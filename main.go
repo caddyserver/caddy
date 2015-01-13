@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"log"
 	"sync"
 
@@ -11,7 +12,9 @@ import (
 func main() {
 	var wg sync.WaitGroup
 
-	vhosts, err := config.Load("Caddyfile")
+	flag.Parse()
+
+	vhosts, err := config.Load(conf)
 	if err != nil {
 		if config.IsNotFound(err) {
 			vhosts = config.Default()
@@ -37,3 +40,9 @@ func main() {
 
 	wg.Wait()
 }
+
+func init() {
+	flag.StringVar(&conf, "conf", server.DefaultConfigFile, "the configuration file to use")
+}
+
+var conf string

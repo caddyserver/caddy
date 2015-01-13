@@ -174,3 +174,5 @@ func enableLogging(l config.Log) (*log.Logger, error) {
 
 	return log.New(file, "", 0), nil
 }
+
+const DefaultConfigFile = "Caddyfile"
