@@ -1,38 +1,36 @@
 Meet caddy
 ===========
 
-Caddy is a web server for your files, much like Apache, nginx, or lighttpd, but with different goals, features, and advantages.
+Caddy is a web server for your files like Apache, nginx, or lighttpd, but with different goals, features, and advantages.
 
-*Note:* This software is pre-1.0. Don't use it in production -- yet. Much will be changing, so please contribute your ideas by opening an issue!
+*Note:* This software is pre-1.0. Don't use it in production -- yet. A lot will change, so please contribute your ideas by opening an issue!
 
 ### Run Caddy
 
 To try Caddy now:
 
 1. Build it
-2. Put it in your $PATH
-3. `cd` into a directory you want to serve
-4. `$ caddy`
+2. `cd` into a directory you want to serve
+3. `./caddy` (or whatever the path is to the binary)
 
-Caddy will, by default, serve the current working directory on http://localhost:8080 (the default port will change before 1.0).
+Caddy will, by default, serve the current working directory on [http://localhost:8080](http://localhost:8080) (the default port will change before 1.0).
 
 ### Configuring Caddy
 
 If the current directory has a file called `Caddyfile`, it will be loaded and parsed and used as configuration. To configure Caddy, place a Caddyfile in the directory of your site.
 
-A Caddyfile should always start with the address to bind to. The rest of the lines are directives which configure the server. Here's an example:
+A Caddyfile always starts with the address to bind to. The rest of the lines are configuration directives. Here's an example:
 
 ```
 mydomain.com:80
-
 gzip
 ext .html
 header /api Access-Control-Allow-Origin *
 ```
 
-This file enables gzip compression, assumes a default file extension of `.html` (so you can serve clean URLs), and adds the coveted "Access-Control-Allow-Origin: *" header to all requests starting with `/api`. Wow! Caddy can do a lot with just four lines of config.
+This simple file enables gzip compression, serves clean URLs (trying `.html` files under the hood), and adds the coveted "Access-Control-Allow-Origin: *" header to all requests starting with `/api`. Wow! Caddy can do a lot with just four lines.
 
-Maybe you want to serve both HTTP and HTTPS. Server, or virtual host, blocks can be defined using curly braces:
+Maybe you want to serve both HTTP and HTTPS. You can define multiple (virtual) hosts using curly braces:
 
 ```
 mydomain.com:80 {
@@ -46,20 +44,26 @@ mydomain.com:443 {
 }
 ```
 
-That easily, we also serve HTTPS on port 443 using the supplied server certificate and key files.
+It's that easy.
 
-Directives that are supported:
 
-- *root* [path]
-- *gzip*
-- *log* requests [output-file] [log-format]
-- *rewrite* [from] [to]
-- *redir* [from] [to] [status]
-- *ext* [list of extensions to try if request doesn't have one]
-- *header* [path] [header-name] [header-value]
-- *tls* [cert-file] [key-file]
 
-This should get you started tinkering. Better docs are on the way, but the spec is changing so quickly at this point that updated docs may lag behind development for now.
+##### Table of Directives
+
+| Directive | Syntax | Description | Example(s) |
+|-----------|--------|-------------|------------|
+| **root** | root *[path]* | Specifies the root folder from which to serve files. | `root /public/www` |
+| **gzip** | gzip | Enables GZIP compression. | `gzip` |
+| **log** | log *[what]* *[output-file]* *[format]* | Enables logging. Right now, only requests are logged. Default file is access.log. | `log requests /var/log/access.log "{time}: {method} for {url}"` |
+| **rewrite** | rewrite *[from]* *[to]* | Internally rewrites a request from one path to another. | `rewrite /a /b` |
+| **redir** | redir *[from]* *[to]* *[status]* | HTTP redirect with the given status code. | `redir /a /b 302` |
+| **ext** | ext *[extensions...]* | Serve clean URLs by internally adding extensions to the requests. Extensions will be tried in the order listed. | `ext .html .htm .txt` |
+| **import** | import *[file]* | Gets replaced with the contents of another file. Useful for sharing settings. | `import shared/common.conf` |
+| **header** | header *[path]* *[header-name]* *[header-value]* -or- header *[path]* { *[header-name]* *[header-value]* ... } | Adds header(s) to responses of requests starting with the specified path. | `header / X-My-Header Foobar` |
+| **tls** | tls *[cert-file]* *[key-file]* | Serves the site over SSL (actually TLS) using the given certificate and key files. | `tls ../ssl/cert.pem ../ssl/key.pem` |
+
+
+This should get you started tinkering. Better docs are on the way, but the spec is changing so quickly at this point that docs may lag behind development for now.
 
 ### Contributing
 
