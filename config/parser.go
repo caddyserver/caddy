@@ -66,18 +66,12 @@ func (p *parser) err(kind, msg string) error {
 }
 
 // parseAddress takes a host:port string (val), and returns the host
-// and port as separate values. If either value that is missing, the
-// default will be used.4
-func (p *parser) parseAddress(val string) (string, string) {
-	if val == "" {
-		return defaultHost, defaultPort
-	}
+// and port as separate values. Empty strings can be returned if
+// either is missing.
+func parseAddress(val string) (string, string) {
 	parts := strings.SplitN(val, ":", 3)
-	if parts[0] == "" {
-		parts[0] = defaultHost
-	}
-	if len(parts) == 1 || parts[1] == "" {
-		return parts[0], defaultPort
+	if len(parts) == 1 {
+		return parts[0], ""
 	} else {
 		return parts[0], parts[1]
 	}

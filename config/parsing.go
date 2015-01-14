@@ -23,7 +23,7 @@ func (p *parser) parse() error {
 // address expects that the current token is a host:port
 // combination.
 func (p *parser) address() error {
-	p.cfg.Host, p.cfg.Port = p.parseAddress(p.tkn())
+	p.cfg.Host, p.cfg.Port = parseAddress(p.tkn())
 	p.lexer.Next()
 	return nil
 }
