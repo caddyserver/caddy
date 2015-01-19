@@ -3,32 +3,119 @@ package config
 import (
 	"errors"
 	"fmt"
+	"os"
 	"strings"
+
+	"github.com/mholt/caddy/middleware"
 )
 
 // parser is a type which can parse config files.
 type parser struct {
-	lexer lexer
-	cfg   Config
+	filename string                // the name of the file that we're parsing
+	lexer    lexer                 // the lexer that is giving us tokens from the raw input
+	cfg      Config                // each server gets one Config; this is the one we're currently building
+	other    map[string]*dispenser // tokens to be parsed later by others (middleware generators)
+	unused   bool                  // sometimes the token won't be immediately consumed
+}
+
+// newParser makes a new parser and prepares it for parsing, given
+// the input to parse.
+func newParser(file *os.File) *parser {
+	p := &parser{filename: file.Name()}
+	p.lexer.load(file)
+	return p
 }
 
 // Parse parses the configuration file. It produces a slice of Config
 // structs which can be used to create and configure server instances.
-func (p *parser) Parse() ([]Config, error) {
+func (p *parser) parse() ([]Config, error) {
 	var configs []Config
 
-	for p.lexer.Next() {
-		p.cfg = Config{ErrorPages: make(map[int]string)}
-
-		err := p.parse()
+	for p.lexer.next() {
+		err := p.parseOne()
 		if err != nil {
-			return configs, err
+			return nil, err
 		}
-
 		configs = append(configs, p.cfg)
 	}
 
 	return configs, nil
+}
+
+// nextArg loads the next token if it is on the same line.
+// Returns true if a token was loaded; false otherwise.
+func (p *parser) nextArg() bool {
+	if p.unused {
+		return false
+	}
+	line := p.line()
+	if p.next() {
+		if p.line() > line {
+			p.unused = true
+			return false
+		}
+		return true
+	}
+	return false
+}
+
+// next loads the next token and returns true if a token
+// was loaded; false otherwise.
+func (p *parser) next() bool {
+	if p.unused {
+		p.unused = false
+		return true
+	} else {
+		return p.lexer.next()
+	}
+}
+
+// parseOne parses the contents of a configuration
+// file for a single Config object (each server or
+// virtualhost instance gets their own Config struct),
+// which is until the next address/server block.
+// Call this only after you know that the lexer has another
+// another token and you're not in the middle of a server
+// block already.
+func (p *parser) parseOne() error {
+	p.cfg = Config{}
+
+	p.other = make(map[string]*dispenser)
+
+	err := p.begin()
+	if err != nil {
+		return err
+	}
+
+	err = p.unwrap()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// unwrap gets the middleware generators from the middleware
+// package in the order in which they are registered, and
+// executes the top-level functions (the generator function)
+// to expose the second layers which is the actual middleware.
+// This function should be called only after p has filled out
+// p.other and that the entire server block has been consumed.
+func (p *parser) unwrap() error {
+	for _, directive := range middleware.Ordered() {
+		if disp, ok := p.other[directive]; ok {
+			if generator, ok := middleware.GetGenerator(directive); ok {
+				mid := generator(disp)
+				if mid == nil {
+					return disp.err
+				}
+				p.cfg.Middleware = append(p.cfg.Middleware, mid)
+			} else {
+				return errors.New("No middleware bound to directive '" + directive + "'")
+			}
+		}
+	}
+	return nil
 }
 
 // tkn is shorthand to get the text/value of the current token.
@@ -58,10 +145,10 @@ func (p *parser) eofErr() error {
 	return p.err("Syntax", "Unexpected EOF")
 }
 
-// err creates a "{{kind}} error: ..." with a custom message msg. The
+// err creates an error with a custom message msg: "{{kind}} error: {{msg}}". The
 // file name and line number are included in the error message.
 func (p *parser) err(kind, msg string) error {
-	msg = fmt.Sprintf("%s error: %s:%d - %s", kind, p.lexer.file.Name(), p.line(), msg)
+	msg = fmt.Sprintf("%s:%d - %s error: %s", p.filename, p.line(), kind, msg)
 	return errors.New(msg)
 }
 

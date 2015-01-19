@@ -4,13 +4,15 @@ import (
 	"errors"
 	"log"
 	"net/http"
-	"os"
 
 	"github.com/mholt/caddy/config"
 	"github.com/mholt/caddy/middleware"
 )
 
-// servers maintains a registry of running servers.
+// The default configuration file to load if none is specified
+const DefaultConfigFile = "Caddyfile"
+
+// servers maintains a registry of running servers, keyed by address.
 var servers = make(map[string]*Server)
 
 // Server represents an instance of a server, which serves
@@ -46,7 +48,7 @@ func New(conf config.Config) (*Server, error) {
 
 // Serve starts the server. It blocks until the server quits.
 func (s *Server) Serve() error {
-	err := s.configureStack()
+	err := s.buildStack()
 	if err != nil {
 		return err
 	}
@@ -73,73 +75,20 @@ func (s *Server) Log(v ...interface{}) {
 	}
 }
 
-// configureStack builds the server's middleware stack based
+// buildStack builds the server's middleware stack based
 // on its config. This method should be called last before
 // ListenAndServe begins.
-func (s *Server) configureStack() error {
-	var mid []middleware.Middleware
-	var err error
-	conf := s.config
+func (s *Server) buildStack() error {
+	s.fileServer = http.FileServer(http.Dir(s.config.Root))
 
-	// FileServer is the main application layer
-	s.fileServer = http.FileServer(http.Dir(conf.Root))
-
-	// push prepends each middleware to the stack so the
-	// compilation can iterate them in a natural, increasing order
-	push := func(m middleware.Middleware) {
-		mid = append(mid, nil)
-		copy(mid[1:], mid[0:])
-		mid[0] = m
-	}
-
-	// BEGIN ADDING MIDDLEWARE
-	// Middleware will be executed in the order they're added.
-
-	if conf.RequestLog.Enabled {
-		if conf.RequestLog.Enabled {
-			s.reqlog, err = enableLogging(conf.RequestLog)
-			if err != nil {
-				return err
-			}
+	for _, start := range s.config.Startup {
+		err := start()
+		if err != nil {
+			return err
 		}
-		push(middleware.RequestLog(s.reqlog, conf.RequestLog.Format))
 	}
 
-	if conf.ErrorLog.Enabled {
-		if conf.ErrorLog.Enabled {
-			s.errlog, err = enableLogging(conf.ErrorLog)
-			if err != nil {
-				return err
-			}
-		}
-		push(middleware.ErrorLog(s.errlog, conf.ErrorLog.Format))
-	}
-
-	if len(conf.Rewrites) > 0 {
-		push(middleware.Rewrite(conf.Rewrites))
-	}
-
-	if len(conf.Redirects) > 0 {
-		push(middleware.Redirect(conf.Redirects))
-	}
-
-	if len(conf.Extensions) > 0 {
-		push(middleware.Extensionless(conf.Root, conf.Extensions))
-	}
-
-	if len(conf.Headers) > 0 {
-		push(middleware.Headers(conf.Headers))
-	}
-
-	if conf.Gzip {
-		push(middleware.Gzip)
-	}
-
-	// END ADDING MIDDLEWARE
-
-	// Compiling the middleware unwraps each HandlerFunc,
-	// fully configured, ready to serve every request.
-	s.compile(mid)
+	s.compile(s.config.Middleware)
 
 	return nil
 }
@@ -152,27 +101,3 @@ func (s *Server) compile(layers []middleware.Middleware) {
 		s.stack = layer(s.stack)
 	}
 }
-
-// enableLogging opens a log file and keeps it open for the lifetime
-// of the server. In fact, the log file is never closed as long as
-// the program is running, since the server will be running for
-// that long. If that ever changes, the log file should be closed.
-func enableLogging(l config.Log) (*log.Logger, error) {
-	var file *os.File
-	var err error
-
-	if l.OutputFile == "stdout" {
-		file = os.Stdout
-	} else if l.OutputFile == "stderr" {
-		file = os.Stderr
-	} else {
-		file, err = os.OpenFile(l.OutputFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return log.New(file, "", 0), nil
-}
-
-const DefaultConfigFile = "Caddyfile"

@@ -10,11 +10,24 @@ import (
 // passed in as well as possible extensions to add, internally,
 // to paths requested. The first path+ext that matches a resource
 // that exists will be used.
-func Extensionless(root string, extensions []string) Middleware {
+func Extensionless(p parser) Middleware {
+	var extensions []string
+	var root = p.Root() // TODO: Big gotcha! Save this now before it goes away! We can't get this later during a request!
+
+	for p.Next() {
+		if !p.NextArg() {
+			return p.ArgErr()
+		}
+		extensions = append(extensions, p.Val())
+		for p.NextArg() {
+			extensions = append(extensions, p.Val())
+		}
+	}
+
 	resourceExists := func(path string) bool {
 		_, err := os.Stat(root + path)
 		// technically we should use os.IsNotExist(err)
-		// but we don't handle any other error types anyway
+		// but we don't handle any other kinds of errors anyway
 		return err == nil
 	}
 

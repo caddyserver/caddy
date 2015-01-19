@@ -7,20 +7,19 @@ import (
 	"strings"
 )
 
-// Adapted from https://gist.github.com/the42/1956518
-
-// Gzip is middleware that gzip-compresses the response.
-func Gzip(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
-			next(w, r)
-			return
+func Gzip(p parser) Middleware {
+	return func(next http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+				next(w, r)
+				return
+			}
+			w.Header().Set("Content-Encoding", "gzip")
+			gzipWriter := gzip.NewWriter(w)
+			defer gzipWriter.Close()
+			gz := gzipResponseWriter{Writer: gzipWriter, ResponseWriter: w}
+			next(gz, r)
 		}
-		w.Header().Set("Content-Encoding", "gzip")
-		gzipWriter := gzip.NewWriter(w)
-		defer gzipWriter.Close()
-		gz := gzipResponseWriter{Writer: gzipWriter, ResponseWriter: w}
-		next(gz, r)
 	}
 }
 
@@ -36,5 +35,6 @@ func (w gzipResponseWriter) Write(b []byte) (int, error) {
 	if w.Header().Get("Content-Type") == "" {
 		w.Header().Set("Content-Type", http.DetectContentType(b))
 	}
-	return w.Writer.Write(b)
+	n, err := w.Writer.Write(b)
+	return n, err
 }

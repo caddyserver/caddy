@@ -1,12 +1,14 @@
 package config
 
+import "github.com/mholt/caddy/middleware"
+
 // This file contains the recursive-descent parsing
 // functions.
 
-// parse is the top of the recursive-descent parsing.
-// It parses at most 1 server configuration (an address
+// begin is the top of the recursive-descent parsing.
+// It parses at most one server configuration (an address
 // and its directives).
-func (p *parser) parse() error {
+func (p *parser) begin() error {
 	err := p.address()
 	if err != nil {
 		return err
@@ -23,15 +25,23 @@ func (p *parser) parse() error {
 // address expects that the current token is a host:port
 // combination.
 func (p *parser) address() error {
+	if p.tkn() == "}" || p.tkn() == "{" {
+		return p.err("Syntax", "'"+p.tkn()+"' is not a listening address or EOF")
+	}
 	p.cfg.Host, p.cfg.Port = parseAddress(p.tkn())
-	p.lexer.Next()
 	return nil
 }
 
-// addressBlock leads into parsing directives. It
-// handles directives enclosed by curly braces and
+// addressBlock leads into parsing directives, including
+// possible opening/closing curly braces around the block.
+// It handles directives enclosed by curly braces and
 // directives not enclosed by curly braces.
 func (p *parser) addressBlock() error {
+	if !p.next() {
+		// file consisted of only an address
+		return nil
+	}
+
 	err := p.openCurlyBrace()
 	if err != nil {
 		// meh, single-server configs don't need curly braces
@@ -51,7 +61,9 @@ func (p *parser) addressBlock() error {
 }
 
 // openCurlyBrace expects the current token to be an
-// opening curly brace.
+// opening curly brace. This acts like an assertion
+// because it returns an error if the token is not
+// a opening curly brace.
 func (p *parser) openCurlyBrace() error {
 	if p.tkn() != "{" {
 		return p.syntaxErr("{")
@@ -60,6 +72,8 @@ func (p *parser) openCurlyBrace() error {
 }
 
 // closeCurlyBrace expects the current token to be
+// a closing curly brace. This acts like an assertion
+// because it returns an error if the token is not
 // a closing curly brace.
 func (p *parser) closeCurlyBrace() error {
 	if p.tkn() != "}" {
@@ -73,18 +87,67 @@ func (p *parser) closeCurlyBrace() error {
 // directive. It goes until EOF or closing curly
 // brace.
 func (p *parser) directives() error {
-	for p.lexer.Next() {
+	for p.next() {
 		if p.tkn() == "}" {
+			// end of address scope
 			break
 		}
-		if fn, ok := validDirectives[p.tkn()]; !ok {
-			return p.syntaxErr("[directive]")
-		} else {
+		if fn, ok := validDirectives[p.tkn()]; ok {
 			err := fn(p)
 			if err != nil {
 				return err
 			}
+		} else if middleware.Registered(p.tkn()) {
+			err := p.collectTokens()
+			if err != nil {
+				return err
+			}
+		} else {
+			return p.err("Syntax", "Unexpected token '"+p.tkn()+"', expecting a valid directive")
 		}
 	}
+	return nil
+}
+
+// collectTokens consumes tokens until the directive's scope
+// closes (either end of line or end of curly brace block).
+func (p *parser) collectTokens() error {
+	directive := p.tkn()
+	line := p.line()
+	nesting := 0
+	breakOk := false
+	disp := newDispenser(p)
+
+	// Re-use a duplicate directive's dispenser from before
+	// (the parsing logic in the middleware generator must
+	// account for multiple occurrences of its directive, even
+	// if that means returning an error or overwriting settings)
+	if existing, ok := p.other[directive]; ok {
+		disp = existing
+	}
+
+	// The directive is appended as a relevant token
+	disp.tokens = append(disp.tokens, p.lexer.token)
+
+	for p.next() {
+		if p.tkn() == "{" {
+			nesting++
+		} else if p.line() > line && nesting == 0 {
+			p.unused = true
+			breakOk = true
+			break
+		} else if p.tkn() == "}" && nesting > 0 {
+			nesting--
+		} else if p.tkn() == "}" && nesting == 0 {
+			return p.err("Syntax", "Unexpected '}' because no matching open curly brace '{'")
+		}
+		disp.tokens = append(disp.tokens, p.lexer.token)
+	}
+
+	if !breakOk || nesting > 0 {
+		return p.eofErr()
+	}
+
+	p.other[directive] = disp
 	return nil
 }

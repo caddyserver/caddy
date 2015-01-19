@@ -9,6 +9,12 @@ import (
 	"github.com/mholt/caddy/server"
 )
 
+var conf string
+
+func init() {
+	flag.StringVar(&conf, "conf", server.DefaultConfigFile, "the configuration file to use")
+}
+
 func main() {
 	var wg sync.WaitGroup
 
@@ -40,9 +46,3 @@ func main() {
 
 	wg.Wait()
 }
-
-func init() {
-	flag.StringVar(&conf, "conf", server.DefaultConfigFile, "the configuration file to use")
-}
-
-var conf string
