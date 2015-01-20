@@ -45,7 +45,7 @@ func newReplacer(r *http.Request, rw *responseRecorder) replacer {
 			return ""
 		}(),
 		"{uri}": r.RequestURI,
-		"{time}": func() string {
+		"{when}": func() string {
 			return time.Now().Format(timeFormat)
 		}(),
 		"{status}": strconv.Itoa(rw.status),

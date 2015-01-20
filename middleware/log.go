@@ -61,7 +61,7 @@ func RequestLog(p parser) Middleware {
 
 const (
 	defaultLogFilename  = "access.log"
-	commonLogFormat     = `{remote} ` + emptyStringReplacer + ` [{time}] "{method} {uri} {proto}" {status} {size}`
+	commonLogFormat     = `{remote} ` + emptyStringReplacer + ` [{when}] "{method} {uri} {proto}" {status} {size}`
 	combinedLogFormat   = commonLogFormat + ` "{>Referer}" "{>User-Agent}"`
 	defaultReqLogFormat = commonLogFormat
 )
