@@ -65,6 +65,7 @@ type Config struct {
 	TLS        TLSConfig
 	Middleware []middleware.Middleware
 	Startup    []func() error
+	MaxCPU     int
 }
 
 // Address returns the host:port of c as a string.

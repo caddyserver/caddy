@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"runtime"
 
 	"github.com/mholt/caddy/config"
 	"github.com/mholt/caddy/middleware"
@@ -36,6 +37,11 @@ func New(conf config.Config) (*Server, error) {
 		return nil, errors.New("Address " + addr + " is already in use")
 	}
 
+	// Use all CPUs (if needed) by default
+	if conf.MaxCPU == 0 {
+		conf.MaxCPU = runtime.NumCPU()
+	}
+
 	// Initialize
 	s := new(Server)
 	s.config = conf
@@ -51,6 +57,10 @@ func (s *Server) Serve() error {
 	err := s.buildStack()
 	if err != nil {
 		return err
+	}
+
+	if s.config.MaxCPU > 0 {
+		runtime.GOMAXPROCS(s.config.MaxCPU)
 	}
 
 	if s.config.TLS.Enabled {
