@@ -28,12 +28,16 @@ func init() {
 				return p.argErr()
 			}
 
-			file, err := os.Open(p.tkn())
+			filename := p.tkn()
+			file, err := os.Open(filename)
 			if err != nil {
 				return p.err("Parse", err.Error())
 			}
 			defer file.Close()
-			p2 := newParser(file)
+			p2, err := newParser(file)
+			if err != nil {
+				return p.err("Parse", "Could not import "+filename+"; "+err.Error())
+			}
 
 			p2.cfg = p.cfg
 			err = p2.directives()

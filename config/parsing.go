@@ -45,6 +45,7 @@ func (p *parser) addressBlock() error {
 	err := p.openCurlyBrace()
 	if err != nil {
 		// meh, single-server configs don't need curly braces
+		p.unused = true // we read the token but aren't consuming it
 		return p.directives()
 	}
 

@@ -24,7 +24,12 @@ func Load(filename string) ([]Config, error) {
 		return nil, err
 	}
 	defer file.Close()
-	p := newParser(file)
+
+	p, err := newParser(file)
+	if err != nil {
+		return nil, err
+	}
+
 	return p.parse()
 }
 

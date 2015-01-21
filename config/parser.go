@@ -20,10 +20,16 @@ type parser struct {
 
 // newParser makes a new parser and prepares it for parsing, given
 // the input to parse.
-func newParser(file *os.File) *parser {
-	p := &parser{filename: file.Name()}
+func newParser(file *os.File) (*parser, error) {
+	stat, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+
+	p := &parser{filename: stat.Name()}
 	p.lexer.load(file)
-	return p
+
+	return p, nil
 }
 
 // Parse parses the configuration file. It produces a slice of Config
