@@ -6,15 +6,23 @@ import (
 	"unicode"
 )
 
-// lexer is a utility which can get values, token by
-// token, from a reader. A token is a word, and tokens
-// are separated by whitespace. A word can be enclosed in
-// quotes if it contains whitespace.
-type lexer struct {
-	reader *bufio.Reader
-	token  token
-	line   int
-}
+type (
+	// lexer is a utility which can get values, token by
+	// token, from a reader. A token is a word, and tokens
+	// are separated by whitespace. A word can be enclosed in
+	// quotes if it contains whitespace.
+	lexer struct {
+		reader *bufio.Reader
+		token  token
+		line   int
+	}
+
+	// token represents a single processable unit.
+	token struct {
+		line int
+		text string
+	}
+)
 
 // load prepares the lexer to scan a file for tokens.
 func (l *lexer) load(file io.Reader) error {
@@ -63,10 +71,6 @@ func (l *lexer) next() bool {
 					return makeToken()
 				}
 			}
-			if ch == '\\' && !escaped {
-				escaped = true
-				continue
-			}
 			if ch == '\n' {
 				l.line++
 			}
@@ -107,10 +111,4 @@ func (l *lexer) next() bool {
 
 		val = append(val, ch)
 	}
-}
-
-// token represents a single processable unit.
-type token struct {
-	line int
-	text string
 }
