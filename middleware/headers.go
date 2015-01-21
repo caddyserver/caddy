@@ -20,7 +20,7 @@ func Headers(p parser) Middleware {
 	)
 	var rules []headers
 
-	for p.Next() {
+	for p.NextLine() {
 		var head headers
 		var isNewPattern bool
 
@@ -43,49 +43,25 @@ func Headers(p parser) Middleware {
 			isNewPattern = true
 		}
 
-		processHeaderBlock := func() bool {
-			if !p.OpenCurlyBrace() {
-				return false
-			}
-			for p.Next() {
-				if p.Val() == "}" {
-					break
-				}
-				h := header{Name: p.Val()}
-				if p.NextArg() {
-					h.Value = p.Val()
-				}
-				head.Headers = append(head.Headers, h)
-			}
-			if !p.CloseCurlyBrace() {
-				return false
-			}
-			return true
-		}
+		for p.NextBlock() {
+			h := header{Name: p.Val()}
 
-		// A single header could be declared on the same line, or
-		// multiple headers can be grouped by URL pattern, so we have
-		// to look for both here.
+			if p.NextArg() {
+				h.Value = p.Val()
+			}
+
+			head.Headers = append(head.Headers, h)
+		}
 		if p.NextArg() {
-			if p.Val() == "{" {
-				if !processHeaderBlock() {
-					return nil
-				}
-			} else {
-				h := header{Name: p.Val()}
-				if p.NextArg() {
-					h.Value = p.Val()
-				}
-				head.Headers = append(head.Headers, h)
+			h := header{Name: p.Val()}
+
+			h.Value = p.Val()
+
+			if p.NextArg() {
+				h.Value = p.Val()
 			}
-		} else {
-			// Okay, it might be an opening curly brace on the next line
-			if !p.Next() {
-				return p.Err("Parse", "Unexpected EOF")
-			}
-			if !processHeaderBlock() {
-				return nil
-			}
+
+			head.Headers = append(head.Headers, h)
 		}
 
 		if isNewPattern {

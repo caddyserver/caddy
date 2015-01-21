@@ -11,16 +11,17 @@ import (
 // generators so that they can parse tokens to configure
 // their instance.
 type dispenser struct {
-	parser *parser
-	iter   int
-	tokens []token
-	err    error
+	parser  *parser
+	cursor  int
+	nesting int
+	tokens  []token
+	err     error
 }
 
 // newDispenser returns a new dispenser.
 func newDispenser(p *parser) *dispenser {
 	d := new(dispenser)
-	d.iter = -1
+	d.cursor = -1
 	d.parser = p
 	return d
 }
@@ -30,10 +31,10 @@ func newDispenser(p *parser) *dispenser {
 // have been consumed.
 // TODO: Have the other Next functions call this one...?
 func (d *dispenser) Next() bool {
-	if d.iter >= len(d.tokens)-1 {
+	if d.cursor >= len(d.tokens)-1 {
 		return false
 	} else {
-		d.iter++
+		d.cursor++
 		return true
 	}
 }
@@ -43,91 +44,96 @@ func (d *dispenser) Next() bool {
 // otherwise. If false, all tokens on the line have
 // been consumed.
 func (d *dispenser) NextArg() bool {
-	if d.iter < 0 {
-		d.iter++
+	if d.cursor < 0 {
+		d.cursor++
 		return true
 	}
-	if d.iter >= len(d.tokens) {
+	if d.cursor >= len(d.tokens) {
 		return false
 	}
-	if d.iter < len(d.tokens)-1 &&
-		d.tokens[d.iter].line == d.tokens[d.iter+1].line {
-		d.iter++
+	if d.cursor < len(d.tokens)-1 &&
+		d.tokens[d.cursor].line == d.tokens[d.cursor+1].line {
+		d.cursor++
 		return true
 	}
 	return false
 }
 
-// TODO: Keep this method? It's like NextArg
-// but only gets the next token if it's on the next line...
+// TODO: Assert that there's a line break and only advance
+// the token if that's the case? (store an error otherwise)
 func (d *dispenser) NextLine() bool {
-	if d.iter < 0 {
-		d.iter++
+	if d.cursor < 0 {
+		d.cursor++
 		return true
 	}
-	if d.iter >= len(d.tokens) {
+	if d.cursor >= len(d.tokens) {
 		return false
 	}
-	if d.iter < len(d.tokens)-1 &&
-		d.tokens[d.iter].line < d.tokens[d.iter+1].line {
-		d.iter++
+	if d.cursor < len(d.tokens)-1 &&
+		d.tokens[d.cursor].line < d.tokens[d.cursor+1].line {
+		d.cursor++
 		return true
 	}
 	return false
 }
 
-// OpenCurlyBrace asserts that the current token is
-// an opening curly brace "{". If it isn't, an error
-// is produced and false is returned.
-func (d *dispenser) OpenCurlyBrace() bool {
-	if d.Val() == "{" {
+// NextBlock advances the cursor to the next token only
+// if the current token is an open curly brace on the
+// same line. If so, that token is consumed and this
+// function will return true until the closing curly
+// brace is consumed by this method.
+func (d *dispenser) NextBlock() bool {
+	if d.nesting > 0 {
+		d.Next()
+		if d.Val() == "}" {
+			d.nesting--
+			d.Next() // consume closing brace
+			return false
+		}
 		return true
-	} else {
-		d.Err("Parse", "Expected '{'")
+	}
+	if !d.NextArg() {
 		return false
 	}
-}
-
-// CloseCurlyBrace asserts that the current token is
-// a closing curly brace "}". If it isn't, an error
-// is produced and false is returned.
-func (d *dispenser) CloseCurlyBrace() bool {
-	if d.Val() == "}" {
-		return true
-	} else {
-		d.Err("Parse", "Expected '}'")
+	if d.Val() != "{" {
+		d.cursor-- // roll back if not opening brace
 		return false
 	}
+	d.Next()
+	d.nesting++
+	return true
 }
 
 // Val gets the text of the current token.
 func (d *dispenser) Val() string {
-	if d.iter >= len(d.tokens) || d.iter < 0 {
+	if d.cursor < 0 || d.cursor >= len(d.tokens) {
 		return ""
 	} else {
-		return d.tokens[d.iter].text
+		return d.tokens[d.cursor].text
 	}
 }
 
 // ArgErr generates an argument error, meaning that another
 // argument was expected but not found. The error is saved
 // within the dispenser, but this function returns nil for
-// convenience.
+// convenience in practice.
 func (d *dispenser) ArgErr() middleware.Middleware {
 	if d.Val() == "{" {
-		d.Err("Syntax", "Unexpected token '{', expecting argument for directive")
+		d.Err("Unexpected token '{', expecting argument")
 		return nil
 	}
-	d.Err("Syntax", "Unexpected line break after '"+d.tokens[d.iter].text+"' (missing arguments?)")
+	d.Err("Unexpected line break after '" + d.Val() + "' (missing arguments?)")
 	return nil
 }
 
-// Err generates a custom error of type kind and with a message
-// of msg. The kind should be capitalized. This function returns
-// nil for convenience, but loads the error into the dispenser
-// so it can be reported immediately.
-func (d *dispenser) Err(kind, msg string) middleware.Middleware {
-	msg = fmt.Sprintf("%s:%d - %s error: %s", d.parser.filename, d.tokens[d.iter].line, kind, msg)
+// Err generates a custom parse error with a message of msg.
+// This function returns nil for convenience, but loads the
+// error into the dispenser so it can be reported. The caller
+// of the middleware preparator is responsible for checking
+// the error in the dispenser after the middleware preparator
+// is finished.
+func (d *dispenser) Err(msg string) middleware.Middleware {
+	msg = fmt.Sprintf("%s:%d - Parse error: %s", d.parser.filename, d.tokens[d.cursor].line, msg)
 	d.err = errors.New(msg)
 	return nil
 }
@@ -137,10 +143,8 @@ func (d *dispenser) Err(kind, msg string) middleware.Middleware {
 // pointed to in targets. If there are fewer tokens available
 // than string pointers, the remaining strings will not be changed.
 func (d *dispenser) Args(targets ...*string) {
-	i := 0
-	for d.NextArg() {
+	for i := 0; i < len(targets) && d.NextArg(); i++ {
 		*targets[i] = d.Val()
-		i++
 	}
 }
 

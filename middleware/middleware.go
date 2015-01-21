@@ -35,12 +35,11 @@ type (
 		Next() bool
 		NextArg() bool
 		NextLine() bool
+		NextBlock() bool
 		Val() string
-		OpenCurlyBrace() bool
-		CloseCurlyBrace() bool
-		ArgErr() Middleware
-		Err(string, string) Middleware
 		Args(...*string)
+		ArgErr() Middleware
+		Err(string) Middleware
 		Startup(func() error)
 		Root() string
 		Host() string

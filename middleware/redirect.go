@@ -36,7 +36,7 @@ func Redirect(p parser) Middleware {
 		}
 
 		if code, ok := httpRedirs[p.Val()]; !ok {
-			return p.Err("Parse", "Invalid redirect code '"+p.Val()+"'")
+			return p.Err("Invalid redirect code '" + p.Val() + "'")
 		} else {
 			rule.Code = code
 		}
