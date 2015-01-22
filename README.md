@@ -3,17 +3,29 @@ Meet caddy
 
 Caddy is a web server for your files like Apache, nginx, or lighttpd, but with different goals, features, and advantages.
 
-*Note:* This software is pre-1.0. Don't use it in production -- yet. A lot will change, so feel free to contribute!
+*Note:* This software is pre-1.0. Don't use it in production (yet).
+
+### Features
+
+- SSL (TLS)
+- Gzip
+- FastCGI (yes, it can serve PHP sites)
+- Logging
+- Rewrite
+- Redirect
+- Extensionless (clean) URLs
+- Multi-core
+- Custom headers
+
+Caddy is designed to be super-easy to use and configure.
 
 ### Run Caddy
 
-To try Caddy now:
-
-1. Build it
+1. Download or build it
 2. `cd` into a directory you want to serve
-3. `caddy` (assuming $GOPATH is in $PATH)
+3. `./caddy`
 
-Caddy will, by default, serve the current working directory on [http://localhost:8080](http://localhost:8080) (the default port will change before 1.0).
+Caddy will, by default, serve the current working directory on [http://localhost:8080](http://localhost:8080) (the default port will change before version 1.0).
 
 ### Configuring Caddy
 
