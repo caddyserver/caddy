@@ -17,6 +17,7 @@ func init() {
 	register("rewrite", Rewrite)
 	register("redir", Redirect)
 	register("ext", Extensionless)
+	register("fastcgi", FastCGI)
 }
 
 type (
@@ -37,7 +38,7 @@ type (
 		NextLine() bool
 		NextBlock() bool
 		Val() string
-		Args(...*string)
+		Args(...*string) bool
 		ArgErr() Middleware
 		Err(string) Middleware
 		Startup(func() error)

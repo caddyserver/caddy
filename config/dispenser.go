@@ -141,11 +141,19 @@ func (d *dispenser) Err(msg string) middleware.Middleware {
 // Args is a convenience function that loads the next arguments
 // (tokens on the same line) into an arbitrary number of strings
 // pointed to in targets. If there are fewer tokens available
-// than string pointers, the remaining strings will not be changed.
-func (d *dispenser) Args(targets ...*string) {
-	for i := 0; i < len(targets) && d.NextArg(); i++ {
+// than string pointers, the remaining strings will not be changed
+// and false will be returned. If there were enough tokens available
+// to fill the arguments, then true will be returned.
+func (d *dispenser) Args(targets ...*string) bool {
+	enough := true
+	for i := 0; i < len(targets); i++ {
+		if !d.NextArg() {
+			enough = false
+			break
+		}
 		*targets[i] = d.Val()
 	}
+	return enough
 }
 
 // Startup registers a function to execute when the server starts.

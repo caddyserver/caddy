@@ -1,7 +1,11 @@
 .DS_Store
 Thumbs.db
 _gitignore/
+Vagrantfile
+.vagrant/
+
 error.log
 access.log
+
 /*.conf
 Caddyfile
