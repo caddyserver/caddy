@@ -3,7 +3,7 @@ package headers
 import (
 	"net/http"
 
-	"github.com/mholt/caddy/middleware/util"
+	"github.com/mholt/caddy/middleware"
 )
 
 // Headers is middleware that adds headers to the responses
@@ -17,7 +17,7 @@ type Headers struct {
 // adding headers to the response according to the configured rules.
 func (h *Headers) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	for _, rule := range h.rules {
-		if util.Path(r.URL.Path).Matches(rule.Url) {
+		if middleware.Path(r.URL.Path).Matches(rule.Url) {
 			for _, header := range rule.Headers {
 				w.Header().Set(header.Name, header.Value)
 			}
