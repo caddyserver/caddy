@@ -1,4 +1,8 @@
-package middleware
+// FastCGI is middleware that acts as a FastCGI client. Requests
+// that get forwarded to FastCGI stop the middleware execution
+// chain. The most common use for this layer is to serve PHP
+// websites with php-fpm.
+package fastcgi
 
 import (
 	"io"
@@ -8,21 +12,20 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/mholt/caddy/middleware"
+
 	"bitbucket.org/PinIdea/fcgi_client" // TODO: Inline this dependency. It'll need some work.
 )
 
-// FastCGI is middleware that acts as a FastCGI client. Requests
-// that get forwarded to FastCGI stop the middleware execution
-// chain. The most common use for this layer is to serve PHP
-// websites with php-fpm.
-func FastCGI(p parser) Middleware {
-	root := p.Root()
+// New generates a new FastCGI middleware.
+func New(c middleware.Controller) (middleware.Middleware, error) {
+	root := c.Root()
 
 	var rules []fastCgi
-	for p.Next() {
+	for c.Next() {
 		rule := fastCgi{}
-		if !p.Args(&rule.path, &rule.address) {
-			return p.ArgErr()
+		if !c.Args(&rule.path, &rule.address) {
+			return nil, c.ArgErr()
 		}
 		rules = append(rules, rule)
 	}
@@ -32,7 +35,7 @@ func FastCGI(p parser) Middleware {
 
 			servedFcgi := false
 			for _, rule := range rules {
-				if Path(r.URL.Path).Matches(rule.path) {
+				if middleware.Path(r.URL.Path).Matches(rule.path) {
 					servedFcgi = true
 
 					// Get absolute file paths
@@ -102,7 +105,7 @@ func FastCGI(p parser) Middleware {
 				next(w, r)
 			}
 		}
-	}
+	}, nil
 }
 
 type fastCgi struct {
