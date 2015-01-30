@@ -1,42 +1,39 @@
-package middleware
-
-import "net/http"
-
 // Redirect is middleware for redirecting certain requests
 // to other locations.
-func Redirect(p parser) Middleware {
+package redirect
 
-	// Redirect describes an HTTP redirect rule.
-	type redirect struct {
-		From string
-		To   string
-		Code int
-	}
+import (
+	"net/http"
 
+	"github.com/mholt/caddy/middleware"
+)
+
+// New creates a new redirect middleware.
+func New(c middleware.Controller) (middleware.Middleware, error) {
 	var redirects []redirect
 
-	for p.Next() {
+	for c.Next() {
 		var rule redirect
 
 		// From
-		if !p.NextArg() {
-			return p.ArgErr()
+		if !c.NextArg() {
+			return nil, c.ArgErr()
 		}
-		rule.From = p.Val()
+		rule.From = c.Val()
 
 		// To
-		if !p.NextArg() {
-			return p.ArgErr()
+		if !c.NextArg() {
+			return nil, c.ArgErr()
 		}
-		rule.To = p.Val()
+		rule.To = c.Val()
 
 		// Status Code
-		if !p.NextArg() {
-			return p.ArgErr()
+		if !c.NextArg() {
+			return nil, c.ArgErr()
 		}
 
-		if code, ok := httpRedirs[p.Val()]; !ok {
-			return p.Err("Invalid redirect code '" + p.Val() + "'")
+		if code, ok := httpRedirs[c.Val()]; !ok {
+			return nil, c.Err("Invalid redirect code '" + c.Val() + "'")
 		} else {
 			rule.Code = code
 		}
@@ -54,7 +51,14 @@ func Redirect(p parser) Middleware {
 			}
 			next(w, r)
 		}
-	}
+	}, nil
+}
+
+// redirect describes an HTTP redirect rule.
+type redirect struct {
+	From string
+	To   string
+	Code int
 }
 
 // httpRedirs is a list of supported HTTP redirect codes.
