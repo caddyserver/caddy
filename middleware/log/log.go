@@ -1,20 +1,23 @@
-package middleware
+package log
 
 import (
 	"log"
 	"net/http"
 	"os"
+
+	"github.com/mholt/caddy/middleware"
 )
 
-func RequestLog(p parser) Middleware {
+// New instantiates a new instance of logging middleware.
+func New(c middleware.Controller) (middleware.Middleware, error) {
 	var logWhat, outputFile, format string
 	var logger *log.Logger
 
-	for p.Next() {
-		p.Args(&logWhat, &outputFile, &format)
+	for c.Next() {
+		c.Args(&logWhat, &outputFile, &format)
 
 		if logWhat == "" {
-			return p.ArgErr()
+			return nil, c.ArgErr()
 		}
 		if outputFile == "" {
 			outputFile = defaultLogFilename
@@ -30,7 +33,7 @@ func RequestLog(p parser) Middleware {
 	}
 
 	// Open the log file for writing when the server starts
-	p.Startup(func() error {
+	c.Startup(func() error {
 		var err error
 		var file *os.File
 
@@ -51,17 +54,17 @@ func RequestLog(p parser) Middleware {
 
 	return func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
-			sw := newResponseRecorder(w)
+			sw := middleware.NewResponseRecorder(w)
 			next(sw, r)
-			rep := newReplacer(r, sw)
-			logger.Println(rep.replace(format))
+			rep := middleware.NewReplacer(r, sw)
+			logger.Println(rep.Replace(format))
 		}
-	}
+	}, nil
 }
 
 const (
 	defaultLogFilename  = "access.log"
-	commonLogFormat     = `{remote} ` + emptyStringReplacer + ` [{when}] "{method} {uri} {proto}" {status} {size}`
+	commonLogFormat     = `{remote} ` + middleware.EmptyStringReplacer + ` [{when}] "{method} {uri} {proto}" {status} {size}`
 	combinedLogFormat   = commonLogFormat + ` "{>Referer}" "{>User-Agent}"`
 	defaultReqLogFormat = commonLogFormat
 )
