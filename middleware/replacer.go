@@ -60,7 +60,7 @@ func NewReplacer(r *http.Request, rw *responseRecorder) replacer {
 	return rep
 }
 
-// replace performs a replacement of values on s and returns
+// Replace performs a replacement of values on s and returns
 // the string with the replaced values.
 func (r replacer) Replace(s string) string {
 	for placeholder, replacement := range r {
