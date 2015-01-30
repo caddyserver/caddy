@@ -3,8 +3,6 @@ package config
 import (
 	"errors"
 	"fmt"
-
-	"github.com/mholt/caddy/middleware"
 )
 
 // dispenser is a type that gets exposed to middleware
@@ -15,7 +13,7 @@ type dispenser struct {
 	cursor  int
 	nesting int
 	tokens  []token
-	err     error
+	//err     error
 }
 
 // newDispenser returns a new dispenser.
@@ -117,25 +115,23 @@ func (d *dispenser) Val() string {
 // argument was expected but not found. The error is saved
 // within the dispenser, but this function returns nil for
 // convenience in practice.
-func (d *dispenser) ArgErr() middleware.Middleware {
+func (d *dispenser) ArgErr() error {
 	if d.Val() == "{" {
-		d.Err("Unexpected token '{', expecting argument")
-		return nil
+		return d.Err("Unexpected token '{', expecting argument")
 	}
-	d.Err("Unexpected line break after '" + d.Val() + "' (missing arguments?)")
-	return nil
+	return d.Err("Unexpected line break after '" + d.Val() + "' (missing arguments?)")
 }
 
 // Err generates a custom parse error with a message of msg.
+// TODO: Update the docs of all these Err methods!
 // This function returns nil for convenience, but loads the
 // error into the dispenser so it can be reported. The caller
 // of the middleware preparator is responsible for checking
 // the error in the dispenser after the middleware preparator
 // is finished.
-func (d *dispenser) Err(msg string) middleware.Middleware {
+func (d *dispenser) Err(msg string) error {
 	msg = fmt.Sprintf("%s:%d - Parse error: %s", d.parser.filename, d.tokens[d.cursor].line, msg)
-	d.err = errors.New(msg)
-	return nil
+	return errors.New(msg)
 }
 
 // Args is a convenience function that loads the next arguments

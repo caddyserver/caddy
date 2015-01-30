@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-
-	"github.com/mholt/caddy/middleware"
 )
 
 // parser is a type which can parse config files.
@@ -108,12 +106,12 @@ func (p *parser) parseOne() error {
 // This function should be called only after p has filled out
 // p.other and that the entire server block has been consumed.
 func (p *parser) unwrap() error {
-	for _, directive := range middleware.Ordered() {
+	for directive := range registry.directiveMap {
 		if disp, ok := p.other[directive]; ok {
-			if generator, ok := middleware.GetGenerator(directive); ok {
-				mid := generator(disp)
-				if mid == nil {
-					return disp.err
+			if generator, ok := registry.directiveMap[directive]; ok {
+				mid, err := generator(disp)
+				if err != nil {
+					return err
 				}
 				p.cfg.Middleware = append(p.cfg.Middleware, mid)
 			} else {

@@ -1,7 +1,5 @@
 package config
 
-import "github.com/mholt/caddy/middleware"
-
 // This file contains the recursive-descent parsing
 // functions.
 
@@ -98,7 +96,7 @@ func (p *parser) directives() error {
 			if err != nil {
 				return err
 			}
-		} else if middleware.Registered(p.tkn()) {
+		} else if middlewareRegistered(p.tkn()) {
 			err := p.collectTokens()
 			if err != nil {
 				return err
