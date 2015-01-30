@@ -10,14 +10,14 @@ import (
 // replacer is a type which can replace placeholder
 // substrings in a string with actual values from a
 // http.Request and responseRecorder. Always use
-// newReplacer to get one of these.
+// NewReplacer to get one of these.
 type replacer map[string]string
 
-// newReplacer makes a new replacer based on r and rw.
+// NewReplacer makes a new replacer based on r and rw.
 // Do not create a new replacer until r and rw have all
 // the needed values, because this function copies those
 // values into the replacer.
-func newReplacer(r *http.Request, rw *responseRecorder) replacer {
+func NewReplacer(r *http.Request, rw *responseRecorder) replacer {
 	rep := replacer{
 		"{method}": r.Method,
 		"{scheme}": func() string {
@@ -62,10 +62,10 @@ func newReplacer(r *http.Request, rw *responseRecorder) replacer {
 
 // replace performs a replacement of values on s and returns
 // the string with the replaced values.
-func (r replacer) replace(s string) string {
+func (r replacer) Replace(s string) string {
 	for placeholder, replacement := range r {
 		if replacement == "" {
-			replacement = emptyStringReplacer
+			replacement = EmptyStringReplacer
 		}
 		s = strings.Replace(s, placeholder, replacement, -1)
 	}
@@ -76,7 +76,7 @@ func (r replacer) replace(s string) string {
 		endOffset := idxStart + len(headerReplacer)
 		idxEnd := strings.Index(s[endOffset:], "}")
 		if idxEnd > -1 {
-			s = s[:idxStart] + emptyStringReplacer + s[endOffset+idxEnd+1:]
+			s = s[:idxStart] + EmptyStringReplacer + s[endOffset+idxEnd+1:]
 		} else {
 			break
 		}
@@ -87,5 +87,5 @@ func (r replacer) replace(s string) string {
 const (
 	timeFormat          = "02/Jan/2006:15:04:05 -0700"
 	headerReplacer      = "{>"
-	emptyStringReplacer = "-"
+	EmptyStringReplacer = "-"
 )

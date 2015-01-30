@@ -14,13 +14,13 @@ type responseRecorder struct {
 	size   int
 }
 
-// newResponseRecorder makes and returns a new responseRecorder,
+// NewResponseRecorder makes and returns a new responseRecorder,
 // which captures the HTTP Status code from the ResponseWriter
 // and also the length of the response body written through it.
 // Because a status is not set unless WriteHeader is called
 // explicitly, this constructor initializes with a status code
 // of 200 to cover the default case.
-func newResponseRecorder(w http.ResponseWriter) *responseRecorder {
+func NewResponseRecorder(w http.ResponseWriter) *responseRecorder {
 	return &responseRecorder{
 		ResponseWriter: w,
 		status:         http.StatusOK,
