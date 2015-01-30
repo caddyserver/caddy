@@ -1,4 +1,4 @@
-// Proxy is middleware that proxies requests.
+// Package proxy is middleware that proxies requests.
 package proxy
 
 import (

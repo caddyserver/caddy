@@ -1,3 +1,4 @@
+// Package log implements basic but useful request logging middleware.
 package log
 
 import (

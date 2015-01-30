@@ -1,3 +1,6 @@
+// Package headers provides middleware that appends headers to
+// requests based on a set of configuration rules that define
+// which routes receive which headers.
 package headers
 
 import (

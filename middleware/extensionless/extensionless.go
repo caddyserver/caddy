@@ -1,4 +1,4 @@
-// Extensionless is middleware for clean URLs. A root path is
+// Package extensionless is middleware for clean URLs. A root path is
 // passed in as well as possible extensions to add, internally,
 // to paths requested. The first path+ext that matches a resource
 // that exists will be used.

@@ -1,7 +1,6 @@
-// Server implements a configurable, general-purpose web server. It
-// relies on configurations obtained from the adjacent config package
-// and can execute middleware as defined by the adjacent middleware
-// package.
+// Package server implements a configurable, general-purpose web server.
+// It relies on configurations obtained from the adjacent config package
+// and can execute middleware as defined by the adjacent middleware package.
 package server
 
 import (

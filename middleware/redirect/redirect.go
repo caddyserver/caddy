@@ -1,4 +1,4 @@
-// Redirect is middleware for redirecting certain requests
+// Package redirect is middleware for redirecting certain requests
 // to other locations.
 package redirect
 

@@ -1,3 +1,5 @@
+// Package gzip provides a simple middleware layer that performs
+// gzip compression on the response.
 package gzip
 
 import (
