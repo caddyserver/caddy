@@ -115,18 +115,18 @@ func (p *parser) collectTokens() error {
 	line := p.line()
 	nesting := 0
 	breakOk := false
-	disp := newDispenser(p)
+	cont := newController(p)
 
-	// Re-use a duplicate directive's dispenser from before
+	// Re-use a duplicate directive's controller from before
 	// (the parsing logic in the middleware generator must
 	// account for multiple occurrences of its directive, even
 	// if that means returning an error or overwriting settings)
 	if existing, ok := p.other[directive]; ok {
-		disp = existing
+		cont = existing
 	}
 
 	// The directive is appended as a relevant token
-	disp.tokens = append(disp.tokens, p.lexer.token)
+	cont.tokens = append(cont.tokens, p.lexer.token)
 
 	for p.next() {
 		if p.tkn() == "{" {
@@ -140,13 +140,13 @@ func (p *parser) collectTokens() error {
 		} else if p.tkn() == "}" && nesting == 0 {
 			return p.err("Syntax", "Unexpected '}' because no matching open curly brace '{'")
 		}
-		disp.tokens = append(disp.tokens, p.lexer.token)
+		cont.tokens = append(cont.tokens, p.lexer.token)
 	}
 
 	if !breakOk || nesting > 0 {
 		return p.eofErr()
 	}
 
-	p.other[directive] = disp
+	p.other[directive] = cont
 	return nil
 }

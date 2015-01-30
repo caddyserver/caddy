@@ -5,6 +5,48 @@ import (
 	"fmt"
 )
 
+// newController returns a new controller.
+func newController(p *parser) *controller {
+	return &controller{
+		dispenser: dispenser{
+			cursor: -1,
+			parser: p,
+		},
+	}
+}
+
+// controller is a dispenser of tokens and also
+// facilitates setup with the server by providing
+// access to its configuration. It implements
+// the middleware.Controller interface.
+type controller struct {
+	dispenser
+}
+
+// Startup registers a function to execute when the server starts.
+func (c *controller) Startup(fn func() error) {
+	c.parser.cfg.Startup = append(c.parser.cfg.Startup, fn)
+}
+
+// Root returns the server root file path.
+func (c *controller) Root() string {
+	if c.parser.cfg.Root == "" {
+		return "."
+	} else {
+		return c.parser.cfg.Root
+	}
+}
+
+// Host returns the hostname the server is bound to.
+func (c *controller) Host() string {
+	return c.parser.cfg.Host
+}
+
+// Port returns the port that the server is listening on.
+func (c *controller) Port() string {
+	return c.parser.cfg.Port
+}
+
 // dispenser is a type that gets exposed to middleware
 // generators so that they can parse tokens to configure
 // their instance.
@@ -16,14 +58,6 @@ type dispenser struct {
 	cursor  int
 	nesting int
 	tokens  []token
-}
-
-// newDispenser returns a new dispenser.
-func newDispenser(p *parser) *dispenser {
-	d := new(dispenser)
-	d.cursor = -1
-	d.parser = p
-	return d
 }
 
 // Next loads the next token. Returns true if a token
@@ -152,28 +186,4 @@ func (d *dispenser) Args(targets ...*string) bool {
 		*targets[i] = d.Val()
 	}
 	return enough
-}
-
-// Startup registers a function to execute when the server starts.
-func (d *dispenser) Startup(fn func() error) {
-	d.parser.cfg.Startup = append(d.parser.cfg.Startup, fn)
-}
-
-// Root returns the server root file path.
-func (d *dispenser) Root() string {
-	if d.parser.cfg.Root == "" {
-		return "."
-	} else {
-		return d.parser.cfg.Root
-	}
-}
-
-// Host returns the hostname the server is bound to.
-func (d *dispenser) Host() string {
-	return d.parser.cfg.Host
-}
-
-// Port returns the port that the server is listening on.
-func (d *dispenser) Port() string {
-	return d.parser.cfg.Port
 }

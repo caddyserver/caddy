@@ -9,11 +9,11 @@ import (
 
 // parser is a type which can parse config files.
 type parser struct {
-	filename string                // the name of the file that we're parsing
-	lexer    lexer                 // the lexer that is giving us tokens from the raw input
-	cfg      Config                // each server gets one Config; this is the one we're currently building
-	other    map[string]*dispenser // tokens to be parsed later by others (middleware generators)
-	unused   bool                  // sometimes the token won't be immediately consumed
+	filename string                 // the name of the file that we're parsing
+	lexer    lexer                  // the lexer that is giving us tokens from the raw input
+	cfg      Config                 // each server gets one Config; this is the one we're currently building
+	other    map[string]*controller // tokens to be parsed later by others (middleware generators)
+	unused   bool                   // sometimes the token won't be immediately consumed
 }
 
 // newParser makes a new parser and prepares it for parsing, given
@@ -84,7 +84,7 @@ func (p *parser) next() bool {
 func (p *parser) parseOne() error {
 	p.cfg = Config{}
 
-	p.other = make(map[string]*dispenser)
+	p.other = make(map[string]*controller)
 
 	err := p.begin()
 	if err != nil {
