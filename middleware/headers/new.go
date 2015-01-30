@@ -16,8 +16,8 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 
 	return func(next http.HandlerFunc) http.HandlerFunc {
 		head := Headers{
-			next:  next,
-			rules: rules,
+			Next:  next,
+			Rules: rules,
 		}
 		return head.ServeHTTP
 	}, nil

@@ -2,11 +2,11 @@ package headers
 
 import "github.com/mholt/caddy/middleware"
 
-func parse(c middleware.Controller) ([]headers, error) {
-	var rules []headers
+func parse(c middleware.Controller) ([]HeaderRule, error) {
+	var rules []HeaderRule
 
 	for c.NextLine() {
-		var head headers
+		var head HeaderRule
 		var isNewPattern bool
 
 		if !c.NextArg() {
@@ -29,7 +29,7 @@ func parse(c middleware.Controller) ([]headers, error) {
 		}
 
 		for c.NextBlock() {
-			h := header{Name: c.Val()}
+			h := Header{Name: c.Val()}
 
 			if c.NextArg() {
 				h.Value = c.Val()
@@ -38,7 +38,7 @@ func parse(c middleware.Controller) ([]headers, error) {
 			head.Headers = append(head.Headers, h)
 		}
 		if c.NextArg() {
-			h := header{Name: c.Val()}
+			h := Header{Name: c.Val()}
 
 			h.Value = c.Val()
 

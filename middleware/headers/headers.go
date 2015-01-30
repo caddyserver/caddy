@@ -9,33 +9,33 @@ import (
 // Headers is middleware that adds headers to the responses
 // for requests matching a certain path.
 type Headers struct {
-	next  http.HandlerFunc
-	rules []headers
+	Next  http.HandlerFunc
+	Rules []HeaderRule
 }
 
 // ServeHTTP implements the http.Handler interface and serves the requests,
 // adding headers to the response according to the configured rules.
-func (h *Headers) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	for _, rule := range h.rules {
+func (h Headers) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	for _, rule := range h.Rules {
 		if middleware.Path(r.URL.Path).Matches(rule.Url) {
 			for _, header := range rule.Headers {
 				w.Header().Set(header.Name, header.Value)
 			}
 		}
 	}
-	h.next(w, r)
+	h.Next(w, r)
 }
 
 type (
-	// Headers groups a slice of HTTP headers by a URL pattern.
+	// HeaderRule groups a slice of HTTP headers by a URL pattern.
 	// TODO: use http.Header type instead??
-	headers struct {
+	HeaderRule struct {
 		Url     string
-		Headers []header
+		Headers []Header
 	}
 
 	// Header represents a single HTTP header, simply a name and value.
-	header struct {
+	Header struct {
 		Name  string
 		Value string
 	}
