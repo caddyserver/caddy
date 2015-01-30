@@ -24,7 +24,7 @@ func (p *parser) begin() error {
 // combination.
 func (p *parser) address() error {
 	if p.tkn() == "}" || p.tkn() == "{" {
-		return p.err("Syntax", "'"+p.tkn()+"' is not a listening address or EOF")
+		return p.err("Syntax", "'"+p.tkn()+"' is not EOF or address")
 	}
 	p.cfg.Host, p.cfg.Port = parseAddress(p.tkn())
 	return nil
