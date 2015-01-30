@@ -17,6 +17,7 @@ func init() {
 	register("rewrite", Rewrite)
 	register("redir", Redirect)
 	register("ext", Extensionless)
+	register("proxy", Proxy)
 	register("fastcgi", FastCGI)
 }
 
