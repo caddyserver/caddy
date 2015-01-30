@@ -1,7 +1,6 @@
-// FastCGI is middleware that acts as a FastCGI client. Requests
-// that get forwarded to FastCGI stop the middleware execution
-// chain. The most common use for this layer is to serve PHP
-// websites with php-fpm.
+// Package fastcgi has middleware that acts as a FastCGI client. Requests
+// that get forwarded to FastCGI stop the middleware execution chain.
+// The most common use for this layer is to serve PHP websites via php-fpm.
 package fastcgi
 
 import (
@@ -13,8 +12,6 @@ import (
 	"strings"
 
 	"github.com/mholt/caddy/middleware"
-
-	"bitbucket.org/PinIdea/fcgi_client" // TODO: Inline this dependency. It'll need some work.
 )
 
 // New generates a new FastCGI middleware.
@@ -62,6 +59,7 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 					}
 
 					// TODO: Do we really have to make this map from scratch for each request?
+					// TODO: We have quite a few more to map, too.
 					env := make(map[string]string)
 					env["SERVER_SOFTWARE"] = "caddy" // TODO: Obtain version info...
 					env["SERVER_PROTOCOL"] = r.Proto
@@ -73,7 +71,7 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 					env["DOCUMENT_URI"] = r.URL.Path
 					env["DOCUMENT_ROOT"] = absRootPath
 
-					fcgi, err := fcgiclient.Dial("tcp", rule.address)
+					fcgi, err := Dial("tcp", rule.address)
 					if err != nil {
 						// TODO!
 					}
