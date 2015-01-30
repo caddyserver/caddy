@@ -1,5 +1,4 @@
-// Package middleware includes a variety of middleware for
-// the servers to use, according to their configuration.
+// Package middleware provides some types and functions common among middleware.
 package middleware
 
 import "net/http"
