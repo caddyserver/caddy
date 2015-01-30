@@ -113,7 +113,9 @@ func (p *parser) unwrap() error {
 				if err != nil {
 					return err
 				}
-				p.cfg.Middleware = append(p.cfg.Middleware, mid)
+				if mid != nil {
+					p.cfg.Middleware = append(p.cfg.Middleware, mid)
+				}
 			} else {
 				return errors.New("No middleware bound to directive '" + directive + "'")
 			}

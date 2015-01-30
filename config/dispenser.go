@@ -8,12 +8,14 @@ import (
 // dispenser is a type that gets exposed to middleware
 // generators so that they can parse tokens to configure
 // their instance.
+// TODO: Rename this; it does more than dispense tokens.
+// It also provides access to the server to touch its
+// configuration.
 type dispenser struct {
 	parser  *parser
 	cursor  int
 	nesting int
 	tokens  []token
-	//err     error
 }
 
 // newDispenser returns a new dispenser.
