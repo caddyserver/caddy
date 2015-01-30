@@ -1,20 +1,23 @@
-package middleware
+// Proxy is middleware that proxies requests.
+package proxy
 
 import (
 	"log"
 	"net/http"
 	"strings"
+
+	"github.com/mholt/caddy/middleware"
 )
 
-// Proxy is middleware that proxies requests.
-func Proxy(p parser) Middleware {
+// New creates a new instance of proxy middleware.
+func New(c middleware.Controller) (middleware.Middleware, error) {
 	var rules []proxyRule
 
-	for p.Next() {
+	for c.Next() {
 		rule := proxyRule{}
 
-		if !p.Args(&rule.from, &rule.to) {
-			return p.ArgErr()
+		if !c.Args(&rule.from, &rule.to) {
+			return nil, c.ArgErr()
 		}
 
 		rules = append(rules, rule)
@@ -24,7 +27,7 @@ func Proxy(p parser) Middleware {
 		return func(w http.ResponseWriter, r *http.Request) {
 
 			for _, rule := range rules {
-				if Path(r.URL.Path).Matches(rule.from) {
+				if middleware.Path(r.URL.Path).Matches(rule.from) {
 					client := &http.Client{}
 
 					r.RequestURI = ""
@@ -41,7 +44,7 @@ func Proxy(p parser) Middleware {
 				}
 			}
 		}
-	}
+	}, nil
 }
 
 type proxyRule struct {
