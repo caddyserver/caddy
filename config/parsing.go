@@ -62,7 +62,7 @@ func (p *parser) addressBlock() error {
 // openCurlyBrace expects the current token to be an
 // opening curly brace. This acts like an assertion
 // because it returns an error if the token is not
-// a opening curly brace.
+// a opening curly brace. It does not advance the token.
 func (p *parser) openCurlyBrace() error {
 	if p.tkn() != "{" {
 		return p.syntaxErr("{")
@@ -73,7 +73,7 @@ func (p *parser) openCurlyBrace() error {
 // closeCurlyBrace expects the current token to be
 // a closing curly brace. This acts like an assertion
 // because it returns an error if the token is not
-// a closing curly brace.
+// a closing curly brace. It does not advance the token.
 func (p *parser) closeCurlyBrace() error {
 	if p.tkn() != "}" {
 		return p.syntaxErr("}")
@@ -84,32 +84,80 @@ func (p *parser) closeCurlyBrace() error {
 // directives parses through all the directives
 // and it expects the current token to be the first
 // directive. It goes until EOF or closing curly
-// brace.
+// brace which ends the address block.
 func (p *parser) directives() error {
 	for p.next() {
 		if p.tkn() == "}" {
 			// end of address scope
 			break
 		}
-		if fn, ok := validDirectives[p.tkn()]; ok {
-			err := fn(p)
+		if p.tkn()[0] == '/' {
+			// Path scope (a.k.a. location context)
+			// TODO: The parser can handle the syntax (obviously), but the
+			// implementation is incomplete. This is intentional,
+			// until we can better decide what kind of feature set we
+			// want to support. Until this is ready, we leave this
+			// syntax undocumented.
+
+			// location := p.tkn()
+
+			if !p.next() {
+				return p.eofErr()
+			}
+
+			err := p.openCurlyBrace()
 			if err != nil {
 				return err
 			}
-		} else if middlewareRegistered(p.tkn()) {
-			err := p.collectTokens()
-			if err != nil {
-				return err
+
+			for p.next() {
+				err := p.closeCurlyBrace()
+				if err == nil { // end of location context
+					break
+				}
+
+				// TODO: How should we give the context to the directives?
+				// Or how do we tell the server that these directives should only
+				// be executed for requests routed to the current path?
+
+				err = p.directive()
+				if err != nil {
+					return err
+				}
 			}
-		} else {
-			return p.err("Syntax", "Unexpected token '"+p.tkn()+"', expecting a valid directive")
+		} else if err := p.directive(); err != nil {
+			return err
 		}
+	}
+	return nil
+}
+
+// directive asserts that the current token is either a built-in
+// directive or a registered middleware directive; otherwise an error
+// will be returned.
+func (p *parser) directive() error {
+	if fn, ok := validDirectives[p.tkn()]; ok {
+		// Built-in (standard) directive
+		err := fn(p)
+		if err != nil {
+			return err
+		}
+	} else if middlewareRegistered(p.tkn()) {
+		// Middleware directive
+		err := p.collectTokens()
+		if err != nil {
+			return err
+		}
+	} else {
+		return p.err("Syntax", "Unexpected token '"+p.tkn()+"', expecting a valid directive")
 	}
 	return nil
 }
 
 // collectTokens consumes tokens until the directive's scope
 // closes (either end of line or end of curly brace block).
+// It creates a controller which is stored in the parser for
+// later use by the middleware.
 func (p *parser) collectTokens() error {
 	directive := p.tkn()
 	line := p.line()

@@ -11,8 +11,8 @@ import (
 // a particular directive and populates the config.
 type dirFunc func(*parser) error
 
-// validDirectives is a map of valid directive names to
-// their parsing function.
+// validDirectives is a map of valid, built-in directive names
+// to their parsing function.
 var validDirectives map[string]dirFunc
 
 func init() {

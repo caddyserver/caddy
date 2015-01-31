@@ -5,54 +5,10 @@ import (
 	"fmt"
 )
 
-// newController returns a new controller.
-func newController(p *parser) *controller {
-	return &controller{
-		dispenser: dispenser{
-			cursor: -1,
-			parser: p,
-		},
-	}
-}
-
-// controller is a dispenser of tokens and also
-// facilitates setup with the server by providing
-// access to its configuration. It implements
-// the middleware.Controller interface.
-type controller struct {
-	dispenser
-}
-
-// Startup registers a function to execute when the server starts.
-func (c *controller) Startup(fn func() error) {
-	c.parser.cfg.Startup = append(c.parser.cfg.Startup, fn)
-}
-
-// Root returns the server root file path.
-func (c *controller) Root() string {
-	if c.parser.cfg.Root == "" {
-		return "."
-	} else {
-		return c.parser.cfg.Root
-	}
-}
-
-// Host returns the hostname the server is bound to.
-func (c *controller) Host() string {
-	return c.parser.cfg.Host
-}
-
-// Port returns the port that the server is listening on.
-func (c *controller) Port() string {
-	return c.parser.cfg.Port
-}
-
 // dispenser is a type that gets exposed to middleware
 // generators so that they can parse tokens to configure
-// their instance.
-// TODO: Rename this; it does more than dispense tokens.
-// It also provides access to the server to touch its
-// configuration.
+// their instance. It basically dispenses tokens but can
+// do so in a structured manner.
 type dispenser struct {
 	parser  *parser
 	cursor  int
@@ -115,7 +71,9 @@ func (d *dispenser) NextLine() bool {
 // if the current token is an open curly brace on the
 // same line. If so, that token is consumed and this
 // function will return true until the closing curly
-// brace is consumed by this method.
+// brace is consumed by this method. Usually, you would
+// use this as the condition of a for loop to parse
+// tokens while being inside the block.
 func (d *dispenser) NextBlock() bool {
 	if d.nesting > 0 {
 		d.Next()

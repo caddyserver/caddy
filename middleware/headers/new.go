@@ -15,10 +15,6 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 	}
 
 	return func(next http.HandlerFunc) http.HandlerFunc {
-		head := Headers{
-			Next:  next,
-			Rules: rules,
-		}
-		return head.ServeHTTP
+		return Headers{Next: next, Rules: rules}.ServeHTTP
 	}, nil
 }
