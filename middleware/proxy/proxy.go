@@ -4,7 +4,8 @@ package proxy
 import (
 	"log"
 	"net/http"
-	"strings"
+	"net/http/httputil"
+	"net/url"
 
 	"github.com/mholt/caddy/middleware"
 )
@@ -28,16 +29,22 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 
 			for _, rule := range rules {
 				if middleware.Path(r.URL.Path).Matches(rule.from) {
-					client := &http.Client{}
+					var scheme string
+					if r.TLS == nil {
+						scheme = "http"
+					} else {
+						scheme = "https"
+					}
 
-					r.RequestURI = ""
-					r.URL.Scheme = strings.ToLower(r.URL.Scheme)
-
-					resp, err := client.Do(r)
+					baseUrl, err := url.Parse(scheme + "://" + rule.to)
 					if err != nil {
 						log.Fatal(err)
 					}
-					resp.Write(w)
+					r.Host = baseUrl.Host
+
+					// TODO: Construct this before; not during every request, if possible
+					proxy := httputil.NewSingleHostReverseProxy(baseUrl)
+					proxy.ServeHTTP(w, r)
 
 				} else {
 					next(w, r)
