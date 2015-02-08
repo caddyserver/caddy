@@ -6,15 +6,17 @@ package config
 // the middleware.Controller interface.
 type controller struct {
 	dispenser
+	parser *parser
 }
 
 // newController returns a new controller.
 func newController(p *parser) *controller {
 	return &controller{
 		dispenser: dispenser{
-			cursor: -1,
-			parser: p,
+			cursor:   -1,
+			filename: p.filename,
 		},
+		parser: p,
 	}
 }
 

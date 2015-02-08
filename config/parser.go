@@ -106,7 +106,7 @@ func (p *parser) parseOne() error {
 // This function should be called only after p has filled out
 // p.other and that the entire server block has been consumed.
 func (p *parser) unwrap() error {
-	for directive := range registry.directiveMap {
+	for _, directive := range registry.ordered {
 		if disp, ok := p.other[directive]; ok {
 			if generator, ok := registry.directiveMap[directive]; ok {
 				mid, err := generator(disp)

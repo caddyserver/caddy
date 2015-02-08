@@ -10,10 +10,10 @@ import (
 // their instance. It basically dispenses tokens but can
 // do so in a structured manner.
 type dispenser struct {
-	parser  *parser
-	cursor  int
-	nesting int
-	tokens  []token
+	filename string
+	cursor   int
+	nesting  int
+	tokens   []token
 }
 
 // Next loads the next token. Returns true if a token
@@ -124,7 +124,7 @@ func (d *dispenser) ArgErr() error {
 // the error in the dispenser after the middleware preparator
 // is finished.
 func (d *dispenser) Err(msg string) error {
-	msg = fmt.Sprintf("%s:%d - Parse error: %s", d.parser.filename, d.tokens[d.cursor].line, msg)
+	msg = fmt.Sprintf("%s:%d - Parse error: %s", d.filename, d.tokens[d.cursor].line, msg)
 	return errors.New(msg)
 }
 

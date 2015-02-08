@@ -14,7 +14,7 @@ import (
 
 // This init function registers middleware. Register middleware
 // in the order they should be executed during a request.
-// Middleware execute in an order like this: A-B-C-*-C-B-A
+// Middleware execute in this order: A-B-C-*-C-B-A
 func init() {
 	register("gzip", gzip.New)
 	register("header", headers.New)
@@ -32,7 +32,7 @@ var (
 	// are bound.
 	registry = struct {
 		directiveMap map[string]middleware.Generator
-		order        []string
+		ordered      []string
 	}{
 		directiveMap: make(map[string]middleware.Generator),
 	}
@@ -43,7 +43,7 @@ var (
 // executed in the order they are registered.
 func register(directive string, generator middleware.Generator) {
 	registry.directiveMap[directive] = generator
-	registry.order = append(registry.order, directive)
+	registry.ordered = append(registry.ordered, directive)
 }
 
 // middlewareRegistered returns whether or not a directive is registered.
