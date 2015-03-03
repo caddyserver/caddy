@@ -10,6 +10,7 @@ import (
 	"github.com/mholt/caddy/middleware/proxy"
 	"github.com/mholt/caddy/middleware/redirect"
 	"github.com/mholt/caddy/middleware/rewrite"
+	"github.com/mholt/caddy/middleware/websockets"
 )
 
 // This init function registers middleware. Register middleware
@@ -24,6 +25,7 @@ func init() {
 	register("ext", extensionless.New)
 	register("proxy", proxy.New)
 	register("fastcgi", fastcgi.New)
+	register("websocket", websockets.New)
 }
 
 var (
