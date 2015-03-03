@@ -1,5 +1,7 @@
 package config
 
+import "errors"
+
 // This file contains the recursive-descent parsing
 // functions.
 
@@ -47,6 +49,14 @@ func (p *parser) addressBlock() error {
 		return p.directives()
 	}
 
+	// When we enter an address block, we also implicitly
+	// enter a path block where the path is all paths ("/")
+	p.other = append(p.other, locationContext{
+		path:       "/",
+		directives: make(map[string]*controller),
+	})
+	p.scope = &p.other[0]
+
 	err = p.directives()
 	if err != nil {
 		return err
@@ -91,40 +101,66 @@ func (p *parser) directives() error {
 			// end of address scope
 			break
 		}
-		if p.tkn()[0] == '/' {
+		if p.tkn()[0] == '/' || p.tkn()[0] == '*' {
 			// Path scope (a.k.a. location context)
+			// Starts with / ('starts with') or * ('ends with').
+
 			// TODO: The parser can handle the syntax (obviously), but the
 			// implementation is incomplete. This is intentional,
 			// until we can better decide what kind of feature set we
-			// want to support. Until this is ready, we leave this
-			// syntax undocumented.
+			// want to support and how exactly we want these location
+			// scopes to work. Until this is ready, we leave this
+			// syntax undocumented. Some changes will need to be
+			// made in parser.go also (the unwrap function) and
+			// probably in server.go when we do this... see those TODOs.
 
-			// location := p.tkn()
+			var scope *locationContext
 
+			// If the path block is a duplicate, append to existing one
+			for i := 0; i < len(p.other); i++ {
+				if p.other[i].path == p.tkn() {
+					scope = &p.other[i]
+					break
+				}
+			}
+
+			// Otherwise, for a new path we haven't seen before, create a new context
+			if scope == nil {
+				scope = &locationContext{
+					path:       p.tkn(),
+					directives: make(map[string]*controller),
+				}
+			}
+
+			// Consume the opening curly brace
 			if !p.next() {
 				return p.eofErr()
 			}
-
 			err := p.openCurlyBrace()
 			if err != nil {
 				return err
 			}
 
+			// Use this path scope as our current context for just a moment
+			p.scope = scope
+
+			// Consume each directive in the path block
 			for p.next() {
 				err := p.closeCurlyBrace()
-				if err == nil { // end of location context
+				if err == nil {
 					break
 				}
-
-				// TODO: How should we give the context to the directives?
-				// Or how do we tell the server that these directives should only
-				// be executed for requests routed to the current path?
 
 				err = p.directive()
 				if err != nil {
 					return err
 				}
 			}
+
+			// Save the new scope and put the current scope back to "/"
+			p.other = append(p.other, *scope)
+			p.scope = &p.other[0]
+
 		} else if err := p.directive(); err != nil {
 			return err
 		}
@@ -134,10 +170,11 @@ func (p *parser) directives() error {
 
 // directive asserts that the current token is either a built-in
 // directive or a registered middleware directive; otherwise an error
-// will be returned.
+// will be returned. If it is a valid directive, tokens will be
+// collected.
 func (p *parser) directive() error {
 	if fn, ok := validDirectives[p.tkn()]; ok {
-		// Built-in (standard) directive
+		// Built-in (standard, or 'core') directive
 		err := fn(p)
 		if err != nil {
 			return err
@@ -159,6 +196,10 @@ func (p *parser) directive() error {
 // It creates a controller which is stored in the parser for
 // later use by the middleware.
 func (p *parser) collectTokens() error {
+	if p.scope == nil {
+		return errors.New("Current scope cannot be nil")
+	}
+
 	directive := p.tkn()
 	line := p.line()
 	nesting := 0
@@ -169,7 +210,7 @@ func (p *parser) collectTokens() error {
 	// (the parsing logic in the middleware generator must
 	// account for multiple occurrences of its directive, even
 	// if that means returning an error or overwriting settings)
-	if existing, ok := p.other[directive]; ok {
+	if existing, ok := p.scope.directives[directive]; ok {
 		cont = existing
 	}
 
@@ -195,6 +236,6 @@ func (p *parser) collectTokens() error {
 		return p.eofErr()
 	}
 
-	p.other[directive] = cont
+	p.scope.directives[directive] = cont
 	return nil
 }

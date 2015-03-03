@@ -63,7 +63,7 @@ type Config struct {
 	Port       string
 	Root       string
 	TLS        TLSConfig
-	Middleware []middleware.Middleware
+	Middleware map[string][]middleware.Middleware
 	Startup    []func() error
 	MaxCPU     int
 }

@@ -29,6 +29,8 @@ func parse(c middleware.Controller) ([]HeaderRule, error) {
 		}
 
 		for c.NextBlock() {
+			// A block of headers was opened...
+
 			h := Header{Name: c.Val()}
 
 			if c.NextArg() {
@@ -38,6 +40,8 @@ func parse(c middleware.Controller) ([]HeaderRule, error) {
 			head.Headers = append(head.Headers, h)
 		}
 		if c.NextArg() {
+			// ... or single header was defined as an argument instead.
+
 			h := Header{Name: c.Val()}
 
 			h.Value = c.Val()

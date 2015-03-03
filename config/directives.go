@@ -12,7 +12,9 @@ import (
 type dirFunc func(*parser) error
 
 // validDirectives is a map of valid, built-in directive names
-// to their parsing function.
+// to their parsing function. Built-in directives cannot be
+// ordered, so they should only be used for internal server
+// configuration; not directly handling requests.
 var validDirectives map[string]dirFunc
 
 func init() {

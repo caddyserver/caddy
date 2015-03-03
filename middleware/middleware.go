@@ -29,5 +29,6 @@ type (
 		Root() string
 		Host() string
 		Port() string
+		Context() Path
 	}
 )

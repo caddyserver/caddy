@@ -1,12 +1,15 @@
 package config
 
+import "github.com/mholt/caddy/middleware"
+
 // controller is a dispenser of tokens and also
 // facilitates setup with the server by providing
 // access to its configuration. It implements
 // the middleware.Controller interface.
 type controller struct {
 	dispenser
-	parser *parser
+	parser    *parser
+	pathScope string
 }
 
 // newController returns a new controller.
@@ -42,4 +45,8 @@ func (c *controller) Host() string {
 // Port returns the port that the server is listening on.
 func (c *controller) Port() string {
 	return c.parser.cfg.Port
+}
+
+func (c *controller) Context() middleware.Path {
+	return middleware.Path(c.pathScope)
 }

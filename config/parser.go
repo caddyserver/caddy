@@ -5,16 +5,30 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/mholt/caddy/middleware"
 )
 
-// parser is a type which can parse config files.
-type parser struct {
-	filename string                 // the name of the file that we're parsing
-	lexer    lexer                  // the lexer that is giving us tokens from the raw input
-	cfg      Config                 // each server gets one Config; this is the one we're currently building
-	other    map[string]*controller // tokens to be parsed later by others (middleware generators)
-	unused   bool                   // sometimes the token won't be immediately consumed
-}
+type (
+	// parser is a type which can parse config files.
+	parser struct {
+		filename string            // the name of the file that we're parsing
+		lexer    lexer             // the lexer that is giving us tokens from the raw input
+		cfg      Config            // each server gets one Config; this is the one we're currently building
+		other    []locationContext // tokens to be 'parsed' later by middleware generators
+		scope    *locationContext  // the current location context (path scope) being populated
+		unused   bool              // sometimes a token will be read but not immediately consumed
+	}
+
+	// locationContext represents a location context
+	// (path block) in a config file. If no context
+	// is explicitly defined, the default location
+	// context is "/".
+	locationContext struct {
+		path       string
+		directives map[string]*controller
+	}
+)
 
 // newParser makes a new parser and prepares it for parsing, given
 // the input to parse.
@@ -78,13 +92,14 @@ func (p *parser) next() bool {
 // file for a single Config object (each server or
 // virtualhost instance gets their own Config struct),
 // which is until the next address/server block.
-// Call this only after you know that the lexer has another
-// another token and you're not in the middle of a server
+// Call this only when you know that the lexer has another
+// another token and you're not in another server
 // block already.
 func (p *parser) parseOne() error {
-	p.cfg = Config{}
-
-	p.other = make(map[string]*controller)
+	p.cfg = Config{
+		Middleware: make(map[string][]middleware.Middleware),
+	}
+	p.other = []locationContext{}
 
 	err := p.begin()
 	if err != nil {
@@ -102,19 +117,24 @@ func (p *parser) parseOne() error {
 // unwrap gets the middleware generators from the middleware
 // package in the order in which they are registered, and
 // executes the top-level functions (the generator function)
-// to expose the second layers which is the actual middleware.
+// to expose the second layers which are the actual middleware.
 // This function should be called only after p has filled out
 // p.other and that the entire server block has been consumed.
 func (p *parser) unwrap() error {
 	for _, directive := range registry.ordered {
-		if disp, ok := p.other[directive]; ok {
+		// TODO: For now, we only support the first and default path scope ("/")
+		// but when we implement support for path scopes, we will have to
+		// change this logic to loop over them and order them. We need to account
+		// for situations where multiple path scopes overlap, regex (??), etc...
+		if disp, ok := p.other[0].directives[directive]; ok {
 			if generator, ok := registry.directiveMap[directive]; ok {
 				mid, err := generator(disp)
 				if err != nil {
 					return err
 				}
 				if mid != nil {
-					p.cfg.Middleware = append(p.cfg.Middleware, mid)
+					// TODO: Again, we assume the default path scope here...
+					p.cfg.Middleware[p.other[0].path] = append(p.cfg.Middleware[p.other[0].path], mid)
 				}
 			} else {
 				return errors.New("No middleware bound to directive '" + directive + "'")

@@ -101,7 +101,11 @@ func (s *Server) buildStack() error {
 		}
 	}
 
-	s.compile(s.config.Middleware)
+	// TODO: We only compile middleware for the "/" scope.
+	// Partial support for multiple location contexts already
+	// exists in the parser and config levels, but until full
+	// support is implemented, this is all we do right here.
+	s.compile(s.config.Middleware["/"])
 
 	return nil
 }
