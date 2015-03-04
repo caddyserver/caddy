@@ -51,7 +51,7 @@ func (ws WebSocket) buildEnv(cmd *exec.Cmd) error {
 		`AUTH_TYPE=`,      // Not used
 		`CONTENT_LENGTH=`, // Not used
 		`CONTENT_TYPE=`,   // Not used
-		`GATEWAY_INTERFACE=` + gatewayInterface,
+		`GATEWAY_INTERFACE=` + GatewayInterface,
 		`PATH_INFO=`,       // TODO
 		`PATH_TRANSLATED=`, // TODO
 		`QUERY_STRING=` + ws.URL.RawQuery,
@@ -66,7 +66,7 @@ func (ws WebSocket) buildEnv(cmd *exec.Cmd) error {
 		`SERVER_NAME=` + serverHost,
 		`SERVER_PORT=` + serverPort,
 		`SERVER_PROTOCOL=` + ws.Proto,
-		`SERVER_SOFTWARE=` + serverSoftware,
+		`SERVER_SOFTWARE=` + ServerSoftware,
 	}
 
 	// Add each HTTP header to the environment as well
@@ -80,11 +80,3 @@ func (ws WebSocket) buildEnv(cmd *exec.Cmd) error {
 
 	return nil
 }
-
-const (
-	// See CGI spec, 4.1.4
-	gatewayInterface = "caddy-CGI/1.1"
-
-	// See CGI spec, 4.1.17
-	serverSoftware = "caddy/0.1.0"
-)

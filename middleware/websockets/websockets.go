@@ -17,6 +17,7 @@ type (
 	// websocket middleware generally, like a list of all the
 	// websocket endpoints.
 	WebSockets struct {
+		// Sockets holds all the web socket endpoint configurations
 		Sockets []WSConfig
 	}
 
@@ -47,11 +48,8 @@ func (ws WebSockets) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func New(c middleware.Controller) (middleware.Middleware, error) {
 	var websocks []WSConfig
 
-	var path string
-	var command string
-
 	for c.Next() {
-		var val string
+		var val, path, command string
 
 		// Path or command; not sure which yet
 		if !c.NextArg() {
@@ -94,9 +92,25 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 		})
 	}
 
+	GatewayInterface = envGatewayInterface
+	ServerSoftware = envServerSoftware
+
 	return func(next http.HandlerFunc) http.HandlerFunc {
 		// We don't use next because websockets aren't HTTP,
 		// so we don't invoke other middleware after this.
 		return WebSockets{Sockets: websocks}.ServeHTTP
 	}, nil
 }
+
+var (
+	// See CGI spec, 4.1.4
+	GatewayInterface string
+
+	// See CGI spec, 4.1.17
+	ServerSoftware string
+)
+
+const (
+	envGatewayInterface = "caddy-CGI/1.1"
+	envServerSoftware   = "caddy/0.1.0"
+)
