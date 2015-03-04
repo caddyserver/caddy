@@ -4,7 +4,7 @@
 package websockets
 
 import (
-	"log"
+	"errors"
 	"net/http"
 
 	"github.com/flynn/go-shlex"
@@ -12,16 +12,31 @@ import (
 	"golang.org/x/net/websocket"
 )
 
-// WebSockets is a type which holds configuration
-// for the websocket middleware collectively.
-type WebSockets struct {
-	Sockets []WebSocket
-}
+type (
+	// WebSockets is a type that holds configuration for the
+	// websocket middleware generally, like a list of all the
+	// websocket endpoints.
+	WebSockets struct {
+		Sockets []WSConfig
+	}
 
-// ServeHTTP more or less converts the HTTP request to a WebSocket connection.
+	// WSConfig holds the configuration for a single websocket
+	// endpoint which may serve zero or more websocket connections.
+	WSConfig struct {
+		Path      string
+		Command   string
+		Arguments []string
+	}
+)
+
+// ServeHTTP converts the HTTP request to a WebSocket connection and serves it up.
 func (ws WebSockets) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	for _, socket := range ws.Sockets {
-		if middleware.Path(r.URL.Path).Matches(socket.Path) {
+	for _, sockconfig := range ws.Sockets {
+		if middleware.Path(r.URL.Path).Matches(sockconfig.Path) {
+			socket := WebSocket{
+				WSConfig: sockconfig,
+				Request:  r,
+			}
 			websocket.Handler(socket.Handle).ServeHTTP(w, r)
 			return
 		}
@@ -30,7 +45,7 @@ func (ws WebSockets) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // New constructs and configures a new websockets middleware instance.
 func New(c middleware.Controller) (middleware.Middleware, error) {
-	var websocks []WebSocket
+	var websocks []WSConfig
 
 	var path string
 	var command string
@@ -62,9 +77,9 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 
 		parts, err := shlex.Split(command)
 		if err != nil {
-			log.Fatal("Error parsing command for websocket use: " + err.Error())
+			return nil, errors.New("Error parsing command for websocket use: " + err.Error())
 		} else if len(parts) == 0 {
-			log.Fatal("No command found for use by websocket.")
+			return nil, errors.New("No command found for use by websocket")
 		}
 
 		cmd = parts[0]
@@ -72,7 +87,7 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 			args = parts[1:]
 		}
 
-		websocks = append(websocks, WebSocket{
+		websocks = append(websocks, WSConfig{
 			Path:      path,
 			Command:   cmd,
 			Arguments: args,
