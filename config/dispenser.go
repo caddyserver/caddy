@@ -105,10 +105,10 @@ func (d *dispenser) Val() string {
 	}
 }
 
-// ArgErr generates an argument error, meaning that another
-// argument was expected but not found. The error is saved
-// within the dispenser, but this function returns nil for
-// convenience in practice.
+// ArgErr returns an argument error, meaning that another
+// argument was expected but not found. In other words,
+// a line break or open curly brace was encountered instead of
+// an argument.
 func (d *dispenser) ArgErr() error {
 	if d.Val() == "{" {
 		return d.Err("Unexpected token '{', expecting argument")
@@ -117,12 +117,6 @@ func (d *dispenser) ArgErr() error {
 }
 
 // Err generates a custom parse error with a message of msg.
-// TODO: Update the docs of all these Err methods!
-// This function returns nil for convenience, but loads the
-// error into the dispenser so it can be reported. The caller
-// of the middleware preparator is responsible for checking
-// the error in the dispenser after the middleware preparator
-// is finished.
 func (d *dispenser) Err(msg string) error {
 	msg = fmt.Sprintf("%s:%d - Parse error: %s", d.filename, d.tokens[d.cursor].line, msg)
 	return errors.New(msg)
