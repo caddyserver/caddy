@@ -23,6 +23,7 @@ type (
 		NextBlock() bool
 		Val() string
 		Args(...*string) bool
+		RemainingArgs() []string
 		ArgErr() error
 		Err(string) error
 		Startup(func() error)

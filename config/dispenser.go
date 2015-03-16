@@ -145,3 +145,21 @@ func (d *dispenser) Args(targets ...*string) bool {
 	}
 	return enough
 }
+
+// RemainingArgs is a convenience function that loads any more arguments
+// (tokens on the same line) into a slice and returns them. Open curly
+// brace tokens indicate the end of arguments (the curly brace is not
+// included).
+func (d *dispenser) RemainingArgs() []string {
+	var args []string
+
+	for d.NextArg() {
+		if d.Val() == "{" {
+			d.cursor--
+			break
+		}
+		args = append(args, d.Val())
+	}
+
+	return args
+}
