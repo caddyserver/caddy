@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"runtime"
 
+	"github.com/bradfitz/http2"
 	"github.com/mholt/caddy/config"
 	"github.com/mholt/caddy/middleware"
 )
@@ -62,14 +63,23 @@ func (s *Server) Serve() error {
 		return err
 	}
 
-	if s.config.MaxCPU > 0 {
+	// use highest value across all configurations
+	if s.config.MaxCPU > 0 && s.config.MaxCPU > runtime.GOMAXPROCS(0) {
 		runtime.GOMAXPROCS(s.config.MaxCPU)
 	}
 
+	server := &http.Server{
+		Addr:    s.config.Address(),
+		Handler: s,
+		// TODO: Make more of the server configurable, also more http2 configurability
+	}
+
+	http2.ConfigureServer(server, nil) // TODO: This may not be necessary after HTTP/2 merged into std lib
+
 	if s.config.TLS.Enabled {
-		return http.ListenAndServeTLS(s.config.Address(), s.config.TLS.Certificate, s.config.TLS.Key, s)
+		return server.ListenAndServeTLS(s.config.TLS.Certificate, s.config.TLS.Key)
 	} else {
-		return http.ListenAndServe(s.config.Address(), s)
+		return server.ListenAndServe()
 	}
 }
 
