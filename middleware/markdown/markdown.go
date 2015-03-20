@@ -3,6 +3,7 @@
 package markdown
 
 import (
+	"bytes"
 	"io/ioutil"
 	"net/http"
 	"path"
@@ -75,18 +76,35 @@ func (m Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					scripts += strings.Replace(jsTemplate, "{{url}}", script, 1) + "\r\n"
 				}
 
+				// Title is first line (length-limited), otherwise filename
+				title := path.Base(fpath)
+				newline := bytes.Index(body, []byte("\n"))
+				if newline > -1 {
+					firstline := body[:newline]
+					newTitle := strings.TrimSpace(string(firstline))
+					if len(newTitle) > 1 {
+						if len(newTitle) > 128 {
+							title = newTitle[:128]
+						} else {
+							title = newTitle
+						}
+					}
+				}
+
 				html := htmlTemplate
-				html = strings.Replace(html, "{{title}}", path.Base(fpath), 1)
+				html = strings.Replace(html, "{{title}}", title, 1)
 				html = strings.Replace(html, "{{css}}", styles, 1)
 				html = strings.Replace(html, "{{js}}", scripts, 1)
 				html = strings.Replace(html, "{{body}}", string(content), 1)
 
 				w.Write([]byte(html))
+
 				return
 			}
 		}
 	}
 
+	// Didn't qualify to serve as markdown; pass-thru
 	m.Next(w, r)
 }
 
