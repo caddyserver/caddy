@@ -10,7 +10,7 @@ import (
 )
 
 // WebSocket represents a web socket server instance. A WebSocket
-// struct is instantiated for each new websocket request.
+// is instantiated for each new websocket request/connection.
 type WebSocket struct {
 	WSConfig
 	*http.Request
@@ -21,13 +21,17 @@ type WebSocket struct {
 // the command's stdin and stdout.
 func (ws WebSocket) Handle(conn *websocket.Conn) {
 	cmd := exec.Command(ws.Command, ws.Arguments...)
+
 	cmd.Stdin = conn
 	cmd.Stdout = conn
+	cmd.Stderr = conn // TODO: Make this configurable from the Caddyfile
 
-	err := ws.buildEnv(cmd)
+	metavars, err := ws.buildEnv(cmd.Path)
 	if err != nil {
-		// TODO
+		panic(err) // TODO
 	}
+
+	cmd.Env = metavars
 
 	err = cmd.Run()
 	if err != nil {
@@ -35,19 +39,22 @@ func (ws WebSocket) Handle(conn *websocket.Conn) {
 	}
 }
 
-// buildEnv sets the meta-variables for the child process according
+// buildEnv creates the meta-variables for the child process according
 // to the CGI 1.1 specification: http://tools.ietf.org/html/rfc3875#section-4.1
-func (ws WebSocket) buildEnv(cmd *exec.Cmd) error {
+// cmdPath should be the path of the command being run.
+// The returned string slice can be set to the command's Env property.
+func (ws WebSocket) buildEnv(cmdPath string) (metavars []string, err error) {
 	remoteHost, remotePort, err := net.SplitHostPort(ws.RemoteAddr)
 	if err != nil {
-		return err
-	}
-	serverHost, serverPort, err := net.SplitHostPort(ws.Host)
-	if err != nil {
-		return err
+		return
 	}
 
-	cmd.Env = []string{
+	serverHost, serverPort, err := net.SplitHostPort(ws.Host)
+	if err != nil {
+		return
+	}
+
+	metavars = []string{
 		`AUTH_TYPE=`,      // Not used
 		`CONTENT_LENGTH=`, // Not used
 		`CONTENT_TYPE=`,   // Not used
@@ -62,7 +69,7 @@ func (ws WebSocket) buildEnv(cmd *exec.Cmd) error {
 		`REMOTE_USER=`, // Not used,
 		`REQUEST_METHOD=` + ws.Method,
 		`REQUEST_URI=` + ws.RequestURI,
-		`SCRIPT_NAME=`, // TODO - absolute path to program being executed?
+		`SCRIPT_NAME=` + cmdPath, // path of the program being executed
 		`SERVER_NAME=` + serverHost,
 		`SERVER_PORT=` + serverPort,
 		`SERVER_PROTOCOL=` + ws.Proto,
@@ -75,8 +82,8 @@ func (ws WebSocket) buildEnv(cmd *exec.Cmd) error {
 		header = strings.ToUpper(header)
 		header = strings.Replace(header, "-", "_", -1)
 		value = strings.Replace(value, "\n", " ", -1)
-		cmd.Env = append(cmd.Env, "HTTP_"+header+"="+value)
+		metavars = append(metavars, "HTTP_"+header+"="+value)
 	}
 
-	return nil
+	return
 }
