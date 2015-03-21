@@ -47,6 +47,7 @@ func (c *controller) Port() string {
 	return c.parser.cfg.Port
 }
 
+// Context returns the path scope that the Controller is in.
 func (c *controller) Context() middleware.Path {
 	return middleware.Path(c.pathScope)
 }

@@ -119,13 +119,18 @@ func (p *parser) parseOne() error {
 // executes the top-level functions (the generator function)
 // to expose the second layers which are the actual middleware.
 // This function should be called only after p has filled out
-// p.other and that the entire server block has been consumed.
+// p.other and the entire server block has already been consumed.
 func (p *parser) unwrap() error {
+	if len(p.other) == 0 {
+		// no middlewares were invoked
+		return nil
+	}
+
 	for _, directive := range registry.ordered {
-		// TODO: For now, we only support the first and default path scope ("/")
-		// but when we implement support for path scopes, we will have to
-		// change this logic to loop over them and order them. We need to account
-		// for situations where multiple path scopes overlap, regex (??), etc...
+		// TODO: For now, we only support the first and default path scope ("/", held in p.other[0])
+		// but when we implement support for path scopes, we will have to change this logic
+		// to loop over them and order them. We need to account for situations where multiple
+		// path scopes overlap, regex (??), etc...
 		if disp, ok := p.other[0].directives[directive]; ok {
 			if generator, ok := registry.directiveMap[directive]; ok {
 				mid, err := generator(disp)
@@ -141,6 +146,7 @@ func (p *parser) unwrap() error {
 			}
 		}
 	}
+
 	return nil
 }
 

@@ -71,7 +71,6 @@ func (s *Server) Serve() error {
 	server := &http.Server{
 		Addr:    s.config.Address(),
 		Handler: s,
-		// TODO: Make more of the server configurable, also more http2 configurability
 	}
 
 	http2.ConfigureServer(server, nil) // TODO: This may not be necessary after HTTP/2 merged into std lib

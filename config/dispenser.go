@@ -5,10 +5,11 @@ import (
 	"fmt"
 )
 
-// dispenser is a type that gets exposed to middleware
-// generators so that they can parse tokens to configure
-// their instance. It basically dispenses tokens but can
-// do so in a structured manner.
+// dispenser is a type that dispenses tokens, similarly to
+// a lexer, except that it can do so with some notion of
+// structure. Its methods implement part of the
+// middleware.Controller interface, so refer to that
+// documentation for more info.
 type dispenser struct {
 	filename string
 	cursor   int
@@ -18,15 +19,13 @@ type dispenser struct {
 
 // Next loads the next token. Returns true if a token
 // was loaded; false otherwise. If false, all tokens
-// have been consumed.
-// TODO: Have the other Next functions call this one...?
+// have already been consumed.
 func (d *dispenser) Next() bool {
-	if d.cursor >= len(d.tokens)-1 {
-		return false
-	} else {
+	if d.cursor < len(d.tokens)-1 {
 		d.cursor++
 		return true
 	}
+	return false
 }
 
 // NextArg loads the next token if it is on the same
@@ -49,8 +48,10 @@ func (d *dispenser) NextArg() bool {
 	return false
 }
 
-// TODO: Assert that there's a line break and only advance
-// the token if that's the case? (store an error otherwise)
+// NextLine loads the next token only if it is not on the same
+// line as the current token, and returns true if a token was
+// loaded; false otherwise. If false, there is not another token
+// or it is on the same line.
 func (d *dispenser) NextLine() bool {
 	if d.cursor < 0 {
 		d.cursor++
@@ -96,30 +97,14 @@ func (d *dispenser) NextBlock() bool {
 	return true
 }
 
-// Val gets the text of the current token.
+// Val gets the text of the current token. If there is no token
+// loaded, it returns empty string.
 func (d *dispenser) Val() string {
 	if d.cursor < 0 || d.cursor >= len(d.tokens) {
 		return ""
 	} else {
 		return d.tokens[d.cursor].text
 	}
-}
-
-// ArgErr returns an argument error, meaning that another
-// argument was expected but not found. In other words,
-// a line break or open curly brace was encountered instead of
-// an argument.
-func (d *dispenser) ArgErr() error {
-	if d.Val() == "{" {
-		return d.Err("Unexpected token '{', expecting argument")
-	}
-	return d.Err("Unexpected line break after '" + d.Val() + "' (missing arguments?)")
-}
-
-// Err generates a custom parse error with a message of msg.
-func (d *dispenser) Err(msg string) error {
-	msg = fmt.Sprintf("%s:%d - Parse error: %s", d.filename, d.tokens[d.cursor].line, msg)
-	return errors.New(msg)
 }
 
 // Args is a convenience function that loads the next arguments
@@ -156,4 +141,21 @@ func (d *dispenser) RemainingArgs() []string {
 	}
 
 	return args
+}
+
+// ArgErr returns an argument error, meaning that another
+// argument was expected but not found. In other words,
+// a line break or open curly brace was encountered instead of
+// an argument.
+func (d *dispenser) ArgErr() error {
+	if d.Val() == "{" {
+		return d.Err("Unexpected token '{', expecting argument")
+	}
+	return d.Err("Unexpected line break after '" + d.Val() + "' (missing arguments?)")
+}
+
+// Err generates a custom parse error with a message of msg.
+func (d *dispenser) Err(msg string) error {
+	msg = fmt.Sprintf("%s:%d - Parse error: %s", d.filename, d.tokens[d.cursor].line, msg)
+	return errors.New(msg)
 }
