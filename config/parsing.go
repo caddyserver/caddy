@@ -1,6 +1,9 @@
 package config
 
-import "errors"
+import (
+	"errors"
+	"net"
+)
 
 // This file contains the recursive-descent parsing
 // functions.
@@ -24,12 +27,12 @@ func (p *parser) begin() error {
 
 // address expects that the current token is a host:port
 // combination.
-func (p *parser) address() error {
+func (p *parser) address() (err error) {
 	if p.tkn() == "}" || p.tkn() == "{" {
 		return p.err("Syntax", "'"+p.tkn()+"' is not EOF or address")
 	}
-	p.cfg.Host, p.cfg.Port = parseAddress(p.tkn())
-	return nil
+	p.cfg.Host, p.cfg.Port, err = net.SplitHostPort(p.tkn())
+	return
 }
 
 // addressBlock leads into parsing directives, including

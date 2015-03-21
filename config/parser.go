@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/mholt/caddy/middleware"
 )
@@ -182,16 +181,4 @@ func (p *parser) eofErr() error {
 func (p *parser) err(kind, msg string) error {
 	msg = fmt.Sprintf("%s:%d - %s error: %s", p.filename, p.line(), kind, msg)
 	return errors.New(msg)
-}
-
-// parseAddress takes a host:port string (val), and returns the host
-// and port as separate values. Empty strings can be returned if
-// either is missing.
-func parseAddress(val string) (string, string) {
-	parts := strings.SplitN(val, ":", 3)
-	if len(parts) == 1 {
-		return parts[0], ""
-	} else {
-		return parts[0], parts[1]
-	}
 }
