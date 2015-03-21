@@ -161,3 +161,38 @@ func TestParserImport(t *testing.T) {
 		t.Errorf("Expected TLS server key to be '', got '%s'", conf.TLS.Key)
 	}
 }
+
+func TestParserLocationContext(t *testing.T) {
+	p := &parser{filename: "test"}
+
+	input := `host:123 {
+				/scope {
+					gzip
+				}
+			}`
+
+	p.lexer.load(strings.NewReader(input))
+
+	confs, err := p.parse()
+	if err != nil {
+		t.Fatalf("Expected no errors, but got '%s'", err)
+	}
+	if len(confs) != 1 {
+		t.Fatalf("Expected 1 configuration, but got '%d': %#v", len(confs), confs)
+	}
+
+	if len(p.other) != 2 {
+		t.Fatalf("Expected 2 path scopes, but got '%d': %#v", len(p.other), p.other)
+	}
+
+	if p.other[0].path != "/" {
+		t.Fatalf("Expected first path scope to be default '/', but got '%d': %#v", p.other[0].path, p.other)
+	}
+	if p.other[1].path != "/scope" {
+		t.Fatalf("Expected first path scope to be '/scope', but got '%d': %#v", p.other[0].path, p.other)
+	}
+
+	if dir, ok := p.other[1].directives["gzip"]; !ok {
+		t.Fatalf("Expected scoped directive to be gzip, but got '%d': %#v", dir, p.other[1].directives)
+	}
+}
