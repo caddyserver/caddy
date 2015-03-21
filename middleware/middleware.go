@@ -53,10 +53,10 @@ type (
 		// to fill the arguments, then true will be returned.
 		Args(...*string) bool
 
-		// RemainingArgs is a convenience function that loads any more arguments
-		// (tokens on the same line) into a slice and returns them. If an open curly
-		// brace token is encountered before the end of the line, that token is
-		// considered the end of the arguments (and the curly brace is not consumed).
+		// RemainingArgs loads any more arguments (tokens on the same line)
+		// into a slice and returns them. Open curly brace tokens also indicate
+		// the end of arguments, and the curly brace is not included in
+		// the return value nor is it loaded.
 		RemainingArgs() []string
 
 		// ArgErr returns an argument error, meaning that another

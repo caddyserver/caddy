@@ -1,6 +1,7 @@
 package config
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -151,6 +152,144 @@ func TestDispenser_NextBlock(t *testing.T) {
 	d.Next() // foobar2
 	assertNextBlock(true, 8, 1)
 	assertNextBlock(false, 8, 0)
+}
+
+func TestDispenser_Args(t *testing.T) {
+	var s1, s2, s3 string
+	input := `dir1 arg1 arg2 arg3
+			  dir2 arg4 arg5
+			  dir3 arg6 arg7
+			  dir4`
+	d := makeTestDispenser("test", input)
+
+	d.Next() // dir1
+
+	// As many strings as arguments
+	if all := d.Args(&s1, &s2, &s3); !all {
+		t.Error("Args(): Expected true, got false")
+	}
+	if s1 != "arg1" {
+		t.Errorf("Args(): Expected s1 to be 'arg1', got '%s'", s1)
+	}
+	if s2 != "arg2" {
+		t.Errorf("Args(): Expected s2 to be 'arg2', got '%s'", s2)
+	}
+	if s3 != "arg3" {
+		t.Errorf("Args(): Expected s3 to be 'arg3', got '%s'", s3)
+	}
+
+	d.Next() // dir2
+
+	// More strings than arguments
+	if all := d.Args(&s1, &s2, &s3); all {
+		t.Error("Args(): Expected false, got true")
+	}
+	if s1 != "arg4" {
+		t.Errorf("Args(): Expected s1 to be 'arg4', got '%s'", s1)
+	}
+	if s2 != "arg5" {
+		t.Errorf("Args(): Expected s2 to be 'arg5', got '%s'", s2)
+	}
+	if s3 != "arg3" {
+		t.Errorf("Args(): Expected s3 to be unchanged ('arg3'), instead got '%s'", s3)
+	}
+
+	// (quick cursor check just for kicks and giggles)
+	if d.cursor != 6 {
+		t.Errorf("Cursor should be 6, but is %d", d.cursor)
+	}
+
+	d.Next() // dir3
+
+	// More arguments than strings
+	if all := d.Args(&s1); !all {
+		t.Error("Args(): Expected true, got false")
+	}
+	if s1 != "arg6" {
+		t.Errorf("Args(): Expected s1 to be 'arg6', got '%s'", s1)
+	}
+
+	d.Next() // dir4
+
+	// No arguments or strings
+	if all := d.Args(); !all {
+		t.Error("Args(): Expected true, got false")
+	}
+
+	// No arguments but at least one string
+	if all := d.Args(&s1); all {
+		t.Error("Args(): Expected false, got true")
+	}
+}
+
+func TestDispenser_RemainingArgs(t *testing.T) {
+	input := `dir1 arg1 arg2 arg3
+			  dir2 arg4 arg5
+			  dir3 arg6 { arg7
+			  dir4`
+	d := makeTestDispenser("test", input)
+
+	d.Next() // dir1
+
+	args := d.RemainingArgs()
+	if expected := []string{"arg1", "arg2", "arg3"}; !reflect.DeepEqual(args, expected) {
+		t.Errorf("RemainingArgs(): Expected %v, got %v", expected, args)
+	}
+
+	d.Next() // dir2
+
+	args = d.RemainingArgs()
+	if expected := []string{"arg4", "arg5"}; !reflect.DeepEqual(args, expected) {
+		t.Errorf("RemainingArgs(): Expected %v, got %v", expected, args)
+	}
+
+	d.Next() // dir3
+
+	args = d.RemainingArgs()
+	if expected := []string{"arg6"}; !reflect.DeepEqual(args, expected) {
+		t.Errorf("RemainingArgs(): Expected %v, got %v", expected, args)
+	}
+
+	d.Next() // {
+	d.Next() // arg7
+	d.Next() // dir4
+
+	args = d.RemainingArgs()
+	if len(args) != 0 {
+		t.Errorf("RemainingArgs(): Expected %v, got %v", []string{}, args)
+	}
+}
+
+func TestDispenser_ArgErr_Err(t *testing.T) {
+	input := `dir1 {
+			  }
+			  dir2 arg1 arg2`
+	d := makeTestDispenser("test", input)
+
+	d.cursor = 1 // {
+
+	if err := d.ArgErr(); err == nil || !strings.Contains(err.Error(), "{") {
+		t.Errorf("ArgErr(): Expected an error message with { in it, but got '%v'", err)
+	}
+
+	d.cursor = 5 // arg2
+
+	if err := d.ArgErr(); err == nil || !strings.Contains(err.Error(), "arg2") {
+		t.Errorf("ArgErr(): Expected an error message with 'arg2' in it; got '%v'", err)
+	}
+
+	err := d.Err("foobar")
+	if err == nil {
+		t.Fatalf("Err(): Expected an error, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "test:3") {
+		t.Errorf("Expected error message with filename:line in it; got '%v'", err)
+	}
+
+	if !strings.Contains(err.Error(), "foobar") {
+		t.Errorf("Expected error message with custom message in it ('foobar'); got '%v'", err)
+	}
 }
 
 func makeTestDispenser(filename, input string) dispenser {

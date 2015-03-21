@@ -123,10 +123,10 @@ func (d *dispenser) Args(targets ...*string) bool {
 	return enough
 }
 
-// RemainingArgs is a convenience function that loads any more arguments
-// (tokens on the same line) into a slice and returns them. Open curly
-// brace tokens indicate the end of arguments (the curly brace is not
-// included).
+// RemainingArgs loads any more arguments (tokens on the same line)
+// into a slice and returns them. Open curly brace tokens also indicate
+// the end of arguments, and the curly brace is not included in
+// the return value nor is it loaded.
 func (d *dispenser) RemainingArgs() []string {
 	var args []string
 
@@ -149,7 +149,7 @@ func (d *dispenser) ArgErr() error {
 	if d.Val() == "{" {
 		return d.Err("Unexpected token '{', expecting argument")
 	}
-	return d.Err("Unexpected line break after '" + d.Val() + "' (missing arguments?)")
+	return d.Err("Unexpected line ending after '" + d.Val() + "' (missing arguments?)")
 }
 
 // Err generates a custom parse error with a message of msg.
