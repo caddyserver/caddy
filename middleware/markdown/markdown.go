@@ -13,24 +13,8 @@ import (
 	"github.com/russross/blackfriday"
 )
 
-// New creates a new instance of Markdown middleware that
-// renders markdown to HTML on-the-fly.
-func New(c middleware.Controller) (middleware.Middleware, error) {
-	md, err := parse(c)
-	if err != nil {
-		return nil, err
-	}
-
-	md.Root = c.Root()
-	md.Renderer = blackfriday.HtmlRenderer(0, "", "")
-
-	return func(next http.HandlerFunc) http.HandlerFunc {
-		md.Next = next
-		return md.ServeHTTP
-	}, nil
-}
-
-// Markdown stores the configuration necessary to serve the Markdown middleware.
+// Markdown implements a layer of middleware that serves
+// markdown as HTML.
 type Markdown struct {
 	// Server root
 	Root string
@@ -38,6 +22,12 @@ type Markdown struct {
 	// Next HTTP handler in the chain
 	Next http.HandlerFunc
 
+	// The list of markdown configurations
+	Configs []MarkdownConfig
+}
+
+// MarkdownConfig stores markdown middleware configurations.
+type MarkdownConfig struct {
 	// Markdown renderer
 	Renderer blackfriday.Renderer
 
@@ -54,12 +44,35 @@ type Markdown struct {
 	Scripts []string
 }
 
+// New creates a new instance of Markdown middleware that
+// renders markdown to HTML on-the-fly.
+func New(c middleware.Controller) (middleware.Middleware, error) {
+	mdconfigs, err := parse(c)
+	if err != nil {
+		return nil, err
+	}
+
+	md := Markdown{
+		Root:    c.Root(),
+		Configs: mdconfigs,
+	}
+
+	return func(next http.HandlerFunc) http.HandlerFunc {
+		md.Next = next
+		return md.ServeHTTP
+	}, nil
+}
+
 // ServeHTTP implements the http.Handler interface.
-func (m Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if middleware.Path(r.URL.Path).Matches(m.PathScope) {
+func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	for _, m := range md.Configs {
+		if !middleware.Path(r.URL.Path).Matches(m.PathScope) {
+			continue
+		}
+
 		for _, ext := range m.Extensions {
 			if strings.HasSuffix(r.URL.Path, ext) {
-				fpath := m.Root + r.URL.Path
+				fpath := md.Root + r.URL.Path
 
 				body, err := ioutil.ReadFile(fpath)
 				if err != nil {
@@ -105,17 +118,21 @@ func (m Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Didn't qualify to serve as markdown; pass-thru
-	m.Next(w, r)
+	md.Next(w, r)
 }
 
-// parse fills up a new instance of Markdown middleware.
-func parse(c middleware.Controller) (Markdown, error) {
-	var md Markdown
+// parse creates new instances of Markdown middleware.
+func parse(c middleware.Controller) ([]MarkdownConfig, error) {
+	var mdconfigs []MarkdownConfig
 
 	for c.Next() {
+		md := MarkdownConfig{
+			Renderer: blackfriday.HtmlRenderer(0, "", ""),
+		}
+
 		// Get the path scope
 		if !c.NextArg() {
-			return md, c.ArgErr()
+			return mdconfigs, c.ArgErr()
 		}
 		md.PathScope = c.Val()
 
@@ -125,27 +142,28 @@ func parse(c middleware.Controller) (Markdown, error) {
 			case "ext":
 				exts := c.RemainingArgs()
 				if len(exts) == 0 {
-					return md, c.ArgErr()
+					return mdconfigs, c.ArgErr()
 				}
 				md.Extensions = append(md.Extensions, exts...)
 			case "css":
 				if !c.NextArg() {
-					return md, c.ArgErr()
+					return mdconfigs, c.ArgErr()
 				}
 				md.Styles = append(md.Styles, c.Val())
 			case "js":
 				if !c.NextArg() {
-					return md, c.ArgErr()
+					return mdconfigs, c.ArgErr()
 				}
 				md.Scripts = append(md.Scripts, c.Val())
 			default:
-				return md, c.Err("Expected valid markdown configuration property")
+				return mdconfigs, c.Err("Expected valid markdown configuration property")
 			}
 		}
 
+		mdconfigs = append(mdconfigs, md)
 	}
 
-	return md, nil
+	return mdconfigs, nil
 }
 
 const (
