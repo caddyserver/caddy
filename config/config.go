@@ -59,13 +59,27 @@ func Default() []Config {
 // is populated by parsing a config file (via the
 // Load function).
 type Config struct {
-	Host       string
-	Port       string
-	Root       string
-	TLS        TLSConfig
+	// The hostname or IP to which to bind the server
+	Host string
+
+	// The port to listen on
+	Port string
+
+	// The directory from which to serve files
+	Root string
+
+	// HTTPS configuration
+	TLS TLSConfig
+
+	// Middleware stack
 	Middleware map[string][]middleware.Middleware
-	Startup    []func() error
-	MaxCPU     int
+
+	// Functions (or methods) to execute at server start; these
+	// are executed before any parts of the server are configured
+	Startup []func() error
+
+	// MaxCPU is the maximum number of cores for the whole process to use
+	MaxCPU int
 }
 
 // Address returns the host:port of c as a string.
