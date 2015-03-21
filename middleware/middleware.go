@@ -34,13 +34,12 @@ type (
 		// or it is on the same line.
 		NextLine() bool
 
-		// NextBlock advances the cursor to the next token only
-		// if the current token is an open curly brace on the
-		// same line. If so, that token is consumed and this
-		// function will return true until the closing curly
-		// brace gets consumed by this method. Usually, you would
-		// use this as the condition of a for loop to parse
-		// tokens while being inside a block.
+		// NextBlock can be used as the condition of a for loop
+		// to load the next token as long as it opens a block or
+		// is already in a block. It returns true if a token was
+		// loaded, or false when the block's closing curly brace
+		// was loaded and thus the block ended. Nested blocks are
+		// not (currently) supported.
 		NextBlock() bool
 
 		// Val gets the text of the current token.
