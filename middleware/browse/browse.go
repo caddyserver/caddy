@@ -55,6 +55,13 @@ type FileInfo struct {
 	Mode    os.FileMode
 }
 
+var IndexPages = []string{
+	"index.html",
+	"index.htm",
+	"default.html",
+	"default.htm",
+}
+
 // New creates a new instance of browse middleware.
 func New(c middleware.Controller) (middleware.Middleware, error) {
 	configs, err := parse(c)
@@ -89,11 +96,20 @@ func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// See if there's a browse configuration to match the path
 	for _, bc := range b.Configs {
 		if !middleware.Path(r.URL.Path).Matches(bc.PathScope) {
 			continue
 		}
 
+		// Browsing navigation gets messed up if browsing a directory
+		// that doesn't end in "/" (which it should, anyway)
+		if r.URL.Path[len(r.URL.Path)-1] != '/' {
+			http.Redirect(w, r, r.URL.Path+"/", http.StatusTemporaryRedirect)
+			return
+		}
+
+		// Load directory contents
 		file, err := os.Open(b.Root + r.URL.Path)
 		if err != nil {
 			panic(err) // TODO
@@ -109,8 +125,21 @@ func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		// Assemble listing of directory contents
 		var fileinfos []FileInfo
+		var abort bool // we bail early if we find an index file
 		for _, f := range files {
 			name := f.Name()
+
+			// Directory is not browseable if it contains index file
+			for _, indexName := range IndexPages {
+				if name == indexName {
+					abort = true
+					break
+				}
+			}
+			if abort {
+				break
+			}
+
 			if f.IsDir() {
 				name += "/"
 			}
@@ -124,6 +153,10 @@ func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				ModTime: f.ModTime(),
 				Mode:    f.Mode(),
 			})
+		}
+		if abort {
+			// this dir has an index file, so not browsable
+			continue
 		}
 
 		// Determine if user can browse up another folder
