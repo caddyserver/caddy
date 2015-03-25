@@ -2,6 +2,7 @@ package config
 
 import (
 	"github.com/mholt/caddy/middleware"
+	"github.com/mholt/caddy/middleware/browse"
 	"github.com/mholt/caddy/middleware/extensionless"
 	"github.com/mholt/caddy/middleware/fastcgi"
 	"github.com/mholt/caddy/middleware/gzip"
@@ -29,6 +30,7 @@ func init() {
 	register("fastcgi", fastcgi.New)
 	register("websocket", websockets.New)
 	register("markdown", markdown.New)
+	register("browse", browse.New)
 }
 
 // registry stores the registered middleware:
