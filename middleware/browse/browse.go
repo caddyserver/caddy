@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dustin/go-humanize"
 	"github.com/mholt/caddy/middleware"
 )
 
@@ -53,6 +54,14 @@ type FileInfo struct {
 	URL     string
 	ModTime time.Time
 	Mode    os.FileMode
+}
+
+func (fi FileInfo) HumanSize() string {
+	return humanize.Bytes(uint64(fi.Size))
+}
+
+func (fi FileInfo) HumanModTime(format string) string {
+	return fi.ModTime.Format(format)
 }
 
 var IndexPages = []string{
@@ -205,30 +214,17 @@ func parse(c middleware.Controller) ([]BrowseConfig, error) {
 	for c.Next() {
 		var bc BrowseConfig
 
-		if !c.NextArg() {
+		// First argument is directory to allow browsing; default is site root
+		if c.NextArg() {
+			bc.PathScope = c.Val()
+		} else {
 			bc.PathScope = "/"
-			err := appendCfg(bc)
-			if err != nil {
-				return configs, err
-			}
-			continue
 		}
 
-		bc.PathScope = c.Val()
-
-		if !c.NextArg() {
-			err := appendCfg(bc)
-			if err != nil {
-				return configs, err
-			}
-			continue
-		}
-
-		tplFile := c.Val()
+		// Second argument would be the template file to use
 		var tplText string
-
-		if tplFile != "" {
-			tplBytes, err := ioutil.ReadFile(tplFile)
+		if c.NextArg() {
+			tplBytes, err := ioutil.ReadFile(c.Val())
 			if err != nil {
 				return configs, err
 			}
@@ -237,12 +233,14 @@ func parse(c middleware.Controller) ([]BrowseConfig, error) {
 			tplText = defaultTemplate
 		}
 
+		// Build the template
 		tpl, err := template.New("listing").Parse(tplText)
 		if err != nil {
 			return configs, err
 		}
 		bc.Template = tpl
 
+		// Save configuration
 		err = appendCfg(bc)
 		if err != nil {
 			return configs, err
@@ -251,9 +249,3 @@ func parse(c middleware.Controller) ([]BrowseConfig, error) {
 
 	return configs, nil
 }
-
-const defaultTemplate = `
-{{range .}}
-	{{.Name}}<br>
-{{end}}
-`
