@@ -101,7 +101,7 @@ func (s *Server) Log(v ...interface{}) {
 // on its config. This method should be called last before
 // ListenAndServe begins.
 func (s *Server) buildStack() error {
-	s.fileServer = http.FileServer(http.Dir(s.config.Root))
+	s.fileServer = FileServer(http.Dir(s.config.Root))
 
 	for _, start := range s.config.Startup {
 		err := start()
@@ -112,7 +112,7 @@ func (s *Server) buildStack() error {
 
 	// TODO: We only compile middleware for the "/" scope.
 	// Partial support for multiple location contexts already
-	// exists in the parser and config levels, but until full
+	// exists at the parser and config levels, but until full
 	// support is implemented, this is all we do right here.
 	s.compile(s.config.Middleware["/"])
 
