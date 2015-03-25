@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"strings"
 
 	"github.com/mholt/caddy/middleware"
 )
@@ -41,10 +42,11 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 
 // ServeHTTP implements the http.Handler interface.
 func (e Extensionless) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if path.Ext(r.URL.Path) == "" {
+	urlpath := strings.TrimSuffix(r.URL.Path, "/")
+	if path.Ext(urlpath) == "" {
 		for _, ext := range e.Extensions {
-			if resourceExists(e.Root, r.URL.Path+ext) {
-				r.URL.Path = r.URL.Path + ext
+			if resourceExists(e.Root, urlpath+ext) {
+				r.URL.Path = urlpath + ext
 				break
 			}
 		}
