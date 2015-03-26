@@ -4,10 +4,8 @@
 package websockets
 
 import (
-	"errors"
 	"net/http"
 
-	"github.com/flynn/go-shlex"
 	"github.com/mholt/caddy/middleware"
 	"golang.org/x/net/websocket"
 )
@@ -101,7 +99,7 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 		}
 
 		// Split command into the actual command and its arguments
-		cmd, args, err := parseCommandAndArgs(command)
+		cmd, args, err := middleware.SplitCommandAndArgs(command)
 		if err != nil {
 			return nil, err
 		}
@@ -120,26 +118,6 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 	return func(next http.HandlerFunc) http.HandlerFunc {
 		return WebSockets{Next: next, Sockets: websocks}.ServeHTTP
 	}, nil
-}
-
-// parseCommandAndArgs takes a command string and parses it
-// shell-style into the command and its separate arguments.
-func parseCommandAndArgs(command string) (cmd string, args []string, err error) {
-	parts, err := shlex.Split(command)
-	if err != nil {
-		err = errors.New("Error parsing command for websocket: " + err.Error())
-		return
-	} else if len(parts) == 0 {
-		err = errors.New("No command found for use by websocket")
-		return
-	}
-
-	cmd = parts[0]
-	if len(parts) > 1 {
-		args = parts[1:]
-	}
-
-	return
 }
 
 var (

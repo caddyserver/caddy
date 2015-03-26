@@ -2,9 +2,12 @@ package config
 
 import (
 	"os"
+	"os/exec"
 	"runtime"
 	"strconv"
 	"strings"
+
+	"github.com/mholt/caddy/middleware"
 )
 
 // dirFunc is a type of parsing function which processes
@@ -109,6 +112,56 @@ func init() {
 				}
 				setCPU(num)
 			}
+			return nil
+		},
+		"startup": func(p *parser) error {
+			// TODO: This code is duplicated with the shutdown directive below
+
+			if !p.nextArg() {
+				return p.argErr()
+			}
+
+			command, args, err := middleware.SplitCommandAndArgs(p.tkn())
+			if err != nil {
+				return p.err("Parse", err.Error())
+			}
+
+			startupfn := func() error {
+				cmd := exec.Command(command, args...)
+				cmd.Stdout = os.Stdout
+				cmd.Stderr = os.Stderr
+				err := cmd.Run()
+				if err != nil {
+					return err
+				}
+				return nil
+			}
+
+			p.cfg.Startup = append(p.cfg.Startup, startupfn)
+			return nil
+		},
+		"shutdown": func(p *parser) error {
+			if !p.nextArg() {
+				return p.argErr()
+			}
+
+			command, args, err := middleware.SplitCommandAndArgs(p.tkn())
+			if err != nil {
+				return p.err("Parse", err.Error())
+			}
+
+			shutdownfn := func() error {
+				cmd := exec.Command(command, args...)
+				cmd.Stdout = os.Stdout
+				cmd.Stderr = os.Stderr
+				err := cmd.Run()
+				if err != nil {
+					return err
+				}
+				return nil
+			}
+
+			p.cfg.Shutdown = append(p.cfg.Shutdown, shutdownfn)
 			return nil
 		},
 	}

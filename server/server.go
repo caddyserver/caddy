@@ -7,6 +7,8 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
 	"runtime"
 
 	"github.com/bradfitz/http2"
@@ -75,6 +77,21 @@ func (s *Server) Serve() error {
 
 	http2.ConfigureServer(server, nil) // TODO: This may not be necessary after HTTP/2 merged into std lib
 
+	// Execute shutdown commands on exit
+	// TODO: Is graceful net/http shutdown necessary?
+	go func() {
+		interrupt := make(chan os.Signal, 1)
+		signal.Notify(interrupt, os.Interrupt, os.Kill) // TODO: syscall.SIGQUIT? (Ctrl+\, Unix-only)
+		<-interrupt
+		for _, shutdownFunc := range s.config.Shutdown {
+			err := shutdownFunc()
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
+		os.Exit(0)
+	}()
+
 	if s.config.TLS.Enabled {
 		return server.ListenAndServeTLS(s.config.TLS.Certificate, s.config.TLS.Key)
 	} else {
@@ -103,6 +120,7 @@ func (s *Server) Log(v ...interface{}) {
 func (s *Server) buildStack() error {
 	s.fileServer = FileServer(http.Dir(s.config.Root))
 
+	// Execute startup functions
 	for _, start := range s.config.Startup {
 		err := start()
 		if err != nil {
