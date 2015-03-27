@@ -43,7 +43,7 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 		} else if outputFile == "stderr" {
 			file = os.Stderr
 		} else {
-			file, err = os.OpenFile(outputFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+			file, err = os.OpenFile(outputFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
 			if err != nil {
 				return err
 			}
