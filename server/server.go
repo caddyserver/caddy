@@ -78,7 +78,6 @@ func (s *Server) Serve() error {
 	http2.ConfigureServer(server, nil) // TODO: This may not be necessary after HTTP/2 merged into std lib
 
 	// Execute shutdown commands on exit
-	// TODO: Is graceful net/http shutdown necessary?
 	go func() {
 		interrupt := make(chan os.Signal, 1)
 		signal.Notify(interrupt, os.Interrupt, os.Kill) // TODO: syscall.SIGQUIT? (Ctrl+\, Unix-only)
@@ -103,7 +102,7 @@ func (s *Server) Serve() error {
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			log.Printf("[PANIC] '%s': %s", r.URL.String(), rec)
+			s.Log("[PANIC] '%s': %s", r.URL.String(), rec)
 		}
 	}()
 	s.stack(w, r)

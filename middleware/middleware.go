@@ -71,6 +71,9 @@ type (
 		// Startup registers a function to execute when the server starts.
 		Startup(func() error)
 
+		// Shutdown registers a function to execute when the server exits.
+		Shutdown(func() error)
+
 		// Root returns the file path from which the server is serving.
 		Root() string
 

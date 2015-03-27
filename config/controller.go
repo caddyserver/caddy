@@ -28,6 +28,11 @@ func (c *controller) Startup(fn func() error) {
 	c.parser.cfg.Startup = append(c.parser.cfg.Startup, fn)
 }
 
+// Shutdown registers a function to execute when the server exits.
+func (c *controller) Shutdown(fn func() error) {
+	c.parser.cfg.Shutdown = append(c.parser.cfg.Shutdown, fn)
+}
+
 // Root returns the server root file path.
 func (c *controller) Root() string {
 	if c.parser.cfg.Root == "" {
