@@ -101,6 +101,11 @@ func (s *Server) Serve() error {
 
 // ServeHTTP is the entry point for each request to s.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			log.Printf("[PANIC] '%s': %s", r.URL.String(), rec)
+		}
+	}()
 	s.stack(w, r)
 }
 
