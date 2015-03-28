@@ -41,15 +41,15 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 		redirects = append(redirects, rule)
 	}
 
-	return func(next http.HandlerFunc) http.HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) {
+	return func(next middleware.HandlerFunc) middleware.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) (int, error) {
 			for _, rule := range redirects {
 				if r.URL.Path == rule.From {
 					http.Redirect(w, r, rule.To, rule.Code)
 					break
 				}
 			}
-			next(w, r)
+			return next(w, r)
 		}
 	}, nil
 }
