@@ -3,6 +3,7 @@ package config
 import (
 	"github.com/mholt/caddy/middleware"
 	"github.com/mholt/caddy/middleware/browse"
+	"github.com/mholt/caddy/middleware/errors"
 	"github.com/mholt/caddy/middleware/extensionless"
 	"github.com/mholt/caddy/middleware/fastcgi"
 	"github.com/mholt/caddy/middleware/gzip"
@@ -15,14 +16,31 @@ import (
 	"github.com/mholt/caddy/middleware/websockets"
 )
 
-// This init function registers middleware. Register middleware
-// in the order they should be executed during a request.
-// Middleware execute in this order: A-B-C-*-C-B-A
-// assuming they call the Next handler in the chain.
+// This init function registers middleware. Register
+// middleware in the order they should be executed
+// during a request (A, B, C...). Middleware execute
+// in the order A-B-C-*-C-B-A, assuming they call
+// the Next handler in the chain.
+//
+// Note: Ordering is VERY important. Every middleware
+// will feel the effects of all other middleware below
+// (after) them, but must not care what middleware above
+// them are doing.
+//
+// For example, log needs to know the status code and exactly
+// how many bytes were written to the client, which every
+// other middleware can affect, so it gets registered first.
+// The errors middleware does not care if gzip or log modifies
+// its response, so it gets registered below them. Gzip, on the
+// other hand, DOES care what errors does to the response since
+// it must compress every output to the client, even error pages,
+// so it must be registered before the errors middleware and any
+// others that would write to the response.
 func init() {
-	register("gzip", gzip.New)
-	register("header", headers.New)
 	register("log", log.New)
+	register("gzip", gzip.New)
+	register("errors", errors.New)
+	register("header", headers.New)
 	register("rewrite", rewrite.New)
 	register("redirect", redirect.New)
 	register("ext", extensionless.New)
