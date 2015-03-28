@@ -20,7 +20,7 @@ import (
 // Browse is an http.Handler that can show a file listing when
 // directories in the given paths are specified.
 type Browse struct {
-	Next    http.HandlerFunc
+	Next    middleware.HandlerFunc
 	Root    string
 	Configs []BrowseConfig
 }
@@ -83,26 +83,23 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 		Configs: configs,
 	}
 
-	return func(next http.HandlerFunc) http.HandlerFunc {
+	return func(next middleware.HandlerFunc) middleware.HandlerFunc {
 		browse.Next = next
 		return browse.ServeHTTP
 	}, nil
 }
 
-// ServeHTTP implements the http.Handler interface.
-func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+// ServeHTTP implements the middleware.Handler interface.
+func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	filename := b.Root + r.URL.Path
 
 	info, err := os.Stat(filename)
 	if err != nil {
-		// TODO: 404 Not Found
-		b.Next(w, r)
-		return
+		return b.Next(w, r)
 	}
 
 	if !info.IsDir() {
-		b.Next(w, r)
-		return
+		return b.Next(w, r)
 	}
 
 	// See if there's a browse configuration to match the path
@@ -115,21 +112,21 @@ func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// that doesn't end in "/" (which it should, anyway)
 		if r.URL.Path[len(r.URL.Path)-1] != '/' {
 			http.Redirect(w, r, r.URL.Path+"/", http.StatusTemporaryRedirect)
-			return
+			return 0, nil
 		}
 
 		// Load directory contents
 		file, err := os.Open(b.Root + r.URL.Path)
 		if err != nil {
-			panic(err) // TODO
+			return http.StatusForbidden, err
 		}
 		defer file.Close()
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
 		files, err := file.Readdir(-1)
-		if err != nil || len(files) == 0 {
-			// TODO - second condition may not be necessary? See docs...
+		if err != nil {
+			return http.StatusForbidden, err
 		}
 
 		// Assemble listing of directory contents
@@ -185,16 +182,17 @@ func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Items:   fileinfos,
 		}
 
+		// TODO: Don't write to w until we know there wasn't an error
 		err = bc.Template.Execute(w, listing)
 		if err != nil {
-			panic(err) // TODO
+			return http.StatusInternalServerError, err
 		}
 
-		return
+		return http.StatusOK, nil
 	}
 
 	// Didn't qualify; pass-thru
-	b.Next(w, r)
+	return b.Next(w, r)
 }
 
 // parse returns a list of browsing configurations
