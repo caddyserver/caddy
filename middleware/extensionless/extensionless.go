@@ -16,7 +16,7 @@ import (
 // Extensionless is an http.Handler that can assume an extension from clean URLs.
 // It tries extensions in the order listed in Extensions.
 type Extensionless struct {
-	Next       http.HandlerFunc
+	Next       middleware.HandlerFunc
 	Root       string
 	Extensions []string
 }
@@ -31,7 +31,7 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 		return nil, err
 	}
 
-	return func(next http.HandlerFunc) http.HandlerFunc {
+	return func(next middleware.HandlerFunc) middleware.HandlerFunc {
 		return Extensionless{
 			Next:       next,
 			Extensions: extensions,
@@ -41,7 +41,7 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 }
 
 // ServeHTTP implements the http.Handler interface.
-func (e Extensionless) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (e Extensionless) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	urlpath := strings.TrimSuffix(r.URL.Path, "/")
 	if path.Ext(urlpath) == "" {
 		for _, ext := range e.Extensions {
@@ -51,7 +51,7 @@ func (e Extensionless) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	e.Next(w, r)
+	return e.Next(w, r)
 }
 
 // parse sets up an instance of Extensionless middleware
