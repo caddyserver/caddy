@@ -16,7 +16,7 @@ type (
 	// websocket endpoints.
 	WebSockets struct {
 		// Next is the next HTTP handler in the chain for when the path doesn't match
-		Next http.HandlerFunc
+		Next middleware.HandlerFunc
 
 		// Sockets holds all the web socket endpoint configurations
 		Sockets []WSConfig
@@ -33,7 +33,7 @@ type (
 )
 
 // ServeHTTP converts the HTTP request to a WebSocket connection and serves it up.
-func (ws WebSockets) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (ws WebSockets) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	for _, sockconfig := range ws.Sockets {
 		if middleware.Path(r.URL.Path).Matches(sockconfig.Path) {
 			socket := WebSocket{
@@ -41,12 +41,12 @@ func (ws WebSockets) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				Request:  r,
 			}
 			websocket.Handler(socket.Handle).ServeHTTP(w, r)
-			return
+			return 0, nil
 		}
 	}
 
 	// Didn't match a websocket path, so pass-thru
-	ws.Next(w, r)
+	return ws.Next(w, r)
 }
 
 // New constructs and configures a new websockets middleware instance.
@@ -115,7 +115,7 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 	GatewayInterface = envGatewayInterface
 	ServerSoftware = envServerSoftware
 
-	return func(next http.HandlerFunc) http.HandlerFunc {
+	return func(next middleware.HandlerFunc) middleware.HandlerFunc {
 		return WebSockets{Next: next, Sockets: websocks}.ServeHTTP
 	}, nil
 }
