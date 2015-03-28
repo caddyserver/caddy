@@ -24,8 +24,8 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 		rules = append(rules, rule)
 	}
 
-	return func(next http.HandlerFunc) http.HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) {
+	return func(next middleware.HandlerFunc) middleware.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) (int, error) {
 
 			for _, rule := range rules {
 				if middleware.Path(r.URL.Path).Matches(rule.from) {
@@ -45,11 +45,11 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 					// TODO: Construct this before; not during every request, if possible
 					proxy := httputil.NewSingleHostReverseProxy(baseUrl)
 					proxy.ServeHTTP(w, r)
-
-				} else {
-					next(w, r)
+					return 0, nil
 				}
 			}
+
+			return next(w, r)
 		}
 	}, nil
 }
