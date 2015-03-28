@@ -13,28 +13,27 @@ import (
 
 // Gzip is a http.Handler middleware type which gzips HTTP responses.
 type Gzip struct {
-	Next http.HandlerFunc
+	Next middleware.HandlerFunc
 }
 
 // New creates a new gzip middleware instance.
 func New(c middleware.Controller) (middleware.Middleware, error) {
-	return func(next http.HandlerFunc) http.HandlerFunc {
+	return func(next middleware.HandlerFunc) middleware.HandlerFunc {
 		gz := Gzip{Next: next}
 		return gz.ServeHTTP
 	}, nil
 }
 
 // ServeHTTP serves a gzipped response if the client supports it.
-func (g Gzip) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (g Gzip) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
-		g.Next(w, r)
-		return
+		return g.Next(w, r)
 	}
 	w.Header().Set("Content-Encoding", "gzip")
 	gzipWriter := gzip.NewWriter(w)
 	defer gzipWriter.Close()
 	gz := gzipResponseWriter{Writer: gzipWriter, ResponseWriter: w}
-	g.Next(gz, r)
+	return g.Next(gz, r)
 }
 
 // gzipResponeWriter wraps the underlying Write method
