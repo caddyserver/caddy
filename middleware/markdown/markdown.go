@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"io/ioutil"
 	"net/http"
+	"os"
 	"path"
 	"strings"
 
@@ -20,7 +21,7 @@ type Markdown struct {
 	Root string
 
 	// Next HTTP handler in the chain
-	Next http.HandlerFunc
+	Next middleware.HandlerFunc
 
 	// The list of markdown configurations
 	Configs []MarkdownConfig
@@ -57,14 +58,14 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 		Configs: mdconfigs,
 	}
 
-	return func(next http.HandlerFunc) http.HandlerFunc {
+	return func(next middleware.HandlerFunc) middleware.HandlerFunc {
 		md.Next = next
 		return md.ServeHTTP
 	}, nil
 }
 
 // ServeHTTP implements the http.Handler interface.
-func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	for _, m := range md.Configs {
 		if !middleware.Path(r.URL.Path).Matches(m.PathScope) {
 			continue
@@ -76,7 +77,10 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 				body, err := ioutil.ReadFile(fpath)
 				if err != nil {
-					panic(err) // TODO
+					if os.IsPermission(err) {
+						return http.StatusForbidden, err
+					}
+					return http.StatusNotFound, nil
 				}
 
 				content := blackfriday.Markdown(body, m.Renderer, 0)
@@ -112,13 +116,13 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 				w.Write([]byte(html))
 
-				return
+				return http.StatusOK, nil
 			}
 		}
 	}
 
 	// Didn't qualify to serve as markdown; pass-thru
-	md.Next(w, r)
+	return md.Next(w, r)
 }
 
 // parse creates new instances of Markdown middleware.
