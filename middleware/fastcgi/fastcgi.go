@@ -6,7 +6,6 @@ package fastcgi
 import (
 	"io"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -27,8 +26,8 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 		rules = append(rules, rule)
 	}
 
-	return func(next http.HandlerFunc) http.HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) {
+	return func(next middleware.HandlerFunc) middleware.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) (int, error) {
 
 			servedFcgi := false
 			for _, rule := range rules {
@@ -38,15 +37,13 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 					// Get absolute file paths
 					absPath, err := filepath.Abs(root + r.URL.Path)
 					if err != nil {
-						// TODO!
-						log.Fatal(err)
+						return http.StatusInternalServerError, err
 					}
 
-					// Get absolute file paths
+					// Get absolute file path to website root
 					absRootPath, err := filepath.Abs(root)
 					if err != nil {
-						// TODO!
-						log.Fatal(err)
+						return http.StatusInternalServerError, err
 					}
 
 					// Separate remote IP and port
@@ -73,17 +70,17 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 
 					fcgi, err := Dial("tcp", rule.address)
 					if err != nil {
-						// TODO!
+						return http.StatusBadGateway, err
 					}
 
 					resp, err := fcgi.Get(env)
 					if err != nil && err != io.EOF {
-						// TODO!
+						return http.StatusBadGateway, err
 					}
 
 					body, err := ioutil.ReadAll(resp.Body)
 					if err != nil {
-						// TODO!
+						return http.StatusBadGateway, err
 					}
 
 					for key, vals := range resp.Header {
@@ -100,8 +97,10 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 			}
 
 			if !servedFcgi {
-				next(w, r)
+				return next(w, r)
 			}
+
+			return 0, nil
 		}
 	}, nil
 }
