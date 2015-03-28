@@ -1,4 +1,4 @@
-// Package log implements basic but useful request logging middleware.
+// Package log implements basic but useful request (access) logging middleware.
 package log
 
 import (
@@ -11,61 +11,112 @@ import (
 
 // New instantiates a new instance of logging middleware.
 func New(c middleware.Controller) (middleware.Middleware, error) {
-	var logWhat, outputFile, format string
-	var logger *log.Logger
-
-	for c.Next() {
-		c.Args(&logWhat, &outputFile, &format)
-
-		if logWhat == "" {
-			return nil, c.ArgErr()
-		}
-		if outputFile == "" {
-			outputFile = defaultLogFilename
-		}
-		switch format {
-		case "":
-			format = defaultReqLogFormat
-		case "{common}":
-			format = commonLogFormat
-		case "{combined}":
-			format = combinedLogFormat
-		}
+	rules, err := parse(c)
+	if err != nil {
+		return nil, err
 	}
 
-	// Open the log file for writing when the server starts
+	// Open the log files for writing when the server starts
 	c.Startup(func() error {
-		var err error
-		var file *os.File
+		for i := 0; i < len(rules); i++ {
+			var err error
+			var file *os.File
 
-		if outputFile == "stdout" {
-			file = os.Stdout
-		} else if outputFile == "stderr" {
-			file = os.Stderr
-		} else {
-			file, err = os.OpenFile(outputFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
-			if err != nil {
-				return err
+			if rules[i].OutputFile == "stdout" {
+				file = os.Stdout
+			} else if rules[i].OutputFile == "stderr" {
+				file = os.Stderr
+			} else {
+				file, err = os.OpenFile(rules[i].OutputFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+				if err != nil {
+					return err
+				}
 			}
+
+			rules[i].Log = log.New(file, "", 0)
 		}
 
-		logger = log.New(file, "", 0)
 		return nil
 	})
 
-	return func(next http.HandlerFunc) http.HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) {
-			sw := middleware.NewResponseRecorder(w)
-			next(sw, r)
-			rep := middleware.NewReplacer(r, sw)
-			logger.Println(rep.Replace(format))
-		}
+	return func(next middleware.HandlerFunc) middleware.HandlerFunc {
+		return Logger{Next: next, Rules: rules}.ServeHTTP
 	}, nil
 }
 
+func (l Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
+	for _, rule := range l.Rules {
+		if middleware.Path(r.URL.Path).Matches(rule.PathScope) {
+			responseRecorder := middleware.NewResponseRecorder(w)
+			status, err := l.Next(responseRecorder, r)
+			rep := middleware.NewReplacer(r, responseRecorder)
+			rule.Log.Println(rep.Replace(rule.Format))
+			return status, err
+		}
+	}
+	return l.Next(w, r)
+}
+
+func parse(c middleware.Controller) ([]LogRule, error) {
+	var rules []LogRule
+
+	for c.Next() {
+		args := c.RemainingArgs()
+
+		if len(args) == 0 {
+			// Nothing specified; use defaults
+			rules = append(rules, LogRule{
+				PathScope:  "/",
+				OutputFile: defaultLogFilename,
+				Format:     defaultLogFormat,
+			})
+		} else if len(args) == 1 {
+			// Only an output file specified
+			rules = append(rules, LogRule{
+				PathScope:  "/",
+				OutputFile: args[0],
+				Format:     defaultLogFormat,
+			})
+		} else {
+			// Path scope, output file, and maybe a format specified
+
+			format := defaultLogFormat
+
+			if len(args) > 2 {
+				switch args[2] {
+				case "{common}":
+					format = commonLogFormat
+				case "{combined}":
+					format = combinedLogFormat
+				}
+			}
+
+			rules = append(rules, LogRule{
+				PathScope:  args[0],
+				OutputFile: args[1],
+				Format:     format,
+			})
+		}
+	}
+
+	return rules, nil
+}
+
+type Logger struct {
+	Next  middleware.HandlerFunc
+	Rules []LogRule
+}
+
+type LogRule struct {
+	PathScope  string
+	OutputFile string
+	Format     string
+	Log        *log.Logger
+}
+
 const (
-	defaultLogFilename  = "access.log"
-	commonLogFormat     = `{remote} ` + middleware.EmptyStringReplacer + ` [{when}] "{method} {uri} {proto}" {status} {size}`
-	combinedLogFormat   = commonLogFormat + ` "{>Referer}" "{>User-Agent}"`
-	defaultReqLogFormat = commonLogFormat
+	defaultLogFilename = "access.log"
+	commonLogFormat    = `{remote} ` + middleware.EmptyStringReplacer + ` [{when}] "{method} {uri} {proto}" {status} {size}`
+	combinedLogFormat  = commonLogFormat + ` "{>Referer}" "{>User-Agent}"`
+	defaultLogFormat   = commonLogFormat
 )
