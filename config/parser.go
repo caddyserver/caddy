@@ -16,7 +16,7 @@ type (
 		cfg      Config            // each server gets one Config; this is the one we're currently building
 		other    []locationContext // tokens to be 'parsed' later by middleware generators
 		scope    *locationContext  // the current location context (path scope) being populated
-		unused   bool              // sometimes a token will be read but not immediately consumed
+		unused   *token            // sometimes a token will be read but not immediately consumed
 	}
 
 	// locationContext represents a location context
@@ -62,13 +62,13 @@ func (p *parser) parse() ([]Config, error) {
 // nextArg loads the next token if it is on the same line.
 // Returns true if a token was loaded; false otherwise.
 func (p *parser) nextArg() bool {
-	if p.unused {
+	if p.unused != nil {
 		return false
 	}
-	line := p.line()
+	line, tkn := p.line(), p.lexer.token
 	if p.next() {
 		if p.line() > line {
-			p.unused = true
+			p.unused = &tkn
 			return false
 		}
 		return true
@@ -79,8 +79,8 @@ func (p *parser) nextArg() bool {
 // next loads the next token and returns true if a token
 // was loaded; false otherwise.
 func (p *parser) next() bool {
-	if p.unused {
-		p.unused = false
+	if p.unused != nil {
+		p.unused = nil
 		return true
 	} else {
 		return p.lexer.next()
@@ -151,11 +151,17 @@ func (p *parser) unwrap() error {
 
 // tkn is shorthand to get the text/value of the current token.
 func (p *parser) tkn() string {
+	if p.unused != nil {
+		return p.unused.text
+	}
 	return p.lexer.token.text
 }
 
 // line is shorthand to get the line number of the current token.
 func (p *parser) line() int {
+	if p.unused != nil {
+		return p.unused.line
+	}
 	return p.lexer.token.line
 }
 

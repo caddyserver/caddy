@@ -48,7 +48,7 @@ func (p *parser) addressBlock() error {
 	err := p.openCurlyBrace()
 	if err != nil {
 		// meh, single-server configs don't need curly braces
-		p.unused = true // we read the token but aren't consuming it
+		p.unused = &p.lexer.token // we read the token but aren't consuming it
 		return p.directives()
 	}
 
@@ -224,7 +224,7 @@ func (p *parser) collectTokens() error {
 		if p.tkn() == "{" {
 			nesting++
 		} else if p.line() > line && nesting == 0 {
-			p.unused = true
+			p.unused = &p.lexer.token
 			breakOk = true
 			break
 		} else if p.tkn() == "}" && nesting > 0 {

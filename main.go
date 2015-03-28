@@ -39,7 +39,7 @@ func main() {
 			defer wg.Done()
 			err := s.Serve()
 			if err != nil {
-				s.Log(err)
+				log.Println(err)
 			}
 		}(s)
 	}
