@@ -28,15 +28,16 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 		rewrites = append(rewrites, rule)
 	}
 
-	return func(next http.HandlerFunc) http.HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) {
+	// TODO: Why can't we just return an http.Handler here instead?
+	return func(next middleware.HandlerFunc) middleware.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) (int, error) {
 			for _, rule := range rewrites {
 				if r.URL.Path == rule.From {
 					r.URL.Path = rule.To
 					break
 				}
 			}
-			next(w, r)
+			return next(w, r)
 		}
 	}, nil
 }
