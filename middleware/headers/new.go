@@ -1,10 +1,6 @@
 package headers
 
-import (
-	"net/http"
-
-	"github.com/mholt/caddy/middleware"
-)
+import "github.com/mholt/caddy/middleware"
 
 // New constructs and configures a new headers middleware instance.
 func New(c middleware.Controller) (middleware.Middleware, error) {
@@ -14,7 +10,7 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 		return nil, err
 	}
 
-	return func(next http.HandlerFunc) http.HandlerFunc {
+	return func(next middleware.HandlerFunc) middleware.HandlerFunc {
 		return Headers{Next: next, Rules: rules}.ServeHTTP
 	}, nil
 }

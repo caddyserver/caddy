@@ -12,13 +12,13 @@ import (
 // Headers is middleware that adds headers to the responses
 // for requests matching a certain path.
 type Headers struct {
-	Next  http.HandlerFunc
+	Next  middleware.HandlerFunc
 	Rules []HeaderRule
 }
 
-// ServeHTTP implements the http.Handler interface and serves the requests,
+// ServeHTTP implements the middleware.Handler interface and serves requests,
 // adding headers to the response according to the configured rules.
-func (h Headers) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h Headers) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	for _, rule := range h.Rules {
 		if middleware.Path(r.URL.Path).Matches(rule.Url) {
 			for _, header := range rule.Headers {
@@ -26,12 +26,12 @@ func (h Headers) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	h.Next(w, r)
+	return h.Next(w, r)
 }
 
 type (
 	// HeaderRule groups a slice of HTTP headers by a URL pattern.
-	// TODO: use http.Header type instead??
+	// TODO: use http.Header type instead?
 	HeaderRule struct {
 		Url     string
 		Headers []Header
