@@ -4,47 +4,49 @@ package redirect
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/mholt/caddy/middleware"
 )
 
 // New creates a new redirect middleware.
 func New(c middleware.Controller) (middleware.Middleware, error) {
-	var redirects []redirect
+	var redirects []Redirect
 
 	for c.Next() {
-		var rule redirect
+		var rule Redirect
+		args := c.RemainingArgs()
 
-		// From
-		if !c.NextArg() {
-			return nil, c.ArgErr()
-		}
-		rule.From = c.Val()
-
-		// To
-		if !c.NextArg() {
-			return nil, c.ArgErr()
-		}
-		rule.To = c.Val()
-
-		// Status Code
-		if !c.NextArg() {
-			return nil, c.ArgErr()
-		}
-
-		if code, ok := httpRedirs[c.Val()]; !ok {
-			return nil, c.Err("Invalid redirect code '" + c.Val() + "'")
+		if len(args) == 1 {
+			// Only 'To' specified
+			rule.From = "/"
+			rule.To = c.Val()
+			rule.Code = 307 // TODO: Consider 301 instead?
+			redirects = append(redirects, rule)
+		} else if len(args) == 3 {
+			// From, To, and Code specified
+			rule.From = args[0]
+			rule.To = args[1]
+			if code, ok := httpRedirs[args[2]]; !ok {
+				return nil, c.Err("Invalid redirect code '" + c.Val() + "'")
+			} else {
+				rule.Code = code
+			}
+			redirects = append(redirects, rule)
 		} else {
-			rule.Code = code
+			return nil, c.ArgErr()
 		}
-
-		redirects = append(redirects, rule)
 	}
 
 	return func(next middleware.HandlerFunc) middleware.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) (int, error) {
 			for _, rule := range redirects {
-				if r.URL.Path == rule.From {
+				if middleware.Path(r.URL.Path).Matches(rule.From) {
+					if rule.From == "/" {
+						// Catchall redirect preserves path (TODO: This should be made more consistent...)
+						http.Redirect(w, r, strings.TrimSuffix(rule.To, "/")+r.URL.Path, rule.Code)
+						return 0, nil
+					}
 					http.Redirect(w, r, rule.To, rule.Code)
 					return 0, nil
 				}
@@ -55,7 +57,7 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 }
 
 // redirect describes an HTTP redirect rule.
-type redirect struct {
+type Redirect struct {
 	From string
 	To   string
 	Code int
