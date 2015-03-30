@@ -46,7 +46,7 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 			for _, rule := range redirects {
 				if r.URL.Path == rule.From {
 					http.Redirect(w, r, rule.To, rule.Code)
-					break
+					return 0, nil
 				}
 			}
 			return next(w, r)

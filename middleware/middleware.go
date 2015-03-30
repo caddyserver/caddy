@@ -37,10 +37,35 @@ type (
 		ServeHTTP(http.ResponseWriter, *http.Request) (int, error)
 	}
 
-	// A Control provides structured access to tokens from a configuration file
-	// and also to properties of the server being configured. Middleware generators
-	// use a Controller to construct their middleware instance.
+	// A Controller provides access to properties of the server. Middleware
+	// generators use a Controller to construct their instances.
 	Controller interface {
+		Dispenser
+
+		// Startup registers a function to execute when the server starts.
+		Startup(func() error)
+
+		// Shutdown registers a function to execute when the server exits.
+		Shutdown(func() error)
+
+		// Root returns the file path from which the server is serving.
+		Root() string
+
+		// Host returns the hostname the server is bound to.
+		Host() string
+
+		// Port returns the port that the server is listening on.
+		Port() string
+
+		// Context returns the path scope that the Controller is in.
+		// Note: This is not currently used, but may be in the future.
+		Context() Path
+	}
+
+	// A Dispenser provides structured access to tokens from a configuration
+	// file. It dispenses tokens to middleware for parsing so that middleware
+	// can configure themselves.
+	Dispenser interface {
 		// Next loads the next token. Returns true if a token
 		// was loaded; false otherwise. If false, all tokens
 		// have already been consumed.
@@ -91,24 +116,5 @@ type (
 
 		// Err generates a custom parse error with a message of msg.
 		Err(string) error
-
-		// Startup registers a function to execute when the server starts.
-		Startup(func() error)
-
-		// Shutdown registers a function to execute when the server exits.
-		Shutdown(func() error)
-
-		// Root returns the file path from which the server is serving.
-		Root() string
-
-		// Host returns the hostname the server is bound to.
-		Host() string
-
-		// Port returns the port that the server is listening on.
-		Port() string
-
-		// Context returns the path scope that the Controller is in.
-		// Note: This is not currently used, but may be in the future.
-		Context() Path
 	}
 )

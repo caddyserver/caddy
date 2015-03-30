@@ -97,6 +97,7 @@ func (h ErrorHandler) errorPage(w http.ResponseWriter, code int) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(code)
 		_, err = io.Copy(w, errorPage)
+
 		if err != nil {
 			// Epic fail... sigh.
 			h.Log.Printf("HTTP %d could not respond with %s: %v", code, pagePath, err)
