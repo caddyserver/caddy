@@ -5,6 +5,7 @@ package server
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -116,7 +117,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				http.StatusInternalServerError)
 		}
 	}()
-	s.stack(w, r)
+
+	status, _ := s.stack(w, r)
+
+	if status >= 400 {
+		w.WriteHeader(status)
+		fmt.Fprintf(w, "%d %s", status, http.StatusText(status))
+	}
 }
 
 // buildStack builds the server's middleware stack based

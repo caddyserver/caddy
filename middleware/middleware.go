@@ -15,20 +15,29 @@ type (
 
 	// HandlerFunc is like http.HandlerFunc except it returns a status code
 	// and an error. It is the inner-most layer which serves individual
-	// requests. The status code is for the client's benefit, the error
+	// requests. The status code is for the client's benefit; the error
 	// value is for the server's benefit. The status code will be sent to
 	// the client while the error value will be logged privately. Sometimes,
 	// an error status code (4xx or 5xx) may be returned with a nil error
 	// when there is no reason to log the error on the server.
 	//
-	// If a HandlerFunc returns an error (status < 400), it should not write
-	// to the response. This philosophy is what makes middleware.HandlerFunc
-	// different from http.HandlerFunc. The error handling should happen
-	// at the application layer or in a dedicated error-handling middleware
-	// rather than an "every middleware for itself" paradigm. The error handling
-	// logic should make sure that the client is properly responded to according
-	// to the status code, but should probably not reveal the error message. The
-	// error message should be logged instead, for example.
+	// If a HandlerFunc returns an error (status >= 400), it should NOT
+	// write to the response. This philosophy makes middleware.HandlerFunc
+	// different from http.HandlerFunc: error handling should happen at
+	// the application layer or in dedicated error-handling middleware
+	// only, rather than with an "every middleware for itself" paradigm.
+	//
+	// The application or error-handling middleware should incorporate logic
+	// to ensure that the client always gets a proper response according to
+	// the status code. For security reasons, it should probably not reveal
+	// the actual error message. (Instead it should be logged, for example.)
+	//
+	// Handlers which do write to the response should return a status value
+	// < 400 as a signal that a response has been written. In other words,
+	// only error-handling middleware or the application will write to the
+	// response for a status code >= 400. When ANY handler writes to the
+	// response, it should return a status code < 400 to signal others to
+	// NOT write to the response again, which would be erroneous.
 	HandlerFunc func(http.ResponseWriter, *http.Request) (int, error)
 
 	// Handler is like http.Handler except ServeHTTP returns a status code

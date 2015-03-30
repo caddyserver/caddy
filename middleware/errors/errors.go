@@ -69,6 +69,7 @@ func (h ErrorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, er
 
 	if status >= 400 {
 		h.errorPage(w, status)
+		return 0, err // status < 400 signals that a response has been written
 	}
 
 	return status, err
