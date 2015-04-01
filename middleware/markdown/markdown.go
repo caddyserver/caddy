@@ -164,6 +164,11 @@ func parse(c middleware.Controller) ([]MarkdownConfig, error) {
 			}
 		}
 
+		// If no extensions were specified, assume .md
+		if len(md.Extensions) == 0 {
+			md.Extensions = []string{".md"}
+		}
+
 		mdconfigs = append(mdconfigs, md)
 	}
 
