@@ -42,7 +42,7 @@ func init() {
 	register("errors", errors.New)
 	register("header", headers.New)
 	register("rewrite", rewrite.New)
-	register("redirect", redirect.New)
+	register("redir", redirect.New)
 	register("ext", extensionless.New)
 	register("proxy", proxy.New)
 	register("fastcgi", fastcgi.New)
