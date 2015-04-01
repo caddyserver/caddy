@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strings"
 
 	"github.com/mholt/caddy/middleware"
 )
@@ -29,14 +30,23 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 
 			for _, rule := range rules {
 				if middleware.Path(r.URL.Path).Matches(rule.from) {
-					var scheme string
-					if r.TLS == nil {
-						scheme = "http"
+					var base string
+
+					if strings.HasPrefix(rule.to, "http") { // includes https
+						// destination includes a scheme! no need to guess
+						base = rule.to
 					} else {
-						scheme = "https"
+						// no scheme specified; assume same as request
+						var scheme string
+						if r.TLS == nil {
+							scheme = "http"
+						} else {
+							scheme = "https"
+						}
+						base = scheme + "://" + rule.to
 					}
 
-					baseUrl, err := url.Parse(scheme + "://" + rule.to)
+					baseUrl, err := url.Parse(base)
 					if err != nil {
 						log.Fatal(err)
 					}
