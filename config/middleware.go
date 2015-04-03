@@ -4,7 +4,7 @@ import (
 	"github.com/mholt/caddy/middleware"
 	"github.com/mholt/caddy/middleware/browse"
 	"github.com/mholt/caddy/middleware/errors"
-	"github.com/mholt/caddy/middleware/extensionless"
+	"github.com/mholt/caddy/middleware/extension"
 	"github.com/mholt/caddy/middleware/fastcgi"
 	"github.com/mholt/caddy/middleware/gzip"
 	"github.com/mholt/caddy/middleware/headers"
@@ -43,7 +43,7 @@ func init() {
 	register("header", headers.New)
 	register("rewrite", rewrite.New)
 	register("redir", redirect.New)
-	register("ext", extensionless.New)
+	register("ext", extension.New)
 	register("proxy", proxy.New)
 	register("fastcgi", fastcgi.New)
 	register("websocket", websockets.New)

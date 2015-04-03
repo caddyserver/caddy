@@ -1,8 +1,9 @@
-// Package extensionless is middleware for clean URLs. A root path is
-// passed in as well as possible extensions to add, internally,
-// to paths requested. The first path+ext that matches a resource
-// that exists will be used.
-package extensionless
+// Package extension is middleware for clean URLs. The root path
+// of the site is passed in as well as possible extensions to try
+// internally for paths requested that don't match an existing
+// resource. The first path+ext combination that matches a valid
+// file will be used.
+package extension
 
 import (
 	"net/http"
@@ -12,14 +13,6 @@ import (
 
 	"github.com/mholt/caddy/middleware"
 )
-
-// Extensionless is an http.Handler that can assume an extension from clean URLs.
-// It tries extensions in the order listed in Extensions.
-type Extensionless struct {
-	Next       middleware.HandlerFunc
-	Root       string
-	Extensions []string
-}
 
 // New creates a new instance of middleware that assumes extensions
 // so the site can use cleaner, extensionless URLs
@@ -32,7 +25,7 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 	}
 
 	return func(next middleware.HandlerFunc) middleware.HandlerFunc {
-		return Extensionless{
+		return Ext{
 			Next:       next,
 			Extensions: extensions,
 			Root:       root,
@@ -40,8 +33,21 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 	}, nil
 }
 
-// ServeHTTP implements the http.Handler interface.
-func (e Extensionless) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
+// Ext can assume an extension from clean URLs.
+// It tries extensions in the order listed in Extensions.
+type Ext struct {
+	// Next handler in the chain
+	Next middleware.HandlerFunc
+
+	// Path to ther root of the site
+	Root string
+
+	// List of extensions to try
+	Extensions []string
+}
+
+// ServeHTTP implements the middleware.Handler interface.
+func (e Ext) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	urlpath := strings.TrimSuffix(r.URL.Path, "/")
 	if path.Ext(urlpath) == "" {
 		for _, ext := range e.Extensions {
@@ -54,7 +60,7 @@ func (e Extensionless) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, e
 	return e.Next(w, r)
 }
 
-// parse sets up an instance of Extensionless middleware
+// parse sets up an instance of extension middleware
 // from a middleware controller and returns a list of extensions.
 func parse(c middleware.Controller) ([]string, error) {
 	var extensions []string
