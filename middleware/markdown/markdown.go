@@ -21,7 +21,7 @@ type Markdown struct {
 	Root string
 
 	// Next HTTP handler in the chain
-	Next middleware.HandlerFunc
+	Next middleware.Handler
 
 	// The list of markdown configurations
 	Configs []MarkdownConfig
@@ -58,9 +58,9 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 		Configs: mdconfigs,
 	}
 
-	return func(next middleware.HandlerFunc) middleware.HandlerFunc {
+	return func(next middleware.Handler) middleware.Handler {
 		md.Next = next
-		return md.ServeHTTP
+		return md
 	}, nil
 }
 
@@ -122,7 +122,7 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 	}
 
 	// Didn't qualify to serve as markdown; pass-thru
-	return md.Next(w, r)
+	return md.Next.ServeHTTP(w, r)
 }
 
 // parse creates new instances of Markdown middleware.

@@ -20,7 +20,7 @@ import (
 // Browse is an http.Handler that can show a file listing when
 // directories in the given paths are specified.
 type Browse struct {
-	Next    middleware.HandlerFunc
+	Next    middleware.Handler
 	Root    string
 	Configs []BrowseConfig
 }
@@ -83,9 +83,9 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 		Configs: configs,
 	}
 
-	return func(next middleware.HandlerFunc) middleware.HandlerFunc {
+	return func(next middleware.Handler) middleware.Handler {
 		browse.Next = next
-		return browse.ServeHTTP
+		return browse
 	}, nil
 }
 
@@ -95,11 +95,11 @@ func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 
 	info, err := os.Stat(filename)
 	if err != nil {
-		return b.Next(w, r)
+		return b.Next.ServeHTTP(w, r)
 	}
 
 	if !info.IsDir() {
-		return b.Next(w, r)
+		return b.Next.ServeHTTP(w, r)
 	}
 
 	// See if there's a browse configuration to match the path
@@ -192,7 +192,7 @@ func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	}
 
 	// Didn't qualify; pass-thru
-	return b.Next(w, r)
+	return b.Next.ServeHTTP(w, r)
 }
 
 // parse returns a list of browsing configurations

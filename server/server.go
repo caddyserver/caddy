@@ -28,7 +28,7 @@ var servers = make(map[string]*Server)
 type Server struct {
 	config     config.Config
 	fileServer middleware.Handler
-	stack      middleware.HandlerFunc
+	stack      middleware.Handler
 }
 
 // New creates a new Server and registers it with the list
@@ -118,8 +118,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	status, _ := s.stack(w, r)
+	status, _ := s.stack.ServeHTTP(w, r)
 
+	// Fallback error response in case error handling wasn't chained in
 	if status >= 400 {
 		w.WriteHeader(status)
 		fmt.Fprintf(w, "%d %s", status, http.StatusText(status))
@@ -144,7 +145,7 @@ func (s *Server) buildStack() error {
 // compile is an elegant alternative to nesting middleware function
 // calls like handler1(handler2(handler3(finalHandler))).
 func (s *Server) compile(layers []middleware.Middleware) {
-	s.stack = s.fileServer.ServeHTTP // core app layer
+	s.stack = s.fileServer // core app layer
 	for i := len(layers) - 1; i >= 0; i-- {
 		s.stack = layers[i](s.stack)
 	}

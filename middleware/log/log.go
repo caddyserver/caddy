@@ -39,8 +39,8 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 		return nil
 	})
 
-	return func(next middleware.HandlerFunc) middleware.HandlerFunc {
-		return Logger{Next: next, Rules: rules}.ServeHTTP
+	return func(next middleware.Handler) middleware.Handler {
+		return Logger{Next: next, Rules: rules}
 	}, nil
 }
 
@@ -48,13 +48,13 @@ func (l Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	for _, rule := range l.Rules {
 		if middleware.Path(r.URL.Path).Matches(rule.PathScope) {
 			responseRecorder := middleware.NewResponseRecorder(w)
-			status, err := l.Next(responseRecorder, r)
+			status, err := l.Next.ServeHTTP(responseRecorder, r)
 			rep := middleware.NewReplacer(r, responseRecorder)
 			rule.Log.Println(rep.Replace(rule.Format))
 			return status, err
 		}
 	}
-	return l.Next(w, r)
+	return l.Next.ServeHTTP(w, r)
 }
 
 func parse(c middleware.Controller) ([]LogRule, error) {
@@ -103,7 +103,7 @@ func parse(c middleware.Controller) ([]LogRule, error) {
 }
 
 type Logger struct {
-	Next  middleware.HandlerFunc
+	Next  middleware.Handler
 	Rules []LogRule
 }
 

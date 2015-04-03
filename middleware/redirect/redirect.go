@@ -38,8 +38,8 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 		}
 	}
 
-	return func(next middleware.HandlerFunc) middleware.HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) (int, error) {
+	return func(next middleware.Handler) middleware.Handler {
+		return middleware.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
 			for _, rule := range redirects {
 				if middleware.Path(r.URL.Path).Matches(rule.From) {
 					if rule.From == "/" {
@@ -51,8 +51,8 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 					return 0, nil
 				}
 			}
-			return next(w, r)
-		}
+			return next.ServeHTTP(w, r)
+		})
 	}, nil
 }
 

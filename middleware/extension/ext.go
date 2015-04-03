@@ -24,12 +24,12 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 		return nil, err
 	}
 
-	return func(next middleware.HandlerFunc) middleware.HandlerFunc {
+	return func(next middleware.Handler) middleware.Handler {
 		return Ext{
 			Next:       next,
 			Extensions: extensions,
 			Root:       root,
-		}.ServeHTTP
+		}
 	}, nil
 }
 
@@ -37,7 +37,7 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 // It tries extensions in the order listed in Extensions.
 type Ext struct {
 	// Next handler in the chain
-	Next middleware.HandlerFunc
+	Next middleware.Handler
 
 	// Path to ther root of the site
 	Root string
@@ -57,7 +57,7 @@ func (e Ext) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			}
 		}
 	}
-	return e.Next(w, r)
+	return e.Next.ServeHTTP(w, r)
 }
 
 // parse sets up an instance of extension middleware

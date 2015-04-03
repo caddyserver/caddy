@@ -26,8 +26,8 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 		rules = append(rules, rule)
 	}
 
-	return func(next middleware.HandlerFunc) middleware.HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) (int, error) {
+	return func(next middleware.Handler) middleware.Handler {
+		return middleware.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
 
 			servedFcgi := false
 			for _, rule := range rules {
@@ -97,11 +97,11 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 			}
 
 			if !servedFcgi {
-				return next(w, r)
+				return next.ServeHTTP(w, r)
 			}
 
 			return 0, nil
-		}
+		})
 	}, nil
 }
 

@@ -39,15 +39,15 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 		return nil
 	})
 
-	return func(next middleware.HandlerFunc) middleware.HandlerFunc {
+	return func(next middleware.Handler) middleware.Handler {
 		handler.Next = next
-		return handler.ServeHTTP
+		return handler
 	}, nil
 }
 
 // ErrorHandler handles HTTP errors (or errors from other middleware).
 type ErrorHandler struct {
-	Next       middleware.HandlerFunc
+	Next       middleware.Handler
 	ErrorPages map[int]string // map of status code to filename
 	LogFile    string
 	Log        *log.Logger
@@ -61,7 +61,7 @@ func (h ErrorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, er
 		}
 	}()
 
-	status, err := h.Next(w, r)
+	status, err := h.Next.ServeHTTP(w, r)
 
 	if err != nil {
 		h.Log.Printf("[ERROR %d %s] %v", status, r.URL.Path, err)

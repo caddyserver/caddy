@@ -29,16 +29,16 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 	}
 
 	// TODO: Why can't we just return an http.Handler here instead?
-	return func(next middleware.HandlerFunc) middleware.HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) (int, error) {
+	return func(next middleware.Handler) middleware.Handler {
+		return middleware.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
 			for _, rule := range rewrites {
 				if r.URL.Path == rule.From {
 					r.URL.Path = rule.To
 					break
 				}
 			}
-			return next(w, r)
-		}
+			return next.ServeHTTP(w, r)
+		})
 	}, nil
 }
 

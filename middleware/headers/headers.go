@@ -12,7 +12,7 @@ import (
 // Headers is middleware that adds headers to the responses
 // for requests matching a certain path.
 type Headers struct {
-	Next  middleware.HandlerFunc
+	Next  middleware.Handler
 	Rules []HeaderRule
 }
 
@@ -26,7 +26,7 @@ func (h Headers) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			}
 		}
 	}
-	return h.Next(w, r)
+	return h.Next.ServeHTTP(w, r)
 }
 
 type (

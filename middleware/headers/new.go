@@ -10,7 +10,7 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 		return nil, err
 	}
 
-	return func(next middleware.HandlerFunc) middleware.HandlerFunc {
-		return Headers{Next: next, Rules: rules}.ServeHTTP
+	return func(next middleware.Handler) middleware.Handler {
+		return Headers{Next: next, Rules: rules}
 	}, nil
 }

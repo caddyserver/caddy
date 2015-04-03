@@ -25,8 +25,8 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 		rules = append(rules, rule)
 	}
 
-	return func(next middleware.HandlerFunc) middleware.HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) (int, error) {
+	return func(next middleware.Handler) middleware.Handler {
+		return middleware.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
 
 			for _, rule := range rules {
 				if middleware.Path(r.URL.Path).Matches(rule.from) {
@@ -59,8 +59,8 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 				}
 			}
 
-			return next(w, r)
-		}
+			return next.ServeHTTP(w, r)
+		})
 	}, nil
 }
 

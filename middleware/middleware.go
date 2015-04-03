@@ -6,26 +6,29 @@ import "net/http"
 type (
 	// Generator represents the outer layer of a middleware that
 	// parses tokens to configure the middleware instance.
+	//
+	// Note: This type will be moved into a different package in the future.
 	Generator func(Controller) (Middleware, error)
 
 	// Middleware is the middle layer which represents the traditional
-	// idea of middleware: it is passed the next HandlerFunc in the chain
-	// and returns the inner layer, which is the actual Handler.
-	Middleware func(HandlerFunc) HandlerFunc
+	// idea of middleware: it chains one Handler to the next by being
+	// passed the next Handler in the chain.
+	//
+	// Note: This type will be moved into a different package in the future.
+	Middleware func(Handler) Handler
 
-	// HandlerFunc is like http.HandlerFunc except it returns a status code
-	// and an error. It is the inner-most layer which serves individual
-	// requests. The status code is for the client's benefit; the error
+	// Handler is like http.Handler except ServeHTTP returns a status code
+	// and an error. The status code is for the client's benefit; the error
 	// value is for the server's benefit. The status code will be sent to
 	// the client while the error value will be logged privately. Sometimes,
 	// an error status code (4xx or 5xx) may be returned with a nil error
 	// when there is no reason to log the error on the server.
 	//
 	// If a HandlerFunc returns an error (status >= 400), it should NOT
-	// write to the response. This philosophy makes middleware.HandlerFunc
-	// different from http.HandlerFunc: error handling should happen at
-	// the application layer or in dedicated error-handling middleware
-	// only, rather than with an "every middleware for itself" paradigm.
+	// write to the response. This philosophy makes middleware.Handler
+	// different from http.Handler: error handling should happen at the
+	// application layer or in dedicated error-handling middleware only
+	// rather than with an "every middleware for itself" paradigm.
 	//
 	// The application or error-handling middleware should incorporate logic
 	// to ensure that the client always gets a proper response according to
@@ -38,10 +41,6 @@ type (
 	// response for a status code >= 400. When ANY handler writes to the
 	// response, it should return a status code < 400 to signal others to
 	// NOT write to the response again, which would be erroneous.
-	HandlerFunc func(http.ResponseWriter, *http.Request) (int, error)
-
-	// Handler is like http.Handler except ServeHTTP returns a status code
-	// and an error. See HandlerFunc documentation for more information.
 	Handler interface {
 		ServeHTTP(http.ResponseWriter, *http.Request) (int, error)
 	}
@@ -127,3 +126,13 @@ type (
 		Err(string) error
 	}
 )
+
+// HandlerFunc is a convenience type like http.HandlerFunc, except
+// ServeHTTP returns a status code and an error. See Handler
+// documentation for more information.
+type HandlerFunc func(http.ResponseWriter, *http.Request) (int, error)
+
+// ServeHTTP implements the Handler interface.
+func (f HandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
+	return f(w, r)
+}
