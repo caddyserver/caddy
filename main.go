@@ -9,10 +9,14 @@ import (
 	"github.com/mholt/caddy/server"
 )
 
-var conf string
+var (
+	conf  string
+	http2 bool
+)
 
 func init() {
 	flag.StringVar(&conf, "conf", server.DefaultConfigFile, "the configuration file to use")
+	flag.BoolVar(&http2, "http2", true, "enable HTTP/2 support") // flag temporary until http2 merged into std lib
 }
 
 func main() {
@@ -34,6 +38,7 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
+		s.HTTP2 = http2
 		wg.Add(1)
 		go func(s *server.Server) {
 			defer wg.Done()

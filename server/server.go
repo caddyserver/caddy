@@ -26,6 +26,7 @@ var servers = make(map[string]*Server)
 // Server represents an instance of a server, which serves
 // static content at a particular address (host and port).
 type Server struct {
+	HTTP2      bool // temporary while http2 is not in std lib (TODO: remove flag when part of std lib)
 	config     config.Config
 	fileServer middleware.Handler
 	stack      middleware.Handler
@@ -83,8 +84,10 @@ func (s *Server) Serve() error {
 		Handler: s,
 	}
 
-	// TODO: This call may not be necessary after HTTP/2 is merged into std lib
-	http2.ConfigureServer(server, nil)
+	if s.HTTP2 {
+		// TODO: This call may not be necessary after HTTP/2 is merged into std lib
+		http2.ConfigureServer(server, nil)
+	}
 
 	// Execute shutdown commands on exit
 	go func() {
