@@ -9,7 +9,7 @@ import (
 	"github.com/mholt/caddy/middleware"
 )
 
-// New instantiates a new Rewrites middleware.
+// New instantiates a new Redirect middleware.
 func New(c middleware.Controller) (middleware.Middleware, error) {
 	rules, err := parse(c)
 	if err != nil {
