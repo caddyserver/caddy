@@ -16,7 +16,7 @@ var (
 
 func init() {
 	flag.StringVar(&conf, "conf", server.DefaultConfigFile, "the configuration file to use")
-	flag.BoolVar(&http2, "http2", true, "enable HTTP/2 support") // flag temporary until http2 merged into std lib
+	flag.BoolVar(&http2, "http2", true, "enable HTTP/2 support") // temporary flag until http2 merged into std lib
 }
 
 func main() {
@@ -38,7 +38,7 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		s.HTTP2 = http2
+		s.HTTP2 = http2 // TODO: This setting is temporary
 		wg.Add(1)
 		go func(s *server.Server) {
 			defer wg.Done()
