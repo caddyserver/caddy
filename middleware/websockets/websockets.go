@@ -108,7 +108,7 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 			Path:      path,
 			Command:   cmd,
 			Arguments: args,
-			Respawn:   respawn,
+			Respawn:   respawn, // TODO: This isn't used currently
 		})
 	}
 
