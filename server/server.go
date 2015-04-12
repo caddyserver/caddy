@@ -134,7 +134,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // on its config. This method should be called last before
 // ListenAndServe begins.
 func (s *Server) buildStack() error {
-	s.fileServer = FileServer(http.Dir(s.config.Root))
+	s.fileServer = FileServer(http.Dir(s.config.Root), []string{s.config.ConfigFile})
 
 	// TODO: We only compile middleware for the "/" scope.
 	// Partial support for multiple location contexts already

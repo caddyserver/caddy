@@ -44,6 +44,9 @@ type Config struct {
 
 	// MaxCPU is the maximum number of cores for the whole process to use
 	MaxCPU int
+
+	// The path to the configuration file from which this was loaded
+	ConfigFile string
 }
 
 // Address returns the host:port of c as a string.
@@ -75,7 +78,16 @@ func Load(filename string) ([]Config, error) {
 		return nil, err
 	}
 
-	return p.parse()
+	cfgs, err := p.parse()
+	if err != nil {
+		return []Config{}, err
+	}
+
+	for i := 0; i < len(cfgs); i++ {
+		cfgs[i].ConfigFile = filename
+	}
+
+	return cfgs, nil
 }
 
 // IsNotFound returns whether or not the error is
