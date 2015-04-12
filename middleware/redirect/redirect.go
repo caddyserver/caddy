@@ -30,9 +30,9 @@ type Redirect struct {
 // ServeHTTP implements the middleware.Handler interface.
 func (rd Redirect) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	for _, rule := range rd.Rules {
-		if middleware.Path(r.URL.Path).Matches(rule.From) {
+		if r.URL.Path == rule.From {
 			if rule.From == "/" {
-				// Catchall redirect preserves path (TODO: This should be made more consistent...)
+				// Catchall redirect preserves path (TODO: This behavior should be more standardized...)
 				http.Redirect(w, r, strings.TrimSuffix(rule.To, "/")+r.URL.Path, rule.Code)
 				return 0, nil
 			}
@@ -55,7 +55,6 @@ func parse(c middleware.Controller) ([]Rule, error) {
 			rule.From = "/"
 			rule.To = c.Val()
 			rule.Code = 307 // TODO: Consider 301 instead?
-			redirects = append(redirects, rule)
 		} else if len(args) == 3 {
 			// From, To, and Code specified
 			rule.From = args[0]
@@ -65,10 +64,15 @@ func parse(c middleware.Controller) ([]Rule, error) {
 			} else {
 				rule.Code = code
 			}
-			redirects = append(redirects, rule)
 		} else {
 			return redirects, c.ArgErr()
 		}
+
+		if rule.From == rule.To {
+			return redirects, c.Err("Redirect rule cannot allow From and To arguments to be the same.")
+		}
+
+		redirects = append(redirects, rule)
 	}
 
 	return redirects, nil
