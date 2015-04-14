@@ -41,15 +41,15 @@ func (p *parser) address() (err error) {
 // directives not enclosed by curly braces.
 func (p *parser) addressBlock() error {
 	if !p.next() {
-		// file consisted of only an address
+		// file consisted only of an address
 		return nil
 	}
 
-	err := p.openCurlyBrace()
-	if err != nil {
+	errOpenCurlyBrace := p.openCurlyBrace()
+	if errOpenCurlyBrace != nil {
 		// meh, single-server configs don't need curly braces
-		p.unused = &p.lexer.token // we read the token but aren't consuming it
-		return p.directives()
+		// but we read a token and we won't consume it; mark it unused
+		p.unused = &p.lexer.token
 	}
 
 	// When we enter an address block, we also implicitly
@@ -60,15 +60,19 @@ func (p *parser) addressBlock() error {
 	})
 	p.scope = &p.other[0]
 
-	err = p.directives()
+	err := p.directives()
 	if err != nil {
 		return err
 	}
 
-	err = p.closeCurlyBrace()
-	if err != nil {
-		return err
+	// Only look for close curly brace if there was an opening
+	if errOpenCurlyBrace == nil {
+		err = p.closeCurlyBrace()
+		if err != nil {
+			return err
+		}
 	}
+
 	return nil
 }
 
@@ -206,7 +210,6 @@ func (p *parser) collectTokens() error {
 	directive := p.tkn()
 	line := p.line()
 	nesting := 0
-	breakOk := false
 	cont := newController(p)
 
 	// Re-use a duplicate directive's controller from before
@@ -225,17 +228,16 @@ func (p *parser) collectTokens() error {
 			nesting++
 		} else if p.line() > line && nesting == 0 {
 			p.unused = &p.lexer.token
-			breakOk = true
 			break
 		} else if p.tkn() == "}" && nesting > 0 {
 			nesting--
 		} else if p.tkn() == "}" && nesting == 0 {
-			return p.err("Syntax", "Unexpected '}' because no matching open curly brace '{'")
+			return p.err("Syntax", "Unexpected '}' because no matching opening brace")
 		}
 		cont.tokens = append(cont.tokens, p.lexer.token)
 	}
 
-	if !breakOk || nesting > 0 {
+	if nesting > 0 {
 		return p.eofErr()
 	}
 
