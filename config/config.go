@@ -3,6 +3,7 @@
 package config
 
 import (
+	"net"
 	"os"
 
 	"github.com/mholt/caddy/middleware"
@@ -12,13 +13,16 @@ const (
 	defaultHost = "localhost"
 	defaultPort = "8080"
 	defaultRoot = "."
+
+	// The default configuration file to load if none is specified
+	DefaultConfigFile = "Caddyfile"
 )
 
 // config represents a server configuration. It
 // is populated by parsing a config file (via the
 // Load function).
 type Config struct {
-	// The hostname or IP to which to bind the server
+	// The hostname or IP on which to serve
 	Host string
 
 	// The port to listen on
@@ -51,7 +55,7 @@ type Config struct {
 
 // Address returns the host:port of c as a string.
 func (c Config) Address() string {
-	return c.Host + ":" + c.Port
+	return net.JoinHostPort(c.Host, c.Port)
 }
 
 // TLSConfig describes how TLS should be configured and used,
