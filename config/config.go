@@ -3,6 +3,7 @@
 package config
 
 import (
+	"log"
 	"net"
 	"os"
 
@@ -77,6 +78,10 @@ func Load(filename string) ([]Config, error) {
 	}
 	defer file.Close()
 
+	// turn off timestamp for parsing
+	flags := log.Flags()
+	log.SetFlags(0)
+
 	p, err := newParser(file)
 	if err != nil {
 		return nil, err
@@ -90,6 +95,9 @@ func Load(filename string) ([]Config, error) {
 	for i := 0; i < len(cfgs); i++ {
 		cfgs[i].ConfigFile = filename
 	}
+
+	// restore logging settings
+	log.SetFlags(flags)
 
 	return cfgs, nil
 }
