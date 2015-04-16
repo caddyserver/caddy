@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"net"
+	"strings"
 )
 
 // This file contains the recursive-descent parsing
@@ -12,7 +13,7 @@ import (
 // It parses at most one server configuration (an address
 // and its directives).
 func (p *parser) begin() error {
-	err := p.address()
+	err := p.addresses()
 	if err != nil {
 		return err
 	}
@@ -25,26 +26,80 @@ func (p *parser) begin() error {
 	return nil
 }
 
-// address expects that the current token is a host:port
-// combination.
-func (p *parser) address() (err error) {
-	if p.tkn() == "}" || p.tkn() == "{" {
-		return p.err("Syntax", "'"+p.tkn()+"' is not EOF or address")
+// addresses expects that the current token is a
+// "scheme://host:port" combination (the "scheme://"
+// and/or ":port" portions may be omitted). If multiple
+// addresses are specified, they must be space-
+// separated on the same line, or each token must end
+// with a comma.
+func (p *parser) addresses() error {
+	var expectingAnother bool
+	p.hosts = []hostPort{}
+
+	// address gets host and port in a format accepted by net.Dial
+	address := func(str string) (host, port string, err error) {
+		if strings.HasPrefix(str, "https://") {
+			port = "https"
+			host = str[8:]
+			return
+		} else if strings.HasPrefix(str, "http://") {
+			port = "http"
+			host = str[7:]
+			return
+		} else if !strings.Contains(str, ":") {
+			str += ":" + defaultPort
+		}
+		host, port, err = net.SplitHostPort(str)
+		return
 	}
-	p.cfg.Host, p.cfg.Port, err = net.SplitHostPort(p.tkn())
-	return
+
+	for {
+		tkn, startLine := p.tkn(), p.line()
+
+		// Open brace definitely indicates end of addresses
+		if tkn == "{" {
+			if expectingAnother {
+				return p.err("Syntax", "Expected another address but had '"+tkn+"' - check for extra comma")
+			}
+			break
+		}
+
+		// Trailing comma indicates another address will follow, which
+		// may possibly be on the next line
+		if tkn[len(tkn)-1] == ',' {
+			tkn = tkn[:len(tkn)-1]
+			expectingAnother = true
+		} else {
+			expectingAnother = false // but we may still see another one on this line
+		}
+
+		// Parse and save this address
+		host, port, err := address(tkn)
+		if err != nil {
+			return err
+		}
+		p.hosts = append(p.hosts, hostPort{host, port})
+
+		// Advance token and possibly break out of loop or return error
+		hasNext := p.next()
+		if expectingAnother && !hasNext {
+			return p.eofErr()
+		}
+		if !expectingAnother && p.line() > startLine {
+			break
+		}
+	}
+
+	return nil
 }
 
 // addressBlock leads into parsing directives, including
 // possible opening/closing curly braces around the block.
 // It handles directives enclosed by curly braces and
-// directives not enclosed by curly braces.
+// directives not enclosed by curly braces. It is expected
+// that the current token is already the beginning of
+// the address block.
 func (p *parser) addressBlock() error {
-	if !p.next() {
-		// file consisted only of an address
-		return nil
-	}
-
 	errOpenCurlyBrace := p.openCurlyBrace()
 	if errOpenCurlyBrace != nil {
 		// meh, single-server configs don't need curly braces

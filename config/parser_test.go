@@ -35,7 +35,7 @@ func TestParserBasic(t *testing.T) {
 
 	input := `localhost:1234
 			  root /test/www
-			  tls cert.pem key.pem`
+			  tls  cert.pem key.pem`
 
 	p.lexer.load(strings.NewReader(input))
 
@@ -65,7 +65,7 @@ func TestParserBasic(t *testing.T) {
 	}
 }
 
-func TestParserBasicWithMultipleHosts(t *testing.T) {
+func TestParserBasicWithMultipleServerBlocks(t *testing.T) {
 	p := &parser{filename: "test"}
 
 	input := `host1.com:443 {
@@ -84,7 +84,7 @@ func TestParserBasicWithMultipleHosts(t *testing.T) {
 		t.Fatalf("Expected no errors, but got '%s'", err)
 	}
 	if len(confs) != 2 {
-		t.Fatalf("Expected 2 configurations, but got '%d': %#v", len(confs), confs)
+		t.Fatalf("Expected 2 configurations, but got %d: %#v", len(confs), confs)
 	}
 
 	// First server
@@ -125,6 +125,91 @@ func TestParserBasicWithMultipleHosts(t *testing.T) {
 	}
 	if confs[1].TLS.Key != "" {
 		t.Errorf("Expected second TLS server key to be '', got '%s'", confs[1].TLS.Key)
+	}
+}
+
+func TestParserBasicWithMultipleHostsPerBlock(t *testing.T) {
+	// This test is table-driven; it is expected that each
+	// input string produce the same set of configs.
+	for _, input := range []string{
+		`host1.com host2.com:1234
+		 root /public_html`, // space-separated, no block
+
+		`host1.com, host2.com:1234
+		 root /public_html`, // comma-separated, no block
+
+		`host1.com,
+		 host2.com:1234
+		 root /public_html`, // comma-separated, newlines, no block
+
+		`host1.com host2.com:1234 {
+			root /public_html
+		 }`, // space-separated, block
+
+		`host1.com, host2.com:1234 {
+			root /public_html
+		 }`, // comma-separated, block
+
+		`host1.com,
+		 host2.com:1234 {
+			root /public_html
+		 }`, // comma-separated, newlines, block
+	} {
+
+		p := &parser{filename: "test"}
+		p.lexer.load(strings.NewReader(input))
+
+		confs, err := p.parse()
+		if err != nil {
+			t.Fatalf("Expected no errors, but got '%s'", err)
+		}
+		if len(confs) != 2 {
+			t.Fatalf("Expected 2 configurations, but got %d: %#v", len(confs), confs)
+		}
+
+		if confs[0].Host != "host1.com" {
+			t.Errorf("Expected host of first conf to be 'host1.com', got '%s'", confs[0].Host)
+		}
+		if confs[0].Port != defaultPort {
+			t.Errorf("Expected port of first conf to be '%s', got '%s'", defaultPort, confs[0].Port)
+		}
+		if confs[0].Root != "/public_html" {
+			t.Errorf("Expected root of first conf to be '/public_html', got '%s'", confs[0].Root)
+		}
+
+		if confs[1].Host != "host2.com" {
+			t.Errorf("Expected host of second conf to be 'host2.com', got '%s'", confs[1].Host)
+		}
+		if confs[1].Port != "1234" {
+			t.Errorf("Expected port of second conf to be '1234', got '%s'", confs[1].Port)
+		}
+		if confs[1].Root != "/public_html" {
+			t.Errorf("Expected root of second conf to be '/public_html', got '%s'", confs[1].Root)
+		}
+
+	}
+}
+
+func TestParserBasicWithAlternateAddressStyles(t *testing.T) {
+	p := &parser{filename: "test"}
+	input := `http://host1.com, https://host2.com,
+			  host3.com:http, host4.com:1234 {
+				  root /test/www
+			  }`
+	p.lexer.load(strings.NewReader(input))
+
+	confs, err := p.parse()
+	if err != nil {
+		t.Fatalf("Expected no errors, but got '%s'", err)
+	}
+	if len(confs) != 4 {
+		t.Fatalf("Expected 4 configurations, but got %d: %#v", len(confs), confs)
+	}
+
+	for _, conf := range confs {
+		if conf.Root != "/test/www" {
+			t.Fatalf("Expected root for conf of %s to be '/test/www', but got: %s", conf.Address(), conf.Root)
+		}
 	}
 }
 
@@ -178,21 +263,21 @@ func TestParserLocationContext(t *testing.T) {
 		t.Fatalf("Expected no errors, but got '%s'", err)
 	}
 	if len(confs) != 1 {
-		t.Fatalf("Expected 1 configuration, but got '%d': %#v", len(confs), confs)
+		t.Fatalf("Expected 1 configuration, but got %d: %#v", len(confs), confs)
 	}
 
 	if len(p.other) != 2 {
-		t.Fatalf("Expected 2 path scopes, but got '%d': %#v", len(p.other), p.other)
+		t.Fatalf("Expected 2 path scopes, but got %d: %#v", len(p.other), p.other)
 	}
 
 	if p.other[0].path != "/" {
-		t.Fatalf("Expected first path scope to be default '/', but got '%d': %#v", p.other[0].path, p.other)
+		t.Fatalf("Expected first path scope to be default '/', but got %d: %#v", p.other[0].path, p.other)
 	}
 	if p.other[1].path != "/scope" {
-		t.Fatalf("Expected first path scope to be '/scope', but got '%d': %#v", p.other[0].path, p.other)
+		t.Fatalf("Expected first path scope to be '/scope', but got %d: %#v", p.other[0].path, p.other)
 	}
 
 	if dir, ok := p.other[1].directives["gzip"]; !ok {
-		t.Fatalf("Expected scoped directive to be gzip, but got '%d': %#v", dir, p.other[1].directives)
+		t.Fatalf("Expected scoped directive to be gzip, but got %d: %#v", dir, p.other[1].directives)
 	}
 }

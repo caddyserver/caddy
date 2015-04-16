@@ -13,7 +13,9 @@ type (
 	parser struct {
 		filename string            // the name of the file that we're parsing
 		lexer    lexer             // the lexer that is giving us tokens from the raw input
-		cfg      Config            // each server gets one Config; this is the one we're currently building
+		hosts    []hostPort        // the list of host:port combinations current tokens apply to
+		cfg      Config            // each virtual host gets one Config; this is the one we're currently building
+		cfgs     []Config          // after a Config is created, it may need to be copied for multiple hosts
 		other    []locationContext // tokens to be 'parsed' later by middleware generators
 		scope    *locationContext  // the current location context (path scope) being populated
 		unused   *token            // sometimes a token will be read but not immediately consumed
@@ -26,6 +28,11 @@ type (
 	locationContext struct {
 		path       string
 		directives map[string]*controller
+	}
+
+	// hostPort just keeps a hostname and port together
+	hostPort struct {
+		host, port string
 	}
 )
 
@@ -53,7 +60,7 @@ func (p *parser) parse() ([]Config, error) {
 		if err != nil {
 			return nil, err
 		}
-		configs = append(configs, p.cfg)
+		configs = append(configs, p.cfgs...)
 	}
 
 	return configs, nil
@@ -95,6 +102,7 @@ func (p *parser) next() bool {
 // another token and you're not in another server
 // block already.
 func (p *parser) parseOne() error {
+	p.cfgs = []Config{}
 	p.cfg = Config{
 		Middleware: make(map[string][]middleware.Middleware),
 	}
@@ -108,6 +116,15 @@ func (p *parser) parseOne() error {
 	err = p.unwrap()
 	if err != nil {
 		return err
+	}
+
+	// Make a copy of the config for each
+	// address that will be using it
+	for _, hostport := range p.hosts {
+		cfgCopy := p.cfg
+		cfgCopy.Host = hostport.host
+		cfgCopy.Port = hostport.port
+		p.cfgs = append(p.cfgs, cfgCopy)
 	}
 
 	return nil
