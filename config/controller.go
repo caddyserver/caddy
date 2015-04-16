@@ -42,16 +42,6 @@ func (c *controller) Root() string {
 	}
 }
 
-// Host returns the hostname the server is bound to.
-func (c *controller) Host() string {
-	return c.parser.cfg.Host
-}
-
-// Port returns the port that the server is listening on.
-func (c *controller) Port() string {
-	return c.parser.cfg.Port
-}
-
 // Context returns the path scope that the Controller is in.
 func (c *controller) Context() middleware.Path {
 	return middleware.Path(c.pathScope)

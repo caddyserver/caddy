@@ -59,12 +59,6 @@ type (
 		// Root returns the file path from which the server is serving.
 		Root() string
 
-		// Host returns the hostname the server is bound to.
-		Host() string
-
-		// Port returns the port that the server is listening on.
-		Port() string
-
 		// Context returns the path scope that the Controller is in.
 		// Note: This is not currently used, but may be in the future.
 		Context() Path
