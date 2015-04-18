@@ -56,6 +56,22 @@ func (fh *fileHandler) serveFile(w http.ResponseWriter, r *http.Request, name st
 		return http.StatusNotFound, nil
 	}
 
+	// redirect to canonical path
+	url := r.URL.Path
+	if d.IsDir() {
+		// Ensure / at end of directory url
+		if url[len(url)-1] != '/' {
+			redirect(w, r, path.Base(url)+"/")
+			return http.StatusMovedPermanently, nil
+		}
+	} else {
+		// Ensure no / at end of file url
+		if url[len(url)-1] == '/' {
+			redirect(w, r, "../"+path.Base(url))
+			return http.StatusMovedPermanently, nil
+		}
+	}
+
 	// use contents of an index file, if present, for directory
 	if d.IsDir() {
 		for _, indexPage := range browse.IndexPages {
@@ -93,4 +109,14 @@ func (fh *fileHandler) serveFile(w http.ResponseWriter, r *http.Request, name st
 	http.ServeContent(w, r, d.Name(), d.ModTime(), f)
 
 	return http.StatusOK, nil
+}
+
+// redirect is taken from http.localRedirect of the std lib. It
+// sends an HTTP redirect to the client but will preserve the
+// query string for the new path.
+func redirect(w http.ResponseWriter, r *http.Request, newPath string) {
+	if q := r.URL.RawQuery; q != "" {
+		newPath += "?" + q
+	}
+	http.Redirect(w, r, newPath, http.StatusMovedPermanently)
 }
