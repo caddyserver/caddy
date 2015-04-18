@@ -13,6 +13,7 @@ import (
 	"github.com/mholt/caddy/middleware/proxy"
 	"github.com/mholt/caddy/middleware/redirect"
 	"github.com/mholt/caddy/middleware/rewrite"
+	"github.com/mholt/caddy/middleware/templates"
 	"github.com/mholt/caddy/middleware/websockets"
 )
 
@@ -48,6 +49,7 @@ func init() {
 	register("fastcgi", fastcgi.New)
 	register("websocket", websockets.New)
 	register("markdown", markdown.New)
+	register("templates", templates.New)
 	register("browse", browse.New)
 }
 
