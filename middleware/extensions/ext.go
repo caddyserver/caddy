@@ -3,7 +3,7 @@
 // internally for paths requested that don't match an existing
 // resource. The first path+ext combination that matches a valid
 // file will be used.
-package extension
+package extensions
 
 import (
 	"net/http"
