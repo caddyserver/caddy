@@ -1,9 +1,9 @@
 package templates
 
 import (
-	"html/template"
 	"net/http"
 	"path"
+	"text/template"
 
 	"github.com/mholt/caddy/middleware"
 )
