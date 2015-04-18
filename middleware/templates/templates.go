@@ -38,7 +38,7 @@ func (t Templates) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 		for _, ext := range rule.Extensions {
 			if reqExt == ext {
 				// Create execution context
-				ctx := context{root: http.Dir(t.Root), req: r}
+				ctx := context{root: http.Dir(t.Root), req: r, URL: r.URL}
 
 				// Build the template
 				tpl, err := template.ParseFiles(t.Root + r.URL.Path)
