@@ -35,8 +35,11 @@ func main() {
 			log.Fatal(err)
 		}
 	}
+	if len(allConfigs) == 0 {
+		allConfigs = config.Default()
+	}
 
-	// Group by address (virtual hosting)
+	// Group by address (virtual hosts)
 	addresses, err := arrangeBindings(allConfigs)
 	if err != nil {
 		log.Fatal(err)
