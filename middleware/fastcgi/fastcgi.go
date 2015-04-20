@@ -7,7 +7,9 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/mholt/caddy/middleware"
@@ -34,12 +36,23 @@ type Handler struct {
 	Rules []Rule
 }
 
+func (h Handler) DoesFileExist(path string) bool {
+	file := h.Root + path
+	if _, err := os.Stat(file); err == nil {
+		return true
+	}
+	return false
+}
+
 // ServeHTTP satisfies the middleware.Handler interface.
 func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	servedFcgi := false
+	indexFile := "index.php"
+	ext := ".php"
+	splitText := ".php"
 	for _, rule := range h.Rules {
-		if middleware.Path(r.URL.Path).Matches(rule.Path) {
-			servedFcgi = true
+		if middleware.Path(r.URL.Path).Matches(rule.Path) && (strings.HasSuffix(r.URL.Path, "/") ||
+			strings.HasSuffix(r.URL.Path, ext) || !h.DoesFileExist(r.URL.Path)) {
 
 			// Get absolute file paths
 			absPath, err := filepath.Abs(h.Root + r.URL.Path)
@@ -56,8 +69,8 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			// Separate remote IP and port
 			var ip, port string
 			if idx := strings.Index(r.RemoteAddr, ":"); idx > -1 {
-				ip = r.RemoteAddr[idx:]
-				port = r.RemoteAddr[:idx]
+				ip = r.RemoteAddr[:idx]
+				port = r.RemoteAddr[idx:]
 			} else {
 				ip = r.RemoteAddr
 			}
@@ -65,6 +78,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			// TODO: Do we really have to make this map from scratch for each request?
 			// TODO: We have quite a few more to map, too.
 			env := make(map[string]string)
+			env["SERVER_NAME"] = "caddy"
 			env["SERVER_SOFTWARE"] = "caddy" // TODO: Obtain version info...
 			env["SERVER_PROTOCOL"] = r.Proto
 			env["SCRIPT_FILENAME"] = absPath
@@ -72,15 +86,40 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			env["REMOTE_PORT"] = port
 			env["REQUEST_METHOD"] = r.Method
 			env["QUERY_STRING"] = r.URL.RawQuery
-			env["DOCUMENT_URI"] = r.URL.Path
+			env["SCRIPT_NAME"] = r.URL.Path
+			env["HTTP_HOST"] = r.Host
+
+			split := strings.Index(r.URL.Path, splitText)
+
+			if split == -1 {
+				//request doesn't have the extension
+				//send the request to the index file
+				env["DOCUMENT_URI"] = "/" + indexFile
+				env["SCRIPT_NAME"] = "/" + indexFile
+				env["SCRIPT_FILENAME"] = absRootPath + "/" + indexFile
+				env["PATH_INFO"] = r.URL.Path
+			} else {
+				env["DOCUMENT_URI"] = r.URL.Path[:split+len(splitText)]
+				env["PATH_INFO"] = r.URL.Path[split+len(splitText):]
+			}
+
+			env["REQUEST_URI"] = r.URL.RequestURI()
+
 			env["DOCUMENT_ROOT"] = absRootPath
+			env["HTTP_COOKIE"] = r.Header.Get("Cookie")
 
 			fcgi, err := Dial("tcp", rule.Address)
 			if err != nil {
 				return http.StatusBadGateway, err
 			}
 
-			resp, err := fcgi.Get(env)
+			var resp *http.Response
+			if r.Method == "GET" {
+				resp, err = fcgi.Get(env)
+			} else {
+				l, _ := strconv.Atoi(r.Header.Get("Content-Length"))
+				resp, err = fcgi.Post(env, r.Header.Get("Content-Type"), r.Body, l)
+			}
 			if err != nil && err != io.EOF {
 				return http.StatusBadGateway, err
 			}
@@ -99,7 +138,9 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			w.WriteHeader(resp.StatusCode)
 			w.Write(body)
 
-			break
+			servedFcgi = true
+
+			return resp.StatusCode, nil
 		}
 	}
 
