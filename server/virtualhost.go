@@ -9,7 +9,7 @@ import (
 
 // virtualHost represents a virtual host/server. While a Server
 // is what actually binds to the address, a user may want to serve
-// multiple sites on a single address, and what is what a
+// multiple sites on a single address, and this is what a
 // virtualHost allows us to do.
 type virtualHost struct {
 	config     config.Config
