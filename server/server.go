@@ -20,10 +20,10 @@ import (
 // Server represents an instance of a server, which serves
 // static content at a particular address (host and port).
 type Server struct {
-	HTTP2   bool // temporary while http2 is not in std lib (TODO: remove flag when part of std lib)
-	address string
-	tls     bool
-	vhosts  map[string]virtualHost
+	HTTP2   bool                   // temporary while http2 is not in std lib (TODO: remove flag when part of std lib)
+	address string                 // the actual address for net.Listen to listen on
+	tls     bool                   // whether this server is serving all HTTPS hosts or not
+	vhosts  map[string]virtualHost // virtual hosts keyed by their address
 }
 
 // New creates a new Server which will bind to addr and serve
