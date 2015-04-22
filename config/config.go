@@ -12,7 +12,7 @@ import (
 
 const (
 	defaultHost = "localhost"
-	defaultPort = "8080"
+	defaultPort = "80"
 	defaultRoot = "."
 
 	// The default configuration file to load if none is specified
