@@ -211,6 +211,53 @@ func TestParserBasicWithAlternateAddressStyles(t *testing.T) {
 			t.Fatalf("Expected root for conf of %s to be '/test/www', but got: %s", conf.Address(), conf.Root)
 		}
 	}
+
+	p = &parser{filename: "test"}
+	input = `host:port, http://host:port, http://host, https://host:port, host`
+	p.lexer.load(strings.NewReader(input))
+
+	confs, err = p.parse()
+	if err != nil {
+		t.Fatalf("Expected no errors, but got '%s'", err)
+	}
+	if len(confs) != 5 {
+		t.Fatalf("Expected 5 configurations, but got %d: %#v", len(confs), confs)
+	}
+
+	if confs[0].Host != "host" {
+		t.Errorf("Expected conf[0] Host='host', got '%#v'", confs[0])
+	}
+	if confs[0].Port != "port" {
+		t.Errorf("Expected conf[0] Port='port', got '%#v'", confs[0])
+	}
+
+	if confs[1].Host != "host" {
+		t.Errorf("Expected conf[1] Host='host', got '%#v'", confs[1])
+	}
+	if confs[1].Port != "port" {
+		t.Errorf("Expected conf[1] Port='port', got '%#v'", confs[1])
+	}
+
+	if confs[2].Host != "host" {
+		t.Errorf("Expected conf[2] Host='host', got '%#v'", confs[2])
+	}
+	if confs[2].Port != "http" {
+		t.Errorf("Expected conf[2] Port='http', got '%#v'", confs[2])
+	}
+
+	if confs[3].Host != "host" {
+		t.Errorf("Expected conf[3] Host='host', got '%#v'", confs[3])
+	}
+	if confs[3].Port != "port" {
+		t.Errorf("Expected conf[3] Port='port', got '%#v'", confs[3])
+	}
+
+	if confs[4].Host != "host" {
+		t.Errorf("Expected conf[4] Host='host', got '%#v'", confs[4])
+	}
+	if confs[4].Port != defaultPort {
+		t.Errorf("Expected conf[4] Port='%s', got '%#v'", defaultPort, confs[4].Port)
+	}
 }
 
 func TestParserImport(t *testing.T) {

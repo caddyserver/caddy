@@ -19,6 +19,7 @@ type (
 		other    []locationContext // tokens to be 'parsed' later by middleware generators
 		scope    *locationContext  // the current location context (path scope) being populated
 		unused   *token            // sometimes a token will be read but not immediately consumed
+		eof      bool              // if we encounter a valid EOF in a hard place
 	}
 
 	// locationContext represents a location context
