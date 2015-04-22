@@ -48,7 +48,6 @@ func (t Templates) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 				}
 
 				// Execute it
-				// TODO: Use pooled buffers to reduce allocations
 				var buf bytes.Buffer
 				err = bc.Template.Execute(&buf, ctx)
 				if err != nil {

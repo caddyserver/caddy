@@ -181,12 +181,12 @@ func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			Items:   fileinfos,
 		}
 
-		// TODO: Use pooled buffers to reduce allocations
 		var buf bytes.Buffer
 		err = bc.Template.Execute(&buf, listing)
 		if err != nil {
 			return http.StatusInternalServerError, err
 		}
+
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		buf.WriteTo(w)
 
