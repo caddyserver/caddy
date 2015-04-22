@@ -49,7 +49,7 @@ func (t Templates) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 
 				// Execute it
 				var buf bytes.Buffer
-				err = bc.Template.Execute(&buf, ctx)
+				err = tpl.Execute(&buf, ctx)
 				if err != nil {
 					return http.StatusInternalServerError, err
 				}
