@@ -1,6 +1,7 @@
 package templates
 
 import (
+	"bytes"
 	"net/http"
 	"path"
 	"text/template"
@@ -47,10 +48,13 @@ func (t Templates) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 				}
 
 				// Execute it
-				err = tpl.Execute(w, ctx)
+				// TODO: Use pooled buffers to reduce allocations
+				var buf bytes.Buffer
+				err = bc.Template.Execute(&buf, ctx)
 				if err != nil {
 					return http.StatusInternalServerError, err
 				}
+				buf.WriteTo(w)
 
 				return http.StatusOK, nil
 			}
