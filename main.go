@@ -13,18 +13,19 @@ import (
 
 var (
 	conf  string
-	http2 bool
+	http2 bool // TODO: temporary flag until http2 is standard
+	quiet bool
 )
 
 func init() {
 	flag.StringVar(&conf, "conf", config.DefaultConfigFile, "the configuration file to use")
-	flag.BoolVar(&http2, "http2", true, "enable HTTP/2 support") // temporary flag until http2 merged into std lib
+	flag.BoolVar(&http2, "http2", true, "enable HTTP/2 support") // TODO: temporary flag until http2 merged into std lib
+	flag.BoolVar(&quiet, "quiet", false, "quiet mode (no initialization output)")
+	flag.Parse()
 }
 
 func main() {
 	var wg sync.WaitGroup
-
-	flag.Parse()
 
 	// Load config from file
 	allConfigs, err := config.Load(conf)
@@ -60,6 +61,12 @@ func main() {
 				log.Println(err)
 			}
 		}(s)
+
+		if !quiet {
+			for _, config := range configs {
+				fmt.Printf("%s -> OK\n", config.Address())
+			}
+		}
 	}
 
 	wg.Wait()
