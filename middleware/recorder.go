@@ -1,6 +1,9 @@
 package middleware
 
-import "net/http"
+import (
+	"net/http"
+	"time"
+)
 
 // responseRecorder is a type of ResponseWriter that captures
 // the status code written to it and also the size of the body
@@ -12,6 +15,7 @@ type responseRecorder struct {
 	http.ResponseWriter
 	status int
 	size   int
+	start  time.Time
 }
 
 // NewResponseRecorder makes and returns a new responseRecorder,
@@ -24,6 +28,7 @@ func NewResponseRecorder(w http.ResponseWriter) *responseRecorder {
 	return &responseRecorder{
 		ResponseWriter: w,
 		status:         http.StatusOK,
+		start:          time.Now(),
 	}
 }
 

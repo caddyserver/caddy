@@ -50,8 +50,9 @@ func NewReplacer(r *http.Request, rr *responseRecorder) replacer {
 		"{when}": func() string {
 			return time.Now().Format(timeFormat)
 		}(),
-		"{status}": strconv.Itoa(rr.status),
-		"{size}":   strconv.Itoa(rr.size),
+		"{status}":  strconv.Itoa(rr.status),
+		"{size}":    strconv.Itoa(rr.size),
+		"{latency}": time.Since(rr.start).String(),
 	}
 
 	// Header placeholders
