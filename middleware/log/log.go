@@ -88,6 +88,8 @@ func parse(c middleware.Controller) ([]LogRule, error) {
 					format = commonLogFormat
 				case "{combined}":
 					format = combinedLogFormat
+				default:
+					format = args[2]
 				}
 			}
 
