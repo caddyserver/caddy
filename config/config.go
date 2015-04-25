@@ -47,9 +47,6 @@ type Config struct {
 	// these are executed in response to SIGINT and are blocking
 	Shutdown []func() error
 
-	// MaxCPU is the maximum number of cores for the whole process to use
-	MaxCPU int
-
 	// The path to the configuration file from which this was loaded
 	ConfigFile string
 }

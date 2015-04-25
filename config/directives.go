@@ -3,9 +3,6 @@ package config
 import (
 	"os"
 	"os/exec"
-	"runtime"
-	"strconv"
-	"strings"
 
 	"github.com/mholt/caddy/middleware"
 )
@@ -72,46 +69,6 @@ func init() {
 			tls.Key = p.tkn()
 
 			p.cfg.TLS = tls
-			return nil
-		},
-		"cpu": func(p *parser) error {
-			sysCores := runtime.NumCPU()
-
-			if !p.nextArg() {
-				return p.argErr()
-			}
-			strNum := p.tkn()
-
-			setCPU := func(val int) {
-				if val < 1 {
-					val = 1
-				}
-				if val > sysCores {
-					val = sysCores
-				}
-				if val > p.cfg.MaxCPU {
-					p.cfg.MaxCPU = val
-				}
-			}
-
-			if strings.HasSuffix(strNum, "%") {
-				// Percent
-				var percent float32
-				pctStr := strNum[:len(strNum)-1]
-				pctInt, err := strconv.Atoi(pctStr)
-				if err != nil || pctInt < 1 || pctInt > 100 {
-					return p.err("Parse", "Invalid number '"+strNum+"' (must be a positive percentage between 1 and 100)")
-				}
-				percent = float32(pctInt) / 100
-				setCPU(int(float32(sysCores) * percent))
-			} else {
-				// Number
-				num, err := strconv.Atoi(strNum)
-				if err != nil || num < 0 {
-					return p.err("Parse", "Invalid number '"+strNum+"' (requires positive integer or percent)")
-				}
-				setCPU(num)
-			}
 			return nil
 		},
 		"startup": func(p *parser) error {
