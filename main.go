@@ -76,7 +76,7 @@ func main() {
 
 		if !quiet {
 			for _, config := range configs {
-				fmt.Printf("%s -> OK\n", config.Address())
+				fmt.Println(config.Address())
 			}
 		}
 	}
