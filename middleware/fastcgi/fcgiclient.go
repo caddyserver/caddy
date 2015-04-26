@@ -26,6 +26,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -372,6 +373,17 @@ func (this *FCGIClient) Request(p map[string]string, req io.Reader) (resp *http.
 		return
 	}
 	resp.Header = http.Header(mimeHeader)
+
+	if resp.Header.Get("Status") != "" {
+		statusParts := strings.SplitN(resp.Header.Get("Status"), " ", 2)
+		resp.StatusCode, err = strconv.Atoi(statusParts[0])
+		if err != nil {
+			return
+		}
+		resp.Status = statusParts[1]
+	} else {
+		resp.StatusCode = http.StatusOK
+	}
 
 	// TODO: fixTransferEncoding ?
 	resp.TransferEncoding = resp.Header["Transfer-Encoding"]
