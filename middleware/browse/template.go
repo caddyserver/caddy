@@ -11,7 +11,7 @@ const defaultTemplate = `<!DOCTYPE html>
 
 body {
 	padding: 1% 2%;
-	font: 16px sans-serif;
+	font: 16px Arial;
 }
 
 header {
@@ -60,7 +60,7 @@ th {
 	text-align: left;
 }
 
-@media (max-width: 650px) {
+@media (max-width: 700px) {
 	.hideable {
 		display: none;
 	}
@@ -71,7 +71,7 @@ th {
 
 	header,
 	header h1 {
-		font-size: 14px;
+		font-size: 16px;
 	}
 
 	header {
@@ -80,7 +80,7 @@ th {
 		width: 100%;
 		background: #333;
 		color: #FFF;
-		padding: 10px;
+		padding: 15px;
 		text-align: center;
 	}
 
@@ -95,8 +95,8 @@ th {
 		position: absolute;
 		left: 0;
 		top: 0;
-		width: 35px;
-		height: 28px;
+		width: 40px;
+		height: 48px;
 		font-size: 35px;
 	}
 
@@ -105,7 +105,7 @@ th {
 	}
 
 	main {
-		margin-top: 50px;
+		margin-top: 70px;
 	}
 }
 </style>

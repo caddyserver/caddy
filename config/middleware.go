@@ -2,6 +2,7 @@ package config
 
 import (
 	"github.com/mholt/caddy/middleware"
+	"github.com/mholt/caddy/middleware/basicauth"
 	"github.com/mholt/caddy/middleware/browse"
 	"github.com/mholt/caddy/middleware/errors"
 	"github.com/mholt/caddy/middleware/extensions"
@@ -45,6 +46,7 @@ func init() {
 	register("rewrite", rewrite.New)
 	register("redir", redirect.New)
 	register("ext", extensions.New)
+	register("basicauth", basicauth.New)
 	register("proxy", proxy.New)
 	register("fastcgi", fastcgi.New)
 	register("websocket", websockets.New)

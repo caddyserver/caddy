@@ -1,6 +1,7 @@
 package templates
 
 import (
+	"bytes"
 	"net/http"
 	"path"
 	"text/template"
@@ -47,10 +48,12 @@ func (t Templates) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 				}
 
 				// Execute it
-				err = tpl.Execute(w, ctx)
+				var buf bytes.Buffer
+				err = tpl.Execute(&buf, ctx)
 				if err != nil {
 					return http.StatusInternalServerError, err
 				}
+				buf.WriteTo(w)
 
 				return http.StatusOK, nil
 			}

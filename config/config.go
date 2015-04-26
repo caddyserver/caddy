@@ -12,7 +12,7 @@ import (
 
 const (
 	defaultHost = "localhost"
-	defaultPort = "8080"
+	defaultPort = "2015"
 	defaultRoot = "."
 
 	// The default configuration file to load if none is specified
@@ -46,9 +46,6 @@ type Config struct {
 	// Functions (or methods) to execute when the server quits;
 	// these are executed in response to SIGINT and are blocking
 	Shutdown []func() error
-
-	// MaxCPU is the maximum number of cores for the whole process to use
-	MaxCPU int
 
 	// The path to the configuration file from which this was loaded
 	ConfigFile string

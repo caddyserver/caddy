@@ -149,7 +149,7 @@ func (d *dispenser) ArgErr() error {
 	if d.Val() == "{" {
 		return d.Err("Unexpected token '{', expecting argument")
 	}
-	return d.Err("Unexpected line ending after '" + d.Val() + "' (missing arguments?)")
+	return d.Err("Wrong argument count or unexpected line ending after '" + d.Val() + "'")
 }
 
 // Err generates a custom parse error with a message of msg.

@@ -135,7 +135,7 @@ func parse(c middleware.Controller) ([]MarkdownConfig, error) {
 		}
 
 		// Get the path scope
-		if !c.NextArg() {
+		if !c.NextArg() || c.Val() == "{" {
 			return mdconfigs, c.ArgErr()
 		}
 		md.PathScope = c.Val()

@@ -3,6 +3,7 @@
 package browse
 
 import (
+	"bytes"
 	"fmt"
 	"html/template"
 	"io/ioutil"
@@ -122,8 +123,6 @@ func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 		}
 		defer file.Close()
 
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-
 		files, err := file.Readdir(-1)
 		if err != nil {
 			return http.StatusForbidden, err
@@ -182,11 +181,14 @@ func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			Items:   fileinfos,
 		}
 
-		// TODO: Don't write to w until we know there wasn't an error
-		err = bc.Template.Execute(w, listing)
+		var buf bytes.Buffer
+		err = bc.Template.Execute(&buf, listing)
 		if err != nil {
 			return http.StatusInternalServerError, err
 		}
+
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		buf.WriteTo(w)
 
 		return http.StatusOK, nil
 	}

@@ -1,10 +1,14 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"log"
 	"net"
+	"runtime"
+	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/mholt/caddy/config"
@@ -13,18 +17,27 @@ import (
 
 var (
 	conf  string
-	http2 bool
+	http2 bool // TODO: temporary flag until http2 is standard
+	quiet bool
+	cpu   string
 )
 
 func init() {
 	flag.StringVar(&conf, "conf", config.DefaultConfigFile, "the configuration file to use")
-	flag.BoolVar(&http2, "http2", true, "enable HTTP/2 support") // temporary flag until http2 merged into std lib
+	flag.BoolVar(&http2, "http2", true, "enable HTTP/2 support") // TODO: temporary flag until http2 merged into std lib
+	flag.BoolVar(&quiet, "quiet", false, "quiet mode (no initialization output)")
+	flag.StringVar(&cpu, "cpu", "100%", "CPU cap")
+	flag.Parse()
 }
 
 func main() {
 	var wg sync.WaitGroup
 
-	flag.Parse()
+	// Set CPU cap
+	err := setCPU(cpu)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	// Load config from file
 	allConfigs, err := config.Load(conf)
@@ -60,6 +73,12 @@ func main() {
 				log.Println(err)
 			}
 		}(s)
+
+		if !quiet {
+			for _, config := range configs {
+				fmt.Println(config.Address())
+			}
+		}
 	}
 
 	wg.Wait()
@@ -101,4 +120,39 @@ func arrangeBindings(allConfigs []config.Config) (map[string][]config.Config, er
 	}
 
 	return addresses, nil
+}
+
+// setCPU parses string cpu and sets GOMAXPROCS
+// according to its value. It accepts either
+// a number (e.g. 3) or a percent (e.g. 50%).
+func setCPU(cpu string) error {
+	var numCPU int
+
+	availCPU := runtime.NumCPU()
+
+	if strings.HasSuffix(cpu, "%") {
+		// Percent
+		var percent float32
+		pctStr := cpu[:len(cpu)-1]
+		pctInt, err := strconv.Atoi(pctStr)
+		if err != nil || pctInt < 1 || pctInt > 100 {
+			return errors.New("Invalid CPU value: percentage must be between 1-100")
+		}
+		percent = float32(pctInt) / 100
+		numCPU = int(float32(availCPU) * percent)
+	} else {
+		// Number
+		num, err := strconv.Atoi(cpu)
+		if err != nil || num < 1 {
+			return errors.New("Invalid CPU value: provide a number or percent greater than 0")
+		}
+		numCPU = num
+	}
+
+	if numCPU > availCPU {
+		numCPU = availCPU
+	}
+
+	runtime.GOMAXPROCS(numCPU)
+	return nil
 }

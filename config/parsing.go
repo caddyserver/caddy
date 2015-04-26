@@ -38,18 +38,25 @@ func (p *parser) addresses() error {
 
 	// address gets host and port in a format accepted by net.Dial
 	address := func(str string) (host, port string, err error) {
+		var schemePort string
+
 		if strings.HasPrefix(str, "https://") {
-			port = "https"
-			host = str[8:]
-			return
+			schemePort = "https"
+			str = str[8:]
 		} else if strings.HasPrefix(str, "http://") {
-			port = "http"
-			host = str[7:]
-			return
+			schemePort = "http"
+			str = str[7:]
 		} else if !strings.Contains(str, ":") {
 			str += ":" + defaultPort
 		}
+
 		host, port, err = net.SplitHostPort(str)
+		if err != nil && schemePort != "" {
+			host = str
+			port = schemePort // assume port from scheme
+			err = nil
+		}
+
 		return
 	}
 
@@ -88,6 +95,10 @@ func (p *parser) addresses() error {
 		if !expectingAnother && p.line() > startLine {
 			break
 		}
+		if !hasNext {
+			p.eof = true
+			break // EOF
+		}
 	}
 
 	return nil
@@ -114,6 +125,12 @@ func (p *parser) addressBlock() error {
 		directives: make(map[string]*controller),
 	})
 	p.scope = &p.other[0]
+
+	if p.eof {
+		// this happens if the Caddyfile consists of only
+		// a line of addresses and nothing else
+		return nil
+	}
 
 	err := p.directives()
 	if err != nil {

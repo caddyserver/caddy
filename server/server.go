@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"runtime"
 
 	"github.com/bradfitz/http2"
 	"github.com/mholt/caddy/config"
@@ -20,10 +19,10 @@ import (
 // Server represents an instance of a server, which serves
 // static content at a particular address (host and port).
 type Server struct {
-	HTTP2   bool // temporary while http2 is not in std lib (TODO: remove flag when part of std lib)
-	address string
-	tls     bool
-	vhosts  map[string]virtualHost
+	HTTP2   bool                   // temporary while http2 is not in std lib (TODO: remove flag when part of std lib)
+	address string                 // the actual address for net.Listen to listen on
+	tls     bool                   // whether this server is serving all HTTPS hosts or not
+	vhosts  map[string]virtualHost // virtual hosts keyed by their address
 }
 
 // New creates a new Server which will bind to addr and serve
@@ -39,11 +38,6 @@ func New(addr string, configs []config.Config, tls bool) (*Server, error) {
 	for _, conf := range configs {
 		if _, exists := s.vhosts[conf.Host]; exists {
 			return nil, fmt.Errorf("Cannot serve %s - host already defined for address %s", conf.Address(), s.address)
-		}
-
-		// Use all CPUs (if needed) by default
-		if conf.MaxCPU == 0 {
-			conf.MaxCPU = runtime.NumCPU()
 		}
 
 		vh := virtualHost{config: conf}
@@ -73,7 +67,7 @@ func (s *Server) Serve() error {
 	}
 
 	for _, vh := range s.vhosts {
-		// Execute startup functions
+		// Execute startup functions now
 		for _, start := range vh.config.Startup {
 			err := start()
 			if err != nil {
@@ -81,13 +75,8 @@ func (s *Server) Serve() error {
 			}
 		}
 
-		// Use highest procs value across all configurations
-		if vh.config.MaxCPU > 0 && vh.config.MaxCPU > runtime.GOMAXPROCS(0) {
-			runtime.GOMAXPROCS(vh.config.MaxCPU)
-		}
-
+		// Execute shutdown commands on exit
 		if len(vh.config.Shutdown) > 0 {
-			// Execute shutdown commands on exit
 			go func() {
 				interrupt := make(chan os.Signal, 1)
 				signal.Notify(interrupt, os.Interrupt, os.Kill) // TODO: syscall.SIGQUIT? (Ctrl+\, Unix-only)
