@@ -376,10 +376,13 @@ func (this *FCGIClient) Request(p map[string]string, req io.Reader) (resp *http.
 
 	if resp.Header.Get("Status") != "" {
 		statusParts := strings.SplitN(resp.Header.Get("Status"), " ", 2)
-		resp.StatusCode, _ = strconv.Atoi(statusParts[0])
+		resp.StatusCode, err = strconv.Atoi(statusParts[0])
+		if err != nil {
+			return
+		}
 		resp.Status = statusParts[1]
 	} else {
-		resp.StatusCode = 200
+		resp.StatusCode = http.StatusOK
 	}
 
 	// TODO: fixTransferEncoding ?
