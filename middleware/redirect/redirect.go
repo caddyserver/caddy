@@ -55,7 +55,7 @@ func parse(c middleware.Controller) ([]Rule, error) {
 			// To specified
 			rule.From = "/"
 			rule.To = args[0]
-			rule.Code = http.StatusTemporaryRedirect
+			rule.Code = http.StatusMovedPermanently
 		case 2:
 			// To and Code specified
 			rule.From = "/"
