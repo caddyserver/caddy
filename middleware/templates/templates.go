@@ -1,3 +1,4 @@
+// Package templates implements template execution for files to be dynamically rendered for the client.
 package templates
 
 import (

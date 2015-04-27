@@ -1,3 +1,4 @@
+// Package basicauth implements HTTP Basic Authentication.
 package basicauth
 
 import (
