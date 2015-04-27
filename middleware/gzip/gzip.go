@@ -33,6 +33,9 @@ func (g Gzip) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 		return g.Next.ServeHTTP(w, r)
 	}
 
+	// Delete this header so gzipping isn't repeated later in the chain
+	r.Header.Del("Accept-Encoding")
+
 	w.Header().Set("Content-Encoding", "gzip")
 	gzipWriter := gzip.NewWriter(w)
 	defer gzipWriter.Close()

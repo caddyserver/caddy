@@ -196,11 +196,7 @@ func (h Handler) buildEnv(r *http.Request, rule Rule) (map[string]string, error)
 	for field, val := range r.Header {
 		header := strings.ToUpper(field)
 		header = headerNameReplacer.Replace(header)
-		// We don't want to pass the encoding header to prevent the fastcgi server from gzipping
-		// TODO: is there a better way.
-		if header != "ACCEPT_ENCODING" {
-			env["HTTP_"+header] = strings.Join(val, ", ")
-		}
+		env["HTTP_"+header] = strings.Join(val, ", ")
 	}
 
 	return env, nil
