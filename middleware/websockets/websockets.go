@@ -130,5 +130,5 @@ var (
 
 const (
 	envGatewayInterface = "caddy-CGI/1.1"
-	envServerSoftware   = "caddy/?.?.?" // TODO
+	envServerSoftware   = "caddy/" // TODO: Version
 )
