@@ -1,6 +1,6 @@
 [![Caddy](https://caddyserver.com/resources/images/caddy-boxed.png)](https://caddyserver.com)
 
-[![Documentation](https://img.shields.io/badge/godoc-documentation-blue.svg?style=flat-square)](https://godoc.org/github.com/mholt/caddy)
+[![Documentation](https://img.shields.io/badge/godoc-reference-blue.svg?style=flat-square)](https://godoc.org/github.com/mholt/caddy)
 
 Caddy is a lightweight, general-purpose web server for Windows, Mac, Linux, BSD, and [Android](https://github.com/mholt/caddy/wiki/Running-Caddy-on-Android). It is a capable alternative to other popular web servers.
 
