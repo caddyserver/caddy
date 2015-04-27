@@ -5,9 +5,7 @@ package fastcgi
 
 import (
 	"errors"
-	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -105,11 +103,11 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			}
 			w.WriteHeader(resp.StatusCode)
 
-			body, err := ioutil.ReadAll(resp.Body)
-			fmt.Printf("%s", body)
-			fmt.Printf("%d\n", resp.StatusCode)
-			fmt.Printf("%d\n", len(body))
-			w.Write(body)
+			// Write the response body
+			_, err = io.Copy(w, resp.Body)
+			if err != nil {
+				return http.StatusBadGateway, err
+			}
 
 			return resp.StatusCode, nil
 		}
