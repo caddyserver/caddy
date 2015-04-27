@@ -162,6 +162,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if vh, ok := s.vhosts[host]; ok {
+		w.Header().Set("Server", "Caddy")
+
 		status, _ := vh.stack.ServeHTTP(w, r)
 
 		// Fallback error response in case error handling wasn't chained in
