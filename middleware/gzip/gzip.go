@@ -33,7 +33,7 @@ func (g Gzip) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 		return g.Next.ServeHTTP(w, r)
 	}
 
-	r.Header.Del("Accept-Encoding")
+	r.Header.Del("Accept-Encoding") // Removes header to prevent double encoding by ambitious fastcgi implementations
 	w.Header().Set("Content-Encoding", "gzip")
 	gzipWriter := gzip.NewWriter(w)
 	defer gzipWriter.Close()
