@@ -3,6 +3,7 @@ Thumbs.db
 _gitignore/
 Vagrantfile
 .vagrant/
+dist/
 
 error.log
 access.log
