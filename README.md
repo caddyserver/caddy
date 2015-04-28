@@ -24,11 +24,9 @@ The most notable features are HTTP/2, Virtual Hosts, TLS + SNI, and easy configu
 
 ## Getting Caddy
 
-Caddy binaries are available for nearly every platform and has no dependencies.
+Caddy binaries have no dependencies and are available for nearly every platform.
 
 [Latest release](https://github.com/mholt/caddy/releases/latest)
-
-
 
 
 ## Running from Source
@@ -44,8 +42,16 @@ By default, Caddy serves the current directory at [localhost:2015](http://localh
 Caddy accepts some flags from the command line. Run `caddy -h` to view the help for flags.
 
 
+#### 3rd-party libraries
 
+Although Caddy's binaries are completely static, Caddy relies on some excellent libraries that really make the project possible.
 
+- [bradfitz/http2](https://github.com/bradfitz/http2) for HTTP/2 support
+- [russross/blackfriday](https://github.com/russross/blackfriday) for Markdown rendering
+- [dustin/go-humanize](https://github.com/dustin/go-humanize) for pleasant times and sizes
+- [flynn/go-shlex](https://github.com/flynn/go-shlex) to parse shell commands properly
+
+This list may not be comprehensive, but [godoc.org](https://godoc.org/github.com/mholt/caddy) will list all packages that any given package imports.
 
 ## Quick Start
 
