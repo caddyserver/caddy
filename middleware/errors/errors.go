@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path"
 	"strconv"
 
 	"github.com/mholt/caddy/middleware"
@@ -28,7 +29,7 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 			file = os.Stdout
 		} else if handler.LogFile == "stderr" {
 			file = os.Stderr
-		} else {
+		} else if handler.LogFile != "" {
 			file, err = os.OpenFile(handler.LogFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
 			if err != nil {
 				return err
@@ -131,6 +132,7 @@ func parse(c middleware.Controller) (ErrorHandler, error) {
 				handler.LogFile = where
 			} else {
 				// Error page; ensure it exists
+				where = path.Join(c.Root(), where)
 				f, err := os.Open(where)
 				if err != nil {
 					return hadBlock, c.Err("Unable to open error page '" + where + "': " + err.Error())
