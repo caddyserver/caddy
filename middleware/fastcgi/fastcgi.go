@@ -60,14 +60,21 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 		// we probably want to exclude static assets (CSS, JS, images...)
 		// but we also want to be flexible for the script we proxy to.
 
+		path := r.URL.Path
+
 		// These criteria work well in this order for PHP sites
-		if middleware.Path(r.URL.Path).Matches(rule.Path) &&
-			(r.URL.Path[len(r.URL.Path)-1] == '/' ||
-				strings.HasSuffix(r.URL.Path, rule.Ext) ||
-				!h.exists(r.URL.Path)) {
+		if middleware.Path(path).Matches(rule.Path) &&
+			(path[len(path)-1] == '/' ||
+				strings.HasSuffix(path, rule.Ext) ||
+				!h.exists(path)) {
+
+			if path[len(path)-1] == '/' && h.exists(path+rule.IndexFile) {
+				// If index file in specified folder exists, send request to it
+				path += rule.IndexFile
+			}
 
 			// Create environment for CGI script
-			env, err := h.buildEnv(r, rule)
+			env, err := h.buildEnv(r, rule, path)
 			if err != nil {
 				return http.StatusInternalServerError, err
 			}
@@ -123,11 +130,11 @@ func (h Handler) exists(path string) bool {
 	return false
 }
 
-func (h Handler) buildEnv(r *http.Request, rule Rule) (map[string]string, error) {
+func (h Handler) buildEnv(r *http.Request, rule Rule, path string) (map[string]string, error) {
 	var env map[string]string
 
 	// Get absolute path of requested resource
-	absPath, err := filepath.Abs(h.Root + r.URL.Path)
+	absPath, err := filepath.Abs(h.Root + path)
 	if err != nil {
 		return env, err
 	}
@@ -142,19 +149,19 @@ func (h Handler) buildEnv(r *http.Request, rule Rule) (map[string]string, error)
 	}
 
 	// Split path in preparation for env variables
-	splitPos := strings.Index(r.URL.Path, rule.SplitPath)
+	splitPos := strings.Index(path, rule.SplitPath)
 	var docURI, scriptName, scriptFilename, pathInfo string
 	if splitPos == -1 {
-		// Request doesn't have the extension, so assume index file
+		// Request doesn't have the extension, so assume index file in root
 		docURI = "/" + rule.IndexFile
 		scriptName = "/" + rule.IndexFile
 		scriptFilename = h.Root + "/" + rule.IndexFile
-		pathInfo = r.URL.Path
+		pathInfo = path
 	} else {
 		// Request has the extension; path was split successfully
-		docURI = r.URL.Path[:splitPos+len(rule.SplitPath)]
-		pathInfo = r.URL.Path[splitPos+len(rule.SplitPath):]
-		scriptName = r.URL.Path
+		docURI = path[:splitPos+len(rule.SplitPath)]
+		pathInfo = path[splitPos+len(rule.SplitPath):]
+		scriptName = path
 		scriptFilename = absPath
 	}
 
