@@ -99,7 +99,13 @@ func (fh *fileHandler) serveFile(w http.ResponseWriter, r *http.Request, name st
 	// If the file is supposed to be hidden, return a 404
 	// (TODO: If the slice gets large, a set may be faster)
 	for _, hiddenPath := range fh.hide {
-		if d.Name() == hiddenPath {
+		// Case-insensitive file systems may have loaded "CaddyFile" when
+		// we think we got "Caddyfile", which poses a security risk if we
+		// aren't careful here: case-insensitive comparison is required!
+		// TODO: This matches file NAME only, regardless of path. In other
+		// words, trying to serve another file with the same name as the
+		// active config file will result in a 404 when it shouldn't.
+		if strings.EqualFold(d.Name(), path.Base(hiddenPath)) {
 			return http.StatusNotFound, nil
 		}
 	}
