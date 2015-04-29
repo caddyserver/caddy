@@ -170,8 +170,8 @@ func TestParserBasicWithMultipleHostsPerBlock(t *testing.T) {
 		if confs[0].Host != "host1.com" {
 			t.Errorf("Expected host of first conf to be 'host1.com', got '%s'", confs[0].Host)
 		}
-		if confs[0].Port != defaultPort {
-			t.Errorf("Expected port of first conf to be '%s', got '%s'", defaultPort, confs[0].Port)
+		if confs[0].Port != DefaultPort {
+			t.Errorf("Expected port of first conf to be '%s', got '%s'", DefaultPort, confs[0].Port)
 		}
 		if confs[0].Root != "/public_html" {
 			t.Errorf("Expected root of first conf to be '/public_html', got '%s'", confs[0].Root)
@@ -255,8 +255,8 @@ func TestParserBasicWithAlternateAddressStyles(t *testing.T) {
 	if confs[4].Host != "host" {
 		t.Errorf("Expected conf[4] Host='host', got '%#v'", confs[4])
 	}
-	if confs[4].Port != defaultPort {
-		t.Errorf("Expected conf[4] Port='%s', got '%#v'", defaultPort, confs[4].Port)
+	if confs[4].Port != DefaultPort {
+		t.Errorf("Expected conf[4] Port='%s', got '%#v'", DefaultPort, confs[4].Port)
 	}
 }
 

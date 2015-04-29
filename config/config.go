@@ -11,13 +11,16 @@ import (
 )
 
 const (
-	defaultHost = "localhost"
-	defaultPort = "2015"
-	defaultRoot = "."
+	DefaultHost = "localhost"
+	DefaultPort = "2015"
+	DefaultRoot = "."
 
 	// The default configuration file to load if none is specified
 	DefaultConfigFile = "Caddyfile"
 )
+
+// Port is configurable via command line flag
+var Port = DefaultPort
 
 // config represents a server configuration. It
 // is populated by parsing a config file (via the
@@ -113,9 +116,9 @@ func IsNotFound(err error) bool {
 func Default() []Config {
 	cfg := []Config{
 		Config{
-			Root: defaultRoot,
-			Host: defaultHost,
-			Port: defaultPort,
+			Root: DefaultRoot,
+			Host: DefaultHost,
+			Port: Port,
 		},
 	}
 	return cfg

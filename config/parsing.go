@@ -47,7 +47,7 @@ func (p *parser) addresses() error {
 			schemePort = "http"
 			str = str[7:]
 		} else if !strings.Contains(str, ":") {
-			str += ":" + defaultPort
+			str += ":" + Port
 		}
 
 		host, port, err = net.SplitHostPort(str)
