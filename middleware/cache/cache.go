@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/dustin/go-humanize"
@@ -13,6 +14,7 @@ import (
 )
 
 // Example line in CaddyFile: cache 60 128mb 10mb
+// Arguments are max-age in seconds, max cache size, max size for an individual file in the cache
 
 // Cache is an http.Handler that can remembers and sends back stored responses
 type Cache struct {
@@ -20,6 +22,7 @@ type Cache struct {
 	Lifetime int
 	Entries  map[string]CacheEntry // url -> entry
 	Rule     Rule
+	Mutex    sync.RWMutex
 }
 
 type CacheEntry struct {
@@ -105,7 +108,10 @@ func (c Cache) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	if r.Method == "GET" {
 		key := r.RequestURI
 		now := time.Now().Unix()
+
+		c.Mutex.RLock()
 		entry, inCache := c.Entries[key]
+		c.Mutex.RUnlock()
 
 		if inCache && now-entry.created < c.Rule.MaxAge && ClientAllowsCaching(r) {
 			entry.lastUsed = time.Now().Unix()
@@ -120,7 +126,9 @@ func (c Cache) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 
 			if normalResponse && bodySize < c.Rule.MaxCacheEntrySize && ServerAllowsCaching(record.Header()) {
 				// adds response to cache
+				c.Mutex.Lock()
 				c.Entries[key] = entry
+				c.Mutex.Unlock()
 			}
 		}
 
