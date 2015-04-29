@@ -161,6 +161,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		host = r.Host // oh well
 	}
 
+	// Try the host as given, or try falling back to 0.0.0.0 (wildcard)
+	if _, ok := s.vhosts[host]; !ok {
+		if _, ok2 := s.vhosts["0.0.0.0"]; ok2 {
+			host = "0.0.0.0"
+		}
+	}
+
 	if vh, ok := s.vhosts[host]; ok {
 		w.Header().Set("Server", "Caddy")
 
