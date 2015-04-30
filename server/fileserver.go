@@ -41,10 +41,14 @@ func (f *fileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, er
 func (fh *fileHandler) serveFile(w http.ResponseWriter, r *http.Request, name string) (int, error) {
 	f, err := fh.root.Open(name)
 	if err != nil {
-		if os.IsPermission(err) {
+		if os.IsNotExist(err) {
 			return http.StatusForbidden, err
+		} else if os.IsPermission(err) {
+			return http.StatusNotFound, nil
 		}
-		return http.StatusNotFound, nil
+		// Likely the server is under load and ran out of file descriptors
+		w.Header().Set("Retry-After", "5") // TODO: 5 seconds enough delay? Or too much?
+		return http.StatusServiceUnavailable, err
 	}
 	defer f.Close()
 
@@ -52,8 +56,11 @@ func (fh *fileHandler) serveFile(w http.ResponseWriter, r *http.Request, name st
 	if err1 != nil {
 		if os.IsPermission(err) {
 			return http.StatusForbidden, err
+		} else if os.IsNotExist(err) {
+			return http.StatusNotFound, nil
 		}
-		return http.StatusNotFound, nil
+		// Return a different status code than above so as to distinguish these cases
+		return http.StatusInternalServerError, err
 	}
 
 	// redirect to canonical path
