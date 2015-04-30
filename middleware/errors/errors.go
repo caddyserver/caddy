@@ -113,8 +113,11 @@ func (h ErrorHandler) errorPage(w http.ResponseWriter, code int) {
 	http.Error(w, defaultBody, code)
 }
 
-func parse(c middleware.Controller) (ErrorHandler, error) {
-	handler := ErrorHandler{ErrorPages: make(map[int]string)}
+func parse(c middleware.Controller) (*ErrorHandler, error) {
+	// Very important that we make a pointer because the Startup
+	// function that opens the log file must have access to the
+	// same instance of the handler, not a copy.
+	handler := &ErrorHandler{ErrorPages: make(map[int]string)}
 
 	optionalBlock := func() (bool, error) {
 		var hadBlock bool
