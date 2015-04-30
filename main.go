@@ -27,6 +27,7 @@ func init() {
 	flag.BoolVar(&http2, "http2", true, "enable HTTP/2 support") // TODO: temporary flag until http2 merged into std lib
 	flag.BoolVar(&quiet, "quiet", false, "quiet mode (no initialization output)")
 	flag.StringVar(&cpu, "cpu", "100%", "CPU cap")
+	flag.StringVar(&config.Host, "host", config.DefaultHost, "Default host")
 	flag.StringVar(&config.Port, "port", config.DefaultPort, "Default port")
 	flag.Parse()
 }
