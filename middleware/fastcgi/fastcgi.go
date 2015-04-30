@@ -111,12 +111,15 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			w.WriteHeader(resp.StatusCode)
 
 			// Write the response body
+			// TODO: If this has an error, the response will already be
+			// partly written. We should copy out of resp.Body into a buffer
+			// first, then write it to the response...
 			_, err = io.Copy(w, resp.Body)
 			if err != nil {
 				return http.StatusBadGateway, err
 			}
 
-			return resp.StatusCode, nil
+			return 0, nil
 		}
 	}
 
