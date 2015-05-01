@@ -5,6 +5,7 @@ import (
 	"github.com/mholt/caddy/middleware"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -45,7 +46,7 @@ func parse(c middleware.Controller) (*Repo, error) {
 
 		switch len(args) {
 		case 2:
-			repo.Path = args[1]
+			repo.Path = filepath.Join(c.Root(), args[1])
 			fallthrough
 		case 1:
 			repo.Url = args[0]
@@ -62,7 +63,7 @@ func parse(c middleware.Controller) (*Repo, error) {
 				if !c.NextArg() {
 					return nil, c.ArgErr()
 				}
-				repo.Path = c.Val()
+				repo.Path = filepath.Join(c.Root(), c.Val())
 			case "branch":
 				if !c.NextArg() {
 					return nil, c.ArgErr()

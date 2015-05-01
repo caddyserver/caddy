@@ -13,8 +13,9 @@
 // 		and https(e.g. https://github.com/user/project) are supported.
 //		Can be specified in either config block or top level
 //
-// 	path 	- directory to pull into
+// 	path 	- directory to pull into, relative to site root
 //		optional. Defaults to site root.
+//		If set, must be a subdirectory to site root to be valid.
 //
 // 	branch 	- git branch or tag
 //		optional. Defaults to master
@@ -30,10 +31,10 @@
 // public repo pulled into site root
 //	git github.com/user/myproject
 //
-// public repo pulled into mysite
+// public repo pulled into <root>/mysite
 //	git https://github.com/user/myproject mysite
 //
-// private repo pulled into mysite with tag v1.0 and interval of 1 day
+// private repo pulled into <root>/mysite with tag v1.0 and interval of 1 day
 //	git {
 //		repo 	git@github.com:user/myproject
 //		branch 	v1.0
