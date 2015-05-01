@@ -42,6 +42,13 @@ By default, Caddy serves the current directory at [localhost:2015](http://localh
 Caddy accepts some flags from the command line. Run `caddy -h` to view the help for flags.
 
 
+
+#### Docker Container
+
+Caddy is [available as a Docker container](https://registry.hub.docker.com/u/darron/caddy/).
+
+
+
 #### 3rd-party libraries
 
 Although Caddy's binaries are completely static, Caddy relies on some excellent libraries that really make the project possible.
@@ -52,6 +59,7 @@ Although Caddy's binaries are completely static, Caddy relies on some excellent 
 - [flynn/go-shlex](https://github.com/flynn/go-shlex) to parse shell commands properly
 
 This list may not be comprehensive, but [godoc.org](https://godoc.org/github.com/mholt/caddy) will list all packages that any given package imports.
+
 
 ## Quick Start
 
