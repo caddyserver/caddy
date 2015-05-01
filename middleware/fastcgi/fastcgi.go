@@ -200,6 +200,11 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, path string) (map[string]s
 		"SCRIPT_NAME":     scriptName,
 	}
 
+	// Add env variables from config
+	for _, envVar := range rule.EnvVars {
+		env[envVar[0]] = envVar[1]
+	}
+
 	// Add all HTTP headers to env variables
 	for field, val := range r.Header {
 		header := strings.ToUpper(field)
@@ -253,6 +258,12 @@ func parse(c middleware.Controller) ([]Rule, error) {
 					return rules, c.ArgErr()
 				}
 				rule.IndexFile = c.Val()
+			case "env":
+				envArgs := c.RemainingArgs()
+				if len(envArgs) < 2 {
+					return rules, c.ArgErr()
+				}
+				rule.EnvVars = append(rule.EnvVars, [2]string{envArgs[0], envArgs[1]})
 			}
 		}
 
@@ -295,6 +306,9 @@ type Rule struct {
 
 	// If the URL does not indicate a file, an index file with this name will be assumed.
 	IndexFile string
+
+	// Environment Variables
+	EnvVars [][2]string
 }
 
 var headerNameReplacer = strings.NewReplacer(" ", "_", "-", "_")
