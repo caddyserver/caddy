@@ -28,6 +28,16 @@ func init() {
 				return p.argErr()
 			}
 			p.cfg.Root = p.tkn()
+
+			// Ensure root folder exists
+			_, err := os.Stat(p.cfg.Root)
+			if err != nil {
+				if os.IsNotExist(err) {
+					return p.err("Path", "Root path "+p.cfg.Root+" does not exist")
+				} else {
+					return p.err("Path", "Unable to access root path "+p.cfg.Root)
+				}
+			}
 			return nil
 		},
 		"import": func(p *parser) error {
