@@ -31,6 +31,8 @@ Caddy binaries have no dependencies and are available for nearly every platform.
 
 ## Running from Source
 
+NOTE: You will need Go **version 1.4** or greater
+
 1. `$ go get github.com/mholt/caddy`
 2. `cd` into your website's directory
 3. Run `caddy` (assumes `$GOPATH/bin` is in your `$PATH`)
