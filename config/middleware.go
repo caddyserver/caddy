@@ -7,6 +7,7 @@ import (
 	"github.com/mholt/caddy/middleware/errors"
 	"github.com/mholt/caddy/middleware/extensions"
 	"github.com/mholt/caddy/middleware/fastcgi"
+	"github.com/mholt/caddy/middleware/git"
 	"github.com/mholt/caddy/middleware/gzip"
 	"github.com/mholt/caddy/middleware/headers"
 	"github.com/mholt/caddy/middleware/log"
@@ -48,6 +49,7 @@ func init() {
 	register("ext", extensions.New)
 	register("basicauth", basicauth.New)
 	register("proxy", proxy.New)
+	register("git", git.New)
 	register("fastcgi", fastcgi.New)
 	register("websocket", websockets.New)
 	register("markdown", markdown.New)
