@@ -72,7 +72,7 @@ func main() {
 			defer wg.Done()
 			err := s.Serve()
 			if err != nil {
-				log.Println(err)
+				log.Fatal(err) // kill whole process to avoid a half-alive zombie server
 			}
 		}(s)
 
