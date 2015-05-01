@@ -1,6 +1,8 @@
 package config
 
 import (
+	"fmt"
+	"log"
 	"os"
 	"os/exec"
 
@@ -30,12 +32,14 @@ func init() {
 			p.cfg.Root = p.tkn()
 
 			// Ensure root folder exists
-			_, err := os.Stat(p.cfg.Root)
+			_, err := os.Open(p.cfg.Root)
 			if err != nil {
 				if os.IsNotExist(err) {
-					return p.err("Path", "Root path "+p.cfg.Root+" does not exist")
+					// Allow this, because the folder might appear later.
+					// But make sure the user knows!
+					log.Printf("Warning: Root path %s does not exist", p.cfg.Root)
 				} else {
-					return p.err("Path", "Unable to access root path "+p.cfg.Root)
+					return p.err("Path", fmt.Sprintf("Unable to access root path '%s': %s", p.cfg.Root, err.Error()))
 				}
 			}
 			return nil
