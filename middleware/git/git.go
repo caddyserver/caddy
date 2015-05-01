@@ -2,29 +2,19 @@ package git
 
 import (
 	"fmt"
-	"github.com/mholt/caddy/middleware"
-	"net/http"
+	"log"
 	"net/url"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/mholt/caddy/middleware"
 )
 
-// Git represents a middleware instance that pulls git repository.
-type Git struct {
-	Next middleware.Handler
-	Repo *Repo
-}
-
-// ServeHTTP satisfies the middleware.Handler interface.
-func (g Git) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
-	if err := g.Repo.Pull(); err != nil {
-		return 500, err
-	}
-	return g.Next.ServeHTTP(w, r)
-}
+// Logger is used to log errors; if nil, the default log.Logger is used.
+var Logger *log.Logger
 
 // New creates a new instance of git middleware.
 func New(c middleware.Controller) (middleware.Middleware, error) {
@@ -32,10 +22,30 @@ func New(c middleware.Controller) (middleware.Middleware, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = repo.Pull()
-	return func(next middleware.Handler) middleware.Handler {
-		return Git{Next: next, Repo: repo}
-	}, err
+
+	c.Startup(func() error {
+		// Startup functions are blocking; start
+		// service routine in background
+		go func() {
+			for {
+				time.Sleep(repo.Interval)
+
+				err := repo.Pull()
+				if err != nil {
+					if Logger == nil {
+						log.Println(err)
+					} else {
+						Logger.Println(err)
+					}
+				}
+			}
+		}()
+
+		// Do a pull right away to return error
+		return repo.Pull()
+	})
+
+	return nil, err
 }
 
 func parse(c middleware.Controller) (*Repo, error) {

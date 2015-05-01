@@ -31,28 +31,13 @@ type Repo struct {
 	Branch   string        // Git branch
 	KeyPath  string        // Path to private ssh key
 	Interval time.Duration // Interval between pulls
-	pulled   bool          // true if there is a successful pull
+	pulled   bool          // true if there was a successful pull
 	lastPull time.Time     // time of the last successful pull
 	sync.Mutex
 }
 
-// Pull requests a repository pull.
-// If it has been performed previously, it returns
-// and requests another pull in background.
-// Otherwise it waits until the pull is done.
+// Pull performs git clone, or git pull if repository exists
 func (r *Repo) Pull() error {
-	// if site is not pulled, pull
-	if !r.pulled {
-		return pull(r)
-	}
-
-	// request pull in background
-	go pull(r)
-	return nil
-}
-
-// pull performs git clone, or git pull if repository exists
-func pull(r *Repo) error {
 	r.Lock()
 	defer r.Unlock()
 	// if it is less than interval since last pull, return
