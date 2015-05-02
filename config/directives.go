@@ -32,7 +32,7 @@ func init() {
 			p.cfg.Root = p.tkn()
 
 			// Ensure root folder exists
-			_, err := os.Open(p.cfg.Root)
+			_, err := os.Stat(p.cfg.Root)
 			if err != nil {
 				if os.IsNotExist(err) {
 					// Allow this, because the folder might appear later.
