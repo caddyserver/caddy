@@ -64,6 +64,15 @@ type gzipResponseWriter struct {
 	http.ResponseWriter
 }
 
+// WriteHeader wraps the underlying WriteHeader method to prevent
+// problems with conflicting headers from proxied backends. For
+// example, a backend system that calculates Content-Length would
+// be wrong because it doesn't know it's being gzipped.
+func (w gzipResponseWriter) WriteHeader(code int) {
+	w.Header().Del("Content-Length")
+	w.ResponseWriter.WriteHeader(code)
+}
+
 // Write wraps the underlying Write method to do compression.
 func (w gzipResponseWriter) Write(b []byte) (int, error) {
 	if w.Header().Get("Content-Type") == "" {
