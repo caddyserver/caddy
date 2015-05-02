@@ -1,19 +1,24 @@
 package git
 
 import (
+	"bytes"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"os"
 	"os/exec"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/mholt/caddy/middleware"
 )
 
 // DefaultInterval is the minimum interval to delay before
 // requesting another git pull
 const DefaultInterval time.Duration = time.Hour * 1
+
+// Number of retries if git pull fails
+const numRetries = 3
 
 // gitBinary holds the absolute path to git executable
 var gitBinary string
@@ -25,18 +30,21 @@ var initMutex sync.Mutex = sync.Mutex{}
 // Repo is the structure that holds required information
 // of a git repository.
 type Repo struct {
-	Url      string        // Repository URL
-	Path     string        // Directory to pull to
-	Host     string        // Git domain host e.g. github.com
-	Branch   string        // Git branch
-	KeyPath  string        // Path to private ssh key
-	Interval time.Duration // Interval between pulls
-	pulled   bool          // true if there was a successful pull
-	lastPull time.Time     // time of the last successful pull
+	Url        string        // Repository URL
+	Path       string        // Directory to pull to
+	Host       string        // Git domain host e.g. github.com
+	Branch     string        // Git branch
+	KeyPath    string        // Path to private ssh key
+	Interval   time.Duration // Interval between pulls
+	Then       string        // Command to execute after successful git pull
+	pulled     bool          // true if there was a successful pull
+	lastPull   time.Time     // time of the last successful pull
+	lastCommit string        // hash for the most recent commit
 	sync.Mutex
 }
 
-// Pull performs git clone, or git pull if repository exists
+// Pull attempts a git clone.
+// It retries at most numRetries times if error occurs
 func (r *Repo) Pull() error {
 	r.Lock()
 	defer r.Unlock()
@@ -45,6 +53,33 @@ func (r *Repo) Pull() error {
 		return nil
 	}
 
+	// keep last commit hash for comparison later
+	lastCommit := r.lastCommit
+
+	var err error
+	// Attempt to pull at most numRetries times
+	for i := 0; i < numRetries; i++ {
+		if err = r.pull(); err == nil {
+			break
+		}
+		logger().Println(err)
+	}
+
+	if err != nil {
+		return err
+	}
+
+	// check if there are new changes,
+	// then execute post pull command
+	if r.lastCommit == lastCommit {
+		logger().Println("No new changes.")
+		return nil
+	}
+	return r.postPullCommand()
+}
+
+// Pull performs git clone, or git pull if repository exists
+func (r *Repo) pull() error {
 	params := []string{"clone", "-b", r.Branch, r.Url, r.Path}
 	if r.pulled {
 		params = []string{"pull", "origin", r.Branch}
@@ -52,35 +87,27 @@ func (r *Repo) Pull() error {
 
 	// if key is specified, pull using ssh key
 	if r.KeyPath != "" {
-		return pullWithKey(r, params)
+		return r.pullWithKey(params)
 	}
 
-	cmd := exec.Command(gitBinary, params...)
-	cmd.Env = os.Environ()
-	cmd.Stdout = os.Stderr
-	cmd.Stderr = os.Stderr
+	dir := ""
 	if r.pulled {
-		cmd.Dir = r.Path
+		dir = r.Path
 	}
 
 	var err error
-	if err = cmd.Start(); err != nil {
-		return err
-	}
-
-	if err = cmd.Wait(); err == nil {
+	if err = runCmd(gitBinary, params, dir); err == nil {
 		r.pulled = true
 		r.lastPull = time.Now()
-		log.Printf("%v pulled.\n", r.Url)
+		logger().Printf("%v pulled.\n", r.Url)
+		r.lastCommit, err = r.getMostRecentCommit()
 	}
-
 	return err
 }
 
-// pullWithKey performs git clone or git pull if repository exists.
-// It is used for private repositories and requires an ssh key.
+// pullWithKey is used for private repositories and requires an ssh key.
 // Note: currently only limited to Linux and OSX.
-func pullWithKey(r *Repo, params []string) error {
+func (r *Repo) pullWithKey(params []string) error {
 	var gitSsh, script *os.File
 	// ensure temporary files deleted after usage
 	defer func() {
@@ -105,30 +132,23 @@ func pullWithKey(r *Repo, params []string) error {
 		return err
 	}
 
-	// execute the git clone bash script
-	cmd := exec.Command(script.Name())
-	cmd.Env = os.Environ()
-	cmd.Stdout = os.Stderr
-	cmd.Stderr = os.Stderr
+	dir := ""
 	if r.pulled {
-		cmd.Dir = r.Path
+		dir = r.Path
 	}
 
-	if err = cmd.Start(); err != nil {
-		return err
-	}
-
-	if err = cmd.Wait(); err == nil {
+	if err = runCmd(script.Name(), nil, dir); err == nil {
 		r.pulled = true
 		r.lastPull = time.Now()
-		log.Printf("%v pulled.\n", r.Url)
+		logger().Printf("%v pulled.\n", r.Url)
+		r.lastCommit, err = r.getMostRecentCommit()
 	}
 	return err
 }
 
 // prepare prepares for a git pull
 // and validates the configured directory
-func prepare(r *Repo) error {
+func (r *Repo) prepare() error {
 	// check if directory exists or is empty
 	// if not, create directory
 	fs, err := ioutil.ReadDir(r.Path)
@@ -148,7 +168,7 @@ func prepare(r *Repo) error {
 	if isGit {
 		// check if same repository
 		var repoUrl string
-		if repoUrl, err = getRepoUrl(r.Path); err == nil && repoUrl == r.Url {
+		if repoUrl, err = r.getRepoUrl(); err == nil && repoUrl == r.Url {
 			r.pulled = true
 			return nil
 		}
@@ -160,23 +180,42 @@ func prepare(r *Repo) error {
 	return fmt.Errorf("Cannot git clone into %v, directory not empty.", r.Path)
 }
 
+// getMostRecentCommit gets the hash of the most recent commit to the
+// repository. Useful for checking if changes occur.
+func (r *Repo) getMostRecentCommit() (string, error) {
+	command := gitBinary + ` --no-pager log -n 1 --pretty=format:"%H"`
+	c, args, err := middleware.SplitCommandAndArgs(command)
+	if err != nil {
+		return "", err
+	}
+	return runCmdOutput(c, args, r.Path)
+}
+
 // getRepoUrl retrieves remote origin url for the git repository at path
-func getRepoUrl(path string) (string, error) {
+func (r *Repo) getRepoUrl() (string, error) {
+	_, err := os.Stat(r.Path)
+	if err != nil {
+		return "", err
+	}
 	args := []string{"config", "--get", "remote.origin.url"}
+	return runCmdOutput(gitBinary, args, r.Path)
+}
 
-	_, err := os.Stat(path)
+// postPullCommand executes r.Then.
+// It is trigged after successful git pull
+func (r *Repo) postPullCommand() error {
+	if r.Then == "" {
+		return nil
+	}
+	c, args, err := middleware.SplitCommandAndArgs(r.Then)
 	if err != nil {
-		return "", err
+		return err
 	}
 
-	cmd := exec.Command(gitBinary, args...)
-	cmd.Dir = path
-	output, err := cmd.Output()
-	if err != nil {
-		return "", err
+	if err = runCmd(c, args, r.Path); err == nil {
+		logger().Printf("Command %v successful.\n", r.Then)
 	}
-
-	return strings.TrimSpace(string(output)), nil
+	return err
 }
 
 // initGit validates git installation and locates the git executable
@@ -197,6 +236,33 @@ func initGit() error {
 	gitBinary, err = exec.LookPath("git")
 	return err
 
+}
+
+// runCmd is a helper function to run commands.
+// It runs command with args from directory at dir.
+// The executed process outputs to os.Stderr
+func runCmd(command string, args []string, dir string) error {
+	cmd := exec.Command(command, args...)
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stderr
+	cmd.Dir = dir
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	return cmd.Wait()
+}
+
+// runCmdOutput is a helper function to run commands and return output.
+// It runs command with args from directory at dir.
+// If successful, returns output and nil error
+func runCmdOutput(command string, args []string, dir string) (string, error) {
+	cmd := exec.Command(command, args...)
+	cmd.Dir = dir
+	var err error
+	if output, err := cmd.Output(); err == nil {
+		return string(bytes.TrimSpace(output)), nil
+	}
+	return "", err
 }
 
 // writeScriptFile writes content to a temporary file.

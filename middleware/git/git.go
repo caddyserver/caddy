@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/url"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -56,7 +57,7 @@ func parse(c middleware.Controller) (*Repo, error) {
 
 		switch len(args) {
 		case 2:
-			repo.Path = filepath.Join(c.Root(), args[1])
+			repo.Path = filepath.Clean(c.Root() + string(filepath.Separator) + args[1])
 			fallthrough
 		case 1:
 			repo.Url = args[0]
@@ -73,7 +74,7 @@ func parse(c middleware.Controller) (*Repo, error) {
 				if !c.NextArg() {
 					return nil, c.ArgErr()
 				}
-				repo.Path = filepath.Join(c.Root(), c.Val())
+				repo.Path = filepath.Clean(c.Root() + string(filepath.Separator) + c.Val())
 			case "branch":
 				if !c.NextArg() {
 					return nil, c.ArgErr()
@@ -92,6 +93,12 @@ func parse(c middleware.Controller) (*Repo, error) {
 				if t > 0 {
 					repo.Interval = time.Duration(t) * time.Second
 				}
+			case "then":
+				thenArgs := c.RemainingArgs()
+				if len(thenArgs) == 0 {
+					return nil, c.ArgErr()
+				}
+				repo.Then = strings.Join(thenArgs, " ")
 			}
 		}
 	}
@@ -125,7 +132,7 @@ func parse(c middleware.Controller) (*Repo, error) {
 		return nil, err
 	}
 
-	return repo, prepare(repo)
+	return repo, repo.prepare()
 }
 
 // sanitizeHttp cleans up repository url and converts to https format
@@ -164,4 +171,12 @@ func sanitizeGit(repoUrl string) (string, string, error) {
 	i := strings.Index(hostUrl, ":")
 	host := hostUrl[:i]
 	return repoUrl, host, nil
+}
+
+// logger is an helper function to retrieve the available logger
+func logger() *log.Logger {
+	if Logger == nil {
+		Logger = log.New(os.Stderr, "", log.LstdFlags)
+	}
+	return Logger
 }

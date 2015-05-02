@@ -7,6 +7,7 @@
 //		branch
 //		key
 //		interval
+//		then command args
 //	}
 //	repo 	- git repository
 // 		compulsory. Both ssh (e.g. git@github.com:user/project.git)
@@ -15,7 +16,6 @@
 //
 // 	path 	- directory to pull into, relative to site root
 //		optional. Defaults to site root.
-//		If set, must be a subdirectory to site root to be valid.
 //
 // 	branch 	- git branch or tag
 //		optional. Defaults to master
@@ -26,6 +26,9 @@
 // 	interval- interval between git pulls in seconds
 //		optional. Defaults to 3600 (1 Hour).
 //
+//	then	- command to execute after successful pull
+//		optional. If set, will execute only when there are new changes.
+//
 // Examples :
 //
 // public repo pulled into site root
@@ -34,7 +37,7 @@
 // public repo pulled into <root>/mysite
 //	git https://github.com/user/myproject mysite
 //
-// private repo pulled into <root>/mysite with tag v1.0 and interval of 1 day
+// private repo pulled into <root>/mysite with tag v1.0 and interval of 1 day.
 //	git {
 //		repo 	git@github.com:user/myproject
 //		branch 	v1.0
