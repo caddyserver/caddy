@@ -1,0 +1,91 @@
+package proxy
+
+import (
+	"math/rand"
+	"sync/atomic"
+)
+
+type HostPool []*UpstreamHost
+
+// Policy decides how a host will be selected from a pool.
+type Policy interface {
+	Select(pool HostPool) *UpstreamHost
+}
+
+// The random policy randomly selected an up host from the pool.
+type Random struct{}
+
+func (r *Random) Select(pool HostPool) *UpstreamHost {
+	// instead of just generating a random index
+	// this is done to prevent selecting a down host
+	var randHost *UpstreamHost
+	count := 0
+	for _, host := range pool {
+		if host.Down() {
+			continue
+		}
+		count++
+		if count == 1 {
+			randHost = host
+		} else {
+			r := rand.Int() % count
+			if r == (count - 1) {
+				randHost = host
+			}
+		}
+	}
+	return randHost
+}
+
+// The least_conn policy selects a host with the least connections.
+// If multiple hosts have the least amount of connections, one is randomly
+// chosen.
+type LeastConn struct{}
+
+func (r *LeastConn) Select(pool HostPool) *UpstreamHost {
+	var bestHost *UpstreamHost
+	count := 0
+	leastConn := int64(1<<63 - 1)
+	for _, host := range pool {
+		if host.Down() {
+			continue
+		}
+		hostConns := host.Conns
+		if hostConns < leastConn {
+			bestHost = host
+			leastConn = hostConns
+			count = 1
+		} else if hostConns == leastConn {
+			// randomly select host among hosts with least connections
+			count++
+			if count == 1 {
+				bestHost = host
+			} else {
+				r := rand.Int() % count
+				if r == (count - 1) {
+					bestHost = host
+				}
+			}
+		}
+	}
+	return bestHost
+}
+
+// The round_robin policy selects a host based on round robin ordering.
+type RoundRobin struct {
+	Robin uint32
+}
+
+func (r *RoundRobin) Select(pool HostPool) *UpstreamHost {
+	poolLen := uint32(len(pool))
+	selection := atomic.AddUint32(&r.Robin, 1) % poolLen
+	host := pool[selection]
+	// if the currently selected host is down, just ffwd to up host
+	for i := uint32(1); host.Down() && i < poolLen; i++ {
+		host = pool[(selection+i)%poolLen]
+	}
+	if host.Down() {
+		return nil
+	}
+	return host
+}
