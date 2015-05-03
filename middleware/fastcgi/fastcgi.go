@@ -85,14 +85,21 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 				return http.StatusBadGateway, err
 			}
 
-			// TODO: Allow more methods (requires refactoring fcgiclient first...)
 			var resp *http.Response
+			contentLength, _ := strconv.Atoi(r.Header.Get("Content-Length"))
 			switch r.Method {
+			case "HEAD":
+				resp, err = fcgi.Head(env)
 			case "GET":
 				resp, err = fcgi.Get(env)
 			case "POST":
-				l, _ := strconv.Atoi(r.Header.Get("Content-Length"))
-				resp, err = fcgi.Post(env, r.Header.Get("Content-Type"), r.Body, l)
+				resp, err = fcgi.Post(env, r.Header.Get("Content-Type"), r.Body, contentLength)
+			case "PUT":
+				resp, err = fcgi.Put(env, r.Header.Get("Content-Type"), r.Body, contentLength)
+			case "PATCH":
+				resp, err = fcgi.Patch(env, r.Header.Get("Content-Type"), r.Body, contentLength)
+			case "DELETE":
+				resp, err = fcgi.Delete(env, r.Header.Get("Content-Type"), r.Body, contentLength)
 			default:
 				return http.StatusMethodNotAllowed, nil
 			}
