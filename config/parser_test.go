@@ -318,13 +318,13 @@ func TestParserLocationContext(t *testing.T) {
 	}
 
 	if p.other[0].path != "/" {
-		t.Fatalf("Expected first path scope to be default '/', but got %d: %#v", p.other[0].path, p.other)
+		t.Fatalf("Expected first path scope to be default '/', but got %v: %#v", p.other[0].path, p.other)
 	}
 	if p.other[1].path != "/scope" {
-		t.Fatalf("Expected first path scope to be '/scope', but got %d: %#v", p.other[0].path, p.other)
+		t.Fatalf("Expected first path scope to be '/scope', but got %v: %#v", p.other[0].path, p.other)
 	}
 
 	if dir, ok := p.other[1].directives["gzip"]; !ok {
-		t.Fatalf("Expected scoped directive to be gzip, but got %d: %#v", dir, p.other[1].directives)
+		t.Fatalf("Expected scoped directive to be gzip, but got %v: %#v", dir, p.other[1].directives)
 	}
 }
