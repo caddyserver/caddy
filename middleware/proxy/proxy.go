@@ -2,51 +2,118 @@
 package proxy
 
 import (
-	"net/http"
-	"net/http/httputil"
-	"net/url"
-	"strings"
-
+	"errors"
 	"github.com/mholt/caddy/middleware"
+	"net/http"
+	"net/url"
+	"sync/atomic"
+	"time"
 )
+
+var errUnreachable = errors.New("Unreachable backend")
 
 // Proxy represents a middleware instance that can proxy requests.
 type Proxy struct {
-	Next  middleware.Handler
-	Rules []Rule
+	Next      middleware.Handler
+	Upstreams []Upstream
+}
+
+// An upstream manages a pool of proxy upstream hosts. Select should return a
+// suitable upstream host, or nil if no such hosts are available.
+type Upstream interface {
+	// The path this upstream host should be routed on
+	From() string
+	// Selects an upstream host to be routed to.
+	Select() *UpstreamHost
+}
+
+type UpstreamHostDownFunc func(*UpstreamHost) bool
+
+// An UpstreamHost represents a single proxy upstream
+type UpstreamHost struct {
+	// The hostname of this upstream host
+	Name         string
+	ReverseProxy *ReverseProxy
+	Conns        int64
+	Fails        int32
+	FailTimeout  time.Duration
+	Unhealthy    bool
+	ExtraHeaders http.Header
+	CheckDown    UpstreamHostDownFunc
+}
+
+func (uh *UpstreamHost) Down() bool {
+	if uh.CheckDown == nil {
+		// Default settings
+		return uh.Unhealthy || uh.Fails > 0
+	}
+	return uh.CheckDown(uh)
 }
 
 // ServeHTTP satisfies the middleware.Handler interface.
 func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 
-	for _, rule := range p.Rules {
-		if middleware.Path(r.URL.Path).Matches(rule.From) {
-			var base string
+	for _, upstream := range p.Upstreams {
+		if middleware.Path(r.URL.Path).Matches(upstream.From()) {
+			var replacer middleware.Replacer
+			start := time.Now()
+			requestHost := r.Host
 
-			if strings.HasPrefix(rule.To, "http") { // includes https
-				// destination includes a scheme! no need to guess
-				base = rule.To
-			} else {
-				// no scheme specified; assume same as request
-				var scheme string
-				if r.TLS == nil {
-					scheme = "http"
-				} else {
-					scheme = "https"
+			// Since Select() should give us "up" hosts, keep retrying
+			// hosts until timeout (or until we get a nil host).
+			for time.Now().Sub(start) < (60 * time.Second) {
+				host := upstream.Select()
+				if host == nil {
+					return http.StatusBadGateway, errUnreachable
 				}
-				base = scheme + "://" + rule.To
-			}
+				proxy := host.ReverseProxy
+				r.Host = host.Name
 
-			baseUrl, err := url.Parse(base)
-			if err != nil {
-				return http.StatusInternalServerError, err
-			}
-			r.Host = baseUrl.Host
+				if baseUrl, err := url.Parse(host.Name); err == nil {
+					r.Host = baseUrl.Host
+					if proxy == nil {
+						proxy = NewSingleHostReverseProxy(baseUrl)
+					}
+				} else if proxy == nil {
+					return http.StatusInternalServerError, err
+				}
+				var extraHeaders http.Header
+				if host.ExtraHeaders != nil {
+					extraHeaders = make(http.Header)
+					if replacer == nil {
+						rHost := r.Host
+						r.Host = requestHost
+						replacer = middleware.NewReplacer(r, nil)
+						r.Host = rHost
+					}
+					for header, values := range host.ExtraHeaders {
+						for _, value := range values {
+							extraHeaders.Add(header,
+								replacer.Replace(value))
+							if header == "Host" {
+								r.Host = replacer.Replace(value)
+							}
+						}
+					}
+				}
 
-			// TODO: Construct this before; not during every request, if possible
-			proxy := httputil.NewSingleHostReverseProxy(baseUrl)
-			proxy.ServeHTTP(w, r)
-			return 0, nil
+				atomic.AddInt64(&host.Conns, 1)
+				backendErr := proxy.ServeHTTP(w, r, extraHeaders)
+				atomic.AddInt64(&host.Conns, -1)
+				if backendErr == nil {
+					return 0, nil
+				}
+				timeout := host.FailTimeout
+				if timeout == 0 {
+					timeout = 10 * time.Second
+				}
+				atomic.AddInt32(&host.Fails, 1)
+				go func(host *UpstreamHost, timeout time.Duration) {
+					time.Sleep(timeout)
+					atomic.AddInt32(&host.Fails, -1)
+				}(host, timeout)
+			}
+			return http.StatusBadGateway, errUnreachable
 		}
 	}
 
@@ -55,30 +122,11 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 
 // New creates a new instance of proxy middleware.
 func New(c middleware.Controller) (middleware.Middleware, error) {
-	rules, err := parse(c)
-	if err != nil {
+	if upstreams, err := newStaticUpstreams(c); err == nil {
+		return func(next middleware.Handler) middleware.Handler {
+			return Proxy{Next: next, Upstreams: upstreams}
+		}, nil
+	} else {
 		return nil, err
 	}
-
-	return func(next middleware.Handler) middleware.Handler {
-		return Proxy{Next: next, Rules: rules}
-	}, nil
-}
-
-func parse(c middleware.Controller) ([]Rule, error) {
-	var rules []Rule
-
-	for c.Next() {
-		var rule Rule
-		if !c.Args(&rule.From, &rule.To) {
-			return rules, c.ArgErr()
-		}
-		rules = append(rules, rule)
-	}
-
-	return rules, nil
-}
-
-type Rule struct {
-	From, To string
 }

@@ -8,17 +8,21 @@ import (
 	"time"
 )
 
-// replacer is a type which can replace placeholder
+// Replacer is a type which can replace placeholder
 // substrings in a string with actual values from a
 // http.Request and responseRecorder. Always use
 // NewReplacer to get one of these.
+type Replacer interface {
+	Replace(string) string
+}
+
 type replacer map[string]string
 
 // NewReplacer makes a new replacer based on r and rr.
 // Do not create a new replacer until r and rr have all
 // the needed values, because this function copies those
 // values into the replacer.
-func NewReplacer(r *http.Request, rr *responseRecorder) replacer {
+func NewReplacer(r *http.Request, rr *responseRecorder) Replacer {
 	rep := replacer{
 		"{method}": r.Method,
 		"{scheme}": func() string {
@@ -33,6 +37,9 @@ func NewReplacer(r *http.Request, rr *responseRecorder) replacer {
 		"{fragment}": r.URL.Fragment,
 		"{proto}":    r.Proto,
 		"{remote}": func() string {
+			if fwdFor := r.Header.Get("X-Forwarded-For"); fwdFor != "" {
+				return fwdFor
+			}
 			host, _, err := net.SplitHostPort(r.RemoteAddr)
 			if err != nil {
 				return r.RemoteAddr
@@ -50,9 +57,11 @@ func NewReplacer(r *http.Request, rr *responseRecorder) replacer {
 		"{when}": func() string {
 			return time.Now().Format(timeFormat)
 		}(),
-		"{status}":  strconv.Itoa(rr.status),
-		"{size}":    strconv.Itoa(rr.size),
-		"{latency}": time.Since(rr.start).String(),
+	}
+	if rr != nil {
+		rep["{status}"] = strconv.Itoa(rr.status)
+		rep["{size}"] = strconv.Itoa(rr.size)
+		rep["{latency}"] = time.Since(rr.start).String()
 	}
 
 	// Header placeholders
