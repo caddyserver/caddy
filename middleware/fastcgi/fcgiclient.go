@@ -407,6 +407,15 @@ func (this *FCGIClient) Get(p map[string]string) (resp *http.Response, err error
 	return this.Request(p, nil)
 }
 
+// Head issues a HEAD request to the fcgi responder.
+func (this *FCGIClient) Head(p map[string]string) (resp *http.Response, err error) {
+
+	p["REQUEST_METHOD"] = "HEAD"
+	p["CONTENT_LENGTH"] = "0"
+
+	return this.Request(p, nil)
+}
+
 // Get issues a Post request to the fcgi responder. with request body
 // in the format that bodyType specified
 func (this *FCGIClient) Post(p map[string]string, bodyType string, body io.Reader, l int) (resp *http.Response, err error) {
@@ -422,6 +431,30 @@ func (this *FCGIClient) Post(p map[string]string, bodyType string, body io.Reade
 	}
 
 	return this.Request(p, body)
+}
+
+// Put issues a PUT request to the fcgi responder.
+func (this *FCGIClient) Put(p map[string]string, bodyType string, body io.Reader, l int) (resp *http.Response, err error) {
+
+	p["REQUEST_METHOD"] = "PUT"
+
+	return this.Post(p, bodyType, body, l)
+}
+
+// Patch issues a PATCH request to the fcgi responder.
+func (this *FCGIClient) Patch(p map[string]string, bodyType string, body io.Reader, l int) (resp *http.Response, err error) {
+
+	p["REQUEST_METHOD"] = "PATCH"
+
+	return this.Post(p, bodyType, body, l)
+}
+
+// Delete issues a DELETE request to the fcgi responder.
+func (this *FCGIClient) Delete(p map[string]string, bodyType string, body io.Reader, l int) (resp *http.Response, err error) {
+
+	p["REQUEST_METHOD"] = "DELETE"
+
+	return this.Post(p, bodyType, body, l)
 }
 
 // PostForm issues a POST to the fcgi responder, with form
