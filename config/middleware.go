@@ -4,6 +4,7 @@ import (
 	"github.com/mholt/caddy/middleware"
 	"github.com/mholt/caddy/middleware/basicauth"
 	"github.com/mholt/caddy/middleware/browse"
+	"github.com/mholt/caddy/middleware/cache"
 	"github.com/mholt/caddy/middleware/errors"
 	"github.com/mholt/caddy/middleware/extensions"
 	"github.com/mholt/caddy/middleware/fastcgi"
@@ -42,6 +43,7 @@ import (
 func init() {
 	register("log", log.New)
 	register("gzip", gzip.New)
+	register("cache", cache.New)
 	register("errors", errors.New)
 	register("header", headers.New)
 	register("rewrite", rewrite.New)
