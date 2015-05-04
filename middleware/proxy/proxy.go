@@ -3,11 +3,12 @@ package proxy
 
 import (
 	"errors"
-	"github.com/mholt/caddy/middleware"
 	"net/http"
 	"net/url"
 	"sync/atomic"
 	"time"
+
+	"github.com/mholt/caddy/middleware"
 )
 
 var errUnreachable = errors.New("Unreachable backend")
@@ -21,8 +22,8 @@ type Proxy struct {
 // An upstream manages a pool of proxy upstream hosts. Select should return a
 // suitable upstream host, or nil if no such hosts are available.
 type Upstream interface {
-	// The path this upstream host should be routed on
-	From() string
+	//The path this upstream host should be routed on
+	from() string
 	// Selects an upstream host to be routed to.
 	Select() *UpstreamHost
 }
@@ -54,7 +55,7 @@ func (uh *UpstreamHost) Down() bool {
 func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 
 	for _, upstream := range p.Upstreams {
-		if middleware.Path(r.URL.Path).Matches(upstream.From()) {
+		if middleware.Path(r.URL.Path).Matches(upstream.from()) {
 			var replacer middleware.Replacer
 			start := time.Now()
 			requestHost := r.Host
@@ -118,15 +119,4 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	}
 
 	return p.Next.ServeHTTP(w, r)
-}
-
-// New creates a new instance of proxy middleware.
-func New(c middleware.Controller) (middleware.Middleware, error) {
-	if upstreams, err := newStaticUpstreams(c); err == nil {
-		return func(next middleware.Handler) middleware.Handler {
-			return Proxy{Next: next, Upstreams: upstreams}
-		}, nil
-	} else {
-		return nil, err
-	}
 }
