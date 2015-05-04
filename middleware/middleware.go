@@ -7,8 +7,6 @@ type (
 	// Middleware is the middle layer which represents the traditional
 	// idea of middleware: it chains one Handler to the next by being
 	// passed the next Handler in the chain.
-	//
-	// Note: This type will be moved into a different package in the future.
 	Middleware func(Handler) Handler
 
 	// Handler is like http.Handler except ServeHTTP returns a status code
