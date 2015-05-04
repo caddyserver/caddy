@@ -4,12 +4,6 @@ package middleware
 import "net/http"
 
 type (
-	// Generator represents the outer layer of a middleware that
-	// parses tokens to configure the middleware instance.
-	//
-	// Note: This type will be moved into a different package in the future.
-	Generator func(Controller) (Middleware, error)
-
 	// Middleware is the middle layer which represents the traditional
 	// idea of middleware: it chains one Handler to the next by being
 	// passed the next Handler in the chain.
@@ -45,86 +39,11 @@ type (
 		ServeHTTP(http.ResponseWriter, *http.Request) (int, error)
 	}
 
-	// A Controller provides access to properties of the server. Middleware
-	// generators use a Controller to construct their instances.
-	Controller interface {
-		Dispenser
-
-		// Startup registers a function to execute when the server starts.
-		Startup(func() error)
-
-		// Shutdown registers a function to execute when the server exits.
-		Shutdown(func() error)
-
-		// Root returns the file path from which the server is serving.
-		Root() string
-
-		// Context returns the path scope that the Controller is in.
-		// Note: This is not currently used, but may be in the future.
-		Context() Path
-	}
-
-	// A Dispenser provides structured access to tokens from a configuration
-	// file. It dispenses tokens to middleware for parsing so that middleware
-	// can configure themselves.
-	Dispenser interface {
-		// Next loads the next token. Returns true if a token
-		// was loaded; false otherwise. If false, all tokens
-		// have already been consumed.
-		Next() bool
-
-		// NextArg loads the next token if it is on the same
-		// line. Returns true if a token was loaded; false
-		// otherwise. If false, all tokens on the line have
-		// been consumed.
-		NextArg() bool
-
-		// NextLine loads the next token only if it is NOT on the same
-		// line as the current token, and returns true if a token was
-		// loaded; false otherwise. If false, there is not another token
-		// or it is on the same line.
-		NextLine() bool
-
-		// NextBlock can be used as the condition of a for loop
-		// to load the next token as long as it opens a block or
-		// is already in a block. It returns true if a token was
-		// loaded, or false when the block's closing curly brace
-		// was loaded and thus the block ended. Nested blocks are
-		// not (currently) supported.
-		NextBlock() bool
-
-		// Val gets the text of the current token.
-		Val() string
-
-		// Args is a convenience function that loads the next arguments
-		// (tokens on the same line) into an arbitrary number of strings
-		// pointed to in arguments. If there are fewer tokens available
-		// than string pointers, the remaining strings will not be changed
-		// and false will be returned. If there were enough tokens available
-		// to fill the arguments, then true will be returned.
-		Args(...*string) bool
-
-		// RemainingArgs loads any more arguments (tokens on the same line)
-		// into a slice and returns them. Open curly brace tokens also indicate
-		// the end of arguments, and the curly brace is not included in
-		// the return value nor is it loaded.
-		RemainingArgs() []string
-
-		// ArgErr returns an argument error, meaning that another
-		// argument was expected but not found. In other words,
-		// a line break, EOF, or open curly brace was encountered instead of
-		// an argument.
-		ArgErr() error
-
-		// Err generates a custom parse error with a message of msg.
-		Err(string) error
-	}
+	// HandlerFunc is a convenience type like http.HandlerFunc, except
+	// ServeHTTP returns a status code and an error. See Handler
+	// documentation for more information.
+	HandlerFunc func(http.ResponseWriter, *http.Request) (int, error)
 )
-
-// HandlerFunc is a convenience type like http.HandlerFunc, except
-// ServeHTTP returns a status code and an error. See Handler
-// documentation for more information.
-type HandlerFunc func(http.ResponseWriter, *http.Request) (int, error)
 
 // ServeHTTP implements the Handler interface.
 func (f HandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
