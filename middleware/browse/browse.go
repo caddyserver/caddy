@@ -4,9 +4,7 @@ package browse
 
 import (
 	"bytes"
-	"fmt"
 	"html/template"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
@@ -23,11 +21,11 @@ import (
 type Browse struct {
 	Next    middleware.Handler
 	Root    string
-	Configs []BrowseConfig
+	Configs []Config
 }
 
-// BrowseConfig is a configuration for browsing in a particular path.
-type BrowseConfig struct {
+// Config is a configuration for browsing in a particular path.
+type Config struct {
 	PathScope string
 	Template  *template.Template
 }
@@ -70,24 +68,6 @@ var IndexPages = []string{
 	"index.htm",
 	"default.html",
 	"default.htm",
-}
-
-// New creates a new instance of browse middleware.
-func New(c middleware.Controller) (middleware.Middleware, error) {
-	configs, err := parse(c)
-	if err != nil {
-		return nil, err
-	}
-
-	browse := Browse{
-		Root:    c.Root(),
-		Configs: configs,
-	}
-
-	return func(next middleware.Handler) middleware.Handler {
-		browse.Next = next
-		return browse
-	}, nil
 }
 
 // ServeHTTP implements the middleware.Handler interface.
@@ -195,57 +175,4 @@ func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 
 	// Didn't qualify; pass-thru
 	return b.Next.ServeHTTP(w, r)
-}
-
-// parse returns a list of browsing configurations
-func parse(c middleware.Controller) ([]BrowseConfig, error) {
-	var configs []BrowseConfig
-
-	appendCfg := func(bc BrowseConfig) error {
-		for _, c := range configs {
-			if c.PathScope == bc.PathScope {
-				return fmt.Errorf("Duplicate browsing config for %s", c.PathScope)
-			}
-		}
-		configs = append(configs, bc)
-		return nil
-	}
-
-	for c.Next() {
-		var bc BrowseConfig
-
-		// First argument is directory to allow browsing; default is site root
-		if c.NextArg() {
-			bc.PathScope = c.Val()
-		} else {
-			bc.PathScope = "/"
-		}
-
-		// Second argument would be the template file to use
-		var tplText string
-		if c.NextArg() {
-			tplBytes, err := ioutil.ReadFile(c.Val())
-			if err != nil {
-				return configs, err
-			}
-			tplText = string(tplBytes)
-		} else {
-			tplText = defaultTemplate
-		}
-
-		// Build the template
-		tpl, err := template.New("listing").Parse(tplText)
-		if err != nil {
-			return configs, err
-		}
-		bc.Template = tpl
-
-		// Save configuration
-		err = appendCfg(bc)
-		if err != nil {
-			return configs, err
-		}
-	}
-
-	return configs, nil
 }

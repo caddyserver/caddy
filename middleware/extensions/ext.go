@@ -1,8 +1,9 @@
-// Package extension is middleware for clean URLs. The root path
-// of the site is passed in as well as possible extensions to try
-// internally for paths requested that don't match an existing
-// resource. The first path+ext combination that matches a valid
-// file will be used.
+// Package extension is middleware for clean URLs.
+//
+// The root path of the site is passed in as well as possible extensions
+// to try internally for paths requested that don't match an existing
+// resource. The first path+ext combination that matches a valid file
+// will be used.
 package extensions
 
 import (
@@ -13,25 +14,6 @@ import (
 
 	"github.com/mholt/caddy/middleware"
 )
-
-// New creates a new instance of middleware that assumes extensions
-// so the site can use cleaner, extensionless URLs
-func New(c middleware.Controller) (middleware.Middleware, error) {
-	root := c.Root()
-
-	extensions, err := parse(c)
-	if err != nil {
-		return nil, err
-	}
-
-	return func(next middleware.Handler) middleware.Handler {
-		return Ext{
-			Next:       next,
-			Extensions: extensions,
-			Root:       root,
-		}
-	}, nil
-}
 
 // Ext can assume an extension from clean URLs.
 // It tries extensions in the order listed in Extensions.
@@ -58,25 +40,6 @@ func (e Ext) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 		}
 	}
 	return e.Next.ServeHTTP(w, r)
-}
-
-// parse sets up an instance of extension middleware
-// from a middleware controller and returns a list of extensions.
-func parse(c middleware.Controller) ([]string, error) {
-	var extensions []string
-
-	for c.Next() {
-		// At least one extension is required
-		if !c.NextArg() {
-			return extensions, c.ArgErr()
-		}
-		extensions = append(extensions, c.Val())
-
-		// Tack on any other extensions that may have been listed
-		extensions = append(extensions, c.RemainingArgs()...)
-	}
-
-	return extensions, nil
 }
 
 // resourceExists returns true if the file specified at

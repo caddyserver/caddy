@@ -12,7 +12,7 @@ import (
 // WebSocket represents a web socket server instance. A WebSocket
 // is instantiated for each new websocket request/connection.
 type WebSocket struct {
-	WSConfig
+	Config
 	*http.Request
 }
 

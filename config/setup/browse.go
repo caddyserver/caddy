@@ -1,4 +1,83 @@
-package browse
+package setup
+
+import (
+	"fmt"
+	"html/template"
+	"io/ioutil"
+
+	"github.com/mholt/caddy/middleware"
+	"github.com/mholt/caddy/middleware/browse"
+)
+
+// Browse configures a new Browse middleware instance.
+func Browse(c *Controller) (middleware.Middleware, error) {
+	configs, err := browseParse(c)
+	if err != nil {
+		return nil, err
+	}
+
+	browse := browse.Browse{
+		Root:    c.Root,
+		Configs: configs,
+	}
+
+	return func(next middleware.Handler) middleware.Handler {
+		browse.Next = next
+		return browse
+	}, nil
+}
+
+func browseParse(c *Controller) ([]browse.Config, error) {
+	var configs []browse.Config
+
+	appendCfg := func(bc browse.Config) error {
+		for _, c := range configs {
+			if c.PathScope == bc.PathScope {
+				return fmt.Errorf("Duplicate browsing config for %s", c.PathScope)
+			}
+		}
+		configs = append(configs, bc)
+		return nil
+	}
+
+	for c.Next() {
+		var bc browse.Config
+
+		// First argument is directory to allow browsing; default is site root
+		if c.NextArg() {
+			bc.PathScope = c.Val()
+		} else {
+			bc.PathScope = "/"
+		}
+
+		// Second argument would be the template file to use
+		var tplText string
+		if c.NextArg() {
+			tplBytes, err := ioutil.ReadFile(c.Val())
+			if err != nil {
+				return configs, err
+			}
+			tplText = string(tplBytes)
+		} else {
+			tplText = defaultTemplate
+		}
+
+		// Build the template
+		tpl, err := template.New("listing").Parse(tplText)
+		if err != nil {
+			return configs, err
+		}
+		bc.Template = tpl
+
+		// Save configuration
+		err = appendCfg(bc)
+		if err != nil {
+			return configs, err
+		}
+	}
+
+	return configs, nil
+}
 
 // The default template to use when serving up directory listings
 const defaultTemplate = `<!DOCTYPE html>

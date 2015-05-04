@@ -24,11 +24,11 @@ type Markdown struct {
 	Next middleware.Handler
 
 	// The list of markdown configurations
-	Configs []MarkdownConfig
+	Configs []Config
 }
 
-// MarkdownConfig stores markdown middleware configurations.
-type MarkdownConfig struct {
+// Config stores markdown middleware configurations.
+type Config struct {
 	// Markdown renderer
 	Renderer blackfriday.Renderer
 
@@ -43,25 +43,6 @@ type MarkdownConfig struct {
 
 	// List of JavaScript files to load for each markdown file
 	Scripts []string
-}
-
-// New creates a new instance of Markdown middleware that
-// renders markdown to HTML on-the-fly.
-func New(c middleware.Controller) (middleware.Middleware, error) {
-	mdconfigs, err := parse(c)
-	if err != nil {
-		return nil, err
-	}
-
-	md := Markdown{
-		Root:    c.Root(),
-		Configs: mdconfigs,
-	}
-
-	return func(next middleware.Handler) middleware.Handler {
-		md.Next = next
-		return md
-	}, nil
 }
 
 // ServeHTTP implements the http.Handler interface.
@@ -123,56 +104,6 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 
 	// Didn't qualify to serve as markdown; pass-thru
 	return md.Next.ServeHTTP(w, r)
-}
-
-// parse creates new instances of Markdown middleware.
-func parse(c middleware.Controller) ([]MarkdownConfig, error) {
-	var mdconfigs []MarkdownConfig
-
-	for c.Next() {
-		md := MarkdownConfig{
-			Renderer: blackfriday.HtmlRenderer(0, "", ""),
-		}
-
-		// Get the path scope
-		if !c.NextArg() || c.Val() == "{" {
-			return mdconfigs, c.ArgErr()
-		}
-		md.PathScope = c.Val()
-
-		// Load any other configuration parameters
-		for c.NextBlock() {
-			switch c.Val() {
-			case "ext":
-				exts := c.RemainingArgs()
-				if len(exts) == 0 {
-					return mdconfigs, c.ArgErr()
-				}
-				md.Extensions = append(md.Extensions, exts...)
-			case "css":
-				if !c.NextArg() {
-					return mdconfigs, c.ArgErr()
-				}
-				md.Styles = append(md.Styles, c.Val())
-			case "js":
-				if !c.NextArg() {
-					return mdconfigs, c.ArgErr()
-				}
-				md.Scripts = append(md.Scripts, c.Val())
-			default:
-				return mdconfigs, c.Err("Expected valid markdown configuration property")
-			}
-		}
-
-		// If no extensions were specified, assume .md
-		if len(md.Extensions) == 0 {
-			md.Extensions = []string{".md"}
-		}
-
-		mdconfigs = append(mdconfigs, md)
-	}
-
-	return mdconfigs, nil
 }
 
 const (
