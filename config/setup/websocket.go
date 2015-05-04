@@ -68,15 +68,10 @@ func WebSocket(c *Controller) (middleware.Middleware, error) {
 		})
 	}
 
-	websockets.GatewayInterface = envGatewayInterface
-	websockets.ServerSoftware = envServerSoftware
+	websockets.GatewayInterface = c.AppName + "-CGI/1.1"
+	websockets.ServerSoftware = c.AppName + "/" + c.AppVersion
 
 	return func(next middleware.Handler) middleware.Handler {
 		return websockets.WebSockets{Next: next, Sockets: websocks}
 	}, nil
 }
-
-const (
-	envGatewayInterface = "caddy-CGI/1.1"
-	envServerSoftware   = "caddy/" // TODO: Version
-)

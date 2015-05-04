@@ -25,9 +25,10 @@ func FastCGI(c *Controller) (middleware.Middleware, error) {
 			Next:            next,
 			Rules:           rules,
 			Root:            root,
-			SoftwareName:    "Caddy", // TODO: Once generators are not in the same pkg as handler, obtain this from some global const
-			SoftwareVersion: "",      // TODO: Get this from some global const too
-			// TODO: Set ServerName and ServerPort to correct values... (as user defined in config)
+			SoftwareName:    c.AppName,
+			SoftwareVersion: c.AppVersion,
+			ServerName:      c.Host,
+			ServerPort:      c.Port,
 		}
 	}, nil
 }

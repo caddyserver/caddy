@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net"
 	"os"
@@ -18,14 +20,15 @@ import (
 )
 
 var (
-	conf  string
-	http2 bool // TODO: temporary flag until http2 is standard
-	quiet bool
-	cpu   string
+	conf     string
+	http2    bool // TODO: temporary flag until http2 is standard
+	quiet    bool
+	cpu      string
+	confBody []byte // configuration data to use, piped from stdin
 )
 
 func init() {
-	flag.StringVar(&conf, "conf", config.DefaultConfigFile, "The configuration file to use")
+	flag.StringVar(&conf, "conf", "", "Configuration file to use")
 	flag.BoolVar(&http2, "http2", true, "Enable HTTP/2 support") // TODO: temporary flag until http2 merged into std lib
 	flag.BoolVar(&quiet, "quiet", false, "Quiet mode (no initialization output)")
 	flag.StringVar(&cpu, "cpu", "100%", "CPU cap")
@@ -33,6 +36,21 @@ func init() {
 	flag.StringVar(&config.Host, "host", config.DefaultHost, "Default host")
 	flag.StringVar(&config.Port, "port", config.DefaultPort, "Default port")
 	flag.Parse()
+
+	config.AppName = "Caddy"
+	config.AppVersion = "0.6.0"
+
+	// Load piped configuration data, if any
+	fi, err := os.Stdin.Stat()
+	if err != nil {
+		log.Fatal(err)
+	}
+	if fi.Mode()&os.ModeCharDevice == 0 {
+		confBody, err = ioutil.ReadAll(os.Stdin)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
 }
 
 func main() {
@@ -45,7 +63,7 @@ func main() {
 	}
 
 	// Load config from file
-	allConfigs, err := loadConfigs(conf)
+	allConfigs, err := loadConfigs()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -82,36 +100,37 @@ func main() {
 	wg.Wait()
 }
 
-// loadConfigs loads configuration from a file.
-func loadConfigs(confPath string) ([]server.Config, error) {
-	var allConfigs []server.Config
-
-	file, err := os.Open(confPath)
-	if err == nil {
-		defer file.Close()
-		allConfigs, err = config.Load(path.Base(confPath), file)
+// loadConfigs loads configuration from a file or stdin (piped).
+// Configuration is obtained from one of three sources, tried
+// in this order: 1. -conf flag, 2. stdin, 3. Caddyfile.
+// If none of those are available, a default configuration is
+// loaded.
+func loadConfigs() ([]server.Config, error) {
+	// -conf flag
+	if conf != "" {
+		file, err := os.Open(conf)
 		if err != nil {
-			return allConfigs, err
+			return []server.Config{}, err
 		}
-	} else {
+		defer file.Close()
+		return config.Load(path.Base(conf), file)
+	}
+
+	// stdin
+	if len(confBody) > 0 {
+		return config.Load("stdin", bytes.NewReader(confBody))
+	}
+
+	// Caddyfile
+	file, err := os.Open(config.DefaultConfigFile)
+	if err != nil {
 		if os.IsNotExist(err) {
-			// This is only a problem if the user
-			// explicitly specified a config file
-			if confPath != config.DefaultConfigFile {
-				return allConfigs, err
-			}
-		} else {
-			// ... but anything else is always a problem
-			return allConfigs, err
+			return []server.Config{config.Default()}, nil
 		}
+		return []server.Config{}, err
 	}
-
-	// If config file was empty or didn't exist, use default
-	if len(allConfigs) == 0 {
-		allConfigs = []server.Config{config.Default()}
-	}
-
-	return allConfigs, nil
+	defer file.Close()
+	return config.Load(config.DefaultConfigFile, file)
 }
 
 // arrangeBindings groups configurations by their bind address. For example,

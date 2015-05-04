@@ -199,7 +199,7 @@ func (d *Dispenser) Err(msg string) error {
 
 // Errf is like Err, but for formatted error messages
 func (d *Dispenser) Errf(format string, args ...interface{}) error {
-	return d.Err(fmt.Sprintf(format, args...)) // TODO: I think args needs to be args...
+	return d.Err(fmt.Sprintf(format, args...))
 }
 
 // numLineBreaks counts how many line breaks are in the token

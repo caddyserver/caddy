@@ -19,13 +19,6 @@ const (
 	DefaultConfigFile = "Caddyfile"
 )
 
-// These three defaults are configurable through the command line
-var (
-	Root = DefaultRoot
-	Host = DefaultHost
-	Port = DefaultPort
-)
-
 func Load(filename string, input io.Reader) ([]server.Config, error) {
 	var configs []server.Config
 
@@ -46,6 +39,9 @@ func Load(filename string, input io.Reader) ([]server.Config, error) {
 			Host:       sb.Host,
 			Port:       sb.Port,
 			Middleware: make(map[string][]middleware.Middleware),
+			ConfigFile: filename,
+			AppName:    AppName,
+			AppVersion: AppVersion,
 		}
 
 		// It is crucial that directives are executed in the proper order.
@@ -105,3 +101,14 @@ func Default() server.Config {
 		Port: Port,
 	}
 }
+
+// These three defaults are configurable through the command line
+var (
+	Root = DefaultRoot
+	Host = DefaultHost
+	Port = DefaultPort
+)
+
+// The application should set these so that various middlewares
+// can access the proper information for their own needs.
+var AppName, AppVersion string

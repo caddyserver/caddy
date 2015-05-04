@@ -63,7 +63,7 @@ func (ws WebSocket) buildEnv(cmdPath string) (metavars []string, err error) {
 		`PATH_TRANSLATED=`, // TODO
 		`QUERY_STRING=` + ws.URL.RawQuery,
 		`REMOTE_ADDR=` + remoteHost,
-		`REMOTE_HOST=` + remoteHost, // TODO (Host lookups are slow; make this configurable)
+		`REMOTE_HOST=` + remoteHost, // Host lookups are slow - don't do them
 		`REMOTE_IDENT=`,             // Not used
 		`REMOTE_PORT=` + remotePort,
 		`REMOTE_USER=`, // Not used,

@@ -34,6 +34,12 @@ type Config struct {
 
 	// The path to the configuration file from which this was loaded
 	ConfigFile string
+
+	// The name of the application
+	AppName string
+
+	// The application's version
+	AppVersion string
 }
 
 // Address returns the host:port of c as a string.
