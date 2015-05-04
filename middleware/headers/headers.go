@@ -13,7 +13,7 @@ import (
 // for requests matching a certain path.
 type Headers struct {
 	Next  middleware.Handler
-	Rules []HeaderRule
+	Rules []Rule
 }
 
 // ServeHTTP implements the middleware.Handler interface and serves requests,
@@ -30,9 +30,9 @@ func (h Headers) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 }
 
 type (
-	// HeaderRule groups a slice of HTTP headers by a URL pattern.
+	// Rule groups a slice of HTTP headers by a URL pattern.
 	// TODO: use http.Header type instead?
-	HeaderRule struct {
+	Rule struct {
 		Url     string
 		Headers []Header
 	}

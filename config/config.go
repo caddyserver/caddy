@@ -1,13 +1,13 @@
-// Package config contains utilities and types necessary for
-// launching specially-configured server instances.
 package config
 
 import (
+	"io"
 	"log"
-	"net"
-	"os"
 
+	"github.com/mholt/caddy/config/parse"
+	"github.com/mholt/caddy/config/setup"
 	"github.com/mholt/caddy/middleware"
+	"github.com/mholt/caddy/server"
 )
 
 const (
@@ -19,110 +19,89 @@ const (
 	DefaultConfigFile = "Caddyfile"
 )
 
-// Host and Port are configurable via command line flag
+// These three defaults are configurable through the command line
 var (
+	Root = DefaultRoot
 	Host = DefaultHost
 	Port = DefaultPort
 )
 
-// config represents a server configuration. It
-// is populated by parsing a config file (via the
-// Load function).
-type Config struct {
-	// The hostname or IP on which to serve
-	Host string
-
-	// The port to listen on
-	Port string
-
-	// The directory from which to serve files
-	Root string
-
-	// HTTPS configuration
-	TLS TLSConfig
-
-	// Middleware stack
-	Middleware map[string][]middleware.Middleware
-
-	// Functions (or methods) to execute at server start; these
-	// are executed before any parts of the server are configured,
-	// and the functions are blocking
-	Startup []func() error
-
-	// Functions (or methods) to execute when the server quits;
-	// these are executed in response to SIGINT and are blocking
-	Shutdown []func() error
-
-	// The path to the configuration file from which this was loaded
-	ConfigFile string
-}
-
-// Address returns the host:port of c as a string.
-func (c Config) Address() string {
-	return net.JoinHostPort(c.Host, c.Port)
-}
-
-// TLSConfig describes how TLS should be configured and used,
-// if at all. A certificate and key are both required.
-type TLSConfig struct {
-	Enabled     bool
-	Certificate string
-	Key         string
-}
-
-// Load loads a configuration file, parses it,
-// and returns a slice of Config structs which
-// can be used to create and configure server
-// instances.
-func Load(filename string) ([]Config, error) {
-	file, err := os.Open(filename)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
+func Load(filename string, input io.Reader) ([]server.Config, error) {
+	var configs []server.Config
 
 	// turn off timestamp for parsing
 	flags := log.Flags()
 	log.SetFlags(0)
 
-	p, err := newParser(file)
+	serverBlocks, err := parse.ServerBlocks(filename, input)
 	if err != nil {
-		return nil, err
+		return configs, err
 	}
 
-	cfgs, err := p.parse()
-	if err != nil {
-		return []Config{}, err
-	}
+	// Each server block represents a single server/address.
+	// Iterate each server block and make a config for each one,
+	// executing the directives that were parsed.
+	for _, sb := range serverBlocks {
+		config := server.Config{
+			Host:       sb.Host,
+			Port:       sb.Port,
+			Middleware: make(map[string][]middleware.Middleware),
+		}
 
-	for i := 0; i < len(cfgs); i++ {
-		cfgs[i].ConfigFile = filename
+		// It is crucial that directives are executed in the proper order.
+		for _, dir := range directiveOrder {
+			// Execute directive if it is in the server block
+			if tokens, ok := sb.Tokens[dir.name]; ok {
+				// Each setup function gets a controller, which is the
+				// server config and the dispenser containing only
+				// this directive's tokens.
+				controller := &setup.Controller{
+					Config:    &config,
+					Dispenser: parse.NewDispenserTokens(filename, tokens),
+				}
+
+				midware, err := dir.setup(controller)
+				if err != nil {
+					return configs, err
+				}
+				if midware != nil {
+					// TODO: For now, we only support the default path scope /
+					config.Middleware["/"] = append(config.Middleware["/"], midware)
+				}
+			}
+		}
+
+		if config.Port == "" {
+			config.Port = Port
+		}
+
+		configs = append(configs, config)
 	}
 
 	// restore logging settings
 	log.SetFlags(flags)
 
-	return cfgs, nil
+	return configs, nil
 }
 
-// IsNotFound returns whether or not the error is
-// one which indicates that the configuration file
-// was not found. (Useful for checking the error
-// returned from Load).
-func IsNotFound(err error) bool {
-	return os.IsNotExist(err)
-}
-
-// Default makes a default configuration
-// that's empty except for root, host, and port,
-// which are essential for serving the cwd.
-func Default() []Config {
-	cfg := []Config{
-		Config{
-			Root: DefaultRoot,
-			Host: Host,
-			Port: Port,
-		},
+// validDirective returns true if d is a valid
+// directive; false otherwise.
+func validDirective(d string) bool {
+	for _, dir := range directiveOrder {
+		if dir.name == d {
+			return true
+		}
 	}
-	return cfg
+	return false
+}
+
+// Default makes a default configuration which
+// is empty except for root, host, and port,
+// which are essentials for serving the cwd.
+func Default() server.Config {
+	return server.Config{
+		Root: Root,
+		Host: Host,
+		Port: Port,
+	}
 }

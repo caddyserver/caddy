@@ -3,7 +3,6 @@ package server
 import (
 	"net/http"
 
-	"github.com/mholt/caddy/config"
 	"github.com/mholt/caddy/middleware"
 )
 
@@ -12,7 +11,7 @@ import (
 // multiple sites on a single address, and this is what a
 // virtualHost allows us to do.
 type virtualHost struct {
-	config     config.Config
+	config     Config
 	fileServer middleware.Handler
 	stack      middleware.Handler
 }

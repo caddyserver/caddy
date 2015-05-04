@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
+	"path"
 	"runtime"
 	"strconv"
 	"strings"
@@ -23,10 +25,11 @@ var (
 )
 
 func init() {
-	flag.StringVar(&conf, "conf", config.DefaultConfigFile, "the configuration file to use")
-	flag.BoolVar(&http2, "http2", true, "enable HTTP/2 support") // TODO: temporary flag until http2 merged into std lib
-	flag.BoolVar(&quiet, "quiet", false, "quiet mode (no initialization output)")
+	flag.StringVar(&conf, "conf", config.DefaultConfigFile, "The configuration file to use")
+	flag.BoolVar(&http2, "http2", true, "Enable HTTP/2 support") // TODO: temporary flag until http2 merged into std lib
+	flag.BoolVar(&quiet, "quiet", false, "Quiet mode (no initialization output)")
 	flag.StringVar(&cpu, "cpu", "100%", "CPU cap")
+	flag.StringVar(&config.Root, "root", config.DefaultRoot, "Root path to default site")
 	flag.StringVar(&config.Host, "host", config.DefaultHost, "Default host")
 	flag.StringVar(&config.Port, "port", config.DefaultPort, "Default port")
 	flag.Parse()
@@ -42,16 +45,9 @@ func main() {
 	}
 
 	// Load config from file
-	allConfigs, err := config.Load(conf)
+	allConfigs, err := loadConfigs(conf)
 	if err != nil {
-		if config.IsNotFound(err) {
-			allConfigs = config.Default()
-		} else {
-			log.Fatal(err)
-		}
-	}
-	if len(allConfigs) == 0 {
-		allConfigs = config.Default()
+		log.Fatal(err)
 	}
 
 	// Group by address (virtual hosts)
@@ -86,13 +82,45 @@ func main() {
 	wg.Wait()
 }
 
+// loadConfigs loads configuration from a file.
+func loadConfigs(confPath string) ([]server.Config, error) {
+	var allConfigs []server.Config
+
+	file, err := os.Open(confPath)
+	if err == nil {
+		defer file.Close()
+		allConfigs, err = config.Load(path.Base(confPath), file)
+		if err != nil {
+			return allConfigs, err
+		}
+	} else {
+		if os.IsNotExist(err) {
+			// This is only a problem if the user
+			// explicitly specified a config file
+			if confPath != config.DefaultConfigFile {
+				return allConfigs, err
+			}
+		} else {
+			// ... but anything else is always a problem
+			return allConfigs, err
+		}
+	}
+
+	// If config file was empty or didn't exist, use default
+	if len(allConfigs) == 0 {
+		allConfigs = []server.Config{config.Default()}
+	}
+
+	return allConfigs, nil
+}
+
 // arrangeBindings groups configurations by their bind address. For example,
 // a server that should listen on localhost and another on 127.0.0.1 will
 // be grouped into the same address: 127.0.0.1. It will return an error
 // if the address lookup fails or if a TLS listener is configured on the
 // same address as a plaintext HTTP listener.
-func arrangeBindings(allConfigs []config.Config) (map[string][]config.Config, error) {
-	addresses := make(map[string][]config.Config)
+func arrangeBindings(allConfigs []server.Config) (map[string][]server.Config, error) {
+	addresses := make(map[string][]server.Config)
 
 	// Group configs by bind address
 	for _, conf := range allConfigs {

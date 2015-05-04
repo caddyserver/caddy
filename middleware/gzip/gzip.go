@@ -20,13 +20,6 @@ type Gzip struct {
 	Next middleware.Handler
 }
 
-// New creates a new gzip middleware instance.
-func New(c middleware.Controller) (middleware.Middleware, error) {
-	return func(next middleware.Handler) middleware.Handler {
-		return Gzip{Next: next}
-	}, nil
-}
-
 // ServeHTTP serves a gzipped response if the client supports it.
 func (g Gzip) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {

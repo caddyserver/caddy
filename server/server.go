@@ -13,7 +13,6 @@ import (
 	"os/signal"
 
 	"github.com/bradfitz/http2"
-	"github.com/mholt/caddy/config"
 )
 
 // Server represents an instance of a server, which serves
@@ -28,7 +27,7 @@ type Server struct {
 // New creates a new Server which will bind to addr and serve
 // the sites/hosts configured in configs. This function does
 // not start serving.
-func New(addr string, configs []config.Config, tls bool) (*Server, error) {
+func New(addr string, configs []Config, tls bool) (*Server, error) {
 	s := &Server{
 		address: addr,
 		tls:     tls,
@@ -93,7 +92,7 @@ func (s *Server) Serve() error {
 	}
 
 	if s.tls {
-		var tlsConfigs []config.TLSConfig
+		var tlsConfigs []TLSConfig
 		for _, vh := range s.vhosts {
 			tlsConfigs = append(tlsConfigs, vh.config.TLS)
 		}
@@ -107,7 +106,7 @@ func (s *Server) Serve() error {
 // multiple sites (different hostnames) to be served from the same address. This method is
 // adapted directly from the std lib's net/http ListenAndServeTLS function, which was
 // written by the Go Authors. It has been modified to support multiple certificate/key pairs.
-func ListenAndServeTLSWithSNI(srv *http.Server, tlsConfigs []config.TLSConfig) error {
+func ListenAndServeTLSWithSNI(srv *http.Server, tlsConfigs []TLSConfig) error {
 	addr := srv.Addr
 	if addr == "" {
 		addr = ":https"
