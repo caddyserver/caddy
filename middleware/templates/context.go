@@ -51,9 +51,13 @@ func (c context) Header(name string) string {
 	return c.req.Header.Get(name)
 }
 
-// RemoteAddr gets the address of the client making the request.
-func (c context) RemoteAddr() string {
-	return c.req.RemoteAddr
+// IP gets the (remote) IP address of the client making the request.
+func (c context) IP() string {
+	ip, _, err := net.SplitHostPort(c.req.RemoteAddr)
+	if err != nil {
+		return c.req.RemoteAddr
+	}
+	return ip
 }
 
 // URI returns the raw, unprocessed request URI (including query
