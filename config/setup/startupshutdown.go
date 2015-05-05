@@ -40,6 +40,7 @@ func registerCallback(c *Controller, list *[]func() error) error {
 
 		fn := func() error {
 			cmd := exec.Command(command, args...)
+			cmd.Stdin = os.Stdin
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
 
