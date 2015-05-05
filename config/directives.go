@@ -43,7 +43,7 @@ var directiveOrder = []directive{
 	// Essential directives that initialize vital configuration settings
 	{"root", setup.Root},
 	{"tls", setup.TLS},
-	{"bindaddr", setup.BindAddr},
+	{"bind", setup.BindHost},
 
 	// Other directives that don't create HTTP handlers
 	{"startup", setup.Startup},
