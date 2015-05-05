@@ -23,7 +23,7 @@ type Proxy struct {
 // suitable upstream host, or nil if no such hosts are available.
 type Upstream interface {
 	//The path this upstream host should be routed on
-	from() string
+	From() string
 	// Selects an upstream host to be routed to.
 	Select() *UpstreamHost
 }
@@ -55,7 +55,7 @@ func (uh *UpstreamHost) Down() bool {
 func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 
 	for _, upstream := range p.Upstreams {
-		if middleware.Path(r.URL.Path).Matches(upstream.from()) {
+		if middleware.Path(r.URL.Path).Matches(upstream.From()) {
 			var replacer middleware.Replacer
 			start := time.Now()
 			requestHost := r.Host
