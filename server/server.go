@@ -132,6 +132,9 @@ func ListenAndServeTLSWithSNI(srv *http.Server, tlsConfigs []TLSConfig) error {
 	}
 	config.BuildNameToCertificate()
 
+	// Add a session cache LRU algorithm with default capacity (64)
+	config.ClientSessionCache = tls.NewLRUClientSessionCache(0)
+
 	conn, err := net.Listen("tcp", addr)
 	if err != nil {
 		return err
