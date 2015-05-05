@@ -11,6 +11,9 @@ type Config struct {
 	// The hostname or IP on which to serve
 	Host string
 
+	// The address to bind on - defaults to Host if empty
+	BindAddress string
+
 	// The port to listen on
 	Port string
 
@@ -44,6 +47,9 @@ type Config struct {
 
 // Address returns the host:port of c as a string.
 func (c Config) Address() string {
+	if c.BindAddress != "" {
+		return net.JoinHostPort(c.BindAddress, c.Port)
+	}
 	return net.JoinHostPort(c.Host, c.Port)
 }
 
