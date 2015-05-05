@@ -3,6 +3,7 @@ package setup
 import (
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/mholt/caddy/middleware"
 )
@@ -20,11 +21,19 @@ func Shutdown(c *Controller) (middleware.Middleware, error) {
 // to the list of callback functions passed in by reference.
 func registerCallback(c *Controller, list *[]func() error) error {
 	for c.Next() {
-		if !c.NextArg() {
+		args := c.RemainingArgs()
+		if len(args) == 0 {
 			return c.ArgErr()
 		}
 
-		command, args, err := middleware.SplitCommandAndArgs(c.Val())
+		nonblock := false
+		if len(args) > 1 && args[len(args)-1] == "&" {
+			// Run command in background; non-blocking
+			nonblock = true
+			args = args[:len(args)-1]
+		}
+
+		command, args, err := middleware.SplitCommandAndArgs(strings.Join(args, " "))
 		if err != nil {
 			return c.Err(err.Error())
 		}
@@ -33,7 +42,12 @@ func registerCallback(c *Controller, list *[]func() error) error {
 			cmd := exec.Command(command, args...)
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
-			return cmd.Run()
+
+			if nonblock {
+				return cmd.Start()
+			} else {
+				return cmd.Run()
+			}
 		}
 
 		*list = append(*list, fn)
