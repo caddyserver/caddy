@@ -38,6 +38,7 @@ func Load(filename string, input io.Reader) ([]server.Config, error) {
 		config := server.Config{
 			Host:       sb.Host,
 			Port:       sb.Port,
+			Root:       Root,
 			Middleware: make(map[string][]middleware.Middleware),
 			ConfigFile: filename,
 			AppName:    AppName,
