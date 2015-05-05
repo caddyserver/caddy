@@ -7,6 +7,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"runtime"
+	"strings"
 
 	"github.com/mholt/caddy/middleware"
 )
@@ -20,12 +22,7 @@ type ErrorHandler struct {
 }
 
 func (h ErrorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
-	defer func() {
-		if rec := recover(); rec != nil {
-			h.Log.Printf("[PANIC %s] %v", r.URL.String(), rec)
-			h.errorPage(w, http.StatusInternalServerError)
-		}
-	}()
+	defer h.recovery(w, r)
 
 	status, err := h.Next.ServeHTTP(w, r)
 
@@ -76,6 +73,42 @@ func (h ErrorHandler) errorPage(w http.ResponseWriter, code int) {
 
 	// Default error response
 	http.Error(w, defaultBody, code)
+}
+
+func (h ErrorHandler) recovery(w http.ResponseWriter, r *http.Request) {
+	rec := recover()
+	if rec == nil {
+		return
+	}
+
+	// Obtain source of panic
+	// From: https://gist.github.com/swdunlop/9629168
+	var name, file string // function name, file name
+	var line int
+	var pc [16]uintptr
+	n := runtime.Callers(3, pc[:])
+	for _, pc := range pc[:n] {
+		fn := runtime.FuncForPC(pc)
+		if fn == nil {
+			continue
+		}
+		file, line = fn.FileLine(pc)
+		name = fn.Name()
+		if !strings.HasPrefix(name, "runtime.") {
+			break
+		}
+	}
+
+	// Trim file path
+	delim := "/caddy/"
+	pkgPathPos := strings.Index(file, delim)
+	if pkgPathPos > -1 && len(file) > pkgPathPos+len(delim) {
+		file = file[pkgPathPos+len(delim):]
+	}
+
+	// Currently we don't use the function name, as file:line is more conventional
+	h.Log.Printf("[PANIC %s] %s:%d - %v", r.URL.String(), file, line, rec)
+	h.errorPage(w, http.StatusInternalServerError)
 }
 
 const DefaultLogFilename = "error.log"
