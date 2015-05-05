@@ -1,6 +1,8 @@
 package setup
 
 import (
+	"net/http"
+
 	"github.com/mholt/caddy/middleware"
 	"github.com/mholt/caddy/middleware/templates"
 )
@@ -13,8 +15,9 @@ func Templates(c *Controller) (middleware.Middleware, error) {
 	}
 
 	tmpls := templates.Templates{
-		Root:  c.Root,
-		Rules: rules,
+		Rules:   rules,
+		Root:    c.Root,
+		FileSys: http.Dir(c.Root),
 	}
 
 	return func(next middleware.Handler) middleware.Handler {
@@ -43,6 +46,10 @@ func templatesParse(c *Controller) ([]templates.Rule, error) {
 			rule.Extensions = defaultExtensions
 		}
 
+		for _, ext := range rule.Extensions {
+			rule.IndexFiles = append(rule.IndexFiles, "index"+ext)
+		}
+
 		rules = append(rules, rule)
 	}
 
@@ -51,4 +58,4 @@ func templatesParse(c *Controller) ([]templates.Rule, error) {
 
 const defaultPath = "/"
 
-var defaultExtensions = []string{".html", ".htm", ".txt"}
+var defaultExtensions = []string{".html", ".htm", ".tmpl", ".tpl", ".txt"}

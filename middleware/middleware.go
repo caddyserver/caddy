@@ -1,7 +1,10 @@
 // Package middleware provides some types and functions common among middleware.
 package middleware
 
-import "net/http"
+import (
+	"net/http"
+	"path/filepath"
+)
 
 type (
 	// Middleware is the middle layer which represents the traditional
@@ -46,4 +49,25 @@ type (
 // ServeHTTP implements the Handler interface.
 func (f HandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	return f(w, r)
+}
+
+// IndexFile looks for a file in /root/fpath/indexFile for each string
+// in indexFiles. If an index file is found, it returns the root-relative
+// path to the file and true. If no index file is found, empty string
+// and false is returned. fpath must end in a forward slash '/'
+// otherwise no index files will be tried (directory paths must end
+// in a forward slash according to HTTP).
+func IndexFile(root http.FileSystem, fpath string, indexFiles []string) (string, bool) {
+	if fpath[len(fpath)-1] != '/' || root == nil {
+		return "", false
+	}
+	for _, indexFile := range indexFiles {
+		fp := filepath.Join(fpath, indexFile)
+		f, err := root.Open(fp)
+		if err == nil {
+			f.Close()
+			return fp, true
+		}
+	}
+	return "", false
 }

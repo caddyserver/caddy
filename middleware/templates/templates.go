@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"net/http"
 	"path"
+	"path/filepath"
 	"text/template"
 
 	"github.com/mholt/caddy/middleware"
@@ -17,15 +18,22 @@ func (t Templates) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 			continue
 		}
 
-		reqExt := path.Ext(r.URL.Path)
+		// Check for index files
+		fpath := r.URL.Path
+		if idx, ok := middleware.IndexFile(t.FileSys, fpath, rule.IndexFiles); ok {
+			fpath = idx
+		}
+
+		// Check the extension
+		reqExt := path.Ext(fpath)
 
 		for _, ext := range rule.Extensions {
 			if reqExt == ext {
 				// Create execution context
-				ctx := context{root: http.Dir(t.Root), req: r, URL: r.URL}
+				ctx := context{root: t.FileSys, req: r, URL: r.URL}
 
 				// Build the template
-				tpl, err := template.ParseFiles(t.Root + r.URL.Path)
+				tpl, err := template.ParseFiles(filepath.Join(t.Root, fpath))
 				if err != nil {
 					return http.StatusInternalServerError, err
 				}
@@ -48,9 +56,10 @@ func (t Templates) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 
 // Templates is middleware to render templated files as the HTTP response.
 type Templates struct {
-	Next  middleware.Handler
-	Root  string
-	Rules []Rule
+	Next    middleware.Handler
+	Rules   []Rule
+	Root    string
+	FileSys http.FileSystem
 }
 
 // Rule represents a template rule. A template will only execute
@@ -59,4 +68,5 @@ type Templates struct {
 type Rule struct {
 	Path       string
 	Extensions []string
+	IndexFiles []string
 }

@@ -20,11 +20,17 @@ type Markdown struct {
 	// Server root
 	Root string
 
+	// Jail the requests to site root with a mock file system
+	FileSys http.FileSystem
+
 	// Next HTTP handler in the chain
 	Next middleware.Handler
 
 	// The list of markdown configurations
 	Configs []Config
+
+	// The list of index files to try
+	IndexFiles []string
 }
 
 // Config stores markdown middleware configurations.
@@ -52,16 +58,24 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 			continue
 		}
 
-		for _, ext := range m.Extensions {
-			if strings.HasSuffix(r.URL.Path, ext) {
-				fpath := md.Root + r.URL.Path
+		fpath := r.URL.Path
+		if idx, ok := middleware.IndexFile(md.FileSys, fpath, md.IndexFiles); ok {
+			fpath = idx
+		}
 
-				body, err := ioutil.ReadFile(fpath)
+		for _, ext := range m.Extensions {
+			if strings.HasSuffix(fpath, ext) {
+				f, err := md.FileSys.Open(fpath)
 				if err != nil {
 					if os.IsPermission(err) {
 						return http.StatusForbidden, err
 					}
 					return http.StatusNotFound, nil
+				}
+
+				body, err := ioutil.ReadAll(f)
+				if err != nil {
+					return http.StatusInternalServerError, err
 				}
 
 				content := blackfriday.Markdown(body, m.Renderer, 0)

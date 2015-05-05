@@ -2,6 +2,7 @@ package setup
 
 import (
 	"errors"
+	"net/http"
 	"path/filepath"
 
 	"github.com/mholt/caddy/middleware"
@@ -10,7 +11,7 @@ import (
 
 // FastCGI configures a new FastCGI middleware instance.
 func FastCGI(c *Controller) (middleware.Middleware, error) {
-	root, err := filepath.Abs(c.Root)
+	absRoot, err := filepath.Abs(c.Root)
 	if err != nil {
 		return nil, err
 	}
@@ -24,7 +25,9 @@ func FastCGI(c *Controller) (middleware.Middleware, error) {
 		return fastcgi.Handler{
 			Next:            next,
 			Rules:           rules,
-			Root:            root,
+			Root:            c.Root,
+			AbsRoot:         absRoot,
+			FileSys:         http.Dir(c.Root),
 			SoftwareName:    c.AppName,
 			SoftwareVersion: c.AppVersion,
 			ServerName:      c.Host,
@@ -72,10 +75,11 @@ func fastcgiParse(c *Controller) ([]fastcgi.Rule, error) {
 				}
 				rule.SplitPath = c.Val()
 			case "index":
-				if !c.NextArg() {
+				args := c.RemainingArgs()
+				if len(args) == 0 {
 					return rules, c.ArgErr()
 				}
-				rule.IndexFile = c.Val()
+				rule.IndexFiles = args
 			case "env":
 				envArgs := c.RemainingArgs()
 				if len(envArgs) < 2 {
@@ -98,7 +102,7 @@ func fastcgiPreset(name string, rule *fastcgi.Rule) error {
 	case "php":
 		rule.Ext = ".php"
 		rule.SplitPath = ".php"
-		rule.IndexFile = "index.php"
+		rule.IndexFiles = []string{"index.php"}
 	default:
 		return errors.New(name + " is not a valid preset name")
 	}

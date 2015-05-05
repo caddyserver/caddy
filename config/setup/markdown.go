@@ -1,6 +1,8 @@
 package setup
 
 import (
+	"net/http"
+
 	"github.com/mholt/caddy/middleware"
 	"github.com/mholt/caddy/middleware/markdown"
 	"github.com/russross/blackfriday"
@@ -14,8 +16,10 @@ func Markdown(c *Controller) (middleware.Middleware, error) {
 	}
 
 	md := markdown.Markdown{
-		Root:    c.Root,
-		Configs: mdconfigs,
+		Root:       c.Root,
+		FileSys:    http.Dir(c.Root),
+		Configs:    mdconfigs,
+		IndexFiles: []string{"index.md"},
 	}
 
 	return func(next middleware.Handler) middleware.Handler {

@@ -16,9 +16,11 @@ import (
 
 // Handler is a middleware type that can handle requests as a FastCGI client.
 type Handler struct {
-	Next  middleware.Handler
-	Root  string // must be absolute path to site root
-	Rules []Rule
+	Next    middleware.Handler
+	Rules   []Rule
+	Root    string
+	AbsRoot string // same as root, but absolute path
+	FileSys http.FileSystem
 
 	// These are sent to CGI scripts in env variables
 	SoftwareName    string
@@ -30,26 +32,27 @@ type Handler struct {
 // ServeHTTP satisfies the middleware.Handler interface.
 func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	for _, rule := range h.Rules {
+
+		// First requirement: Base path must match
+		if !middleware.Path(r.URL.Path).Matches(rule.Path) {
+			continue
+		}
+
 		// In addition to matching the path, a request must meet some
 		// other criteria before being proxied as FastCGI. For example,
 		// we probably want to exclude static assets (CSS, JS, images...)
 		// but we also want to be flexible for the script we proxy to.
 
-		path := r.URL.Path
+		fpath := r.URL.Path
+		if idx, ok := middleware.IndexFile(h.FileSys, fpath, rule.IndexFiles); ok {
+			fpath = idx
+		}
 
 		// These criteria work well in this order for PHP sites
-		if middleware.Path(path).Matches(rule.Path) &&
-			(path[len(path)-1] == '/' ||
-				strings.HasSuffix(path, rule.Ext) ||
-				!h.exists(path)) {
-
-			if path[len(path)-1] == '/' && h.exists(path+rule.IndexFile) {
-				// If index file in specified folder exists, send request to it
-				path += rule.IndexFile
-			}
+		if fpath[len(fpath)-1] == '/' || strings.HasSuffix(fpath, rule.Ext) || !h.exists(fpath) {
 
 			// Create environment for CGI script
-			env, err := h.buildEnv(r, rule, path)
+			env, err := h.buildEnv(r, rule, fpath)
 			if err != nil {
 				return http.StatusInternalServerError, err
 			}
@@ -115,14 +118,12 @@ func (h Handler) exists(path string) bool {
 	return false
 }
 
-func (h Handler) buildEnv(r *http.Request, rule Rule, path string) (map[string]string, error) {
+// buildEnv returns a set of CGI environment variables for the request.
+func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]string, error) {
 	var env map[string]string
 
 	// Get absolute path of requested resource
-	absPath, err := filepath.Abs(h.Root + path)
-	if err != nil {
-		return env, err
-	}
+	absPath := filepath.Join(h.AbsRoot, fpath)
 
 	// Separate remote IP and port; more lenient than net.SplitHostPort
 	var ip, port string
@@ -134,19 +135,19 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, path string) (map[string]s
 	}
 
 	// Split path in preparation for env variables
-	splitPos := strings.Index(path, rule.SplitPath)
+	splitPos := strings.Index(fpath, rule.SplitPath)
 	var docURI, scriptName, scriptFilename, pathInfo string
 	if splitPos == -1 {
 		// Request doesn't have the extension, so assume index file in root
-		docURI = "/" + rule.IndexFile
-		scriptName = "/" + rule.IndexFile
-		scriptFilename = h.Root + "/" + rule.IndexFile
-		pathInfo = path
+		docURI = "/" + rule.IndexFiles[0]
+		scriptName = "/" + rule.IndexFiles[0]
+		scriptFilename = filepath.Join(h.AbsRoot, rule.IndexFiles[0])
+		pathInfo = fpath
 	} else {
 		// Request has the extension; path was split successfully
-		docURI = path[:splitPos+len(rule.SplitPath)]
-		pathInfo = path[splitPos+len(rule.SplitPath):]
-		scriptName = path
+		docURI = fpath[:splitPos+len(rule.SplitPath)]
+		pathInfo = fpath[splitPos+len(rule.SplitPath):]
+		scriptName = fpath
 		scriptFilename = absPath
 	}
 
@@ -160,7 +161,7 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, path string) (map[string]s
 		"CONTENT_TYPE":      r.Header.Get("Content-Type"),
 		"GATEWAY_INTERFACE": "CGI/1.1",
 		"PATH_INFO":         pathInfo,
-		"PATH_TRANSLATED":   h.Root + "/" + pathInfo, // Source for path_translated: http://www.oreilly.com/openbook/cgi/ch02_04.html
+		"PATH_TRANSLATED":   filepath.Join(h.AbsRoot, pathInfo), // Info: http://www.oreilly.com/openbook/cgi/ch02_04.html
 		"QUERY_STRING":      r.URL.RawQuery,
 		"REMOTE_ADDR":       ip,
 		"REMOTE_HOST":       ip, // For speed, remote host lookups disabled
@@ -174,7 +175,7 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, path string) (map[string]s
 		"SERVER_SOFTWARE":   h.SoftwareName + "/" + h.SoftwareVersion,
 
 		// Other variables
-		"DOCUMENT_ROOT":   h.Root,
+		"DOCUMENT_ROOT":   h.AbsRoot,
 		"DOCUMENT_URI":    docURI,
 		"HTTP_HOST":       r.Host, // added here, since not always part of headers
 		"REQUEST_URI":     r.URL.RequestURI(),
@@ -214,8 +215,9 @@ type Rule struct {
 	// PATH_INFO for the CGI script to use.
 	SplitPath string
 
-	// If the URL does not indicate a file, an index file with this name will be assumed.
-	IndexFile string
+	// If the URL ends with '/' (which indicates a directory), these index
+	// files will be tried instead.
+	IndexFiles []string
 
 	// Environment Variables
 	EnvVars [][2]string
