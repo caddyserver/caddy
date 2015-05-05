@@ -3,7 +3,7 @@ package setup
 import "github.com/mholt/caddy/middleware"
 
 func TLS(c *Controller) (middleware.Middleware, error) {
-	c.TLS.Enabled = true
+	c.TLS.Enabled = c.Port != "http"
 
 	for c.Next() {
 		if !c.NextArg() {
