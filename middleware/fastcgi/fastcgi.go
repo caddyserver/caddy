@@ -70,6 +70,8 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 				resp, err = fcgi.Head(env)
 			case "GET":
 				resp, err = fcgi.Get(env)
+			case "OPTIONS":
+				resp, err = fcgi.Options(env)
 			case "POST":
 				resp, err = fcgi.Post(env, r.Header.Get("Content-Type"), r.Body, contentLength)
 			case "PUT":

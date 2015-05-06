@@ -416,7 +416,16 @@ func (this *FCGIClient) Head(p map[string]string) (resp *http.Response, err erro
 	return this.Request(p, nil)
 }
 
-// Get issues a Post request to the fcgi responder. with request body
+// Options issues an OPTIONS request to the fcgi responder.
+func (this *FCGIClient) Options(p map[string]string) (resp *http.Response, err error) {
+
+	p["REQUEST_METHOD"] = "OPTIONS"
+	p["CONTENT_LENGTH"] = "0"
+
+	return this.Request(p, nil)
+}
+
+// Post issues a POST request to the fcgi responder. with request body
 // in the format that bodyType specified
 func (this *FCGIClient) Post(p map[string]string, bodyType string, body io.Reader, l int) (resp *http.Response, err error) {
 
