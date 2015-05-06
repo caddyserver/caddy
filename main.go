@@ -104,12 +104,13 @@ func loadConfigs() ([]server.Config, error) {
 	}
 
 	// stdin
-	// Load piped configuration data, if any
 	fi, err := os.Stdin.Stat()
-	if err != nil {
-		log.Fatal(err)
-	}
 	if err == nil && fi.Mode()&os.ModeCharDevice == 0 {
+		// Note that a non-nil error is not a problem. Windows
+		// will not create a stdin if there is no pipe, which
+		// produces an error when calling Stat(). But Unix will
+		// make one either way, which is why we also check that
+		// bitmask.
 		confBody, err := ioutil.ReadAll(os.Stdin)
 		if err != nil {
 			log.Fatal(err)
@@ -128,6 +129,7 @@ func loadConfigs() ([]server.Config, error) {
 		return []server.Config{}, err
 	}
 	defer file.Close()
+
 	return config.Load(config.DefaultConfigFile, file)
 }
 
@@ -143,7 +145,7 @@ func arrangeBindings(allConfigs []server.Config) (map[string][]server.Config, er
 	for _, conf := range allConfigs {
 		addr, err := net.ResolveTCPAddr("tcp", conf.Address())
 		if err != nil {
-			return addresses, err
+			return addresses, errors.New("Could not serve " + conf.Address() + " - " + err.Error())
 		}
 		addresses[addr.String()] = append(addresses[addr.String()], conf)
 	}
