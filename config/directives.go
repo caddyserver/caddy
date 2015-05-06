@@ -59,6 +59,7 @@ var directiveOrder = []directive{
 	{"redir", setup.Redir},
 	{"ext", setup.Ext},
 	{"basicauth", setup.BasicAuth},
+	{"internal", setup.Internal},
 	{"proxy", setup.Proxy},
 	{"fastcgi", setup.FastCGI},
 	{"websocket", setup.WebSocket},
