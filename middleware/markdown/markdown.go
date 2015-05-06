@@ -49,6 +49,9 @@ type Config struct {
 
 	// List of JavaScript files to load for each markdown file
 	Scripts []string
+
+	// Map of registered templates
+	Templates map[string] string
 }
 
 // ServeHTTP implements the http.Handler interface.
