@@ -24,7 +24,6 @@ var (
 	http2    bool // TODO: temporary flag until http2 is standard
 	quiet    bool
 	cpu      string
-	confBody []byte // configuration data to use, piped from stdin
 )
 
 func init() {
@@ -39,18 +38,6 @@ func init() {
 
 	config.AppName = "Caddy"
 	config.AppVersion = "0.6.0"
-
-	// Load piped configuration data, if any
-	fi, err := os.Stdin.Stat()
-	if err != nil {
-		log.Fatal(err)
-	}
-	if fi.Mode()&os.ModeCharDevice == 0 {
-		confBody, err = ioutil.ReadAll(os.Stdin)
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
 }
 
 func main() {
@@ -117,8 +104,19 @@ func loadConfigs() ([]server.Config, error) {
 	}
 
 	// stdin
-	if len(confBody) > 0 {
-		return config.Load("stdin", bytes.NewReader(confBody))
+	// Load piped configuration data, if any
+	fi, err := os.Stdin.Stat()
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err == nil && fi.Mode()&os.ModeCharDevice == 0 {
+		confBody, err := ioutil.ReadAll(os.Stdin)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if len(confBody) > 0 {
+			return config.Load("stdin", bytes.NewReader(confBody))
+		}
 	}
 
 	// Caddyfile
