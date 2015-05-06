@@ -34,13 +34,14 @@ func init() {
 	flag.StringVar(&config.Root, "root", config.DefaultRoot, "Root path to default site")
 	flag.StringVar(&config.Host, "host", config.DefaultHost, "Default host")
 	flag.StringVar(&config.Port, "port", config.DefaultPort, "Default port")
-	flag.Parse()
 
 	config.AppName = "Caddy"
 	config.AppVersion = "0.6.0"
 }
 
 func main() {
+	flag.Parse()
+
 	var wg sync.WaitGroup
 
 	// Set CPU cap
