@@ -17,12 +17,16 @@ var (
 
 // Metadata stores a page's metadata
 type Metadata struct {
+	Title     string
 	Template  string
 	Variables map[string]interface{}
 }
 
 // Load loads parsed metadata into m
 func (m *Metadata) load(parsedMap map[string]interface{}) {
+	if template, ok := parsedMap["title"]; ok {
+		m.Title, _ = template.(string)
+	}
 	if template, ok := parsedMap["template"]; ok {
 		m.Template, _ = template.(string)
 	}
@@ -37,6 +41,7 @@ type MetadataParser interface {
 	// Identifiers
 	Opening() []byte
 	Closing() []byte
+
 	Parse([]byte) error
 	Metadata() Metadata
 }
@@ -121,12 +126,12 @@ func (y *YAMLMetadataParser) Metadata() Metadata {
 	return y.metadata
 }
 
-// Opening returns the opening identifier TOML metadata
+// Opening returns the opening identifier YAML metadata
 func (y *YAMLMetadataParser) Opening() []byte {
 	return []byte("---")
 }
 
-// Closing returns the closing identifier TOML metadata
+// Closing returns the closing identifier YAML metadata
 func (y *YAMLMetadataParser) Closing() []byte {
 	return []byte("---")
 }

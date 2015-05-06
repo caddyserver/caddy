@@ -5,41 +5,44 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
+	"path/filepath"
 	"text/template"
+
+	"github.com/russross/blackfriday"
+	"strings"
 )
 
 // Process the contents of a page.
 // It parses the metadata if any and uses the template if found
-func Process(c Config, b []byte) ([]byte, error) {
+func Process(c Config, fpath string, b []byte) ([]byte, error) {
 	metadata, markdown, err := extractMetadata(b)
 	if err != nil {
 		return nil, err
 	}
-	// if metadata template is included
+	// if template is not specified, check if Default template is set
+	if metadata.Template == "" {
+		if _, ok := c.Templates[DefaultTemplate]; ok {
+			metadata.Template = DefaultTemplate
+		}
+	}
+
+	// if template is set, load it
 	var tmpl []byte
 	if metadata.Template != "" {
 		if t, ok := c.Templates[metadata.Template]; ok {
-			tmpl, err = loadTemplate(t)
+			tmpl, err = ioutil.ReadFile(t)
 		}
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	// if no template loaded
-	// use default template
-	if tmpl == nil {
-		tmpl = []byte(htmlTemplate)
-	}
-
 	// process markdown
-	if markdown, err = processMarkdown(markdown, metadata.Variables); err != nil {
-		return nil, err
-	}
+	markdown = blackfriday.Markdown(markdown, c.Renderer, 0)
+	// set it as body for template
+	metadata.Variables["body"] = string(markdown)
 
-	tmpl = bytes.Replace(tmpl, []byte("{{body}}"), markdown, 1)
-
-	return tmpl, nil
+	return processTemplate(c, fpath, tmpl, metadata)
 }
 
 // extractMetadata extracts metadata content from a page.
@@ -70,12 +73,22 @@ func extractMetadata(b []byte) (metadata Metadata, markdown []byte, err error) {
 		line := scanner.Bytes()
 		// closing identifier found
 		if bytes.Equal(bytes.TrimSpace(line), parser.Closing()) {
-			if err := parser.Parse(buf.Bytes()); err != nil {
+			// parse the metadata
+			err := parser.Parse(buf.Bytes())
+			if err != nil {
 				return metadata, nil, err
 			}
-			return parser.Metadata(), reader.Bytes(), nil
+			// get the scanner to return remaining bytes
+			scanner.Split(func(data []byte, atEOF bool) (int, []byte, error) {
+				return len(data), data, nil
+			})
+			// scan the remaining bytes
+			scanner.Scan()
+
+			return parser.Metadata(), scanner.Bytes(), nil
 		}
 		buf.Write(line)
+		buf.WriteString("\r\n")
 	}
 	return metadata, nil, fmt.Errorf("Metadata not closed. '%v' not found", string(parser.Closing()))
 }
@@ -91,25 +104,71 @@ func findParser(line []byte) MetadataParser {
 	return nil
 }
 
-func loadTemplate(tmpl string) ([]byte, error) {
-	b, err := ioutil.ReadFile(tmpl)
+func processTemplate(c Config, fpath string, tmpl []byte, metadata Metadata) ([]byte, error) {
+	// if template is specified
+	// replace parse the template
+	if tmpl != nil {
+		tmpl = defaultTemplate(c, metadata, fpath)
+	}
+
+	b := &bytes.Buffer{}
+	t, err := template.New("").Parse(string(tmpl))
 	if err != nil {
 		return nil, err
 	}
-	if !bytes.Contains(b, []byte("{{body}}")) {
-		return nil, fmt.Errorf("template missing {{body}}")
+	if err = t.Execute(b, metadata.Variables); err != nil {
+		return nil, err
 	}
-	return b, nil
+	return b.Bytes(), nil
+
 }
 
-func processMarkdown(b []byte, vars map[string]interface{}) ([]byte, error) {
-	buf := &bytes.Buffer{}
-	t, err := template.New("markdown").Parse(string(b))
-	if err != nil {
-		return nil, err
+func defaultTemplate(c Config, metadata Metadata, fpath string) []byte {
+	// else, use default template
+	var scripts, styles bytes.Buffer
+	for _, style := range c.Styles {
+		styles.WriteString(strings.Replace(cssTemplate, "{{url}}", style, 1))
+		styles.WriteString("\r\n")
 	}
-	if err := t.Execute(buf, vars); err != nil {
-		return nil, err
+	for _, script := range c.Scripts {
+		scripts.WriteString(strings.Replace(jsTemplate, "{{url}}", script, 1))
+		scripts.WriteString("\r\n")
 	}
-	return buf.Bytes(), nil
+
+	// Title is first line (length-limited), otherwise filename
+	title := metadata.Title
+	if title == "" {
+		title = filepath.Base(fpath)
+		if body, _ := metadata.Variables["body"].([]byte); len(body) > 128 {
+			title = string(body[:128])
+		} else if len(body) > 0 {
+			title = string(body)
+		}
+	}
+
+	html := []byte(htmlTemplate)
+	html = bytes.Replace(html, []byte("{{title}}"), []byte(title), 1)
+	html = bytes.Replace(html, []byte("{{css}}"), styles.Bytes(), 1)
+	html = bytes.Replace(html, []byte("{{js}}"), scripts.Bytes(), 1)
+
+	return html
 }
+
+const (
+	htmlTemplate = `<!DOCTYPE html>
+<html>
+	<head>
+		<title>{{title}}</title>
+		<meta charset="utf-8">
+		{{css}}
+		{{js}}
+	</head>
+	<body>
+		{{.body}}
+	</body>
+</html>`
+	cssTemplate = `<link rel="stylesheet" href="{{url}}">`
+	jsTemplate  = `<script src="{{url}}"></script>`
+
+	DefaultTemplate = "defaultTemplate"
+)
