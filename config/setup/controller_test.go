@@ -10,7 +10,7 @@ import (
 // newTestController creates a new *Controller for
 // the input specified, with a filename of "Testfile"
 func newTestController(input string) *Controller {
-	return Controller{
+	return &Controller{
 		Config:    &server.Config{},
 		Dispenser: parse.NewDispenser("Testfile", strings.NewReader(input)),
 	}
