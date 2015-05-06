@@ -51,6 +51,12 @@ func (p *parser) begin() error {
 		return err
 	}
 
+	if p.eof {
+		// this happens if the Caddyfile consists of only
+		// a line of addresses and nothing else
+		return nil
+	}
+
 	err = p.blockContents()
 	if err != nil {
 		return err
@@ -111,12 +117,6 @@ func (p *parser) blockContents() error {
 	if errOpenCurlyBrace != nil {
 		// single-server configs don't need curly braces
 		p.cursor--
-	}
-
-	if p.eof {
-		// this happens if the Caddyfile consists of only
-		// a line of addresses and nothing else
-		return nil
 	}
 
 	err := p.directives()
