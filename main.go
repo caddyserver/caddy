@@ -20,14 +20,14 @@ import (
 )
 
 var (
-	conf     string
-	http2    bool // TODO: temporary flag until http2 is standard
-	quiet    bool
-	cpu      string
+	conf  string
+	http2 bool // TODO: temporary flag until http2 is standard
+	quiet bool
+	cpu   string
 )
 
 func init() {
-	flag.StringVar(&conf, "conf", "", "Configuration file to use")
+	flag.StringVar(&conf, "conf", "", "Configuration file to use (default="+config.DefaultConfigFile+")")
 	flag.BoolVar(&http2, "http2", true, "Enable HTTP/2 support") // TODO: temporary flag until http2 merged into std lib
 	flag.BoolVar(&quiet, "quiet", false, "Quiet mode (no initialization output)")
 	flag.StringVar(&cpu, "cpu", "100%", "CPU cap")
