@@ -9,12 +9,19 @@ import (
 	"text/template"
 
 	"github.com/russross/blackfriday"
+	"log"
+	"os"
 	"strings"
 )
 
-// Process the contents of a page.
+const (
+	DefaultTemplate = "defaultTemplate"
+	StaticDir       = ".caddy_static"
+)
+
+// process the contents of a page.
 // It parses the metadata if any and uses the template if found
-func Process(c Config, fpath string, b []byte) ([]byte, error) {
+func (md Markdown) process(c Config, fpath string, b []byte) ([]byte, error) {
 	metadata, markdown, err := extractMetadata(b)
 	if err != nil {
 		return nil, err
@@ -42,7 +49,7 @@ func Process(c Config, fpath string, b []byte) ([]byte, error) {
 	// set it as body for template
 	metadata.Variables["body"] = string(markdown)
 
-	return processTemplate(c, fpath, tmpl, metadata)
+	return md.processTemplate(c, fpath, tmpl, metadata)
 }
 
 // extractMetadata extracts metadata content from a page.
@@ -104,7 +111,7 @@ func findParser(line []byte) MetadataParser {
 	return nil
 }
 
-func processTemplate(c Config, fpath string, tmpl []byte, metadata Metadata) ([]byte, error) {
+func (md Markdown) processTemplate(c Config, fpath string, tmpl []byte, metadata Metadata) ([]byte, error) {
 	// if template is specified
 	// replace parse the template
 	if tmpl != nil {
@@ -119,6 +126,14 @@ func processTemplate(c Config, fpath string, tmpl []byte, metadata Metadata) ([]
 	if err = t.Execute(b, metadata.Variables); err != nil {
 		return nil, err
 	}
+
+	// generate static page
+	if err = md.generatePage(c, fpath, b.Bytes()); err != nil {
+		// if static page generation fails,
+		// nothing fatal, only log the error.
+		log.Println(err)
+	}
+
 	return b.Bytes(), nil
 
 }
@@ -154,6 +169,42 @@ func defaultTemplate(c Config, metadata Metadata, fpath string) []byte {
 	return html
 }
 
+func (md Markdown) generatePage(c Config, fpath string, content []byte) error {
+	// should not happen
+	// must be set on init
+	if c.StaticDir == "" {
+		return fmt.Errorf("Static directory not set")
+	}
+
+	// if static directory is not existing, create it
+	if _, err := os.Stat(c.StaticDir); err != nil {
+		err := os.MkdirAll(c.StaticDir, os.FileMode(0755))
+		if err != nil {
+			return err
+		}
+	}
+
+	filePath := filepath.Join(c.StaticDir, fpath)
+
+	// If it is index file, use the directory instead
+	if md.IsIndexFile(filepath.Base(fpath)) {
+		filePath, _ = filepath.Split(filePath)
+	}
+	if err := os.MkdirAll(filePath, os.FileMode(0755)); err != nil {
+		return err
+	}
+
+	// generate index.html file in the directory
+	filePath = filepath.Join(filePath, "index.html")
+	err := ioutil.WriteFile(filePath, content, os.FileMode(0755))
+	if err != nil {
+		return err
+	}
+
+	c.StaticFiles[fpath] = filePath
+	return nil
+}
+
 const (
 	htmlTemplate = `<!DOCTYPE html>
 <html>
@@ -169,6 +220,4 @@ const (
 </html>`
 	cssTemplate = `<link rel="stylesheet" href="{{url}}">`
 	jsTemplate  = `<script src="{{url}}"></script>`
-
-	DefaultTemplate = "defaultTemplate"
 )

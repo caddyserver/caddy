@@ -2,11 +2,12 @@ package setup
 
 import (
 	"net/http"
+	"path"
+	"path/filepath"
 
 	"github.com/mholt/caddy/middleware"
 	"github.com/mholt/caddy/middleware/markdown"
 	"github.com/russross/blackfriday"
-	"path/filepath"
 )
 
 // Markdown configures a new Markdown middleware instance.
@@ -37,6 +38,7 @@ func markdownParse(c *Controller) ([]markdown.Config, error) {
 			Renderer:    blackfriday.HtmlRenderer(0, "", ""),
 			Templates:   make(map[string]string),
 			StaticFiles: make(map[string]string),
+			StaticDir:   path.Join(c.Root, markdown.StaticDir),
 		}
 
 		// Get the path scope

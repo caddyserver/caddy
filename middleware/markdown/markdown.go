@@ -31,6 +31,16 @@ type Markdown struct {
 	IndexFiles []string
 }
 
+// Helper function to check if a file is an index file
+func (m Markdown) IsIndexFile(file string) bool {
+	for _, f := range m.IndexFiles {
+		if f == file {
+			return true
+		}
+	}
+	return false
+}
+
 // Config stores markdown middleware configurations.
 type Config struct {
 	// Markdown renderer
@@ -53,6 +63,9 @@ type Config struct {
 
 	// Static files
 	StaticFiles map[string]string
+
+	// Static files directory
+	StaticDir string
 }
 
 // ServeHTTP implements the http.Handler interface.
@@ -77,18 +90,37 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 					return http.StatusNotFound, nil
 				}
 
+				fs, err := f.Stat()
+				if err != nil {
+					return http.StatusNotFound, nil
+				}
+
+				// if static site is generated, attempt to use it
+				if filepath, ok := m.StaticFiles[fpath]; ok {
+					if fs1, err := os.Stat(filepath); err == nil {
+						// if markdown has not been modified
+						// since static page generation,
+						// serve the static page
+						if fs.ModTime().UnixNano() < fs1.ModTime().UnixNano() {
+							if html, err := ioutil.ReadFile(filepath); err == nil {
+								w.Write(html)
+								return http.StatusOK, nil
+							}
+						}
+					}
+				}
+
 				body, err := ioutil.ReadAll(f)
 				if err != nil {
 					return http.StatusInternalServerError, err
 				}
 
-				html, err := Process(md, fpath, body)
+				html, err := md.process(m, fpath, body)
 				if err != nil {
 					return http.StatusInternalServerError, err
 				}
 
-				w.Write([]byte(html))
-
+				w.Write(html)
 				return http.StatusOK, nil
 			}
 		}
