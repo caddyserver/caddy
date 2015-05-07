@@ -16,7 +16,10 @@ type Internal struct {
 	Paths []string
 }
 
-const redirectHeader string = "X-Accel-Redirect"
+const (
+	redirectHeader   string = "X-Accel-Redirect"
+	maxRedirectCount int    = 10
+)
 
 func isInternalRedirect(w http.ResponseWriter) bool {
 	return w.Header().Get(redirectHeader) != ""
@@ -37,13 +40,19 @@ func (i Internal) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error)
 	iw := internalResponseWriter{ResponseWriter: w}
 	status, err := i.Next.ServeHTTP(iw, r)
 
-	for isInternalRedirect(iw) {
+	for c := 0; c < maxRedirectCount && isInternalRedirect(iw); c++ {
 		// Redirect - adapt request URL path and send it again
 		// "down the chain"
 		r.URL.Path = iw.Header().Get(redirectHeader)
 		iw.ClearHeader()
 
 		status, err = i.Next.ServeHTTP(iw, r)
+	}
+
+	if isInternalRedirect(iw) {
+		// Too many redirect cycles
+		iw.ClearHeader()
+		return http.StatusInternalServerError, nil
 	}
 
 	return status, err
