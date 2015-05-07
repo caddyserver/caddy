@@ -20,10 +20,11 @@ import (
 )
 
 var (
-	conf  string
-	http2 bool // TODO: temporary flag until http2 is standard
-	quiet bool
-	cpu   string
+	conf    string
+	http2   bool // TODO: temporary flag until http2 is standard
+	quiet   bool
+	cpu     string
+	version bool
 )
 
 func init() {
@@ -34,6 +35,7 @@ func init() {
 	flag.StringVar(&config.Root, "root", config.DefaultRoot, "Root path to default site")
 	flag.StringVar(&config.Host, "host", config.DefaultHost, "Default host")
 	flag.StringVar(&config.Port, "port", config.DefaultPort, "Default port")
+	flag.BoolVar(&version, "version", false, "Show version")
 
 	config.AppName = "Caddy"
 	config.AppVersion = "0.6.0"
@@ -41,6 +43,11 @@ func init() {
 
 func main() {
 	flag.Parse()
+
+	if version {
+		fmt.Printf("%s %s\n", config.AppName, config.AppVersion)
+		os.Exit(0)
+	}
 
 	var wg sync.WaitGroup
 
