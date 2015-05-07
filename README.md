@@ -1,8 +1,8 @@
 [![Caddy](https://caddyserver.com/resources/images/caddy-boxed.png)](https://caddyserver.com)
 
-[![Documentation](https://img.shields.io/badge/godoc-reference-blue.svg?style=flat-square)](https://godoc.org/github.com/mholt/caddy)
+[![Documentation](https://img.shields.io/badge/godoc-reference-blue.svg?style=flat-square)](https://godoc.org/github.com/mholt/caddy) [![Build Status](https://img.shields.io/travis/mholt/caddy.svg?style=flat-square)](https://travis-ci.org/mholt/caddy)
 
-Caddy is a lightweight, general-purpose web server for Windows, Mac, Linux, BSD, and [Android](https://github.com/mholt/caddy/wiki/Running-Caddy-on-Android). It is a capable alternative to other popular web servers.
+Caddy is a lightweight, general-purpose web server for Windows, Mac, Linux, BSD, and [Android](https://github.com/mholt/caddy/wiki/Running-Caddy-on-Android). It is a capable alternative to other popular web servers that is easy to use.
 
 The most notable features are HTTP/2, Virtual Hosts, TLS + SNI, and easy configuration with a [Caddyfile](https://caddyserver.com/docs/caddyfile). Usually, you have one Caddyfile per site. Most directives for the Caddyfile invoke a layer of middleware which can be [used in your own Go programs](https://github.com/mholt/caddy/wiki/Using-Caddy-Middleware-in-Your-Own-Programs).
 
@@ -31,7 +31,7 @@ Caddy binaries have no dependencies and are available for nearly every platform.
 
 ## Running from Source
 
-NOTE: You will need Go **version 1.4** or greater
+Note: You will need **[Go 1.4](https://golang.org/dl)** or newer
 
 1. `$ go get github.com/mholt/caddy`
 2. `cd` into your website's directory
@@ -41,7 +41,7 @@ If you're tinkering, you can also use `go run main.go`.
 
 By default, Caddy serves the current directory at [localhost:2015](http://localhost:2015). You can place a Caddyfile to configure Caddy for serving your site.
 
-Caddy accepts some flags from the command line. Run `caddy -h` to view the help for flags.
+Caddy accepts some flags from the command line. Run `caddy -h` to view the help for flags. You can also pipe a Caddyfile into the caddy command.
 
 
 
@@ -113,6 +113,8 @@ For more documentation, please view [the website](https://caddyserver.com/docs).
 
 
 ## Contributing
+
+**[Join us on Slack](https://gophers.slack.com/messages/caddy/)** to chat with other Caddy developers! ([Request an invite](http://bit.ly/go-slack-signup), then join the #caddy channel.)
 
 This project gladly accepts contributions. Interested users are encouraged to get involved by opening issues with their ideas, questions, and bug reports. Bug reports should contain clear instructions to reproduce the problem and state expected behavior.
 
