@@ -37,19 +37,13 @@ func (i Internal) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error)
 	iw := internalResponseWriter{ResponseWriter: w}
 	status, err := i.Next.ServeHTTP(iw, r)
 
-	if isInternalRedirect(iw) && status < 400 {
+	for isInternalRedirect(iw) {
 		// Redirect - adapt request URL path and send it again
 		// "down the chain"
 		r.URL.Path = iw.Header().Get(redirectHeader)
 		iw.ClearHeader()
 
 		status, err = i.Next.ServeHTTP(iw, r)
-
-		if isInternalRedirect(iw) {
-			// multiple redirects not supported
-			iw.ClearHeader()
-			return http.StatusInternalServerError, nil
-		}
 	}
 
 	return status, err
@@ -72,7 +66,7 @@ func (w internalResponseWriter) ClearHeader() {
 // WriteHeader ignores the call if the response should be redirected to an
 // internal location.
 func (w internalResponseWriter) WriteHeader(code int) {
-	if !isInternalRedirect(w) && code < 400 {
+	if !isInternalRedirect(w) {
 		w.ResponseWriter.WriteHeader(code)
 	}
 }
