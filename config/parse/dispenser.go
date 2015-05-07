@@ -109,6 +109,10 @@ func (d *Dispenser) NextBlock() bool {
 		return false
 	}
 	d.Next()
+	if d.Val() == "}" {
+		// Open and then closed right away
+		return false
+	}
 	d.nesting++
 	return true
 }

@@ -149,9 +149,8 @@ func TestDispenser_NextBlock(t *testing.T) {
 	assertNextBlock(true, 3, 1)
 	assertNextBlock(true, 4, 1)
 	assertNextBlock(false, 5, 0)
-	d.Next() // foobar2
-	assertNextBlock(true, 8, 1)
-	assertNextBlock(false, 8, 0)
+	d.Next()                     // foobar2
+	assertNextBlock(false, 8, 0) // empty block is as if it didn't exist
 }
 
 func TestDispenser_Args(t *testing.T) {
