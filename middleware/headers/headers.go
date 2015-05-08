@@ -5,6 +5,7 @@ package headers
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/mholt/caddy/middleware"
 )
@@ -22,7 +23,11 @@ func (h Headers) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 	for _, rule := range h.Rules {
 		if middleware.Path(r.URL.Path).Matches(rule.Url) {
 			for _, header := range rule.Headers {
-				w.Header().Set(header.Name, header.Value)
+				if strings.HasPrefix(header.Name, "-") {
+					w.Header().Del(strings.TrimLeft(header.Name, "-"))
+				} else {
+					w.Header().Set(header.Name, header.Value)
+				}
 			}
 		}
 	}
