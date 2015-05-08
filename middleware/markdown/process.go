@@ -137,7 +137,7 @@ func defaultTemplate(c Config, metadata Metadata, requestPath string) []byte {
 	title := metadata.Title
 	if title == "" {
 		title = filepath.Base(requestPath)
-		if body, _ := metadata.Variables["body"].([]byte); len(body) > 128 {
+		if body, _ := metadata.Variables["markdown"].([]byte); len(body) > 128 {
 			title = string(body[:128])
 		} else if len(body) > 0 {
 			title = string(body)
@@ -162,7 +162,7 @@ const (
 		{{js}}
 	</head>
 	<body>
-		{{.body}}
+		{{.markdown}}
 	</body>
 </html>`
 	cssTemplate = `<link rel="stylesheet" href="{{url}}">`

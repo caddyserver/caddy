@@ -162,14 +162,18 @@ func extractMetadata(b []byte) (metadata Metadata, markdown []byte, err error) {
 	var parser MetadataParser
 
 	// Read first line
-	if scanner.Scan() {
-		line := scanner.Bytes()
-		parser = findParser(line)
-		// if no parser found,
+	if !scanner.Scan() {
+		// if no line is read,
 		// assume metadata not present
-		if parser == nil {
-			return metadata, b, nil
-		}
+		return metadata, b, nil
+	}
+
+	line := scanner.Bytes()
+	parser = findParser(line)
+	// if no parser found,
+	// assume metadata not present
+	if parser == nil {
+		return metadata, b, nil
 	}
 
 	// buffer for metadata contents
