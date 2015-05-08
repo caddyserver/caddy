@@ -36,9 +36,11 @@ func (l *lexer) load(input io.Reader) error {
 // the token starts with a quotes character (")
 // in which case the token goes until the closing
 // quotes (the enclosing quotes are not included).
-// The rest of the line is skipped if a "#"
-// character is read in. Returns true if a token
-// was loaded; false otherwise.
+// Inside quoted strings, quotes may be escaped
+// with a preceding \ character. No other chars
+// may be escaped. The rest of the line is skipped
+// if a "#" character is read in. Returns true if
+// a token was loaded; false otherwise.
 func (l *lexer) next() bool {
 	var val []rune
 	var comment, quoted, escaped bool
@@ -73,6 +75,12 @@ func (l *lexer) next() bool {
 			}
 			if ch == '\n' {
 				l.line++
+			}
+			if escaped {
+				// only escape quotes
+				if ch != '"' {
+					val = append(val, '\\')
+				}
 			}
 			val = append(val, ch)
 			escaped = false
