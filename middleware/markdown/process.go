@@ -1,17 +1,16 @@
 package markdown
 
 import (
-	"bufio"
 	"bytes"
 	"fmt"
 	"io/ioutil"
+	"log"
+	"os"
 	"path/filepath"
+	"strings"
 	"text/template"
 
 	"github.com/russross/blackfriday"
-	"log"
-	"os"
-	"strings"
 )
 
 const (
@@ -48,71 +47,9 @@ func (md Markdown) process(c Config, requestPath string, b []byte) ([]byte, erro
 	markdown = blackfriday.Markdown(markdown, c.Renderer, 0)
 
 	// set it as body for template
-	metadata.Variables["body"] = string(markdown)
+	metadata.Variables["markdown"] = string(markdown)
 
 	return md.processTemplate(c, requestPath, tmpl, metadata)
-}
-
-// extractMetadata extracts metadata content from a page.
-// it returns the metadata, the remaining bytes (markdown),
-// and an error if any
-func extractMetadata(b []byte) (metadata Metadata, markdown []byte, err error) {
-	b = bytes.TrimSpace(b)
-	reader := bytes.NewBuffer(b)
-	scanner := bufio.NewScanner(reader)
-	var parser MetadataParser
-
-	// Read first line
-	if scanner.Scan() {
-		line := scanner.Bytes()
-		parser = findParser(line)
-		// if no parser found,
-		// assume metadata not present
-		if parser == nil {
-			return metadata, b, nil
-		}
-	}
-
-	// buffer for metadata contents
-	buf := bytes.Buffer{}
-
-	// Read remaining lines until closing identifier is found
-	for scanner.Scan() {
-		line := scanner.Bytes()
-
-		// if closing identifier found
-		if bytes.Equal(bytes.TrimSpace(line), parser.Closing()) {
-			// parse the metadata
-			err := parser.Parse(buf.Bytes())
-			if err != nil {
-				return metadata, nil, err
-			}
-			// get the scanner to return remaining bytes
-			scanner.Split(func(data []byte, atEOF bool) (int, []byte, error) {
-				return len(data), data, nil
-			})
-			// scan the remaining bytes
-			scanner.Scan()
-
-			return parser.Metadata(), scanner.Bytes(), nil
-		}
-		buf.Write(line)
-		buf.WriteString("\r\n")
-	}
-
-	// closing identifier not found
-	return metadata, nil, fmt.Errorf("Metadata not closed. '%v' not found", string(parser.Closing()))
-}
-
-// findParser finds the parser using line that contains opening identifier
-func findParser(line []byte) MetadataParser {
-	line = bytes.TrimSpace(line)
-	for _, parser := range parsers {
-		if bytes.Equal(parser.Opening(), line) {
-			return parser
-		}
-	}
-	return nil
 }
 
 // processTemplate processes a template given a requestPath,
