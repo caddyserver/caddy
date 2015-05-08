@@ -24,12 +24,14 @@ func TestBasicAuth(t *testing.T) {
 		result int
 		cred   string
 	}{
+		{"/testing", http.StatusUnauthorized, "ttest:test"},
 		{"/testing", http.StatusOK, "test:ttest"},
+		
 		{"/testing", http.StatusUnauthorized, ""},
 
 	}
 
-	//auth := "Basic " + base64.StdEncoding.EncodeToString([]byte("foo:bar"))
+	
 	for i, test := range tests {
 
 		
@@ -41,7 +43,14 @@ func TestBasicAuth(t *testing.T) {
 		req.Header.Set("Authorization", auth)
 
 		rec := httptest.NewRecorder()
-		rw.ServeHTTP(rec, req)
+		result, err := rw.ServeHTTP(rec, req)
+		if err != nil {
+			t.Fatalf("Test %d: Could not ServeHTTP %v", i, err)
+		}
+		if result != test.result {
+			t.Errorf("Test %d: Expected Header '%d' but was '%d'",
+				i, test.result, result)
+		}
 
 		if rec.Code != test.result {
 			t.Errorf("Test %d: Expected Header '%d' but was '%d'",
@@ -54,5 +63,5 @@ func TestBasicAuth(t *testing.T) {
 
 func contentHandler(w http.ResponseWriter, r *http.Request) (int, error) {
 	fmt.Fprintf(w, r.URL.String())
-	return 0, nil
+	return http.StatusOK, nil
 }
