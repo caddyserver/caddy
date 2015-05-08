@@ -19,9 +19,9 @@ const (
 	StaticDir       = ".caddy_static"
 )
 
-// process the contents of a page.
-// It parses the metadata if any and uses the template if found
-func (md Markdown) process(c Config, fpath string, b []byte) ([]byte, error) {
+// process processes the contents of a page.
+// It parses the metadata (if any) and uses the template (if found)
+func (md Markdown) process(c Config, requestPath string, b []byte) ([]byte, error) {
 	metadata, markdown, err := extractMetadata(b)
 	if err != nil {
 		return nil, err
@@ -46,10 +46,11 @@ func (md Markdown) process(c Config, fpath string, b []byte) ([]byte, error) {
 
 	// process markdown
 	markdown = blackfriday.Markdown(markdown, c.Renderer, 0)
+
 	// set it as body for template
 	metadata.Variables["body"] = string(markdown)
 
-	return md.processTemplate(c, fpath, tmpl, metadata)
+	return md.processTemplate(c, requestPath, tmpl, metadata)
 }
 
 // extractMetadata extracts metadata content from a page.
@@ -60,12 +61,12 @@ func extractMetadata(b []byte) (metadata Metadata, markdown []byte, err error) {
 	reader := bytes.NewBuffer(b)
 	scanner := bufio.NewScanner(reader)
 	var parser MetadataParser
-	//	if scanner.Scan() &&
+
 	// Read first line
 	if scanner.Scan() {
 		line := scanner.Bytes()
 		parser = findParser(line)
-		// if no parser found
+		// if no parser found,
 		// assume metadata not present
 		if parser == nil {
 			return metadata, b, nil
@@ -78,7 +79,8 @@ func extractMetadata(b []byte) (metadata Metadata, markdown []byte, err error) {
 	// Read remaining lines until closing identifier is found
 	for scanner.Scan() {
 		line := scanner.Bytes()
-		// closing identifier found
+
+		// if closing identifier found
 		if bytes.Equal(bytes.TrimSpace(line), parser.Closing()) {
 			// parse the metadata
 			err := parser.Parse(buf.Bytes())
@@ -97,10 +99,12 @@ func extractMetadata(b []byte) (metadata Metadata, markdown []byte, err error) {
 		buf.Write(line)
 		buf.WriteString("\r\n")
 	}
+
+	// closing identifier not found
 	return metadata, nil, fmt.Errorf("Metadata not closed. '%v' not found", string(parser.Closing()))
 }
 
-// findParser locates the parser for an opening identifier
+// findParser finds the parser using line that contains opening identifier
 func findParser(line []byte) MetadataParser {
 	line = bytes.TrimSpace(line)
 	for _, parser := range parsers {
@@ -111,13 +115,16 @@ func findParser(line []byte) MetadataParser {
 	return nil
 }
 
-func (md Markdown) processTemplate(c Config, fpath string, tmpl []byte, metadata Metadata) ([]byte, error) {
-	// if template is specified
-	// replace parse the template
-	if tmpl != nil {
-		tmpl = defaultTemplate(c, metadata, fpath)
+// processTemplate processes a template given a requestPath,
+// template (tmpl) and metadata
+func (md Markdown) processTemplate(c Config, requestPath string, tmpl []byte, metadata Metadata) ([]byte, error) {
+	// if template is not specified,
+	// use the default template
+	if tmpl == nil {
+		tmpl = defaultTemplate(c, metadata, requestPath)
 	}
 
+	// process the template
 	b := &bytes.Buffer{}
 	t, err := template.New("").Parse(string(tmpl))
 	if err != nil {
@@ -128,7 +135,7 @@ func (md Markdown) processTemplate(c Config, fpath string, tmpl []byte, metadata
 	}
 
 	// generate static page
-	if err = md.generatePage(c, fpath, b.Bytes()); err != nil {
+	if err = md.generatePage(c, requestPath, b.Bytes()); err != nil {
 		// if static page generation fails,
 		// nothing fatal, only log the error.
 		log.Println(err)
@@ -138,8 +145,47 @@ func (md Markdown) processTemplate(c Config, fpath string, tmpl []byte, metadata
 
 }
 
-func defaultTemplate(c Config, metadata Metadata, fpath string) []byte {
-	// else, use default template
+// generatePage generates a static html page from the markdown in content.
+func (md Markdown) generatePage(c Config, requestPath string, content []byte) error {
+	// should not happen,
+	// must be set on Markdown init.
+	if c.StaticDir == "" {
+		return fmt.Errorf("Static directory not set")
+	}
+
+	// if static directory is not existing, create it
+	if _, err := os.Stat(c.StaticDir); err != nil {
+		err := os.MkdirAll(c.StaticDir, os.FileMode(0755))
+		if err != nil {
+			return err
+		}
+	}
+
+	filePath := filepath.Join(c.StaticDir, requestPath)
+
+	// If it is index file, use the directory instead
+	if md.IsIndexFile(filepath.Base(requestPath)) {
+		filePath, _ = filepath.Split(filePath)
+	}
+
+	// Create the directory in case it is not existing
+	if err := os.MkdirAll(filePath, os.FileMode(0755)); err != nil {
+		return err
+	}
+
+	// generate index.html file in the directory
+	filePath = filepath.Join(filePath, "index.html")
+	err := ioutil.WriteFile(filePath, content, os.FileMode(0755))
+	if err != nil {
+		return err
+	}
+
+	c.StaticFiles[requestPath] = filePath
+	return nil
+}
+
+// defaultTemplate constructs a default template.
+func defaultTemplate(c Config, metadata Metadata, requestPath string) []byte {
 	var scripts, styles bytes.Buffer
 	for _, style := range c.Styles {
 		styles.WriteString(strings.Replace(cssTemplate, "{{url}}", style, 1))
@@ -153,7 +199,7 @@ func defaultTemplate(c Config, metadata Metadata, fpath string) []byte {
 	// Title is first line (length-limited), otherwise filename
 	title := metadata.Title
 	if title == "" {
-		title = filepath.Base(fpath)
+		title = filepath.Base(requestPath)
 		if body, _ := metadata.Variables["body"].([]byte); len(body) > 128 {
 			title = string(body[:128])
 		} else if len(body) > 0 {
@@ -167,42 +213,6 @@ func defaultTemplate(c Config, metadata Metadata, fpath string) []byte {
 	html = bytes.Replace(html, []byte("{{js}}"), scripts.Bytes(), 1)
 
 	return html
-}
-
-func (md Markdown) generatePage(c Config, fpath string, content []byte) error {
-	// should not happen
-	// must be set on init
-	if c.StaticDir == "" {
-		return fmt.Errorf("Static directory not set")
-	}
-
-	// if static directory is not existing, create it
-	if _, err := os.Stat(c.StaticDir); err != nil {
-		err := os.MkdirAll(c.StaticDir, os.FileMode(0755))
-		if err != nil {
-			return err
-		}
-	}
-
-	filePath := filepath.Join(c.StaticDir, fpath)
-
-	// If it is index file, use the directory instead
-	if md.IsIndexFile(filepath.Base(fpath)) {
-		filePath, _ = filepath.Split(filePath)
-	}
-	if err := os.MkdirAll(filePath, os.FileMode(0755)); err != nil {
-		return err
-	}
-
-	// generate index.html file in the directory
-	filePath = filepath.Join(filePath, "index.html")
-	err := ioutil.WriteFile(filePath, content, os.FileMode(0755))
-	if err != nil {
-		return err
-	}
-
-	c.StaticFiles[fpath] = filePath
-	return nil
 }
 
 const (

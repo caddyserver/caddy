@@ -17,12 +17,17 @@ var (
 
 // Metadata stores a page's metadata
 type Metadata struct {
-	Title     string
-	Template  string
+	// Page title
+	Title string
+
+	// Page template
+	Template string
+
+	// Variables to be used with Template
 	Variables map[string]interface{}
 }
 
-// Load loads parsed metadata into m
+// load loads parsed values in parsedMap into Metadata
 func (m *Metadata) load(parsedMap map[string]interface{}) {
 	if template, ok := parsedMap["title"]; ok {
 		m.Title, _ = template.(string)
@@ -35,14 +40,19 @@ func (m *Metadata) load(parsedMap map[string]interface{}) {
 	}
 }
 
-// MetadataParser parses the page metadata
-// into Metadata
+// MetadataParser is a an interface that must be satisfied by each parser
 type MetadataParser interface {
-	// Identifiers
+	// Opening identifier
 	Opening() []byte
+
+	// Closing identifier
 	Closing() []byte
 
+	// Parse the metadata
 	Parse([]byte) error
+
+	// Parsed metadata.
+	// Should be called after a call to Parse returns no error
 	Metadata() Metadata
 }
 
@@ -51,7 +61,7 @@ type JSONMetadataParser struct {
 	metadata Metadata
 }
 
-// Parse parses b into metadata
+// Parse the metadata
 func (j *JSONMetadataParser) Parse(b []byte) error {
 	m := make(map[string]interface{})
 	if err := json.Unmarshal(b, &m); err != nil {
@@ -61,7 +71,8 @@ func (j *JSONMetadataParser) Parse(b []byte) error {
 	return nil
 }
 
-// Metadata returns the metadata parsed by this parser
+// Parsed metadata.
+// Should be called after a call to Parse returns no error
 func (j *JSONMetadataParser) Metadata() Metadata {
 	return j.metadata
 }
@@ -81,7 +92,7 @@ type TOMLMetadataParser struct {
 	metadata Metadata
 }
 
-// Parse parses b into metadata
+// Parse the metadata
 func (t *TOMLMetadataParser) Parse(b []byte) error {
 	m := make(map[string]interface{})
 	if err := toml.Unmarshal(b, &m); err != nil {
@@ -91,7 +102,8 @@ func (t *TOMLMetadataParser) Parse(b []byte) error {
 	return nil
 }
 
-// Metadata returns the metadata parsed by this parser
+// Parsed metadata.
+// Should be called after a call to Parse returns no error
 func (t *TOMLMetadataParser) Metadata() Metadata {
 	return t.metadata
 }
@@ -106,12 +118,12 @@ func (t *TOMLMetadataParser) Closing() []byte {
 	return []byte("+++")
 }
 
-// YAMLMetadataParser is the MetdataParser for YAML
+// YAMLMetadataParser is the MetadataParser for YAML
 type YAMLMetadataParser struct {
 	metadata Metadata
 }
 
-// Parse parses b into metadata
+// Parse the metadata
 func (y *YAMLMetadataParser) Parse(b []byte) error {
 	m := make(map[string]interface{})
 	if err := yaml.Unmarshal(b, &m); err != nil {
@@ -121,7 +133,8 @@ func (y *YAMLMetadataParser) Parse(b []byte) error {
 	return nil
 }
 
-// Metadata returns the metadata parsed by this parser
+// Parsed metadata.
+// Should be called after a call to Parse returns no error
 func (y *YAMLMetadataParser) Metadata() Metadata {
 	return y.metadata
 }

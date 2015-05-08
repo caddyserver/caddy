@@ -61,10 +61,10 @@ type Config struct {
 	// Map of registered templates
 	Templates map[string]string
 
-	// Static files
+	// Map of request URL to static files generated
 	StaticFiles map[string]string
 
-	// Static files directory
+	// Directory to store static files
 	StaticDir string
 }
 
