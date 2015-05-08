@@ -81,6 +81,18 @@ func TestLexer(t *testing.T) {
 			},
 		},
 		{
+			input: `"don't\escape"`,
+			expected: []token{
+				{line: 1, text: `don't\escape`},
+			},
+		},
+		{
+			input: `"don't\\escape"`,
+			expected: []token{
+				{line: 1, text: `don't\\escape`},
+			},
+		},
+		{
 			input: `A "quoted value with line
 					break inside" {
 						foobar
@@ -91,6 +103,20 @@ func TestLexer(t *testing.T) {
 				{line: 2, text: "{"},
 				{line: 3, text: "foobar"},
 				{line: 4, text: "}"},
+			},
+		},
+		{
+			input: `"C:\php\php-cgi.exe"`,
+			expected: []token{
+				{line: 1, text: `C:\php\php-cgi.exe`},
+			},
+		},
+		{
+			input: `empty "" string`,
+			expected: []token{
+				{line: 1, text: `empty`},
+				{line: 1, text: ``},
+				{line: 1, text: `string`},
 			},
 		},
 		{
