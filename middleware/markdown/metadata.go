@@ -51,8 +51,10 @@ type MetadataParser interface {
 	// Closing identifier
 	Closing() []byte
 
-	// Parse the metadata
-	Parse([]byte) error
+	// Parse the metadata.
+	// Returns the remaining page contents (Markdown)
+	// after extracting metadata
+	Parse([]byte) ([]byte, error)
 
 	// Parsed metadata.
 	// Should be called after a call to Parse returns no error
@@ -65,13 +67,25 @@ type JSONMetadataParser struct {
 }
 
 // Parse the metadata
-func (j *JSONMetadataParser) Parse(b []byte) error {
+func (j *JSONMetadataParser) Parse(b []byte) ([]byte, error) {
 	m := make(map[string]interface{})
-	if err := json.Unmarshal(b, &m); err != nil {
-		return err
+
+	// Read the preceding JSON object
+	decoder := json.NewDecoder(bytes.NewReader(b))
+	if err := decoder.Decode(&m); err != nil {
+		return b, err
 	}
+
 	j.metadata.load(m)
-	return nil
+
+	// Retrieve remaining bytes after decoding
+	buf := make([]byte, len(b))
+	n, err := decoder.Buffered().Read(buf)
+	if err != nil {
+		return b, err
+	}
+
+	return buf[:n], nil
 }
 
 // Parsed metadata.
@@ -82,12 +96,12 @@ func (j *JSONMetadataParser) Metadata() Metadata {
 
 // Opening returns the opening identifier JSON metadata
 func (j *JSONMetadataParser) Opening() []byte {
-	return []byte(":::")
+	return []byte("{")
 }
 
 // Closing returns the closing identifier JSON metadata
 func (j *JSONMetadataParser) Closing() []byte {
-	return []byte(":::")
+	return []byte("}")
 }
 
 // TOMLMetadataParser is the MetadataParser for TOML
@@ -96,13 +110,17 @@ type TOMLMetadataParser struct {
 }
 
 // Parse the metadata
-func (t *TOMLMetadataParser) Parse(b []byte) error {
+func (t *TOMLMetadataParser) Parse(b []byte) ([]byte, error) {
+	b, markdown, err := extractMetadata(t, b)
+	if err != nil {
+		return markdown, err
+	}
 	m := make(map[string]interface{})
 	if err := toml.Unmarshal(b, &m); err != nil {
-		return err
+		return markdown, err
 	}
 	t.metadata.load(m)
-	return nil
+	return markdown, nil
 }
 
 // Parsed metadata.
@@ -127,13 +145,17 @@ type YAMLMetadataParser struct {
 }
 
 // Parse the metadata
-func (y *YAMLMetadataParser) Parse(b []byte) error {
+func (y *YAMLMetadataParser) Parse(b []byte) ([]byte, error) {
+	b, markdown, err := extractMetadata(y, b)
+	if err != nil {
+		return markdown, err
+	}
 	m := make(map[string]interface{})
 	if err := yaml.Unmarshal(b, &m); err != nil {
-		return err
+		return markdown, err
 	}
 	y.metadata.load(m)
-	return nil
+	return markdown, nil
 }
 
 // Parsed metadata.
@@ -154,26 +176,23 @@ func (y *YAMLMetadataParser) Closing() []byte {
 
 // extractMetadata extracts metadata content from a page.
 // it returns the metadata, the remaining bytes (markdown),
-// and an error if any
-func extractMetadata(b []byte) (metadata Metadata, markdown []byte, err error) {
+// and an error if any.
+// Useful for MetadataParser with defined identifiers (YAML, TOML)
+func extractMetadata(parser MetadataParser, b []byte) (metadata []byte, markdown []byte, err error) {
 	b = bytes.TrimSpace(b)
 	reader := bytes.NewBuffer(b)
 	scanner := bufio.NewScanner(reader)
-	var parser MetadataParser
 
 	// Read first line
 	if !scanner.Scan() {
 		// if no line is read,
 		// assume metadata not present
-		return metadata, b, nil
+		return nil, b, nil
 	}
 
-	line := scanner.Bytes()
-	parser = findParser(line)
-	// if no parser found,
-	// assume metadata not present
-	if parser == nil {
-		return metadata, b, nil
+	line := bytes.TrimSpace(scanner.Bytes())
+	if !bytes.Equal(line, parser.Opening()) {
+		return nil, b, fmt.Errorf("Wrong identifier")
 	}
 
 	// buffer for metadata contents
@@ -185,11 +204,7 @@ func extractMetadata(b []byte) (metadata Metadata, markdown []byte, err error) {
 
 		// if closing identifier found
 		if bytes.Equal(bytes.TrimSpace(line), parser.Closing()) {
-			// parse the metadata
-			err := parser.Parse(buf.Bytes())
-			if err != nil {
-				return metadata, nil, err
-			}
+
 			// get the scanner to return remaining bytes
 			scanner.Split(func(data []byte, atEOF bool) (int, []byte, error) {
 				return len(data), data, nil
@@ -197,18 +212,23 @@ func extractMetadata(b []byte) (metadata Metadata, markdown []byte, err error) {
 			// scan the remaining bytes
 			scanner.Scan()
 
-			return parser.Metadata(), scanner.Bytes(), nil
+			return buf.Bytes(), scanner.Bytes(), nil
 		}
 		buf.Write(line)
 		buf.WriteString("\r\n")
 	}
 
 	// closing identifier not found
-	return metadata, nil, fmt.Errorf("Metadata not closed. '%v' not found", string(parser.Closing()))
+	return buf.Bytes(), nil, fmt.Errorf("Metadata not closed. '%v' not found", string(parser.Closing()))
 }
 
 // findParser finds the parser using line that contains opening identifier
-func findParser(line []byte) MetadataParser {
+func findParser(b []byte) MetadataParser {
+	var line []byte
+	// Read first line
+	if _, err := fmt.Fscanln(bytes.NewReader(b), &line); err != nil {
+		return nil
+	}
 	line = bytes.TrimSpace(line)
 	for _, parser := range parsers {
 		if bytes.Equal(parser.Opening(), line) {

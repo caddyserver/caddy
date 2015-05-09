@@ -21,10 +21,22 @@ const (
 // process processes the contents of a page.
 // It parses the metadata (if any) and uses the template (if found)
 func (md Markdown) process(c Config, requestPath string, b []byte) ([]byte, error) {
-	metadata, markdown, err := extractMetadata(b)
-	if err != nil {
-		return nil, err
+	var metadata = Metadata{}
+	var markdown []byte
+	var err error
+
+	// find parser compatible with page contents
+	parser := findParser(b)
+
+	// if found, assume metadata present and parse.
+	if parser != nil {
+		markdown, err = parser.Parse(b)
+		if err != nil {
+			return nil, err
+		}
+		metadata = parser.Metadata()
 	}
+
 	// if template is not specified, check if Default template is set
 	if metadata.Template == "" {
 		if _, ok := c.Templates[DefaultTemplate]; ok {

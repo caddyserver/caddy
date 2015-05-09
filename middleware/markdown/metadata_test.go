@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -19,6 +20,7 @@ template = "default"
 [variables]
 name = "value"
 +++
+Page content
 `,
 	`+++
 title = "A title"
@@ -41,6 +43,7 @@ template : default
 variables :
 - name : value
 ---
+Page content
 `,
 	`---
 title : A title
@@ -51,34 +54,30 @@ variables :
 	`title : A title template : default variables : name : value`,
 }
 var JSON = [4]string{`
-{
 	"title" : "A title",
 	"template" : "default",
 	"variables" : {
 		"name" : "value"
 	}
-}
 `,
-	`:::
-{
+	`{
 	"title" : "A title",
 	"template" : "default",
 	"variables" : {
 		"name" : "value"
 	}
 }
-:::`,
-	`:::
-{
-	"title" : "A title",
-	"template" : "default",
-	"variables" : {
-		"name" : "value"
-	}
-}
+Page content
 `,
 	`
-	:::
+{
+	"title" : "A title",
+	"template" : "default",
+	"variables" : {
+		"name" : "value"
+	}
+`,
+	`
 {{
 	"title" : "A title",
 	"template" : "default",
@@ -86,7 +85,6 @@ var JSON = [4]string{`
 		"name" : "value"
 	}
 }
-:::
 	`,
 }
 
@@ -129,17 +127,18 @@ func TestParsers(t *testing.T) {
 
 	for _, v := range data {
 		// metadata without identifiers
-		err := v.parser.Parse([]byte(v.testData[0]))
+		if _, err := v.parser.Parse([]byte(v.testData[0])); err == nil {
+			t.Fatalf("Expected error for invalid metadata for %v", v.name)
+		}
+
+		// metadata with identifiers
+		md, err := v.parser.Parse([]byte(v.testData[1]))
 		check(t, err)
 		if !compare(v.parser.Metadata()) {
 			t.Fatalf("Expected %v, found %v for %v", expected, v.parser.Metadata().Variables, v.name)
 		}
-
-		// metadata with identifiers
-		metadata, _, err := extractMetadata([]byte(v.testData[1]))
-		check(t, err)
-		if !compare(metadata) {
-			t.Fatalf("Expected %v, found %v for %v", expected, metadata.Variables, v.name)
+		if "Page content" != strings.TrimSpace(string(md)) {
+			t.Fatalf("Expected %v, found %v for %v", "Page content", string(md), v.name)
 		}
 
 		var line []byte
@@ -153,12 +152,12 @@ func TestParsers(t *testing.T) {
 		}
 
 		// metadata without closing identifier
-		if _, _, err := extractMetadata([]byte(v.testData[2])); err == nil {
+		if _, err := v.parser.Parse([]byte(v.testData[2])); err == nil {
 			t.Fatalf("Expected error for missing closing identifier for %v", v.name)
 		}
 
 		// invalid metadata
-		if err := v.parser.Parse([]byte(v.testData[3])); err == nil {
+		if md, err = v.parser.Parse([]byte(v.testData[3])); err == nil {
 			t.Fatalf("Expected error for invalid metadata for %v", v.name)
 		}
 	}
