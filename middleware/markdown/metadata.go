@@ -12,9 +12,9 @@ import (
 
 var (
 	parsers = []MetadataParser{
-		&JSONMetadataParser{},
-		&TOMLMetadataParser{},
-		&YAMLMetadataParser{},
+		&JSONMetadataParser{metadata: Metadata{Variables: make(map[string]interface{})}},
+		&TOMLMetadataParser{metadata: Metadata{Variables: make(map[string]interface{})}},
+		&YAMLMetadataParser{metadata: Metadata{Variables: make(map[string]interface{})}},
 	}
 )
 

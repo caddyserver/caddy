@@ -21,7 +21,7 @@ const (
 // process processes the contents of a page.
 // It parses the metadata (if any) and uses the template (if found)
 func (md Markdown) process(c Config, requestPath string, b []byte) ([]byte, error) {
-	var metadata = Metadata{}
+	var metadata = Metadata{Variables: make(map[string]interface{})}
 	var markdown []byte
 	var err error
 
