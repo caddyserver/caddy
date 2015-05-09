@@ -31,7 +31,6 @@ func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 			// Check credentials
 			if !ok || username != rule.Username || password != rule.Password {
 				w.Header().Set("WWW-Authenticate", "Basic")
-				w.WriteHeader(http.StatusUnauthorized)
 				return http.StatusUnauthorized, nil
 			}
 
