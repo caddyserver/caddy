@@ -1,7 +1,6 @@
 package redirect
 
 import (
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -10,14 +9,7 @@ import (
 )
 
 func TestRedirect(t *testing.T) {
-	re := Redirect{
-		Next: middleware.HandlerFunc(urlPrinter),
-		Rules: []Rule{
-			{From: "/from", To: "/to"},
-			{From: "/a", To: "/b"},
-		},
-	}
-	tests := []struct {
+	for i, test := range []struct {
 		from             string
 		expectedLocation string
 	}{
@@ -29,9 +21,20 @@ func TestRedirect(t *testing.T) {
 		{"/asdf?foo=bar", ""},
 		{"/foo#bar", ""},
 		{"/a#foo", "/b"},
-	}
+	} {
+		var nextCalled bool
 
-	for i, test := range tests {
+		re := Redirect{
+			Next: middleware.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
+				nextCalled = true
+				return 0, nil
+			}),
+			Rules: []Rule{
+				{From: "/from", To: "/to"},
+				{From: "/a", To: "/b"},
+			},
+		}
+
 		req, err := http.NewRequest("GET", test.from, nil)
 		if err != nil {
 			t.Fatalf("Test %d: Could not create HTTP request: %v", i, err)
@@ -45,22 +48,8 @@ func TestRedirect(t *testing.T) {
 				i, test.expectedLocation, rec.Header().Get("Location"))
 		}
 
-		var expectedBody string
-
-		if test.expectedLocation != "" {
-			expectedBody = "<a href=\"" + test.expectedLocation + "\"></a>.\n\n"
-		} else {
-			expectedBody = test.from
-		}
-
-		if rec.Body.String() != expectedBody {
-			t.Errorf("Test %d: Expected body to be %q but was %q",
-				i, expectedBody, rec.Body.String())
+		if nextCalled && test.expectedLocation != "" {
+			t.Errorf("Test %d: Next handler was unexpectedly called", i)
 		}
 	}
-}
-
-func urlPrinter(w http.ResponseWriter, r *http.Request) (int, error) {
-	fmt.Fprintf(w, r.URL.String())
-	return 0, nil
 }
