@@ -29,17 +29,17 @@ func headersParse(c *Controller) ([]headers.Rule, error) {
 		}
 		pattern := c.Val()
 
-		// See if we already have a definition for this URL pattern...
+		// See if we already have a definition for this Path pattern...
 		for _, h := range rules {
-			if h.Url == pattern {
+			if h.Path == pattern {
 				head = h
 				break
 			}
 		}
 
 		// ...otherwise, this is a new pattern
-		if head.Url == "" {
-			head.Url = pattern
+		if head.Path == "" {
+			head.Path = pattern
 			isNewPattern = true
 		}
 
@@ -72,7 +72,7 @@ func headersParse(c *Controller) ([]headers.Rule, error) {
 			rules = append(rules, head)
 		} else {
 			for i := 0; i < len(rules); i++ {
-				if rules[i].Url == pattern {
+				if rules[i].Path == pattern {
 					rules[i] = head
 					break
 				}
