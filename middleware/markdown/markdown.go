@@ -3,11 +3,9 @@
 package markdown
 
 import (
-	"bytes"
 	"io/ioutil"
 	"net/http"
 	"os"
-	"path"
 	"strings"
 
 	"github.com/mholt/caddy/middleware"
@@ -33,6 +31,16 @@ type Markdown struct {
 	IndexFiles []string
 }
 
+// Helper function to check if a file is an index file
+func (m Markdown) IsIndexFile(file string) bool {
+	for _, f := range m.IndexFiles {
+		if f == file {
+			return true
+		}
+	}
+	return false
+}
+
 // Config stores markdown middleware configurations.
 type Config struct {
 	// Markdown renderer
@@ -49,6 +57,15 @@ type Config struct {
 
 	// List of JavaScript files to load for each markdown file
 	Scripts []string
+
+	// Map of registered templates
+	Templates map[string]string
+
+	// Map of request URL to static files generated
+	StaticFiles map[string]string
+
+	// Directory to store static files
+	StaticDir string
 }
 
 // ServeHTTP implements the http.Handler interface.
@@ -73,44 +90,37 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 					return http.StatusNotFound, nil
 				}
 
+				fs, err := f.Stat()
+				if err != nil {
+					return http.StatusNotFound, nil
+				}
+
+				// if static site is generated, attempt to use it
+				if filepath, ok := m.StaticFiles[fpath]; ok {
+					if fs1, err := os.Stat(filepath); err == nil {
+						// if markdown has not been modified
+						// since static page generation,
+						// serve the static page
+						if fs.ModTime().UnixNano() < fs1.ModTime().UnixNano() {
+							if html, err := ioutil.ReadFile(filepath); err == nil {
+								w.Write(html)
+								return http.StatusOK, nil
+							}
+						}
+					}
+				}
+
 				body, err := ioutil.ReadAll(f)
 				if err != nil {
 					return http.StatusInternalServerError, err
 				}
 
-				content := blackfriday.Markdown(body, m.Renderer, 0)
-
-				var scripts, styles string
-				for _, style := range m.Styles {
-					styles += strings.Replace(cssTemplate, "{{url}}", style, 1) + "\r\n"
-				}
-				for _, script := range m.Scripts {
-					scripts += strings.Replace(jsTemplate, "{{url}}", script, 1) + "\r\n"
+				html, err := md.process(m, fpath, body)
+				if err != nil {
+					return http.StatusInternalServerError, err
 				}
 
-				// Title is first line (length-limited), otherwise filename
-				title := path.Base(fpath)
-				newline := bytes.Index(body, []byte("\n"))
-				if newline > -1 {
-					firstline := body[:newline]
-					newTitle := strings.TrimSpace(string(firstline))
-					if len(newTitle) > 1 {
-						if len(newTitle) > 128 {
-							title = newTitle[:128]
-						} else {
-							title = newTitle
-						}
-					}
-				}
-
-				html := htmlTemplate
-				html = strings.Replace(html, "{{title}}", title, 1)
-				html = strings.Replace(html, "{{css}}", styles, 1)
-				html = strings.Replace(html, "{{js}}", scripts, 1)
-				html = strings.Replace(html, "{{body}}", string(content), 1)
-
-				w.Write([]byte(html))
-
+				w.Write(html)
 				return http.StatusOK, nil
 			}
 		}
@@ -119,20 +129,3 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 	// Didn't qualify to serve as markdown; pass-thru
 	return md.Next.ServeHTTP(w, r)
 }
-
-const (
-	htmlTemplate = `<!DOCTYPE html>
-<html>
-	<head>
-		<title>{{title}}</title>
-		<meta charset="utf-8">
-		{{css}}
-		{{js}}
-	</head>
-	<body>
-		{{body}}
-	</body>
-</html>`
-	cssTemplate = `<link rel="stylesheet" href="{{url}}">`
-	jsTemplate  = `<script src="{{url}}"></script>`
-)

@@ -2,6 +2,8 @@ package setup
 
 import (
 	"net/http"
+	"path"
+	"path/filepath"
 
 	"github.com/mholt/caddy/middleware"
 	"github.com/mholt/caddy/middleware/markdown"
@@ -33,7 +35,10 @@ func markdownParse(c *Controller) ([]markdown.Config, error) {
 
 	for c.Next() {
 		md := markdown.Config{
-			Renderer: blackfriday.HtmlRenderer(0, "", ""),
+			Renderer:    blackfriday.HtmlRenderer(0, "", ""),
+			Templates:   make(map[string]string),
+			StaticFiles: make(map[string]string),
+			StaticDir:   path.Join(c.Root, markdown.StaticDir),
 		}
 
 		// Get the path scope
@@ -61,6 +66,23 @@ func markdownParse(c *Controller) ([]markdown.Config, error) {
 					return mdconfigs, c.ArgErr()
 				}
 				md.Scripts = append(md.Scripts, c.Val())
+			case "template":
+				tArgs := c.RemainingArgs()
+				switch len(tArgs) {
+				case 0:
+					return mdconfigs, c.ArgErr()
+				case 1:
+					if _, ok := md.Templates[markdown.DefaultTemplate]; ok {
+						return mdconfigs, c.Err("only one default template is allowed, use alias.")
+					}
+					fpath := filepath.Clean(c.Root + string(filepath.Separator) + tArgs[0])
+					md.Templates[markdown.DefaultTemplate] = fpath
+				case 2:
+					fpath := filepath.Clean(c.Root + string(filepath.Separator) + tArgs[1])
+					md.Templates[tArgs[0]] = fpath
+				default:
+					return mdconfigs, c.ArgErr()
+				}
 			default:
 				return mdconfigs, c.Err("Expected valid markdown configuration property")
 			}
