@@ -84,12 +84,13 @@ func TestMultipleOverlappingRules(t *testing.T) {
 		{"/t", http.StatusOK, "t:p1"},
 		{"/t/t", http.StatusOK, "t:p1"},
 		{"/t/t", http.StatusOK, "t1:p2"},
-
+		{"/a", http.StatusOK, "t1:p2"},
+		{"/t/t", http.StatusUnauthorized, "t1:p3"},
+		{"/t", http.StatusUnauthorized, "t1:p2"},
 	}
 
 	
 	for i, test := range tests {
-
 		
 		req, err := http.NewRequest("GET", test.from, nil)
 		if err != nil {
@@ -108,7 +109,6 @@ func TestMultipleOverlappingRules(t *testing.T) {
 				i, test.result, result)
 		}
 		
-	
 	}
 
 }
