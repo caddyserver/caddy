@@ -105,6 +105,11 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 							if html, err := ioutil.ReadFile(filepath); err == nil {
 								w.Write(html)
 								return http.StatusOK, nil
+							} else {
+								if os.IsPermission(err) {
+									return http.StatusForbidden, err
+								}
+								return http.StatusNotFound, nil
 							}
 						}
 					}
@@ -115,7 +120,7 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 					return http.StatusInternalServerError, err
 				}
 
-				html, err := md.process(m, fpath, body)
+				html, err := md.Process(m, fpath, body)
 				if err != nil {
 					return http.StatusInternalServerError, err
 				}

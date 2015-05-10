@@ -1,9 +1,12 @@
 package setup
 
 import (
+	"io/ioutil"
 	"net/http"
+	"os"
 	"path"
 	"path/filepath"
+	"strings"
 
 	"github.com/mholt/caddy/middleware"
 	"github.com/mholt/caddy/middleware/markdown"
@@ -24,6 +27,57 @@ func Markdown(c *Controller) (middleware.Middleware, error) {
 		IndexFiles: []string{"index.md"},
 	}
 
+	// For any configs that enabled static site gen, sweep the whole path at startup
+	c.Startup = append(c.Startup, func() error {
+		for _, cfg := range mdconfigs {
+			if cfg.StaticDir == "" {
+				continue
+			}
+
+			// If generated site already exists, clear it out
+			_, err := os.Stat(cfg.StaticDir)
+			if err == nil {
+				err := os.RemoveAll(cfg.StaticDir)
+				if err != nil {
+					return err
+				}
+			}
+
+			fp := filepath.Join(md.Root, cfg.PathScope)
+			filepath.Walk(fp, func(path string, info os.FileInfo, err error) error {
+				for _, ext := range cfg.Extensions {
+					if !info.IsDir() && strings.HasSuffix(info.Name(), ext) {
+						// Load the file
+						body, err := ioutil.ReadFile(path)
+						if err != nil {
+							return err
+						}
+
+						// Get the relative path as if it were a HTTP request,
+						// then prepend with "/" (like a real HTTP request)
+						reqPath, err := filepath.Rel(md.Root, path)
+						if err != nil {
+							return err
+						}
+						reqPath = "/" + reqPath
+
+						// Generate the static file
+						_, err = md.Process(cfg, reqPath, body)
+						if err != nil {
+							return err
+						}
+
+						break // don't try other file extensions
+					}
+				}
+
+				return nil
+			})
+		}
+
+		return nil
+	})
+
 	return func(next middleware.Handler) middleware.Handler {
 		md.Next = next
 		return md
@@ -38,7 +92,6 @@ func markdownParse(c *Controller) ([]markdown.Config, error) {
 			Renderer:    blackfriday.HtmlRenderer(0, "", ""),
 			Templates:   make(map[string]string),
 			StaticFiles: make(map[string]string),
-			StaticDir:   path.Join(c.Root, markdown.StaticDir),
 		}
 
 		// Get the path scope
@@ -81,6 +134,16 @@ func markdownParse(c *Controller) ([]markdown.Config, error) {
 					fpath := filepath.Clean(c.Root + string(filepath.Separator) + tArgs[1])
 					md.Templates[tArgs[0]] = fpath
 				default:
+					return mdconfigs, c.ArgErr()
+				}
+			case "sitegen":
+				if c.NextArg() {
+					md.StaticDir = path.Join(c.Root, c.Val())
+				} else {
+					md.StaticDir = path.Join(c.Root, markdown.DefaultStaticDir)
+				}
+				if c.NextArg() {
+					// only 1 argument allowed
 					return mdconfigs, c.ArgErr()
 				}
 			default:

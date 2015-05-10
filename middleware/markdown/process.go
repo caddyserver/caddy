@@ -2,7 +2,6 @@ package markdown
 
 import (
 	"bytes"
-	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
@@ -14,13 +13,13 @@ import (
 )
 
 const (
-	DefaultTemplate = "defaultTemplate"
-	StaticDir       = ".caddy_static"
+	DefaultTemplate  = "defaultTemplate"
+	DefaultStaticDir = "generated_site"
 )
 
-// process processes the contents of a page.
-// It parses the metadata (if any) and uses the template (if found)
-func (md Markdown) process(c Config, requestPath string, b []byte) ([]byte, error) {
+// Process processes the contents of a page in b. It parses the metadata
+// (if any) and uses the template (if found).
+func (md Markdown) Process(c Config, requestPath string, b []byte) ([]byte, error) {
 	var metadata = Metadata{Variables: make(map[string]interface{})}
 	var markdown []byte
 	var err error
@@ -28,8 +27,11 @@ func (md Markdown) process(c Config, requestPath string, b []byte) ([]byte, erro
 	// find parser compatible with page contents
 	parser := findParser(b)
 
-	// if found, assume metadata present and parse.
-	if parser != nil {
+	if parser == nil {
+		// if not found, assume whole file is markdown (no front matter)
+		markdown = b
+	} else {
+		// if found, assume metadata present and parse.
 		markdown, err = parser.Parse(b)
 		if err != nil {
 			return nil, err
@@ -74,7 +76,7 @@ func (md Markdown) processTemplate(c Config, requestPath string, tmpl []byte, me
 	}
 
 	// process the template
-	b := &bytes.Buffer{}
+	b := new(bytes.Buffer)
 	t, err := template.New("").Parse(string(tmpl))
 	if err != nil {
 		return nil, err
@@ -87,6 +89,7 @@ func (md Markdown) processTemplate(c Config, requestPath string, tmpl []byte, me
 	if err = md.generatePage(c, requestPath, b.Bytes()); err != nil {
 		// if static page generation fails,
 		// nothing fatal, only log the error.
+		// TODO: Report this non-fatal error, but don't log it here
 		log.Println(err)
 	}
 
@@ -94,42 +97,41 @@ func (md Markdown) processTemplate(c Config, requestPath string, tmpl []byte, me
 
 }
 
-// generatePage generates a static html page from the markdown in content.
+// generatePage generates a static html page from the markdown in content if c.StaticDir
+// is a non-empty value, meaning that the user enabled static site generation.
 func (md Markdown) generatePage(c Config, requestPath string, content []byte) error {
-	// should not happen,
-	// must be set on Markdown init.
-	if c.StaticDir == "" {
-		return fmt.Errorf("Static directory not set")
-	}
+	// Only generate the page if static site generation is enabled
+	if c.StaticDir != "" {
+		// if static directory is not existing, create it
+		if _, err := os.Stat(c.StaticDir); err != nil {
+			err := os.MkdirAll(c.StaticDir, os.FileMode(0755))
+			if err != nil {
+				return err
+			}
+		}
 
-	// if static directory is not existing, create it
-	if _, err := os.Stat(c.StaticDir); err != nil {
-		err := os.MkdirAll(c.StaticDir, os.FileMode(0755))
+		filePath := filepath.Join(c.StaticDir, requestPath)
+
+		// If it is index file, use the directory instead
+		if md.IsIndexFile(filepath.Base(requestPath)) {
+			filePath, _ = filepath.Split(filePath)
+		}
+
+		// Create the directory in case it is not existing
+		if err := os.MkdirAll(filePath, os.FileMode(0744)); err != nil {
+			return err
+		}
+
+		// generate index.html file in the directory
+		filePath = filepath.Join(filePath, "index.html")
+		err := ioutil.WriteFile(filePath, content, os.FileMode(0664))
 		if err != nil {
 			return err
 		}
+
+		c.StaticFiles[requestPath] = filePath
 	}
 
-	filePath := filepath.Join(c.StaticDir, requestPath)
-
-	// If it is index file, use the directory instead
-	if md.IsIndexFile(filepath.Base(requestPath)) {
-		filePath, _ = filepath.Split(filePath)
-	}
-
-	// Create the directory in case it is not existing
-	if err := os.MkdirAll(filePath, os.FileMode(0755)); err != nil {
-		return err
-	}
-
-	// generate index.html file in the directory
-	filePath = filepath.Join(filePath, "index.html")
-	err := ioutil.WriteFile(filePath, content, os.FileMode(0755))
-	if err != nil {
-		return err
-	}
-
-	c.StaticFiles[requestPath] = filePath
 	return nil
 }
 
