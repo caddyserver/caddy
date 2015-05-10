@@ -18,10 +18,10 @@ type Headers struct {
 }
 
 // ServeHTTP implements the middleware.Handler interface and serves requests,
-// adding headers to the response according to the configured rules.
+// setting headers on the response according to the configured rules.
 func (h Headers) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	for _, rule := range h.Rules {
-		if middleware.Path(r.URL.Path).Matches(rule.Url) {
+		if middleware.Path(r.URL.Path).Matches(rule.Path) {
 			for _, header := range rule.Headers {
 				if strings.HasPrefix(header.Name, "-") {
 					w.Header().Del(strings.TrimLeft(header.Name, "-"))
@@ -38,7 +38,7 @@ type (
 	// Rule groups a slice of HTTP headers by a URL pattern.
 	// TODO: use http.Header type instead?
 	Rule struct {
-		Url     string
+		Path    string
 		Headers []Header
 	}
 
