@@ -99,7 +99,10 @@ func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 		// Load directory contents
 		file, err := os.Open(b.Root + r.URL.Path)
 		if err != nil {
-			return http.StatusForbidden, err
+			if os.IsPermission(err) {
+				return http.StatusForbidden, err
+			}
+			return http.StatusNotFound, err
 		}
 		defer file.Close()
 
