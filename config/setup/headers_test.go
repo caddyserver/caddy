@@ -21,7 +21,7 @@ func TestHeaders(t *testing.T) {
 	handler := mid(emptyNext)
 	myHandler, ok := handler.(headers.Headers)
 	if !ok {
-		t.Fatalf("Expected handler to be type BasicAuth, got: %#v", handler)
+		t.Fatalf("Expected handler to be type Headers, got: %#v", handler)
 	}
 
 	if !sameNext(myHandler.Next, emptyNext) {
