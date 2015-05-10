@@ -19,6 +19,10 @@ type BasicAuth struct {
 
 // ServeHTTP implements the middleware.Handler interface.
 func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
+
+	var hasAuth bool
+	var isAuthenticated bool
+
 	for _, rule := range a.Rules {
 		for _, res := range rule.Resources {
 			if !middleware.Path(r.URL.Path).Matches(res) {
@@ -27,16 +31,26 @@ func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 
 			// Path matches; parse auth header
 			username, password, ok := r.BasicAuth()
+			hasAuth = true
 
 			// Check credentials
 			if !ok || username != rule.Username || password != rule.Password {
-				w.Header().Set("WWW-Authenticate", "Basic")
-				return http.StatusUnauthorized, nil
+				continue
 			}
-
+			// flag set only on success authentication
+			isAuthenticated = true
+		}
+	}
+	
+	if hasAuth {
+		if !isAuthenticated {
+			w.Header().Set("WWW-Authenticate", "Basic")
+			return http.StatusUnauthorized, nil
+		} else {
 			// "It's an older code, sir, but it checks out. I was about to clear them."
 			return a.Next.ServeHTTP(w, r)
 		}
+
 	}
 
 	// Pass-thru when no paths match
