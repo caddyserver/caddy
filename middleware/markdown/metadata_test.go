@@ -35,13 +35,13 @@ var YAML = [4]string{`
 title : A title
 template : default
 variables :
-- name : value
+  name : value
 `,
 	`---
 title : A title
 template : default
 variables :
-- name : value
+  name : value
 ---
 Page content
 `,
@@ -49,7 +49,7 @@ Page content
 title : A title
 template : default
 variables :
-- name : value
+  name : value
 `,
 	`title : A title template : default variables : name : value`,
 }
@@ -112,7 +112,7 @@ func TestParsers(t *testing.T) {
 				return false
 			}
 		}
-		return true
+		return len(m.Variables) == 1
 	}
 
 	data := []struct {
@@ -135,7 +135,7 @@ func TestParsers(t *testing.T) {
 		md, err := v.parser.Parse([]byte(v.testData[1]))
 		check(t, err)
 		if !compare(v.parser.Metadata()) {
-			t.Fatalf("Expected %v, found %v for %v", expected, v.parser.Metadata().Variables, v.name)
+			t.Fatalf("Expected %v, found %v for %v", expected, v.parser.Metadata(), v.name)
 		}
 		if "Page content" != strings.TrimSpace(string(md)) {
 			t.Fatalf("Expected %v, found %v for %v", "Page content", string(md), v.name)

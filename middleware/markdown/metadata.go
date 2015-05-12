@@ -154,6 +154,19 @@ func (y *YAMLMetadataParser) Parse(b []byte) ([]byte, error) {
 	if err := yaml.Unmarshal(b, &m); err != nil {
 		return markdown, err
 	}
+
+	// convert variables (if present) to map[string]interface{}
+	// to match expected type
+	if vars, ok := m["variables"].(map[interface{}]interface{}); ok {
+		vars1 := make(map[string]interface{})
+		for k, v := range vars {
+			if key, ok := k.(string); ok {
+				vars1[key] = v
+			}
+		}
+		m["variables"] = vars1
+	}
+
 	y.metadata.load(m)
 	return markdown, nil
 }
