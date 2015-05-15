@@ -18,61 +18,61 @@ func Rewrite(c *Controller) (middleware.Middleware, error) {
 }
 
 func rewriteParse(c *Controller) ([]rewrite.Rule, error) {
-	var rewrites []rewrite.Rule
-	var regexps []rewrite.Rule
+	var simpleRules []rewrite.Rule
+	var regexpRules []rewrite.Rule
 
 	for c.Next() {
 		var rule rewrite.Rule
 		var err error
+		var base = "/"
+		var pattern, to string
+		var ext []string
 
 		args := c.RemainingArgs()
 
 		switch len(args) {
 		case 2:
-			if args[0] != "regexp" {
-				rule = rewrite.NewSimpleRule(args[0], args[1])
-				rewrites = append(rewrites, rule)
-				continue
-			}
-
-			var base = args[1]
-			var pattern, to string
-			var ext []string
-
+			rule = rewrite.NewSimpleRule(args[0], args[1])
+			simpleRules = append(simpleRules, rule)
+		case 1:
+			base = args[0]
+			fallthrough
+		case 0:
 			for c.NextBlock() {
 				switch c.Val() {
-				case "pattern":
+				case "r", "regexp":
 					if !c.NextArg() {
-						return rewrites, c.ArgErr()
+						return nil, c.ArgErr()
 					}
 					pattern = c.Val()
 				case "to":
 					if !c.NextArg() {
-						return rewrites, c.ArgErr()
+						return nil, c.ArgErr()
 					}
 					to = c.Val()
 				case "ext":
 					args1 := c.RemainingArgs()
 					if len(args1) == 0 {
-						return rewrites, c.ArgErr()
+						return nil, c.ArgErr()
 					}
 					ext = args1
 				default:
-					return rewrites, c.ArgErr()
+					return nil, c.ArgErr()
 				}
 			}
 			if pattern == "" || to == "" {
-				return rewrites, c.ArgErr()
+				return nil, c.ArgErr()
 			}
 			if rule, err = rewrite.NewRegexpRule(base, pattern, to, ext); err != nil {
-				return rewrites, err
+				return nil, err
 			}
-			rewrites = append(regexps, rule)
+			regexpRules = append(regexpRules, rule)
 		default:
-			return rewrites, c.ArgErr()
+			return nil, c.ArgErr()
 		}
 
 	}
 
-	return append(rewrites, regexps...), nil
+	// put simple rules in front to avoid regexp computation for them
+	return append(simpleRules, regexpRules...), nil
 }

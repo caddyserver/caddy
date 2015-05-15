@@ -79,9 +79,9 @@ func NewRegexpRule(base, pattern, to string, ext []string) (*RegexpRule, error) 
 	}, nil
 }
 
-var regexpVars [2]string = [2]string{
-	"$path",
-	"$query",
+var regexpVars []string = []string{
+	"{path}",
+	"{query}",
 }
 
 func (r *RegexpRule) Rewrite(req *http.Request) bool {
@@ -92,7 +92,7 @@ func (r *RegexpRule) Rewrite(req *http.Request) bool {
 	if !r.matchExt(rPath) {
 		return false
 	}
-	if !r.MatchString(req.URL.Path) {
+	if !r.MatchString(rPath[len(r.base):]) {
 		return false
 	}
 
@@ -127,6 +127,7 @@ func (r *RegexpRule) matchExt(rPath string) bool {
 	if ext == "" {
 		ext = "/"
 	}
+
 	mustUse := false
 	for _, v := range r.ext {
 		use := true
@@ -143,9 +144,9 @@ func (r *RegexpRule) matchExt(rPath string) bool {
 			return use
 		}
 	}
+
 	if mustUse {
 		return false
 	}
-
 	return true
 }
