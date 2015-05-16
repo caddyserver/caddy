@@ -109,7 +109,7 @@ func (r *RegexpRule) Rewrite(req *http.Request) bool {
 	rPath := req.URL.Path
 
 	// validate base
-	if !strings.HasPrefix(rPath, r.Base) {
+	if !middleware.Path(rPath).Matches(r.Base) {
 		return false
 	}
 
