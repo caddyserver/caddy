@@ -99,6 +99,9 @@ func NewRegexpRule(base, pattern, to string, ext []string) (*RegexpRule, error) 
 var regexpVars []string = []string{
 	"{path}",
 	"{query}",
+	"{file}",
+	"{dir}",
+	"{frag}",
 }
 
 // Rewrite rewrites the internal location of the current request.
@@ -130,6 +133,14 @@ func (r *RegexpRule) Rewrite(req *http.Request) bool {
 				to = strings.Replace(to, v, req.URL.Path[1:], -1)
 			case "{query}":
 				to = strings.Replace(to, v, req.URL.RawQuery, -1)
+			case "{frag}":
+				to = strings.Replace(to, v, req.URL.Fragment, -1)
+			case "{file}":
+				_, file := path.Split(req.URL.Path)
+				to = strings.Replace(to, v, file, -1)
+			case "{dir}":
+				dir, _ := path.Split(req.URL.Path)
+				to = path.Clean(strings.Replace(to, v, dir, -1))
 			}
 		}
 	}
