@@ -30,31 +30,47 @@ func (rw Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error)
 	return rw.Next.ServeHTTP(w, r)
 }
 
-// A Rule describes an internal location rewrite rule.
+// Rule describes an internal location rewrite rule.
 type Rule interface {
+	// Rewrite rewrites the internal location of the current request.
 	Rewrite(*http.Request) bool
 }
 
-type SimpleRule [2]string
+// SimpleRule is a simple rewrite rule.
+type SimpleRule struct {
+	From, To string
+}
 
+// NewSimpleRule creates a new Simple Rule
 func NewSimpleRule(from, to string) SimpleRule {
 	return SimpleRule{from, to}
 }
 
+// Rewrite rewrites the internal location of the current request.
 func (s SimpleRule) Rewrite(r *http.Request) bool {
-	if s[0] == r.URL.Path {
-		r.URL.Path = s[1]
+	if s.From == r.URL.Path {
+		r.URL.Path = s.To
 		return true
 	}
 	return false
 }
 
+// RegexpRule is a rewrite rule based on a regular expression
 type RegexpRule struct {
-	base, to string
-	ext      []string
+	// Path base. Request to this path and subpaths will be rewritten
+	Base string
+
+	// Path to rewrite to
+	To string
+
+	// Extensions to filter by
+	Exts []string
+
 	*regexp.Regexp
 }
 
+// NewRegexpRule creates a new RegexpRule. It returns an error if regexp
+// pattern (pattern) or extensions (ext) are invalid.
 func NewRegexpRule(base, pattern, to string, ext []string) (*RegexpRule, error) {
 	r, err := regexp.Compile(pattern)
 	if err != nil {
@@ -64,7 +80,7 @@ func NewRegexpRule(base, pattern, to string, ext []string) (*RegexpRule, error) 
 	// validate extensions
 	for _, v := range ext {
 		if len(v) < 2 || (len(v) < 3 && v[0] == '!') {
-			// check if it is no extension
+			// check if no extension is specified
 			if v != "/" && v != "!/" {
 				return nil, fmt.Errorf("Invalid extension %v", v)
 			}
@@ -79,48 +95,62 @@ func NewRegexpRule(base, pattern, to string, ext []string) (*RegexpRule, error) 
 	}, nil
 }
 
+// regexpVars are variables that can be used for To (rewrite destination path).
 var regexpVars []string = []string{
 	"{path}",
 	"{query}",
 }
 
+// Rewrite rewrites the internal location of the current request.
 func (r *RegexpRule) Rewrite(req *http.Request) bool {
 	rPath := req.URL.Path
-	if strings.Index(rPath, r.base) != 0 {
+
+	// validate base
+	if !strings.HasPrefix(rPath, r.Base) {
 		return false
 	}
+
+	// validate extensions
 	if !r.matchExt(rPath) {
 		return false
 	}
-	if !r.MatchString(rPath[len(r.base):]) {
+
+	// validate regexp
+	if !r.MatchString(rPath[len(r.Base):]) {
 		return false
 	}
 
-	to := r.to
+	to := r.To
 
 	// check variables
 	for _, v := range regexpVars {
-		if strings.Contains(r.to, v) {
+		if strings.Contains(r.To, v) {
 			switch v {
-			case regexpVars[0]:
+			case "{path}":
 				to = strings.Replace(to, v, req.URL.Path[1:], -1)
-			case regexpVars[1]:
+			case "{query}":
 				to = strings.Replace(to, v, req.URL.RawQuery, -1)
 			}
 		}
 	}
 
+	// validate resulting path
 	url, err := url.Parse(to)
 	if err != nil {
 		return false
 	}
 
+	// perform rewrite
 	req.URL.Path = url.Path
-	req.URL.RawQuery = url.RawQuery
-
+	if url.RawQuery != "" {
+		// overwrite query string if present
+		req.URL.RawQuery = url.RawQuery
+	}
 	return true
 }
 
+// matchExt matches rPath against registered file extensions.
+// Returns true if a match is found and false otherwise.
 func (r *RegexpRule) matchExt(rPath string) bool {
 	f := filepath.Base(rPath)
 	ext := path.Ext(f)
@@ -129,7 +159,7 @@ func (r *RegexpRule) matchExt(rPath string) bool {
 	}
 
 	mustUse := false
-	for _, v := range r.ext {
+	for _, v := range r.Exts {
 		use := true
 		if v[0] == '!' {
 			use = false

@@ -60,6 +60,7 @@ func rewriteParse(c *Controller) ([]rewrite.Rule, error) {
 					return nil, c.ArgErr()
 				}
 			}
+			// ensure pattern and to are specified
 			if pattern == "" || to == "" {
 				return nil, c.ArgErr()
 			}
