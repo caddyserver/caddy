@@ -7,16 +7,41 @@ import (
 	"testing"
 
 	"github.com/mholt/caddy/middleware"
+	"strings"
 )
 
 func TestRewrite(t *testing.T) {
 	rw := Rewrite{
 		Next: middleware.HandlerFunc(urlPrinter),
 		Rules: []Rule{
-			{From: "/from", To: "/to"},
-			{From: "/a", To: "/b"},
+			NewSimpleRule("/from", "/to"),
+			NewSimpleRule("/a", "/b"),
 		},
 	}
+
+	regexpRules := [][]string{
+		[]string{"/reg/", ".*", "/to", ""},
+		[]string{"/r/", "[a-z]+", "/toaz", "!.html|"},
+		[]string{"/url/", "a([a-z0-9]*)s([A-Z]{2})", "/to/{path}", ""},
+		[]string{"/ab/", "ab", "/ab?{query}", ".txt|"},
+		[]string{"/ab/", "ab", "/ab?type=html&{query}", ".html|"},
+		[]string{"/abc/", "ab", "/abc/{file}", ".html|"},
+		[]string{"/abcd/", "ab", "/a/{dir}/{file}", ".html|"},
+		[]string{"/abcde/", "ab", "/a#{frag}", ".html|"},
+	}
+
+	for _, regexpRule := range regexpRules {
+		var ext []string
+		if s := strings.Split(regexpRule[3], "|"); len(s) > 1 {
+			ext = s[:len(s)-1]
+		}
+		rule, err := NewRegexpRule(regexpRule[0], regexpRule[1], regexpRule[2], ext)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rw.Rules = append(rw.Rules, rule)
+	}
+
 	tests := []struct {
 		from       string
 		expectedTo string
@@ -29,6 +54,28 @@ func TestRewrite(t *testing.T) {
 		{"/asdf?foo=bar", "/asdf?foo=bar"},
 		{"/foo#bar", "/foo#bar"},
 		{"/a#foo", "/b#foo"},
+		{"/reg/foo", "/to"},
+		{"/re", "/re"},
+		{"/r/", "/r/"},
+		{"/r/123", "/r/123"},
+		{"/r/a123", "/toaz"},
+		{"/r/abcz", "/toaz"},
+		{"/r/z", "/toaz"},
+		{"/r/z.html", "/r/z.html"},
+		{"/r/z.js", "/toaz"},
+		{"/url/asAB", "/to/url/asAB"},
+		{"/url/aBsAB", "/url/aBsAB"},
+		{"/url/a00sAB", "/to/url/a00sAB"},
+		{"/url/a0z0sAB", "/to/url/a0z0sAB"},
+		{"/ab/aa", "/ab/aa"},
+		{"/ab/ab", "/ab/ab"},
+		{"/ab/ab.txt", "/ab"},
+		{"/ab/ab.txt?name=name", "/ab?name=name"},
+		{"/ab/ab.html?name=name", "/ab?type=html&name=name"},
+		{"/abc/ab.html", "/abc/ab.html"},
+		{"/abcd/abcd.html", "/a/abcd/abcd.html"},
+		{"/abcde/abcde.html", "/a"},
+		{"/abcde/abcde.html#1234", "/a#1234"},
 	}
 
 	for i, test := range tests {
