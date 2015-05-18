@@ -12,7 +12,7 @@ import (
 // Map of supported protocols
 // SSLv3 will be not supported in next release
 var supportedProtocols = map[string]uint16{
-	"ssl3":   tls.VersionSSL30,
+	"ssl3.0": tls.VersionSSL30,
 	"tls1.0": tls.VersionTLS10,
 	"tls1.1": tls.VersionTLS11,
 	"tls1.2": tls.VersionTLS12,
