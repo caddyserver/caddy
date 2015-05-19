@@ -132,8 +132,18 @@ func ListenAndServeTLSWithSNI(srv *http.Server, tlsConfigs []TLSConfig) error {
 	}
 	config.BuildNameToCertificate()
 
-	// Add a session cache LRU algorithm with default capacity (64)
-	config.ClientSessionCache = tls.NewLRUClientSessionCache(0)
+	// Here we change some crypto/tls defaults based on caddyfile
+	// If no config provided, we set defaults focused in security
+
+	// Add a session cache LRU algorithm
+	config.ClientSessionCache = tls.NewLRUClientSessionCache(tlsConfigs[0].CacheSize)
+
+	config.MinVersion = tlsConfigs[0].ProtocolMinVersion
+	config.MaxVersion = tlsConfigs[0].ProtocolMaxVersion
+	config.CipherSuites = tlsConfigs[0].Ciphers
+
+	// Server ciphers have priority over client ciphers
+	config.PreferServerCipherSuites = true
 
 	conn, err := net.Listen("tcp", addr)
 	if err != nil {
