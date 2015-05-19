@@ -76,3 +76,34 @@ func TestTLSParseWithOptionalParams(t *testing.T) {
 		t.Errorf("Expected CacheSize 128, got %v", c.TLS.CacheSize)
 	}
 }
+
+func TestTLSParseWithWrongOptionalParams(t *testing.T) {
+	params := `tls cert.crt cert.key {
+            cache a
+        }`
+	c := newTestController(params)
+	_, err := TLS(c)
+	if err == nil {
+		t.Errorf("Expected errors, but no error returned")
+	}
+
+	// Test protocols wrong params
+	params = `tls cert.crt cert.key {
+			protocols ssl tls
+		}`
+	c = newTestController(params)
+	_, err = TLS(c)
+	if err == nil {
+		t.Errorf("Expected errors, but no error returned")
+	}
+
+	// Test ciphers wrong params
+	params = `tls cert.crt cert.key {
+			ciphers not-valid-cipher
+		}`
+	c = newTestController(params)
+	_, err = TLS(c)
+	if err == nil {
+		t.Errorf("Expected errors, but no error returned")
+	}
+}

@@ -64,19 +64,20 @@ func TLS(c *Controller) (middleware.Middleware, error) {
 				}
 				value, ok := supportedProtocols[strings.ToLower(args[0])]
 				if !ok {
-					return nil, c.ArgErr()
+					return nil, c.Errf("Wrong protocol name or protocol not supported '%s'", c.Val())
+
 				}
 				c.TLS.ProtocolMinVersion = value
 				value, ok = supportedProtocols[strings.ToLower(args[1])]
 				if !ok {
-					return nil, c.ArgErr()
+					return nil, c.Errf("Wrong protocol name or protocol not supported '%s'", c.Val())
 				}
 				c.TLS.ProtocolMaxVersion = value
 			case "ciphers":
 				for c.NextArg() {
 					value, ok := supportedCiphers[strings.ToUpper(c.Val())]
 					if !ok {
-						return nil, c.ArgErr()
+						return nil, c.Errf("Wrong cipher name or cipher not supported '%s'", c.Val())
 					}
 					c.TLS.Ciphers = append(c.TLS.Ciphers, value)
 				}
@@ -84,9 +85,13 @@ func TLS(c *Controller) (middleware.Middleware, error) {
 				if !c.NextArg() {
 					return nil, c.ArgErr()
 				}
-				c.TLS.CacheSize, _ = strconv.Atoi(c.Val())
+				size, err := strconv.Atoi(c.Val())
+				if err != nil {
+					return nil, c.Errf("Cache parameter should be an number '%s': %v", c.Val(), err)
+				}
+				c.TLS.CacheSize = size
 			default:
-				return nil, c.ArgErr()
+				return nil, c.Errf("Unknown keyword '%s'")
 			}
 		}
 	}
