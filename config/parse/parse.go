@@ -24,4 +24,6 @@ func allTokens(input io.Reader) (tokens []token) {
 	return
 }
 
+// Set of directives that are valid (unordered). Populated
+// by config package's init function.
 var ValidDirectives = make(map[string]struct{})
