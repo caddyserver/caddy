@@ -137,7 +137,7 @@ func ListenAndServeTLSWithSNI(srv *http.Server, tlsConfigs []TLSConfig) error {
 	config.MinVersion = tlsConfigs[0].ProtocolMinVersion
 	config.MaxVersion = tlsConfigs[0].ProtocolMaxVersion
 	config.CipherSuites = tlsConfigs[0].Ciphers
-	config.PreferServerCipherSuites = true
+	config.PreferServerCipherSuites = tlsConfigs[0].PreferServerCipherSuites
 
 	conn, err := net.Listen("tcp", addr)
 	if err != nil {

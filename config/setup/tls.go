@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mholt/caddy/app"
 	"github.com/mholt/caddy/middleware"
 )
 
@@ -40,7 +39,6 @@ func TLS(c *Controller) (middleware.Middleware, error) {
 				value, ok := supportedProtocols[strings.ToLower(args[0])]
 				if !ok {
 					return nil, c.Errf("Wrong protocol name or protocol not supported '%s'", c.Val())
-
 				}
 				c.TLS.ProtocolMinVersion = value
 				value, ok = supportedProtocols[strings.ToLower(args[1])]
@@ -50,12 +48,9 @@ func TLS(c *Controller) (middleware.Middleware, error) {
 				c.TLS.ProtocolMaxVersion = value
 			case "ciphers":
 				for c.NextArg() {
-					value, ok := supportedCiphers[strings.ToUpper(c.Val())]
+					value, ok := supportedCiphersMap[strings.ToUpper(c.Val())]
 					if !ok {
 						return nil, c.Errf("Wrong cipher name or cipher not supported '%s'", c.Val())
-					}
-					if _, ok := http2CipherSuites[value]; app.Http2 && !ok {
-						return nil, c.Errf("Cipher suite %s is not allowed for HTTP/2", c.Val())
 					}
 					c.TLS.Ciphers = append(c.TLS.Ciphers, value)
 				}
@@ -65,7 +60,7 @@ func TLS(c *Controller) (middleware.Middleware, error) {
 				}
 				size, err := strconv.Atoi(c.Val())
 				if err != nil {
-					return nil, c.Errf("Cache parameter must be an number '%s': %v", c.Val(), err)
+					return nil, c.Errf("Cache parameter must be a number '%s': %v", c.Val(), err)
 				}
 				c.TLS.CacheSize = size
 			default:
@@ -76,19 +71,16 @@ func TLS(c *Controller) (middleware.Middleware, error) {
 
 	// If no ciphers provided, use all that Caddy supports for the protocol
 	if len(c.TLS.Ciphers) == 0 {
-		for _, v := range supportedCiphers {
-			if _, ok := http2CipherSuites[v]; !app.Http2 || ok {
-				c.TLS.Ciphers = append(c.TLS.Ciphers, v)
-			}
-		}
+		c.TLS.Ciphers = supportedCiphers
 	}
 
-	// If no ProtocolMin provided, set default MinVersion to TLSv1.1 for security reasons
+	// Not a cipher suite, but still important for mitigating protocol downgrade attacks
+	c.TLS.Ciphers = append(c.TLS.Ciphers, tls.TLS_FALLBACK_SCSV)
+
+	// Set default protocol min and max versions - must balance compatibility and security
 	if c.TLS.ProtocolMinVersion == 0 {
-		c.TLS.ProtocolMinVersion = tls.VersionTLS11
+		c.TLS.ProtocolMinVersion = tls.VersionTLS10
 	}
-
-	//If no ProtocolMax provided, use crypto/tls default MaxVersion(tls1.2)
 	if c.TLS.ProtocolMaxVersion == 0 {
 		c.TLS.ProtocolMaxVersion = tls.VersionTLS12
 	}
@@ -97,6 +89,9 @@ func TLS(c *Controller) (middleware.Middleware, error) {
 	if c.TLS.CacheSize <= 0 {
 		c.TLS.CacheSize = 64
 	}
+
+	// Prefer server cipher suites
+	c.TLS.PreferServerCipherSuites = true
 
 	return nil, nil
 }
@@ -111,11 +106,17 @@ var supportedProtocols = map[string]uint16{
 	"tls1.2": tls.VersionTLS12,
 }
 
-// Map of supported ciphers.
+// Map of supported ciphers, used only for parsing config.
 //
 // Note that, at time of writing, HTTP/2 blacklists 276 cipher suites,
 // including all but two of the suites below (the two GCM suites).
-var supportedCiphers = map[string]uint16{
+// See https://http2.github.io/http2-spec/#BadCipherSuites
+//
+// TLS_FALLBACK_SCSV is not in this list because we manually ensure
+// it is always added (even though it is not technically a cipher suite).
+//
+// This map, like any map, is NOT ORDERED. Do not range over this map.
+var supportedCiphersMap = map[string]uint16{
 	"ECDHE-RSA-AES128-GCM-SHA256":   tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
 	"ECDHE-ECDSA-AES128-GCM-SHA256": tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
 	"ECDHE-RSA-AES128-CBC-SHA":      tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
@@ -128,9 +129,21 @@ var supportedCiphers = map[string]uint16{
 	"RSA-3DES-EDE-CBC-SHA":          tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA,
 }
 
-// Set of cipher suites not blacklisted by HTTP/2 spec.
-// See https://http2.github.io/http2-spec/#BadCipherSuites
-var http2CipherSuites = map[uint16]struct{}{
-	tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256:   struct{}{},
-	tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256: struct{}{},
+// List of supported cipher suites in descending order of preference.
+// Ordering is very important! Getting the wrong order will break
+// mainstream clients, especially with HTTP/2.
+//
+// Note that TLS_FALLBACK_SCSV is not in this list since it is always
+// added manually.
+var supportedCiphers = []uint16{
+	tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+	tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+	tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+	tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
+	tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
+	tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
+	tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+	tls.TLS_RSA_WITH_AES_128_CBC_SHA,
+	tls.TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA,
+	tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA,
 }

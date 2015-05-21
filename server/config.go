@@ -55,13 +55,14 @@ func (c Config) Address() string {
 
 // TLSConfig describes how TLS should be configured and used,
 // if at all. A certificate and key are both required.
-// Ciphers, Protocols and CacheSize are optional
+// The rest is optional.
 type TLSConfig struct {
-	Enabled            bool
-	Certificate        string
-	Key                string
-	Ciphers            []uint16
-	ProtocolMinVersion uint16
-	ProtocolMaxVersion uint16
-	CacheSize          int
+	Enabled                  bool
+	Certificate              string
+	Key                      string
+	Ciphers                  []uint16
+	ProtocolMinVersion       uint16
+	ProtocolMaxVersion       uint16
+	CacheSize                int
+	PreferServerCipherSuites bool
 }
