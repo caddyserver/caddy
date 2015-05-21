@@ -71,7 +71,7 @@ func main() {
 
 	// Start each server with its one or more configurations
 	for addr, configs := range addresses {
-		s, err := server.New(addr, configs, configs[0].TLS.Enabled)
+		s, err := server.New(addr.String(), configs, configs[0].TLS.Enabled)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -89,10 +89,23 @@ func main() {
 			for _, config := range configs {
 				fmt.Println(config.Address())
 			}
+
+			for addr, configs := range addresses {
+				for _, conf := range configs {
+					if addr.IP.IsLoopback() && !isLocalhost(conf.Host) {
+						fmt.Printf("Notice: %s is only accessible on this machine (%s)\n",
+							conf.Host, addr.IP.String())
+					}
+				}
+			}
 		}
 	}
 
 	wg.Wait()
+}
+
+func isLocalhost(s string) bool {
+	return s == "localhost" || s == "::1" || strings.HasPrefix(s, "127.")
 }
 
 // loadConfigs loads configuration from a file or stdin (piped).
@@ -146,8 +159,8 @@ func loadConfigs() ([]server.Config, error) {
 // be grouped into the same address: 127.0.0.1. It will return an error
 // if the address lookup fails or if a TLS listener is configured on the
 // same address as a plaintext HTTP listener.
-func arrangeBindings(allConfigs []server.Config) (map[string][]server.Config, error) {
-	addresses := make(map[string][]server.Config)
+func arrangeBindings(allConfigs []server.Config) (map[*net.TCPAddr][]server.Config, error) {
+	addresses := make(map[*net.TCPAddr][]server.Config)
 
 	// Group configs by bind address
 	for _, conf := range allConfigs {
@@ -155,7 +168,7 @@ func arrangeBindings(allConfigs []server.Config) (map[string][]server.Config, er
 		if err != nil {
 			return addresses, errors.New("Could not serve " + conf.Address() + " - " + err.Error())
 		}
-		addresses[addr.String()] = append(addresses[addr.String()], conf)
+		addresses[addr] = append(addresses[addr], conf)
 	}
 
 	// Don't allow HTTP and HTTPS to be served on the same address
