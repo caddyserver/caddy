@@ -257,7 +257,7 @@ func (p *parser) closeCurlyBrace() error {
 // standardAddress turns the accepted host and port patterns
 // into a format accepted by net.Dial.
 func standardAddress(str string) (host, port string, err error) {
-	var schemePort string
+	var schemePort, splitPort string
 
 	if strings.HasPrefix(str, "https://") {
 		schemePort = "https"
@@ -267,14 +267,19 @@ func standardAddress(str string) (host, port string, err error) {
 		str = str[7:]
 	}
 
-	host, port, err = net.SplitHostPort(str)
-	if err != nil && schemePort == "" {
-		host, port, err = net.SplitHostPort(str + ":") // tack on empty port
+	host, splitPort, err = net.SplitHostPort(str)
+	if err != nil {
+		host, splitPort, err = net.SplitHostPort(str + ":") // tack on empty port
 	}
-	if err != nil && schemePort != "" {
+	if err != nil {
+		// ¯\_(ツ)_/¯
 		host = str
-		port = schemePort // assume port from scheme
-		err = nil
+	}
+
+	if splitPort != "" {
+		port = splitPort
+	} else {
+		port = schemePort
 	}
 
 	return
