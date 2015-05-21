@@ -102,7 +102,7 @@ func main() {
 
 				// Warn if ulimit is too low for production sites
 				if (runtime.GOOS == "linux" || runtime.GOOS == "darwin") &&
-					addr.IP.IsLoopback() && !checkedFdLimit {
+					!addr.IP.IsLoopback() && !checkedFdLimit {
 					out, err := exec.Command("ulimit", "-n").Output()
 					if err == nil {
 						// Note that an error here need not be reported
