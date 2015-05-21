@@ -98,7 +98,7 @@ func main() {
 			// Warn if ulimit is too low for production sites
 			if (runtime.GOOS == "linux" || runtime.GOOS == "darwin") &&
 				!addr.IP.IsLoopback() && !checkedFdLimit {
-				out, err := exec.Command("ulimit", "-n").Output()
+				out, err := exec.Command("sh", "-c", "ulimit -n").Output() // use sh because ulimit isn't in Linux $PATH
 				if err == nil {
 					// Note that an error here need not be reported
 					lim, err := strconv.Atoi(string(bytes.TrimSpace(out)))
