@@ -265,11 +265,12 @@ func standardAddress(str string) (host, port string, err error) {
 	} else if strings.HasPrefix(str, "http://") {
 		schemePort = "http"
 		str = str[7:]
-	} else if !strings.Contains(str, ":") {
-		str += ":" // + Port
 	}
 
 	host, port, err = net.SplitHostPort(str)
+	if err != nil {
+		host, port, err = net.SplitHostPort(str + ":") // tack on empty port
+	}
 	if err != nil && schemePort != "" {
 		host = str
 		port = schemePort // assume port from scheme
