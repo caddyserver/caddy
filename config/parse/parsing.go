@@ -268,7 +268,7 @@ func standardAddress(str string) (host, port string, err error) {
 	}
 
 	host, port, err = net.SplitHostPort(str)
-	if err != nil {
+	if err != nil && schemePort == "" {
 		host, port, err = net.SplitHostPort(str + ":") // tack on empty port
 	}
 	if err != nil && schemePort != "" {

@@ -78,39 +78,40 @@ func main() {
 		}(s)
 
 		app.Servers = append(app.Servers, s)
+	}
 
-		if !app.Quiet {
-			var checkedFdLimit bool
+	// Show initialization output
+	if !app.Quiet {
+		var checkedFdLimit bool
+		for addr, configs := range addresses {
+			for _, conf := range configs {
+				// Print address of site
+				fmt.Println(conf.Address())
 
-			for addr, configs := range addresses {
-				for _, conf := range configs {
-					// Print address of site
-					fmt.Println(conf.Address())
-
-					// Note if non-localhost site resolves to loopback interface
-					if addr.IP.IsLoopback() && !isLocalhost(conf.Host) {
-						fmt.Printf("Notice: %s is only accessible on this machine (%s)\n",
-							conf.Host, addr.IP.String())
-					}
+				// Note if non-localhost site resolves to loopback interface
+				if addr.IP.IsLoopback() && !isLocalhost(conf.Host) {
+					fmt.Printf("Notice: %s is only accessible on this machine (%s)\n",
+						conf.Host, addr.IP.String())
 				}
+			}
 
-				// Warn if ulimit is too low for production sites
-				if (runtime.GOOS == "linux" || runtime.GOOS == "darwin") &&
-					!addr.IP.IsLoopback() && !checkedFdLimit {
-					out, err := exec.Command("ulimit", "-n").Output()
-					if err == nil {
-						// Note that an error here need not be reported
-						lim, err := strconv.Atoi(string(bytes.TrimSpace(out)))
-						if err == nil && lim < 4096 {
-							fmt.Printf("Warning: File descriptor limit is too low (%d) for production sites\n", lim)
-						}
-						checkedFdLimit = true
+			// Warn if ulimit is too low for production sites
+			if (runtime.GOOS == "linux" || runtime.GOOS == "darwin") &&
+				!addr.IP.IsLoopback() && !checkedFdLimit {
+				out, err := exec.Command("ulimit", "-n").Output()
+				if err == nil {
+					// Note that an error here need not be reported
+					lim, err := strconv.Atoi(string(bytes.TrimSpace(out)))
+					if err == nil && lim < 4096 {
+						fmt.Printf("Warning: File descriptor limit is too low (%d) for production sites\n", lim)
 					}
+					checkedFdLimit = true
 				}
 			}
 		}
 	}
 
+	// Wait for all listeners to stop
 	app.Wg.Wait()
 }
 
