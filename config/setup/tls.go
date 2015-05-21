@@ -6,32 +6,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/mholt/caddy/app"
 	"github.com/mholt/caddy/middleware"
 )
-
-// Map of supported protocols
-// SSLv3 will be not supported in next release
-var supportedProtocols = map[string]uint16{
-	"ssl3.0": tls.VersionSSL30,
-	"tls1.0": tls.VersionTLS10,
-	"tls1.1": tls.VersionTLS11,
-	"tls1.2": tls.VersionTLS12,
-}
-
-// Map of supported ciphers
-// For security reasons caddy will not support RC4 ciphers
-var supportedCiphers = map[string]uint16{
-	"ECDHE-RSA-AES128-GCM-SHA256":   tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-	"ECDHE-ECDSA-AES128-GCM-SHA256": tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
-	"ECDHE-RSA-AES128-CBC-SHA":      tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
-	"ECDHE-RSA-AES256-CBC-SHA":      tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
-	"ECDHE-ECDSA-AES256-CBC-SHA":    tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
-	"ECDHE-ECDSA-AES128-CBC-SHA":    tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
-	"RSA-AES128-CBC-SHA":            tls.TLS_RSA_WITH_AES_128_CBC_SHA,
-	"RSA-AES256-CBC-SHA":            tls.TLS_RSA_WITH_AES_256_CBC_SHA,
-	"ECDHE-RSA-3DES-EDE-CBC-SHA":    tls.TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA,
-	"RSA-3DES-EDE-CBC-SHA":          tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA,
-}
 
 func TLS(c *Controller) (middleware.Middleware, error) {
 	c.TLS.Enabled = true
@@ -79,6 +56,9 @@ func TLS(c *Controller) (middleware.Middleware, error) {
 					if !ok {
 						return nil, c.Errf("Wrong cipher name or cipher not supported '%s'", c.Val())
 					}
+					if _, ok := http2CipherSuites[value]; app.Http2 && !ok {
+						return nil, c.Errf("Cipher suite %s is not allowed for HTTP/2", c.Val())
+					}
 					c.TLS.Ciphers = append(c.TLS.Ciphers, value)
 				}
 			case "cache":
@@ -87,7 +67,7 @@ func TLS(c *Controller) (middleware.Middleware, error) {
 				}
 				size, err := strconv.Atoi(c.Val())
 				if err != nil {
-					return nil, c.Errf("Cache parameter should be an number '%s': %v", c.Val(), err)
+					return nil, c.Errf("Cache parameter must be an number '%s': %v", c.Val(), err)
 				}
 				c.TLS.CacheSize = size
 			default:
@@ -96,10 +76,12 @@ func TLS(c *Controller) (middleware.Middleware, error) {
 		}
 	}
 
-	// If no Ciphers provided, use all caddy supportedCiphers
+	// If no ciphers provided, use all that Caddy supports for the protocol
 	if len(c.TLS.Ciphers) == 0 {
 		for _, v := range supportedCiphers {
-			c.TLS.Ciphers = append(c.TLS.Ciphers, v)
+			if _, ok := http2CipherSuites[v]; !app.Http2 || ok {
+				c.TLS.Ciphers = append(c.TLS.Ciphers, v)
+			}
 		}
 	}
 
@@ -114,9 +96,43 @@ func TLS(c *Controller) (middleware.Middleware, error) {
 	}
 
 	//If no cachesize provided, set default to 64
-	if c.TLS.CacheSize == 0 {
+	if c.TLS.CacheSize <= 0 {
 		c.TLS.CacheSize = 64
 	}
 
 	return nil, nil
+}
+
+// Map of supported protocols
+// SSLv3 will be not supported in next release
+// HTTP/2 only supports TLS 1.2 and higher
+var supportedProtocols = map[string]uint16{
+	"ssl3.0": tls.VersionSSL30,
+	"tls1.0": tls.VersionTLS10,
+	"tls1.1": tls.VersionTLS11,
+	"tls1.2": tls.VersionTLS12,
+}
+
+// Map of supported ciphers.
+//
+// Note that, at time of writing, HTTP/2 blacklists 276 cipher suites,
+// including all but two of the suites below (the two GCM suites).
+var supportedCiphers = map[string]uint16{
+	"ECDHE-RSA-AES128-GCM-SHA256":   tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+	"ECDHE-ECDSA-AES128-GCM-SHA256": tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+	"ECDHE-RSA-AES128-CBC-SHA":      tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
+	"ECDHE-RSA-AES256-CBC-SHA":      tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+	"ECDHE-ECDSA-AES256-CBC-SHA":    tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
+	"ECDHE-ECDSA-AES128-CBC-SHA":    tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
+	"RSA-AES128-CBC-SHA":            tls.TLS_RSA_WITH_AES_128_CBC_SHA,
+	"RSA-AES256-CBC-SHA":            tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+	"ECDHE-RSA-3DES-EDE-CBC-SHA":    tls.TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA,
+	"RSA-3DES-EDE-CBC-SHA":          tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA,
+}
+
+// Set of cipher suites not blacklisted by HTTP/2 spec.
+// See https://http2.github.io/http2-spec/#BadCipherSuites
+var http2CipherSuites = map[uint16]struct{}{
+	tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256:   struct{}{},
+	tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256: struct{}{},
 }

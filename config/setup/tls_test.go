@@ -3,7 +3,28 @@ package setup
 import (
 	"crypto/tls"
 	"testing"
+
+	"github.com/mholt/caddy/app"
 )
+
+func TestTLSParseBasic(t *testing.T) {
+	c := newTestController(`tls cert.pem key.pem`)
+
+	_, err := TLS(c)
+	if err != nil {
+		t.Error("Expected no errors, but had an error")
+	}
+
+	if c.TLS.Certificate != "cert.pem" {
+		t.Errorf("Expected certificate arg to be 'cert.pem', was '%s'", c.TLS.Certificate)
+	}
+	if c.TLS.Key != "key.pem" {
+		t.Errorf("Expected key arg to be 'key.pem', was '%s'", c.TLS.Key)
+	}
+	if !c.TLS.Enabled {
+		t.Error("Expected TLS Enabled=true, but was false")
+	}
+}
 
 func TestTLSParseNoOptional(t *testing.T) {
 	c := newTestController(`tls cert.crt cert.key`)
@@ -44,7 +65,6 @@ func TestTLSParseIncompleteParams(t *testing.T) {
 	if err == nil {
 		t.Errorf("Expected errors, but no error returned")
 	}
-
 }
 
 func TestTLSParseWithOptionalParams(t *testing.T) {
@@ -105,5 +125,45 @@ func TestTLSParseWithWrongOptionalParams(t *testing.T) {
 	_, err = TLS(c)
 	if err == nil {
 		t.Errorf("Expected errors, but no error returned")
+	}
+}
+
+func TestTLSParseWithHTTP2Requirements(t *testing.T) {
+	params := `tls cert.crt cert.key`
+	c := newTestController(params)
+
+	// With HTTP2, cipher suites should be limited
+	app.Http2 = true
+	_, err := TLS(c)
+	if err != nil {
+		t.Errorf("Expected no errors, got: %v", err)
+	}
+	if len(c.TLS.Ciphers) != len(http2CipherSuites) {
+		t.Errorf("With HTTP/2 on, expected %d supported ciphers, got %d",
+			len(http2CipherSuites), len(c.TLS.Ciphers))
+	}
+
+	params = `tls cert.crt cert.key {
+			ciphers RSA-AES128-CBC-SHA
+		}`
+	c = newTestController(params)
+	// Should not be able to specify a blacklisted cipher suite with HTTP2 on
+	_, err = TLS(c)
+	if err == nil {
+		t.Error("Expected an error because cipher suite is invalid for HTTP/2")
+	}
+
+	params = `tls cert.crt cert.key`
+	c = newTestController(params)
+
+	// Without HTTP2, cipher suites should not be as restricted
+	app.Http2 = false
+	_, err = TLS(c)
+	if err != nil {
+		t.Errorf("Expected no errors, got: %v", err)
+	}
+	if len(c.TLS.Ciphers) != len(supportedCiphers) {
+		t.Errorf("With HTTP/2 off, expected %d supported ciphers, got %d",
+			len(supportedCiphers), len(c.TLS.Ciphers))
 	}
 }

@@ -1,9 +1,13 @@
 package config
 
 import (
+	"errors"
+	"fmt"
 	"io"
 	"log"
+	"net"
 
+	"github.com/mholt/caddy/app"
 	"github.com/mholt/caddy/config/parse"
 	"github.com/mholt/caddy/config/setup"
 	"github.com/mholt/caddy/middleware"
@@ -41,8 +45,8 @@ func Load(filename string, input io.Reader) ([]server.Config, error) {
 			Root:       Root,
 			Middleware: make(map[string][]middleware.Middleware),
 			ConfigFile: filename,
-			AppName:    AppName,
-			AppVersion: AppVersion,
+			AppName:    app.Name,
+			AppVersion: app.Version,
 		}
 
 		// It is crucial that directives are executed in the proper order.
@@ -81,6 +85,46 @@ func Load(filename string, input io.Reader) ([]server.Config, error) {
 	return configs, nil
 }
 
+// ArrangeBindings groups configurations by their bind address. For example,
+// a server that should listen on localhost and another on 127.0.0.1 will
+// be grouped into the same address: 127.0.0.1. It will return an error
+// if the address lookup fails or if a TLS listener is configured on the
+// same address as a plaintext HTTP listener. The return value is a map of
+// bind address to list of configs that would become VirtualHosts on that
+// server.
+func ArrangeBindings(allConfigs []server.Config) (map[*net.TCPAddr][]server.Config, error) {
+	addresses := make(map[*net.TCPAddr][]server.Config)
+
+	// Group configs by bind address
+	for _, conf := range allConfigs {
+		addr, err := net.ResolveTCPAddr("tcp", conf.Address())
+		if err != nil {
+			return addresses, errors.New("Could not serve " + conf.Address() + " - " + err.Error())
+		}
+		addresses[addr] = append(addresses[addr], conf)
+	}
+
+	// Don't allow HTTP and HTTPS to be served on the same address
+	for _, configs := range addresses {
+		isTLS := configs[0].TLS.Enabled
+		for _, config := range configs {
+			if config.TLS.Enabled != isTLS {
+				thisConfigProto, otherConfigProto := "HTTP", "HTTP"
+				if config.TLS.Enabled {
+					thisConfigProto = "HTTPS"
+				}
+				if configs[0].TLS.Enabled {
+					otherConfigProto = "HTTPS"
+				}
+				return addresses, fmt.Errorf("Configuration error: Cannot multiplex %s (%s) and %s (%s) on same address",
+					configs[0].Address(), otherConfigProto, config.Address(), thisConfigProto)
+			}
+		}
+	}
+
+	return addresses, nil
+}
+
 // validDirective returns true if d is a valid
 // directive; false otherwise.
 func validDirective(d string) bool {
@@ -109,7 +153,3 @@ var (
 	Host = DefaultHost
 	Port = DefaultPort
 )
-
-// The application should set these so that various middlewares
-// can access the proper information for their own needs.
-var AppName, AppVersion string
