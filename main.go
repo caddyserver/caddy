@@ -115,6 +115,7 @@ func main() {
 	app.Wg.Wait()
 }
 
+// isLocalhost returns true if the string looks explicitly like a localhost address.
 func isLocalhost(s string) bool {
 	return s == "localhost" || s == "::1" || strings.HasPrefix(s, "127.")
 }
