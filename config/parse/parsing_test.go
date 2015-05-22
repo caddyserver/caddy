@@ -1,6 +1,7 @@
 package parse
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -57,18 +58,13 @@ func TestStandardAddress(t *testing.T) {
 }
 
 func TestParseOne(t *testing.T) {
-	testParseOne := func(input string, shouldErr bool) (multiServerBlock, error) {
+	setupParseTests()
+
+	testParseOne := func(input string) (multiServerBlock, error) {
 		p := testParser(input)
 		p.Next()
 		err := p.parseOne()
 		return p.block, err
-	}
-
-	// Set up some bogus directives for testing
-	ValidDirectives = map[string]struct{}{
-		"dir1": struct{}{},
-		"dir2": struct{}{},
-		"dir3": struct{}{},
 	}
 
 	for i, test := range []struct {
@@ -223,7 +219,7 @@ func TestParseOne(t *testing.T) {
 
 		{``, false, []address{}, map[string]int{}},
 	} {
-		result, err := testParseOne(test.input, test.shouldErr)
+		result, err := testParseOne(test.input)
 
 		if test.shouldErr && err == nil {
 			t.Errorf("Test %d: Expected an error, but didn't get one", i)
@@ -261,7 +257,103 @@ func TestParseOne(t *testing.T) {
 			}
 		}
 	}
+}
 
+func TestParseAll(t *testing.T) {
+	setupParseTests()
+
+	for i, test := range []struct {
+		input     string
+		shouldErr bool
+		addresses []address // one per expected server block, in order
+	}{
+		{`localhost`, false, []address{
+			{"localhost", ""},
+		}},
+
+		{`localhost:1234`, false, []address{
+			{"localhost", "1234"},
+		}},
+
+		{`localhost:1234 {
+		  }
+		  localhost:2015 {
+		  }`, false, []address{
+			{"localhost", "1234"},
+			{"localhost", "2015"},
+		}},
+
+		{`localhost:1234, http://host2`, false, []address{
+			{"localhost", "1234"},
+			{"host2", "http"},
+		}},
+
+		{`http://host1.com, http://host2.com {
+		  }
+		  https://host3.com, https://host4.com {
+		  }`, false, []address{
+			{"host1.com", "http"},
+			{"host2.com", "http"},
+			{"host3.com", "https"},
+			{"host4.com", "https"},
+		}},
+	} {
+		p := testParser(test.input)
+		blocks, err := p.parseAll()
+
+		if test.shouldErr && err == nil {
+			t.Errorf("Test %d: Expected an error, but didn't get one", i)
+		}
+		if !test.shouldErr && err != nil {
+			t.Errorf("Test %d: Expected no error, but got: %v", i, err)
+		}
+
+		if len(blocks) != len(test.addresses) {
+			t.Errorf("Test %d: Expected %d server blocks, got %d",
+				i, len(test.addresses), len(blocks))
+			continue
+		}
+		for j, block := range blocks {
+			if block.Host != test.addresses[j].host {
+				t.Errorf("Test %d, block %d: Expected host to be '%s', but was '%s'",
+					i, j, test.addresses[j].host, block.Host)
+			}
+			if block.Port != test.addresses[j].port {
+				t.Errorf("Test %d, block %d: Expected port to be '%s', but was '%s'",
+					i, j, test.addresses[j].port, block.Port)
+			}
+		}
+	}
+
+	// Exploding the server blocks that have more than one address should replicate/share tokens
+	p := testParser(`host1 {
+	                   dir1 foo bar
+	                 }
+
+	                 host2, host3 {
+	                   dir2 foo bar
+	                   dir3 foo {
+	                     bar
+	                   }
+	                 }`)
+	blocks, err := p.parseAll()
+	if err != nil {
+		t.Fatal("Expected there to not be an error, but there was: %v", err)
+	}
+
+	if !reflect.DeepEqual(blocks[1].Tokens, blocks[2].Tokens) {
+		t.Errorf("Expected host2 and host3 to have same tokens, but they didn't.\nhost2 Block: %v\nhost3 Block: %v",
+			blocks[1].Tokens, blocks[2].Tokens)
+	}
+}
+
+func setupParseTests() {
+	// Set up some bogus directives for testing
+	ValidDirectives = map[string]struct{}{
+		"dir1": struct{}{},
+		"dir2": struct{}{},
+		"dir3": struct{}{},
+	}
 }
 
 func testParser(input string) parser {
