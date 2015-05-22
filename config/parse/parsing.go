@@ -46,6 +46,10 @@ func (p *parser) parseOne() error {
 }
 
 func (p *parser) begin() error {
+	if len(p.tokens) == 0 {
+		return nil
+	}
+
 	err := p.addresses()
 	if err != nil {
 		return err
