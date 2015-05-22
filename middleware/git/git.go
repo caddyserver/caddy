@@ -3,15 +3,14 @@ package git
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
-	"os/exec"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/mholt/caddy/middleware"
+	"github.com/mholt/caddy/middleware/git/gitos"
 )
 
 // DefaultInterval is the minimum interval to delay before
@@ -24,8 +23,11 @@ const numRetries = 3
 // gitBinary holds the absolute path to git executable
 var gitBinary string
 
+// shell holds the shell to be used. Either sh or bash.
+var shell string
+
 // initMutex prevents parallel attempt to validate
-// git availability in PATH
+// git requirements.
 var initMutex sync.Mutex = sync.Mutex{}
 
 // Logger is used to log errors; if nil, the default log.Logger is used.
@@ -120,20 +122,20 @@ func (r *Repo) pull() error {
 // pullWithKey is used for private repositories and requires an ssh key.
 // Note: currently only limited to Linux and OSX.
 func (r *Repo) pullWithKey(params []string) error {
-	var gitSsh, script *os.File
+	var gitSsh, script gitos.File
 	// ensure temporary files deleted after usage
 	defer func() {
 		if gitSsh != nil {
-			os.Remove(gitSsh.Name())
+			gos.Remove(gitSsh.Name())
 		}
 		if script != nil {
-			os.Remove(script.Name())
+			gos.Remove(script.Name())
 		}
 	}()
 
 	var err error
 	// write git.sh script to temp file
-	gitSsh, err = writeScriptFile(gitWrapperScript(gitBinary))
+	gitSsh, err = writeScriptFile(gitWrapperScript())
 	if err != nil {
 		return err
 	}
@@ -163,9 +165,9 @@ func (r *Repo) pullWithKey(params []string) error {
 func (r *Repo) Prepare() error {
 	// check if directory exists or is empty
 	// if not, create directory
-	fs, err := ioutil.ReadDir(r.Path)
+	fs, err := gos.ReadDir(r.Path)
 	if err != nil || len(fs) == 0 {
-		return os.MkdirAll(r.Path, os.FileMode(0755))
+		return gos.MkdirAll(r.Path, os.FileMode(0755))
 	}
 
 	// validate git repo
@@ -180,9 +182,15 @@ func (r *Repo) Prepare() error {
 	if isGit {
 		// check if same repository
 		var repoUrl string
-		if repoUrl, err = r.getRepoUrl(); err == nil && repoUrl == r.Url {
-			r.pulled = true
-			return nil
+		if repoUrl, err = r.getRepoUrl(); err == nil {
+			// add .git suffix if missing for adequate comparison.
+			if !strings.HasSuffix(repoUrl, ".git") {
+				repoUrl += ".git"
+			}
+			if repoUrl == r.Url {
+				r.pulled = true
+				return nil
+			}
 		}
 		if err != nil {
 			return fmt.Errorf("Cannot retrieve repo url for %v Error: %v", r.Path, err)
@@ -205,7 +213,7 @@ func (r *Repo) getMostRecentCommit() (string, error) {
 
 // getRepoUrl retrieves remote origin url for the git repository at path
 func (r *Repo) getRepoUrl() (string, error) {
-	_, err := os.Stat(r.Path)
+	_, err := gos.Stat(r.Path)
 	if err != nil {
 		return "", err
 	}
@@ -230,9 +238,9 @@ func (r *Repo) postPullCommand() error {
 	return err
 }
 
-// InitGit validates git installation and locates the git executable
-// binary in PATH
-func InitGit() error {
+// Init validates git installation, locates the git executable
+// binary in PATH and check for available shell to use.
+func Init() error {
 	// prevent concurrent call
 	initMutex.Lock()
 	defer initMutex.Unlock()
@@ -245,18 +253,30 @@ func InitGit() error {
 
 	// locate git binary in path
 	var err error
-	gitBinary, err = exec.LookPath("git")
-	return err
+	if gitBinary, err = gos.LookPath("git"); err != nil {
+		return fmt.Errorf("Git middleware requires git installed. Cannot find git binary in PATH")
+	}
+
+	// locate bash in PATH. If not found, fallback to sh.
+	// If neither is found, return error.
+	shell = "bash"
+	if _, err = gos.LookPath("bash"); err != nil {
+		shell = "sh"
+		if _, err = gos.LookPath("sh"); err != nil {
+			return fmt.Errorf("Git middleware requires either bash or sh.")
+		}
+	}
+	return nil
 }
 
 // runCmd is a helper function to run commands.
 // It runs command with args from directory at dir.
 // The executed process outputs to os.Stderr
 func runCmd(command string, args []string, dir string) error {
-	cmd := exec.Command(command, args...)
-	cmd.Stderr = os.Stderr
-	cmd.Stdout = os.Stderr
-	cmd.Dir = dir
+	cmd := gos.Command(command, args...)
+	cmd.Stdout(os.Stderr)
+	cmd.Stderr(os.Stderr)
+	cmd.Dir(dir)
 	if err := cmd.Start(); err != nil {
 		return err
 	}
@@ -267,8 +287,8 @@ func runCmd(command string, args []string, dir string) error {
 // It runs command with args from directory at dir.
 // If successful, returns output and nil error
 func runCmdOutput(command string, args []string, dir string) (string, error) {
-	cmd := exec.Command(command, args...)
-	cmd.Dir = dir
+	cmd := gos.Command(command, args...)
+	cmd.Dir(dir)
 	var err error
 	if output, err := cmd.Output(); err == nil {
 		return string(bytes.TrimSpace(output)), nil
@@ -279,8 +299,8 @@ func runCmdOutput(command string, args []string, dir string) (string, error) {
 // writeScriptFile writes content to a temporary file.
 // It changes the temporary file mode to executable and
 // closes it to prepare it for execution.
-func writeScriptFile(content []byte) (file *os.File, err error) {
-	if file, err = ioutil.TempFile("", "caddy"); err != nil {
+func writeScriptFile(content []byte) (file gitos.File, err error) {
+	if file, err = gos.TempFile("", "caddy"); err != nil {
 		return nil, err
 	}
 	if _, err = file.Write(content); err != nil {
@@ -293,8 +313,8 @@ func writeScriptFile(content []byte) (file *os.File, err error) {
 }
 
 // gitWrapperScript forms content for git.sh script
-var gitWrapperScript = func(gitBinary string) []byte {
-	return []byte(fmt.Sprintf(`#!/bin/bash
+func gitWrapperScript() []byte {
+	return []byte(fmt.Sprintf(`#!/bin/%v
 
 # The MIT License (MIT)
 # Copyright (c) 2013 Alvin Abad
@@ -323,17 +343,17 @@ fi
 # Run the git command
 %v "$@"
 
-`, gitBinary))
+`, shell, gitBinary))
 }
 
 // bashScript forms content of bash script to clone or update a repo using ssh
-var bashScript = func(gitShPath string, repo *Repo, params []string) []byte {
-	return []byte(fmt.Sprintf(`#!/bin/bash
+func bashScript(gitShPath string, repo *Repo, params []string) []byte {
+	return []byte(fmt.Sprintf(`#!/bin/%v
 
 mkdir -p ~/.ssh;
 touch ~/.ssh/known_hosts;
 ssh-keyscan -t rsa,dsa %v 2>&1 | sort -u - ~/.ssh/known_hosts > ~/.ssh/tmp_hosts;
 cat ~/.ssh/tmp_hosts >> ~/.ssh/known_hosts;
 %v -i %v %v;
-`, repo.Host, gitShPath, repo.KeyPath, strings.Join(params, " ")))
+`, shell, repo.Host, gitShPath, repo.KeyPath, strings.Join(params, " ")))
 }
