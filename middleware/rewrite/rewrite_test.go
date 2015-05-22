@@ -28,6 +28,7 @@ func TestRewrite(t *testing.T) {
 		[]string{"/abc/", "ab", "/abc/{file}", ".html|"},
 		[]string{"/abcd/", "ab", "/a/{dir}/{file}", ".html|"},
 		[]string{"/abcde/", "ab", "/a#{frag}", ".html|"},
+		[]string{"/ab/", `.*\.jpg`, "/ajpg", ""},
 	}
 
 	for _, regexpRule := range regexpRules {
@@ -76,6 +77,7 @@ func TestRewrite(t *testing.T) {
 		{"/abcd/abcd.html", "/a/abcd/abcd.html"},
 		{"/abcde/abcde.html", "/a"},
 		{"/abcde/abcde.html#1234", "/a#1234"},
+		{"/ab/ab.jpg", "/ajpg"},
 	}
 
 	for i, test := range tests {

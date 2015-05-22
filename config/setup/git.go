@@ -96,6 +96,8 @@ func gitParse(c *Controller) (*git.Repo, error) {
 					return nil, c.ArgErr()
 				}
 				repo.Then = strings.Join(thenArgs, " ")
+			default:
+				return nil, c.ArgErr()
 			}
 		}
 	}
@@ -124,8 +126,8 @@ func gitParse(c *Controller) (*git.Repo, error) {
 		return nil, err
 	}
 
-	// validate git availability in PATH
-	if err = git.InitGit(); err != nil {
+	// validate git requirements
+	if err = git.Init(); err != nil {
 		return nil, err
 	}
 
@@ -153,19 +155,39 @@ func sanitizeHttp(repoUrl string) (string, string, error) {
 	}
 
 	repoUrl = "https://" + url.Host + url.Path
+
+	// add .git suffix if missing
+	if !strings.HasSuffix(repoUrl, ".git") {
+		repoUrl += ".git"
+	}
+
 	return repoUrl, url.Host, nil
 }
 
-// sanitizeGit cleans up repository url and validate ssh format.
+// sanitizeGit cleans up repository url and converts to ssh format for private
+// repositories if required.
 // Returns sanitized url, hostName (e.g. github.com, bitbucket.com)
 // and possible error
 func sanitizeGit(repoUrl string) (string, string, error) {
 	repoUrl = strings.TrimSpace(repoUrl)
+
+	// check if valid ssh format
 	if !strings.HasPrefix(repoUrl, "git@") || strings.Index(repoUrl, ":") < len("git@a:") {
-		return "", "", fmt.Errorf("Invalid git url %s", repoUrl)
+		// check if valid http format and convert to ssh
+		if url, err := url.Parse(repoUrl); err == nil && strings.HasPrefix(url.Scheme, "http") {
+			repoUrl = fmt.Sprintf("git@%v:%v", url.Host, url.Path[1:])
+		} else {
+			return "", "", fmt.Errorf("Invalid git url %s", repoUrl)
+		}
 	}
 	hostUrl := repoUrl[len("git@"):]
 	i := strings.Index(hostUrl, ":")
 	host := hostUrl[:i]
+
+	// add .git suffix if missing
+	if !strings.HasSuffix(repoUrl, ".git") {
+		repoUrl += ".git"
+	}
+
 	return repoUrl, host, nil
 }
