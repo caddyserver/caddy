@@ -288,6 +288,8 @@ func TestParseAll(t *testing.T) {
 			{"host2", "http"},
 		}},
 
+		{`localhost:1234, http://host2,`, true, []address{}},
+
 		{`http://host1.com, http://host2.com {
 		  }
 		  https://host3.com, https://host4.com {
