@@ -58,7 +58,14 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			}
 
 			// Connect to FastCGI gateway
-			fcgi, err := Dial("tcp", rule.Address)
+			var fcgi *FCGIClient
+
+			// check if unix socket or tcp
+			if strings.HasPrefix(rule.Address, "/") {
+				fcgi, err = Dial("unix", rule.Address)
+			} else {
+				fcgi, err = Dial("tcp", rule.Address)
+			}
 			if err != nil {
 				return http.StatusBadGateway, err
 			}
@@ -83,7 +90,10 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			default:
 				return http.StatusMethodNotAllowed, nil
 			}
-			defer resp.Body.Close()
+
+			if resp.Body != nil {
+				defer resp.Body.Close()
+			}
 
 			if err != nil && err != io.EOF {
 				return http.StatusBadGateway, err
