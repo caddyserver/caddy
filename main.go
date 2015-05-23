@@ -117,7 +117,7 @@ func checkFdlimit() {
 			// Note that an error here need not be reported
 			lim, err := strconv.Atoi(string(bytes.TrimSpace(out)))
 			if err == nil && lim < min {
-				fmt.Printf("Warning: File descriptor limit %d is too low for production sites. Recommend at least ulimit -n %d\n", lim, min)
+				fmt.Printf("Warning: File descriptor limit %d is too low for production sites.\nAt least %d is recommended. Set with \"ulimit -n %d\".\n", lim, min, min)
 			}
 		}
 	}
