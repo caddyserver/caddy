@@ -95,24 +95,32 @@ func main() {
 				}
 			}
 
-			// Warn if ulimit is too low for production sites
-			if (runtime.GOOS == "linux" || runtime.GOOS == "darwin") &&
-				!addr.IP.IsLoopback() && !checkedFdLimit {
-				out, err := exec.Command("sh", "-c", "ulimit -n").Output() // use sh because ulimit isn't in Linux $PATH
-				if err == nil {
-					// Note that an error here need not be reported
-					lim, err := strconv.Atoi(string(bytes.TrimSpace(out)))
-					if err == nil && lim < 4096 {
-						fmt.Printf("Warning: File descriptor limit is too low (%d) for production sites\n", lim)
-					}
-					checkedFdLimit = true
-				}
+			if !checkedFdLimit && !addr.IP.IsLoopback() {
+				checkFdlimit()
+				checkedFdLimit = true
 			}
 		}
 	}
 
 	// Wait for all listeners to stop
 	app.Wg.Wait()
+}
+
+// checkFdlimit issues a warning if the OS max file descriptors is below a recommended minimum.
+func checkFdlimit() {
+	const min = 4096
+
+	// Warn if ulimit is too low for production sites
+	if runtime.GOOS == "linux" || runtime.GOOS == "darwin" {
+		out, err := exec.Command("sh", "-c", "ulimit -n").Output() // use sh because ulimit isn't in Linux $PATH
+		if err == nil {
+			// Note that an error here need not be reported
+			lim, err := strconv.Atoi(string(bytes.TrimSpace(out)))
+			if err == nil && lim < min {
+				fmt.Printf("Warning: File descriptor limit %d is too low for production sites. Recommend at least ulimit -n %d\n", lim, min)
+			}
+		}
+	}
 }
 
 // isLocalhost returns true if the string looks explicitly like a localhost address.
