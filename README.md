@@ -53,14 +53,9 @@ Caddy is [available as a Docker container](https://registry.hub.docker.com/u/dar
 
 #### 3rd-party libraries
 
-Although Caddy's binaries are completely static, Caddy relies on some excellent libraries that really make the project possible.
+Although Caddy's binaries are completely static, Caddy relies on some excellent libraries. [Godoc.org](https://godoc.org/github.com/mholt/caddy) shows the packages that each Caddy package imports.
 
-- [bradfitz/http2](https://github.com/bradfitz/http2) for HTTP/2 support
-- [russross/blackfriday](https://github.com/russross/blackfriday) for Markdown rendering
-- [dustin/go-humanize](https://github.com/dustin/go-humanize) for pleasant times and sizes
-- [flynn/go-shlex](https://github.com/flynn/go-shlex) to parse shell commands properly
 
-This list may not be comprehensive, but [godoc.org](https://godoc.org/github.com/mholt/caddy) will list all packages that any given package imports.
 
 
 ## Quick Start
@@ -111,24 +106,20 @@ For more documentation, please view [the website](https://caddyserver.com/docs).
 
 
 
-
 ## Contributing
 
 **[Join us on Slack](https://gophers.slack.com/messages/caddy/)** to chat with other Caddy developers! ([Request an invite](http://bit.ly/go-slack-signup), then join the #caddy channel.)
 
-This project gladly accepts contributions. Interested users are encouraged to get involved by opening issues with their ideas, questions, and bug reports. Bug reports should contain clear instructions to reproduce the problem and state expected behavior.
-
-For small tweaks and bug fixes, feel free to submit pull requests at any time. For new features or to change existing behavior, please open an issue first to discuss it and claim it. This prevents overlapping efforts and also keeps the project in-line with its goals.
+This project would not be what it is without your help. Please see the [contributing guidelines](https://github.com/mholt/caddy/blob/master/CONTRIBUTING.md) if you haven't already.
 
 Thanks for making Caddy -- and the Web -- better!
 
 
 
 
-
 ## About the project
 
-Caddy was born out of the need for a "batteries-included" web server that runs anywhere and doesn't have to take its configuration with it. Caddy took inspiration from nginx, lighttpd, Websocketd, and Vagrant, and provides a pleasant mixture of features from each of them.
+Caddy was born out of the need for a "batteries-included" web server that runs anywhere and doesn't have to take its configuration with it. Caddy took inspiration from [spark](https://github.com/rif/spark), nginx, lighttpd, Websocketd, and Vagrant, and provides a pleasant mixture of features from each of them.
 
 
 *Twitter: [@mholt6](https://twitter.com/mholt6)*
