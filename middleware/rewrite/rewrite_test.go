@@ -6,8 +6,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/mholt/caddy/middleware"
 	"strings"
+
+	"github.com/mholt/caddy/middleware"
 )
 
 func TestRewrite(t *testing.T) {

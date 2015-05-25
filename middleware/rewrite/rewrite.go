@@ -6,12 +6,13 @@ import (
 	"net/http"
 
 	"fmt"
-	"github.com/mholt/caddy/middleware"
 	"net/url"
 	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/mholt/caddy/middleware"
 )
 
 // Rewrite is middleware to rewrite request locations internally before being handled.
@@ -96,7 +97,7 @@ func NewRegexpRule(base, pattern, to string, ext []string) (*RegexpRule, error) 
 }
 
 // regexpVars are variables that can be used for To (rewrite destination path).
-var regexpVars []string = []string{
+var regexpVars = []string{
 	"{path}",
 	"{query}",
 	"{file}",
