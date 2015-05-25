@@ -5,6 +5,7 @@ import (
 	"sync/atomic"
 )
 
+// HostPool is a collection of UpstreamHosts.
 type HostPool []*UpstreamHost
 
 // Policy decides how a host will be selected from a pool.
@@ -12,9 +13,10 @@ type Policy interface {
 	Select(pool HostPool) *UpstreamHost
 }
 
-// The random policy randomly selected an up host from the pool.
+// Random is a policy that selects up hosts from a pool at random.
 type Random struct{}
 
+// Select selects an up host at random from the specified pool.
 func (r *Random) Select(pool HostPool) *UpstreamHost {
 	// instead of just generating a random index
 	// this is done to prevent selecting a down host
@@ -37,11 +39,12 @@ func (r *Random) Select(pool HostPool) *UpstreamHost {
 	return randHost
 }
 
-// The least_conn policy selects a host with the least connections.
-// If multiple hosts have the least amount of connections, one is randomly
-// chosen.
+// LeastConn is a policy that selects the host with the least connections.
 type LeastConn struct{}
 
+// Select selects the up host with the least number of connections in the
+// pool.  If more than one host has the same least number of connections,
+// one of the hosts is chosen at random.
 func (r *LeastConn) Select(pool HostPool) *UpstreamHost {
 	var bestHost *UpstreamHost
 	count := 0
@@ -71,11 +74,12 @@ func (r *LeastConn) Select(pool HostPool) *UpstreamHost {
 	return bestHost
 }
 
-// The round_robin policy selects a host based on round robin ordering.
+// RoundRobin is a policy that selects hosts based on round robin ordering.
 type RoundRobin struct {
 	Robin uint32
 }
 
+// Select selects an up host from the pool using a round robin ordering scheme.
 func (r *RoundRobin) Select(pool HostPool) *UpstreamHost {
 	poolLen := uint32(len(pool))
 	selection := atomic.AddUint32(&r.Robin, 1) % poolLen

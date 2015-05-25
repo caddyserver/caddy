@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"github.com/mholt/caddy/config/parse"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -9,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/mholt/caddy/config/parse"
 )
 
 type staticUpstream struct {
@@ -24,7 +25,7 @@ type staticUpstream struct {
 	}
 }
 
-// newStaticUpstreams parses the configuration input and sets up
+// NewStaticUpstreams parses the configuration input and sets up
 // static upstreams for the proxy middleware.
 func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
 	var upstreams []Upstream
@@ -130,8 +131,8 @@ func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
 					}
 				}(upstream),
 			}
-			if baseUrl, err := url.Parse(uh.Name); err == nil {
-				uh.ReverseProxy = NewSingleHostReverseProxy(baseUrl)
+			if baseURL, err := url.Parse(uh.Name); err == nil {
+				uh.ReverseProxy = NewSingleHostReverseProxy(baseURL)
 			} else {
 				return upstreams, err
 			}
@@ -152,8 +153,8 @@ func (u *staticUpstream) From() string {
 
 func (u *staticUpstream) healthCheck() {
 	for _, host := range u.Hosts {
-		hostUrl := host.Name + u.HealthCheck.Path
-		if r, err := http.Get(hostUrl); err == nil {
+		hostURL := host.Name + u.HealthCheck.Path
+		if r, err := http.Get(hostURL); err == nil {
 			io.Copy(ioutil.Discard, r.Body)
 			r.Body.Close()
 			host.Unhealthy = r.StatusCode < 200 || r.StatusCode >= 400
@@ -199,7 +200,6 @@ func (u *staticUpstream) Select() *UpstreamHost {
 
 	if u.Policy == nil {
 		return (&Random{}).Select(pool)
-	} else {
-		return u.Policy.Select(pool)
 	}
+	return u.Policy.Select(pool)
 }
