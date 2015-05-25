@@ -16,10 +16,10 @@ import (
 )
 
 const (
-	// Program name
+	// Name is the program name
 	Name = "Caddy"
 
-	// Program version
+	// Version is the program version
 	Version = "0.6.0"
 )
 
@@ -27,13 +27,13 @@ var (
 	// Servers is a list of all the currently-listening servers
 	Servers []*server.Server
 
-	// This mutex protects the Servers slice during changes
+	// ServersMutex protects the Servers slice during changes
 	ServersMutex sync.Mutex
 
-	// Waiting on Wg will block until all listeners have shut down.
+	// Wg is used to wait for all servers to shut down
 	Wg sync.WaitGroup
 
-	// Whether HTTP2 is enabled or not
+	// Http2 indicates whether HTTP2 is enabled or not
 	Http2 bool // TODO: temporary flag until http2 is standard
 
 	// Quiet mode hides non-error initialization output

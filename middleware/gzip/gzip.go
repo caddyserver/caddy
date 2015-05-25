@@ -45,9 +45,8 @@ func (g Gzip) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 		gz.WriteHeader(status)
 		fmt.Fprintf(gz, "%d %s", status, http.StatusText(status))
 		return 0, err
-	} else {
-		return status, err
 	}
+	return status, err
 }
 
 // gzipResponeWriter wraps the underlying Write method

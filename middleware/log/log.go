@@ -8,9 +8,10 @@ import (
 	"github.com/mholt/caddy/middleware"
 )
 
+// Logger is a basic request logging middleware.
 type Logger struct {
 	Next  middleware.Handler
-	Rules []LogRule
+	Rules []Rule
 }
 
 func (l Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
@@ -26,7 +27,8 @@ func (l Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	return l.Next.ServeHTTP(w, r)
 }
 
-type LogRule struct {
+// Rule configures the logging middleware.
+type Rule struct {
 	PathScope  string
 	OutputFile string
 	Format     string

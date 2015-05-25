@@ -63,7 +63,7 @@ func TestGit(t *testing.T) {
 	// prepare
 	repos := []*Repo{
 		nil,
-		&Repo{Path: "gitdir", Url: "success.git"},
+		&Repo{Path: "gitdir", URL: "success.git"},
 	}
 	for _, r := range repos {
 		repo := createRepo(r)
@@ -79,26 +79,26 @@ func TestGit(t *testing.T) {
 		output string
 	}{
 		{
-			&Repo{Path: "gitdir", Url: "git@github.com:user/repo.git", KeyPath: "~/.key", Then: "echo Hello"},
+			&Repo{Path: "gitdir", URL: "git@github.com:user/repo.git", KeyPath: "~/.key", Then: "echo Hello"},
 			`git@github.com:user/repo.git pulled.
 Command echo Hello successful.
 `,
 		},
 		{
-			&Repo{Path: "gitdir", Url: "https://github.com/user/repo.git", Then: "echo Hello"},
+			&Repo{Path: "gitdir", URL: "https://github.com/user/repo.git", Then: "echo Hello"},
 			`https://github.com/user/repo.git pulled.
 Command echo Hello successful.
 `,
 		},
 		{
-			&Repo{Url: "git@github.com:user/repo"},
+			&Repo{URL: "git@github.com:user/repo"},
 			`git@github.com:user/repo pulled.
 `,
 		},
 	}
 
 	for i, test := range tests {
-		gittest.CmdOutput = test.repo.Url
+		gittest.CmdOutput = test.repo.URL
 
 		test.repo = createRepo(test.repo)
 
@@ -117,8 +117,8 @@ Command echo Hello successful.
 
 	// pull with error
 	repos = []*Repo{
-		&Repo{Path: "gitdir", Url: "http://github.com:u/repo.git"},
-		&Repo{Path: "gitdir", Url: "https://github.com/user/repo.git", Then: "echo Hello"},
+		&Repo{Path: "gitdir", URL: "http://github.com:u/repo.git"},
+		&Repo{Path: "gitdir", URL: "https://github.com/user/repo.git", Then: "echo Hello"},
 		&Repo{Path: "gitdir"},
 		&Repo{Path: "gitdir", KeyPath: ".key"},
 	}
@@ -143,7 +143,7 @@ Command echo Hello successful.
 
 func createRepo(r *Repo) *Repo {
 	repo := &Repo{
-		Url:      "git@github.com/user/test",
+		URL:      "git@github.com/user/test",
 		Path:     ".",
 		Host:     "github.com",
 		Branch:   "master",
@@ -170,8 +170,8 @@ func createRepo(r *Repo) *Repo {
 	if r.Then != "" {
 		repo.Then = r.Then
 	}
-	if r.Url != "" {
-		repo.Url = r.Url
+	if r.URL != "" {
+		repo.URL = r.URL
 	}
 
 	return repo

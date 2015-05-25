@@ -1,4 +1,4 @@
-// Package extension is middleware for clean URLs.
+// Package extensions contains middleware for clean URLs.
 //
 // The root path of the site is passed in as well as possible extensions
 // to try internally for paths requested that don't match an existing

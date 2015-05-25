@@ -58,9 +58,8 @@ func (l *lexer) next() bool {
 			}
 			if err == io.EOF {
 				return false
-			} else {
-				panic(err)
 			}
+			panic(err)
 		}
 
 		if quoted {

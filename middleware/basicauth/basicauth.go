@@ -41,16 +41,14 @@ func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 			isAuthenticated = true
 		}
 	}
-	
+
 	if hasAuth {
 		if !isAuthenticated {
 			w.Header().Set("WWW-Authenticate", "Basic")
 			return http.StatusUnauthorized, nil
-		} else {
-			// "It's an older code, sir, but it checks out. I was about to clear them."
-			return a.Next.ServeHTTP(w, r)
 		}
-
+		// "It's an older code, sir, but it checks out. I was about to clear them."
+		return a.Next.ServeHTTP(w, r)
 	}
 
 	// Pass-thru when no paths match

@@ -55,10 +55,12 @@ type FileInfo struct {
 	Mode    os.FileMode
 }
 
+// HumanSize returns the size of the file as a human-readable string.
 func (fi FileInfo) HumanSize() string {
 	return humanize.Bytes(uint64(fi.Size))
 }
 
+// HumanModTime returns the modified time of the file as a human-readable string.
 func (fi FileInfo) HumanModTime(format string) string {
 	return fi.ModTime.Format(format)
 }
