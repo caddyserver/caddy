@@ -62,8 +62,9 @@ type Repo struct {
 func (r *Repo) Pull() error {
 	r.Lock()
 	defer r.Unlock()
-	// if it is less than interval since last pull, return
-	if time.Since(r.lastPull) <= r.Interval {
+
+	// prevent a pull if the last one was less than 5 seconds ago
+	if time.Since(r.lastPull) < 5*time.Second {
 		return nil
 	}
 

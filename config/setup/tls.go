@@ -82,7 +82,7 @@ func TLS(c *Controller) (middleware.Middleware, error) {
 }
 
 // Map of supported protocols
-// SSLv3 will be not supported in next release
+// SSLv3 will be not supported in future release
 // HTTP/2 only supports TLS 1.2 and higher
 var supportedProtocols = map[string]uint16{
 	"ssl3.0": tls.VersionSSL30,
