@@ -31,9 +31,6 @@ func TestTLSParseBasic(t *testing.T) {
 	if c.TLS.ProtocolMaxVersion != tls.VersionTLS12 {
 		t.Errorf("Expected 'tls1.2 (0x0303)' as ProtocolMaxVersion, got %v", c.TLS.ProtocolMaxVersion)
 	}
-	if c.TLS.CacheSize != 64 {
-		t.Errorf("Expected CacheSize 64, got %v", c.TLS.CacheSize)
-	}
 
 	// Cipher checks
 	expectedCiphers := []uint16{
@@ -88,7 +85,6 @@ func TestTLSParseWithOptionalParams(t *testing.T) {
 	params := `tls cert.crt cert.key {
             protocols ssl3.0 tls1.2
             ciphers RSA-3DES-EDE-CBC-SHA RSA-AES256-CBC-SHA ECDHE-RSA-AES128-GCM-SHA256
-            cache 128
         }`
 	c := newTestController(params)
 
@@ -108,28 +104,15 @@ func TestTLSParseWithOptionalParams(t *testing.T) {
 	if len(c.TLS.Ciphers)-1 != 3 {
 		t.Errorf("Expected 3 Ciphers (not including TLS_FALLBACK_SCSV), got %v", len(c.TLS.Ciphers))
 	}
-
-	if c.TLS.CacheSize != 128 {
-		t.Errorf("Expected CacheSize 128, got %v", c.TLS.CacheSize)
-	}
 }
 
 func TestTLSParseWithWrongOptionalParams(t *testing.T) {
-	params := `tls cert.crt cert.key {
-            cache a
-        }`
-	c := newTestController(params)
-	_, err := TLS(c)
-	if err == nil {
-		t.Errorf("Expected errors, but no error returned")
-	}
-
 	// Test protocols wrong params
-	params = `tls cert.crt cert.key {
+	params := `tls cert.crt cert.key {
 			protocols ssl tls
 		}`
-	c = newTestController(params)
-	_, err = TLS(c)
+	c := newTestController(params)
+	_, err := TLS(c)
 	if err == nil {
 		t.Errorf("Expected errors, but no error returned")
 	}

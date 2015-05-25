@@ -3,7 +3,6 @@ package setup
 import (
 	"crypto/tls"
 	"log"
-	"strconv"
 	"strings"
 
 	"github.com/mholt/caddy/middleware"
@@ -54,15 +53,6 @@ func TLS(c *Controller) (middleware.Middleware, error) {
 					}
 					c.TLS.Ciphers = append(c.TLS.Ciphers, value)
 				}
-			case "cache":
-				if !c.NextArg() {
-					return nil, c.ArgErr()
-				}
-				size, err := strconv.Atoi(c.Val())
-				if err != nil {
-					return nil, c.Errf("Cache parameter must be a number '%s': %v", c.Val(), err)
-				}
-				c.TLS.CacheSize = size
 			default:
 				return nil, c.Errf("Unknown keyword '%s'")
 			}
@@ -83,11 +73,6 @@ func TLS(c *Controller) (middleware.Middleware, error) {
 	}
 	if c.TLS.ProtocolMaxVersion == 0 {
 		c.TLS.ProtocolMaxVersion = tls.VersionTLS12
-	}
-
-	//If no cachesize provided, set default to 64
-	if c.TLS.CacheSize <= 0 {
-		c.TLS.CacheSize = 64
 	}
 
 	// Prefer server cipher suites

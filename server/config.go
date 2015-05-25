@@ -63,6 +63,5 @@ type TLSConfig struct {
 	Ciphers                  []uint16
 	ProtocolMinVersion       uint16
 	ProtocolMaxVersion       uint16
-	CacheSize                int
 	PreferServerCipherSuites bool
 }

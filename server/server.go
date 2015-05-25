@@ -132,7 +132,6 @@ func ListenAndServeTLSWithSNI(srv *http.Server, tlsConfigs []TLSConfig) error {
 	config.BuildNameToCertificate()
 
 	// Customize our TLS configuration
-	config.ClientSessionCache = tls.NewLRUClientSessionCache(tlsConfigs[0].CacheSize)
 	config.MinVersion = tlsConfigs[0].ProtocolMinVersion
 	config.MaxVersion = tlsConfigs[0].ProtocolMaxVersion
 	config.CipherSuites = tlsConfigs[0].Ciphers
