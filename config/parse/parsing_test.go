@@ -340,7 +340,7 @@ func TestParseAll(t *testing.T) {
 	                 }`)
 	blocks, err := p.parseAll()
 	if err != nil {
-		t.Fatal("Expected there to not be an error, but there was: %v", err)
+		t.Fatalf("Expected there to not be an error, but there was: %v", err)
 	}
 
 	if !reflect.DeepEqual(blocks[1].Tokens, blocks[2].Tokens) {
