@@ -19,18 +19,19 @@ type Proxy struct {
 	Upstreams []Upstream
 }
 
-// An upstream manages a pool of proxy upstream hosts. Select should return a
+// Upstream manages a pool of proxy upstream hosts. Select should return a
 // suitable upstream host, or nil if no such hosts are available.
 type Upstream interface {
-	//The path this upstream host should be routed on
+	// The path this upstream host should be routed on
 	From() string
 	// Selects an upstream host to be routed to.
 	Select() *UpstreamHost
 }
 
+// UpstreamHostDownFunc can be used to customize how Down behaves.
 type UpstreamHostDownFunc func(*UpstreamHost) bool
 
-// An UpstreamHost represents a single proxy upstream
+// UpstreamHost represents a single proxy upstream
 type UpstreamHost struct {
 	// The hostname of this upstream host
 	Name         string
@@ -43,6 +44,9 @@ type UpstreamHost struct {
 	CheckDown    UpstreamHostDownFunc
 }
 
+// Down checks whether the upstream host is down or not.
+// Down will try to use uh.CheckDown first, and will fall
+// back to some default criteria if necessary.
 func (uh *UpstreamHost) Down() bool {
 	if uh.CheckDown == nil {
 		// Default settings
@@ -70,10 +74,10 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 				proxy := host.ReverseProxy
 				r.Host = host.Name
 
-				if baseUrl, err := url.Parse(host.Name); err == nil {
-					r.Host = baseUrl.Host
+				if baseURL, err := url.Parse(host.Name); err == nil {
+					r.Host = baseURL.Host
 					if proxy == nil {
-						proxy = NewSingleHostReverseProxy(baseUrl)
+						proxy = NewSingleHostReverseProxy(baseURL)
 					}
 				} else if proxy == nil {
 					return http.StatusInternalServerError, err

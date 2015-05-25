@@ -19,7 +19,8 @@ const (
 	DefaultPort = "2015"
 	DefaultRoot = "."
 
-	// The default configuration file to load if none is specified
+	// DefaultConfigFile is the name of the configuration file that is loaded
+	// by default if no other file is specified.
 	DefaultConfigFile = "Caddyfile"
 )
 

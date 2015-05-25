@@ -8,6 +8,7 @@ import (
 	caddylog "github.com/mholt/caddy/middleware/log"
 )
 
+// Log sets up the logging middleware.
 func Log(c *Controller) (middleware.Middleware, error) {
 	rules, err := logParse(c)
 	if err != nil {
@@ -42,22 +43,22 @@ func Log(c *Controller) (middleware.Middleware, error) {
 	}, nil
 }
 
-func logParse(c *Controller) ([]caddylog.LogRule, error) {
-	var rules []caddylog.LogRule
+func logParse(c *Controller) ([]caddylog.Rule, error) {
+	var rules []caddylog.Rule
 
 	for c.Next() {
 		args := c.RemainingArgs()
 
 		if len(args) == 0 {
 			// Nothing specified; use defaults
-			rules = append(rules, caddylog.LogRule{
+			rules = append(rules, caddylog.Rule{
 				PathScope:  "/",
 				OutputFile: caddylog.DefaultLogFilename,
 				Format:     caddylog.DefaultLogFormat,
 			})
 		} else if len(args) == 1 {
 			// Only an output file specified
-			rules = append(rules, caddylog.LogRule{
+			rules = append(rules, caddylog.Rule{
 				PathScope:  "/",
 				OutputFile: args[0],
 				Format:     caddylog.DefaultLogFormat,
@@ -78,7 +79,7 @@ func logParse(c *Controller) ([]caddylog.LogRule, error) {
 				}
 			}
 
-			rules = append(rules, caddylog.LogRule{
+			rules = append(rules, caddylog.Rule{
 				PathScope:  args[0],
 				OutputFile: args[1],
 				Format:     format,

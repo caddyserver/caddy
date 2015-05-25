@@ -1,4 +1,4 @@
-// The package internal provides a simple middleware that (a) prevents access
+// Package internal provides a simple middleware that (a) prevents access
 // to internal locations and (b) allows to return files from internal location
 // by setting a special header, e.g. in a proxy response.
 package internal
@@ -85,7 +85,6 @@ func (w internalResponseWriter) WriteHeader(code int) {
 func (w internalResponseWriter) Write(b []byte) (int, error) {
 	if isInternalRedirect(w) {
 		return 0, nil
-	} else {
-		return w.ResponseWriter.Write(b)
 	}
+	return w.ResponseWriter.Write(b)
 }

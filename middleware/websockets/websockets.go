@@ -22,7 +22,7 @@ type (
 		Sockets []Config
 	}
 
-	// WSConfig holds the configuration for a single websocket
+	// Config holds the configuration for a single websocket
 	// endpoint which may serve multiple websocket connections.
 	Config struct {
 		Path      string
@@ -50,9 +50,11 @@ func (ws WebSockets) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, err
 }
 
 var (
-	// See CGI spec, 4.1.4
+	// GatewayInterface is the dialect of CGI being used by the server
+	// to communicate with the script.  See CGI spec, 4.1.4
 	GatewayInterface string
 
-	// See CGI spec, 4.1.17
+	// ServerSoftware is the name and version of the information server
+	// software making the CGI request.  See CGI spec, 4.1.17
 	ServerSoftware string
 )

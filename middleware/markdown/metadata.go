@@ -88,8 +88,8 @@ func (j *JSONMetadataParser) Parse(b []byte) ([]byte, error) {
 	return buf[:n], nil
 }
 
-// Parsed metadata.
-// Should be called after a call to Parse returns no error
+// Metadata returns parsed metadata.  It should be called
+// only after a call to Parse returns without error.
 func (j *JSONMetadataParser) Metadata() Metadata {
 	return j.metadata
 }
@@ -123,8 +123,8 @@ func (t *TOMLMetadataParser) Parse(b []byte) ([]byte, error) {
 	return markdown, nil
 }
 
-// Parsed metadata.
-// Should be called after a call to Parse returns no error
+// Metadata returns parsed metadata.  It should be called
+// only after a call to Parse returns without error.
 func (t *TOMLMetadataParser) Metadata() Metadata {
 	return t.metadata
 }
@@ -171,8 +171,8 @@ func (y *YAMLMetadataParser) Parse(b []byte) ([]byte, error) {
 	return markdown, nil
 }
 
-// Parsed metadata.
-// Should be called after a call to Parse returns no error
+// Metadata returns parsed metadata.  It should be called
+// only after a call to Parse returns without error.
 func (y *YAMLMetadataParser) Metadata() Metadata {
 	return y.metadata
 }

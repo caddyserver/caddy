@@ -32,29 +32,29 @@ func TestGitParse(t *testing.T) {
 		expected  *git.Repo
 	}{
 		{`git git@github.com:user/repo`, false, &git.Repo{
-			Url: "https://github.com/user/repo.git",
+			URL: "https://github.com/user/repo.git",
 		}},
 		{`git github.com/user/repo`, false, &git.Repo{
-			Url: "https://github.com/user/repo.git",
+			URL: "https://github.com/user/repo.git",
 		}},
 		{`git git@github.com/user/repo`, true, nil},
 		{`git http://github.com/user/repo`, false, &git.Repo{
-			Url: "https://github.com/user/repo.git",
+			URL: "https://github.com/user/repo.git",
 		}},
 		{`git https://github.com/user/repo`, false, &git.Repo{
-			Url: "https://github.com/user/repo.git",
+			URL: "https://github.com/user/repo.git",
 		}},
 		{`git http://github.com/user/repo {
 			key ~/.key
 		}`, false, &git.Repo{
 			KeyPath: "~/.key",
-			Url:     "git@github.com:user/repo.git",
+			URL:     "git@github.com:user/repo.git",
 		}},
 		{`git git@github.com:user/repo {
 			key ~/.key
 		}`, false, &git.Repo{
 			KeyPath: "~/.key",
-			Url:     "git@github.com:user/repo.git",
+			URL:     "git@github.com:user/repo.git",
 		}},
 		{`git `, true, nil},
 		{`git {
@@ -66,7 +66,7 @@ func TestGitParse(t *testing.T) {
 		key ~/.key
 		}`, false, &git.Repo{
 			KeyPath: "~/.key",
-			Url:     "git@github.com:user/repo.git",
+			URL:     "git@github.com:user/repo.git",
 		}},
 		{`git {
 		repo git@github.com:user/repo
@@ -74,7 +74,7 @@ func TestGitParse(t *testing.T) {
 		interval 600
 		}`, false, &git.Repo{
 			KeyPath:  "~/.key",
-			Url:      "git@github.com:user/repo.git",
+			URL:      "git@github.com:user/repo.git",
 			Interval: time.Second * 600,
 		}},
 		{`git {
@@ -82,7 +82,7 @@ func TestGitParse(t *testing.T) {
 		branch dev
 		}`, false, &git.Repo{
 			Branch: "dev",
-			Url:    "https://github.com/user/repo.git",
+			URL:    "https://github.com/user/repo.git",
 		}},
 		{`git {
 		key ~/.key
@@ -93,7 +93,7 @@ func TestGitParse(t *testing.T) {
 		then echo hello world
 		}`, false, &git.Repo{
 			KeyPath: "~/.key",
-			Url:     "git@github.com:user/repo.git",
+			URL:     "git@github.com:user/repo.git",
 			Then:    "echo hello world",
 		}},
 	}
@@ -137,7 +137,7 @@ func reposEqual(expected, repo *git.Repo) bool {
 	if expected.Then != "" && expected.Then != repo.Then {
 		return false
 	}
-	if expected.Url != "" && expected.Url != repo.Url {
+	if expected.URL != "" && expected.URL != repo.URL {
 		return false
 	}
 	return true

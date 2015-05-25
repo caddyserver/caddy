@@ -28,7 +28,7 @@ var shell string
 
 // initMutex prevents parallel attempt to validate
 // git requirements.
-var initMutex sync.Mutex = sync.Mutex{}
+var initMutex = sync.Mutex{}
 
 // Logger is used to log errors; if nil, the default log.Logger is used.
 var Logger *log.Logger
@@ -44,7 +44,7 @@ func logger() *log.Logger {
 // Repo is the structure that holds required information
 // of a git repository.
 type Repo struct {
-	Url        string        // Repository URL
+	URL        string        // Repository URL
 	Path       string        // Directory to pull to
 	Host       string        // Git domain host e.g. github.com
 	Branch     string        // Git branch
@@ -94,7 +94,7 @@ func (r *Repo) Pull() error {
 
 // Pull performs git clone, or git pull if repository exists
 func (r *Repo) pull() error {
-	params := []string{"clone", "-b", r.Branch, r.Url, r.Path}
+	params := []string{"clone", "-b", r.Branch, r.URL, r.Path}
 	if r.pulled {
 		params = []string{"pull", "origin", r.Branch}
 	}
@@ -113,7 +113,7 @@ func (r *Repo) pull() error {
 	if err = runCmd(gitBinary, params, dir); err == nil {
 		r.pulled = true
 		r.lastPull = time.Now()
-		logger().Printf("%v pulled.\n", r.Url)
+		logger().Printf("%v pulled.\n", r.URL)
 		r.lastCommit, err = r.getMostRecentCommit()
 	}
 	return err
@@ -122,11 +122,11 @@ func (r *Repo) pull() error {
 // pullWithKey is used for private repositories and requires an ssh key.
 // Note: currently only limited to Linux and OSX.
 func (r *Repo) pullWithKey(params []string) error {
-	var gitSsh, script gitos.File
+	var gitSSH, script gitos.File
 	// ensure temporary files deleted after usage
 	defer func() {
-		if gitSsh != nil {
-			gos.Remove(gitSsh.Name())
+		if gitSSH != nil {
+			gos.Remove(gitSSH.Name())
 		}
 		if script != nil {
 			gos.Remove(script.Name())
@@ -135,13 +135,13 @@ func (r *Repo) pullWithKey(params []string) error {
 
 	var err error
 	// write git.sh script to temp file
-	gitSsh, err = writeScriptFile(gitWrapperScript())
+	gitSSH, err = writeScriptFile(gitWrapperScript())
 	if err != nil {
 		return err
 	}
 
 	// write git clone bash script to file
-	script, err = writeScriptFile(bashScript(gitSsh.Name(), r, params))
+	script, err = writeScriptFile(bashScript(gitSSH.Name(), r, params))
 	if err != nil {
 		return err
 	}
@@ -154,7 +154,7 @@ func (r *Repo) pullWithKey(params []string) error {
 	if err = runCmd(script.Name(), nil, dir); err == nil {
 		r.pulled = true
 		r.lastPull = time.Now()
-		logger().Printf("%v pulled.\n", r.Url)
+		logger().Printf("%v pulled.\n", r.URL)
 		r.lastCommit, err = r.getMostRecentCommit()
 	}
 	return err
@@ -181,13 +181,13 @@ func (r *Repo) Prepare() error {
 
 	if isGit {
 		// check if same repository
-		var repoUrl string
-		if repoUrl, err = r.getRepoUrl(); err == nil {
+		var repoURL string
+		if repoURL, err = r.getRepoURL(); err == nil {
 			// add .git suffix if missing for adequate comparison.
-			if !strings.HasSuffix(repoUrl, ".git") {
-				repoUrl += ".git"
+			if !strings.HasSuffix(repoURL, ".git") {
+				repoURL += ".git"
 			}
-			if repoUrl == r.Url {
+			if repoURL == r.URL {
 				r.pulled = true
 				return nil
 			}
@@ -195,7 +195,7 @@ func (r *Repo) Prepare() error {
 		if err != nil {
 			return fmt.Errorf("Cannot retrieve repo url for %v Error: %v", r.Path, err)
 		}
-		return fmt.Errorf("Another git repo '%v' exists at %v", repoUrl, r.Path)
+		return fmt.Errorf("Another git repo '%v' exists at %v", repoURL, r.Path)
 	}
 	return fmt.Errorf("Cannot git clone into %v, directory not empty.", r.Path)
 }
@@ -211,8 +211,8 @@ func (r *Repo) getMostRecentCommit() (string, error) {
 	return runCmdOutput(c, args, r.Path)
 }
 
-// getRepoUrl retrieves remote origin url for the git repository at path
-func (r *Repo) getRepoUrl() (string, error) {
+// getRepoURL retrieves remote origin url for the git repository at path
+func (r *Repo) getRepoURL() (string, error) {
 	_, err := gos.Stat(r.Path)
 	if err != nil {
 		return "", err

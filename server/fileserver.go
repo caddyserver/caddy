@@ -10,7 +10,7 @@ import (
 	"github.com/mholt/caddy/middleware/browse"
 )
 
-// This FileServer is adapted from the one in net/http by
+// FileServer is adapted from the one in net/http by
 // the Go authors. Significant modifications have been made.
 //
 //
@@ -28,15 +28,16 @@ type fileHandler struct {
 	hide []string // list of files to treat as "Not Found"
 }
 
-func (f *fileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
+func (fh *fileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	upath := r.URL.Path
 	if !strings.HasPrefix(upath, "/") {
 		upath = "/" + upath
 		r.URL.Path = upath
 	}
-	return f.serveFile(w, r, path.Clean(upath))
+	return fh.serveFile(w, r, path.Clean(upath))
 }
 
+// serveFile writes the specified file to the HTTP response.
 // name is '/'-separated, not filepath.Separator.
 func (fh *fileHandler) serveFile(w http.ResponseWriter, r *http.Request, name string) (int, error) {
 	f, err := fh.root.Open(name)

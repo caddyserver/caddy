@@ -31,9 +31,9 @@ type Markdown struct {
 	IndexFiles []string
 }
 
-// Helper function to check if a file is an index file
-func (m Markdown) IsIndexFile(file string) bool {
-	for _, f := range m.IndexFiles {
+// IsIndexFile checks to see if a file is an index file
+func (md Markdown) IsIndexFile(file string) bool {
+	for _, f := range md.IndexFiles {
 		if f == file {
 			return true
 		}
@@ -105,12 +105,11 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 							if html, err := ioutil.ReadFile(filepath); err == nil {
 								w.Write(html)
 								return http.StatusOK, nil
-							} else {
-								if os.IsPermission(err) {
-									return http.StatusForbidden, err
-								}
-								return http.StatusNotFound, nil
 							}
+							if os.IsPermission(err) {
+								return http.StatusForbidden, err
+							}
+							return http.StatusNotFound, nil
 						}
 					}
 				}
