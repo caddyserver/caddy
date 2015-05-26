@@ -33,6 +33,9 @@ var initMutex = sync.Mutex{}
 // Logger is used to log errors; if nil, the default log.Logger is used.
 var Logger *log.Logger
 
+// Monitor listens for halt signal to stop repositories from auto pulling.
+var Monitor = &monitor{}
+
 // logger is an helper function to retrieve the available logger
 func logger() *log.Logger {
 	if Logger == nil {

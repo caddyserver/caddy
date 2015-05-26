@@ -139,6 +139,39 @@ Command echo Hello successful.
 		}
 	}
 
+	// timeout checks
+	timeoutTests := []struct {
+		repo       *Repo
+		shouldPull bool
+	}{
+		{&Repo{Interval: time.Millisecond * 4900}, false},
+		{&Repo{Interval: time.Millisecond * 1}, false},
+		{&Repo{Interval: time.Second * 5}, true},
+		{&Repo{Interval: time.Second * 10}, true},
+	}
+
+	for i, r := range timeoutTests {
+		r.repo = createRepo(r.repo)
+
+		err := r.repo.Prepare()
+		check(t, err)
+		err = r.repo.Pull()
+		check(t, err)
+
+		before := r.repo.lastPull
+
+		time.Sleep(r.repo.Interval)
+
+		err = r.repo.Pull()
+		after := r.repo.lastPull
+		check(t, err)
+
+		expected := after.After(before)
+		if expected != r.shouldPull {
+			t.Errorf("Pull with Error %v: Expected %v found %v", i, expected, r.shouldPull)
+		}
+	}
+
 }
 
 func createRepo(r *Repo) *Repo {
