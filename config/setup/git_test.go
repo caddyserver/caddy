@@ -87,7 +87,7 @@ No new changes.`
 		}
 
 		// stop background thread monitor
-		git.Monitor.StopAndWait(repo.URL, 1)
+		git.Services.Stop(repo.URL, 1)
 
 	}
 
