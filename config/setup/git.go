@@ -2,7 +2,6 @@ package setup
 
 import (
 	"fmt"
-	"log"
 	"net/url"
 	"path/filepath"
 	"runtime"
@@ -22,22 +21,8 @@ func Git(c *Controller) (middleware.Middleware, error) {
 	}
 
 	c.Startup = append(c.Startup, func() error {
-		// Startup functions are blocking; start
-		// service routine in background
-		go func() {
-			for {
-				time.Sleep(repo.Interval)
-
-				err := repo.Pull()
-				if err != nil {
-					if git.Logger == nil {
-						log.Println(err)
-					} else {
-						git.Logger.Println(err)
-					}
-				}
-			}
-		}()
+		// Start service routine in background
+		git.Start(repo)
 
 		// Do a pull right away to return error
 		return repo.Pull()

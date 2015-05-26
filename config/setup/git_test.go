@@ -1,6 +1,9 @@
 package setup
 
 import (
+	"io/ioutil"
+	"log"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,16 +16,81 @@ func init() {
 	git.SetOS(gittest.FakeOS)
 }
 
+func check(t *testing.T, err error) {
+	if err != nil {
+		t.Errorf("Expected no errors, but got: %v", err)
+	}
+}
+
 func TestGit(t *testing.T) {
 	c := newTestController(`git git@github.com:mholt/caddy.git`)
 
 	mid, err := Git(c)
-	if err != nil {
-		t.Errorf("Expected no errors, but got: %v", err)
-	}
+	check(t, err)
 	if mid != nil {
 		t.Fatal("Git middleware is a background service and expected to be nil.")
 	}
+}
+
+func TestIntervals(t *testing.T) {
+	tests := []string{
+		`git git@github.com:user/repo { interval 10 }`,
+		`git git@github.com:user/repo { interval 5 }`,
+		`git git@github.com:user/repo { interval 2 }`,
+		`git git@github.com:user/repo { interval 1 }`,
+		`git git@github.com:user/repo { interval 6 }`,
+	}
+
+	for i, test := range tests {
+		git.Logger = nil
+
+		c1 := newTestController(test)
+		repo, err := gitParse(c1)
+		check(t, err)
+
+		c2 := newTestController(test)
+		_, err = Git(c2)
+		check(t, err)
+
+		// start startup services
+		err = c2.Startup[0]()
+		check(t, err)
+
+		// wait for first background pull
+		time.Sleep(time.Millisecond * 100)
+
+		// switch logger to test file
+		logFile := gittest.Open("file")
+		git.Logger = log.New(logFile, "", 0)
+
+		// sleep for the interval
+		time.Sleep(repo.Interval)
+
+		// get log output
+		out, err := ioutil.ReadAll(logFile)
+		check(t, err)
+
+		// if greater than minimum interval
+		if repo.Interval >= time.Second*5 {
+			expected := `https://github.com/user/repo.git pulled.
+No new changes.`
+
+			// ensure pull is done by tracing the output
+			if expected != strings.TrimSpace(string(out)) {
+				t.Errorf("Test %v: Expected %v found %v", i, expected, string(out))
+			}
+		} else {
+			// ensure pull is ignored by confirming no output
+			if string(out) != "" {
+				t.Errorf("Test %v: Expected no output but found %v", i, string(out))
+			}
+		}
+
+		// stop background thread monitor
+		git.Monitor.StopAndWait(repo.URL, 1)
+
+	}
+
 }
 
 func TestGitParse(t *testing.T) {
