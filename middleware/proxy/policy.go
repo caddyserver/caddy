@@ -11,6 +11,7 @@ type HostPool []*UpstreamHost
 // Policy decides how a host will be selected from a pool.
 type Policy interface {
 	Select(pool HostPool) *UpstreamHost
+	Name() string
 }
 
 // Random is a policy that selects up hosts from a pool at random.
@@ -37,6 +38,11 @@ func (r *Random) Select(pool HostPool) *UpstreamHost {
 		}
 	}
 	return randHost
+}
+
+// Name returns the name of the policy.
+func (r *Random) Name() string {
+	return "random"
 }
 
 // LeastConn is a policy that selects the host with the least connections.
@@ -74,6 +80,11 @@ func (r *LeastConn) Select(pool HostPool) *UpstreamHost {
 	return bestHost
 }
 
+// Name returns the name of the policy.
+func (r *LeastConn) Name() string {
+	return "least_conn"
+}
+
 // RoundRobin is a policy that selects hosts based on round robin ordering.
 type RoundRobin struct {
 	Robin uint32
@@ -92,4 +103,9 @@ func (r *RoundRobin) Select(pool HostPool) *UpstreamHost {
 		return nil
 	}
 	return host
+}
+
+// Name returns the name of the policy.
+func (r *RoundRobin) Name() string {
+	return "round_robin"
 }

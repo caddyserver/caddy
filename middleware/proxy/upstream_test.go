@@ -41,3 +41,12 @@ func TestSelect(t *testing.T) {
 		t.Error("Expected select to not return nil")
 	}
 }
+
+func TestRegisterPolicy(t *testing.T) {
+	customPolicy := &customPolicy{}
+	RegisterPolicy(customPolicy)
+	if _, ok := supportedPolicies[customPolicy.Name()]; !ok {
+		t.Error("Expected supportedPolicies to have a custom policy.")
+	}
+
+}
