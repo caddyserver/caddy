@@ -34,7 +34,7 @@ func Test(t *testing.T) {
 		}
 	}
 
-	time.Sleep(time.Second * 5)
+	gos.Sleep(time.Second * 5)
 	Services.Stop(repos[0].URL, 1)
 	if len(Services.services) != 4 {
 		t.Errorf("Expected %v service(s), found %v", 4, len(Services.services))
@@ -52,7 +52,7 @@ func Test(t *testing.T) {
 		t.Errorf("Expected %v service(s), found %v", 6, len(Services.services))
 	}
 
-	time.Sleep(time.Second * 5)
+	gos.Sleep(time.Second * 5)
 	Services.Stop(repo.URL, -1)
 	if len(Services.services) != 4 {
 		t.Errorf("Expected %v service(s), found %v", 4, len(Services.services))

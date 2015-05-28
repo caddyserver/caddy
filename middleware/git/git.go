@@ -68,7 +68,7 @@ func (r *Repo) Pull() error {
 	defer r.Unlock()
 
 	// prevent a pull if the last one was less than 5 seconds ago
-	if time.Since(r.lastPull) < 5*time.Second {
+	if gos.TimeSince(r.lastPull) < 5*time.Second {
 		return nil
 	}
 

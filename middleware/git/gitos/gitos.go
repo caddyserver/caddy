@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"time"
 )
 
 // File is an abstraction for file (os.File).
@@ -114,6 +115,33 @@ type OS interface {
 	// beginning with prefix, opens the file for reading and writing, and
 	// returns the resulting File.
 	TempFile(string, string) (File, error)
+
+	// Sleep pauses the current goroutine for at least the duration d. A
+	// negative or zero duration causes Sleep to return immediately.
+	Sleep(time.Duration)
+
+	// NewTicker returns a new Ticker containing a channel that will send the
+	// time with a period specified by the argument.
+	NewTicker(time.Duration) Ticker
+
+	// TimeSince returns the time elapsed since the argument.
+	TimeSince(time.Time) time.Duration
+}
+
+// Ticker is an abstraction for Ticker (time.Ticker)
+type Ticker interface {
+	C() <-chan time.Time
+	Stop()
+}
+
+// GitTicker is the implementation of Ticker for git.
+type GitTicker struct {
+	*time.Ticker
+}
+
+// C returns the channel on which the ticks are delivered.s
+func (g *GitTicker) C() <-chan time.Time {
+	return g.Ticker.C
 }
 
 // GitOS is the implementation of OS for git.
@@ -157,4 +185,19 @@ func (g GitOS) ReadDir(dirname string) ([]os.FileInfo, error) {
 // Command calls exec.Command.
 func (g GitOS) Command(name string, args ...string) Cmd {
 	return &gitCmd{exec.Command(name, args...)}
+}
+
+// Sleep calls time.Sleep.
+func (g GitOS) Sleep(d time.Duration) {
+	time.Sleep(d)
+}
+
+// New Ticker calls time.NewTicker.
+func (g GitOS) NewTicker(d time.Duration) Ticker {
+	return &GitTicker{time.NewTicker(d)}
+}
+
+// TimeSince calls time.Since
+func (g GitOS) TimeSince(t time.Time) time.Duration {
+	return time.Since(t)
 }

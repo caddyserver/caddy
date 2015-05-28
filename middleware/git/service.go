@@ -2,30 +2,29 @@ package git
 
 import (
 	"sync"
-	"time"
+
+	"github.com/mholt/caddy/middleware/git/gitos"
 )
 
 // repoService is the service that runs in background and periodically
 // pull from the repository.
 type repoService struct {
-	repo    *Repo
-	ticker  *time.Ticker  // ticker to tick at intervals
-	running bool          // whether service is running.
-	halt    chan struct{} // channel to notify service to halt and stop pulling.
+	repo   *Repo
+	ticker gitos.Ticker  // ticker to tick at intervals
+	halt   chan struct{} // channel to notify service to halt and stop pulling.
 }
 
 // Start starts a new background service to pull periodically.
 func Start(repo *Repo) {
 	service := &repoService{
 		repo,
-		time.NewTicker(repo.Interval),
-		true,
+		gos.NewTicker(repo.Interval),
 		make(chan struct{}),
 	}
 	go func(s *repoService) {
 		for {
 			select {
-			case <-s.ticker.C:
+			case <-s.ticker.C():
 				err := repo.Pull()
 				if err != nil {
 					logger().Println(err)

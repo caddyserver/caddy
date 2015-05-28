@@ -19,6 +19,9 @@ var CmdOutput = "success"
 // TempFileName is the name of any file returned by mocked gitos.OS's TempFile().
 var TempFileName = "tempfile"
 
+// TimeSpeed is how faster the mocked gitos.Ticker and gitos.Sleep should run.
+var TimeSpeed = 5
+
 // dirs mocks a fake git dir if filename is "gitdir".
 var dirs = map[string][]os.FileInfo{
 	"gitdir": {
@@ -29,6 +32,11 @@ var dirs = map[string][]os.FileInfo{
 // Open creates a new mock gitos.File.
 func Open(name string) gitos.File {
 	return &fakeFile{name: name}
+}
+
+// Sleep calls fake time.Sleep
+func Sleep(d time.Duration) {
+	FakeOS.Sleep(d)
 }
 
 // fakeFile is a mock gitos.File.
@@ -70,7 +78,7 @@ func (f *fakeFile) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
-// fakeCmd is a mock git.Cmd.
+// fakeCmd is a mock gitos.Cmd.
 type fakeCmd struct{}
 
 func (f fakeCmd) Run() error {
@@ -128,7 +136,16 @@ func (f fakeInfo) Sys() interface{} {
 	return nil
 }
 
-// fakeOS is a mock git.OS.
+// fakeTicker is a mock gitos.Ticker
+type fakeTicker struct {
+	*time.Ticker
+}
+
+func (f fakeTicker) C() <-chan time.Time {
+	return f.Ticker.C
+}
+
+// fakeOS is a mock gitos.OS.
 type fakeOS struct{}
 
 func (f fakeOS) Mkdir(name string, perm os.FileMode) error {
@@ -164,4 +181,16 @@ func (f fakeOS) ReadDir(dirname string) ([]os.FileInfo, error) {
 
 func (f fakeOS) Command(name string, args ...string) gitos.Cmd {
 	return fakeCmd{}
+}
+
+func (f fakeOS) Sleep(d time.Duration) {
+	time.Sleep(d / time.Duration(TimeSpeed))
+}
+
+func (f fakeOS) NewTicker(d time.Duration) gitos.Ticker {
+	return &fakeTicker{time.NewTicker(d / time.Duration(TimeSpeed))}
+}
+
+func (f fakeOS) TimeSince(t time.Time) time.Duration {
+	return time.Since(t) * time.Duration(TimeSpeed)
 }

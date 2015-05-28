@@ -57,14 +57,14 @@ func TestIntervals(t *testing.T) {
 		check(t, err)
 
 		// wait for first background pull
-		time.Sleep(time.Millisecond * 100)
+		gittest.Sleep(time.Millisecond * 100)
 
 		// switch logger to test file
 		logFile := gittest.Open("file")
 		git.Logger = log.New(logFile, "", 0)
 
 		// sleep for the interval
-		time.Sleep(repo.Interval)
+		gittest.Sleep(repo.Interval)
 
 		// get log output
 		out, err := ioutil.ReadAll(logFile)
