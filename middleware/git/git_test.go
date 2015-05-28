@@ -160,7 +160,7 @@ Command echo Hello successful.
 
 		before := r.repo.lastPull
 
-		time.Sleep(r.repo.Interval)
+		gittest.Sleep(r.repo.Interval)
 
 		err = r.repo.Pull()
 		after := r.repo.lastPull

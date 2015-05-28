@@ -33,8 +33,9 @@ var initMutex = sync.Mutex{}
 // Logger is used to log errors; if nil, the default log.Logger is used.
 var Logger *log.Logger
 
-// Monitor listens for halt signal to stop repositories from auto pulling.
-var Monitor = &monitor{}
+// Services holds all git pulling services and provides the function to
+// stop them.
+var Services = &services{}
 
 // logger is an helper function to retrieve the available logger
 func logger() *log.Logger {
@@ -67,7 +68,7 @@ func (r *Repo) Pull() error {
 	defer r.Unlock()
 
 	// prevent a pull if the last one was less than 5 seconds ago
-	if time.Since(r.lastPull) < 5*time.Second {
+	if gos.TimeSince(r.lastPull) < 5*time.Second {
 		return nil
 	}
 
