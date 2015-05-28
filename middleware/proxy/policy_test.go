@@ -10,10 +10,6 @@ func (r *customPolicy) Select(pool HostPool) *UpstreamHost {
 	return pool[0]
 }
 
-func (r *customPolicy) Name() string {
-	return "custom"
-}
-
 func testPool() HostPool {
 	pool := []*UpstreamHost{
 		&UpstreamHost{
