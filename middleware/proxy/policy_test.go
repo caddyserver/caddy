@@ -4,6 +4,12 @@ import (
 	"testing"
 )
 
+type customPolicy struct{}
+
+func (r *customPolicy) Select(pool HostPool) *UpstreamHost {
+	return pool[0]
+}
+
 func testPool() HostPool {
 	pool := []*UpstreamHost{
 		&UpstreamHost{
@@ -53,5 +59,14 @@ func TestLeastConnPolicy(t *testing.T) {
 	h = lcPolicy.Select(pool)
 	if h != pool[0] && h != pool[1] {
 		t.Error("Expected least connection host to be first or second host.")
+	}
+}
+
+func TestCustomPolicy(t *testing.T) {
+	pool := testPool()
+	customPolicy := &customPolicy{}
+	h := customPolicy.Select(pool)
+	if h != pool[0] {
+		t.Error("Expected custom policy host to be the first host.")
 	}
 }

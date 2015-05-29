@@ -13,6 +13,12 @@ type Policy interface {
 	Select(pool HostPool) *UpstreamHost
 }
 
+func init() {
+	RegisterPolicy("random", func() Policy { return &Random{} })
+	RegisterPolicy("least_conn", func() Policy { return &LeastConn{} })
+	RegisterPolicy("round_robin", func() Policy { return &RoundRobin{} })
+}
+
 // Random is a policy that selects up hosts from a pool at random.
 type Random struct{}
 

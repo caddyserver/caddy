@@ -12,6 +12,8 @@ import (
 	"github.com/mholt/caddy/config/parse"
 )
 
+var supportedPolicies map[string]func() Policy = make(map[string]func() Policy)
+
 type staticUpstream struct {
 	from   string
 	Hosts  HostPool
@@ -53,14 +55,10 @@ func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
 				if !c.NextArg() {
 					return upstreams, c.ArgErr()
 				}
-				switch c.Val() {
-				case "random":
-					upstream.Policy = &Random{}
-				case "round_robin":
-					upstream.Policy = &RoundRobin{}
-				case "least_conn":
-					upstream.Policy = &LeastConn{}
-				default:
+
+				if policyCreateFunc, ok := supportedPolicies[c.Val()]; ok {
+					upstream.Policy = policyCreateFunc()
+				} else {
 					return upstreams, c.ArgErr()
 				}
 			case "fail_timeout":
@@ -145,6 +143,11 @@ func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
 		upstreams = append(upstreams, upstream)
 	}
 	return upstreams, nil
+}
+
+// RegisterPolicy adds a custom policy to the proxy.
+func RegisterPolicy(name string, policy func() Policy) {
+	supportedPolicies[name] = policy
 }
 
 func (u *staticUpstream) From() string {
