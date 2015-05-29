@@ -27,12 +27,6 @@ type staticUpstream struct {
 	}
 }
 
-func init() {
-	RegisterPolicy("random", func() Policy { return &Random{} })
-	RegisterPolicy("least_conn", func() Policy { return &LeastConn{} })
-	RegisterPolicy("round_robin", func() Policy { return &RoundRobin{} })
-}
-
 // NewStaticUpstreams parses the configuration input and sets up
 // static upstreams for the proxy middleware.
 func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
