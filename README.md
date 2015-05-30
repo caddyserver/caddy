@@ -47,7 +47,10 @@ Caddy accepts some flags from the command line. Run `caddy -h` to view the help 
 
 #### Docker Container
 
-Caddy is [available as a Docker container](https://registry.hub.docker.com/u/darron/caddy/).
+Caddy is available as a Docker container from any of these sources:
+
+- [abiosoft/caddy](https://registry.hub.docker.com/u/abiosoft/caddy/)
+- [darron/caddy](https://registry.hub.docker.com/u/darron/caddy/)
 
 
 
