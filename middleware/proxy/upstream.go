@@ -12,7 +12,10 @@ import (
 	"github.com/mholt/caddy/config/parse"
 )
 
-var supportedPolicies map[string]func() Policy = make(map[string]func() Policy)
+var (
+	supportedPolicies map[string]func() Policy = make(map[string]func() Policy)
+	proxyHeaders      http.Header
+)
 
 type staticUpstream struct {
 	from   string
@@ -40,7 +43,7 @@ func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
 			FailTimeout: 10 * time.Second,
 			MaxFails:    1,
 		}
-		var proxyHeaders http.Header
+
 		if !c.Args(&upstream.from) {
 			return upstreams, c.ArgErr()
 		}
@@ -97,10 +100,10 @@ func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
 				if !c.Args(&header, &value) {
 					return upstreams, c.ArgErr()
 				}
-				if proxyHeaders == nil {
-					proxyHeaders = make(map[string][]string)
-				}
-				proxyHeaders.Add(header, value)
+				addProxyHeader(header, value)
+			case "websocket":
+				addProxyHeader("Connection", "{>Connection}")
+				addProxyHeader("Upgrade", "{>Upgrade}")
 			}
 		}
 
@@ -148,6 +151,14 @@ func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
 // RegisterPolicy adds a custom policy to the proxy.
 func RegisterPolicy(name string, policy func() Policy) {
 	supportedPolicies[name] = policy
+}
+
+// AddProxyHeader adds a proxy header.
+func addProxyHeader(header, value string) {
+	if proxyHeaders == nil {
+		proxyHeaders = make(map[string][]string)
+	}
+	proxyHeaders.Add(header, value)
 }
 
 func (u *staticUpstream) From() string {

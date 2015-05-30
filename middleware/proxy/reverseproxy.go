@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-const HTTPSwitchProtocols = 101
+const HTTPSwitchingProtocols = 101
 
 // onExitFlushLoop is a callback set by tests to detect the state of the
 // flushLoop() goroutine.
@@ -155,7 +155,7 @@ func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request, extr
 
 	copyHeader(rw.Header(), res.Header)
 
-	if res.StatusCode == HTTPSwitchProtocols {
+	if res.StatusCode == HTTPSwitchingProtocols && outreq.Header.Get("Upgrade") == "websocket" {
 		hj, ok := rw.(http.Hijacker)
 		if !ok {
 			return nil
