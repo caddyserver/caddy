@@ -2,6 +2,7 @@
 package basicauth
 
 import (
+	"crypto/subtle"
 	"net/http"
 
 	"github.com/mholt/caddy/middleware"
@@ -34,10 +35,13 @@ func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 			hasAuth = true
 
 			// Check credentials
-			if !ok || username != rule.Username || password != rule.Password {
+			if !ok ||
+				username != rule.Username ||
+				subtle.ConstantTimeCompare([]byte(password), []byte(rule.Password)) != 1 {
 				continue
 			}
-			// flag set only on success authentication
+
+			// Flag set only on successful authentication
 			isAuthenticated = true
 		}
 	}
