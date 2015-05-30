@@ -4,8 +4,9 @@ import (
 	"testing"
 
 	"fmt"
-	"github.com/mholt/caddy/middleware/rewrite"
 	"regexp"
+
+	"github.com/mholt/caddy/middleware/rewrite"
 )
 
 func TestRewrite(t *testing.T) {
