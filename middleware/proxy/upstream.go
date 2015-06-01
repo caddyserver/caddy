@@ -14,7 +14,7 @@ import (
 
 var (
 	supportedPolicies map[string]func() Policy = make(map[string]func() Policy)
-	proxyHeaders      http.Header
+	proxyHeaders      http.Header              = make(http.Header)
 )
 
 type staticUpstream struct {
@@ -100,10 +100,10 @@ func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
 				if !c.Args(&header, &value) {
 					return upstreams, c.ArgErr()
 				}
-				addProxyHeader(header, value)
+				proxyHeaders.Add(header, value)
 			case "websocket":
-				addProxyHeader("Connection", "{>Connection}")
-				addProxyHeader("Upgrade", "{>Upgrade}")
+				proxyHeaders.Add("Connection", "{>Connection}")
+				proxyHeaders.Add("Upgrade", "{>Upgrade}")
 			}
 		}
 
@@ -151,14 +151,6 @@ func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
 // RegisterPolicy adds a custom policy to the proxy.
 func RegisterPolicy(name string, policy func() Policy) {
 	supportedPolicies[name] = policy
-}
-
-// AddProxyHeader adds a proxy header.
-func addProxyHeader(header, value string) {
-	if proxyHeaders == nil {
-		proxyHeaders = make(map[string][]string)
-	}
-	proxyHeaders.Add(header, value)
 }
 
 func (u *staticUpstream) From() string {
