@@ -147,7 +147,7 @@ func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request, extr
 	}
 	defer res.Body.Close()
 
-	if res.StatusCode == http.StatusSwitchingProtocols && outreq.Header.Get("Upgrade") == "websocket" {
+	if res.StatusCode == http.StatusSwitchingProtocols && res.Header.Get("Upgrade") == "websocket" {
 		hj, ok := rw.(http.Hijacker)
 		if !ok {
 			return nil
