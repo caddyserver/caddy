@@ -1,8 +1,13 @@
-// Copyright 2011 The Go Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
-// HTTP reverse proxy handler
+// This file is adapted from code in the net/http/httputil
+// package of the Go standard library, which is by the
+// Go Authors, and bears this copyright and license info:
+//
+//   Copyright 2011 The Go Authors. All rights reserved.
+//   Use of this source code is governed by a BSD-style
+//   license that can be found in the LICENSE file.
+//
+// This file has been modified from the standard lib to
+// meet the needs of the application.
 
 package proxy
 
@@ -157,22 +162,20 @@ func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request, extr
 		if err != nil {
 			return err
 		}
+		defer conn.Close()
 
 		backendConn, err := net.Dial("tcp", outreq.Host)
 		if err != nil {
-			conn.Close()
 			return err
 		}
+		defer backendConn.Close()
 
 		outreq.Write(backendConn)
 
 		go func() {
 			io.Copy(backendConn, conn) // write tcp stream to backend.
-			backendConn.Close()
 		}()
-
 		io.Copy(conn, backendConn) // read tcp stream from backend.
-		conn.Close()
 	} else {
 		for _, h := range hopHeaders {
 			res.Header.Del(h)
