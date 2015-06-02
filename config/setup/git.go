@@ -11,6 +11,7 @@ import (
 
 	"github.com/mholt/caddy/middleware"
 	"github.com/mholt/caddy/middleware/git"
+	"github.com/mholt/caddy/middleware/git/webhook"
 )
 
 // Git configures a new Git service routine.
@@ -20,13 +21,30 @@ func Git(c *Controller) (middleware.Middleware, error) {
 		return nil, err
 	}
 
-	c.Startup = append(c.Startup, func() error {
-		// Start service routine in background
-		git.Start(repo)
+	// If a HookUrl is set, we switch to event based pulling.
+	// Install the url handler
+	if repo.HookUrl != "" {
 
-		// Do a pull right away to return error
-		return repo.Pull()
-	})
+		c.Startup = append(c.Startup, func() error {
+			return repo.Pull()
+		})
+
+		webhook := &webhook.WebHook{Repo: repo}
+		return func(next middleware.Handler) middleware.Handler {
+			webhook.Next = next
+			return webhook
+		}, nil
+
+	} else {
+		c.Startup = append(c.Startup, func() error {
+
+			// Start service routine in background
+			git.Start(repo)
+
+			// Do a pull right away to return error
+			return repo.Pull()
+		})
+	}
 
 	return nil, err
 }
@@ -75,6 +93,17 @@ func gitParse(c *Controller) (*git.Repo, error) {
 				if t > 0 {
 					repo.Interval = time.Duration(t) * time.Second
 				}
+			case "hook":
+				if !c.NextArg() {
+					return nil, c.ArgErr()
+				}
+				repo.HookUrl = c.Val()
+
+				// optional secret for validation
+				if c.NextArg() {
+					repo.HookSecret = c.Val()
+				}
+
 			case "then":
 				thenArgs := c.RemainingArgs()
 				if len(thenArgs) == 0 {

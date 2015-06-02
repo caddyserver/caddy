@@ -59,6 +59,9 @@ type Repo struct {
 	lastPull   time.Time     // time of the last successful pull
 	lastCommit string        // hash for the most recent commit
 	sync.Mutex
+	HookUrl    string // url to listen on for webhooks
+	HookSecret string // secret to validate hooks
+
 }
 
 // Pull attempts a git clone.
