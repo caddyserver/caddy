@@ -64,4 +64,5 @@ type TLSConfig struct {
 	ProtocolMinVersion       uint16
 	ProtocolMaxVersion       uint16
 	PreferServerCipherSuites bool
+	ClientCerts              []string
 }

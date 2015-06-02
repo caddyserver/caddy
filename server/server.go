@@ -5,7 +5,9 @@ package server
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
@@ -137,13 +139,51 @@ func ListenAndServeTLSWithSNI(srv *http.Server, tlsConfigs []TLSConfig) error {
 	config.CipherSuites = tlsConfigs[0].Ciphers
 	config.PreferServerCipherSuites = tlsConfigs[0].PreferServerCipherSuites
 
-	conn, err := net.Listen("tcp", addr)
+	// TLS client authentication, if user enabled it
+	err = setupClientAuth(tlsConfigs, config)
 	if err != nil {
 		return err
 	}
 
+	// Create listener and we're on our way
+	conn, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
 	tlsListener := tls.NewListener(conn, config)
+
 	return srv.Serve(tlsListener)
+}
+
+// setupClientAuth sets up TLS client authentication only if
+// any of the TLS configs specified at least one cert file.
+func setupClientAuth(tlsConfigs []TLSConfig, config *tls.Config) error {
+	var clientAuth bool
+	for _, cfg := range tlsConfigs {
+		if len(cfg.ClientCerts) > 0 {
+			clientAuth = true
+			break
+		}
+	}
+
+	if clientAuth {
+		pool := x509.NewCertPool()
+		for _, cfg := range tlsConfigs {
+			for _, caFile := range cfg.ClientCerts {
+				caCrt, err := ioutil.ReadFile(caFile) // Anyone that gets a cert from Matt Holt can connect
+				if err != nil {
+					return err
+				}
+				if !pool.AppendCertsFromPEM(caCrt) {
+					return fmt.Errorf("Error loading client certificate '%s': no certificates were successfully parsed", caFile)
+				}
+			}
+		}
+		config.ClientCAs = pool
+		config.ClientAuth = tls.RequireAndVerifyClientCert
+	}
+
+	return nil
 }
 
 // ServeHTTP is the entry point for every request to the address that s

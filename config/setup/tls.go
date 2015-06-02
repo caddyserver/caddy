@@ -53,8 +53,13 @@ func TLS(c *Controller) (middleware.Middleware, error) {
 					}
 					c.TLS.Ciphers = append(c.TLS.Ciphers, value)
 				}
+			case "clients":
+				c.TLS.ClientCerts = c.RemainingArgs()
+				if len(c.TLS.ClientCerts) == 0 {
+					return nil, c.ArgErr()
+				}
 			default:
-				return nil, c.Errf("Unknown keyword '%s'")
+				return nil, c.Errf("Unknown keyword '%s'", c.Val())
 			}
 		}
 	}
