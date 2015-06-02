@@ -127,3 +127,34 @@ func TestTLSParseWithWrongOptionalParams(t *testing.T) {
 		t.Errorf("Expected errors, but no error returned")
 	}
 }
+
+func TestTLSParseWithClientAuth(t *testing.T) {
+	params := `tls cert.crt cert.key {
+			clients client_ca.crt client2_ca.crt
+		}`
+	c := newTestController(params)
+	_, err := TLS(c)
+	if err != nil {
+		t.Errorf("Expected no errors, got: %v", err)
+	}
+
+	if count := len(c.TLS.ClientCerts); count != 2 {
+		t.Fatalf("Expected two client certs, had %d", count)
+	}
+	if actual := c.TLS.ClientCerts[0]; actual != "client_ca.crt" {
+		t.Errorf("Expected first client cert file to be '%s', but was '%s'", "client_ca.crt", actual)
+	}
+	if actual := c.TLS.ClientCerts[1]; actual != "client2_ca.crt" {
+		t.Errorf("Expected second client cert file to be '%s', but was '%s'", "client2_ca.crt", actual)
+	}
+
+	// Test missing client cert file
+	params = `tls cert.crt cert.key {
+			clients
+		}`
+	c = newTestController(params)
+	_, err = TLS(c)
+	if err == nil {
+		t.Errorf("Expected an error, but no error returned")
+	}
+}
