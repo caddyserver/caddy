@@ -147,14 +147,43 @@ func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request, extr
 	}
 	defer res.Body.Close()
 
-	for _, h := range hopHeaders {
-		res.Header.Del(h)
+	if res.StatusCode == http.StatusSwitchingProtocols && res.Header.Get("Upgrade") == "websocket" {
+		hj, ok := rw.(http.Hijacker)
+		if !ok {
+			return nil
+		}
+
+		conn, _, err := hj.Hijack()
+		if err != nil {
+			return err
+		}
+
+		backendConn, err := net.Dial("tcp", outreq.Host)
+		if err != nil {
+			conn.Close()
+			return err
+		}
+
+		outreq.Write(backendConn)
+
+		go func() {
+			io.Copy(backendConn, conn) // write tcp stream to backend.
+			backendConn.Close()
+		}()
+
+		io.Copy(conn, backendConn) // read tcp stream from backend.
+		conn.Close()
+	} else {
+		for _, h := range hopHeaders {
+			res.Header.Del(h)
+		}
+
+		copyHeader(rw.Header(), res.Header)
+
+		rw.WriteHeader(res.StatusCode)
+		p.copyResponse(rw, res.Body)
 	}
 
-	copyHeader(rw.Header(), res.Header)
-
-	rw.WriteHeader(res.StatusCode)
-	p.copyResponse(rw, res.Body)
 	return nil
 }
 
