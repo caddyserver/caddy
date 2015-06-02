@@ -59,7 +59,7 @@ func TLS(c *Controller) (middleware.Middleware, error) {
 					return nil, c.ArgErr()
 				}
 			default:
-				return nil, c.Errf("Unknown keyword '%s'")
+				return nil, c.Errf("Unknown keyword '%s'", c.Val())
 			}
 		}
 	}
