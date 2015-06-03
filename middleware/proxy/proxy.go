@@ -42,6 +42,7 @@ type UpstreamHost struct {
 	Unhealthy    bool
 	ExtraHeaders http.Header
 	CheckDown    UpstreamHostDownFunc
+	Without      string
 }
 
 // Down checks whether the upstream host is down or not.
@@ -77,7 +78,7 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 				if baseURL, err := url.Parse(host.Name); err == nil {
 					r.Host = baseURL.Host
 					if proxy == nil {
-						proxy = NewSingleHostReverseProxy(baseURL)
+						proxy = NewSingleHostReverseProxy(baseURL, host.Without)
 					}
 				} else if proxy == nil {
 					return http.StatusInternalServerError, err
