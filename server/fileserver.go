@@ -101,7 +101,13 @@ func (fh *fileHandler) serveFile(w http.ResponseWriter, r *http.Request, name st
 	// Still a directory? (we didn't find an index file)
 	// Return 404 to hide the fact that the folder exists
 	if d.IsDir() {
-		return http.StatusNotFound, nil
+		if name == "/" {
+			welcome := `<html>Caddy Works!</html>`
+			w.Write([]byte(welcome))
+			return http.StatusOK, nil
+		} else {
+			return http.StatusNotFound, nil
+		}
 	}
 
 	// If the file is supposed to be hidden, return a 404
