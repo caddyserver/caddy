@@ -120,7 +120,7 @@ func (u *fakeUpstream) Select() *UpstreamHost {
 	uri, _ := url.Parse(u.name)
 	return &UpstreamHost{
 		Name:         u.name,
-		ReverseProxy: NewSingleHostReverseProxy(uri),
+		ReverseProxy: NewSingleHostReverseProxy(uri, ""),
 		ExtraHeaders: proxyHeaders,
 	}
 }
@@ -149,3 +149,9 @@ func (c *fakeConn) SetWriteDeadline(t time.Time) error { return nil }
 func (c *fakeConn) Close() error                       { return nil }
 func (c *fakeConn) Read(b []byte) (int, error)         { return c.readBuf.Read(b) }
 func (c *fakeConn) Write(b []byte) (int, error)        { return c.writeBuf.Write(b) }
+
+func newWithoutPathPrefixTestProxy(backendAddr string) *Proxy {
+	return &Proxy{
+		Upstreams: []Upstream{&fakeUpstreamWithoutPathPrefix{from: "/api/messages", withoutPathPrefix: "/api"}},
+	}
+}

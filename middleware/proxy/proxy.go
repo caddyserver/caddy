@@ -34,15 +34,15 @@ type UpstreamHostDownFunc func(*UpstreamHost) bool
 // UpstreamHost represents a single proxy upstream
 type UpstreamHost struct {
 	// The hostname of this upstream host
-	Name         string
-	ReverseProxy *ReverseProxy
-	Conns        int64
-	Fails        int32
-	FailTimeout  time.Duration
-	Unhealthy    bool
-	ExtraHeaders http.Header
-	CheckDown    UpstreamHostDownFunc
-	Without      string
+	Name              string
+	ReverseProxy      *ReverseProxy
+	Conns             int64
+	Fails             int32
+	FailTimeout       time.Duration
+	Unhealthy         bool
+	ExtraHeaders      http.Header
+	CheckDown         UpstreamHostDownFunc
+	WithoutPathPrefix string
 }
 
 // Down checks whether the upstream host is down or not.
@@ -78,7 +78,7 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 				if baseURL, err := url.Parse(host.Name); err == nil {
 					r.Host = baseURL.Host
 					if proxy == nil {
-						proxy = NewSingleHostReverseProxy(baseURL, host.Without)
+						proxy = NewSingleHostReverseProxy(baseURL, host.WithoutPathPrefix)
 					}
 				} else if proxy == nil {
 					return http.StatusInternalServerError, err

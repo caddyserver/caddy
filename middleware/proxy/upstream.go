@@ -28,7 +28,7 @@ type staticUpstream struct {
 		Path     string
 		Interval time.Duration
 	}
-	Without string
+	WithoutPathPrefix string
 }
 
 // NewStaticUpstreams parses the configuration input and sets up
@@ -108,7 +108,7 @@ func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
 				if !c.NextArg() {
 					return upstreams, c.ArgErr()
 				}
-				upstream.Without = c.Val()
+				upstream.WithoutPathPrefix = c.Val()
 			}
 		}
 
@@ -136,10 +136,10 @@ func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
 						return false
 					}
 				}(upstream),
-				Without: upstream.Without,
+				WithoutPathPrefix: upstream.WithoutPathPrefix,
 			}
 			if baseURL, err := url.Parse(uh.Name); err == nil {
-				uh.ReverseProxy = NewSingleHostReverseProxy(baseURL, uh.Without)
+				uh.ReverseProxy = NewSingleHostReverseProxy(baseURL, uh.WithoutPathPrefix)
 			} else {
 				return upstreams, err
 			}

@@ -76,7 +76,7 @@ func NewSingleHostReverseProxy(target *url.URL, without string) *ReverseProxy {
 			req.URL.RawQuery = targetQuery + "&" + req.URL.RawQuery
 		}
 		if without != "" {
-			req.URL.Path = strings.Replace(req.URL.Path, without, "", 1)
+			req.URL.Path = strings.TrimPrefix(req.URL.Path, without)
 		}
 	}
 	return &ReverseProxy{Director: director}
