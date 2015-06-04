@@ -120,7 +120,7 @@ func (u *fakeUpstream) Select() *UpstreamHost {
 	uri, _ := url.Parse(u.name)
 	return &UpstreamHost{
 		Name:         u.name,
-		ReverseProxy: NewSingleHostReverseProxy(uri),
+		ReverseProxy: NewSingleHostReverseProxy(uri, ""),
 		ExtraHeaders: proxyHeaders,
 	}
 }

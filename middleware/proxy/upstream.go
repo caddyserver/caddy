@@ -28,13 +28,13 @@ type staticUpstream struct {
 		Path     string
 		Interval time.Duration
 	}
+	WithoutPathPrefix string
 }
 
 // NewStaticUpstreams parses the configuration input and sets up
 // static upstreams for the proxy middleware.
 func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
 	var upstreams []Upstream
-
 	for c.Next() {
 		upstream := &staticUpstream{
 			from:        "",
@@ -104,6 +104,11 @@ func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
 			case "websocket":
 				proxyHeaders.Add("Connection", "{>Connection}")
 				proxyHeaders.Add("Upgrade", "{>Upgrade}")
+			case "without":
+				if !c.NextArg() {
+					return upstreams, c.ArgErr()
+				}
+				upstream.WithoutPathPrefix = c.Val()
 			}
 		}
 
@@ -131,9 +136,10 @@ func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
 						return false
 					}
 				}(upstream),
+				WithoutPathPrefix: upstream.WithoutPathPrefix,
 			}
 			if baseURL, err := url.Parse(uh.Name); err == nil {
-				uh.ReverseProxy = NewSingleHostReverseProxy(baseURL)
+				uh.ReverseProxy = NewSingleHostReverseProxy(baseURL, uh.WithoutPathPrefix)
 			} else {
 				return upstreams, err
 			}
