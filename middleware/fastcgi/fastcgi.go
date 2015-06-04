@@ -61,7 +61,10 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			var fcgi *FCGIClient
 
 			// check if unix socket or tcp
-			if strings.HasPrefix(rule.Address, "/") {
+			if strings.HasPrefix(rule.Address, "/") || strings.HasPrefix(rule.Address, "unix:") {
+				if strings.HasPrefix(rule.Address, "unix:") {
+					rule.Address = rule.Address[len("unix:"):]
+				}
 				fcgi, err = Dial("unix", rule.Address)
 			} else {
 				fcgi, err = Dial("tcp", rule.Address)
