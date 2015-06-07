@@ -40,6 +40,7 @@ func TestReverseProxy(t *testing.T) {
 
 	// set up proxy
 	p := &Proxy{
+		Next:      httpserver.EmptyNext, // prevents panic in some cases when test fails
 		Upstreams: []Upstream{newFakeUpstream(backend.URL, false)},
 	}
 
@@ -80,6 +81,7 @@ func TestReverseProxyInsecureSkipVerify(t *testing.T) {
 
 	// set up proxy
 	p := &Proxy{
+		Next:      httpserver.EmptyNext, // prevents panic in some cases when test fails
 		Upstreams: []Upstream{newFakeUpstream(backend.URL, true)},
 	}
 
@@ -372,6 +374,7 @@ func TestUpstreamHeadersUpdate(t *testing.T) {
 	}
 	// set up proxy
 	p := &Proxy{
+		Next:      httpserver.EmptyNext, // prevents panic in some cases when test fails
 		Upstreams: []Upstream{upstream},
 	}
 
@@ -441,6 +444,7 @@ func TestDownstreamHeadersUpdate(t *testing.T) {
 	}
 	// set up proxy
 	p := &Proxy{
+		Next:      httpserver.EmptyNext, // prevents panic in some cases when test fails
 		Upstreams: []Upstream{upstream},
 	}
 
@@ -485,10 +489,98 @@ func TestDownstreamHeadersUpdate(t *testing.T) {
 
 }
 
+var (
+	upstreamResp1 = []byte("Hello, /")
+	upstreamResp2 = []byte("Hello, /api/")
+)
+
+func newMultiHostTestProxy() *Proxy {
+	// No-op backends.
+	upstreamServer1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "%s", upstreamResp1)
+	}))
+	upstreamServer2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "%s", upstreamResp2)
+	}))
+	p := &Proxy{
+		Next: httpserver.EmptyNext, // prevents panic in some cases when test fails
+		Upstreams: []Upstream{
+			// The order is important; the short path should go first to ensure
+			// we choose the most specific route, not the first one.
+			&fakeUpstream{
+				name: upstreamServer1.URL,
+				from: "/",
+			},
+			&fakeUpstream{
+				name: upstreamServer2.URL,
+				from: "/api",
+			},
+		},
+	}
+	return p
+}
+
+func TestMultiReverseProxyFromClient(t *testing.T) {
+	p := newMultiHostTestProxy()
+
+	// This is a full end-end test, so the proxy handler.
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p.ServeHTTP(w, r)
+	}))
+	defer proxy.Close()
+
+	// Table tests.
+	var multiProxy = []struct {
+		url  string
+		body []byte
+	}{
+		{
+			"/",
+			upstreamResp1,
+		},
+		{
+			"/api/",
+			upstreamResp2,
+		},
+		{
+			"/messages/",
+			upstreamResp1,
+		},
+		{
+			"/api/messages/?text=cat",
+			upstreamResp2,
+		},
+	}
+
+	for _, tt := range multiProxy {
+		// Create client request
+		reqURL := singleJoiningSlash(proxy.URL, tt.url)
+		req, err := http.NewRequest("GET", reqURL, nil)
+		if err != nil {
+			t.Fatalf("Failed to create request: %v", err)
+		}
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("Failed to make request: %v", err)
+		}
+		body, err := ioutil.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			t.Fatalf("Failed to read response: %v", err)
+		}
+
+		if !bytes.Equal(body, tt.body) {
+			t.Errorf("Expected '%s' but got '%s' instead", tt.body, body)
+		}
+	}
+}
+
 func newFakeUpstream(name string, insecure bool) *fakeUpstream {
 	uri, _ := url.Parse(name)
 	u := &fakeUpstream{
 		name: name,
+		from: "/",
 		host: &UpstreamHost{
 			Name:         name,
 			ReverseProxy: NewSingleHostReverseProxy(uri, ""),
@@ -501,15 +593,27 @@ func newFakeUpstream(name string, insecure bool) *fakeUpstream {
 }
 
 type fakeUpstream struct {
-	name string
-	host *UpstreamHost
+	name    string
+	host    *UpstreamHost
+	from    string
+	without string
 }
 
 func (u *fakeUpstream) From() string {
-	return "/"
+	return u.from
 }
 
 func (u *fakeUpstream) Select() *UpstreamHost {
+	if u.host == nil {
+		uri, err := url.Parse(u.name)
+		if err != nil {
+			log.Fatalf("Unable to url.Parse %s: %v", u.name, err)
+		}
+		u.host = &UpstreamHost{
+			Name:         u.name,
+			ReverseProxy: NewSingleHostReverseProxy(uri, u.without),
+		}
+	}
 	return u.host
 }
 
@@ -523,12 +627,14 @@ func (u *fakeUpstream) AllowedPath(requestPath string) bool {
 // proxy.
 func newWebSocketTestProxy(backendAddr string) *Proxy {
 	return &Proxy{
+		Next:      httpserver.EmptyNext, // prevents panic in some cases when test fails
 		Upstreams: []Upstream{&fakeWsUpstream{name: backendAddr, without: ""}},
 	}
 }
 
 func newPrefixedWebSocketTestProxy(backendAddr string, prefix string) *Proxy {
 	return &Proxy{
+		Next:      httpserver.EmptyNext, // prevents panic in some cases when test fails
 		Upstreams: []Upstream{&fakeWsUpstream{name: backendAddr, without: prefix}},
 	}
 }

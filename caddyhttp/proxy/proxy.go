@@ -77,86 +77,102 @@ var tryDuration = 60 * time.Second
 
 // ServeHTTP satisfies the httpserver.Handler interface.
 func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
-	for _, upstream := range p.Upstreams {
-		if !httpserver.Path(r.URL.Path).Matches(upstream.From()) ||
-			!upstream.AllowedPath(r.URL.Path) {
-			continue
-		}
-
-		var replacer httpserver.Replacer
-		start := time.Now()
-
-		outreq := createUpstreamRequest(r)
-
-		// Since Select() should give us "up" hosts, keep retrying
-		// hosts until timeout (or until we get a nil host).
-		for time.Now().Sub(start) < tryDuration {
-			host := upstream.Select()
-			if host == nil {
-				return http.StatusBadGateway, errUnreachable
-			}
-			if rr, ok := w.(*httpserver.ResponseRecorder); ok && rr.Replacer != nil {
-				rr.Replacer.Set("upstream", host.Name)
-			}
-
-			outreq.Host = host.Name
-			if host.UpstreamHeaders != nil {
-				if replacer == nil {
-					rHost := r.Host
-					replacer = httpserver.NewReplacer(r, nil, "")
-					outreq.Host = rHost
-				}
-				if v, ok := host.UpstreamHeaders["Host"]; ok {
-					outreq.Host = replacer.Replace(v[len(v)-1])
-				}
-				// Modify headers for request that will be sent to the upstream host
-				upHeaders := createHeadersByRules(host.UpstreamHeaders, r.Header, replacer)
-				for k, v := range upHeaders {
-					outreq.Header[k] = v
-				}
-			}
-
-			var downHeaderUpdateFn respUpdateFn
-			if host.DownstreamHeaders != nil {
-				if replacer == nil {
-					rHost := r.Host
-					replacer = httpserver.NewReplacer(r, nil, "")
-					outreq.Host = rHost
-				}
-				//Creates a function that is used to update headers the response received by the reverse proxy
-				downHeaderUpdateFn = createRespHeaderUpdateFn(host.DownstreamHeaders, replacer)
-			}
-
-			proxy := host.ReverseProxy
-			if baseURL, err := url.Parse(host.Name); err == nil {
-				r.Host = baseURL.Host
-				if proxy == nil {
-					proxy = NewSingleHostReverseProxy(baseURL, host.WithoutPathPrefix)
-				}
-			} else if proxy == nil {
-				return http.StatusInternalServerError, err
-			}
-
-			atomic.AddInt64(&host.Conns, 1)
-			backendErr := proxy.ServeHTTP(w, outreq, downHeaderUpdateFn)
-			atomic.AddInt64(&host.Conns, -1)
-			if backendErr == nil {
-				return 0, nil
-			}
-			timeout := host.FailTimeout
-			if timeout == 0 {
-				timeout = 10 * time.Second
-			}
-			atomic.AddInt32(&host.Fails, 1)
-			go func(host *UpstreamHost, timeout time.Duration) {
-				time.Sleep(timeout)
-				atomic.AddInt32(&host.Fails, -1)
-			}(host, timeout)
-		}
-		return http.StatusBadGateway, errUnreachable
+	// Start by selecting most specific matching upstream config
+	upstream := p.match(r)
+	if upstream == nil {
+		return p.Next.ServeHTTP(w, r)
 	}
 
-	return p.Next.ServeHTTP(w, r)
+	var replacer httpserver.Replacer
+	start := time.Now()
+
+	outreq := createUpstreamRequest(r)
+
+	// Since Select() should give us "up" hosts, keep retrying
+	// hosts until timeout (or until we get a nil host).
+	for time.Now().Sub(start) < tryDuration {
+		host := upstream.Select()
+		if host == nil {
+			return http.StatusBadGateway, errUnreachable
+		}
+		if rr, ok := w.(*httpserver.ResponseRecorder); ok && rr.Replacer != nil {
+			rr.Replacer.Set("upstream", host.Name)
+		}
+
+		outreq.Host = host.Name
+		if host.UpstreamHeaders != nil {
+			if replacer == nil {
+				rHost := r.Host
+				replacer = httpserver.NewReplacer(r, nil, "")
+				outreq.Host = rHost
+			}
+			if v, ok := host.UpstreamHeaders["Host"]; ok {
+				outreq.Host = replacer.Replace(v[len(v)-1])
+			}
+			// Modify headers for request that will be sent to the upstream host
+			upHeaders := createHeadersByRules(host.UpstreamHeaders, r.Header, replacer)
+			for k, v := range upHeaders {
+				outreq.Header[k] = v
+			}
+		}
+
+		var downHeaderUpdateFn respUpdateFn
+		if host.DownstreamHeaders != nil {
+			if replacer == nil {
+				rHost := r.Host
+				replacer = httpserver.NewReplacer(r, nil, "")
+				outreq.Host = rHost
+			}
+			//Creates a function that is used to update headers the response received by the reverse proxy
+			downHeaderUpdateFn = createRespHeaderUpdateFn(host.DownstreamHeaders, replacer)
+		}
+
+		proxy := host.ReverseProxy
+		if baseURL, err := url.Parse(host.Name); err == nil {
+			r.Host = baseURL.Host
+			if proxy == nil {
+				proxy = NewSingleHostReverseProxy(baseURL, host.WithoutPathPrefix)
+			}
+		} else if proxy == nil {
+			return http.StatusInternalServerError, err
+		}
+
+		atomic.AddInt64(&host.Conns, 1)
+		backendErr := proxy.ServeHTTP(w, outreq, downHeaderUpdateFn)
+		atomic.AddInt64(&host.Conns, -1)
+		if backendErr == nil {
+			return 0, nil
+		}
+		timeout := host.FailTimeout
+		if timeout == 0 {
+			timeout = 10 * time.Second
+		}
+		atomic.AddInt32(&host.Fails, 1)
+		go func(host *UpstreamHost, timeout time.Duration) {
+			time.Sleep(timeout)
+			atomic.AddInt32(&host.Fails, -1)
+		}(host, timeout)
+	}
+
+	return http.StatusBadGateway, errUnreachable
+}
+
+// match finds the best match for a proxy config based
+// on r.
+func (p Proxy) match(r *http.Request) Upstream {
+	var u Upstream
+	var longestMatch int
+	for _, upstream := range p.Upstreams {
+		basePath := upstream.From()
+		if !httpserver.Path(r.URL.Path).Matches(basePath) || !upstream.AllowedPath(r.URL.Path) {
+			continue
+		}
+		if len(basePath) > longestMatch {
+			longestMatch = len(basePath)
+			u = upstream
+		}
+	}
+	return u
 }
 
 // createUpstremRequest shallow-copies r into a new request
