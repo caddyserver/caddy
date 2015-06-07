@@ -9,7 +9,7 @@ import (
 	"github.com/mholt/caddy/middleware"
 )
 
-func Test(t *testing.T) {
+func TestGzipHandler(t *testing.T) {
 
 	pathFilter := PathFilter{make(Set)}
 	badPaths := []string{"/bad", "/nogzip", "/nongzip"}
