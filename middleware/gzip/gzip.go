@@ -17,7 +17,14 @@ import (
 // specifies the Content-Type, otherwise some clients will assume
 // application/x-gzip and try to download a file.
 type Gzip struct {
-	Next middleware.Handler
+	Next    middleware.Handler
+	Configs []Config
+}
+
+// Config holds the configuration for Gzip middleware
+type Config struct {
+	Filters []Filter // Filters to use
+	Level   int      // Compression level
 }
 
 // ServeHTTP serves a gzipped response if the client supports it.
@@ -26,27 +33,56 @@ func (g Gzip) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 		return g.Next.ServeHTTP(w, r)
 	}
 
-	// Delete this header so gzipping isn't repeated later in the chain
-	r.Header.Del("Accept-Encoding")
+outer:
+	for _, c := range g.Configs {
 
-	w.Header().Set("Content-Encoding", "gzip")
-	gzipWriter := gzip.NewWriter(w)
-	defer gzipWriter.Close()
-	gz := gzipResponseWriter{Writer: gzipWriter, ResponseWriter: w}
+		// Check filters to determine if gzipping is permitted for this
+		// request
+		for _, filter := range c.Filters {
+			if !filter.ShouldCompress(r) {
+				continue outer
+			}
+		}
 
-	// Any response in forward middleware will now be compressed
-	status, err := g.Next.ServeHTTP(gz, r)
+		// Delete this header so gzipping is not repeated later in the chain
+		r.Header.Del("Accept-Encoding")
 
-	// If there was an error that remained unhandled, we need
-	// to send something back before gzipWriter gets closed at
-	// the return of this method!
-	if status >= 400 {
-		gz.Header().Set("Content-Type", "text/plain") // very necessary
-		gz.WriteHeader(status)
-		fmt.Fprintf(gz, "%d %s", status, http.StatusText(status))
-		return 0, err
+		w.Header().Set("Content-Encoding", "gzip")
+		gzipWriter, err := newWriter(c, w)
+		if err != nil {
+			// should not happen
+			return http.StatusInternalServerError, err
+		}
+		defer gzipWriter.Close()
+		gz := gzipResponseWriter{Writer: gzipWriter, ResponseWriter: w}
+
+		// Any response in forward middleware will now be compressed
+		status, err := g.Next.ServeHTTP(gz, r)
+
+		// If there was an error that remained unhandled, we need
+		// to send something back before gzipWriter gets closed at
+		// the return of this method!
+		if status >= 400 {
+			gz.Header().Set("Content-Type", "text/plain") // very necessary
+			gz.WriteHeader(status)
+			fmt.Fprintf(gz, "%d %s", status, http.StatusText(status))
+			return 0, err
+		}
+		return status, err
 	}
-	return status, err
+
+	// no matching filter
+	return g.Next.ServeHTTP(w, r)
+}
+
+// newWriter create a new Gzip Writer based on the compression level.
+// If the level is valid (i.e. between 1 and 9), it uses the level.
+// Otherwise, it uses default compression level.
+func newWriter(c Config, w http.ResponseWriter) (*gzip.Writer, error) {
+	if c.Level >= gzip.BestSpeed && c.Level <= gzip.BestCompression {
+		return gzip.NewWriterLevel(w, c.Level)
+	}
+	return gzip.NewWriter(w), nil
 }
 
 // gzipResponeWriter wraps the underlying Write method
