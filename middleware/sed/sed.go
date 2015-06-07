@@ -14,6 +14,11 @@ import (
 	"github.com/mholt/caddy/middleware"
 )
 
+var (
+	cts  = []string{"text/html"} // TODO (brk0v): only html pages
+	size = 1 << 18               // default 256 KB
+)
+
 // bufferedWriter buffers responce for replacing content.
 type bufferedWriter struct {
 	http.ResponseWriter
@@ -130,7 +135,7 @@ func (bw *bufferedWriter) Apply(r *http.Request) ([]byte, error) {
 	var body []byte
 	if bw.ContentEncoding != "" {
 		if r.Header.Get("Accept-Encoding") == "" {
-			// gzip middleware has been already ungziped data
+			// gzip middleware has been already uncompressed data
 			body = bw.Body.Bytes()
 			return body, nil
 		}
@@ -178,8 +183,6 @@ func (s Sed) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 		if middleware.Path(r.URL.Path).Matches(rule.Url) {
 
 			// Buffering write.
-			cts := []string{"text/html"} // TODO (brk0v): only html pages
-			size := 1 << 18              // default 256 KB
 			if rule.Size != 0 {
 				size = rule.Size
 			}
