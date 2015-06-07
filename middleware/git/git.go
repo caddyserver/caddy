@@ -3,7 +3,6 @@ package git
 import (
 	"bytes"
 	"fmt"
-	"log"
 	"os"
 	"strings"
 	"sync"
@@ -30,20 +29,9 @@ var shell string
 // git requirements.
 var initMutex = sync.Mutex{}
 
-// Logger is used to log errors; if nil, the default log.Logger is used.
-var Logger *log.Logger
-
 // Services holds all git pulling services and provides the function to
 // stop them.
 var Services = &services{}
-
-// logger is an helper function to retrieve the available logger
-func logger() *log.Logger {
-	if Logger == nil {
-		Logger = log.New(os.Stderr, "", log.LstdFlags)
-	}
-	return Logger
-}
 
 // Repo is the structure that holds required information
 // of a git repository.
@@ -84,7 +72,7 @@ func (r *Repo) Pull() error {
 		if err = r.pull(); err == nil {
 			break
 		}
-		logger().Println(err)
+		Logger().Println(err)
 	}
 
 	if err != nil {
@@ -94,7 +82,7 @@ func (r *Repo) Pull() error {
 	// check if there are new changes,
 	// then execute post pull command
 	if r.lastCommit == lastCommit {
-		logger().Println("No new changes.")
+		Logger().Println("No new changes.")
 		return nil
 	}
 	return r.postPullCommand()
@@ -121,7 +109,7 @@ func (r *Repo) pull() error {
 	if err = runCmd(gitBinary, params, dir); err == nil {
 		r.pulled = true
 		r.lastPull = time.Now()
-		logger().Printf("%v pulled.\n", r.URL)
+		Logger().Printf("%v pulled.\n", r.URL)
 		r.lastCommit, err = r.getMostRecentCommit()
 	}
 	return err
@@ -162,7 +150,7 @@ func (r *Repo) pullWithKey(params []string) error {
 	if err = runCmd(script.Name(), nil, dir); err == nil {
 		r.pulled = true
 		r.lastPull = time.Now()
-		logger().Printf("%v pulled.\n", r.URL)
+		Logger().Printf("%v pulled.\n", r.URL)
 		r.lastCommit, err = r.getMostRecentCommit()
 	}
 	return err
@@ -241,7 +229,7 @@ func (r *Repo) postPullCommand() error {
 	}
 
 	if err = runCmd(c, args, r.Path); err == nil {
-		logger().Printf("Command %v successful.\n", r.Then)
+		Logger().Printf("Command %v successful.\n", r.Then)
 	}
 	return err
 }

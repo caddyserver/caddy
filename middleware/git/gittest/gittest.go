@@ -4,7 +4,9 @@ package gittest
 
 import (
 	"io"
+	"log"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/mholt/caddy/middleware/git/gitos"
@@ -39,12 +41,18 @@ func Sleep(d time.Duration) {
 	FakeOS.Sleep(d)
 }
 
+// NewLogger creates a logger that logs to f
+func NewLogger(f gitos.File) *log.Logger {
+	return log.New(f, "", 0)
+}
+
 // fakeFile is a mock gitos.File.
 type fakeFile struct {
 	name    string
 	dir     bool
 	content []byte
 	info    fakeInfo
+	sync.Mutex
 }
 
 func (f fakeFile) Name() string {
@@ -65,6 +73,8 @@ func (f fakeFile) Chmod(mode os.FileMode) error {
 }
 
 func (f *fakeFile) Read(b []byte) (int, error) {
+	f.Lock()
+	defer f.Unlock()
 	if len(f.content) == 0 {
 		return 0, io.EOF
 	}
@@ -74,6 +84,8 @@ func (f *fakeFile) Read(b []byte) (int, error) {
 }
 
 func (f *fakeFile) Write(b []byte) (int, error) {
+	f.Lock()
+	defer f.Unlock()
 	f.content = append(f.content, b...)
 	return len(b), nil
 }

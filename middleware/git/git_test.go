@@ -73,7 +73,7 @@ func TestGit(t *testing.T) {
 
 	// pull with success
 	logFile := gittest.Open("file")
-	Logger = log.New(logFile, "", 0)
+	SetLogger(log.New(logFile, "", 0))
 	tests := []struct {
 		repo   *Repo
 		output string
