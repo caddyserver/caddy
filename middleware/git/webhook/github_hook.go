@@ -6,12 +6,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"github.com/mholt/caddy/middleware/git"
 	"io/ioutil"
 	"log"
 	"net/http"
-	"os"
 	"strings"
+
+	"github.com/mholt/caddy/middleware/git"
 )
 
 type GithubHook struct{}
@@ -28,15 +28,9 @@ type ghPush struct {
 	Ref string `json:"ref"`
 }
 
-// Logger is used to log errors; if nil, the default log.Logger is used.
-var Logger *log.Logger
-
 // logger is an helper function to retrieve the available logger
 func logger() *log.Logger {
-	if Logger == nil {
-		Logger = log.New(os.Stderr, "", log.LstdFlags)
-	}
-	return Logger
+	return git.Logger()
 }
 
 func (g GithubHook) DoesHandle(h http.Header) bool {
@@ -97,7 +91,7 @@ func (g GithubHook) handleSignature(r *http.Request, body []byte, secret string)
 	signature := r.Header.Get("X-Hub-Signature")
 	if signature != "" {
 		if secret == "" {
-			logger().Print("Unable to verify request signature. Secret not set in caddyfile!")
+			logger().Print("Unable to verify request signature. Secret not set in caddyfile!\n")
 		} else {
 			mac := hmac.New(sha1.New, []byte(secret))
 			mac.Write(body)
@@ -129,7 +123,7 @@ func (g GithubHook) handlePush(body []byte, repo *git.Repo) error {
 
 	branch := refSlice[2]
 	if branch == repo.Branch {
-		logger().Print("Received pull notification for the tracking branch, updating...")
+		logger().Print("Received pull notification for the tracking branch, updating...\n")
 		repo.Pull()
 	}
 
@@ -148,7 +142,7 @@ func (g GithubHook) handleRelease(body []byte, repo *git.Repo) error {
 		return errors.New("The release request contained an invalid TagName.")
 	}
 
-	logger().Printf("Received new release '%s'. -> Updating local repository to this release.", release.Release.Name)
+	logger().Printf("Received new release '%s'. -> Updating local repository to this release.\n", release.Release.Name)
 
 	// Update the local branch to the release tag name
 	// this will pull the release tag.

@@ -27,7 +27,7 @@ func Start(repo *Repo) {
 			case <-s.ticker.C():
 				err := repo.Pull()
 				if err != nil {
-					logger().Println(err)
+					Logger().Println(err)
 				}
 			case <-s.halt:
 				s.ticker.Stop()

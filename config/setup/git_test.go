@@ -2,7 +2,6 @@ package setup
 
 import (
 	"io/ioutil"
-	"log"
 	"strings"
 	"testing"
 	"time"
@@ -42,7 +41,7 @@ func TestIntervals(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		git.Logger = nil
+		git.SetLogger(gittest.NewLogger(gittest.Open("file")))
 
 		c1 := newTestController(test)
 		repo, err := gitParse(c1)
@@ -61,7 +60,7 @@ func TestIntervals(t *testing.T) {
 
 		// switch logger to test file
 		logFile := gittest.Open("file")
-		git.Logger = log.New(logFile, "", 0)
+		git.SetLogger(gittest.NewLogger(logFile))
 
 		// sleep for the interval
 		gittest.Sleep(repo.Interval)
