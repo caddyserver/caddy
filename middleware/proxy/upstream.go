@@ -14,7 +14,6 @@ import (
 
 var (
 	supportedPolicies map[string]func() Policy = make(map[string]func() Policy)
-	proxyHeaders      http.Header              = make(http.Header)
 )
 
 type staticUpstream struct {
@@ -36,6 +35,7 @@ type staticUpstream struct {
 func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
 	var upstreams []Upstream
 	for c.Next() {
+		var proxyHeaders http.Header = make(http.Header)
 		upstream := &staticUpstream{
 			from:        "",
 			Hosts:       nil,
