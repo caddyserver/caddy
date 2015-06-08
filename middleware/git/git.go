@@ -189,11 +189,11 @@ func (r *Repo) Prepare() error {
 			}
 		}
 		if err != nil {
-			return fmt.Errorf("Cannot retrieve repo url for %v Error: %v", r.Path, err)
+			return fmt.Errorf("cannot retrieve repo url for %v Error: %v", r.Path, err)
 		}
-		return fmt.Errorf("Another git repo '%v' exists at %v", repoURL, r.Path)
+		return fmt.Errorf("another git repo '%v' exists at %v", repoURL, r.Path)
 	}
-	return fmt.Errorf("Cannot git clone into %v, directory not empty.", r.Path)
+	return fmt.Errorf("cannot git clone into %v, directory not empty.", r.Path)
 }
 
 // getMostRecentCommit gets the hash of the most recent commit to the
@@ -250,7 +250,7 @@ func Init() error {
 	// locate git binary in path
 	var err error
 	if gitBinary, err = gos.LookPath("git"); err != nil {
-		return fmt.Errorf("Git middleware requires git installed. Cannot find git binary in PATH")
+		return fmt.Errorf("git middleware requires git installed. Cannot find git binary in PATH")
 	}
 
 	// locate bash in PATH. If not found, fallback to sh.
@@ -259,7 +259,7 @@ func Init() error {
 	if _, err = gos.LookPath("bash"); err != nil {
 		shell = "sh"
 		if _, err = gos.LookPath("sh"); err != nil {
-			return fmt.Errorf("Git middleware requires either bash or sh.")
+			return fmt.Errorf("git middleware requires either bash or sh.")
 		}
 	}
 	return nil

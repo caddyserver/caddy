@@ -83,7 +83,7 @@ func NewRegexpRule(base, pattern, to string, ext []string) (*RegexpRule, error) 
 		if len(v) < 2 || (len(v) < 3 && v[0] == '!') {
 			// check if no extension is specified
 			if v != "/" && v != "!/" {
-				return nil, fmt.Errorf("Invalid extension %v", v)
+				return nil, fmt.Errorf("invalid extension %v", v)
 			}
 		}
 	}

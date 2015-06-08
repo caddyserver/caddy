@@ -76,24 +76,24 @@ func nextFunc(shouldGzip bool) middleware.Handler {
 	return middleware.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
 		if shouldGzip {
 			if r.Header.Get("Accept-Encoding") != "" {
-				return 0, fmt.Errorf("Accept-Encoding header not expected")
+				return 0, fmt.Errorf("accept-Encoding header not expected")
 			}
 			if w.Header().Get("Content-Encoding") != "gzip" {
-				return 0, fmt.Errorf("Content-Encoding must be gzip, found %v", r.Header.Get("Content-Encoding"))
+				return 0, fmt.Errorf("content-Encoding must be gzip, found %v", r.Header.Get("Content-Encoding"))
 			}
 			if _, ok := w.(gzipResponseWriter); !ok {
-				return 0, fmt.Errorf("ResponseWriter should be gzipResponseWriter, found %T", w)
+				return 0, fmt.Errorf("responseWriter should be gzipResponseWriter, found %T", w)
 			}
 			return 0, nil
 		}
 		if r.Header.Get("Accept-Encoding") == "" {
-			return 0, fmt.Errorf("Accept-Encoding header expected")
+			return 0, fmt.Errorf("accept-Encoding header expected")
 		}
 		if w.Header().Get("Content-Encoding") == "gzip" {
-			return 0, fmt.Errorf("Content-Encoding must not be gzip, found gzip")
+			return 0, fmt.Errorf("content-Encoding must not be gzip, found gzip")
 		}
 		if _, ok := w.(gzipResponseWriter); ok {
-			return 0, fmt.Errorf("ResponseWriter should not be gzipResponseWriter")
+			return 0, fmt.Errorf("responseWriter should not be gzipResponseWriter")
 		}
 		return 0, nil
 	})
