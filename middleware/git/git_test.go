@@ -133,7 +133,7 @@ Command echo Hello successful.
 			continue
 		}
 
-		expected := "Another git repo 'git@github.com:u1/repo.git' exists at gitdir"
+		expected := "another git repo 'git@github.com:u1/repo.git' exists at gitdir"
 		if expected != err.Error() {
 			t.Errorf("Pull with Error %v: Expected %v found %v", i, expected, err.Error())
 		}
