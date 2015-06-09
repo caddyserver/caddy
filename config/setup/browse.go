@@ -33,7 +33,7 @@ func browseParse(c *Controller) ([]browse.Config, error) {
 	appendCfg := func(bc browse.Config) error {
 		for _, c := range configs {
 			if c.PathScope == bc.PathScope {
-				return fmt.Errorf("Duplicate browsing config for %s", c.PathScope)
+				return fmt.Errorf("duplicate browsing config for %s", c.PathScope)
 			}
 		}
 		configs = append(configs, bc)

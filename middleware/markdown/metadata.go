@@ -205,7 +205,7 @@ func extractMetadata(parser MetadataParser, b []byte) (metadata []byte, markdown
 
 	line := bytes.TrimSpace(scanner.Bytes())
 	if !bytes.Equal(line, parser.Opening()) {
-		return nil, b, fmt.Errorf("Wrong identifier")
+		return nil, b, fmt.Errorf("wrong identifier")
 	}
 
 	// buffer for metadata contents
@@ -232,7 +232,7 @@ func extractMetadata(parser MetadataParser, b []byte) (metadata []byte, markdown
 	}
 
 	// closing identifier not found
-	return buf.Bytes(), nil, fmt.Errorf("Metadata not closed. '%v' not found", string(parser.Closing()))
+	return buf.Bytes(), nil, fmt.Errorf("metadata not closed. '%v' not found", string(parser.Closing()))
 }
 
 // findParser finds the parser using line that contains opening identifier

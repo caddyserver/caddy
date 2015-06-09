@@ -11,7 +11,7 @@ import (
 	"github.com/mholt/caddy/middleware"
 )
 
-var errUnreachable = errors.New("Unreachable backend")
+var errUnreachable = errors.New("unreachable backend")
 
 // Proxy represents a middleware instance that can proxy requests.
 type Proxy struct {

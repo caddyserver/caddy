@@ -132,7 +132,7 @@ func gitParse(c *Controller) (*git.Repo, error) {
 		repo.URL, repo.Host, err = sanitizeGit(repo.URL)
 		// TODO add Windows support for private repos
 		if runtime.GOOS == "windows" {
-			return nil, fmt.Errorf("Private repository not yet supported on Windows")
+			return nil, fmt.Errorf("private repository not yet supported on Windows")
 		}
 	}
 
@@ -162,7 +162,7 @@ func sanitizeHTTP(repoURL string) (string, string, error) {
 		url.Path = url.Path[len("git@"):]
 		i := strings.Index(url.Path, ":")
 		if i < 0 {
-			return "", "", fmt.Errorf("Invalid git url %s", repoURL)
+			return "", "", fmt.Errorf("invalid git url %s", repoURL)
 		}
 		url.Host = url.Path[:i]
 		url.Path = "/" + url.Path[i+1:]
@@ -191,7 +191,7 @@ func sanitizeGit(repoURL string) (string, string, error) {
 		if url, err := url.Parse(repoURL); err == nil && strings.HasPrefix(url.Scheme, "http") {
 			repoURL = fmt.Sprintf("git@%v:%v", url.Host, url.Path[1:])
 		} else {
-			return "", "", fmt.Errorf("Invalid git url %s", repoURL)
+			return "", "", fmt.Errorf("invalid git url %s", repoURL)
 		}
 	}
 	hostURL := repoURL[len("git@"):]

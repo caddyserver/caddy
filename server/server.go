@@ -38,7 +38,7 @@ func New(addr string, configs []Config, tls bool) (*Server, error) {
 
 	for _, conf := range configs {
 		if _, exists := s.vhosts[conf.Host]; exists {
-			return nil, fmt.Errorf("Cannot serve %s - host already defined for address %s", conf.Address(), s.address)
+			return nil, fmt.Errorf("cannot serve %s - host already defined for address %s", conf.Address(), s.address)
 		}
 
 		vh := virtualHost{config: conf}
@@ -175,7 +175,7 @@ func setupClientAuth(tlsConfigs []TLSConfig, config *tls.Config) error {
 					return err
 				}
 				if !pool.AppendCertsFromPEM(caCrt) {
-					return fmt.Errorf("Error loading client certificate '%s': no certificates were successfully parsed", caFile)
+					return fmt.Errorf("error loading client certificate '%s': no certificates were successfully parsed", caFile)
 				}
 			}
 		}

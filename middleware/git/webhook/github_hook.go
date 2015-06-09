@@ -45,7 +45,7 @@ func (g GithubHook) DoesHandle(h http.Header) bool {
 
 func (g GithubHook) Handle(w http.ResponseWriter, r *http.Request, repo *git.Repo) (int, error) {
 	if r.Method != "POST" {
-		return http.StatusMethodNotAllowed, errors.New("The request had an invalid method.")
+		return http.StatusMethodNotAllowed, errors.New("the request had an invalid method.")
 	}
 
 	// read full body - required for signature
@@ -58,7 +58,7 @@ func (g GithubHook) Handle(w http.ResponseWriter, r *http.Request, repo *git.Rep
 
 	event := r.Header.Get("X-Github-Event")
 	if event == "" {
-		return http.StatusBadRequest, errors.New("The 'X-Github-Event' header is required but was missing.")
+		return http.StatusBadRequest, errors.New("the 'X-Github-Event' header is required but was missing.")
 	}
 
 	switch event {
@@ -98,7 +98,7 @@ func (g GithubHook) handleSignature(r *http.Request, body []byte, secret string)
 			expectedMac := hex.EncodeToString(mac.Sum(nil))
 
 			if signature[5:] != expectedMac {
-				return errors.New("Could not verify request signature. The signature is invalid!")
+				return errors.New("could not verify request signature. The signature is invalid!")
 			}
 		}
 	}
@@ -118,7 +118,7 @@ func (g GithubHook) handlePush(body []byte, repo *git.Repo) error {
 	// and if it matches with our locally tracked one, pull.
 	refSlice := strings.Split(push.Ref, "/")
 	if len(refSlice) != 3 {
-		return errors.New("The push request contained an invalid reference string.")
+		return errors.New("the push request contained an invalid reference string.")
 	}
 
 	branch := refSlice[2]
@@ -139,7 +139,7 @@ func (g GithubHook) handleRelease(body []byte, repo *git.Repo) error {
 	}
 
 	if release.Release.TagName == "" {
-		return errors.New("The release request contained an invalid TagName.")
+		return errors.New("the release request contained an invalid TagName.")
 	}
 
 	logger().Printf("Received new release '%s'. -> Updating local repository to this release.\n", release.Release.Name)

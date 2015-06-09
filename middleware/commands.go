@@ -11,10 +11,10 @@ import (
 func SplitCommandAndArgs(command string) (cmd string, args []string, err error) {
 	parts, err := shlex.Split(command)
 	if err != nil {
-		err = errors.New("Error parsing command: " + err.Error())
+		err = errors.New("error parsing command: " + err.Error())
 		return
 	} else if len(parts) == 0 {
-		err = errors.New("No command contained in '" + command + "'")
+		err = errors.New("no command contained in '" + command + "'")
 		return
 	}
 
