@@ -1,7 +1,7 @@
-// Package internal provides a simple middleware that (a) prevents access
+// Package inner provides a simple middleware that (a) prevents access
 // to internal locations and (b) allows to return files from internal location
 // by setting a special header, e.g. in a proxy response.
-package internal
+package inner
 
 import (
 	"net/http"
