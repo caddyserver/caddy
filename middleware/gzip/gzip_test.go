@@ -16,13 +16,20 @@ func TestGzipHandler(t *testing.T) {
 	for _, p := range badPaths {
 		pathFilter.IgnoredPaths.Add(p)
 	}
+	extFilter := ExtFilter{make(Set)}
+	for _, e := range []string{".txt", ".html", ".css", ".md"} {
+		extFilter.Exts.Add(e)
+	}
 	gz := Gzip{Configs: []Config{
-		Config{Filters: []Filter{DefaultExtFilter(), pathFilter}},
+		Config{Filters: []Filter{pathFilter, extFilter}},
 	}}
 
 	w := httptest.NewRecorder()
 	gz.Next = nextFunc(true)
-	for _, e := range textExts {
+	var exts = []string{
+		".html", ".css", ".md",
+	}
+	for _, e := range exts {
 		url := "/file" + e
 		r, err := http.NewRequest("GET", url, nil)
 		if err != nil {
@@ -38,7 +45,7 @@ func TestGzipHandler(t *testing.T) {
 	w = httptest.NewRecorder()
 	gz.Next = nextFunc(false)
 	for _, p := range badPaths {
-		for _, e := range textExts {
+		for _, e := range exts {
 			url := p + "/file" + e
 			r, err := http.NewRequest("GET", url, nil)
 			if err != nil {
@@ -54,7 +61,7 @@ func TestGzipHandler(t *testing.T) {
 
 	w = httptest.NewRecorder()
 	gz.Next = nextFunc(false)
-	exts := []string{
+	exts = []string{
 		".htm1", ".abc", ".mdx",
 	}
 	for _, e := range exts {
@@ -63,6 +70,45 @@ func TestGzipHandler(t *testing.T) {
 		if err != nil {
 			t.Error(err)
 		}
+		r.Header.Set("Accept-Encoding", "gzip")
+		_, err = gz.ServeHTTP(w, r)
+		if err != nil {
+			t.Error(err)
+		}
+	}
+
+	gz.Configs[0].Filters[1] = DefaultMIMEFilter()
+	w = httptest.NewRecorder()
+	gz.Next = nextFunc(true)
+	var mimes = []string{
+		"text/html", "text/css", "application/json",
+	}
+	for _, m := range mimes {
+		url := "/file"
+		r, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			t.Error(err)
+		}
+		r.Header.Set("Content-Type", m)
+		r.Header.Set("Accept-Encoding", "gzip")
+		_, err = gz.ServeHTTP(w, r)
+		if err != nil {
+			t.Error(err)
+		}
+	}
+
+	w = httptest.NewRecorder()
+	gz.Next = nextFunc(false)
+	mimes = []string{
+		"image/jpeg", "image/png",
+	}
+	for _, m := range mimes {
+		url := "/file"
+		r, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			t.Error(err)
+		}
+		r.Header.Set("Content-Type", m)
 		r.Header.Set("Accept-Encoding", "gzip")
 		_, err = gz.ServeHTTP(w, r)
 		if err != nil {

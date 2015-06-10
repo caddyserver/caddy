@@ -47,13 +47,13 @@ func TestSet(t *testing.T) {
 }
 
 func TestExtFilter(t *testing.T) {
-	var filter Filter = DefaultExtFilter()
-	_ = filter.(ExtFilter)
-	for i, e := range textExts {
-		r := urlRequest("file" + e)
-		if !filter.ShouldCompress(r) {
-			t.Errorf("Test %v: Should be valid filter", i)
-		}
+	var filter Filter = ExtFilter{make(Set)}
+	for _, e := range []string{".txt", ".html", ".css", ".md"} {
+		filter.(ExtFilter).Exts.Add(e)
+	}
+	r := urlRequest("file.txt")
+	if !filter.ShouldCompress(r) {
+		t.Errorf("Should be valid filter")
 	}
 	var exts = []string{
 		".html", ".css", ".md",
@@ -96,6 +96,32 @@ func TestPathFilter(t *testing.T) {
 		r := urlRequest(p)
 		if !filter.ShouldCompress(r) {
 			t.Errorf("Test %v: Should be valid filter", i)
+		}
+	}
+}
+
+func TestMIMEFilter(t *testing.T) {
+	var filter Filter = DefaultMIMEFilter()
+	_ = filter.(MIMEFilter)
+	var mimes = []string{
+		"text/html", "text/css", "application/json",
+	}
+	for i, m := range mimes {
+		r := urlRequest("file" + m)
+		r.Header.Set("Content-Type", m)
+		if !filter.ShouldCompress(r) {
+			t.Errorf("Test %v: Should be valid filter", i)
+		}
+	}
+	mimes = []string{
+		"image/jpeg", "image/png",
+	}
+	filter = DefaultMIMEFilter()
+	for i, m := range mimes {
+		r := urlRequest("file" + m)
+		r.Header.Set("Content-Type", m)
+		if filter.ShouldCompress(r) {
+			t.Errorf("Test %v: Should not be valid filter", i)
 		}
 	}
 }
