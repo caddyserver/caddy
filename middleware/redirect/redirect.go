@@ -3,6 +3,8 @@
 package redirect
 
 import (
+	"fmt"
+	"html"
 	"net/http"
 	"strings"
 
@@ -20,11 +22,20 @@ func (rd Redirect) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 	for _, rule := range rd.Rules {
 		if rule.From == "/" {
 			// Catchall redirect preserves path (TODO: Standardize/formalize this behavior)
-			http.Redirect(w, r, strings.TrimSuffix(rule.To, "/")+r.URL.Path, rule.Code)
+			newPath := strings.TrimSuffix(rule.To, "/") + r.URL.Path
+			if rule.Meta {
+				fmt.Fprintf(w, metaRedir, html.EscapeString(newPath))
+			} else {
+				http.Redirect(w, r, newPath, rule.Code)
+			}
 			return 0, nil
 		}
 		if r.URL.Path == rule.From {
-			http.Redirect(w, r, rule.To, rule.Code)
+			if rule.Meta {
+				fmt.Fprintf(w, metaRedir, html.EscapeString(rule.To))
+			} else {
+				http.Redirect(w, r, rule.To, rule.Code)
+			}
 			return 0, nil
 		}
 	}
@@ -35,4 +46,12 @@ func (rd Redirect) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 type Rule struct {
 	From, To string
 	Code     int
+	Meta     bool
 }
+
+var metaRedir = `<html>
+<head>
+  <meta http-equiv="refresh" content="0;URL='%s'">
+</head>
+<body>redirecting...</body>
+</html>`

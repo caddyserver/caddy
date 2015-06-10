@@ -26,17 +26,21 @@ func redirParse(c *Controller) ([]redirect.Rule, error) {
 		var rule redirect.Rule
 		args := c.RemainingArgs()
 
+		// Always set the default Code, then overwrite
+		rule.Code = http.StatusMovedPermanently
+
 		switch len(args) {
 		case 1:
 			// To specified
 			rule.From = "/"
 			rule.To = args[0]
-			rule.Code = http.StatusMovedPermanently
 		case 2:
 			// To and Code specified
 			rule.From = "/"
 			rule.To = args[0]
-			if code, ok := httpRedirs[args[1]]; !ok {
+			if "meta" == args[1] {
+				rule.Meta = true
+			} else if code, ok := httpRedirs[args[1]]; !ok {
 				return redirects, c.Err("Invalid redirect code '" + args[1] + "'")
 			} else {
 				rule.Code = code
@@ -45,7 +49,9 @@ func redirParse(c *Controller) ([]redirect.Rule, error) {
 			// From, To, and Code specified
 			rule.From = args[0]
 			rule.To = args[1]
-			if code, ok := httpRedirs[args[2]]; !ok {
+			if "meta" == args[2] {
+				rule.Meta = true
+			} else if code, ok := httpRedirs[args[2]]; !ok {
 				return redirects, c.Err("Invalid redirect code '" + args[2] + "'")
 			} else {
 				rule.Code = code
