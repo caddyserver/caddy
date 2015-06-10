@@ -209,6 +209,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.vhosts[host]; !ok {
 		if _, ok2 := s.vhosts["0.0.0.0"]; ok2 {
 			host = "0.0.0.0"
+		} else if _, ok2 := s.vhosts[""]; ok2 {
+			host = ""
 		}
 	}
 
