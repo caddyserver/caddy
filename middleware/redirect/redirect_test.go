@@ -1,12 +1,43 @@
 package redirect
 
 import (
+	"bytes"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/mholt/caddy/middleware"
 )
+
+func TestMetaRedirect(t *testing.T) {
+	re := Redirect{
+		Rules: []Rule{
+			{From: "/", Meta: true, To: "https://example.com/"},
+			{From: "/whatever", Meta: true, To: "https://example.com/whatever"},
+		},
+	}
+
+	for i, test := range re.Rules {
+		req, err := http.NewRequest("GET", test.From, nil)
+		if err != nil {
+			t.Fatalf("Test %d: Could not create HTTP request: %v", i, err)
+		}
+
+		rec := httptest.NewRecorder()
+		re.ServeHTTP(rec, req)
+
+		body, err := ioutil.ReadAll(rec.Body)
+		if err != nil {
+			t.Fatalf("Test %d: Could not read HTTP response body: %v", i, err)
+		}
+		expectedSnippet := `<meta http-equiv="refresh" content="0;URL='` + test.To + `'">`
+		if !bytes.Contains(body, []byte(expectedSnippet)) {
+			t.Errorf("Test %d: Expected Response Body to contain %q but was %q",
+				i, expectedSnippet, body)
+		}
+	}
+}
 
 func TestRedirect(t *testing.T) {
 	for i, test := range []struct {
