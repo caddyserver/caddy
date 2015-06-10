@@ -2,7 +2,7 @@ package setup
 
 import (
 	"github.com/mholt/caddy/middleware"
-	"github.com/mholt/caddy/middleware/internal"
+	"github.com/mholt/caddy/middleware/inner"
 )
 
 // Internal configures a new Internal middleware instance.
@@ -13,7 +13,7 @@ func Internal(c *Controller) (middleware.Middleware, error) {
 	}
 
 	return func(next middleware.Handler) middleware.Handler {
-		return internal.Internal{Next: next, Paths: paths}
+		return inner.Internal{Next: next, Paths: paths}
 	}, nil
 }
 
