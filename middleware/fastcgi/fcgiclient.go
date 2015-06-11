@@ -375,21 +375,15 @@ func (c *FCGIClient) Request(p map[string]string, req io.Reader) (resp *http.Res
 	resp.Header = http.Header(mimeHeader)
 
 	if resp.Header.Get("Status") != "" {
-		
-		// check if Status is long enought to split
-		if strings.Count(resp.Header.Get("Status"), " ") > 0 {
-			statusParts := strings.SplitN(resp.Header.Get("Status"), " ", 2)
-			resp.StatusCode, err = strconv.Atoi(statusParts[0])
-			resp.Status = statusParts[1]
-			resp.Status = statusParts[1]
-		} else {
-			resp.StatusCode, err = strconv.Atoi(resp.Header.Get("Status"))
-		}
-	
+		statusParts := strings.SplitN(resp.Header.Get("Status"), " ", 2)
+		resp.StatusCode, err = strconv.Atoi(statusParts[0])
 		if err != nil {
 			return
 		}
-	
+		if (len(statusParts) > 0) {
+			resp.Status = statusParts[1]	
+		}
+		
 	} else {
 		resp.StatusCode = http.StatusOK
 	}
