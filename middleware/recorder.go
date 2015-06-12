@@ -1,6 +1,9 @@
 package middleware
 
 import (
+	"bufio"
+	"errors"
+	"net"
 	"net/http"
 	"time"
 )
@@ -47,4 +50,13 @@ func (r *responseRecorder) Write(buf []byte) (int, error) {
 		r.size += n
 	}
 	return n, err
+}
+
+// Hijacker is a wrapper of http.Hijacker underearth if any,
+// otherwise it just returns an error.
+func (r *responseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if hj, ok := r.ResponseWriter.(http.Hijacker); ok {
+		return hj.Hijack()
+	}
+	return nil, nil, errors.New("I'm not a Hijacker")
 }
