@@ -1,5 +1,13 @@
 CHANGES
 
+<VERSION> (<DATE>)
+- git: Pull changes immediately with GitHub webhook
+- gzip: Filter by path and extension
+- gzip: Customize compression level
+- proxy: Strip prefix from path for proxy to path
+- redir: Meta tag redirects
+
+
 0.7.1 (June 2, 2015)
 - basicauth: Patched timing vulnerability
 - proxy: Support for WebSocket backends
