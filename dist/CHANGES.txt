@@ -1,0 +1,63 @@
+CHANGES
+
+0.7.1 (June 2, 2015)
+- basicauth: Patched timing vulnerability
+- proxy: Support for WebSocket backends
+- tls: Client authentication
+
+
+0.7.0 (May 25, 2015)
+- New directive 'internal' to protect resources with X-Accel-Redirect
+- New -version flag to show program name and version
+- core: Fixed escaped backslash characters inside quoted strings
+- core: Fixed parsing Caddyfile for IPv6 addresses missing ports
+- core: A notice is shown when non-local address resolves to loopback interface
+- core: Warns if file descriptor limit is too low for production site (Mac/Linux)
+- fastcgi: Support for Unix sockets
+- git: Fixed issue that prevented pulling at designated interval
+- header: Remove a header field by prefixing field name with "-"
+- markdown: Simple static site generation
+- markdown: Support for metadata ("front matter") at beginning of files
+- rewrite: Experimental support for regular expressions
+- tls: Customize cipher suites and protocols
+- tls: Removed RC4 ciphers
+- Other internal improvements that are not user-facing (more tests, etc.)
+
+
+0.6.0 (May 7, 2015)
+- New directive 'git' to automatically pull changes
+- New directive 'bind' to override host server binds to
+- New -root flag to specify root path to default site
+- Ability to receive config data piped through stdin
+- core: Warning if root directory doesn't exist at startup
+- core: Entire process dies if any server fails to start
+- gzip: Fixed Content-Length value when proxying requests
+- errors: Error log now includes file and line number of panics
+- fastcgi: Pass custom environment variables
+- fastcgi: Support for HEAD, OPTIONS, PUT, PATCH, and DELETE methods
+- fastcgi: Fixed SERVER_SOFTWARE variables
+- markdown: Support for index files when URL points to a directory
+- proxy: Load balancing with multiple backends, health checks, failovers, and multiple policies
+- proxy: Add custom headers
+- startup/shutdown: Run command in background with '&' at end
+- templates: Added .tpl and .tmpl as default extensions
+- templates: Support for index files when URL points to a directory
+- templates: Changed .RemoteAddr to .IP and stripped out remote port
+- tls: TLS disabled (with warning) for servers that are explicitly http://
+- websocket: Fixed SERVER_SOFTWARE and GATEWAY_INTERFACE variables
+- Many internal improvements
+
+
+0.5.1 (April 30, 2015)
+- Default host is now 0.0.0.0 (wildcard)
+- New -host and -port flags to override default host and port
+- core: Support for binding to 0.0.0.0
+- core: Graceful error handling during heavy load; proper error responses
+- errors: Fixed file path handling
+- errors: Fixed panic due to nil Log file
+- fastcgi: Support for index files
+- fastcgi: Fix for handling errors that come from responder
+
+
+0.5.0 (April 28, 2015)
+- Initial release
