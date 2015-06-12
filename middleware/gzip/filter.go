@@ -3,13 +3,14 @@ package gzip
 import (
 	"net/http"
 	"path"
+	"strings"
 
 	"github.com/mholt/caddy/middleware"
 )
 
 // Filter determines if a request should be gzipped.
 type Filter interface {
-	// ShouldCompress tells if compression gzip compression
+	// ShouldCompress tells if gzip compression
 	// should be done on the request.
 	ShouldCompress(*http.Request) bool
 }
@@ -20,24 +21,12 @@ type ExtFilter struct {
 	Exts Set
 }
 
-// textExts is a list of extensions for text related files.
-var textExts = []string{
-	".html", ".htm", ".css", ".json", ".php", ".js", ".txt", ".md", ".xml",
-}
-
 // extWildCard is the wildcard for extensions.
 const extWildCard = "*"
 
-// DefaultExtFilter creates a default ExtFilter with
-// file extensions for text types.
-func DefaultExtFilter() ExtFilter {
-	e := ExtFilter{make(Set)}
-	for _, ext := range textExts {
-		e.Exts.Add(ext)
-	}
-	return e
-}
-
+// ShouldCompress checks if the request file extension matches any
+// of the registered extensions. It returns true if the extension is
+// found and false otherwise.
 func (e ExtFilter) ShouldCompress(r *http.Request) bool {
 	ext := path.Ext(r.URL.Path)
 	return e.Exts.Contains(extWildCard) || e.Exts.Contains(ext)
@@ -50,12 +39,45 @@ type PathFilter struct {
 }
 
 // ShouldCompress checks if the request path matches any of the
-// registered paths to ignore. If returns false if an ignored path
+// registered paths to ignore. It returns false if an ignored path
 // is found and true otherwise.
 func (p PathFilter) ShouldCompress(r *http.Request) bool {
 	return !p.IgnoredPaths.ContainsFunc(func(value string) bool {
 		return middleware.Path(r.URL.Path).Matches(value)
 	})
+}
+
+// MIMEFilter is Filter for request content types.
+type MIMEFilter struct {
+	// Types is the MIME types to accept.
+	Types Set
+}
+
+// defaultMIMETypes is the list of default MIME types to use.
+var defaultMIMETypes = []string{
+	"text/plain", "text/html", "text/css", "application/json", "application/javascript",
+	"text/x-markdown", "text/xml", "application/xml",
+}
+
+// DefaultMIMEFilter creates a MIMEFilter with default types.
+func DefaultMIMEFilter() MIMEFilter {
+	m := MIMEFilter{Types: make(Set)}
+	for _, mime := range defaultMIMETypes {
+		m.Types.Add(mime)
+	}
+	return m
+}
+
+// ShouldCompress checks if the content type of the request
+// matches any of the registered ones. It returns true if
+// found and false otherwise.
+func (m MIMEFilter) ShouldCompress(r *http.Request) bool {
+	return m.Types.Contains(r.Header.Get("Content-Type"))
+}
+
+func ValidMIME(mime string) bool {
+	s := strings.Split(mime, "/")
+	return len(s) == 2 && strings.TrimSpace(s[0]) != "" && strings.TrimSpace(s[1]) != ""
 }
 
 // Set stores distinct strings.

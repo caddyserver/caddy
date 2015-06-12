@@ -28,7 +28,8 @@ func gzipParse(c *Controller) ([]gzip.Config, error) {
 		config := gzip.Config{}
 
 		pathFilter := gzip.PathFilter{make(gzip.Set)}
-		extFilter := gzip.DefaultExtFilter()
+		mimeFilter := gzip.MIMEFilter{make(gzip.Set)}
+		extFilter := gzip.ExtFilter{make(gzip.Set)}
 
 		// no extra args expected
 		if len(c.RemainingArgs()) > 0 {
@@ -37,6 +38,17 @@ func gzipParse(c *Controller) ([]gzip.Config, error) {
 
 		for c.NextBlock() {
 			switch c.Val() {
+			case "mimes":
+				mimes := c.RemainingArgs()
+				if len(mimes) == 0 {
+					return configs, c.ArgErr()
+				}
+				for _, m := range mimes {
+					if !gzip.ValidMIME(m) {
+						return configs, fmt.Errorf("Invalid MIME %v.", m)
+					}
+					mimeFilter.Types.Add(m)
+				}
 			case "ext":
 				exts := c.RemainingArgs()
 				if len(exts) == 0 {
@@ -74,8 +86,25 @@ func gzipParse(c *Controller) ([]gzip.Config, error) {
 			}
 		}
 
-		// put pathFilter in front to filter with path first
-		config.Filters = []gzip.Filter{pathFilter, extFilter}
+		config.Filters = []gzip.Filter{}
+
+		// if ignored paths are specified, put in front to filter with path first
+		if len(pathFilter.IgnoredPaths) > 0 {
+			config.Filters = []gzip.Filter{pathFilter}
+		}
+
+		// if mime types are specified, use it and ignore extensions
+		if len(mimeFilter.Types) > 0 {
+			config.Filters = append(config.Filters, mimeFilter)
+
+			// if extensions are specified, use it
+		} else if len(extFilter.Exts) > 0 {
+			config.Filters = append(config.Filters, extFilter)
+
+			// neither is specified, use default mime types
+		} else {
+			config.Filters = append(config.Filters, gzip.DefaultMIMEFilter())
+		}
 
 		configs = append(configs, config)
 	}
