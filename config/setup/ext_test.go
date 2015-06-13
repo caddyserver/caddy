@@ -2,8 +2,8 @@ package setup
 
 import (
 	"testing"
-
-	"github.com/mholt/caddy/middleware/ext"
+	
+	"github.com/mholt/caddy/middleware/extensions"
 )
 
 func TestExt(t *testing.T) {
@@ -20,12 +20,20 @@ func TestExt(t *testing.T) {
 	}
 
 	handler := mid(emptyNext)
-	myHandler, ok := handler.(ext.Ext)
+	myHandler, ok := handler.(extensions.Ext)
+	
 	if !ok {
 		t.Fatalf("Expected handler to be type Ext, got: %#v", handler)
 	}
 
-	if !sameNext(myHandler.Next, emptyNext) {
-		t.Error("'Next' field of handler was not set properly")
+	if myHandler.Extensions[0] != ".html" {
+		t.Errorf("Expected .html in the list of Extensions")
 	}
+	if myHandler.Extensions[1] != ".htm" {
+		t.Errorf("Expected .htm in the list of Extensions")
+	}
+	if myHandler.Extensions[2] != ".php" {
+		t.Errorf("Expected .php in the list of Extensions")
+	}
+	
 }
