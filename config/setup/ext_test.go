@@ -25,7 +25,7 @@ func TestExt(t *testing.T) {
 	if !ok {
 		t.Fatalf("Expected handler to be type Ext, got: %#v", handler)
 	}
-
+	
 	if myHandler.Extensions[0] != ".html" {
 		t.Errorf("Expected .html in the list of Extensions")
 	}
@@ -35,5 +35,9 @@ func TestExt(t *testing.T) {
 	if myHandler.Extensions[2] != ".php" {
 		t.Errorf("Expected .php in the list of Extensions")
 	}
+	if !sameNext(myHandler.Next, emptyNext) {
+		t.Error("'Next' field of handler was not set properly")
+	}
+	
 	
 }
