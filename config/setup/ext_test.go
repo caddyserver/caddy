@@ -3,7 +3,7 @@ package setup
 import (
 	"testing"
 
-	"github.com/mholt/caddy/middleware/gzip"
+	"github.com/mholt/caddy/middleware/ext"
 )
 
 func TestExt(t *testing.T) {
