@@ -4,11 +4,13 @@ package browse
 
 import (
 	"bytes"
+	"errors"
 	"html/template"
 	"net/http"
 	"net/url"
 	"os"
 	"path"
+	"sort"
 	"strings"
 	"time"
 
@@ -43,6 +45,12 @@ type Listing struct {
 
 	// The items (files and folders) in the path
 	Items []FileInfo
+
+	// Which sorting order is used
+	Sort string
+
+	// And which order
+	Order string
 }
 
 // FileInfo is the info about a particular file or directory
@@ -53,6 +61,61 @@ type FileInfo struct {
 	URL     string
 	ModTime time.Time
 	Mode    os.FileMode
+}
+
+// Implement sorting for Listing
+type byName Listing
+type bySize Listing
+type byTime Listing
+
+// By Name
+func (l byName) Len() int      { return len(l.Items) }
+func (l byName) Swap(i, j int) { l.Items[i], l.Items[j] = l.Items[j], l.Items[i] }
+
+// Treat upper and lower case equally
+func (l byName) Less(i, j int) bool {
+	return strings.ToLower(l.Items[i].Name) < strings.ToLower(l.Items[j].Name)
+}
+
+// By Size
+func (l bySize) Len() int           { return len(l.Items) }
+func (l bySize) Swap(i, j int)      { l.Items[i], l.Items[j] = l.Items[j], l.Items[i] }
+func (l bySize) Less(i, j int) bool { return l.Items[i].Size < l.Items[j].Size }
+
+// By Time
+func (l byTime) Len() int           { return len(l.Items) }
+func (l byTime) Swap(i, j int)      { l.Items[i], l.Items[j] = l.Items[j], l.Items[i] }
+func (l byTime) Less(i, j int) bool { return l.Items[i].ModTime.Unix() < l.Items[j].ModTime.Unix() }
+
+// Add sorting method to "Listing"
+// it will apply what's in ".Sort" and ".Order"
+func (l Listing) applySort() {
+	// Check '.Order' to know how to sort
+	if l.Order == "desc" {
+		switch l.Sort {
+		case "name":
+			sort.Sort(sort.Reverse(byName(l)))
+		case "size":
+			sort.Sort(sort.Reverse(bySize(l)))
+		case "time":
+			sort.Sort(sort.Reverse(byTime(l)))
+		default:
+			// If not one of the above, do nothing
+			return
+		}
+	} else { // If we had more Orderings we could add them here
+		switch l.Sort {
+		case "name":
+			sort.Sort(byName(l))
+		case "size":
+			sort.Sort(bySize(l))
+		case "time":
+			sort.Sort(byTime(l))
+		default:
+			// If not one of the above, do nothing
+			return
+		}
+	}
 }
 
 // HumanSize returns the size of the file as a human-readable string.
@@ -70,6 +133,42 @@ var IndexPages = []string{
 	"index.htm",
 	"default.html",
 	"default.htm",
+}
+
+func directoryListing(files []os.FileInfo, urlPath string, canGoUp bool) (Listing, error) {
+	var fileinfos []FileInfo
+	for _, f := range files {
+		name := f.Name()
+
+		// Directory is not browsable if it contains index file
+		for _, indexName := range IndexPages {
+			if name == indexName {
+				return Listing{}, errors.New("Directory contains index file, not browsable!")
+			}
+		}
+
+		if f.IsDir() {
+			name += "/"
+		}
+
+		url := url.URL{Path: name}
+
+		fileinfos = append(fileinfos, FileInfo{
+			IsDir:   f.IsDir(),
+			Name:    f.Name(),
+			Size:    f.Size(),
+			URL:     url.String(),
+			ModTime: f.ModTime(),
+			Mode:    f.Mode(),
+		})
+	}
+
+	return Listing{
+		Name:    path.Base(urlPath),
+		Path:    urlPath,
+		CanGoUp: canGoUp,
+		Items:   fileinfos,
+	}, nil
 }
 
 // ServeHTTP implements the middleware.Handler interface.
@@ -113,42 +212,6 @@ func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			return http.StatusForbidden, err
 		}
 
-		// Assemble listing of directory contents
-		var fileinfos []FileInfo
-		var abort bool // we bail early if we find an index file
-		for _, f := range files {
-			name := f.Name()
-
-			// Directory is not browseable if it contains index file
-			for _, indexName := range IndexPages {
-				if name == indexName {
-					abort = true
-					break
-				}
-			}
-			if abort {
-				break
-			}
-
-			if f.IsDir() {
-				name += "/"
-			}
-			url := url.URL{Path: name}
-
-			fileinfos = append(fileinfos, FileInfo{
-				IsDir:   f.IsDir(),
-				Name:    f.Name(),
-				Size:    f.Size(),
-				URL:     url.String(),
-				ModTime: f.ModTime(),
-				Mode:    f.Mode(),
-			})
-		}
-		if abort {
-			// this dir has an index file, so not browsable
-			continue
-		}
-
 		// Determine if user can browse up another folder
 		var canGoUp bool
 		curPath := strings.TrimSuffix(r.URL.Path, "/")
@@ -158,13 +221,23 @@ func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 				break
 			}
 		}
-
-		listing := Listing{
-			Name:    path.Base(r.URL.Path),
-			Path:    r.URL.Path,
-			CanGoUp: canGoUp,
-			Items:   fileinfos,
+		// Assemble listing of directory contents
+		listing, err := directoryListing(files, r.URL.Path, canGoUp)
+		if err != nil { // directory isn't browsable
+			continue
 		}
+
+		// Get the query vales and store them in the Listing struct
+		listing.Sort, listing.Order = r.URL.Query().Get("sort"), r.URL.Query().Get("order")
+
+		// If the query 'sort' is empty, default to "name" and "asc"
+		if listing.Sort == "" {
+			listing.Sort = "name"
+			listing.Order = "asc"
+		}
+
+		// Apply the sorting
+		listing.applySort()
 
 		var buf bytes.Buffer
 		err = bc.Template.Execute(&buf, listing)
