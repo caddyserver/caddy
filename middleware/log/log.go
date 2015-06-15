@@ -11,8 +11,9 @@ import (
 
 // Logger is a basic request logging middleware.
 type Logger struct {
-	Next  middleware.Handler
-	Rules []Rule
+	Next      middleware.Handler
+	Rules     []Rule
+	ErrorFunc func(http.ResponseWriter, *http.Request, int) // failover error handler
 }
 
 func (l Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
@@ -21,8 +22,15 @@ func (l Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			responseRecorder := middleware.NewResponseRecorder(w)
 			status, err := l.Next.ServeHTTP(responseRecorder, r)
 			if status >= 400 {
-				responseRecorder.WriteHeader(status)
-				fmt.Fprintf(responseRecorder, "%d %s", status, http.StatusText(status))
+				// There was an error up the chain, but no response has been written yet.
+				// The error must be handled here so the log entry will record the response size.
+				if l.ErrorFunc != nil {
+					l.ErrorFunc(responseRecorder, r, status)
+				} else {
+					// Default failover error handler
+					responseRecorder.WriteHeader(status)
+					fmt.Fprintf(responseRecorder, "%d %s", status, http.StatusText(status))
+				}
 				status = 0
 			}
 			rep := middleware.NewReplacer(r, responseRecorder)

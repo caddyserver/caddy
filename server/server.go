@@ -221,11 +221,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		// Fallback error response in case error handling wasn't chained in
 		if status >= 400 {
-			w.WriteHeader(status)
-			fmt.Fprintf(w, "%d %s", status, http.StatusText(status))
+			DefaultErrorFunc(w, r, status)
 		}
 	} else {
 		w.WriteHeader(http.StatusNotFound)
 		fmt.Fprintf(w, "No such host at %s", s.address)
 	}
+}
+
+func DefaultErrorFunc(w http.ResponseWriter, r *http.Request, status int) {
+	w.WriteHeader(status)
+	fmt.Fprintf(w, "%d %s", status, http.StatusText(status))
 }
