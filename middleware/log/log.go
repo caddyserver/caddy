@@ -2,6 +2,7 @@
 package log
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 
@@ -19,6 +20,11 @@ func (l Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 		if middleware.Path(r.URL.Path).Matches(rule.PathScope) {
 			responseRecorder := middleware.NewResponseRecorder(w)
 			status, err := l.Next.ServeHTTP(responseRecorder, r)
+			if status >= 400 {
+				responseRecorder.WriteHeader(status)
+				fmt.Fprintf(responseRecorder, "%d %s", status, http.StatusText(status))
+				status = 0
+			}
 			rep := middleware.NewReplacer(r, responseRecorder)
 			rule.Log.Println(rep.Replace(rule.Format))
 			return status, err
