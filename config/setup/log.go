@@ -6,6 +6,7 @@ import (
 
 	"github.com/mholt/caddy/middleware"
 	caddylog "github.com/mholt/caddy/middleware/log"
+	"github.com/mholt/caddy/server"
 )
 
 // Log sets up the logging middleware.
@@ -39,7 +40,7 @@ func Log(c *Controller) (middleware.Middleware, error) {
 	})
 
 	return func(next middleware.Handler) middleware.Handler {
-		return caddylog.Logger{Next: next, Rules: rules}
+		return caddylog.Logger{Next: next, Rules: rules, ErrorFunc: server.DefaultErrorFunc}
 	}, nil
 }
 
