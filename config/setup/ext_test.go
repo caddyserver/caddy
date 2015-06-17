@@ -40,3 +40,35 @@ func TestExt(t *testing.T) {
 	}
 
 }
+
+func TestExtParse(t *testing.T) {
+	tests := []struct {
+		inputExts    string
+		shouldErr    bool
+		expectedExts []string
+	}{
+		{`ext .html .htm .php`, false, []string{".html", ".htm", ".php"}},
+	}
+	for i, test := range tests {
+		c := newTestController(test.inputExts)
+		actualExts, err := extParse(c)
+
+		if err == nil && test.shouldErr {
+			t.Errorf("Test %d didn't error, but it should have", i)
+		} else if err != nil && !test.shouldErr {
+			t.Errorf("Test %d errored, but it shouldn't have; got '%v'", i, err)
+		}
+
+		if len(actualExts) != len(test.expectedExts) {
+			t.Fatalf("Test %d expected %d rules, but got %d",
+				i, len(test.expectedExts), len(actualExts))
+		}
+		for j, actualExt := range actualExts {
+			if actualExt != test.expectedExts[j] {
+				t.Fatalf("Test %d expected %dth extension to be  %s  , but got %s",
+					i, j, test.expectedExts[j], actualExt)
+			}
+		}
+	}
+
+}
