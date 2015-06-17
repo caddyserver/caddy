@@ -48,6 +48,8 @@ func TestExtParse(t *testing.T) {
 		expectedExts []string
 	}{
 		{`ext .html .htm .php`, false, []string{".html", ".htm", ".php"}},
+		{`ext .php .html .xml`, false, []string{".php", ".html", ".xml"}},
+		{`ext .txt .php .xml`, false, []string{".txt", ".php", ".xml"}},
 	}
 	for i, test := range tests {
 		c := newTestController(test.inputExts)
