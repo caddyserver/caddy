@@ -24,7 +24,7 @@ func TestLog(t *testing.T) {
 	myHandler, ok := handler.(caddylog.Logger)
 
 	if !ok {
-		t.Fatalf("Expected handler to be type Ext, got: %#v", handler)
+		t.Fatalf("Expected handler to be type Logger, got: %#v", handler)
 	}
 
 	if myHandler.Rules[0].PathScope != "/" {
