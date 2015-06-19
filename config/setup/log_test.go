@@ -63,6 +63,41 @@ func TestLogParse(t *testing.T) {
 			OutputFile: "log.txt",
 			Format:     caddylog.DefaultLogFormat,
 		}}},
+		{`log /serve stdout`, false, []caddylog.Rule{{
+			PathScope:  "/serve",
+			OutputFile: "stdout",
+			Format:     caddylog.DefaultLogFormat,
+		}}},
+		{`log /myapi log.txt {common}`, false, []caddylog.Rule{{
+			PathScope:  "/myapi",
+			OutputFile: "log.txt",
+			Format:     caddylog.CommonLogFormat,
+		}}},
+		{`log /test accesslog.txt {combined}`, false, []caddylog.Rule{{
+			PathScope:  "/test",
+			OutputFile: "accesslog.txt",
+			Format:     caddylog.CombinedLogFormat,
+		}}},
+		{`log /api1 log.txt 
+		  log /api2 accesslog.txt {combined}`, false, []caddylog.Rule{{
+			PathScope:  "/api1",
+			OutputFile: "log.txt",
+			Format:     caddylog.DefaultLogFormat,
+		}, {
+			PathScope:  "/api2",
+			OutputFile: "accesslog.txt",
+			Format:     caddylog.CombinedLogFormat,
+		}}},
+		{`log /api3 stdout {host}
+		  log /api4 log.txt {when}`, false, []caddylog.Rule{{
+			PathScope:  "/api3",
+			OutputFile: "stdout",
+			Format:     "{host}",
+		}, {
+			PathScope:  "/api4",
+			OutputFile: "log.txt",
+			Format:     "{when}",
+		}}},
 	}
 	for i, test := range tests {
 		c := newTestController(test.inputLogRules)
