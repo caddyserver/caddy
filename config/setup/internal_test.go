@@ -36,7 +36,7 @@ func TestInternal(t *testing.T) {
 
 }
 
-func InternalParse(t *testing.T) {
+func TestInternalParse(t *testing.T) {
 	tests := []struct {
 		inputInternalPaths    string
 		shouldErr             bool
