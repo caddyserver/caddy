@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"sort"
 	"strings"
 	"time"
 
@@ -64,6 +65,12 @@ func (fi FileInfo) HumanSize() string {
 func (fi FileInfo) HumanModTime(format string) string {
 	return fi.ModTime.Format(format)
 }
+
+type fileInfoByName []FileInfo
+
+func (fi fileInfoByName) Len() int           { return len(fi) }
+func (fi fileInfoByName) Swap(i, j int)      { fi[i], fi[j] = fi[j], fi[i] }
+func (fi fileInfoByName) Less(i, j int) bool { return fi[i].Name < fi[j].Name }
 
 var IndexPages = []string{
 	"index.html",
@@ -148,6 +155,8 @@ func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			// this dir has an index file, so not browsable
 			continue
 		}
+
+		sort.Sort(fileInfoByName(fileinfos))
 
 		// Determine if user can browse up another folder
 		var canGoUp bool
