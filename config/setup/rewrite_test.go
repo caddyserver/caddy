@@ -10,7 +10,7 @@ import (
 )
 
 func TestRewrite(t *testing.T) {
-	c := newTestController(`rewrite /from /to`)
+	c := NewTestController(`rewrite /from /to`)
 
 	mid, err := Rewrite(c)
 	if err != nil {
@@ -20,13 +20,13 @@ func TestRewrite(t *testing.T) {
 		t.Fatal("Expected middleware, was nil instead")
 	}
 
-	handler := mid(emptyNext)
+	handler := mid(EmptyNext)
 	myHandler, ok := handler.(rewrite.Rewrite)
 	if !ok {
 		t.Fatalf("Expected handler to be type Rewrite, got: %#v", handler)
 	}
 
-	if !sameNext(myHandler.Next, emptyNext) {
+	if !SameNext(myHandler.Next, EmptyNext) {
 		t.Error("'Next' field of handler was not set properly")
 	}
 
@@ -57,7 +57,7 @@ func TestRewriteParse(t *testing.T) {
 	}
 
 	for i, test := range simpleTests {
-		c := newTestController(test.input)
+		c := NewTestController(test.input)
 		actual, err := rewriteParse(c)
 
 		if err == nil && test.shouldErr {
@@ -140,7 +140,7 @@ func TestRewriteParse(t *testing.T) {
 	}
 
 	for i, test := range regexpTests {
-		c := newTestController(test.input)
+		c := NewTestController(test.input)
 		actual, err := rewriteParse(c)
 
 		if err == nil && test.shouldErr {

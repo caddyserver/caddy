@@ -8,7 +8,7 @@ import (
 
 func TestLog(t *testing.T) {
 
-	c := newTestController(`log`)
+	c := NewTestController(`log`)
 
 	mid, err := Log(c)
 
@@ -20,7 +20,7 @@ func TestLog(t *testing.T) {
 		t.Fatal("Expected middleware, was nil instead")
 	}
 
-	handler := mid(emptyNext)
+	handler := mid(EmptyNext)
 	myHandler, ok := handler.(caddylog.Logger)
 
 	if !ok {
@@ -36,7 +36,7 @@ func TestLog(t *testing.T) {
 	if myHandler.Rules[0].Format != caddylog.DefaultLogFormat {
 		t.Errorf("Expected %s as the default Log Format", caddylog.DefaultLogFormat)
 	}
-	if !sameNext(myHandler.Next, emptyNext) {
+	if !SameNext(myHandler.Next, EmptyNext) {
 		t.Error("'Next' field of handler was not set properly")
 	}
 
@@ -100,7 +100,7 @@ func TestLogParse(t *testing.T) {
 		}}},
 	}
 	for i, test := range tests {
-		c := newTestController(test.inputLogRules)
+		c := NewTestController(test.inputLogRules)
 		actualLogRules, err := logParse(c)
 
 		if err == nil && test.shouldErr {

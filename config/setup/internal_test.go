@@ -7,7 +7,7 @@ import (
 )
 
 func TestInternal(t *testing.T) {
-	c := newTestController(`internal /internal`)
+	c := NewTestController(`internal /internal`)
 
 	mid, err := Internal(c)
 
@@ -19,7 +19,7 @@ func TestInternal(t *testing.T) {
 		t.Fatal("Expected middleware, was nil instead")
 	}
 
-	handler := mid(emptyNext)
+	handler := mid(EmptyNext)
 	myHandler, ok := handler.(inner.Internal)
 
 	if !ok {
@@ -30,7 +30,7 @@ func TestInternal(t *testing.T) {
 		t.Errorf("Expected internal in the list of internal Paths")
 	}
 
-	if !sameNext(myHandler.Next, emptyNext) {
+	if !SameNext(myHandler.Next, EmptyNext) {
 		t.Error("'Next' field of handler was not set properly")
 	}
 
@@ -48,7 +48,7 @@ func TestInternalParse(t *testing.T) {
 		  internal /internal2`, false, []string{"/internal1", "/internal2"}},
 	}
 	for i, test := range tests {
-		c := newTestController(test.inputInternalPaths)
+		c := NewTestController(test.inputInternalPaths)
 		actualInternalPaths, err := internalParse(c)
 
 		if err == nil && test.shouldErr {

@@ -8,7 +8,7 @@ import (
 )
 
 func TestBasicAuth(t *testing.T) {
-	c := newTestController(`basicauth user pwd`)
+	c := NewTestController(`basicauth user pwd`)
 
 	mid, err := BasicAuth(c)
 	if err != nil {
@@ -18,13 +18,13 @@ func TestBasicAuth(t *testing.T) {
 		t.Fatal("Expected middleware, was nil instead")
 	}
 
-	handler := mid(emptyNext)
+	handler := mid(EmptyNext)
 	myHandler, ok := handler.(basicauth.BasicAuth)
 	if !ok {
 		t.Fatalf("Expected handler to be type BasicAuth, got: %#v", handler)
 	}
 
-	if !sameNext(myHandler.Next, emptyNext) {
+	if !SameNext(myHandler.Next, EmptyNext) {
 		t.Error("'Next' field of handler was not set properly")
 	}
 }
@@ -62,7 +62,7 @@ func TestBasicAuthParse(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		c := newTestController(test.input)
+		c := NewTestController(test.input)
 		actual, err := basicAuthParse(c)
 
 		if err == nil && test.shouldErr {

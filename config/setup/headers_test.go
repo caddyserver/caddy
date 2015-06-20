@@ -8,7 +8,7 @@ import (
 )
 
 func TestHeaders(t *testing.T) {
-	c := newTestController(`header / Foo Bar`)
+	c := NewTestController(`header / Foo Bar`)
 
 	mid, err := Headers(c)
 	if err != nil {
@@ -18,13 +18,13 @@ func TestHeaders(t *testing.T) {
 		t.Fatal("Expected middleware, was nil instead")
 	}
 
-	handler := mid(emptyNext)
+	handler := mid(EmptyNext)
 	myHandler, ok := handler.(headers.Headers)
 	if !ok {
 		t.Fatalf("Expected handler to be type Headers, got: %#v", handler)
 	}
 
-	if !sameNext(myHandler.Next, emptyNext) {
+	if !SameNext(myHandler.Next, EmptyNext) {
 		t.Error("'Next' field of handler was not set properly")
 	}
 }
@@ -51,7 +51,7 @@ func TestHeadersParse(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		c := newTestController(test.input)
+		c := NewTestController(test.input)
 		actual, err := headersParse(c)
 
 		if err == nil && test.shouldErr {
