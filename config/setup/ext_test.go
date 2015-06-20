@@ -7,7 +7,7 @@ import (
 )
 
 func TestExt(t *testing.T) {
-	c := newTestController(`ext .html .htm .php`)
+	c := NewTestController(`ext .html .htm .php`)
 
 	mid, err := Ext(c)
 
@@ -19,7 +19,7 @@ func TestExt(t *testing.T) {
 		t.Fatal("Expected middleware, was nil instead")
 	}
 
-	handler := mid(emptyNext)
+	handler := mid(EmptyNext)
 	myHandler, ok := handler.(extensions.Ext)
 
 	if !ok {
@@ -35,7 +35,7 @@ func TestExt(t *testing.T) {
 	if myHandler.Extensions[2] != ".php" {
 		t.Errorf("Expected .php in the list of Extensions")
 	}
-	if !sameNext(myHandler.Next, emptyNext) {
+	if !SameNext(myHandler.Next, EmptyNext) {
 		t.Error("'Next' field of handler was not set properly")
 	}
 
@@ -52,7 +52,7 @@ func TestExtParse(t *testing.T) {
 		{`ext .txt .php .xml`, false, []string{".txt", ".php", ".xml"}},
 	}
 	for i, test := range tests {
-		c := newTestController(test.inputExts)
+		c := NewTestController(test.inputExts)
 		actualExts, err := extParse(c)
 
 		if err == nil && test.shouldErr {

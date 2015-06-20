@@ -22,7 +22,7 @@ func check(t *testing.T, err error) {
 }
 
 func TestGit(t *testing.T) {
-	c := newTestController(`git git@github.com:mholt/caddy.git`)
+	c := NewTestController(`git git@github.com:mholt/caddy.git`)
 
 	mid, err := Git(c)
 	check(t, err)
@@ -43,11 +43,11 @@ func TestIntervals(t *testing.T) {
 	for i, test := range tests {
 		git.SetLogger(gittest.NewLogger(gittest.Open("file")))
 
-		c1 := newTestController(test)
+		c1 := NewTestController(test)
 		repo, err := gitParse(c1)
 		check(t, err)
 
-		c2 := newTestController(test)
+		c2 := NewTestController(test)
 		_, err = Git(c2)
 		check(t, err)
 
@@ -166,7 +166,7 @@ func TestGitParse(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		c := newTestController(test.input)
+		c := NewTestController(test.input)
 		repo, err := gitParse(c)
 		if !test.shouldErr && err != nil {
 			t.Errorf("Test %v should not error but found %v", i, err)

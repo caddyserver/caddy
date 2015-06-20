@@ -7,7 +7,7 @@ import (
 )
 
 func TestGzip(t *testing.T) {
-	c := newTestController(`gzip`)
+	c := NewTestController(`gzip`)
 
 	mid, err := Gzip(c)
 	if err != nil {
@@ -17,13 +17,13 @@ func TestGzip(t *testing.T) {
 		t.Fatal("Expected middleware, was nil instead")
 	}
 
-	handler := mid(emptyNext)
+	handler := mid(EmptyNext)
 	myHandler, ok := handler.(gzip.Gzip)
 	if !ok {
 		t.Fatalf("Expected handler to be type Gzip, got: %#v", handler)
 	}
 
-	if !sameNext(myHandler.Next, emptyNext) {
+	if !SameNext(myHandler.Next, EmptyNext) {
 		t.Error("'Next' field of handler was not set properly")
 	}
 
@@ -82,7 +82,7 @@ func TestGzip(t *testing.T) {
 		`, false},
 	}
 	for i, test := range tests {
-		c := newTestController(test.input)
+		c := NewTestController(test.input)
 		_, err := gzipParse(c)
 		if test.shouldErr && err == nil {
 			t.Errorf("Test %v: Expected error but found nil", i)

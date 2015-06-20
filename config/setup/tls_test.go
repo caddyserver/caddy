@@ -6,7 +6,7 @@ import (
 )
 
 func TestTLSParseBasic(t *testing.T) {
-	c := newTestController(`tls cert.pem key.pem`)
+	c := NewTestController(`tls cert.pem key.pem`)
 
 	_, err := TLS(c)
 	if err != nil {
@@ -66,14 +66,14 @@ func TestTLSParseBasic(t *testing.T) {
 }
 
 func TestTLSParseIncompleteParams(t *testing.T) {
-	c := newTestController(`tls`)
+	c := NewTestController(`tls`)
 
 	_, err := TLS(c)
 	if err == nil {
 		t.Errorf("Expected errors, but no error returned")
 	}
 
-	c = newTestController(`tls cert.key`)
+	c = NewTestController(`tls cert.key`)
 
 	_, err = TLS(c)
 	if err == nil {
@@ -86,7 +86,7 @@ func TestTLSParseWithOptionalParams(t *testing.T) {
             protocols ssl3.0 tls1.2
             ciphers RSA-3DES-EDE-CBC-SHA RSA-AES256-CBC-SHA ECDHE-RSA-AES128-GCM-SHA256
         }`
-	c := newTestController(params)
+	c := NewTestController(params)
 
 	_, err := TLS(c)
 	if err != nil {
@@ -111,7 +111,7 @@ func TestTLSParseWithWrongOptionalParams(t *testing.T) {
 	params := `tls cert.crt cert.key {
 			protocols ssl tls
 		}`
-	c := newTestController(params)
+	c := NewTestController(params)
 	_, err := TLS(c)
 	if err == nil {
 		t.Errorf("Expected errors, but no error returned")
@@ -121,7 +121,7 @@ func TestTLSParseWithWrongOptionalParams(t *testing.T) {
 	params = `tls cert.crt cert.key {
 			ciphers not-valid-cipher
 		}`
-	c = newTestController(params)
+	c = NewTestController(params)
 	_, err = TLS(c)
 	if err == nil {
 		t.Errorf("Expected errors, but no error returned")
@@ -132,7 +132,7 @@ func TestTLSParseWithClientAuth(t *testing.T) {
 	params := `tls cert.crt cert.key {
 			clients client_ca.crt client2_ca.crt
 		}`
-	c := newTestController(params)
+	c := NewTestController(params)
 	_, err := TLS(c)
 	if err != nil {
 		t.Errorf("Expected no errors, got: %v", err)
@@ -152,7 +152,7 @@ func TestTLSParseWithClientAuth(t *testing.T) {
 	params = `tls cert.crt cert.key {
 			clients
 		}`
-	c = newTestController(params)
+	c = NewTestController(params)
 	_, err = TLS(c)
 	if err == nil {
 		t.Errorf("Expected an error, but no error returned")
