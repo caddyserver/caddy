@@ -139,6 +139,11 @@ th {
 	text-align: left;
 }
 
+th a {
+	color: #000;
+	text-decoration: none;
+}
+
 @media (max-width: 700px) {
 	.hideable {
 		display: none;
@@ -204,27 +209,27 @@ th {
 				<tr>
 					<th>
 						{{if and (eq .Sort "name") (ne .Order "desc")}}
-						<a href="?sort=name&order=desc">Name&#8595;</a>
+						<a href="?sort=name&order=desc">Name &#9650;</a>
 						{{else if and (eq .Sort "name") (ne .Order "asc")}}
-						<a href="?sort=name&order=asc">Name&#8593;</a>
+						<a href="?sort=name&order=asc">Name &#9660;</a>
 						{{else}}
 						<a href="?sort=name&order=asc">Name</a>
 						{{end}}
 					</th>
 					<th>
 						{{if and (eq .Sort "size") (ne .Order "desc")}}
-						<a href="?sort=size&order=desc">Size&#8595;</a>
+						<a href="?sort=size&order=desc">Size &#9650;</a>
 						{{else if and (eq .Sort "size") (ne .Order "asc")}}
-						<a href="?sort=size&order=asc">Size&#8593;</a>
+						<a href="?sort=size&order=asc">Size &#9660;</a>
 						{{else}}
 						<a href="?sort=size&order=asc">Size</a>
 						{{end}}
 					</th>
 					<th class="hideable">
 						{{if and (eq .Sort "time") (ne .Order "desc")}}
-						<a href="?sort=time&order=desc">Modified&#8595;</a>
+						<a href="?sort=time&order=desc">Modified &#9650;</a>
 						{{else if and (eq .Sort "time") (ne .Order "asc")}}
-						<a href="?sort=time&order=asc">Modified&#8593;</a>
+						<a href="?sort=time&order=asc">Modified &#9660;</a>
 						{{else}}
 						<a href="?sort=time&order=asc">Modified</a>
 						{{end}}

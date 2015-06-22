@@ -1,6 +1,7 @@
 CHANGES
 
 <VERSION> (<DATE>)
+- browse: Click column heading to sort
 - git: Pull changes immediately with GitHub webhook
 - gzip: Filter by path and extension
 - gzip: Customize compression level
