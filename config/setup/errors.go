@@ -1,6 +1,7 @@
 package setup
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"path"
@@ -68,7 +69,7 @@ func errorsParse(c *Controller) (*errors.ErrorHandler, error) {
 				where = path.Join(c.Root, where)
 				f, err := os.Open(where)
 				if err != nil {
-					return hadBlock, c.Err("Unable to open error page '" + where + "': " + err.Error())
+					fmt.Println("Warning: Unable to open error page '" + where + "': " + err.Error())
 				}
 				f.Close()
 
