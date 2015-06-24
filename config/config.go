@@ -1,7 +1,6 @@
 package config
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -89,18 +88,22 @@ func Load(filename string, input io.Reader) ([]server.Config, error) {
 // ArrangeBindings groups configurations by their bind address. For example,
 // a server that should listen on localhost and another on 127.0.0.1 will
 // be grouped into the same address: 127.0.0.1. It will return an error
-// if the address lookup fails or if a TLS listener is configured on the
+// if an address is malformed or a TLS listener is configured on the
 // same address as a plaintext HTTP listener. The return value is a map of
 // bind address to list of configs that would become VirtualHosts on that
-// server.
+// server. Use the keys of the returned map to create listeners, and use
+// the associated values to set up the virtualhosts.
 func ArrangeBindings(allConfigs []server.Config) (map[*net.TCPAddr][]server.Config, error) {
 	addresses := make(map[*net.TCPAddr][]server.Config)
 
 	// Group configs by bind address
 	for _, conf := range allConfigs {
-		newAddr, err := net.ResolveTCPAddr("tcp", conf.Address())
-		if err != nil {
-			return addresses, errors.New("could not serve " + conf.Address() + " - " + err.Error())
+		newAddr, warnErr, fatalErr := resolveAddr(conf)
+		if fatalErr != nil {
+			return addresses, fatalErr
+		}
+		if warnErr != nil {
+			log.Println("[Warning]", warnErr)
 		}
 
 		// Make sure to compare the string representation of the address,
@@ -137,6 +140,59 @@ func ArrangeBindings(allConfigs []server.Config) (map[*net.TCPAddr][]server.Conf
 	}
 
 	return addresses, nil
+}
+
+// resolveAddr determines the address (host and port) that a config will
+// bind to. The returned address, resolvAddr, should be used to bind the
+// listener or group the config with other configs using the same address.
+// The first error, if not nil, is just a warning and should be reported
+// but execution may continue. The second error, if not nil, is a real
+// problem and the server should not be started.
+//
+// This function handles edge cases gracefully. If a port name like
+// "http" or "https" is unknown to the system, this function will
+// change them to 80 or 443 respectively. If a hostname fails to
+// resolve, that host can still be served but will be listening on
+// the wildcard host instead. This function takes care of this for you.
+func resolveAddr(conf server.Config) (resolvAddr *net.TCPAddr, warnErr error, fatalErr error) {
+	// The host to bind to may be different from the (virtual)host to serve
+	bindHost := conf.BindHost
+	if bindHost == "" {
+		bindHost = conf.Host
+	}
+
+	resolvAddr, warnErr = net.ResolveTCPAddr("tcp", net.JoinHostPort(bindHost, conf.Port))
+	if warnErr != nil {
+		// Most likely the host lookup failed or the port is unknown
+		tryPort := conf.Port
+
+		switch errVal := warnErr.(type) {
+		case *net.AddrError:
+			if errVal.Err == "unknown port" {
+				// some odd Linux machines don't support these port names; see issue #136
+				switch conf.Port {
+				case "http":
+					tryPort = "80"
+				case "https":
+					tryPort = "443"
+				}
+			}
+			resolvAddr, fatalErr = net.ResolveTCPAddr("tcp", net.JoinHostPort(bindHost, tryPort))
+			if fatalErr != nil {
+				return
+			}
+		default:
+			// the hostname probably couldn't be resolved, just bind to wildcard then
+			resolvAddr, fatalErr = net.ResolveTCPAddr("tcp", net.JoinHostPort("0.0.0.0", tryPort))
+			if fatalErr != nil {
+				return
+			}
+		}
+
+		return
+	}
+
+	return
 }
 
 // validDirective returns true if d is a valid
