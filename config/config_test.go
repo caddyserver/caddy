@@ -12,6 +12,9 @@ func TestReolveAddr(t *testing.T) {
 	// If that happens, maybe we should use actualAddr.IP.IsLoopback()
 	// for the assertion, rather than a direct string comparison.
 
+	// NOTE: Tests with {Host: "", Port: ""} and {Host: "localhost", Port: ""}
+	// will not behave the same cross-platform, so they have bene omitted.
+
 	for i, test := range []struct {
 		config         server.Config
 		shouldWarnErr  bool
@@ -24,8 +27,6 @@ func TestReolveAddr(t *testing.T) {
 		{server.Config{Host: "should-not-resolve", Port: "1234"}, true, false, "0.0.0.0", 1234},
 		{server.Config{Host: "localhost", Port: "http"}, false, false, "127.0.0.1", 80},
 		{server.Config{Host: "localhost", Port: "https"}, false, false, "127.0.0.1", 443},
-		{server.Config{Host: "", Port: ""}, false, true, "", 0},
-		{server.Config{Host: "localhost", Port: ""}, false, true, "127.0.0.1", 0},
 		{server.Config{Host: "", Port: "1234"}, false, false, "<nil>", 1234},
 		{server.Config{Host: "localhost", Port: "abcd"}, false, true, "", 0},
 		{server.Config{BindHost: "127.0.0.1", Host: "should-not-be-used", Port: "1234"}, false, false, "127.0.0.1", 1234},
