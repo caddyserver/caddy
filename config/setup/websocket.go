@@ -8,7 +8,7 @@ import (
 // WebSocket configures a new WebSockets middleware instance.
 func WebSocket(c *Controller) (middleware.Middleware, error) {
 
-	websocks, err := websocketParse(c)
+	websocks, err := webSocketParse(c)
 	if err != nil {
 		return nil, err
 	}
@@ -20,7 +20,7 @@ func WebSocket(c *Controller) (middleware.Middleware, error) {
 	}, nil
 }
 
-func websocketParse(c *Controller) ([]websockets.Config, error) {
+func webSocketParse(c *Controller) ([]websockets.Config, error) {
 	var websocks []websockets.Config
 	var respawn bool
 
