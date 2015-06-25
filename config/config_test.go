@@ -13,7 +13,7 @@ func TestReolveAddr(t *testing.T) {
 	// for the assertion, rather than a direct string comparison.
 
 	// NOTE: Tests with {Host: "", Port: ""} and {Host: "localhost", Port: ""}
-	// will not behave the same cross-platform, so they have bene omitted.
+	// will not behave the same cross-platform, so they have been omitted.
 
 	for i, test := range []struct {
 		config         server.Config
