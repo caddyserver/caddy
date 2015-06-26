@@ -27,14 +27,14 @@ func TestTemplates(t *testing.T) {
 		t.Fatalf("Expected handler to be type Templates, got: %#v", handler)
 	}
 
-	if myHandler.Rules[0].Path != DefaultTemplatePath {
+	if myHandler.Rules[0].Path != defaultTemplatePath {
 		t.Errorf("Expected / as the default Path")
 	}
-	if fmt.Sprint(myHandler.Rules[0].Extensions) != fmt.Sprint(DefaultTemplateExtensions) {
-		t.Errorf("Expected %v to be the Default Extensions", DefaultTemplateExtensions)
+	if fmt.Sprint(myHandler.Rules[0].Extensions) != fmt.Sprint(defaultTemplateExtensions) {
+		t.Errorf("Expected %v to be the Default Extensions", defaultTemplateExtensions)
 	}
 	var indexFiles []string
-	for _, extension := range DefaultTemplateExtensions {
+	for _, extension := range defaultTemplateExtensions {
 		indexFiles = append(indexFiles, "index"+extension)
 	}
 	if fmt.Sprint(myHandler.Rules[0].IndexFiles) != fmt.Sprint(indexFiles) {
