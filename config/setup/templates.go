@@ -39,11 +39,11 @@ func templatesParse(c *Controller) ([]templates.Rule, error) {
 			// Any remaining arguments are extensions
 			rule.Extensions = c.RemainingArgs()
 			if len(rule.Extensions) == 0 {
-				rule.Extensions = defaultExtensions
+				rule.Extensions = DefaultTemplateExtensions
 			}
 		} else {
-			rule.Path = defaultPath
-			rule.Extensions = defaultExtensions
+			rule.Path = DefaultTemplatePath
+			rule.Extensions = DefaultTemplateExtensions
 		}
 
 		for _, ext := range rule.Extensions {
@@ -56,6 +56,6 @@ func templatesParse(c *Controller) ([]templates.Rule, error) {
 	return rules, nil
 }
 
-const defaultPath = "/"
+const DefaultTemplatePath = "/"
 
-var defaultExtensions = []string{".html", ".htm", ".tmpl", ".tpl", ".txt"}
+var DefaultTemplateExtensions = []string{".html", ".htm", ".tmpl", ".tpl", ".txt"}
