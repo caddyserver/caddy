@@ -41,3 +41,54 @@ func TestTemplates(t *testing.T) {
 		t.Errorf("Expected %v to be the Default Index files", indexFiles)
 	}
 }
+func TestTemplatesParse(t *testing.T) {
+	tests := []struct {
+		inputTemplateConfig    string
+		shouldErr              bool
+		expectedTemplateConfig []templates.Rule
+	}{
+		{`templates /api1`, false, []templates.Rule{{
+			Path:       "/api1",
+			Extensions: defaultTemplateExtensions,
+		}}},
+		{`templates /api2 .txt .htm`, false, []templates.Rule{{
+			Path:       "/api2",
+			Extensions: []string{".txt", ".htm"},
+		}}},
+
+		{`templates /api3 .htm .html  
+		  templates /api4 .txt .tpl `, false, []templates.Rule{{
+			Path:       "/api3",
+			Extensions: []string{".htm", ".html"},
+		}, {
+			Path:       "/api4",
+			Extensions: []string{".txt", ".tpl"},
+		}}},
+	}
+	for i, test := range tests {
+		c := NewTestController(test.inputTemplateConfig)
+		actualTemplateConfigs, err := templatesParse(c)
+
+		if err == nil && test.shouldErr {
+			t.Errorf("Test %d didn't error, but it should have", i)
+		} else if err != nil && !test.shouldErr {
+			t.Errorf("Test %d errored, but it shouldn't have; got '%v'", i, err)
+		}
+		if len(actualTemplateConfigs) != len(test.expectedTemplateConfig) {
+			t.Fatalf("Test %d expected %d no of Template configs, but got %d ",
+				i, len(test.expectedTemplateConfig), len(actualTemplateConfigs))
+		}
+		for j, actualTemplateConfig := range actualTemplateConfigs {
+
+			if actualTemplateConfig.Path != test.expectedTemplateConfig[j].Path {
+				t.Errorf("Test %d expected %dth Template Config Path to be  %s  , but got %s",
+					i, j, test.expectedTemplateConfig[j].Path, actualTemplateConfig.Path)
+			}
+
+			if fmt.Sprint(actualTemplateConfig.Extensions) != fmt.Sprint(test.expectedTemplateConfig[j].Extensions) {
+				t.Errorf("Expected %v to be the  Extensions , but got %v instead", test.expectedTemplateConfig[j].Extensions, actualTemplateConfig.Extensions)
+			}
+		}
+	}
+
+}
