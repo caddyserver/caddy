@@ -2,7 +2,7 @@
 
 [![Documentation](https://img.shields.io/badge/godoc-reference-blue.svg?style=flat-square)](https://godoc.org/github.com/mholt/caddy) [![Build Status](https://img.shields.io/travis/mholt/caddy.svg?style=flat-square)](https://travis-ci.org/mholt/caddy)
 
-Caddy is a lightweight, general-purpose web server for Windows, Mac, Linux, BSD, and [Android](https://github.com/mholt/caddy/wiki/Running-Caddy-on-Android). It is a capable alternative to other popular web servers that is easy to use.
+Caddy is a lightweight, general-purpose web server for Windows, Mac, Linux, BSD, and [Android](https://github.com/mholt/caddy/wiki/Running-Caddy-on-Android). It is a capable alternative to other popular and easy to use web servers.
 
 The most notable features are HTTP/2, Virtual Hosts, TLS + SNI, and easy configuration with a [Caddyfile](https://caddyserver.com/docs/caddyfile). Usually, you have one Caddyfile per site. Most directives for the Caddyfile invoke a layer of middleware which can be [used in your own Go programs](https://github.com/mholt/caddy/wiki/Using-Caddy-Middleware-in-Your-Own-Programs).
 
