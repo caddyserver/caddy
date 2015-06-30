@@ -176,7 +176,6 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 		"CONTENT_TYPE":      r.Header.Get("Content-Type"),
 		"GATEWAY_INTERFACE": "CGI/1.1",
 		"PATH_INFO":         pathInfo,
-		"PATH_TRANSLATED":   filepath.Join(h.AbsRoot, pathInfo), // Info: http://www.oreilly.com/openbook/cgi/ch02_04.html
 		"QUERY_STRING":      r.URL.RawQuery,
 		"REMOTE_ADDR":       ip,
 		"REMOTE_HOST":       ip, // For speed, remote host lookups disabled
@@ -196,6 +195,13 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 		"REQUEST_URI":     r.URL.RequestURI(),
 		"SCRIPT_FILENAME": scriptFilename,
 		"SCRIPT_NAME":     scriptName,
+	}
+
+	// compliance with the CGI specification that PATH_TRANSLATED
+	// should only exist if PATH_INFO is defined.
+	// Info: https://www.ietf.org/rfc/rfc3875 Page 14
+	if env["PATH_INFO"] != "" {
+		env["PATH_TRANSLATED"] = filepath.Join(h.AbsRoot, pathInfo) // Info: http://www.oreilly.com/openbook/cgi/ch02_04.html
 	}
 
 	// Add env variables from config
