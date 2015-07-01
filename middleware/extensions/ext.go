@@ -31,7 +31,7 @@ type Ext struct {
 // ServeHTTP implements the middleware.Handler interface.
 func (e Ext) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	urlpath := strings.TrimSuffix(r.URL.Path, "/")
-	if path.Ext(urlpath) == "" {
+	if path.Ext(urlpath) == "" && r.URL.Path[len(r.URL.Path)-1] != '/' {
 		for _, ext := range e.Extensions {
 			if resourceExists(e.Root, urlpath+ext) {
 				r.URL.Path = urlpath + ext

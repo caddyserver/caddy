@@ -6,6 +6,7 @@ CHANGES
 - browse: Sort by clicking column heading or using query string
 - core: Serving hostname that doesn't resolve issues warning then listens on 0.0.0.0
 - errors: Missing error page during parse time is warning, not error
+- ext: Extension only appended if request path does not end in /
 - fastcgi: Fix for backend responding without status text
 - fastcgi: Fix PATH_TRANSLATED when PATH_INFO is empty (RFC 3875)
 - gzip: Enable by file path and/or extension
