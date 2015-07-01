@@ -1,10 +1,12 @@
 package templates
 
 import (
+	"bytes"
 	"io/ioutil"
 	"net"
 	"net/http"
 	"net/url"
+	"text/template"
 	"time"
 
 	"github.com/mholt/caddy/middleware"
@@ -26,8 +28,24 @@ func (c context) Include(filename string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	body, err := ioutil.ReadAll(file)
-	return string(body), err
+	if err != nil {
+		return "", err
+	}
+
+	tpl, err := template.New(filename).Parse(string(body))
+	if err != nil {
+		return "", err
+	}
+
+	var buf bytes.Buffer
+	err = tpl.Execute(&buf, c)
+	if err != nil {
+		return "", err
+	}
+
+	return buf.String(), nil
 }
 
 // Date returns the current timestamp in the specified format
