@@ -2,16 +2,18 @@ CHANGES
 
 
 <master>
+- Removed git directive from core; now available as an addon
 - browse: Sort by clicking column heading or using query string
 - core: Serving hostname that doesn't resolve issues warning then listens on 0.0.0.0
 - errors: Missing error page during parse time is warning, not error
 - fastcgi: Fix for backend responding without status text
-- git: Pull changes immediately with GitHub webhook
+- fastcgi: Fix PATH_TRANSLATED when PATH_INFO is empty (RFC 3875)
 - gzip: Enable by file path and/or extension
 - gzip: Customize compression level
 - log: Fix for missing status in log entry when error unhandled
 - proxy: Strip prefix from path for proxy to path
 - redir: Meta tag redirects
+- templates: Support for nested includes
 
 
 0.7.1 (June 2, 2015)
