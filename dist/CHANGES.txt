@@ -1,20 +1,22 @@
 CHANGES
 
 
-<master>
-- Removed git directive from core; now available as an addon
+0.7.2 (July 1, 2015)
+- Custom builds through caddyserver.com - extend Caddy by writing addons
 - browse: Sort by clicking column heading or using query string
 - core: Serving hostname that doesn't resolve issues warning then listens on 0.0.0.0
 - errors: Missing error page during parse time is warning, not error
 - ext: Extension only appended if request path does not end in /
 - fastcgi: Fix for backend responding without status text
 - fastcgi: Fix PATH_TRANSLATED when PATH_INFO is empty (RFC 3875)
+- git: Removed from core (available as add-on)
 - gzip: Enable by file path and/or extension
 - gzip: Customize compression level
 - log: Fix for missing status in log entry when error unhandled
 - proxy: Strip prefix from path for proxy to path
 - redir: Meta tag redirects
 - templates: Support for nested includes
+- Internal improvements and more tests
 
 
 0.7.1 (June 2, 2015)
