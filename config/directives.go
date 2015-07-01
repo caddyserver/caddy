@@ -48,7 +48,6 @@ var directiveOrder = []directive{
 	// Other directives that don't create HTTP handlers
 	{"startup", setup.Startup},
 	{"shutdown", setup.Shutdown},
-	{"git", setup.Git},
 
 	// Directives that inject handlers (middleware)
 	{"log", setup.Log},
