@@ -28,6 +28,7 @@ func (c context) Include(filename string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	defer file.Close()
 
 	body, err := ioutil.ReadAll(file)
 	if err != nil {
