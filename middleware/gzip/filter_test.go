@@ -108,7 +108,7 @@ func TestMIMEFilter(t *testing.T) {
 	}
 	for i, m := range mimes {
 		r := urlRequest("file" + m)
-		r.Header.Set("Content-Type", m)
+		r.Header.Set("Accept", m)
 		if !filter.ShouldCompress(r) {
 			t.Errorf("Test %v: Should be valid filter", i)
 		}

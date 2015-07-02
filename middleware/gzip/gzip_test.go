@@ -89,7 +89,7 @@ func TestGzipHandler(t *testing.T) {
 		if err != nil {
 			t.Error(err)
 		}
-		r.Header.Set("Content-Type", m)
+		r.Header.Set("Accept", m)
 		r.Header.Set("Accept-Encoding", "gzip")
 		_, err = gz.ServeHTTP(w, r)
 		if err != nil {
