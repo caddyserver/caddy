@@ -15,6 +15,18 @@ type Filter interface {
 	ShouldCompress(*http.Request) bool
 }
 
+// defaultExtensions is the list of default extensions for which to enable gzipping.
+var defaultExtensions = []string{"", ".txt", ".html", ".css", ".json", ".js", ".md", ".xml"}
+
+// DefaultExtFilter creates an ExtFilter with default extensions.
+func DefaultExtFilter() ExtFilter {
+	m := ExtFilter{Exts: make(Set)}
+	for _, extension := range defaultExtensions {
+		m.Exts.Add(extension)
+	}
+	return m
+}
+
 // ExtFilter is Filter for file name extensions.
 type ExtFilter struct {
 	// Exts is the file name extensions to accept
@@ -72,7 +84,7 @@ func DefaultMIMEFilter() MIMEFilter {
 // matches any of the registered ones. It returns true if
 // found and false otherwise.
 func (m MIMEFilter) ShouldCompress(r *http.Request) bool {
-	return m.Types.Contains(r.Header.Get("Content-Type"))
+	return m.Types.Contains(r.Header.Get("Accept"))
 }
 
 func ValidMIME(mime string) bool {

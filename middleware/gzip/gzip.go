@@ -36,8 +36,7 @@ func (g Gzip) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 outer:
 	for _, c := range g.Configs {
 
-		// Check filters to determine if gzipping is permitted for this
-		// request
+		// Check filters to determine if gzipping is permitted for this request
 		for _, filter := range c.Filters {
 			if !filter.ShouldCompress(r) {
 				continue outer
