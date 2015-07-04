@@ -59,25 +59,13 @@ func TestGzip(t *testing.T) {
 		 level 3
 		}
 		`, false},
-		{`gzip { mimes text/html
-		}`, false},
-		{`gzip { mimes text/html application/json
-		}`, false},
-		{`gzip { mimes text/html application/
-		}`, true},
-		{`gzip { mimes text/html /json
-		}`, true},
-		{`gzip { mimes /json text/html
-		}`, true},
 		{`gzip { not /file
 		 ext .html
 		 level 1
-		 mimes text/html text/plain
 		}
 		gzip { not /file1
 		 ext .htm
 		 level 3
-		 mimes text/html text/css
 		}
 		`, false},
 	}
