@@ -73,6 +73,13 @@ func TestExtFilter(t *testing.T) {
 			t.Errorf("Test %v: Should not be valid filter", i)
 		}
 	}
+	filter.(ExtFilter).Exts.Add(ExtWildCard)
+	for i, e := range exts {
+		r := urlRequest("file" + e)
+		if !filter.ShouldCompress(r) {
+			t.Errorf("Test %v: Should be valid filter. Wildcard used.", i)
+		}
+	}
 }
 
 func TestPathFilter(t *testing.T) {

@@ -33,14 +33,14 @@ type ExtFilter struct {
 }
 
 // extWildCard is the wildcard for extensions.
-const extWildCard = "*"
+const ExtWildCard = "*"
 
 // ShouldCompress checks if the request file extension matches any
 // of the registered extensions. It returns true if the extension is
 // found and false otherwise.
 func (e ExtFilter) ShouldCompress(r *http.Request) bool {
 	ext := path.Ext(r.URL.Path)
-	return e.Exts.Contains(extWildCard) || e.Exts.Contains(ext)
+	return e.Exts.Contains(ExtWildCard) || e.Exts.Contains(ext)
 }
 
 // PathFilter is Filter for request path.
