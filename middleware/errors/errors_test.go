@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mholt/caddy/middleware"
@@ -109,7 +110,7 @@ func TestErrors(t *testing.T) {
 			t.Errorf("Test %d: Expected body %q, but got %q",
 				i, test.expectedBody, body)
 		}
-		if log := buf.String(); log != test.expectedLog {
+		if log := buf.String(); !strings.Contains(log, test.expectedLog) {
 			t.Errorf("Test %d: Expected log %q, but got %q",
 				i, test.expectedLog, log)
 		}
