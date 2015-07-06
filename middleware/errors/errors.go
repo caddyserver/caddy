@@ -9,6 +9,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/mholt/caddy/middleware"
 )
@@ -27,7 +28,7 @@ func (h ErrorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, er
 	status, err := h.Next.ServeHTTP(w, r)
 
 	if err != nil {
-		h.Log.Printf("[ERROR %d %s] %v", status, r.URL.Path, err)
+		h.Log.Printf("%s [ERROR %d %s] %v", time.Now().Format(timeFormat), status, r.URL.Path, err)
 	}
 
 	if status >= 400 {
@@ -107,8 +108,9 @@ func (h ErrorHandler) recovery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Currently we don't use the function name, as file:line is more conventional
-	h.Log.Printf("[PANIC %s] %s:%d - %v", r.URL.String(), file, line, rec)
+	h.Log.Printf("%s [PANIC %s] %s:%d - %v", time.Now().Format(timeFormat), r.URL.String(), file, line, rec)
 	h.errorPage(w, http.StatusInternalServerError)
 }
 
 const DefaultLogFilename = "error.log"
+const timeFormat = "02/Jan/2006:15:04:05 -0700"
