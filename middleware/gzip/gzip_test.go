@@ -76,46 +76,6 @@ func TestGzipHandler(t *testing.T) {
 			t.Error(err)
 		}
 	}
-
-	gz.Configs[0].Filters[1] = DefaultMIMEFilter()
-	w = httptest.NewRecorder()
-	gz.Next = nextFunc(true)
-	var mimes = []string{
-		"text/html", "text/css", "application/json",
-	}
-	for _, m := range mimes {
-		url := "/file"
-		r, err := http.NewRequest("GET", url, nil)
-		if err != nil {
-			t.Error(err)
-		}
-		r.Header.Set("Content-Type", m)
-		r.Header.Set("Accept-Encoding", "gzip")
-		_, err = gz.ServeHTTP(w, r)
-		if err != nil {
-			t.Error(err)
-		}
-	}
-
-	w = httptest.NewRecorder()
-	gz.Next = nextFunc(false)
-	mimes = []string{
-		"image/jpeg", "image/png",
-	}
-	for _, m := range mimes {
-		url := "/file"
-		r, err := http.NewRequest("GET", url, nil)
-		if err != nil {
-			t.Error(err)
-		}
-		r.Header.Set("Content-Type", m)
-		r.Header.Set("Accept-Encoding", "gzip")
-		_, err = gz.ServeHTTP(w, r)
-		if err != nil {
-			t.Error(err)
-		}
-	}
-
 }
 
 func nextFunc(shouldGzip bool) middleware.Handler {

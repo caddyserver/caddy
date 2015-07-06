@@ -100,32 +100,6 @@ func TestPathFilter(t *testing.T) {
 	}
 }
 
-func TestMIMEFilter(t *testing.T) {
-	var filter Filter = DefaultMIMEFilter()
-	_ = filter.(MIMEFilter)
-	var mimes = []string{
-		"text/html", "text/css", "application/json",
-	}
-	for i, m := range mimes {
-		r := urlRequest("file" + m)
-		r.Header.Set("Content-Type", m)
-		if !filter.ShouldCompress(r) {
-			t.Errorf("Test %v: Should be valid filter", i)
-		}
-	}
-	mimes = []string{
-		"image/jpeg", "image/png",
-	}
-	filter = DefaultMIMEFilter()
-	for i, m := range mimes {
-		r := urlRequest("file" + m)
-		r.Header.Set("Content-Type", m)
-		if filter.ShouldCompress(r) {
-			t.Errorf("Test %v: Should not be valid filter", i)
-		}
-	}
-}
-
 func urlRequest(url string) *http.Request {
 	r, _ := http.NewRequest("GET", url, nil)
 	return r

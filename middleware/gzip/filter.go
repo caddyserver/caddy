@@ -3,7 +3,6 @@ package gzip
 import (
 	"net/http"
 	"path"
-	"strings"
 
 	"github.com/mholt/caddy/middleware"
 )
@@ -13,6 +12,18 @@ type Filter interface {
 	// ShouldCompress tells if gzip compression
 	// should be done on the request.
 	ShouldCompress(*http.Request) bool
+}
+
+// defaultExtensions is the list of default extensions for which to enable gzipping.
+var defaultExtensions = []string{"", ".txt", ".htm", ".html", ".css", ".php", ".js", ".json", ".md", ".xml"}
+
+// DefaultExtFilter creates an ExtFilter with default extensions.
+func DefaultExtFilter() ExtFilter {
+	m := ExtFilter{Exts: make(Set)}
+	for _, extension := range defaultExtensions {
+		m.Exts.Add(extension)
+	}
+	return m
 }
 
 // ExtFilter is Filter for file name extensions.
@@ -45,39 +56,6 @@ func (p PathFilter) ShouldCompress(r *http.Request) bool {
 	return !p.IgnoredPaths.ContainsFunc(func(value string) bool {
 		return middleware.Path(r.URL.Path).Matches(value)
 	})
-}
-
-// MIMEFilter is Filter for request content types.
-type MIMEFilter struct {
-	// Types is the MIME types to accept.
-	Types Set
-}
-
-// defaultMIMETypes is the list of default MIME types to use.
-var defaultMIMETypes = []string{
-	"text/plain", "text/html", "text/css", "application/json", "application/javascript",
-	"text/x-markdown", "text/xml", "application/xml",
-}
-
-// DefaultMIMEFilter creates a MIMEFilter with default types.
-func DefaultMIMEFilter() MIMEFilter {
-	m := MIMEFilter{Types: make(Set)}
-	for _, mime := range defaultMIMETypes {
-		m.Types.Add(mime)
-	}
-	return m
-}
-
-// ShouldCompress checks if the content type of the request
-// matches any of the registered ones. It returns true if
-// found and false otherwise.
-func (m MIMEFilter) ShouldCompress(r *http.Request) bool {
-	return m.Types.Contains(r.Header.Get("Content-Type"))
-}
-
-func ValidMIME(mime string) bool {
-	s := strings.Split(mime, "/")
-	return len(s) == 2 && strings.TrimSpace(s[0]) != "" && strings.TrimSpace(s[1]) != ""
 }
 
 // Set stores distinct strings.
