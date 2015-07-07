@@ -4,6 +4,7 @@ package templates
 import (
 	"bytes"
 	"net/http"
+	"os"
 	"path"
 	"path/filepath"
 	"text/template"
@@ -35,6 +36,11 @@ func (t Templates) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 				// Build the template
 				tpl, err := template.ParseFiles(filepath.Join(t.Root, fpath))
 				if err != nil {
+					if os.IsNotExist(err) {
+						return http.StatusNotFound, nil
+					} else if os.IsPermission(err) {
+						return http.StatusForbidden, nil
+					}
 					return http.StatusInternalServerError, err
 				}
 
