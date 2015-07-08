@@ -19,6 +19,7 @@ type (
 
 	// token represents a single parsable unit.
 	token struct {
+		file string
 		line int
 		text string
 	}

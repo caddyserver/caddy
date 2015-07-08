@@ -3,6 +3,7 @@ package parse
 import (
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -73,7 +74,16 @@ func (p *parser) addresses() error {
 	var expectingAnother bool
 
 	for {
-		tkn, startLine := p.Val(), p.Line()
+		tkn := p.Val()
+
+		// special case: import directive replaces tokens during parse-time
+		if tkn == "import" && p.isNewLine() {
+			err := p.doImport()
+			if err != nil {
+				return err
+			}
+			continue
+		}
 
 		// Open brace definitely indicates end of addresses
 		if tkn == "{" {
@@ -104,12 +114,12 @@ func (p *parser) addresses() error {
 		if expectingAnother && !hasNext {
 			return p.EofErr()
 		}
-		if !expectingAnother && p.Line() > startLine {
-			break
-		}
 		if !hasNext {
 			p.eof = true
 			break // EOF
+		}
+		if !expectingAnother && p.isNewLine() {
+			break
 		}
 	}
 
@@ -156,6 +166,7 @@ func (p *parser) directives() error {
 			if err != nil {
 				return err
 			}
+			p.cursor-- // cursor is advanced when we continue, so roll back one more
 			continue
 		}
 
@@ -188,12 +199,17 @@ func (p *parser) doImport() error {
 	defer file.Close()
 	importedTokens := allTokens(file)
 
+	// Tack the filename onto these tokens so any errors show the imported file's name
+	for i := 0; i < len(importedTokens); i++ {
+		importedTokens[i].file = filepath.Base(importFile)
+	}
+
 	// Splice out the import directive and its argument (2 tokens total)
-	// and insert the imported tokens.
+	// and insert the imported tokens in their place.
 	tokensBefore := p.tokens[:p.cursor-1]
 	tokensAfter := p.tokens[p.cursor+1:]
 	p.tokens = append(tokensBefore, append(importedTokens, tokensAfter...)...)
-	p.cursor -= 2
+	p.cursor-- // cursor was advanced one position to read the filename; rewind it
 
 	return nil
 }
@@ -206,7 +222,6 @@ func (p *parser) doImport() error {
 // by directive setup functions.
 func (p *parser) directive() error {
 	dir := p.Val()
-	line := p.Line()
 	nesting := 0
 
 	if _, ok := ValidDirectives[dir]; !ok {
@@ -219,7 +234,7 @@ func (p *parser) directive() error {
 	for p.Next() {
 		if p.Val() == "{" {
 			nesting++
-		} else if p.Line()+p.numLineBreaks(p.cursor) > line && nesting == 0 {
+		} else if p.isNewLine() && nesting == 0 {
 			p.cursor-- // read too far
 			break
 		} else if p.Val() == "}" && nesting > 0 {
@@ -239,7 +254,7 @@ func (p *parser) directive() error {
 // openCurlyBrace expects the current token to be an
 // opening curly brace. This acts like an assertion
 // because it returns an error if the token is not
-// a opening curly brace. It does not advance the token.
+// a opening curly brace. It does NOT advance the token.
 func (p *parser) openCurlyBrace() error {
 	if p.Val() != "{" {
 		return p.SyntaxErr("{")
@@ -250,7 +265,7 @@ func (p *parser) openCurlyBrace() error {
 // closeCurlyBrace expects the current token to be
 // a closing curly brace. This acts like an assertion
 // because it returns an error if the token is not
-// a closing curly brace. It does not advance the token.
+// a closing curly brace. It does NOT advance the token.
 func (p *parser) closeCurlyBrace() error {
 	if p.Val() != "}" {
 		return p.SyntaxErr("}")

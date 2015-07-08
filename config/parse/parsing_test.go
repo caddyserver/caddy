@@ -57,7 +57,7 @@ func TestStandardAddress(t *testing.T) {
 	}
 }
 
-func TestParseOne(t *testing.T) {
+func TestParseOneAndImport(t *testing.T) {
 	setupParseTests()
 
 	testParseOne := func(input string) (multiServerBlock, error) {
@@ -218,6 +218,23 @@ func TestParseOne(t *testing.T) {
 		}},
 
 		{``, false, []address{}, map[string]int{}},
+
+		{`localhost
+		  dir1 arg1
+		  import import_test1.txt`, false, []address{
+			{"localhost", ""},
+		}, map[string]int{
+			"dir1": 2,
+			"dir2": 3,
+			"dir3": 1,
+		}},
+
+		{`import import_test2.txt`, false, []address{
+			{"host1", ""},
+		}, map[string]int{
+			"dir1": 1,
+			"dir2": 2,
+		}},
 	} {
 		result, err := testParseOne(test.input)
 

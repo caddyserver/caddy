@@ -37,7 +37,7 @@ func NewDispenserTokens(filename string, tokens []token) Dispenser {
 
 // Next loads the next token. Returns true if a token
 // was loaded; false otherwise. If false, all tokens
-// have already been consumed.
+// have been consumed.
 func (d *Dispenser) Next() bool {
 	if d.cursor < len(d.tokens)-1 {
 		d.cursor++
@@ -49,7 +49,7 @@ func (d *Dispenser) Next() bool {
 // NextArg loads the next token if it is on the same
 // line. Returns true if a token was loaded; false
 // otherwise. If false, all tokens on the line have
-// been consumed.
+// been consumed. It handles imported tokens correctly.
 func (d *Dispenser) NextArg() bool {
 	if d.cursor < 0 {
 		d.cursor++
@@ -59,7 +59,8 @@ func (d *Dispenser) NextArg() bool {
 		return false
 	}
 	if d.cursor < len(d.tokens)-1 &&
-		(d.tokens[d.cursor].line+d.numLineBreaks(d.cursor) == d.tokens[d.cursor+1].line) {
+		d.tokens[d.cursor].file == d.tokens[d.cursor+1].file &&
+		d.tokens[d.cursor].line+d.numLineBreaks(d.cursor) == d.tokens[d.cursor+1].line {
 		d.cursor++
 		return true
 	}
@@ -69,7 +70,7 @@ func (d *Dispenser) NextArg() bool {
 // NextLine loads the next token only if it is not on the same
 // line as the current token, and returns true if a token was
 // loaded; false otherwise. If false, there is not another token
-// or it is on the same line.
+// or it is on the same line. It handles imported tokens correctly.
 func (d *Dispenser) NextLine() bool {
 	if d.cursor < 0 {
 		d.cursor++
@@ -79,7 +80,8 @@ func (d *Dispenser) NextLine() bool {
 		return false
 	}
 	if d.cursor < len(d.tokens)-1 &&
-		d.tokens[d.cursor].line+d.numLineBreaks(d.cursor) < d.tokens[d.cursor+1].line {
+		(d.tokens[d.cursor].file != d.tokens[d.cursor+1].file ||
+			d.tokens[d.cursor].line+d.numLineBreaks(d.cursor) < d.tokens[d.cursor+1].line) {
 		d.cursor++
 		return true
 	}
@@ -135,6 +137,18 @@ func (d *Dispenser) Line() int {
 	return d.tokens[d.cursor].line
 }
 
+// File gets the filename of the current token. If there is no token loaded,
+// it returns the filename originally given when parsing started.
+func (d *Dispenser) File() string {
+	if d.cursor < 0 || d.cursor >= len(d.tokens) {
+		return d.filename
+	}
+	if tokenFilename := d.tokens[d.cursor].file; tokenFilename != "" {
+		return tokenFilename
+	}
+	return d.filename
+}
+
 // Args is a convenience function that loads the next arguments
 // (tokens on the same line) into an arbitrary number of strings
 // pointed to in targets. If there are fewer tokens available
@@ -185,7 +199,7 @@ func (d *Dispenser) ArgErr() error {
 // SyntaxErr creates a generic syntax error which explains what was
 // found and what was expected.
 func (d *Dispenser) SyntaxErr(expected string) error {
-	msg := fmt.Sprintf("%s:%d - Syntax error: Unexpected token '%s', expecting '%s'", d.filename, d.Line(), d.Val(), expected)
+	msg := fmt.Sprintf("%s:%d - Syntax error: Unexpected token '%s', expecting '%s'", d.File(), d.Line(), d.Val(), expected)
 	return errors.New(msg)
 }
 
@@ -197,7 +211,7 @@ func (d *Dispenser) EofErr() error {
 
 // Err generates a custom parse error with a message of msg.
 func (d *Dispenser) Err(msg string) error {
-	msg = fmt.Sprintf("%s:%d - Parse error: %s", d.filename, d.Line(), msg)
+	msg = fmt.Sprintf("%s:%d - Parse error: %s", d.File(), d.Line(), msg)
 	return errors.New(msg)
 }
 
@@ -214,4 +228,18 @@ func (d *Dispenser) numLineBreaks(tknIdx int) int {
 		return 0
 	}
 	return strings.Count(d.tokens[tknIdx].text, "\n")
+}
+
+// isNewLine determines whether the current token is on a different
+// line (higher line number) than the previous token. It handles imported
+// tokens correctly. If there isn't a previous token, it returns true.
+func (d *Dispenser) isNewLine() bool {
+	if d.cursor < 1 {
+		return true
+	}
+	if d.cursor > len(d.tokens)-1 {
+		return false
+	}
+	return d.tokens[d.cursor-1].file != d.tokens[d.cursor].file ||
+		d.tokens[d.cursor-1].line+d.numLineBreaks(d.cursor-1) < d.tokens[d.cursor].line
 }

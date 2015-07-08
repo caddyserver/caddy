@@ -1,5 +1,11 @@
 CHANGES
 
+<master>
+- errors: Error log now includes timestamp with each entry
+- gzip: Default filtering is by extension (fixes bug); removed MIME type filter
+- import: Fixed; works inside and outside server blocks
+- templates: Restricted or missing files result in proper 403 or 404 error
+
 
 0.7.2 (July 1, 2015)
 - Custom builds through caddyserver.com - extend Caddy by writing addons
