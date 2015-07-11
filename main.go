@@ -63,7 +63,7 @@ func main() {
 
 	// Start each server with its one or more configurations
 	for addr, configs := range addresses {
-		s, err := server.New(addr.String(), configs, configs[0].TLS.Enabled)
+		s, err := server.New(addr.String(), configs)
 		if err != nil {
 			log.Fatal(err)
 		}
