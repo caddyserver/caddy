@@ -7,7 +7,8 @@ import (
 	"html"
 	"net/http"
 	"net/url"
-	"regexp"
+	"path"
+	"strings"
 
 	"github.com/mholt/caddy/middleware"
 )
@@ -27,9 +28,10 @@ func (rd Redirect) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 			if err != nil {
 				return http.StatusInternalServerError, err
 			}
-			newPath := toURL.Host + toURL.Path + r.URL.Path
-			rmSlashs := regexp.MustCompile("//+")
-			newPath = rmSlashs.ReplaceAllString(newPath, "/")
+			newPath := path.Join(toURL.Host, toURL.Path, r.URL.Path)
+			if strings.HasSuffix(r.URL.Path, "/") {
+				newPath = newPath + "/"
+			}
 			newPath = toURL.Scheme + "://" + newPath
 			parameters := toURL.Query()
 			for k, v := range r.URL.Query() {
