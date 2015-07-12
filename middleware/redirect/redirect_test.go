@@ -39,6 +39,43 @@ func TestMetaRedirect(t *testing.T) {
 	}
 }
 
+func TestParametersRedirect(t *testing.T) {
+	re := Redirect{
+		Rules: []Rule{
+			{From: "/", Meta: false, To: "http://example.com/"},
+		},
+	}
+
+	req, err := http.NewRequest("GET", "/a?b=c", nil)
+	if err != nil {
+		t.Fatalf("Test: Could not create HTTP request: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	re.ServeHTTP(rec, req)
+
+	if "http://example.com/a?b=c" != rec.Header().Get("Location") {
+		t.Fatalf("Test: expected location header %q but was %q", "http://example.com/a?b=c", rec.Header().Get("Location"))
+	}
+
+	re = Redirect{
+		Rules: []Rule{
+			{From: "/", Meta: false, To: "http://example.com/a?b=c"},
+		},
+	}
+
+	req, err = http.NewRequest("GET", "/d?e=f", nil)
+	if err != nil {
+		t.Fatalf("Test: Could not create HTTP request: %v", err)
+	}
+
+	re.ServeHTTP(rec, req)
+
+	if "http://example.com/a/d?b=c&e=f" != rec.Header().Get("Location") {
+		t.Fatalf("Test: expected location header %q but was %q", "http://example.com/a/d?b=c&e=f", rec.Header().Get("Location"))
+	}
+}
+
 func TestRedirect(t *testing.T) {
 	for i, test := range []struct {
 		from             string
