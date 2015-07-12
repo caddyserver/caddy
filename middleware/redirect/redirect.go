@@ -23,9 +23,9 @@ func (rd Redirect) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 	for _, rule := range rd.Rules {
 		if rule.From == "/" {
 			// Catchall redirect preserves path (TODO: Standardize/formalize this behavior)
-			toURL, err := url.ParseRequestURI(rule.To)
+			toURL, err := url.Parse(rule.To)
 			if err != nil {
-				return 500, err
+				return http.StatusInternalServerError, err
 			}
 			newPath := toURL.Host + toURL.Path + r.URL.Path
 			rmSlashs := regexp.MustCompile("//+")
