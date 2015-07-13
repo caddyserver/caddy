@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"html"
 	"net/http"
+	"net/url"
+	"path"
 	"strings"
 
 	"github.com/mholt/caddy/middleware"
@@ -22,7 +24,22 @@ func (rd Redirect) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 	for _, rule := range rd.Rules {
 		if rule.From == "/" {
 			// Catchall redirect preserves path (TODO: Standardize/formalize this behavior)
-			newPath := strings.TrimSuffix(rule.To, "/") + r.URL.Path
+			toURL, err := url.Parse(rule.To)
+			if err != nil {
+				return http.StatusInternalServerError, err
+			}
+			newPath := path.Join(toURL.Host, toURL.Path, r.URL.Path)
+			if strings.HasSuffix(r.URL.Path, "/") {
+				newPath = newPath + "/"
+			}
+			newPath = toURL.Scheme + "://" + newPath
+			parameters := toURL.Query()
+			for k, v := range r.URL.Query() {
+				parameters.Set(k, v[0])
+			}
+			if len(parameters) > 0 {
+				newPath = newPath + "?" + parameters.Encode()
+			}
 			if rule.Meta {
 				fmt.Fprintf(w, metaRedir, html.EscapeString(newPath))
 			} else {
