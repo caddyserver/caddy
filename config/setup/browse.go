@@ -2,8 +2,8 @@ package setup
 
 import (
 	"fmt"
-	"html/template"
 	"io/ioutil"
+	"text/template"
 
 	"github.com/mholt/caddy/middleware"
 	"github.com/mholt/caddy/middleware/browse"

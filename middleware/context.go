@@ -1,4 +1,4 @@
-package templates
+package middleware
 
 import (
 	"bytes"
@@ -8,23 +8,22 @@ import (
 	"net/url"
 	"text/template"
 	"time"
-
-	"github.com/mholt/caddy/middleware"
 )
 
 // This file contains the context and functions available for
 // use in the templates.
 
 // context is the context with which templates are executed.
-type context struct {
-	root http.FileSystem
-	req  *http.Request
-	URL  *url.URL
+type Context struct {
+	Root http.FileSystem
+	Req  *http.Request
+	// This is used to access information about the URL.
+	URL *url.URL
 }
 
 // Include returns the contents of filename relative to the site root
-func (c context) Include(filename string) (string, error) {
-	file, err := c.root.Open(filename)
+func (c Context) Include(filename string) (string, error) {
+	file, err := c.Root.Open(filename)
 	if err != nil {
 		return "", err
 	}
@@ -50,13 +49,13 @@ func (c context) Include(filename string) (string, error) {
 }
 
 // Date returns the current timestamp in the specified format
-func (c context) Date(format string) string {
+func (c Context) Date(format string) string {
 	return time.Now().Format(format)
 }
 
 // Cookie gets the value of a cookie with name name.
-func (c context) Cookie(name string) string {
-	cookies := c.req.Cookies()
+func (c Context) Cookie(name string) string {
+	cookies := c.Req.Cookies()
 	for _, cookie := range cookies {
 		if cookie.Name == name {
 			return cookie.Value
@@ -66,15 +65,15 @@ func (c context) Cookie(name string) string {
 }
 
 // Header gets the value of a request header with field name.
-func (c context) Header(name string) string {
-	return c.req.Header.Get(name)
+func (c Context) Header(name string) string {
+	return c.Req.Header.Get(name)
 }
 
 // IP gets the (remote) IP address of the client making the request.
-func (c context) IP() string {
-	ip, _, err := net.SplitHostPort(c.req.RemoteAddr)
+func (c Context) IP() string {
+	ip, _, err := net.SplitHostPort(c.Req.RemoteAddr)
 	if err != nil {
-		return c.req.RemoteAddr
+		return c.Req.RemoteAddr
 	}
 	return ip
 }
@@ -82,14 +81,14 @@ func (c context) IP() string {
 // URI returns the raw, unprocessed request URI (including query
 // string and hash) obtained directly from the Request-Line of
 // the HTTP request.
-func (c context) URI() string {
-	return c.req.RequestURI
+func (c Context) URI() string {
+	return c.Req.RequestURI
 }
 
 // Host returns the hostname portion of the Host header
 // from the HTTP request.
-func (c context) Host() (string, error) {
-	host, _, err := net.SplitHostPort(c.req.Host)
+func (c Context) Host() (string, error) {
+	host, _, err := net.SplitHostPort(c.Req.Host)
 	if err != nil {
 		return "", err
 	}
@@ -97,8 +96,8 @@ func (c context) Host() (string, error) {
 }
 
 // Port returns the port portion of the Host header if specified.
-func (c context) Port() (string, error) {
-	_, port, err := net.SplitHostPort(c.req.Host)
+func (c Context) Port() (string, error) {
+	_, port, err := net.SplitHostPort(c.Req.Host)
 	if err != nil {
 		return "", err
 	}
@@ -106,12 +105,12 @@ func (c context) Port() (string, error) {
 }
 
 // Method returns the method (GET, POST, etc.) of the request.
-func (c context) Method() string {
-	return c.req.Method
+func (c Context) Method() string {
+	return c.Req.Method
 }
 
 // PathMatches returns true if the path portion of the request
 // URL matches pattern.
-func (c context) PathMatches(pattern string) bool {
-	return middleware.Path(c.req.URL.Path).Matches(pattern)
+func (c Context) PathMatches(pattern string) bool {
+	return Path(c.Req.URL.Path).Matches(pattern)
 }
