@@ -1,10 +1,11 @@
 CHANGES
 
-<master>
-- errors: Error log now includes timestamp with each entry
-- gzip: Default filtering is by extension (fixes bug); removed MIME type filter
+0.7.3 (July 15, 2015)
+- errors: Error log now shows timestamp with each entry
+- gzip: Fixed; Default filtering is by extension; removed MIME type filter
 - import: Fixed; works inside and outside server blocks
-- templates: Restricted or missing files result in proper 403 or 404 error
+- redir: Query string preserved on catch-all redirects
+- templates: Proper 403 or 404 errors for restricted or missing files
 
 
 0.7.2 (July 1, 2015)

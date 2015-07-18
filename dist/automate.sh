@@ -19,28 +19,37 @@ ReleaseDir=$DistDir/release
 # Compile binaries
 mkdir -p $BuildDir
 cd $BuildDir
-rm -f *
+rm -f caddy*
 gox $Package
 
 # Zip them up with release notes and stuff
 mkdir -p $ReleaseDir
 cd $ReleaseDir
-rm -f *
+rm -f caddy*
 for f in $BuildDir/*
 do
 	# Name .zip file same as binary, but strip .exe from end
-	zipname=$(basename ${f%".exe"}).zip
+	zipname=$(basename ${f%".exe"})
+	if [[ $f == *"linux"* ]] || [[ $f == *"bsd"* ]]; then
+		zipname=${zipname}.tar.gz
+	else
+		zipname=${zipname}.zip
+	fi
 
 	# Binary inside the zip file is simply the project name
-	bin=$BuildDir/$(basename $Package)
-	if [[ $f == *.exe ]]
-	then
-		bin=$bin.exe
+	binbase=$(basename $Package)
+	if [[ $f == *.exe ]]; then
+		binbase=$binbase.exe
 	fi
+	bin=$BuildDir/$binbase
 	mv $f $bin
 
 	# Compress distributable
-	zip -j $zipname $bin $DistDir/CHANGES.txt $DistDir/LICENSES.txt $DistDir/README.txt
+	if [[ $zipname == *.zip ]]; then
+		zip -j $zipname $bin $DistDir/CHANGES.txt $DistDir/LICENSES.txt $DistDir/README.txt
+	else
+		tar -cvzf $zipname -C $BuildDir $binbase -C $DistDir CHANGES.txt LICENSES.txt README.txt
+	fi
 
 	# Put binary filename back to original
 	mv $bin $f

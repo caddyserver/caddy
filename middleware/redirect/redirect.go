@@ -23,7 +23,7 @@ type Redirect struct {
 func (rd Redirect) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	for _, rule := range rd.Rules {
 		if rule.From == "/" {
-			// Catchall redirect preserves path (TODO: Standardize/formalize this behavior)
+			// Catchall redirect preserves path and query string
 			toURL, err := url.Parse(rule.To)
 			if err != nil {
 				return http.StatusInternalServerError, err
