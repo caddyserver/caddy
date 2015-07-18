@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 
 	"github.com/BurntSushi/toml"
 	"gopkg.in/yaml.v2"
@@ -150,6 +151,7 @@ func (y *YAMLMetadataParser) Parse(b []byte) ([]byte, error) {
 	if err != nil {
 		return markdown, err
 	}
+
 	m := make(map[string]interface{})
 	if err := yaml.Unmarshal(b, &m); err != nil {
 		return markdown, err
@@ -187,52 +189,46 @@ func (y *YAMLMetadataParser) Closing() []byte {
 	return []byte("---")
 }
 
-// extractMetadata extracts metadata content from a page.
-// it returns the metadata, the remaining bytes (markdown),
-// and an error if any.
-// Useful for MetadataParser with defined identifiers (YAML, TOML)
+// extractMetadata separates metadata content from from markdown content in b.
+// It returns the metadata, the remaining bytes (markdown), and an error, if any.
 func extractMetadata(parser MetadataParser, b []byte) (metadata []byte, markdown []byte, err error) {
 	b = bytes.TrimSpace(b)
-	reader := bytes.NewBuffer(b)
-	scanner := bufio.NewScanner(reader)
+	reader := bufio.NewReader(bytes.NewBuffer(b))
 
-	// Read first line
-	if !scanner.Scan() {
-		// if no line is read,
-		// assume metadata not present
-		return nil, b, nil
-	}
-
-	line := bytes.TrimSpace(scanner.Bytes())
-	if !bytes.Equal(line, parser.Opening()) {
-		return nil, b, fmt.Errorf("wrong identifier")
+	// Read first line, which should indicate metadata or not
+	line, err := reader.ReadBytes('\n')
+	if err != nil || !bytes.Equal(bytes.TrimSpace(line), parser.Opening()) {
+		return nil, b, fmt.Errorf("first line missing expected metadata identifier")
 	}
 
 	// buffer for metadata contents
-	buf := bytes.Buffer{}
+	metaBuf := bytes.Buffer{}
 
 	// Read remaining lines until closing identifier is found
-	for scanner.Scan() {
-		line := scanner.Bytes()
-
-		// if closing identifier found
-		if bytes.Equal(bytes.TrimSpace(line), parser.Closing()) {
-
-			// get the scanner to return remaining bytes
-			scanner.Split(func(data []byte, atEOF bool) (int, []byte, error) {
-				return len(data), data, nil
-			})
-			// scan the remaining bytes
-			scanner.Scan()
-
-			return buf.Bytes(), scanner.Bytes(), nil
+	for {
+		line, err := reader.ReadBytes('\n')
+		if err != nil {
+			if err == io.EOF {
+				// no closing metadata identifier found
+				return nil, nil, fmt.Errorf("metadata not closed ('%s' not found)", parser.Closing())
+			}
+			return nil, nil, err
 		}
-		buf.Write(line)
-		buf.WriteString("\r\n")
+
+		// if closing identifier found, the remaining bytes must be markdown content
+		if bytes.Equal(bytes.TrimSpace(line), parser.Closing()) {
+			break
+		}
+
+		metaBuf.Write(line)
+		metaBuf.WriteString("\r\n")
 	}
 
-	// closing identifier not found
-	return buf.Bytes(), nil, fmt.Errorf("metadata not closed. '%v' not found", string(parser.Closing()))
+	// By now, the rest of the buffer contains markdown content
+	contentBuf := new(bytes.Buffer)
+	io.Copy(contentBuf, reader)
+
+	return metaBuf.Bytes(), contentBuf.Bytes(), nil
 }
 
 // findParser finds the parser using line that contains opening identifier
