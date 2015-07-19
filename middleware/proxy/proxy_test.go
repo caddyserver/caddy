@@ -3,7 +3,9 @@ package proxy
 import (
 	"bufio"
 	"bytes"
+	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -98,30 +100,37 @@ func TestWebSocketReverseProxyFromWSClient(t *testing.T) {
 // also sets up the rules/environment for testing WebSocket
 // proxy.
 func newWebSocketTestProxy(backendAddr string) *Proxy {
-	proxyHeaders = http.Header{
-		"Connection": {"{>Connection}"},
-		"Upgrade":    {"{>Upgrade}"},
-	}
-
 	return &Proxy{
-		Upstreams: []Upstream{&fakeUpstream{name: backendAddr}},
+		Upstreams: []Upstream{
+			&fakeUpstream{
+				name: backendAddr,
+				from: "/",
+				extraHeaders: http.Header{
+					"Connection": {"{>Connection}"},
+					"Upgrade":    {"{>Upgrade}"},
+				},
+			},
+		},
 	}
 }
 
 type fakeUpstream struct {
-	name string
+	name         string
+	from         string
+	without      string
+	extraHeaders http.Header
 }
 
 func (u *fakeUpstream) From() string {
-	return "/"
+	return u.from
 }
 
 func (u *fakeUpstream) Select() *UpstreamHost {
 	uri, _ := url.Parse(u.name)
 	return &UpstreamHost{
 		Name:         u.name,
-		ReverseProxy: NewSingleHostReverseProxy(uri, ""),
-		ExtraHeaders: proxyHeaders,
+		ReverseProxy: NewSingleHostReverseProxy(uri, u.without),
+		ExtraHeaders: u.extraHeaders,
 	}
 }
 
@@ -149,3 +158,151 @@ func (c *fakeConn) SetWriteDeadline(t time.Time) error { return nil }
 func (c *fakeConn) Close() error                       { return nil }
 func (c *fakeConn) Read(b []byte) (int, error)         { return c.readBuf.Read(b) }
 func (c *fakeConn) Write(b []byte) (int, error)        { return c.writeBuf.Write(b) }
+
+var (
+	upstreamResp1 = []byte("Hello, /")
+	upstreamResp2 = []byte("Hello, /api/")
+)
+
+func newMultiHostTestProxy() *Proxy {
+	// No-op backends.
+	upstreamServer1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "%s", upstreamResp1)
+	}))
+	upstreamServer2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "%s", upstreamResp2)
+	}))
+
+	// Test proxy.
+	p := &Proxy{
+		Upstreams: []Upstream{
+			&fakeUpstream{
+				name: upstreamServer1.URL,
+				from: "/",
+				extraHeaders: http.Header{
+					"Host": {"example.com"},
+				},
+			},
+			&fakeUpstream{
+				name: upstreamServer2.URL,
+				from: "/api",
+				extraHeaders: http.Header{
+					"Host": {"example.net"},
+				},
+			},
+		},
+	}
+	return p
+}
+
+func TestMultiReverseProxyFromClient(t *testing.T) {
+	p := newMultiHostTestProxy()
+
+	// This is a full end-end test, so the proxy handler.
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p.ServeHTTP(w, r)
+	}))
+	defer proxy.Close()
+
+	// Table tests.
+	var multiProxy = []struct {
+		url  string
+		body []byte
+	}{
+		{
+			"/",
+			upstreamResp1,
+		},
+		{
+			"/api/",
+			upstreamResp2,
+		},
+		{
+			"/messages/",
+			upstreamResp1,
+		},
+		{
+			"/api/messages/?text=cat",
+			upstreamResp2,
+		},
+	}
+
+	for _, tt := range multiProxy {
+		// Create client request
+		reqURL := singleJoiningSlash(proxy.URL, tt.url)
+		req, err := http.NewRequest("GET", reqURL, nil)
+		if err != nil {
+			t.Fatalf("Failed to create request: %v", err)
+		}
+
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		defer resp.Body.Close()
+		if err != nil {
+			t.Fatalf("Failed to make request: %v", err)
+		}
+
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatalf("Failed to read responce: %v", err)
+		}
+
+		if !bytes.Equal(body, tt.body) {
+			t.Errorf("Expected '%s' but got '%s' instead", tt.body, body)
+		}
+	}
+}
+
+func T1estMultiReverseProxyServeHostHeader(t *testing.T) {
+	p := newMultiHostTestProxy()
+
+	// Table tests.
+	var multiHostHeader = []struct {
+		url          string
+		extraHeaders http.Header
+	}{
+		{
+			"/",
+			http.Header{
+				"Host": {"example.com"},
+			},
+		},
+		{
+			"/api/",
+			http.Header{
+				"Host": {"example.net"},
+			},
+		},
+		{
+			"/messages/",
+			http.Header{
+				"Host": {"example.com"},
+			},
+		},
+		{
+			"/api/messages/?text=cat",
+			http.Header{
+				"Host": {"example.net"},
+			},
+		},
+	}
+
+	for _, tt := range multiHostHeader {
+		// Create client request
+		r, err := http.NewRequest("GET", tt.url, nil)
+		if err != nil {
+			t.Fatalf("Failed to create request: %v", err)
+		}
+
+		// Capture the request
+		w := httptest.NewRecorder()
+
+		// Booya! Do the test.
+		p.ServeHTTP(w, r)
+
+		host := r.Header.Get("Host")
+		if host != tt.extraHeaders.Get("Host") {
+			t.Errorf("Expected Host Header '%s' but got '%s' instead", tt.extraHeaders.Get("Host"), host)
+		}
+	}
+}

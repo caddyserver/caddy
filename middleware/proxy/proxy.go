@@ -13,6 +13,16 @@ import (
 
 var errUnreachable = errors.New("unreachable backend")
 
+// Does path match pattern?
+func pathMatch(pattern, path string) bool {
+	if len(pattern) == 0 {
+		// should not happen
+		return false
+	}
+	n := len(pattern)
+	return len(path) >= n && path[0:n] == pattern
+}
+
 // Proxy represents a middleware instance that can proxy requests.
 type Proxy struct {
 	Next      middleware.Handler
@@ -56,72 +66,87 @@ func (uh *UpstreamHost) Down() bool {
 	return uh.CheckDown(uh)
 }
 
-// ServeHTTP satisfies the middleware.Handler interface.
-func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
-
+func (p Proxy) match(path string) Upstream {
+	var u Upstream
+	n := 0
 	for _, upstream := range p.Upstreams {
-		if middleware.Path(r.URL.Path).Matches(upstream.From()) {
-			var replacer middleware.Replacer
-			start := time.Now()
-			requestHost := r.Host
-
-			// Since Select() should give us "up" hosts, keep retrying
-			// hosts until timeout (or until we get a nil host).
-			for time.Now().Sub(start) < (60 * time.Second) {
-				host := upstream.Select()
-				if host == nil {
-					return http.StatusBadGateway, errUnreachable
-				}
-				proxy := host.ReverseProxy
-				r.Host = host.Name
-
-				if baseURL, err := url.Parse(host.Name); err == nil {
-					r.Host = baseURL.Host
-					if proxy == nil {
-						proxy = NewSingleHostReverseProxy(baseURL, host.WithoutPathPrefix)
-					}
-				} else if proxy == nil {
-					return http.StatusInternalServerError, err
-				}
-				var extraHeaders http.Header
-				if host.ExtraHeaders != nil {
-					extraHeaders = make(http.Header)
-					if replacer == nil {
-						rHost := r.Host
-						r.Host = requestHost
-						replacer = middleware.NewReplacer(r, nil)
-						r.Host = rHost
-					}
-					for header, values := range host.ExtraHeaders {
-						for _, value := range values {
-							extraHeaders.Add(header,
-								replacer.Replace(value))
-							if header == "Host" {
-								r.Host = replacer.Replace(value)
-							}
-						}
-					}
-				}
-
-				atomic.AddInt64(&host.Conns, 1)
-				backendErr := proxy.ServeHTTP(w, r, extraHeaders)
-				atomic.AddInt64(&host.Conns, -1)
-				if backendErr == nil {
-					return 0, nil
-				}
-				timeout := host.FailTimeout
-				if timeout == 0 {
-					timeout = 10 * time.Second
-				}
-				atomic.AddInt32(&host.Fails, 1)
-				go func(host *UpstreamHost, timeout time.Duration) {
-					time.Sleep(timeout)
-					atomic.AddInt32(&host.Fails, -1)
-				}(host, timeout)
-			}
-			return http.StatusBadGateway, errUnreachable
+		pattern := upstream.From()
+		if !pathMatch(pattern, path) {
+			continue
+		}
+		if len(pattern) > n {
+			n = len(pattern)
+			u = upstream
 		}
 	}
+	return u
+}
 
-	return p.Next.ServeHTTP(w, r)
+// ServeHTTP satisfies the middleware.Handler interface.
+func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
+	// Select best match upstream
+	upstream := p.match(r.URL.Path)
+	if upstream == nil {
+		return p.Next.ServeHTTP(w, r)
+	}
+
+	var replacer middleware.Replacer
+	start := time.Now()
+	requestHost := r.Host
+
+	// Since Select() should give us "up" hosts, keep retrying
+	// hosts until timeout (or until we get a nil host).
+	for time.Now().Sub(start) < (60 * time.Second) {
+		host := upstream.Select()
+		if host == nil {
+			return http.StatusBadGateway, errUnreachable
+		}
+		proxy := host.ReverseProxy
+		r.Host = host.Name
+
+		if baseURL, err := url.Parse(host.Name); err == nil {
+			r.Host = baseURL.Host
+			if proxy == nil {
+				proxy = NewSingleHostReverseProxy(baseURL, host.WithoutPathPrefix)
+			}
+		} else if proxy == nil {
+			return http.StatusInternalServerError, err
+		}
+		var extraHeaders http.Header
+		if host.ExtraHeaders != nil {
+			extraHeaders = make(http.Header)
+			if replacer == nil {
+				rHost := r.Host
+				r.Host = requestHost
+				replacer = middleware.NewReplacer(r, nil)
+				r.Host = rHost
+			}
+			for header, values := range host.ExtraHeaders {
+				for _, value := range values {
+					extraHeaders.Add(header,
+						replacer.Replace(value))
+					if header == "Host" {
+						r.Host = replacer.Replace(value)
+					}
+				}
+			}
+		}
+
+		atomic.AddInt64(&host.Conns, 1)
+		backendErr := proxy.ServeHTTP(w, r, extraHeaders)
+		atomic.AddInt64(&host.Conns, -1)
+		if backendErr == nil {
+			return 0, nil
+		}
+		timeout := host.FailTimeout
+		if timeout == 0 {
+			timeout = 10 * time.Second
+		}
+		atomic.AddInt32(&host.Fails, 1)
+		go func(host *UpstreamHost, timeout time.Duration) {
+			time.Sleep(timeout)
+			atomic.AddInt32(&host.Fails, -1)
+		}(host, timeout)
+	}
+	return http.StatusBadGateway, errUnreachable
 }
