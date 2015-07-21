@@ -191,7 +191,7 @@ const (
 		{{js}}
 	</head>
 	<body>
-		{{.markdown}}
+		{{.Markdown}}
 	</body>
 </html>`
 	cssTemplate = `<link rel="stylesheet" href="{{url}}">`
