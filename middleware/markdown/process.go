@@ -9,6 +9,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/mholt/caddy/middleware"
 	"github.com/russross/blackfriday"
 )
 
@@ -17,9 +18,16 @@ const (
 	DefaultStaticDir = "generated_site"
 )
 
+type MarkdownData struct {
+	middleware.Context
+	Var      map[string]interface{}
+	Title    string
+	Markdown string
+}
+
 // Process processes the contents of a page in b. It parses the metadata
 // (if any) and uses the template (if found).
-func (md Markdown) Process(c Config, requestPath string, b []byte) ([]byte, error) {
+func (md Markdown) Process(c Config, requestPath string, b []byte, ctx middleware.Context) ([]byte, error) {
 	var metadata = Metadata{Variables: make(map[string]interface{})}
 	var markdown []byte
 	var err error
@@ -63,12 +71,12 @@ func (md Markdown) Process(c Config, requestPath string, b []byte) ([]byte, erro
 	// set it as body for template
 	metadata.Variables["markdown"] = string(markdown)
 
-	return md.processTemplate(c, requestPath, tmpl, metadata)
+	return md.processTemplate(c, requestPath, tmpl, metadata, ctx)
 }
 
 // processTemplate processes a template given a requestPath,
 // template (tmpl) and metadata
-func (md Markdown) processTemplate(c Config, requestPath string, tmpl []byte, metadata Metadata) ([]byte, error) {
+func (md Markdown) processTemplate(c Config, requestPath string, tmpl []byte, metadata Metadata, ctx middleware.Context) ([]byte, error) {
 	// if template is not specified,
 	// use the default template
 	if tmpl == nil {
@@ -81,7 +89,14 @@ func (md Markdown) processTemplate(c Config, requestPath string, tmpl []byte, me
 	if err != nil {
 		return nil, err
 	}
-	if err = t.Execute(b, metadata.Variables); err != nil {
+	mdData := MarkdownData{
+		Context:  ctx,
+		Var:      metadata.Variables,
+		Title:    metadata.Title,
+		Markdown: metadata.Variables["markdown"].(string),
+	}
+
+	if err = t.Execute(b, mdData); err != nil {
 		return nil, err
 	}
 

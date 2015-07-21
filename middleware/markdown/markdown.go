@@ -119,7 +119,12 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 					return http.StatusInternalServerError, err
 				}
 
-				html, err := md.Process(m, fpath, body)
+				ctx := middleware.Context{
+					Root: md.FileSys,
+					Req:  r,
+					URL:  r.URL,
+				}
+				html, err := md.Process(m, fpath, body, ctx)
 				if err != nil {
 					return http.StatusInternalServerError, err
 				}
