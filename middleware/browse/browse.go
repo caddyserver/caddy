@@ -85,7 +85,7 @@ func (l bySize) Less(i, j int) bool { return l.Items[i].Size < l.Items[j].Size }
 // By Time
 func (l byTime) Len() int           { return len(l.Items) }
 func (l byTime) Swap(i, j int)      { l.Items[i], l.Items[j] = l.Items[j], l.Items[i] }
-func (l byTime) Less(i, j int) bool { return l.Items[i].ModTime.Unix() < l.Items[j].ModTime.Unix() }
+func (l byTime) Less(i, j int) bool { return l.Items[i].ModTime.Before(l.Items[j].ModTime) }
 
 // Add sorting method to "Listing"
 // it will apply what's in ".Sort" and ".Order"
@@ -230,10 +230,23 @@ func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 		// Get the query vales and store them in the Listing struct
 		listing.Sort, listing.Order = r.URL.Query().Get("sort"), r.URL.Query().Get("order")
 
-		// If the query 'sort' is empty, default to "name" and "asc"
-		if listing.Sort == "" {
-			listing.Sort = "name"
-			listing.Order = "asc"
+		// If the query 'sort' or 'order' is empty, check the cookies
+		if listing.Sort == "" || listing.Order == "" {
+			sortCookie, sortErr := r.Cookie("sort")
+			orderCookie, orderErr := r.Cookie("order")
+
+			// if there's no sorting values in the cookies, default to "name" and "asc"
+			if sortErr != nil || orderErr != nil {
+				listing.Sort = "name"
+				listing.Order = "asc"
+			} else { // if we have values in the cookies, use them
+				listing.Sort = sortCookie.Value
+				listing.Order = orderCookie.Value
+			}
+
+		} else { // save the query value of 'sort' and 'order' as cookies
+			http.SetCookie(w, &http.Cookie{Name: "sort", Value: listing.Sort, Path: "/"})
+			http.SetCookie(w, &http.Cookie{Name: "order", Value: listing.Order, Path: "/"})
 		}
 
 		// Apply the sorting
