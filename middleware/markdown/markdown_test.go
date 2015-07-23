@@ -6,15 +6,16 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mholt/caddy/middleware"
 	"github.com/russross/blackfriday"
 )
 
 func TestMarkdown(t *testing.T) {
 	templates := make(map[string]string)
-	templates[DefaultTemplate] = "markdown_tpl.html"
+	templates[DefaultTemplate] = "testdata/markdown_tpl.html"
 	md := Markdown{
-		Root:    "/blog",
-		FileSys: http.Dir("."),
+		Root:    "./testdata",
+		FileSys: http.Dir("./testdata"),
 		Configs: []Config{
 			Config{
 				Renderer:   blackfriday.HtmlRenderer(0, "", ""),
@@ -34,6 +35,10 @@ func TestMarkdown(t *testing.T) {
 			},
 		},
 		IndexFiles: []string{"index.html"},
+		Next: middleware.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
+			t.Fatalf("Next shouldn't be called")
+			return 0, nil
+		}),
 	}
 
 	req, err := http.NewRequest("GET", "/blog/test.md", nil)

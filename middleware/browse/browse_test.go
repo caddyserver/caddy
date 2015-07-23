@@ -101,7 +101,7 @@ func TestSort(t *testing.T) {
 }
 
 func TestBrowseTemplate(t *testing.T) {
-	tmpl, err := template.ParseFiles("photos.tpl")
+	tmpl, err := template.ParseFiles("testdata/photos.tpl")
 	if err != nil {
 		t.Fatalf("An error occured while parsing the template: %v", err)
 	}
@@ -111,7 +111,7 @@ func TestBrowseTemplate(t *testing.T) {
 			t.Fatalf("Next shouldn't be called")
 			return 0, nil
 		}),
-		Root: ".",
+		Root: "./testdata",
 		Configs: []Config{
 			Config{
 				PathScope: "/photos",

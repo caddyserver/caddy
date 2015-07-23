@@ -25,8 +25,8 @@ func Test(t *testing.T) {
 				Path:       "/images",
 			},
 		},
-		Root:    ".",
-		FileSys: http.Dir("."),
+		Root:    "./testdata",
+		FileSys: http.Dir("./testdata"),
 	}
 
 	tmplroot := Templates{
@@ -40,8 +40,8 @@ func Test(t *testing.T) {
 				Path:       "/",
 			},
 		},
-		Root:    ".",
-		FileSys: http.Dir("."),
+		Root:    "./testdata",
+		FileSys: http.Dir("./testdata"),
 	}
 
 	/*
