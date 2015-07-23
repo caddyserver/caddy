@@ -2,7 +2,6 @@ package markdown
 
 import (
 	"bytes"
-	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
@@ -107,7 +106,6 @@ func (md Markdown) processTemplate(c Config, requestPath string, tmpl []byte, me
 		// nothing fatal, only log the error.
 		// TODO: Report this non-fatal error, but don't log it here
 		log.Println(err)
-		fmt.Printf("Error: %v", err)
 	}
 
 	return b.Bytes(), nil
