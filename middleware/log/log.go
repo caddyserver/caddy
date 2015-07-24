@@ -33,7 +33,7 @@ func (l Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 				}
 				status = 0
 			}
-			rep := middleware.NewReplacer(r, responseRecorder)
+			rep := middleware.NewReplacer(r, responseRecorder, CommonLogEmptyValue)
 			rule.Log.Println(rep.Replace(rule.Format))
 			return status, err
 		}
@@ -50,8 +50,9 @@ type Rule struct {
 }
 
 const (
-	DefaultLogFilename = "access.log"
-	CommonLogFormat    = `{remote} ` + middleware.EmptyStringReplacer + ` [{when}] "{method} {uri} {proto}" {status} {size}`
-	CombinedLogFormat  = CommonLogFormat + ` "{>Referer}" "{>User-Agent}"`
-	DefaultLogFormat   = CommonLogFormat
+	DefaultLogFilename  = "access.log"
+	CommonLogFormat     = `{remote} ` + CommonLogEmptyValue + ` [{when}] "{method} {uri} {proto}" {status} {size}`
+	CommonLogEmptyValue = "-"
+	CombinedLogFormat   = CommonLogFormat + ` "{>Referer}" "{>User-Agent}"`
+	DefaultLogFormat    = CommonLogFormat
 )

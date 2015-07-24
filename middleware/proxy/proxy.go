@@ -89,7 +89,7 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 					if replacer == nil {
 						rHost := r.Host
 						r.Host = requestHost
-						replacer = middleware.NewReplacer(r, nil)
+						replacer = middleware.NewReplacer(r, nil, "")
 						r.Host = rHost
 					}
 					for header, values := range host.ExtraHeaders {
