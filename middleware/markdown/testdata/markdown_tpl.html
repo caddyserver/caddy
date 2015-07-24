@@ -1,11 +1,11 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>{{.Title}}</title>
+<title>{{.Doc.title}}</title>
 </head>
 <body>
 {{.Include "header.html"}}
-Welcome to {{.Var.sitename}}!
-{{.Markdown}}
+Welcome to {{.Doc.sitename}}!
+{{.Doc.body}}
 </body>
 </html>

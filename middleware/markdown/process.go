@@ -20,9 +20,8 @@ const (
 
 type MarkdownData struct {
 	middleware.Context
-	Var      map[string]interface{}
-	Title    string
-	Markdown string
+	Doc      map[string]interface{}
+	markdown string
 }
 
 // Process processes the contents of a page in b. It parses the metadata
@@ -69,7 +68,8 @@ func (md Markdown) Process(c Config, requestPath string, b []byte, ctx middlewar
 	markdown = blackfriday.Markdown(markdown, c.Renderer, 0)
 
 	// set it as body for template
-	metadata.Variables["markdown"] = string(markdown)
+	metadata.Variables["body"] = string(markdown)
+	metadata.Variables["title"] = metadata.Title
 
 	return md.processTemplate(c, requestPath, tmpl, metadata, ctx)
 }
@@ -90,10 +90,8 @@ func (md Markdown) processTemplate(c Config, requestPath string, tmpl []byte, me
 		return nil, err
 	}
 	mdData := MarkdownData{
-		Context:  ctx,
-		Var:      metadata.Variables,
-		Title:    metadata.Title,
-		Markdown: metadata.Variables["markdown"].(string),
+		Context: ctx,
+		Doc:     metadata.Variables,
 	}
 
 	if err = t.Execute(b, mdData); err != nil {
@@ -166,7 +164,7 @@ func defaultTemplate(c Config, metadata Metadata, requestPath string) []byte {
 	title := metadata.Title
 	if title == "" {
 		title = filepath.Base(requestPath)
-		if body, _ := metadata.Variables["markdown"].([]byte); len(body) > 128 {
+		if body, _ := metadata.Variables["body"].([]byte); len(body) > 128 {
 			title = string(body[:128])
 		} else if len(body) > 0 {
 			title = string(body)
@@ -191,7 +189,7 @@ const (
 		{{js}}
 	</head>
 	<body>
-		{{.Markdown}}
+		{{.Doc.body}}
 	</body>
 </html>`
 	cssTemplate = `<link rel="stylesheet" href="{{url}}">`
