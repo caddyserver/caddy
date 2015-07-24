@@ -20,8 +20,7 @@ const (
 
 type MarkdownData struct {
 	middleware.Context
-	Doc      map[string]interface{}
-	markdown string
+	Doc map[string]interface{}
 }
 
 // Process processes the contents of a page in b. It parses the metadata
