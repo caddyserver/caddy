@@ -1,5 +1,13 @@
 CHANGES
 
+<master>
+- browse: Sort preference persisted in cookie
+- browse: Added index.txt and default.txt to list of default files
+- markdown: Fix for large markdown files
+- redir: Can use variables like log formats can
+- redir: Catch-all redirects no longer preserve path; use {uri} instead
+
+
 0.7.3 (July 15, 2015)
 - errors: Error log now shows timestamp with each entry
 - gzip: Fixed; Default filtering is by extension; removed MIME type filter
