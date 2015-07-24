@@ -10,72 +10,6 @@ import (
 	"github.com/mholt/caddy/middleware"
 )
 
-func TestMetaRedirect(t *testing.T) {
-	re := Redirect{
-		Rules: []Rule{
-			{From: "/", Meta: true, To: "https://example.com/"},
-			{From: "/whatever", Meta: true, To: "https://example.com/whatever"},
-		},
-	}
-
-	for i, test := range re.Rules {
-		req, err := http.NewRequest("GET", test.From, nil)
-		if err != nil {
-			t.Fatalf("Test %d: Could not create HTTP request: %v", i, err)
-		}
-
-		rec := httptest.NewRecorder()
-		re.ServeHTTP(rec, req)
-
-		body, err := ioutil.ReadAll(rec.Body)
-		if err != nil {
-			t.Fatalf("Test %d: Could not read HTTP response body: %v", i, err)
-		}
-		expectedSnippet := `<meta http-equiv="refresh" content="0;URL='` + test.To + `'">`
-		if !bytes.Contains(body, []byte(expectedSnippet)) {
-			t.Errorf("Test %d: Expected Response Body to contain %q but was %q",
-				i, expectedSnippet, body)
-		}
-	}
-}
-
-func TestParametersRedirect(t *testing.T) {
-	re := Redirect{
-		Rules: []Rule{
-			{From: "/", Meta: false, To: "http://example.com/"},
-		},
-	}
-
-	req, err := http.NewRequest("GET", "/a?b=c", nil)
-	if err != nil {
-		t.Fatalf("Test: Could not create HTTP request: %v", err)
-	}
-
-	rec := httptest.NewRecorder()
-	re.ServeHTTP(rec, req)
-
-	if "http://example.com/a?b=c" != rec.Header().Get("Location") {
-		t.Fatalf("Test: expected location header %q but was %q", "http://example.com/a?b=c", rec.Header().Get("Location"))
-	}
-
-	re = Redirect{
-		Rules: []Rule{
-			{From: "/", Meta: false, To: "http://example.com/a?b=c"},
-		},
-	}
-
-	req, err = http.NewRequest("GET", "/d?e=f", nil)
-	if err != nil {
-		t.Fatalf("Test: Could not create HTTP request: %v", err)
-	}
-
-	re.ServeHTTP(rec, req)
-
-	if "http://example.com/a/d?b=c&e=f" != rec.Header().Get("Location") {
-		t.Fatalf("Test: expected location header %q but was %q", "http://example.com/a/d?b=c&e=f", rec.Header().Get("Location"))
-	}
-}
-
 func TestRedirect(t *testing.T) {
 	for i, test := range []struct {
 		from             string
@@ -118,6 +52,72 @@ func TestRedirect(t *testing.T) {
 
 		if nextCalled && test.expectedLocation != "" {
 			t.Errorf("Test %d: Next handler was unexpectedly called", i)
+		}
+	}
+}
+
+func TestParametersRedirect(t *testing.T) {
+	re := Redirect{
+		Rules: []Rule{
+			{From: "/", Meta: false, To: "http://example.com{uri}"},
+		},
+	}
+
+	req, err := http.NewRequest("GET", "/a?b=c", nil)
+	if err != nil {
+		t.Fatalf("Test: Could not create HTTP request: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	re.ServeHTTP(rec, req)
+
+	if rec.Header().Get("Location") != "http://example.com/a?b=c" {
+		t.Fatalf("Test: expected location header %q but was %q", "http://example.com/a?b=c", rec.Header().Get("Location"))
+	}
+
+	re = Redirect{
+		Rules: []Rule{
+			{From: "/", Meta: false, To: "http://example.com/a{path}?b=c&{query}"},
+		},
+	}
+
+	req, err = http.NewRequest("GET", "/d?e=f", nil)
+	if err != nil {
+		t.Fatalf("Test: Could not create HTTP request: %v", err)
+	}
+
+	re.ServeHTTP(rec, req)
+
+	if "http://example.com/a/d?b=c&e=f" != rec.Header().Get("Location") {
+		t.Fatalf("Test: expected location header %q but was %q", "http://example.com/a/d?b=c&e=f", rec.Header().Get("Location"))
+	}
+}
+
+func TestMetaRedirect(t *testing.T) {
+	re := Redirect{
+		Rules: []Rule{
+			{From: "/whatever", Meta: true, To: "/something"},
+			{From: "/", Meta: true, To: "https://example.com/"},
+		},
+	}
+
+	for i, test := range re.Rules {
+		req, err := http.NewRequest("GET", test.From, nil)
+		if err != nil {
+			t.Fatalf("Test %d: Could not create HTTP request: %v", i, err)
+		}
+
+		rec := httptest.NewRecorder()
+		re.ServeHTTP(rec, req)
+
+		body, err := ioutil.ReadAll(rec.Body)
+		if err != nil {
+			t.Fatalf("Test %d: Could not read HTTP response body: %v", i, err)
+		}
+		expectedSnippet := `<meta http-equiv="refresh" content="0; URL='` + test.To + `'">`
+		if !bytes.Contains(body, []byte(expectedSnippet)) {
+			t.Errorf("Test %d: Expected Response Body to contain %q but was %q",
+				i, expectedSnippet, body)
 		}
 	}
 }

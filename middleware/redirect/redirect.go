@@ -6,9 +6,6 @@ import (
 	"fmt"
 	"html"
 	"net/http"
-	"net/url"
-	"path"
-	"strings"
 
 	"github.com/mholt/caddy/middleware"
 )
@@ -22,36 +19,13 @@ type Redirect struct {
 // ServeHTTP implements the middleware.Handler interface.
 func (rd Redirect) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	for _, rule := range rd.Rules {
-		if rule.From == "/" {
-			// Catchall redirect preserves path and query string
-			toURL, err := url.Parse(rule.To)
-			if err != nil {
-				return http.StatusInternalServerError, err
-			}
-			newPath := path.Join(toURL.Host, toURL.Path, r.URL.Path)
-			if strings.HasSuffix(r.URL.Path, "/") {
-				newPath = newPath + "/"
-			}
-			newPath = toURL.Scheme + "://" + newPath
-			parameters := toURL.Query()
-			for k, v := range r.URL.Query() {
-				parameters.Set(k, v[0])
-			}
-			if len(parameters) > 0 {
-				newPath = newPath + "?" + parameters.Encode()
-			}
+		if rule.From == "/" || r.URL.Path == rule.From {
+			to := middleware.NewReplacer(r, nil, "").Replace(rule.To)
 			if rule.Meta {
-				fmt.Fprintf(w, metaRedir, html.EscapeString(newPath))
+				safeTo := html.EscapeString(to)
+				fmt.Fprintf(w, metaRedir, safeTo, safeTo)
 			} else {
-				http.Redirect(w, r, newPath, rule.Code)
-			}
-			return 0, nil
-		}
-		if r.URL.Path == rule.From {
-			if rule.Meta {
-				fmt.Fprintf(w, metaRedir, html.EscapeString(rule.To))
-			} else {
-				http.Redirect(w, r, rule.To, rule.Code)
+				http.Redirect(w, r, to, rule.Code)
 			}
 			return 0, nil
 		}
@@ -66,9 +40,13 @@ type Rule struct {
 	Meta     bool
 }
 
-var metaRedir = `<html>
-<head>
-  <meta http-equiv="refresh" content="0;URL='%s'">
-</head>
-<body>redirecting...</body>
+// Script tag comes first since that will better imitate a redirect in the browser's
+// history, but the meta tag is a fallback for most non-JS clients.
+const metaRedir = `<!DOCTYPE html>
+<html>
+	<head>
+		<script>window.location.replace("%s");</script>
+		<meta http-equiv="refresh" content="0; URL='%s'">
+	</head>
+	<body>Redirecting...</body>
 </html>`
