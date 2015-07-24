@@ -131,8 +131,10 @@ func (fi FileInfo) HumanModTime(format string) string {
 var IndexPages = []string{
 	"index.html",
 	"index.htm",
+	"index.txt",
 	"default.html",
 	"default.htm",
+	"default.txt",
 }
 
 func directoryListing(files []os.FileInfo, urlPath string, canGoUp bool) (Listing, error) {
