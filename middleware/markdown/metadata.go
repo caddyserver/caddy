@@ -207,17 +207,18 @@ func extractMetadata(parser MetadataParser, b []byte) (metadata []byte, markdown
 	// Read remaining lines until closing identifier is found
 	for {
 		line, err := reader.ReadBytes('\n')
-		if err != nil {
-			if err == io.EOF {
-				// no closing metadata identifier found
-				return nil, nil, fmt.Errorf("metadata not closed ('%s' not found)", parser.Closing())
-			}
+		if err != nil && err != io.EOF {
 			return nil, nil, err
 		}
 
 		// if closing identifier found, the remaining bytes must be markdown content
 		if bytes.Equal(bytes.TrimSpace(line), parser.Closing()) {
 			break
+		}
+
+		// if file ended, by this point no closing identifier was found
+		if err == io.EOF {
+			return nil, nil, fmt.Errorf("metadata not closed ('%s' not found)", parser.Closing())
 		}
 
 		metaBuf.Write(line)
