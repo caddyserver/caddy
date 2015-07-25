@@ -62,7 +62,8 @@ func Markdown(c *Controller) (middleware.Middleware, error) {
 						reqPath = "/" + reqPath
 
 						// Generate the static file
-						_, err = md.Process(cfg, reqPath, body)
+						ctx := middleware.Context{Root: md.FileSys}
+						_, err = md.Process(cfg, reqPath, body, ctx)
 						if err != nil {
 							return err
 						}

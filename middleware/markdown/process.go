@@ -9,6 +9,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/mholt/caddy/middleware"
 	"github.com/russross/blackfriday"
 )
 
@@ -17,9 +18,14 @@ const (
 	DefaultStaticDir = "generated_site"
 )
 
+type MarkdownData struct {
+	middleware.Context
+	Doc map[string]interface{}
+}
+
 // Process processes the contents of a page in b. It parses the metadata
 // (if any) and uses the template (if found).
-func (md Markdown) Process(c Config, requestPath string, b []byte) ([]byte, error) {
+func (md Markdown) Process(c Config, requestPath string, b []byte, ctx middleware.Context) ([]byte, error) {
 	var metadata = Metadata{Variables: make(map[string]interface{})}
 	var markdown []byte
 	var err error
@@ -61,14 +67,21 @@ func (md Markdown) Process(c Config, requestPath string, b []byte) ([]byte, erro
 	markdown = blackfriday.Markdown(markdown, c.Renderer, 0)
 
 	// set it as body for template
-	metadata.Variables["markdown"] = string(markdown)
+	metadata.Variables["body"] = string(markdown)
+	title := metadata.Title
+	if title == "" {
+		title = filepath.Base(requestPath)
+		var extension = filepath.Ext(requestPath)
+		title = title[0 : len(title)-len(extension)]
+	}
+	metadata.Variables["title"] = title
 
-	return md.processTemplate(c, requestPath, tmpl, metadata)
+	return md.processTemplate(c, requestPath, tmpl, metadata, ctx)
 }
 
 // processTemplate processes a template given a requestPath,
 // template (tmpl) and metadata
-func (md Markdown) processTemplate(c Config, requestPath string, tmpl []byte, metadata Metadata) ([]byte, error) {
+func (md Markdown) processTemplate(c Config, requestPath string, tmpl []byte, metadata Metadata, ctx middleware.Context) ([]byte, error) {
 	// if template is not specified,
 	// use the default template
 	if tmpl == nil {
@@ -81,7 +94,12 @@ func (md Markdown) processTemplate(c Config, requestPath string, tmpl []byte, me
 	if err != nil {
 		return nil, err
 	}
-	if err = t.Execute(b, metadata.Variables); err != nil {
+	mdData := MarkdownData{
+		Context: ctx,
+		Doc:     metadata.Variables,
+	}
+
+	if err = t.Execute(b, mdData); err != nil {
 		return nil, err
 	}
 
@@ -148,15 +166,7 @@ func defaultTemplate(c Config, metadata Metadata, requestPath string) []byte {
 	}
 
 	// Title is first line (length-limited), otherwise filename
-	title := metadata.Title
-	if title == "" {
-		title = filepath.Base(requestPath)
-		if body, _ := metadata.Variables["markdown"].([]byte); len(body) > 128 {
-			title = string(body[:128])
-		} else if len(body) > 0 {
-			title = string(body)
-		}
-	}
+	title, _ := metadata.Variables["title"].(string)
 
 	html := []byte(htmlTemplate)
 	html = bytes.Replace(html, []byte("{{title}}"), []byte(title), 1)
@@ -176,7 +186,7 @@ const (
 		{{js}}
 	</head>
 	<body>
-		{{.markdown}}
+		{{.Doc.body}}
 	</body>
 </html>`
 	cssTemplate = `<link rel="stylesheet" href="{{url}}">`

@@ -5,13 +5,13 @@ package browse
 import (
 	"bytes"
 	"errors"
-	"html/template"
 	"net/http"
 	"net/url"
 	"os"
 	"path"
 	"sort"
 	"strings"
+	"text/template"
 	"time"
 
 	"github.com/dustin/go-humanize"
@@ -51,6 +51,8 @@ type Listing struct {
 
 	// And which order
 	Order string
+
+	middleware.Context
 }
 
 // FileInfo is the info about a particular file or directory
@@ -137,8 +139,9 @@ var IndexPages = []string{
 	"default.txt",
 }
 
-func directoryListing(files []os.FileInfo, urlPath string, canGoUp bool) (Listing, error) {
+func directoryListing(files []os.FileInfo, r *http.Request, canGoUp bool, root string) (Listing, error) {
 	var fileinfos []FileInfo
+	var urlPath = r.URL.Path
 	for _, f := range files {
 		name := f.Name()
 
@@ -170,6 +173,11 @@ func directoryListing(files []os.FileInfo, urlPath string, canGoUp bool) (Listin
 		Path:    urlPath,
 		CanGoUp: canGoUp,
 		Items:   fileinfos,
+		Context: middleware.Context{
+			Root: http.Dir(root),
+			Req:  r,
+			URL:  r.URL,
+		},
 	}, nil
 }
 
@@ -224,7 +232,7 @@ func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			}
 		}
 		// Assemble listing of directory contents
-		listing, err := directoryListing(files, r.URL.Path, canGoUp)
+		listing, err := directoryListing(files, r, canGoUp, b.Root)
 		if err != nil { // directory isn't browsable
 			continue
 		}

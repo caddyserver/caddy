@@ -1,9 +1,14 @@
 package browse
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"sort"
 	"testing"
+	"text/template"
 	"time"
+
+	"github.com/mholt/caddy/middleware"
 )
 
 // "sort" package has "IsSorted" function, but no "IsReversed";
@@ -92,5 +97,61 @@ func TestSort(t *testing.T) {
 	listing.applySort()
 	if !isReversed(byTime(listing)) {
 		t.Errorf("The listing isn't reversed by time: %v", listing.Items)
+	}
+}
+
+func TestBrowseTemplate(t *testing.T) {
+	tmpl, err := template.ParseFiles("testdata/photos.tpl")
+	if err != nil {
+		t.Fatalf("An error occured while parsing the template: %v", err)
+	}
+
+	b := Browse{
+		Next: middleware.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
+			t.Fatalf("Next shouldn't be called")
+			return 0, nil
+		}),
+		Root: "./testdata",
+		Configs: []Config{
+			Config{
+				PathScope: "/photos",
+				Template:  tmpl,
+			},
+		},
+	}
+
+	req, err := http.NewRequest("GET", "/photos/", nil)
+	if err != nil {
+		t.Fatalf("Test: Could not create HTTP request: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+
+	b.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Wrong status, expected %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	respBody := rec.Body.String()
+	expectedBody := `<!DOCTYPE html>
+<html>
+<head>
+<title>Template</title>
+</head>
+<body>
+<h1>Header</h1>
+
+<h1>/photos/</h1>
+
+<a href="test.html">test.html</a><br>
+
+<a href="test2.html">test2.html</a><br>
+
+</body>
+</html>
+`
+
+	if respBody != expectedBody {
+		t.Fatalf("Expected body: %v got: %v", expectedBody, respBody)
 	}
 }
