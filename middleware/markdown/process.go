@@ -68,7 +68,13 @@ func (md Markdown) Process(c Config, requestPath string, b []byte, ctx middlewar
 
 	// set it as body for template
 	metadata.Variables["body"] = string(markdown)
-	metadata.Variables["title"] = metadata.Title
+	title := metadata.Title
+	if title == "" {
+		title = filepath.Base(requestPath)
+		var extension = filepath.Ext(requestPath)
+		title = title[0 : len(title)-len(extension)]
+	}
+	metadata.Variables["title"] = title
 
 	return md.processTemplate(c, requestPath, tmpl, metadata, ctx)
 }
@@ -160,15 +166,7 @@ func defaultTemplate(c Config, metadata Metadata, requestPath string) []byte {
 	}
 
 	// Title is first line (length-limited), otherwise filename
-	title := metadata.Title
-	if title == "" {
-		title = filepath.Base(requestPath)
-		if body, _ := metadata.Variables["body"].([]byte); len(body) > 128 {
-			title = string(body[:128])
-		} else if len(body) > 0 {
-			title = string(body)
-		}
-	}
+	title, _ := metadata.Variables["title"].(string)
 
 	html := []byte(htmlTemplate)
 	html = bytes.Replace(html, []byte("{{title}}"), []byte(title), 1)

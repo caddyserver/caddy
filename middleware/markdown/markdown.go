@@ -3,7 +3,6 @@
 package markdown
 
 import (
-	"fmt"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -126,7 +125,6 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 					URL:  r.URL,
 				}
 				html, err := md.Process(m, fpath, body, ctx)
-				fmt.Printf("%v", html)
 				if err != nil {
 					return http.StatusInternalServerError, err
 				}
