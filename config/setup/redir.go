@@ -82,6 +82,8 @@ func redirParse(c *Controller) ([]redirect.Rule, error) {
 			switch len(insideArgs) {
 			case 1:
 				// To specified (catch-all redirect)
+				// Not sure why user is doing this in a table, as it causes all other redirects to be ignored.
+				// As such, this feature remains undocumented.
 				rule.From = "/"
 				rule.To = insideArgs[0]
 			case 2:

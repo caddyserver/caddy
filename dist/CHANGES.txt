@@ -6,6 +6,7 @@ CHANGES
 - markdown: Fix for large markdown files
 - redir: Can use variables like log formats can
 - redir: Catch-all redirects no longer preserve path; use {uri} instead
+- redir: Create redirect tables by opening a redir block
 
 
 0.7.3 (July 15, 2015)
