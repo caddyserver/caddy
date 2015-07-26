@@ -20,13 +20,13 @@ const (
 
 type MarkdownData struct {
 	middleware.Context
-	Doc map[string]interface{}
+	Doc map[string]string
 }
 
 // Process processes the contents of a page in b. It parses the metadata
 // (if any) and uses the template (if found).
 func (md Markdown) Process(c Config, requestPath string, b []byte, ctx middleware.Context) ([]byte, error) {
-	var metadata = Metadata{Variables: make(map[string]interface{})}
+	var metadata = Metadata{Variables: make(map[string]string)}
 	var markdown []byte
 	var err error
 
@@ -166,7 +166,7 @@ func defaultTemplate(c Config, metadata Metadata, requestPath string) []byte {
 	}
 
 	// Title is first line (length-limited), otherwise filename
-	title, _ := metadata.Variables["title"].(string)
+	title, _ := metadata.Variables["title"]
 
 	html := []byte(htmlTemplate)
 	html = bytes.Replace(html, []byte("{{title}}"), []byte(title), 1)

@@ -98,7 +98,7 @@ func TestParsers(t *testing.T) {
 	expected := Metadata{
 		Title:     "A title",
 		Template:  "default",
-		Variables: map[string]interface{}{"name": "value"},
+		Variables: map[string]string{"name": "value"},
 	}
 	compare := func(m Metadata) bool {
 		if m.Title != expected.Title {
