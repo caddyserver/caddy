@@ -13,9 +13,9 @@ import (
 
 var (
 	parsers = []MetadataParser{
-		&JSONMetadataParser{metadata: Metadata{Variables: make(map[string]interface{})}},
-		&TOMLMetadataParser{metadata: Metadata{Variables: make(map[string]interface{})}},
-		&YAMLMetadataParser{metadata: Metadata{Variables: make(map[string]interface{})}},
+		&JSONMetadataParser{metadata: Metadata{Variables: make(map[string]string)}},
+		&TOMLMetadataParser{metadata: Metadata{Variables: make(map[string]string)}},
+		&YAMLMetadataParser{metadata: Metadata{Variables: make(map[string]string)}},
 	}
 )
 
@@ -28,7 +28,7 @@ type Metadata struct {
 	Template string
 
 	// Variables to be used with Template
-	Variables map[string]interface{}
+	Variables map[string]string
 }
 
 // load loads parsed values in parsedMap into Metadata
@@ -40,7 +40,7 @@ func (m *Metadata) load(parsedMap map[string]interface{}) {
 		m.Template, _ = template.(string)
 	}
 	if variables, ok := parsedMap["variables"]; ok {
-		m.Variables, _ = variables.(map[string]interface{})
+		m.Variables, _ = variables.(map[string]string)
 	}
 }
 
@@ -75,6 +75,15 @@ func (j *JSONMetadataParser) Parse(b []byte) ([]byte, error) {
 	decoder := json.NewDecoder(bytes.NewReader(b))
 	if err := decoder.Decode(&m); err != nil {
 		return b, err
+	}
+	if vars, ok := m["variables"].(map[string]interface{}); ok {
+		vars1 := make(map[string]string)
+		for k, v := range vars {
+			if val, ok := v.(string); ok {
+				vars1[k] = val
+			}
+		}
+		m["variables"] = vars1
 	}
 
 	j.metadata.load(m)
@@ -120,6 +129,15 @@ func (t *TOMLMetadataParser) Parse(b []byte) ([]byte, error) {
 	if err := toml.Unmarshal(b, &m); err != nil {
 		return markdown, err
 	}
+	if vars, ok := m["variables"].(map[string]interface{}); ok {
+		vars1 := make(map[string]string)
+		for k, v := range vars {
+			if val, ok := v.(string); ok {
+				vars1[k] = val
+			}
+		}
+		m["variables"] = vars1
+	}
 	t.metadata.load(m)
 	return markdown, nil
 }
@@ -160,10 +178,12 @@ func (y *YAMLMetadataParser) Parse(b []byte) ([]byte, error) {
 	// convert variables (if present) to map[string]interface{}
 	// to match expected type
 	if vars, ok := m["variables"].(map[interface{}]interface{}); ok {
-		vars1 := make(map[string]interface{})
+		vars1 := make(map[string]string)
 		for k, v := range vars {
 			if key, ok := k.(string); ok {
-				vars1[key] = v
+				if val, ok := v.(string); ok {
+					vars1[key] = val
+				}
 			}
 		}
 		m["variables"] = vars1
