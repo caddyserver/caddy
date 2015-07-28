@@ -20,7 +20,8 @@ const (
 
 type MarkdownData struct {
 	middleware.Context
-	Doc map[string]string
+	Doc   map[string]string
+	Links []PageLink
 }
 
 // Process processes the contents of a page in b. It parses the metadata
@@ -97,9 +98,14 @@ func (md Markdown) processTemplate(c Config, requestPath string, tmpl []byte, me
 	mdData := MarkdownData{
 		Context: ctx,
 		Doc:     metadata.Variables,
+		Links:   c.Links,
 	}
 
-	if err = t.Execute(b, mdData); err != nil {
+	pagesMutex.RLock()
+	err = t.Execute(b, mdData)
+	pagesMutex.RUnlock()
+
+	if err != nil {
 		return nil, err
 	}
 

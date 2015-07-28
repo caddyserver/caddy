@@ -9,14 +9,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"gopkg.in/yaml.v2"
-)
-
-var (
-	parsers = []MetadataParser{
-		&JSONMetadataParser{metadata: Metadata{Variables: make(map[string]string)}},
-		&TOMLMetadataParser{metadata: Metadata{Variables: make(map[string]string)}},
-		&YAMLMetadataParser{metadata: Metadata{Variables: make(map[string]string)}},
-	}
+	"time"
 )
 
 // Metadata stores a page's metadata
@@ -27,20 +20,31 @@ type Metadata struct {
 	// Page template
 	Template string
 
+	// Publish date
+	Date time.Time
+
 	// Variables to be used with Template
 	Variables map[string]string
 }
 
 // load loads parsed values in parsedMap into Metadata
 func (m *Metadata) load(parsedMap map[string]interface{}) {
-	if template, ok := parsedMap["title"]; ok {
-		m.Title, _ = template.(string)
+	if title, ok := parsedMap["title"]; ok {
+		m.Title, _ = title.(string)
 	}
 	if template, ok := parsedMap["template"]; ok {
 		m.Template, _ = template.(string)
 	}
-	if variables, ok := parsedMap["variables"]; ok {
-		m.Variables, _ = variables.(map[string]string)
+	if date, ok := parsedMap["date"].(string); ok {
+		if t, err := time.Parse(timeLayout, date); err == nil {
+			m.Date = t
+		}
+	}
+	// store everything as a variable
+	for key, val := range parsedMap {
+		if v, ok := val.(string); ok {
+			m.Variables[key] = v
+		}
 	}
 }
 
@@ -62,7 +66,7 @@ type MetadataParser interface {
 	Metadata() Metadata
 }
 
-// JSONMetadataParser is the MetdataParser for JSON
+// JSONMetadataParser is the MetadataParser for JSON
 type JSONMetadataParser struct {
 	metadata Metadata
 }
@@ -76,16 +80,6 @@ func (j *JSONMetadataParser) Parse(b []byte) ([]byte, error) {
 	if err := decoder.Decode(&m); err != nil {
 		return b, err
 	}
-	if vars, ok := m["variables"].(map[string]interface{}); ok {
-		vars1 := make(map[string]string)
-		for k, v := range vars {
-			if val, ok := v.(string); ok {
-				vars1[k] = val
-			}
-		}
-		m["variables"] = vars1
-	}
-
 	j.metadata.load(m)
 
 	// Retrieve remaining bytes after decoding
@@ -129,15 +123,6 @@ func (t *TOMLMetadataParser) Parse(b []byte) ([]byte, error) {
 	if err := toml.Unmarshal(b, &m); err != nil {
 		return markdown, err
 	}
-	if vars, ok := m["variables"].(map[string]interface{}); ok {
-		vars1 := make(map[string]string)
-		for k, v := range vars {
-			if val, ok := v.(string); ok {
-				vars1[k] = val
-			}
-		}
-		m["variables"] = vars1
-	}
 	t.metadata.load(m)
 	return markdown, nil
 }
@@ -174,21 +159,6 @@ func (y *YAMLMetadataParser) Parse(b []byte) ([]byte, error) {
 	if err := yaml.Unmarshal(b, &m); err != nil {
 		return markdown, err
 	}
-
-	// convert variables (if present) to map[string]interface{}
-	// to match expected type
-	if vars, ok := m["variables"].(map[interface{}]interface{}); ok {
-		vars1 := make(map[string]string)
-		for k, v := range vars {
-			if key, ok := k.(string); ok {
-				if val, ok := v.(string); ok {
-					vars1[key] = val
-				}
-			}
-		}
-		m["variables"] = vars1
-	}
-
 	y.metadata.load(m)
 	return markdown, nil
 }
@@ -260,10 +230,19 @@ func findParser(b []byte) MetadataParser {
 		return nil
 	}
 	line = bytes.TrimSpace(line)
-	for _, parser := range parsers {
+	for _, parser := range parsers() {
 		if bytes.Equal(parser.Opening(), line) {
 			return parser
 		}
 	}
 	return nil
+}
+
+// parsers returns all available parsers
+func parsers() []MetadataParser {
+	return []MetadataParser{
+		&JSONMetadataParser{metadata: Metadata{Variables: make(map[string]string)}},
+		&TOMLMetadataParser{metadata: Metadata{Variables: make(map[string]string)}},
+		&YAMLMetadataParser{metadata: Metadata{Variables: make(map[string]string)}},
+	}
 }

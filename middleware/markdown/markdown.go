@@ -10,6 +10,7 @@ import (
 
 	"github.com/mholt/caddy/middleware"
 	"github.com/russross/blackfriday"
+	//	"log"
 )
 
 // Markdown implements a layer of middleware that serves
@@ -64,6 +65,9 @@ type Config struct {
 	// Map of request URL to static files generated
 	StaticFiles map[string]string
 
+	// Links to all markdown pages ordered by date.
+	Links []PageLink
+
 	// Directory to store static files
 	StaticDir string
 }
@@ -112,6 +116,15 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 							return http.StatusNotFound, nil
 						}
 					}
+				}
+
+				if m.StaticDir != "" {
+					// Markdown modified or new. Update links.
+					//					go func() {
+					//						if err := GenerateLinks(md, &md.Configs[i]); err != nil {
+					//							log.Println(err)
+					//						}
+					//					}()
 				}
 
 				body, err := ioutil.ReadAll(f)
