@@ -55,7 +55,7 @@ func TestMarkdown(t *testing.T) {
 						Title:   "first",
 						Summary: "",
 						Date:    time.Now(),
-						Url:     "/og/first.md",
+						URL:     "/og/first.md",
 					},
 				},
 			},
@@ -191,8 +191,8 @@ func getTrue() bool {
 
 	for i, c := range md.Configs {
 		log.Printf("Test number: %d, configuration links: %v, config: %v", i, c.Links, c)
-		if c.Links[0].Url != expectedLinks[i] {
-			t.Fatalf("Expected %v got %v", expectedLinks[i], c.Links[0].Url)
+		if c.Links[0].URL != expectedLinks[i] {
+			t.Fatalf("Expected %v got %v", expectedLinks[i], c.Links[0].URL)
 		}
 	}
 
