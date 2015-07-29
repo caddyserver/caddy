@@ -28,12 +28,12 @@ type PageLink struct {
 	Url     string
 }
 
-// pageLinkSorter sorts PageLink by newest date to oldest.
-type pageLinkSorter []PageLink
+// byDate sorts PageLink by newest date to oldest.
+type byDate []PageLink
 
-func (p pageLinkSorter) Len() int           { return len(p) }
-func (p pageLinkSorter) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
-func (p pageLinkSorter) Less(i, j int) bool { return p[i].Date.After(p[j].Date) }
+func (p byDate) Len() int           { return len(p) }
+func (p byDate) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
+func (p byDate) Less(i, j int) bool { return p[i].Date.After(p[j].Date) }
 
 type linkGen struct {
 	generating bool
@@ -120,7 +120,7 @@ func (l *linkGen) generateLinks(md Markdown, cfg *Config) {
 	})
 
 	// sort by newest date
-	sort.Sort(pageLinkSorter(cfg.Links))
+	sort.Sort(byDate(cfg.Links))
 	cfg.Unlock()
 
 	l.Lock()
