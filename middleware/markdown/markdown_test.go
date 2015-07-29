@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/mholt/caddy/middleware"
@@ -18,20 +19,24 @@ func TestMarkdown(t *testing.T) {
 		FileSys: http.Dir("./testdata"),
 		Configs: []Config{
 			Config{
-				Renderer:   blackfriday.HtmlRenderer(0, "", ""),
-				PathScope:  "/blog",
-				Extensions: []string{".md"},
-				Styles:     []string{},
-				Scripts:    []string{},
-				Templates:  templates,
+				Renderer:    blackfriday.HtmlRenderer(0, "", ""),
+				PathScope:   "/blog",
+				Extensions:  []string{".md"},
+				Styles:      []string{},
+				Scripts:     []string{},
+				Templates:   templates,
+				StaticDir:   DefaultStaticDir,
+				StaticFiles: make(map[string]string),
 			},
 			Config{
-				Renderer:   blackfriday.HtmlRenderer(0, "", ""),
-				PathScope:  "/log",
-				Extensions: []string{".md"},
-				Styles:     []string{"/resources/css/log.css", "/resources/css/default.css"},
-				Scripts:    []string{"/resources/js/log.js", "/resources/js/default.js"},
-				Templates:  make(map[string]string),
+				Renderer:    blackfriday.HtmlRenderer(0, "", ""),
+				PathScope:   "/log",
+				Extensions:  []string{".md"},
+				Styles:      []string{"/resources/css/log.css", "/resources/css/default.css"},
+				Scripts:     []string{"/resources/js/log.js", "/resources/js/default.js"},
+				Templates:   make(map[string]string),
+				StaticDir:   DefaultStaticDir,
+				StaticFiles: make(map[string]string),
 			},
 		},
 		IndexFiles: []string{"index.html"},
@@ -123,4 +128,34 @@ func getTrue() bool {
 	if respBody != expectedBody {
 		t.Fatalf("Expected body: %v got: %v", expectedBody, respBody)
 	}
+
+	expectedLinks := []string{
+		"/blog/test.md",
+		"/log/test.md",
+	}
+
+	for i, c := range md.Configs {
+		if c.Links[0].Url != expectedLinks[i] {
+			t.Fatalf("Expected %v got %v", expectedLinks[i], c.Links[0].Url)
+		}
+	}
+
+	// attempt to trigger race condition
+	var w sync.WaitGroup
+	f := func() {
+		req, err := http.NewRequest("GET", "/log/test.md", nil)
+		if err != nil {
+			t.Fatalf("Could not create HTTP request: %v", err)
+		}
+		rec := httptest.NewRecorder()
+
+		md.ServeHTTP(rec, req)
+		w.Done()
+	}
+	for i := 0; i < 5; i++ {
+		w.Add(1)
+		go f()
+	}
+	w.Wait()
+
 }
