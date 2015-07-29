@@ -1,12 +1,17 @@
 CHANGES
 
 <master>
-- browse: Sort preference persisted in cookie
+- browse: Sorting preference persisted in cookie
 - browse: Added index.txt and default.txt to list of default files
-- markdown: Fix for large markdown files
-- redir: Can use variables like log formats can
+- browse: Template files may now use Caddy template actions
+- markdown: Template files may now use Caddy template actions
+- markdown: Several bug fixes, especially for large and empty Markdown files
+- markdown: Generate index pages to link to markdown pages (sitegen only)
+- markdown: Flatten structure of front matter, changed template variables
+- redir: Can use variables (placeholders) just as log formats can
 - redir: Catch-all redirects no longer preserve path; use {uri} instead
 - redir: Create redirect tables by opening a redir block
+- Other minor internal improvements and more tests
 
 
 0.7.3 (July 15, 2015)
