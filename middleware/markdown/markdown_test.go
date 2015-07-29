@@ -3,8 +3,10 @@ package markdown
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mholt/caddy/middleware"
 	"github.com/russross/blackfriday"
@@ -139,6 +141,10 @@ func getTrue() bool {
 		t.Fatalf("Could not create HTTP request: %v", err)
 	}
 	rec = httptest.NewRecorder()
+	currenttime := time.Now().Local().Add(-time.Second)
+	err = os.Chtimes("testdata/og/first.md", currenttime, currenttime)
+	currenttime = time.Now().Local()
+	err = os.Chtimes("testdata/og_static/og/first.md/index.html", currenttime, currenttime)
 
 	md.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
