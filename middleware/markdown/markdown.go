@@ -4,13 +4,14 @@ package markdown
 
 import (
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/mholt/caddy/middleware"
 	"github.com/russross/blackfriday"
-	//	"log"
 )
 
 // Markdown implements a layer of middleware that serves
@@ -70,11 +71,14 @@ type Config struct {
 
 	// Directory to store static files
 	StaticDir string
+
+	sync.RWMutex
 }
 
 // ServeHTTP implements the http.Handler interface.
 func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
-	for _, m := range md.Configs {
+	for i := range md.Configs {
+		m := &md.Configs[i]
 		if !middleware.Path(r.URL.Path).Matches(m.PathScope) {
 			continue
 		}
@@ -120,11 +124,9 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 
 				if m.StaticDir != "" {
 					// Markdown modified or new. Update links.
-					//					go func() {
-					//						if err := GenerateLinks(md, &md.Configs[i]); err != nil {
-					//							log.Println(err)
-					//						}
-					//					}()
+					if err := GenerateLinks(md, m); err != nil {
+						log.Println(err)
+					}
 				}
 
 				body, err := ioutil.ReadAll(f)
@@ -137,7 +139,7 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 					Req:  r,
 					URL:  r.URL,
 				}
-				html, err := md.Process(m, fpath, body, ctx)
+				html, err := md.Process(*m, fpath, body, ctx)
 				if err != nil {
 					return http.StatusInternalServerError, err
 				}

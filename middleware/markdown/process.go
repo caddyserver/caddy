@@ -101,9 +101,9 @@ func (md Markdown) processTemplate(c Config, requestPath string, tmpl []byte, me
 		Links:   c.Links,
 	}
 
-	pagesMutex.RLock()
+	c.RLock()
 	err = t.Execute(b, mdData)
-	pagesMutex.RUnlock()
+	c.RUnlock()
 
 	if err != nil {
 		return nil, err
