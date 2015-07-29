@@ -48,7 +48,11 @@ func (r PlaintextRenderer) TitleBlock(out *bytes.Buffer, text []byte) {}
 
 func (r PlaintextRenderer) AutoLink(out *bytes.Buffer, link []byte, kind int) {}
 
-func (r PlaintextRenderer) CodeSpan(out *bytes.Buffer, text []byte) {}
+func (r PlaintextRenderer) CodeSpan(out *bytes.Buffer, text []byte) {
+	out.Write([]byte("`"))
+	out.Write(text)
+	out.Write([]byte("`"))
+}
 
 func (r PlaintextRenderer) DoubleEmphasis(out *bytes.Buffer, text []byte) {
 	out.Write(text)

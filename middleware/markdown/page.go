@@ -1,6 +1,7 @@
 package markdown
 
 import (
+	"bytes"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -16,8 +17,8 @@ const (
 	// Date format YYYY-MM-DD HH:MM:SS
 	timeLayout = `2006-01-02 15:04:05`
 
-	// Length of page summary.
-	summaryLen = 150
+	// Maximum length of page summary.
+	summaryLen = 500
 )
 
 // PageLink represents a statically generated markdown page.
@@ -25,7 +26,7 @@ type PageLink struct {
 	Title   string
 	Summary string
 	Date    time.Time
-	Url     string
+	URL     string
 }
 
 // byDate sorts PageLink by newest date to oldest.
@@ -99,15 +100,22 @@ func (l *linkGen) generateLinks(md Markdown, cfg *Config) {
 					return err
 				}
 
+				// truncate summary to maximum length
 				if len(summary) > summaryLen {
 					summary = summary[:summaryLen]
+
+					// trim to nearest word
+					lastSpace := bytes.LastIndex(summary, []byte(" "))
+					if lastSpace != -1 {
+						summary = summary[:lastSpace]
+					}
 				}
 
 				metadata := parser.Metadata()
 
 				cfg.Links = append(cfg.Links, PageLink{
 					Title:   metadata.Title,
-					Url:     reqPath,
+					URL:     reqPath,
 					Date:    metadata.Date,
 					Summary: string(blackfriday.Markdown(summary, PlaintextRenderer{}, 0)),
 				})
