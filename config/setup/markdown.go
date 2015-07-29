@@ -34,6 +34,10 @@ func Markdown(c *Controller) (middleware.Middleware, error) {
 				continue
 			}
 
+			if err := markdown.GenerateLinks(md, &cfg); err != nil {
+				return err
+			}
+
 			// If generated site already exists, clear it out
 			_, err := os.Stat(cfg.StaticDir)
 			if err == nil {

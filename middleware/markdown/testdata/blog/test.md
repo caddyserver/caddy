@@ -1,7 +1,6 @@
 ---
 title: Markdown test
-variables:
-    sitename: A Caddy website
+sitename: A Caddy website
 ---
 
 ## Welcome on the blog

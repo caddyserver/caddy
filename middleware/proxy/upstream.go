@@ -109,6 +109,8 @@ func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
 					return upstreams, c.ArgErr()
 				}
 				upstream.WithoutPathPrefix = c.Val()
+			default:
+				return upstreams, c.Errf("unknown property '%s'", c.Val())
 			}
 		}
 

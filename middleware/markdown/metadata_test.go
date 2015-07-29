@@ -11,13 +11,11 @@ import (
 var TOML = [4]string{`
 title = "A title"
 template = "default"
-[variables]
 name = "value"
 `,
 	`+++
 title = "A title"
 template = "default"
-[variables]
 name = "value"
 +++
 Page content
@@ -25,7 +23,6 @@ Page content
 	`+++
 title = "A title"
 template = "default"
-[variables]
 name = "value"
 	`,
 	`title = "A title" template = "default" [variables] name = "value"`,
@@ -34,38 +31,31 @@ name = "value"
 var YAML = [4]string{`
 title : A title
 template : default
-variables :
-  name : value
+name : value
 `,
 	`---
 title : A title
 template : default
-variables :
-  name : value
+name : value
 ---
 Page content
 `,
 	`---
 title : A title
 template : default
-variables :
-  name : value
+name : value
 `,
 	`title : A title template : default variables : name : value`,
 }
 var JSON = [4]string{`
 	"title" : "A title",
 	"template" : "default",
-	"variables" : {
-		"name" : "value"
-	}
+	"name" : "value"
 `,
 	`{
 	"title" : "A title",
 	"template" : "default",
-	"variables" : {
-		"name" : "value"
-	}
+	"name" : "value"
 }
 Page content
 `,
@@ -73,17 +63,13 @@ Page content
 {
 	"title" : "A title",
 	"template" : "default",
-	"variables" : {
-		"name" : "value"
-	}
+	"name" : "value"
 `,
 	`
 {{
 	"title" : "A title",
 	"template" : "default",
-	"variables" : {
-		"name" : "value"
-	}
+	"name" : "value"
 }
 	`,
 }
@@ -96,9 +82,13 @@ func check(t *testing.T, err error) {
 
 func TestParsers(t *testing.T) {
 	expected := Metadata{
-		Title:     "A title",
-		Template:  "default",
-		Variables: map[string]string{"name": "value"},
+		Title:    "A title",
+		Template: "default",
+		Variables: map[string]string{
+			"name":     "value",
+			"title":    "A title",
+			"template": "default",
+		},
 	}
 	compare := func(m Metadata) bool {
 		if m.Title != expected.Title {
@@ -112,7 +102,7 @@ func TestParsers(t *testing.T) {
 				return false
 			}
 		}
-		return len(m.Variables) == 1
+		return len(m.Variables) == len(expected.Variables)
 	}
 
 	data := []struct {
@@ -120,9 +110,9 @@ func TestParsers(t *testing.T) {
 		testData [4]string
 		name     string
 	}{
-		{&JSONMetadataParser{}, JSON, "json"},
-		{&YAMLMetadataParser{}, YAML, "yaml"},
-		{&TOMLMetadataParser{}, TOML, "toml"},
+		{&JSONMetadataParser{metadata: Metadata{Variables: make(map[string]string)}}, JSON, "json"},
+		{&YAMLMetadataParser{metadata: Metadata{Variables: make(map[string]string)}}, YAML, "yaml"},
+		{&TOMLMetadataParser{metadata: Metadata{Variables: make(map[string]string)}}, TOML, "toml"},
 	}
 
 	for _, v := range data {
