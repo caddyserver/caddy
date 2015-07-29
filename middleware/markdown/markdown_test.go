@@ -1,11 +1,14 @@
 package markdown
 
 import (
+	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/mholt/caddy/middleware"
 	"github.com/russross/blackfriday"
@@ -37,6 +40,24 @@ func TestMarkdown(t *testing.T) {
 				Templates:   make(map[string]string),
 				StaticDir:   DefaultStaticDir,
 				StaticFiles: make(map[string]string),
+			},
+			Config{
+				Renderer:    blackfriday.HtmlRenderer(0, "", ""),
+				PathScope:   "/og",
+				Extensions:  []string{".md"},
+				Styles:      []string{},
+				Scripts:     []string{},
+				Templates:   templates,
+				StaticDir:   "testdata/og_static",
+				StaticFiles: map[string]string{"/og/first.md": "testdata/og_static/og/first.md/index.html"},
+				Links: []PageLink{
+					PageLink{
+						Title:   "first",
+						Summary: "",
+						Date:    time.Now(),
+						Url:     "/og/first.md",
+					},
+				},
 			},
 		},
 		IndexFiles: []string{"index.html"},
@@ -129,12 +150,47 @@ func getTrue() bool {
 		t.Fatalf("Expected body: %v got: %v", expectedBody, respBody)
 	}
 
+	req, err = http.NewRequest("GET", "/og/first.md", nil)
+	if err != nil {
+		t.Fatalf("Could not create HTTP request: %v", err)
+	}
+	rec = httptest.NewRecorder()
+	currenttime := time.Now().Local().Add(-time.Second)
+	err = os.Chtimes("testdata/og/first.md", currenttime, currenttime)
+	currenttime = time.Now().Local()
+	err = os.Chtimes("testdata/og_static/og/first.md/index.html", currenttime, currenttime)
+
+	md.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Wrong status, expected: %d and got %d", http.StatusOK, rec.Code)
+	}
+	respBody = rec.Body.String()
+	expectedBody = `<!DOCTYPE html>
+<html>
+<head>
+<title>first_post</title>
+</head>
+<body>
+<h1>Header title</h1>
+
+<h1>Test h1</h1>
+
+</body>
+</html>`
+	respBody = replacer.Replace(respBody)
+	expectedBody = replacer.Replace(expectedBody)
+	if respBody != expectedBody {
+		t.Fatalf("Expected body: %v got: %v", expectedBody, respBody)
+	}
+
 	expectedLinks := []string{
 		"/blog/test.md",
 		"/log/test.md",
+		"/og/first.md",
 	}
 
 	for i, c := range md.Configs {
+		log.Printf("Test number: %d, configuration links: %v, config: %v", i, c.Links, c)
 		if c.Links[0].Url != expectedLinks[i] {
 			t.Fatalf("Expected %v got %v", expectedLinks[i], c.Links[0].Url)
 		}
@@ -157,5 +213,9 @@ func getTrue() bool {
 		go f()
 	}
 	w.Wait()
+
+	if err = os.RemoveAll(DefaultStaticDir); err != nil {
+		t.Errorf("Error while removing the generated static files: %v", err)
+	}
 
 }
