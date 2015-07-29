@@ -40,7 +40,7 @@ func TestMarkdown(t *testing.T) {
 				Styles:      []string{},
 				Scripts:     []string{},
 				Templates:   templates,
-				StaticDir:   "/og_static",
+				StaticDir:   "testdata/og_static",
 				StaticFiles: map[string]string{"/og/first.md": "testdata/og_static/og/first.md/index.html"},
 			},
 		},
