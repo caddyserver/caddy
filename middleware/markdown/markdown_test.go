@@ -33,6 +33,16 @@ func TestMarkdown(t *testing.T) {
 				Scripts:    []string{"/resources/js/log.js", "/resources/js/default.js"},
 				Templates:  make(map[string]string),
 			},
+			Config{
+				Renderer:    blackfriday.HtmlRenderer(0, "", ""),
+				PathScope:   "/og",
+				Extensions:  []string{".md"},
+				Styles:      []string{},
+				Scripts:     []string{},
+				Templates:   templates,
+				StaticDir:   "/og_static",
+				StaticFiles: map[string]string{"/og/first.md": "testdata/og_static/og/first.md/index.html"},
+			},
 		},
 		IndexFiles: []string{"index.html"},
 		Next: middleware.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
@@ -118,6 +128,35 @@ func getTrue() bool {
 </html>`
 
 	replacer := strings.NewReplacer("\r", "", "\n", "")
+	respBody = replacer.Replace(respBody)
+	expectedBody = replacer.Replace(expectedBody)
+	if respBody != expectedBody {
+		t.Fatalf("Expected body: %v got: %v", expectedBody, respBody)
+	}
+
+	req, err = http.NewRequest("GET", "/og/first.md", nil)
+	if err != nil {
+		t.Fatalf("Could not create HTTP request: %v", err)
+	}
+	rec = httptest.NewRecorder()
+
+	md.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Wrong status, expected: %d and got %d", http.StatusOK, rec.Code)
+	}
+	respBody = rec.Body.String()
+	expectedBody = `<!DOCTYPE html>
+<html>
+<head>
+<title>first_post</title>
+</head>
+<body>
+<h1>Header title</h1>
+
+<h1>Test h1</h1>
+
+</body>
+</html>`
 	respBody = replacer.Replace(respBody)
 	expectedBody = replacer.Replace(expectedBody)
 	if respBody != expectedBody {
