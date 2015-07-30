@@ -1,9 +1,11 @@
 package setup
 
 import (
+	"io"
 	"log"
 	"os"
 
+	"github.com/hashicorp/go-syslog"
 	"github.com/mholt/caddy/middleware"
 	caddylog "github.com/mholt/caddy/middleware/log"
 	"github.com/mholt/caddy/server"
@@ -20,12 +22,17 @@ func Log(c *Controller) (middleware.Middleware, error) {
 	c.Startup = append(c.Startup, func() error {
 		for i := 0; i < len(rules); i++ {
 			var err error
-			var file *os.File
+			var file io.Writer
 
 			if rules[i].OutputFile == "stdout" {
 				file = os.Stdout
 			} else if rules[i].OutputFile == "stderr" {
 				file = os.Stderr
+			} else if rules[i].OutputFile == "syslog" {
+				file, err = gsyslog.NewLogger(gsyslog.LOG_NOTICE, "SYSLOG", "caddy")
+				if err != nil {
+					return err
+				}
 			} else {
 				file, err = os.OpenFile(rules[i].OutputFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
 				if err != nil {

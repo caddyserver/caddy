@@ -2,11 +2,13 @@ package setup
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path"
 	"strconv"
 
+	"github.com/hashicorp/go-syslog"
 	"github.com/mholt/caddy/middleware"
 	"github.com/mholt/caddy/middleware/errors"
 )
@@ -21,12 +23,17 @@ func Errors(c *Controller) (middleware.Middleware, error) {
 	// Open the log file for writing when the server starts
 	c.Startup = append(c.Startup, func() error {
 		var err error
-		var file *os.File
+		var file io.Writer
 
 		if handler.LogFile == "stdout" {
 			file = os.Stdout
 		} else if handler.LogFile == "stderr" {
 			file = os.Stderr
+		} else if handler.LogFile == "syslog" {
+			file, err = gsyslog.NewLogger(gsyslog.LOG_ERR, "SYSLOG", "caddy")
+			if err != nil {
+				return err
+			}
 		} else if handler.LogFile != "" {
 			file, err = os.OpenFile(handler.LogFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
 			if err != nil {
