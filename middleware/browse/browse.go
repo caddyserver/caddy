@@ -120,9 +120,10 @@ func (l Listing) applySort() {
 	}
 }
 
-// HumanSize returns the size of the file as a human-readable string.
+// HumanSize returns the size of the file as a human-readable string
+// in IEC format (i.e. power of 2 or base 1024).
 func (fi FileInfo) HumanSize() string {
-	return humanize.Bytes(uint64(fi.Size))
+	return humanize.IBytes(uint64(fi.Size))
 }
 
 // HumanModTime returns the modified time of the file as a human-readable string.
