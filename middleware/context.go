@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"text/template"
 	"time"
 )
@@ -13,7 +14,7 @@ import (
 // This file contains the context and functions available for
 // use in the templates.
 
-// context is the context with which templates are executed.
+// Context is the context with which Caddy templates are executed.
 type Context struct {
 	Root http.FileSystem
 	Req  *http.Request
@@ -48,8 +49,8 @@ func (c Context) Include(filename string) (string, error) {
 	return buf.String(), nil
 }
 
-// Date returns the current timestamp in the specified format
-func (c Context) Date(format string) string {
+// Now returns the current timestamp in the specified format.
+func (c Context) Now(format string) string {
 	return time.Now().Format(format)
 }
 
@@ -113,4 +114,18 @@ func (c Context) Method() string {
 // URL matches pattern.
 func (c Context) PathMatches(pattern string) bool {
 	return Path(c.Req.URL.Path).Matches(pattern)
+}
+
+// Truncate truncates the input string to the given length. If
+// input is shorter than length, the entire string is returned.
+func (c Context) Truncate(input string, length int) string {
+	if len(input) > length {
+		return input[:length]
+	}
+	return input
+}
+
+// Replace replaces instances of find in input with replacement.
+func (c Context) Replace(input, find, replacement string) string {
+	return strings.Replace(input, find, replacement, -1)
 }
