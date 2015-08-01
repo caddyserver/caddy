@@ -48,7 +48,8 @@ func Markdown(c *Controller) (middleware.Middleware, error) {
 			}
 
 			fp := filepath.Join(md.Root, cfg.PathScope)
-			filepath.Walk(fp, func(path string, info os.FileInfo, err error) error {
+
+			err = filepath.Walk(fp, func(path string, info os.FileInfo, err error) error {
 				for _, ext := range cfg.Extensions {
 					if !info.IsDir() && strings.HasSuffix(info.Name(), ext) {
 						// Load the file
@@ -75,9 +76,12 @@ func Markdown(c *Controller) (middleware.Middleware, error) {
 						break // don't try other file extensions
 					}
 				}
-
 				return nil
 			})
+
+			if err != nil {
+				return err
+			}
 		}
 
 		return nil
