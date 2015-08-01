@@ -68,7 +68,16 @@ func (l *linkGen) generateLinks(md Markdown, cfg *Config) {
 	l.generating = true
 	l.Unlock()
 
-	fp := filepath.Join(md.Root, cfg.PathScope)
+	fp := filepath.Join(md.Root, cfg.PathScope) // path to scan for .md files
+
+	// If the file path to scan for Markdown files (fp) does
+	// not exist, there are no markdown files to scan for.
+	if _, err := os.Stat(fp); os.IsNotExist(err) {
+		l.Lock()
+		l.lastErr = err
+		l.Unlock()
+		return
+	}
 
 	cfg.Links = []PageLink{}
 
