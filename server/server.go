@@ -83,18 +83,23 @@ func (s *Server) Serve() error {
 
 		// Execute shutdown commands on exit
 		if len(vh.config.Shutdown) > 0 {
-			go func() {
+			go func(vh virtualHost) {
+				// Wait for signal
 				interrupt := make(chan os.Signal, 1)
-				signal.Notify(interrupt, os.Interrupt, os.Kill) // TODO: syscall.SIGQUIT? (Ctrl+\, Unix-only)
+				signal.Notify(interrupt, os.Interrupt, os.Kill)
 				<-interrupt
+
+				// Run callbacks
+				exitCode := 0
 				for _, shutdownFunc := range vh.config.Shutdown {
 					err := shutdownFunc()
 					if err != nil {
-						log.Fatal(err)
+						exitCode = 1
+						log.Println(err)
 					}
 				}
-				os.Exit(0)
-			}()
+				os.Exit(exitCode) // BUG: Other shutdown goroutines might be running; use sync.WaitGroup
+			}(vh)
 		}
 	}
 

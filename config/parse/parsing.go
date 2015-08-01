@@ -9,34 +9,26 @@ import (
 
 type parser struct {
 	Dispenser
-	block multiServerBlock // current server block being parsed
-	eof   bool             // if we encounter a valid EOF in a hard place
+	block ServerBlock // current server block being parsed
+	eof   bool        // if we encounter a valid EOF in a hard place
 }
 
-func (p *parser) parseAll() ([]serverBlock, error) {
-	var blocks []serverBlock
+func (p *parser) parseAll() ([]ServerBlock, error) {
+	var blocks []ServerBlock
 
 	for p.Next() {
 		err := p.parseOne()
 		if err != nil {
 			return blocks, err
 		}
-
-		// explode the multiServerBlock into multiple serverBlocks
-		for _, addr := range p.block.addresses {
-			blocks = append(blocks, serverBlock{
-				Host:   addr.host,
-				Port:   addr.port,
-				Tokens: p.block.tokens,
-			})
-		}
+		blocks = append(blocks, p.block)
 	}
 
 	return blocks, nil
 }
 
 func (p *parser) parseOne() error {
-	p.block = multiServerBlock{tokens: make(map[string][]token)}
+	p.block = ServerBlock{Tokens: make(map[string][]token)}
 
 	err := p.begin()
 	if err != nil {
@@ -107,7 +99,7 @@ func (p *parser) addresses() error {
 		if err != nil {
 			return err
 		}
-		p.block.addresses = append(p.block.addresses, address{host, port})
+		p.block.Addresses = append(p.block.Addresses, Address{host, port})
 
 		// Advance token and possibly break out of loop or return error
 		hasNext := p.Next()
@@ -229,7 +221,7 @@ func (p *parser) directive() error {
 	}
 
 	// The directive itself is appended as a relevant token
-	p.block.tokens[dir] = append(p.block.tokens[dir], p.tokens[p.cursor])
+	p.block.Tokens[dir] = append(p.block.Tokens[dir], p.tokens[p.cursor])
 
 	for p.Next() {
 		if p.Val() == "{" {
@@ -242,7 +234,7 @@ func (p *parser) directive() error {
 		} else if p.Val() == "}" && nesting == 0 {
 			return p.Err("Unexpected '}' because no matching opening brace")
 		}
-		p.block.tokens[dir] = append(p.block.tokens[dir], p.tokens[p.cursor])
+		p.block.Tokens[dir] = append(p.block.Tokens[dir], p.tokens[p.cursor])
 	}
 
 	if nesting > 0 {
@@ -305,21 +297,15 @@ func standardAddress(str string) (host, port string, err error) {
 }
 
 type (
-	// serverBlock stores tokens by directive name for a
-	// single host:port (address)
-	serverBlock struct {
+	// ServerBlock associates tokens with a list of addresses
+	// and groups tokens by directive name.
+	ServerBlock struct {
+		Addresses []Address
+		Tokens    map[string][]token
+	}
+
+	// Address represents a host and port.
+	Address struct {
 		Host, Port string
-		Tokens     map[string][]token // directive name to tokens (including directive)
-	}
-
-	// multiServerBlock is the same as serverBlock but for
-	// multiple addresses that share the same tokens
-	multiServerBlock struct {
-		addresses []address
-		tokens    map[string][]token
-	}
-
-	address struct {
-		host, port string
 	}
 )

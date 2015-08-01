@@ -23,7 +23,9 @@ const (
 	DefaultConfigFile = "Caddyfile"
 )
 
-func Load(filename string, input io.Reader) ([]server.Config, error) {
+// Load reads input (named filename) and parses it, returning server
+// configurations grouped by listening address.
+func Load(filename string, input io.Reader) (Group, error) {
 	var configs []server.Config
 
 	// turn off timestamp for parsing
@@ -32,60 +34,82 @@ func Load(filename string, input io.Reader) ([]server.Config, error) {
 
 	serverBlocks, err := parse.ServerBlocks(filename, input)
 	if err != nil {
-		return configs, err
+		return nil, err
 	}
 
-	// Each server block represents a single server/address.
+	// Each server block represents one or more servers/addresses.
 	// Iterate each server block and make a config for each one,
 	// executing the directives that were parsed.
 	for _, sb := range serverBlocks {
-		config := server.Config{
-			Host:       sb.Host,
-			Port:       sb.Port,
-			Root:       Root,
-			Middleware: make(map[string][]middleware.Middleware),
-			ConfigFile: filename,
-			AppName:    app.Name,
-			AppVersion: app.Version,
+		sharedConfig, err := serverBlockToConfig(filename, sb)
+		if err != nil {
+			return nil, err
 		}
 
-		// It is crucial that directives are executed in the proper order.
-		for _, dir := range directiveOrder {
-			// Execute directive if it is in the server block
-			if tokens, ok := sb.Tokens[dir.name]; ok {
-				// Each setup function gets a controller, which is the
-				// server config and the dispenser containing only
-				// this directive's tokens.
-				controller := &setup.Controller{
-					Config:    &config,
-					Dispenser: parse.NewDispenserTokens(filename, tokens),
-				}
-
-				midware, err := dir.setup(controller)
-				if err != nil {
-					return configs, err
-				}
-				if midware != nil {
-					// TODO: For now, we only support the default path scope /
-					config.Middleware["/"] = append(config.Middleware["/"], midware)
-				}
+		// Now share the config with as many hosts as share the server block
+		for i, addr := range sb.Addresses {
+			config := sharedConfig
+			config.Host = addr.Host
+			config.Port = addr.Port
+			if config.Port == "" {
+				config.Port = Port
 			}
+			if i == 0 {
+				sharedConfig.Startup = []func() error{}
+				sharedConfig.Shutdown = []func() error{}
+			}
+			configs = append(configs, config)
 		}
-
-		if config.Port == "" {
-			config.Port = Port
-		}
-
-		configs = append(configs, config)
 	}
 
 	// restore logging settings
 	log.SetFlags(flags)
 
-	return configs, nil
+	// Group by address/virtualhosts
+	return arrangeBindings(configs)
 }
 
-// ArrangeBindings groups configurations by their bind address. For example,
+// serverBlockToConfig makes a config for the server block
+// by executing the tokens that were parsed. The returned
+// config is shared among all hosts/addresses for the server
+// block, so Host and Port information is not filled out
+// here.
+func serverBlockToConfig(filename string, sb parse.ServerBlock) (server.Config, error) {
+	sharedConfig := server.Config{
+		Root:       Root,
+		Middleware: make(map[string][]middleware.Middleware),
+		ConfigFile: filename,
+		AppName:    app.Name,
+		AppVersion: app.Version,
+	}
+
+	// It is crucial that directives are executed in the proper order.
+	for _, dir := range directiveOrder {
+		// Execute directive if it is in the server block
+		if tokens, ok := sb.Tokens[dir.name]; ok {
+			// Each setup function gets a controller, which is the
+			// server config and the dispenser containing only
+			// this directive's tokens.
+			controller := &setup.Controller{
+				Config:    &sharedConfig,
+				Dispenser: parse.NewDispenserTokens(filename, tokens),
+			}
+
+			midware, err := dir.setup(controller)
+			if err != nil {
+				return sharedConfig, err
+			}
+			if midware != nil {
+				// TODO: For now, we only support the default path scope /
+				sharedConfig.Middleware["/"] = append(sharedConfig.Middleware["/"], midware)
+			}
+		}
+	}
+
+	return sharedConfig, nil
+}
+
+// arrangeBindings groups configurations by their bind address. For example,
 // a server that should listen on localhost and another on 127.0.0.1 will
 // be grouped into the same address: 127.0.0.1. It will return an error
 // if an address is malformed or a TLS listener is configured on the
@@ -93,8 +117,8 @@ func Load(filename string, input io.Reader) ([]server.Config, error) {
 // bind address to list of configs that would become VirtualHosts on that
 // server. Use the keys of the returned map to create listeners, and use
 // the associated values to set up the virtualhosts.
-func ArrangeBindings(allConfigs []server.Config) (map[*net.TCPAddr][]server.Config, error) {
-	addresses := make(map[*net.TCPAddr][]server.Config)
+func arrangeBindings(allConfigs []server.Config) (Group, error) {
+	addresses := make(Group)
 
 	// Group configs by bind address
 	for _, conf := range allConfigs {
@@ -206,15 +230,19 @@ func validDirective(d string) bool {
 	return false
 }
 
-// Default makes a default configuration which
-// is empty except for root, host, and port,
-// which are essentials for serving the cwd.
-func Default() server.Config {
+func NewDefault() server.Config {
 	return server.Config{
 		Root: Root,
 		Host: Host,
 		Port: Port,
 	}
+}
+
+// Default makes a default configuration which
+// is empty except for root, host, and port,
+// which are essentials for serving the cwd.
+func Default() (Group, error) {
+	return arrangeBindings([]server.Config{NewDefault()})
 }
 
 // These three defaults are configurable through the command line
@@ -223,3 +251,5 @@ var (
 	Host = DefaultHost
 	Port = DefaultPort
 )
+
+type Group map[*net.TCPAddr][]server.Config

@@ -6,7 +6,7 @@ import "io"
 // ServerBlocks parses the input just enough to organize tokens,
 // in order, by server block. No further parsing is performed.
 // Server blocks are returned in the order in which they appear.
-func ServerBlocks(filename string, input io.Reader) ([]serverBlock, error) {
+func ServerBlocks(filename string, input io.Reader) ([]ServerBlock, error) {
 	p := parser{Dispenser: NewDispenser(filename, input)}
 	blocks, err := p.parseAll()
 	return blocks, err

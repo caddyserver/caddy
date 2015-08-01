@@ -49,14 +49,8 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Load config from file
-	allConfigs, err := loadConfigs()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Group by address (virtual hosts)
-	addresses, err := config.ArrangeBindings(allConfigs)
+	// Load address configurations from highest priority input
+	addresses, err := loadConfigs()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -129,16 +123,17 @@ func isLocalhost(s string) bool {
 }
 
 // loadConfigs loads configuration from a file or stdin (piped).
+// The configurations are grouped by bind address.
 // Configuration is obtained from one of three sources, tried
 // in this order: 1. -conf flag, 2. stdin, 3. Caddyfile.
 // If none of those are available, a default configuration is
 // loaded.
-func loadConfigs() ([]server.Config, error) {
+func loadConfigs() (config.Group, error) {
 	// -conf flag
 	if conf != "" {
 		file, err := os.Open(conf)
 		if err != nil {
-			return []server.Config{}, err
+			return nil, err
 		}
 		defer file.Close()
 		return config.Load(path.Base(conf), file)
@@ -165,9 +160,9 @@ func loadConfigs() ([]server.Config, error) {
 	file, err := os.Open(config.DefaultConfigFile)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return []server.Config{config.Default()}, nil
+			return config.Default()
 		}
-		return []server.Config{}, err
+		return nil, err
 	}
 	defer file.Close()
 

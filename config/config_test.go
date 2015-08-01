@@ -6,7 +6,7 @@ import (
 	"github.com/mholt/caddy/server"
 )
 
-func TestReolveAddr(t *testing.T) {
+func TestResolveAddr(t *testing.T) {
 	// NOTE: If tests fail due to comparing to string "127.0.0.1",
 	// it's possible that system env resolves with IPv6, or ::1.
 	// If that happens, maybe we should use actualAddr.IP.IsLoopback()
