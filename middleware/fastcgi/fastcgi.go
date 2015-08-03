@@ -204,6 +204,11 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 		env["PATH_TRANSLATED"] = filepath.Join(h.AbsRoot, pathInfo) // Info: http://www.oreilly.com/openbook/cgi/ch02_04.html
 	}
 
+	// Some web apps rely on knowing HTTPS or not
+	if r.TLS != nil {
+		env["HTTPS"] = "on"
+	}
+
 	// Add env variables from config
 	for _, envVar := range rule.EnvVars {
 		env[envVar[0]] = envVar[1]
