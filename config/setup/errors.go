@@ -30,7 +30,7 @@ func Errors(c *Controller) (middleware.Middleware, error) {
 		} else if handler.LogFile == "stderr" {
 			file = os.Stderr
 		} else if handler.LogFile == "syslog" {
-			file, err = gsyslog.NewLogger(gsyslog.LOG_ERR, "SYSLOG", "caddy")
+			file, err = gsyslog.NewLogger(gsyslog.LOG_ERR, "LOCAL0", "caddy")
 			if err != nil {
 				return err
 			}

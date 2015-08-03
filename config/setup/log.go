@@ -29,7 +29,7 @@ func Log(c *Controller) (middleware.Middleware, error) {
 			} else if rules[i].OutputFile == "stderr" {
 				file = os.Stderr
 			} else if rules[i].OutputFile == "syslog" {
-				file, err = gsyslog.NewLogger(gsyslog.LOG_INFO, "SYSLOG", "caddy")
+				file, err = gsyslog.NewLogger(gsyslog.LOG_INFO, "LOCAL0", "caddy")
 				if err != nil {
 					return err
 				}
