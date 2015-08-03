@@ -36,6 +36,9 @@ func Load(filename string, input io.Reader) (Group, error) {
 	if err != nil {
 		return nil, err
 	}
+	if len(serverBlocks) == 0 {
+		return Default()
+	}
 
 	// Each server block represents one or more servers/addresses.
 	// Iterate each server block and make a config for each one,

@@ -21,7 +21,9 @@ func (p *parser) parseAll() ([]ServerBlock, error) {
 		if err != nil {
 			return blocks, err
 		}
-		blocks = append(blocks, p.block)
+		if len(p.block.Addresses) > 0 {
+			blocks = append(blocks, p.block)
+		}
 	}
 
 	return blocks, nil
@@ -85,21 +87,23 @@ func (p *parser) addresses() error {
 			break
 		}
 
-		// Trailing comma indicates another address will follow, which
-		// may possibly be on the next line
-		if tkn[len(tkn)-1] == ',' {
-			tkn = tkn[:len(tkn)-1]
-			expectingAnother = true
-		} else {
-			expectingAnother = false // but we may still see another one on this line
-		}
+		if tkn != "" {
+			// Trailing comma indicates another address will follow, which
+			// may possibly be on the next line
+			if tkn[len(tkn)-1] == ',' {
+				tkn = tkn[:len(tkn)-1]
+				expectingAnother = true
+			} else {
+				expectingAnother = false // but we may still see another one on this line
+			}
 
-		// Parse and save this address
-		host, port, err := standardAddress(tkn)
-		if err != nil {
-			return err
+			// Parse and save this address
+			host, port, err := standardAddress(tkn)
+			if err != nil {
+				return err
+			}
+			p.block.Addresses = append(p.block.Addresses, Address{host, port})
 		}
-		p.block.Addresses = append(p.block.Addresses, Address{host, port})
 
 		// Advance token and possibly break out of loop or return error
 		hasNext := p.Next()

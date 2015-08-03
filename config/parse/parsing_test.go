@@ -61,7 +61,7 @@ func TestParseOneAndImport(t *testing.T) {
 
 	testParseOne := func(input string) (ServerBlock, error) {
 		p := testParser(input)
-		p.Next()
+		p.Next() // parseOne doesn't call Next() to start, so we must
 		err := p.parseOne()
 		return p.block, err
 	}
@@ -234,6 +234,10 @@ func TestParseOneAndImport(t *testing.T) {
 			"dir1": 1,
 			"dir2": 2,
 		}},
+
+		{``, false, []Address{}, map[string]int{}},
+
+		{`""`, false, []Address{}, map[string]int{}},
 	} {
 		result, err := testParseOne(test.input)
 
@@ -271,6 +275,62 @@ func TestParseOneAndImport(t *testing.T) {
 					i, directive, test.tokens[directive], len(tokens))
 				continue
 			}
+		}
+	}
+}
+
+func TestParseAll(t *testing.T) {
+	setupParseTests()
+
+	testParseAll := func(input string) ([]ServerBlock, error) {
+		p := testParser(input)
+		return p.parseAll()
+	}
+
+	for i, test := range []struct {
+		input     string
+		shouldErr bool
+		numBlocks int
+	}{
+		{`localhost`, false, 1},
+
+		{`localhost {
+			    dir1
+			  }`, false, 1},
+
+		{`http://localhost https://localhost
+			  dir1 foo bar`, false, 1},
+
+		{`http://localhost, https://localhost {
+			    dir1 foo bar
+			  }`, false, 1},
+
+		{`http://host1.com,
+			  http://host2.com,
+			  https://host3.com`, false, 1},
+
+		{`host1 {
+			}
+			host2 {
+			}`, false, 2},
+
+		{`""`, false, 0},
+
+		{``, false, 0},
+	} {
+		results, err := testParseAll(test.input)
+
+		if test.shouldErr && err == nil {
+			t.Errorf("Test %d: Expected an error, but didn't get one", i)
+		}
+		if !test.shouldErr && err != nil {
+			t.Errorf("Test %d: Expected no error, but got: %v", i, err)
+		}
+
+		if len(results) != test.numBlocks {
+			t.Errorf("Test %d: Expected %d server blocks, got %d",
+				i, test.numBlocks, len(results))
+			continue
 		}
 	}
 }
