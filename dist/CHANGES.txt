@@ -1,5 +1,12 @@
 CHANGES
 
+<master>
+- fastcgi: Set HTTPS env variable if connection is secure
+- markdown: Fixed error reporting during initial site generation
+- markdown: Fixed crash if path does not exist when server starts
+- Several bug fixes related to startup and shutdown functions
+
+
 0.7.4 (July 30, 2015)
 - browse: Sorting preference persisted in cookie
 - browse: Added index.txt and default.txt to list of default files
