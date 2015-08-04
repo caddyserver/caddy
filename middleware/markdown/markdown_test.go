@@ -199,7 +199,7 @@ func getTrue() bool {
 		}
 	}
 
-	// attempt to trigger race condition
+	// attempt to trigger race conditions
 	var w sync.WaitGroup
 	f := func() {
 		req, err := http.NewRequest("GET", "/log/test.md", nil)
@@ -209,6 +209,16 @@ func getTrue() bool {
 		rec := httptest.NewRecorder()
 
 		md.ServeHTTP(rec, req)
+		w.Done()
+	}
+	for i := 0; i < 5; i++ {
+		w.Add(1)
+		go f()
+	}
+	w.Wait()
+
+	f = func() {
+		GenerateLinks(md, &md.Configs[0])
 		w.Done()
 	}
 	for i := 0; i < 5; i++ {

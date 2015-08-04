@@ -79,6 +79,7 @@ func (l *linkGen) generateLinks(md Markdown, cfg *Config) {
 	if _, err := os.Stat(fp); os.IsNotExist(err) {
 		l.Lock()
 		l.lastErr = err
+		l.generating = false
 		l.Unlock()
 		return
 	}
@@ -87,6 +88,9 @@ func (l *linkGen) generateLinks(md Markdown, cfg *Config) {
 
 	// same hash, return.
 	if err == nil && hash == cfg.linksHash {
+		l.Lock()
+		l.generating = false
+		l.Unlock()
 		return
 	} else if err != nil {
 		log.Println("Error:", err)

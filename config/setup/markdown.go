@@ -36,10 +36,8 @@ func Markdown(c *Controller) (middleware.Middleware, error) {
 			if err := markdown.GenerateLinks(md, cfg); err != nil {
 				return err
 			}
-			// Watch file changes for links generation.
-			if cfg.Development {
-				markdown.Watch(md, cfg, 0)
-			} else {
+			// Watch file changes for links generation if not in development mode.
+			if !cfg.Development {
 				markdown.Watch(md, cfg, markdown.DefaultInterval)
 			}
 

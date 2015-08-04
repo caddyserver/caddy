@@ -4,6 +4,7 @@ package markdown
 
 import (
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -117,6 +118,13 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 				fs, err := f.Stat()
 				if err != nil {
 					return http.StatusNotFound, nil
+				}
+
+				// if development is set, scan directory for file changes for links.
+				if m.Development {
+					if err := GenerateLinks(md, m); err != nil {
+						log.Println(err)
+					}
 				}
 
 				// if static site is generated, attempt to use it

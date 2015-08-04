@@ -20,39 +20,19 @@ func Watch(md Markdown, c *Config, interval time.Duration) (stopChan chan struct
 func TickerFunc(interval time.Duration, f func()) chan struct{} {
 	stopChan := make(chan struct{})
 
-	if interval > 0 {
-		ticker := time.NewTicker(interval)
-		go func() {
-		loop:
-			for {
-				select {
-				case <-ticker.C:
-					f()
-				case <-stopChan:
-					ticker.Stop()
-					break loop
-				}
+	ticker := time.NewTicker(interval)
+	go func() {
+	loop:
+		for {
+			select {
+			case <-ticker.C:
+				f()
+			case <-stopChan:
+				ticker.Stop()
+				break loop
 			}
-		}()
-	} else {
-		go func() {
-		loop:
-			for {
-				m := make(chan struct{})
-				go func() {
-					f()
-					m <- struct{}{}
-				}()
-				select {
-				case <-m:
-					continue loop
-				case <-stopChan:
-					break loop
-				}
-				time.Sleep(DevInterval)
+		}
+	}()
 
-			}
-		}()
-	}
 	return stopChan
 }
