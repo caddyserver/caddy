@@ -162,7 +162,7 @@ func markdownParse(c *Controller) ([]markdown.Config, error) {
 					// only 1 argument allowed
 					return mdconfigs, c.ArgErr()
 				}
-			case "development":
+			case "dev":
 				if c.NextArg() {
 					md.Development = strings.ToLower(c.Val()) == "true"
 				} else {
