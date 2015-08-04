@@ -1,0 +1,58 @@
+package markdown
+
+import "time"
+
+const (
+	DefaultInterval = time.Second * 60
+	DevInterval     = time.Second * 1
+)
+
+// Watch monitors the configured markdown directory for changes. It calls GenerateLinks
+// when there are changes.
+func Watch(md Markdown, c *Config, interval time.Duration) (stopChan chan struct{}) {
+	return TickerFunc(interval, func() {
+		GenerateLinks(md, c)
+	})
+}
+
+// TickerFunc runs f at interval. If interval is <= 0, it loops f. A message to the
+// returned channel will stop the executing goroutine.
+func TickerFunc(interval time.Duration, f func()) chan struct{} {
+	stopChan := make(chan struct{})
+
+	if interval > 0 {
+		ticker := time.NewTicker(interval)
+		go func() {
+		loop:
+			for {
+				select {
+				case <-ticker.C:
+					f()
+				case <-stopChan:
+					ticker.Stop()
+					break loop
+				}
+			}
+		}()
+	} else {
+		go func() {
+		loop:
+			for {
+				m := make(chan struct{})
+				go func() {
+					f()
+					m <- struct{}{}
+				}()
+				select {
+				case <-m:
+					continue loop
+				case <-stopChan:
+					break loop
+				}
+				time.Sleep(DevInterval)
+
+			}
+		}()
+	}
+	return stopChan
+}

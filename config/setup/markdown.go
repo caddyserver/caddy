@@ -29,13 +29,22 @@ func Markdown(c *Controller) (middleware.Middleware, error) {
 
 	// For any configs that enabled static site gen, sweep the whole path at startup
 	c.Startup = append(c.Startup, func() error {
-		for _, cfg := range mdconfigs {
-			if cfg.StaticDir == "" {
-				continue
+		for i := range mdconfigs {
+			cfg := &mdconfigs[i]
+
+			// Links generation.
+			if err := markdown.GenerateLinks(md, cfg); err != nil {
+				return err
+			}
+			// Watch file changes for links generation.
+			if cfg.Development {
+				markdown.Watch(md, cfg, 0)
+			} else {
+				markdown.Watch(md, cfg, markdown.DefaultInterval)
 			}
 
-			if err := markdown.GenerateLinks(md, &cfg); err != nil {
-				return err
+			if cfg.StaticDir == "" {
+				continue
 			}
 
 			// If generated site already exists, clear it out
@@ -68,7 +77,7 @@ func Markdown(c *Controller) (middleware.Middleware, error) {
 
 						// Generate the static file
 						ctx := middleware.Context{Root: md.FileSys}
-						_, err = md.Process(cfg, reqPath, body, ctx)
+						_, err = md.Process(*cfg, reqPath, body, ctx)
 						if err != nil {
 							return err
 						}
@@ -150,6 +159,16 @@ func markdownParse(c *Controller) ([]markdown.Config, error) {
 					md.StaticDir = path.Join(c.Root, c.Val())
 				} else {
 					md.StaticDir = path.Join(c.Root, markdown.DefaultStaticDir)
+				}
+				if c.NextArg() {
+					// only 1 argument allowed
+					return mdconfigs, c.ArgErr()
+				}
+			case "development":
+				if c.NextArg() {
+					md.Development = strings.ToLower(c.Val()) == "true"
+				} else {
+					md.Development = true
 				}
 				if c.NextArg() {
 					// only 1 argument allowed

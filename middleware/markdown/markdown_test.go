@@ -1,6 +1,7 @@
 package markdown
 
 import (
+	"bufio"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -102,7 +103,7 @@ func getTrue() bool {
 </body>
 </html>
 `
-	if respBody != expectedBody {
+	if !equalStrings(respBody, expectedBody) {
 		t.Fatalf("Expected body: %v got: %v", expectedBody, respBody)
 	}
 
@@ -143,10 +144,7 @@ func getTrue() bool {
 	</body>
 </html>`
 
-	replacer := strings.NewReplacer("\r", "", "\n", "")
-	respBody = replacer.Replace(respBody)
-	expectedBody = replacer.Replace(expectedBody)
-	if respBody != expectedBody {
+	if !equalStrings(respBody, expectedBody) {
 		t.Fatalf("Expected body: %v got: %v", expectedBody, respBody)
 	}
 
@@ -177,19 +175,24 @@ func getTrue() bool {
 
 </body>
 </html>`
-	respBody = replacer.Replace(respBody)
-	expectedBody = replacer.Replace(expectedBody)
-	if respBody != expectedBody {
+
+	if !equalStrings(respBody, expectedBody) {
 		t.Fatalf("Expected body: %v got: %v", expectedBody, respBody)
 	}
 
 	expectedLinks := []string{
 		"/blog/test.md",
 		"/log/test.md",
-		"/og/first.md",
 	}
 
-	for i, c := range md.Configs {
+	for i := range md.Configs {
+		c := &md.Configs[i]
+		if err := GenerateLinks(md, c); err != nil {
+			t.Fatalf("Error: %v", err)
+		}
+	}
+
+	for i, c := range md.Configs[:2] {
 		log.Printf("Test number: %d, configuration links: %v, config: %v", i, c.Links, c)
 		if c.Links[0].URL != expectedLinks[i] {
 			t.Fatalf("Expected %v got %v", expectedLinks[i], c.Links[0].URL)
@@ -218,4 +221,18 @@ func getTrue() bool {
 		t.Errorf("Error while removing the generated static files: %v", err)
 	}
 
+}
+
+func equalStrings(s1, s2 string) bool {
+	s1 = strings.TrimSpace(s1)
+	s2 = strings.TrimSpace(s2)
+	in := bufio.NewScanner(strings.NewReader(s1))
+	for in.Scan() {
+		txt := strings.TrimSpace(in.Text())
+		if !strings.HasPrefix(strings.TrimSpace(s2), txt) {
+			return false
+		}
+		s2 = strings.Replace(s2, txt, "", 1)
+	}
+	return true
 }
