@@ -1,9 +1,14 @@
 CHANGES
 
-<master>
+0.7.5 (August 5, 2015)
+- core: All listeners bind to 0.0.0.0 unless 'bind' directive is used
 - fastcgi: Set HTTPS env variable if connection is secure
+- log: Output to system log (except Windows)
+- markdown: Added dev command to disable caching during development
 - markdown: Fixed error reporting during initial site generation
 - markdown: Fixed crash if path does not exist when server starts
+- markdown: Fixed site generation and link indexing when files change
+- templates: Added .NowDate for use in date-related functions
 - Several bug fixes related to startup and shutdown functions
 
 

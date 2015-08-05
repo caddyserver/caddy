@@ -12,3 +12,5 @@ access.log
 
 /*.conf
 Caddyfile
+
+og_static/
