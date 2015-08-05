@@ -182,11 +182,7 @@ func arrangeBindings(allConfigs []server.Config) (Group, error) {
 // resolve, that host can still be served but will be listening on
 // the wildcard host instead. This function takes care of this for you.
 func resolveAddr(conf server.Config) (resolvAddr *net.TCPAddr, warnErr error, fatalErr error) {
-	// The host to bind to may be different from the (virtual)host to serve
 	bindHost := conf.BindHost
-	if bindHost == "" {
-		bindHost = conf.Host
-	}
 
 	resolvAddr, warnErr = net.ResolveTCPAddr("tcp", net.JoinHostPort(bindHost, conf.Port))
 	if warnErr != nil {

@@ -22,13 +22,15 @@ func TestResolveAddr(t *testing.T) {
 		expectedIP     string
 		expectedPort   int
 	}{
-		{server.Config{Host: "localhost", Port: "1234"}, false, false, "127.0.0.1", 1234},
-		{server.Config{Host: "127.0.0.1", Port: "1234"}, false, false, "127.0.0.1", 1234},
-		{server.Config{Host: "should-not-resolve", Port: "1234"}, true, false, "0.0.0.0", 1234},
-		{server.Config{Host: "localhost", Port: "http"}, false, false, "127.0.0.1", 80},
-		{server.Config{Host: "localhost", Port: "https"}, false, false, "127.0.0.1", 443},
-		{server.Config{Host: "", Port: "1234"}, false, false, "<nil>", 1234},
-		{server.Config{Host: "localhost", Port: "abcd"}, false, true, "", 0},
+		{server.Config{Host: "127.0.0.1", Port: "1234"}, false, false, "<nil>", 1234},
+		{server.Config{Host: "localhost", Port: "80"}, false, false, "<nil>", 80},
+		{server.Config{BindHost: "localhost", Port: "1234"}, false, false, "127.0.0.1", 1234},
+		{server.Config{BindHost: "127.0.0.1", Port: "1234"}, false, false, "127.0.0.1", 1234},
+		{server.Config{BindHost: "should-not-resolve", Port: "1234"}, true, false, "0.0.0.0", 1234},
+		{server.Config{BindHost: "localhost", Port: "http"}, false, false, "127.0.0.1", 80},
+		{server.Config{BindHost: "localhost", Port: "https"}, false, false, "127.0.0.1", 443},
+		{server.Config{BindHost: "", Port: "1234"}, false, false, "<nil>", 1234},
+		{server.Config{BindHost: "localhost", Port: "abcd"}, false, true, "", 0},
 		{server.Config{BindHost: "127.0.0.1", Host: "should-not-be-used", Port: "1234"}, false, false, "127.0.0.1", 1234},
 		{server.Config{BindHost: "localhost", Host: "should-not-be-used", Port: "1234"}, false, false, "127.0.0.1", 1234},
 		{server.Config{BindHost: "should-not-resolve", Host: "localhost", Port: "1234"}, true, false, "0.0.0.0", 1234},

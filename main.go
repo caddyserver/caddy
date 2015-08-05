@@ -87,11 +87,10 @@ func main() {
 					fmt.Printf("Notice: %s is only accessible on this machine (%s)\n",
 						conf.Host, addr.IP.String())
 				}
-			}
-
-			if !checkedFdLimit && !addr.IP.IsLoopback() {
-				checkFdlimit()
-				checkedFdLimit = true
+				if !checkedFdLimit && !addr.IP.IsLoopback() && !isLocalhost(conf.Host) {
+					checkFdlimit()
+					checkedFdLimit = true
+				}
 			}
 		}
 	}
@@ -111,7 +110,7 @@ func checkFdlimit() {
 			// Note that an error here need not be reported
 			lim, err := strconv.Atoi(string(bytes.TrimSpace(out)))
 			if err == nil && lim < min {
-				fmt.Printf("Warning: File descriptor limit %d is too low for production sites.\nAt least %d is recommended. Set with \"ulimit -n %d\".\n", lim, min, min)
+				fmt.Printf("Warning: File descriptor limit %d is too low for production sites. At least %d is recommended. Set with \"ulimit -n %d\".\n", lim, min, min)
 			}
 		}
 	}
