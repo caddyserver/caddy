@@ -94,9 +94,8 @@ func (c Config) IsValidExt(ext string) bool {
 
 // ServeHTTP implements the http.Handler interface.
 func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
-	for i := range md.Configs {
-		m := &md.Configs[i]
-		if !middleware.Path(r.URL.Path).Matches(m.PathScope) {
+	for _, cfg := range md.Configs {
+		if !middleware.Path(r.URL.Path).Matches(cfg.PathScope) {
 			continue
 		}
 
@@ -105,7 +104,7 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 			fpath = idx
 		}
 
-		for _, ext := range m.Extensions {
+		for _, ext := range cfg.Extensions {
 			if strings.HasSuffix(fpath, ext) {
 				f, err := md.FileSys.Open(fpath)
 				if err != nil {
@@ -121,19 +120,18 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 				}
 
 				// if development is set, scan directory for file changes for links.
-				if m.Development {
-					if err := GenerateStatic(md, m); err != nil {
-						log.Println(err)
+				if cfg.Development {
+					if err := GenerateStatic(md, &cfg); err != nil {
+						log.Println("On-demand generation error (markdown):", err)
 					}
 				}
 
 				// if static site is generated, attempt to use it
-				if filepath, ok := m.StaticFiles[fpath]; ok {
+				if filepath, ok := cfg.StaticFiles[fpath]; ok {
 					if fs1, err := os.Stat(filepath); err == nil {
-						// if markdown has not been modified
-						// since static page generation,
-						// serve the static page
-						if fs.ModTime().UnixNano() < fs1.ModTime().UnixNano() {
+						// if markdown has not been modified since static page
+						// generation, serve the static page
+						if fs.ModTime().Before(fs1.ModTime()) {
 							if html, err := ioutil.ReadFile(filepath); err == nil {
 								w.Write(html)
 								return http.StatusOK, nil
@@ -156,7 +154,7 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 					Req:  r,
 					URL:  r.URL,
 				}
-				html, err := md.Process(*m, fpath, body, ctx)
+				html, err := md.Process(cfg, fpath, body, ctx)
 				if err != nil {
 					return http.StatusInternalServerError, err
 				}

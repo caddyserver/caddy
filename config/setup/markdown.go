@@ -25,12 +25,12 @@ func Markdown(c *Controller) (middleware.Middleware, error) {
 		IndexFiles: []string{"index.md"},
 	}
 
-	// For any configs that enabled static site gen, sweep the whole path at startup
+	// Sweep the whole path at startup to at least generate link index, maybe generate static site
 	c.Startup = append(c.Startup, func() error {
 		for i := range mdconfigs {
 			cfg := &mdconfigs[i]
 
-			// Generate static files.
+			// Generate link index and static files (if enabled)
 			if err := markdown.GenerateStatic(md, cfg); err != nil {
 				return err
 			}

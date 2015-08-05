@@ -92,7 +92,7 @@ func (l *linkGen) generateLinks(md Markdown, cfg *Config) bool {
 		l.Unlock()
 		return false
 	} else if err != nil {
-		log.Println("Error:", err)
+		log.Println("Hash error (markdown):", err)
 	}
 
 	cfg.Links = []PageLink{}
@@ -100,53 +100,55 @@ func (l *linkGen) generateLinks(md Markdown, cfg *Config) bool {
 	cfg.Lock()
 	l.lastErr = filepath.Walk(fp, func(path string, info os.FileInfo, err error) error {
 		for _, ext := range cfg.Extensions {
-			if !info.IsDir() && strings.HasSuffix(info.Name(), ext) {
-				// Load the file
-				body, err := ioutil.ReadFile(path)
-				if err != nil {
-					return err
-				}
-
-				// Get the relative path as if it were a HTTP request,
-				// then prepend with "/" (like a real HTTP request)
-				reqPath, err := filepath.Rel(md.Root, path)
-				if err != nil {
-					return err
-				}
-				reqPath = "/" + reqPath
-
-				parser := findParser(body)
-				if parser == nil {
-					// no metadata, ignore.
-					continue
-				}
-				summary, err := parser.Parse(body)
-				if err != nil {
-					return err
-				}
-
-				// truncate summary to maximum length
-				if len(summary) > summaryLen {
-					summary = summary[:summaryLen]
-
-					// trim to nearest word
-					lastSpace := bytes.LastIndex(summary, []byte(" "))
-					if lastSpace != -1 {
-						summary = summary[:lastSpace]
-					}
-				}
-
-				metadata := parser.Metadata()
-
-				cfg.Links = append(cfg.Links, PageLink{
-					Title:   metadata.Title,
-					URL:     reqPath,
-					Date:    metadata.Date,
-					Summary: string(blackfriday.Markdown(summary, SummaryRenderer{}, 0)),
-				})
-
-				break // don't try other file extensions
+			if info.IsDir() || !strings.HasSuffix(info.Name(), ext) {
+				continue
 			}
+
+			// Load the file
+			body, err := ioutil.ReadFile(path)
+			if err != nil {
+				return err
+			}
+
+			// Get the relative path as if it were a HTTP request,
+			// then prepend with "/" (like a real HTTP request)
+			reqPath, err := filepath.Rel(md.Root, path)
+			if err != nil {
+				return err
+			}
+			reqPath = "/" + reqPath
+
+			parser := findParser(body)
+			if parser == nil {
+				// no metadata, ignore.
+				continue
+			}
+			summary, err := parser.Parse(body)
+			if err != nil {
+				return err
+			}
+
+			// truncate summary to maximum length
+			if len(summary) > summaryLen {
+				summary = summary[:summaryLen]
+
+				// trim to nearest word
+				lastSpace := bytes.LastIndex(summary, []byte(" "))
+				if lastSpace != -1 {
+					summary = summary[:lastSpace]
+				}
+			}
+
+			metadata := parser.Metadata()
+
+			cfg.Links = append(cfg.Links, PageLink{
+				Title:   metadata.Title,
+				URL:     reqPath,
+				Date:    metadata.Date,
+				Summary: string(blackfriday.Markdown(summary, SummaryRenderer{}, 0)),
+			})
+
+			break // don't try other file extensions
 		}
 
 		return nil

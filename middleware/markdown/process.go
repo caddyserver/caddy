@@ -114,7 +114,7 @@ func (md Markdown) processTemplate(c Config, requestPath string, tmpl []byte, me
 		// if static page generation fails,
 		// nothing fatal, only log the error.
 		// TODO: Report this non-fatal error, but don't log it here
-		log.Println(err)
+		log.Println("Rendering error (markdown):", err)
 	}
 
 	return b.Bytes(), nil

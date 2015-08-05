@@ -1,7 +1,7 @@
 package markdown
 
 import (
-	"crypto/sha1"
+	"crypto/md5"
 	"encoding/hex"
 	"fmt"
 	"io/ioutil"
@@ -13,7 +13,9 @@ import (
 	"github.com/mholt/caddy/middleware"
 )
 
-// GenerateStatic generate static files from markdowns.
+// GenerateStatic generate static files and link index from markdowns.
+// It only generates static files if it is enabled (cfg.StaticDir
+// must be set).
 func GenerateStatic(md Markdown, cfg *Config) error {
 	generated, err := generateLinks(md, cfg)
 	if err != nil {
@@ -130,6 +132,6 @@ func computeDirHash(md Markdown, c Config) (string, error) {
 		return "", err
 	}
 
-	sum := sha1.Sum([]byte(hashString))
+	sum := md5.Sum([]byte(hashString))
 	return hex.EncodeToString(sum[:]), nil
 }
