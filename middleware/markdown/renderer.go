@@ -4,25 +4,23 @@ import (
 	"bytes"
 )
 
-type PlaintextRenderer struct{}
+type SummaryRenderer struct{}
 
 // Block-level callbacks
 
-func (r PlaintextRenderer) BlockCode(out *bytes.Buffer, text []byte, lang string) {}
+func (r SummaryRenderer) BlockCode(out *bytes.Buffer, text []byte, lang string) {}
 
-func (r PlaintextRenderer) BlockQuote(out *bytes.Buffer, text []byte) {}
+func (r SummaryRenderer) BlockQuote(out *bytes.Buffer, text []byte) {}
 
-func (r PlaintextRenderer) BlockHtml(out *bytes.Buffer, text []byte) {}
+func (r SummaryRenderer) BlockHtml(out *bytes.Buffer, text []byte) {}
 
-func (r PlaintextRenderer) Header(out *bytes.Buffer, text func() bool, level int, id string) {}
+func (r SummaryRenderer) Header(out *bytes.Buffer, text func() bool, level int, id string) {}
 
-func (r PlaintextRenderer) HRule(out *bytes.Buffer) {}
+func (r SummaryRenderer) HRule(out *bytes.Buffer) {}
 
-func (r PlaintextRenderer) List(out *bytes.Buffer, text func() bool, flags int) {}
-
-func (r PlaintextRenderer) ListItem(out *bytes.Buffer, text []byte, flags int) {}
-
-func (r PlaintextRenderer) Paragraph(out *bytes.Buffer, text func() bool) {
+func (r SummaryRenderer) List(out *bytes.Buffer, text func() bool, flags int) {
+	// TODO: This is not desired (we'd rather not write lists as part of summary),
+	// but see this issue: https://github.com/russross/blackfriday/issues/189
 	marker := out.Len()
 	if !text() {
 		out.Truncate(marker)
@@ -30,68 +28,78 @@ func (r PlaintextRenderer) Paragraph(out *bytes.Buffer, text func() bool) {
 	out.Write([]byte{' '})
 }
 
-func (r PlaintextRenderer) Table(out *bytes.Buffer, header []byte, body []byte, columnData []int) {}
+func (r SummaryRenderer) ListItem(out *bytes.Buffer, text []byte, flags int) {}
 
-func (r PlaintextRenderer) TableRow(out *bytes.Buffer, text []byte) {}
+func (r SummaryRenderer) Paragraph(out *bytes.Buffer, text func() bool) {
+	marker := out.Len()
+	if !text() {
+		out.Truncate(marker)
+	}
+	out.Write([]byte{' '})
+}
 
-func (r PlaintextRenderer) TableHeaderCell(out *bytes.Buffer, text []byte, flags int) {}
+func (r SummaryRenderer) Table(out *bytes.Buffer, header []byte, body []byte, columnData []int) {}
 
-func (r PlaintextRenderer) TableCell(out *bytes.Buffer, text []byte, flags int) {}
+func (r SummaryRenderer) TableRow(out *bytes.Buffer, text []byte) {}
 
-func (r PlaintextRenderer) Footnotes(out *bytes.Buffer, text func() bool) {}
+func (r SummaryRenderer) TableHeaderCell(out *bytes.Buffer, text []byte, flags int) {}
 
-func (r PlaintextRenderer) FootnoteItem(out *bytes.Buffer, name, text []byte, flags int) {}
+func (r SummaryRenderer) TableCell(out *bytes.Buffer, text []byte, flags int) {}
 
-func (r PlaintextRenderer) TitleBlock(out *bytes.Buffer, text []byte) {}
+func (r SummaryRenderer) Footnotes(out *bytes.Buffer, text func() bool) {}
+
+func (r SummaryRenderer) FootnoteItem(out *bytes.Buffer, name, text []byte, flags int) {}
+
+func (r SummaryRenderer) TitleBlock(out *bytes.Buffer, text []byte) {}
 
 // Span-level callbacks
 
-func (r PlaintextRenderer) AutoLink(out *bytes.Buffer, link []byte, kind int) {}
+func (r SummaryRenderer) AutoLink(out *bytes.Buffer, link []byte, kind int) {}
 
-func (r PlaintextRenderer) CodeSpan(out *bytes.Buffer, text []byte) {
+func (r SummaryRenderer) CodeSpan(out *bytes.Buffer, text []byte) {
 	out.Write([]byte("`"))
 	out.Write(text)
 	out.Write([]byte("`"))
 }
 
-func (r PlaintextRenderer) DoubleEmphasis(out *bytes.Buffer, text []byte) {
+func (r SummaryRenderer) DoubleEmphasis(out *bytes.Buffer, text []byte) {
 	out.Write(text)
 }
 
-func (r PlaintextRenderer) Emphasis(out *bytes.Buffer, text []byte) {
+func (r SummaryRenderer) Emphasis(out *bytes.Buffer, text []byte) {
 	out.Write(text)
 }
 
-func (r PlaintextRenderer) Image(out *bytes.Buffer, link []byte, title []byte, alt []byte) {}
+func (r SummaryRenderer) Image(out *bytes.Buffer, link []byte, title []byte, alt []byte) {}
 
-func (r PlaintextRenderer) LineBreak(out *bytes.Buffer) {}
+func (r SummaryRenderer) LineBreak(out *bytes.Buffer) {}
 
-func (r PlaintextRenderer) Link(out *bytes.Buffer, link []byte, title []byte, content []byte) {
+func (r SummaryRenderer) Link(out *bytes.Buffer, link []byte, title []byte, content []byte) {
 	out.Write(content)
 }
-func (r PlaintextRenderer) RawHtmlTag(out *bytes.Buffer, tag []byte) {}
+func (r SummaryRenderer) RawHtmlTag(out *bytes.Buffer, tag []byte) {}
 
-func (r PlaintextRenderer) TripleEmphasis(out *bytes.Buffer, text []byte) {
+func (r SummaryRenderer) TripleEmphasis(out *bytes.Buffer, text []byte) {
 	out.Write(text)
 }
-func (r PlaintextRenderer) StrikeThrough(out *bytes.Buffer, text []byte) {}
+func (r SummaryRenderer) StrikeThrough(out *bytes.Buffer, text []byte) {}
 
-func (r PlaintextRenderer) FootnoteRef(out *bytes.Buffer, ref []byte, id int) {}
+func (r SummaryRenderer) FootnoteRef(out *bytes.Buffer, ref []byte, id int) {}
 
 // Low-level callbacks
 
-func (r PlaintextRenderer) Entity(out *bytes.Buffer, entity []byte) {
+func (r SummaryRenderer) Entity(out *bytes.Buffer, entity []byte) {
 	out.Write(entity)
 }
 
-func (r PlaintextRenderer) NormalText(out *bytes.Buffer, text []byte) {
+func (r SummaryRenderer) NormalText(out *bytes.Buffer, text []byte) {
 	out.Write(text)
 }
 
 // Header and footer
 
-func (r PlaintextRenderer) DocumentHeader(out *bytes.Buffer) {}
+func (r SummaryRenderer) DocumentHeader(out *bytes.Buffer) {}
 
-func (r PlaintextRenderer) DocumentFooter(out *bytes.Buffer) {}
+func (r SummaryRenderer) DocumentFooter(out *bytes.Buffer) {}
 
-func (r PlaintextRenderer) GetFlags() int { return 0 }
+func (r SummaryRenderer) GetFlags() int { return 0 }

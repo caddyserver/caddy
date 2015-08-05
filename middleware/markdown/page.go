@@ -142,7 +142,7 @@ func (l *linkGen) generateLinks(md Markdown, cfg *Config) bool {
 					Title:   metadata.Title,
 					URL:     reqPath,
 					Date:    metadata.Date,
-					Summary: string(blackfriday.Markdown(summary, PlaintextRenderer{}, 0)),
+					Summary: string(blackfriday.Markdown(summary, SummaryRenderer{}, 0)),
 				})
 
 				break // don't try other file extensions
