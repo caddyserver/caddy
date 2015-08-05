@@ -54,6 +54,12 @@ func (c Context) Now(format string) string {
 	return time.Now().Format(format)
 }
 
+// NowDate returns the current date/time that can be used
+// in other time functions.
+func (c Context) NowDate() time.Time {
+	return time.Now()
+}
+
 // Cookie gets the value of a cookie with name name.
 func (c Context) Cookie(name string) string {
 	cookies := c.Req.Cookies()
