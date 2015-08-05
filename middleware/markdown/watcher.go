@@ -2,10 +2,7 @@ package markdown
 
 import "time"
 
-const (
-	DefaultInterval = time.Second * 60
-	DevInterval     = time.Second * 1
-)
+const DefaultInterval = time.Second * 60
 
 // Watch monitors the configured markdown directory for changes. It calls GenerateLinks
 // when there are changes.
