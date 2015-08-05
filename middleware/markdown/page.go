@@ -2,7 +2,11 @@ package markdown
 
 import (
 	"bytes"
+	"crypto/sha1"
+	"encoding/hex"
+	"fmt"
 	"io/ioutil"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -75,8 +79,21 @@ func (l *linkGen) generateLinks(md Markdown, cfg *Config) {
 	if _, err := os.Stat(fp); os.IsNotExist(err) {
 		l.Lock()
 		l.lastErr = err
+		l.generating = false
 		l.Unlock()
 		return
+	}
+
+	hash, err := computeDirHash(md, *cfg)
+
+	// same hash, return.
+	if err == nil && hash == cfg.linksHash {
+		l.Lock()
+		l.generating = false
+		l.Unlock()
+		return
+	} else if err != nil {
+		log.Println("Error:", err)
 	}
 
 	cfg.Links = []PageLink{}
@@ -138,6 +155,8 @@ func (l *linkGen) generateLinks(md Markdown, cfg *Config) {
 
 	// sort by newest date
 	sort.Sort(byDate(cfg.Links))
+
+	cfg.linksHash = hash
 	cfg.Unlock()
 
 	l.Lock()
@@ -175,4 +194,26 @@ func GenerateLinks(md Markdown, cfg *Config) error {
 	g.generateLinks(md, cfg)
 	g.discardWaiters()
 	return g.lastErr
+}
+
+// computeDirHash computes an hash on static directory of c.
+func computeDirHash(md Markdown, c Config) (string, error) {
+	dir := filepath.Join(md.Root, c.PathScope)
+	if _, err := os.Stat(dir); err != nil {
+		return "", err
+	}
+
+	hashString := ""
+	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if !info.IsDir() && c.IsValidExt(filepath.Ext(path)) {
+			hashString += fmt.Sprintf("%v%v%v%v", info.ModTime(), info.Name(), info.Size(), path)
+		}
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+
+	sum := sha1.Sum([]byte(hashString))
+	return hex.EncodeToString(sum[:]), nil
 }

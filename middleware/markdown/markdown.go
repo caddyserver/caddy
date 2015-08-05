@@ -69,10 +69,27 @@ type Config struct {
 	// Links to all markdown pages ordered by date.
 	Links []PageLink
 
+	// Stores a directory hash to check for changes.
+	linksHash string
+
 	// Directory to store static files
 	StaticDir string
 
+	// If in development mode. i.e. Actively editing markdown files.
+	Development bool
+
 	sync.RWMutex
+}
+
+// IsValidExt checks to see if an extension is a valid markdown extension
+// for config.
+func (c Config) IsValidExt(ext string) bool {
+	for _, e := range c.Extensions {
+		if e == ext {
+			return true
+		}
+	}
+	return false
 }
 
 // ServeHTTP implements the http.Handler interface.
@@ -103,6 +120,13 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 					return http.StatusNotFound, nil
 				}
 
+				// if development is set, scan directory for file changes for links.
+				if m.Development {
+					if err := GenerateLinks(md, m); err != nil {
+						log.Println(err)
+					}
+				}
+
 				// if static site is generated, attempt to use it
 				if filepath, ok := m.StaticFiles[fpath]; ok {
 					if fs1, err := os.Stat(filepath); err == nil {
@@ -119,13 +143,6 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 							}
 							return http.StatusNotFound, nil
 						}
-					}
-				}
-
-				if m.StaticDir != "" {
-					// Markdown modified or new. Update links.
-					if err := GenerateLinks(md, m); err != nil {
-						log.Println(err)
 					}
 				}
 
