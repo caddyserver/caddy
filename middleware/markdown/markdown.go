@@ -122,7 +122,7 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 
 				// if development is set, scan directory for file changes for links.
 				if m.Development {
-					if err := GenerateLinks(md, m); err != nil {
+					if err := GenerateStatic(md, m); err != nil {
 						log.Println(err)
 					}
 				}
