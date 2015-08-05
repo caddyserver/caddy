@@ -51,6 +51,7 @@ Caddy is available as a Docker container from any of these sources:
 
 - [abiosoft/caddy](https://registry.hub.docker.com/u/abiosoft/caddy/)
 - [darron/caddy](https://registry.hub.docker.com/u/darron/caddy/)
+- [joshix/caddy](https://registry.hub.docker.com/u/joshix/caddy/)
 - [jumanjiman/caddy](https://registry.hub.docker.com/u/jumanjiman/caddy/)
 - [zenithar/nano-caddy](https://registry.hub.docker.com/u/zenithar/nano-caddy/)
 
