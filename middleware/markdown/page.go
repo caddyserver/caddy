@@ -2,9 +2,6 @@ package markdown
 
 import (
 	"bytes"
-	"crypto/sha1"
-	"encoding/hex"
-	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
@@ -67,7 +64,9 @@ func (l *linkGen) started() bool {
 	return l.generating
 }
 
-func (l *linkGen) generateLinks(md Markdown, cfg *Config) {
+// generateLinks generate links to markdown files if there are file changes.
+// It returns true when generation is done and false otherwise.
+func (l *linkGen) generateLinks(md Markdown, cfg *Config) bool {
 	l.Lock()
 	l.generating = true
 	l.Unlock()
@@ -81,7 +80,7 @@ func (l *linkGen) generateLinks(md Markdown, cfg *Config) {
 		l.lastErr = err
 		l.generating = false
 		l.Unlock()
-		return
+		return false
 	}
 
 	hash, err := computeDirHash(md, *cfg)
@@ -91,7 +90,7 @@ func (l *linkGen) generateLinks(md Markdown, cfg *Config) {
 		l.Lock()
 		l.generating = false
 		l.Unlock()
-		return
+		return false
 	} else if err != nil {
 		log.Println("Error:", err)
 	}
@@ -162,58 +161,5 @@ func (l *linkGen) generateLinks(md Markdown, cfg *Config) {
 	l.Lock()
 	l.generating = false
 	l.Unlock()
-}
-
-type linkGenerator struct {
-	gens map[*Config]*linkGen
-	sync.Mutex
-}
-
-var generator = linkGenerator{gens: make(map[*Config]*linkGen)}
-
-// GenerateLinks generates links to all markdown files ordered by newest date.
-// This blocks until link generation is done. When called by multiple goroutines,
-// the first caller starts the generation and others only wait.
-func GenerateLinks(md Markdown, cfg *Config) error {
-	generator.Lock()
-
-	// if link generator exists for config and running, wait.
-	if g, ok := generator.gens[cfg]; ok {
-		if g.started() {
-			g.addWaiter()
-			generator.Unlock()
-			g.Wait()
-			return g.lastErr
-		}
-	}
-
-	g := &linkGen{}
-	generator.gens[cfg] = g
-	generator.Unlock()
-
-	g.generateLinks(md, cfg)
-	g.discardWaiters()
-	return g.lastErr
-}
-
-// computeDirHash computes an hash on static directory of c.
-func computeDirHash(md Markdown, c Config) (string, error) {
-	dir := filepath.Join(md.Root, c.PathScope)
-	if _, err := os.Stat(dir); err != nil {
-		return "", err
-	}
-
-	hashString := ""
-	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if !info.IsDir() && c.IsValidExt(filepath.Ext(path)) {
-			hashString += fmt.Sprintf("%v%v%v%v", info.ModTime(), info.Name(), info.Size(), path)
-		}
-		return nil
-	})
-	if err != nil {
-		return "", err
-	}
-
-	sum := sha1.Sum([]byte(hashString))
-	return hex.EncodeToString(sum[:]), nil
+	return true
 }

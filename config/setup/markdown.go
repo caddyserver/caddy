@@ -1,9 +1,7 @@
 package setup
 
 import (
-	"io/ioutil"
 	"net/http"
-	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -32,62 +30,14 @@ func Markdown(c *Controller) (middleware.Middleware, error) {
 		for i := range mdconfigs {
 			cfg := &mdconfigs[i]
 
-			// Links generation.
-			if err := markdown.GenerateLinks(md, cfg); err != nil {
+			// Generate static files.
+			if err := markdown.GenerateStatic(md, cfg); err != nil {
 				return err
 			}
-			// Watch file changes for links generation if not in development mode.
+
+			// Watch file changes for static site generation if not in development mode.
 			if !cfg.Development {
 				markdown.Watch(md, cfg, markdown.DefaultInterval)
-			}
-
-			if cfg.StaticDir == "" {
-				continue
-			}
-
-			// If generated site already exists, clear it out
-			_, err := os.Stat(cfg.StaticDir)
-			if err == nil {
-				err := os.RemoveAll(cfg.StaticDir)
-				if err != nil {
-					return err
-				}
-			}
-
-			fp := filepath.Join(md.Root, cfg.PathScope)
-
-			err = filepath.Walk(fp, func(path string, info os.FileInfo, err error) error {
-				for _, ext := range cfg.Extensions {
-					if !info.IsDir() && strings.HasSuffix(info.Name(), ext) {
-						// Load the file
-						body, err := ioutil.ReadFile(path)
-						if err != nil {
-							return err
-						}
-
-						// Get the relative path as if it were a HTTP request,
-						// then prepend with "/" (like a real HTTP request)
-						reqPath, err := filepath.Rel(md.Root, path)
-						if err != nil {
-							return err
-						}
-						reqPath = "/" + reqPath
-
-						// Generate the static file
-						ctx := middleware.Context{Root: md.FileSys}
-						_, err = md.Process(*cfg, reqPath, body, ctx)
-						if err != nil {
-							return err
-						}
-
-						break // don't try other file extensions
-					}
-				}
-				return nil
-			})
-
-			if err != nil {
-				return err
 			}
 		}
 

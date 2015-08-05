@@ -68,6 +68,14 @@ func TestMarkdown(t *testing.T) {
 		}),
 	}
 
+	for i := range md.Configs {
+		c := &md.Configs[i]
+		if err := GenerateStatic(md, c); err != nil {
+			t.Fatalf("Error: %v", err)
+		}
+		Watch(md, c, time.Millisecond*100)
+	}
+
 	req, err := http.NewRequest("GET", "/blog/test.md", nil)
 	if err != nil {
 		t.Fatalf("Could not create HTTP request: %v", err)
@@ -157,6 +165,7 @@ func getTrue() bool {
 	err = os.Chtimes("testdata/og/first.md", currenttime, currenttime)
 	currenttime = time.Now().Local()
 	err = os.Chtimes("testdata/og_static/og/first.md/index.html", currenttime, currenttime)
+	time.Sleep(time.Millisecond * 200)
 
 	md.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -169,8 +178,9 @@ func getTrue() bool {
 <title>first_post</title>
 </head>
 <body>
-<h1>Header title</h1>
+<h1>Header</h1>
 
+Welcome to title!
 <h1>Test h1</h1>
 
 </body>
@@ -183,13 +193,6 @@ func getTrue() bool {
 	expectedLinks := []string{
 		"/blog/test.md",
 		"/log/test.md",
-	}
-
-	for i := range md.Configs {
-		c := &md.Configs[i]
-		if err := GenerateLinks(md, c); err != nil {
-			t.Fatalf("Error: %v", err)
-		}
 	}
 
 	for i, c := range md.Configs[:2] {
@@ -218,7 +221,7 @@ func getTrue() bool {
 	w.Wait()
 
 	f = func() {
-		GenerateLinks(md, &md.Configs[0])
+		GenerateStatic(md, &md.Configs[0])
 		w.Done()
 	}
 	for i := 0; i < 5; i++ {

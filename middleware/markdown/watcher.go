@@ -1,6 +1,9 @@
 package markdown
 
-import "time"
+import (
+	"log"
+	"time"
+)
 
 const DefaultInterval = time.Second * 60
 
@@ -8,12 +11,14 @@ const DefaultInterval = time.Second * 60
 // when there are changes.
 func Watch(md Markdown, c *Config, interval time.Duration) (stopChan chan struct{}) {
 	return TickerFunc(interval, func() {
-		GenerateLinks(md, c)
+		if err := GenerateStatic(md, c); err != nil {
+			log.Println(err)
+		}
 	})
 }
 
-// TickerFunc runs f at interval. If interval is <= 0, it loops f. A message to the
-// returned channel will stop the executing goroutine.
+// TickerFunc runs f at interval. A message to the returned channel will stop the
+// executing goroutine.
 func TickerFunc(interval time.Duration, f func()) chan struct{} {
 	stopChan := make(chan struct{})
 
