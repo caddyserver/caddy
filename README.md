@@ -52,7 +52,7 @@ Caddy is available as a Docker container from any of these sources:
 - [abiosoft/caddy](https://registry.hub.docker.com/u/abiosoft/caddy/)
 - [darron/caddy](https://registry.hub.docker.com/u/darron/caddy/)
 - [jumanjiman/caddy](https://registry.hub.docker.com/u/jumanjiman/caddy/)
-
+- [zenithar/nano-caddy](https://registry.hub.docker.com/u/zenithar/nano-caddy/)
 
 
 #### 3rd-party libraries
@@ -117,6 +117,8 @@ For more documentation, please view [the website](https://caddyserver.com/docs).
 This project would not be what it is without your help. Please see the [contributing guidelines](https://github.com/mholt/caddy/blob/master/CONTRIBUTING.md) if you haven't already.
 
 Thanks for making Caddy -- and the Web -- better!
+
+Special thanks to [![DigitalOcean](http://i.imgur.com/sfGr0eY.png)](https://www.digitalocean.com) for hosting the Caddy project.
 
 
 

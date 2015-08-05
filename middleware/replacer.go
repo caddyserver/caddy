@@ -24,7 +24,9 @@ type replacer struct {
 // NewReplacer makes a new replacer based on r and rr.
 // Do not create a new replacer until r and rr have all
 // the needed values, because this function copies those
-// values into the replacer.
+// values into the replacer. rr may be nil if it is not
+// available. emptyValue should be the string that is used
+// in place of empty string (can still be empty string).
 func NewReplacer(r *http.Request, rr *responseRecorder, emptyValue string) Replacer {
 	rep := replacer{
 		replacements: map[string]string{
