@@ -9,6 +9,7 @@ import (
 	"github.com/mholt/caddy/middleware"
 	caddylog "github.com/mholt/caddy/middleware/log"
 	"github.com/mholt/caddy/server"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 // Log sets up the logging middleware.
@@ -34,9 +35,14 @@ func Log(c *Controller) (middleware.Middleware, error) {
 					return err
 				}
 			} else {
-				file, err = os.OpenFile(rules[i].OutputFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+				_, err = os.OpenFile(rules[i].OutputFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
 				if err != nil {
 					return err
+				}
+				file = &lumberjack.Logger{
+					Filename:   rules[i].OutputFile,
+					MaxSize:    20,
+					MaxBackups: 10,
 				}
 			}
 

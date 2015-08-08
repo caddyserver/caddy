@@ -11,6 +11,7 @@ import (
 	"github.com/hashicorp/go-syslog"
 	"github.com/mholt/caddy/middleware"
 	"github.com/mholt/caddy/middleware/errors"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 // Errors configures a new gzip middleware instance.
@@ -35,9 +36,14 @@ func Errors(c *Controller) (middleware.Middleware, error) {
 				return err
 			}
 		} else if handler.LogFile != "" {
-			file, err = os.OpenFile(handler.LogFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+			_, err = os.OpenFile(handler.LogFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
 			if err != nil {
 				return err
+			}
+			file = &lumberjack.Logger{
+				Filename:   handler.LogFile,
+				MaxSize:    20,
+				MaxBackups: 10,
 			}
 		}
 
