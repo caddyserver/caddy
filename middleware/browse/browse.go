@@ -297,7 +297,7 @@ func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			}
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 
-		} else { // there's no json query, browse normally
+		} else { // there's no 'application/json' in the 'Accept' header, browse normally
 			err = bc.Template.Execute(&buf, listing)
 			if err != nil {
 				return http.StatusInternalServerError, err
