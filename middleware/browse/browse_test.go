@@ -1,8 +1,7 @@
 package browse
 
 import (
-	//"bytes"
-	"encoding/json"
+        "encoding/json"
 	"github.com/mholt/caddy/middleware"
 	"net/http"
 	"net/http/httptest"
@@ -191,7 +190,7 @@ func TestBrowseJson(t *testing.T) {
 	}
 
 	actualJsonResponseString := rec.Body.String()
-	//t.Logf("json response body: %s\n", respBody)
+
 	//generating the listing to compare it with the response body
 	file, err := os.Open(b.Root + req.URL.Path)
 	if err != nil {
@@ -233,12 +232,10 @@ func TestBrowseJson(t *testing.T) {
 	listing.Order = "asc"
 	listing.applySort()
 
-	//var buf bytes.Buffer
 	marsh, err := json.Marshal(listing.Items)
 	if err != nil {
 		t.Fatalf("Unable to Marshal the listing ")
 	}
-	//t.Logf("json value: %s\n", string(marsh))
 	expectedJsonString := string(marsh)
 	if actualJsonResponseString != expectedJsonString {
 		t.Errorf("Json response string doesnt match the expected Json response ")
