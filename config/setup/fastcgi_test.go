@@ -51,6 +51,16 @@ func TestFastcgiParse(t *testing.T) {
 				SplitPath:  ".php",
 				IndexFiles: []string{"index.php"},
 			}}},
+		{`fastcgi / 127.0.0.1:9001 {
+	              split .html
+	              }`,
+			false, []fastcgi.Rule{{
+				Path:       "/",
+				Address:    "127.0.0.1:9001",
+				Ext:        "",
+				SplitPath:  ".html",
+				IndexFiles: []string{},
+			}}},
 	}
 	for i, test := range tests {
 		c := NewTestController(test.inputFastcgiConfig)
