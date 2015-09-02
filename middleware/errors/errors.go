@@ -20,6 +20,7 @@ type ErrorHandler struct {
 	ErrorPages map[int]string // map of status code to filename
 	LogFile    string
 	Log        *log.Logger
+	LogRoller  *middleware.LogRoller
 }
 
 func (h ErrorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
