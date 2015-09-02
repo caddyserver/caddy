@@ -43,6 +43,7 @@ By default, Caddy serves the current directory at [localhost:2015](http://localh
 
 Caddy accepts some flags from the command line. Run `caddy -h` to view the help for flags. You can also pipe a Caddyfile into the caddy command.
 
+**Running as root:** We advise against this; use setcap instead, like so: `setcap cap_net_bind_service=+ep ./caddy` This will allow you to listen on ports below 1024 (like 80 and 443).
 
 
 #### Docker Container
@@ -51,6 +52,7 @@ Caddy is available as a Docker container from any of these sources:
 
 - [abiosoft/caddy](https://registry.hub.docker.com/u/abiosoft/caddy/)
 - [darron/caddy](https://registry.hub.docker.com/u/darron/caddy/)
+- [joshix/caddy](https://registry.hub.docker.com/u/joshix/caddy/)
 - [jumanjiman/caddy](https://registry.hub.docker.com/u/jumanjiman/caddy/)
 - [zenithar/nano-caddy](https://registry.hub.docker.com/u/zenithar/nano-caddy/)
 

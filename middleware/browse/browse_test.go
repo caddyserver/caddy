@@ -1,14 +1,16 @@
 package browse
 
 import (
+        "encoding/json"
+	"github.com/mholt/caddy/middleware"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"os"
 	"sort"
 	"testing"
 	"text/template"
 	"time"
-
-	"github.com/mholt/caddy/middleware"
 )
 
 // "sort" package has "IsSorted" function, but no "IsReversed";
@@ -153,5 +155,89 @@ func TestBrowseTemplate(t *testing.T) {
 
 	if respBody != expectedBody {
 		t.Fatalf("Expected body: %v got: %v", expectedBody, respBody)
+	}
+
+}
+
+func TestBrowseJson(t *testing.T) {
+
+	b := Browse{
+		Next: middleware.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
+			t.Fatalf("Next shouldn't be called")
+			return 0, nil
+		}),
+		Root: "./testdata",
+		Configs: []Config{
+			Config{
+				PathScope: "/photos",
+			},
+		},
+	}
+
+	req, err := http.NewRequest("GET", "/photos/", nil)
+	if err != nil {
+		t.Fatalf("Test: Could not create HTTP request: %v", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	rec := httptest.NewRecorder()
+
+	b.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Wrong status, expected %d, got %d", http.StatusOK, rec.Code)
+	}
+	if rec.HeaderMap.Get("Content-Type") != "application/json; charset=utf-8" {
+		t.Fatalf("Expected Content type to be application/json; charset=utf-8, but got %s ", rec.HeaderMap.Get("Content-Type"))
+	}
+
+	actualJsonResponseString := rec.Body.String()
+
+	//generating the listing to compare it with the response body
+	file, err := os.Open(b.Root + req.URL.Path)
+	if err != nil {
+		if os.IsPermission(err) {
+			t.Fatalf("Os Permission Error")
+
+		}
+
+	}
+	defer file.Close()
+
+	files, err := file.Readdir(-1)
+	if err != nil {
+		t.Fatalf("Unable to Read Contents of the directory")
+	}
+	var fileinfos []FileInfo
+	for _, f := range files {
+		name := f.Name()
+
+		if f.IsDir() {
+			name += "/"
+		}
+
+		url := url.URL{Path: name}
+
+		fileinfos = append(fileinfos, FileInfo{
+			IsDir:   f.IsDir(),
+			Name:    f.Name(),
+			Size:    f.Size(),
+			URL:     url.String(),
+			ModTime: f.ModTime(),
+			Mode:    f.Mode(),
+		})
+	}
+	listing := Listing{
+		Items: fileinfos,
+	}
+	listing.Sort = "name"
+	listing.Order = "asc"
+	listing.applySort()
+
+	marsh, err := json.Marshal(listing.Items)
+	if err != nil {
+		t.Fatalf("Unable to Marshal the listing ")
+	}
+	expectedJsonString := string(marsh)
+	if actualJsonResponseString != expectedJsonString {
+		t.Errorf("Json response string doesnt match the expected Json response ")
 	}
 }

@@ -57,6 +57,11 @@ func Load(filename string, input io.Reader) (Group, error) {
 			if config.Port == "" {
 				config.Port = Port
 			}
+			if config.Port == "http" {
+				config.TLS.Enabled = false
+				log.Printf("Warning: TLS disabled for %s://%s. To force TLS over the plaintext HTTP port, "+
+					"specify port 80 explicitly (https://%s:80).", config.Port, config.Host, config.Host)
+			}
 			if i == 0 {
 				sharedConfig.Startup = []func() error{}
 				sharedConfig.Shutdown = []func() error{}

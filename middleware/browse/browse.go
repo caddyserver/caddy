@@ -4,12 +4,14 @@ package browse
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
 	"os"
 	"path"
 	"sort"
+	"strconv"
 	"strings"
 	"text/template"
 	"time"
@@ -185,7 +187,6 @@ func directoryListing(files []os.FileInfo, r *http.Request, canGoUp bool, root s
 // ServeHTTP implements the middleware.Handler interface.
 func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	filename := b.Root + r.URL.Path
-
 	info, err := os.Stat(filename)
 	if err != nil {
 		return b.Next.ServeHTTP(w, r)
@@ -264,12 +265,47 @@ func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 		listing.applySort()
 
 		var buf bytes.Buffer
-		err = bc.Template.Execute(&buf, listing)
-		if err != nil {
-			return http.StatusInternalServerError, err
+		// check if we should provide json
+		acceptHeader := strings.Join(r.Header["Accept"], ",")
+		if strings.Contains(strings.ToLower(acceptHeader), "application/json") {
+			var marsh []byte
+			// check if we are limited
+			if limitQuery := r.URL.Query().Get("limit"); limitQuery != "" {
+				limit, err := strconv.Atoi(limitQuery)
+				if err != nil { // if the 'limit' query can't be interpreted as a number, return err
+					return http.StatusBadRequest, err
+				}
+				// if `limit` is equal or less than len(listing.Items) and bigger than 0, list them
+				if limit <= len(listing.Items) && limit > 0 {
+					marsh, err = json.Marshal(listing.Items[:limit])
+				} else { // if the 'limit' query is empty, or has the wrong value, list everything
+					marsh, err = json.Marshal(listing.Items)
+				}
+				if err != nil {
+					return http.StatusInternalServerError, err
+				}
+			} else { // there's no 'limit' query, list them all
+				marsh, err = json.Marshal(listing.Items)
+				if err != nil {
+					return http.StatusInternalServerError, err
+				}
+			}
+
+			// write the marshaled json to buf
+			if _, err = buf.Write(marsh); err != nil {
+				return http.StatusInternalServerError, err
+			}
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+
+		} else { // there's no 'application/json' in the 'Accept' header, browse normally
+			err = bc.Template.Execute(&buf, listing)
+			if err != nil {
+				return http.StatusInternalServerError, err
+			}
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
 		}
 
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		buf.WriteTo(w)
 
 		return http.StatusOK, nil
