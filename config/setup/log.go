@@ -22,25 +22,33 @@ func Log(c *Controller) (middleware.Middleware, error) {
 	c.Startup = append(c.Startup, func() error {
 		for i := 0; i < len(rules); i++ {
 			var err error
-			var file io.Writer
+			var writer io.Writer
 
 			if rules[i].OutputFile == "stdout" {
-				file = os.Stdout
+				writer = os.Stdout
 			} else if rules[i].OutputFile == "stderr" {
-				file = os.Stderr
+				writer = os.Stderr
 			} else if rules[i].OutputFile == "syslog" {
-				file, err = gsyslog.NewLogger(gsyslog.LOG_INFO, "LOCAL0", "caddy")
+				writer, err = gsyslog.NewLogger(gsyslog.LOG_INFO, "LOCAL0", "caddy")
 				if err != nil {
 					return err
 				}
 			} else {
+				var file *os.File
 				file, err = os.OpenFile(rules[i].OutputFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
 				if err != nil {
 					return err
 				}
+				if rules[i].Roller != nil {
+					file.Close()
+					rules[i].Roller.Filename = rules[i].OutputFile
+					writer = rules[i].Roller.GetLogWriter()
+				} else {
+					writer = file
+				}
 			}
 
-			rules[i].Log = log.New(file, "", 0)
+			rules[i].Log = log.New(writer, "", 0)
 		}
 
 		return nil
@@ -57,12 +65,33 @@ func logParse(c *Controller) ([]caddylog.Rule, error) {
 	for c.Next() {
 		args := c.RemainingArgs()
 
+		var logRoller *middleware.LogRoller
+		if c.NextBlock() {
+			if c.Val() == "rotate" {
+				if c.NextArg() {
+					if c.Val() == "{" {
+						var err error
+						logRoller, err = parseRoller(c)
+						if err != nil {
+							return nil, err
+						}
+						// This part doesn't allow having something after the rotate block
+						if c.Next() {
+							if c.Val() != "}" {
+								return nil, c.ArgErr()
+							}
+						}
+					}
+				}
+			}
+		}
 		if len(args) == 0 {
 			// Nothing specified; use defaults
 			rules = append(rules, caddylog.Rule{
 				PathScope:  "/",
 				OutputFile: caddylog.DefaultLogFilename,
 				Format:     caddylog.DefaultLogFormat,
+				Roller:     logRoller,
 			})
 		} else if len(args) == 1 {
 			// Only an output file specified
@@ -70,6 +99,7 @@ func logParse(c *Controller) ([]caddylog.Rule, error) {
 				PathScope:  "/",
 				OutputFile: args[0],
 				Format:     caddylog.DefaultLogFormat,
+				Roller:     logRoller,
 			})
 		} else {
 			// Path scope, output file, and maybe a format specified
@@ -91,6 +121,7 @@ func logParse(c *Controller) ([]caddylog.Rule, error) {
 				PathScope:  args[0],
 				OutputFile: args[1],
 				Format:     format,
+				Roller:     logRoller,
 			})
 		}
 	}

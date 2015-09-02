@@ -23,25 +23,35 @@ func Errors(c *Controller) (middleware.Middleware, error) {
 	// Open the log file for writing when the server starts
 	c.Startup = append(c.Startup, func() error {
 		var err error
-		var file io.Writer
+		var writer io.Writer
 
 		if handler.LogFile == "stdout" {
-			file = os.Stdout
+			writer = os.Stdout
 		} else if handler.LogFile == "stderr" {
-			file = os.Stderr
+			writer = os.Stderr
 		} else if handler.LogFile == "syslog" {
-			file, err = gsyslog.NewLogger(gsyslog.LOG_ERR, "LOCAL0", "caddy")
+			writer, err = gsyslog.NewLogger(gsyslog.LOG_ERR, "LOCAL0", "caddy")
 			if err != nil {
 				return err
 			}
 		} else if handler.LogFile != "" {
+			var file *os.File
 			file, err = os.OpenFile(handler.LogFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
 			if err != nil {
 				return err
 			}
+			if handler.LogRoller != nil {
+				file.Close()
+
+				handler.LogRoller.Filename = handler.LogFile
+
+				writer = handler.LogRoller.GetLogWriter()
+			} else {
+				writer = file
+			}
 		}
 
-		handler.Log = log.New(file, "", 0)
+		handler.Log = log.New(writer, "", 0)
 		return nil
 	})
 
@@ -71,6 +81,16 @@ func errorsParse(c *Controller) (*errors.ErrorHandler, error) {
 
 			if what == "log" {
 				handler.LogFile = where
+				if c.NextArg() {
+					if c.Val() == "{" {
+						c.IncrNest()
+						logRoller, err := parseRoller(c)
+						if err != nil {
+							return hadBlock, err
+						}
+						handler.LogRoller = logRoller
+					}
+				}
 			} else {
 				// Error page; ensure it exists
 				where = path.Join(c.Root, where)
@@ -91,6 +111,10 @@ func errorsParse(c *Controller) (*errors.ErrorHandler, error) {
 	}
 
 	for c.Next() {
+		// weird hack to avoid having the handler values overwritten.
+		if c.Val() == "}" {
+			continue
+		}
 		// Configuration may be in a block
 		hadBlock, err := optionalBlock()
 		if err != nil {
