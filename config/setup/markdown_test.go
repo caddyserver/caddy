@@ -111,7 +111,7 @@ func TestMarkdownStaticGen(t *testing.T) {
 
 	fp := filepath.Join(c.Root, markdown.DefaultStaticDir)
 	if err = os.RemoveAll(fp); err != nil {
-		t.Errorf("Error while removing the generated static files: ", err)
+		t.Errorf("Error while removing the generated static files: %v", err)
 	}
 }
 
