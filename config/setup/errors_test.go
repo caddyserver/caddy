@@ -67,6 +67,7 @@ func TestErrorsParse(t *testing.T) {
 				MaxSize:    2,
 				MaxAge:     10,
 				MaxBackups: 3,
+				LocalTime:  true,
 			},
 		}},
 		{`errors { log errors.txt {
@@ -86,6 +87,7 @@ func TestErrorsParse(t *testing.T) {
 				MaxSize:    3,
 				MaxAge:     11,
 				MaxBackups: 5,
+				LocalTime:  true,
 			},
 		}},
 	}

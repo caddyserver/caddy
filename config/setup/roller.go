@@ -35,5 +35,6 @@ func parseRoller(c *Controller) (*middleware.LogRoller, error) {
 		MaxSize:    size,
 		MaxAge:     age,
 		MaxBackups: keep,
+		LocalTime:  true,
 	}, nil
 }
