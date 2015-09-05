@@ -9,6 +9,8 @@ import (
 
 // BasicAuth configures a new BasicAuth middleware instance.
 func BasicAuth(c *Controller) (middleware.Middleware, error) {
+	root := c.Root
+
 	rules, err := basicAuthParse(c)
 	if err != nil {
 		return nil, err
@@ -18,6 +20,7 @@ func BasicAuth(c *Controller) (middleware.Middleware, error) {
 
 	return func(next middleware.Handler) middleware.Handler {
 		basic.Next = next
+		basic.SiteRoot = root
 		return basic
 	}, nil
 }
@@ -34,7 +37,7 @@ func basicAuthParse(c *Controller) ([]basicauth.Rule, error) {
 		switch len(args) {
 		case 2:
 			rule.Username = args[0]
-			if rule.Password, err = passwordMatcher(rule.Username, args[1]); err != nil {
+			if rule.Password, err = passwordMatcher(rule.Username, args[1], c.Root); err != nil {
 				return rules, c.Errf("Get password matcher from %s: %v", c.Val(), err)
 			}
 
@@ -47,7 +50,7 @@ func basicAuthParse(c *Controller) ([]basicauth.Rule, error) {
 		case 3:
 			rule.Resources = append(rule.Resources, args[0])
 			rule.Username = args[1]
-			if rule.Password, err = passwordMatcher(rule.Username, args[2]); err != nil {
+			if rule.Password, err = passwordMatcher(rule.Username, args[2], c.Root); err != nil {
 				return rules, c.Errf("Get password matcher from %s: %v", c.Val(), err)
 			}
 		default:
@@ -60,10 +63,10 @@ func basicAuthParse(c *Controller) ([]basicauth.Rule, error) {
 	return rules, nil
 }
 
-func passwordMatcher(username, passw string) (basicauth.PasswordMatcher, error) {
+func passwordMatcher(username, passw, siteRoot string) (basicauth.PasswordMatcher, error) {
 	if !strings.HasPrefix(passw, "htpasswd=") {
 		return basicauth.PlainMatcher(passw), nil
 	}
 
-	return basicauth.GetHtpasswdMatcher(passw[9:], username)
+	return basicauth.GetHtpasswdMatcher(passw[9:], username, siteRoot)
 }

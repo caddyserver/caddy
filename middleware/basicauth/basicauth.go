@@ -22,8 +22,9 @@ import (
 // security of HTTP Basic Auth is disputed. Use discretion when deciding
 // what to protect with BasicAuth.
 type BasicAuth struct {
-	Next  middleware.Handler
-	Rules []Rule
+	Next     middleware.Handler
+	SiteRoot string
+	Rules    []Rule
 }
 
 // ServeHTTP implements the middleware.Handler interface.
@@ -84,11 +85,8 @@ var (
 	htpasswordsMu sync.Mutex
 )
 
-func GetHtpasswdMatcher(filename, username string) (PasswordMatcher, error) {
-	filename, err := filepath.Abs(filename)
-	if err != nil {
-		return nil, err
-	}
+func GetHtpasswdMatcher(filename, username, siteRoot string) (PasswordMatcher, error) {
+	filename = filepath.Join(siteRoot, filename)
 	htpasswordsMu.Lock()
 	if htpasswords == nil {
 		htpasswords = make(map[string]map[string]PasswordMatcher)

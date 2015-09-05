@@ -132,7 +132,7 @@ md5:$apr1$l42y8rex$pOA2VJ0x/0TwaFeAF9nX61`
 
 	for i, username := range []string{"sha1", "md5"} {
 		rule := Rule{Username: username, Resources: []string{"/testing"}}
-		if rule.Password, err = GetHtpasswdMatcher(htfh.Name(), rule.Username); err != nil {
+		if rule.Password, err = GetHtpasswdMatcher(htfh.Name(), rule.Username, "/"); err != nil {
 			t.Fatalf("GetHtpasswdMatcher(%q, %q): %v", htfh.Name(), rule.Username, err)
 		}
 		t.Logf("%d. username=%q password=%v", i, rule.Username, rule.Password)
