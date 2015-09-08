@@ -124,7 +124,7 @@ func isLocalhost(s string) bool {
 // loadConfigs loads configuration from a file or stdin (piped).
 // The configurations are grouped by bind address.
 // Configuration is obtained from one of three sources, tried
-// in this order: 1. -conf flag, 2. stdin, 4. command line argument 3. Caddyfile.
+// in this order: 1. -conf flag, 2. stdin, 3. command line argument 4. Caddyfile.
 // If none of those are available, a default configuration is
 // loaded.
 func loadConfigs() (config.Group, error) {
