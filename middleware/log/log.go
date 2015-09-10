@@ -47,6 +47,7 @@ type Rule struct {
 	OutputFile string
 	Format     string
 	Log        *log.Logger
+	Roller     *middleware.LogRoller
 }
 
 const (

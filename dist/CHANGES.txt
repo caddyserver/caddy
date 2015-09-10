@@ -1,5 +1,10 @@
 CHANGES
 
+<master>
+- basicauth: Support for legacy htpasswd files
+- browse: JSON response with file listing given Accept header
+
+
 0.7.5 (August 5, 2015)
 - core: All listeners bind to 0.0.0.0 unless 'bind' directive is used
 - fastcgi: Set HTTPS env variable if connection is secure

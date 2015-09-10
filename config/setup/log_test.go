@@ -3,6 +3,7 @@ package setup
 import (
 	"testing"
 
+	"github.com/mholt/caddy/middleware"
 	caddylog "github.com/mholt/caddy/middleware/log"
 )
 
@@ -35,6 +36,9 @@ func TestLog(t *testing.T) {
 	}
 	if myHandler.Rules[0].Format != caddylog.DefaultLogFormat {
 		t.Errorf("Expected %s as the default Log Format", caddylog.DefaultLogFormat)
+	}
+	if myHandler.Rules[0].Roller != nil {
+		t.Errorf("Expected Roller to be nil, got: %v", *myHandler.Rules[0].Roller)
 	}
 	if !SameNext(myHandler.Next, EmptyNext) {
 		t.Error("'Next' field of handler was not set properly")
@@ -78,7 +82,7 @@ func TestLogParse(t *testing.T) {
 			OutputFile: "accesslog.txt",
 			Format:     caddylog.CombinedLogFormat,
 		}}},
-		{`log /api1 log.txt 
+		{`log /api1 log.txt
 		  log /api2 accesslog.txt {combined}`, false, []caddylog.Rule{{
 			PathScope:  "/api1",
 			OutputFile: "log.txt",
@@ -97,6 +101,17 @@ func TestLogParse(t *testing.T) {
 			PathScope:  "/api4",
 			OutputFile: "log.txt",
 			Format:     "{when}",
+		}}},
+		{`log access.log { rotate { size 2 age 10 keep 3 } }`, false, []caddylog.Rule{{
+			PathScope:  "/",
+			OutputFile: "access.log",
+			Format:     caddylog.DefaultLogFormat,
+			Roller: &middleware.LogRoller{
+				MaxSize:    2,
+				MaxAge:     10,
+				MaxBackups: 3,
+				LocalTime:  true,
+			},
 		}}},
 	}
 	for i, test := range tests {
@@ -127,6 +142,32 @@ func TestLogParse(t *testing.T) {
 			if actualLogRule.Format != test.expectedLogRules[j].Format {
 				t.Errorf("Test %d expected %dth LogRule Format to be  %s  , but got %s",
 					i, j, test.expectedLogRules[j].Format, actualLogRule.Format)
+			}
+			if actualLogRule.Roller != nil && test.expectedLogRules[j].Roller == nil || actualLogRule.Roller == nil && test.expectedLogRules[j].Roller != nil {
+				t.Fatalf("Test %d expected %dth LogRule Roller to be %v, but got %v",
+					i, j, test.expectedLogRules[j].Roller, actualLogRule.Roller)
+			}
+			if actualLogRule.Roller != nil && test.expectedLogRules[j].Roller != nil {
+				if actualLogRule.Roller.Filename != test.expectedLogRules[j].Roller.Filename {
+					t.Fatalf("Test %d expected %dth LogRule Roller Filename to be %s, but got %s",
+						i, j, test.expectedLogRules[j].Roller.Filename, actualLogRule.Roller.Filename)
+				}
+				if actualLogRule.Roller.MaxAge != test.expectedLogRules[j].Roller.MaxAge {
+					t.Fatalf("Test %d expected %dth LogRule Roller MaxAge to be %d, but got %d",
+						i, j, test.expectedLogRules[j].Roller.MaxAge, actualLogRule.Roller.MaxAge)
+				}
+				if actualLogRule.Roller.MaxBackups != test.expectedLogRules[j].Roller.MaxBackups {
+					t.Fatalf("Test %d expected %dth LogRule Roller MaxBackups to be %d, but got %d",
+						i, j, test.expectedLogRules[j].Roller.MaxBackups, actualLogRule.Roller.MaxBackups)
+				}
+				if actualLogRule.Roller.MaxSize != test.expectedLogRules[j].Roller.MaxSize {
+					t.Fatalf("Test %d expected %dth LogRule Roller MaxSize to be %d, but got %d",
+						i, j, test.expectedLogRules[j].Roller.MaxSize, actualLogRule.Roller.MaxSize)
+				}
+				if actualLogRule.Roller.LocalTime != test.expectedLogRules[j].Roller.LocalTime {
+					t.Fatalf("Test %d expected %dth LogRule Roller LocalTime to be %t, but got %t",
+						i, j, test.expectedLogRules[j].Roller.LocalTime, actualLogRule.Roller.LocalTime)
+				}
 			}
 		}
 	}

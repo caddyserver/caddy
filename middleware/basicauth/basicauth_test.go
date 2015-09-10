@@ -3,8 +3,10 @@ package basicauth
 import (
 	"encoding/base64"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/mholt/caddy/middleware"
@@ -15,7 +17,7 @@ func TestBasicAuth(t *testing.T) {
 	rw := BasicAuth{
 		Next: middleware.HandlerFunc(contentHandler),
 		Rules: []Rule{
-			{Username: "test", Password: "ttest", Resources: []string{"/testing"}},
+			{Username: "test", Password: PlainMatcher("ttest"), Resources: []string{"/testing"}},
 		},
 	}
 
@@ -66,8 +68,8 @@ func TestMultipleOverlappingRules(t *testing.T) {
 	rw := BasicAuth{
 		Next: middleware.HandlerFunc(contentHandler),
 		Rules: []Rule{
-			{Username: "t", Password: "p1", Resources: []string{"/t"}},
-			{Username: "t1", Password: "p2", Resources: []string{"/t/t"}},
+			{Username: "t", Password: PlainMatcher("p1"), Resources: []string{"/t"}},
+			{Username: "t1", Password: PlainMatcher("p2"), Resources: []string{"/t/t"}},
 		},
 	}
 
@@ -110,4 +112,32 @@ func TestMultipleOverlappingRules(t *testing.T) {
 func contentHandler(w http.ResponseWriter, r *http.Request) (int, error) {
 	fmt.Fprintf(w, r.URL.String())
 	return http.StatusOK, nil
+}
+
+func TestHtpasswd(t *testing.T) {
+	htpasswdPasswd := "IedFOuGmTpT8"
+	htpasswdFile := `sha1:{SHA}dcAUljwz99qFjYR0YLTXx0RqLww=
+md5:$apr1$l42y8rex$pOA2VJ0x/0TwaFeAF9nX61`
+
+	htfh, err := ioutil.TempFile("", "basicauth-")
+	if err != nil {
+		t.Skipf("Error creating temp file (%v), will skip htpassword test")
+		return
+	}
+	if _, err = htfh.Write([]byte(htpasswdFile)); err != nil {
+		t.Fatalf("write htpasswd file %q: %v", htfh.Name(), err)
+	}
+	htfh.Close()
+	defer os.Remove(htfh.Name())
+
+	for i, username := range []string{"sha1", "md5"} {
+		rule := Rule{Username: username, Resources: []string{"/testing"}}
+		if rule.Password, err = GetHtpasswdMatcher(htfh.Name(), rule.Username, "/"); err != nil {
+			t.Fatalf("GetHtpasswdMatcher(%q, %q): %v", htfh.Name(), rule.Username, err)
+		}
+		t.Logf("%d. username=%q password=%v", i, rule.Username, rule.Password)
+		if !rule.Password(htpasswdPasswd) || rule.Password(htpasswdPasswd+"!") {
+			t.Errorf("%d (%s) password does not match.", i, rule.Username)
+		}
+	}
 }

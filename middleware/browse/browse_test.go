@@ -236,7 +236,6 @@ func TestBrowseJson(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unable to Marshal the listing ")
 	}
-
 	expectedJsonString := string(marsh)
 	if actualJsonResponseString != expectedJsonString {
 		t.Errorf("Json response string doesnt match the expected Json response ")
