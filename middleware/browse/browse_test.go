@@ -1,7 +1,7 @@
 package browse
 
 import (
-        "encoding/json"
+	"encoding/json"
 	"github.com/mholt/caddy/middleware"
 	"net/http"
 	"net/http/httptest"
