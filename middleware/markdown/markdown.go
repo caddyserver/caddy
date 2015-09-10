@@ -27,7 +27,7 @@ type Markdown struct {
 	Next middleware.Handler
 
 	// The list of markdown configurations
-	Configs []Config
+	Configs []*Config
 
 	// The list of index files to try
 	IndexFiles []string
@@ -83,7 +83,7 @@ type Config struct {
 
 // IsValidExt checks to see if an extension is a valid markdown extension
 // for config.
-func (c Config) IsValidExt(ext string) bool {
+func (c *Config) IsValidExt(ext string) bool {
 	for _, e := range c.Extensions {
 		if e == ext {
 			return true
@@ -121,7 +121,7 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 
 				// if development is set, scan directory for file changes for links.
 				if cfg.Development {
-					if err := GenerateStatic(md, &cfg); err != nil {
+					if err := GenerateStatic(md, cfg); err != nil {
 						log.Println("On-demand generation error (markdown):", err)
 					}
 				}
