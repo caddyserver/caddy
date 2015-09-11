@@ -102,7 +102,7 @@ func generateStaticHTML(md Markdown, cfg *Config) error {
 
 				// Generate the static file
 				ctx := middleware.Context{Root: md.FileSys}
-				_, err = md.Process(*cfg, reqPath, body, ctx)
+				_, err = md.Process(cfg, reqPath, body, ctx)
 				if err != nil {
 					return err
 				}
@@ -115,7 +115,7 @@ func generateStaticHTML(md Markdown, cfg *Config) error {
 }
 
 // computeDirHash computes an hash on static directory of c.
-func computeDirHash(md Markdown, c Config) (string, error) {
+func computeDirHash(md Markdown, c *Config) (string, error) {
 	dir := filepath.Join(md.Root, c.PathScope)
 	if _, err := os.Stat(dir); err != nil {
 		return "", err

@@ -21,8 +21,8 @@ func TestMarkdown(t *testing.T) {
 	md := Markdown{
 		Root:    "./testdata",
 		FileSys: http.Dir("./testdata"),
-		Configs: []Config{
-			Config{
+		Configs: []*Config{
+			&Config{
 				Renderer:    blackfriday.HtmlRenderer(0, "", ""),
 				PathScope:   "/blog",
 				Extensions:  []string{".md"},
@@ -32,7 +32,7 @@ func TestMarkdown(t *testing.T) {
 				StaticDir:   DefaultStaticDir,
 				StaticFiles: make(map[string]string),
 			},
-			Config{
+			&Config{
 				Renderer:    blackfriday.HtmlRenderer(0, "", ""),
 				PathScope:   "/log",
 				Extensions:  []string{".md"},
@@ -42,7 +42,7 @@ func TestMarkdown(t *testing.T) {
 				StaticDir:   DefaultStaticDir,
 				StaticFiles: make(map[string]string),
 			},
-			Config{
+			&Config{
 				Renderer:    blackfriday.HtmlRenderer(0, "", ""),
 				PathScope:   "/og",
 				Extensions:  []string{".md"},
@@ -69,7 +69,7 @@ func TestMarkdown(t *testing.T) {
 	}
 
 	for i := range md.Configs {
-		c := &md.Configs[i]
+		c := md.Configs[i]
 		if err := GenerateStatic(md, c); err != nil {
 			t.Fatalf("Error: %v", err)
 		}
@@ -221,7 +221,7 @@ Welcome to title!
 	w.Wait()
 
 	f = func() {
-		GenerateStatic(md, &md.Configs[0])
+		GenerateStatic(md, md.Configs[0])
 		w.Done()
 	}
 	for i := 0; i < 5; i++ {

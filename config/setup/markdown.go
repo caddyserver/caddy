@@ -28,7 +28,7 @@ func Markdown(c *Controller) (middleware.Middleware, error) {
 	// Sweep the whole path at startup to at least generate link index, maybe generate static site
 	c.Startup = append(c.Startup, func() error {
 		for i := range mdconfigs {
-			cfg := &mdconfigs[i]
+			cfg := mdconfigs[i]
 
 			// Generate link index and static files (if enabled)
 			if err := markdown.GenerateStatic(md, cfg); err != nil {
@@ -50,11 +50,11 @@ func Markdown(c *Controller) (middleware.Middleware, error) {
 	}, nil
 }
 
-func markdownParse(c *Controller) ([]markdown.Config, error) {
-	var mdconfigs []markdown.Config
+func markdownParse(c *Controller) ([]*markdown.Config, error) {
+	var mdconfigs []*markdown.Config
 
 	for c.Next() {
-		md := markdown.Config{
+		md := &markdown.Config{
 			Renderer:    blackfriday.HtmlRenderer(0, "", ""),
 			Templates:   make(map[string]string),
 			StaticFiles: make(map[string]string),

@@ -83,7 +83,7 @@ func (l *linkGen) generateLinks(md Markdown, cfg *Config) bool {
 		return false
 	}
 
-	hash, err := computeDirHash(md, *cfg)
+	hash, err := computeDirHash(md, cfg)
 
 	// same hash, return.
 	if err == nil && hash == cfg.linksHash {

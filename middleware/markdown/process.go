@@ -26,7 +26,7 @@ type MarkdownData struct {
 
 // Process processes the contents of a page in b. It parses the metadata
 // (if any) and uses the template (if found).
-func (md Markdown) Process(c Config, requestPath string, b []byte, ctx middleware.Context) ([]byte, error) {
+func (md Markdown) Process(c *Config, requestPath string, b []byte, ctx middleware.Context) ([]byte, error) {
 	var metadata = Metadata{Variables: make(map[string]string)}
 	var markdown []byte
 	var err error
@@ -82,7 +82,7 @@ func (md Markdown) Process(c Config, requestPath string, b []byte, ctx middlewar
 
 // processTemplate processes a template given a requestPath,
 // template (tmpl) and metadata
-func (md Markdown) processTemplate(c Config, requestPath string, tmpl []byte, metadata Metadata, ctx middleware.Context) ([]byte, error) {
+func (md Markdown) processTemplate(c *Config, requestPath string, tmpl []byte, metadata Metadata, ctx middleware.Context) ([]byte, error) {
 	// if template is not specified,
 	// use the default template
 	if tmpl == nil {
@@ -123,7 +123,7 @@ func (md Markdown) processTemplate(c Config, requestPath string, tmpl []byte, me
 
 // generatePage generates a static html page from the markdown in content if c.StaticDir
 // is a non-empty value, meaning that the user enabled static site generation.
-func (md Markdown) generatePage(c Config, requestPath string, content []byte) error {
+func (md Markdown) generatePage(c *Config, requestPath string, content []byte) error {
 	// Only generate the page if static site generation is enabled
 	if c.StaticDir != "" {
 		// if static directory is not existing, create it
@@ -160,7 +160,7 @@ func (md Markdown) generatePage(c Config, requestPath string, content []byte) er
 }
 
 // defaultTemplate constructs a default template.
-func defaultTemplate(c Config, metadata Metadata, requestPath string) []byte {
+func defaultTemplate(c *Config, metadata Metadata, requestPath string) []byte {
 	var scripts, styles bytes.Buffer
 	for _, style := range c.Styles {
 		styles.WriteString(strings.Replace(cssTemplate, "{{url}}", style, 1))
