@@ -153,7 +153,9 @@ func (md Markdown) generatePage(c *Config, requestPath string, content []byte) e
 			return err
 		}
 
+		c.Lock()
 		c.StaticFiles[requestPath] = filePath
+		c.Unlock()
 	}
 
 	return nil
