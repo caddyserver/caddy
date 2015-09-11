@@ -117,7 +117,7 @@ md5:$apr1$l42y8rex$pOA2VJ0x/0TwaFeAF9nX61`
 				pwd = fmt.Sprintf("%s%d", pwd, j+1)
 			}
 			if !actualRule.Password(pwd) || actualRule.Password(test.password+"!") {
-				t.Errorf("Test %d, rule %d: Expected password '%s', got '%s'",
+				t.Errorf("Test %d, rule %d: Expected password '%v', got '%v'",
 					i, j, test.password, actualRule.Password)
 			}
 

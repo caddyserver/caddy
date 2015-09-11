@@ -27,8 +27,8 @@ func gzipParse(c *Controller) ([]gzip.Config, error) {
 	for c.Next() {
 		config := gzip.Config{}
 
-		pathFilter := gzip.PathFilter{make(gzip.Set)}
-		extFilter := gzip.ExtFilter{make(gzip.Set)}
+		pathFilter := gzip.PathFilter{IgnoredPaths: make(gzip.Set)}
+		extFilter := gzip.ExtFilter{Exts: make(gzip.Set)}
 
 		// No extra args expected
 		if len(c.RemainingArgs()) > 0 {

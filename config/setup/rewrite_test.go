@@ -42,17 +42,17 @@ func TestRewriteParse(t *testing.T) {
 		expected  []rewrite.Rule
 	}{
 		{`rewrite /from /to`, false, []rewrite.Rule{
-			rewrite.SimpleRule{"/from", "/to"},
+			rewrite.SimpleRule{From: "/from", To: "/to"},
 		}},
 		{`rewrite /from /to
 		  rewrite a b`, false, []rewrite.Rule{
-			rewrite.SimpleRule{"/from", "/to"},
-			rewrite.SimpleRule{"a", "b"},
+			rewrite.SimpleRule{From: "/from", To: "/to"},
+			rewrite.SimpleRule{From: "a", To: "b"},
 		}},
 		{`rewrite a`, true, []rewrite.Rule{}},
 		{`rewrite`, true, []rewrite.Rule{}},
 		{`rewrite a b c`, true, []rewrite.Rule{
-			rewrite.SimpleRule{"a", "b"},
+			rewrite.SimpleRule{From: "a", To: "b"},
 		}},
 	}
 
@@ -98,14 +98,14 @@ func TestRewriteParse(t *testing.T) {
 			r	.*
 			to	/to
 		 }`, false, []rewrite.Rule{
-			&rewrite.RegexpRule{"/", "/to", nil, regexp.MustCompile(".*")},
+			&rewrite.RegexpRule{Base: "/", To: "/to", Regexp: regexp.MustCompile(".*")},
 		}},
 		{`rewrite {
 			regexp	.*
 			to		/to
 			ext		/ html txt
 		 }`, false, []rewrite.Rule{
-			&rewrite.RegexpRule{"/", "/to", []string{"/", "html", "txt"}, regexp.MustCompile(".*")},
+			&rewrite.RegexpRule{Base: "/", To: "/to", Exts: []string{"/", "html", "txt"}, Regexp: regexp.MustCompile(".*")},
 		}},
 		{`rewrite /path {
 			r	rr
@@ -116,8 +116,8 @@ func TestRewriteParse(t *testing.T) {
 		 	to 		/to
 		 }
 		 `, false, []rewrite.Rule{
-			&rewrite.RegexpRule{"/path", "/dest", nil, regexp.MustCompile("rr")},
-			&rewrite.RegexpRule{"/", "/to", nil, regexp.MustCompile("[a-z]+")},
+			&rewrite.RegexpRule{Base: "/path", To: "/dest", Regexp: regexp.MustCompile("rr")},
+			&rewrite.RegexpRule{Base: "/", To: "/to", Regexp: regexp.MustCompile("[a-z]+")},
 		}},
 		{`rewrite {
 			to	/to

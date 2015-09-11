@@ -28,5 +28,5 @@ var EmptyNext = middleware.HandlerFunc(func(w http.ResponseWriter, r *http.Reque
 
 // SameNext does a pointer comparison between next1 and next2.
 func SameNext(next1, next2 middleware.Handler) bool {
-	return fmt.Sprintf("%p", next1) == fmt.Sprintf("%p", next2)
+	return fmt.Sprintf("%v", next1) == fmt.Sprintf("%v", next2)
 }
