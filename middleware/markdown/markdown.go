@@ -126,8 +126,11 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 					}
 				}
 
+				cfg.RLock()
+				filepath, ok := cfg.StaticFiles[fpath]
+				cfg.RUnlock()
 				// if static site is generated, attempt to use it
-				if filepath, ok := cfg.StaticFiles[fpath]; ok {
+				if ok {
 					if fs1, err := os.Stat(filepath); err == nil {
 						// if markdown has not been modified since static page
 						// generation, serve the static page
