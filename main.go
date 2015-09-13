@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/exec"
 	"path"
@@ -28,6 +30,8 @@ func init() {
 	flag.StringVar(&conf, "conf", "", "Configuration file to use (default="+config.DefaultConfigFile+")")
 	flag.BoolVar(&app.Http2, "http2", true, "Enable HTTP/2 support") // TODO: temporary flag until http2 merged into std lib
 	flag.BoolVar(&app.Quiet, "quiet", false, "Quiet mode (no initialization output)")
+	flag.BoolVar(&app.Debug, "debug", false, "Enable debug features")
+	flag.StringVar(&app.PprofPort, "pprof-port", "6060", "Port for net/http/pprof handlers")
 	flag.StringVar(&cpu, "cpu", "100%", "CPU cap")
 	flag.StringVar(&config.Root, "root", config.DefaultRoot, "Root path to default site")
 	flag.StringVar(&config.Host, "host", config.DefaultHost, "Default host")
@@ -41,6 +45,15 @@ func main() {
 	if version {
 		fmt.Printf("%s %s\n", app.Name, app.Version)
 		os.Exit(0)
+	}
+
+	if app.Debug {
+		go func() {
+			if !app.Quiet {
+				log.Printf("Start pprof server on localhost:%s (you can change this with -pprof-port)\n", app.PprofPort)
+			}
+			fmt.Println(http.ListenAndServe("localhost:"+app.PprofPort, nil))
+		}()
 	}
 
 	// Set CPU cap
