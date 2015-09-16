@@ -166,6 +166,12 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 		scriptFilename = absPath
 	}
 
+	// Strip PATH_INFO from SCRIPT_NAME
+	indexPathInfo := strings.LastIndex(scriptName, pathInfo)
+	if indexPathInfo != -1 {
+		scriptName = scriptName[:indexPathInfo]
+	}
+
 	// Some variables are unused but cleared explicitly to prevent
 	// the parent environment from interfering.
 	env = map[string]string{
