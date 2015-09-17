@@ -17,8 +17,9 @@ func Browse(c *Controller) (middleware.Middleware, error) {
 	}
 
 	browse := browse.Browse{
-		Root:    c.Root,
-		Configs: configs,
+		Root:          c.Root,
+		Configs:       configs,
+		IgnoreIndexes: false,
 	}
 
 	return func(next middleware.Handler) middleware.Handler {
