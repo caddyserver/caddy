@@ -131,6 +131,19 @@ func (c Context) Truncate(input string, length int) string {
 	return input
 }
 
+// StripExt returns the input string without the extension,
+// which is the suffix starting with the final '.' character
+// but not before the final path separator ('/') character.
+// If there is no extension, the whole input is returned.
+func (c Context) StripExt(path string) string {
+	for i := len(path) - 1; i >= 0 && path[i] != '/'; i-- {
+		if path[i] == '.' {
+			return path[:i]
+		}
+	}
+	return path
+}
+
 // Replace replaces instances of find in input with replacement.
 func (c Context) Replace(input, find, replacement string) string {
 	return strings.Replace(input, find, replacement, -1)
