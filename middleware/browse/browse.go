@@ -23,9 +23,10 @@ import (
 // Browse is an http.Handler that can show a file listing when
 // directories in the given paths are specified.
 type Browse struct {
-	Next    middleware.Handler
-	Root    string
-	Configs []Config
+	Next          middleware.Handler
+	Root          string
+	Configs       []Config
+	IgnoreIndexes bool
 }
 
 // Config is a configuration for browsing in a particular path.
@@ -142,16 +143,18 @@ var IndexPages = []string{
 	"default.txt",
 }
 
-func directoryListing(files []os.FileInfo, r *http.Request, canGoUp bool, root string) (Listing, error) {
+func directoryListing(files []os.FileInfo, r *http.Request, canGoUp bool, root string, ignoreIndexes bool) (Listing, error) {
 	var fileinfos []FileInfo
 	var urlPath = r.URL.Path
 	for _, f := range files {
 		name := f.Name()
 
 		// Directory is not browsable if it contains index file
-		for _, indexName := range IndexPages {
-			if name == indexName {
-				return Listing{}, errors.New("Directory contains index file, not browsable!")
+		if !ignoreIndexes {
+			for _, indexName := range IndexPages {
+				if name == indexName {
+					return Listing{}, errors.New("Directory contains index file, not browsable!")
+				}
 			}
 		}
 
@@ -234,7 +237,7 @@ func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			}
 		}
 		// Assemble listing of directory contents
-		listing, err := directoryListing(files, r, canGoUp, b.Root)
+		listing, err := directoryListing(files, r, canGoUp, b.Root, b.IgnoreIndexes)
 		if err != nil { // directory isn't browsable
 			continue
 		}
