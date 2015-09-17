@@ -38,6 +38,12 @@ var (
 
 	// Quiet mode hides non-error initialization output
 	Quiet bool
+
+	// Debug mode enables debugging features
+	Debug bool
+
+	// PprofPort is port for /debug/pprof handlers
+	PprofPort string
 )
 
 // SetCPU parses string cpu and sets GOMAXPROCS
