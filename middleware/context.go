@@ -131,6 +131,40 @@ func (c Context) Truncate(input string, length int) string {
 	return input
 }
 
+// StripHTML returns s without HTML tags. It is fairly naive
+// but works with most valid HTML inputs.
+func (c Context) StripHTML(s string) string {
+	var buf bytes.Buffer
+	var inTag, inQuotes bool
+	var tagStart int
+	for i, ch := range s {
+		if inTag {
+			if ch == '>' && !inQuotes {
+				inTag = false
+			} else if ch == '<' && !inQuotes {
+				// false start
+				buf.WriteString(s[tagStart:i])
+				tagStart = i
+			} else if ch == '"' {
+				inQuotes = !inQuotes
+			}
+			continue
+		}
+		if ch == '<' {
+			inTag = true
+			tagStart = i
+			continue
+		}
+		buf.WriteRune(ch)
+	}
+	if inTag {
+		// false start
+		buf.WriteString(s[tagStart:])
+		inTag = false
+	}
+	return buf.String()
+}
+
 // StripExt returns the input string without the extension,
 // which is the suffix starting with the final '.' character
 // but not before the final path separator ('/') character.
