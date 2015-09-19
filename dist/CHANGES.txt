@@ -4,6 +4,7 @@ CHANGES
 - basicauth: Support for legacy htpasswd files
 - browse: JSON response with file listing given Accept header
 - core: Caddyfile as command line argument
+- templates: Added .StripExt and .StripHTML methods
 
 
 0.7.5 (August 5, 2015)
