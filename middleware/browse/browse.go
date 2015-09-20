@@ -32,6 +32,7 @@ type Browse struct {
 // Config is a configuration for browsing in a particular path.
 type Config struct {
 	PathScope string
+	Variables interface{}
 	Template  *template.Template
 }
 
@@ -54,6 +55,9 @@ type Listing struct {
 
 	// And which order
 	Order string
+
+	// User defined costum variables
+	User interface{}
 
 	middleware.Context
 }
@@ -143,7 +147,7 @@ var IndexPages = []string{
 	"default.txt",
 }
 
-func directoryListing(files []os.FileInfo, r *http.Request, canGoUp bool, root string, ignoreIndexes bool) (Listing, error) {
+func directoryListing(files []os.FileInfo, r *http.Request, canGoUp bool, root string, ignoreIndexes bool, vars interface{}) (Listing, error) {
 	var fileinfos []FileInfo
 	var urlPath = r.URL.Path
 	for _, f := range files {
@@ -184,6 +188,7 @@ func directoryListing(files []os.FileInfo, r *http.Request, canGoUp bool, root s
 			Req:  r,
 			URL:  r.URL,
 		},
+		User: vars,
 	}, nil
 }
 
@@ -237,7 +242,7 @@ func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			}
 		}
 		// Assemble listing of directory contents
-		listing, err := directoryListing(files, r, canGoUp, b.Root, b.IgnoreIndexes)
+		listing, err := directoryListing(files, r, canGoUp, b.Root, b.IgnoreIndexes, bc.Variables)
 		if err != nil { // directory isn't browsable
 			continue
 		}
