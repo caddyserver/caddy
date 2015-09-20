@@ -41,7 +41,6 @@ func NewReplacer(r *http.Request, rr *responseRecorder, emptyValue string) Repla
 			"{host}":     r.Host,
 			"{path}":     r.URL.Path,
 			"{query}":    r.URL.RawQuery,
-			"{frag}":     r.URL.Fragment,
 			"{fragment}": r.URL.Fragment,
 			"{proto}":    r.Proto,
 			"{remote}": func() string {
