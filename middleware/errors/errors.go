@@ -53,7 +53,8 @@ func (h ErrorHandler) errorPage(w http.ResponseWriter, code int) {
 		errorPage, err := os.Open(pagePath)
 		if err != nil {
 			// An error handling an error... <insert grumpy cat here>
-			h.Log.Printf("HTTP %d could not load error page %s: %v", code, pagePath, err)
+			h.Log.Printf("%s [HTTP %d] could not load error page %s: %v",
+				time.Now().Format(timeFormat), code, pagePath, err)
 			http.Error(w, defaultBody, code)
 			return
 		}
@@ -66,7 +67,8 @@ func (h ErrorHandler) errorPage(w http.ResponseWriter, code int) {
 
 		if err != nil {
 			// Epic fail... sigh.
-			h.Log.Printf("HTTP %d could not respond with %s: %v", code, pagePath, err)
+			h.Log.Printf("%s [HTTP %d] could not respond with %s: %v",
+				time.Now().Format(timeFormat), code, pagePath, err)
 			http.Error(w, defaultBody, code)
 		}
 
