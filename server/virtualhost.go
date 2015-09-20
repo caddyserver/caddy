@@ -20,7 +20,7 @@ type virtualHost struct {
 // on its config. This method should be called last before
 // ListenAndServe begins.
 func (vh *virtualHost) buildStack() error {
-	vh.fileServer = FileServer(http.Dir(vh.config.Root), []string{vh.config.ConfigFile})
+	vh.fileServer = middleware.FileServer(http.Dir(vh.config.Root), []string{vh.config.ConfigFile})
 
 	// TODO: We only compile middleware for the "/" scope.
 	// Partial support for multiple location contexts already

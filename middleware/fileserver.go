@@ -1,25 +1,34 @@
-package server
+package middleware
 
 import (
 	"net/http"
 	"os"
 	"path"
 	"strings"
-
-	"github.com/mholt/caddy/middleware"
-	"github.com/mholt/caddy/middleware/browse"
 )
 
+// This file contains a standard way for Caddy middleware
+// to load files from the file system given a request
+// URI and path to site root. Other middleware that load
+// files should use these facilities.
+
+// FileServer implements a production-ready file server
+// and is the 'default' handler for all requests to Caddy.
+// It simply loads and serves the URI requested. If Caddy is
+// run without any extra configuration/directives, this is the
+// only middleware handler that runs. It is not in its own
+// folder like most other middleware handlers because it does
+// not require a directive. It is a special case.
+//
 // FileServer is adapted from the one in net/http by
 // the Go authors. Significant modifications have been made.
 //
-//
-// License:
+// Original license:
 //
 // Copyright 2009 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
-func FileServer(root http.FileSystem, hide []string) middleware.Handler {
+func FileServer(root http.FileSystem, hide []string) Handler {
 	return &fileHandler{root: root, hide: hide}
 }
 
@@ -82,7 +91,7 @@ func (fh *fileHandler) serveFile(w http.ResponseWriter, r *http.Request, name st
 
 	// use contents of an index file, if present, for directory
 	if d.IsDir() {
-		for _, indexPage := range browse.IndexPages {
+		for _, indexPage := range IndexPages {
 			index := strings.TrimSuffix(name, "/") + "/" + indexPage
 			ff, err := fh.root.Open(index)
 			if err == nil {
@@ -133,4 +142,15 @@ func redirect(w http.ResponseWriter, r *http.Request, newPath string) {
 		newPath += "?" + q
 	}
 	http.Redirect(w, r, newPath, http.StatusMovedPermanently)
+}
+
+// IndexPages is a list of pages that may be understood as
+// the "index" files to directories.
+var IndexPages = []string{
+	"index.html",
+	"index.htm",
+	"index.txt",
+	"default.html",
+	"default.htm",
+	"default.txt",
 }

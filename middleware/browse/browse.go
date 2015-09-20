@@ -56,7 +56,7 @@ type Listing struct {
 	// And which order
 	Order string
 
-	// User defined costum variables
+	// Optional custom variables for use in browse templates
 	User interface{}
 
 	middleware.Context
@@ -138,15 +138,6 @@ func (fi FileInfo) HumanModTime(format string) string {
 	return fi.ModTime.Format(format)
 }
 
-var IndexPages = []string{
-	"index.html",
-	"index.htm",
-	"index.txt",
-	"default.html",
-	"default.htm",
-	"default.txt",
-}
-
 func directoryListing(files []os.FileInfo, r *http.Request, canGoUp bool, root string, ignoreIndexes bool, vars interface{}) (Listing, error) {
 	var fileinfos []FileInfo
 	var urlPath = r.URL.Path
@@ -155,7 +146,7 @@ func directoryListing(files []os.FileInfo, r *http.Request, canGoUp bool, root s
 
 		// Directory is not browsable if it contains index file
 		if !ignoreIndexes {
-			for _, indexName := range IndexPages {
+			for _, indexName := range middleware.IndexPages {
 				if name == indexName {
 					return Listing{}, errors.New("Directory contains index file, not browsable!")
 				}
