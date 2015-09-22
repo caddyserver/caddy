@@ -33,10 +33,9 @@ type UpstreamHostDownFunc func(*UpstreamHost) bool
 
 // UpstreamHost represents a single proxy upstream
 type UpstreamHost struct {
-	// The hostname of this upstream host
-	Name              string
+	Conns             int64  // must be first field to be 64-bit aligned on 32-bit systems
+	Name              string // hostname of this upstream host
 	ReverseProxy      *ReverseProxy
-	Conns             int64
 	Fails             int32
 	FailTimeout       time.Duration
 	Unhealthy         bool
