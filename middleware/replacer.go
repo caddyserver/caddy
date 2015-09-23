@@ -3,6 +3,7 @@ package middleware
 import (
 	"net"
 	"net/http"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -62,6 +63,14 @@ func NewReplacer(r *http.Request, rr *responseRecorder, emptyValue string) Repla
 			"{uri}": r.URL.RequestURI(),
 			"{when}": func() string {
 				return time.Now().Format(timeFormat)
+			}(),
+			"{file}": func() string {
+				_, file := path.Split(r.URL.Path)
+				return file
+			}(),
+			"{dir}": func() string {
+				dir, _ := path.Split(r.URL.Path)
+				return dir
 			}(),
 		},
 		emptyValue: emptyValue,
