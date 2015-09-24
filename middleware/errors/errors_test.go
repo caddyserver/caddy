@@ -82,8 +82,8 @@ func TestErrors(t *testing.T) {
 			expectedCode: 0,
 			expectedBody: fmt.Sprintf("%d %s\n", http.StatusForbidden,
 				http.StatusText(http.StatusForbidden)),
-			expectedLog: fmt.Sprintf("could not load error page %s: %v\n",
-				"not_exist_file", notExistErr),
+			expectedLog: fmt.Sprintf("[HTTP %d] could not load error page %s: %v\n",
+				http.StatusForbidden, "not_exist_file", notExistErr),
 			expectedErr: nil,
 		},
 	}
