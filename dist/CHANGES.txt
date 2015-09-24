@@ -4,7 +4,9 @@ CHANGES
 - basicauth: Support for legacy htpasswd files
 - browse: JSON response with file listing given Accept header
 - core: Caddyfile as command line argument
+- errors: Can write full stack trace to HTTP response for debugging
 - errors, log: Roll log files after certain size or age
+- proxy: Fix for 32-bit architectures
 - templates: Added .StripExt and .StripHTML methods
 - Internal improvements and minor bug fixes
 
