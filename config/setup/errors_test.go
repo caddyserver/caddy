@@ -8,9 +8,7 @@ import (
 )
 
 func TestErrors(t *testing.T) {
-
 	c := NewTestController(`errors`)
-
 	mid, err := Errors(c)
 
 	if err != nil {
@@ -28,14 +26,23 @@ func TestErrors(t *testing.T) {
 		t.Fatalf("Expected handler to be type ErrorHandler, got: %#v", handler)
 	}
 
-	if myHandler.LogFile != errors.DefaultLogFilename {
-		t.Errorf("Expected %s as the default LogFile", errors.DefaultLogFilename)
+	if myHandler.LogFile != "" {
+		t.Errorf("Expected '%s' as the default LogFile", "")
 	}
 	if myHandler.LogRoller != nil {
 		t.Errorf("Expected LogRoller to be nil, got: %v", *myHandler.LogRoller)
 	}
 	if !SameNext(myHandler.Next, EmptyNext) {
 		t.Error("'Next' field of handler was not set properly")
+	}
+
+	// Test Startup function
+	if len(c.Startup) == 0 {
+		t.Fatal("Expected 1 startup function, had 0")
+	}
+	err = c.Startup[0]()
+	if myHandler.Log == nil {
+		t.Error("Expected Log to be non-nil after startup because Debug is not enabled")
 	}
 }
 
@@ -46,10 +53,18 @@ func TestErrorsParse(t *testing.T) {
 		expectedErrorHandler errors.ErrorHandler
 	}{
 		{`errors`, false, errors.ErrorHandler{
-			LogFile: errors.DefaultLogFilename,
+			LogFile: "",
 		}},
 		{`errors errors.txt`, false, errors.ErrorHandler{
 			LogFile: "errors.txt",
+		}},
+		{`errors visible`, false, errors.ErrorHandler{
+			LogFile: "",
+			Debug:   true,
+		}},
+		{`errors { log visible }`, false, errors.ErrorHandler{
+			LogFile: "",
+			Debug:   true,
 		}},
 		{`errors { log errors.txt
         404 404.html
@@ -101,8 +116,12 @@ func TestErrorsParse(t *testing.T) {
 			t.Errorf("Test %d errored, but it shouldn't have; got '%v'", i, err)
 		}
 		if actualErrorsRule.LogFile != test.expectedErrorHandler.LogFile {
-			t.Errorf("Test %d expected LogFile to be  %s  , but got %s",
+			t.Errorf("Test %d expected LogFile to be %s, but got %s",
 				i, test.expectedErrorHandler.LogFile, actualErrorsRule.LogFile)
+		}
+		if actualErrorsRule.Debug != test.expectedErrorHandler.Debug {
+			t.Errorf("Test %d expected Debug to be %v, but got %v",
+				i, test.expectedErrorHandler.Debug, actualErrorsRule.Debug)
 		}
 		if actualErrorsRule.LogRoller != nil && test.expectedErrorHandler.LogRoller == nil || actualErrorsRule.LogRoller == nil && test.expectedErrorHandler.LogRoller != nil {
 			t.Fatalf("Test %d expected LogRoller to be %v, but got %v",

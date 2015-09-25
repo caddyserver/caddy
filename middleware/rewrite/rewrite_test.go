@@ -28,7 +28,7 @@ func TestRewrite(t *testing.T) {
 		[]string{"/ab/", "ab", "/ab?type=html&{query}", ".html|"},
 		[]string{"/abc/", "ab", "/abc/{file}", ".html|"},
 		[]string{"/abcd/", "ab", "/a/{dir}/{file}", ".html|"},
-		[]string{"/abcde/", "ab", "/a#{frag}", ".html|"},
+		[]string{"/abcde/", "ab", "/a#{fragment}", ".html|"},
 		[]string{"/ab/", `.*\.jpg`, "/ajpg", ""},
 	}
 

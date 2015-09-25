@@ -23,14 +23,16 @@ import (
 // Browse is an http.Handler that can show a file listing when
 // directories in the given paths are specified.
 type Browse struct {
-	Next    middleware.Handler
-	Root    string
-	Configs []Config
+	Next          middleware.Handler
+	Root          string
+	Configs       []Config
+	IgnoreIndexes bool
 }
 
 // Config is a configuration for browsing in a particular path.
 type Config struct {
 	PathScope string
+	Variables interface{}
 	Template  *template.Template
 }
 
@@ -53,6 +55,9 @@ type Listing struct {
 
 	// And which order
 	Order string
+
+	// Optional custom variables for use in browse templates
+	User interface{}
 
 	middleware.Context
 }
@@ -133,25 +138,18 @@ func (fi FileInfo) HumanModTime(format string) string {
 	return fi.ModTime.Format(format)
 }
 
-var IndexPages = []string{
-	"index.html",
-	"index.htm",
-	"index.txt",
-	"default.html",
-	"default.htm",
-	"default.txt",
-}
-
-func directoryListing(files []os.FileInfo, r *http.Request, canGoUp bool, root string) (Listing, error) {
+func directoryListing(files []os.FileInfo, r *http.Request, canGoUp bool, root string, ignoreIndexes bool, vars interface{}) (Listing, error) {
 	var fileinfos []FileInfo
 	var urlPath = r.URL.Path
 	for _, f := range files {
 		name := f.Name()
 
 		// Directory is not browsable if it contains index file
-		for _, indexName := range IndexPages {
-			if name == indexName {
-				return Listing{}, errors.New("Directory contains index file, not browsable!")
+		if !ignoreIndexes {
+			for _, indexName := range middleware.IndexPages {
+				if name == indexName {
+					return Listing{}, errors.New("Directory contains index file, not browsable!")
+				}
 			}
 		}
 
@@ -181,6 +179,7 @@ func directoryListing(files []os.FileInfo, r *http.Request, canGoUp bool, root s
 			Req:  r,
 			URL:  r.URL,
 		},
+		User: vars,
 	}, nil
 }
 
@@ -234,7 +233,7 @@ func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			}
 		}
 		// Assemble listing of directory contents
-		listing, err := directoryListing(files, r, canGoUp, b.Root)
+		listing, err := directoryListing(files, r, canGoUp, b.Root, b.IgnoreIndexes, bc.Variables)
 		if err != nil { // directory isn't browsable
 			continue
 		}

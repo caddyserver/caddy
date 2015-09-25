@@ -33,11 +33,12 @@ func TestErrors(t *testing.T) {
 
 	buf := bytes.Buffer{}
 	em := ErrorHandler{
-		ErrorPages: make(map[int]string),
-		Log:        log.New(&buf, "", 0),
+		ErrorPages: map[int]string{
+			http.StatusNotFound:  path,
+			http.StatusForbidden: "not_exist_file",
+		},
+		Log: log.New(&buf, "", 0),
 	}
-	em.ErrorPages[http.StatusNotFound] = path
-	em.ErrorPages[http.StatusForbidden] = "not_exist_file"
 	_, notExistErr := os.Open("not_exist_file")
 
 	testErr := errors.New("test error")
@@ -82,8 +83,8 @@ func TestErrors(t *testing.T) {
 			expectedCode: 0,
 			expectedBody: fmt.Sprintf("%d %s\n", http.StatusForbidden,
 				http.StatusText(http.StatusForbidden)),
-			expectedLog: fmt.Sprintf("HTTP %d could not load error page %s: %v\n",
-				http.StatusForbidden, "not_exist_file", notExistErr),
+			expectedLog: fmt.Sprintf("[NOTICE %d /] could not load error page: %v\n",
+				http.StatusForbidden, notExistErr),
 			expectedErr: nil,
 		},
 	}
@@ -114,6 +115,44 @@ func TestErrors(t *testing.T) {
 			t.Errorf("Test %d: Expected log %q, but got %q",
 				i, test.expectedLog, log)
 		}
+	}
+}
+
+func TestVisibleErrorWithPanic(t *testing.T) {
+	const panicMsg = "I'm a panic"
+	eh := ErrorHandler{
+		ErrorPages: make(map[int]string),
+		Debug:      true,
+		Next: middleware.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
+			panic(panicMsg)
+		}),
+	}
+
+	req, err := http.NewRequest("GET", "/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+
+	code, err := eh.ServeHTTP(rec, req)
+
+	if code != 0 {
+		t.Errorf("Expected error handler to return 0 (it should write to response), got status %d", code)
+	}
+	if err != nil {
+		t.Errorf("Expected error handler to return nil error (it should panic!), but got '%v'", err)
+	}
+
+	body := rec.Body.String()
+
+	if !strings.Contains(body, "[PANIC /] middleware/errors/errors_test.go") {
+		t.Errorf("Expected response body to contain error log line, but it didn't:\n%s", body)
+	}
+	if !strings.Contains(body, panicMsg) {
+		t.Errorf("Expected response body to contain panic message, but it didn't:\n%s", body)
+	}
+	if len(body) < 500 {
+		t.Errorf("Expected response body to contain stack trace, but it was too short: len=%d", len(body))
 	}
 }
 

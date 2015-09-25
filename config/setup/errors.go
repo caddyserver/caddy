@@ -25,16 +25,24 @@ func Errors(c *Controller) (middleware.Middleware, error) {
 		var err error
 		var writer io.Writer
 
-		if handler.LogFile == "stdout" {
+		switch handler.LogFile {
+		case "visible":
+			handler.Debug = true
+		case "stdout":
 			writer = os.Stdout
-		} else if handler.LogFile == "stderr" {
+		case "stderr":
 			writer = os.Stderr
-		} else if handler.LogFile == "syslog" {
+		case "syslog":
 			writer, err = gsyslog.NewLogger(gsyslog.LOG_ERR, "LOCAL0", "caddy")
 			if err != nil {
 				return err
 			}
-		} else if handler.LogFile != "" {
+		default:
+			if handler.LogFile == "" {
+				writer = os.Stderr // default
+				break
+			}
+
 			var file *os.File
 			file, err = os.OpenFile(handler.LogFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
 			if err != nil {
@@ -80,15 +88,19 @@ func errorsParse(c *Controller) (*errors.ErrorHandler, error) {
 			where := c.Val()
 
 			if what == "log" {
-				handler.LogFile = where
-				if c.NextArg() {
-					if c.Val() == "{" {
-						c.IncrNest()
-						logRoller, err := parseRoller(c)
-						if err != nil {
-							return hadBlock, err
+				if where == "visible" {
+					handler.Debug = true
+				} else {
+					handler.LogFile = where
+					if c.NextArg() {
+						if c.Val() == "{" {
+							c.IncrNest()
+							logRoller, err := parseRoller(c)
+							if err != nil {
+								return hadBlock, err
+							}
+							handler.LogRoller = logRoller
 						}
-						handler.LogRoller = logRoller
 					}
 				}
 			} else {
@@ -121,12 +133,14 @@ func errorsParse(c *Controller) (*errors.ErrorHandler, error) {
 			return handler, err
 		}
 
-		// Otherwise, the only argument would be an error log file name
+		// Otherwise, the only argument would be an error log file name or 'visible'
 		if !hadBlock {
 			if c.NextArg() {
-				handler.LogFile = c.Val()
-			} else {
-				handler.LogFile = errors.DefaultLogFilename
+				if c.Val() == "visible" {
+					handler.Debug = true
+				} else {
+					handler.LogFile = c.Val()
+				}
 			}
 		}
 	}
