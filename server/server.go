@@ -14,7 +14,7 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/bradfitz/http2"
+	"golang.org/x/net/http2"
 )
 
 // Server represents an instance of a server, which serves
