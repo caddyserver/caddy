@@ -166,6 +166,9 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 		scriptFilename = absPath
 	}
 
+	// Strip PATH_INFO from SCRIPT_NAME
+	scriptName = strings.TrimSuffix(scriptName, pathInfo)
+
 	// Get the request URI. The request URI might be as it came in over the wire,
 	// or it might have been rewritten internally by the rewrite middleware (see issue #256).
 	// If it was rewritten, there will be a header indicating the original URL,

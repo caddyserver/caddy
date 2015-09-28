@@ -381,9 +381,9 @@ func (c *FCGIClient) Request(p map[string]string, req io.Reader) (resp *http.Res
 			return
 		}
 		if len(statusParts) > 1 {
-			resp.Status = statusParts[1]	
+			resp.Status = statusParts[1]
 		}
-		
+
 	} else {
 		resp.StatusCode = http.StatusOK
 	}
