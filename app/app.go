@@ -20,7 +20,7 @@ const (
 	Name = "Caddy"
 
 	// Version is the program version
-	Version = "0.7.5"
+	Version = "0.7.6"
 )
 
 var (

@@ -1,12 +1,13 @@
 CHANGES
 
-<master>
+0.7.6 (September 28, 2015)
 - basicauth: Support for legacy htpasswd files
-- browse: JSON response with file listing given Accept header
+- browse: JSON response with file listing
 - core: Caddyfile as command line argument
 - errors: Can write full stack trace to HTTP response for debugging
 - errors, log: Roll log files after certain size or age
 - proxy: Fix for 32-bit architectures
+- rewrite: Better compatibility with fastcgi and PHP apps
 - templates: Added .StripExt and .StripHTML methods
 - Internal improvements and minor bug fixes
 
