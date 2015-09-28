@@ -166,6 +166,17 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 		scriptFilename = absPath
 	}
 
+	// Get the request URI. The request URI might be as it came in over the wire,
+	// or it might have been rewritten internally by the rewrite middleware (see issue #256).
+	// If it was rewritten, there will be a header indicating the original URL,
+	// which is needed to get the correct RequestURI value for PHP apps.
+	const internalRewriteFieldName = "Caddy-Rewrite-Original-URI"
+	reqURI := r.URL.RequestURI()
+	if origURI := r.Header.Get(internalRewriteFieldName); origURI != "" {
+		reqURI = origURI
+		r.Header.Del(internalRewriteFieldName)
+	}
+
 	// Some variables are unused but cleared explicitly to prevent
 	// the parent environment from interfering.
 	env = map[string]string{
@@ -192,7 +203,7 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 		"DOCUMENT_ROOT":   h.AbsRoot,
 		"DOCUMENT_URI":    docURI,
 		"HTTP_HOST":       r.Host, // added here, since not always part of headers
-		"REQUEST_URI":     r.URL.RequestURI(),
+		"REQUEST_URI":     reqURI,
 		"SCRIPT_FILENAME": scriptFilename,
 		"SCRIPT_NAME":     scriptName,
 	}

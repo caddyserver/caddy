@@ -49,6 +49,9 @@ func NewSimpleRule(from, to string) SimpleRule {
 // Rewrite rewrites the internal location of the current request.
 func (s SimpleRule) Rewrite(r *http.Request) bool {
 	if s.From == r.URL.Path {
+		// take note of this rewrite for internal use by fastcgi
+		// all we need is the URI, not full URL
+		r.Header.Set("Caddy-Rewrite-Original-URI", r.URL.RequestURI())
 		r.URL.Path = s.To
 		return true
 	}
@@ -128,6 +131,10 @@ func (r *RegexpRule) Rewrite(req *http.Request) bool {
 	if err != nil {
 		return false
 	}
+
+	// take note of this rewrite for internal use by fastcgi
+	// all we need is the URI, not full URL
+	req.Header.Set("Caddy-Rewrite-Original-URI", req.URL.RequestURI())
 
 	// perform rewrite
 	req.URL.Path = url.Path
