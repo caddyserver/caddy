@@ -51,7 +51,7 @@ func (s SimpleRule) Rewrite(r *http.Request) bool {
 	if s.From == r.URL.Path {
 		// take note of this rewrite for internal use by fastcgi
 		// all we need is the URI, not full URL
-		r.Header.Set("Caddy-Rewrite-Original-URI", r.URL.RequestURI())
+		r.Header.Set(headerFieldName, r.URL.RequestURI())
 		r.URL.Path = s.To
 		return true
 	}
@@ -134,7 +134,7 @@ func (r *RegexpRule) Rewrite(req *http.Request) bool {
 
 	// take note of this rewrite for internal use by fastcgi
 	// all we need is the URI, not full URL
-	req.Header.Set("Caddy-Rewrite-Original-URI", req.URL.RequestURI())
+	req.Header.Set(headerFieldName, req.URL.RequestURI())
 
 	// perform rewrite
 	req.URL.Path = url.Path
@@ -176,3 +176,8 @@ func (r *RegexpRule) matchExt(rPath string) bool {
 	}
 	return true
 }
+
+// When a rewrite is performed, this header is added to the request
+// and is for internal use only, specifically the fastcgi middleware.
+// It contains the original request URI before the rewrite.
+const headerFieldName = "Caddy-Rewrite-Original-URI"
