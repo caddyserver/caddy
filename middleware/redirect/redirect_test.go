@@ -2,9 +2,11 @@ package redirect
 
 import (
 	"bytes"
+	"crypto/tls"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/mholt/caddy/middleware"
@@ -14,15 +16,22 @@ func TestRedirect(t *testing.T) {
 	for i, test := range []struct {
 		from             string
 		expectedLocation string
+		expectedCode     int
 	}{
-		{"/from", "/to"},
-		{"/a", "/b"},
-		{"/aa", ""},
-		{"/", ""},
-		{"/a?foo=bar", "/b"},
-		{"/asdf?foo=bar", ""},
-		{"/foo#bar", ""},
-		{"/a#foo", "/b"},
+		{"http://localhost/from", "/to", http.StatusMovedPermanently},
+		{"http://localhost/a", "/b", http.StatusTemporaryRedirect},
+		{"http://localhost/aa", "", http.StatusOK},
+		{"http://localhost/", "", http.StatusOK},
+		{"http://localhost/a?foo=bar", "/b", http.StatusTemporaryRedirect},
+		{"http://localhost/asdf?foo=bar", "", http.StatusOK},
+		{"http://localhost/foo#bar", "", http.StatusOK},
+		{"http://localhost/a#foo", "/b", http.StatusTemporaryRedirect},
+		{"http://localhost/scheme", "https://localhost/scheme", http.StatusMovedPermanently},
+		{"https://localhost/scheme", "", http.StatusOK},
+		{"https://localhost/scheme2", "http://localhost/scheme2", http.StatusMovedPermanently},
+		{"http://localhost/scheme2", "", http.StatusOK},
+		{"http://localhost/scheme3", "https://localhost/scheme3", http.StatusMovedPermanently},
+		{"https://localhost/scheme3", "", http.StatusOK},
 	} {
 		var nextCalled bool
 
@@ -32,14 +41,20 @@ func TestRedirect(t *testing.T) {
 				return 0, nil
 			}),
 			Rules: []Rule{
-				{From: "/from", To: "/to"},
-				{From: "/a", To: "/b"},
+				{FromPath: "/from", To: "/to", Code: http.StatusMovedPermanently},
+				{FromPath: "/a", To: "/b", Code: http.StatusTemporaryRedirect},
+				{FromScheme: "http", FromPath: "/scheme", To: "https://localhost/scheme", Code: http.StatusMovedPermanently},
+				{FromScheme: "https", FromPath: "/scheme2", To: "http://localhost/scheme2", Code: http.StatusMovedPermanently},
+				{FromScheme: "", FromPath: "/scheme3", To: "https://localhost/scheme3", Code: http.StatusMovedPermanently},
 			},
 		}
 
 		req, err := http.NewRequest("GET", test.from, nil)
 		if err != nil {
 			t.Fatalf("Test %d: Could not create HTTP request: %v", i, err)
+		}
+		if strings.HasPrefix(test.from, "https://") {
+			req.TLS = new(tls.ConnectionState) // faux HTTPS
 		}
 
 		rec := httptest.NewRecorder()
@@ -48,6 +63,11 @@ func TestRedirect(t *testing.T) {
 		if rec.Header().Get("Location") != test.expectedLocation {
 			t.Errorf("Test %d: Expected Location header to be %q but was %q",
 				i, test.expectedLocation, rec.Header().Get("Location"))
+		}
+
+		if rec.Code != test.expectedCode {
+			t.Errorf("Test %d: Expected status code to be %d but was %d",
+				i, test.expectedCode, rec.Code)
 		}
 
 		if nextCalled && test.expectedLocation != "" {
@@ -59,7 +79,7 @@ func TestRedirect(t *testing.T) {
 func TestParametersRedirect(t *testing.T) {
 	re := Redirect{
 		Rules: []Rule{
-			{From: "/", Meta: false, To: "http://example.com{uri}"},
+			{FromPath: "/", Meta: false, To: "http://example.com{uri}"},
 		},
 	}
 
@@ -77,7 +97,7 @@ func TestParametersRedirect(t *testing.T) {
 
 	re = Redirect{
 		Rules: []Rule{
-			{From: "/", Meta: false, To: "http://example.com/a{path}?b=c&{query}"},
+			{FromPath: "/", Meta: false, To: "http://example.com/a{path}?b=c&{query}"},
 		},
 	}
 
@@ -96,13 +116,13 @@ func TestParametersRedirect(t *testing.T) {
 func TestMetaRedirect(t *testing.T) {
 	re := Redirect{
 		Rules: []Rule{
-			{From: "/whatever", Meta: true, To: "/something"},
-			{From: "/", Meta: true, To: "https://example.com/"},
+			{FromPath: "/whatever", Meta: true, To: "/something"},
+			{FromPath: "/", Meta: true, To: "https://example.com/"},
 		},
 	}
 
 	for i, test := range re.Rules {
-		req, err := http.NewRequest("GET", test.From, nil)
+		req, err := http.NewRequest("GET", test.FromPath, nil)
 		if err != nil {
 			t.Fatalf("Test %d: Could not create HTTP request: %v", i, err)
 		}

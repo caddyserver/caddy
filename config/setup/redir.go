@@ -37,13 +37,13 @@ func redirParse(c *Controller) ([]redirect.Rule, error) {
 	// checkAndSaveRule checks the rule for validity (except the redir code)
 	// and saves it if it's valid, or returns an error.
 	checkAndSaveRule := func(rule redirect.Rule) error {
-		if rule.From == rule.To {
+		if rule.FromPath == rule.To {
 			return c.Err("'from' and 'to' values of redirect rule cannot be the same")
 		}
 
 		for _, otherRule := range redirects {
-			if otherRule.From == rule.From {
-				return c.Errf("rule with duplicate 'from' value: %s -> %s", otherRule.From, otherRule.To)
+			if otherRule.FromPath == rule.FromPath {
+				return c.Errf("rule with duplicate 'from' value: %s -> %s", otherRule.FromPath, otherRule.To)
 			}
 		}
 
@@ -59,6 +59,12 @@ func redirParse(c *Controller) ([]redirect.Rule, error) {
 			hadOptionalBlock = true
 
 			var rule redirect.Rule
+
+			if c.Config.TLS.Enabled {
+				rule.FromScheme = "https"
+			} else {
+				rule.FromScheme = "http"
+			}
 
 			// Set initial redirect code
 			// BUG: If the code is specified for a whole block and that code is invalid,
@@ -84,15 +90,15 @@ func redirParse(c *Controller) ([]redirect.Rule, error) {
 				// To specified (catch-all redirect)
 				// Not sure why user is doing this in a table, as it causes all other redirects to be ignored.
 				// As such, this feature remains undocumented.
-				rule.From = "/"
+				rule.FromPath = "/"
 				rule.To = insideArgs[0]
 			case 2:
 				// From and To specified
-				rule.From = insideArgs[0]
+				rule.FromPath = insideArgs[0]
 				rule.To = insideArgs[1]
 			case 3:
 				// From, To, and Code specified
-				rule.From = insideArgs[0]
+				rule.FromPath = insideArgs[0]
 				rule.To = insideArgs[1]
 				err := setRedirCode(insideArgs[2], &rule)
 				if err != nil {
@@ -110,16 +116,23 @@ func redirParse(c *Controller) ([]redirect.Rule, error) {
 
 		if !hadOptionalBlock {
 			var rule redirect.Rule
+
+			if c.Config.TLS.Enabled {
+				rule.FromScheme = "https"
+			} else {
+				rule.FromScheme = "http"
+			}
+
 			rule.Code = http.StatusMovedPermanently // default
 
 			switch len(args) {
 			case 1:
 				// To specified (catch-all redirect)
-				rule.From = "/"
+				rule.FromPath = "/"
 				rule.To = args[0]
 			case 2:
 				// To and Code specified (catch-all redirect)
-				rule.From = "/"
+				rule.FromPath = "/"
 				rule.To = args[0]
 				err := setRedirCode(args[1], &rule)
 				if err != nil {
@@ -127,7 +140,7 @@ func redirParse(c *Controller) ([]redirect.Rule, error) {
 				}
 			case 3:
 				// From, To, and Code specified
-				rule.From = args[0]
+				rule.FromPath = args[0]
 				rule.To = args[1]
 				err := setRedirCode(args[2], &rule)
 				if err != nil {
@@ -149,12 +162,12 @@ func redirParse(c *Controller) ([]redirect.Rule, error) {
 
 // httpRedirs is a list of supported HTTP redirect codes.
 var httpRedirs = map[string]int{
-	"300": 300, // Multiple Choices
-	"301": 301, // Moved Permanently
-	"302": 302, // Found (NOT CORRECT for "Temporary Redirect", see 307)
-	"303": 303, // See Other
-	"304": 304, // Not Modified
-	"305": 305, // Use Proxy
-	"307": 307, // Temporary Redirect
+	"300": http.StatusMultipleChoices,
+	"301": http.StatusMovedPermanently,
+	"302": http.StatusFound, // (NOT CORRECT for "Temporary Redirect", see 307)
+	"303": http.StatusSeeOther,
+	"304": http.StatusNotModified,
+	"305": http.StatusUseProxy,
+	"307": http.StatusTemporaryRedirect,
 	"308": 308, // Permanent Redirect
 }
