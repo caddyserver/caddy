@@ -57,6 +57,7 @@ var directiveOrder = []directive{
 	{"rewrite", setup.Rewrite},
 	{"redir", setup.Redir},
 	{"ext", setup.Ext},
+	{"mime", setup.Mime},
 	{"basicauth", setup.BasicAuth},
 	{"internal", setup.Internal},
 	{"proxy", setup.Proxy},
