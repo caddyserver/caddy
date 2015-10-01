@@ -26,6 +26,12 @@ func TestRedirect(t *testing.T) {
 		{"http://localhost/asdf?foo=bar", "", http.StatusOK},
 		{"http://localhost/foo#bar", "", http.StatusOK},
 		{"http://localhost/a#foo", "/b", http.StatusTemporaryRedirect},
+
+		// The scheme checks that were added to this package don't actually
+		// help with redirects because of Caddy's design: a redirect middleware
+		// for http will always be different than the redirect middleware for
+		// https because they have to be on different listeners. These tests
+		// just go to show extra bulletproofing, I guess.
 		{"http://localhost/scheme", "https://localhost/scheme", http.StatusMovedPermanently},
 		{"https://localhost/scheme", "", http.StatusOK},
 		{"https://localhost/scheme2", "http://localhost/scheme2", http.StatusMovedPermanently},
@@ -43,6 +49,11 @@ func TestRedirect(t *testing.T) {
 			Rules: []Rule{
 				{FromPath: "/from", To: "/to", Code: http.StatusMovedPermanently},
 				{FromPath: "/a", To: "/b", Code: http.StatusTemporaryRedirect},
+
+				// These http and https schemes would never actually be mixed in the same
+				// redirect rule with Caddy because http and https schemes have different listeners,
+				// so they don't share a redirect rule. So although these tests prove something
+				// impossible with Caddy, it's extra bulletproofing at very little cost.
 				{FromScheme: "http", FromPath: "/scheme", To: "https://localhost/scheme", Code: http.StatusMovedPermanently},
 				{FromScheme: "https", FromPath: "/scheme2", To: "http://localhost/scheme2", Code: http.StatusMovedPermanently},
 				{FromScheme: "", FromPath: "/scheme3", To: "https://localhost/scheme3", Code: http.StatusMovedPermanently},
