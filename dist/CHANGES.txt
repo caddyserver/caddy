@@ -1,6 +1,11 @@
 CHANGES
 
+<master>
+- New directive 'mime' to customize Content-Type based on file extension
+
+
 0.7.6 (September 28, 2015)
+- Pass in simple Caddyfile as command line arguments
 - basicauth: Support for legacy htpasswd files
 - browse: JSON response with file listing
 - core: Caddyfile as command line argument
