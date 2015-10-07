@@ -193,6 +193,10 @@ th a {
 		margin-top: 70px;
 	}
 }
+
+.name {
+	white-space: pre;
+}
 </style>
 	</head>
 	<body>
@@ -240,7 +244,7 @@ th a {
 				<tr>
 					<td>
 						{{if .IsDir}}&#128194;{{else}}&#128196;{{end}}
-						<a href="{{.URL}}">{{.Name}}</a>
+						<a href="{{.URL}}" class="name">{{.Name}}</a>
 					</td>
 					<td>{{.HumanSize}}</td>
 					<td class="hideable">{{.HumanModTime "01/02/2006 3:04:05 PM -0700"}}</td>
