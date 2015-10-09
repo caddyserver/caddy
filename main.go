@@ -26,7 +26,7 @@ var (
 
 func init() {
 	flag.StringVar(&conf, "conf", "", "Configuration file to use (default="+config.DefaultConfigFile+")")
-	flag.BoolVar(&app.Http2, "http2", true, "Enable HTTP/2 support") // TODO: temporary flag until http2 merged into std lib
+	flag.BoolVar(&app.HTTP2, "http2", true, "Enable HTTP/2 support") // TODO: temporary flag until http2 merged into std lib
 	flag.BoolVar(&app.Quiet, "quiet", false, "Quiet mode (no initialization output)")
 	flag.StringVar(&cpu, "cpu", "100%", "CPU cap")
 	flag.StringVar(&config.Root, "root", config.DefaultRoot, "Root path to default site")
@@ -61,7 +61,7 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		s.HTTP2 = app.Http2 // TODO: This setting is temporary
+		s.HTTP2 = app.HTTP2 // TODO: This setting is temporary
 		app.Wg.Add(1)
 		go func(s *server.Server) {
 			defer app.Wg.Done()

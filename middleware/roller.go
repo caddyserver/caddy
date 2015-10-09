@@ -6,6 +6,7 @@ import (
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
+// LogRoller implements a middleware that provides a rolling logger.
 type LogRoller struct {
 	Filename   string
 	MaxSize    int
@@ -14,6 +15,7 @@ type LogRoller struct {
 	LocalTime  bool
 }
 
+// GetLogWriter returns an io.Writer that writes to a rolling logger.
 func (l LogRoller) GetLogWriter() io.Writer {
 	return &lumberjack.Logger{
 		Filename:   l.Filename,

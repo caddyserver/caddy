@@ -37,9 +37,8 @@ func (h ErrorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, er
 			w.WriteHeader(status)
 			fmt.Fprintln(w, errMsg)
 			return 0, err // returning < 400 signals that a response has been written
-		} else {
-			h.Log.Println(errMsg)
 		}
+		h.Log.Println(errMsg)
 	}
 
 	if status >= 400 {

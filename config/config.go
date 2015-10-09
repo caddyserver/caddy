@@ -234,6 +234,8 @@ func validDirective(d string) bool {
 	return false
 }
 
+// NewDefault creates a default configuration using the default
+// root, host, and port.
 func NewDefault() server.Config {
 	return server.Config{
 		Root: Root,
@@ -256,4 +258,5 @@ var (
 	Port = DefaultPort
 )
 
+// Group maps network addresses to their configurations.
 type Group map[*net.TCPAddr][]server.Config

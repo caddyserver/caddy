@@ -115,7 +115,7 @@ func (r *RegexpRule) Rewrite(req *http.Request) bool {
 	// include trailing slash in regexp if present
 	start := len(r.Base)
 	if strings.HasSuffix(r.Base, "/") {
-		start -= 1
+		start--
 	}
 
 	// validate regexp

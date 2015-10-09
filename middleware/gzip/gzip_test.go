@@ -21,7 +21,7 @@ func TestGzipHandler(t *testing.T) {
 		extFilter.Exts.Add(e)
 	}
 	gz := Gzip{Configs: []Config{
-		Config{Filters: []Filter{pathFilter, extFilter}},
+		{Filters: []Filter{pathFilter, extFilter}},
 	}}
 
 	w := httptest.NewRecorder()
