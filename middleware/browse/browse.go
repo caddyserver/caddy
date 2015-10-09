@@ -242,21 +242,28 @@ func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 		listing.Sort, listing.Order = r.URL.Query().Get("sort"), r.URL.Query().Get("order")
 
 		// If the query 'sort' or 'order' is empty, check the cookies
-		if listing.Sort == "" || listing.Order == "" {
+		if listing.Sort == "" {
 			sortCookie, sortErr := r.Cookie("sort")
-			orderCookie, orderErr := r.Cookie("order")
-
 			// if there's no sorting values in the cookies, default to "name" and "asc"
-			if sortErr != nil || orderErr != nil {
+			if sortErr != nil {
 				listing.Sort = "name"
-				listing.Order = "asc"
 			} else { // if we have values in the cookies, use them
 				listing.Sort = sortCookie.Value
-				listing.Order = orderCookie.Value
 			}
-
 		} else { // save the query value of 'sort' and 'order' as cookies
 			http.SetCookie(w, &http.Cookie{Name: "sort", Value: listing.Sort, Path: "/"})
+			http.SetCookie(w, &http.Cookie{Name: "order", Value: listing.Order, Path: "/"})
+		}
+
+		if listing.Order == "" {
+			orderCookie, orderErr := r.Cookie("order")
+			// if there's no sorting values in the cookies, default to "name" and "asc"
+			if orderErr != nil {
+				listing.Order = "asc"
+			} else { // if we have values in the cookies, use them
+				listing.Order = orderCookie.Value
+			}
+		} else { // save the query value of 'sort' and 'order' as cookies
 			http.SetCookie(w, &http.Cookie{Name: "order", Value: listing.Order, Path: "/"})
 		}
 
