@@ -13,18 +13,18 @@ func TestRoot(t *testing.T) {
 
 	// Predefined error substrings
 	parseErrContent := "Parse error:"
-	unableToAccessErroContent := "Unable to access root path"
+	unableToAccessErrContent := "Unable to access root path"
 
 	existingDirPath, err := getTempDirPath()
 	if err != nil {
-		t.Errorf("BeforeTest: Failed to find an existing directory for testing! Error was: %v", err)
+		t.Fatalf("BeforeTest: Failed to find an existing directory for testing! Error was: %v", err)
 	}
 
 	nonExistingDir := filepath.Join(existingDirPath, "highly_unlikely_to_exist_dir")
 
 	existingFile, err := ioutil.TempFile("", "root_test")
 	if err != nil {
-		t.Errorf("BeforeTest: Failed to create temp file for testing! Error was: %v", err)
+		t.Fatalf("BeforeTest: Failed to create temp file for testing! Error was: %v", err)
 	}
 	defer os.Remove(existingFile.Name())
 
@@ -48,7 +48,7 @@ func TestRoot(t *testing.T) {
 			`root `, true, "", parseErrContent,
 		},
 		{
-			fmt.Sprintf(`root %s`, unaccessiblePath), true, "", unableToAccessErroContent,
+			fmt.Sprintf(`root %s`, unaccessiblePath), true, "", unableToAccessErrContent,
 		},
 		{
 			fmt.Sprintf(`root {
