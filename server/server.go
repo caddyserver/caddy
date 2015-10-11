@@ -264,6 +264,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// DefaultErrorFunc responds to an HTTP request with a simple description
+// of the specified HTTP status code.
 func DefaultErrorFunc(w http.ResponseWriter, r *http.Request, status int) {
 	w.WriteHeader(status)
 	fmt.Fprintf(w, "%d %s", status, http.StatusText(status))

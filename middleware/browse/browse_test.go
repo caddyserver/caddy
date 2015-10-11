@@ -117,7 +117,7 @@ func TestBrowseTemplate(t *testing.T) {
 		}),
 		Root: "./testdata",
 		Configs: []Config{
-			Config{
+			{
 				PathScope: "/photos",
 				Template:  tmpl,
 			},
@@ -172,7 +172,7 @@ func TestBrowseJson(t *testing.T) {
 		}),
 		Root: "./testdata",
 		Configs: []Config{
-			Config{
+			{
 				PathScope: "/photos/",
 			},
 		},
@@ -283,7 +283,7 @@ func TestBrowseJson(t *testing.T) {
 			t.Fatalf("Expected Content type to be application/json; charset=utf-8, but got %s ", rec.HeaderMap.Get("Content-Type"))
 		}
 
-		actualJsonResponseString := rec.Body.String()
+		actualJSONResponse := rec.Body.String()
 		copyOflisting := listing
 		if test.SortBy == "" {
 			copyOflisting.Sort = "name"
@@ -308,12 +308,11 @@ func TestBrowseJson(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Unable to Marshal the listing ")
 		}
-		expectedJsonString := string(marsh)
+		expectedJSON := string(marsh)
 
-		if actualJsonResponseString != expectedJsonString {
+		if actualJSONResponse != expectedJSON {
 			t.Errorf("JSON response doesn't match the expected for test number %d with sort=%s, order=%s\nExpected response %s\nActual response = %s\n",
-				i+1, test.SortBy, test.OrderBy, expectedJsonString, actualJsonResponseString)
+				i+1, test.SortBy, test.OrderBy, expectedJSON, actualJSONResponse)
 		}
-
 	}
 }

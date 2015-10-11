@@ -18,7 +18,7 @@ const (
 	DefaultStaticDir = "generated_site"
 )
 
-type MarkdownData struct {
+type Data struct {
 	middleware.Context
 	Doc   map[string]string
 	Links []PageLink
@@ -95,7 +95,7 @@ func (md Markdown) processTemplate(c *Config, requestPath string, tmpl []byte, m
 	if err != nil {
 		return nil, err
 	}
-	mdData := MarkdownData{
+	mdData := Data{
 		Context: ctx,
 		Doc:     metadata.Variables,
 		Links:   c.Links,

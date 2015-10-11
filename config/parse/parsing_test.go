@@ -338,9 +338,9 @@ func TestParseAll(t *testing.T) {
 func setupParseTests() {
 	// Set up some bogus directives for testing
 	ValidDirectives = map[string]struct{}{
-		"dir1": struct{}{},
-		"dir2": struct{}{},
-		"dir3": struct{}{},
+		"dir1": {},
+		"dir2": {},
+		"dir3": {},
 	}
 }
 

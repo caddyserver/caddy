@@ -58,17 +58,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			}
 
 			// Connect to FastCGI gateway
-			var fcgi *FCGIClient
-
-			// check if unix socket or tcp
-			if strings.HasPrefix(rule.Address, "/") || strings.HasPrefix(rule.Address, "unix:") {
-				if strings.HasPrefix(rule.Address, "unix:") {
-					rule.Address = rule.Address[len("unix:"):]
-				}
-				fcgi, err = Dial("unix", rule.Address)
-			} else {
-				fcgi, err = Dial("tcp", rule.Address)
-			}
+			fcgi, err := getClient(&rule)
 			if err != nil {
 				return http.StatusBadGateway, err
 			}
@@ -102,13 +92,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 				return http.StatusBadGateway, err
 			}
 
-			// Write the response header
-			for key, vals := range resp.Header {
-				for _, val := range vals {
-					w.Header().Add(key, val)
-				}
-			}
-			w.WriteHeader(resp.StatusCode)
+			writeHeader(w, resp)
 
 			// Write the response body
 			// TODO: If this has an error, the response will already be
@@ -124,6 +108,26 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 	}
 
 	return h.Next.ServeHTTP(w, r)
+}
+
+func getClient(r *Rule) (*FCGIClient, error) {
+	// check if unix socket or TCP
+	if trim := strings.HasPrefix(r.Address, "unix"); strings.HasPrefix(r.Address, "/") || trim {
+		if trim {
+			r.Address = r.Address[len("unix:"):]
+		}
+		return Dial("unix", r.Address)
+	}
+	return Dial("tcp", r.Address)
+}
+
+func writeHeader(w http.ResponseWriter, r *http.Response) {
+	for key, vals := range r.Header {
+		for _, val := range vals {
+			w.Header().Add(key, val)
+		}
+	}
+	w.WriteHeader(r.StatusCode)
 }
 
 func (h Handler) exists(path string) bool {

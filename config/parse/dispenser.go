@@ -119,6 +119,7 @@ func (d *Dispenser) NextBlock() bool {
 	return true
 }
 
+// IncrNest adds a level of nesting to the dispenser.
 func (d *Dispenser) IncrNest() {
 	d.nesting++
 	return
@@ -208,9 +209,9 @@ func (d *Dispenser) SyntaxErr(expected string) error {
 	return errors.New(msg)
 }
 
-// EofErr returns an EOF error, meaning that end of input
-// was found when another token was expected.
-func (d *Dispenser) EofErr() error {
+// EOFErr returns an error indicating that the dispenser reached
+// the end of the input when searching for the next token.
+func (d *Dispenser) EOFErr() error {
 	return d.Errf("Unexpected EOF")
 }
 

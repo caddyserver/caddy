@@ -13,8 +13,8 @@ import (
 )
 
 var (
-	supportedPolicies map[string]func() Policy = make(map[string]func() Policy)
-	proxyHeaders      http.Header              = make(http.Header)
+	supportedPolicies = make(map[string]func() Policy)
+	proxyHeaders      = make(http.Header)
 )
 
 type staticUpstream struct {
@@ -53,64 +53,8 @@ func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
 		}
 
 		for c.NextBlock() {
-			switch c.Val() {
-			case "policy":
-				if !c.NextArg() {
-					return upstreams, c.ArgErr()
-				}
-
-				if policyCreateFunc, ok := supportedPolicies[c.Val()]; ok {
-					upstream.Policy = policyCreateFunc()
-				} else {
-					return upstreams, c.ArgErr()
-				}
-			case "fail_timeout":
-				if !c.NextArg() {
-					return upstreams, c.ArgErr()
-				}
-				if dur, err := time.ParseDuration(c.Val()); err == nil {
-					upstream.FailTimeout = dur
-				} else {
-					return upstreams, err
-				}
-			case "max_fails":
-				if !c.NextArg() {
-					return upstreams, c.ArgErr()
-				}
-				if n, err := strconv.Atoi(c.Val()); err == nil {
-					upstream.MaxFails = int32(n)
-				} else {
-					return upstreams, err
-				}
-			case "health_check":
-				if !c.NextArg() {
-					return upstreams, c.ArgErr()
-				}
-				upstream.HealthCheck.Path = c.Val()
-				upstream.HealthCheck.Interval = 30 * time.Second
-				if c.NextArg() {
-					if dur, err := time.ParseDuration(c.Val()); err == nil {
-						upstream.HealthCheck.Interval = dur
-					} else {
-						return upstreams, err
-					}
-				}
-			case "proxy_header":
-				var header, value string
-				if !c.Args(&header, &value) {
-					return upstreams, c.ArgErr()
-				}
-				proxyHeaders.Add(header, value)
-			case "websocket":
-				proxyHeaders.Add("Connection", "{>Connection}")
-				proxyHeaders.Add("Upgrade", "{>Upgrade}")
-			case "without":
-				if !c.NextArg() {
-					return upstreams, c.ArgErr()
-				}
-				upstream.WithoutPathPrefix = c.Val()
-			default:
-				return upstreams, c.Errf("unknown property '%s'", c.Val())
+			if err := parseBlock(&c, upstream); err != nil {
+				return upstreams, err
 			}
 		}
 
@@ -163,6 +107,68 @@ func RegisterPolicy(name string, policy func() Policy) {
 
 func (u *staticUpstream) From() string {
 	return u.from
+}
+
+func parseBlock(c *parse.Dispenser, u *staticUpstream) error {
+	switch c.Val() {
+	case "policy":
+		if !c.NextArg() {
+			return c.ArgErr()
+		}
+		policyCreateFunc, ok := supportedPolicies[c.Val()]
+		if !ok {
+			return c.ArgErr()
+		}
+		u.Policy = policyCreateFunc()
+	case "fail_timeout":
+		if !c.NextArg() {
+			return c.ArgErr()
+		}
+		dur, err := time.ParseDuration(c.Val())
+		if err != nil {
+			return err
+		}
+		u.FailTimeout = dur
+	case "max_fails":
+		if !c.NextArg() {
+			return c.ArgErr()
+		}
+		n, err := strconv.Atoi(c.Val())
+		if err != nil {
+			return err
+		}
+		u.MaxFails = int32(n)
+	case "health_check":
+		if !c.NextArg() {
+			return c.ArgErr()
+		}
+		u.HealthCheck.Path = c.Val()
+		u.HealthCheck.Interval = 30 * time.Second
+		if c.NextArg() {
+			dur, err := time.ParseDuration(c.Val())
+			if err != nil {
+				return err
+			}
+			u.HealthCheck.Interval = dur
+		}
+	case "proxy_header":
+		var header, value string
+		if !c.Args(&header, &value) {
+			return c.ArgErr()
+		}
+		proxyHeaders.Add(header, value)
+	case "websocket":
+		proxyHeaders.Add("Connection", "{>Connection}")
+		proxyHeaders.Add("Upgrade", "{>Upgrade}")
+	case "without":
+		if !c.NextArg() {
+			return c.ArgErr()
+		}
+		u.WithoutPathPrefix = c.Val()
+	default:
+		return c.Errf("unknown property '%s'", c.Val())
+	}
+	return nil
 }
 
 func (u *staticUpstream) healthCheck() {

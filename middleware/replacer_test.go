@@ -10,9 +10,9 @@ import (
 func TestNewReplacer(t *testing.T) {
 	w := httptest.NewRecorder()
 	recordRequest := NewResponseRecorder(w)
-	userJson := `{"username": "dennis"}`
+	userJSON := `{"username": "dennis"}`
 
-	reader := strings.NewReader(userJson) //Convert string to reader
+	reader := strings.NewReader(userJSON) //Convert string to reader
 
 	request, err := http.NewRequest("POST", "http://caddyserver.com", reader) //Create request with JSON body
 	if err != nil {
@@ -41,9 +41,9 @@ func TestNewReplacer(t *testing.T) {
 func TestReplace(t *testing.T) {
 	w := httptest.NewRecorder()
 	recordRequest := NewResponseRecorder(w)
-	userJson := `{"username": "dennis"}`
+	userJSON := `{"username": "dennis"}`
 
-	reader := strings.NewReader(userJson) //Convert string to reader
+	reader := strings.NewReader(userJSON) //Convert string to reader
 
 	request, err := http.NewRequest("POST", "http://caddyserver.com", reader) //Create request with JSON body
 	if err != nil {

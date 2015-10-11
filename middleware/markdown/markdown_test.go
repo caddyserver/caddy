@@ -22,7 +22,7 @@ func TestMarkdown(t *testing.T) {
 		Root:    "./testdata",
 		FileSys: http.Dir("./testdata"),
 		Configs: []*Config{
-			&Config{
+			{
 				Renderer:    blackfriday.HtmlRenderer(0, "", ""),
 				PathScope:   "/blog",
 				Extensions:  []string{".md"},
@@ -32,7 +32,7 @@ func TestMarkdown(t *testing.T) {
 				StaticDir:   DefaultStaticDir,
 				StaticFiles: make(map[string]string),
 			},
-			&Config{
+			{
 				Renderer:    blackfriday.HtmlRenderer(0, "", ""),
 				PathScope:   "/log",
 				Extensions:  []string{".md"},
@@ -42,7 +42,7 @@ func TestMarkdown(t *testing.T) {
 				StaticDir:   DefaultStaticDir,
 				StaticFiles: make(map[string]string),
 			},
-			&Config{
+			{
 				Renderer:    blackfriday.HtmlRenderer(0, "", ""),
 				PathScope:   "/og",
 				Extensions:  []string{".md"},
@@ -52,7 +52,7 @@ func TestMarkdown(t *testing.T) {
 				StaticDir:   "testdata/og_static",
 				StaticFiles: map[string]string{"/og/first.md": "testdata/og_static/og/first.md/index.html"},
 				Links: []PageLink{
-					PageLink{
+					{
 						Title:   "first",
 						Summary: "",
 						Date:    time.Now(),

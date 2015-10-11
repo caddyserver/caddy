@@ -5,6 +5,8 @@ import (
 	"time"
 )
 
+// DefaultInterval is the default interval at which the markdown watcher
+// checks for changes.
 const DefaultInterval = time.Second * 60
 
 // Watch monitors the configured markdown directory for changes. It calls GenerateLinks

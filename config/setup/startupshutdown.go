@@ -46,9 +46,8 @@ func registerCallback(c *Controller, list *[]func() error) error {
 
 			if nonblock {
 				return cmd.Start()
-			} else {
-				return cmd.Run()
 			}
+			return cmd.Run()
 		}
 
 		*list = append(*list, fn)

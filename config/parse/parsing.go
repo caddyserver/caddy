@@ -108,7 +108,7 @@ func (p *parser) addresses() error {
 		// Advance token and possibly break out of loop or return error
 		hasNext := p.Next()
 		if expectingAnother && !hasNext {
-			return p.EofErr()
+			return p.EOFErr()
 		}
 		if !hasNext {
 			p.eof = true
@@ -242,7 +242,7 @@ func (p *parser) directive() error {
 	}
 
 	if nesting > 0 {
-		return p.EofErr()
+		return p.EOFErr()
 	}
 	return nil
 }

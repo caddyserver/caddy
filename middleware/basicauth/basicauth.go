@@ -78,6 +78,7 @@ type Rule struct {
 	Resources []string
 }
 
+// PasswordMatcher determines whether a password mathes a rule.
 type PasswordMatcher func(pw string) bool
 
 var (
@@ -137,6 +138,8 @@ func parseHtpasswd(pm map[string]PasswordMatcher, r io.Reader) error {
 	return scanner.Err()
 }
 
+// PlainMatcher returns a PasswordMatcher that does a constant-time
+// byte-wise comparison.
 func PlainMatcher(passw string) PasswordMatcher {
 	return func(pw string) bool {
 		return subtle.ConstantTimeCompare([]byte(pw), []byte(passw)) == 1
