@@ -14,3 +14,5 @@ access.log
 Caddyfile
 
 og_static/
+config/setup/testdata/generated_site/
+middleware/markdown/generated_site/
