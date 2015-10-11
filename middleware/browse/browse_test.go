@@ -2,15 +2,17 @@ package browse
 
 import (
 	"encoding/json"
-	"github.com/mholt/caddy/middleware"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sort"
 	"testing"
 	"text/template"
 	"time"
+
+	"github.com/mholt/caddy/middleware"
 )
 
 // "sort" package has "IsSorted" function, but no "IsReversed";
@@ -177,13 +179,12 @@ func TestBrowseJson(t *testing.T) {
 	}
 
 	//Getting the listing from the ./testdata/photos, the listing returned will be used to validate test results
-	file, err := os.Open(b.Root + "/photos")
+	testDataPath := b.Root + "/photos/"
+	file, err := os.Open(testDataPath)
 	if err != nil {
 		if os.IsPermission(err) {
 			t.Fatalf("Os Permission Error")
-
 		}
-
 	}
 	defer file.Close()
 
@@ -193,8 +194,16 @@ func TestBrowseJson(t *testing.T) {
 	}
 	var fileinfos []FileInfo
 
-	for _, f := range files {
+	for i, f := range files {
 		name := f.Name()
+
+		// Tests fail in CI environment because all file mod times are the same for
+		// some reason, making the sorting unpredictable. To hack around this,
+		// we ensure here that each file has a different mod time.
+		chTime := f.ModTime().Add(-(time.Duration(i) * time.Second))
+		if err := os.Chtimes(filepath.Join(testDataPath, name), chTime, chTime); err != nil {
+			t.Fatal(err)
+		}
 
 		if f.IsDir() {
 			name += "/"
@@ -207,14 +216,11 @@ func TestBrowseJson(t *testing.T) {
 			Name:    f.Name(),
 			Size:    f.Size(),
 			URL:     url.String(),
-			ModTime: f.ModTime(),
+			ModTime: chTime,
 			Mode:    f.Mode(),
 		})
 	}
-	listing := Listing{
-		Items: fileinfos,
-	}
-	//listing obtained above and will be used for validation inside the tests
+	listing := Listing{Items: fileinfos} // this listing will be used for validation inside the tests
 
 	tests := []struct {
 		QueryUrl       string
@@ -231,27 +237,27 @@ func TestBrowseJson(t *testing.T) {
 		{"/?limit=1", "", "", 1, false, listing.Items[:1]},
 		//test case 3 : if the listing request is bigger than total size of listing then it should return everything
 		{"/?limit=100000000", "", "", 100000000, false, listing.Items},
-		//testing for negative limit
+		//test case 4 : testing for negative limit
 		{"/?limit=-1", "", "", -1, false, listing.Items},
-		//testing with limit set to -1 and order set to descending
+		//test case 5 : testing with limit set to -1 and order set to descending
 		{"/?limit=-1&order=desc", "", "desc", -1, false, listing.Items},
-		//testing with limit set to 2 and order set to descending
+		//test case 6 : testing with limit set to 2 and order set to descending
 		{"/?limit=2&order=desc", "", "desc", 2, false, listing.Items},
-		//testing with limit set to 3 and order set to descending
+		//test case 7 : testing with limit set to 3 and order set to descending
 		{"/?limit=3&order=desc", "", "desc", 3, false, listing.Items},
-		//testing with limit set to 3 and order set to ascending
+		//test case 8 : testing with limit set to 3 and order set to ascending
 		{"/?limit=3&order=asc", "", "asc", 3, false, listing.Items},
-		//testing with limit set to 1111111 and order set to ascending
+		//test case 9 : testing with limit set to 1111111 and order set to ascending
 		{"/?limit=1111111&order=asc", "", "asc", 1111111, false, listing.Items},
-		//testing with limit set to default and order set to ascending and sorting by size
+		//test case 10 : testing with limit set to default and order set to ascending and sorting by size
 		{"/?order=asc&sort=size", "size", "asc", -1, false, listing.Items},
-		//testing with limit set to default and order set to ascending and sorting by last modified
+		//test case 11 : testing with limit set to default and order set to ascending and sorting by last modified
 		{"/?order=asc&sort=time", "time", "asc", -1, false, listing.Items},
-		//testing with limit set to 1 and order set to ascending and sorting by last modified
+		//test case 12 : testing with limit set to 1 and order set to ascending and sorting by last modified
 		{"/?order=asc&sort=time&limit=1", "time", "asc", 1, false, listing.Items},
-		//testing with limit set to -100 and order set to ascending and sorting by last modified
+		//test case 13 : testing with limit set to -100 and order set to ascending and sorting by last modified
 		{"/?order=asc&sort=time&limit=-100", "time", "asc", -100, false, listing.Items},
-		//testing with limit set to -100 and order set to ascending and sorting by size
+		//test case 14 : testing with limit set to -100 and order set to ascending and sorting by size
 		{"/?order=asc&sort=size&limit=-100", "size", "asc", -100, false, listing.Items},
 	}
 
@@ -305,7 +311,8 @@ func TestBrowseJson(t *testing.T) {
 		expectedJsonString := string(marsh)
 
 		if actualJsonResponseString != expectedJsonString {
-			t.Errorf("Json response string doesnt match the expected Json response for test number %d with sort = %s , order = %s,\nExpected response %s\nActual response = %s\n ", i+1, test.SortBy, test.OrderBy, expectedJsonString, actualJsonResponseString)
+			t.Errorf("JSON response doesn't match the expected for test number %d with sort=%s, order=%s\nExpected response %s\nActual response = %s\n",
+				i+1, test.SortBy, test.OrderBy, expectedJsonString, actualJsonResponseString)
 		}
 
 	}
