@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"runtime"
 )
 
 func TestRoot(t *testing.T) {
@@ -26,10 +27,13 @@ func TestRoot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BeforeTest: Failed to create temp file for testing! Error was: %v", err)
 	}
-	defer os.Remove(existingFile.Name())
+	defer func () {
+		existingFile.Close()
+		os.Remove(existingFile.Name())
+	}()
 
-	unaccessiblePath := filepath.Join(existingFile.Name(), "some_name")
-
+	unaccessiblePath := getInaccessibleOsDependentPath(existingFile.Name())
+	
 	tests := []struct {
 		input              string
 		shouldErr          bool
@@ -60,8 +64,9 @@ func TestRoot(t *testing.T) {
 	for i, test := range tests {
 		c := NewTestController(test.input)
 		mid, err := Root(c)
+
 		if test.shouldErr && err == nil {
-			t.Errorf("Test %d: Expected error but found nil for input %s", i, test.input)
+			t.Errorf("Test %d: Expected error but found %s for input %s", i, err, test.input)
 		}
 
 		if err != nil {
@@ -96,4 +101,13 @@ func getTempDirPath() (string, error) {
 	}
 
 	return tempDir, nil
+}
+
+func getInaccessibleOsDependentPath(file string) string{
+	if runtime.GOOS == "windows"{
+		return filepath.Join("C:", "file\x00name")// 0 byte breaks the lstat syscall
+	} else {
+		// TODO - check if the zero-byte filename works for linux only. If it does - use it instead
+ 	   return filepath.Join(file, "some_name")
+	}
 }
