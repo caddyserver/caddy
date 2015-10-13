@@ -1,0 +1,20 @@
+version: "{build}"
+
+os: Windows Server 2012 R2
+
+clone_folder: c:\go\src\github.com\mholt\caddy
+
+environment:
+  GOPATH: c:\go
+
+install:
+  - go get golang.org/x/tools/cmd/vet
+  - echo %PATH%
+  - echo %GOPATH%
+  - go version
+  - go env
+  - go get -d ./...
+
+build_script:
+  - go vet ./...
+  - go test ./...
