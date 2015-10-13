@@ -87,6 +87,7 @@ var (
 )
 
 func GetHtpasswdMatcher(filename, username, siteRoot string) (PasswordMatcher, error) {
+	fmt.Printf("ZBZB joining '%s' and '%s' and trying to open\n", siteRoot, filename)
 	filename = filepath.Join(siteRoot, filename)
 	htpasswordsMu.Lock()
 	if htpasswords == nil {

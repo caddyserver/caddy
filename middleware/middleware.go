@@ -3,7 +3,7 @@ package middleware
 
 import (
 	"net/http"
-	"path/filepath"
+	"path"
 )
 
 type (
@@ -57,12 +57,19 @@ func (f HandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, err
 // and false is returned. fpath must end in a forward slash '/'
 // otherwise no index files will be tried (directory paths must end
 // in a forward slash according to HTTP).
+//
+// All paths passed into and returned from this function use '/' as the
+// path separator, just like URLs.  IndexFle handles path manipulation
+// internally for systems that use different path separators.
 func IndexFile(root http.FileSystem, fpath string, indexFiles []string) (string, bool) {
 	if fpath[len(fpath)-1] != '/' || root == nil {
 		return "", false
 	}
 	for _, indexFile := range indexFiles {
-		fp := filepath.Join(fpath, indexFile)
+		// func (http.FileSystem).Open wants all paths separated by "/",
+		// regardless of operating system convention, so use
+		// path.Join instead of filepath.Join
+		fp := path.Join(fpath, indexFile)
 		f, err := root.Open(fp)
 		if err == nil {
 			f.Close()

@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"fmt"
 	"net/http"
 	"testing"
 )
@@ -15,13 +16,17 @@ func TestIndexfile(t *testing.T) {
 		expectedBoolValue bool   //return value
 	}{
 		{
-			http.Dir("./templates/testdata"), "/images/", []string{"img.htm"},
+			http.Dir("./templates/testdata"),
+			"/images/",
+			[]string{"img.htm"},
 			false,
-			"/images/img.htm", true,
+			"/images/img.htm",
+			true,
 		},
 	}
 	for i, test := range tests {
 		actualFilePath, actualBoolValue := IndexFile(test.rootDir, test.fpath, test.indexFiles)
+		fmt.Println("ZBZB IndexFile returned", actualFilePath, ",", actualBoolValue)
 		if actualBoolValue == true && test.shouldErr {
 			t.Errorf("Test %d didn't error, but it should have", i)
 		} else if actualBoolValue != true && !test.shouldErr {
