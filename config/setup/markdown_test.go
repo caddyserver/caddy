@@ -106,9 +106,9 @@ func TestMarkdownStaticGen(t *testing.T) {
 </body>
 </html>
 `)
-	// TODO: html contains Windows line endings, expectedBody doesn't...
+
 	if !bytes.Equal(html, expectedBody) {
-		//t.Fatalf("Expected file content: %s got: %s", string(expectedBody), string(html))
+		t.Fatalf("Expected file content: %s got: %s", string(expectedBody), string(html))
 	}
 
 	fp := filepath.Join(c.Root, markdown.DefaultStaticDir)
