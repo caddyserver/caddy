@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"runtime"
 )
 
 func TestRoot(t *testing.T) {
@@ -27,13 +26,13 @@ func TestRoot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BeforeTest: Failed to create temp file for testing! Error was: %v", err)
 	}
-	defer func () {
+	defer func() {
 		existingFile.Close()
 		os.Remove(existingFile.Name())
 	}()
 
-	unaccessiblePath := getInaccessibleOsDependentPath(existingFile.Name())
-	
+	inaccessiblePath := getInaccessiblePath(existingFile.Name())
+
 	tests := []struct {
 		input              string
 		shouldErr          bool
@@ -52,7 +51,7 @@ func TestRoot(t *testing.T) {
 			`root `, true, "", parseErrContent,
 		},
 		{
-			fmt.Sprintf(`root %s`, unaccessiblePath), true, "", unableToAccessErrContent,
+			fmt.Sprintf(`root %s`, inaccessiblePath), true, "", unableToAccessErrContent,
 		},
 		{
 			fmt.Sprintf(`root {
@@ -103,11 +102,7 @@ func getTempDirPath() (string, error) {
 	return tempDir, nil
 }
 
-func getInaccessibleOsDependentPath(file string) string{
-	if runtime.GOOS == "windows"{
-		return filepath.Join("C:", "file\x00name")// 0 byte breaks the lstat syscall
-	} else {
-		// TODO - check if the zero-byte filename works for linux only. If it does - use it instead
- 	   return filepath.Join(file, "some_name")
-	}
+func getInaccessiblePath(file string) string {
+	// null byte in filename is not allowed on Windows AND unix
+	return filepath.Join("C:", "file\x00name")
 }
