@@ -83,35 +83,35 @@ func serveWS(w http.ResponseWriter, r *http.Request, config *Config) (int, error
 	}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		return 0, err
+		return http.StatusBadRequest, err
 	}
 	defer conn.Close()
 
 	cmd := exec.Command(config.Command, config.Arguments...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		panic(err) // TODO
+		return http.StatusBadGateway, err
 	}
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		panic(err) // TODO
+		return http.StatusBadGateway, err
 	}
 
 	metavars, err := buildEnv(cmd.Path, r)
 	if err != nil {
-		panic(err) // TODO
+		return http.StatusBadGateway, err
 	}
 
 	cmd.Env = metavars
 
 	if err := cmd.Start(); err != nil {
-		panic(err)
+		return http.StatusBadGateway, err
 	}
 
 	reader(conn, stdout, stdin)
 
-	return 0, nil // we shouldn't get here.
+	return 0, nil
 }
 
 // buildEnv creates the meta-variables for the child process according
@@ -171,32 +171,39 @@ func reader(conn *websocket.Conn, stdout io.ReadCloser, stdin io.WriteCloser) {
 	conn.SetReadLimit(maxMessageSize)
 	conn.SetReadDeadline(time.Now().Add(pongWait))
 	conn.SetPongHandler(func(string) error { conn.SetReadDeadline(time.Now().Add(pongWait)); return nil })
-	go ticker(conn)
+	tickerChan := make(chan bool)
+	defer func() { tickerChan <- true }() // make sure to close the ticker when we are done.
+	go ticker(conn, tickerChan)
 
 	for {
 		msgType, r, err := conn.NextReader()
 		if err != nil {
 			if msgType == -1 {
-				return // we are done, as we got a close method.
+				return // we got a disconnect from the client. We are good to close.
 			}
-			panic(err) // TODO do something else here.
+			conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseGoingAway, ""), time.Time{})
+			return
 		}
 
 		w, err := conn.NextWriter(msgType)
 		if err != nil {
-			panic(err) // TODO do something else here.
+			conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseGoingAway, ""), time.Time{})
+			return
 		}
 
 		if _, err := io.Copy(stdin, r); err != nil {
-			panic(err) // TODO do something else here.
+			conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseGoingAway, ""), time.Time{})
+			return
 		}
 
 		go func() {
 			if _, err := io.Copy(w, stdout); err != nil {
-				panic(err) // TODO do something else here.
+				conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseGoingAway, ""), time.Time{})
+				return
 			}
 			if err := w.Close(); err != nil {
-				panic(err) // TODO do something else here.
+				conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseGoingAway, ""), time.Time{})
+				return
 			}
 		}()
 	}
@@ -204,17 +211,19 @@ func reader(conn *websocket.Conn, stdout io.ReadCloser, stdin io.WriteCloser) {
 
 // ticker is start by the reader. Basically it is the method that simulates the websocket
 // between the server and client to keep it alive with ping messages.
-func ticker(conn *websocket.Conn) {
+func ticker(conn *websocket.Conn, c chan bool) {
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
 		ticker.Stop()
-		conn.WriteMessage(websocket.CloseMessage, nil)
+		close(c)
 	}()
 
 	for { // blocking loop with select to wait for stimulation.
 		select {
 		case <-ticker.C:
 			conn.WriteMessage(websocket.PingMessage, nil)
+		case <-c:
+			return // clean up this routine.
 		}
 	}
 }
