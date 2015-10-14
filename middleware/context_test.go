@@ -46,7 +46,7 @@ func TestInclude(t *testing.T) {
 		{
 			fileContent:          `str1 {{ .InvalidField }} str2`,
 			expectedContent:      "",
-			shouldErr:            false,
+			shouldErr:            true,
 			expectedErrorContent: `InvalidField is not a field of struct type middleware.Context`,
 		},
 	}
@@ -62,6 +62,9 @@ func TestInclude(t *testing.T) {
 
 		content, err := context.Include(inputFilename)
 		if err != nil {
+			if !test.shouldErr {
+				t.Errorf(testPrefix+"Expected no error, found [%s]", test.expectedErrorContent, err.Error())
+			}
 			if !strings.Contains(err.Error(), test.expectedErrorContent) {
 				t.Errorf(testPrefix+"Expected error content [%s], found [%s]", test.expectedErrorContent, err.Error())
 			}
