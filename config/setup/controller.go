@@ -24,7 +24,9 @@ type Controller struct {
 // add-ons can use this as a convenience.
 func NewTestController(input string) *Controller {
 	return &Controller{
-		Config:    &server.Config{},
+		Config: &server.Config{
+			Root: ".",
+		},
 		Dispenser: parse.NewDispenser("Testfile", strings.NewReader(input)),
 	}
 }

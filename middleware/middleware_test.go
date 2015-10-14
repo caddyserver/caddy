@@ -15,9 +15,12 @@ func TestIndexfile(t *testing.T) {
 		expectedBoolValue bool   //return value
 	}{
 		{
-			http.Dir("./templates/testdata"), "/images/", []string{"img.htm"},
+			http.Dir("./templates/testdata"),
+			"/images/",
+			[]string{"img.htm"},
 			false,
-			"/images/img.htm", true,
+			"/images/img.htm",
+			true,
 		},
 	}
 	for i, test := range tests {
