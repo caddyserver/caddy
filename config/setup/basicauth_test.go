@@ -38,7 +38,7 @@ func TestBasicAuthParse(t *testing.T) {
 md5:$apr1$l42y8rex$pOA2VJ0x/0TwaFeAF9nX61`
 
 	var skipHtpassword bool
-	htfh, err := ioutil.TempFile("", "basicauth-")
+	htfh, err := ioutil.TempFile(".", "basicauth-")
 	if err != nil {
 		t.Logf("Error creating temp file (%v), will skip htpassword test", err)
 		skipHtpassword = true
