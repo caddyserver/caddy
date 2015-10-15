@@ -11,10 +11,15 @@ import (
 )
 
 // Controller is given to the setup function of middlewares which
-// gives them access to be able to read tokens and set config.
+// gives them access to be able to read tokens and set config. Each
+// virtualhost gets their own server config and dispenser.
 type Controller struct {
 	*server.Config
 	parse.Dispenser
+
+	// OncePerServerBlock is a function that executes f
+	// exactly once per server block, no matter how many
+	// hosts are associated with it.
 	OncePerServerBlock func(f func())
 }
 

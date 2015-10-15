@@ -45,7 +45,7 @@ func Load(filename string, input io.Reader) (Group, error) {
 	// Iterate each server block and make a config for each one,
 	// executing the directives that were parsed.
 	for _, sb := range serverBlocks {
-		var once sync.Once
+		onces := makeOnces()
 
 		for _, addr := range sb.Addresses {
 			config := server.Config{
@@ -68,7 +68,7 @@ func Load(filename string, input io.Reader) (Group, error) {
 					controller := &setup.Controller{
 						Config:             &config,
 						Dispenser:          parse.NewDispenserTokens(filename, tokens),
-						OncePerServerBlock: func(f func()) { once.Do(f) },
+						OncePerServerBlock: func(f func()) { onces[dir.name].Do(f) },
 					}
 
 					midware, err := dir.setup(controller)
@@ -94,6 +94,23 @@ func Load(filename string, input io.Reader) (Group, error) {
 	log.SetFlags(flags)
 
 	return arrangeBindings(configs)
+}
+
+// makeOnces makes a map of directive name to sync.Once
+// instance. This is intended to be called once per server
+// block when setting up configs so that Setup functions
+// for each directive can perform a task just once per
+// server block, even if there are multiple hosts on the block.
+//
+// We need one Once per directive, otherwise the first
+// directive to use it would exclude other directives from
+// using it at all, which would be a bug.
+func makeOnces() map[string]*sync.Once {
+	onces := make(map[string]*sync.Once)
+	for _, dir := range directiveOrder {
+		onces[dir.name] = new(sync.Once)
+	}
+	return onces
 }
 
 // arrangeBindings groups configurations by their bind address. For example,
