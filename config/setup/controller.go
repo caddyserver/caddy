@@ -15,6 +15,7 @@ import (
 type Controller struct {
 	*server.Config
 	parse.Dispenser
+	OncePerServerBlock func(f func())
 }
 
 // NewTestController creates a new *Controller for
