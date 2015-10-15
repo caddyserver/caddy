@@ -66,9 +66,15 @@ func Load(filename string, input io.Reader) (Group, error) {
 					// server config and the dispenser containing only
 					// this directive's tokens.
 					controller := &setup.Controller{
-						Config:             &config,
-						Dispenser:          parse.NewDispenserTokens(filename, tokens),
-						OncePerServerBlock: func(f func()) { onces[dir.name].Do(f) },
+						Config:    &config,
+						Dispenser: parse.NewDispenserTokens(filename, tokens),
+						OncePerServerBlock: func(f func() error) error {
+							var err error
+							onces[dir.name].Do(func() {
+								err = f()
+							})
+							return err
+						},
 					}
 
 					midware, err := dir.setup(controller)

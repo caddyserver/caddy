@@ -19,8 +19,11 @@ type Controller struct {
 
 	// OncePerServerBlock is a function that executes f
 	// exactly once per server block, no matter how many
-	// hosts are associated with it.
-	OncePerServerBlock func(f func())
+	// hosts are associated with it. If it is the first
+	// time, the function f is executed immediately
+	// (not deferred) and may return an error which is
+	// returned by OncePerServerBlock.
+	OncePerServerBlock func(f func() error) error
 }
 
 // NewTestController creates a new *Controller for
