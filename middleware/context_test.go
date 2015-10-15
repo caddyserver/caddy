@@ -119,7 +119,7 @@ func TestCookie(t *testing.T) {
 		},
 		// Test 3 - cookie with optional fields
 		{
-			cookie:        &http.Cookie{Name: "cookie", Value: "cookieValue", Path: "/path", Domain: "https://caddy.com", Expires: (time.Now().Add(10 * time.Minute)), MaxAge: 120},
+			cookie:        &http.Cookie{Name: "cookie", Value: "cookieValue", Path: "/path", Domain: "https://localhost", Expires: (time.Now().Add(10 * time.Minute)), MaxAge: 120},
 			cookieName:    "cookie",
 			expectedValue: "cookieValue",
 		},
@@ -194,12 +194,6 @@ func TestIP(t *testing.T) {
 		{"[2001:db8:a0b:12f0::1]", "[2001:db8:a0b:12f0::1]"},
 		// Test 4 - ipv6 with zone and port
 		{`[fe80:1::3%eth0]:44`, `fe80:1::3%eth0`},
-		// Test 5 - ipv6 without port with brackets
-		// {"[:fe:2]", ":fe:2"}, // TODO - failing (error in SplitHostPort) returns the host with brackets
-		// Test 6 - invalid address
-		// {":::::::::::::", ""}, // TODO - failing (error in SplitHostPort) returns the invalid address
-		// Test 7 - invalid address
-		// {"[::1][]", ""}, // TODO - failing (error in SplitHostPort) returns the invalid address
 	}
 
 	for i, test := range tests {
@@ -323,49 +317,49 @@ func TestPathMatches(t *testing.T) {
 	}{
 		// Test 0
 		{
-			urlStr:      "http://caddy.com/",
+			urlStr:      "http://localhost/",
 			pattern:     "",
 			shouldMatch: true,
 		},
 		// Test 1
 		{
-			urlStr:      "http://caddy.com",
+			urlStr:      "http://localhost",
 			pattern:     "",
 			shouldMatch: true,
 		},
 		// Test 1
 		{
-			urlStr:      "http://caddy.com/",
+			urlStr:      "http://localhost/",
 			pattern:     "/",
 			shouldMatch: true,
 		},
 		// Test 3
 		{
-			urlStr:      "http://caddy.com/?param=val",
+			urlStr:      "http://localhost/?param=val",
 			pattern:     "/",
 			shouldMatch: true,
 		},
 		// Test 4
 		{
-			urlStr:      "http://caddy.com/dir1/dir2",
+			urlStr:      "http://localhost/dir1/dir2",
 			pattern:     "/dir2",
 			shouldMatch: false,
 		},
 		// Test 5
 		{
-			urlStr:      "http://caddy.com/dir1/dir2",
+			urlStr:      "http://localhost/dir1/dir2",
 			pattern:     "/dir1",
 			shouldMatch: true,
 		},
 		// Test 6
 		{
-			urlStr:      "http://caddy.com:444/dir1/dir2",
+			urlStr:      "http://localhost:444/dir1/dir2",
 			pattern:     "/dir1",
 			shouldMatch: true,
 		},
 		// Test 7
 		{
-			urlStr:      "http://caddy.com/dir1/dir2",
+			urlStr:      "http://localhost/dir1/dir2",
 			pattern:     "*/dir2",
 			shouldMatch: false,
 		},
@@ -387,13 +381,13 @@ func TestPathMatches(t *testing.T) {
 }
 
 func initTestContext() (Context, error) {
-	rootDir := getTestFilesFolder()
 	body := bytes.NewBufferString("request body")
-	request, err := http.NewRequest("GET", "https://caddy.com", body)
+	request, err := http.NewRequest("GET", "https://localhost", body)
 	if err != nil {
 		return Context{}, err
 	}
-	return Context{Root: http.Dir(rootDir), Req: request}, nil
+
+	return Context{Root: http.Dir(os.TempDir()), Req: request}, nil
 }
 
 func getContextOrFail(t *testing.T) Context {
@@ -402,10 +396,6 @@ func getContextOrFail(t *testing.T) Context {
 		t.Fatalf("Failed to prepare test context")
 	}
 	return context
-}
-
-func getTestFilesFolder() string {
-	return os.TempDir()
 }
 
 func getTestPrefix(testN int) string {
