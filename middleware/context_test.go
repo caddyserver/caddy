@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,10 +14,7 @@ import (
 )
 
 func TestInclude(t *testing.T) {
-	context, err := initTestContext()
-	if err != nil {
-		t.Fatalf("Failed to prepare test context")
-	}
+	context := getContextOrFail(t)
 
 	inputFilename := "test_file"
 	absInFilePath := filepath.Join(fmt.Sprintf("%s", context.Root), inputFilename)
@@ -86,12 +84,9 @@ func TestInclude(t *testing.T) {
 }
 
 func TestIncludeNotExisting(t *testing.T) {
-	context, err := initTestContext()
-	if err != nil {
-		t.Fatalf("Failed to prepare test context")
-	}
+	context := getContextOrFail(t)
 
-	_, err = context.Include("not_existing")
+	_, err := context.Include("not_existing")
 	if err == nil {
 		t.Errorf("Expected error but found nil!")
 	}
@@ -134,10 +129,8 @@ func TestCookie(t *testing.T) {
 		testPrefix := getTestPrefix(i)
 
 		// reinitialize the context for each test
-		context, err := initTestContext()
-		if err != nil {
-			t.Fatalf("Failed to prepare test context")
-		}
+		context := getContextOrFail(t)
+
 		context.Req.AddCookie(test.cookie)
 
 		actualCookieVal := context.Cookie(test.cookieName)
@@ -149,10 +142,7 @@ func TestCookie(t *testing.T) {
 }
 
 func TestCookieMultipleCookies(t *testing.T) {
-	context, err := initTestContext()
-	if err != nil {
-		t.Fatalf("Failed to prepare test context")
-	}
+	context := getContextOrFail(t)
 
 	cookieNameBase, cookieValueBase := "cookieName", "cookieValue"
 
@@ -170,11 +160,25 @@ func TestCookieMultipleCookies(t *testing.T) {
 	}
 }
 
-func TestIP(t *testing.T) {
-	context, err := initTestContext()
-	if err != nil {
-		t.Fatalf("Failed to prepare test context")
+func TestHeader(t *testing.T) {
+	context := getContextOrFail(t)
+
+	headerKey, headerVal := "Header1", "HeaderVal1"
+	context.Req.Header.Add(headerKey, headerVal)
+
+	actualHeaderVal := context.Header(headerKey)
+	if actualHeaderVal != headerVal {
+		t.Errorf("Expected header %s, found %s", headerVal, actualHeaderVal)
 	}
+
+	missingHeaderVal := context.Header("not-existing")
+	if missingHeaderVal != "" {
+		t.Errorf("Expected empty header value, found %s", missingHeaderVal)
+	}
+}
+
+func TestIP(t *testing.T) {
+	context := getContextOrFail(t)
 
 	tests := []struct {
 		inputRemoteAddr string
@@ -210,6 +214,178 @@ func TestIP(t *testing.T) {
 	}
 }
 
+func TestURL(t *testing.T) {
+	context := getContextOrFail(t)
+
+	inputURL := "http://localhost"
+	context.Req.RequestURI = inputURL
+
+	if inputURL != context.URI() {
+		t.Errorf("Expected url %s, found %s", inputURL, context.URI())
+	}
+}
+
+func TestHost(t *testing.T) {
+	tests := []struct {
+		input        string
+		expectedHost string
+		shouldErr    bool
+	}{
+		{
+			input:        "localhost:123",
+			expectedHost: "localhost",
+			shouldErr:    false,
+		},
+		{
+			input:        "localhost",
+			expectedHost: "",
+			shouldErr:    true, // missing port in address
+		},
+	}
+
+	for _, test := range tests {
+		testHostOrPort(t, true, test.input, test.expectedHost, test.shouldErr)
+	}
+}
+
+func TestPort(t *testing.T) {
+	tests := []struct {
+		input        string
+		expectedPort string
+		shouldErr    bool
+	}{
+		{
+			input:        "localhost:123",
+			expectedPort: "123",
+			shouldErr:    false,
+		},
+		{
+			input:        "localhost",
+			expectedPort: "",
+			shouldErr:    true, // missing port in address
+		},
+	}
+
+	for _, test := range tests {
+		testHostOrPort(t, false, test.input, test.expectedPort, test.shouldErr)
+	}
+}
+
+func testHostOrPort(t *testing.T, isTestingHost bool, input, expectedResult string, shouldErr bool) {
+	context := getContextOrFail(t)
+
+	context.Req.Host = input
+	var actualResult, testedObject string
+	var err error
+
+	if isTestingHost {
+		actualResult, err = context.Host()
+		testedObject = "host"
+	} else {
+		actualResult, err = context.Port()
+		testedObject = "port"
+	}
+
+	if shouldErr && err == nil {
+		t.Errorf("Expected error, found nil!")
+		return
+	}
+
+	if !shouldErr && err != nil {
+		t.Errorf("Expected no error, found %s", err)
+		return
+	}
+
+	if actualResult != expectedResult {
+		t.Errorf("Expected %s %s, found %s", testedObject, expectedResult, actualResult)
+	}
+}
+
+func TestMethod(t *testing.T) {
+	context := getContextOrFail(t)
+
+	method := "POST"
+	context.Req.Method = method
+
+	if method != context.Method() {
+		t.Errorf("Expected method %s, found %s", method, context.Method())
+	}
+
+}
+
+func TestPathMatches(t *testing.T) {
+	context := getContextOrFail(t)
+
+	tests := []struct {
+		urlStr      string
+		pattern     string
+		shouldMatch bool
+	}{
+		// Test 0
+		{
+			urlStr:      "http://caddy.com/",
+			pattern:     "",
+			shouldMatch: true,
+		},
+		// Test 1
+		{
+			urlStr:      "http://caddy.com",
+			pattern:     "",
+			shouldMatch: true,
+		},
+		// Test 1
+		{
+			urlStr:      "http://caddy.com/",
+			pattern:     "/",
+			shouldMatch: true,
+		},
+		// Test 3
+		{
+			urlStr:      "http://caddy.com/?param=val",
+			pattern:     "/",
+			shouldMatch: true,
+		},
+		// Test 4
+		{
+			urlStr:      "http://caddy.com/dir1/dir2",
+			pattern:     "/dir2",
+			shouldMatch: false,
+		},
+		// Test 5
+		{
+			urlStr:      "http://caddy.com/dir1/dir2",
+			pattern:     "/dir1",
+			shouldMatch: true,
+		},
+		// Test 6
+		{
+			urlStr:      "http://caddy.com:444/dir1/dir2",
+			pattern:     "/dir1",
+			shouldMatch: true,
+		},
+		// Test 7
+		{
+			urlStr:      "http://caddy.com/dir1/dir2",
+			pattern:     "*/dir2",
+			shouldMatch: false,
+		},
+	}
+
+	for i, test := range tests {
+		testPrefix := getTestPrefix(i)
+		var err error
+		context.Req.URL, err = url.Parse(test.urlStr)
+		if err != nil {
+			t.Fatalf("Failed to prepare test URL from string %s! Error was: %s", test.urlStr, err)
+		}
+
+		matches := context.PathMatches(test.pattern)
+		if matches != test.shouldMatch {
+			t.Errorf(testPrefix+"Expected and actual result differ: expected to match [%t], actual matches [%t]", test.shouldMatch, matches)
+		}
+	}
+}
+
 func initTestContext() (Context, error) {
 	rootDir := getTestFilesFolder()
 	body := bytes.NewBufferString("request body")
@@ -218,6 +394,14 @@ func initTestContext() (Context, error) {
 		return Context{}, err
 	}
 	return Context{Root: http.Dir(rootDir), Req: request}, nil
+}
+
+func getContextOrFail(t *testing.T) Context {
+	context, err := initTestContext()
+	if err != nil {
+		t.Fatalf("Failed to prepare test context")
+	}
+	return context
 }
 
 func getTestFilesFolder() string {
