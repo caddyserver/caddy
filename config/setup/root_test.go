@@ -26,9 +26,12 @@ func TestRoot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BeforeTest: Failed to create temp file for testing! Error was: %v", err)
 	}
-	defer os.Remove(existingFile.Name())
+	defer func() {
+		existingFile.Close()
+		os.Remove(existingFile.Name())
+	}()
 
-	unaccessiblePath := filepath.Join(existingFile.Name(), "some_name")
+	inaccessiblePath := getInaccessiblePath(existingFile.Name())
 
 	tests := []struct {
 		input              string
@@ -48,7 +51,7 @@ func TestRoot(t *testing.T) {
 			`root `, true, "", parseErrContent,
 		},
 		{
-			fmt.Sprintf(`root %s`, unaccessiblePath), true, "", unableToAccessErrContent,
+			fmt.Sprintf(`root %s`, inaccessiblePath), true, "", unableToAccessErrContent,
 		},
 		{
 			fmt.Sprintf(`root {
@@ -60,8 +63,9 @@ func TestRoot(t *testing.T) {
 	for i, test := range tests {
 		c := NewTestController(test.input)
 		mid, err := Root(c)
+
 		if test.shouldErr && err == nil {
-			t.Errorf("Test %d: Expected error but found nil for input %s", i, test.input)
+			t.Errorf("Test %d: Expected error but found %s for input %s", i, err, test.input)
 		}
 
 		if err != nil {
@@ -96,4 +100,9 @@ func getTempDirPath() (string, error) {
 	}
 
 	return tempDir, nil
+}
+
+func getInaccessiblePath(file string) string {
+	// null byte in filename is not allowed on Windows AND unix
+	return filepath.Join("C:", "file\x00name")
 }

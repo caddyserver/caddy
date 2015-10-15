@@ -114,11 +114,11 @@ func loadParams(c *Controller, mdc *markdown.Config) error {
 			if _, ok := mdc.Templates[markdown.DefaultTemplate]; ok {
 				return c.Err("only one default template is allowed, use alias.")
 			}
-			fpath := filepath.Clean(c.Root + string(filepath.Separator) + tArgs[0])
+			fpath := filepath.ToSlash(filepath.Clean(c.Root + string(filepath.Separator) + tArgs[0]))
 			mdc.Templates[markdown.DefaultTemplate] = fpath
 			return nil
 		case 2:
-			fpath := filepath.Clean(c.Root + string(filepath.Separator) + tArgs[1])
+			fpath := filepath.ToSlash(filepath.Clean(c.Root + string(filepath.Separator) + tArgs[1]))
 			mdc.Templates[tArgs[0]] = fpath
 			return nil
 		default:

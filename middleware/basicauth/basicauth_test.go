@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/mholt/caddy/middleware"
@@ -124,15 +125,18 @@ md5:$apr1$l42y8rex$pOA2VJ0x/0TwaFeAF9nX61`
 		t.Skipf("Error creating temp file (%v), will skip htpassword test")
 		return
 	}
+	defer os.Remove(htfh.Name())
 	if _, err = htfh.Write([]byte(htpasswdFile)); err != nil {
 		t.Fatalf("write htpasswd file %q: %v", htfh.Name(), err)
 	}
 	htfh.Close()
-	defer os.Remove(htfh.Name())
 
 	for i, username := range []string{"sha1", "md5"} {
 		rule := Rule{Username: username, Resources: []string{"/testing"}}
-		if rule.Password, err = GetHtpasswdMatcher(htfh.Name(), rule.Username, "/"); err != nil {
+
+		siteRoot := filepath.Dir(htfh.Name())
+		filename := filepath.Base(htfh.Name())
+		if rule.Password, err = GetHtpasswdMatcher(filename, rule.Username, siteRoot); err != nil {
 			t.Fatalf("GetHtpasswdMatcher(%q, %q): %v", htfh.Name(), rule.Username, err)
 		}
 		t.Logf("%d. username=%q password=%v", i, rule.Username, rule.Password)

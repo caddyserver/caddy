@@ -2,26 +2,26 @@ package setup
 
 import (
 	"github.com/mholt/caddy/middleware"
-	"github.com/mholt/caddy/middleware/websockets"
+	"github.com/mholt/caddy/middleware/websocket"
 )
 
-// WebSocket configures a new WebSockets middleware instance.
+// WebSocket configures a new WebSocket middleware instance.
 func WebSocket(c *Controller) (middleware.Middleware, error) {
 
 	websocks, err := webSocketParse(c)
 	if err != nil {
 		return nil, err
 	}
-	websockets.GatewayInterface = c.AppName + "-CGI/1.1"
-	websockets.ServerSoftware = c.AppName + "/" + c.AppVersion
+	websocket.GatewayInterface = c.AppName + "-CGI/1.1"
+	websocket.ServerSoftware = c.AppName + "/" + c.AppVersion
 
 	return func(next middleware.Handler) middleware.Handler {
-		return websockets.WebSockets{Next: next, Sockets: websocks}
+		return websocket.WebSocket{Next: next, Sockets: websocks}
 	}, nil
 }
 
-func webSocketParse(c *Controller) ([]websockets.Config, error) {
-	var websocks []websockets.Config
+func webSocketParse(c *Controller) ([]websocket.Config, error) {
+	var websocks []websocket.Config
 	var respawn bool
 
 	optionalBlock := func() (hadBlock bool, err error) {
@@ -74,7 +74,7 @@ func webSocketParse(c *Controller) ([]websockets.Config, error) {
 			return nil, err
 		}
 
-		websocks = append(websocks, websockets.Config{
+		websocks = append(websocks, websocket.Config{
 			Path:      path,
 			Command:   cmd,
 			Arguments: args,

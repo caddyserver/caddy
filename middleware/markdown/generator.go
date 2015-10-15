@@ -70,7 +70,7 @@ func generateLinks(md Markdown, cfg *Config) (bool, error) {
 	return generated, g.lastErr
 }
 
-// generateStaticFiles generates static html files from markdowns.
+// generateStaticHTML generates static HTML files from markdowns.
 func generateStaticHTML(md Markdown, cfg *Config) error {
 	// If generated site already exists, clear it out
 	_, err := os.Stat(cfg.StaticDir)
@@ -98,6 +98,7 @@ func generateStaticHTML(md Markdown, cfg *Config) error {
 				if err != nil {
 					return err
 				}
+				reqPath = filepath.ToSlash(reqPath)
 				reqPath = "/" + reqPath
 
 				// Generate the static file
