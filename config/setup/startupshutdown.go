@@ -55,9 +55,8 @@ func registerCallback(c *Controller, list *[]func() error) error {
 		funcs = append(funcs, fn)
 	}
 
-	c.OncePerServerBlock(func() {
+	return c.OncePerServerBlock(func() error {
 		*list = append(*list, funcs...)
+		return nil
 	})
-
-	return nil
 }
