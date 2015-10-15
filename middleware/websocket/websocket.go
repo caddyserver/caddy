@@ -172,7 +172,7 @@ func reader(conn *websocket.Conn, stdout io.ReadCloser, stdin io.WriteCloser) {
 	conn.SetReadDeadline(time.Now().Add(pongWait))
 	conn.SetPongHandler(func(string) error { conn.SetReadDeadline(time.Now().Add(pongWait)); return nil })
 	tickerChan := make(chan bool)
-	defer func() { tickerChan <- true }() // make sure to close the ticker when we are done.
+	defer close(tickerChan) // make sure to close the ticker when we are done.
 	go ticker(conn, tickerChan)
 
 	for {
@@ -213,10 +213,7 @@ func reader(conn *websocket.Conn, stdout io.ReadCloser, stdin io.WriteCloser) {
 // between the server and client to keep it alive with ping messages.
 func ticker(conn *websocket.Conn, c chan bool) {
 	ticker := time.NewTicker(pingPeriod)
-	defer func() {
-		ticker.Stop()
-		close(c)
-	}()
+	defer ticker.Stop()
 
 	for { // blocking loop with select to wait for stimulation.
 		select {
