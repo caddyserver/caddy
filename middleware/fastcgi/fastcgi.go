@@ -58,17 +58,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			}
 
 			// Connect to FastCGI gateway
-			var fcgi *FCGIClient
-
-			// check if unix socket or tcp
-			if strings.HasPrefix(rule.Address, "/") || strings.HasPrefix(rule.Address, "unix:") {
-				if strings.HasPrefix(rule.Address, "unix:") {
-					rule.Address = rule.Address[len("unix:"):]
-				}
-				fcgi, err = Dial("unix", rule.Address)
-			} else {
-				fcgi, err = Dial("tcp", rule.Address)
-			}
+			fcgi, err := getClient(&rule)
 			if err != nil {
 				return http.StatusBadGateway, err
 			}
@@ -102,13 +92,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 				return http.StatusBadGateway, err
 			}
 
-			// Write the response header
-			for key, vals := range resp.Header {
-				for _, val := range vals {
-					w.Header().Add(key, val)
-				}
-			}
-			w.WriteHeader(resp.StatusCode)
+			writeHeader(w, resp)
 
 			// Write the response body
 			// TODO: If this has an error, the response will already be
@@ -124,6 +108,26 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 	}
 
 	return h.Next.ServeHTTP(w, r)
+}
+
+func getClient(r *Rule) (*FCGIClient, error) {
+	// check if unix socket or TCP
+	if trim := strings.HasPrefix(r.Address, "unix"); strings.HasPrefix(r.Address, "/") || trim {
+		if trim {
+			r.Address = r.Address[len("unix:"):]
+		}
+		return Dial("unix", r.Address)
+	}
+	return Dial("tcp", r.Address)
+}
+
+func writeHeader(w http.ResponseWriter, r *http.Response) {
+	for key, vals := range r.Header {
+		for _, val := range vals {
+			w.Header().Add(key, val)
+		}
+	}
+	w.WriteHeader(r.StatusCode)
 }
 
 func (h Handler) exists(path string) bool {
@@ -166,6 +170,20 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 		scriptFilename = absPath
 	}
 
+	// Strip PATH_INFO from SCRIPT_NAME
+	scriptName = strings.TrimSuffix(scriptName, pathInfo)
+
+	// Get the request URI. The request URI might be as it came in over the wire,
+	// or it might have been rewritten internally by the rewrite middleware (see issue #256).
+	// If it was rewritten, there will be a header indicating the original URL,
+	// which is needed to get the correct RequestURI value for PHP apps.
+	const internalRewriteFieldName = "Caddy-Rewrite-Original-URI"
+	reqURI := r.URL.RequestURI()
+	if origURI := r.Header.Get(internalRewriteFieldName); origURI != "" {
+		reqURI = origURI
+		r.Header.Del(internalRewriteFieldName)
+	}
+
 	// Some variables are unused but cleared explicitly to prevent
 	// the parent environment from interfering.
 	env = map[string]string{
@@ -192,7 +210,7 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 		"DOCUMENT_ROOT":   h.AbsRoot,
 		"DOCUMENT_URI":    docURI,
 		"HTTP_HOST":       r.Host, // added here, since not always part of headers
-		"REQUEST_URI":     r.URL.RequestURI(),
+		"REQUEST_URI":     reqURI,
 		"SCRIPT_FILENAME": scriptFilename,
 		"SCRIPT_NAME":     scriptName,
 	}

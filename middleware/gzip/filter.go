@@ -81,7 +81,7 @@ func (s Set) Contains(value string) bool {
 // elements in the set and passes each to f. It returns true
 // on the first call to f that returns true and false otherwise.
 func (s Set) ContainsFunc(f func(string) bool) bool {
-	for k, _ := range s {
+	for k := range s {
 		if f(k) {
 			return true
 		}

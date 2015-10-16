@@ -30,45 +30,45 @@ import (
 	"sync"
 )
 
-const FCGI_LISTENSOCK_FILENO uint8 = 0
-const FCGI_HEADER_LEN uint8 = 8
-const VERSION_1 uint8 = 1
-const FCGI_NULL_REQUEST_ID uint8 = 0
-const FCGI_KEEP_CONN uint8 = 1
+const FCGIListenSockFileno uint8 = 0
+const FCGIHeaderLen uint8 = 8
+const Version1 uint8 = 1
+const FCGINullRequestID uint8 = 0
+const FCGIKeepConn uint8 = 1
 const doubleCRLF = "\r\n\r\n"
 
 const (
-	FCGI_BEGIN_REQUEST uint8 = iota + 1
-	FCGI_ABORT_REQUEST
-	FCGI_END_REQUEST
-	FCGI_PARAMS
-	FCGI_STDIN
-	FCGI_STDOUT
-	FCGI_STDERR
-	FCGI_DATA
-	FCGI_GET_VALUES
-	FCGI_GET_VALUES_RESULT
-	FCGI_UNKNOWN_TYPE
-	FCGI_MAXTYPE = FCGI_UNKNOWN_TYPE
+	BeginRequest uint8 = iota + 1
+	AbortRequest
+	EndRequest
+	Params
+	Stdin
+	Stdout
+	Stderr
+	Data
+	GetValues
+	GetValuesResult
+	UnknownType
+	MaxType = UnknownType
 )
 
 const (
-	FCGI_RESPONDER uint8 = iota + 1
-	FCGI_AUTHORIZER
-	FCGI_FILTER
+	Responder uint8 = iota + 1
+	Authorizer
+	Filter
 )
 
 const (
-	FCGI_REQUEST_COMPLETE uint8 = iota
-	FCGI_CANT_MPX_CONN
-	FCGI_OVERLOADED
-	FCGI_UNKNOWN_ROLE
+	RequestComplete uint8 = iota
+	CantMultiplexConns
+	Overloaded
+	UnknownRole
 )
 
 const (
-	FCGI_MAX_CONNS  string = "MAX_CONNS"
-	FCGI_MAX_REQS   string = "MAX_REQS"
-	FCGI_MPXS_CONNS string = "MPXS_CONNS"
+	MaxConns       string = "MAX_CONNS"
+	MaxRequests    string = "MAX_REQS"
+	MultiplexConns string = "MPXS_CONNS"
 )
 
 const (
@@ -79,7 +79,7 @@ const (
 type header struct {
 	Version       uint8
 	Type          uint8
-	Id            uint16
+	ID            uint16
 	ContentLength uint16
 	PaddingLength uint8
 	Reserved      uint8
@@ -92,7 +92,7 @@ var pad [maxPad]byte
 func (h *header) init(recType uint8, reqID uint16, contentLength int) {
 	h.Version = 1
 	h.Type = recType
-	h.Id = reqID
+	h.ID = reqID
 	h.ContentLength = uint16(contentLength)
 	h.PaddingLength = uint8(-contentLength & 7)
 }
@@ -110,7 +110,7 @@ func (rec *record) read(r io.Reader) (buf []byte, err error) {
 		err = errors.New("fcgi: invalid header version")
 		return
 	}
-	if rec.h.Type == FCGI_END_REQUEST {
+	if rec.h.Type == EndRequest {
 		err = io.EOF
 		return
 	}
@@ -126,13 +126,15 @@ func (rec *record) read(r io.Reader) (buf []byte, err error) {
 	return
 }
 
+// FCGIClient implements a FastCGI client, which is a standard for
+// interfacing external applications with Web servers.
 type FCGIClient struct {
 	mutex     sync.Mutex
 	rwc       io.ReadWriteCloser
 	h         header
 	buf       bytes.Buffer
 	keepAlive bool
-	reqId     uint16
+	reqID     uint16
 }
 
 // Dial connects to the fcgi responder at the specified network address.
@@ -148,7 +150,7 @@ func Dial(network, address string) (fcgi *FCGIClient, err error) {
 	fcgi = &FCGIClient{
 		rwc:       conn,
 		keepAlive: false,
-		reqId:     1,
+		reqID:     1,
 	}
 
 	return
@@ -163,7 +165,7 @@ func (c *FCGIClient) writeRecord(recType uint8, content []byte) (err error) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	c.buf.Reset()
-	c.h.init(recType, c.reqId, len(content))
+	c.h.init(recType, c.reqID, len(content))
 	if err := binary.Write(&c.buf, binary.BigEndian, c.h); err != nil {
 		return err
 	}
@@ -179,14 +181,14 @@ func (c *FCGIClient) writeRecord(recType uint8, content []byte) (err error) {
 
 func (c *FCGIClient) writeBeginRequest(role uint16, flags uint8) error {
 	b := [8]byte{byte(role >> 8), byte(role), flags}
-	return c.writeRecord(FCGI_BEGIN_REQUEST, b[:])
+	return c.writeRecord(BeginRequest, b[:])
 }
 
 func (c *FCGIClient) writeEndRequest(appStatus int, protocolStatus uint8) error {
 	b := make([]byte, 8)
 	binary.BigEndian.PutUint32(b, uint32(appStatus))
 	b[4] = protocolStatus
-	return c.writeRecord(FCGI_END_REQUEST, b)
+	return c.writeRecord(EndRequest, b)
 }
 
 func (c *FCGIClient) writePairs(recType uint8, pairs map[string]string) error {
@@ -334,17 +336,17 @@ func (w *streamReader) Read(p []byte) (n int, err error) {
 // Do made the request and returns a io.Reader that translates the data read
 // from fcgi responder out of fcgi packet before returning it.
 func (c *FCGIClient) Do(p map[string]string, req io.Reader) (r io.Reader, err error) {
-	err = c.writeBeginRequest(uint16(FCGI_RESPONDER), 0)
+	err = c.writeBeginRequest(uint16(Responder), 0)
 	if err != nil {
 		return
 	}
 
-	err = c.writePairs(FCGI_PARAMS, p)
+	err = c.writePairs(Params, p)
 	if err != nil {
 		return
 	}
 
-	body := newWriter(c, FCGI_STDIN)
+	body := newWriter(c, Stdin)
 	if req != nil {
 		io.Copy(body, req)
 	}
@@ -381,9 +383,9 @@ func (c *FCGIClient) Request(p map[string]string, req io.Reader) (resp *http.Res
 			return
 		}
 		if len(statusParts) > 1 {
-			resp.Status = statusParts[1]	
+			resp.Status = statusParts[1]
 		}
-		
+
 	} else {
 		resp.StatusCode = http.StatusOK
 	}

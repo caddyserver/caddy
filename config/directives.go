@@ -57,6 +57,7 @@ var directiveOrder = []directive{
 	{"rewrite", setup.Rewrite},
 	{"redir", setup.Redir},
 	{"ext", setup.Ext},
+	{"mime", setup.Mime},
 	{"basicauth", setup.BasicAuth},
 	{"internal", setup.Internal},
 	{"proxy", setup.Proxy},
@@ -73,7 +74,7 @@ type directive struct {
 	setup SetupFunc
 }
 
-// A setup function takes a setup controller. Its return values may
-// both be nil. If middleware is not nil, it will be chained into
+// SetupFunc takes a controller and may optionally return a middleware.
+// If the resulting middleware is not nil, it will be chained into
 // the HTTP handlers in the order specified in this package.
 type SetupFunc func(c *setup.Controller) (middleware.Middleware, error)

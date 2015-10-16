@@ -12,13 +12,13 @@ func (r *customPolicy) Select(pool HostPool) *UpstreamHost {
 
 func testPool() HostPool {
 	pool := []*UpstreamHost{
-		&UpstreamHost{
+		{
 			Name: "http://google.com", // this should resolve (healthcheck test)
 		},
-		&UpstreamHost{
+		{
 			Name: "http://shouldnot.resolve", // this shouldn't
 		},
-		&UpstreamHost{
+		{
 			Name: "http://C",
 		},
 	}

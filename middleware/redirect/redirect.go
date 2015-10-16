@@ -19,7 +19,7 @@ type Redirect struct {
 // ServeHTTP implements the middleware.Handler interface.
 func (rd Redirect) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	for _, rule := range rd.Rules {
-		if rule.From == "/" || r.URL.Path == rule.From {
+		if (rule.FromPath == "/" || r.URL.Path == rule.FromPath) && schemeMatches(rule, r) {
 			to := middleware.NewReplacer(r, nil, "").Replace(rule.To)
 			if rule.Meta {
 				safeTo := html.EscapeString(to)
@@ -33,11 +33,16 @@ func (rd Redirect) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 	return rd.Next.ServeHTTP(w, r)
 }
 
+func schemeMatches(rule Rule, req *http.Request) bool {
+	return (rule.FromScheme == "https" && req.TLS != nil) ||
+		(rule.FromScheme != "https" && req.TLS == nil)
+}
+
 // Rule describes an HTTP redirect rule.
 type Rule struct {
-	From, To string
-	Code     int
-	Meta     bool
+	FromScheme, FromPath, To string
+	Code                     int
+	Meta                     bool
 }
 
 // Script tag comes first since that will better imitate a redirect in the browser's

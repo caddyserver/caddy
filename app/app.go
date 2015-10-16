@@ -22,7 +22,7 @@ const (
 	Name = "Caddy"
 
 	// Version is the program version
-	Version = "0.7.5"
+	Version = "0.7.6"
 )
 
 var (
@@ -35,8 +35,8 @@ var (
 	// Wg is used to wait for all servers to shut down
 	Wg sync.WaitGroup
 
-	// Http2 indicates whether HTTP2 is enabled or not
-	Http2 bool // TODO: temporary flag until http2 is standard
+	// HTTP2 indicates whether HTTP2 is enabled or not
+	HTTP2 bool // TODO: temporary flag until http2 is standard
 
 	// Quiet mode hides non-error initialization output
 	Quiet bool

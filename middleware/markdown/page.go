@@ -116,7 +116,7 @@ func (l *linkGen) generateLinks(md Markdown, cfg *Config) bool {
 			if err != nil {
 				return err
 			}
-			reqPath = "/" + reqPath
+			reqPath = "/" + filepath.ToSlash(reqPath)
 
 			parser := findParser(body)
 			if parser == nil {

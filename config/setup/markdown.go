@@ -68,62 +68,8 @@ func markdownParse(c *Controller) ([]*markdown.Config, error) {
 
 		// Load any other configuration parameters
 		for c.NextBlock() {
-			switch c.Val() {
-			case "ext":
-				exts := c.RemainingArgs()
-				if len(exts) == 0 {
-					return mdconfigs, c.ArgErr()
-				}
-				md.Extensions = append(md.Extensions, exts...)
-			case "css":
-				if !c.NextArg() {
-					return mdconfigs, c.ArgErr()
-				}
-				md.Styles = append(md.Styles, c.Val())
-			case "js":
-				if !c.NextArg() {
-					return mdconfigs, c.ArgErr()
-				}
-				md.Scripts = append(md.Scripts, c.Val())
-			case "template":
-				tArgs := c.RemainingArgs()
-				switch len(tArgs) {
-				case 0:
-					return mdconfigs, c.ArgErr()
-				case 1:
-					if _, ok := md.Templates[markdown.DefaultTemplate]; ok {
-						return mdconfigs, c.Err("only one default template is allowed, use alias.")
-					}
-					fpath := filepath.Clean(c.Root + string(filepath.Separator) + tArgs[0])
-					md.Templates[markdown.DefaultTemplate] = fpath
-				case 2:
-					fpath := filepath.Clean(c.Root + string(filepath.Separator) + tArgs[1])
-					md.Templates[tArgs[0]] = fpath
-				default:
-					return mdconfigs, c.ArgErr()
-				}
-			case "sitegen":
-				if c.NextArg() {
-					md.StaticDir = path.Join(c.Root, c.Val())
-				} else {
-					md.StaticDir = path.Join(c.Root, markdown.DefaultStaticDir)
-				}
-				if c.NextArg() {
-					// only 1 argument allowed
-					return mdconfigs, c.ArgErr()
-				}
-			case "dev":
-				if c.NextArg() {
-					md.Development = strings.ToLower(c.Val()) == "true"
-				} else {
-					md.Development = true
-				}
-				if c.NextArg() {
-					// only 1 argument allowed
-					return mdconfigs, c.ArgErr()
-				}
-			default:
-				return mdconfigs, c.Err("Expected valid markdown configuration property")
+			if err := loadParams(c, md); err != nil {
+				return mdconfigs, err
 			}
 		}
 
@@ -136,4 +82,71 @@ func markdownParse(c *Controller) ([]*markdown.Config, error) {
 	}
 
 	return mdconfigs, nil
+}
+
+func loadParams(c *Controller, mdc *markdown.Config) error {
+	switch c.Val() {
+	case "ext":
+		exts := c.RemainingArgs()
+		if len(exts) == 0 {
+			return c.ArgErr()
+		}
+		mdc.Extensions = append(mdc.Extensions, exts...)
+		return nil
+	case "css":
+		if !c.NextArg() {
+			return c.ArgErr()
+		}
+		mdc.Styles = append(mdc.Styles, c.Val())
+		return nil
+	case "js":
+		if !c.NextArg() {
+			return c.ArgErr()
+		}
+		mdc.Scripts = append(mdc.Scripts, c.Val())
+		return nil
+	case "template":
+		tArgs := c.RemainingArgs()
+		switch len(tArgs) {
+		case 0:
+			return c.ArgErr()
+		case 1:
+			if _, ok := mdc.Templates[markdown.DefaultTemplate]; ok {
+				return c.Err("only one default template is allowed, use alias.")
+			}
+			fpath := filepath.ToSlash(filepath.Clean(c.Root + string(filepath.Separator) + tArgs[0]))
+			mdc.Templates[markdown.DefaultTemplate] = fpath
+			return nil
+		case 2:
+			fpath := filepath.ToSlash(filepath.Clean(c.Root + string(filepath.Separator) + tArgs[1]))
+			mdc.Templates[tArgs[0]] = fpath
+			return nil
+		default:
+			return c.ArgErr()
+		}
+	case "sitegen":
+		if c.NextArg() {
+			mdc.StaticDir = path.Join(c.Root, c.Val())
+		} else {
+			mdc.StaticDir = path.Join(c.Root, markdown.DefaultStaticDir)
+		}
+		if c.NextArg() {
+			// only 1 argument allowed
+			return c.ArgErr()
+		}
+		return nil
+	case "dev":
+		if c.NextArg() {
+			mdc.Development = strings.ToLower(c.Val()) == "true"
+		} else {
+			mdc.Development = true
+		}
+		if c.NextArg() {
+			// only 1 argument allowed
+			return c.ArgErr()
+		}
+		return nil
+	default:
+		return c.Err("Expected valid markdown configuration property")
+	}
 }

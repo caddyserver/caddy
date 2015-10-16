@@ -86,7 +86,7 @@ func (s *Server) Serve() error {
 			go func(vh virtualHost) {
 				// Wait for signal
 				interrupt := make(chan os.Signal, 1)
-				signal.Notify(interrupt, os.Interrupt, os.Kill)
+				signal.Notify(interrupt, os.Interrupt, os.Kill) // TODO: syscall.SIGQUIT? (Ctrl+\, Unix-only)
 				<-interrupt
 
 				// Run callbacks
@@ -264,6 +264,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// DefaultErrorFunc responds to an HTTP request with a simple description
+// of the specified HTTP status code.
 func DefaultErrorFunc(w http.ResponseWriter, r *http.Request, status int) {
 	w.WriteHeader(status)
 	fmt.Fprintf(w, "%d %s", status, http.StatusText(status))

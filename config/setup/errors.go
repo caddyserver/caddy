@@ -5,7 +5,7 @@ import (
 	"io"
 	"log"
 	"os"
-	"path"
+	"path/filepath"
 	"strconv"
 
 	"github.com/hashicorp/go-syslog"
@@ -105,7 +105,7 @@ func errorsParse(c *Controller) (*errors.ErrorHandler, error) {
 				}
 			} else {
 				// Error page; ensure it exists
-				where = path.Join(c.Root, where)
+				where = filepath.Join(c.Root, where)
 				f, err := os.Open(where)
 				if err != nil {
 					fmt.Println("Warning: Unable to open error page '" + where + "': " + err.Error())

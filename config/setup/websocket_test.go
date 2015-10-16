@@ -1,8 +1,9 @@
 package setup
 
 import (
-	"github.com/mholt/caddy/middleware/websockets"
 	"testing"
+
+	"github.com/mholt/caddy/middleware/websocket"
 )
 
 func TestWebSocket(t *testing.T) {
@@ -20,10 +21,10 @@ func TestWebSocket(t *testing.T) {
 	}
 
 	handler := mid(EmptyNext)
-	myHandler, ok := handler.(websockets.WebSockets)
+	myHandler, ok := handler.(websocket.WebSocket)
 
 	if !ok {
-		t.Fatalf("Expected handler to be type WebSockets, got: %#v", handler)
+		t.Fatalf("Expected handler to be type WebSocket, got: %#v", handler)
 	}
 
 	if myHandler.Sockets[0].Path != "/" {
@@ -38,15 +39,15 @@ func TestWebSocketParse(t *testing.T) {
 	tests := []struct {
 		inputWebSocketConfig    string
 		shouldErr               bool
-		expectedWebSocketConfig []websockets.Config
+		expectedWebSocketConfig []websocket.Config
 	}{
-		{`websocket /api1 cat`, false, []websockets.Config{{
+		{`websocket /api1 cat`, false, []websocket.Config{{
 			Path:    "/api1",
 			Command: "cat",
 		}}},
 
 		{`websocket /api3 cat  
-		  websocket /api4 cat `, false, []websockets.Config{{
+		  websocket /api4 cat `, false, []websocket.Config{{
 			Path:    "/api3",
 			Command: "cat",
 		}, {

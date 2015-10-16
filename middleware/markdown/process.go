@@ -18,7 +18,7 @@ const (
 	DefaultStaticDir = "generated_site"
 )
 
-type MarkdownData struct {
+type Data struct {
 	middleware.Context
 	Doc   map[string]string
 	Links []PageLink
@@ -95,7 +95,7 @@ func (md Markdown) processTemplate(c *Config, requestPath string, tmpl []byte, m
 	if err != nil {
 		return nil, err
 	}
-	mdData := MarkdownData{
+	mdData := Data{
 		Context: ctx,
 		Doc:     metadata.Variables,
 		Links:   c.Links,
@@ -134,7 +134,10 @@ func (md Markdown) generatePage(c *Config, requestPath string, content []byte) e
 			}
 		}
 
-		filePath := filepath.Join(c.StaticDir, requestPath)
+		// the URL will always use "/" as a path separator,
+		// convert that to a native path to support OS that
+		// use different path separators
+		filePath := filepath.Join(c.StaticDir, filepath.FromSlash(requestPath))
 
 		// If it is index file, use the directory instead
 		if md.IsIndexFile(filepath.Base(requestPath)) {
@@ -154,7 +157,7 @@ func (md Markdown) generatePage(c *Config, requestPath string, content []byte) e
 		}
 
 		c.Lock()
-		c.StaticFiles[requestPath] = filePath
+		c.StaticFiles[requestPath] = filepath.ToSlash(filePath)
 		c.Unlock()
 	}
 

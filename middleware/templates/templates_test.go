@@ -14,12 +14,12 @@ func Test(t *testing.T) {
 			return 0, nil
 		}),
 		Rules: []Rule{
-			Rule{
+			{
 				Extensions: []string{".html"},
 				IndexFiles: []string{"index.html"},
 				Path:       "/photos",
 			},
-			Rule{
+			{
 				Extensions: []string{".html", ".htm"},
 				IndexFiles: []string{"index.html", "index.htm"},
 				Path:       "/images",
@@ -34,7 +34,7 @@ func Test(t *testing.T) {
 			return 0, nil
 		}),
 		Rules: []Rule{
-			Rule{
+			{
 				Extensions: []string{".html"},
 				IndexFiles: []string{"index.html"},
 				Path:       "/",

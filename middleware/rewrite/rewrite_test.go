@@ -21,15 +21,15 @@ func TestRewrite(t *testing.T) {
 	}
 
 	regexpRules := [][]string{
-		[]string{"/reg/", ".*", "/to", ""},
-		[]string{"/r/", "[a-z]+", "/toaz", "!.html|"},
-		[]string{"/url/", "a([a-z0-9]*)s([A-Z]{2})", "/to/{path}", ""},
-		[]string{"/ab/", "ab", "/ab?{query}", ".txt|"},
-		[]string{"/ab/", "ab", "/ab?type=html&{query}", ".html|"},
-		[]string{"/abc/", "ab", "/abc/{file}", ".html|"},
-		[]string{"/abcd/", "ab", "/a/{dir}/{file}", ".html|"},
-		[]string{"/abcde/", "ab", "/a#{fragment}", ".html|"},
-		[]string{"/ab/", `.*\.jpg`, "/ajpg", ""},
+		{"/reg/", ".*", "/to", ""},
+		{"/r/", "[a-z]+", "/toaz", "!.html|"},
+		{"/url/", "a([a-z0-9]*)s([A-Z]{2})", "/to/{path}", ""},
+		{"/ab/", "ab", "/ab?{query}", ".txt|"},
+		{"/ab/", "ab", "/ab?type=html&{query}", ".html|"},
+		{"/abc/", "ab", "/abc/{file}", ".html|"},
+		{"/abcd/", "ab", "/a/{dir}/{file}", ".html|"},
+		{"/abcde/", "ab", "/a#{fragment}", ".html|"},
+		{"/ab/", `.*\.jpg`, "/ajpg", ""},
 	}
 
 	for _, regexpRule := range regexpRules {
