@@ -24,6 +24,15 @@ type Controller struct {
 	// (not deferred) and may return an error which is
 	// returned by OncePerServerBlock.
 	OncePerServerBlock func(f func() error) error
+
+	// ServerBlockIndex is the 0-based index of the
+	// server block as it appeared in the input.
+	ServerBlockIndex int
+
+	// ServerBlockHosts is a list of hosts that are
+	// associated with this server block. All these
+	// hosts, consequently, share the same tokens.
+	ServerBlockHosts []string
 }
 
 // NewTestController creates a new *Controller for

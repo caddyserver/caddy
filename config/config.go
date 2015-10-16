@@ -44,7 +44,7 @@ func Load(filename string, input io.Reader) (Group, error) {
 	// Each server block represents similar hosts/addresses.
 	// Iterate each server block and make a config for each one,
 	// executing the directives that were parsed.
-	for _, sb := range serverBlocks {
+	for i, sb := range serverBlocks {
 		onces := makeOnces()
 
 		for _, addr := range sb.Addresses {
@@ -75,6 +75,8 @@ func Load(filename string, input io.Reader) (Group, error) {
 							})
 							return err
 						},
+						ServerBlockIndex: i,
+						ServerBlockHosts: sb.HostList(),
 					}
 
 					midware, err := dir.setup(controller)
