@@ -50,13 +50,12 @@ func (c Config) Address() string {
 	return net.JoinHostPort(c.Host, c.Port)
 }
 
-// TLSConfig describes how TLS should be configured and used,
-// if at all. A certificate and key are both required.
-// The rest is optional.
+// TLSConfig describes how TLS should be configured and used.
 type TLSConfig struct {
 	Enabled                  bool
 	Certificate              string
 	Key                      string
+	LetsEncryptEmail         string
 	Ciphers                  []uint16
 	ProtocolMinVersion       uint16
 	ProtocolMaxVersion       uint16

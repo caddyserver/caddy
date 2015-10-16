@@ -8,18 +8,21 @@ import (
 )
 
 func TLS(c *Controller) (middleware.Middleware, error) {
-	c.TLS.Enabled = true
+	if c.Port != "http" {
+		c.TLS.Enabled = true
+	}
 
 	for c.Next() {
-		if !c.NextArg() {
+		args := c.RemainingArgs()
+		switch len(args) {
+		case 1:
+			c.TLS.LetsEncryptEmail = args[0]
+		case 2:
+			c.TLS.Certificate = args[0]
+			c.TLS.Key = args[1]
+		default:
 			return nil, c.ArgErr()
 		}
-		c.TLS.Certificate = c.Val()
-
-		if !c.NextArg() {
-			return nil, c.ArgErr()
-		}
-		c.TLS.Key = c.Val()
 
 		// Optional block
 		for c.NextBlock() {

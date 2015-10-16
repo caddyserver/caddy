@@ -1,8 +1,6 @@
 package config
 
 import (
-	"crypto/rand"
-	"crypto/rsa"
 	"errors"
 	"fmt"
 	"io"
@@ -77,25 +75,20 @@ func Load(filename string, input io.Reader) (Group, error) {
 	// restore logging settings
 	log.SetFlags(flags)
 
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	// Initiate Let's Encrypt
+	leUser, err := NewLetsEncryptUser("example1@mail.com")
 	if err != nil {
-		return Group{}, errors.New("Error Generating Key:" + err.Error())
+		return Group{}, err
 	}
-
 	for _, cfg := range configs {
-		// TODO: && hostname does not resolve to localhost (?) && TLS is not force-disabled
-		if !cfg.TLS.Enabled {
-			// Initiate Let's Encrypt
-			user := LetsEncryptUser{
-				Email: "example@mail.com",
-				Key:   privateKey,
-			}
-			client := acme.NewClient("http://192.168.99.100:4000", &user, 2048, "5001")
+		// TODO: && !IsLoopback()
+		if !cfg.TLS.Enabled && cfg.Port != "http" {
+			client := acme.NewClient("http://192.168.99.100:4000", &leUser, 2048, "5001")
 			reg, err := client.Register()
 			if err != nil {
 				return Group{}, errors.New("Error Registering: " + err.Error())
 			}
-			user.Registration = reg
+			leUser.Registration = reg
 
 			err = client.AgreeToTos()
 			if err != nil {
@@ -106,29 +99,11 @@ func Load(filename string, input io.Reader) (Group, error) {
 			if err != nil {
 				return Group{}, errors.New("Error Obtaining Certs: " + err.Error())
 			}
-
-			fmt.Printf("%#v\n", certs)
 		}
 	}
 
 	// Group by address/virtualhosts
 	return arrangeBindings(configs)
-}
-
-type LetsEncryptUser struct {
-	Email        string
-	Registration *acme.RegistrationResource
-	Key          *rsa.PrivateKey
-}
-
-func (u LetsEncryptUser) GetEmail() string {
-	return u.Email
-}
-func (u LetsEncryptUser) GetRegistration() *acme.RegistrationResource {
-	return u.Registration
-}
-func (u LetsEncryptUser) GetPrivateKey() *rsa.PrivateKey {
-	return u.Key
 }
 
 // serverBlockToConfig makes a config for the server block
@@ -303,11 +278,22 @@ func Default() (Group, error) {
 	return arrangeBindings([]server.Config{NewDefault()})
 }
 
-// These three defaults are configurable through the command line
+// These defaults are configurable through the command line
 var (
+	// Site root
 	Root = DefaultRoot
+
+	// Site host
 	Host = DefaultHost
+
+	// Site port
 	Port = DefaultPort
+
+	// Let's Encrypt account email
+	LetsEncryptEmail string
+
+	// Agreement to Let's Encrypt terms
+	LetsEncryptAgree bool
 )
 
 type Group map[*net.TCPAddr][]server.Config
