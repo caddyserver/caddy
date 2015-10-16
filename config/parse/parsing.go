@@ -312,3 +312,15 @@ type (
 		Host, Port string
 	}
 )
+
+// HostList converts the list of addresses (hosts)
+// that are associated with this server block into
+// a slice of strings. Each string is a host:port
+// combination.
+func (sb serverBlock) HostList() []string {
+	sbHosts := make([]string, len(sb.Addresses))
+	for j, addr := range sb.Addresses {
+		sbHosts[j] = net.JoinHostPort(addr.Host, addr.Port)
+	}
+	return sbHosts
+}
