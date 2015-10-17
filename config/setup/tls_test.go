@@ -70,14 +70,7 @@ func TestTLSParseIncompleteParams(t *testing.T) {
 
 	_, err := TLS(c)
 	if err == nil {
-		t.Errorf("Expected errors, but no error returned")
-	}
-
-	c = NewTestController(`tls cert.key`)
-
-	_, err = TLS(c)
-	if err == nil {
-		t.Errorf("Expected errors, but no error returned")
+		t.Errorf("Expected errors (first check), but no error returned")
 	}
 }
 
