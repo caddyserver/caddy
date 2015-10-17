@@ -29,17 +29,29 @@ type Controller struct {
 	// server block as it appeared in the input.
 	ServerBlockIndex int
 
+	// ServerBlockHostIndex is the 0-based index of this
+	// host as it appeared in the input at the head of the
+	// server block.
+	ServerBlockHostIndex int
+
 	// ServerBlockHosts is a list of hosts that are
 	// associated with this server block. All these
 	// hosts, consequently, share the same tokens.
 	ServerBlockHosts []string
+
+	// ServerBlockStorage is used by a directive's
+	// setup function to persist state between all
+	// the hosts on a server block.
+	ServerBlockStorage interface{}
 }
 
 // NewTestController creates a new *Controller for
-// the input specified, with a filename of "Testfile"
+// the input specified, with a filename of "Testfile".
+// The Config is bare, consisting only of a Root of cwd.
 //
 // Used primarily for testing but needs to be exported so
-// add-ons can use this as a convenience.
+// add-ons can use this as a convenience. Does not initialize
+// the server-block-related fields.
 func NewTestController(input string) *Controller {
 	return &Controller{
 		Config: &server.Config{
