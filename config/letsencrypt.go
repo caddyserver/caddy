@@ -148,7 +148,7 @@ func initiateLetsEncrypt(configs []server.Config) ([]server.Config, error) {
 
 			if !plaintextHostFound {
 				// Make one that redirects to HTTPS for all requests
-				configs = append(configs, redirPlaintextHost(cfg))
+				configs = append(configs, redirPlaintextHost(*cfg))
 			}
 		}
 	}
