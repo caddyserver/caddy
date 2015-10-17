@@ -127,6 +127,8 @@ func initiateLetsEncrypt(configs []server.Config) error {
 		for _, cfg := range serverConfigs {
 			cfg.TLS.Certificate = filepath.Join(app.DataFolder(), "letsencrypt", "sites", cfg.Host, cfg.Host+".crt")
 			cfg.TLS.Key = filepath.Join(app.DataFolder(), "letsencrypt", "sites", cfg.Host, cfg.Host+".key")
+			cfg.TLS.Enabled = true
+			cfg.Port = "https"
 		}
 	}
 
