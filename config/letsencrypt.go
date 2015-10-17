@@ -19,11 +19,24 @@ import (
 	"github.com/xenolf/lego/acme"
 )
 
-const rsaKeySize = 2048
+// Some essential values related to the Let's Encrypt process
+const (
+	// Size of RSA keys in bits
+	rsaKeySize = 2048
 
-// initiateLetsEncrypt sets up TLS ... <TODO>
+	// The base URL to the Let's Encrypt CA
+	caURL = "http://192.168.99.100:4000"
+
+	// The port to expose to the CA server for Simple HTTP Challenge
+	exposePort = "5001"
+)
+
+// initiateLetsEncrypt sets up TLS for each server config
+// in configs as needed. It only skips the config if the
+// cert and key are already specified or if plaintext http
+// is explicitly specified as the port.
 func initiateLetsEncrypt(configs []server.Config) error {
-	// fill map of email address to server configs that use that email address for TLS.
+	// populate map of email address to server configs that use that email address for TLS.
 	// this will help us reduce roundtrips when getting the certs.
 	initMap := make(map[string][]*server.Config)
 	for i := 0; i < len(configs); i++ {
@@ -36,14 +49,20 @@ func initiateLetsEncrypt(configs []server.Config) error {
 		}
 	}
 
+	// Loop through each email address and obtain certs; we can obtain more
+	// than one certificate per email address, and still save them individually.
 	for leEmail, serverConfigs := range initMap {
+		// Look up or create the LE user account
 		leUser, err := getLetsEncryptUser(leEmail)
 		if err != nil {
 			return err
 		}
 
-		client := acme.NewClient("http://192.168.99.100:4000", &leUser, rsaKeySize, "5001")
+		// The client facilitates our communication with the CA server.
+		client := acme.NewClient(caURL, &leUser, rsaKeySize, exposePort)
 
+		// If not registered, the user must register an account with the CA
+		// and agree to terms
 		if leUser.Registration == nil {
 			reg, err := client.Register()
 			if err != nil {
@@ -64,31 +83,30 @@ func initiateLetsEncrypt(configs []server.Config) error {
 			}
 		}
 
-		// collect all the hostnames
+		// collect all the hostnames into one slice
 		var hosts []string
 		for _, cfg := range serverConfigs {
 			hosts = append(hosts, cfg.Host)
 		}
 
-		// showtime: let's get free, trusted SSL certificates! yee-haw!
+		// showtime: let's get free, trusted SSL certificates! yeah!
 		certificates, err := client.ObtainCertificates(hosts)
 		if err != nil {
 			return errors.New("error obtaining certs: " + err.Error())
 		}
 
-		// ... that's it. pain gone. save the certs, keys, and update server configs.
+		// ... that's it. save the certs, keys, and update server configs.
 		for _, cert := range certificates {
 			certFolder := filepath.Join(app.DataFolder(), "letsencrypt", "sites", cert.Domain)
 			os.MkdirAll(certFolder, 0700)
+
 			// Save cert
 			err = saveCertificate(cert.Certificate, filepath.Join(certFolder, cert.Domain+".crt"))
-			//err = ioutil.WriteFile(filepath.Join(certFolder, cert.Domain+".crt"), cert.Certificate, 0600)
 			if err != nil {
 				return err
 			}
 
 			// Save private key
-			//savePrivateKey(cert.PrivateKey, filepath.Join(certFolder, cert.Domain+".key"))
 			err = ioutil.WriteFile(filepath.Join(certFolder, cert.Domain+".key"), cert.PrivateKey, 0600)
 			if err != nil {
 				return err
@@ -115,17 +133,37 @@ func initiateLetsEncrypt(configs []server.Config) error {
 	return nil
 }
 
+// getEmail does everything it can to obtain an email
+// address from the user to use for TLS for cfg. If it
+// cannot get an email address, it returns empty string.
 func getEmail(cfg server.Config) string {
+	// First try the tls directive from the Caddyfile
 	leEmail := cfg.TLS.LetsEncryptEmail
 	if leEmail == "" {
+		// Then try memory (command line flag or typed by user previously)
 		leEmail = LetsEncryptEmail
 	}
 	if leEmail == "" {
-		// TODO: get most recent email from ~/.caddy/users file
+		// Then try to get most recent user email ~/.caddy/users file
+		// TODO: Probably better to open the user's json file and read the email out of there...
+		userDirs, err := ioutil.ReadDir(filepath.Join(app.DataFolder(), "letsencrypt", "users"))
+		if err == nil {
+			var mostRecent os.FileInfo
+			for _, dir := range userDirs {
+				if !dir.IsDir() {
+					continue
+				}
+				if mostRecent == nil || dir.ModTime().After(mostRecent.ModTime()) {
+					mostRecent = dir
+				}
+			}
+			leEmail = mostRecent.Name()
+		}
 	}
 	if leEmail == "" {
+		// Alas, we must bother the user and ask for an email address
 		reader := bufio.NewReader(os.Stdin)
-		fmt.Print("Email address: ")
+		fmt.Print("Email address: ") // TODO: More explanation probably, and show ToS?
 		var err error
 		leEmail, err = reader.ReadString('\n')
 		if err != nil {
