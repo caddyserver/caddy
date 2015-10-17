@@ -1,7 +1,6 @@
 package config
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -13,7 +12,6 @@ import (
 	"github.com/mholt/caddy/config/setup"
 	"github.com/mholt/caddy/middleware"
 	"github.com/mholt/caddy/server"
-	"github.com/xenolf/lego/acme"
 )
 
 const (
@@ -103,34 +101,13 @@ func Load(filename string, input io.Reader) (Group, error) {
 	// restore logging settings
 	log.SetFlags(flags)
 
-	// Initiate Let's Encrypt
-	leUser, err := NewLetsEncryptUser("example1@mail.com")
+	// secure all the things
+	err = initiateLetsEncrypt(configs)
 	if err != nil {
-		return Group{}, err
-	}
-	for _, cfg := range configs {
-		// TODO: && !IsLoopback()
-		if !cfg.TLS.Enabled && cfg.Port != "http" {
-			client := acme.NewClient("http://192.168.99.100:4000", &leUser, 2048, "5001")
-			reg, err := client.Register()
-			if err != nil {
-				return Group{}, errors.New("Error Registering: " + err.Error())
-			}
-			leUser.Registration = reg
-
-			err = client.AgreeToTos()
-			if err != nil {
-				return Group{}, errors.New("Error Agreeing to ToS: " + err.Error())
-			}
-
-			certs, err := client.ObtainCertificates([]string{"caddy.dev"})
-			if err != nil {
-				return Group{}, errors.New("Error Obtaining Certs: " + err.Error())
-			}
-		}
+		return nil, err
 	}
 
-	// Group by address/virtualhosts
+	// group by address/virtualhosts
 	return arrangeBindings(configs)
 }
 
