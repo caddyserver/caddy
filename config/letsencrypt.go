@@ -1,5 +1,8 @@
 package config
 
+// TODO: This code is a mess but I'm cleaning it up locally and
+// refactoring a bunch. It will have tests, too. Don't worry. :)
+
 import (
 	"bufio"
 	"crypto/rand"
@@ -10,11 +13,14 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/mholt/caddy/app"
+	"github.com/mholt/caddy/middleware"
+	"github.com/mholt/caddy/middleware/redirect"
 	"github.com/mholt/caddy/server"
 	"github.com/xenolf/lego/acme"
 )
@@ -35,7 +41,7 @@ const (
 // in configs as needed. It only skips the config if the
 // cert and key are already specified or if plaintext http
 // is explicitly specified as the port.
-func initiateLetsEncrypt(configs []server.Config) error {
+func initiateLetsEncrypt(configs []server.Config) ([]server.Config, error) {
 	// populate map of email address to server configs that use that email address for TLS.
 	// this will help us reduce roundtrips when getting the certs.
 	initMap := make(map[string][]*server.Config)
@@ -43,7 +49,7 @@ func initiateLetsEncrypt(configs []server.Config) error {
 		if configs[i].TLS.Certificate == "" && configs[i].TLS.Key == "" && configs[i].Port != "http" { // TODO: && !cfg.Host.IsLoopback()
 			leEmail := getEmail(configs[i])
 			if leEmail == "" {
-				return errors.New("cannot serve HTTPS without email address OR certificate and key")
+				return configs, errors.New("cannot serve HTTPS without email address OR certificate and key")
 			}
 			initMap[leEmail] = append(initMap[leEmail], &configs[i])
 		}
@@ -55,7 +61,7 @@ func initiateLetsEncrypt(configs []server.Config) error {
 		// Look up or create the LE user account
 		leUser, err := getLetsEncryptUser(leEmail)
 		if err != nil {
-			return err
+			return configs, err
 		}
 
 		// The client facilitates our communication with the CA server.
@@ -66,7 +72,7 @@ func initiateLetsEncrypt(configs []server.Config) error {
 		if leUser.Registration == nil {
 			reg, err := client.Register()
 			if err != nil {
-				return errors.New("registration error: " + err.Error())
+				return configs, errors.New("registration error: " + err.Error())
 			}
 			leUser.Registration = reg
 
@@ -74,12 +80,12 @@ func initiateLetsEncrypt(configs []server.Config) error {
 			err = client.AgreeToTos()
 			if err != nil {
 				saveLetsEncryptUser(leUser) // TODO: Might as well try, right? Error check?
-				return errors.New("error agreeing to terms: " + err.Error())
+				return configs, errors.New("error agreeing to terms: " + err.Error())
 			}
 
 			err = saveLetsEncryptUser(leUser)
 			if err != nil {
-				return errors.New("could not save user: " + err.Error())
+				return configs, errors.New("could not save user: " + err.Error())
 			}
 		}
 
@@ -92,7 +98,7 @@ func initiateLetsEncrypt(configs []server.Config) error {
 		// showtime: let's get free, trusted SSL certificates! yeah!
 		certificates, err := client.ObtainCertificates(hosts)
 		if err != nil {
-			return errors.New("error obtaining certs: " + err.Error())
+			return configs, errors.New("error obtaining certs: " + err.Error())
 		}
 
 		// ... that's it. save the certs, keys, and update server configs.
@@ -103,23 +109,23 @@ func initiateLetsEncrypt(configs []server.Config) error {
 			// Save cert
 			err = saveCertificate(cert.Certificate, filepath.Join(certFolder, cert.Domain+".crt"))
 			if err != nil {
-				return err
+				return configs, err
 			}
 
 			// Save private key
 			err = ioutil.WriteFile(filepath.Join(certFolder, cert.Domain+".key"), cert.PrivateKey, 0600)
 			if err != nil {
-				return err
+				return configs, err
 			}
 
 			// Save cert metadata
 			jsonBytes, err := json.MarshalIndent(&CertificateMeta{URL: cert.CertURL, Domain: cert.Domain}, "", "\t")
 			if err != nil {
-				return err
+				return configs, err
 			}
 			err = ioutil.WriteFile(filepath.Join(certFolder, cert.Domain+".json"), jsonBytes, 0600)
 			if err != nil {
-				return err
+				return configs, err
 			}
 		}
 
@@ -129,10 +135,49 @@ func initiateLetsEncrypt(configs []server.Config) error {
 			cfg.TLS.Key = filepath.Join(app.DataFolder(), "letsencrypt", "sites", cfg.Host, cfg.Host+".key")
 			cfg.TLS.Enabled = true
 			cfg.Port = "https"
+
+			// Is there a plaintext HTTP config for the same host? If not, make
+			// one and have it redirect all requests to this HTTPS host.
+			var plaintextHostFound bool
+			for _, otherCfg := range configs {
+				if cfg.Host == otherCfg.Host && otherCfg.Port == "http" {
+					plaintextHostFound = true
+					break
+				}
+			}
+
+			if !plaintextHostFound {
+				// Make one that redirects to HTTPS for all requests
+				configs = append(configs, redirPlaintextHost(cfg))
+			}
 		}
 	}
 
-	return nil
+	return configs, nil
+}
+
+// redirPlaintextHost returns a new virtualhost configuration for a server
+// that redirects the plaintext HTTP host of cfg to cfg, which is assumed
+// to be the secure (HTTPS) host.
+func redirPlaintextHost(cfg server.Config) server.Config {
+	redirMidware := func(next middleware.Handler) middleware.Handler {
+		return redirect.Redirect{Next: next, Rules: []redirect.Rule{
+			{
+				FromScheme: "http",
+				FromPath:   "/",
+				To:         "https://" + cfg.Host + "{uri}",
+				Code:       http.StatusMovedPermanently,
+			},
+		}}
+	}
+
+	return server.Config{
+		Host: cfg.Host,
+		Port: "http",
+		Middleware: map[string][]middleware.Middleware{
+			"/": []middleware.Middleware{redirMidware},
+		},
+	}
 }
 
 // getEmail does everything it can to obtain an email

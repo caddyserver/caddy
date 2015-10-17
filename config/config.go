@@ -102,7 +102,7 @@ func Load(filename string, input io.Reader) (Group, error) {
 	log.SetFlags(flags)
 
 	// secure all the things
-	err = initiateLetsEncrypt(configs)
+	configs, err = initiateLetsEncrypt(configs)
 	if err != nil {
 		return nil, err
 	}
