@@ -1,14 +1,11 @@
 package letsencrypt
 
 import (
-	"bufio"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io/ioutil"
 	"net/http"
 	"os"
-	"strings"
 
 	"github.com/mholt/caddy/middleware"
 	"github.com/mholt/caddy/middleware/redirect"
@@ -20,91 +17,41 @@ import (
 // as needed. It only skips the config if the cert and key
 // are already provided or if plaintext http is explicitly
 // specified as the port.
+//
+// This function may prompt the user to provide an email
+// address if none is available through other means. It
+// prefers the email address specified in the config, but
+// if that is not available it will check the command line
+// argument. If absent, it will use the most recent email
+// address from last time. If there isn't one, the user
+// will be prompted. If the user leaves email blank, <TODO>.
 func Activate(configs []server.Config) ([]server.Config, error) {
-	// populate map of email address to server configs that use that email address for TLS.
-	// this will help us reduce roundtrips when getting the certs.
-	initMap := make(map[string][]*server.Config)
-	for i := 0; i < len(configs); i++ {
-		if configs[i].TLS.Certificate == "" && configs[i].TLS.Key == "" && configs[i].Port != "http" { // TODO: && !cfg.Host.IsLoopback()
-			leEmail := getEmail(configs[i])
-			if leEmail == "" {
-				return configs, errors.New("cannot serve HTTPS without email address OR certificate and key")
-			}
-			initMap[leEmail] = append(initMap[leEmail], &configs[i])
-		}
+	// Group configs by LE email address; this will help us
+	// reduce round-trips when getting the certs.
+	initMap, err := groupConfigsByEmail(configs)
+	if err != nil {
+		return configs, err
 	}
 
 	// Loop through each email address and obtain certs; we can obtain more
 	// than one certificate per email address, and still save them individually.
 	for leEmail, serverConfigs := range initMap {
-		// Look up or create the LE user account
-		leUser, err := getUser(leEmail)
+		// make client to service this email address with CA server
+		client, err := newClient(leEmail)
 		if err != nil {
 			return configs, err
 		}
 
-		// The client facilitates our communication with the CA server.
-		client := acme.NewClient(caURL, &leUser, rsaKeySize, exposePort)
-
-		// If not registered, the user must register an account with the CA
-		// and agree to terms
-		if leUser.Registration == nil {
-			reg, err := client.Register()
-			if err != nil {
-				return configs, errors.New("registration error: " + err.Error())
-			}
-			leUser.Registration = reg
-
-			// TODO: we can just do the agreement once, when registering, right?
-			err = client.AgreeToTos()
-			if err != nil {
-				saveUser(leUser) // TODO: Might as well try, right? Error check?
-				return configs, errors.New("error agreeing to terms: " + err.Error())
-			}
-
-			err = saveUser(leUser)
-			if err != nil {
-				return configs, errors.New("could not save user: " + err.Error())
-			}
-		}
-
-		// collect all the hostnames into one slice
-		var hosts []string
-		for _, cfg := range serverConfigs {
-			hosts = append(hosts, cfg.Host)
-		}
-
-		// showtime: let's get free, trusted SSL certificates! yeah!
-		certificates, err := client.ObtainCertificates(hosts)
+		// client is ready, so let's get free, trusted SSL certificates! yeah!
+		certificates, err := obtainCertificates(client, serverConfigs)
 		if err != nil {
-			return configs, errors.New("error obtaining certs: " + err.Error())
+			return configs, err
 		}
 
-		// ... that's it. save the certs, keys, and update server configs.
-		for _, cert := range certificates {
-			os.MkdirAll(storage.Site(cert.Domain), 0700)
-
-			// Save cert
-			err = saveCertificate(cert.Certificate, storage.SiteCertFile(cert.Domain))
-			if err != nil {
-				return configs, err
-			}
-
-			// Save private key
-			err = ioutil.WriteFile(storage.SiteKeyFile(cert.Domain), cert.PrivateKey, 0600)
-			if err != nil {
-				return configs, err
-			}
-
-			// Save cert metadata
-			jsonBytes, err := json.MarshalIndent(&CertificateMeta{URL: cert.CertURL, Domain: cert.Domain}, "", "\t")
-			if err != nil {
-				return configs, err
-			}
-			err = ioutil.WriteFile(storage.SiteMetaFile(cert.Domain), jsonBytes, 0600)
-			if err != nil {
-				return configs, err
-			}
+		// ... that's it. save the certs, keys, and metadata files to disk
+		err = saveCertsAndKeys(certificates)
+		if err != nil {
+			return configs, err
 		}
 
 		// it all comes down to this: filling in the file path of a valid certificate automatically
@@ -134,9 +81,117 @@ func Activate(configs []server.Config) ([]server.Config, error) {
 	return configs, nil
 }
 
-// redirPlaintextHost returns a new virtualhost configuration for a server
-// that redirects the plaintext HTTP host of cfg to cfg, which is assumed
-// to be the secure (HTTPS) host.
+// groupConfigsByEmail groups configs by the Let's Encrypt email address
+// associated to them or to the default Let's Encrypt email address. If the
+// default email is not available, the user will be prompted to provide one.
+func groupConfigsByEmail(configs []server.Config) (map[string][]*server.Config, error) {
+	initMap := make(map[string][]*server.Config)
+	for i := 0; i < len(configs); i++ {
+		if configs[i].TLS.Certificate == "" && configs[i].TLS.Key == "" && configs[i].Port != "http" { // TODO: && !cfg.Host.IsLoopback()
+			leEmail := getEmail(configs[i])
+			if leEmail == "" {
+				return nil, errors.New("must have email address to serve HTTPS without existing certificate and key")
+			}
+			initMap[leEmail] = append(initMap[leEmail], &configs[i])
+		}
+	}
+	return initMap, nil
+}
+
+// newClient creates a new ACME client to facilitate communication
+// with the Let's Encrypt CA server on behalf of the user specified
+// by leEmail. As part of this process, a user will be loaded from
+// disk (if already exists) or created new and registered via ACME
+// and saved to the file system for next time.
+func newClient(leEmail string) (*acme.Client, error) {
+	// Look up or create the LE user account
+	leUser, err := getUser(leEmail)
+	if err != nil {
+		return nil, err
+	}
+
+	// The client facilitates our communication with the CA server.
+	client := acme.NewClient(caURL, &leUser, rsaKeySize, exposePort)
+
+	// If not registered, the user must register an account with the CA
+	// and agree to terms
+	if leUser.Registration == nil {
+		reg, err := client.Register()
+		if err != nil {
+			return nil, errors.New("registration error: " + err.Error())
+		}
+		leUser.Registration = reg
+
+		// TODO: we can just do the agreement once: when registering, right?
+		err = client.AgreeToTos()
+		if err != nil {
+			saveUser(leUser) // TODO: Might as well try, right? Error check?
+			return nil, errors.New("error agreeing to terms: " + err.Error())
+		}
+
+		// save user to the file system
+		err = saveUser(leUser)
+		if err != nil {
+			return nil, errors.New("could not save user: " + err.Error())
+		}
+	}
+
+	return client, nil
+}
+
+// obtainCertificates obtains certificates from the CA server for
+// the configurations in serverConfigs using client.
+func obtainCertificates(client *acme.Client, serverConfigs []*server.Config) ([]acme.CertificateResource, error) {
+	// collect all the hostnames into one slice
+	var hosts []string
+	for _, cfg := range serverConfigs {
+		hosts = append(hosts, cfg.Host)
+	}
+
+	certificates, err := client.ObtainCertificates(hosts)
+	if err != nil {
+		return nil, errors.New("error obtaining certs: " + err.Error())
+	}
+
+	return certificates, nil
+}
+
+// saveCertificates saves each certificate resource to disk. This
+// includes the certificate file itself, the private key, and the
+// metadata file.
+func saveCertsAndKeys(certificates []acme.CertificateResource) error {
+	for _, cert := range certificates {
+		os.MkdirAll(storage.Site(cert.Domain), 0700)
+
+		// Save cert
+		err := saveCertificate(cert.Certificate, storage.SiteCertFile(cert.Domain))
+		if err != nil {
+			return err
+		}
+
+		// Save private key
+		err = ioutil.WriteFile(storage.SiteKeyFile(cert.Domain), cert.PrivateKey, 0600)
+		if err != nil {
+			return err
+		}
+
+		// Save cert metadata
+		jsonBytes, err := json.MarshalIndent(&CertificateMeta{URL: cert.CertURL, Domain: cert.Domain}, "", "\t")
+		if err != nil {
+			return err
+		}
+		err = ioutil.WriteFile(storage.SiteMetaFile(cert.Domain), jsonBytes, 0600)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// redirPlaintextHost returns a new plaintext HTTP configuration for
+// a virtualHost that simply redirects to cfg, which is assumed to
+// be the HTTPS configuration. The returned configuration is set
+// to listen on the "http" port (port 80).
 func redirPlaintextHost(cfg server.Config) server.Config {
 	redirMidware := func(next middleware.Handler) middleware.Handler {
 		return redirect.Redirect{Next: next, Rules: []redirect.Rule{
@@ -156,49 +211,6 @@ func redirPlaintextHost(cfg server.Config) server.Config {
 			"/": []middleware.Middleware{redirMidware},
 		},
 	}
-}
-
-// getEmail does everything it can to obtain an email
-// address from the user to use for TLS for cfg. If it
-// cannot get an email address, it returns empty string.
-func getEmail(cfg server.Config) string {
-	// First try the tls directive from the Caddyfile
-	leEmail := cfg.TLS.LetsEncryptEmail
-	if leEmail == "" {
-		// Then try memory (command line flag or typed by user previously)
-		leEmail = DefaultEmail
-	}
-	if leEmail == "" {
-		// Then try to get most recent user email ~/.caddy/users file
-		// TODO: Probably better to open the user's json file and read the email out of there...
-		userDirs, err := ioutil.ReadDir(storage.Users())
-		if err == nil {
-			var mostRecent os.FileInfo
-			for _, dir := range userDirs {
-				if !dir.IsDir() {
-					continue
-				}
-				if mostRecent == nil || dir.ModTime().After(mostRecent.ModTime()) {
-					mostRecent = dir
-				}
-			}
-			if mostRecent != nil {
-				leEmail = mostRecent.Name()
-			}
-		}
-	}
-	if leEmail == "" {
-		// Alas, we must bother the user and ask for an email address
-		reader := bufio.NewReader(os.Stdin)
-		fmt.Print("Email address: ") // TODO: More explanation probably, and show ToS?
-		var err error
-		leEmail, err = reader.ReadString('\n')
-		if err != nil {
-			return ""
-		}
-		DefaultEmail = leEmail
-	}
-	return strings.TrimSpace(leEmail)
 }
 
 var (
