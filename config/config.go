@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/mholt/caddy/app"
+	"github.com/mholt/caddy/config/letsencrypt"
 	"github.com/mholt/caddy/config/parse"
 	"github.com/mholt/caddy/config/setup"
 	"github.com/mholt/caddy/middleware"
@@ -102,7 +103,7 @@ func Load(filename string, input io.Reader) (Group, error) {
 	log.SetFlags(flags)
 
 	// secure all the things
-	configs, err = initiateLetsEncrypt(configs)
+	configs, err = letsencrypt.Activate(configs)
 	if err != nil {
 		return nil, err
 	}
@@ -272,12 +273,6 @@ var (
 
 	// Site port
 	Port = DefaultPort
-
-	// Let's Encrypt account email
-	LetsEncryptEmail string
-
-	// Agreement to Let's Encrypt terms
-	LetsEncryptAgree bool
 )
 
 // Group maps network addresses to their configurations.

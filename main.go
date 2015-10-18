@@ -15,6 +15,7 @@ import (
 
 	"github.com/mholt/caddy/app"
 	"github.com/mholt/caddy/config"
+	"github.com/mholt/caddy/config/letsencrypt"
 	"github.com/mholt/caddy/server"
 )
 
@@ -33,8 +34,8 @@ func init() {
 	flag.StringVar(&config.Host, "host", config.DefaultHost, "Default host")
 	flag.StringVar(&config.Port, "port", config.DefaultPort, "Default port")
 	flag.BoolVar(&version, "version", false, "Show version")
-	flag.BoolVar(&config.LetsEncryptAgree, "agree", false, "Agree to Let's Encrypt Subscriber Agreement")
-	flag.StringVar(&config.LetsEncryptEmail, "email", "", "Email address to use for Let's Encrypt account")
+	flag.BoolVar(&letsencrypt.Agreed, "agree", false, "Agree to Let's Encrypt Subscriber Agreement")
+	flag.StringVar(&letsencrypt.DefaultEmail, "email", "", "Default email address to use for Let's Encrypt transactions")
 }
 
 func main() {

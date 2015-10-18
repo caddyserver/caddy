@@ -1,47 +1,26 @@
-package config
-
-// TODO: This code is a mess but I'm cleaning it up locally and
-// refactoring a bunch. It will have tests, too. Don't worry. :)
+package letsencrypt
 
 import (
 	"bufio"
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
 	"encoding/json"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 
-	"github.com/mholt/caddy/app"
 	"github.com/mholt/caddy/middleware"
 	"github.com/mholt/caddy/middleware/redirect"
 	"github.com/mholt/caddy/server"
 	"github.com/xenolf/lego/acme"
 )
 
-// Some essential values related to the Let's Encrypt process
-const (
-	// Size of RSA keys in bits
-	rsaKeySize = 2048
-
-	// The base URL to the Let's Encrypt CA
-	caURL = "http://192.168.99.100:4000"
-
-	// The port to expose to the CA server for Simple HTTP Challenge
-	exposePort = "5001"
-)
-
-// initiateLetsEncrypt sets up TLS for each server config
-// in configs as needed. It only skips the config if the
-// cert and key are already specified or if plaintext http
-// is explicitly specified as the port.
-func initiateLetsEncrypt(configs []server.Config) ([]server.Config, error) {
+// Activate sets up TLS for each server config in configs
+// as needed. It only skips the config if the cert and key
+// are already provided or if plaintext http is explicitly
+// specified as the port.
+func Activate(configs []server.Config) ([]server.Config, error) {
 	// populate map of email address to server configs that use that email address for TLS.
 	// this will help us reduce roundtrips when getting the certs.
 	initMap := make(map[string][]*server.Config)
@@ -59,7 +38,7 @@ func initiateLetsEncrypt(configs []server.Config) ([]server.Config, error) {
 	// than one certificate per email address, and still save them individually.
 	for leEmail, serverConfigs := range initMap {
 		// Look up or create the LE user account
-		leUser, err := getLetsEncryptUser(leEmail)
+		leUser, err := getUser(leEmail)
 		if err != nil {
 			return configs, err
 		}
@@ -79,11 +58,11 @@ func initiateLetsEncrypt(configs []server.Config) ([]server.Config, error) {
 			// TODO: we can just do the agreement once, when registering, right?
 			err = client.AgreeToTos()
 			if err != nil {
-				saveLetsEncryptUser(leUser) // TODO: Might as well try, right? Error check?
+				saveUser(leUser) // TODO: Might as well try, right? Error check?
 				return configs, errors.New("error agreeing to terms: " + err.Error())
 			}
 
-			err = saveLetsEncryptUser(leUser)
+			err = saveUser(leUser)
 			if err != nil {
 				return configs, errors.New("could not save user: " + err.Error())
 			}
@@ -103,17 +82,16 @@ func initiateLetsEncrypt(configs []server.Config) ([]server.Config, error) {
 
 		// ... that's it. save the certs, keys, and update server configs.
 		for _, cert := range certificates {
-			certFolder := filepath.Join(app.DataFolder(), "letsencrypt", "sites", cert.Domain)
-			os.MkdirAll(certFolder, 0700)
+			os.MkdirAll(storage.Site(cert.Domain), 0700)
 
 			// Save cert
-			err = saveCertificate(cert.Certificate, filepath.Join(certFolder, cert.Domain+".crt"))
+			err = saveCertificate(cert.Certificate, storage.SiteCertFile(cert.Domain))
 			if err != nil {
 				return configs, err
 			}
 
 			// Save private key
-			err = ioutil.WriteFile(filepath.Join(certFolder, cert.Domain+".key"), cert.PrivateKey, 0600)
+			err = ioutil.WriteFile(storage.SiteKeyFile(cert.Domain), cert.PrivateKey, 0600)
 			if err != nil {
 				return configs, err
 			}
@@ -123,7 +101,7 @@ func initiateLetsEncrypt(configs []server.Config) ([]server.Config, error) {
 			if err != nil {
 				return configs, err
 			}
-			err = ioutil.WriteFile(filepath.Join(certFolder, cert.Domain+".json"), jsonBytes, 0600)
+			err = ioutil.WriteFile(storage.SiteMetaFile(cert.Domain), jsonBytes, 0600)
 			if err != nil {
 				return configs, err
 			}
@@ -131,8 +109,8 @@ func initiateLetsEncrypt(configs []server.Config) ([]server.Config, error) {
 
 		// it all comes down to this: filling in the file path of a valid certificate automatically
 		for _, cfg := range serverConfigs {
-			cfg.TLS.Certificate = filepath.Join(app.DataFolder(), "letsencrypt", "sites", cfg.Host, cfg.Host+".crt")
-			cfg.TLS.Key = filepath.Join(app.DataFolder(), "letsencrypt", "sites", cfg.Host, cfg.Host+".key")
+			cfg.TLS.Certificate = storage.SiteCertFile(cfg.Host)
+			cfg.TLS.Key = storage.SiteKeyFile(cfg.Host)
 			cfg.TLS.Enabled = true
 			cfg.Port = "https"
 
@@ -188,12 +166,12 @@ func getEmail(cfg server.Config) string {
 	leEmail := cfg.TLS.LetsEncryptEmail
 	if leEmail == "" {
 		// Then try memory (command line flag or typed by user previously)
-		leEmail = LetsEncryptEmail
+		leEmail = DefaultEmail
 	}
 	if leEmail == "" {
 		// Then try to get most recent user email ~/.caddy/users file
 		// TODO: Probably better to open the user's json file and read the email out of there...
-		userDirs, err := ioutil.ReadDir(filepath.Join(app.DataFolder(), "letsencrypt", "users"))
+		userDirs, err := ioutil.ReadDir(storage.Users())
 		if err == nil {
 			var mostRecent os.FileInfo
 			for _, dir := range userDirs {
@@ -204,7 +182,9 @@ func getEmail(cfg server.Config) string {
 					mostRecent = dir
 				}
 			}
-			leEmail = mostRecent.Name()
+			if mostRecent != nil {
+				leEmail = mostRecent.Name()
+			}
 		}
 	}
 	if leEmail == "" {
@@ -216,135 +196,41 @@ func getEmail(cfg server.Config) string {
 		if err != nil {
 			return ""
 		}
-		LetsEncryptEmail = leEmail
+		DefaultEmail = leEmail
 	}
 	return strings.TrimSpace(leEmail)
 }
 
-func saveLetsEncryptUser(user LetsEncryptUser) error {
-	// make user account folder
-	userFolder := filepath.Join(app.DataFolder(), "letsencrypt", "users", user.Email)
-	err := os.MkdirAll(userFolder, 0700)
-	if err != nil {
-		return err
-	}
+var (
+	// Let's Encrypt account email to use if none provided
+	DefaultEmail string
 
-	// save private key file
-	user.KeyFile = filepath.Join(userFolder, emailUsername(user.Email)+".key")
-	err = savePrivateKey(user.key, user.KeyFile)
-	if err != nil {
-		return err
-	}
+	// Whether user has agreed to the Let's Encrypt SA
+	Agreed bool
+)
 
-	// save registration file
-	jsonBytes, err := json.MarshalIndent(&user, "", "\t")
-	if err != nil {
-		return err
-	}
+// Some essential values related to the Let's Encrypt process
+const (
+	// Size of RSA keys in bits
+	rsaKeySize = 2048
 
-	return ioutil.WriteFile(filepath.Join(userFolder, "registration.json"), jsonBytes, 0600)
-}
+	// The base URL to the Let's Encrypt CA
+	caURL = "http://192.168.99.100:4000"
 
-func getLetsEncryptUser(email string) (LetsEncryptUser, error) {
-	var user LetsEncryptUser
+	// The port to expose to the CA server for Simple HTTP Challenge
+	exposePort = "5001"
+)
 
-	userFolder := filepath.Join(app.DataFolder(), "letsencrypt", "users", email)
-	regFile, err := os.Open(filepath.Join(userFolder, "registration.json"))
-	if err != nil {
-		if os.IsNotExist(err) {
-			// create a new user
-			return newLetsEncryptUser(email)
-		}
-		return user, err
-	}
+// KeySize represents the length of a key in bits
+type KeySize int
 
-	err = json.NewDecoder(regFile).Decode(&user)
-	if err != nil {
-		return user, err
-	}
-
-	user.key, err = loadPrivateKey(user.KeyFile)
-	if err != nil {
-		return user, err
-	}
-
-	return user, nil
-}
-
-func newLetsEncryptUser(email string) (LetsEncryptUser, error) {
-	user := LetsEncryptUser{Email: email}
-	privateKey, err := rsa.GenerateKey(rand.Reader, rsaKeySize)
-	if err != nil {
-		return user, errors.New("error generating private key: " + err.Error())
-	}
-	user.key = privateKey
-	return user, nil
-}
-
-func emailUsername(email string) string {
-	at := strings.Index(email, "@")
-	if at == -1 {
-		return email
-	}
-	return email[:at]
-}
-
-type LetsEncryptUser struct {
-	Email        string
-	Registration *acme.RegistrationResource
-	KeyFile      string
-	key          *rsa.PrivateKey
-}
-
-func (u LetsEncryptUser) GetEmail() string {
-	return u.Email
-}
-func (u LetsEncryptUser) GetRegistration() *acme.RegistrationResource {
-	return u.Registration
-}
-func (u LetsEncryptUser) GetPrivateKey() *rsa.PrivateKey {
-	return u.key
-}
-
-// savePrivateKey saves an RSA private key to file.
-//
-// Borrowed from Sebastian Erhart
-// https://github.com/xenolf/lego/blob/34910bd541315993224af1f04f9b2877513e5477/crypto.go
-func savePrivateKey(key *rsa.PrivateKey, file string) error {
-	pemKey := pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}
-	keyOut, err := os.Create(file)
-	if err != nil {
-		return err
-	}
-	pem.Encode(keyOut, &pemKey)
-	keyOut.Close()
-	return nil
-}
-
-// TODO: Check file permission
-func saveCertificate(certBytes []byte, file string) error {
-	pemCert := pem.Block{Type: "CERTIFICATE", Bytes: certBytes}
-	certOut, err := os.Create(file)
-	if err != nil {
-		return err
-	}
-	pem.Encode(certOut, &pemCert)
-	certOut.Close()
-	return nil
-}
-
-// loadPrivateKey loads an RSA private key from filename.
-//
-// Borrowed from Sebastian Erhart
-// https://github.com/xenolf/lego/blob/34910bd541315993224af1f04f9b2877513e5477/crypto.go
-func loadPrivateKey(file string) (*rsa.PrivateKey, error) {
-	keyBytes, err := ioutil.ReadFile(file)
-	if err != nil {
-		return nil, err
-	}
-	keyBlock, _ := pem.Decode(keyBytes)
-	return x509.ParsePKCS1PrivateKey(keyBlock.Bytes)
-}
+// Key sizes
+const (
+	ECC_224  KeySize = 224
+	ECC_256          = 256
+	RSA_2048         = 2048
+	RSA_4096         = 4096
+)
 
 type CertificateMeta struct {
 	Domain, URL string
