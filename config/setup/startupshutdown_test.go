@@ -14,7 +14,7 @@ import (
 // The Startup function's tests are symmetrical to Shutdown tests,
 // because the Startup and Shutdown functions share virtually the
 // same functionality
-func TestStartupWithBlockingCommand(t *testing.T) {
+func TestStartup(t *testing.T) {
 	var startupFuncs []func() error
 
 	tempDirPath, err := getTempDirPath() // function defined in caddy/config/setup/root_test.go
@@ -22,7 +22,7 @@ func TestStartupWithBlockingCommand(t *testing.T) {
 		t.Fatalf("BeforeTest: Failed to find an existing directory for testing! Error was: %v", err)
 	}
 
-	tempDir := filepath.Join(tempDirPath, "dir_for_testing")
+	tempDir := filepath.Join(tempDirPath, "nonexistant_dir_for_testing") // time.nanoseconds is concatenated to the directory in order to ensure uniqueness of the tempDir
 
 	exec.Command("rm", "-r", tempDir).Start() // removes tempDir from the OS's temp directory, if the tempDir already exists
 
