@@ -23,6 +23,7 @@ func TestStartup(t *testing.T) {
 	}
 
 	tempDir := filepath.Join(tempDirPath, "nonexistant_dir_for_testing") // time.nanoseconds is concatenated to the directory in order to ensure uniqueness of the tempDir
+	fmt.Println(tempDir)
 
 	exec.Command("rm", "-r", tempDir).Start() // removes tempDir from the OS's temp directory, if the tempDir already exists
 
