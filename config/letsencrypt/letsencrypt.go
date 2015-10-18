@@ -1,3 +1,5 @@
+// Package letsencrypt integrates Let's Encrypt with Caddy with first-class support.
+// It is designed to configure sites for HTTPS by default.
 package letsencrypt
 
 import (
@@ -26,6 +28,15 @@ import (
 // address from last time. If there isn't one, the user
 // will be prompted. If the user leaves email blank, <TODO>.
 func Activate(configs []server.Config) ([]server.Config, error) {
+	// First identify and configure any elligible hosts for which
+	// we already have certs and keys in storage from last time.
+	configLen := len(configs) // avoid infinite loop since this loop appends to the slice
+	for i := 0; i < configLen; i++ {
+		if existingCertAndKey(configs[i].Host) {
+			configs = autoConfigure(&configs[i], configs)
+		}
+	}
+
 	// Group configs by LE email address; this will help us
 	// reduce round-trips when getting the certs.
 	initMap, err := groupConfigsByEmail(configs)
@@ -54,8 +65,10 @@ func Activate(configs []server.Config) ([]server.Config, error) {
 			return configs, err
 		}
 
-		// it all comes down to this: filling in the file path of a valid certificate automatically
-		configs = autoConfigure(configs, serverConfigs)
+		// it all comes down to this: turning TLS on for all the configs
+		for _, cfg := range serverConfigs {
+			configs = autoConfigure(cfg, configs)
+		}
 	}
 
 	return configs, nil
@@ -64,10 +77,18 @@ func Activate(configs []server.Config) ([]server.Config, error) {
 // groupConfigsByEmail groups configs by the Let's Encrypt email address
 // associated to them or to the default Let's Encrypt email address. If the
 // default email is not available, the user will be prompted to provide one.
+//
+// This function also filters out configs that don't need extra TLS help.
+// Configurations with a manual TLS configuration or one that is already
+// found in storage will not be added to any group.
 func groupConfigsByEmail(configs []server.Config) (map[string][]*server.Config, error) {
 	initMap := make(map[string][]*server.Config)
 	for i := 0; i < len(configs); i++ {
 		if configs[i].TLS.Certificate == "" && configs[i].TLS.Key == "" && configs[i].Port != "http" { // TODO: && !cfg.Host.IsLoopback()
+			// make sure an HTTPS version of this config doesn't exist in the list already
+			if hostHasOtherScheme(configs[i].Host, "https", configs) {
+				continue
+			}
 			leEmail := getEmail(configs[i])
 			if leEmail == "" {
 				return nil, errors.New("must have email address to serve HTTPS without existing certificate and key")
@@ -76,6 +97,20 @@ func groupConfigsByEmail(configs []server.Config) (map[string][]*server.Config, 
 		}
 	}
 	return initMap, nil
+}
+
+// existingCertAndKey returns true if the host has a certificate
+// and private key in storage already, false otherwise.
+func existingCertAndKey(host string) bool {
+	_, err := os.Stat(storage.SiteCertFile(host))
+	if err != nil {
+		return false
+	}
+	_, err = os.Stat(storage.SiteKeyFile(host))
+	if err != nil {
+		return false
+	}
+	return true
 }
 
 // newClient creates a new ACME client to facilitate communication
@@ -168,33 +203,34 @@ func saveCertsAndKeys(certificates []acme.CertificateResource) error {
 	return nil
 }
 
-// autoConfigure enables TLS on all the configs in serverConfigs
-// and appends, if necessary, new configs to allConfigs that redirect
-// plaintext HTTP to their HTTPS counterparts.
-func autoConfigure(allConfigs []server.Config, serverConfigs []*server.Config) []server.Config {
-	for _, cfg := range serverConfigs {
-		cfg.TLS.Certificate = storage.SiteCertFile(cfg.Host)
-		cfg.TLS.Key = storage.SiteKeyFile(cfg.Host)
-		cfg.TLS.Enabled = true
-		cfg.Port = "https"
+// autoConfigure enables TLS on cfg and appends, if necessary, a new config
+// to allConfigs that redirects plaintext HTTP to its new HTTPS counterpart.
+func autoConfigure(cfg *server.Config, allConfigs []server.Config) []server.Config {
+	cfg.TLS.Certificate = storage.SiteCertFile(cfg.Host)
+	cfg.TLS.Key = storage.SiteKeyFile(cfg.Host)
+	cfg.TLS.Enabled = true
+	cfg.Port = "https"
 
-		// Is there a plaintext HTTP config for the same host? If not, make
-		// one and have it redirect all requests to this HTTPS host.
-		var plaintextHostFound bool
-		for _, otherCfg := range allConfigs {
-			if cfg.Host == otherCfg.Host && otherCfg.Port == "http" {
-				plaintextHostFound = true
-				break
-			}
-		}
+	// Is there a plaintext HTTP config for the same host? If not, make
+	// one and have it redirect all requests to this HTTPS host.
+	if !hostHasOtherScheme(cfg.Host, "http", allConfigs) {
+		// Make one that redirects to HTTPS for all requests
+		allConfigs = append(allConfigs, redirPlaintextHost(*cfg))
+	}
+	return allConfigs
+}
 
-		if !plaintextHostFound {
-			// Make one that redirects to HTTPS for all requests
-			allConfigs = append(allConfigs, redirPlaintextHost(*cfg))
+// hostHasOtherScheme tells you whether there is another config in the list
+// for the same host but with the port equal to scheme. For example, to see
+// if example.com has a https variant already, pass in example.com and
+// "https" along with the list of configs.
+func hostHasOtherScheme(host, scheme string, allConfigs []server.Config) bool {
+	for _, otherCfg := range allConfigs {
+		if otherCfg.Host == host && otherCfg.Port == scheme {
+			return true
 		}
 	}
-
-	return allConfigs
+	return false
 }
 
 // redirPlaintextHost returns a new plaintext HTTP configuration for
