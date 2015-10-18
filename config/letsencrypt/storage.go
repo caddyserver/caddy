@@ -16,10 +16,6 @@ var storage = Storage(filepath.Join(app.DataFolder(), "letsencrypt"))
 // forming file paths derived from it.
 type Storage string
 
-func (s Storage) Path(parts ...string) string {
-	return filepath.Join(append([]string{string(s)}, parts...)...)
-}
-
 // Sites gets the directory that stores site certificate and keys.
 func (s Storage) Sites() string {
 	return filepath.Join(string(s), "sites")
