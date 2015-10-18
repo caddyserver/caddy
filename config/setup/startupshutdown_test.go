@@ -3,6 +3,7 @@ package setup
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -16,16 +17,26 @@ import (
 func TestStartupWithBlockingCommand(t *testing.T) {
 	var startupFuncs []func() error
 
-	startupCommand := `-startup mkdir temp_dir_for_testing
-			   -startup mkdir temp_dir_for_testing &
-			   -startup highly_unlikely_to_exist_command 
+	tempDirPath, err := getTempDirPath() // function defined in caddy/config/setup/root_test.go
+	if err != nil {
+		t.Fatalf("BeforeTest: Failed to find an existing directory for testing! Error was: %v", err)
+	}
+
+	tempDir := filepath.Join(tempDirPath, "dir_for_testing")
+
+	exec.Command("rm", "-r", tempDir).Start() // removes tempDir from the OS's temp directory, if the tempDir already exists
+
+	startupCommand := ` startup mkdir ` + tempDir + `
+			    startup mkdir ` + tempDir + ` &
+		            startup highly_unlikely_to_exist_command
 			  `
+
 	c := &Controller{
 		Config:    &server.Config{Startup: startupFuncs},
 		Dispenser: parse.NewDispenser("", strings.NewReader(startupCommand)),
 	}
 
-	_, err := Startup(c)
+	_, err = Startup(c)
 	if err != nil {
 		t.Errorf("Expected no errors, got: %v", err)
 	}
@@ -34,9 +45,9 @@ func TestStartupWithBlockingCommand(t *testing.T) {
 		shouldExecutionErr bool
 		shouldRemoveErr    bool
 	}{
-		{false, false},
-		{false, true},
-		{true, true},
+		{false, false}, // expected struct booleans for blocking commands
+		{false, true},  // expected struct booleans for non-blocking commands
+		{true, true},   // expected struct booleans for non-existant commands
 	}
 
 	for i, test := range tests {
@@ -44,13 +55,11 @@ func TestStartupWithBlockingCommand(t *testing.T) {
 		if err != nil && !test.shouldExecutionErr {
 			t.Errorf("Test %d recieved an error of:\n%v", i, err)
 		}
-		err = os.Remove("./temp_dir_for_testing")
+		err = os.Remove(tempDir)
 		if err != nil && !test.shouldRemoveErr {
 			t.Errorf("Test %d recieved an error of:\n%v", i, err)
 		}
 
 	}
-
-	exec.Command("rm", "-r", "./temp_dir_for_testing").Start()
 
 }
