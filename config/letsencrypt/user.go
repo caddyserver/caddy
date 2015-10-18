@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"github.com/xenolf/lego/acme"
 )
 
+// User represents a Let's Encrypt user account.
 type User struct {
 	Email        string
 	Registration *acme.RegistrationResource
@@ -22,18 +24,25 @@ type User struct {
 	key          *rsa.PrivateKey
 }
 
+// GetEmail gets u's email.
 func (u User) GetEmail() string {
 	return u.Email
 }
+
+// GetRegistration gets u's registration resource.
 func (u User) GetRegistration() *acme.RegistrationResource {
 	return u.Registration
 }
+
+// GetPrivateKey gets u's private key.
 func (u User) GetPrivateKey() *rsa.PrivateKey {
 	return u.key
 }
 
 // getUser loads the user with the given email from disk.
-// If the user does not exist, it will create a new one.
+// If the user does not exist, it will create a new one,
+// but it does NOT save new users to the disk or register
+// them via ACME.
 func getUser(email string) (User, error) {
 	var user User
 
@@ -95,7 +104,7 @@ func saveUser(user User) error {
 // instead.
 func newUser(email string) (User, error) {
 	user := User{Email: email}
-	privateKey, err := rsa.GenerateKey(rand.Reader, rsaKeySize)
+	privateKey, err := rsa.GenerateKey(rand.Reader, rsaKeySizeToUse)
 	if err != nil {
 		return user, errors.New("error generating private key: " + err.Error())
 	}
@@ -134,7 +143,8 @@ func getEmail(cfg server.Config) string {
 	}
 	if leEmail == "" {
 		// Alas, we must bother the user and ask for an email address
-		reader := bufio.NewReader(os.Stdin)
+		// TODO/BUG: This doesn't work when Caddyfile is piped into caddy
+		reader := bufio.NewReader(stdin)
 		fmt.Print("Email address: ") // TODO: More explanation probably, and show ToS?
 		var err error
 		leEmail, err = reader.ReadString('\n')
@@ -145,3 +155,7 @@ func getEmail(cfg server.Config) string {
 	}
 	return strings.TrimSpace(leEmail)
 }
+
+// stdin is used to read the user's input if prompted;
+// this is changed by tests during tests.
+var stdin = io.ReadWriter(os.Stdin)

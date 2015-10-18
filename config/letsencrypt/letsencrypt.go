@@ -1,5 +1,6 @@
-// Package letsencrypt integrates Let's Encrypt with Caddy with first-class support.
-// It is designed to configure sites for HTTPS by default.
+// Package letsencrypt integrates Let's Encrypt functionality into Caddy
+// with first-class support for creating and renewing certificates
+// automatically. It is designed to configure sites for HTTPS by default.
 package letsencrypt
 
 import (
@@ -126,7 +127,7 @@ func newClient(leEmail string) (*acme.Client, error) {
 	}
 
 	// The client facilitates our communication with the CA server.
-	client := acme.NewClient(caURL, &leUser, rsaKeySize, exposePort, true) // TODO: Dev mode is enabled
+	client := acme.NewClient(caURL, &leUser, rsaKeySizeToUse, exposePort, true) // TODO: Dev mode is enabled
 
 	// If not registered, the user must register an account with the CA
 	// and agree to terms
@@ -268,9 +269,6 @@ var (
 
 // Some essential values related to the Let's Encrypt process
 const (
-	// Size of RSA keys in bits
-	rsaKeySize = 2048
-
 	// The base URL to the Let's Encrypt CA
 	caURL = "http://192.168.99.100:4000"
 
@@ -278,10 +276,10 @@ const (
 	exposePort = "5001"
 )
 
-// KeySize represents the length of a key in bits
+// KeySize represents the length of a key in bits.
 type KeySize int
 
-// Key sizes
+// Key sizes are used to determine the strength of a key.
 const (
 	ECC_224  KeySize = 224
 	ECC_256          = 256
@@ -289,6 +287,13 @@ const (
 	RSA_4096         = 4096
 )
 
+// rsaKeySizeToUse is the size to use for new RSA keys.
+// This shouldn't need to change except for in tests;
+// the size can be drastically reduced for speed.
+var rsaKeySizeToUse = RSA_2048
+
+// CertificateMeta is a container type used to write out a file
+// with information about a certificate.
 type CertificateMeta struct {
 	Domain, URL string
 }
