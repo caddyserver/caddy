@@ -55,27 +55,7 @@ func Activate(configs []server.Config) ([]server.Config, error) {
 		}
 
 		// it all comes down to this: filling in the file path of a valid certificate automatically
-		for _, cfg := range serverConfigs {
-			cfg.TLS.Certificate = storage.SiteCertFile(cfg.Host)
-			cfg.TLS.Key = storage.SiteKeyFile(cfg.Host)
-			cfg.TLS.Enabled = true
-			cfg.Port = "https"
-
-			// Is there a plaintext HTTP config for the same host? If not, make
-			// one and have it redirect all requests to this HTTPS host.
-			var plaintextHostFound bool
-			for _, otherCfg := range configs {
-				if cfg.Host == otherCfg.Host && otherCfg.Port == "http" {
-					plaintextHostFound = true
-					break
-				}
-			}
-
-			if !plaintextHostFound {
-				// Make one that redirects to HTTPS for all requests
-				configs = append(configs, redirPlaintextHost(*cfg))
-			}
-		}
+		configs = autoConfigure(configs, serverConfigs)
 	}
 
 	return configs, nil
@@ -186,6 +166,35 @@ func saveCertsAndKeys(certificates []acme.CertificateResource) error {
 		}
 	}
 	return nil
+}
+
+// autoConfigure enables TLS on all the configs in serverConfigs
+// and appends, if necessary, new configs to allConfigs that redirect
+// plaintext HTTP to their HTTPS counterparts.
+func autoConfigure(allConfigs []server.Config, serverConfigs []*server.Config) []server.Config {
+	for _, cfg := range serverConfigs {
+		cfg.TLS.Certificate = storage.SiteCertFile(cfg.Host)
+		cfg.TLS.Key = storage.SiteKeyFile(cfg.Host)
+		cfg.TLS.Enabled = true
+		cfg.Port = "https"
+
+		// Is there a plaintext HTTP config for the same host? If not, make
+		// one and have it redirect all requests to this HTTPS host.
+		var plaintextHostFound bool
+		for _, otherCfg := range allConfigs {
+			if cfg.Host == otherCfg.Host && otherCfg.Port == "http" {
+				plaintextHostFound = true
+				break
+			}
+		}
+
+		if !plaintextHostFound {
+			// Make one that redirects to HTTPS for all requests
+			allConfigs = append(allConfigs, redirPlaintextHost(*cfg))
+		}
+	}
+
+	return allConfigs
 }
 
 // redirPlaintextHost returns a new plaintext HTTP configuration for
