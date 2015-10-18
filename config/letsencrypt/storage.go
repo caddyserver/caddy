@@ -79,6 +79,8 @@ func emailUsername(email string) string {
 	at := strings.Index(email, "@")
 	if at == -1 {
 		return email
+	} else if at == 0 {
+		return email[1:]
 	}
 	return email[:at]
 }
