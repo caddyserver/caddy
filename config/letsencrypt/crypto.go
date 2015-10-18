@@ -8,19 +8,6 @@ import (
 	"os"
 )
 
-// saveCertificate saves a DER-encoded (binary format) certificate
-// to file.
-func saveCertificate(certBytes []byte, file string) error {
-	pemCert := pem.Block{Type: "CERTIFICATE", Bytes: certBytes}
-	certOut, err := os.Create(file)
-	if err != nil {
-		return err
-	}
-	pem.Encode(certOut, &pemCert)
-	certOut.Close()
-	return nil
-}
-
 // loadRSAPrivateKey loads a PEM-encoded RSA private key from file.
 func loadRSAPrivateKey(file string) (*rsa.PrivateKey, error) {
 	keyBytes, err := ioutil.ReadFile(file)

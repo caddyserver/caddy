@@ -144,7 +144,7 @@ func saveCertsAndKeys(certificates []acme.CertificateResource) error {
 		os.MkdirAll(storage.Site(cert.Domain), 0700)
 
 		// Save cert
-		err := saveCertificate(cert.Certificate, storage.SiteCertFile(cert.Domain))
+		err := ioutil.WriteFile(storage.SiteCertFile(cert.Domain), cert.Certificate, 0600)
 		if err != nil {
 			return err
 		}
