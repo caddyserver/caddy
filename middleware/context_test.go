@@ -380,6 +380,138 @@ func TestPathMatches(t *testing.T) {
 	}
 }
 
+func TestTruncate(t *testing.T) {
+	context := getContextOrFail(t)
+	tests := []struct {
+		inputString string
+		inputLength int
+		expected    string
+	}{
+		// Test 0 - small length
+		{
+			inputString: "string",
+			inputLength: 1,
+			expected:    "s",
+		},
+		// Test 1 - exact length
+		{
+			inputString: "string",
+			inputLength: 6,
+			expected:    "string",
+		},
+		// Test 2 - bigger length
+		{
+			inputString: "string",
+			inputLength: 10,
+			expected:    "string",
+		},
+	}
+
+	for i, test := range tests {
+		actual := context.Truncate(test.inputString, test.inputLength)
+		if actual != test.expected {
+			t.Errorf(getTestPrefix(i)+"Expected %s, found %s. Input was Truncate(%q, %d)", test.expected, actual, test.inputString, test.inputLength)
+		}
+	}
+}
+
+func TestStripHTML(t *testing.T) {
+	context := getContextOrFail(t)
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		// Test 0 - no tags
+		{
+			input:    `h1`,
+			expected: `h1`,
+		},
+		// Test 1 - happy path
+		{
+			input:    `<h1>h1</h1>`,
+			expected: `h1`,
+		},
+		// Test 2 - tag in quotes
+		{
+			input:    `<h1">">h1</h1>`,
+			expected: `h1`,
+		},
+		// Test 3 - multiple tags
+		{
+			input:    `<h1><b>h1</b></h1>`,
+			expected: `h1`,
+		},
+		// Test 4 - tags not closed
+		{
+			input:    `<h1`,
+			expected: `<h1`,
+		},
+		// Test 5 - false start
+		{
+			input:    `<h1<b>hi`,
+			expected: `<h1hi`,
+		},
+	}
+
+	for i, test := range tests {
+		actual := context.StripHTML(test.input)
+		if actual != test.expected {
+			t.Errorf(getTestPrefix(i)+"Expected %s, found %s. Input was StripHTML(%s)", test.expected, actual, test.input)
+		}
+	}
+}
+
+func TestStripExt(t *testing.T) {
+	context := getContextOrFail(t)
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		// Test 0 - empty input
+		{
+			input:    "",
+			expected: "",
+		},
+		// Test 1 - relative file with ext
+		{
+			input:    "file.ext",
+			expected: "file",
+		},
+		// Test 2 - relative file without ext
+		{
+			input:    "file",
+			expected: "file",
+		},
+		// Test 3 - absolute file without ext
+		{
+			input:    "/file",
+			expected: "/file",
+		},
+		// Test 4 - absolute file with ext
+		{
+			input:    "/file.ext",
+			expected: "/file",
+		},
+		// Test 5 - with ext but ends with /
+		{
+			input:    "/dir.ext/",
+			expected: "/dir.ext/",
+		},
+		// Test 6 - file with ext under dir with ext
+		{
+			input:    "/dir.ext/file.ext",
+			expected: "/dir.ext/file",
+		},
+	}
+
+	for i, test := range tests {
+		actual := context.StripExt(test.input)
+		if actual != test.expected {
+			t.Errorf(getTestPrefix(i)+"Expected %s, found %s. Input was StripExt(%q)", test.expected, actual, test.input)
+		}
+	}
+}
+
 func initTestContext() (Context, error) {
 	body := bytes.NewBufferString("request body")
 	request, err := http.NewRequest("GET", "https://localhost", body)
