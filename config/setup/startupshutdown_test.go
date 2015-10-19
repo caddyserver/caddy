@@ -1,14 +1,14 @@
 package setup
 
 import (
-	//	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
-	//	"strings"
+	"strings"
 	"testing"
 
-	//	"github.com/mholt/caddy/config/parse"
-	//	"github.com/mholt/caddy/server"
+	"github.com/mholt/caddy/config/parse"
+	"github.com/mholt/caddy/server"
 )
 
 // The Startup function's tests are symmetrical to Shutdown tests,
@@ -16,48 +16,27 @@ import (
 // same functionality
 func TestStartup(t *testing.T) {
 
-	curPath := `C:/Users/appveyor/AppData/Local/Temp/1/dir_for_testing_startup_random`
-	err := exec.Command("mkdir", filepath.FromSlash(curPath)).Start()
-	if err != nil {
-		t.Error(err)
-	}
-	err = exec.Command("rm", "-r", filepath.FromSlash(curPath)).Start()
-	if err != nil {
-		t.Error(err)
-	}
-	t.Errorf("The filepath is %s", filepath.FromSlash(curPath))
-}
-
-/*
 	var startupFuncs []func() error
 
-	/*
-		tempDirPath, err := getTempDirPath() // function defined in caddy/config/setup/root_test.go
-		if err != nil {
-			t.Fatalf("BeforeTest: Failed to find an existing directory for testing! Error was: %v", err)
-		}
+	tempDirPath, err := getTempDirPath() // function defined in caddy/config/setup/root_test.go
+	if err != nil {
+		t.Fatalf("BeforeTest: Failed to find an existing directory for testing! Error was: %v", err)
+	}
 
-		tempDir := filepath.Join(tempDirPath, "just_a_testing_dir") // time.nanoseconds is concatenated to the directory in order to ensure uniqueness of the tempDir
-		fmt.Println("The temp dir is " + tempDir)
+	testDir := filepath.Join(tempDirPath, "temp_dir_for_testing_startupshutdown.go")
+	osSenitiveTestDir := filepath.FromSlash(testDir) // path separators correspond to OS-specific path separator
 
-		//	exec.Command("rm", "-r", tempDir).Start() // removes tempDir from the OS's temp directory, if the tempDir already exists
+	exec.Command("rm", "-r", osSenitiveTestDir).Start() // removes osSenitiveTestDir from the OS's temp directory, if the osSenitiveTestDir already exists
 
-		startupCommand := ` startup mkdir ` + tempDir + `
-				    startup mkdir ` + tempDir + ` &
-			            startup highly_unlikely_to_exist_command
-				  `
-
-	curPath := `C:/Users/appveyor\\AppData\\Local\\Temp\\1\\dir_for_testing_startup
-	startupCommand := ` startup mkdir C:\\Users\\appveyor\\AppData\\Local\\Temp\\1\\dir_for_testing_startup
-			    startup mkdir C:\\Users\\appveyor\\AppData\\Local\\Temp\\1\\dir_for_testing_startup &
-		            startup highly_unlikely_to_exist_command
-
+	startupCommand := ` startup mkdir ` + osSenitiveTestDir + `
+			    startup mkdir ` + osSenitiveTestDir + ` &
+			    startup highly_unlikely_to_exist_command
+			  `
 	c := &Controller{
 		Config:    &server.Config{Startup: startupFuncs},
 		Dispenser: parse.NewDispenser("", strings.NewReader(startupCommand)),
 	}
-
-	_, err := Startup(c)
+	_, err = Startup(c)
 	if err != nil {
 		t.Errorf("Expected no errors, got: %v", err)
 	}
@@ -76,7 +55,7 @@ func TestStartup(t *testing.T) {
 		if err != nil && !test.shouldExecutionErr {
 			t.Errorf("Test %d recieved an error of:\n%v", i, err)
 		}
-		err = os.Remove("C:\\Users\\appveyor\\AppData\\Local\\Temp\\1\\dir_for_testing_startup")
+		err = os.Remove(osSenitiveTestDir)
 		if err != nil && !test.shouldRemoveErr {
 			t.Errorf("Test %d recieved an error of:\n%v", i, err)
 		}
@@ -84,4 +63,3 @@ func TestStartup(t *testing.T) {
 	}
 
 }
-*/
