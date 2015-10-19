@@ -47,8 +47,9 @@ func Load(filename string, input io.Reader) (Group, error) {
 	// executing the directives that were parsed.
 	for i, sb := range serverBlocks {
 		onces := makeOnces()
+		storages := makeStorages()
 
-		for _, addr := range sb.Addresses {
+		for j, addr := range sb.Addresses {
 			config := server.Config{
 				Host:       addr.Host,
 				Port:       addr.Port,
@@ -76,8 +77,10 @@ func Load(filename string, input io.Reader) (Group, error) {
 							})
 							return err
 						},
-						ServerBlockIndex: i,
-						ServerBlockHosts: sb.HostList(),
+						ServerBlockIndex:     i,
+						ServerBlockHostIndex: j,
+						ServerBlockHosts:     sb.HostList(),
+						ServerBlockStorage:   storages[dir.name],
 					}
 
 					midware, err := dir.setup(controller)
@@ -88,6 +91,7 @@ func Load(filename string, input io.Reader) (Group, error) {
 						// TODO: For now, we only support the default path scope /
 						config.Middleware["/"] = append(config.Middleware["/"], midware)
 					}
+					storages[dir.name] = controller.ServerBlockStorage // persist for this server block
 				}
 			}
 
@@ -127,6 +131,18 @@ func makeOnces() map[string]*sync.Once {
 		onces[dir.name] = new(sync.Once)
 	}
 	return onces
+}
+
+// makeStorages makes a map of directive name to interface{}
+// so that directives' setup functions can persist state
+// between different hosts on the same server block during the
+// setup phase.
+func makeStorages() map[string]interface{} {
+	storages := make(map[string]interface{})
+	for _, dir := range directiveOrder {
+		storages[dir.name] = nil
+	}
+	return storages
 }
 
 // arrangeBindings groups configurations by their bind address. For example,
