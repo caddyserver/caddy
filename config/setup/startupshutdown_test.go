@@ -2,7 +2,7 @@ package setup
 
 import (
 	//	"fmt"
-	//	"os/exec"
+	"os/exec"
 	"path/filepath"
 	//	"strings"
 	"testing"
@@ -16,8 +16,16 @@ import (
 // same functionality
 func TestStartup(t *testing.T) {
 
-	curPath := `C:/Users/appveyor/AppData/Local/Temp/1/dir_for_testing_startup`
-	t.Errorf("The fromslash file path is %s", filepath.FromSlash(curPath))
+	curPath := `C:/Users/appveyor/AppData/Local/Temp/1/dir_for_testing_startup_random`
+	err := exec.Command("mkdir", filepath.FromSlash(curPath)).Start()
+	if err != nil {
+		t.Error(err)
+	}
+	err = exec.Command("rm", "-r", filepath.FromSlash(curPath)).Start()
+	if err != nil {
+		t.Error(err)
+	}
+	t.Errorf("The filepath is %s", filepath.FromSlash(curPath))
 }
 
 /*
