@@ -1,13 +1,14 @@
 package setup
 
 import (
-	"os"
+	//	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/mholt/caddy/config/parse"
+	"github.com/mholt/caddy/middleware"
 	"github.com/mholt/caddy/server"
 )
 
@@ -36,30 +37,44 @@ func TestStartup(t *testing.T) {
 		Config:    &server.Config{Startup: startupFuncs},
 		Dispenser: parse.NewDispenser("", strings.NewReader(startupCommand)),
 	}
-	_, err = Startup(c)
+	c.Next()
+	args := c.RemainingArgs()
+	for _, arg := range args {
+		t.Errorf(arg)
+	}
+	_, args, err = middleware.SplitCommandAndArgs(strings.Join(args, " "))
 	if err != nil {
-		t.Errorf("Expected no errors, got: %v", err)
+		t.Error(err)
+	}
+	for _, arg := range args {
+		t.Errorf(arg)
 	}
 
-	tests := []struct {
-		shouldExecutionErr bool
-		shouldRemoveErr    bool
-	}{
-		{false, false}, // expected struct booleans for blocking commands
-		{false, true},  // expected struct booleans for non-blocking commands
-		{true, true},   // expected struct booleans for non-existant commands
-	}
-
-	for i, test := range tests {
-		err = c.Startup[i]()
-		if err != nil && !test.shouldExecutionErr {
-			t.Errorf("Test %d recieved an error of:\n%v", i, err)
-		}
-		err = os.Remove(osSenitiveTestDir)
-		if err != nil && !test.shouldRemoveErr {
-			t.Errorf("Test %d recieved an error of:\n%v", i, err)
+	/*
+		_, err = Startup(c)
+		if err != nil {
+			t.Errorf("Expected no errors, got: %v", err)
 		}
 
-	}
+		tests := []struct {
+			shouldExecutionErr bool
+			shouldRemoveErr    bool
+		}{
+			{false, false}, // expected struct booleans for blocking commands
+			{false, true},  // expected struct booleans for non-blocking commands
+			{true, true},   // expected struct booleans for non-existant commands
+		}
 
+		for i, test := range tests {
+			err = c.Startup[i]()
+			if err != nil && !test.shouldExecutionErr {
+				t.Errorf("Test %d recieved an error of:\n%v", i, err)
+			}
+			err = os.Remove(osSenitiveTestDir)
+			if err != nil && !test.shouldRemoveErr {
+				t.Errorf("Test %d recieved an error of:\n%v", i, err)
+			}
+
+		}
+	*/
 }
