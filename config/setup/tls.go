@@ -21,6 +21,10 @@ func TLS(c *Controller) (middleware.Middleware, error) {
 		switch len(args) {
 		case 1:
 			c.TLS.LetsEncryptEmail = args[0]
+			// user can force-disable LE activation this way
+			if c.TLS.LetsEncryptEmail == "off" {
+				c.TLS.Enabled = false
+			}
 		case 2:
 			c.TLS.Certificate = args[0]
 			c.TLS.Key = args[1]

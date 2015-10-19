@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/mholt/caddy/middleware"
 	"github.com/mholt/caddy/middleware/redirect"
@@ -33,7 +34,7 @@ func Activate(configs []server.Config) ([]server.Config, error) {
 	// we already have certs and keys in storage from last time.
 	configLen := len(configs) // avoid infinite loop since this loop appends to the slice
 	for i := 0; i < configLen; i++ {
-		if existingCertAndKey(configs[i].Host) {
+		if existingCertAndKey(configs[i].Host) && configs[i].TLS.LetsEncryptEmail != "off" {
 			configs = autoConfigure(&configs[i], configs)
 		}
 	}
@@ -83,19 +84,37 @@ func Activate(configs []server.Config) ([]server.Config, error) {
 // Configurations with a manual TLS configuration or one that is already
 // found in storage will not be added to any group.
 func groupConfigsByEmail(configs []server.Config) (map[string][]*server.Config, error) {
+	// configQualifies returns true if cfg qualifes for automatic LE activation
+	configQualifies := func(cfg server.Config) bool {
+		return cfg.TLS.Certificate == "" && // user could provide their own cert and key
+			cfg.TLS.Key == "" &&
+
+			// user can force-disable automatic HTTPS for this host
+			cfg.Port != "http" &&
+			cfg.TLS.LetsEncryptEmail != "off" &&
+
+			// obviously we get can't certs for loopback or internal hosts
+			cfg.Host != "localhost" &&
+			cfg.Host != "" &&
+			cfg.Host != "0.0.0.0" &&
+			cfg.Host != "::1" &&
+			!strings.HasPrefix(cfg.Host, "127.") &&
+			!strings.HasPrefix(cfg.Host, "10.") &&
+
+			// make sure an HTTPS version of this config doesn't exist in the list already
+			!hostHasOtherScheme(cfg.Host, "https", configs)
+	}
+
 	initMap := make(map[string][]*server.Config)
 	for i := 0; i < len(configs); i++ {
-		if configs[i].TLS.Certificate == "" && configs[i].TLS.Key == "" && configs[i].Port != "http" { // TODO: && !cfg.Host.IsLoopback()
-			// make sure an HTTPS version of this config doesn't exist in the list already
-			if hostHasOtherScheme(configs[i].Host, "https", configs) {
-				continue
-			}
-			leEmail := getEmail(configs[i])
-			if leEmail == "" {
-				return nil, errors.New("must have email address to serve HTTPS without existing certificate and key")
-			}
-			initMap[leEmail] = append(initMap[leEmail], &configs[i])
+		if !configQualifies(configs[i]) {
+			continue
 		}
+		leEmail := getEmail(configs[i])
+		if leEmail == "" {
+			return nil, errors.New("must have email address to serve HTTPS without existing certificate and key")
+		}
+		initMap[leEmail] = append(initMap[leEmail], &configs[i])
 	}
 	return initMap, nil
 }
@@ -212,12 +231,12 @@ func autoConfigure(cfg *server.Config, allConfigs []server.Config) []server.Conf
 	cfg.TLS.Enabled = true
 	cfg.Port = "https"
 
-	// Is there a plaintext HTTP config for the same host? If not, make
-	// one and have it redirect all requests to this HTTPS host.
+	// Set up http->https redirect as long as there isn't already
+	// a http counterpart in the configs
 	if !hostHasOtherScheme(cfg.Host, "http", allConfigs) {
-		// Make one that redirects to HTTPS for all requests
 		allConfigs = append(allConfigs, redirPlaintextHost(*cfg))
 	}
+
 	return allConfigs
 }
 
@@ -270,6 +289,7 @@ var (
 // Some essential values related to the Let's Encrypt process
 const (
 	// The base URL to the Let's Encrypt CA
+	// TODO: Staging API URL is: https://acme-staging.api.letsencrypt.org
 	caURL = "http://192.168.99.100:4000"
 
 	// The port to expose to the CA server for Simple HTTP Challenge
