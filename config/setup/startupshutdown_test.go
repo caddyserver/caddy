@@ -19,7 +19,7 @@ import (
 func TestStartup(t *testing.T) {
 
 	curPath := `C:/Users/appveyor/AppData/Local/Temp/1/dir_for_testing_startup`
-	fmt.Sprintf("The fromslash file path is %s", filepath.FromSlash(curPath))
+	t.Errorf("The fromslash file path is %s", filepath.FromSlash(curPath))
 	fmt.Sprintf("The os is seperator is %c", os.PathSeparator)
 }
 
