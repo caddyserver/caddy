@@ -90,6 +90,7 @@ func Load(filename string, input io.Reader) (Group, error) {
 						// TODO: For now, we only support the default path scope /
 						config.Middleware["/"] = append(config.Middleware["/"], midware)
 					}
+					storages[dir.name] = controller.ServerBlockStorage // persist for this server block
 				}
 			}
 
