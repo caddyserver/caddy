@@ -8,6 +8,20 @@ import (
 	"github.com/mholt/caddy/server"
 )
 
+func TestNewDefault(t *testing.T) {
+	config := NewDefault()
+
+	if actual, expected := config.Root, DefaultRoot; actual != expected {
+		t.Errorf("Root was %s but expected %s", actual, expected)
+	}
+	if actual, expected := config.Host, DefaultHost; actual != expected {
+		t.Errorf("Host was %s but expected %s", actual, expected)
+	}
+	if actual, expected := config.Port, DefaultPort; actual != expected {
+		t.Errorf("Port was %d but expected %d", actual, expected)
+	}
+}
+
 func TestResolveAddr(t *testing.T) {
 	// NOTE: If tests fail due to comparing to string "127.0.0.1",
 	// it's possible that system env resolves with IPv6, or ::1.
