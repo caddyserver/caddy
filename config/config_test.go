@@ -18,7 +18,7 @@ func TestNewDefault(t *testing.T) {
 		t.Errorf("Host was %s but expected %s", actual, expected)
 	}
 	if actual, expected := config.Port, DefaultPort; actual != expected {
-		t.Errorf("Port was %d but expected %d", actual, expected)
+		t.Errorf("Port was %s but expected %s", actual, expected)
 	}
 }
 
