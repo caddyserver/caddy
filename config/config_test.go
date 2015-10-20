@@ -83,3 +83,22 @@ func TestMakeOnces(t *testing.T) {
 		t.Errorf("onces was %v, expected %v", onces, expected)
 	}
 }
+
+func TestMakeStorages(t *testing.T) {
+	directives := []directive{
+		{"dummy", nil},
+		{"dummy2", nil},
+	}
+	directiveOrder = directives
+	storages := makeStorages()
+	if len(storages) != len(directives) {
+		t.Errorf("storages had len %d , expected %d", len(storages), len(directives))
+	}
+	expected := map[string]interface{}{
+		"dummy":  nil,
+		"dummy2": nil,
+	}
+	if !reflect.DeepEqual(storages, expected) {
+		t.Errorf("storages was %v, expected %v", storages, expected)
+	}
+}
