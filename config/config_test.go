@@ -102,3 +102,23 @@ func TestMakeStorages(t *testing.T) {
 		t.Errorf("storages was %v, expected %v", storages, expected)
 	}
 }
+
+func TestValidDirective(t *testing.T) {
+	directives := []directive{
+		{"dummy", nil},
+		{"dummy2", nil},
+	}
+	directiveOrder = directives
+	for i, test := range []struct {
+		directive string
+		valid     bool
+	}{
+		{"dummy", true},
+		{"dummy2", true},
+		{"dummy3", false},
+	} {
+		if actual, expected := validDirective(test.directive), test.valid; actual != expected {
+			t.Errorf("Test %d: valid was %t, expected %t", i, actual, expected)
+		}
+	}
+}
