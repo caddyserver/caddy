@@ -7,9 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/mholt/caddy/middleware"
 	"github.com/mholt/caddy/middleware/redirect"
@@ -38,6 +40,8 @@ func Activate(configs []server.Config) ([]server.Config, error) {
 			configs = autoConfigure(&configs[i], configs)
 		}
 	}
+	// Handle cert renewal on Startup
+	processCertificateRenewal(configs)
 
 	// Group configs by LE email address; this will help us
 	// reduce round-trips when getting the certs.
@@ -72,6 +76,8 @@ func Activate(configs []server.Config) ([]server.Config, error) {
 			configs = autoConfigure(cfg, configs)
 		}
 	}
+
+	go renewalFunc(configs)
 
 	return configs, nil
 }
@@ -211,7 +217,7 @@ func saveCertsAndKeys(certificates []acme.CertificateResource) error {
 		}
 
 		// Save cert metadata
-		jsonBytes, err := json.MarshalIndent(&CertificateMeta{URL: cert.CertURL, Domain: cert.Domain}, "", "\t")
+		jsonBytes, err := json.MarshalIndent(&cert, "", "\t")
 		if err != nil {
 			return err
 		}
@@ -278,6 +284,141 @@ func redirPlaintextHost(cfg server.Config) server.Config {
 	}
 }
 
+func renewalFunc(configs []server.Config) {
+	nextRun, err := processCertificateRenewal(configs)
+	if err != nil {
+		log.Printf("[ERROR] Could not start renewal routine. %v", err)
+		return
+	}
+
+	for {
+		timer := time.NewTimer(time.Duration(nextRun) * time.Hour)
+		<-timer.C
+		nextRun, err = processCertificateRenewal(configs)
+		if err != nil {
+			log.Printf("[ERROR] Renewal routing stopped. %v", err)
+			return
+		}
+	}
+}
+
+// checkCertificateRenewal loops through all configured
+// sites and looks for certificates to renew. Nothing is mutated
+// through this function. The changes happen directly on disk.
+func processCertificateRenewal(configs []server.Config) (int, error) {
+	log.Print("[INFO] Processing certificate renewals...")
+	// Check if we should run. If not, get out of here.
+	next, err := getNextRenewalShedule()
+	if err != nil {
+		return 0, err
+	}
+
+	if next > 0 {
+		return next, nil
+	}
+
+	// We are executing. Write the current timestamp into the file.
+	err = ioutil.WriteFile(storage.RenewTimerFile(), []byte(time.Now().UTC().Format(time.RFC3339)), 0600)
+	if err != nil {
+		return 0, err
+	}
+	next = renewTimer
+
+	for _, cfg := range configs {
+		// Check if this entry is TLS enabled and managed by LE
+		if !cfg.TLS.Enabled || !existingCertAndKey(cfg.Host) {
+			continue
+		}
+
+		// Read the certificate and get the NotAfter time.
+		certBytes, err := ioutil.ReadFile(storage.SiteCertFile(cfg.Host))
+		if err != nil {
+			return 0, err
+		}
+		expTime, err := acme.GetPEMCertExpiration(certBytes)
+		if err != nil {
+			return 0, err
+		}
+
+		// The time returned from the certificate is always in UTC.
+		// So calculate the time left with local time as UTC.
+		// Directly convert it to days for the following checks.
+		daysLeft := int(expTime.Sub(time.Now().UTC()).Hours() / 24)
+
+		// Renew on two or less days remaining.
+		if daysLeft <= 2 {
+			log.Printf("[WARN] There are %d days left on the certificate of %s. Trying to renew now.", daysLeft, cfg.Host)
+			client, err := newClient(getEmail(cfg))
+			if err != nil {
+				return 0, err
+			}
+
+			// Read metadata
+			metaBytes, err := ioutil.ReadFile(storage.SiteMetaFile(cfg.Host))
+			if err != nil {
+				return 0, err
+			}
+
+			privBytes, err := ioutil.ReadFile(storage.SiteKeyFile(cfg.Host))
+			if err != nil {
+				return 0, err
+			}
+
+			var certMeta acme.CertificateResource
+			err = json.Unmarshal(metaBytes, &certMeta)
+			certMeta.Certificate = certBytes
+			certMeta.PrivateKey = privBytes
+
+			// Renew certificate.
+			// TODO: revokeOld should be an option in the caddyfile
+			newCertMeta, err := client.RenewCertificate(certMeta, true)
+			if err != nil {
+				return 0, err
+			}
+
+			saveCertsAndKeys([]acme.CertificateResource{newCertMeta})
+		}
+
+		// Warn on 14 days remaining
+		if daysLeft <= 14 {
+			log.Printf("[WARN] There are %d days left on the certificate of %s. Will renew on two days left.\n", daysLeft, cfg.Host)
+		}
+	}
+
+	return next, nil
+}
+
+// getNextRenewalShedule calculates the offset in hours the renew process should
+// run from the current time. If the file the time is in does not exists, the
+// function returns zero to trigger a renew asap.
+func getNextRenewalShedule() (int, error) {
+
+	// Check if the file exists. If it does not, return 0 to indicate immediate processing.
+	if _, err := os.Stat(storage.RenewTimerFile()); os.IsNotExist(err) {
+		return 0, nil
+	}
+
+	renewTimeBytes, err := ioutil.ReadFile(storage.RenewTimerFile())
+	if err != nil {
+		return 0, err
+	}
+
+	renewalTime, err := time.Parse(time.RFC3339, string(renewTimeBytes))
+	if err != nil {
+		return 0, err
+	}
+
+	// The time read from the file was equal or more then 24 hours in the past,
+	// write the current time to the file and return true.
+	hoursSinceRenew := int(time.Now().UTC().Sub(renewalTime).Hours())
+
+	if hoursSinceRenew >= renewTimer {
+		return 0, nil
+	}
+
+	return hoursSinceRenew, nil
+}
+
 var (
 	// Let's Encrypt account email to use if none provided
 	DefaultEmail string
@@ -294,6 +435,9 @@ const (
 
 	// The port to expose to the CA server for Simple HTTP Challenge
 	exposePort = "5001"
+
+	// Renewal Timer - Check renewals every x hours.
+	renewTimer = 24
 )
 
 // KeySize represents the length of a key in bits.

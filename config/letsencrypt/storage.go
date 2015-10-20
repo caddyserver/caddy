@@ -16,6 +16,11 @@ var storage = Storage(filepath.Join(app.DataFolder(), "letsencrypt"))
 // forming file paths derived from it.
 type Storage string
 
+// RenewTimerFile returns the path to the file used for renewal timing.
+func (s Storage) RenewTimerFile() string {
+	return filepath.Join(string(s), "lastrenew")
+}
+
 // Sites gets the directory that stores site certificate and keys.
 func (s Storage) Sites() string {
 	return filepath.Join(string(s), "sites")
