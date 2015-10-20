@@ -168,7 +168,7 @@ func beforeServeHttpTest(t *testing.T) {
 		// and fill them with content
 		_, err = f.WriteString(fileContent)
 		if err != nil {
-			t.Fatal("Failed to write to %s. Error was: %v", absFile, err)
+			t.Fatalf("Failed to write to %s. Error was: %v", absFile, err)
 			return
 		}
 		f.Close()
