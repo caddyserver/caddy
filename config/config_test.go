@@ -1,6 +1,8 @@
 package config
 
 import (
+	"reflect"
+	"sync"
 	"testing"
 
 	"github.com/mholt/caddy/server"
@@ -60,5 +62,24 @@ func TestResolveAddr(t *testing.T) {
 		if actual, expected := actualAddr.Port, test.expectedPort; actual != expected {
 			t.Errorf("Test %d: Port was %d but expected %d", i, actual, expected)
 		}
+	}
+}
+
+func TestMakeOnces(t *testing.T) {
+	directives := []directive{
+		{"dummy", nil},
+		{"dummy2", nil},
+	}
+	directiveOrder = directives
+	onces := makeOnces()
+	if len(onces) != len(directives) {
+		t.Errorf("onces had len %d , expected %d", len(onces), len(directives))
+	}
+	expected := map[string]*sync.Once{
+		"dummy":  new(sync.Once),
+		"dummy2": new(sync.Once),
+	}
+	if !reflect.DeepEqual(onces, expected) {
+		t.Errorf("onces was %v, expected %v", onces, expected)
 	}
 }
