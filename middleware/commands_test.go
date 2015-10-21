@@ -6,6 +6,73 @@ import (
 	"testing"
 )
 
+func TestParseWindowsCommand(t *testing.T) {
+	for i, test := range []struct {
+		input    string
+		expected []string
+	}{
+		{ // 0
+			input:    `cmd`,
+			expected: []string{`cmd`},
+		},
+		{ // 1
+			input:    `cmd arg1 arg2`,
+			expected: []string{`cmd`, `arg1`, `arg2`},
+		},
+		{ // 2
+			input:    `cmd "combined arg" arg2`,
+			expected: []string{`cmd`, `combined arg`, `arg2`},
+		},
+		{ // 3
+			input:    `mkdir C:\Windows\foo\bar`,
+			expected: []string{`mkdir`, `C:\Windows\foo\bar`},
+		},
+		{ // 4
+			input:    `"command here"`,
+			expected: []string{`command here`},
+		},
+		{ // 5
+			input:    `cmd \"arg\"`,
+			expected: []string{`cmd`, `"arg"`},
+		},
+		{ // 6
+			input:    `cmd "a \"quoted value\""`,
+			expected: []string{`cmd`, `a "quoted value"`},
+		},
+		{ // 7
+			input:    `mkdir "C:\directory name\foobar"`,
+			expected: []string{`mkdir`, `C:\directory name\foobar`},
+		},
+		{ // 8
+			input:    `mkdir C:\ space`,
+			expected: []string{`mkdir`, `C:\`, `space`},
+		},
+		{ // 9
+			input:    `mkdir "C:\ space"`,
+			expected: []string{`mkdir`, `C:\ space`},
+		},
+		{ // 10
+			input:    `\\"`,
+			expected: []string{`\`},
+		},
+		{ // 11
+			input:    `"\\\""`,
+			expected: []string{`\"`},
+		},
+	} {
+		actual := parseWindowsCommand(test.input)
+		if len(actual) != len(test.expected) {
+			t.Errorf("Test %d: Expected %d parts, got %d: %#v", i, len(test.expected), len(actual), actual)
+			continue
+		}
+		for j := 0; j < len(actual); j++ {
+			if expectedPart, actualPart := test.expected[j], actual[j]; expectedPart != actualPart {
+				t.Errorf("Test %d: Expected: %v Actual: %v (index %d)", i, expectedPart, actualPart, j)
+			}
+		}
+	}
+}
+
 func TestSplitCommandAndArgs(t *testing.T) {
 	var parseErrorContent = "error parsing command:"
 	var noCommandErrContent = "no command contained in"
