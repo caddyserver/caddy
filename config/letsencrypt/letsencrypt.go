@@ -284,6 +284,41 @@ func redirPlaintextHost(cfg server.Config) server.Config {
 	}
 }
 
+// Revoke revokes the certificate for host via ACME protocol.
+func Revoke(host string) error {
+	if !existingCertAndKey(host) {
+		return errors.New("no certificate and key for " + host)
+	}
+
+	email := getEmail(server.Config{Host: host})
+	if email == "" {
+		return errors.New("email is required to revoke")
+	}
+
+	client, err := newClient(email)
+	if err != nil {
+		return err
+	}
+
+	certFile := storage.SiteCertFile(host)
+	certBytes, err := ioutil.ReadFile(certFile)
+	if err != nil {
+		return err
+	}
+
+	err = client.RevokeCertificate(certBytes)
+	if err != nil {
+		return err
+	}
+
+	err = os.Remove(certFile)
+	if err != nil {
+		return errors.New("certificate revoked, but unable to delete certificate file: " + err.Error())
+	}
+
+	return nil
+}
+
 var (
 	// Let's Encrypt account email to use if none provided
 	DefaultEmail string
@@ -321,9 +356,3 @@ const (
 // This shouldn't need to change except for in tests;
 // the size can be drastically reduced for speed.
 var rsaKeySizeToUse = RSA_2048
-
-// CertificateMeta is a container type used to write out a file
-// with information about a certificate.
-type CertificateMeta struct {
-	Domain, URL string
-}
