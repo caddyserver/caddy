@@ -1,14 +1,13 @@
 package setup
 
 import (
-	//	"os"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/mholt/caddy/config/parse"
-	"github.com/mholt/caddy/middleware"
 	"github.com/mholt/caddy/server"
 )
 
@@ -25,7 +24,7 @@ func TestStartup(t *testing.T) {
 	}
 
 	testDir := filepath.Join(tempDirPath, "temp_dir_for_testing_startupshutdown.go")
-	osSenitiveTestDir := filepath.FromSlash(testDir) // path separators correspond to OS-specific path separator
+	osSenitiveTestDir := filepath.FromSlash(testDir)
 
 	exec.Command("rm", "-r", osSenitiveTestDir).Start() // removes osSenitiveTestDir from the OS's temp directory, if the osSenitiveTestDir already exists
 
@@ -37,44 +36,29 @@ func TestStartup(t *testing.T) {
 		Config:    &server.Config{Startup: startupFuncs},
 		Dispenser: parse.NewDispenser("", strings.NewReader(startupCommand)),
 	}
-	c.Next()
-	args := c.RemainingArgs()
-	for _, arg := range args {
-		t.Errorf(arg)
-	}
-	_, args, err = middleware.SplitCommandAndArgs(strings.Join(args, " "))
+	_, err = Startup(c)
 	if err != nil {
-		t.Error(err)
-	}
-	for _, arg := range args {
-		t.Errorf(arg)
+		t.Errorf("Expected no errors, got: %v", err)
 	}
 
-	/*
-		_, err = Startup(c)
-		if err != nil {
-			t.Errorf("Expected no errors, got: %v", err)
+	tests := []struct {
+		shouldExecutionErr bool
+		shouldRemoveErr    bool
+	}{
+		{false, false}, // expected struct booleans for blocking commands
+		{false, true},  // expected struct booleans for non-blocking commands
+		{true, true},   // expected struct booleans for non-existant commands
+	}
+
+	for i, test := range tests {
+		err = c.Startup[i]()
+		if err != nil && !test.shouldExecutionErr {
+			t.Errorf("Test %d recieved an error of:\n%v", i, err)
+		}
+		err = os.Remove(osSenitiveTestDir)
+		if err != nil && !test.shouldRemoveErr {
+			t.Errorf("Test %d recieved an error of:\n%v", i, err)
 		}
 
-		tests := []struct {
-			shouldExecutionErr bool
-			shouldRemoveErr    bool
-		}{
-			{false, false}, // expected struct booleans for blocking commands
-			{false, true},  // expected struct booleans for non-blocking commands
-			{true, true},   // expected struct booleans for non-existant commands
-		}
-
-		for i, test := range tests {
-			err = c.Startup[i]()
-			if err != nil && !test.shouldExecutionErr {
-				t.Errorf("Test %d recieved an error of:\n%v", i, err)
-			}
-			err = os.Remove(osSenitiveTestDir)
-			if err != nil && !test.shouldRemoveErr {
-				t.Errorf("Test %d recieved an error of:\n%v", i, err)
-			}
-
-		}
-	*/
+	}
 }
