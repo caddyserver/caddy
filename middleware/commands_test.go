@@ -118,28 +118,21 @@ func TestSplitCommandAndArgs(t *testing.T) {
 			expectedArgs:       []string{`arg1 arg1`},
 			expectedErrContent: ``,
 		},
-		// Test case 5 - command with comments
-		{
-			input:              `command arg1 #comment1 comment2`,
-			expectedCommand:    `command`,
-			expectedArgs:       []string{`arg1`},
-			expectedErrContent: "",
-		},
-		// Test case 6 - command with multiple spaces and tab character
+		// Test case 5 - command with multiple spaces and tab character
 		{
 			input:              "command arg1    arg2\targ3",
 			expectedCommand:    `command`,
 			expectedArgs:       []string{`arg1`, `arg2`, "arg3"},
 			expectedErrContent: "",
 		},
-		// Test case 7 - command with unclosed quotes
+		// Test case 6 - command with unclosed quotes
 		{
 			input:              `command "arg1 arg2`,
 			expectedCommand:    "",
 			expectedArgs:       nil,
 			expectedErrContent: parseErrorContent,
 		},
-		// Test case 8 - command with unclosed quotes
+		// Test case 7 - command with unclosed quotes
 		{
 			input:              `command 'arg1 arg2"`,
 			expectedCommand:    "",
