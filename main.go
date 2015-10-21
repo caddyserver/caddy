@@ -23,6 +23,7 @@ var (
 	conf    string
 	cpu     string
 	version bool
+	revoke  string
 )
 
 func init() {
@@ -36,6 +37,7 @@ func init() {
 	flag.BoolVar(&version, "version", false, "Show version")
 	flag.BoolVar(&letsencrypt.Agreed, "agree", false, "Agree to Let's Encrypt Subscriber Agreement")
 	flag.StringVar(&letsencrypt.DefaultEmail, "email", "", "Default email address to use for Let's Encrypt transactions")
+	flag.StringVar(&revoke, "revoke", "", "Hostname for which to revoke the certificate")
 }
 
 func main() {
@@ -43,6 +45,14 @@ func main() {
 
 	if version {
 		fmt.Printf("%s %s\n", app.Name, app.Version)
+		os.Exit(0)
+	}
+	if revoke != "" {
+		err := letsencrypt.Revoke(revoke)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("Revoked certificate for %s\n", revoke)
 		os.Exit(0)
 	}
 
