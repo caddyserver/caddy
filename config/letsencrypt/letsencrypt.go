@@ -164,7 +164,7 @@ func newClient(leEmail string) (*acme.Client, error) {
 		leUser.Registration = reg
 
 		// TODO: we can just do the agreement once: when registering, right?
-		err = client.AgreeToTos()
+		err = client.AgreeToTOS()
 		if err != nil {
 			saveUser(leUser) // TODO: Might as well try, right? Error check?
 			return nil, errors.New("error agreeing to terms: " + err.Error())
