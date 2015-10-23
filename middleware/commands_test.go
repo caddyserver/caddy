@@ -7,7 +7,7 @@ import (
 )
 
 func TestParseWindowsCommand(t *testing.T) {
-	for i, test := range []struct {
+	tests := []struct {
 		input    string
 		expected []string
 	}{
@@ -51,25 +51,54 @@ func TestParseWindowsCommand(t *testing.T) {
 			input:    `mkdir "C:\ space"`,
 			expected: []string{`mkdir`, `C:\ space`},
 		},
-		{ // 10
-			input:    `\\"`,
-			expected: []string{`\`},
+		// 10
+		{
+			input:    `mkdir \\?\C:\Users`,
+			expected: []string{`mkdir`, `\\?\C:\Users`},
 		},
-		{ // 11
-			input:    `"\\\""`,
-			expected: []string{`\"`},
+		// 11
+		{
+			input:    `mkdir "\\?\C:\Program Files"`,
+			expected: []string{`mkdir`, `\\?\C:\Program Files`},
 		},
-	} {
+	}
+	var nTests int
+	for i, test := range tests {
+		fmt.Printf("====== Test %d ======\n", i)
 		actual := parseWindowsCommand(test.input)
 		if len(actual) != len(test.expected) {
+			fmt.Printf("Test %d: Expected %d parts, got %d: %#v", i, len(test.expected), len(actual), actual)
+			fmt.Println()
 			t.Errorf("Test %d: Expected %d parts, got %d: %#v", i, len(test.expected), len(actual), actual)
 			continue
 		}
 		for j := 0; j < len(actual); j++ {
 			if expectedPart, actualPart := test.expected[j], actual[j]; expectedPart != actualPart {
+				fmt.Printf("Test %d: Expected: %v Actual: %v (index %d)", i, expectedPart, actualPart, j)
+				fmt.Println()
 				t.Errorf("Test %d: Expected: %v Actual: %v (index %d)", i, expectedPart, actualPart, j)
 			}
 		}
+		nTests += 1
+	}
+
+	for _, test := range tests {
+		fmt.Printf("====== Test %d ======\n", nTests)
+		actual := parseWindowsCommand2(test.input)
+		if len(actual) != len(test.expected) {
+			fmt.Printf("Test %d: Expected %d parts, got %d: %#v", nTests, len(test.expected), len(actual), actual)
+			fmt.Println()
+			t.Errorf("Test %d: Expected %d parts, got %d: %#v", nTests, len(test.expected), len(actual), actual)
+			continue
+		}
+		for j := 0; j < len(actual); j++ {
+			if expectedPart, actualPart := test.expected[j], actual[j]; expectedPart != actualPart {
+				fmt.Printf("Test %d: Expected: %v Actual: %v (index %d)", nTests, expectedPart, actualPart, j)
+				fmt.Println()
+				t.Errorf("Test %d: Expected: %v Actual: %v (index %d)", nTests, expectedPart, actualPart, j)
+			}
+		}
+		nTests += 1
 	}
 }
 
