@@ -189,7 +189,7 @@ func obtainCertificates(client *acme.Client, serverConfigs []*server.Config) ([]
 		hosts = append(hosts, cfg.Host)
 	}
 
-	certificates, err := client.ObtainCertificates(hosts)
+	certificates, err := client.ObtainCertificates(hosts, true)
 	if err != nil {
 		return nil, errors.New("error obtaining certs: " + err.Error())
 	}
