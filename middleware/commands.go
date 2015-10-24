@@ -2,23 +2,23 @@ package middleware
 
 import (
 	"errors"
-	"fmt"
 	"runtime"
-	"strings"
 	"unicode"
 
 	"github.com/flynn/go-shlex"
 )
+
+var runtimeGoos = runtime.GOOS
 
 // SplitCommandAndArgs takes a command string and parses it
 // shell-style into the command and its separate arguments.
 func SplitCommandAndArgs(command string) (cmd string, args []string, err error) {
 	var parts []string
 
-	if runtime.GOOS == "windows" {
+	if runtimeGoos == "windows" {
 		parts = parseWindowsCommand(command) // parse it Windows-style
 	} else {
-		parts, err = shlex.Split(command) // parse it Unix-style
+		parts, err = parseUnixCommand(command) // parse it Unix-style
 		if err != nil {
 			err = errors.New("error parsing command: " + err.Error())
 			return
@@ -38,112 +38,76 @@ func SplitCommandAndArgs(command string) (cmd string, args []string, err error) 
 	return
 }
 
-// parseWindowsCommand is a sad but good-enough attempt to
-// split a command into the command and its arguments like
-// the Windows command line would; only basic parsing is
-// supported. This function has to be used on Windows instead
-// of the shlex package because this function treats backslash
-// characters properly.
-//
-// Loosely based off the rules here: http://stackoverflow.com/a/4094897/1048862
-// True parsing is much, much trickier.
-func parseWindowsCommand2(cmd string) []string {
-	var parts []string
-	var part string
-	var quoted bool
-	var backslashes int
-
-	for _, ch := range cmd {
-		if ch == '\\' {
-			backslashes++
-			continue
-		}
-		var evenBacksl = (backslashes % 2) == 0
-		if backslashes > 0 && ch != '\\' {
-			numBacksl := (backslashes / 2) + 1
-			if ch == '"' {
-				numBacksl--
-			}
-			part += strings.Repeat(`\`, numBacksl)
-			backslashes = 0
-		}
-
-		if quoted {
-			if ch == '"' && evenBacksl {
-				quoted = false
-				continue
-			}
-			part += string(ch)
-			continue
-		}
-
-		if unicode.IsSpace(ch) && len(part) > 0 {
-			parts = append(parts, part)
-			part = ""
-			continue
-		}
-
-		if ch == '"' && evenBacksl {
-			quoted = true
-			continue
-		}
-
-		part += string(ch)
-	}
-
-	if len(part) > 0 {
-		parts = append(parts, part)
-		part = ""
-	}
-
-	return parts
+// parseUnixCommand parses a unix style command line and returns the
+// command and its arguments or an error
+func parseUnixCommand(cmd string) ([]string, error) {
+	return shlex.Split(cmd)
 }
 
+// parseWindowsCommand parses windows command lines and
+// returns the command and the arguments as an array. It
+// should be able to parse commonly used command lines.
+// Only basic syntax is supported:
+//  - spaces in double quotes are not token delimiters
+//  - double quotes are escaped by either backspace or another double quote
+//  - except for the above case backspaces are path separators (not special)
+//
+// Many sources point out that escaping quotes using backslash can be unsafe.
+// Use two double quotes when possible. (Source: http://stackoverflow.com/a/31413730/2616179 )
+//
+// This function has to be used on Windows instead
+// of the shlex package because this function treats backslash
+// characters properly.
 func parseWindowsCommand(cmd string) []string {
+	const backslash = '\\'
+	const quote = '"'
+
 	var parts []string
 	var part string
 	var inQuotes bool
-	var wasBackslash bool
-
-	prefix := "DEBUG:"
-
-	fmt.Println(prefix, "Parsing cmd:", cmd)
+	var lastRune rune
 
 	for i, ch := range cmd {
-		fmt.Println("  ", prefix, "Looking at char:", string(ch), "at index", string(i))
 
-		if ch == '\\' {
-			wasBackslash = true
-			// put it in the part - for now we don't know if it's escaping char or path separator
+		if i != 0 {
+			lastRune = rune(cmd[i-1])
+		}
+
+		if ch == backslash {
+			// put it in the part - for now we don't know if it's an
+			// escaping char or path separator
 			part += string(ch)
 			continue
 		}
 
-		if ch == '"' {
-			if wasBackslash {
+		if ch == quote {
+			if lastRune == backslash {
 				// remove the backslash from the part and add the escaped quote instead
 				part = part[:len(part)-1]
 				part += string(ch)
-				wasBackslash = false
 				continue
-			} else {
-				// normal escaping quotes
-				fmt.Println("    ", prefix, "and it's a quote")
-				inQuotes = !inQuotes
-				continue
-
 			}
+
+			if lastRune == quote {
+				// revert the last change of the inQuotes state
+				// it was an escaping quote
+				inQuotes = !inQuotes
+				part += string(ch)
+				continue
+			}
+
+			// normal escaping quotes
+			inQuotes = !inQuotes
+			continue
+
 		}
 
 		if unicode.IsSpace(ch) && !inQuotes && len(part) > 0 {
-			fmt.Println("    ", prefix, "and it's a space outside quotes")
 			parts = append(parts, part)
 			part = ""
-			wasBackslash = false
 			continue
 		}
 
-		wasBackslash = false
 		part += string(ch)
 	}
 
@@ -152,6 +116,5 @@ func parseWindowsCommand(cmd string) []string {
 		part = ""
 	}
 
-	fmt.Println(prefix, strings.Join(parts, ","))
 	return parts
 }
