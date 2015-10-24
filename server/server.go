@@ -162,6 +162,7 @@ func ListenAndServeTLSWithSNI(srv *http.Server, tlsConfigs []TLSConfig) error {
 	config.Certificates = make([]tls.Certificate, len(tlsConfigs))
 	for i, tlsConfig := range tlsConfigs {
 		config.Certificates[i], err = tls.LoadX509KeyPair(tlsConfig.Certificate, tlsConfig.Key)
+		config.Certificates[i].OCSPStaple = tlsConfig.OCSPStaple
 		if err != nil {
 			return err
 		}
