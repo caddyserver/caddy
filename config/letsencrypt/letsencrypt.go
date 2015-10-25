@@ -152,7 +152,7 @@ func newClient(leEmail string) (*acme.Client, error) {
 	}
 
 	// The client facilitates our communication with the CA server.
-	client := acme.NewClient(caURL, &leUser, rsaKeySizeToUse, exposePort, true) // TODO: Dev mode is enabled
+	client := acme.NewClient(caURL, &leUser, rsaKeySizeToUse, exposePort)
 
 	// If not registered, the user must register an account with the CA
 	// and agree to terms
