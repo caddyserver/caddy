@@ -92,6 +92,7 @@ func loadCaddyfile() (caddy.Input, error) {
 		return caddy.CaddyfileInput{
 			Contents: contents,
 			Filepath: conf,
+			RealFile: true,
 		}, nil
 	}
 
@@ -115,6 +116,7 @@ func loadCaddyfile() (caddy.Input, error) {
 	return caddy.CaddyfileInput{
 		Contents: contents,
 		Filepath: caddy.DefaultConfigFile,
+		RealFile: true,
 	}, nil
 }
 

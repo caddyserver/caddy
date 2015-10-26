@@ -58,6 +58,7 @@ func isRestart() bool {
 type CaddyfileInput struct {
 	Filepath string
 	Contents []byte
+	RealFile bool
 }
 
 // Body returns c.Contents.
@@ -65,3 +66,6 @@ func (c CaddyfileInput) Body() []byte { return c.Contents }
 
 // Path returns c.Filepath.
 func (c CaddyfileInput) Path() string { return c.Filepath }
+
+// Path returns true if the original input was a real file on the file system.
+func (c CaddyfileInput) IsFile() bool { return c.RealFile }

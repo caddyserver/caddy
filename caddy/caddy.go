@@ -319,4 +319,8 @@ type Input interface {
 
 	// Gets the path to the origin file
 	Path() string
+
+	// IsFile returns true if the original input was a file on the file system
+	// that could be loaded again later if requested.
+	IsFile() bool
 }

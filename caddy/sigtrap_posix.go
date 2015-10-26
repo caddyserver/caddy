@@ -3,6 +3,7 @@
 package caddy
 
 import (
+	"io/ioutil"
 	"log"
 	"os"
 	"os/signal"
@@ -17,7 +18,23 @@ func init() {
 
 		for {
 			<-reload
-			err := Restart(nil)
+
+			var updatedCaddyfile Input
+
+			caddyfileMu.Lock()
+			if caddyfile.IsFile() {
+				body, err := ioutil.ReadFile(caddyfile.Path())
+				if err == nil {
+					caddyfile = CaddyfileInput{
+						Filepath: caddyfile.Path(),
+						Contents: body,
+						RealFile: true,
+					}
+				}
+			}
+			caddyfileMu.Unlock()
+
+			err := Restart(updatedCaddyfile)
 			if err != nil {
 				log.Println(err)
 			}
