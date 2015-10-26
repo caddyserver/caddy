@@ -153,14 +153,14 @@ func makeStorages() map[string]interface{} {
 // bind address to list of configs that would become VirtualHosts on that
 // server. Use the keys of the returned map to create listeners, and use
 // the associated values to set up the virtualhosts.
-func arrangeBindings(allConfigs []server.Config) (map[*net.TCPAddr][]server.Config, error) {
-	addresses := make(map[*net.TCPAddr][]server.Config)
+func arrangeBindings(allConfigs []server.Config) (Group, error) {
+	var groupings Group
 
 	// Group configs by bind address
 	for _, conf := range allConfigs {
-		newAddr, warnErr, fatalErr := resolveAddr(conf)
+		bindAddr, warnErr, fatalErr := resolveAddr(conf)
 		if fatalErr != nil {
-			return addresses, fatalErr
+			return groupings, fatalErr
 		}
 		if warnErr != nil {
 			log.Println("[Warning]", warnErr)
@@ -169,37 +169,40 @@ func arrangeBindings(allConfigs []server.Config) (map[*net.TCPAddr][]server.Conf
 		// Make sure to compare the string representation of the address,
 		// not the pointer, since a new *TCPAddr is created each time.
 		var existing bool
-		for addr := range addresses {
-			if addr.String() == newAddr.String() {
-				addresses[addr] = append(addresses[addr], conf)
+		for i := 0; i < len(groupings); i++ {
+			if groupings[i].BindAddr.String() == bindAddr.String() {
+				groupings[i].Configs = append(groupings[i].Configs, conf)
 				existing = true
 				break
 			}
 		}
 		if !existing {
-			addresses[newAddr] = append(addresses[newAddr], conf)
+			groupings = append(groupings, BindingMapping{
+				BindAddr: bindAddr,
+				Configs:  []server.Config{conf},
+			})
 		}
 	}
 
 	// Don't allow HTTP and HTTPS to be served on the same address
-	for _, configs := range addresses {
-		isTLS := configs[0].TLS.Enabled
-		for _, config := range configs {
+	for _, group := range groupings {
+		isTLS := group.Configs[0].TLS.Enabled
+		for _, config := range group.Configs {
 			if config.TLS.Enabled != isTLS {
 				thisConfigProto, otherConfigProto := "HTTP", "HTTP"
 				if config.TLS.Enabled {
 					thisConfigProto = "HTTPS"
 				}
-				if configs[0].TLS.Enabled {
+				if group.Configs[0].TLS.Enabled {
 					otherConfigProto = "HTTPS"
 				}
-				return addresses, fmt.Errorf("configuration error: Cannot multiplex %s (%s) and %s (%s) on same address",
-					configs[0].Address(), otherConfigProto, config.Address(), thisConfigProto)
+				return groupings, fmt.Errorf("configuration error: Cannot multiplex %s (%s) and %s (%s) on same address",
+					group.Configs[0].Address(), otherConfigProto, config.Address(), thisConfigProto)
 			}
 		}
 	}
 
-	return addresses, nil
+	return groupings, nil
 }
 
 // resolveAddr determines the address (host and port) that a config will
@@ -291,5 +294,15 @@ var (
 	Port = DefaultPort
 )
 
+// BindingMapping maps a network address to configurations
+// that will bind to it. The order of the configs is important.
+type BindingMapping struct {
+	BindAddr *net.TCPAddr
+	Configs  []server.Config
+}
+
 // Group maps network addresses to their configurations.
-type Group map[*net.TCPAddr][]server.Config
+// Preserving the order of the groupings is important
+// (related to graceful shutdown and restart)
+// so this is a slice, not a literal map.
+type Group []BindingMapping

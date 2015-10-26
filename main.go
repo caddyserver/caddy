@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net"
 	"os"
 	"os/exec"
 	"path"
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/mholt/caddy/app"
 	"github.com/mholt/caddy/config"
@@ -63,44 +65,70 @@ func main() {
 	}
 
 	// Load config from file
-	addresses, err := loadConfigs()
+	groupings, err := loadConfigs()
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	// Start each server with its one or more configurations
-	for addr, configs := range addresses {
-		s, err := server.New(addr.String(), configs)
+	for i, group := range groupings {
+		s, err := server.New(group.BindAddr.String(), group.Configs)
 		if err != nil {
 			log.Fatal(err)
 		}
 		s.HTTP2 = app.HTTP2 // TODO: This setting is temporary
-		app.Wg.Add(1)
-		go func(s *server.Server) {
-			defer app.Wg.Done()
-			err := s.Serve()
-			if err != nil {
-				log.Fatal(err) // kill whole process to avoid a half-alive zombie server
-			}
-		}(s)
 
+		app.Wg.Add(1)
+		go func(s *server.Server, i int) {
+			defer app.Wg.Done()
+
+			if os.Getenv("CADDY_RESTART") == "true" {
+				file := os.NewFile(uintptr(3+i), "")
+				ln, err := net.FileListener(file)
+				if err != nil {
+					log.Fatal("FILE LISTENER:", err)
+				}
+
+				var ok bool
+				ln, ok = ln.(server.ListenerFile)
+				if !ok {
+					log.Fatal("Listener was not a ListenerFile")
+				}
+
+				err = s.Serve(ln.(server.ListenerFile))
+				// TODO: Better error logging... also, is it even necessary?
+				if err != nil {
+					log.Println(err)
+				}
+			} else {
+				err := s.ListenAndServe()
+				// TODO: Better error logging... also, is it even necessary?
+				// For example, "use of closed network connection" is normal if doing graceful shutdown...
+				if err != nil {
+					log.Println(err)
+				}
+			}
+		}(s, i)
+
+		app.ServersMutex.Lock()
 		app.Servers = append(app.Servers, s)
+		app.ServersMutex.Unlock()
 	}
 
 	// Show initialization output
 	if !app.Quiet {
 		var checkedFdLimit bool
-		for addr, configs := range addresses {
-			for _, conf := range configs {
+		for _, group := range groupings {
+			for _, conf := range group.Configs {
 				// Print address of site
 				fmt.Println(conf.Address())
 
 				// Note if non-localhost site resolves to loopback interface
-				if addr.IP.IsLoopback() && !isLocalhost(conf.Host) {
+				if group.BindAddr.IP.IsLoopback() && !isLocalhost(conf.Host) {
 					fmt.Printf("Notice: %s is only accessible on this machine (%s)\n",
-						conf.Host, addr.IP.String())
+						conf.Host, group.BindAddr.IP.String())
 				}
-				if !checkedFdLimit && !addr.IP.IsLoopback() && !isLocalhost(conf.Host) {
+				if !checkedFdLimit && !group.BindAddr.IP.IsLoopback() && !isLocalhost(conf.Host) {
 					checkFdlimit()
 					checkedFdLimit = true
 				}
@@ -108,7 +136,16 @@ func main() {
 		}
 	}
 
-	// Wait for all listeners to stop
+	// TODO: Temporary; testing restart
+	if os.Getenv("CADDY_RESTART") != "true" {
+		go func() {
+			time.Sleep(5 * time.Second)
+			fmt.Println("restarting")
+			log.Println("RESTART ERR:", app.Restart([]byte{}))
+		}()
+	}
+
+	// Wait for all servers to be stopped
 	app.Wg.Wait()
 }
 

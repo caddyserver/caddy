@@ -7,12 +7,15 @@ package app
 
 import (
 	"errors"
+	"log"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 
 	"github.com/mholt/caddy/server"
 )
@@ -41,6 +44,75 @@ var (
 	// Quiet mode hides non-error initialization output
 	Quiet bool
 )
+
+func init() {
+	go func() {
+		// Wait for signal
+		interrupt := make(chan os.Signal, 1)
+		signal.Notify(interrupt, os.Interrupt, os.Kill) // TODO: syscall.SIGTERM? Or that should not run callbacks...
+		<-interrupt
+
+		// Run shutdown callbacks
+		var exitCode int
+		ServersMutex.Lock()
+		errs := server.ShutdownCallbacks(Servers)
+		ServersMutex.Unlock()
+		if len(errs) > 0 {
+			for _, err := range errs {
+				log.Println(err)
+			}
+			exitCode = 1
+		}
+		os.Exit(exitCode)
+	}()
+}
+
+// Restart restarts the entire application; gracefully with zero
+// downtime if on a POSIX-compatible system, or forcefully if on
+// Windows but with imperceptibly-short downtime.
+//
+// The restarted application will use caddyfile as its input
+// configuration; it will not look elsewhere for the config
+// to use.
+func Restart(caddyfile []byte) error {
+	// TODO: This is POSIX-only right now; also, os.Args[0] is required!
+	// TODO: Pipe the Caddyfile to stdin of child!
+	// TODO: Before stopping this process, verify child started successfully (valid Caddyfile, etc)
+
+	// Tell the child that it's a restart
+	os.Setenv("CADDY_RESTART", "true")
+
+	// Pass along current environment and file descriptors to child.
+	// We pass along the file descriptors explicitly to ensure proper
+	// order, since losing the original order will break the child.
+	fds := []uintptr{os.Stdin.Fd(), os.Stdout.Fd(), os.Stderr.Fd()}
+
+	// Now add file descriptors of the sockets
+	ServersMutex.Lock()
+	for _, s := range Servers {
+		fds = append(fds, s.ListenerFd())
+	}
+	ServersMutex.Unlock()
+
+	// Fork the process with the current environment and file descriptors
+	execSpec := &syscall.ProcAttr{
+		Env:   os.Environ(),
+		Files: fds,
+	}
+	fork, err := syscall.ForkExec(os.Args[0], os.Args, execSpec)
+	if err != nil {
+		log.Println("FORK ERR:", err, fork)
+	}
+
+	// Child process is listening now; we can stop all our servers here.
+	ServersMutex.Lock()
+	for _, s := range Servers {
+		go s.Stop() // TODO: error checking/reporting
+	}
+	ServersMutex.Unlock()
+
+	return err
+}
 
 // SetCPU parses string cpu and sets GOMAXPROCS
 // according to its value. It accepts either
