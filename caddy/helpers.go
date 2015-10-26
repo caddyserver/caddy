@@ -3,52 +3,17 @@ package caddy
 import (
 	"bytes"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
-	"os/signal"
 	"runtime"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"github.com/mholt/caddy/caddy/letsencrypt"
-	"github.com/mholt/caddy/server"
 )
 
 func init() {
 	letsencrypt.OnRenew = func() error { return Restart(nil) }
-
-	// Trap signals
-	go func() {
-		shutdown, reload := make(chan os.Signal, 1), make(chan os.Signal, 1)
-		signal.Notify(shutdown, os.Interrupt, os.Kill) // quit the process
-		signal.Notify(reload, syscall.SIGUSR1)         // reload configuration
-
-		for {
-			select {
-			case <-shutdown:
-				var exitCode int
-
-				serversMu.Lock()
-				errs := server.ShutdownCallbacks(servers)
-				serversMu.Unlock()
-				if len(errs) > 0 {
-					for _, err := range errs {
-						log.Println(err)
-					}
-					exitCode = 1
-				}
-				os.Exit(exitCode)
-
-			case <-reload:
-				err := Restart(nil)
-				if err != nil {
-					log.Println(err)
-				}
-			}
-		}
-	}()
 }
 
 // isLocalhost returns true if the string looks explicitly like a localhost address.
@@ -72,3 +37,31 @@ func checkFdlimit() {
 		}
 	}
 }
+
+// caddyfileGob maps bind address to index of the file descriptor
+// in the Files array passed to the child process. It also contains
+// the caddyfile contents. Used only during graceful restarts.
+type caddyfileGob struct {
+	ListenerFds map[string]uintptr
+	Caddyfile   []byte
+}
+
+// isRestart returns whether this process is, according
+// to env variables, a fork as part of a graceful restart.
+func isRestart() bool {
+	return os.Getenv("CADDY_RESTART") == "true"
+}
+
+// CaddyfileInput represents a Caddyfile as input
+// and is simply a convenient way to implement
+// the Input interface.
+type CaddyfileInput struct {
+	Filepath string
+	Contents []byte
+}
+
+// Body returns c.Contents.
+func (c CaddyfileInput) Body() []byte { return c.Contents }
+
+// Path returns c.Filepath.
+func (c CaddyfileInput) Path() string { return c.Filepath }

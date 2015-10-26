@@ -1,3 +1,5 @@
+// +build !windows
+
 package caddy
 
 import (
@@ -5,17 +7,8 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
-	"runtime"
 	"syscall"
 )
-
-// caddyfileGob maps bind address to index of the file descriptor
-// in the Files array passed to the child process. It also contains
-// the caddyfile contents. Used only during graceful restarts.
-type caddyfileGob struct {
-	ListenerFds map[string]uintptr
-	Caddyfile   []byte
-}
 
 // Restart restarts the entire application; gracefully with zero
 // downtime if on a POSIX-compatible system, or forcefully if on
@@ -29,18 +22,6 @@ func Restart(newCaddyfile Input) error {
 		caddyfileMu.Lock()
 		newCaddyfile = caddyfile
 		caddyfileMu.Unlock()
-	}
-
-	if runtime.GOOS == "windows" {
-		err := Stop()
-		if err != nil {
-			return err
-		}
-		err = Start(newCaddyfile)
-		if err != nil {
-			return err
-		}
-		return nil
 	}
 
 	if len(os.Args) == 0 { // this should never happen, but just in case...
@@ -110,23 +91,3 @@ func Restart(newCaddyfile Input) error {
 	// Child process is listening now; we can stop all our servers here.
 	return Stop()
 }
-
-// isRestart returns whether this process is, according
-// to env variables, a fork as part of a graceful restart.
-func isRestart() bool {
-	return os.Getenv("CADDY_RESTART") == "true"
-}
-
-// CaddyfileInput represents a Caddyfile as input
-// and is simply a convenient way to implement
-// the Input interface.
-type CaddyfileInput struct {
-	Filepath string
-	Contents []byte
-}
-
-// Body returns c.Contents.
-func (c CaddyfileInput) Body() []byte { return c.Contents }
-
-// Path returns c.Filepath.
-func (c CaddyfileInput) Path() string { return c.Filepath }
