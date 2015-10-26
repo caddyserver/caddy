@@ -1,3 +1,16 @@
+// Package caddy implements the Caddy web server as a service.
+//
+// To use this package, follow a few simple steps:
+//
+//   1. Set the AppName and AppVersion variables.
+//   2. Call LoadCaddyfile() to get the Caddyfile (it
+//      might have been piped in as part of a restart).
+//      You should pass in your own Caddyfile loader.
+//   3. Call caddy.Start() to start Caddy, caddy.Stop()
+//      to stop it, or caddy.Restart() to restart it.
+//
+// You should use caddy.Wait() to wait for all Caddy servers
+// to quit before your process exits.
 package caddy
 
 import (
@@ -9,16 +22,10 @@ import (
 	"log"
 	"net"
 	"os"
-	"os/exec"
-	"os/signal"
 	"path"
-	"runtime"
-	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 
-	"github.com/mholt/caddy/caddy/letsencrypt"
 	"github.com/mholt/caddy/server"
 )
 
@@ -71,14 +78,6 @@ const (
 	DefaultPort = "2015"
 	DefaultRoot = "."
 )
-
-// caddyfileGob maps bind address to index of the file descriptor
-// in the Files array passed to the child process. It also contains
-// the caddyfile contents.
-type caddyfileGob struct {
-	ListenerFds map[string]uintptr
-	Caddyfile   []byte
-}
 
 // Start starts Caddy with the given Caddyfile. If cdyfile
 // is nil or the process is forked from a parent as part of
@@ -216,28 +215,7 @@ func startServers(groupings Group) error {
 	return nil
 }
 
-// isLocalhost returns true if the string looks explicitly like a localhost address.
-func isLocalhost(s string) bool {
-	return s == "localhost" || s == "::1" || strings.HasPrefix(s, "127.")
-}
-
-// checkFdlimit issues a warning if the OS max file descriptors is below a recommended minimum.
-func checkFdlimit() {
-	const min = 4096
-
-	// Warn if ulimit is too low for production sites
-	if runtime.GOOS == "linux" || runtime.GOOS == "darwin" {
-		out, err := exec.Command("sh", "-c", "ulimit -n").Output() // use sh because ulimit isn't in Linux $PATH
-		if err == nil {
-			// Note that an error here need not be reported
-			lim, err := strconv.Atoi(string(bytes.TrimSpace(out)))
-			if err == nil && lim < min {
-				fmt.Printf("Warning: File descriptor limit %d is too low for production sites. At least %d is recommended. Set with \"ulimit -n %d\".\n", lim, min, min)
-			}
-		}
-	}
-}
-
+// Stop stops all servers. It blocks until they are all stopped.
 func Stop() error {
 	serversMu.Lock()
 	for _, s := range servers {
@@ -245,100 +223,6 @@ func Stop() error {
 	}
 	serversMu.Unlock()
 	return nil
-}
-
-// Restart restarts the entire application; gracefully with zero
-// downtime if on a POSIX-compatible system, or forcefully if on
-// Windows but with imperceptibly-short downtime.
-//
-// The restarted application will use newCaddyfile as its input
-// configuration. If newCaddyfile is nil, the current (existing)
-// Caddyfile configuration will be used.
-func Restart(newCaddyfile Input) error {
-	if newCaddyfile == nil {
-		caddyfileMu.Lock()
-		newCaddyfile = caddyfile
-		caddyfileMu.Unlock()
-	}
-
-	if runtime.GOOS == "windows" {
-		err := Stop()
-		if err != nil {
-			return err
-		}
-		err = Start(newCaddyfile)
-		if err != nil {
-			return err
-		}
-		return nil
-	}
-
-	if len(os.Args) == 0 { // this should never happen, but just in case...
-		os.Args = []string{""}
-	}
-
-	// Tell the child that it's a restart
-	os.Setenv("CADDY_RESTART", "true")
-
-	// Prepare our payload to the child process
-	cdyfileGob := caddyfileGob{
-		ListenerFds: make(map[string]uintptr),
-		Caddyfile:   newCaddyfile.Body(),
-	}
-
-	// Prepare a pipe to the fork's stdin so it can get the Caddyfile
-	rpipe, wpipe, err := os.Pipe()
-	if err != nil {
-		return err
-	}
-
-	// Prepare a pipe that the child process will use to communicate
-	// its success or failure with us, the parent
-	sigrpipe, sigwpipe, err := os.Pipe()
-	if err != nil {
-		return err
-	}
-
-	// Pass along current environment and file descriptors to child.
-	// Ordering here is very important: stdin, stdout, stderr, sigpipe,
-	// and then the listener file descriptors (in order).
-	fds := []uintptr{rpipe.Fd(), os.Stdout.Fd(), os.Stderr.Fd(), sigwpipe.Fd()}
-
-	// Now add file descriptors of the sockets
-	serversMu.Lock()
-	for i, s := range servers {
-		fds = append(fds, s.ListenerFd())
-		cdyfileGob.ListenerFds[s.Addr] = uintptr(4 + i) // 4 fds come before any of the listeners
-	}
-	serversMu.Unlock()
-
-	// Fork the process with the current environment and file descriptors
-	execSpec := &syscall.ProcAttr{
-		Env:   os.Environ(),
-		Files: fds,
-	}
-	_, err = syscall.ForkExec(os.Args[0], os.Args, execSpec)
-	if err != nil {
-		return err
-	}
-
-	// Feed it the Caddyfile
-	err = gob.NewEncoder(wpipe).Encode(cdyfileGob)
-	if err != nil {
-		return err
-	}
-	wpipe.Close()
-
-	// Wait for child process to signal success or fail
-	sigwpipe.Close() // close our copy of the write end of the pipe
-	answer, err := ioutil.ReadAll(sigrpipe)
-	if err != nil || len(answer) == 0 {
-		log.Println("restart: child failed to answer; changes not applied")
-		return incompleteRestartErr
-	}
-
-	// Child process is listening now; we can stop all our servers here.
-	return Stop()
 }
 
 // Wait blocks until all servers are stopped.
@@ -387,19 +271,6 @@ func LoadCaddyfile(loader func() (Input, error)) (cdyfile Input, err error) {
 	return
 }
 
-// Caddyfile returns the current Caddyfile
-func Caddyfile() Input {
-	caddyfileMu.Lock()
-	defer caddyfileMu.Unlock()
-	return caddyfile
-}
-
-// isRestart returns whether this process is, according
-// to env variables, a fork as part of a graceful restart.
-func isRestart() bool {
-	return os.Getenv("CADDY_RESTART") == "true"
-}
-
 // CaddyfileFromPipe loads the Caddyfile input from f if f is
 // not interactive input. f is assumed to be a pipe or stream,
 // such as os.Stdin. If f is not a pipe, no error is returned
@@ -430,6 +301,13 @@ func CaddyfileFromPipe(f *os.File) (Input, error) {
 	return nil, nil
 }
 
+// Caddyfile returns the current Caddyfile
+func Caddyfile() Input {
+	caddyfileMu.Lock()
+	defer caddyfileMu.Unlock()
+	return caddyfile
+}
+
 // Input represents a Caddyfile; its contents and file path
 // (which should include the file name at the end of the path).
 // If path does not apply (e.g. piped input) you may use
@@ -441,53 +319,4 @@ type Input interface {
 
 	// Gets the path to the origin file
 	Path() string
-}
-
-// CaddyfileInput represents a Caddyfile as input
-// and is simply a convenient way to implement
-// the Input interface.
-type CaddyfileInput struct {
-	Filepath string
-	Contents []byte
-}
-
-// Body returns c.Contents.
-func (c CaddyfileInput) Body() []byte { return c.Contents }
-
-// Path returns c.Filepath.
-func (c CaddyfileInput) Path() string { return c.Filepath }
-
-func init() {
-	letsencrypt.OnRenew = func() error { return Restart(nil) }
-
-	// Trap signals
-	go func() {
-		shutdown, reload := make(chan os.Signal, 1), make(chan os.Signal, 1)
-		signal.Notify(shutdown, os.Interrupt, os.Kill) // quit the process
-		signal.Notify(reload, syscall.SIGUSR1)         // reload configuration
-
-		for {
-			select {
-			case <-shutdown:
-				var exitCode int
-
-				serversMu.Lock()
-				errs := server.ShutdownCallbacks(servers)
-				serversMu.Unlock()
-				if len(errs) > 0 {
-					for _, err := range errs {
-						log.Println(err)
-					}
-					exitCode = 1
-				}
-				os.Exit(exitCode)
-
-			case <-reload:
-				err := Restart(nil)
-				if err != nil {
-					log.Println(err)
-				}
-			}
-		}
-	}()
 }
