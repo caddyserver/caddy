@@ -18,6 +18,12 @@ import (
 	"github.com/xenolf/lego/acme"
 )
 
+// OnRenew is the function that will be used to restart
+// the application or the part of the application that uses
+// the certificates maintained by this package. When at least
+// one certificate is renewed, this function will be called.
+var OnRenew func() error
+
 // Activate sets up TLS for each server config in configs
 // as needed. It only skips the config if the cert and key
 // are already provided or if plaintext http is explicitly

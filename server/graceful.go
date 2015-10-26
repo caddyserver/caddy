@@ -65,6 +65,12 @@ type gracefulConn struct {
 
 // Close closes c's underlying connection while updating the wg count.
 func (c gracefulConn) Close() error {
+	err := c.Conn.Close()
+	if err != nil {
+		return err
+	}
+	// close can fail on http2 connections (as of Oct. 2015, before http2 in std lib)
+	// so don't decrement count unless close succeeds
 	c.httpWg.Done()
-	return c.Conn.Close()
+	return nil
 }

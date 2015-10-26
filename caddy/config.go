@@ -1,4 +1,4 @@
-package config
+package caddy
 
 import (
 	"fmt"
@@ -7,19 +7,14 @@ import (
 	"net"
 	"sync"
 
-	"github.com/mholt/caddy/app"
-	"github.com/mholt/caddy/config/letsencrypt"
-	"github.com/mholt/caddy/config/parse"
-	"github.com/mholt/caddy/config/setup"
+	"github.com/mholt/caddy/caddy/letsencrypt"
+	"github.com/mholt/caddy/caddy/parse"
+	"github.com/mholt/caddy/caddy/setup"
 	"github.com/mholt/caddy/middleware"
 	"github.com/mholt/caddy/server"
 )
 
 const (
-	DefaultHost = "0.0.0.0"
-	DefaultPort = "2015"
-	DefaultRoot = "."
-
 	// DefaultConfigFile is the name of the configuration file that is loaded
 	// by default if no other file is specified.
 	DefaultConfigFile = "Caddyfile"
@@ -56,8 +51,8 @@ func Load(filename string, input io.Reader) (Group, error) {
 				Root:       Root,
 				Middleware: make(map[string][]middleware.Middleware),
 				ConfigFile: filename,
-				AppName:    app.Name,
-				AppVersion: app.Version,
+				AppName:    AppName,
+				AppVersion: AppVersion,
 			}
 
 			// It is crucial that directives are executed in the proper order.

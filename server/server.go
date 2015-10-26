@@ -59,14 +59,13 @@ func New(addr string, configs []Config) (*Server, error) {
 		tls:    tls,
 		vhosts: make(map[string]virtualHost),
 	}
-	s.Handler = s // TODO: this is weird
+	s.Handler = s // this is weird, but whatever
 
 	// We have to bound our wg with one increment
 	// to prevent a "race condition" that is hard-coded
 	// into sync.WaitGroup.Wait() - basically, an add
 	// with a positive delta must be guaranteed to
 	// occur before Wait() is called on the wg.
-	fmt.Println("+1 (new)")
 	s.httpWg.Add(1)
 
 	// Set up each virtualhost
@@ -169,11 +168,6 @@ func (s *Server) setup() error {
 // by the Go Authors. It has been modified to support multiple certificate/key pairs,
 // client authentication, and our custom Server type.
 func serveTLSWithSNI(s *Server, ln net.Listener, tlsConfigs []TLSConfig) error {
-	addr := s.Server.Addr
-	if addr == "" {
-		addr = ":https"
-	}
-
 	config := cloneTLSConfig(s.TLSConfig)
 	if config.NextProtos == nil {
 		config.NextProtos = []string{"http/1.1"}
@@ -267,7 +261,7 @@ func (s *Server) ListenerFd() uintptr {
 // (configuration and middleware stack) will handle the request.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Sleeping")
-	time.Sleep(5 * time.Second)
+	time.Sleep(5 * time.Second) // TODO: Temporarily making requests hang so we can test graceful restart
 	fmt.Println("Unblocking")
 	defer func() {
 		// In case the user doesn't enable error middleware, we still

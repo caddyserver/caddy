@@ -4,13 +4,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mholt/caddy/app"
+	"github.com/mholt/caddy/caddy/assets"
 )
 
 // storage is used to get file paths in a consistent,
 // cross-platform way for persisting Let's Encrypt assets
 // on the file system.
-var storage = Storage(filepath.Join(app.DataFolder(), "letsencrypt"))
+var storage = Storage(filepath.Join(assets.Path(), "letsencrypt"))
 
 // Storage is a root directory and facilitates
 // forming file paths derived from it.

@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/mholt/caddy/config/parse"
+	"github.com/mholt/caddy/caddy/parse"
 	"github.com/mholt/caddy/middleware"
 	"github.com/mholt/caddy/server"
 )
