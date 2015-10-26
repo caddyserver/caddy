@@ -89,13 +89,12 @@ func main() {
 					log.Fatal("FILE LISTENER:", err)
 				}
 
-				var ok bool
-				ln, ok = ln.(server.ListenerFile)
+				lnf, ok := ln.(server.ListenerFile)
 				if !ok {
 					log.Fatal("Listener was not a ListenerFile")
 				}
 
-				err = s.Serve(ln.(server.ListenerFile))
+				err = s.Serve(lnf)
 				// TODO: Better error logging... also, is it even necessary?
 				if err != nil {
 					log.Println(err)
@@ -204,7 +203,7 @@ func loadConfigs() (config.Group, error) {
 		}
 	}
 
-	// Command line Arg
+	// Command line args
 	if flag.NArg() > 0 {
 		confBody := ":" + config.DefaultPort + "\n" + strings.Join(flag.Args(), "\n")
 		return config.Load("args", bytes.NewBufferString(confBody))

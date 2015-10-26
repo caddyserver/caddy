@@ -84,10 +84,10 @@ func processCertificateRenewal(configs []server.Config) []error {
 
 			// Renew certificate.
 			// TODO: revokeOld should be an option in the caddyfile
-			newCertMeta, err := client.RenewCertificate(certMeta, true)
+			newCertMeta, err := client.RenewCertificate(certMeta, true, true)
 			if err != nil {
 				time.Sleep(10 * time.Second)
-				newCertMeta, err = client.RenewCertificate(certMeta, true)
+				newCertMeta, err = client.RenewCertificate(certMeta, true, true)
 				if err != nil {
 					errs = append(errs, err)
 					continue

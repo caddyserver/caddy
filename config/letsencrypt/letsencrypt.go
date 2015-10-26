@@ -152,7 +152,7 @@ func newClient(leEmail string) (*acme.Client, error) {
 	}
 
 	// The client facilitates our communication with the CA server.
-	client := acme.NewClient(caURL, &leUser, rsaKeySizeToUse, exposePort, true) // TODO: Dev mode is enabled
+	client := acme.NewClient(caURL, &leUser, rsaKeySizeToUse, exposePort)
 
 	// If not registered, the user must register an account with the CA
 	// and agree to terms
@@ -164,7 +164,7 @@ func newClient(leEmail string) (*acme.Client, error) {
 		leUser.Registration = reg
 
 		// TODO: we can just do the agreement once: when registering, right?
-		err = client.AgreeToTos()
+		err = client.AgreeToTOS()
 		if err != nil {
 			saveUser(leUser) // TODO: Might as well try, right? Error check?
 			return nil, errors.New("error agreeing to terms: " + err.Error())
@@ -189,7 +189,7 @@ func obtainCertificates(client *acme.Client, serverConfigs []*server.Config) ([]
 		hosts = append(hosts, cfg.Host)
 	}
 
-	certificates, err := client.ObtainCertificates(hosts)
+	certificates, err := client.ObtainCertificates(hosts, true)
 	if err != nil {
 		return nil, errors.New("error obtaining certs: " + err.Error())
 	}
