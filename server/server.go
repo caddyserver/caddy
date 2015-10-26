@@ -260,9 +260,6 @@ func (s *Server) ListenerFd() uintptr {
 // defined in the Host header so that the correct virtualhost
 // (configuration and middleware stack) will handle the request.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("Sleeping")
-	time.Sleep(5 * time.Second) // TODO: Temporarily making requests hang so we can test graceful restart
-	fmt.Println("Unblocking")
 	defer func() {
 		// In case the user doesn't enable error middleware, we still
 		// need to make sure that we stay alive up here

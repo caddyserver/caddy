@@ -105,58 +105,15 @@ func Start(cdyfile Input) error {
 	caddyfile = cdyfile
 	caddyfileMu.Unlock()
 
-	groupings, err := Load(path.Base(caddyfile.Path()), bytes.NewReader(caddyfile.Body()))
+	groupings, err := Load(path.Base(cdyfile.Path()), bytes.NewReader(cdyfile.Body()))
+	if err != nil {
+		return err
+	}
 
 	// Start each server with its one or more configurations
-	for i, group := range groupings {
-		s, err := server.New(group.BindAddr.String(), group.Configs)
-		if err != nil {
-			log.Fatal(err)
-		}
-		s.HTTP2 = HTTP2 // TODO: This setting is temporary
-
-		var ln server.ListenerFile
-		if isRestart() {
-			// Look up this server's listener in the map of inherited file descriptors;
-			// if we don't have one, we must make a new one.
-			if fdIndex, ok := loadedGob.ListenerFds[s.Addr]; ok {
-				file := os.NewFile(fdIndex, "")
-
-				fln, err := net.FileListener(file)
-				if err != nil {
-					log.Fatal("FILE LISTENER:", err)
-				}
-
-				ln, ok = fln.(server.ListenerFile)
-				if !ok {
-					log.Fatal("Listener was not a ListenerFile")
-				}
-
-				delete(loadedGob.ListenerFds, s.Addr) // mark it as used
-			}
-		}
-
-		wg.Add(1)
-		go func(s *server.Server, i int, ln server.ListenerFile) {
-			defer wg.Done()
-			if ln == nil {
-				err := s.ListenAndServe()
-				// "use of closed network connection" is normal if doing graceful shutdown...
-				if !strings.Contains(err.Error(), "use of closed network connection") {
-					// But an error at initial startup must be fatal
-					log.Fatal(err)
-				}
-			} else {
-				err := s.Serve(ln)
-				if err != nil {
-					log.Println(err)
-				}
-			}
-		}(s, i, ln)
-
-		serversMu.Lock()
-		servers = append(servers, s)
-		serversMu.Unlock()
+	err = startServers(groupings)
+	if err != nil {
+		return err
 	}
 
 	// Close remaining file descriptors we may have inherited that we don't need
@@ -191,13 +148,71 @@ func Start(cdyfile Input) error {
 		}
 	}
 
-	// Tell parent we're A-OK
+	// Tell parent process that we got this
 	if isRestart() {
 		file := os.NewFile(3, "")
 		file.Write([]byte("success"))
 		file.Close()
 	}
 
+	return nil
+}
+
+// startServers starts all the servers in groupings,
+// taking into account whether or not this process is
+// a child from a graceful restart or not.
+func startServers(groupings Group) error {
+	for i, group := range groupings {
+		s, err := server.New(group.BindAddr.String(), group.Configs)
+		if err != nil {
+			log.Fatal(err)
+		}
+		s.HTTP2 = HTTP2 // TODO: This setting is temporary
+
+		var ln server.ListenerFile
+		if isRestart() {
+			// Look up this server's listener in the map of inherited file descriptors;
+			// if we don't have one, we must make a new one.
+			if fdIndex, ok := loadedGob.ListenerFds[s.Addr]; ok {
+				file := os.NewFile(fdIndex, "")
+
+				fln, err := net.FileListener(file)
+				if err != nil {
+					log.Fatal(err)
+				}
+
+				ln, ok = fln.(server.ListenerFile)
+				if !ok {
+					log.Fatal("listener was not a ListenerFile")
+				}
+
+				delete(loadedGob.ListenerFds, s.Addr) // mark it as used
+			}
+		}
+
+		wg.Add(1)
+		go func(s *server.Server, i int, ln server.ListenerFile) {
+			defer wg.Done()
+			if ln != nil {
+				err = s.Serve(ln)
+			} else {
+				err = s.ListenAndServe()
+			}
+
+			// "use of closed network connection" is normal if doing graceful shutdown...
+			if err != nil && !strings.Contains(err.Error(), "use of closed network connection") {
+				if isRestart() {
+					log.Fatal(err)
+				} else {
+					log.Println(err)
+				}
+			}
+		}(s, i, ln)
+
+		serversMu.Lock()
+		servers = append(servers, s)
+		serversMu.Unlock()
+	}
 	return nil
 }
 
@@ -302,9 +317,9 @@ func Restart(newCaddyfile Input) error {
 		Env:   os.Environ(),
 		Files: fds,
 	}
-	pid, err := syscall.ForkExec(os.Args[0], os.Args, execSpec)
+	_, err = syscall.ForkExec(os.Args[0], os.Args, execSpec)
 	if err != nil {
-		log.Println("FORK ERR:", err, pid)
+		return err
 	}
 
 	// Feed it the Caddyfile
@@ -447,24 +462,32 @@ func init() {
 
 	// Trap signals
 	go func() {
-		// Wait for signal
-		interrupt := make(chan os.Signal, 1)
-		signal.Notify(interrupt, os.Interrupt, os.Kill)
-		<-interrupt
+		shutdown, reload := make(chan os.Signal, 1), make(chan os.Signal, 1)
+		signal.Notify(shutdown, os.Interrupt, os.Kill) // quit the process
+		signal.Notify(reload, syscall.SIGUSR1)         // reload configuration
 
-		// TODO: A signal just for graceful restart (reload config) - maybe SIGUSR1
+		for {
+			select {
+			case <-shutdown:
+				var exitCode int
 
-		// Run shutdown callbacks
-		var exitCode int
-		serversMu.Lock()
-		errs := server.ShutdownCallbacks(servers)
-		serversMu.Unlock()
-		if len(errs) > 0 {
-			for _, err := range errs {
-				log.Println(err)
+				serversMu.Lock()
+				errs := server.ShutdownCallbacks(servers)
+				serversMu.Unlock()
+				if len(errs) > 0 {
+					for _, err := range errs {
+						log.Println(err)
+					}
+					exitCode = 1
+				}
+				os.Exit(exitCode)
+
+			case <-reload:
+				err := Restart(nil)
+				if err != nil {
+					log.Println(err)
+				}
 			}
-			exitCode = 1
 		}
-		os.Exit(exitCode)
 	}()
 }

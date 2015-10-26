@@ -10,7 +10,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/mholt/caddy/caddy"
 	"github.com/mholt/caddy/caddy/letsencrypt"
@@ -78,15 +77,6 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	// TODO: Temporary; testing restart
-	//if os.Getenv("CADDY_RESTART") != "true" {
-	go func() {
-		time.Sleep(5 * time.Second)
-		fmt.Println("restarting")
-		log.Println("RESTART ERR:", caddy.Restart(nil))
-	}()
-	//}
 
 	// Twiddle your thumbs
 	caddy.Wait()
