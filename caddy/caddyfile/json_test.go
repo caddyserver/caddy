@@ -23,10 +23,9 @@ var tests = []struct {
 		caddyfile: `host1:, host2: {
 	dir abc {
 		def ghi
-		jklmnop
 	}
 }`,
-		json: `[{"hosts":["host1:","host2:"],"body":{"dir":["abc",{"def":["ghi"],"jklmnop":null}]}}]`,
+		json: `[{"hosts":["host1:","host2:"],"body":{"dir":["abc",{"def":["ghi"]}]}}]`,
 	},
 	{ // 3
 		caddyfile: `host1:1234, host2:5678 {
