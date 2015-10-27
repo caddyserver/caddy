@@ -149,9 +149,9 @@ func Start(cdyfile Input) error {
 
 	// Tell parent process that we got this
 	if isRestart() {
-		file := os.NewFile(3, "")
-		file.Write([]byte("success"))
-		file.Close()
+		ppipe := os.NewFile(3, "") // parent is listening on pipe at index 3
+		ppipe.Write([]byte("success"))
+		ppipe.Close()
 	}
 
 	return nil
