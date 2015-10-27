@@ -17,9 +17,15 @@ import (
 func keepCertificatesRenewed(configs []server.Config) {
 	ticker := time.Tick(renewInterval)
 	for range ticker {
-		if errs := processCertificateRenewal(configs); len(errs) > 0 {
+		if n, errs := processCertificateRenewal(configs); len(errs) > 0 {
 			for _, err := range errs {
 				log.Printf("[ERROR] cert renewal: %v\n", err)
+			}
+			if n > 0 && OnRenew != nil {
+				err := OnRenew()
+				if err != nil {
+					log.Printf("[ERROR] onrenew callback: %v\n", err)
+				}
 			}
 		}
 	}
@@ -28,9 +34,11 @@ func keepCertificatesRenewed(configs []server.Config) {
 // checkCertificateRenewal loops through all configured
 // sites and looks for certificates to renew. Nothing is mutated
 // through this function. The changes happen directly on disk.
-func processCertificateRenewal(configs []server.Config) []error {
-	var errs []error
+// It returns the number of certificates renewed and
+func processCertificateRenewal(configs []server.Config) (int, []error) {
 	log.Print("[INFO] Processing certificate renewals...")
+	var errs []error
+	var n int
 
 	for _, cfg := range configs {
 		// Host must be TLS-enabled and have assets managed by LE
@@ -96,11 +104,12 @@ func processCertificateRenewal(configs []server.Config) []error {
 			}
 
 			saveCertsAndKeys([]acme.CertificateResource{newCertMeta})
+			n++
 		} else if daysLeft <= 14 {
 			// Warn on 14 days remaining
 			log.Printf("[WARN] There are %d days left on the certificate for %s. Will renew when 7 days remain.\n", daysLeft, cfg.Host)
 		}
 	}
 
-	return errs
+	return n, errs
 }

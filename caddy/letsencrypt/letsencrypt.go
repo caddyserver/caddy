@@ -18,6 +18,12 @@ import (
 	"github.com/xenolf/lego/acme"
 )
 
+// OnRenew is the function that will be used to restart
+// the application or the part of the application that uses
+// the certificates maintained by this package. When at least
+// one certificate is renewed, this function will be called.
+var OnRenew func() error
+
 // Activate sets up TLS for each server config in configs
 // as needed. It only skips the config if the cert and key
 // are already provided or if plaintext http is explicitly
@@ -33,7 +39,7 @@ import (
 func Activate(configs []server.Config) ([]server.Config, error) {
 	// First identify and configure any elligible hosts for which
 	// we already have certs and keys in storage from last time.
-	configLen := len(configs) // avoid infinite loop since this loop appends to the slice
+	configLen := len(configs) // avoid infinite loop since this loop appends plaintext to the slice
 	for i := 0; i < configLen; i++ {
 		if existingCertAndKey(configs[i].Host) && configs[i].TLS.LetsEncryptEmail != "off" {
 			configs = autoConfigure(&configs[i], configs)
@@ -152,7 +158,7 @@ func newClient(leEmail string) (*acme.Client, error) {
 	}
 
 	// The client facilitates our communication with the CA server.
-	client := acme.NewClient(caURL, &leUser, rsaKeySizeToUse, exposePort)
+	client := acme.NewClient(CAUrl, &leUser, rsaKeySizeToUse, exposePort)
 
 	// If not registered, the user must register an account with the CA
 	// and agree to terms
@@ -232,9 +238,14 @@ func saveCertsAndKeys(certificates []acme.CertificateResource) error {
 // autoConfigure enables TLS on cfg and appends, if necessary, a new config
 // to allConfigs that redirects plaintext HTTP to its new HTTPS counterpart.
 func autoConfigure(cfg *server.Config, allConfigs []server.Config) []server.Config {
-	bundleBytes, _ := ioutil.ReadFile(storage.SiteCertFile(cfg.Host))
-	ocsp, _ := acme.GetOCSPForCert(bundleBytes)
-	cfg.TLS.OCSPStaple = ocsp
+	bundleBytes, err := ioutil.ReadFile(storage.SiteCertFile(cfg.Host))
+	// TODO: Handle these errors better
+	if err == nil {
+		ocsp, err := acme.GetOCSPForCert(bundleBytes)
+		if err == nil {
+			cfg.TLS.OCSPStaple = ocsp
+		}
+	}
 	cfg.TLS.Certificate = storage.SiteCertFile(cfg.Host)
 	cfg.TLS.Key = storage.SiteKeyFile(cfg.Host)
 	cfg.TLS.Enabled = true
@@ -328,15 +339,13 @@ var (
 
 	// Whether user has agreed to the Let's Encrypt SA
 	Agreed bool
+
+	// The base URL to the CA's ACME endpoint
+	CAUrl string
 )
 
 // Some essential values related to the Let's Encrypt process
 const (
-	// The base URL to the Let's Encrypt CA
-	// TODO: Staging API URL is: https://acme-staging.api.letsencrypt.org
-	// TODO: Production endpoint is: https://acme-v01.api.letsencrypt.org
-	caURL = "http://192.168.99.100:4000"
-
 	// The port to expose to the CA server for Simple HTTP Challenge
 	exposePort = "5001"
 

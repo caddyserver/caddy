@@ -1,22 +1,18 @@
 package main
 
 import (
-	"bytes"
+	"errors"
 	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
-	"os/exec"
-	"path"
 	"runtime"
 	"strconv"
 	"strings"
 
-	"github.com/mholt/caddy/app"
-	"github.com/mholt/caddy/config"
-	"github.com/mholt/caddy/config/letsencrypt"
-	"github.com/mholt/caddy/server"
+	"github.com/mholt/caddy/caddy"
+	"github.com/mholt/caddy/caddy/letsencrypt"
 )
 
 var (
@@ -26,15 +22,24 @@ var (
 	revoke  string
 )
 
+const (
+	appName    = "Caddy"
+	appVersion = "0.8 beta"
+)
+
 func init() {
-	flag.StringVar(&conf, "conf", "", "Configuration file to use (default="+config.DefaultConfigFile+")")
-	flag.BoolVar(&app.HTTP2, "http2", true, "Enable HTTP/2 support") // TODO: temporary flag until http2 merged into std lib
-	flag.BoolVar(&app.Quiet, "quiet", false, "Quiet mode (no initialization output)")
+	flag.StringVar(&conf, "conf", "", "Configuration file to use (default="+caddy.DefaultConfigFile+")")
+	flag.BoolVar(&caddy.HTTP2, "http2", true, "HTTP/2 support") // TODO: temporary flag until http2 merged into std lib
+	flag.BoolVar(&caddy.Quiet, "quiet", false, "Quiet mode (no initialization output)")
 	flag.StringVar(&cpu, "cpu", "100%", "CPU cap")
-	flag.StringVar(&config.Root, "root", config.DefaultRoot, "Root path to default site")
-	flag.StringVar(&config.Host, "host", config.DefaultHost, "Default host")
-	flag.StringVar(&config.Port, "port", config.DefaultPort, "Default port")
+	flag.StringVar(&caddy.Root, "root", caddy.DefaultRoot, "Root path to default site")
+	flag.StringVar(&caddy.Host, "host", caddy.DefaultHost, "Default host")
+	flag.StringVar(&caddy.Port, "port", caddy.DefaultPort, "Default port")
 	flag.BoolVar(&version, "version", false, "Show version")
+	// TODO: Boulder dev URL is: http://192.168.99.100:4000
+	// TODO: Staging API URL is: https://acme-staging.api.letsencrypt.org
+	// TODO: Production endpoint is: https://acme-v01.api.letsencrypt.org
+	flag.StringVar(&letsencrypt.CAUrl, "ca", "https://acme-staging.api.letsencrypt.org", "Certificate authority ACME server")
 	flag.BoolVar(&letsencrypt.Agreed, "agree", false, "Agree to Let's Encrypt Subscriber Agreement")
 	flag.StringVar(&letsencrypt.DefaultEmail, "email", "", "Default email address to use for Let's Encrypt transactions")
 	flag.StringVar(&revoke, "revoke", "", "Hostname for which to revoke the certificate")
@@ -43,8 +48,11 @@ func init() {
 func main() {
 	flag.Parse()
 
+	caddy.AppName = appName
+	caddy.AppVersion = appVersion
+
 	if version {
-		fmt.Printf("%s %s\n", app.Name, app.Version)
+		fmt.Printf("%s %s\n", caddy.AppName, caddy.AppVersion)
 		os.Exit(0)
 	}
 	if revoke != "" {
@@ -57,131 +65,96 @@ func main() {
 	}
 
 	// Set CPU cap
-	err := app.SetCPU(cpu)
+	err := setCPU(cpu)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// Load config from file
-	addresses, err := loadConfigs()
+	// Get Caddyfile input
+	caddyfile, err := caddy.LoadCaddyfile(loadCaddyfile)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// Start each server with its one or more configurations
-	for addr, configs := range addresses {
-		s, err := server.New(addr.String(), configs)
-		if err != nil {
-			log.Fatal(err)
-		}
-		s.HTTP2 = app.HTTP2 // TODO: This setting is temporary
-		app.Wg.Add(1)
-		go func(s *server.Server) {
-			defer app.Wg.Done()
-			err := s.Serve()
-			if err != nil {
-				log.Fatal(err) // kill whole process to avoid a half-alive zombie server
-			}
-		}(s)
-
-		app.Servers = append(app.Servers, s)
+	// Start your engines
+	err = caddy.Start(caddyfile)
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	// Show initialization output
-	if !app.Quiet {
-		var checkedFdLimit bool
-		for addr, configs := range addresses {
-			for _, conf := range configs {
-				// Print address of site
-				fmt.Println(conf.Address())
-
-				// Note if non-localhost site resolves to loopback interface
-				if addr.IP.IsLoopback() && !isLocalhost(conf.Host) {
-					fmt.Printf("Notice: %s is only accessible on this machine (%s)\n",
-						conf.Host, addr.IP.String())
-				}
-				if !checkedFdLimit && !addr.IP.IsLoopback() && !isLocalhost(conf.Host) {
-					checkFdlimit()
-					checkedFdLimit = true
-				}
-			}
-		}
-	}
-
-	// Wait for all listeners to stop
-	app.Wg.Wait()
+	// Twiddle your thumbs
+	caddy.Wait()
 }
 
-// checkFdlimit issues a warning if the OS max file descriptors is below a recommended minimum.
-func checkFdlimit() {
-	const min = 4096
-
-	// Warn if ulimit is too low for production sites
-	if runtime.GOOS == "linux" || runtime.GOOS == "darwin" {
-		out, err := exec.Command("sh", "-c", "ulimit -n").Output() // use sh because ulimit isn't in Linux $PATH
-		if err == nil {
-			// Note that an error here need not be reported
-			lim, err := strconv.Atoi(string(bytes.TrimSpace(out)))
-			if err == nil && lim < min {
-				fmt.Printf("Warning: File descriptor limit %d is too low for production sites. At least %d is recommended. Set with \"ulimit -n %d\".\n", lim, min, min)
-			}
-		}
-	}
-}
-
-// isLocalhost returns true if the string looks explicitly like a localhost address.
-func isLocalhost(s string) bool {
-	return s == "localhost" || s == "::1" || strings.HasPrefix(s, "127.")
-}
-
-// loadConfigs loads configuration from a file or stdin (piped).
-// The configurations are grouped by bind address.
-// Configuration is obtained from one of four sources, tried
-// in this order: 1. -conf flag, 2. stdin, 3. command line argument 4. Caddyfile.
-// If none of those are available, a default configuration is loaded.
-func loadConfigs() (config.Group, error) {
+func loadCaddyfile() (caddy.Input, error) {
 	// -conf flag
 	if conf != "" {
-		file, err := os.Open(conf)
+		contents, err := ioutil.ReadFile(conf)
 		if err != nil {
 			return nil, err
 		}
-		defer file.Close()
-		return config.Load(path.Base(conf), file)
+		return caddy.CaddyfileInput{
+			Contents: contents,
+			Filepath: conf,
+			RealFile: true,
+		}, nil
 	}
 
-	// stdin
-	fi, err := os.Stdin.Stat()
-	if err == nil && fi.Mode()&os.ModeCharDevice == 0 {
-		// Note that a non-nil error is not a problem. Windows
-		// will not create a stdin if there is no pipe, which
-		// produces an error when calling Stat(). But Unix will
-		// make one either way, which is why we also check that
-		// bitmask.
-		confBody, err := ioutil.ReadAll(os.Stdin)
-		if err != nil {
-			log.Fatal(err)
-		}
-		if len(confBody) > 0 {
-			return config.Load("stdin", bytes.NewReader(confBody))
-		}
-	}
-
-	// Command line Arg
+	// command line args
 	if flag.NArg() > 0 {
-		confBody := ":" + config.DefaultPort + "\n" + strings.Join(flag.Args(), "\n")
-		return config.Load("args", bytes.NewBufferString(confBody))
+		confBody := ":" + caddy.DefaultPort + "\n" + strings.Join(flag.Args(), "\n")
+		return caddy.CaddyfileInput{
+			Contents: []byte(confBody),
+			Filepath: "args",
+		}, nil
 	}
 
-	// Caddyfile
-	file, err := os.Open(config.DefaultConfigFile)
+	// Caddyfile in cwd
+	contents, err := ioutil.ReadFile(caddy.DefaultConfigFile)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return config.Default()
+			return caddy.DefaultInput, nil
 		}
 		return nil, err
 	}
-	defer file.Close()
+	return caddy.CaddyfileInput{
+		Contents: contents,
+		Filepath: caddy.DefaultConfigFile,
+		RealFile: true,
+	}, nil
+}
 
-	return config.Load(config.DefaultConfigFile, file)
+// setCPU parses string cpu and sets GOMAXPROCS
+// according to its value. It accepts either
+// a number (e.g. 3) or a percent (e.g. 50%).
+func setCPU(cpu string) error {
+	var numCPU int
+
+	availCPU := runtime.NumCPU()
+
+	if strings.HasSuffix(cpu, "%") {
+		// Percent
+		var percent float32
+		pctStr := cpu[:len(cpu)-1]
+		pctInt, err := strconv.Atoi(pctStr)
+		if err != nil || pctInt < 1 || pctInt > 100 {
+			return errors.New("invalid CPU value: percentage must be between 1-100")
+		}
+		percent = float32(pctInt) / 100
+		numCPU = int(float32(availCPU) * percent)
+	} else {
+		// Number
+		num, err := strconv.Atoi(cpu)
+		if err != nil || num < 1 {
+			return errors.New("invalid CPU value: provide a number or percent greater than 0")
+		}
+		numCPU = num
+	}
+
+	if numCPU > availCPU {
+		numCPU = availCPU
+	}
+
+	runtime.GOMAXPROCS(numCPU)
+	return nil
 }

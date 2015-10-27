@@ -1,4 +1,4 @@
-package config
+package caddy
 
 import (
 	"testing"

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mholt/caddy/config/parse"
+	"github.com/mholt/caddy/caddy/parse"
 )
 
 var (

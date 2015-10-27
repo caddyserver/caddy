@@ -10,14 +10,14 @@ import (
 )
 
 func init() {
-	rsaKeySizeToUse = 128 // makes tests faster
+	rsaKeySizeToUse = 128 // make tests faster; small key size OK for testing
 }
 
 func TestSaveAndLoadRSAPrivateKey(t *testing.T) {
 	keyFile := "test.key"
 	defer os.Remove(keyFile)
 
-	privateKey, err := rsa.GenerateKey(rand.Reader, 128) // small key size is OK for testing
+	privateKey, err := rsa.GenerateKey(rand.Reader, rsaKeySizeToUse)
 	if err != nil {
 		t.Fatal(err)
 	}
