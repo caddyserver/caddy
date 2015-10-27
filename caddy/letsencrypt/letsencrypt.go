@@ -238,6 +238,9 @@ func saveCertsAndKeys(certificates []acme.CertificateResource) error {
 // autoConfigure enables TLS on cfg and appends, if necessary, a new config
 // to allConfigs that redirects plaintext HTTP to its new HTTPS counterpart.
 func autoConfigure(cfg *server.Config, allConfigs []server.Config) []server.Config {
+	bundleBytes, _ := ioutil.ReadFile(storage.SiteCertFile(cfg.Host))
+	ocsp, _ := acme.GetOCSPForCert(bundleBytes)
+	cfg.TLS.OCSPStaple = ocsp
 	cfg.TLS.Certificate = storage.SiteCertFile(cfg.Host)
 	cfg.TLS.Key = storage.SiteKeyFile(cfg.Host)
 	cfg.TLS.Enabled = true

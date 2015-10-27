@@ -56,6 +56,7 @@ type TLSConfig struct {
 	Certificate              string
 	Key                      string
 	LetsEncryptEmail         string
+	OCSPStaple               []byte
 	Ciphers                  []uint16
 	ProtocolMinVersion       uint16
 	ProtocolMaxVersion       uint16
