@@ -29,7 +29,7 @@ func Load(filename string, input io.Reader) (Group, error) {
 	flags := log.Flags()
 	log.SetFlags(0)
 
-	serverBlocks, err := parse.ServerBlocks(filename, input)
+	serverBlocks, err := parse.ServerBlocks(filename, input, true)
 	if err != nil {
 		return nil, err
 	}
