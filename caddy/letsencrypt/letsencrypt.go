@@ -39,7 +39,7 @@ var OnRenew func() error
 func Activate(configs []server.Config) ([]server.Config, error) {
 	// First identify and configure any elligible hosts for which
 	// we already have certs and keys in storage from last time.
-	configLen := len(configs) // avoid infinite loop since this loop appends to the slice
+	configLen := len(configs) // avoid infinite loop since this loop appends plaintext to the slice
 	for i := 0; i < configLen; i++ {
 		if existingCertAndKey(configs[i].Host) && configs[i].TLS.LetsEncryptEmail != "off" {
 			configs = autoConfigure(&configs[i], configs)
@@ -238,9 +238,14 @@ func saveCertsAndKeys(certificates []acme.CertificateResource) error {
 // autoConfigure enables TLS on cfg and appends, if necessary, a new config
 // to allConfigs that redirects plaintext HTTP to its new HTTPS counterpart.
 func autoConfigure(cfg *server.Config, allConfigs []server.Config) []server.Config {
-	bundleBytes, _ := ioutil.ReadFile(storage.SiteCertFile(cfg.Host))
-	ocsp, _ := acme.GetOCSPForCert(bundleBytes)
-	cfg.TLS.OCSPStaple = ocsp
+	bundleBytes, err := ioutil.ReadFile(storage.SiteCertFile(cfg.Host))
+	// TODO: Handle these errors better
+	if err == nil {
+		ocsp, err := acme.GetOCSPForCert(bundleBytes)
+		if err == nil {
+			cfg.TLS.OCSPStaple = ocsp
+		}
+	}
 	cfg.TLS.Certificate = storage.SiteCertFile(cfg.Host)
 	cfg.TLS.Key = storage.SiteKeyFile(cfg.Host)
 	cfg.TLS.Enabled = true
