@@ -29,16 +29,20 @@ const (
 
 func init() {
 	flag.StringVar(&conf, "conf", "", "Configuration file to use (default="+caddy.DefaultConfigFile+")")
-	flag.BoolVar(&caddy.HTTP2, "http2", true, "Enable HTTP/2 support") // TODO: temporary flag until http2 merged into std lib
+	flag.BoolVar(&caddy.HTTP2, "http2", true, "HTTP/2 support") // TODO: temporary flag until http2 merged into std lib
 	flag.BoolVar(&caddy.Quiet, "quiet", false, "Quiet mode (no initialization output)")
 	flag.StringVar(&cpu, "cpu", "100%", "CPU cap")
 	flag.StringVar(&caddy.Root, "root", caddy.DefaultRoot, "Root path to default site")
 	flag.StringVar(&caddy.Host, "host", caddy.DefaultHost, "Default host")
 	flag.StringVar(&caddy.Port, "port", caddy.DefaultPort, "Default port")
 	flag.BoolVar(&version, "version", false, "Show version")
+	// TODO: Boulder dev URL is: http://192.168.99.100:4000
+	// TODO: Staging API URL is: https://acme-staging.api.letsencrypt.org
+	// TODO: Production endpoint is: https://acme-v01.api.letsencrypt.org
+	flag.StringVar(&letsencrypt.CAUrl, "ca", "https://acme-staging.api.letsencrypt.org", "Certificate authority ACME server")
 	flag.BoolVar(&letsencrypt.Agreed, "agree", false, "Agree to Let's Encrypt Subscriber Agreement")
 	flag.StringVar(&letsencrypt.DefaultEmail, "email", "", "Default email address to use for Let's Encrypt transactions")
-	flag.StringVar(&revoke, "revoke", "", "Hostname for which to revoke its certificate")
+	flag.StringVar(&revoke, "revoke", "", "Hostname for which to revoke the certificate")
 }
 
 func main() {

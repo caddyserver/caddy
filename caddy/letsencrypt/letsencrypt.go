@@ -158,7 +158,7 @@ func newClient(leEmail string) (*acme.Client, error) {
 	}
 
 	// The client facilitates our communication with the CA server.
-	client := acme.NewClient(caURL, &leUser, rsaKeySizeToUse, exposePort)
+	client := acme.NewClient(CAUrl, &leUser, rsaKeySizeToUse, exposePort)
 
 	// If not registered, the user must register an account with the CA
 	// and agree to terms
@@ -331,15 +331,13 @@ var (
 
 	// Whether user has agreed to the Let's Encrypt SA
 	Agreed bool
+
+	// The base URL to the CA's ACME endpoint
+	CAUrl string
 )
 
 // Some essential values related to the Let's Encrypt process
 const (
-	// The base URL to the Let's Encrypt CA
-	// TODO: Staging API URL is: https://acme-staging.api.letsencrypt.org
-	// TODO: Production endpoint is: https://acme-v01.api.letsencrypt.org
-	caURL = "http://192.168.99.100:4000"
-
 	// The port to expose to the CA server for Simple HTTP Challenge
 	exposePort = "5001"
 
