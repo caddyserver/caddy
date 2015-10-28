@@ -136,6 +136,7 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 						// generation, serve the static page
 						if fs.ModTime().Before(fs1.ModTime()) {
 							if html, err := ioutil.ReadFile(filepath); err == nil {
+								middleware.SetLastModifiedHeader(w, fs1.ModTime())
 								w.Write(html)
 								return http.StatusOK, nil
 							}
@@ -162,6 +163,7 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 					return http.StatusInternalServerError, err
 				}
 
+				middleware.SetLastModifiedHeader(w, fs.ModTime())
 				w.Write(html)
 				return http.StatusOK, nil
 			}
