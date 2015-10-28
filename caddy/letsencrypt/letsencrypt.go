@@ -241,8 +241,8 @@ func autoConfigure(cfg *server.Config, allConfigs []server.Config) []server.Conf
 	bundleBytes, err := ioutil.ReadFile(storage.SiteCertFile(cfg.Host))
 	// TODO: Handle these errors better
 	if err == nil {
-		ocsp, err := acme.GetOCSPForCert(bundleBytes)
-		if err == nil {
+		ocsp, status, err := acme.GetOCSPForCert(bundleBytes)
+		if err == nil && status == acme.OCSPGood {
 			cfg.TLS.OCSPStaple = ocsp
 		}
 	}
