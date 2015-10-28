@@ -232,8 +232,13 @@ func TestHost(t *testing.T) {
 		},
 		{
 			input:        "localhost",
+			expectedHost: "localhost",
+			shouldErr:    false,
+		},
+		{
+			input:        "[::]",
 			expectedHost: "",
-			shouldErr:    true, // missing port in address
+			shouldErr:    true,
 		},
 	}
 
@@ -257,6 +262,11 @@ func TestPort(t *testing.T) {
 			input:        "localhost",
 			expectedPort: "",
 			shouldErr:    true, // missing port in address
+		},
+		{
+			input:        ":8080",
+			expectedPort: "8080",
+			shouldErr:    false,
 		},
 	}
 
