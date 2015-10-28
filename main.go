@@ -49,7 +49,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Load address configurations from highest priority input
+	// Load config from file
 	addresses, err := loadConfigs()
 	if err != nil {
 		log.Fatal(err)
@@ -123,10 +123,9 @@ func isLocalhost(s string) bool {
 
 // loadConfigs loads configuration from a file or stdin (piped).
 // The configurations are grouped by bind address.
-// Configuration is obtained from one of three sources, tried
+// Configuration is obtained from one of four sources, tried
 // in this order: 1. -conf flag, 2. stdin, 3. command line argument 4. Caddyfile.
-// If none of those are available, a default configuration is
-// loaded.
+// If none of those are available, a default configuration is loaded.
 func loadConfigs() (config.Group, error) {
 	// -conf flag
 	if conf != "" {

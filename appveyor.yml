@@ -2,10 +2,10 @@ version: "{build}"
 
 os: Windows Server 2012 R2
 
-clone_folder: c:\go\src\github.com\mholt\caddy
+clone_folder: c:\gopath\src\github.com\mholt\caddy
 
 environment:
-  GOPATH: c:\go
+  GOPATH: c:\gopath
 
 install:
   - go get golang.org/x/tools/cmd/vet

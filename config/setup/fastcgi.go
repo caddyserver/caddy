@@ -31,7 +31,7 @@ func FastCGI(c *Controller) (middleware.Middleware, error) {
 			SoftwareName:    c.AppName,
 			SoftwareVersion: c.AppVersion,
 			ServerName:      c.Host,
-			ServerPort:      c.Port, // BUG: This is not known until the server blocks are split up...
+			ServerPort:      c.Port,
 		}
 	}, nil
 }

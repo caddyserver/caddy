@@ -9,12 +9,12 @@ import (
 
 type parser struct {
 	Dispenser
-	block ServerBlock // current server block being parsed
+	block serverBlock // current server block being parsed
 	eof   bool        // if we encounter a valid EOF in a hard place
 }
 
-func (p *parser) parseAll() ([]ServerBlock, error) {
-	var blocks []ServerBlock
+func (p *parser) parseAll() ([]serverBlock, error) {
+	var blocks []serverBlock
 
 	for p.Next() {
 		err := p.parseOne()
@@ -30,7 +30,7 @@ func (p *parser) parseAll() ([]ServerBlock, error) {
 }
 
 func (p *parser) parseOne() error {
-	p.block = ServerBlock{Tokens: make(map[string][]token)}
+	p.block = serverBlock{Tokens: make(map[string][]token)}
 
 	err := p.begin()
 	if err != nil {
@@ -87,7 +87,7 @@ func (p *parser) addresses() error {
 			break
 		}
 
-		if tkn != "" {
+		if tkn != "" { // empty token possible if user typed "" in Caddyfile
 			// Trailing comma indicates another address will follow, which
 			// may possibly be on the next line
 			if tkn[len(tkn)-1] == ',' {
@@ -102,7 +102,7 @@ func (p *parser) addresses() error {
 			if err != nil {
 				return err
 			}
-			p.block.Addresses = append(p.block.Addresses, Address{host, port})
+			p.block.Addresses = append(p.block.Addresses, address{host, port})
 		}
 
 		// Advance token and possibly break out of loop or return error
@@ -301,15 +301,26 @@ func standardAddress(str string) (host, port string, err error) {
 }
 
 type (
-	// ServerBlock associates tokens with a list of addresses
+	// serverBlock associates tokens with a list of addresses
 	// and groups tokens by directive name.
-	ServerBlock struct {
-		Addresses []Address
+	serverBlock struct {
+		Addresses []address
 		Tokens    map[string][]token
 	}
 
-	// Address represents a host and port.
-	Address struct {
+	address struct {
 		Host, Port string
 	}
 )
+
+// HostList converts the list of addresses (hosts)
+// that are associated with this server block into
+// a slice of strings. Each string is a host:port
+// combination.
+func (sb serverBlock) HostList() []string {
+	sbHosts := make([]string, len(sb.Addresses))
+	for j, addr := range sb.Addresses {
+		sbHosts[j] = net.JoinHostPort(addr.Host, addr.Port)
+	}
+	return sbHosts
+}
