@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 
@@ -104,6 +105,11 @@ func FromJSON(jsonBytes []byte) ([]byte, error) {
 
 	for _, sb := range j {
 		for i, host := range sb.Hosts {
+			if hostname, port, err := net.SplitHostPort(host); err == nil {
+				if port == "http" || port == "https" {
+					host = port + "://" + hostname
+				}
+			}
 			if i > 0 {
 				result += ", "
 			}
