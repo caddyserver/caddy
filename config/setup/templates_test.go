@@ -2,8 +2,9 @@ package setup
 
 import (
 	"fmt"
-	"github.com/mholt/caddy/middleware/templates"
 	"testing"
+
+	"github.com/mholt/caddy/middleware/templates"
 )
 
 func TestTemplates(t *testing.T) {
@@ -40,7 +41,11 @@ func TestTemplates(t *testing.T) {
 	if fmt.Sprint(myHandler.Rules[0].IndexFiles) != fmt.Sprint(indexFiles) {
 		t.Errorf("Expected %v to be the Default Index files", indexFiles)
 	}
+	if myHandler.Rules[0].Delims != [2]string{} {
+		t.Errorf("Expected %v to be the Default Delims", [2]string{})
+	}
 }
+
 func TestTemplatesParse(t *testing.T) {
 	tests := []struct {
 		inputTemplateConfig    string
@@ -50,19 +55,32 @@ func TestTemplatesParse(t *testing.T) {
 		{`templates /api1`, false, []templates.Rule{{
 			Path:       "/api1",
 			Extensions: defaultTemplateExtensions,
+			Delims:     [2]string{},
 		}}},
 		{`templates /api2 .txt .htm`, false, []templates.Rule{{
 			Path:       "/api2",
 			Extensions: []string{".txt", ".htm"},
+			Delims:     [2]string{},
 		}}},
 
-		{`templates /api3 .htm .html  
+		{`templates /api3 .htm .html
 		  templates /api4 .txt .tpl `, false, []templates.Rule{{
 			Path:       "/api3",
 			Extensions: []string{".htm", ".html"},
+			Delims:     [2]string{},
 		}, {
 			Path:       "/api4",
 			Extensions: []string{".txt", ".tpl"},
+			Delims:     [2]string{},
+		}}},
+		{`templates {
+				path /api5
+				ext .html
+				between {% %}
+			}`, false, []templates.Rule{{
+			Path:       "/api5",
+			Extensions: []string{".html"},
+			Delims:     [2]string{"{%", "%}"},
 		}}},
 	}
 	for i, test := range tests {
