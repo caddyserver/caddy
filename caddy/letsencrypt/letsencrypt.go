@@ -62,19 +62,19 @@ func Activate(configs []server.Config) ([]server.Config, error) {
 		// make client to service this email address with CA server
 		client, err := newClient(leEmail)
 		if err != nil {
-			return configs, err
+			return configs, errors.New("error creating client: " + err.Error())
 		}
 
 		// client is ready, so let's get free, trusted SSL certificates! yeah!
 		certificates, err := obtainCertificates(client, serverConfigs)
 		if err != nil {
-			return configs, err
+			return configs, errors.New("error obtaining cert: " + err.Error())
 		}
 
 		// ... that's it. save the certs, keys, and metadata files to disk
 		err = saveCertsAndKeys(certificates)
 		if err != nil {
-			return configs, err
+			return configs, errors.New("error saving assets: " + err.Error())
 		}
 
 		// it all comes down to this: turning TLS on for all the configs
@@ -158,7 +158,10 @@ func newClient(leEmail string) (*acme.Client, error) {
 	}
 
 	// The client facilitates our communication with the CA server.
-	client := acme.NewClient(CAUrl, &leUser, rsaKeySizeToUse, exposePort)
+	client, err := acme.NewClient(CAUrl, &leUser, rsaKeySizeToUse, exposePort)
+	if err != nil {
+		return nil, err
+	}
 
 	// If not registered, the user must register an account with the CA
 	// and agree to terms
@@ -169,7 +172,13 @@ func newClient(leEmail string) (*acme.Client, error) {
 		}
 		leUser.Registration = reg
 
-		// TODO: we can just do the agreement once: when registering, right?
+		if !Agreed && reg.TosURL == "" {
+			Agreed = promptUserAgreement("<TODO>", false) // TODO
+		}
+		if !Agreed && reg.TosURL == "" {
+			return nil, errors.New("user must agree to terms")
+		}
+
 		err = client.AgreeToTOS()
 		if err != nil {
 			saveUser(leUser) // TODO: Might as well try, right? Error check?

@@ -156,6 +156,29 @@ func getEmail(cfg server.Config) string {
 	return strings.TrimSpace(leEmail)
 }
 
+// promptUserAgreement prompts the user to agree to the agreement
+// at agreementURL via stdin. If the agreement has changed, then pass
+// true as the second argument. If this is the user's first time
+// agreeing, pass false. It returns whether the user agreed or not.
+func promptUserAgreement(agreementURL string, changed bool) bool {
+	if changed {
+		fmt.Printf("The Let's Encrypt Subscriber Agreement has changed:\n%s\n", agreementURL)
+		fmt.Print("Do you agree to the new terms? (y/n): ")
+	} else {
+		fmt.Printf("To continue, you must agree to the Let's Encrypt Subscriber Agreement:\n%s\n", agreementURL)
+		fmt.Print("Do you agree to the terms? (y/n): ")
+	}
+
+	reader := bufio.NewReader(stdin) // TODO/BUG: This doesn't work when Caddyfile is piped into caddy
+	answer, err := reader.ReadString('\n')
+	if err != nil {
+		return false
+	}
+	answer = strings.ToLower(strings.TrimSpace(answer))
+
+	return answer == "y" || answer == "yes"
+}
+
 // stdin is used to read the user's input if prompted;
 // this is changed by tests during tests.
 var stdin = io.ReadWriter(os.Stdin)

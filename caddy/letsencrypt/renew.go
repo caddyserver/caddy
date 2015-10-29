@@ -34,7 +34,8 @@ func keepCertificatesRenewed(configs []server.Config) {
 // checkCertificateRenewal loops through all configured
 // sites and looks for certificates to renew. Nothing is mutated
 // through this function. The changes happen directly on disk.
-// It returns the number of certificates renewed and
+// It returns the number of certificates renewed and any errors
+// that occurred.
 func processCertificateRenewal(configs []server.Config) (int, []error) {
 	log.Print("[INFO] Processing certificate renewals...")
 	var errs []error
