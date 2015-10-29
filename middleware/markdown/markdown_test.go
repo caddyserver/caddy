@@ -92,7 +92,7 @@ func TestMarkdown(t *testing.T) {
 	expectedBody := `<!DOCTYPE html>
 <html>
 <head>
-<title>Markdown test</title>
+<title>Markdown test 1</title>
 </head>
 <body>
 <h1>Header</h1>
@@ -102,11 +102,10 @@ Welcome to A Caddy website!
 
 <p>Body</p>
 
-<p><code>go
-func getTrue() bool {
+<pre><code class="language-go">func getTrue() bool {
     return true
 }
-</code></p>
+</code></pre>
 
 </body>
 </html>
@@ -129,7 +128,7 @@ func getTrue() bool {
 	expectedBody = `<!DOCTYPE html>
 <html>
 	<head>
-		<title>Markdown test</title>
+		<title>Markdown test 2</title>
 		<meta charset="utf-8">
 		<link rel="stylesheet" href="/resources/css/log.css">
 <link rel="stylesheet" href="/resources/css/default.css">
@@ -143,11 +142,10 @@ func getTrue() bool {
 
 <p>Body</p>
 
-<p><code>go
-func getTrue() bool {
+<pre><code class="language-go">func getTrue() bool {
     return true
 }
-</code></p>
+</code></pre>
 
 	</body>
 </html>`
