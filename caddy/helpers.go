@@ -43,7 +43,7 @@ func checkFdlimit() {
 // the caddyfile contents. Used only during graceful restarts.
 type caddyfileGob struct {
 	ListenerFds map[string]uintptr
-	Caddyfile   []byte
+	Caddyfile   Input
 }
 
 // isRestart returns whether this process is, according

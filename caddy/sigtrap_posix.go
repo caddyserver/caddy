@@ -36,7 +36,7 @@ func init() {
 
 			err := Restart(updatedCaddyfile)
 			if err != nil {
-				log.Println(err)
+				log.Println("error at restart:", err)
 			}
 		}
 	}()

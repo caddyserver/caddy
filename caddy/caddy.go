@@ -264,10 +264,7 @@ func LoadCaddyfile(loader func() (Input, error)) (cdyfile Input, err error) {
 		if err != nil {
 			return nil, err
 		}
-		cdyfile = CaddyfileInput{
-			Filepath: os.Stdin.Name(),
-			Contents: loadedGob.Caddyfile,
-		}
+		cdyfile = loadedGob.Caddyfile
 	}
 
 	// Otherwise, we first try to get from stdin pipe

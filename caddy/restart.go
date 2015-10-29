@@ -10,6 +10,10 @@ import (
 	"syscall"
 )
 
+func init() {
+	gob.Register(CaddyfileInput{})
+}
+
 // Restart restarts the entire application; gracefully with zero
 // downtime if on a POSIX-compatible system, or forcefully if on
 // Windows but with imperceptibly-short downtime.
@@ -17,6 +21,11 @@ import (
 // The restarted application will use newCaddyfile as its input
 // configuration. If newCaddyfile is nil, the current (existing)
 // Caddyfile configuration will be used.
+//
+// Note: The process must exist in the same place on the disk in
+// order for this to work. Thus, multiple graceful restarts don't
+// work if executing with `go run`, since the binary is cleaned up
+// when `go run` sees the initial parent process exit.
 func Restart(newCaddyfile Input) error {
 	if newCaddyfile == nil {
 		caddyfileMu.Lock()
@@ -24,7 +33,7 @@ func Restart(newCaddyfile Input) error {
 		caddyfileMu.Unlock()
 	}
 
-	if len(os.Args) == 0 { // this should never happen, but just in case...
+	if len(os.Args) == 0 { // this should never happen...
 		os.Args = []string{""}
 	}
 
@@ -34,7 +43,7 @@ func Restart(newCaddyfile Input) error {
 	// Prepare our payload to the child process
 	cdyfileGob := caddyfileGob{
 		ListenerFds: make(map[string]uintptr),
-		Caddyfile:   newCaddyfile.Body(),
+		Caddyfile:   newCaddyfile,
 	}
 
 	// Prepare a pipe to the fork's stdin so it can get the Caddyfile
