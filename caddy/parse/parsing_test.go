@@ -375,6 +375,6 @@ func setupParseTests() {
 
 func testParser(input string) parser {
 	buf := strings.NewReader(input)
-	p := parser{Dispenser: NewDispenser("Test", buf)}
+	p := parser{Dispenser: NewDispenser("Test", buf), checkDirectives: true}
 	return p
 }

@@ -9,8 +9,9 @@ import (
 
 type parser struct {
 	Dispenser
-	block serverBlock // current server block being parsed
-	eof   bool        // if we encounter a valid EOF in a hard place
+	block           serverBlock // current server block being parsed
+	eof             bool        // if we encounter a valid EOF in a hard place
+	checkDirectives bool        // if true, directives must be known
 }
 
 func (p *parser) parseAll() ([]serverBlock, error) {
@@ -220,8 +221,10 @@ func (p *parser) directive() error {
 	dir := p.Val()
 	nesting := 0
 
-	if _, ok := ValidDirectives[dir]; !ok {
-		return p.Errf("Unknown directive '%s'", dir)
+	if p.checkDirectives {
+		if _, ok := ValidDirectives[dir]; !ok {
+			return p.Errf("Unknown directive '%s'", dir)
+		}
 	}
 
 	// The directive itself is appended as a relevant token
