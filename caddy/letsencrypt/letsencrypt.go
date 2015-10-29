@@ -18,12 +18,6 @@ import (
 	"github.com/xenolf/lego/acme"
 )
 
-// OnRenew is the function that will be used to restart
-// the application or the part of the application that uses
-// the certificates maintained by this package. When at least
-// one certificate is renewed, this function will be called.
-var OnRenew func() error
-
 // Activate sets up TLS for each server config in configs
 // as needed. It only skips the config if the cert and key
 // are already provided or if plaintext http is explicitly
@@ -40,7 +34,9 @@ var OnRenew func() error
 // Also note that calling this function activates asset
 // management automatically, which <TODO>.
 func Activate(configs []server.Config) ([]server.Config, error) {
-	// First identify and configure any elligible hosts for which
+	// TODO: Is multiple activation (before a deactivation) an error?
+
+	// First identify and configure any eligible hosts for which
 	// we already have certs and keys in storage from last time.
 	configLen := len(configs) // avoid infinite loop since this loop appends plaintext to the slice
 	for i := 0; i < configLen; i++ {
@@ -269,6 +265,7 @@ func autoConfigure(cfg *server.Config, allConfigs []server.Config) []server.Conf
 	// TODO: Handle these errors better
 	if err == nil {
 		ocsp, status, err := acme.GetOCSPForCert(bundleBytes)
+		ocspStatus[&bundleBytes] = status
 		if err == nil && status == acme.OCSPGood {
 			cfg.TLS.OCSPStaple = ocsp
 		}
@@ -402,3 +399,8 @@ var rsaKeySizeToUse = RSA_2048
 // stopChan is used to signal the maintenance goroutine
 // to terminate.
 var stopChan chan struct{}
+
+// ocspStatus maps certificate bundle to OCSP status at start.
+// It is used during regular OCSP checks to see if the OCSP
+// status has changed.
+var ocspStatus = make(map[*[]byte]int)

@@ -13,7 +13,7 @@ import (
 )
 
 func init() {
-	letsencrypt.OnRenew = func() error { return Restart(nil) }
+	letsencrypt.OnChange = func() error { return Restart(nil) }
 }
 
 // isLocalhost returns true if the string looks explicitly like a localhost address.

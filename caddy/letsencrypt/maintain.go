@@ -10,6 +10,13 @@ import (
 	"github.com/xenolf/lego/acme"
 )
 
+// OnChange is a callback function that will be used to restart
+// the application or the part of the application that uses
+// the certificates maintained by this package. When at least
+// one certificate is renewed or an OCSP status changes, this
+// function will be called.
+var OnChange func() error
+
 // maintainAssets is a permanently-blocking function
 // that loops indefinitely and, on a regular schedule, checks
 // certificates for expiration and initiates a renewal of certs
@@ -30,15 +37,25 @@ func maintainAssets(configs []server.Config, stopChan chan struct{}) {
 				for _, err := range errs {
 					log.Printf("[ERROR] cert renewal: %v\n", err)
 				}
-				if n > 0 && OnRenew != nil {
-					err := OnRenew()
+				if n > 0 && OnChange != nil {
+					err := OnChange()
 					if err != nil {
-						log.Printf("[ERROR] onrenew callback: %v\n", err)
+						log.Printf("[ERROR] onchange after cert renewal: %v\n", err)
 					}
 				}
 			}
 		case <-ocspTicker.C:
-			// TODO: Update OCSP
+			for bundle, oldStatus := range ocspStatus {
+				_, newStatus, err := acme.GetOCSPForCert(*bundle)
+				if err == nil && newStatus != oldStatus && OnChange != nil {
+					log.Printf("[INFO] ocsp status changed from %v to %v\n", oldStatus, newStatus)
+					err := OnChange()
+					if err != nil {
+						log.Printf("[ERROR] onchange after ocsp update: %v\n", err)
+					}
+					break
+				}
+			}
 		case <-stopChan:
 			renewalTicker.Stop()
 			ocspTicker.Stop()
