@@ -33,9 +33,18 @@ func (t Templates) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 				// Create execution context
 				ctx := middleware.Context{Root: t.FileSys, Req: r, URL: r.URL}
 
+				// New template
+				templateName := filepath.Base(fpath)
+				tpl := template.New(templateName)
+
+				// Set delims
+				if rule.Delims != [2]string{} {
+					tpl.Delims(rule.Delims[0], rule.Delims[1])
+				}
+
 				// Build the template
 				templatePath := filepath.Join(t.Root, fpath)
-				tpl, err := template.ParseFiles(templatePath)
+				tpl, err := tpl.ParseFiles(templatePath)
 				if err != nil {
 					if os.IsNotExist(err) {
 						return http.StatusNotFound, nil
@@ -82,4 +91,5 @@ type Rule struct {
 	Path       string
 	Extensions []string
 	IndexFiles []string
+	Delims     [2]string
 }
