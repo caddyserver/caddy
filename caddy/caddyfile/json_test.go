@@ -6,26 +6,26 @@ var tests = []struct {
 	caddyfile, json string
 }{
 	{ // 0
-		caddyfile: `foo: {
+		caddyfile: `foo {
 	root /bar
 }`,
-		json: `[{"hosts":["foo:"],"body":{"root":["/bar"]}}]`,
+		json: `[{"hosts":["foo"],"body":{"root":["/bar"]}}]`,
 	},
 	{ // 1
-		caddyfile: `host1:, host2: {
+		caddyfile: `host1, host2 {
 	dir {
 		def
 	}
 }`,
-		json: `[{"hosts":["host1:","host2:"],"body":{"dir":[{"def":null}]}}]`,
+		json: `[{"hosts":["host1","host2"],"body":{"dir":[{"def":null}]}}]`,
 	},
 	{ // 2
-		caddyfile: `host1:, host2: {
+		caddyfile: `host1, host2 {
 	dir abc {
 		def ghi
 	}
 }`,
-		json: `[{"hosts":["host1:","host2:"],"body":{"dir":["abc",{"def":["ghi"]}]}}]`,
+		json: `[{"hosts":["host1","host2"],"body":{"dir":["abc",{"def":["ghi"]}]}}]`,
 	},
 	{ // 3
 		caddyfile: `host1:1234, host2:5678 {
@@ -33,6 +33,31 @@ var tests = []struct {
 	}
 }`,
 		json: `[{"hosts":["host1:1234","host2:5678"],"body":{"dir":["abc",{}]}}]`,
+	},
+	{ // 4
+		caddyfile: `host {
+	foo "bar baz"
+}`,
+		json: `[{"hosts":["host"],"body":{"foo":["bar baz"]}}]`,
+	},
+	{ // 5
+		caddyfile: `host, host:80 {
+	foo "bar \"baz\""
+}`,
+		json: `[{"hosts":["host","host:80"],"body":{"foo":["bar \"baz\""]}}]`,
+	},
+	{ // 6
+		caddyfile: `host {
+	foo "bar
+baz"
+}`,
+		json: `[{"hosts":["host"],"body":{"foo":["bar\nbaz"]}}]`,
+	},
+	{ // 7
+		caddyfile: `host {
+	dir 123 4.56 true
+}`,
+		json: `[{"hosts":["host"],"body":{"dir":["123","4.56","true"]}}]`, // NOTE: I guess we assume numbers and booleans should be encoded as strings...?
 	},
 }
 

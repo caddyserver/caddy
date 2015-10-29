@@ -25,7 +25,7 @@ func ToJSON(caddyfile []byte) ([]byte, error) {
 		block := ServerBlock{Body: make(map[string]interface{})}
 
 		for _, host := range sb.HostList() {
-			block.Hosts = append(block.Hosts, host)
+			block.Hosts = append(block.Hosts, strings.TrimSuffix(host, ":"))
 		}
 
 		for dir, tokens := range sb.Tokens {
@@ -107,7 +107,7 @@ func FromJSON(jsonBytes []byte) ([]byte, error) {
 			if i > 0 {
 				result += ", "
 			}
-			result += host
+			result += strings.TrimSuffix(host, ":")
 		}
 		result += jsonToText(sb.Body, 1)
 	}
@@ -122,11 +122,15 @@ func jsonToText(scope interface{}, depth int) string {
 
 	switch val := scope.(type) {
 	case string:
-		result += " " + val
+		if strings.ContainsAny(val, "\" \n\t\r") {
+			result += ` "` + strings.Replace(val, "\"", "\\\"", -1) + `"`
+		} else {
+			result += " " + val
+		}
 	case int:
 		result += " " + strconv.Itoa(val)
 	case float64:
-		result += " " + fmt.Sprintf("%f", val)
+		result += " " + fmt.Sprintf("%v", val)
 	case bool:
 		result += " " + fmt.Sprintf("%t", val)
 	case map[string]interface{}:
