@@ -34,7 +34,8 @@ func (t Templates) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 				ctx := middleware.Context{Root: t.FileSys, Req: r, URL: r.URL}
 
 				// Build the template
-				tpl, err := template.ParseFiles(filepath.Join(t.Root, fpath))
+				templatePath := filepath.Join(t.Root, fpath)
+				tpl, err := template.ParseFiles(templatePath)
 				if err != nil {
 					if os.IsNotExist(err) {
 						return http.StatusNotFound, nil
@@ -49,6 +50,12 @@ func (t Templates) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 				err = tpl.Execute(&buf, ctx)
 				if err != nil {
 					return http.StatusInternalServerError, err
+				}
+
+				templateInfo, err := os.Stat(templatePath)
+				if err == nil {
+					// add the Last-Modified header if we were able to optain the information
+					middleware.SetLastModifiedHeader(w, templateInfo.ModTime())
 				}
 				buf.WriteTo(w)
 
