@@ -20,8 +20,9 @@ import (
 
 // Activate sets up TLS for each server config in configs
 // as needed. It only skips the config if the cert and key
-// are already provided or if plaintext http is explicitly
-// specified as the port.
+// are already provided, if plaintext http is explicitly
+// specified as the port, TLS is explicitly disabled, or
+// the host looks like a loopback or wildcard address.
 //
 // This function may prompt the user to provide an email
 // address if none is available through other means. It
@@ -33,10 +34,14 @@ import (
 //
 // Also note that calling this function activates asset
 // management automatically, which <TODO>.
+//
+// Activate returns the updated list of configs, since
+// some may have been appended, for example, to redirect
+// plaintext HTTP requests to their HTTPS counterpart.
 func Activate(configs []server.Config) ([]server.Config, error) {
 	// TODO: Is multiple activation (before a deactivation) an error?
 
-	// First identify and configure any eligible hosts for which
+	// Identify and configure any eligible hosts for which
 	// we already have certs and keys in storage from last time.
 	configLen := len(configs) // avoid infinite loop since this loop appends plaintext to the slice
 	for i := 0; i < configLen; i++ {
@@ -45,19 +50,22 @@ func Activate(configs []server.Config) ([]server.Config, error) {
 		}
 	}
 
-	// First renew any existing certificates that need it
-	renewCertificates(configs)
+	// Filter the configs by what we can maintain automatically
+	filteredConfigs := filterConfigs(configs)
+
+	// Renew any existing certificates that need renewal
+	renewCertificates(filteredConfigs)
 
 	// Group configs by LE email address; this will help us
 	// reduce round-trips when getting the certs.
-	initMap, err := groupConfigsByEmail(configs)
+	groupedConfigs, err := groupConfigsByEmail(filteredConfigs)
 	if err != nil {
 		return configs, err
 	}
 
-	// Loop through each email address and obtain certs; we can obtain more
+	// Loop through each email address and obtain certs; this way, we can obtain more
 	// than one certificate per email address, and still save them individually.
-	for leEmail, serverConfigs := range initMap {
+	for leEmail, serverConfigs := range groupedConfigs {
 		// make client to service this email address with CA server
 		client, err := newClient(leEmail)
 		if err != nil {
@@ -82,8 +90,9 @@ func Activate(configs []server.Config) ([]server.Config, error) {
 		}
 	}
 
+	Deactivate() // in case previous caller wasn't clean about it
 	stopChan = make(chan struct{})
-	go maintainAssets(configs, stopChan)
+	go maintainAssets(filteredConfigs, stopChan)
 
 	return configs, nil
 }
@@ -102,14 +111,13 @@ func Deactivate() (err error) {
 	return
 }
 
-// groupConfigsByEmail groups configs by the Let's Encrypt email address
-// associated to them or to the default Let's Encrypt email address. If the
-// default email is not available, the user will be prompted to provide one.
-//
-// This function also filters out configs that don't need extra TLS help.
-// Configurations with a manual TLS configuration or one that is already
-// found in storage will not be added to any group.
-func groupConfigsByEmail(configs []server.Config) (map[string][]*server.Config, error) {
+// filterConfigs filters and returns configs that are eligible for automatic
+// TLS by skipping configs that do not qualify for automatic maintenance
+// of assets. Configurations with a manual TLS configuration or that already
+// have an HTTPS counterpart host defined will be skipped.
+func filterConfigs(configs []server.Config) []server.Config {
+	var filtered []server.Config
+
 	// configQualifies returns true if cfg qualifes for automatic LE activation
 	configQualifies := func(cfg server.Config) bool {
 		return cfg.TLS.Certificate == "" && // user could provide their own cert and key
@@ -131,11 +139,22 @@ func groupConfigsByEmail(configs []server.Config) (map[string][]*server.Config, 
 			!hostHasOtherScheme(cfg.Host, "https", configs)
 	}
 
+	for _, cfg := range configs {
+		if configQualifies(cfg) {
+			filtered = append(filtered, cfg)
+		}
+	}
+
+	return filtered
+}
+
+// groupConfigsByEmail groups configs by user email address. The returned map is
+// a map of email address to the configs that are serviced under that account.
+// If an email address is not available, the user will be prompted to provide one.
+// This function assumes that all configs passed in qualify for automatic management.
+func groupConfigsByEmail(configs []server.Config) (map[string][]*server.Config, error) {
 	initMap := make(map[string][]*server.Config)
 	for i := 0; i < len(configs); i++ {
-		if !configQualifies(configs[i]) {
-			continue
-		}
 		leEmail := getEmail(configs[i])
 		if leEmail == "" {
 			return nil, errors.New("must have email address to serve HTTPS without existing certificate and key")
@@ -260,6 +279,8 @@ func saveCertsAndKeys(certificates []acme.CertificateResource) error {
 
 // autoConfigure enables TLS on cfg and appends, if necessary, a new config
 // to allConfigs that redirects plaintext HTTP to its new HTTPS counterpart.
+// It expects the certificate and key to already be in storage. It returns
+// the new list of allConfigs.
 func autoConfigure(cfg *server.Config, allConfigs []server.Config) []server.Config {
 	bundleBytes, err := ioutil.ReadFile(storage.SiteCertFile(cfg.Host))
 	// TODO: Handle these errors better
