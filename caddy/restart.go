@@ -81,7 +81,7 @@ func Restart(newCaddyfile Input) error {
 	wpipe.Close()
 
 	// Wait for child process to signal success or fail
-	sigwpipe.Close() // close our copy of the write end of the pipe
+	sigwpipe.Close() // close our copy of the write end of the pipe or we might be stuck
 	answer, err := ioutil.ReadAll(sigrpipe)
 	if err != nil || len(answer) == 0 {
 		log.Println("restart: child failed to answer; changes not applied")

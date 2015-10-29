@@ -36,6 +36,9 @@ var OnRenew func() error
 // argument. If absent, it will use the most recent email
 // address from last time. If there isn't one, the user
 // will be prompted. If the user leaves email blank, <TODO>.
+//
+// Also note that calling this function activates asset
+// management automatically, which <TODO>.
 func Activate(configs []server.Config) ([]server.Config, error) {
 	// First identify and configure any elligible hosts for which
 	// we already have certs and keys in storage from last time.
@@ -47,7 +50,7 @@ func Activate(configs []server.Config) ([]server.Config, error) {
 	}
 
 	// First renew any existing certificates that need it
-	processCertificateRenewal(configs)
+	renewCertificates(configs)
 
 	// Group configs by LE email address; this will help us
 	// reduce round-trips when getting the certs.
@@ -83,9 +86,24 @@ func Activate(configs []server.Config) ([]server.Config, error) {
 		}
 	}
 
-	go keepCertificatesRenewed(configs)
+	stopChan = make(chan struct{})
+	go maintainAssets(configs, stopChan)
 
 	return configs, nil
+}
+
+// Deactivate cleans up long-term, in-memory resources
+// allocated by calling Activate(). Essentially, it stops
+// the asset maintainer from running, meaning that certificates
+// will not be renewed, OCSP staples will not be updated, etc.
+func Deactivate() (err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			err = errors.New("already deactivated")
+		}
+	}()
+	close(stopChan)
+	return
 }
 
 // groupConfigsByEmail groups configs by the Let's Encrypt email address
@@ -360,6 +378,9 @@ const (
 
 	// How often to check certificates for renewal
 	renewInterval = 24 * time.Hour
+
+	// How often to update OCSP stapling
+	ocspInterval = 1 * time.Hour
 )
 
 // KeySize represents the length of a key in bits.
@@ -377,3 +398,7 @@ const (
 // This shouldn't need to change except for in tests;
 // the size can be drastically reduced for speed.
 var rsaKeySizeToUse = RSA_2048
+
+// stopChan is used to signal the maintenance goroutine
+// to terminate.
+var stopChan chan struct{}

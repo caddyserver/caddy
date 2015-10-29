@@ -10,33 +10,49 @@ import (
 	"github.com/xenolf/lego/acme"
 )
 
-// keepCertificatesRenewed is a permanently-blocking function
+// maintainAssets is a permanently-blocking function
 // that loops indefinitely and, on a regular schedule, checks
 // certificates for expiration and initiates a renewal of certs
-// that are expiring soon.
-func keepCertificatesRenewed(configs []server.Config) {
-	ticker := time.Tick(renewInterval)
-	for range ticker {
-		if n, errs := processCertificateRenewal(configs); len(errs) > 0 {
-			for _, err := range errs {
-				log.Printf("[ERROR] cert renewal: %v\n", err)
-			}
-			if n > 0 && OnRenew != nil {
-				err := OnRenew()
-				if err != nil {
-					log.Printf("[ERROR] onrenew callback: %v\n", err)
+// that are expiring soon. It also updates OCSP stapling and
+// performs other maintenance of assets.
+//
+// You must pass in the server configs to maintain and the channel
+// which you'll close when maintenance should stop, to allow this
+// goroutine to clean up after itself.
+func maintainAssets(configs []server.Config, stopChan chan struct{}) {
+	renewalTicker := time.NewTicker(renewInterval)
+	ocspTicker := time.NewTicker(ocspInterval)
+
+	for {
+		select {
+		case <-renewalTicker.C:
+			if n, errs := renewCertificates(configs); len(errs) > 0 {
+				for _, err := range errs {
+					log.Printf("[ERROR] cert renewal: %v\n", err)
+				}
+				if n > 0 && OnRenew != nil {
+					err := OnRenew()
+					if err != nil {
+						log.Printf("[ERROR] onrenew callback: %v\n", err)
+					}
 				}
 			}
+		case <-ocspTicker.C:
+			// TODO: Update OCSP
+		case <-stopChan:
+			renewalTicker.Stop()
+			ocspTicker.Stop()
+			return
 		}
 	}
 }
 
-// checkCertificateRenewal loops through all configured
-// sites and looks for certificates to renew. Nothing is mutated
+// renewCertificates loops through all configured site and
+// looks for certificates to renew. Nothing is mutated
 // through this function. The changes happen directly on disk.
 // It returns the number of certificates renewed and any errors
-// that occurred.
-func processCertificateRenewal(configs []server.Config) (int, []error) {
+// that occurred. It only performs a renewal if necessary.
+func renewCertificates(configs []server.Config) (int, []error) {
 	log.Print("[INFO] Processing certificate renewals...")
 	var errs []error
 	var n int

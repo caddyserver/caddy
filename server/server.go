@@ -66,6 +66,7 @@ func New(addr string, configs []Config) (*Server, error) {
 	// into sync.WaitGroup.Wait() - basically, an add
 	// with a positive delta must be guaranteed to
 	// occur before Wait() is called on the wg.
+	// In a way, this kind of acts as a safety barrier.
 	s.httpWg.Add(1)
 
 	// Set up each virtualhost
@@ -228,12 +229,12 @@ func (s *Server) Stop() error {
 		// Wait for remaining connections to finish or
 		// force them all to close after timeout
 		select {
-		case <-time.After(5 * time.Second): // TODO: configurable?
+		case <-time.After(5 * time.Second): // TODO: make configurable?
 		case <-done:
 		}
 	}
 
-	// Close the listener now; this stops the server and
+	// Close the listener now; this stops the server without delay
 	s.listenerMu.Lock()
 	err := s.listener.Close()
 	s.listenerMu.Unlock()

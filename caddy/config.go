@@ -7,7 +7,6 @@ import (
 	"net"
 	"sync"
 
-	"github.com/mholt/caddy/caddy/letsencrypt"
 	"github.com/mholt/caddy/caddy/parse"
 	"github.com/mholt/caddy/caddy/setup"
 	"github.com/mholt/caddy/middleware"
@@ -20,9 +19,9 @@ const (
 	DefaultConfigFile = "Caddyfile"
 )
 
-// Load reads input (named filename) and parses it, returning server
-// configurations grouped by listening address.
-func Load(filename string, input io.Reader) (Group, error) {
+// load reads input (named filename) and parses it, returning the
+// server configurations in the order they appeared in the input.
+func load(filename string, input io.Reader) ([]server.Config, error) {
 	var configs []server.Config
 
 	// turn off timestamp for parsing
@@ -34,7 +33,7 @@ func Load(filename string, input io.Reader) (Group, error) {
 		return nil, err
 	}
 	if len(serverBlocks) == 0 {
-		return Default()
+		return []server.Config{NewDefault()}, nil
 	}
 
 	// Each server block represents similar hosts/addresses.
@@ -101,14 +100,7 @@ func Load(filename string, input io.Reader) (Group, error) {
 	// restore logging settings
 	log.SetFlags(flags)
 
-	// secure all the things
-	configs, err = letsencrypt.Activate(configs)
-	if err != nil {
-		return nil, err
-	}
-
-	// group by address/virtualhosts
-	return arrangeBindings(configs)
+	return configs, nil
 }
 
 // makeOnces makes a map of directive name to sync.Once
@@ -269,12 +261,6 @@ func NewDefault() server.Config {
 		Host: Host,
 		Port: Port,
 	}
-}
-
-// Default obtains a default config and arranges
-// bindings so it's ready to use.
-func Default() (Group, error) {
-	return arrangeBindings([]server.Config{NewDefault()})
 }
 
 // These defaults are configurable through the command line

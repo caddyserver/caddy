@@ -26,6 +26,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/mholt/caddy/caddy/letsencrypt"
 	"github.com/mholt/caddy/server"
 )
 
@@ -90,6 +91,8 @@ const (
 // In any case, an error is returned if Caddy could not be
 // started.
 func Start(cdyfile Input) error {
+	// TODO: What if already started -- is that an error?
+
 	var err error
 
 	// Input must never be nil; try to load something
@@ -104,7 +107,20 @@ func Start(cdyfile Input) error {
 	caddyfile = cdyfile
 	caddyfileMu.Unlock()
 
-	groupings, err := Load(path.Base(cdyfile.Path()), bytes.NewReader(cdyfile.Body()))
+	// load the server configs
+	configs, err := load(path.Base(cdyfile.Path()), bytes.NewReader(cdyfile.Body()))
+	if err != nil {
+		return err
+	}
+
+	// secure all the things
+	configs, err = letsencrypt.Activate(configs)
+	if err != nil {
+		return err
+	}
+
+	// group virtualhosts by address
+	groupings, err := arrangeBindings(configs)
 	if err != nil {
 		return err
 	}
@@ -217,11 +233,15 @@ func startServers(groupings Group) error {
 
 // Stop stops all servers. It blocks until they are all stopped.
 func Stop() error {
+	letsencrypt.Deactivate()
+
 	serversMu.Lock()
 	for _, s := range servers {
 		s.Stop() // TODO: error checking/reporting?
 	}
+	servers = []*server.Server{} // don't reuse servers
 	serversMu.Unlock()
+
 	return nil
 }
 
