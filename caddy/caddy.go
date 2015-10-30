@@ -11,6 +11,10 @@
 //
 // You should use caddy.Wait() to wait for all Caddy servers
 // to quit before your process exits.
+//
+// Importing this package has the side-effect of trapping
+// SIGINT on all platforms and SIGUSR1 on not-Windows systems.
+// It has to do this in order to perform shutdowns or reloads.
 package caddy
 
 import (
@@ -83,11 +87,13 @@ const (
 // Start starts Caddy with the given Caddyfile. If cdyfile
 // is nil or the process is forked from a parent as part of
 // a graceful restart, Caddy will check to see if Caddyfile
-// was piped from stdin and use that.
+// was piped from stdin and use that. It blocks until all the
+// servers are listening.
 //
 // If this process is a fork and no Caddyfile was piped in,
-// an error will be returned. If this process is NOT a fork
-// and cdyfile is nil, a default configuration will be assumed.
+// an error will be returned (the Restart() function does this
+// for you automatically). If this process is NOT a fork and
+// cdyfile is nil, a default configuration will be assumed.
 // In any case, an error is returned if Caddy could not be
 // started.
 func Start(cdyfile Input) error {
@@ -175,9 +181,12 @@ func Start(cdyfile Input) error {
 
 // startServers starts all the servers in groupings,
 // taking into account whether or not this process is
-// a child from a graceful restart or not.
+// a child from a graceful restart or not. It blocks
+// until the servers are listening.
 func startServers(groupings Group) error {
-	for i, group := range groupings {
+	var startupWg sync.WaitGroup
+
+	for _, group := range groupings {
 		s, err := server.New(group.BindAddr.String(), group.Configs)
 		if err != nil {
 			log.Fatal(err)
@@ -206,8 +215,9 @@ func startServers(groupings Group) error {
 		}
 
 		wg.Add(1)
-		go func(s *server.Server, i int, ln server.ListenerFile) {
+		go func(s *server.Server, ln server.ListenerFile) {
 			defer wg.Done()
+
 			if ln != nil {
 				err = s.Serve(ln)
 			} else {
@@ -222,16 +232,27 @@ func startServers(groupings Group) error {
 					log.Println(err)
 				}
 			}
-		}(s, i, ln)
+		}(s, ln)
+
+		startupWg.Add(1)
+		go func(s *server.Server) {
+			defer startupWg.Done()
+			s.WaitUntilStarted()
+		}(s)
 
 		serversMu.Lock()
 		servers = append(servers, s)
 		serversMu.Unlock()
 	}
+
+	startupWg.Wait()
+
 	return nil
 }
 
 // Stop stops all servers. It blocks until they are all stopped.
+// It does NOT execute shutdown callbacks that may have been
+// configured by middleware (they are executed on SIGINT).
 func Stop() error {
 	letsencrypt.Deactivate()
 

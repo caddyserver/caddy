@@ -32,6 +32,7 @@ type Server struct {
 	listener   ListenerFile           // the listener which is bound to the socket
 	listenerMu sync.Mutex             // protects listener
 	httpWg     sync.WaitGroup         // used to wait on outstanding connections
+	startChan  chan struct{}          // used to block until server is finished starting
 }
 
 type ListenerFile interface {
@@ -42,6 +43,11 @@ type ListenerFile interface {
 // New creates a new Server which will bind to addr and serve
 // the sites/hosts configured in configs. This function does
 // not start serving.
+//
+// Do not re-use a server (start, stop, then start again). We
+// could probably add more locking to make this possible, but
+// as it stands, you should dispose of a server after stopping it.
+// The behavior of serving with a spent server is undefined.
 func New(addr string, configs []Config) (*Server, error) {
 	var tls bool
 	if len(configs) > 0 {
@@ -56,8 +62,9 @@ func New(addr string, configs []Config) (*Server, error) {
 			// WriteTimeout:   2 * time.Minute,
 			// MaxHeaderBytes: 1 << 16,
 		},
-		tls:    tls,
-		vhosts: make(map[string]virtualHost),
+		tls:       tls,
+		vhosts:    make(map[string]virtualHost),
+		startChan: make(chan struct{}),
 	}
 	s.Handler = s // this is weird, but whatever
 
@@ -94,6 +101,7 @@ func New(addr string, configs []Config) (*Server, error) {
 func (s *Server) Serve(ln ListenerFile) error {
 	err := s.setup()
 	if err != nil {
+		close(s.startChan)
 		return err
 	}
 	return s.serve(ln)
@@ -103,11 +111,13 @@ func (s *Server) Serve(ln ListenerFile) error {
 func (s *Server) ListenAndServe() error {
 	err := s.setup()
 	if err != nil {
+		close(s.startChan)
 		return err
 	}
 
 	ln, err := net.Listen("tcp", s.Addr)
 	if err != nil {
+		close(s.startChan)
 		return err
 	}
 
@@ -136,6 +146,7 @@ func (s *Server) serve(ln ListenerFile) error {
 		return serveTLSWithSNI(s, s.listener, tlsConfigs)
 	}
 
+	close(s.startChan) // unblock anyone waiting for this to start listening
 	return s.Server.Serve(s.listener)
 }
 
@@ -182,6 +193,7 @@ func serveTLSWithSNI(s *Server, ln net.Listener, tlsConfigs []TLSConfig) error {
 		config.Certificates[i], err = tls.LoadX509KeyPair(tlsConfig.Certificate, tlsConfig.Key)
 		config.Certificates[i].OCSPStaple = tlsConfig.OCSPStaple
 		if err != nil {
+			close(s.startChan)
 			return err
 		}
 	}
@@ -196,6 +208,7 @@ func serveTLSWithSNI(s *Server, ln net.Listener, tlsConfigs []TLSConfig) error {
 	// TLS client authentication, if user enabled it
 	err = setupClientAuth(tlsConfigs, config)
 	if err != nil {
+		close(s.startChan)
 		return err
 	}
 
@@ -205,7 +218,7 @@ func serveTLSWithSNI(s *Server, ln net.Listener, tlsConfigs []TLSConfig) error {
 	// on POSIX systems.
 	ln = tls.NewListener(ln, config)
 
-	// Begin serving; block until done
+	close(s.startChan) // unblock anyone waiting for this to start listening
 	return s.Server.Serve(ln)
 }
 
@@ -215,7 +228,7 @@ func serveTLSWithSNI(s *Server, ln net.Listener, tlsConfigs []TLSConfig) error {
 // seconds); on Windows it will close the listener
 // immediately.
 func (s *Server) Stop() error {
-	s.Server.SetKeepAlivesEnabled(false) // TODO: Does this even do anything? :P
+	s.Server.SetKeepAlivesEnabled(false)
 
 	if runtime.GOOS != "windows" {
 		// force connections to close after timeout
@@ -229,7 +242,7 @@ func (s *Server) Stop() error {
 		// Wait for remaining connections to finish or
 		// force them all to close after timeout
 		select {
-		case <-time.After(5 * time.Second): // TODO: make configurable?
+		case <-time.After(5 * time.Second): // TODO: make configurable
 		case <-done:
 		}
 	}
@@ -244,6 +257,13 @@ func (s *Server) Stop() error {
 	}
 
 	return err
+}
+
+// WaitUntilStarted blocks until the server s is started, meaning
+// that practically the next instruction is to start the server loop.
+// It also unblocks if the server encounters an error during startup.
+func (s *Server) WaitUntilStarted() {
+	<-s.startChan
 }
 
 // ListenerFd gets the file descriptor of the listener.
