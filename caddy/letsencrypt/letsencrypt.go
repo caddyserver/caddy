@@ -39,32 +39,35 @@ import (
 // some may have been appended, for example, to redirect
 // plaintext HTTP requests to their HTTPS counterpart.
 func Activate(configs []server.Config) ([]server.Config, error) {
+	// just in case previous caller forgot...
+	Deactivate()
 	// TODO: Is multiple activation (before a deactivation) an error?
+
+	// reset cached ocsp statuses from any previous activations
+	ocspStatus = make(map[*[]byte]int)
 
 	// Identify and configure any eligible hosts for which
 	// we already have certs and keys in storage from last time.
 	configLen := len(configs) // avoid infinite loop since this loop appends plaintext to the slice
 	for i := 0; i < configLen; i++ {
-		if existingCertAndKey(configs[i].Host) && configs[i].TLS.LetsEncryptEmail != "off" {
+		if existingCertAndKey(configs[i].Host) && configQualifies(configs[i], configs) {
 			configs = autoConfigure(&configs[i], configs)
 		}
 	}
 
-	// Filter the configs by what we can maintain automatically
-	filteredConfigs := filterConfigs(configs)
-
-	// Renew any existing certificates that need renewal
-	renewCertificates(filteredConfigs)
-
-	// Group configs by LE email address; this will help us
-	// reduce round-trips when getting the certs.
-	groupedConfigs, err := groupConfigsByEmail(filteredConfigs)
+	// Group configs by email address; only configs that are eligible
+	// for TLS management are included. We group by email so that we
+	// can request certificates in batches with the same client.
+	// Note: The return value is a map, and iteration over a map is
+	// not ordered. I don't think it will be a problem, but if an
+	// ordering problem arises, look at this carefully.
+	groupedConfigs, err := groupConfigsByEmail(configs)
 	if err != nil {
 		return configs, err
 	}
 
-	// Loop through each email address and obtain certs; this way, we can obtain more
-	// than one certificate per email address, and still save them individually.
+	// obtain certificates for configs that need one, and reconfigure each
+	// config to use the certificates
 	for leEmail, serverConfigs := range groupedConfigs {
 		// make client to service this email address with CA server
 		client, err := newClient(leEmail)
@@ -75,7 +78,7 @@ func Activate(configs []server.Config) ([]server.Config, error) {
 		// client is ready, so let's get free, trusted SSL certificates! yeah!
 		certificates, err := obtainCertificates(client, serverConfigs)
 		if err != nil {
-			return configs, errors.New("error obtaining cert: " + err.Error())
+			return configs, errors.New("error getting certs: " + err.Error())
 		}
 
 		// ... that's it. save the certs, keys, and metadata files to disk
@@ -84,15 +87,17 @@ func Activate(configs []server.Config) ([]server.Config, error) {
 			return configs, errors.New("error saving assets: " + err.Error())
 		}
 
-		// it all comes down to this: turning TLS on for all the configs
-		for _, cfg := range serverConfigs {
-			configs = autoConfigure(cfg, configs)
+		// it all comes down to this: turning on TLS with all the new certs
+		for i := 0; i < len(serverConfigs); i++ {
+			configs = autoConfigure(serverConfigs[i], configs)
 		}
 	}
 
-	Deactivate() // in case previous caller wasn't clean about it
-	stopChan = make(chan struct{})
-	go maintainAssets(filteredConfigs, stopChan)
+	// renew all certificates that need renewal
+	renewCertificates(configs)
+
+	// keep certificates renewed and OCSP stapling updated
+	go maintainAssets(configs, stopChan)
 
 	return configs, nil
 }
@@ -108,55 +113,51 @@ func Deactivate() (err error) {
 		}
 	}()
 	close(stopChan)
+	stopChan = make(chan struct{})
 	return
 }
 
-// filterConfigs filters and returns configs that are eligible for automatic
-// TLS by skipping configs that do not qualify for automatic maintenance
-// of assets. Configurations with a manual TLS configuration or that already
-// have an HTTPS counterpart host defined will be skipped.
-func filterConfigs(configs []server.Config) []server.Config {
-	var filtered []server.Config
+// configQualifies returns true if cfg qualifes for automatic LE activation,
+// but it does require the list of all configs to be passed in as well.
+// It does NOT check to see if a cert and key already exist for cfg.
+func configQualifies(cfg server.Config, allConfigs []server.Config) bool {
+	return cfg.TLS.Certificate == "" && // user could provide their own cert and key
+		cfg.TLS.Key == "" &&
 
-	// configQualifies returns true if cfg qualifes for automatic LE activation
-	configQualifies := func(cfg server.Config) bool {
-		return cfg.TLS.Certificate == "" && // user could provide their own cert and key
-			cfg.TLS.Key == "" &&
+		// user can force-disable automatic HTTPS for this host
+		cfg.Port != "http" &&
+		cfg.TLS.LetsEncryptEmail != "off" &&
 
-			// user can force-disable automatic HTTPS for this host
-			cfg.Port != "http" &&
-			cfg.TLS.LetsEncryptEmail != "off" &&
+		// obviously we get can't certs for loopback or internal hosts
+		cfg.Host != "localhost" &&
+		cfg.Host != "" &&
+		cfg.Host != "0.0.0.0" &&
+		cfg.Host != "::1" &&
+		!strings.HasPrefix(cfg.Host, "127.") &&
+		// TODO: Also exclude 10.* and 192.168.* addresses?
 
-			// obviously we get can't certs for loopback or internal hosts
-			cfg.Host != "localhost" &&
-			cfg.Host != "" &&
-			cfg.Host != "0.0.0.0" &&
-			cfg.Host != "::1" &&
-			!strings.HasPrefix(cfg.Host, "127.") &&
-			!strings.HasPrefix(cfg.Host, "10.") &&
-
-			// make sure an HTTPS version of this config doesn't exist in the list already
-			!hostHasOtherScheme(cfg.Host, "https", configs)
-	}
-
-	for _, cfg := range configs {
-		if configQualifies(cfg) {
-			filtered = append(filtered, cfg)
-		}
-	}
-
-	return filtered
+		// make sure an HTTPS version of this config doesn't exist in the list already
+		!hostHasOtherScheme(cfg.Host, "https", allConfigs)
 }
 
 // groupConfigsByEmail groups configs by user email address. The returned map is
 // a map of email address to the configs that are serviced under that account.
-// If an email address is not available, the user will be prompted to provide one.
-// This function assumes that all configs passed in qualify for automatic management.
+// If an email address is not available for an eligible config, the user will be
+// prompted to provide one. The returned map contains pointers to the original
+// server config values.
 func groupConfigsByEmail(configs []server.Config) (map[string][]*server.Config, error) {
 	initMap := make(map[string][]*server.Config)
 	for i := 0; i < len(configs); i++ {
+		// filter out configs that we already have certs for and
+		// that we won't be obtaining certs for - this way we won't
+		// bother the user for an email address unnecessarily and
+		// we don't obtain new certs for a host we already have certs for.
+		if existingCertAndKey(configs[i].Host) || !configQualifies(configs[i], configs) {
+			continue
+		}
 		leEmail := getEmail(configs[i])
 		if leEmail == "" {
+			// TODO: This may not be an error; just a poor choice by the user
 			return nil, errors.New("must have email address to serve HTTPS without existing certificate and key")
 		}
 		initMap[leEmail] = append(initMap[leEmail], &configs[i])
@@ -280,7 +281,8 @@ func saveCertsAndKeys(certificates []acme.CertificateResource) error {
 // autoConfigure enables TLS on cfg and appends, if necessary, a new config
 // to allConfigs that redirects plaintext HTTP to its new HTTPS counterpart.
 // It expects the certificate and key to already be in storage. It returns
-// the new list of allConfigs.
+// the new list of allConfigs, since it may append a new config. This function
+// assumes that cfg was already set up for HTTPS.
 func autoConfigure(cfg *server.Config, allConfigs []server.Config) []server.Config {
 	bundleBytes, err := ioutil.ReadFile(storage.SiteCertFile(cfg.Host))
 	// TODO: Handle these errors better
@@ -294,7 +296,9 @@ func autoConfigure(cfg *server.Config, allConfigs []server.Config) []server.Conf
 	cfg.TLS.Certificate = storage.SiteCertFile(cfg.Host)
 	cfg.TLS.Key = storage.SiteKeyFile(cfg.Host)
 	cfg.TLS.Enabled = true
-	cfg.Port = "https"
+	if cfg.Port == "" {
+		cfg.Port = "https"
+	}
 
 	// Set up http->https redirect as long as there isn't already
 	// a http counterpart in the configs
@@ -308,11 +312,21 @@ func autoConfigure(cfg *server.Config, allConfigs []server.Config) []server.Conf
 // hostHasOtherScheme tells you whether there is another config in the list
 // for the same host but with the port equal to scheme. For example, to see
 // if example.com has a https variant already, pass in example.com and
-// "https" along with the list of configs.
+// "https" along with the list of configs. This function considers "443"
+// and "https" to be the same scheme, as well as "http" and "80".
 func hostHasOtherScheme(host, scheme string, allConfigs []server.Config) bool {
+	if scheme == "80" {
+		scheme = "http"
+	} else if scheme == "443" {
+		scheme = "https"
+	}
 	for _, otherCfg := range allConfigs {
-		if otherCfg.Host == host && otherCfg.Port == scheme {
-			return true
+		if otherCfg.Host == host {
+			if (otherCfg.Port == scheme) ||
+				(scheme == "https" && otherCfg.Port == "443") ||
+				(scheme == "http" && otherCfg.Port == "80") {
+				return true
+			}
 		}
 	}
 	return false
@@ -323,12 +337,17 @@ func hostHasOtherScheme(host, scheme string, allConfigs []server.Config) bool {
 // be the HTTPS configuration. The returned configuration is set
 // to listen on the "http" port (port 80).
 func redirPlaintextHost(cfg server.Config) server.Config {
+	toUrl := "https://" + cfg.Host
+	if cfg.Port != "https" && cfg.Port != "http" {
+		toUrl += ":" + cfg.Port
+	}
+
 	redirMidware := func(next middleware.Handler) middleware.Handler {
 		return redirect.Redirect{Next: next, Rules: []redirect.Rule{
 			{
 				FromScheme: "http",
 				FromPath:   "/",
-				To:         "https://" + cfg.Host + "{uri}",
+				To:         toUrl + "{uri}",
 				Code:       http.StatusMovedPermanently,
 			},
 		}}
@@ -391,13 +410,15 @@ var (
 
 // Some essential values related to the Let's Encrypt process
 const (
-	// The port to expose to the CA server for Simple HTTP Challenge
-	exposePort = "5001"
+	// The port to expose to the CA server for Simple HTTP Challenge.
+	// NOTE: Let's Encrypt requires port 443. If exposePort is not 443,
+	// then port 443 must be forwarded to exposePort.
+	exposePort = "443"
 
-	// How often to check certificates for renewal
+	// How often to check certificates for renewal.
 	renewInterval = 24 * time.Hour
 
-	// How often to update OCSP stapling
+	// How often to update OCSP stapling.
 	ocspInterval = 1 * time.Hour
 )
 

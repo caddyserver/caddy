@@ -62,7 +62,7 @@ baz"
 	{ // 8
 		caddyfile: `http://host, https://host {
 }`,
-		json: `[{"hosts":["host:http","host:https"],"body":{}}]`, // hosts in JSON are always host:port format (if port is specified)
+		json: `[{"hosts":["host:http","host:https"],"body":{}}]`, // hosts in JSON are always host:port format (if port is specified), for consistency
 	},
 }
 

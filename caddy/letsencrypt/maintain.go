@@ -25,7 +25,7 @@ var OnChange func() error
 //
 // You must pass in the server configs to maintain and the channel
 // which you'll close when maintenance should stop, to allow this
-// goroutine to clean up after itself.
+// goroutine to clean up after itself and unblock.
 func maintainAssets(configs []server.Config, stopChan chan struct{}) {
 	renewalTicker := time.NewTicker(renewInterval)
 	ocspTicker := time.NewTicker(ocspInterval)
@@ -66,7 +66,7 @@ func maintainAssets(configs []server.Config, stopChan chan struct{}) {
 
 // renewCertificates loops through all configured site and
 // looks for certificates to renew. Nothing is mutated
-// through this function. The changes happen directly on disk.
+// through this function; all changes happen directly on disk.
 // It returns the number of certificates renewed and any errors
 // that occurred. It only performs a renewal if necessary.
 func renewCertificates(configs []server.Config) (int, []error) {
@@ -75,7 +75,7 @@ func renewCertificates(configs []server.Config) (int, []error) {
 	var n int
 
 	for _, cfg := range configs {
-		// Host must be TLS-enabled and have assets managed by LE
+		// Host must be TLS-enabled and have existing assets managed by LE
 		if !cfg.TLS.Enabled || !existingCertAndKey(cfg.Host) {
 			continue
 		}
@@ -100,7 +100,7 @@ func renewCertificates(configs []server.Config) (int, []error) {
 		// Renew with a week or less remaining.
 		if daysLeft <= 7 {
 			log.Printf("[INFO] There are %d days left on the certificate of %s. Trying to renew now.", daysLeft, cfg.Host)
-			client, err := newClient(getEmail(cfg))
+			client, err := newClient("") // email not used for renewal
 			if err != nil {
 				errs = append(errs, err)
 				continue

@@ -276,7 +276,7 @@ func Wait() {
 // the Caddyfile. If loader does not return a Caddyfile, the
 // default one will be returned. Thus, if there are no other
 // errors, this function always returns at least the default
-// Caddyfile.
+// Caddyfile (not the previously-used Caddyfile).
 func LoadCaddyfile(loader func() (Input, error)) (cdyfile Input, err error) {
 	// If we are a fork, finishing the restart is highest priority;
 	// piped input is required in this case.

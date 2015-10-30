@@ -41,7 +41,7 @@ func init() {
 	// TODO: Production endpoint is: https://acme-v01.api.letsencrypt.org
 	flag.StringVar(&letsencrypt.CAUrl, "ca", "https://acme-staging.api.letsencrypt.org", "Certificate authority ACME server")
 	flag.BoolVar(&letsencrypt.Agreed, "agree", false, "Agree to Let's Encrypt Subscriber Agreement")
-	flag.StringVar(&letsencrypt.DefaultEmail, "email", "", "Default email address to use for Let's Encrypt transactions")
+	flag.StringVar(&letsencrypt.DefaultEmail, "email", "", "Default Let's Encrypt account email address")
 	flag.StringVar(&revoke, "revoke", "", "Hostname for which to revoke the certificate")
 }
 

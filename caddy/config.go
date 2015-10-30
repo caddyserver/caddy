@@ -89,10 +89,6 @@ func load(filename string, input io.Reader) ([]server.Config, error) {
 				}
 			}
 
-			if config.Port == "" {
-				config.Port = Port
-			}
-
 			configs = append(configs, config)
 		}
 	}
@@ -145,6 +141,11 @@ func arrangeBindings(allConfigs []server.Config) (Group, error) {
 
 	// Group configs by bind address
 	for _, conf := range allConfigs {
+		// use default port if none is specified
+		if conf.Port == "" {
+			conf.Port = Port
+		}
+
 		bindAddr, warnErr, fatalErr := resolveAddr(conf)
 		if fatalErr != nil {
 			return groupings, fatalErr
