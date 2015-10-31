@@ -22,7 +22,7 @@ func TestStartup(t *testing.T) {
 	testDir := filepath.Join(tempDirPath, "temp_dir_for_testing_startupshutdown.go")
 	osSenitiveTestDir := filepath.FromSlash(testDir)
 
-	exec.Command("rm", "-r", osSenitiveTestDir).Start() // removes osSenitiveTestDir from the OS's temp directory, if the osSenitiveTestDir already exists
+	exec.Command("rm", "-r", osSenitiveTestDir).Run() // removes osSenitiveTestDir from the OS's temp directory, if the osSenitiveTestDir already exists
 
 	tests := []struct {
 		input              string
@@ -33,7 +33,7 @@ func TestStartup(t *testing.T) {
 		{"startup mkdir " + osSenitiveTestDir, false, false},
 
 		// test case #1 tests proper functionality of non-blocking commands
-		{"startup mkdir " + osSenitiveTestDir, false, true},
+		{"startup mkdir " + osSenitiveTestDir + " &", false, true},
 
 		// test case #2 tests handling of non-existant commands
 		{"startup " + strconv.Itoa(int(time.Now().UnixNano())), true, true},
