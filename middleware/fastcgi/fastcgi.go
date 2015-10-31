@@ -4,6 +4,7 @@
 package fastcgi
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -46,10 +47,21 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 		fpath := r.URL.Path
 		if idx, ok := middleware.IndexFile(h.FileSys, fpath, rule.IndexFiles); ok {
 			fpath = idx
+			// Index file present.
+			// If request path cannot be split, return error.
+			if !h.canSplit(fpath, rule) {
+				return http.StatusInternalServerError, ErrIndexMissingSplit
+			}
+		} else {
+			// No index file present.
+			// If request path cannot be split, ignore request.
+			if !h.canSplit(fpath, rule) {
+				continue
+			}
 		}
 
 		// These criteria work well in this order for PHP sites
-		if fpath[len(fpath)-1] == '/' || strings.HasSuffix(fpath, rule.Ext) || !h.exists(fpath) {
+		if !h.exists(fpath) || fpath[len(fpath)-1] == '/' || strings.HasSuffix(fpath, rule.Ext) {
 
 			// Create environment for CGI script
 			env, err := h.buildEnv(r, rule, fpath)
@@ -137,6 +149,10 @@ func (h Handler) exists(path string) bool {
 	return false
 }
 
+func (h Handler) canSplit(path string, rule Rule) bool {
+	return strings.Contains(path, rule.SplitPath)
+}
+
 // buildEnv returns a set of CGI environment variables for the request.
 func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]string, error) {
 	var env map[string]string
@@ -153,22 +169,15 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 		ip = r.RemoteAddr
 	}
 
-	// Split path in preparation for env variables
+	// Split path in preparation for env variables.
+	// Previous h.canSplit checks ensure this can never be -1.
 	splitPos := strings.Index(fpath, rule.SplitPath)
-	var docURI, scriptName, scriptFilename, pathInfo string
-	if splitPos == -1 {
-		// Request doesn't have the extension, so assume index file in root
-		docURI = "/" + rule.IndexFiles[0]
-		scriptName = "/" + rule.IndexFiles[0]
-		scriptFilename = filepath.Join(h.AbsRoot, rule.IndexFiles[0])
-		pathInfo = fpath
-	} else {
-		// Request has the extension; path was split successfully
-		docURI = fpath[:splitPos+len(rule.SplitPath)]
-		pathInfo = fpath[splitPos+len(rule.SplitPath):]
-		scriptName = fpath
-		scriptFilename = absPath
-	}
+
+	// Request has the extension; path was split successfully
+	docURI := fpath[:splitPos+len(rule.SplitPath)]
+	pathInfo := fpath[splitPos+len(rule.SplitPath):]
+	scriptName := fpath
+	scriptFilename := absPath
 
 	// Strip PATH_INFO from SCRIPT_NAME
 	scriptName = strings.TrimSuffix(scriptName, pathInfo)
@@ -267,4 +276,8 @@ type Rule struct {
 	EnvVars [][2]string
 }
 
-var headerNameReplacer = strings.NewReplacer(" ", "_", "-", "_")
+var (
+	headerNameReplacer = strings.NewReplacer(" ", "_", "-", "_")
+
+	ErrIndexMissingSplit = errors.New("configured index file(s) must include split value")
+)
