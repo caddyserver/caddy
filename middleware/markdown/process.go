@@ -65,7 +65,8 @@ func (md Markdown) Process(c *Config, requestPath string, b []byte, ctx middlewa
 	}
 
 	// process markdown
-	markdown = blackfriday.Markdown(markdown, c.Renderer, 0)
+	extns := blackfriday.EXTENSION_TABLES | blackfriday.EXTENSION_FENCED_CODE | blackfriday.EXTENSION_STRIKETHROUGH
+	markdown = blackfriday.Markdown(markdown, c.Renderer, extns)
 
 	// set it as body for template
 	metadata.Variables["body"] = string(markdown)

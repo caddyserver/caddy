@@ -20,6 +20,8 @@ func Shutdown(c *Controller) (middleware.Middleware, error) {
 // using c to parse the line. It appends the callback function
 // to the list of callback functions passed in by reference.
 func registerCallback(c *Controller, list *[]func() error) error {
+	var funcs []func() error
+
 	for c.Next() {
 		args := c.RemainingArgs()
 		if len(args) == 0 {
@@ -50,8 +52,11 @@ func registerCallback(c *Controller, list *[]func() error) error {
 			return cmd.Run()
 		}
 
-		*list = append(*list, fn)
+		funcs = append(funcs, fn)
 	}
 
-	return nil
+	return c.OncePerServerBlock(func() error {
+		*list = append(*list, funcs...)
+		return nil
+	})
 }

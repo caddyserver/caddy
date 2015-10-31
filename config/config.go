@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"sync"
 
 	"github.com/mholt/caddy/app"
 	"github.com/mholt/caddy/config/parse"
@@ -40,32 +41,63 @@ func Load(filename string, input io.Reader) (Group, error) {
 		return Default()
 	}
 
-	// Each server block represents one or more servers/addresses.
+	// Each server block represents similar hosts/addresses.
 	// Iterate each server block and make a config for each one,
 	// executing the directives that were parsed.
-	for _, sb := range serverBlocks {
-		sharedConfig, err := serverBlockToConfig(filename, sb)
-		if err != nil {
-			return nil, err
-		}
+	for i, sb := range serverBlocks {
+		onces := makeOnces()
+		storages := makeStorages()
 
-		// Now share the config with as many hosts as share the server block
-		for i, addr := range sb.Addresses {
-			config := sharedConfig
-			config.Host = addr.Host
-			config.Port = addr.Port
+		for j, addr := range sb.Addresses {
+			config := server.Config{
+				Host:       addr.Host,
+				Port:       addr.Port,
+				Root:       Root,
+				Middleware: make(map[string][]middleware.Middleware),
+				ConfigFile: filename,
+				AppName:    app.Name,
+				AppVersion: app.Version,
+			}
+
+			// It is crucial that directives are executed in the proper order.
+			for _, dir := range directiveOrder {
+				// Execute directive if it is in the server block
+				if tokens, ok := sb.Tokens[dir.name]; ok {
+					// Each setup function gets a controller, which is the
+					// server config and the dispenser containing only
+					// this directive's tokens.
+					controller := &setup.Controller{
+						Config:    &config,
+						Dispenser: parse.NewDispenserTokens(filename, tokens),
+						OncePerServerBlock: func(f func() error) error {
+							var err error
+							onces[dir.name].Do(func() {
+								err = f()
+							})
+							return err
+						},
+						ServerBlockIndex:     i,
+						ServerBlockHostIndex: j,
+						ServerBlockHosts:     sb.HostList(),
+						ServerBlockStorage:   storages[dir.name],
+					}
+
+					midware, err := dir.setup(controller)
+					if err != nil {
+						return nil, err
+					}
+					if midware != nil {
+						// TODO: For now, we only support the default path scope /
+						config.Middleware["/"] = append(config.Middleware["/"], midware)
+					}
+					storages[dir.name] = controller.ServerBlockStorage // persist for this server block
+				}
+			}
+
 			if config.Port == "" {
 				config.Port = Port
 			}
-			if config.Port == "http" {
-				config.TLS.Enabled = false
-				log.Printf("Warning: TLS disabled for %s://%s. To force TLS over the plaintext HTTP port, "+
-					"specify port 80 explicitly (https://%s:80).", config.Port, config.Host, config.Host)
-			}
-			if i == 0 {
-				sharedConfig.Startup = []func() error{}
-				sharedConfig.Shutdown = []func() error{}
-			}
+
 			configs = append(configs, config)
 		}
 	}
@@ -73,48 +105,36 @@ func Load(filename string, input io.Reader) (Group, error) {
 	// restore logging settings
 	log.SetFlags(flags)
 
-	// Group by address/virtualhosts
 	return arrangeBindings(configs)
 }
 
-// serverBlockToConfig makes a config for the server block
-// by executing the tokens that were parsed. The returned
-// config is shared among all hosts/addresses for the server
-// block, so Host and Port information is not filled out
-// here.
-func serverBlockToConfig(filename string, sb parse.ServerBlock) (server.Config, error) {
-	sharedConfig := server.Config{
-		Root:       Root,
-		Middleware: make(map[string][]middleware.Middleware),
-		ConfigFile: filename,
-		AppName:    app.Name,
-		AppVersion: app.Version,
-	}
-
-	// It is crucial that directives are executed in the proper order.
+// makeOnces makes a map of directive name to sync.Once
+// instance. This is intended to be called once per server
+// block when setting up configs so that Setup functions
+// for each directive can perform a task just once per
+// server block, even if there are multiple hosts on the block.
+//
+// We need one Once per directive, otherwise the first
+// directive to use it would exclude other directives from
+// using it at all, which would be a bug.
+func makeOnces() map[string]*sync.Once {
+	onces := make(map[string]*sync.Once)
 	for _, dir := range directiveOrder {
-		// Execute directive if it is in the server block
-		if tokens, ok := sb.Tokens[dir.name]; ok {
-			// Each setup function gets a controller, which is the
-			// server config and the dispenser containing only
-			// this directive's tokens.
-			controller := &setup.Controller{
-				Config:    &sharedConfig,
-				Dispenser: parse.NewDispenserTokens(filename, tokens),
-			}
-
-			midware, err := dir.setup(controller)
-			if err != nil {
-				return sharedConfig, err
-			}
-			if midware != nil {
-				// TODO: For now, we only support the default path scope /
-				sharedConfig.Middleware["/"] = append(sharedConfig.Middleware["/"], midware)
-			}
-		}
+		onces[dir.name] = new(sync.Once)
 	}
+	return onces
+}
 
-	return sharedConfig, nil
+// makeStorages makes a map of directive name to interface{}
+// so that directives' setup functions can persist state
+// between different hosts on the same server block during the
+// setup phase.
+func makeStorages() map[string]interface{} {
+	storages := make(map[string]interface{})
+	for _, dir := range directiveOrder {
+		storages[dir.name] = nil
+	}
+	return storages
 }
 
 // arrangeBindings groups configurations by their bind address. For example,
@@ -125,8 +145,8 @@ func serverBlockToConfig(filename string, sb parse.ServerBlock) (server.Config, 
 // bind address to list of configs that would become VirtualHosts on that
 // server. Use the keys of the returned map to create listeners, and use
 // the associated values to set up the virtualhosts.
-func arrangeBindings(allConfigs []server.Config) (Group, error) {
-	addresses := make(Group)
+func arrangeBindings(allConfigs []server.Config) (map[*net.TCPAddr][]server.Config, error) {
+	addresses := make(map[*net.TCPAddr][]server.Config)
 
 	// Group configs by bind address
 	for _, conf := range allConfigs {
@@ -234,8 +254,9 @@ func validDirective(d string) bool {
 	return false
 }
 
-// NewDefault creates a default configuration using the default
-// root, host, and port.
+// NewDefault makes a default configuration, which
+// is empty except for root, host, and port,
+// which are essentials for serving the cwd.
 func NewDefault() server.Config {
 	return server.Config{
 		Root: Root,
@@ -244,9 +265,8 @@ func NewDefault() server.Config {
 	}
 }
 
-// Default makes a default configuration which
-// is empty except for root, host, and port,
-// which are essentials for serving the cwd.
+// Default obtains a default config and arranges
+// bindings so it's ready to use.
 func Default() (Group, error) {
 	return arrangeBindings([]server.Config{NewDefault()})
 }
