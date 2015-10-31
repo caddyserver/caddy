@@ -30,10 +30,12 @@ import (
 // if that is not available it will check the command line
 // argument. If absent, it will use the most recent email
 // address from last time. If there isn't one, the user
-// will be prompted. If the user leaves email blank, <TODO>.
+// will be prompted and shown SA link.
 //
 // Also note that calling this function activates asset
-// management automatically, which <TODO>.
+// management automatically, which keeps certificates
+// renewed and OCSP stapling updated. This has the effect
+// of causing restarts when assets are updated.
 //
 // Activate returns the updated list of configs, since
 // some may have been appended, for example, to redirect
@@ -41,7 +43,6 @@ import (
 func Activate(configs []server.Config) ([]server.Config, error) {
 	// just in case previous caller forgot...
 	Deactivate()
-	// TODO: Is multiple activation (before a deactivation) an error?
 
 	// reset cached ocsp statuses from any previous activations
 	ocspStatus = make(map[*[]byte]int)

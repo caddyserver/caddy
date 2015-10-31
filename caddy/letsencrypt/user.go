@@ -143,11 +143,12 @@ func getEmail(cfg server.Config) string {
 		}
 	}
 	if leEmail == "" {
-		// Alas, we must bother the user and ask for an email address
+		// Alas, we must bother the user and ask for an email address;
+		// if they proceed they also agree to the SA.
 		reader := bufio.NewReader(stdin)
 		fmt.Println("Your sites will be served over HTTPS automatically using Let's Encrypt.")
 		fmt.Println("By continuing, you agree to the Let's Encrypt Subscriber Agreement at:")
-		fmt.Println("  <TODO: link>")
+		fmt.Println("  https://letsencrypt.org/documents/LE-SA-v1.0.1-July-27-2015.pdf") // TODO: Show current SA link
 		fmt.Println("Please enter your email address so you can recover your account if needed.")
 		fmt.Println("You can leave it blank, but you lose the ability to recover your account.")
 		fmt.Print("Email address: ")
@@ -157,6 +158,7 @@ func getEmail(cfg server.Config) string {
 			return ""
 		}
 		DefaultEmail = leEmail
+		Agreed = true
 	}
 	return strings.TrimSpace(leEmail)
 }
