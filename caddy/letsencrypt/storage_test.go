@@ -35,6 +35,17 @@ func TestStorage(t *testing.T) {
 	if expected, actual := filepath.Join("letsencrypt", "users", "me@example.com", "me.key"), storage.UserKeyFile("me@example.com"); actual != expected {
 		t.Errorf("Expected UserKeyFile() to return '%s' but got '%s'", expected, actual)
 	}
+
+	// Test with empty emails
+	if expected, actual := filepath.Join("letsencrypt", "users", emptyEmail), storage.User(emptyEmail); actual != expected {
+		t.Errorf("Expected User(\"\") to return '%s' but got '%s'", expected, actual)
+	}
+	if expected, actual := filepath.Join("letsencrypt", "users", emptyEmail, emptyEmail+".json"), storage.UserRegFile(""); actual != expected {
+		t.Errorf("Expected UserRegFile(\"\") to return '%s' but got '%s'", expected, actual)
+	}
+	if expected, actual := filepath.Join("letsencrypt", "users", emptyEmail, emptyEmail+".key"), storage.UserKeyFile(""); actual != expected {
+		t.Errorf("Expected UserKeyFile(\"\") to return '%s' but got '%s'", expected, actual)
+	}
 }
 
 func TestEmailUsername(t *testing.T) {
@@ -60,6 +71,10 @@ func TestEmailUsername(t *testing.T) {
 		{
 			input:  "@foobar.com",
 			expect: "foobar.com",
+		},
+		{
+			input:  emptyEmail,
+			expect: emptyEmail,
 		},
 	} {
 		if actual := emailUsername(test.input); actual != test.expect {

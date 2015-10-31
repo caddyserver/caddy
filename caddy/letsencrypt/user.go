@@ -115,6 +115,8 @@ func newUser(email string) (User, error) {
 // getEmail does everything it can to obtain an email
 // address from the user to use for TLS for cfg. If it
 // cannot get an email address, it returns empty string.
+// (It will warn the user of the consequences of an
+// empty email.)
 func getEmail(cfg server.Config) string {
 	// First try the tls directive from the Caddyfile
 	leEmail := cfg.TLS.LetsEncryptEmail
@@ -124,7 +126,6 @@ func getEmail(cfg server.Config) string {
 	}
 	if leEmail == "" {
 		// Then try to get most recent user email ~/.caddy/users file
-		// TODO: Probably better to open the user's json file and read the email out of there...
 		userDirs, err := ioutil.ReadDir(storage.Users())
 		if err == nil {
 			var mostRecent os.FileInfo
@@ -143,9 +144,13 @@ func getEmail(cfg server.Config) string {
 	}
 	if leEmail == "" {
 		// Alas, we must bother the user and ask for an email address
-		// TODO/BUG: This doesn't work when Caddyfile is piped into caddy
 		reader := bufio.NewReader(stdin)
-		fmt.Print("Email address: ") // TODO: More explanation probably, and show ToS?
+		fmt.Println("Your sites will be served over HTTPS automatically using Let's Encrypt.")
+		fmt.Println("By continuing, you agree to the Let's Encrypt Subscriber Agreement at:")
+		fmt.Println("  <TODO: link>")
+		fmt.Println("Please enter your email address so you can recover your account if needed.")
+		fmt.Println("You can leave it blank, but you lose the ability to recover your account.")
+		fmt.Print("Email address: ")
 		var err error
 		leEmail, err = reader.ReadString('\n')
 		if err != nil {
@@ -169,7 +174,7 @@ func promptUserAgreement(agreementURL string, changed bool) bool {
 		fmt.Print("Do you agree to the terms? (y/n): ")
 	}
 
-	reader := bufio.NewReader(stdin) // TODO/BUG: This doesn't work when Caddyfile is piped into caddy
+	reader := bufio.NewReader(stdin)
 	answer, err := reader.ReadString('\n')
 	if err != nil {
 		return false
@@ -182,3 +187,7 @@ func promptUserAgreement(agreementURL string, changed bool) bool {
 // stdin is used to read the user's input if prompted;
 // this is changed by tests during tests.
 var stdin = io.ReadWriter(os.Stdin)
+
+// The name of the folder for accounts where the email
+// address was not provided; default 'username' if you will.
+const emptyEmail = "default"

@@ -156,10 +156,6 @@ func groupConfigsByEmail(configs []server.Config) (map[string][]*server.Config, 
 			continue
 		}
 		leEmail := getEmail(configs[i])
-		if leEmail == "" {
-			// TODO: This may not be an error; just a poor choice by the user
-			return nil, errors.New("must have email address to serve HTTPS without existing certificate and key")
-		}
 		initMap[leEmail] = append(initMap[leEmail], &configs[i])
 	}
 	return initMap, nil

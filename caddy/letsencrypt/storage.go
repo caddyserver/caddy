@@ -48,12 +48,18 @@ func (s Storage) Users() string {
 
 // User gets the account folder for the user with email.
 func (s Storage) User(email string) string {
+	if email == "" {
+		email = emptyEmail
+	}
 	return filepath.Join(s.Users(), email)
 }
 
 // UserRegFile gets the path to the registration file for
 // the user with the given email address.
 func (s Storage) UserRegFile(email string) string {
+	if email == "" {
+		email = emptyEmail
+	}
 	fileName := emailUsername(email)
 	if fileName == "" {
 		fileName = "registration"
@@ -64,7 +70,9 @@ func (s Storage) UserRegFile(email string) string {
 // UserKeyFile gets the path to the private key file for
 // the user with the given email address.
 func (s Storage) UserKeyFile(email string) string {
-	// TODO: Read the KeyFile property in the registration file instead?
+	if email == "" {
+		email = emptyEmail
+	}
 	fileName := emailUsername(email)
 	if fileName == "" {
 		fileName = "private"
