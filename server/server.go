@@ -117,8 +117,21 @@ func (s *Server) ListenAndServe() error {
 
 	ln, err := net.Listen("tcp", s.Addr)
 	if err != nil {
-		close(s.startChan)
-		return err
+		var succeeded bool
+		if runtime.GOOS == "windows" { // TODO: Limit this to Windows only? (it keeps sockets open after closing listeners)
+			for i := 0; i < 20; i++ {
+				time.Sleep(100 * time.Millisecond)
+				ln, err = net.Listen("tcp", s.Addr)
+				if err == nil {
+					succeeded = true
+					break
+				}
+			}
+		}
+		if !succeeded {
+			close(s.startChan)
+			return err
+		}
 	}
 
 	return s.serve(ln.(*net.TCPListener))
