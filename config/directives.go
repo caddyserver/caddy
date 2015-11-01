@@ -53,6 +53,7 @@ var directiveOrder = []directive{
 	{"log", setup.Log},
 	{"gzip", setup.Gzip},
 	{"errors", setup.Errors},
+	{"sed", setup.Sed},
 	{"header", setup.Headers},
 	{"rewrite", setup.Rewrite},
 	{"redir", setup.Redir},
