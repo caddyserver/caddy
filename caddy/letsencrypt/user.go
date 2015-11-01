@@ -20,7 +20,6 @@ import (
 type User struct {
 	Email        string
 	Registration *acme.RegistrationResource
-	KeyFile      string
 	key          *rsa.PrivateKey
 }
 
@@ -64,7 +63,7 @@ func getUser(email string) (User, error) {
 	}
 
 	// load their private key
-	user.key, err = loadRSAPrivateKey(user.KeyFile)
+	user.key, err = loadRSAPrivateKey(storage.UserKeyFile(email))
 	if err != nil {
 		return user, err
 	}
@@ -82,8 +81,7 @@ func saveUser(user User) error {
 	}
 
 	// save private key file
-	user.KeyFile = storage.UserKeyFile(user.Email)
-	err = saveRSAPrivateKey(user.key, user.KeyFile)
+	err = saveRSAPrivateKey(user.key, storage.UserKeyFile(user.Email))
 	if err != nil {
 		return err
 	}
