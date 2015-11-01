@@ -7,6 +7,7 @@ import (
 	"net"
 	"sync"
 
+	"github.com/mholt/caddy/caddy/letsencrypt"
 	"github.com/mholt/caddy/caddy/parse"
 	"github.com/mholt/caddy/caddy/setup"
 	"github.com/mholt/caddy/middleware"
@@ -19,15 +20,20 @@ const (
 	DefaultConfigFile = "Caddyfile"
 )
 
-// load reads input (named filename) and parses it, returning the
-// server configurations in the order they appeared in the input.
-func load(filename string, input io.Reader) ([]server.Config, error) {
+// loadConfigs reads input (named filename) and parses it, returning the
+// server configurations in the order they appeared in the input. As part
+// of this, it activates Let's Encrypt for the configs that are produced.
+// Thus, the returned configs are already optimally configured optimally
+// for HTTPS.
+func loadConfigs(filename string, input io.Reader) ([]server.Config, error) {
 	var configs []server.Config
 
 	// turn off timestamp for parsing
 	flags := log.Flags()
 	log.SetFlags(0)
 
+	// Each server block represents similar hosts/addresses, since they
+	// were grouped together in the Caddyfile.
 	serverBlocks, err := parse.ServerBlocks(filename, input, true)
 	if err != nil {
 		return nil, err
@@ -36,9 +42,11 @@ func load(filename string, input io.Reader) ([]server.Config, error) {
 		return []server.Config{NewDefault()}, nil
 	}
 
-	// Each server block represents similar hosts/addresses.
+	var lastDirectiveIndex int // we set up directives in two parts; this stores where we left off
+
 	// Iterate each server block and make a config for each one,
-	// executing the directives that were parsed.
+	// executing the directives that were parsed in order up to the tls
+	// directive; this is because we must activate Let's Encrypt.
 	for i, sb := range serverBlocks {
 		onces := makeOnces()
 		storages := makeStorages()
@@ -55,12 +63,12 @@ func load(filename string, input io.Reader) ([]server.Config, error) {
 			}
 
 			// It is crucial that directives are executed in the proper order.
-			for _, dir := range directiveOrder {
+			for k, dir := range directiveOrder {
 				// Execute directive if it is in the server block
 				if tokens, ok := sb.Tokens[dir.name]; ok {
-					// Each setup function gets a controller, which is the
-					// server config and the dispenser containing only
-					// this directive's tokens.
+					// Each setup function gets a controller, from which setup functions
+					// get access to the config, tokens, and other state information useful
+					// to set up its own host only.
 					controller := &setup.Controller{
 						Config:    &config,
 						Dispenser: parse.NewDispenserTokens(filename, tokens),
@@ -76,7 +84,7 @@ func load(filename string, input io.Reader) ([]server.Config, error) {
 						ServerBlockHosts:     sb.HostList(),
 						ServerBlockStorage:   storages[dir.name],
 					}
-
+					// execute setup function and append middleware handler, if any
 					midware, err := dir.setup(controller)
 					if err != nil {
 						return nil, err
@@ -87,9 +95,71 @@ func load(filename string, input io.Reader) ([]server.Config, error) {
 					}
 					storages[dir.name] = controller.ServerBlockStorage // persist for this server block
 				}
+
+				// Stop after TLS setup, since we need to activate Let's Encrypt before continuing;
+				// it makes some changes to the configs that middlewares might want to know about.
+				if dir.name == "tls" {
+					lastDirectiveIndex = k
+					break
+				}
 			}
 
 			configs = append(configs, config)
+		}
+	}
+
+	// Now we have all the configs, but they have only been set up to the
+	// point of tls. We need to activate Let's Encrypt before setting up
+	// the rest of the middlewares so they have correct information regarding
+	// TLS configuration, if necessary. (this call is append-only, so our
+	// iterations below shouldn't be affected)
+	configs, err = letsencrypt.Activate(configs)
+	if err != nil {
+		return nil, err
+	}
+
+	// Finish setting up the rest of the directives, now that TLS is
+	// optimally configured. These loops are similar to above except
+	// we don't iterate all the directives from the beginning and we
+	// don't create new configs.
+	configIndex := -1
+	for i, sb := range serverBlocks {
+		onces := makeOnces()
+		storages := makeStorages()
+
+		for j := range sb.Addresses {
+			configIndex++
+
+			for k := lastDirectiveIndex + 1; k < len(directiveOrder); k++ {
+				dir := directiveOrder[k]
+
+				if tokens, ok := sb.Tokens[dir.name]; ok {
+					controller := &setup.Controller{
+						Config:    &configs[configIndex],
+						Dispenser: parse.NewDispenserTokens(filename, tokens),
+						OncePerServerBlock: func(f func() error) error {
+							var err error
+							onces[dir.name].Do(func() {
+								err = f()
+							})
+							return err
+						},
+						ServerBlockIndex:     i,
+						ServerBlockHostIndex: j,
+						ServerBlockHosts:     sb.HostList(),
+						ServerBlockStorage:   storages[dir.name],
+					}
+					midware, err := dir.setup(controller)
+					if err != nil {
+						return nil, err
+					}
+					if midware != nil {
+						// TODO: For now, we only support the default path scope /
+						configs[configIndex].Middleware["/"] = append(configs[configIndex].Middleware["/"], midware)
+					}
+					storages[dir.name] = controller.ServerBlockStorage // persist for this server block
+				}
+			}
 		}
 	}
 

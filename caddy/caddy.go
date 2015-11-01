@@ -113,14 +113,8 @@ func Start(cdyfile Input) error {
 	caddyfile = cdyfile
 	caddyfileMu.Unlock()
 
-	// load the server configs
-	configs, err := load(path.Base(cdyfile.Path()), bytes.NewReader(cdyfile.Body()))
-	if err != nil {
-		return err
-	}
-
-	// secure all the things
-	configs, err = letsencrypt.Activate(configs)
+	// load the server configs (activates Let's Encrypt)
+	configs, err := loadConfigs(path.Base(cdyfile.Path()), bytes.NewReader(cdyfile.Body()))
 	if err != nil {
 		return err
 	}

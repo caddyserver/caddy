@@ -40,9 +40,15 @@ import (
 // Activate returns the updated list of configs, since
 // some may have been appended, for example, to redirect
 // plaintext HTTP requests to their HTTPS counterpart.
+// This function only appends; it does not prepend or splice.
 func Activate(configs []server.Config) ([]server.Config, error) {
 	// just in case previous caller forgot...
 	Deactivate()
+
+	// TODO: All the output the end user should see when running caddy is something
+	// simple like "Setting up HTTPS..." (and maybe 'done' at the end of the line when finished).
+	// In other words, hide all the other logging except for on errors. Or maybe
+	// have a place to put those logs.
 
 	// reset cached ocsp statuses from any previous activations
 	ocspStatus = make(map[*[]byte]int)
