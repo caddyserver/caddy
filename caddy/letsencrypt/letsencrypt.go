@@ -89,15 +89,16 @@ func Activate(configs []server.Config) ([]server.Config, error) {
 			// Build an error string to return, using all the failures in the list.
 			var errMsg string
 
-			// An agreement error means we need to prompt the user (once) with updated terms
-			// while they're still here.
-			var promptedUpdatedTerms bool
+			// If an error is because of updated SA, only prompt user for agreement once
+			var promptedForAgreement bool
 
 			for domain, obtainErr := range failures {
 				// If the failure was simply because the terms have changed, re-prompt and re-try
-				if tosErr, ok := obtainErr.(acme.TOSError); ok && !promptedUpdatedTerms {
-					Agreed = promptUserAgreement(tosErr.Detail, true) // TODO: Use latest URL
-					promptedUpdatedTerms = true
+				if tosErr, ok := obtainErr.(acme.TOSError); ok {
+					if !Agreed && !promptedForAgreement {
+						Agreed = promptUserAgreement(tosErr.Detail, true) // TODO: Use latest URL
+						promptedForAgreement = true
+					}
 					if Agreed {
 						err := client.AgreeToTOS()
 						if err != nil {
