@@ -21,6 +21,7 @@ func TLS(c *Controller) (middleware.Middleware, error) {
 		switch len(args) {
 		case 1:
 			c.TLS.LetsEncryptEmail = args[0]
+
 			// user can force-disable LE activation this way
 			if c.TLS.LetsEncryptEmail == "off" {
 				c.TLS.Enabled = false
@@ -28,6 +29,13 @@ func TLS(c *Controller) (middleware.Middleware, error) {
 		case 2:
 			c.TLS.Certificate = args[0]
 			c.TLS.Key = args[1]
+
+			// manual HTTPS configuration without port specified should be
+			// served on the HTTPS port; that is what user would expect, and
+			// makes it consistent with how the letsencrypt package works.
+			if c.Port == "" {
+				c.Port = "https"
+			}
 		default:
 			return nil, c.ArgErr()
 		}
