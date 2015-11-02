@@ -146,9 +146,9 @@ func getEmail(cfg server.Config) string {
 		reader := bufio.NewReader(stdin)
 		fmt.Println("Your sites will be served over HTTPS automatically using Let's Encrypt.")
 		fmt.Println("By continuing, you agree to the Let's Encrypt Subscriber Agreement at:")
-		fmt.Println("  https://letsencrypt.org/documents/LE-SA-v1.0.1-July-27-2015.pdf") // TODO: Show current SA link
+		fmt.Println("  " + saURL) // TODO: Show current SA link
 		fmt.Println("Please enter your email address so you can recover your account if needed.")
-		fmt.Println("You can leave it blank, but you lose the ability to recover your account.")
+		fmt.Println("You can leave it blank, but you'll lose the ability to recover your account.")
 		fmt.Print("Email address: ")
 		var err error
 		leEmail, err = reader.ReadString('\n')
@@ -167,10 +167,10 @@ func getEmail(cfg server.Config) string {
 // agreeing, pass false. It returns whether the user agreed or not.
 func promptUserAgreement(agreementURL string, changed bool) bool {
 	if changed {
-		fmt.Printf("The Let's Encrypt Subscriber Agreement has changed:\n%s\n", agreementURL)
+		fmt.Printf("The Let's Encrypt Subscriber Agreement has changed:\n  %s\n", agreementURL)
 		fmt.Print("Do you agree to the new terms? (y/n): ")
 	} else {
-		fmt.Printf("To continue, you must agree to the Let's Encrypt Subscriber Agreement:\n%s\n", agreementURL)
+		fmt.Printf("To continue, you must agree to the Let's Encrypt Subscriber Agreement:\n  %s\n", agreementURL)
 		fmt.Print("Do you agree to the terms? (y/n): ")
 	}
 
@@ -191,3 +191,6 @@ var stdin = io.ReadWriter(os.Stdin)
 // The name of the folder for accounts where the email
 // address was not provided; default 'username' if you will.
 const emptyEmail = "default"
+
+// TODO: Use latest
+const saURL = "https://letsencrypt.org/documents/LE-SA-v1.0.1-July-27-2015.pdf"

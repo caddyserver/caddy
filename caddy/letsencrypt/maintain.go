@@ -97,8 +97,8 @@ func renewCertificates(configs []server.Config) (int, []error) {
 		// Directly convert it to days for the following checks.
 		daysLeft := int(expTime.Sub(time.Now().UTC()).Hours() / 24)
 
-		// Renew with a week or less remaining.
-		if daysLeft <= 7 {
+		// Renew with two weeks or less remaining.
+		if daysLeft <= 14 {
 			log.Printf("[INFO] There are %d days left on the certificate of %s. Trying to renew now.", daysLeft, cfg.Host)
 			client, err := newClient("") // email not used for renewal
 			if err != nil {
@@ -127,8 +127,17 @@ func renewCertificates(configs []server.Config) (int, []error) {
 			// Renew certificate.
 			// TODO: revokeOld should be an option in the caddyfile
 			// TODO: bundle should be an option in the caddyfile as well :)
+		Renew:
 			newCertMeta, err := client.RenewCertificate(certMeta, true, true)
 			if err != nil {
+				if _, ok := err.(acme.TOSError); ok {
+					err := client.AgreeToTOS()
+					if err != nil {
+						errs = append(errs, err)
+					}
+					goto Renew
+				}
+
 				time.Sleep(10 * time.Second)
 				newCertMeta, err = client.RenewCertificate(certMeta, true, true)
 				if err != nil {

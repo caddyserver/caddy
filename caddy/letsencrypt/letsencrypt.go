@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -84,11 +83,35 @@ func Activate(configs []server.Config) ([]server.Config, error) {
 		}
 
 		// client is ready, so let's get free, trusted SSL certificates! yeah!
+	Obtain:
 		certificates, failures := obtainCertificates(client, serverConfigs)
 		if len(failures) > 0 {
-			for k, v := range failures {
-				log.Printf("[%s] Failed to get a certificate: %s", k, v)
+			// Build an error string to return, using all the failures in the list.
+			var errMsg string
+
+			// An agreement error means we need to prompt the user (once) with updated terms
+			// while they're still here.
+			var promptedUpdatedTerms bool
+
+			for domain, obtainErr := range failures {
+				// If the failure was simply because the terms have changed, re-prompt and re-try
+				if tosErr, ok := obtainErr.(acme.TOSError); ok && !promptedUpdatedTerms {
+					Agreed = promptUserAgreement(tosErr.Detail, true) // TODO: Use latest URL
+					promptedUpdatedTerms = true
+					if Agreed {
+						err := client.AgreeToTOS()
+						if err != nil {
+							return configs, errors.New("error agreeing to updated terms: " + err.Error())
+						}
+						goto Obtain
+					}
+				}
+
+				// If user did not agree or it was any other kind of error, just append to the list of errors
+				errMsg += "[" + domain + "] failed to get certificate: " + obtainErr.Error() + "\n"
 			}
+
+			return configs, errors.New(errMsg)
 		}
 
 		// ... that's it. save the certs, keys, and metadata files to disk
@@ -213,7 +236,7 @@ func newClient(leEmail string) (*acme.Client, error) {
 		leUser.Registration = reg
 
 		if !Agreed && reg.TosURL == "" {
-			Agreed = promptUserAgreement("<TODO>", false) // TODO
+			Agreed = promptUserAgreement(saURL, false) // TODO - latest URL
 		}
 		if !Agreed && reg.TosURL == "" {
 			return nil, errors.New("user must agree to terms")
