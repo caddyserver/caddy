@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -83,9 +84,11 @@ func Activate(configs []server.Config) ([]server.Config, error) {
 		}
 
 		// client is ready, so let's get free, trusted SSL certificates! yeah!
-		certificates, err := obtainCertificates(client, serverConfigs)
-		if err != nil {
-			return configs, errors.New("error getting certs: " + err.Error())
+		certificates, failures := obtainCertificates(client, serverConfigs)
+		if len(failures) > 0 {
+			for k, v := range failures {
+				log.Printf("[%s] Failed to get a certificate: %s", k, v)
+			}
 		}
 
 		// ... that's it. save the certs, keys, and metadata files to disk
@@ -234,19 +237,14 @@ func newClient(leEmail string) (*acme.Client, error) {
 
 // obtainCertificates obtains certificates from the CA server for
 // the configurations in serverConfigs using client.
-func obtainCertificates(client *acme.Client, serverConfigs []*server.Config) ([]acme.CertificateResource, error) {
+func obtainCertificates(client *acme.Client, serverConfigs []*server.Config) ([]acme.CertificateResource, map[string]error) {
 	// collect all the hostnames into one slice
 	var hosts []string
 	for _, cfg := range serverConfigs {
 		hosts = append(hosts, cfg.Host)
 	}
 
-	certificates, err := client.ObtainCertificates(hosts, true)
-	if err != nil {
-		return nil, errors.New("error obtaining certs: " + err.Error())
-	}
-
-	return certificates, nil
+	return client.ObtainCertificates(hosts, true)
 }
 
 // saveCertificates saves each certificate resource to disk. This
