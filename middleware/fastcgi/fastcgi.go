@@ -278,6 +278,6 @@ type Rule struct {
 
 var (
 	headerNameReplacer = strings.NewReplacer(" ", "_", "-", "_")
-
+	// ErrIndexMissingSplit describes an index configuration error.
 	ErrIndexMissingSplit = errors.New("configured index file(s) must include split value")
 )

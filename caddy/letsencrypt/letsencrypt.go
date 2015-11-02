@@ -398,9 +398,9 @@ func otherHostHasScheme(allConfigs []server.Config, cfgIndex int, scheme string)
 // be the HTTPS configuration. The returned configuration is set
 // to listen on the "http" port (port 80).
 func redirPlaintextHost(cfg server.Config) server.Config {
-	toUrl := "https://" + cfg.Host
+	toURL := "https://" + cfg.Host
 	if cfg.Port != "https" && cfg.Port != "http" {
-		toUrl += ":" + cfg.Port
+		toURL += ":" + cfg.Port
 	}
 
 	redirMidware := func(next middleware.Handler) middleware.Handler {
@@ -408,7 +408,7 @@ func redirPlaintextHost(cfg server.Config) server.Config {
 			{
 				FromScheme: "http",
 				FromPath:   "/",
-				To:         toUrl + "{uri}",
+				To:         toURL + "{uri}",
 				Code:       http.StatusMovedPermanently,
 			},
 		}}
@@ -459,13 +459,13 @@ func Revoke(host string) error {
 }
 
 var (
-	// Let's Encrypt account email to use if none provided
+	// DefaultEmail represents the Let's Encrypt account email to use if none provided
 	DefaultEmail string
 
-	// Whether user has agreed to the Let's Encrypt SA
+	// Agreed indicates whether user has agreed to the Let's Encrypt SA
 	Agreed bool
 
-	// The base URL to the CA's ACME endpoint
+	// CAUrl represents the base URL to the CA's ACME endpoint
 	CAUrl string
 )
 

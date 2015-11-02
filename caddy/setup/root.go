@@ -7,6 +7,7 @@ import (
 	"github.com/mholt/caddy/middleware"
 )
 
+// Root sets up the root file path of the server.
 func Root(c *Controller) (middleware.Middleware, error) {
 	for c.Next() {
 		if !c.NextArg() {

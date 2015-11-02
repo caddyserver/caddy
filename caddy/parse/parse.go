@@ -8,8 +8,8 @@ import "io"
 // If checkDirectives is true, only valid directives will be allowed
 // otherwise we consider it a parse error. Server blocks are returned
 // in the order in which they appear.
-func ServerBlocks(filename string, input io.Reader, checkDirectives bool) ([]serverBlock, error) {
-	p := parser{Dispenser: NewDispenser(filename, input), checkDirectives: checkDirectives}
+func ServerBlocks(filename string, input io.Reader) ([]serverBlock, error) {
+	p := parser{Dispenser: NewDispenser(filename, input)}
 	blocks, err := p.parseAll()
 	return blocks, err
 }
@@ -26,6 +26,6 @@ func allTokens(input io.Reader) (tokens []token) {
 	return
 }
 
-// Set of directives that are valid (unordered). Populated
+// ValidDirectives is a set of directives that are valid (unordered). Populated
 // by config package's init function.
 var ValidDirectives = make(map[string]struct{})

@@ -51,9 +51,14 @@ type Rule struct {
 }
 
 const (
-	DefaultLogFilename  = "access.log"
-	CommonLogFormat     = `{remote} ` + CommonLogEmptyValue + ` [{when}] "{method} {uri} {proto}" {status} {size}`
+	// DefaultLogFilename is the default log filename.
+	DefaultLogFilename = "access.log"
+	// CommonLogFormat is the common log format.
+	CommonLogFormat = `{remote} ` + CommonLogEmptyValue + ` [{when}] "{method} {uri} {proto}" {status} {size}`
+	// CommonLogEmptyValue is the common empty log value.
 	CommonLogEmptyValue = "-"
-	CombinedLogFormat   = CommonLogFormat + ` "{>Referer}" "{>User-Agent}"`
-	DefaultLogFormat    = CommonLogFormat
+	// CombinedLogFormat is the combined log format.
+	CombinedLogFormat = CommonLogFormat + ` "{>Referer}" "{>User-Agent}"`
+	// DefaultLogFormat is the default log format.
+	DefaultLogFormat = CommonLogFormat
 )

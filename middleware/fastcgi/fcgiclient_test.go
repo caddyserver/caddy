@@ -193,8 +193,8 @@ func generateRandFile(size int) (p string, m string) {
 
 func DisabledTest(t *testing.T) {
 	// TODO: test chunked reader
-
 	t_ = t
+
 	rand.Seed(time.Now().UTC().UnixNano())
 
 	// server

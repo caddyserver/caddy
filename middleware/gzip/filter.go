@@ -32,7 +32,7 @@ type ExtFilter struct {
 	Exts Set
 }
 
-// extWildCard is the wildcard for extensions.
+// ExtWildCard is the wildcard for extensions.
 const ExtWildCard = "*"
 
 // ShouldCompress checks if the request file extension matches any

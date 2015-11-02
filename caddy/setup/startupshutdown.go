@@ -8,10 +8,12 @@ import (
 	"github.com/mholt/caddy/middleware"
 )
 
+// Startup registers a startup callback to execute during server start.
 func Startup(c *Controller) (middleware.Middleware, error) {
 	return nil, registerCallback(c, &c.Startup)
 }
 
+// Shutdown registers a shutdown callback to execute during process exit.
 func Shutdown(c *Controller) (middleware.Middleware, error) {
 	return nil, registerCallback(c, &c.Shutdown)
 }

@@ -30,44 +30,75 @@ import (
 	"sync"
 )
 
+// FCGIListenSockFileno describes listen socket file number.
 const FCGIListenSockFileno uint8 = 0
+
+// FCGIHeaderLen describes header length.
 const FCGIHeaderLen uint8 = 8
+
+// Version1 describes the version.
 const Version1 uint8 = 1
+
+// FCGINullRequestID describes the null request ID.
 const FCGINullRequestID uint8 = 0
+
+// FCGIKeepConn describes keep connection mode.
 const FCGIKeepConn uint8 = 1
 const doubleCRLF = "\r\n\r\n"
 
 const (
+	// BeginRequest is the begin request flag.
 	BeginRequest uint8 = iota + 1
+	// AbortRequest is the abort request flag.
 	AbortRequest
+	// EndRequest is the end request flag.
 	EndRequest
+	// Params is the parameters flag.
 	Params
+	// Stdin is the standard input flag.
 	Stdin
+	// Stdout is the standard output flag.
 	Stdout
+	// Stderr is the standard error flag.
 	Stderr
+	// Data is the data flag.
 	Data
+	// GetValues is the get values flag.
 	GetValues
+	// GetValuesResult is the get values result flag.
 	GetValuesResult
+	// UnknownType is the unknown type flag.
 	UnknownType
+	// MaxType is the maximum type flag.
 	MaxType = UnknownType
 )
 
 const (
+	// Responder is the responder flag.
 	Responder uint8 = iota + 1
+	// Authorizer is the authorizer flag.
 	Authorizer
+	// Filter is the filter flag.
 	Filter
 )
 
 const (
+	// RequestComplete is the completed request flag.
 	RequestComplete uint8 = iota
+	// CantMultiplexConns is the multiplexed connections flag.
 	CantMultiplexConns
+	// Overloaded is the overloaded flag.
 	Overloaded
+	// UnknownRole is the unknown role flag.
 	UnknownRole
 )
 
 const (
-	MaxConns       string = "MAX_CONNS"
-	MaxRequests    string = "MAX_REQS"
+	// MaxConns is the maximum connections flag.
+	MaxConns string = "MAX_CONNS"
+	// MaxRequests is the maximum requests flag.
+	MaxRequests string = "MAX_REQS"
+	// MultiplexConns is the multiplex connections flag.
 	MultiplexConns string = "MPXS_CONNS"
 )
 

@@ -67,5 +67,5 @@ func (c CaddyfileInput) Body() []byte { return c.Contents }
 // Path returns c.Filepath.
 func (c CaddyfileInput) Path() string { return c.Filepath }
 
-// Path returns true if the original input was a real file on the file system.
+// IsFile returns true if the original input was a real file on the file system.
 func (c CaddyfileInput) IsFile() bool { return c.RealFile }

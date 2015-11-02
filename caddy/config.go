@@ -280,7 +280,7 @@ func arrangeBindings(allConfigs []server.Config) (Group, error) {
 // change them to 80 or 443 respectively. If a hostname fails to
 // resolve, that host can still be served but will be listening on
 // the wildcard host instead. This function takes care of this for you.
-func resolveAddr(conf server.Config) (resolvAddr *net.TCPAddr, warnErr error, fatalErr error) {
+func resolveAddr(conf server.Config) (resolvAddr *net.TCPAddr, warnErr, fatalErr error) {
 	bindHost := conf.BindHost
 
 	// TODO: Do we even need the port? Maybe we just need to look up the host.

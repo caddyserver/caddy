@@ -11,7 +11,7 @@ import (
 )
 
 var testDir = filepath.Join(os.TempDir(), "caddy_testdir")
-var customErr = errors.New("Custom Error")
+var ErrCustom = errors.New("Custom Error")
 
 // testFiles is a map with relative paths to test files as keys and file content as values.
 // The map represents the following structure:
@@ -32,8 +32,8 @@ var testFiles = map[string]string{
 // TestServeHTTP covers positive scenarios when serving files.
 func TestServeHTTP(t *testing.T) {
 
-	beforeServeHttpTest(t)
-	defer afterServeHttpTest(t)
+	beforeServeHTTPTest(t)
+	defer afterServeHTTPTest(t)
 
 	fileserver := FileServer(http.Dir(testDir), []string{"hidden.html"})
 
@@ -137,8 +137,8 @@ func TestServeHTTP(t *testing.T) {
 
 }
 
-// beforeServeHttpTest creates a test directory with the structure, defined in the variable testFiles
-func beforeServeHttpTest(t *testing.T) {
+// beforeServeHTTPTest creates a test directory with the structure, defined in the variable testFiles
+func beforeServeHTTPTest(t *testing.T) {
 	// make the root test dir
 	err := os.Mkdir(testDir, os.ModePerm)
 	if err != nil {
@@ -176,8 +176,8 @@ func beforeServeHttpTest(t *testing.T) {
 
 }
 
-// afterServeHttpTest removes the test dir and all its content
-func afterServeHttpTest(t *testing.T) {
+// afterServeHTTPTest removes the test dir and all its content
+func afterServeHTTPTest(t *testing.T) {
 	// cleans up everything under the test dir. No need to clean the individual files.
 	err := os.RemoveAll(testDir)
 	if err != nil {
@@ -232,9 +232,9 @@ func TestServeHTTPFailingFS(t *testing.T) {
 			expectedErr:    os.ErrPermission,
 		},
 		{
-			fsErr:           customErr,
+			fsErr:           ErrCustom,
 			expectedStatus:  http.StatusServiceUnavailable,
-			expectedErr:     customErr,
+			expectedErr:     ErrCustom,
 			expectedHeaders: map[string]string{"Retry-After": "5"},
 		},
 	}
@@ -293,9 +293,9 @@ func TestServeHTTPFailingStat(t *testing.T) {
 			expectedErr:    os.ErrPermission,
 		},
 		{
-			statErr:        customErr,
+			statErr:        ErrCustom,
 			expectedStatus: http.StatusInternalServerError,
-			expectedErr:    customErr,
+			expectedErr:    ErrCustom,
 		},
 	}
 

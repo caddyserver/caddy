@@ -26,7 +26,7 @@ func (s Storage) Site(domain string) string {
 	return filepath.Join(s.Sites(), domain)
 }
 
-// CertFile returns the path to the certificate file for domain.
+// SiteCertFile returns the path to the certificate file for domain.
 func (s Storage) SiteCertFile(domain string) string {
 	return filepath.Join(s.Site(domain), domain+".crt")
 }

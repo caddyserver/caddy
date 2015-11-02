@@ -14,10 +14,13 @@ import (
 )
 
 const (
-	DefaultTemplate  = "defaultTemplate"
+	// DefaultTemplate is the default template.
+	DefaultTemplate = "defaultTemplate"
+	// DefaultStaticDir is the default static directory.
 	DefaultStaticDir = "generated_site"
 )
 
+// Data represents a markdown document.
 type Data struct {
 	middleware.Context
 	Doc   map[string]string
