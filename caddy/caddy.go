@@ -127,7 +127,7 @@ func Start(cdyfile Input) error {
 	}
 
 	// Close remaining file descriptors we may have inherited that we don't need
-	if isRestart() {
+	if IsRestart() {
 		for _, fdIndex := range loadedGob.ListenerFds {
 			file := os.NewFile(fdIndex, "")
 			fln, err := net.FileListener(file)
@@ -138,7 +138,7 @@ func Start(cdyfile Input) error {
 	}
 
 	// Show initialization output
-	if !Quiet && !isRestart() {
+	if !Quiet && !IsRestart() {
 		var checkedFdLimit bool
 		for _, group := range groupings {
 			for _, conf := range group.Configs {
@@ -159,7 +159,7 @@ func Start(cdyfile Input) error {
 	}
 
 	// Tell parent process that we got this
-	if isRestart() {
+	if IsRestart() {
 		ppipe := os.NewFile(3, "") // parent is listening on pipe at index 3
 		ppipe.Write([]byte("success"))
 		ppipe.Close()
@@ -174,6 +174,7 @@ func Start(cdyfile Input) error {
 // until the servers are listening.
 func startServers(groupings Group) error {
 	var startupWg sync.WaitGroup
+	errChan := make(chan error)
 
 	for _, group := range groupings {
 		s, err := server.New(group.BindAddr.String(), group.Configs)
@@ -183,7 +184,7 @@ func startServers(groupings Group) error {
 		s.HTTP2 = HTTP2 // TODO: This setting is temporary
 
 		var ln server.ListenerFile
-		if isRestart() {
+		if IsRestart() {
 			// Look up this server's listener in the map of inherited file descriptors;
 			// if we don't have one, we must make a new one.
 			if fdIndex, ok := loadedGob.ListenerFds[s.Addr]; ok {
@@ -215,11 +216,7 @@ func startServers(groupings Group) error {
 
 			// "use of closed network connection" is normal if doing graceful shutdown...
 			if err != nil && !strings.Contains(err.Error(), "use of closed network connection") {
-				if isRestart() {
-					log.Fatal(err)
-				} else {
-					log.Println(err)
-				}
+				errChan <- err
 			}
 		}(s, ln)
 
@@ -234,7 +231,15 @@ func startServers(groupings Group) error {
 		serversMu.Unlock()
 	}
 
+	// Wait for all servers to finish starting
 	startupWg.Wait()
+
+	// Return the first error, if any
+	select {
+	case err := <-errChan:
+		return err
+	default:
+	}
 
 	return nil
 }
@@ -269,7 +274,7 @@ func Wait() {
 func LoadCaddyfile(loader func() (Input, error)) (cdyfile Input, err error) {
 	// If we are a fork, finishing the restart is highest priority;
 	// piped input is required in this case.
-	if isRestart() {
+	if IsRestart() {
 		err := gob.NewDecoder(os.Stdin).Decode(&loadedGob)
 		if err != nil {
 			return nil, err

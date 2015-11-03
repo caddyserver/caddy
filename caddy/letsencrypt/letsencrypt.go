@@ -57,8 +57,8 @@ func Activate(configs []server.Config) ([]server.Config, error) {
 	// we already have certs and keys in storage from last time.
 	configLen := len(configs) // avoid infinite loop since this loop appends plaintext to the slice
 	for i := 0; i < configLen; i++ {
-		if existingCertAndKey(configs[i].Host) && configQualifies(configs[i], configs) {
-			configs = autoConfigure(&configs[i], configs)
+		if existingCertAndKey(configs[i].Host) && configQualifies(configs, i) {
+			configs = autoConfigure(configs, i)
 		}
 	}
 
@@ -123,7 +123,7 @@ func Activate(configs []server.Config) ([]server.Config, error) {
 
 		// it all comes down to this: turning on TLS with all the new certs
 		for i := 0; i < len(serverConfigs); i++ {
-			configs = autoConfigure(serverConfigs[i], configs)
+			configs = autoConfigure(configs, i)
 		}
 	}
 
@@ -151,10 +151,11 @@ func Deactivate() (err error) {
 	return
 }
 
-// configQualifies returns true if cfg qualifes for automatic LE activation,
-// but it does require the list of all configs to be passed in as well.
-// It does NOT check to see if a cert and key already exist for cfg.
-func configQualifies(cfg server.Config, allConfigs []server.Config) bool {
+// configQualifies returns true if the config at cfgIndex (within allConfigs)
+// qualifes for automatic LE activation. It does NOT check to see if a cert
+// and key already exist for the config.
+func configQualifies(allConfigs []server.Config, cfgIndex int) bool {
+	cfg := allConfigs[cfgIndex]
 	return cfg.TLS.Certificate == "" && // user could provide their own cert and key
 		cfg.TLS.Key == "" &&
 
@@ -167,11 +168,11 @@ func configQualifies(cfg server.Config, allConfigs []server.Config) bool {
 		cfg.Host != "" &&
 		cfg.Host != "0.0.0.0" &&
 		cfg.Host != "::1" &&
-		!strings.HasPrefix(cfg.Host, "127.") && // to use a boulder on your own machine, add fake domain to hosts file
+		!strings.HasPrefix(cfg.Host, "127.") && // to use boulder on your own machine, add fake domain to hosts file
 		// not excluding 10.* and 192.168.* hosts for possibility of running internal Boulder instance
 
-		// make sure an HTTPS version of this config doesn't exist in the list already
-		!hostHasOtherScheme(cfg.Host, "https", allConfigs)
+		// make sure another HTTPS version of this config doesn't exist in the list already
+		!otherHostHasScheme(allConfigs, cfgIndex, "https")
 }
 
 // groupConfigsByEmail groups configs by user email address. The returned map is
@@ -186,7 +187,7 @@ func groupConfigsByEmail(configs []server.Config) (map[string][]*server.Config, 
 		// that we won't be obtaining certs for - this way we won't
 		// bother the user for an email address unnecessarily and
 		// we don't obtain new certs for a host we already have certs for.
-		if existingCertAndKey(configs[i].Host) || !configQualifies(configs[i], configs) {
+		if existingCertAndKey(configs[i].Host) || !configQualifies(configs, i) {
 			continue
 		}
 		leEmail := getEmail(configs[i])
@@ -311,12 +312,14 @@ func saveCertsAndKeys(certificates []acme.CertificateResource) error {
 	return nil
 }
 
-// autoConfigure enables TLS on cfg and appends, if necessary, a new config
-// to allConfigs that redirects plaintext HTTP to its new HTTPS counterpart.
-// It expects the certificate and key to already be in storage. It returns
-// the new list of allConfigs, since it may append a new config. This function
-// assumes that cfg was already set up for HTTPS.
-func autoConfigure(cfg *server.Config, allConfigs []server.Config) []server.Config {
+// autoConfigure enables TLS on allConfigs[cfgIndex] and appends, if necessary,
+// a new config to allConfigs that redirects plaintext HTTP to its new HTTPS
+// counterpart. It expects the certificate and key to already be in storage. It
+// returns the new list of allConfigs, since it may append a new config. This
+// function assumes that allConfigs[cfgIndex] is already set up for HTTPS.
+func autoConfigure(allConfigs []server.Config, cfgIndex int) []server.Config {
+	cfg := &allConfigs[cfgIndex]
+
 	bundleBytes, err := ioutil.ReadFile(storage.SiteCertFile(cfg.Host))
 	// TODO: Handle these errors better
 	if err == nil {
@@ -344,28 +347,32 @@ func autoConfigure(cfg *server.Config, allConfigs []server.Config) []server.Conf
 		acmeHandlers[cfg.Host] = handler
 	}
 
-	// Set up http->https redirect as long as there isn't already
-	// a http counterpart in the configs
-	if !hostHasOtherScheme(cfg.Host, "http", allConfigs) {
+	// Set up http->https redirect as long as there isn't already a http counterpart
+	// in the configs and this isn't, for some reason, already on port 80
+	if !otherHostHasScheme(allConfigs, cfgIndex, "http") &&
+		cfg.Port != "80" && cfg.Port != "http" { // (would not be http port with current program flow, but just in case)
 		allConfigs = append(allConfigs, redirPlaintextHost(*cfg))
 	}
 
 	return allConfigs
 }
 
-// hostHasOtherScheme tells you whether there is another config in the list
-// for the same host but with the port equal to scheme. For example, to see
-// if example.com has a https variant already, pass in example.com and
-// "https" along with the list of configs. This function considers "443"
-// and "https" to be the same scheme, as well as "http" and "80".
-func hostHasOtherScheme(host, scheme string, allConfigs []server.Config) bool {
+// otherHostHasScheme tells you whether there is ANOTHER config in allConfigs
+// for the same host but with the port equal to scheme as allConfigs[cfgIndex].
+// This function considers "443" and "https" to be the same scheme, as well as
+// "http" and "80". It does not tell you whether there is ANY config with scheme,
+// only if there's a different one with it.
+func otherHostHasScheme(allConfigs []server.Config, cfgIndex int, scheme string) bool {
 	if scheme == "80" {
 		scheme = "http"
 	} else if scheme == "443" {
 		scheme = "https"
 	}
-	for _, otherCfg := range allConfigs {
-		if otherCfg.Host == host {
+	for i, otherCfg := range allConfigs {
+		if i == cfgIndex {
+			continue // has to be a config OTHER than the one we're comparing against
+		}
+		if otherCfg.Host == allConfigs[cfgIndex].Host {
 			if (otherCfg.Port == scheme) ||
 				(scheme == "https" && otherCfg.Port == "443") ||
 				(scheme == "http" && otherCfg.Port == "80") {

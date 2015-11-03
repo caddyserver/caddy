@@ -46,9 +46,9 @@ type caddyfileGob struct {
 	Caddyfile   Input
 }
 
-// isRestart returns whether this process is, according
+// IsRestart returns whether this process is, according
 // to env variables, a fork as part of a graceful restart.
-func isRestart() bool {
+func IsRestart() bool {
 	return os.Getenv("CADDY_RESTART") == "true"
 }
 

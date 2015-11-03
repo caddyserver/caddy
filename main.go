@@ -79,7 +79,11 @@ func main() {
 	// Start your engines
 	err = caddy.Start(caddyfile)
 	if err != nil {
-		log.Fatal(err)
+		if caddy.IsRestart() {
+			log.Println("error starting servers:", err)
+		} else {
+			log.Fatal(err)
+		}
 	}
 
 	// Twiddle your thumbs
