@@ -33,15 +33,17 @@ func maintainAssets(configs []server.Config, stopChan chan struct{}) {
 	for {
 		select {
 		case <-renewalTicker.C:
-			if n, errs := renewCertificates(configs); len(errs) > 0 {
+			n, errs := renewCertificates(configs, true)
+			if len(errs) > 0 {
 				for _, err := range errs {
 					log.Printf("[ERROR] cert renewal: %v\n", err)
 				}
-				if n > 0 && OnChange != nil {
-					err := OnChange()
-					if err != nil {
-						log.Printf("[ERROR] onchange after cert renewal: %v\n", err)
-					}
+			}
+			// even if there was an error, some renewals may have succeeded
+			if n > 0 && OnChange != nil {
+				err := OnChange()
+				if err != nil {
+					log.Printf("[ERROR] onchange after cert renewal: %v\n", err)
 				}
 			}
 		case <-ocspTicker.C:
@@ -69,10 +71,19 @@ func maintainAssets(configs []server.Config, stopChan chan struct{}) {
 // through this function; all changes happen directly on disk.
 // It returns the number of certificates renewed and any errors
 // that occurred. It only performs a renewal if necessary.
-func renewCertificates(configs []server.Config) (int, []error) {
+// If useCustomPort is true, a custom port will be used, and
+// whatever is listening at 443 better proxy ACME requests to it.
+// Otherwise, the acme package will create its own listener on 443.
+func renewCertificates(configs []server.Config, useCustomPort bool) (int, []error) {
 	log.Print("[INFO] Processing certificate renewals...")
 	var errs []error
 	var n int
+
+	defer func() {
+		// reset these so as to not interfere with other challenges
+		acme.OnSimpleHTTPStart = nil
+		acme.OnSimpleHTTPEnd = nil
+	}()
 
 	for _, cfg := range configs {
 		// Host must be TLS-enabled and have existing assets managed by LE
@@ -100,7 +111,12 @@ func renewCertificates(configs []server.Config) (int, []error) {
 		// Renew with two weeks or less remaining.
 		if daysLeft <= 14 {
 			log.Printf("[INFO] There are %d days left on the certificate of %s. Trying to renew now.", daysLeft, cfg.Host)
-			client, err := newClient("") // email not used for renewal
+			var client *acme.Client
+			if useCustomPort {
+				client, err = newClientPort("", alternatePort) // email not used for renewal
+			} else {
+				client, err = newClient("")
+			}
 			if err != nil {
 				errs = append(errs, err)
 				continue
@@ -123,6 +139,10 @@ func renewCertificates(configs []server.Config) (int, []error) {
 			err = json.Unmarshal(metaBytes, &certMeta)
 			certMeta.Certificate = certBytes
 			certMeta.PrivateKey = privBytes
+
+			// Tell the handler to accept and proxy acme request in order to solve challenge
+			acme.OnSimpleHTTPStart = acmeHandlers[cfg.Host].ChallengeOn
+			acme.OnSimpleHTTPEnd = acmeHandlers[cfg.Host].ChallengeOff
 
 			// Renew certificate.
 			// TODO: revokeOld should be an option in the caddyfile
@@ -148,11 +168,16 @@ func renewCertificates(configs []server.Config) (int, []error) {
 
 			saveCertsAndKeys([]acme.CertificateResource{newCertMeta})
 			n++
-		} else if daysLeft <= 14 {
-			// Warn on 14 days remaining
-			log.Printf("[WARN] There are %d days left on the certificate for %s. Will renew when 7 days remain.\n", daysLeft, cfg.Host)
+		} else if daysLeft <= 30 {
+			// Warn on 30 days remaining. TODO: Just do this once...
+			log.Printf("[WARN] There are %d days left on the certificate for %s. Will renew when 14 days remain.\n", daysLeft, cfg.Host)
 		}
 	}
 
 	return n, errs
 }
+
+// acmeHandlers is a map of host to ACME handler. These
+// are used to proxy ACME requests to the ACME client
+// when port 443 is in use.
+var acmeHandlers = make(map[string]*Handler)

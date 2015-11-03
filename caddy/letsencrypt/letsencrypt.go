@@ -82,7 +82,7 @@ func Activate(configs []server.Config) ([]server.Config, error) {
 			return configs, errors.New("error creating client: " + err.Error())
 		}
 
-		// client is ready, so let's get free, trusted SSL certificates! yeah!
+		// client is ready, so let's get free, trusted SSL certificates!
 	Obtain:
 		certificates, failures := obtainCertificates(client, serverConfigs)
 		if len(failures) > 0 {
@@ -128,7 +128,7 @@ func Activate(configs []server.Config) ([]server.Config, error) {
 	}
 
 	// renew all certificates that need renewal
-	renewCertificates(configs)
+	renewCertificates(configs, false)
 
 	// keep certificates renewed and OCSP stapling updated
 	go maintainAssets(configs, stopChan)
@@ -167,8 +167,8 @@ func configQualifies(cfg server.Config, allConfigs []server.Config) bool {
 		cfg.Host != "" &&
 		cfg.Host != "0.0.0.0" &&
 		cfg.Host != "::1" &&
-		!strings.HasPrefix(cfg.Host, "127.") &&
-		// TODO: Also exclude 10.* and 192.168.* addresses?
+		!strings.HasPrefix(cfg.Host, "127.") && // to use a boulder on your own machine, add fake domain to hosts file
+		// not excluding 10.* and 192.168.* hosts for possibility of running internal Boulder instance
 
 		// make sure an HTTPS version of this config doesn't exist in the list already
 		!hostHasOtherScheme(cfg.Host, "https", allConfigs)
@@ -215,6 +215,14 @@ func existingCertAndKey(host string) bool {
 // disk (if already exists) or created new and registered via ACME
 // and saved to the file system for next time.
 func newClient(leEmail string) (*acme.Client, error) {
+	return newClientPort(leEmail, exposePort)
+}
+
+// newClientPort does the same thing as newClient, except it creates a
+// new client with a custom port used for ACME transactions instead of
+// the default port. This is important if the default port is already in
+// use or is not exposed to the public, etc.
+func newClientPort(leEmail, port string) (*acme.Client, error) {
 	// Look up or create the LE user account
 	leUser, err := getUser(leEmail)
 	if err != nil {
@@ -222,7 +230,7 @@ func newClient(leEmail string) (*acme.Client, error) {
 	}
 
 	// The client facilitates our communication with the CA server.
-	client, err := acme.NewClient(CAUrl, &leUser, rsaKeySizeToUse, exposePort)
+	client, err := acme.NewClient(CAUrl, &leUser, rsaKeySizeToUse, port)
 	if err != nil {
 		return nil, err
 	}
@@ -323,6 +331,17 @@ func autoConfigure(cfg *server.Config, allConfigs []server.Config) []server.Conf
 	cfg.TLS.Enabled = true
 	if cfg.Port == "" {
 		cfg.Port = "https"
+	}
+
+	// Chain in ACME middleware proxy if we use up the SSL port
+	if cfg.Port == "https" || cfg.Port == "443" {
+		handler := new(Handler)
+		mid := func(next middleware.Handler) middleware.Handler {
+			handler.Next = next
+			return handler
+		}
+		cfg.Middleware["/"] = append(cfg.Middleware["/"], mid)
+		acmeHandlers[cfg.Host] = handler
 	}
 
 	// Set up http->https redirect as long as there isn't already
@@ -439,6 +458,11 @@ const (
 	// NOTE: Let's Encrypt requires port 443. If exposePort is not 443,
 	// then port 443 must be forwarded to exposePort.
 	exposePort = "443"
+
+	// If port 443 is in use by a Caddy server instance, then this is
+	// port on which the acme client will solve challenges. (Whatever is
+	// listening on port 443 must proxy ACME requests to this port.)
+	alternatePort = "5033"
 
 	// How often to check certificates for renewal.
 	renewInterval = 24 * time.Hour
