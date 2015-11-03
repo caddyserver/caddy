@@ -9,17 +9,12 @@ import (
 )
 
 func TLS(c *Controller) (middleware.Middleware, error) {
-	if c.Port != "http" {
-		c.TLS.Enabled = true
-	} else {
-		log.Printf("Warning: TLS disabled for %s://%s. To force TLS over the plaintext HTTP port, "+
-			"specify port 80 explicitly (https://%s:80).", c.Port, c.Host, c.Host)
-	}
-
 	if c.Port == "http" {
 		c.TLS.Enabled = false
 		log.Printf("Warning: TLS disabled for %s://%s. To force TLS over the plaintext HTTP port, "+
 			"specify port 80 explicitly (https://%s:80).", c.Port, c.Host, c.Host)
+	} else {
+		c.TLS.Enabled = true // they had a tls directive, so assume it's on unless we confirm otherwise later
 	}
 
 	for c.Next() {
