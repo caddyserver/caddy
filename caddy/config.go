@@ -278,6 +278,7 @@ func arrangeBindings(allConfigs []server.Config) (Group, error) {
 func resolveAddr(conf server.Config) (resolvAddr *net.TCPAddr, warnErr error, fatalErr error) {
 	bindHost := conf.BindHost
 
+	// TODO: Do we even need the port? Maybe we just need to look up the host.
 	resolvAddr, warnErr = net.ResolveTCPAddr("tcp", net.JoinHostPort(bindHost, conf.Port))
 	if warnErr != nil {
 		// Most likely the host lookup failed or the port is unknown

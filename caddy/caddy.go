@@ -39,7 +39,7 @@ var (
 	// The name and version of the application.
 	AppName, AppVersion string
 
-	// If true, initialization will not show any output.
+	// If true, initialization will not show any informative output.
 	Quiet bool
 
 	// DefaultInput is the default configuration to use when config input is empty or missing.

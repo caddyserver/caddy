@@ -16,9 +16,9 @@ func init() {
 	letsencrypt.OnChange = func() error { return Restart(nil) }
 }
 
-// isLocalhost returns true if the string looks explicitly like a localhost address.
-func isLocalhost(s string) bool {
-	return s == "localhost" || s == "::1" || strings.HasPrefix(s, "127.")
+// isLocalhost returns true if host looks explicitly like a localhost address.
+func isLocalhost(host string) bool {
+	return host == "localhost" || host == "::1" || strings.HasPrefix(host, "127.")
 }
 
 // checkFdlimit issues a warning if the OS max file descriptors is below a recommended minimum.
