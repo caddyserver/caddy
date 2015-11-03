@@ -335,6 +335,14 @@ func NewDefault() server.Config {
 	}
 }
 
+// DefaultInput returns the default Caddyfile input
+// to use when it is otherwise empty or missing.
+func DefaultInput() CaddyfileInput {
+	return CaddyfileInput{
+		Contents: []byte(fmt.Sprintf("%s:%s\nroot %s", Host, Port, Root)),
+	}
+}
+
 // These defaults are configurable through the command line
 var (
 	// Site root

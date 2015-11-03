@@ -42,11 +42,6 @@ var (
 	// If true, initialization will not show any informative output.
 	Quiet bool
 
-	// DefaultInput is the default configuration to use when config input is empty or missing.
-	DefaultInput = CaddyfileInput{
-		Contents: []byte(fmt.Sprintf("%s:%s\nroot %s", DefaultHost, DefaultPort, DefaultRoot)),
-	}
-
 	// HTTP2 indicates whether HTTP2 is enabled or not
 	HTTP2 bool // TODO: temporary flag until http2 is standard
 )
@@ -297,7 +292,7 @@ func LoadCaddyfile(loader func() (Input, error)) (cdyfile Input, err error) {
 
 	// Otherwise revert to default
 	if cdyfile == nil {
-		cdyfile = DefaultInput
+		cdyfile = DefaultInput()
 	}
 
 	return

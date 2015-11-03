@@ -113,7 +113,7 @@ func loadCaddyfile() (caddy.Input, error) {
 	contents, err := ioutil.ReadFile(caddy.DefaultConfigFile)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return caddy.DefaultInput, nil
+			return caddy.DefaultInput(), nil
 		}
 		return nil, err
 	}
