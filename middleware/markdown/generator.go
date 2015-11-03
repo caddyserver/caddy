@@ -17,18 +17,18 @@ import (
 // It only generates static files if it is enabled (cfg.StaticDir
 // must be set).
 func GenerateStatic(md Markdown, cfg *Config) error {
-	generated, err := generateLinks(md, cfg)
-	if err != nil {
-		return err
-	}
-
-	// No new file changes, return.
-	if !generated {
-		return nil
-	}
-
 	// If static site generation is enabled.
 	if cfg.StaticDir != "" {
+		generated, err := generateLinks(md, cfg)
+		if err != nil {
+			return err
+		}
+
+		// No new file changes, return.
+		if !generated {
+			return nil
+		}
+
 		if err := generateStaticHTML(md, cfg); err != nil {
 			return err
 		}
