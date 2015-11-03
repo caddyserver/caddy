@@ -5,9 +5,11 @@ import "io"
 
 // ServerBlocks parses the input just enough to organize tokens,
 // in order, by server block. No further parsing is performed.
-// Server blocks are returned in the order in which they appear.
-func ServerBlocks(filename string, input io.Reader) ([]serverBlock, error) {
-	p := parser{Dispenser: NewDispenser(filename, input)}
+// If checkDirectives is true, only valid directives will be allowed
+// otherwise we consider it a parse error. Server blocks are returned
+// in the order in which they appear.
+func ServerBlocks(filename string, input io.Reader, checkDirectives bool) ([]serverBlock, error) {
+	p := parser{Dispenser: NewDispenser(filename, input), checkDirectives: checkDirectives}
 	blocks, err := p.parseAll()
 	return blocks, err
 }

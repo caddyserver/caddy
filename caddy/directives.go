@@ -1,8 +1,8 @@
-package config
+package caddy
 
 import (
-	"github.com/mholt/caddy/config/parse"
-	"github.com/mholt/caddy/config/setup"
+	"github.com/mholt/caddy/caddy/parse"
+	"github.com/mholt/caddy/caddy/setup"
 	"github.com/mholt/caddy/middleware"
 )
 
@@ -42,7 +42,7 @@ func init() {
 var directiveOrder = []directive{
 	// Essential directives that initialize vital configuration settings
 	{"root", setup.Root},
-	{"tls", setup.TLS},
+	{"tls", setup.TLS}, // letsencrypt is set up just after tls
 	{"bind", setup.BindHost},
 
 	// Other directives that don't create HTTP handlers

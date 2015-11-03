@@ -1,10 +1,8 @@
-package app_test
+package main
 
 import (
 	"runtime"
 	"testing"
-
-	"github.com/mholt/caddy/app"
 )
 
 func TestSetCPU(t *testing.T) {
@@ -26,7 +24,7 @@ func TestSetCPU(t *testing.T) {
 		{"invalid input%", currentCPU, true},
 		{"9999", maxCPU, false}, // over available CPU
 	} {
-		err := app.SetCPU(test.input)
+		err := setCPU(test.input)
 		if test.shouldErr && err == nil {
 			t.Errorf("Test %d: Expected error, but there wasn't any", i)
 		}

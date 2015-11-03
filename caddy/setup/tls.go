@@ -9,24 +9,37 @@ import (
 )
 
 func TLS(c *Controller) (middleware.Middleware, error) {
-	c.TLS.Enabled = true
-
 	if c.Port == "http" {
 		c.TLS.Enabled = false
 		log.Printf("Warning: TLS disabled for %s://%s. To force TLS over the plaintext HTTP port, "+
 			"specify port 80 explicitly (https://%s:80).", c.Port, c.Host, c.Host)
+	} else {
+		c.TLS.Enabled = true // they had a tls directive, so assume it's on unless we confirm otherwise later
 	}
 
 	for c.Next() {
-		if !c.NextArg() {
-			return nil, c.ArgErr()
-		}
-		c.TLS.Certificate = c.Val()
+		args := c.RemainingArgs()
+		switch len(args) {
+		case 1:
+			c.TLS.LetsEncryptEmail = args[0]
 
-		if !c.NextArg() {
+			// user can force-disable LE activation this way
+			if c.TLS.LetsEncryptEmail == "off" {
+				c.TLS.Enabled = false
+			}
+		case 2:
+			c.TLS.Certificate = args[0]
+			c.TLS.Key = args[1]
+
+			// manual HTTPS configuration without port specified should be
+			// served on the HTTPS port; that is what user would expect, and
+			// makes it consistent with how the letsencrypt package works.
+			if c.Port == "" {
+				c.Port = "https"
+			}
+		default:
 			return nil, c.ArgErr()
 		}
-		c.TLS.Key = c.Val()
 
 		// Optional block
 		for c.NextBlock() {

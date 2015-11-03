@@ -1,4 +1,4 @@
-package config
+package caddy
 
 import (
 	"fmt"
@@ -7,43 +7,46 @@ import (
 	"net"
 	"sync"
 
-	"github.com/mholt/caddy/app"
-	"github.com/mholt/caddy/config/parse"
-	"github.com/mholt/caddy/config/setup"
+	"github.com/mholt/caddy/caddy/letsencrypt"
+	"github.com/mholt/caddy/caddy/parse"
+	"github.com/mholt/caddy/caddy/setup"
 	"github.com/mholt/caddy/middleware"
 	"github.com/mholt/caddy/server"
 )
 
 const (
-	DefaultHost = "0.0.0.0"
-	DefaultPort = "2015"
-	DefaultRoot = "."
-
 	// DefaultConfigFile is the name of the configuration file that is loaded
 	// by default if no other file is specified.
 	DefaultConfigFile = "Caddyfile"
 )
 
-// Load reads input (named filename) and parses it, returning server
-// configurations grouped by listening address.
-func Load(filename string, input io.Reader) (Group, error) {
+// loadConfigs reads input (named filename) and parses it, returning the
+// server configurations in the order they appeared in the input. As part
+// of this, it activates Let's Encrypt for the configs that are produced.
+// Thus, the returned configs are already optimally configured optimally
+// for HTTPS.
+func loadConfigs(filename string, input io.Reader) ([]server.Config, error) {
 	var configs []server.Config
 
 	// turn off timestamp for parsing
 	flags := log.Flags()
 	log.SetFlags(0)
 
-	serverBlocks, err := parse.ServerBlocks(filename, input)
+	// Each server block represents similar hosts/addresses, since they
+	// were grouped together in the Caddyfile.
+	serverBlocks, err := parse.ServerBlocks(filename, input, true)
 	if err != nil {
 		return nil, err
 	}
 	if len(serverBlocks) == 0 {
-		return Default()
+		return []server.Config{NewDefault()}, nil
 	}
 
-	// Each server block represents similar hosts/addresses.
+	var lastDirectiveIndex int // we set up directives in two parts; this stores where we left off
+
 	// Iterate each server block and make a config for each one,
-	// executing the directives that were parsed.
+	// executing the directives that were parsed in order up to the tls
+	// directive; this is because we must activate Let's Encrypt.
 	for i, sb := range serverBlocks {
 		onces := makeOnces()
 		storages := makeStorages()
@@ -55,17 +58,17 @@ func Load(filename string, input io.Reader) (Group, error) {
 				Root:       Root,
 				Middleware: make(map[string][]middleware.Middleware),
 				ConfigFile: filename,
-				AppName:    app.Name,
-				AppVersion: app.Version,
+				AppName:    AppName,
+				AppVersion: AppVersion,
 			}
 
 			// It is crucial that directives are executed in the proper order.
-			for _, dir := range directiveOrder {
+			for k, dir := range directiveOrder {
 				// Execute directive if it is in the server block
 				if tokens, ok := sb.Tokens[dir.name]; ok {
-					// Each setup function gets a controller, which is the
-					// server config and the dispenser containing only
-					// this directive's tokens.
+					// Each setup function gets a controller, from which setup functions
+					// get access to the config, tokens, and other state information useful
+					// to set up its own host only.
 					controller := &setup.Controller{
 						Config:    &config,
 						Dispenser: parse.NewDispenserTokens(filename, tokens),
@@ -81,7 +84,7 @@ func Load(filename string, input io.Reader) (Group, error) {
 						ServerBlockHosts:     sb.HostList(),
 						ServerBlockStorage:   storages[dir.name],
 					}
-
+					// execute setup function and append middleware handler, if any
 					midware, err := dir.setup(controller)
 					if err != nil {
 						return nil, err
@@ -92,20 +95,78 @@ func Load(filename string, input io.Reader) (Group, error) {
 					}
 					storages[dir.name] = controller.ServerBlockStorage // persist for this server block
 				}
-			}
 
-			if config.Port == "" {
-				config.Port = Port
+				// Stop after TLS setup, since we need to activate Let's Encrypt before continuing;
+				// it makes some changes to the configs that middlewares might want to know about.
+				if dir.name == "tls" {
+					lastDirectiveIndex = k
+					break
+				}
 			}
 
 			configs = append(configs, config)
 		}
 	}
 
+	// Now we have all the configs, but they have only been set up to the
+	// point of tls. We need to activate Let's Encrypt before setting up
+	// the rest of the middlewares so they have correct information regarding
+	// TLS configuration, if necessary. (this call is append-only, so our
+	// iterations below shouldn't be affected)
+	configs, err = letsencrypt.Activate(configs)
+	if err != nil {
+		return nil, err
+	}
+
+	// Finish setting up the rest of the directives, now that TLS is
+	// optimally configured. These loops are similar to above except
+	// we don't iterate all the directives from the beginning and we
+	// don't create new configs.
+	configIndex := -1
+	for i, sb := range serverBlocks {
+		onces := makeOnces()
+		storages := makeStorages()
+
+		for j := range sb.Addresses {
+			configIndex++
+
+			for k := lastDirectiveIndex + 1; k < len(directiveOrder); k++ {
+				dir := directiveOrder[k]
+
+				if tokens, ok := sb.Tokens[dir.name]; ok {
+					controller := &setup.Controller{
+						Config:    &configs[configIndex],
+						Dispenser: parse.NewDispenserTokens(filename, tokens),
+						OncePerServerBlock: func(f func() error) error {
+							var err error
+							onces[dir.name].Do(func() {
+								err = f()
+							})
+							return err
+						},
+						ServerBlockIndex:     i,
+						ServerBlockHostIndex: j,
+						ServerBlockHosts:     sb.HostList(),
+						ServerBlockStorage:   storages[dir.name],
+					}
+					midware, err := dir.setup(controller)
+					if err != nil {
+						return nil, err
+					}
+					if midware != nil {
+						// TODO: For now, we only support the default path scope /
+						configs[configIndex].Middleware["/"] = append(configs[configIndex].Middleware["/"], midware)
+					}
+					storages[dir.name] = controller.ServerBlockStorage // persist for this server block
+				}
+			}
+		}
+	}
+
 	// restore logging settings
 	log.SetFlags(flags)
 
-	return arrangeBindings(configs)
+	return configs, nil
 }
 
 // makeOnces makes a map of directive name to sync.Once
@@ -145,14 +206,19 @@ func makeStorages() map[string]interface{} {
 // bind address to list of configs that would become VirtualHosts on that
 // server. Use the keys of the returned map to create listeners, and use
 // the associated values to set up the virtualhosts.
-func arrangeBindings(allConfigs []server.Config) (map[*net.TCPAddr][]server.Config, error) {
-	addresses := make(map[*net.TCPAddr][]server.Config)
+func arrangeBindings(allConfigs []server.Config) (Group, error) {
+	var groupings Group
 
 	// Group configs by bind address
 	for _, conf := range allConfigs {
-		newAddr, warnErr, fatalErr := resolveAddr(conf)
+		// use default port if none is specified
+		if conf.Port == "" {
+			conf.Port = Port
+		}
+
+		bindAddr, warnErr, fatalErr := resolveAddr(conf)
 		if fatalErr != nil {
-			return addresses, fatalErr
+			return groupings, fatalErr
 		}
 		if warnErr != nil {
 			log.Println("[Warning]", warnErr)
@@ -161,37 +227,40 @@ func arrangeBindings(allConfigs []server.Config) (map[*net.TCPAddr][]server.Conf
 		// Make sure to compare the string representation of the address,
 		// not the pointer, since a new *TCPAddr is created each time.
 		var existing bool
-		for addr := range addresses {
-			if addr.String() == newAddr.String() {
-				addresses[addr] = append(addresses[addr], conf)
+		for i := 0; i < len(groupings); i++ {
+			if groupings[i].BindAddr.String() == bindAddr.String() {
+				groupings[i].Configs = append(groupings[i].Configs, conf)
 				existing = true
 				break
 			}
 		}
 		if !existing {
-			addresses[newAddr] = append(addresses[newAddr], conf)
+			groupings = append(groupings, BindingMapping{
+				BindAddr: bindAddr,
+				Configs:  []server.Config{conf},
+			})
 		}
 	}
 
 	// Don't allow HTTP and HTTPS to be served on the same address
-	for _, configs := range addresses {
-		isTLS := configs[0].TLS.Enabled
-		for _, config := range configs {
+	for _, group := range groupings {
+		isTLS := group.Configs[0].TLS.Enabled
+		for _, config := range group.Configs {
 			if config.TLS.Enabled != isTLS {
 				thisConfigProto, otherConfigProto := "HTTP", "HTTP"
 				if config.TLS.Enabled {
 					thisConfigProto = "HTTPS"
 				}
-				if configs[0].TLS.Enabled {
+				if group.Configs[0].TLS.Enabled {
 					otherConfigProto = "HTTPS"
 				}
-				return addresses, fmt.Errorf("configuration error: Cannot multiplex %s (%s) and %s (%s) on same address",
-					configs[0].Address(), otherConfigProto, config.Address(), thisConfigProto)
+				return groupings, fmt.Errorf("configuration error: Cannot multiplex %s (%s) and %s (%s) on same address",
+					group.Configs[0].Address(), otherConfigProto, config.Address(), thisConfigProto)
 			}
 		}
 	}
 
-	return addresses, nil
+	return groupings, nil
 }
 
 // resolveAddr determines the address (host and port) that a config will
@@ -209,6 +278,7 @@ func arrangeBindings(allConfigs []server.Config) (map[*net.TCPAddr][]server.Conf
 func resolveAddr(conf server.Config) (resolvAddr *net.TCPAddr, warnErr error, fatalErr error) {
 	bindHost := conf.BindHost
 
+	// TODO: Do we even need the port? Maybe we just need to look up the host.
 	resolvAddr, warnErr = net.ResolveTCPAddr("tcp", net.JoinHostPort(bindHost, conf.Port))
 	if warnErr != nil {
 		// Most likely the host lookup failed or the port is unknown
@@ -265,18 +335,27 @@ func NewDefault() server.Config {
 	}
 }
 
-// Default obtains a default config and arranges
-// bindings so it's ready to use.
-func Default() (Group, error) {
-	return arrangeBindings([]server.Config{NewDefault()})
-}
-
-// These three defaults are configurable through the command line
+// These defaults are configurable through the command line
 var (
+	// Site root
 	Root = DefaultRoot
+
+	// Site host
 	Host = DefaultHost
+
+	// Site port
 	Port = DefaultPort
 )
 
+// BindingMapping maps a network address to configurations
+// that will bind to it. The order of the configs is important.
+type BindingMapping struct {
+	BindAddr *net.TCPAddr
+	Configs  []server.Config
+}
+
 // Group maps network addresses to their configurations.
-type Group map[*net.TCPAddr][]server.Config
+// Preserving the order of the groupings is important
+// (related to graceful shutdown and restart)
+// so this is a slice, not a literal map.
+type Group []BindingMapping
