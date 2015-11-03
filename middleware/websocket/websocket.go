@@ -5,6 +5,7 @@ package websocket
 
 import (
 	"bufio"
+	"bytes"
 	"io"
 	"net"
 	"net/http"
@@ -224,7 +225,7 @@ func pumpStdout(conn *websocket.Conn, stdout io.Reader, done chan struct{}) {
 	s := bufio.NewScanner(stdout)
 	for s.Scan() {
 		conn.SetWriteDeadline(time.Now().Add(writeWait))
-		if err := conn.WriteMessage(websocket.TextMessage, s.Bytes()); err != nil {
+		if err := conn.WriteMessage(websocket.TextMessage, bytes.TrimSpace(s.Bytes())); err != nil {
 			break
 		}
 	}
