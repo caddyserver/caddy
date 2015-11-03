@@ -6,6 +6,7 @@ CHANGES
 - Major internal refactoring to allow use of Caddy as library
 - New directive 'mime' to customize Content-Type based on file extension
 - New -accept flag to accept Let's Encrypt SA without prompt
+- New -email flag to customize default email used for ACME transactions
 - New -ca flag to customize ACME CA server URL
 - New -revoke flag to revoke a certificate
 - browse: Render filenames with multiple whitespace properly
