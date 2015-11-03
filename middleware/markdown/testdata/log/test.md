@@ -1,5 +1,5 @@
 ---
-title: Markdown test
+title: Markdown test 2
 sitename: A Caddy website
 ---
 

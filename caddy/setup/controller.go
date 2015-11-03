@@ -58,6 +58,9 @@ func NewTestController(input string) *Controller {
 			Root: ".",
 		},
 		Dispenser: parse.NewDispenser("Testfile", strings.NewReader(input)),
+		OncePerServerBlock: func(f func() error) error {
+			return f()
+		},
 	}
 }
 

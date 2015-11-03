@@ -1,10 +1,26 @@
 package caddy
 
 import (
+	"reflect"
+	"sync"
 	"testing"
 
 	"github.com/mholt/caddy/server"
 )
+
+func TestNewDefault(t *testing.T) {
+	config := NewDefault()
+
+	if actual, expected := config.Root, DefaultRoot; actual != expected {
+		t.Errorf("Root was %s but expected %s", actual, expected)
+	}
+	if actual, expected := config.Host, DefaultHost; actual != expected {
+		t.Errorf("Host was %s but expected %s", actual, expected)
+	}
+	if actual, expected := config.Port, DefaultPort; actual != expected {
+		t.Errorf("Port was %s but expected %s", actual, expected)
+	}
+}
 
 func TestResolveAddr(t *testing.T) {
 	// NOTE: If tests fail due to comparing to string "127.0.0.1",
@@ -59,6 +75,64 @@ func TestResolveAddr(t *testing.T) {
 		}
 		if actual, expected := actualAddr.Port, test.expectedPort; actual != expected {
 			t.Errorf("Test %d: Port was %d but expected %d", i, actual, expected)
+		}
+	}
+}
+
+func TestMakeOnces(t *testing.T) {
+	directives := []directive{
+		{"dummy", nil},
+		{"dummy2", nil},
+	}
+	directiveOrder = directives
+	onces := makeOnces()
+	if len(onces) != len(directives) {
+		t.Errorf("onces had len %d , expected %d", len(onces), len(directives))
+	}
+	expected := map[string]*sync.Once{
+		"dummy":  new(sync.Once),
+		"dummy2": new(sync.Once),
+	}
+	if !reflect.DeepEqual(onces, expected) {
+		t.Errorf("onces was %v, expected %v", onces, expected)
+	}
+}
+
+func TestMakeStorages(t *testing.T) {
+	directives := []directive{
+		{"dummy", nil},
+		{"dummy2", nil},
+	}
+	directiveOrder = directives
+	storages := makeStorages()
+	if len(storages) != len(directives) {
+		t.Errorf("storages had len %d , expected %d", len(storages), len(directives))
+	}
+	expected := map[string]interface{}{
+		"dummy":  nil,
+		"dummy2": nil,
+	}
+	if !reflect.DeepEqual(storages, expected) {
+		t.Errorf("storages was %v, expected %v", storages, expected)
+	}
+}
+
+func TestValidDirective(t *testing.T) {
+	directives := []directive{
+		{"dummy", nil},
+		{"dummy2", nil},
+	}
+	directiveOrder = directives
+	for i, test := range []struct {
+		directive string
+		valid     bool
+	}{
+		{"dummy", true},
+		{"dummy2", true},
+		{"dummy3", false},
+	} {
+		if actual, expected := validDirective(test.directive), test.valid; actual != expected {
+			t.Errorf("Test %d: valid was %t, expected %t", i, actual, expected)
 		}
 	}
 }

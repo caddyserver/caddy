@@ -32,18 +32,48 @@ func templatesParse(c *Controller) ([]templates.Rule, error) {
 	for c.Next() {
 		var rule templates.Rule
 
-		if c.NextArg() {
+		rule.Path = defaultTemplatePath
+		rule.Extensions = defaultTemplateExtensions
+
+		args := c.RemainingArgs()
+
+		switch len(args) {
+		case 0:
+			// Optional block
+			for c.NextBlock() {
+				switch c.Val() {
+				case "path":
+					args := c.RemainingArgs()
+					if len(args) != 1 {
+						return nil, c.ArgErr()
+					}
+					rule.Path = args[0]
+
+				case "ext":
+					args := c.RemainingArgs()
+					if len(args) == 0 {
+						return nil, c.ArgErr()
+					}
+					rule.Extensions = args
+
+				case "between":
+					args := c.RemainingArgs()
+					if len(args) != 2 {
+						return nil, c.ArgErr()
+					}
+					rule.Delims[0] = args[0]
+					rule.Delims[1] = args[1]
+				}
+			}
+		default:
 			// First argument would be the path
-			rule.Path = c.Val()
+			rule.Path = args[0]
 
 			// Any remaining arguments are extensions
-			rule.Extensions = c.RemainingArgs()
+			rule.Extensions = args[1:]
 			if len(rule.Extensions) == 0 {
 				rule.Extensions = defaultTemplateExtensions
 			}
-		} else {
-			rule.Path = defaultTemplatePath
-			rule.Extensions = defaultTemplateExtensions
 		}
 
 		for _, ext := range rule.Extensions {
@@ -52,7 +82,6 @@ func templatesParse(c *Controller) ([]templates.Rule, error) {
 
 		rules = append(rules, rule)
 	}
-
 	return rules, nil
 }
 

@@ -54,6 +54,25 @@ func TestWebSocketParse(t *testing.T) {
 			Path:    "/api4",
 			Command: "cat",
 		}}},
+
+		{`websocket /api5 "cmd arg1 arg2 arg3"`, false, []websocket.Config{{
+			Path:      "/api5",
+			Command:   "cmd",
+			Arguments: []string{"arg1", "arg2", "arg3"},
+		}}},
+
+		// accept respawn
+		{`websocket /api6 cat {
+			respawn
+		}`, false, []websocket.Config{{
+			Path:    "/api6",
+			Command: "cat",
+		}}},
+
+		// invalid configuration
+		{`websocket /api7 cat {
+			invalid
+		}`, true, []websocket.Config{}},
 	}
 	for i, test := range tests {
 		c := NewTestController(test.inputWebSocketConfig)

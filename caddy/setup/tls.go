@@ -16,6 +16,12 @@ func TLS(c *Controller) (middleware.Middleware, error) {
 			"specify port 80 explicitly (https://%s:80).", c.Port, c.Host, c.Host)
 	}
 
+	if c.Port == "http" {
+		c.TLS.Enabled = false
+		log.Printf("Warning: TLS disabled for %s://%s. To force TLS over the plaintext HTTP port, "+
+			"specify port 80 explicitly (https://%s:80).", c.Port, c.Host, c.Host)
+	}
+
 	for c.Next() {
 		args := c.RemainingArgs()
 		switch len(args) {

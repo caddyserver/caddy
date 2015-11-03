@@ -62,8 +62,8 @@ func (fh *fileHandler) serveFile(w http.ResponseWriter, r *http.Request, name st
 	}
 	defer f.Close()
 
-	d, err1 := f.Stat()
-	if err1 != nil {
+	d, err := f.Stat()
+	if err != nil {
 		if os.IsNotExist(err) {
 			return http.StatusNotFound, nil
 		} else if os.IsPermission(err) {
