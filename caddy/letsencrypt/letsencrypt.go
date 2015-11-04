@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mholt/caddy/caddy/setup"
 	"github.com/mholt/caddy/middleware"
 	"github.com/mholt/caddy/middleware/redirect"
 	"github.com/mholt/caddy/server"
@@ -338,6 +339,9 @@ func autoConfigure(allConfigs []server.Config, cfgIndex int) []server.Config {
 	cfg.TLS.Certificate = storage.SiteCertFile(cfg.Host)
 	cfg.TLS.Key = storage.SiteKeyFile(cfg.Host)
 	cfg.TLS.Enabled = true
+	// Ensure all defaults are set for the TLS config
+	setup.SetDefaultTLSParams(cfg)
+
 	if cfg.Port == "" {
 		cfg.Port = "https"
 	}

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/mholt/caddy/middleware"
+	"github.com/mholt/caddy/server"
 )
 
 func TLS(c *Controller) (middleware.Middleware, error) {
@@ -78,6 +79,14 @@ func TLS(c *Controller) (middleware.Middleware, error) {
 		}
 	}
 
+	SetDefaultTLSParams(c.Config)
+
+	return nil, nil
+}
+
+// SetDefaultTLSParams sets the default TLS cipher suites, protocol versions and server preferences
+// of a server.Config if they were not previously set.
+func SetDefaultTLSParams(c *server.Config) {
 	// If no ciphers provided, use all that Caddy supports for the protocol
 	if len(c.TLS.Ciphers) == 0 {
 		c.TLS.Ciphers = supportedCiphers
@@ -96,8 +105,6 @@ func TLS(c *Controller) (middleware.Middleware, error) {
 
 	// Prefer server cipher suites
 	c.TLS.PreferServerCipherSuites = true
-
-	return nil, nil
 }
 
 // Map of supported protocols
