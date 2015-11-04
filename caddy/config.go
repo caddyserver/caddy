@@ -1,6 +1,7 @@
 package caddy
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"log"
@@ -39,7 +40,11 @@ func loadConfigs(filename string, input io.Reader) ([]server.Config, error) {
 		return nil, err
 	}
 	if len(serverBlocks) == 0 {
-		return []server.Config{NewDefault()}, nil
+		newInput := DefaultInput()
+		serverBlocks, err = parse.ServerBlocks(newInput.Path(), bytes.NewReader(newInput.Body()), true)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	var lastDirectiveIndex int // we set up directives in two parts; this stores where we left off
