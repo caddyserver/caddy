@@ -75,16 +75,22 @@ func Activate(configs []server.Config) ([]server.Config, error) {
 
 	// obtain certificates for configs that need one, and reconfigure each
 	// config to use the certificates
-	for leEmail, serverConfigs := range groupedConfigs {
+	for leEmail, cfgIndexes := range groupedConfigs {
 		// make client to service this email address with CA server
 		client, err := newClient(leEmail)
 		if err != nil {
 			return configs, errors.New("error creating client: " + err.Error())
 		}
 
+		// little bit of housekeeping; gather the hostnames into a slice
+		hosts := make([]string, len(cfgIndexes))
+		for i, idx := range cfgIndexes {
+			hosts[i] = configs[idx].Host
+		}
+
 		// client is ready, so let's get free, trusted SSL certificates!
 	Obtain:
-		certificates, failures := obtainCertificates(client, serverConfigs)
+		certificates, failures := client.ObtainCertificates(hosts, true)
 		if len(failures) > 0 {
 			// Build an error string to return, using all the failures in the list.
 			var errMsg string
@@ -122,8 +128,8 @@ func Activate(configs []server.Config) ([]server.Config, error) {
 		}
 
 		// it all comes down to this: turning on TLS with all the new certs
-		for i := 0; i < len(serverConfigs); i++ {
-			configs = autoConfigure(configs, i)
+		for _, idx := range cfgIndexes {
+			configs = autoConfigure(configs, idx)
 		}
 	}
 
@@ -180,8 +186,8 @@ func configQualifies(allConfigs []server.Config, cfgIndex int) bool {
 // If an email address is not available for an eligible config, the user will be
 // prompted to provide one. The returned map contains pointers to the original
 // server config values.
-func groupConfigsByEmail(configs []server.Config) (map[string][]*server.Config, error) {
-	initMap := make(map[string][]*server.Config)
+func groupConfigsByEmail(configs []server.Config) (map[string][]int, error) {
+	initMap := make(map[string][]int)
 	for i := 0; i < len(configs); i++ {
 		// filter out configs that we already have certs for and
 		// that we won't be obtaining certs for - this way we won't
@@ -191,7 +197,7 @@ func groupConfigsByEmail(configs []server.Config) (map[string][]*server.Config, 
 			continue
 		}
 		leEmail := getEmail(configs[i])
-		initMap[leEmail] = append(initMap[leEmail], &configs[i])
+		initMap[leEmail] = append(initMap[leEmail], i)
 	}
 	return initMap, nil
 }
@@ -270,7 +276,7 @@ func newClientPort(leEmail, port string) (*acme.Client, error) {
 
 // obtainCertificates obtains certificates from the CA server for
 // the configurations in serverConfigs using client.
-func obtainCertificates(client *acme.Client, serverConfigs []*server.Config) ([]acme.CertificateResource, map[string]error) {
+func obtainCertificates(client *acme.Client, serverConfigs []server.Config) ([]acme.CertificateResource, map[string]error) {
 	// collect all the hostnames into one slice
 	var hosts []string
 	for _, cfg := range serverConfigs {
