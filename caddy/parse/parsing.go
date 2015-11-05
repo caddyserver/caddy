@@ -4,6 +4,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -70,6 +71,8 @@ func (p *parser) addresses() error {
 
 	for {
 		tkn := p.Val()
+
+		tkn = getValFromEnv(tkn)
 
 		// special case: import directive replaces tokens during parse-time
 		if tkn == "import" && p.isNewLine() {
@@ -241,6 +244,7 @@ func (p *parser) directive() error {
 		} else if p.Val() == "}" && nesting == 0 {
 			return p.Err("Unexpected '}' because no matching opening brace")
 		}
+		p.tokens[p.cursor].text = getValFromEnv(p.tokens[p.cursor].text)
 		p.block.Tokens[dir] = append(p.block.Tokens[dir], p.tokens[p.cursor])
 	}
 
@@ -326,4 +330,15 @@ func (sb serverBlock) HostList() []string {
 		sbHosts[j] = net.JoinHostPort(addr.Host, addr.Port)
 	}
 	return sbHosts
+}
+
+func getValFromEnv(s string) string {
+	re := regexp.MustCompile("{\\$[^}]+}")
+	envRefs := re.FindAllString(s, -1)
+
+	for _, ref := range envRefs {
+		s = strings.Replace(s, ref, os.Getenv(ref[2:len(ref)-1]), -1)
+	}
+
+	return s
 }
