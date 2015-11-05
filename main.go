@@ -20,6 +20,7 @@ var (
 	cpu     string
 	version bool
 	revoke  string
+	logfile string
 )
 
 const (
@@ -43,13 +44,30 @@ func init() {
 	flag.BoolVar(&letsencrypt.Agreed, "agree", false, "Agree to Let's Encrypt Subscriber Agreement")
 	flag.StringVar(&letsencrypt.DefaultEmail, "email", "", "Default Let's Encrypt account email address")
 	flag.StringVar(&revoke, "revoke", "", "Hostname for which to revoke the certificate")
+	flag.StringVar(&logfile, "log", "", "Process log file")
 }
 
 func main() {
-	flag.Parse()
+	flag.Parse() // called here in main() to allow other packages to set flags in their inits
 
 	caddy.AppName = appName
 	caddy.AppVersion = appVersion
+
+	// set up process log before anything bad happens
+	switch logfile {
+	case "stdout":
+		log.SetOutput(os.Stdout)
+	case "stderr":
+		log.SetOutput(os.Stderr)
+	case "":
+		log.SetOutput(ioutil.Discard)
+	default:
+		file, err := os.Create(logfile)
+		if err != nil {
+			log.Fatalf("Error opening log file: %v", err)
+		}
+		log.SetOutput(file)
+	}
 
 	if version {
 		fmt.Printf("%s %s\n", caddy.AppName, caddy.AppVersion)
@@ -67,13 +85,13 @@ func main() {
 	// Set CPU cap
 	err := setCPU(cpu)
 	if err != nil {
-		log.Fatal(err)
+		mustLogFatal(err)
 	}
 
 	// Get Caddyfile input
 	caddyfile, err := caddy.LoadCaddyfile(loadCaddyfile)
 	if err != nil {
-		log.Fatal(err)
+		mustLogFatal(err)
 	}
 
 	// Start your engines
@@ -82,12 +100,20 @@ func main() {
 		if caddy.IsRestart() {
 			log.Println("error starting servers:", err)
 		} else {
-			log.Fatal(err)
+			mustLogFatal(err)
 		}
 	}
 
 	// Twiddle your thumbs
 	caddy.Wait()
+}
+
+// mustLogFatal just wraps log.Fatal() in a way that ensures the
+// output is always printed to stderr so the user can see it,
+// even if the process log was not enabled.
+func mustLogFatal(args ...interface{}) {
+	log.SetOutput(os.Stderr)
+	log.Fatal(args...)
 }
 
 func loadCaddyfile() (caddy.Input, error) {

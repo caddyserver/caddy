@@ -23,7 +23,6 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net"
 	"os"
 	"path"
@@ -183,25 +182,25 @@ func startServers(groupings Group) error {
 	for _, group := range groupings {
 		s, err := server.New(group.BindAddr.String(), group.Configs)
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
 		s.HTTP2 = HTTP2 // TODO: This setting is temporary
 
 		var ln server.ListenerFile
 		if IsRestart() {
 			// Look up this server's listener in the map of inherited file descriptors;
-			// if we don't have one, we must make a new one.
+			// if we don't have one, we must make a new one (later).
 			if fdIndex, ok := loadedGob.ListenerFds[s.Addr]; ok {
 				file := os.NewFile(fdIndex, "")
 
 				fln, err := net.FileListener(file)
 				if err != nil {
-					log.Fatal(err)
+					return err
 				}
 
 				ln, ok = fln.(server.ListenerFile)
 				if !ok {
-					log.Fatal("listener was not a ListenerFile")
+					return errors.New("listener for " + s.Addr + " was not a ListenerFile")
 				}
 
 				delete(loadedGob.ListenerFds, s.Addr) // mark it as used
