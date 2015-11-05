@@ -8,7 +8,7 @@ import "io"
 // If checkDirectives is true, only valid directives will be allowed
 // otherwise we consider it a parse error. Server blocks are returned
 // in the order in which they appear.
-func ServerBlocks(filename string, input io.Reader) ([]serverBlock, error) {
+func ServerBlocks(filename string, input io.Reader, checkDirectives bool) ([]serverBlock, error) {
 	p := parser{Dispenser: NewDispenser(filename, input)}
 	blocks, err := p.parseAll()
 	return blocks, err
