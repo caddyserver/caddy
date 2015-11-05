@@ -102,7 +102,7 @@ func New(addr string, configs []Config) (*Server, error) {
 func (s *Server) Serve(ln ListenerFile) error {
 	err := s.setup()
 	if err != nil {
-		close(s.startChan)
+		defer close(s.startChan) // MUST defer so error is properly reported, same with all cases in this file
 		return err
 	}
 	return s.serve(ln)
@@ -112,7 +112,7 @@ func (s *Server) Serve(ln ListenerFile) error {
 func (s *Server) ListenAndServe() error {
 	err := s.setup()
 	if err != nil {
-		close(s.startChan)
+		defer close(s.startChan)
 		return err
 	}
 
@@ -130,7 +130,7 @@ func (s *Server) ListenAndServe() error {
 			}
 		}
 		if !succeeded {
-			close(s.startChan)
+			defer close(s.startChan)
 			return err
 		}
 	}
@@ -207,7 +207,7 @@ func serveTLSWithSNI(s *Server, ln net.Listener, tlsConfigs []TLSConfig) error {
 		config.Certificates[i], err = tls.LoadX509KeyPair(tlsConfig.Certificate, tlsConfig.Key)
 		config.Certificates[i].OCSPStaple = tlsConfig.OCSPStaple
 		if err != nil {
-			close(s.startChan)
+			defer close(s.startChan)
 			return err
 		}
 	}
@@ -222,7 +222,7 @@ func serveTLSWithSNI(s *Server, ln net.Listener, tlsConfigs []TLSConfig) error {
 	// TLS client authentication, if user enabled it
 	err = setupClientAuth(tlsConfigs, config)
 	if err != nil {
-		close(s.startChan)
+		defer close(s.startChan)
 		return err
 	}
 

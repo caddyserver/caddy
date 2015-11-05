@@ -210,16 +210,10 @@ func startServers(groupings Group) error {
 		wg.Add(1)
 		go func(s *server.Server, ln server.ListenerFile) {
 			defer wg.Done()
-
 			if ln != nil {
-				err = s.Serve(ln)
+				errChan <- s.Serve(ln)
 			} else {
-				err = s.ListenAndServe()
-			}
-
-			// "use of closed network connection" is normal if doing graceful shutdown...
-			if err != nil && !strings.Contains(err.Error(), "use of closed network connection") {
-				errChan <- err
+				errChan <- s.ListenAndServe()
 			}
 		}(s, ln)
 
@@ -240,7 +234,10 @@ func startServers(groupings Group) error {
 	// Return the first error, if any
 	select {
 	case err := <-errChan:
-		return err
+		// "use of closed network connection" is normal if it was a graceful shutdown
+		if err != nil && !strings.Contains(err.Error(), "use of closed network connection") {
+			return err
+		}
 	default:
 	}
 
