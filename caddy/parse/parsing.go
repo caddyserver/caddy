@@ -9,8 +9,7 @@ import (
 )
 
 var (
-	unixEnvRegEx    = regexp.MustCompile("{\\$[^}]+}")
-	windowsEnvRegEx = regexp.MustCompile("{%[^}]+%}")
+	envRegEx = regexp.MustCompile("{\\$[^}]+}")
 )
 
 type parser struct {
@@ -338,18 +337,11 @@ func (sb serverBlock) HostList() []string {
 }
 
 func getValFromEnv(s string) string {
-	envRefsUnix := unixEnvRegEx.FindAllString(s, -1)
+	envRefs := envRegEx.FindAllString(s, -1)
 
-	for _, ref := range envRefsUnix {
+	for _, ref := range envRefs {
 		s = strings.Replace(s, ref, os.Getenv(ref[2:len(ref)-1]), -1)
 	}
 
-	envRefsWin := unixEnvRegEx.FindAllString(s, -1)
-
-	for _, ref := range envRefsWin {
-		s = strings.Replace(s, ref, os.Getenv(ref[2:len(ref)-2]), -1)
-	}
-
 	return s
-
 }
