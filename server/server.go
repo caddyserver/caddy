@@ -35,6 +35,7 @@ type Server struct {
 	startChan  chan struct{}          // used to block until server is finished starting
 }
 
+// ListenerFile represents a listener.
 type ListenerFile interface {
 	net.Listener
 	File() (*os.File, error)

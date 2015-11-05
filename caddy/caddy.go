@@ -37,7 +37,8 @@ import (
 // Configurable application parameters
 var (
 	// The name and version of the application.
-	AppName, AppVersion string
+	AppName    string
+	AppVersion string
 
 	// If true, initialization will not show any informative output.
 	Quiet bool
@@ -53,9 +54,9 @@ var (
 	// caddyfileMu protects caddyfile during changes
 	caddyfileMu sync.Mutex
 
-	// incompleteRestartErr occurs if this process is a fork
+	// errIncompleteRestart occurs if this process is a fork
 	// of the parent but no Caddyfile was piped in
-	incompleteRestartErr = errors.New("cannot finish restart successfully")
+	errIncompleteRestart = errors.New("cannot finish restart successfully")
 
 	// servers is a list of all the currently-listening servers
 	servers []*server.Server
@@ -74,8 +75,11 @@ var (
 )
 
 const (
+	// DefaultHost is the default host.
 	DefaultHost = "0.0.0.0"
+	// DefaultPort is the default port.
 	DefaultPort = "2015"
+	// DefaultRoot is the default root folder.
 	DefaultRoot = "."
 )
 

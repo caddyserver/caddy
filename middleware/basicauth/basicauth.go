@@ -78,7 +78,7 @@ type Rule struct {
 	Resources []string
 }
 
-// PasswordMatcher determines whether a password mathes a rule.
+// PasswordMatcher determines whether a password matches a rule.
 type PasswordMatcher func(pw string) bool
 
 var (
@@ -86,6 +86,7 @@ var (
 	htpasswordsMu sync.Mutex
 )
 
+// GetHtpasswdMatcher matches password rules.
 func GetHtpasswdMatcher(filename, username, siteRoot string) (PasswordMatcher, error) {
 	filename = filepath.Join(siteRoot, filename)
 	htpasswordsMu.Lock()

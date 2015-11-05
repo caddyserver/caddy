@@ -223,7 +223,7 @@ func TestBrowseJson(t *testing.T) {
 	listing := Listing{Items: fileinfos} // this listing will be used for validation inside the tests
 
 	tests := []struct {
-		QueryUrl       string
+		QueryURL       string
 		SortBy         string
 		OrderBy        string
 		Limit          int
@@ -263,7 +263,7 @@ func TestBrowseJson(t *testing.T) {
 
 	for i, test := range tests {
 		var marsh []byte
-		req, err := http.NewRequest("GET", "/photos"+test.QueryUrl, nil)
+		req, err := http.NewRequest("GET", "/photos"+test.QueryURL, nil)
 
 		if err == nil && test.shouldErr {
 			t.Errorf("Test %d didn't error, but it should have", i)

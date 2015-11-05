@@ -9,6 +9,7 @@ import (
 	"github.com/mholt/caddy/server"
 )
 
+// TLS sets up the TLS configuration (but does not activate Let's Encrypt; that is handled elsewhere).
 func TLS(c *Controller) (middleware.Middleware, error) {
 	if c.Port == "http" {
 		c.TLS.Enabled = false

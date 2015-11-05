@@ -94,7 +94,7 @@ func Restart(newCaddyfile Input) error {
 	answer, err := ioutil.ReadAll(sigrpipe)
 	if err != nil || len(answer) == 0 {
 		log.Println("restart: child failed to initialize; changes not applied")
-		return incompleteRestartErr
+		return errIncompleteRestart
 	}
 
 	// Child process is listening now; we can stop all our servers here.

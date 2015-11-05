@@ -155,8 +155,10 @@ func jsonToText(scope interface{}, depth int) string {
 	return result
 }
 
+// Caddyfile encapsulates a slice of ServerBlocks.
 type Caddyfile []ServerBlock
 
+// ServerBlock represents a server block.
 type ServerBlock struct {
 	Hosts []string               `json:"hosts"`
 	Body  map[string]interface{} `json:"body"`
