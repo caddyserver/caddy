@@ -8,6 +8,11 @@ import (
 	"strings"
 )
 
+var (
+	unixEnvRegEx    = regexp.MustCompile("{\\$[^}]+}")
+	windowsEnvRegEx = regexp.MustCompile("{%[^}]+%}")
+)
+
 type parser struct {
 	Dispenser
 	block           serverBlock // current server block being parsed
@@ -333,12 +338,18 @@ func (sb serverBlock) HostList() []string {
 }
 
 func getValFromEnv(s string) string {
-	re := regexp.MustCompile("{\\$[^}]+}")
-	envRefs := re.FindAllString(s, -1)
+	envRefsUnix := unixEnvRegEx.FindAllString(s, -1)
 
-	for _, ref := range envRefs {
+	for _, ref := range envRefsUnix {
 		s = strings.Replace(s, ref, os.Getenv(ref[2:len(ref)-1]), -1)
 	}
 
+	envRefsWin := unixEnvRegEx.FindAllString(s, -1)
+
+	for _, ref := range envRefsWin {
+		s = strings.Replace(s, ref, os.Getenv(ref[2:len(ref)-2]), -1)
+	}
+
 	return s
+
 }
