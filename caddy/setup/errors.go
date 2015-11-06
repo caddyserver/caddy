@@ -1,7 +1,6 @@
 package setup
 
 import (
-	"fmt"
 	"io"
 	"log"
 	"os"
@@ -108,7 +107,7 @@ func errorsParse(c *Controller) (*errors.ErrorHandler, error) {
 				where = filepath.Join(c.Root, where)
 				f, err := os.Open(where)
 				if err != nil {
-					fmt.Println("Warning: Unable to open error page '" + where + "': " + err.Error())
+					log.Printf("[WARNING] Unable to open error page '%s': %v", where, err)
 				}
 				f.Close()
 
