@@ -29,10 +29,6 @@ const (
 func loadConfigs(filename string, input io.Reader) ([]server.Config, error) {
 	var configs []server.Config
 
-	// turn off timestamp for parsing
-	flags := log.Flags()
-	log.SetFlags(0)
-
 	// Each server block represents similar hosts/addresses, since they
 	// were grouped together in the Caddyfile.
 	serverBlocks, err := parse.ServerBlocks(filename, input, true)
@@ -167,9 +163,6 @@ func loadConfigs(filename string, input io.Reader) ([]server.Config, error) {
 			}
 		}
 	}
-
-	// restore logging settings
-	log.SetFlags(flags)
 
 	return configs, nil
 }

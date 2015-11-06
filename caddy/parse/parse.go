@@ -10,6 +10,7 @@ import "io"
 // in the order in which they appear.
 func ServerBlocks(filename string, input io.Reader, checkDirectives bool) ([]serverBlock, error) {
 	p := parser{Dispenser: NewDispenser(filename, input)}
+	p.checkDirectives = checkDirectives
 	blocks, err := p.parseAll()
 	return blocks, err
 }
