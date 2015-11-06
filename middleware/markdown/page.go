@@ -92,7 +92,7 @@ func (l *linkGen) generateLinks(md Markdown, cfg *Config) bool {
 		l.Unlock()
 		return false
 	} else if err != nil {
-		log.Println("Hash error (markdown):", err)
+		log.Printf("[ERROR] markdown: Hash error: %v", err)
 	}
 
 	cfg.Links = []PageLink{}

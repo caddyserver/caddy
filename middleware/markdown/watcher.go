@@ -14,7 +14,7 @@ const DefaultInterval = time.Second * 60
 func Watch(md Markdown, c *Config, interval time.Duration) (stopChan chan struct{}) {
 	return TickerFunc(interval, func() {
 		if err := GenerateStatic(md, c); err != nil {
-			log.Println(err)
+			log.Printf("[ERROR] markdown: Re-generating static site: %v", err)
 		}
 	})
 }

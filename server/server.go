@@ -266,8 +266,7 @@ func (s *Server) Stop() error {
 	err := s.listener.Close()
 	s.listenerMu.Unlock()
 	if err != nil {
-		// TODO: Better logging
-		log.Println(err)
+		log.Printf("[ERROR] Closing listener for %s: %v", s.Addr, err)
 	}
 
 	return err

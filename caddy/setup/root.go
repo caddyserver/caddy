@@ -22,7 +22,7 @@ func Root(c *Controller) (middleware.Middleware, error) {
 		if os.IsNotExist(err) {
 			// Allow this, because the folder might appear later.
 			// But make sure the user knows!
-			log.Printf("Warning: Root path does not exist: %s", c.Root)
+			log.Printf("[WARNING] Root path does not exist: %s", c.Root)
 		} else {
 			return nil, c.Errf("Unable to access root path '%s': %v", c.Root, err)
 		}

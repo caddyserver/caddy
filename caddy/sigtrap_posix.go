@@ -42,7 +42,7 @@ func init() {
 
 			err := Restart(updatedCaddyfile)
 			if err != nil {
-				log.Println("error at restart:", err)
+				log.Printf("[ERROR] SIGUSR1: Restart returned: %v", err)
 			}
 		}
 	}()

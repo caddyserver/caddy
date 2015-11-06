@@ -122,7 +122,7 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 				// if development is set, scan directory for file changes for links.
 				if cfg.Development {
 					if err := GenerateStatic(md, cfg); err != nil {
-						log.Println("On-demand generation error (markdown):", err)
+						log.Printf("[ERROR] markdown: on-demand site generation error: %v", err)
 					}
 				}
 

@@ -115,10 +115,9 @@ func (md Markdown) processTemplate(c *Config, requestPath string, tmpl []byte, m
 
 	// generate static page
 	if err = md.generatePage(c, requestPath, b.Bytes()); err != nil {
-		// if static page generation fails,
-		// nothing fatal, only log the error.
-		// TODO: Report this non-fatal error, but don't log it here
-		log.Println("Rendering error (markdown):", err)
+		// if static page generation fails, nothing fatal, only log the error.
+		// TODO: Report (return) this non-fatal error, but don't log it here?
+		log.Println("[ERROR] markdown: Render:", err)
 	}
 
 	return b.Bytes(), nil

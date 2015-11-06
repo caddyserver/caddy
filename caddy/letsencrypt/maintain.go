@@ -36,24 +36,24 @@ func maintainAssets(configs []server.Config, stopChan chan struct{}) {
 			n, errs := renewCertificates(configs, true)
 			if len(errs) > 0 {
 				for _, err := range errs {
-					log.Printf("[ERROR] cert renewal: %v\n", err)
+					log.Printf("[ERROR] Certificate renewal: %v", err)
 				}
 			}
 			// even if there was an error, some renewals may have succeeded
 			if n > 0 && OnChange != nil {
 				err := OnChange()
 				if err != nil {
-					log.Printf("[ERROR] onchange after cert renewal: %v\n", err)
+					log.Printf("[ERROR] OnChange after cert renewal: %v", err)
 				}
 			}
 		case <-ocspTicker.C:
 			for bundle, oldStatus := range ocspStatus {
 				_, newStatus, err := acme.GetOCSPForCert(*bundle)
 				if err == nil && newStatus != oldStatus && OnChange != nil {
-					log.Printf("[INFO] ocsp status changed from %v to %v\n", oldStatus, newStatus)
+					log.Printf("[INFO] OCSP status changed from %v to %v", oldStatus, newStatus)
 					err := OnChange()
 					if err != nil {
-						log.Printf("[ERROR] onchange after ocsp update: %v\n", err)
+						log.Printf("[ERROR] OnChange after OCSP update: %v", err)
 					}
 					break
 				}
@@ -75,7 +75,7 @@ func maintainAssets(configs []server.Config, stopChan chan struct{}) {
 // whatever is listening at 443 better proxy ACME requests to it.
 // Otherwise, the acme package will create its own listener on 443.
 func renewCertificates(configs []server.Config, useCustomPort bool) (int, []error) {
-	log.Print("[INFO] Processing certificate renewals...")
+	log.Printf("[INFO] Checking certificates for %d hosts", len(configs))
 	var errs []error
 	var n int
 
@@ -110,7 +110,7 @@ func renewCertificates(configs []server.Config, useCustomPort bool) (int, []erro
 
 		// Renew with two weeks or less remaining.
 		if daysLeft <= 14 {
-			log.Printf("[INFO] There are %d days left on the certificate of %s. Trying to renew now.", daysLeft, cfg.Host)
+			log.Printf("[INFO] Certificate for %s has %d days remaining; attempting renewal", cfg.Host, daysLeft)
 			var client *acme.Client
 			if useCustomPort {
 				client, err = newClientPort("", alternatePort) // email not used for renewal
@@ -170,7 +170,7 @@ func renewCertificates(configs []server.Config, useCustomPort bool) (int, []erro
 			n++
 		} else if daysLeft <= 30 {
 			// Warn on 30 days remaining. TODO: Just do this once...
-			log.Printf("[WARN] There are %d days left on the certificate for %s. Will renew when 14 days remain.\n", daysLeft, cfg.Host)
+			log.Printf("[WARNING] Certificate for %s has %d days remaining; will automatically renew when 14 days remain\n", cfg.Host, daysLeft)
 		}
 	}
 

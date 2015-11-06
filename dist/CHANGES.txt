@@ -9,6 +9,7 @@ CHANGES
 - New -email flag to customize default email used for ACME transactions
 - New -ca flag to customize ACME CA server URL
 - New -revoke flag to revoke a certificate
+- New -log flag to enable process log
 - browse: Render filenames with multiple whitespace properly
 - markdown: Include Last-Modified header in response
 - startup, shutdown: Better Windows support

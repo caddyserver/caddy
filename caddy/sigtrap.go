@@ -23,7 +23,7 @@ func init() {
 
 		if len(errs) > 0 {
 			for _, err := range errs {
-				log.Println(err)
+				log.Printf("[ERROR] Shutting down: %v", err)
 			}
 			exitCode = 1
 		}

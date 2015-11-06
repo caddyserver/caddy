@@ -226,7 +226,7 @@ func arrangeBindings(allConfigs []server.Config) (Group, error) {
 			return groupings, fatalErr
 		}
 		if warnErr != nil {
-			log.Println("[Warning]", warnErr)
+			log.Printf("[WARNING] Resolving bind address for %s: %v", conf.Address(), warnErr)
 		}
 
 		// Make sure to compare the string representation of the address,

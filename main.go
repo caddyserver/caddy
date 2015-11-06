@@ -62,7 +62,7 @@ func main() {
 	case "":
 		log.SetOutput(ioutil.Discard)
 	default:
-		file, err := os.Create(logfile)
+		file, err := os.OpenFile(logfile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
 		if err != nil {
 			log.Fatalf("Error opening log file: %v", err)
 		}
@@ -98,7 +98,7 @@ func main() {
 	err = caddy.Start(caddyfile)
 	if err != nil {
 		if caddy.IsRestart() {
-			log.Println("error starting servers:", err)
+			log.Printf("[ERROR] Upon starting %s: %v", appName, err)
 		} else {
 			mustLogFatal(err)
 		}
