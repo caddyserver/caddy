@@ -282,15 +282,7 @@ func LoadCaddyfile(loader func() (Input, error)) (cdyfile Input, err error) {
 		cdyfile = loadedGob.Caddyfile
 	}
 
-	// Otherwise, we first try to get from stdin pipe
-	if cdyfile == nil {
-		cdyfile, err = CaddyfileFromPipe(os.Stdin)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	// No piped input, so try the user's loader instead
+	// Try user's loader
 	if cdyfile == nil && loader != nil {
 		cdyfile, err = loader()
 	}
