@@ -114,9 +114,18 @@ func loadConfigs(filename string, input io.Reader) ([]server.Config, error) {
 	// the rest of the middlewares so they have correct information regarding
 	// TLS configuration, if necessary. (this call is append-only, so our
 	// iterations below shouldn't be affected)
+	if !IsRestart() && !Quiet {
+		fmt.Print("Activating privacy features...")
+	}
 	configs, err = letsencrypt.Activate(configs)
 	if err != nil {
+		if !Quiet {
+			fmt.Println()
+		}
 		return nil, err
+	}
+	if !IsRestart() && !Quiet {
+		fmt.Println(" done.")
 	}
 
 	// Finish setting up the rest of the directives, now that TLS is
