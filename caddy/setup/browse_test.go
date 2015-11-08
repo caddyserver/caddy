@@ -48,7 +48,6 @@ func TestBrowse(t *testing.T) {
 		{"browse " + tempDirPath + "\n browse " + tempDirPath, nil, true},
 	} {
 
-		//		c := &Controller{Config: &server.Config{Root: "."}, Dispenser: parse.NewDispenser("", strings.NewReader(testTokens[i]))}
 		recievedFunc, err := Browse(NewTestController(test.input))
 		if err != nil && !test.shouldErr {
 			t.Errorf("Test case #%d recieved an error of %v", i, err)
