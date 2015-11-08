@@ -8,8 +8,8 @@ import (
 
 func TestRedir(t *testing.T) {
 
-	tests := []struct {
-		testToken     string
+	for j, test := range []struct {
+		input         string
 		shouldErr     bool
 		expectedRules []redirect.Rule
 	}{
@@ -42,27 +42,24 @@ func TestRedir(t *testing.T) {
 
 		// test case #9 tests the detection of duplicate redirections
 		{"redir {\n /bar /foo 304 \n} redir {\n /bar /foo 304 \n}", true, []redirect.Rule{redirect.Rule{}}},
-	}
-
-	for j, test := range tests {
-		c := NewTestController(test.testToken)
-		retrievedFunc, err := Redir(c)
+	} {
+		recievedFunc, err := Redir(NewTestController(test.input))
 		if err != nil && !test.shouldErr {
 			t.Errorf("Test case #%d recieved an error of %v", j, err)
 		} else if test.shouldErr {
 			continue
 		}
-		retrievedRules := retrievedFunc(nil).(redirect.Redirect).Rules
+		recievedRules := recievedFunc(nil).(redirect.Redirect).Rules
 
-		for i, retrievedRule := range retrievedRules {
-			if retrievedRule.FromPath != test.expectedRules[i].FromPath {
-				t.Errorf("Test case #%d.%d expected a from path of %s, but recieved a from path of %s", j, i, test.expectedRules[i].FromPath, retrievedRule.FromPath)
+		for i, recievedRule := range recievedRules {
+			if recievedRule.FromPath != test.expectedRules[i].FromPath {
+				t.Errorf("Test case #%d.%d expected a from path of %s, but recieved a from path of %s", j, i, test.expectedRules[i].FromPath, recievedRule.FromPath)
 			}
-			if retrievedRule.To != test.expectedRules[i].To {
-				t.Errorf("Test case #%d.%d expected a TO path of %s, but recieved a TO path of %s", j, i, test.expectedRules[i].To, retrievedRule.To)
+			if recievedRule.To != test.expectedRules[i].To {
+				t.Errorf("Test case #%d.%d expected a TO path of %s, but recieved a TO path of %s", j, i, test.expectedRules[i].To, recievedRule.To)
 			}
-			if retrievedRule.Code != test.expectedRules[i].Code {
-				t.Errorf("Test case #%d.%d expected a HTTP status code of %d, but recieved a code of %d", j, i, test.expectedRules[i].Code, retrievedRule.Code)
+			if recievedRule.Code != test.expectedRules[i].Code {
+				t.Errorf("Test case #%d.%d expected a HTTP status code of %d, but recieved a code of %d", j, i, test.expectedRules[i].Code, recievedRule.Code)
 			}
 		}
 	}

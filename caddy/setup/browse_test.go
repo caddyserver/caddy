@@ -5,13 +5,10 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 
-	"github.com/mholt/caddy/caddy/parse"
 	"github.com/mholt/caddy/middleware/browse"
-	"github.com/mholt/caddy/server"
 )
 
 func TestBrowse(t *testing.T) {
@@ -30,45 +27,37 @@ func TestBrowse(t *testing.T) {
 
 	tempTemplatePath := filepath.Join(".", tempTemplate.Name())
 
-	testTokens := []string{
-		"browse " + tempDirPath + "\n browse .",
-		"browse /",
-		"browse . " + tempTemplatePath,
-		"browse . " + nonExistantDirPath,
-		"browse " + tempDirPath + "\n browse " + tempDirPath,
-	}
-
-	tests := []struct {
+	for i, test := range []struct {
+		input             string
 		expectedPathScope []string
 		shouldErr         bool
 	}{
 		// test case #0 tests handling of multiple pathscopes
-		{[]string{tempDirPath, "."}, false},
+		{"browse " + tempDirPath + "\n browse .", []string{tempDirPath, "."}, false},
 
 		// test case #1 tests instantiation of browse.Config with default values
-		{[]string{"/"}, false},
+		{"browse /", []string{"/"}, false},
 
 		// test case #2 tests detectaction of custom template
-		{[]string{"."}, false},
+		{"browse . " + tempTemplatePath, []string{"."}, false},
 
 		// test case #3 tests detection of non-existant template
-		{nil, true},
+		{"browse . " + nonExistantDirPath, nil, true},
 
 		// test case #4 tests detection of duplicate pathscopes
-		{nil, true},
-	}
+		{"browse " + tempDirPath + "\n browse " + tempDirPath, nil, true},
+	} {
 
-	for i, test := range tests {
-		c := &Controller{Config: &server.Config{Root: "."}, Dispenser: parse.NewDispenser("", strings.NewReader(testTokens[i]))}
-		retrievedFunc, err := Browse(c)
+		//		c := &Controller{Config: &server.Config{Root: "."}, Dispenser: parse.NewDispenser("", strings.NewReader(testTokens[i]))}
+		recievedFunc, err := Browse(NewTestController(test.input))
 		if err != nil && !test.shouldErr {
 			t.Errorf("Test case #%d recieved an error of %v", i, err)
 		}
 		if test.expectedPathScope == nil {
 			continue
 		}
-		retrievedConfigs := retrievedFunc(nil).(browse.Browse).Configs
-		for j, config := range retrievedConfigs {
+		recievedConfigs := recievedFunc(nil).(browse.Browse).Configs
+		for j, config := range recievedConfigs {
 			if config.PathScope != test.expectedPathScope[j] {
 				t.Errorf("Test case #%d expected a pathscope of %v, but got %v", i, test.expectedPathScope, config.PathScope)
 			}
