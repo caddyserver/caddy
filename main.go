@@ -145,7 +145,7 @@ func loadCaddyfile() (caddy.Input, error) {
 
 	// command line args
 	if flag.NArg() > 0 {
-		confBody := ":" + caddy.DefaultPort + "\n" + strings.Join(flag.Args(), "\n")
+		confBody := caddy.Host + ":" + caddy.Port + "\n" + strings.Join(flag.Args(), "\n")
 		return caddy.CaddyfileInput{
 			Contents: []byte(confBody),
 			Filepath: "args",
