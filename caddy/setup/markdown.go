@@ -61,10 +61,15 @@ func markdownParse(c *Controller) ([]*markdown.Config, error) {
 		}
 
 		// Get the path scope
-		if !c.NextArg() || c.Val() == "{" {
+		args := c.RemainingArgs()
+		switch len(args) {
+		case 0:
+			md.PathScope = "/"
+		case 1:
+			md.PathScope = args[0]
+		default:
 			return mdconfigs, c.ArgErr()
 		}
-		md.PathScope = c.Val()
 
 		// Load any other configuration parameters
 		for c.NextBlock() {
