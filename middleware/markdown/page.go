@@ -118,15 +118,17 @@ func (l *linkGen) generateLinks(md Markdown, cfg *Config) bool {
 			}
 			reqPath = "/" + filepath.ToSlash(reqPath)
 
+			// Make the summary
 			parser := findParser(body)
 			if parser == nil {
 				// no metadata, ignore.
 				continue
 			}
-			summary, err := parser.Parse(body)
+			summaryRaw, err := parser.Parse(body)
 			if err != nil {
 				return err
 			}
+			summary := blackfriday.Markdown(summaryRaw, SummaryRenderer{}, 0)
 
 			// truncate summary to maximum length
 			if len(summary) > summaryLen {
@@ -145,7 +147,7 @@ func (l *linkGen) generateLinks(md Markdown, cfg *Config) bool {
 				Title:   metadata.Title,
 				URL:     reqPath,
 				Date:    metadata.Date,
-				Summary: string(blackfriday.Markdown(summary, SummaryRenderer{}, 0)),
+				Summary: string(summary),
 			})
 
 			break // don't try other file extensions

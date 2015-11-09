@@ -213,8 +213,8 @@ func makeStorages() map[string]interface{} {
 // bind address to list of configs that would become VirtualHosts on that
 // server. Use the keys of the returned map to create listeners, and use
 // the associated values to set up the virtualhosts.
-func arrangeBindings(allConfigs []server.Config) (Group, error) {
-	var groupings Group
+func arrangeBindings(allConfigs []server.Config) (bindingGroup, error) {
+	var groupings bindingGroup
 
 	// Group configs by bind address
 	for _, conf := range allConfigs {
@@ -242,7 +242,7 @@ func arrangeBindings(allConfigs []server.Config) (Group, error) {
 			}
 		}
 		if !existing {
-			groupings = append(groupings, BindingMapping{
+			groupings = append(groupings, bindingMapping{
 				BindAddr: bindAddr,
 				Configs:  []server.Config{conf},
 			})
@@ -362,15 +362,15 @@ var (
 	Port = DefaultPort
 )
 
-// BindingMapping maps a network address to configurations
+// bindingMapping maps a network address to configurations
 // that will bind to it. The order of the configs is important.
-type BindingMapping struct {
+type bindingMapping struct {
 	BindAddr *net.TCPAddr
 	Configs  []server.Config
 }
 
-// Group maps network addresses to their configurations.
+// bindingGroup maps network addresses to their configurations.
 // Preserving the order of the groupings is important
 // (related to graceful shutdown and restart)
 // so this is a slice, not a literal map.
-type Group []BindingMapping
+type bindingGroup []bindingMapping

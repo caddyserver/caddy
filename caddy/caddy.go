@@ -175,7 +175,7 @@ func Start(cdyfile Input) error {
 // taking into account whether or not this process is
 // a child from a graceful restart or not. It blocks
 // until the servers are listening.
-func startServers(groupings Group) error {
+func startServers(groupings bindingGroup) error {
 	var startupWg sync.WaitGroup
 	errChan := make(chan error)
 
