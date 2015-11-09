@@ -94,10 +94,10 @@ const (
 // cdyfile is nil, a default configuration will be assumed.
 // In any case, an error is returned if Caddy could not be
 // started.
-func Start(cdyfile Input) error {
-	// TODO: What if already started -- is that an error?
+func Start(cdyfile Input) (err error) {
+	defer func() { signalParent(err == nil) }()
 
-	var err error
+	// TODO: What if already started -- is that an error?
 
 	// Input must never be nil; try to load something
 	if cdyfile == nil {
@@ -161,13 +161,6 @@ func Start(cdyfile Input) error {
 		}
 	}
 
-	// Tell parent process that we got this
-	if IsRestart() {
-		ppipe := os.NewFile(3, "") // parent is listening on pipe at index 3
-		ppipe.Write([]byte("success"))
-		ppipe.Close()
-	}
-
 	return nil
 }
 
@@ -177,7 +170,7 @@ func Start(cdyfile Input) error {
 // until the servers are listening.
 func startServers(groupings bindingGroup) error {
 	var startupWg sync.WaitGroup
-	errChan := make(chan error)
+	errChan := make(chan error, len(groupings)) // must be buffered to allow Serve functions below to return if stopped later
 
 	for _, group := range groupings {
 		s, err := server.New(group.BindAddr.String(), group.Configs)

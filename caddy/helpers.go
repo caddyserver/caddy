@@ -38,6 +38,21 @@ func checkFdlimit() {
 	}
 }
 
+// signalParent tells the parent our status using pipe at index 3.
+// If this process is not a restart, this function does nothing.
+// Calling this is vital so that the parent process can unblock and
+// either continue running or kill itself.
+func signalParent(success bool) {
+	if IsRestart() {
+		ppipe := os.NewFile(3, "") // parent is listening on pipe at index 3
+		if success {
+			// Tell parent process that we're OK so it can quit now
+			ppipe.Write([]byte("success"))
+		}
+		ppipe.Close()
+	}
+}
+
 // caddyfileGob maps bind address to index of the file descriptor
 // in the Files array passed to the child process. It also contains
 // the caddyfile contents. Used only during graceful restarts.
