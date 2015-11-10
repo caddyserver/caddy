@@ -9,7 +9,7 @@ var tests = []struct {
 		caddyfile: `foo {
 	root /bar
 }`,
-		json: `[{"hosts":["foo"],"body":{"root":["/bar"]}}]`,
+		json: `[{"hosts":["foo"],"body":[["root","/bar"]]}]`,
 	},
 	{ // 1
 		caddyfile: `host1, host2 {
@@ -17,52 +17,87 @@ var tests = []struct {
 		def
 	}
 }`,
-		json: `[{"hosts":["host1","host2"],"body":{"dir":[{"def":null}]}}]`,
+		json: `[{"hosts":["host1","host2"],"body":[["dir",[["def"]]]]}]`,
 	},
 	{ // 2
 		caddyfile: `host1, host2 {
 	dir abc {
 		def ghi
+		jkl
 	}
 }`,
-		json: `[{"hosts":["host1","host2"],"body":{"dir":["abc",{"def":["ghi"]}]}}]`,
+		json: `[{"hosts":["host1","host2"],"body":[["dir","abc",[["def","ghi"],["jkl"]]]]}]`,
 	},
 	{ // 3
 		caddyfile: `host1:1234, host2:5678 {
 	dir abc {
 	}
 }`,
-		json: `[{"hosts":["host1:1234","host2:5678"],"body":{"dir":["abc",{}]}}]`,
+		json: `[{"hosts":["host1:1234","host2:5678"],"body":[["dir","abc",[]]]}]`,
 	},
 	{ // 4
 		caddyfile: `host {
 	foo "bar baz"
 }`,
-		json: `[{"hosts":["host"],"body":{"foo":["bar baz"]}}]`,
+		json: `[{"hosts":["host"],"body":[["foo","bar baz"]]}]`,
 	},
 	{ // 5
 		caddyfile: `host, host:80 {
 	foo "bar \"baz\""
 }`,
-		json: `[{"hosts":["host","host:80"],"body":{"foo":["bar \"baz\""]}}]`,
+		json: `[{"hosts":["host","host:80"],"body":[["foo","bar \"baz\""]]}]`,
 	},
 	{ // 6
 		caddyfile: `host {
 	foo "bar
 baz"
 }`,
-		json: `[{"hosts":["host"],"body":{"foo":["bar\nbaz"]}}]`,
+		json: `[{"hosts":["host"],"body":[["foo","bar\nbaz"]]}]`,
 	},
 	{ // 7
 		caddyfile: `host {
 	dir 123 4.56 true
 }`,
-		json: `[{"hosts":["host"],"body":{"dir":["123","4.56","true"]}}]`, // NOTE: I guess we assume numbers and booleans should be encoded as strings...?
+		json: `[{"hosts":["host"],"body":[["dir","123","4.56","true"]]}]`, // NOTE: I guess we assume numbers and booleans should be encoded as strings...?
 	},
 	{ // 8
 		caddyfile: `http://host, https://host {
 }`,
-		json: `[{"hosts":["host:http","host:https"],"body":{}}]`, // hosts in JSON are always host:port format (if port is specified), for consistency
+		json: `[{"hosts":["host:http","host:https"],"body":[]}]`, // hosts in JSON are always host:port format (if port is specified), for consistency
+	},
+	{ // 9
+		caddyfile: `host {
+	dir1 a b
+	dir2 c d
+}`,
+		json: `[{"hosts":["host"],"body":[["dir1","a","b"],["dir2","c","d"]]}]`,
+	},
+	{ // 10
+		caddyfile: `host {
+	dir a b
+	dir c d
+}`,
+		json: `[{"hosts":["host"],"body":[["dir","a","b"],["dir","c","d"]]}]`,
+	},
+	{ // 11
+		caddyfile: `host {
+	dir1 a b
+	dir2 {
+		c
+		d
+	}
+}`,
+		json: `[{"hosts":["host"],"body":[["dir1","a","b"],["dir2",[["c"],["d"]]]]}]`,
+	},
+	{ // 12
+		caddyfile: `host1 {
+	dir1
+}
+
+host2 {
+	dir2
+}`,
+		json: `[{"hosts":["host1"],"body":[["dir1"]]},{"hosts":["host2"],"body":[["dir2"]]}]`,
 	},
 }
 

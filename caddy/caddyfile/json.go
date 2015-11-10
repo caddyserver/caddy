@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -23,18 +24,29 @@ func ToJSON(caddyfile []byte) ([]byte, error) {
 	}
 
 	for _, sb := range serverBlocks {
-		block := ServerBlock{Body: make(map[string]interface{})}
+		block := ServerBlock{Body: [][]interface{}{}}
 
+		// Fill up host list
 		for _, host := range sb.HostList() {
 			block.Hosts = append(block.Hosts, strings.TrimSuffix(host, ":"))
 		}
 
-		for dir, tokens := range sb.Tokens {
-			disp := parse.NewDispenserTokens(filename, tokens)
-			disp.Next() // the first token is the directive; skip it
-			block.Body[dir] = constructLine(disp)
+		// Extract directives deterministically by sorting them
+		var directives = make([]string, len(sb.Tokens))
+		for dir := range sb.Tokens {
+			directives = append(directives, dir)
+		}
+		sort.Strings(directives)
+
+		// Convert each directive's tokens into our JSON structure
+		for _, dir := range directives {
+			disp := parse.NewDispenserTokens(filename, sb.Tokens[dir])
+			for disp.Next() {
+				block.Body = append(block.Body, constructLine(&disp))
+			}
 		}
 
+		// tack this block onto the end of the list
 		j = append(j, block)
 	}
 
@@ -50,17 +62,18 @@ func ToJSON(caddyfile []byte) ([]byte, error) {
 // but only one line at a time, to be used at the top-level of
 // a server block only (where the first token on each line is a
 // directive) - not to be used at any other nesting level.
-func constructLine(d parse.Dispenser) interface{} {
+// goes to end of line
+func constructLine(d *parse.Dispenser) []interface{} {
 	var args []interface{}
 
-	all := d.RemainingArgs()
-	for _, arg := range all {
-		args = append(args, arg)
-	}
+	args = append(args, d.Val())
 
-	d.Next()
-	if d.Val() == "{" {
-		args = append(args, constructBlock(d))
+	for d.NextArg() {
+		if d.Val() == "{" {
+			args = append(args, constructBlock(d))
+			continue
+		}
+		args = append(args, d.Val())
 	}
 
 	return args
@@ -68,26 +81,15 @@ func constructLine(d parse.Dispenser) interface{} {
 
 // constructBlock recursively processes tokens into a
 // JSON-encodable structure.
-func constructBlock(d parse.Dispenser) interface{} {
-	block := make(map[string]interface{})
+// goes to end of block
+func constructBlock(d *parse.Dispenser) [][]interface{} {
+	block := [][]interface{}{}
 
 	for d.Next() {
 		if d.Val() == "}" {
 			break
 		}
-
-		dir := d.Val()
-		all := d.RemainingArgs()
-
-		var args []interface{}
-		for _, arg := range all {
-			args = append(args, arg)
-		}
-		if d.Val() == "{" {
-			args = append(args, constructBlock(d))
-		}
-
-		block[dir] = args
+		block = append(block, constructLine(d))
 	}
 
 	return block
@@ -103,7 +105,10 @@ func FromJSON(jsonBytes []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	for _, sb := range j {
+	for sbPos, sb := range j {
+		if sbPos > 0 {
+			result += "\n\n"
+		}
 		for i, host := range sb.Hosts {
 			if hostname, port, err := net.SplitHostPort(host); err == nil {
 				if port == "http" || port == "https" {
@@ -129,26 +134,36 @@ func jsonToText(scope interface{}, depth int) string {
 	switch val := scope.(type) {
 	case string:
 		if strings.ContainsAny(val, "\" \n\t\r") {
-			result += ` "` + strings.Replace(val, "\"", "\\\"", -1) + `"`
+			result += `"` + strings.Replace(val, "\"", "\\\"", -1) + `"`
 		} else {
-			result += " " + val
+			result += val
 		}
 	case int:
-		result += " " + strconv.Itoa(val)
+		result += strconv.Itoa(val)
 	case float64:
-		result += " " + fmt.Sprintf("%v", val)
+		result += fmt.Sprintf("%v", val)
 	case bool:
-		result += " " + fmt.Sprintf("%t", val)
-	case map[string]interface{}:
+		result += fmt.Sprintf("%t", val)
+	case [][]interface{}:
 		result += " {\n"
-		for param, args := range val {
-			result += strings.Repeat("\t", depth) + param
-			result += jsonToText(args, depth+1) + "\n"
+		for _, arg := range val {
+			result += strings.Repeat("\t", depth) + jsonToText(arg, depth+1) + "\n"
 		}
 		result += strings.Repeat("\t", depth-1) + "}"
 	case []interface{}:
-		for _, v := range val {
+		for i, v := range val {
+			if block, ok := v.([]interface{}); ok {
+				result += "{\n"
+				for _, arg := range block {
+					result += strings.Repeat("\t", depth) + jsonToText(arg, depth+1) + "\n"
+				}
+				result += strings.Repeat("\t", depth-1) + "}"
+				continue
+			}
 			result += jsonToText(v, depth)
+			if i < len(val)-1 {
+				result += " "
+			}
 		}
 	}
 
@@ -160,6 +175,6 @@ type Caddyfile []ServerBlock
 
 // ServerBlock represents a server block.
 type ServerBlock struct {
-	Hosts []string               `json:"hosts"`
-	Body  map[string]interface{} `json:"body"`
+	Hosts []string        `json:"hosts"`
+	Body  [][]interface{} `json:"body"`
 }
