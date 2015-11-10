@@ -117,25 +117,17 @@ func mustLogFatal(args ...interface{}) {
 }
 
 func loadCaddyfile() (caddy.Input, error) {
-	// First try stdin pipe
-	cdyfile, err := caddy.CaddyfileFromPipe(os.Stdin)
-	if err != nil {
-		return nil, err
-	}
-	if cdyfile != nil {
-		// it is an error if -conf is also specified because, which to use?
-		if conf != "" {
-			return nil, errors.New("load: can't choose between stdin pipe and -conf flag")
-		}
-		return cdyfile, err
-	}
-
-	// -conf flag
+	// Try -conf flag
 	if conf != "" {
+		if conf == "stdin" {
+			return caddy.CaddyfileFromPipe(os.Stdin)
+		}
+
 		contents, err := ioutil.ReadFile(conf)
 		if err != nil {
 			return nil, err
 		}
+
 		return caddy.CaddyfileInput{
 			Contents: contents,
 			Filepath: conf,
