@@ -31,22 +31,22 @@ const (
 
 func init() {
 	flag.StringVar(&conf, "conf", "", "Configuration file to use (default="+caddy.DefaultConfigFile+")")
-	flag.BoolVar(&caddy.HTTP2, "http2", true, "HTTP/2 support") // TODO: temporary flag until http2 merged into std lib
-	flag.BoolVar(&caddy.Quiet, "quiet", false, "Quiet mode (no initialization output)")
 	flag.StringVar(&cpu, "cpu", "100%", "CPU cap")
-	flag.StringVar(&caddy.Root, "root", caddy.DefaultRoot, "Root path to default site")
 	flag.StringVar(&caddy.Host, "host", caddy.DefaultHost, "Default host")
-	flag.StringVar(&caddy.Port, "port", caddy.DefaultPort, "Default port")
+	flag.BoolVar(&caddy.HTTP2, "http2", true, "HTTP/2 support") // TODO: temporary flag until http2 merged into std lib
 	flag.StringVar(&pidfile, "pidfile", "", "Path to write pid file")
+	flag.StringVar(&caddy.Port, "port", caddy.DefaultPort, "Default port")
+	flag.BoolVar(&caddy.Quiet, "quiet", false, "Quiet mode (no initialization output)")
+	flag.StringVar(&caddy.Root, "root", caddy.DefaultRoot, "Root path to default site")
 	flag.BoolVar(&version, "version", false, "Show version")
 	// TODO: Boulder dev URL is: http://192.168.99.100:4000
 	// TODO: Staging API URL is: https://acme-staging.api.letsencrypt.org
 	// TODO: Production endpoint is: https://acme-v01.api.letsencrypt.org
-	flag.StringVar(&letsencrypt.CAUrl, "ca", "https://acme-staging.api.letsencrypt.org", "Certificate authority ACME server")
 	flag.BoolVar(&letsencrypt.Agreed, "agree", false, "Agree to Let's Encrypt Subscriber Agreement")
+	flag.StringVar(&letsencrypt.CAUrl, "ca", "https://acme-staging.api.letsencrypt.org", "Certificate authority ACME server")
 	flag.StringVar(&letsencrypt.DefaultEmail, "email", "", "Default Let's Encrypt account email address")
-	flag.StringVar(&revoke, "revoke", "", "Hostname for which to revoke the certificate")
 	flag.StringVar(&logfile, "log", "", "Process log file")
+	flag.StringVar(&revoke, "revoke", "", "Hostname for which to revoke the certificate")
 }
 
 func main() {
@@ -71,9 +71,12 @@ func main() {
 		log.SetOutput(file)
 	}
 
-	if version {
-		fmt.Printf("%s %s\n", caddy.AppName, caddy.AppVersion)
-		os.Exit(0)
+	if pidfile != "" {
+		pid := []byte(strconv.Itoa(os.Getpid()) + "\n")
+		err := ioutil.WriteFile(pidfile, pid, 0644)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 	if revoke != "" {
 		err := letsencrypt.Revoke(revoke)
@@ -83,12 +86,9 @@ func main() {
 		fmt.Printf("Revoked certificate for %s\n", revoke)
 		os.Exit(0)
 	}
-	if pidfile != "" {
-		pid := []byte(strconv.Itoa(os.Getpid()) + "\n")
-		err := ioutil.WriteFile(pidfile, pid, 0644)
-		if err != nil {
-			log.Fatal(err)
-		}
+	if version {
+		fmt.Printf("%s %s\n", caddy.AppName, caddy.AppVersion)
+		os.Exit(0)
 	}
 
 	// Set CPU cap
