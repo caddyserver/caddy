@@ -10,7 +10,7 @@ import (
 
 // Startup registers a startup callback to execute during server start.
 func Startup(c *Controller) (middleware.Middleware, error) {
-	return nil, registerCallback(c, &c.Startup)
+	return nil, registerCallback(c, &c.FirstStartup)
 }
 
 // Shutdown registers a shutdown callback to execute during process exit.
