@@ -18,9 +18,10 @@ import (
 var (
 	conf    string
 	cpu     string
-	version bool
-	revoke  string
 	logfile string
+	pidfile string
+	revoke  string
+	version bool
 )
 
 const (
@@ -36,6 +37,7 @@ func init() {
 	flag.StringVar(&caddy.Root, "root", caddy.DefaultRoot, "Root path to default site")
 	flag.StringVar(&caddy.Host, "host", caddy.DefaultHost, "Default host")
 	flag.StringVar(&caddy.Port, "port", caddy.DefaultPort, "Default port")
+	flag.StringVar(&pidfile, "pidfile", "", "Path to write pid file")
 	flag.BoolVar(&version, "version", false, "Show version")
 	// TODO: Boulder dev URL is: http://192.168.99.100:4000
 	// TODO: Staging API URL is: https://acme-staging.api.letsencrypt.org
@@ -80,6 +82,13 @@ func main() {
 		}
 		fmt.Printf("Revoked certificate for %s\n", revoke)
 		os.Exit(0)
+	}
+	if pidfile != "" {
+		pid := []byte(strconv.Itoa(os.Getpid()) + "\n")
+		err := ioutil.WriteFile(pidfile, pid, 0644)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	// Set CPU cap
