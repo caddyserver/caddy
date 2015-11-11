@@ -37,8 +37,8 @@ func TestMarkdown(t *testing.T) {
 	if myHandler.Configs[0].PathScope != "/blog" {
 		t.Errorf("Expected /blog as the Path Scope")
 	}
-	if fmt.Sprint(myHandler.Configs[0].Extensions) != fmt.Sprint([]string{".md"}) {
-		t.Errorf("Expected .md  as the Default Extension")
+	if fmt.Sprint(myHandler.Configs[0].Extensions) != fmt.Sprint([]string{".md", ".markdown", ".mdown"}) {
+		t.Errorf("Expected .md, .markdown, and .mdown as default extensions")
 	}
 }
 

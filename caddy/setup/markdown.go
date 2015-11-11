@@ -78,9 +78,9 @@ func markdownParse(c *Controller) ([]*markdown.Config, error) {
 			}
 		}
 
-		// If no extensions were specified, assume .md
+		// If no extensions were specified, assume some defaults
 		if len(md.Extensions) == 0 {
-			md.Extensions = []string{".md"}
+			md.Extensions = []string{".md", ".markdown", ".mdown"}
 		}
 
 		mdconfigs = append(mdconfigs, md)
