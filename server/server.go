@@ -371,6 +371,23 @@ func setupClientAuth(tlsConfigs []TLSConfig, config *tls.Config) error {
 	return nil
 }
 
+// RunFirstStartupFuncs runs all of the server's FirstStartup
+// callback functions unless one of them returns an error first.
+// It is up the caller's responsibility to call this only once and
+// at the correct time. The functions here should not be executed
+// at restarts or where the user does not explicitly start a new
+// instance of the server.
+func (s *Server) RunFirstStartupFuncs() error {
+	for _, vh := range s.vhosts {
+		for _, f := range vh.config.FirstStartup {
+			if err := f(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // tcpKeepAliveListener sets TCP keep-alive timeouts on accepted
 // connections. It's used by ListenAndServe and ListenAndServeTLS so
 // dead TCP connections (e.g. closing laptop mid-download) eventually

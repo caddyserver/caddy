@@ -45,7 +45,7 @@ func TestStartup(t *testing.T) {
 		if err != nil {
 			t.Errorf("Expected no errors, got: %v", err)
 		}
-		err = c.Startup[0]()
+		err = c.FirstStartup[0]()
 		if err != nil && !test.shouldExecutionErr {
 			t.Errorf("Test %d recieved an error of:\n%v", i, err)
 		}

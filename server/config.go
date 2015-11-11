@@ -26,10 +26,20 @@ type Config struct {
 	// Middleware stack; map of path scope to middleware -- TODO: Support path scope?
 	Middleware map[string][]middleware.Middleware
 
-	// Functions (or methods) to execute at server start; these
-	// are executed before any parts of the server are configured,
-	// and the functions are blocking
+	// Startup is a list of functions (or methods) to execute at
+	// server startup and restart; these are executed before any
+	// parts of the server are configured, and the functions are
+	// blocking. These are good for setting up middlewares and
+	// starting goroutines.
 	Startup []func() error
+
+	// FirstStartup is like Startup but these functions only execute
+	// during the initial startup, not on subsequent restarts.
+	//
+	// (Note: The server does not ever run these on its own; it is up
+	// to the calling application to do so, and do so only once, as the
+	// server itself has no notion whether it's a restart or not.)
+	FirstStartup []func() error
 
 	// Functions (or methods) to execute when the server quits;
 	// these are executed in response to SIGINT and are blocking

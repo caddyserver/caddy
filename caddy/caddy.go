@@ -71,6 +71,10 @@ var (
 	// index in the list of inherited file descriptors. This
 	// variable is not safe for concurrent access.
 	loadedGob caddyfileGob
+
+	// startedBefore should be set to true if caddy has been
+	// started at least once.
+	startedBefore bool
 )
 
 const (
@@ -128,6 +132,7 @@ func Start(cdyfile Input) (err error) {
 	if err != nil {
 		return err
 	}
+	startedBefore = true
 
 	// Close remaining file descriptors we may have inherited that we don't need
 	if IsRestart() {
@@ -203,6 +208,18 @@ func startServers(groupings bindingGroup) error {
 		wg.Add(1)
 		go func(s *server.Server, ln server.ListenerFile) {
 			defer wg.Done()
+
+			// run startup functions that should only execute when
+			// the original parent process is starting.
+			if !IsRestart() && !startedBefore {
+				err := s.RunFirstStartupFuncs()
+				if err != nil {
+					errChan <- err
+					return
+				}
+			}
+
+			// start the server
 			if ln != nil {
 				errChan <- s.Serve(ln)
 			} else {
