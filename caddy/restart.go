@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"os/exec"
 	"syscall"
 )
 
@@ -33,7 +34,7 @@ func Restart(newCaddyfile Input) error {
 		caddyfileMu.Unlock()
 	}
 
-	if len(os.Args) == 0 { // this should never happen...
+	if len(os.Args) == 0 { // this should never happen, but...
 		os.Args = []string{""}
 	}
 
@@ -72,12 +73,18 @@ func Restart(newCaddyfile Input) error {
 	}
 	serversMu.Unlock()
 
+	// We're gonna need the proper path to the executable
+	exepath, err := exec.LookPath(os.Args[0])
+	if err != nil {
+		return err
+	}
+
 	// Fork the process with the current environment and file descriptors
 	execSpec := &syscall.ProcAttr{
 		Env:   os.Environ(),
 		Files: fds,
 	}
-	_, err = syscall.ForkExec(os.Args[0], os.Args, execSpec)
+	_, err = syscall.ForkExec(exepath, os.Args, execSpec)
 	if err != nil {
 		return err
 	}

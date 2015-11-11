@@ -24,14 +24,14 @@ func init() {
 			caddyfileMu.Lock()
 			if caddyfile == nil {
 				// Hmm, did spawing process forget to close stdin? Anyhow, this is unusual.
-				log.Println("[ERROR] SIGUSR1: no caddyfile to reload (was stdin left open?)")
+				log.Println("[ERROR] SIGUSR1: no Caddyfile to reload (was stdin left open?)")
 				caddyfileMu.Unlock()
 				continue
 			}
 			if caddyfile.IsFile() {
 				body, err := ioutil.ReadFile(caddyfile.Path())
 				if err == nil {
-					caddyfile = CaddyfileInput{
+					updatedCaddyfile = CaddyfileInput{
 						Filepath: caddyfile.Path(),
 						Contents: body,
 						RealFile: true,
