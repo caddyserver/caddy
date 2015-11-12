@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net"
 	"os"
 	"path"
@@ -44,6 +45,9 @@ var (
 
 	// HTTP2 indicates whether HTTP2 is enabled or not
 	HTTP2 bool // TODO: temporary flag until http2 is standard
+
+	// PidFile is the path to the pidfile to create
+	PidFile string
 )
 
 var (
@@ -72,8 +76,8 @@ var (
 	// variable is not safe for concurrent access.
 	loadedGob caddyfileGob
 
-	// startedBefore should be set to true if caddy has been
-	// started at least once.
+	// startedBefore should be set to true if caddy has been started
+	// at least once (does not indicate whether currently running).
 	startedBefore bool
 )
 
@@ -99,9 +103,18 @@ const (
 // In any case, an error is returned if Caddy could not be
 // started.
 func Start(cdyfile Input) (err error) {
-	defer func() { signalParent(err == nil) }()
-
-	// TODO: What if already started -- is that an error?
+	// When we return, tell the parent whether we started
+	// successfully, and if so, write the pidfile (if enabled)
+	defer func() {
+		success := err == nil
+		signalParent(success)
+		if success && PidFile != "" {
+			err := writePidFile()
+			if err != nil {
+				log.Printf("[ERROR] Could not write pidfile: %v", err)
+			}
+		}
+	}()
 
 	// Input must never be nil; try to load something
 	if cdyfile == nil {

@@ -3,6 +3,7 @@ package caddy
 import (
 	"bytes"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"runtime"
@@ -65,6 +66,12 @@ type caddyfileGob struct {
 // to env variables, a fork as part of a graceful restart.
 func IsRestart() bool {
 	return os.Getenv("CADDY_RESTART") == "true"
+}
+
+// writePidFile writes the process ID to the file at PidFile, if specified.
+func writePidFile() error {
+	pid := []byte(strconv.Itoa(os.Getpid()) + "\n")
+	return ioutil.WriteFile(PidFile, pid, 0644)
 }
 
 // CaddyfileInput represents a Caddyfile as input

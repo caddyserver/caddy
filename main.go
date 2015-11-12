@@ -19,7 +19,6 @@ var (
 	conf    string
 	cpu     string
 	logfile string
-	pidfile string
 	revoke  string
 	version bool
 )
@@ -38,7 +37,7 @@ func init() {
 	flag.StringVar(&caddy.Host, "host", caddy.DefaultHost, "Default host")
 	flag.BoolVar(&caddy.HTTP2, "http2", true, "HTTP/2 support") // TODO: temporary flag until http2 merged into std lib
 	flag.StringVar(&logfile, "log", "", "Process log file")
-	flag.StringVar(&pidfile, "pidfile", "", "Path to write pid file")
+	flag.StringVar(&caddy.PidFile, "pidfile", "", "Path to write pid file")
 	flag.StringVar(&caddy.Port, "port", caddy.DefaultPort, "Default port")
 	flag.BoolVar(&caddy.Quiet, "quiet", false, "Quiet mode (no initialization output)")
 	flag.StringVar(&revoke, "revoke", "", "Hostname for which to revoke the certificate")
@@ -68,13 +67,6 @@ func main() {
 		log.SetOutput(file)
 	}
 
-	if pidfile != "" {
-		pid := []byte(strconv.Itoa(os.Getpid()) + "\n")
-		err := ioutil.WriteFile(pidfile, pid, 0644)
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
 	if revoke != "" {
 		err := letsencrypt.Revoke(revoke)
 		if err != nil {
