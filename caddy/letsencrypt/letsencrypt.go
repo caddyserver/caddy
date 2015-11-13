@@ -287,10 +287,13 @@ func obtainCertificates(client *acme.Client, serverConfigs []server.Config) ([]a
 // metadata file.
 func saveCertsAndKeys(certificates []acme.CertificateResource) error {
 	for _, cert := range certificates {
-		os.MkdirAll(storage.Site(cert.Domain), 0700)
+		err := os.MkdirAll(storage.Site(cert.Domain), 0700)
+		if err != nil {
+			return err
+		}
 
 		// Save cert
-		err := ioutil.WriteFile(storage.SiteCertFile(cert.Domain), cert.Certificate, 0600)
+		err = ioutil.WriteFile(storage.SiteCertFile(cert.Domain), cert.Certificate, 0600)
 		if err != nil {
 			return err
 		}
