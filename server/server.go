@@ -280,14 +280,11 @@ func (s *Server) WaitUntilStarted() {
 }
 
 // ListenerFd gets the file descriptor of the listener.
-func (s *Server) ListenerFd() uintptr {
+func (s *Server) ListenerFd() *os.File {
 	s.listenerMu.Lock()
 	defer s.listenerMu.Unlock()
-	file, err := s.listener.File()
-	if err != nil {
-		return 0
-	}
-	return file.Fd()
+	file, _ := s.listener.File()
+	return file
 }
 
 // ServeHTTP is the entry point for every request to the address that s

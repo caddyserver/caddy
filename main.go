@@ -30,7 +30,7 @@ const (
 
 func init() {
 	flag.BoolVar(&letsencrypt.Agreed, "agree", false, "Agree to Let's Encrypt Subscriber Agreement")
-	flag.StringVar(&letsencrypt.CAUrl, "ca", "https://acme-staging.api.letsencrypt.org", "Certificate authority ACME server")
+	flag.StringVar(&letsencrypt.CAUrl, "ca", "https://acme-staging.api.letsencrypt.org/directory", "Certificate authority ACME server")
 	flag.StringVar(&conf, "conf", "", "Configuration file to use (default="+caddy.DefaultConfigFile+")")
 	flag.StringVar(&cpu, "cpu", "100%", "CPU cap")
 	flag.StringVar(&letsencrypt.DefaultEmail, "email", "", "Default Let's Encrypt account email address")
@@ -62,7 +62,7 @@ func main() {
 	default:
 		file, err := os.OpenFile(logfile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
 		if err != nil {
-			log.Fatalf("Error opening log file: %v", err)
+			log.Fatalf("Error opening process log file: %v", err)
 		}
 		log.SetOutput(file)
 	}
@@ -95,11 +95,7 @@ func main() {
 	// Start your engines
 	err = caddy.Start(caddyfile)
 	if err != nil {
-		if caddy.IsRestart() {
-			log.Printf("[ERROR] Upon starting %s: %v", appName, err)
-		} else {
-			mustLogFatal(err)
-		}
+		mustLogFatal(err)
 	}
 
 	// Twiddle your thumbs
@@ -107,10 +103,15 @@ func main() {
 }
 
 // mustLogFatal just wraps log.Fatal() in a way that ensures the
-// output is always printed to stderr so the user can see it,
-// even if the process log was not enabled.
+// output is always printed to stderr so the user can see it
+// if the user is still there, even if the process log was not
+// enabled. If this process is a restart, however, and the user
+// might not be there anymore, this just logs to the process log
+// and exits.
 func mustLogFatal(args ...interface{}) {
-	log.SetOutput(os.Stderr)
+	if !caddy.IsRestart() {
+		log.SetOutput(os.Stderr)
+	}
 	log.Fatal(args...)
 }
 

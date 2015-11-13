@@ -59,7 +59,7 @@ var (
 
 	// errIncompleteRestart occurs if this process is a fork
 	// of the parent but no Caddyfile was piped in
-	errIncompleteRestart = errors.New("cannot finish restart successfully")
+	errIncompleteRestart = errors.New("incomplete restart")
 
 	// servers is a list of all the currently-listening servers
 	servers []*server.Server
@@ -103,15 +103,16 @@ const (
 // In any case, an error is returned if Caddy could not be
 // started.
 func Start(cdyfile Input) (err error) {
-	// When we return, tell the parent whether we started
-	// successfully, and if so, write the pidfile (if enabled)
+	// If we return with no errors, we must do two things: tell the
+	// parent that we succeeded and write to the pidfile.
 	defer func() {
-		success := err == nil
-		signalParent(success)
-		if success && PidFile != "" {
-			err := writePidFile()
-			if err != nil {
-				log.Printf("[ERROR] Could not write pidfile: %v", err)
+		if err == nil {
+			signalSuccessToParent() // TODO: Is doing this more than once per process a bad idea? Start could get called more than once in other apps.
+			if PidFile != "" {
+				err := writePidFile()
+				if err != nil {
+					log.Printf("[ERROR] Could not write pidfile: %v", err)
+				}
 			}
 		}
 	}()

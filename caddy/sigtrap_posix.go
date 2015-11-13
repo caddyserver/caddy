@@ -19,6 +19,8 @@ func init() {
 		for {
 			<-reload
 
+			log.Println("[INFO] SIGUSR1: Reloading")
+
 			var updatedCaddyfile Input
 
 			caddyfileMu.Lock()
@@ -42,7 +44,7 @@ func init() {
 
 			err := Restart(updatedCaddyfile)
 			if err != nil {
-				log.Printf("[ERROR] SIGUSR1: Restart returned: %v", err)
+				log.Printf("[ERROR] SIGUSR1: %v", err)
 			}
 		}
 	}()

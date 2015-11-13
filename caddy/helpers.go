@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"os"
 	"os/exec"
 	"runtime"
@@ -39,16 +40,16 @@ func checkFdlimit() {
 	}
 }
 
-// signalParent tells the parent our status using pipe at index 3.
+// signalSuccessToParent tells the parent our status using pipe at index 3.
 // If this process is not a restart, this function does nothing.
-// Calling this is vital so that the parent process can unblock and
-// either continue running or kill itself.
-func signalParent(success bool) {
+// Calling this function once this process has successfully initialized
+// is vital so that the parent process can unblock and kill itself.
+func signalSuccessToParent() {
 	if IsRestart() {
-		ppipe := os.NewFile(3, "") // parent is listening on pipe at index 3
-		if success {
-			// Tell parent process that we're OK so it can quit now
-			ppipe.Write([]byte("success"))
+		ppipe := os.NewFile(3, "")               // parent is reading from pipe at index 3
+		_, err := ppipe.Write([]byte("success")) // we must send some bytes to the parent
+		if err != nil {
+			log.Printf("[ERROR] Communicating successful init to parent: %v", err)
 		}
 		ppipe.Close()
 	}

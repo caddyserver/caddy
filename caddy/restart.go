@@ -8,7 +8,6 @@ import (
 	"log"
 	"os"
 	"os/exec"
-	"syscall"
 )
 
 func init() {
@@ -54,56 +53,56 @@ func Restart(newCaddyfile Input) error {
 	}
 
 	// Prepare a pipe that the child process will use to communicate
-	// its success or failure with us, the parent
+	// its success with us by sending > 0 bytes
 	sigrpipe, sigwpipe, err := os.Pipe()
 	if err != nil {
 		return err
 	}
 
-	// Pass along current environment and file descriptors to child.
-	// Ordering here is very important: stdin, stdout, stderr, sigpipe,
-	// and then the listener file descriptors (in order).
-	fds := []uintptr{rpipe.Fd(), os.Stdout.Fd(), os.Stderr.Fd(), sigwpipe.Fd()}
+	// Pass along relevant file descriptors to child process; ordering
+	// is very important since we rely on these being in certain positions.
+	extraFiles := []*os.File{sigwpipe}
 
-	// Now add file descriptors of the sockets
+	// Add file descriptors of all the sockets
 	serversMu.Lock()
 	for i, s := range servers {
-		fds = append(fds, s.ListenerFd())
+		extraFiles = append(extraFiles, s.ListenerFd())
 		cdyfileGob.ListenerFds[s.Addr] = uintptr(4 + i) // 4 fds come before any of the listeners
 	}
 	serversMu.Unlock()
 
-	// We're gonna need the proper path to the executable
-	exepath, err := exec.LookPath(os.Args[0])
+	// Set up the command
+	cmd := exec.Command(os.Args[0], os.Args[1:]...)
+	cmd.Stdin = rpipe      // fd 0
+	cmd.Stdout = os.Stdout // fd 1
+	cmd.Stderr = os.Stderr // fd 2
+	cmd.ExtraFiles = extraFiles
+
+	// Spawn the child process
+	err = cmd.Start()
 	if err != nil {
 		return err
 	}
 
-	// Fork the process with the current environment and file descriptors
-	execSpec := &syscall.ProcAttr{
-		Env:   os.Environ(),
-		Files: fds,
-	}
-	_, err = syscall.ForkExec(exepath, os.Args, execSpec)
-	if err != nil {
-		return err
-	}
-
-	// Feed it the Caddyfile
+	// Feed Caddyfile to the child
 	err = gob.NewEncoder(wpipe).Encode(cdyfileGob)
 	if err != nil {
 		return err
 	}
 	wpipe.Close()
 
-	// Wait for child process to signal success or fail
-	sigwpipe.Close() // close our copy of the write end of the pipe or we might be stuck
-	answer, err := ioutil.ReadAll(sigrpipe)
-	if err != nil || len(answer) == 0 {
-		log.Println("[ERROR] Restart: child failed to initialize; changes not applied")
+	// Determine whether child startup succeeded
+	sigwpipe.Close() // close our copy of the write end of the pipe -- TODO: why?
+	answer, readErr := ioutil.ReadAll(sigrpipe)
+	if answer == nil || len(answer) == 0 {
+		cmdErr := cmd.Wait() // get exit status
+		log.Printf("[ERROR] Restart: child failed to initialize (%v) - changes not applied", cmdErr)
+		if readErr != nil {
+			log.Printf("[ERROR] Restart: additionally, error communicating with child process: %v", readErr)
+		}
 		return errIncompleteRestart
 	}
 
-	// Child process is listening now; we can stop all our servers here.
+	// Looks like child was successful; we can exit gracefully.
 	return Stop()
 }
