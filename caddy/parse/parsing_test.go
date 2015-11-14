@@ -1,6 +1,7 @@
 package parse
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -336,6 +337,65 @@ func TestParseAll(t *testing.T) {
 			t.Errorf("Test %d: Expected an error, but didn't get one", i)
 		}
 		if !test.shouldErr && err != nil {
+			t.Errorf("Test %d: Expected no error, but got: %v", i, err)
+		}
+
+		if len(blocks) != len(test.addresses) {
+			t.Errorf("Test %d: Expected %d server blocks, got %d",
+				i, len(test.addresses), len(blocks))
+			continue
+		}
+		for j, block := range blocks {
+			if len(block.Addresses) != len(test.addresses[j]) {
+				t.Errorf("Test %d: Expected %d addresses in block %d, got %d",
+					i, len(test.addresses[j]), j, len(block.Addresses))
+				continue
+			}
+			for k, addr := range block.Addresses {
+				if addr.Host != test.addresses[j][k].Host {
+					t.Errorf("Test %d, block %d, address %d: Expected host to be '%s', but was '%s'",
+						i, j, k, test.addresses[j][k].Host, addr.Host)
+				}
+				if addr.Port != test.addresses[j][k].Port {
+					t.Errorf("Test %d, block %d, address %d: Expected port to be '%s', but was '%s'",
+						i, j, k, test.addresses[j][k].Port, addr.Port)
+				}
+			}
+		}
+	}
+}
+
+func TestEnvironmentReplacement(t *testing.T) {
+	setupParseTests()
+
+	os.Setenv("MY_PORT", "8080")
+	os.Setenv("MY_ADDRESS", "servername.com")
+	os.Setenv("MY_ADDRESS2", "127.0.0.1")
+
+	for i, test := range []struct {
+		input     string
+		addresses [][]address // addresses per server block, in order
+	}{
+		{`{$MY_ADDRESS}`, [][]address{
+			{{"servername.com", ""}},
+		}},
+
+		{`{$MY_ADDRESS}:{$MY_PORT}`, [][]address{
+			[]address{{"servername.com", "8080"}},
+		}},
+
+		{`{$MY_ADDRESS2}:1234 {
+		  }
+		  localhost:{$MY_PORT} {
+		  }`, [][]address{
+			[]address{{"127.0.0.1", "1234"}},
+			[]address{{"localhost", "8080"}},
+		}},
+	} {
+		p := testParser(test.input)
+		blocks, err := p.parseAll()
+
+		if err != nil {
 			t.Errorf("Test %d: Expected no error, but got: %v", i, err)
 		}
 
