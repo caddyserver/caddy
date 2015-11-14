@@ -47,6 +47,7 @@ outer:
 		r.Header.Del("Accept-Encoding")
 
 		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Set("Vary", "Accept-Encoding")
 		gzipWriter, err := newWriter(c, w)
 		if err != nil {
 			// should not happen
