@@ -8,6 +8,10 @@ import (
 func TestSetCPU(t *testing.T) {
 	currentCPU := runtime.GOMAXPROCS(-1)
 	maxCPU := runtime.NumCPU()
+	halfCPU := int(0.5 * float32(maxCPU))
+	if halfCPU < 1 {
+		halfCPU = 1
+	}
 	for i, test := range []struct {
 		input     string
 		output    int
@@ -17,7 +21,7 @@ func TestSetCPU(t *testing.T) {
 		{"-1", currentCPU, true},
 		{"0", currentCPU, true},
 		{"100%", maxCPU, false},
-		{"50%", int(0.5 * float32(maxCPU)), false},
+		{"50%", halfCPU, false},
 		{"110%", currentCPU, true},
 		{"-10%", currentCPU, true},
 		{"invalid input", currentCPU, true},
