@@ -12,8 +12,7 @@
 // You should use caddy.Wait() to wait for all Caddy servers
 // to quit before your process exits.
 //
-// Importing this package has the side-effect of trapping
-// SIGINT on all platforms and SIGUSR1 on not-Windows systems.
+// Importing this package has the side-effect of trapping signals.
 // It has to do this in order to perform shutdowns or reloads.
 package caddy
 
@@ -275,7 +274,7 @@ func startServers(groupings bindingGroup) error {
 
 // Stop stops all servers. It blocks until they are all stopped.
 // It does NOT execute shutdown callbacks that may have been
-// configured by middleware (they are executed on SIGINT).
+// configured by middleware (they must be executed separately).
 func Stop() error {
 	letsencrypt.Deactivate()
 

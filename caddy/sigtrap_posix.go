@@ -11,40 +11,62 @@ import (
 )
 
 func init() {
-	// Trap POSIX-only signals
+	// Trap all POSIX-only signals
 	go func() {
-		reload := make(chan os.Signal, 1)
-		signal.Notify(reload, syscall.SIGUSR1) // reload configuration
+		sigchan := make(chan os.Signal, 1)
+		signal.Notify(sigchan, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT, syscall.SIGUSR1)
 
-		for {
-			<-reload
+		for sig := range sigchan {
+			switch sig {
+			case syscall.SIGTERM:
+				log.Println("[INFO] SIGTERM: Terminating process")
+				os.Exit(0)
 
-			log.Println("[INFO] SIGUSR1: Reloading")
+			case syscall.SIGQUIT:
+				log.Println("[INFO] SIGQUIT: Shutting down")
+				exitCode := executeShutdownCallbacks("SIGQUIT")
+				err := Stop()
+				if err != nil {
+					log.Printf("[ERROR] SIGQUIT stop: %v", err)
+					exitCode = 1
+				}
+				os.Exit(exitCode)
 
-			var updatedCaddyfile Input
+			case syscall.SIGHUP:
+				log.Println("[INFO] SIGHUP: Hanging up")
+				err := Stop()
+				if err != nil {
+					log.Printf("[ERROR] SIGHUP stop: %v", err)
+				}
 
-			caddyfileMu.Lock()
-			if caddyfile == nil {
-				// Hmm, did spawing process forget to close stdin? Anyhow, this is unusual.
-				log.Println("[ERROR] SIGUSR1: no Caddyfile to reload (was stdin left open?)")
-				caddyfileMu.Unlock()
-				continue
-			}
-			if caddyfile.IsFile() {
-				body, err := ioutil.ReadFile(caddyfile.Path())
-				if err == nil {
-					updatedCaddyfile = CaddyfileInput{
-						Filepath: caddyfile.Path(),
-						Contents: body,
-						RealFile: true,
+			case syscall.SIGUSR1:
+				log.Println("[INFO] SIGUSR1: Reloading")
+
+				var updatedCaddyfile Input
+
+				caddyfileMu.Lock()
+				if caddyfile == nil {
+					// Hmm, did spawing process forget to close stdin? Anyhow, this is unusual.
+					log.Println("[ERROR] SIGUSR1: no Caddyfile to reload (was stdin left open?)")
+					caddyfileMu.Unlock()
+					continue
+				}
+				if caddyfile.IsFile() {
+					body, err := ioutil.ReadFile(caddyfile.Path())
+					if err == nil {
+						updatedCaddyfile = CaddyfileInput{
+							Filepath: caddyfile.Path(),
+							Contents: body,
+							RealFile: true,
+						}
 					}
 				}
-			}
-			caddyfileMu.Unlock()
+				caddyfileMu.Unlock()
 
-			err := Restart(updatedCaddyfile)
-			if err != nil {
-				log.Printf("[ERROR] SIGUSR1: %v", err)
+				err := Restart(updatedCaddyfile)
+				if err != nil {
+					log.Printf("[ERROR] SIGUSR1: %v", err)
+				}
 			}
 		}
 	}()
