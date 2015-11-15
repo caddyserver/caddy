@@ -17,6 +17,6 @@ func TestBuildEnv(t *testing.T) {
 		t.Fatal("Didn't expect an error:", err)
 	}
 	if len(env) == 0 {
-		t.Fatal("Expected non-empty environment; got %#v", env)
+		t.Fatalf("Expected non-empty environment; got %#v", env)
 	}
 }
