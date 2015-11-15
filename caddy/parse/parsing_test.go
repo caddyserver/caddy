@@ -391,6 +391,22 @@ func TestEnvironmentReplacement(t *testing.T) {
 			[]address{{"127.0.0.1", "1234"}},
 			[]address{{"localhost", "8080"}},
 		}},
+
+		{`{%MY_ADDRESS%}`, [][]address{
+			{{"servername.com", ""}},
+		}},
+
+		{`{%MY_ADDRESS%}:{%MY_PORT%}`, [][]address{
+			[]address{{"servername.com", "8080"}},
+		}},
+
+		{`{%MY_ADDRESS2%}:1234 {
+		  }
+		  localhost:{%MY_PORT%} {
+		  }`, [][]address{
+			[]address{{"127.0.0.1", "1234"}},
+			[]address{{"localhost", "8080"}},
+		}},
 	} {
 		p := testParser(test.input)
 		blocks, err := p.parseAll()

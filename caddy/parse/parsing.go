@@ -4,12 +4,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
-)
-
-var (
-	envRegEx = regexp.MustCompile("{\\$[^}]+}")
 )
 
 type parser struct {
@@ -337,10 +332,23 @@ func (sb serverBlock) HostList() []string {
 }
 
 func getValFromEnv(s string) string {
-	envRefs := envRegEx.FindAllString(s, -1)
+	s = replaceEnvReferences(s, "{$", "}")
+	s = replaceEnvReferences(s, "{%", "%}")
+	return s
+}
 
-	for _, ref := range envRefs {
-		s = strings.Replace(s, ref, os.Getenv(ref[2:len(ref)-1]), -1)
+func replaceEnvReferences(s, refStart, refEnd string) string {
+	index := strings.Index(s, refStart)
+	for index != -1 {
+		endIndex := strings.Index(s, refEnd)
+		if endIndex != -1 {
+			ref := s[index : endIndex+len(refEnd)]
+			s = strings.Replace(s, ref, os.Getenv(ref[len(refStart):len(ref)-len(refEnd)]), -1)
+		} else {
+			return s
+		}
+
+		index = strings.Index(s, refStart)
 	}
 
 	return s
