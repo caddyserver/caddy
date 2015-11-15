@@ -71,6 +71,8 @@ func (p *parser) addresses() error {
 	for {
 		tkn := p.Val()
 
+		tkn = getValFromEnv(tkn)
+
 		// special case: import directive replaces tokens during parse-time
 		if tkn == "import" && p.isNewLine() {
 			err := p.doImport()
@@ -241,6 +243,7 @@ func (p *parser) directive() error {
 		} else if p.Val() == "}" && nesting == 0 {
 			return p.Err("Unexpected '}' because no matching opening brace")
 		}
+		p.tokens[p.cursor].text = getValFromEnv(p.tokens[p.cursor].text)
 		p.block.Tokens[dir] = append(p.block.Tokens[dir], p.tokens[p.cursor])
 	}
 
@@ -326,4 +329,27 @@ func (sb serverBlock) HostList() []string {
 		sbHosts[j] = net.JoinHostPort(addr.Host, addr.Port)
 	}
 	return sbHosts
+}
+
+func getValFromEnv(s string) string {
+	s = replaceEnvReferences(s, "{$", "}")
+	s = replaceEnvReferences(s, "{%", "%}")
+	return s
+}
+
+func replaceEnvReferences(s, refStart, refEnd string) string {
+	index := strings.Index(s, refStart)
+	for index != -1 {
+		endIndex := strings.Index(s, refEnd)
+		if endIndex != -1 {
+			ref := s[index : endIndex+len(refEnd)]
+			s = strings.Replace(s, ref, os.Getenv(ref[len(refStart):len(ref)-len(refEnd)]), -1)
+		} else {
+			return s
+		}
+
+		index = strings.Index(s, refStart)
+	}
+
+	return s
 }
