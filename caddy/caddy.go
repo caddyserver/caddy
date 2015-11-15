@@ -29,6 +29,7 @@ import (
 	"path"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/mholt/caddy/caddy/letsencrypt"
 	"github.com/mholt/caddy/server"
@@ -43,11 +44,14 @@ var (
 	// If true, initialization will not show any informative output.
 	Quiet bool
 
-	// HTTP2 indicates whether HTTP2 is enabled or not
+	// HTTP2 indicates whether HTTP2 is enabled or not.
 	HTTP2 bool // TODO: temporary flag until http2 is standard
 
-	// PidFile is the path to the pidfile to create
+	// PidFile is the path to the pidfile to create.
 	PidFile string
+
+	// GracefulTimeout is the maximum duration of a graceful shutdown.
+	GracefulTimeout time.Duration
 )
 
 var (
@@ -91,17 +95,20 @@ const (
 )
 
 // Start starts Caddy with the given Caddyfile. If cdyfile
-// is nil or the process is forked from a parent as part of
-// a graceful restart, Caddy will check to see if Caddyfile
-// was piped from stdin and use that. It blocks until all the
-// servers are listening.
+// is nil, the LoadCaddyfile function will be called to get
+// one.
 //
-// If this process is a fork and no Caddyfile was piped in,
-// an error will be returned (the Restart() function does this
-// for you automatically). If this process is NOT a fork and
-// cdyfile is nil, a default configuration will be assumed.
-// In any case, an error is returned if Caddy could not be
-// started.
+// This function blocks until all the servers are listening.
+//
+// Note (POSIX): If Start is called in the child process of a
+// restart more than once within the duration of the graceful
+// cutoff (i.e. the child process called Start a first time,
+// then called Stop, then Start again within the first 5 seconds
+// or however long GracefulTimeout is) and the Caddyfiles have
+// at least one listener address in common, the second Start
+// may fail with "address already in use" as there's no
+// guarantee that the parent process has relinquished the
+// address before the grace period ends.
 func Start(cdyfile Input) (err error) {
 	// If we return with no errors, we must do two things: tell the
 	// parent that we succeeded and write to the pidfile.
@@ -148,17 +155,6 @@ func Start(cdyfile Input) (err error) {
 	}
 	startedBefore = true
 
-	// Close remaining file descriptors we may have inherited that we don't need
-	if IsRestart() {
-		for _, fdIndex := range loadedGob.ListenerFds {
-			file := os.NewFile(fdIndex, "")
-			fln, err := net.FileListener(file)
-			if err == nil {
-				fln.Close()
-			}
-		}
-	}
-
 	// Show initialization output
 	if !Quiet && !IsRestart() {
 		var checkedFdLimit bool
@@ -192,7 +188,7 @@ func startServers(groupings bindingGroup) error {
 	errChan := make(chan error, len(groupings)) // must be buffered to allow Serve functions below to return if stopped later
 
 	for _, group := range groupings {
-		s, err := server.New(group.BindAddr.String(), group.Configs)
+		s, err := server.New(group.BindAddr.String(), group.Configs, GracefulTimeout)
 		if err != nil {
 			return err
 		}
@@ -215,7 +211,8 @@ func startServers(groupings bindingGroup) error {
 					return errors.New("listener for " + s.Addr + " was not a ListenerFile")
 				}
 
-				delete(loadedGob.ListenerFds, s.Addr) // mark it as used
+				file.Close()
+				delete(loadedGob.ListenerFds, s.Addr)
 			}
 		}
 
@@ -252,6 +249,14 @@ func startServers(groupings bindingGroup) error {
 		serversMu.Unlock()
 	}
 
+	// Close the remaining (unused) file descriptors to free up resources
+	if IsRestart() {
+		for key, fdIndex := range loadedGob.ListenerFds {
+			os.NewFile(fdIndex, "").Close()
+			delete(loadedGob.ListenerFds, key)
+		}
+	}
+
 	// Wait for all servers to finish starting
 	startupWg.Wait()
 
@@ -276,7 +281,9 @@ func Stop() error {
 
 	serversMu.Lock()
 	for _, s := range servers {
-		s.Stop() // TODO: error checking/reporting?
+		if err := s.Stop(); err != nil {
+			log.Printf("[ERROR] Stopping %s: %v", s.Addr, err)
+		}
 	}
 	servers = []*server.Server{} // don't reuse servers
 	serversMu.Unlock()
@@ -289,12 +296,13 @@ func Wait() {
 	wg.Wait()
 }
 
-// LoadCaddyfile loads a Caddyfile in a way that prioritizes
-// reading from stdin pipe; otherwise it calls loader to load
-// the Caddyfile. If loader does not return a Caddyfile, the
-// default one will be returned. Thus, if there are no other
-// errors, this function always returns at least the default
-// Caddyfile (not the previously-used Caddyfile).
+// LoadCaddyfile loads a Caddyfile, prioritizing a Caddyfile
+// piped from stdin as part of a restart (only happens on first call
+// to LoadCaddyfile). If it is not a restart, this function tries
+// calling the user's loader function, and if that returns nil, then
+// this function resorts to the default configuration. Thus, if there
+// are no other errors, this function always returns at least the
+// default Caddyfile.
 func LoadCaddyfile(loader func() (Input, error)) (cdyfile Input, err error) {
 	// If we are a fork, finishing the restart is highest priority;
 	// piped input is required in this case.

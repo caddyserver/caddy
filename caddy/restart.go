@@ -84,6 +84,11 @@ func Restart(newCaddyfile Input) error {
 		return err
 	}
 
+	// Immediately close our dup'ed fds and the write end of our signal pipe
+	for _, f := range extraFiles {
+		f.Close()
+	}
+
 	// Feed Caddyfile to the child
 	err = gob.NewEncoder(wpipe).Encode(cdyfileGob)
 	if err != nil {
@@ -92,7 +97,6 @@ func Restart(newCaddyfile Input) error {
 	wpipe.Close()
 
 	// Determine whether child startup succeeded
-	sigwpipe.Close() // close our copy of the write end of the pipe -- TODO: why?
 	answer, readErr := ioutil.ReadAll(sigrpipe)
 	if answer == nil || len(answer) == 0 {
 		cmdErr := cmd.Wait() // get exit status
@@ -103,6 +107,6 @@ func Restart(newCaddyfile Input) error {
 		return errIncompleteRestart
 	}
 
-	// Looks like child was successful; we can exit gracefully.
+	// Looks like child is successful; we can exit gracefully.
 	return Stop()
 }

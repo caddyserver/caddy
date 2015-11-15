@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/mholt/caddy/caddy/letsencrypt"
 )
@@ -44,16 +45,27 @@ func checkFdlimit() {
 // If this process is not a restart, this function does nothing.
 // Calling this function once this process has successfully initialized
 // is vital so that the parent process can unblock and kill itself.
+// This function is idempotent; it executes at most once per process.
 func signalSuccessToParent() {
-	if IsRestart() {
-		ppipe := os.NewFile(3, "")               // parent is reading from pipe at index 3
-		_, err := ppipe.Write([]byte("success")) // we must send some bytes to the parent
-		if err != nil {
-			log.Printf("[ERROR] Communicating successful init to parent: %v", err)
+	signalParentOnce.Do(func() {
+		if IsRestart() {
+			ppipe := os.NewFile(3, "")               // parent is reading from pipe at index 3
+			_, err := ppipe.Write([]byte("success")) // we must send some bytes to the parent
+			if err != nil {
+				log.Printf("[ERROR] Communicating successful init to parent: %v", err)
+			}
+			ppipe.Close()
 		}
-		ppipe.Close()
-	}
+	})
 }
+
+// signalParentOnce is used to make sure that the parent is only
+// signaled once; doing so more than once breaks whatever socket is
+// at fd 4 (the reason for this is still unclear - to reproduce,
+// call Stop() and Start() in succession at least once after a
+// restart, then try loading first host of Caddyfile in the browser).
+// Do not use this directly - call signalSuccessToParent instead.
+var signalParentOnce sync.Once
 
 // caddyfileGob maps bind address to index of the file descriptor
 // in the Files array passed to the child process. It also contains

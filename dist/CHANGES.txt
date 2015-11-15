@@ -10,8 +10,11 @@ CHANGES
 - New -ca flag to customize ACME CA server URL
 - New -revoke flag to revoke a certificate
 - New -log flag to enable process log
+- New -pidfile flag to enable writing pidfile
+- New -grace flag to customize the graceful shutdown timeout
 - browse: Render filenames with multiple whitespace properly
 - markdown: Include Last-Modified header in response
+- markdown: Render tables, strikethrough, and fenced code blocks
 - startup, shutdown: Better Windows support
 - templates: Bug fix for .Host when port is absent
 - templates: Include Last-Modified header in response

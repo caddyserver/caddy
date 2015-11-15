@@ -8,7 +8,6 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -26,13 +25,14 @@ import (
 // graceful termination (POSIX only).
 type Server struct {
 	*http.Server
-	HTTP2      bool                   // temporary while http2 is not in std lib (TODO: remove flag when part of std lib)
-	tls        bool                   // whether this server is serving all HTTPS hosts or not
-	vhosts     map[string]virtualHost // virtual hosts keyed by their address
-	listener   ListenerFile           // the listener which is bound to the socket
-	listenerMu sync.Mutex             // protects listener
-	httpWg     sync.WaitGroup         // used to wait on outstanding connections
-	startChan  chan struct{}          // used to block until server is finished starting
+	HTTP2       bool                   // temporary while http2 is not in std lib (TODO: remove flag when part of std lib)
+	tls         bool                   // whether this server is serving all HTTPS hosts or not
+	vhosts      map[string]virtualHost // virtual hosts keyed by their address
+	listener    ListenerFile           // the listener which is bound to the socket
+	listenerMu  sync.Mutex             // protects listener
+	httpWg      sync.WaitGroup         // used to wait on outstanding connections
+	startChan   chan struct{}          // used to block until server is finished starting
+	connTimeout time.Duration          // the maximum duration of a graceful shutdown
 }
 
 // ListenerFile represents a listener.
@@ -42,14 +42,17 @@ type ListenerFile interface {
 }
 
 // New creates a new Server which will bind to addr and serve
-// the sites/hosts configured in configs. This function does
-// not start serving.
+// the sites/hosts configured in configs. Its listener will
+// gracefully close when the server is stopped which will take
+// no longer than gracefulTimeout.
+//
+// This function does not start serving.
 //
 // Do not re-use a server (start, stop, then start again). We
 // could probably add more locking to make this possible, but
 // as it stands, you should dispose of a server after stopping it.
 // The behavior of serving with a spent server is undefined.
-func New(addr string, configs []Config) (*Server, error) {
+func New(addr string, configs []Config, gracefulTimeout time.Duration) (*Server, error) {
 	var tls bool
 	if len(configs) > 0 {
 		tls = configs[0].TLS.Enabled
@@ -63,9 +66,10 @@ func New(addr string, configs []Config) (*Server, error) {
 			// WriteTimeout:   2 * time.Minute,
 			// MaxHeaderBytes: 1 << 16,
 		},
-		tls:       tls,
-		vhosts:    make(map[string]virtualHost),
-		startChan: make(chan struct{}),
+		tls:         tls,
+		vhosts:      make(map[string]virtualHost),
+		startChan:   make(chan struct{}),
+		connTimeout: gracefulTimeout,
 	}
 	s.Handler = s // this is weird, but whatever
 
@@ -241,7 +245,7 @@ func serveTLSWithSNI(s *Server, ln net.Listener, tlsConfigs []TLSConfig) error {
 // connections to close (up to a max timeout of a few
 // seconds); on Windows it will close the listener
 // immediately.
-func (s *Server) Stop() error {
+func (s *Server) Stop() (err error) {
 	s.Server.SetKeepAlivesEnabled(false)
 
 	if runtime.GOOS != "windows" {
@@ -256,20 +260,19 @@ func (s *Server) Stop() error {
 		// Wait for remaining connections to finish or
 		// force them all to close after timeout
 		select {
-		case <-time.After(5 * time.Second): // TODO: make configurable
+		case <-time.After(s.connTimeout):
 		case <-done:
 		}
 	}
 
 	// Close the listener now; this stops the server without delay
 	s.listenerMu.Lock()
-	err := s.listener.Close()
-	s.listenerMu.Unlock()
-	if err != nil {
-		log.Printf("[ERROR] Closing listener for %s: %v", s.Addr, err)
+	if s.listener != nil {
+		err = s.listener.Close()
 	}
+	s.listenerMu.Unlock()
 
-	return err
+	return
 }
 
 // WaitUntilStarted blocks until the server s is started, meaning
@@ -279,12 +282,17 @@ func (s *Server) WaitUntilStarted() {
 	<-s.startChan
 }
 
-// ListenerFd gets the file descriptor of the listener.
+// ListenerFd gets a dup'ed file of the listener. If there
+// is no underlying file, the return value will be nil. It
+// is the caller's responsibility to close the file.
 func (s *Server) ListenerFd() *os.File {
 	s.listenerMu.Lock()
 	defer s.listenerMu.Unlock()
-	file, _ := s.listener.File()
-	return file
+	if s.listener != nil {
+		file, _ := s.listener.File()
+		return file
+	}
+	return nil
 }
 
 // ServeHTTP is the entry point for every request to the address that s
@@ -370,7 +378,7 @@ func setupClientAuth(tlsConfigs []TLSConfig, config *tls.Config) error {
 
 // RunFirstStartupFuncs runs all of the server's FirstStartup
 // callback functions unless one of them returns an error first.
-// It is up the caller's responsibility to call this only once and
+// It is the caller's responsibility to call this only once and
 // at the correct time. The functions here should not be executed
 // at restarts or where the user does not explicitly start a new
 // instance of the server.

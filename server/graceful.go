@@ -2,7 +2,6 @@ package server
 
 import (
 	"net"
-	"os"
 	"sync"
 	"syscall"
 )
@@ -13,7 +12,9 @@ func newGracefulListener(l ListenerFile, wg *sync.WaitGroup) *gracefulListener {
 	gl := &gracefulListener{ListenerFile: l, stop: make(chan error), httpWg: wg}
 	go func() {
 		<-gl.stop
+		gl.Lock()
 		gl.stopped = true
+		gl.Unlock()
 		gl.stop <- gl.ListenerFile.Close()
 	}()
 	return gl
@@ -24,12 +25,13 @@ func newGracefulListener(l ListenerFile, wg *sync.WaitGroup) *gracefulListener {
 // methods mainly wrap net.Listener to be graceful.
 type gracefulListener struct {
 	ListenerFile
-	stop    chan error
-	stopped bool
-	httpWg  *sync.WaitGroup // pointer to the host's wg used for counting connections
+	stop       chan error
+	stopped    bool
+	sync.Mutex                 // protects the stopped flag
+	httpWg     *sync.WaitGroup // pointer to the host's wg used for counting connections
 }
 
-// Accept accepts a connection. This type wraps
+// Accept accepts a connection.
 func (gl *gracefulListener) Accept() (c net.Conn, err error) {
 	c, err = gl.ListenerFile.Accept()
 	if err != nil {
@@ -42,16 +44,14 @@ func (gl *gracefulListener) Accept() (c net.Conn, err error) {
 
 // Close immediately closes the listener.
 func (gl *gracefulListener) Close() error {
+	gl.Lock()
 	if gl.stopped {
+		gl.Unlock()
 		return syscall.EINVAL
 	}
+	gl.Unlock()
 	gl.stop <- nil
 	return <-gl.stop
-}
-
-// File implements ListenerFile; it gets the file of the listening socket.
-func (gl *gracefulListener) File() (*os.File, error) {
-	return gl.ListenerFile.File()
 }
 
 // gracefulConn represents a connection on a
