@@ -76,6 +76,10 @@ func TestEmailUsername(t *testing.T) {
 			input:  emptyEmail,
 			expect: emptyEmail,
 		},
+		{
+			input:  "",
+			expect: "",
+		},
 	} {
 		if actual := emailUsername(test.input); actual != test.expect {
 			t.Errorf("Test %d: Expected username to be '%s' but was '%s'", i, test.expect, actual)
