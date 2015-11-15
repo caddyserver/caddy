@@ -368,75 +368,76 @@ func TestParseAll(t *testing.T) {
 func TestEnvironmentReplacement(t *testing.T) {
 	setupParseTests()
 
-	os.Setenv("MY_PORT", "8080")
-	os.Setenv("MY_ADDRESS", "servername.com")
-	os.Setenv("MY_ADDRESS2", "127.0.0.1")
+	os.Setenv("PORT", "8080")
+	os.Setenv("ADDRESS", "servername.com")
+	os.Setenv("FOOBAR", "foobar")
 
-	for i, test := range []struct {
-		input     string
-		addresses [][]address // addresses per server block, in order
-	}{
-		{`{$MY_ADDRESS}`, [][]address{
-			{{"servername.com", ""}},
-		}},
+	// basic test; unix-style env vars
+	p := testParser(`{$ADDRESS}`)
+	blocks, _ := p.parseAll()
+	if actual, expected := blocks[0].Addresses[0].Host, "servername.com"; expected != actual {
+		t.Errorf("Expected host to be '%s' but was '%s'", expected, actual)
+	}
 
-		{`{$MY_ADDRESS}:{$MY_PORT}`, [][]address{
-			[]address{{"servername.com", "8080"}},
-		}},
+	// multiple vars per token
+	p = testParser(`{$ADDRESS}:{$PORT}`)
+	blocks, _ = p.parseAll()
+	if actual, expected := blocks[0].Addresses[0].Host, "servername.com"; expected != actual {
+		t.Errorf("Expected host to be '%s' but was '%s'", expected, actual)
+	}
+	if actual, expected := blocks[0].Addresses[0].Port, "8080"; expected != actual {
+		t.Errorf("Expected port to be '%s' but was '%s'", expected, actual)
+	}
 
-		{`{$MY_ADDRESS2}:1234 {
-		  }
-		  localhost:{$MY_PORT} {
-		  }`, [][]address{
-			[]address{{"127.0.0.1", "1234"}},
-			[]address{{"localhost", "8080"}},
-		}},
+	// windows-style var and unix style in same token
+	p = testParser(`{%ADDRESS%}:{$PORT}`)
+	blocks, _ = p.parseAll()
+	if actual, expected := blocks[0].Addresses[0].Host, "servername.com"; expected != actual {
+		t.Errorf("Expected host to be '%s' but was '%s'", expected, actual)
+	}
+	if actual, expected := blocks[0].Addresses[0].Port, "8080"; expected != actual {
+		t.Errorf("Expected port to be '%s' but was '%s'", expected, actual)
+	}
 
-		{`{%MY_ADDRESS%}`, [][]address{
-			{{"servername.com", ""}},
-		}},
+	// reverse order
+	p = testParser(`{$ADDRESS}:{%PORT%}`)
+	blocks, _ = p.parseAll()
+	if actual, expected := blocks[0].Addresses[0].Host, "servername.com"; expected != actual {
+		t.Errorf("Expected host to be '%s' but was '%s'", expected, actual)
+	}
+	if actual, expected := blocks[0].Addresses[0].Port, "8080"; expected != actual {
+		t.Errorf("Expected port to be '%s' but was '%s'", expected, actual)
+	}
 
-		{`{%MY_ADDRESS%}:{%MY_PORT%}`, [][]address{
-			[]address{{"servername.com", "8080"}},
-		}},
+	// env var in server block body as argument
+	p = testParser(":{%PORT%}\ndir1 {$FOOBAR}")
+	blocks, _ = p.parseAll()
+	if actual, expected := blocks[0].Addresses[0].Port, "8080"; expected != actual {
+		t.Errorf("Expected port to be '%s' but was '%s'", expected, actual)
+	}
+	if actual, expected := blocks[0].Tokens["dir1"][1].text, "foobar"; expected != actual {
+		t.Errorf("Expected argument to be '%s' but was '%s'", expected, actual)
+	}
 
-		{`{%MY_ADDRESS2%}:1234 {
-		  }
-		  localhost:{%MY_PORT%} {
-		  }`, [][]address{
-			[]address{{"127.0.0.1", "1234"}},
-			[]address{{"localhost", "8080"}},
-		}},
-	} {
-		p := testParser(test.input)
-		blocks, err := p.parseAll()
+	// combined windows env vars in argument
+	p = testParser(":{%PORT%}\ndir1 {%ADDRESS%}/{%FOOBAR%}")
+	blocks, _ = p.parseAll()
+	if actual, expected := blocks[0].Tokens["dir1"][1].text, "servername.com/foobar"; expected != actual {
+		t.Errorf("Expected argument to be '%s' but was '%s'", expected, actual)
+	}
 
-		if err != nil {
-			t.Errorf("Test %d: Expected no error, but got: %v", i, err)
-		}
+	// malformed env var (windows)
+	p = testParser(":1234\ndir1 {%ADDRESS}")
+	blocks, _ = p.parseAll()
+	if actual, expected := blocks[0].Tokens["dir1"][1].text, "{%ADDRESS}"; expected != actual {
+		t.Errorf("Expected host to be '%s' but was '%s'", expected, actual)
+	}
 
-		if len(blocks) != len(test.addresses) {
-			t.Errorf("Test %d: Expected %d server blocks, got %d",
-				i, len(test.addresses), len(blocks))
-			continue
-		}
-		for j, block := range blocks {
-			if len(block.Addresses) != len(test.addresses[j]) {
-				t.Errorf("Test %d: Expected %d addresses in block %d, got %d",
-					i, len(test.addresses[j]), j, len(block.Addresses))
-				continue
-			}
-			for k, addr := range block.Addresses {
-				if addr.Host != test.addresses[j][k].Host {
-					t.Errorf("Test %d, block %d, address %d: Expected host to be '%s', but was '%s'",
-						i, j, k, test.addresses[j][k].Host, addr.Host)
-				}
-				if addr.Port != test.addresses[j][k].Port {
-					t.Errorf("Test %d, block %d, address %d: Expected port to be '%s', but was '%s'",
-						i, j, k, test.addresses[j][k].Port, addr.Port)
-				}
-			}
-		}
+	// malformed (non-existent) env var (unix)
+	p = testParser(`:{$PORT$}`)
+	blocks, _ = p.parseAll()
+	if actual, expected := blocks[0].Addresses[0].Port, ""; expected != actual {
+		t.Errorf("Expected port to be '%s' but was '%s'", expected, actual)
 	}
 }
 

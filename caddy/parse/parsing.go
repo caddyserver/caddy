@@ -69,9 +69,7 @@ func (p *parser) addresses() error {
 	var expectingAnother bool
 
 	for {
-		tkn := p.Val()
-
-		tkn = getValFromEnv(tkn)
+		tkn := replaceEnvVars(p.Val())
 
 		// special case: import directive replaces tokens during parse-time
 		if tkn == "import" && p.isNewLine() {
@@ -243,7 +241,7 @@ func (p *parser) directive() error {
 		} else if p.Val() == "}" && nesting == 0 {
 			return p.Err("Unexpected '}' because no matching opening brace")
 		}
-		p.tokens[p.cursor].text = getValFromEnv(p.tokens[p.cursor].text)
+		p.tokens[p.cursor].text = replaceEnvVars(p.tokens[p.cursor].text)
 		p.block.Tokens[dir] = append(p.block.Tokens[dir], p.tokens[p.cursor])
 	}
 
@@ -306,6 +304,31 @@ func standardAddress(str string) (host, port string, err error) {
 	return
 }
 
+// replaceEnvVars replaces environment variables that appear in the token
+// and understands both the Unix $SYNTAX and Windows %SYNTAX%.
+func replaceEnvVars(s string) string {
+	s = replaceEnvReferences(s, "{%", "%}")
+	s = replaceEnvReferences(s, "{$", "}")
+	return s
+}
+
+// replaceEnvReferences performs the actual replacement of env variables
+// in s, given the placeholder start and placeholder end strings.
+func replaceEnvReferences(s, refStart, refEnd string) string {
+	index := strings.Index(s, refStart)
+	for index != -1 {
+		endIndex := strings.Index(s, refEnd)
+		if endIndex != -1 {
+			ref := s[index : endIndex+len(refEnd)]
+			s = strings.Replace(s, ref, os.Getenv(ref[len(refStart):len(ref)-len(refEnd)]), -1)
+		} else {
+			return s
+		}
+		index = strings.Index(s, refStart)
+	}
+	return s
+}
+
 type (
 	// serverBlock associates tokens with a list of addresses
 	// and groups tokens by directive name.
@@ -329,27 +352,4 @@ func (sb serverBlock) HostList() []string {
 		sbHosts[j] = net.JoinHostPort(addr.Host, addr.Port)
 	}
 	return sbHosts
-}
-
-func getValFromEnv(s string) string {
-	s = replaceEnvReferences(s, "{$", "}")
-	s = replaceEnvReferences(s, "{%", "%}")
-	return s
-}
-
-func replaceEnvReferences(s, refStart, refEnd string) string {
-	index := strings.Index(s, refStart)
-	for index != -1 {
-		endIndex := strings.Index(s, refEnd)
-		if endIndex != -1 {
-			ref := s[index : endIndex+len(refEnd)]
-			s = strings.Replace(s, ref, os.Getenv(ref[len(refStart):len(ref)-len(refEnd)]), -1)
-		} else {
-			return s
-		}
-
-		index = strings.Index(s, refStart)
-	}
-
-	return s
 }
