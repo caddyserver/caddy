@@ -149,11 +149,17 @@ func serveWS(w http.ResponseWriter, r *http.Request, config *Config) (int, error
 // cmdPath should be the path of the command being run.
 // The returned string slice can be set to the command's Env property.
 func buildEnv(cmdPath string, r *http.Request) (metavars []string, err error) {
+	if !strings.Contains(r.RemoteAddr, ":") {
+		r.RemoteAddr += ":"
+	}
 	remoteHost, remotePort, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return
 	}
 
+	if !strings.Contains(r.Host, ":") {
+		r.Host += ":"
+	}
 	serverHost, serverPort, err := net.SplitHostPort(r.Host)
 	if err != nil {
 		return
