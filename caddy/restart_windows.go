@@ -1,5 +1,7 @@
 package caddy
 
+// Restart restarts Caddy forcefully using newCaddyfile,
+// or, if nil, the current/existing Caddyfile is reused.
 func Restart(newCaddyfile Input) error {
 	if newCaddyfile == nil {
 		caddyfileMu.Lock()

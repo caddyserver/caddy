@@ -11,9 +11,6 @@
 //
 // You should use caddy.Wait() to wait for all Caddy servers
 // to quit before your process exits.
-//
-// Importing this package has the side-effect of trapping signals.
-// It has to do this in order to perform shutdowns or reloads.
 package caddy
 
 import (

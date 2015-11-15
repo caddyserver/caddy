@@ -1,0 +1,3 @@
+package caddy
+
+func trapSignalsPosix() {}

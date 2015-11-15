@@ -9,10 +9,20 @@ import (
 	"github.com/mholt/caddy/server"
 )
 
-func init() {
-	// Trap interrupt signal (cross-platform); triggers forceful shutdown
-	// that executes shutdown callbacks first. A second interrupt signal
-	// will exit the process immediately.
+// TrapSignals create signal handlers for all applicable signals for this
+// system. If your Go program uses signals, this is a rather invasive
+// function; best to implement them yourself in that case. Signals are not
+// required for the caddy package to function properly, but this is a
+// convenient way to allow the user to control this package of your program.
+func TrapSignals() {
+	trapSignalsCrossPlatform()
+	trapSignalsPosix()
+}
+
+// trapSignalsCrossPlatform captures SIGINT, which triggers forceful
+// shutdown that executes shutdown callbacks first. A second interrupt
+// signal will exit the process immediately.
+func trapSignalsCrossPlatform() {
 	go func() {
 		shutdown := make(chan os.Signal, 1)
 		signal.Notify(shutdown, os.Interrupt)

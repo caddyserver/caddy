@@ -10,8 +10,8 @@ import (
 	"syscall"
 )
 
-func init() {
-	// Trap all POSIX-only signals
+// trapSignalsPosix captures POSIX-only signals.
+func trapSignalsPosix() {
 	go func() {
 		sigchan := make(chan os.Signal, 1)
 		signal.Notify(sigchan, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT, syscall.SIGUSR1)
