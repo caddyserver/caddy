@@ -5,11 +5,13 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"path"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/mholt/caddy/caddy/parse"
+	"github.com/mholt/caddy/middleware"
 )
 
 var (
@@ -29,6 +31,7 @@ type staticUpstream struct {
 		Interval time.Duration
 	}
 	WithoutPathPrefix string
+	IgnoredSubPaths   []string
 }
 
 // NewStaticUpstreams parses the configuration input and sets up
@@ -165,6 +168,12 @@ func parseBlock(c *parse.Dispenser, u *staticUpstream) error {
 			return c.ArgErr()
 		}
 		u.WithoutPathPrefix = c.Val()
+	case "except":
+		ignoredPaths := c.RemainingArgs()
+		if len(ignoredPaths) == 0 {
+			return c.ArgErr()
+		}
+		u.IgnoredSubPaths = ignoredPaths
 	default:
 		return c.Errf("unknown property '%s'", c.Val())
 	}
@@ -222,4 +231,13 @@ func (u *staticUpstream) Select() *UpstreamHost {
 		return (&Random{}).Select(pool)
 	}
 	return u.Policy.Select(pool)
+}
+
+func (u *staticUpstream) IsAllowedPath(requestPath string) bool {
+	for _, ignoredSubPath := range u.IgnoredSubPaths {
+		if middleware.Path(path.Clean(requestPath)).Matches(path.Join(u.From(), ignoredSubPath)) {
+			return false
+		}
+	}
+	return true
 }

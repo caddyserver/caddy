@@ -125,6 +125,10 @@ func (u *fakeUpstream) Select() *UpstreamHost {
 	}
 }
 
+func (u *fakeUpstream) IsAllowedPath(requestPath string) bool {
+	return true
+}
+
 // recorderHijacker is a ResponseRecorder that can
 // be hijacked.
 type recorderHijacker struct {
