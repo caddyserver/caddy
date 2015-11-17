@@ -51,3 +51,33 @@ func TestRegisterPolicy(t *testing.T) {
 	}
 
 }
+
+func TestAllowedPaths(t *testing.T) {
+	upstream := &staticUpstream{
+		from:            "/proxy",
+		IgnoredSubPaths: []string{"/download", "/static"},
+	}
+	tests := []struct {
+		url      string
+		expected bool
+	}{
+		{"/proxy", true},
+		{"/proxy/dl", true},
+		{"/proxy/download", false},
+		{"/proxy/download/static", false},
+		{"/proxy/static", false},
+		{"/proxy/static/download", false},
+		{"/proxy/something/download", true},
+		{"/proxy/something/static", true},
+		{"/proxy//static", false},
+		{"/proxy//static//download", false},
+		{"/proxy//download", false},
+	}
+
+	for i, test := range tests {
+		isAllowed := upstream.IsAllowedPath(test.url)
+		if test.expected != isAllowed {
+			t.Errorf("Test %d: expected %v found %v", i+1, test.expected, isAllowed)
+		}
+	}
+}
