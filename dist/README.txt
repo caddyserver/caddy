@@ -2,6 +2,7 @@ CADDY 0.8 beta 3
 
 Website
 	https://caddyserver.com
+	@caddyserver
 
 Source Code
 	https://github.com/mholt/caddy

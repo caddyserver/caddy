@@ -16,6 +16,7 @@ CHANGES
 - browse: Render filenames with multiple whitespace properly
 - markdown: Include Last-Modified header in response
 - markdown: Render tables, strikethrough, and fenced code blocks
+- proxy: Ability to exclude/ignore paths from proxying
 - startup, shutdown: Better Windows support
 - templates: Bug fix for .Host when port is absent
 - templates: Include Last-Modified header in response
