@@ -98,11 +98,6 @@ func TestWebSocketReverseProxyFromWSClient(t *testing.T) {
 // also sets up the rules/environment for testing WebSocket
 // proxy.
 func newWebSocketTestProxy(backendAddr string) *Proxy {
-	proxyHeaders = http.Header{
-		"Connection": {"{>Connection}"},
-		"Upgrade":    {"{>Upgrade}"},
-	}
-
 	return &Proxy{
 		Upstreams: []Upstream{&fakeUpstream{name: backendAddr}},
 	}
@@ -121,7 +116,9 @@ func (u *fakeUpstream) Select() *UpstreamHost {
 	return &UpstreamHost{
 		Name:         u.name,
 		ReverseProxy: NewSingleHostReverseProxy(uri, ""),
-		ExtraHeaders: proxyHeaders,
+		ExtraHeaders: http.Header{
+			"Connection": {"{>Connection}"},
+			"Upgrade":    {"{>Upgrade}"}},
 	}
 }
 
