@@ -16,13 +16,13 @@ import (
 
 var (
 	supportedPolicies = make(map[string]func() Policy)
-	proxyHeaders      = make(http.Header)
 )
 
 type staticUpstream struct {
-	from   string
-	Hosts  HostPool
-	Policy Policy
+	from         string
+	proxyHeaders http.Header
+	Hosts        HostPool
+	Policy       Policy
 
 	FailTimeout time.Duration
 	MaxFails    int32
@@ -72,7 +72,7 @@ func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
 				Fails:        0,
 				FailTimeout:  upstream.FailTimeout,
 				Unhealthy:    false,
-				ExtraHeaders: proxyHeaders,
+				ExtraHeaders: upstream.proxyHeaders,
 				CheckDown: func(upstream *staticUpstream) UpstreamHostDownFunc {
 					return func(uh *UpstreamHost) bool {
 						if uh.Unhealthy {
@@ -159,10 +159,16 @@ func parseBlock(c *parse.Dispenser, u *staticUpstream) error {
 		if !c.Args(&header, &value) {
 			return c.ArgErr()
 		}
-		proxyHeaders.Add(header, value)
+		if u.proxyHeaders == nil {
+			u.proxyHeaders = make(http.Header)
+		}
+		u.proxyHeaders.Add(header, value)
 	case "websocket":
-		proxyHeaders.Add("Connection", "{>Connection}")
-		proxyHeaders.Add("Upgrade", "{>Upgrade}")
+		if u.proxyHeaders == nil {
+			u.proxyHeaders = make(http.Header)
+		}
+		u.proxyHeaders.Add("Connection", "{>Connection}")
+		u.proxyHeaders.Add("Upgrade", "{>Upgrade}")
 	case "without":
 		if !c.NextArg() {
 			return c.ArgErr()
