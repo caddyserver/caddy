@@ -260,13 +260,18 @@ func TestPort(t *testing.T) {
 		},
 		{
 			input:        "localhost",
-			expectedPort: "",
-			shouldErr:    true, // missing port in address
+			expectedPort: "80", // assuming 80 is the default port
+			shouldErr:    false,
 		},
 		{
 			input:        ":8080",
 			expectedPort: "8080",
 			shouldErr:    false,
+		},
+		{
+			input:        "[::]",
+			expectedPort: "",
+			shouldErr:    true,
 		},
 	}
 
