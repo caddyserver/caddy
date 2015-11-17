@@ -1,8 +1,23 @@
 package proxy
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"testing"
 )
+
+var workableServer *httptest.Server
+
+func TestMain(m *testing.M) {
+	workableServer = httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			// do nothing
+		}))
+	r := m.Run()
+	workableServer.Close()
+	os.Exit(r)
+}
 
 type customPolicy struct{}
 
@@ -13,7 +28,7 @@ func (r *customPolicy) Select(pool HostPool) *UpstreamHost {
 func testPool() HostPool {
 	pool := []*UpstreamHost{
 		{
-			Name: "http://google.com", // this should resolve (healthcheck test)
+			Name: workableServer.URL, // this should resolve (healthcheck test)
 		},
 		{
 			Name: "http://shouldnot.resolve", // this shouldn't
