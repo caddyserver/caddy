@@ -218,7 +218,7 @@ func existingCertAndKey(host string) bool {
 // disk (if already exists) or created new and registered via ACME
 // and saved to the file system for next time.
 func newClient(leEmail string) (*acme.Client, error) {
-	return newClientPort(leEmail, exposePort)
+	return newClientPort(leEmail, "")
 }
 
 // newClientPort does the same thing as newClient, except it creates a
@@ -469,14 +469,10 @@ var (
 
 // Some essential values related to the Let's Encrypt process
 const (
-	// The port to expose to the CA server for Simple HTTP Challenge.
-	// NOTE: Let's Encrypt requires port 443. If exposePort is not 443,
-	// then port 443 must be forwarded to exposePort.
-	exposePort = "443"
-
-	// If port 443 is in use by a Caddy server instance, then this is
-	// port on which the acme client will solve challenges. (Whatever is
-	// listening on port 443 must proxy ACME requests to this port.)
+	// alternatePort is the port on which the acme client will open a
+	// listener and solve the CA's challenges. If this alternate port
+	// is used instead of the default port (80 or 443), then the
+	// default port for the challenge must be forwarded to this one.
 	alternatePort = "5033"
 
 	// How often to check certificates for renewal.
