@@ -40,11 +40,12 @@ func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
 	var upstreams []Upstream
 	for c.Next() {
 		upstream := &staticUpstream{
-			from:        "",
-			Hosts:       nil,
-			Policy:      &Random{},
-			FailTimeout: 10 * time.Second,
-			MaxFails:    1,
+			from:         "",
+			proxyHeaders: make(http.Header),
+			Hosts:        nil,
+			Policy:       &Random{},
+			FailTimeout:  10 * time.Second,
+			MaxFails:     1,
 		}
 
 		if !c.Args(&upstream.from) {
@@ -159,14 +160,8 @@ func parseBlock(c *parse.Dispenser, u *staticUpstream) error {
 		if !c.Args(&header, &value) {
 			return c.ArgErr()
 		}
-		if u.proxyHeaders == nil {
-			u.proxyHeaders = make(http.Header)
-		}
 		u.proxyHeaders.Add(header, value)
 	case "websocket":
-		if u.proxyHeaders == nil {
-			u.proxyHeaders = make(http.Header)
-		}
 		u.proxyHeaders.Add("Connection", "{>Connection}")
 		u.proxyHeaders.Add("Upgrade", "{>Upgrade}")
 	case "without":
