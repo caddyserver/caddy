@@ -166,15 +166,27 @@ func configQualifies(allConfigs []server.Config, cfgIndex int) bool {
 		cfg.TLS.LetsEncryptEmail != "off" &&
 
 		// obviously we get can't certs for loopback or internal hosts
-		cfg.Host != "localhost" &&
-		cfg.Host != "" &&
-		cfg.Host != "0.0.0.0" &&
-		cfg.Host != "::1" &&
-		!strings.HasPrefix(cfg.Host, "127.") && // to use boulder on your own machine, add fake domain to hosts file
-		// not excluding 10.* and 192.168.* hosts for possibility of running internal Boulder instance
+		HostQualifies(cfg.Host) &&
 
 		// make sure another HTTPS version of this config doesn't exist in the list already
 		!otherHostHasScheme(allConfigs, cfgIndex, "https")
+}
+
+// HostQualifies returns true if the hostname alone
+// appears eligible for automatic HTTPS. For example,
+// localhost, empty hostname, and wildcard hosts are
+// not eligible because we cannot obtain certificates
+// for those names.
+func HostQualifies(hostname string) bool {
+	return hostname != "localhost" &&
+		strings.TrimSpace(hostname) != "" &&
+		hostname != "0.0.0.0" &&
+		hostname != "[::]" && // before parsing
+		hostname != "::" && // after parsing
+		hostname != "[::1]" && // before parsing
+		hostname != "::1" && // after parsing
+		!strings.HasPrefix(hostname, "127.") // to use boulder on your own machine, add fake domain to hosts file
+	// not excluding 10.* and 192.168.* hosts for possibility of running internal Boulder instance
 }
 
 // groupConfigsByEmail groups configs by user email address. The returned map is
@@ -273,12 +285,10 @@ func newClientPort(leEmail, port string) (*acme.Client, error) {
 // obtainCertificates obtains certificates from the CA server for
 // the configurations in serverConfigs using client.
 func obtainCertificates(client *acme.Client, serverConfigs []server.Config) ([]acme.CertificateResource, map[string]error) {
-	// collect all the hostnames into one slice
 	var hosts []string
 	for _, cfg := range serverConfigs {
 		hosts = append(hosts, cfg.Host)
 	}
-
 	return client.ObtainCertificates(hosts, true)
 }
 

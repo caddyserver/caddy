@@ -8,6 +8,34 @@ import (
 	"github.com/mholt/caddy/server"
 )
 
+func TestHostQualifies(t *testing.T) {
+	for i, test := range []struct {
+		host   string
+		expect bool
+	}{
+		{"localhost", false},
+		{"127.0.0.1", false},
+		{"127.0.1.5", false},
+		{"::1", false},
+		{"[::1]", false},
+		{"[::]", false},
+		{"::", false},
+		{"", false},
+		{" ", false},
+		{"0.0.0.0", false},
+		{"192.168.1.3", true},
+		{"10.0.2.1", true},
+		{"foobar.com", true},
+	} {
+		if HostQualifies(test.host) && !test.expect {
+			t.Errorf("Test %d: Expected '%s' to NOT qualify, but it did", i, test.host)
+		}
+		if !HostQualifies(test.host) && test.expect {
+			t.Errorf("Test %d: Expected '%s' to qualify, but it did NOT", i, test.host)
+		}
+	}
+}
+
 func TestRedirPlaintextHost(t *testing.T) {
 	cfg := redirPlaintextHost(server.Config{
 		Host: "example.com",

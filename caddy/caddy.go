@@ -83,7 +83,7 @@ var (
 
 const (
 	// DefaultHost is the default host.
-	DefaultHost = "0.0.0.0"
+	DefaultHost = ""
 	// DefaultPort is the default port.
 	DefaultPort = "2015"
 	// DefaultRoot is the default root folder.

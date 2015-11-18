@@ -331,22 +331,18 @@ func validDirective(d string) bool {
 	return false
 }
 
-// NewDefault makes a default configuration, which
-// is empty except for root, host, and port,
-// which are essentials for serving the cwd.
-func NewDefault() server.Config {
-	return server.Config{
-		Root: Root,
-		Host: Host,
-		Port: Port,
-	}
-}
-
 // DefaultInput returns the default Caddyfile input
 // to use when it is otherwise empty or missing.
+// It uses the default host and port (depends on
+// host, e.g. localhost is 2015, otherwise https) and
+// root.
 func DefaultInput() CaddyfileInput {
+	port := Port
+	if letsencrypt.HostQualifies(Host) {
+		port = "https"
+	}
 	return CaddyfileInput{
-		Contents: []byte(fmt.Sprintf("%s:%s\nroot %s", Host, Port, Root)),
+		Contents: []byte(fmt.Sprintf("%s:%s\nroot %s", Host, port, Root)),
 	}
 }
 

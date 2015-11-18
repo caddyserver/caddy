@@ -8,17 +8,26 @@ import (
 	"github.com/mholt/caddy/server"
 )
 
-func TestNewDefault(t *testing.T) {
-	config := NewDefault()
+func TestDefaultInput(t *testing.T) {
+	if actual, expected := string(DefaultInput().Body()), ":2015\nroot ."; actual != expected {
+		t.Errorf("Host=%s; Port=%s; Root=%s;\nEXPECTED: '%s'\n  ACTUAL: '%s'", Host, Port, Root, expected, actual)
+	}
 
-	if actual, expected := config.Root, DefaultRoot; actual != expected {
-		t.Errorf("Root was %s but expected %s", actual, expected)
+	// next few tests simulate user providing -host flag
+
+	Host = "not-localhost.com"
+	if actual, expected := string(DefaultInput().Body()), "not-localhost.com:https\nroot ."; actual != expected {
+		t.Errorf("Host=%s; Port=%s; Root=%s;\nEXPECTED: '%s'\n  ACTUAL: '%s'", Host, Port, Root, expected, actual)
 	}
-	if actual, expected := config.Host, DefaultHost; actual != expected {
-		t.Errorf("Host was %s but expected %s", actual, expected)
+
+	Host = "[::1]"
+	if actual, expected := string(DefaultInput().Body()), "[::1]:2015\nroot ."; actual != expected {
+		t.Errorf("Host=%s; Port=%s; Root=%s;\nEXPECTED: '%s'\n  ACTUAL: '%s'", Host, Port, Root, expected, actual)
 	}
-	if actual, expected := config.Port, DefaultPort; actual != expected {
-		t.Errorf("Port was %s but expected %s", actual, expected)
+
+	Host = "127.0.1.1"
+	if actual, expected := string(DefaultInput().Body()), "127.0.1.1:2015\nroot ."; actual != expected {
+		t.Errorf("Host=%s; Port=%s; Root=%s;\nEXPECTED: '%s'\n  ACTUAL: '%s'", Host, Port, Root, expected, actual)
 	}
 }
 
