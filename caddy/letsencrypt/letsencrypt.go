@@ -344,22 +344,32 @@ func autoConfigure(allConfigs []server.Config, cfgIndex int) []server.Config {
 		cfg.Port = "https"
 	}
 
-	// Chain in ACME middleware proxy if we use up the SSL port
-	if cfg.Port == "https" || cfg.Port == "443" {
-		handler := new(Handler)
-		mid := func(next middleware.Handler) middleware.Handler {
-			handler.Next = next
-			return handler
-		}
-		cfg.Middleware["/"] = append(cfg.Middleware["/"], mid)
-		acmeHandlers[cfg.Host] = handler
-	}
-
 	// Set up http->https redirect as long as there isn't already a http counterpart
-	// in the configs and this isn't, for some reason, already on port 80
+	// in the configs and this isn't, for some reason, already on port 80.
+	// Also, the port 80 variant of this config is necessary for proxying challenge requests.
 	if !otherHostHasScheme(allConfigs, cfgIndex, "http") &&
 		cfg.Port != "80" && cfg.Port != "http" { // (would not be http port with current program flow, but just in case)
 		allConfigs = append(allConfigs, redirPlaintextHost(*cfg))
+	}
+
+	// To support renewals, we need handlers at ports 80 and 443,
+	// depending on the challenge type that is used to complete renewal.
+	// Every proxy for this host can share the handler.
+	handler := new(Handler)
+	mid := func(next middleware.Handler) middleware.Handler {
+		handler.Next = next
+		return handler
+	}
+	acmeHandlers[cfg.Host] = handler
+
+	// Handler needs to go in 80 and 443
+	for i, c := range allConfigs {
+		if c.Address() == cfg.Host+":80" ||
+			c.Address() == cfg.Host+":443" ||
+			c.Address() == cfg.Host+":http" ||
+			c.Address() == cfg.Host+":https" {
+			allConfigs[i].Middleware["/"] = append(allConfigs[i].Middleware["/"], mid)
+		}
 	}
 
 	return allConfigs

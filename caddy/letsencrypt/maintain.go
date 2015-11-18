@@ -144,9 +144,7 @@ func renewCertificates(configs []server.Config, useCustomPort bool) (int, []erro
 			acme.OnSimpleHTTPStart = acmeHandlers[cfg.Host].ChallengeOn
 			acme.OnSimpleHTTPEnd = acmeHandlers[cfg.Host].ChallengeOff
 
-			// Renew certificate.
-			// TODO: revokeOld should be an option in the caddyfile
-			// TODO: bundle should be an option in the caddyfile as well :)
+			// Renew certificate
 		Renew:
 			newCertMeta, err := client.RenewCertificate(certMeta, true, true)
 			if err != nil {
