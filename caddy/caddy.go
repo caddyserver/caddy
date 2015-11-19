@@ -33,11 +33,13 @@ import (
 
 // Configurable application parameters
 var (
-	// The name and version of the application.
-	AppName    string
+	// AppName is the name of the application.
+	AppName string
+
+	// AppVersion is the version of the application.
 	AppVersion string
 
-	// If true, initialization will not show any informative output.
+	// Quiet when set to true, will not show any informative output on initialization.
 	Quiet bool
 
 	// HTTP2 indicates whether HTTP2 is enabled or not.
