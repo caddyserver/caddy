@@ -348,13 +348,13 @@ func DefaultInput() CaddyfileInput {
 
 // These defaults are configurable through the command line
 var (
-	// Site root
+	// Root is the site root
 	Root = DefaultRoot
 
-	// Site host
+	// Host is the site host
 	Host = DefaultHost
 
-	// Site port
+	// Port is the site port
 	Port = DefaultPort
 )
 
