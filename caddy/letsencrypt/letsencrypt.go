@@ -364,20 +364,22 @@ func autoConfigure(allConfigs []server.Config, cfgIndex int) []server.Config {
 
 	// To support renewals, we need handlers at ports 80 and 443,
 	// depending on the challenge type that is used to complete renewal.
-	// Every proxy for this host can share the handler.
-	handler := new(Handler)
-	mid := func(next middleware.Handler) middleware.Handler {
-		handler.Next = next
-		return handler
-	}
-	acmeHandlers[cfg.Host] = handler
-
-	// Handler needs to go in 80 and 443
 	for i, c := range allConfigs {
 		if c.Address() == cfg.Host+":80" ||
 			c.Address() == cfg.Host+":443" ||
 			c.Address() == cfg.Host+":http" ||
 			c.Address() == cfg.Host+":https" {
+
+			// Each virtualhost must have their own handlers, or the chaining gets messed up when middlewares are compiled!
+			handler := new(Handler)
+			mid := func(next middleware.Handler) middleware.Handler {
+				handler.Next = next
+				return handler
+			}
+			// TODO: Currently, acmeHandlers are not referenced, but we need to add a way to toggle
+			// their proxy functionality -- or maybe not. Gotta figure this out for sure.
+			acmeHandlers[c.Address()] = handler
+
 			allConfigs[i].Middleware["/"] = append(allConfigs[i].Middleware["/"], mid)
 		}
 	}
