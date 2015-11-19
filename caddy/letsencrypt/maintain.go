@@ -79,12 +79,6 @@ func renewCertificates(configs []server.Config, useCustomPort bool) (int, []erro
 	var errs []error
 	var n int
 
-	defer func() {
-		// reset these so as to not interfere with other challenges
-		acme.OnSimpleHTTPStart = nil
-		acme.OnSimpleHTTPEnd = nil
-	}()
-
 	for _, cfg := range configs {
 		// Host must be TLS-enabled and have existing assets managed by LE
 		if !cfg.TLS.Enabled || !existingCertAndKey(cfg.Host) {
@@ -122,27 +116,21 @@ func renewCertificates(configs []server.Config, useCustomPort bool) (int, []erro
 				continue
 			}
 
-			// Read metadata
+			// Read and set up cert meta, required for renewal
 			metaBytes, err := ioutil.ReadFile(storage.SiteMetaFile(cfg.Host))
 			if err != nil {
 				errs = append(errs, err)
 				continue
 			}
-
 			privBytes, err := ioutil.ReadFile(storage.SiteKeyFile(cfg.Host))
 			if err != nil {
 				errs = append(errs, err)
 				continue
 			}
-
 			var certMeta acme.CertificateResource
 			err = json.Unmarshal(metaBytes, &certMeta)
 			certMeta.Certificate = certBytes
 			certMeta.PrivateKey = privBytes
-
-			// Tell the handler to accept and proxy acme request in order to solve challenge
-			acme.OnSimpleHTTPStart = acmeHandlers[cfg.Host].ChallengeOn
-			acme.OnSimpleHTTPEnd = acmeHandlers[cfg.Host].ChallengeOff
 
 			// Renew certificate
 		Renew:
@@ -176,6 +164,5 @@ func renewCertificates(configs []server.Config, useCustomPort bool) (int, []erro
 }
 
 // acmeHandlers is a map of host to ACME handler. These
-// are used to proxy ACME requests to the ACME client
-// when port 443 is in use.
+// are used to proxy ACME requests to the ACME client.
 var acmeHandlers = make(map[string]*Handler)
