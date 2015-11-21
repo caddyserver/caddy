@@ -207,7 +207,7 @@ th a {
 			<div class="up">&nbsp;</div>
 			{{end}}
 
-			<h1>{{.Path}}</h1>
+			<h1 class="name">{{.Path}}</h1>
 		</header>
 		<main>
 			<table>
