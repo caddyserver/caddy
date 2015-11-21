@@ -155,9 +155,9 @@ func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request, extr
 	if err != nil {
 		return err
 	}
-	defer res.Body.Close()
 
 	if res.StatusCode == http.StatusSwitchingProtocols && res.Header.Get("Upgrade") == "websocket" {
+		res.Body.Close()
 		hj, ok := rw.(http.Hijacker)
 		if !ok {
 			return nil
@@ -169,7 +169,7 @@ func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request, extr
 		}
 		defer conn.Close()
 
-		backendConn, err := net.Dial("tcp", outreq.Host)
+		backendConn, err := net.Dial("tcp", outreq.URL.Host)
 		if err != nil {
 			return err
 		}
@@ -182,6 +182,7 @@ func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request, extr
 		}()
 		io.Copy(conn, backendConn) // read tcp stream from backend.
 	} else {
+		defer res.Body.Close()
 		for _, h := range hopHeaders {
 			res.Header.Del(h)
 		}
