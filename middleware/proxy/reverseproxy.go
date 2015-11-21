@@ -169,7 +169,7 @@ func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request, extr
 		}
 		defer conn.Close()
 
-		backendConn, err := net.Dial("tcp", outreq.Host)
+		backendConn, err := net.Dial("tcp", outreq.URL.Host)
 		if err != nil {
 			return err
 		}
