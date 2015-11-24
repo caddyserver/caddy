@@ -130,8 +130,8 @@ Caddy is available as a Docker container from any of these sources:
 
 #### 3rd-party dependencies
 
-Although Caddy's binaries are completely static, Caddy relies on some excellent 
-libraries. [Godoc.org](https://godoc.org/github.com/mholt/caddy) shows the 
+Although Caddy's binaries are completely static, Caddy relies on some excellent
+libraries. [Godoc.org](https://godoc.org/github.com/mholt/caddy) shows the
 packages that each Caddy package imports.
 
 
@@ -139,18 +139,18 @@ packages that each Caddy package imports.
 
 ## Contributing
 
-**[Join us on Slack](https://gophers.slack.com/messages/caddy/)** to chat with 
-other Caddy developers! ([Request an invite](http://bit.ly/go-slack-signup), 
+**[Join us on Slack](https://gophers.slack.com/messages/caddy/)** to chat with
+other Caddy developers! ([Request an invite](http://bit.ly/go-slack-signup),
 then join the #caddy channel.)
 
-This project would not be what it is without your help. Please see the 
-[contributing guidelines](https://github.com/mholt/caddy/blob/master/CONTRIBUTING.md) 
+This project would not be what it is without your help. Please see the
+[contributing guidelines](https://github.com/mholt/caddy/blob/master/CONTRIBUTING.md)
 if you haven't already.
 
 Thanks for making Caddy -- and the Web -- better!
 
-Special thanks to 
-[![DigitalOcean](http://i.imgur.com/sfGr0eY.png)](https://www.digitalocean.com) 
+Special thanks to
+[![DigitalOcean](http://i.imgur.com/sfGr0eY.png)](https://www.digitalocean.com)
 for hosting the Caddy project.
 
 
@@ -158,12 +158,12 @@ for hosting the Caddy project.
 
 ## About the project
 
-Caddy was born out of the need for a "batteries-included" web server that runs 
-anywhere and doesn't have to take its configuration with it. Caddy took 
-inspiration from [spark](https://github.com/rif/spark), 
-[nginx](https://github.com/nginx/nginx), lighttpd, 
-[Websocketd]()https://github.com/joewalnes/websocketd)
-and [Vagrant](https://www.vagrantup.com/), 
+Caddy was born out of the need for a "batteries-included" web server that runs
+anywhere and doesn't have to take its configuration with it. Caddy took
+inspiration from [spark](https://github.com/rif/spark),
+[nginx](https://github.com/nginx/nginx), lighttpd,
+[Websocketd](https://github.com/joewalnes/websocketd)
+and [Vagrant](https://www.vagrantup.com/),
 which provides a pleasant mixture of features from each of them.
 
 
