@@ -95,7 +95,7 @@ You may also be interested in the [developer guide]
 
 ## Running from Source
 
-Note: You will need **[Go 1.4](https://golang.org/dl)** or newer
+Note: You will need **[Go 1.4](https://golang.org/dl)** or a later version.
 
 1. `$ go get github.com/mholt/caddy`
 2. `cd` into your website's directory
@@ -160,9 +160,11 @@ for hosting the Caddy project.
 
 Caddy was born out of the need for a "batteries-included" web server that runs 
 anywhere and doesn't have to take its configuration with it. Caddy took 
-inspiration from [spark](https://github.com/rif/spark), nginx, lighttpd, 
-Websocketd, and Vagrant, and provides a pleasant mixture of features from each 
-of them.
+inspiration from [spark](https://github.com/rif/spark), 
+[nginx](https://github.com/nginx/nginx), lighttpd, 
+[Websocketd]()https://github.com/joewalnes/websocketd)
+and [Vagrant](https://www.vagrantup.com/), 
+which provides a pleasant mixture of features from each of them.
 
 
 *Twitter: [@mholt6](https://twitter.com/mholt6)*
