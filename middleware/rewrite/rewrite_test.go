@@ -17,6 +17,7 @@ func TestRewrite(t *testing.T) {
 		Rules: []Rule{
 			NewSimpleRule("/from", "/to"),
 			NewSimpleRule("/a", "/b"),
+			NewSimpleRule("/b", "/b{uri}"),
 		},
 	}
 
@@ -50,6 +51,7 @@ func TestRewrite(t *testing.T) {
 	}{
 		{"/from", "/to"},
 		{"/a", "/b"},
+		{"/b", "/b/b"},
 		{"/aa", "/aa"},
 		{"/", "/"},
 		{"/a?foo=bar", "/b?foo=bar"},

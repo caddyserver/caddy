@@ -52,7 +52,11 @@ func (s SimpleRule) Rewrite(r *http.Request) bool {
 		// take note of this rewrite for internal use by fastcgi
 		// all we need is the URI, not full URL
 		r.Header.Set(headerFieldName, r.URL.RequestURI())
-		r.URL.Path = s.To
+
+		// replace variables
+		to := path.Clean(middleware.NewReplacer(r, nil, "").Replace(s.To))
+
+		r.URL.Path = to
 		return true
 	}
 	return false
