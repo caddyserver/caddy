@@ -79,9 +79,19 @@ func Activate(configs []server.Config) ([]server.Config, error) {
 		}
 
 		// little bit of housekeeping; gather the hostnames into a slice
-		hosts := make([]string, len(cfgIndexes))
-		for i, idx := range cfgIndexes {
-			hosts[i] = configs[idx].Host
+		var hosts []string
+		for _, idx := range cfgIndexes {
+			// don't allow duplicates (happens when serving same host on multiple ports!)
+			var duplicate bool
+			for _, otherHost := range hosts {
+				if configs[idx].Host == otherHost {
+					duplicate = true
+					break
+				}
+			}
+			if !duplicate {
+				hosts = append(hosts, configs[idx].Host)
+			}
 		}
 
 		// client is ready, so let's get free, trusted SSL certificates!
