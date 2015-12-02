@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/BurntSushi/toml"
 	"gopkg.in/yaml.v2"
-	"time"
 )
 
 // Metadata stores a page's metadata
@@ -178,8 +178,8 @@ func (y *YAMLMetadataParser) Closing() []byte {
 // It returns the metadata, the remaining bytes (markdown), and an error, if any.
 func extractMetadata(parser MetadataParser, b []byte) (metadata []byte, markdown []byte, err error) {
 	b = bytes.TrimSpace(b)
-	openingLine := append(parser.Opening(), '\n')
-	closingLine := append(parser.Closing(), '\n')
+	openingLine := parser.Opening()
+	closingLine := parser.Closing()
 	if !bytes.HasPrefix(b, openingLine) {
 		return nil, b, fmt.Errorf("first line missing expected metadata identifier")
 	}
