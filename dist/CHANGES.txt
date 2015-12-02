@@ -14,6 +14,7 @@ CHANGES
 - New -grace flag to customize the graceful shutdown timeout
 - New support for SIGHUP, SIGTERM, and SIGQUIT signals
 - browse: Render filenames with multiple whitespace properly
+- core: Use environment variables in Caddyfile
 - markdown: Include Last-Modified header in response
 - markdown: Render tables, strikethrough, and fenced code blocks
 - proxy: Ability to exclude/ignore paths from proxying
