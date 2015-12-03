@@ -14,72 +14,92 @@ func check(t *testing.T, err error) {
 	}
 }
 
-func TestParsers(t *testing.T) {
-	var TOML = [4]string{`
+var TOML = [5]string{`
 title = "A title"
 template = "default"
 name = "value"
 `,
-		`+++
+	`+++
 title = "A title"
 template = "default"
 name = "value"
 +++
 Page content
 	`,
-		`+++
+	`+++
 title = "A title"
 template = "default"
 name = "value"
 	`,
-		`title = "A title" template = "default" [variables] name = "value"`,
-	}
+	`title = "A title" template = "default" [variables] name = "value"`,
+	`+++
+title = "A title"
+template = "default"
+name = "value"
++++
+`,
+}
 
-	var YAML = [4]string{`
+var YAML = [5]string{`
 title : A title
 template : default
 name : value
 `,
-		`---
+	`---
 title : A title
 template : default
 name : value
 ---
 	Page content
 	`,
-		`---
+	`---
 title : A title
 template : default
 name : value
 	`,
-		`title : A title template : default variables : name : value`,
-	}
-	var JSON = [4]string{`
-"title" : "A title",
-"template" : "default",
-"name" : "value"
+	`title : A title template : default variables : name : value`,
+	`---
+title : A title
+template : default
+name : value
+---
 `,
-		`{
+}
+
+var JSON = [5]string{`
+	"title" : "A title",
+	"template" : "default",
+	"name" : "value"
+`,
+	`{
 	"title" : "A title",
 	"template" : "default",
 	"name" : "value"
 }
 Page content
 	`,
-		`
+	`
 {
 	"title" : "A title",
 	"template" : "default",
 	"name" : "value"
 	`,
-		`
-{{
+	`
+{
+	"title" :: "A title",
+	"template" : "default",
+	"name" : "value"
+}
+	`,
+	`{
 	"title" : "A title",
 	"template" : "default",
 	"name" : "value"
 }
-		`,
-	}
+`,
+}
+
+func TestParsers(t *testing.T) {
 	expected := Metadata{
 		Title:    "A title",
 		Template: "default",
@@ -106,7 +126,7 @@ Page content
 
 	data := []struct {
 		parser   MetadataParser
-		testData [4]string
+		testData [5]string
 		name     string
 	}{
 		{&JSONMetadataParser{metadata: Metadata{Variables: make(map[string]string)}}, JSON, "json"},
@@ -148,6 +168,11 @@ Page content
 		// invalid metadata
 		if md, err = v.parser.Parse([]byte(v.testData[3])); err == nil {
 			t.Fatalf("Expected error for invalid metadata for %v", v.name)
+		}
+
+		// front matter but no body
+		if md, err = v.parser.Parse([]byte(v.testData[4])); err != nil {
+			t.Fatalf("Unexpected error for valid metadata but no body for %v", v.name)
 		}
 	}
 
