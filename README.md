@@ -95,7 +95,7 @@ You may also be interested in the [developer guide]
 
 ## Running from Source
 
-Note: You will need **[Go 1.4](https://golang.org/dl)** or a later version.
+Note: You will need **[Go 1.4](https://golang.org/dl/)** or a later version.
 
 1. `$ go get github.com/mholt/caddy`
 2. `cd` into your website's directory
@@ -120,11 +120,11 @@ ports < 1024 like 80 and 443.
 
 Caddy is available as a Docker container from any of these sources:
 
-- [abiosoft/caddy](https://registry.hub.docker.com/u/abiosoft/caddy/)
-- [darron/caddy](https://registry.hub.docker.com/u/darron/caddy/)
-- [joshix/caddy](https://registry.hub.docker.com/u/joshix/caddy/)
-- [jumanjiman/caddy](https://registry.hub.docker.com/u/jumanjiman/caddy/)
-- [zenithar/nano-caddy](https://registry.hub.docker.com/u/zenithar/nano-caddy/)
+- [abiosoft/caddy](https://hub.docker.com/r/abiosoft/caddy/)
+- [darron/caddy](https://hub.docker.com/r/darron/caddy/)
+- [joshix/caddy](https://hub.docker.com/r/joshix/caddy/)
+- [jumanjiman/caddy](https://hub.docker.com/r/jumanjiman/caddy/)
+- [zenithar/nano-caddy](https://hub.docker.com/r/zenithar/nano-caddy/)
 
 
 
