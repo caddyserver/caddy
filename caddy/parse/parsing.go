@@ -194,6 +194,10 @@ func (p *parser) doImport() error {
 		return p.Errf("Failed to use import pattern %s - %s", importPattern, err.Error())
 	}
 
+	if len(matches) == 0 {
+		return p.Errf("No files matching the import pattern %s", importPattern)
+	}
+
 	for _, importFile := range matches {
 		if err := p.doSingleImport(importFile); err != nil {
 			return err
