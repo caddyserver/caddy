@@ -26,13 +26,13 @@ var (
 
 const (
 	appName    = "Caddy"
-	appVersion = "0.8 beta 4"
+	appVersion = "0.8"
 )
 
 func init() {
 	caddy.TrapSignals()
 	flag.BoolVar(&letsencrypt.Agreed, "agree", false, "Agree to Let's Encrypt Subscriber Agreement")
-	flag.StringVar(&letsencrypt.CAUrl, "ca", "https://acme-staging.api.letsencrypt.org/directory", "Certificate authority ACME server")
+	flag.StringVar(&letsencrypt.CAUrl, "ca", "https://acme-v01.api.letsencrypt.org/directory", "Certificate authority ACME server")
 	flag.StringVar(&conf, "conf", "", "Configuration file to use (default="+caddy.DefaultConfigFile+")")
 	flag.StringVar(&cpu, "cpu", "100%", "CPU cap")
 	flag.StringVar(&letsencrypt.DefaultEmail, "email", "", "Default Let's Encrypt account email address")
