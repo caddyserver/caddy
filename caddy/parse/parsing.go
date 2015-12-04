@@ -184,11 +184,26 @@ func (p *parser) doImport() error {
 	if !p.NextArg() {
 		return p.ArgErr()
 	}
-	importFile := p.Val()
+	importPattern := p.Val()
 	if p.NextArg() {
 		return p.Err("Import allows only one file to import")
 	}
 
+	matches, err := filepath.Glob(importPattern)
+	if err != nil {
+		return p.Errf("Failed to use import pattern %s - %s", importPattern, err.Error())
+	}
+
+	for _, importFile := range matches {
+		if err := p.doSingleImport(importFile); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (p *parser) doSingleImport(importFile string) error {
 	file, err := os.Open(importFile)
 	if err != nil {
 		return p.Errf("Could not import %s - %v", importFile, err)
