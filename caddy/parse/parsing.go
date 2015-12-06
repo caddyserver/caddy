@@ -198,11 +198,22 @@ func (p *parser) doImport() error {
 		return p.Errf("No files matching the import pattern %s", importPattern)
 	}
 
+	// Splice out the import directive and its argument (2 tokens total)
+	// and insert the imported tokens in their place.
+	tokensBefore := p.tokens[:p.cursor-1]
+	tokensAfter := p.tokens[p.cursor+1:]
+	// cursor was advanced one position to read filename; rewind it
+	p.cursor--
+
+	p.tokens = tokensBefore
+
 	for _, importFile := range matches {
 		if err := p.doSingleImport(importFile); err != nil {
 			return err
 		}
 	}
+
+	p.tokens = append(p.tokens, append(tokensAfter)...)
 
 	return nil
 }
@@ -222,10 +233,7 @@ func (p *parser) doSingleImport(importFile string) error {
 
 	// Splice out the import directive and its argument (2 tokens total)
 	// and insert the imported tokens in their place.
-	tokensBefore := p.tokens[:p.cursor-1]
-	tokensAfter := p.tokens[p.cursor+1:]
-	p.tokens = append(tokensBefore, append(importedTokens, tokensAfter...)...)
-	p.cursor-- // cursor was advanced one position to read the filename; rewind it
+	p.tokens = append(p.tokens, append(importedTokens)...)
 
 	return nil
 }
