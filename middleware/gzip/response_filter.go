@@ -16,7 +16,7 @@ type LengthFilter int64
 // ShouldCompress returns if content length is greater than or
 // equals to minimum length.
 func (l LengthFilter) ShouldCompress(w http.ResponseWriter) bool {
-	contentLength := (w.Header().Get("Content-Length"))
+	contentLength := w.Header().Get("Content-Length")
 	length, err := strconv.ParseInt(contentLength, 10, 64)
 	if err != nil || length == 0 {
 		return false
