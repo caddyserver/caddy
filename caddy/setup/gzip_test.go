@@ -73,6 +73,18 @@ func TestGzip(t *testing.T) {
 		 level 1
 		}
 		`, false},
+		{`gzip { not /file
+		 ext *
+		 level 1
+		 min_length ab
+		}
+		`, true},
+		{`gzip { not /file
+		 ext *
+		 level 1
+		 min_length 1000
+		}
+		`, false},
 	}
 	for i, test := range tests {
 		c := NewTestController(test.input)

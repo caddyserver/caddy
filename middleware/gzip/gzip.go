@@ -23,8 +23,9 @@ type Gzip struct {
 
 // Config holds the configuration for Gzip middleware
 type Config struct {
-	Filters []Filter // Filters to use
-	Level   int      // Compression level
+	RequestFilters  []RequestFilter
+	ResponseFilters []ResponseFilter
+	Level           int // Compression level
 }
 
 // ServeHTTP serves a gzipped response if the client supports it.
@@ -36,8 +37,8 @@ func (g Gzip) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 outer:
 	for _, c := range g.Configs {
 
-		// Check filters to determine if gzipping is permitted for this request
-		for _, filter := range c.Filters {
+		// Check request filters to determine if gzipping is permitted for this request
+		for _, filter := range c.RequestFilters {
 			if !filter.ShouldCompress(r) {
 				continue outer
 			}
@@ -56,8 +57,17 @@ outer:
 		defer gzipWriter.Close()
 		gz := gzipResponseWriter{Writer: gzipWriter, ResponseWriter: w}
 
+		var rw http.ResponseWriter
+		// if no response filter is used
+		if len(c.ResponseFilters) == 0 {
+			rw = gz
+		} else {
+			// wrap gzip writer with ResponseFilterWriter
+			rw = NewResponseFilterWriter(c.ResponseFilters, gz)
+		}
+
 		// Any response in forward middleware will now be compressed
-		status, err := g.Next.ServeHTTP(gz, r)
+		status, err := g.Next.ServeHTTP(rw, r)
 
 		// If there was an error that remained unhandled, we need
 		// to send something back before gzipWriter gets closed at
