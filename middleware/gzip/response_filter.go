@@ -1,6 +1,7 @@
 package gzip
 
 import (
+	"compress/gzip"
 	"net/http"
 	"strconv"
 )
@@ -29,7 +30,6 @@ func (l LengthFilter) ShouldCompress(w http.ResponseWriter) bool {
 // uncompressed data otherwise.
 type ResponseFilterWriter struct {
 	filters        []ResponseFilter
-	validated      bool
 	shouldCompress bool
 	gzipResponseWriter
 }
@@ -40,21 +40,33 @@ func NewResponseFilterWriter(filters []ResponseFilter, gz gzipResponseWriter) *R
 }
 
 // Write wraps underlying Write method and compresses if filters
-// are satisfied
-func (r *ResponseFilterWriter) Write(b []byte) (int, error) {
-	// One time validation to determine if compression should
-	// be used or not.
-	if !r.validated {
-		r.shouldCompress = true
-		for _, filter := range r.filters {
-			if !filter.ShouldCompress(r) {
-				r.shouldCompress = false
-				break
-			}
+// are satisfied.
+func (r *ResponseFilterWriter) WriteHeader(code int) {
+	// Determine if compression should be used or not.
+	r.shouldCompress = true
+	for _, filter := range r.filters {
+		if !filter.ShouldCompress(r) {
+			r.shouldCompress = false
+			break
 		}
-		r.validated = true
 	}
 
+	if r.shouldCompress {
+		// replace buffer with ResponseWriter
+		if gzWriter, ok := r.gzipResponseWriter.Writer.(*gzip.Writer); ok {
+			gzWriter.Reset(r.ResponseWriter)
+		}
+		// use gzip WriteHeader to include and delete
+		// necessary headers
+		r.gzipResponseWriter.WriteHeader(code)
+	} else {
+		r.ResponseWriter.WriteHeader(code)
+	}
+}
+
+// Write wraps underlying Write method and compresses if filters
+// are satisfied
+func (r *ResponseFilterWriter) Write(b []byte) (int, error) {
 	if r.shouldCompress {
 		return r.gzipResponseWriter.Write(b)
 	}

@@ -3,6 +3,7 @@
 package gzip
 
 import (
+	"bytes"
 	"compress/gzip"
 	"fmt"
 	"io"
@@ -47,9 +48,13 @@ outer:
 		// Delete this header so gzipping is not repeated later in the chain
 		r.Header.Del("Accept-Encoding")
 
-		w.Header().Set("Content-Encoding", "gzip")
-		w.Header().Set("Vary", "Accept-Encoding")
-		gzipWriter, err := newWriter(c, w)
+		// gzipWriter modifies underlying writer at init,
+		// use a buffer instead to leave ResponseWriter in
+		// original form.
+		var buf = &bytes.Buffer{}
+		defer buf.Reset()
+
+		gzipWriter, err := newWriter(c, buf)
 		if err != nil {
 			// should not happen
 			return http.StatusInternalServerError, err
@@ -60,6 +65,8 @@ outer:
 		var rw http.ResponseWriter
 		// if no response filter is used
 		if len(c.ResponseFilters) == 0 {
+			// replace buffer with ResponseWriter
+			gzipWriter.Reset(w)
 			rw = gz
 		} else {
 			// wrap gzip writer with ResponseFilterWriter
@@ -88,7 +95,7 @@ outer:
 // newWriter create a new Gzip Writer based on the compression level.
 // If the level is valid (i.e. between 1 and 9), it uses the level.
 // Otherwise, it uses default compression level.
-func newWriter(c Config, w http.ResponseWriter) (*gzip.Writer, error) {
+func newWriter(c Config, w io.Writer) (*gzip.Writer, error) {
 	if c.Level >= gzip.BestSpeed && c.Level <= gzip.BestCompression {
 		return gzip.NewWriterLevel(w, c.Level)
 	}
@@ -108,6 +115,8 @@ type gzipResponseWriter struct {
 // be wrong because it doesn't know it's being gzipped.
 func (w gzipResponseWriter) WriteHeader(code int) {
 	w.Header().Del("Content-Length")
+	w.Header().Set("Content-Encoding", "gzip")
+	w.Header().Set("Vary", "Accept-Encoding")
 	w.ResponseWriter.WriteHeader(code)
 }
 
