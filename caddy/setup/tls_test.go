@@ -42,8 +42,6 @@ func TestTLSParseBasic(t *testing.T) {
 		tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
 		tls.TLS_RSA_WITH_AES_256_CBC_SHA,
 		tls.TLS_RSA_WITH_AES_128_CBC_SHA,
-		tls.TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA,
-		tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA,
 		tls.TLS_FALLBACK_SCSV,
 	}
 
@@ -77,7 +75,7 @@ func TestTLSParseIncompleteParams(t *testing.T) {
 func TestTLSParseWithOptionalParams(t *testing.T) {
 	params := `tls cert.crt cert.key {
             protocols ssl3.0 tls1.2
-            ciphers RSA-3DES-EDE-CBC-SHA RSA-AES256-CBC-SHA ECDHE-RSA-AES128-GCM-SHA256
+            ciphers ECDHE-ECDSA-AES128-CBC-SHA RSA-AES256-CBC-SHA ECDHE-RSA-AES128-GCM-SHA256
         }`
 	c := NewTestController(params)
 
