@@ -18,7 +18,7 @@ func TestWatcher(t *testing.T) {
 		out += fmt.Sprint(i)
 	})
 	// wait little more because of concurrency
-	time.Sleep(interval * 9)
+	time.Sleep(interval * 12)
 	stopChan <- struct{}{}
 	if !strings.HasPrefix(out, expected) {
 		t.Fatalf("Expected to have prefix %v, found %v", expected, out)
@@ -32,7 +32,7 @@ func TestWatcher(t *testing.T) {
 		out += fmt.Sprint(i)
 		mu.Unlock()
 	})
-	time.Sleep(interval * 10)
+	time.Sleep(interval * 15)
 	mu.Lock()
 	res := out
 	mu.Unlock()
