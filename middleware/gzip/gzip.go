@@ -3,10 +3,10 @@
 package gzip
 
 import (
-	"bytes"
 	"compress/gzip"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"strings"
 
@@ -49,12 +49,9 @@ outer:
 		r.Header.Del("Accept-Encoding")
 
 		// gzipWriter modifies underlying writer at init,
-		// use a buffer instead to leave ResponseWriter in
+		// use a discard writer instead to leave ResponseWriter in
 		// original form.
-		var buf = &bytes.Buffer{}
-		defer buf.Reset()
-
-		gzipWriter, err := newWriter(c, buf)
+		gzipWriter, err := newWriter(c, ioutil.Discard)
 		if err != nil {
 			// should not happen
 			return http.StatusInternalServerError, err
@@ -65,7 +62,7 @@ outer:
 		var rw http.ResponseWriter
 		// if no response filter is used
 		if len(c.ResponseFilters) == 0 {
-			// replace buffer with ResponseWriter
+			// replace discard writer with ResponseWriter
 			gzipWriter.Reset(w)
 			rw = gz
 		} else {
