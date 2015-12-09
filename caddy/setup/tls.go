@@ -91,6 +91,9 @@ func SetDefaultTLSParams(c *server.Config) {
 	// If no ciphers provided, use all that Caddy supports for the protocol
 	if len(c.TLS.Ciphers) == 0 {
 		c.TLS.Ciphers = supportedCiphers
+		
+		// Remove ECDHE-RSA-3DES-EDE-CBC-SHA and RSA-3DES-EDE-CBC-SHA from the default TLS config
+		c.TLS.Ciphers = c.TLS.Ciphers[:len(c.TLS.Ciphers)-2]
 	}
 
 	// Not a cipher suite, but still important for mitigating protocol downgrade attacks
