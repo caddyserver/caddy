@@ -114,6 +114,19 @@ func Activate(configs []server.Config) ([]server.Config, error) {
 				errMsg += "[" + domain + "] failed to get certificate: " + obtainErr.Error() + "\n"
 			}
 
+			// Save the certs we did obtain, though, before leaving
+			if err := saveCertsAndKeys(certificates); err == nil {
+				if len(certificates) > 0 {
+					var certList []string
+					for _, cert := range certificates {
+						certList = append(certList, cert.Domain)
+					}
+					errMsg += "Saved certificates for: " + strings.Join(certList, ", ") + "\n"
+				}
+			} else {
+				errMsg += "Unable to save obtained certificates: " + err.Error() + "\n"
+			}
+
 			return configs, errors.New(errMsg)
 		}
 
