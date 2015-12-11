@@ -176,10 +176,11 @@ func (p *parser) directives() error {
 }
 
 // doImport swaps out the import directive and its argument
-// (a total of 2 tokens) with the tokens in the file specified.
-// When the function returns, the cursor is on the token before
-// where the import directive was. In other words, call Next()
-// to access the first token that was imported.
+// (a total of 2 tokens) with the tokens in the specified file
+// or globbing pattern. When the function returns, the cursor
+// is on the token before where the import directive was. In
+// other words, call Next() to access the first token that was
+// imported.
 func (p *parser) doImport() error {
 	if !p.NextArg() {
 		return p.ArgErr()
@@ -218,6 +219,8 @@ func (p *parser) doImport() error {
 	return nil
 }
 
+// doSingleImport lexes the individual files matching the
+// globbing pattern from of the import directive.
 func (p *parser) doSingleImport(importFile string) error {
 	file, err := os.Open(importFile)
 	if err != nil {
