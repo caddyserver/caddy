@@ -164,6 +164,7 @@ type FCGIClient struct {
 	rwc       io.ReadWriteCloser
 	h         header
 	buf       bytes.Buffer
+	stderr    bytes.Buffer
 	keepAlive bool
 	reqID     uint16
 }
@@ -346,10 +347,22 @@ func (w *streamReader) Read(p []byte) (n int, err error) {
 
 	if len(p) > 0 {
 		if len(w.buf) == 0 {
-			rec := &record{}
-			w.buf, err = rec.read(w.c.rwc)
-			if err != nil {
-				return
+
+			// filter outputs for error log
+			for {
+				rec := &record{}
+				var buf []byte
+				buf, err = rec.read(w.c.rwc)
+				if err != nil {
+					return
+				}
+				// standard error output
+				if rec.h.Type == Stderr {
+					w.c.stderr.Write(buf)
+					continue
+				}
+				w.buf = buf
+				break
 			}
 		}
 
