@@ -117,10 +117,11 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 
 			// FastCGI stderr outputs
 			if fcgi.stderr.Len() != 0 {
-				err = LogError(fcgi.stderr.String())
+				// Remove trailing newline, error logger already does this.
+				err = LogError(strings.TrimSuffix(fcgi.stderr.String(), "\n"))
 			}
 
-			return 0, err
+			return resp.StatusCode, err
 		}
 	}
 
