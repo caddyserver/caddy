@@ -21,7 +21,7 @@ func TestGzipHandler(t *testing.T) {
 		extFilter.Exts.Add(e)
 	}
 	gz := Gzip{Configs: []Config{
-		{Filters: []Filter{pathFilter, extFilter}},
+		{RequestFilters: []RequestFilter{pathFilter, extFilter}},
 	}}
 
 	w := httptest.NewRecorder()
@@ -80,6 +80,8 @@ func TestGzipHandler(t *testing.T) {
 
 func nextFunc(shouldGzip bool) middleware.Handler {
 	return middleware.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
+		w.WriteHeader(200)
+		w.Write([]byte("test"))
 		if shouldGzip {
 			if r.Header.Get("Accept-Encoding") != "" {
 				return 0, fmt.Errorf("Accept-Encoding header not expected")

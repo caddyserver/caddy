@@ -47,7 +47,7 @@ func TestSet(t *testing.T) {
 }
 
 func TestExtFilter(t *testing.T) {
-	var filter Filter = ExtFilter{make(Set)}
+	var filter RequestFilter = ExtFilter{make(Set)}
 	for _, e := range []string{".txt", ".html", ".css", ".md"} {
 		filter.(ExtFilter).Exts.Add(e)
 	}
@@ -86,7 +86,7 @@ func TestPathFilter(t *testing.T) {
 	paths := []string{
 		"/a", "/b", "/c", "/de",
 	}
-	var filter Filter = PathFilter{make(Set)}
+	var filter RequestFilter = PathFilter{make(Set)}
 	for _, p := range paths {
 		filter.(PathFilter).IgnoredPaths.Add(p)
 	}
