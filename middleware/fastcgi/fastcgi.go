@@ -115,7 +115,13 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 				return http.StatusBadGateway, err
 			}
 
-			return 0, nil
+			// FastCGI stderr outputs
+			if fcgi.stderr.Len() != 0 {
+				// Remove trailing newline, error logger already does this.
+				err = LogError(strings.TrimSuffix(fcgi.stderr.String(), "\n"))
+			}
+
+			return resp.StatusCode, err
 		}
 	}
 
@@ -281,3 +287,11 @@ var (
 	// ErrIndexMissingSplit describes an index configuration error.
 	ErrIndexMissingSplit = errors.New("configured index file(s) must include split value")
 )
+
+// LogError is a non fatal error that allows requests to go through.
+type LogError string
+
+// Error satisfies error interface.
+func (l LogError) Error() string {
+	return string(l)
+}
