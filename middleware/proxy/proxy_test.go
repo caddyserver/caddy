@@ -111,6 +111,10 @@ func (u *fakeUpstream) From() string {
 	return "/"
 }
 
+func (u *fakeUpstream) ProxyRedirects() map[string]string {
+	return make(map[string]string)
+}
+
 func (u *fakeUpstream) Select() *UpstreamHost {
 	uri, _ := url.Parse(u.name)
 	return &UpstreamHost{
