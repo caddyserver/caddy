@@ -63,7 +63,6 @@ func TestResponseFilterWriter(t *testing.T) {
 	for i, ts := range tests {
 		server.Next = middleware.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
 			w.Header().Set("Content-Length", fmt.Sprint(len(ts.body)))
-			w.WriteHeader(200)
 			w.Write([]byte(ts.body))
 			return 200, nil
 		})

@@ -80,7 +80,6 @@ func TestGzipHandler(t *testing.T) {
 
 func nextFunc(shouldGzip bool) middleware.Handler {
 	return middleware.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
-		w.WriteHeader(200)
 		w.Write([]byte("test"))
 		if shouldGzip {
 			if r.Header.Get("Accept-Encoding") != "" {
