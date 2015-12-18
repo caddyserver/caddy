@@ -31,11 +31,11 @@ func (l LengthFilter) ShouldCompress(w http.ResponseWriter) bool {
 type ResponseFilterWriter struct {
 	filters        []ResponseFilter
 	shouldCompress bool
-	gzipResponseWriter
+	*gzipResponseWriter
 }
 
 // NewResponseFilterWriter creates and initializes a new ResponseFilterWriter.
-func NewResponseFilterWriter(filters []ResponseFilter, gz gzipResponseWriter) *ResponseFilterWriter {
+func NewResponseFilterWriter(filters []ResponseFilter, gz *gzipResponseWriter) *ResponseFilterWriter {
 	return &ResponseFilterWriter{filters: filters, gzipResponseWriter: gz}
 }
 

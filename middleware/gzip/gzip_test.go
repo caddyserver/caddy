@@ -92,7 +92,7 @@ func nextFunc(shouldGzip bool) middleware.Handler {
 			if w.Header().Get("Vary") != "Accept-Encoding" {
 				return 0, fmt.Errorf("Vary must be Accept-Encoding, found %v", r.Header.Get("Vary"))
 			}
-			if _, ok := w.(gzipResponseWriter); !ok {
+			if _, ok := w.(*gzipResponseWriter); !ok {
 				return 0, fmt.Errorf("ResponseWriter should be gzipResponseWriter, found %T", w)
 			}
 			return 0, nil
@@ -103,7 +103,7 @@ func nextFunc(shouldGzip bool) middleware.Handler {
 		if w.Header().Get("Content-Encoding") == "gzip" {
 			return 0, fmt.Errorf("Content-Encoding must not be gzip, found gzip")
 		}
-		if _, ok := w.(gzipResponseWriter); ok {
+		if _, ok := w.(*gzipResponseWriter); ok {
 			return 0, fmt.Errorf("ResponseWriter should not be gzipResponseWriter")
 		}
 		return 0, nil

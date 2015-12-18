@@ -57,7 +57,7 @@ outer:
 			return http.StatusInternalServerError, err
 		}
 		defer gzipWriter.Close()
-		gz := gzipResponseWriter{Writer: gzipWriter, ResponseWriter: w}
+		gz := &gzipResponseWriter{Writer: gzipWriter, ResponseWriter: w}
 
 		var rw http.ResponseWriter
 		// if no response filter is used
@@ -104,21 +104,26 @@ func newWriter(c Config, w io.Writer) (*gzip.Writer, error) {
 type gzipResponseWriter struct {
 	io.Writer
 	http.ResponseWriter
+	statusCodeWritten bool
 }
 
 // WriteHeader wraps the underlying WriteHeader method to prevent
 // problems with conflicting headers from proxied backends. For
 // example, a backend system that calculates Content-Length would
 // be wrong because it doesn't know it's being gzipped.
-func (w gzipResponseWriter) WriteHeader(code int) {
+func (w *gzipResponseWriter) WriteHeader(code int) {
 	w.Header().Del("Content-Length")
 	w.Header().Set("Content-Encoding", "gzip")
 	w.Header().Set("Vary", "Accept-Encoding")
 	w.ResponseWriter.WriteHeader(code)
+	w.statusCodeWritten = true
 }
 
 // Write wraps the underlying Write method to do compression.
-func (w gzipResponseWriter) Write(b []byte) (int, error) {
+func (w *gzipResponseWriter) Write(b []byte) (int, error) {
+	if !w.statusCodeWritten {
+		w.WriteHeader(http.StatusOK)
+	}
 	if w.Header().Get("Content-Type") == "" {
 		w.Header().Set("Content-Type", http.DetectContentType(b))
 	}
