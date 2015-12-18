@@ -18,7 +18,7 @@ helping out in simple ways!
 
 #### Ideas, questions, bug reports
 
-Feek free to [open an issue](https://github.com/mholt/caddy/issues) with your
+Feel free to [open an issue](https://github.com/mholt/caddy/issues) with your
 ideas, questions, and bug reports, if one does not already exist for it. Bug
 reports should state expected behavior and contain clear instructions for
 isolating and reproducing the problem.
