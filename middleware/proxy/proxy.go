@@ -28,6 +28,8 @@ type Upstream interface {
 	Select() *UpstreamHost
 	// Checks if subpath is not an ignored path
 	IsAllowedPath(string) bool
+	// property: proxy_redirect
+	ProxyRedirects() map[string]string
 }
 
 // UpstreamHostDownFunc can be used to customize how Down behaves.
@@ -105,7 +107,7 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 				}
 
 				atomic.AddInt64(&host.Conns, 1)
-				backendErr := proxy.ServeHTTP(w, r, extraHeaders)
+				backendErr := proxy.ServeHTTP(w, r, extraHeaders, upstream.ProxyRedirects())
 				atomic.AddInt64(&host.Conns, -1)
 				if backendErr == nil {
 					return 0, nil
