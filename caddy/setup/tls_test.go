@@ -46,9 +46,9 @@ func TestTLSParseBasic(t *testing.T) {
 	}
 
 	// Ensure count is correct (plus one for TLS_FALLBACK_SCSV)
-	if len(c.TLS.Ciphers) != len(defaultCiphers) {
+	if len(c.TLS.Ciphers) != len(expectedCiphers) {
 		t.Errorf("Expected %v Ciphers (including TLS_FALLBACK_SCSV), got %v",
-			len(defaultCiphers), len(c.TLS.Ciphers))
+			len(expectedCiphers), len(c.TLS.Ciphers))
 	}
 
 	// Ensure ordering is correct
