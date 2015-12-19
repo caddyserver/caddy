@@ -137,8 +137,6 @@ var supportedCiphersMap = map[string]uint16{
 	"ECDHE-ECDSA-AES128-CBC-SHA":    tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
 	"RSA-AES128-CBC-SHA":            tls.TLS_RSA_WITH_AES_128_CBC_SHA,
 	"RSA-AES256-CBC-SHA":            tls.TLS_RSA_WITH_AES_256_CBC_SHA,
-	"ECDHE-RSA-3DES-EDE-CBC-SHA":    tls.TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA,
-	"RSA-3DES-EDE-CBC-SHA":          tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA,
 }
 
 // List of supported cipher suites in descending order of preference.
@@ -156,8 +154,6 @@ var supportedCiphers = []uint16{
 	tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
 	tls.TLS_RSA_WITH_AES_256_CBC_SHA,
 	tls.TLS_RSA_WITH_AES_128_CBC_SHA,
-	tls.TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA,
-	tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA,
 }
 
 // List of all the ciphers we want to use by default
