@@ -90,10 +90,7 @@ func TLS(c *Controller) (middleware.Middleware, error) {
 func SetDefaultTLSParams(c *server.Config) {
 	// If no ciphers provided, use all that Caddy supports for the protocol
 	if len(c.TLS.Ciphers) == 0 {
-		c.TLS.Ciphers = supportedCiphers
-		
-		// Remove ECDHE-RSA-3DES-EDE-CBC-SHA and RSA-3DES-EDE-CBC-SHA from the default TLS config
-		c.TLS.Ciphers = c.TLS.Ciphers[:len(c.TLS.Ciphers)-2]
+		c.TLS.Ciphers = defaultCiphers
 	}
 
 	// Not a cipher suite, but still important for mitigating protocol downgrade attacks
@@ -161,4 +158,16 @@ var supportedCiphers = []uint16{
 	tls.TLS_RSA_WITH_AES_128_CBC_SHA,
 	tls.TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA,
 	tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA,
+}
+
+// List of all the ciphers we want to use by default
+var defaultCiphers = []uint16{
+	tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+	tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+	tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+	tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
+	tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
+	tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
+	tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+	tls.TLS_RSA_WITH_AES_128_CBC_SHA,
 }
