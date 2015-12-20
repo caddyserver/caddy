@@ -123,17 +123,32 @@ h1 {
 }
 
 table {
+	table-layout:fixed;
+	width:100%;
+	max-width: 64em;
 	border: 0;
 	border-collapse: collapse;
-	max-width: 750px;
 	margin: 0 auto;
 }
 
 th,
 td {
-	padding: 4px 20px;
+	padding: 0.5em 1em;
 	vertical-align: middle;
 	line-height: 1.5em; /* emoji are kind of odd heights */
+}
+
+th:first-child, td:first-child {
+	overflow-wrap: break-word;
+	word-break: break-word;
+}
+
+th:nth-child(2), td:nth-child(2) {
+	width: 4em;
+}
+
+th:last-child, td:last-child {
+	width: 15em;
 }
 
 th {
