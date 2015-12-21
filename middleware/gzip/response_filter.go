@@ -29,17 +29,18 @@ func (l LengthFilter) ShouldCompress(w http.ResponseWriter) bool {
 // gzip compressed data if ResponseFilters are satisfied or
 // uncompressed data otherwise.
 type ResponseFilterWriter struct {
-	filters        []ResponseFilter
-	shouldCompress bool
-	gzipResponseWriter
+	filters           []ResponseFilter
+	shouldCompress    bool
+	statusCodeWritten bool
+	*gzipResponseWriter
 }
 
 // NewResponseFilterWriter creates and initializes a new ResponseFilterWriter.
-func NewResponseFilterWriter(filters []ResponseFilter, gz gzipResponseWriter) *ResponseFilterWriter {
+func NewResponseFilterWriter(filters []ResponseFilter, gz *gzipResponseWriter) *ResponseFilterWriter {
 	return &ResponseFilterWriter{filters: filters, gzipResponseWriter: gz}
 }
 
-// Write wraps underlying Write method and compresses if filters
+// Write wraps underlying WriteHeader method and compresses if filters
 // are satisfied.
 func (r *ResponseFilterWriter) WriteHeader(code int) {
 	// Determine if compression should be used or not.
@@ -62,11 +63,15 @@ func (r *ResponseFilterWriter) WriteHeader(code int) {
 	} else {
 		r.ResponseWriter.WriteHeader(code)
 	}
+	r.statusCodeWritten = true
 }
 
 // Write wraps underlying Write method and compresses if filters
 // are satisfied
 func (r *ResponseFilterWriter) Write(b []byte) (int, error) {
+	if !r.statusCodeWritten {
+		r.WriteHeader(http.StatusOK)
+	}
 	if r.shouldCompress {
 		return r.gzipResponseWriter.Write(b)
 	}

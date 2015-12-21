@@ -33,7 +33,7 @@ func TestLengthFilter(t *testing.T) {
 		for j, filter := range filters {
 			r := httptest.NewRecorder()
 			r.Header().Set("Content-Length", fmt.Sprint(ts.length))
-			wWriter := NewResponseFilterWriter([]ResponseFilter{filter}, gzipResponseWriter{gzip.NewWriter(r), r})
+			wWriter := NewResponseFilterWriter([]ResponseFilter{filter}, &gzipResponseWriter{gzip.NewWriter(r), r, false})
 			if filter.ShouldCompress(wWriter) != ts.shouldCompress[j] {
 				t.Errorf("Test %v: Expected %v found %v", i, ts.shouldCompress[j], filter.ShouldCompress(r))
 			}
@@ -63,7 +63,6 @@ func TestResponseFilterWriter(t *testing.T) {
 	for i, ts := range tests {
 		server.Next = middleware.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
 			w.Header().Set("Content-Length", fmt.Sprint(len(ts.body)))
-			w.WriteHeader(200)
 			w.Write([]byte(ts.body))
 			return 200, nil
 		})
