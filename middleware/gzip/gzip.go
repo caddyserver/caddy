@@ -114,7 +114,7 @@ type gzipResponseWriter struct {
 func (w *gzipResponseWriter) WriteHeader(code int) {
 	w.Header().Del("Content-Length")
 	w.Header().Set("Content-Encoding", "gzip")
-	w.Header().Set("Vary", "Accept-Encoding")
+	w.Header().Add("Vary", "Accept-Encoding")
 	w.ResponseWriter.WriteHeader(code)
 	w.statusCodeWritten = true
 }
