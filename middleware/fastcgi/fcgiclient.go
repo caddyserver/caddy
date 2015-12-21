@@ -400,6 +400,15 @@ func (c *FCGIClient) Do(p map[string]string, req io.Reader) (r io.Reader, err er
 	return
 }
 
+// clientCloser is a io.ReadCloser. It wraps a io.Reader with a Closer
+// that closes FCGIClient connection.
+type clientCloser struct {
+	*FCGIClient
+	io.Reader
+}
+
+func (f clientCloser) Close() error { return f.rwc.Close() }
+
 // Request returns a HTTP Response with Header and Body
 // from fcgi responder
 func (c *FCGIClient) Request(p map[string]string, req io.Reader) (resp *http.Response, err error) {
@@ -439,9 +448,9 @@ func (c *FCGIClient) Request(p map[string]string, req io.Reader) (resp *http.Res
 	resp.ContentLength, _ = strconv.ParseInt(resp.Header.Get("Content-Length"), 10, 64)
 
 	if chunked(resp.TransferEncoding) {
-		resp.Body = ioutil.NopCloser(httputil.NewChunkedReader(rb))
+		resp.Body = clientCloser{c, httputil.NewChunkedReader(rb)}
 	} else {
-		resp.Body = ioutil.NopCloser(rb)
+		resp.Body = clientCloser{c, ioutil.NopCloser(rb)}
 	}
 	return
 }
