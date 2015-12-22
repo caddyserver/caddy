@@ -105,8 +105,12 @@ func generateStaticHTML(md Markdown, cfg *Config) error {
 				reqPath = filepath.ToSlash(reqPath)
 				reqPath = "/" + reqPath
 
+				// Create empty requests and url to cater for template values.
+				req, _ := http.NewRequest("", "/", nil)
+				urlVar, _ := url.Parse("/")
+
 				// Generate the static file
-				ctx := middleware.Context{Root: md.FileSys, Req: new(http.Request), URL: new(url.URL)}
+				ctx := middleware.Context{Root: md.FileSys, Req: req, URL: urlVar}
 				_, err = md.Process(cfg, reqPath, body, ctx)
 				if err != nil {
 					return err
