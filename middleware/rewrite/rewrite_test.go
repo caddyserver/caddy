@@ -4,9 +4,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"testing"
-
 	"strings"
+	"testing"
 
 	"github.com/mholt/caddy/middleware"
 )
@@ -38,7 +37,7 @@ func TestRewrite(t *testing.T) {
 		if s := strings.Split(regexpRule[3], "|"); len(s) > 1 {
 			ext = s[:len(s)-1]
 		}
-		rule, err := NewRegexpRule(regexpRule[0], regexpRule[1], regexpRule[2], ext)
+		rule, err := NewComplexRule(regexpRule[0], regexpRule[1], regexpRule[2], ext)
 		if err != nil {
 			t.Fatal(err)
 		}
