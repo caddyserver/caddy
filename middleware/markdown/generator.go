@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io/ioutil"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -104,7 +106,7 @@ func generateStaticHTML(md Markdown, cfg *Config) error {
 				reqPath = "/" + reqPath
 
 				// Generate the static file
-				ctx := middleware.Context{Root: md.FileSys}
+				ctx := middleware.Context{Root: md.FileSys, Req: new(http.Request), URL: new(url.URL)}
 				_, err = md.Process(cfg, reqPath, body, ctx)
 				if err != nil {
 					return err
