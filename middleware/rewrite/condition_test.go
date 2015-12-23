@@ -55,7 +55,7 @@ func TestConditions(t *testing.T) {
 	for _, op := range invalidOperators {
 		_, err := NewIf("a", op, "b")
 		if err == nil {
-			t.Error("Invalid operator %v used, expected error.", op)
+			t.Errorf("Invalid operator %v used, expected error.", op)
 		}
 	}
 
