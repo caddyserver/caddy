@@ -54,6 +54,10 @@ func To(fs http.FileSystem, r *http.Request, to string) bool {
 // isValidFile checks if file exists on the filesystem.
 // if file ends with `/`, it is validated as a directory.
 func isValidFile(fs http.FileSystem, file string) bool {
+	if fs == nil {
+		return false
+	}
+
 	f, err := fs.Open(file)
 	if err != nil {
 		return false

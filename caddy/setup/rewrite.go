@@ -2,6 +2,7 @@ package setup
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/mholt/caddy/middleware"
 	"github.com/mholt/caddy/middleware/rewrite"
@@ -54,10 +55,11 @@ func rewriteParse(c *Controller) ([]rewrite.Rule, error) {
 					}
 					pattern = c.Val()
 				case "to":
-					if !c.NextArg() {
+					args1 := c.RemainingArgs()
+					if len(args1) == 0 {
 						return nil, c.ArgErr()
 					}
-					to = c.Val()
+					to = strings.Join(args1, " ")
 				case "ext":
 					args1 := c.RemainingArgs()
 					if len(args1) == 0 {

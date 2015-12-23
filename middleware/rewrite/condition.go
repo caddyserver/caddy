@@ -2,10 +2,11 @@ package rewrite
 
 import (
 	"fmt"
-	"github.com/mholt/caddy/middleware"
 	"net/http"
 	"regexp"
 	"strings"
+
+	"github.com/mholt/caddy/middleware"
 )
 
 const (
@@ -19,7 +20,7 @@ const (
 )
 
 func operatorError(operator string) error {
-	return fmt.Errorf("Invalid operator", operator)
+	return fmt.Errorf("Invalid operator %v", operator)
 }
 
 func newReplacer(r *http.Request) middleware.Replacer {
