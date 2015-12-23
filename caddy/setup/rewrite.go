@@ -78,8 +78,8 @@ func rewriteParse(c *Controller) ([]rewrite.Rule, error) {
 					return nil, c.ArgErr()
 				}
 			}
-			// ensure pattern and to are specified
-			if pattern == "" || to == "" {
+			// ensure to is specified
+			if to == "" {
 				return nil, c.ArgErr()
 			}
 			if rule, err = rewrite.NewComplexRule(base, pattern, to, ext, ifs); err != nil {

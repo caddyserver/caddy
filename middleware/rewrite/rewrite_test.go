@@ -18,6 +18,7 @@ func TestRewrite(t *testing.T) {
 			NewSimpleRule("/a", "/b"),
 			NewSimpleRule("/b", "/b{uri}"),
 		},
+		FileSys: http.Dir("."),
 	}
 
 	regexpRules := [][]string{
@@ -37,7 +38,7 @@ func TestRewrite(t *testing.T) {
 		if s := strings.Split(regexpRule[3], "|"); len(s) > 1 {
 			ext = s[:len(s)-1]
 		}
-		rule, err := NewComplexRule(regexpRule[0], regexpRule[1], regexpRule[2], ext)
+		rule, err := NewComplexRule(regexpRule[0], regexpRule[1], regexpRule[2], ext, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

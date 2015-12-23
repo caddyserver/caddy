@@ -128,9 +128,18 @@ func (r *ComplexRule) Rewrite(fs http.FileSystem, req *http.Request) bool {
 		start--
 	}
 
-	// validate regexp
-	if !r.MatchString(rPath[start:]) {
-		return false
+	// validate regexp if present
+	if r.Regexp != nil {
+		if !r.MatchString(rPath[start:]) {
+			return false
+		}
+	}
+
+	// validate rewrite conditions
+	for _, i := range r.Ifs {
+		if !i.True(req) {
+			return false
+		}
 	}
 
 	// attempt rewrite

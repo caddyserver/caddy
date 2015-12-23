@@ -120,11 +120,6 @@ func TestRewriteParse(t *testing.T) {
 			&rewrite.ComplexRule{Base: "/", To: "/to", Regexp: regexp.MustCompile("[a-z]+")},
 		}},
 		{`rewrite {
-			to	/to
-		 }`, true, []rewrite.Rule{
-			&rewrite.ComplexRule{},
-		}},
-		{`rewrite {
 			r	.*
 		 }`, true, []rewrite.Rule{
 			&rewrite.ComplexRule{},

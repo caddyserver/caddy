@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"path"
 	"strings"
 )
 
@@ -17,7 +18,7 @@ func To(fs http.FileSystem, r *http.Request, to string) bool {
 	// try each rewrite paths
 	t := ""
 	for _, v := range tos {
-		t = replacer.Replace(v)
+		t = path.Clean(replacer.Replace(v))
 		if isValidFile(fs, t) {
 			break
 		}
