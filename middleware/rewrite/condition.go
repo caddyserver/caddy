@@ -70,7 +70,7 @@ func endsWithFunc(a, b string) bool {
 }
 
 // matchFunc is condition for Match operator.
-// It does regexp matching of
+// It does regexp matching of a against pattern in b
 func matchFunc(a, b string) bool {
 	matched, _ := regexp.MatchString(b, a)
 	return matched

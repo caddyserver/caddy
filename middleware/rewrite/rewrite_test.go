@@ -21,7 +21,7 @@ func TestRewrite(t *testing.T) {
 		FileSys: http.Dir("."),
 	}
 
-	regexpRules := [][]string{
+	regexps := [][]string{
 		{"/reg/", ".*", "/to", ""},
 		{"/r/", "[a-z]+", "/toaz", "!.html|"},
 		{"/url/", "a([a-z0-9]*)s([A-Z]{2})", "/to/{path}", ""},
@@ -33,7 +33,7 @@ func TestRewrite(t *testing.T) {
 		{"/ab/", `.*\.jpg`, "/ajpg", ""},
 	}
 
-	for _, regexpRule := range regexpRules {
+	for _, regexpRule := range regexps {
 		var ext []string
 		if s := strings.Split(regexpRule[3], "|"); len(s) > 1 {
 			ext = s[:len(s)-1]

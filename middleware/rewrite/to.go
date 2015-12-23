@@ -19,6 +19,13 @@ func To(fs http.FileSystem, r *http.Request, to string) bool {
 	t := ""
 	for _, v := range tos {
 		t = path.Clean(replacer.Replace(v))
+
+		// add trailing slash for directories, if present
+		if strings.HasSuffix(v, "/") && !strings.HasSuffix(t, "/") {
+			t += "/"
+		}
+
+		// validate file
 		if isValidFile(fs, t) {
 			break
 		}
@@ -69,5 +76,11 @@ func isValidFile(fs http.FileSystem, file string) bool {
 		return false
 	}
 
-	return strings.HasSuffix(file, "/") && stat.IsDir()
+	// directory
+	if strings.HasSuffix(file, "/") {
+		return stat.IsDir()
+	}
+
+	// file
+	return !stat.IsDir()
 }
