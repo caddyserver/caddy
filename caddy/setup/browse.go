@@ -123,8 +123,8 @@ h1 {
 }
 
 table {
-	table-layout:fixed;
-	width:100%;
+	table-layout: fixed;
+	width: 100%;
 	max-width: 64em;
 	border: 0;
 	border-collapse: collapse;
