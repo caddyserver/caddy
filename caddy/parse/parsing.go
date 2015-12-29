@@ -187,7 +187,7 @@ func (p *parser) doImport() error {
 	}
 	importPattern := p.Val()
 	if p.NextArg() {
-		return p.Err("Import allows only one file to import")
+		return p.Err("Import allows only one expression, either file or glob pattern")
 	}
 
 	matches, err := filepath.Glob(importPattern)
