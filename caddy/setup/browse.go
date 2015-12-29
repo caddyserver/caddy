@@ -86,143 +86,119 @@ const defaultTemplate = `<!DOCTYPE html>
 	<head>
 		<title>{{.Name}}</title>
 		<meta charset="utf-8">
-<style>
-* { padding: 0; margin: 0; }
+		<style>
+			* {
+				padding: 0;
+				margin: 0;
+			}
 
-body {
-	padding: 1% 2%;
-	font: 16px Arial;
-}
+			body {
+				text-rendering: optimizespeed;
+				font-family: FreeSans, Arimo, "Droid Sans", Helvetica, Arial, sans-serif;
+				font-size: 1em;
+			}
 
-header {
-	font-size: 45px;
-	padding: 25px;
-}
+			main {
+				margin-top: 3em;
+			}
 
-header a {
-	text-decoration: none;
-	color: inherit;
-}
+			header,
+			header h1 {
+				font-size: 1em;
+			}
 
-header .up {
-	display: inline-block;
-	height: 50px;
-	width: 50px;
-	text-align: center;
-	margin-right: 20px;
-}
+			header {
+				position: fixed;
+				top: 0;width: 100%;
+				background: #333333;
+				line-height: 3em;
+				color: #FFFFFF;
+				text-align: center;
+			}
 
-header a.up:hover {
-	background: #000;
-	color: #FFF;
-}
+			header a {
+				text-decoration: none;
+				color: #FFFFFF;
+			}
 
-h1 {
-	font-size: 30px;
-	display: inline;
-}
+			header a.up {
+				display: inline-block;
+				position: absolute;
+				left: 0;
+				top: 0;
+				width: 1.5em;
+				font-size: 2em;
+				text-align: center;
+			}
 
-table {
-	table-layout: fixed;
-	width: 100%;
-	max-width: 64em;
-	border: 0;
-	border-collapse: collapse;
-	margin: 0 auto;
-}
+			header h1 {
+				font-weight: normal;
+				padding: 0 1em;
+				overflow-x: hidden;
+				text-overflow: ellipsis;
+			}
 
-th,
-td {
-	padding: 0.5em 1em;
-	vertical-align: middle;
-	line-height: 1.5em; /* emoji are kind of odd heights */
-}
+			header h1.up {
+				padding-left: 3em;
+			}
 
-th:first-child, td:first-child {
-	overflow-wrap: break-word;
-	word-break: break-word;
-}
+			table {
+				table-layout: fixed;
+				width: 100%;
+				max-width: 64em;
+				border: 0;
+				border-collapse: collapse;
+				margin: 0 auto;
+			}
 
-th:nth-child(2), td:nth-child(2) {
-	width: 4em;
-}
+			th,
+			td {
+				padding: 0.5em 1em;
+				vertical-align: middle;
+				line-height: 1.5em;
+				/* emoji are kind of odd heights */
+			}
 
-th:last-child, td:last-child {
-	width: 15em;
-}
+			th:first-child,
+			td:first-child {
+				overflow-wrap: break-word;
+				word-break: break-word;
+			}
 
-th {
-	text-align: left;
-}
+			th:nth-child(2),
+			td:nth-child(2) {
+				width: 4em;
+			}
 
-th a {
-	color: #000;
-	text-decoration: none;
-}
+			th:last-child,
+			td:last-child {
+				width: 11em;
+			}
 
-@media (max-width: 700px) {
-	.hideable {
-		display: none;
-	}
+			th {
+				text-align: left;
+			}
 
-	body {
-		padding: 0;
-	}
+			th a {
+				color: #000000;
+				text-decoration: none;
+			}
 
-	header,
-	header h1 {
-		font-size: 16px;
-	}
-
-	header {
-		position: fixed;
-		top: 0;
-		width: 100%;
-		background: #333;
-		color: #FFF;
-		padding: 15px;
-		text-align: center;
-	}
-
-	header .up {
-		height: auto;
-		width: auto;
-		display: none;
-	}
-
-	header a.up {
-		display: inline-block;
-		position: absolute;
-		left: 0;
-		top: 0;
-		width: 40px;
-		height: 48px;
-		font-size: 35px;
-	}
-
-	header h1 {
-		font-weight: normal;
-	}
-
-	main {
-		margin-top: 70px;
-	}
-}
-
-.name {
-	white-space: pre;
-}
-</style>
+			@media (max-width: 48em) {
+				.hideable {
+					display: none;
+				}
+			}
+		</style>
 	</head>
 	<body>
 		<header>
 			{{if .CanGoUp}}
 			<a href=".." class="up" title="Up one level">&#11025;</a>
+			<h1 class="up name">{{.Path}}</h1>
 			{{else}}
-			<div class="up">&nbsp;</div>
-			{{end}}
-
 			<h1 class="name">{{.Path}}</h1>
+			{{end}}
 		</header>
 		<main>
 			<table>
@@ -242,8 +218,7 @@ th a {
 						{{else if and (eq .Sort "size") (ne .Order "asc")}}
 						<a href="?sort=size&order=asc">Size &#9660;</a>
 						{{else}}
-						<a href="?sort=size&order=asc">Size</a>
-						{{end}}
+						<a href="?sort=size&order=asc">Size</a> {{end}}
 					</th>
 					<th class="hideable">
 						{{if and (eq .Sort "time") (ne .Order "desc")}}
@@ -262,7 +237,7 @@ th a {
 						<a href="{{.URL}}" class="name">{{.Name}}</a>
 					</td>
 					<td>{{.HumanSize}}</td>
-					<td class="hideable">{{.HumanModTime "01/02/2006 3:04:05 PM -0700"}}</td>
+					<td class="hideable">{{.HumanModTime "01/02/2006 03:04:05 PM"}}</td>
 				</tr>
 				{{end}}
 			</table>
