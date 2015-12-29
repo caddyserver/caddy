@@ -99,6 +99,7 @@ const defaultTemplate = `<!DOCTYPE html>
 			}
 
 			main {
+				display: block;
 				margin-top: 3em;
 			}
 
