@@ -132,6 +132,7 @@ const defaultTemplate = `<!DOCTYPE html>
 			}
 
 			header h1 {
+				white-space: nowrap;
 				font-weight: normal;
 				padding: 0 1em;
 				overflow-x: hidden;
