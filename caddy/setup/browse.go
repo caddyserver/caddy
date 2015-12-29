@@ -155,7 +155,7 @@ const defaultTemplate = `<!DOCTYPE html>
 			th,
 			td {
 				padding: 0.5em 1em;
-				vertical-align: middle;
+				vertical-align: top;
 				line-height: 1.5em;
 				/* emoji are kind of odd heights */
 			}
