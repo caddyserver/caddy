@@ -69,3 +69,43 @@ func TestReplace(t *testing.T) {
 	}
 
 }
+
+func TestSet(t *testing.T) {
+	w := httptest.NewRecorder()
+	recordRequest := NewResponseRecorder(w)
+	userJSON := `{"username": "dennis"}`
+
+	reader := strings.NewReader(userJSON) //Convert string to reader
+
+	request, err := http.NewRequest("POST", "http://caddyserver.com", reader) //Create request with JSON body
+	if err != nil {
+		t.Fatalf("Request Formation Failed \n")
+	}
+	replaceValues := NewReplacer(request, recordRequest, "")
+
+	replaceValues.Set("host", "getcaddy.com")
+	replaceValues.Set("method", "GET")
+	replaceValues.Set("status", "201")
+	replaceValues.Set("variable", "value")
+
+	switch v := replaceValues.(type) {
+	case replacer:
+
+		if v.Replace("This host is {host}") != "This host is getcaddy.com" {
+			t.Errorf("Expected host replacement failed")
+		}
+		if v.Replace("This request method is {method}") != "This request method is GET" {
+			t.Errorf("Expected method  replacement failed")
+		}
+		if v.Replace("The response status is {status}") != "The response status is 201" {
+			t.Errorf("Expected status replacement failed")
+		}
+		if v.Replace("The value of variable is {variable}") != "The value of variable is value" {
+			t.Errorf("Expected status replacement failed")
+		}
+
+	default:
+		t.Fatalf("Return Value from New Replacer expected pass type assertion into a replacer type   \n")
+	}
+
+}

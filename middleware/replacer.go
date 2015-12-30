@@ -3,6 +3,7 @@ package middleware
 import (
 	"net"
 	"net/http"
+	"net/url"
 	"path"
 	"strconv"
 	"strings"
@@ -15,6 +16,7 @@ import (
 // NewReplacer to get one of these.
 type Replacer interface {
 	Replace(string) string
+	Set(key, value string)
 }
 
 type replacer struct {
@@ -38,11 +40,13 @@ func NewReplacer(r *http.Request, rr *responseRecorder, emptyValue string) Repla
 				}
 				return "http"
 			}(),
-			"{host}":     r.Host,
-			"{path}":     r.URL.Path,
-			"{query}":    r.URL.RawQuery,
-			"{fragment}": r.URL.Fragment,
-			"{proto}":    r.Proto,
+			"{host}":          r.Host,
+			"{path}":          r.URL.Path,
+			"{path_escaped}":  url.QueryEscape(r.URL.Path),
+			"{query}":         r.URL.RawQuery,
+			"{query_escaped}": url.QueryEscape(r.URL.RawQuery),
+			"{fragment}":      r.URL.Fragment,
+			"{proto}":         r.Proto,
 			"{remote}": func() string {
 				if fwdFor := r.Header.Get("X-Forwarded-For"); fwdFor != "" {
 					return fwdFor
@@ -60,7 +64,8 @@ func NewReplacer(r *http.Request, rr *responseRecorder, emptyValue string) Repla
 				}
 				return port
 			}(),
-			"{uri}": r.URL.RequestURI(),
+			"{uri}":         r.URL.RequestURI(),
+			"{uri_escaped}": url.QueryEscape(r.URL.RequestURI()),
 			"{when}": func() string {
 				return time.Now().Format(timeFormat)
 			}(),
@@ -111,6 +116,11 @@ func (r replacer) Replace(s string) string {
 		}
 	}
 	return s
+}
+
+// Set sets key to value in the replacements map.
+func (r replacer) Set(key, value string) {
+	r.replacements["{"+key+"}"] = value
 }
 
 const (
