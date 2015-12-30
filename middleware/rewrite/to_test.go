@@ -36,7 +36,7 @@ func TestTo(t *testing.T) {
 		if err != nil {
 			t.Error(err)
 		}
-		To(fs, r, test.to)
+		To(fs, r, test.to, newReplacer(r))
 		if uri(r.URL) != test.expected {
 			t.Errorf("Test %v: expected %v found %v", i, test.expected, uri(r.URL))
 		}

@@ -54,7 +54,7 @@ func (s SimpleRule) Rewrite(fs http.FileSystem, r *http.Request) bool {
 		r.Header.Set(headerFieldName, r.URL.RequestURI())
 
 		// attempt rewrite
-		return To(fs, r, s.To)
+		return To(fs, r, s.To, newReplacer(r))
 	}
 	return false
 }
@@ -111,6 +111,7 @@ func NewComplexRule(base, pattern, to string, ext []string, ifs []If) (*ComplexR
 // Rewrite rewrites the internal location of the current request.
 func (r *ComplexRule) Rewrite(fs http.FileSystem, req *http.Request) bool {
 	rPath := req.URL.Path
+	replacer := newReplacer(req)
 
 	// validate base
 	if !middleware.Path(rPath).Matches(r.Base) {
@@ -130,8 +131,16 @@ func (r *ComplexRule) Rewrite(fs http.FileSystem, req *http.Request) bool {
 
 	// validate regexp if present
 	if r.Regexp != nil {
-		if !r.MatchString(rPath[start:]) {
+		matches := r.FindStringSubmatch(rPath[start:])
+		switch len(matches) {
+		case 0:
+			// no match
 			return false
+		default:
+			// set regexp match variables {1}, {2} ...
+			for i := 1; i < len(matches); i++ {
+				replacer.Set(fmt.Sprint(i), matches[i])
+			}
 		}
 	}
 
@@ -143,7 +152,7 @@ func (r *ComplexRule) Rewrite(fs http.FileSystem, req *http.Request) bool {
 	}
 
 	// attempt rewrite
-	return To(fs, req, r.To)
+	return To(fs, req, r.To, replacer)
 }
 
 // matchExt matches rPath against registered file extensions.
