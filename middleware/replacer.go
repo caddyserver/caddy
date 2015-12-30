@@ -16,6 +16,7 @@ import (
 // NewReplacer to get one of these.
 type Replacer interface {
 	Replace(string) string
+	Set(key, value string)
 }
 
 type replacer struct {
@@ -115,6 +116,11 @@ func (r replacer) Replace(s string) string {
 		}
 	}
 	return s
+}
+
+// Set sets key to value in the replacements map.
+func (r replacer) Set(key, value string) {
+	r.replacements["{"+key+"}"] = value
 }
 
 const (
