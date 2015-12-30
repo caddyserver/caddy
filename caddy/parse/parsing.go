@@ -176,19 +176,52 @@ func (p *parser) directives() error {
 }
 
 // doImport swaps out the import directive and its argument
-// (a total of 2 tokens) with the tokens in the file specified.
-// When the function returns, the cursor is on the token before
-// where the import directive was. In other words, call Next()
-// to access the first token that was imported.
+// (a total of 2 tokens) with the tokens in the specified file
+// or globbing pattern. When the function returns, the cursor
+// is on the token before where the import directive was. In
+// other words, call Next() to access the first token that was
+// imported.
 func (p *parser) doImport() error {
 	if !p.NextArg() {
 		return p.ArgErr()
 	}
-	importFile := p.Val()
+	importPattern := p.Val()
 	if p.NextArg() {
-		return p.Err("Import allows only one file to import")
+		return p.Err("Import allows only one expression, either file or glob pattern")
 	}
 
+	matches, err := filepath.Glob(importPattern)
+	if err != nil {
+		return p.Errf("Failed to use import pattern %s - %s", importPattern, err.Error())
+	}
+
+	if len(matches) == 0 {
+		return p.Errf("No files matching the import pattern %s", importPattern)
+	}
+
+	// Splice out the import directive and its argument (2 tokens total)
+	// and insert the imported tokens in their place.
+	tokensBefore := p.tokens[:p.cursor-1]
+	tokensAfter := p.tokens[p.cursor+1:]
+	// cursor was advanced one position to read filename; rewind it
+	p.cursor--
+
+	p.tokens = tokensBefore
+
+	for _, importFile := range matches {
+		if err := p.doSingleImport(importFile); err != nil {
+			return err
+		}
+	}
+
+	p.tokens = append(p.tokens, append(tokensAfter)...)
+
+	return nil
+}
+
+// doSingleImport lexes the individual files matching the
+// globbing pattern from of the import directive.
+func (p *parser) doSingleImport(importFile string) error {
 	file, err := os.Open(importFile)
 	if err != nil {
 		return p.Errf("Could not import %s - %v", importFile, err)
@@ -203,10 +236,7 @@ func (p *parser) doImport() error {
 
 	// Splice out the import directive and its argument (2 tokens total)
 	// and insert the imported tokens in their place.
-	tokensBefore := p.tokens[:p.cursor-1]
-	tokensAfter := p.tokens[p.cursor+1:]
-	p.tokens = append(tokensBefore, append(importedTokens, tokensAfter...)...)
-	p.cursor-- // cursor was advanced one position to read the filename; rewind it
+	p.tokens = append(p.tokens, append(importedTokens)...)
 
 	return nil
 }

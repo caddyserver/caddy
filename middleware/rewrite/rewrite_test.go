@@ -4,9 +4,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"testing"
-
 	"strings"
+	"testing"
 
 	"github.com/mholt/caddy/middleware"
 )
@@ -19,9 +18,10 @@ func TestRewrite(t *testing.T) {
 			NewSimpleRule("/a", "/b"),
 			NewSimpleRule("/b", "/b{uri}"),
 		},
+		FileSys: http.Dir("."),
 	}
 
-	regexpRules := [][]string{
+	regexps := [][]string{
 		{"/reg/", ".*", "/to", ""},
 		{"/r/", "[a-z]+", "/toaz", "!.html|"},
 		{"/url/", "a([a-z0-9]*)s([A-Z]{2})", "/to/{path}", ""},
@@ -33,12 +33,12 @@ func TestRewrite(t *testing.T) {
 		{"/ab/", `.*\.jpg`, "/ajpg", ""},
 	}
 
-	for _, regexpRule := range regexpRules {
+	for _, regexpRule := range regexps {
 		var ext []string
 		if s := strings.Split(regexpRule[3], "|"); len(s) > 1 {
 			ext = s[:len(s)-1]
 		}
-		rule, err := NewRegexpRule(regexpRule[0], regexpRule[1], regexpRule[2], ext)
+		rule, err := NewComplexRule(regexpRule[0], regexpRule[1], regexpRule[2], ext, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

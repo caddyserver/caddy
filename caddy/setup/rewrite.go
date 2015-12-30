@@ -1,6 +1,9 @@
 package setup
 
 import (
+	"net/http"
+	"strings"
+
 	"github.com/mholt/caddy/middleware"
 	"github.com/mholt/caddy/middleware/rewrite"
 )
@@ -13,7 +16,11 @@ func Rewrite(c *Controller) (middleware.Middleware, error) {
 	}
 
 	return func(next middleware.Handler) middleware.Handler {
-		return rewrite.Rewrite{Next: next, Rules: rewrites}
+		return rewrite.Rewrite{
+			Next:    next,
+			FileSys: http.Dir(c.Root),
+			Rules:   rewrites,
+		}
 	}, nil
 }
 
@@ -29,6 +36,8 @@ func rewriteParse(c *Controller) ([]rewrite.Rule, error) {
 		var ext []string
 
 		args := c.RemainingArgs()
+
+		var ifs []rewrite.If
 
 		switch len(args) {
 		case 2:
@@ -46,25 +55,36 @@ func rewriteParse(c *Controller) ([]rewrite.Rule, error) {
 					}
 					pattern = c.Val()
 				case "to":
-					if !c.NextArg() {
+					args1 := c.RemainingArgs()
+					if len(args1) == 0 {
 						return nil, c.ArgErr()
 					}
-					to = c.Val()
+					to = strings.Join(args1, " ")
 				case "ext":
 					args1 := c.RemainingArgs()
 					if len(args1) == 0 {
 						return nil, c.ArgErr()
 					}
 					ext = args1
+				case "if":
+					args1 := c.RemainingArgs()
+					if len(args1) != 3 {
+						return nil, c.ArgErr()
+					}
+					ifCond, err := rewrite.NewIf(args1[0], args1[1], args1[2])
+					if err != nil {
+						return nil, err
+					}
+					ifs = append(ifs, ifCond)
 				default:
 					return nil, c.ArgErr()
 				}
 			}
-			// ensure pattern and to are specified
-			if pattern == "" || to == "" {
+			// ensure to is specified
+			if to == "" {
 				return nil, c.ArgErr()
 			}
-			if rule, err = rewrite.NewRegexpRule(base, pattern, to, ext); err != nil {
+			if rule, err = rewrite.NewComplexRule(base, pattern, to, ext, ifs); err != nil {
 				return nil, err
 			}
 			regexpRules = append(regexpRules, rule)
