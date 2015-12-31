@@ -24,6 +24,13 @@ type Rewrite struct {
 func (rw Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	for _, rule := range rw.Rules {
 		if ok := rule.Rewrite(rw.FileSys, r); ok {
+
+			// if rule is complex rule and status code is set
+			if cRule, ok := rule.(*ComplexRule); ok && cRule.Status != 0 {
+				return cRule.Status, nil
+			}
+
+			// rewrite done
 			break
 		}
 	}
@@ -67,6 +74,10 @@ type ComplexRule struct {
 	// Path to rewrite to
 	To string
 
+	// If set, neither performs rewrite nor proceeds
+	// with request. Only returns code.
+	Status int
+
 	// Extensions to filter by
 	Exts []string
 
@@ -78,7 +89,7 @@ type ComplexRule struct {
 
 // NewRegexpRule creates a new RegexpRule. It returns an error if regexp
 // pattern (pattern) or extensions (ext) are invalid.
-func NewComplexRule(base, pattern, to string, ext []string, ifs []If) (*ComplexRule, error) {
+func NewComplexRule(base, pattern, to string, status int, ext []string, ifs []If) (*ComplexRule, error) {
 	// validate regexp if present
 	var r *regexp.Regexp
 	if pattern != "" {
@@ -102,6 +113,7 @@ func NewComplexRule(base, pattern, to string, ext []string, ifs []If) (*ComplexR
 	return &ComplexRule{
 		Base:   base,
 		To:     to,
+		Status: status,
 		Exts:   ext,
 		Ifs:    ifs,
 		Regexp: r,

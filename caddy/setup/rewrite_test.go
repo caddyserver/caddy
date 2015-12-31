@@ -137,6 +137,33 @@ func TestRewriteParse(t *testing.T) {
 		 }`, false, []rewrite.Rule{
 			&rewrite.ComplexRule{Base: "/", To: "/to", Ifs: []rewrite.If{rewrite.If{A: "{path}", Operator: "is", B: "a"}}},
 		}},
+		{`rewrite {
+			status 400
+		 }`, false, []rewrite.Rule{
+			&rewrite.ComplexRule{Base: "/", Regexp: regexp.MustCompile(".*"), Status: 400},
+		}},
+		{`rewrite {
+			to /to
+			status 400
+		 }`, false, []rewrite.Rule{
+			&rewrite.ComplexRule{Base: "/", To: "/to", Regexp: regexp.MustCompile(".*"), Status: 400},
+		}},
+		{`rewrite {
+			status 399
+		 }`, true, []rewrite.Rule{
+			&rewrite.ComplexRule{},
+		}},
+		{`rewrite {
+			status 0
+		 }`, true, []rewrite.Rule{
+			&rewrite.ComplexRule{},
+		}},
+		{`rewrite {
+			to /to
+			status 0
+		 }`, true, []rewrite.Rule{
+			&rewrite.ComplexRule{},
+		}},
 	}
 
 	for i, test := range regexpTests {

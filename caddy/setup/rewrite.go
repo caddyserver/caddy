@@ -2,6 +2,7 @@ package setup
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/mholt/caddy/middleware"
@@ -33,6 +34,7 @@ func rewriteParse(c *Controller) ([]rewrite.Rule, error) {
 		var err error
 		var base = "/"
 		var pattern, to string
+		var status int
 		var ext []string
 
 		args := c.RemainingArgs()
@@ -73,15 +75,23 @@ func rewriteParse(c *Controller) ([]rewrite.Rule, error) {
 						return nil, err
 					}
 					ifs = append(ifs, ifCond)
+				case "status":
+					if !c.NextArg() {
+						return nil, c.ArgErr()
+					}
+					status, _ = strconv.Atoi(c.Val())
+					if status < 400 || status > 499 {
+						return nil, c.Err("status must be 4xx")
+					}
 				default:
 					return nil, c.ArgErr()
 				}
 			}
-			// ensure to is specified
-			if to == "" {
+			// ensure to or status is specified
+			if to == "" && status == 0 {
 				return nil, c.ArgErr()
 			}
-			if rule, err = rewrite.NewComplexRule(base, pattern, to, ext, ifs); err != nil {
+			if rule, err = rewrite.NewComplexRule(base, pattern, to, status, ext, ifs); err != nil {
 				return nil, err
 			}
 			regexpRules = append(regexpRules, rule)
