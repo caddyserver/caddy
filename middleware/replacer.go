@@ -86,9 +86,9 @@ func NewReplacer(r *http.Request, rr *responseRecorder, emptyValue string) Repla
 		rep.replacements["{latency}"] = time.Since(rr.start).String()
 	}
 
-	// Header placeholders
-	for header, val := range r.Header {
-		rep.replacements[headerReplacer+header+"}"] = strings.Join(val, ",")
+	// Header placeholders (case-insensitive)
+	for header, values := range r.Header {
+		rep.replacements[headerReplacer+strings.ToLower(header)+"}"] = strings.Join(values, ",")
 	}
 
 	return rep
@@ -97,6 +97,32 @@ func NewReplacer(r *http.Request, rr *responseRecorder, emptyValue string) Repla
 // Replace performs a replacement of values on s and returns
 // the string with the replaced values.
 func (r replacer) Replace(s string) string {
+	// Header replacements - these are case-insensitive, so we can't just use strings.Replace()
+	startPos := strings.Index(s, headerReplacer)
+	for startPos > -1 {
+		// carefully find end of placeholder
+		endOffset := strings.Index(s[startPos+1:], "}")
+		if endOffset == -1 {
+			startPos = strings.Index(s[startPos+len(headerReplacer):], headerReplacer)
+			continue
+		}
+		endPos := startPos + len(headerReplacer) + endOffset
+
+		// look for replacement, case-insensitive
+		placeholder := strings.ToLower(s[startPos:endPos])
+		replacement := r.replacements[placeholder]
+		if replacement == "" {
+			replacement = r.emptyValue
+		}
+
+		// do the replacement manually
+		s = s[:startPos] + replacement + s[endPos:]
+
+		// move to next one
+		startPos = strings.Index(s[endOffset:], headerReplacer)
+	}
+
+	// Regular replacements - these are easier because they're case-sensitive
 	for placeholder, replacement := range r.replacements {
 		if replacement == "" {
 			replacement = r.emptyValue
@@ -104,17 +130,6 @@ func (r replacer) Replace(s string) string {
 		s = strings.Replace(s, placeholder, replacement, -1)
 	}
 
-	// Replace any header placeholders that weren't found
-	for strings.Contains(s, headerReplacer) {
-		idxStart := strings.Index(s, headerReplacer)
-		endOffset := idxStart + len(headerReplacer)
-		idxEnd := strings.Index(s[endOffset:], "}")
-		if idxEnd > -1 {
-			s = s[:idxStart] + r.emptyValue + s[endOffset+idxEnd+1:]
-		} else {
-			break
-		}
-	}
 	return s
 }
 
