@@ -112,12 +112,22 @@ header,
 
 th:first-child,
 td:first-child {
-	padding-left: 5%;
+	padding: 0.5em 2.5% 0.5em 5%;
+}
+
+td:first-child svg {
+	position: absolute;
+}
+
+td:first-child div.name {
+	margin-left: 2em;
+	word-break: break-all;
+	overflow-wrap: break-word;
 }
 
 th:last-child,
 td:last-child {
-	padding-right: 5%;
+	padding: 0.5em 5% 0.5em 2.5%;
 }
 
 header {
@@ -174,7 +184,7 @@ tr:not(:first-child):hover {
 th,
 td {
 	text-align: left;
-	padding: 10px 0;
+	vertical-align: top;
 }
 
 th {
@@ -201,9 +211,17 @@ td:first-child {
 	word-break: break-word;
 }
 
+th:nth-child(2),
+td:nth-child(2) {
+	padding: 0.5em 2.5%;
+	white-space: nowrap;
+}
+
 th:last-child,
 td:last-child {
 	text-align: right;
+	padding: 0.5em 5% 0.5em 2.5%;
+	white-space: nowrap;
 }
 
 footer {
@@ -217,14 +235,16 @@ footer {
 		display: none;
 	}
 
+	th:first-child,
 	td:first-child {
 		width: auto;
 	}
 
 	th:nth-child(2),
 	td:nth-child(2) {
-		padding-right: 5%;
+		padding: 0.5em 5% 0.5em 2.5%;
 		text-align: right;
+		width: 5em;
 	}
 }
 </style>
@@ -280,7 +300,7 @@ footer {
 								{{else}}
 								<svg width="1.5em" height="1em" version="1.1" viewBox="0 0 26.604381 29.144726"><use xlink:href="#file"></use></svg>
 								{{end}}
-								{{.Name}}
+								<div class="name">{{.Name}}</div>
 							</a>
 						</td>
 						<td>{{.HumanSize}}</td>
