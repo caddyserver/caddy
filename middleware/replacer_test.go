@@ -45,7 +45,8 @@ func TestReplace(t *testing.T) {
 	if err != nil {
 		t.Fatal("Request Formation Failed\n")
 	}
-	request.Header.Set("Custom", "fooBar")
+	request.Header.Set("Custom", "foobarbaz")
+	request.Header.Set("ShorterVal", "1")
 	repl := NewReplacer(request, recordRequest, "-")
 
 	if expected, actual := "This host is localhost.", repl.Replace("This host is {host}."); expected != actual {
@@ -57,12 +58,12 @@ func TestReplace(t *testing.T) {
 	if expected, actual := "The response status is 200.", repl.Replace("The response status is {status}."); expected != actual {
 		t.Errorf("{status} replacement: expected '%s', got '%s'", expected, actual)
 	}
-	if expected, actual := "The Custom header is fooBar.", repl.Replace("The Custom header is {>Custom}."); expected != actual {
+	if expected, actual := "The Custom header is foobarbaz.", repl.Replace("The Custom header is {>Custom}."); expected != actual {
 		t.Errorf("{>Custom} replacement: expected '%s', got '%s'", expected, actual)
 	}
 
 	// Test header case-insensitivity
-	if expected, actual := "The cUsToM header is fooBar...", repl.Replace("The cUsToM header is {>cUsToM}..."); expected != actual {
+	if expected, actual := "The cUsToM header is foobarbaz...", repl.Replace("The cUsToM header is {>cUsToM}..."); expected != actual {
 		t.Errorf("{>cUsToM} replacement: expected '%s', got '%s'", expected, actual)
 	}
 
@@ -79,6 +80,16 @@ func TestReplace(t *testing.T) {
 	// Test bad header placeholder
 	if expected, actual := "Bad {>Custom placeholder", repl.Replace("Bad {>Custom placeholder"); expected != actual {
 		t.Errorf("bad header placeholder: expected '%s', got '%s'", expected, actual)
+	}
+
+	// Test bad header placeholder with valid one later
+	if expected, actual := "Bad -", repl.Replace("Bad {>Custom placeholder {>ShorterVal}"); expected != actual {
+		t.Errorf("bad header placeholders: expected '%s', got '%s'", expected, actual)
+	}
+
+	// Test shorter header value with multiple placeholders
+	if expected, actual := "Short value 1 then foobarbaz.", repl.Replace("Short value {>ShorterVal} then {>Custom}."); expected != actual {
+		t.Errorf("short value: expected '%s', got '%s'", expected, actual)
 	}
 }
 

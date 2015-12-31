@@ -98,28 +98,20 @@ func NewReplacer(r *http.Request, rr *responseRecorder, emptyValue string) Repla
 // the string with the replaced values.
 func (r replacer) Replace(s string) string {
 	// Header replacements - these are case-insensitive, so we can't just use strings.Replace()
-	startPos := strings.Index(s, headerReplacer)
-	for startPos > -1 {
-		// carefully find end of placeholder
-		endOffset := strings.Index(s[startPos+1:], "}")
-		if endOffset == -1 {
-			startPos = strings.Index(s[startPos+len(headerReplacer):], headerReplacer)
-			continue
+	for strings.Contains(s, headerReplacer) {
+		idxStart := strings.Index(s, headerReplacer)
+		endOffset := idxStart + len(headerReplacer)
+		idxEnd := strings.Index(s[endOffset:], "}")
+		if idxEnd > -1 {
+			placeholder := strings.ToLower(s[idxStart : endOffset+idxEnd+1])
+			replacement := r.replacements[placeholder]
+			if replacement == "" {
+				replacement = r.emptyValue
+			}
+			s = s[:idxStart] + replacement + s[endOffset+idxEnd+1:]
+		} else {
+			break
 		}
-		endPos := startPos + len(headerReplacer) + endOffset
-
-		// look for replacement, case-insensitive
-		placeholder := strings.ToLower(s[startPos:endPos])
-		replacement := r.replacements[placeholder]
-		if replacement == "" {
-			replacement = r.emptyValue
-		}
-
-		// do the replacement manually
-		s = s[:startPos] + replacement + s[endPos:]
-
-		// move to next one
-		startPos = strings.Index(s[endOffset:], headerReplacer)
 	}
 
 	// Regular replacements - these are easier because they're case-sensitive
