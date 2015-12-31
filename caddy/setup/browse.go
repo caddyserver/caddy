@@ -86,6 +86,7 @@ const defaultTemplate = `<!DOCTYPE html>
 	<head>
 		<title>{{.Name}}</title>
 		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
 * { padding: 0; margin: 0; }
 
@@ -230,6 +231,66 @@ footer {
 </style>
 	</head>
 	<body>
+		<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" height="0" width="0" style="position: absolute;">
+			<defs>
+				<!-- Folder -->
+				<linearGradient id="f" y2="640" gradientUnits="userSpaceOnUse" x2="244.84" gradientTransform="matrix(.97319 0 0 1.0135 -.50695 -13.679)" y1="415.75" x1="244.84">
+					<stop stop-color="#b3ddfd" offset="0"/>
+					<stop stop-color="#69c" offset="1"/>
+				</linearGradient>
+				<linearGradient id="e" y2="571.06" gradientUnits="userSpaceOnUse" x2="238.03" gradientTransform="translate(0,2)" y1="346.05" x1="236.26">
+					<stop stop-color="#ace" offset="0"/>
+					<stop stop-color="#369" offset="1"/>
+				</linearGradient>
+				<g id="folder" transform="translate(-266.06 -193.36)">
+					<g transform="matrix(.066019 0 0 .066019 264.2 170.93)">
+						<g transform="matrix(1.4738 0 0 1.4738 -52.053 -166.93)">
+							<path fill="#69c" d="m98.424 343.78c-11.08 0-20 8.92-20 20v48.5 33.719 105.06c0 11.08 8.92 20 20 20h279.22c11.08 0 20-8.92 20-20v-138.78c0-11.08-8.92-20-20-20h-117.12c-7.5478-1.1844-9.7958-6.8483-10.375-11.312v-5.625-11.562c0-11.08-8.92-20-20-20h-131.72z"/>
+							<rect rx="12.885" ry="12.199" height="227.28" width="366.69" y="409.69" x="54.428" fill="#369"/>
+							<path fill="url(#e)" d="m98.424 345.78c-11.08 0-20 8.92-20 20v48.5 33.719 105.06c0 11.08 8.92 20 20 20h279.22c11.08 0 20-8.92 20-20v-138.78c0-11.08-8.92-20-20-20h-117.12c-7.5478-1.1844-9.7958-6.8483-10.375-11.312v-5.625-11.562c0-11.08-8.92-20-20-20h-131.72z"/>
+							<rect rx="12.885" ry="12.199" height="227.28" width="366.69" y="407.69" x="54.428" fill="url(#f)"/>
+						</g>
+					</g>
+				</g>
+
+
+				<!-- File -->
+				<linearGradient id="a">
+					<stop stop-color="#cbcbcb" offset="0"/>
+					<stop stop-color="#f0f0f0" offset=".34923"/>
+					<stop stop-color="#e2e2e2" offset="1"/>
+				</linearGradient>
+				<linearGradient id="d" y2="686.15" xlink:href="#a" gradientUnits="userSpaceOnUse" y1="207.83" gradientTransform="matrix(.28346 0 0 .31053 -608.52 485.11)" x2="380.1" x1="749.25"/>
+				<linearGradient id="c" y2="287.74" xlink:href="#a" gradientUnits="userSpaceOnUse" y1="169.44" gradientTransform="matrix(.28342 0 0 .31057 -608.52 485.11)" x2="622.33" x1="741.64"/>
+				<linearGradient id="b" y2="418.54" gradientUnits="userSpaceOnUse" y1="236.13" gradientTransform="matrix(.29343 0 0 .29999 -608.52 485.11)" x2="330.88" x1="687.96">
+					<stop stop-color="#fff" offset="0"/>
+					<stop stop-color="#fff" stop-opacity="0" offset="1"/>
+				</linearGradient>
+				<g id="file" transform="translate(-278.15 -216.59)">
+					<g fill-rule="evenodd" transform="matrix(.19775 0 0 .19775 381.05 112.68)">
+						<path d="m-520.17 525.5v36.739 36.739 36.739 36.739h33.528 33.528 33.528 33.528v-36.739-36.739-36.739l-33.528-36.739h-33.528-33.528-33.528z" stroke-opacity=".36478" stroke-width=".42649" fill="#fff"/>
+						<g>
+							<path d="m-520.11 525.68v36.739 36.739 36.739 36.739h33.528 33.528 33.528 33.528v-36.739-36.739-36.739l-33.528-36.739h-33.528-33.528-33.528z" stroke-opacity=".36478" stroke="#000" stroke-width=".42649" fill="url(#d)"/>
+							<path d="m-386 562.42c-10.108-2.9925-23.206-2.5682-33.101-0.86253 1.7084-10.962 1.922-24.701-0.4271-35.877l33.528 36.739z" stroke-width=".95407pt" fill="url(#c)"/>
+							<path d="m-519.13 537-0.60402 134.7h131.68l0.0755-33.296c-2.9446 1.1325-32.692-40.998-70.141-39.186-37.483 1.8137-27.785-56.777-61.006-62.214z" stroke-width="1pt" fill="url(#b)"/>
+						</g>
+					</g>
+				</g>
+
+				<!-- Up arrow -->
+				<g id="up-arrow" transform="translate(-279.22 -208.12)">
+					<path transform="matrix(.22413 0 0 .12089 335.67 164.35)" stroke-width="0" d="m-194.17 412.01h-28.827-28.827l14.414-24.965 14.414-24.965 14.414 24.965z"/>
+				</g>
+
+				<!-- Down arrow -->
+				<g id="down-arrow" transform="translate(-279.22 -208.12)">
+					<path transform="matrix(.22413 0 0 -.12089 335.67 257.93)" stroke-width="0" d="m-194.17 412.01h-28.827-28.827l14.414-24.965 14.414-24.965 14.414 24.965z"/>
+				</g>
+			</defs>
+		</svg>
+
+
+
 		<header>
 			<h1>{{.LinkedPath}}</h1>
 		</header>
@@ -293,66 +354,5 @@ footer {
 		<footer>
 			Served with <a href="https://caddyserver.com">Caddy</a>
 		</footer>
-
-
-
-		<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" height="0" width="0">
-			<defs>
-				<!-- Folder -->
-				<linearGradient id="f" y2="640" gradientUnits="userSpaceOnUse" x2="244.84" gradientTransform="matrix(.97319 0 0 1.0135 -.50695 -13.679)" y1="415.75" x1="244.84">
-					<stop stop-color="#b3ddfd" offset="0"/>
-					<stop stop-color="#69c" offset="1"/>
-				</linearGradient>
-				<linearGradient id="e" y2="571.06" gradientUnits="userSpaceOnUse" x2="238.03" gradientTransform="translate(0,2)" y1="346.05" x1="236.26">
-					<stop stop-color="#ace" offset="0"/>
-					<stop stop-color="#369" offset="1"/>
-				</linearGradient>
-				<g id="folder" transform="translate(-266.06 -193.36)">
-					<g transform="matrix(.066019 0 0 .066019 264.2 170.93)">
-						<g transform="matrix(1.4738 0 0 1.4738 -52.053 -166.93)">
-							<path fill="#69c" d="m98.424 343.78c-11.08 0-20 8.92-20 20v48.5 33.719 105.06c0 11.08 8.92 20 20 20h279.22c11.08 0 20-8.92 20-20v-138.78c0-11.08-8.92-20-20-20h-117.12c-7.5478-1.1844-9.7958-6.8483-10.375-11.312v-5.625-11.562c0-11.08-8.92-20-20-20h-131.72z"/>
-							<rect rx="12.885" ry="12.199" height="227.28" width="366.69" y="409.69" x="54.428" fill="#369"/>
-							<path fill="url(#e)" d="m98.424 345.78c-11.08 0-20 8.92-20 20v48.5 33.719 105.06c0 11.08 8.92 20 20 20h279.22c11.08 0 20-8.92 20-20v-138.78c0-11.08-8.92-20-20-20h-117.12c-7.5478-1.1844-9.7958-6.8483-10.375-11.312v-5.625-11.562c0-11.08-8.92-20-20-20h-131.72z"/>
-							<rect rx="12.885" ry="12.199" height="227.28" width="366.69" y="407.69" x="54.428" fill="url(#f)"/>
-						</g>
-					</g>
-				</g>
-
-
-				<!-- File -->
-				<linearGradient id="a">
-					<stop stop-color="#cbcbcb" offset="0"/>
-					<stop stop-color="#f0f0f0" offset=".34923"/>
-					<stop stop-color="#e2e2e2" offset="1"/>
-				</linearGradient>
-				<linearGradient id="d" y2="686.15" xlink:href="#a" gradientUnits="userSpaceOnUse" y1="207.83" gradientTransform="matrix(.28346 0 0 .31053 -608.52 485.11)" x2="380.1" x1="749.25"/>
-				<linearGradient id="c" y2="287.74" xlink:href="#a" gradientUnits="userSpaceOnUse" y1="169.44" gradientTransform="matrix(.28342 0 0 .31057 -608.52 485.11)" x2="622.33" x1="741.64"/>
-				<linearGradient id="b" y2="418.54" gradientUnits="userSpaceOnUse" y1="236.13" gradientTransform="matrix(.29343 0 0 .29999 -608.52 485.11)" x2="330.88" x1="687.96">
-					<stop stop-color="#fff" offset="0"/>
-					<stop stop-color="#fff" stop-opacity="0" offset="1"/>
-				</linearGradient>
-				<g id="file" transform="translate(-278.15 -216.59)">
-					<g fill-rule="evenodd" transform="matrix(.19775 0 0 .19775 381.05 112.68)">
-						<path d="m-520.17 525.5v36.739 36.739 36.739 36.739h33.528 33.528 33.528 33.528v-36.739-36.739-36.739l-33.528-36.739h-33.528-33.528-33.528z" stroke-opacity=".36478" stroke-width=".42649" fill="#fff"/>
-						<g>
-							<path d="m-520.11 525.68v36.739 36.739 36.739 36.739h33.528 33.528 33.528 33.528v-36.739-36.739-36.739l-33.528-36.739h-33.528-33.528-33.528z" stroke-opacity=".36478" stroke="#000" stroke-width=".42649" fill="url(#d)"/>
-							<path d="m-386 562.42c-10.108-2.9925-23.206-2.5682-33.101-0.86253 1.7084-10.962 1.922-24.701-0.4271-35.877l33.528 36.739z" stroke-width=".95407pt" fill="url(#c)"/>
-							<path d="m-519.13 537-0.60402 134.7h131.68l0.0755-33.296c-2.9446 1.1325-32.692-40.998-70.141-39.186-37.483 1.8137-27.785-56.777-61.006-62.214z" stroke-width="1pt" fill="url(#b)"/>
-						</g>
-					</g>
-				</g>
-
-				<!-- Up arrow -->
-				<g id="up-arrow" transform="translate(-279.22 -208.12)">
-					<path transform="matrix(.22413 0 0 .12089 335.67 164.35)" stroke-width="0" d="m-194.17 412.01h-28.827-28.827l14.414-24.965 14.414-24.965 14.414 24.965z"/>
-				</g>
-
-				<!-- Down arrow -->
-				<g id="down-arrow" transform="translate(-279.22 -208.12)">
-					<path transform="matrix(.22413 0 0 -.12089 335.67 257.93)" stroke-width="0" d="m-194.17 412.01h-28.827-28.827l14.414-24.965 14.414-24.965 14.414 24.965z"/>
-				</g>
-			</defs>
-		</svg>
-
 	</body>
 </html>`
