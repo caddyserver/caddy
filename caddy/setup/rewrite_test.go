@@ -50,8 +50,8 @@ func TestRewriteParse(t *testing.T) {
 		}},
 		{`rewrite a`, true, []rewrite.Rule{}},
 		{`rewrite`, true, []rewrite.Rule{}},
-		{`rewrite a b c`, true, []rewrite.Rule{
-			rewrite.SimpleRule{From: "a", To: "b"},
+		{`rewrite a b c`, false, []rewrite.Rule{
+			rewrite.SimpleRule{From: "a", To: "b c"},
 		}},
 	}
 

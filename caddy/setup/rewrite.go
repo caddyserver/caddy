@@ -40,9 +40,6 @@ func rewriteParse(c *Controller) ([]rewrite.Rule, error) {
 		var ifs []rewrite.If
 
 		switch len(args) {
-		case 2:
-			rule = rewrite.NewSimpleRule(args[0], args[1])
-			simpleRules = append(simpleRules, rule)
 		case 1:
 			base = args[0]
 			fallthrough
@@ -88,8 +85,11 @@ func rewriteParse(c *Controller) ([]rewrite.Rule, error) {
 				return nil, err
 			}
 			regexpRules = append(regexpRules, rule)
+
+		// the only unhandled case is 2 and above
 		default:
-			return nil, c.ArgErr()
+			rule = rewrite.NewSimpleRule(args[0], strings.Join(args[1:], " "))
+			simpleRules = append(simpleRules, rule)
 		}
 
 	}
