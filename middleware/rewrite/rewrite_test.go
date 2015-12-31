@@ -31,6 +31,9 @@ func TestRewrite(t *testing.T) {
 		{"/abcd/", "ab", "/a/{dir}/{file}", ".html|"},
 		{"/abcde/", "ab", "/a#{fragment}", ".html|"},
 		{"/ab/", `.*\.jpg`, "/ajpg", ""},
+		{"/reggrp", `/ad/([0-9]+)([a-z]*)`, "/a{1}/{2}", ""},
+		{"/reg2grp", `(.*)`, "/{1}", ""},
+		{"/reg3grp", `(.*)/(.*)/(.*)`, "/{1}{2}{3}", ""},
 	}
 
 	for _, regexpRule := range regexps {
@@ -81,6 +84,12 @@ func TestRewrite(t *testing.T) {
 		{"/abcde/abcde.html", "/a"},
 		{"/abcde/abcde.html#1234", "/a#1234"},
 		{"/ab/ab.jpg", "/ajpg"},
+		{"/reggrp/ad/12", "/a12"},
+		{"/reggrp/ad/124a", "/a124/a"},
+		{"/reggrp/ad/124abc", "/a124/abc"},
+		{"/reg2grp/ad/124abc", "/ad/124abc"},
+		{"/reg3grp/ad/aa/66", "/adaa66"},
+		{"/reg3grp/ad612/n1n/ab", "/ad612n1nab"},
 	}
 
 	for i, test := range tests {
