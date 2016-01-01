@@ -87,7 +87,7 @@ const defaultTemplate = `<!DOCTYPE html>
 		<title>{{.Name}}</title>
 		<meta charset="utf-8">
 		<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<style>
+<style type="text/css">
 * { padding: 0; margin: 0; }
 
 body {
@@ -111,14 +111,8 @@ header,
 	padding-right: 5%;
 }
 
-th:first-child,
-td:first-child {
-	padding-left: 5%;
-}
-
-th:last-child,
-td:last-child {
-	padding-right: 5%;
+div.listing {
+	padding: 0 5%;
 }
 
 header {
@@ -175,7 +169,9 @@ tr:not(:first-child):hover {
 th,
 td {
 	text-align: left;
-	padding: 10px 0;
+	padding: 10px 5px;
+	overflow-wrap: break-word;
+	word-wrap: break-word;
 }
 
 th {
@@ -196,15 +192,23 @@ td {
 	font-size: 14px;
 }
 
-td:first-child {
-	width: 50%;
+td:nth-child(1) {
+	width: 1.5em;
+	padding-right: 0.1em;
+}
+
+td:nth-child(2) {
+	width: 100%;
 	overflow-wrap: break-word;
 	word-break: break-word;
 }
 
+th:nth-child(3),
+td:nth-child(3),
 th:last-child,
 td:last-child {
-	text-align: right;
+	width: 1%;
+	white-space: nowrap;
 }
 
 footer {
@@ -218,15 +222,6 @@ footer {
 		display: none;
 	}
 
-	td:first-child {
-		width: auto;
-	}
-
-	th:nth-child(2),
-	td:nth-child(2) {
-		padding-right: 5%;
-		text-align: right;
-	}
 }
 </style>
 	</head>
@@ -296,7 +291,7 @@ footer {
 		</header>
 		<main>
 			<div class="meta">
-				<div class="content">	
+				<div class="content">
 					<span class="meta-item"><b>{{.NumDirs}}</b> director{{if eq 1 .NumDirs}}y{{else}}ies{{end}}</span>
 					<span class="meta-item"><b>{{.NumFiles}}</b> file{{if ne 1 .NumFiles}}s{{end}}</span>
 				</div>
@@ -304,6 +299,7 @@ footer {
 			<div class="listing">
 				<table>
 					<tr>
+						<th></th>
 						<th>
 							{{if and (eq .Sort "name") (ne .Order "desc")}}
 							<a href="?sort=name&order=desc">Name <svg width="1em" height=".4em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#up-arrow"></use></svg></a>
@@ -334,13 +330,14 @@ footer {
 					</tr>
 					{{range .Items}}
 					<tr>
+						<td>{{if .IsDir}}
+							<svg width="1.5em" height="1em" version="1.1" viewBox="0 0 35.678803 28.527945"><use xlink:href="#folder"></use></svg>
+							{{else}}
+							<svg width="1.5em" height="1em" version="1.1" viewBox="0 0 26.604381 29.144726"><use xlink:href="#file"></use></svg>
+							{{end}}
+						</td>
 						<td>
 							<a href="{{.URL}}" class="name">
-								{{if .IsDir}}
-								<svg width="1.5em" height="1em" version="1.1" viewBox="0 0 35.678803 28.527945"><use xlink:href="#folder"></use></svg>
-								{{else}}
-								<svg width="1.5em" height="1em" version="1.1" viewBox="0 0 26.604381 29.144726"><use xlink:href="#file"></use></svg>
-								{{end}}
 								{{.Name}}
 							</a>
 						</td>
