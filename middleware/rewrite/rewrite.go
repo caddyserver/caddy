@@ -13,6 +13,19 @@ import (
 	"github.com/mholt/caddy/middleware"
 )
 
+// RewriteResult is the result of a rewrite
+type RewriteResult int
+
+const (
+	// RewriteIgnored is returned when rewrite is not done on request.
+	RewriteIgnored RewriteResult = iota
+	// RewriteDone is returned when rewrite is done on request.
+	RewriteDone
+	// RewriteStatus is returned when rewrite is not needed and status code should be set
+	// for the request.
+	RewriteStatus
+)
+
 // Rewrite is middleware to rewrite request locations internally before being handled.
 type Rewrite struct {
 	Next    middleware.Handler
@@ -22,16 +35,18 @@ type Rewrite struct {
 
 // ServeHTTP implements the middleware.Handler interface.
 func (rw Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
+outer:
 	for _, rule := range rw.Rules {
-		if ok := rule.Rewrite(rw.FileSys, r); ok {
-
-			// if rule is complex rule and status code is set
+		switch result := rule.Rewrite(rw.FileSys, r); result {
+		case RewriteDone:
+			break outer
+		case RewriteIgnored:
+			break
+		case RewriteStatus:
+			// only valid for complex rules.
 			if cRule, ok := rule.(*ComplexRule); ok && cRule.Status != 0 {
 				return cRule.Status, nil
 			}
-
-			// rewrite done
-			break
 		}
 	}
 	return rw.Next.ServeHTTP(w, r)
@@ -40,7 +55,7 @@ func (rw Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error)
 // Rule describes an internal location rewrite rule.
 type Rule interface {
 	// Rewrite rewrites the internal location of the current request.
-	Rewrite(http.FileSystem, *http.Request) bool
+	Rewrite(http.FileSystem, *http.Request) RewriteResult
 }
 
 // SimpleRule is a simple rewrite rule.
@@ -54,7 +69,7 @@ func NewSimpleRule(from, to string) SimpleRule {
 }
 
 // Rewrite rewrites the internal location of the current request.
-func (s SimpleRule) Rewrite(fs http.FileSystem, r *http.Request) bool {
+func (s SimpleRule) Rewrite(fs http.FileSystem, r *http.Request) RewriteResult {
 	if s.From == r.URL.Path {
 		// take note of this rewrite for internal use by fastcgi
 		// all we need is the URI, not full URL
@@ -63,7 +78,7 @@ func (s SimpleRule) Rewrite(fs http.FileSystem, r *http.Request) bool {
 		// attempt rewrite
 		return To(fs, r, s.To, newReplacer(r))
 	}
-	return false
+	return RewriteIgnored
 }
 
 // ComplexRule is a rewrite rule based on a regular expression
@@ -121,33 +136,38 @@ func NewComplexRule(base, pattern, to string, status int, ext []string, ifs []If
 }
 
 // Rewrite rewrites the internal location of the current request.
-func (r *ComplexRule) Rewrite(fs http.FileSystem, req *http.Request) bool {
+func (r *ComplexRule) Rewrite(fs http.FileSystem, req *http.Request) (re RewriteResult) {
 	rPath := req.URL.Path
 	replacer := newReplacer(req)
 
 	// validate base
 	if !middleware.Path(rPath).Matches(r.Base) {
-		return false
+		return
+	}
+
+	// if status is present, stop rewrite and return it.
+	if r.Status != 0 {
+		return RewriteStatus
 	}
 
 	// validate extensions
 	if !r.matchExt(rPath) {
-		return false
-	}
-
-	// include trailing slash in regexp if present
-	start := len(r.Base)
-	if strings.HasSuffix(r.Base, "/") {
-		start--
+		return
 	}
 
 	// validate regexp if present
 	if r.Regexp != nil {
+		// include trailing slash in regexp if present
+		start := len(r.Base)
+		if strings.HasSuffix(r.Base, "/") {
+			start--
+		}
+
 		matches := r.FindStringSubmatch(rPath[start:])
 		switch len(matches) {
 		case 0:
 			// no match
-			return false
+			return
 		default:
 			// set regexp match variables {1}, {2} ...
 			for i := 1; i < len(matches); i++ {
@@ -159,7 +179,7 @@ func (r *ComplexRule) Rewrite(fs http.FileSystem, req *http.Request) bool {
 	// validate rewrite conditions
 	for _, i := range r.Ifs {
 		if !i.True(req) {
-			return false
+			return
 		}
 	}
 
