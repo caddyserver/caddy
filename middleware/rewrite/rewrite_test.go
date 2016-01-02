@@ -107,17 +107,27 @@ func TestRewrite(t *testing.T) {
 		}
 	}
 
-	statusTests := []int{
-		401, 405, 403, 400,
+	statusTests := []struct {
+		status         int
+		base           string
+		to             string
+		regexp         string
+		statusExpected bool
+	}{
+		{400, "/status", "", "", true},
+		{400, "/ignore", "", "", false},
+		{400, "/", "", "^/ignore", false},
+		{400, "/", "", "(.*)", true},
+		{400, "/status", "", "", true},
 	}
 
 	for i, s := range statusTests {
 		urlPath := fmt.Sprintf("/status%d", i)
-		rule, err := NewComplexRule(urlPath, "", "", s, nil, nil)
+		rule, err := NewComplexRule(s.base, s.regexp, s.to, s.status, nil, nil)
 		if err != nil {
 			t.Fatalf("Test %d: No error expected for rule but found %v", i, err)
 		}
-		rw.Rules = append(rw.Rules, rule)
+		rw.Rules = []Rule{rule}
 		req, err := http.NewRequest("GET", urlPath, nil)
 		if err != nil {
 			t.Fatalf("Test %d: Could not create HTTP request: %v", i, err)
@@ -128,11 +138,17 @@ func TestRewrite(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Test %d: No error expected for handler but found %v", i, err)
 		}
-		if rec.Body.String() != "" {
-			t.Errorf("Test %d: Expected empty body but found %s", i, rec.Body.String())
-		}
-		if code != s {
-			t.Errorf("Text %d: Expected status code %d found %d", i, s, code)
+		if s.statusExpected {
+			if rec.Body.String() != "" {
+				t.Errorf("Test %d: Expected empty body but found %s", i, rec.Body.String())
+			}
+			if code != s.status {
+				t.Errorf("Test %d: Expected status code %d found %d", i, s.status, code)
+			}
+		} else {
+			if code != 0 {
+				t.Errorf("Test %d: Expected no status code found %d", i, code)
+			}
 		}
 	}
 }

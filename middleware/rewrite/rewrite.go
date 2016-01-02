@@ -145,11 +145,6 @@ func (r *ComplexRule) Rewrite(fs http.FileSystem, req *http.Request) (re Rewrite
 		return
 	}
 
-	// if status is present, stop rewrite and return it.
-	if r.Status != 0 {
-		return RewriteStatus
-	}
-
 	// validate extensions
 	if !r.matchExt(rPath) {
 		return
@@ -181,6 +176,11 @@ func (r *ComplexRule) Rewrite(fs http.FileSystem, req *http.Request) (re Rewrite
 		if !i.True(req) {
 			return
 		}
+	}
+
+	// if status is present, stop rewrite and return it.
+	if r.Status != 0 {
+		return RewriteStatus
 	}
 
 	// attempt rewrite
