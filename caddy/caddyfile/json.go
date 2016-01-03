@@ -28,7 +28,7 @@ func ToJSON(caddyfile []byte) ([]byte, error) {
 
 		// Fill up host list
 		for _, host := range sb.HostList() {
-			block.Hosts = append(block.Hosts, strings.TrimSuffix(host, ":"))
+			block.Hosts = append(block.Hosts, standardizeScheme(host))
 		}
 
 		// Extract directives deterministically by sorting them
@@ -62,7 +62,6 @@ func ToJSON(caddyfile []byte) ([]byte, error) {
 // but only one line at a time, to be used at the top-level of
 // a server block only (where the first token on each line is a
 // directive) - not to be used at any other nesting level.
-// goes to end of line
 func constructLine(d *parse.Dispenser) []interface{} {
 	var args []interface{}
 
@@ -80,8 +79,8 @@ func constructLine(d *parse.Dispenser) []interface{} {
 }
 
 // constructBlock recursively processes tokens into a
-// JSON-encodable structure.
-// goes to end of block
+// JSON-encodable structure. To be used in a directive's
+// block. Goes to end of block.
 func constructBlock(d *parse.Dispenser) [][]interface{} {
 	block := [][]interface{}{}
 
@@ -110,15 +109,10 @@ func FromJSON(jsonBytes []byte) ([]byte, error) {
 			result += "\n\n"
 		}
 		for i, host := range sb.Hosts {
-			if hostname, port, err := net.SplitHostPort(host); err == nil {
-				if port == "http" || port == "https" {
-					host = port + "://" + hostname
-				}
-			}
 			if i > 0 {
 				result += ", "
 			}
-			result += strings.TrimSuffix(host, ":")
+			result += standardizeScheme(host)
 		}
 		result += jsonToText(sb.Body, 1)
 	}
@@ -168,6 +162,17 @@ func jsonToText(scope interface{}, depth int) string {
 	}
 
 	return result
+}
+
+// standardizeScheme turns an address like host:https into https://host,
+// or "host:" into "host".
+func standardizeScheme(addr string) string {
+	if hostname, port, err := net.SplitHostPort(addr); err == nil {
+		if port == "http" || port == "https" {
+			addr = port + "://" + hostname
+		}
+	}
+	return strings.TrimSuffix(addr, ":")
 }
 
 // Caddyfile encapsulates a slice of ServerBlocks.
