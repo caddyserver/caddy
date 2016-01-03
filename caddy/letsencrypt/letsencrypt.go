@@ -445,8 +445,9 @@ func redirPlaintextHost(cfg server.Config) server.Config {
 	}
 
 	return server.Config{
-		Host: cfg.Host,
-		Port: "http",
+		Host:     cfg.Host,
+		BindHost: cfg.BindHost,
+		Port:     "http",
 		Middleware: map[string][]middleware.Middleware{
 			"/": []middleware.Middleware{redirMidware},
 		},

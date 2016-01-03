@@ -42,8 +42,8 @@ func init() {
 var directiveOrder = []directive{
 	// Essential directives that initialize vital configuration settings
 	{"root", setup.Root},
-	{"tls", setup.TLS}, // letsencrypt is set up just after tls
 	{"bind", setup.BindHost},
+	{"tls", setup.TLS}, // letsencrypt is set up just after tls
 
 	// Other directives that don't create HTTP handlers
 	{"startup", setup.Startup},
