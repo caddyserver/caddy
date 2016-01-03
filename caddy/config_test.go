@@ -13,10 +13,10 @@ func TestDefaultInput(t *testing.T) {
 		t.Errorf("Host=%s; Port=%s; Root=%s;\nEXPECTED: '%s'\n  ACTUAL: '%s'", Host, Port, Root, expected, actual)
 	}
 
-	// next few tests simulate user providing -host flag
+	// next few tests simulate user providing -host and/or -port flags
 
 	Host = "not-localhost.com"
-	if actual, expected := string(DefaultInput().Body()), "not-localhost.com:https\nroot ."; actual != expected {
+	if actual, expected := string(DefaultInput().Body()), "not-localhost.com:443\nroot ."; actual != expected {
 		t.Errorf("Host=%s; Port=%s; Root=%s;\nEXPECTED: '%s'\n  ACTUAL: '%s'", Host, Port, Root, expected, actual)
 	}
 
@@ -27,6 +27,18 @@ func TestDefaultInput(t *testing.T) {
 
 	Host = "127.0.1.1"
 	if actual, expected := string(DefaultInput().Body()), "127.0.1.1:2015\nroot ."; actual != expected {
+		t.Errorf("Host=%s; Port=%s; Root=%s;\nEXPECTED: '%s'\n  ACTUAL: '%s'", Host, Port, Root, expected, actual)
+	}
+
+	Host = "not-localhost.com"
+	Port = "1234"
+	if actual, expected := string(DefaultInput().Body()), "not-localhost.com:1234\nroot ."; actual != expected {
+		t.Errorf("Host=%s; Port=%s; Root=%s;\nEXPECTED: '%s'\n  ACTUAL: '%s'", Host, Port, Root, expected, actual)
+	}
+
+	Host = DefaultHost
+	Port = "1234"
+	if actual, expected := string(DefaultInput().Body()), ":1234\nroot ."; actual != expected {
 		t.Errorf("Host=%s; Port=%s; Root=%s;\nEXPECTED: '%s'\n  ACTUAL: '%s'", Host, Port, Root, expected, actual)
 	}
 }
@@ -51,14 +63,14 @@ func TestResolveAddr(t *testing.T) {
 		{server.Config{Host: "localhost", Port: "80"}, false, false, "<nil>", 80},
 		{server.Config{BindHost: "localhost", Port: "1234"}, false, false, "127.0.0.1", 1234},
 		{server.Config{BindHost: "127.0.0.1", Port: "1234"}, false, false, "127.0.0.1", 1234},
-		{server.Config{BindHost: "should-not-resolve", Port: "1234"}, true, false, "0.0.0.0", 1234},
+		{server.Config{BindHost: "should-not-resolve", Port: "1234"}, true, false, "<nil>", 1234},
 		{server.Config{BindHost: "localhost", Port: "http"}, false, false, "127.0.0.1", 80},
 		{server.Config{BindHost: "localhost", Port: "https"}, false, false, "127.0.0.1", 443},
 		{server.Config{BindHost: "", Port: "1234"}, false, false, "<nil>", 1234},
 		{server.Config{BindHost: "localhost", Port: "abcd"}, false, true, "", 0},
 		{server.Config{BindHost: "127.0.0.1", Host: "should-not-be-used", Port: "1234"}, false, false, "127.0.0.1", 1234},
 		{server.Config{BindHost: "localhost", Host: "should-not-be-used", Port: "1234"}, false, false, "127.0.0.1", 1234},
-		{server.Config{BindHost: "should-not-resolve", Host: "localhost", Port: "1234"}, true, false, "0.0.0.0", 1234},
+		{server.Config{BindHost: "should-not-resolve", Host: "localhost", Port: "1234"}, true, false, "<nil>", 1234},
 	} {
 		actualAddr, warnErr, fatalErr := resolveAddr(test.config)
 
