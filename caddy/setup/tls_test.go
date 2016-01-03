@@ -66,11 +66,12 @@ func TestTLSParseBasic(t *testing.T) {
 }
 
 func TestTLSParseIncompleteParams(t *testing.T) {
+	// This doesn't do anything useful but is allowed in case the user wants to be explicit
+	// about TLS being enabled...
 	c := NewTestController(`tls`)
-
 	_, err := TLS(c)
-	if err == nil {
-		t.Errorf("Expected errors (first check), but no error returned")
+	if err != nil {
+		t.Errorf("Expected no error, but got %v", err)
 	}
 }
 
@@ -95,9 +96,38 @@ func TestTLSParseWithOptionalParams(t *testing.T) {
 	}
 
 	if len(c.TLS.Ciphers)-1 != 3 {
-		t.Errorf("Expected 3 Ciphers (not including TLS_FALLBACK_SCSV), got %v", len(c.TLS.Ciphers))
+		t.Errorf("Expected 3 Ciphers (not including TLS_FALLBACK_SCSV), got %v", len(c.TLS.Ciphers)-1)
 	}
 }
+
+func TestTLSDefaultWithOptionalParams(t *testing.T) {
+	params := `tls {
+            ciphers RSA-3DES-EDE-CBC-SHA
+        }`
+	c := NewTestController(params)
+
+	_, err := TLS(c)
+	if err != nil {
+		t.Errorf("Expected no errors, got: %v", err)
+	}
+	if len(c.TLS.Ciphers)-1 != 1 {
+		t.Errorf("Expected 1 ciphers (not including TLS_FALLBACK_SCSV), got %v", len(c.TLS.Ciphers)-1)
+	}
+}
+
+// TODO: If we allow this... but probably not a good idea.
+// func TestTLSDisableHTTPRedirect(t *testing.T) {
+// 	c := NewTestController(`tls {
+// 	    allow_http
+// 	}`)
+// 	_, err := TLS(c)
+// 	if err != nil {
+// 		t.Errorf("Expected no error, but got %v", err)
+// 	}
+// 	if !c.TLS.DisableHTTPRedir {
+// 		t.Error("Expected HTTP redirect to be disabled, but it wasn't")
+// 	}
+// }
 
 func TestTLSParseWithWrongOptionalParams(t *testing.T) {
 	// Test protocols wrong params

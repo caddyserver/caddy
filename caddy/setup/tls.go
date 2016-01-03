@@ -11,12 +11,12 @@ import (
 
 // TLS sets up the TLS configuration (but does not activate Let's Encrypt; that is handled elsewhere).
 func TLS(c *Controller) (middleware.Middleware, error) {
-	if c.Port == "http" {
+	if c.Scheme == "http" {
 		c.TLS.Enabled = false
 		log.Printf("[WARNING] TLS disabled for %s://%s. To force TLS over the plaintext HTTP port, "+
-			"specify port 80 explicitly (https://%s:80).", c.Port, c.Host, c.Host)
+			"specify port 80 explicitly (https://%s:80).", c.Scheme, c.Address(), c.Host)
 	} else {
-		c.TLS.Enabled = true // they had a tls directive, so assume it's on unless we confirm otherwise later
+		c.TLS.Enabled = true // assume this for now
 	}
 
 	for c.Next() {
@@ -37,13 +37,11 @@ func TLS(c *Controller) (middleware.Middleware, error) {
 			// served on the HTTPS port; that is what user would expect, and
 			// makes it consistent with how the letsencrypt package works.
 			if c.Port == "" {
-				c.Port = "https"
+				c.Port = "443"
 			}
-		default:
-			return nil, c.ArgErr()
 		}
 
-		// Optional block
+		// Optional block with extra parameters
 		for c.NextBlock() {
 			switch c.Val() {
 			case "protocols":
@@ -74,6 +72,9 @@ func TLS(c *Controller) (middleware.Middleware, error) {
 				if len(c.TLS.ClientCerts) == 0 {
 					return nil, c.ArgErr()
 				}
+			// TODO: Allow this? It's a bad idea to allow HTTP. If we do this, make sure invoking tls at all (even manually) also sets up a redirect if possible?
+			// case "allow_http":
+			// 	c.TLS.DisableHTTPRedir = true
 			default:
 				return nil, c.Errf("Unknown keyword '%s'", c.Val())
 			}
