@@ -14,6 +14,7 @@ import (
 
 	"github.com/mholt/caddy/caddy"
 	"github.com/mholt/caddy/caddy/letsencrypt"
+	"github.com/xenolf/lego/acme"
 )
 
 var (
@@ -53,6 +54,7 @@ func main() {
 
 	caddy.AppName = appName
 	caddy.AppVersion = appVersion
+	acme.UserAgent = appName + "/" + appVersion
 
 	// set up process log before anything bad happens
 	switch logfile {

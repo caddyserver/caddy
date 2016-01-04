@@ -27,8 +27,8 @@ var OnChange func() error
 // which you'll close when maintenance should stop, to allow this
 // goroutine to clean up after itself and unblock.
 func maintainAssets(configs []server.Config, stopChan chan struct{}) {
-	renewalTicker := time.NewTicker(renewInterval)
-	ocspTicker := time.NewTicker(ocspInterval)
+	renewalTicker := time.NewTicker(RenewInterval)
+	ocspTicker := time.NewTicker(OCSPInterval)
 
 	for {
 		select {
@@ -47,15 +47,25 @@ func maintainAssets(configs []server.Config, stopChan chan struct{}) {
 				}
 			}
 		case <-ocspTicker.C:
-			for bundle, oldStatus := range ocspStatus {
-				_, newStatus, err := acme.GetOCSPForCert(*bundle)
-				if err == nil && newStatus != oldStatus && OnChange != nil {
-					log.Printf("[INFO] OCSP status changed from %v to %v", oldStatus, newStatus)
-					err := OnChange()
+			for bundle, oldResp := range ocspCache {
+				// start checking OCSP staple about halfway through validity period for good measure
+				refreshTime := oldResp.ThisUpdate.Add(oldResp.NextUpdate.Sub(oldResp.ThisUpdate) / 10)
+				if time.Now().After(refreshTime) {
+					_, newResp, err := acme.GetOCSPForCert(*bundle)
 					if err != nil {
-						log.Printf("[ERROR] OnChange after OCSP update: %v", err)
+						log.Printf("[ERROR] Checking OCSP for bundle: %v", err)
+						continue
 					}
-					break
+					if newResp.NextUpdate != oldResp.NextUpdate {
+						if OnChange != nil {
+							log.Printf("[INFO] Updating OCSP stapling to extend validity period to %v", newResp.NextUpdate)
+							err := OnChange()
+							if err != nil {
+								log.Printf("[ERROR] OnChange after OCSP trigger: %v", err)
+							}
+							break
+						}
+					}
 				}
 			}
 		case <-stopChan:
@@ -107,7 +117,7 @@ func renewCertificates(configs []server.Config, useCustomPort bool) (int, []erro
 			log.Printf("[INFO] Certificate for %s has %d days remaining; attempting renewal", cfg.Host, daysLeft)
 			var client *acme.Client
 			if useCustomPort {
-				client, err = newClientPort("", alternatePort) // email not used for renewal
+				client, err = newClientPort("", AlternatePort) // email not used for renewal
 			} else {
 				client, err = newClient("")
 			}
@@ -134,7 +144,7 @@ func renewCertificates(configs []server.Config, useCustomPort bool) (int, []erro
 
 			// Renew certificate
 		Renew:
-			newCertMeta, err := client.RenewCertificate(certMeta, true, true)
+			newCertMeta, err := client.RenewCertificate(certMeta, true)
 			if err != nil {
 				if _, ok := err.(acme.TOSError); ok {
 					err := client.AgreeToTOS()
@@ -145,24 +155,20 @@ func renewCertificates(configs []server.Config, useCustomPort bool) (int, []erro
 				}
 
 				time.Sleep(10 * time.Second)
-				newCertMeta, err = client.RenewCertificate(certMeta, true, true)
+				newCertMeta, err = client.RenewCertificate(certMeta, true)
 				if err != nil {
 					errs = append(errs, err)
 					continue
 				}
 			}
 
-			saveCertsAndKeys([]acme.CertificateResource{newCertMeta})
+			saveCertResource(newCertMeta)
 			n++
-		} else if daysLeft <= 30 {
-			// Warn on 30 days remaining. TODO: Just do this once...
+		} else if daysLeft <= 21 {
+			// Warn on 21 days remaining. TODO: Just do this once...
 			log.Printf("[WARNING] Certificate for %s has %d days remaining; will automatically renew when 14 days remain\n", cfg.Host, daysLeft)
 		}
 	}
 
 	return n, errs
 }
-
-// acmeHandlers is a map of host to ACME handler. These
-// are used to proxy ACME requests to the ACME client.
-var acmeHandlers = make(map[string]*Handler)

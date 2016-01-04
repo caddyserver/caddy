@@ -2,30 +2,21 @@ package letsencrypt
 
 import (
 	"crypto/tls"
+	"log"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"strings"
-
-	"github.com/mholt/caddy/middleware"
 )
 
 const challengeBasePath = "/.well-known/acme-challenge"
 
-// Handler is a Caddy middleware that can proxy ACME challenge
-// requests to the real ACME client endpoint. This is necessary
-// to renew certificates while the server is running.
-type Handler struct {
-	Next middleware.Handler
-	//ChallengeActive int32 // (TODO) use sync/atomic to set/get this flag safely and efficiently
-}
-
-// ServeHTTP is basically a no-op unless an ACME challenge is active on this host
-// and the request path matches the expected path exactly.
-func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
-	// Proxy challenge requests to ACME client
-	// TODO: Only do this if a challenge is active?
+// RequestCallback proxies challenge requests to ACME client if the
+// request path starts with challengeBasePath. It returns true if it
+// handled the request and no more needs to be done; it returns false
+// if this call was a no-op and the request still needs handling.
+func RequestCallback(w http.ResponseWriter, r *http.Request) bool {
 	if strings.HasPrefix(r.URL.Path, challengeBasePath) {
 		scheme := "http"
 		if r.TLS != nil {
@@ -37,9 +28,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error)
 			hostname = r.URL.Host
 		}
 
-		upstream, err := url.Parse(scheme + "://" + hostname + ":" + alternatePort)
+		upstream, err := url.Parse(scheme + "://" + hostname + ":" + AlternatePort)
 		if err != nil {
-			return http.StatusInternalServerError, err
+			w.WriteHeader(http.StatusInternalServerError)
+			log.Printf("[ERROR] letsencrypt handler: %v", err)
+			return true
 		}
 
 		proxy := httputil.NewSingleHostReverseProxy(upstream)
@@ -48,8 +41,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error)
 		}
 		proxy.ServeHTTP(w, r)
 
-		return 0, nil
+		return true
 	}
 
-	return h.Next.ServeHTTP(w, r)
+	return false
 }

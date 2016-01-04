@@ -7,10 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"os"
 	"strings"
 	"time"
+
+	"golang.org/x/crypto/ocsp"
 
 	"github.com/mholt/caddy/caddy/setup"
 	"github.com/mholt/caddy/middleware"
@@ -18,6 +21,91 @@ import (
 	"github.com/mholt/caddy/server"
 	"github.com/xenolf/lego/acme"
 )
+
+func configureExisting(configs []server.Config) []server.Config {
+	// Identify and configure any eligible hosts for which
+	// we already have certs and keys in storage from last time.
+	configLen := len(configs) // avoid infinite loop since this loop appends plaintext to the slice
+	for i := 0; i < configLen; i++ {
+		if existingCertAndKey(configs[i].Host) && ConfigQualifies(configs, i) {
+			configs = autoConfigure(configs, i)
+		}
+	}
+	return configs
+}
+
+// ObtainCertsAndConfigure obtains certificates for all qualifying configs.
+func ObtainCertsAndConfigure(configs []server.Config, optPort string) ([]server.Config, error) {
+	// Group configs by email address; only configs that are eligible
+	// for TLS management are included. We group by email so that we
+	// can request certificates in batches with the same client.
+	// Note: The return value is a map, and iteration over a map is
+	// not ordered. I don't think it will be a problem, but if an
+	// ordering problem arises, look at this carefully.
+	groupedConfigs, err := groupConfigsByEmail(configs)
+	if err != nil {
+		return configs, err
+	}
+
+	// obtain certificates for configs that need one, and reconfigure each
+	// config to use the certificates
+	for leEmail, cfgIndexes := range groupedConfigs {
+		// make client to service this email address with CA server
+		client, err := newClientPort(leEmail, optPort)
+		if err != nil {
+			return configs, errors.New("error creating client: " + err.Error())
+		}
+
+		// let's get free, trusted SSL certificates!
+		for _, idx := range cfgIndexes {
+			hostname := configs[idx].Host
+
+		Obtain:
+			certificate, failures := client.ObtainCertificate([]string{hostname}, true)
+			if len(failures) == 0 {
+				// Success - immediately save the certificate resource
+				err := saveCertResource(certificate)
+				if err != nil {
+					return configs, errors.New("error saving assets for " + hostname + ": " + err.Error())
+				}
+			} else {
+				// Error - either try to fix it or report them it to the user and abort
+				var errMsg string             // we'll combine all the failures into a single error message
+				var promptedForAgreement bool // only prompt user for agreement at most once
+
+				for errDomain, obtainErr := range failures {
+					if obtainErr != nil {
+						if tosErr, ok := obtainErr.(acme.TOSError); ok {
+							if !Agreed && !promptedForAgreement {
+								Agreed = promptUserAgreement(tosErr.Detail, true) // TODO: Use latest URL
+								promptedForAgreement = true
+							}
+							if Agreed {
+								err := client.AgreeToTOS()
+								if err != nil {
+									return configs, errors.New("error agreeing to updated terms: " + err.Error())
+								}
+								goto Obtain
+							}
+						}
+
+						// If user did not agree or it was any other kind of error, just append to the list of errors
+						errMsg += "[" + errDomain + "] failed to get certificate: " + obtainErr.Error() + "\n"
+					}
+				}
+
+				return configs, errors.New(errMsg)
+			}
+		}
+
+		// it all comes down to this: turning on TLS with all the new certs
+		for _, idx := range cfgIndexes {
+			configs = autoConfigure(configs, idx)
+		}
+	}
+
+	return configs, nil
+}
 
 // Activate sets up TLS for each server config in configs
 // as needed. It only skips the config if the cert and key
@@ -43,106 +131,24 @@ import (
 // plaintext HTTP requests to their HTTPS counterpart.
 // This function only appends; it does not prepend or splice.
 func Activate(configs []server.Config) ([]server.Config, error) {
+	var err error
+
 	// just in case previous caller forgot...
 	Deactivate()
 
-	// reset cached ocsp statuses from any previous activations
-	ocspStatus = make(map[*[]byte]int)
+	// reset cached ocsp from any previous activations
+	ocspCache = make(map[*[]byte]*ocsp.Response)
 
-	// Identify and configure any eligible hosts for which
-	// we already have certs and keys in storage from last time.
-	configLen := len(configs) // avoid infinite loop since this loop appends plaintext to the slice
-	for i := 0; i < configLen; i++ {
-		if existingCertAndKey(configs[i].Host) && configQualifies(configs, i) {
-			configs = autoConfigure(configs, i)
-		}
-	}
+	// configure configs for which we have an existing certificate
+	configs = configureExisting(configs)
 
-	// Group configs by email address; only configs that are eligible
-	// for TLS management are included. We group by email so that we
-	// can request certificates in batches with the same client.
-	// Note: The return value is a map, and iteration over a map is
-	// not ordered. I don't think it will be a problem, but if an
-	// ordering problem arises, look at this carefully.
-	groupedConfigs, err := groupConfigsByEmail(configs)
+	// obtain certificates for configs which need one, and make them use them
+	configs, err = ObtainCertsAndConfigure(configs, "")
 	if err != nil {
 		return configs, err
 	}
 
-	// obtain certificates for configs that need one, and reconfigure each
-	// config to use the certificates
-	for leEmail, cfgIndexes := range groupedConfigs {
-		// make client to service this email address with CA server
-		client, err := newClient(leEmail)
-		if err != nil {
-			return configs, errors.New("error creating client: " + err.Error())
-		}
-
-		// little bit of housekeeping; gather the hostnames into a slice
-		hosts := make([]string, len(cfgIndexes))
-		for i, idx := range cfgIndexes {
-			hosts[i] = configs[idx].Host
-		}
-
-		// client is ready, so let's get free, trusted SSL certificates!
-	Obtain:
-		certificates, failures := client.ObtainCertificates(hosts, true)
-		if len(failures) > 0 {
-			// Build an error string to return, using all the failures in the list.
-			var errMsg string
-
-			// If an error is because of updated SA, only prompt user for agreement once
-			var promptedForAgreement bool
-
-			for domain, obtainErr := range failures {
-				// If the failure was simply because the terms have changed, re-prompt and re-try
-				if tosErr, ok := obtainErr.(acme.TOSError); ok {
-					if !Agreed && !promptedForAgreement {
-						Agreed = promptUserAgreement(tosErr.Detail, true) // TODO: Use latest URL
-						promptedForAgreement = true
-					}
-					if Agreed {
-						err := client.AgreeToTOS()
-						if err != nil {
-							return configs, errors.New("error agreeing to updated terms: " + err.Error())
-						}
-						goto Obtain
-					}
-				}
-
-				// If user did not agree or it was any other kind of error, just append to the list of errors
-				errMsg += "[" + domain + "] failed to get certificate: " + obtainErr.Error() + "\n"
-			}
-
-			// Save the certs we did obtain, though, before leaving
-			if err := saveCertsAndKeys(certificates); err == nil {
-				if len(certificates) > 0 {
-					var certList []string
-					for _, cert := range certificates {
-						certList = append(certList, cert.Domain)
-					}
-					errMsg += "Saved certificates for: " + strings.Join(certList, ", ") + "\n"
-				}
-			} else {
-				errMsg += "Unable to save obtained certificates: " + err.Error() + "\n"
-			}
-
-			return configs, errors.New(errMsg)
-		}
-
-		// ... that's it. save the certs, keys, and metadata files to disk
-		err = saveCertsAndKeys(certificates)
-		if err != nil {
-			return configs, errors.New("error saving assets: " + err.Error())
-		}
-
-		// it all comes down to this: turning on TLS with all the new certs
-		for _, idx := range cfgIndexes {
-			configs = autoConfigure(configs, idx)
-		}
-	}
-
-	// renew all certificates that need renewal
+	// renew all relevant certificates that need renewal; TODO: handle errors
 	renewCertificates(configs, false)
 
 	// keep certificates renewed and OCSP stapling updated
@@ -166,16 +172,17 @@ func Deactivate() (err error) {
 	return
 }
 
-// configQualifies returns true if the config at cfgIndex (within allConfigs)
+// ConfigQualifies returns true if the config at cfgIndex (within allConfigs)
 // qualifes for automatic LE activation. It does NOT check to see if a cert
 // and key already exist for the config.
-func configQualifies(allConfigs []server.Config, cfgIndex int) bool {
+func ConfigQualifies(allConfigs []server.Config, cfgIndex int) bool {
 	cfg := allConfigs[cfgIndex]
 	return cfg.TLS.Certificate == "" && // user could provide their own cert and key
 		cfg.TLS.Key == "" &&
 
 		// user can force-disable automatic HTTPS for this host
-		cfg.Port != "http" &&
+		cfg.Scheme != "http" &&
+		cfg.Port != "80" &&
 		cfg.TLS.LetsEncryptEmail != "off" &&
 
 		// obviously we get can't certs for loopback or internal hosts
@@ -193,13 +200,11 @@ func configQualifies(allConfigs []server.Config, cfgIndex int) bool {
 func HostQualifies(hostname string) bool {
 	return hostname != "localhost" &&
 		strings.TrimSpace(hostname) != "" &&
-		hostname != "0.0.0.0" &&
+		net.ParseIP(hostname) == nil && // cannot be an IP address, see: https://community.letsencrypt.org/t/certificate-for-static-ip/84/2?u=mholt
 		hostname != "[::]" && // before parsing
 		hostname != "::" && // after parsing
 		hostname != "[::1]" && // before parsing
-		hostname != "::1" && // after parsing
-		!strings.HasPrefix(hostname, "127.") // to use boulder on your own machine, add fake domain to hosts file
-	// not excluding 10.* and 192.168.* hosts for possibility of running internal Boulder instance
+		hostname != "::1" // after parsing
 }
 
 // groupConfigsByEmail groups configs by user email address. The returned map is
@@ -214,7 +219,7 @@ func groupConfigsByEmail(configs []server.Config) (map[string][]int, error) {
 		// that we won't be obtaining certs for - this way we won't
 		// bother the user for an email address unnecessarily and
 		// we don't obtain new certs for a host we already have certs for.
-		if existingCertAndKey(configs[i].Host) || !configQualifies(configs, i) {
+		if existingCertAndKey(configs[i].Host) || !ConfigQualifies(configs, i) {
 			continue
 		}
 		leEmail := getEmail(configs[i])
@@ -258,10 +263,13 @@ func newClientPort(leEmail, port string) (*acme.Client, error) {
 	}
 
 	// The client facilitates our communication with the CA server.
-	client, err := acme.NewClient(CAUrl, &leUser, rsaKeySizeToUse, port)
+	client, err := acme.NewClient(CAUrl, &leUser, rsaKeySizeToUse)
 	if err != nil {
 		return nil, err
 	}
+	client.SetHTTPPort(port)
+	client.SetTLSPort(port)
+	client.ExcludeChallenges([]string{"tls-sni-01", "dns-01"}) // We can only guarantee http-01 at this time
 
 	// If not registered, the user must register an account with the CA
 	// and agree to terms
@@ -295,48 +303,37 @@ func newClientPort(leEmail, port string) (*acme.Client, error) {
 	return client, nil
 }
 
-// obtainCertificates obtains certificates from the CA server for
-// the configurations in serverConfigs using client.
-func obtainCertificates(client *acme.Client, serverConfigs []server.Config) ([]acme.CertificateResource, map[string]error) {
-	var hosts []string
-	for _, cfg := range serverConfigs {
-		hosts = append(hosts, cfg.Host)
-	}
-	return client.ObtainCertificates(hosts, true)
-}
-
-// saveCertificates saves each certificate resource to disk. This
+// saveCertResource saves the certificate resource to disk. This
 // includes the certificate file itself, the private key, and the
 // metadata file.
-func saveCertsAndKeys(certificates []acme.CertificateResource) error {
-	for _, cert := range certificates {
-		err := os.MkdirAll(storage.Site(cert.Domain), 0700)
-		if err != nil {
-			return err
-		}
-
-		// Save cert
-		err = ioutil.WriteFile(storage.SiteCertFile(cert.Domain), cert.Certificate, 0600)
-		if err != nil {
-			return err
-		}
-
-		// Save private key
-		err = ioutil.WriteFile(storage.SiteKeyFile(cert.Domain), cert.PrivateKey, 0600)
-		if err != nil {
-			return err
-		}
-
-		// Save cert metadata
-		jsonBytes, err := json.MarshalIndent(&cert, "", "\t")
-		if err != nil {
-			return err
-		}
-		err = ioutil.WriteFile(storage.SiteMetaFile(cert.Domain), jsonBytes, 0600)
-		if err != nil {
-			return err
-		}
+func saveCertResource(cert acme.CertificateResource) error {
+	err := os.MkdirAll(storage.Site(cert.Domain), 0700)
+	if err != nil {
+		return err
 	}
+
+	// Save cert
+	err = ioutil.WriteFile(storage.SiteCertFile(cert.Domain), cert.Certificate, 0600)
+	if err != nil {
+		return err
+	}
+
+	// Save private key
+	err = ioutil.WriteFile(storage.SiteKeyFile(cert.Domain), cert.PrivateKey, 0600)
+	if err != nil {
+		return err
+	}
+
+	// Save cert metadata
+	jsonBytes, err := json.MarshalIndent(&cert, "", "\t")
+	if err != nil {
+		return err
+	}
+	err = ioutil.WriteFile(storage.SiteMetaFile(cert.Domain), jsonBytes, 0600)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -351,50 +348,26 @@ func autoConfigure(allConfigs []server.Config, cfgIndex int) []server.Config {
 	bundleBytes, err := ioutil.ReadFile(storage.SiteCertFile(cfg.Host))
 	// TODO: Handle these errors better
 	if err == nil {
-		ocsp, status, err := acme.GetOCSPForCert(bundleBytes)
-		ocspStatus[&bundleBytes] = status
-		if err == nil && status == acme.OCSPGood {
-			cfg.TLS.OCSPStaple = ocsp
+		ocspBytes, ocspResp, err := acme.GetOCSPForCert(bundleBytes)
+		ocspCache[&bundleBytes] = ocspResp
+		if err == nil && ocspResp.Status == ocsp.Good {
+			cfg.TLS.OCSPStaple = ocspBytes
 		}
 	}
 	cfg.TLS.Certificate = storage.SiteCertFile(cfg.Host)
 	cfg.TLS.Key = storage.SiteKeyFile(cfg.Host)
 	cfg.TLS.Enabled = true
-	// Ensure all defaults are set for the TLS config
 	setup.SetDefaultTLSParams(cfg)
 
 	if cfg.Port == "" {
-		cfg.Port = "https"
+		cfg.Port = "443"
 	}
 
 	// Set up http->https redirect as long as there isn't already a http counterpart
 	// in the configs and this isn't, for some reason, already on port 80.
 	// Also, the port 80 variant of this config is necessary for proxying challenge requests.
-	if !otherHostHasScheme(allConfigs, cfgIndex, "http") &&
-		cfg.Port != "80" && cfg.Port != "http" { // (would not be http port with current program flow, but just in case)
+	if !otherHostHasScheme(allConfigs, cfgIndex, "http") && cfg.Port != "80" && cfg.Scheme != "http" {
 		allConfigs = append(allConfigs, redirPlaintextHost(*cfg))
-	}
-
-	// To support renewals, we need handlers at ports 80 and 443,
-	// depending on the challenge type that is used to complete renewal.
-	for i, c := range allConfigs {
-		if c.Address() == cfg.Host+":80" ||
-			c.Address() == cfg.Host+":443" ||
-			c.Address() == cfg.Host+":http" ||
-			c.Address() == cfg.Host+":https" {
-
-			// Each virtualhost must have their own handlers, or the chaining gets messed up when middlewares are compiled!
-			handler := new(Handler)
-			mid := func(next middleware.Handler) middleware.Handler {
-				handler.Next = next
-				return handler
-			}
-			// TODO: Currently, acmeHandlers are not referenced, but we need to add a way to toggle
-			// their proxy functionality -- or maybe not. Gotta figure this out for sure.
-			acmeHandlers[c.Address()] = handler
-
-			allConfigs[i].Middleware["/"] = append(allConfigs[i].Middleware["/"], mid)
-		}
 	}
 
 	return allConfigs
@@ -406,21 +379,17 @@ func autoConfigure(allConfigs []server.Config, cfgIndex int) []server.Config {
 // "http" and "80". It does not tell you whether there is ANY config with scheme,
 // only if there's a different one with it.
 func otherHostHasScheme(allConfigs []server.Config, cfgIndex int, scheme string) bool {
-	if scheme == "80" {
-		scheme = "http"
-	} else if scheme == "443" {
-		scheme = "https"
+	if scheme == "http" {
+		scheme = "80"
+	} else if scheme == "https" {
+		scheme = "443"
 	}
 	for i, otherCfg := range allConfigs {
 		if i == cfgIndex {
 			continue // has to be a config OTHER than the one we're comparing against
 		}
-		if otherCfg.Host == allConfigs[cfgIndex].Host {
-			if (otherCfg.Port == scheme) ||
-				(scheme == "https" && otherCfg.Port == "443") ||
-				(scheme == "http" && otherCfg.Port == "80") {
-				return true
-			}
+		if otherCfg.Host == allConfigs[cfgIndex].Host && otherCfg.Port == scheme {
+			return true
 		}
 	}
 	return false
@@ -432,7 +401,7 @@ func otherHostHasScheme(allConfigs []server.Config, cfgIndex int, scheme string)
 // to listen on the "http" port (port 80).
 func redirPlaintextHost(cfg server.Config) server.Config {
 	toURL := "https://" + cfg.Host
-	if cfg.Port != "https" && cfg.Port != "http" {
+	if cfg.Port != "443" && cfg.Port != "80" {
 		toURL += ":" + cfg.Port
 	}
 
@@ -449,7 +418,7 @@ func redirPlaintextHost(cfg server.Config) server.Config {
 
 	return server.Config{
 		Host: cfg.Host,
-		Port: "http",
+		Port: "80",
 		Middleware: map[string][]middleware.Middleware{
 			"/": []middleware.Middleware{redirMidware},
 		},
@@ -504,17 +473,17 @@ var (
 
 // Some essential values related to the Let's Encrypt process
 const (
-	// alternatePort is the port on which the acme client will open a
+	// AlternatePort is the port on which the acme client will open a
 	// listener and solve the CA's challenges. If this alternate port
 	// is used instead of the default port (80 or 443), then the
 	// default port for the challenge must be forwarded to this one.
-	alternatePort = "5033"
+	AlternatePort = "5033"
 
-	// How often to check certificates for renewal.
-	renewInterval = 24 * time.Hour
+	// RenewInterval is how often to check certificates for renewal.
+	RenewInterval = 24 * time.Hour
 
-	// How often to update OCSP stapling.
-	ocspInterval = 1 * time.Hour
+	// OCSPInterval is how often to check if OCSP stapling needs updating.
+	OCSPInterval = 1 * time.Hour
 )
 
 // KeySize represents the length of a key in bits.
@@ -522,22 +491,22 @@ type KeySize int
 
 // Key sizes are used to determine the strength of a key.
 const (
-	ECC_224  KeySize = 224
-	ECC_256          = 256
-	RSA_2048         = 2048
-	RSA_4096         = 4096
+	Ecc224  KeySize = 224
+	Ecc256          = 256
+	Rsa2048         = 2048
+	Rsa4096         = 4096
 )
 
 // rsaKeySizeToUse is the size to use for new RSA keys.
 // This shouldn't need to change except for in tests;
 // the size can be drastically reduced for speed.
-var rsaKeySizeToUse = RSA_2048
+var rsaKeySizeToUse = Rsa2048
 
 // stopChan is used to signal the maintenance goroutine
 // to terminate.
 var stopChan chan struct{}
 
-// ocspStatus maps certificate bundle to OCSP status at start.
+// ocspCache maps certificate bundle to OCSP response.
 // It is used during regular OCSP checks to see if the OCSP
-// status has changed.
-var ocspStatus = make(map[*[]byte]int)
+// response needs to be updated.
+var ocspCache = make(map[*[]byte]*ocsp.Response)

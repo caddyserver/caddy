@@ -40,12 +40,12 @@ func TestSaveAndLoadRSAPrivateKey(t *testing.T) {
 	}
 }
 
-// rsaPrivateKeyBytes returns the bytes of DER-encoded key.
-func rsaPrivateKeyBytes(key *rsa.PrivateKey) []byte {
-	return x509.MarshalPKCS1PrivateKey(key)
-}
-
 // rsaPrivateKeysSame compares the bytes of a and b and returns true if they are the same.
 func rsaPrivateKeysSame(a, b *rsa.PrivateKey) bool {
 	return bytes.Equal(rsaPrivateKeyBytes(a), rsaPrivateKeyBytes(b))
+}
+
+// rsaPrivateKeyBytes returns the bytes of DER-encoded key.
+func rsaPrivateKeyBytes(key *rsa.PrivateKey) []byte {
+	return x509.MarshalPKCS1PrivateKey(key)
 }

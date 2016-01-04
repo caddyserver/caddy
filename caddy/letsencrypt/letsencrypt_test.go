@@ -23,9 +23,11 @@ func TestHostQualifies(t *testing.T) {
 		{"", false},
 		{" ", false},
 		{"0.0.0.0", false},
-		{"192.168.1.3", true},
-		{"10.0.2.1", true},
+		{"192.168.1.3", false},
+		{"10.0.2.1", false},
+		{"169.112.53.4", false},
 		{"foobar.com", true},
+		{"sub.foobar.com", true},
 	} {
 		if HostQualifies(test.host) && !test.expect {
 			t.Errorf("Test %d: Expected '%s' to NOT qualify, but it did", i, test.host)
@@ -39,14 +41,14 @@ func TestHostQualifies(t *testing.T) {
 func TestRedirPlaintextHost(t *testing.T) {
 	cfg := redirPlaintextHost(server.Config{
 		Host: "example.com",
-		Port: "http",
+		Port: "80",
 	})
 
 	// Check host and port
 	if actual, expected := cfg.Host, "example.com"; actual != expected {
 		t.Errorf("Expected redir config to have host %s but got %s", expected, actual)
 	}
-	if actual, expected := cfg.Port, "http"; actual != expected {
+	if actual, expected := cfg.Port, "80"; actual != expected {
 		t.Errorf("Expected redir config to have port '%s' but got '%s'", expected, actual)
 	}
 
