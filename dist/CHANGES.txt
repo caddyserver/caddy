@@ -1,8 +1,8 @@
 CHANGES
 
-0.8 beta
-- Let's Encrypt (free, automatic, fully-managed HTTPS for your sites)
-- Graceful restarts (for POSIX-compatible systems)
+0.8.0 (December 4, 2015)
+- HTTPS by default via Let's Encrypt (certs & keys are fully managed)
+- Graceful restarts (on POSIX-compliant systems)
 - Major internal refactoring to allow use of Caddy as library
 - New directive 'mime' to customize Content-Type based on file extension
 - New -accept flag to accept Let's Encrypt SA without prompt
@@ -14,6 +14,7 @@ CHANGES
 - New -grace flag to customize the graceful shutdown timeout
 - New support for SIGHUP, SIGTERM, and SIGQUIT signals
 - browse: Render filenames with multiple whitespace properly
+- core: Use environment variables in Caddyfile
 - markdown: Include Last-Modified header in response
 - markdown: Render tables, strikethrough, and fenced code blocks
 - proxy: Ability to exclude/ignore paths from proxying

@@ -164,6 +164,7 @@ type FCGIClient struct {
 	rwc       io.ReadWriteCloser
 	h         header
 	buf       bytes.Buffer
+	stderr    bytes.Buffer
 	keepAlive bool
 	reqID     uint16
 }
@@ -346,10 +347,22 @@ func (w *streamReader) Read(p []byte) (n int, err error) {
 
 	if len(p) > 0 {
 		if len(w.buf) == 0 {
-			rec := &record{}
-			w.buf, err = rec.read(w.c.rwc)
-			if err != nil {
-				return
+
+			// filter outputs for error log
+			for {
+				rec := &record{}
+				var buf []byte
+				buf, err = rec.read(w.c.rwc)
+				if err != nil {
+					return
+				}
+				// standard error output
+				if rec.h.Type == Stderr {
+					w.c.stderr.Write(buf)
+					continue
+				}
+				w.buf = buf
+				break
 			}
 		}
 
@@ -386,6 +399,15 @@ func (c *FCGIClient) Do(p map[string]string, req io.Reader) (r io.Reader, err er
 	r = &streamReader{c: c}
 	return
 }
+
+// clientCloser is a io.ReadCloser. It wraps a io.Reader with a Closer
+// that closes FCGIClient connection.
+type clientCloser struct {
+	*FCGIClient
+	io.Reader
+}
+
+func (f clientCloser) Close() error { return f.rwc.Close() }
 
 // Request returns a HTTP Response with Header and Body
 // from fcgi responder
@@ -426,9 +448,9 @@ func (c *FCGIClient) Request(p map[string]string, req io.Reader) (resp *http.Res
 	resp.ContentLength, _ = strconv.ParseInt(resp.Header.Get("Content-Length"), 10, 64)
 
 	if chunked(resp.TransferEncoding) {
-		resp.Body = ioutil.NopCloser(httputil.NewChunkedReader(rb))
+		resp.Body = clientCloser{c, httputil.NewChunkedReader(rb)}
 	} else {
-		resp.Body = ioutil.NopCloser(rb)
+		resp.Body = clientCloser{c, ioutil.NopCloser(rb)}
 	}
 	return
 }

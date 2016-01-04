@@ -1,15 +1,13 @@
 package markdown
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
+	"time"
 
 	"github.com/BurntSushi/toml"
 	"gopkg.in/yaml.v2"
-	"time"
 )
 
 // Metadata stores a page's metadata
@@ -73,23 +71,20 @@ type JSONMetadataParser struct {
 
 // Parse the metadata
 func (j *JSONMetadataParser) Parse(b []byte) ([]byte, error) {
+	b, markdown, err := extractMetadata(j, b)
+	if err != nil {
+		return markdown, err
+	}
 	m := make(map[string]interface{})
 
 	// Read the preceding JSON object
 	decoder := json.NewDecoder(bytes.NewReader(b))
 	if err := decoder.Decode(&m); err != nil {
-		return b, err
+		return markdown, err
 	}
 	j.metadata.load(m)
 
-	// Retrieve remaining bytes after decoding
-	buf := make([]byte, len(b))
-	n, err := decoder.Buffered().Read(buf)
-	if err != nil {
-		return b, err
-	}
-
-	return buf[:n], nil
+	return markdown, nil
 }
 
 // Metadata returns parsed metadata.  It should be called
@@ -183,43 +178,29 @@ func (y *YAMLMetadataParser) Closing() []byte {
 // It returns the metadata, the remaining bytes (markdown), and an error, if any.
 func extractMetadata(parser MetadataParser, b []byte) (metadata []byte, markdown []byte, err error) {
 	b = bytes.TrimSpace(b)
-	reader := bufio.NewReader(bytes.NewBuffer(b))
-
-	// Read first line, which should indicate metadata or not
-	line, err := reader.ReadBytes('\n')
-	if err != nil || !bytes.Equal(bytes.TrimSpace(line), parser.Opening()) {
+	openingLine := parser.Opening()
+	closingLine := parser.Closing()
+	if !bytes.HasPrefix(b, openingLine) {
 		return nil, b, fmt.Errorf("first line missing expected metadata identifier")
 	}
-
-	// buffer for metadata contents
-	metaBuf := bytes.Buffer{}
-
-	// Read remaining lines until closing identifier is found
-	for {
-		line, err := reader.ReadBytes('\n')
-		if err != nil && err != io.EOF {
-			return nil, nil, err
-		}
-
-		// if closing identifier found, the remaining bytes must be markdown content
-		if bytes.Equal(bytes.TrimSpace(line), parser.Closing()) {
-			break
-		}
-
-		// if file ended, by this point no closing identifier was found
-		if err == io.EOF {
-			return nil, nil, fmt.Errorf("metadata not closed ('%s' not found)", parser.Closing())
-		}
-
-		metaBuf.Write(line)
-		metaBuf.WriteString("\r\n")
+	metaStart := len(openingLine)
+	if _, ok := parser.(*JSONMetadataParser); ok {
+		metaStart = 0
 	}
-
-	// By now, the rest of the buffer contains markdown content
-	contentBuf := new(bytes.Buffer)
-	io.Copy(contentBuf, reader)
-
-	return metaBuf.Bytes(), contentBuf.Bytes(), nil
+	metaEnd := bytes.Index(b[metaStart:], closingLine)
+	if metaEnd == -1 {
+		return nil, nil, fmt.Errorf("metadata not closed ('%s' not found)", parser.Closing())
+	}
+	metaEnd += metaStart
+	if _, ok := parser.(*JSONMetadataParser); ok {
+		metaEnd += len(closingLine)
+	}
+	metadata = b[metaStart:metaEnd]
+	markdown = b[metaEnd:]
+	if _, ok := parser.(*JSONMetadataParser); !ok {
+		markdown = b[metaEnd+len(closingLine):]
+	}
+	return metadata, markdown, nil
 }
 
 // findParser finds the parser using line that contains opening identifier

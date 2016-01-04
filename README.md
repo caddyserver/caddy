@@ -1,5 +1,6 @@
 [![Caddy](https://caddyserver.com/resources/images/caddy-boxed.png)](https://caddyserver.com)
 
+[![Dev Chat](https://img.shields.io/badge/dev%20chat-gitter-ff69b4.svg?style=flat-square&label=dev+chat&color=ff69b4)](https://gitter.im/mholt/caddy) 
 [![Documentation](https://img.shields.io/badge/godoc-reference-blue.svg?style=flat-square)](https://godoc.org/github.com/mholt/caddy) 
 [![Linux Build Status](https://img.shields.io/travis/mholt/caddy.svg?style=flat-square&label=linux+build)](https://travis-ci.org/mholt/caddy) 
 [![Windows Build Status](https://img.shields.io/appveyor/ci/mholt/caddy.svg?style=flat-square&label=windows+build)](https://ci.appveyor.com/project/mholt/caddy)
@@ -95,7 +96,7 @@ You may also be interested in the [developer guide]
 
 ## Running from Source
 
-Note: You will need **[Go 1.4](https://golang.org/dl)** or a later version.
+Note: You will need **[Go 1.4](https://golang.org/dl/)** or a later version.
 
 1. `$ go get github.com/mholt/caddy`
 2. `cd` into your website's directory
@@ -120,11 +121,11 @@ ports < 1024 like 80 and 443.
 
 Caddy is available as a Docker container from any of these sources:
 
-- [abiosoft/caddy](https://registry.hub.docker.com/u/abiosoft/caddy/)
-- [darron/caddy](https://registry.hub.docker.com/u/darron/caddy/)
-- [joshix/caddy](https://registry.hub.docker.com/u/joshix/caddy/)
-- [jumanjiman/caddy](https://registry.hub.docker.com/u/jumanjiman/caddy/)
-- [zenithar/nano-caddy](https://registry.hub.docker.com/u/zenithar/nano-caddy/)
+- [abiosoft/caddy](https://hub.docker.com/r/abiosoft/caddy/)
+- [darron/caddy](https://hub.docker.com/r/darron/caddy/)
+- [joshix/caddy](https://hub.docker.com/r/joshix/caddy/)
+- [jumanjiman/caddy](https://hub.docker.com/r/jumanjiman/caddy/)
+- [zenithar/nano-caddy](https://hub.docker.com/r/zenithar/nano-caddy/)
 
 
 
@@ -139,9 +140,10 @@ packages that each Caddy package imports.
 
 ## Contributing
 
-**[Join us on Slack](https://gophers.slack.com/messages/caddy/)** to chat with
-other Caddy developers! ([Request an invite](http://bit.ly/go-slack-signup),
-then join the #caddy channel.)
+**[Join our dev chat on Gitter](https://gitter.im/mholt/caddy)** to chat with
+other Caddy developers! (Dev chat only; try our
+[support room](https://gitter.im/caddyserver/support) for help or
+[general](https://gitter.im/caddyserver/general) for anything else.)
 
 This project would not be what it is without your help. Please see the
 [contributing guidelines](https://github.com/mholt/caddy/blob/master/CONTRIBUTING.md)

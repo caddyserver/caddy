@@ -144,7 +144,7 @@ func getEmail(cfg server.Config) string {
 		// Alas, we must bother the user and ask for an email address;
 		// if they proceed they also agree to the SA.
 		reader := bufio.NewReader(stdin)
-		fmt.Println("Your sites will be served over HTTPS automatically using Let's Encrypt.")
+		fmt.Println("\nYour sites will be served over HTTPS automatically using Let's Encrypt.")
 		fmt.Println("By continuing, you agree to the Let's Encrypt Subscriber Agreement at:")
 		fmt.Println("  " + saURL) // TODO: Show current SA link
 		fmt.Println("Please enter your email address so you can recover your account if needed.")

@@ -333,6 +333,13 @@ func TestParseAll(t *testing.T) {
 			[]address{{"http://host1.com", "http", "host1.com", "80"}, {"http://host2.com", "http", "host2.com", "80"}},
 			[]address{{"https://host3.com", "https", "host3.com", "443"}, {"https://host4.com", "https", "host4.com", "443"}},
 		}},
+
+		{`import import_glob*.txt`, false, [][]address{
+			[]address{{"glob0.host0", ""}},
+			[]address{{"glob0.host1", ""}},
+			[]address{{"glob1.host0", ""}},
+			[]address{{"glob2.host0", ""}},
+		}},
 	} {
 		p := testParser(test.input)
 		blocks, err := p.parseAll()

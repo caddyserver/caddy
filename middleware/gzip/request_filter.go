@@ -7,8 +7,8 @@ import (
 	"github.com/mholt/caddy/middleware"
 )
 
-// Filter determines if a request should be gzipped.
-type Filter interface {
+// RequestFilter determines if a request should be gzipped.
+type RequestFilter interface {
 	// ShouldCompress tells if gzip compression
 	// should be done on the request.
 	ShouldCompress(*http.Request) bool
@@ -26,7 +26,7 @@ func DefaultExtFilter() ExtFilter {
 	return m
 }
 
-// ExtFilter is Filter for file name extensions.
+// ExtFilter is RequestFilter for file name extensions.
 type ExtFilter struct {
 	// Exts is the file name extensions to accept
 	Exts Set
@@ -43,7 +43,7 @@ func (e ExtFilter) ShouldCompress(r *http.Request) bool {
 	return e.Exts.Contains(ExtWildCard) || e.Exts.Contains(ext)
 }
 
-// PathFilter is Filter for request path.
+// PathFilter is RequestFilter for request path.
 type PathFilter struct {
 	// IgnoredPaths is the paths to ignore
 	IgnoredPaths Set

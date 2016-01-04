@@ -4,9 +4,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"testing"
-
 	"strings"
+	"testing"
 
 	"github.com/mholt/caddy/middleware"
 )
@@ -19,9 +18,10 @@ func TestRewrite(t *testing.T) {
 			NewSimpleRule("/a", "/b"),
 			NewSimpleRule("/b", "/b{uri}"),
 		},
+		FileSys: http.Dir("."),
 	}
 
-	regexpRules := [][]string{
+	regexps := [][]string{
 		{"/reg/", ".*", "/to", ""},
 		{"/r/", "[a-z]+", "/toaz", "!.html|"},
 		{"/url/", "a([a-z0-9]*)s([A-Z]{2})", "/to/{path}", ""},
@@ -31,14 +31,17 @@ func TestRewrite(t *testing.T) {
 		{"/abcd/", "ab", "/a/{dir}/{file}", ".html|"},
 		{"/abcde/", "ab", "/a#{fragment}", ".html|"},
 		{"/ab/", `.*\.jpg`, "/ajpg", ""},
+		{"/reggrp", `/ad/([0-9]+)([a-z]*)`, "/a{1}/{2}", ""},
+		{"/reg2grp", `(.*)`, "/{1}", ""},
+		{"/reg3grp", `(.*)/(.*)/(.*)`, "/{1}{2}{3}", ""},
 	}
 
-	for _, regexpRule := range regexpRules {
+	for _, regexpRule := range regexps {
 		var ext []string
 		if s := strings.Split(regexpRule[3], "|"); len(s) > 1 {
 			ext = s[:len(s)-1]
 		}
-		rule, err := NewRegexpRule(regexpRule[0], regexpRule[1], regexpRule[2], ext)
+		rule, err := NewComplexRule(regexpRule[0], regexpRule[1], regexpRule[2], ext, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -81,6 +84,12 @@ func TestRewrite(t *testing.T) {
 		{"/abcde/abcde.html", "/a"},
 		{"/abcde/abcde.html#1234", "/a#1234"},
 		{"/ab/ab.jpg", "/ajpg"},
+		{"/reggrp/ad/12", "/a12"},
+		{"/reggrp/ad/124a", "/a124/a"},
+		{"/reggrp/ad/124abc", "/a124/abc"},
+		{"/reg2grp/ad/124abc", "/ad/124abc"},
+		{"/reg3grp/ad/aa/66", "/adaa66"},
+		{"/reg3grp/ad612/n1n/ab", "/ad612n1nab"},
 	}
 
 	for i, test := range tests {

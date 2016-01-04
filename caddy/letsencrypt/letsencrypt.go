@@ -49,6 +49,7 @@ func ObtainCertsAndConfigure(configs []server.Config, optPort string) ([]server.
 
 	// obtain certificates for configs that need one, and reconfigure each
 	// config to use the certificates
+	finishedHosts := make(map[string]struct{})
 	for leEmail, cfgIndexes := range groupedConfigs {
 		// make client to service this email address with CA server
 		client, err := newClientPort(leEmail, optPort)
@@ -59,6 +60,12 @@ func ObtainCertsAndConfigure(configs []server.Config, optPort string) ([]server.
 		// let's get free, trusted SSL certificates!
 		for _, idx := range cfgIndexes {
 			hostname := configs[idx].Host
+
+			// prevent duplicate efforts, for example, when host is served on multiple ports
+			if _, ok := finishedHosts[hostname]; ok {
+				continue
+			}
+			finishedHosts[hostname] = struct{}{}
 
 		Obtain:
 			certificate, failures := client.ObtainCertificate([]string{hostname}, true)

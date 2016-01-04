@@ -3,6 +3,7 @@ package middleware
 import (
 	"net"
 	"net/http"
+	"net/url"
 	"path"
 	"strconv"
 	"strings"
@@ -15,6 +16,7 @@ import (
 // NewReplacer to get one of these.
 type Replacer interface {
 	Replace(string) string
+	Set(key, value string)
 }
 
 type replacer struct {
@@ -38,11 +40,13 @@ func NewReplacer(r *http.Request, rr *responseRecorder, emptyValue string) Repla
 				}
 				return "http"
 			}(),
-			"{host}":     r.Host,
-			"{path}":     r.URL.Path,
-			"{query}":    r.URL.RawQuery,
-			"{fragment}": r.URL.Fragment,
-			"{proto}":    r.Proto,
+			"{host}":          r.Host,
+			"{path}":          r.URL.Path,
+			"{path_escaped}":  url.QueryEscape(r.URL.Path),
+			"{query}":         r.URL.RawQuery,
+			"{query_escaped}": url.QueryEscape(r.URL.RawQuery),
+			"{fragment}":      r.URL.Fragment,
+			"{proto}":         r.Proto,
 			"{remote}": func() string {
 				if fwdFor := r.Header.Get("X-Forwarded-For"); fwdFor != "" {
 					return fwdFor
@@ -60,7 +64,8 @@ func NewReplacer(r *http.Request, rr *responseRecorder, emptyValue string) Repla
 				}
 				return port
 			}(),
-			"{uri}": r.URL.RequestURI(),
+			"{uri}":         r.URL.RequestURI(),
+			"{uri_escaped}": url.QueryEscape(r.URL.RequestURI()),
 			"{when}": func() string {
 				return time.Now().Format(timeFormat)
 			}(),
@@ -81,9 +86,9 @@ func NewReplacer(r *http.Request, rr *responseRecorder, emptyValue string) Repla
 		rep.replacements["{latency}"] = time.Since(rr.start).String()
 	}
 
-	// Header placeholders
-	for header, val := range r.Header {
-		rep.replacements[headerReplacer+header+"}"] = strings.Join(val, ",")
+	// Header placeholders (case-insensitive)
+	for header, values := range r.Header {
+		rep.replacements[headerReplacer+strings.ToLower(header)+"}"] = strings.Join(values, ",")
 	}
 
 	return rep
@@ -92,6 +97,24 @@ func NewReplacer(r *http.Request, rr *responseRecorder, emptyValue string) Repla
 // Replace performs a replacement of values on s and returns
 // the string with the replaced values.
 func (r replacer) Replace(s string) string {
+	// Header replacements - these are case-insensitive, so we can't just use strings.Replace()
+	for strings.Contains(s, headerReplacer) {
+		idxStart := strings.Index(s, headerReplacer)
+		endOffset := idxStart + len(headerReplacer)
+		idxEnd := strings.Index(s[endOffset:], "}")
+		if idxEnd > -1 {
+			placeholder := strings.ToLower(s[idxStart : endOffset+idxEnd+1])
+			replacement := r.replacements[placeholder]
+			if replacement == "" {
+				replacement = r.emptyValue
+			}
+			s = s[:idxStart] + replacement + s[endOffset+idxEnd+1:]
+		} else {
+			break
+		}
+	}
+
+	// Regular replacements - these are easier because they're case-sensitive
 	for placeholder, replacement := range r.replacements {
 		if replacement == "" {
 			replacement = r.emptyValue
@@ -99,18 +122,12 @@ func (r replacer) Replace(s string) string {
 		s = strings.Replace(s, placeholder, replacement, -1)
 	}
 
-	// Replace any header placeholders that weren't found
-	for strings.Contains(s, headerReplacer) {
-		idxStart := strings.Index(s, headerReplacer)
-		endOffset := idxStart + len(headerReplacer)
-		idxEnd := strings.Index(s[endOffset:], "}")
-		if idxEnd > -1 {
-			s = s[:idxStart] + r.emptyValue + s[endOffset+idxEnd+1:]
-		} else {
-			break
-		}
-	}
 	return s
+}
+
+// Set sets key to value in the replacements map.
+func (r replacer) Set(key, value string) {
+	r.replacements["{"+key+"}"] = value
 }
 
 const (
