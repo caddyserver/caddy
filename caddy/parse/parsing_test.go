@@ -335,10 +335,10 @@ func TestParseAll(t *testing.T) {
 		}},
 
 		{`import import_glob*.txt`, false, [][]address{
-			[]address{{"glob0.host0", ""}},
-			[]address{{"glob0.host1", ""}},
-			[]address{{"glob1.host0", ""}},
-			[]address{{"glob2.host0", ""}},
+			[]address{{"glob0.host0", "", "glob0.host0", ""}},
+			[]address{{"glob0.host1", "", "glob0.host1", ""}},
+			[]address{{"glob1.host0", "", "glob1.host0", ""}},
+			[]address{{"glob2.host0", "", "glob2.host0", ""}},
 		}},
 	} {
 		p := testParser(test.input)
@@ -449,6 +449,13 @@ func TestEnvironmentReplacement(t *testing.T) {
 	blocks, _ = p.parseAll()
 	if actual, expected := blocks[0].Addresses[0].Port, ""; expected != actual {
 		t.Errorf("Expected port to be '%s' but was '%s'", expected, actual)
+	}
+
+	// in quoted field
+	p = testParser(":1234\ndir1 \"Test {$FOOBAR} test\"")
+	blocks, _ = p.parseAll()
+	if actual, expected := blocks[0].Tokens["dir1"][1].text, "Test foobar test"; expected != actual {
+		t.Errorf("Expected argument to be '%s' but was '%s'", expected, actual)
 	}
 }
 
