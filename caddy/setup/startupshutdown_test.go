@@ -2,7 +2,6 @@ package setup
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -13,16 +12,19 @@ import (
 // because the Startup and Shutdown functions share virtually the
 // same functionality
 func TestStartup(t *testing.T) {
-
 	tempDirPath, err := getTempDirPath()
 	if err != nil {
 		t.Fatalf("BeforeTest: Failed to find an existing directory for testing! Error was: %v", err)
 	}
 
-	testDir := filepath.Join(tempDirPath, "temp_dir_for_testing_startupshutdown.go")
+	testDir := filepath.Join(tempDirPath, "temp_dir_for_testing_startupshutdown")
+	defer func() {
+		// clean up after non-blocking startup function quits
+		time.Sleep(500 * time.Millisecond)
+		os.RemoveAll(testDir)
+	}()
 	osSenitiveTestDir := filepath.FromSlash(testDir)
-
-	exec.Command("rm", "-r", osSenitiveTestDir).Run() // removes osSenitiveTestDir from the OS's temp directory, if the osSenitiveTestDir already exists
+	os.RemoveAll(osSenitiveTestDir) // start with a clean slate
 
 	tests := []struct {
 		input              string
@@ -53,6 +55,5 @@ func TestStartup(t *testing.T) {
 		if err != nil && !test.shouldRemoveErr {
 			t.Errorf("Test %d recieved an error of:\n%v", i, err)
 		}
-
 	}
 }

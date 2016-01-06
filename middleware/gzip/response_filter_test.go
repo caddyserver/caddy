@@ -11,7 +11,7 @@ import (
 )
 
 func TestLengthFilter(t *testing.T) {
-	var filters []ResponseFilter = []ResponseFilter{
+	var filters = []ResponseFilter{
 		LengthFilter(100),
 		LengthFilter(1000),
 		LengthFilter(0),

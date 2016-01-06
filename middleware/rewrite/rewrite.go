@@ -76,7 +76,7 @@ type ComplexRule struct {
 	*regexp.Regexp
 }
 
-// NewRegexpRule creates a new RegexpRule. It returns an error if regexp
+// NewComplexRule creates a new RegexpRule. It returns an error if regexp
 // pattern (pattern) or extensions (ext) are invalid.
 func NewComplexRule(base, pattern, to string, ext []string, ifs []If) (*ComplexRule, error) {
 	// validate regexp if present
