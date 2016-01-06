@@ -69,6 +69,7 @@ type TLSConfig struct {
 	Certificate      string
 	Key              string
 	LetsEncryptEmail string
+	Managed          bool // will be set to true if config qualifies for automatic, managed TLS
 	//DisableHTTPRedir         bool // TODO: not a good idea - should we really allow it?
 	OCSPStaple               []byte
 	Ciphers                  []uint16

@@ -131,14 +131,13 @@ func getCertsForNewCaddyfile(newCaddyfile Input) error {
 		return errors.New("loading Caddyfile: " + err.Error())
 	}
 
-	// TODO: Yuck, this is hacky. port 443 not set until letsencrypt is activated, so we change it here.
-	for i := range configs {
-		if configs[i].Port == "" && letsencrypt.ConfigQualifies(configs, i) {
-			configs[i].Port = "443"
-		}
-	}
+	// first mark the configs that are qualified for managed TLS
+	letsencrypt.MarkQualified(configs)
 
-	// only get certs for configs that bind to an address we're already listening on
+	// we must make sure port is set before we group by bind address
+	letsencrypt.EnableTLS(configs)
+
+	// we only need to issue certs for hosts where we already have an active listener
 	groupings, err := arrangeBindings(configs)
 	if err != nil {
 		return errors.New("arranging bindings: " + err.Error())
@@ -156,8 +155,8 @@ GroupLoop:
 	}
 	serversMu.Unlock()
 
-	// obtain certs for eligible configs; letsencrypt pkg will filter out the rest.
-	configs, err = letsencrypt.ObtainCertsAndConfigure(configsToSetup, letsencrypt.AlternatePort)
+	// place certs on the disk
+	err = letsencrypt.ObtainCerts(configsToSetup, letsencrypt.AlternatePort)
 	if err != nil {
 		return errors.New("obtaining certs: " + err.Error())
 	}
