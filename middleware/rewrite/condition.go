@@ -14,9 +14,11 @@ const (
 	Is         = "is"
 	Not        = "not"
 	Has        = "has"
+	NotHas     = "not_has"
 	StartsWith = "starts_with"
 	EndsWith   = "ends_with"
 	Match      = "match"
+	NotMatch   = "not_match"
 )
 
 func operatorError(operator string) error {
@@ -34,9 +36,11 @@ var conditions = map[string]condition{
 	Is:         isFunc,
 	Not:        notFunc,
 	Has:        hasFunc,
+	NotHas:     notHasFunc,
 	StartsWith: startsWithFunc,
 	EndsWith:   endsWithFunc,
 	Match:      matchFunc,
+	NotMatch:   notMatchFunc,
 }
 
 // isFunc is condition for Is operator.
@@ -57,6 +61,12 @@ func hasFunc(a, b string) bool {
 	return strings.Contains(a, b)
 }
 
+// notHasFunc is condition for NotHas operator.
+// It checks if b is not a substring of a.
+func notHasFunc(a, b string) bool {
+	return !strings.Contains(a, b)
+}
+
 // startsWithFunc is condition for StartsWith operator.
 // It checks if b is a prefix of a.
 func startsWithFunc(a, b string) bool {
@@ -71,9 +81,18 @@ func endsWithFunc(a, b string) bool {
 
 // matchFunc is condition for Match operator.
 // It does regexp matching of a against pattern in b
+// and returns if they match.
 func matchFunc(a, b string) bool {
 	matched, _ := regexp.MatchString(b, a)
 	return matched
+}
+
+// notMatchFunc is condition for NotMatch operator.
+// It does regexp matching of a against pattern in b
+// and returns if they do not match.
+func notMatchFunc(a, b string) bool {
+	matched, _ := regexp.MatchString(b, a)
+	return !matched
 }
 
 // If is statement for a rewrite condition.
