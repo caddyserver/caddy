@@ -40,13 +40,17 @@ func TestHostQualifies(t *testing.T) {
 
 func TestRedirPlaintextHost(t *testing.T) {
 	cfg := redirPlaintextHost(server.Config{
-		Host: "example.com",
-		Port: "80",
+		Host:     "example.com",
+		BindHost: "93.184.216.34",
+		Port:     "80",
 	})
 
 	// Check host and port
 	if actual, expected := cfg.Host, "example.com"; actual != expected {
 		t.Errorf("Expected redir config to have host %s but got %s", expected, actual)
+	}
+	if actual, expected := cfg.BindHost, "93.184.216.34"; actual != expected {
+		t.Errorf("Expected redir config to have bindhost %s but got %s", expected, actual)
 	}
 	if actual, expected := cfg.Port, "80"; actual != expected {
 		t.Errorf("Expected redir config to have port '%s' but got '%s'", expected, actual)

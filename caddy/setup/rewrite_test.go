@@ -50,8 +50,8 @@ func TestRewriteParse(t *testing.T) {
 		}},
 		{`rewrite a`, true, []rewrite.Rule{}},
 		{`rewrite`, true, []rewrite.Rule{}},
-		{`rewrite a b c`, true, []rewrite.Rule{
-			rewrite.SimpleRule{From: "a", To: "b"},
+		{`rewrite a b c`, false, []rewrite.Rule{
+			rewrite.SimpleRule{From: "a", To: "b c"},
 		}},
 	}
 
@@ -136,6 +136,33 @@ func TestRewriteParse(t *testing.T) {
 			if {path} is a
 		 }`, false, []rewrite.Rule{
 			&rewrite.ComplexRule{Base: "/", To: "/to", Ifs: []rewrite.If{rewrite.If{A: "{path}", Operator: "is", B: "a"}}},
+		}},
+		{`rewrite {
+			status 400
+		 }`, false, []rewrite.Rule{
+			&rewrite.ComplexRule{Base: "/", Regexp: regexp.MustCompile(".*"), Status: 400},
+		}},
+		{`rewrite {
+			to /to
+			status 400
+		 }`, false, []rewrite.Rule{
+			&rewrite.ComplexRule{Base: "/", To: "/to", Regexp: regexp.MustCompile(".*"), Status: 400},
+		}},
+		{`rewrite {
+			status 399
+		 }`, true, []rewrite.Rule{
+			&rewrite.ComplexRule{},
+		}},
+		{`rewrite {
+			status 0
+		 }`, true, []rewrite.Rule{
+			&rewrite.ComplexRule{},
+		}},
+		{`rewrite {
+			to /to
+			status 0
+		 }`, true, []rewrite.Rule{
+			&rewrite.ComplexRule{},
 		}},
 	}
 
