@@ -182,6 +182,7 @@ th {
 	padding-top: 15px;
 	padding-bottom: 15px;
 	font-size: 16px;
+	white-space: nowrap;
 }
 
 th a {
@@ -198,13 +199,21 @@ td {
 
 td:first-child {
 	width: 50%;
-	overflow-wrap: break-word;
-	word-break: break-word;
 }
 
 th:last-child,
 td:last-child {
 	text-align: right;
+}
+
+td:first-child svg {
+	position: absolute;
+}
+
+td .name {
+	margin-left: 1.75em;
+	word-break: break-all;
+	overflow-wrap: break-word;
 }
 
 footer {
@@ -335,13 +344,13 @@ footer {
 					{{range .Items}}
 					<tr>
 						<td>
-							<a href="{{.URL}}" class="name">
+							<a href="{{.URL}}">
 								{{if .IsDir}}
 								<svg width="1.5em" height="1em" version="1.1" viewBox="0 0 35.678803 28.527945"><use xlink:href="#folder"></use></svg>
 								{{else}}
 								<svg width="1.5em" height="1em" version="1.1" viewBox="0 0 26.604381 29.144726"><use xlink:href="#file"></use></svg>
 								{{end}}
-								{{.Name}}
+								<span class="name">{{.Name}}</span>
 							</a>
 						</td>
 						<td>{{.HumanSize}}</td>
