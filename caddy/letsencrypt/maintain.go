@@ -49,7 +49,7 @@ func maintainAssets(configs []server.Config, stopChan chan struct{}) {
 		case <-ocspTicker.C:
 			for bundle, oldResp := range ocspCache {
 				// start checking OCSP staple about halfway through validity period for good measure
-				refreshTime := oldResp.ThisUpdate.Add(oldResp.NextUpdate.Sub(oldResp.ThisUpdate) / 10)
+				refreshTime := oldResp.ThisUpdate.Add(oldResp.NextUpdate.Sub(oldResp.ThisUpdate) / 2)
 				if time.Now().After(refreshTime) {
 					_, newResp, err := acme.GetOCSPForCert(*bundle)
 					if err != nil {
@@ -112,8 +112,8 @@ func renewCertificates(configs []server.Config, useCustomPort bool) (int, []erro
 		// Directly convert it to days for the following checks.
 		daysLeft := int(expTime.Sub(time.Now().UTC()).Hours() / 24)
 
-		// Renew with two weeks or less remaining.
-		if daysLeft <= 14 {
+		// Renew if getting close to expiration.
+		if daysLeft <= renewDaysBefore {
 			log.Printf("[INFO] Certificate for %s has %d days remaining; attempting renewal", cfg.Host, daysLeft)
 			var client *acme.Client
 			if useCustomPort {
@@ -164,11 +164,13 @@ func renewCertificates(configs []server.Config, useCustomPort bool) (int, []erro
 
 			saveCertResource(newCertMeta)
 			n++
-		} else if daysLeft <= 21 {
-			// Warn on 21 days remaining. TODO: Just do this once...
-			log.Printf("[WARNING] Certificate for %s has %d days remaining; will automatically renew when 14 days remain\n", cfg.Host, daysLeft)
+		} else if daysLeft <= renewDaysBefore+7 && daysLeft >= renewDaysBefore+6 {
+			log.Printf("[WARNING] Certificate for %s has %d days remaining; will automatically renew when %d days remain\n", cfg.Host, daysLeft, renewDaysBefore)
 		}
 	}
 
 	return n, errs
 }
+
+// renewDaysBefore is how many days before expiration to renew certificates.
+const renewDaysBefore = 14

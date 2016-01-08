@@ -72,7 +72,11 @@ func Activate(configs []server.Config) ([]server.Config, error) {
 	// set up redirects
 	configs = MakePlaintextRedirects(configs)
 
-	// renew all relevant certificates that need renewal; TODO: handle errors
+	// renew all relevant certificates that need renewal. this is important
+	// to do right away for a couple reasons, mainly because each restart,
+	// the renewal ticker is reset, so if restarts happen more often than
+	// the ticker interval, renewals would never happen. but doing
+	// it right away at start guarantees that renewals aren't missed.
 	renewCertificates(configs, false)
 
 	// keep certificates renewed and OCSP stapling updated
@@ -127,7 +131,7 @@ func ObtainCerts(configs []server.Config, optPort string) error {
 			}
 
 		Obtain:
-			certificate, failures := client.ObtainCertificate([]string{cfg.Host}, true)
+			certificate, failures := client.ObtainCertificate([]string{cfg.Host}, true, nil)
 			if len(failures) == 0 {
 				// Success - immediately save the certificate resource
 				err := saveCertResource(certificate)
@@ -289,11 +293,9 @@ func HostQualifies(hostname string) bool {
 		strings.TrimSpace(hostname) != "" &&
 		net.ParseIP(hostname) == nil && // cannot be an IP address, see: https://community.letsencrypt.org/t/certificate-for-static-ip/84/2?u=mholt
 
-		// TODO: net.ParseIP also catches the two variants without brackets
-		hostname != "[::]" && // before parsing
-		hostname != "::" && // after parsing
-		hostname != "[::1]" && // before parsing
-		hostname != "::1" // after parsing
+		// These special cases can sneak through if specified with -host and with empty/no Caddyfile
+		hostname != "[::]" &&
+		hostname != "[::1]"
 }
 
 // existingCertAndKey returns true if the host has a certificate
@@ -335,8 +337,8 @@ func newClientPort(leEmail, port string) (*acme.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	client.SetHTTPPort(port)
-	client.SetTLSPort(port)
+	client.SetHTTPAddress(":" + port)
+	client.SetTLSAddress(":" + port)
 	client.ExcludeChallenges([]string{"tls-sni-01", "dns-01"}) // We can only guarantee http-01 at this time
 
 	// If not registered, the user must register an account with the CA

@@ -1,4 +1,5 @@
-// Package caddy implements the Caddy web server as a service.
+// Package caddy implements the Caddy web server as a service
+// in your own Go programs.
 //
 // To use this package, follow a few simple steps:
 //
