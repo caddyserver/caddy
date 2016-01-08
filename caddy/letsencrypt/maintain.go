@@ -50,12 +50,16 @@ func maintainAssets(configs []server.Config, stopChan chan struct{}) {
 			for bundle, oldResp := range ocspCache {
 				// start checking OCSP staple about halfway through validity period for good measure
 				refreshTime := oldResp.ThisUpdate.Add(oldResp.NextUpdate.Sub(oldResp.ThisUpdate) / 2)
+
+				// only check for updated OCSP validity window if refreshTime is in the past
 				if time.Now().After(refreshTime) {
 					_, newResp, err := acme.GetOCSPForCert(*bundle)
 					if err != nil {
 						log.Printf("[ERROR] Checking OCSP for bundle: %v", err)
 						continue
 					}
+
+					// we're not looking for different status, just a more future expiration
 					if newResp.NextUpdate != oldResp.NextUpdate {
 						if OnChange != nil {
 							log.Printf("[INFO] Updating OCSP stapling to extend validity period to %v", newResp.NextUpdate)

@@ -6,44 +6,44 @@ import (
 )
 
 func TestStorage(t *testing.T) {
-	storage = Storage("./letsencrypt")
+	storage = Storage("./le_test")
 
-	if expected, actual := filepath.Join("letsencrypt", "sites"), storage.Sites(); actual != expected {
+	if expected, actual := filepath.Join("le_test", "sites"), storage.Sites(); actual != expected {
 		t.Errorf("Expected Sites() to return '%s' but got '%s'", expected, actual)
 	}
-	if expected, actual := filepath.Join("letsencrypt", "sites", "test.com"), storage.Site("test.com"); actual != expected {
+	if expected, actual := filepath.Join("le_test", "sites", "test.com"), storage.Site("test.com"); actual != expected {
 		t.Errorf("Expected Site() to return '%s' but got '%s'", expected, actual)
 	}
-	if expected, actual := filepath.Join("letsencrypt", "sites", "test.com", "test.com.crt"), storage.SiteCertFile("test.com"); actual != expected {
+	if expected, actual := filepath.Join("le_test", "sites", "test.com", "test.com.crt"), storage.SiteCertFile("test.com"); actual != expected {
 		t.Errorf("Expected SiteCertFile() to return '%s' but got '%s'", expected, actual)
 	}
-	if expected, actual := filepath.Join("letsencrypt", "sites", "test.com", "test.com.key"), storage.SiteKeyFile("test.com"); actual != expected {
+	if expected, actual := filepath.Join("le_test", "sites", "test.com", "test.com.key"), storage.SiteKeyFile("test.com"); actual != expected {
 		t.Errorf("Expected SiteKeyFile() to return '%s' but got '%s'", expected, actual)
 	}
-	if expected, actual := filepath.Join("letsencrypt", "sites", "test.com", "test.com.json"), storage.SiteMetaFile("test.com"); actual != expected {
+	if expected, actual := filepath.Join("le_test", "sites", "test.com", "test.com.json"), storage.SiteMetaFile("test.com"); actual != expected {
 		t.Errorf("Expected SiteMetaFile() to return '%s' but got '%s'", expected, actual)
 	}
-	if expected, actual := filepath.Join("letsencrypt", "users"), storage.Users(); actual != expected {
+	if expected, actual := filepath.Join("le_test", "users"), storage.Users(); actual != expected {
 		t.Errorf("Expected Users() to return '%s' but got '%s'", expected, actual)
 	}
-	if expected, actual := filepath.Join("letsencrypt", "users", "me@example.com"), storage.User("me@example.com"); actual != expected {
+	if expected, actual := filepath.Join("le_test", "users", "me@example.com"), storage.User("me@example.com"); actual != expected {
 		t.Errorf("Expected User() to return '%s' but got '%s'", expected, actual)
 	}
-	if expected, actual := filepath.Join("letsencrypt", "users", "me@example.com", "me.json"), storage.UserRegFile("me@example.com"); actual != expected {
+	if expected, actual := filepath.Join("le_test", "users", "me@example.com", "me.json"), storage.UserRegFile("me@example.com"); actual != expected {
 		t.Errorf("Expected UserRegFile() to return '%s' but got '%s'", expected, actual)
 	}
-	if expected, actual := filepath.Join("letsencrypt", "users", "me@example.com", "me.key"), storage.UserKeyFile("me@example.com"); actual != expected {
+	if expected, actual := filepath.Join("le_test", "users", "me@example.com", "me.key"), storage.UserKeyFile("me@example.com"); actual != expected {
 		t.Errorf("Expected UserKeyFile() to return '%s' but got '%s'", expected, actual)
 	}
 
 	// Test with empty emails
-	if expected, actual := filepath.Join("letsencrypt", "users", emptyEmail), storage.User(emptyEmail); actual != expected {
+	if expected, actual := filepath.Join("le_test", "users", emptyEmail), storage.User(emptyEmail); actual != expected {
 		t.Errorf("Expected User(\"\") to return '%s' but got '%s'", expected, actual)
 	}
-	if expected, actual := filepath.Join("letsencrypt", "users", emptyEmail, emptyEmail+".json"), storage.UserRegFile(""); actual != expected {
+	if expected, actual := filepath.Join("le_test", "users", emptyEmail, emptyEmail+".json"), storage.UserRegFile(""); actual != expected {
 		t.Errorf("Expected UserRegFile(\"\") to return '%s' but got '%s'", expected, actual)
 	}
-	if expected, actual := filepath.Join("letsencrypt", "users", emptyEmail, emptyEmail+".key"), storage.UserKeyFile(""); actual != expected {
+	if expected, actual := filepath.Join("le_test", "users", emptyEmail, emptyEmail+".key"), storage.UserKeyFile(""); actual != expected {
 		t.Errorf("Expected UserKeyFile(\"\") to return '%s' but got '%s'", expected, actual)
 	}
 }

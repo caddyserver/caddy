@@ -267,9 +267,13 @@ func MakePlaintextRedirects(allConfigs []server.Config) []server.Config {
 	return allConfigs
 }
 
-// ConfigQualifies returns true if the config at cfgIndex (within allConfigs)
-// qualifes for automatic LE activation. It does NOT check to see if a cert
-// and key already exist for the config.
+// ConfigQualifies returns true if cfg qualifies for
+// fully managed TLS. It does NOT check to see if a
+// cert and key already exist for the config. If the
+// config does qualify, you should set cfg.TLS.Managed
+// to true and use that instead, because the process of
+// setting up the config may make it look like it
+// doesn't qualify even though it originally did.
 func ConfigQualifies(cfg server.Config) bool {
 	return cfg.TLS.Certificate == "" && // user could provide their own cert and key
 		cfg.TLS.Key == "" &&
@@ -289,13 +293,16 @@ func ConfigQualifies(cfg server.Config) bool {
 // not eligible because we cannot obtain certificates
 // for those names.
 func HostQualifies(hostname string) bool {
-	return hostname != "localhost" &&
-		strings.TrimSpace(hostname) != "" &&
-		net.ParseIP(hostname) == nil && // cannot be an IP address, see: https://community.letsencrypt.org/t/certificate-for-static-ip/84/2?u=mholt
+	return hostname != "localhost" && // localhost is ineligible
 
-		// These special cases can sneak through if specified with -host and with empty/no Caddyfile
-		hostname != "[::]" &&
-		hostname != "[::1]"
+		// hostname must not be empty
+		strings.TrimSpace(hostname) != "" &&
+
+		// cannot be an IP address, see
+		// https://community.letsencrypt.org/t/certificate-for-static-ip/84/2?u=mholt
+		// (also trim [] from either end, since that special case can sneak through
+		// for IPv6 addresses using the -host flag and with empty/no Caddyfile)
+		net.ParseIP(strings.Trim(hostname, "[]")) == nil
 }
 
 // existingCertAndKey returns true if the host has a certificate
