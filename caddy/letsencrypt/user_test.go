@@ -125,6 +125,11 @@ func TestGetUserAlreadyExists(t *testing.T) {
 }
 
 func TestGetEmail(t *testing.T) {
+	// let's not clutter up the output
+	origStdout := os.Stdout
+	os.Stdout = nil
+	defer func() { os.Stdout = origStdout }()
+
 	storage = Storage("./testdata")
 	defer os.RemoveAll(string(storage))
 	DefaultEmail = "test2@foo.com"
