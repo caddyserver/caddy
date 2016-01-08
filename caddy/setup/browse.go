@@ -86,171 +86,282 @@ const defaultTemplate = `<!DOCTYPE html>
 	<head>
 		<title>{{.Name}}</title>
 		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
 * { padding: 0; margin: 0; }
 
 body {
-	padding: 1% 2%;
-	font: 16px Arial;
+	font-family: sans-serif;
+	text-rendering: optimizespeed;
+}
+
+a {
+	color: #006ed3;
+	text-decoration: none;
+}
+
+a:hover,
+h1 a:hover {
+	color: #319cff;
+}
+
+header,
+.content {
+	padding-left: 5%;
+	padding-right: 5%;
+}
+
+th:first-child,
+td:first-child {
+	padding-left: 5%;
+}
+
+th:last-child,
+td:last-child {
+	padding-right: 5%;
 }
 
 header {
-	font-size: 45px;
-	padding: 25px;
-}
-
-header a {
-	text-decoration: none;
-	color: inherit;
-}
-
-header .up {
-	display: inline-block;
-	height: 50px;
-	width: 50px;
-	text-align: center;
-	margin-right: 20px;
-}
-
-header a.up:hover {
-	background: #000;
-	color: #FFF;
+	padding-top: 25px;
+	padding-bottom: 15px;
+	background-color: #f2f2f2;
 }
 
 h1 {
-	font-size: 30px;
-	display: inline;
+	font-size: 20px;
+	font-weight: normal;
+	white-space: nowrap;
+	overflow-x: hidden;
+	text-overflow: ellipsis;
+}
+
+h1 a {
+	color: inherit;
+}
+
+h1 a:hover {
+	text-decoration: underline;
+}
+
+main {
+	display: block;
+}
+
+.meta {
+	font-size: 12px;
+	font-family: Verdana, sans-serif;
+	border-bottom: 1px solid #9C9C9C;
+	padding-top: 15px;
+	padding-bottom: 15px;
+}
+
+.meta-item {
+	margin-right: 1em;
 }
 
 table {
-	border: 0;
+	width: 100%;
 	border-collapse: collapse;
-	max-width: 750px;
-	margin: 0 auto;
+}
+
+tr {
+	border-bottom: 1px dashed #dadada;
+}
+
+tr:not(:first-child):hover {
+	background-color: #ffffec;
 }
 
 th,
 td {
-	padding: 4px 20px;
-	vertical-align: middle;
-	line-height: 1.5em; /* emoji are kind of odd heights */
+	text-align: left;
+	padding: 10px 0;
 }
 
 th {
-	text-align: left;
+	padding-top: 15px;
+	padding-bottom: 15px;
+	font-size: 16px;
+	white-space: nowrap;
 }
 
 th a {
-	color: #000;
-	text-decoration: none;
+	color: black;
 }
 
-@media (max-width: 700px) {
+th svg {
+	vertical-align: middle;
+}
+
+td {
+	font-size: 14px;
+}
+
+td:first-child {
+	width: 50%;
+}
+
+th:last-child,
+td:last-child {
+	text-align: right;
+}
+
+td:first-child svg {
+	position: absolute;
+}
+
+td .name {
+	margin-left: 1.75em;
+	word-break: break-all;
+	overflow-wrap: break-word;
+}
+
+footer {
+	padding: 40px 20px;
+	font-size: 12px;
+	text-align: center;
+}
+
+@media (max-width: 600px) {
 	.hideable {
 		display: none;
 	}
 
-	body {
-		padding: 0;
-	}
-
-	header,
-	header h1 {
-		font-size: 16px;
-	}
-
-	header {
-		position: fixed;
-		top: 0;
-		width: 100%;
-		background: #333;
-		color: #FFF;
-		padding: 15px;
-		text-align: center;
-	}
-
-	header .up {
-		height: auto;
+	td:first-child {
 		width: auto;
-		display: none;
 	}
 
-	header a.up {
-		display: inline-block;
-		position: absolute;
-		left: 0;
-		top: 0;
-		width: 40px;
-		height: 48px;
-		font-size: 35px;
+	th:nth-child(2),
+	td:nth-child(2) {
+		padding-right: 5%;
+		text-align: right;
 	}
-
-	header h1 {
-		font-weight: normal;
-	}
-
-	main {
-		margin-top: 70px;
-	}
-}
-
-.name {
-	white-space: pre;
 }
 </style>
 	</head>
 	<body>
-		<header>
-			{{if .CanGoUp}}
-			<a href=".." class="up" title="Up one level">&#11025;</a>
-			{{else}}
-			<div class="up">&nbsp;</div>
-			{{end}}
+		<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" height="0" width="0" style="position: absolute;">
+			<defs>
+				<!-- Folder -->
+				<linearGradient id="f" y2="640" gradientUnits="userSpaceOnUse" x2="244.84" gradientTransform="matrix(.97319 0 0 1.0135 -.50695 -13.679)" y1="415.75" x1="244.84">
+					<stop stop-color="#b3ddfd" offset="0"/>
+					<stop stop-color="#69c" offset="1"/>
+				</linearGradient>
+				<linearGradient id="e" y2="571.06" gradientUnits="userSpaceOnUse" x2="238.03" gradientTransform="translate(0,2)" y1="346.05" x1="236.26">
+					<stop stop-color="#ace" offset="0"/>
+					<stop stop-color="#369" offset="1"/>
+				</linearGradient>
+				<g id="folder" transform="translate(-266.06 -193.36)">
+					<g transform="matrix(.066019 0 0 .066019 264.2 170.93)">
+						<g transform="matrix(1.4738 0 0 1.4738 -52.053 -166.93)">
+							<path fill="#69c" d="m98.424 343.78c-11.08 0-20 8.92-20 20v48.5 33.719 105.06c0 11.08 8.92 20 20 20h279.22c11.08 0 20-8.92 20-20v-138.78c0-11.08-8.92-20-20-20h-117.12c-7.5478-1.1844-9.7958-6.8483-10.375-11.312v-5.625-11.562c0-11.08-8.92-20-20-20h-131.72z"/>
+							<rect rx="12.885" ry="12.199" height="227.28" width="366.69" y="409.69" x="54.428" fill="#369"/>
+							<path fill="url(#e)" d="m98.424 345.78c-11.08 0-20 8.92-20 20v48.5 33.719 105.06c0 11.08 8.92 20 20 20h279.22c11.08 0 20-8.92 20-20v-138.78c0-11.08-8.92-20-20-20h-117.12c-7.5478-1.1844-9.7958-6.8483-10.375-11.312v-5.625-11.562c0-11.08-8.92-20-20-20h-131.72z"/>
+							<rect rx="12.885" ry="12.199" height="227.28" width="366.69" y="407.69" x="54.428" fill="url(#f)"/>
+						</g>
+					</g>
+				</g>
 
-			<h1 class="name">{{.Path}}</h1>
+
+				<!-- File -->
+				<linearGradient id="a">
+					<stop stop-color="#cbcbcb" offset="0"/>
+					<stop stop-color="#f0f0f0" offset=".34923"/>
+					<stop stop-color="#e2e2e2" offset="1"/>
+				</linearGradient>
+				<linearGradient id="d" y2="686.15" xlink:href="#a" gradientUnits="userSpaceOnUse" y1="207.83" gradientTransform="matrix(.28346 0 0 .31053 -608.52 485.11)" x2="380.1" x1="749.25"/>
+				<linearGradient id="c" y2="287.74" xlink:href="#a" gradientUnits="userSpaceOnUse" y1="169.44" gradientTransform="matrix(.28342 0 0 .31057 -608.52 485.11)" x2="622.33" x1="741.64"/>
+				<linearGradient id="b" y2="418.54" gradientUnits="userSpaceOnUse" y1="236.13" gradientTransform="matrix(.29343 0 0 .29999 -608.52 485.11)" x2="330.88" x1="687.96">
+					<stop stop-color="#fff" offset="0"/>
+					<stop stop-color="#fff" stop-opacity="0" offset="1"/>
+				</linearGradient>
+				<g id="file" transform="translate(-278.15 -216.59)">
+					<g fill-rule="evenodd" transform="matrix(.19775 0 0 .19775 381.05 112.68)">
+						<path d="m-520.17 525.5v36.739 36.739 36.739 36.739h33.528 33.528 33.528 33.528v-36.739-36.739-36.739l-33.528-36.739h-33.528-33.528-33.528z" stroke-opacity=".36478" stroke-width=".42649" fill="#fff"/>
+						<g>
+							<path d="m-520.11 525.68v36.739 36.739 36.739 36.739h33.528 33.528 33.528 33.528v-36.739-36.739-36.739l-33.528-36.739h-33.528-33.528-33.528z" stroke-opacity=".36478" stroke="#000" stroke-width=".42649" fill="url(#d)"/>
+							<path d="m-386 562.42c-10.108-2.9925-23.206-2.5682-33.101-0.86253 1.7084-10.962 1.922-24.701-0.4271-35.877l33.528 36.739z" stroke-width=".95407pt" fill="url(#c)"/>
+							<path d="m-519.13 537-0.60402 134.7h131.68l0.0755-33.296c-2.9446 1.1325-32.692-40.998-70.141-39.186-37.483 1.8137-27.785-56.777-61.006-62.214z" stroke-width="1pt" fill="url(#b)"/>
+						</g>
+					</g>
+				</g>
+
+				<!-- Up arrow -->
+				<g id="up-arrow" transform="translate(-279.22 -208.12)">
+					<path transform="matrix(.22413 0 0 .12089 335.67 164.35)" stroke-width="0" d="m-194.17 412.01h-28.827-28.827l14.414-24.965 14.414-24.965 14.414 24.965z"/>
+				</g>
+
+				<!-- Down arrow -->
+				<g id="down-arrow" transform="translate(-279.22 -208.12)">
+					<path transform="matrix(.22413 0 0 -.12089 335.67 257.93)" stroke-width="0" d="m-194.17 412.01h-28.827-28.827l14.414-24.965 14.414-24.965 14.414 24.965z"/>
+				</g>
+			</defs>
+		</svg>
+
+
+
+		<header>
+			<h1>{{.LinkedPath}}</h1>
 		</header>
 		<main>
-			<table>
-				<tr>
-					<th>
-						{{if and (eq .Sort "name") (ne .Order "desc")}}
-						<a href="?sort=name&order=desc">Name &#9650;</a>
-						{{else if and (eq .Sort "name") (ne .Order "asc")}}
-						<a href="?sort=name&order=asc">Name &#9660;</a>
-						{{else}}
-						<a href="?sort=name&order=asc">Name</a>
-						{{end}}
-					</th>
-					<th>
-						{{if and (eq .Sort "size") (ne .Order "desc")}}
-						<a href="?sort=size&order=desc">Size &#9650;</a>
-						{{else if and (eq .Sort "size") (ne .Order "asc")}}
-						<a href="?sort=size&order=asc">Size &#9660;</a>
-						{{else}}
-						<a href="?sort=size&order=asc">Size</a>
-						{{end}}
-					</th>
-					<th class="hideable">
-						{{if and (eq .Sort "time") (ne .Order "desc")}}
-						<a href="?sort=time&order=desc">Modified &#9650;</a>
-						{{else if and (eq .Sort "time") (ne .Order "asc")}}
-						<a href="?sort=time&order=asc">Modified &#9660;</a>
-						{{else}}
-						<a href="?sort=time&order=asc">Modified</a>
-						{{end}}
-					</th>
-				</tr>
-				{{range .Items}}
-				<tr>
-					<td>
-						{{if .IsDir}}&#128194;{{else}}&#128196;{{end}}
-						<a href="{{.URL}}" class="name">{{.Name}}</a>
-					</td>
-					<td>{{.HumanSize}}</td>
-					<td class="hideable">{{.HumanModTime "01/02/2006 3:04:05 PM -0700"}}</td>
-				</tr>
-				{{end}}
-			</table>
+			<div class="meta">
+				<div class="content">	
+					<span class="meta-item"><b>{{.NumDirs}}</b> director{{if eq 1 .NumDirs}}y{{else}}ies{{end}}</span>
+					<span class="meta-item"><b>{{.NumFiles}}</b> file{{if ne 1 .NumFiles}}s{{end}}</span>
+				</div>
+			</div>
+			<div class="listing">
+				<table>
+					<tr>
+						<th>
+							{{if and (eq .Sort "name") (ne .Order "desc")}}
+							<a href="?sort=name&order=desc">Name <svg width="1em" height=".4em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#up-arrow"></use></svg></a>
+							{{else if and (eq .Sort "name") (ne .Order "asc")}}
+							<a href="?sort=name&order=asc">Name <svg width="1em" height=".4em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#down-arrow"></use></svg></a>
+							{{else}}
+							<a href="?sort=name&order=asc">Name</a>
+							{{end}}
+						</th>
+						<th>
+							{{if and (eq .Sort "size") (ne .Order "desc")}}
+							<a href="?sort=size&order=desc">Size <svg width="1em" height=".4em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#up-arrow"></use></svg></a></a>
+							{{else if and (eq .Sort "size") (ne .Order "asc")}}
+							<a href="?sort=size&order=asc">Size <svg width="1em" height=".4em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#down-arrow"></use></svg></a></a>
+							{{else}}
+							<a href="?sort=size&order=asc">Size</a>
+							{{end}}
+						</th>
+						<th class="hideable">
+							{{if and (eq .Sort "time") (ne .Order "desc")}}
+							<a href="?sort=time&order=desc">Modified <svg width="1em" height=".4em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#up-arrow"></use></svg></a></a>
+							{{else if and (eq .Sort "time") (ne .Order "asc")}}
+							<a href="?sort=time&order=asc">Modified <svg width="1em" height=".4em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#down-arrow"></use></svg></a></a>
+							{{else}}
+							<a href="?sort=time&order=asc">Modified</a>
+							{{end}}
+						</th>
+					</tr>
+					{{range .Items}}
+					<tr>
+						<td>
+							<a href="{{.URL}}">
+								{{if .IsDir}}
+								<svg width="1.5em" height="1em" version="1.1" viewBox="0 0 35.678803 28.527945"><use xlink:href="#folder"></use></svg>
+								{{else}}
+								<svg width="1.5em" height="1em" version="1.1" viewBox="0 0 26.604381 29.144726"><use xlink:href="#file"></use></svg>
+								{{end}}
+								<span class="name">{{.Name}}</span>
+							</a>
+						</td>
+						<td>{{.HumanSize}}</td>
+						<td class="hideable">{{.HumanModTime "01/02/2006 03:04:05 PM"}}</td>
+					</tr>
+					{{end}}
+				</table>
+			</div>
 		</main>
+		<footer>
+			Served with <a href="https://caddyserver.com">Caddy</a>
+		</footer>
 	</body>
 </html>`
