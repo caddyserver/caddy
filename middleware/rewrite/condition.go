@@ -9,8 +9,8 @@ import (
 	"github.com/mholt/caddy/middleware"
 )
 
+// Operators
 const (
-	// Operators
 	Is         = "is"
 	Not        = "not"
 	Has        = "has"

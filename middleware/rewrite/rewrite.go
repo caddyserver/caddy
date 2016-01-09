@@ -13,12 +13,12 @@ import (
 	"github.com/mholt/caddy/middleware"
 )
 
-// RewriteResult is the result of a rewrite
-type RewriteResult int
+// Result is the result of a rewrite
+type Result int
 
 const (
 	// RewriteIgnored is returned when rewrite is not done on request.
-	RewriteIgnored RewriteResult = iota
+	RewriteIgnored Result = iota
 	// RewriteDone is returned when rewrite is done on request.
 	RewriteDone
 	// RewriteStatus is returned when rewrite is not needed and status code should be set
@@ -55,7 +55,7 @@ outer:
 // Rule describes an internal location rewrite rule.
 type Rule interface {
 	// Rewrite rewrites the internal location of the current request.
-	Rewrite(http.FileSystem, *http.Request) RewriteResult
+	Rewrite(http.FileSystem, *http.Request) Result
 }
 
 // SimpleRule is a simple rewrite rule.
@@ -69,7 +69,7 @@ func NewSimpleRule(from, to string) SimpleRule {
 }
 
 // Rewrite rewrites the internal location of the current request.
-func (s SimpleRule) Rewrite(fs http.FileSystem, r *http.Request) RewriteResult {
+func (s SimpleRule) Rewrite(fs http.FileSystem, r *http.Request) Result {
 	if s.From == r.URL.Path {
 		// take note of this rewrite for internal use by fastcgi
 		// all we need is the URI, not full URL
@@ -102,7 +102,7 @@ type ComplexRule struct {
 	*regexp.Regexp
 }
 
-// NewRegexpRule creates a new RegexpRule. It returns an error if regexp
+// NewComplexRule creates a new RegexpRule. It returns an error if regexp
 // pattern (pattern) or extensions (ext) are invalid.
 func NewComplexRule(base, pattern, to string, status int, ext []string, ifs []If) (*ComplexRule, error) {
 	// validate regexp if present
@@ -136,7 +136,7 @@ func NewComplexRule(base, pattern, to string, status int, ext []string, ifs []If
 }
 
 // Rewrite rewrites the internal location of the current request.
-func (r *ComplexRule) Rewrite(fs http.FileSystem, req *http.Request) (re RewriteResult) {
+func (r *ComplexRule) Rewrite(fs http.FileSystem, req *http.Request) (re Result) {
 	rPath := req.URL.Path
 	replacer := newReplacer(req)
 

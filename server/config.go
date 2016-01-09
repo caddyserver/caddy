@@ -17,6 +17,9 @@ type Config struct {
 	// The port to listen on
 	Port string
 
+	// The protocol (http/https) to serve with this config; only set if user explicitly specifies it
+	Scheme string
+
 	// The directory from which to serve files
 	Root string
 
@@ -62,10 +65,12 @@ func (c Config) Address() string {
 
 // TLSConfig describes how TLS should be configured and used.
 type TLSConfig struct {
-	Enabled                  bool
-	Certificate              string
-	Key                      string
-	LetsEncryptEmail         string
+	Enabled          bool
+	Certificate      string
+	Key              string
+	LetsEncryptEmail string
+	Managed          bool // will be set to true if config qualifies for automatic, managed TLS
+	//DisableHTTPRedir         bool // TODO: not a good idea - should we really allow it?
 	OCSPStaple               []byte
 	Ciphers                  []uint16
 	ProtocolMinVersion       uint16

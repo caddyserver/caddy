@@ -3,11 +3,17 @@
 package caddy
 
 import (
+	"bytes"
 	"encoding/gob"
+	"errors"
 	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
+	"path"
+
+	"github.com/mholt/caddy/caddy/letsencrypt"
+	"github.com/mholt/caddy/server"
 )
 
 func init() {
@@ -31,6 +37,12 @@ func Restart(newCaddyfile Input) error {
 		caddyfileMu.Lock()
 		newCaddyfile = caddyfile
 		caddyfileMu.Unlock()
+	}
+
+	// Get certificates for any new hosts in the new Caddyfile without causing downtime
+	err := getCertsForNewCaddyfile(newCaddyfile)
+	if err != nil {
+		return errors.New("TLS preload: " + err.Error())
 	}
 
 	if len(os.Args) == 0 { // this should never happen, but...
@@ -61,7 +73,7 @@ func Restart(newCaddyfile Input) error {
 
 	// Pass along relevant file descriptors to child process; ordering
 	// is very important since we rely on these being in certain positions.
-	extraFiles := []*os.File{sigwpipe}
+	extraFiles := []*os.File{sigwpipe} // fd 3
 
 	// Add file descriptors of all the sockets
 	serversMu.Lock()
@@ -109,4 +121,45 @@ func Restart(newCaddyfile Input) error {
 
 	// Looks like child is successful; we can exit gracefully.
 	return Stop()
+}
+
+func getCertsForNewCaddyfile(newCaddyfile Input) error {
+	// parse the new caddyfile only up to (and including) TLS
+	// so we can know what we need to get certs for.
+	configs, _, _, err := loadConfigsUpToIncludingTLS(path.Base(newCaddyfile.Path()), bytes.NewReader(newCaddyfile.Body()))
+	if err != nil {
+		return errors.New("loading Caddyfile: " + err.Error())
+	}
+
+	// first mark the configs that are qualified for managed TLS
+	letsencrypt.MarkQualified(configs)
+
+	// we must make sure port is set before we group by bind address
+	letsencrypt.EnableTLS(configs)
+
+	// we only need to issue certs for hosts where we already have an active listener
+	groupings, err := arrangeBindings(configs)
+	if err != nil {
+		return errors.New("arranging bindings: " + err.Error())
+	}
+	var configsToSetup []server.Config
+	serversMu.Lock()
+GroupLoop:
+	for _, group := range groupings {
+		for _, server := range servers {
+			if server.Addr == group.BindAddr.String() {
+				configsToSetup = append(configsToSetup, group.Configs...)
+				continue GroupLoop
+			}
+		}
+	}
+	serversMu.Unlock()
+
+	// place certs on the disk
+	err = letsencrypt.ObtainCerts(configsToSetup, letsencrypt.AlternatePort)
+	if err != nil {
+		return errors.New("obtaining certs: " + err.Error())
+	}
+
+	return nil
 }

@@ -21,25 +21,22 @@ const (
 	DefaultConfigFile = "Caddyfile"
 )
 
-// loadConfigs reads input (named filename) and parses it, returning the
-// server configurations in the order they appeared in the input. As part
-// of this, it activates Let's Encrypt for the configs that are produced.
-// Thus, the returned configs are already optimally configured optimally
-// for HTTPS.
-func loadConfigs(filename string, input io.Reader) ([]server.Config, error) {
+// loadConfigsUpToIncludingTLS loads the configs from input with name filename and returns them,
+// the parsed server blocks, the index of the last directive it processed, and an error (if any).
+func loadConfigsUpToIncludingTLS(filename string, input io.Reader) ([]server.Config, []parse.ServerBlock, int, error) {
 	var configs []server.Config
 
 	// Each server block represents similar hosts/addresses, since they
 	// were grouped together in the Caddyfile.
 	serverBlocks, err := parse.ServerBlocks(filename, input, true)
 	if err != nil {
-		return nil, err
+		return nil, nil, 0, err
 	}
 	if len(serverBlocks) == 0 {
 		newInput := DefaultInput()
 		serverBlocks, err = parse.ServerBlocks(newInput.Path(), bytes.NewReader(newInput.Body()), true)
 		if err != nil {
-			return nil, err
+			return nil, nil, 0, err
 		}
 	}
 
@@ -56,6 +53,7 @@ func loadConfigs(filename string, input io.Reader) ([]server.Config, error) {
 			config := server.Config{
 				Host:       addr.Host,
 				Port:       addr.Port,
+				Scheme:     addr.Scheme,
 				Root:       Root,
 				Middleware: make(map[string][]middleware.Middleware),
 				ConfigFile: filename,
@@ -88,7 +86,7 @@ func loadConfigs(filename string, input io.Reader) ([]server.Config, error) {
 					// execute setup function and append middleware handler, if any
 					midware, err := dir.setup(controller)
 					if err != nil {
-						return nil, err
+						return nil, nil, lastDirectiveIndex, err
 					}
 					if midware != nil {
 						// TODO: For now, we only support the default path scope /
@@ -109,22 +107,31 @@ func loadConfigs(filename string, input io.Reader) ([]server.Config, error) {
 		}
 	}
 
+	return configs, serverBlocks, lastDirectiveIndex, nil
+}
+
+// loadConfigs reads input (named filename) and parses it, returning the
+// server configurations in the order they appeared in the input. As part
+// of this, it activates Let's Encrypt for the configs that are produced.
+// Thus, the returned configs are already optimally configured for HTTPS.
+func loadConfigs(filename string, input io.Reader) ([]server.Config, error) {
+	configs, serverBlocks, lastDirectiveIndex, err := loadConfigsUpToIncludingTLS(filename, input)
+	if err != nil {
+		return nil, err
+	}
+
 	// Now we have all the configs, but they have only been set up to the
 	// point of tls. We need to activate Let's Encrypt before setting up
 	// the rest of the middlewares so they have correct information regarding
-	// TLS configuration, if necessary. (this call is append-only, so our
-	// iterations below shouldn't be affected)
+	// TLS configuration, if necessary. (this only appends, so our iterations
+	// over server blocks below shouldn't be affected)
 	if !IsRestart() && !Quiet {
 		fmt.Print("Activating privacy features...")
 	}
 	configs, err = letsencrypt.Activate(configs)
 	if err != nil {
-		if !Quiet {
-			fmt.Println()
-		}
 		return nil, err
-	}
-	if !IsRestart() && !Quiet {
+	} else if !IsRestart() && !Quiet {
 		fmt.Println(" done.")
 	}
 
@@ -277,44 +284,17 @@ func arrangeBindings(allConfigs []server.Config) (bindingGroup, error) {
 // but execution may continue. The second error, if not nil, is a real
 // problem and the server should not be started.
 //
-// This function handles edge cases gracefully. If a port name like
-// "http" or "https" is unknown to the system, this function will
-// change them to 80 or 443 respectively. If a hostname fails to
-// resolve, that host can still be served but will be listening on
-// the wildcard host instead. This function takes care of this for you.
+// This function does not handle edge cases like port "http" or "https" if
+// they are not known to the system. It does, however, serve on the wildcard
+// host if resolving the address of the specific hostname fails.
 func resolveAddr(conf server.Config) (resolvAddr *net.TCPAddr, warnErr, fatalErr error) {
-	bindHost := conf.BindHost
-
-	// TODO: Do we even need the port? Maybe we just need to look up the host.
-	resolvAddr, warnErr = net.ResolveTCPAddr("tcp", net.JoinHostPort(bindHost, conf.Port))
+	resolvAddr, warnErr = net.ResolveTCPAddr("tcp", net.JoinHostPort(conf.BindHost, conf.Port))
 	if warnErr != nil {
-		// Most likely the host lookup failed or the port is unknown
-		tryPort := conf.Port
-
-		switch errVal := warnErr.(type) {
-		case *net.AddrError:
-			if errVal.Err == "unknown port" {
-				// some odd Linux machines don't support these port names; see issue #136
-				switch conf.Port {
-				case "http":
-					tryPort = "80"
-				case "https":
-					tryPort = "443"
-				}
-			}
-			resolvAddr, fatalErr = net.ResolveTCPAddr("tcp", net.JoinHostPort(bindHost, tryPort))
-			if fatalErr != nil {
-				return
-			}
-		default:
-			// the hostname probably couldn't be resolved, just bind to wildcard then
-			resolvAddr, fatalErr = net.ResolveTCPAddr("tcp", net.JoinHostPort("0.0.0.0", tryPort))
-			if fatalErr != nil {
-				return
-			}
+		// the hostname probably couldn't be resolved, just bind to wildcard then
+		resolvAddr, fatalErr = net.ResolveTCPAddr("tcp", net.JoinHostPort("", conf.Port))
+		if fatalErr != nil {
+			return
 		}
-
-		return
 	}
 
 	return
@@ -334,12 +314,12 @@ func validDirective(d string) bool {
 // DefaultInput returns the default Caddyfile input
 // to use when it is otherwise empty or missing.
 // It uses the default host and port (depends on
-// host, e.g. localhost is 2015, otherwise https) and
+// host, e.g. localhost is 2015, otherwise 443) and
 // root.
 func DefaultInput() CaddyfileInput {
 	port := Port
-	if letsencrypt.HostQualifies(Host) {
-		port = "https"
+	if letsencrypt.HostQualifies(Host) && port == DefaultPort {
+		port = "443"
 	}
 	return CaddyfileInput{
 		Contents: []byte(fmt.Sprintf("%s:%s\nroot %s", Host, port, Root)),

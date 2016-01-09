@@ -40,8 +40,8 @@ func NewResponseFilterWriter(filters []ResponseFilter, gz *gzipResponseWriter) *
 	return &ResponseFilterWriter{filters: filters, gzipResponseWriter: gz}
 }
 
-// Write wraps underlying WriteHeader method and compresses if filters
-// are satisfied.
+// WriteHeader wraps underlying WriteHeader method and
+// compresses if filters are satisfied.
 func (r *ResponseFilterWriter) WriteHeader(code int) {
 	// Determine if compression should be used or not.
 	r.shouldCompress = true

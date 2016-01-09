@@ -27,8 +27,8 @@ var OnChange func() error
 // which you'll close when maintenance should stop, to allow this
 // goroutine to clean up after itself and unblock.
 func maintainAssets(configs []server.Config, stopChan chan struct{}) {
-	renewalTicker := time.NewTicker(renewInterval)
-	ocspTicker := time.NewTicker(ocspInterval)
+	renewalTicker := time.NewTicker(RenewInterval)
+	ocspTicker := time.NewTicker(OCSPInterval)
 
 	for {
 		select {
@@ -47,15 +47,29 @@ func maintainAssets(configs []server.Config, stopChan chan struct{}) {
 				}
 			}
 		case <-ocspTicker.C:
-			for bundle, oldStatus := range ocspStatus {
-				_, newStatus, err := acme.GetOCSPForCert(*bundle)
-				if err == nil && newStatus != oldStatus && OnChange != nil {
-					log.Printf("[INFO] OCSP status changed from %v to %v", oldStatus, newStatus)
-					err := OnChange()
+			for bundle, oldResp := range ocspCache {
+				// start checking OCSP staple about halfway through validity period for good measure
+				refreshTime := oldResp.ThisUpdate.Add(oldResp.NextUpdate.Sub(oldResp.ThisUpdate) / 2)
+
+				// only check for updated OCSP validity window if refreshTime is in the past
+				if time.Now().After(refreshTime) {
+					_, newResp, err := acme.GetOCSPForCert(*bundle)
 					if err != nil {
-						log.Printf("[ERROR] OnChange after OCSP update: %v", err)
+						log.Printf("[ERROR] Checking OCSP for bundle: %v", err)
+						continue
 					}
-					break
+
+					// we're not looking for different status, just a more future expiration
+					if newResp.NextUpdate != oldResp.NextUpdate {
+						if OnChange != nil {
+							log.Printf("[INFO] Updating OCSP stapling to extend validity period to %v", newResp.NextUpdate)
+							err := OnChange()
+							if err != nil {
+								log.Printf("[ERROR] OnChange after OCSP trigger: %v", err)
+							}
+							break
+						}
+					}
 				}
 			}
 		case <-stopChan:
@@ -102,12 +116,12 @@ func renewCertificates(configs []server.Config, useCustomPort bool) (int, []erro
 		// Directly convert it to days for the following checks.
 		daysLeft := int(expTime.Sub(time.Now().UTC()).Hours() / 24)
 
-		// Renew with two weeks or less remaining.
-		if daysLeft <= 14 {
+		// Renew if getting close to expiration.
+		if daysLeft <= renewDaysBefore {
 			log.Printf("[INFO] Certificate for %s has %d days remaining; attempting renewal", cfg.Host, daysLeft)
 			var client *acme.Client
 			if useCustomPort {
-				client, err = newClientPort("", alternatePort) // email not used for renewal
+				client, err = newClientPort("", AlternatePort) // email not used for renewal
 			} else {
 				client, err = newClient("")
 			}
@@ -134,7 +148,7 @@ func renewCertificates(configs []server.Config, useCustomPort bool) (int, []erro
 
 			// Renew certificate
 		Renew:
-			newCertMeta, err := client.RenewCertificate(certMeta, true, true)
+			newCertMeta, err := client.RenewCertificate(certMeta, true)
 			if err != nil {
 				if _, ok := err.(acme.TOSError); ok {
 					err := client.AgreeToTOS()
@@ -145,24 +159,22 @@ func renewCertificates(configs []server.Config, useCustomPort bool) (int, []erro
 				}
 
 				time.Sleep(10 * time.Second)
-				newCertMeta, err = client.RenewCertificate(certMeta, true, true)
+				newCertMeta, err = client.RenewCertificate(certMeta, true)
 				if err != nil {
 					errs = append(errs, err)
 					continue
 				}
 			}
 
-			saveCertsAndKeys([]acme.CertificateResource{newCertMeta})
+			saveCertResource(newCertMeta)
 			n++
-		} else if daysLeft <= 30 {
-			// Warn on 30 days remaining. TODO: Just do this once...
-			log.Printf("[WARNING] Certificate for %s has %d days remaining; will automatically renew when 14 days remain\n", cfg.Host, daysLeft)
+		} else if daysLeft <= renewDaysBefore+7 && daysLeft >= renewDaysBefore+6 {
+			log.Printf("[WARNING] Certificate for %s has %d days remaining; will automatically renew when %d days remain\n", cfg.Host, daysLeft, renewDaysBefore)
 		}
 	}
 
 	return n, errs
 }
 
-// acmeHandlers is a map of host to ACME handler. These
-// are used to proxy ACME requests to the ACME client.
-var acmeHandlers = make(map[string]*Handler)
+// renewDaysBefore is how many days before expiration to renew certificates.
+const renewDaysBefore = 14

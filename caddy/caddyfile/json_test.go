@@ -63,7 +63,7 @@ baz"
 	{ // 8
 		caddyfile: `http://host, https://host {
 }`,
-		json: `[{"hosts":["host:http","host:https"],"body":[]}]`, // hosts in JSON are always host:port format (if port is specified), for consistency
+		json: `[{"hosts":["http://host","https://host"],"body":[]}]`, // hosts in JSON are always host:port format (if port is specified), for consistency
 	},
 	{ // 9
 		caddyfile: `host {
@@ -122,5 +122,40 @@ func TestFromJSON(t *testing.T) {
 		if string(output) != test.caddyfile {
 			t.Errorf("Test %d\nExpected:\n'%s'\nActual:\n'%s'", i, test.caddyfile, string(output))
 		}
+	}
+}
+
+func TestStandardizeAddress(t *testing.T) {
+	// host:https should be converted to https://host
+	output, err := ToJSON([]byte(`host:https`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if expected, actual := `[{"hosts":["https://host"],"body":[]}]`, string(output); expected != actual {
+		t.Errorf("Expected:\n'%s'\nActual:\n'%s'", expected, actual)
+	}
+
+	output, err = FromJSON([]byte(`[{"hosts":["https://host"],"body":[]}]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if expected, actual := "https://host {\n}", string(output); expected != actual {
+		t.Errorf("Expected:\n'%s'\nActual:\n'%s'", expected, actual)
+	}
+
+	// host: should be converted to just host
+	output, err = ToJSON([]byte(`host:`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if expected, actual := `[{"hosts":["host"],"body":[]}]`, string(output); expected != actual {
+		t.Errorf("Expected:\n'%s'\nActual:\n'%s'", expected, actual)
+	}
+	output, err = FromJSON([]byte(`[{"hosts":["host:"],"body":[]}]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if expected, actual := "host {\n}", string(output); expected != actual {
+		t.Errorf("Expected:\n'%s'\nActual:\n'%s'", expected, actual)
 	}
 }

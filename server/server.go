@@ -33,6 +33,7 @@ type Server struct {
 	httpWg      sync.WaitGroup         // used to wait on outstanding connections
 	startChan   chan struct{}          // used to block until server is finished starting
 	connTimeout time.Duration          // the maximum duration of a graceful shutdown
+	ReqCallback OptionalCallback       // if non-nil, is executed at the beginning of every request
 }
 
 // ListenerFile represents a listener.
@@ -40,6 +41,11 @@ type ListenerFile interface {
 	net.Listener
 	File() (*os.File, error)
 }
+
+// OptionalCallback is a function that may or may not handle a request.
+// It returns whether or not it handled the request. If it handled the
+// request, it is presumed that no further request handling should occur.
+type OptionalCallback func(http.ResponseWriter, *http.Request) bool
 
 // New creates a new Server which will bind to addr and serve
 // the sites/hosts configured in configs. Its listener will
@@ -309,6 +315,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
+	w.Header().Set("Server", "Caddy")
+
+	// Execute the optional request callback if it exists
+	if s.ReqCallback != nil && s.ReqCallback(w, r) {
+		return
+	}
+
 	host, _, err := net.SplitHostPort(r.Host)
 	if err != nil {
 		host = r.Host // oh well
@@ -324,8 +337,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if vh, ok := s.vhosts[host]; ok {
-		w.Header().Set("Server", "Caddy")
-
 		status, _ := vh.stack.ServeHTTP(w, r)
 
 		// Fallback error response in case error handling wasn't chained in

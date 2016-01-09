@@ -1,4 +1,5 @@
-// Package caddy implements the Caddy web server as a service.
+// Package caddy implements the Caddy web server as a service
+// in your own Go programs.
 //
 // To use this package, follow a few simple steps:
 //
@@ -190,7 +191,8 @@ func startServers(groupings bindingGroup) error {
 		if err != nil {
 			return err
 		}
-		s.HTTP2 = HTTP2 // TODO: This setting is temporary
+		s.HTTP2 = HTTP2                             // TODO: This setting is temporary
+		s.ReqCallback = letsencrypt.RequestCallback // ensures we can solve ACME challenges while running
 
 		var ln server.ListenerFile
 		if IsRestart() {

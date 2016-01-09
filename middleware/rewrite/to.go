@@ -13,7 +13,7 @@ import (
 // To attempts rewrite. It attempts to rewrite to first valid path
 // or the last path if none of the paths are valid.
 // Returns true if rewrite is successful and false otherwise.
-func To(fs http.FileSystem, r *http.Request, to string, replacer middleware.Replacer) RewriteResult {
+func To(fs http.FileSystem, r *http.Request, to string, replacer middleware.Replacer) Result {
 	tos := strings.Fields(to)
 
 	// try each rewrite paths

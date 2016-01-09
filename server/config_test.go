@@ -18,8 +18,8 @@ func TestConfigAddress(t *testing.T) {
 		t.Errorf("Expected '%s' but got '%s'", expected, actual)
 	}
 
-	cfg = Config{Host: "::1", Port: "https"}
-	if actual, expected := cfg.Address(), "[::1]:https"; expected != actual {
+	cfg = Config{Host: "::1", Port: "443"}
+	if actual, expected := cfg.Address(), "[::1]:443"; expected != actual {
 		t.Errorf("Expected '%s' but got '%s'", expected, actual)
 	}
 }
