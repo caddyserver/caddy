@@ -183,63 +183,63 @@ func (p *parser) directives() error {
 // other words, call Next() to access the first token that was
 // imported.
 func (p *parser) doImport() error {
+	// syntax check
 	if !p.NextArg() {
 		return p.ArgErr()
 	}
 	importPattern := p.Val()
 	if p.NextArg() {
-		return p.Err("Import allows only one expression, either file or glob pattern")
+		return p.Err("Import takes only one argument (glob pattern or file)")
 	}
 
+	// do glob
 	matches, err := filepath.Glob(importPattern)
 	if err != nil {
-		return p.Errf("Failed to use import pattern %s - %s", importPattern, err.Error())
+		return p.Errf("Failed to use import pattern %s: %v", importPattern, err)
 	}
-
 	if len(matches) == 0 {
-		return p.Errf("No files matching the import pattern %s", importPattern)
+		return p.Errf("No files matching import pattern %s", importPattern)
 	}
 
-	// Splice out the import directive and its argument (2 tokens total)
-	// and insert the imported tokens in their place.
+	// splice out the import directive and its argument (2 tokens total)
 	tokensBefore := p.tokens[:p.cursor-1]
 	tokensAfter := p.tokens[p.cursor+1:]
-	// cursor was advanced one position to read filename; rewind it
-	p.cursor--
 
-	p.tokens = tokensBefore
-
+	// collect all the imported tokens
+	var importedTokens []token
 	for _, importFile := range matches {
-		if err := p.doSingleImport(importFile); err != nil {
+		newTokens, err := p.doSingleImport(importFile)
+		if err != nil {
 			return err
 		}
+		importedTokens = append(importedTokens, newTokens...)
 	}
 
-	p.tokens = append(p.tokens, append(tokensAfter)...)
+	// splice the imported tokens in the place of the import statement
+	// and rewind cursor so Next() will land on first imported token
+	p.tokens = append(tokensBefore, append(importedTokens, tokensAfter...)...)
+	p.cursor--
 
 	return nil
 }
 
-// doSingleImport lexes the individual files matching the
-// globbing pattern from of the import directive.
-func (p *parser) doSingleImport(importFile string) error {
+// doSingleImport lexes the individual file at importFile and returns
+// its tokens or an error, if any.
+func (p *parser) doSingleImport(importFile string) ([]token, error) {
 	file, err := os.Open(importFile)
 	if err != nil {
-		return p.Errf("Could not import %s - %v", importFile, err)
+		return nil, p.Errf("Could not import %s: %v", importFile, err)
 	}
 	defer file.Close()
 	importedTokens := allTokens(file)
 
-	// Tack the filename onto these tokens so any errors show the imported file's name
+	// Tack the filename onto these tokens so errors show the imported file's name
+	filename := filepath.Base(importFile)
 	for i := 0; i < len(importedTokens); i++ {
-		importedTokens[i].file = filepath.Base(importFile)
+		importedTokens[i].file = filename
 	}
 
-	// Splice out the import directive and its argument (2 tokens total)
-	// and insert the imported tokens in their place.
-	p.tokens = append(p.tokens, append(importedTokens)...)
-
-	return nil
+	return importedTokens, nil
 }
 
 // directive collects tokens until the directive's scope
