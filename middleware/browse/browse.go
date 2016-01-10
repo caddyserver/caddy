@@ -106,6 +106,17 @@ type FileInfo struct {
 	Mode    os.FileMode
 }
 
+// HumanSize returns the size of the file as a human-readable string
+// in IEC format (i.e. power of 2 or base 1024).
+func (fi FileInfo) HumanSize() string {
+	return humanize.IBytes(uint64(fi.Size))
+}
+
+// HumanModTime returns the modified time of the file as a human-readable string.
+func (fi FileInfo) HumanModTime(format string) string {
+	return fi.ModTime.Format(format)
+}
+
 // Implement sorting for Listing
 type byName Listing
 type bySize Listing
@@ -159,17 +170,6 @@ func (l Listing) applySort() {
 			return
 		}
 	}
-}
-
-// HumanSize returns the size of the file as a human-readable string
-// in IEC format (i.e. power of 2 or base 1024).
-func (fi FileInfo) HumanSize() string {
-	return humanize.IBytes(uint64(fi.Size))
-}
-
-// HumanModTime returns the modified time of the file as a human-readable string.
-func (fi FileInfo) HumanModTime(format string) string {
-	return fi.ModTime.Format(format)
 }
 
 func directoryListing(files []os.FileInfo, r *http.Request, canGoUp bool, root string, ignoreIndexes bool, vars interface{}) (Listing, error) {
