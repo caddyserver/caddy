@@ -32,10 +32,18 @@ func trapSignalsCrossPlatform() {
 
 			if i > 0 {
 				log.Println("[INFO] SIGINT: Force quit")
+				if PidFile != "" {
+					os.Remove(PidFile)
+				}
 				os.Exit(1)
 			}
 
 			log.Println("[INFO] SIGINT: Shutting down")
+
+			if PidFile != "" {
+				os.Remove(PidFile)
+			}
+
 			go os.Exit(executeShutdownCallbacks("SIGINT"))
 		}
 	}()
