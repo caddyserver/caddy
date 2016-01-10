@@ -28,6 +28,8 @@ type Upstream interface {
 	Select() *UpstreamHost
 	// Checks if subpath is not an ignored path
 	IsAllowedPath(string) bool
+
+	middleware.ConfigPath
 }
 
 // UpstreamHostDownFunc can be used to customize how Down behaves.

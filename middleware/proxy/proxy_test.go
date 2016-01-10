@@ -111,6 +111,10 @@ func (u *fakeUpstream) From() string {
 	return "/"
 }
 
+func (u *fakeUpstream) Path() string {
+	return "/"
+}
+
 func (u *fakeUpstream) Select() *UpstreamHost {
 	uri, _ := url.Parse(u.name)
 	return &UpstreamHost{
