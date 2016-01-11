@@ -57,7 +57,7 @@ type Rule interface {
 	// Rewrite rewrites the internal location of the current request.
 	Rewrite(http.FileSystem, *http.Request) Result
 
-	middleware.ConfigPath
+	middleware.Config
 }
 
 // SimpleRule is a simple rewrite rule.
@@ -70,7 +70,7 @@ func NewSimpleRule(from, to string) SimpleRule {
 	return SimpleRule{from, to}
 }
 
-// Path satisfies middleware.ConfigPath
+// Path satisfies middleware.Config
 func (s SimpleRule) Path() string {
 	return s.From
 }
@@ -142,7 +142,7 @@ func NewComplexRule(base, pattern, to string, status int, ext []string, ifs []If
 	}, nil
 }
 
-// Path satisfies middleware.ConfigPath.
+// Path satisfies middleware.Config.
 func (r *ComplexRule) Path() string {
 	return r.Base
 }

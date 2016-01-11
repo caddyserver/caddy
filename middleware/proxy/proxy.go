@@ -29,7 +29,7 @@ type Upstream interface {
 	// Checks if subpath is not an ignored path
 	IsAllowedPath(string) bool
 
-	middleware.ConfigPath
+	middleware.Config
 }
 
 // UpstreamHostDownFunc can be used to customize how Down behaves.

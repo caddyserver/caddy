@@ -3,15 +3,15 @@ package middleware
 import "testing"
 
 func TestConfigPath(t *testing.T) {
-	testRules := ConfigPaths{
-		testPath("/"),
-		testPath("/school"),
-		testPath("/s"),
-		testPath("/sch"),
-		testPath("/schools"),
+	testRules := Configs{
+		testConfig("/"),
+		testConfig("/school"),
+		testConfig("/s"),
+		testConfig("/sch"),
+		testConfig("/schools"),
 	}
 
-	rules := ConfigPaths{}
+	rules := Configs{}
 	for _, r := range testRules {
 		rules.Add(r)
 	}
@@ -28,8 +28,8 @@ func TestConfigPath(t *testing.T) {
 
 }
 
-type testPath string
+type testConfig string
 
-func (t testPath) Path() string {
+func (t testConfig) Path() string {
 	return string(t)
 }

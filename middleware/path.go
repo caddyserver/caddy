@@ -14,35 +14,35 @@ func (p Path) Matches(other string) bool {
 	return strings.HasPrefix(string(p), other)
 }
 
-// ConfigPath represents a configuration base path.
-type ConfigPath interface {
+// Config represents a configuration.
+type Config interface {
 	// Path returns base path value.
 	Path() string
 }
 
-// ConfigPaths is a list of ConfigPath
-type ConfigPaths []ConfigPath
+// Configs is a list of Config
+type Configs []Config
 
-// Add adds a new ConfigPath to the list in descending order of
+// Add adds a new Config to the list in descending order of
 // path length.
-func (paths *ConfigPaths) Add(b ConfigPath) {
-	idx := len(*paths)
-	for i, p := range *paths {
-		if len(p.Path()) < len(b.Path()) {
+func (configs *Configs) Add(c Config) {
+	idx := len(*configs)
+	for i, config := range *configs {
+		if len(config.Path()) < len(c.Path()) {
 			idx = i
 			break
 		}
 	}
-	part := []ConfigPath{b}
-	if idx < len(*paths) {
-		part = append(part, (*paths)[idx:]...)
+	part := []Config{c}
+	if idx < len(*configs) {
+		part = append(part, (*configs)[idx:]...)
 	}
-	*paths = append((*paths)[:idx], part...)
+	*configs = append((*configs)[:idx], part...)
 }
 
-// Each iterates through all config paths and calls f on each iteration
-func (paths ConfigPaths) Each(f func(ConfigPath)) {
-	for _, p := range paths {
-		f(p)
+// Each iterates through all configs and calls f on each iteration
+func (configs Configs) Each(f func(Config)) {
+	for _, c := range configs {
+		f(c)
 	}
 }

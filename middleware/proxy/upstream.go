@@ -34,7 +34,7 @@ type staticUpstream struct {
 	IgnoredSubPaths   []string
 }
 
-// Path satisfies middleware.ConfigPath
+// Path satisfies middleware.Config
 func (s staticUpstream) Path() string {
 	return s.from
 }
@@ -43,7 +43,7 @@ func (s staticUpstream) Path() string {
 // static upstreams for the proxy middleware.
 func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
 	var upstreams []Upstream
-	var configPaths middleware.ConfigPaths
+	var configs middleware.Configs
 	for c.Next() {
 		upstream := &staticUpstream{
 			from:         "",
@@ -106,11 +106,11 @@ func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
 			go upstream.HealthCheckWorker(nil)
 		}
 
-		configPaths.Add(upstream)
+		configs.Add(upstream)
 	}
 
 	// retrieve in sorted order
-	configPaths.Each(func(c middleware.ConfigPath) {
+	configs.Each(func(c middleware.Config) {
 		upstream, _ := c.(Upstream)
 		upstreams = append(upstreams, upstream)
 	})

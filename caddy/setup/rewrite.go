@@ -104,19 +104,19 @@ func rewriteParse(c *Controller) ([]rewrite.Rule, error) {
 
 	}
 
-	var configPaths middleware.ConfigPaths
+	var configs middleware.Configs
 
 	// put simple rules in front to avoid regexp computation for them
 	for _, v := range append(simpleRules, complexRules...) {
 		// order by longest path
-		configPaths.Add(v)
+		configs.Add(v)
 	}
 
 	var rules []rewrite.Rule
 
 	// add to rules after ordering
-	configPaths.Each(func(b middleware.ConfigPath) {
-		rule, _ := b.(rewrite.Rule)
+	configs.Each(func(c middleware.Config) {
+		rule, _ := c.(rewrite.Rule)
 		rules = append(rules, rule)
 	})
 
