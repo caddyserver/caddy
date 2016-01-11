@@ -11,10 +11,9 @@ import (
 
 // TLS sets up the TLS configuration (but does not activate Let's Encrypt; that is handled elsewhere).
 func TLS(c *Controller) (middleware.Middleware, error) {
-	if c.Scheme == "http" && c.Port != "80" {
+	if c.Scheme == "http" {
 		c.TLS.Enabled = false
-		log.Printf("[WARNING] TLS disabled for %s://%s. To force TLS over the plaintext HTTP port, "+
-			"specify port 80 explicitly (https://%s:80).", c.Scheme, c.Address(), c.Host)
+		log.Printf("[WARNING] TLS disabled for %s://%s.", c.Scheme, c.Address())
 	} else {
 		c.TLS.Enabled = true
 	}
@@ -102,8 +101,9 @@ func SetDefaultTLSParams(c *server.Config) {
 	// Prefer server cipher suites
 	c.TLS.PreferServerCipherSuites = true
 
-	// Default TLS port is 443; only use if port is not manually specified
-	if c.Port == "" {
+	// Default TLS port is 443; only use if port is not manually specified,
+	// TLS is enabled, and the host is not localhost
+	if c.Port == "" && c.TLS.Enabled && c.Host != "localhost" {
 		c.Port = "443"
 	}
 }
