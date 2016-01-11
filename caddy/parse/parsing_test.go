@@ -27,6 +27,8 @@ func TestStandardAddress(t *testing.T) {
 		{`:https`, "https", "", "443", false},
 		{`http://localhost:https`, "", "", "", true}, // conflict
 		{`http://localhost:http`, "", "", "", true},  // repeated scheme
+		{`http://localhost:443`, "", "", "", true},   // not conventional
+		{`https://localhost:80`, "", "", "", true},   // not conventional
 		{`http://localhost`, "http", "localhost", "80", false},
 		{`https://localhost`, "https", "localhost", "443", false},
 		{`http://127.0.0.1`, "http", "127.0.0.1", "80", false},

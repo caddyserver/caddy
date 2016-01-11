@@ -338,7 +338,12 @@ func standardAddress(str string) (address, error) {
 
 	// repeated or conflicting scheme is confusing, so error
 	if scheme != "" && (port == "http" || port == "https") {
-		return address{}, fmt.Errorf("[%s] scheme specified twice in address", str)
+		return address{}, fmt.Errorf("[%s] scheme specified twice in address", input)
+	}
+
+	// error if scheme and port combination violate convention
+	if (scheme == "http" && port == "443") || (scheme == "https" && port == "80") {
+		return address{}, fmt.Errorf("[%s] scheme and port violate convention", input)
 	}
 
 	// standardize http and https ports to their respective port numbers
