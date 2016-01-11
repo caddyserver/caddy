@@ -116,11 +116,11 @@ func MarkQualified(configs []server.Config) {
 //
 // TODO: Right now by potentially prompting about ToS error, we assume this function is only
 // called at startup, but that is not always the case because it could be during a restart.
-func ObtainCerts(configs []server.Config, optPort string) error {
-	groupedConfigs := groupConfigsByEmail(configs)
+func ObtainCerts(configs []server.Config, altPort string) error {
+	groupedConfigs := groupConfigsByEmail(configs, altPort != "") // don't prompt user if server already running
 
 	for email, group := range groupedConfigs {
-		client, err := newClientPort(email, optPort)
+		client, err := newClientPort(email, altPort)
 		if err != nil {
 			return errors.New("error creating client: " + err.Error())
 		}
@@ -147,11 +147,11 @@ func ObtainCerts(configs []server.Config, optPort string) error {
 					// TODO: Double-check, will obtainErr ever be nil?
 					if tosErr, ok := obtainErr.(acme.TOSError); ok {
 						// Terms of Service agreement error; we can probably deal with this
-						if !Agreed && !promptedForAgreement {
+						if !Agreed && !promptedForAgreement && altPort == "" { // don't prompt if server is already running
 							Agreed = promptUserAgreement(tosErr.Detail, true) // TODO: Use latest URL
 							promptedForAgreement = true
 						}
-						if Agreed {
+						if Agreed || altPort != "" {
 							err := client.AgreeToTOS()
 							if err != nil {
 								return errors.New("error agreeing to updated terms: " + err.Error())
@@ -174,14 +174,15 @@ func ObtainCerts(configs []server.Config, optPort string) error {
 
 // groupConfigsByEmail groups configs by the email address to be used by its
 // ACME client. It only includes configs that are marked as fully managed.
-// This is the function that may prompt for an email address.
-func groupConfigsByEmail(configs []server.Config) map[string][]server.Config {
+// This is the function that may prompt for an email address, unless skipPrompt
+// is true, in which case it will assume an empty email address.
+func groupConfigsByEmail(configs []server.Config, skipPrompt bool) map[string][]server.Config {
 	initMap := make(map[string][]server.Config)
 	for _, cfg := range configs {
 		if !cfg.TLS.Managed {
 			continue
 		}
-		leEmail := getEmail(cfg)
+		leEmail := getEmail(cfg, skipPrompt)
 		initMap[leEmail] = append(initMap[leEmail], cfg)
 	}
 	return initMap
@@ -451,7 +452,7 @@ func Revoke(host string) error {
 		return errors.New("no certificate and key for " + host)
 	}
 
-	email := getEmail(server.Config{Host: host})
+	email := getEmail(server.Config{Host: host}, false)
 	if email == "" {
 		return errors.New("email is required to revoke")
 	}

@@ -13,7 +13,6 @@ import (
 	"path"
 
 	"github.com/mholt/caddy/caddy/letsencrypt"
-	"github.com/mholt/caddy/server"
 )
 
 func init() {
@@ -137,26 +136,8 @@ func getCertsForNewCaddyfile(newCaddyfile Input) error {
 	// we must make sure port is set before we group by bind address
 	letsencrypt.EnableTLS(configs)
 
-	// we only need to issue certs for hosts where we already have an active listener
-	groupings, err := arrangeBindings(configs)
-	if err != nil {
-		return errors.New("arranging bindings: " + err.Error())
-	}
-	var configsToSetup []server.Config
-	serversMu.Lock()
-GroupLoop:
-	for _, group := range groupings {
-		for _, server := range servers {
-			if server.Addr == group.BindAddr.String() {
-				configsToSetup = append(configsToSetup, group.Configs...)
-				continue GroupLoop
-			}
-		}
-	}
-	serversMu.Unlock()
-
 	// place certs on the disk
-	err = letsencrypt.ObtainCerts(configsToSetup, letsencrypt.AlternatePort)
+	err = letsencrypt.ObtainCerts(configs, letsencrypt.AlternatePort)
 	if err != nil {
 		return errors.New("obtaining certs: " + err.Error())
 	}

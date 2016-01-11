@@ -280,7 +280,7 @@ func TestEnableTLS(t *testing.T) {
 }
 
 func TestGroupConfigsByEmail(t *testing.T) {
-	if groupConfigsByEmail([]server.Config{}) == nil {
+	if groupConfigsByEmail([]server.Config{}, false) == nil {
 		t.Errorf("With empty input, returned map was nil, but expected non-nil map")
 	}
 
@@ -292,9 +292,9 @@ func TestGroupConfigsByEmail(t *testing.T) {
 		server.Config{Host: "sub4.example.com", TLS: server.TLSConfig{LetsEncryptEmail: "", Managed: true}},
 		server.Config{Host: "sub5.example.com", TLS: server.TLSConfig{LetsEncryptEmail: ""}}, // not managed
 	}
-	DefaultEmail = "test@example.com" // bypass prompt during tests...
+	DefaultEmail = "test@example.com"
 
-	groups := groupConfigsByEmail(configs)
+	groups := groupConfigsByEmail(configs, true)
 
 	if groups == nil {
 		t.Fatalf("Returned map was nil, but expected values")
