@@ -113,9 +113,6 @@ func MarkQualified(configs []server.Config) {
 // ObtainCerts obtains certificates for all these configs as long as a certificate does not
 // already exist on disk. It does not modify the configs at all; it only obtains and stores
 // certificates and keys to the disk.
-//
-// TODO: Right now by potentially prompting about ToS error, we assume this function is only
-// called at startup, but that is not always the case because it could be during a restart.
 func ObtainCerts(configs []server.Config, altPort string) error {
 	groupedConfigs := groupConfigsByEmail(configs, altPort != "") // don't prompt user if server already running
 

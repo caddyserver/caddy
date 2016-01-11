@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -346,6 +347,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	} else {
 		w.WriteHeader(http.StatusNotFound)
 		fmt.Fprintf(w, "No such host at %s", s.Server.Addr)
+		log.Printf("[INFO] %s - No such host at %s", host, s.Server.Addr)
 	}
 }
 
