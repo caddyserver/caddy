@@ -1,5 +1,19 @@
 CHANGES
 
+<master>
+- Improved OCSP stapling
+- Can reload config with new hosts that need certs from Let's Encrypt
+- If pidfile is created, it is deleted when Caddy exits
+- browse: New default template
+- gzip: Added min_length setting
+- import: Support for glob patterns (*) to import multiple files
+- rewrite: New complex rules with conditions, regex captures, and status code
+- tls: Removed DES ciphers from default cipher suite list
+- tls: All supported certificates are OCSP-stapled
+- tls: Allow custom configuration without specifying certificate and key
+- tls: No longer allow HTTPS over port 80
+- Dozens of bug fixes, improvements, and more tests across the board
+
 0.8.0 (December 4, 2015)
 - HTTPS by default via Let's Encrypt (certs & keys are fully managed)
 - Graceful restarts (on POSIX-compliant systems)
