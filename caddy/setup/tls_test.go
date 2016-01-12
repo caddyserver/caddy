@@ -64,12 +64,11 @@ func TestTLSParseBasic(t *testing.T) {
 }
 
 func TestTLSParseIncompleteParams(t *testing.T) {
-	// This doesn't do anything useful but is allowed in case the user wants to be explicit
-	// about TLS being enabled...
+	// Using tls without args is an error because it's unnecessary.
 	c := NewTestController(`tls`)
 	_, err := TLS(c)
-	if err != nil {
-		t.Errorf("Expected no error, but got %v", err)
+	if err == nil {
+		t.Error("Expected an error, but didn't get one")
 	}
 }
 
