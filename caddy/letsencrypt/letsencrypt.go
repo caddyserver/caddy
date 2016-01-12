@@ -342,9 +342,11 @@ func newClientPort(leEmail, port string) (*acme.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	client.SetHTTPAddress(":" + port)
-	client.SetTLSAddress(":" + port)
-	client.ExcludeChallenges([]string{"tls-sni-01", "dns-01"}) // We can only guarantee http-01 at this time
+	if port != "" {
+		client.SetHTTPAddress(":" + port)
+		client.SetTLSAddress(":" + port)
+	}
+	client.ExcludeChallenges([]string{"tls-sni-01", "dns-01"}) // We can only guarantee http-01 at this time, but tls-01 should work if port is not custom!
 
 	// If not registered, the user must register an account with the CA
 	// and agree to terms
@@ -355,11 +357,13 @@ func newClientPort(leEmail, port string) (*acme.Client, error) {
 		}
 		leUser.Registration = reg
 
-		if !Agreed && reg.TosURL == "" {
-			Agreed = promptUserAgreement(saURL, false) // TODO - latest URL
-		}
-		if !Agreed && reg.TosURL == "" {
-			return nil, errors.New("user must agree to terms")
+		if port == "" { // can't prompt a user who isn't there
+			if !Agreed && reg.TosURL == "" {
+				Agreed = promptUserAgreement(saURL, false) // TODO - latest URL
+			}
+			if !Agreed && reg.TosURL == "" {
+				return nil, errors.New("user must agree to terms")
+			}
 		}
 
 		err = client.AgreeToTOS()
