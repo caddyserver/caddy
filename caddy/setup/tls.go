@@ -34,7 +34,9 @@ func TLS(c *Controller) (middleware.Middleware, error) {
 		}
 
 		// Optional block with extra parameters
+		var hadBlock bool
 		for c.NextBlock() {
+			hadBlock = true
 			switch c.Val() {
 			case "protocols":
 				args := c.RemainingArgs()
@@ -70,6 +72,11 @@ func TLS(c *Controller) (middleware.Middleware, error) {
 			default:
 				return nil, c.Errf("Unknown keyword '%s'", c.Val())
 			}
+		}
+
+		// tls requires at least one argument if a block is not opened
+		if len(args) == 0 && !hadBlock {
+			return nil, c.ArgErr()
 		}
 	}
 
