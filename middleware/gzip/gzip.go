@@ -121,11 +121,11 @@ func (w *gzipResponseWriter) WriteHeader(code int) {
 
 // Write wraps the underlying Write method to do compression.
 func (w *gzipResponseWriter) Write(b []byte) (int, error) {
-	if !w.statusCodeWritten {
-		w.WriteHeader(http.StatusOK)
-	}
 	if w.Header().Get("Content-Type") == "" {
 		w.Header().Set("Content-Type", http.DetectContentType(b))
+	}
+	if !w.statusCodeWritten {
+		w.WriteHeader(http.StatusOK)
 	}
 	n, err := w.Writer.Write(b)
 	return n, err

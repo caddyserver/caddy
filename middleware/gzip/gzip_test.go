@@ -2,8 +2,10 @@ package gzip
 
 import (
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/mholt/caddy/middleware"
@@ -80,7 +82,16 @@ func TestGzipHandler(t *testing.T) {
 
 func nextFunc(shouldGzip bool) middleware.Handler {
 	return middleware.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
-		w.Write([]byte("test"))
+
+		// write a relatively large text file
+		b, err := ioutil.ReadFile("testdata/test.txt")
+		if err != nil {
+			return 500, err
+		}
+		if _, err := w.Write(b); err != nil {
+			return 500, err
+		}
+
 		if shouldGzip {
 			if r.Header.Get("Accept-Encoding") != "" {
 				return 0, fmt.Errorf("Accept-Encoding header not expected")
@@ -93,6 +104,9 @@ func nextFunc(shouldGzip bool) middleware.Handler {
 			}
 			if _, ok := w.(*gzipResponseWriter); !ok {
 				return 0, fmt.Errorf("ResponseWriter should be gzipResponseWriter, found %T", w)
+			}
+			if strings.Contains(w.Header().Get("Content-Type"), "application/x-gzip") {
+				return 0, fmt.Errorf("Content type should not be gzip.")
 			}
 			return 0, nil
 		}
