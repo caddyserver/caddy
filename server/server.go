@@ -15,8 +15,6 @@ import (
 	"runtime"
 	"sync"
 	"time"
-
-	"golang.org/x/net/http2"
 )
 
 // Server represents an instance of a server, which serves
@@ -179,9 +177,8 @@ func (s *Server) serve(ln ListenerFile) error {
 // called just before the listener announces itself on the network
 // and should only be called when the server is just starting up.
 func (s *Server) setup() error {
-	if s.HTTP2 {
-		// TODO: This call may not be necessary after HTTP/2 is merged into std lib
-		http2.ConfigureServer(s.Server, nil)
+	if !s.HTTP2 {
+		s.TLSNextProto = make(map[string]func(*http.Server, *tls.Conn, http.Handler))
 	}
 
 	// Execute startup functions now
@@ -206,9 +203,6 @@ func (s *Server) setup() error {
 // client authentication, and our custom Server type.
 func serveTLSWithSNI(s *Server, ln net.Listener, tlsConfigs []TLSConfig) error {
 	config := cloneTLSConfig(s.TLSConfig)
-	if config.NextProtos == nil {
-		config.NextProtos = []string{"http/1.1"}
-	}
 
 	// Here we diverge from the stdlib a bit by loading multiple certs/key pairs
 	// then we map the server names to their certs
@@ -236,6 +230,7 @@ func serveTLSWithSNI(s *Server, ln net.Listener, tlsConfigs []TLSConfig) error {
 		defer close(s.startChan)
 		return err
 	}
+	s.TLSConfig = config
 
 	// Create TLS listener - note that we do not replace s.listener
 	// with this TLS listener; tls.listener is unexported and does

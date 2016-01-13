@@ -95,7 +95,8 @@ func SetDefaultTLSParams(c *server.Config) {
 	}
 
 	// Not a cipher suite, but still important for mitigating protocol downgrade attacks
-	c.TLS.Ciphers = append(c.TLS.Ciphers, tls.TLS_FALLBACK_SCSV)
+	// (prepend since having it at end breaks http2 due to non-h2-approved suites before it)
+	c.TLS.Ciphers = append([]uint16{tls.TLS_FALLBACK_SCSV}, c.TLS.Ciphers...)
 
 	// Set default protocol min and max versions - must balance compatibility and security
 	if c.TLS.ProtocolMinVersion == 0 {
