@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 )
@@ -33,6 +34,7 @@ type Server struct {
 	startChan   chan struct{}          // used to block until server is finished starting
 	connTimeout time.Duration          // the maximum duration of a graceful shutdown
 	ReqCallback OptionalCallback       // if non-nil, is executed at the beginning of every request
+	SNICallback func(clientHello *tls.ClientHelloInfo) (*tls.Certificate, error)
 }
 
 // ListenerFile represents a listener.
@@ -206,17 +208,39 @@ func serveTLSWithSNI(s *Server, ln net.Listener, tlsConfigs []TLSConfig) error {
 
 	// Here we diverge from the stdlib a bit by loading multiple certs/key pairs
 	// then we map the server names to their certs
-	var err error
-	config.Certificates = make([]tls.Certificate, len(tlsConfigs))
-	for i, tlsConfig := range tlsConfigs {
-		config.Certificates[i], err = tls.LoadX509KeyPair(tlsConfig.Certificate, tlsConfig.Key)
-		config.Certificates[i].OCSPStaple = tlsConfig.OCSPStaple
+	for _, tlsConfig := range tlsConfigs {
+		if tlsConfig.Certificate == "" || tlsConfig.Key == "" {
+			continue
+		}
+		cert, err := tls.LoadX509KeyPair(tlsConfig.Certificate, tlsConfig.Key)
 		if err != nil {
 			defer close(s.startChan)
-			return err
+			return fmt.Errorf("loading certificate and key pair: %v", err)
 		}
+		cert.OCSPStaple = tlsConfig.OCSPStaple
+		config.Certificates = append(config.Certificates, cert)
 	}
-	config.BuildNameToCertificate()
+	if len(config.Certificates) > 0 {
+		config.BuildNameToCertificate()
+	}
+
+	config.GetCertificate = func(clientHello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+		// TODO: When Caddy starts, if it is to issue certs dynamically, we need
+		// terms agreement and an email address. make sure this is enforced at server
+		// start if the Caddyfile enables dynamic certificate issuance!
+
+		// Check NameToCertificate like the std lib does in "getCertificate" (unexported, bah)
+		cert := GetCertificateFromCache(clientHello, config.NameToCertificate)
+		if cert != nil {
+			return cert, nil
+		}
+
+		if s.SNICallback != nil {
+			return s.SNICallback(clientHello)
+		}
+
+		return nil, nil
+	}
 
 	// Customize our TLS configuration
 	config.MinVersion = tlsConfigs[0].ProtocolMinVersion
@@ -225,7 +249,7 @@ func serveTLSWithSNI(s *Server, ln net.Listener, tlsConfigs []TLSConfig) error {
 	config.PreferServerCipherSuites = tlsConfigs[0].PreferServerCipherSuites
 
 	// TLS client authentication, if user enabled it
-	err = setupClientAuth(tlsConfigs, config)
+	err := setupClientAuth(tlsConfigs, config)
 	if err != nil {
 		defer close(s.startChan)
 		return err
@@ -240,6 +264,36 @@ func serveTLSWithSNI(s *Server, ln net.Listener, tlsConfigs []TLSConfig) error {
 
 	close(s.startChan) // unblock anyone waiting for this to start listening
 	return s.Server.Serve(ln)
+}
+
+// Borrowed from the Go standard library, crypto/tls pacakge, common.go.
+// It has been modified to fit this program.
+// Original license:
+//
+// Copyright 2009 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+func GetCertificateFromCache(clientHello *tls.ClientHelloInfo, cache map[string]*tls.Certificate) *tls.Certificate {
+	name := strings.ToLower(clientHello.ServerName)
+	for len(name) > 0 && name[len(name)-1] == '.' {
+		name = name[:len(name)-1]
+	}
+
+	// exact match? great! use it
+	if cert, ok := cache[name]; ok {
+		return cert
+	}
+
+	// try replacing labels in the name with wildcards until we get a match.
+	labels := strings.Split(name, ".")
+	for i := range labels {
+		labels[i] = "*"
+		candidate := strings.Join(labels, ".")
+		if cert, ok := cache[candidate]; ok {
+			return cert
+		}
+	}
+	return nil
 }
 
 // Stop stops the server. It blocks until the server is

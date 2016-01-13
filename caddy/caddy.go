@@ -191,8 +191,9 @@ func startServers(groupings bindingGroup) error {
 		if err != nil {
 			return err
 		}
-		s.HTTP2 = HTTP2                             // TODO: This setting is temporary
-		s.ReqCallback = letsencrypt.RequestCallback // ensures we can solve ACME challenges while running
+		s.HTTP2 = HTTP2                                           // TODO: This setting is temporary
+		s.ReqCallback = letsencrypt.RequestCallback               // ensures we can solve ACME challenges while running
+		s.SNICallback = letsencrypt.GetCertificateDuringHandshake // TLS on demand -- awesome!
 
 		var ln server.ListenerFile
 		if IsRestart() {

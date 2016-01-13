@@ -6,6 +6,7 @@ package letsencrypt
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -82,6 +83,13 @@ func Activate(configs []server.Config) ([]server.Config, error) {
 	// keep certificates renewed and OCSP stapling updated
 	go maintainAssets(configs, stopChan)
 
+	// TODO - experimental dynamic TLS!
+	for i := range configs {
+		if configs[i].Host == "" && configs[i].Port == "443" {
+			configs[i].TLS.Enabled = true
+		}
+	}
+
 	return configs, nil
 }
 
@@ -127,41 +135,9 @@ func ObtainCerts(configs []server.Config, altPort string) error {
 				continue
 			}
 
-		Obtain:
-			certificate, failures := client.ObtainCertificate([]string{cfg.Host}, true, nil)
-			if len(failures) == 0 {
-				// Success - immediately save the certificate resource
-				err := saveCertResource(certificate)
-				if err != nil {
-					return errors.New("error saving assets for " + cfg.Host + ": " + err.Error())
-				}
-			} else {
-				// Error - either try to fix it or report them it to the user and abort
-				var errMsg string             // we'll combine all the failures into a single error message
-				var promptedForAgreement bool // only prompt user for agreement at most once
-
-				for errDomain, obtainErr := range failures {
-					// TODO: Double-check, will obtainErr ever be nil?
-					if tosErr, ok := obtainErr.(acme.TOSError); ok {
-						// Terms of Service agreement error; we can probably deal with this
-						if !Agreed && !promptedForAgreement && altPort == "" { // don't prompt if server is already running
-							Agreed = promptUserAgreement(tosErr.Detail, true) // TODO: Use latest URL
-							promptedForAgreement = true
-						}
-						if Agreed || altPort != "" {
-							err := client.AgreeToTOS()
-							if err != nil {
-								return errors.New("error agreeing to updated terms: " + err.Error())
-							}
-							goto Obtain
-						}
-					}
-
-					// If user did not agree or it was any other kind of error, just append to the list of errors
-					errMsg += "[" + errDomain + "] failed to get certificate: " + obtainErr.Error() + "\n"
-				}
-
-				return errors.New(errMsg)
+			err := clientObtain(client, []string{cfg.Host}, altPort == "")
+			if err != nil {
+				return err
 			}
 		}
 	}
@@ -445,6 +421,49 @@ func redirPlaintextHost(cfg server.Config) server.Config {
 			"/": []middleware.Middleware{redirMidware},
 		},
 	}
+}
+
+// clientObtain uses client to obtain a single certificate for domains in names. If
+// the user is present to provide an email address, pass in true for allowPrompt,
+// otherwise pass in false. If err == nil, the certificate (and key) will be saved
+// to disk in the storage folder.
+func clientObtain(client *acme.Client, names []string, allowPrompt bool) error {
+	certificate, failures := client.ObtainCertificate(names, true, nil)
+	if len(failures) > 0 {
+		// Error - either try to fix it or report them it to the user and abort
+		var errMsg string             // we'll combine all the failures into a single error message
+		var promptedForAgreement bool // only prompt user for agreement at most once
+
+		for errDomain, obtainErr := range failures {
+			// TODO: Double-check, will obtainErr ever be nil?
+			if tosErr, ok := obtainErr.(acme.TOSError); ok {
+				// Terms of Service agreement error; we can probably deal with this
+				if !Agreed && !promptedForAgreement && allowPrompt { // don't prompt if server is already running
+					Agreed = promptUserAgreement(tosErr.Detail, true) // TODO: Use latest URL
+					promptedForAgreement = true
+				}
+				if Agreed || !allowPrompt {
+					err := client.AgreeToTOS()
+					if err != nil {
+						return errors.New("error agreeing to updated terms: " + err.Error())
+					}
+					return clientObtain(client, names, allowPrompt)
+				}
+			}
+
+			// If user did not agree or it was any other kind of error, just append to the list of errors
+			errMsg += "[" + errDomain + "] failed to get certificate: " + obtainErr.Error() + "\n"
+		}
+		return errors.New(errMsg)
+	}
+
+	// Success - immediately save the certificate resource
+	err := saveCertResource(certificate)
+	if err != nil {
+		return fmt.Errorf("error saving assets for %v: %v", names, err)
+	}
+
+	return nil
 }
 
 // Revoke revokes the certificate for host via ACME protocol.
