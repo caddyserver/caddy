@@ -147,11 +147,11 @@ func TestBrowseTemplate(t *testing.T) {
 
 <h1>/photos/</h1>
 
-<a href="test.html">test.html</a><br>
+<a href="./test.html">test.html</a><br>
 
-<a href="test2.html">test2.html</a><br>
+<a href="./test2.html">test2.html</a><br>
 
-<a href="test3.html">test3.html</a><br>
+<a href="./test3.html">test3.html</a><br>
 
 </body>
 </html>
@@ -209,7 +209,7 @@ func TestBrowseJson(t *testing.T) {
 			name += "/"
 		}
 
-		url := url.URL{Path: name}
+		url := url.URL{Path: "./" + name}
 
 		fileinfos = append(fileinfos, FileInfo{
 			IsDir:   f.IsDir(),

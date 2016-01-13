@@ -196,7 +196,7 @@ func directoryListing(files []os.FileInfo, r *http.Request, canGoUp bool, root s
 			fileCount++
 		}
 
-		url := url.URL{Path: name}
+		url := url.URL{Path: "./" + name} // prepend with "./" to fix paths with ':' in the name
 
 		fileinfos = append(fileinfos, FileInfo{
 			IsDir:   f.IsDir(),
