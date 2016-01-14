@@ -68,6 +68,9 @@ var directiveOrder = []directive{
 	{"browse", setup.Browse},
 }
 
+// RegisterDirective adds the given directive to caddy's list of directives.
+// Pass the name of a directive you want it to be placed after,
+// otherwise it will be placed at the bottom of the stack.
 func RegisterDirective(name string, setup SetupFunc, after string) {
 	dir := directive{name: name, setup: setup}
 	idx := len(directiveOrder)
