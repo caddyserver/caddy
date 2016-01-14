@@ -15,7 +15,7 @@ type RequestFilter interface {
 }
 
 // defaultExtensions is the list of default extensions for which to enable gzipping.
-var defaultExtensions = []string{"", ".txt", ".htm", ".html", ".css", ".php", ".js", ".json", ".md", ".xml"}
+var defaultExtensions = []string{"", ".txt", ".htm", ".html", ".css", ".php", ".js", ".json", ".md", ".xml", ".svg"}
 
 // DefaultExtFilter creates an ExtFilter with default extensions.
 func DefaultExtFilter() ExtFilter {
