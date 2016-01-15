@@ -47,7 +47,7 @@ func gzipParse(c *Controller) ([]gzip.Config, error) {
 					return configs, c.ArgErr()
 				}
 				for _, e := range exts {
-					if !strings.HasPrefix(e, ".") && e != gzip.ExtWildCard {
+					if !strings.HasPrefix(e, ".") && e != gzip.ExtWildCard && e != "" {
 						return configs, fmt.Errorf(`gzip: invalid extension "%v" (must start with dot)`, e)
 					}
 					extFilter.Exts.Add(e)
