@@ -6,6 +6,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"os"
+	"runtime"
 	"testing"
 )
 
@@ -28,13 +29,26 @@ func TestSaveAndLoadRSAPrivateKey(t *testing.T) {
 		t.Fatal("error saving private key:", err)
 	}
 
+	// it doesn't make sense to test file permission on windows
+	if runtime.GOOS != "windows" {
+		// get info of the key file
+		info, err := os.Stat(keyFile)
+		if err != nil {
+			t.Fatal("error stating private key:", err)
+		}
+		// verify permission of key file is correct
+		if info.Mode().Perm() != 0600 {
+			t.Error("Expected key file to have permission 0600, but it wasn't")
+		}
+	}
+
 	// test load
 	loadedKey, err := loadRSAPrivateKey(keyFile)
 	if err != nil {
 		t.Error("error loading private key:", err)
 	}
 
-	// very loaded key is correct
+	// verify loaded key is correct
 	if !rsaPrivateKeysSame(privateKey, loadedKey) {
 		t.Error("Expected key bytes to be the same, but they weren't")
 	}
