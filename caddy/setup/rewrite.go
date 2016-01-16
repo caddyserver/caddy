@@ -27,7 +27,7 @@ func Rewrite(c *Controller) (middleware.Middleware, error) {
 
 func rewriteParse(c *Controller) ([]rewrite.Rule, error) {
 	var simpleRules []rewrite.Rule
-	var regexpRules []rewrite.Rule
+	var complexRules []rewrite.Rule
 
 	for c.Next() {
 		var rule rewrite.Rule
@@ -94,7 +94,7 @@ func rewriteParse(c *Controller) ([]rewrite.Rule, error) {
 			if rule, err = rewrite.NewComplexRule(base, pattern, to, status, ext, ifs); err != nil {
 				return nil, err
 			}
-			regexpRules = append(regexpRules, rule)
+			complexRules = append(complexRules, rule)
 
 		// the only unhandled case is 2 and above
 		default:
@@ -104,6 +104,21 @@ func rewriteParse(c *Controller) ([]rewrite.Rule, error) {
 
 	}
 
+	var configs middleware.Configs
+
 	// put simple rules in front to avoid regexp computation for them
-	return append(simpleRules, regexpRules...), nil
+	for _, v := range append(simpleRules, complexRules...) {
+		// order by longest path
+		configs.Add(v)
+	}
+
+	var rules []rewrite.Rule
+
+	// add to rules after ordering
+	configs.Each(func(c middleware.Config) {
+		rule, _ := c.(rewrite.Rule)
+		rules = append(rules, rule)
+	})
+
+	return rules, nil
 }

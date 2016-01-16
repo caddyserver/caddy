@@ -56,6 +56,8 @@ outer:
 type Rule interface {
 	// Rewrite rewrites the internal location of the current request.
 	Rewrite(http.FileSystem, *http.Request) Result
+
+	middleware.Config
 }
 
 // SimpleRule is a simple rewrite rule.
@@ -66,6 +68,11 @@ type SimpleRule struct {
 // NewSimpleRule creates a new Simple Rule
 func NewSimpleRule(from, to string) SimpleRule {
 	return SimpleRule{from, to}
+}
+
+// Path satisfies middleware.Config
+func (s SimpleRule) Path() string {
+	return s.From
 }
 
 // Rewrite rewrites the internal location of the current request.
@@ -133,6 +140,11 @@ func NewComplexRule(base, pattern, to string, status int, ext []string, ifs []If
 		Ifs:    ifs,
 		Regexp: r,
 	}, nil
+}
+
+// Path satisfies middleware.Config.
+func (r *ComplexRule) Path() string {
+	return r.Base
 }
 
 // Rewrite rewrites the internal location of the current request.
