@@ -103,7 +103,7 @@ var hopHeaders = []string{
 	"Upgrade",
 }
 
-func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request, extraHeaders http.Header) error {
+func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request, extraHeaders http.Header, proxyRedirects map[string]string) error {
 	transport := p.Transport
 	if transport == nil {
 		transport = http.DefaultTransport
@@ -154,6 +154,14 @@ func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request, extr
 	res, err := transport.RoundTrip(outreq)
 	if err != nil {
 		return err
+	}
+
+	if lu, err := res.Location(); err == nil {
+		for redirect, replacement := range proxyRedirects {
+			if strings.HasPrefix(lu.String(), redirect) {
+				res.Header.Set("Location", strings.Replace(lu.String(), redirect, replacement, 1))
+			}
+		}
 	}
 
 	if res.StatusCode == http.StatusSwitchingProtocols && res.Header.Get("Upgrade") == "websocket" {

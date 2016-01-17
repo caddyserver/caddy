@@ -32,6 +32,7 @@ type staticUpstream struct {
 	}
 	WithoutPathPrefix string
 	IgnoredSubPaths   []string
+	proxyRedirects    map[string]string
 }
 
 // NewStaticUpstreams parses the configuration input and sets up
@@ -40,12 +41,13 @@ func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
 	var upstreams []Upstream
 	for c.Next() {
 		upstream := &staticUpstream{
-			from:         "",
-			proxyHeaders: make(http.Header),
-			Hosts:        nil,
-			Policy:       &Random{},
-			FailTimeout:  10 * time.Second,
-			MaxFails:     1,
+			from:           "",
+			proxyHeaders:   make(http.Header),
+			Hosts:          nil,
+			Policy:         &Random{},
+			FailTimeout:    10 * time.Second,
+			MaxFails:       1,
+			proxyRedirects: map[string]string{},
 		}
 
 		if !c.Args(&upstream.from) {
@@ -113,6 +115,10 @@ func (u *staticUpstream) From() string {
 	return u.from
 }
 
+func (u *staticUpstream) ProxyRedirects() map[string]string {
+	return u.proxyRedirects
+}
+
 func parseBlock(c *parse.Dispenser, u *staticUpstream) error {
 	switch c.Val() {
 	case "policy":
@@ -175,6 +181,12 @@ func parseBlock(c *parse.Dispenser, u *staticUpstream) error {
 			return c.ArgErr()
 		}
 		u.IgnoredSubPaths = ignoredPaths
+	case "proxy_redirect":
+		var redirect, replacement string
+		if !c.Args(&redirect, &replacement) {
+			return c.ArgErr()
+		}
+		u.proxyRedirects[redirect] = replacement
 	default:
 		return c.Errf("unknown property '%s'", c.Val())
 	}
