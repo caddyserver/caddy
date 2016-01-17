@@ -3,15 +3,18 @@ package proxy
 import (
 	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"net/url"
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mholt/caddy/caddy/parse"
 	"github.com/mholt/caddy/middleware"
+	"github.com/mholt/caddy/middleware/proxy/provider"
 )
 
 var (
@@ -33,6 +36,8 @@ type staticUpstream struct {
 	}
 	WithoutPathPrefix string
 	IgnoredSubPaths   []string
+
+	sync.Mutex
 }
 
 // NewStaticUpstreams parses the configuration input and sets up
@@ -63,42 +68,27 @@ func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
 			}
 		}
 
-		upstream.Hosts = make([]*UpstreamHost, len(to))
-		for i, host := range to {
-			if !strings.HasPrefix(host, "http") &&
-				!strings.HasPrefix(host, "unix:") {
-				host = "http://" + host
-			}
-			uh := &UpstreamHost{
-				Name:         host,
-				Conns:        0,
-				Fails:        0,
-				FailTimeout:  upstream.FailTimeout,
-				Unhealthy:    false,
-				ExtraHeaders: upstream.proxyHeaders,
-				CheckDown: func(upstream *staticUpstream) UpstreamHostDownFunc {
-					return func(uh *UpstreamHost) bool {
-						if uh.Unhealthy {
-							return true
-						}
-						if uh.Fails >= upstream.MaxFails &&
-							upstream.MaxFails != 0 {
-							return true
-						}
-						return false
-					}
-				}(upstream),
-				WithoutPathPrefix: upstream.WithoutPathPrefix,
-			}
-			if baseURL, err := url.Parse(uh.Name); err == nil {
-				uh.ReverseProxy = NewSingleHostReverseProxy(baseURL, uh.WithoutPathPrefix)
-				if upstream.insecureSkipVerify {
-					uh.ReverseProxy.Transport = InsecureTransport
-				}
-			} else {
+		for _, addr := range to {
+			p, err := provider.Get(addr)
+			if err != nil {
 				return upstreams, err
 			}
-			upstream.Hosts[i] = uh
+			hosts, err := p.Hosts()
+			if err != nil {
+				return upstreams, err
+			}
+			for _, host := range hosts {
+				err := addToUpstream(upstream, host)
+				if err != nil {
+					return upstreams, err
+				}
+				// if provider is dynamic
+				// watch for changes
+				if dp, ok := p.(provider.DynamicProvider); ok {
+					watcher := dp.Watch()
+					go providerWorker(upstream, watcher, nil)
+				}
+			}
 		}
 
 		if upstream.HealthCheck.Path != "" {
@@ -107,6 +97,61 @@ func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
 		upstreams = append(upstreams, upstream)
 	}
 	return upstreams, nil
+}
+
+func addToUpstream(upstream *staticUpstream, host string) error {
+	uh := &UpstreamHost{
+		Name:         host,
+		Conns:        0,
+		Fails:        0,
+		FailTimeout:  upstream.FailTimeout,
+		Unhealthy:    false,
+		ExtraHeaders: upstream.proxyHeaders,
+		CheckDown: func(upstream *staticUpstream) UpstreamHostDownFunc {
+			return func(uh *UpstreamHost) bool {
+				if uh.Unhealthy {
+					return true
+				}
+				if uh.Fails >= upstream.MaxFails &&
+				upstream.MaxFails != 0 {
+					return true
+				}
+				return false
+			}
+		}(upstream),
+		WithoutPathPrefix: upstream.WithoutPathPrefix,
+	}
+	if baseURL, err := url.Parse(uh.Name); err == nil {
+		uh.ReverseProxy = NewSingleHostReverseProxy(baseURL, uh.WithoutPathPrefix)
+		if upstream.insecureSkipVerify {
+			uh.ReverseProxy.Transport = InsecureTransport
+		}
+	} else {
+		return err
+	}
+	upstream.Lock()
+	upstream.Hosts = append(upstream.Hosts, uh)
+	upstream.Unlock()
+	return nil
+}
+
+func providerWorker(upstream *staticUpstream, watcher provider.Watcher, stop chan struct{}) {
+	for {
+		select {
+		case c := <-watcher.Next():
+			if c.Err != nil {
+				log.Println(c.Err)
+			} else {
+				if err := addToUpstream(upstream, c.Host); err != nil {
+					log.Println(err)
+				} else {
+					log.Println("New host added to ")
+				}
+			}
+		case <-stop:
+			watcher.Stop()
+		}
+	}
 }
 
 // RegisterPolicy adds a custom policy to the proxy.
