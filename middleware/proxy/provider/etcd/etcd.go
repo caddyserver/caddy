@@ -2,13 +2,12 @@
 package etcd
 
 import (
+	"errors"
 	"fmt"
 	"strings"
-	"sync"
 
 	"github.com/coreos/etcd/client"
 	"github.com/mholt/caddy/middleware/proxy/provider"
-	"github.com/syndtr/goleveldb/leveldb/errors"
 	"golang.org/x/net/context"
 )
 
@@ -17,7 +16,7 @@ const (
 	Scheme = "etcd://"
 
 	// DefaultDirectory is the default Etcd config directory.
-	DefaultDirectory = "/CADDY_PROXY_HOSTS/"
+	DefaultDirectory = "/caddy_proxy_hosts/"
 )
 
 var (
@@ -34,7 +33,6 @@ type Provider struct {
 	username  string
 	password  string
 	client.KeysAPI
-	sync.Mutex
 }
 
 // New creates a new Etcd Provider
@@ -56,7 +54,7 @@ func New(addr string) (provider.Provider, error) {
 	}
 
 	p.KeysAPI = client.NewKeysAPI(c)
-	return &p, nil
+	return p, nil
 }
 
 // Hosts satisfies provider.Provider interface.
@@ -121,11 +119,11 @@ func (w *watcher) Next() (provider.WatcherMsg, error) {
 
 // parseAddr passes addr into a new configured Provider.
 // URL format: etcd://username:password@<etcd_addr1>,<etcd_addr2>/<optional path prefix>
-func parseAddr(addr string) (Provider, error) {
-	p := Provider{}
+func parseAddr(addr string) (*Provider, error) {
+	p := &Provider{}
 	// validate scheme.
 	if !strings.HasPrefix(addr, Scheme) {
-		return p, errInvalidScheme
+		return nil, errInvalidScheme
 	}
 
 	// extract username and password if present.
@@ -157,7 +155,7 @@ func extractUserPass(addr string) (username, password, remaining string) {
 		remaining = addr
 		return
 	}
-	userPass := strings.Split(s[0], ":")
+	userPass := strings.SplitN(s[0], ":", 2)
 	username = userPass[0]
 	if len(userPass) > 1 {
 		password = userPass[1]

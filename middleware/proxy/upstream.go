@@ -100,6 +100,7 @@ func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
 		}
 
 		if upstream.HealthCheck.Path != "" {
+			// TODO provide stop channel
 			go upstream.HealthCheckWorker(nil)
 		}
 		upstreams = append(upstreams, upstream)
@@ -234,29 +235,26 @@ func (upstream *staticUpstream) ProviderWorker(watcher provider.Watcher, stop <-
 		}
 	}()
 
-worker:
 	for {
-		select {
-		case m, ok := <-resp:
-			if !ok {
-				break worker
+		m, ok := <-resp
+		if !ok {
+			break
+		}
+		if m.err != nil {
+			log.Println(m.err)
+			continue
+		}
+		if m.msg.Remove {
+			// remove from upstream
+			upstream.RemoveHost(m.msg.Host)
+			log.Printf("Host %v removed from upstream", m.msg.Host)
+		} else {
+			// add host to upstream
+			if err := upstream.AddHost(m.msg.Host); err != nil {
+				log.Println(err)
+				continue
 			}
-			if m.err != nil {
-				log.Println(m.err)
-				continue worker
-			}
-			if m.msg.Remove {
-				// remove from upstream
-				upstream.RemoveHost(m.msg.Host)
-				log.Printf("Host %v removed from upstream", m.msg.Host)
-			} else {
-				// add host to upstream
-				if err := upstream.AddHost(m.msg.Host); err != nil {
-					log.Println(err)
-					continue worker
-				}
-				log.Printf("New host %v added to upstream", m.msg.Host)
-			}
+			log.Printf("New host %v added to upstream", m.msg.Host)
 		}
 
 	}

@@ -49,7 +49,52 @@ func TestRegisterPolicy(t *testing.T) {
 	if _, ok := supportedPolicies[name]; !ok {
 		t.Error("Expected supportedPolicies to have a custom policy.")
 	}
+}
 
+func TestAddRemove(t *testing.T) {
+	upstream := &staticUpstream{
+		from:        "",
+		Hosts:       nil,
+		Policy:      &Random{},
+		FailTimeout: 10 * time.Second,
+		MaxFails:    1,
+		hostSet:     make(map[string]struct{}),
+	}
+	upstream.AddHost("localhost")
+	if len(upstream.Hosts) != 1 {
+		t.Errorf("Expecting %v found %v", 1, len(upstream.Hosts))
+	}
+	if upstream.Hosts[0].Name != "http://localhost" {
+		t.Errorf("Expecting %v found %v", "http://localhost", upstream.Hosts[0])
+	}
+	upstream.AddHost("localhost")
+	if len(upstream.Hosts) != 1 {
+		t.Errorf("Expecting %v found %v", 1, len(upstream.Hosts))
+	}
+	if upstream.Hosts[0].Name != "http://localhost" {
+		t.Errorf("Expecting %v found %v", "http://localhost", upstream.Hosts[0])
+	}
+	upstream.AddHost("localhost1")
+	upstream.AddHost("localhost2")
+	if len(upstream.Hosts) != 3 {
+		t.Errorf("Expecting %v found %v", 3, len(upstream.Hosts))
+	}
+	upstream.RemoveHost("localhost4")
+	if len(upstream.Hosts) != 3 {
+		t.Errorf("Expecting %v found %v", 3, len(upstream.Hosts))
+	}
+	upstream.RemoveHost("localhost2")
+	if len(upstream.Hosts) != 2 {
+		t.Errorf("Expecting %v found %v", 2, len(upstream.Hosts))
+	}
+	if upstream.Hosts[1].Name != "http://localhost1" {
+		t.Errorf("Expecting %v found %v", "http://localhost1", upstream.Hosts[1])
+	}
+	upstream.RemoveHost("localhost1")
+	upstream.RemoveHost("localhost")
+	if len(upstream.Hosts) != 0 {
+		t.Errorf("Expecting %v found %v", 0, len(upstream.Hosts))
+	}
 }
 
 func TestAllowedPaths(t *testing.T) {
