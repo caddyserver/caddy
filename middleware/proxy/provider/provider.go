@@ -1,6 +1,16 @@
 package provider
 
-import "github.com/mholt/caddy/middleware/proxy/provider/etcd"
+import (
+	"errors"
+	"fmt"
+	"strings"
+)
+
+var (
+	providers = make(map[string]NewFunc)
+
+	ErrUnsupportedScheme = errors.New("scheme is not supported.")
+)
 
 type Provider interface {
 	Hosts() ([]string, error)
@@ -8,20 +18,33 @@ type Provider interface {
 
 type staticProvider string
 
-func (s staticProvider) Hosts([]string, error) {
-	return []string{s}, nil
+func (s staticProvider) Hosts() ([]string, error) {
+	return []string{string(s)}, nil
 }
 
-func newStaticProvider(host string) (Provider, error) {
-	return staticProvider(host)
+func newStatic(host string) (Provider, error) {
+	if !strings.HasPrefix(host, "http") {
+		host = "http://" + host
+	}
+	return staticProvider(host), nil
 }
-
-var providers = make(map[string]NewFunc)
 
 type NewFunc func(string) (Provider, error)
 
-func RegisterProvider(scheme string, initFunc NewFunc) {
+func Register(scheme string, initFunc NewFunc) {
 	providers[scheme] = initFunc
+}
+
+func Get(addr string) (Provider, error) {
+	scheme := ""
+	s := strings.SplitN(addr, "://", 2)
+	if len(s) > 1 {
+		scheme = s[0]
+	}
+	if f, ok := providers[scheme]; ok {
+		return f(addr)
+	}
+	return nil, fmt.Errorf("%s %v", scheme, ErrUnsupportedScheme)
 }
 
 // DynamicProvider represents a dynamic hosts provider.
@@ -30,15 +53,22 @@ type DynamicProvider interface {
 	Watch() Watcher
 }
 
+// Config
+type Config struct {
+	Host string
+	Err  error
+}
+
 // Watcher watches for changes in the store.
 // Next blocks until a new host is available.
 type Watcher interface {
-	Next() (host string, err error)
+	Next() <-chan Config
+	Stop()
 }
 
 func init() {
-	// register all providers
-	RegisterProvider("http://", newStaticProvider)
-	RegisterProvider("https://", newStaticProvider)
-	RegisterProvider("etcd://", etcd.New)
+	// register provider
+	Register("http://", newStatic)
+	Register("https://", newStatic)
+	Register("", newStatic)
 }

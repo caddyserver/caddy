@@ -3,6 +3,7 @@ package etcd
 import (
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/coreos/etcd/client"
 	"github.com/mholt/caddy/middleware/proxy/provider"
@@ -27,6 +28,8 @@ type Provider struct {
 	endpoints []string
 	directory string
 	client.KeysAPI
+	watching bool
+	sync.Mutex
 }
 
 // New creates a new Etcd DynamicProvider
@@ -70,28 +73,54 @@ func (p *Provider) Hosts([]string, error) {
 func (p *Provider) Watch() provider.Watcher {
 	w := p.Watcher(p.directory, client.WatcherOptions{Recursive: true})
 	return watcher{
-		next: func() (string, error) {
-			resp, err := w.Next(context.Background())
-			if err != nil {
-				return "", err
-			}
-			if resp.Node.Dir {
-				return "", fmt.Errorf("%s is %v", resp.Node.Key, ErrNotKey)
-			}
-			if len(strings.Split(strings.TrimPrefix(resp.Node.Key, p.directory), "/")) != 1 {
-				return "", fmt.Errorf("%s is %v '%v", resp.Node.Key, ErrNotInDirectory, p.directory)
-			}
-			return resp.Node.Value, nil
+		next: func() <-chan provider.Config {
+			ch := make(<-chan provider.Config)
+			go func() {
+				p.Lock()
+				p.watching = true
+				p.Unlock()
+
+				for {
+					resp, err := w.Next(context.Background())
+					if err != nil {
+						return "", err
+					}
+					if resp.Node.Dir {
+						return "", fmt.Errorf("%s is %v", resp.Node.Key, ErrNotKey)
+					}
+					if len(strings.Split(strings.TrimPrefix(resp.Node.Key, p.directory), "/")) != 1 {
+						return "", fmt.Errorf("%s is %v '%v", resp.Node.Key, ErrNotInDirectory, p.directory)
+					}
+					ch <- provider.Config{resp.Node.Value, nil}
+					p.Lock()
+					if !p.watching {
+						p.Unlock()
+						break
+					}
+					p.Unlock()
+				}
+			}()
+			return ch
+		},
+		stop: func() {
+			p.Lock()
+			p.watching = false
+			p.Unlock()
 		},
 	}
 }
 
 type watcher struct {
-	next func() (host string, err error)
+	next func() <-chan provider.Config
+	stop func()
 }
 
-func (w watcher) Next() (string, error) {
+func (w watcher) Next() <-chan provider.Config {
 	return w.next()
+}
+
+func (w watcher) Stop() {
+	w.stop()
 }
 
 // URL format
@@ -112,4 +141,9 @@ func parseAddr(addr string) (Provider, error) {
 		store.directory = DefaultDirectory
 	}
 	return store, nil
+}
+
+func init() {
+	// register
+	provider.Register("etcd://", New)
 }
