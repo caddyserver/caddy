@@ -217,15 +217,26 @@ func (upstream *staticUpstream) ProviderWorker(watcher provider.Watcher, stop <-
 	}
 	resp := make(chan msg)
 	go func() {
-		// blocks until there's a message from Watcher
-		m, err := watcher.Next()
-		resp <- msg{m, err}
+	outer:
+		for {
+			// blocks until there's a message from Watcher
+			m, err := watcher.Next()
+			select {
+			case resp <- msg{m, err}:
+			case <-stop:
+				close(resp)
+				break outer
+			}
+		}
 	}()
 
 worker:
 	for {
 		select {
-		case m := <-resp:
+		case m, ok := <-resp:
+			if !ok {
+				break worker
+			}
 			if m.err != nil {
 				log.Println(m.err)
 				continue worker
@@ -233,7 +244,7 @@ worker:
 			if m.msg.Remove {
 				// remove from upstream
 				upstream.RemoveHost(m.msg.Host)
-				log.Printf("Host %v removed to upstream\n", m.msg.Host)
+				log.Printf("Host %v removed from upstream\n", m.msg.Host)
 			} else {
 				// add host to upstream
 				if err := upstream.AddHost(m.msg.Host); err != nil {
@@ -242,8 +253,6 @@ worker:
 				}
 				log.Printf("New host %v added to upstream\n", m.msg.Host)
 			}
-		case <-stop:
-			break worker
 		}
 
 	}

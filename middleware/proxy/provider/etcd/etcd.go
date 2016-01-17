@@ -90,9 +90,7 @@ func (p *Provider) Watch() provider.Watcher {
 				return
 			}
 
-			// TODO Nonfunctional code block
-			// Etcd client not reporting delete events.
-			// Relying on proxy health checker to bring inactive hosts down.
+			// Remove host
 			if resp.Node.Value == "" {
 				if resp.PrevNode != nil {
 					return provider.WatcherMsg{Host: resp.PrevNode.Value, Remove: true}, nil
@@ -101,6 +99,7 @@ func (p *Provider) Watch() provider.Watcher {
 				err = errors.New("Node is previously empty")
 			}
 
+			// Add host
 			return provider.WatcherMsg{Host: resp.Node.Value, Remove: false}, err
 		},
 	}
@@ -143,7 +142,7 @@ func extractUserPass(addr string) (username, password, remaining string) {
 		remaining = addr
 		return
 	}
-	userPass := strings.Split(s[0], "@")
+	userPass := strings.Split(s[0], ":")
 	username = userPass[0]
 	if len(userPass) > 1 {
 		password = userPass[1]
