@@ -1,3 +1,4 @@
+// Package etcd is an Etcd backed provider.
 package etcd
 
 import (
@@ -12,18 +13,21 @@ import (
 )
 
 const (
+	// Scheme is Ectd url scheme.
 	Scheme = "etcd://"
 
+	// DefaultDirectory is the default Etcd config directory.
 	DefaultDirectory = "/CADDY_PROXY_HOSTS/"
 )
 
 var (
-	ErrInvalidScheme  = errors.New("invalid Etcd scheme")
-	ErrNotDirectory   = errors.New("not an Etcd directory")
-	ErrNotKey         = errors.New("not an Etcd key")
-	ErrNotInDirectory = errors.New("not in expected directory")
+	errInvalidScheme  = errors.New("invalid Etcd scheme")
+	errNotDirectory   = errors.New("not an Etcd directory")
+	errNotKey         = errors.New("not an Etcd key")
+	errNotInDirectory = errors.New("not in expected directory")
 )
 
+// Provider is Etcd provider.
 type Provider struct {
 	endpoints []string
 	directory string
@@ -33,7 +37,7 @@ type Provider struct {
 	sync.Mutex
 }
 
-// New creates a new Etcd DynamicProvider
+// New creates a new Etcd Provider
 func New(addr string) (provider.Provider, error) {
 	p, err := parseAddr(addr)
 	if err != nil {
@@ -55,6 +59,7 @@ func New(addr string) (provider.Provider, error) {
 	return &p, nil
 }
 
+// Hosts satisfies provider.Provider interface.
 func (p *Provider) Hosts() ([]string, error) {
 	var hosts []string
 	resp, err := p.Get(context.Background(), p.directory, nil)
@@ -62,17 +67,18 @@ func (p *Provider) Hosts() ([]string, error) {
 		return nil, err
 	}
 	if !resp.Node.Dir {
-		return nil, fmt.Errorf("%s is %v", p.directory, ErrNotDirectory)
+		return nil, fmt.Errorf("%s is %v", p.directory, errNotDirectory)
 	}
 	for _, node := range resp.Node.Nodes {
 		if node.Dir {
-			return nil, fmt.Errorf("%s is %v", node.Key, ErrNotKey)
+			return nil, fmt.Errorf("%s is %v", node.Key, errNotKey)
 		}
 		hosts = append(hosts, node.Value)
 	}
 	return hosts, nil
 }
 
+// Watch satisfies provider.DynamicProvider interface.
 func (p *Provider) Watch() provider.Watcher {
 	w := p.Watcher(p.directory, &client.WatcherOptions{Recursive: true})
 	return &watcher{
@@ -82,11 +88,11 @@ func (p *Provider) Watch() provider.Watcher {
 				return
 			}
 			if resp.Node.Dir {
-				err = fmt.Errorf("%s is %v", resp.Node.Key, ErrNotKey)
+				err = fmt.Errorf("%s is %v", resp.Node.Key, errNotKey)
 				return
 			}
 			if len(strings.Split(strings.TrimPrefix(resp.Node.Key, p.directory), "/")) != 1 {
-				err = fmt.Errorf("%s is %v '%v", resp.Node.Key, ErrNotInDirectory, p.directory)
+				err = fmt.Errorf("%s is %v '%v", resp.Node.Key, errNotInDirectory, p.directory)
 				return
 			}
 
@@ -113,18 +119,25 @@ func (w *watcher) Next() (provider.WatcherMsg, error) {
 	return w.next()
 }
 
-// URL format
-// etcd://username:password@<etcd_addr1>,<etcd_addr2>/<optional path prefix>
+// parseAddr passes addr into a new configured Provider.
+// URL format: etcd://username:password@<etcd_addr1>,<etcd_addr2>/<optional path prefix>
 func parseAddr(addr string) (Provider, error) {
 	p := Provider{}
+	// validate scheme.
 	if !strings.HasPrefix(addr, Scheme) {
-		return p, ErrInvalidScheme
+		return p, errInvalidScheme
 	}
+
+	// extract username and password if present.
 	p.username, p.password, addr = extractUserPass(strings.TrimPrefix(addr, Scheme))
+
+	// extract endpoints.
 	s := strings.SplitN(addr, "/", 2)
 	for _, v := range strings.Split(s[0], ",") {
 		p.endpoints = append(p.endpoints, "http://"+v)
 	}
+
+	// extract directory
 	if len(s) == 2 {
 		p.directory = "/" + s[1]
 		if !strings.HasSuffix(s[1], "/") {
@@ -133,9 +146,11 @@ func parseAddr(addr string) (Provider, error) {
 	} else {
 		p.directory = DefaultDirectory
 	}
+
 	return p, nil
 }
 
+// extractUserPass extracts username and password from addr.
 func extractUserPass(addr string) (username, password, remaining string) {
 	s := strings.SplitN(addr, "@", 2)
 	if len(s) == 1 {

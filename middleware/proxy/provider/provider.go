@@ -7,32 +7,39 @@ import (
 )
 
 var (
-	providers = make(map[string]NewFunc)
+	providers = make(map[string]NewProviderFunc)
 
-	ErrUnsupportedScheme = errors.New("scheme is not supported.")
+	errUnsupportedScheme = errors.New("scheme is not supported.")
 )
 
+// Provider is hosts provider.
 type Provider interface {
+	// Hosts returns all hosts provided by this provider.
 	Hosts() ([]string, error)
 }
 
+// staticProvider cater for static hardcoded hosts.
 type staticProvider string
 
+// Hosts satisfies Provider interface.
 func (s staticProvider) Hosts() ([]string, error) {
 	return []string{string(s)}, nil
 }
 
+// newStatic creates a new static host provider.
 func newStatic(host string) (Provider, error) {
 	return staticProvider(host), nil
 }
 
-// NewFunc creates a new Provider.
-type NewFunc func(host string) (Provider, error)
+// NewProviderFunc creates a new Provider.
+type NewProviderFunc func(host string) (Provider, error)
 
-func Register(scheme string, newFunc NewFunc) {
+// Register registers a url scheme against a new provider function.
+func Register(scheme string, newFunc NewProviderFunc) {
 	providers[scheme] = newFunc
 }
 
+// Get fetches a provider using the scheme of the provided address.
 func Get(addr string) (Provider, error) {
 	scheme := ""
 	s := strings.SplitN(addr, "://", 2)
@@ -42,15 +49,18 @@ func Get(addr string) (Provider, error) {
 	if f, ok := providers[scheme]; ok {
 		return f(addr)
 	}
-	return nil, fmt.Errorf("%s %v", scheme, ErrUnsupportedScheme)
+	return nil, fmt.Errorf("%s %v", scheme, errUnsupportedScheme)
 }
 
 // DynamicProvider represents a dynamic hosts provider.
 type DynamicProvider interface {
 	Provider
+	// Watch creates a new Watcher.
 	Watch() Watcher
 }
 
+// WatcherMsg is the message sent by Watcher when there is a
+// change to a host.
 type WatcherMsg struct {
 	// Host is the affected host
 	Host string

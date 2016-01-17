@@ -37,6 +37,9 @@ type staticUpstream struct {
 	WithoutPathPrefix string
 	IgnoredSubPaths   []string
 
+	// Ensure distinct hosts
+	hostSet map[string]struct{}
+
 	sync.RWMutex
 }
 
@@ -52,6 +55,7 @@ func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
 			Policy:       &Random{},
 			FailTimeout:  10 * time.Second,
 			MaxFails:     1,
+			hostSet:      make(map[string]struct{}),
 		}
 
 		if !c.Args(&upstream.from) {
@@ -244,14 +248,14 @@ worker:
 			if m.msg.Remove {
 				// remove from upstream
 				upstream.RemoveHost(m.msg.Host)
-				log.Printf("Host %v removed from upstream\n", m.msg.Host)
+				log.Printf("Host %v removed from upstream", m.msg.Host)
 			} else {
 				// add host to upstream
 				if err := upstream.AddHost(m.msg.Host); err != nil {
 					log.Println(err)
 					continue worker
 				}
-				log.Printf("New host %v added to upstream\n", m.msg.Host)
+				log.Printf("New host %v added to upstream", m.msg.Host)
 			}
 		}
 
@@ -295,8 +299,18 @@ func (u *staticUpstream) IsAllowedPath(requestPath string) bool {
 	return true
 }
 
+// AddHost adds host to upstream hosts.
 func (upstream *staticUpstream) AddHost(host string) error {
+	upstream.Lock()
+	defer upstream.Unlock()
+
 	host = hostName(host).String()
+
+	// If its previously added, ignore
+	if _, ok := upstream.hostSet[host]; ok {
+		return nil
+	}
+
 	uh := &UpstreamHost{
 		Name:         host,
 		Conns:        0,
@@ -326,15 +340,23 @@ func (upstream *staticUpstream) AddHost(host string) error {
 	} else {
 		return err
 	}
-	upstream.Lock()
 	upstream.Hosts = append(upstream.Hosts, uh)
-	upstream.Unlock()
+	upstream.hostSet[host] = struct{}{}
 	return nil
 }
 
+// RemoveHost removes host from upstream hosts.
 func (upstream *staticUpstream) RemoveHost(host string) {
 	upstream.Lock()
 	defer upstream.Unlock()
+
+	host = hostName(host).String()
+
+	// If it does not exist, ignore
+	if _, ok := upstream.hostSet[host]; !ok {
+		return
+	}
+
 	idx := -1
 	for i, h := range upstream.Hosts {
 		if hostName(host).equals(h.Name) {
@@ -345,6 +367,9 @@ func (upstream *staticUpstream) RemoveHost(host string) {
 	if idx == -1 {
 		return
 	}
+
+	delete(upstream.hostSet, host)
+
 	if idx == len(upstream.Hosts)-1 {
 		upstream.Hosts = upstream.Hosts[:idx]
 		return
