@@ -14,7 +14,7 @@ import (
 const (
 	Scheme = "etcd://"
 
-	DefaultDirectory = "/CADDY_PROXY_HOSTS"
+	DefaultDirectory = "/CADDY_PROXY_HOSTS/"
 )
 
 var (
@@ -27,32 +27,35 @@ var (
 type Provider struct {
 	endpoints []string
 	directory string
+	username  string
+	password  string
 	client.KeysAPI
-	watching bool
 	sync.Mutex
 }
 
 // New creates a new Etcd DynamicProvider
-func New(addr string) (provider.DynamicProvider, error) {
-	store, err := parseAddr(addr)
+func New(addr string) (provider.Provider, error) {
+	p, err := parseAddr(addr)
 	if err != nil {
 		return nil, err
 	}
 
 	cfg := client.Config{
-		Endpoints: store.endpoints,
+		Endpoints: p.endpoints,
 		Transport: client.DefaultTransport,
+		Username:  p.username,
+		Password:  p.password,
 	}
 	c, err := client.New(cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	store.KeysAPI = client.NewKeysAPI(c)
-	return &store
+	p.KeysAPI = client.NewKeysAPI(c)
+	return &p, nil
 }
 
-func (p *Provider) Hosts([]string, error) {
+func (p *Provider) Hosts() ([]string, error) {
 	var hosts []string
 	resp, err := p.Get(context.Background(), p.directory, nil)
 	if err != nil {
@@ -71,79 +74,80 @@ func (p *Provider) Hosts([]string, error) {
 }
 
 func (p *Provider) Watch() provider.Watcher {
-	w := p.Watcher(p.directory, client.WatcherOptions{Recursive: true})
-	return watcher{
-		next: func() <-chan provider.Config {
-			ch := make(<-chan provider.Config)
-			go func() {
-				p.Lock()
-				p.watching = true
-				p.Unlock()
+	w := p.Watcher(p.directory, &client.WatcherOptions{Recursive: true})
+	return &watcher{
+		next: func() (msg provider.WatcherMsg, err error) {
+			var resp *client.Response
+			if resp, err = w.Next(context.Background()); err != nil {
+				return
+			}
+			if resp.Node.Dir {
+				err = fmt.Errorf("%s is %v", resp.Node.Key, ErrNotKey)
+				return
+			}
+			if len(strings.Split(strings.TrimPrefix(resp.Node.Key, p.directory), "/")) != 1 {
+				err = fmt.Errorf("%s is %v '%v", resp.Node.Key, ErrNotInDirectory, p.directory)
+				return
+			}
 
-				for {
-					resp, err := w.Next(context.Background())
-					if err != nil {
-						return "", err
-					}
-					if resp.Node.Dir {
-						return "", fmt.Errorf("%s is %v", resp.Node.Key, ErrNotKey)
-					}
-					if len(strings.Split(strings.TrimPrefix(resp.Node.Key, p.directory), "/")) != 1 {
-						return "", fmt.Errorf("%s is %v '%v", resp.Node.Key, ErrNotInDirectory, p.directory)
-					}
-					ch <- provider.Config{resp.Node.Value, nil}
-					p.Lock()
-					if !p.watching {
-						p.Unlock()
-						break
-					}
-					p.Unlock()
+			// TODO Nonfunctional code block
+			// Etcd client not reporting delete events.
+			// Relying on proxy health checker to bring inactive hosts down.
+			if resp.Node.Value == "" {
+				if resp.PrevNode != nil {
+					return provider.WatcherMsg{Host: resp.PrevNode.Value, Remove: true}, nil
 				}
-			}()
-			return ch
-		},
-		stop: func() {
-			p.Lock()
-			p.watching = false
-			p.Unlock()
+				// should not happen
+				err = errors.New("Node is previously empty")
+			}
+
+			return provider.WatcherMsg{Host: resp.Node.Value, Remove: false}, err
 		},
 	}
 }
 
 type watcher struct {
-	next func() <-chan provider.Config
-	stop func()
+	next func() (provider.WatcherMsg, error)
 }
 
-func (w watcher) Next() <-chan provider.Config {
+func (w *watcher) Next() (provider.WatcherMsg, error) {
 	return w.next()
 }
 
-func (w watcher) Stop() {
-	w.stop()
-}
-
 // URL format
-// etcd://<etcd_addr1>,<etcd_addr2>/<optional path prefix>
+// etcd://username:password@<etcd_addr1>,<etcd_addr2>/<optional path prefix>
 func parseAddr(addr string) (Provider, error) {
-	store := Provider{}
+	p := Provider{}
 	if !strings.HasPrefix(addr, Scheme) {
-		return ErrInvalidScheme
+		return p, ErrInvalidScheme
 	}
-	addr = strings.TrimPrefix(addr, Scheme)
+	p.username, p.password, addr = extractUserPass(strings.TrimPrefix(addr, Scheme))
 	s := strings.SplitN(addr, "/", 2)
-	for _, v := range strings.Split(s, ",") {
-		store.endpoints = append(store.endpoints, "http://"+v)
+	for _, v := range strings.Split(s[0], ",") {
+		p.endpoints = append(p.endpoints, "http://"+v)
 	}
 	if len(s) == 2 {
-		store.directory = "/" + s[1]
+		p.directory = "/" + s[1]
+		if !strings.HasSuffix(s[1], "/") {
+			p.directory += "/"
+		}
 	} else {
-		store.directory = DefaultDirectory
+		p.directory = DefaultDirectory
 	}
-	return store, nil
+	return p, nil
 }
 
-func init() {
-	// register
-	provider.Register("etcd://", New)
+func extractUserPass(addr string) (username, password, remaining string) {
+	s := strings.SplitN(addr, "@", 2)
+	if len(s) == 1 {
+		remaining = addr
+		return
+	}
+	userPass := strings.Split(s[0], "@")
+	username = userPass[0]
+	if len(userPass) > 1 {
+		password = userPass[1]
+	}
+	remaining = s[1]
+	return
 }

@@ -37,7 +37,7 @@ type staticUpstream struct {
 	WithoutPathPrefix string
 	IgnoredSubPaths   []string
 
-	sync.Mutex
+	sync.RWMutex
 }
 
 // NewStaticUpstreams parses the configuration input and sets up
@@ -69,25 +69,29 @@ func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
 		}
 
 		for _, addr := range to {
-			p, err := provider.Get(addr)
-			if err != nil {
+			var p provider.Provider
+			var err error
+			var hosts []string
+			// fetch provider
+			if p, err = provider.Get(addr); err != nil {
 				return upstreams, err
 			}
-			hosts, err := p.Hosts()
-			if err != nil {
+			// fetch hosts from provider
+			if hosts, err = p.Hosts(); err != nil {
 				return upstreams, err
 			}
+			// add hosts to upstream
 			for _, host := range hosts {
-				err := addToUpstream(upstream, host)
+				err := upstream.AddHost(host)
 				if err != nil {
 					return upstreams, err
 				}
-				// if provider is dynamic
-				// watch for changes
-				if dp, ok := p.(provider.DynamicProvider); ok {
-					watcher := dp.Watch()
-					go providerWorker(upstream, watcher, nil)
-				}
+			}
+			// if provider is dynamic
+			// watch for upcoming changes
+			if dp, ok := p.(provider.DynamicProvider); ok {
+				watcher := dp.Watch()
+				go upstream.ProviderWorker(watcher, nil)
 			}
 		}
 
@@ -97,61 +101,6 @@ func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
 		upstreams = append(upstreams, upstream)
 	}
 	return upstreams, nil
-}
-
-func addToUpstream(upstream *staticUpstream, host string) error {
-	uh := &UpstreamHost{
-		Name:         host,
-		Conns:        0,
-		Fails:        0,
-		FailTimeout:  upstream.FailTimeout,
-		Unhealthy:    false,
-		ExtraHeaders: upstream.proxyHeaders,
-		CheckDown: func(upstream *staticUpstream) UpstreamHostDownFunc {
-			return func(uh *UpstreamHost) bool {
-				if uh.Unhealthy {
-					return true
-				}
-				if uh.Fails >= upstream.MaxFails &&
-				upstream.MaxFails != 0 {
-					return true
-				}
-				return false
-			}
-		}(upstream),
-		WithoutPathPrefix: upstream.WithoutPathPrefix,
-	}
-	if baseURL, err := url.Parse(uh.Name); err == nil {
-		uh.ReverseProxy = NewSingleHostReverseProxy(baseURL, uh.WithoutPathPrefix)
-		if upstream.insecureSkipVerify {
-			uh.ReverseProxy.Transport = InsecureTransport
-		}
-	} else {
-		return err
-	}
-	upstream.Lock()
-	upstream.Hosts = append(upstream.Hosts, uh)
-	upstream.Unlock()
-	return nil
-}
-
-func providerWorker(upstream *staticUpstream, watcher provider.Watcher, stop chan struct{}) {
-	for {
-		select {
-		case c := <-watcher.Next():
-			if c.Err != nil {
-				log.Println(c.Err)
-			} else {
-				if err := addToUpstream(upstream, c.Host); err != nil {
-					log.Println(err)
-				} else {
-					log.Println("New host added to ")
-				}
-			}
-		case <-stop:
-			watcher.Stop()
-		}
-	}
 }
 
 // RegisterPolicy adds a custom policy to the proxy.
@@ -261,7 +210,49 @@ func (u *staticUpstream) HealthCheckWorker(stop chan struct{}) {
 	}
 }
 
+func (upstream *staticUpstream) ProviderWorker(watcher provider.Watcher, stop <-chan struct{}) {
+	type msg struct {
+		msg provider.WatcherMsg
+		err error
+	}
+	resp := make(chan msg)
+	go func() {
+		// blocks until there's a message from Watcher
+		m, err := watcher.Next()
+		resp <- msg{m, err}
+	}()
+
+worker:
+	for {
+		select {
+		case m := <-resp:
+			if m.err != nil {
+				log.Println(m.err)
+				continue worker
+			}
+			if m.msg.Remove {
+				// remove from upstream
+				upstream.RemoveHost(m.msg.Host)
+				log.Printf("Host %v removed to upstream\n", m.msg.Host)
+			} else {
+				// add host to upstream
+				if err := upstream.AddHost(m.msg.Host); err != nil {
+					log.Println(err)
+					continue worker
+				}
+				log.Printf("New host %v added to upstream\n", m.msg.Host)
+			}
+		case <-stop:
+			break worker
+		}
+
+	}
+}
+
 func (u *staticUpstream) Select() *UpstreamHost {
+	u.RLock()
+	defer u.RUnlock()
+
 	pool := u.Hosts
 	if len(pool) == 1 {
 		if pool[0].Down() {
@@ -293,4 +284,74 @@ func (u *staticUpstream) IsAllowedPath(requestPath string) bool {
 		}
 	}
 	return true
+}
+
+func (upstream *staticUpstream) AddHost(host string) error {
+	host = hostName(host).String()
+	uh := &UpstreamHost{
+		Name:         host,
+		Conns:        0,
+		Fails:        0,
+		FailTimeout:  upstream.FailTimeout,
+		Unhealthy:    false,
+		ExtraHeaders: upstream.proxyHeaders,
+		CheckDown: func(upstream *staticUpstream) UpstreamHostDownFunc {
+			return func(uh *UpstreamHost) bool {
+				if uh.Unhealthy {
+					return true
+				}
+				if uh.Fails >= upstream.MaxFails &&
+					upstream.MaxFails != 0 {
+					return true
+				}
+				return false
+			}
+		}(upstream),
+		WithoutPathPrefix: upstream.WithoutPathPrefix,
+	}
+	if baseURL, err := url.Parse(uh.Name); err == nil {
+		uh.ReverseProxy = NewSingleHostReverseProxy(baseURL, uh.WithoutPathPrefix)
+		if upstream.insecureSkipVerify {
+			uh.ReverseProxy.Transport = InsecureTransport
+		}
+	} else {
+		return err
+	}
+	upstream.Lock()
+	upstream.Hosts = append(upstream.Hosts, uh)
+	upstream.Unlock()
+	return nil
+}
+
+func (upstream *staticUpstream) RemoveHost(host string) {
+	upstream.Lock()
+	defer upstream.Unlock()
+	idx := -1
+	for i, h := range upstream.Hosts {
+		if hostName(host).equals(h.Name) {
+			idx = i
+			break
+		}
+	}
+	if idx == -1 {
+		return
+	}
+	if idx == len(upstream.Hosts)-1 {
+		upstream.Hosts = upstream.Hosts[:idx]
+		return
+	}
+	upstream.Hosts = append(upstream.Hosts[:idx], upstream.Hosts[idx+1:]...)
+}
+
+type hostName string
+
+func (h hostName) equals(host string) bool {
+	return h.String() == hostName(host).String()
+}
+
+func (h hostName) String() string {
+	if !strings.HasPrefix(string(h), "http") {
+		return "http://" + string(h)
+	}
+	return string(h)
 }

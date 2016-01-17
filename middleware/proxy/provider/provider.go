@@ -23,16 +23,14 @@ func (s staticProvider) Hosts() ([]string, error) {
 }
 
 func newStatic(host string) (Provider, error) {
-	if !strings.HasPrefix(host, "http") {
-		host = "http://" + host
-	}
 	return staticProvider(host), nil
 }
 
-type NewFunc func(string) (Provider, error)
+// NewFunc creates a new Provider.
+type NewFunc func(host string) (Provider, error)
 
-func Register(scheme string, initFunc NewFunc) {
-	providers[scheme] = initFunc
+func Register(scheme string, newFunc NewFunc) {
+	providers[scheme] = newFunc
 }
 
 func Get(addr string) (Provider, error) {
@@ -53,22 +51,22 @@ type DynamicProvider interface {
 	Watch() Watcher
 }
 
-// Config
-type Config struct {
+type WatcherMsg struct {
+	// Host is the affected host
 	Host string
-	Err  error
+	// Remove is true if the host should be removed instead.
+	Remove bool
 }
 
 // Watcher watches for changes in the store.
 // Next blocks until a new host is available.
 type Watcher interface {
-	Next() <-chan Config
-	Stop()
+	Next() (msg WatcherMsg, err error)
 }
 
 func init() {
-	// register provider
-	Register("http://", newStatic)
-	Register("https://", newStatic)
+	// register static provider
+	Register("http", newStatic)
+	Register("https", newStatic)
 	Register("", newStatic)
 }
