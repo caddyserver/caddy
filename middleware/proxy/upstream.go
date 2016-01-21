@@ -235,6 +235,17 @@ func (upstream *staticUpstream) ProviderWorker(watcher provider.Watcher, stop <-
 		}
 	}()
 
+	interval := 5
+	delay := func() {
+		log.Printf("Delaying %d seconds before next attempt.", interval)
+		time.Sleep(time.Second * time.Duration(interval))
+
+		// delay at most 60 seconds.
+		interval += 5
+		if interval > 60 {
+			interval = 60
+		}
+	}
 	for {
 		m, ok := <-resp
 		if !ok {
@@ -242,7 +253,11 @@ func (upstream *staticUpstream) ProviderWorker(watcher provider.Watcher, stop <-
 		}
 		if m.err != nil {
 			log.Println(m.err)
+			delay()
 			continue
+		} else {
+			// no errors, reset delay interval.
+			interval = 0
 		}
 		if m.msg.Remove {
 			// remove from upstream
