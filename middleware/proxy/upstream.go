@@ -19,10 +19,11 @@ var (
 )
 
 type staticUpstream struct {
-	from         string
-	proxyHeaders http.Header
-	Hosts        HostPool
-	Policy       Policy
+	from               string
+	proxyHeaders       http.Header
+	Hosts              HostPool
+	Policy             Policy
+	insecureSkipVerify bool
 
 	FailTimeout time.Duration
 	MaxFails    int32
@@ -90,6 +91,9 @@ func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
 			}
 			if baseURL, err := url.Parse(uh.Name); err == nil {
 				uh.ReverseProxy = NewSingleHostReverseProxy(baseURL, uh.WithoutPathPrefix)
+				if upstream.insecureSkipVerify {
+					uh.ReverseProxy.Transport = InsecureTransport
+				}
 			} else {
 				return upstreams, err
 			}
@@ -175,6 +179,8 @@ func parseBlock(c *parse.Dispenser, u *staticUpstream) error {
 			return c.ArgErr()
 		}
 		u.IgnoredSubPaths = ignoredPaths
+	case "insecure_skip_verify":
+		u.insecureSkipVerify = true
 	default:
 		return c.Errf("unknown property '%s'", c.Val())
 	}
