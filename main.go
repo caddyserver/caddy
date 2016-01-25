@@ -27,7 +27,7 @@ var (
 
 const (
 	appName    = "Caddy"
-	appVersion = "0.8"
+	appVersion = "0.8.1"
 )
 
 func init() {

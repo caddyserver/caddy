@@ -25,6 +25,7 @@ func saveRSAPrivateKey(key *rsa.PrivateKey, file string) error {
 	if err != nil {
 		return err
 	}
+	keyOut.Chmod(0600)
 	defer keyOut.Close()
 	return pem.Encode(keyOut, &pemKey)
 }

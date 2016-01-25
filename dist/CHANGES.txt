@@ -1,9 +1,9 @@
 CHANGES
 
-<master>
+0.8.1 (January 12, 2016)
 - Improved OCSP stapling
-- Can reload config with new hosts that need certs from Let's Encrypt
-- If pidfile is created, it is deleted when Caddy exits
+- Better graceful reload when new hosts need certificates from Let's Encrypt
+- Current pidfile is now deleted when Caddy exits
 - browse: New default template
 - gzip: Added min_length setting
 - import: Support for glob patterns (*) to import multiple files

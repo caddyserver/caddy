@@ -57,6 +57,10 @@ func (uh *UpstreamHost) Down() bool {
 	return uh.CheckDown(uh)
 }
 
+// tryDuration is how long to try upstream hosts; failures result in
+// immediate retries until this duration ends or we get a nil host.
+var tryDuration = 60 * time.Second
+
 // ServeHTTP satisfies the middleware.Handler interface.
 func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 
@@ -68,7 +72,7 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 
 			// Since Select() should give us "up" hosts, keep retrying
 			// hosts until timeout (or until we get a nil host).
-			for time.Now().Sub(start) < (60 * time.Second) {
+			for time.Now().Sub(start) < tryDuration {
 				host := upstream.Select()
 				if host == nil {
 					return http.StatusBadGateway, errUnreachable

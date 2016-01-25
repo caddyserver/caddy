@@ -322,7 +322,7 @@ func newClientPort(leEmail, port string) (*acme.Client, error) {
 		client.SetHTTPAddress(":" + port)
 		client.SetTLSAddress(":" + port)
 	}
-	client.ExcludeChallenges([]string{"tls-sni-01", "dns-01"}) // We can only guarantee http-01 at this time, but tls-01 should work if port is not custom!
+	client.ExcludeChallenges([]acme.Challenge{acme.TLSSNI01, acme.DNS01}) // We can only guarantee http-01 at this time, but tls-01 should work if port is not custom!
 
 	// If not registered, the user must register an account with the CA
 	// and agree to terms

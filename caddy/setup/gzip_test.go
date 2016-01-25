@@ -50,6 +50,9 @@ func TestGzip(t *testing.T) {
 		 level 1
 		}
 		gzip`, false},
+		{`gzip {
+		 ext ""
+		}`, false},
 		{`gzip { not /file
 		 ext .html
 		 level 1
