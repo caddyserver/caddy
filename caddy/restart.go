@@ -32,6 +32,8 @@ func init() {
 // work if executing with `go run`, since the binary is cleaned up
 // when `go run` sees the initial parent process exit.
 func Restart(newCaddyfile Input) error {
+	log.Println("[INFO] Restarting")
+
 	if newCaddyfile == nil {
 		caddyfileMu.Lock()
 		newCaddyfile = caddyfile
