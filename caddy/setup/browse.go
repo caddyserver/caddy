@@ -214,6 +214,7 @@ td .name {
 	margin-left: 1.75em;
 	word-break: break-all;
 	overflow-wrap: break-word;
+	white-space: pre-wrap;
 }
 
 footer {
