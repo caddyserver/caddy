@@ -131,7 +131,7 @@ func ObtainCerts(configs []server.Config, altPort string) error {
 		}
 
 		for _, cfg := range group {
-			if existingCertAndKey(cfg.Host) {
+			if cfg.Host == "" || existingCertAndKey(cfg.Host) {
 				continue
 			}
 
@@ -170,8 +170,10 @@ func EnableTLS(configs []server.Config) {
 			continue
 		}
 		configs[i].TLS.Enabled = true
-		configs[i].TLS.Certificate = storage.SiteCertFile(configs[i].Host)
-		configs[i].TLS.Key = storage.SiteKeyFile(configs[i].Host)
+		if configs[i].Host != "" {
+			configs[i].TLS.Certificate = storage.SiteCertFile(configs[i].Host)
+			configs[i].TLS.Key = storage.SiteKeyFile(configs[i].Host)
+		}
 		setup.SetDefaultTLSParams(&configs[i])
 	}
 }
@@ -257,13 +259,15 @@ func ConfigQualifies(cfg server.Config) bool {
 		cfg.Port != "80" &&
 		cfg.TLS.LetsEncryptEmail != "off" &&
 
-		// we get can't certs for some kinds of hostnames
-		HostQualifies(cfg.Host)
+		// we get can't certs for some kinds of hostnames,
+		// but we CAN get certs at request-time even if
+		// the hostname in the config is empty right now.
+		(cfg.Host == "" || HostQualifies(cfg.Host))
 }
 
 // HostQualifies returns true if the hostname alone
 // appears eligible for automatic HTTPS. For example,
-// localhost, empty hostname, and wildcard hosts are
+// localhost, empty hostname, and IP addresses are
 // not eligible because we cannot obtain certificates
 // for those names.
 func HostQualifies(hostname string) bool {
@@ -397,7 +401,7 @@ func saveCertResource(cert acme.CertificateResource) error {
 // be the HTTPS configuration. The returned configuration is set
 // to listen on port 80.
 func redirPlaintextHost(cfg server.Config) server.Config {
-	toURL := "https://" + cfg.Host
+	toURL := "https://{host}" // serve any host, since cfg.Host could be empty
 	if cfg.Port != "443" && cfg.Port != "80" {
 		toURL += ":" + cfg.Port
 	}

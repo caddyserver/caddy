@@ -46,6 +46,7 @@ func TestConfigQualifies(t *testing.T) {
 		cfg    server.Config
 		expect bool
 	}{
+		{server.Config{Host: ""}, true},
 		{server.Config{Host: "localhost"}, false},
 		{server.Config{Host: "example.com"}, true},
 		{server.Config{Host: "example.com", TLS: server.TLSConfig{Certificate: "cert.pem"}}, false},
@@ -105,18 +106,18 @@ func TestRedirPlaintextHost(t *testing.T) {
 	if actual, expected := handler.Rules[0].FromPath, "/"; actual != expected {
 		t.Errorf("Expected redirect rule to be for path '%s' but is actually for '%s'", expected, actual)
 	}
-	if actual, expected := handler.Rules[0].To, "https://example.com:1234{uri}"; actual != expected {
+	if actual, expected := handler.Rules[0].To, "https://{host}:1234{uri}"; actual != expected {
 		t.Errorf("Expected redirect rule to be to URL '%s' but is actually to '%s'", expected, actual)
 	}
 	if actual, expected := handler.Rules[0].Code, http.StatusMovedPermanently; actual != expected {
 		t.Errorf("Expected redirect rule to have code %d but was %d", expected, actual)
 	}
 
-	// browsers can interpret default ports with scheme, so make sure the port
-	// doesn't get added in explicitly for default ports.
+	// browsers can infer a default port from scheme, so make sure the port
+	// doesn't get added in explicitly for default ports like 443 for https.
 	cfg = redirPlaintextHost(server.Config{Host: "example.com", Port: "443"})
 	handler, ok = cfg.Middleware["/"][0](nil).(redirect.Redirect)
-	if actual, expected := handler.Rules[0].To, "https://example.com{uri}"; actual != expected {
+	if actual, expected := handler.Rules[0].To, "https://{host}{uri}"; actual != expected {
 		t.Errorf("(Default Port) Expected redirect rule to be to URL '%s' but is actually to '%s'", expected, actual)
 	}
 }
@@ -252,7 +253,7 @@ func TestMakePlaintextRedirects(t *testing.T) {
 
 func TestEnableTLS(t *testing.T) {
 	configs := []server.Config{
-		server.Config{TLS: server.TLSConfig{Managed: true}},
+		server.Config{Host: "example.com", TLS: server.TLSConfig{Managed: true}},
 		server.Config{}, // not managed - no changes!
 	}
 
@@ -325,8 +326,9 @@ func TestMarkQualified(t *testing.T) {
 		{Host: "example.com", Port: "1234"},
 		{Host: "example.com", Scheme: "https"},
 		{Host: "example.com", Port: "80", Scheme: "https"},
+		{Host: ""},
 	}
-	expectedManagedCount := 4
+	expectedManagedCount := 5
 
 	MarkQualified(configs)
 

@@ -154,10 +154,11 @@ func getEmail(cfg server.Config, skipPrompt bool) string {
 		if err != nil {
 			return ""
 		}
+		leEmail = strings.TrimSpace(leEmail)
 		DefaultEmail = leEmail
 		Agreed = true
 	}
-	return strings.TrimSpace(leEmail)
+	return leEmail
 }
 
 // promptUserAgreement prompts the user to agree to the agreement
