@@ -4,16 +4,83 @@ import (
 	"bufio"
 	"bytes"
 	"io"
+	"io/ioutil"
+	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"golang.org/x/net/websocket"
 )
+
+func init() {
+	tryDuration = 50 * time.Millisecond // prevent tests from hanging
+}
+
+func TestReverseProxy(t *testing.T) {
+	log.SetOutput(ioutil.Discard)
+	defer log.SetOutput(os.Stderr)
+
+	var requestReceived bool
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestReceived = true
+		w.Write([]byte("Hello, client"))
+	}))
+	defer backend.Close()
+
+	// set up proxy
+	p := &Proxy{
+		Upstreams: []Upstream{newFakeUpstream(backend.URL, false)},
+	}
+
+	// create request and response recorder
+	r, err := http.NewRequest("GET", "/", nil)
+	if err != nil {
+		t.Fatalf("Failed to create request: %v", err)
+	}
+	w := httptest.NewRecorder()
+
+	p.ServeHTTP(w, r)
+
+	if !requestReceived {
+		t.Error("Expected backend to receive request, but it didn't")
+	}
+}
+
+func TestReverseProxyInsecureSkipVerify(t *testing.T) {
+	log.SetOutput(ioutil.Discard)
+	defer log.SetOutput(os.Stderr)
+
+	var requestReceived bool
+	backend := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestReceived = true
+		w.Write([]byte("Hello, client"))
+	}))
+	defer backend.Close()
+
+	// set up proxy
+	p := &Proxy{
+		Upstreams: []Upstream{newFakeUpstream(backend.URL, true)},
+	}
+
+	// create request and response recorder
+	r, err := http.NewRequest("GET", "/", nil)
+	if err != nil {
+		t.Fatalf("Failed to create request: %v", err)
+	}
+	w := httptest.NewRecorder()
+
+	p.ServeHTTP(w, r)
+
+	if !requestReceived {
+		t.Error("Even with insecure HTTPS, expected backend to receive request, but it didn't")
+	}
+}
 
 func TestWebSocketReverseProxyServeHTTPHandler(t *testing.T) {
 	// No-op websocket backend simply allows the WS connection to be
@@ -93,18 +160,24 @@ func TestWebSocketReverseProxyFromWSClient(t *testing.T) {
 	}
 }
 
-// newWebSocketTestProxy returns a test proxy that will
-// redirect to the specified backendAddr. The function
-// also sets up the rules/environment for testing WebSocket
-// proxy.
-func newWebSocketTestProxy(backendAddr string) *Proxy {
-	return &Proxy{
-		Upstreams: []Upstream{&fakeUpstream{name: backendAddr}},
+func newFakeUpstream(name string, insecure bool) *fakeUpstream {
+	uri, _ := url.Parse(name)
+	u := &fakeUpstream{
+		name: name,
+		host: &UpstreamHost{
+			Name:         name,
+			ReverseProxy: NewSingleHostReverseProxy(uri, ""),
+		},
 	}
+	if insecure {
+		u.host.ReverseProxy.Transport = InsecureTransport
+	}
+	return u
 }
 
 type fakeUpstream struct {
 	name string
+	host *UpstreamHost
 }
 
 func (u *fakeUpstream) From() string {
@@ -112,6 +185,32 @@ func (u *fakeUpstream) From() string {
 }
 
 func (u *fakeUpstream) Select() *UpstreamHost {
+	return u.host
+}
+
+func (u *fakeUpstream) IsAllowedPath(requestPath string) bool {
+	return true
+}
+
+// newWebSocketTestProxy returns a test proxy that will
+// redirect to the specified backendAddr. The function
+// also sets up the rules/environment for testing WebSocket
+// proxy.
+func newWebSocketTestProxy(backendAddr string) *Proxy {
+	return &Proxy{
+		Upstreams: []Upstream{&fakeWsUpstream{name: backendAddr}},
+	}
+}
+
+type fakeWsUpstream struct {
+	name string
+}
+
+func (u *fakeWsUpstream) From() string {
+	return "/"
+}
+
+func (u *fakeWsUpstream) Select() *UpstreamHost {
 	uri, _ := url.Parse(u.name)
 	return &UpstreamHost{
 		Name:         u.name,
@@ -122,7 +221,7 @@ func (u *fakeUpstream) Select() *UpstreamHost {
 	}
 }
 
-func (u *fakeUpstream) IsAllowedPath(requestPath string) bool {
+func (u *fakeWsUpstream) IsAllowedPath(requestPath string) bool {
 	return true
 }
 
