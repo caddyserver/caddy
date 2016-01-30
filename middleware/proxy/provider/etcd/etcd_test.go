@@ -13,9 +13,10 @@ func TestParseAddr(t *testing.T) {
 		expected *Provider
 	}{
 		{
-			"etcd://localhost:2015",
+			"etcd://localhost:2015/",
 			&Provider{
 				endpoints: []string{"http://localhost:2015"},
+				directory: "",
 			},
 		},
 		{
@@ -52,7 +53,7 @@ func TestParseAddr(t *testing.T) {
 				endpoints: []string{"http://localhost:2015"},
 				username:  "user",
 				password:  "pass",
-				directory: "/directory/",
+				directory: "/directory",
 			},
 		},
 		{
@@ -61,7 +62,7 @@ func TestParseAddr(t *testing.T) {
 				endpoints: []string{"http://2015"},
 				username:  "user",
 				password:  "pass",
-				directory: "/directory/",
+				directory: "/directory",
 			},
 		},
 	}
