@@ -7,5 +7,5 @@ import (
 
 func init() {
 	// register dynamic providers
-	provider.Register("etcd", etcd.New)
+	provider.Register(etcd.Scheme, etcd.New)
 }

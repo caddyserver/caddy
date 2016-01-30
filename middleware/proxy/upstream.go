@@ -222,15 +222,13 @@ func (upstream *staticUpstream) ProviderWorker(watcher provider.Watcher, stop <-
 	}
 	resp := make(chan msg)
 	go func() {
-	outer:
 		for {
 			// blocks until there's a message from Watcher
 			m, err := watcher.Next()
 			select {
 			case resp <- msg{m, err}:
 			case <-stop:
-				close(resp)
-				break outer
+				return
 			}
 		}
 	}()

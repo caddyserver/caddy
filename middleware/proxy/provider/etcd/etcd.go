@@ -4,6 +4,7 @@ package etcd
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/coreos/etcd/client"
@@ -13,10 +14,10 @@ import (
 
 const (
 	// Scheme is Ectd url scheme.
-	Scheme = "etcd://"
+	Scheme = "etcd"
 
 	// DefaultDirectory is the default Etcd config directory.
-	DefaultDirectory = "/caddy_proxy_hosts/"
+	DefaultDirectory = "/caddyserver.com/proxy/default/hosts/"
 )
 
 var (
@@ -121,45 +122,26 @@ func (w *watcher) Next() (provider.WatcherMsg, error) {
 // URL format: etcd://username:password@<etcd_addr1>,<etcd_addr2>/<optional path prefix>
 func parseAddr(addr string) (*Provider, error) {
 	p := &Provider{}
-	// validate scheme.
-	if !strings.HasPrefix(addr, Scheme) {
+
+	u, err := url.Parse(addr)
+	if err != nil {
+		return p, err
+	}
+
+	if u.Scheme != Scheme {
 		return nil, errInvalidScheme
 	}
 
-	// extract username and password if present.
-	p.username, p.password, addr = extractUserPass(strings.TrimPrefix(addr, Scheme))
-
-	// extract endpoints.
-	s := strings.SplitN(addr, "/", 2)
-	for _, v := range strings.Split(s[0], ",") {
-		p.endpoints = append(p.endpoints, "http://"+v)
+	p.directory = DefaultDirectory
+	if u.Path != "" && u.Path != "/" {
+		p.directory = u.Path
 	}
-
-	// extract directory
-	if len(s) == 2 {
-		p.directory = "/" + s[1]
-		if !strings.HasSuffix(s[1], "/") {
-			p.directory += "/"
-		}
-	} else {
-		p.directory = DefaultDirectory
+	for _, endpoint := range strings.Split(u.Host, ",") {
+		p.endpoints = append(p.endpoints, "http://"+endpoint)
 	}
-
+	if u.User != nil {
+		p.username = u.User.Username()
+		p.password, _ = u.User.Password()
+	}
 	return p, nil
-}
-
-// extractUserPass extracts username and password from addr.
-func extractUserPass(addr string) (username, password, remaining string) {
-	s := strings.SplitN(addr, "@", 2)
-	if len(s) == 1 {
-		remaining = addr
-		return
-	}
-	userPass := strings.SplitN(s[0], ":", 2)
-	username = userPass[0]
-	if len(userPass) > 1 {
-		password = userPass[1]
-	}
-	remaining = s[1]
-	return
 }
