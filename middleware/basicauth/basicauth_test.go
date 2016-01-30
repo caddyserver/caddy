@@ -139,7 +139,7 @@ md5:$apr1$l42y8rex$pOA2VJ0x/0TwaFeAF9nX61`
 		if rule.Password, err = GetHtpasswdMatcher(filename, rule.Username, siteRoot); err != nil {
 			t.Fatalf("GetHtpasswdMatcher(%q, %q): %v", htfh.Name(), rule.Username, err)
 		}
-		t.Logf("%d. username=%q password=%v", i, rule.Username, rule.Password)
+		t.Logf("%d. username=%q password=%v", i, rule.Username, rule.Password())
 		if !rule.Password(htpasswdPasswd) || rule.Password(htpasswdPasswd+"!") {
 			t.Errorf("%d (%s) password does not match.", i, rule.Username)
 		}
