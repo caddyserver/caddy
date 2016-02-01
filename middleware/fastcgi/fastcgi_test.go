@@ -32,24 +32,24 @@ func TestRuleParseAddress(t *testing.T) {
 
 }
 
-func BuildEnvSingle(r *http.Request, rule Rule, fpath string, envExpected map[string]string, t *testing.T) {
-
-	h := Handler{}
-
-	env, err := h.buildEnv(r, rule, fpath)
-	if err != nil {
-		t.Error("Unexpected error:", err.Error())
-	}
-
-	for k, v := range envExpected {
-		if env[k] != v {
-			t.Errorf("Unexpected %v. Got %v, expected %v", k, env[k], v)
-		}
-	}
-
-}
-
 func TestBuildEnv(t *testing.T) {
+
+	buildEnvSingle := func(r *http.Request, rule Rule, fpath string, envExpected map[string]string, t *testing.T) {
+	
+		h := Handler{}
+	
+		env, err := h.buildEnv(r, rule, fpath)
+		if err != nil {
+			t.Error("Unexpected error:", err.Error())
+		}
+	
+		for k, v := range envExpected {
+			if env[k] != v {
+				t.Errorf("Unexpected %v. Got %v, expected %v", k, env[k], v)
+			}
+		}
+	
+	}
 
 	rule := Rule{}
 	url, err := url.Parse("http://localhost:2015/fgci_test.php?test=blabla")
@@ -80,16 +80,16 @@ func TestBuildEnv(t *testing.T) {
 	}
 
 	// 1. Test for full canonical IPv6 address
-	BuildEnvSingle(&r, rule, fpath, envExpected, t)
+	buildEnvSingle(&r, rule, fpath, envExpected, t)
 
 	// 2. Test for shorthand notation of IPv6 address
 	r.RemoteAddr = "[::1]:51688"
 	envExpected["REMOTE_ADDR"] = "[::1]"
-	BuildEnvSingle(&r, rule, fpath, envExpected, t)
+	buildEnvSingle(&r, rule, fpath, envExpected, t)
 
 	// 3. Test for IPv4 address
 	r.RemoteAddr = "192.168.0.10:51688"
 	envExpected["REMOTE_ADDR"] = "192.168.0.10"
-	BuildEnvSingle(&r, rule, fpath, envExpected, t)
+	buildEnvSingle(&r, rule, fpath, envExpected, t)
 
 }
