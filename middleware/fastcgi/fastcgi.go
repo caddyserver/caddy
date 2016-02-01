@@ -85,16 +85,8 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 				resp, err = fcgi.Get(env)
 			case "OPTIONS":
 				resp, err = fcgi.Options(env)
-			case "POST":
-				resp, err = fcgi.Post(env, r.Header.Get("Content-Type"), r.Body, contentLength)
-			case "PUT":
-				resp, err = fcgi.Put(env, r.Header.Get("Content-Type"), r.Body, contentLength)
-			case "PATCH":
-				resp, err = fcgi.Patch(env, r.Header.Get("Content-Type"), r.Body, contentLength)
-			case "DELETE":
-				resp, err = fcgi.Delete(env, r.Header.Get("Content-Type"), r.Body, contentLength)
 			default:
-				return http.StatusMethodNotAllowed, nil
+				resp, err = fcgi.Post(env, r.Method, r.Header.Get("Content-Type"), r.Body, contentLength)
 			}
 
 			if resp.Body != nil {

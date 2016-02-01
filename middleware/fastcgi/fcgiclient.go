@@ -484,11 +484,17 @@ func (c *FCGIClient) Options(p map[string]string) (resp *http.Response, err erro
 
 // Post issues a POST request to the fcgi responder. with request body
 // in the format that bodyType specified
-func (c *FCGIClient) Post(p map[string]string, bodyType string, body io.Reader, l int) (resp *http.Response, err error) {
+func (c *FCGIClient) Post(p map[string]string, method string, bodyType string, body io.Reader, l int) (resp *http.Response, err error) {
+	if p == nil {
+		p = make(map[string]string)
+	}
+
+	p["REQUEST_METHOD"] = strings.ToUpper(method)
 
 	if len(p["REQUEST_METHOD"]) == 0 || p["REQUEST_METHOD"] == "GET" {
 		p["REQUEST_METHOD"] = "POST"
 	}
+
 	p["CONTENT_LENGTH"] = strconv.Itoa(l)
 	if len(bodyType) > 0 {
 		p["CONTENT_TYPE"] = bodyType
@@ -499,35 +505,11 @@ func (c *FCGIClient) Post(p map[string]string, bodyType string, body io.Reader, 
 	return c.Request(p, body)
 }
 
-// Put issues a PUT request to the fcgi responder.
-func (c *FCGIClient) Put(p map[string]string, bodyType string, body io.Reader, l int) (resp *http.Response, err error) {
-
-	p["REQUEST_METHOD"] = "PUT"
-
-	return c.Post(p, bodyType, body, l)
-}
-
-// Patch issues a PATCH request to the fcgi responder.
-func (c *FCGIClient) Patch(p map[string]string, bodyType string, body io.Reader, l int) (resp *http.Response, err error) {
-
-	p["REQUEST_METHOD"] = "PATCH"
-
-	return c.Post(p, bodyType, body, l)
-}
-
-// Delete issues a DELETE request to the fcgi responder.
-func (c *FCGIClient) Delete(p map[string]string, bodyType string, body io.Reader, l int) (resp *http.Response, err error) {
-
-	p["REQUEST_METHOD"] = "DELETE"
-
-	return c.Post(p, bodyType, body, l)
-}
-
 // PostForm issues a POST to the fcgi responder, with form
 // as a string key to a list values (url.Values)
 func (c *FCGIClient) PostForm(p map[string]string, data url.Values) (resp *http.Response, err error) {
 	body := bytes.NewReader([]byte(data.Encode()))
-	return c.Post(p, "application/x-www-form-urlencoded", body, body.Len())
+	return c.Post(p, "POST", "application/x-www-form-urlencoded", body, body.Len())
 }
 
 // PostFile issues a POST to the fcgi responder in multipart(RFC 2046) standard,
@@ -566,7 +548,7 @@ func (c *FCGIClient) PostFile(p map[string]string, data url.Values, file map[str
 		return
 	}
 
-	return c.Post(p, bodyType, buf, buf.Len())
+	return c.Post(p, "POST", bodyType, buf, buf.Len())
 }
 
 // Checks whether chunked is part of the encodings stack
