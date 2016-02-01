@@ -182,7 +182,7 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 
 	// Separate remote IP and port; more lenient than net.SplitHostPort
 	var ip, port string
-	if idx := strings.Index(r.RemoteAddr, ":"); idx > -1 {
+	if idx := strings.LastIndex(r.RemoteAddr, ":"); idx > -1 {
 		ip = r.RemoteAddr[:idx]
 		port = r.RemoteAddr[idx+1:]
 	} else {
