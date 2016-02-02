@@ -107,7 +107,7 @@ func (f fakeDynamic) Watch() Watcher {
 	return f
 }
 
-func (f fakeDynamic) Next() (msg WatcherMsg, err error) {
+func (f fakeDynamic) Next() (msgs []WatcherMsg, err error) {
 	time.Sleep(100)
-	return WatcherMsg{}, nil
+	return []WatcherMsg{}, nil
 }

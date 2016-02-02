@@ -216,17 +216,17 @@ func (u *staticUpstream) HealthCheckWorker(stop chan struct{}) {
 }
 
 func (upstream *staticUpstream) ProviderWorker(watcher provider.Watcher, stop <-chan struct{}) {
-	type msg struct {
-		msg provider.WatcherMsg
-		err error
+	type message struct {
+		msgs []provider.WatcherMsg
+		err  error
 	}
-	resp := make(chan msg)
+	resp := make(chan message)
 	go func() {
 		for {
 			// blocks until there's a message from Watcher
 			m, err := watcher.Next()
 			select {
-			case resp <- msg{m, err}:
+			case resp <- message{m, err}:
 			case <-stop:
 				return
 			}
@@ -257,17 +257,20 @@ func (upstream *staticUpstream) ProviderWorker(watcher provider.Watcher, stop <-
 			// no errors, reset delay interval.
 			interval = 0
 		}
-		if m.msg.Remove {
-			// remove from upstream
-			upstream.RemoveHost(m.msg.Host)
-			log.Printf("Host %v removed from upstream", m.msg.Host)
-		} else {
-			// add host to upstream
-			if err := upstream.AddHost(m.msg.Host); err != nil {
-				log.Println(err)
-				continue
+		for _, msg := range m.msgs {
+			if msg.Remove {
+				// remove from upstream
+				if upstream.RemoveHost(msg.Host) {
+					log.Printf("Host %v removed from upstream", msg.Host)
+				}
+			} else {
+				// add host to upstream
+				if err := upstream.AddHost(msg.Host); err != nil {
+					log.Println(err)
+					continue
+				}
+				log.Printf("New host %v added to upstream", msg.Host)
 			}
-			log.Printf("New host %v added to upstream", m.msg.Host)
 		}
 
 	}
@@ -357,7 +360,7 @@ func (upstream *staticUpstream) AddHost(host string) error {
 }
 
 // RemoveHost removes host from upstream hosts.
-func (upstream *staticUpstream) RemoveHost(host string) {
+func (upstream *staticUpstream) RemoveHost(host string) bool {
 	upstream.Lock()
 	defer upstream.Unlock()
 
@@ -365,7 +368,7 @@ func (upstream *staticUpstream) RemoveHost(host string) {
 
 	// If it does not exist, ignore
 	if _, ok := upstream.hostSet[host]; !ok {
-		return
+		return false
 	}
 
 	idx := -1
@@ -376,16 +379,17 @@ func (upstream *staticUpstream) RemoveHost(host string) {
 		}
 	}
 	if idx == -1 {
-		return
+		return false
 	}
 
 	delete(upstream.hostSet, host)
 
 	if idx == len(upstream.Hosts)-1 {
 		upstream.Hosts = upstream.Hosts[:idx]
-		return
+		return true
 	}
 	upstream.Hosts = append(upstream.Hosts[:idx], upstream.Hosts[idx+1:]...)
+	return true
 }
 
 type hostName string
