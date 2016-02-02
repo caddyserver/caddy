@@ -71,9 +71,9 @@ func TestProvider(t *testing.T) {
 		{"faked://localhost", false},
 	}
 
-	Register("http", newStatic)
-	Register("https", newStatic)
-	Register("", newStatic)
+	Register("http", static)
+	Register("https", static)
+	Register("", static)
 
 	for i, test := range tests {
 		pr, _ := Get(test.addr)

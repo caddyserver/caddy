@@ -10,9 +10,9 @@ import (
 	"github.com/mholt/caddy/kvstore"
 )
 
-var ErrWatchFailure = errors.New("WatchTree failed for")
+var errWatchFailure = errors.New("WatchTree failed for")
 
-// DynamicProvider represents a dynamic hosts provider.
+// DynamicProvider is a dynamic hosts provider.
 type DynamicProvider interface {
 	Provider
 	// Watch creates a new Watcher.
@@ -34,7 +34,8 @@ type Watcher interface {
 	Next() (msgs []WatcherMsg, err error)
 }
 
-func newDynamic(addr string) (Provider, error) {
+// dynamic creates a new dynamic host provider.
+func dynamic(addr string) (Provider, error) {
 	store, err := kvstore.NewStore(addr)
 	if err != nil {
 		return nil, err
@@ -50,6 +51,7 @@ type dynamicProvider struct {
 	*kvstore.Store
 }
 
+// Hosts satisfy Provider.
 func (d *dynamicProvider) Hosts() ([]string, error) {
 	var hosts []string
 
@@ -73,6 +75,7 @@ func (d *dynamicProvider) Hosts() ([]string, error) {
 	return hosts, nil
 }
 
+// Watch satisfies DynamicProvider.
 func (d *dynamicProvider) Watch() Watcher {
 	keysChan, err := d.WatchTree(d.BaseDir, nil)
 	if err != nil {
@@ -96,7 +99,7 @@ func (d *dynamicProvider) Watch() Watcher {
 					return msgs, err
 				}
 				// return generic error message, next try will be successful.
-				return msgs, fmt.Errorf("%v %s", ErrWatchFailure, d.Type)
+				return msgs, fmt.Errorf("%v %s", errWatchFailure, d.Type)
 			}
 
 			// comparison set
