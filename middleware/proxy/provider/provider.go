@@ -18,19 +18,6 @@ type Provider interface {
 	Hosts() ([]string, error)
 }
 
-// staticProvider cater for static hardcoded hosts.
-type staticProvider string
-
-// Hosts satisfies Provider interface.
-func (s staticProvider) Hosts() ([]string, error) {
-	return []string{string(s)}, nil
-}
-
-// newStatic creates a new static host provider.
-func newStatic(host string) (Provider, error) {
-	return staticProvider(host), nil
-}
-
 // NewProviderFunc creates a new Provider.
 type NewProviderFunc func(host string) (Provider, error)
 

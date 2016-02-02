@@ -2,12 +2,12 @@ package provider
 
 func init() {
 	// static
-	Register("http", newStatic)
-	Register("https", newStatic)
-	Register("", newStatic)
+	Register("http", static)
+	Register("https", static)
+	Register("", static)
 
 	// dynamic
-	Register("etcd", newDynamic)
-	Register("consul", newDynamic)
-	Register("zk", newDynamic)
+	Register("etcd", dynamic)
+	Register("consul", dynamic)
+	Register("zk", dynamic)
 }
