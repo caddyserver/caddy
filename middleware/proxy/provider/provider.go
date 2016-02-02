@@ -51,10 +51,3 @@ func Get(addr string) (Provider, error) {
 	}
 	return nil, fmt.Errorf("%s %v", scheme, errUnsupportedScheme)
 }
-
-func init() {
-	// register static provider
-	Register("http", newStatic)
-	Register("https", newStatic)
-	Register("", newStatic)
-}
