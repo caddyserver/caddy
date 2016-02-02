@@ -104,6 +104,9 @@ var hopHeaders = []string{
 	"Upgrade",
 }
 
+// InsecureTransport is used to facilitate HTTPS proxying
+// when it is OK for upstream to be using a bad certificate,
+// since this transport skips verification.
 var InsecureTransport http.RoundTripper = &http.Transport{
 	Proxy: http.ProxyFromEnvironment,
 	Dial: (&net.Dialer{
