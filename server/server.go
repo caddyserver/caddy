@@ -337,6 +337,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Get the remote host
+	remoteAddress, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		remoteAddress = r.Host
+	}
+
 	if vh, ok := s.vhosts[host]; ok {
 		status, _ := vh.stack.ServeHTTP(w, r)
 
@@ -347,7 +353,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	} else {
 		w.WriteHeader(http.StatusNotFound)
 		fmt.Fprintf(w, "No such host at %s", s.Server.Addr)
-		log.Printf("[INFO] %s - No such host at %s", host, s.Server.Addr)
+		log.Printf("[INFO] %s - No such host at %s (requested by %s)", host, s.Server.Addr, remoteAddress)
 	}
 }
 
