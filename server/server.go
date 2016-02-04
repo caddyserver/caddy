@@ -340,7 +340,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Get the remote host
 	remoteHost, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
-		remoteHost = r.Host
+		remoteHost = remoteHost.Host
 	}
 
 	if vh, ok := s.vhosts[host]; ok {
