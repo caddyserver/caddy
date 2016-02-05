@@ -7,6 +7,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -91,6 +92,11 @@ func NewReplacer(r *http.Request, rr *responseRecorder, emptyValue string) Repla
 		rep.replacements[headerReplacer+strings.ToLower(header)+"}"] = strings.Join(values, ",")
 	}
 
+	customReplacementsMutex.RLock()
+	for k, v := range customReplacements {
+		rep.replacements["{@"+k+"}"] = v
+	}
+	customReplacementsMutex.RUnlock()
 	return rep
 }
 
@@ -134,3 +140,14 @@ const (
 	timeFormat     = "02/Jan/2006:15:04:05 -0700"
 	headerReplacer = "{>"
 )
+
+var (
+	customReplacements      = map[string]string{}
+	customReplacementsMutex sync.RWMutex
+)
+
+func RegisterReplacement(name, value string) {
+	customReplacementsMutex.Lock()
+	defer customReplacementsMutex.Unlock()
+	customReplacements[name] = value
+}
