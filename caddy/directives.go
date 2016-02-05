@@ -68,6 +68,23 @@ var directiveOrder = []directive{
 	{"browse", setup.Browse},
 }
 
+// RegisterDirective adds the given directive to caddy's list of directives.
+// Pass the name of a directive you want it to be placed after,
+// otherwise it will be placed at the bottom of the stack.
+func RegisterDirective(name string, setup SetupFunc, after string) {
+	dir := directive{name: name, setup: setup}
+	idx := len(directiveOrder)
+	for i := range directiveOrder {
+		if directiveOrder[i].name == after {
+			idx = i + 1
+			break
+		}
+	}
+	newDirectives := append(directiveOrder[:idx], append([]directive{dir}, directiveOrder[idx:]...)...)
+	directiveOrder = newDirectives
+	parse.ValidDirectives[name] = struct{}{}
+}
+
 // directive ties together a directive name with its setup function.
 type directive struct {
 	name  string

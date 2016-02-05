@@ -9,6 +9,8 @@ import (
 	"strings"
 	"text/template"
 	"time"
+
+	"github.com/russross/blackfriday"
 )
 
 // This file contains the context and functions available for
@@ -189,4 +191,18 @@ func (c Context) StripExt(path string) string {
 // Replace replaces instances of find in input with replacement.
 func (c Context) Replace(input, find, replacement string) string {
 	return strings.Replace(input, find, replacement, -1)
+}
+
+// Markdown returns the HTML contents of the markdown contained in filename
+// (relative to the site root).
+func (c Context) Markdown(filename string) (string, error) {
+	body, err := c.Include(filename)
+	if err != nil {
+		return "", err
+	}
+	renderer := blackfriday.HtmlRenderer(0, "", "")
+	extns := blackfriday.EXTENSION_TABLES | blackfriday.EXTENSION_FENCED_CODE | blackfriday.EXTENSION_STRIKETHROUGH | blackfriday.EXTENSION_DEFINITION_LISTS
+	markdown := blackfriday.Markdown([]byte(body), renderer, extns)
+
+	return string(markdown), nil
 }
