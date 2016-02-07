@@ -4,7 +4,9 @@
 package letsencrypt
 
 import (
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"io/ioutil"
 	"net"
@@ -213,24 +215,56 @@ func StapleOCSP(configs []server.Config) error {
 			return errors.New("load certificate to staple ocsp: " + err.Error())
 		}
 
-		ocspBytes, ocspResp, err := acme.GetOCSPForCert(bundleBytes)
-		if err == nil {
-			// TODO: We ignore the error if it exists because some certificates
-			// may not have an issuer URL which we should ignore anyway, and
-			// sometimes we get syntax errors in the responses. To reproduce this
-			// behavior, start Caddy with an empty Caddyfile and -log stderr. Then
-			// add a host to the Caddyfile which requires a new LE certificate.
-			// Reload Caddy's config with SIGUSR1, and see the log report that it
-			// obtains the certificate, but then an error:
-			// getting ocsp: asn1: syntax error: sequence truncated
-			// But retrying the reload again sometimes solves the problem. It's flaky...
-			ocspCache[&bundleBytes] = ocspResp
-			if ocspResp.Status == ocsp.Good {
-				configs[i].TLS.OCSPStaple = ocspBytes
+		certs, err := parsePEMBundle(bundleBytes)
+		if err != nil {
+			return errors.New("failed to parse certificates: " + err.Error())
+		}
+		if len(certs[0].OCSPServer) > 0 {
+			ocspBytes, ocspResp, err := acme.GetOCSPForCert(bundleBytes)
+			if err == nil {
+				// TODO: We ignore the error if it exists because some certificates
+				// may not have an issuer URL which we should ignore anyway, and
+				// sometimes we get syntax errors in the responses. To reproduce this
+				// behavior, start Caddy with an empty Caddyfile and -log stderr. Then
+				// add a host to the Caddyfile which requires a new LE certificate.
+				// Reload Caddy's config with SIGUSR1, and see the log report that it
+				// obtains the certificate, but then an error:
+				// getting ocsp: asn1: syntax error: sequence truncated
+				// But retrying the reload again sometimes solves the problem. It's flaky...
+				ocspCache[&bundleBytes] = ocspResp
+				if ocspResp.Status == ocsp.Good {
+					configs[i].TLS.OCSPStaple = ocspBytes
+				}
 			}
 		}
 	}
 	return nil
+}
+
+func parsePEMBundle(bundle []byte) ([]*x509.Certificate, error) {
+	var certificates []*x509.Certificate
+	var certDERBlock *pem.Block
+
+	for {
+		certDERBlock, bundle = pem.Decode(bundle)
+		if certDERBlock == nil {
+			break
+		}
+
+		if certDERBlock.Type == "CERTIFICATE" {
+			cert, err := x509.ParseCertificate(certDERBlock.Bytes)
+			if err != nil {
+				return nil, err
+			}
+			certificates = append(certificates, cert)
+		}
+	}
+
+	if len(certificates) == 0 {
+		return nil, errors.New("No certificates were found while parsing the bundle.")
+	}
+
+	return certificates, nil
 }
 
 // hostHasOtherPort returns true if there is another config in the list with the same
