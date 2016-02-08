@@ -56,6 +56,8 @@ func init() {
 func main() {
 	flag.Parse() // called here in main() to allow other packages to set flags in their inits
 
+	const svcPIDFile = `/run/Caddy.pid`
+
 	caddy.AppName = appName
 	caddy.AppVersion = appVersion
 	acme.UserAgent = appName + "/" + appVersion
@@ -106,7 +108,13 @@ func main() {
 		Name:        caddy.AppName,
 		DisplayName: caddy.AppName,
 
-		Arguments: []string{"-conf", serviceCaddyPath},
+		Arguments: []string{"-conf", serviceCaddyPath, "-pidfile", svcPIDFile},
+
+		Option: service.KeyValue{
+			"RunWait":      caddy.Wait,
+			"ReloadSignal": "USR1",
+			"PIDFile":      svcPIDFile,
+		},
 	})
 	if err != nil {
 		mustLogFatal(err)
@@ -125,9 +133,6 @@ func main() {
 	if err != nil {
 		mustLogFatal(err)
 	}
-
-	// Twiddle your thumbs
-	caddy.Wait()
 }
 
 type app struct{}
