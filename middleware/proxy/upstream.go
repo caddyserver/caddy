@@ -65,7 +65,8 @@ func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
 
 		upstream.Hosts = make([]*UpstreamHost, len(to))
 		for i, host := range to {
-			if !strings.HasPrefix(host, "http") {
+			if !strings.HasPrefix(host, "http") &&
+				!strings.HasPrefix(host, "unix:") {
 				host = "http://" + host
 			}
 			uh := &UpstreamHost{

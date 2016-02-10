@@ -63,7 +63,6 @@ var tryDuration = 60 * time.Second
 
 // ServeHTTP satisfies the middleware.Handler interface.
 func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
-
 	for _, upstream := range p.Upstreams {
 		if middleware.Path(r.URL.Path).Matches(upstream.From()) && upstream.IsAllowedPath(r.URL.Path) {
 			var replacer middleware.Replacer
