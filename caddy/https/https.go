@@ -68,12 +68,7 @@ func Activate(configs []server.Config) ([]server.Config, error) {
 	// the renewal ticker is reset, so if restarts happen more often than
 	// the ticker interval, renewals would never happen. but doing
 	// it right away at start guarantees that renewals aren't missed.
-	client, err := NewACMEClient("", true) // renewals don't use email
-	if err != nil {
-		return configs, err
-	}
-	client.Configure("")
-	err = renewManagedCertificates(client)
+	err = renewManagedCertificates(true)
 	if err != nil {
 		return configs, err
 	}

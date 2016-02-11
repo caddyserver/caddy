@@ -24,13 +24,7 @@ func maintainAssets(stopChan chan struct{}) {
 		select {
 		case <-renewalTicker.C:
 			log.Println("[INFO] Scanning for expiring certificates")
-			client, err := NewACMEClient("", false) // renewals don't use email
-			if err != nil {
-				log.Printf("[ERROR] Creating client for renewals: %v", err)
-				continue
-			}
-			client.Configure("") // TODO: Bind address of relevant listener, yuck
-			renewManagedCertificates(client)
+			renewManagedCertificates(false)
 			log.Println("[INFO] Done checking certificates")
 		case <-ocspTicker.C:
 			log.Println("[INFO] Scanning for stale OCSP staples")
@@ -45,8 +39,9 @@ func maintainAssets(stopChan chan struct{}) {
 	}
 }
 
-func renewManagedCertificates(client *ACMEClient) error {
+func renewManagedCertificates(allowPrompts bool) (err error) {
 	var renewed, deleted []Certificate
+	var client *ACMEClient
 	visitedNames := make(map[string]struct{})
 
 	certCacheMu.RLock()
@@ -73,6 +68,15 @@ func renewManagedCertificates(client *ACMEClient) error {
 		timeLeft := cert.NotAfter.Sub(time.Now().UTC())
 		if timeLeft < renewDurationBefore {
 			log.Printf("[INFO] Certificate for %v expires in %v; attempting renewal", cert.Names, timeLeft)
+
+			if client == nil {
+				client, err = NewACMEClient("", allowPrompts) // renewals don't use email
+				if err != nil {
+					return err
+				}
+				client.Configure("") // TODO: Bind address of relevant listener, yuck
+			}
+
 			err := client.Renew(cert.Names[0]) // managed certs better have only one name
 			if err != nil {
 				if client.AllowPrompts {

@@ -4,20 +4,9 @@ import (
 	"net/http"
 	"testing"
 	"time"
-
-	"github.com/mholt/caddy/caddy/https"
-	"github.com/xenolf/lego/acme"
 )
 
 func TestCaddyStartStop(t *testing.T) {
-	// Use fake ACME clients for testing
-	https.NewACMEClient = func(email string, allowPrompts bool) (*https.ACMEClient, error) {
-		return &https.ACMEClient{
-			Client:       new(acme.Client),
-			AllowPrompts: allowPrompts,
-		}, nil
-	}
-
 	caddyfile := "localhost:1984"
 
 	for i := 0; i < 2; i++ {
