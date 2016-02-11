@@ -49,7 +49,7 @@ func Activate(configs []server.Config) ([]server.Config, error) {
 	MarkQualified(configs)
 
 	// place certificates and keys on disk
-	err := ObtainCerts(configs, true)
+	err := ObtainCerts(configs, true, false)
 	if err != nil {
 		return configs, err
 	}
@@ -109,10 +109,12 @@ func MarkQualified(configs []server.Config) {
 	}
 }
 
-// ObtainCerts obtains certificates for all these configs as long as a certificate does not
-// already exist on disk. It does not modify the configs at all; it only obtains and stores
-// certificates and keys to the disk.
-func ObtainCerts(configs []server.Config, allowPrompts bool) error {
+// ObtainCerts obtains certificates for all these configs as long as a
+// certificate does not already exist on disk. It does not modify the
+// configs at all; it only obtains and stores certificates and keys to
+// the disk. If allowPrompts is true, the user may be shown a prompt.
+// If proxyACME is true, the ACME challenges will be proxied to our alt port.
+func ObtainCerts(configs []server.Config, allowPrompts, proxyACME bool) error {
 	// We group configs by email so we don't make the same clients over and
 	// over. This has the potential to prompt the user for an email, but we
 	// prevent that by assuming that if we already have a listener that can
@@ -131,7 +133,19 @@ func ObtainCerts(configs []server.Config, allowPrompts bool) error {
 				continue
 			}
 
-			client.Configure(cfg.BindHost)
+			// c.Configure assumes that allowPrompts == !proxyACME,
+			// but that's not always true. For example, a restart where
+			// the user isn't present and we're not listening on port 80.
+			// TODO: This could probably be refactored better.
+			if proxyACME {
+				client.SetHTTPAddress(net.JoinHostPort(cfg.BindHost, AlternatePort))
+				client.SetTLSAddress(net.JoinHostPort(cfg.BindHost, AlternatePort))
+				client.ExcludeChallenges([]acme.Challenge{acme.TLSSNI01, acme.DNS01})
+			} else {
+				client.SetHTTPAddress(net.JoinHostPort(cfg.BindHost, ""))
+				client.SetTLSAddress(net.JoinHostPort(cfg.BindHost, ""))
+				client.ExcludeChallenges([]acme.Challenge{acme.DNS01})
+			}
 
 			err := client.Obtain([]string{cfg.Host})
 			if err != nil {

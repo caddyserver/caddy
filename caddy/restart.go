@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io/ioutil"
 	"log"
+	"net"
 	"os"
 	"os/exec"
 	"path"
@@ -142,8 +143,21 @@ func getCertsForNewCaddyfile(newCaddyfile Input) error {
 	// (can ignore error since we aren't actually using the certs)
 	https.EnableTLS(configs, false)
 
+	// find out if we can let the acme package start its own challenge listener
+	// on port 80
+	var proxyACME bool
+	serversMu.Lock()
+	for _, s := range servers {
+		_, port, _ := net.SplitHostPort(s.Addr)
+		if port == "80" {
+			proxyACME = true
+			break
+		}
+	}
+	serversMu.Unlock()
+
 	// place certs on the disk
-	err = https.ObtainCerts(configs, false)
+	err = https.ObtainCerts(configs, false, proxyACME)
 	if err != nil {
 		return errors.New("obtaining certs: " + err.Error())
 	}
