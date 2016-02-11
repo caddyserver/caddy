@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"sync/atomic"
 
 	"github.com/mholt/caddy/caddy/https"
 )
@@ -55,8 +56,9 @@ func Restart(newCaddyfile Input) error {
 
 	// Prepare our payload to the child process
 	cdyfileGob := caddyfileGob{
-		ListenerFds: make(map[string]uintptr),
-		Caddyfile:   newCaddyfile,
+		ListenerFds:            make(map[string]uintptr),
+		Caddyfile:              newCaddyfile,
+		OnDemandTLSCertsIssued: atomic.LoadInt32(https.OnDemandIssuedCount),
 	}
 
 	// Prepare a pipe to the fork's stdin so it can get the Caddyfile

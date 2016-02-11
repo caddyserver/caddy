@@ -26,6 +26,7 @@ import (
 	"path"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/mholt/caddy/caddy/https"
@@ -317,6 +318,7 @@ func LoadCaddyfile(loader func() (Input, error)) (cdyfile Input, err error) {
 			return nil, err
 		}
 		cdyfile = loadedGob.Caddyfile
+		atomic.StoreInt32(https.OnDemandIssuedCount, loadedGob.OnDemandTLSCertsIssued)
 	}
 
 	// Try user's loader

@@ -63,10 +63,12 @@ var signalParentOnce sync.Once
 
 // caddyfileGob maps bind address to index of the file descriptor
 // in the Files array passed to the child process. It also contains
-// the caddyfile contents. Used only during graceful restarts.
+// the caddyfile contents and other state needed by the new process.
+// Used only during graceful restarts where a new process is spawned.
 type caddyfileGob struct {
-	ListenerFds map[string]uintptr
-	Caddyfile   Input
+	ListenerFds            map[string]uintptr
+	Caddyfile              Input
+	OnDemandTLSCertsIssued int32
 }
 
 // IsRestart returns whether this process is, according

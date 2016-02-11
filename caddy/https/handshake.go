@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/mholt/caddy/server"
@@ -15,11 +17,12 @@ import (
 )
 
 // GetCertificate gets a certificate to satisfy clientHello as long as
-// the certificate is already cached in memory.
+// the certificate is already cached in memory. It will not be loaded
+// from disk or obtained from the CA during the handshake.
 //
 // This function is safe for use as a tls.Config.GetCertificate callback.
 func GetCertificate(clientHello *tls.ClientHelloInfo) (*tls.Certificate, error) {
-	cert, err := getCertDuringHandshake(clientHello.ServerName, false)
+	cert, err := getCertDuringHandshake(clientHello.ServerName, false, false)
 	return cert.Certificate, err
 }
 
@@ -31,45 +34,60 @@ func GetCertificate(clientHello *tls.ClientHelloInfo) (*tls.Certificate, error) 
 //
 // This function is safe for use as a tls.Config.GetCertificate callback.
 func GetOrObtainCertificate(clientHello *tls.ClientHelloInfo) (*tls.Certificate, error) {
-	cert, err := getCertDuringHandshake(clientHello.ServerName, true)
+	cert, err := getCertDuringHandshake(clientHello.ServerName, true, true)
 	return cert.Certificate, err
 }
 
 // getCertDuringHandshake will get a certificate for name. It first tries
-// the in-memory cache, then, if obtainIfNecessary is true, it goes to disk,
-// then asks the CA for a certificate if necessary.
+// the in-memory cache. If no certificate for name is in the cach and if
+// loadIfNecessary == true, it goes to disk to load it into the cache and
+// serve it. If it's not on disk and if obtainIfNecessary == true, the
+// certificate will be obtained from the CA, cached, and served. If
+// obtainIfNecessary is true, then loadIfNecessary must also be set to true.
 //
 // This function is safe for concurrent use.
-func getCertDuringHandshake(name string, obtainIfNecessary bool) (Certificate, error) {
+func getCertDuringHandshake(name string, loadIfNecessary, obtainIfNecessary bool) (Certificate, error) {
 	// First check our in-memory cache to see if we've already loaded it
 	cert, ok := getCertificate(name)
 	if ok {
 		return cert, nil
 	}
 
-	if obtainIfNecessary {
-		// TODO: Mitigate abuse!
+	if loadIfNecessary {
 		var err error
 
 		// Then check to see if we have one on disk
-		cert, err := cacheManagedCertificate(name, true)
-		if err != nil {
-			return cert, err
-		} else if cert.Certificate != nil {
-			cert, err := handshakeMaintenance(name, cert)
+		cert, err = cacheManagedCertificate(name, true)
+		if err == nil {
+			cert, err = handshakeMaintenance(name, cert)
 			if err != nil {
 				log.Printf("[ERROR] Maintaining newly-loaded certificate for %s: %v", name, err)
 			}
-			return cert, err
+			return cert, nil
 		}
 
-		// Only option left is to get one from LE, but the name has to qualify first
-		if !HostQualifies(name) {
-			return cert, errors.New("hostname '" + name + "' does not qualify for certificate")
-		}
+		if obtainIfNecessary {
+			name = strings.ToLower(name)
 
-		// By this point, we need to obtain one from the CA.
-		return obtainOnDemandCertificate(name)
+			// Make sure aren't over any applicable limits
+			if onDemandMaxIssue > 0 && atomic.LoadInt32(OnDemandIssuedCount) >= onDemandMaxIssue {
+				return Certificate{}, fmt.Errorf("%s: maximum certificates issued (%d)", name, onDemandMaxIssue)
+			}
+			failedIssuanceMu.RLock()
+			when, ok := failedIssuance[name]
+			failedIssuanceMu.RUnlock()
+			if ok {
+				return Certificate{}, fmt.Errorf("%s: throttled; refusing to issue cert since last attempt on %s failed", name, when.String())
+			}
+
+			// Only option left is to get one from LE, but the name has to qualify first
+			if !HostQualifies(name) {
+				return cert, errors.New("hostname '" + name + "' does not qualify for certificate")
+			}
+
+			// By this point, we need to obtain one from the CA.
+			return obtainOnDemandCertificate(name)
+		}
 	}
 
 	return Certificate{}, nil
@@ -89,7 +107,7 @@ func obtainOnDemandCertificate(name string) (Certificate, error) {
 		// wait for it to finish obtaining the cert and then we'll use it.
 		obtainCertWaitChansMu.Unlock()
 		<-wait
-		return getCertDuringHandshake(name, false) // passing in true might result in infinite loop if obtain failed
+		return getCertDuringHandshake(name, true, false)
 	}
 
 	// looks like it's up to us to do all the work and obtain the cert
@@ -115,11 +133,24 @@ func obtainOnDemandCertificate(name string) (Certificate, error) {
 	client.Configure("") // TODO: which BindHost?
 	err = client.Obtain([]string{name})
 	if err != nil {
+		// Failed to solve challenge, so don't allow another on-demand
+		// issue for this name to be attempted for a little while.
+		failedIssuanceMu.Lock()
+		failedIssuance[name] = time.Now()
+		go func(name string) {
+			time.Sleep(5 * time.Minute)
+			failedIssuanceMu.Lock()
+			delete(failedIssuance, name)
+			failedIssuanceMu.Unlock()
+		}(name)
+		failedIssuanceMu.Unlock()
 		return Certificate{}, err
 	}
 
+	atomic.AddInt32(OnDemandIssuedCount, 1)
+
 	// The certificate is on disk; now just start over to load it and serve it
-	return getCertDuringHandshake(name, false) // pass in false as a fail-safe from infinite-looping
+	return getCertDuringHandshake(name, true, false)
 }
 
 // handshakeMaintenance performs a check on cert for expiration and OCSP
@@ -127,12 +158,6 @@ func obtainOnDemandCertificate(name string) (Certificate, error) {
 //
 // This function is safe for use by multiple concurrent goroutines.
 func handshakeMaintenance(name string, cert Certificate) (Certificate, error) {
-	// fmt.Println("ON-DEMAND CERT?", cert.OnDemand)
-	// if !cert.OnDemand {
-	// 	return cert, nil
-	// }
-	fmt.Println("Checking expiration of cert; on-demand:", cert.OnDemand)
-
 	// Check cert expiration
 	timeLeft := cert.NotAfter.Sub(time.Now().UTC())
 	if timeLeft < renewDurationBefore {
@@ -173,7 +198,7 @@ func renewDynamicCertificate(name string) (Certificate, error) {
 		// wait for it to finish, then we'll use the new one.
 		obtainCertWaitChansMu.Unlock()
 		<-wait
-		return getCertDuringHandshake(name, false)
+		return getCertDuringHandshake(name, true, false)
 	}
 
 	// looks like it's up to us to do all the work and renew the cert
@@ -201,7 +226,7 @@ func renewDynamicCertificate(name string) (Certificate, error) {
 		return Certificate{}, err
 	}
 
-	return getCertDuringHandshake(name, false)
+	return getCertDuringHandshake(name, true, false)
 }
 
 // stapleOCSP staples OCSP information to cert for hostname name.
@@ -235,3 +260,20 @@ func stapleOCSP(cert *Certificate, pemBundle []byte) error {
 // obtainCertWaitChans is used to coordinate obtaining certs for each hostname.
 var obtainCertWaitChans = make(map[string]chan struct{})
 var obtainCertWaitChansMu sync.Mutex
+
+// OnDemandIssuedCount is the number of certificates that have been issued
+// on-demand by this process. It is only safe to modify this count atomically.
+// If it reaches max_certs, on-demand issuances will fail.
+var OnDemandIssuedCount = new(int32)
+
+// onDemandMaxIssue is set based on max_certs in tls config. It specifies the
+// maximum number of certificates that can be issued.
+// TODO: This applies globally, but we should probably make a server-specific
+// way to keep track of these limits and counts...
+var onDemandMaxIssue int32
+
+// failedIssuance is a set of names that we recently failed to get a
+// certificate for from the ACME CA. They are removed after some time.
+// When a name is in this map, do not issue a certificate for it.
+var failedIssuance = make(map[string]time.Time)
+var failedIssuanceMu sync.RWMutex

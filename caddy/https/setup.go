@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/mholt/caddy/caddy/setup"
@@ -27,7 +28,7 @@ func Setup(c *setup.Controller) (middleware.Middleware, error) {
 	}
 
 	for c.Next() {
-		var certificateFile, keyFile, loadDir string
+		var certificateFile, keyFile, loadDir, maxCerts string
 
 		args := c.RemainingArgs()
 		switch len(args) {
@@ -80,6 +81,8 @@ func Setup(c *setup.Controller) (middleware.Middleware, error) {
 			case "load":
 				c.Args(&loadDir)
 				c.TLS.Manual = true
+			case "max_certs":
+				c.Args(&maxCerts)
 			default:
 				return nil, c.Errf("Unknown keyword '%s'", c.Val())
 			}
@@ -88,6 +91,20 @@ func Setup(c *setup.Controller) (middleware.Middleware, error) {
 		// tls requires at least one argument if a block is not opened
 		if len(args) == 0 && !hadBlock {
 			return nil, c.ArgErr()
+		}
+
+		if c.TLS.Manual && maxCerts != "" {
+			return nil, c.Err("Cannot limit certificate count (max_certs) for manual TLS configurations")
+		}
+
+		if maxCerts != "" {
+			maxCertsNum, err := strconv.Atoi(maxCerts)
+			if err != nil || maxCertsNum < 0 {
+				return nil, c.Err("max_certs must be a positive integer")
+			}
+			if onDemandMaxIssue == 0 || int32(maxCertsNum) < onDemandMaxIssue { // keep the minimum; TODO: This is global; should be per-server or per-vhost...
+				onDemandMaxIssue = int32(maxCertsNum)
+			}
 		}
 
 		// don't load certificates unless we're supposed to
