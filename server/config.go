@@ -65,13 +65,10 @@ func (c Config) Address() string {
 
 // TLSConfig describes how TLS should be configured and used.
 type TLSConfig struct {
-	Enabled          bool
-	Certificate      string
-	Key              string
-	LetsEncryptEmail string
-	Managed          bool // will be set to true if config qualifies for automatic, managed TLS
-	//DisableHTTPRedir         bool // TODO: not a good idea - should we really allow it?
-	OCSPStaple               []byte
+	Enabled                  bool
+	LetsEncryptEmail         string
+	Managed                  bool // will be set to true if config qualifies for automatic, managed TLS
+	Manual                   bool // will be set to true if user provides the cert and key files
 	Ciphers                  []uint16
 	ProtocolMinVersion       uint16
 	ProtocolMaxVersion       uint16

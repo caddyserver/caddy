@@ -1,4 +1,4 @@
-package letsencrypt
+package https
 
 import (
 	"io/ioutil"
@@ -48,9 +48,9 @@ func TestConfigQualifies(t *testing.T) {
 	}{
 		{server.Config{Host: ""}, true},
 		{server.Config{Host: "localhost"}, false},
+		{server.Config{Host: "123.44.3.21"}, false},
 		{server.Config{Host: "example.com"}, true},
-		{server.Config{Host: "example.com", TLS: server.TLSConfig{Certificate: "cert.pem"}}, false},
-		{server.Config{Host: "example.com", TLS: server.TLSConfig{Key: "key.pem"}}, false},
+		{server.Config{Host: "example.com", TLS: server.TLSConfig{Manual: true}}, false},
 		{server.Config{Host: "example.com", TLS: server.TLSConfig{LetsEncryptEmail: "off"}}, false},
 		{server.Config{Host: "example.com", TLS: server.TLSConfig{LetsEncryptEmail: "foo@bar.com"}}, true},
 		{server.Config{Host: "example.com", Scheme: "http"}, false},
@@ -257,26 +257,13 @@ func TestEnableTLS(t *testing.T) {
 		server.Config{}, // not managed - no changes!
 	}
 
-	EnableTLS(configs)
+	EnableTLS(configs, false)
 
 	if !configs[0].TLS.Enabled {
 		t.Errorf("Expected config 0 to have TLS.Enabled == true, but it was false")
 	}
-	if configs[0].TLS.Certificate == "" {
-		t.Errorf("Expected config 0 to have TLS.Certificate set, but it was empty")
-	}
-	if configs[0].TLS.Key == "" {
-		t.Errorf("Expected config 0 to have TLS.Key set, but it was empty")
-	}
-
 	if configs[1].TLS.Enabled {
 		t.Errorf("Expected config 1 to have TLS.Enabled == false, but it was true")
-	}
-	if configs[1].TLS.Certificate != "" {
-		t.Errorf("Expected config 1 to have TLS.Certificate empty, but it was: %s", configs[1].TLS.Certificate)
-	}
-	if configs[1].TLS.Key != "" {
-		t.Errorf("Expected config 1 to have TLS.Key empty, but it was: %s", configs[1].TLS.Key)
 	}
 }
 
@@ -316,9 +303,9 @@ func TestMarkQualified(t *testing.T) {
 	// TODO: TestConfigQualifies and this test share the same config list...
 	configs := []server.Config{
 		{Host: "localhost"},
+		{Host: "123.44.3.21"},
 		{Host: "example.com"},
-		{Host: "example.com", TLS: server.TLSConfig{Certificate: "cert.pem"}},
-		{Host: "example.com", TLS: server.TLSConfig{Key: "key.pem"}},
+		{Host: "example.com", TLS: server.TLSConfig{Manual: true}},
 		{Host: "example.com", TLS: server.TLSConfig{LetsEncryptEmail: "off"}},
 		{Host: "example.com", TLS: server.TLSConfig{LetsEncryptEmail: "foo@bar.com"}},
 		{Host: "example.com", Scheme: "http"},

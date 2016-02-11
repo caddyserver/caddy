@@ -12,7 +12,7 @@ import (
 	"os/exec"
 	"path"
 
-	"github.com/mholt/caddy/caddy/letsencrypt"
+	"github.com/mholt/caddy/caddy/https"
 )
 
 func init() {
@@ -133,13 +133,15 @@ func getCertsForNewCaddyfile(newCaddyfile Input) error {
 	}
 
 	// first mark the configs that are qualified for managed TLS
-	letsencrypt.MarkQualified(configs)
+	https.MarkQualified(configs)
 
-	// we must make sure port is set before we group by bind address
-	letsencrypt.EnableTLS(configs)
+	// since we group by bind address to obtain certs, we must call
+	// EnableTLS to make sure the port is set properly first
+	// (can ignore error since we aren't actually using the certs)
+	https.EnableTLS(configs, false)
 
 	// place certs on the disk
-	err = letsencrypt.ObtainCerts(configs, letsencrypt.AlternatePort)
+	err = https.ObtainCerts(configs, false)
 	if err != nil {
 		return errors.New("obtaining certs: " + err.Error())
 	}

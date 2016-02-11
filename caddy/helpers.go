@@ -11,13 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-
-	"github.com/mholt/caddy/caddy/letsencrypt"
 )
-
-func init() {
-	letsencrypt.OnChange = func() error { return Restart(nil) }
-}
 
 // isLocalhost returns true if host looks explicitly like a localhost address.
 func isLocalhost(host string) bool {

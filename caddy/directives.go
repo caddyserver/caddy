@@ -1,6 +1,7 @@
 package caddy
 
 import (
+	"github.com/mholt/caddy/caddy/https"
 	"github.com/mholt/caddy/caddy/parse"
 	"github.com/mholt/caddy/caddy/setup"
 	"github.com/mholt/caddy/middleware"
@@ -43,7 +44,7 @@ var directiveOrder = []directive{
 	// Essential directives that initialize vital configuration settings
 	{"root", setup.Root},
 	{"bind", setup.BindHost},
-	{"tls", setup.TLS}, // letsencrypt is set up just after tls
+	{"tls", https.Setup},
 
 	// Other directives that don't create HTTP handlers
 	{"startup", setup.Startup},

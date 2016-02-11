@@ -1,16 +1,24 @@
-package setup
+package https
 
 import (
+	"bytes"
 	"crypto/tls"
+	"encoding/pem"
+	"io/ioutil"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 
+	"github.com/mholt/caddy/caddy/setup"
 	"github.com/mholt/caddy/middleware"
 	"github.com/mholt/caddy/server"
 )
 
-// TLS sets up the TLS configuration (but does not activate Let's Encrypt; that is handled elsewhere).
-func TLS(c *Controller) (middleware.Middleware, error) {
+// Setup sets up the TLS configuration and installs certificates that
+// are specified by the user in the config file. All the automatic HTTPS
+// stuff comes later outside of this function.
+func Setup(c *setup.Controller) (middleware.Middleware, error) {
 	if c.Scheme == "http" {
 		c.TLS.Enabled = false
 		log.Printf("[WARNING] TLS disabled for %s://%s.", c.Scheme, c.Address())
@@ -19,18 +27,21 @@ func TLS(c *Controller) (middleware.Middleware, error) {
 	}
 
 	for c.Next() {
+		var certificateFile, keyFile, loadDir string
+
 		args := c.RemainingArgs()
 		switch len(args) {
 		case 1:
 			c.TLS.LetsEncryptEmail = args[0]
 
-			// user can force-disable LE activation this way
+			// user can force-disable managed TLS this way
 			if c.TLS.LetsEncryptEmail == "off" {
 				c.TLS.Enabled = false
 			}
 		case 2:
-			c.TLS.Certificate = args[0]
-			c.TLS.Key = args[1]
+			certificateFile = args[0]
+			keyFile = args[1]
+			c.TLS.Manual = true
 		}
 
 		// Optional block with extra parameters
@@ -66,9 +77,9 @@ func TLS(c *Controller) (middleware.Middleware, error) {
 				if len(c.TLS.ClientCerts) == 0 {
 					return nil, c.ArgErr()
 				}
-			// TODO: Allow this? It's a bad idea to allow HTTP. If we do this, make sure invoking tls at all (even manually) also sets up a redirect if possible?
-			// case "allow_http":
-			// 	c.TLS.DisableHTTPRedir = true
+			case "load":
+				c.Args(&loadDir)
+				c.TLS.Manual = true
 			default:
 				return nil, c.Errf("Unknown keyword '%s'", c.Val())
 			}
@@ -78,18 +89,112 @@ func TLS(c *Controller) (middleware.Middleware, error) {
 		if len(args) == 0 && !hadBlock {
 			return nil, c.ArgErr()
 		}
+
+		// don't load certificates unless we're supposed to
+		if !c.TLS.Enabled || !c.TLS.Manual {
+			continue
+		}
+
+		// load a single certificate and key, if specified
+		if certificateFile != "" && keyFile != "" {
+			err := cacheUnmanagedCertificatePEMFile(certificateFile, keyFile)
+			if err != nil {
+				return nil, c.Errf("Unable to load certificate and key files for %s: %v", c.Host, err)
+			}
+			log.Printf("[INFO] Successfully loaded TLS assets from %s and %s", certificateFile, keyFile)
+		}
+
+		// load a directory of certificates, if specified
+		// modeled after haproxy: https://cbonte.github.io/haproxy-dconv/configuration-1.5.html#5.1-crt
+		if loadDir != "" {
+			err := filepath.Walk(loadDir, func(path string, info os.FileInfo, err error) error {
+				if err != nil {
+					log.Printf("[WARNING] Unable to traverse into %s; skipping", path)
+					return nil
+				}
+				if info.IsDir() {
+					return nil
+				}
+				if strings.HasSuffix(strings.ToLower(info.Name()), ".pem") {
+					certBuilder, keyBuilder := new(bytes.Buffer), new(bytes.Buffer)
+					var foundKey bool
+
+					bundle, err := ioutil.ReadFile(path)
+					if err != nil {
+						return err
+					}
+
+					for {
+						// Decode next block so we can see what type it is
+						var derBlock *pem.Block
+						derBlock, bundle = pem.Decode(bundle)
+						if derBlock == nil {
+							break
+						}
+
+						if derBlock.Type == "CERTIFICATE" {
+							// Re-encode certificate as PEM, appending to certificate chain
+							pem.Encode(certBuilder, derBlock)
+						} else if derBlock.Type == "EC PARAMETERS" {
+							// EC keys are composed of two blocks: parameters and key
+							// (parameter block should come first)
+							if !foundKey {
+								// Encode parameters
+								pem.Encode(keyBuilder, derBlock)
+
+								// Key must immediately follow
+								derBlock, bundle = pem.Decode(bundle)
+								if derBlock == nil || derBlock.Type != "EC PRIVATE KEY" {
+									return c.Errf("%s: expected elliptic private key to immediately follow EC parameters", path)
+								}
+								pem.Encode(keyBuilder, derBlock)
+								foundKey = true
+							}
+						} else if derBlock.Type == "PRIVATE KEY" || strings.HasSuffix(derBlock.Type, " PRIVATE KEY") {
+							// RSA key
+							if !foundKey {
+								pem.Encode(keyBuilder, derBlock)
+								foundKey = true
+							}
+						} else {
+							return c.Errf("%s: unrecognized PEM block type: %s", path, derBlock.Type)
+						}
+					}
+
+					certPEMBytes, keyPEMBytes := certBuilder.Bytes(), keyBuilder.Bytes()
+					if len(certPEMBytes) == 0 {
+						return c.Errf("%s: failed to parse PEM data", path)
+					}
+					if len(keyPEMBytes) == 0 {
+						return c.Errf("%s: no private key block found", path)
+					}
+
+					err = cacheUnmanagedCertificatePEMBytes(certPEMBytes, keyPEMBytes)
+					if err != nil {
+						return c.Errf("%s: failed to load cert and key for %s: %v", path, c.Host, err)
+					}
+					log.Printf("[INFO] Successfully loaded TLS assets from %s", path)
+				}
+				return nil
+			})
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
 
-	SetDefaultTLSParams(c.Config)
+	setDefaultTLSParams(c.Config)
 
 	return nil, nil
 }
 
-// SetDefaultTLSParams sets the default TLS cipher suites, protocol versions,
+// setDefaultTLSParams sets the default TLS cipher suites, protocol versions,
 // and server preferences of a server.Config if they were not previously set
-// (it does not overwrite; only fills in missing values).
-func SetDefaultTLSParams(c *server.Config) {
-	// If no ciphers provided, use all that Caddy supports for the protocol
+// (it does not overwrite; only fills in missing values). It will also set the
+// port to 443 if not already set, TLS is enabled, TLS is manual, and the host
+// does not equal localhost.
+func setDefaultTLSParams(c *server.Config) {
+	// If no ciphers provided, use default list
 	if len(c.TLS.Ciphers) == 0 {
 		c.TLS.Ciphers = defaultCiphers
 	}
@@ -111,14 +216,14 @@ func SetDefaultTLSParams(c *server.Config) {
 
 	// Default TLS port is 443; only use if port is not manually specified,
 	// TLS is enabled, and the host is not localhost
-	if c.Port == "" && c.TLS.Enabled && c.Host != "localhost" {
+	if c.Port == "" && c.TLS.Enabled && !c.TLS.Manual && c.Host != "localhost" {
 		c.Port = "443"
 	}
 }
 
-// Map of supported protocols
-// SSLv3 will be not supported in future release
-// HTTP/2 only supports TLS 1.2 and higher
+// Map of supported protocols.
+// SSLv3 will be not supported in future release.
+// HTTP/2 only supports TLS 1.2 and higher.
 var supportedProtocols = map[string]uint16{
 	"ssl3.0": tls.VersionSSL30,
 	"tls1.0": tls.VersionTLS10,
