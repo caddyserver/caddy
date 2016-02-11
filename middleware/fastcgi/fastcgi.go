@@ -70,7 +70,8 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			}
 
 			// Connect to FastCGI gateway
-			fcgi, err := getClient(&rule)
+			network, address := rule.parseAddress()
+			fcgi, err := Dial(network, address)
 			if err != nil {
 				return http.StatusBadGateway, err
 			}
@@ -128,15 +129,28 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 	return h.Next.ServeHTTP(w, r)
 }
 
-func getClient(r *Rule) (*FCGIClient, error) {
-	// check if unix socket or TCP
+// parseAddress returns the network and address of r.
+// The first string is the network, "tcp" or "unix", implied from the scheme and address.
+// The second string is r.Address, with scheme prefixes removed.
+// The two returned strings can be used as parameters to the Dial() function.
+func (r Rule) parseAddress() (string, string) {
+	// check if address has tcp scheme explicitly set
+	if strings.HasPrefix(r.Address, "tcp://") {
+		return "tcp", r.Address[len("tcp://"):]
+	}
+	// check if address has fastcgi scheme explicity set
+	if strings.HasPrefix(r.Address, "fastcgi://") {
+		return "tcp", r.Address[len("fastcgi://"):]
+	}
+	// check if unix socket
 	if trim := strings.HasPrefix(r.Address, "unix"); strings.HasPrefix(r.Address, "/") || trim {
 		if trim {
-			r.Address = r.Address[len("unix:"):]
+			return "unix", r.Address[len("unix:"):]
 		}
-		return Dial("unix", r.Address)
+		return "unix", r.Address
 	}
-	return Dial("tcp", r.Address)
+	// default case, a plain tcp address with no scheme
+	return "tcp", r.Address
 }
 
 func writeHeader(w http.ResponseWriter, r *http.Response) {
@@ -168,7 +182,7 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 
 	// Separate remote IP and port; more lenient than net.SplitHostPort
 	var ip, port string
-	if idx := strings.Index(r.RemoteAddr, ":"); idx > -1 {
+	if idx := strings.LastIndex(r.RemoteAddr, ":"); idx > -1 {
 		ip = r.RemoteAddr[:idx]
 		port = r.RemoteAddr[idx+1:]
 	} else {

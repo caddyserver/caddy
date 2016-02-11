@@ -23,9 +23,9 @@ func RequestCallback(w http.ResponseWriter, r *http.Request) bool {
 			scheme = "https"
 		}
 
-		hostname, _, err := net.SplitHostPort(r.URL.Host)
+		hostname, _, err := net.SplitHostPort(r.Host)
 		if err != nil {
-			hostname = r.URL.Host
+			hostname = r.Host
 		}
 
 		upstream, err := url.Parse(scheme + "://" + hostname + ":" + AlternatePort)

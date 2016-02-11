@@ -169,12 +169,11 @@ type FCGIClient struct {
 	reqID     uint16
 }
 
-// Dial connects to the fcgi responder at the specified network address.
+// DialWithDialer connects to the fcgi responder at the specified network address, using custom net.Dialer.
 // See func net.Dial for a description of the network and address parameters.
-func Dial(network, address string) (fcgi *FCGIClient, err error) {
+func DialWithDialer(network, address string, dialer net.Dialer) (fcgi *FCGIClient, err error) {
 	var conn net.Conn
-
-	conn, err = net.Dial(network, address)
+	conn, err = dialer.Dial(network, address)
 	if err != nil {
 		return
 	}
@@ -186,6 +185,12 @@ func Dial(network, address string) (fcgi *FCGIClient, err error) {
 	}
 
 	return
+}
+
+// Dial connects to the fcgi responder at the specified network address, using default net.Dialer.
+// See func net.Dial for a description of the network and address parameters.
+func Dial(network, address string) (fcgi *FCGIClient, err error) {
+	return DialWithDialer(network, address, net.Dialer{})
 }
 
 // Close closes fcgi connnection

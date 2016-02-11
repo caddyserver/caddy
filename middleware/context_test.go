@@ -92,6 +92,45 @@ func TestIncludeNotExisting(t *testing.T) {
 	}
 }
 
+func TestMarkdown(t *testing.T) {
+	context := getContextOrFail(t)
+
+	inputFilename := "test_file"
+	absInFilePath := filepath.Join(fmt.Sprintf("%s", context.Root), inputFilename)
+	defer func() {
+		err := os.Remove(absInFilePath)
+		if err != nil && !os.IsNotExist(err) {
+			t.Fatalf("Failed to clean test file!")
+		}
+	}()
+
+	tests := []struct {
+		fileContent          string
+		expectedContent      string
+	}{
+		// Test 0 - test parsing of markdown
+		{
+			fileContent:          "* str1\n* str2\n",
+			expectedContent:      "<ul>\n<li>str1</li>\n<li>str2</li>\n</ul>\n",
+		},
+	}
+
+	for i, test := range tests {
+		testPrefix := getTestPrefix(i)
+
+		// WriteFile truncates the contentt
+		err := ioutil.WriteFile(absInFilePath, []byte(test.fileContent), os.ModePerm)
+		if err != nil {
+			t.Fatal(testPrefix+"Failed to create test file. Error was: %v", err)
+		}
+
+		content, _ := context.Markdown(inputFilename)
+		if content != test.expectedContent {
+			t.Errorf(testPrefix+"Expected content [%s] but found [%s]. Input file was: %s", test.expectedContent, content, inputFilename)
+		}
+	}
+}
+
 func TestCookie(t *testing.T) {
 
 	tests := []struct {
