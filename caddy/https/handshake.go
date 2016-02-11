@@ -67,30 +67,58 @@ func getCertDuringHandshake(name string, loadIfNecessary, obtainIfNecessary bool
 		}
 
 		if obtainIfNecessary {
+			// By this point, we need to ask the CA for a certificate
+
 			name = strings.ToLower(name)
 
 			// Make sure aren't over any applicable limits
-			if onDemandMaxIssue > 0 && atomic.LoadInt32(OnDemandIssuedCount) >= onDemandMaxIssue {
-				return Certificate{}, fmt.Errorf("%s: maximum certificates issued (%d)", name, onDemandMaxIssue)
-			}
-			failedIssuanceMu.RLock()
-			when, ok := failedIssuance[name]
-			failedIssuanceMu.RUnlock()
-			if ok {
-				return Certificate{}, fmt.Errorf("%s: throttled; refusing to issue cert since last attempt on %s failed", name, when.String())
+			err := checkLimitsForObtainingNewCerts(name)
+			if err != nil {
+				return Certificate{}, err
 			}
 
-			// Only option left is to get one from LE, but the name has to qualify first
+			// Name has to qualify for a certificate
 			if !HostQualifies(name) {
 				return cert, errors.New("hostname '" + name + "' does not qualify for certificate")
 			}
 
-			// By this point, we need to obtain one from the CA.
+			// Obtain certificate from the CA
 			return obtainOnDemandCertificate(name)
 		}
 	}
 
 	return Certificate{}, nil
+}
+
+// checkLimitsForObtainingNewCerts checks to see if name can be issued right
+// now according to mitigating factors we keep track of and preferences the
+// user has set. If a non-nil error is returned, do not issue a new certificate
+// for name.
+func checkLimitsForObtainingNewCerts(name string) error {
+	// User can set hard limit for number of certs for the process to issue
+	if onDemandMaxIssue > 0 && atomic.LoadInt32(OnDemandIssuedCount) >= onDemandMaxIssue {
+		return fmt.Errorf("%s: maximum certificates issued (%d)", name, onDemandMaxIssue)
+	}
+
+	// Make sure name hasn't failed a challenge recently
+	failedIssuanceMu.RLock()
+	when, ok := failedIssuance[name]
+	failedIssuanceMu.RUnlock()
+	if ok {
+		return fmt.Errorf("%s: throttled; refusing to issue cert since last attempt on %s failed", name, when.String())
+	}
+
+	// Make sure, if we've issued a few certificates already, that we haven't
+	// issued any recently
+	lastIssueTimeMu.Lock()
+	since := time.Since(lastIssueTime)
+	lastIssueTimeMu.Unlock()
+	if atomic.LoadInt32(OnDemandIssuedCount) >= 10 && since < 10*time.Minute {
+		return fmt.Errorf("%s: throttled; last certificate was obtained %v ago", name, since)
+	}
+
+	// 👍Good to go
+	return nil
 }
 
 // obtainOnDemandCertificate obtains a certificate for name for the given
@@ -147,9 +175,13 @@ func obtainOnDemandCertificate(name string) (Certificate, error) {
 		return Certificate{}, err
 	}
 
+	// Success - update counters and stuff
 	atomic.AddInt32(OnDemandIssuedCount, 1)
+	lastIssueTimeMu.Lock()
+	lastIssueTime = time.Now()
+	lastIssueTimeMu.Unlock()
 
-	// The certificate is on disk; now just start over to load it and serve it
+	// The certificate is already on disk; now just start over to load it and serve it
 	return getCertDuringHandshake(name, true, false)
 }
 
@@ -269,11 +301,17 @@ var OnDemandIssuedCount = new(int32)
 // onDemandMaxIssue is set based on max_certs in tls config. It specifies the
 // maximum number of certificates that can be issued.
 // TODO: This applies globally, but we should probably make a server-specific
-// way to keep track of these limits and counts...
+// way to keep track of these limits and counts, since it's specified in the
+// Caddyfile...
 var onDemandMaxIssue int32
 
 // failedIssuance is a set of names that we recently failed to get a
 // certificate for from the ACME CA. They are removed after some time.
-// When a name is in this map, do not issue a certificate for it.
+// When a name is in this map, do not issue a certificate for it on-demand.
 var failedIssuance = make(map[string]time.Time)
 var failedIssuanceMu sync.RWMutex
+
+// lastIssueTime records when we last obtained a certificate successfully.
+// If this value is recent, do not make any on-demand certificate requests.
+var lastIssueTime time.Time
+var lastIssueTimeMu sync.Mutex
