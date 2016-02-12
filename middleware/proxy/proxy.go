@@ -42,6 +42,7 @@ type UpstreamHost struct {
 	FailTimeout       time.Duration
 	Unhealthy         bool
 	ExtraHeaders      http.Header
+	HiddenHeaders     http.Header
 	CheckDown         UpstreamHostDownFunc
 	WithoutPathPrefix string
 }
