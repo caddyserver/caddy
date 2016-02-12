@@ -113,7 +113,7 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 				if host.HiddenHeaders != nil {
 					hiddenHeaders = make(http.Header)
 					for header, _ := range host.HiddenHeaders {
-						hiddenHeaders.Add(header,'')
+						hiddenHeaders.Add(header,"")
 					}
 				}
 
