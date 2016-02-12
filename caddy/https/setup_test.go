@@ -1,24 +1,46 @@
-package setup
+package https
 
 import (
 	"crypto/tls"
+	"io/ioutil"
+	"log"
+	"os"
 	"testing"
+
+	"github.com/mholt/caddy/caddy/setup"
 )
 
-func TestTLSParseBasic(t *testing.T) {
-	c := NewTestController(`tls cert.pem key.pem`)
+func TestMain(m *testing.M) {
+	// Write test certificates to disk before tests, and clean up
+	// when we're done.
+	err := ioutil.WriteFile(certFile, testCert, 0644)
+	if err != nil {
+		log.Fatal(err)
+	}
+	err = ioutil.WriteFile(keyFile, testKey, 0644)
+	if err != nil {
+		os.Remove(certFile)
+		log.Fatal(err)
+	}
 
-	_, err := TLS(c)
+	result := m.Run()
+
+	os.Remove(certFile)
+	os.Remove(keyFile)
+	os.Exit(result)
+}
+
+func TestSetupParseBasic(t *testing.T) {
+	c := setup.NewTestController(`tls ` + certFile + ` ` + keyFile + ``)
+
+	_, err := Setup(c)
 	if err != nil {
 		t.Errorf("Expected no errors, got: %v", err)
 	}
 
 	// Basic checks
-	if c.TLS.Certificate != "cert.pem" {
-		t.Errorf("Expected certificate arg to be 'cert.pem', was '%s'", c.TLS.Certificate)
-	}
-	if c.TLS.Key != "key.pem" {
-		t.Errorf("Expected key arg to be 'key.pem', was '%s'", c.TLS.Key)
+	if !c.TLS.Manual {
+		t.Error("Expected TLS Manual=true, but was false")
 	}
 	if !c.TLS.Enabled {
 		t.Error("Expected TLS Enabled=true, but was false")
@@ -34,6 +56,7 @@ func TestTLSParseBasic(t *testing.T) {
 
 	// Cipher checks
 	expectedCiphers := []uint16{
+		tls.TLS_FALLBACK_SCSV,
 		tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
 		tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
 		tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
@@ -42,7 +65,6 @@ func TestTLSParseBasic(t *testing.T) {
 		tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
 		tls.TLS_RSA_WITH_AES_256_CBC_SHA,
 		tls.TLS_RSA_WITH_AES_128_CBC_SHA,
-		tls.TLS_FALLBACK_SCSV,
 	}
 
 	// Ensure count is correct (plus one for TLS_FALLBACK_SCSV)
@@ -63,23 +85,23 @@ func TestTLSParseBasic(t *testing.T) {
 	}
 }
 
-func TestTLSParseIncompleteParams(t *testing.T) {
+func TestSetupParseIncompleteParams(t *testing.T) {
 	// Using tls without args is an error because it's unnecessary.
-	c := NewTestController(`tls`)
-	_, err := TLS(c)
+	c := setup.NewTestController(`tls`)
+	_, err := Setup(c)
 	if err == nil {
 		t.Error("Expected an error, but didn't get one")
 	}
 }
 
-func TestTLSParseWithOptionalParams(t *testing.T) {
-	params := `tls cert.crt cert.key {
+func TestSetupParseWithOptionalParams(t *testing.T) {
+	params := `tls ` + certFile + ` ` + keyFile + ` {
             protocols ssl3.0 tls1.2
             ciphers RSA-3DES-EDE-CBC-SHA RSA-AES256-CBC-SHA ECDHE-RSA-AES128-GCM-SHA256
         }`
-	c := NewTestController(params)
+	c := setup.NewTestController(params)
 
-	_, err := TLS(c)
+	_, err := Setup(c)
 	if err != nil {
 		t.Errorf("Expected no errors, got: %v", err)
 	}
@@ -97,13 +119,13 @@ func TestTLSParseWithOptionalParams(t *testing.T) {
 	}
 }
 
-func TestTLSDefaultWithOptionalParams(t *testing.T) {
+func TestSetupDefaultWithOptionalParams(t *testing.T) {
 	params := `tls {
             ciphers RSA-3DES-EDE-CBC-SHA
         }`
-	c := NewTestController(params)
+	c := setup.NewTestController(params)
 
-	_, err := TLS(c)
+	_, err := Setup(c)
 	if err != nil {
 		t.Errorf("Expected no errors, got: %v", err)
 	}
@@ -113,7 +135,7 @@ func TestTLSDefaultWithOptionalParams(t *testing.T) {
 }
 
 // TODO: If we allow this... but probably not a good idea.
-// func TestTLSDisableHTTPRedirect(t *testing.T) {
+// func TestSetupDisableHTTPRedirect(t *testing.T) {
 // 	c := NewTestController(`tls {
 // 	    allow_http
 // 	}`)
@@ -126,34 +148,34 @@ func TestTLSDefaultWithOptionalParams(t *testing.T) {
 // 	}
 // }
 
-func TestTLSParseWithWrongOptionalParams(t *testing.T) {
+func TestSetupParseWithWrongOptionalParams(t *testing.T) {
 	// Test protocols wrong params
-	params := `tls cert.crt cert.key {
+	params := `tls ` + certFile + ` ` + keyFile + ` {
 			protocols ssl tls
 		}`
-	c := NewTestController(params)
-	_, err := TLS(c)
+	c := setup.NewTestController(params)
+	_, err := Setup(c)
 	if err == nil {
 		t.Errorf("Expected errors, but no error returned")
 	}
 
 	// Test ciphers wrong params
-	params = `tls cert.crt cert.key {
+	params = `tls ` + certFile + ` ` + keyFile + ` {
 			ciphers not-valid-cipher
 		}`
-	c = NewTestController(params)
-	_, err = TLS(c)
+	c = setup.NewTestController(params)
+	_, err = Setup(c)
 	if err == nil {
 		t.Errorf("Expected errors, but no error returned")
 	}
 }
 
-func TestTLSParseWithClientAuth(t *testing.T) {
-	params := `tls cert.crt cert.key {
+func TestSetupParseWithClientAuth(t *testing.T) {
+	params := `tls ` + certFile + ` ` + keyFile + ` {
 			clients client_ca.crt client2_ca.crt
 		}`
-	c := NewTestController(params)
-	_, err := TLS(c)
+	c := setup.NewTestController(params)
+	_, err := Setup(c)
 	if err != nil {
 		t.Errorf("Expected no errors, got: %v", err)
 	}
@@ -169,12 +191,40 @@ func TestTLSParseWithClientAuth(t *testing.T) {
 	}
 
 	// Test missing client cert file
-	params = `tls cert.crt cert.key {
+	params = `tls ` + certFile + ` ` + keyFile + ` {
 			clients
 		}`
-	c = NewTestController(params)
-	_, err = TLS(c)
+	c = setup.NewTestController(params)
+	_, err = Setup(c)
 	if err == nil {
 		t.Errorf("Expected an error, but no error returned")
 	}
 }
+
+const (
+	certFile = "test_cert.pem"
+	keyFile  = "test_key.pem"
+)
+
+var testCert = []byte(`-----BEGIN CERTIFICATE-----
+MIIBkjCCATmgAwIBAgIJANfFCBcABL6LMAkGByqGSM49BAEwFDESMBAGA1UEAxMJ
+bG9jYWxob3N0MB4XDTE2MDIxMDIyMjAyNFoXDTE4MDIwOTIyMjAyNFowFDESMBAG
+A1UEAxMJbG9jYWxob3N0MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEs22MtnG7
+9K1mvIyjEO9GLx7BFD0tBbGnwQ0VPsuCxC6IeVuXbQDLSiVQvFZ6lUszTlczNxVk
+pEfqrM6xAupB7qN1MHMwHQYDVR0OBBYEFHxYDvAxUwL4XrjPev6qZ/BiLDs5MEQG
+A1UdIwQ9MDuAFHxYDvAxUwL4XrjPev6qZ/BiLDs5oRikFjAUMRIwEAYDVQQDEwls
+b2NhbGhvc3SCCQDXxQgXAAS+izAMBgNVHRMEBTADAQH/MAkGByqGSM49BAEDSAAw
+RQIgRvBqbyJM2JCJqhA1FmcoZjeMocmhxQHTt1c+1N2wFUgCIQDtvrivbBPA688N
+Qh3sMeAKNKPsx5NxYdoWuu9KWcKz9A==
+-----END CERTIFICATE-----
+`)
+
+var testKey = []byte(`-----BEGIN EC PARAMETERS-----
+BggqhkjOPQMBBw==
+-----END EC PARAMETERS-----
+-----BEGIN EC PRIVATE KEY-----
+MHcCAQEEIGLtRmwzYVcrH3J0BnzYbGPdWVF10i9p6mxkA4+b2fURoAoGCCqGSM49
+AwEHoUQDQgAEs22MtnG79K1mvIyjEO9GLx7BFD0tBbGnwQ0VPsuCxC6IeVuXbQDL
+SiVQvFZ6lUszTlczNxVkpEfqrM6xAupB7g==
+-----END EC PRIVATE KEY-----
+`)

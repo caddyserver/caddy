@@ -7,7 +7,7 @@ import (
 )
 
 func TestCaddyStartStop(t *testing.T) {
-	caddyfile := "localhost:1984\ntls off"
+	caddyfile := "localhost:1984"
 
 	for i := 0; i < 2; i++ {
 		err := Start(CaddyfileInput{Contents: []byte(caddyfile)})

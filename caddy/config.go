@@ -8,7 +8,7 @@ import (
 	"net"
 	"sync"
 
-	"github.com/mholt/caddy/caddy/letsencrypt"
+	"github.com/mholt/caddy/caddy/https"
 	"github.com/mholt/caddy/caddy/parse"
 	"github.com/mholt/caddy/caddy/setup"
 	"github.com/mholt/caddy/middleware"
@@ -128,7 +128,7 @@ func loadConfigs(filename string, input io.Reader) ([]server.Config, error) {
 	if !IsRestart() && !Quiet {
 		fmt.Print("Activating privacy features...")
 	}
-	configs, err = letsencrypt.Activate(configs)
+	configs, err = https.Activate(configs)
 	if err != nil {
 		return nil, err
 	} else if !IsRestart() && !Quiet {
@@ -318,7 +318,7 @@ func validDirective(d string) bool {
 // root.
 func DefaultInput() CaddyfileInput {
 	port := Port
-	if letsencrypt.HostQualifies(Host) && port == DefaultPort {
+	if https.HostQualifies(Host) && port == DefaultPort {
 		port = "443"
 	}
 	return CaddyfileInput{

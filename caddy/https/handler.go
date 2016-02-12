@@ -1,9 +1,8 @@
-package letsencrypt
+package https
 
 import (
 	"crypto/tls"
 	"log"
-	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -23,21 +22,16 @@ func RequestCallback(w http.ResponseWriter, r *http.Request) bool {
 			scheme = "https"
 		}
 
-		hostname, _, err := net.SplitHostPort(r.Host)
-		if err != nil {
-			hostname = r.Host
-		}
-
-		upstream, err := url.Parse(scheme + "://" + hostname + ":" + AlternatePort)
+		upstream, err := url.Parse(scheme + "://localhost:" + AlternatePort)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			log.Printf("[ERROR] letsencrypt handler: %v", err)
+			log.Printf("[ERROR] ACME proxy handler: %v", err)
 			return true
 		}
 
 		proxy := httputil.NewSingleHostReverseProxy(upstream)
 		proxy.Transport = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // client would use self-signed cert
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // solver uses self-signed certs
 		}
 		proxy.ServeHTTP(w, r)
 

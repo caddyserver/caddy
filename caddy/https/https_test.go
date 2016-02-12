@@ -1,4 +1,4 @@
-package letsencrypt
+package https
 
 import (
 	"io/ioutil"
@@ -46,10 +46,11 @@ func TestConfigQualifies(t *testing.T) {
 		cfg    server.Config
 		expect bool
 	}{
+		{server.Config{Host: ""}, true},
 		{server.Config{Host: "localhost"}, false},
+		{server.Config{Host: "123.44.3.21"}, false},
 		{server.Config{Host: "example.com"}, true},
-		{server.Config{Host: "example.com", TLS: server.TLSConfig{Certificate: "cert.pem"}}, false},
-		{server.Config{Host: "example.com", TLS: server.TLSConfig{Key: "key.pem"}}, false},
+		{server.Config{Host: "example.com", TLS: server.TLSConfig{Manual: true}}, false},
 		{server.Config{Host: "example.com", TLS: server.TLSConfig{LetsEncryptEmail: "off"}}, false},
 		{server.Config{Host: "example.com", TLS: server.TLSConfig{LetsEncryptEmail: "foo@bar.com"}}, true},
 		{server.Config{Host: "example.com", Scheme: "http"}, false},
@@ -105,18 +106,18 @@ func TestRedirPlaintextHost(t *testing.T) {
 	if actual, expected := handler.Rules[0].FromPath, "/"; actual != expected {
 		t.Errorf("Expected redirect rule to be for path '%s' but is actually for '%s'", expected, actual)
 	}
-	if actual, expected := handler.Rules[0].To, "https://example.com:1234{uri}"; actual != expected {
+	if actual, expected := handler.Rules[0].To, "https://{host}:1234{uri}"; actual != expected {
 		t.Errorf("Expected redirect rule to be to URL '%s' but is actually to '%s'", expected, actual)
 	}
 	if actual, expected := handler.Rules[0].Code, http.StatusMovedPermanently; actual != expected {
 		t.Errorf("Expected redirect rule to have code %d but was %d", expected, actual)
 	}
 
-	// browsers can interpret default ports with scheme, so make sure the port
-	// doesn't get added in explicitly for default ports.
+	// browsers can infer a default port from scheme, so make sure the port
+	// doesn't get added in explicitly for default ports like 443 for https.
 	cfg = redirPlaintextHost(server.Config{Host: "example.com", Port: "443"})
 	handler, ok = cfg.Middleware["/"][0](nil).(redirect.Redirect)
-	if actual, expected := handler.Rules[0].To, "https://example.com{uri}"; actual != expected {
+	if actual, expected := handler.Rules[0].To, "https://{host}{uri}"; actual != expected {
 		t.Errorf("(Default Port) Expected redirect rule to be to URL '%s' but is actually to '%s'", expected, actual)
 	}
 }
@@ -252,30 +253,17 @@ func TestMakePlaintextRedirects(t *testing.T) {
 
 func TestEnableTLS(t *testing.T) {
 	configs := []server.Config{
-		server.Config{TLS: server.TLSConfig{Managed: true}},
+		server.Config{Host: "example.com", TLS: server.TLSConfig{Managed: true}},
 		server.Config{}, // not managed - no changes!
 	}
 
-	EnableTLS(configs)
+	EnableTLS(configs, false)
 
 	if !configs[0].TLS.Enabled {
 		t.Errorf("Expected config 0 to have TLS.Enabled == true, but it was false")
 	}
-	if configs[0].TLS.Certificate == "" {
-		t.Errorf("Expected config 0 to have TLS.Certificate set, but it was empty")
-	}
-	if configs[0].TLS.Key == "" {
-		t.Errorf("Expected config 0 to have TLS.Key set, but it was empty")
-	}
-
 	if configs[1].TLS.Enabled {
 		t.Errorf("Expected config 1 to have TLS.Enabled == false, but it was true")
-	}
-	if configs[1].TLS.Certificate != "" {
-		t.Errorf("Expected config 1 to have TLS.Certificate empty, but it was: %s", configs[1].TLS.Certificate)
-	}
-	if configs[1].TLS.Key != "" {
-		t.Errorf("Expected config 1 to have TLS.Key empty, but it was: %s", configs[1].TLS.Key)
 	}
 }
 
@@ -315,9 +303,9 @@ func TestMarkQualified(t *testing.T) {
 	// TODO: TestConfigQualifies and this test share the same config list...
 	configs := []server.Config{
 		{Host: "localhost"},
+		{Host: "123.44.3.21"},
 		{Host: "example.com"},
-		{Host: "example.com", TLS: server.TLSConfig{Certificate: "cert.pem"}},
-		{Host: "example.com", TLS: server.TLSConfig{Key: "key.pem"}},
+		{Host: "example.com", TLS: server.TLSConfig{Manual: true}},
 		{Host: "example.com", TLS: server.TLSConfig{LetsEncryptEmail: "off"}},
 		{Host: "example.com", TLS: server.TLSConfig{LetsEncryptEmail: "foo@bar.com"}},
 		{Host: "example.com", Scheme: "http"},
@@ -325,8 +313,9 @@ func TestMarkQualified(t *testing.T) {
 		{Host: "example.com", Port: "1234"},
 		{Host: "example.com", Scheme: "https"},
 		{Host: "example.com", Port: "80", Scheme: "https"},
+		{Host: ""},
 	}
-	expectedManagedCount := 4
+	expectedManagedCount := 5
 
 	MarkQualified(configs)
 

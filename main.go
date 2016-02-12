@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/mholt/caddy/caddy"
-	"github.com/mholt/caddy/caddy/letsencrypt"
+	"github.com/mholt/caddy/caddy/https"
 	"github.com/xenolf/lego/acme"
 )
 
@@ -32,14 +32,14 @@ const (
 
 func init() {
 	caddy.TrapSignals()
-	flag.BoolVar(&letsencrypt.Agreed, "agree", false, "Agree to Let's Encrypt Subscriber Agreement")
-	flag.StringVar(&letsencrypt.CAUrl, "ca", "https://acme-v01.api.letsencrypt.org/directory", "Certificate authority ACME server")
+	flag.BoolVar(&https.Agreed, "agree", false, "Agree to Let's Encrypt Subscriber Agreement")
+	flag.StringVar(&https.CAUrl, "ca", "https://acme-v01.api.letsencrypt.org/directory", "Certificate authority ACME server")
 	flag.StringVar(&conf, "conf", "", "Configuration file to use (default="+caddy.DefaultConfigFile+")")
 	flag.StringVar(&cpu, "cpu", "100%", "CPU cap")
-	flag.StringVar(&letsencrypt.DefaultEmail, "email", "", "Default Let's Encrypt account email address")
+	flag.StringVar(&https.DefaultEmail, "email", "", "Default Let's Encrypt account email address")
 	flag.DurationVar(&caddy.GracefulTimeout, "grace", 5*time.Second, "Maximum duration of graceful shutdown")
 	flag.StringVar(&caddy.Host, "host", caddy.DefaultHost, "Default host")
-	flag.BoolVar(&caddy.HTTP2, "http2", true, "HTTP/2 support") // TODO: temporary flag until http2 merged into std lib
+	flag.BoolVar(&caddy.HTTP2, "http2", true, "HTTP/2 support")
 	flag.StringVar(&logfile, "log", "", "Process log file")
 	flag.StringVar(&caddy.PidFile, "pidfile", "", "Path to write pid file")
 	flag.StringVar(&caddy.Port, "port", caddy.DefaultPort, "Default port")
@@ -73,7 +73,7 @@ func main() {
 	}
 
 	if revoke != "" {
-		err := letsencrypt.Revoke(revoke)
+		err := https.Revoke(revoke)
 		if err != nil {
 			log.Fatal(err)
 		}
