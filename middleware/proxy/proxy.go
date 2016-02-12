@@ -113,12 +113,12 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 				if host.HiddenHeaders != nil {
 					hiddenHeaders = make(http.Header)
 					for header, _ := range host.HiddenHeaders {
-						hiddenHeaders.Add(header)
+						hiddenHeaders.Add(header,'')
 					}
 				}
 
 				atomic.AddInt64(&host.Conns, 1)
-				backendErr := proxy.ServeHTTP(w, r, extraHeaders)
+				backendErr := proxy.ServeHTTP(w, r, extraHeaders, hiddenHeaders)
 				atomic.AddInt64(&host.Conns, -1)
 				if backendErr == nil {
 					return 0, nil
