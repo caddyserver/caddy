@@ -142,7 +142,7 @@ var InsecureTransport http.RoundTripper = &http.Transport{
 	TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
 }
 
-func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request, extraHeaders http.Header) error {
+func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request, extraHeaders http.Header, hiddenHeaders http.Header) error {
 	transport := p.Transport
 	if transport == nil {
 		transport = http.DefaultTransport
@@ -171,6 +171,20 @@ func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request, extr
 				copiedHeaders = true
 			}
 			outreq.Header.Del(h)
+		}
+	}
+
+	// Remove headers listed on the hide_headers directive
+	if hiddenHeaders != nil {
+		for h, _ := range hiddenHeaders {
+			if outreq.Header.Get(h) != "" {
+				if !copiedHeaders {
+					outreq.Header = make(http.Header)
+					copyHeader(outreq.Header, req.Header)
+					copiedHeaders = true
+				}
+				outreq.Header.Del(h)
+			}
 		}
 	}
 
