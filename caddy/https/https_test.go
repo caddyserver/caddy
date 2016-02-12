@@ -46,7 +46,7 @@ func TestConfigQualifies(t *testing.T) {
 		cfg    server.Config
 		expect bool
 	}{
-		{server.Config{Host: ""}, true},
+		{server.Config{Host: ""}, false},
 		{server.Config{Host: "localhost"}, false},
 		{server.Config{Host: "123.44.3.21"}, false},
 		{server.Config{Host: "example.com"}, true},
@@ -302,6 +302,7 @@ func TestGroupConfigsByEmail(t *testing.T) {
 func TestMarkQualified(t *testing.T) {
 	// TODO: TestConfigQualifies and this test share the same config list...
 	configs := []server.Config{
+		{Host: ""},
 		{Host: "localhost"},
 		{Host: "123.44.3.21"},
 		{Host: "example.com"},
@@ -313,9 +314,8 @@ func TestMarkQualified(t *testing.T) {
 		{Host: "example.com", Port: "1234"},
 		{Host: "example.com", Scheme: "https"},
 		{Host: "example.com", Port: "80", Scheme: "https"},
-		{Host: ""},
 	}
-	expectedManagedCount := 5
+	expectedManagedCount := 4
 
 	MarkQualified(configs)
 

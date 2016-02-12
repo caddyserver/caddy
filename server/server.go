@@ -63,12 +63,14 @@ func New(addr string, configs []Config, gracefulTimeout time.Duration) (*Server,
 	var useTLS, useOnDemandTLS bool
 	if len(configs) > 0 {
 		useTLS = configs[0].TLS.Enabled
-		host, _, err := net.SplitHostPort(addr)
-		if err != nil {
-			host = addr
-		}
-		if useTLS && host == "" && !configs[0].TLS.Manual {
-			useOnDemandTLS = true
+		if useTLS {
+			host, _, err := net.SplitHostPort(addr)
+			if err != nil {
+				host = addr
+			}
+			if host == "" && configs[0].TLS.OnDemand {
+				useOnDemandTLS = true
+			}
 		}
 	}
 
