@@ -209,9 +209,9 @@ func TestExistingCertAndKey(t *testing.T) {
 
 func TestHostHasOtherPort(t *testing.T) {
 	configs := []server.Config{
-		server.Config{Host: "example.com", Port: "80"},
-		server.Config{Host: "sub1.example.com", Port: "80"},
-		server.Config{Host: "sub1.example.com", Port: "443"},
+		{Host: "example.com", Port: "80"},
+		{Host: "sub1.example.com", Port: "80"},
+		{Host: "sub1.example.com", Port: "443"},
 	}
 
 	if hostHasOtherPort(configs, 0, "80") {
@@ -228,18 +228,18 @@ func TestHostHasOtherPort(t *testing.T) {
 func TestMakePlaintextRedirects(t *testing.T) {
 	configs := []server.Config{
 		// Happy path = standard redirect from 80 to 443
-		server.Config{Host: "example.com", TLS: server.TLSConfig{Managed: true}},
+		{Host: "example.com", TLS: server.TLSConfig{Managed: true}},
 
 		// Host on port 80 already defined; don't change it (no redirect)
-		server.Config{Host: "sub1.example.com", Port: "80", Scheme: "http"},
-		server.Config{Host: "sub1.example.com", TLS: server.TLSConfig{Managed: true}},
+		{Host: "sub1.example.com", Port: "80", Scheme: "http"},
+		{Host: "sub1.example.com", TLS: server.TLSConfig{Managed: true}},
 
 		// Redirect from port 80 to port 5000 in this case
-		server.Config{Host: "sub2.example.com", Port: "5000", TLS: server.TLSConfig{Managed: true}},
+		{Host: "sub2.example.com", Port: "5000", TLS: server.TLSConfig{Managed: true}},
 
 		// Can redirect from 80 to either 443 or 5001, but choose 443
-		server.Config{Host: "sub3.example.com", Port: "443", TLS: server.TLSConfig{Managed: true}},
-		server.Config{Host: "sub3.example.com", Port: "5001", Scheme: "https", TLS: server.TLSConfig{Managed: true}},
+		{Host: "sub3.example.com", Port: "443", TLS: server.TLSConfig{Managed: true}},
+		{Host: "sub3.example.com", Port: "5001", Scheme: "https", TLS: server.TLSConfig{Managed: true}},
 	}
 
 	result := MakePlaintextRedirects(configs)
@@ -253,8 +253,8 @@ func TestMakePlaintextRedirects(t *testing.T) {
 
 func TestEnableTLS(t *testing.T) {
 	configs := []server.Config{
-		server.Config{Host: "example.com", TLS: server.TLSConfig{Managed: true}},
-		server.Config{}, // not managed - no changes!
+		{Host: "example.com", TLS: server.TLSConfig{Managed: true}},
+		{}, // not managed - no changes!
 	}
 
 	EnableTLS(configs, false)
@@ -273,12 +273,12 @@ func TestGroupConfigsByEmail(t *testing.T) {
 	}
 
 	configs := []server.Config{
-		server.Config{Host: "example.com", TLS: server.TLSConfig{LetsEncryptEmail: "", Managed: true}},
-		server.Config{Host: "sub1.example.com", TLS: server.TLSConfig{LetsEncryptEmail: "foo@bar", Managed: true}},
-		server.Config{Host: "sub2.example.com", TLS: server.TLSConfig{LetsEncryptEmail: "", Managed: true}},
-		server.Config{Host: "sub3.example.com", TLS: server.TLSConfig{LetsEncryptEmail: "foo@bar", Managed: true}},
-		server.Config{Host: "sub4.example.com", TLS: server.TLSConfig{LetsEncryptEmail: "", Managed: true}},
-		server.Config{Host: "sub5.example.com", TLS: server.TLSConfig{LetsEncryptEmail: ""}}, // not managed
+		{Host: "example.com", TLS: server.TLSConfig{LetsEncryptEmail: "", Managed: true}},
+		{Host: "sub1.example.com", TLS: server.TLSConfig{LetsEncryptEmail: "foo@bar", Managed: true}},
+		{Host: "sub2.example.com", TLS: server.TLSConfig{LetsEncryptEmail: "", Managed: true}},
+		{Host: "sub3.example.com", TLS: server.TLSConfig{LetsEncryptEmail: "foo@bar", Managed: true}},
+		{Host: "sub4.example.com", TLS: server.TLSConfig{LetsEncryptEmail: "", Managed: true}},
+		{Host: "sub5.example.com", TLS: server.TLSConfig{LetsEncryptEmail: ""}}, // not managed
 	}
 	DefaultEmail = "test@example.com"
 

@@ -45,7 +45,7 @@ func TestServeHTTP(t *testing.T) {
 		expectedStatus      int
 		expectedBodyContent string
 	}{
-		// Test 0 - access withoutt any path
+		// Test 0 - access without any path
 		{
 			url:            "https://foo",
 			expectedStatus: http.StatusNotFound,
@@ -78,7 +78,7 @@ func TestServeHTTP(t *testing.T) {
 			url:            "https://foo/dir/",
 			expectedStatus: http.StatusNotFound,
 		},
-		// Test 6 - access folder withtout trailing slash
+		// Test 6 - access folder without trailing slash
 		{
 			url:                 "https://foo/dir",
 			expectedStatus:      http.StatusMovedPermanently,

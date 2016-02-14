@@ -37,7 +37,7 @@ func TestStartup(t *testing.T) {
 		// test case #1 tests proper functionality of non-blocking commands
 		{"startup mkdir " + osSenitiveTestDir + " &", false, true},
 
-		// test case #2 tests handling of non-existant commands
+		// test case #2 tests handling of non-existent commands
 		{"startup " + strconv.Itoa(int(time.Now().UnixNano())), true, true},
 	}
 

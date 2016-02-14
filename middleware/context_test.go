@@ -105,13 +105,13 @@ func TestMarkdown(t *testing.T) {
 	}()
 
 	tests := []struct {
-		fileContent          string
-		expectedContent      string
+		fileContent     string
+		expectedContent string
 	}{
 		// Test 0 - test parsing of markdown
 		{
-			fileContent:          "* str1\n* str2\n",
-			expectedContent:      "<ul>\n<li>str1</li>\n<li>str2</li>\n</ul>\n",
+			fileContent:     "* str1\n* str2\n",
+			expectedContent: "<ul>\n<li>str1</li>\n<li>str2</li>\n</ul>\n",
 		},
 	}
 
