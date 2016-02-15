@@ -4,6 +4,7 @@ import (
 	"net"
 
 	"github.com/mholt/caddy/middleware"
+	"github.com/xenolf/lego/acme"
 )
 
 // Config configuration for a single server.
@@ -75,4 +76,5 @@ type TLSConfig struct {
 	ProtocolMaxVersion       uint16
 	PreferServerCipherSuites bool
 	ClientCerts              []string
+	DNSProvider              acme.ChallengeProvider
 }

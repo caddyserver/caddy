@@ -14,6 +14,7 @@ import (
 	"github.com/mholt/caddy/caddy/setup"
 	"github.com/mholt/caddy/middleware"
 	"github.com/mholt/caddy/server"
+	"github.com/xenolf/lego/acme"
 )
 
 // Setup sets up the TLS configuration and installs certificates that
@@ -84,6 +85,13 @@ func Setup(c *setup.Controller) (middleware.Middleware, error) {
 			case "max_certs":
 				c.Args(&maxCerts)
 				c.TLS.OnDemand = true
+			case "dns":
+				args := c.RemainingArgs()
+				p, err := createDNSProvider(args, c)
+				if err != nil {
+					return nil, err
+				}
+				c.TLS.DNSProvider = p
 			default:
 				return nil, c.Errf("Unknown keyword '%s'", c.Val())
 			}
@@ -298,4 +306,36 @@ var defaultCiphers = []uint16{
 	tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
 	tls.TLS_RSA_WITH_AES_256_CBC_SHA,
 	tls.TLS_RSA_WITH_AES_128_CBC_SHA,
+}
+
+func createDNSProvider(args []string, c *setup.Controller) (acme.ChallengeProvider, error) {
+	if len(args) < 1 {
+		return nil, c.ArgErr()
+	}
+	switch args[0] {
+	case "cloudflare":
+		if len(args) != 3 {
+			return nil, c.ArgErr()
+		}
+		return acme.NewDNSProviderCloudFlare(args[1], args[2])
+	case "digitalocean":
+		if len(args) != 2 {
+			return nil, c.ArgErr()
+		}
+		return acme.NewDNSProviderDigitalOcean(args[1])
+	case "dnsimple":
+		if len(args) != 3 {
+			return nil, c.ArgErr()
+		}
+		return acme.NewDNSProviderDNSimple(args[1], args[2])
+	case "manual":
+		return nil, c.Err("Caddy does not support manual dns challenge mode")
+	case "route53":
+		if len(args) != 4 {
+			return nil, c.ArgErr()
+		}
+		return acme.NewDNSProviderRoute53(args[1], args[2], args[3])
+	default:
+		return nil, c.Errf("Unknown DNS provider: %s", args[0])
+	}
 }
