@@ -83,6 +83,7 @@ func Setup(c *setup.Controller) (middleware.Middleware, error) {
 				c.TLS.Manual = true
 			case "max_certs":
 				c.Args(&maxCerts)
+				c.TLS.OnDemand = true
 			default:
 				return nil, c.Errf("Unknown keyword '%s'", c.Val())
 			}
@@ -93,21 +94,18 @@ func Setup(c *setup.Controller) (middleware.Middleware, error) {
 			return nil, c.ArgErr()
 		}
 
-		if c.TLS.Manual && maxCerts != "" {
-			return nil, c.Err("Cannot limit certificate count (max_certs) for manual TLS configurations")
-		}
-
+		// set certificate limit if on-demand TLS is enabled
 		if maxCerts != "" {
 			maxCertsNum, err := strconv.Atoi(maxCerts)
-			if err != nil || maxCertsNum < 0 {
+			if err != nil || maxCertsNum < 1 {
 				return nil, c.Err("max_certs must be a positive integer")
 			}
-			if onDemandMaxIssue == 0 || int32(maxCertsNum) < onDemandMaxIssue { // keep the minimum; TODO: This is global; should be per-server or per-vhost...
+			if onDemandMaxIssue == 0 || int32(maxCertsNum) < onDemandMaxIssue { // keep the minimum; TODO: We have to do this because it is global; should be per-server or per-vhost...
 				onDemandMaxIssue = int32(maxCertsNum)
 			}
 		}
 
-		// don't load certificates unless we're supposed to
+		// don't try to load certificates unless we're supposed to
 		if !c.TLS.Enabled || !c.TLS.Manual {
 			continue
 		}

@@ -65,10 +65,11 @@ func (c Config) Address() string {
 
 // TLSConfig describes how TLS should be configured and used.
 type TLSConfig struct {
-	Enabled                  bool
+	Enabled                  bool // will be set to true if TLS is enabled
 	LetsEncryptEmail         string
-	Managed                  bool // will be set to true if config qualifies for automatic, managed TLS
-	Manual                   bool // will be set to true if user provides the cert and key files
+	Manual                   bool // will be set to true if user provides own certs and keys
+	Managed                  bool // will be set to true if config qualifies for automatic/managed HTTPS
+	OnDemand                 bool // will be set to true if user enables on-demand TLS (obtain certs during handshakes)
 	Ciphers                  []uint16
 	ProtocolMinVersion       uint16
 	ProtocolMaxVersion       uint16

@@ -95,7 +95,7 @@ func Deactivate() (err error) {
 }
 
 // MarkQualified scans each config and, if it qualifies for managed
-// TLS, it sets the Marked field of the TLSConfig to true.
+// TLS, it sets the Managed field of the TLSConfig to true.
 func MarkQualified(configs []server.Config) {
 	for i := 0; i < len(configs); i++ {
 		if ConfigQualifies(configs[i]) {
@@ -152,9 +152,10 @@ func ObtainCerts(configs []server.Config, allowPrompts, proxyACME bool) error {
 	return nil
 }
 
-// groupConfigsByEmail groups configs by the email address to be used by its
-// ACME client. It only includes configs that are marked as fully managed.
-// If userPresent is true, the operator MAY be prompted for an email address.
+// groupConfigsByEmail groups configs by the email address to be used by an
+// ACME client. It only groups configs that have TLS enabled and that are
+// marked as Managed. If userPresent is true, the operator MAY be prompted
+// for an email address.
 func groupConfigsByEmail(configs []server.Config, userPresent bool) map[string][]server.Config {
 	initMap := make(map[string][]server.Config)
 	for _, cfg := range configs {
@@ -214,7 +215,7 @@ func hostHasOtherPort(allConfigs []server.Config, thisConfigIdx int, otherPort s
 // all configs.
 func MakePlaintextRedirects(allConfigs []server.Config) []server.Config {
 	for i, cfg := range allConfigs {
-		if cfg.TLS.Managed &&
+		if (cfg.TLS.Managed || cfg.TLS.OnDemand) &&
 			!hostHasOtherPort(allConfigs, i, "80") &&
 			(cfg.Port == "443" || !hostHasOtherPort(allConfigs, i, "443")) {
 			allConfigs = append(allConfigs, redirPlaintextHost(cfg))
@@ -224,10 +225,11 @@ func MakePlaintextRedirects(allConfigs []server.Config) []server.Config {
 }
 
 // ConfigQualifies returns true if cfg qualifies for
-// fully managed TLS. It does NOT check to see if a
+// fully managed TLS (but not on-demand TLS, which is
+// not considered here). It does NOT check to see if a
 // cert and key already exist for the config. If the
 // config does qualify, you should set cfg.TLS.Managed
-// to true and use that instead, because the process of
+// to true and check that instead, because the process of
 // setting up the config may make it look like it
 // doesn't qualify even though it originally did.
 func ConfigQualifies(cfg server.Config) bool {
@@ -238,10 +240,8 @@ func ConfigQualifies(cfg server.Config) bool {
 		cfg.Port != "80" &&
 		cfg.TLS.LetsEncryptEmail != "off" &&
 
-		// we get can't certs for some kinds of hostnames,
-		// but we CAN get certs at request-time even if
-		// the hostname in the config is empty right now.
-		(cfg.Host == "" || HostQualifies(cfg.Host))
+		// we get can't certs for some kinds of hostnames
+		HostQualifies(cfg.Host)
 }
 
 // HostQualifies returns true if the hostname alone
