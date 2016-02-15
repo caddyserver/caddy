@@ -311,19 +311,19 @@ func TestParseAll(t *testing.T) {
 		}},
 
 		{`localhost:1234`, false, [][]address{
-			[]address{{"localhost:1234", "", "localhost", "1234"}},
+			{{"localhost:1234", "", "localhost", "1234"}},
 		}},
 
 		{`localhost:1234 {
 		  }
 		  localhost:2015 {
 		  }`, false, [][]address{
-			[]address{{"localhost:1234", "", "localhost", "1234"}},
-			[]address{{"localhost:2015", "", "localhost", "2015"}},
+			{{"localhost:1234", "", "localhost", "1234"}},
+			{{"localhost:2015", "", "localhost", "2015"}},
 		}},
 
 		{`localhost:1234, http://host2`, false, [][]address{
-			[]address{{"localhost:1234", "", "localhost", "1234"}, {"http://host2", "http", "host2", "80"}},
+			{{"localhost:1234", "", "localhost", "1234"}, {"http://host2", "http", "host2", "80"}},
 		}},
 
 		{`localhost:1234, http://host2,`, true, [][]address{}},
@@ -332,15 +332,15 @@ func TestParseAll(t *testing.T) {
 		  }
 		  https://host3.com, https://host4.com {
 		  }`, false, [][]address{
-			[]address{{"http://host1.com", "http", "host1.com", "80"}, {"http://host2.com", "http", "host2.com", "80"}},
-			[]address{{"https://host3.com", "https", "host3.com", "443"}, {"https://host4.com", "https", "host4.com", "443"}},
+			{{"http://host1.com", "http", "host1.com", "80"}, {"http://host2.com", "http", "host2.com", "80"}},
+			{{"https://host3.com", "https", "host3.com", "443"}, {"https://host4.com", "https", "host4.com", "443"}},
 		}},
 
 		{`import import_glob*.txt`, false, [][]address{
-			[]address{{"glob0.host0", "", "glob0.host0", ""}},
-			[]address{{"glob0.host1", "", "glob0.host1", ""}},
-			[]address{{"glob1.host0", "", "glob1.host0", ""}},
-			[]address{{"glob2.host0", "", "glob2.host0", ""}},
+			{{"glob0.host0", "", "glob0.host0", ""}},
+			{{"glob0.host1", "", "glob0.host1", ""}},
+			{{"glob1.host0", "", "glob1.host0", ""}},
+			{{"glob2.host0", "", "glob2.host0", ""}},
 		}},
 	} {
 		p := testParser(test.input)

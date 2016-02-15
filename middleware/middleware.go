@@ -102,7 +102,8 @@ func SetLastModifiedHeader(w http.ResponseWriter, modTime time.Time) {
 	w.Header().Set("Last-Modified", modTime.UTC().Format(http.TimeFormat))
 }
 
-// currentTime returns time.Now() everytime it's called. It's used for mocking in tests.
+// currentTime, as it is defined here, returns time.Now().
+// It's defined as a variable for mocking time in tests.
 var currentTime = func() time.Time {
 	return time.Now()
 }

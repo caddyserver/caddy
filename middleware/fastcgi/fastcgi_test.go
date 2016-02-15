@@ -35,20 +35,20 @@ func TestRuleParseAddress(t *testing.T) {
 func TestBuildEnv(t *testing.T) {
 
 	buildEnvSingle := func(r *http.Request, rule Rule, fpath string, envExpected map[string]string, t *testing.T) {
-	
+
 		h := Handler{}
-	
+
 		env, err := h.buildEnv(r, rule, fpath)
 		if err != nil {
 			t.Error("Unexpected error:", err.Error())
 		}
-	
+
 		for k, v := range envExpected {
 			if env[k] != v {
 				t.Errorf("Unexpected %v. Got %v, expected %v", k, env[k], v)
 			}
 		}
-	
+
 	}
 
 	rule := Rule{}

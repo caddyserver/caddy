@@ -135,7 +135,7 @@ func TestRewriteParse(t *testing.T) {
 			to	/to
 			if {path} is a
 		 }`, false, []rewrite.Rule{
-			&rewrite.ComplexRule{Base: "/", To: "/to", Ifs: []rewrite.If{rewrite.If{A: "{path}", Operator: "is", B: "a"}}},
+			&rewrite.ComplexRule{Base: "/", To: "/to", Ifs: []rewrite.If{{A: "{path}", Operator: "is", B: "a"}}},
 		}},
 		{`rewrite {
 			status 400

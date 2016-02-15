@@ -12,11 +12,11 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
-	"runtime"
 	"time"
-	"path/filepath"
 
 	"golang.org/x/net/websocket"
 )

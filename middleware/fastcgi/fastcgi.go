@@ -138,7 +138,7 @@ func (r Rule) parseAddress() (string, string) {
 	if strings.HasPrefix(r.Address, "tcp://") {
 		return "tcp", r.Address[len("tcp://"):]
 	}
-	// check if address has fastcgi scheme explicity set
+	// check if address has fastcgi scheme explicitly set
 	if strings.HasPrefix(r.Address, "fastcgi://") {
 		return "tcp", r.Address[len("fastcgi://"):]
 	}

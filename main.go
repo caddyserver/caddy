@@ -15,6 +15,7 @@ import (
 	"github.com/mholt/caddy/caddy"
 	"github.com/mholt/caddy/caddy/https"
 	"github.com/xenolf/lego/acme"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 var (
@@ -65,11 +66,12 @@ func main() {
 	case "":
 		log.SetOutput(ioutil.Discard)
 	default:
-		file, err := os.OpenFile(logfile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
-		if err != nil {
-			log.Fatalf("Error opening process log file: %v", err)
-		}
-		log.SetOutput(file)
+		log.SetOutput(&lumberjack.Logger{
+			Filename:   logfile,
+			MaxSize:    100,
+			MaxAge:     14,
+			MaxBackups: 10,
+		})
 	}
 
 	if revoke != "" {
