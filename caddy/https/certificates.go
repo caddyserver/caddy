@@ -24,7 +24,7 @@ var certCacheMu sync.RWMutex
 // we can be more efficient by extracting the metadata once so it's
 // just there, ready to use.
 type Certificate struct {
-	*tls.Certificate
+	tls.Certificate
 
 	// Names is the list of names this certificate is written for.
 	// The first is the CommonName (if any), the rest are SAN.
@@ -170,7 +170,6 @@ func makeCertificate(certPEMBlock, keyPEMBlock []byte) (Certificate, error) {
 	if len(tlsCert.Certificate) == 0 {
 		return cert, errors.New("certificate is empty")
 	}
-	cert.Certificate = &tlsCert
 
 	// Parse leaf certificate and extract relevant metadata
 	leaf, err := x509.ParseCertificate(tlsCert.Certificate[0])
@@ -198,6 +197,7 @@ func makeCertificate(certPEMBlock, keyPEMBlock []byte) (Certificate, error) {
 		cert.OCSP = ocspResp
 	}
 
+	cert.Certificate = tlsCert
 	return cert, nil
 }
 
@@ -213,7 +213,9 @@ func makeCertificate(certPEMBlock, keyPEMBlock []byte) (Certificate, error) {
 func cacheCertificate(cert Certificate) {
 	certCacheMu.Lock()
 	if _, ok := certCache[""]; !ok {
-		certCache[""] = cert // use as default
+		// use as default
+		certCache[""] = cert
+		cert.Names = append(cert.Names, "")
 	}
 	for len(certCache)+len(cert.Names) > 10000 {
 		// for simplicity, just remove random elements

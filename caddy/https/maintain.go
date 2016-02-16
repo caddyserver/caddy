@@ -4,7 +4,17 @@ import (
 	"log"
 	"time"
 
+	"github.com/mholt/caddy/server"
+
 	"golang.org/x/crypto/ocsp"
+)
+
+const (
+	// RenewInterval is how often to check certificates for renewal.
+	RenewInterval = 12 * time.Hour
+
+	// OCSPInterval is how often to check if OCSP stapling needs updating.
+	OCSPInterval = 1 * time.Hour
 )
 
 // maintainAssets is a permanently-blocking function
@@ -28,7 +38,7 @@ func maintainAssets(stopChan chan struct{}) {
 			log.Println("[INFO] Done checking certificates")
 		case <-ocspTicker.C:
 			log.Println("[INFO] Scanning for stale OCSP staples")
-			updatePreloadedOCSPStaples()
+			updateOCSPStaples()
 			log.Println("[INFO] Done checking OCSP staples")
 		case <-stopChan:
 			renewalTicker.Stop()
@@ -70,7 +80,7 @@ func renewManagedCertificates(allowPrompts bool) (err error) {
 			log.Printf("[INFO] Certificate for %v expires in %v; attempting renewal", cert.Names, timeLeft)
 
 			if client == nil {
-				client, err = NewACMEClient("", allowPrompts) // renewals don't use email
+				client, err = NewACMEClientGetEmail(server.Config{}, allowPrompts)
 				if err != nil {
 					return err
 				}
@@ -116,42 +126,66 @@ func renewManagedCertificates(allowPrompts bool) (err error) {
 	return nil
 }
 
-func updatePreloadedOCSPStaples() {
+func updateOCSPStaples() {
 	// Create a temporary place to store updates
-	// until we release the potentially slow read
-	// lock so we can use a quick write lock.
+	// until we release the potentially long-lived
+	// read lock and use a short-lived write lock.
 	type ocspUpdate struct {
-		rawBytes       []byte
-		parsedResponse *ocsp.Response
+		rawBytes []byte
+		parsed   *ocsp.Response
 	}
 	updated := make(map[string]ocspUpdate)
 
+	// A single SAN certificate maps to multiple names, so we use this
+	// set to make sure we don't waste cycles checking OCSP for the same
+	// certificate multiple times.
+	visited := make(map[string]struct{})
+
 	certCacheMu.RLock()
 	for name, cert := range certCache {
-		// we update OCSP for managed and un-managed certs here, but only
-		// if it has OCSP stapled and only for pre-loaded certificates
-		if cert.OnDemand || cert.OCSP == nil {
+		// skip this certificate if we've already visited it,
+		// and if not, mark all the names as visited
+		if _, ok := visited[name]; ok {
+			continue
+		}
+		for _, n := range cert.Names {
+			visited[n] = struct{}{}
+		}
+
+		// no point in updating OCSP for expired certificates
+		if time.Now().After(cert.NotAfter) {
 			continue
 		}
 
-		// start checking OCSP staple about halfway through validity period for good measure
-		oldNextUpdate := cert.OCSP.NextUpdate
-		refreshTime := cert.OCSP.ThisUpdate.Add(oldNextUpdate.Sub(cert.OCSP.ThisUpdate) / 2)
+		var lastNextUpdate time.Time
+		if cert.OCSP != nil {
+			// start checking OCSP staple about halfway through validity period for good measure
+			lastNextUpdate = cert.OCSP.NextUpdate
+			refreshTime := cert.OCSP.ThisUpdate.Add(lastNextUpdate.Sub(cert.OCSP.ThisUpdate) / 2)
 
-		// only check for updated OCSP validity window if the refresh time is
-		// in the past and the certificate is not expired
-		if time.Now().After(refreshTime) && time.Now().Before(cert.NotAfter) {
-			err := stapleOCSP(&cert, nil)
-			if err != nil {
-				log.Printf("[ERROR] Checking OCSP for %s: %v", name, err)
+			// since OCSP is already stapled, we need only check if we're in that "refresh window"
+			if time.Now().Before(refreshTime) {
 				continue
 			}
+		}
 
-			// if the OCSP response has been updated, we use it
-			if oldNextUpdate != cert.OCSP.NextUpdate {
-				log.Printf("[INFO] Moving validity period of OCSP staple for %s from %v to %v",
-					name, oldNextUpdate, cert.OCSP.NextUpdate)
-				updated[name] = ocspUpdate{rawBytes: cert.Certificate.OCSPStaple, parsedResponse: cert.OCSP}
+		err := stapleOCSP(&cert, nil)
+		if err != nil {
+			if cert.OCSP != nil {
+				// if it was no staple before, that's fine, otherwise we should log the error
+				log.Printf("[ERROR] Checking OCSP for %s: %v", name, err)
+			}
+			continue
+		}
+
+		// By this point, we've obtained the latest OCSP response.
+		// If there was no staple before, or if the response is updated, make
+		// sure we apply the update to all names on the certificate.
+		if lastNextUpdate.IsZero() || lastNextUpdate != cert.OCSP.NextUpdate {
+			log.Printf("[INFO] Advancing OCSP staple for %v from %s to %s",
+				cert.Names, lastNextUpdate, cert.OCSP.NextUpdate)
+			for _, n := range cert.Names {
+				updated[n] = ocspUpdate{rawBytes: cert.Certificate.OCSPStaple, parsed: cert.OCSP}
 			}
 		}
 	}
@@ -161,7 +195,7 @@ func updatePreloadedOCSPStaples() {
 	certCacheMu.Lock()
 	for name, update := range updated {
 		cert := certCache[name]
-		cert.OCSP = update.parsedResponse
+		cert.OCSP = update.parsed
 		cert.Certificate.OCSPStaple = update.rawBytes
 		certCache[name] = cert
 	}

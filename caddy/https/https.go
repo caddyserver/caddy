@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/mholt/caddy/middleware"
 	"github.com/mholt/caddy/middleware/redirect"
@@ -215,7 +214,7 @@ func hostHasOtherPort(allConfigs []server.Config, thisConfigIdx int, otherPort s
 // all configs.
 func MakePlaintextRedirects(allConfigs []server.Config) []server.Config {
 	for i, cfg := range allConfigs {
-		if (cfg.TLS.Managed || cfg.TLS.OnDemand) &&
+		if cfg.TLS.Managed &&
 			!hostHasOtherPort(allConfigs, i, "80") &&
 			(cfg.Port == "443" || !hostHasOtherPort(allConfigs, i, "443")) {
 			allConfigs = append(allConfigs, redirPlaintextHost(cfg))
@@ -233,15 +232,16 @@ func MakePlaintextRedirects(allConfigs []server.Config) []server.Config {
 // setting up the config may make it look like it
 // doesn't qualify even though it originally did.
 func ConfigQualifies(cfg server.Config) bool {
-	return !cfg.TLS.Manual && // user can provide own cert and key
+	return (!cfg.TLS.Manual || cfg.TLS.OnDemand) && // user might provide own cert and key
 
 		// user can force-disable automatic HTTPS for this host
 		cfg.Scheme != "http" &&
 		cfg.Port != "80" &&
 		cfg.TLS.LetsEncryptEmail != "off" &&
 
-		// we get can't certs for some kinds of hostnames
-		HostQualifies(cfg.Host)
+		// we get can't certs for some kinds of hostnames, but
+		// on-demand TLS allows empty hostnames at startup
+		(HostQualifies(cfg.Host) || cfg.TLS.OnDemand)
 }
 
 // HostQualifies returns true if the hostname alone
@@ -387,20 +387,11 @@ var (
 	CAUrl string
 )
 
-// Some essential values related to the Let's Encrypt process
-const (
-	// AlternatePort is the port on which the acme client will open a
-	// listener and solve the CA's challenges. If this alternate port
-	// is used instead of the default port (80 or 443), then the
-	// default port for the challenge must be forwarded to this one.
-	AlternatePort = "5033"
-
-	// RenewInterval is how often to check certificates for renewal.
-	RenewInterval = 6 * time.Hour
-
-	// OCSPInterval is how often to check if OCSP stapling needs updating.
-	OCSPInterval = 1 * time.Hour
-)
+// AlternatePort is the port on which the acme client will open a
+// listener and solve the CA's challenges. If this alternate port
+// is used instead of the default port (80 or 443), then the
+// default port for the challenge must be forwarded to this one.
+const AlternatePort = "5033"
 
 // KeySize represents the length of a key in bits.
 type KeySize int

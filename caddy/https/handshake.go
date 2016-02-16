@@ -23,7 +23,7 @@ import (
 // This function is safe for use as a tls.Config.GetCertificate callback.
 func GetCertificate(clientHello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	cert, err := getCertDuringHandshake(clientHello.ServerName, false, false)
-	return cert.Certificate, err
+	return &cert.Certificate, err
 }
 
 // GetOrObtainCertificate will get a certificate to satisfy clientHello, even
@@ -35,7 +35,7 @@ func GetCertificate(clientHello *tls.ClientHelloInfo) (*tls.Certificate, error) 
 // This function is safe for use as a tls.Config.GetCertificate callback.
 func GetOrObtainCertificate(clientHello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	cert, err := getCertDuringHandshake(clientHello.ServerName, true, true)
-	return cert.Certificate, err
+	return &cert.Certificate, err
 }
 
 // getCertDuringHandshake will get a certificate for name. It first tries
@@ -122,8 +122,8 @@ func checkLimitsForObtainingNewCerts(name string) error {
 }
 
 // obtainOnDemandCertificate obtains a certificate for name for the given
-// clientHello. If another goroutine has already started obtaining a cert
-// for name, it will wait and use what the other goroutine obtained.
+// name. If another goroutine has already started obtaining a cert for
+// name, it will wait and use what the other goroutine obtained.
 //
 // This function is safe for use by multiple concurrent goroutines.
 func obtainOnDemandCertificate(name string) (Certificate, error) {
@@ -248,7 +248,7 @@ func renewDynamicCertificate(name string) (Certificate, error) {
 
 	log.Printf("[INFO] Renewing certificate for %s", name)
 
-	client, err := NewACMEClient("", false) // renewals don't use email
+	client, err := NewACMEClientGetEmail(server.Config{}, false)
 	if err != nil {
 		return Certificate{}, err
 	}
@@ -295,7 +295,7 @@ var obtainCertWaitChansMu sync.Mutex
 
 // OnDemandIssuedCount is the number of certificates that have been issued
 // on-demand by this process. It is only safe to modify this count atomically.
-// If it reaches max_certs, on-demand issuances will fail.
+// If it reaches onDemandMaxIssue, on-demand issuances will fail.
 var OnDemandIssuedCount = new(int32)
 
 // onDemandMaxIssue is set based on max_certs in tls config. It specifies the
