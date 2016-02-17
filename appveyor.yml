@@ -6,13 +6,14 @@ clone_folder: c:\gopath\src\github.com\mholt\caddy
 
 environment:
   GOPATH: c:\gopath
+  CGO_ENABLED: 0
 
 install:
   - go get golang.org/x/tools/cmd/vet
   - echo %GOPATH%
   - go version
   - go env
-  - go get -d ./...
+  - go get -t ./...
 
 build_script:
   - go vet ./...

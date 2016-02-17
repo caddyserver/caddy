@@ -96,7 +96,7 @@ You may also be interested in the [developer guide]
 
 ## Running from Source
 
-Note: You will need **[Go 1.4](https://golang.org/dl/)** or a later version.
+Note: You will need **[Go 1.6](https://golang.org/dl/)** or newer.
 
 1. `$ go get github.com/mholt/caddy`
 2. `cd` into your website's directory
