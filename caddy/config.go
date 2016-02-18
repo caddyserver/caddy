@@ -11,7 +11,6 @@ import (
 	"github.com/mholt/caddy/caddy/https"
 	"github.com/mholt/caddy/caddy/parse"
 	"github.com/mholt/caddy/caddy/setup"
-	"github.com/mholt/caddy/middleware"
 	"github.com/mholt/caddy/server"
 )
 
@@ -55,7 +54,6 @@ func loadConfigsUpToIncludingTLS(filename string, input io.Reader) ([]server.Con
 				Port:       addr.Port,
 				Scheme:     addr.Scheme,
 				Root:       Root,
-				Middleware: make(map[string][]middleware.Middleware),
 				ConfigFile: filename,
 				AppName:    AppName,
 				AppVersion: AppVersion,
@@ -89,8 +87,7 @@ func loadConfigsUpToIncludingTLS(filename string, input io.Reader) ([]server.Con
 						return nil, nil, lastDirectiveIndex, err
 					}
 					if midware != nil {
-						// TODO: For now, we only support the default path scope /
-						config.Middleware["/"] = append(config.Middleware["/"], midware)
+						config.Middleware = append(config.Middleware, midware)
 					}
 					storages[dir.name] = controller.ServerBlockStorage // persist for this server block
 				}
@@ -171,8 +168,7 @@ func loadConfigs(filename string, input io.Reader) ([]server.Config, error) {
 						return nil, err
 					}
 					if midware != nil {
-						// TODO: For now, we only support the default path scope /
-						configs[configIndex].Middleware["/"] = append(configs[configIndex].Middleware["/"], midware)
+						configs[configIndex].Middleware = append(configs[configIndex].Middleware, midware)
 					}
 					storages[dir.name] = controller.ServerBlockStorage // persist for this server block
 				}

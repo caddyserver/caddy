@@ -87,11 +87,11 @@ func TestRedirPlaintextHost(t *testing.T) {
 	}
 
 	// Make sure redirect handler is set up properly
-	if cfg.Middleware == nil || len(cfg.Middleware["/"]) != 1 {
+	if cfg.Middleware == nil || len(cfg.Middleware) != 1 {
 		t.Fatalf("Redir config middleware not set up properly; got: %#v", cfg.Middleware)
 	}
 
-	handler, ok := cfg.Middleware["/"][0](nil).(redirect.Redirect)
+	handler, ok := cfg.Middleware[0](nil).(redirect.Redirect)
 	if !ok {
 		t.Fatalf("Expected a redirect.Redirect middleware, but got: %#v", handler)
 	}
@@ -116,7 +116,7 @@ func TestRedirPlaintextHost(t *testing.T) {
 	// browsers can infer a default port from scheme, so make sure the port
 	// doesn't get added in explicitly for default ports like 443 for https.
 	cfg = redirPlaintextHost(server.Config{Host: "example.com", Port: "443"})
-	handler, ok = cfg.Middleware["/"][0](nil).(redirect.Redirect)
+	handler, ok = cfg.Middleware[0](nil).(redirect.Redirect)
 	if actual, expected := handler.Rules[0].To, "https://{host}{uri}"; actual != expected {
 		t.Errorf("(Default Port) Expected redirect rule to be to URL '%s' but is actually to '%s'", expected, actual)
 	}

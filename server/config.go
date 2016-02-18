@@ -26,8 +26,8 @@ type Config struct {
 	// HTTPS configuration
 	TLS TLSConfig
 
-	// Middleware stack; map of path scope to middleware -- TODO: Support path scope?
-	Middleware map[string][]middleware.Middleware
+	// Middleware stack
+	Middleware []middleware.Middleware
 
 	// Startup is a list of functions (or methods) to execute at
 	// server startup and restart; these are executed before any
