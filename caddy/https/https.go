@@ -117,14 +117,24 @@ func ObtainCerts(configs []server.Config, allowPrompts, proxyACME bool) error {
 	groupedConfigs := groupConfigsByEmail(configs, allowPrompts)
 
 	for email, group := range groupedConfigs {
-		client, err := NewACMEClient(email, allowPrompts)
-		if err != nil {
-			return errors.New("error creating client: " + err.Error())
-		}
+		// Wait as long as we can before creating the client, because it
+		// may not be needed, for example, if we already have what we
+		// need on disk. Creating a client involves the network and
+		// potentially prompting the user, etc., so only do if necessary.
+		var client *ACMEClient
 
 		for _, cfg := range group {
 			if cfg.Host == "" || existingCertAndKey(cfg.Host) {
 				continue
+			}
+
+			// Now we definitely do need a client
+			if client == nil {
+				var err error
+				client, err = NewACMEClient(email, allowPrompts)
+				if err != nil {
+					return errors.New("error creating client: " + err.Error())
+				}
 			}
 
 			// c.Configure assumes that allowPrompts == !proxyACME,
