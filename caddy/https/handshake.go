@@ -39,31 +39,30 @@ func GetOrObtainCertificate(clientHello *tls.ClientHelloInfo) (*tls.Certificate,
 }
 
 // getCertDuringHandshake will get a certificate for name. It first tries
-// the in-memory cache. If no certificate for name is in the cach and if
+// the in-memory cache. If no certificate for name is in the cache and if
 // loadIfNecessary == true, it goes to disk to load it into the cache and
 // serve it. If it's not on disk and if obtainIfNecessary == true, the
 // certificate will be obtained from the CA, cached, and served. If
 // obtainIfNecessary is true, then loadIfNecessary must also be set to true.
+// An error will be returned if and only if no certificate is available.
 //
 // This function is safe for concurrent use.
 func getCertDuringHandshake(name string, loadIfNecessary, obtainIfNecessary bool) (Certificate, error) {
 	// First check our in-memory cache to see if we've already loaded it
-	cert, ok := getCertificate(name)
-	if ok {
+	cert, matched, defaulted := getCertificate(name)
+	if matched {
 		return cert, nil
 	}
 
 	if loadIfNecessary {
-		var err error
-
 		// Then check to see if we have one on disk
-		cert, err = cacheManagedCertificate(name, true)
+		loadedCert, err := cacheManagedCertificate(name, true)
 		if err == nil {
-			cert, err = handshakeMaintenance(name, cert)
+			loadedCert, err = handshakeMaintenance(name, loadedCert)
 			if err != nil {
 				log.Printf("[ERROR] Maintaining newly-loaded certificate for %s: %v", name, err)
 			}
-			return cert, nil
+			return loadedCert, nil
 		}
 
 		if obtainIfNecessary {
@@ -87,7 +86,11 @@ func getCertDuringHandshake(name string, loadIfNecessary, obtainIfNecessary bool
 		}
 	}
 
-	return Certificate{}, nil
+	if defaulted {
+		return cert, nil
+	}
+
+	return Certificate{}, errors.New("no certificate for " + name)
 }
 
 // checkLimitsForObtainingNewCerts checks to see if name can be issued right

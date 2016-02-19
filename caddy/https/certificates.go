@@ -50,23 +50,21 @@ type Certificate struct {
 	OCSP *ocsp.Response
 }
 
-// getCertificate gets a certificate from the in-memory cache that
-// matches name (a certificate name). Note that if name does not have
-// an exact match, it will be checked against names of the form
-// '*.example.com' (wildcard certificates) according to RFC 6125.
-//
-// If cert was found by matching name, matched will be returned true.
-// If no match is found, the default certificate will be returned and
-// matched will be returned as false. (The default certificate is the
-// first one that entered the cache.) If the cache is empty (or there
-// is no default certificate for some reason), matched will still be
-// false, but cert.Certificate will be nil.
+// getCertificate gets a certificate that matches name (a server name)
+// from the in-memory cache. If there is no exact match for name, it
+// will be checked against names of the form '*.example.com' (wildcard
+// certificates) according to RFC 6125. If a match is found, matched will
+// be true. If no matches are found, matched will be false and a default
+// certificate will be returned with defaulted set to true. If no default
+// certificate is set, defaulted will be set to false.
 //
 // The logic in this function is adapted from the Go standard library,
 // which is by the Go Authors.
 //
 // This function is safe for concurrent use.
-func getCertificate(name string) (cert Certificate, matched bool) {
+func getCertificate(name string) (cert Certificate, matched, defaulted bool) {
+	var ok bool
+
 	// Not going to trim trailing dots here since RFC 3546 says,
 	// "The hostname is represented ... without a trailing dot."
 	// Just normalize to lowercase.
@@ -76,8 +74,9 @@ func getCertificate(name string) (cert Certificate, matched bool) {
 	defer certCacheMu.RUnlock()
 
 	// exact match? great, let's use it
-	if cert, ok := certCache[name]; ok {
-		return cert, true
+	if cert, ok = certCache[name]; ok {
+		matched = true
+		return
 	}
 
 	// try replacing labels in the name with wildcards until we get a match
@@ -85,14 +84,15 @@ func getCertificate(name string) (cert Certificate, matched bool) {
 	for i := range labels {
 		labels[i] = "*"
 		candidate := strings.Join(labels, ".")
-		if cert, ok := certCache[candidate]; ok {
-			return cert, true
+		if cert, ok = certCache[candidate]; ok {
+			matched = true
+			return
 		}
 	}
 
-	// if nothing matches, return the default certificate
-	cert = certCache[""]
-	return cert, false
+	// if nothing matches, use the default certificate or bust
+	cert, defaulted = certCache[""]
+	return
 }
 
 // cacheManagedCertificate loads the certificate for domain into the
@@ -214,8 +214,8 @@ func cacheCertificate(cert Certificate) {
 	certCacheMu.Lock()
 	if _, ok := certCache[""]; !ok {
 		// use as default
-		certCache[""] = cert
 		cert.Names = append(cert.Names, "")
+		certCache[""] = cert
 	}
 	for len(certCache)+len(cert.Names) > 10000 {
 		// for simplicity, just remove random elements
