@@ -79,6 +79,13 @@ func TestErrors(t *testing.T) {
 			expectedErr:  nil,
 		},
 		{
+			next:         genErrorHandler(http.StatusNotFound, nil, "normal"),
+			expectedCode: 0,
+			expectedBody: "normal",
+			expectedLog:  "",
+			expectedErr:  nil,
+		},
+		{
 			next:         genErrorHandler(http.StatusForbidden, nil, ""),
 			expectedCode: 0,
 			expectedBody: fmt.Sprintf("%d %s\n", http.StatusForbidden,
