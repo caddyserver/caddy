@@ -12,7 +12,7 @@ import (
 	"github.com/mholt/caddy/middleware/errors"
 )
 
-// Errors configures a new gzip middleware instance.
+// Errors configures a new errors middleware instance.
 func Errors(c *Controller) (middleware.Middleware, error) {
 	handler, err := errorsParse(c)
 	if err != nil {
