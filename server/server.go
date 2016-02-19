@@ -331,7 +331,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		w.WriteHeader(http.StatusNotFound)
 		fmt.Fprintf(w, "No such host at %s", s.Server.Addr)
-		log.Printf("[INFO] %s - No such host at %s (requested by %s)", host, s.Server.Addr, remoteHost)
+		log.Printf("[INFO] %s - No such host at %s (Remote: %s, Referer: %s)",
+			host, s.Server.Addr, remoteHost, r.Header.Get("Referer"))
 	}
 }
 
