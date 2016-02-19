@@ -126,12 +126,14 @@ func ObtainCerts(configs []server.Config, allowPrompts, proxyACME bool) error {
 			if cfg.Host == "" || existingCertAndKey(cfg.Host) {
 				continue
 			}
-
 			// c.Configure assumes that allowPrompts == !proxyACME,
 			// but that's not always true. For example, a restart where
 			// the user isn't present and we're not listening on port 80.
 			// TODO: This could probably be refactored better.
-			if proxyACME {
+			if cfg.TLS.DNSProvider != nil {
+				client.SetChallengeProvider(acme.DNS01, cfg.TLS.DNSProvider)
+				client.ExcludeChallenges([]acme.Challenge{acme.TLSSNI01, acme.HTTP01})
+			} else if proxyACME {
 				client.SetHTTPAddress(net.JoinHostPort(cfg.BindHost, AlternatePort))
 				client.SetTLSAddress(net.JoinHostPort(cfg.BindHost, AlternatePort))
 				client.ExcludeChallenges([]acme.Challenge{acme.TLSSNI01, acme.DNS01})
@@ -147,7 +149,6 @@ func ObtainCerts(configs []server.Config, allowPrompts, proxyACME bool) error {
 			}
 		}
 	}
-
 	return nil
 }
 
