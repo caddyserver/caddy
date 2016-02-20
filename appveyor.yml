@@ -9,12 +9,18 @@ environment:
   CGO_ENABLED: 0
 
 install:
-  - go get golang.org/x/tools/cmd/vet
-  - echo %GOPATH%
+  - rmdir c:\go /s /q
+  - appveyor DownloadFile https://storage.googleapis.com/golang/go1.6.windows-amd64.zip
+  - 7z x go1.6.windows-amd64.zip -y -oC:\ > NUL
   - go version
   - go env
+  - go get golang.org/x/tools/cmd/vet
   - go get -t ./...
 
-build_script:
+build: off
+
+test_script:
   - go vet ./...
   - go test ./...
+
+deploy: off
