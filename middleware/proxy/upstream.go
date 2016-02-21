@@ -399,7 +399,7 @@ func (h hostName) equals(host string) bool {
 }
 
 func (h hostName) String() string {
-	if !strings.HasPrefix(string(h), "http") {
+	if !strings.HasPrefix(string(h), "http") && !strings.HasPrefix(string(h), "unix:") {
 		return "http://" + string(h)
 	}
 	return string(h)
