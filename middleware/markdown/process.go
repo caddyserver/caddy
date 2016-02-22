@@ -23,14 +23,15 @@ const (
 // Data represents a markdown document.
 type Data struct {
 	middleware.Context
-	Doc   map[string]string
-	Links []PageLink
+	Doc      map[string]string
+	DocFlags map[string]bool
+	Links    []PageLink
 }
 
 // Process processes the contents of a page in b. It parses the metadata
 // (if any) and uses the template (if found).
 func (md Markdown) Process(c *Config, requestPath string, b []byte, ctx middleware.Context) ([]byte, error) {
-	var metadata = Metadata{Variables: make(map[string]string)}
+	var metadata = newMetadata()
 	var markdown []byte
 	var err error
 
@@ -100,9 +101,10 @@ func (md Markdown) processTemplate(c *Config, requestPath string, tmpl []byte, m
 		return nil, err
 	}
 	mdData := Data{
-		Context: ctx,
-		Doc:     metadata.Variables,
-		Links:   c.Links,
+		Context:  ctx,
+		Doc:      metadata.Variables,
+		DocFlags: metadata.Flags,
+		Links:    c.Links,
 	}
 
 	c.RLock()
