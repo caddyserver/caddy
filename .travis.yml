@@ -8,9 +8,8 @@ env:
 - CGO_ENABLED=0
 
 install:
-  - go get -t ./...
   - go get golang.org/x/tools/cmd/vet
 
 script:
-  - go vet ./...
-  - go test ./...
+  - make vet
+  - make test
