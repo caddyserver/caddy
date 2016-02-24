@@ -4,6 +4,7 @@
 package fastcgi
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"net/http"
@@ -105,13 +106,21 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 				return http.StatusBadGateway, err
 			}
 
+			// Write the response body to a buffer
+			// To explicitly set Content-Length
+			// For FastCGI app that don't set it
+			var buf bytes.Buffer
+			io.Copy(&buf, resp.Body)
+			if r.Header.Get("Content-Length") == "" {
+				w.Header().Set("Content-Length", strconv.Itoa(buf.Len()))
+			}
 			writeHeader(w, resp)
 
 			// Write the response body
 			// TODO: If this has an error, the response will already be
 			// partly written. We should copy out of resp.Body into a buffer
 			// first, then write it to the response...
-			_, err = io.Copy(w, resp.Body)
+			_, err = io.Copy(w, &buf)
 			if err != nil {
 				return http.StatusBadGateway, err
 			}
