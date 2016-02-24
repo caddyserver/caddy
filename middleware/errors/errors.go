@@ -27,7 +27,8 @@ type ErrorHandler struct {
 func (h ErrorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	defer h.recovery(w, r)
 
-	status, err := h.Next.ServeHTTP(w, r)
+	responseRecorder := middleware.NewResponseRecorder(w)
+	status, err := h.Next.ServeHTTP(responseRecorder, r)
 
 	if err != nil {
 		errMsg := fmt.Sprintf("%s [ERROR %d %s] %v", time.Now().Format(timeFormat), status, r.URL.Path, err)
@@ -36,14 +37,17 @@ func (h ErrorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, er
 			// Write error to response instead of to log
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			w.WriteHeader(status)
-			fmt.Fprintln(w, errMsg)
+			fmt.Fprintln(responseRecorder, errMsg)
 			return 0, err // returning < 400 signals that a response has been written
 		}
 		h.Log.Println(errMsg)
 	}
 
 	if status >= 400 {
-		h.errorPage(w, r, status)
+		// Check there is no response body already sent
+		if responseRecorder.Size() == 0 {
+			h.errorPage(responseRecorder, r, status)
+		}
 		return 0, err
 	}
 

@@ -320,7 +320,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		// Fallback error response in case error handling wasn't chained in
 		if status >= 400 {
-			DefaultErrorFunc(w, r, status)
+			// Check there is no response body already sent
+			if w.Header().Get("Content-Length") == "" {
+				DefaultErrorFunc(w, r, status)
+			}
 		}
 	} else {
 		// Get the remote host
