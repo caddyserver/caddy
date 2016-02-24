@@ -23,6 +23,9 @@ type Metadata struct {
 
 	// Variables to be used with Template
 	Variables map[string]string
+
+	// Flags to be used with Template
+	Flags map[string]bool
 }
 
 // load loads parsed values in parsedMap into Metadata
@@ -40,8 +43,11 @@ func (m *Metadata) load(parsedMap map[string]interface{}) {
 	}
 	// store everything as a variable
 	for key, val := range parsedMap {
-		if v, ok := val.(string); ok {
+		switch v := val.(type) {
+		case string:
 			m.Variables[key] = v
+		case bool:
+			m.Flags[key] = v
 		}
 	}
 }
@@ -219,11 +225,18 @@ func findParser(b []byte) MetadataParser {
 	return nil
 }
 
+func newMetadata() Metadata {
+	return Metadata{
+		Variables: make(map[string]string),
+		Flags:     make(map[string]bool),
+	}
+}
+
 // parsers returns all available parsers
 func parsers() []MetadataParser {
 	return []MetadataParser{
-		&JSONMetadataParser{metadata: Metadata{Variables: make(map[string]string)}},
-		&TOMLMetadataParser{metadata: Metadata{Variables: make(map[string]string)}},
-		&YAMLMetadataParser{metadata: Metadata{Variables: make(map[string]string)}},
+		&JSONMetadataParser{metadata: newMetadata()},
+		&TOMLMetadataParser{metadata: newMetadata()},
+		&YAMLMetadataParser{metadata: newMetadata()},
 	}
 }
