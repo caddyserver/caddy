@@ -1,13 +1,61 @@
 package fastcgi
 
 import (
+	"net"
 	"net/http"
+	"net/http/fcgi"
+	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"testing"
 )
 
-func TestRuleParseAddress(t *testing.T) {
+func TestServeHTTPContentLength(t *testing.T) {
+	testWithBackend := func(body string, setContentLength bool) {
+		bodyLenStr := strconv.Itoa(len(body))
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("BackendSetsContentLength=%v: Unable to create listener for test: %v", setContentLength, err)
+		}
+		defer listener.Close()
+		go fcgi.Serve(listener, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if setContentLength {
+				w.Header().Set("Content-Length", bodyLenStr)
+			}
+			w.Write([]byte(body))
+		}))
 
+		handler := Handler{
+			Next:  nil,
+			Rules: []Rule{{Path: "/", Address: listener.Addr().String()}},
+		}
+		r, err := http.NewRequest("GET", "/", nil)
+		if err != nil {
+			t.Fatalf("BackendSetsContentLength=%v: Unable to create request: %v", setContentLength, err)
+		}
+		w := httptest.NewRecorder()
+
+		status, err := handler.ServeHTTP(w, r)
+
+		if got, want := status, http.StatusOK; got != want {
+			t.Errorf("BackendSetsContentLength=%v: Expected returned status code to be %d, got %d", setContentLength, want, got)
+		}
+		if err != nil {
+			t.Errorf("BackendSetsContentLength=%v: Expected nil error, got: %v", setContentLength, err)
+		}
+		if got, want := w.Header().Get("Content-Length"), bodyLenStr; got != want {
+			t.Errorf("BackendSetsContentLength=%v: Expected Content-Length to be '%s', got: '%s'", setContentLength, want, got)
+		}
+		if got, want := w.Body.String(), body; got != want {
+			t.Errorf("BackendSetsContentLength=%v: Expected response body to be '%s', got: '%s'", setContentLength, want, got)
+		}
+	}
+
+	testWithBackend("Backend does NOT set Content-Length", false)
+	testWithBackend("Backend sets Content-Length", true)
+}
+
+func TestRuleParseAddress(t *testing.T) {
 	getClientTestTable := []struct {
 		rule            *Rule
 		expectednetwork string
@@ -27,28 +75,21 @@ func TestRuleParseAddress(t *testing.T) {
 		if _, actualaddress := entry.rule.parseAddress(); actualaddress != entry.expectedaddress {
 			t.Errorf("Unexpected parsed address for address string %v. Got %v, expected %v", entry.rule.Address, actualaddress, entry.expectedaddress)
 		}
-
 	}
-
 }
 
 func TestBuildEnv(t *testing.T) {
-
-	buildEnvSingle := func(r *http.Request, rule Rule, fpath string, envExpected map[string]string, t *testing.T) {
-
-		h := Handler{}
-
+	testBuildEnv := func(r *http.Request, rule Rule, fpath string, envExpected map[string]string) {
+		var h Handler
 		env, err := h.buildEnv(r, rule, fpath)
 		if err != nil {
 			t.Error("Unexpected error:", err.Error())
 		}
-
 		for k, v := range envExpected {
 			if env[k] != v {
 				t.Errorf("Unexpected %v. Got %v, expected %v", k, env[k], v)
 			}
 		}
-
 	}
 
 	rule := Rule{}
@@ -80,16 +121,15 @@ func TestBuildEnv(t *testing.T) {
 	}
 
 	// 1. Test for full canonical IPv6 address
-	buildEnvSingle(&r, rule, fpath, envExpected, t)
+	testBuildEnv(&r, rule, fpath, envExpected)
 
 	// 2. Test for shorthand notation of IPv6 address
 	r.RemoteAddr = "[::1]:51688"
 	envExpected["REMOTE_ADDR"] = "[::1]"
-	buildEnvSingle(&r, rule, fpath, envExpected, t)
+	testBuildEnv(&r, rule, fpath, envExpected)
 
 	// 3. Test for IPv4 address
 	r.RemoteAddr = "192.168.0.10:51688"
 	envExpected["REMOTE_ADDR"] = "192.168.0.10"
-	buildEnvSingle(&r, rule, fpath, envExpected, t)
-
+	testBuildEnv(&r, rule, fpath, envExpected)
 }

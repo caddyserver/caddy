@@ -72,7 +72,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 
 			// Connect to FastCGI gateway
 			network, address := rule.parseAddress()
-			fcgi, err := Dial(network, address)
+			fcgiBackend, err := Dial(network, address)
 			if err != nil {
 				return http.StatusBadGateway, err
 			}
@@ -81,19 +81,19 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			contentLength, _ := strconv.Atoi(r.Header.Get("Content-Length"))
 			switch r.Method {
 			case "HEAD":
-				resp, err = fcgi.Head(env)
+				resp, err = fcgiBackend.Head(env)
 			case "GET":
-				resp, err = fcgi.Get(env)
+				resp, err = fcgiBackend.Get(env)
 			case "OPTIONS":
-				resp, err = fcgi.Options(env)
+				resp, err = fcgiBackend.Options(env)
 			case "POST":
-				resp, err = fcgi.Post(env, r.Header.Get("Content-Type"), r.Body, contentLength)
+				resp, err = fcgiBackend.Post(env, r.Header.Get("Content-Type"), r.Body, contentLength)
 			case "PUT":
-				resp, err = fcgi.Put(env, r.Header.Get("Content-Type"), r.Body, contentLength)
+				resp, err = fcgiBackend.Put(env, r.Header.Get("Content-Type"), r.Body, contentLength)
 			case "PATCH":
-				resp, err = fcgi.Patch(env, r.Header.Get("Content-Type"), r.Body, contentLength)
+				resp, err = fcgiBackend.Patch(env, r.Header.Get("Content-Type"), r.Body, contentLength)
 			case "DELETE":
-				resp, err = fcgi.Delete(env, r.Header.Get("Content-Type"), r.Body, contentLength)
+				resp, err = fcgiBackend.Delete(env, r.Header.Get("Content-Type"), r.Body, contentLength)
 			default:
 				return http.StatusMethodNotAllowed, nil
 			}
@@ -106,29 +106,35 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 				return http.StatusBadGateway, err
 			}
 
-			// Write the response body to a buffer
-			// To explicitly set Content-Length
-			// For FastCGI app that don't set it
-			var buf bytes.Buffer
-			io.Copy(&buf, resp.Body)
+			var responseBody io.Reader = resp.Body
 			if r.Header.Get("Content-Length") == "" {
+				// If the upstream app didn't set a Content-Length (shame on them),
+				// we need to do it to prevent error messages being appended to
+				// an already-written response, and other problematic behavior.
+				// So we copy it to a buffer and read its size before flushing
+				// the response out to the client. See issues #567 and #614.
+				buf := new(bytes.Buffer)
+				_, err := io.Copy(buf, resp.Body)
+				if err != nil {
+					return http.StatusBadGateway, err
+				}
 				w.Header().Set("Content-Length", strconv.Itoa(buf.Len()))
+				responseBody = buf
 			}
+
+			// Write the status code and header fields
 			writeHeader(w, resp)
 
 			// Write the response body
-			// TODO: If this has an error, the response will already be
-			// partly written. We should copy out of resp.Body into a buffer
-			// first, then write it to the response...
-			_, err = io.Copy(w, &buf)
+			_, err = io.Copy(w, responseBody)
 			if err != nil {
 				return http.StatusBadGateway, err
 			}
 
 			// FastCGI stderr outputs
-			if fcgi.stderr.Len() != 0 {
+			if fcgiBackend.stderr.Len() != 0 {
 				// Remove trailing newline, error logger already does this.
-				err = LogError(strings.TrimSuffix(fcgi.stderr.String(), "\n"))
+				err = LogError(strings.TrimSuffix(fcgiBackend.stderr.String(), "\n"))
 			}
 
 			return resp.StatusCode, err
