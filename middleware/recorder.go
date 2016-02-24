@@ -62,11 +62,11 @@ func (r *ResponseRecorder) Status() int {
 	return r.status
 }
 
-// Hijacker is a wrapper of http.Hijacker underearth if any,
-// otherwise it just returns an error.
+// Hijack implements http.Hijacker. It simply wraps the underlying
+// ResponseWriter's Hijack method if there is one, or returns an error.
 func (r *ResponseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	if hj, ok := r.ResponseWriter.(http.Hijacker); ok {
 		return hj.Hijack()
 	}
-	return nil, nil, errors.New("I'm not a Hijacker")
+	return nil, nil, errors.New("not a Hijacker")
 }
