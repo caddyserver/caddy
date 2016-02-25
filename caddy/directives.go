@@ -1,6 +1,8 @@
 package caddy
 
 import (
+	"log"
+
 	"github.com/mholt/caddy/caddy/https"
 	"github.com/mholt/caddy/caddy/parse"
 	"github.com/mholt/caddy/caddy/setup"
@@ -15,7 +17,9 @@ func init() {
 	// The parse package does not need to know the
 	// ordering of the directives.
 	for _, dir := range directiveOrder {
-		parse.ValidDirectives[dir.name] = struct{}{}
+		if dir.setup != nil {
+			parse.ValidDirectives[dir.name] = struct{}{}
+		}
 	}
 }
 
@@ -49,6 +53,7 @@ var directiveOrder = []directive{
 	// Other directives that don't create HTTP handlers
 	{"startup", setup.Startup},
 	{"shutdown", setup.Shutdown},
+	{"git", nil},
 
 	// Directives that inject handlers (middleware)
 	{"log", setup.Log},
@@ -84,6 +89,22 @@ func RegisterDirective(name string, setup SetupFunc, after string) {
 	newDirectives := append(directiveOrder[:idx], append([]directive{dir}, directiveOrder[idx:]...)...)
 	directiveOrder = newDirectives
 	parse.ValidDirectives[name] = struct{}{}
+}
+
+// ActivateKnownDirective provides a setup func for an external directive that we only have a placeholder for.
+func ActivateKnownDirective(name string, setup SetupFunc) {
+	for i, d := range directiveOrder {
+		if d.name == name {
+			if d.setup != nil {
+				log.Fatalf("Directive %s already activated", name)
+			}
+			d.setup = setup
+			directiveOrder[i] = d
+			parse.ValidDirectives[name] = struct{}{}
+			return
+		}
+	}
+	log.Fatalf("Unknown directive %s", name)
 }
 
 // directive ties together a directive name with its setup function.
