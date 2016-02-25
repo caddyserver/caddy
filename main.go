@@ -7,11 +7,13 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/kardianos/service"
 	"github.com/mholt/caddy/caddy"
 	"github.com/mholt/caddy/caddy/https"
 	"github.com/xenolf/lego/acme"
@@ -24,6 +26,7 @@ var (
 	logfile string
 	revoke  string
 	version bool
+	srvctl  string
 )
 
 const (
@@ -48,10 +51,13 @@ func init() {
 	flag.StringVar(&revoke, "revoke", "", "Hostname for which to revoke the certificate")
 	flag.StringVar(&caddy.Root, "root", caddy.DefaultRoot, "Root path to default site")
 	flag.BoolVar(&version, "version", false, "Show version")
+	flag.StringVar(&srvctl, "service", "", "Control a system service of Caddy")
 }
 
 func main() {
 	flag.Parse() // called here in main() to allow other packages to set flags in their inits
+
+	const svcPIDFile = `/run/Caddy.pid`
 
 	caddy.AppName = appName
 	caddy.AppVersion = appVersion
@@ -87,26 +93,80 @@ func main() {
 		os.Exit(0)
 	}
 
+	// Create an absolute path to the caddy file for use
+	// in a service.
+	serviceCaddyPath := caddy.DefaultConfigFile
+	if len(conf) != 0 {
+		serviceCaddyPath = conf
+	}
+	if !filepath.IsAbs(serviceCaddyPath) {
+		wd, err := os.Getwd()
+		if err != nil {
+			mustLogFatal(err)
+		}
+		serviceCaddyPath = filepath.Join(wd, serviceCaddyPath)
+	}
+	sys, err := service.New(app{}, &service.Config{
+		Name:        caddy.AppName,
+		DisplayName: caddy.AppName,
+
+		Arguments: []string{"-conf", serviceCaddyPath, "-pidfile", svcPIDFile},
+
+		Option: service.KeyValue{
+			"RunWait":      caddy.Wait,
+			"ReloadSignal": "USR1",
+			"PIDFile":      svcPIDFile,
+		},
+	})
+	if err != nil {
+		mustLogFatal(err)
+	}
+
+	// Handle any service control commands.
+	if len(srvctl) != 0 {
+		err = service.Control(sys, srvctl)
+		if err != nil {
+			mustLogFatal(err, service.ControlAction)
+		}
+		return
+	}
+
+	err = sys.Run()
+	if err != nil {
+		mustLogFatal(err)
+	}
+}
+
+type app struct{}
+
+func (app) Start(s service.Service) error {
+	if !service.Interactive() && len(conf) != 0 {
+		// Set the WD here if running under a service.
+		// This is required as on windows there is no way to set the current working
+		// directory as a service.
+		dir, _ := filepath.Split(conf)
+		err := os.Chdir(dir)
+		if err != nil {
+			return err
+		}
+	}
 	// Set CPU cap
 	err := setCPU(cpu)
 	if err != nil {
-		mustLogFatal(err)
+		return err
 	}
 
 	// Get Caddyfile input
 	caddyfile, err := caddy.LoadCaddyfile(loadCaddyfile)
 	if err != nil {
-		mustLogFatal(err)
+		return err
 	}
 
 	// Start your engines
-	err = caddy.Start(caddyfile)
-	if err != nil {
-		mustLogFatal(err)
-	}
-
-	// Twiddle your thumbs
-	caddy.Wait()
+	return caddy.Start(caddyfile)
+}
+func (app) Stop(s service.Service) error {
+	return caddy.Stop()
 }
 
 // mustLogFatal just wraps log.Fatal() in a way that ensures the
