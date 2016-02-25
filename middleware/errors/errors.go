@@ -43,7 +43,9 @@ func (h ErrorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, er
 	}
 
 	if status >= 400 {
-		h.errorPage(w, r, status)
+		if w.Header().Get("Content-Length") == "" {
+			h.errorPage(w, r, status)
+		}
 		return 0, err
 	}
 

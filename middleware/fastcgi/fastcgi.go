@@ -107,7 +107,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			}
 
 			var responseBody io.Reader = resp.Body
-			if r.Header.Get("Content-Length") == "" {
+			if resp.Header.Get("Content-Length") == "" {
 				// If the upstream app didn't set a Content-Length (shame on them),
 				// we need to do it to prevent error messages being appended to
 				// an already-written response, and other problematic behavior.
@@ -137,6 +137,11 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 				err = LogError(strings.TrimSuffix(fcgiBackend.stderr.String(), "\n"))
 			}
 
+			// Normally we should only return a status >= 400 if no response
+			// body is written yet, however, upstream apps don't know about
+			// this contract and we still want the correct code logged, so error
+			// handling code in our stack needs to check Content-Length before
+			// writing an error message... oh well.
 			return resp.StatusCode, err
 		}
 	}

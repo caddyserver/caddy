@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -75,6 +76,13 @@ func TestErrors(t *testing.T) {
 			next:         genErrorHandler(http.StatusNotFound, nil, ""),
 			expectedCode: 0,
 			expectedBody: content,
+			expectedLog:  "",
+			expectedErr:  nil,
+		},
+		{
+			next:         genErrorHandler(http.StatusNotFound, nil, "normal"),
+			expectedCode: 0,
+			expectedBody: "normal",
 			expectedLog:  "",
 			expectedErr:  nil,
 		},
@@ -158,6 +166,9 @@ func TestVisibleErrorWithPanic(t *testing.T) {
 
 func genErrorHandler(status int, err error, body string) middleware.Handler {
 	return middleware.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
+		if len(body) > 0 {
+			w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+		}
 		fmt.Fprint(w, body)
 		return status, err
 	})

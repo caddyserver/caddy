@@ -319,7 +319,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		status, _ := vh.stack.ServeHTTP(w, r)
 
 		// Fallback error response in case error handling wasn't chained in
-		if status >= 400 {
+		if status >= 400 && w.Header().Get("Content-Length") == "" {
 			DefaultErrorFunc(w, r, status)
 		}
 	} else {
@@ -416,36 +416,6 @@ func (ln tcpKeepAliveListener) Accept() (c net.Conn, err error) {
 func (ln tcpKeepAliveListener) File() (*os.File, error) {
 	return ln.TCPListener.File()
 }
-
-// copied from net/http/transport.go
-/*
- TODO - remove - not necessary?
-func cloneTLSConfig(cfg *tls.Config) *tls.Config {
-	if cfg == nil {
-		return &tls.Config{}
-	}
-	return &tls.Config{
-		Rand:                     cfg.Rand,
-		Time:                     cfg.Time,
-		Certificates:             cfg.Certificates,
-		NameToCertificate:        cfg.NameToCertificate,
-		GetCertificate:           cfg.GetCertificate,
-		RootCAs:                  cfg.RootCAs,
-		NextProtos:               cfg.NextProtos,
-		ServerName:               cfg.ServerName,
-		ClientAuth:               cfg.ClientAuth,
-		ClientCAs:                cfg.ClientCAs,
-		InsecureSkipVerify:       cfg.InsecureSkipVerify,
-		CipherSuites:             cfg.CipherSuites,
-		PreferServerCipherSuites: cfg.PreferServerCipherSuites,
-		SessionTicketsDisabled:   cfg.SessionTicketsDisabled,
-		SessionTicketKey:         cfg.SessionTicketKey,
-		ClientSessionCache:       cfg.ClientSessionCache,
-		MinVersion:               cfg.MinVersion,
-		MaxVersion:               cfg.MaxVersion,
-		CurvePreferences:         cfg.CurvePreferences,
-	}
-}*/
 
 // ShutdownCallbacks executes all the shutdown callbacks
 // for all the virtualhosts in servers, and returns all the
