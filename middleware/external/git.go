@@ -8,5 +8,5 @@ import (
 )
 
 func init() {
-	caddy.ActivateKnownDirective("git", git.Setup)
+	caddy.ActivateDirective("git", git.Setup)
 }

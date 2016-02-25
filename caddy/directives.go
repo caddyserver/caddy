@@ -44,6 +44,8 @@ func init() {
 // pages, so it must be registered before the errors
 // middleware and any others that would write to the
 // response.
+//
+// Middleware here with a nil setup func are "external" to caddy core, and must be activated.
 var directiveOrder = []directive{
 	// Essential directives that initialize vital configuration settings
 	{"root", setup.Root},
@@ -59,12 +61,16 @@ var directiveOrder = []directive{
 	{"log", setup.Log},
 	{"gzip", setup.Gzip},
 	{"errors", setup.Errors},
+	{"ipfilter", nil},
+	{"search", nil},
 	{"header", setup.Headers},
+	{"cors", nil},
 	{"rewrite", setup.Rewrite},
 	{"redir", setup.Redir},
 	{"ext", setup.Ext},
 	{"mime", setup.Mime},
 	{"basicauth", setup.BasicAuth},
+	{"jsonp", nil},
 	{"internal", setup.Internal},
 	{"proxy", setup.Proxy},
 	{"fastcgi", setup.FastCGI},
@@ -72,6 +78,7 @@ var directiveOrder = []directive{
 	{"markdown", setup.Markdown},
 	{"templates", setup.Templates},
 	{"browse", setup.Browse},
+	{"hugo", nil},
 }
 
 // RegisterDirective adds the given directive to caddy's list of directives.
@@ -91,8 +98,8 @@ func RegisterDirective(name string, setup SetupFunc, after string) {
 	parse.ValidDirectives[name] = struct{}{}
 }
 
-// ActivateKnownDirective provides a setup func for an external directive that we only have a placeholder for.
-func ActivateKnownDirective(name string, setup SetupFunc) {
+// ActivateDirective provides a setup func for an external directive that we only have a placeholder for.
+func ActivateDirective(name string, setup SetupFunc) {
 	for i, d := range directiveOrder {
 		if d.name == name {
 			if d.setup != nil {
