@@ -3,7 +3,7 @@
 package external
 
 import (
-	"github.com/captncraig/caddy-cors"
+	cors "github.com/captncraig/cors/caddy"
 	"github.com/mholt/caddy/caddy"
 )
 
