@@ -28,7 +28,7 @@ var (
 
 const (
 	appName    = "Caddy"
-	appVersion = "0.8.1"
+	appVersion = "0.8.2"
 )
 
 func init() {
@@ -40,7 +40,7 @@ func init() {
 	flag.StringVar(&https.DefaultEmail, "email", "", "Default Let's Encrypt account email address")
 	flag.DurationVar(&caddy.GracefulTimeout, "grace", 5*time.Second, "Maximum duration of graceful shutdown")
 	flag.StringVar(&caddy.Host, "host", caddy.DefaultHost, "Default host")
-	flag.BoolVar(&caddy.HTTP2, "http2", true, "HTTP/2 support")
+	flag.BoolVar(&caddy.HTTP2, "http2", true, "Use HTTP/2")
 	flag.StringVar(&logfile, "log", "", "Process log file")
 	flag.StringVar(&caddy.PidFile, "pidfile", "", "Path to write pid file")
 	flag.StringVar(&caddy.Port, "port", caddy.DefaultPort, "Default port")
