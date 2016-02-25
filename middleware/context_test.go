@@ -459,12 +459,36 @@ func TestTruncate(t *testing.T) {
 			inputLength: 10,
 			expected:    "string",
 		},
+		// Test 3 - zero length
+		{
+			inputString: "string",
+			inputLength: 0,
+			expected:    "",
+		},
+		// Test 4 - negative, smaller length
+		{
+			inputString: "string",
+			inputLength: -5,
+			expected:    "tring",
+		},
+		// Test 5 - negative, exact length
+		{
+			inputString: "string",
+			inputLength: -6,
+			expected:    "string",
+		},
+		// Test 6 - negative, bigger length
+		{
+			inputString: "string",
+			inputLength: -7,
+			expected:    "string",
+		},
 	}
 
 	for i, test := range tests {
 		actual := context.Truncate(test.inputString, test.inputLength)
 		if actual != test.expected {
-			t.Errorf(getTestPrefix(i)+"Expected %s, found %s. Input was Truncate(%q, %d)", test.expected, actual, test.inputString, test.inputLength)
+			t.Errorf(getTestPrefix(i)+"Expected '%s', found '%s'. Input was Truncate(%q, %d)", test.expected, actual, test.inputString, test.inputLength)
 		}
 	}
 }

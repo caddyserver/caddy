@@ -132,10 +132,16 @@ func (c Context) PathMatches(pattern string) bool {
 	return Path(c.Req.URL.Path).Matches(pattern)
 }
 
-// Truncate truncates the input string to the given length. If
-// input is shorter than length, the entire string is returned.
+// Truncate truncates the input string to the given length.
+// If length is negative, it returns that many characters
+// starting from the end of the string. If the absolute value
+// of length is greater than len(input), the whole input is
+// returned.
 func (c Context) Truncate(input string, length int) string {
-	if len(input) > length {
+	if length < 0 && len(input)+length > 0 {
+		return input[len(input)+length:]
+	}
+	if length >= 0 && len(input) > length {
 		return input[:length]
 	}
 	return input
