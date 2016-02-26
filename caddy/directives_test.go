@@ -6,9 +6,9 @@ import (
 )
 
 func TestRegister(t *testing.T) {
-	directives := []directive{
-		{"dummy", nil},
-		{"dummy2", nil},
+	directives := []Directive{
+		{"dummy", nil, "", ""},
+		{"dummy2", nil, "", ""},
 	}
 	directiveOrder = directives
 	RegisterDirective("foo", nil, "dummy")
@@ -17,7 +17,7 @@ func TestRegister(t *testing.T) {
 	}
 	getNames := func() (s []string) {
 		for _, d := range directiveOrder {
-			s = append(s, d.name)
+			s = append(s, d.Name)
 		}
 		return s
 	}

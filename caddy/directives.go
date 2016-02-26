@@ -9,6 +9,8 @@ import (
 	"github.com/mholt/caddy/middleware"
 )
 
+var valid = struct{}{}
+
 func init() {
 	// The parse package must know which directives
 	// are valid, but it must not import the setup
@@ -17,8 +19,8 @@ func init() {
 	// The parse package does not need to know the
 	// ordering of the directives.
 	for _, dir := range directiveOrder {
-		if dir.setup != nil {
-			parse.ValidDirectives[dir.name] = struct{}{}
+		if dir.Setup != nil {
+			parse.ValidDirectives[dir.Name] = valid
 		}
 	}
 }
@@ -46,78 +48,89 @@ func init() {
 // response.
 //
 // Middleware here with a nil setup func are "external" to caddy core, and must be activated.
-var directiveOrder = []directive{
+var directiveOrder = []Directive{
 	// Essential directives that initialize vital configuration settings
-	{"root", setup.Root},
-	{"bind", setup.BindHost},
-	{"tls", https.Setup},
+	{"root", setup.Root, "", ""},
+	{"bind", setup.BindHost, "", ""},
+	{"tls", https.Setup, "", ""},
 
 	// Other directives that don't create HTTP handlers
-	{"startup", setup.Startup},
-	{"shutdown", setup.Shutdown},
-	{"git", nil},
+	{"startup", setup.Startup, "", ""},
+	{"shutdown", setup.Shutdown, "", ""},
+	{"git", nil, "github.com/abiosoft/caddy-git", "Deploy your site with git push."},
 
 	// Directives that inject handlers (middleware)
-	{"log", setup.Log},
-	{"gzip", setup.Gzip},
-	{"errors", setup.Errors},
-	{"ipfilter", nil},
-	{"search", nil},
-	{"header", setup.Headers},
-	{"cors", nil},
-	{"rewrite", setup.Rewrite},
-	{"redir", setup.Redir},
-	{"ext", setup.Ext},
-	{"mime", setup.Mime},
-	{"basicauth", setup.BasicAuth},
-	{"jsonp", nil},
-	{"internal", setup.Internal},
-	{"proxy", setup.Proxy},
-	{"fastcgi", setup.FastCGI},
-	{"websocket", setup.WebSocket},
-	{"markdown", setup.Markdown},
-	{"templates", setup.Templates},
-	{"browse", setup.Browse},
-	{"hugo", nil},
+	{"log", setup.Log, "", ""},
+	{"gzip", setup.Gzip, "", ""},
+	{"errors", setup.Errors, "", ""},
+	{"ipfilter", nil, "github.com/pyed/ipfilter", "Block or allow clients based on IP origin."},
+	{"search", nil, "github.com/pedronasser/caddy-search", "Activates a site search engine"},
+	{"header", setup.Headers, "", ""},
+	{"cors", nil, "github.com/captncraig/cors/caddy", "Enable Cross Origin Resource Sharing"},
+	{"rewrite", setup.Rewrite, "", ""},
+	{"redir", setup.Redir, "", ""},
+	{"ext", setup.Ext, "", ""},
+	{"mime", setup.Mime, "", ""},
+	{"basicauth", setup.BasicAuth, "", ""},
+	{"jsonp", nil, "github.com/pschlump/caddy-jsonp", "Wrap regular JSON responses as JSONP"},
+	{"internal", setup.Internal, "", ""},
+	{"proxy", setup.Proxy, "", ""},
+	{"fastcgi", setup.FastCGI, "", ""},
+	{"websocket", setup.WebSocket, "", ""},
+	{"markdown", setup.Markdown, "", ""},
+	{"templates", setup.Templates, "", ""},
+	{"browse", setup.Browse, "", ""},
+	{"hugo", nil, "github.com/hacdias/caddy-hugo", "Powerful and easy static site generator with admin interface."},
 }
 
 // RegisterDirective adds the given directive to caddy's list of directives.
 // Pass the name of a directive you want it to be placed after,
 // otherwise it will be placed at the bottom of the stack.
 func RegisterDirective(name string, setup SetupFunc, after string) {
-	dir := directive{name: name, setup: setup}
+	dir := Directive{Name: name, Setup: setup}
 	idx := len(directiveOrder)
 	for i := range directiveOrder {
-		if directiveOrder[i].name == after {
+		if directiveOrder[i].Name == after {
 			idx = i + 1
 			break
 		}
 	}
-	newDirectives := append(directiveOrder[:idx], append([]directive{dir}, directiveOrder[idx:]...)...)
+	newDirectives := append(directiveOrder[:idx], append([]Directive{dir}, directiveOrder[idx:]...)...)
 	directiveOrder = newDirectives
-	parse.ValidDirectives[name] = struct{}{}
+	parse.ValidDirectives[name] = valid
 }
 
 // ActivateDirective provides a setup func for an external directive that we only have a placeholder for.
 func ActivateDirective(name string, setup SetupFunc) {
 	for i, d := range directiveOrder {
-		if d.name == name {
-			if d.setup != nil {
+		if d.Name == name {
+			if d.Setup != nil {
 				log.Fatalf("Directive %s already activated", name)
 			}
-			d.setup = setup
+			d.Setup = setup
 			directiveOrder[i] = d
-			parse.ValidDirectives[name] = struct{}{}
+			parse.ValidDirectives[name] = valid
 			return
 		}
 	}
 	log.Fatalf("Unknown directive %s", name)
 }
 
-// directive ties together a directive name with its setup function.
-type directive struct {
-	name  string
-	setup SetupFunc
+// Directive ties together a directive name with its setup function.
+type Directive struct {
+	Name        string    `json:"directive"`
+	Setup       SetupFunc `json:"-"`
+	Package     string    `json:"package"`
+	Description string    `json:"description"`
+}
+
+// GetDirectives returns a read-only copy of the current directive stack
+func GetDirectives() []Directive {
+	d := make([]Directive, len(directiveOrder))
+	for i, dir := range directiveOrder {
+		d[i] = dir
+	}
+	return d
 }
 
 // SetupFunc takes a controller and may optionally return a middleware.

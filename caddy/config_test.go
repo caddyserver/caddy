@@ -101,9 +101,9 @@ func TestResolveAddr(t *testing.T) {
 }
 
 func TestMakeOnces(t *testing.T) {
-	directives := []directive{
-		{"dummy", nil},
-		{"dummy2", nil},
+	directives := []Directive{
+		{"dummy", nil, "", ""},
+		{"dummy2", nil, "", ""},
 	}
 	directiveOrder = directives
 	onces := makeOnces()
@@ -120,9 +120,9 @@ func TestMakeOnces(t *testing.T) {
 }
 
 func TestMakeStorages(t *testing.T) {
-	directives := []directive{
-		{"dummy", nil},
-		{"dummy2", nil},
+	directives := []Directive{
+		{"dummy", nil, "", ""},
+		{"dummy2", nil, "", ""},
 	}
 	directiveOrder = directives
 	storages := makeStorages()
@@ -139,9 +139,9 @@ func TestMakeStorages(t *testing.T) {
 }
 
 func TestValidDirective(t *testing.T) {
-	directives := []directive{
-		{"dummy", nil},
-		{"dummy2", nil},
+	directives := []Directive{
+		{"dummy", nil, "", ""},
+		{"dummy2", nil, "", ""},
 	}
 	directiveOrder = directives
 	for i, test := range []struct {
