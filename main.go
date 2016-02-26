@@ -18,21 +18,9 @@ import (
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
-var (
-	conf    string
-	cpu     string
-	logfile string
-	revoke  string
-	version bool
-)
-
-const (
-	appName    = "Caddy"
-	appVersion = "0.8.2"
-)
-
 func init() {
 	caddy.TrapSignals()
+	setVersion()
 	flag.BoolVar(&https.Agreed, "agree", false, "Agree to Let's Encrypt Subscriber Agreement")
 	flag.StringVar(&https.CAUrl, "ca", "https://acme-v01.api.letsencrypt.org/directory", "Certificate authority ACME server")
 	flag.StringVar(&conf, "conf", "", "Configuration file to use (default="+caddy.DefaultConfigFile+")")
@@ -83,7 +71,10 @@ func main() {
 		os.Exit(0)
 	}
 	if version {
-		fmt.Printf("%s %s\n", caddy.AppName, caddy.AppVersion)
+		fmt.Printf("%s %s\n", appName, appVersion)
+		if devBuild && gitShortStat != "" {
+			fmt.Printf("%s\n%s\n", gitShortStat, gitFilesModified)
+		}
 		os.Exit(0)
 	}
 
@@ -199,3 +190,44 @@ func setCPU(cpu string) error {
 	runtime.GOMAXPROCS(numCPU)
 	return nil
 }
+
+// setVersion figures out the version information based on
+// variables set by -ldflags.
+func setVersion() {
+	// A development build is one that's not at a tag or has uncommitted changes
+	devBuild = gitTag == "" || gitShortStat != ""
+
+	// Only set the appVersion if -ldflags was used
+	if gitNearestTag != "" || gitTag != "" {
+		if devBuild && gitNearestTag != "" {
+			appVersion = fmt.Sprintf("%s (+%s %s)",
+				strings.TrimPrefix(gitNearestTag, "v"), gitCommit, buildDate)
+		} else if gitTag != "" {
+			appVersion = strings.TrimPrefix(gitTag, "v")
+		}
+	}
+}
+
+const appName = "Caddy"
+
+// Flags that control program flow or startup
+var (
+	conf    string
+	cpu     string
+	logfile string
+	revoke  string
+	version bool
+)
+
+// Build information obtained with the help of -ldflags
+var (
+	appVersion = "(untracked dev build)" // inferred at startup
+	devBuild   = true                    // inferred at startup
+
+	buildDate        string // date -u
+	gitTag           string // git describe --exact-match HEAD 2> /dev/null
+	gitNearestTag    string // git describe --abbrev=0 --tags HEAD
+	gitCommit        string // git rev-parse HEAD
+	gitShortStat     string // git diff-index --shortstat
+	gitFilesModified string // git diff-index --name-only HEAD
+)
