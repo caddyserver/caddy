@@ -2,6 +2,7 @@ package https
 
 import (
 	"bufio"
+	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/json"
@@ -34,7 +35,7 @@ func (u User) GetRegistration() *acme.RegistrationResource {
 }
 
 // GetPrivateKey gets u's private key.
-func (u User) GetPrivateKey() *rsa.PrivateKey {
+func (u User) GetPrivateKey() crypto.PrivateKey {
 	return u.key
 }
 

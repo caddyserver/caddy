@@ -11,7 +11,9 @@ import (
 )
 
 func init() {
-	rsaKeySizeToUse = 128 // make tests faster; small key size OK for testing
+	rsaKeySizeToUse = 2048 // TODO(hkjn): Bring back support for small
+	// keys to speed up tests? Current changes
+	// are quick fix for #640.
 }
 
 func TestSaveAndLoadRSAPrivateKey(t *testing.T) {
