@@ -124,7 +124,7 @@ func ObtainCerts(configs []server.Config, allowPrompts, proxyACME bool) error {
 		var client *ACMEClient
 
 		for _, cfg := range group {
-			if cfg.Host == "" || existingCertAndKey(cfg.Host) {
+			if !HostQualifies(cfg.Host) || existingCertAndKey(cfg.Host) {
 				continue
 			}
 
@@ -190,7 +190,7 @@ func EnableTLS(configs []server.Config, loadCertificates bool) error {
 			continue
 		}
 		configs[i].TLS.Enabled = true
-		if loadCertificates && configs[i].Host != "" {
+		if loadCertificates && HostQualifies(configs[i].Host) {
 			_, err := cacheManagedCertificate(configs[i].Host, false)
 			if err != nil {
 				return err
