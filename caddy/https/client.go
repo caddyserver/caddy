@@ -34,16 +34,7 @@ var NewACMEClient = func(email string, allowPrompts bool) (*ACMEClient, error) {
 	}
 
 	// The client facilitates our communication with the CA server.
-	var kt acme.KeyType
-	if rsaKeySizeToUse == Rsa2048 {
-		kt = acme.RSA2048
-	} else if rsaKeySizeToUse == Rsa4096 {
-		kt = acme.RSA4096
-	} else {
-		// TODO(hkjn): Support more types? Current changes are quick fix for #640.
-		return nil, fmt.Errorf("https: unsupported keysize")
-	}
-	client, err := acme.NewClient(CAUrl, &leUser, kt)
+	client, err := acme.NewClient(CAUrl, &leUser, KeyType)
 	if err != nil {
 		return nil, err
 	}

@@ -401,21 +401,10 @@ var (
 // default port for the challenge must be forwarded to this one.
 const AlternatePort = "5033"
 
-// KeySize represents the length of a key in bits.
-type KeySize int
-
-// Key sizes are used to determine the strength of a key.
-const (
-	Ecc224  KeySize = 224
-	Ecc256          = 256
-	Rsa2048         = 2048
-	Rsa4096         = 4096
-)
-
-// rsaKeySizeToUse is the size to use for new RSA keys.
+// KeyType is the type to use for new keys.
 // This shouldn't need to change except for in tests;
 // the size can be drastically reduced for speed.
-var rsaKeySizeToUse = Rsa2048
+var KeyType = acme.EC384
 
 // stopChan is used to signal the maintenance goroutine
 // to terminate.
