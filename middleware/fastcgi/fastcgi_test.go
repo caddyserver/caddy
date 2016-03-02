@@ -10,49 +10,44 @@ import (
 	"testing"
 )
 
-func TestServeHTTPContentLength(t *testing.T) {
-	testWithBackend := func(body string, setContentLength bool) {
-		bodyLenStr := strconv.Itoa(len(body))
-		listener, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			t.Fatalf("BackendSetsContentLength=%v: Unable to create listener for test: %v", setContentLength, err)
-		}
-		defer listener.Close()
-		go fcgi.Serve(listener, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if setContentLength {
-				w.Header().Set("Content-Length", bodyLenStr)
-			}
-			w.Write([]byte(body))
-		}))
+func TestServeHTTP(t *testing.T) {
+	body := "This is some test body content"
 
-		handler := Handler{
-			Next:  nil,
-			Rules: []Rule{{Path: "/", Address: listener.Addr().String()}},
-		}
-		r, err := http.NewRequest("GET", "/", nil)
-		if err != nil {
-			t.Fatalf("BackendSetsContentLength=%v: Unable to create request: %v", setContentLength, err)
-		}
-		w := httptest.NewRecorder()
-
-		status, err := handler.ServeHTTP(w, r)
-
-		if got, want := status, http.StatusOK; got != want {
-			t.Errorf("BackendSetsContentLength=%v: Expected returned status code to be %d, got %d", setContentLength, want, got)
-		}
-		if err != nil {
-			t.Errorf("BackendSetsContentLength=%v: Expected nil error, got: %v", setContentLength, err)
-		}
-		if got, want := w.Header().Get("Content-Length"), bodyLenStr; got != want {
-			t.Errorf("BackendSetsContentLength=%v: Expected Content-Length to be '%s', got: '%s'", setContentLength, want, got)
-		}
-		if got, want := w.Body.String(), body; got != want {
-			t.Errorf("BackendSetsContentLength=%v: Expected response body to be '%s', got: '%s'", setContentLength, want, got)
-		}
+	bodyLenStr := strconv.Itoa(len(body))
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Unable to create listener for test: %v", err)
 	}
+	defer listener.Close()
+	go fcgi.Serve(listener, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", bodyLenStr)
+		w.Write([]byte(body))
+	}))
 
-	testWithBackend("Backend does NOT set Content-Length", false)
-	testWithBackend("Backend sets Content-Length", true)
+	handler := Handler{
+		Next:  nil,
+		Rules: []Rule{{Path: "/", Address: listener.Addr().String()}},
+	}
+	r, err := http.NewRequest("GET", "/", nil)
+	if err != nil {
+		t.Fatalf("Unable to create request: %v", err)
+	}
+	w := httptest.NewRecorder()
+
+	status, err := handler.ServeHTTP(w, r)
+
+	if got, want := status, 0; got != want {
+		t.Errorf("Expected returned status code to be %d, got %d", want, got)
+	}
+	if err != nil {
+		t.Errorf("Expected nil error, got: %v", err)
+	}
+	if got, want := w.Header().Get("Content-Length"), bodyLenStr; got != want {
+		t.Errorf("Expected Content-Length to be '%s', got: '%s'", want, got)
+	}
+	if got, want := w.Body.String(), body; got != want {
+		t.Errorf("Expected response body to be '%s', got: '%s'", want, got)
+	}
 }
 
 func TestRuleParseAddress(t *testing.T) {

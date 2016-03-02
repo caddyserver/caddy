@@ -80,13 +80,6 @@ func TestErrors(t *testing.T) {
 			expectedErr:  nil,
 		},
 		{
-			next:         genErrorHandler(http.StatusNotFound, nil, "normal"),
-			expectedCode: 0,
-			expectedBody: "normal",
-			expectedLog:  "",
-			expectedErr:  nil,
-		},
-		{
 			next:         genErrorHandler(http.StatusForbidden, nil, ""),
 			expectedCode: 0,
 			expectedBody: fmt.Sprintf("%d %s\n", http.StatusForbidden,
@@ -168,8 +161,8 @@ func genErrorHandler(status int, err error, body string) middleware.Handler {
 	return middleware.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
 		if len(body) > 0 {
 			w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+			fmt.Fprint(w, body)
 		}
-		fmt.Fprint(w, body)
 		return status, err
 	})
 }

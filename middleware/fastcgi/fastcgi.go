@@ -4,7 +4,6 @@
 package fastcgi
 
 import (
-	"bytes"
 	"errors"
 	"io"
 	"net/http"
@@ -106,43 +105,28 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 				return http.StatusBadGateway, err
 			}
 
-			var responseBody io.Reader = resp.Body
-			if resp.Header.Get("Content-Length") == "" {
-				// If the upstream app didn't set a Content-Length (shame on them),
-				// we need to do it to prevent error messages being appended to
-				// an already-written response, and other problematic behavior.
-				// So we copy it to a buffer and read its size before flushing
-				// the response out to the client. See issues #567 and #614.
-				buf := new(bytes.Buffer)
-				_, err := io.Copy(buf, resp.Body)
-				if err != nil {
-					return http.StatusBadGateway, err
-				}
-				w.Header().Set("Content-Length", strconv.Itoa(buf.Len()))
-				responseBody = buf
-			}
-
-			// Write the status code and header fields
+			// Write response header
 			writeHeader(w, resp)
 
 			// Write the response body
-			_, err = io.Copy(w, responseBody)
+			_, err = io.Copy(w, resp.Body)
 			if err != nil {
 				return http.StatusBadGateway, err
 			}
 
-			// FastCGI stderr outputs
+			// Log any stderr output from upstream
 			if fcgiBackend.stderr.Len() != 0 {
 				// Remove trailing newline, error logger already does this.
 				err = LogError(strings.TrimSuffix(fcgiBackend.stderr.String(), "\n"))
 			}
 
-			// Normally we should only return a status >= 400 if no response
-			// body is written yet, however, upstream apps don't know about
-			// this contract and we still want the correct code logged, so error
-			// handling code in our stack needs to check Content-Length before
-			// writing an error message... oh well.
-			return resp.StatusCode, err
+			// Normally we would return the status code if it is an error status (>= 400),
+			// however, upstream FastCGI apps don't know about our contract and have
+			// probably already written an error page. So we just return 0, indicating
+			// that the response body is already written. However, we do return any
+			// error value so it can be logged.
+			// Note that the proxy middleware works the same way, returning status=0.
+			return 0, err
 		}
 	}
 

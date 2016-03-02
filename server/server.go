@@ -319,7 +319,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		status, _ := vh.stack.ServeHTTP(w, r)
 
 		// Fallback error response in case error handling wasn't chained in
-		if status >= 400 && w.Header().Get("Content-Length") == "" {
+		if status >= 400 {
 			DefaultErrorFunc(w, r, status)
 		}
 	} else {

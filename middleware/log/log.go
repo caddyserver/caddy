@@ -26,7 +26,7 @@ func (l Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 				// The error must be handled here so the log entry will record the response size.
 				if l.ErrorFunc != nil {
 					l.ErrorFunc(responseRecorder, r, status)
-				} else if responseRecorder.Header().Get("Content-Length") == "" { // ensure no body written since proxy backends may write an error page
+				} else {
 					// Default failover error handler
 					responseRecorder.WriteHeader(status)
 					fmt.Fprintf(responseRecorder, "%d %s", status, http.StatusText(status))
