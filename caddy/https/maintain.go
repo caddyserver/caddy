@@ -89,8 +89,13 @@ func renewManagedCertificates(allowPrompts bool) (err error) {
 
 			err := client.Renew(cert.Names[0]) // managed certs better have only one name
 			if err != nil {
-				if client.AllowPrompts {
-					// User is present, so stop immediately and report the error
+				if client.AllowPrompts && timeLeft < 0 {
+					// Certificate renewal failed, the operator is present, and the certificate
+					// is already expired; we should stop immediately and return the error. Note
+					// that we used to do this any time a renewal failed at startup. However,
+					// after discussion in https://github.com/mholt/caddy/issues/642 we decided to
+					// only stop startup if the certificate is expired. We still log the error
+					// otherwise.
 					certCacheMu.RUnlock()
 					return err
 				}
