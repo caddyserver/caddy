@@ -104,7 +104,7 @@ func saveUser(user User) error {
 // instead. It does NOT prompt the user.
 func newUser(email string) (User, error) {
 	user := User{Email: email}
-	privateKey, err := rsa.GenerateKey(rand.Reader, rsaKeySizeToUse)
+	privateKey, err := rsa.GenerateKey(rand.Reader, KeySize)
 	if err != nil {
 		return user, errors.New("error generating private key: " + err.Error())
 	}
