@@ -3,8 +3,9 @@ package https
 import (
 	"bufio"
 	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/rsa"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,7 +22,7 @@ import (
 type User struct {
 	Email        string
 	Registration *acme.RegistrationResource
-	key          *rsa.PrivateKey
+	key          crypto.PrivateKey
 }
 
 // GetEmail gets u's email.
@@ -64,7 +65,7 @@ func getUser(email string) (User, error) {
 	}
 
 	// load their private key
-	user.key, err = loadRSAPrivateKey(storage.UserKeyFile(email))
+	user.key, err = loadPrivateKey(storage.UserKeyFile(email))
 	if err != nil {
 		return user, err
 	}
@@ -83,7 +84,7 @@ func saveUser(user User) error {
 	}
 
 	// save private key file
-	err = saveRSAPrivateKey(user.key, storage.UserKeyFile(user.Email))
+	err = savePrivateKey(user.key, storage.UserKeyFile(user.Email))
 	if err != nil {
 		return err
 	}
@@ -104,7 +105,7 @@ func saveUser(user User) error {
 // instead. It does NOT prompt the user.
 func newUser(email string) (User, error) {
 	user := User{Email: email}
-	privateKey, err := rsa.GenerateKey(rand.Reader, rsaKeySizeToUse)
+	privateKey, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
 	if err != nil {
 		return user, errors.New("error generating private key: " + err.Error())
 	}

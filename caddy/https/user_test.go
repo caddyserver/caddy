@@ -114,7 +114,7 @@ func TestGetUserAlreadyExists(t *testing.T) {
 	}
 
 	// Assert keys are the same
-	if !rsaPrivateKeysSame(user.key, user2.key) {
+	if !PrivateKeysSame(user.key, user2.key) {
 		t.Error("Expected private key to be the same after loading, but it wasn't")
 	}
 
