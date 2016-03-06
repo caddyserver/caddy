@@ -8,7 +8,7 @@
 #
 # Add the following lines to /etc/rc.conf to enable caddy:
 # caddy_enable (bool):        Set to "NO" by default.
-#                             Set it to "YES" to enable apache24
+#                             Set it to "YES" to enable caddy
 #
 # caddy_cert_email (str):     Set to "" by default.
 #                             Defines the SSL certificate issuer email. By providing an
