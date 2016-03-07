@@ -8,11 +8,13 @@ import (
 	"errors"
 	"io/ioutil"
 	"log"
+	"net"
 	"os"
 	"os/exec"
 	"path"
+	"sync/atomic"
 
-	"github.com/mholt/caddy/caddy/letsencrypt"
+	"github.com/mholt/caddy/caddy/https"
 )
 
 func init() {
@@ -55,8 +57,9 @@ func Restart(newCaddyfile Input) error {
 
 	// Prepare our payload to the child process
 	cdyfileGob := caddyfileGob{
-		ListenerFds: make(map[string]uintptr),
-		Caddyfile:   newCaddyfile,
+		ListenerFds:            make(map[string]uintptr),
+		Caddyfile:              newCaddyfile,
+		OnDemandTLSCertsIssued: atomic.LoadInt32(https.OnDemandIssuedCount),
 	}
 
 	// Prepare a pipe to the fork's stdin so it can get the Caddyfile
@@ -133,13 +136,28 @@ func getCertsForNewCaddyfile(newCaddyfile Input) error {
 	}
 
 	// first mark the configs that are qualified for managed TLS
-	letsencrypt.MarkQualified(configs)
+	https.MarkQualified(configs)
 
-	// we must make sure port is set before we group by bind address
-	letsencrypt.EnableTLS(configs)
+	// since we group by bind address to obtain certs, we must call
+	// EnableTLS to make sure the port is set properly first
+	// (can ignore error since we aren't actually using the certs)
+	https.EnableTLS(configs, false)
+
+	// find out if we can let the acme package start its own challenge listener
+	// on port 80
+	var proxyACME bool
+	serversMu.Lock()
+	for _, s := range servers {
+		_, port, _ := net.SplitHostPort(s.Addr)
+		if port == "80" {
+			proxyACME = true
+			break
+		}
+	}
+	serversMu.Unlock()
 
 	// place certs on the disk
-	err = letsencrypt.ObtainCerts(configs, letsencrypt.AlternatePort)
+	err = https.ObtainCerts(configs, false, proxyACME)
 	if err != nil {
 		return errors.New("obtaining certs: " + err.Error())
 	}

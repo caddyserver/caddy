@@ -80,8 +80,8 @@ func rewriteParse(c *Controller) ([]rewrite.Rule, error) {
 						return nil, c.ArgErr()
 					}
 					status, _ = strconv.Atoi(c.Val())
-					if status < 400 || status > 499 {
-						return nil, c.Err("status must be 4xx")
+					if status < 200 || (status > 299 && status < 400) || status > 499 {
+						return nil, c.Err("status must be 2xx or 4xx")
 					}
 				default:
 					return nil, c.ArgErr()

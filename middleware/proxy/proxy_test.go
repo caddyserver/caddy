@@ -3,6 +3,7 @@ package proxy
 import (
 	"bufio"
 	"bytes"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
@@ -11,6 +12,8 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -155,6 +158,69 @@ func TestWebSocketReverseProxyFromWSClient(t *testing.T) {
 	// It should be echoed back to us
 	var actualMsg string
 	websocket.Message.Receive(ws, &actualMsg)
+	if actualMsg != trialMsg {
+		t.Errorf("Expected '%s' but got '%s' instead", trialMsg, actualMsg)
+	}
+}
+
+func TestUnixSocketProxy(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		return
+	}
+
+	trialMsg := "Is it working?"
+
+	var proxySuccess bool
+
+	// This is our fake "application" we want to proxy to
+	ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Request was proxied when this is called
+		proxySuccess = true
+
+		fmt.Fprint(w, trialMsg)
+	}))
+
+	// Get absolute path for unix: socket
+	socketPath, err := filepath.Abs("./test_socket")
+	if err != nil {
+		t.Fatalf("Unable to get absolute path: %v", err)
+	}
+
+	// Change httptest.Server listener to listen to unix: socket
+	ln, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatalf("Unable to listen: %v", err)
+	}
+	ts.Listener = ln
+
+	ts.Start()
+	defer ts.Close()
+
+	url := strings.Replace(ts.URL, "http://", "unix:", 1)
+	p := newWebSocketTestProxy(url)
+
+	echoProxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p.ServeHTTP(w, r)
+	}))
+	defer echoProxy.Close()
+
+	res, err := http.Get(echoProxy.URL)
+	if err != nil {
+		t.Fatalf("Unable to GET: %v", err)
+	}
+
+	greeting, err := ioutil.ReadAll(res.Body)
+	res.Body.Close()
+	if err != nil {
+		t.Fatalf("Unable to GET: %v", err)
+	}
+
+	actualMsg := fmt.Sprintf("%s", greeting)
+
+	if !proxySuccess {
+		t.Errorf("Expected request to be proxied, but it wasn't")
+	}
+
 	if actualMsg != trialMsg {
 		t.Errorf("Expected '%s' but got '%s' instead", trialMsg, actualMsg)
 	}

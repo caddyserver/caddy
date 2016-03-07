@@ -34,6 +34,7 @@ func (h ErrorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, er
 
 		if h.Debug {
 			// Write error to response instead of to log
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			w.WriteHeader(status)
 			fmt.Fprintln(w, errMsg)
 			return 0, err // returning < 400 signals that a response has been written
@@ -124,6 +125,7 @@ func (h ErrorHandler) recovery(w http.ResponseWriter, r *http.Request) {
 		// Write error and stack trace to the response rather than to a log
 		var stackBuf [4096]byte
 		stack := stackBuf[:runtime.Stack(stackBuf[:], false)]
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusInternalServerError)
 		fmt.Fprintf(w, "%s\n\n%s", panicMsg, stack)
 	} else {

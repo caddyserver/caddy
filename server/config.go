@@ -26,8 +26,8 @@ type Config struct {
 	// HTTPS configuration
 	TLS TLSConfig
 
-	// Middleware stack; map of path scope to middleware -- TODO: Support path scope?
-	Middleware map[string][]middleware.Middleware
+	// Middleware stack
+	Middleware []middleware.Middleware
 
 	// Startup is a list of functions (or methods) to execute at
 	// server startup and restart; these are executed before any
@@ -65,13 +65,11 @@ func (c Config) Address() string {
 
 // TLSConfig describes how TLS should be configured and used.
 type TLSConfig struct {
-	Enabled          bool
-	Certificate      string
-	Key              string
-	LetsEncryptEmail string
-	Managed          bool // will be set to true if config qualifies for automatic, managed TLS
-	//DisableHTTPRedir         bool // TODO: not a good idea - should we really allow it?
-	OCSPStaple               []byte
+	Enabled                  bool // will be set to true if TLS is enabled
+	LetsEncryptEmail         string
+	Manual                   bool // will be set to true if user provides own certs and keys
+	Managed                  bool // will be set to true if config qualifies for implicit automatic/managed HTTPS
+	OnDemand                 bool // will be set to true if user enables on-demand TLS (obtain certs during handshakes)
 	Ciphers                  []uint16
 	ProtocolMinVersion       uint16
 	ProtocolMaxVersion       uint16

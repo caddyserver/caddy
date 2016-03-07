@@ -1,9 +1,11 @@
-package letsencrypt
+package https
 
 import (
 	"bufio"
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/rsa"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,7 +22,7 @@ import (
 type User struct {
 	Email        string
 	Registration *acme.RegistrationResource
-	key          *rsa.PrivateKey
+	key          crypto.PrivateKey
 }
 
 // GetEmail gets u's email.
@@ -34,14 +36,14 @@ func (u User) GetRegistration() *acme.RegistrationResource {
 }
 
 // GetPrivateKey gets u's private key.
-func (u User) GetPrivateKey() *rsa.PrivateKey {
+func (u User) GetPrivateKey() crypto.PrivateKey {
 	return u.key
 }
 
 // getUser loads the user with the given email from disk.
 // If the user does not exist, it will create a new one,
 // but it does NOT save new users to the disk or register
-// them via ACME.
+// them via ACME. It does NOT prompt the user.
 func getUser(email string) (User, error) {
 	var user User
 
@@ -63,7 +65,7 @@ func getUser(email string) (User, error) {
 	}
 
 	// load their private key
-	user.key, err = loadRSAPrivateKey(storage.UserKeyFile(email))
+	user.key, err = loadPrivateKey(storage.UserKeyFile(email))
 	if err != nil {
 		return user, err
 	}
@@ -72,7 +74,8 @@ func getUser(email string) (User, error) {
 }
 
 // saveUser persists a user's key and account registration
-// to the file system. It does NOT register the user via ACME.
+// to the file system. It does NOT register the user via ACME
+// or prompt the user.
 func saveUser(user User) error {
 	// make user account folder
 	err := os.MkdirAll(storage.User(user.Email), 0700)
@@ -81,7 +84,7 @@ func saveUser(user User) error {
 	}
 
 	// save private key file
-	err = saveRSAPrivateKey(user.key, storage.UserKeyFile(user.Email))
+	err = savePrivateKey(user.key, storage.UserKeyFile(user.Email))
 	if err != nil {
 		return err
 	}
@@ -99,10 +102,10 @@ func saveUser(user User) error {
 // with a new private key. This function does NOT save the
 // user to disk or register it via ACME. If you want to use
 // a user account that might already exist, call getUser
-// instead.
+// instead. It does NOT prompt the user.
 func newUser(email string) (User, error) {
 	user := User{Email: email}
-	privateKey, err := rsa.GenerateKey(rand.Reader, rsaKeySizeToUse)
+	privateKey, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
 	if err != nil {
 		return user, errors.New("error generating private key: " + err.Error())
 	}
@@ -114,10 +117,10 @@ func newUser(email string) (User, error) {
 // address from the user to use for TLS for cfg. If it
 // cannot get an email address, it returns empty string.
 // (It will warn the user of the consequences of an
-// empty email.) If skipPrompt is true, the user will
-// NOT be prompted and an empty email will be returned
-// instead.
-func getEmail(cfg server.Config, skipPrompt bool) string {
+// empty email.) This function MAY prompt the user for
+// input. If userPresent is false, the operator will
+// NOT be prompted and an empty email may be returned.
+func getEmail(cfg server.Config, userPresent bool) string {
 	// First try the tls directive from the Caddyfile
 	leEmail := cfg.TLS.LetsEncryptEmail
 	if leEmail == "" {
@@ -135,11 +138,12 @@ func getEmail(cfg server.Config, skipPrompt bool) string {
 				}
 				if mostRecent == nil || dir.ModTime().After(mostRecent.ModTime()) {
 					leEmail = dir.Name()
+					DefaultEmail = leEmail // save for next time
 				}
 			}
 		}
 	}
-	if leEmail == "" && !skipPrompt {
+	if leEmail == "" && userPresent {
 		// Alas, we must bother the user and ask for an email address;
 		// if they proceed they also agree to the SA.
 		reader := bufio.NewReader(stdin)
@@ -154,10 +158,11 @@ func getEmail(cfg server.Config, skipPrompt bool) string {
 		if err != nil {
 			return ""
 		}
+		leEmail = strings.TrimSpace(leEmail)
 		DefaultEmail = leEmail
 		Agreed = true
 	}
-	return strings.TrimSpace(leEmail)
+	return leEmail
 }
 
 // promptUserAgreement prompts the user to agree to the agreement

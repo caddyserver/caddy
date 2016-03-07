@@ -33,6 +33,18 @@ func TestMarkdown(t *testing.T) {
 				StaticFiles: make(map[string]string),
 			},
 			{
+				Renderer:   blackfriday.HtmlRenderer(0, "", ""),
+				PathScope:  "/docflags",
+				Extensions: []string{".md"},
+				Styles:     []string{},
+				Scripts:    []string{},
+				Templates: map[string]string{
+					DefaultTemplate: "testdata/docflags/template.txt",
+				},
+				StaticDir:   DefaultStaticDir,
+				StaticFiles: make(map[string]string),
+			},
+			{
 				Renderer:    blackfriday.HtmlRenderer(0, "", ""),
 				PathScope:   "/log",
 				Extensions:  []string{".md"},
@@ -114,6 +126,26 @@ Welcome to A Caddy website!
 		t.Fatalf("Expected body: %v got: %v", expectedBody, respBody)
 	}
 
+	req, err = http.NewRequest("GET", "/docflags/test.md", nil)
+	if err != nil {
+		t.Fatalf("Could not create HTTP request: %v", err)
+	}
+	rec = httptest.NewRecorder()
+
+	md.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Wrong status, expected: %d and got %d", http.StatusOK, rec.Code)
+	}
+	respBody = rec.Body.String()
+	expectedBody = `Doc.var_string hello
+Doc.var_bool <no value>
+DocFlags.var_string <no value>
+DocFlags.var_bool true`
+
+	if !equalStrings(respBody, expectedBody) {
+		t.Fatalf("Expected body: %v got: %v", expectedBody, respBody)
+	}
+
 	req, err = http.NewRequest("GET", "/log/test.md", nil)
 	if err != nil {
 		t.Fatalf("Could not create HTTP request: %v", err)
@@ -190,6 +222,7 @@ Welcome to title!
 
 	expectedLinks := []string{
 		"/blog/test.md",
+		"/docflags/test.md",
 		"/log/test.md",
 	}
 

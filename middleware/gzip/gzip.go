@@ -3,10 +3,12 @@
 package gzip
 
 import (
+	"bufio"
 	"compress/gzip"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"strings"
 
@@ -129,4 +131,13 @@ func (w *gzipResponseWriter) Write(b []byte) (int, error) {
 	}
 	n, err := w.Writer.Write(b)
 	return n, err
+}
+
+// Hijack implements http.Hijacker. It simply wraps the underlying
+// ResponseWriter's Hijack method if there is one, or returns an error.
+func (w *gzipResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if hj, ok := w.ResponseWriter.(http.Hijacker); ok {
+		return hj.Hijack()
+	}
+	return nil, nil, fmt.Errorf("not a Hijacker")
 }

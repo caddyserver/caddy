@@ -18,11 +18,15 @@ var TOML = [5]string{`
 title = "A title"
 template = "default"
 name = "value"
+positive = true
+negative = false
 `,
 	`+++
 title = "A title"
 template = "default"
 name = "value"
+positive = true
+negative = false
 +++
 Page content
 	`,
@@ -30,12 +34,16 @@ Page content
 title = "A title"
 template = "default"
 name = "value"
+positive = true
+negative = false
 	`,
 	`title = "A title" template = "default" [variables] name = "value"`,
 	`+++
 title = "A title"
 template = "default"
 name = "value"
+positive = true
+negative = false
 +++
 `,
 }
@@ -44,11 +52,15 @@ var YAML = [5]string{`
 title : A title
 template : default
 name : value
+positive : true
+negative : false
 `,
 	`---
 title : A title
 template : default
 name : value
+positive : true
+negative : false
 ---
 	Page content
 	`,
@@ -57,11 +69,13 @@ title : A title
 template : default
 name : value
 	`,
-	`title : A title template : default variables : name : value`,
+	`title : A title template : default variables : name : value : positive : true : negative : false`,
 	`---
 title : A title
 template : default
 name : value
+positive : true
+negative : false
 ---
 `,
 }
@@ -69,12 +83,16 @@ name : value
 var JSON = [5]string{`
 	"title" : "A title",
 	"template" : "default",
-	"name" : "value"
+	"name" : "value",
+	"positive" : true,
+	"negative" : false
 `,
 	`{
 	"title" : "A title",
 	"template" : "default",
-	"name" : "value"
+	"name" : "value",
+	"positive" : true,
+	"negative" : false
 }
 Page content
 	`,
@@ -82,19 +100,25 @@ Page content
 {
 	"title" : "A title",
 	"template" : "default",
-	"name" : "value"
+	"name" : "value",
+	"positive" : true,
+	"negative" : false
 	`,
 	`
 {
 	"title" :: "A title",
 	"template" : "default",
-	"name" : "value"
+	"name" : "value",
+	"positive" : true,
+	"negative" : false
 }
 	`,
 	`{
 	"title" : "A title",
 	"template" : "default",
-	"name" : "value"
+	"name" : "value",
+	"positive" : true,
+	"negative" : false
 }
 `,
 }
@@ -107,6 +131,10 @@ func TestParsers(t *testing.T) {
 			"name":     "value",
 			"title":    "A title",
 			"template": "default",
+		},
+		Flags: map[string]bool{
+			"positive": true,
+			"negative": false,
 		},
 	}
 	compare := func(m Metadata) bool {
@@ -121,7 +149,14 @@ func TestParsers(t *testing.T) {
 				return false
 			}
 		}
-		return len(m.Variables) == len(expected.Variables)
+		for k, v := range m.Flags {
+			if v != expected.Flags[k] {
+				return false
+			}
+		}
+		varLenOK := len(m.Variables) == len(expected.Variables)
+		flagLenOK := len(m.Flags) == len(expected.Flags)
+		return varLenOK && flagLenOK
 	}
 
 	data := []struct {
@@ -129,9 +164,9 @@ func TestParsers(t *testing.T) {
 		testData [5]string
 		name     string
 	}{
-		{&JSONMetadataParser{metadata: Metadata{Variables: make(map[string]string)}}, JSON, "json"},
-		{&YAMLMetadataParser{metadata: Metadata{Variables: make(map[string]string)}}, YAML, "yaml"},
-		{&TOMLMetadataParser{metadata: Metadata{Variables: make(map[string]string)}}, TOML, "toml"},
+		{&JSONMetadataParser{metadata: newMetadata()}, JSON, "json"},
+		{&YAMLMetadataParser{metadata: newMetadata()}, YAML, "yaml"},
+		{&TOMLMetadataParser{metadata: newMetadata()}, TOML, "toml"},
 	}
 
 	for _, v := range data {
@@ -207,9 +242,9 @@ Mycket olika byggnader har man i de nordiska rikena: pyramidformiga, kilformiga,
 		testData string
 		name     string
 	}{
-		{&JSONMetadataParser{metadata: Metadata{Variables: make(map[string]string)}}, JSON, "json"},
-		{&YAMLMetadataParser{metadata: Metadata{Variables: make(map[string]string)}}, YAML, "yaml"},
-		{&TOMLMetadataParser{metadata: Metadata{Variables: make(map[string]string)}}, TOML, "toml"},
+		{&JSONMetadataParser{metadata: newMetadata()}, JSON, "json"},
+		{&YAMLMetadataParser{metadata: newMetadata()}, YAML, "yaml"},
+		{&TOMLMetadataParser{metadata: newMetadata()}, TOML, "toml"},
 	}
 	for _, v := range data {
 		// metadata without identifiers

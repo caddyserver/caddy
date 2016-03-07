@@ -1,5 +1,23 @@
 CHANGES
 
+0.8.2 (February 25, 2016)
+- On-demand TLS can obtain certificates during handshakes
+- Built with Go 1.6
+- Process log (-log) is rotated when it gets large
+- Managed certificates get renewed 30 days early instead of just 14
+- fastcgi: Allow scheme prefix before address
+- markdown: Support for definition lists
+- proxy: Allow proxy to insecure HTTPS backends
+- proxy: Support proxy to unix socket
+- rewrite: Status code can be 2xx or 4xx
+- templates: New .Markdown action to interpret included file as Markdown
+- templates: .Truncate now truncates from end of string when length is negative
+- tls: Set hard limit for certificates obtained with on-demand TLS
+- tls: Load certificates from directory
+- tls: Add SHA384 cipher suites
+- Multiple bug fixes and internal changes
+
+
 0.8.1 (January 12, 2016)
 - Improved OCSP stapling
 - Better graceful reload when new hosts need certificates from Let's Encrypt
@@ -13,6 +31,7 @@ CHANGES
 - tls: Allow custom configuration without specifying certificate and key
 - tls: No longer allow HTTPS over port 80
 - Dozens of bug fixes, improvements, and more tests across the board
+
 
 0.8.0 (December 4, 2015)
 - HTTPS by default via Let's Encrypt (certs & keys are fully managed)

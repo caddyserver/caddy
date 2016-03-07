@@ -9,6 +9,8 @@ import (
 	"strings"
 	"text/template"
 	"time"
+
+	"github.com/russross/blackfriday"
 )
 
 // This file contains the context and functions available for
@@ -130,10 +132,16 @@ func (c Context) PathMatches(pattern string) bool {
 	return Path(c.Req.URL.Path).Matches(pattern)
 }
 
-// Truncate truncates the input string to the given length. If
-// input is shorter than length, the entire string is returned.
+// Truncate truncates the input string to the given length.
+// If length is negative, it returns that many characters
+// starting from the end of the string. If the absolute value
+// of length is greater than len(input), the whole input is
+// returned.
 func (c Context) Truncate(input string, length int) string {
-	if len(input) > length {
+	if length < 0 && len(input)+length > 0 {
+		return input[len(input)+length:]
+	}
+	if length >= 0 && len(input) > length {
 		return input[:length]
 	}
 	return input
@@ -189,4 +197,18 @@ func (c Context) StripExt(path string) string {
 // Replace replaces instances of find in input with replacement.
 func (c Context) Replace(input, find, replacement string) string {
 	return strings.Replace(input, find, replacement, -1)
+}
+
+// Markdown returns the HTML contents of the markdown contained in filename
+// (relative to the site root).
+func (c Context) Markdown(filename string) (string, error) {
+	body, err := c.Include(filename)
+	if err != nil {
+		return "", err
+	}
+	renderer := blackfriday.HtmlRenderer(0, "", "")
+	extns := blackfriday.EXTENSION_TABLES | blackfriday.EXTENSION_FENCED_CODE | blackfriday.EXTENSION_STRIKETHROUGH | blackfriday.EXTENSION_DEFINITION_LISTS
+	markdown := blackfriday.Markdown([]byte(body), renderer, extns)
+
+	return string(markdown), nil
 }

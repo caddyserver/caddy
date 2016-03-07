@@ -13,30 +13,24 @@ type (
 	// passed the next Handler in the chain.
 	Middleware func(Handler) Handler
 
-	// Handler is like http.Handler except ServeHTTP returns a status code
-	// and an error. The status code is for the client's benefit; the error
-	// value is for the server's benefit. The status code will be sent to
-	// the client while the error value will be logged privately. Sometimes,
-	// an error status code (4xx or 5xx) may be returned with a nil error
-	// when there is no reason to log the error on the server.
+	// Handler is like http.Handler except ServeHTTP may return a status
+	// code and/or error.
 	//
-	// If a HandlerFunc returns an error (status >= 400), it should NOT
-	// write to the response. This philosophy makes middleware.Handler
-	// different from http.Handler: error handling should happen at the
-	// application layer or in dedicated error-handling middleware only
-	// rather than with an "every middleware for itself" paradigm.
+	// If ServeHTTP writes to the response body, it should return a status
+	// code of 0. This signals to other handlers above it that the response
+	// body is already written, and that they should not write to it also.
 	//
-	// The application or error-handling middleware should incorporate logic
-	// to ensure that the client always gets a proper response according to
-	// the status code. For security reasons, it should probably not reveal
-	// the actual error message. (Instead it should be logged, for example.)
+	// If ServeHTTP encounters an error, it should return the error value
+	// so it can be logged by designated error-handling middleware.
 	//
-	// Handlers which do write to the response should return a status value
-	// < 400 as a signal that a response has been written. In other words,
-	// only error-handling middleware or the application will write to the
-	// response for a status code >= 400. When ANY handler writes to the
-	// response, it should return a status code < 400 to signal others to
-	// NOT write to the response again, which would be erroneous.
+	// If writing a response after calling another ServeHTTP method, the
+	// returned status code SHOULD be used when writing the response.
+	//
+	// If handling errors after calling another ServeHTTP method, the
+	// returned error value SHOULD be logged or handled accordingly.
+	//
+	// Otherwise, return values should be propagated down the middleware
+	// chain by returning them unchanged.
 	Handler interface {
 		ServeHTTP(http.ResponseWriter, *http.Request) (int, error)
 	}
@@ -102,7 +96,8 @@ func SetLastModifiedHeader(w http.ResponseWriter, modTime time.Time) {
 	w.Header().Set("Last-Modified", modTime.UTC().Format(http.TimeFormat))
 }
 
-// currentTime returns time.Now() everytime it's called. It's used for mocking in tests.
+// currentTime, as it is defined here, returns time.Now().
+// It's defined as a variable for mocking time in tests.
 var currentTime = func() time.Time {
 	return time.Now()
 }

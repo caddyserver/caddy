@@ -1,4 +1,4 @@
-package letsencrypt
+package https
 
 import (
 	"io/ioutil"
@@ -46,10 +46,11 @@ func TestConfigQualifies(t *testing.T) {
 		cfg    server.Config
 		expect bool
 	}{
+		{server.Config{Host: ""}, false},
 		{server.Config{Host: "localhost"}, false},
+		{server.Config{Host: "123.44.3.21"}, false},
 		{server.Config{Host: "example.com"}, true},
-		{server.Config{Host: "example.com", TLS: server.TLSConfig{Certificate: "cert.pem"}}, false},
-		{server.Config{Host: "example.com", TLS: server.TLSConfig{Key: "key.pem"}}, false},
+		{server.Config{Host: "example.com", TLS: server.TLSConfig{Manual: true}}, false},
 		{server.Config{Host: "example.com", TLS: server.TLSConfig{LetsEncryptEmail: "off"}}, false},
 		{server.Config{Host: "example.com", TLS: server.TLSConfig{LetsEncryptEmail: "foo@bar.com"}}, true},
 		{server.Config{Host: "example.com", Scheme: "http"}, false},
@@ -86,11 +87,11 @@ func TestRedirPlaintextHost(t *testing.T) {
 	}
 
 	// Make sure redirect handler is set up properly
-	if cfg.Middleware == nil || len(cfg.Middleware["/"]) != 1 {
+	if cfg.Middleware == nil || len(cfg.Middleware) != 1 {
 		t.Fatalf("Redir config middleware not set up properly; got: %#v", cfg.Middleware)
 	}
 
-	handler, ok := cfg.Middleware["/"][0](nil).(redirect.Redirect)
+	handler, ok := cfg.Middleware[0](nil).(redirect.Redirect)
 	if !ok {
 		t.Fatalf("Expected a redirect.Redirect middleware, but got: %#v", handler)
 	}
@@ -105,18 +106,18 @@ func TestRedirPlaintextHost(t *testing.T) {
 	if actual, expected := handler.Rules[0].FromPath, "/"; actual != expected {
 		t.Errorf("Expected redirect rule to be for path '%s' but is actually for '%s'", expected, actual)
 	}
-	if actual, expected := handler.Rules[0].To, "https://example.com:1234{uri}"; actual != expected {
+	if actual, expected := handler.Rules[0].To, "https://{host}:1234{uri}"; actual != expected {
 		t.Errorf("Expected redirect rule to be to URL '%s' but is actually to '%s'", expected, actual)
 	}
 	if actual, expected := handler.Rules[0].Code, http.StatusMovedPermanently; actual != expected {
 		t.Errorf("Expected redirect rule to have code %d but was %d", expected, actual)
 	}
 
-	// browsers can interpret default ports with scheme, so make sure the port
-	// doesn't get added in explicitly for default ports.
+	// browsers can infer a default port from scheme, so make sure the port
+	// doesn't get added in explicitly for default ports like 443 for https.
 	cfg = redirPlaintextHost(server.Config{Host: "example.com", Port: "443"})
-	handler, ok = cfg.Middleware["/"][0](nil).(redirect.Redirect)
-	if actual, expected := handler.Rules[0].To, "https://example.com{uri}"; actual != expected {
+	handler, ok = cfg.Middleware[0](nil).(redirect.Redirect)
+	if actual, expected := handler.Rules[0].To, "https://{host}{uri}"; actual != expected {
 		t.Errorf("(Default Port) Expected redirect rule to be to URL '%s' but is actually to '%s'", expected, actual)
 	}
 }
@@ -208,9 +209,9 @@ func TestExistingCertAndKey(t *testing.T) {
 
 func TestHostHasOtherPort(t *testing.T) {
 	configs := []server.Config{
-		server.Config{Host: "example.com", Port: "80"},
-		server.Config{Host: "sub1.example.com", Port: "80"},
-		server.Config{Host: "sub1.example.com", Port: "443"},
+		{Host: "example.com", Port: "80"},
+		{Host: "sub1.example.com", Port: "80"},
+		{Host: "sub1.example.com", Port: "443"},
 	}
 
 	if hostHasOtherPort(configs, 0, "80") {
@@ -227,18 +228,18 @@ func TestHostHasOtherPort(t *testing.T) {
 func TestMakePlaintextRedirects(t *testing.T) {
 	configs := []server.Config{
 		// Happy path = standard redirect from 80 to 443
-		server.Config{Host: "example.com", TLS: server.TLSConfig{Managed: true}},
+		{Host: "example.com", TLS: server.TLSConfig{Managed: true}},
 
 		// Host on port 80 already defined; don't change it (no redirect)
-		server.Config{Host: "sub1.example.com", Port: "80", Scheme: "http"},
-		server.Config{Host: "sub1.example.com", TLS: server.TLSConfig{Managed: true}},
+		{Host: "sub1.example.com", Port: "80", Scheme: "http"},
+		{Host: "sub1.example.com", TLS: server.TLSConfig{Managed: true}},
 
 		// Redirect from port 80 to port 5000 in this case
-		server.Config{Host: "sub2.example.com", Port: "5000", TLS: server.TLSConfig{Managed: true}},
+		{Host: "sub2.example.com", Port: "5000", TLS: server.TLSConfig{Managed: true}},
 
 		// Can redirect from 80 to either 443 or 5001, but choose 443
-		server.Config{Host: "sub3.example.com", Port: "443", TLS: server.TLSConfig{Managed: true}},
-		server.Config{Host: "sub3.example.com", Port: "5001", Scheme: "https", TLS: server.TLSConfig{Managed: true}},
+		{Host: "sub3.example.com", Port: "443", TLS: server.TLSConfig{Managed: true}},
+		{Host: "sub3.example.com", Port: "5001", Scheme: "https", TLS: server.TLSConfig{Managed: true}},
 	}
 
 	result := MakePlaintextRedirects(configs)
@@ -252,30 +253,17 @@ func TestMakePlaintextRedirects(t *testing.T) {
 
 func TestEnableTLS(t *testing.T) {
 	configs := []server.Config{
-		server.Config{TLS: server.TLSConfig{Managed: true}},
-		server.Config{}, // not managed - no changes!
+		{Host: "example.com", TLS: server.TLSConfig{Managed: true}},
+		{}, // not managed - no changes!
 	}
 
-	EnableTLS(configs)
+	EnableTLS(configs, false)
 
 	if !configs[0].TLS.Enabled {
 		t.Errorf("Expected config 0 to have TLS.Enabled == true, but it was false")
 	}
-	if configs[0].TLS.Certificate == "" {
-		t.Errorf("Expected config 0 to have TLS.Certificate set, but it was empty")
-	}
-	if configs[0].TLS.Key == "" {
-		t.Errorf("Expected config 0 to have TLS.Key set, but it was empty")
-	}
-
 	if configs[1].TLS.Enabled {
 		t.Errorf("Expected config 1 to have TLS.Enabled == false, but it was true")
-	}
-	if configs[1].TLS.Certificate != "" {
-		t.Errorf("Expected config 1 to have TLS.Certificate empty, but it was: %s", configs[1].TLS.Certificate)
-	}
-	if configs[1].TLS.Key != "" {
-		t.Errorf("Expected config 1 to have TLS.Key empty, but it was: %s", configs[1].TLS.Key)
 	}
 }
 
@@ -285,12 +273,12 @@ func TestGroupConfigsByEmail(t *testing.T) {
 	}
 
 	configs := []server.Config{
-		server.Config{Host: "example.com", TLS: server.TLSConfig{LetsEncryptEmail: "", Managed: true}},
-		server.Config{Host: "sub1.example.com", TLS: server.TLSConfig{LetsEncryptEmail: "foo@bar", Managed: true}},
-		server.Config{Host: "sub2.example.com", TLS: server.TLSConfig{LetsEncryptEmail: "", Managed: true}},
-		server.Config{Host: "sub3.example.com", TLS: server.TLSConfig{LetsEncryptEmail: "foo@bar", Managed: true}},
-		server.Config{Host: "sub4.example.com", TLS: server.TLSConfig{LetsEncryptEmail: "", Managed: true}},
-		server.Config{Host: "sub5.example.com", TLS: server.TLSConfig{LetsEncryptEmail: ""}}, // not managed
+		{Host: "example.com", TLS: server.TLSConfig{LetsEncryptEmail: "", Managed: true}},
+		{Host: "sub1.example.com", TLS: server.TLSConfig{LetsEncryptEmail: "foo@bar", Managed: true}},
+		{Host: "sub2.example.com", TLS: server.TLSConfig{LetsEncryptEmail: "", Managed: true}},
+		{Host: "sub3.example.com", TLS: server.TLSConfig{LetsEncryptEmail: "foo@bar", Managed: true}},
+		{Host: "sub4.example.com", TLS: server.TLSConfig{LetsEncryptEmail: "", Managed: true}},
+		{Host: "sub5.example.com", TLS: server.TLSConfig{LetsEncryptEmail: ""}}, // not managed
 	}
 	DefaultEmail = "test@example.com"
 
@@ -314,10 +302,11 @@ func TestGroupConfigsByEmail(t *testing.T) {
 func TestMarkQualified(t *testing.T) {
 	// TODO: TestConfigQualifies and this test share the same config list...
 	configs := []server.Config{
+		{Host: ""},
 		{Host: "localhost"},
+		{Host: "123.44.3.21"},
 		{Host: "example.com"},
-		{Host: "example.com", TLS: server.TLSConfig{Certificate: "cert.pem"}},
-		{Host: "example.com", TLS: server.TLSConfig{Key: "key.pem"}},
+		{Host: "example.com", TLS: server.TLSConfig{Manual: true}},
 		{Host: "example.com", TLS: server.TLSConfig{LetsEncryptEmail: "off"}},
 		{Host: "example.com", TLS: server.TLSConfig{LetsEncryptEmail: "foo@bar.com"}},
 		{Host: "example.com", Scheme: "http"},

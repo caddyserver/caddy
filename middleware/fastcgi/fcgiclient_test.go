@@ -39,9 +39,7 @@ const (
 	ipPort = "127.0.0.1:59000"
 )
 
-var (
-	t_ *testing.T
-)
+var globalt *testing.T
 
 type FastCGIServer struct{}
 
@@ -158,7 +156,7 @@ func sendFcgi(reqType int, fcgiParams map[string]string, data []byte, posts map[
 	time.Sleep(1 * time.Second)
 
 	if bytes.Index(content, []byte("FAILED")) >= 0 {
-		t_.Error("Server return failed message")
+		globalt.Error("Server return failed message")
 	}
 
 	return
@@ -193,7 +191,7 @@ func generateRandFile(size int) (p string, m string) {
 
 func DisabledTest(t *testing.T) {
 	// TODO: test chunked reader
-	t_ = t
+	globalt = t
 
 	rand.Seed(time.Now().UTC().UnixNano())
 

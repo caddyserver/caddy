@@ -71,7 +71,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 
 			// Connect to FastCGI gateway
 			network, address := rule.parseAddress()
-			fcgi, err := Dial(network, address)
+			fcgiBackend, err := Dial(network, address)
 			if err != nil {
 				return http.StatusBadGateway, err
 			}
@@ -80,13 +80,13 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			contentLength, _ := strconv.Atoi(r.Header.Get("Content-Length"))
 			switch r.Method {
 			case "HEAD":
-				resp, err = fcgi.Head(env)
+				resp, err = fcgiBackend.Head(env)
 			case "GET":
-				resp, err = fcgi.Get(env)
+				resp, err = fcgiBackend.Get(env)
 			case "OPTIONS":
-				resp, err = fcgi.Options(env)
+				resp, err = fcgiBackend.Options(env)
 			default:
-				resp, err = fcgi.Post(env, r.Method, r.Header.Get("Content-Type"), r.Body, contentLength)
+				resp, err = fcgiBackend.Post(env, r.Method, r.Header.Get("Content-Type"), r.Body, contentLength)
 			}
 
 			if resp.Body != nil {
@@ -97,24 +97,28 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 				return http.StatusBadGateway, err
 			}
 
+			// Write response header
 			writeHeader(w, resp)
 
 			// Write the response body
-			// TODO: If this has an error, the response will already be
-			// partly written. We should copy out of resp.Body into a buffer
-			// first, then write it to the response...
 			_, err = io.Copy(w, resp.Body)
 			if err != nil {
 				return http.StatusBadGateway, err
 			}
 
-			// FastCGI stderr outputs
-			if fcgi.stderr.Len() != 0 {
+			// Log any stderr output from upstream
+			if fcgiBackend.stderr.Len() != 0 {
 				// Remove trailing newline, error logger already does this.
-				err = LogError(strings.TrimSuffix(fcgi.stderr.String(), "\n"))
+				err = LogError(strings.TrimSuffix(fcgiBackend.stderr.String(), "\n"))
 			}
 
-			return resp.StatusCode, err
+			// Normally we would return the status code if it is an error status (>= 400),
+			// however, upstream FastCGI apps don't know about our contract and have
+			// probably already written an error page. So we just return 0, indicating
+			// that the response body is already written. However, we do return any
+			// error value so it can be logged.
+			// Note that the proxy middleware works the same way, returning status=0.
+			return 0, err
 		}
 	}
 
@@ -130,7 +134,7 @@ func (r Rule) parseAddress() (string, string) {
 	if strings.HasPrefix(r.Address, "tcp://") {
 		return "tcp", r.Address[len("tcp://"):]
 	}
-	// check if address has fastcgi scheme explicity set
+	// check if address has fastcgi scheme explicitly set
 	if strings.HasPrefix(r.Address, "fastcgi://") {
 		return "tcp", r.Address[len("fastcgi://"):]
 	}
@@ -174,7 +178,7 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 
 	// Separate remote IP and port; more lenient than net.SplitHostPort
 	var ip, port string
-	if idx := strings.Index(r.RemoteAddr, ":"); idx > -1 {
+	if idx := strings.LastIndex(r.RemoteAddr, ":"); idx > -1 {
 		ip = r.RemoteAddr[:idx]
 		port = r.RemoteAddr[idx+1:]
 	} else {

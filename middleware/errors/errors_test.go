@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -158,7 +159,10 @@ func TestVisibleErrorWithPanic(t *testing.T) {
 
 func genErrorHandler(status int, err error, body string) middleware.Handler {
 	return middleware.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
-		fmt.Fprint(w, body)
+		if len(body) > 0 {
+			w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+			fmt.Fprint(w, body)
+		}
 		return status, err
 	})
 }

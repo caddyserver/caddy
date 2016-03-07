@@ -59,6 +59,18 @@ func singleJoiningSlash(a, b string) string {
 	return a + b
 }
 
+// Though the relevant directive prefix is just "unix:", url.Parse
+// will - assuming the regular URL scheme - add additional slashes
+// as if "unix" was a request protocol.
+// What we need is just the path, so if "unix:/var/run/www.socket"
+// was the proxy directive, the parsed hostName would be
+// "unix:///var/run/www.socket", hence the ambiguous trimming.
+func socketDial(hostName string) func(network, addr string) (conn net.Conn, err error) {
+	return func(network, addr string) (conn net.Conn, err error) {
+		return net.Dial("unix", hostName[len("unix://"):])
+	}
+}
+
 // NewSingleHostReverseProxy returns a new ReverseProxy that rewrites
 // URLs to the scheme, host, and base path provided in target. If the
 // target's path is "/base" and the incoming request was for "/dir",
@@ -68,8 +80,15 @@ func singleJoiningSlash(a, b string) string {
 func NewSingleHostReverseProxy(target *url.URL, without string) *ReverseProxy {
 	targetQuery := target.RawQuery
 	director := func(req *http.Request) {
-		req.URL.Scheme = target.Scheme
-		req.URL.Host = target.Host
+		if target.Scheme == "unix" {
+			// to make Dial work with unix URL,
+			// scheme and host have to be faked
+			req.URL.Scheme = "http"
+			req.URL.Host = "socket"
+		} else {
+			req.URL.Scheme = target.Scheme
+			req.URL.Host = target.Host
+		}
 		req.URL.Path = singleJoiningSlash(target.Path, req.URL.Path)
 		if targetQuery == "" || req.URL.RawQuery == "" {
 			req.URL.RawQuery = targetQuery + req.URL.RawQuery
@@ -80,7 +99,13 @@ func NewSingleHostReverseProxy(target *url.URL, without string) *ReverseProxy {
 			req.URL.Path = strings.TrimPrefix(req.URL.Path, without)
 		}
 	}
-	return &ReverseProxy{Director: director}
+	rp := &ReverseProxy{Director: director}
+	if target.Scheme == "unix" {
+		rp.Transport = &http.Transport{
+			Dial: socketDial(target.String()),
+		}
+	}
+	return rp
 }
 
 func copyHeader(dst, src http.Header) {

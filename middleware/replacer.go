@@ -30,7 +30,7 @@ type replacer struct {
 // values into the replacer. rr may be nil if it is not
 // available. emptyValue should be the string that is used
 // in place of empty string (can still be empty string).
-func NewReplacer(r *http.Request, rr *responseRecorder, emptyValue string) Replacer {
+func NewReplacer(r *http.Request, rr *ResponseRecorder, emptyValue string) Replacer {
 	rep := replacer{
 		replacements: map[string]string{
 			"{method}": r.Method,

@@ -1,4 +1,4 @@
-package letsencrypt
+package https
 
 import (
 	"bytes"
@@ -114,7 +114,7 @@ func TestGetUserAlreadyExists(t *testing.T) {
 	}
 
 	// Assert keys are the same
-	if !rsaPrivateKeysSame(user.key, user2.key) {
+	if !PrivateKeysSame(user.key, user2.key) {
 		t.Error("Expected private key to be the same after loading, but it wasn't")
 	}
 
@@ -140,13 +140,13 @@ func TestGetEmail(t *testing.T) {
 			LetsEncryptEmail: "test1@foo.com",
 		},
 	}
-	actual := getEmail(config, false)
+	actual := getEmail(config, true)
 	if actual != "test1@foo.com" {
 		t.Errorf("Did not get correct email from config; expected '%s' but got '%s'", "test1@foo.com", actual)
 	}
 
 	// Test2: Use default email from flag (or user previously typing it)
-	actual = getEmail(server.Config{}, false)
+	actual = getEmail(server.Config{}, true)
 	if actual != DefaultEmail {
 		t.Errorf("Did not get correct email from config; expected '%s' but got '%s'", DefaultEmail, actual)
 	}
@@ -158,7 +158,7 @@ func TestGetEmail(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Could not simulate user input, error: %v", err)
 	}
-	actual = getEmail(server.Config{}, false)
+	actual = getEmail(server.Config{}, true)
 	if actual != "test3@foo.com" {
 		t.Errorf("Did not get correct email from user input prompt; expected '%s' but got '%s'", "test3@foo.com", actual)
 	}
@@ -189,7 +189,7 @@ func TestGetEmail(t *testing.T) {
 			t.Fatalf("Could not change user folder mod time for '%s': %v", eml, err)
 		}
 	}
-	actual = getEmail(server.Config{}, false)
+	actual = getEmail(server.Config{}, true)
 	if actual != "test4-3@foo.com" {
 		t.Errorf("Did not get correct email from storage; expected '%s' but got '%s'", "test4-3@foo.com", actual)
 	}

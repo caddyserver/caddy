@@ -15,8 +15,6 @@ import (
 	"runtime"
 	"sync"
 	"time"
-
-	"golang.org/x/net/http2"
 )
 
 // Server represents an instance of a server, which serves
@@ -26,8 +24,9 @@ import (
 // graceful termination (POSIX only).
 type Server struct {
 	*http.Server
-	HTTP2       bool                   // temporary while http2 is not in std lib (TODO: remove flag when part of std lib)
+	HTTP2       bool                   // whether to enable HTTP/2
 	tls         bool                   // whether this server is serving all HTTPS hosts or not
+	OnDemandTLS bool                   // whether this server supports on-demand TLS (load certs at handshake-time)
 	vhosts      map[string]virtualHost // virtual hosts keyed by their address
 	listener    ListenerFile           // the listener which is bound to the socket
 	listenerMu  sync.Mutex             // protects listener
@@ -35,6 +34,7 @@ type Server struct {
 	startChan   chan struct{}          // used to block until server is finished starting
 	connTimeout time.Duration          // the maximum duration of a graceful shutdown
 	ReqCallback OptionalCallback       // if non-nil, is executed at the beginning of every request
+	SNICallback func(clientHello *tls.ClientHelloInfo) (*tls.Certificate, error)
 }
 
 // ListenerFile represents a listener.
@@ -60,20 +60,23 @@ type OptionalCallback func(http.ResponseWriter, *http.Request) bool
 // as it stands, you should dispose of a server after stopping it.
 // The behavior of serving with a spent server is undefined.
 func New(addr string, configs []Config, gracefulTimeout time.Duration) (*Server, error) {
-	var tls bool
+	var useTLS, useOnDemandTLS bool
 	if len(configs) > 0 {
-		tls = configs[0].TLS.Enabled
+		useTLS = configs[0].TLS.Enabled
+		useOnDemandTLS = configs[0].TLS.OnDemand
 	}
 
 	s := &Server{
 		Server: &http.Server{
-			Addr: addr,
+			Addr:      addr,
+			TLSConfig: new(tls.Config),
 			// TODO: Make these values configurable?
 			// ReadTimeout:    2 * time.Minute,
 			// WriteTimeout:   2 * time.Minute,
 			// MaxHeaderBytes: 1 << 16,
 		},
-		tls:         tls,
+		tls:         useTLS,
+		OnDemandTLS: useOnDemandTLS,
 		vhosts:      make(map[string]virtualHost),
 		startChan:   make(chan struct{}),
 		connTimeout: gracefulTimeout,
@@ -168,7 +171,7 @@ func (s *Server) serve(ln ListenerFile) error {
 		for _, vh := range s.vhosts {
 			tlsConfigs = append(tlsConfigs, vh.config.TLS)
 		}
-		return serveTLSWithSNI(s, s.listener, tlsConfigs)
+		return serveTLS(s, s.listener, tlsConfigs)
 	}
 
 	close(s.startChan) // unblock anyone waiting for this to start listening
@@ -179,9 +182,8 @@ func (s *Server) serve(ln ListenerFile) error {
 // called just before the listener announces itself on the network
 // and should only be called when the server is just starting up.
 func (s *Server) setup() error {
-	if s.HTTP2 {
-		// TODO: This call may not be necessary after HTTP/2 is merged into std lib
-		http2.ConfigureServer(s.Server, nil)
+	if !s.HTTP2 {
+		s.TLSNextProto = make(map[string]func(*http.Server, *tls.Conn, http.Handler))
 	}
 
 	// Execute startup functions now
@@ -197,41 +199,17 @@ func (s *Server) setup() error {
 	return nil
 }
 
-// serveTLSWithSNI serves TLS with Server Name Indication (SNI) support, which allows
-// multiple sites (different hostnames) to be served from the same address. It also
-// supports client authentication if srv has it enabled. It blocks until s quits.
-//
-// This method is adapted from the std lib's net/http ServeTLS function, which was written
-// by the Go Authors. It has been modified to support multiple certificate/key pairs,
-// client authentication, and our custom Server type.
-func serveTLSWithSNI(s *Server, ln net.Listener, tlsConfigs []TLSConfig) error {
-	config := cloneTLSConfig(s.TLSConfig)
-	if config.NextProtos == nil {
-		config.NextProtos = []string{"http/1.1"}
-	}
-
-	// Here we diverge from the stdlib a bit by loading multiple certs/key pairs
-	// then we map the server names to their certs
-	var err error
-	config.Certificates = make([]tls.Certificate, len(tlsConfigs))
-	for i, tlsConfig := range tlsConfigs {
-		config.Certificates[i], err = tls.LoadX509KeyPair(tlsConfig.Certificate, tlsConfig.Key)
-		config.Certificates[i].OCSPStaple = tlsConfig.OCSPStaple
-		if err != nil {
-			defer close(s.startChan)
-			return err
-		}
-	}
-	config.BuildNameToCertificate()
-
+// serveTLS serves TLS with SNI and client auth support if s has them enabled. It
+// blocks until s quits.
+func serveTLS(s *Server, ln net.Listener, tlsConfigs []TLSConfig) error {
 	// Customize our TLS configuration
-	config.MinVersion = tlsConfigs[0].ProtocolMinVersion
-	config.MaxVersion = tlsConfigs[0].ProtocolMaxVersion
-	config.CipherSuites = tlsConfigs[0].Ciphers
-	config.PreferServerCipherSuites = tlsConfigs[0].PreferServerCipherSuites
+	s.TLSConfig.MinVersion = tlsConfigs[0].ProtocolMinVersion
+	s.TLSConfig.MaxVersion = tlsConfigs[0].ProtocolMaxVersion
+	s.TLSConfig.CipherSuites = tlsConfigs[0].Ciphers
+	s.TLSConfig.PreferServerCipherSuites = tlsConfigs[0].PreferServerCipherSuites
 
 	// TLS client authentication, if user enabled it
-	err = setupClientAuth(tlsConfigs, config)
+	err := setupClientAuth(tlsConfigs, s.TLSConfig)
 	if err != nil {
 		defer close(s.startChan)
 		return err
@@ -241,7 +219,7 @@ func serveTLSWithSNI(s *Server, ln net.Listener, tlsConfigs []TLSConfig) error {
 	// with this TLS listener; tls.listener is unexported and does
 	// not implement the File() method we need for graceful restarts
 	// on POSIX systems.
-	ln = tls.NewListener(ln, config)
+	ln = tls.NewListener(ln, s.TLSConfig)
 
 	close(s.startChan) // unblock anyone waiting for this to start listening
 	return s.Server.Serve(ln)
@@ -345,9 +323,16 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			DefaultErrorFunc(w, r, status)
 		}
 	} else {
+		// Get the remote host
+		remoteHost, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			remoteHost = r.RemoteAddr
+		}
+
 		w.WriteHeader(http.StatusNotFound)
 		fmt.Fprintf(w, "No such host at %s", s.Server.Addr)
-		log.Printf("[INFO] %s - No such host at %s", host, s.Server.Addr)
+		log.Printf("[INFO] %s - No such host at %s (Remote: %s, Referer: %s)",
+			host, s.Server.Addr, remoteHost, r.Header.Get("Referer"))
 	}
 }
 
@@ -430,34 +415,6 @@ func (ln tcpKeepAliveListener) Accept() (c net.Conn, err error) {
 // File implements ListenerFile; returns the underlying file of the listener.
 func (ln tcpKeepAliveListener) File() (*os.File, error) {
 	return ln.TCPListener.File()
-}
-
-// copied from net/http/transport.go
-func cloneTLSConfig(cfg *tls.Config) *tls.Config {
-	if cfg == nil {
-		return &tls.Config{}
-	}
-	return &tls.Config{
-		Rand:                     cfg.Rand,
-		Time:                     cfg.Time,
-		Certificates:             cfg.Certificates,
-		NameToCertificate:        cfg.NameToCertificate,
-		GetCertificate:           cfg.GetCertificate,
-		RootCAs:                  cfg.RootCAs,
-		NextProtos:               cfg.NextProtos,
-		ServerName:               cfg.ServerName,
-		ClientAuth:               cfg.ClientAuth,
-		ClientCAs:                cfg.ClientCAs,
-		InsecureSkipVerify:       cfg.InsecureSkipVerify,
-		CipherSuites:             cfg.CipherSuites,
-		PreferServerCipherSuites: cfg.PreferServerCipherSuites,
-		SessionTicketsDisabled:   cfg.SessionTicketsDisabled,
-		SessionTicketKey:         cfg.SessionTicketKey,
-		ClientSessionCache:       cfg.ClientSessionCache,
-		MinVersion:               cfg.MinVersion,
-		MaxVersion:               cfg.MaxVersion,
-		CurvePreferences:         cfg.CurvePreferences,
-	}
 }
 
 // ShutdownCallbacks executes all the shutdown callbacks

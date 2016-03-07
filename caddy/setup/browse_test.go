@@ -41,7 +41,7 @@ func TestBrowse(t *testing.T) {
 		// test case #2 tests detectaction of custom template
 		{"browse . " + tempTemplatePath, []string{"."}, false},
 
-		// test case #3 tests detection of non-existant template
+		// test case #3 tests detection of non-existent template
 		{"browse . " + nonExistantDirPath, nil, true},
 
 		// test case #4 tests detection of duplicate pathscopes
