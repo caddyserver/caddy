@@ -37,7 +37,6 @@ getting free help. If we helped you, please consider
 [donating](https://caddyserver.com/donate) - it keeps us motivated!
 
 
-
 ### Minor improvements and new tests
 
 Submit [pull requests](https://github.com/mholt/caddy/pulls) at any time. Make
@@ -61,19 +60,12 @@ The disadvantage of pull requests is that they are unlikely to get accepted
 without significant changes, or it may be rejected entirely. Don't worry, that
 won't happen without an open discussion first.
 
+If you are going to spend significant time implementing code for a pull request,
+best to open an issue first and "claim" it and get feedback before you invest
+a lot of time.
 
 
-#### New features
-
-Before submitting a pull request, please open an issue first to discuss it and 
-claim it. This prevents overlapping efforts and keeps the project in-line with 
-its goals. If you prefer to discuss the feature privately, you can reach other 
-developers on Gitter or you may email me directly. (My email address is below.)
-
-And don't forget to write tests for new features!
-
-
-#### Vulnerabilities
+### Vulnerabilities
 
 If you've found a vulnerability that is serious, please email me: Matthew dot 
 Holt at Gmail. If it's not a big deal, a pull request will probably be faster.
@@ -81,4 +73,5 @@ Holt at Gmail. If it's not a big deal, a pull request will probably be faster.
 
 ## Thank you
 
-Thanks for your help! Caddy would not be what it is today without your contributions.
+Thanks for your help! Caddy would not be what it is today without your
+contributions.
