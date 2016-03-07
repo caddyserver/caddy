@@ -20,35 +20,12 @@ import (
 type Context struct {
 	Root http.FileSystem
 	Req  *http.Request
-	// This is used to access information about the URL.
-	URL *url.URL
+	URL  *url.URL
 }
 
-// Include returns the contents of filename relative to the site root
+// Include returns the contents of filename relative to the site root.
 func (c Context) Include(filename string) (string, error) {
-	file, err := c.Root.Open(filename)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-
-	body, err := ioutil.ReadAll(file)
-	if err != nil {
-		return "", err
-	}
-
-	tpl, err := template.New(filename).Parse(string(body))
-	if err != nil {
-		return "", err
-	}
-
-	var buf bytes.Buffer
-	err = tpl.Execute(&buf, c)
-	if err != nil {
-		return "", err
-	}
-
-	return buf.String(), nil
+	return ContextInclude(filename, c, c.Root)
 }
 
 // Now returns the current timestamp in the specified format.
@@ -211,4 +188,35 @@ func (c Context) Markdown(filename string) (string, error) {
 	markdown := blackfriday.Markdown([]byte(body), renderer, extns)
 
 	return string(markdown), nil
+}
+
+// ContextInclude opens filename using fs and executes a template with the context ctx.
+// This does the same thing that Context.Include() does, but with the ability to provide
+// your own context so that the included files can have access to additional fields your
+// type may provide. You can embed Context in your type, then override its Include method
+// to call this function with ctx being the instance of your type, and fs being Context.Root.
+func ContextInclude(filename string, ctx interface{}, fs http.FileSystem) (string, error) {
+	file, err := fs.Open(filename)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	body, err := ioutil.ReadAll(file)
+	if err != nil {
+		return "", err
+	}
+
+	tpl, err := template.New(filename).Parse(string(body))
+	if err != nil {
+		return "", err
+	}
+
+	var buf bytes.Buffer
+	err = tpl.Execute(&buf, ctx)
+	if err != nil {
+		return "", err
+	}
+
+	return buf.String(), nil
 }

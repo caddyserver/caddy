@@ -28,6 +28,12 @@ type Data struct {
 	Links    []PageLink
 }
 
+// Include "overrides" the embedded middleware.Context's Include()
+// method so that included files have access to d's fields.
+func (d Data) Include(filename string) (string, error) {
+	return middleware.ContextInclude(filename, d, d.Root)
+}
+
 // Process processes the contents of a page in b. It parses the metadata
 // (if any) and uses the template (if found).
 func (md Markdown) Process(c *Config, requestPath string, b []byte, ctx middleware.Context) ([]byte, error) {
