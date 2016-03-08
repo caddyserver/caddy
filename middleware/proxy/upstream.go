@@ -27,6 +27,7 @@ type staticUpstream struct {
 
 	FailTimeout time.Duration
 	MaxFails    int32
+	MaxConns    int64
 	HealthCheck struct {
 		Path     string
 		Interval time.Duration
@@ -47,6 +48,7 @@ func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
 			Policy:       &Random{},
 			FailTimeout:  10 * time.Second,
 			MaxFails:     1,
+			MaxConns:     0,
 		}
 
 		if !c.Args(&upstream.from) {
@@ -78,6 +80,10 @@ func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
 				ExtraHeaders: upstream.proxyHeaders,
 				CheckDown: func(upstream *staticUpstream) UpstreamHostDownFunc {
 					return func(uh *UpstreamHost) bool {
+						if upstream.MaxConns != 0 &&
+							uh.Conns >= upstream.MaxConns {
+							return true
+						}
 						if uh.Unhealthy {
 							return true
 						}
@@ -147,6 +153,15 @@ func parseBlock(c *parse.Dispenser, u *staticUpstream) error {
 			return err
 		}
 		u.MaxFails = int32(n)
+	case "max_conns":
+		if !c.NextArg() {
+			return c.ArgErr()
+		}
+		n, err := strconv.ParseInt(c.Val(), 10, 64)
+		if err != nil {
+			return err
+		}
+		u.MaxConns = n
 	case "health_check":
 		if !c.NextArg() {
 			return c.ArgErr()
