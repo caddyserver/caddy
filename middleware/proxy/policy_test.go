@@ -53,11 +53,22 @@ func TestRoundRobinPolicy(t *testing.T) {
 	if h != pool[2] {
 		t.Error("Expected second round robin host to be third host in the pool.")
 	}
-	// mark host as down
-	pool[0].Unhealthy = true
 	h = rrPolicy.Select(pool)
-	if h != pool[1] {
+	if h != pool[0] {
 		t.Error("Expected third round robin host to be first host in the pool.")
+	}
+	// mark host as down
+	pool[1].Unhealthy = true
+	h = rrPolicy.Select(pool)
+	if h != pool[2] {
+		t.Error("Expected to skip down host.")
+	}
+	// mark host as full
+	pool[2].Conns = 1
+	pool[2].MaxConns = 1
+	h = rrPolicy.Select(pool)
+	if h != pool[0] {
+		t.Error("Expected to skip full host.")
 	}
 }
 

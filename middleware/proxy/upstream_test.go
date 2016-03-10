@@ -40,6 +40,19 @@ func TestSelect(t *testing.T) {
 	if h := upstream.Select(); h == nil {
 		t.Error("Expected select to not return nil")
 	}
+	upstream.Hosts[0].Conns = 1
+	upstream.Hosts[0].MaxConns = 1
+	upstream.Hosts[1].Conns = 1
+	upstream.Hosts[1].MaxConns = 1
+	upstream.Hosts[2].Conns = 1
+	upstream.Hosts[2].MaxConns = 1
+	if h := upstream.Select(); h != nil {
+		t.Error("Expected select to return nil as all hosts are full")
+	}
+	upstream.Hosts[2].Conns = 0
+	if h := upstream.Select(); h == nil {
+		t.Error("Expected select to not return nil")
+	}
 }
 
 func TestRegisterPolicy(t *testing.T) {

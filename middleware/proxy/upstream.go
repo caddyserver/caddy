@@ -80,10 +80,6 @@ func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
 				ExtraHeaders: upstream.proxyHeaders,
 				CheckDown: func(upstream *staticUpstream) UpstreamHostDownFunc {
 					return func(uh *UpstreamHost) bool {
-						if upstream.MaxConns != 0 &&
-							uh.Conns >= upstream.MaxConns {
-							return true
-						}
 						if uh.Unhealthy {
 							return true
 						}
@@ -95,6 +91,7 @@ func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
 					}
 				}(upstream),
 				WithoutPathPrefix: upstream.WithoutPathPrefix,
+				MaxConns:          upstream.MaxConns,
 			}
 			if baseURL, err := url.Parse(uh.Name); err == nil {
 				uh.ReverseProxy = NewSingleHostReverseProxy(baseURL, uh.WithoutPathPrefix)
@@ -234,19 +231,19 @@ func (u *staticUpstream) HealthCheckWorker(stop chan struct{}) {
 func (u *staticUpstream) Select() *UpstreamHost {
 	pool := u.Hosts
 	if len(pool) == 1 {
-		if pool[0].Down() {
+		if !pool[0].Available() {
 			return nil
 		}
 		return pool[0]
 	}
-	allDown := true
+	allUnavailable := true
 	for _, host := range pool {
-		if !host.Down() {
-			allDown = false
+		if host.Available() {
+			allUnavailable = false
 			break
 		}
 	}
-	if allDown {
+	if allUnavailable {
 		return nil
 	}
 
