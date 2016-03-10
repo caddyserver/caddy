@@ -5,6 +5,45 @@ import (
 	"time"
 )
 
+func TestNewHost(t *testing.T) {
+	upstream := &staticUpstream{
+		FailTimeout: 10 * time.Second,
+		MaxConns:    1,
+		MaxFails:    1,
+	}
+
+	uh, err := upstream.NewHost("example.com")
+	if err != nil {
+		t.Error("Expected no error")
+	}
+	if uh.Name != "http://example.com" {
+		t.Error("Expected default schema to be added to Name.")
+	}
+	if uh.FailTimeout != upstream.FailTimeout {
+		t.Error("Expected default FailTimeout to be set.")
+	}
+	if uh.MaxConns != upstream.MaxConns {
+		t.Error("Expected default MaxConns to be set.")
+	}
+	if uh.CheckDown == nil {
+		t.Error("Expected default CheckDown to be set.")
+	}
+	if uh.CheckDown(uh) {
+		t.Error("Expected new host not to be down.")
+	}
+	// mark Unhealthy
+	uh.Unhealthy = true
+	if !uh.CheckDown(uh) {
+		t.Error("Expected unhealthy host to be down.")
+	}
+	// mark with Fails
+	uh.Unhealthy = false
+	uh.Fails = 1
+	if !uh.CheckDown(uh) {
+		t.Error("Expected failed host to be down.")
+	}
+}
+
 func TestHealthCheck(t *testing.T) {
 	upstream := &staticUpstream{
 		from:        "",
