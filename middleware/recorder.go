@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// responseRecorder is a type of ResponseWriter that captures
+// ResponseRecorder is a type of ResponseWriter that captures
 // the status code written to it and also the size of the body
 // written in the response. A status code does not have
 // to be written, however, in which case 200 must be assumed.
