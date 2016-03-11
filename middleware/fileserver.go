@@ -141,6 +141,7 @@ func (fh fileHandler) isHidden(name string) bool {
 		name = strings.TrimSpace(name)
 		for strings.HasSuffix(name, ".") {
 			name = name[:len(name)-1]
+			name = strings.TrimSpace(name)
 		}
 	}
 	// If the file is supposed to be hidden, return a 404

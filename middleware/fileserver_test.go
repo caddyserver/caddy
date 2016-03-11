@@ -112,6 +112,26 @@ func TestServeHTTP(t *testing.T) {
 			expectedStatus:      http.StatusMovedPermanently,
 			expectedBodyContent: movedPermanently,
 		},
+		// Test 11 - attempt to bypass hidden file
+		{
+			url:            "https://foo/dir/hidden.html%20",
+			expectedStatus: http.StatusNotFound,
+		},
+		// Test 12 - attempt to bypass hidden file
+		{
+			url:            "https://foo/dir/hidden.html.",
+			expectedStatus: http.StatusNotFound,
+		},
+		// Test 13 - attempt to bypass hidden file
+		{
+			url:            "https://foo/dir/hidden.html.%20",
+			expectedStatus: http.StatusNotFound,
+		},
+		// Test 14 - attempt to bypass hidden file
+		{
+			url:            "https://foo/dir/hidden.html%20.",
+			expectedStatus: http.StatusNotFound,
+		},
 	}
 
 	for i, test := range tests {
