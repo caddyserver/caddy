@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 )
 
@@ -43,7 +44,7 @@ func (fh *fileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, e
 		upath = "/" + upath
 		r.URL.Path = upath
 	}
-	return fh.serveFile(w, r, path.Clean(upath))
+	return fh.serveFile(w, r, filepath.Clean(upath))
 }
 
 // serveFile writes the specified file to the HTTP response.
