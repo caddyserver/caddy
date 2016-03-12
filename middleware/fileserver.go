@@ -103,6 +103,8 @@ func (fh *fileHandler) serveFile(w http.ResponseWriter, r *http.Request, name st
 			index := strings.TrimSuffix(name, "/") + "/" + indexPage
 			ff, err := fh.root.Open(index)
 			if err == nil {
+				// this defer does not leak fds because previous iterations
+				// of the loop must have had an err, so nothing to close
 				defer ff.Close()
 				dd, err := ff.Stat()
 				if err == nil {
