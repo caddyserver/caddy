@@ -122,7 +122,7 @@ func (fh *fileHandler) serveFile(w http.ResponseWriter, r *http.Request, name st
 	}
 
 	// If file is on hide list.
-	if fh.isHidden(d.Name()) {
+	if fh.isHidden(d) {
 		return http.StatusNotFound, nil
 	}
 
@@ -133,28 +133,18 @@ func (fh *fileHandler) serveFile(w http.ResponseWriter, r *http.Request, name st
 	return http.StatusOK, nil
 }
 
-// isHidden checks if file with name is on hide list.
-func (fh fileHandler) isHidden(name string) bool {
-	// Clean up on Windows.
-	// Remove trailing dots and trim whitespaces.
-	if runtimeGoos == "windows" {
-		name = strings.TrimSpace(name)
-		for strings.HasSuffix(name, ".") {
-			name = name[:len(name)-1]
-			name = strings.TrimSpace(name)
-		}
-	}
+// isHidden checks if file with FileInfo d is on hide list.
+func (fh fileHandler) isHidden(d os.FileInfo) bool {
 	// If the file is supposed to be hidden, return a 404
 	// (TODO: If the slice gets large, a set may be faster)
 	for _, hiddenPath := range fh.hide {
-		// Case-insensitive file systems may have loaded "CaddyFile" when
-		// we think we got "Caddyfile", which poses a security risk if we
-		// aren't careful here: case-insensitive comparison is required!
-		// TODO: This matches file NAME only, regardless of path. In other
-		// words, trying to serve another file with the same name as the
-		// active config file will result in a 404 when it shouldn't.
-		if strings.EqualFold(name, filepath.Base(hiddenPath)) {
-			return true
+		// Check if the served file is exactly the hidden file.
+		if hFile, err := fh.root.Open(hiddenPath); err == nil {
+			fs, _ := hFile.Stat()
+			hFile.Close()
+			if os.SameFile(d, fs) {
+				return true
+			}
 		}
 	}
 	return false

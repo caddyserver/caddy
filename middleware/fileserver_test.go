@@ -35,7 +35,7 @@ func TestServeHTTP(t *testing.T) {
 	beforeServeHTTPTest(t)
 	defer afterServeHTTPTest(t)
 
-	fileserver := FileServer(http.Dir(testDir), []string{"hidden.html"})
+	fileserver := FileServer(http.Dir(testDir), []string{"dir/hidden.html"})
 
 	movedPermanently := "Moved Permanently"
 
@@ -84,52 +84,57 @@ func TestServeHTTP(t *testing.T) {
 			expectedStatus:      http.StatusMovedPermanently,
 			expectedBodyContent: movedPermanently,
 		},
-		// Test 6 - access file with trailing slash
+		// Test 7 - access file with trailing slash
 		{
 			url:                 "https://foo/file1.html/",
 			expectedStatus:      http.StatusMovedPermanently,
 			expectedBodyContent: movedPermanently,
 		},
-		// Test 7 - access not existing path
+		// Test 8 - access not existing path
 		{
 			url:            "https://foo/not_existing",
 			expectedStatus: http.StatusNotFound,
 		},
-		// Test 8 - access a file, marked as hidden
+		// Test 9 - access a file, marked as hidden
 		{
 			url:            "https://foo/dir/hidden.html",
 			expectedStatus: http.StatusNotFound,
 		},
-		// Test 9 - access a index file directly
+		// Test 10 - access a index file directly
 		{
 			url:                 "https://foo/dirwithindex/index.html",
 			expectedStatus:      http.StatusOK,
 			expectedBodyContent: testFiles[filepath.Join("dirwithindex", "index.html")],
 		},
-		// Test 10 - send a request with query params
+		// Test 11 - send a request with query params
 		{
 			url:                 "https://foo/dir?param1=val",
 			expectedStatus:      http.StatusMovedPermanently,
 			expectedBodyContent: movedPermanently,
 		},
-		// Test 11 - attempt to bypass hidden file
+		// Test 12 - attempt to bypass hidden file
 		{
 			url:            "https://foo/dir/hidden.html%20",
 			expectedStatus: http.StatusNotFound,
 		},
-		// Test 12 - attempt to bypass hidden file
+		// Test 13 - attempt to bypass hidden file
 		{
 			url:            "https://foo/dir/hidden.html.",
 			expectedStatus: http.StatusNotFound,
 		},
-		// Test 13 - attempt to bypass hidden file
+		// Test 14 - attempt to bypass hidden file
 		{
 			url:            "https://foo/dir/hidden.html.%20",
 			expectedStatus: http.StatusNotFound,
 		},
-		// Test 14 - attempt to bypass hidden file
+		// Test 15 - attempt to bypass hidden file
 		{
 			url:            "https://foo/dir/hidden.html%20.",
+			expectedStatus: http.StatusNotFound,
+		},
+		// Test 16 - serve another file with same name as hidden file.
+		{
+			url:            "https://foo/hidden.html",
 			expectedStatus: http.StatusNotFound,
 		},
 	}
