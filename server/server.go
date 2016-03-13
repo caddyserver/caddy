@@ -296,11 +296,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Server", "Caddy")
 
-	// Execute the optional request callback if it exists
-	if s.ReqCallback != nil && s.ReqCallback(w, r) {
-		return
-	}
-
 	host, _, err := net.SplitHostPort(r.Host)
 	if err != nil {
 		host = r.Host // oh well
@@ -313,6 +308,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		} else if _, ok2 := s.vhosts[""]; ok2 {
 			host = ""
 		}
+	}
+
+	// Execute the optional request callback if it exists and it's not disabled
+	if s.ReqCallback != nil && !s.vhosts[host].config.TLS.Manual && s.ReqCallback(w, r) {
+		return
 	}
 
 	if vh, ok := s.vhosts[host]; ok {
