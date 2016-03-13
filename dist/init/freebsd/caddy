@@ -1,0 +1,73 @@
+#!/bin/sh
+#
+
+# PROVIDE: caddy
+# REQUIRE: LOGIN NETWORKING named cleanvar sshd
+# KEYWORD: shutdown
+
+#
+# Add the following lines to /etc/rc.conf to enable caddy:
+# caddy_enable (bool):        Set to "NO" by default.
+#                             Set it to "YES" to enable caddy
+#
+# caddy_cert_email (str):     Set to "" by default.
+#                             Defines the SSL certificate issuer email. By providing an
+#                             email address you automatically agree to letsencrypt.org's
+#                             general terms and conditions
+#
+# caddy_bin_path (str):       Set to "/usr/local/bin/caddy" by default.
+#                             Provides the path to the caddy server executable
+#
+# caddy_cpu (str):            Set to "99%" by default.
+#                             Configures, how much CPU capacity caddy may gain
+#
+# caddy_config_path (str):    Set to "/usr/local/www/Caddyfile" by default.
+#                             Defines the path for the configuration file caddy will load on boot
+#
+# caddy_run_user (str):       Set to "root" by default.
+#                             Defines the user that caddy will run on
+#
+
+. /etc/rc.subr
+
+name="caddy"
+rcvar=${name}_enable
+
+load_rc_config $name
+: ${caddy_enable:=no}
+: ${caddy_cert_email=""}
+: ${caddy_bin_path="/usr/local/bin/caddy"}
+: ${caddy_cpu="99%"} # was a bug for me that caused a crash within jails
+: ${caddy_config_path="/usr/local/www/Caddyfile"}
+: ${caddy_run_user="root"}
+
+if [ "$caddy_cert_email" = "" ] 
+then
+	echo "rc variable \$caddy_cert_email is not set. Please provide a valid SSL certificate issuer email."
+	exit 1
+fi
+
+pidfile="/var/run/caddy.pid"
+logfile="/var/log/caddy.log"
+
+command="${caddy_bin_path} -log ${logfile} -pidfile ${pidfile} -cpu ${caddy_cpu} -conf ${caddy_config_path} -agree -email ${caddy_cert_email}"
+
+start_cmd="caddy_start"
+status_cmd="caddy_status"
+stop_cmd="caddy_stop"
+
+caddy_start() {  
+    echo "Starting Caddy..."
+    /usr/sbin/daemon -u ${caddy_run_user} -c ${command} >> ${logfile}
+}
+
+caddy_status() {
+    ps -p `cat ${pidfile} 2> /dev/null` > /dev/null 2>&1 && echo 'Running' || echo 'Not Running. Please note that upon startup it will take Caddy a few seconds to come up. So you might just wanna wait a few seconds before starting it again.'
+}
+
+caddy_stop() {
+    echo "Stopping Caddy..."
+    kill -QUIT `cat $pidfile 2> /dev/null`
+}
+
+run_rc_command "$1"
