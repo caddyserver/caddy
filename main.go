@@ -36,6 +36,7 @@ func init() {
 	flag.StringVar(&revoke, "revoke", "", "Hostname for which to revoke the certificate")
 	flag.StringVar(&caddy.Root, "root", caddy.DefaultRoot, "Root path to default site")
 	flag.BoolVar(&version, "version", false, "Show version")
+	flag.BoolVar(&directives, "directives", false, "List supported directives")
 }
 
 func main() {
@@ -74,6 +75,12 @@ func main() {
 		fmt.Printf("%s %s\n", appName, appVersion)
 		if devBuild && gitShortStat != "" {
 			fmt.Printf("%s\n%s\n", gitShortStat, gitFilesModified)
+		}
+		os.Exit(0)
+	}
+	if directives {
+		for _, d := range caddy.Directives() {
+			fmt.Println(d)
 		}
 		os.Exit(0)
 	}
@@ -212,11 +219,12 @@ const appName = "Caddy"
 
 // Flags that control program flow or startup
 var (
-	conf    string
-	cpu     string
-	logfile string
-	revoke  string
-	version bool
+	conf       string
+	cpu        string
+	logfile    string
+	revoke     string
+	version    bool
+	directives bool
 )
 
 // Build information obtained with the help of -ldflags
