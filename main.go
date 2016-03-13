@@ -14,7 +14,6 @@ import (
 
 	"github.com/mholt/caddy/caddy"
 	"github.com/mholt/caddy/caddy/https"
-	"github.com/mholt/caddy/caddy/parse"
 	"github.com/xenolf/lego/acme"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
@@ -80,7 +79,7 @@ func main() {
 		os.Exit(0)
 	}
 	if directives {
-		for d := range parse.ValidDirectives {
+		for _, d := range caddy.Directives() {
 			fmt.Println(d)
 		}
 		os.Exit(0)

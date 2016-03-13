@@ -69,6 +69,15 @@ var directiveOrder = []directive{
 	{"browse", setup.Browse},
 }
 
+// Directives returns the list of directives in order of priority.
+func Directives() []string {
+	directives := make([]string, len(directiveOrder))
+	for i, d := range directiveOrder {
+		directives[i] = d.name
+	}
+	return directives
+}
+
 // RegisterDirective adds the given directive to caddy's list of directives.
 // Pass the name of a directive you want it to be placed after,
 // otherwise it will be placed at the bottom of the stack.
