@@ -44,6 +44,7 @@ type UpstreamHost struct {
 	ExtraHeaders      http.Header
 	CheckDown         UpstreamHostDownFunc
 	WithoutPathPrefix string
+	MaxConns          int64
 }
 
 // Down checks whether the upstream host is down or not.
@@ -55,6 +56,16 @@ func (uh *UpstreamHost) Down() bool {
 		return uh.Unhealthy || uh.Fails > 0
 	}
 	return uh.CheckDown(uh)
+}
+
+// Full checks whether the upstream host has reached its maximum connections
+func (uh *UpstreamHost) Full() bool {
+	return uh.MaxConns > 0 && uh.Conns >= uh.MaxConns
+}
+
+// Available checks whether the upstream host is available for proxying to
+func (uh *UpstreamHost) Available() bool {
+	return !uh.Down() && !uh.Full()
 }
 
 // tryDuration is how long to try upstream hosts; failures result in

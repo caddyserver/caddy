@@ -27,6 +27,7 @@ type staticUpstream struct {
 
 	FailTimeout time.Duration
 	MaxFails    int32
+	MaxConns    int64
 	HealthCheck struct {
 		Path     string
 		Interval time.Duration
@@ -47,6 +48,7 @@ func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
 			Policy:       &Random{},
 			FailTimeout:  10 * time.Second,
 			MaxFails:     1,
+			MaxConns:     0,
 		}
 
 		if !c.Args(&upstream.from) {
@@ -65,37 +67,8 @@ func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
 
 		upstream.Hosts = make([]*UpstreamHost, len(to))
 		for i, host := range to {
-			if !strings.HasPrefix(host, "http") &&
-				!strings.HasPrefix(host, "unix:") {
-				host = "http://" + host
-			}
-			uh := &UpstreamHost{
-				Name:         host,
-				Conns:        0,
-				Fails:        0,
-				FailTimeout:  upstream.FailTimeout,
-				Unhealthy:    false,
-				ExtraHeaders: upstream.proxyHeaders,
-				CheckDown: func(upstream *staticUpstream) UpstreamHostDownFunc {
-					return func(uh *UpstreamHost) bool {
-						if uh.Unhealthy {
-							return true
-						}
-						if uh.Fails >= upstream.MaxFails &&
-							upstream.MaxFails != 0 {
-							return true
-						}
-						return false
-					}
-				}(upstream),
-				WithoutPathPrefix: upstream.WithoutPathPrefix,
-			}
-			if baseURL, err := url.Parse(uh.Name); err == nil {
-				uh.ReverseProxy = NewSingleHostReverseProxy(baseURL, uh.WithoutPathPrefix)
-				if upstream.insecureSkipVerify {
-					uh.ReverseProxy.Transport = InsecureTransport
-				}
-			} else {
+			uh, err := upstream.NewHost(host)
+			if err != nil {
 				return upstreams, err
 			}
 			upstream.Hosts[i] = uh
@@ -116,6 +89,46 @@ func RegisterPolicy(name string, policy func() Policy) {
 
 func (u *staticUpstream) From() string {
 	return u.from
+}
+
+func (u *staticUpstream) NewHost(host string) (*UpstreamHost, error) {
+	if !strings.HasPrefix(host, "http") &&
+		!strings.HasPrefix(host, "unix:") {
+		host = "http://" + host
+	}
+	uh := &UpstreamHost{
+		Name:         host,
+		Conns:        0,
+		Fails:        0,
+		FailTimeout:  u.FailTimeout,
+		Unhealthy:    false,
+		ExtraHeaders: u.proxyHeaders,
+		CheckDown: func(u *staticUpstream) UpstreamHostDownFunc {
+			return func(uh *UpstreamHost) bool {
+				if uh.Unhealthy {
+					return true
+				}
+				if uh.Fails >= u.MaxFails &&
+					u.MaxFails != 0 {
+					return true
+				}
+				return false
+			}
+		}(u),
+		WithoutPathPrefix: u.WithoutPathPrefix,
+		MaxConns:          u.MaxConns,
+	}
+
+	baseURL, err := url.Parse(uh.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	uh.ReverseProxy = NewSingleHostReverseProxy(baseURL, uh.WithoutPathPrefix)
+	if u.insecureSkipVerify {
+		uh.ReverseProxy.Transport = InsecureTransport
+	}
+	return uh, nil
 }
 
 func parseBlock(c *parse.Dispenser, u *staticUpstream) error {
@@ -147,6 +160,15 @@ func parseBlock(c *parse.Dispenser, u *staticUpstream) error {
 			return err
 		}
 		u.MaxFails = int32(n)
+	case "max_conns":
+		if !c.NextArg() {
+			return c.ArgErr()
+		}
+		n, err := strconv.ParseInt(c.Val(), 10, 64)
+		if err != nil {
+			return err
+		}
+		u.MaxConns = n
 	case "health_check":
 		if !c.NextArg() {
 			return c.ArgErr()
@@ -219,19 +241,19 @@ func (u *staticUpstream) HealthCheckWorker(stop chan struct{}) {
 func (u *staticUpstream) Select() *UpstreamHost {
 	pool := u.Hosts
 	if len(pool) == 1 {
-		if pool[0].Down() {
+		if !pool[0].Available() {
 			return nil
 		}
 		return pool[0]
 	}
-	allDown := true
+	allUnavailable := true
 	for _, host := range pool {
-		if !host.Down() {
-			allDown = false
+		if host.Available() {
+			allUnavailable = false
 			break
 		}
 	}
-	if allDown {
+	if allUnavailable {
 		return nil
 	}
 
