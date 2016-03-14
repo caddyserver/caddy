@@ -21,6 +21,7 @@ var (
 type staticUpstream struct {
 	from               string
 	proxyHeaders       http.Header
+	hiddenHeaders      http.Header
 	Hosts              HostPool
 	Policy             Policy
 	insecureSkipVerify bool
@@ -41,12 +42,13 @@ func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
 	var upstreams []Upstream
 	for c.Next() {
 		upstream := &staticUpstream{
-			from:         "",
-			proxyHeaders: make(http.Header),
-			Hosts:        nil,
-			Policy:       &Random{},
-			FailTimeout:  10 * time.Second,
-			MaxFails:     1,
+			from:          "",
+			proxyHeaders:  make(http.Header),
+			hiddenHeaders: make(http.Header),
+			Hosts:         nil,
+			Policy:        &Random{},
+			FailTimeout:   10 * time.Second,
+			MaxFails:      1,
 		}
 
 		if !c.Args(&upstream.from) {
@@ -70,12 +72,13 @@ func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
 				host = "http://" + host
 			}
 			uh := &UpstreamHost{
-				Name:         host,
-				Conns:        0,
-				Fails:        0,
-				FailTimeout:  upstream.FailTimeout,
-				Unhealthy:    false,
-				ExtraHeaders: upstream.proxyHeaders,
+				Name:          host,
+				Conns:         0,
+				Fails:         0,
+				FailTimeout:   upstream.FailTimeout,
+				Unhealthy:     false,
+				ExtraHeaders:  upstream.proxyHeaders,
+				HiddenHeaders: upstream.hiddenHeaders,
 				CheckDown: func(upstream *staticUpstream) UpstreamHostDownFunc {
 					return func(uh *UpstreamHost) bool {
 						if uh.Unhealthy {
@@ -166,6 +169,12 @@ func parseBlock(c *parse.Dispenser, u *staticUpstream) error {
 			return c.ArgErr()
 		}
 		u.proxyHeaders.Add(header, value)
+	case "hide_header":
+		var header, value string
+		if !c.Args(&header, &value) {
+			return c.ArgErr()
+		}
+		u.hiddenHeaders.Add(header, value)
 	case "websocket":
 		u.proxyHeaders.Add("Connection", "{>Connection}")
 		u.proxyHeaders.Add("Upgrade", "{>Upgrade}")
