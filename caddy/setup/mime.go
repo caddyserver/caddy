@@ -20,8 +20,8 @@ func Mime(c *Controller) (middleware.Middleware, error) {
 	}, nil
 }
 
-func mimeParse(c *Controller) ([]mime.Config, error) {
-	var configs []mime.Config
+func mimeParse(c *Controller) (mime.Config, error) {
+	configs := mime.Config{}
 
 	for c.Next() {
 		// At least one extension is required
@@ -29,22 +29,22 @@ func mimeParse(c *Controller) ([]mime.Config, error) {
 		args := c.RemainingArgs()
 		switch len(args) {
 		case 2:
-			if err := validateExt(args[0]); err != nil {
+			if err := validateExt(configs, args[0]); err != nil {
 				return configs, err
 			}
-			configs = append(configs, mime.Config{Ext: args[0], ContentType: args[1]})
+			configs[args[0]] = args[1]
 		case 1:
 			return configs, c.ArgErr()
 		case 0:
 			for c.NextBlock() {
 				ext := c.Val()
-				if err := validateExt(ext); err != nil {
+				if err := validateExt(configs, ext); err != nil {
 					return configs, err
 				}
 				if !c.NextArg() {
 					return configs, c.ArgErr()
 				}
-				configs = append(configs, mime.Config{Ext: ext, ContentType: c.Val()})
+				configs[ext] = c.Val()
 			}
 		}
 
@@ -54,9 +54,12 @@ func mimeParse(c *Controller) ([]mime.Config, error) {
 }
 
 // validateExt checks for valid file name extension.
-func validateExt(ext string) error {
+func validateExt(configs mime.Config, ext string) error {
 	if !strings.HasPrefix(ext, ".") {
 		return fmt.Errorf(`mime: invalid extension "%v" (must start with dot)`, ext)
+	}
+	if _, ok := configs[ext]; ok {
+		return fmt.Errorf(`mime: duplicate extension "%v" found`, ext)
 	}
 	return nil
 }
