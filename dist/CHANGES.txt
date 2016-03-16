@@ -1,5 +1,9 @@
 CHANGES
 
+<master>
+- proxy: New max_conns setting to limit max connections per upstream
+- Internal improvements, restructuring, and bug fixes
+
 0.8.2 (February 25, 2016)
 - On-demand TLS can obtain certificates during handshakes
 - Built with Go 1.6
