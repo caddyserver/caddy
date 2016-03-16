@@ -107,7 +107,7 @@ func TestMarkdown(t *testing.T) {
 <title>Markdown test 1</title>
 </head>
 <body>
-<h1>Header</h1>
+<h1>Header for: Markdown test 1</h1>
 
 Welcome to A Caddy website!
 <h2>Welcome on the blog</h2>
@@ -208,7 +208,7 @@ DocFlags.var_bool true`
 <title>first_post</title>
 </head>
 <body>
-<h1>Header</h1>
+<h1>Header for: first_post</h1>
 
 Welcome to title!
 <h1>Test h1</h1>
