@@ -102,14 +102,14 @@ Note: You will need **[Go 1.6](https://golang.org/dl/)** or newer.
 2. `cd` into your website's directory
 3. Run `caddy` (assumes `$GOPATH/bin` is in your `$PATH`)
 
-If you're tinkering, you can also use `go run main.go`.
+If you're tinkering, you can also use `./build.bash && ./ecaddy`.
 
 By default, Caddy serves the current directory at 
 [localhost:2015](http://localhost:2015). You can place a Caddyfile to configure 
 Caddy for serving your site.
 
 Caddy accepts some flags from the command line. Run `caddy -h` to view the help
- for flags. You can also pipe a Caddyfile into the caddy command.
+ for flags or see the [CLI documentation](https://caddyserver.com/docs/cli).
 
 **Running as root:** We advise against this; use setcap instead, like so: 
 `setcap cap_net_bind_service=+ep ./caddy` This will allow you to listen on 
