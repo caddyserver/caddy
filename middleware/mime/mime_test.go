@@ -11,18 +11,13 @@ import (
 
 func TestMimeHandler(t *testing.T) {
 
-	mimes := map[string]string{
+	mimes := Config{
 		".html": "text/html",
 		".txt":  "text/plain",
 		".swf":  "application/x-shockwave-flash",
 	}
 
-	var configs []Config
-	for ext, contentType := range mimes {
-		configs = append(configs, Config{Ext: ext, ContentType: contentType})
-	}
-
-	m := Mime{Configs: configs}
+	m := Mime{Configs: mimes}
 
 	w := httptest.NewRecorder()
 	exts := []string{

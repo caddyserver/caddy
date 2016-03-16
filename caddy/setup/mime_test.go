@@ -42,6 +42,11 @@ func TestMime(t *testing.T) {
 		 .html text/html
 		 .txt text/plain
 		} `, false},
+		{`mime {
+		 .foo text/foo
+		 .bar text/bar
+		 .foo text/foobar
+		} `, true},
 		{`mime { .html text/html } `, false},
 		{`mime { .html
 		} `, true},
