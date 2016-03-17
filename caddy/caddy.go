@@ -155,6 +155,15 @@ func Start(cdyfile Input) (err error) {
 	}
 	startedBefore = true
 
+	showInitializationOutput(groupings)
+
+	return nil
+}
+
+// showInitializationOutput just outputs some basic information about
+// what is being served to stdout, as well as any applicable, non-essential
+// warnings for the user.
+func showInitializationOutput(groupings bindingGroup) {
 	// Show initialization output
 	if !Quiet && !IsRestart() {
 		var checkedFdLimit bool
@@ -175,8 +184,6 @@ func Start(cdyfile Input) (err error) {
 			}
 		}
 	}
-
-	return nil
 }
 
 // startServers starts all the servers in groupings,
