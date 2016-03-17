@@ -63,7 +63,7 @@ func (t Templates) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 
 				templateInfo, err := os.Stat(templatePath)
 				if err == nil {
-					// add the Last-Modified header if we were able to optain the information
+					// add the Last-Modified header if we were able to read the stamp
 					middleware.SetLastModifiedHeader(w, templateInfo.ModTime())
 				}
 				buf.WriteTo(w)
