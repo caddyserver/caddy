@@ -88,9 +88,9 @@ func TestSaveAndLoadECCPrivateKey(t *testing.T) {
 	}
 
 	// verify loaded key is correct
-        if !PrivateKeysSame(privateKey, loadedKey) {
-                t.Error("Expected key bytes to be the same, but they weren't")
-        }
+	if !PrivateKeysSame(privateKey, loadedKey) {
+		t.Error("Expected key bytes to be the same, but they weren't")
+	}
 }
 
 // PrivateKeysSame compares the bytes of a and b and returns true if they are the same.

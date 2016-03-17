@@ -18,7 +18,7 @@ func loadPrivateKey(file string) (crypto.PrivateKey, error) {
 		return nil, err
 	}
 	keyBlock, _ := pem.Decode(keyBytes)
-	
+
 	switch keyBlock.Type {
 	case "RSA PRIVATE KEY":
 		return x509.ParsePKCS1PrivateKey(keyBlock.Bytes)
@@ -45,7 +45,7 @@ func savePrivateKey(key crypto.PrivateKey, file string) error {
 		pemType = "RSA"
 		keyBytes = x509.MarshalPKCS1PrivateKey(key)
 	}
-	
+
 	pemKey := pem.Block{Type: pemType + " PRIVATE KEY", Bytes: keyBytes}
 	keyOut, err := os.Create(file)
 	if err != nil {
