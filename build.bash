@@ -8,48 +8,48 @@
 #
 # Outputs compiled program in current directory.
 # Default file name is 'ecaddy'.
-#
+
 set -e
 
-output="$1"
-if [ -z "$output" ]; then
-	output="ecaddy"
-fi
+: ${output_filename:="$1"}
+: ${output_filename:="ecaddy"}
 
 pkg=main
+ldflags=()
 
 # Timestamp of build
-builddate_id=$pkg.buildDate
-builddate=`date -u`
+name="${pkg}.buildDate"
+value=$(date --utc +"%F %H:%M:%SZ")
+ldflags+=("-X" "\"${name}=${value}\"")
 
 # Current tag, if HEAD is on a tag
-tag_id=$pkg.gitTag
+name="${pkg}.gitTag"
 set +e
-tag=`git describe --exact-match HEAD 2> /dev/null`
+value="$(git describe --exact-match HEAD 2>/dev/null)"
 set -e
+ldflags+=("-X" "\"${name}=${value}\"")
 
 # Nearest tag on branch
-lasttag_id=$pkg.gitNearestTag
-lasttag=`git describe --abbrev=0 --tags HEAD`
+name="${pkg}.gitNearestTag"
+value="$(git describe --abbrev=0 --tags HEAD)"
+ldflags+=("-X" "\"${name}=${value}\"")
 
 # Commit SHA
-commit_id=$pkg.gitCommit
-commit=`git rev-parse --short HEAD`
+name="${pkg}.gitCommit"
+value="$(git rev-parse --short HEAD)"
+ldflags+=("-X" "\"${name}=${value}\"")
 
-# Summary of uncommited changes
-shortstat_id=$pkg.gitShortStat
-shortstat=`git diff-index --shortstat HEAD`
+# Summary of uncommitted changes
+name="${pkg}.gitShortStat"
+value="$(git diff-index --shortstat HEAD)"
+ldflags+=("-X" "\"${name}=${value}\"")
 
 # List of modified files
-files_id=$pkg.gitFilesModified
-files=`git diff-index --name-only HEAD`
+name="${pkg}.gitFilesModified"
+value="$(git diff-index --name-only HEAD | tr "\n" "," | sed -e 's:,$::')"
+ldflags+=("-X" "\"${name}=${value}\"")
 
-
-go build -ldflags "
-	-X \"$builddate_id=$builddate\"
-	-X \"$tag_id=$tag\"
-	-X \"$lasttag_id=$lasttag\"
-	-X \"$commit_id=$commit\"
-	-X \"$shortstat_id=$shortstat\"
-	-X \"$files_id=$files\"
-" -o "$output"
+set -x
+go build \
+  -ldflags "${ldflags[*]}" \
+  -o "${output_filename}"
