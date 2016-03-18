@@ -13,8 +13,10 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
+	"unicode"
 )
 
 // Server represents an instance of a server, which serves
@@ -315,6 +317,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// prepare request for middleware stack.
+	prepareRequest(r)
+
 	if vh, ok := s.vhosts[host]; ok {
 		status, _ := vh.stack.ServeHTTP(w, r)
 
@@ -334,6 +339,21 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[INFO] %s - No such host at %s (Remote: %s, Referer: %s)",
 			host, s.Server.Addr, remoteHost, r.Header.Get("Referer"))
 	}
+}
+
+// prepareRequest prepares request before it gets to the middleware stack.
+func prepareRequest(r *http.Request) {
+	// This currently only handles a special case on Darwin.
+	// In the future, this function may be used for other related
+	// actions.
+	if runtime.GOOS == "darwin" {
+		r.URL.Path = trimInvisibleChars(r.URL.Path)
+	}
+}
+
+// trimInvisibleChars trims invisible characters from s.
+func trimInvisibleChars(s string) string {
+	return strings.Join(strings.FieldsFunc(s, func(r rune) bool { return !unicode.IsPrint(r) }), "")
 }
 
 // DefaultErrorFunc responds to an HTTP request with a simple description
