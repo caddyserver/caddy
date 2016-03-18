@@ -41,7 +41,9 @@ getting free help. If we helped you, please consider
 
 Submit [pull requests](https://github.com/mholt/caddy/pulls) at any time. Make
 sure to write tests to assert your change is working properly and is thoroughly
-covered.
+covered. We'll ask most pull requests to be
+[squashed](http://gitready.com/advanced/2009/02/10/squashing-commits-with-rebase.html),
+especially with small commits.
 
 
 ### Proposals, suggestions, ideas, new features
@@ -63,6 +65,15 @@ won't happen without an open discussion first.
 If you are going to spend significant time implementing code for a pull request,
 best to open an issue first and "claim" it and get feedback before you invest
 a lot of time.
+
+
+### Collaborator status
+
+If your pull request is merged, congratulations! You're technically a
+collaborator. We may also grant you "Collaborator status" which means you can
+push to the repository and merge other pull requests. We hope that you will
+stay involved by reviewing pull requests, submitting more of your own, and
+resolving issues as you are able to. Thanks for making Caddy amazing!
 
 
 ### Vulnerabilities
