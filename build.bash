@@ -9,9 +9,9 @@
 # Outputs compiled program in current directory.
 # Default file name is 'ecaddy'.
 
-set -e
+set -euo pipefail
 
-: ${output_filename:="$1"}
+: ${output_filename:="${1:-}"}
 : ${output_filename:="ecaddy"}
 
 pkg=main
