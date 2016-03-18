@@ -61,6 +61,7 @@ var directiveOrder = []directive{
 	{"mime", setup.Mime},
 	{"basicauth", setup.BasicAuth},
 	{"internal", setup.Internal},
+	{"pprof", setup.PProf},
 	{"proxy", setup.Proxy},
 	{"fastcgi", setup.FastCGI},
 	{"websocket", setup.WebSocket},
