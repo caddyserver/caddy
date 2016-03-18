@@ -4,7 +4,9 @@
 [Unit]
 Description=Caddy HTTP/2 web server %I
 Documentation=https://caddyserver.com/docs
-After=network.target
+After=network-online.target
+Wants=network-online.target
+Wants=systemd-networkd-wait-online.service
 
 [Service]
 ; run user and group for caddy
