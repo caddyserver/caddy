@@ -62,7 +62,7 @@ func loadConfigsUpToIncludingTLS(filename string, input io.Reader) ([]server.Con
 			// It is crucial that directives are executed in the proper order.
 			for k, dir := range directiveOrder {
 				// Execute directive if it is in the server block
-				if tokens, ok := sb.Tokens[dir.name]; ok {
+				if tokens, ok := sb.Tokens[dir.Name]; ok {
 					// Each setup function gets a controller, from which setup functions
 					// get access to the config, tokens, and other state information useful
 					// to set up its own host only.
@@ -71,7 +71,7 @@ func loadConfigsUpToIncludingTLS(filename string, input io.Reader) ([]server.Con
 						Dispenser: parse.NewDispenserTokens(filename, tokens),
 						OncePerServerBlock: func(f func() error) error {
 							var err error
-							onces[dir.name].Do(func() {
+							onces[dir.Name].Do(func() {
 								err = f()
 							})
 							return err
@@ -79,22 +79,22 @@ func loadConfigsUpToIncludingTLS(filename string, input io.Reader) ([]server.Con
 						ServerBlockIndex:     i,
 						ServerBlockHostIndex: j,
 						ServerBlockHosts:     sb.HostList(),
-						ServerBlockStorage:   storages[dir.name],
+						ServerBlockStorage:   storages[dir.Name],
 					}
 					// execute setup function and append middleware handler, if any
-					midware, err := dir.setup(controller)
+					midware, err := dir.Setup(controller)
 					if err != nil {
 						return nil, nil, lastDirectiveIndex, err
 					}
 					if midware != nil {
 						config.Middleware = append(config.Middleware, midware)
 					}
-					storages[dir.name] = controller.ServerBlockStorage // persist for this server block
+					storages[dir.Name] = controller.ServerBlockStorage // persist for this server block
 				}
 
 				// Stop after TLS setup, since we need to activate Let's Encrypt before continuing;
 				// it makes some changes to the configs that middlewares might want to know about.
-				if dir.name == "tls" {
+				if dir.Name == "tls" {
 					lastDirectiveIndex = k
 					break
 				}
@@ -147,13 +147,13 @@ func loadConfigs(filename string, input io.Reader) ([]server.Config, error) {
 			for k := lastDirectiveIndex + 1; k < len(directiveOrder); k++ {
 				dir := directiveOrder[k]
 
-				if tokens, ok := sb.Tokens[dir.name]; ok {
+				if tokens, ok := sb.Tokens[dir.Name]; ok {
 					controller := &setup.Controller{
 						Config:    &configs[configIndex],
 						Dispenser: parse.NewDispenserTokens(filename, tokens),
 						OncePerServerBlock: func(f func() error) error {
 							var err error
-							onces[dir.name].Do(func() {
+							onces[dir.Name].Do(func() {
 								err = f()
 							})
 							return err
@@ -161,16 +161,16 @@ func loadConfigs(filename string, input io.Reader) ([]server.Config, error) {
 						ServerBlockIndex:     i,
 						ServerBlockHostIndex: j,
 						ServerBlockHosts:     sb.HostList(),
-						ServerBlockStorage:   storages[dir.name],
+						ServerBlockStorage:   storages[dir.Name],
 					}
-					midware, err := dir.setup(controller)
+					midware, err := dir.Setup(controller)
 					if err != nil {
 						return nil, err
 					}
 					if midware != nil {
 						configs[configIndex].Middleware = append(configs[configIndex].Middleware, midware)
 					}
-					storages[dir.name] = controller.ServerBlockStorage // persist for this server block
+					storages[dir.Name] = controller.ServerBlockStorage // persist for this server block
 				}
 			}
 		}
@@ -191,7 +191,7 @@ func loadConfigs(filename string, input io.Reader) ([]server.Config, error) {
 func makeOnces() map[string]*sync.Once {
 	onces := make(map[string]*sync.Once)
 	for _, dir := range directiveOrder {
-		onces[dir.name] = new(sync.Once)
+		onces[dir.Name] = new(sync.Once)
 	}
 	return onces
 }
@@ -203,7 +203,7 @@ func makeOnces() map[string]*sync.Once {
 func makeStorages() map[string]interface{} {
 	storages := make(map[string]interface{})
 	for _, dir := range directiveOrder {
-		storages[dir.name] = nil
+		storages[dir.Name] = nil
 	}
 	return storages
 }
@@ -300,7 +300,7 @@ func resolveAddr(conf server.Config) (resolvAddr *net.TCPAddr, warnErr, fatalErr
 // directive; false otherwise.
 func validDirective(d string) bool {
 	for _, dir := range directiveOrder {
-		if dir.name == d {
+		if dir.Name == d {
 			return true
 		}
 	}

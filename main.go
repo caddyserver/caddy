@@ -16,6 +16,9 @@ import (
 	"github.com/mholt/caddy/caddy/https"
 	"github.com/xenolf/lego/acme"
 	"gopkg.in/natefinch/lumberjack.v2"
+
+	// Load all external directives enabled by build tags
+	_ "github.com/mholt/caddy/middleware/external"
 )
 
 func init() {
