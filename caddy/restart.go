@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 
 	"github.com/mholt/caddy/caddy/https"
+	"github.com/mholt/caddy/caddy/notify"
 )
 
 func init() {
@@ -39,6 +40,7 @@ func init() {
 // when `go run` sees the initial parent process exit.
 func Restart(newCaddyfile Input) error {
 	log.Println("[INFO] Restarting")
+	go notify.IsReloading(true).WithStatus("Restarting").Tell()
 
 	if newCaddyfile == nil {
 		caddyfileMu.Lock()
@@ -132,6 +134,7 @@ func Restart(newCaddyfile Input) error {
 	}
 
 	// Looks like child is successful; we can exit gracefully.
+	notify.SucceededBy(cmd.Process.Pid).WithStatus("Handing over to new main process").Tell()
 	return Stop()
 }
 
