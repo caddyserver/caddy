@@ -34,6 +34,7 @@ func TestRewrite(t *testing.T) {
 		{"/reggrp", `/ad/([0-9]+)([a-z]*)`, "/a{1}/{2}", ""},
 		{"/reg2grp", `(.*)`, "/{1}", ""},
 		{"/reg3grp", `(.*)/(.*)/(.*)`, "/{1}{2}{3}", ""},
+		{"/hashtest", "(.*)", "/{1}", ""},
 	}
 
 	for _, regexpRule := range regexps {
@@ -90,6 +91,9 @@ func TestRewrite(t *testing.T) {
 		{"/reg2grp/ad/124abc", "/ad/124abc"},
 		{"/reg3grp/ad/aa/66", "/adaa66"},
 		{"/reg3grp/ad612/n1n/ab", "/ad612n1nab"},
+		{"/hashtest/a%20%23%20test", "/a%20%23%20test"},
+		{"/hashtest/a%20%3F%20test", "/a%20%3F%20test"},
+		{"/hashtest/a%20%3F%23test", "/a%20%3F%23test"},
 	}
 
 	for i, test := range tests {
@@ -154,6 +158,6 @@ func TestRewrite(t *testing.T) {
 }
 
 func urlPrinter(w http.ResponseWriter, r *http.Request) (int, error) {
-	fmt.Fprintf(w, r.URL.String())
+	fmt.Fprint(w, r.URL.String())
 	return 0, nil
 }

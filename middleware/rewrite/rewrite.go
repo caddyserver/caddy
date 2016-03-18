@@ -5,6 +5,7 @@ package rewrite
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -165,7 +166,17 @@ func (r *ComplexRule) Rewrite(fs http.FileSystem, req *http.Request) (re Result)
 			return
 		default:
 			// set regexp match variables {1}, {2} ...
+
+			// url escaped values of ? and #.
+			q, f := url.QueryEscape("?"), url.QueryEscape("#")
+
 			for i := 1; i < len(matches); i++ {
+				// Special case of unescaped # and ? by stdlib regexp.
+				// Reverse the unescape.
+				if strings.ContainsAny(matches[i], "?#") {
+					matches[i] = strings.NewReplacer("?", q, "#", f).Replace(matches[i])
+				}
+
 				replacer.Set(fmt.Sprint(i), matches[i])
 			}
 		}
