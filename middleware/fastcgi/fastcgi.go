@@ -45,17 +45,18 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 		// but we also want to be flexible for the script we proxy to.
 
 		fpath := r.URL.Path
+
 		if idx, ok := middleware.IndexFile(h.FileSys, fpath, rule.IndexFiles); ok {
 			fpath = idx
 			// Index file present.
 			// If request path cannot be split, return error.
-			if !h.canSplit(fpath, rule) {
+			if !rule.canSplit(fpath) {
 				return http.StatusInternalServerError, ErrIndexMissingSplit
 			}
 		} else {
 			// No index file present.
 			// If request path cannot be split, ignore request.
-			if !h.canSplit(fpath, rule) {
+			if !rule.canSplit(fpath) {
 				continue
 			}
 		}
@@ -165,10 +166,6 @@ func (h Handler) exists(path string) bool {
 	return false
 }
 
-func (h Handler) canSplit(path string, rule Rule) bool {
-	return strings.Contains(path, rule.SplitPath)
-}
-
 // buildEnv returns a set of CGI environment variables for the request.
 func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]string, error) {
 	var env map[string]string
@@ -186,8 +183,8 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 	}
 
 	// Split path in preparation for env variables.
-	// Previous h.canSplit checks ensure this can never be -1.
-	splitPos := strings.Index(fpath, rule.SplitPath)
+	// Previous rule.canSplit checks ensure this can never be -1.
+	splitPos := rule.splitPos(fpath)
 
 	// Request has the extension; path was split successfully
 	docURI := fpath[:splitPos+len(rule.SplitPath)]
@@ -290,6 +287,20 @@ type Rule struct {
 
 	// Environment Variables
 	EnvVars [][2]string
+}
+
+// canSplit checks if path can split into two based on rule.SplitPath.
+func (r Rule) canSplit(path string) bool {
+	return r.splitPos(path) >= 0
+}
+
+// splitPos returns the index where path should be split
+// based on rule.SplitPath.
+func (r Rule) splitPos(path string) int {
+	if middleware.CaseSensitivePath {
+		return strings.Index(path, r.SplitPath)
+	}
+	return strings.Index(strings.ToLower(path), strings.ToLower(r.SplitPath))
 }
 
 var (
