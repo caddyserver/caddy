@@ -1,3 +1,6 @@
+*.bash    text eol=lf whitespace=blank-at-eol,space-before-tab,tab-in-indent,trailing-space,tabwidth=2
+*.sh      text eol=lf whitespace=blank-at-eol,space-before-tab,tab-in-indent,trailing-space,tabwidth=2
+
 # files for systemd
 *.path    text eol=lf whitespace=blank-at-eol,space-before-tab,tab-in-indent,trailing-space,tabwidth=2
 *.service text eol=lf whitespace=blank-at-eol,space-before-tab,tab-in-indent,trailing-space,tabwidth=2

@@ -1,56 +1,78 @@
 #!/usr/bin/env bash
-set -e
-set -o pipefail
-shopt -s nullglob # if no files match glob, assume empty list instead of string literal
 
+set -euo pipefail
+# if no files match glob, assume empty list instead of string literal
+shopt -s nullglob
 
-## PACKAGE TO BUILD
-Package=github.com/mholt/caddy
+: ${build_package:="github.com/mholt/caddy"}
 
+: ${dist_dir:="${GOPATH}/src/${build_package}/dist"}
+: ${build_dir:="${dist_dir}/builds"}
+: ${target_dir:="${dist_dir}/release"}
 
-## PATHS TO USE
-DistDir=$GOPATH/src/$Package/dist
-BuildDir=$DistDir/builds
-ReleaseDir=$DistDir/release
+# Bundles a single binary, given as first parameter, into an archive.
+package() {
+  # Binary inside the zip file is simply the project name
+  binbase="$(basename "${build_package}")"
+  if [[ "${1}" == *.exe ]]; then
+    binbase+=".exe"
+  fi
+  bin="${build_dir}/${binbase}"
 
+  # Name .zip file same as binary, but strip .exe from end
+  zipname="$(basename "${1%.exe}")"
+  case "$(printf "${zipname}" | cut -d '_' -f 2 | sed -e 's:[a-z]*bsd:bsd:')" in
+    linux|bsd) zipname+=".tar.gz" ;;
+    *)         zipname+=".zip" ;;
+  esac
 
-## BEGIN
+  # Compress distributable depending on extension
+  case "${zipname##*.}" in
+    zip)
+      zip -j "${target_dir}/${zipname}" \
+        "${1}" \
+        "${dist_dir}"/{CHANGES.txt,LICENSES.txt,README.txt}
+      printf "@ $(basename "${1}")\n@=${binbase}\n" \
+      | zipnote -w "${target_dir}/${zipname}"
+      ;;
+    gz)
+      tar -caf "${target_dir}/${zipname}" \
+        --owner=0 --group=0 \
+        --transform="s#$(basename "${1}")#${binbase}#" \
+        -C "$(dirname "${1}")" "$(basename "${1}")" \
+        -C "${dist_dir}" CHANGES.txt LICENSES.txt README.txt
+      ;;
+  esac
+}
 
-# Compile binaries
-mkdir -p $BuildDir
-cd $BuildDir
-rm -f caddy*
-gox $Package
+prepare_directories() {
+  mkdir -p "${build_dir}"
+  rm -f "${build_dir}"/caddy*
 
-# Zip them up with release notes and stuff
-mkdir -p $ReleaseDir
-cd $ReleaseDir
-rm -f caddy*
-for f in $BuildDir/*
-do
-	# Name .zip file same as binary, but strip .exe from end
-	zipname=$(basename ${f%".exe"})
-	if [[ $f == *"linux"* ]] || [[ $f == *"bsd"* ]]; then
-		zipname=${zipname}.tar.gz
-	else
-		zipname=${zipname}.zip
-	fi
+  mkdir -p "${target_dir}"
+  rm -f "${target_dir}"/caddy*
+}
 
-	# Binary inside the zip file is simply the project name
-	binbase=$(basename $Package)
-	if [[ $f == *.exe ]]; then
-		binbase=$binbase.exe
-	fi
-	bin=$BuildDir/$binbase
-	mv $f $bin
+compile_binaries() {
+  (cd "${build_dir}"; gox "${build_package}")
+}
 
-	# Compress distributable
-	if [[ $zipname == *.zip ]]; then
-		zip -j $zipname $bin $DistDir/CHANGES.txt $DistDir/LICENSES.txt $DistDir/README.txt
-	else
-		tar -cvzf $zipname -C $BuildDir $binbase -C $DistDir CHANGES.txt LICENSES.txt README.txt
-	fi
+if [[ "${1:-}" == "" ]]; then
+  prepare_directories
+  compile_binaries
 
-	# Put binary filename back to original
-	mv $bin $f
-done
+  case "${OSTYPE}" in
+    linux*)
+      find "${build_dir}" -type f -executable -print0 \
+      | xargs --null --max-args=1 --max-procs=$(nproc --ignore=1) -I '{}' \
+        "${0}" package '{}'
+      ;;
+    *)
+      while read f; do
+        package "${f}"
+      done < <(ls -1 "${build_dir}"/caddy*)
+      ;;
+  esac
+else
+  ${1} "${2}"
+fi
