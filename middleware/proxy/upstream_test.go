@@ -127,9 +127,9 @@ func TestAllowedPaths(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		isAllowed := upstream.IsAllowedPath(test.url)
-		if test.expected != isAllowed {
-			t.Errorf("Test %d: expected %v found %v", i+1, test.expected, isAllowed)
+		allowed := upstream.AllowedPath(test.url)
+		if test.expected != allowed {
+			t.Errorf("Test %d: expected %v found %v", i+1, test.expected, allowed)
 		}
 	}
 }

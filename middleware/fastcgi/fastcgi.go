@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -34,8 +35,8 @@ type Handler struct {
 func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	for _, rule := range h.Rules {
 
-		// First requirement: Base path must match
-		if !middleware.Path(r.URL.Path).Matches(rule.Path) {
+		// First requirement: Base path must match and the path must be allowed.
+		if !middleware.Path(r.URL.Path).Matches(rule.Path) || !rule.AllowedPath(r.URL.Path) {
 			continue
 		}
 
@@ -287,6 +288,9 @@ type Rule struct {
 
 	// Environment Variables
 	EnvVars [][2]string
+
+	// Ignored paths
+	IgnoredSubPaths []string
 }
 
 // canSplit checks if path can split into two based on rule.SplitPath.
@@ -301,6 +305,16 @@ func (r Rule) splitPos(path string) int {
 		return strings.Index(path, r.SplitPath)
 	}
 	return strings.Index(strings.ToLower(path), strings.ToLower(r.SplitPath))
+}
+
+// AllowedPath checks if requestPath is not an ignored path.
+func (r Rule) AllowedPath(requestPath string) bool {
+	for _, ignoredSubPath := range r.IgnoredSubPaths {
+		if middleware.Path(path.Clean(requestPath)).Matches(path.Join(r.Path, ignoredSubPath)) {
+			return false
+		}
+	}
+	return true
 }
 
 var (

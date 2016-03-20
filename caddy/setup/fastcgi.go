@@ -86,6 +86,12 @@ func fastcgiParse(c *Controller) ([]fastcgi.Rule, error) {
 					return rules, c.ArgErr()
 				}
 				rule.EnvVars = append(rule.EnvVars, [2]string{envArgs[0], envArgs[1]})
+			case "except":
+				ignoredPaths := c.RemainingArgs()
+				if len(ignoredPaths) == 0 {
+					return rules, c.ArgErr()
+				}
+				rule.IgnoredSubPaths = ignoredPaths
 			}
 		}
 
