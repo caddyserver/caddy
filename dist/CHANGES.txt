@@ -1,6 +1,8 @@
 CHANGES
 
 <master>
+- New pprof directive for exposing process performance profile
+- Toggle case-sensitive path matching with environment variable
 - proxy: New max_conns setting to limit max connections per upstream
 - Internal improvements, restructuring, and bug fixes
 

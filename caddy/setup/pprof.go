@@ -20,7 +20,8 @@ func PProf(c *Controller) (middleware.Middleware, error) {
 		}
 		found = true
 	}
+
 	return func(next middleware.Handler) middleware.Handler {
-		return pprof.New(next)
+		return &pprof.Handler{Next: next, Mux: pprof.NewMux()}
 	}, nil
 }
