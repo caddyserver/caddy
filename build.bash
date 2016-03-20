@@ -19,7 +19,7 @@ ldflags=()
 
 # Timestamp of build
 name="${pkg}.buildDate"
-value=$(date --utc +"%F %H:%M:%SZ")
+value=$(date -u +"%a %b %d %H:%M:%S %Z %Y")
 ldflags+=("-X" "\"${name}=${value}\"")
 
 # Current tag, if HEAD is on a tag
@@ -46,10 +46,7 @@ ldflags+=("-X" "\"${name}=${value}\"")
 
 # List of modified files
 name="${pkg}.gitFilesModified"
-value="$(git diff-index --name-only HEAD | tr "\n" "," | sed -e 's:,$::')"
+value="$(git diff-index --name-only HEAD)"
 ldflags+=("-X" "\"${name}=${value}\"")
 
-set -x
-go build \
-  -ldflags "${ldflags[*]}" \
-  -o "${output_filename}"
+go build -ldflags "${ldflags[*]}" -o "${output_filename}"

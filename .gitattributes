@@ -1,7 +1,7 @@
-*.bash    text eol=lf whitespace=blank-at-eol,space-before-tab,tab-in-indent,trailing-space,tabwidth=2
-*.sh      text eol=lf whitespace=blank-at-eol,space-before-tab,tab-in-indent,trailing-space,tabwidth=2
+*.bash    text eol=lf whitespace=blank-at-eol,space-before-tab,tab-in-indent,trailing-space,tabwidth=4
+*.sh      text eol=lf whitespace=blank-at-eol,space-before-tab,tab-in-indent,trailing-space,tabwidth=4
 
 # files for systemd
-*.path    text eol=lf whitespace=blank-at-eol,space-before-tab,tab-in-indent,trailing-space,tabwidth=2
-*.service text eol=lf whitespace=blank-at-eol,space-before-tab,tab-in-indent,trailing-space,tabwidth=2
-*.timer   text eol=lf whitespace=blank-at-eol,space-before-tab,tab-in-indent,trailing-space,tabwidth=2
+*.path    text eol=lf whitespace=blank-at-eol,space-before-tab,tab-in-indent,trailing-space,tabwidth=4
+*.service text eol=lf whitespace=blank-at-eol,space-before-tab,tab-in-indent,trailing-space,tabwidth=4
+*.timer   text eol=lf whitespace=blank-at-eol,space-before-tab,tab-in-indent,trailing-space,tabwidth=4
