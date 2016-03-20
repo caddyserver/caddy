@@ -27,7 +27,7 @@ type Upstream interface {
 	// Selects an upstream host to be routed to.
 	Select() *UpstreamHost
 	// Checks if subpath is not an ignored path
-	IsAllowedPath(string) bool
+	AllowedPath(string) bool
 }
 
 // UpstreamHostDownFunc can be used to customize how Down behaves.
@@ -75,7 +75,7 @@ var tryDuration = 60 * time.Second
 // ServeHTTP satisfies the middleware.Handler interface.
 func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	for _, upstream := range p.Upstreams {
-		if middleware.Path(r.URL.Path).Matches(upstream.From()) && upstream.IsAllowedPath(r.URL.Path) {
+		if middleware.Path(r.URL.Path).Matches(upstream.From()) && upstream.AllowedPath(r.URL.Path) {
 			var replacer middleware.Replacer
 			start := time.Now()
 			requestHost := r.Host

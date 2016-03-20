@@ -263,7 +263,7 @@ func (u *staticUpstream) Select() *UpstreamHost {
 	return u.Policy.Select(pool)
 }
 
-func (u *staticUpstream) IsAllowedPath(requestPath string) bool {
+func (u *staticUpstream) AllowedPath(requestPath string) bool {
 	for _, ignoredSubPath := range u.IgnoredSubPaths {
 		if middleware.Path(path.Clean(requestPath)).Matches(path.Join(u.From(), ignoredSubPath)) {
 			return false

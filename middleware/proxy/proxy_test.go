@@ -254,7 +254,7 @@ func (u *fakeUpstream) Select() *UpstreamHost {
 	return u.host
 }
 
-func (u *fakeUpstream) IsAllowedPath(requestPath string) bool {
+func (u *fakeUpstream) AllowedPath(requestPath string) bool {
 	return true
 }
 
@@ -287,7 +287,7 @@ func (u *fakeWsUpstream) Select() *UpstreamHost {
 	}
 }
 
-func (u *fakeWsUpstream) IsAllowedPath(requestPath string) bool {
+func (u *fakeWsUpstream) AllowedPath(requestPath string) bool {
 	return true
 }
 

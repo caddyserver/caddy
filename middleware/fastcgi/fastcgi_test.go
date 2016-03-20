@@ -73,6 +73,36 @@ func TestRuleParseAddress(t *testing.T) {
 	}
 }
 
+func TestRuleIgnoredPath(t *testing.T) {
+	rule := &Rule{
+		Path:            "/fastcgi",
+		IgnoredSubPaths: []string{"/download", "/static"},
+	}
+	tests := []struct {
+		url      string
+		expected bool
+	}{
+		{"/fastcgi", true},
+		{"/fastcgi/dl", true},
+		{"/fastcgi/download", false},
+		{"/fastcgi/download/static", false},
+		{"/fastcgi/static", false},
+		{"/fastcgi/static/download", false},
+		{"/fastcgi/something/download", true},
+		{"/fastcgi/something/static", true},
+		{"/fastcgi//static", false},
+		{"/fastcgi//static//download", false},
+		{"/fastcgi//download", false},
+	}
+
+	for i, test := range tests {
+		allowed := rule.AllowedPath(test.url)
+		if test.expected != allowed {
+			t.Errorf("Test %d: expected %v found %v", i, test.expected, allowed)
+		}
+	}
+}
+
 func TestBuildEnv(t *testing.T) {
 	testBuildEnv := func(r *http.Request, rule Rule, fpath string, envExpected map[string]string) {
 		var h Handler

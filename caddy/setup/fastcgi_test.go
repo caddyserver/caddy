@@ -2,8 +2,9 @@ package setup
 
 import (
 	"fmt"
-	"github.com/mholt/caddy/middleware/fastcgi"
 	"testing"
+
+	"github.com/mholt/caddy/middleware/fastcgi"
 )
 
 func TestFastCGI(t *testing.T) {
@@ -61,6 +62,18 @@ func TestFastcgiParse(t *testing.T) {
 				SplitPath:  ".html",
 				IndexFiles: []string{},
 			}}},
+		{`fastcgi / 127.0.0.1:9001 {
+	              split .html
+	              except /admin /user
+	              }`,
+			false, []fastcgi.Rule{{
+				Path:            "/",
+				Address:         "127.0.0.1:9001",
+				Ext:             "",
+				SplitPath:       ".html",
+				IndexFiles:      []string{},
+				IgnoredSubPaths: []string{"/admin", "/user"},
+			}}},
 	}
 	for i, test := range tests {
 		c := NewTestController(test.inputFastcgiConfig)
@@ -100,6 +113,11 @@ func TestFastcgiParse(t *testing.T) {
 			if fmt.Sprint(actualFastcgiConfig.IndexFiles) != fmt.Sprint(test.expectedFastcgiConfig[j].IndexFiles) {
 				t.Errorf("Test %d expected %dth FastCGI IndexFiles to be  %s  , but got %s",
 					i, j, test.expectedFastcgiConfig[j].IndexFiles, actualFastcgiConfig.IndexFiles)
+			}
+
+			if fmt.Sprint(actualFastcgiConfig.IgnoredSubPaths) != fmt.Sprint(test.expectedFastcgiConfig[j].IgnoredSubPaths) {
+				t.Errorf("Test %d expected %dth FastCGI IgnoredSubPaths to be  %s  , but got %s",
+					i, j, test.expectedFastcgiConfig[j].IgnoredSubPaths, actualFastcgiConfig.IgnoredSubPaths)
 			}
 		}
 	}
