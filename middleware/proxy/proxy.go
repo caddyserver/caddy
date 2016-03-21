@@ -89,6 +89,9 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 				}
 				proxy := host.ReverseProxy
 				r.Host = host.Name
+				if rr, ok := w.(*middleware.ResponseRecorder); ok && rr.Replacer != nil {
+					rr.Replacer.Set("upstream", host.Name)
+				}
 
 				if baseURL, err := url.Parse(host.Name); err == nil {
 					r.Host = baseURL.Host

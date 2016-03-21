@@ -12,26 +12,38 @@ import (
 
 // Replacer is a type which can replace placeholder
 // substrings in a string with actual values from a
-// http.Request and responseRecorder. Always use
-// NewReplacer to get one of these.
+// http.Request and ResponseRecorder. Always use
+// NewReplacer to get one of these. Any placeholders
+// made with Set() should overwrite existing values if
+// the key is already used.
 type Replacer interface {
 	Replace(string) string
 	Set(key, value string)
 }
 
+// replacer implements Replacer. customReplacements
+// is used to store custom replacements created with
+// Set() until the time of replacement, at which point
+// they will be used to overwrite other replacements
+// if there is a name conflict.
 type replacer struct {
-	replacements map[string]string
-	emptyValue   string
+	replacements       map[string]string
+	customReplacements map[string]string
+	emptyValue         string
+	responseRecorder   *ResponseRecorder
 }
 
-// NewReplacer makes a new replacer based on r and rr.
-// Do not create a new replacer until r and rr have all
-// the needed values, because this function copies those
-// values into the replacer. rr may be nil if it is not
-// available. emptyValue should be the string that is used
-// in place of empty string (can still be empty string).
+// NewReplacer makes a new replacer based on r and rr which
+// are used for request and response placeholders, respectively.
+// Request placeholders are created immediately, whereas
+// response placeholders are not created until Replace()
+// is invoked. rr may be nil if it is not available.
+// emptyValue should be the string that is used in place
+// of empty string (can still be empty string).
 func NewReplacer(r *http.Request, rr *ResponseRecorder, emptyValue string) Replacer {
-	rep := replacer{
+	rep := &replacer{
+		responseRecorder:   rr,
+		customReplacements: make(map[string]string),
 		replacements: map[string]string{
 			"{method}": r.Method,
 			"{scheme}": func() string {
@@ -66,9 +78,7 @@ func NewReplacer(r *http.Request, rr *ResponseRecorder, emptyValue string) Repla
 			}(),
 			"{uri}":         r.URL.RequestURI(),
 			"{uri_escaped}": url.QueryEscape(r.URL.RequestURI()),
-			"{when}": func() string {
-				return time.Now().Format(timeFormat)
-			}(),
+			"{when}":        time.Now().Format(timeFormat),
 			"{file}": func() string {
 				_, file := path.Split(r.URL.Path)
 				return file
@@ -79,11 +89,6 @@ func NewReplacer(r *http.Request, rr *ResponseRecorder, emptyValue string) Repla
 			}(),
 		},
 		emptyValue: emptyValue,
-	}
-	if rr != nil {
-		rep.replacements["{status}"] = strconv.Itoa(rr.status)
-		rep.replacements["{size}"] = strconv.Itoa(rr.size)
-		rep.replacements["{latency}"] = time.Since(rr.start).String()
 	}
 
 	// Header placeholders (case-insensitive)
@@ -96,7 +101,19 @@ func NewReplacer(r *http.Request, rr *ResponseRecorder, emptyValue string) Repla
 
 // Replace performs a replacement of values on s and returns
 // the string with the replaced values.
-func (r replacer) Replace(s string) string {
+func (r *replacer) Replace(s string) string {
+	// Make response placeholders now
+	if r.responseRecorder != nil {
+		r.replacements["{status}"] = strconv.Itoa(r.responseRecorder.status)
+		r.replacements["{size}"] = strconv.Itoa(r.responseRecorder.size)
+		r.replacements["{latency}"] = time.Since(r.responseRecorder.start).String()
+	}
+
+	// Include custom placeholders, overwriting existing ones if necessary
+	for key, val := range r.customReplacements {
+		r.replacements[key] = val
+	}
+
 	// Header replacements - these are case-insensitive, so we can't just use strings.Replace()
 	for strings.Contains(s, headerReplacer) {
 		idxStart := strings.Index(s, headerReplacer)
@@ -125,9 +142,9 @@ func (r replacer) Replace(s string) string {
 	return s
 }
 
-// Set sets key to value in the replacements map.
-func (r replacer) Set(key, value string) {
-	r.replacements["{"+key+"}"] = value
+// Set sets key to value in the r.customReplacements map.
+func (r *replacer) Set(key, value string) {
+	r.customReplacements["{"+key+"}"] = value
 }
 
 const (

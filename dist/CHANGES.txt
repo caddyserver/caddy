@@ -4,6 +4,7 @@ CHANGES
 - New pprof directive for exposing process performance profile
 - Toggle case-sensitive path matching with environment variable
 - proxy: New max_conns setting to limit max connections per upstream
+- proxy: Enables replaceable value for name of upstream host
 - Internal improvements, restructuring, and bug fixes
 
 0.8.2 (February 25, 2016)

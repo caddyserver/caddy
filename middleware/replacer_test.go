@@ -16,23 +16,27 @@ func TestNewReplacer(t *testing.T) {
 	if err != nil {
 		t.Fatal("Request Formation Failed\n")
 	}
-	replaceValues := NewReplacer(request, recordRequest, "")
+	rep := NewReplacer(request, recordRequest, "")
 
-	switch v := replaceValues.(type) {
-	case replacer:
-
+	switch v := rep.(type) {
+	case *replacer:
 		if v.replacements["{host}"] != "localhost" {
 			t.Error("Expected host to be localhost")
 		}
 		if v.replacements["{method}"] != "POST" {
 			t.Error("Expected request method  to be POST")
 		}
-		if v.replacements["{status}"] != "200" {
-			t.Error("Expected status to be 200")
-		}
 
+		// Response placeholders should only be set after call to Replace()
+		if got, want := v.replacements["{status}"], ""; got != want {
+			t.Errorf("Expected status to NOT be set before Replace() is called; was: %s", got)
+		}
+		rep.Replace("foobar")
+		if got, want := v.replacements["{status}"], "200"; got != want {
+			t.Errorf("Expected status to be %s, was: %s", want, got)
+		}
 	default:
-		t.Fatal("Return Value from New Replacer expected pass type assertion into a replacer type\n")
+		t.Fatalf("Expected *replacer underlying Replacer type, got: %#v", rep)
 	}
 }
 

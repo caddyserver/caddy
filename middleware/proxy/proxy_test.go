@@ -18,6 +18,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mholt/caddy/middleware"
+
 	"golang.org/x/net/websocket"
 )
 
@@ -52,6 +54,16 @@ func TestReverseProxy(t *testing.T) {
 
 	if !requestReceived {
 		t.Error("Expected backend to receive request, but it didn't")
+	}
+
+	// Make sure {upstream} placeholder is set
+	rr := middleware.NewResponseRecorder(httptest.NewRecorder())
+	rr.Replacer = middleware.NewReplacer(r, rr, "-")
+
+	p.ServeHTTP(rr, r)
+
+	if got, want := rr.Replacer.Replace("{upstream}"), backend.URL; got != want {
+		t.Errorf("Expected custom placeholder {upstream} to be set (%s), but it wasn't; got: %s", want, got)
 	}
 }
 

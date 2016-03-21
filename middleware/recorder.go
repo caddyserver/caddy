@@ -8,17 +8,24 @@ import (
 	"time"
 )
 
-// ResponseRecorder is a type of ResponseWriter that captures
+// ResponseRecorder is a type of http.ResponseWriter that captures
 // the status code written to it and also the size of the body
 // written in the response. A status code does not have
 // to be written, however, in which case 200 must be assumed.
 // It is best to have the constructor initialize this type
 // with that default status code.
+//
+// Setting the Replacer field allows middlewares to type-assert
+// the http.ResponseWriter to ResponseRecorder and set their own
+// placeholder values for logging utilities to use.
+//
+// Beware when accessing the Replacer value; it may be nil!
 type ResponseRecorder struct {
 	http.ResponseWriter
-	status int
-	size   int
-	start  time.Time
+	Replacer Replacer
+	status   int
+	size     int
+	start    time.Time
 }
 
 // NewResponseRecorder makes and returns a new responseRecorder,
