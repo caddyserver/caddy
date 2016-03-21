@@ -2,6 +2,7 @@ CHANGES
 
 <master>
 - New pprof directive for exposing process performance profile
+- New -restart option to force in-process restarts on Unix systems
 - Toggle case-sensitive path matching with environment variable
 - proxy: New max_conns setting to limit max connections per upstream
 - proxy: Enables replaceable value for name of upstream host
