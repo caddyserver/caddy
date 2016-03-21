@@ -25,6 +25,10 @@ func init() {
 // downtime if on a POSIX-compatible system, or forcefully if on
 // Windows but with imperceptibly-short downtime.
 //
+// The behavior can be controlled by the RestartMode variable,
+// where "inproc" will restart forcefully in process same as
+// Windows on a POSIX-compatible system.
+//
 // The restarted application will use newCaddyfile as its input
 // configuration. If newCaddyfile is nil, the current (existing)
 // Caddyfile configuration will be used.
@@ -46,6 +50,10 @@ func Restart(newCaddyfile Input) error {
 	err := getCertsForNewCaddyfile(newCaddyfile)
 	if err != nil {
 		return errors.New("TLS preload: " + err.Error())
+	}
+
+	if RestartMode == "inproc" {
+		return restartInProc(newCaddyfile)
 	}
 
 	if len(os.Args) == 0 { // this should never happen, but...
@@ -161,6 +169,25 @@ func getCertsForNewCaddyfile(newCaddyfile Input) error {
 	if err != nil {
 		return errors.New("obtaining certs: " + err.Error())
 	}
+
+	return nil
+}
+
+// restartInProc restarts Caddy forcefully in process using newCaddyfile.
+func restartInProc(newCaddyfile Input) error {
+	wg.Add(1) // barrier so Wait() doesn't unblock
+
+	err := Stop()
+	if err != nil {
+		return err
+	}
+
+	err = Start(newCaddyfile)
+	if err != nil {
+		return err
+	}
+
+	wg.Done() // take down our barrier
 
 	return nil
 }

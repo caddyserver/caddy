@@ -52,6 +52,11 @@ var (
 
 	// GracefulTimeout is the maximum duration of a graceful shutdown.
 	GracefulTimeout time.Duration
+
+	// RestartMode is the mode used for restart,
+	// "inproc" will restart in process,
+	// otherwise default behavior is used (inproc on Windows, fork on Linux).
+	RestartMode = ""
 )
 
 var (
