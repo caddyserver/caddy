@@ -12,10 +12,10 @@ before_install:
   # for git to use when cloning from googlesource.com.
   # Bypasses "bandwidth limit exceeded" errors.
   # See github.com/golang/go/issues/12933
-  - openssl aes-256-cbc -K $encrypted_3df18f9af81d_key -iv $encrypted_3df18f9af81d_iv -in dist/gitcookie.sh.enc -out dist/gitcookie.sh -d
+ - if [ "$TRAVIS_PULL_REQUEST" = "false" ]; then openssl aes-256-cbc -K $encrypted_3df18f9af81d_key -iv $encrypted_3df18f9af81d_iv -in dist/gitcookie.sh.enc -out dist/gitcookie.sh -d; fi
 
 install:
-  - bash dist/gitcookie.sh
+  - if [ "$TRAVIS_PULL_REQUEST" = "false" ]; then bash dist/gitcookie.sh; fi
   - go get -t ./...
   - go get golang.org/x/tools/cmd/vet
 
