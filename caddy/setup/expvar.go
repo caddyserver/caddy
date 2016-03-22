@@ -1,7 +1,9 @@
 package setup
 
 import (
-	_ "expvar"
+	stdexpvar "expvar"
+	"runtime"
+	"sync"
 
 	"github.com/mholt/caddy/middleware"
 	"github.com/mholt/caddy/middleware/expvar"
@@ -14,6 +16,9 @@ func ExpVar(c *Controller) (middleware.Middleware, error) {
 		return nil, err
 	}
 
+	// publish any extra information/metrics we may want to capture
+	publishExtraVars()
+
 	expvar := expvar.ExpVar{Resource: resource}
 
 	return func(next middleware.Handler) middleware.Handler {
@@ -24,12 +29,13 @@ func ExpVar(c *Controller) (middleware.Middleware, error) {
 
 func expVarParse(c *Controller) (expvar.Resource, error) {
 	var resource expvar.Resource
-
 	var err error
+
 	for c.Next() {
 		args := c.RemainingArgs()
-
 		switch len(args) {
+		case 0:
+			resource = expvar.Resource(defaultExpvarPath)
 		case 1:
 			resource = expvar.Resource(args[0])
 		default:
@@ -39,3 +45,16 @@ func expVarParse(c *Controller) (expvar.Resource, error) {
 
 	return resource, err
 }
+
+func publishExtraVars() {
+	// By using sync.Once instead of an init() function, we don't clutter
+	// the app's expvar export unnecessarily, or risk colliding with it.
+	publishOnce.Do(func() {
+		stdexpvar.Publish("Goroutines", stdexpvar.Func(func() interface{} {
+			return runtime.NumGoroutine()
+		}))
+	})
+}
+
+var publishOnce sync.Once // publishing variables should only be done once
+var defaultExpvarPath = "/debug/vars"
