@@ -113,7 +113,6 @@ func parseWindowsCommand(cmd string) []string {
 
 	if len(part) > 0 {
 		parts = append(parts, part)
-		part = ""
 	}
 
 	return parts

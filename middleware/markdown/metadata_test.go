@@ -206,7 +206,7 @@ func TestParsers(t *testing.T) {
 		}
 
 		// front matter but no body
-		if md, err = v.parser.Parse([]byte(v.testData[4])); err != nil {
+		if _, err = v.parser.Parse([]byte(v.testData[4])); err != nil {
 			t.Fatalf("Unexpected error for valid metadata but no body for %v", v.name)
 		}
 	}

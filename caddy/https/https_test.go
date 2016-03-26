@@ -116,7 +116,7 @@ func TestRedirPlaintextHost(t *testing.T) {
 	// browsers can infer a default port from scheme, so make sure the port
 	// doesn't get added in explicitly for default ports like 443 for https.
 	cfg = redirPlaintextHost(server.Config{Host: "example.com", Port: "443"})
-	handler, ok = cfg.Middleware[0](nil).(redirect.Redirect)
+	handler, _ = cfg.Middleware[0](nil).(redirect.Redirect)
 	if actual, expected := handler.Rules[0].To, "https://{host}{uri}"; actual != expected {
 		t.Errorf("(Default Port) Expected redirect rule to be to URL '%s' but is actually to '%s'", expected, actual)
 	}

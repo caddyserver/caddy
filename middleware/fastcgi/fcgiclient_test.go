@@ -149,7 +149,7 @@ func sendFcgi(reqType int, fcgiParams map[string]string, data []byte, posts map[
 	}
 
 	defer resp.Body.Close()
-	content, err = ioutil.ReadAll(resp.Body)
+	content, _ = ioutil.ReadAll(resp.Body)
 
 	log.Println("c: send data length ≈", length, string(content))
 	fcgi.Close()

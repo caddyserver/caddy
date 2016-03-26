@@ -37,7 +37,7 @@ func TestInternal(t *testing.T) {
 		}
 
 		rec := httptest.NewRecorder()
-		code, err := im.ServeHTTP(rec, req)
+		code, _ := im.ServeHTTP(rec, req)
 
 		if code != test.expectedCode {
 			t.Errorf("Test %d: Expected status code %d for %s, but got %d",

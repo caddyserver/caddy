@@ -153,7 +153,6 @@ func (c Context) StripHTML(s string) string {
 	if inTag {
 		// false start
 		buf.WriteString(s[tagStart:])
-		inTag = false
 	}
 	return buf.String()
 }
