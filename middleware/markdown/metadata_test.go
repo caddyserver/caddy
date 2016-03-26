@@ -201,7 +201,7 @@ func TestParsers(t *testing.T) {
 		}
 
 		// invalid metadata
-		if md, err = v.parser.Parse([]byte(v.testData[3])); err == nil {
+		if _, err = v.parser.Parse([]byte(v.testData[3])); err == nil {
 			t.Fatalf("Expected error for invalid metadata for %v", v.name)
 		}
 
