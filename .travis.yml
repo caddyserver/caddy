@@ -20,5 +20,6 @@ install:
   - go get golang.org/x/tools/cmd/vet
 
 script:
+  - [ -z "$(find -name "*.go" | xargs gofmt -s -l)" ] || exit 1
   - go vet ./...
   - go test ./...
