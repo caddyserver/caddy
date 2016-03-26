@@ -226,16 +226,11 @@ func DisabledTest(t *testing.T) {
 
 	log.Println("test:", "post data (more than 60KB)")
 	data := ""
-	length := 0
 	for i := 0x00; i < 0xff; i++ {
 		v0 := strings.Repeat(string(i), 256)
 		h := md5.New()
 		io.WriteString(h, v0)
 		k0 := fmt.Sprintf("%x", h.Sum(nil))
-
-		length += len(k0)
-		length += len(v0)
-
 		data += k0 + "=" + url.QueryEscape(v0) + "&"
 	}
 	sendFcgi(0, fcgiParams, []byte(data), nil, nil)
