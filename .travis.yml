@@ -18,8 +18,14 @@ install:
   - if [ "$TRAVIS_PULL_REQUEST" = "false" ]; then bash dist/gitcookie.sh; fi
   - go get -t ./...
   - go get golang.org/x/tools/cmd/vet
+  - go get github.com/golang/lint/golint
+  - go get github.com/gordonklaus/ineffassign
 
 script:
   - "[ -z \"$(find -name \"*.go\" | xargs gofmt -s -l)\" ] || exit 1"
+  - ineffassign .
   - go vet ./...
   - go test ./...
+
+after_script:
+  - golint ./...

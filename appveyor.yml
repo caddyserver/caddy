@@ -14,13 +14,20 @@ install:
   - 7z x go1.6.windows-amd64.zip -y -oC:\ > NUL
   - go version
   - go env
-  - go get golang.org/x/tools/cmd/vet
   - go get -t ./...
+  - go get golang.org/x/tools/cmd/vet
+  - go get github.com/golang/lint/golint
+  - go get github.com/gordonklaus/ineffassign
+  - set PATH=%GOPATH%\bin;%PATH%
 
 build: off
 
 test_script:
   - go vet ./...
   - go test ./...
+  - ineffassign .
+
+after_test:
+  - golint ./...
 
 deploy: off
