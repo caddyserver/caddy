@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"bytes"
+	"fmt"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -218,4 +219,41 @@ func ContextInclude(filename string, ctx interface{}, fs http.FileSystem) (strin
 	}
 
 	return buf.String(), nil
+}
+
+// ToLower will convert the given string to lower case.
+func (c Context) ToLower(s string) string {
+	return strings.ToLower(s)
+}
+
+// ToUpper will convert the given string to upper case.
+func (c Context) ToUpper(s string) string {
+	return strings.ToUpper(s)
+}
+
+// Split is a passthrough to strings.Split. It will split the first argument at each instance of the seperator and return a slice of strings.
+func (c Context) Split(s string, sep string) []string {
+	return strings.Split(s, sep)
+}
+
+// Slice will convert the given arguments into a slice.
+func (c Context) Slice(elems ...interface{}) []interface{} {
+	return elems
+}
+
+// Map will convert the arguments into a map. It expects alternating string keys and values. This is useful for building more complicated data structures
+// if you are using subtemplates or things like that.
+func (c Context) Map(values ...interface{}) (map[string]interface{}, error) {
+	if len(values)%2 != 0 {
+		return nil, fmt.Errorf("Map expects an even number of arguments")
+	}
+	dict := make(map[string]interface{}, len(values)/2)
+	for i := 0; i < len(values); i += 2 {
+		key, ok := values[i].(string)
+		if !ok {
+			return nil, fmt.Errorf("Map keys must be strings")
+		}
+		dict[key] = values[i+1]
+	}
+	return dict, nil
 }
