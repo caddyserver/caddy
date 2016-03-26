@@ -62,7 +62,7 @@ func webSocketParse(c *Controller) ([]websocket.Config, error) {
 			}
 
 			// Okay, check again for optional block
-			hadBlock, err = optionalBlock()
+			_, err = optionalBlock()
 			if err != nil {
 				return nil, err
 			}

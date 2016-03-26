@@ -40,7 +40,7 @@ func TestErrors(t *testing.T) {
 	if len(c.Startup) == 0 {
 		t.Fatal("Expected 1 startup function, had 0")
 	}
-	err = c.Startup[0]()
+	c.Startup[0]()
 	if myHandler.Log == nil {
 		t.Error("Expected Log to be non-nil after startup because Debug is not enabled")
 	}
