@@ -22,7 +22,7 @@ install:
   - go get github.com/gordonklaus/ineffassign
 
 script:
-  - "[ -z \"$(find -name \"*.go\" | xargs gofmt -s -l)\" ] || exit 1"
+  - diff <(echo -n) <(gofmt -s -d .)
   - ineffassign .
   - go vet ./...
   - go test ./...
