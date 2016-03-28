@@ -95,6 +95,18 @@ func NewSingleHostReverseProxy(target *url.URL, without string) *ReverseProxy {
 		} else {
 			req.URL.RawQuery = targetQuery + "&" + req.URL.RawQuery
 		}
+		// Trims the path of the socket from the URL path.
+		// This is done because req.URL passed to your proxied service
+		// will have the full path of the socket file prefixed to it.
+		// Calling /test on a server that proxies requests to
+		// unix:/var/run/www.socket will thus set the requested path
+		// to /var/run/www.socket/test, rendering paths useless.
+		if target.Scheme == "unix" {
+			// See comment on socketDial for the trim
+			socketPrefix := target.String()[len("unix://"):]
+			req.URL.Path = strings.TrimPrefix(req.URL.Path, socketPrefix)
+		}
+		// We are then safe to remove the `without` prefix.
 		if without != "" {
 			req.URL.Path = strings.TrimPrefix(req.URL.Path, without)
 		}
