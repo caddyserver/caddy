@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"text/template"
 )
 
 func TestInclude(t *testing.T) {
@@ -610,4 +612,33 @@ func getContextOrFail(t *testing.T) Context {
 
 func getTestPrefix(testN int) string {
 	return fmt.Sprintf("Test [%d]: ", testN)
+}
+
+func TestTemplates(t *testing.T) {
+	tests := []struct{ tmpl, expected string }{
+		{`{{.ToUpper "aAA"}}`, "AAA"},
+		{`{{"bbb" | .ToUpper}}`, "BBB"},
+		{`{{.ToLower "CCc"}}`, "ccc"},
+		{`{{range (.Split "a,b,c" ",")}}{{.}}{{end}}`, "abc"},
+		{`{{range .Split "a,b,c" ","}}{{.}}{{end}}`, "abc"},
+		{`{{range .Slice "a" "b" "c"}}{{.}}{{end}}`, "abc"},
+		{`{{with .Map "A" "a" "B" "b" "c" "d"}}{{.A}}{{.B}}{{.c}}{{end}}`, "abd"},
+	}
+	for i, test := range tests {
+		ctx := getContextOrFail(t)
+		tmpl, err := template.New("").Parse(test.tmpl)
+		if err != nil {
+			t.Errorf("Test %d: %s", i, err)
+			continue
+		}
+		buf := &bytes.Buffer{}
+		err = tmpl.Execute(buf, ctx)
+		if err != nil {
+			t.Errorf("Test %d: %s", i, err)
+			continue
+		}
+		if buf.String() != test.expected {
+			t.Errorf("Test %d: Results do not match. '%s' != '%s'", i, buf.String(), test.expected)
+		}
+	}
 }
