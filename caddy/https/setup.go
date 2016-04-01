@@ -14,6 +14,7 @@ import (
 	"github.com/mholt/caddy/caddy/setup"
 	"github.com/mholt/caddy/middleware"
 	"github.com/mholt/caddy/server"
+	"github.com/xenolf/lego/acme"
 )
 
 // Setup sets up the TLS configuration and installs certificates that
@@ -51,6 +52,13 @@ func Setup(c *setup.Controller) (middleware.Middleware, error) {
 		for c.NextBlock() {
 			hadBlock = true
 			switch c.Val() {
+			case "key_type":
+				arg := c.RemainingArgs()
+				value, ok := supportedKeyTypes[strings.ToUpper(arg[0])]
+				if !ok {
+					return nil, c.Errf("Wrong KeyType name or KeyType not supported '%s'", c.Val())
+				}
+				KeyType = value
 			case "protocols":
 				args := c.RemainingArgs()
 				if len(args) != 2 {
@@ -220,6 +228,10 @@ func loadCertsInDir(c *setup.Controller, dir string) error {
 // port to 443 if not already set, TLS is enabled, TLS is manual, and the host
 // does not equal localhost.
 func setDefaultTLSParams(c *server.Config) {
+	if KeyType == "" {
+		KeyType = acme.RSA2048
+	}
+
 	// If no ciphers provided, use default list
 	if len(c.TLS.Ciphers) == 0 {
 		c.TLS.Ciphers = defaultCiphers
@@ -245,6 +257,15 @@ func setDefaultTLSParams(c *server.Config) {
 	if c.Port == "" && c.TLS.Enabled && (!c.TLS.Manual || c.TLS.OnDemand) && c.Host != "localhost" {
 		c.Port = "443"
 	}
+}
+
+// Map of supported key types
+var supportedKeyTypes = map[string]acme.KeyType{
+	"EC384":   acme.EC384,
+	"EC256":   acme.EC256,
+	"RSA8192": acme.RSA8192,
+	"RSA4096": acme.RSA4096,
+	"RSA2048": acme.RSA2048,
 }
 
 // Map of supported protocols.
