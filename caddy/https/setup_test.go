@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/mholt/caddy/caddy/setup"
+	"github.com/xenolf/lego/acme"
 )
 
 func TestMain(m *testing.M) {
@@ -170,6 +171,16 @@ func TestSetupParseWithWrongOptionalParams(t *testing.T) {
 	if err == nil {
 		t.Errorf("Expected errors, but no error returned")
 	}
+
+	// Test key_type wrong params
+	params = `tls {
+			key_type ab123
+		}`
+	c = setup.NewTestController(params)
+	_, err = Setup(c)
+	if err == nil {
+		t.Errorf("Expected errors, but no error returned")
+	}
 }
 
 func TestSetupParseWithClientAuth(t *testing.T) {
@@ -200,6 +211,22 @@ func TestSetupParseWithClientAuth(t *testing.T) {
 	_, err = Setup(c)
 	if err == nil {
 		t.Errorf("Expected an error, but no error returned")
+	}
+}
+
+func TestSetupParseWithKeyType(t *testing.T) {
+	params := `tls {
+            key_type ec384
+        }`
+	c := setup.NewTestController(params)
+
+	_, err := Setup(c)
+	if err != nil {
+		t.Errorf("Expected no errors, got: %v", err)
+	}
+
+	if KeyType != acme.EC384 {
+		t.Errorf("Expected 'P384' as KeyType, got %#v", KeyType)
 	}
 }
 
