@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 var testDir = filepath.Join(os.TempDir(), "caddy_testdir")
@@ -44,6 +45,7 @@ func TestServeHTTP(t *testing.T) {
 
 		expectedStatus      int
 		expectedBodyContent string
+		expectedEtag        string
 	}{
 		// Test 0 - access without any path
 		{
@@ -60,12 +62,14 @@ func TestServeHTTP(t *testing.T) {
 			url:                 "https://foo/file1.html",
 			expectedStatus:      http.StatusOK,
 			expectedBodyContent: testFiles["file1.html"],
+			expectedEtag:        `W/"1e240-13"`,
 		},
 		// Test 3 - access folder with index file with trailing slash
 		{
 			url:                 "https://foo/dirwithindex/",
 			expectedStatus:      http.StatusOK,
 			expectedBodyContent: testFiles[filepath.Join("dirwithindex", "index.html")],
+			expectedEtag:        `W/"1e240-20"`,
 		},
 		// Test 4 - access folder with index file without trailing slash
 		{
@@ -105,6 +109,7 @@ func TestServeHTTP(t *testing.T) {
 			url:                 "https://foo/dirwithindex/index.html",
 			expectedStatus:      http.StatusOK,
 			expectedBodyContent: testFiles[filepath.Join("dirwithindex", "index.html")],
+			expectedEtag:        `W/"1e240-20"`,
 		},
 		// Test 11 - send a request with query params
 		{
@@ -143,6 +148,7 @@ func TestServeHTTP(t *testing.T) {
 		responseRecorder := httptest.NewRecorder()
 		request, err := http.NewRequest("GET", test.url, strings.NewReader(""))
 		status, err := fileserver.ServeHTTP(responseRecorder, request)
+		etag := responseRecorder.Header().Get("Etag")
 
 		// check if error matches expectations
 		if err != nil {
@@ -152,6 +158,11 @@ func TestServeHTTP(t *testing.T) {
 		// check status code
 		if test.expectedStatus != status {
 			t.Errorf(getTestPrefix(i)+"Expected status %d, found %d", test.expectedStatus, status)
+		}
+
+		// check etag
+		if test.expectedEtag != etag {
+			t.Errorf(getTestPrefix(i)+"Expected Etag header %d, found %d", test.expectedEtag, etag)
 		}
 
 		// check body content
@@ -172,6 +183,8 @@ func beforeServeHTTPTest(t *testing.T) {
 			return
 		}
 	}
+
+	fixedTime := time.Unix(123456, 0)
 
 	for relFile, fileContent := range testFiles {
 		absFile := filepath.Join(testDir, relFile)
@@ -197,6 +210,12 @@ func beforeServeHTTPTest(t *testing.T) {
 			return
 		}
 		f.Close()
+
+		// and set the last modified time
+		err = os.Chtimes(absFile, fixedTime, fixedTime)
+		if err != nil {
+			t.Fatalf("Failed to set file time to %s. Error was: %v", fixedTime, err)
+		}
 	}
 
 }
