@@ -17,7 +17,7 @@ func TestSaveAndLoadRSAPrivateKey(t *testing.T) {
 	keyFile := "test.key"
 	defer os.Remove(keyFile)
 
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	privateKey, err := rsa.GenerateKey(rand.Reader, 128) // make tests faster; small key size OK for testing
 	if err != nil {
 		t.Fatal(err)
 	}
