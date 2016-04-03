@@ -62,14 +62,14 @@ func TestServeHTTP(t *testing.T) {
 			url:                 "https://foo/file1.html",
 			expectedStatus:      http.StatusOK,
 			expectedBodyContent: testFiles["file1.html"],
-			expectedEtag:        "\"1e240-13\"",
+			expectedEtag:        `W/"1e240-13"`,
 		},
 		// Test 3 - access folder with index file with trailing slash
 		{
 			url:                 "https://foo/dirwithindex/",
 			expectedStatus:      http.StatusOK,
 			expectedBodyContent: testFiles[filepath.Join("dirwithindex", "index.html")],
-			expectedEtag:        "\"1e240-20\"",
+			expectedEtag:        `W/"1e240-20"`,
 		},
 		// Test 4 - access folder with index file without trailing slash
 		{
@@ -109,7 +109,7 @@ func TestServeHTTP(t *testing.T) {
 			url:                 "https://foo/dirwithindex/index.html",
 			expectedStatus:      http.StatusOK,
 			expectedBodyContent: testFiles[filepath.Join("dirwithindex", "index.html")],
-			expectedEtag:        "\"1e240-20\"",
+			expectedEtag:        `W/"1e240-20"`,
 		},
 		// Test 11 - send a request with query params
 		{
