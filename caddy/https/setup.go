@@ -228,10 +228,6 @@ func loadCertsInDir(c *setup.Controller, dir string) error {
 // port to 443 if not already set, TLS is enabled, TLS is manual, and the host
 // does not equal localhost.
 func setDefaultTLSParams(c *server.Config) {
-	if KeyType == "" {
-		KeyType = acme.RSA2048
-	}
-
 	// If no ciphers provided, use default list
 	if len(c.TLS.Ciphers) == 0 {
 		c.TLS.Ciphers = defaultCiphers

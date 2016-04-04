@@ -55,6 +55,11 @@ func TestSetupParseBasic(t *testing.T) {
 		t.Errorf("Expected 'tls1.2 (0x0303)' as ProtocolMaxVersion, got %v", c.TLS.ProtocolMaxVersion)
 	}
 
+	// KeyType default
+	if KeyType != acme.RSA2048 {
+		t.Errorf("Expected '2048' as KeyType, got %#v", KeyType)
+	}
+
 	// Cipher checks
 	expectedCiphers := []uint16{
 		tls.TLS_FALLBACK_SCSV,
