@@ -7,11 +7,12 @@ import "log"
 func Restart(newCaddyfile Input) error {
 	log.Println("[INFO] Restarting")
 
+	caddyfileMu.Lock()
+	oldCaddyfile := caddyfile
 	if newCaddyfile == nil {
-		caddyfileMu.Lock()
 		newCaddyfile = caddyfile
-		caddyfileMu.Unlock()
 	}
+	caddyfileMu.Unlock()
 
 	wg.Add(1) // barrier so Wait() doesn't unblock
 
@@ -22,6 +23,12 @@ func Restart(newCaddyfile Input) error {
 
 	err = Start(newCaddyfile)
 	if err != nil {
+		// revert to old Caddyfile
+		if oldErr := Start(oldCaddyfile); oldErr != nil {
+			log.Printf("[ERROR] Restart: in-process restart failed and cannot revert to old Caddyfile: %v", oldErr)
+		} else {
+			wg.Done() // take down our barrier
+		}
 		return err
 	}
 

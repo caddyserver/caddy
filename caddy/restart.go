@@ -182,8 +182,18 @@ func restartInProc(newCaddyfile Input) error {
 		return err
 	}
 
+	caddyfileMu.Lock()
+	oldCaddyfile := caddyfile
+	caddyfileMu.Unlock()
+
 	err = Start(newCaddyfile)
 	if err != nil {
+		// revert to old Caddyfile
+		if oldErr := Start(oldCaddyfile); oldErr != nil {
+			log.Printf("[ERROR] Restart: in-process restart failed and cannot revert to old Caddyfile: %v", oldErr)
+		} else {
+			wg.Done() // take down our barrier
+		}
 		return err
 	}
 
