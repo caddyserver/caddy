@@ -126,6 +126,7 @@ Caddy is available as a Docker container from any of these sources:
 - [joshix/caddy](https://hub.docker.com/r/joshix/caddy/)
 - [jumanjiman/caddy](https://hub.docker.com/r/jumanjiman/caddy/)
 - [zenithar/nano-caddy](https://hub.docker.com/r/zenithar/nano-caddy/)
+- [zzrot/alpine-caddy](https://hub.docker.com/r/zzrot/alpine-caddy/)
 
 
 
