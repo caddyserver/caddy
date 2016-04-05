@@ -404,7 +404,7 @@ const AlternatePort = "5033"
 // KeyType is the type to use for new keys.
 // This shouldn't need to change except for in tests;
 // the size can be drastically reduced for speed.
-var KeyType acme.KeyType
+var KeyType = acme.RSA2048
 
 // stopChan is used to signal the maintenance goroutine
 // to terminate.
