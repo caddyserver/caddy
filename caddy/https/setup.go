@@ -257,8 +257,8 @@ func setDefaultTLSParams(c *server.Config) {
 
 // Map of supported key types
 var supportedKeyTypes = map[string]acme.KeyType{
-	"EC384":   acme.EC384,
-	"EC256":   acme.EC256,
+	"P384":    acme.EC384,
+	"P256":    acme.EC256,
 	"RSA8192": acme.RSA8192,
 	"RSA4096": acme.RSA4096,
 	"RSA2048": acme.RSA2048,

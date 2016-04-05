@@ -221,7 +221,7 @@ func TestSetupParseWithClientAuth(t *testing.T) {
 
 func TestSetupParseWithKeyType(t *testing.T) {
 	params := `tls {
-            key_type ec384
+            key_type p384
         }`
 	c := setup.NewTestController(params)
 
