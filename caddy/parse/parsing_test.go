@@ -13,7 +13,9 @@ func TestStandardAddress(t *testing.T) {
 		shouldErr          bool
 	}{
 		{`localhost`, "", "localhost", "", false},
+		{`LOCALHOST`, "", "localhost", "", false},
 		{`localhost:1234`, "", "localhost", "1234", false},
+		{`LOCALHOST:1234`, "", "localhost", "1234", false},
 		{`localhost:`, "", "localhost", "", false},
 		{`0.0.0.0`, "", "0.0.0.0", "", false},
 		{`127.0.0.1:1234`, "", "127.0.0.1", "1234", false},
@@ -35,6 +37,7 @@ func TestStandardAddress(t *testing.T) {
 		{`https://127.0.0.1`, "https", "127.0.0.1", "443", false},
 		{`http://[::1]`, "http", "::1", "80", false},
 		{`http://localhost:1234`, "http", "localhost", "1234", false},
+		{`http://LOCALHOST:1234`, "http", "localhost", "1234", false},
 		{`https://127.0.0.1:1234`, "https", "127.0.0.1", "1234", false},
 		{`http://[::1]:1234`, "http", "::1", "1234", false},
 		{``, "", "", "", false},

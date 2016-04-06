@@ -104,6 +104,7 @@ func (p *parser) addresses() error {
 			if err != nil {
 				return err
 			}
+
 			p.block.Addresses = append(p.block.Addresses, addr)
 		}
 
@@ -328,6 +329,9 @@ func standardAddress(str string) (address, error) {
 			host = str
 		}
 	}
+
+	// "The host subcomponent is case-insensitive." (RFC 3986)
+	host = strings.ToLower(host)
 
 	// see if we can set port based off scheme
 	if port == "" {
