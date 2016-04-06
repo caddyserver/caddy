@@ -17,7 +17,6 @@ before_install:
 install:
   - if [ "$TRAVIS_PULL_REQUEST" = "false" ]; then bash dist/gitcookie.sh; fi
   - go get -t ./...
-  - go get golang.org/x/tools/cmd/vet
   - go get github.com/golang/lint/golint
   - go get github.com/gordonklaus/ineffassign
 
