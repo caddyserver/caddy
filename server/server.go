@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 )
@@ -300,6 +301,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		host = r.Host // oh well
 	}
+
+	// "The host subcomponent is case-insensitive." (RFC 3986)
+	host = strings.ToLower(host)
 
 	// Try the host as given, or try falling back to 0.0.0.0 (wildcard)
 	if _, ok := s.vhosts[host]; !ok {
