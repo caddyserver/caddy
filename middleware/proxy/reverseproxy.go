@@ -111,7 +111,7 @@ func NewSingleHostReverseProxy(target *url.URL, without string) *ReverseProxy {
 			req.URL.Path = strings.TrimPrefix(req.URL.Path, without)
 		}
 	}
-	rp := &ReverseProxy{Director: director}
+	rp := &ReverseProxy{Director: director, FlushInterval: 250 * time.Millisecond} // flushing good for streaming & server-sent events
 	if target.Scheme == "unix" {
 		rp.Transport = &http.Transport{
 			Dial: socketDial(target.String()),
