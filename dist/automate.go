@@ -138,7 +138,6 @@ func numProcs() int {
 // builds, and we can add more upon request if there is
 // enough demand.
 var platforms = []platform{
-	{os: "darwin", arch: "386", archive: "zip"},
 	{os: "darwin", arch: "amd64", archive: "zip"},
 	{os: "freebsd", arch: "386", archive: "tar.gz"},
 	{os: "freebsd", arch: "amd64", archive: "tar.gz"},
