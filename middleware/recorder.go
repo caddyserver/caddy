@@ -83,5 +83,7 @@ func (r *ResponseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 func (r *ResponseRecorder) Flush() {
 	if f, ok := r.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
+	} else {
+		panic("not a Flusher") // should be recovered at the beginning of middleware stack
 	}
 }
