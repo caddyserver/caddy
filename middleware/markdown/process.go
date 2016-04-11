@@ -2,17 +2,10 @@ package markdown
 
 import (
 	"bytes"
-	"io/ioutil"
 	"path/filepath"
-	"text/template"
 
 	"github.com/mholt/caddy/middleware"
 	"github.com/russross/blackfriday"
-)
-
-const (
-	// DefaultTemplate is the default template.
-	DefaultTemplate = "defaultTemplate"
 )
 
 // Data represents a markdown document.
@@ -52,24 +45,6 @@ func (md Markdown) Process(c *Config, requestPath string, b []byte, ctx middlewa
 		metadata = parser.Metadata()
 	}
 
-	// if template is not specified, check if Default template is set
-	if metadata.Template == "" {
-		if _, ok := c.Templates[DefaultTemplate]; ok {
-			metadata.Template = DefaultTemplate
-		}
-	}
-
-	// if template is set, load it
-	var tmpl []byte
-	if metadata.Template != "" {
-		if t, ok := c.Templates[metadata.Template]; ok {
-			tmpl, err = ioutil.ReadFile(t)
-		}
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	// process markdown
 	extns := 0
 	extns |= blackfriday.EXTENSION_TABLES
@@ -88,27 +63,12 @@ func (md Markdown) Process(c *Config, requestPath string, b []byte, ctx middlewa
 	}
 	metadata.Variables["title"] = title
 
-	return md.processTemplate(c, requestPath, tmpl, metadata, ctx)
+	// return md.processTemplate(c, requestPath, metadata, ctx)
+	return md.doTemplate(c, requestPath, metadata, ctx)
 }
 
-// processTemplate processes a template given a requestPath,
-// template (tmpl) and metadata
-func (md Markdown) processTemplate(c *Config, requestPath string, tmpl []byte, metadata Metadata, ctx middleware.Context) ([]byte, error) {
-	var t *template.Template
-	var err error
-
-	// if template is not specified,
-	// use the default template
-	if tmpl == nil {
-		t = template.Must(template.New("").Parse(htmlTemplate))
-	} else {
-		t, err = template.New("").Parse(string(tmpl))
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	// process the template
+// doTemplate executes a template given a requestPath, template, and metadata
+func (md Markdown) doTemplate(c *Config, reqPath string, metadata Metadata, ctx middleware.Context) ([]byte, error) {
 	mdData := Data{
 		Context:  ctx,
 		Doc:      metadata.Variables,
@@ -118,27 +78,9 @@ func (md Markdown) processTemplate(c *Config, requestPath string, tmpl []byte, m
 	}
 
 	b := new(bytes.Buffer)
-	err = t.Execute(b, mdData)
-	if err != nil {
+	if err := c.Template.ExecuteTemplate(b, metadata.Template, mdData); err != nil {
 		return nil, err
 	}
 
 	return b.Bytes(), nil
 }
-
-const (
-	htmlTemplate = `<!DOCTYPE html>
-<html>
-	<head>
-		<title>{{.Doc.title}}</title>
-		<meta charset="utf-8">
-		{{range .Styles}}<link rel="stylesheet" href="{{.}}">
-		{{end -}}
-		{{range .Scripts}}<script src="{{.}}"></script>
-		{{end -}}
-	</head>
-	<body>
-		{{.Doc.body}}
-	</body>
-</html>`
-)

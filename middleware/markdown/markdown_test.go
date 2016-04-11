@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -14,11 +15,15 @@ import (
 )
 
 func TestMarkdown(t *testing.T) {
-	templates := make(map[string]string)
-	templates[DefaultTemplate] = "testdata/markdown_tpl.html"
+	rootDir := "./testdata"
+
+	f := func(filename string) string {
+		return filepath.ToSlash(rootDir + string(filepath.Separator) + filename)
+	}
+
 	md := Markdown{
-		Root:    "./testdata",
-		FileSys: http.Dir("./testdata"),
+		Root:    rootDir,
+		FileSys: http.Dir(rootDir),
 		Configs: []*Config{
 			{
 				Renderer:  blackfriday.HtmlRenderer(0, "", ""),
@@ -26,9 +31,9 @@ func TestMarkdown(t *testing.T) {
 				Extensions: map[string]struct{}{
 					".md": struct{}{},
 				},
-				Styles:    []string{},
-				Scripts:   []string{},
-				Templates: templates,
+				Styles:   []string{},
+				Scripts:  []string{},
+				Template: setDefaultTemplate(f("markdown_tpl.html")),
 			},
 			{
 				Renderer:  blackfriday.HtmlRenderer(0, "", ""),
@@ -36,11 +41,9 @@ func TestMarkdown(t *testing.T) {
 				Extensions: map[string]struct{}{
 					".md": struct{}{},
 				},
-				Styles:  []string{},
-				Scripts: []string{},
-				Templates: map[string]string{
-					DefaultTemplate: "testdata/docflags/template.txt",
-				},
+				Styles:   []string{},
+				Scripts:  []string{},
+				Template: setDefaultTemplate(f("docflags/template.txt")),
 			},
 			{
 				Renderer:  blackfriday.HtmlRenderer(0, "", ""),
@@ -48,9 +51,9 @@ func TestMarkdown(t *testing.T) {
 				Extensions: map[string]struct{}{
 					".md": struct{}{},
 				},
-				Styles:    []string{"/resources/css/log.css", "/resources/css/default.css"},
-				Scripts:   []string{"/resources/js/log.js", "/resources/js/default.js"},
-				Templates: make(map[string]string),
+				Styles:   []string{"/resources/css/log.css", "/resources/css/default.css"},
+				Scripts:  []string{"/resources/js/log.js", "/resources/js/default.js"},
+				Template: GetDefaultTemplate(),
 			},
 			{
 				Renderer:  blackfriday.HtmlRenderer(0, "", ""),
@@ -58,9 +61,9 @@ func TestMarkdown(t *testing.T) {
 				Extensions: map[string]struct{}{
 					".md": struct{}{},
 				},
-				Styles:    []string{},
-				Scripts:   []string{},
-				Templates: templates,
+				Styles:   []string{},
+				Scripts:  []string{},
+				Template: setDefaultTemplate(f("markdown_tpl.html")),
 			},
 		},
 		IndexFiles: []string{"index.html"},
@@ -145,12 +148,10 @@ DocFlags.var_bool true`
 		<title>Markdown test 2</title>
 		<meta charset="utf-8">
 		<link rel="stylesheet" href="/resources/css/log.css">
-<link rel="stylesheet" href="/resources/css/default.css">
-
+		<link rel="stylesheet" href="/resources/css/default.css">
 		<script src="/resources/js/log.js"></script>
-<script src="/resources/js/default.js"></script>
-
-	</head>
+		<script src="/resources/js/default.js"></script>
+		</head>
 	<body>
 		<h2>Welcome on the blog</h2>
 

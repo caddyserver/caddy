@@ -36,7 +36,7 @@ func markdownParse(c *Controller) ([]*markdown.Config, error) {
 		md := &markdown.Config{
 			Renderer:   blackfriday.HtmlRenderer(0, "", ""),
 			Extensions: make(map[string]struct{}),
-			Templates:  make(map[string]string),
+			Template:   markdown.GetDefaultTemplate(),
 		}
 
 		// Get the path scope
@@ -95,17 +95,32 @@ func loadParams(c *Controller, mdc *markdown.Config) error {
 		default:
 			return c.ArgErr()
 		case 1:
-			if _, ok := mdc.Templates[markdown.DefaultTemplate]; ok {
-				return c.Err("only one default template is allowed, use alias.")
-			}
 			fpath := filepath.ToSlash(filepath.Clean(c.Root + string(filepath.Separator) + tArgs[0]))
-			mdc.Templates[markdown.DefaultTemplate] = fpath
+
+			if err := markdown.SetTemplate(mdc.Template, "", fpath); err != nil {
+				c.Errf("default template parse error: %v", err)
+			}
 			return nil
 		case 2:
 			fpath := filepath.ToSlash(filepath.Clean(c.Root + string(filepath.Separator) + tArgs[1]))
-			mdc.Templates[tArgs[0]] = fpath
+
+			if err := markdown.SetTemplate(mdc.Template, tArgs[0], fpath); err != nil {
+				c.Errf("template parse error: %v", err)
+			}
 			return nil
 		}
+	case "templatedir":
+		if !c.NextArg() {
+			return c.ArgErr()
+		}
+		_, err := mdc.Template.ParseGlob(c.Val())
+		if err != nil {
+			c.Errf("template load error: %v", err)
+		}
+		if c.NextArg() {
+			return c.ArgErr()
+		}
+		return nil
 	default:
 		return c.Err("Expected valid markdown configuration property")
 	}

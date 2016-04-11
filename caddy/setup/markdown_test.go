@@ -1,9 +1,13 @@
 package setup
 
 import (
+	"bytes"
 	"fmt"
+	"net/http"
 	"testing"
+	"text/template"
 
+	"github.com/mholt/caddy/middleware"
 	"github.com/mholt/caddy/middleware/markdown"
 )
 
@@ -58,8 +62,9 @@ func TestMarkdownParse(t *testing.T) {
 				".md":  struct{}{},
 				".txt": struct{}{},
 			},
-			Styles:  []string{"/resources/css/blog.css"},
-			Scripts: []string{"/resources/js/blog.js"},
+			Styles:   []string{"/resources/css/blog.css"},
+			Scripts:  []string{"/resources/js/blog.js"},
+			Template: markdown.GetDefaultTemplate(),
 		}}},
 		{`markdown /blog {
 	ext .md
@@ -69,9 +74,13 @@ func TestMarkdownParse(t *testing.T) {
 			Extensions: map[string]struct{}{
 				".md": struct{}{},
 			},
-			Templates: map[string]string{markdown.DefaultTemplate: "testdata/tpl_with_include.html"},
+			Template: markdown.GetDefaultTemplate(),
 		}}},
 	}
+	// Setup the extra template
+	tmpl := tests[1].expectedMarkdownConfig[0].Template
+	markdown.SetTemplate(tmpl, "", "./testdata/tpl_with_include.html")
+
 	for i, test := range tests {
 		c := NewTestController(test.inputMarkdownConfig)
 		c.Root = "./testdata"
@@ -101,11 +110,47 @@ func TestMarkdownParse(t *testing.T) {
 				t.Errorf("Test %d expected %dth Markdown Config Scripts to be  %s  , but got %s",
 					i, j, fmt.Sprint(test.expectedMarkdownConfig[j].Scripts), fmt.Sprint(actualMarkdownConfig.Scripts))
 			}
-			if fmt.Sprint(actualMarkdownConfig.Templates) != fmt.Sprint(test.expectedMarkdownConfig[j].Templates) {
-				t.Errorf("Test %d expected %dth Markdown Config Templates to be  %s  , but got %s",
-					i, j, fmt.Sprint(test.expectedMarkdownConfig[j].Templates), fmt.Sprint(actualMarkdownConfig.Templates))
+			if ok, tx, ty := equalTemplates(actualMarkdownConfig.Template, test.expectedMarkdownConfig[j].Template); !ok {
+				t.Errorf("Test %d the %dth Markdown Config Templates did not match, expected %s to be %s", i, j, tx, ty)
 			}
 		}
 	}
+}
 
+func equalTemplates(i, j *template.Template) (bool, string, string) {
+	// Just in case :)
+	if i == j {
+		return true, "", ""
+	}
+
+	// We can't do much here, templates can't really be compared.  However,
+	// we can execute the templates and compare their outputs to be reasonably
+	// sure that they're the same.
+
+	// This is exceedingly ugly.
+	ctx := middleware.Context{
+		Root: http.Dir("./testdata"),
+	}
+
+	md := markdown.Data{
+		Context:  ctx,
+		Doc:      make(map[string]string),
+		DocFlags: make(map[string]bool),
+		Styles:   []string{"style1"},
+		Scripts:  []string{"js1"},
+	}
+	md.Doc["title"] = "some title"
+	md.Doc["body"] = "some body"
+
+	bufi := new(bytes.Buffer)
+	bufj := new(bytes.Buffer)
+
+	if err := i.Execute(bufi, md); err != nil {
+		return false, fmt.Sprintf("%v", err), ""
+	}
+	if err := j.Execute(bufj, md); err != nil {
+		return false, "", fmt.Sprintf("%v", err)
+	}
+
+	return bytes.Equal(bufi.Bytes(), bufj.Bytes()), string(bufi.Bytes()), string(bufj.Bytes())
 }

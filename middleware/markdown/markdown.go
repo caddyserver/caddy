@@ -4,10 +4,10 @@ package markdown
 
 import (
 	"io/ioutil"
-	"log"
 	"net/http"
 	"os"
 	"path"
+	"text/template"
 
 	"github.com/mholt/caddy/middleware"
 	"github.com/russross/blackfriday"
@@ -59,8 +59,8 @@ type Config struct {
 	// List of JavaScript files to load for each markdown file
 	Scripts []string
 
-	// Map of registered templates
-	Templates map[string]string
+	// Template(s) to render with
+	Template *template.Template
 }
 
 // ServeHTTP implements the http.Handler interface.
