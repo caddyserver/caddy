@@ -96,6 +96,34 @@ func (l Listing) LinkedPath() string {
 	return result
 }
 
+// BreadcrumbMap returns l.Path where every element is a map
+// of URLs and path segment names.
+func (l Listing) BreadcrumbMap() map[string]string {
+	result := map[string]string{}
+
+	if len(l.Path) == 0 {
+		return result
+	}
+
+	// skip trailing slash
+	lpath := l.Path
+	if lpath[len(lpath)-1] == '/' {
+		lpath = lpath[:len(lpath)-1]
+	}
+
+	parts := strings.Split(lpath, "/")
+	for i, part := range parts {
+		if i == 0 && part == "" {
+			// Leading slash (root)
+			result["/"] = "/"
+			continue
+		}
+		result[strings.Join(parts[:i+1], "/")] = part
+	}
+
+	return result
+}
+
 // FileInfo is the info about a particular file or directory
 type FileInfo struct {
 	IsDir   bool
