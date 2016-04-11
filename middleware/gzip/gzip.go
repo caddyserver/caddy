@@ -142,6 +142,16 @@ func (w *gzipResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return nil, nil, fmt.Errorf("not a Hijacker")
 }
 
+// Flush implements http.Flusher. It simply wraps the underlying
+// ResponseWriter's Flush method if there is one, or panics.
+func (w *gzipResponseWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	} else {
+		panic("not a Flusher") // should be recovered at the beginning of middleware stack
+	}
+}
+
 // CloseNotify implements http.CloseNotifier.
 // It just inherits the underlying ResponseWriter's CloseNotify method.
 func (w *gzipResponseWriter) CloseNotify() <-chan bool {
