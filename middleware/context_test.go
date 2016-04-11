@@ -52,7 +52,13 @@ func TestInclude(t *testing.T) {
 			fileContent:          `str1 {{ .InvalidField }} str2`,
 			expectedContent:      "",
 			shouldErr:            true,
-			expectedErrorContent: `InvalidField is not a field of struct type middleware.Context`,
+			expectedErrorContent: `InvalidField`,
+		},
+		{
+			fileContent:          `str1 {{ .InvalidField }} str2`,
+			expectedContent:      "",
+			shouldErr:            true,
+			expectedErrorContent: `type middleware.Context`,
 		},
 	}
 
