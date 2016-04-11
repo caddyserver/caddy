@@ -3,10 +3,7 @@ package markdown
 import (
 	"bytes"
 	"io/ioutil"
-	"log"
-	"os"
 	"path/filepath"
-	"strings"
 	"text/template"
 
 	"github.com/mholt/caddy/middleware"
@@ -16,8 +13,6 @@ import (
 const (
 	// DefaultTemplate is the default template.
 	DefaultTemplate = "defaultTemplate"
-	// DefaultStaticDir is the default static directory.
-	DefaultStaticDir = "generated_site"
 )
 
 // Data represents a markdown document.
@@ -25,7 +20,8 @@ type Data struct {
 	middleware.Context
 	Doc      map[string]string
 	DocFlags map[string]bool
-	Links    []PageLink
+	Styles   []string
+	Scripts  []string
 }
 
 // Include "overrides" the embedded middleware.Context's Include()
@@ -75,7 +71,11 @@ func (md Markdown) Process(c *Config, requestPath string, b []byte, ctx middlewa
 	}
 
 	// process markdown
-	extns := blackfriday.EXTENSION_TABLES | blackfriday.EXTENSION_FENCED_CODE | blackfriday.EXTENSION_STRIKETHROUGH | blackfriday.EXTENSION_DEFINITION_LISTS
+	extns := 0
+	extns |= blackfriday.EXTENSION_TABLES
+	extns |= blackfriday.EXTENSION_FENCED_CODE
+	extns |= blackfriday.EXTENSION_STRIKETHROUGH
+	extns |= blackfriday.EXTENSION_DEFINITION_LISTS
 	markdown = blackfriday.Markdown(markdown, c.Renderer, extns)
 
 	// set it as body for template
@@ -94,123 +94,51 @@ func (md Markdown) Process(c *Config, requestPath string, b []byte, ctx middlewa
 // processTemplate processes a template given a requestPath,
 // template (tmpl) and metadata
 func (md Markdown) processTemplate(c *Config, requestPath string, tmpl []byte, metadata Metadata, ctx middleware.Context) ([]byte, error) {
+	var t *template.Template
+	var err error
+
 	// if template is not specified,
 	// use the default template
 	if tmpl == nil {
-		tmpl = defaultTemplate(c, metadata, requestPath)
+		t = template.Must(template.New("").Parse(htmlTemplate))
+	} else {
+		t, err = template.New("").Parse(string(tmpl))
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// process the template
-	b := new(bytes.Buffer)
-	t, err := template.New("").Parse(string(tmpl))
-	if err != nil {
-		return nil, err
-	}
 	mdData := Data{
 		Context:  ctx,
 		Doc:      metadata.Variables,
 		DocFlags: metadata.Flags,
-		Links:    c.Links,
+		Styles:   c.Styles,
+		Scripts:  c.Scripts,
 	}
 
-	c.RLock()
+	b := new(bytes.Buffer)
 	err = t.Execute(b, mdData)
-	c.RUnlock()
-
 	if err != nil {
 		return nil, err
 	}
 
-	// generate static page
-	if err = md.generatePage(c, requestPath, b.Bytes()); err != nil {
-		// if static page generation fails, nothing fatal, only log the error.
-		// TODO: Report (return) this non-fatal error, but don't log it here?
-		log.Println("[ERROR] markdown: Render:", err)
-	}
-
 	return b.Bytes(), nil
-
-}
-
-// generatePage generates a static html page from the markdown in content if c.StaticDir
-// is a non-empty value, meaning that the user enabled static site generation.
-func (md Markdown) generatePage(c *Config, requestPath string, content []byte) error {
-	// Only generate the page if static site generation is enabled
-	if c.StaticDir != "" {
-		// if static directory is not existing, create it
-		if _, err := os.Stat(c.StaticDir); err != nil {
-			err := os.MkdirAll(c.StaticDir, os.FileMode(0755))
-			if err != nil {
-				return err
-			}
-		}
-
-		// the URL will always use "/" as a path separator,
-		// convert that to a native path to support OS that
-		// use different path separators
-		filePath := filepath.Join(c.StaticDir, filepath.FromSlash(requestPath))
-
-		// If it is index file, use the directory instead
-		if md.IsIndexFile(filepath.Base(requestPath)) {
-			filePath, _ = filepath.Split(filePath)
-		}
-
-		// Create the directory in case it is not existing
-		if err := os.MkdirAll(filePath, os.FileMode(0744)); err != nil {
-			return err
-		}
-
-		// generate index.html file in the directory
-		filePath = filepath.Join(filePath, "index.html")
-		err := ioutil.WriteFile(filePath, content, os.FileMode(0664))
-		if err != nil {
-			return err
-		}
-
-		c.Lock()
-		c.StaticFiles[requestPath] = filepath.ToSlash(filePath)
-		c.Unlock()
-	}
-
-	return nil
-}
-
-// defaultTemplate constructs a default template.
-func defaultTemplate(c *Config, metadata Metadata, requestPath string) []byte {
-	var scripts, styles bytes.Buffer
-	for _, style := range c.Styles {
-		styles.WriteString(strings.Replace(cssTemplate, "{{url}}", style, 1))
-		styles.WriteString("\r\n")
-	}
-	for _, script := range c.Scripts {
-		scripts.WriteString(strings.Replace(jsTemplate, "{{url}}", script, 1))
-		scripts.WriteString("\r\n")
-	}
-
-	// Title is first line (length-limited), otherwise filename
-	title, _ := metadata.Variables["title"]
-
-	html := []byte(htmlTemplate)
-	html = bytes.Replace(html, []byte("{{title}}"), []byte(title), 1)
-	html = bytes.Replace(html, []byte("{{css}}"), styles.Bytes(), 1)
-	html = bytes.Replace(html, []byte("{{js}}"), scripts.Bytes(), 1)
-
-	return html
 }
 
 const (
 	htmlTemplate = `<!DOCTYPE html>
 <html>
 	<head>
-		<title>{{title}}</title>
+		<title>{{.Doc.title}}</title>
 		<meta charset="utf-8">
-		{{css}}
-		{{js}}
+		{{range .Styles}}<link rel="stylesheet" href="{{.}}">
+		{{end -}}
+		{{range .Scripts}}<script src="{{.}}"></script>
+		{{end -}}
 	</head>
 	<body>
 		{{.Doc.body}}
 	</body>
 </html>`
-	cssTemplate = `<link rel="stylesheet" href="{{url}}">`
-	jsTemplate  = `<script src="{{url}}"></script>`
 )

@@ -2,12 +2,16 @@ package markdown
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"time"
+)
 
-	"github.com/BurntSushi/toml"
-	"gopkg.in/yaml.v2"
+var (
+	// Date format YYYY-MM-DD HH:MM:SS or YYYY-MM-DD
+	timeLayout = []string{
+		`2006-01-02 15:04:05`,
+		`2006-01-02`,
+	}
 )
 
 // Metadata stores a page's metadata
@@ -30,6 +34,8 @@ type Metadata struct {
 
 // load loads parsed values in parsedMap into Metadata
 func (m *Metadata) load(parsedMap map[string]interface{}) {
+
+	// Pull top level things out
 	if title, ok := parsedMap["title"]; ok {
 		m.Title, _ = title.(string)
 	}
@@ -37,17 +43,21 @@ func (m *Metadata) load(parsedMap map[string]interface{}) {
 		m.Template, _ = template.(string)
 	}
 	if date, ok := parsedMap["date"].(string); ok {
-		if t, err := time.Parse(timeLayout, date); err == nil {
-			m.Date = t
+		for _, layout := range timeLayout {
+			if t, err := time.Parse(layout, date); err == nil {
+				m.Date = t
+				break
+			}
 		}
 	}
-	// store everything as a variable
+
+	// Store everything as a flag or variable
 	for key, val := range parsedMap {
 		switch v := val.(type) {
-		case string:
-			m.Variables[key] = v
 		case bool:
 			m.Flags[key] = v
+		case string:
+			m.Variables[key] = v
 		}
 	}
 }
@@ -68,116 +78,6 @@ type MetadataParser interface {
 	// Parsed metadata.
 	// Should be called after a call to Parse returns no error
 	Metadata() Metadata
-}
-
-// JSONMetadataParser is the MetadataParser for JSON
-type JSONMetadataParser struct {
-	metadata Metadata
-}
-
-// Parse the metadata
-func (j *JSONMetadataParser) Parse(b []byte) ([]byte, error) {
-	b, markdown, err := extractMetadata(j, b)
-	if err != nil {
-		return markdown, err
-	}
-	m := make(map[string]interface{})
-
-	// Read the preceding JSON object
-	decoder := json.NewDecoder(bytes.NewReader(b))
-	if err := decoder.Decode(&m); err != nil {
-		return markdown, err
-	}
-	j.metadata.load(m)
-
-	return markdown, nil
-}
-
-// Metadata returns parsed metadata.  It should be called
-// only after a call to Parse returns without error.
-func (j *JSONMetadataParser) Metadata() Metadata {
-	return j.metadata
-}
-
-// Opening returns the opening identifier JSON metadata
-func (j *JSONMetadataParser) Opening() []byte {
-	return []byte("{")
-}
-
-// Closing returns the closing identifier JSON metadata
-func (j *JSONMetadataParser) Closing() []byte {
-	return []byte("}")
-}
-
-// TOMLMetadataParser is the MetadataParser for TOML
-type TOMLMetadataParser struct {
-	metadata Metadata
-}
-
-// Parse the metadata
-func (t *TOMLMetadataParser) Parse(b []byte) ([]byte, error) {
-	b, markdown, err := extractMetadata(t, b)
-	if err != nil {
-		return markdown, err
-	}
-	m := make(map[string]interface{})
-	if err := toml.Unmarshal(b, &m); err != nil {
-		return markdown, err
-	}
-	t.metadata.load(m)
-	return markdown, nil
-}
-
-// Metadata returns parsed metadata.  It should be called
-// only after a call to Parse returns without error.
-func (t *TOMLMetadataParser) Metadata() Metadata {
-	return t.metadata
-}
-
-// Opening returns the opening identifier TOML metadata
-func (t *TOMLMetadataParser) Opening() []byte {
-	return []byte("+++")
-}
-
-// Closing returns the closing identifier TOML metadata
-func (t *TOMLMetadataParser) Closing() []byte {
-	return []byte("+++")
-}
-
-// YAMLMetadataParser is the MetadataParser for YAML
-type YAMLMetadataParser struct {
-	metadata Metadata
-}
-
-// Parse the metadata
-func (y *YAMLMetadataParser) Parse(b []byte) ([]byte, error) {
-	b, markdown, err := extractMetadata(y, b)
-	if err != nil {
-		return markdown, err
-	}
-
-	m := make(map[string]interface{})
-	if err := yaml.Unmarshal(b, &m); err != nil {
-		return markdown, err
-	}
-	y.metadata.load(m)
-	return markdown, nil
-}
-
-// Metadata returns parsed metadata.  It should be called
-// only after a call to Parse returns without error.
-func (y *YAMLMetadataParser) Metadata() Metadata {
-	return y.metadata
-}
-
-// Opening returns the opening identifier YAML metadata
-func (y *YAMLMetadataParser) Opening() []byte {
-	return []byte("---")
-}
-
-// Closing returns the closing identifier YAML metadata
-func (y *YAMLMetadataParser) Closing() []byte {
-	return []byte("---")
 }
 
 // extractMetadata separates metadata content from from markdown content in b.

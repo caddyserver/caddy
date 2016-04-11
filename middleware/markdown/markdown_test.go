@@ -2,12 +2,10 @@ package markdown
 
 import (
 	"bufio"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -23,54 +21,46 @@ func TestMarkdown(t *testing.T) {
 		FileSys: http.Dir("./testdata"),
 		Configs: []*Config{
 			{
-				Renderer:    blackfriday.HtmlRenderer(0, "", ""),
-				PathScope:   "/blog",
-				Extensions:  []string{".md"},
-				Styles:      []string{},
-				Scripts:     []string{},
-				Templates:   templates,
-				StaticDir:   DefaultStaticDir,
-				StaticFiles: make(map[string]string),
+				Renderer:  blackfriday.HtmlRenderer(0, "", ""),
+				PathScope: "/blog",
+				Extensions: map[string]struct{}{
+					".md": struct{}{},
+				},
+				Styles:    []string{},
+				Scripts:   []string{},
+				Templates: templates,
 			},
 			{
-				Renderer:   blackfriday.HtmlRenderer(0, "", ""),
-				PathScope:  "/docflags",
-				Extensions: []string{".md"},
-				Styles:     []string{},
-				Scripts:    []string{},
+				Renderer:  blackfriday.HtmlRenderer(0, "", ""),
+				PathScope: "/docflags",
+				Extensions: map[string]struct{}{
+					".md": struct{}{},
+				},
+				Styles:  []string{},
+				Scripts: []string{},
 				Templates: map[string]string{
 					DefaultTemplate: "testdata/docflags/template.txt",
 				},
-				StaticDir:   DefaultStaticDir,
-				StaticFiles: make(map[string]string),
 			},
 			{
-				Renderer:    blackfriday.HtmlRenderer(0, "", ""),
-				PathScope:   "/log",
-				Extensions:  []string{".md"},
-				Styles:      []string{"/resources/css/log.css", "/resources/css/default.css"},
-				Scripts:     []string{"/resources/js/log.js", "/resources/js/default.js"},
-				Templates:   make(map[string]string),
-				StaticDir:   DefaultStaticDir,
-				StaticFiles: make(map[string]string),
-			},
-			{
-				Renderer:    blackfriday.HtmlRenderer(0, "", ""),
-				PathScope:   "/og",
-				Extensions:  []string{".md"},
-				Styles:      []string{},
-				Scripts:     []string{},
-				Templates:   templates,
-				StaticDir:   "testdata/og_static",
-				StaticFiles: map[string]string{"/og/first.md": "testdata/og_static/og/first.md/index.html"},
-				Links: []PageLink{
-					{
-						Title:   "first",
-						Summary: "",
-						Date:    time.Now(),
-						URL:     "/og/first.md",
-					},
+				Renderer:  blackfriday.HtmlRenderer(0, "", ""),
+				PathScope: "/log",
+				Extensions: map[string]struct{}{
+					".md": struct{}{},
 				},
+				Styles:    []string{"/resources/css/log.css", "/resources/css/default.css"},
+				Scripts:   []string{"/resources/js/log.js", "/resources/js/default.js"},
+				Templates: make(map[string]string),
+			},
+			{
+				Renderer:  blackfriday.HtmlRenderer(0, "", ""),
+				PathScope: "/og",
+				Extensions: map[string]struct{}{
+					".md": struct{}{},
+				},
+				Styles:    []string{},
+				Scripts:   []string{},
+				Templates: templates,
 			},
 		},
 		IndexFiles: []string{"index.html"},
@@ -78,14 +68,6 @@ func TestMarkdown(t *testing.T) {
 			t.Fatalf("Next shouldn't be called")
 			return 0, nil
 		}),
-	}
-
-	for i := range md.Configs {
-		c := md.Configs[i]
-		if err := GenerateStatic(md, c); err != nil {
-			t.Fatalf("Error: %v", err)
-		}
-		Watch(md, c, time.Millisecond*100)
 	}
 
 	req, err := http.NewRequest("GET", "/blog/test.md", nil)
@@ -219,52 +201,6 @@ Welcome to title!
 	if !equalStrings(respBody, expectedBody) {
 		t.Fatalf("Expected body: %v got: %v", expectedBody, respBody)
 	}
-
-	expectedLinks := []string{
-		"/blog/test.md",
-		"/docflags/test.md",
-		"/log/test.md",
-	}
-
-	for i, c := range md.Configs[:2] {
-		log.Printf("Test number: %d, configuration links: %v, config: %v", i, c.Links, c)
-		if c.Links[0].URL != expectedLinks[i] {
-			t.Fatalf("Expected %v got %v", expectedLinks[i], c.Links[0].URL)
-		}
-	}
-
-	// attempt to trigger race conditions
-	var w sync.WaitGroup
-	f := func() {
-		req, err := http.NewRequest("GET", "/log/test.md", nil)
-		if err != nil {
-			t.Fatalf("Could not create HTTP request: %v", err)
-		}
-		rec := httptest.NewRecorder()
-
-		md.ServeHTTP(rec, req)
-		w.Done()
-	}
-	for i := 0; i < 5; i++ {
-		w.Add(1)
-		go f()
-	}
-	w.Wait()
-
-	f = func() {
-		GenerateStatic(md, md.Configs[0])
-		w.Done()
-	}
-	for i := 0; i < 5; i++ {
-		w.Add(1)
-		go f()
-	}
-	w.Wait()
-
-	if err = os.RemoveAll(DefaultStaticDir); err != nil {
-		t.Errorf("Error while removing the generated static files: %v", err)
-	}
-
 }
 
 func equalStrings(s1, s2 string) bool {

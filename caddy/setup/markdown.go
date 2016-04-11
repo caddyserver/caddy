@@ -2,9 +2,7 @@ package setup
 
 import (
 	"net/http"
-	"path"
 	"path/filepath"
-	"strings"
 
 	"github.com/mholt/caddy/middleware"
 	"github.com/mholt/caddy/middleware/markdown"
@@ -25,25 +23,6 @@ func Markdown(c *Controller) (middleware.Middleware, error) {
 		IndexFiles: []string{"index.md"},
 	}
 
-	// Sweep the whole path at startup to at least generate link index, maybe generate static site
-	c.Startup = append(c.Startup, func() error {
-		for i := range mdconfigs {
-			cfg := mdconfigs[i]
-
-			// Generate link index and static files (if enabled)
-			if err := markdown.GenerateStatic(md, cfg); err != nil {
-				return err
-			}
-
-			// Watch file changes for static site generation if not in development mode.
-			if !cfg.Development {
-				markdown.Watch(md, cfg, markdown.DefaultInterval)
-			}
-		}
-
-		return nil
-	})
-
 	return func(next middleware.Handler) middleware.Handler {
 		md.Next = next
 		return md
@@ -55,9 +34,9 @@ func markdownParse(c *Controller) ([]*markdown.Config, error) {
 
 	for c.Next() {
 		md := &markdown.Config{
-			Renderer:    blackfriday.HtmlRenderer(0, "", ""),
-			Templates:   make(map[string]string),
-			StaticFiles: make(map[string]string),
+			Renderer:   blackfriday.HtmlRenderer(0, "", ""),
+			Extensions: make(map[string]struct{}),
+			Templates:  make(map[string]string),
 		}
 
 		// Get the path scope
@@ -80,7 +59,9 @@ func markdownParse(c *Controller) ([]*markdown.Config, error) {
 
 		// If no extensions were specified, assume some defaults
 		if len(md.Extensions) == 0 {
-			md.Extensions = []string{".md", ".markdown", ".mdown"}
+			md.Extensions[".md"] = struct{}{}
+			md.Extensions[".markdown"] = struct{}{}
+			md.Extensions[".mdown"] = struct{}{}
 		}
 
 		mdconfigs = append(mdconfigs, md)
@@ -92,11 +73,9 @@ func markdownParse(c *Controller) ([]*markdown.Config, error) {
 func loadParams(c *Controller, mdc *markdown.Config) error {
 	switch c.Val() {
 	case "ext":
-		exts := c.RemainingArgs()
-		if len(exts) == 0 {
-			return c.ArgErr()
+		for _, ext := range c.RemainingArgs() {
+			mdc.Extensions[ext] = struct{}{}
 		}
-		mdc.Extensions = append(mdc.Extensions, exts...)
 		return nil
 	case "css":
 		if !c.NextArg() {
@@ -113,7 +92,7 @@ func loadParams(c *Controller, mdc *markdown.Config) error {
 	case "template":
 		tArgs := c.RemainingArgs()
 		switch len(tArgs) {
-		case 0:
+		default:
 			return c.ArgErr()
 		case 1:
 			if _, ok := mdc.Templates[markdown.DefaultTemplate]; ok {
@@ -126,31 +105,7 @@ func loadParams(c *Controller, mdc *markdown.Config) error {
 			fpath := filepath.ToSlash(filepath.Clean(c.Root + string(filepath.Separator) + tArgs[1]))
 			mdc.Templates[tArgs[0]] = fpath
 			return nil
-		default:
-			return c.ArgErr()
 		}
-	case "sitegen":
-		if c.NextArg() {
-			mdc.StaticDir = path.Join(c.Root, c.Val())
-		} else {
-			mdc.StaticDir = path.Join(c.Root, markdown.DefaultStaticDir)
-		}
-		if c.NextArg() {
-			// only 1 argument allowed
-			return c.ArgErr()
-		}
-		return nil
-	case "dev":
-		if c.NextArg() {
-			mdc.Development = strings.ToLower(c.Val()) == "true"
-		} else {
-			mdc.Development = true
-		}
-		if c.NextArg() {
-			// only 1 argument allowed
-			return c.ArgErr()
-		}
-		return nil
 	default:
 		return c.Err("Expected valid markdown configuration property")
 	}
