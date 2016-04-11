@@ -87,3 +87,12 @@ func (r *ResponseRecorder) Flush() {
 		panic("not a Flusher") // should be recovered at the beginning of middleware stack
 	}
 }
+
+// CloseNotify implements http.CloseNotifier.
+// It just inherits the underlying ResponseWriter's CloseNotify method.
+func (r *ResponseRecorder) CloseNotify() <-chan bool {
+	if cn, ok := r.ResponseWriter.(http.CloseNotifier); ok {
+		return cn.CloseNotify()
+	}
+	panic("not a CloseNotifier")
+}
