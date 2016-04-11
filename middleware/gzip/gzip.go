@@ -141,3 +141,12 @@ func (w *gzipResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	}
 	return nil, nil, fmt.Errorf("not a Hijacker")
 }
+
+// CloseNotify implements http.CloseNotifier.
+// It just inherits the underlying ResponseWriter's CloseNotify method.
+func (w *gzipResponseWriter) CloseNotify() <-chan bool {
+	if cn, ok := w.ResponseWriter.(http.CloseNotifier); ok {
+		return cn.CloseNotify()
+	}
+	panic("not a CloseNotifier")
+}
