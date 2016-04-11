@@ -210,7 +210,8 @@ td:first-child svg {
 	position: absolute;
 }
 
-td .name {
+td .name,
+td .goup {
 	margin-left: 1.75em;
 	word-break: break-all;
 	overflow-wrap: break-word;
@@ -342,6 +343,17 @@ footer {
 							{{end}}
 						</th>
 					</tr>
+					{{if .CanGoUp}}
+					<tr>
+						<td>
+							<a href="..">
+								<span class="goup">Go up</span>
+							</a>
+						</td>
+						<td>&mdash;</td>
+						<td>&mdash;</td>
+					</tr>
+					{{end}}
 					{{range .Items}}
 					<tr>
 						<td>
