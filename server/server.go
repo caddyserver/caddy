@@ -4,9 +4,11 @@
 package server
 
 import (
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net"
@@ -16,6 +18,11 @@ import (
 	"strings"
 	"sync"
 	"time"
+)
+
+const (
+	tlsNewTicketEvery = time.Hour * 10 // generate a new ticket for TLS PFS encryption every so often
+	tlsNumTickets     = 4              // hold and consider that many tickets to decrypt TLS sessions
 )
 
 // Server represents an instance of a server, which serves
@@ -28,6 +35,7 @@ type Server struct {
 	HTTP2       bool                   // whether to enable HTTP/2
 	tls         bool                   // whether this server is serving all HTTPS hosts or not
 	OnDemandTLS bool                   // whether this server supports on-demand TLS (load certs at handshake-time)
+	tlsGovChan  chan struct{}          // close to stop the TLS maintenance goroutine
 	vhosts      map[string]virtualHost // virtual hosts keyed by their address
 	listener    ListenerFile           // the listener which is bound to the socket
 	listenerMu  sync.Mutex             // protects listener
@@ -216,6 +224,11 @@ func serveTLS(s *Server, ln net.Listener, tlsConfigs []TLSConfig) error {
 		return err
 	}
 
+	// Setup any goroutines governing over TLS settings
+	s.tlsGovChan = make(chan struct{})
+	timer := time.NewTicker(tlsNewTicketEvery)
+	go runTLSTicketKeyRotation(s.TLSConfig, timer, s.tlsGovChan)
+
 	// Create TLS listener - note that we do not replace s.listener
 	// with this TLS listener; tls.listener is unexported and does
 	// not implement the File() method we need for graceful restarts
@@ -257,6 +270,11 @@ func (s *Server) Stop() (err error) {
 		err = s.listener.Close()
 	}
 	s.listenerMu.Unlock()
+
+	// Closing this signals any TLS governor goroutines to exit
+	if s.tlsGovChan != nil {
+		close(s.tlsGovChan)
+	}
 
 	return
 }
@@ -376,6 +394,67 @@ func setupClientAuth(tlsConfigs []TLSConfig, config *tls.Config) error {
 	}
 
 	return nil
+}
+
+var runTLSTicketKeyRotation = standaloneTLSTicketKeyRotation
+
+var setSessionTicketKeysTestHook = func(keys [][32]byte) [][32]byte {
+	return keys
+}
+
+// standaloneTLSTicketKeyRotation governs over the array of TLS ticket keys used to de/crypt TLS tickets.
+// It periodically sets a new ticket key as the first one, used to encrypt (and decrypt),
+// pushing any old ticket keys to the back, where they are considered for decryption only.
+//
+// Lack of entropy for the very first ticket key results in the feature being disabled (as does Go),
+// later lack of entropy temporarily disables ticket key rotation.
+// Old ticket keys are still phased out, though.
+//
+// Stops the timer when returning.
+func standaloneTLSTicketKeyRotation(c *tls.Config, timer *time.Ticker, exitChan chan struct{}) {
+	defer timer.Stop()
+	// The entire page should be marked as sticky, but Go cannot do that
+	// without resorting to syscall#Mlock. And, we don't have madvise (for NODUMP), too. ☹
+	keys := make([][32]byte, 1, tlsNumTickets)
+
+	rng := c.Rand
+	if rng == nil {
+		rng = rand.Reader
+	}
+	if _, err := io.ReadFull(rng, keys[0][:]); err != nil {
+		c.SessionTicketsDisabled = true // bail if we don't have the entropy for the first one
+		return
+	}
+	c.SetSessionTicketKeys(setSessionTicketKeysTestHook(keys))
+
+	for {
+		select {
+		case _, isOpen := <-exitChan:
+			if !isOpen {
+				return
+			}
+		case <-timer.C:
+			rng = c.Rand // could've changed since the start
+			if rng == nil {
+				rng = rand.Reader
+			}
+			var newTicketKey [32]byte
+			_, err := io.ReadFull(rng, newTicketKey[:])
+
+			if len(keys) < tlsNumTickets {
+				keys = append(keys, keys[0]) // manipulates the internal length
+			}
+			for idx := len(keys) - 1; idx >= 1; idx-- {
+				keys[idx] = keys[idx-1] // yes, this makes copies
+			}
+
+			if err == nil {
+				keys[0] = newTicketKey
+			}
+			// pushes the last key out, doesn't matter that we don't have a new one
+			c.SetSessionTicketKeys(setSessionTicketKeysTestHook(keys))
+		}
+	}
 }
 
 // RunFirstStartupFuncs runs all of the server's FirstStartup
