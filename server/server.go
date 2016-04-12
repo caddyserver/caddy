@@ -226,7 +226,7 @@ func serveTLS(s *Server, ln net.Listener, tlsConfigs []TLSConfig) error {
 
 	// Setup any goroutines governing over TLS settings
 	s.tlsGovChan = make(chan struct{})
-	go startTLSTicketKeyRotation(s.TLSConfig, s.tlsGovChan)
+	go runTLSTicketKeyRotation(s.TLSConfig, s.tlsGovChan)
 
 	// Create TLS listener - note that we do not replace s.listener
 	// with this TLS listener; tls.listener is unexported and does
@@ -395,14 +395,16 @@ func setupClientAuth(tlsConfigs []TLSConfig, config *tls.Config) error {
 	return nil
 }
 
-// startTLSTicketKeyRotation governs over the array of TLS ticket keys used to de/crypt TLS tickets.
+var runTLSTicketKeyRotation = standaloneTLSTicketKeyRotation
+
+// standaloneTLSTicketKeyRotation governs over the array of TLS ticket keys used to de/crypt TLS tickets.
 // It periodically sets a new ticket key as the first one, used to encrypt (and decrypt),
 // pushing any old ticket keys to the back, where they are considered for decryption only.
 //
 // Lack of entropy for the very first ticket key results in the feature being disabled (as does Go),
 // later lack of entropy temporarily disables ticket key rotation.
 // Old ticket keys are still phased out, though.
-func startTLSTicketKeyRotation(c *tls.Config, exitChan chan struct{}) {
+func standaloneTLSTicketKeyRotation(c *tls.Config, exitChan chan struct{}) {
 	timer := time.NewTicker(tlsNewTicketEvery)
 	defer timer.Stop()
 	// The entire page should be marked as sticky, but Go cannot do that
