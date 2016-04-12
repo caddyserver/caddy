@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/url"
 	"os"
@@ -67,33 +66,6 @@ type Listing struct {
 	User interface{}
 
 	middleware.Context
-}
-
-// LinkedPath returns l.Path where every element is a clickable
-// link to the path up to that point so far.
-func (l Listing) LinkedPath() string {
-	if len(l.Path) == 0 {
-		return ""
-	}
-
-	// skip trailing slash
-	lpath := l.Path
-	if lpath[len(lpath)-1] == '/' {
-		lpath = lpath[:len(lpath)-1]
-	}
-
-	parts := strings.Split(lpath, "/")
-	var result string
-	for i, part := range parts {
-		if i == 0 && part == "" {
-			// Leading slash (root)
-			result += `<a href="/">/</a>`
-			continue
-		}
-		result += fmt.Sprintf(`<a href="%s/">%s</a>/`, strings.Join(parts[:i+1], "/"), part)
-	}
-
-	return result
 }
 
 // BreadcrumbMap returns l.Path where every element is a map
