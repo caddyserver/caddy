@@ -226,7 +226,8 @@ func serveTLS(s *Server, ln net.Listener, tlsConfigs []TLSConfig) error {
 
 	// Setup any goroutines governing over TLS settings
 	s.tlsGovChan = make(chan struct{})
-	go runTLSTicketKeyRotation(s.TLSConfig, s.tlsGovChan)
+	timer := time.NewTicker(tlsNewTicketEvery)
+	go runTLSTicketKeyRotation(s.TLSConfig, timer, s.tlsGovChan)
 
 	// Create TLS listener - note that we do not replace s.listener
 	// with this TLS listener; tls.listener is unexported and does
@@ -397,6 +398,10 @@ func setupClientAuth(tlsConfigs []TLSConfig, config *tls.Config) error {
 
 var runTLSTicketKeyRotation = standaloneTLSTicketKeyRotation
 
+var setSessionTicketKeysTestHook = func(keys [][32]byte) [][32]byte {
+	return keys
+}
+
 // standaloneTLSTicketKeyRotation governs over the array of TLS ticket keys used to de/crypt TLS tickets.
 // It periodically sets a new ticket key as the first one, used to encrypt (and decrypt),
 // pushing any old ticket keys to the back, where they are considered for decryption only.
@@ -404,8 +409,9 @@ var runTLSTicketKeyRotation = standaloneTLSTicketKeyRotation
 // Lack of entropy for the very first ticket key results in the feature being disabled (as does Go),
 // later lack of entropy temporarily disables ticket key rotation.
 // Old ticket keys are still phased out, though.
-func standaloneTLSTicketKeyRotation(c *tls.Config, exitChan chan struct{}) {
-	timer := time.NewTicker(tlsNewTicketEvery)
+//
+// Stops the timer when returning.
+func standaloneTLSTicketKeyRotation(c *tls.Config, timer *time.Ticker, exitChan chan struct{}) {
 	defer timer.Stop()
 	// The entire page should be marked as sticky, but Go cannot do that
 	// without resorting to syscall#Mlock. And, we don't have madvise (for NODUMP), too. ☹
@@ -419,7 +425,7 @@ func standaloneTLSTicketKeyRotation(c *tls.Config, exitChan chan struct{}) {
 		c.SessionTicketsDisabled = true // bail if we don't have the entropy for the first one
 		return
 	}
-	c.SetSessionTicketKeys(keys)
+	c.SetSessionTicketKeys(setSessionTicketKeysTestHook(keys))
 
 	for {
 		select {
@@ -446,7 +452,7 @@ func standaloneTLSTicketKeyRotation(c *tls.Config, exitChan chan struct{}) {
 				keys[0] = newTicketKey
 			}
 			// pushes the last key out, doesn't matter that we don't have a new one
-			c.SetSessionTicketKeys(keys)
+			c.SetSessionTicketKeys(setSessionTicketKeysTestHook(keys))
 		}
 	}
 }
