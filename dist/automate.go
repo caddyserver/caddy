@@ -66,10 +66,7 @@ func main() {
 			if p.arch == "arm" {
 				baseFilename += p.arm
 			}
-			binFilename = baseFilename
-			if p.os == "windows" {
-				binFilename += ".exe"
-			}
+			binFilename = baseFilename + p.binExt
 
 			binPath := filepath.Join(buildDir, binFilename)
 			archive := filepath.Join(releaseDir, fmt.Sprintf("%s.%s", baseFilename, p.archive))
@@ -151,8 +148,8 @@ var platforms = []platform{
 	{os: "openbsd", arch: "386", archive: "tar.gz"},
 	{os: "openbsd", arch: "amd64", archive: "tar.gz"},
 	{os: "solaris", arch: "amd64", archive: "tar.gz"},
-	{os: "windows", arch: "386", archive: "zip"},
-	{os: "windows", arch: "amd64", archive: "zip"},
+	{os: "windows", arch: "386", binExt: ".exe", archive: "zip"},
+	{os: "windows", arch: "amd64", binExt: ".exe", archive: "zip"},
 }
 
 var distContents = []string{
