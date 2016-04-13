@@ -42,11 +42,9 @@ const (
 <html>
 	<head>
 		<title>{{.Doc.title}}</title>
-		<meta charset="utf-8">
-		{{range .Styles}}<link rel="stylesheet" href="{{.}}">
-		{{end -}}
-		{{range .Scripts}}<script src="{{.}}"></script>
-		{{end -}}
+		<meta charset="utf-8">{{range .Styles}}
+		<link rel="stylesheet" href="{{.}}">{{end}}{{range .Scripts}}
+		<script src="{{.}}"></script>{{end}}
 	</head>
 	<body>
 		{{.Doc.body}}

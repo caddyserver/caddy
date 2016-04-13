@@ -151,7 +151,7 @@ DocFlags.var_bool true`
 		<link rel="stylesheet" href="/resources/css/default.css">
 		<script src="/resources/js/log.js"></script>
 		<script src="/resources/js/default.js"></script>
-		</head>
+	</head>
 	<body>
 		<h2>Welcome on the blog</h2>
 
