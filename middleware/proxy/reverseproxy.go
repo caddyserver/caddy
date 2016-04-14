@@ -228,10 +228,16 @@ func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request, extr
 
 		outreq.Write(backendConn)
 
+		errCh := make(chan error, 1)
 		go func() {
-			io.Copy(backendConn, conn) // write tcp stream to backend.
+			_, err := io.Copy(backendConn, conn) // write tcp stream to backend.
+			errCh <- err
 		}()
-		io.Copy(conn, backendConn) // read tcp stream from backend.
+		go func() {
+			_, err := io.Copy(conn, backendConn) // read tcp stream from backend.
+			errCh <- err
+		}()
+		<-errCh
 	} else {
 		defer res.Body.Close()
 		for _, h := range hopHeaders {
