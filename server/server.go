@@ -379,17 +379,19 @@ func DefaultErrorFunc(w http.ResponseWriter, r *http.Request, status int) {
 // setupClientAuth sets up TLS client authentication only if
 // any of the TLS configs specified at least one cert file.
 func setupClientAuth(tlsConfigs []TLSConfig, config *tls.Config) error {
-	var clientAuth bool
+	whatClientAuth := tls.NoClientCert
 	for _, cfg := range tlsConfigs {
-		if len(cfg.ClientCerts) > 0 {
-			clientAuth = true
-			break
+		if whatClientAuth < cfg.ClientAuth { // Use the most restrictive.
+			whatClientAuth = cfg.ClientAuth
 		}
 	}
 
-	if clientAuth {
+	if whatClientAuth != tls.NoClientCert {
 		pool := x509.NewCertPool()
 		for _, cfg := range tlsConfigs {
+			if len(cfg.ClientCerts) == 0 {
+				continue
+			}
 			for _, caFile := range cfg.ClientCerts {
 				caCrt, err := ioutil.ReadFile(caFile) // Anyone that gets a cert from this CA can connect
 				if err != nil {
@@ -401,7 +403,7 @@ func setupClientAuth(tlsConfigs []TLSConfig, config *tls.Config) error {
 			}
 		}
 		config.ClientCAs = pool
-		config.ClientAuth = tls.RequireAndVerifyClientCert
+		config.ClientAuth = whatClientAuth
 	}
 
 	return nil
