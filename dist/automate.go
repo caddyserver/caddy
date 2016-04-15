@@ -123,7 +123,7 @@ func (p platform) String() string {
 func numProcs() int {
 	n := runtime.GOMAXPROCS(0)
 	if n == runtime.NumCPU() && n > 1 {
-		n -= 1
+		n--
 	}
 	return n
 }
