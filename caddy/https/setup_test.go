@@ -189,33 +189,68 @@ func TestSetupParseWithWrongOptionalParams(t *testing.T) {
 }
 
 func TestSetupParseWithClientAuth(t *testing.T) {
+	// Test missing client cert file
 	params := `tls ` + certFile + ` ` + keyFile + ` {
-			clients client_ca.crt client2_ca.crt
+			clients
 		}`
 	c := setup.NewTestController(params)
 	_, err := Setup(c)
-	if err != nil {
-		t.Errorf("Expected no errors, got: %v", err)
-	}
-
-	if count := len(c.TLS.ClientCerts); count != 2 {
-		t.Fatalf("Expected two client certs, had %d", count)
-	}
-	if actual := c.TLS.ClientCerts[0]; actual != "client_ca.crt" {
-		t.Errorf("Expected first client cert file to be '%s', but was '%s'", "client_ca.crt", actual)
-	}
-	if actual := c.TLS.ClientCerts[1]; actual != "client2_ca.crt" {
-		t.Errorf("Expected second client cert file to be '%s', but was '%s'", "client2_ca.crt", actual)
-	}
-
-	// Test missing client cert file
-	params = `tls ` + certFile + ` ` + keyFile + ` {
-			clients
-		}`
-	c = setup.NewTestController(params)
-	_, err = Setup(c)
 	if err == nil {
 		t.Errorf("Expected an error, but no error returned")
+	}
+
+	noCAs, twoCAs := []string{}, []string{"client_ca.crt", "client2_ca.crt"}
+	for caseNumber, caseData := range []struct {
+		params         string
+		clientAuthType tls.ClientAuthType
+		expectedErr    bool
+		expectedCAs    []string
+	}{
+		{"", tls.NoClientCert, false, noCAs},
+		{`tls ` + certFile + ` ` + keyFile + ` {
+			clients client_ca.crt client2_ca.crt
+		}`, tls.RequireAndVerifyClientCert, false, twoCAs},
+		// now come modifier
+		{`tls ` + certFile + ` ` + keyFile + ` {
+			clients request
+		}`, tls.RequestClientCert, false, noCAs},
+		{`tls ` + certFile + ` ` + keyFile + ` {
+			clients require
+		}`, tls.RequireAnyClientCert, false, noCAs},
+		{`tls ` + certFile + ` ` + keyFile + ` {
+			clients verify_if_given client_ca.crt client2_ca.crt
+		}`, tls.VerifyClientCertIfGiven, false, twoCAs},
+		{`tls ` + certFile + ` ` + keyFile + ` {
+			clients verify_if_given
+		}`, tls.VerifyClientCertIfGiven, true, noCAs},
+	} {
+		c := setup.NewTestController(caseData.params)
+		_, err := Setup(c)
+		if caseData.expectedErr {
+			if err == nil {
+				t.Errorf("In case %d: Expected an error, got: %v", caseNumber, err)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("In case %d: Expected no errors, got: %v", caseNumber, err)
+		}
+
+		if caseData.clientAuthType != c.TLS.ClientAuth {
+			t.Errorf("In case %d: Expected TLS client auth type %v, got: %v",
+				caseNumber, caseData.clientAuthType, c.TLS.ClientAuth)
+		}
+
+		if count := len(c.TLS.ClientCerts); count < len(caseData.expectedCAs) {
+			t.Fatalf("In case %d: Expected %d client certs, had %d", caseNumber, len(caseData.expectedCAs), count)
+		}
+
+		for idx, expected := range caseData.expectedCAs {
+			if actual := c.TLS.ClientCerts[idx]; actual != expected {
+				t.Errorf("In case %d: Expected %dth client cert file to be '%s', but was '%s'",
+					caseNumber, idx, expected, actual)
+			}
+		}
 	}
 }
 

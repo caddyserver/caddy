@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -332,6 +333,16 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Use URL.RawPath If you need the original, "raw" URL.Path in your middleware.
+	// Collapse any ./ ../ /// madness here instead of doing that in every plugin.
+	if r.URL.Path != "/" {
+		path := filepath.Clean(r.URL.Path)
+		if !strings.HasPrefix(path, "/") {
+			path = "/" + path
+		}
+		r.URL.Path = path
+	}
+
 	// Execute the optional request callback if it exists and it's not disabled
 	if s.ReqCallback != nil && !s.vhosts[host].config.TLS.Manual && s.ReqCallback(w, r) {
 		return
@@ -368,17 +379,19 @@ func DefaultErrorFunc(w http.ResponseWriter, r *http.Request, status int) {
 // setupClientAuth sets up TLS client authentication only if
 // any of the TLS configs specified at least one cert file.
 func setupClientAuth(tlsConfigs []TLSConfig, config *tls.Config) error {
-	var clientAuth bool
+	whatClientAuth := tls.NoClientCert
 	for _, cfg := range tlsConfigs {
-		if len(cfg.ClientCerts) > 0 {
-			clientAuth = true
-			break
+		if whatClientAuth < cfg.ClientAuth { // Use the most restrictive.
+			whatClientAuth = cfg.ClientAuth
 		}
 	}
 
-	if clientAuth {
+	if whatClientAuth != tls.NoClientCert {
 		pool := x509.NewCertPool()
 		for _, cfg := range tlsConfigs {
+			if len(cfg.ClientCerts) == 0 {
+				continue
+			}
 			for _, caFile := range cfg.ClientCerts {
 				caCrt, err := ioutil.ReadFile(caFile) // Anyone that gets a cert from this CA can connect
 				if err != nil {
@@ -390,7 +403,7 @@ func setupClientAuth(tlsConfigs []TLSConfig, config *tls.Config) error {
 			}
 		}
 		config.ClientCAs = pool
-		config.ClientAuth = tls.RequireAndVerifyClientCert
+		config.ClientAuth = whatClientAuth
 	}
 
 	return nil
