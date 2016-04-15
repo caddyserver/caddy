@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -330,6 +331,16 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		} else if _, ok2 := s.vhosts[""]; ok2 {
 			host = ""
 		}
+	}
+
+	// Use URL.RawPath If you need the original, "raw" URL.Path in your middleware.
+	// Collapse any ./ ../ /// madness here instead of doing that in every plugin.
+	if r.URL.Path != "/" {
+		path := filepath.Clean(r.URL.Path)
+		if !strings.HasPrefix(path, "/") {
+			path = "/" + path
+		}
+		r.URL.Path = path
 	}
 
 	// Execute the optional request callback if it exists and it's not disabled
