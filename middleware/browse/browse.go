@@ -241,6 +241,11 @@ func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 		if !middleware.Path(r.URL.Path).Matches(bc.PathScope) {
 			continue
 		}
+		switch r.Method {
+		case http.MethodGet, http.MethodHead:
+		default:
+			return http.StatusMethodNotAllowed, nil
+		}
 
 		// Browsing navigation gets messed up if browsing a directory
 		// that doesn't end in "/" (which it should, anyway)
