@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,23 +12,30 @@ import (
 	"time"
 )
 
-var testDir = filepath.Join(os.TempDir(), "caddy_testdir")
-var ErrCustom = errors.New("Custom Error")
+var (
+	ErrCustom = errors.New("Custom Error")
+
+	testDir     = filepath.Join(os.TempDir(), "caddy_testdir")
+	testWebRoot = filepath.Join(testDir, "webroot")
+)
 
 // testFiles is a map with relative paths to test files as keys and file content as values.
 // The map represents the following structure:
 // - $TEMP/caddy_testdir/
-// '-- file1.html
-// '-- dirwithindex/
-// '---- index.html
-// '-- dir/
-// '---- file2.html
-// '---- hidden.html
+// '-- unreachable.html
+// '-- webroot/
+// '---- file1.html
+// '---- dirwithindex/
+// '------ index.html
+// '---- dir/
+// '------ file2.html
+// '------ hidden.html
 var testFiles = map[string]string{
-	"file1.html":                                "<h1>file1.html</h1>",
-	filepath.Join("dirwithindex", "index.html"): "<h1>dirwithindex/index.html</h1>",
-	filepath.Join("dir", "file2.html"):          "<h1>dir/file2.html</h1>",
-	filepath.Join("dir", "hidden.html"):         "<h1>dir/hidden.html</h1>",
+	"unreachable.html":                                     "<h1>must not leak</h1>",
+	filepath.Join("webroot", "file1.html"):                 "<h1>file1.html</h1>",
+	filepath.Join("webroot", "dirwithindex", "index.html"): "<h1>dirwithindex/index.html</h1>",
+	filepath.Join("webroot", "dir", "file2.html"):          "<h1>dir/file2.html</h1>",
+	filepath.Join("webroot", "dir", "hidden.html"):         "<h1>dir/hidden.html</h1>",
 }
 
 // TestServeHTTP covers positive scenarios when serving files.
@@ -36,7 +44,7 @@ func TestServeHTTP(t *testing.T) {
 	beforeServeHTTPTest(t)
 	defer afterServeHTTPTest(t)
 
-	fileserver := FileServer(http.Dir(testDir), []string{"dir/hidden.html"})
+	fileserver := FileServer(http.Dir(testWebRoot), []string{"dir/hidden.html"})
 
 	movedPermanently := "Moved Permanently"
 
@@ -142,11 +150,20 @@ func TestServeHTTP(t *testing.T) {
 			url:            "https://foo/hidden.html",
 			expectedStatus: http.StatusNotFound,
 		},
+		// Test 17 - try to get below the root directory.
+		{
+			url:            "https://foo/%2f..%2funreachable.html",
+			expectedStatus: http.StatusNotFound,
+		},
 	}
 
 	for i, test := range tests {
 		responseRecorder := httptest.NewRecorder()
-		request, err := http.NewRequest("GET", test.url, strings.NewReader(""))
+		request, err := http.NewRequest("GET", test.url, nil)
+		// prevent any URL sanitization within Go: we need unmodified paths here
+		if u, _ := url.Parse(test.url); u.RawPath != "" {
+			request.URL.Path = u.RawPath
+		}
 		status, err := fileserver.ServeHTTP(responseRecorder, request)
 		etag := responseRecorder.Header().Get("Etag")
 
@@ -176,7 +193,7 @@ func TestServeHTTP(t *testing.T) {
 // beforeServeHTTPTest creates a test directory with the structure, defined in the variable testFiles
 func beforeServeHTTPTest(t *testing.T) {
 	// make the root test dir
-	err := os.Mkdir(testDir, os.ModePerm)
+	err := os.MkdirAll(testWebRoot, os.ModePerm)
 	if err != nil {
 		if !os.IsExist(err) {
 			t.Fatalf("Failed to create test dir. Error was: %v", err)
