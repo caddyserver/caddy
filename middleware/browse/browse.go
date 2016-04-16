@@ -315,8 +315,8 @@ func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			listing.Sort = sortCookie.Value
 		}
 	} else { // Save the query value of 'sort' and 'order' as cookies.
-		http.SetCookie(w, &http.Cookie{Name: "sort", Value: listing.Sort, Path: "/"})
-		http.SetCookie(w, &http.Cookie{Name: "order", Value: listing.Order, Path: "/"})
+		http.SetCookie(w, &http.Cookie{Name: "sort", Value: listing.Sort, Path: bc.PathScope, Secure: r.TLS != nil})
+		http.SetCookie(w, &http.Cookie{Name: "order", Value: listing.Order, Path: bc.PathScope, Secure: r.TLS != nil})
 	}
 
 	if listing.Order == "" {
@@ -325,7 +325,7 @@ func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			listing.Order = orderCookie.Value
 		}
 	} else {
-		http.SetCookie(w, &http.Cookie{Name: "order", Value: listing.Order, Path: "/"})
+		http.SetCookie(w, &http.Cookie{Name: "order", Value: listing.Order, Path: bc.PathScope, Secure: r.TLS != nil})
 	}
 
 	listing.applySort()
