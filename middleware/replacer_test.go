@@ -3,6 +3,7 @@ package middleware
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 )
@@ -52,6 +53,14 @@ func TestReplace(t *testing.T) {
 	request.Header.Set("Custom", "foobarbaz")
 	request.Header.Set("ShorterVal", "1")
 	repl := NewReplacer(request, recordRequest, "-")
+
+	hostname, err := os.Hostname()
+	if err != nil {
+		t.Fatal("Failed to determine hostname\n")
+	}
+	if expected, actual := "This hostname is "+hostname, repl.Replace("This hostname is {hostname}"); expected != actual {
+		t.Errorf("{hostname} replacement: expected '%s', got '%s'", expected, actual)
+	}
 
 	if expected, actual := "This host is localhost.", repl.Replace("This host is {host}."); expected != actual {
 		t.Errorf("{host} replacement: expected '%s', got '%s'", expected, actual)

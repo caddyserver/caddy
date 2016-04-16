@@ -20,13 +20,14 @@ type Headers struct {
 // ServeHTTP implements the middleware.Handler interface and serves requests,
 // setting headers on the response according to the configured rules.
 func (h Headers) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
+	replacer := middleware.NewReplacer(r, nil, "")
 	for _, rule := range h.Rules {
 		if middleware.Path(r.URL.Path).Matches(rule.Path) {
 			for _, header := range rule.Headers {
 				if strings.HasPrefix(header.Name, "-") {
 					w.Header().Del(strings.TrimLeft(header.Name, "-"))
 				} else {
-					w.Header().Set(header.Name, header.Value)
+					w.Header().Set(header.Name, replacer.Replace(header.Value))
 				}
 			}
 		}
