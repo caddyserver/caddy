@@ -32,6 +32,17 @@ type Metadata struct {
 	Flags map[string]bool
 }
 
+// NewMetadata() returns a new Metadata struct, loaded with the given map
+func NewMetadata(parsedMap map[string]interface{}) Metadata {
+	md := Metadata{
+		Variables: make(map[string]string),
+		Flags:     make(map[string]bool),
+	}
+	md.load(parsedMap)
+
+	return md
+}
+
 // load loads parsed values in parsedMap into Metadata
 func (m *Metadata) load(parsedMap map[string]interface{}) {
 
@@ -87,13 +98,6 @@ func GetParser(buf []byte) MetadataParser {
 	}
 
 	return nil
-}
-
-func NewMetadata() Metadata {
-	return Metadata{
-		Variables: make(map[string]string),
-		Flags:     make(map[string]bool),
-	}
 }
 
 // parsers returns all available parsers

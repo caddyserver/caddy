@@ -122,7 +122,9 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 				return http.StatusInternalServerError, err
 			}
 
-			// html, err = md.doTemplate(cfg, html, ctx)
+			// TODO(weingart): move template execution here, something like:
+			//
+			// html, err = md.execTemplate(cfg, html, ctx)
 			// if err != nil {
 			// 	return http.StatusInternalServerError, err
 			// }

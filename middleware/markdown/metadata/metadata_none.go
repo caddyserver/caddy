@@ -17,8 +17,7 @@ func (n *NoneMetadataParser) Type() string {
 // Parse metadata/markdown file
 func (n *NoneMetadataParser) Init(b *bytes.Buffer) bool {
 	m := make(map[string]interface{})
-	n.metadata = NewMetadata()
-	n.metadata.load(m)
+	n.metadata = NewMetadata(m)
 	n.markdown = bytes.NewBuffer(b.Bytes())
 
 	return true

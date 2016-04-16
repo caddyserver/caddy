@@ -28,8 +28,7 @@ func (t *TOMLMetadataParser) Init(b *bytes.Buffer) bool {
 	if err := toml.Unmarshal(meta.Bytes(), &m); err != nil {
 		return false
 	}
-	t.metadata = NewMetadata()
-	t.metadata.load(m)
+	t.metadata = NewMetadata(m)
 
 	return true
 }

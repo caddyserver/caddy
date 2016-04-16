@@ -36,8 +36,7 @@ func (j *JSONMetadataParser) Init(b *bytes.Buffer) bool {
 		}
 	}
 
-	j.metadata = NewMetadata()
-	j.metadata.load(m)
+	j.metadata = NewMetadata(m)
 	j.markdown = bytes.NewBuffer(b.Bytes())
 
 	return true

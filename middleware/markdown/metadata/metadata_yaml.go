@@ -27,8 +27,7 @@ func (y *YAMLMetadataParser) Init(b *bytes.Buffer) bool {
 	if err := yaml.Unmarshal(meta.Bytes(), &m); err != nil {
 		return false
 	}
-	y.metadata = NewMetadata()
-	y.metadata.load(m)
+	y.metadata = NewMetadata(m)
 
 	return true
 }
