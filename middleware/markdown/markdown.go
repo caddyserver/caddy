@@ -70,9 +70,26 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 			continue
 		}
 
+		var dirents []os.FileInfo
 		fpath := r.URL.Path
 		if idx, ok := middleware.IndexFile(md.FileSys, fpath, md.IndexFiles); ok {
+			// We're serving a directory index file, which may be a markdown
+			// file with a template.  Let's grab a list of files this directory
+			// URL points to, and pass that in to any possible template invocations,
+			// so that templates can customize the look and feel of a directory.
+
+			fdp, err := md.FileSys.Open(fpath)
+			if err != nil {
+				return http.StatusInternalServerError, err
+			}
+			dirents, err = fdp.Readdir(-1)
+			if err != nil {
+				return http.StatusInternalServerError, err
+			}
+
+			// Set path to found index file
 			fpath = idx
+			_ = dirents
 		}
 
 		// If supported extension, process it
@@ -100,10 +117,15 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 				Req:  r,
 				URL:  r.URL,
 			}
-			html, err := md.Process(cfg, fpath, body, ctx)
+			html, err := cfg.Markdown(fpath, body, ctx)
 			if err != nil {
 				return http.StatusInternalServerError, err
 			}
+
+			// html, err = md.doTemplate(cfg, html, ctx)
+			// if err != nil {
+			// 	return http.StatusInternalServerError, err
+			// }
 
 			middleware.SetLastModifiedHeader(w, fs.ModTime())
 			w.Write(html)

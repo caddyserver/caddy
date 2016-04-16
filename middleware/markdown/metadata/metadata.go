@@ -1,6 +1,7 @@
-package markdown
+package metadata
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"time"
@@ -64,20 +65,23 @@ func (m *Metadata) load(parsedMap map[string]interface{}) {
 
 // MetadataParser is a an interface that must be satisfied by each parser
 type MetadataParser interface {
+	// Initialize a parser
+	Init(b *bytes.Buffer) bool
+
+	// Type of metadata
+	Type() string
+
 	// Opening identifier
 	Opening() []byte
 
 	// Closing identifier
 	Closing() []byte
 
-	// Parse the metadata.
-	// Returns the remaining page contents (Markdown)
-	// after extracting metadata
-	Parse([]byte) ([]byte, error)
-
 	// Parsed metadata.
-	// Should be called after a call to Parse returns no error
 	Metadata() Metadata
+
+	// Raw markdown.
+	Markdown() []byte
 }
 
 // extractMetadata separates metadata content from from markdown content in b.
@@ -109,8 +113,19 @@ func extractMetadata(parser MetadataParser, b []byte) (metadata []byte, markdown
 	return metadata, markdown, nil
 }
 
+func GetParser(buf []byte) MetadataParser {
+	for _, p := range parsers() {
+		b := bytes.NewBuffer(buf)
+		if p.Init(b) {
+			return p
+		}
+	}
+
+	return nil
+}
+
 // findParser finds the parser using line that contains opening identifier
-func findParser(b []byte) MetadataParser {
+func FindParser(b []byte) MetadataParser {
 	var line []byte
 	// Read first line
 	if _, err := fmt.Fscanln(bytes.NewReader(b), &line); err != nil {
@@ -125,7 +140,7 @@ func findParser(b []byte) MetadataParser {
 	return nil
 }
 
-func newMetadata() Metadata {
+func NewMetadata() Metadata {
 	return Metadata{
 		Variables: make(map[string]string),
 		Flags:     make(map[string]bool),
@@ -135,8 +150,53 @@ func newMetadata() Metadata {
 // parsers returns all available parsers
 func parsers() []MetadataParser {
 	return []MetadataParser{
-		&JSONMetadataParser{metadata: newMetadata()},
-		&TOMLMetadataParser{metadata: newMetadata()},
-		&YAMLMetadataParser{metadata: newMetadata()},
+		&TOMLMetadataParser{},
+		&YAMLMetadataParser{metadata: NewMetadata()},
+		&JSONMetadataParser{},
+		&NoneMetadataParser{},
 	}
+}
+
+// Split out "normal" metadata with given delimiter
+func splitBuffer(b *bytes.Buffer, delim string) (*bytes.Buffer, *bytes.Buffer) {
+	scanner := bufio.NewScanner(b)
+
+	// Read and check first line
+	if !scanner.Scan() {
+		return nil, nil
+	}
+	if string(bytes.TrimSpace(scanner.Bytes())) != delim {
+		return nil, nil
+	}
+
+	// Accumulate metadata, until delimiter
+	meta := bytes.NewBuffer(nil)
+	for scanner.Scan() {
+		if string(bytes.TrimSpace(scanner.Bytes())) == delim {
+			break
+		}
+		if _, err := meta.Write(scanner.Bytes()); err != nil {
+			return nil, nil
+		}
+		if _, err := meta.WriteRune('\n'); err != nil {
+			return nil, nil
+		}
+	}
+	// Make sure we saw closing delimiter
+	if string(bytes.TrimSpace(scanner.Bytes())) != delim {
+		return nil, nil
+	}
+
+	// The rest is markdown
+	markdown := new(bytes.Buffer)
+	for scanner.Scan() {
+		if _, err := markdown.Write(scanner.Bytes()); err != nil {
+			return nil, nil
+		}
+		if _, err := markdown.WriteRune('\n'); err != nil {
+			return nil, nil
+		}
+	}
+
+	return meta, markdown
 }

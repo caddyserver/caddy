@@ -1,9 +1,49 @@
 package markdown
 
 import (
+	"bytes"
 	"io/ioutil"
+	"os"
 	"text/template"
+
+	"github.com/mholt/caddy/middleware"
+	"github.com/mholt/caddy/middleware/markdown/metadata"
 )
+
+// Data represents a markdown document.
+type Data struct {
+	middleware.Context
+	Doc      map[string]string
+	DocFlags map[string]bool
+	Styles   []string
+	Scripts  []string
+	Files    []os.FileInfo
+}
+
+// Include "overrides" the embedded middleware.Context's Include()
+// method so that included files have access to d's fields.
+// Note: using {{template 'template-name' .}} instead might be better.
+func (d Data) Include(filename string) (string, error) {
+	return middleware.ContextInclude(filename, d, d.Root)
+}
+
+// execTemplate executes a template given a requestPath, template, and metadata
+func execTemplate(c *Config, mdata metadata.Metadata, ctx middleware.Context) ([]byte, error) {
+	mdData := Data{
+		Context:  ctx,
+		Doc:      mdata.Variables,
+		DocFlags: mdata.Flags,
+		Styles:   c.Styles,
+		Scripts:  c.Scripts,
+	}
+
+	b := new(bytes.Buffer)
+	if err := c.Template.ExecuteTemplate(b, mdata.Template, mdData); err != nil {
+		return nil, err
+	}
+
+	return b.Bytes(), nil
+}
 
 func setDefaultTemplate(filename string) *template.Template {
 	buf, err := ioutil.ReadFile(filename)
