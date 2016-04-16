@@ -3,7 +3,6 @@ package metadata
 import (
 	"bufio"
 	"bytes"
-	"fmt"
 	"time"
 )
 
@@ -71,12 +70,6 @@ type MetadataParser interface {
 	// Type of metadata
 	Type() string
 
-	// Opening identifier
-	Opening() []byte
-
-	// Closing identifier
-	Closing() []byte
-
 	// Parsed metadata.
 	Metadata() Metadata
 
@@ -84,35 +77,7 @@ type MetadataParser interface {
 	Markdown() []byte
 }
 
-// extractMetadata separates metadata content from from markdown content in b.
-// It returns the metadata, the remaining bytes (markdown), and an error, if any.
-func extractMetadata(parser MetadataParser, b []byte) (metadata []byte, markdown []byte, err error) {
-	b = bytes.TrimSpace(b)
-	openingLine := parser.Opening()
-	closingLine := parser.Closing()
-	if !bytes.HasPrefix(b, openingLine) {
-		return nil, b, fmt.Errorf("first line missing expected metadata identifier")
-	}
-	metaStart := len(openingLine)
-	if _, ok := parser.(*JSONMetadataParser); ok {
-		metaStart = 0
-	}
-	metaEnd := bytes.Index(b[metaStart:], closingLine)
-	if metaEnd == -1 {
-		return nil, nil, fmt.Errorf("metadata not closed ('%s' not found)", parser.Closing())
-	}
-	metaEnd += metaStart
-	if _, ok := parser.(*JSONMetadataParser); ok {
-		metaEnd += len(closingLine)
-	}
-	metadata = b[metaStart:metaEnd]
-	markdown = b[metaEnd:]
-	if _, ok := parser.(*JSONMetadataParser); !ok {
-		markdown = b[metaEnd+len(closingLine):]
-	}
-	return metadata, markdown, nil
-}
-
+// GetParser returns a parser for the given data
 func GetParser(buf []byte) MetadataParser {
 	for _, p := range parsers() {
 		b := bytes.NewBuffer(buf)
@@ -121,22 +86,6 @@ func GetParser(buf []byte) MetadataParser {
 		}
 	}
 
-	return nil
-}
-
-// findParser finds the parser using line that contains opening identifier
-func FindParser(b []byte) MetadataParser {
-	var line []byte
-	// Read first line
-	if _, err := fmt.Fscanln(bytes.NewReader(b), &line); err != nil {
-		return nil
-	}
-	line = bytes.TrimSpace(line)
-	for _, parser := range parsers() {
-		if bytes.Equal(parser.Opening(), line) {
-			return parser
-		}
-	}
 	return nil
 }
 
@@ -151,13 +100,15 @@ func NewMetadata() Metadata {
 func parsers() []MetadataParser {
 	return []MetadataParser{
 		&TOMLMetadataParser{},
-		&YAMLMetadataParser{metadata: NewMetadata()},
+		&YAMLMetadataParser{},
 		&JSONMetadataParser{},
+
+		// This one must be last
 		&NoneMetadataParser{},
 	}
 }
 
-// Split out "normal" metadata with given delimiter
+// Split out prefixed/suffixed metadata with given delimiter
 func splitBuffer(b *bytes.Buffer, delim string) (*bytes.Buffer, *bytes.Buffer) {
 	scanner := bufio.NewScanner(b)
 

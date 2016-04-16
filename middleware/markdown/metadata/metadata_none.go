@@ -38,13 +38,3 @@ func (n *NoneMetadataParser) Metadata() Metadata {
 func (n *NoneMetadataParser) Markdown() []byte {
 	return n.markdown.Bytes()
 }
-
-// Opening returns the opening identifier TOML metadata
-func (n *NoneMetadataParser) Opening() []byte {
-	return []byte("...")
-}
-
-// Closing returns the closing identifier TOML metadata
-func (n *NoneMetadataParser) Closing() []byte {
-	return []byte("...")
-}

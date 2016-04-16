@@ -33,21 +33,6 @@ func (y *YAMLMetadataParser) Init(b *bytes.Buffer) bool {
 	return true
 }
 
-// Parse the metadata
-func (y *YAMLMetadataParser) Parse(b []byte) ([]byte, error) {
-	b, markdown, err := extractMetadata(y, b)
-	if err != nil {
-		return markdown, err
-	}
-
-	m := make(map[string]interface{})
-	if err := yaml.Unmarshal(b, &m); err != nil {
-		return markdown, err
-	}
-	y.metadata.load(m)
-	return markdown, nil
-}
-
 // Metadata returns parsed metadata.  It should be called
 // only after a call to Parse returns without error.
 func (y *YAMLMetadataParser) Metadata() Metadata {
@@ -56,14 +41,4 @@ func (y *YAMLMetadataParser) Metadata() Metadata {
 
 func (y *YAMLMetadataParser) Markdown() []byte {
 	return y.markdown.Bytes()
-}
-
-// Opening returns the opening identifier YAML metadata
-func (y *YAMLMetadataParser) Opening() []byte {
-	return []byte("---")
-}
-
-// Closing returns the closing identifier YAML metadata
-func (y *YAMLMetadataParser) Closing() []byte {
-	return []byte("---")
 }
