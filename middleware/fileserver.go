@@ -2,10 +2,12 @@ package middleware
 
 import (
 	"fmt"
+	"math/rand"
 	"net/http"
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -65,7 +67,8 @@ func (fh *fileHandler) serveFile(w http.ResponseWriter, r *http.Request, name st
 			return http.StatusForbidden, err
 		}
 		// Likely the server is under load and ran out of file descriptors
-		w.Header().Set("Retry-After", "5") // TODO: 5 seconds enough delay? Or too much?
+		backoff := int(3 + rand.Int31()%3) // 3–5 seconds to prevent a stampede
+		w.Header().Set("Retry-After", strconv.Itoa(backoff))
 		return http.StatusServiceUnavailable, err
 	}
 	defer f.Close()
