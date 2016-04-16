@@ -89,7 +89,6 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 
 			// Set path to found index file
 			fpath = idx
-			_ = dirents
 		}
 
 		// If supported extension, process it
@@ -117,7 +116,7 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 				Req:  r,
 				URL:  r.URL,
 			}
-			html, err := cfg.Markdown(fpath, body, ctx)
+			html, err := cfg.Markdown(fpath, body, dirents, ctx)
 			if err != nil {
 				return http.StatusInternalServerError, err
 			}

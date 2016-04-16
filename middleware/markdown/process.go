@@ -1,6 +1,7 @@
 package markdown
 
 import (
+	"os"
 	"path/filepath"
 
 	"github.com/mholt/caddy/middleware"
@@ -10,7 +11,7 @@ import (
 
 // Markdown processes the contents of a page in b. It parses the metadata
 // (if any) and uses the template (if found).
-func (c *Config) Markdown(requestPath string, b []byte, ctx middleware.Context) ([]byte, error) {
+func (c *Config) Markdown(requestPath string, b []byte, dirents []os.FileInfo, ctx middleware.Context) ([]byte, error) {
 	parser := metadata.GetParser(b)
 	markdown := parser.Markdown()
 	mdata := parser.Metadata()
@@ -32,6 +33,13 @@ func (c *Config) Markdown(requestPath string, b []byte, ctx middleware.Context) 
 		title = title[0 : len(title)-len(extension)]
 	}
 	mdata.Variables["title"] = title
+
+	if len(dirents) > 0 {
+		mdata.Flags["dirents"] = true
+		mdata.Dirents = dirents
+	} else {
+		mdata.Flags["dirents"] = false
+	}
 
 	return execTemplate(c, mdata, ctx)
 }
