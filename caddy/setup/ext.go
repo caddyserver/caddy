@@ -2,6 +2,7 @@ package setup
 
 import (
 	"os"
+	"path/filepath"
 
 	"github.com/mholt/caddy/middleware"
 	"github.com/mholt/caddy/middleware/extensions"
@@ -47,7 +48,7 @@ func extParse(c *Controller) ([]string, error) {
 // resourceExists returns true if the file specified at
 // root + path exists; false otherwise.
 func resourceExists(root, path string) bool {
-	_, err := os.Stat(root + path)
+	_, err := os.Stat(filepath.Join(root, path))
 	// technically we should use os.IsNotExist(err)
 	// but we don't handle any other kinds of errors anyway
 	return err == nil

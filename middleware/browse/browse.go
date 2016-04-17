@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -173,9 +174,11 @@ func (l Listing) applySort() {
 }
 
 func directoryListing(files []os.FileInfo, r *http.Request, canGoUp bool, root string, ignoreIndexes bool, vars interface{}) (Listing, error) {
-	var fileinfos []FileInfo
-	var dirCount, fileCount int
-	var urlPath = r.URL.Path
+	var (
+		fileinfos           []FileInfo
+		dirCount, fileCount int
+		urlPath             = r.URL.Path
+	)
 
 	for _, f := range files {
 		name := f.Name()
@@ -226,143 +229,150 @@ func directoryListing(files []os.FileInfo, r *http.Request, canGoUp bool, root s
 
 // ServeHTTP implements the middleware.Handler interface.
 func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
-	filename := b.Root + r.URL.Path
-	info, err := os.Stat(filename)
-	if err != nil {
+	var bc *Config
+	// See if there's a browse configuration to match the path
+	for i := range b.Configs {
+		if middleware.Path(r.URL.Path).Matches(b.Configs[i].PathScope) {
+			bc = &b.Configs[i]
+			break
+		}
+	}
+	if bc == nil {
 		return b.Next.ServeHTTP(w, r)
 	}
 
+	// Browse works on existing directories; delegate everything else
+	requestedFilepath := filepath.Join(b.Root, r.URL.Path)
+	info, err := os.Stat(requestedFilepath)
+	if err != nil {
+		switch {
+		case os.IsPermission(err):
+			return http.StatusForbidden, err
+		case os.IsExist(err):
+			return http.StatusNotFound, err
+		default:
+			return b.Next.ServeHTTP(w, r)
+		}
+	}
 	if !info.IsDir() {
 		return b.Next.ServeHTTP(w, r)
 	}
 
-	// See if there's a browse configuration to match the path
-	for _, bc := range b.Configs {
-		if !middleware.Path(r.URL.Path).Matches(bc.PathScope) {
-			continue
-		}
-		switch r.Method {
-		case http.MethodGet, http.MethodHead:
-		default:
-			return http.StatusMethodNotAllowed, nil
-		}
+	// Do not reply to anything else because it might be nonsensical
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+	default:
+		return http.StatusMethodNotAllowed, nil
+	}
 
-		// Browsing navigation gets messed up if browsing a directory
-		// that doesn't end in "/" (which it should, anyway)
-		if r.URL.Path[len(r.URL.Path)-1] != '/' {
-			http.Redirect(w, r, r.URL.Path+"/", http.StatusTemporaryRedirect)
-			return 0, nil
-		}
+	// Browsing navigation gets messed up if browsing a directory
+	// that doesn't end in "/" (which it should, anyway)
+	if !strings.HasSuffix(r.URL.Path, "/") {
+		http.Redirect(w, r, r.URL.Path+"/", http.StatusTemporaryRedirect)
+		return 0, nil
+	}
 
-		// Load directory contents
-		file, err := os.Open(b.Root + r.URL.Path)
-		if err != nil {
-			if os.IsPermission(err) {
-				return http.StatusForbidden, err
-			}
-			return http.StatusNotFound, err
-		}
-		defer file.Close()
-
-		files, err := file.Readdir(-1)
-		if err != nil {
+	// Load directory contents
+	file, err := os.Open(requestedFilepath)
+	if err != nil {
+		if os.IsPermission(err) {
 			return http.StatusForbidden, err
 		}
+		return http.StatusInternalServerError, err
+	}
+	defer file.Close()
 
-		// Determine if user can browse up another folder
-		var canGoUp bool
-		curPath := strings.TrimSuffix(r.URL.Path, "/")
-		for _, other := range b.Configs {
-			if strings.HasPrefix(path.Dir(curPath), other.PathScope) {
-				canGoUp = true
-				break
+	files, err := file.Readdir(-1)
+	if err != nil {
+		if os.IsPermission(err) {
+			return http.StatusForbidden, err
+		}
+		return http.StatusInternalServerError, err
+	}
+
+	// Determine if user can browse up another folder
+	var canGoUp bool
+	curPath := strings.TrimSuffix(r.URL.Path, "/")
+	for _, other := range b.Configs {
+		if strings.HasPrefix(path.Dir(curPath), other.PathScope) {
+			canGoUp = true
+			break
+		}
+	}
+	// Assemble listing of directory contents
+	listing, err := directoryListing(files, r, canGoUp, b.Root, b.IgnoreIndexes, bc.Variables)
+	if err != nil { // directory isn't browsable
+		return http.StatusInternalServerError, err
+	}
+
+	// Copy the query values into the Listing struct
+	listing.Sort, listing.Order = r.URL.Query().Get("sort"), r.URL.Query().Get("order")
+
+	// If the query 'sort' or 'order' is empty, use defaults or any values previously saved in Cookies
+	if listing.Sort == "" {
+		listing.Sort = "name"
+		if sortCookie, sortErr := r.Cookie("sort"); sortErr == nil {
+			listing.Sort = sortCookie.Value
+		}
+	} else { // Save the query value of 'sort' and 'order' as cookies.
+		http.SetCookie(w, &http.Cookie{Name: "sort", Value: listing.Sort, Path: bc.PathScope, Secure: r.TLS != nil})
+		http.SetCookie(w, &http.Cookie{Name: "order", Value: listing.Order, Path: bc.PathScope, Secure: r.TLS != nil})
+	}
+
+	if listing.Order == "" {
+		listing.Order = "asc"
+		if orderCookie, orderErr := r.Cookie("order"); orderErr == nil {
+			listing.Order = orderCookie.Value
+		}
+	} else {
+		http.SetCookie(w, &http.Cookie{Name: "order", Value: listing.Order, Path: bc.PathScope, Secure: r.TLS != nil})
+	}
+
+	listing.applySort()
+
+	var buf bytes.Buffer
+	// Check if we should provide json
+	acceptHeader := strings.Join(r.Header["Accept"], ",")
+	if strings.Contains(strings.ToLower(acceptHeader), "application/json") {
+		var marsh []byte
+		// Check if we are limited
+		if limitQuery := r.URL.Query().Get("limit"); limitQuery != "" {
+			limit, err := strconv.Atoi(limitQuery)
+			if err != nil { // if the 'limit' query can't be interpreted as a number, return err
+				return http.StatusBadRequest, err
 			}
-		}
-		// Assemble listing of directory contents
-		listing, err := directoryListing(files, r, canGoUp, b.Root, b.IgnoreIndexes, bc.Variables)
-		if err != nil { // directory isn't browsable
-			continue
-		}
-
-		// Get the query vales and store them in the Listing struct
-		listing.Sort, listing.Order = r.URL.Query().Get("sort"), r.URL.Query().Get("order")
-
-		// If the query 'sort' or 'order' is empty, check the cookies
-		if listing.Sort == "" {
-			sortCookie, sortErr := r.Cookie("sort")
-			// if there's no sorting values in the cookies, default to "name" and "asc"
-			if sortErr != nil {
-				listing.Sort = "name"
-			} else { // if we have values in the cookies, use them
-				listing.Sort = sortCookie.Value
-			}
-		} else { // save the query value of 'sort' and 'order' as cookies
-			http.SetCookie(w, &http.Cookie{Name: "sort", Value: listing.Sort, Path: "/"})
-			http.SetCookie(w, &http.Cookie{Name: "order", Value: listing.Order, Path: "/"})
-		}
-
-		if listing.Order == "" {
-			orderCookie, orderErr := r.Cookie("order")
-			// if there's no sorting values in the cookies, default to "name" and "asc"
-			if orderErr != nil {
-				listing.Order = "asc"
-			} else { // if we have values in the cookies, use them
-				listing.Order = orderCookie.Value
-			}
-		} else { // save the query value of 'sort' and 'order' as cookies
-			http.SetCookie(w, &http.Cookie{Name: "order", Value: listing.Order, Path: "/"})
-		}
-
-		// Apply the sorting
-		listing.applySort()
-
-		var buf bytes.Buffer
-		// check if we should provide json
-		acceptHeader := strings.Join(r.Header["Accept"], ",")
-		if strings.Contains(strings.ToLower(acceptHeader), "application/json") {
-			var marsh []byte
-			// check if we are limited
-			if limitQuery := r.URL.Query().Get("limit"); limitQuery != "" {
-				limit, err := strconv.Atoi(limitQuery)
-				if err != nil { // if the 'limit' query can't be interpreted as a number, return err
-					return http.StatusBadRequest, err
-				}
-				// if `limit` is equal or less than len(listing.Items) and bigger than 0, list them
-				if limit <= len(listing.Items) && limit > 0 {
-					marsh, err = json.Marshal(listing.Items[:limit])
-				} else { // if the 'limit' query is empty, or has the wrong value, list everything
-					marsh, err = json.Marshal(listing.Items)
-				}
-				if err != nil {
-					return http.StatusInternalServerError, err
-				}
-			} else { // there's no 'limit' query, list them all
+			// if `limit` is equal or less than len(listing.Items) and bigger than 0, list them
+			if limit <= len(listing.Items) && limit > 0 {
+				marsh, err = json.Marshal(listing.Items[:limit])
+			} else { // if the 'limit' query is empty, or has the wrong value, list everything
 				marsh, err = json.Marshal(listing.Items)
-				if err != nil {
-					return http.StatusInternalServerError, err
-				}
 			}
-
-			// write the marshaled json to buf
-			if _, err = buf.Write(marsh); err != nil {
-				return http.StatusInternalServerError, err
-			}
-			w.Header().Set("Content-Type", "application/json; charset=utf-8")
-
-		} else { // there's no 'application/json' in the 'Accept' header, browse normally
-			err = bc.Template.Execute(&buf, listing)
 			if err != nil {
 				return http.StatusInternalServerError, err
 			}
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-
+		} else { // There's no 'limit' query; list them all
+			marsh, err = json.Marshal(listing.Items)
+			if err != nil {
+				return http.StatusInternalServerError, err
+			}
 		}
 
-		buf.WriteTo(w)
+		// Write the marshaled json to buf
+		if _, err = buf.Write(marsh); err != nil {
+			return http.StatusInternalServerError, err
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 
-		return http.StatusOK, nil
+	} else { // There's no 'application/json' in the 'Accept' header; browse normally
+		err = bc.Template.Execute(&buf, listing)
+		if err != nil {
+			return http.StatusInternalServerError, err
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
 	}
 
-	// Didn't qualify; pass-thru
-	return b.Next.ServeHTTP(w, r)
+	buf.WriteTo(w)
+
+	return http.StatusOK, nil
 }

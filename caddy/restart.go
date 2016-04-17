@@ -11,7 +11,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"path"
+	"path/filepath"
 	"sync/atomic"
 
 	"github.com/mholt/caddy/caddy/https"
@@ -138,7 +138,7 @@ func Restart(newCaddyfile Input) error {
 func getCertsForNewCaddyfile(newCaddyfile Input) error {
 	// parse the new caddyfile only up to (and including) TLS
 	// so we can know what we need to get certs for.
-	configs, _, _, err := loadConfigsUpToIncludingTLS(path.Base(newCaddyfile.Path()), bytes.NewReader(newCaddyfile.Body()))
+	configs, _, _, err := loadConfigsUpToIncludingTLS(filepath.Base(newCaddyfile.Path()), bytes.NewReader(newCaddyfile.Body()))
 	if err != nil {
 		return errors.New("loading Caddyfile: " + err.Error())
 	}
