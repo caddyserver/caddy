@@ -116,5 +116,5 @@ func PrivateKeyBytes(key crypto.PrivateKey) ([]byte, error) {
 	case *ecdsa.PrivateKey:
 		return x509.MarshalECPrivateKey(key)
 	}
-	return nil, errors.New("Bad juju")
+	return nil, errors.New("Unknown private key type")
 }
