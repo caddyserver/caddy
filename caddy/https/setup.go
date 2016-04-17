@@ -83,10 +83,30 @@ func Setup(c *setup.Controller) (middleware.Middleware, error) {
 					c.TLS.Ciphers = append(c.TLS.Ciphers, value)
 				}
 			case "clients":
-				c.TLS.ClientCerts = c.RemainingArgs()
-				if len(c.TLS.ClientCerts) == 0 {
+				clientCertList := c.RemainingArgs()
+				if len(clientCertList) == 0 {
 					return nil, c.ArgErr()
 				}
+
+				listStart, mustProvideCA := 1, true
+				switch clientCertList[0] {
+				case "request":
+					c.TLS.ClientAuth = tls.RequestClientCert
+					mustProvideCA = false
+				case "require":
+					c.TLS.ClientAuth = tls.RequireAnyClientCert
+					mustProvideCA = false
+				case "verify_if_given":
+					c.TLS.ClientAuth = tls.VerifyClientCertIfGiven
+				default:
+					c.TLS.ClientAuth = tls.RequireAndVerifyClientCert
+					listStart = 0
+				}
+				if mustProvideCA && len(clientCertList) <= listStart {
+					return nil, c.ArgErr()
+				}
+
+				c.TLS.ClientCerts = clientCertList[listStart:]
 			case "load":
 				c.Args(&loadDir)
 				c.TLS.Manual = true

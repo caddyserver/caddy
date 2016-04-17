@@ -210,7 +210,8 @@ td:first-child svg {
 	position: absolute;
 }
 
-td .name {
+td .name,
+td .goup {
 	margin-left: 1.75em;
 	word-break: break-all;
 	overflow-wrap: break-word;
@@ -263,7 +264,6 @@ footer {
 					</g>
 				</g>
 
-
 				<!-- File -->
 				<linearGradient id="a">
 					<stop stop-color="#cbcbcb" offset="0"/>
@@ -299,14 +299,14 @@ footer {
 			</defs>
 		</svg>
 
-
-
 		<header>
-			<h1>{{.LinkedPath}}</h1>
+			<h1>
+				{{range $url, $name := .BreadcrumbMap}}<a href="{{$url}}">{{$name}}</a>{{if ne $url "/"}}/{{end}}{{end}}
+			</h1>
 		</header>
 		<main>
 			<div class="meta">
-				<div class="content">	
+				<div class="content">
 					<span class="meta-item"><b>{{.NumDirs}}</b> director{{if eq 1 .NumDirs}}y{{else}}ies{{end}}</span>
 					<span class="meta-item"><b>{{.NumFiles}}</b> file{{if ne 1 .NumFiles}}s{{end}}</span>
 				</div>
@@ -342,6 +342,17 @@ footer {
 							{{end}}
 						</th>
 					</tr>
+					{{if .CanGoUp}}
+					<tr>
+						<td>
+							<a href="..">
+								<span class="goup">Go up</span>
+							</a>
+						</td>
+						<td>&mdash;</td>
+						<td>&mdash;</td>
+					</tr>
+					{{end}}
 					{{range .Items}}
 					<tr>
 						<td>

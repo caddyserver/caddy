@@ -104,6 +104,51 @@ func TestSort(t *testing.T) {
 	}
 }
 
+func TestBrowseHTTPMethods(t *testing.T) {
+	tmpl, err := template.ParseFiles("testdata/photos.tpl")
+	if err != nil {
+		t.Fatalf("An error occured while parsing the template: %v", err)
+	}
+
+	b := Browse{
+		Next: middleware.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
+			t.Fatalf("Next shouldn't be called")
+			return 0, nil
+		}),
+		Root: "./testdata",
+		Configs: []Config{
+			{
+				PathScope: "/photos",
+				Template:  tmpl,
+			},
+		},
+	}
+
+	rec := httptest.NewRecorder()
+	for method, expected := range map[string]int{
+		http.MethodGet:     http.StatusOK,
+		http.MethodHead:    http.StatusOK,
+		http.MethodOptions: http.StatusMethodNotAllowed,
+		http.MethodPost:    http.StatusMethodNotAllowed,
+		http.MethodPut:     http.StatusMethodNotAllowed,
+		http.MethodPatch:   http.StatusMethodNotAllowed,
+		http.MethodDelete:  http.StatusMethodNotAllowed,
+		"COPY":             http.StatusMethodNotAllowed,
+		"MOVE":             http.StatusMethodNotAllowed,
+		"MKCOL":            http.StatusMethodNotAllowed,
+	} {
+		req, err := http.NewRequest(method, "/photos/", nil)
+		if err != nil {
+			t.Fatalf("Test: Could not create HTTP request: %v", err)
+		}
+
+		code, _ := b.ServeHTTP(rec, req)
+		if code != expected {
+			t.Errorf("Wrong status with HTTP Method %s: expected %d, got %d", method, expected, code)
+		}
+	}
+}
+
 func TestBrowseTemplate(t *testing.T) {
 	tmpl, err := template.ParseFiles("testdata/photos.tpl")
 	if err != nil {

@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/url"
 	"os"
@@ -69,11 +68,13 @@ type Listing struct {
 	middleware.Context
 }
 
-// LinkedPath returns l.Path where every element is a clickable
-// link to the path up to that point so far.
-func (l Listing) LinkedPath() string {
+// BreadcrumbMap returns l.Path where every element is a map
+// of URLs and path segment names.
+func (l Listing) BreadcrumbMap() map[string]string {
+	result := map[string]string{}
+
 	if len(l.Path) == 0 {
-		return ""
+		return result
 	}
 
 	// skip trailing slash
@@ -83,14 +84,13 @@ func (l Listing) LinkedPath() string {
 	}
 
 	parts := strings.Split(lpath, "/")
-	var result string
 	for i, part := range parts {
 		if i == 0 && part == "" {
 			// Leading slash (root)
-			result += `<a href="/">/</a>`
+			result["/"] = "/"
 			continue
 		}
-		result += fmt.Sprintf(`<a href="%s/">%s</a>/`, strings.Join(parts[:i+1], "/"), part)
+		result[strings.Join(parts[:i+1], "/")] = part
 	}
 
 	return result
@@ -240,6 +240,11 @@ func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	for _, bc := range b.Configs {
 		if !middleware.Path(r.URL.Path).Matches(bc.PathScope) {
 			continue
+		}
+		switch r.Method {
+		case http.MethodGet, http.MethodHead:
+		default:
+			return http.StatusMethodNotAllowed, nil
 		}
 
 		// Browsing navigation gets messed up if browsing a directory
