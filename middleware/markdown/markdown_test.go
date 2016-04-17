@@ -29,7 +29,7 @@ func TestMarkdown(t *testing.T) {
 				Renderer:  blackfriday.HtmlRenderer(0, "", ""),
 				PathScope: "/blog",
 				Extensions: map[string]struct{}{
-					".md": struct{}{},
+					".md": {},
 				},
 				Styles:   []string{},
 				Scripts:  []string{},
@@ -39,7 +39,7 @@ func TestMarkdown(t *testing.T) {
 				Renderer:  blackfriday.HtmlRenderer(0, "", ""),
 				PathScope: "/docflags",
 				Extensions: map[string]struct{}{
-					".md": struct{}{},
+					".md": {},
 				},
 				Styles:   []string{},
 				Scripts:  []string{},
@@ -49,7 +49,7 @@ func TestMarkdown(t *testing.T) {
 				Renderer:  blackfriday.HtmlRenderer(0, "", ""),
 				PathScope: "/log",
 				Extensions: map[string]struct{}{
-					".md": struct{}{},
+					".md": {},
 				},
 				Styles:   []string{"/resources/css/log.css", "/resources/css/default.css"},
 				Scripts:  []string{"/resources/js/log.js", "/resources/js/default.js"},
@@ -59,7 +59,7 @@ func TestMarkdown(t *testing.T) {
 				Renderer:  blackfriday.HtmlRenderer(0, "", ""),
 				PathScope: "/og",
 				Extensions: map[string]struct{}{
-					".md": struct{}{},
+					".md": {},
 				},
 				Styles:   []string{},
 				Scripts:  []string{},
@@ -175,9 +175,9 @@ DocFlags.var_bool true`
 	}
 	rec = httptest.NewRecorder()
 	currenttime := time.Now().Local().Add(-time.Second)
-	err = os.Chtimes("testdata/og/first.md", currenttime, currenttime)
+	_ = os.Chtimes("testdata/og/first.md", currenttime, currenttime)
 	currenttime = time.Now().Local()
-	err = os.Chtimes("testdata/og_static/og/first.md/index.html", currenttime, currenttime)
+	_ = os.Chtimes("testdata/og_static/og/first.md/index.html", currenttime, currenttime)
 	time.Sleep(time.Millisecond * 200)
 
 	md.ServeHTTP(rec, req)
