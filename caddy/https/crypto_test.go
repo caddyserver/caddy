@@ -105,7 +105,12 @@ func PrivateKeyBytes(key crypto.PrivateKey) []byte {
 	case *rsa.PrivateKey:
 		keyBytes = x509.MarshalPKCS1PrivateKey(key)
 	case *ecdsa.PrivateKey:
-		keyBytes, _ = x509.MarshalECPrivateKey(key)
+		var err error
+		var t *testing.T
+		keyBytes, err = x509.MarshalECPrivateKey(key)
+		if err != nil {
+			t.Error(err)
+		}
 	}
 	return keyBytes
 }
