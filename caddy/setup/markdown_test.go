@@ -59,8 +59,8 @@ func TestMarkdownParse(t *testing.T) {
 }`, false, []markdown.Config{{
 			PathScope: "/blog",
 			Extensions: map[string]struct{}{
-				".md":  struct{}{},
-				".txt": struct{}{},
+				".md":  {},
+				".txt": {},
 			},
 			Styles:   []string{"/resources/css/blog.css"},
 			Scripts:  []string{"/resources/js/blog.js"},
@@ -72,7 +72,7 @@ func TestMarkdownParse(t *testing.T) {
 }`, false, []markdown.Config{{
 			PathScope: "/blog",
 			Extensions: map[string]struct{}{
-				".md": struct{}{},
+				".md": {},
 			},
 			Template: markdown.GetDefaultTemplate(),
 		}}},
