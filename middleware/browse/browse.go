@@ -275,19 +275,27 @@ func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	// Load directory contents
 	file, err := os.Open(requestedFilepath)
 	if err != nil {
-		if os.IsPermission(err) {
+		switch {
+		case os.IsPermission(err):
 			return http.StatusForbidden, err
+		case os.IsExist(err):
+			return http.StatusGone, err
+		default:
+			return http.StatusInternalServerError, err
 		}
-		return http.StatusInternalServerError, err
 	}
 	defer file.Close()
 
 	files, err := file.Readdir(-1)
 	if err != nil {
-		if os.IsPermission(err) {
+		switch {
+		case os.IsPermission(err):
 			return http.StatusForbidden, err
+		case os.IsExist(err):
+			return http.StatusGone, err
+		default:
+			return http.StatusInternalServerError, err
 		}
-		return http.StatusInternalServerError, err
 	}
 
 	// Determine if user can browse up another folder
