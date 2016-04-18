@@ -385,5 +385,16 @@ footer {
 		<footer>
 			Served with <a href="https://caddyserver.com">Caddy</a>
 		</footer>
+		<script type="text/javascript">
+			function localizeDatetime(e, index, ar) {
+				if (e.textContent === undefined) {
+					return;
+				}
+				var d = new Date(e.getAttribute('datetime'));
+				e.textContent = d.toLocaleString();
+			}
+			var timeList = Array.prototype.slice.call(document.getElementsByTagName("time"));
+			timeList.forEach(localizeDatetime);
+		</script>
 	</body>
 </html>`
