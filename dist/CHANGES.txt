@@ -1,8 +1,8 @@
 CHANGES
 
 <master>
-- Built with Go 1.6.1
-- New pprof directive for exposing process performance profile
+- Built with Go 1.6.2
+- New pprof directive for exposing process profiling endpoints
 - New expvar directive for exposing memory/GC performance
 - New -restart option to force in-process restarts on Unix systems
 - Only fail to start if managed certificate is expired (issue #642)
