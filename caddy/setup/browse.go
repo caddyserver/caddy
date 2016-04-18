@@ -85,7 +85,6 @@ const defaultTemplate = `<!DOCTYPE html>
 <html>
 	<head>
 		<title>{{.Name}}</title>
-		<meta charset="utf-8">
 		<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
 * { padding: 0; margin: 0; }
@@ -106,7 +105,7 @@ h1 a:hover {
 }
 
 header,
-.content {
+#summary {
 	padding-left: 5%;
 	padding-right: 5%;
 }
@@ -306,7 +305,7 @@ footer {
 		</header>
 		<main>
 			<div class="meta">
-				<div class="content">
+				<div id="summary">
 					<span class="meta-item"><b>{{.NumDirs}}</b> director{{if eq 1 .NumDirs}}y{{else}}ies{{end}}</span>
 					<span class="meta-item"><b>{{.NumFiles}}</b> file{{if ne 1 .NumFiles}}s{{end}}</span>
 					{{- if ne 0 .ItemsLimitedTo}}
@@ -315,37 +314,40 @@ footer {
 				</div>
 			</div>
 			<div class="listing">
-				<table>
+				<table aria-describedby="summary">
+					<thead>
 					<tr>
 						<th>
-							{{if and (eq .Sort "name") (ne .Order "desc")}}
+							{{- if and (eq .Sort "name") (ne .Order "desc")}}
 							<a href="?sort=name&order=desc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}">Name <svg width="1em" height=".4em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#up-arrow"></use></svg></a>
-							{{else if and (eq .Sort "name") (ne .Order "asc")}}
+							{{- else if and (eq .Sort "name") (ne .Order "asc")}}
 							<a href="?sort=name&order=asc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}">Name <svg width="1em" height=".4em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#down-arrow"></use></svg></a>
-							{{else}}
+							{{- else}}
 							<a href="?sort=name&order=asc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}">Name</a>
-							{{end}}
+							{{- end}}
 						</th>
 						<th>
-							{{if and (eq .Sort "size") (ne .Order "desc")}}
+							{{- if and (eq .Sort "size") (ne .Order "desc")}}
 							<a href="?sort=size&order=desc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}">Size <svg width="1em" height=".4em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#up-arrow"></use></svg></a></a>
-							{{else if and (eq .Sort "size") (ne .Order "asc")}}
+							{{- else if and (eq .Sort "size") (ne .Order "asc")}}
 							<a href="?sort=size&order=asc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}">Size <svg width="1em" height=".4em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#down-arrow"></use></svg></a></a>
-							{{else}}
+							{{- else}}
 							<a href="?sort=size&order=asc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}">Size</a>
-							{{end}}
+							{{- end}}
 						</th>
 						<th class="hideable">
-							{{if and (eq .Sort "time") (ne .Order "desc")}}
+							{{- if and (eq .Sort "time") (ne .Order "desc")}}
 							<a href="?sort=time&order=desc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}">Modified <svg width="1em" height=".4em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#up-arrow"></use></svg></a></a>
-							{{else if and (eq .Sort "time") (ne .Order "asc")}}
+							{{- else if and (eq .Sort "time") (ne .Order "asc")}}
 							<a href="?sort=time&order=asc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}">Modified <svg width="1em" height=".4em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#down-arrow"></use></svg></a></a>
-							{{else}}
+							{{- else}}
 							<a href="?sort=time&order=asc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}">Modified</a>
-							{{end}}
+							{{- end}}
 						</th>
 					</tr>
-					{{if .CanGoUp}}
+					</thead>
+					<tbody>
+					{{- if .CanGoUp}}
 					<tr>
 						<td>
 							<a href="..">
@@ -353,25 +355,30 @@ footer {
 							</a>
 						</td>
 						<td>&mdash;</td>
-						<td>&mdash;</td>
+						<td class="hideable">&mdash;</td>
 					</tr>
-					{{end}}
-					{{range .Items}}
+					{{- end}}
+					{{- range .Items}}
 					<tr>
 						<td>
 							<a href="{{.URL}}">
-								{{if .IsDir}}
+								{{- if .IsDir}}
 								<svg width="1.5em" height="1em" version="1.1" viewBox="0 0 35.678803 28.527945"><use xlink:href="#folder"></use></svg>
-								{{else}}
+								{{- else}}
 								<svg width="1.5em" height="1em" version="1.1" viewBox="0 0 26.604381 29.144726"><use xlink:href="#file"></use></svg>
-								{{end}}
+								{{- end}}
 								<span class="name">{{.Name}}</span>
 							</a>
 						</td>
-						<td>{{.HumanSize}}</td>
-						<td class="hideable">{{.HumanModTime "01/02/2006 03:04:05 PM"}}</td>
+						{{- if .IsDir}}
+						<td data-order="-1">&mdash;</td>
+						{{- else}}
+						<td data-order="{{.Size}}">{{.HumanSize}}</td>
+						{{- end}}
+						<td class="hideable"><time datetime="{{.HumanModTime "2006-01-02 15:04:05-0700"}}">{{.HumanModTime "01/02/2006 03:04:05 PM"}}</time></td>
 					</tr>
-					{{end}}
+					{{- end}}
+					</tbody>
 				</table>
 			</div>
 		</main>
