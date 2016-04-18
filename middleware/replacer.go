@@ -4,6 +4,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
 	"strconv"
 	"strings"
@@ -51,6 +52,13 @@ func NewReplacer(r *http.Request, rr *ResponseRecorder, emptyValue string) Repla
 					return "https"
 				}
 				return "http"
+			}(),
+			"{hostname}": func() string {
+				name, err := os.Hostname()
+				if err != nil {
+					return ""
+				}
+				return name
 			}(),
 			"{host}":          r.Host,
 			"{path}":          r.URL.Path,

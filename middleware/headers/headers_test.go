@@ -3,12 +3,17 @@ package headers
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/mholt/caddy/middleware"
 )
 
 func TestHeaders(t *testing.T) {
+	hostname, err := os.Hostname()
+	if err != nil {
+		t.Fatalf("Could not determine hostname: %v", err)
+	}
 	for i, test := range []struct {
 		from  string
 		name  string
@@ -17,6 +22,7 @@ func TestHeaders(t *testing.T) {
 		{"/a", "Foo", "Bar"},
 		{"/a", "Bar", ""},
 		{"/a", "Baz", ""},
+		{"/a", "ServerName", hostname},
 		{"/b", "Foo", ""},
 		{"/b", "Bar", "Removed in /a"},
 	} {
@@ -27,6 +33,7 @@ func TestHeaders(t *testing.T) {
 			Rules: []Rule{
 				{Path: "/a", Headers: []Header{
 					{Name: "Foo", Value: "Bar"},
+					{Name: "ServerName", Value: "{hostname}"},
 					{Name: "-Bar"},
 				}},
 			},
