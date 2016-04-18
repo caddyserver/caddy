@@ -112,8 +112,7 @@ func TestBrowseHTTPMethods(t *testing.T) {
 
 	b := Browse{
 		Next: middleware.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
-			t.Fatalf("Next shouldn't be called")
-			return 0, nil
+			return http.StatusTeapot, nil // not t.Fatalf, or we will not see what other methods yield
 		}),
 		Root: "./testdata",
 		Configs: []Config{
@@ -128,14 +127,8 @@ func TestBrowseHTTPMethods(t *testing.T) {
 	for method, expected := range map[string]int{
 		http.MethodGet:     http.StatusOK,
 		http.MethodHead:    http.StatusOK,
-		http.MethodOptions: http.StatusMethodNotAllowed,
-		http.MethodPost:    http.StatusMethodNotAllowed,
-		http.MethodPut:     http.StatusMethodNotAllowed,
-		http.MethodPatch:   http.StatusMethodNotAllowed,
-		http.MethodDelete:  http.StatusMethodNotAllowed,
-		"COPY":             http.StatusMethodNotAllowed,
-		"MOVE":             http.StatusMethodNotAllowed,
-		"MKCOL":            http.StatusMethodNotAllowed,
+		http.MethodOptions: http.StatusNotImplemented,
+		"PROPFIND":         http.StatusNotImplemented,
 	} {
 		req, err := http.NewRequest(method, "/photos/", nil)
 		if err != nil {

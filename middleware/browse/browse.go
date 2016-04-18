@@ -234,12 +234,11 @@ func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	for i := range b.Configs {
 		if middleware.Path(r.URL.Path).Matches(b.Configs[i].PathScope) {
 			bc = &b.Configs[i]
-			break
+			goto inScope
 		}
 	}
-	if bc == nil {
-		return b.Next.ServeHTTP(w, r)
-	}
+	return b.Next.ServeHTTP(w, r)
+inScope:
 
 	// Browse works on existing directories; delegate everything else
 	requestedFilepath := filepath.Join(b.Root, r.URL.Path)
@@ -261,8 +260,11 @@ func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	// Do not reply to anything else because it might be nonsensical
 	switch r.Method {
 	case http.MethodGet, http.MethodHead:
+		// proceed, noop
+	case "PROPFIND", http.MethodOptions:
+		return http.StatusNotImplemented, nil
 	default:
-		return http.StatusMethodNotAllowed, nil
+		return b.Next.ServeHTTP(w, r)
 	}
 
 	// Browsing navigation gets messed up if browsing a directory
@@ -275,19 +277,27 @@ func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	// Load directory contents
 	file, err := os.Open(requestedFilepath)
 	if err != nil {
-		if os.IsPermission(err) {
+		switch {
+		case os.IsPermission(err):
 			return http.StatusForbidden, err
+		case os.IsExist(err):
+			return http.StatusGone, err
+		default:
+			return http.StatusInternalServerError, err
 		}
-		return http.StatusInternalServerError, err
 	}
 	defer file.Close()
 
 	files, err := file.Readdir(-1)
 	if err != nil {
-		if os.IsPermission(err) {
+		switch {
+		case os.IsPermission(err):
 			return http.StatusForbidden, err
+		case os.IsExist(err):
+			return http.StatusGone, err
+		default:
+			return http.StatusInternalServerError, err
 		}
-		return http.StatusInternalServerError, err
 	}
 
 	// Determine if user can browse up another folder
@@ -302,7 +312,7 @@ func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	// Assemble listing of directory contents
 	listing, err := directoryListing(files, r, canGoUp, b.Root, b.IgnoreIndexes, bc.Variables)
 	if err != nil { // directory isn't browsable
-		return http.StatusInternalServerError, err
+		return b.Next.ServeHTTP(w, r)
 	}
 
 	// Copy the query values into the Listing struct
