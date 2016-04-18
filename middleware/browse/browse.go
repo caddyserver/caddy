@@ -135,9 +135,20 @@ func (l byName) Less(i, j int) bool {
 }
 
 // By Size
-func (l bySize) Len() int           { return len(l.Items) }
-func (l bySize) Swap(i, j int)      { l.Items[i], l.Items[j] = l.Items[j], l.Items[i] }
-func (l bySize) Less(i, j int) bool { return l.Items[i].Size < l.Items[j].Size }
+func (l bySize) Len() int      { return len(l.Items) }
+func (l bySize) Swap(i, j int) { l.Items[i], l.Items[j] = l.Items[j], l.Items[i] }
+
+const directoryOffset = -1 << 31 // = math.MinInt32
+func (l bySize) Less(i, j int) bool {
+	iSize, jSize := l.Items[i].Size, l.Items[j].Size
+	if l.Items[i].IsDir {
+		iSize = directoryOffset + iSize
+	}
+	if l.Items[j].IsDir {
+		jSize = directoryOffset + jSize
+	}
+	return iSize < jSize
+}
 
 // By Time
 func (l byTime) Len() int           { return len(l.Items) }
