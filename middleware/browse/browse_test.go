@@ -114,10 +114,10 @@ func TestBrowseHTTPMethods(t *testing.T) {
 		Next: middleware.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
 			return http.StatusTeapot, nil // not t.Fatalf, or we will not see what other methods yield
 		}),
-		Root: "./testdata",
 		Configs: []Config{
 			{
 				PathScope: "/photos",
+				Root:      http.Dir("./testdata"),
 				Template:  tmpl,
 			},
 		},
@@ -153,10 +153,10 @@ func TestBrowseTemplate(t *testing.T) {
 			t.Fatalf("Next shouldn't be called")
 			return 0, nil
 		}),
-		Root: "./testdata",
 		Configs: []Config{
 			{
 				PathScope: "/photos",
+				Root:      http.Dir("./testdata"),
 				Template:  tmpl,
 			},
 		},
@@ -208,16 +208,16 @@ func TestBrowseJson(t *testing.T) {
 			t.Fatalf("Next shouldn't be called")
 			return 0, nil
 		}),
-		Root: "./testdata",
 		Configs: []Config{
 			{
 				PathScope: "/photos/",
+				Root:      http.Dir("./testdata"),
 			},
 		},
 	}
 
 	//Getting the listing from the ./testdata/photos, the listing returned will be used to validate test results
-	testDataPath := b.Root + "/photos/"
+	testDataPath := filepath.Join("./testdata", "photos")
 	file, err := os.Open(testDataPath)
 	if err != nil {
 		if os.IsPermission(err) {

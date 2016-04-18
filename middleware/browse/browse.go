@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"os"
 	"path"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -24,7 +23,6 @@ import (
 // directories in the given paths are specified.
 type Browse struct {
 	Next          middleware.Handler
-	Root          string
 	Configs       []Config
 	IgnoreIndexes bool
 }
@@ -32,6 +30,7 @@ type Browse struct {
 // Config is a configuration for browsing in a particular path.
 type Config struct {
 	PathScope string
+	Root      http.FileSystem
 	Variables interface{}
 	Template  *template.Template
 }
@@ -247,14 +246,26 @@ func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 inScope:
 
 	// Browse works on existing directories; delegate everything else
-	requestedFilepath := filepath.Join(b.Root, r.URL.Path)
-	info, err := os.Stat(requestedFilepath)
+	requestedFilepath, err := bc.Root.Open(r.URL.Path)
 	if err != nil {
 		switch {
 		case os.IsPermission(err):
 			return http.StatusForbidden, err
 		case os.IsExist(err):
 			return http.StatusNotFound, err
+		default:
+			return b.Next.ServeHTTP(w, r)
+		}
+	}
+	defer requestedFilepath.Close()
+
+	info, err := requestedFilepath.Stat()
+	if err != nil {
+		switch {
+		case os.IsPermission(err):
+			return http.StatusForbidden, err
+		case os.IsExist(err):
+			return http.StatusGone, err
 		default:
 			return b.Next.ServeHTTP(w, r)
 		}
@@ -283,15 +294,8 @@ inScope:
 	return b.ServeListing(w, r, requestedFilepath, bc)
 }
 
-func (b Browse) loadDirectoryContents(requestedFilepath, urlPath string) (*Listing, bool, error) {
-	// Load directory contents
-	file, err := os.Open(requestedFilepath)
-	if err != nil {
-		return nil, false, err
-	}
-	defer file.Close()
-
-	files, err := file.Readdir(-1)
+func (b Browse) loadDirectoryContents(requestedFilepath http.File, urlPath string) (*Listing, bool, error) {
+	files, err := requestedFilepath.Readdir(-1)
 	if err != nil {
 		return nil, false, err
 	}
@@ -351,7 +355,7 @@ func (b Browse) handleSortOrder(w http.ResponseWriter, r *http.Request, scope st
 }
 
 // ServeListing returns a formatted view of 'requestedFilepath' contents'.
-func (b Browse) ServeListing(w http.ResponseWriter, r *http.Request, requestedFilepath string, bc *Config) (int, error) {
+func (b Browse) ServeListing(w http.ResponseWriter, r *http.Request, requestedFilepath http.File, bc *Config) (int, error) {
 	listing, containsIndex, err := b.loadDirectoryContents(requestedFilepath, r.URL.Path)
 	if err != nil {
 		switch {
@@ -367,7 +371,7 @@ func (b Browse) ServeListing(w http.ResponseWriter, r *http.Request, requestedFi
 		return b.Next.ServeHTTP(w, r)
 	}
 	listing.Context = middleware.Context{
-		Root: http.Dir(b.Root),
+		Root: bc.Root,
 		Req:  r,
 		URL:  r.URL,
 	}

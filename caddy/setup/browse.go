@@ -3,6 +3,7 @@ package setup
 import (
 	"fmt"
 	"io/ioutil"
+	"net/http"
 	"text/template"
 
 	"github.com/mholt/caddy/middleware"
@@ -17,7 +18,6 @@ func Browse(c *Controller) (middleware.Middleware, error) {
 	}
 
 	browse := browse.Browse{
-		Root:          c.Root,
 		Configs:       configs,
 		IgnoreIndexes: false,
 	}
@@ -49,6 +49,16 @@ func browseParse(c *Controller) ([]browse.Config, error) {
 			bc.PathScope = c.Val()
 		} else {
 			bc.PathScope = "/"
+		}
+		bc.Root = http.Dir(c.Root)
+		theRoot, err := bc.Root.Open("/") // catch a missing path early
+		if err != nil {
+			return configs, err
+		}
+		defer theRoot.Close()
+		_, err = theRoot.Readdir(-1)
+		if err != nil {
+			return configs, err
 		}
 
 		// Second argument would be the template file to use
