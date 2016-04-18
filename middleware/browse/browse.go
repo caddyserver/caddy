@@ -5,7 +5,6 @@ package browse
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/url"
 	"os"
@@ -173,22 +172,20 @@ func (l Listing) applySort() {
 	}
 }
 
-func directoryListing(files []os.FileInfo, r *http.Request, canGoUp bool, root string, ignoreIndexes bool, vars interface{}) (Listing, error) {
+func directoryListing(files []os.FileInfo, canGoUp bool, urlPath string) (Listing, bool) {
 	var (
 		fileinfos           []FileInfo
 		dirCount, fileCount int
-		urlPath             = r.URL.Path
+		hasIndexFile        bool
 	)
 
 	for _, f := range files {
 		name := f.Name()
 
-		// Directory is not browsable if it contains index file
-		if !ignoreIndexes {
-			for _, indexName := range middleware.IndexPages {
-				if name == indexName {
-					return Listing{}, errors.New("Directory contains index file, not browsable!")
-				}
+		for _, indexName := range middleware.IndexPages {
+			if name == indexName {
+				hasIndexFile = true
+				break
 			}
 		}
 
@@ -218,16 +215,11 @@ func directoryListing(files []os.FileInfo, r *http.Request, canGoUp bool, root s
 		Items:    fileinfos,
 		NumDirs:  dirCount,
 		NumFiles: fileCount,
-		Context: middleware.Context{
-			Root: http.Dir(root),
-			Req:  r,
-			URL:  r.URL,
-		},
-		User: vars,
-	}, nil
+	}, hasIndexFile
 }
 
-// ServeHTTP implements the middleware.Handler interface.
+// ServeHTTP determines if the request is for this plugin, and if all prerequisites are met.
+// If so, control is handed over to ServeListing.
 func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	var bc *Config
 	// See if there's a browse configuration to match the path
@@ -274,22 +266,70 @@ inScope:
 		return 0, nil
 	}
 
+	return b.ServeListing(w, r, requestedFilepath, bc)
+}
+
+func (b Browse) loadDirectoryContents(requestedFilepath, urlPath string) (*Listing, bool, error) {
 	// Load directory contents
 	file, err := os.Open(requestedFilepath)
 	if err != nil {
-		switch {
-		case os.IsPermission(err):
-			return http.StatusForbidden, err
-		case os.IsExist(err):
-			return http.StatusGone, err
-		default:
-			return http.StatusInternalServerError, err
-		}
+		return nil, false, err
 	}
 	defer file.Close()
 
 	files, err := file.Readdir(-1)
 	if err != nil {
+		return nil, false, err
+	}
+
+	// Determine if user can browse up another folder
+	var canGoUp bool
+	curPathDir := path.Dir(strings.TrimSuffix(urlPath, "/"))
+	for _, other := range b.Configs {
+		if strings.HasPrefix(curPathDir, other.PathScope) {
+			canGoUp = true
+			break
+		}
+	}
+
+	// Assemble listing of directory contents
+	listing, hasIndex := directoryListing(files, canGoUp, urlPath)
+
+	return &listing, hasIndex, nil
+}
+
+// handleSortOrder gets and stores for a Listing the 'sort' and 'order'.
+//
+// This sets Cookies.
+func (b Browse) handleSortOrder(w http.ResponseWriter, r *http.Request, scope string) (string, string) {
+	sort, order := r.URL.Query().Get("sort"), r.URL.Query().Get("order")
+
+	// If the query 'sort' or 'order' is empty, use defaults or any values previously saved in Cookies
+	if sort == "" {
+		sort = "name"
+		if sortCookie, sortErr := r.Cookie("sort"); sortErr == nil {
+			sort = sortCookie.Value
+		}
+	} else {
+		http.SetCookie(w, &http.Cookie{Name: "sort", Value: sort, Path: scope, Secure: r.TLS != nil})
+	}
+
+	if order == "" {
+		order = "asc"
+		if orderCookie, orderErr := r.Cookie("order"); orderErr == nil {
+			order = orderCookie.Value
+		}
+	} else {
+		http.SetCookie(w, &http.Cookie{Name: "order", Value: order, Path: scope, Secure: r.TLS != nil})
+	}
+
+	return sort, order
+}
+
+// ServeListing returns a formatted view of 'requestedFilepath' contents'.
+func (b Browse) ServeListing(w http.ResponseWriter, r *http.Request, requestedFilepath string, bc *Config) (int, error) {
+	listing, containsIndex, err := b.loadDirectoryContents(requestedFilepath, r.URL.Path)
+	if err != nil {
 		switch {
 		case os.IsPermission(err):
 			return http.StatusForbidden, err
@@ -299,83 +339,40 @@ inScope:
 			return http.StatusInternalServerError, err
 		}
 	}
-
-	// Determine if user can browse up another folder
-	var canGoUp bool
-	curPath := strings.TrimSuffix(r.URL.Path, "/")
-	for _, other := range b.Configs {
-		if strings.HasPrefix(path.Dir(curPath), other.PathScope) {
-			canGoUp = true
-			break
-		}
-	}
-	// Assemble listing of directory contents
-	listing, err := directoryListing(files, r, canGoUp, b.Root, b.IgnoreIndexes, bc.Variables)
-	if err != nil { // directory isn't browsable
+	if containsIndex && !b.IgnoreIndexes { // directory isn't browsable
 		return b.Next.ServeHTTP(w, r)
 	}
+	listing.Context = middleware.Context{
+		Root: http.Dir(b.Root),
+		Req:  r,
+		URL:  r.URL,
+	}
+	listing.User = bc.Variables
 
 	// Copy the query values into the Listing struct
-	listing.Sort, listing.Order = r.URL.Query().Get("sort"), r.URL.Query().Get("order")
-
-	// If the query 'sort' or 'order' is empty, use defaults or any values previously saved in Cookies
-	if listing.Sort == "" {
-		listing.Sort = "name"
-		if sortCookie, sortErr := r.Cookie("sort"); sortErr == nil {
-			listing.Sort = sortCookie.Value
-		}
-	} else { // Save the query value of 'sort' and 'order' as cookies.
-		http.SetCookie(w, &http.Cookie{Name: "sort", Value: listing.Sort, Path: bc.PathScope, Secure: r.TLS != nil})
-		http.SetCookie(w, &http.Cookie{Name: "order", Value: listing.Order, Path: bc.PathScope, Secure: r.TLS != nil})
-	}
-
-	if listing.Order == "" {
-		listing.Order = "asc"
-		if orderCookie, orderErr := r.Cookie("order"); orderErr == nil {
-			listing.Order = orderCookie.Value
-		}
-	} else {
-		http.SetCookie(w, &http.Cookie{Name: "order", Value: listing.Order, Path: bc.PathScope, Secure: r.TLS != nil})
-	}
+	listing.Sort, listing.Order = b.handleSortOrder(w, r, bc.PathScope)
 
 	listing.applySort()
 
-	var buf bytes.Buffer
-	// Check if we should provide json
-	acceptHeader := strings.Join(r.Header["Accept"], ",")
-	if strings.Contains(strings.ToLower(acceptHeader), "application/json") {
-		var marsh []byte
-		// Check if we are limited
+	var buf *bytes.Buffer
+	acceptHeader := strings.ToLower(strings.Join(r.Header["Accept"], ","))
+	switch {
+	case strings.Contains(acceptHeader, "application/json"):
+		var limit int
 		if limitQuery := r.URL.Query().Get("limit"); limitQuery != "" {
-			limit, err := strconv.Atoi(limitQuery)
+			limit, err = strconv.Atoi(limitQuery)
 			if err != nil { // if the 'limit' query can't be interpreted as a number, return err
 				return http.StatusBadRequest, err
 			}
-			// if `limit` is equal or less than len(listing.Items) and bigger than 0, list them
-			if limit <= len(listing.Items) && limit > 0 {
-				marsh, err = json.Marshal(listing.Items[:limit])
-			} else { // if the 'limit' query is empty, or has the wrong value, list everything
-				marsh, err = json.Marshal(listing.Items)
-			}
-			if err != nil {
-				return http.StatusInternalServerError, err
-			}
-		} else { // There's no 'limit' query; list them all
-			marsh, err = json.Marshal(listing.Items)
-			if err != nil {
-				return http.StatusInternalServerError, err
-			}
 		}
 
-		// Write the marshaled json to buf
-		if _, err = buf.Write(marsh); err != nil {
+		if buf, err = b.formatAsJSON(listing, bc, limit); err != nil {
 			return http.StatusInternalServerError, err
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 
-	} else { // There's no 'application/json' in the 'Accept' header; browse normally
-		err = bc.Template.Execute(&buf, listing)
-		if err != nil {
+	default: // There's no 'application/json' in the 'Accept' header; browse normally
+		if buf, err = b.formatAsHTML(listing, bc); err != nil {
 			return http.StatusInternalServerError, err
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -385,4 +382,39 @@ inScope:
 	buf.WriteTo(w)
 
 	return http.StatusOK, nil
+}
+
+func (b Browse) formatAsJSON(listing *Listing, bc *Config, limit int) (*bytes.Buffer, error) {
+	buf := new(bytes.Buffer)
+	var marsh []byte
+	var err error
+
+	// Check if we are limited
+	if limit > 0 {
+		// if `limit` is equal or less than len(listing.Items) and bigger than 0, list them
+		if limit <= len(listing.Items) {
+			marsh, err = json.Marshal(listing.Items[:limit])
+		} else { // if the 'limit' query is empty, or has the wrong value, list everything
+			marsh, err = json.Marshal(listing.Items)
+		}
+		if err != nil {
+			return nil, err
+		}
+	} else { // There's no 'limit' query; list them all
+		marsh, err = json.Marshal(listing.Items)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Write the marshaled json to buf
+	_, err = buf.Write(marsh)
+
+	return buf, err
+}
+
+func (b Browse) formatAsHTML(listing *Listing, bc *Config) (*bytes.Buffer, error) {
+	buf := new(bytes.Buffer)
+	err := bc.Template.Execute(buf, listing)
+	return buf, err
 }
