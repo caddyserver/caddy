@@ -62,6 +62,9 @@ type Listing struct {
 	// And which order
 	Order string
 
+	// If ≠0 then Items have been limited to that many elements
+	ItemsLimitedTo int
+
 	// Optional custom variables for use in browse templates
 	User interface{}
 
@@ -298,32 +301,42 @@ func (b Browse) loadDirectoryContents(requestedFilepath, urlPath string) (*Listi
 	return &listing, hasIndex, nil
 }
 
-// handleSortOrder gets and stores for a Listing the 'sort' and 'order'.
+// handleSortOrder gets and stores for a Listing the 'sort' and 'order',
+// and reads 'limit' if given. The latter is 0 if not given.
 //
 // This sets Cookies.
-func (b Browse) handleSortOrder(w http.ResponseWriter, r *http.Request, scope string) (string, string) {
-	sort, order := r.URL.Query().Get("sort"), r.URL.Query().Get("order")
+func (b Browse) handleSortOrder(w http.ResponseWriter, r *http.Request, scope string) (sort string, order string, limit int, err error) {
+	sort, order, limitQuery := r.URL.Query().Get("sort"), r.URL.Query().Get("order"), r.URL.Query().Get("limit")
 
 	// If the query 'sort' or 'order' is empty, use defaults or any values previously saved in Cookies
-	if sort == "" {
+	switch sort {
+	case "":
 		sort = "name"
 		if sortCookie, sortErr := r.Cookie("sort"); sortErr == nil {
 			sort = sortCookie.Value
 		}
-	} else {
+	case "name", "size", "type":
 		http.SetCookie(w, &http.Cookie{Name: "sort", Value: sort, Path: scope, Secure: r.TLS != nil})
 	}
 
-	if order == "" {
+	switch order {
+	case "":
 		order = "asc"
 		if orderCookie, orderErr := r.Cookie("order"); orderErr == nil {
 			order = orderCookie.Value
 		}
-	} else {
+	case "asc", "desc":
 		http.SetCookie(w, &http.Cookie{Name: "order", Value: order, Path: scope, Secure: r.TLS != nil})
 	}
 
-	return sort, order
+	if limitQuery != "" {
+		limit, err = strconv.Atoi(limitQuery)
+		if err != nil { // if the 'limit' query can't be interpreted as a number, return err
+			return
+		}
+	}
+
+	return
 }
 
 // ServeListing returns a formatted view of 'requestedFilepath' contents'.
@@ -350,23 +363,24 @@ func (b Browse) ServeListing(w http.ResponseWriter, r *http.Request, requestedFi
 	listing.User = bc.Variables
 
 	// Copy the query values into the Listing struct
-	listing.Sort, listing.Order = b.handleSortOrder(w, r, bc.PathScope)
+	var limit int
+	listing.Sort, listing.Order, limit, err = b.handleSortOrder(w, r, bc.PathScope)
+	if err != nil {
+		return http.StatusBadRequest, err
+	}
 
 	listing.applySort()
+
+	if limit > 0 && limit <= len(listing.Items) {
+		listing.Items = listing.Items[:limit]
+		listing.ItemsLimitedTo = limit
+	}
 
 	var buf *bytes.Buffer
 	acceptHeader := strings.ToLower(strings.Join(r.Header["Accept"], ","))
 	switch {
 	case strings.Contains(acceptHeader, "application/json"):
-		var limit int
-		if limitQuery := r.URL.Query().Get("limit"); limitQuery != "" {
-			limit, err = strconv.Atoi(limitQuery)
-			if err != nil { // if the 'limit' query can't be interpreted as a number, return err
-				return http.StatusBadRequest, err
-			}
-		}
-
-		if buf, err = b.formatAsJSON(listing, bc, limit); err != nil {
+		if buf, err = b.formatAsJSON(listing, bc); err != nil {
 			return http.StatusInternalServerError, err
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -384,32 +398,14 @@ func (b Browse) ServeListing(w http.ResponseWriter, r *http.Request, requestedFi
 	return http.StatusOK, nil
 }
 
-func (b Browse) formatAsJSON(listing *Listing, bc *Config, limit int) (*bytes.Buffer, error) {
-	buf := new(bytes.Buffer)
-	var marsh []byte
-	var err error
-
-	// Check if we are limited
-	if limit > 0 {
-		// if `limit` is equal or less than len(listing.Items) and bigger than 0, list them
-		if limit <= len(listing.Items) {
-			marsh, err = json.Marshal(listing.Items[:limit])
-		} else { // if the 'limit' query is empty, or has the wrong value, list everything
-			marsh, err = json.Marshal(listing.Items)
-		}
-		if err != nil {
-			return nil, err
-		}
-	} else { // There's no 'limit' query; list them all
-		marsh, err = json.Marshal(listing.Items)
-		if err != nil {
-			return nil, err
-		}
+func (b Browse) formatAsJSON(listing *Listing, bc *Config) (*bytes.Buffer, error) {
+	marsh, err := json.Marshal(listing.Items)
+	if err != nil {
+		return nil, err
 	}
 
-	// Write the marshaled json to buf
+	buf := new(bytes.Buffer)
 	_, err = buf.Write(marsh)
-
 	return buf, err
 }
 
