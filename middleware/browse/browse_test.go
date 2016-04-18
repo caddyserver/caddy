@@ -238,7 +238,7 @@ func TestBrowseJson(t *testing.T) {
 		// Tests fail in CI environment because all file mod times are the same for
 		// some reason, making the sorting unpredictable. To hack around this,
 		// we ensure here that each file has a different mod time.
-		chTime := f.ModTime().Add(-(time.Duration(i) * time.Second))
+		chTime := f.ModTime().UTC().Add(-(time.Duration(i) * time.Second))
 		if err := os.Chtimes(filepath.Join(testDataPath, name), chTime, chTime); err != nil {
 			t.Fatal(err)
 		}

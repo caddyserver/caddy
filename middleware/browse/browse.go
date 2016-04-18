@@ -217,7 +217,7 @@ func directoryListing(files []os.FileInfo, canGoUp bool, urlPath string) (Listin
 			Name:    f.Name(),
 			Size:    f.Size(),
 			URL:     url.String(),
-			ModTime: f.ModTime(),
+			ModTime: f.ModTime().UTC(),
 			Mode:    f.Mode(),
 		})
 	}
