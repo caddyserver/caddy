@@ -3,6 +3,7 @@ package setup
 import (
 	"fmt"
 	"io/ioutil"
+	"net/http"
 	"text/template"
 
 	"github.com/mholt/caddy/middleware"
@@ -17,7 +18,6 @@ func Browse(c *Controller) (middleware.Middleware, error) {
 	}
 
 	browse := browse.Browse{
-		Root:          c.Root,
 		Configs:       configs,
 		IgnoreIndexes: false,
 	}
@@ -49,6 +49,16 @@ func browseParse(c *Controller) ([]browse.Config, error) {
 			bc.PathScope = c.Val()
 		} else {
 			bc.PathScope = "/"
+		}
+		bc.Root = http.Dir(c.Root)
+		theRoot, err := bc.Root.Open("/") // catch a missing path early
+		if err != nil {
+			return configs, err
+		}
+		defer theRoot.Close()
+		_, err = theRoot.Readdir(-1)
+		if err != nil {
+			return configs, err
 		}
 
 		// Second argument would be the template file to use
@@ -85,7 +95,6 @@ const defaultTemplate = `<!DOCTYPE html>
 <html>
 	<head>
 		<title>{{.Name}}</title>
-		<meta charset="utf-8">
 		<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
 * { padding: 0; margin: 0; }
@@ -106,7 +115,7 @@ h1 a:hover {
 }
 
 header,
-.content {
+#summary {
 	padding-left: 5%;
 	padding-right: 5%;
 }
@@ -306,43 +315,49 @@ footer {
 		</header>
 		<main>
 			<div class="meta">
-				<div class="content">
+				<div id="summary">
 					<span class="meta-item"><b>{{.NumDirs}}</b> director{{if eq 1 .NumDirs}}y{{else}}ies{{end}}</span>
 					<span class="meta-item"><b>{{.NumFiles}}</b> file{{if ne 1 .NumFiles}}s{{end}}</span>
+					{{- if ne 0 .ItemsLimitedTo}}
+					<span class="meta-item">(of which only <b>{{.ItemsLimitedTo}}</b> are displayed)</span>
+					{{- end}}
 				</div>
 			</div>
 			<div class="listing">
-				<table>
+				<table aria-describedby="summary">
+					<thead>
 					<tr>
 						<th>
-							{{if and (eq .Sort "name") (ne .Order "desc")}}
-							<a href="?sort=name&order=desc">Name <svg width="1em" height=".4em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#up-arrow"></use></svg></a>
-							{{else if and (eq .Sort "name") (ne .Order "asc")}}
-							<a href="?sort=name&order=asc">Name <svg width="1em" height=".4em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#down-arrow"></use></svg></a>
-							{{else}}
-							<a href="?sort=name&order=asc">Name</a>
-							{{end}}
+							{{- if and (eq .Sort "name") (ne .Order "desc")}}
+							<a href="?sort=name&order=desc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}">Name <svg width="1em" height=".4em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#up-arrow"></use></svg></a>
+							{{- else if and (eq .Sort "name") (ne .Order "asc")}}
+							<a href="?sort=name&order=asc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}">Name <svg width="1em" height=".4em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#down-arrow"></use></svg></a>
+							{{- else}}
+							<a href="?sort=name&order=asc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}">Name</a>
+							{{- end}}
 						</th>
 						<th>
-							{{if and (eq .Sort "size") (ne .Order "desc")}}
-							<a href="?sort=size&order=desc">Size <svg width="1em" height=".4em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#up-arrow"></use></svg></a></a>
-							{{else if and (eq .Sort "size") (ne .Order "asc")}}
-							<a href="?sort=size&order=asc">Size <svg width="1em" height=".4em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#down-arrow"></use></svg></a></a>
-							{{else}}
-							<a href="?sort=size&order=asc">Size</a>
-							{{end}}
+							{{- if and (eq .Sort "size") (ne .Order "desc")}}
+							<a href="?sort=size&order=desc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}">Size <svg width="1em" height=".4em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#up-arrow"></use></svg></a></a>
+							{{- else if and (eq .Sort "size") (ne .Order "asc")}}
+							<a href="?sort=size&order=asc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}">Size <svg width="1em" height=".4em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#down-arrow"></use></svg></a></a>
+							{{- else}}
+							<a href="?sort=size&order=asc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}">Size</a>
+							{{- end}}
 						</th>
 						<th class="hideable">
-							{{if and (eq .Sort "time") (ne .Order "desc")}}
-							<a href="?sort=time&order=desc">Modified <svg width="1em" height=".4em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#up-arrow"></use></svg></a></a>
-							{{else if and (eq .Sort "time") (ne .Order "asc")}}
-							<a href="?sort=time&order=asc">Modified <svg width="1em" height=".4em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#down-arrow"></use></svg></a></a>
-							{{else}}
-							<a href="?sort=time&order=asc">Modified</a>
-							{{end}}
+							{{- if and (eq .Sort "time") (ne .Order "desc")}}
+							<a href="?sort=time&order=desc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}">Modified <svg width="1em" height=".4em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#up-arrow"></use></svg></a></a>
+							{{- else if and (eq .Sort "time") (ne .Order "asc")}}
+							<a href="?sort=time&order=asc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}">Modified <svg width="1em" height=".4em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#down-arrow"></use></svg></a></a>
+							{{- else}}
+							<a href="?sort=time&order=asc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}">Modified</a>
+							{{- end}}
 						</th>
 					</tr>
-					{{if .CanGoUp}}
+					</thead>
+					<tbody>
+					{{- if .CanGoUp}}
 					<tr>
 						<td>
 							<a href="..">
@@ -350,30 +365,46 @@ footer {
 							</a>
 						</td>
 						<td>&mdash;</td>
-						<td>&mdash;</td>
+						<td class="hideable">&mdash;</td>
 					</tr>
-					{{end}}
-					{{range .Items}}
+					{{- end}}
+					{{- range .Items}}
 					<tr>
 						<td>
 							<a href="{{.URL}}">
-								{{if .IsDir}}
+								{{- if .IsDir}}
 								<svg width="1.5em" height="1em" version="1.1" viewBox="0 0 35.678803 28.527945"><use xlink:href="#folder"></use></svg>
-								{{else}}
+								{{- else}}
 								<svg width="1.5em" height="1em" version="1.1" viewBox="0 0 26.604381 29.144726"><use xlink:href="#file"></use></svg>
-								{{end}}
+								{{- end}}
 								<span class="name">{{.Name}}</span>
 							</a>
 						</td>
-						<td>{{.HumanSize}}</td>
-						<td class="hideable">{{.HumanModTime "01/02/2006 03:04:05 PM"}}</td>
+						{{- if .IsDir}}
+						<td data-order="-1">&mdash;</td>
+						{{- else}}
+						<td data-order="{{.Size}}">{{.HumanSize}}</td>
+						{{- end}}
+						<td class="hideable"><time datetime="{{.HumanModTime "2006-01-02 15:04:05-0700"}}">{{.HumanModTime "01/02/2006 03:04:05 PM"}}</time></td>
 					</tr>
-					{{end}}
+					{{- end}}
+					</tbody>
 				</table>
 			</div>
 		</main>
 		<footer>
 			Served with <a href="https://caddyserver.com">Caddy</a>
 		</footer>
+		<script type="text/javascript">
+			function localizeDatetime(e, index, ar) {
+				if (e.textContent === undefined) {
+					return;
+				}
+				var d = new Date(e.getAttribute('datetime'));
+				e.textContent = d.toLocaleString();
+			}
+			var timeList = Array.prototype.slice.call(document.getElementsByTagName("time"));
+			timeList.forEach(localizeDatetime);
+		</script>
 	</body>
 </html>`
