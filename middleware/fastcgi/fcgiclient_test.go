@@ -200,7 +200,7 @@ func DisabledTest(t *testing.T) {
 		listener, err := net.Listen("tcp", ipPort)
 		if err != nil {
 			// handle error
-			log.Println("listener creatation failed: ", err)
+			log.Println("listener creation failed: ", err)
 		}
 
 		srv := new(FastCGIServer)
