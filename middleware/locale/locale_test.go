@@ -18,9 +18,9 @@ func TestLocale(t *testing.T) {
 		acceptLanguageHeader string
 		expectedLocale       string
 	}{
-		{[]string{"en"}, []method.Method{&method.Header{}}, "", "en"},
-		{[]string{"en", "en-GB"}, []method.Method{&method.Header{}}, "en-GB,en", "en-GB"},
-		{[]string{"en", "de"}, []method.Method{&method.Header{}}, "de,en;q=0.8,en-GB;q=0.6", "de"},
+		{[]string{"en"}, []method.Method{method.Names["header"]}, "", "en"},
+		{[]string{"en", "en-GB"}, []method.Method{method.Names["header"]}, "en-GB,en", "en-GB"},
+		{[]string{"en", "de"}, []method.Method{method.Names["header"]}, "de,en;q=0.8,en-GB;q=0.6", "de"},
 	}
 
 	for index, test := range tests {

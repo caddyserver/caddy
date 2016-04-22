@@ -19,7 +19,7 @@ type Locale struct {
 func (l *Locale) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	candidates := []string{}
 	for _, method := range l.Methods {
-		candidates = append(candidates, method.Detect(r)...)
+		candidates = append(candidates, method(r)...)
 	}
 
 	if candidate := l.firstValid(candidates); candidate == "" {

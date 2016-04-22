@@ -8,17 +8,9 @@ import (
 	"strings"
 )
 
-// Header implements the header detect method.
-type Header struct{}
-
-// Name returns the method's name.
-func (h *Header) Name() string {
-	return "header"
-}
-
 // Detect reads the locales from the request's Accept-Language header and returns
 // them in the defined order.
-func (h *Header) Detect(r *http.Request) []string {
+func detectByHeader(r *http.Request) []string {
 	browserLocales := parseBrowserLocales(r.Header.Get("Accept-Language"))
 	sort.Sort(browserLocales)
 	return browserLocales.locales()

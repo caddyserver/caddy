@@ -9,7 +9,7 @@ import (
 )
 
 func TestHeaderParsing(t *testing.T) {
-	header := method.Header{}
+	header := method.Names["header"]
 
 	request, _ := http.NewRequest("GET", "/test.html", nil)
 
@@ -25,7 +25,7 @@ func TestHeaderParsing(t *testing.T) {
 	for index, test := range tests {
 		request.Header.Set("Accept-Language", test.header)
 
-		locales := header.Detect(request)
+		locales := header(request)
 		if !reflect.DeepEqual(test.expectedLocales, locales) {
 			t.Fatalf("test %d: expected locales %#v, got %#v", index, test.expectedLocales, locales)
 		}
