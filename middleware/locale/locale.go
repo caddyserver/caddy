@@ -23,11 +23,11 @@ func (l *Locale) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 		candidates = append(candidates, method(r, l.Settings)...)
 	}
 
-	if candidate := l.firstValid(candidates); candidate == "" {
-		r.Header.Set("Detected-Locale", l.defaultLocale())
-	} else {
-		r.Header.Set("Detected-Locale", candidate)
+	locale := l.firstValid(candidates)
+	if locale == "" {
+		locale = l.defaultLocale()
 	}
+	r.Header.Set("Detected-Locale", locale)
 
 	return l.Next.ServeHTTP(w, r)
 }
