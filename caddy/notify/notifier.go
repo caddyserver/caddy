@@ -1,6 +1,9 @@
 package notify
 
-import "sync"
+import (
+	"runtime"
+	"sync"
+)
 
 // Notifier is implemented by facilities that pass fine-grained state notifications
 // from this process to any concerned parties, such as init daemons.
@@ -34,6 +37,8 @@ type Notifier interface {
 	// Tell pushes all outstanding state notifications to the concerned parties.
 	//
 	// Use this to end a chain of calls to a Notifier.
+	//
+	// This will be run in the main thread.
 	// Run in a goroutine to avoid blocking.
 	Tell()
 }
@@ -159,6 +164,13 @@ func (p *chainNotifier) SucceededBy(newMainPID int) Notifier {
 func (p *chainNotifier) Tell() {
 	p.otherLock.RLock()
 	defer p.otherLock.RUnlock()
+
+	if p.other == nil {
+		return
+	}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	for _, n := range p.other {
 		if !n.RequisiteMet() {
 			continue
