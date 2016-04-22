@@ -112,12 +112,21 @@ func renewManagedCertificates(allowPrompts bool) (err error) {
 
 	// Apply changes to the cache
 	for _, cert := range renewed {
+		if cert.Names[len(cert.Names)-1] == "" {
+			// Special case: This is the default certificate, so we must
+			// ensure it gets updated as well, otherwise the renewal
+			// routine will find it and think it still needs to be renewed,
+			// even though we already renewed it...
+			certCacheMu.Lock()
+			delete(certCache, "")
+			certCacheMu.Unlock()
+		}
 		_, err := cacheManagedCertificate(cert.Names[0], cert.OnDemand)
 		if err != nil {
 			if client.AllowPrompts {
 				return err // operator is present, so report error immediately
 			}
-			log.Printf("[ERROR] %v", err)
+			log.Printf("[ERROR] Caching renewed certificate: %v", err)
 		}
 	}
 	for _, cert := range deleted {
@@ -178,7 +187,7 @@ func updateOCSPStaples() {
 		if err != nil {
 			if cert.OCSP != nil {
 				// if it was no staple before, that's fine, otherwise we should log the error
-				log.Printf("[ERROR] Checking OCSP for %s: %v", name, err)
+				log.Printf("[ERROR] Checking OCSP for %v: %v", cert.Names, err)
 			}
 			continue
 		}
