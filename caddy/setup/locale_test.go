@@ -10,40 +10,43 @@ import (
 
 func TestLocaleParsing(t *testing.T) {
 	tests := []struct {
-		input           string
-		expectedLocales []string
-		expectedMethods []method.Method
+		input            string
+		expectedLocales  []string
+		expectedMethods  []method.Method
+		expectedSettings *method.Settings
 	}{
-		{`locale en de`, []string{"en", "de"}, []method.Method{&method.Header{}}},
+		{`locale en de`, []string{"en", "de"}, []method.Method{method.Names["header"]}, &method.Settings{}},
 		{`locale en {
 		    all de
-		  }`, []string{"en", "de"}, []method.Method{&method.Header{}}},
+		  }`, []string{"en", "de"}, []method.Method{method.Names["header"]}, &method.Settings{}},
 		{`locale en de {
-		    detect header
-		  }`, []string{"en", "de"}, []method.Method{&method.Header{}}},
+		    detect cookie header
+				cookie language
+		  }`, []string{"en", "de"}, []method.Method{method.Names["cookie"], method.Names["header"]},
+			&method.Settings{CookieName: "language"}},
 	}
 
-	for _, test := range tests {
+	for index, test := range tests {
 		controller := NewTestController(test.input)
 
 		middleware, err := Locale(controller)
 		if err != nil {
-			t.Errorf("Expected no errors, but got: %v", err)
+			t.Errorf("test %d: expected no errors, but got: %v", index, err)
 		}
 
 		handler := middleware(EmptyNext)
 		localeHandler, ok := handler.(*locale.Locale)
 		if !ok {
-			t.Fatalf("Expected handler to be type Locale, got: %#v", handler)
+			t.Fatalf("test %d: expected handler to be type Locale, got: %#v", index, handler)
 		}
 
 		if !reflect.DeepEqual(localeHandler.Locales, test.expectedLocales) {
-			t.Fatalf("Expected handler to have locales %#v, got: %#v",
+			t.Fatalf("test %d: expected handler to have locales %#v, got: %#v", index,
 				test.expectedLocales, localeHandler.Locales)
 		}
-		if !reflect.DeepEqual(localeHandler.Methods, test.expectedMethods) {
-			t.Fatalf("Expected handler to have detect methods %#v, got: %#v",
-				test.expectedMethods, localeHandler.Methods)
+		if len(localeHandler.Methods) != len(test.expectedMethods) {
+			t.Fatalf("test %d: expected handler to have %d detect methods, got: %d", index,
+				len(test.expectedMethods), len(localeHandler.Methods))
 		}
 	}
 }

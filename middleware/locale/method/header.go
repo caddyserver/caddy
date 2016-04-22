@@ -8,9 +8,7 @@ import (
 	"strings"
 )
 
-// Detect reads the locales from the request's Accept-Language header and returns
-// them in the defined order.
-func detectByHeader(r *http.Request) []string {
+func detectByHeader(r *http.Request, _ *Settings) []string {
 	browserLocales := parseBrowserLocales(r.Header.Get("Accept-Language"))
 	sort.Sort(browserLocales)
 	return browserLocales.locales()

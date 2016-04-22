@@ -12,7 +12,7 @@ import (
 func Locale(c *Controller) (middleware.Middleware, error) {
 	locale := &locale.Locale{}
 
-	locales, methods, err := localeParse(c)
+	locales, methods, settings, err := localeParse(c)
 	if err != nil {
 		return nil, err
 	}
@@ -21,13 +21,15 @@ func Locale(c *Controller) (middleware.Middleware, error) {
 		locale.Next = next
 		locale.Locales = locales
 		locale.Methods = methods
+		locale.Settings = settings
 		return locale
 	}, nil
 }
 
-func localeParse(c *Controller) ([]string, []method.Method, error) {
+func localeParse(c *Controller) ([]string, []method.Method, *method.Settings, error) {
 	locales := []string{}
-	methods := []method.Method{&method.Header{}}
+	methods := []method.Method{}
+	settings := &method.Settings{}
 
 	for c.Next() {
 		args := c.RemainingArgs()
@@ -44,22 +46,34 @@ func localeParse(c *Controller) ([]string, []method.Method, error) {
 				case "detect":
 					detectArgs := c.RemainingArgs()
 					if len(detectArgs) == 0 {
-						return nil, nil, c.ArgErr()
+						return nil, nil, nil, c.ArgErr()
 					}
-					methods = []method.Method{}
 					for _, detectArg := range detectArgs {
 						method, found := method.Names[strings.ToLower(strings.TrimSpace(detectArg))]
 						if !found {
-							return nil, nil, c.ArgErr()
+							return nil, nil, nil, c.Errf("could not find detect method [%s]", detectArg)
 						}
 						methods = append(methods, method)
 					}
+				case "cookie":
+					if !c.NextArg() {
+						return nil, nil, nil, c.ArgErr()
+					}
+					settings.CookieName = c.Val()
 				default:
-					return nil, nil, c.ArgErr()
+					return nil, nil, nil, c.ArgErr()
 				}
 			}
 		}
 	}
 
-	return locales, methods, nil
+	if len(locales) == 0 {
+		return nil, nil, nil, c.Errf("no locales specified")
+	}
+
+	if len(methods) == 0 {
+		methods = append(methods, method.Names["header"])
+	}
+
+	return locales, methods, settings, nil
 }
