@@ -1,6 +1,8 @@
 package setup
 
 import (
+	"strings"
+
 	"github.com/mholt/caddy/middleware"
 	"github.com/mholt/caddy/middleware/locale"
 	"github.com/mholt/caddy/middleware/locale/method"
@@ -8,44 +10,56 @@ import (
 
 // Locale configures a new Locale middleware instance.
 func Locale(c *Controller) (middleware.Middleware, error) {
-	rootPath := c.Root
 	locale := &locale.Locale{}
 
-	methods, defaultLocale, err := localeParse(c)
+	locales, methods, err := localeParse(c)
 	if err != nil {
 		return nil, err
 	}
 
 	return func(next middleware.Handler) middleware.Handler {
 		locale.Next = next
-		locale.RootPath = rootPath
+		locale.Locales = locales
 		locale.Methods = methods
-		locale.DefaultLocale = defaultLocale
 		return locale
 	}, nil
 }
 
-func localeParse(c *Controller) ([]method.Method, string, error) {
-	methods := []method.Method{}
-	defaultLocale := ""
+func localeParse(c *Controller) ([]string, []method.Method, error) {
+	locales := []string{}
+	methods := []method.Method{&method.Header{}}
 
 	for c.Next() {
 		args := c.RemainingArgs()
-		if len(args) == 0 {
-			return nil, "", c.Errf("no default locale specified")
-		}
 
-		for index := 0; index < len(args)-1; index++ {
-			name := args[index]
-			method, found := method.Names[name]
-			if !found {
-				return nil, "", c.Errf("unknown locale detect method [%s]", name)
+		switch len(args) {
+		default:
+			locales = append(locales, args...)
+			fallthrough
+		case 0:
+			for c.NextBlock() {
+				switch c.Val() {
+				case "all":
+					locales = append(locales, c.RemainingArgs()...)
+				case "detect":
+					detectArgs := c.RemainingArgs()
+					if len(detectArgs) == 0 {
+						return nil, nil, c.ArgErr()
+					}
+					methods = []method.Method{}
+					for _, detectArg := range detectArgs {
+						method, found := method.Names[strings.ToLower(strings.TrimSpace(detectArg))]
+						if !found {
+							return nil, nil, c.ArgErr()
+						}
+						methods = append(methods, method)
+					}
+				default:
+					return nil, nil, c.ArgErr()
+				}
 			}
-			methods = append(methods, method)
 		}
-
-		defaultLocale = args[len(args)-1]
 	}
 
-	return methods, defaultLocale, nil
+	return locales, methods, nil
 }
