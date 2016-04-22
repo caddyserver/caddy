@@ -3,14 +3,15 @@ package setup
 import (
 	"github.com/mholt/caddy/middleware"
 	"github.com/mholt/caddy/middleware/locale"
+	"github.com/mholt/caddy/middleware/locale/method"
 )
 
 // Locale configures a new Locale middleware instance.
 func Locale(c *Controller) (middleware.Middleware, error) {
 	rootPath := c.Root
-	locale := locale.Locale{}
+	locale := &locale.Locale{}
 
-	detectMethods, defaultLocale, err := localeParse(c)
+	methods, defaultLocale, err := localeParse(c)
 	if err != nil {
 		return nil, err
 	}
@@ -18,14 +19,14 @@ func Locale(c *Controller) (middleware.Middleware, error) {
 	return func(next middleware.Handler) middleware.Handler {
 		locale.Next = next
 		locale.RootPath = rootPath
-		locale.DetectMethods = detectMethods
+		locale.Methods = methods
 		locale.DefaultLocale = defaultLocale
 		return locale
 	}, nil
 }
 
-func localeParse(c *Controller) ([]locale.DetectMethod, string, error) {
-	detectMethods := []locale.DetectMethod{}
+func localeParse(c *Controller) ([]method.Method, string, error) {
+	methods := []method.Method{}
 	defaultLocale := ""
 
 	for c.Next() {
@@ -35,15 +36,16 @@ func localeParse(c *Controller) ([]locale.DetectMethod, string, error) {
 		}
 
 		for index := 0; index < len(args)-1; index++ {
-			detectMethod, err := locale.ParseDetectMethod(args[index])
-			if err != nil {
-				return nil, "", c.Errf("error parsing detect method: %s", err)
+			name := args[index]
+			method, found := method.Names[name]
+			if !found {
+				return nil, "", c.Errf("unknown locale detect method [%s]", name)
 			}
-			detectMethods = append(detectMethods, detectMethod)
+			methods = append(methods, method)
 		}
 
 		defaultLocale = args[len(args)-1]
 	}
 
-	return detectMethods, defaultLocale, nil
+	return methods, defaultLocale, nil
 }

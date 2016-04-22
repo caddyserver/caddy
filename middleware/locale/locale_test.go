@@ -10,6 +10,7 @@ import (
 
 	"github.com/mholt/caddy/middleware"
 	"github.com/mholt/caddy/middleware/locale"
+	"github.com/mholt/caddy/middleware/locale/method"
 )
 
 func TestLocale(t *testing.T) {
@@ -21,42 +22,42 @@ func TestLocale(t *testing.T) {
 	defer os.Remove(touchFile(t, filepath.Join(rootPath, "test.de.html")))
 
 	tests := []struct {
-		detectMethods        []locale.DetectMethod
+		methods              []method.Method
 		defaultLocale        string
 		acceptLanguageHeader string
 		expectedLocale       string
 		expectedPath         string
 	}{
-		{[]locale.DetectMethod{locale.DetectMethodHeader}, "fr", "", "", "/test.html"},
-		{[]locale.DetectMethod{locale.DetectMethodHeader}, "en", "", "en", "/test.en.html"},
-		{[]locale.DetectMethod{locale.DetectMethodHeader}, "en-GB", "", "en-GB", "/test.en-GB.html"},
-		{[]locale.DetectMethod{locale.DetectMethodHeader}, "en", "de,en;q=0.8,en-GB;q=0.6", "de", "/test.de.html"},
+		{[]method.Method{&method.Header{}}, "fr", "", "", "/test.html"},
+		{[]method.Method{&method.Header{}}, "en", "", "en", "/test.en.html"},
+		{[]method.Method{&method.Header{}}, "en-GB", "", "en-GB", "/test.en-GB.html"},
+		{[]method.Method{&method.Header{}}, "en", "de,en;q=0.8,en-GB;q=0.6", "de", "/test.de.html"},
 	}
 
-	for _, test := range tests {
+	for index, test := range tests {
 		locale := locale.Locale{
 			Next:          middleware.HandlerFunc(contentHandler),
 			RootPath:      rootPath,
-			DetectMethods: test.detectMethods,
+			Methods:       test.methods,
 			DefaultLocale: test.defaultLocale,
 		}
 
 		request, err := http.NewRequest("GET", "/test.html", nil)
 		if err != nil {
-			t.Fatalf("could not create HTTP request %v", err)
+			t.Fatalf("test %d: could not create HTTP request %v", index, err)
 		}
 		request.Header.Set("Accept-Language", test.acceptLanguageHeader)
 
 		recorder := httptest.NewRecorder()
 		if _, err = locale.ServeHTTP(recorder, request); err != nil {
-			t.Fatalf("could not ServeHTTP %v", err)
+			t.Fatalf("test %d: could not ServeHTTP %v", index, err)
 		}
 
 		if cl := recorder.Header().Get("Content-Language"); cl != test.expectedLocale {
-			t.Fatalf("expected content language %s, got %s", test.expectedLocale, cl)
+			t.Fatalf("test %d: expected content language %s, got %s", index, test.expectedLocale, cl)
 		}
 		if path := request.URL.Path; path != test.expectedPath {
-			t.Fatalf("expected path %s, got %s", test.expectedPath, path)
+			t.Fatalf("test %d: expected path %s, got %s", index, test.expectedPath, path)
 		}
 	}
 }

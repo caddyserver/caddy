@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/mholt/caddy/middleware/locale"
+	"github.com/mholt/caddy/middleware/locale/method"
 )
 
 func TestLocaleDetector(t *testing.T) {
@@ -19,7 +20,7 @@ func TestLocaleDetector(t *testing.T) {
 	}
 
 	handler := middleware(EmptyNext)
-	localeHandler, ok := handler.(locale.Locale)
+	localeHandler, ok := handler.(*locale.Locale)
 	if !ok {
 		t.Fatalf("Expected handler to be type Locale, got: %#v", handler)
 	}
@@ -32,11 +33,11 @@ func TestLocaleDetector(t *testing.T) {
 func TestLocaleParsing(t *testing.T) {
 	tests := []struct {
 		input                 string
-		expectedDetectMethods []locale.DetectMethod
+		expectedMethods       []method.Method
 		expectedDefaultLocale string
 	}{
-		{`locale en`, []locale.DetectMethod{}, "en"},
-		{`locale header de_DE`, []locale.DetectMethod{locale.DetectMethodHeader}, "de_DE"},
+		{`locale en`, []method.Method{}, "en"},
+		{`locale header de_DE`, []method.Method{&method.Header{}}, "de_DE"},
 	}
 
 	for _, test := range tests {
@@ -48,14 +49,14 @@ func TestLocaleParsing(t *testing.T) {
 		}
 
 		handler := middleware(EmptyNext)
-		localeHandler, ok := handler.(locale.Locale)
+		localeHandler, ok := handler.(*locale.Locale)
 		if !ok {
 			t.Fatalf("Expected handler to be type Locale, got: %#v", handler)
 		}
 
-		if !reflect.DeepEqual(localeHandler.DetectMethods, test.expectedDetectMethods) {
+		if !reflect.DeepEqual(localeHandler.Methods, test.expectedMethods) {
 			t.Fatalf("Expected handler to have detect methods %#v, got: %#v",
-				test.expectedDetectMethods, localeHandler.DetectMethods)
+				test.expectedMethods, localeHandler.Methods)
 		}
 
 		if localeHandler.DefaultLocale != test.expectedDefaultLocale {

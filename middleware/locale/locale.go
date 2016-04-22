@@ -5,27 +5,24 @@ import (
 	"net/http"
 	"os"
 	"path"
-	"strings"
 
 	"github.com/mholt/caddy/middleware"
+	"github.com/mholt/caddy/middleware/locale/method"
 )
 
 // Locale is a middleware to detect the user's locale.
 type Locale struct {
 	Next          middleware.Handler
 	RootPath      string
-	DetectMethods []DetectMethod
+	Methods       []method.Method
 	DefaultLocale string
 }
 
 // ServeHTTP implements the middleware.Handler interface.
 func (l *Locale) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	candidates := []string{}
-	for _, detectMethod := range l.DetectMethods {
-		switch detectMethod {
-		case DetectMethodHeader:
-			candidates = append(candidates, fromHeader(r)...)
-		}
+	for _, method := range l.Methods {
+		candidates = append(candidates, method.Detect(r)...)
 	}
 	candidates = append(candidates, l.DefaultLocale)
 
@@ -41,22 +38,6 @@ func (l *Locale) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 	}
 
 	return l.Next.ServeHTTP(w, r)
-}
-
-func fromHeader(r *http.Request) []string {
-	parts := strings.Split(r.Header.Get("Accept-Language"), ",")
-
-	locales := []string{}
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		locale := strings.Split(part, ";")[0]
-		locales = append(locales, locale)
-	}
-
-	return locales
 }
 
 // resourceExists returns true if the file specified at path exists; false otherwise.
