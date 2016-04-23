@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -103,22 +104,16 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 				}
 				var extraHeaders http.Header
 				if host.ExtraHeaders != nil {
-					extraHeaders = make(http.Header)
 					if replacer == nil {
 						rHost := r.Host
 						r.Host = requestHost
 						replacer = middleware.NewReplacer(r, nil, "")
 						r.Host = rHost
 					}
-					for header, values := range host.ExtraHeaders {
-						for _, value := range values {
-							extraHeaders.Add(header,
-								replacer.Replace(value))
-							if header == "Host" {
-								r.Host = replacer.Replace(value)
-							}
-						}
+					if v, ok := host.ExtraHeaders["Host"]; ok {
+						r.Host = replacer.Replace(v[len(v)-1])
 					}
+					extraHeaders = updateHeaders(host.ExtraHeaders, r.Header, replacer)
 				}
 
 				atomic.AddInt64(&host.Conns, 1)
@@ -142,4 +137,40 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	}
 
 	return p.Next.ServeHTTP(w, r)
+}
+
+func updateHeaders(rules http.Header, base http.Header, repl middleware.Replacer) http.Header {
+	extraHeaders := make(http.Header)
+	for header, values := range rules {
+		if strings.HasPrefix(header, "+") {
+			header = strings.TrimLeft(header, "+")
+			add(extraHeaders, header, base[header])
+			applyEach(values, repl.Replace)
+			add(extraHeaders, header, values)
+		} else if strings.HasPrefix(header, "-") {
+			base.Del(strings.TrimLeft(header, "-"))
+		} else if _, ok := base[header]; ok {
+			applyEach(values, repl.Replace)
+			for _, v := range values {
+				extraHeaders.Set(header, v)
+			}
+		} else {
+			applyEach(values, repl.Replace)
+			add(extraHeaders, header, values)
+			add(extraHeaders, header, base[header])
+		}
+	}
+	return extraHeaders
+}
+
+func applyEach(values []string, mapFn func(string) string) {
+	for i, v := range values {
+		values[i] = mapFn(v)
+	}
+}
+
+func add(base http.Header, header string, values []string) {
+	for _, v := range values {
+		base.Add(header, v)
+	}
 }
