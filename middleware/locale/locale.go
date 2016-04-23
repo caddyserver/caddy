@@ -10,17 +10,17 @@ import (
 
 // Locale is a middleware to detect the user's locale.
 type Locale struct {
-	Next     middleware.Handler
-	Locales  []string
-	Methods  []method.Method
-	Settings *method.Settings
+	Next             middleware.Handler
+	AvailableLocales []string
+	Methods          []method.Method
+	Configuration    *method.Configuration
 }
 
 // ServeHTTP implements the middleware.Handler interface.
 func (l *Locale) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	candidates := []string{}
 	for _, method := range l.Methods {
-		candidates = append(candidates, method(r, l.Settings)...)
+		candidates = append(candidates, method(r, l.Configuration)...)
 	}
 
 	locale := l.firstValid(candidates)
@@ -33,7 +33,7 @@ func (l *Locale) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 }
 
 func (l *Locale) defaultLocale() string {
-	return l.Locales[0]
+	return l.AvailableLocales[0]
 }
 
 func (l *Locale) firstValid(candidates []string) string {
@@ -47,7 +47,7 @@ func (l *Locale) firstValid(candidates []string) string {
 }
 
 func (l *Locale) isValid(locale string) bool {
-	for _, validLocale := range l.Locales {
+	for _, validLocale := range l.AvailableLocales {
 		if locale == validLocale {
 			return true
 		}

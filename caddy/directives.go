@@ -53,6 +53,7 @@ var directiveOrder = []directive{
 	// Directives that inject handlers (middleware)
 	{"log", setup.Log},
 	{"gzip", setup.Gzip},
+	{"locale", setup.Locale},
 	{"errors", setup.Errors},
 	{"header", setup.Headers},
 	{"rewrite", setup.Rewrite},
@@ -69,7 +70,6 @@ var directiveOrder = []directive{
 	{"markdown", setup.Markdown},
 	{"templates", setup.Templates},
 	{"browse", setup.Browse},
-	{"locale", setup.Locale},
 }
 
 // Directives returns the list of directives in order of priority.

@@ -1,7 +1,6 @@
 package locale_test
 
 import (
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -13,7 +12,7 @@ import (
 
 func TestLocale(t *testing.T) {
 	tests := []struct {
-		locales              []string
+		availableLocales     []string
 		methods              []method.Method
 		acceptLanguageHeader string
 		expectedLocale       string
@@ -25,9 +24,9 @@ func TestLocale(t *testing.T) {
 
 	for index, test := range tests {
 		locale := locale.Locale{
-			Next:    middleware.HandlerFunc(contentHandler),
-			Methods: test.methods,
-			Locales: test.locales,
+			Next:             middleware.HandlerFunc(contentHandler),
+			AvailableLocales: test.availableLocales,
+			Methods:          test.methods,
 		}
 
 		request, err := http.NewRequest("GET", "/", nil)
@@ -47,7 +46,6 @@ func TestLocale(t *testing.T) {
 	}
 }
 
-func contentHandler(w http.ResponseWriter, r *http.Request) (int, error) {
-	fmt.Fprintf(w, r.URL.String())
+func contentHandler(_ http.ResponseWriter, _ *http.Request) (int, error) {
 	return http.StatusOK, nil
 }

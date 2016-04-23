@@ -10,22 +10,24 @@ import (
 
 func TestCookieParsing(t *testing.T) {
 	cookie := method.Names["cookie"]
-	settings := &method.Settings{CookieName: "locale"}
-
-	request, _ := http.NewRequest("GET", "/", nil)
+	configuration := &method.Configuration{CookieName: "locale"}
 
 	tests := []struct {
 		name            string
 		value           string
 		expectedLocales []string
 	}{
+		{"", "", []string{}},
 		{"locale", "en", []string{"en"}},
-		{"locale", "de", []string{"de"}},
 	}
 
 	for index, test := range tests {
-		request.Header.Set("Cookie", (&http.Cookie{Name: test.name, Value: test.value}).String())
-		locales := cookie(request, settings)
+		request, _ := http.NewRequest("GET", "/", nil)
+		if test.name != "" {
+			request.Header.Set("Cookie", (&http.Cookie{Name: test.name, Value: test.value}).String())
+		}
+
+		locales := cookie(request, configuration)
 		if !reflect.DeepEqual(test.expectedLocales, locales) {
 			t.Fatalf("test %d: expected locales %#v, got %#v", index, test.expectedLocales, locales)
 		}

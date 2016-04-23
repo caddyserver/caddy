@@ -8,10 +8,10 @@ var Names = map[string]Method{
 	"cookie": detectByCookie,
 }
 
-// Method defines the interface for the locale detect method.
-type Method func(*http.Request, *Settings) []string
+// Method defines the alias for the locale detect method.
+type Method func(*http.Request, *Configuration) []string
 
-// Settings defines for a detection method.
-type Settings struct {
+// Configuration defines the configuration for detection methods.
+type Configuration struct {
 	CookieName string
 }

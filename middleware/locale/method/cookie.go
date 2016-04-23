@@ -1,17 +1,11 @@
 package method
 
-import (
-	"net/http"
-	"strings"
-)
+import "net/http"
 
-func detectByCookie(r *http.Request, settings *Settings) []string {
-	name := strings.TrimSpace(settings.CookieName)
-	if name == "" {
-		name = "locale"
+func detectByCookie(r *http.Request, c *Configuration) []string {
+	locale, _ := r.Cookie(c.CookieName)
+	if locale == nil {
+		return []string{}
 	}
-
-	locale, _ := r.Cookie(name)
-
 	return []string{locale.Value}
 }

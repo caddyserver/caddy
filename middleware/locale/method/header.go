@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-func detectByHeader(r *http.Request, _ *Settings) []string {
+func detectByHeader(r *http.Request, _ *Configuration) []string {
 	browserLocales := parseBrowserLocales(r.Header.Get("Accept-Language"))
 	sort.Sort(browserLocales)
 	return browserLocales.locales()
@@ -59,11 +59,11 @@ func parseBrowserLocale(text string) *browserLocale {
 	parts := strings.Split(text, ";")
 
 	browserLocale := &browserLocale{
-		locale: parts[0],
+		locale: strings.TrimSpace(parts[0]),
 		q:      1.0,
 	}
 	if len(parts) > 1 {
-		if values, err := url.ParseQuery(parts[1]); err == nil {
+		if values, err := url.ParseQuery(strings.TrimSpace(parts[1])); err == nil {
 			if qValue := values.Get("q"); qValue != "" {
 				if q, err := strconv.ParseFloat(qValue, 64); err == nil {
 					browserLocale.q = q
