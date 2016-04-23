@@ -202,7 +202,8 @@ func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request, extr
 		}
 	}
 
-	res, err := transport.RoundTrip(outreq)
+	c := &http.Client{Transport: transport}
+	res, err := c.Do(outreq)
 	if err != nil {
 		return err
 	}
