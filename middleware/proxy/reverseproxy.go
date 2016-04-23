@@ -38,7 +38,7 @@ type ReverseProxy struct {
 
 	// The transport used to perform proxy requests.
 	// If nil, http.DefaultTransport is used.
-	Transport http.RoundTripper
+	Transport *http.Transport
 
 	// FlushInterval specifies the flush interval
 	// to flush to the client while copying the
@@ -144,7 +144,7 @@ var hopHeaders = []string{
 // InsecureTransport is used to facilitate HTTPS proxying
 // when it is OK for upstream to be using a bad certificate,
 // since this transport skips verification.
-var InsecureTransport http.RoundTripper = &http.Transport{
+var InsecureTransport = &http.Transport{
 	Proxy: http.ProxyFromEnvironment,
 	Dial: (&net.Dialer{
 		Timeout:   30 * time.Second,
@@ -157,7 +157,7 @@ var InsecureTransport http.RoundTripper = &http.Transport{
 func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request, extraHeaders http.Header) error {
 	transport := p.Transport
 	if transport == nil {
-		transport = http.DefaultTransport
+		transport = http.DefaultTransport.(*http.Transport)
 	}
 
 	outreq := new(http.Request)
