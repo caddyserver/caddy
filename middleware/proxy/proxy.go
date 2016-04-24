@@ -102,7 +102,6 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			outreq.Host = host.Name
 			// Modify headers for request that will be sent to the upstream host
 			if host.UpStreamHeaders != nil {
-				extraHeaders := make(http.Header)
 				if replacer == nil {
 					rHost := r.Host
 					replacer = middleware.NewReplacer(r, nil, "")
@@ -120,9 +119,8 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			if host.DownStreamHeaders != nil {
 				if replacer == nil {
 					rHost := r.Host
-					r.Host = requestHost
 					replacer = middleware.NewReplacer(r, nil, "")
-					r.Host = rHost
+					outreq.Host = rHost
 				}
 				downHeaderUpdateFn = func(src http.Header) {
 					newHeaders := updateHeaders(host.DownStreamHeaders, src, replacer)
@@ -194,4 +192,39 @@ func createUpstreamRequest(r *http.Request) *http.Request {
 	}
 
 	return outreq
+}
+func updateHeaders(rules http.Header, base http.Header, repl middleware.Replacer) http.Header {
+	newHeaders := make(http.Header)
+	for header, values := range rules {
+		if strings.HasPrefix(header, "+") {
+			header = strings.TrimLeft(header, "+")
+			add(newHeaders, header, base[header])
+			applyEach(values, repl.Replace)
+			add(newHeaders, header, values)
+		} else if strings.HasPrefix(header, "-") {
+			base.Del(strings.TrimLeft(header, "-"))
+		} else if _, ok := base[header]; ok {
+			applyEach(values, repl.Replace)
+			for _, v := range values {
+				newHeaders.Set(header, v)
+			}
+		} else {
+			applyEach(values, repl.Replace)
+			add(newHeaders, header, values)
+			add(newHeaders, header, base[header])
+		}
+	}
+	return newHeaders
+}
+
+func applyEach(values []string, mapFn func(string) string) {
+	for i, v := range values {
+		values[i] = mapFn(v)
+	}
+}
+
+func add(base http.Header, header string, values []string) {
+	for _, v := range values {
+		base.Add(header, v)
+	}
 }

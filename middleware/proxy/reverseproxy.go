@@ -154,6 +154,8 @@ var InsecureTransport http.RoundTripper = &http.Transport{
 	TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
 }
 
+type RespHeaderUpdateFn func(src http.Header)
+
 func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, respHeaderFn RespHeaderUpdateFn) error {
 	transport := p.Transport
 	if transport == nil {

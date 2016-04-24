@@ -348,7 +348,7 @@ func TestUnixSocketProxyPaths(t *testing.T) {
 	}
 }
 
-func TestHeadersUpdate(t *testing.T) {
+func TestUpStreamHeadersUpdate(t *testing.T) {
 	log.SetOutput(ioutil.Discard)
 	defer log.SetOutput(os.Stderr)
 
@@ -360,7 +360,7 @@ func TestHeadersUpdate(t *testing.T) {
 	defer backend.Close()
 
 	upstream := newFakeUpstream(backend.URL, false)
-	upstream.host.ExtraHeaders = http.Header{
+	upstream.host.UpStreamHeaders = http.Header{
 		"Connection": {"{>Connection}"},
 		"Upgrade":    {"{>Upgrade}"},
 		"+Merge-Me":  {"Merge-Value"},
@@ -388,6 +388,71 @@ func TestHeadersUpdate(t *testing.T) {
 	p.ServeHTTP(w, r)
 
 	replacer := middleware.NewReplacer(r, nil, "")
+
+	headerKey := "Merge-Me"
+	values, ok := actualHeaders[headerKey]
+	if !ok {
+		t.Errorf("Request sent to upstream backend does not contain expected %v header. Expected header to be added", headerKey)
+	} else if len(values) < 2 && (values[0] != "Initial" || values[1] != replacer.Replace("{hostname}")) {
+		t.Errorf("Values for proxy header `+Merge-Me` should be merged. Got %v", values)
+	}
+
+	headerKey = "Add-Me"
+	if _, ok := actualHeaders[headerKey]; !ok {
+		t.Errorf("Request sent to upstream backend does not contain expected %v header", headerKey)
+	}
+
+	headerKey = "Remove-Me"
+	if _, ok := actualHeaders[headerKey]; ok {
+		t.Errorf("Request sent to upstream backend should not contain %v header", headerKey)
+	}
+
+	headerKey = "Replace-Me"
+	headerValue := replacer.Replace("{hostname}")
+	value, ok := actualHeaders[headerKey]
+	if !ok {
+		t.Errorf("Request sent to upstream backend should not remove %v header", headerKey)
+	} else if len(value) > 0 && headerValue != value[0] {
+		t.Errorf("Request sent to backend should replace value of %v header with %v. Instead value was %v", headerKey, headerValue, value)
+	}
+
+}
+
+func TestDownStreamHeadersUpdate(t *testing.T) {
+	log.SetOutput(ioutil.Discard)
+	defer log.SetOutput(os.Stderr)
+
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Merge-Me", "Initial")
+		w.Header().Add("Remove-Me", "Remove-Value")
+		w.Header().Add("Replace-Me", "Replace-Value")
+		w.Write([]byte("Hello, client"))
+	}))
+	defer backend.Close()
+
+	upstream := newFakeUpstream(backend.URL, false)
+	upstream.host.DownStreamHeaders = http.Header{
+		"+Merge-Me":  {"Merge-Value"},
+		"+Add-Me":    {"Add-Value"},
+		"-Remove-Me": {""},
+		"Replace-Me": {"{hostname}"},
+	}
+	// set up proxy
+	p := &Proxy{
+		Upstreams: []Upstream{upstream},
+	}
+
+	// create request and response recorder
+	r, err := http.NewRequest("GET", "/", nil)
+	if err != nil {
+		t.Fatalf("Failed to create request: %v", err)
+	}
+	w := httptest.NewRecorder()
+
+	p.ServeHTTP(w, r)
+
+	replacer := middleware.NewReplacer(r, nil, "")
+	var actualHeaders http.Header = w.Header()
 
 	headerKey := "Merge-Me"
 	values, ok := actualHeaders[headerKey]
@@ -480,7 +545,7 @@ func (u *fakeWsUpstream) Select() *UpstreamHost {
 	return &UpstreamHost{
 		Name:         u.name,
 		ReverseProxy: NewSingleHostReverseProxy(uri, u.without),
-		ExtraHeaders: http.Header{
+		UpStreamHeaders: http.Header{
 			"Connection": {"{>Connection}"},
 			"Upgrade":    {"{>Upgrade}"}},
 	}
