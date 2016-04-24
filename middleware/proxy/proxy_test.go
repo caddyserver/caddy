@@ -392,7 +392,7 @@ func TestHeadersUpdate(t *testing.T) {
 	headerKey := "Merge-Me"
 	values, ok := actualHeaders[headerKey]
 	if !ok {
-		t.Errorf("Request sent to upstream backend does not contain expected header. Expected header to be added", headerKey)
+		t.Errorf("Request sent to upstream backend does not contain expected %v header. Expected header to be added", headerKey)
 	} else if len(values) < 2 && (values[0] != "Initial" || values[1] != replacer.Replace("{hostname}")) {
 		t.Errorf("Values for proxy header `+Merge-Me` should be merged. Got %v", values)
 	}
