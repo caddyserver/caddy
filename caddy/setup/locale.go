@@ -1,7 +1,6 @@
 package setup
 
 import (
-	"log"
 	"strings"
 
 	"github.com/mholt/caddy/middleware"
@@ -17,7 +16,6 @@ func Locale(c *Controller) (middleware.Middleware, error) {
 	}
 
 	return func(next middleware.Handler) middleware.Handler {
-		log.Printf("middle")
 		l.Next = next
 		return l
 	}, nil
@@ -41,7 +39,7 @@ func parseLocale(c *Controller) (*locale.Locale, error) {
 
 		for c.NextBlock() {
 			switch c.Val() {
-			case "all":
+			case "available":
 				result.AvailableLocales = append(result.AvailableLocales, c.RemainingArgs()...)
 			case "detect":
 				detectArgs := c.RemainingArgs()

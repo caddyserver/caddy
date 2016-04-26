@@ -17,12 +17,12 @@ func TestLocaleParsing(t *testing.T) {
 	}{
 		{`locale en de`, []string{"en", "de"}, []method.Method{method.Names["header"]}, &method.Configuration{}},
 		{`locale en {
-		    all de
-		  }`, []string{"en", "de"}, []method.Method{method.Names["header"]}, &method.Configuration{}},
+        available de
+      }`, []string{"en", "de"}, []method.Method{method.Names["header"]}, &method.Configuration{}},
 		{`locale en de {
-		    detect cookie header
-				cookie language
-		  }`, []string{"en", "de"}, []method.Method{method.Names["cookie"], method.Names["header"]},
+        detect cookie header
+        cookie language
+      }`, []string{"en", "de"}, []method.Method{method.Names["cookie"], method.Names["header"]},
 			&method.Configuration{CookieName: "language"}},
 	}
 
