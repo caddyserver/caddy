@@ -25,6 +25,7 @@ func parseLocale(c *Controller) (*locale.Locale, error) {
 	result := &locale.Locale{
 		AvailableLocales: []string{},
 		Methods:          []method.Method{},
+		PathScope:        "/",
 		Configuration: &method.Configuration{
 			CookieName: "locale",
 		},
@@ -59,6 +60,13 @@ func parseLocale(c *Controller) (*locale.Locale, error) {
 				}
 				if value := strings.TrimSpace(c.Val()); value != "" {
 					result.Configuration.CookieName = value
+				}
+			case "path":
+				if !c.NextArg() {
+					return nil, c.ArgErr()
+				}
+				if value := strings.TrimSpace(c.Val()); value != "" {
+					result.PathScope = value
 				}
 			default:
 				return nil, c.ArgErr()

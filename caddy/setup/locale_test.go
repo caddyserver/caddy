@@ -13,16 +13,19 @@ func TestLocaleParsing(t *testing.T) {
 		input                 string
 		expectedLocales       []string
 		expectedMethods       []method.Method
+		expectedPathScope     string
 		expectedConfiguration *method.Configuration
 	}{
-		{`locale en de`, []string{"en", "de"}, []method.Method{method.Names["header"]}, &method.Configuration{}},
+		{`locale en de`, []string{"en", "de"}, []method.Method{method.Names["header"]}, "/", &method.Configuration{}},
 		{`locale en {
         available de
-      }`, []string{"en", "de"}, []method.Method{method.Names["header"]}, &method.Configuration{}},
+        path /
+      }`, []string{"en", "de"}, []method.Method{method.Names["header"]}, "/", &method.Configuration{}},
 		{`locale en de {
         detect cookie header
         cookie language
-      }`, []string{"en", "de"}, []method.Method{method.Names["cookie"], method.Names["header"]},
+        path /test
+      }`, []string{"en", "de"}, []method.Method{method.Names["cookie"], method.Names["header"]}, "/test",
 			&method.Configuration{CookieName: "language"}},
 	}
 
