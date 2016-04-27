@@ -385,7 +385,7 @@ footer {
 						{{- else}}
 						<td data-order="{{.Size}}">{{.HumanSize}}</td>
 						{{- end}}
-						<td class="hideable"><time datetime="{{.HumanModTime "2006-01-02 15:04:05-0700"}}">{{.HumanModTime "01/02/2006 03:04:05 PM"}}</time></td>
+						<td class="hideable"><time datetime="{{.HumanModTime "2006-01-02T15:04:05Z"}}">{{.HumanModTime "01/02/2006 03:04:05 PM -07:00"}}</time></td>
 					</tr>
 					{{- end}}
 					</tbody>
@@ -401,6 +401,12 @@ footer {
 					return;
 				}
 				var d = new Date(e.getAttribute('datetime'));
+				if (isNaN(d)) {
+					d = new Date(e.textContent);
+					if (isNaN(d)) {
+						return;
+					}
+				}
 				e.textContent = d.toLocaleString();
 			}
 			var timeList = Array.prototype.slice.call(document.getElementsByTagName("time"));

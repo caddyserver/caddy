@@ -445,6 +445,7 @@ func standaloneTLSTicketKeyRotation(c *tls.Config, timer *time.Ticker, exitChan 
 		c.SessionTicketsDisabled = true // bail if we don't have the entropy for the first one
 		return
 	}
+	c.SessionTicketKey = keys[0] // SetSessionTicketKeys doesn't set a 'tls.keysAlreadSet'
 	c.SetSessionTicketKeys(setSessionTicketKeysTestHook(keys))
 
 	for {
