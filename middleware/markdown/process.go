@@ -23,7 +23,7 @@ const (
 // Data represents a markdown document.
 type Data struct {
 	middleware.Context
-	Doc      map[string]string
+	Doc      map[string]interface{} // Update to interface{} to allow any type
 	DocFlags map[string]bool
 	Links    []PageLink
 }
@@ -191,7 +191,7 @@ func defaultTemplate(c *Config, metadata Metadata, requestPath string) []byte {
 	title, _ := metadata.Variables["title"]
 
 	html := []byte(htmlTemplate)
-	html = bytes.Replace(html, []byte("{{title}}"), []byte(title), 1)
+	html = bytes.Replace(html, []byte("{{title}}"), []byte(title.(string)), 1)
 	html = bytes.Replace(html, []byte("{{css}}"), styles.Bytes(), 1)
 	html = bytes.Replace(html, []byte("{{js}}"), scripts.Bytes(), 1)
 
