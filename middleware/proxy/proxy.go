@@ -85,31 +85,7 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 		var replacer middleware.Replacer
 		start := time.Now()
 
-		outreq := new(http.Request)
-		*outreq = *r // includes shallow copies of maps, but okay
-
-		// Remove hop-by-hop headers to the backend.  Especially
-		// important is "Connection" because we want a persistent
-		// connection, regardless of what the client sent to us.  This
-		// is modifying the same underlying map from r (shallow
-		// copied above) so we only copy it if necessary.
-		for _, h := range hopHeaders {
-			if outreq.Header.Get(h) != "" {
-				outreq.Header = make(http.Header)
-				copyHeader(outreq.Header, r.Header)
-				outreq.Header.Del(h)
-			}
-		}
-
-		if clientIP, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-			// If we aren't the first proxy, retain prior
-			// X-Forwarded-For information as a comma+space
-			// separated list and fold multiple headers into one.
-			if prior, ok := outreq.Header["X-Forwarded-For"]; ok {
-				clientIP = strings.Join(prior, ", ") + ", " + clientIP
-			}
-			outreq.Header.Set("X-Forwarded-For", clientIP)
-		}
+		outreq := createUpstreamRequest(r)
 
 		// Since Select() should give us "up" hosts, keep retrying
 		// hosts until timeout (or until we get a nil host).
@@ -118,11 +94,11 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			if host == nil {
 				return http.StatusBadGateway, errUnreachable
 			}
-			outreq.Host = host.Name
 			if rr, ok := w.(*middleware.ResponseRecorder); ok && rr.Replacer != nil {
 				rr.Replacer.Set("upstream", host.Name)
 			}
 
+			outreq.Host = host.Name
 			if host.ExtraHeaders != nil {
 				extraHeaders := make(http.Header)
 				if replacer == nil {
@@ -173,4 +149,36 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	}
 
 	return p.Next.ServeHTTP(w, r)
+}
+
+// createUpstremRequest shallow-copies r into a new request
+// that can be sent upstream.
+func createUpstreamRequest(r *http.Request) *http.Request {
+	outreq := new(http.Request)
+	*outreq = *r // includes shallow copies of maps, but okay
+
+	// Remove hop-by-hop headers to the backend.  Especially
+	// important is "Connection" because we want a persistent
+	// connection, regardless of what the client sent to us.  This
+	// is modifying the same underlying map from r (shallow
+	// copied above) so we only copy it if necessary.
+	for _, h := range hopHeaders {
+		if outreq.Header.Get(h) != "" {
+			outreq.Header = make(http.Header)
+			copyHeader(outreq.Header, r.Header)
+			outreq.Header.Del(h)
+		}
+	}
+
+	if clientIP, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		// If we aren't the first proxy, retain prior
+		// X-Forwarded-For information as a comma+space
+		// separated list and fold multiple headers into one.
+		if prior, ok := outreq.Header["X-Forwarded-For"]; ok {
+			clientIP = strings.Join(prior, ", ") + ", " + clientIP
+		}
+		outreq.Header.Set("X-Forwarded-For", clientIP)
+	}
+
+	return outreq
 }
