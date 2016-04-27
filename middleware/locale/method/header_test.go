@@ -1,15 +1,13 @@
-package method_test
+package method
 
 import (
 	"net/http"
 	"reflect"
 	"testing"
-
-	"github.com/mholt/caddy/middleware/locale/method"
 )
 
 func TestHeaderParsing(t *testing.T) {
-	header := method.Names["header"]
+	header := Names["header"]
 
 	request, _ := http.NewRequest("GET", "/", nil)
 

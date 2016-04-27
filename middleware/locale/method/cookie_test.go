@@ -1,16 +1,14 @@
-package method_test
+package method
 
 import (
 	"net/http"
 	"reflect"
 	"testing"
-
-	"github.com/mholt/caddy/middleware/locale/method"
 )
 
 func TestCookieParsing(t *testing.T) {
-	cookie := method.Names["cookie"]
-	configuration := &method.Configuration{CookieName: "locale"}
+	cookie := Names["cookie"]
+	configuration := &Configuration{CookieName: "locale"}
 
 	tests := []struct {
 		name            string

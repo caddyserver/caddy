@@ -1,4 +1,4 @@
-package locale_test
+package locale
 
 import (
 	"net/http"
@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/mholt/caddy/middleware"
-	"github.com/mholt/caddy/middleware/locale"
 	"github.com/mholt/caddy/middleware/locale/method"
 )
 
@@ -26,7 +25,7 @@ func TestLocale(t *testing.T) {
 	}
 
 	for index, test := range tests {
-		locale := locale.Locale{
+		locale := Locale{
 			Next:             middleware.HandlerFunc(contentHandler),
 			AvailableLocales: test.availableLocales,
 			Methods:          test.methods,
