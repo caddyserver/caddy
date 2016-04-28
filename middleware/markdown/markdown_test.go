@@ -45,6 +45,18 @@ func TestMarkdown(t *testing.T) {
 				StaticFiles: make(map[string]string),
 			},
 			{
+				Renderer:   blackfriday.HtmlRenderer(0, "", ""),
+				PathScope:  "/objects",
+				Extensions: []string{".md"},
+				Styles:     []string{},
+				Scripts:    []string{},
+				Templates: map[string]string{
+					DefaultTemplate: "testdata/objects/template.txt",
+				},
+				StaticDir:   DefaultStaticDir,
+				StaticFiles: make(map[string]string),
+			},
+			{
 				Renderer:    blackfriday.HtmlRenderer(0, "", ""),
 				PathScope:   "/log",
 				Extensions:  []string{".md"},
