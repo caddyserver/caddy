@@ -95,7 +95,7 @@ func TestMarkdown(t *testing.T) {
 	for i := range md.Configs {
 		c := md.Configs[i]
 		if err := GenerateStatic(md, c); err != nil {
-			t.Fatalf("Error: %v", err)
+			t.Fatalf("Error at %v: %v", i, err)
 		}
 		Watch(md, c, time.Millisecond*100)
 	}
@@ -158,7 +158,45 @@ DocFlags.var_bool true`
 		t.Fatalf("Expected body: %v got: %v", expectedBody, respBody)
 	}
 	
-	//start object tests
+	
+	req, err = http.NewRequest("GET", "/objects/json.md", nil)
+	if err != nil {
+		t.Fatalf("Could not create HTTP request: %v", err)
+	}
+	rec = httptest.NewRecorder()
+
+	md.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Wrong status, expected: %d and got %d", http.StatusOK, rec.Code)
+	}
+	respBody = rec.Body.String()
+	expectedBody = `kind: json
+	object-key: value`
+
+	if !equalStrings(respBody, expectedBody) {
+		t.Fatalf("Expected body: %v got: %v", expectedBody, respBody)
+	}
+	
+	
+	req, err = http.NewRequest("GET", "/objects/yaml.md", nil)
+	if err != nil {
+		t.Fatalf("Could not create HTTP request: %v", err)
+	}
+	rec = httptest.NewRecorder()
+
+	md.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Wrong status, expected: %d and got %d", http.StatusOK, rec.Code)
+	}
+	respBody = rec.Body.String()
+	expectedBody = `kind: yaml
+	object-key: value`
+
+	if !equalStrings(respBody, expectedBody) {
+		t.Fatalf("Expected body: %v got: %v", expectedBody, respBody)
+	}
+	
+	
 	req, err = http.NewRequest("GET", "/objects/toml.md", nil)
 	if err != nil {
 		t.Fatalf("Could not create HTTP request: %v", err)
@@ -176,7 +214,7 @@ DocFlags.var_bool true`
 	if !equalStrings(respBody, expectedBody) {
 		t.Fatalf("Expected body: %v got: %v", expectedBody, respBody)
 	}
-	//end object tests
+	
 
 	req, err = http.NewRequest("GET", "/log/test.md", nil)
 	if err != nil {
