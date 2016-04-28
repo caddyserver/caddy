@@ -1,5 +1,5 @@
-+++
-kind: yaml
+---
+kind: "yaml"
 object:
-    key: value
-+++
+    key: "value"
+---
