@@ -1,2 +1,2 @@
 kind: {{ .Doc.kind }}
-object-value: {{ .Doc.object.key }}
+object-key: {{ .Doc.object.key }}
