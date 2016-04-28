@@ -154,14 +154,11 @@ var InsecureTransport http.RoundTripper = &http.Transport{
 	TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
 }
 
-func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request, extraHeaders http.Header) error {
+func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, respHeaderFn RespHeaderUpdateFn) error {
 	transport := p.Transport
 	if transport == nil {
 		transport = http.DefaultTransport
 	}
-
-	outreq := new(http.Request)
-	*outreq = *req // includes shallow copies of maps, but okay
 
 	p.Director(outreq)
 	outreq.Proto = "HTTP/1.1"
@@ -169,42 +166,11 @@ func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request, extr
 	outreq.ProtoMinor = 1
 	outreq.Close = false
 
-	// Remove hop-by-hop headers to the backend.  Especially
-	// important is "Connection" because we want a persistent
-	// connection, regardless of what the client sent to us.  This
-	// is modifying the same underlying map from req (shallow
-	// copied above) so we only copy it if necessary.
-	copiedHeaders := false
-	for _, h := range hopHeaders {
-		if outreq.Header.Get(h) != "" {
-			if !copiedHeaders {
-				outreq.Header = make(http.Header)
-				copyHeader(outreq.Header, req.Header)
-				copiedHeaders = true
-			}
-			outreq.Header.Del(h)
-		}
-	}
-
-	if clientIP, _, err := net.SplitHostPort(req.RemoteAddr); err == nil {
-		// If we aren't the first proxy retain prior
-		// X-Forwarded-For information as a comma+space
-		// separated list and fold multiple headers into one.
-		if prior, ok := outreq.Header["X-Forwarded-For"]; ok {
-			clientIP = strings.Join(prior, ", ") + ", " + clientIP
-		}
-		outreq.Header.Set("X-Forwarded-For", clientIP)
-	}
-
-	if extraHeaders != nil {
-		for k, v := range extraHeaders {
-			outreq.Header[k] = v
-		}
-	}
-
 	res, err := transport.RoundTrip(outreq)
 	if err != nil {
 		return err
+	} else if respHeaderFn != nil {
+		respHeaderFn(res.Header)
 	}
 
 	if res.StatusCode == http.StatusSwitchingProtocols && strings.ToLower(res.Header.Get("Upgrade")) == "websocket" {
@@ -237,9 +203,7 @@ func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request, extr
 		for _, h := range hopHeaders {
 			res.Header.Del(h)
 		}
-
 		copyHeader(rw.Header(), res.Header)
-
 		rw.WriteHeader(res.StatusCode)
 		p.copyResponse(rw, res.Body)
 	}
@@ -260,7 +224,6 @@ func (p *ReverseProxy) copyResponse(dst io.Writer, src io.Reader) {
 			dst = mlw
 		}
 	}
-
 	io.Copy(dst, src)
 }
 
