@@ -157,6 +157,26 @@ DocFlags.var_bool true`
 	if !equalStrings(respBody, expectedBody) {
 		t.Fatalf("Expected body: %v got: %v", expectedBody, respBody)
 	}
+	
+	//start object tests
+	req, err = http.NewRequest("GET", "/objects/toml.md", nil)
+	if err != nil {
+		t.Fatalf("Could not create HTTP request: %v", err)
+	}
+	rec = httptest.NewRecorder()
+
+	md.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Wrong status, expected: %d and got %d", http.StatusOK, rec.Code)
+	}
+	respBody = rec.Body.String()
+	expectedBody = `kind: toml
+	object-key: value`
+
+	if !equalStrings(respBody, expectedBody) {
+		t.Fatalf("Expected body: %v got: %v", expectedBody, respBody)
+	}
+	//end object tests
 
 	req, err = http.NewRequest("GET", "/log/test.md", nil)
 	if err != nil {
