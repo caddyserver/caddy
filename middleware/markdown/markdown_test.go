@@ -95,7 +95,7 @@ func TestMarkdown(t *testing.T) {
 	for i := range md.Configs {
 		c := md.Configs[i]
 		if err := GenerateStatic(md, c); err != nil {
-			t.Fatalf("Error at %v: %v", i, err)
+			t.Fatalf("Error: %v", err)
 		}
 		Watch(md, c, time.Millisecond*100)
 	}
