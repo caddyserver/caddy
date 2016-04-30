@@ -10,6 +10,7 @@ import (
 var (
 	// Date format YYYY-MM-DD HH:MM:SS or YYYY-MM-DD
 	timeLayout = []string{
+		`2006-01-02 15:04:05-0700`,
 		`2006-01-02 15:04:05`,
 		`2006-01-02`,
 	}
