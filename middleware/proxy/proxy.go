@@ -100,7 +100,6 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			}
 
 			outreq.Host = host.Name
-			// Modify headers for request that will be sent to the upstream host
 			if host.UpStreamHeaders != nil {
 				if replacer == nil {
 					rHost := r.Host
@@ -110,24 +109,22 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 				if v, ok := host.UpStreamHeaders["Host"]; ok {
 					r.Host = replacer.Replace(v[len(v)-1])
 				}
-				upHeaders := updateHeaders(host.UpStreamHeaders, r.Header, replacer)
+				// Modify headers for request that will be sent to the upstream host
+				upHeaders := createHeadersByRules(host.UpStreamHeaders, r.Header, replacer)
 				for k, v := range upHeaders {
 					outreq.Header[k] = v
 				}
 			}
-			var downHeaderUpdateFn RespHeaderUpdateFn = nil
+
+			var downHeaderUpdateFn respUpdateFn
 			if host.DownStreamHeaders != nil {
 				if replacer == nil {
 					rHost := r.Host
 					replacer = middleware.NewReplacer(r, nil, "")
 					outreq.Host = rHost
 				}
-				downHeaderUpdateFn = func(src http.Header) {
-					newHeaders := updateHeaders(host.DownStreamHeaders, src, replacer)
-					for h, v := range newHeaders {
-						src[h] = v
-					}
-				}
+				//Creates a function that is used to update headeres the response received by the reverseproxy
+				downHeaderUpdateFn = createRespHeaderUpdateFn(host.DownStreamHeaders, replacer)
 			}
 
 			proxy := host.ReverseProxy
@@ -193,7 +190,17 @@ func createUpstreamRequest(r *http.Request) *http.Request {
 
 	return outreq
 }
-func updateHeaders(rules http.Header, base http.Header, repl middleware.Replacer) http.Header {
+
+func createRespHeaderUpdateFn(rules http.Header, replacer middleware.Replacer) respUpdateFn {
+	return func(resp *http.Response) {
+		newHeaders := createHeadersByRules(rules, resp.Header, replacer)
+		for h, v := range newHeaders {
+			resp.Header[h] = v
+		}
+	}
+}
+
+func createHeadersByRules(rules http.Header, base http.Header, repl middleware.Replacer) http.Header {
 	newHeaders := make(http.Header)
 	for header, values := range rules {
 		if strings.HasPrefix(header, "+") {

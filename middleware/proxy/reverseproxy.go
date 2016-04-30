@@ -154,9 +154,9 @@ var InsecureTransport http.RoundTripper = &http.Transport{
 	TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
 }
 
-type RespHeaderUpdateFn func(src http.Header)
+type respUpdateFn func(resp *http.Response)
 
-func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, respHeaderFn RespHeaderUpdateFn) error {
+func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, respUpdateFn respUpdateFn) error {
 	transport := p.Transport
 	if transport == nil {
 		transport = http.DefaultTransport
@@ -171,8 +171,8 @@ func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, r
 	res, err := transport.RoundTrip(outreq)
 	if err != nil {
 		return err
-	} else if respHeaderFn != nil {
-		respHeaderFn(res.Header)
+	} else if respUpdateFn != nil {
+		respUpdateFn(res)
 	}
 
 	if res.StatusCode == http.StatusSwitchingProtocols && strings.ToLower(res.Header.Get("Upgrade")) == "websocket" {
