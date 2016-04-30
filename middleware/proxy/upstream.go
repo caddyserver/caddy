@@ -20,7 +20,8 @@ var (
 
 type staticUpstream struct {
 	from               string
-	proxyHeaders       http.Header
+	upstreamHeaders    http.Header
+	downstreamHeaders  http.Header
 	Hosts              HostPool
 	Policy             Policy
 	insecureSkipVerify bool
@@ -42,13 +43,14 @@ func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
 	var upstreams []Upstream
 	for c.Next() {
 		upstream := &staticUpstream{
-			from:         "",
-			proxyHeaders: make(http.Header),
-			Hosts:        nil,
-			Policy:       &Random{},
-			FailTimeout:  10 * time.Second,
-			MaxFails:     1,
-			MaxConns:     0,
+			from:              "",
+			upstreamHeaders:   make(http.Header),
+			downstreamHeaders: make(http.Header),
+			Hosts:             nil,
+			Policy:            &Random{},
+			FailTimeout:       10 * time.Second,
+			MaxFails:          1,
+			MaxConns:          0,
 		}
 
 		if !c.Args(&upstream.from) {
@@ -97,12 +99,13 @@ func (u *staticUpstream) NewHost(host string) (*UpstreamHost, error) {
 		host = "http://" + host
 	}
 	uh := &UpstreamHost{
-		Name:         host,
-		Conns:        0,
-		Fails:        0,
-		FailTimeout:  u.FailTimeout,
-		Unhealthy:    false,
-		ExtraHeaders: u.proxyHeaders,
+		Name:              host,
+		Conns:             0,
+		Fails:             0,
+		FailTimeout:       u.FailTimeout,
+		Unhealthy:         false,
+		UpstreamHeaders:   u.upstreamHeaders,
+		DownstreamHeaders: u.downstreamHeaders,
 		CheckDown: func(u *staticUpstream) UpstreamHostDownFunc {
 			return func(uh *UpstreamHost) bool {
 				if uh.Unhealthy {
@@ -182,15 +185,23 @@ func parseBlock(c *parse.Dispenser, u *staticUpstream) error {
 			}
 			u.HealthCheck.Interval = dur
 		}
+	case "header_upstream":
+		fallthrough
 	case "proxy_header":
 		var header, value string
 		if !c.Args(&header, &value) {
 			return c.ArgErr()
 		}
-		u.proxyHeaders.Add(header, value)
+		u.upstreamHeaders.Add(header, value)
+	case "header_downstream":
+		var header, value string
+		if !c.Args(&header, &value) {
+			return c.ArgErr()
+		}
+		u.downstreamHeaders.Add(header, value)
 	case "websocket":
-		u.proxyHeaders.Add("Connection", "{>Connection}")
-		u.proxyHeaders.Add("Upgrade", "{>Upgrade}")
+		u.upstreamHeaders.Add("Connection", "{>Connection}")
+		u.upstreamHeaders.Add("Upgrade", "{>Upgrade}")
 	case "without":
 		if !c.NextArg() {
 			return c.ArgErr()

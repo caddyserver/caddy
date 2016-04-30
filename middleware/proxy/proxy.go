@@ -3,8 +3,10 @@ package proxy
 
 import (
 	"errors"
+	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -41,7 +43,8 @@ type UpstreamHost struct {
 	Fails             int32
 	FailTimeout       time.Duration
 	Unhealthy         bool
-	ExtraHeaders      http.Header
+	UpstreamHeaders   http.Header
+	DownstreamHeaders http.Header
 	CheckDown         UpstreamHostDownFunc
 	WithoutPathPrefix string
 	MaxConns          int64
@@ -75,71 +78,160 @@ var tryDuration = 60 * time.Second
 // ServeHTTP satisfies the middleware.Handler interface.
 func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	for _, upstream := range p.Upstreams {
-		if middleware.Path(r.URL.Path).Matches(upstream.From()) && upstream.AllowedPath(r.URL.Path) {
-			var replacer middleware.Replacer
-			start := time.Now()
-			requestHost := r.Host
-
-			// Since Select() should give us "up" hosts, keep retrying
-			// hosts until timeout (or until we get a nil host).
-			for time.Now().Sub(start) < tryDuration {
-				host := upstream.Select()
-				if host == nil {
-					return http.StatusBadGateway, errUnreachable
-				}
-				proxy := host.ReverseProxy
-				r.Host = host.Name
-				if rr, ok := w.(*middleware.ResponseRecorder); ok && rr.Replacer != nil {
-					rr.Replacer.Set("upstream", host.Name)
-				}
-
-				if baseURL, err := url.Parse(host.Name); err == nil {
-					r.Host = baseURL.Host
-					if proxy == nil {
-						proxy = NewSingleHostReverseProxy(baseURL, host.WithoutPathPrefix)
-					}
-				} else if proxy == nil {
-					return http.StatusInternalServerError, err
-				}
-				var extraHeaders http.Header
-				if host.ExtraHeaders != nil {
-					extraHeaders = make(http.Header)
-					if replacer == nil {
-						rHost := r.Host
-						r.Host = requestHost
-						replacer = middleware.NewReplacer(r, nil, "")
-						r.Host = rHost
-					}
-					for header, values := range host.ExtraHeaders {
-						for _, value := range values {
-							extraHeaders.Add(header,
-								replacer.Replace(value))
-							if header == "Host" {
-								r.Host = replacer.Replace(value)
-							}
-						}
-					}
-				}
-
-				atomic.AddInt64(&host.Conns, 1)
-				backendErr := proxy.ServeHTTP(w, r, extraHeaders)
-				atomic.AddInt64(&host.Conns, -1)
-				if backendErr == nil {
-					return 0, nil
-				}
-				timeout := host.FailTimeout
-				if timeout == 0 {
-					timeout = 10 * time.Second
-				}
-				atomic.AddInt32(&host.Fails, 1)
-				go func(host *UpstreamHost, timeout time.Duration) {
-					time.Sleep(timeout)
-					atomic.AddInt32(&host.Fails, -1)
-				}(host, timeout)
-			}
-			return http.StatusBadGateway, errUnreachable
+		if !middleware.Path(r.URL.Path).Matches(upstream.From()) ||
+			!upstream.AllowedPath(r.URL.Path) {
+			continue
 		}
+
+		var replacer middleware.Replacer
+		start := time.Now()
+
+		outreq := createUpstreamRequest(r)
+
+		// Since Select() should give us "up" hosts, keep retrying
+		// hosts until timeout (or until we get a nil host).
+		for time.Now().Sub(start) < tryDuration {
+			host := upstream.Select()
+			if host == nil {
+				return http.StatusBadGateway, errUnreachable
+			}
+			if rr, ok := w.(*middleware.ResponseRecorder); ok && rr.Replacer != nil {
+				rr.Replacer.Set("upstream", host.Name)
+			}
+
+			outreq.Host = host.Name
+			if host.UpstreamHeaders != nil {
+				if replacer == nil {
+					rHost := r.Host
+					replacer = middleware.NewReplacer(r, nil, "")
+					outreq.Host = rHost
+				}
+				if v, ok := host.UpstreamHeaders["Host"]; ok {
+					r.Host = replacer.Replace(v[len(v)-1])
+				}
+				// Modify headers for request that will be sent to the upstream host
+				upHeaders := createHeadersByRules(host.UpstreamHeaders, r.Header, replacer)
+				for k, v := range upHeaders {
+					outreq.Header[k] = v
+				}
+			}
+
+			var downHeaderUpdateFn respUpdateFn
+			if host.DownstreamHeaders != nil {
+				if replacer == nil {
+					rHost := r.Host
+					replacer = middleware.NewReplacer(r, nil, "")
+					outreq.Host = rHost
+				}
+				//Creates a function that is used to update headers the response received by the reverse proxy
+				downHeaderUpdateFn = createRespHeaderUpdateFn(host.DownstreamHeaders, replacer)
+			}
+
+			proxy := host.ReverseProxy
+			if baseURL, err := url.Parse(host.Name); err == nil {
+				r.Host = baseURL.Host
+				if proxy == nil {
+					proxy = NewSingleHostReverseProxy(baseURL, host.WithoutPathPrefix)
+				}
+			} else if proxy == nil {
+				return http.StatusInternalServerError, err
+			}
+
+			atomic.AddInt64(&host.Conns, 1)
+			backendErr := proxy.ServeHTTP(w, outreq, downHeaderUpdateFn)
+			atomic.AddInt64(&host.Conns, -1)
+			if backendErr == nil {
+				return 0, nil
+			}
+			timeout := host.FailTimeout
+			if timeout == 0 {
+				timeout = 10 * time.Second
+			}
+			atomic.AddInt32(&host.Fails, 1)
+			go func(host *UpstreamHost, timeout time.Duration) {
+				time.Sleep(timeout)
+				atomic.AddInt32(&host.Fails, -1)
+			}(host, timeout)
+		}
+		return http.StatusBadGateway, errUnreachable
 	}
 
 	return p.Next.ServeHTTP(w, r)
+}
+
+// createUpstremRequest shallow-copies r into a new request
+// that can be sent upstream.
+func createUpstreamRequest(r *http.Request) *http.Request {
+	outreq := new(http.Request)
+	*outreq = *r // includes shallow copies of maps, but okay
+
+	// Remove hop-by-hop headers to the backend.  Especially
+	// important is "Connection" because we want a persistent
+	// connection, regardless of what the client sent to us.  This
+	// is modifying the same underlying map from r (shallow
+	// copied above) so we only copy it if necessary.
+	for _, h := range hopHeaders {
+		if outreq.Header.Get(h) != "" {
+			outreq.Header = make(http.Header)
+			copyHeader(outreq.Header, r.Header)
+			outreq.Header.Del(h)
+		}
+	}
+
+	if clientIP, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		// If we aren't the first proxy, retain prior
+		// X-Forwarded-For information as a comma+space
+		// separated list and fold multiple headers into one.
+		if prior, ok := outreq.Header["X-Forwarded-For"]; ok {
+			clientIP = strings.Join(prior, ", ") + ", " + clientIP
+		}
+		outreq.Header.Set("X-Forwarded-For", clientIP)
+	}
+
+	return outreq
+}
+
+func createRespHeaderUpdateFn(rules http.Header, replacer middleware.Replacer) respUpdateFn {
+	return func(resp *http.Response) {
+		newHeaders := createHeadersByRules(rules, resp.Header, replacer)
+		for h, v := range newHeaders {
+			resp.Header[h] = v
+		}
+	}
+}
+
+func createHeadersByRules(rules http.Header, base http.Header, repl middleware.Replacer) http.Header {
+	newHeaders := make(http.Header)
+	for header, values := range rules {
+		if strings.HasPrefix(header, "+") {
+			header = strings.TrimLeft(header, "+")
+			add(newHeaders, header, base[header])
+			applyEach(values, repl.Replace)
+			add(newHeaders, header, values)
+		} else if strings.HasPrefix(header, "-") {
+			base.Del(strings.TrimLeft(header, "-"))
+		} else if _, ok := base[header]; ok {
+			applyEach(values, repl.Replace)
+			for _, v := range values {
+				newHeaders.Set(header, v)
+			}
+		} else {
+			applyEach(values, repl.Replace)
+			add(newHeaders, header, values)
+			add(newHeaders, header, base[header])
+		}
+	}
+	return newHeaders
+}
+
+func applyEach(values []string, mapFn func(string) string) {
+	for i, v := range values {
+		values[i] = mapFn(v)
+	}
+}
+
+func add(base http.Header, header string, values []string) {
+	for _, v := range values {
+		base.Add(header, v)
+	}
 }

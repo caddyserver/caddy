@@ -14,7 +14,7 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
+	"path"
 	"runtime"
 	"strings"
 	"sync"
@@ -336,11 +336,18 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Use URL.RawPath If you need the original, "raw" URL.Path in your middleware.
 	// Collapse any ./ ../ /// madness here instead of doing that in every plugin.
 	if r.URL.Path != "/" {
-		path := filepath.Clean(r.URL.Path)
-		if !strings.HasPrefix(path, "/") {
-			path = "/" + path
+		cleanedPath := path.Clean(r.URL.Path)
+		if cleanedPath == "." {
+			r.URL.Path = "/"
+		} else {
+			if !strings.HasPrefix(cleanedPath, "/") {
+				cleanedPath = "/" + cleanedPath
+			}
+			if strings.HasSuffix(r.URL.Path, "/") && !strings.HasSuffix(cleanedPath, "/") {
+				cleanedPath = cleanedPath + "/"
+			}
+			r.URL.Path = cleanedPath
 		}
-		r.URL.Path = path
 	}
 
 	// Execute the optional request callback if it exists and it's not disabled
@@ -438,6 +445,7 @@ func standaloneTLSTicketKeyRotation(c *tls.Config, timer *time.Ticker, exitChan 
 		c.SessionTicketsDisabled = true // bail if we don't have the entropy for the first one
 		return
 	}
+	c.SessionTicketKey = keys[0] // SetSessionTicketKeys doesn't set a 'tls.keysAlreadSet'
 	c.SetSessionTicketKeys(setSessionTicketKeysTestHook(keys))
 
 	for {

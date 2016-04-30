@@ -1,18 +1,26 @@
 CHANGES
 
 <master>
-- Built with Go 1.6.1
-- New pprof directive for exposing process performance profile
-- New expvar directive for exposing memory/GC performance
+- ...
+
+
+0.8.3 (April 26, 2016)
+- Built with Go 1.6.2
+- New pprof middleware for exposing process profiling endpoints
+- New expvar middleware for exposing memory/GC performance
 - New -restart option to force in-process restarts on Unix systems
 - Only fail to start if managed certificate is expired (issue #642)
 - Toggle case-sensitive path matching with environment variable
 - File server now adds ETag header for static files
+- browse: Replace .LinkedPath action with .BreadcrumbMap
 - fastcgi: New except clause to exclude paths
 - proxy: New max_conns setting to limit max connections per upstream
-- proxy: Enables replaceable value for name of upstream host
+- proxy: New replaceable value for name of upstream host
+- templates: New utility actions for dealing with strings
 - tls: Customize certificate key with key_type (+ECC)
-- Internal improvements and bug fixes
+- tls: Session ticket keys are now rotated
+- Many other minor internal improvements and bug fixes
+
 
 0.8.2 (February 25, 2016)
 - On-demand TLS can obtain certificates during handshakes

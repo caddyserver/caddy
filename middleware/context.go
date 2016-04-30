@@ -235,7 +235,7 @@ func (c Context) ToUpper(s string) string {
 	return strings.ToUpper(s)
 }
 
-// Split is a passthrough to strings.Split. It will split the first argument at each instance of the seperator and return a slice of strings.
+// Split is a passthrough to strings.Split. It will split the first argument at each instance of the separator and return a slice of strings.
 func (c Context) Split(s string, sep string) []string {
 	return strings.Split(s, sep)
 }

@@ -2,10 +2,12 @@ package middleware
 
 import (
 	"fmt"
+	"math/rand"
 	"net/http"
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -40,12 +42,11 @@ type fileHandler struct {
 }
 
 func (fh *fileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
-	upath := r.URL.Path
-	if !strings.HasPrefix(upath, "/") {
-		upath = "/" + upath
-		r.URL.Path = upath
+	// r.URL.Path has already been cleaned in caddy/server by path.Clean().
+	if r.URL.Path == "" {
+		r.URL.Path = "/"
 	}
-	return fh.serveFile(w, r, path.Clean(upath))
+	return fh.serveFile(w, r, r.URL.Path)
 }
 
 // serveFile writes the specified file to the HTTP response.
@@ -66,7 +67,8 @@ func (fh *fileHandler) serveFile(w http.ResponseWriter, r *http.Request, name st
 			return http.StatusForbidden, err
 		}
 		// Likely the server is under load and ran out of file descriptors
-		w.Header().Set("Retry-After", "5") // TODO: 5 seconds enough delay? Or too much?
+		backoff := int(3 + rand.Int31()%3) // 3–5 seconds to prevent a stampede
+		w.Header().Set("Retry-After", strconv.Itoa(backoff))
 		return http.StatusServiceUnavailable, err
 	}
 	defer f.Close()
@@ -86,13 +88,13 @@ func (fh *fileHandler) serveFile(w http.ResponseWriter, r *http.Request, name st
 	url := r.URL.Path
 	if d.IsDir() {
 		// Ensure / at end of directory url
-		if url[len(url)-1] != '/' {
+		if !strings.HasSuffix(url, "/") {
 			redirect(w, r, path.Base(url)+"/")
 			return http.StatusMovedPermanently, nil
 		}
 	} else {
 		// Ensure no / at end of file url
-		if url[len(url)-1] == '/' {
+		if strings.HasSuffix(url, "/") {
 			redirect(w, r, "../"+path.Base(url))
 			return http.StatusMovedPermanently, nil
 		}

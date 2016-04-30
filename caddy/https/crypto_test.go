@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"errors"
 	"os"
 	"runtime"
 	"testing"
@@ -95,17 +96,25 @@ func TestSaveAndLoadECCPrivateKey(t *testing.T) {
 
 // PrivateKeysSame compares the bytes of a and b and returns true if they are the same.
 func PrivateKeysSame(a, b crypto.PrivateKey) bool {
-	return bytes.Equal(PrivateKeyBytes(a), PrivateKeyBytes(b))
+	var abytes, bbytes []byte
+	var err error
+
+	if abytes, err = PrivateKeyBytes(a); err != nil {
+		return false
+	}
+	if bbytes, err = PrivateKeyBytes(b); err != nil {
+		return false
+	}
+	return bytes.Equal(abytes, bbytes)
 }
 
 // PrivateKeyBytes returns the bytes of DER-encoded key.
-func PrivateKeyBytes(key crypto.PrivateKey) []byte {
-	var keyBytes []byte
+func PrivateKeyBytes(key crypto.PrivateKey) ([]byte, error) {
 	switch key := key.(type) {
 	case *rsa.PrivateKey:
-		keyBytes = x509.MarshalPKCS1PrivateKey(key)
+		return x509.MarshalPKCS1PrivateKey(key), nil
 	case *ecdsa.PrivateKey:
-		keyBytes, _ = x509.MarshalECPrivateKey(key)
+		return x509.MarshalECPrivateKey(key)
 	}
-	return keyBytes
+	return nil, errors.New("Unknown private key type")
 }

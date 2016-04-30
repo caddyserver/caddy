@@ -17,6 +17,7 @@ set -euo pipefail
 : ${output_filename:="ecaddy"}
 
 : ${git_repo:="${2:-}"}
+: ${git_repo:="."}
 
 pkg=main
 ldflags=()
