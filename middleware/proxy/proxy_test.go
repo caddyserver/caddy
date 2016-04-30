@@ -452,7 +452,7 @@ func TestDownstreamHeadersUpdate(t *testing.T) {
 	p.ServeHTTP(w, r)
 
 	replacer := middleware.NewReplacer(r, nil, "")
-	var actualHeaders http.Header = w.Header()
+	actualHeaders := w.Header()
 
 	headerKey := "Merge-Me"
 	values, ok := actualHeaders[headerKey]
