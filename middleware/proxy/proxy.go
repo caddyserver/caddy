@@ -43,7 +43,8 @@ type UpstreamHost struct {
 	Fails             int32
 	FailTimeout       time.Duration
 	Unhealthy         bool
-	ExtraHeaders      http.Header
+	UpstreamHeaders   http.Header
+	DownstreamHeaders http.Header
 	CheckDown         UpstreamHostDownFunc
 	WithoutPathPrefix string
 	MaxConns          int64
@@ -99,24 +100,31 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			}
 
 			outreq.Host = host.Name
-			if host.ExtraHeaders != nil {
-				extraHeaders := make(http.Header)
+			if host.UpstreamHeaders != nil {
 				if replacer == nil {
 					rHost := r.Host
 					replacer = middleware.NewReplacer(r, nil, "")
 					outreq.Host = rHost
 				}
-				for header, values := range host.ExtraHeaders {
-					for _, value := range values {
-						extraHeaders.Add(header, replacer.Replace(value))
-						if header == "Host" {
-							outreq.Host = replacer.Replace(value)
-						}
-					}
+				if v, ok := host.UpstreamHeaders["Host"]; ok {
+					r.Host = replacer.Replace(v[len(v)-1])
 				}
-				for k, v := range extraHeaders {
+				// Modify headers for request that will be sent to the upstream host
+				upHeaders := createHeadersByRules(host.UpstreamHeaders, r.Header, replacer)
+				for k, v := range upHeaders {
 					outreq.Header[k] = v
 				}
+			}
+
+			var downHeaderUpdateFn respUpdateFn
+			if host.DownstreamHeaders != nil {
+				if replacer == nil {
+					rHost := r.Host
+					replacer = middleware.NewReplacer(r, nil, "")
+					outreq.Host = rHost
+				}
+				//Creates a function that is used to update headers the response received by the reverse proxy
+				downHeaderUpdateFn = createRespHeaderUpdateFn(host.DownstreamHeaders, replacer)
 			}
 
 			proxy := host.ReverseProxy
@@ -130,7 +138,7 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			}
 
 			atomic.AddInt64(&host.Conns, 1)
-			backendErr := proxy.ServeHTTP(w, outreq)
+			backendErr := proxy.ServeHTTP(w, outreq, downHeaderUpdateFn)
 			atomic.AddInt64(&host.Conns, -1)
 			if backendErr == nil {
 				return 0, nil
@@ -181,4 +189,49 @@ func createUpstreamRequest(r *http.Request) *http.Request {
 	}
 
 	return outreq
+}
+
+func createRespHeaderUpdateFn(rules http.Header, replacer middleware.Replacer) respUpdateFn {
+	return func(resp *http.Response) {
+		newHeaders := createHeadersByRules(rules, resp.Header, replacer)
+		for h, v := range newHeaders {
+			resp.Header[h] = v
+		}
+	}
+}
+
+func createHeadersByRules(rules http.Header, base http.Header, repl middleware.Replacer) http.Header {
+	newHeaders := make(http.Header)
+	for header, values := range rules {
+		if strings.HasPrefix(header, "+") {
+			header = strings.TrimLeft(header, "+")
+			add(newHeaders, header, base[header])
+			applyEach(values, repl.Replace)
+			add(newHeaders, header, values)
+		} else if strings.HasPrefix(header, "-") {
+			base.Del(strings.TrimLeft(header, "-"))
+		} else if _, ok := base[header]; ok {
+			applyEach(values, repl.Replace)
+			for _, v := range values {
+				newHeaders.Set(header, v)
+			}
+		} else {
+			applyEach(values, repl.Replace)
+			add(newHeaders, header, values)
+			add(newHeaders, header, base[header])
+		}
+	}
+	return newHeaders
+}
+
+func applyEach(values []string, mapFn func(string) string) {
+	for i, v := range values {
+		values[i] = mapFn(v)
+	}
+}
+
+func add(base http.Header, header string, values []string) {
+	for _, v := range values {
+		base.Add(header, v)
+	}
 }
