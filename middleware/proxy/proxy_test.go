@@ -413,7 +413,7 @@ func TestUpstreamHeadersUpdate(t *testing.T) {
 	if !ok {
 		t.Errorf("Request sent to upstream backend should not remove %v header", headerKey)
 	} else if len(value) > 0 && headerValue != value[0] {
-		t.Errorf("Request sent to backend should replace value of %v header with %v. Instead value was %v", headerKey, headerValue, value)
+		t.Errorf("Request sent to upstream backend should replace value of %v header with %v. Instead value was %v", headerKey, headerValue, value)
 	}
 
 }
@@ -457,28 +457,28 @@ func TestDownstreamHeadersUpdate(t *testing.T) {
 	headerKey := "Merge-Me"
 	values, ok := actualHeaders[headerKey]
 	if !ok {
-		t.Errorf("Request sent to upstream backend does not contain expected %v header. Expected header to be added", headerKey)
+		t.Errorf("Downstream response does not contain expected %v header. Expected header should be added", headerKey)
 	} else if len(values) < 2 && (values[0] != "Initial" || values[1] != replacer.Replace("{hostname}")) {
-		t.Errorf("Values for proxy header `+Merge-Me` should be merged. Got %v", values)
+		t.Errorf("Values for header `+Merge-Me` should be merged. Got %v", values)
 	}
 
 	headerKey = "Add-Me"
 	if _, ok := actualHeaders[headerKey]; !ok {
-		t.Errorf("Request sent to upstream backend does not contain expected %v header", headerKey)
+		t.Errorf("Downstream response does not contain expected %v header", headerKey)
 	}
 
 	headerKey = "Remove-Me"
 	if _, ok := actualHeaders[headerKey]; ok {
-		t.Errorf("Request sent to upstream backend should not contain %v header", headerKey)
+		t.Errorf("Downstream response should not contain %v header received from upstream", headerKey)
 	}
 
 	headerKey = "Replace-Me"
 	headerValue := replacer.Replace("{hostname}")
 	value, ok := actualHeaders[headerKey]
 	if !ok {
-		t.Errorf("Request sent to upstream backend should not remove %v header", headerKey)
+		t.Errorf("Downstream response should contain %v header and not remove it", headerKey)
 	} else if len(value) > 0 && headerValue != value[0] {
-		t.Errorf("Request sent to backend should replace value of %v header with %v. Instead value was %v", headerKey, headerValue, value)
+		t.Errorf("Downstream response should have header %v with value %v. Instead value was %v", headerKey, headerValue, value)
 	}
 
 }
