@@ -38,14 +38,14 @@ func TestHeadersParse(t *testing.T) {
 		{`header /foo Foo "Bar Baz"`,
 			false, []headers.Rule{
 				{Path: "/foo", Headers: []headers.Header{
-					{"Foo", "Bar Baz"},
+					{Name: "Foo", Value: "Bar Baz"},
 				}},
 			}},
 		{`header /bar { Foo "Bar Baz" Baz Qux }`,
 			false, []headers.Rule{
 				{Path: "/bar", Headers: []headers.Header{
-					{"Foo", "Bar Baz"},
-					{"Baz", "Qux"},
+					{Name: "Foo", Value: "Bar Baz"},
+					{Name: "Baz", Value: "Qux"},
 				}},
 			}},
 	}
