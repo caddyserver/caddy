@@ -43,8 +43,8 @@ type UpstreamHost struct {
 	Fails             int32
 	FailTimeout       time.Duration
 	Unhealthy         bool
-	UpStreamHeaders   http.Header
-	DownStreamHeaders http.Header
+	UpstreamHeaders   http.Header
+	DownstreamHeaders http.Header
 	CheckDown         UpstreamHostDownFunc
 	WithoutPathPrefix string
 	MaxConns          int64
@@ -100,31 +100,31 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			}
 
 			outreq.Host = host.Name
-			if host.UpStreamHeaders != nil {
+			if host.UpstreamHeaders != nil {
 				if replacer == nil {
 					rHost := r.Host
 					replacer = middleware.NewReplacer(r, nil, "")
 					outreq.Host = rHost
 				}
-				if v, ok := host.UpStreamHeaders["Host"]; ok {
+				if v, ok := host.UpstreamHeaders["Host"]; ok {
 					r.Host = replacer.Replace(v[len(v)-1])
 				}
 				// Modify headers for request that will be sent to the upstream host
-				upHeaders := createHeadersByRules(host.UpStreamHeaders, r.Header, replacer)
+				upHeaders := createHeadersByRules(host.UpstreamHeaders, r.Header, replacer)
 				for k, v := range upHeaders {
 					outreq.Header[k] = v
 				}
 			}
 
 			var downHeaderUpdateFn respUpdateFn
-			if host.DownStreamHeaders != nil {
+			if host.DownstreamHeaders != nil {
 				if replacer == nil {
 					rHost := r.Host
 					replacer = middleware.NewReplacer(r, nil, "")
 					outreq.Host = rHost
 				}
-				//Creates a function that is used to update headeres the response received by the reverseproxy
-				downHeaderUpdateFn = createRespHeaderUpdateFn(host.DownStreamHeaders, replacer)
+				//Creates a function that is used to update headers the response received by the reverse proxy
+				downHeaderUpdateFn = createRespHeaderUpdateFn(host.DownstreamHeaders, replacer)
 			}
 
 			proxy := host.ReverseProxy

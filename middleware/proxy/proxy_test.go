@@ -348,7 +348,7 @@ func TestUnixSocketProxyPaths(t *testing.T) {
 	}
 }
 
-func TestUpStreamHeadersUpdate(t *testing.T) {
+func TestUpstreamHeadersUpdate(t *testing.T) {
 	log.SetOutput(ioutil.Discard)
 	defer log.SetOutput(os.Stderr)
 
@@ -360,7 +360,7 @@ func TestUpStreamHeadersUpdate(t *testing.T) {
 	defer backend.Close()
 
 	upstream := newFakeUpstream(backend.URL, false)
-	upstream.host.UpStreamHeaders = http.Header{
+	upstream.host.UpstreamHeaders = http.Header{
 		"Connection": {"{>Connection}"},
 		"Upgrade":    {"{>Upgrade}"},
 		"+Merge-Me":  {"Merge-Value"},
@@ -418,7 +418,7 @@ func TestUpStreamHeadersUpdate(t *testing.T) {
 
 }
 
-func TestDownStreamHeadersUpdate(t *testing.T) {
+func TestDownstreamHeadersUpdate(t *testing.T) {
 	log.SetOutput(ioutil.Discard)
 	defer log.SetOutput(os.Stderr)
 
@@ -431,7 +431,7 @@ func TestDownStreamHeadersUpdate(t *testing.T) {
 	defer backend.Close()
 
 	upstream := newFakeUpstream(backend.URL, false)
-	upstream.host.DownStreamHeaders = http.Header{
+	upstream.host.DownstreamHeaders = http.Header{
 		"+Merge-Me":  {"Merge-Value"},
 		"+Add-Me":    {"Add-Value"},
 		"-Remove-Me": {""},
@@ -545,7 +545,7 @@ func (u *fakeWsUpstream) Select() *UpstreamHost {
 	return &UpstreamHost{
 		Name:         u.name,
 		ReverseProxy: NewSingleHostReverseProxy(uri, u.without),
-		UpStreamHeaders: http.Header{
+		UpstreamHeaders: http.Header{
 			"Connection": {"{>Connection}"},
 			"Upgrade":    {"{>Upgrade}"}},
 	}

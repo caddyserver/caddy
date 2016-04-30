@@ -104,8 +104,8 @@ func (u *staticUpstream) NewHost(host string) (*UpstreamHost, error) {
 		Fails:             0,
 		FailTimeout:       u.FailTimeout,
 		Unhealthy:         false,
-		UpStreamHeaders:   u.upstreamHeaders,
-		DownStreamHeaders: u.downstreamHeaders,
+		UpstreamHeaders:   u.upstreamHeaders,
+		DownstreamHeaders: u.downstreamHeaders,
 		CheckDown: func(u *staticUpstream) UpstreamHostDownFunc {
 			return func(uh *UpstreamHost) bool {
 				if uh.Unhealthy {
