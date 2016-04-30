@@ -33,16 +33,6 @@ type Markdown struct {
 	IndexFiles []string
 }
 
-// IsIndexFile checks to see if a file is an index file
-func (md Markdown) IsIndexFile(file string) bool {
-	for _, f := range md.IndexFiles {
-		if f == file {
-			return true
-		}
-	}
-	return false
-}
-
 // Config stores markdown middleware configurations.
 type Config struct {
 	// Markdown renderer
