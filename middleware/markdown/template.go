@@ -3,7 +3,6 @@ package markdown
 import (
 	"bytes"
 	"io/ioutil"
-	// "os"
 	"text/template"
 
 	"github.com/mholt/caddy/middleware"
@@ -44,15 +43,6 @@ func execTemplate(c *Config, mdata metadata.Metadata, files []FileInfo, ctx midd
 	}
 
 	return b.Bytes(), nil
-}
-
-func setDefaultTemplate(filename string) *template.Template {
-	buf, err := ioutil.ReadFile(filename)
-	if err != nil {
-		return nil
-	}
-
-	return template.Must(GetDefaultTemplate().Parse(string(buf)))
 }
 
 func SetTemplate(t *template.Template, name, filename string) error {

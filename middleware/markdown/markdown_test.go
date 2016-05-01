@@ -2,12 +2,14 @@ package markdown
 
 import (
 	"bufio"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"text/template"
 	"time"
 
 	"github.com/mholt/caddy/middleware"
@@ -216,4 +218,13 @@ func equalStrings(s1, s2 string) bool {
 		s2 = strings.Replace(s2, txt, "", 1)
 	}
 	return true
+}
+
+func setDefaultTemplate(filename string) *template.Template {
+	buf, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return nil
+	}
+
+	return template.Must(GetDefaultTemplate().Parse(string(buf)))
 }

@@ -3,10 +3,10 @@
 package markdown
 
 import (
-	"io/ioutil"
 	"net/http"
 	"os"
 	"path"
+	"strings"
 	"text/template"
 	"time"
 
@@ -83,17 +83,22 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 		// URL points to, and pass that in to any possible template invocations,
 		// so that templates can customize the look and feel of a directory.
 		fdp, err := md.FileSys.Open(fpath)
-		if err != nil {
-			if os.IsPermission(err) {
-				return http.StatusForbidden, err
-			}
+		switch {
+		case err == nil: // nop
+		case os.IsPermission(err):
+			return http.StatusForbidden, err
+		case os.IsExist(err):
+			return http.StatusNotFound, nil
+		default: // did we run out of FD?
 			return http.StatusInternalServerError, err
 		}
+		defer fdp.Close()
 
 		// Grab a possible set of directory entries.  Note, we do not check
 		// for errors here (unreadable directory, for example).  It may
 		// still be useful to have a directory template file, without the
-		// directory contents being present.
+		// directory contents being present.  Note, the directory's last
+		// modification is also present here (entry ".").
 		dirents, _ = fdp.Readdir(-1)
 		for _, d := range dirents {
 			lastModTime = latest(lastModTime, d.ModTime())
@@ -103,53 +108,45 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 		fpath = idx
 	}
 
-	// If supported extension, process it
-	if _, ok := cfg.Extensions[path.Ext(fpath)]; ok {
-		f, err := md.FileSys.Open(fpath)
-		if err != nil {
-			if os.IsPermission(err) {
-				return http.StatusForbidden, err
-			}
-			return http.StatusNotFound, nil
-		}
-
-		fs, err := f.Stat()
-		if err != nil {
-			return http.StatusNotFound, nil
-		}
-		lastModTime = latest(lastModTime, fs.ModTime())
-
-		body, err := ioutil.ReadAll(f)
-		if err != nil {
-			return http.StatusInternalServerError, err
-		}
-
-		ctx := middleware.Context{
-			Root: md.FileSys,
-			Req:  r,
-			URL:  r.URL,
-		}
-		html, err := cfg.Markdown(fpath, body, dirents, ctx)
-		if err != nil {
-			return http.StatusInternalServerError, err
-		}
-
-		// TODO(weingart): move template execution here, something like:
-		//
-		// html, err = md.execTemplate(cfg, html, ctx)
-		// if err != nil {
-		// 	return http.StatusInternalServerError, err
-		// }
-
-		middleware.SetLastModifiedHeader(w, lastModTime)
-		if r.Method == http.MethodGet {
-			w.Write(html)
-		}
-		return http.StatusOK, nil
+	// If not supported extension, pass on it
+	if _, ok := cfg.Extensions[path.Ext(fpath)]; !ok {
+		return md.Next.ServeHTTP(w, r)
 	}
 
-	// Didn't qualify to serve as markdown; pass-thru
-	return md.Next.ServeHTTP(w, r)
+	// At this point we have a supported extension/markdown
+	f, err := md.FileSys.Open(fpath)
+	switch {
+	case err == nil: // nop
+	case os.IsPermission(err):
+		return http.StatusForbidden, err
+	case os.IsExist(err):
+		return http.StatusNotFound, nil
+	default: // did we run out of FD?
+		return http.StatusInternalServerError, err
+	}
+	defer f.Close()
+
+	if fs, err := f.Stat(); err != nil {
+		return http.StatusGone, nil
+	} else {
+		lastModTime = latest(lastModTime, fs.ModTime())
+	}
+
+	ctx := middleware.Context{
+		Root: md.FileSys,
+		Req:  r,
+		URL:  r.URL,
+	}
+	html, err := cfg.Markdown(title(fpath), f, dirents, ctx)
+	if err != nil {
+		return http.StatusInternalServerError, err
+	}
+
+	middleware.SetLastModifiedHeader(w, lastModTime)
+	if r.Method == http.MethodGet {
+		w.Write(html)
+	}
+	return http.StatusOK, nil
 }
 
 // latest returns the latest time.Time
@@ -163,4 +160,9 @@ func latest(t ...time.Time) time.Time {
 	}
 
 	return last
+}
+
+// title gives a backup generated title for a page
+func title(p string) string {
+	return strings.TrimRight(path.Base(p), path.Ext(p))
 }
