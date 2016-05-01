@@ -16,19 +16,19 @@ type FileInfo struct {
 	ctx middleware.Context
 }
 
-func (f FileInfo) Summarize(wordcount int) string {
+func (f FileInfo) Summarize(wordcount int) (string, error) {
 	fp, err := f.ctx.Root.Open(f.Name())
 	if err != nil {
-		return ""
+		return "", err
 	}
 	defer fp.Close()
 
 	buf, err := ioutil.ReadAll(fp)
 	if err != nil {
-		return ""
+		return "", err
 	}
 
-	return string(summary.Markdown(buf, wordcount))
+	return string(summary.Markdown(buf, wordcount)), nil
 }
 
 // Markdown processes the contents of a page in b. It parses the metadata
