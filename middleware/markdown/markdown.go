@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"strconv"
 	"strings"
 	"text/template"
 	"time"
@@ -142,6 +143,8 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 		return http.StatusInternalServerError, err
 	}
 
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Content-Length", strconv.FormatInt(int64(len(html)), 10))
 	middleware.SetLastModifiedHeader(w, lastModTime)
 	if r.Method == http.MethodGet {
 		w.Write(html)
