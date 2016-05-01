@@ -3,7 +3,6 @@ package metadata
 import (
 	"bufio"
 	"bytes"
-	"os"
 	"time"
 )
 
@@ -32,9 +31,6 @@ type Metadata struct {
 
 	// Flags to be used with Template
 	Flags map[string]bool
-
-	// Directory entries present, if a directory
-	Dirents []os.FileInfo
 }
 
 // NewMetadata() returns a new Metadata struct, loaded with the given map

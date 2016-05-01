@@ -1,13 +1,35 @@
 package markdown
 
 import (
+	"io/ioutil"
 	"os"
 	"path/filepath"
 
 	"github.com/mholt/caddy/middleware"
 	"github.com/mholt/caddy/middleware/markdown/metadata"
+	"github.com/mholt/caddy/middleware/markdown/summary"
 	"github.com/russross/blackfriday"
 )
+
+type FileInfo struct {
+	os.FileInfo
+	ctx middleware.Context
+}
+
+func (f FileInfo) Summarize(wordcount int) string {
+	fp, err := f.ctx.Root.Open(f.Name())
+	if err != nil {
+		return ""
+	}
+	defer fp.Close()
+
+	buf, err := ioutil.ReadAll(fp)
+	if err != nil {
+		return ""
+	}
+
+	return string(summary.Markdown(buf, wordcount))
+}
 
 // Markdown processes the contents of a page in b. It parses the metadata
 // (if any) and uses the template (if found).
@@ -26,6 +48,8 @@ func (c *Config) Markdown(requestPath string, b []byte, dirents []os.FileInfo, c
 
 	// set it as body for template
 	mdata.Variables["body"] = string(markdown)
+
+	// fixup title
 	title := mdata.Title
 	if title == "" {
 		title = filepath.Base(requestPath)
@@ -34,12 +58,15 @@ func (c *Config) Markdown(requestPath string, b []byte, dirents []os.FileInfo, c
 	}
 	mdata.Variables["title"] = title
 
-	if len(dirents) > 0 {
-		mdata.Flags["dirents"] = true
-		mdata.Dirents = dirents
-	} else {
-		mdata.Flags["dirents"] = false
+	// massage possible files
+	files := []FileInfo{}
+	for _, ent := range dirents {
+		file := FileInfo{
+			FileInfo: ent,
+			ctx:      ctx,
+		}
+		files = append(files, file)
 	}
 
-	return execTemplate(c, mdata, ctx)
+	return execTemplate(c, mdata, files, ctx)
 }

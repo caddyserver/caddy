@@ -3,7 +3,7 @@ package markdown
 import (
 	"bytes"
 	"io/ioutil"
-	"os"
+	// "os"
 	"text/template"
 
 	"github.com/mholt/caddy/middleware"
@@ -17,7 +17,7 @@ type Data struct {
 	DocFlags map[string]bool
 	Styles   []string
 	Scripts  []string
-	Files    []os.FileInfo
+	Files    []FileInfo
 }
 
 // Include "overrides" the embedded middleware.Context's Include()
@@ -28,13 +28,14 @@ func (d Data) Include(filename string) (string, error) {
 }
 
 // execTemplate executes a template given a requestPath, template, and metadata
-func execTemplate(c *Config, mdata metadata.Metadata, ctx middleware.Context) ([]byte, error) {
+func execTemplate(c *Config, mdata metadata.Metadata, files []FileInfo, ctx middleware.Context) ([]byte, error) {
 	mdData := Data{
 		Context:  ctx,
 		Doc:      mdata.Variables,
 		DocFlags: mdata.Flags,
 		Styles:   c.Styles,
 		Scripts:  c.Scripts,
+		Files:    files,
 	}
 
 	b := new(bytes.Buffer)
