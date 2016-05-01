@@ -142,7 +142,7 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 		// }
 
 		middleware.SetLastModifiedHeader(w, lastModTime)
-		if r.Method == "GET" {
+		if r.Method == http.MethodGet {
 			w.Write(html)
 		}
 		return http.StatusOK, nil
