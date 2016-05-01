@@ -4,7 +4,6 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
-	// "path/filepath"
 
 	"github.com/mholt/caddy/middleware"
 	"github.com/mholt/caddy/middleware/markdown/metadata"
