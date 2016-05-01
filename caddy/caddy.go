@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/mholt/caddy/caddy/https"
+	"github.com/mholt/caddy/caddy/notify"
 	"github.com/mholt/caddy/server"
 )
 
@@ -142,6 +143,7 @@ func Start(cdyfile Input) (err error) {
 	caddyfileMu.Unlock()
 
 	// load the server configs (activates Let's Encrypt)
+	go notify.IsReloading(true).WithStatus("Loading configurations").Tell()
 	configs, err := loadConfigs(path.Base(cdyfile.Path()), bytes.NewReader(cdyfile.Body()))
 	if err != nil {
 		return err
@@ -154,12 +156,14 @@ func Start(cdyfile Input) (err error) {
 	}
 
 	// Start each server with its one or more configurations
+	go notify.IsReloading(false).WithStatus("Starting the servers").Tell()
 	err = startServers(groupings)
 	if err != nil {
 		return err
 	}
 	startedBefore = true
 
+	go notify.IsReady(true).WithStatus("Serving").Tell()
 	showInitializationOutput(groupings)
 
 	return nil
@@ -276,6 +280,7 @@ func startServers(groupings bindingGroup) error {
 	}
 
 	// Wait for all servers to finish starting
+	go notify.WithStatus("Waiting for all servers to finish starting").Tell()
 	startupWg.Wait()
 
 	// Return the first error, if any

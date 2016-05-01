@@ -6,6 +6,7 @@ import (
 	"os/signal"
 	"sync"
 
+	"github.com/mholt/caddy/caddy/notify"
 	"github.com/mholt/caddy/server"
 )
 
@@ -39,6 +40,7 @@ func trapSignalsCrossPlatform() {
 			}
 
 			log.Println("[INFO] SIGINT: Shutting down")
+			notify.IsStopping().Tell()
 
 			if PidFile != "" {
 				os.Remove(PidFile)
@@ -54,6 +56,7 @@ func trapSignalsCrossPlatform() {
 // This function is idempotent; subsequent invocations always return 0.
 func executeShutdownCallbacks(signame string) (exitCode int) {
 	shutdownCallbacksOnce.Do(func() {
+		go notify.WithStatus("Executing shutdown callbacks").Tell()
 		serversMu.Lock()
 		errs := server.ShutdownCallbacks(servers)
 		serversMu.Unlock()
@@ -64,6 +67,7 @@ func executeShutdownCallbacks(signame string) (exitCode int) {
 			}
 			exitCode = 1
 		}
+		go notify.WithStatus("Finished executing shutdown callbacks").Tell()
 	})
 	return
 }

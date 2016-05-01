@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/mholt/caddy/caddy/notify"
 )
 
 // trapSignalsPosix captures POSIX-only signals.
@@ -27,6 +29,7 @@ func trapSignalsPosix() {
 
 			case syscall.SIGQUIT:
 				log.Println("[INFO] SIGQUIT: Shutting down")
+				notify.IsStopping().Tell()
 				exitCode := executeShutdownCallbacks("SIGQUIT")
 				err := Stop()
 				if err != nil {
@@ -40,6 +43,7 @@ func trapSignalsPosix() {
 
 			case syscall.SIGHUP:
 				log.Println("[INFO] SIGHUP: Hanging up")
+				notify.IsStopping().Tell()
 				err := Stop()
 				if err != nil {
 					log.Printf("[ERROR] SIGHUP stop: %v", err)

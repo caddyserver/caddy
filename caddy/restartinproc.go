@@ -1,6 +1,9 @@
 package caddy
 
-import "log"
+import (
+	"github.com/mholt/caddy/caddy/notify"
+	"log"
+)
 
 // restartInProc restarts Caddy forcefully in process using newCaddyfile.
 func restartInProc(newCaddyfile Input) error {
@@ -23,6 +26,7 @@ func restartInProc(newCaddyfile Input) error {
 		} else {
 			wg.Done() // take down our barrier
 		}
+		go notify.IsReloading(false).Tell()
 		return err
 	}
 
