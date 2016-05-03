@@ -127,7 +127,7 @@ func TestParsers(t *testing.T) {
 	expected := Metadata{
 		Title:    "A title",
 		Template: "default",
-		Variables: map[string]string{
+		Variables: map[string]interface{}{
 			"name":     "value",
 			"title":    "A title",
 			"template": "default",

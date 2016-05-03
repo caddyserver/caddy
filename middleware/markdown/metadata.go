@@ -22,7 +22,7 @@ type Metadata struct {
 	Date time.Time
 
 	// Variables to be used with Template
-	Variables map[string]string
+	Variables map[string]interface{} // Update to interface{} to allow any type
 
 	// Flags to be used with Template
 	Flags map[string]bool
@@ -48,6 +48,8 @@ func (m *Metadata) load(parsedMap map[string]interface{}) {
 			m.Variables[key] = v
 		case bool:
 			m.Flags[key] = v
+		default:
+			m.Variables[key] = v // Everything that's not a string or bool will just go into .Doc: Objects, Arrays, Integers, etc.
 		}
 	}
 }
@@ -227,7 +229,7 @@ func findParser(b []byte) MetadataParser {
 
 func newMetadata() Metadata {
 	return Metadata{
-		Variables: make(map[string]string),
+		Variables: make(map[string]interface{}), // Update to interface{} to allow any type
 		Flags:     make(map[string]bool),
 	}
 }
