@@ -362,6 +362,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if status >= 400 {
 			DefaultErrorFunc(w, r, status)
 		}
+
+		w.WriteHeader(status)
 	} else {
 		// Get the remote host
 		remoteHost, _, err := net.SplitHostPort(r.RemoteAddr)
