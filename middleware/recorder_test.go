@@ -13,7 +13,7 @@ func TestNewResponseRecorder(t *testing.T) {
 		t.Fatalf("Expected Response writer in the Recording to be same as the one sent\n")
 	}
 	if recordRequest.status != http.StatusOK {
-		t.Fatalf("Expected recorded status  to be http.StatusOK (%d) , but found %d\n ", recordRequest.status)
+		t.Fatalf("Expected recorded status  to be http.StatusOK (%d) , but found %d\n ", http.StatusOK, recordRequest.status)
 	}
 }
 func TestWriteHeader(t *testing.T) {
@@ -35,6 +35,6 @@ func TestWrite(t *testing.T) {
 		t.Fatalf("Expected the bytes written counter to be %d, but instead found %d\n", len(buf), recordRequest.size)
 	}
 	if w.Body.String() != responseTestString {
-		t.Fatalf("Expected Response Body to be %s , but found %s\n", w.Body.String())
+		t.Fatalf("Expected Response Body to be %s , but found %s\n", responseTestString, w.Body.String())
 	}
 }

@@ -1,4 +1,4 @@
-// Package log implements basic but useful request (access) logging middleware.
+// Package log implements request (access) logging middleware.
 package log
 
 import (
@@ -19,8 +19,17 @@ type Logger struct {
 func (l Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	for _, rule := range l.Rules {
 		if middleware.Path(r.URL.Path).Matches(rule.PathScope) {
+			// Record the response
 			responseRecorder := middleware.NewResponseRecorder(w)
+
+			// Attach the Replacer we'll use so that other middlewares can
+			// set their own placeholders if they want to.
+			rep := middleware.NewReplacer(r, responseRecorder, CommonLogEmptyValue)
+			responseRecorder.Replacer = rep
+
+			// Bon voyage, request!
 			status, err := l.Next.ServeHTTP(responseRecorder, r)
+
 			if status >= 400 {
 				// There was an error up the chain, but no response has been written yet.
 				// The error must be handled here so the log entry will record the response size.
@@ -33,8 +42,10 @@ func (l Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 				}
 				status = 0
 			}
-			rep := middleware.NewReplacer(r, responseRecorder, CommonLogEmptyValue)
+
+			// Write log entry
 			rule.Log.Println(rep.Replace(rule.Format))
+
 			return status, err
 		}
 	}
@@ -51,9 +62,14 @@ type Rule struct {
 }
 
 const (
-	DefaultLogFilename  = "access.log"
-	CommonLogFormat     = `{remote} ` + CommonLogEmptyValue + ` [{when}] "{method} {uri} {proto}" {status} {size}`
+	// DefaultLogFilename is the default log filename.
+	DefaultLogFilename = "access.log"
+	// CommonLogFormat is the common log format.
+	CommonLogFormat = `{remote} ` + CommonLogEmptyValue + ` [{when}] "{method} {uri} {proto}" {status} {size}`
+	// CommonLogEmptyValue is the common empty log value.
 	CommonLogEmptyValue = "-"
-	CombinedLogFormat   = CommonLogFormat + ` "{>Referer}" "{>User-Agent}"`
-	DefaultLogFormat    = CommonLogFormat
+	// CombinedLogFormat is the combined log format.
+	CombinedLogFormat = CommonLogFormat + ` "{>Referer}" "{>User-Agent}"`
+	// DefaultLogFormat is the default log format.
+	DefaultLogFormat = CommonLogFormat
 )

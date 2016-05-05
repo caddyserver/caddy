@@ -1,8 +1,23 @@
 package proxy
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"testing"
 )
+
+var workableServer *httptest.Server
+
+func TestMain(m *testing.M) {
+	workableServer = httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			// do nothing
+		}))
+	r := m.Run()
+	workableServer.Close()
+	os.Exit(r)
+}
 
 type customPolicy struct{}
 
@@ -12,13 +27,13 @@ func (r *customPolicy) Select(pool HostPool) *UpstreamHost {
 
 func testPool() HostPool {
 	pool := []*UpstreamHost{
-		&UpstreamHost{
-			Name: "http://google.com", // this should resolve (healthcheck test)
+		{
+			Name: workableServer.URL, // this should resolve (healthcheck test)
 		},
-		&UpstreamHost{
+		{
 			Name: "http://shouldnot.resolve", // this shouldn't
 		},
-		&UpstreamHost{
+		{
 			Name: "http://C",
 		},
 	}
@@ -38,11 +53,22 @@ func TestRoundRobinPolicy(t *testing.T) {
 	if h != pool[2] {
 		t.Error("Expected second round robin host to be third host in the pool.")
 	}
-	// mark host as down
-	pool[0].Unhealthy = true
 	h = rrPolicy.Select(pool)
-	if h != pool[1] {
+	if h != pool[0] {
 		t.Error("Expected third round robin host to be first host in the pool.")
+	}
+	// mark host as down
+	pool[1].Unhealthy = true
+	h = rrPolicy.Select(pool)
+	if h != pool[2] {
+		t.Error("Expected to skip down host.")
+	}
+	// mark host as full
+	pool[2].Conns = 1
+	pool[2].MaxConns = 1
+	h = rrPolicy.Select(pool)
+	if h != pool[0] {
+		t.Error("Expected to skip full host.")
 	}
 }
 

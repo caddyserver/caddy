@@ -5,6 +5,8 @@ import (
 	"time"
 )
 
+// DefaultInterval is the default interval at which the markdown watcher
+// checks for changes.
 const DefaultInterval = time.Second * 60
 
 // Watch monitors the configured markdown directory for changes. It calls GenerateLinks
@@ -12,7 +14,7 @@ const DefaultInterval = time.Second * 60
 func Watch(md Markdown, c *Config, interval time.Duration) (stopChan chan struct{}) {
 	return TickerFunc(interval, func() {
 		if err := GenerateStatic(md, c); err != nil {
-			log.Println(err)
+			log.Printf("[ERROR] markdown: Re-generating static site: %v", err)
 		}
 	})
 }

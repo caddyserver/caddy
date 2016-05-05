@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io/ioutil"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,6 +19,7 @@ import (
 // It only generates static files if it is enabled (cfg.StaticDir
 // must be set).
 func GenerateStatic(md Markdown, cfg *Config) error {
+	// Generate links since they may be needed, even without sitegen.
 	generated, err := generateLinks(md, cfg)
 	if err != nil {
 		return err
@@ -27,12 +30,13 @@ func GenerateStatic(md Markdown, cfg *Config) error {
 		return nil
 	}
 
-	// If static site generation is enabled.
+	// If static site generation is enabled, generate the site.
 	if cfg.StaticDir != "" {
 		if err := generateStaticHTML(md, cfg); err != nil {
 			return err
 		}
 	}
+
 	return nil
 }
 
@@ -70,7 +74,7 @@ func generateLinks(md Markdown, cfg *Config) (bool, error) {
 	return generated, g.lastErr
 }
 
-// generateStaticFiles generates static html files from markdowns.
+// generateStaticHTML generates static HTML files from markdowns.
 func generateStaticHTML(md Markdown, cfg *Config) error {
 	// If generated site already exists, clear it out
 	_, err := os.Stat(cfg.StaticDir)
@@ -98,11 +102,16 @@ func generateStaticHTML(md Markdown, cfg *Config) error {
 				if err != nil {
 					return err
 				}
+				reqPath = filepath.ToSlash(reqPath)
 				reqPath = "/" + reqPath
 
+				// Create empty requests and url to cater for template values.
+				req, _ := http.NewRequest("", "/", nil)
+				urlVar, _ := url.Parse("/")
+
 				// Generate the static file
-				ctx := middleware.Context{Root: md.FileSys}
-				_, err = md.Process(*cfg, reqPath, body, ctx)
+				ctx := middleware.Context{Root: md.FileSys, Req: req, URL: urlVar}
+				_, err = md.Process(cfg, reqPath, body, ctx)
 				if err != nil {
 					return err
 				}
@@ -115,7 +124,7 @@ func generateStaticHTML(md Markdown, cfg *Config) error {
 }
 
 // computeDirHash computes an hash on static directory of c.
-func computeDirHash(md Markdown, c Config) (string, error) {
+func computeDirHash(md Markdown, c *Config) (string, error) {
 	dir := filepath.Join(md.Root, c.PathScope)
 	if _, err := os.Stat(dir); err != nil {
 		return "", err

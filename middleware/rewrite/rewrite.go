@@ -3,9 +3,8 @@
 package rewrite
 
 import (
-	"net/http"
-
 	"fmt"
+	"net/http"
 	"net/url"
 	"path"
 	"path/filepath"
@@ -15,17 +14,40 @@ import (
 	"github.com/mholt/caddy/middleware"
 )
 
+// Result is the result of a rewrite
+type Result int
+
+const (
+	// RewriteIgnored is returned when rewrite is not done on request.
+	RewriteIgnored Result = iota
+	// RewriteDone is returned when rewrite is done on request.
+	RewriteDone
+	// RewriteStatus is returned when rewrite is not needed and status code should be set
+	// for the request.
+	RewriteStatus
+)
+
 // Rewrite is middleware to rewrite request locations internally before being handled.
 type Rewrite struct {
-	Next  middleware.Handler
-	Rules []Rule
+	Next    middleware.Handler
+	FileSys http.FileSystem
+	Rules   []Rule
 }
 
 // ServeHTTP implements the middleware.Handler interface.
 func (rw Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
+outer:
 	for _, rule := range rw.Rules {
-		if ok := rule.Rewrite(r); ok {
+		switch result := rule.Rewrite(rw.FileSys, r); result {
+		case RewriteDone:
+			break outer
+		case RewriteIgnored:
 			break
+		case RewriteStatus:
+			// only valid for complex rules.
+			if cRule, ok := rule.(*ComplexRule); ok && cRule.Status != 0 {
+				return cRule.Status, nil
+			}
 		}
 	}
 	return rw.Next.ServeHTTP(w, r)
@@ -34,7 +56,7 @@ func (rw Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error)
 // Rule describes an internal location rewrite rule.
 type Rule interface {
 	// Rewrite rewrites the internal location of the current request.
-	Rewrite(*http.Request) bool
+	Rewrite(http.FileSystem, *http.Request) Result
 }
 
 // SimpleRule is a simple rewrite rule.
@@ -48,37 +70,53 @@ func NewSimpleRule(from, to string) SimpleRule {
 }
 
 // Rewrite rewrites the internal location of the current request.
-func (s SimpleRule) Rewrite(r *http.Request) bool {
+func (s SimpleRule) Rewrite(fs http.FileSystem, r *http.Request) Result {
 	if s.From == r.URL.Path {
-		r.URL.Path = s.To
-		return true
+		// take note of this rewrite for internal use by fastcgi
+		// all we need is the URI, not full URL
+		r.Header.Set(headerFieldName, r.URL.RequestURI())
+
+		// attempt rewrite
+		return To(fs, r, s.To, newReplacer(r))
 	}
-	return false
+	return RewriteIgnored
 }
 
-// RegexpRule is a rewrite rule based on a regular expression
-type RegexpRule struct {
+// ComplexRule is a rewrite rule based on a regular expression
+type ComplexRule struct {
 	// Path base. Request to this path and subpaths will be rewritten
 	Base string
 
 	// Path to rewrite to
 	To string
 
+	// If set, neither performs rewrite nor proceeds
+	// with request. Only returns code.
+	Status int
+
 	// Extensions to filter by
 	Exts []string
+
+	// Rewrite conditions
+	Ifs []If
 
 	*regexp.Regexp
 }
 
-// NewRegexpRule creates a new RegexpRule. It returns an error if regexp
+// NewComplexRule creates a new RegexpRule. It returns an error if regexp
 // pattern (pattern) or extensions (ext) are invalid.
-func NewRegexpRule(base, pattern, to string, ext []string) (*RegexpRule, error) {
-	r, err := regexp.Compile(pattern)
-	if err != nil {
-		return nil, err
+func NewComplexRule(base, pattern, to string, status int, ext []string, ifs []If) (*ComplexRule, error) {
+	// validate regexp if present
+	var r *regexp.Regexp
+	if pattern != "" {
+		var err error
+		r, err = regexp.Compile(pattern)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	// validate extensions
+	// validate extensions if present
 	for _, v := range ext {
 		if len(v) < 2 || (len(v) < 3 && v[0] == '!') {
 			// check if no extension is specified
@@ -88,82 +126,81 @@ func NewRegexpRule(base, pattern, to string, ext []string) (*RegexpRule, error) 
 		}
 	}
 
-	return &RegexpRule{
-		base,
-		to,
-		ext,
-		r,
+	return &ComplexRule{
+		Base:   base,
+		To:     to,
+		Status: status,
+		Exts:   ext,
+		Ifs:    ifs,
+		Regexp: r,
 	}, nil
 }
 
-// regexpVars are variables that can be used for To (rewrite destination path).
-var regexpVars = []string{
-	"{path}",
-	"{query}",
-	"{file}",
-	"{dir}",
-	"{frag}",
-}
-
 // Rewrite rewrites the internal location of the current request.
-func (r *RegexpRule) Rewrite(req *http.Request) bool {
+func (r *ComplexRule) Rewrite(fs http.FileSystem, req *http.Request) (re Result) {
 	rPath := req.URL.Path
+	replacer := newReplacer(req)
 
 	// validate base
 	if !middleware.Path(rPath).Matches(r.Base) {
-		return false
+		return
 	}
 
 	// validate extensions
 	if !r.matchExt(rPath) {
-		return false
+		return
 	}
 
-	// validate regexp
-	if !r.MatchString(rPath[len(r.Base):]) {
-		return false
-	}
+	// validate regexp if present
+	if r.Regexp != nil {
+		// include trailing slash in regexp if present
+		start := len(r.Base)
+		if strings.HasSuffix(r.Base, "/") {
+			start--
+		}
 
-	to := r.To
+		matches := r.FindStringSubmatch(rPath[start:])
+		switch len(matches) {
+		case 0:
+			// no match
+			return
+		default:
+			// set regexp match variables {1}, {2} ...
 
-	// check variables
-	for _, v := range regexpVars {
-		if strings.Contains(r.To, v) {
-			switch v {
-			case "{path}":
-				to = strings.Replace(to, v, req.URL.Path[1:], -1)
-			case "{query}":
-				to = strings.Replace(to, v, req.URL.RawQuery, -1)
-			case "{frag}":
-				to = strings.Replace(to, v, req.URL.Fragment, -1)
-			case "{file}":
-				_, file := path.Split(req.URL.Path)
-				to = strings.Replace(to, v, file, -1)
-			case "{dir}":
-				dir, _ := path.Split(req.URL.Path)
-				to = path.Clean(strings.Replace(to, v, dir, -1))
+			// url escaped values of ? and #.
+			q, f := url.QueryEscape("?"), url.QueryEscape("#")
+
+			for i := 1; i < len(matches); i++ {
+				// Special case of unescaped # and ? by stdlib regexp.
+				// Reverse the unescape.
+				if strings.ContainsAny(matches[i], "?#") {
+					matches[i] = strings.NewReplacer("?", q, "#", f).Replace(matches[i])
+				}
+
+				replacer.Set(fmt.Sprint(i), matches[i])
 			}
 		}
 	}
 
-	// validate resulting path
-	url, err := url.Parse(to)
-	if err != nil {
-		return false
+	// validate rewrite conditions
+	for _, i := range r.Ifs {
+		if !i.True(req) {
+			return
+		}
 	}
 
-	// perform rewrite
-	req.URL.Path = url.Path
-	if url.RawQuery != "" {
-		// overwrite query string if present
-		req.URL.RawQuery = url.RawQuery
+	// if status is present, stop rewrite and return it.
+	if r.Status != 0 {
+		return RewriteStatus
 	}
-	return true
+
+	// attempt rewrite
+	return To(fs, req, r.To, replacer)
 }
 
 // matchExt matches rPath against registered file extensions.
 // Returns true if a match is found and false otherwise.
-func (r *RegexpRule) matchExt(rPath string) bool {
+func (r *ComplexRule) matchExt(rPath string) bool {
 	f := filepath.Base(rPath)
 	ext := path.Ext(f)
 	if ext == "" {
@@ -192,3 +229,8 @@ func (r *RegexpRule) matchExt(rPath string) bool {
 	}
 	return true
 }
+
+// When a rewrite is performed, this header is added to the request
+// and is for internal use only, specifically the fastcgi middleware.
+// It contains the original request URI before the rewrite.
+const headerFieldName = "Caddy-Rewrite-Original-URI"

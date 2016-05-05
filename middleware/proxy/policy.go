@@ -25,11 +25,11 @@ type Random struct{}
 // Select selects an up host at random from the specified pool.
 func (r *Random) Select(pool HostPool) *UpstreamHost {
 	// instead of just generating a random index
-	// this is done to prevent selecting a down host
+	// this is done to prevent selecting a unavailable host
 	var randHost *UpstreamHost
 	count := 0
 	for _, host := range pool {
-		if host.Down() {
+		if !host.Available() {
 			continue
 		}
 		count++
@@ -56,7 +56,7 @@ func (r *LeastConn) Select(pool HostPool) *UpstreamHost {
 	count := 0
 	leastConn := int64(1<<63 - 1)
 	for _, host := range pool {
-		if host.Down() {
+		if !host.Available() {
 			continue
 		}
 		hostConns := host.Conns
@@ -90,11 +90,11 @@ func (r *RoundRobin) Select(pool HostPool) *UpstreamHost {
 	poolLen := uint32(len(pool))
 	selection := atomic.AddUint32(&r.Robin, 1) % poolLen
 	host := pool[selection]
-	// if the currently selected host is down, just ffwd to up host
-	for i := uint32(1); host.Down() && i < poolLen; i++ {
+	// if the currently selected host is not available, just ffwd to up host
+	for i := uint32(1); !host.Available() && i < poolLen; i++ {
 		host = pool[(selection+i)%poolLen]
 	}
-	if host.Down() {
+	if !host.Available() {
 		return nil
 	}
 	return host

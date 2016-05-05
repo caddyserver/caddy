@@ -14,13 +14,14 @@ import (
 	"github.com/mholt/caddy/middleware"
 )
 
-// ErrorHandler handles HTTP errors (or errors from other middleware).
+// ErrorHandler handles HTTP errors (and errors from other middleware).
 type ErrorHandler struct {
 	Next       middleware.Handler
 	ErrorPages map[int]string // map of status code to filename
 	LogFile    string
 	Log        *log.Logger
 	LogRoller  *middleware.LogRoller
+	Debug      bool // if true, errors are written out to client rather than to a log
 }
 
 func (h ErrorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
@@ -29,12 +30,21 @@ func (h ErrorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, er
 	status, err := h.Next.ServeHTTP(w, r)
 
 	if err != nil {
-		h.Log.Printf("%s [ERROR %d %s] %v", time.Now().Format(timeFormat), status, r.URL.Path, err)
+		errMsg := fmt.Sprintf("%s [ERROR %d %s] %v", time.Now().Format(timeFormat), status, r.URL.Path, err)
+
+		if h.Debug {
+			// Write error to response instead of to log
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			w.WriteHeader(status)
+			fmt.Fprintln(w, errMsg)
+			return 0, err // returning < 400 signals that a response has been written
+		}
+		h.Log.Println(errMsg)
 	}
 
 	if status >= 400 {
-		h.errorPage(w, status)
-		return 0, err // status < 400 signals that a response has been written
+		h.errorPage(w, r, status)
+		return 0, err
 	}
 
 	return status, err
@@ -43,7 +53,7 @@ func (h ErrorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, er
 // errorPage serves a static error page to w according to the status
 // code. If there is an error serving the error page, a plaintext error
 // message is written instead, and the extra error is logged.
-func (h ErrorHandler) errorPage(w http.ResponseWriter, code int) {
+func (h ErrorHandler) errorPage(w http.ResponseWriter, r *http.Request, code int) {
 	defaultBody := fmt.Sprintf("%d %s", code, http.StatusText(code))
 
 	// See if an error page for this status code was specified
@@ -52,8 +62,9 @@ func (h ErrorHandler) errorPage(w http.ResponseWriter, code int) {
 		// Try to open it
 		errorPage, err := os.Open(pagePath)
 		if err != nil {
-			// An error handling an error... <insert grumpy cat here>
-			h.Log.Printf("HTTP %d could not load error page %s: %v", code, pagePath, err)
+			// An additional error handling an error... <insert grumpy cat here>
+			h.Log.Printf("%s [NOTICE %d %s] could not load error page: %v",
+				time.Now().Format(timeFormat), code, r.URL.String(), err)
 			http.Error(w, defaultBody, code)
 			return
 		}
@@ -66,7 +77,8 @@ func (h ErrorHandler) errorPage(w http.ResponseWriter, code int) {
 
 		if err != nil {
 			// Epic fail... sigh.
-			h.Log.Printf("HTTP %d could not respond with %s: %v", code, pagePath, err)
+			h.Log.Printf("%s [NOTICE %d %s] could not respond with %s: %v",
+				time.Now().Format(timeFormat), code, r.URL.String(), pagePath, err)
 			http.Error(w, defaultBody, code)
 		}
 
@@ -108,10 +120,19 @@ func (h ErrorHandler) recovery(w http.ResponseWriter, r *http.Request) {
 		file = file[pkgPathPos+len(delim):]
 	}
 
-	// Currently we don't use the function name, as file:line is more conventional
-	h.Log.Printf("%s [PANIC %s] %s:%d - %v", time.Now().Format(timeFormat), r.URL.String(), file, line, rec)
-	h.errorPage(w, http.StatusInternalServerError)
+	panicMsg := fmt.Sprintf("%s [PANIC %s] %s:%d - %v", time.Now().Format(timeFormat), r.URL.String(), file, line, rec)
+	if h.Debug {
+		// Write error and stack trace to the response rather than to a log
+		var stackBuf [4096]byte
+		stack := stackBuf[:runtime.Stack(stackBuf[:], false)]
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprintf(w, "%s\n\n%s", panicMsg, stack)
+	} else {
+		// Currently we don't use the function name, since file:line is more conventional
+		h.Log.Printf(panicMsg)
+		h.errorPage(w, r, http.StatusInternalServerError)
+	}
 }
 
-const DefaultLogFilename = "error.log"
 const timeFormat = "02/Jan/2006:15:04:05 -0700"

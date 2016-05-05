@@ -5,30 +5,36 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"path"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/mholt/caddy/config/parse"
+	"github.com/mholt/caddy/caddy/parse"
+	"github.com/mholt/caddy/middleware"
 )
 
 var (
-	supportedPolicies map[string]func() Policy = make(map[string]func() Policy)
-	proxyHeaders      http.Header              = make(http.Header)
+	supportedPolicies = make(map[string]func() Policy)
 )
 
 type staticUpstream struct {
-	from   string
-	Hosts  HostPool
-	Policy Policy
+	from               string
+	upstreamHeaders    http.Header
+	downstreamHeaders  http.Header
+	Hosts              HostPool
+	Policy             Policy
+	insecureSkipVerify bool
 
 	FailTimeout time.Duration
 	MaxFails    int32
+	MaxConns    int64
 	HealthCheck struct {
 		Path     string
 		Interval time.Duration
 	}
 	WithoutPathPrefix string
+	IgnoredSubPaths   []string
 }
 
 // NewStaticUpstreams parses the configuration input and sets up
@@ -37,11 +43,14 @@ func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
 	var upstreams []Upstream
 	for c.Next() {
 		upstream := &staticUpstream{
-			from:        "",
-			Hosts:       nil,
-			Policy:      &Random{},
-			FailTimeout: 10 * time.Second,
-			MaxFails:    1,
+			from:              "",
+			upstreamHeaders:   make(http.Header),
+			downstreamHeaders: make(http.Header),
+			Hosts:             nil,
+			Policy:            &Random{},
+			FailTimeout:       10 * time.Second,
+			MaxFails:          1,
+			MaxConns:          0,
 		}
 
 		if !c.Args(&upstream.from) {
@@ -53,96 +62,15 @@ func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
 		}
 
 		for c.NextBlock() {
-			switch c.Val() {
-			case "policy":
-				if !c.NextArg() {
-					return upstreams, c.ArgErr()
-				}
-
-				if policyCreateFunc, ok := supportedPolicies[c.Val()]; ok {
-					upstream.Policy = policyCreateFunc()
-				} else {
-					return upstreams, c.ArgErr()
-				}
-			case "fail_timeout":
-				if !c.NextArg() {
-					return upstreams, c.ArgErr()
-				}
-				if dur, err := time.ParseDuration(c.Val()); err == nil {
-					upstream.FailTimeout = dur
-				} else {
-					return upstreams, err
-				}
-			case "max_fails":
-				if !c.NextArg() {
-					return upstreams, c.ArgErr()
-				}
-				if n, err := strconv.Atoi(c.Val()); err == nil {
-					upstream.MaxFails = int32(n)
-				} else {
-					return upstreams, err
-				}
-			case "health_check":
-				if !c.NextArg() {
-					return upstreams, c.ArgErr()
-				}
-				upstream.HealthCheck.Path = c.Val()
-				upstream.HealthCheck.Interval = 30 * time.Second
-				if c.NextArg() {
-					if dur, err := time.ParseDuration(c.Val()); err == nil {
-						upstream.HealthCheck.Interval = dur
-					} else {
-						return upstreams, err
-					}
-				}
-			case "proxy_header":
-				var header, value string
-				if !c.Args(&header, &value) {
-					return upstreams, c.ArgErr()
-				}
-				proxyHeaders.Add(header, value)
-			case "websocket":
-				proxyHeaders.Add("Connection", "{>Connection}")
-				proxyHeaders.Add("Upgrade", "{>Upgrade}")
-			case "without":
-				if !c.NextArg() {
-					return upstreams, c.ArgErr()
-				}
-				upstream.WithoutPathPrefix = c.Val()
-			default:
-				return upstreams, c.Errf("unknown property '%s'", c.Val())
+			if err := parseBlock(&c, upstream); err != nil {
+				return upstreams, err
 			}
 		}
 
 		upstream.Hosts = make([]*UpstreamHost, len(to))
 		for i, host := range to {
-			if !strings.HasPrefix(host, "http") {
-				host = "http://" + host
-			}
-			uh := &UpstreamHost{
-				Name:         host,
-				Conns:        0,
-				Fails:        0,
-				FailTimeout:  upstream.FailTimeout,
-				Unhealthy:    false,
-				ExtraHeaders: proxyHeaders,
-				CheckDown: func(upstream *staticUpstream) UpstreamHostDownFunc {
-					return func(uh *UpstreamHost) bool {
-						if uh.Unhealthy {
-							return true
-						}
-						if uh.Fails >= upstream.MaxFails &&
-							upstream.MaxFails != 0 {
-							return true
-						}
-						return false
-					}
-				}(upstream),
-				WithoutPathPrefix: upstream.WithoutPathPrefix,
-			}
-			if baseURL, err := url.Parse(uh.Name); err == nil {
-				uh.ReverseProxy = NewSingleHostReverseProxy(baseURL, uh.WithoutPathPrefix)
-			} else {
+			uh, err := upstream.NewHost(host)
+			if err != nil {
 				return upstreams, err
 			}
 			upstream.Hosts[i] = uh
@@ -163,6 +91,134 @@ func RegisterPolicy(name string, policy func() Policy) {
 
 func (u *staticUpstream) From() string {
 	return u.from
+}
+
+func (u *staticUpstream) NewHost(host string) (*UpstreamHost, error) {
+	if !strings.HasPrefix(host, "http") &&
+		!strings.HasPrefix(host, "unix:") {
+		host = "http://" + host
+	}
+	uh := &UpstreamHost{
+		Name:              host,
+		Conns:             0,
+		Fails:             0,
+		FailTimeout:       u.FailTimeout,
+		Unhealthy:         false,
+		UpstreamHeaders:   u.upstreamHeaders,
+		DownstreamHeaders: u.downstreamHeaders,
+		CheckDown: func(u *staticUpstream) UpstreamHostDownFunc {
+			return func(uh *UpstreamHost) bool {
+				if uh.Unhealthy {
+					return true
+				}
+				if uh.Fails >= u.MaxFails &&
+					u.MaxFails != 0 {
+					return true
+				}
+				return false
+			}
+		}(u),
+		WithoutPathPrefix: u.WithoutPathPrefix,
+		MaxConns:          u.MaxConns,
+	}
+
+	baseURL, err := url.Parse(uh.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	uh.ReverseProxy = NewSingleHostReverseProxy(baseURL, uh.WithoutPathPrefix)
+	if u.insecureSkipVerify {
+		uh.ReverseProxy.Transport = InsecureTransport
+	}
+	return uh, nil
+}
+
+func parseBlock(c *parse.Dispenser, u *staticUpstream) error {
+	switch c.Val() {
+	case "policy":
+		if !c.NextArg() {
+			return c.ArgErr()
+		}
+		policyCreateFunc, ok := supportedPolicies[c.Val()]
+		if !ok {
+			return c.ArgErr()
+		}
+		u.Policy = policyCreateFunc()
+	case "fail_timeout":
+		if !c.NextArg() {
+			return c.ArgErr()
+		}
+		dur, err := time.ParseDuration(c.Val())
+		if err != nil {
+			return err
+		}
+		u.FailTimeout = dur
+	case "max_fails":
+		if !c.NextArg() {
+			return c.ArgErr()
+		}
+		n, err := strconv.Atoi(c.Val())
+		if err != nil {
+			return err
+		}
+		u.MaxFails = int32(n)
+	case "max_conns":
+		if !c.NextArg() {
+			return c.ArgErr()
+		}
+		n, err := strconv.ParseInt(c.Val(), 10, 64)
+		if err != nil {
+			return err
+		}
+		u.MaxConns = n
+	case "health_check":
+		if !c.NextArg() {
+			return c.ArgErr()
+		}
+		u.HealthCheck.Path = c.Val()
+		u.HealthCheck.Interval = 30 * time.Second
+		if c.NextArg() {
+			dur, err := time.ParseDuration(c.Val())
+			if err != nil {
+				return err
+			}
+			u.HealthCheck.Interval = dur
+		}
+	case "header_upstream":
+		fallthrough
+	case "proxy_header":
+		var header, value string
+		if !c.Args(&header, &value) {
+			return c.ArgErr()
+		}
+		u.upstreamHeaders.Add(header, value)
+	case "header_downstream":
+		var header, value string
+		if !c.Args(&header, &value) {
+			return c.ArgErr()
+		}
+		u.downstreamHeaders.Add(header, value)
+	case "websocket":
+		u.upstreamHeaders.Add("Connection", "{>Connection}")
+		u.upstreamHeaders.Add("Upgrade", "{>Upgrade}")
+	case "without":
+		if !c.NextArg() {
+			return c.ArgErr()
+		}
+		u.WithoutPathPrefix = c.Val()
+	case "except":
+		ignoredPaths := c.RemainingArgs()
+		if len(ignoredPaths) == 0 {
+			return c.ArgErr()
+		}
+		u.IgnoredSubPaths = ignoredPaths
+	case "insecure_skip_verify":
+		u.insecureSkipVerify = true
+	default:
+		return c.Errf("unknown property '%s'", c.Val())
+	}
+	return nil
 }
 
 func (u *staticUpstream) healthCheck() {
@@ -196,19 +252,19 @@ func (u *staticUpstream) HealthCheckWorker(stop chan struct{}) {
 func (u *staticUpstream) Select() *UpstreamHost {
 	pool := u.Hosts
 	if len(pool) == 1 {
-		if pool[0].Down() {
+		if !pool[0].Available() {
 			return nil
 		}
 		return pool[0]
 	}
-	allDown := true
+	allUnavailable := true
 	for _, host := range pool {
-		if !host.Down() {
-			allDown = false
+		if host.Available() {
+			allUnavailable = false
 			break
 		}
 	}
-	if allDown {
+	if allUnavailable {
 		return nil
 	}
 
@@ -216,4 +272,13 @@ func (u *staticUpstream) Select() *UpstreamHost {
 		return (&Random{}).Select(pool)
 	}
 	return u.Policy.Select(pool)
+}
+
+func (u *staticUpstream) AllowedPath(requestPath string) bool {
+	for _, ignoredSubPath := range u.IgnoredSubPaths {
+		if middleware.Path(path.Clean(requestPath)).Matches(path.Join(u.From(), ignoredSubPath)) {
+			return false
+		}
+	}
+	return true
 }

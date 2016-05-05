@@ -14,20 +14,30 @@ import (
 )
 
 const (
-	DefaultTemplate  = "defaultTemplate"
+	// DefaultTemplate is the default template.
+	DefaultTemplate = "defaultTemplate"
+	// DefaultStaticDir is the default static directory.
 	DefaultStaticDir = "generated_site"
 )
 
-type MarkdownData struct {
+// Data represents a markdown document.
+type Data struct {
 	middleware.Context
-	Doc   map[string]string
-	Links []PageLink
+	Doc      map[string]string
+	DocFlags map[string]bool
+	Links    []PageLink
+}
+
+// Include "overrides" the embedded middleware.Context's Include()
+// method so that included files have access to d's fields.
+func (d Data) Include(filename string) (string, error) {
+	return middleware.ContextInclude(filename, d, d.Root)
 }
 
 // Process processes the contents of a page in b. It parses the metadata
 // (if any) and uses the template (if found).
-func (md Markdown) Process(c Config, requestPath string, b []byte, ctx middleware.Context) ([]byte, error) {
-	var metadata = Metadata{Variables: make(map[string]string)}
+func (md Markdown) Process(c *Config, requestPath string, b []byte, ctx middleware.Context) ([]byte, error) {
+	var metadata = newMetadata()
 	var markdown []byte
 	var err error
 
@@ -65,7 +75,8 @@ func (md Markdown) Process(c Config, requestPath string, b []byte, ctx middlewar
 	}
 
 	// process markdown
-	markdown = blackfriday.Markdown(markdown, c.Renderer, 0)
+	extns := blackfriday.EXTENSION_TABLES | blackfriday.EXTENSION_FENCED_CODE | blackfriday.EXTENSION_STRIKETHROUGH | blackfriday.EXTENSION_DEFINITION_LISTS
+	markdown = blackfriday.Markdown(markdown, c.Renderer, extns)
 
 	// set it as body for template
 	metadata.Variables["body"] = string(markdown)
@@ -82,7 +93,7 @@ func (md Markdown) Process(c Config, requestPath string, b []byte, ctx middlewar
 
 // processTemplate processes a template given a requestPath,
 // template (tmpl) and metadata
-func (md Markdown) processTemplate(c Config, requestPath string, tmpl []byte, metadata Metadata, ctx middleware.Context) ([]byte, error) {
+func (md Markdown) processTemplate(c *Config, requestPath string, tmpl []byte, metadata Metadata, ctx middleware.Context) ([]byte, error) {
 	// if template is not specified,
 	// use the default template
 	if tmpl == nil {
@@ -95,10 +106,11 @@ func (md Markdown) processTemplate(c Config, requestPath string, tmpl []byte, me
 	if err != nil {
 		return nil, err
 	}
-	mdData := MarkdownData{
-		Context: ctx,
-		Doc:     metadata.Variables,
-		Links:   c.Links,
+	mdData := Data{
+		Context:  ctx,
+		Doc:      metadata.Variables,
+		DocFlags: metadata.Flags,
+		Links:    c.Links,
 	}
 
 	c.RLock()
@@ -111,10 +123,9 @@ func (md Markdown) processTemplate(c Config, requestPath string, tmpl []byte, me
 
 	// generate static page
 	if err = md.generatePage(c, requestPath, b.Bytes()); err != nil {
-		// if static page generation fails,
-		// nothing fatal, only log the error.
-		// TODO: Report this non-fatal error, but don't log it here
-		log.Println("Rendering error (markdown):", err)
+		// if static page generation fails, nothing fatal, only log the error.
+		// TODO: Report (return) this non-fatal error, but don't log it here?
+		log.Println("[ERROR] markdown: Render:", err)
 	}
 
 	return b.Bytes(), nil
@@ -123,7 +134,7 @@ func (md Markdown) processTemplate(c Config, requestPath string, tmpl []byte, me
 
 // generatePage generates a static html page from the markdown in content if c.StaticDir
 // is a non-empty value, meaning that the user enabled static site generation.
-func (md Markdown) generatePage(c Config, requestPath string, content []byte) error {
+func (md Markdown) generatePage(c *Config, requestPath string, content []byte) error {
 	// Only generate the page if static site generation is enabled
 	if c.StaticDir != "" {
 		// if static directory is not existing, create it
@@ -134,7 +145,10 @@ func (md Markdown) generatePage(c Config, requestPath string, content []byte) er
 			}
 		}
 
-		filePath := filepath.Join(c.StaticDir, requestPath)
+		// the URL will always use "/" as a path separator,
+		// convert that to a native path to support OS that
+		// use different path separators
+		filePath := filepath.Join(c.StaticDir, filepath.FromSlash(requestPath))
 
 		// If it is index file, use the directory instead
 		if md.IsIndexFile(filepath.Base(requestPath)) {
@@ -153,14 +167,16 @@ func (md Markdown) generatePage(c Config, requestPath string, content []byte) er
 			return err
 		}
 
-		c.StaticFiles[requestPath] = filePath
+		c.Lock()
+		c.StaticFiles[requestPath] = filepath.ToSlash(filePath)
+		c.Unlock()
 	}
 
 	return nil
 }
 
 // defaultTemplate constructs a default template.
-func defaultTemplate(c Config, metadata Metadata, requestPath string) []byte {
+func defaultTemplate(c *Config, metadata Metadata, requestPath string) []byte {
 	var scripts, styles bytes.Buffer
 	for _, style := range c.Styles {
 		styles.WriteString(strings.Replace(cssTemplate, "{{url}}", style, 1))

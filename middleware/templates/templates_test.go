@@ -14,15 +14,16 @@ func Test(t *testing.T) {
 			return 0, nil
 		}),
 		Rules: []Rule{
-			Rule{
+			{
 				Extensions: []string{".html"},
 				IndexFiles: []string{"index.html"},
 				Path:       "/photos",
 			},
-			Rule{
+			{
 				Extensions: []string{".html", ".htm"},
 				IndexFiles: []string{"index.html", "index.htm"},
 				Path:       "/images",
+				Delims:     [2]string{"{%", "%}"},
 			},
 		},
 		Root:    "./testdata",
@@ -34,7 +35,7 @@ func Test(t *testing.T) {
 			return 0, nil
 		}),
 		Rules: []Rule{
-			Rule{
+			{
 				Extensions: []string{".html"},
 				IndexFiles: []string{"index.html"},
 				Path:       "/",
@@ -88,6 +89,30 @@ func Test(t *testing.T) {
 	respBody = rec.Body.String()
 	expectedBody = `<!DOCTYPE html><html><head><title>img</title></head><body><h1>Header title</h1>
 </body></html>
+`
+
+	if respBody != expectedBody {
+		t.Fatalf("Test: the expected body %v is different from the response one: %v", expectedBody, respBody)
+	}
+
+	/*
+	* Test tmpl on /images/img2.htm
+	 */
+	req, err = http.NewRequest("GET", "/images/img2.htm", nil)
+	if err != nil {
+		t.Fatalf("Could not create HTTP request: %v", err)
+	}
+
+	rec = httptest.NewRecorder()
+
+	tmpl.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Test: Wrong response code: %d, should be %d", rec.Code, http.StatusOK)
+	}
+
+	respBody = rec.Body.String()
+	expectedBody = `<!DOCTYPE html><html><head><title>img</title></head><body>{{.Include "header.html"}}</body></html>
 `
 
 	if respBody != expectedBody {

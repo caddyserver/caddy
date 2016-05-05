@@ -30,6 +30,7 @@ func TestExtensions(t *testing.T) {
 		{"/extensions_test/", []string{".html"}, "/extensions_test/"},
 		{"/extensions_test", []string{".json"}, "/extensions_test"},
 		{"/another_test", []string{".html"}, "/another_test"},
+		{"", []string{".html"}, ""},
 	} {
 		ex := Ext{
 			Next: middleware.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {

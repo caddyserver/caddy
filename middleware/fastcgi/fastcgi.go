@@ -4,9 +4,11 @@
 package fastcgi
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -33,8 +35,8 @@ type Handler struct {
 func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	for _, rule := range h.Rules {
 
-		// First requirement: Base path must match
-		if !middleware.Path(r.URL.Path).Matches(rule.Path) {
+		// First requirement: Base path must match and the path must be allowed.
+		if !middleware.Path(r.URL.Path).Matches(rule.Path) || !rule.AllowedPath(r.URL.Path) {
 			continue
 		}
 
@@ -44,12 +46,24 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 		// but we also want to be flexible for the script we proxy to.
 
 		fpath := r.URL.Path
+
 		if idx, ok := middleware.IndexFile(h.FileSys, fpath, rule.IndexFiles); ok {
 			fpath = idx
+			// Index file present.
+			// If request path cannot be split, return error.
+			if !rule.canSplit(fpath) {
+				return http.StatusInternalServerError, ErrIndexMissingSplit
+			}
+		} else {
+			// No index file present.
+			// If request path cannot be split, ignore request.
+			if !rule.canSplit(fpath) {
+				continue
+			}
 		}
 
 		// These criteria work well in this order for PHP sites
-		if fpath[len(fpath)-1] == '/' || strings.HasSuffix(fpath, rule.Ext) || !h.exists(fpath) {
+		if !h.exists(fpath) || fpath[len(fpath)-1] == '/' || strings.HasSuffix(fpath, rule.Ext) {
 
 			// Create environment for CGI script
 			env, err := h.buildEnv(r, rule, fpath)
@@ -58,17 +72,8 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			}
 
 			// Connect to FastCGI gateway
-			var fcgi *FCGIClient
-
-			// check if unix socket or tcp
-			if strings.HasPrefix(rule.Address, "/") || strings.HasPrefix(rule.Address, "unix:") {
-				if strings.HasPrefix(rule.Address, "unix:") {
-					rule.Address = rule.Address[len("unix:"):]
-				}
-				fcgi, err = Dial("unix", rule.Address)
-			} else {
-				fcgi, err = Dial("tcp", rule.Address)
-			}
+			network, address := rule.parseAddress()
+			fcgiBackend, err := Dial(network, address)
 			if err != nil {
 				return http.StatusBadGateway, err
 			}
@@ -77,21 +82,13 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			contentLength, _ := strconv.Atoi(r.Header.Get("Content-Length"))
 			switch r.Method {
 			case "HEAD":
-				resp, err = fcgi.Head(env)
+				resp, err = fcgiBackend.Head(env)
 			case "GET":
-				resp, err = fcgi.Get(env)
+				resp, err = fcgiBackend.Get(env)
 			case "OPTIONS":
-				resp, err = fcgi.Options(env)
-			case "POST":
-				resp, err = fcgi.Post(env, r.Header.Get("Content-Type"), r.Body, contentLength)
-			case "PUT":
-				resp, err = fcgi.Put(env, r.Header.Get("Content-Type"), r.Body, contentLength)
-			case "PATCH":
-				resp, err = fcgi.Patch(env, r.Header.Get("Content-Type"), r.Body, contentLength)
-			case "DELETE":
-				resp, err = fcgi.Delete(env, r.Header.Get("Content-Type"), r.Body, contentLength)
+				resp, err = fcgiBackend.Options(env)
 			default:
-				return http.StatusMethodNotAllowed, nil
+				resp, err = fcgiBackend.Post(env, r.Method, r.Header.Get("Content-Type"), r.Body, contentLength)
 			}
 
 			if resp.Body != nil {
@@ -102,28 +99,65 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 				return http.StatusBadGateway, err
 			}
 
-			// Write the response header
-			for key, vals := range resp.Header {
-				for _, val := range vals {
-					w.Header().Add(key, val)
-				}
-			}
-			w.WriteHeader(resp.StatusCode)
+			// Write response header
+			writeHeader(w, resp)
 
 			// Write the response body
-			// TODO: If this has an error, the response will already be
-			// partly written. We should copy out of resp.Body into a buffer
-			// first, then write it to the response...
 			_, err = io.Copy(w, resp.Body)
 			if err != nil {
 				return http.StatusBadGateway, err
 			}
 
-			return 0, nil
+			// Log any stderr output from upstream
+			if fcgiBackend.stderr.Len() != 0 {
+				// Remove trailing newline, error logger already does this.
+				err = LogError(strings.TrimSuffix(fcgiBackend.stderr.String(), "\n"))
+			}
+
+			// Normally we would return the status code if it is an error status (>= 400),
+			// however, upstream FastCGI apps don't know about our contract and have
+			// probably already written an error page. So we just return 0, indicating
+			// that the response body is already written. However, we do return any
+			// error value so it can be logged.
+			// Note that the proxy middleware works the same way, returning status=0.
+			return 0, err
 		}
 	}
 
 	return h.Next.ServeHTTP(w, r)
+}
+
+// parseAddress returns the network and address of r.
+// The first string is the network, "tcp" or "unix", implied from the scheme and address.
+// The second string is r.Address, with scheme prefixes removed.
+// The two returned strings can be used as parameters to the Dial() function.
+func (r Rule) parseAddress() (string, string) {
+	// check if address has tcp scheme explicitly set
+	if strings.HasPrefix(r.Address, "tcp://") {
+		return "tcp", r.Address[len("tcp://"):]
+	}
+	// check if address has fastcgi scheme explicitly set
+	if strings.HasPrefix(r.Address, "fastcgi://") {
+		return "tcp", r.Address[len("fastcgi://"):]
+	}
+	// check if unix socket
+	if trim := strings.HasPrefix(r.Address, "unix"); strings.HasPrefix(r.Address, "/") || trim {
+		if trim {
+			return "unix", r.Address[len("unix:"):]
+		}
+		return "unix", r.Address
+	}
+	// default case, a plain tcp address with no scheme
+	return "tcp", r.Address
+}
+
+func writeHeader(w http.ResponseWriter, r *http.Response) {
+	for key, vals := range r.Header {
+		for _, val := range vals {
+			w.Header().Add(key, val)
+		}
+	}
+	w.WriteHeader(r.StatusCode)
 }
 
 func (h Handler) exists(path string) bool {
@@ -142,28 +176,35 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 
 	// Separate remote IP and port; more lenient than net.SplitHostPort
 	var ip, port string
-	if idx := strings.Index(r.RemoteAddr, ":"); idx > -1 {
+	if idx := strings.LastIndex(r.RemoteAddr, ":"); idx > -1 {
 		ip = r.RemoteAddr[:idx]
 		port = r.RemoteAddr[idx+1:]
 	} else {
 		ip = r.RemoteAddr
 	}
 
-	// Split path in preparation for env variables
-	splitPos := strings.Index(fpath, rule.SplitPath)
-	var docURI, scriptName, scriptFilename, pathInfo string
-	if splitPos == -1 {
-		// Request doesn't have the extension, so assume index file in root
-		docURI = "/" + rule.IndexFiles[0]
-		scriptName = "/" + rule.IndexFiles[0]
-		scriptFilename = filepath.Join(h.AbsRoot, rule.IndexFiles[0])
-		pathInfo = fpath
-	} else {
-		// Request has the extension; path was split successfully
-		docURI = fpath[:splitPos+len(rule.SplitPath)]
-		pathInfo = fpath[splitPos+len(rule.SplitPath):]
-		scriptName = fpath
-		scriptFilename = absPath
+	// Split path in preparation for env variables.
+	// Previous rule.canSplit checks ensure this can never be -1.
+	splitPos := rule.splitPos(fpath)
+
+	// Request has the extension; path was split successfully
+	docURI := fpath[:splitPos+len(rule.SplitPath)]
+	pathInfo := fpath[splitPos+len(rule.SplitPath):]
+	scriptName := fpath
+	scriptFilename := absPath
+
+	// Strip PATH_INFO from SCRIPT_NAME
+	scriptName = strings.TrimSuffix(scriptName, pathInfo)
+
+	// Get the request URI. The request URI might be as it came in over the wire,
+	// or it might have been rewritten internally by the rewrite middleware (see issue #256).
+	// If it was rewritten, there will be a header indicating the original URL,
+	// which is needed to get the correct RequestURI value for PHP apps.
+	const internalRewriteFieldName = "Caddy-Rewrite-Original-URI"
+	reqURI := r.URL.RequestURI()
+	if origURI := r.Header.Get(internalRewriteFieldName); origURI != "" {
+		reqURI = origURI
+		r.Header.Del(internalRewriteFieldName)
 	}
 
 	// Some variables are unused but cleared explicitly to prevent
@@ -192,7 +233,7 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 		"DOCUMENT_ROOT":   h.AbsRoot,
 		"DOCUMENT_URI":    docURI,
 		"HTTP_HOST":       r.Host, // added here, since not always part of headers
-		"REQUEST_URI":     r.URL.RequestURI(),
+		"REQUEST_URI":     reqURI,
 		"SCRIPT_FILENAME": scriptFilename,
 		"SCRIPT_NAME":     scriptName,
 	}
@@ -247,6 +288,45 @@ type Rule struct {
 
 	// Environment Variables
 	EnvVars [][2]string
+
+	// Ignored paths
+	IgnoredSubPaths []string
 }
 
-var headerNameReplacer = strings.NewReplacer(" ", "_", "-", "_")
+// canSplit checks if path can split into two based on rule.SplitPath.
+func (r Rule) canSplit(path string) bool {
+	return r.splitPos(path) >= 0
+}
+
+// splitPos returns the index where path should be split
+// based on rule.SplitPath.
+func (r Rule) splitPos(path string) int {
+	if middleware.CaseSensitivePath {
+		return strings.Index(path, r.SplitPath)
+	}
+	return strings.Index(strings.ToLower(path), strings.ToLower(r.SplitPath))
+}
+
+// AllowedPath checks if requestPath is not an ignored path.
+func (r Rule) AllowedPath(requestPath string) bool {
+	for _, ignoredSubPath := range r.IgnoredSubPaths {
+		if middleware.Path(path.Clean(requestPath)).Matches(path.Join(r.Path, ignoredSubPath)) {
+			return false
+		}
+	}
+	return true
+}
+
+var (
+	headerNameReplacer = strings.NewReplacer(" ", "_", "-", "_")
+	// ErrIndexMissingSplit describes an index configuration error.
+	ErrIndexMissingSplit = errors.New("configured index file(s) must include split value")
+)
+
+// LogError is a non fatal error that allows requests to go through.
+type LogError string
+
+// Error satisfies error interface.
+func (l LogError) Error() string {
+	return string(l)
+}

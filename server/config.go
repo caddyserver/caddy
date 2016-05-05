@@ -1,6 +1,7 @@
 package server
 
 import (
+	"crypto/tls"
 	"net"
 
 	"github.com/mholt/caddy/middleware"
@@ -17,19 +18,32 @@ type Config struct {
 	// The port to listen on
 	Port string
 
+	// The protocol (http/https) to serve with this config; only set if user explicitly specifies it
+	Scheme string
+
 	// The directory from which to serve files
 	Root string
 
 	// HTTPS configuration
 	TLS TLSConfig
 
-	// Middleware stack; map of path scope to middleware -- TODO: Support path scope?
-	Middleware map[string][]middleware.Middleware
+	// Middleware stack
+	Middleware []middleware.Middleware
 
-	// Functions (or methods) to execute at server start; these
-	// are executed before any parts of the server are configured,
-	// and the functions are blocking
+	// Startup is a list of functions (or methods) to execute at
+	// server startup and restart; these are executed before any
+	// parts of the server are configured, and the functions are
+	// blocking. These are good for setting up middlewares and
+	// starting goroutines.
 	Startup []func() error
+
+	// FirstStartup is like Startup but these functions only execute
+	// during the initial startup, not on subsequent restarts.
+	//
+	// (Note: The server does not ever run these on its own; it is up
+	// to the calling application to do so, and do so only once, as the
+	// server itself has no notion whether it's a restart or not.)
+	FirstStartup []func() error
 
 	// Functions (or methods) to execute when the server quits;
 	// these are executed in response to SIGINT and are blocking
@@ -50,16 +64,17 @@ func (c Config) Address() string {
 	return net.JoinHostPort(c.Host, c.Port)
 }
 
-// TLSConfig describes how TLS should be configured and used,
-// if at all. A certificate and key are both required.
-// The rest is optional.
+// TLSConfig describes how TLS should be configured and used.
 type TLSConfig struct {
-	Enabled                  bool
-	Certificate              string
-	Key                      string
+	Enabled                  bool // will be set to true if TLS is enabled
+	LetsEncryptEmail         string
+	Manual                   bool // will be set to true if user provides own certs and keys
+	Managed                  bool // will be set to true if config qualifies for implicit automatic/managed HTTPS
+	OnDemand                 bool // will be set to true if user enables on-demand TLS (obtain certs during handshakes)
 	Ciphers                  []uint16
 	ProtocolMinVersion       uint16
 	ProtocolMaxVersion       uint16
 	PreferServerCipherSuites bool
 	ClientCerts              []string
+	ClientAuth               tls.ClientAuthType
 }

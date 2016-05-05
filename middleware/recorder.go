@@ -8,17 +8,24 @@ import (
 	"time"
 )
 
-// responseRecorder is a type of ResponseWriter that captures
+// ResponseRecorder is a type of http.ResponseWriter that captures
 // the status code written to it and also the size of the body
 // written in the response. A status code does not have
 // to be written, however, in which case 200 must be assumed.
 // It is best to have the constructor initialize this type
 // with that default status code.
-type responseRecorder struct {
+//
+// Setting the Replacer field allows middlewares to type-assert
+// the http.ResponseWriter to ResponseRecorder and set their own
+// placeholder values for logging utilities to use.
+//
+// Beware when accessing the Replacer value; it may be nil!
+type ResponseRecorder struct {
 	http.ResponseWriter
-	status int
-	size   int
-	start  time.Time
+	Replacer Replacer
+	status   int
+	size     int
+	start    time.Time
 }
 
 // NewResponseRecorder makes and returns a new responseRecorder,
@@ -27,8 +34,8 @@ type responseRecorder struct {
 // Because a status is not set unless WriteHeader is called
 // explicitly, this constructor initializes with a status code
 // of 200 to cover the default case.
-func NewResponseRecorder(w http.ResponseWriter) *responseRecorder {
-	return &responseRecorder{
+func NewResponseRecorder(w http.ResponseWriter) *ResponseRecorder {
+	return &ResponseRecorder{
 		ResponseWriter: w,
 		status:         http.StatusOK,
 		start:          time.Now(),
@@ -37,14 +44,14 @@ func NewResponseRecorder(w http.ResponseWriter) *responseRecorder {
 
 // WriteHeader records the status code and calls the
 // underlying ResponseWriter's WriteHeader method.
-func (r *responseRecorder) WriteHeader(status int) {
+func (r *ResponseRecorder) WriteHeader(status int) {
 	r.status = status
 	r.ResponseWriter.WriteHeader(status)
 }
 
 // Write is a wrapper that records the size of the body
 // that gets written.
-func (r *responseRecorder) Write(buf []byte) (int, error) {
+func (r *ResponseRecorder) Write(buf []byte) (int, error) {
 	n, err := r.ResponseWriter.Write(buf)
 	if err == nil {
 		r.size += n
@@ -52,11 +59,40 @@ func (r *responseRecorder) Write(buf []byte) (int, error) {
 	return n, err
 }
 
-// Hijacker is a wrapper of http.Hijacker underearth if any,
-// otherwise it just returns an error.
-func (r *responseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+// Size is a Getter to size property
+func (r *ResponseRecorder) Size() int {
+	return r.size
+}
+
+// Status is a Getter to status property
+func (r *ResponseRecorder) Status() int {
+	return r.status
+}
+
+// Hijack implements http.Hijacker. It simply wraps the underlying
+// ResponseWriter's Hijack method if there is one, or returns an error.
+func (r *ResponseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	if hj, ok := r.ResponseWriter.(http.Hijacker); ok {
 		return hj.Hijack()
 	}
-	return nil, nil, errors.New("I'm not a Hijacker")
+	return nil, nil, errors.New("not a Hijacker")
+}
+
+// Flush implements http.Flusher. It simply wraps the underlying
+// ResponseWriter's Flush method if there is one, or does nothing.
+func (r *ResponseRecorder) Flush() {
+	if f, ok := r.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	} else {
+		panic("not a Flusher") // should be recovered at the beginning of middleware stack
+	}
+}
+
+// CloseNotify implements http.CloseNotifier.
+// It just inherits the underlying ResponseWriter's CloseNotify method.
+func (r *ResponseRecorder) CloseNotify() <-chan bool {
+	if cn, ok := r.ResponseWriter.(http.CloseNotifier); ok {
+		return cn.CloseNotify()
+	}
+	panic("not a CloseNotifier")
 }

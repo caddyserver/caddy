@@ -21,8 +21,8 @@ func TestMarkdown(t *testing.T) {
 	md := Markdown{
 		Root:    "./testdata",
 		FileSys: http.Dir("./testdata"),
-		Configs: []Config{
-			Config{
+		Configs: []*Config{
+			{
 				Renderer:    blackfriday.HtmlRenderer(0, "", ""),
 				PathScope:   "/blog",
 				Extensions:  []string{".md"},
@@ -32,7 +32,19 @@ func TestMarkdown(t *testing.T) {
 				StaticDir:   DefaultStaticDir,
 				StaticFiles: make(map[string]string),
 			},
-			Config{
+			{
+				Renderer:   blackfriday.HtmlRenderer(0, "", ""),
+				PathScope:  "/docflags",
+				Extensions: []string{".md"},
+				Styles:     []string{},
+				Scripts:    []string{},
+				Templates: map[string]string{
+					DefaultTemplate: "testdata/docflags/template.txt",
+				},
+				StaticDir:   DefaultStaticDir,
+				StaticFiles: make(map[string]string),
+			},
+			{
 				Renderer:    blackfriday.HtmlRenderer(0, "", ""),
 				PathScope:   "/log",
 				Extensions:  []string{".md"},
@@ -42,7 +54,7 @@ func TestMarkdown(t *testing.T) {
 				StaticDir:   DefaultStaticDir,
 				StaticFiles: make(map[string]string),
 			},
-			Config{
+			{
 				Renderer:    blackfriday.HtmlRenderer(0, "", ""),
 				PathScope:   "/og",
 				Extensions:  []string{".md"},
@@ -52,7 +64,7 @@ func TestMarkdown(t *testing.T) {
 				StaticDir:   "testdata/og_static",
 				StaticFiles: map[string]string{"/og/first.md": "testdata/og_static/og/first.md/index.html"},
 				Links: []PageLink{
-					PageLink{
+					{
 						Title:   "first",
 						Summary: "",
 						Date:    time.Now(),
@@ -69,7 +81,7 @@ func TestMarkdown(t *testing.T) {
 	}
 
 	for i := range md.Configs {
-		c := &md.Configs[i]
+		c := md.Configs[i]
 		if err := GenerateStatic(md, c); err != nil {
 			t.Fatalf("Error: %v", err)
 		}
@@ -92,25 +104,44 @@ func TestMarkdown(t *testing.T) {
 	expectedBody := `<!DOCTYPE html>
 <html>
 <head>
-<title>Markdown test</title>
+<title>Markdown test 1</title>
 </head>
 <body>
-<h1>Header</h1>
+<h1>Header for: Markdown test 1</h1>
 
 Welcome to A Caddy website!
 <h2>Welcome on the blog</h2>
 
 <p>Body</p>
 
-<p><code>go
-func getTrue() bool {
+<pre><code class="language-go">func getTrue() bool {
     return true
 }
-</code></p>
+</code></pre>
 
 </body>
 </html>
 `
+	if !equalStrings(respBody, expectedBody) {
+		t.Fatalf("Expected body: %v got: %v", expectedBody, respBody)
+	}
+
+	req, err = http.NewRequest("GET", "/docflags/test.md", nil)
+	if err != nil {
+		t.Fatalf("Could not create HTTP request: %v", err)
+	}
+	rec = httptest.NewRecorder()
+
+	md.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Wrong status, expected: %d and got %d", http.StatusOK, rec.Code)
+	}
+	respBody = rec.Body.String()
+	expectedBody = `Doc.var_string hello
+Doc.var_bool <no value>
+DocFlags.var_string <no value>
+DocFlags.var_bool true`
+
 	if !equalStrings(respBody, expectedBody) {
 		t.Fatalf("Expected body: %v got: %v", expectedBody, respBody)
 	}
@@ -129,7 +160,7 @@ func getTrue() bool {
 	expectedBody = `<!DOCTYPE html>
 <html>
 	<head>
-		<title>Markdown test</title>
+		<title>Markdown test 2</title>
 		<meta charset="utf-8">
 		<link rel="stylesheet" href="/resources/css/log.css">
 <link rel="stylesheet" href="/resources/css/default.css">
@@ -143,11 +174,10 @@ func getTrue() bool {
 
 <p>Body</p>
 
-<p><code>go
-func getTrue() bool {
+<pre><code class="language-go">func getTrue() bool {
     return true
 }
-</code></p>
+</code></pre>
 
 	</body>
 </html>`
@@ -178,7 +208,7 @@ func getTrue() bool {
 <title>first_post</title>
 </head>
 <body>
-<h1>Header</h1>
+<h1>Header for: first_post</h1>
 
 Welcome to title!
 <h1>Test h1</h1>
@@ -192,6 +222,7 @@ Welcome to title!
 
 	expectedLinks := []string{
 		"/blog/test.md",
+		"/docflags/test.md",
 		"/log/test.md",
 	}
 
@@ -221,7 +252,7 @@ Welcome to title!
 	w.Wait()
 
 	f = func() {
-		GenerateStatic(md, &md.Configs[0])
+		GenerateStatic(md, md.Configs[0])
 		w.Done()
 	}
 	for i := 0; i < 5; i++ {

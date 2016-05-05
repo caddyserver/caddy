@@ -1,5 +1,101 @@
 CHANGES
 
+<master>
+- ...
+
+
+0.8.3 (April 26, 2016)
+- Built with Go 1.6.2
+- New pprof middleware for exposing process profiling endpoints
+- New expvar middleware for exposing memory/GC performance
+- New -restart option to force in-process restarts on Unix systems
+- Only fail to start if managed certificate is expired (issue #642)
+- Toggle case-sensitive path matching with environment variable
+- File server now adds ETag header for static files
+- browse: Replace .LinkedPath action with .BreadcrumbMap
+- fastcgi: New except clause to exclude paths
+- proxy: New max_conns setting to limit max connections per upstream
+- proxy: New replaceable value for name of upstream host
+- templates: New utility actions for dealing with strings
+- tls: Customize certificate key with key_type (+ECC)
+- tls: Session ticket keys are now rotated
+- Many other minor internal improvements and bug fixes
+
+
+0.8.2 (February 25, 2016)
+- On-demand TLS can obtain certificates during handshakes
+- Built with Go 1.6
+- Process log (-log) is rotated when it gets large
+- Managed certificates get renewed 30 days early instead of just 14
+- fastcgi: Allow scheme prefix before address
+- markdown: Support for definition lists
+- proxy: Allow proxy to insecure HTTPS backends
+- proxy: Support proxy to unix socket
+- rewrite: Status code can be 2xx or 4xx
+- templates: New .Markdown action to interpret included file as Markdown
+- templates: .Truncate now truncates from end of string when length is negative
+- tls: Set hard limit for certificates obtained with on-demand TLS
+- tls: Load certificates from directory
+- tls: Add SHA384 cipher suites
+- Multiple bug fixes and internal changes
+
+
+0.8.1 (January 12, 2016)
+- Improved OCSP stapling
+- Better graceful reload when new hosts need certificates from Let's Encrypt
+- Current pidfile is now deleted when Caddy exits
+- browse: New default template
+- gzip: Added min_length setting
+- import: Support for glob patterns (*) to import multiple files
+- rewrite: New complex rules with conditions, regex captures, and status code
+- tls: Removed DES ciphers from default cipher suite list
+- tls: All supported certificates are OCSP-stapled
+- tls: Allow custom configuration without specifying certificate and key
+- tls: No longer allow HTTPS over port 80
+- Dozens of bug fixes, improvements, and more tests across the board
+
+
+0.8.0 (December 4, 2015)
+- HTTPS by default via Let's Encrypt (certs & keys are fully managed)
+- Graceful restarts (on POSIX-compliant systems)
+- Major internal refactoring to allow use of Caddy as library
+- New directive 'mime' to customize Content-Type based on file extension
+- New -accept flag to accept Let's Encrypt SA without prompt
+- New -email flag to customize default email used for ACME transactions
+- New -ca flag to customize ACME CA server URL
+- New -revoke flag to revoke a certificate
+- New -log flag to enable process log
+- New -pidfile flag to enable writing pidfile
+- New -grace flag to customize the graceful shutdown timeout
+- New support for SIGHUP, SIGTERM, and SIGQUIT signals
+- browse: Render filenames with multiple whitespace properly
+- core: Use environment variables in Caddyfile
+- markdown: Include Last-Modified header in response
+- markdown: Render tables, strikethrough, and fenced code blocks
+- proxy: Ability to exclude/ignore paths from proxying
+- startup, shutdown: Better Windows support
+- templates: Bug fix for .Host when port is absent
+- templates: Include Last-Modified header in response
+- templates: Support for custom delimiters
+- tls: For non-local hosts, default port is now 443 unless specified
+- tls: Force-disable HTTPS
+- tls: Specify Let's Encrypt email address
+- Many, many more tests and numerous bug fixes and improvements
+
+
+0.7.6 (September 28, 2015)
+- Pass in simple Caddyfile as command line arguments
+- basicauth: Support for legacy htpasswd files
+- browse: JSON response with file listing
+- core: Caddyfile as command line argument
+- errors: Can write full stack trace to HTTP response for debugging
+- errors, log: Roll log files after certain size or age
+- proxy: Fix for 32-bit architectures
+- rewrite: Better compatibility with fastcgi and PHP apps
+- templates: Added .StripExt and .StripHTML methods
+- Internal improvements and minor bug fixes
+
+
 0.7.5 (August 5, 2015)
 - core: All listeners bind to 0.0.0.0 unless 'bind' directive is used
 - fastcgi: Set HTTPS env variable if connection is secure
