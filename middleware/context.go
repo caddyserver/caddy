@@ -184,7 +184,11 @@ func (c Context) Markdown(filename string) (string, error) {
 		return "", err
 	}
 	renderer := blackfriday.HtmlRenderer(0, "", "")
-	extns := blackfriday.EXTENSION_TABLES | blackfriday.EXTENSION_FENCED_CODE | blackfriday.EXTENSION_STRIKETHROUGH | blackfriday.EXTENSION_DEFINITION_LISTS
+	extns := 0
+	extns |= blackfriday.EXTENSION_TABLES
+	extns |= blackfriday.EXTENSION_FENCED_CODE
+	extns |= blackfriday.EXTENSION_STRIKETHROUGH
+	extns |= blackfriday.EXTENSION_DEFINITION_LISTS
 	markdown := blackfriday.Markdown([]byte(body), renderer, extns)
 
 	return string(markdown), nil
