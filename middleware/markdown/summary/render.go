@@ -23,8 +23,8 @@ func (r renderer) BlockCode(out *bytes.Buffer, text []byte, land string) {}
 // Stub BlockQuote is teh quote tag callback.
 func (r renderer) BlockQuote(out *bytes.Buffer, text []byte) {}
 
-// Stub BlockHtml is the HTML tag callback.
-func (r renderer) BlockHtml(out *bytes.Buffer, text []byte) {}
+// Stub BlockHTML is the HTML tag callback.
+func (r renderer) BlockHTML(out *bytes.Buffer, text []byte) {}
 
 // Stub Header is the header tag callback.
 func (r renderer) Header(out *bytes.Buffer, text func() bool, level int, id string) {}
@@ -114,8 +114,8 @@ func (r renderer) Link(out *bytes.Buffer, link []byte, title []byte, content []b
 	out.Write(content)
 }
 
-// Stub RawHtmlTag is the raw HTML tag callback.
-func (r renderer) RawHtmlTag(out *bytes.Buffer, tag []byte) {}
+// Stub RawHTMLTag is the raw HTML tag callback.
+func (r renderer) RawHTMLTag(out *bytes.Buffer, tag []byte) {}
 
 // TripleEmphasis is the triple emphasis tag callback.  Outputs a simple plain-text
 // version of the input.
