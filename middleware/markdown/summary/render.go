@@ -23,8 +23,8 @@ func (r renderer) BlockCode(out *bytes.Buffer, text []byte, land string) {}
 // Stub BlockQuote is teh quote tag callback.
 func (r renderer) BlockQuote(out *bytes.Buffer, text []byte) {}
 
-// Stub BlockHTML is the HTML tag callback.
-func (r renderer) BlockHTML(out *bytes.Buffer, text []byte) {}
+// Stub BlockHtml is the HTML tag callback.
+func (r renderer) BlockHtml(out *bytes.Buffer, text []byte) {}
 
 // Stub Header is the header tag callback.
 func (r renderer) Header(out *bytes.Buffer, text func() bool, level int, id string) {}
