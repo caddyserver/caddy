@@ -4,8 +4,7 @@
 // To use this package, follow a few simple steps:
 //
 //   1. Set the AppName and AppVersion variables.
-//   2. Call LoadCaddyfile() to get the Caddyfile (it
-//      might have been piped in as part of a restart).
+//   2. Call LoadCaddyfile() to get the Caddyfile.
 //      You should pass in your own Caddyfile loader.
 //   3. Call caddy.Start() to start Caddy, caddy.Stop()
 //      to stop it, or caddy.Restart() to restart it.
@@ -16,7 +15,6 @@ package caddy
 
 import (
 	"bytes"
-	"encoding/gob"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -26,7 +24,6 @@ import (
 	"path"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/mholt/caddy/caddy/https"
@@ -52,11 +49,6 @@ var (
 
 	// GracefulTimeout is the maximum duration of a graceful shutdown.
 	GracefulTimeout time.Duration
-
-	// RestartMode is the mode used for restart,
-	// "inproc" will restart in process,
-	// otherwise default behavior is used (inproc on Windows, fork on Linux).
-	RestartMode = ""
 )
 
 var (
@@ -65,10 +57,6 @@ var (
 
 	// caddyfileMu protects caddyfile during changes
 	caddyfileMu sync.Mutex
-
-	// errIncompleteRestart occurs if this process is a fork
-	// of the parent but no Caddyfile was piped in
-	errIncompleteRestart = errors.New("incomplete restart")
 
 	// servers is a list of all the currently-listening servers
 	servers []*server.Server
@@ -79,11 +67,8 @@ var (
 	// wg is used to wait for all servers to shut down
 	wg sync.WaitGroup
 
-	// loadedGob is used if this is a child process as part of
-	// a graceful restart; it is used to map listeners to their
-	// index in the list of inherited file descriptors. This
-	// variable is not safe for concurrent access.
-	loadedGob caddyfileGob
+	// restartFds keeps the servers' sockets for graceful in-process restart
+	restartFds = make(map[string]*os.File)
 
 	// startedBefore should be set to true if caddy has been started
 	// at least once (does not indicate whether currently running).
@@ -104,31 +89,7 @@ const (
 // one.
 //
 // This function blocks until all the servers are listening.
-//
-// Note (POSIX): If Start is called in the child process of a
-// restart more than once within the duration of the graceful
-// cutoff (i.e. the child process called Start a first time,
-// then called Stop, then Start again within the first 5 seconds
-// or however long GracefulTimeout is) and the Caddyfiles have
-// at least one listener address in common, the second Start
-// may fail with "address already in use" as there's no
-// guarantee that the parent process has relinquished the
-// address before the grace period ends.
 func Start(cdyfile Input) (err error) {
-	// If we return with no errors, we must do two things: tell the
-	// parent that we succeeded and write to the pidfile.
-	defer func() {
-		if err == nil {
-			signalSuccessToParent() // TODO: Is doing this more than once per process a bad idea? Start could get called more than once in other apps.
-			if PidFile != "" {
-				err := writePidFile()
-				if err != nil {
-					log.Printf("[ERROR] Could not write pidfile: %v", err)
-				}
-			}
-		}
-	}()
-
 	// Input must never be nil; try to load something
 	if cdyfile == nil {
 		cdyfile, err = LoadCaddyfile(nil)
@@ -158,9 +119,10 @@ func Start(cdyfile Input) (err error) {
 	if err != nil {
 		return err
 	}
-	startedBefore = true
 
 	showInitializationOutput(groupings)
+
+	startedBefore = true
 
 	return nil
 }
@@ -193,8 +155,8 @@ func showInitializationOutput(groupings bindingGroup) {
 
 // startServers starts all the servers in groupings,
 // taking into account whether or not this process is
-// a child from a graceful restart or not. It blocks
-// until the servers are listening.
+// from a graceful restart or not. It blocks until
+// the servers are listening.
 func startServers(groupings bindingGroup) error {
 	var startupWg sync.WaitGroup
 	errChan := make(chan error, len(groupings)) // must be buffered to allow Serve functions below to return if stopped later
@@ -213,12 +175,9 @@ func startServers(groupings bindingGroup) error {
 		}
 
 		var ln server.ListenerFile
-		if IsRestart() {
-			// Look up this server's listener in the map of inherited file descriptors;
-			// if we don't have one, we must make a new one (later).
-			if fdIndex, ok := loadedGob.ListenerFds[s.Addr]; ok {
-				file := os.NewFile(fdIndex, "")
-
+		if len(restartFds) > 0 {
+			// Reuse the listeners for in-process restart
+			if file, ok := restartFds[s.Addr]; ok {
 				fln, err := net.FileListener(file)
 				if err != nil {
 					return err
@@ -230,7 +189,7 @@ func startServers(groupings bindingGroup) error {
 				}
 
 				file.Close()
-				delete(loadedGob.ListenerFds, s.Addr)
+				delete(restartFds, s.Addr)
 			}
 		}
 
@@ -240,7 +199,7 @@ func startServers(groupings bindingGroup) error {
 
 			// run startup functions that should only execute when
 			// the original parent process is starting.
-			if !IsRestart() && !startedBefore {
+			if !startedBefore {
 				err := s.RunFirstStartupFuncs()
 				if err != nil {
 					errChan <- err
@@ -268,10 +227,10 @@ func startServers(groupings bindingGroup) error {
 	}
 
 	// Close the remaining (unused) file descriptors to free up resources
-	if IsRestart() {
-		for key, fdIndex := range loadedGob.ListenerFds {
-			os.NewFile(fdIndex, "").Close()
-			delete(loadedGob.ListenerFds, key)
+	if len(restartFds) > 0 {
+		for key, file := range restartFds {
+			file.Close()
+			delete(restartFds, key)
 		}
 	}
 
@@ -314,25 +273,11 @@ func Wait() {
 	wg.Wait()
 }
 
-// LoadCaddyfile loads a Caddyfile, prioritizing a Caddyfile
-// piped from stdin as part of a restart (only happens on first call
-// to LoadCaddyfile). If it is not a restart, this function tries
-// calling the user's loader function, and if that returns nil, then
-// this function resorts to the default configuration. Thus, if there
-// are no other errors, this function always returns at least the
-// default Caddyfile.
+// LoadCaddyfile loads a Caddyfile by calling the user's loader function,
+// and if that returns nil, then this function resorts to the default
+// configuration. Thus, if there are no other errors, this function
+// always returns at least the default Caddyfile.
 func LoadCaddyfile(loader func() (Input, error)) (cdyfile Input, err error) {
-	// If we are a fork, finishing the restart is highest priority;
-	// piped input is required in this case.
-	if IsRestart() {
-		err := gob.NewDecoder(os.Stdin).Decode(&loadedGob)
-		if err != nil {
-			return nil, err
-		}
-		cdyfile = loadedGob.Caddyfile
-		atomic.StoreInt32(https.OnDemandIssuedCount, loadedGob.OnDemandTLSCertsIssued)
-	}
-
 	// Try user's loader
 	if cdyfile == nil && loader != nil {
 		cdyfile, err = loader()
