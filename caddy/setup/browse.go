@@ -393,7 +393,7 @@ footer {
 			</div>
 		</main>
 		<footer>
-			Served with <a href="https://caddyserver.com">Caddy</a>
+			Served with <a rel="noopener noreferrer" href="https://caddyserver.com">Caddy</a>.
 		</footer>
 		<script type="text/javascript">
 			function localizeDatetime(e, index, ar) {
