@@ -53,6 +53,7 @@ var directiveOrder = []directive{
 	// Directives that inject handlers (middleware)
 	{"log", setup.Log},
 	{"gzip", setup.Gzip},
+	{"locale", setup.Locale},
 	{"errors", setup.Errors},
 	{"header", setup.Headers},
 	{"rewrite", setup.Rewrite},

@@ -95,6 +95,7 @@ func NewReplacer(r *http.Request, rr *ResponseRecorder, emptyValue string) Repla
 				dir, _ := path.Split(r.URL.Path)
 				return dir
 			}(),
+			"{locale}": r.Header.Get("Detected-Locale"),
 		},
 		emptyValue: emptyValue,
 	}
