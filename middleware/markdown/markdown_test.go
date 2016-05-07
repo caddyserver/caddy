@@ -2,13 +2,14 @@ package markdown
 
 import (
 	"bufio"
-	"log"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
+	"text/template"
 	"time"
 
 	"github.com/mholt/caddy/middleware"
@@ -16,61 +17,55 @@ import (
 )
 
 func TestMarkdown(t *testing.T) {
-	templates := make(map[string]string)
-	templates[DefaultTemplate] = "testdata/markdown_tpl.html"
+	rootDir := "./testdata"
+
+	f := func(filename string) string {
+		return filepath.ToSlash(rootDir + string(filepath.Separator) + filename)
+	}
+
 	md := Markdown{
-		Root:    "./testdata",
-		FileSys: http.Dir("./testdata"),
+		Root:    rootDir,
+		FileSys: http.Dir(rootDir),
 		Configs: []*Config{
 			{
-				Renderer:    blackfriday.HtmlRenderer(0, "", ""),
-				PathScope:   "/blog",
-				Extensions:  []string{".md"},
-				Styles:      []string{},
-				Scripts:     []string{},
-				Templates:   templates,
-				StaticDir:   DefaultStaticDir,
-				StaticFiles: make(map[string]string),
-			},
-			{
-				Renderer:   blackfriday.HtmlRenderer(0, "", ""),
-				PathScope:  "/docflags",
-				Extensions: []string{".md"},
-				Styles:     []string{},
-				Scripts:    []string{},
-				Templates: map[string]string{
-					DefaultTemplate: "testdata/docflags/template.txt",
+				Renderer:  blackfriday.HtmlRenderer(0, "", ""),
+				PathScope: "/blog",
+				Extensions: map[string]struct{}{
+					".md": {},
 				},
-				StaticDir:   DefaultStaticDir,
-				StaticFiles: make(map[string]string),
+				Styles:   []string{},
+				Scripts:  []string{},
+				Template: setDefaultTemplate(f("markdown_tpl.html")),
 			},
 			{
-				Renderer:    blackfriday.HtmlRenderer(0, "", ""),
-				PathScope:   "/log",
-				Extensions:  []string{".md"},
-				Styles:      []string{"/resources/css/log.css", "/resources/css/default.css"},
-				Scripts:     []string{"/resources/js/log.js", "/resources/js/default.js"},
-				Templates:   make(map[string]string),
-				StaticDir:   DefaultStaticDir,
-				StaticFiles: make(map[string]string),
-			},
-			{
-				Renderer:    blackfriday.HtmlRenderer(0, "", ""),
-				PathScope:   "/og",
-				Extensions:  []string{".md"},
-				Styles:      []string{},
-				Scripts:     []string{},
-				Templates:   templates,
-				StaticDir:   "testdata/og_static",
-				StaticFiles: map[string]string{"/og/first.md": "testdata/og_static/og/first.md/index.html"},
-				Links: []PageLink{
-					{
-						Title:   "first",
-						Summary: "",
-						Date:    time.Now(),
-						URL:     "/og/first.md",
-					},
+				Renderer:  blackfriday.HtmlRenderer(0, "", ""),
+				PathScope: "/docflags",
+				Extensions: map[string]struct{}{
+					".md": {},
 				},
+				Styles:   []string{},
+				Scripts:  []string{},
+				Template: setDefaultTemplate(f("docflags/template.txt")),
+			},
+			{
+				Renderer:  blackfriday.HtmlRenderer(0, "", ""),
+				PathScope: "/log",
+				Extensions: map[string]struct{}{
+					".md": {},
+				},
+				Styles:   []string{"/resources/css/log.css", "/resources/css/default.css"},
+				Scripts:  []string{"/resources/js/log.js", "/resources/js/default.js"},
+				Template: GetDefaultTemplate(),
+			},
+			{
+				Renderer:  blackfriday.HtmlRenderer(0, "", ""),
+				PathScope: "/og",
+				Extensions: map[string]struct{}{
+					".md": {},
+				},
+				Styles:   []string{},
+				Scripts:  []string{},
+				Template: setDefaultTemplate(f("markdown_tpl.html")),
 			},
 		},
 		IndexFiles: []string{"index.html"},
@@ -78,14 +73,6 @@ func TestMarkdown(t *testing.T) {
 			t.Fatalf("Next shouldn't be called")
 			return 0, nil
 		}),
-	}
-
-	for i := range md.Configs {
-		c := md.Configs[i]
-		if err := GenerateStatic(md, c); err != nil {
-			t.Fatalf("Error: %v", err)
-		}
-		Watch(md, c, time.Millisecond*100)
 	}
 
 	req, err := http.NewRequest("GET", "/blog/test.md", nil)
@@ -163,11 +150,9 @@ DocFlags.var_bool true`
 		<title>Markdown test 2</title>
 		<meta charset="utf-8">
 		<link rel="stylesheet" href="/resources/css/log.css">
-<link rel="stylesheet" href="/resources/css/default.css">
-
+		<link rel="stylesheet" href="/resources/css/default.css">
 		<script src="/resources/js/log.js"></script>
-<script src="/resources/js/default.js"></script>
-
+		<script src="/resources/js/default.js"></script>
 	</head>
 	<body>
 		<h2>Welcome on the blog</h2>
@@ -192,9 +177,9 @@ DocFlags.var_bool true`
 	}
 	rec = httptest.NewRecorder()
 	currenttime := time.Now().Local().Add(-time.Second)
-	err = os.Chtimes("testdata/og/first.md", currenttime, currenttime)
+	_ = os.Chtimes("testdata/og/first.md", currenttime, currenttime)
 	currenttime = time.Now().Local()
-	err = os.Chtimes("testdata/og_static/og/first.md/index.html", currenttime, currenttime)
+	_ = os.Chtimes("testdata/og_static/og/first.md/index.html", currenttime, currenttime)
 	time.Sleep(time.Millisecond * 200)
 
 	md.ServeHTTP(rec, req)
@@ -219,52 +204,6 @@ Welcome to title!
 	if !equalStrings(respBody, expectedBody) {
 		t.Fatalf("Expected body: %v got: %v", expectedBody, respBody)
 	}
-
-	expectedLinks := []string{
-		"/blog/test.md",
-		"/docflags/test.md",
-		"/log/test.md",
-	}
-
-	for i, c := range md.Configs[:2] {
-		log.Printf("Test number: %d, configuration links: %v, config: %v", i, c.Links, c)
-		if c.Links[0].URL != expectedLinks[i] {
-			t.Fatalf("Expected %v got %v", expectedLinks[i], c.Links[0].URL)
-		}
-	}
-
-	// attempt to trigger race conditions
-	var w sync.WaitGroup
-	f := func() {
-		req, err := http.NewRequest("GET", "/log/test.md", nil)
-		if err != nil {
-			t.Fatalf("Could not create HTTP request: %v", err)
-		}
-		rec := httptest.NewRecorder()
-
-		md.ServeHTTP(rec, req)
-		w.Done()
-	}
-	for i := 0; i < 5; i++ {
-		w.Add(1)
-		go f()
-	}
-	w.Wait()
-
-	f = func() {
-		GenerateStatic(md, md.Configs[0])
-		w.Done()
-	}
-	for i := 0; i < 5; i++ {
-		w.Add(1)
-		go f()
-	}
-	w.Wait()
-
-	if err = os.RemoveAll(DefaultStaticDir); err != nil {
-		t.Errorf("Error while removing the generated static files: %v", err)
-	}
-
 }
 
 func equalStrings(s1, s2 string) bool {
@@ -279,4 +218,13 @@ func equalStrings(s1, s2 string) bool {
 		s2 = strings.Replace(s2, txt, "", 1)
 	}
 	return true
+}
+
+func setDefaultTemplate(filename string) *template.Template {
+	buf, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return nil
+	}
+
+	return template.Must(GetDefaultTemplate().Parse(string(buf)))
 }

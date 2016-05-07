@@ -96,7 +96,9 @@ You may also be interested in the [developer guide]
 
 ## Running from Source
 
-Note: You will need **[Go 1.6](https://golang.org/dl/)** or newer.
+Note: You will need **[Go 1.6](https://golang.org/dl/)** or newer (required for
+transparent automatic HTTP/2 support and to take advantage of performance improvements
+in the TLS and crypto libraries).
 
 1. `$ go get github.com/mholt/caddy`
 2. `cd` into your website's directory

@@ -1,9 +1,7 @@
-package markdown
+package metadata
 
 import (
 	"bytes"
-	"fmt"
-	"reflect"
 	"strings"
 	"testing"
 )
@@ -164,56 +162,52 @@ func TestParsers(t *testing.T) {
 		testData [5]string
 		name     string
 	}{
-		{&JSONMetadataParser{metadata: newMetadata()}, JSON, "json"},
-		{&YAMLMetadataParser{metadata: newMetadata()}, YAML, "yaml"},
-		{&TOMLMetadataParser{metadata: newMetadata()}, TOML, "toml"},
+		{&JSONMetadataParser{}, JSON, "JSON"},
+		{&YAMLMetadataParser{}, YAML, "YAML"},
+		{&TOMLMetadataParser{}, TOML, "TOML"},
 	}
 
 	for _, v := range data {
 		// metadata without identifiers
-		if _, err := v.parser.Parse([]byte(v.testData[0])); err == nil {
+		if v.parser.Init(bytes.NewBufferString(v.testData[0])) {
 			t.Fatalf("Expected error for invalid metadata for %v", v.name)
 		}
 
 		// metadata with identifiers
-		md, err := v.parser.Parse([]byte(v.testData[1]))
-		check(t, err)
+		if !v.parser.Init(bytes.NewBufferString(v.testData[1])) {
+			t.Fatalf("Metadata failed to initialize, type %v", v.parser.Type())
+		}
+		md := v.parser.Markdown()
 		if !compare(v.parser.Metadata()) {
 			t.Fatalf("Expected %v, found %v for %v", expected, v.parser.Metadata(), v.name)
 		}
 		if "Page content" != strings.TrimSpace(string(md)) {
 			t.Fatalf("Expected %v, found %v for %v", "Page content", string(md), v.name)
 		}
-
-		var line []byte
-		fmt.Fscanln(bytes.NewReader([]byte(v.testData[1])), &line)
-		if parser := findParser(line); parser == nil {
-			t.Fatalf("Parser must be found for %v", v.name)
-		} else {
-			if reflect.TypeOf(parser) != reflect.TypeOf(v.parser) {
-				t.Fatalf("parsers not equal. %v != %v", reflect.TypeOf(parser), reflect.TypeOf(v.parser))
-			}
+		// Check that we find the correct metadata parser type
+		if p := GetParser([]byte(v.testData[1])); p.Type() != v.name {
+			t.Fatalf("Wrong parser found, expected %v, found %v", v.name, p.Type())
 		}
 
 		// metadata without closing identifier
-		if _, err := v.parser.Parse([]byte(v.testData[2])); err == nil {
-			t.Fatalf("Expected error for missing closing identifier for %v", v.name)
+		if v.parser.Init(bytes.NewBufferString(v.testData[2])) {
+			t.Fatalf("Expected error for missing closing identifier for %v parser", v.name)
 		}
 
 		// invalid metadata
-		if _, err = v.parser.Parse([]byte(v.testData[3])); err == nil {
+		if v.parser.Init(bytes.NewBufferString(v.testData[3])) {
 			t.Fatalf("Expected error for invalid metadata for %v", v.name)
 		}
 
 		// front matter but no body
-		if _, err = v.parser.Parse([]byte(v.testData[4])); err != nil {
+		if !v.parser.Init(bytes.NewBufferString(v.testData[4])) {
 			t.Fatalf("Unexpected error for valid metadata but no body for %v", v.name)
 		}
 	}
-
 }
 
 func TestLargeBody(t *testing.T) {
+
 	var JSON = `{
 "template": "chapter"
 }
@@ -235,21 +229,33 @@ template : chapter
 Mycket olika byggnader har man i de nordiska rikena: pyramidformiga, kilformiga, välvda, runda och fyrkantiga. De pyramidformiga består helt enkelt av träribbor, som upptill löper samman och nedtill bildar en vidare krets; de är avsedda att användas av hantverkarna under sommaren, för att de inte ska plågas av solen, på samma gång som de besväras av rök och eld. De kilformiga husen är i regel försedda med höga tak, för att de täta och tunga snömassorna fortare ska kunna blåsa av och inte tynga ned taken. Dessa är täckta av björknäver, tegel eller kluvet spån av furu - för kådans skull -, gran, ek eller bok; taken på de förmögnas hus däremot med plåtar av koppar eller bly, i likhet med kyrktaken. Valvbyggnaderna uppförs ganska konstnärligt till skydd mot våldsamma vindar och snöfall, görs av sten eller trä, och är avsedda för olika alldagliga viktiga ändamål. Liknande byggnader kan finnas i stormännens gårdar där de används som förvaringsrum för husgeråd och jordbruksredskap. De runda byggnaderna - som för övrigt är de högst sällsynta - används av konstnärer, som vid sitt arbete behöver ett jämnt fördelat ljus från taket. Vanligast är de fyrkantiga husen, vars grova bjälkar är synnerligen väl hopfogade i hörnen - ett sant mästerverk av byggnadskonst; även dessa har fönster högt uppe i taken, för att dagsljuset skall kunna strömma in och ge alla därinne full belysning. Stenhusen har dörröppningar i förhållande till byggnadens storlek, men smala fönstergluggar, som skydd mot den stränga kölden, frosten och snön. Vore de större och vidare, såsom fönstren i Italien, skulle husen i följd av den fint yrande snön, som röres upp av den starka blåsten, precis som dammet av virvelvinden, snart nog fyllas med massor av snö och inte kunna stå emot dess tryck, utan störta samman.
 
 	`
+	var NONE = `
+
+Mycket olika byggnader har man i de nordiska rikena: pyramidformiga, kilformiga, välvda, runda och fyrkantiga. De pyramidformiga består helt enkelt av träribbor, som upptill löper samman och nedtill bildar en vidare krets; de är avsedda att användas av hantverkarna under sommaren, för att de inte ska plågas av solen, på samma gång som de besväras av rök och eld. De kilformiga husen är i regel försedda med höga tak, för att de täta och tunga snömassorna fortare ska kunna blåsa av och inte tynga ned taken. Dessa är täckta av björknäver, tegel eller kluvet spån av furu - för kådans skull -, gran, ek eller bok; taken på de förmögnas hus däremot med plåtar av koppar eller bly, i likhet med kyrktaken. Valvbyggnaderna uppförs ganska konstnärligt till skydd mot våldsamma vindar och snöfall, görs av sten eller trä, och är avsedda för olika alldagliga viktiga ändamål. Liknande byggnader kan finnas i stormännens gårdar där de används som förvaringsrum för husgeråd och jordbruksredskap. De runda byggnaderna - som för övrigt är de högst sällsynta - används av konstnärer, som vid sitt arbete behöver ett jämnt fördelat ljus från taket. Vanligast är de fyrkantiga husen, vars grova bjälkar är synnerligen väl hopfogade i hörnen - ett sant mästerverk av byggnadskonst; även dessa har fönster högt uppe i taken, för att dagsljuset skall kunna strömma in och ge alla därinne full belysning. Stenhusen har dörröppningar i förhållande till byggnadens storlek, men smala fönstergluggar, som skydd mot den stränga kölden, frosten och snön. Vore de större och vidare, såsom fönstren i Italien, skulle husen i följd av den fint yrande snön, som röres upp av den starka blåsten, precis som dammet av virvelvinden, snart nog fyllas med massor av snö och inte kunna stå emot dess tryck, utan störta samman.
+
+	`
 	var expectedBody = `Mycket olika byggnader har man i de nordiska rikena: pyramidformiga, kilformiga, välvda, runda och fyrkantiga. De pyramidformiga består helt enkelt av träribbor, som upptill löper samman och nedtill bildar en vidare krets; de är avsedda att användas av hantverkarna under sommaren, för att de inte ska plågas av solen, på samma gång som de besväras av rök och eld. De kilformiga husen är i regel försedda med höga tak, för att de täta och tunga snömassorna fortare ska kunna blåsa av och inte tynga ned taken. Dessa är täckta av björknäver, tegel eller kluvet spån av furu - för kådans skull -, gran, ek eller bok; taken på de förmögnas hus däremot med plåtar av koppar eller bly, i likhet med kyrktaken. Valvbyggnaderna uppförs ganska konstnärligt till skydd mot våldsamma vindar och snöfall, görs av sten eller trä, och är avsedda för olika alldagliga viktiga ändamål. Liknande byggnader kan finnas i stormännens gårdar där de används som förvaringsrum för husgeråd och jordbruksredskap. De runda byggnaderna - som för övrigt är de högst sällsynta - används av konstnärer, som vid sitt arbete behöver ett jämnt fördelat ljus från taket. Vanligast är de fyrkantiga husen, vars grova bjälkar är synnerligen väl hopfogade i hörnen - ett sant mästerverk av byggnadskonst; även dessa har fönster högt uppe i taken, för att dagsljuset skall kunna strömma in och ge alla därinne full belysning. Stenhusen har dörröppningar i förhållande till byggnadens storlek, men smala fönstergluggar, som skydd mot den stränga kölden, frosten och snön. Vore de större och vidare, såsom fönstren i Italien, skulle husen i följd av den fint yrande snön, som röres upp av den starka blåsten, precis som dammet av virvelvinden, snart nog fyllas med massor av snö och inte kunna stå emot dess tryck, utan störta samman.
 `
+
 	data := []struct {
-		parser   MetadataParser
+		pType    string
 		testData string
-		name     string
 	}{
-		{&JSONMetadataParser{metadata: newMetadata()}, JSON, "json"},
-		{&YAMLMetadataParser{metadata: newMetadata()}, YAML, "yaml"},
-		{&TOMLMetadataParser{metadata: newMetadata()}, TOML, "toml"},
+		{"JSON", JSON},
+		{"TOML", TOML},
+		{"YAML", YAML},
+		{"None", NONE},
 	}
 	for _, v := range data {
-		// metadata without identifiers
-		if md, err := v.parser.Parse([]byte(v.testData)); err != nil || strings.TrimSpace(string(md)) != strings.TrimSpace(expectedBody) {
-			t.Fatalf("Error not expected and/or markdown not equal for %v", v.name)
+		p := GetParser([]byte(v.testData))
+		if v.pType != p.Type() {
+			t.Fatalf("Wrong parser type, expected %v, got %v", v.pType, p.Type())
+		}
+		md := p.Markdown()
+		if strings.TrimSpace(string(md)) != strings.TrimSpace(expectedBody) {
+			t.Log("Provided:", v.testData)
+			t.Log("Returned:", p.Markdown())
+			t.Fatalf("Error, mismatched body in expected type %v, matched type %v", v.pType, p.Type())
 		}
 	}
 }

@@ -3,12 +3,13 @@
 package markdown
 
 import (
-	"io/ioutil"
-	"log"
 	"net/http"
 	"os"
+	"path"
+	"strconv"
 	"strings"
-	"sync"
+	"text/template"
+	"time"
 
 	"github.com/mholt/caddy/middleware"
 	"github.com/russross/blackfriday"
@@ -33,16 +34,6 @@ type Markdown struct {
 	IndexFiles []string
 }
 
-// IsIndexFile checks to see if a file is an index file
-func (md Markdown) IsIndexFile(file string) bool {
-	for _, f := range md.IndexFiles {
-		if f == file {
-			return true
-		}
-	}
-	return false
-}
-
 // Config stores markdown middleware configurations.
 type Config struct {
 	// Markdown renderer
@@ -52,7 +43,7 @@ type Config struct {
 	PathScope string
 
 	// List of extensions to consider as markdown files
-	Extensions []string
+	Extensions map[string]struct{}
 
 	// List of style sheets to load for each markdown file
 	Styles []string
@@ -60,116 +51,121 @@ type Config struct {
 	// List of JavaScript files to load for each markdown file
 	Scripts []string
 
-	// Map of registered templates
-	Templates map[string]string
-
-	// Map of request URL to static files generated
-	StaticFiles map[string]string
-
-	// Links to all markdown pages ordered by date.
-	Links []PageLink
-
-	// Stores a directory hash to check for changes.
-	linksHash string
-
-	// Directory to store static files
-	StaticDir string
-
-	// If in development mode. i.e. Actively editing markdown files.
-	Development bool
-
-	sync.RWMutex
-}
-
-// IsValidExt checks to see if an extension is a valid markdown extension
-// for config.
-func (c *Config) IsValidExt(ext string) bool {
-	for _, e := range c.Extensions {
-		if e == ext {
-			return true
-		}
-	}
-	return false
+	// Template(s) to render with
+	Template *template.Template
 }
 
 // ServeHTTP implements the http.Handler interface.
 func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
-	for _, cfg := range md.Configs {
-		if !middleware.Path(r.URL.Path).Matches(cfg.PathScope) {
-			continue
+	var cfg *Config
+	for _, c := range md.Configs {
+		if middleware.Path(r.URL.Path).Matches(c.PathScope) { // not negated
+			cfg = c
+			break // or goto
+		}
+	}
+	if cfg == nil {
+		return md.Next.ServeHTTP(w, r) // exit early
+	}
+
+	// We only deal with HEAD/GET
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+	default:
+		return http.StatusMethodNotAllowed, nil
+	}
+
+	var dirents []os.FileInfo
+	var lastModTime time.Time
+	fpath := r.URL.Path
+	if idx, ok := middleware.IndexFile(md.FileSys, fpath, md.IndexFiles); ok {
+		// We're serving a directory index file, which may be a markdown
+		// file with a template.  Let's grab a list of files this directory
+		// URL points to, and pass that in to any possible template invocations,
+		// so that templates can customize the look and feel of a directory.
+		fdp, err := md.FileSys.Open(fpath)
+		switch {
+		case err == nil: // nop
+		case os.IsPermission(err):
+			return http.StatusForbidden, err
+		case os.IsExist(err):
+			return http.StatusNotFound, nil
+		default: // did we run out of FD?
+			return http.StatusInternalServerError, err
+		}
+		defer fdp.Close()
+
+		// Grab a possible set of directory entries.  Note, we do not check
+		// for errors here (unreadable directory, for example).  It may
+		// still be useful to have a directory template file, without the
+		// directory contents being present.  Note, the directory's last
+		// modification is also present here (entry ".").
+		dirents, _ = fdp.Readdir(-1)
+		for _, d := range dirents {
+			lastModTime = latest(lastModTime, d.ModTime())
 		}
 
-		fpath := r.URL.Path
-		if idx, ok := middleware.IndexFile(md.FileSys, fpath, md.IndexFiles); ok {
-			fpath = idx
-		}
+		// Set path to found index file
+		fpath = idx
+	}
 
-		for _, ext := range cfg.Extensions {
-			if strings.HasSuffix(fpath, ext) {
-				f, err := md.FileSys.Open(fpath)
-				if err != nil {
-					if os.IsPermission(err) {
-						return http.StatusForbidden, err
-					}
-					return http.StatusNotFound, nil
-				}
+	// If not supported extension, pass on it
+	if _, ok := cfg.Extensions[path.Ext(fpath)]; !ok {
+		return md.Next.ServeHTTP(w, r)
+	}
 
-				fs, err := f.Stat()
-				if err != nil {
-					return http.StatusNotFound, nil
-				}
+	// At this point we have a supported extension/markdown
+	f, err := md.FileSys.Open(fpath)
+	switch {
+	case err == nil: // nop
+	case os.IsPermission(err):
+		return http.StatusForbidden, err
+	case os.IsExist(err):
+		return http.StatusNotFound, nil
+	default: // did we run out of FD?
+		return http.StatusInternalServerError, err
+	}
+	defer f.Close()
 
-				// if development is set, scan directory for file changes for links.
-				if cfg.Development {
-					if err := GenerateStatic(md, cfg); err != nil {
-						log.Printf("[ERROR] markdown: on-demand site generation error: %v", err)
-					}
-				}
+	if fs, err := f.Stat(); err != nil {
+		return http.StatusGone, nil
+	} else {
+		lastModTime = latest(lastModTime, fs.ModTime())
+	}
 
-				cfg.RLock()
-				filepath, ok := cfg.StaticFiles[fpath]
-				cfg.RUnlock()
-				// if static site is generated, attempt to use it
-				if ok {
-					if fs1, err := os.Stat(filepath); err == nil {
-						// if markdown has not been modified since static page
-						// generation, serve the static page
-						if fs.ModTime().Before(fs1.ModTime()) {
-							if html, err := ioutil.ReadFile(filepath); err == nil {
-								middleware.SetLastModifiedHeader(w, fs1.ModTime())
-								w.Write(html)
-								return http.StatusOK, nil
-							}
-							if os.IsPermission(err) {
-								return http.StatusForbidden, err
-							}
-							return http.StatusNotFound, nil
-						}
-					}
-				}
+	ctx := middleware.Context{
+		Root: md.FileSys,
+		Req:  r,
+		URL:  r.URL,
+	}
+	html, err := cfg.Markdown(title(fpath), f, dirents, ctx)
+	if err != nil {
+		return http.StatusInternalServerError, err
+	}
 
-				body, err := ioutil.ReadAll(f)
-				if err != nil {
-					return http.StatusInternalServerError, err
-				}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Content-Length", strconv.FormatInt(int64(len(html)), 10))
+	middleware.SetLastModifiedHeader(w, lastModTime)
+	if r.Method == http.MethodGet {
+		w.Write(html)
+	}
+	return http.StatusOK, nil
+}
 
-				ctx := middleware.Context{
-					Root: md.FileSys,
-					Req:  r,
-					URL:  r.URL,
-				}
-				html, err := md.Process(cfg, fpath, body, ctx)
-				if err != nil {
-					return http.StatusInternalServerError, err
-				}
+// latest returns the latest time.Time
+func latest(t ...time.Time) time.Time {
+	var last time.Time
 
-				middleware.SetLastModifiedHeader(w, fs.ModTime())
-				w.Write(html)
-				return http.StatusOK, nil
-			}
+	for _, tt := range t {
+		if tt.After(last) {
+			last = tt
 		}
 	}
 
-	// Didn't qualify to serve as markdown; pass-thru
-	return md.Next.ServeHTTP(w, r)
+	return last
+}
+
+// title gives a backup generated title for a page
+func title(p string) string {
+	return strings.TrimRight(path.Base(p), path.Ext(p))
 }
