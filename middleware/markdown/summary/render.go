@@ -114,8 +114,8 @@ func (r renderer) Link(out *bytes.Buffer, link []byte, title []byte, content []b
 	out.Write(content)
 }
 
-// Stub RawHTMLTag is the raw HTML tag callback.
-func (r renderer) RawHTMLTag(out *bytes.Buffer, tag []byte) {}
+// Stub RawHtmlTag is the raw HTML tag callback.
+func (r renderer) RawHtmlTag(out *bytes.Buffer, tag []byte) {}
 
 // TripleEmphasis is the triple emphasis tag callback.  Outputs a simple plain-text
 // version of the input.
