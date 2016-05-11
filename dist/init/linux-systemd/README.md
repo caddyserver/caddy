@@ -4,6 +4,25 @@ Please do not hesitate to ask if you have any questions.
 
 ## Quickstart
 
+The provided unit file assumes that you want to run caddy as `www-data` and group `www-data`,
+both having UID and GID 33 here.
+Adjust this to your liking according to the preferences of you Linux distribution!
+
+```bash
+groupadd -g 33 www-data
+useradd \
+  -g www-data --no-user-group \
+  --home-dir /var/www --no-create-home \
+  --shell /usr/sbin/nologin \
+  --system --uid 33 www-data
+
+mkdir /etc/caddy
+chown -R root:www-data /etc/caddy
+mkdir /etc/ssl/caddy
+chown -R www-data:root /etc/ssl/caddy
+chmod 0770 /etc/ssl/caddy
+```
+
 - Install the unit configuration file: `cp caddy.service /etc/systemd/system/`
 - Reload the systemd daemon: `systemctl daemon-reload`
 - Make sure to [configure](#configuration) the service unit before starting caddy.
@@ -52,3 +71,9 @@ sudo -u www-data -g www-data -s \
   `systemctl kill --signal=USR1 caddy.service`
 - If you have more files that start with `caddy` – like a `caddy.timer`, `caddy.path`, or `caddy.socket` – then it is important to append `.service`.
   Although if `caddy.service` is all you have, then you can just use `caddy` without any extension, such as in: `systemctl status caddy`
+
+- You can make your other certificates and private key files accessible to a user `www-data` by command `setfacl`, if you must:
+
+```bash
+setfacl -m user:www-data:r-- /etc/ssl/private/my.key
+```
