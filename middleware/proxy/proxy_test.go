@@ -100,7 +100,8 @@ func TestReverseProxyInsecureSkipVerify(t *testing.T) {
 func TestWebSocketReverseProxyServeHTTPHandler(t *testing.T) {
 	// No-op websocket backend simply allows the WS connection to be
 	// accepted then it will be immediately closed. Perfect for testing.
-	wsNop := httptest.NewServer(websocket.Handler(func(ws *websocket.Conn) {}))
+	var connCount int
+	wsNop := httptest.NewServer(websocket.Handler(func(ws *websocket.Conn) { connCount++ }))
 	defer wsNop.Close()
 
 	// Get proxy to use for the test
@@ -132,6 +133,9 @@ func TestWebSocketReverseProxyServeHTTPHandler(t *testing.T) {
 	actual := w.fakeConn.writeBuf.Bytes()
 	if !bytes.Equal(actual, expected) {
 		t.Errorf("Expected backend to accept response:\n'%s'\nActually got:\n'%s'", expected, actual)
+	}
+	if connCount != 1 {
+		t.Errorf("Expected 1 websocket connection, got %d", connCount)
 	}
 }
 
