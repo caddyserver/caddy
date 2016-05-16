@@ -432,7 +432,10 @@ type recorderHijacker struct {
 }
 
 func (rh *recorderHijacker) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	return rh.fakeConn, nil, nil
+	rw := &bufio.ReadWriter{
+		Reader: &bufio.Reader{},
+	}
+	return rh.fakeConn, rw, nil
 }
 
 type fakeConn struct {

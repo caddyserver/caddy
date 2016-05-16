@@ -13,6 +13,7 @@ package proxy
 
 import (
 	"crypto/tls"
+	"github.com/koding/websocketproxy"
 	"io"
 	"net"
 	"net/http"
@@ -164,10 +165,6 @@ func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request, extr
 	*outreq = *req // includes shallow copies of maps, but okay
 
 	p.Director(outreq)
-	outreq.Proto = "HTTP/1.1"
-	outreq.ProtoMajor = 1
-	outreq.ProtoMinor = 1
-	outreq.Close = false
 
 	// Remove hop-by-hop headers to the backend.  Especially
 	// important is "Connection" because we want a persistent
@@ -202,6 +199,20 @@ func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request, extr
 		}
 	}
 
+	if requestIsWebsocket(req) {
+		outreq.Proto = "HTTP/1.1"
+		outreq.ProtoMajor = 1
+		outreq.ProtoMinor = 1
+		outreq.Close = false
+		if outreq.URL.Scheme == "http" {
+			outreq.URL.Scheme = "ws"
+		} else if outreq.URL.Scheme == "https" {
+			outreq.URL.Scheme = "wss"
+		}
+		websocketproxy.ProxyHandler(outreq.URL).ServeHTTP(rw, outreq)
+		return nil
+	}
+	// replace this with something staged
 	res, err := transport.RoundTrip(outreq)
 	if err != nil {
 		return err
@@ -220,6 +231,8 @@ func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request, extr
 		}
 		defer conn.Close()
 
+		// can we change Transport to something that can dial?
+		// we can instantiate websocket.Dialer with out NetDial
 		backendConn, err := net.Dial("tcp", outreq.URL.Host)
 		if err != nil {
 			return err
@@ -245,6 +258,16 @@ func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request, extr
 	}
 
 	return nil
+}
+
+// isWebsocket checks whether the incoming request is a part of websocket
+// handshake
+func requestIsWebsocket(req *http.Request) bool {
+	if strings.ToLower(req.Header.Get("Upgrade")) != "websocket" ||
+		!strings.Contains(strings.ToLower(req.Header.Get("Connection")), "upgrade") {
+		return false
+	}
+	return true
 }
 
 func (p *ReverseProxy) copyResponse(dst io.Writer, src io.Reader) {
