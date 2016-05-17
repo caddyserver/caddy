@@ -9,4 +9,4 @@ Different scripts have different maintainers; please consult the comments in the
 
 ## Disclaimer
 
-The files contained herein are not officially supported by the Caddy project author and/or contributors, and as such, the files are not endorsed by the same. The Caddy project author and its contributors are not responsible for the function or malfunction of these scripts/files, or any uintended consequences to your system or website in attempting to set up Caddy. Users are expected to know how to administer their system, and these files should be considered as only a guide or suggestion for using Caddy in certain environments.
+The files contained herein are not officially supported by the Caddy project author and/or contributors, and as such, the files are not endorsed by the same. The Caddy project author and its contributors are not responsible for the function or malfunction of these scripts/files, or any unintended consequences to your system or website in attempting to set up Caddy. Users are expected to know how to administer their system, and these files should be considered as only a guide or suggestion for using Caddy in certain environments.

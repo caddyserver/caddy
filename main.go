@@ -33,7 +33,6 @@ func init() {
 	flag.StringVar(&caddy.PidFile, "pidfile", "", "Path to write pid file")
 	flag.StringVar(&caddy.Port, "port", caddy.DefaultPort, "Default port")
 	flag.BoolVar(&caddy.Quiet, "quiet", false, "Quiet mode (no initialization output)")
-	flag.StringVar(&caddy.RestartMode, "restart", "", "Restart mode (inproc for in process restart)")
 	flag.StringVar(&revoke, "revoke", "", "Hostname for which to revoke the certificate")
 	flag.StringVar(&caddy.Root, "root", caddy.DefaultRoot, "Root path to default site")
 	flag.BoolVar(&version, "version", false, "Show version")

@@ -155,7 +155,7 @@ if you haven't already.
 Thanks for making Caddy -- and the Web -- better!
 
 Special thanks to
-[![DigitalOcean](http://i.imgur.com/sfGr0eY.png)](https://www.digitalocean.com)
+[![DigitalOcean](https://i.imgur.com/sfGr0eY.png)](https://www.digitalocean.com)
 for hosting the Caddy project.
 
 
