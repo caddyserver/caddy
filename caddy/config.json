@@ -1,0 +1,23 @@
+{
+    "app_name": "Caddy",
+    "app_version": "0.8.2 (+426d165 Wed Mar 23 23:32:13 UTC 2016)",
+    "caddyfiles": [],
+    "http2": true,
+    "process": {
+        "quiet": false,
+        "pidfile": "",
+        "restart_mode": "",
+        "cpu": "100%",
+        "log": "",
+        "commands": {
+            "revoke": "",
+            "version": false,
+            "directives": false
+        }
+    },
+    "servers": {
+        "http": {
+            "tls": true
+        }
+    }
+}
