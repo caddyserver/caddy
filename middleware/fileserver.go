@@ -3,6 +3,7 @@ package middleware
 import (
 	"fmt"
 	"math/rand"
+	"mime"
 	"net/http"
 	"os"
 	"path"
@@ -59,6 +60,31 @@ func (fh *fileHandler) serveFile(w http.ResponseWriter, r *http.Request, name st
 			return http.StatusNotFound, nil
 		}
 	}
+
+	// When a request accepts gzipped files and a precompressed file sits
+	// alongside the original, then gzipped file will be served instead.
+	if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+		name = filepath.Clean(name)
+		if strings.HasPrefix(name, "/") {
+			name = name[1:len(name)]
+		}
+		if _, err := os.Stat(name + ".gz"); err == nil {
+			var buffer bytes.Buffer
+			buffer.WriteString(name)
+			buffer.WriteString(".gz")
+			name = buffer.String()
+			// sets response header so the response_filter.go won't commpress it.
+			w.Header().Set("Content-Encoding", "gzip")
+			if w.Header().Get("Content-Type") == "" {
+				mimeType := ""
+				if mimeType = mime.TypeByExtension(filepath.Ext(name)); mimeType == "" {
+					mimeType = "text/plain" // or maybe better to http.DetectContentType...
+				}
+				w.Header().Set("Content-Type", mimeType)
+			}
+		}
+	}
+
 	f, err := fh.root.Open(name)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -71,6 +97,7 @@ func (fh *fileHandler) serveFile(w http.ResponseWriter, r *http.Request, name st
 		w.Header().Set("Retry-After", strconv.Itoa(backoff))
 		return http.StatusServiceUnavailable, err
 	}
+
 	defer f.Close()
 
 	d, err := f.Stat()

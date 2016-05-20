@@ -44,11 +44,17 @@ func NewResponseFilterWriter(filters []ResponseFilter, gz *gzipResponseWriter) *
 // compresses if filters are satisfied.
 func (r *ResponseFilterWriter) WriteHeader(code int) {
 	// Determine if compression should be used or not.
-	r.shouldCompress = true
-	for _, filter := range r.filters {
-		if !filter.ShouldCompress(r) {
-			r.shouldCompress = false
-			break
+	isPrecompressed := r.Header().Get("Content-Encoding") == "gzip"
+	// header set on fileserver.go if a precompressed version of the file exists.
+	if isPrecompressed {
+		r.shouldCompress = false
+	} else {
+		r.shouldCompress = true
+		for _, filter := range r.filters {
+			if !filter.ShouldCompress(r) {
+				r.shouldCompress = false
+				break
+			}
 		}
 	}
 
@@ -61,7 +67,11 @@ func (r *ResponseFilterWriter) WriteHeader(code int) {
 		// necessary headers
 		r.gzipResponseWriter.WriteHeader(code)
 	} else {
-		r.ResponseWriter.WriteHeader(code)
+		if isPrecompressed {
+			r.gzipResponseWriter.WriteHeader(code)
+		} else {
+			r.ResponseWriter.WriteHeader(code)
+		}
 	}
 	r.statusCodeWritten = true
 }
