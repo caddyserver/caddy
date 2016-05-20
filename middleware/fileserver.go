@@ -69,11 +69,12 @@ func (fh *fileHandler) serveFile(w http.ResponseWriter, r *http.Request, name st
 		if strings.HasPrefix(name, "/") {
 			name = name[1:len(name)]
 		}
-		if _, err := os.Stat(name + ".gz"); err == nil {
-			var buffer bytes.Buffer
-			buffer.WriteString(name)
-			buffer.WriteString(".gz")
-			name = buffer.String()
+		var buffer bytes.Buffer
+		buffer.WriteString(name)
+		buffer.WriteString(".gz")
+		nameGz := buffer.String()
+		if _, err := os.Stat(nameGz); err == nil {
+			name = nameGz
 			// sets response header so the response_filter.go won't commpress it.
 			w.Header().Set("Content-Encoding", "gzip")
 			if w.Header().Get("Content-Type") == "" {
