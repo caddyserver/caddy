@@ -69,7 +69,10 @@ func (fh *fileHandler) serveFile(w http.ResponseWriter, r *http.Request, name st
 			name = name[1:len(name)]
 		}
 		if _, err := os.Stat(name + ".gz"); err == nil {
-			name = name + ".gz"
+			var buffer bytes.Buffer
+			buffer.WriteString(name)
+			buffer.WriteString(".gz")
+			name = buffer.String()
 			// sets response header so the response_filter.go won't commpress it.
 			w.Header().Set("Content-Encoding", "gzip")
 			if w.Header().Get("Content-Type") == "" {
