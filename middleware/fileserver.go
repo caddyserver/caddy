@@ -67,7 +67,7 @@ func (fh *fileHandler) serveFile(w http.ResponseWriter, r *http.Request, name st
 	if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
 		name = filepath.Clean(name)
 		if strings.HasPrefix(name, "/") {
-			name = name[1:len(name)]
+			name = name[1:]
 		}
 		var buffer bytes.Buffer
 		buffer.WriteString(name)
