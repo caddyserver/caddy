@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"bytes"
 	"fmt"
 	"math/rand"
 	"mime"
