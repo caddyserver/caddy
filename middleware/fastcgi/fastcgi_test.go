@@ -137,7 +137,7 @@ func TestBuildEnv(t *testing.T) {
 	fpath := "/fgci_test.php"
 
 	var envExpected = map[string]string{
-		"REMOTE_ADDR":     "[2b02:1810:4f2d:9400:70ab:f822:be8a:9093]",
+		"REMOTE_ADDR":     "2b02:1810:4f2d:9400:70ab:f822:be8a:9093",
 		"REMOTE_PORT":     "51688",
 		"SERVER_PROTOCOL": "HTTP/1.1",
 		"QUERY_STRING":    "test=blabla",
@@ -150,7 +150,7 @@ func TestBuildEnv(t *testing.T) {
 
 	// 2. Test for shorthand notation of IPv6 address
 	r.RemoteAddr = "[::1]:51688"
-	envExpected["REMOTE_ADDR"] = "[::1]"
+	envExpected["REMOTE_ADDR"] = "::1"
 	testBuildEnv(&r, rule, fpath, envExpected)
 
 	// 3. Test for IPv4 address

@@ -183,6 +183,10 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 		ip = r.RemoteAddr
 	}
 
+	// Remove [] from IPv6 addresses
+	ip = strings.Replace(ip, "[", "", 1)
+	ip = strings.Replace(ip, "]", "", 1)
+
 	// Split path in preparation for env variables.
 	// Previous rule.canSplit checks ensure this can never be -1.
 	splitPos := rule.splitPos(fpath)
