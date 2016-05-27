@@ -1,6 +1,6 @@
 [![Caddy](https://caddyserver.com/resources/images/caddy-boxed.png)](https://caddyserver.com)
 
-[![Dev Chat](https://img.shields.io/badge/dev%20chat-gitter-ff69b4.svg?style=flat-square&label=dev+chat&color=ff69b4)](https://gitter.im/mholt/caddy) 
+[![community](https://img.shields.io/badge/community-forum-ff69b4.svg?style=flat-square)](https://forum.caddyserver.com) 
 [![Documentation](https://img.shields.io/badge/godoc-reference-blue.svg?style=flat-square)](https://godoc.org/github.com/mholt/caddy) 
 [![Linux Build Status](https://img.shields.io/travis/mholt/caddy.svg?style=flat-square&label=linux+build)](https://travis-ci.org/mholt/caddy) 
 [![Windows Build Status](https://img.shields.io/appveyor/ci/mholt/caddy.svg?style=flat-square&label=windows+build)](https://ci.appveyor.com/project/mholt/caddy)
@@ -143,14 +143,11 @@ packages that each Caddy package imports.
 
 ## Contributing
 
-**[Join our dev chat on Gitter](https://gitter.im/mholt/caddy)** to chat with
-other Caddy developers! (Dev chat only; try our
-[support room](https://gitter.im/caddyserver/support) for help or
-[general](https://gitter.im/caddyserver/general) for anything else.)
+**[Join our community](https://forum.caddyserver.com) where you can chat with other Caddy users and developers!**
 
-This project would not be what it is without your help. Please see the
-[contributing guidelines](https://github.com/mholt/caddy/blob/master/CONTRIBUTING.md)
-if you haven't already.
+Please see our [contributing guidelines](https://github.com/mholt/caddy/blob/master/CONTRIBUTING.md).
+
+We use GitHub issues and pull requests *only* for bug reports and discussing specific changes to Caddy. We welcome all other topics on the [forum](https://forum.caddyserver.com)!
 
 Thanks for making Caddy -- and the Web -- better!
 

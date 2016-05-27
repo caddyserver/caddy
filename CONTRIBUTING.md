@@ -4,18 +4,13 @@ Welcome! Our community focuses on helping others and making Caddy the best it
 can be. We gladly accept contributions and encourage you to get involved!
 
 
-### Join us in chat
+### Join us in the forum
 
-Please direct your discussion to the correct room:
+The [Caddy forum](https://forum.caddyserver.com) is the place for all discussion
+that doesn't belong in issues or pull requests. Feel free to participate with us!
 
-- **Dev Chat:** [gitter.im/mholt/caddy](https://gitter.im/mholt/caddy) - to chat
-with other Caddy developers
-- **Support:**
-[gitter.im/caddyserver/support](https://gitter.im/caddyserver/support) - to give
-and get help
-- **General:**
-[gitter.im/caddyserver/general](https://gitter.im/caddyserver/general) - for
-anything about Web development
+If you want to file a bug report or make an improvement to Caddy, however, you
+should submit an issue or pull request.
 
 
 ### Bug reports
