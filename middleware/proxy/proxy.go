@@ -107,7 +107,7 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 					outreq.Host = rHost
 				}
 				if v, ok := host.UpstreamHeaders["Host"]; ok {
-					r.Host = replacer.Replace(v[len(v)-1])
+					outreq.Host = replacer.Replace(v[len(v)-1])
 				}
 				// Modify headers for request that will be sent to the upstream host
 				upHeaders := createHeadersByRules(host.UpstreamHeaders, r.Header, replacer)
