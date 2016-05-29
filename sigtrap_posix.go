@@ -27,11 +27,12 @@ func trapSignalsPosix() {
 			case syscall.SIGQUIT:
 				log.Println("[INFO] SIGQUIT: Shutting down")
 				exitCode := executeShutdownCallbacks("SIGQUIT")
-				err := Stop()
-				if err != nil {
-					log.Printf("[ERROR] SIGQUIT stop: %v", err)
-					exitCode = 1
-				}
+				// TODO - re-enable Stop(), which stops all servers on all instances, I guess
+				// err := Stop()
+				// if err != nil {
+				// 	log.Printf("[ERROR] SIGQUIT stop: %v", err)
+				// 	exitCode = 1
+				// }
 				if PidFile != "" {
 					os.Remove(PidFile)
 				}
@@ -39,18 +40,20 @@ func trapSignalsPosix() {
 
 			case syscall.SIGHUP:
 				log.Println("[INFO] SIGHUP: Hanging up")
-				err := Stop()
-				if err != nil {
-					log.Printf("[ERROR] SIGHUP stop: %v", err)
-				}
+				// TODO - re-enable Stop(), which stops all servers on all instances, I guess
+				// err := Stop()
+				// if err != nil {
+				// 	log.Printf("[ERROR] SIGHUP stop: %v", err)
+				// }
 
 			case syscall.SIGUSR1:
 				log.Println("[INFO] SIGUSR1: Reloading")
 
 				// Start with the existing Caddyfile
-				caddyfileInputMu.Lock()
-				updatedCaddyfile := caddyfileInput
-				caddyfileInputMu.Unlock()
+				instancesMu.Lock()
+				inst := instances[0]
+				instancesMu.Unlock()
+				updatedCaddyfile := inst.caddyfileInput
 				if updatedCaddyfile == nil {
 					// Hmm, did spawing process forget to close stdin? Anyhow, this is unusual.
 					log.Println("[ERROR] SIGUSR1: no Caddyfile to reload (was stdin left open?)")
@@ -63,9 +66,9 @@ func trapSignalsPosix() {
 				}
 
 				// Load the updated Caddyfile
-				newCaddyfile, err := loaderUsed.loader.Load()
+				newCaddyfile, err := loaderUsed.loader.Load(inst.serverType)
 				if err != nil {
-					log.Println("[ERROR] SIGUSR1: loading updated Caddyfile: %v", err)
+					log.Printf("[ERROR] SIGUSR1: loading updated Caddyfile: %v", err)
 					continue
 				}
 				if newCaddyfile != nil {
@@ -73,7 +76,7 @@ func trapSignalsPosix() {
 				}
 
 				// Kick off the restart; our work is done
-				err = Restart(startedServerType, updatedCaddyfile)
+				inst, err = inst.Restart(updatedCaddyfile)
 				if err != nil {
 					log.Printf("[ERROR] SIGUSR1: %v", err)
 				}

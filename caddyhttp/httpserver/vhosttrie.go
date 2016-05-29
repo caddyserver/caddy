@@ -5,13 +5,14 @@ import (
 	"strings"
 )
 
-// vhostTrie facilitates virtual hosting. It can match
-// request paths first by hostname (with support for
-// wildcards as TLS certificates support them), then by
-// longest matching path.
+// vhostTrie facilitates virtual hosting. It matches
+// requests first by hostname (with support for
+// wildcards as TLS certificates support them), then
+// by longest matching path.
 type vhostTrie struct {
 	edges map[string]*vhostTrie
-	stack Handler
+	site  *SiteConfig // also known as a virtual host
+	path  string      // the path portion of the key for this node
 }
 
 // newVHostTrie returns a new vhostTrie.
@@ -20,32 +21,41 @@ func newVHostTrie() *vhostTrie {
 }
 
 // Insert adds stack to t keyed by key. The key should be
-// a valid host/path combination (or just host).
-func (t *vhostTrie) Insert(key string, stack Handler) {
+// a valid "host/path" combination (or just host).
+func (t *vhostTrie) Insert(key string, site *SiteConfig) {
 	host, path := t.splitHostPath(key)
 	if _, ok := t.edges[host]; !ok {
 		t.edges[host] = newVHostTrie()
 	}
-	t.edges[host].insertPath(path, stack)
+	t.edges[host].insertPath(path, path, site)
 }
 
 // insertPath expects t to be a host node (not a root node),
-// and inserts stack into the t according to remainingPath.
-func (t *vhostTrie) insertPath(remainingPath string, stack Handler) {
+// and inserts site into the t according to remainingPath.
+func (t *vhostTrie) insertPath(remainingPath, originalPath string, site *SiteConfig) {
 	if remainingPath == "" {
-		t.stack = stack
+		t.site = site
+		t.path = originalPath
 		return
 	}
 	ch := string(remainingPath[0])
 	if _, ok := t.edges[ch]; !ok {
 		t.edges[ch] = newVHostTrie()
 	}
-	t.edges[ch].insertPath(remainingPath[1:], stack)
+	t.edges[ch].insertPath(remainingPath[1:], originalPath, site)
 }
 
-// Match returns the middleware stack in v with
-// the closest match to key.
-func (t *vhostTrie) Match(key string) Handler {
+// Match returns the virtual host (site) in v with
+// the closest match to key. If there was a match,
+// it returns the SiteConfig and the path portion of
+// the key used to make the match. The matched path
+// would be a prefix of the path portion of the
+// key, if not the whole path portion of the key.
+// If there is no match, nil and empty string will
+// be returned.
+//
+// A typical key will be in the form "host" or "host/path".
+func (t *vhostTrie) Match(key string) (*SiteConfig, string) {
 	host, path := t.splitHostPath(key)
 	// try the given host, then, if no match, try wildcard hosts
 	branch := t.matchHost(host)
@@ -56,13 +66,13 @@ func (t *vhostTrie) Match(key string) Handler {
 		branch = t.matchHost("")
 	}
 	if branch == nil {
-		return nil
+		return nil, ""
 	}
 	node := branch.matchPath(path)
 	if node == nil {
-		return nil
+		return nil, ""
 	}
-	return node.stack
+	return node.site, node.path
 }
 
 // matchHost returns the vhostTrie matching host. The matching
@@ -99,7 +109,7 @@ func (t *vhostTrie) matchPath(remainingPath string) *vhostTrie {
 		if !ok {
 			break
 		}
-		if next.stack != nil {
+		if next.site != nil {
 			longestMatch = next
 		}
 		t = next

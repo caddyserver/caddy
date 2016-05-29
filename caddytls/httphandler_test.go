@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestRequestCallbackNoOp(t *testing.T) {
+func TestHTTPChallengeHandlerNoOp(t *testing.T) {
 	// try base paths that aren't handled by this handler
 	for _, url := range []string{
 		"http://localhost/",
@@ -21,13 +21,13 @@ func TestRequestCallbackNoOp(t *testing.T) {
 			t.Fatalf("Could not craft request, got error: %v", err)
 		}
 		rw := httptest.NewRecorder()
-		if RequestCallback(rw, req) {
+		if HTTPChallengeHandler(rw, req, DefaultHTTPAlternatePort) {
 			t.Errorf("Got true with this URL, but shouldn't have: %s", url)
 		}
 	}
 }
 
-func TestRequestCallbackSuccess(t *testing.T) {
+func TestHTTPChallengeHandlerSuccess(t *testing.T) {
 	expectedPath := challengeBasePath + "/asdf"
 
 	// Set up fake acme handler backend to make sure proxying succeeds
@@ -40,7 +40,7 @@ func TestRequestCallbackSuccess(t *testing.T) {
 	}))
 
 	// Custom listener that uses the port we expect
-	ln, err := net.Listen("tcp", "127.0.0.1:"+AlternatePort)
+	ln, err := net.Listen("tcp", "127.0.0.1:"+DefaultHTTPAlternatePort)
 	if err != nil {
 		t.Fatalf("Unable to start test server listener: %v", err)
 	}
@@ -49,13 +49,13 @@ func TestRequestCallbackSuccess(t *testing.T) {
 	// Start our engines and run the test
 	ts.Start()
 	defer ts.Close()
-	req, err := http.NewRequest("GET", "http://127.0.0.1:"+AlternatePort+expectedPath, nil)
+	req, err := http.NewRequest("GET", "http://127.0.0.1:"+DefaultHTTPAlternatePort+expectedPath, nil)
 	if err != nil {
 		t.Fatalf("Could not craft request, got error: %v", err)
 	}
 	rw := httptest.NewRecorder()
 
-	RequestCallback(rw, req)
+	HTTPChallengeHandler(rw, req, DefaultHTTPAlternatePort)
 
 	if !proxySuccess {
 		t.Fatal("Expected request to be proxied, but it wasn't")

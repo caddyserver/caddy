@@ -1,12 +1,12 @@
 package caddy
 
-// Controller is given to the setup function of middlewares which
 import (
 	"strings"
 
 	"github.com/mholt/caddy2/caddyfile"
 )
 
+// Controller is given to the setup function of middlewares which
 // gives them access to be able to read tokens and set config. Each
 // virtualhost gets their own server config and dispenser.
 type Controller struct {

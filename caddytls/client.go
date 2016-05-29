@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mholt/caddy2"
 	"github.com/xenolf/lego/acme"
 )
 
@@ -30,13 +31,17 @@ var newACMEClient = func(config *Config, allowPrompts bool) (*ACMEClient, error)
 		return nil, err
 	}
 
-	if config.KeyType == "" {
-		config.KeyType = acme.EC256
+	caURL := CAUrl
+	if config.CAUrl != "" {
+		caURL = config.CAUrl
+	}
+	keyType := acme.EC256
+	if config.KeyType != "" {
+		keyType = config.KeyType
 	}
 
 	// The client facilitates our communication with the CA server.
-	// TODO: This won't work, because we shouldn't have to specify key type until we want the cert
-	client, err := acme.NewClient(CAUrl, &leUser, config.KeyType)
+	client, err := acme.NewClient(caURL, &leUser, keyType)
 	if err != nil {
 		return nil, err
 	}
@@ -72,34 +77,65 @@ var newACMEClient = func(config *Config, allowPrompts bool) (*ACMEClient, error)
 		}
 	}
 
-	return &ACMEClient{
-		Client:       client,
-		AllowPrompts: allowPrompts,
-	}, nil
-}
+	c := &ACMEClient{Client: client, AllowPrompts: allowPrompts}
 
-// Configure configures c according to bindHost, which is the host (not
-// whole address) to bind the listener to in solving the http and tls-sni
-// challenges.
-func (c *ACMEClient) Configure(bindHost string) {
-	// If we allow prompts, operator must be present. In our case,
-	// that is synonymous with saying the server is not already
-	// started. So if the user is still there, we don't use
-	// AlternatePort because we don't need to proxy the challenges.
-	// Conversely, if the operator is not there, the server has
-	// already started and we need to proxy the challenge.
-	if c.AllowPrompts {
-		// Operator is present; server is not already listening
-		c.SetHTTPAddress(net.JoinHostPort(bindHost, ""))
-		c.SetTLSAddress(net.JoinHostPort(bindHost, ""))
-		//c.ExcludeChallenges([]acme.Challenge{acme.DNS01})
-	} else {
-		// Operator is not present; server is started, so proxy challenges
-		c.SetHTTPAddress(net.JoinHostPort(bindHost, AlternatePort))
-		c.SetTLSAddress(net.JoinHostPort(bindHost, AlternatePort))
-		//c.ExcludeChallenges([]acme.Challenge{acme.TLSSNI01, acme.DNS01})
+	// See if HTTP challenge needs to be proxied
+	if caddy.HasListenerWithAddress(net.JoinHostPort(config.ListenHost, HTTPChallengePort)) {
+		altPort := config.AltHTTPPort
+		if altPort == "" {
+			altPort = DefaultHTTPAlternatePort
+		}
+		c.SetHTTPAddress(net.JoinHostPort(config.ListenHost, altPort))
 	}
-	c.ExcludeChallenges([]acme.Challenge{acme.TLSSNI01, acme.DNS01}) // TODO: can we proxy TLS challenges? and we should support DNS...
+
+	// See if TLS challenge needs to be handled by our own facilities
+	if caddy.HasListenerWithAddress(net.JoinHostPort(config.ListenHost, TLSSNIChallengePort)) {
+		c.SetChallengeProvider(acme.TLSSNI01, tlsSniSolver{})
+	}
+
+	// TODO: THIS IS TEMPORARY, ONLY FOR EXPERIMENTING!
+	c.ExcludeChallenges([]acme.Challenge{acme.TLSSNI01})
+
+	// TODO: DNS providers should be plugins too, so we don't
+	// have to import them all, right??
+	/*
+		var dnsProv acme.ChallengeProvider
+		var err error
+		switch config.DNSProvider {
+		case "cloudflare":
+			dnsProv, err = cloudflare.NewDNSProvider()
+		case "digitalocean":
+			dnsProv, err = digitalocean.NewDNSProvider()
+		case "dnsimple":
+			dnsProv, err = dnsimple.NewDNSProvider()
+		case "dyn":
+			dnsProv, err = dyn.NewDNSProvider()
+		case "gandi":
+			dnsProv, err = gandi.NewDNSProvider()
+		case "gcloud":
+			dnsProv, err = gcloud.NewDNSProvider()
+		case "namecheap":
+			dnsProv, err = namecheap.NewDNSProvider()
+		case "rfc2136":
+			dnsProv, err = rfc2136.NewDNSProvider()
+		case "route53":
+			dnsProv, err = route53.NewDNSProvider()
+		case "vultr":
+			dnsProv, err = vultr.NewDNSProvider()
+		default:
+			if config.DNSProvider != "" {
+				return fmt.Errorf("unknown DNS provider '%s'", config.DNSProvider)
+			}
+		}
+		if err != nil {
+			return err
+		}
+		if dnsProv != nil {
+			client.SetChallengeProvider(acme.DNS01, dnsProv)
+		}
+	*/
+
+	return c, nil
 }
 
 // Obtain obtains a single certificate for names. It stores the certificate

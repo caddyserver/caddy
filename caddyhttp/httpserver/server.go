@@ -14,9 +14,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mholt/caddy2/shared/caddytls"
+	"github.com/mholt/caddy2/caddyhttp/staticfiles"
+	"github.com/mholt/caddy2/caddytls"
 )
 
+// SiteConfig contains information about a site (also known as
+// a virtual host).
 type SiteConfig struct {
 	// The address of the site
 	Addr Address
@@ -28,38 +31,51 @@ type SiteConfig struct {
 	// TLS configuration
 	TLS *caddytls.Config
 
-	// Middleware stack
+	// Uncompiled middleware stack
 	middleware []Middleware
+
+	// Compiled middleware stack
+	middlewareChain Handler
 
 	// Directory from which to serve files
 	Root string
+
+	// A list of files to hide (for example, the
+	// source Caddyfile). TODO: Enforcing this
+	// should be centralized, for example, a
+	// standardized way of loading files from disk
+	// for a request.
+	HiddenFiles []string
 }
 
+// TLSConfig returns s.TLS.
 func (s SiteConfig) TLSConfig() *caddytls.Config {
 	return s.TLS
 }
 
+// Host returns s.Addr.Host.
 func (s SiteConfig) Host() string {
 	return s.Addr.Host
 }
 
+// Port returns s.Addr.Port.
 func (s SiteConfig) Port() string {
 	return s.Addr.Port
 }
 
-// TODO: get useful comments on all these fields
+// Server is the HTTP server implementation.
 type Server struct {
 	*http.Server
-	//tls         *caddytls.Config
-	tls         bool
 	listener    net.Listener
-	listenerMu  sync.Mutex // TODO: How necessary is this?
-	connTimeout time.Duration
-	connWg      sync.WaitGroup
-	tlsGovChan  chan struct{} // close to stop the TLS maintenance goroutine
+	listenerMu  sync.Mutex     // TODO: How necessary is this?
+	connTimeout time.Duration  // max time to wait for a connection before force stop
+	connWg      sync.WaitGroup // one increment per connection
+	tlsGovChan  chan struct{}  // close to stop the TLS maintenance goroutine
 	vhosts      *vhostTrie
 }
 
+// NewServer creates a new Server instance that will listen on addr
+// and will serve the sites configured in group.
 func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 	s := &Server{
 		Server: &http.Server{
@@ -72,6 +88,11 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 		vhosts: newVHostTrie(),
 	}
 	s.Handler = s // this is weird, but whatever
+
+	// Disable HTTP/2 if desired
+	if !HTTP2 {
+		s.TLSNextProto = make(map[string]func(*http.Server, *tls.Conn, http.Handler))
+	}
 
 	// We have to bound our wg with one increment
 	// to prevent a "race condition" that is hard-coded
@@ -92,18 +113,21 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 		return nil, err
 	}
 
-	// Compile middleware stacks (configures virtual hosting)
+	// Compile custom middleware for every site (enables virtual hosting)
 	for _, site := range group {
-		var stack Handler // TODO: file server
+		stack := Handler(staticfiles.FileServer{Root: http.Dir(site.Root), Hide: site.HiddenFiles})
 		for i := len(site.middleware) - 1; i >= 0; i-- {
 			stack = site.middleware[i](stack)
 		}
-		s.vhosts.Insert(site.Addr.VHost(), stack)
+		site.middlewareChain = stack
+		s.vhosts.Insert(site.Addr.VHost(), site)
 	}
 
 	return s, nil
 }
 
+// Listen creates an active listener for s that can be
+// used to serve requests.
 func (s *Server) Listen() (net.Listener, error) {
 	if s.Server == nil {
 		return nil, fmt.Errorf("Server field is nil")
@@ -135,6 +159,7 @@ func (s *Server) Listen() (net.Listener, error) {
 	return ln.(*net.TCPListener), nil
 }
 
+// Serve serves requests on ln. It blocks until ln is closed.
 func (s *Server) Serve(ln net.Listener) error {
 	if tcpLn, ok := ln.(*net.TCPListener); ok {
 		ln = tcpKeepAliveListener{TCPListener: tcpLn}
@@ -158,133 +183,102 @@ func (s *Server) Serve(ln net.Listener) error {
 	return s.Server.Serve(ln)
 }
 
+// ServeHTTP is the entry point of all HTTP requests.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		// We absolutely need to be sure we stay alive up here,
-		// even though in theory the errors middleware does this.
+		// even though, in theory, the errors middleware does this.
 		if rec := recover(); rec != nil {
-			http.Error(w, http.StatusText(http.StatusInternalServerError),
-				http.StatusInternalServerError)
+			log.Printf("[PANIC] %v", rec)
+			DefaultErrorFunc(w, r, http.StatusInternalServerError)
 		}
 	}()
 
 	w.Header().Set("Server", "Caddy")
 
-	// TODO: This is temporary
-	//fmt.Fprintf(w, "PID %d\n", os.Getpid())
+	sanitizePath(r)
 
-	// Collapse any ./ ../ /// madness right away. Note to middleware:
-	// use URL.RawPath If you need the "original" URL.Path value.
-	if r.URL.Path != "/" {
-		cleanedPath := path.Clean(r.URL.Path)
-		if cleanedPath == "." {
-			r.URL.Path = "/"
-		} else {
-			if !strings.HasPrefix(cleanedPath, "/") {
-				cleanedPath = "/" + cleanedPath
-			}
-			if strings.HasSuffix(r.URL.Path, "/") && !strings.HasSuffix(cleanedPath, "/") {
-				cleanedPath = cleanedPath + "/"
-			}
-			r.URL.Path = cleanedPath
-		}
+	status, _ := s.serveHTTP(w, r)
+
+	// Fallback error response in case error handling wasn't chained in
+	if status >= 400 {
+		DefaultErrorFunc(w, r, status)
 	}
+}
 
+func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	// strip out the port because it's not used in virtual
-	// hosting, the port is irrelevant because each listener
+	// hosting; the port is irrelevant because each listener
 	// is on a different port.
 	hostname, _, err := net.SplitHostPort(r.Host)
 	if err != nil {
 		hostname = r.Host
 	}
 
-	vhost := s.vhosts.Match(hostname + r.URL.Path)
+	// look up the virtualhost; if no match, serve error
+	vhost, pathPrefix := s.vhosts.Match(hostname + r.URL.Path)
 
 	if vhost == nil {
+		// check for ACME challenge even if vhost is nil;
+		// could be a new host coming online soon
+		if caddytls.HTTPChallengeHandler(w, r, caddytls.DefaultHTTPAlternatePort) {
+			return 0, nil
+		}
+		// otherwise, log the error and write a message to the client
 		remoteHost, _, err := net.SplitHostPort(r.RemoteAddr)
 		if err != nil {
 			remoteHost = r.RemoteAddr
 		}
-		w.WriteHeader(http.StatusNotFound)
-		fmt.Fprintf(w, "No such site at %s", s.Server.Addr)
+		writeTextResponse(w, http.StatusNotFound, "No such site at "+s.Server.Addr)
 		log.Printf("[INFO] %s - No such site at %s (Remote: %s, Referer: %s)",
 			hostname, s.Server.Addr, remoteHost, r.Header.Get("Referer"))
-		return
+		return 0, nil
 	}
 
-	status, _ := vhost.ServeHTTP(w, r)
-
-	// Fallback error response in case error handling wasn't chained in
-	if status >= 400 {
-		DefaultErrorFunc(w, r, status)
+	// we still check for ACME challenge if the vhost exists,
+	// because we must apply its HTTP challenge config settings
+	if s.proxyHTTPChallenge(vhost, w, r) {
+		return 0, nil
 	}
 
-	/*
-		host, _, err := net.SplitHostPort(r.Host)
-		if err != nil {
-			host = r.Host // oh well
+	// trim the path portion of the site address from the beginning of
+	// the URL path, so a request to example.com/foo/blog on the site
+	// defined as example.com/foo appears as /blog instead of /foo/blog.
+	if pathPrefix != "/" {
+		r.URL.Path = strings.TrimPrefix(r.URL.Path, pathPrefix)
+		if !strings.HasPrefix(r.URL.Path, "/") {
+			r.URL.Path = "/" + r.URL.Path
 		}
+	}
 
-		// "The host subcomponent is case-insensitive." (RFC 3986)
-		host = strings.ToLower(host)
-
-		// Try the host as given, or try falling back to 0.0.0.0 (wildcard)
-		if _, ok := s.vhosts[host]; !ok {
-			if _, ok2 := s.vhosts["0.0.0.0"]; ok2 {
-				host = "0.0.0.0"
-			} else if _, ok2 := s.vhosts[""]; ok2 {
-				host = ""
-			}
-		}
-
-		// Use URL.RawPath If you need the original, "raw" URL.Path in your middleware.
-		// Collapse any ./ ../ /// madness here instead of doing that in every plugin.
-		if r.URL.Path != "/" {
-			cleanedPath := path.Clean(r.URL.Path)
-			if cleanedPath == "." {
-				r.URL.Path = "/"
-			} else {
-				if !strings.HasPrefix(cleanedPath, "/") {
-					cleanedPath = "/" + cleanedPath
-				}
-				if strings.HasSuffix(r.URL.Path, "/") && !strings.HasSuffix(cleanedPath, "/") {
-					cleanedPath = cleanedPath + "/"
-				}
-				r.URL.Path = cleanedPath
-			}
-		}
-
-		// Execute the optional request callback if it exists and it's not disabled
-		if s.ReqCallback != nil && !s.vhosts[host].config.TLS.Manual && s.ReqCallback(w, r) {
-			return
-		}
-
-		if vh, ok := s.vhosts[host]; ok {
-			status, _ := vh.stack.ServeHTTP(w, r)
-
-			// Fallback error response in case error handling wasn't chained in
-			if status >= 400 {
-				DefaultErrorFunc(w, r, status)
-			}
-		} else {
-			// Get the remote host
-			remoteHost, _, err := net.SplitHostPort(r.RemoteAddr)
-			if err != nil {
-				remoteHost = r.RemoteAddr
-			}
-
-			w.WriteHeader(http.StatusNotFound)
-			fmt.Fprintf(w, "No such host at %s", s.Server.Addr)
-			log.Printf("[INFO] %s - No such host at %s (Remote: %s, Referer: %s)",
-				host, s.Server.Addr, remoteHost, r.Header.Get("Referer"))
-		}
-	*/
+	return vhost.middlewareChain.ServeHTTP(w, r)
 }
 
+// proxyHTTPChallenge solves the ACME HTTP challenge if r is the HTTP
+// request for the challenge. If it is, and if the request has been
+// fulfilled (response written), true is returned; false otherwise.
+// If you don't have a vhost, just call the challenge handler directly.
+func (s *Server) proxyHTTPChallenge(vhost *SiteConfig, w http.ResponseWriter, r *http.Request) bool {
+	if vhost.Addr.Port != caddytls.HTTPChallengePort {
+		return false
+	}
+	if vhost.TLS != nil && vhost.TLS.Manual {
+		return false
+	}
+	altPort := caddytls.DefaultHTTPAlternatePort
+	if vhost.TLS != nil && vhost.TLS.AltHTTPPort != "" {
+		altPort = vhost.TLS.AltHTTPPort
+	}
+	return caddytls.HTTPChallengeHandler(w, r, altPort)
+}
+
+// Address returns the address s was assigned to listen on.
 func (s *Server) Address() string {
 	return s.Server.Addr
 }
 
+// Stop stops s gracefully (or forcefully after timeout) and
+// closes its listener.
 func (s *Server) Stop() (err error) {
 	s.SetKeepAlivesEnabled(false)
 
@@ -320,6 +314,28 @@ func (s *Server) Stop() (err error) {
 	return
 }
 
+// sanitizePath collapses any ./ ../ /// madness
+// which helps prevent path traversal attacks.
+// Note to middleware: use URL.RawPath If you need
+// the "original" URL.Path value.
+func sanitizePath(r *http.Request) {
+	if r.URL.Path == "/" {
+		return
+	}
+	cleanedPath := path.Clean(r.URL.Path)
+	if cleanedPath == "." {
+		r.URL.Path = "/"
+	} else {
+		if !strings.HasPrefix(cleanedPath, "/") {
+			cleanedPath = "/" + cleanedPath
+		}
+		if strings.HasSuffix(r.URL.Path, "/") && !strings.HasSuffix(cleanedPath, "/") {
+			cleanedPath = cleanedPath + "/"
+		}
+		r.URL.Path = cleanedPath
+	}
+}
+
 // tcpKeepAliveListener sets TCP keep-alive timeouts on accepted
 // connections. It's used by ListenAndServe and ListenAndServeTLS so
 // dead TCP connections (e.g. closing laptop mid-download) eventually
@@ -349,6 +365,14 @@ func (ln tcpKeepAliveListener) File() (*os.File, error) {
 // DefaultErrorFunc responds to an HTTP request with a simple description
 // of the specified HTTP status code.
 func DefaultErrorFunc(w http.ResponseWriter, r *http.Request, status int) {
+	writeTextResponse(w, status, fmt.Sprintf("%d %s", status, http.StatusText(status)))
+}
+
+// writeTextResponse writes body with code status to w. The body will
+// be interpreted as plain text.
+func writeTextResponse(w http.ResponseWriter, status int, body string) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(status)
-	fmt.Fprintf(w, "%d %s", status, http.StatusText(status))
+	w.Write([]byte(body))
 }

@@ -334,61 +334,6 @@ func (p *parser) validDirective(dir string) bool {
 	return false
 }
 
-/*
-// standardAddress parses an address string into a structured format with separate
-// scheme, host, and port portions, as well as the original input string.
-func standardAddress(str string) (Address, error) {
-	input := str
-
-	// Split input into components (prepend with // to assert host by default)
-	if !strings.Contains(str, "//") {
-		str = "//" + str
-	}
-	u, err := url.Parse(str)
-	if err != nil {
-		return Address{}, err
-	}
-
-	// separate host and port
-	host, port, err := net.SplitHostPort(u.Host)
-	if err != nil {
-		host, port, err = net.SplitHostPort(u.Host + ":")
-		if err != nil {
-			host = u.Host
-		}
-	}
-
-	// see if we can set port based off scheme
-	if port == "" {
-		if u.Scheme == "http" {
-			port = "80"
-		} else if u.Scheme == "https" {
-			port = "443"
-		}
-	}
-
-	// repeated or conflicting scheme is confusing, so error
-	if u.Scheme != "" && (port == "http" || port == "https") {
-		return Address{}, fmt.Errorf("[%s] scheme specified twice in address", input)
-	}
-
-	// error if scheme and port combination violate convention
-	if (u.Scheme == "http" && port == "443") || (u.Scheme == "https" && port == "80") {
-		return Address{}, fmt.Errorf("[%s] scheme and port violate convention", input)
-	}
-
-	// standardize http and https ports to their respective port numbers
-	if port == "http" {
-		u.Scheme = "http"
-		port = "80"
-	} else if port == "https" {
-		u.Scheme = "https"
-		port = "443"
-	}
-
-	return Address{Full: input, Scheme: u.Scheme, Host: host, Port: port, Path: u.Path}, err
-}
-*/
 // replaceEnvVars replaces environment variables that appear in the token
 // and understands both the $UNIX and %WINDOWS% syntaxes.
 func replaceEnvVars(s string) string {

@@ -25,11 +25,8 @@ var (
 	// AppVersion is the version of the application.
 	AppVersion string
 
-	// Quiet when set to true, will not show any informative output on initialization.
+	// Quiet mode will not show any informative output on initialization.
 	Quiet bool
-
-	// HTTP2 indicates whether HTTP2 is enabled or not.
-	HTTP2 bool
 
 	// PidFile is the path to the pidfile to create.
 	PidFile string
@@ -38,31 +35,171 @@ var (
 	GracefulTimeout time.Duration
 )
 
-var (
-	// startedServerType is the server type that was (last) started.
+// Instance contains the state of servers created as a result of
+// calling Start and can be used to access or control those servers.
+type Instance struct {
+	// serverType is the server type that was (last) started.
 	// Note that this package currently does not support starting
 	// multiple server types at a time in the same process.
-	startedServerType string
+	serverType string
 
 	// caddyfileInput is the input configuration text used for this process
 	caddyfileInput Input
 
-	// caddyfileMu protects caddyfileInput during changes
-	caddyfileInputMu sync.Mutex
-
-	// restartFds keeps the servers' sockets for graceful in-process restart
-	restartFds = make(map[string]*os.File)
-
 	// wg is used to wait for all servers to shut down
 	wg sync.WaitGroup
 
-	// startedBefore should be set to true if caddy has been started
-	// at least once (does not indicate whether currently running).
-	startedBefore bool
-)
+	// servers is the list of servers with their listeners...
+	servers []serverListener
+}
+
+// Stop stops all servers contained in i.
+func (i *Instance) Stop() error {
+	//i.serversMu.Lock()
+	for _, s := range i.servers {
+		if gs, ok := s.server.(GracefulServer); ok {
+			if err := gs.Stop(); err != nil {
+				log.Printf("[ERROR] Stopping %s: %v", gs.Address(), err)
+			}
+		}
+	}
+	//i.servers = []serverListener{} // don't reuse servers
+	//i.serversMu.Unlock()
+	for j, other := range instances {
+		if other == i {
+			instances = append(instances[:j], instances[j+1:]...)
+			break
+		}
+	}
+	return nil
+}
+
+// Restart replaces the servers in i with new servers created from
+// executing the newCaddyfile. Upon success, it returns the new
+// instance to replace i. Upon failure, i will not be replaced.
+func (i *Instance) Restart(newCaddyfile Input) (*Instance, error) {
+	log.Println("[INFO] Reloading")
+
+	if newCaddyfile == nil {
+		newCaddyfile = i.caddyfileInput
+	}
+
+	// Add file descriptors of all the sockets that are capable of it
+	restartFds := make(map[string]restartPair)
+	for _, s := range i.servers {
+		gs, srvOk := s.server.(GracefulServer)
+		ln, lnOk := s.listener.(Listener)
+		if srvOk && lnOk {
+			// lnFile, err := ln.File()
+			// if err != nil {
+			// 	return i, err
+			// }
+			// restartFds[gs.Address()] = lnFile
+			restartFds[gs.Address()] = restartPair{server: gs, listener: ln}
+		}
+	}
+
+	// create new instance; if the restart fails, it is simply discarded
+	newInst := &Instance{serverType: newCaddyfile.ServerType()}
+
+	// attempt to start new instance
+	err := startWithListenerFds(newCaddyfile, newInst, restartFds)
+	if err != nil {
+		return i, err
+	}
+
+	// success! stop all old servers and bump the old instance out
+	// so it will be garbage-collected
+	// for _, s := range i.servers {
+	// 	if gs, ok := s.server.(GracefulServer); ok {
+	// 		if err := gs.Stop(); err != nil {
+	// 			log.Printf("[ERROR] Stopping %s: %v", gs.Address(), err)
+	// 		}
+	// 	} else {
+	// 		s.listener.Close()
+	// 	}
+	// }
+	instancesMu.Lock()
+	for j, other := range instances {
+		if other == i {
+			instances = append(instances[:j], instances[j+1:]...)
+			break
+		}
+	}
+	instancesMu.Unlock()
+
+	log.Println("[INFO] Reloading complete")
+
+	return newInst, nil
+}
+
+// SaveServer adds s and its associated listener ln to the
+// internally-kept list of servers that is running. For
+// saved servers, graceful restarts will be provided.
+func (i *Instance) SaveServer(s Server, ln net.Listener) {
+	i.servers = append(i.servers, serverListener{server: s, listener: ln})
+}
+
+// HasListenerWithAddress returns whether this package is
+// tracking a server using a listener with the address
+// addr.
+func HasListenerWithAddress(addr string) bool {
+	instancesMu.Lock()
+	defer instancesMu.Unlock()
+	for _, inst := range instances {
+		for _, sln := range inst.servers {
+			if listenerAddrEqual(sln.listener, addr) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// listenerAddrEqual compares a listener's address with
+// addr. Extra care is taken to match addresses with an
+// empty hostname portion, as listeners tend to report
+// [::]:80, for example, when the matching address that
+// created the listener might be simply :80.
+func listenerAddrEqual(ln net.Listener, addr string) bool {
+	lnAddr := ln.Addr().String()
+	hostname, port, err := net.SplitHostPort(addr)
+	if err != nil || hostname != "" {
+		return lnAddr == addr
+	}
+	if lnAddr == net.JoinHostPort("::", port) {
+		return true
+	}
+	if lnAddr == net.JoinHostPort("0.0.0.0", port) {
+		return true
+	}
+	return false
+}
+
+/*
+// TODO: We should be able to support UDP servers... I'm considering this pattern.
+
+type UDPListener struct {
+	*net.UDPConn
+}
+
+func (u UDPListener) Accept() (net.Conn, error) {
+	return u.UDPConn, nil
+}
+
+func (u UDPListener) Close() error {
+	return u.UDPConn.Close()
+}
+
+func (u UDPListener) Addr() net.Addr {
+	return u.UDPConn.LocalAddr()
+}
+
+var _ net.Listener = UDPListener{}
+*/
 
 // Server is a type that can listen and serve. A Server
-// should only associate with zero or one listeners.
+// must associate with exactly zero or one listeners.
 type Server interface {
 	// Listen starts listening by creating a new listener
 	// and returning it. It does not start accepting
@@ -90,6 +227,9 @@ type Stopper interface {
 // of server being implemented). It must be able to return
 // the address it is configured to listen on so that its
 // listener can be paired with it upon graceful restarts.
+// The net.Listener that a GracefulServer creates must
+// implement the Listener interface for restarts to be
+// graceful (assuming the listener is for TCP).
 type GracefulServer interface {
 	Server
 	Stopper
@@ -112,28 +252,38 @@ type Listener interface {
 	File() (*os.File, error)
 }
 
-// LoadCaddyfile loads a Caddyfile by calling the user's loader function,
-// and if that returns nil, then this function resorts to the default
-// configuration. Thus, if there are no other errors, this function
-// always returns at least the default Caddyfile.
-func LoadCaddyfile() (cdyfile Input, err error) {
-	// Ask plugins for a Caddyfile
-	cdyfile, err = loadCaddyfileInput()
+// LoadCaddyfile loads a Caddyfile by calling the plugged in
+// Caddyfile loader methods. An error is returned if more than
+// one loader returns a non-nil Caddyfile input. If no loaders
+// load a Caddyfile, the default loader is used. If no default
+// loader is registered or it returns nil, the server type's
+// default Caddyfile is loaded. If the server type does not
+// specify any default Caddyfile value, then an empty Caddyfile
+// is returned. Consequently, this function never returns a nil
+// value as long as there are no errors.
+func LoadCaddyfile(serverType string) (Input, error) {
+	// Ask plugged-in loaders for a Caddyfile
+	cdyfile, err := loadCaddyfileInput(serverType)
 	if err != nil {
 		return nil, err
 	}
 
 	// Otherwise revert to default
-	// TODO.
 	if cdyfile == nil {
-		//	cdyfile = DefaultInput()
+		cdyfile = DefaultInput(serverType)
 	}
 
-	return
+	// Still nil? Geez.
+	if cdyfile == nil {
+		cdyfile = CaddyfileInput{ServerTypeName: serverType}
+	}
+
+	return cdyfile, nil
 }
 
-func Wait() {
-	wg.Wait()
+// Wait blocks until all of i's servers have stopped.
+func (i *Instance) Wait() {
+	i.wg.Wait()
 }
 
 // CaddyfileFromPipe loads the Caddyfile input from f if f is
@@ -150,7 +300,7 @@ func CaddyfileFromPipe(f *os.File) (Input, error) {
 		// produces an error when calling Stat(). But Unix will
 		// make one either way, which is why we also check that
 		// bitmask.
-		// BUG: Reading from stdin after this fails (e.g. for the let's encrypt email address) (OS X)
+		// NOTE: Reading from stdin after this fails (e.g. for the let's encrypt email address) (OS X)
 		confBody, err := ioutil.ReadAll(f)
 		if err != nil {
 			return nil, err
@@ -166,73 +316,59 @@ func CaddyfileFromPipe(f *os.File) (Input, error) {
 	return nil, nil
 }
 
-// Caddyfile returns the current Caddyfile
-func Caddyfile() Input {
-	caddyfileInputMu.Lock()
-	defer caddyfileInputMu.Unlock()
-	return caddyfileInput
+// Caddyfile returns the Caddyfile used to create i.
+func (i *Instance) Caddyfile() Input {
+	return i.caddyfileInput
 }
 
-// Start starts Caddy with the given Caddyfile. If cdyfile
-// is nil, the LoadCaddyfile function will be called to get
-// one.
+// Start starts Caddy with the given Caddyfile.
 //
 // This function blocks until all the servers are listening.
-//
-// Do not call Start() with more than one server type per
-// process; the behavior is currently undefined. We may look
-// into changing this in the future.
-func Start(serverType string, cdyfile Input) (err error) {
-	startedServerType = serverType
+func Start(cdyfile Input) (*Instance, error) {
+	inst := &Instance{serverType: cdyfile.ServerType()}
+	return inst, startWithListenerFds(cdyfile, inst, nil)
+}
 
-	stype, err := getServerType(serverType)
-	if err != nil {
-		return err
-	}
-
-	// Input must never be nil; try to load something
-	// TODO: This may still result in nil caddyfile? Just use an "empty" one otherwise?
+func startWithListenerFds(cdyfile Input, inst *Instance, restartFds map[string]restartPair) error {
 	if cdyfile == nil {
-		cdyfile, err = LoadCaddyfile()
-		if err != nil {
-			return err
-		}
+		cdyfile = CaddyfileInput{}
 	}
 
-	caddyfileInputMu.Lock()
-	caddyfileInput = cdyfile
-	caddyfileInputMu.Unlock()
+	stypeName := cdyfile.ServerType()
 
-	sblocks, err := loadServerBlocks(serverType, path.Base(cdyfile.Path()), bytes.NewReader(cdyfile.Body()))
+	stype, err := getServerType(stypeName)
 	if err != nil {
 		return err
 	}
 
-	if stype.InspectServerBlocks != nil {
-		sblocks, err = stype.InspectServerBlocks(cdyfile.Path(), sblocks)
-		if err != nil {
-			return err
-		}
-	}
+	inst.caddyfileInput = cdyfile
 
-	err = executeDirectives(serverType, cdyfile.Path(), stype.Directives, sblocks)
+	sblocks, err := loadServerBlocks(stypeName, path.Base(cdyfile.Path()), bytes.NewReader(cdyfile.Body()))
 	if err != nil {
 		return err
 	}
 
-	// TODO: Make it possible to just require []Server instead of []GracefulServer?
-	var serverList []Server
-	if stype.MakeServers != nil {
-		slist, err := stype.MakeServers()
-		if err != nil {
-			return err
-		}
-		serverList = append(serverList, slist...)
+	ctx := stype.NewContext()
+
+	sblocks, err = ctx.InspectServerBlocks(cdyfile.Path(), sblocks)
+	if err != nil {
+		return err
+	}
+
+	err = executeDirectives(stypeName, cdyfile.Path(), stype.Directives, sblocks)
+	if err != nil {
+		return err
+	}
+
+	slist, err := ctx.MakeServers()
+	if err != nil {
+		return err
 	}
 
 	// TODO: Run startup callbacks...
 	// run startup functions that should only execute when
-	// the original parent process is starting.
+	// the original parent process is starting,
+	// in other words, when currentRunContext loads as nil
 	// TODO... move into server package? Also, is startedBefore necessary?
 	// if !startedBefore { { //&& !startedBefore {
 	// 	err := s.RunFirstStartupFuncs()
@@ -242,13 +378,14 @@ func Start(serverType string, cdyfile Input) (err error) {
 	// 	}
 	// }
 
-	err = startServers(serverList)
+	err = startServers(slist, inst, restartFds)
 	if err != nil {
 		return err
 	}
 
-	startedBefore = true
-	// TODO ^ needed?
+	instancesMu.Lock()
+	instances = append(instances, inst)
+	instancesMu.Unlock()
 
 	// showInitializationOutput(groupings)
 
@@ -268,17 +405,6 @@ func executeDirectives(serverType, filename string,
 			if _, ok := storages[i]; !ok {
 				storages[i] = make(map[string]interface{})
 			}
-
-			// TODO...
-			// config := server.Config{
-			// 	Host:       addr.Host,
-			// 	Port:       addr.Port,
-			// 	Scheme:     addr.Scheme,
-			// 	Root:       Config.Defaults.Root,
-			// 	ConfigFile: filename,
-			// 	AppName:    Config.AppName,
-			// 	AppVersion: Config.AppVersion,
-			// }
 
 			for j, key := range sb.Keys {
 				// Execute directive if it is in the server block
@@ -312,13 +438,6 @@ func executeDirectives(serverType, filename string,
 
 					storages[i][dir.Name] = controller.ServerBlockStorage // persist for this server block
 				}
-
-				// Stop after TLS setup, since we need to activate Let's Encrypt before continuing;
-				// it makes some changes to the configs that middlewares might want to know about.
-				// if dir == "tls" {
-				// 	lastDirectiveIndex = k
-				// 	break
-				// }
 			}
 		}
 
@@ -336,7 +455,7 @@ func executeDirectives(serverType, filename string,
 	return nil
 }
 
-func startServers(serverList []Server) error {
+func startServers(serverList []Server, inst *Instance, restartFds map[string]restartPair) error {
 	errChan := make(chan error, len(serverList))
 
 	for _, s := range serverList {
@@ -344,18 +463,18 @@ func startServers(serverList []Server) error {
 		var err error
 
 		// If this is a reload and s is a GracefulServer,
-		// TODO -- why is being a GracefulServer a requirement?? Should work anyway, right?
-		// we can probably inherit its listener from earlier.
-		if gs, ok := s.(GracefulServer); ok && len(restartFds) > 0 {
+		// reuse the listener for a graceful restart.
+		if gs, ok := s.(GracefulServer); ok && restartFds != nil {
 			addr := gs.Address()
-			fmt.Println("Is a graceful server... addr:", addr)
-			if file, ok := restartFds[addr]; ok {
+			if old, ok := restartFds[addr]; ok {
+				file, err := old.listener.File()
+				if err != nil {
+					return err
+				}
 				ln, err = net.FileListener(file)
 				if err != nil {
 					return err
 				}
-				fmt.Println("Inherited listener:", ln)
-
 				file.Close()
 				delete(restartFds, addr)
 			}
@@ -368,21 +487,21 @@ func startServers(serverList []Server) error {
 			}
 		}
 
-		wg.Add(1)
-		go func(s Server, ln net.Listener) {
-			defer wg.Done()
+		inst.wg.Add(1)
+		go func(s Server, ln net.Listener, inst *Instance) {
+			defer inst.wg.Done()
 			errChan <- s.Serve(ln)
-		}(s, ln)
+		}(s, ln, inst)
 
-		SaveServer(s, ln)
+		inst.servers = append(inst.servers, serverListener{server: s, listener: ln})
 	}
 
 	// Close the remaining (unused) file descriptors to free up resources
-	if len(restartFds) > 0 {
-		for key, file := range restartFds {
-			file.Close()
-			delete(restartFds, key)
+	for key, old := range restartFds {
+		if err := old.server.Stop(); err != nil {
+			log.Printf("[ERROR] Stopping %s: %v", old.server.Address(), err)
 		}
+		delete(restartFds, key)
 	}
 
 	// Log errors that may be returned from Serve() calls,
@@ -423,7 +542,7 @@ func getServerType(serverType string) (ServerType, error) {
 }
 
 func loadServerBlocks(serverType, filename string, input io.Reader) ([]caddyfile.ServerBlock, error) {
-	validDirectives := ValidDirectives()
+	validDirectives := ValidDirectives(serverType)
 	serverBlocks, err := caddyfile.ServerBlocks(filename, input, validDirectives)
 	if err != nil {
 		return nil, err
@@ -446,40 +565,30 @@ func writePidFile() error {
 	return ioutil.WriteFile(PidFile, pid, 0644)
 }
 
-// Stop stops all servers. It blocks until they are all stopped.
-// It does NOT execute shutdown callbacks that may have been
-// configured by middleware (they must be executed separately).
-func Stop() error {
-	// TODO
-	//https.Deactivate()
-
-	serversMu.Lock()
-	for _, s := range servers {
-		if gs, ok := s.server.(GracefulServer); ok {
-			if err := gs.Stop(); err != nil {
-				log.Printf("[ERROR] Stopping %s: %v", gs.Address(), err)
-			}
-		}
-	}
-	servers = []serverListener{} // don't reuse servers
-	serversMu.Unlock()
-
-	return nil
+// Upgrade re-launches the process, preserving the listeners
+// for a graceful restart. It does NOT load new configuration,
+// merely starts the process with a newly-upgraded binary.
+// TODO: This is not yet implemented
+func Upgrade() error {
+	return fmt.Errorf("not implemented")
 }
 
 // IsRestart returns whether the servers have been
 // restarted - TODO: This doesn't mesh well with the new 0.9 changes
+// More like, this tells whether servers have been started before
+// TODO...
 func IsRestart() bool {
-	return startedBefore
+	//return currentRunContext.Load() != nil
+	return false
 }
 
 // CaddyfileInput represents a Caddyfile as input
 // and is simply a convenient way to implement
 // the Input interface.
 type CaddyfileInput struct {
-	Filepath string
-	Contents []byte
-	//ServerType string // TODO - Necessary?
+	Filepath       string
+	Contents       []byte
+	ServerTypeName string
 }
 
 // Body returns c.Contents.
@@ -487,6 +596,9 @@ func (c CaddyfileInput) Body() []byte { return c.Contents }
 
 // Path returns c.Filepath.
 func (c CaddyfileInput) Path() string { return c.Filepath }
+
+// ServerType returns c.ServerType.
+func (c CaddyfileInput) ServerType() string { return c.ServerTypeName }
 
 // Input represents a Caddyfile; its contents and file path
 // (which should include the file name at the end of the path).
@@ -499,6 +611,9 @@ type Input interface {
 
 	// Gets the path to the origin file
 	Path() string
+
+	// The type of server this input is intended for
+	ServerType() string
 }
 
 // DefaultInput returns the default Caddyfile input
@@ -507,18 +622,11 @@ type Input interface {
 // host, e.g. localhost is 2015, otherwise 443) and
 // root.
 func DefaultInput(serverType string) Input {
-	// port := Config.Defaults.Port
-	// if https.HostQualifies(Config.Defaults.Host) && port == DefaultPort {
-	// 	port = "443"
-	// }
-	// return CaddyfileInput{
-	// 	Contents: []byte(fmt.Sprintf("%s:%s\nroot %s", Config.Defaults.Host, port, Config.Defaults.Root)),
-	// }
 	if _, ok := serverTypes[serverType]; !ok {
-		return CaddyfileInput{}
+		return nil
 	}
 	if serverTypes[serverType].DefaultInput == nil {
-		return CaddyfileInput{}
+		return nil
 	}
 	return serverTypes[serverType].DefaultInput()
 }
@@ -529,6 +637,19 @@ func IsLoopback(host string) bool {
 		host == "::1" ||
 		strings.HasPrefix(host, "127.")
 }
+
+type restartPair struct {
+	server   GracefulServer
+	listener Listener
+}
+
+var (
+	// instances is the list of running Instances.
+	instances []*Instance
+
+	// instancesMu protects instances.
+	instancesMu sync.Mutex
+)
 
 const (
 	// DefaultConfigFile is the name of the configuration file that is loaded

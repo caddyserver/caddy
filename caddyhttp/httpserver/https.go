@@ -1,36 +1,36 @@
 package httpserver
 
 import (
-	"fmt"
 	"net"
 	"net/http"
 
-	"github.com/mholt/caddy2/shared/caddytls"
+	"github.com/mholt/caddy2/caddytls"
 )
 
 func activateHTTPS() error {
 	caddytls.Deactivate()
 
-	// pre-screen each config and earmark the ones that qualify for managed TLS
-	markQualifiedForAutoHTTPS(siteConfigs)
+	for _, ctx := range contexts {
+		// pre-screen each config and earmark the ones that qualify for managed TLS
+		markQualifiedForAutoHTTPS(ctx.siteConfigs)
 
-	// place certificates and keys on disk
-	for _, c := range siteConfigs {
-		err := caddytls.ObtainCert(c.TLS, true, false)
+		// place certificates and keys on disk
+		for _, c := range ctx.siteConfigs {
+			err := c.TLS.ObtainCert(true) // caddytls.ObtainCert(c.TLS, true)
+			if err != nil {
+				return err
+			}
+		}
+
+		// update TLS configurations
+		err := enableAutoHTTPS(ctx.siteConfigs, true)
 		if err != nil {
 			return err
 		}
-	}
 
-	// update TLS configurations
-	err := enableAutoHTTPS(siteConfigs, true)
-	if err != nil {
-		return err
+		// set up redirects
+		ctx.siteConfigs = makePlaintextRedirects(ctx.siteConfigs)
 	}
-
-	// set up redirects
-	// TODO - verify that the redirect works! (requires compiling middleware stack...)
-	siteConfigs = makePlaintextRedirects(siteConfigs)
 
 	// renew all relevant certificates that need renewal. this is important
 	// to do right away for a couple reasons, mainly because each restart,
@@ -38,13 +38,13 @@ func activateHTTPS() error {
 	// the ticker interval, renewals would never happen. but doing
 	// it right away at start guarantees that renewals aren't missed.
 	// TODO
-	err = caddytls.RenewManagedCertificates(true)
+	err := caddytls.RenewManagedCertificates(true)
 	if err != nil {
 		return err
 	}
 
 	// keep certificates renewed and OCSP stapling updated
-	// TODO
+	// TODO - this should just happen by being imported, why start/stop it?
 	go caddytls.MaintainAssets(stopChan)
 
 	return nil
@@ -107,7 +107,6 @@ func makePlaintextRedirects(allConfigs []*SiteConfig) []*SiteConfig {
 			!hostHasOtherPort(allConfigs, i, "80") &&
 			(cfg.Addr.Port == "443" || !hostHasOtherPort(allConfigs, i, "443")) {
 			allConfigs = append(allConfigs, redirPlaintextHost(cfg))
-			fmt.Println("NEW:", allConfigs[len(allConfigs)-1])
 		}
 	}
 	return allConfigs
@@ -137,8 +136,7 @@ func redirPlaintextHost(cfg *SiteConfig) *SiteConfig {
 	redirMiddleware := func(next Handler) Handler {
 		return HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
 			toURL := "https://" + r.Host + r.RequestURI
-			fmt.Println("REDIRECTING TO:", toURL)
-			http.Redirect(w, r, toURL, http.StatusTemporaryRedirect)
+			http.Redirect(w, r, toURL, http.StatusTemporaryRedirect) // TODO: Change to permanent
 			return 0, nil
 		})
 	}
@@ -149,6 +147,7 @@ func redirPlaintextHost(cfg *SiteConfig) *SiteConfig {
 		Addr:       Address{Original: addr, Host: host, Port: port},
 		ListenHost: cfg.ListenHost,
 		middleware: []Middleware{redirMiddleware},
+		TLS:        &caddytls.Config{AltHTTPPort: cfg.TLS.AltHTTPPort},
 	}
 }
 

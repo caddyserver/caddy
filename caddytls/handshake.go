@@ -18,7 +18,7 @@ import (
 // configGroup is a type that keys configs by their hostname
 // (hostnames can have wildcard characters; use the getConfig
 // method to get a config by matching its hostname). Its
-// GetCertificate function can be used in tls.Config.
+// GetCertificate function can be used with tls.Config.
 type configGroup map[string]*Config
 
 // getConfig gets the config by the first key match for name.
@@ -91,7 +91,7 @@ func (cg configGroup) getCertDuringHandshake(name string, loadIfNecessary, obtai
 		// Get the relevant TLS config for this name so we can load or obtain a cert
 		cfg := cg.getConfig(name)
 		if cfg == nil {
-			return Certificate{}, noCertErr
+			return Certificate{}, errNoCert
 		}
 
 		// Then check to see if we have one on disk
@@ -129,7 +129,7 @@ func (cg configGroup) getCertDuringHandshake(name string, loadIfNecessary, obtai
 		return cert, nil
 	}
 
-	return Certificate{}, noCertErr
+	return Certificate{}, errNoCert
 }
 
 // checkLimitsForObtainingNewCerts checks to see if name can be issued right
@@ -195,13 +195,7 @@ func (cg configGroup) obtainOnDemandCertificate(name string, cfg *Config) (Certi
 
 	log.Printf("[INFO] Obtaining new certificate for %s", name)
 
-	// obtain cert - TODO: proper config
-	// client, err := cfg.ObtainNewACMEClient(&Config{}, false)
-	// if err != nil {
-	// 	return Certificate{}, errors.New("error creating client: " + err.Error())
-	// }
-	// client.Configure("") // TODO: which BindHost?
-	if err := cfg.ObtainCert(name, false, false); err != nil { // TODO: Is the second false correct?
+	if err := cfg.ObtainCert(false); err != nil {
 		// Failed to solve challenge, so don't allow another on-demand
 		// issue for this name to be attempted for a little while.
 		failedIssuanceMu.Lock()
@@ -289,13 +283,7 @@ func (cg configGroup) renewDynamicCertificate(name string, cfg *Config) (Certifi
 
 	log.Printf("[INFO] Renewing certificate for %s", name)
 
-	// // TODO: Use actual Config...
-	// client, err := NewACMEClient(&Config{}, false)
-	// if err != nil {
-	// 	return Certificate{}, err
-	// }
-	// client.Configure("") // TODO: Bind address of relevant listener, yuck
-	err := cfg.RenewCert(name)
+	err := cfg.RenewCert(false)
 	if err != nil {
 		return Certificate{}, err
 	}
@@ -358,4 +346,4 @@ var failedIssuanceMu sync.RWMutex
 var lastIssueTime time.Time
 var lastIssueTimeMu sync.Mutex
 
-var noCertErr = errors.New("no certificate available")
+var errNoCert = errors.New("no certificate available")

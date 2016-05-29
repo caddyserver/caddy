@@ -19,6 +19,7 @@ func setupBind(c *caddy.Controller) error {
 		if !c.Args(&config.ListenHost) {
 			return c.ArgErr()
 		}
+		config.TLS.ListenHost = config.ListenHost // necessary for ACME challenges, see issue #309
 	}
 	return nil
 }

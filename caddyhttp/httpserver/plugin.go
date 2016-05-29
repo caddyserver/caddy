@@ -9,7 +9,7 @@ import (
 
 	"github.com/mholt/caddy2"
 	"github.com/mholt/caddy2/caddyfile"
-	"github.com/mholt/caddy2/shared/caddytls"
+	"github.com/mholt/caddy2/caddytls"
 )
 
 const serverType = "http"
@@ -17,34 +17,53 @@ const serverType = "http"
 func init() {
 	flag.StringVar(&Host, "host", DefaultHost, "Default host")
 	flag.StringVar(&Port, "port", DefaultPort, "Default port")
-	flag.StringVar(&Root, "root", DefaultRoot, "Root path to default site")
+	flag.StringVar(&Root, "root", DefaultRoot, "Root path of default site")
+	flag.BoolVar(&HTTP2, "http2", true, "Use HTTP/2")
 
-	caddy.AddServerType("http", caddy.ServerType{
-		Directives:          directives,
-		InspectServerBlocks: inspectServerBlocks,
-		MakeServers:         makeServers,
+	caddy.RegisterServerType(serverType, caddy.ServerType{
+		Directives: directives,
 		DefaultInput: func() caddy.Input {
-			port := Port
-			if caddytls.HostQualifies(Host) && port == DefaultPort {
-				port = "443" // TODO: We could leave this blank right? Since it will be set to 443 by default
+			if Port == DefaultPort && Host != "" {
+				// by leaving the port blank in this case we give auto HTTPS
+				// a chance to set the port to 443 for us
+				return caddy.CaddyfileInput{
+					Contents: []byte(fmt.Sprintf("%s\nroot %s", Host, Root)),
+				}
 			}
 			return caddy.CaddyfileInput{
-				Contents: []byte(fmt.Sprintf("%s:%s\nroot %s", Host, port, Root)),
+				Contents: []byte(fmt.Sprintf("%s:%s\nroot %s", Host, Port, Root)),
 			}
 		},
+		NewContext: newContext,
 	})
-
-	caddy.ParsingCallback(serverType, "tls", activateHTTPS)
-
-	caddytls.RegisterConfigGetter(serverType, caddytlsConfigGetter)
+	caddy.RegisterCaddyfileLoader("short", caddy.LoaderFunc(shortCaddyfileLoader))
+	caddy.RegisterParsingCallback(serverType, "tls", activateHTTPS)
+	caddytls.RegisterConfigGetter(serverType, func(key string) *caddytls.Config { return GetConfig(key).TLS })
 }
 
-func caddytlsConfigGetter(key string) *caddytls.Config {
-	return GetConfig(key).TLS
+var contexts []*httpContext
+
+func newContext() caddy.Context {
+	context := &httpContext{keysToSiteConfigs: make(map[string]*SiteConfig)}
+	contexts = append(contexts, context)
+	return context
 }
 
-// TODO: better name
-func inspectServerBlocks(sourceFile string, serverBlocks []caddyfile.ServerBlock) ([]caddyfile.ServerBlock, error) {
+type httpContext struct {
+	// keysToSiteConfigs maps an address at the top of a
+	// server block (a "key") to its SiteConfig. Not all
+	// SiteConfigs will be represented here, only ones
+	// that appeared in the Caddyfile.
+	keysToSiteConfigs map[string]*SiteConfig
+
+	// siteConfigs is the master list of all site configs.
+	siteConfigs []*SiteConfig
+}
+
+// InspectServerBlocks make sure that everything checks out before
+// executing directives and otherwise prepares the directives to
+// be parsed and executed.
+func (h *httpContext) InspectServerBlocks(sourceFile string, serverBlocks []caddyfile.ServerBlock) ([]caddyfile.ServerBlock, error) {
 	// TODO: Here you can inspect the server blocks
 	// and make changes to them, like adding a directive
 	// that must always be present (e.g. 'errors discard`?) -
@@ -55,7 +74,7 @@ func inspectServerBlocks(sourceFile string, serverBlocks []caddyfile.ServerBlock
 	for _, sb := range serverBlocks {
 		for _, key := range sb.Keys {
 			key = strings.ToLower(key)
-			if _, dup := keysToSiteConfigs[key]; dup {
+			if _, dup := h.keysToSiteConfigs[key]; dup {
 				return serverBlocks, fmt.Errorf("duplicate site address: %s", key)
 			}
 			addr, err := standardizeAddress(key)
@@ -63,44 +82,29 @@ func inspectServerBlocks(sourceFile string, serverBlocks []caddyfile.ServerBlock
 				return serverBlocks, err
 			}
 			// Save the config to our master list, and key it for lookups
-			cfg := &SiteConfig{Addr: addr, TLS: &caddytls.Config{Hostname: addr.Host}}
-			siteConfigs = append(siteConfigs, cfg)
-			keysToSiteConfigs[key] = cfg
+			cfg := &SiteConfig{
+				Addr:        addr,
+				TLS:         &caddytls.Config{Hostname: addr.Host},
+				HiddenFiles: []string{sourceFile},
+			}
+			h.siteConfigs = append(h.siteConfigs, cfg)
+			h.keysToSiteConfigs[key] = cfg
 		}
 	}
 
 	return serverBlocks, nil
 }
 
-// keysToSiteConfigs maps an address at the top of a
-// server block (a "key") to its SiteConfig. Not all
-// SiteConfigs will be represented here, only ones
-// that appeared in the Caddyfile.
-var keysToSiteConfigs = make(map[string]*SiteConfig)
-
-// siteConfigs is the master list of all site configs.
-var siteConfigs []*SiteConfig
-
-// GetConfig gets a SiteConfig that is keyed by addrKey.
-// It creates an empty one if the key does not exist.
-func GetConfig(addrKey string) *SiteConfig {
-	if _, ok := keysToSiteConfigs[addrKey]; !ok {
-		cfg := new(SiteConfig)
-		siteConfigs = append(siteConfigs, cfg)
-		keysToSiteConfigs[addrKey] = cfg
-	}
-	return keysToSiteConfigs[addrKey]
-}
-
-func makeServers() ([]caddy.Server, error) {
-	// TODO... (like map-reduce; group-combine)
-	groups, err := groupSiteConfigsByListenAddr(siteConfigs)
+// MakeServers uses the newly-created siteConfigs to
+// create and return a list of server instances.
+func (h *httpContext) MakeServers() ([]caddy.Server, error) {
+	// we must map (group) each config to a bind address
+	groups, err := groupSiteConfigsByListenAddr(h.siteConfigs)
 	if err != nil {
 		return nil, err
 	}
 
-	// Each group will essentially become a server instance.
-	// TODO: Move this into its own function
+	// then we create a server for each group
 	var servers []caddy.Server
 	for addr, group := range groups {
 		s, err := NewServer(addr, group)
@@ -113,18 +117,52 @@ func makeServers() ([]caddy.Server, error) {
 	return servers, nil
 }
 
+// GetConfig gets a SiteConfig that is keyed by addrKey.
+// It creates an empty one in the latest context
+// if the key does not exist in any context.
+func GetConfig(addrKey string) *SiteConfig {
+	for _, context := range contexts {
+		if cfg, ok := context.keysToSiteConfigs[addrKey]; ok {
+			return cfg
+		}
+	}
+
+	cfg := new(SiteConfig)
+	defaultCtx := contexts[len(contexts)-1]
+	defaultCtx.siteConfigs = append(defaultCtx.siteConfigs, cfg)
+	defaultCtx.keysToSiteConfigs[addrKey] = cfg
+	return cfg
+}
+
+// shortCaddyfileLoader loads a Caddyfile if positional arguments are
+// detected, or, in other words, if un-named arguments are provided to
+// the program. A "short Caddyfile" is one in which each argument
+// is a line of the Caddyfile. The default host and port are prepended
+// according to the Host and Port values.
+func shortCaddyfileLoader(serverType string) (caddy.Input, error) {
+	if flag.NArg() > 0 && serverType == "http" {
+		confBody := fmt.Sprintf("%s:%s\n%s", Host, Port, strings.Join(flag.Args(), "\n"))
+		return caddy.CaddyfileInput{
+			Contents:       []byte(confBody),
+			Filepath:       "args",
+			ServerTypeName: serverType,
+		}, nil
+	}
+	return nil, nil
+}
+
 // groupSiteConfigsByListenAddr groups site configs by their listen
 // (bind) address, so sites that use the same listener can be served
 // on the same server instance. The return value maps the listen
 // address (what you pass into net.Listen) to the list of site configs.
-// This function does not vet the groups to ensure they are compatible.
+// This function does NOT vet the configs to ensure they are compatible.
 func groupSiteConfigsByListenAddr(configs []*SiteConfig) (map[string][]*SiteConfig, error) {
 	groups := make(map[string][]*SiteConfig)
 
 	for _, conf := range configs {
-		if caddy.IsLoopback(conf.Addr.Host) {
+		if caddy.IsLoopback(conf.Addr.Host) && conf.ListenHost == "" {
 			// special case: one would not expect a site served
-			// at loopback to be accessible from the outside.
+			// at loopback to be connected to from the outside.
 			conf.ListenHost = conf.Addr.Host
 		}
 		if conf.Addr.Port == "" {
@@ -141,10 +179,14 @@ func groupSiteConfigsByListenAddr(configs []*SiteConfig) (map[string][]*SiteConf
 	return groups, nil
 }
 
+// AddMiddleware adds a middleware to a site's middleware stack.
 func (sc *SiteConfig) AddMiddleware(m Middleware) {
 	sc.middleware = append(sc.middleware, m)
 }
 
+// Address represents a site address. It contains
+// the original input value, and the component
+// parts of an address.
 type Address struct {
 	Original, Scheme, Host, Port, Path string
 }
@@ -154,7 +196,7 @@ func (a Address) String() string {
 	return a.Original
 }
 
-// VHost returns a sensible concatenation of Host:Port:Path from a.
+// VHost returns a sensible concatenation of Host:Port/Path from a.
 // It's basically the a.Original but without the scheme.
 func (a Address) VHost() string {
 	if idx := strings.Index(a.Original, "://"); idx > -1 {
@@ -217,10 +259,11 @@ func standardizeAddress(str string) (Address, error) {
 	return Address{Original: input, Scheme: u.Scheme, Host: host, Port: port, Path: u.Path}, err
 }
 
+// directives is the list of all directives that exist for the http server type.
 var directives = []caddy.Directive{
 	{Name: "root", Package: "github.com/mholt/caddy/caddyhttp/root"},
 	{Name: "bind", Package: "github.com/mholt/caddy/caddyhttp/bind"},
-	{Name: "tls", Package: "github.com/mholt/caddy/caddyhttp/tls"}, // TODO: can be generic
+	{Name: "tls", Package: "github.com/mholt/caddy/caddytls"},
 
 	{Name: "startup", Package: "github.com/mholt/caddy/caddyhttp/"},  // TODO: can be generic - also, needs package path
 	{Name: "shutdown", Package: "github.com/mholt/caddy/caddyhttp/"}, // TODO: can be generic - also, needs package path
@@ -265,4 +308,7 @@ var (
 
 	// Port is the site port
 	Port = DefaultPort
+
+	// HTTP2 indicates whether HTTP2 is enabled or not.
+	HTTP2 bool
 )

@@ -6,10 +6,15 @@ import (
 	"runtime"
 )
 
-// Path returns the path to the folder
-// where the application may store data. This
-// currently resolves to ~/.caddy
+// AssetsPath returns the path to the folder
+// where the application may store data. If
+// CADDYPATH env variable is set, that value
+// is used. Otherwise, the path is the result
+// of evaluating "$HOME/.caddy".
 func AssetsPath() string {
+	if caddyPath := os.Getenv("CADDYPATH"); caddyPath != "" {
+		return caddyPath
+	}
 	return filepath.Join(userHomeDir(), ".caddy")
 }
 

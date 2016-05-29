@@ -15,6 +15,8 @@ const (
 	OCSPInterval = 1 * time.Hour
 )
 
+// TODO: Just start maintenance from the init() function, in other words, simply by being imported... why not?
+
 // MaintainAssets is a permanently-blocking function
 // that loops indefinitely and, on a regular schedule, checks
 // certificates for expiration and initiates a renewal of certs
@@ -51,7 +53,6 @@ func MaintainAssets(stopChan chan struct{}) {
 // RenewManagedCertificates renews managed certificates.
 func RenewManagedCertificates(allowPrompts bool) (err error) {
 	var renewed, deleted []Certificate
-	var client *ACMEClient
 	visitedNames := make(map[string]struct{})
 
 	certCacheMu.RLock()
@@ -62,7 +63,7 @@ func RenewManagedCertificates(allowPrompts bool) (err error) {
 
 		// the list of names on this cert should never be empty...
 		if cert.Names == nil || len(cert.Names) == 0 {
-			log.Printf("[WARNING] Certificate keyed by '%s' has no names: %v", name, cert.Names)
+			log.Printf("[WARNING] Certificate keyed by '%s' has no names: %v - removing from cache", name, cert.Names)
 			deleted = append(deleted, cert)
 			continue
 		}
@@ -79,21 +80,21 @@ func RenewManagedCertificates(allowPrompts bool) (err error) {
 		if timeLeft < renewDurationBefore {
 			log.Printf("[INFO] Certificate for %v expires in %v; attempting renewal", cert.Names, timeLeft)
 
-			if client == nil {
-				if cert.Config == nil {
-					log.Printf("[ERROR] No TLS config designated for %s", name)
-					continue
-				}
-				client, err = newACMEClient(cert.Config, allowPrompts)
-				if err != nil {
-					return err
-				}
-				client.Configure("") // TODO: Bind address of relevant listener, yuck
+			if cert.Config == nil {
+				log.Printf("[ERROR] No TLS config designated for %s", name)
+				continue
 			}
 
-			err := client.Renew(cert.Names[0]) // managed certs better have only one name
+			err := cert.Config.RenewCert(allowPrompts)
+
+			// client, err := newACMEClient(cert.Config, allowPrompts)
+			// if err != nil {
+			// 	return err
+			// }
+
+			// err = client.Renew() // managed certs had better have only one name
 			if err != nil {
-				if client.AllowPrompts && timeLeft < 0 {
+				if allowPrompts && timeLeft < 0 {
 					// Certificate renewal failed, the operator is present, and the certificate
 					// is already expired; we should stop immediately and return the error. Note
 					// that we used to do this any time a renewal failed at startup. However,
@@ -127,7 +128,7 @@ func RenewManagedCertificates(allowPrompts bool) (err error) {
 		}
 		_, err := CacheManagedCertificate(cert.Names[0], cert.Config)
 		if err != nil {
-			if client.AllowPrompts {
+			if allowPrompts {
 				return err // operator is present, so report error immediately
 			}
 			log.Printf("[ERROR] %v", err)

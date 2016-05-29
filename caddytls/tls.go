@@ -1,7 +1,6 @@
 // Package caddytls facilitates the management of TLS assets and integrates
 // Let's Encrypt functionality into Caddy with first-class support for
 // creating and renewing certificates automatically.
-// TODO: Move out of "shared" folder into top level of repo
 package caddytls
 
 // Deactivate cleans up long-term, in-memory resources
@@ -29,103 +28,6 @@ func Deactivate() (err error) {
 	close(stopChan)
 	stopChan = make(chan struct{})
 	return
-}
-
-// CertObtainInfo is a type which can get the information needed
-// to obtain TLS certificates via ACME.
-type CertObtainInfo interface {
-	// Key returns the key/name of the TLS config to use to obtain
-	// certificates.
-	Key() string
-
-	// Host returns the hostname for which to obtain a certificate.
-	Host() string
-
-	// ListenerHost returns the host to listen on, if a listener
-	// must be started. The port will be decided... separately I guess. TODO
-	ListenerHost() string
-}
-
-// ObtainCert obtains a certificate for the hostname represented by info,
-// as long as a certificate does not already exist in storage on disk. It
-// only obtains and stores certificates (and their keys) to disk, it does
-// not load them into memory. If allowPrompts is true, the user may be
-// shown a prompt. If proxyACME is true, the relevant ACME challenges will
-// be proxied to the alternate port.
-// TODO - this function needs proxyACME to work, with custom alt port.
-func ObtainCert(cfg *Config, allowPrompts, proxyACME bool) error {
-	if !cfg.Managed || !HostQualifies(cfg.Hostname) || existingCertAndKey(cfg.Hostname) {
-		return nil
-	}
-
-	if cfg.LetsEncryptEmail == "" {
-		cfg.LetsEncryptEmail = getEmail(allowPrompts)
-	}
-
-	client, err := newACMEClient(cfg, allowPrompts)
-	if err != nil {
-		return err
-	}
-
-	// TODO: DNS providers should be plugins too, so we don't
-	// have to import them all, right??
-	/*
-		var dnsProv acme.ChallengeProvider
-		var err error
-		switch cfg.DNSProvider {
-		case "cloudflare":
-			dnsProv, err = cloudflare.NewDNSProvider()
-		case "digitalocean":
-			dnsProv, err = digitalocean.NewDNSProvider()
-		case "dnsimple":
-			dnsProv, err = dnsimple.NewDNSProvider()
-		case "dyn":
-			dnsProv, err = dyn.NewDNSProvider()
-		case "gandi":
-			dnsProv, err = gandi.NewDNSProvider()
-		case "gcloud":
-			dnsProv, err = gcloud.NewDNSProvider()
-		case "namecheap":
-			dnsProv, err = namecheap.NewDNSProvider()
-		case "rfc2136":
-			dnsProv, err = rfc2136.NewDNSProvider()
-		case "route53":
-			dnsProv, err = route53.NewDNSProvider()
-		case "vultr":
-			dnsProv, err = vultr.NewDNSProvider()
-		}
-		if err != nil {
-			return err
-		}
-		if dnsProv != nil {
-			client.SetChallengeProvider(acme.DNS01, dnsProv)
-		}
-	*/
-
-	// client.Configure() assumes that allowPrompts == !proxyACME,
-	// but that's not always true. For example, a restart where
-	// the user isn't present and we're not listening on port 80.
-	// So we don't call client.Configure() here...
-	// TODO: This is the "old" way of doing it; this needs work still...
-	if proxyACME {
-		client.SetHTTPAddress(net.JoinHostPort(cfg.ACMEHost, cfg.ACMEPort))
-		client.SetTLSAddress(net.JoinHostPort(cfg.ACMEHost, cfg.ACMEPort))
-		//client.ExcludeChallenges([]acme.Challenge{acme.TLSSNI01, acme.DNS01})
-	} else {
-		client.SetHTTPAddress(net.JoinHostPort(cfg.ACMEHost, cfg.ACMEPort))
-		client.SetTLSAddress(net.JoinHostPort(cfg.ACMEHost, cfg.ACMEPort))
-		//client.ExcludeChallenges([]acme.Challenge{acme.DNS01})
-	}
-
-	return client.Obtain([]string{cfg.Hostname})
-}
-
-func (c *Config) RenewCert(name string) error {
-	client, err := newACMEClient(&Config{}, false)
-	if err != nil {
-		return err
-	}
-	return client.Renew(name)
 }
 
 // HostQualifies returns true if the hostname alone
@@ -228,7 +130,7 @@ func Revoke(host string) error {
 }
 
 // tlsSniSolver is a type that can solve tls-sni challenges using
-// an existing listener.
+// an existing listener and our custom, in-memory certificate cache.
 type tlsSniSolver struct{}
 
 // Present adds the challenge certificate to the cache.
@@ -244,12 +146,14 @@ func (s tlsSniSolver) Present(domain, token, keyAuth string) error {
 	return nil
 }
 
-// Cleanup removes the challenge certificate from the cache.
-func (s tlsSniSolver) Cleanup(domain, token, keyAuth string) error {
+// CleanUp removes the challenge certificate from the cache.
+func (s tlsSniSolver) CleanUp(domain, token, keyAuth string) error {
 	uncacheCertificate(domain)
 	return nil
 }
 
+// ConfigHolder is any type that has a Config; it presumably is
+// connected to a hostname and port on which it is serving.
 type ConfigHolder interface {
 	TLSConfig() *Config
 	Host() string
@@ -260,9 +164,9 @@ type ConfigHolder interface {
 // for managed TLS (but not on-demand TLS specifically).
 // It does NOT check to see if a cert and key already exist
 // for the config. If the return value is true, you should
-// be OK to set cfg.TLS.Managed to true; then you should check
-// that value in the future instead, because the process of
-// setting up the config may make it look like it doesn't
+// be OK to set c.TLSConfig().Managed to true; then you should
+// check that value in the future instead, because the process
+// of setting up the config may make it look like it doesn't
 // qualify even though it originally did.
 func QualifiesForManagedTLS(c ConfigHolder) bool {
 	if c == nil {
@@ -285,21 +189,15 @@ func QualifiesForManagedTLS(c ConfigHolder) bool {
 }
 
 var (
-	// DefaultEmail represents the Let's Encrypt account email to use if none provided
+	// DefaultEmail represents the Let's Encrypt account email to use if none provided.
 	DefaultEmail string
 
-	// Agreed indicates whether user has agreed to the Let's Encrypt SA
+	// Agreed indicates whether user has agreed to the Let's Encrypt SA.
 	Agreed bool
 
-	// CAUrl represents the base URL to the CA's ACME endpoint
+	// CAUrl represents the default URL to the CA's ACME directory endpoint.
 	CAUrl string
 )
-
-// AlternatePort is the port on which the acme client will open a
-// listener and solve the CA's challenges. If this alternate port
-// is used instead of the default port (80 or 443), then the
-// default port for the challenge must be forwarded to this one.
-const AlternatePort = "5033"
 
 // stopChan is used to signal the maintenance goroutine
 // to terminate.
