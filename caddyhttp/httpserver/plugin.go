@@ -20,6 +20,7 @@ func init() {
 	flag.StringVar(&Port, "port", DefaultPort, "Default port")
 	flag.StringVar(&Root, "root", DefaultRoot, "Root path of default site")
 	flag.BoolVar(&HTTP2, "http2", true, "Use HTTP/2")
+	flag.BoolVar(&QUIC, "quic", false, "Use experimental QUIC")
 
 	caddy.RegisterServerType(serverType, caddy.ServerType{
 		Directives: directives,
@@ -322,4 +323,7 @@ var (
 
 	// HTTP2 indicates whether HTTP2 is enabled or not.
 	HTTP2 bool
+
+	// QUIC indicates whether QUIC is enabled or not.
+	QUIC bool
 )

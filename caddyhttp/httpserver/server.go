@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lucas-clemente/quic-go/h2quic"
 	"github.com/mholt/caddy2/caddyhttp/staticfiles"
 	"github.com/mholt/caddy2/caddytls"
 )
@@ -68,6 +69,7 @@ func (s SiteConfig) Port() string {
 // Server is the HTTP server implementation.
 type Server struct {
 	Server      *http.Server
+	quicServer  *h2quic.Server
 	listener    net.Listener
 	listenerMu  sync.Mutex     // TODO: How necessary is this?
 	connTimeout time.Duration  // max time to wait for a connection before force stop
@@ -94,6 +96,13 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 	// Disable HTTP/2 if desired
 	if !HTTP2 {
 		s.Server.TLSNextProto = make(map[string]func(*http.Server, *tls.Conn, http.Handler))
+	}
+
+	// Enable QUIC if desired
+	if QUIC {
+		s.quicServer = &h2quic.Server{
+			Server: s.Server,
+		}
 	}
 
 	// We have to bound our wg with one increment
@@ -187,7 +196,20 @@ func (s *Server) Serve(ln net.Listener) error {
 		go runTLSTicketKeyRotation(s.Server.TLSConfig, timer, s.tlsGovChan)
 	}
 
-	return s.Server.Serve(ln)
+	if QUIC {
+		go func() {
+			err := s.quicServer.ListenAndServe()
+			if err != nil {
+				fmt.Printf("Error listening for QUIC connections: %s", err.Error())
+			}
+		}()
+	}
+
+	err := s.Server.Serve(ln)
+	if QUIC {
+		s.quicServer.Close()
+	}
+	return err
 }
 
 // ServeHTTP is the entry point of all HTTP requests.
@@ -202,6 +224,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	w.Header().Set("Server", "Caddy")
+
+	if QUIC {
+		// Set the Alternate-Protocol and Alt-Svc headers for QUIC
+		s.quicServer.SetQuicHeaders(w.Header())
+	}
 
 	sanitizePath(r)
 
