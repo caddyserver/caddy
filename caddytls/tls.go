@@ -3,7 +3,6 @@
 // creating and renewing certificates automatically.
 package caddytls
 
-// Deactivate cleans up long-term, in-memory resources
 import (
 	"encoding/json"
 	"errors"
@@ -14,21 +13,6 @@ import (
 
 	"github.com/xenolf/lego/acme"
 )
-
-// Deactivate cleans up long-term, in-memory resources
-// allocated by calling Activate(). Essentially, it stops
-// the asset maintainer from running, meaning that certificates
-// will not be renewed, OCSP staples will not be updated, etc.
-func Deactivate() (err error) {
-	defer func() {
-		if rec := recover(); rec != nil {
-			err = errors.New("already deactivated")
-		}
-	}()
-	close(stopChan)
-	stopChan = make(chan struct{})
-	return
-}
 
 // HostQualifies returns true if the hostname alone
 // appears eligible for automatic HTTPS. For example,
@@ -41,22 +25,23 @@ func HostQualifies(hostname string) bool {
 		// hostname must not be empty
 		strings.TrimSpace(hostname) != "" &&
 
+		// must not contain wildcard (*) characters (until CA supports it)
+		!strings.Contains(hostname, "*") &&
+
 		// cannot be an IP address, see
 		// https://community.letsencrypt.org/t/certificate-for-static-ip/84/2?u=mholt
-		// (also trim [] from either end, since that special case can sneak through
-		// for IPv6 addresses using the -host flag and with empty/no Caddyfile)
-		// TODO: Is the special case with [] still true?
-		net.ParseIP(strings.Trim(hostname, "[]")) == nil
+		net.ParseIP(hostname) == nil
 }
 
-// existingCertAndKey returns true if the host has a certificate
-// and private key in storage already, false otherwise.
-func existingCertAndKey(host string) bool {
-	_, err := os.Stat(storage.SiteCertFile(host))
+// existingCertAndKey returns true if the hostname has
+// a certificate and private key in storage already,
+// false otherwise.
+func existingCertAndKey(hostname string) bool {
+	_, err := os.Stat(storage.SiteCertFile(hostname))
 	if err != nil {
 		return false
 	}
-	_, err = os.Stat(storage.SiteKeyFile(host))
+	_, err = os.Stat(storage.SiteKeyFile(hostname))
 	if err != nil {
 		return false
 	}
@@ -188,6 +173,18 @@ func QualifiesForManagedTLS(c ConfigHolder) bool {
 		(HostQualifies(c.Host()) || tlsConfig.OnDemand)
 }
 
+// DNSProviderConstructor is a function that takes credentials and
+// returns a type that can solve the ACME DNS challenges.
+type DNSProviderConstructor func(credentials ...string) (acme.ChallengeProvider, error)
+
+// dnsProviders is the list of DNS providers that have been plugged in.
+var dnsProviders = make(map[string]DNSProviderConstructor)
+
+// RegisterDNSProvider registers provider by name for solving the ACME DNS challenge.
+func RegisterDNSProvider(name string, provider DNSProviderConstructor) {
+	dnsProviders[name] = provider
+}
+
 var (
 	// DefaultEmail represents the Let's Encrypt account email to use if none provided.
 	DefaultEmail string
@@ -198,7 +195,3 @@ var (
 	// CAUrl represents the default URL to the CA's ACME directory endpoint.
 	CAUrl string
 )
-
-// stopChan is used to signal the maintenance goroutine
-// to terminate.
-var stopChan chan struct{}

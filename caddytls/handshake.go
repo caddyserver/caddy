@@ -1,9 +1,7 @@
 package caddytls
 
 import (
-	"bytes"
 	"crypto/tls"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"log"
@@ -11,8 +9,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/xenolf/lego/acme"
 )
 
 // configGroup is a type that keys configs by their hostname
@@ -46,38 +42,36 @@ func (cg configGroup) getConfig(name string) *Config {
 		}
 	}
 
+	// as last resort, try a config that serves all names
+	if config, ok := cg[""]; ok {
+		return config
+	}
+
 	return nil
 }
 
-// GetCertificate gets a certificate to satisfy clientHello as long as
-// the certificate is already cached in memory. It will not be loaded
-// from disk or obtained from the CA during the handshake.
+// GetCertificate gets a certificate to satisfy clientHello. In getting
+// the certificate, it abides the rules and settings defined in the
+// Config that matches clientHello.ServerName. It first checks the in-
+// memory cache, then, if the config enables "OnDemand", it accessses
+// disk, then accesses the network if it must obtain a new certificate
+// via ACME.
 //
 // This method is safe for use as a tls.Config.GetCertificate callback.
 func (cg configGroup) GetCertificate(clientHello *tls.ClientHelloInfo) (*tls.Certificate, error) {
-	cert, err := cg.getCertDuringHandshake(clientHello.ServerName, false, false)
+	cert, err := cg.getCertDuringHandshake(clientHello.ServerName, true, true)
 	return &cert.Certificate, err
 }
 
-// GetOrObtainCertificate will get a certificate to satisfy clientHello, even
-// if that means obtaining a new certificate from a CA during the handshake.
-// It first checks the in-memory cache, then accesses disk, then accesses the
-// network if it must. An obtained certificate will be stored on disk and
-// cached in memory.
-//
-// This function is safe for use as a tls.Config.GetCertificate callback.
-// func GetOrObtainCertificate(clientHello *tls.ClientHelloInfo) (*tls.Certificate, error) {
-// 	cert, err := getCertDuringHandshake(clientHello.ServerName, true, true)
-// 	return &cert.Certificate, err
-// }
-
 // getCertDuringHandshake will get a certificate for name. It first tries
-// the in-memory cache. If no certificate for name is in the cache and if
-// loadIfNecessary == true, it goes to disk to load it into the cache and
-// serve it. If it's not on disk and if obtainIfNecessary == true, the
-// certificate will be obtained from the CA, cached, and served. If
-// obtainIfNecessary is true, then loadIfNecessary must also be set to true.
-// An error will be returned if and only if no certificate is available.
+// the in-memory cache. If no certificate for name is in the cache, the
+// config most closely corresponding to name will be loaded. If that config
+// allows it (OnDemand=true) and if loadIfNecessary == true, it goes to disk
+// to load it into the cache and serve it. If it's not on disk and if
+// obtainIfNecessary == true, the certificate will be obtained from the CA,
+// cached, and served. If obtainIfNecessary is true, then loadIfNecessary
+// must also be set to true. An error will be returned if and only if no
+// certificate is available.
 //
 // This function is safe for concurrent use.
 func (cg configGroup) getCertDuringHandshake(name string, loadIfNecessary, obtainIfNecessary bool) (Certificate, error) {
@@ -87,13 +81,10 @@ func (cg configGroup) getCertDuringHandshake(name string, loadIfNecessary, obtai
 		return cert, nil
 	}
 
-	if loadIfNecessary {
-		// Get the relevant TLS config for this name so we can load or obtain a cert
-		cfg := cg.getConfig(name)
-		if cfg == nil {
-			return Certificate{}, errNoCert
-		}
-
+	// Get the relevant TLS config for this name. If OnDemand is enabled,
+	// then we might be able to load or obtain a needed certificate.
+	cfg := cg.getConfig(name)
+	if cfg != nil && cfg.OnDemand && loadIfNecessary {
 		// Then check to see if we have one on disk
 		loadedCert, err := CacheManagedCertificate(name, cfg)
 		if err == nil {
@@ -103,7 +94,6 @@ func (cg configGroup) getCertDuringHandshake(name string, loadIfNecessary, obtai
 			}
 			return loadedCert, nil
 		}
-
 		if obtainIfNecessary {
 			// By this point, we need to ask the CA for a certificate
 
@@ -125,11 +115,12 @@ func (cg configGroup) getCertDuringHandshake(name string, loadIfNecessary, obtai
 		}
 	}
 
+	// Fall back to the default certificate if there is one
 	if defaulted {
 		return cert, nil
 	}
 
-	return Certificate{}, errNoCert
+	return Certificate{}, fmt.Errorf("no certificate available for %s", name)
 }
 
 // checkLimitsForObtainingNewCerts checks to see if name can be issued right
@@ -195,7 +186,7 @@ func (cg configGroup) obtainOnDemandCertificate(name string, cfg *Config) (Certi
 
 	log.Printf("[INFO] Obtaining new certificate for %s", name)
 
-	if err := cfg.ObtainCert(false); err != nil {
+	if err := cfg.obtainCertName(name, false); err != nil {
 		// Failed to solve challenge, so don't allow another on-demand
 		// issue for this name to be attempted for a little while.
 		failedIssuanceMu.Lock()
@@ -227,7 +218,7 @@ func (cg configGroup) obtainOnDemandCertificate(name string, cfg *Config) (Certi
 func (cg configGroup) handshakeMaintenance(name string, cert Certificate) (Certificate, error) {
 	// Check cert expiration
 	timeLeft := cert.NotAfter.Sub(time.Now().UTC())
-	if timeLeft < renewDurationBefore {
+	if timeLeft < RenewDurationBefore {
 		log.Printf("[INFO] Certificate for %v expires in %v; attempting renewal", cert.Names, timeLeft)
 		return cg.renewDynamicCertificate(name, cert.Config)
 	}
@@ -283,40 +274,12 @@ func (cg configGroup) renewDynamicCertificate(name string, cfg *Config) (Certifi
 
 	log.Printf("[INFO] Renewing certificate for %s", name)
 
-	err := cfg.RenewCert(false)
+	err := cfg.renewCertName(name, false)
 	if err != nil {
 		return Certificate{}, err
 	}
 
 	return cg.getCertDuringHandshake(name, true, false)
-}
-
-// stapleOCSP staples OCSP information to cert for hostname name.
-// If you have it handy, you should pass in the PEM-encoded certificate
-// bundle; otherwise the DER-encoded cert will have to be PEM-encoded.
-// If you don't have the PEM blocks handy, just pass in nil.
-//
-// Errors here are not necessarily fatal, it could just be that the
-// certificate doesn't have an issuer URL.
-func stapleOCSP(cert *Certificate, pemBundle []byte) error {
-	if pemBundle == nil {
-		// The function in the acme package that gets OCSP requires a PEM-encoded cert
-		bundle := new(bytes.Buffer)
-		for _, derBytes := range cert.Certificate.Certificate {
-			pem.Encode(bundle, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
-		}
-		pemBundle = bundle.Bytes()
-	}
-
-	ocspBytes, ocspResp, err := acme.GetOCSPForCert(pemBundle)
-	if err != nil {
-		return err
-	}
-
-	cert.Certificate.OCSPStaple = ocspBytes
-	cert.OCSP = ocspResp
-
-	return nil
 }
 
 // obtainCertWaitChans is used to coordinate obtaining certs for each hostname.

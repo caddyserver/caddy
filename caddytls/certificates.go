@@ -106,6 +106,7 @@ func getCertificate(name string) (cert Certificate, matched, defaulted bool) {
 // (meaning that it was obtained or loaded during a TLS handshake).
 //
 // This function is safe for concurrent use.
+// TODO: Do we still need to take domain as a separate argument?
 func CacheManagedCertificate(domain string, cfg *Config) (Certificate, error) {
 	//func CacheManagedCertificate(cfg *Config) (Certificate, error) {
 	cert, err := makeCertificateFromDisk(storage.SiteCertFile(domain), storage.SiteKeyFile(domain))
@@ -221,7 +222,7 @@ func makeCertificate(certPEMBlock, keyPEMBlock []byte) (Certificate, error) {
 func cacheCertificate(cert Certificate) {
 	certCacheMu.Lock()
 	if _, ok := certCache[""]; !ok {
-		// use as default
+		// use as default - must be *appended* to list, or bad things happen!
 		cert.Names = append(cert.Names, "")
 		certCache[""] = cert
 	}

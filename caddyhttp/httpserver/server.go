@@ -2,8 +2,10 @@
 package httpserver
 
 import (
+	"crypto/rand"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -65,7 +67,7 @@ func (s SiteConfig) Port() string {
 
 // Server is the HTTP server implementation.
 type Server struct {
-	*http.Server
+	Server      *http.Server
 	listener    net.Listener
 	listenerMu  sync.Mutex     // TODO: How necessary is this?
 	connTimeout time.Duration  // max time to wait for a connection before force stop
@@ -87,11 +89,11 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 		},
 		vhosts: newVHostTrie(),
 	}
-	s.Handler = s // this is weird, but whatever
+	s.Server.Handler = s // this is weird, but whatever
 
 	// Disable HTTP/2 if desired
 	if !HTTP2 {
-		s.TLSNextProto = make(map[string]func(*http.Server, *tls.Conn, http.Handler))
+		s.Server.TLSNextProto = make(map[string]func(*http.Server, *tls.Conn, http.Handler))
 	}
 
 	// We have to bound our wg with one increment
@@ -108,7 +110,7 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 	for _, site := range group {
 		tlsConfigs = append(tlsConfigs, site.TLS)
 	}
-	s.TLSConfig, err = caddytls.MakeTLSConfig(tlsConfigs)
+	s.Server.TLSConfig, err = caddytls.MakeTLSConfig(tlsConfigs)
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +135,7 @@ func (s *Server) Listen() (net.Listener, error) {
 		return nil, fmt.Errorf("Server field is nil")
 	}
 
-	ln, err := net.Listen("tcp", s.Addr)
+	ln, err := net.Listen("tcp", s.Server.Addr)
 	if err != nil {
 		var succeeded bool
 		if runtime.GOOS == "windows" {
@@ -142,7 +144,7 @@ func (s *Server) Listen() (net.Listener, error) {
 			// in succession. TODO: Better way to handle this? And why limit this to Windows?
 			for i := 0; i < 20; i++ {
 				time.Sleep(100 * time.Millisecond)
-				ln, err = net.Listen("tcp", s.Addr)
+				ln, err = net.Listen("tcp", s.Server.Addr)
 				if err == nil {
 					succeeded = true
 					break
@@ -171,13 +173,18 @@ func (s *Server) Serve(ln net.Listener) error {
 	s.listener = ln
 	s.listenerMu.Unlock()
 
-	if s.TLSConfig != nil {
+	if s.Server.TLSConfig != nil {
 		// Create TLS listener - note that we do not replace s.listener
 		// with this TLS listener; tls.listener is unexported and does
 		// not implement the File() method we need for graceful restarts
 		// on POSIX systems.
 		// TODO: Is this ^ still relevant anymore? Maybe we can now that it's a net.Listener...
-		ln = tls.NewListener(ln, s.TLSConfig)
+		ln = tls.NewListener(ln, s.Server.TLSConfig)
+
+		// Setup any goroutines governing TLS settings (like ticket key rotation)
+		s.tlsGovChan = make(chan struct{})
+		timer := time.NewTicker(tlsNewTicketEvery)
+		go runTLSTicketKeyRotation(s.Server.TLSConfig, timer, s.tlsGovChan)
 	}
 
 	return s.Server.Serve(ln)
@@ -280,7 +287,7 @@ func (s *Server) Address() string {
 // Stop stops s gracefully (or forcefully after timeout) and
 // closes its listener.
 func (s *Server) Stop() (err error) {
-	s.SetKeepAlivesEnabled(false)
+	s.Server.SetKeepAlivesEnabled(false)
 
 	if runtime.GOOS != "windows" {
 		// force connections to close after timeout
@@ -312,6 +319,69 @@ func (s *Server) Stop() (err error) {
 	}
 
 	return
+}
+
+var runTLSTicketKeyRotation = standaloneTLSTicketKeyRotation
+
+var setSessionTicketKeysTestHook = func(keys [][32]byte) [][32]byte {
+	return keys
+}
+
+// standaloneTLSTicketKeyRotation governs over the array of TLS ticket keys used to de/crypt TLS tickets.
+// It periodically sets a new ticket key as the first one, used to encrypt (and decrypt),
+// pushing any old ticket keys to the back, where they are considered for decryption only.
+//
+// Lack of entropy for the very first ticket key results in the feature being disabled (as does Go),
+// later lack of entropy temporarily disables ticket key rotation.
+// Old ticket keys are still phased out, though.
+//
+// Stops the timer when returning.
+func standaloneTLSTicketKeyRotation(c *tls.Config, timer *time.Ticker, exitChan chan struct{}) {
+	defer timer.Stop()
+
+	// The entire page should be marked as sticky, but Go cannot do that
+	// without resorting to syscall#Mlock. And, we don't have madvise (for NODUMP), too. ☹
+	keys := make([][32]byte, 1, tlsNumTickets)
+
+	rng := c.Rand
+	if rng == nil {
+		rng = rand.Reader
+	}
+	if _, err := io.ReadFull(rng, keys[0][:]); err != nil {
+		c.SessionTicketsDisabled = true // bail if we don't have the entropy for the first one
+		return
+	}
+	c.SessionTicketKey = keys[0] // SetSessionTicketKeys doesn't set a 'tls.keysAlreadySet'
+	c.SetSessionTicketKeys(setSessionTicketKeysTestHook(keys))
+
+	for {
+		select {
+		case _, isOpen := <-exitChan:
+			if !isOpen {
+				return
+			}
+		case <-timer.C:
+			rng = c.Rand // could've changed since the start
+			if rng == nil {
+				rng = rand.Reader
+			}
+			var newTicketKey [32]byte
+			_, err := io.ReadFull(rng, newTicketKey[:])
+
+			if len(keys) < tlsNumTickets {
+				keys = append(keys, keys[0]) // manipulates the internal length
+			}
+			for idx := len(keys) - 1; idx >= 1; idx-- {
+				keys[idx] = keys[idx-1] // yes, this makes copies
+			}
+
+			if err == nil {
+				keys[0] = newTicketKey
+			}
+			// pushes the last key out, doesn't matter that we don't have a new one
+			c.SetSessionTicketKeys(setSessionTicketKeysTestHook(keys))
+		}
+	}
 }
 
 // sanitizePath collapses any ./ ../ /// madness
@@ -376,3 +446,8 @@ func writeTextResponse(w http.ResponseWriter, status int, body string) {
 	w.WriteHeader(status)
 	w.Write([]byte(body))
 }
+
+const (
+	tlsNewTicketEvery = 10 * time.Hour // generate a new ticket for TLS PFS encryption every so often
+	tlsNumTickets     = 4              // hold and consider that many tickets to decrypt TLS sessions
+)

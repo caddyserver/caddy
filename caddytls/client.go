@@ -79,61 +79,42 @@ var newACMEClient = func(config *Config, allowPrompts bool) (*ACMEClient, error)
 
 	c := &ACMEClient{Client: client, AllowPrompts: allowPrompts}
 
-	// See if HTTP challenge needs to be proxied
-	if caddy.HasListenerWithAddress(net.JoinHostPort(config.ListenHost, HTTPChallengePort)) {
-		altPort := config.AltHTTPPort
-		if altPort == "" {
-			altPort = DefaultHTTPAlternatePort
-		}
-		c.SetHTTPAddress(net.JoinHostPort(config.ListenHost, altPort))
-	}
+	if config.DNSProvider == "" {
+		// Use HTTP and TLS-SNI challenges by default
 
-	// See if TLS challenge needs to be handled by our own facilities
-	if caddy.HasListenerWithAddress(net.JoinHostPort(config.ListenHost, TLSSNIChallengePort)) {
-		c.SetChallengeProvider(acme.TLSSNI01, tlsSniSolver{})
-	}
-
-	// TODO: THIS IS TEMPORARY, ONLY FOR EXPERIMENTING!
-	c.ExcludeChallenges([]acme.Challenge{acme.TLSSNI01})
-
-	// TODO: DNS providers should be plugins too, so we don't
-	// have to import them all, right??
-	/*
-		var dnsProv acme.ChallengeProvider
-		var err error
-		switch config.DNSProvider {
-		case "cloudflare":
-			dnsProv, err = cloudflare.NewDNSProvider()
-		case "digitalocean":
-			dnsProv, err = digitalocean.NewDNSProvider()
-		case "dnsimple":
-			dnsProv, err = dnsimple.NewDNSProvider()
-		case "dyn":
-			dnsProv, err = dyn.NewDNSProvider()
-		case "gandi":
-			dnsProv, err = gandi.NewDNSProvider()
-		case "gcloud":
-			dnsProv, err = gcloud.NewDNSProvider()
-		case "namecheap":
-			dnsProv, err = namecheap.NewDNSProvider()
-		case "rfc2136":
-			dnsProv, err = rfc2136.NewDNSProvider()
-		case "route53":
-			dnsProv, err = route53.NewDNSProvider()
-		case "vultr":
-			dnsProv, err = vultr.NewDNSProvider()
-		default:
-			if config.DNSProvider != "" {
-				return fmt.Errorf("unknown DNS provider '%s'", config.DNSProvider)
+		// See if HTTP challenge needs to be proxied
+		if caddy.HasListenerWithAddress(net.JoinHostPort(config.ListenHost, HTTPChallengePort)) {
+			altPort := config.AltHTTPPort
+			if altPort == "" {
+				altPort = DefaultHTTPAlternatePort
 			}
+			c.SetHTTPAddress(net.JoinHostPort(config.ListenHost, altPort))
 		}
+
+		// See if TLS challenge needs to be handled by our own facilities
+		if caddy.HasListenerWithAddress(net.JoinHostPort(config.ListenHost, TLSSNIChallengePort)) {
+			c.SetChallengeProvider(acme.TLSSNI01, tlsSniSolver{})
+		}
+	} else {
+		// Otherwise, DNS challenge it is
+
+		// Load provider constructor function
+		provFn, ok := dnsProviders[config.DNSProvider]
+		if !ok {
+			return nil, errors.New("unknown DNS provider by name '" + config.DNSProvider + "'")
+		}
+
+		// we could pass credentials to create the provider, but for now
+		// we just let the solver package get them from the environment
+		prov, err := provFn()
 		if err != nil {
-			return err
+			return nil, err
 		}
-		if dnsProv != nil {
-			client.SetChallengeProvider(acme.DNS01, dnsProv)
-		}
-	*/
+
+		// Use only the DNS challenge
+		c.ExcludeChallenges([]acme.Challenge{acme.HTTP01, acme.TLSSNI01})
+		c.SetChallengeProvider(acme.DNS01, prov)
+	}
 
 	return c, nil
 }

@@ -7,27 +7,34 @@ import (
 	"golang.org/x/crypto/ocsp"
 )
 
+func init() {
+	// maintain assets while this package is imported, which is
+	// always. we don't ever stop it, since we need it running.
+	go maintainAssets(make(chan struct{}))
+}
+
 const (
 	// RenewInterval is how often to check certificates for renewal.
 	RenewInterval = 12 * time.Hour
 
 	// OCSPInterval is how often to check if OCSP stapling needs updating.
 	OCSPInterval = 1 * time.Hour
+
+	// RenewDurationBefore is how long before expiration to renew certificates.
+	RenewDurationBefore = (24 * time.Hour) * 30
 )
 
-// TODO: Just start maintenance from the init() function, in other words, simply by being imported... why not?
-
-// MaintainAssets is a permanently-blocking function
+// maintainAssets is a permanently-blocking function
 // that loops indefinitely and, on a regular schedule, checks
 // certificates for expiration and initiates a renewal of certs
 // that are expiring soon. It also updates OCSP stapling and
-// performs other maintenance of assets.
+// performs other maintenance of assets. It should only be
+// called once per process.
 //
 // You must pass in the channel which you'll close when
 // maintenance should stop, to allow this goroutine to clean up
-// after itself and unblock.
-func MaintainAssets(stopChan chan struct{}) {
-	// TODO: If already running, just do nothing.
+// after itself and unblock. (Not that you HAVE to stop it...)
+func maintainAssets(stopChan chan struct{}) {
 	renewalTicker := time.NewTicker(RenewInterval)
 	ocspTicker := time.NewTicker(OCSPInterval)
 
@@ -39,7 +46,7 @@ func MaintainAssets(stopChan chan struct{}) {
 			log.Println("[INFO] Done checking certificates")
 		case <-ocspTicker.C:
 			log.Println("[INFO] Scanning for stale OCSP staples")
-			updateOCSPStaples()
+			UpdateOCSPStaples()
 			log.Println("[INFO] Done checking OCSP staples")
 		case <-stopChan:
 			renewalTicker.Stop()
@@ -76,23 +83,19 @@ func RenewManagedCertificates(allowPrompts bool) (err error) {
 			visitedNames[name] = struct{}{}
 		}
 
+		// if its time is up or ending soon, we need to try to renew it
 		timeLeft := cert.NotAfter.Sub(time.Now().UTC())
-		if timeLeft < renewDurationBefore {
+		if timeLeft < RenewDurationBefore {
 			log.Printf("[INFO] Certificate for %v expires in %v; attempting renewal", cert.Names, timeLeft)
 
 			if cert.Config == nil {
-				log.Printf("[ERROR] No TLS config designated for %s", name)
+				log.Printf("[ERROR] %s: No associated TLS config; unable to renew", name)
 				continue
 			}
 
+			// this works well because managed certs are only associated with one name per config
 			err := cert.Config.RenewCert(allowPrompts)
 
-			// client, err := newACMEClient(cert.Config, allowPrompts)
-			// if err != nil {
-			// 	return err
-			// }
-
-			// err = client.Renew() // managed certs had better have only one name
 			if err != nil {
 				if allowPrompts && timeLeft < 0 {
 					// Certificate renewal failed, the operator is present, and the certificate
@@ -118,10 +121,11 @@ func RenewManagedCertificates(allowPrompts bool) (err error) {
 	// Apply changes to the cache
 	for _, cert := range renewed {
 		if cert.Names[len(cert.Names)-1] == "" {
-			// Special case: This is the default certificate, so we must
-			// ensure it gets updated as well, otherwise the renewal
-			// routine will find it and think it still needs to be renewed,
-			// even though we already renewed it...
+			// Special case: This is the default certificate. We must
+			// flush it out of the cache so that we no longer point to
+			// the old, un-renewed certificate. Otherwise it will be
+			// renewed on every scan, which is too often. When we cache
+			// this certificate in a moment, it will be the default again.
 			certCacheMu.Lock()
 			delete(certCache, "")
 			certCacheMu.Unlock()
@@ -145,7 +149,9 @@ func RenewManagedCertificates(allowPrompts bool) (err error) {
 	return nil
 }
 
-func updateOCSPStaples() {
+// UpdateOCSPStaples updates the OCSP stapling in all
+// eligible, cached certificates.
+func UpdateOCSPStaples() {
 	// Create a temporary place to store updates
 	// until we release the potentially long-lived
 	// read lock and use a short-lived write lock.
@@ -191,7 +197,7 @@ func updateOCSPStaples() {
 		err := stapleOCSP(&cert, nil)
 		if err != nil {
 			if cert.OCSP != nil {
-				// if it was no staple before, that's fine, otherwise we should log the error
+				// if there was no staple before, that's fine; otherwise we should log the error
 				log.Printf("[ERROR] Checking OCSP for %v: %v", cert.Names, err)
 			}
 			continue
@@ -220,6 +226,3 @@ func updateOCSPStaples() {
 	}
 	certCacheMu.Unlock()
 }
-
-// renewDurationBefore is how long before expiration to renew certificates.
-const renewDurationBefore = (24 * time.Hour) * 30

@@ -3,6 +3,7 @@ package httpserver
 import (
 	"flag"
 	"fmt"
+	"log"
 	"net"
 	"net/url"
 	"strings"
@@ -27,11 +28,13 @@ func init() {
 				// by leaving the port blank in this case we give auto HTTPS
 				// a chance to set the port to 443 for us
 				return caddy.CaddyfileInput{
-					Contents: []byte(fmt.Sprintf("%s\nroot %s", Host, Root)),
+					Contents:       []byte(fmt.Sprintf("%s\nroot %s", Host, Root)),
+					ServerTypeName: serverType,
 				}
 			}
 			return caddy.CaddyfileInput{
-				Contents: []byte(fmt.Sprintf("%s:%s\nroot %s", Host, Port, Root)),
+				Contents:       []byte(fmt.Sprintf("%s:%s\nroot %s", Host, Port, Root)),
+				ServerTypeName: serverType,
 			}
 		},
 		NewContext: newContext,
@@ -64,7 +67,7 @@ type httpContext struct {
 // executing directives and otherwise prepares the directives to
 // be parsed and executed.
 func (h *httpContext) InspectServerBlocks(sourceFile string, serverBlocks []caddyfile.ServerBlock) ([]caddyfile.ServerBlock, error) {
-	// TODO: Here you can inspect the server blocks
+	// TODO: Here we can inspect the server blocks
 	// and make changes to them, like adding a directive
 	// that must always be present (e.g. 'errors discard`?) -
 	// totally optional; server types need not register this
@@ -98,6 +101,15 @@ func (h *httpContext) InspectServerBlocks(sourceFile string, serverBlocks []cadd
 // MakeServers uses the newly-created siteConfigs to
 // create and return a list of server instances.
 func (h *httpContext) MakeServers() ([]caddy.Server, error) {
+	// make sure TLS is disabled for explicitly-HTTP sites
+	// (necessary when HTTP address shares a block containing tls)
+	for _, cfg := range h.siteConfigs {
+		if cfg.TLS.Enabled && (cfg.Addr.Port == "80" || cfg.Addr.Scheme == "http") {
+			cfg.TLS.Enabled = false
+			log.Printf("[WARNING] TLS disabled for %s", cfg.Addr)
+		}
+	}
+
 	// we must map (group) each config to a bind address
 	groups, err := groupSiteConfigsByListenAddr(h.siteConfigs)
 	if err != nil {
@@ -126,7 +138,6 @@ func GetConfig(addrKey string) *SiteConfig {
 			return cfg
 		}
 	}
-
 	cfg := new(SiteConfig)
 	defaultCtx := contexts[len(contexts)-1]
 	defaultCtx.siteConfigs = append(defaultCtx.siteConfigs, cfg)

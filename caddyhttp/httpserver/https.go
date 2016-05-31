@@ -8,15 +8,14 @@ import (
 )
 
 func activateHTTPS() error {
-	caddytls.Deactivate()
-
+	// TODO: Is this loop a bug? Should we scope this method to just a single context? (restarts...?)
 	for _, ctx := range contexts {
 		// pre-screen each config and earmark the ones that qualify for managed TLS
 		markQualifiedForAutoHTTPS(ctx.siteConfigs)
 
 		// place certificates and keys on disk
 		for _, c := range ctx.siteConfigs {
-			err := c.TLS.ObtainCert(true) // caddytls.ObtainCert(c.TLS, true)
+			err := c.TLS.ObtainCert(true)
 			if err != nil {
 				return err
 			}
@@ -33,19 +32,12 @@ func activateHTTPS() error {
 	}
 
 	// renew all relevant certificates that need renewal. this is important
-	// to do right away for a couple reasons, mainly because each restart,
-	// the renewal ticker is reset, so if restarts happen more often than
-	// the ticker interval, renewals would never happen. but doing
-	// it right away at start guarantees that renewals aren't missed.
-	// TODO
+	// to do right away so we guarantee that renewals aren't missed, and
+	// also the user can respond to any potential errors that occur.
 	err := caddytls.RenewManagedCertificates(true)
 	if err != nil {
 		return err
 	}
-
-	// keep certificates renewed and OCSP stapling updated
-	// TODO - this should just happen by being imported, why start/stop it?
-	go caddytls.MaintainAssets(stopChan)
 
 	return nil
 }

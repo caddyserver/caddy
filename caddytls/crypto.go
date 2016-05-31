@@ -1,6 +1,7 @@
 package caddytls
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/rsa"
@@ -9,6 +10,8 @@ import (
 	"errors"
 	"io/ioutil"
 	"os"
+
+	"github.com/xenolf/lego/acme"
 )
 
 // loadPrivateKey loads a PEM-encoded ECC/RSA private key from file.
@@ -54,4 +57,32 @@ func savePrivateKey(key crypto.PrivateKey, file string) error {
 	keyOut.Chmod(0600)
 	defer keyOut.Close()
 	return pem.Encode(keyOut, &pemKey)
+}
+
+// stapleOCSP staples OCSP information to cert for hostname name.
+// If you have it handy, you should pass in the PEM-encoded certificate
+// bundle; otherwise the DER-encoded cert will have to be PEM-encoded.
+// If you don't have the PEM blocks handy, just pass in nil.
+//
+// Errors here are not necessarily fatal, it could just be that the
+// certificate doesn't have an issuer URL.
+func stapleOCSP(cert *Certificate, pemBundle []byte) error {
+	if pemBundle == nil {
+		// The function in the acme package that gets OCSP requires a PEM-encoded cert
+		bundle := new(bytes.Buffer)
+		for _, derBytes := range cert.Certificate.Certificate {
+			pem.Encode(bundle, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
+		}
+		pemBundle = bundle.Bytes()
+	}
+
+	ocspBytes, ocspResp, err := acme.GetOCSPForCert(pemBundle)
+	if err != nil {
+		return err
+	}
+
+	cert.Certificate.OCSPStaple = ocspBytes
+	cert.OCSP = ocspResp
+
+	return nil
 }

@@ -145,21 +145,17 @@ func Setup(c *caddy.Controller) error {
 			case "max_certs":
 				c.Args(&maxCerts)
 				config.OnDemand = true
+				fmt.Printf("OnDemand=true for %s\n", c.Key)
 			case "dns":
 				args := c.RemainingArgs()
 				if len(args) != 1 {
 					return c.ArgErr()
 				}
-				switch args[0] {
-				case "cloudflare", "digitalocean", "dnsimple",
-					"dyn", "gandi", "gcloud", "namecheap",
-					"rfc2136", "route53", "vultr":
-					config.DNSProvider = args[0]
-				default:
+				dnsProvName := args[0]
+				if _, ok := dnsProviders[dnsProvName]; !ok {
 					return c.Errf("Unsupported DNS provider '%s'", args[0])
 				}
-			case "dev":
-
+				config.DNSProvider = args[0]
 			default:
 				return c.Errf("Unknown keyword '%s'", c.Val())
 			}
@@ -210,7 +206,7 @@ func Setup(c *caddy.Controller) error {
 	if config.SelfSigned {
 		err := makeSelfSignedCert(config)
 		if err != nil {
-			return err
+			return fmt.Errorf("self-signed: %v", err)
 		}
 	}
 
@@ -233,10 +229,10 @@ func makeSelfSignedCert(config *Config) error {
 	case acme.RSA8192:
 		privKey, err = rsa.GenerateKey(rand.Reader, 8192)
 	default:
-		return fmt.Errorf("self-signed: cannot generate private key; unknown key type %v", config.KeyType)
+		return fmt.Errorf("cannot generate private key; unknown key type %v", config.KeyType)
 	}
 	if err != nil {
-		return fmt.Errorf("self-signed: failed to generate private key: %v", err)
+		return fmt.Errorf("failed to generate private key: %v", err)
 	}
 
 	// create certificate structure with proper values
@@ -245,7 +241,7 @@ func makeSelfSignedCert(config *Config) error {
 	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
 	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
 	if err != nil {
-		return fmt.Errorf("self-signed: failed to generate serial number: %v", err)
+		return fmt.Errorf("failed to generate serial number: %v", err)
 	}
 	cert := &x509.Certificate{
 		SerialNumber: serialNumber,
@@ -273,7 +269,7 @@ func makeSelfSignedCert(config *Config) error {
 	}
 	derBytes, err := x509.CreateCertificate(rand.Reader, cert, cert, publicKey(privKey), privKey)
 	if err != nil {
-		return fmt.Errorf("self-signed: could not create certificate: %v", err)
+		return fmt.Errorf("could not create certificate: %v", err)
 	}
 
 	cacheCertificate(Certificate{

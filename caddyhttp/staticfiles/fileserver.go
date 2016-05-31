@@ -31,18 +31,18 @@ type FileServer struct {
 	Hide []string
 }
 
-// ServeHTTP serves static files for r according to fh's configuration.
-func (fh FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
+// ServeHTTP serves static files for r according to fs's configuration.
+func (fs FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	// r.URL.Path has already been cleaned by Caddy.
 	if r.URL.Path == "" {
 		r.URL.Path = "/"
 	}
-	return fh.serveFile(w, r, r.URL.Path)
+	return fs.serveFile(w, r, r.URL.Path)
 }
 
 // serveFile writes the specified file to the HTTP response.
 // name is '/'-separated, not filepath.Separator.
-func (fh FileServer) serveFile(w http.ResponseWriter, r *http.Request, name string) (int, error) {
+func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request, name string) (int, error) {
 	// Prevent absolute path access on Windows.
 	// TODO remove when stdlib http.Dir fixes this.
 	if runtime.GOOS == "windows" {
@@ -51,7 +51,7 @@ func (fh FileServer) serveFile(w http.ResponseWriter, r *http.Request, name stri
 		}
 	}
 
-	f, err := fh.Root.Open(name)
+	f, err := fs.Root.Open(name)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return http.StatusNotFound, nil
@@ -96,7 +96,7 @@ func (fh FileServer) serveFile(w http.ResponseWriter, r *http.Request, name stri
 	if d.IsDir() {
 		for _, indexPage := range IndexPages {
 			index := strings.TrimSuffix(name, "/") + "/" + indexPage
-			ff, err := fh.Root.Open(index)
+			ff, err := fs.Root.Open(index)
 			if err == nil {
 				// this defer does not leak fds because previous iterations
 				// of the loop must have had an err, so nothing to close
@@ -118,7 +118,7 @@ func (fh FileServer) serveFile(w http.ResponseWriter, r *http.Request, name stri
 		return http.StatusNotFound, nil
 	}
 
-	if fh.isHidden(d) {
+	if fs.isHidden(d) {
 		return http.StatusNotFound, nil
 	}
 
@@ -134,11 +134,11 @@ func (fh FileServer) serveFile(w http.ResponseWriter, r *http.Request, name stri
 }
 
 // isHidden checks if file with FileInfo d is on hide list.
-func (fh FileServer) isHidden(d os.FileInfo) bool {
+func (fs FileServer) isHidden(d os.FileInfo) bool {
 	// If the file is supposed to be hidden, return a 404
-	for _, hiddenPath := range fh.Hide {
+	for _, hiddenPath := range fs.Hide {
 		// Check if the served file is exactly the hidden file.
-		if hFile, err := fh.Root.Open(hiddenPath); err == nil {
+		if hFile, err := fs.Root.Open(hiddenPath); err == nil {
 			fs, _ := hFile.Stat()
 			hFile.Close()
 			if os.SameFile(d, fs) {

@@ -55,7 +55,6 @@ type Instance struct {
 
 // Stop stops all servers contained in i.
 func (i *Instance) Stop() error {
-	//i.serversMu.Lock()
 	for _, s := range i.servers {
 		if gs, ok := s.server.(GracefulServer); ok {
 			if err := gs.Stop(); err != nil {
@@ -63,8 +62,6 @@ func (i *Instance) Stop() error {
 			}
 		}
 	}
-	//i.servers = []serverListener{} // don't reuse servers
-	//i.serversMu.Unlock()
 	for j, other := range instances {
 		if other == i {
 			instances = append(instances[:j], instances[j+1:]...)
@@ -90,11 +87,6 @@ func (i *Instance) Restart(newCaddyfile Input) (*Instance, error) {
 		gs, srvOk := s.server.(GracefulServer)
 		ln, lnOk := s.listener.(Listener)
 		if srvOk && lnOk {
-			// lnFile, err := ln.File()
-			// if err != nil {
-			// 	return i, err
-			// }
-			// restartFds[gs.Address()] = lnFile
 			restartFds[gs.Address()] = restartPair{server: gs, listener: ln}
 		}
 	}
@@ -108,17 +100,7 @@ func (i *Instance) Restart(newCaddyfile Input) (*Instance, error) {
 		return i, err
 	}
 
-	// success! stop all old servers and bump the old instance out
-	// so it will be garbage-collected
-	// for _, s := range i.servers {
-	// 	if gs, ok := s.server.(GracefulServer); ok {
-	// 		if err := gs.Stop(); err != nil {
-	// 			log.Printf("[ERROR] Stopping %s: %v", gs.Address(), err)
-	// 		}
-	// 	} else {
-	// 		s.listener.Close()
-	// 	}
-	// }
+	// success! bump the old instance out so it will be garbage-collected
 	instancesMu.Lock()
 	for j, other := range instances {
 		if other == i {
@@ -497,6 +479,7 @@ func startServers(serverList []Server, inst *Instance, restartFds map[string]res
 	}
 
 	// Close the remaining (unused) file descriptors to free up resources
+	// and stop old servers that aren't used anymore
 	for key, old := range restartFds {
 		if err := old.server.Stop(); err != nil {
 			log.Printf("[ERROR] Stopping %s: %v", old.server.Address(), err)
@@ -576,7 +559,7 @@ func Upgrade() error {
 // IsRestart returns whether the servers have been
 // restarted - TODO: This doesn't mesh well with the new 0.9 changes
 // More like, this tells whether servers have been started before
-// TODO...
+// TODO... maybe change to IsStarted() or something?
 func IsRestart() bool {
 	//return currentRunContext.Load() != nil
 	return false

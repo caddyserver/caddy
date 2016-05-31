@@ -13,7 +13,6 @@ import (
 )
 
 // Config describes how TLS should be configured and used.
-// TODO: Some of these should be scoped per hostname or hostname pattern (*)... see Config2
 type Config struct {
 	// These values are shared amongst other Configs for the same listener.
 	Enabled                  bool
@@ -47,7 +46,11 @@ type Config struct {
 // If allowPrompts is true, the user may be shown a prompt. If proxyACME is
 // true, the relevant ACME challenges will be proxied to the alternate port.
 func (c *Config) ObtainCert(allowPrompts bool) error {
-	if !c.Managed || !HostQualifies(c.Hostname) || existingCertAndKey(c.Hostname) {
+	return c.obtainCertName(c.Hostname, allowPrompts)
+}
+
+func (c *Config) obtainCertName(name string, allowPrompts bool) error {
+	if !c.Managed || !HostQualifies(name) || existingCertAndKey(name) {
 		return nil
 	}
 
@@ -60,11 +63,15 @@ func (c *Config) ObtainCert(allowPrompts bool) error {
 		return err
 	}
 
-	return client.Obtain([]string{c.Hostname})
+	return client.Obtain([]string{name})
 }
 
 // RenewCert renews the certificate for c.Hostname.
 func (c *Config) RenewCert(allowPrompts bool) error {
+	return c.renewCertName(c.Hostname, allowPrompts)
+}
+
+func (c *Config) renewCertName(name string, allowPrompts bool) error {
 	// Prepare for renewal (load PEM cert, key, and meta)
 	certBytes, err := ioutil.ReadFile(storage.SiteCertFile(c.Hostname))
 	if err != nil {
@@ -229,7 +236,9 @@ func MakeTLSConfig(configs []*Config) (*tls.Config, error) {
 		config.ClientCAs = pool
 	}
 
-	// Associate the GetCertificate callback, or nothing we just did will work
+	// Associate the GetCertificate callback, or almost nothing we just did will work
+	// TODO: On-demand TLS... does it use a separate callback? No, right? It should
+	// figure that out during handshake-time which config to apply, right?
 	config.GetCertificate = configMap.GetCertificate
 
 	return config, nil
