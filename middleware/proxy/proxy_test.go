@@ -309,6 +309,8 @@ func TestUnixSocketProxyPaths(t *testing.T) {
 		{"/proxy/hello", "/proxy", fmt.Sprintf(greeting, "/hello")},
 		{"/proxy/foo/bar", "/proxy", fmt.Sprintf(greeting, "/foo/bar")},
 		{"/proxy/?foo=bar", "/proxy", fmt.Sprintf(greeting, "/?foo=bar")},
+		{"/queues/%2F/fetchtasks", "", fmt.Sprintf(greeting, "/queues/%2F/fetchtasks")},
+		{"/queues/%2F/fetchtasks?foo=bar", "", fmt.Sprintf(greeting, "/queues/%2F/fetchtasks?foo=bar")},
 	}
 
 	for _, test := range tests {

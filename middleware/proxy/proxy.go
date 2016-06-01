@@ -165,6 +165,11 @@ func createUpstreamRequest(r *http.Request) *http.Request {
 	outreq := new(http.Request)
 	*outreq = *r // includes shallow copies of maps, but okay
 
+	// Restore URL Path if it has been modified
+	if outreq.URL.RawPath != "" {
+		outreq.URL.Opaque = outreq.URL.RawPath
+	}
+
 	// Remove hop-by-hop headers to the backend.  Especially
 	// important is "Connection" because we want a persistent
 	// connection, regardless of what the client sent to us.  This
