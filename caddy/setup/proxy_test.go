@@ -96,6 +96,20 @@ func TestUpstream(t *testing.T) {
 				"http://testendpoint": {},
 			},
 		},
+
+		// test #9 test several upstream directives
+		{
+			"proxy / localhost:8080 {\n upstream localhost:8081-8082\n upstream localhost:8083-8085\n}",
+			false,
+			map[string]struct{}{
+				"http://localhost:8080": {},
+				"http://localhost:8081": {},
+				"http://localhost:8082": {},
+				"http://localhost:8083": {},
+				"http://localhost:8084": {},
+				"http://localhost:8085": {},
+			},
+		},
 	} {
 		receivedFunc, err := Proxy(NewTestController(test.input))
 		if err != nil && !test.shouldErr {
