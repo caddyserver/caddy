@@ -18,7 +18,7 @@ func TestUpstream(t *testing.T) {
 			"proxy / localhost:80",
 			false,
 			map[string]struct{}{
-				"http://localhost:80": struct{}{},
+				"http://localhost:80": {},
 			},
 		},
 
@@ -27,9 +27,9 @@ func TestUpstream(t *testing.T) {
 			"proxy / localhost:8080-8082",
 			false,
 			map[string]struct{}{
-				"http://localhost:8080": struct{}{},
-				"http://localhost:8081": struct{}{},
-				"http://localhost:8082": struct{}{},
+				"http://localhost:8080": {},
+				"http://localhost:8081": {},
+				"http://localhost:8082": {},
 			},
 		},
 
@@ -38,7 +38,7 @@ func TestUpstream(t *testing.T) {
 			"proxy / {\n upstream localhost:8080\n}",
 			false,
 			map[string]struct{}{
-				"http://localhost:8080": struct{}{},
+				"http://localhost:8080": {},
 			},
 		},
 
@@ -47,8 +47,8 @@ func TestUpstream(t *testing.T) {
 			"proxy / {\n upstream localhost:8080-8081\n}",
 			false,
 			map[string]struct{}{
-				"http://localhost:8080": struct{}{},
-				"http://localhost:8081": struct{}{},
+				"http://localhost:8080": {},
+				"http://localhost:8081": {},
 			},
 		},
 
@@ -57,9 +57,9 @@ func TestUpstream(t *testing.T) {
 			"proxy / localhost:8080 {\n upstream localhost:8081-8082\n}",
 			false,
 			map[string]struct{}{
-				"http://localhost:8080": struct{}{},
-				"http://localhost:8081": struct{}{},
-				"http://localhost:8082": struct{}{},
+				"http://localhost:8080": {},
+				"http://localhost:8081": {},
+				"http://localhost:8082": {},
 			},
 		},
 
@@ -68,8 +68,8 @@ func TestUpstream(t *testing.T) {
 			"proxy / localhost:8080 {\n upstream unix:/var/foo\n}",
 			false,
 			map[string]struct{}{
-				"http://localhost:8080": struct{}{},
-				"unix:/var/foo":         struct{}{},
+				"http://localhost:8080": {},
+				"unix:/var/foo":         {},
 			},
 		},
 
@@ -92,8 +92,8 @@ func TestUpstream(t *testing.T) {
 			"proxy / http://localhost {\n upstream testendpoint\n}",
 			false,
 			map[string]struct{}{
-				"http://localhost":    struct{}{},
-				"http://testendpoint": struct{}{},
+				"http://localhost":    {},
+				"http://testendpoint": {},
 			},
 		},
 	} {
