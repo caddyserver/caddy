@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -56,15 +57,36 @@ func NewStaticUpstreams(c parse.Dispenser) ([]Upstream, error) {
 		if !c.Args(&upstream.from) {
 			return upstreams, c.ArgErr()
 		}
-		to := c.RemainingArgs()
-		if len(to) == 0 {
-			return upstreams, c.ArgErr()
+
+		var to []string
+		for _, t := range c.RemainingArgs() {
+			parsed, err := parseUpstream(t)
+			if err != nil {
+				return upstreams, err
+			}
+			to = append(to, parsed...)
 		}
 
 		for c.NextBlock() {
-			if err := parseBlock(&c, upstream); err != nil {
-				return upstreams, err
+			switch c.Val() {
+			case "upstream":
+				if !c.NextArg() {
+					return upstreams, c.ArgErr()
+				}
+				parsed, err := parseUpstream(c.Val())
+				if err != nil {
+					return upstreams, err
+				}
+				to = append(to, parsed...)
+			default:
+				if err := parseBlock(&c, upstream); err != nil {
+					return upstreams, err
+				}
 			}
+		}
+
+		if len(to) == 0 {
+			return upstreams, c.ArgErr()
 		}
 
 		upstream.Hosts = make([]*UpstreamHost, len(to))
@@ -132,6 +154,45 @@ func (u *staticUpstream) NewHost(host string) (*UpstreamHost, error) {
 		uh.ReverseProxy.Transport = InsecureTransport
 	}
 	return uh, nil
+}
+
+func parseUpstream(u string) ([]string, error) {
+	if !strings.HasPrefix(u, "unix:") {
+		colonIdx := strings.LastIndex(u, ":")
+		protoIdx := strings.Index(u, "://")
+
+		if colonIdx != -1 && colonIdx != protoIdx {
+			us := u[:colonIdx]
+			ports := u[len(us)+1:]
+			if separators := strings.Count(ports, "-"); separators > 1 {
+				return nil, fmt.Errorf("port range [%s] is invalid", ports)
+			} else if separators == 1 {
+				portsStr := strings.Split(ports, "-")
+				pIni, err := strconv.Atoi(portsStr[0])
+				if err != nil {
+					return nil, err
+				}
+
+				pEnd, err := strconv.Atoi(portsStr[1])
+				if err != nil {
+					return nil, err
+				}
+
+				if pEnd <= pIni {
+					return nil, fmt.Errorf("port range [%s] is invalid", ports)
+				}
+
+				hosts := []string{}
+				for p := pIni; p <= pEnd; p++ {
+					hosts = append(hosts, fmt.Sprintf("%s:%d", us, p))
+				}
+				return hosts, nil
+			}
+		}
+	}
+
+	return []string{u}, nil
+
 }
 
 func parseBlock(c *parse.Dispenser, u *staticUpstream) error {
