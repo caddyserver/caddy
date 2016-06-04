@@ -12,12 +12,12 @@ import (
 	"github.com/mholt/archiver"
 )
 
-var buildScript, pkgDir, distDir, buildDir, releaseDir string
+var buildScript, repoDir, distDir, buildDir, releaseDir string
 
 func init() {
-	pkgDir = filepath.Join(os.Getenv("GOPATH"), "src", "github.com", "mholt", "caddy")
-	buildScript = filepath.Join(pkgDir, "build.bash")
-	distDir = filepath.Join(pkgDir, "dist")
+	repoDir = filepath.Join(os.Getenv("GOPATH"), "src", "github.com", "mholt", "caddy")
+	buildScript = filepath.Join(repoDir, "caddy", "build.bash")
+	distDir = filepath.Join(repoDir, "dist")
 	buildDir = filepath.Join(distDir, "builds")
 	releaseDir = filepath.Join(distDir, "release")
 }
@@ -98,7 +98,7 @@ func main() {
 
 func build(p platform, out string) error {
 	cmd := exec.Command(buildScript, out)
-	cmd.Dir = pkgDir
+	cmd.Dir = repoDir
 	cmd.Env = os.Environ()
 	cmd.Env = append(cmd.Env, "CGO_ENABLED=0")
 	cmd.Env = append(cmd.Env, "GOOS="+p.os)
@@ -132,8 +132,8 @@ func numProcs() int {
 // Not all supported platforms are listed since some are
 // problematic and we only build the most common ones.
 // These are just the pre-made, readily-available static
-// builds, and we can add more upon request if there is
-// enough demand.
+// builds, and we can try to add more upon request if there
+// is enough demand.
 var platforms = []platform{
 	{os: "darwin", arch: "amd64", archive: "zip"},
 	{os: "freebsd", arch: "386", archive: "tar.gz"},
