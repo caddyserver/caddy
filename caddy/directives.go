@@ -65,6 +65,7 @@ var directiveOrder = []directive{
 	{"expvar", setup.ExpVar},
 	{"proxy", setup.Proxy},
 	{"fastcgi", setup.FastCGI},
+	{"scgi", setup.SCGI},
 	{"websocket", setup.WebSocket},
 	{"markdown", setup.Markdown},
 	{"templates", setup.Templates},
