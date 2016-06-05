@@ -6,6 +6,7 @@ import (
 
 	// plug in the standard directives
 	_ "github.com/mholt/caddy/caddyhttp/bind"
+	_ "github.com/mholt/caddy/caddyhttp/errors"
 	_ "github.com/mholt/caddy/caddyhttp/gzip"
 	_ "github.com/mholt/caddy/caddyhttp/log"
 	_ "github.com/mholt/caddy/caddyhttp/root"

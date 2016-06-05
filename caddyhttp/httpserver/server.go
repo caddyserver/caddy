@@ -214,7 +214,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 		if err != nil {
 			remoteHost = r.RemoteAddr
 		}
-		writeTextResponse(w, http.StatusNotFound, "No such site at "+s.Server.Addr)
+		WriteTextResponse(w, http.StatusNotFound, "No such site at "+s.Server.Addr)
 		log.Printf("[INFO] %s - No such site at %s (Remote: %s, Referer: %s)",
 			hostname, s.Server.Addr, remoteHost, r.Header.Get("Referer"))
 		return 0, nil
@@ -329,7 +329,7 @@ func (s *Server) OnStartupComplete() {
 	}
 	for _, site := range s.sites {
 		output := site.Addr.String()
-		if caddy.IsLocalhost(s.Address()) && !caddy.IsLocalhost(site.Addr.Host) {
+		if caddy.IsLoopback(s.Address()) && !caddy.IsLoopback(site.Addr.Host) {
 			output += " (only accessible on this machine)"
 		}
 		fmt.Println(output)
@@ -365,12 +365,12 @@ func (ln tcpKeepAliveListener) File() (*os.File, error) {
 // DefaultErrorFunc responds to an HTTP request with a simple description
 // of the specified HTTP status code.
 func DefaultErrorFunc(w http.ResponseWriter, r *http.Request, status int) {
-	writeTextResponse(w, status, fmt.Sprintf("%d %s", status, http.StatusText(status)))
+	WriteTextResponse(w, status, fmt.Sprintf("%d %s\n", status, http.StatusText(status)))
 }
 
-// writeTextResponse writes body with code status to w. The body will
+// WriteTextResponse writes body with code status to w. The body will
 // be interpreted as plain text.
-func writeTextResponse(w http.ResponseWriter, status int, body string) {
+func WriteTextResponse(w http.ResponseWriter, status int, body string) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(status)
