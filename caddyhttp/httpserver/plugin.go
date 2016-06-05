@@ -70,12 +70,6 @@ type httpContext struct {
 // executing directives and otherwise prepares the directives to
 // be parsed and executed.
 func (h *httpContext) InspectServerBlocks(sourceFile string, serverBlocks []caddyfile.ServerBlock) ([]caddyfile.ServerBlock, error) {
-	// TODO: Here we can inspect the server blocks
-	// and make changes to them, like adding a directive
-	// that must always be present (e.g. 'errors discard`?) -
-	// totally optional; server types need not register this
-	// function.
-
 	// For each address in each server block, make a new config
 	for _, sb := range serverBlocks {
 		for _, key := range sb.Keys {
@@ -95,6 +89,18 @@ func (h *httpContext) InspectServerBlocks(sourceFile string, serverBlocks []cadd
 			}
 			h.siteConfigs = append(h.siteConfigs, cfg)
 			h.keysToSiteConfigs[key] = cfg
+		}
+	}
+
+	// For sites that have gzip (which gets chained in
+	// before the error handler) we should ensure that the
+	// errors directive also appears so error pages aren't
+	// written after the gzip writer is closed.
+	for _, sb := range serverBlocks {
+		_, hasGzip := sb.Tokens["gzip"]
+		_, hasErrors := sb.Tokens["errors"]
+		if hasGzip && !hasErrors {
+			sb.Tokens["errors"] = []caddyfile.Token{{Text: "errors"}}
 		}
 	}
 
@@ -215,12 +221,15 @@ type Address struct {
 
 // String returns a human-friendly print of the address.
 func (a Address) String() string {
+	if a.Host == "" && a.Port == "" {
+		return ""
+	}
 	scheme := a.Scheme
 	if scheme == "" {
-		if a.Port == "80" {
-			scheme = "http"
-		} else if a.Port == "443" {
+		if a.Port == "443" {
 			scheme = "https"
+		} else {
+			scheme = "http"
 		}
 	}
 	s := scheme
@@ -228,12 +237,13 @@ func (a Address) String() string {
 		s += "://"
 	}
 	s += a.Host
-	if (scheme == "https" && a.Port != "443") ||
-		(scheme == "http" && a.Port != "80") {
+	if a.Port != "" &&
+		((scheme == "https" && a.Port != "443") ||
+			(scheme == "http" && a.Port != "80")) {
 		s += ":" + a.Port
 	}
 	if a.Path != "" {
-		s += "/" + a.Path
+		s += a.Path
 	}
 	return s
 }

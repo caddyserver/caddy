@@ -13,15 +13,15 @@ type (
 	// in quotes if it contains whitespace.
 	lexer struct {
 		reader *bufio.Reader
-		token  token
+		token  Token
 		line   int
 	}
 
-	// token represents a single parsable unit.
-	token struct {
-		file string
-		line int
-		text string
+	// Token represents a single parsable unit.
+	Token struct {
+		File string
+		Line int
+		Text string
 	}
 )
 
@@ -47,7 +47,7 @@ func (l *lexer) next() bool {
 	var comment, quoted, escaped bool
 
 	makeToken := func() bool {
-		l.token.text = string(val)
+		l.token.Text = string(val)
 		return true
 	}
 
@@ -110,7 +110,7 @@ func (l *lexer) next() bool {
 		}
 
 		if len(val) == 0 {
-			l.token = token{line: l.line}
+			l.token = Token{Line: l.line}
 			if ch == '"' {
 				quoted = true
 				continue

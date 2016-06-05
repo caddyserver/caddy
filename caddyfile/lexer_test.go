@@ -7,44 +7,44 @@ import (
 
 type lexerTestCase struct {
 	input    string
-	expected []token
+	expected []Token
 }
 
 func TestLexer(t *testing.T) {
 	testCases := []lexerTestCase{
 		{
 			input: `host:123`,
-			expected: []token{
-				{line: 1, text: "host:123"},
+			expected: []Token{
+				{Line: 1, Text: "host:123"},
 			},
 		},
 		{
 			input: `host:123
 
 					directive`,
-			expected: []token{
-				{line: 1, text: "host:123"},
-				{line: 3, text: "directive"},
+			expected: []Token{
+				{Line: 1, Text: "host:123"},
+				{Line: 3, Text: "directive"},
 			},
 		},
 		{
 			input: `host:123 {
 						directive
 					}`,
-			expected: []token{
-				{line: 1, text: "host:123"},
-				{line: 1, text: "{"},
-				{line: 2, text: "directive"},
-				{line: 3, text: "}"},
+			expected: []Token{
+				{Line: 1, Text: "host:123"},
+				{Line: 1, Text: "{"},
+				{Line: 2, Text: "directive"},
+				{Line: 3, Text: "}"},
 			},
 		},
 		{
 			input: `host:123 { directive }`,
-			expected: []token{
-				{line: 1, text: "host:123"},
-				{line: 1, text: "{"},
-				{line: 1, text: "directive"},
-				{line: 1, text: "}"},
+			expected: []Token{
+				{Line: 1, Text: "host:123"},
+				{Line: 1, Text: "{"},
+				{Line: 1, Text: "directive"},
+				{Line: 1, Text: "}"},
 			},
 		},
 		{
@@ -54,42 +54,42 @@ func TestLexer(t *testing.T) {
 						# comment
 						foobar # another comment
 					}`,
-			expected: []token{
-				{line: 1, text: "host:123"},
-				{line: 1, text: "{"},
-				{line: 3, text: "directive"},
-				{line: 5, text: "foobar"},
-				{line: 6, text: "}"},
+			expected: []Token{
+				{Line: 1, Text: "host:123"},
+				{Line: 1, Text: "{"},
+				{Line: 3, Text: "directive"},
+				{Line: 5, Text: "foobar"},
+				{Line: 6, Text: "}"},
 			},
 		},
 		{
 			input: `a "quoted value" b
 					foobar`,
-			expected: []token{
-				{line: 1, text: "a"},
-				{line: 1, text: "quoted value"},
-				{line: 1, text: "b"},
-				{line: 2, text: "foobar"},
+			expected: []Token{
+				{Line: 1, Text: "a"},
+				{Line: 1, Text: "quoted value"},
+				{Line: 1, Text: "b"},
+				{Line: 2, Text: "foobar"},
 			},
 		},
 		{
 			input: `A "quoted \"value\" inside" B`,
-			expected: []token{
-				{line: 1, text: "A"},
-				{line: 1, text: `quoted "value" inside`},
-				{line: 1, text: "B"},
+			expected: []Token{
+				{Line: 1, Text: "A"},
+				{Line: 1, Text: `quoted "value" inside`},
+				{Line: 1, Text: "B"},
 			},
 		},
 		{
 			input: `"don't\escape"`,
-			expected: []token{
-				{line: 1, text: `don't\escape`},
+			expected: []Token{
+				{Line: 1, Text: `don't\escape`},
 			},
 		},
 		{
 			input: `"don't\\escape"`,
-			expected: []token{
-				{line: 1, text: `don't\\escape`},
+			expected: []Token{
+				{Line: 1, Text: `don't\\escape`},
 			},
 		},
 		{
@@ -97,35 +97,35 @@ func TestLexer(t *testing.T) {
 					break inside" {
 						foobar
 					}`,
-			expected: []token{
-				{line: 1, text: "A"},
-				{line: 1, text: "quoted value with line\n\t\t\t\t\tbreak inside"},
-				{line: 2, text: "{"},
-				{line: 3, text: "foobar"},
-				{line: 4, text: "}"},
+			expected: []Token{
+				{Line: 1, Text: "A"},
+				{Line: 1, Text: "quoted value with line\n\t\t\t\t\tbreak inside"},
+				{Line: 2, Text: "{"},
+				{Line: 3, Text: "foobar"},
+				{Line: 4, Text: "}"},
 			},
 		},
 		{
 			input: `"C:\php\php-cgi.exe"`,
-			expected: []token{
-				{line: 1, text: `C:\php\php-cgi.exe`},
+			expected: []Token{
+				{Line: 1, Text: `C:\php\php-cgi.exe`},
 			},
 		},
 		{
 			input: `empty "" string`,
-			expected: []token{
-				{line: 1, text: `empty`},
-				{line: 1, text: ``},
-				{line: 1, text: `string`},
+			expected: []Token{
+				{Line: 1, Text: `empty`},
+				{Line: 1, Text: ``},
+				{Line: 1, Text: `string`},
 			},
 		},
 		{
 			input: "skip those\r\nCR characters",
-			expected: []token{
-				{line: 1, text: "skip"},
-				{line: 1, text: "those"},
-				{line: 2, text: "CR"},
-				{line: 2, text: "characters"},
+			expected: []Token{
+				{Line: 1, Text: "skip"},
+				{Line: 1, Text: "those"},
+				{Line: 2, Text: "CR"},
+				{Line: 2, Text: "characters"},
 			},
 		},
 	}
@@ -136,7 +136,7 @@ func TestLexer(t *testing.T) {
 	}
 }
 
-func tokenize(input string) (tokens []token) {
+func tokenize(input string) (tokens []Token) {
 	l := lexer{}
 	l.load(strings.NewReader(input))
 	for l.next() {
@@ -145,20 +145,20 @@ func tokenize(input string) (tokens []token) {
 	return
 }
 
-func lexerCompare(t *testing.T, n int, expected, actual []token) {
+func lexerCompare(t *testing.T, n int, expected, actual []Token) {
 	if len(expected) != len(actual) {
 		t.Errorf("Test case %d: expected %d token(s) but got %d", n, len(expected), len(actual))
 	}
 
 	for i := 0; i < len(actual) && i < len(expected); i++ {
-		if actual[i].line != expected[i].line {
+		if actual[i].Line != expected[i].Line {
 			t.Errorf("Test case %d token %d ('%s'): expected line %d but was line %d",
-				n, i, expected[i].text, expected[i].line, actual[i].line)
+				n, i, expected[i].Text, expected[i].Line, actual[i].Line)
 			break
 		}
-		if actual[i].text != expected[i].text {
+		if actual[i].Text != expected[i].Text {
 			t.Errorf("Test case %d token %d: expected text '%s' but was '%s'",
-				n, i, expected[i].text, actual[i].text)
+				n, i, expected[i].Text, actual[i].Text)
 			break
 		}
 	}

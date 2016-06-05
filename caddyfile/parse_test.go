@@ -16,15 +16,13 @@ func TestAllTokens(t *testing.T) {
 	}
 
 	for i, val := range expected {
-		if tokens[i].text != val {
-			t.Errorf("Token %d should be '%s' but was '%s'", i, val, tokens[i].text)
+		if tokens[i].Text != val {
+			t.Errorf("Token %d should be '%s' but was '%s'", i, val, tokens[i].Text)
 		}
 	}
 }
 
 func TestParseOneAndImport(t *testing.T) {
-	setupParseTests()
-
 	testParseOne := func(input string) (ServerBlock, error) {
 		p := testParser(input)
 		p.Next() // parseOne doesn't call Next() to start, so we must
@@ -249,8 +247,6 @@ func TestParseOneAndImport(t *testing.T) {
 }
 
 func TestParseAll(t *testing.T) {
-	setupParseTests()
-
 	for i, test := range []struct {
 		input     string
 		shouldErr bool
@@ -325,8 +321,6 @@ func TestParseAll(t *testing.T) {
 }
 
 func TestEnvironmentReplacement(t *testing.T) {
-	setupParseTests()
-
 	os.Setenv("PORT", "8080")
 	os.Setenv("ADDRESS", "servername.com")
 	os.Setenv("FOOBAR", "foobar")
@@ -365,21 +359,21 @@ func TestEnvironmentReplacement(t *testing.T) {
 	if actual, expected := blocks[0].Keys[0], ":8080"; expected != actual {
 		t.Errorf("Expected key to be '%s' but was '%s'", expected, actual)
 	}
-	if actual, expected := blocks[0].Tokens["dir1"][1].text, "foobar"; expected != actual {
+	if actual, expected := blocks[0].Tokens["dir1"][1].Text, "foobar"; expected != actual {
 		t.Errorf("Expected argument to be '%s' but was '%s'", expected, actual)
 	}
 
 	// combined windows env vars in argument
 	p = testParser(":{%PORT%}\ndir1 {%ADDRESS%}/{%FOOBAR%}")
 	blocks, _ = p.parseAll()
-	if actual, expected := blocks[0].Tokens["dir1"][1].text, "servername.com/foobar"; expected != actual {
+	if actual, expected := blocks[0].Tokens["dir1"][1].Text, "servername.com/foobar"; expected != actual {
 		t.Errorf("Expected argument to be '%s' but was '%s'", expected, actual)
 	}
 
 	// malformed env var (windows)
 	p = testParser(":1234\ndir1 {%ADDRESS}")
 	blocks, _ = p.parseAll()
-	if actual, expected := blocks[0].Tokens["dir1"][1].text, "{%ADDRESS}"; expected != actual {
+	if actual, expected := blocks[0].Tokens["dir1"][1].Text, "{%ADDRESS}"; expected != actual {
 		t.Errorf("Expected host to be '%s' but was '%s'", expected, actual)
 	}
 
@@ -393,14 +387,9 @@ func TestEnvironmentReplacement(t *testing.T) {
 	// in quoted field
 	p = testParser(":1234\ndir1 \"Test {$FOOBAR} test\"")
 	blocks, _ = p.parseAll()
-	if actual, expected := blocks[0].Tokens["dir1"][1].text, "Test foobar test"; expected != actual {
+	if actual, expected := blocks[0].Tokens["dir1"][1].Text, "Test foobar test"; expected != actual {
 		t.Errorf("Expected argument to be '%s' but was '%s'", expected, actual)
 	}
-}
-
-func setupParseTests() {
-	// Set up some bogus directives for testing
-	//directives = []string{"dir1", "dir2", "dir3"}
 }
 
 func testParser(input string) parser {

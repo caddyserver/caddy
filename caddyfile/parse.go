@@ -22,7 +22,7 @@ func ServerBlocks(filename string, input io.Reader, validDirectives []string) ([
 // allTokens lexes the entire input, but does not parse it.
 // It returns all the tokens from the input, unstructured
 // and in order.
-func allTokens(input io.Reader) (tokens []token) {
+func allTokens(input io.Reader) (tokens []Token) {
 	l := new(lexer)
 	l.load(input)
 	for l.next() {
@@ -55,7 +55,7 @@ func (p *parser) parseAll() ([]ServerBlock, error) {
 }
 
 func (p *parser) parseOne() error {
-	p.block = ServerBlock{Tokens: make(map[string][]token)}
+	p.block = ServerBlock{Tokens: make(map[string][]Token)}
 
 	err := p.begin()
 	if err != nil {
@@ -224,7 +224,7 @@ func (p *parser) doImport() error {
 	tokensAfter := p.tokens[p.cursor+1:]
 
 	// collect all the imported tokens
-	var importedTokens []token
+	var importedTokens []Token
 	for _, importFile := range matches {
 		newTokens, err := p.doSingleImport(importFile)
 		if err != nil {
@@ -243,7 +243,7 @@ func (p *parser) doImport() error {
 
 // doSingleImport lexes the individual file at importFile and returns
 // its tokens or an error, if any.
-func (p *parser) doSingleImport(importFile string) ([]token, error) {
+func (p *parser) doSingleImport(importFile string) ([]Token, error) {
 	file, err := os.Open(importFile)
 	if err != nil {
 		return nil, p.Errf("Could not import %s: %v", importFile, err)
@@ -254,7 +254,7 @@ func (p *parser) doSingleImport(importFile string) ([]token, error) {
 	// Tack the filename onto these tokens so errors show the imported file's name
 	filename := filepath.Base(importFile)
 	for i := 0; i < len(importedTokens); i++ {
-		importedTokens[i].file = filename
+		importedTokens[i].File = filename
 	}
 
 	return importedTokens, nil
@@ -289,7 +289,7 @@ func (p *parser) directive() error {
 		} else if p.Val() == "}" && nesting == 0 {
 			return p.Err("Unexpected '}' because no matching opening brace")
 		}
-		p.tokens[p.cursor].text = replaceEnvVars(p.tokens[p.cursor].text)
+		p.tokens[p.cursor].Text = replaceEnvVars(p.tokens[p.cursor].Text)
 		p.block.Tokens[dir] = append(p.block.Tokens[dir], p.tokens[p.cursor])
 	}
 
@@ -359,11 +359,9 @@ func replaceEnvReferences(s, refStart, refEnd string) string {
 	return s
 }
 
-type (
-	// ServerBlock associates any number of keys (usually addresses
-	// of some sort) with tokens (grouped by directive name).
-	ServerBlock struct {
-		Keys   []string
-		Tokens map[string][]token
-	}
-)
+// ServerBlock associates any number of keys (usually addresses
+// of some sort) with tokens (grouped by directive name).
+type ServerBlock struct {
+	Keys   []string
+	Tokens map[string][]Token
+}

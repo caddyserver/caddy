@@ -421,7 +421,7 @@ func startWithListenerFds(cdyfile Input, inst *Instance, restartFds map[string]r
 		}
 		if !Quiet {
 			for _, srvln := range inst.servers {
-				if !IsLocalhost(srvln.listener.Addr().String()) {
+				if !IsLoopback(srvln.listener.Addr().String()) {
 					checkFdlimit()
 					break
 				}
@@ -571,6 +571,9 @@ func getServerType(serverType string) (ServerType, error) {
 	if ok {
 		return stype, nil
 	}
+	if len(serverTypes) == 0 {
+		return ServerType{}, fmt.Errorf("no server types plugged in")
+	}
 	if serverType == "" {
 		if len(serverTypes) == 1 {
 			for _, stype := range serverTypes {
@@ -578,9 +581,6 @@ func getServerType(serverType string) (ServerType, error) {
 			}
 		}
 		return ServerType{}, fmt.Errorf("multiple server types available; must choose one")
-	}
-	if len(serverTypes) == 0 {
-		return ServerType{}, fmt.Errorf("no server types plugged in")
 	}
 	return ServerType{}, fmt.Errorf("unknown server type '%s'", serverType)
 }
@@ -618,16 +618,16 @@ func Stop() error {
 	return nil
 }
 
-// IsLocalhost returns true if the hostname of addr looks
+// IsLoopback returns true if the hostname of addr looks
 // explicitly like a common local hostname. addr must only
 // be a host or a host:port combination.
-func IsLocalhost(addr string) bool {
+func IsLoopback(addr string) bool {
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
 		host = addr // happens if the addr is just a hostname
 	}
 	return host == "localhost" ||
-		host == "::1" ||
+		strings.Trim(host, "[]") == "::1" ||
 		strings.HasPrefix(host, "127.")
 }
 
@@ -713,13 +713,6 @@ func DefaultInput(serverType string) Input {
 		return nil
 	}
 	return serverTypes[serverType].DefaultInput()
-}
-
-// IsLoopback returns true if host looks explicitly like a loopback address.
-func IsLoopback(host string) bool {
-	return host == "localhost" ||
-		host == "::1" ||
-		strings.HasPrefix(host, "127.")
 }
 
 // writePidFile writes the process ID to the file at PidFile.

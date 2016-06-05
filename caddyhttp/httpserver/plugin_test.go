@@ -90,3 +90,25 @@ func TestAddressVHost(t *testing.T) {
 		}
 	}
 }
+
+func TestAddressString(t *testing.T) {
+	for i, test := range []struct {
+		addr     Address
+		expected string
+	}{
+		{Address{Scheme: "http", Host: "host", Port: "1234", Path: "/path"}, "http://host:1234/path"},
+		{Address{Scheme: "", Host: "host", Port: "", Path: ""}, "http://host"},
+		{Address{Scheme: "", Host: "host", Port: "80", Path: ""}, "http://host"},
+		{Address{Scheme: "", Host: "host", Port: "443", Path: ""}, "https://host"},
+		{Address{Scheme: "https", Host: "host", Port: "443", Path: ""}, "https://host"},
+		{Address{Scheme: "https", Host: "host", Port: "", Path: ""}, "https://host"},
+		{Address{Scheme: "", Host: "host", Port: "80", Path: "/path"}, "http://host/path"},
+		{Address{Scheme: "http", Host: "", Port: "1234", Path: ""}, "http://:1234"},
+		{Address{Scheme: "", Host: "", Port: "", Path: ""}, ""},
+	} {
+		actual := test.addr.String()
+		if actual != test.expected {
+			t.Errorf("Test %d: expected '%s' but got '%s'", i, test.expected, actual)
+		}
+	}
+}

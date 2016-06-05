@@ -12,7 +12,7 @@ import (
 // some really convenient methods.
 type Dispenser struct {
 	filename string
-	tokens   []token
+	tokens   []Token
 	cursor   int
 	nesting  int
 }
@@ -27,7 +27,7 @@ func NewDispenser(filename string, input io.Reader) Dispenser {
 }
 
 // NewDispenserTokens returns a Dispenser filled with the given tokens.
-func NewDispenserTokens(filename string, tokens []token) Dispenser {
+func NewDispenserTokens(filename string, tokens []Token) Dispenser {
 	return Dispenser{
 		filename: filename,
 		tokens:   tokens,
@@ -59,8 +59,8 @@ func (d *Dispenser) NextArg() bool {
 		return false
 	}
 	if d.cursor < len(d.tokens)-1 &&
-		d.tokens[d.cursor].file == d.tokens[d.cursor+1].file &&
-		d.tokens[d.cursor].line+d.numLineBreaks(d.cursor) == d.tokens[d.cursor+1].line {
+		d.tokens[d.cursor].File == d.tokens[d.cursor+1].File &&
+		d.tokens[d.cursor].Line+d.numLineBreaks(d.cursor) == d.tokens[d.cursor+1].Line {
 		d.cursor++
 		return true
 	}
@@ -80,8 +80,8 @@ func (d *Dispenser) NextLine() bool {
 		return false
 	}
 	if d.cursor < len(d.tokens)-1 &&
-		(d.tokens[d.cursor].file != d.tokens[d.cursor+1].file ||
-			d.tokens[d.cursor].line+d.numLineBreaks(d.cursor) < d.tokens[d.cursor+1].line) {
+		(d.tokens[d.cursor].File != d.tokens[d.cursor+1].File ||
+			d.tokens[d.cursor].Line+d.numLineBreaks(d.cursor) < d.tokens[d.cursor+1].Line) {
 		d.cursor++
 		return true
 	}
@@ -131,7 +131,7 @@ func (d *Dispenser) Val() string {
 	if d.cursor < 0 || d.cursor >= len(d.tokens) {
 		return ""
 	}
-	return d.tokens[d.cursor].text
+	return d.tokens[d.cursor].Text
 }
 
 // Line gets the line number of the current token. If there is no token
@@ -140,7 +140,7 @@ func (d *Dispenser) Line() int {
 	if d.cursor < 0 || d.cursor >= len(d.tokens) {
 		return 0
 	}
-	return d.tokens[d.cursor].line
+	return d.tokens[d.cursor].Line
 }
 
 // File gets the filename of the current token. If there is no token loaded,
@@ -149,7 +149,7 @@ func (d *Dispenser) File() string {
 	if d.cursor < 0 || d.cursor >= len(d.tokens) {
 		return d.filename
 	}
-	if tokenFilename := d.tokens[d.cursor].file; tokenFilename != "" {
+	if tokenFilename := d.tokens[d.cursor].File; tokenFilename != "" {
 		return tokenFilename
 	}
 	return d.filename
@@ -233,7 +233,7 @@ func (d *Dispenser) numLineBreaks(tknIdx int) int {
 	if tknIdx < 0 || tknIdx >= len(d.tokens) {
 		return 0
 	}
-	return strings.Count(d.tokens[tknIdx].text, "\n")
+	return strings.Count(d.tokens[tknIdx].Text, "\n")
 }
 
 // isNewLine determines whether the current token is on a different
@@ -246,6 +246,6 @@ func (d *Dispenser) isNewLine() bool {
 	if d.cursor > len(d.tokens)-1 {
 		return false
 	}
-	return d.tokens[d.cursor-1].file != d.tokens[d.cursor].file ||
-		d.tokens[d.cursor-1].line+d.numLineBreaks(d.cursor-1) < d.tokens[d.cursor].line
+	return d.tokens[d.cursor-1].File != d.tokens[d.cursor].File ||
+		d.tokens[d.cursor-1].Line+d.numLineBreaks(d.cursor-1) < d.tokens[d.cursor].Line
 }
