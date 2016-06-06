@@ -155,8 +155,7 @@ func GetConfig(addrKey string) *SiteConfig {
 		// this shouldn't happen except in tests
 		newContext()
 	}
-	cfg := new(SiteConfig)
-	cfg.TLS = new(caddytls.Config)
+	cfg := &SiteConfig{Root: Root, TLS: new(caddytls.Config)}
 	defaultCtx := contexts[len(contexts)-1]
 	defaultCtx.siteConfigs = append(defaultCtx.siteConfigs, cfg)
 	defaultCtx.keysToSiteConfigs[addrKey] = cfg
