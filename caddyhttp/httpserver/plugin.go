@@ -84,6 +84,7 @@ func (h *httpContext) InspectServerBlocks(sourceFile string, serverBlocks []cadd
 			// Save the config to our master list, and key it for lookups
 			cfg := &SiteConfig{
 				Addr:        addr,
+				Root:        Root,
 				TLS:         &caddytls.Config{Hostname: addr.Host},
 				HiddenFiles: []string{sourceFile},
 			}
@@ -315,34 +316,43 @@ func standardizeAddress(str string) (Address, error) {
 // http server type, including non-standard (3rd-party) directives.
 // The ordering of this list is important.
 var directives = []string{
-	// primitive actions that set up the basics of each config
+	// primitive actions that set up the fundamental vitals of each config
 	"root",
-	"bind",
 	"tls",
+	"bind",
 
-	// these don't inject middleware handlers
+	// services/utilities, or other directives that don't necessarily inject handlers
 	"startup",
 	"shutdown",
+	"realip", // github.com/captncraig/caddy-realip
+	"git",    // github.com/abiosoft/caddy-git
 
-	// these add middleware to the stack
+	// directives that add middleware to the stack
 	"log",
 	"gzip",
 	"errors",
+	"ipfilter", // github.com/pyed/ipfilter
+	"search",   // github.com/pedronasser/caddy-search
 	"header",
+	"cors", // github.com/captncraig/cors/caddy
 	"rewrite",
 	"redir",
 	"ext",
 	"mime",
 	"basicauth",
+	"jwt",    // github.com/BTBurke/caddy-jwt
+	"jsonp",  // github.com/pschlump/caddy-jsonp
+	"upload", // blitznote.com/src/caddy.upload
 	"internal",
-	"pprof",
-	"expvar",
 	"proxy",
 	"fastcgi",
 	"websocket",
 	"markdown",
 	"templates",
 	"browse",
+	"hugo",       // github.com/hacdias/caddy-hugo
+	"mailout",    // github.com/SchumacherFM/mailout
+	"prometheus", // github.com/miekg/caddy-prometheus
 }
 
 const (

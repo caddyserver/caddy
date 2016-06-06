@@ -33,11 +33,11 @@ func init() {
 	flag.StringVar(&caddytls.DefaultCAUrl, "ca", "https://acme-staging.api.letsencrypt.org/directory", "URL to certificate authority's ACME server directory")
 	flag.StringVar(&conf, "conf", "", "Caddyfile to load (default \""+caddy.DefaultConfigFile+"\")")
 	flag.StringVar(&cpu, "cpu", "100%", "CPU cap")
-	flag.BoolVar(&plugins, "plugins", false, "List supported plugins") // TODO: change to plugins
+	flag.BoolVar(&plugins, "plugins", false, "List installed plugins")
 	flag.StringVar(&caddytls.DefaultEmail, "email", "", "Default ACME CA account email address")
 	flag.StringVar(&logfile, "log", "", "Process log file")
 	flag.StringVar(&caddy.PidFile, "pidfile", "", "Path to write pid file")
-	flag.BoolVar(&caddy.Quiet, "quiet", false, "Quiet mode (no initialization output)") // TODO
+	flag.BoolVar(&caddy.Quiet, "quiet", false, "Quiet mode (no initialization output)")
 	flag.StringVar(&revoke, "revoke", "", "Hostname for which to revoke the certificate")
 	flag.StringVar(&serverType, "type", "http", "Type of server to run")
 	flag.BoolVar(&version, "version", false, "Show version")
