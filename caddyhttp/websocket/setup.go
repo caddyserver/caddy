@@ -6,8 +6,7 @@ import (
 )
 
 func init() {
-	caddy.RegisterPlugin(caddy.Plugin{
-		Name:       "websocket",
+	caddy.RegisterPlugin("websocket", caddy.Plugin{
 		ServerType: "http",
 		Action:     setup,
 	})

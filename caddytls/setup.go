@@ -16,10 +16,7 @@ import (
 )
 
 func init() {
-	caddy.RegisterPlugin(caddy.Plugin{
-		Name:   "tls",
-		Action: setupTLS,
-	})
+	caddy.RegisterPlugin("tls", caddy.Plugin{Action: setupTLS})
 }
 
 // setupTLS sets up the TLS configuration and installs certificates that

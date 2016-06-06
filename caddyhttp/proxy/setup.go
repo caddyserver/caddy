@@ -6,8 +6,7 @@ import (
 )
 
 func init() {
-	caddy.RegisterPlugin(caddy.Plugin{
-		Name:       "proxy",
+	caddy.RegisterPlugin("proxy", caddy.Plugin{
 		ServerType: "http",
 		Action:     setup,
 	})

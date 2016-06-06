@@ -135,11 +135,6 @@ type ServerType struct {
 
 // Plugin is a type which holds information about a plugin.
 type Plugin struct {
-	// The plugin must have a name: lower case and one word.
-	// If this plugin has an action, it must be the name of
-	// the directive to attach to. A name is always required.
-	Name string
-
 	// ServerType is the type of server this plugin is for.
 	// Can be empty if not applicable, or if the plugin
 	// can associate with any server type.
@@ -154,17 +149,22 @@ type Plugin struct {
 // themselves, even if they do not perform an action associated
 // with a directive. It is important for the process to know
 // which plugins are available.
-func RegisterPlugin(plugin Plugin) {
-	if plugin.Name == "" {
+//
+// The plugin MUST have a name: lower case and one word.
+// If this plugin has an action, it must be the name of
+// the directive that invokes it. A name is always required
+// and must be unique for the server type.
+func RegisterPlugin(name string, plugin Plugin) {
+	if name == "" {
 		panic("plugin must have a name")
 	}
 	if _, ok := plugins[plugin.ServerType]; !ok {
 		plugins[plugin.ServerType] = make(map[string]Plugin)
 	}
-	if _, dup := plugins[plugin.ServerType][plugin.Name]; dup {
-		panic("plugin named " + plugin.Name + " already registered for server type " + plugin.ServerType)
+	if _, dup := plugins[plugin.ServerType][name]; dup {
+		panic("plugin named " + name + " already registered for server type " + plugin.ServerType)
 	}
-	plugins[plugin.ServerType][plugin.Name] = plugin
+	plugins[plugin.ServerType][name] = plugin
 }
 
 // RegisterParsingCallback registers callback to be called after

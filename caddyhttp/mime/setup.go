@@ -9,8 +9,7 @@ import (
 )
 
 func init() {
-	caddy.RegisterPlugin(caddy.Plugin{
-		Name:       "mime",
+	caddy.RegisterPlugin("mime", caddy.Plugin{
 		ServerType: "http",
 		Action:     setup,
 	})

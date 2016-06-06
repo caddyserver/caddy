@@ -17,8 +17,7 @@ import (
 )
 
 func init() {
-	caddy.RegisterPlugin(caddy.Plugin{
-		Name:       "gzip",
+	caddy.RegisterPlugin("gzip", caddy.Plugin{
 		ServerType: "http",
 		Action:     setup,
 	})

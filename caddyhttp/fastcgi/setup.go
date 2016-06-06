@@ -10,8 +10,7 @@ import (
 )
 
 func init() {
-	caddy.RegisterPlugin(caddy.Plugin{
-		Name:       "fastcgi",
+	caddy.RegisterPlugin("fastcgi", caddy.Plugin{
 		ServerType: "http",
 		Action:     setup,
 	})

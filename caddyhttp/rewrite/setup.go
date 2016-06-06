@@ -10,8 +10,7 @@ import (
 )
 
 func init() {
-	caddy.RegisterPlugin(caddy.Plugin{
-		Name:       "rewrite",
+	caddy.RegisterPlugin("rewrite", caddy.Plugin{
 		ServerType: "http",
 		Action:     setup,
 	})

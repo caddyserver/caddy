@@ -9,8 +9,7 @@ import (
 )
 
 func init() {
-	caddy.RegisterPlugin(caddy.Plugin{
-		Name:       "root",
+	caddy.RegisterPlugin("root", caddy.Plugin{
 		ServerType: "http",
 		Action:     setupRoot,
 	})

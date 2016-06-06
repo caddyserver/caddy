@@ -11,8 +11,7 @@ import (
 )
 
 func init() {
-	caddy.RegisterPlugin(caddy.Plugin{
-		Name:       "log",
+	caddy.RegisterPlugin("log", caddy.Plugin{
 		ServerType: "http",
 		Action:     setup,
 	})
