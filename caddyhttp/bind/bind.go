@@ -6,8 +6,7 @@ import (
 )
 
 func init() {
-	caddy.RegisterPlugin(caddy.Plugin{
-		Name:       "bind",
+	caddy.RegisterPlugin("bind", caddy.Plugin{
 		ServerType: "http",
 		Action:     setupBind,
 	})

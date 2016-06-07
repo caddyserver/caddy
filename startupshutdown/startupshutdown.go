@@ -9,14 +9,8 @@ import (
 )
 
 func init() {
-	caddy.RegisterPlugin(caddy.Plugin{
-		Name:   "startup",
-		Action: Startup,
-	})
-	caddy.RegisterPlugin(caddy.Plugin{
-		Name:   "shutdown",
-		Action: Shutdown,
-	})
+	caddy.RegisterPlugin("startup", caddy.Plugin{Action: Startup})
+	caddy.RegisterPlugin("shutdown", caddy.Plugin{Action: Shutdown})
 }
 
 // Startup registers a startup callback to execute during server start.

@@ -10,8 +10,7 @@ import (
 )
 
 func init() {
-	caddy.RegisterPlugin(caddy.Plugin{
-		Name:       "markdown",
+	caddy.RegisterPlugin("markdown", caddy.Plugin{
 		ServerType: "http",
 		Action:     setup,
 	})

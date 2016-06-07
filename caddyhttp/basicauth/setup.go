@@ -8,8 +8,7 @@ import (
 )
 
 func init() {
-	caddy.RegisterPlugin(caddy.Plugin{
-		Name:       "basicauth",
+	caddy.RegisterPlugin("basicauth", caddy.Plugin{
 		ServerType: "http",
 		Action:     setup,
 	})

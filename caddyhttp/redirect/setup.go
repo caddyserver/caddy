@@ -8,8 +8,7 @@ import (
 )
 
 func init() {
-	caddy.RegisterPlugin(caddy.Plugin{
-		Name:       "redir",
+	caddy.RegisterPlugin("redir", caddy.Plugin{
 		ServerType: "http",
 		Action:     setup,
 	})
