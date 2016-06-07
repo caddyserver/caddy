@@ -343,6 +343,8 @@ var directives = []string{
 	"jsonp",  // github.com/pschlump/caddy-jsonp
 	"upload", // blitznote.com/src/caddy.upload
 	"internal",
+	"pprof",
+	"expvar",
 	"proxy",
 	"fastcgi",
 	"websocket",

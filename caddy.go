@@ -1,3 +1,16 @@
+// Package caddy implements the Caddy server manager.
+//
+// To use this package:
+//
+//   1. Set the AppName and AppVersion variables.
+//   2. Call LoadCaddyfile() to get the Caddyfile.
+//      Pass in the name of the server type (like "http").
+//   3. Call caddy.Start() to start Caddy. You get back
+//      an Instance, on which you can call Restart() to
+//      restart it or Stop() to stop it.
+//
+// You should call Wait() on your instance to wait for
+// all servers to quit before your process exits.
 package caddy
 
 import (

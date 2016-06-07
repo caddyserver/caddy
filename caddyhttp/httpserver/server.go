@@ -52,6 +52,16 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 		connTimeout: GracefulTimeout,
 	}
 	s.Server.Handler = s // this is weird, but whatever
+	s.Server.ConnState = func(c net.Conn, cs http.ConnState) {
+		if cs == http.StateIdle {
+			s.listenerMu.Lock()
+			// server stopped, close idle connection
+			if s.listener == nil {
+				c.Close()
+			}
+			s.listenerMu.Unlock()
+		}
+	}
 
 	// Disable HTTP/2 if desired
 	if !HTTP2 {
@@ -288,6 +298,7 @@ func (s *Server) Stop() (err error) {
 	s.listenerMu.Lock()
 	if s.listener != nil {
 		err = s.listener.Close()
+		s.listener = nil
 	}
 	s.listenerMu.Unlock()
 

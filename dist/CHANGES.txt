@@ -1,7 +1,21 @@
 CHANGES
 
-<master>
-- ...
+0.9
+- New core
+- New experimental QUIC support with -quic flag (HTTPS only)
+- New -type flag to specify other server type
+- Moved ~/.caddy/letsencrypt to ~/.caddy/acme and re-organized assets
+- Moved caddy package to top level folder, and pushed main to subfolder
+- Changed -directives flag to -plugins
+- Site addresses can have paths
+- Site addresses can make some use of wildcards in domains
+- Removed -restart option (all restarts happen in-process)
+- markdown: Overhauled; removed site generation features
+- proxy: More control of headers
+- proxy: Specify multiple upstreams with optional port ranges
+- tls: Support for ACME DNS challenge across 10 providers
+- tls: Generate self-signed certificates in memory
+- tls: Support for TLS-SNI challenge during restarts
 
 
 0.8.3 (April 26, 2016)
@@ -55,7 +69,7 @@ CHANGES
 - Dozens of bug fixes, improvements, and more tests across the board
 
 
-0.8.0 (December 4, 2015)
+0.8 (December 4, 2015)
 - HTTPS by default via Let's Encrypt (certs & keys are fully managed)
 - Graceful restarts (on POSIX-compliant systems)
 - Major internal refactoring to allow use of Caddy as library
@@ -155,7 +169,7 @@ CHANGES
 - tls: Client authentication
 
 
-0.7.0 (May 25, 2015)
+0.7 (May 25, 2015)
 - New directive 'internal' to protect resources with X-Accel-Redirect
 - New -version flag to show program name and version
 - core: Fixed escaped backslash characters inside quoted strings
@@ -173,7 +187,7 @@ CHANGES
 - Other internal improvements that are not user-facing (more tests, etc.)
 
 
-0.6.0 (May 7, 2015)
+0.6 (May 7, 2015)
 - New directive 'git' to automatically pull changes
 - New directive 'bind' to override host server binds to
 - New -root flag to specify root path to default site
@@ -208,5 +222,5 @@ CHANGES
 - fastcgi: Fix for handling errors that come from responder
 
 
-0.5.0 (April 28, 2015)
+0.5 (April 28, 2015)
 - Initial release
