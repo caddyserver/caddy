@@ -3,7 +3,7 @@ CADDY 0.9 beta 1
 Website
 	https://caddyserver.com
 
-Community
+Community Forum
 	https://forum.caddyserver.com
 
 Twitter

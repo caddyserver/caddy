@@ -29,8 +29,7 @@ func init() {
 	setVersion()
 
 	flag.BoolVar(&caddytls.Agreed, "agree", false, "Agree to the CA's Subscriber Agreement")
-	// TODO: Change from staging to v01
-	flag.StringVar(&caddytls.DefaultCAUrl, "ca", "https://acme-staging.api.letsencrypt.org/directory", "URL to certificate authority's ACME server directory")
+	flag.StringVar(&caddytls.DefaultCAUrl, "ca", "https://acme-v01.api.letsencrypt.org/directory", "URL to certificate authority's ACME server directory")
 	flag.StringVar(&conf, "conf", "", "Caddyfile to load (default \""+caddy.DefaultConfigFile+"\")")
 	flag.StringVar(&cpu, "cpu", "100%", "CPU cap")
 	flag.BoolVar(&plugins, "plugins", false, "List installed plugins")

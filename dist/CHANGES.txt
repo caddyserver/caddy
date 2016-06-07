@@ -1,21 +1,24 @@
 CHANGES
 
-0.9
+0.9 beta 1 (June 7, 2016)
 - New core
 - New experimental QUIC support with -quic flag (HTTPS only)
-- New -type flag to specify other server type
-- Moved ~/.caddy/letsencrypt to ~/.caddy/acme and re-organized assets
+- New -type flag to specify other server types
+- Moved ~/.caddy/letsencrypt to ~/.caddy/acme and reorganized assets
 - Moved caddy package to top level folder, and pushed main to subfolder
-- Changed -directives flag to -plugins
 - Site addresses can have paths
 - Site addresses can make some use of wildcards in domains
-- Removed -restart option (all restarts happen in-process)
+- Renamed -directives flag to -plugins
+- Restarting no longer requires spawning a new process
+- Removed -restart option
+- log: New {request} placeholder to dump entire request (sans body)
 - markdown: Overhauled; removed site generation features
 - proxy: More control of headers
 - proxy: Specify multiple upstreams with optional port ranges
-- tls: Support for ACME DNS challenge across 10 providers
 - tls: Generate self-signed certificates in memory
+- tls: Support for ACME DNS challenge across 10 providers
 - tls: Support for TLS-SNI challenge during restarts
+- Various bug fixes and enhancements
 
 
 0.8.3 (April 26, 2016)

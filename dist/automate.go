@@ -12,11 +12,12 @@ import (
 	"github.com/mholt/archiver"
 )
 
-var buildScript, repoDir, distDir, buildDir, releaseDir string
+var buildScript, repoDir, mainDir, distDir, buildDir, releaseDir string
 
 func init() {
 	repoDir = filepath.Join(os.Getenv("GOPATH"), "src", "github.com", "mholt", "caddy")
-	buildScript = filepath.Join(repoDir, "caddy", "build.bash")
+	mainDir = filepath.Join(repoDir, "caddy")
+	buildScript = filepath.Join(mainDir, "build.bash")
 	distDir = filepath.Join(repoDir, "dist")
 	buildDir = filepath.Join(distDir, "builds")
 	releaseDir = filepath.Join(distDir, "release")
@@ -98,7 +99,7 @@ func main() {
 
 func build(p platform, out string) error {
 	cmd := exec.Command(buildScript, out)
-	cmd.Dir = repoDir
+	cmd.Dir = mainDir
 	cmd.Env = os.Environ()
 	cmd.Env = append(cmd.Env, "CGO_ENABLED=0")
 	cmd.Env = append(cmd.Env, "GOOS="+p.os)
