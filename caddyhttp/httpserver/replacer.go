@@ -107,7 +107,6 @@ func NewReplacer(r *http.Request, rr *ResponseRecorder, emptyValue string) Repla
 			"{request}": func() string {
 				dump, err := httputil.DumpRequest(r, false)
 				if err != nil {
-					// should we return err.Error()?
 					return ""
 				}
 
