@@ -74,6 +74,9 @@ func TestReplace(t *testing.T) {
 	if expected, actual := "The Custom header is foobarbaz.", repl.Replace("The Custom header is {>Custom}."); expected != actual {
 		t.Errorf("{>Custom} replacement: expected '%s', got '%s'", expected, actual)
 	}
+	if expected, actual := "The request is POST / HTTP/1.1\\r\\nHost: localhost\\r\\nCustom: foobarbaz\\r\\nShorterval: 1\\r\\n\\r\\n.", repl.Replace("The request is {request}."); expected != actual {
+		t.Errorf("{request} replacement: expected '%s', got '%s'", expected, actual)
+	}
 
 	// Test header case-insensitivity
 	if expected, actual := "The cUsToM header is foobarbaz...", repl.Replace("The cUsToM header is {>cUsToM}..."); expected != actual {

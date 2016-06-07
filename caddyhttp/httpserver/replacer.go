@@ -3,12 +3,21 @@ package httpserver
 import (
 	"net"
 	"net/http"
+	"net/http/httputil"
 	"net/url"
 	"os"
 	"path"
 	"strconv"
 	"strings"
 	"time"
+)
+
+// requestReplacer is a strings.Replacer which is used to
+// encode literal \r and \n characters and keep everything
+// on one line
+var requestReplacer = strings.NewReplacer(
+	"\r", "\\r",
+	"\n", "\\n",
 )
 
 // Replacer is a type which can replace placeholder
@@ -94,6 +103,14 @@ func NewReplacer(r *http.Request, rr *ResponseRecorder, emptyValue string) Repla
 			"{dir}": func() string {
 				dir, _ := path.Split(r.URL.Path)
 				return dir
+			}(),
+			"{request}": func() string {
+				dump, err := httputil.DumpRequest(r, false)
+				if err != nil {
+					return ""
+				}
+
+				return requestReplacer.Replace(string(dump))
 			}(),
 		},
 		emptyValue: emptyValue,
