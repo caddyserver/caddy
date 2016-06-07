@@ -100,7 +100,7 @@ Note: You will need **[Go 1.6](https://golang.org/dl/)** or newer (required for
 transparent automatic HTTP/2 support and to take advantage of performance improvements
 in the TLS and crypto libraries).
 
-1. `$ go get github.com/mholt/caddy`
+1. `$ go get github.com/mholt/caddy/caddy`
 2. `cd` into your website's directory
 3. Run `caddy` (assumes `$GOPATH/bin` is in your `$PATH`)
 
