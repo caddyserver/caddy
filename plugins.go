@@ -88,14 +88,30 @@ type serverListener struct {
 	listener net.Listener
 }
 
-// Context is a type that carries a server type through
+// Context is a type which carries a server type through
 // the load and setup phase; it maintains the state
 // between loading the Caddyfile, then executing its
 // directives, then making the servers for Caddy to
 // manage. Typically, such state involves configuration
 // structs, etc.
 type Context interface {
+	// Called after the Caddyfile is parsed into server
+	// blocks but before the directives are executed,
+	// this method gives you an opportunity to inspect
+	// the server blocks and prepare for the execution
+	// of directives. Return the server blocks (which
+	// you may modify, if desired) and an error, if any.
+	// The first argument is the name or path to the
+	// configuration file (Caddyfile).
+	//
+	// This function can be a no-op and simply return its
+	// input if there is nothing to do here.
 	InspectServerBlocks(string, []caddyfile.ServerBlock) ([]caddyfile.ServerBlock, error)
+
+	// This is what Caddy calls to make server instances.
+	// By this time, all directives have been executed and,
+	// presumably, the context has enough state to produce
+	// server instances for Caddy to start.
 	MakeServers() ([]Server, error)
 }
 
@@ -115,21 +131,18 @@ type ServerType struct {
 	// one word if possible and lower-cased.
 	Directives []string
 
-	// InspectServerBlocks is an optional callback that is
-	// executed after loading the tokens for each server
-	// block but before executing the directives in them.
-	// This func may modify the server blocks and return
-	// new ones to be used.
-	InspectServerBlocks func(sourceFile string, serverBlocks []caddyfile.ServerBlock) ([]caddyfile.ServerBlock, error)
-
-	// MakeServers is a callback that makes the server
-	// instances.
-	MakeServers func() ([]Server, error)
-
 	// DefaultInput returns a default config input if none
-	// is otherwise loaded.
+	// is otherwise loaded. This is optional, but highly
+	// recommended, otherwise a blank Caddyfile will be
+	// used.
 	DefaultInput func() Input
 
+	// The function that produces a new server type context.
+	// This will be called when a new Caddyfile is being
+	// loaded, parsed, and executed independently of any
+	// startup phases before this one. It's a way to keep
+	// each set of server instances separate and to reduce
+	// the amount of global state you need.
 	NewContext func() Context
 }
 
@@ -216,12 +229,12 @@ func DirectiveAction(serverType, dir string) (SetupFunc, error) {
 // loaders return a non-nil Input. The default
 // loader may always return an Input value.
 type Loader interface {
-	Load(string) (Input, error)
+	Load(serverType string) (Input, error)
 }
 
 // LoaderFunc is a convenience type similar to http.HandlerFunc
 // that allows you to use a plain function as a Load() method.
-type LoaderFunc func(string) (Input, error)
+type LoaderFunc func(serverType string) (Input, error)
 
 // Load loads a Caddyfile.
 func (lf LoaderFunc) Load(serverType string) (Input, error) {
