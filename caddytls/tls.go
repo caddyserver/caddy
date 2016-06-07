@@ -1,6 +1,17 @@
 // Package caddytls facilitates the management of TLS assets and integrates
 // Let's Encrypt functionality into Caddy with first-class support for
-// creating and renewing certificates automatically.
+// creating and renewing certificates automatically. It also implements
+// the tls directive.
+//
+// This package is meant to be used by Caddy server types. To use the
+// tls directive, a server type must import this package and call
+// RegisterConfigGetter(). The server type must make and keep track of
+// the caddytls.Config structs that this package produces. It must also
+// add tls to its list of directives. When it comes time to make the
+// server instances, the server type can call MakeTLSConfig() to convert
+// a []caddytls.Config to a single tls.Config for use in tls.NewListener().
+// It is also recommended to call RotateSessionTicketKeys() when
+// starting a new listener.
 package caddytls
 
 import (
