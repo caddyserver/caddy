@@ -51,7 +51,8 @@ var contexts []*httpContext
 
 func newContext() caddy.Context {
 	context := &httpContext{keysToSiteConfigs: make(map[string]*SiteConfig)}
-	contexts = append(contexts, context)
+	// put the new context at start to allow setup of directives on new instance
+	contexts = append([]*httpContext{context}, contexts...)
 	return context
 }
 
