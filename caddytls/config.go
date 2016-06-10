@@ -17,7 +17,7 @@ type Config struct {
 	// The hostname or class of hostnames this config is
 	// designated for; can contain wildcard characters
 	// according to RFC 6125 §6.4.3 - this field MUST
-	// NOT be empty in order for things to work smoothly
+	// be set in order for things to work as expected
 	Hostname string
 
 	// Whether TLS is enabled

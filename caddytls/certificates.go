@@ -205,6 +205,9 @@ func makeCertificate(certPEMBlock, keyPEMBlock []byte) (Certificate, error) {
 //
 // This function is safe for concurrent use.
 func cacheCertificate(cert Certificate) {
+	if cert.Config == nil {
+		cert.Config = new(Config)
+	}
 	certCacheMu.Lock()
 	if _, ok := certCache[""]; !ok {
 		// use as default - must be *appended* to list, or bad things happen!

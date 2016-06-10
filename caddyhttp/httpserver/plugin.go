@@ -115,9 +115,19 @@ func (h *httpContext) MakeServers() ([]caddy.Server, error) {
 	// make sure TLS is disabled for explicitly-HTTP sites
 	// (necessary when HTTP address shares a block containing tls)
 	for _, cfg := range h.siteConfigs {
-		if cfg.TLS.Enabled && (cfg.Addr.Port == "80" || cfg.Addr.Scheme == "http") {
+		if !cfg.TLS.Enabled {
+			continue
+		}
+		if cfg.Addr.Port == "80" || cfg.Addr.Scheme == "http" {
 			cfg.TLS.Enabled = false
 			log.Printf("[WARNING] TLS disabled for %s", cfg.Addr)
+		} else if cfg.Addr.Scheme == "" {
+			// set scheme to https ourselves, since TLS is enabled
+			// and it was not explicitly set to something else. this
+			// makes it appear as "https" when we print the list of
+			// running sites; otherwise "http" would be assumed which
+			// is incorrect for this site.
+			cfg.Addr.Scheme = "https"
 		}
 	}
 
