@@ -331,7 +331,7 @@ var directives = []string{
 	"log",
 	"gzip",
 	"errors",
-	"minify", // github.com/hacdias/caddy-minify
+	"minify",   // github.com/hacdias/caddy-minify
 	"ipfilter", // github.com/pyed/ipfilter
 	"search",   // github.com/pedronasser/caddy-search
 	"header",
