@@ -82,17 +82,17 @@ func (r *LeastConn) Select(pool HostPool) *UpstreamHost {
 
 // RoundRobin is a policy that selects hosts based on round robin ordering.
 type RoundRobin struct {
-	Robin uint32
+	robin uint32
 }
 
 // Select selects an up host from the pool using a round robin ordering scheme.
 func (r *RoundRobin) Select(pool HostPool) *UpstreamHost {
 	poolLen := uint32(len(pool))
-	selection := atomic.AddUint32(&r.Robin, 1) % poolLen
+	selection := atomic.AddUint32(&r.robin, 1) % poolLen
 	host := pool[selection]
 	// if the currently selected host is not available, just ffwd to up host
 	for i := uint32(1); !host.Available() && i < poolLen; i++ {
-		selection = atomic.AddUint32(&r.Robin, 1) % poolLen
+		selection = atomic.AddUint32(&r.robin, 1) % poolLen
 		host = pool[selection]
 	}
 	if !host.Available() {
