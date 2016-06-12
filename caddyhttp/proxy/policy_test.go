@@ -63,11 +63,18 @@ func TestRoundRobinPolicy(t *testing.T) {
 	if h != pool[2] {
 		t.Error("Expected to skip down host.")
 	}
-	// mark host as full
-	pool[2].Conns = 1
-	pool[2].MaxConns = 1
+	// mark host as up
+	pool[1].Unhealthy = false
+
 	h = rrPolicy.Select(pool)
-	if h != pool[0] {
+	if h == pool[2] {
+		t.Error("Expected to balance evenly among healthy hosts")
+	}
+	// mark host as full
+	pool[1].Conns = 1
+	pool[1].MaxConns = 1
+	h = rrPolicy.Select(pool)
+	if h != pool[2] {
 		t.Error("Expected to skip full host.")
 	}
 }

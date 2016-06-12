@@ -92,7 +92,8 @@ func (r *RoundRobin) Select(pool HostPool) *UpstreamHost {
 	host := pool[selection]
 	// if the currently selected host is not available, just ffwd to up host
 	for i := uint32(1); !host.Available() && i < poolLen; i++ {
-		host = pool[(selection+i)%poolLen]
+		selection = atomic.AddUint32(&r.Robin, 1) % poolLen
+		host = pool[selection]
 	}
 	if !host.Available() {
 		return nil
