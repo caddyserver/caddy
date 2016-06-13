@@ -113,20 +113,24 @@ type tlsSniSolver struct{}
 
 // Present adds the challenge certificate to the cache.
 func (s tlsSniSolver) Present(domain, token, keyAuth string) error {
-	cert, err := acme.TLSSNI01ChallengeCert(keyAuth)
+	cert, acmeDomain, err := acme.TLSSNI01ChallengeCert(keyAuth)
 	if err != nil {
 		return err
 	}
 	cacheCertificate(Certificate{
 		Certificate: cert,
-		Names:       []string{domain},
+		Names:       []string{acmeDomain},
 	})
 	return nil
 }
 
 // CleanUp removes the challenge certificate from the cache.
 func (s tlsSniSolver) CleanUp(domain, token, keyAuth string) error {
-	uncacheCertificate(domain)
+	_, acmeDomain, err := acme.TLSSNI01ChallengeCert(keyAuth)
+	if err != nil {
+		return err
+	}
+	uncacheCertificate(acmeDomain)
 	return nil
 }
 
