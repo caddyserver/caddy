@@ -260,7 +260,7 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream) error {
 			return c.ArgErr()
 		}
 		u.downstreamHeaders.Add(header, value)
-	case "reverse_proxy":
+	case "transparent":
 		u.upstreamHeaders.Add("Host", "{host}")
 		u.upstreamHeaders.Add("X-Real-IP", "{remote}")
 		u.upstreamHeaders.Add("X-Forwarded-Proto", "{scheme}")

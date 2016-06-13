@@ -141,14 +141,14 @@ func TestParseBlock(t *testing.T) {
 	tests := []struct {
 		config string
 	}{
-		// Test #1: reverse_proxy preset
-		{"proxy / localhost:8080 {\n reverse_proxy \n}"},
+		// Test #1: transparent preset
+		{"proxy / localhost:8080 {\n transparent \n}"},
 
-		// Test #2: reverse_proxy preset with another param
-		{"proxy / localhost:8080 {\n reverse_proxy \nproxy_header X-Test Tester \n}"},
+		// Test #2: transparent preset with another param
+		{"proxy / localhost:8080 {\n transparent \nproxy_header X-Test Tester \n}"},
 
-		// Test #3: reverse_proxy preset on multiple sites
-		{"proxy / localhost:8080 {\n reverse_proxy \n} \nproxy /api localhost:8081 { \nreverse_proxy \n}"},
+		// Test #3: transparent preset on multiple sites
+		{"proxy / localhost:8080 {\n transparent \n} \nproxy /api localhost:8081 { \ntransparent \n}"},
 	}
 
 	for i, test := range tests {
