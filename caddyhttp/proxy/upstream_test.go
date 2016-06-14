@@ -1,8 +1,11 @@
 package proxy
 
 import (
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/mholt/caddy/caddyfile"
 )
 
 func TestNewHost(t *testing.T) {
@@ -130,6 +133,43 @@ func TestAllowedPaths(t *testing.T) {
 		allowed := upstream.AllowedPath(test.url)
 		if test.expected != allowed {
 			t.Errorf("Test %d: expected %v found %v", i+1, test.expected, allowed)
+		}
+	}
+}
+
+func TestParseBlock(t *testing.T) {
+	tests := []struct {
+		config string
+	}{
+		// Test #1: transparent preset
+		{"proxy / localhost:8080 {\n transparent \n}"},
+
+		// Test #2: transparent preset with another param
+		{"proxy / localhost:8080 {\n transparent \nproxy_header X-Test Tester \n}"},
+
+		// Test #3: transparent preset on multiple sites
+		{"proxy / localhost:8080 {\n transparent \n} \nproxy /api localhost:8081 { \ntransparent \n}"},
+	}
+
+	for i, test := range tests {
+		upstreams, err := NewStaticUpstreams(caddyfile.NewDispenser("Testfile", strings.NewReader(test.config)))
+		if err != nil {
+			t.Error("Expected no error. Got:", err.Error())
+		}
+		for _, upstream := range upstreams {
+			headers := upstream.Select().UpstreamHeaders
+
+			if _, ok := headers["Host"]; !ok {
+				t.Errorf("Test %d: Could not find the Host header", i+1)
+			}
+
+			if _, ok := headers["X-Real-Ip"]; !ok {
+				t.Errorf("Test %d: Could not find the X-Real-Ip header", i+1)
+			}
+
+			if _, ok := headers["X-Forwarded-Proto"]; !ok {
+				t.Errorf("Test %d: Could not find the X-Forwarded-Proto header", i+1)
+			}
 		}
 	}
 }
