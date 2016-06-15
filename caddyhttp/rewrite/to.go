@@ -18,8 +18,15 @@ func To(fs http.FileSystem, r *http.Request, to string, replacer httpserver.Repl
 
 	// try each rewrite paths
 	t := ""
+	query := ""
 	for _, v := range tos {
-		t = path.Clean(replacer.Replace(v))
+		t = replacer.Replace(v)
+		tparts := strings.Split(t, "?")
+		t = path.Clean(tparts[0])
+
+		if len(tparts) > 1 {
+			query = tparts[1]
+		}
 
 		// add trailing slash for directories, if present
 		if strings.HasSuffix(v, "/") && !strings.HasSuffix(t, "/") {
@@ -47,9 +54,9 @@ func To(fs http.FileSystem, r *http.Request, to string, replacer httpserver.Repl
 
 	// perform rewrite
 	r.URL.Path = u.Path
-	if u.RawQuery != "" {
+	if query != "" {
 		// overwrite query string if present
-		r.URL.RawQuery = u.RawQuery
+		r.URL.RawQuery = query
 	}
 	if u.Fragment != "" {
 		// overwrite fragment if present
