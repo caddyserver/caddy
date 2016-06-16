@@ -22,6 +22,7 @@ func TestTo(t *testing.T) {
 		{"/?a=b", "/testfile /index.php?{query}", "/testfile?a=b"},
 		{"/?a=b", "/testdir /index.php?{query}", "/index.php?a=b"},
 		{"/?a=b", "/testdir/ /index.php?{query}", "/testdir/?a=b"},
+		{"/test?url=http://caddyserver.com", " /p/{path}?{query}", "/p/test?url=http://caddyserver.com"},
 	}
 
 	uri := func(r *url.URL) string {
