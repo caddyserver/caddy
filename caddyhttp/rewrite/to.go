@@ -21,7 +21,7 @@ func To(fs http.FileSystem, r *http.Request, to string, replacer httpserver.Repl
 	query := ""
 	for _, v := range tos {
 		t = replacer.Replace(v)
-		tparts := strings.Split(t, "?")
+		tparts := strings.SplitN(t, "?", 2)
 		t = path.Clean(tparts[0])
 
 		if len(tparts) > 1 {
