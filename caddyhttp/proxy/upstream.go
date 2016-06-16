@@ -33,6 +33,7 @@ type staticUpstream struct {
 	HealthCheck struct {
 		Path     string
 		Interval time.Duration
+		Timeout  time.Duration
 	}
 	WithoutPathPrefix string
 	IgnoredSubPaths   []string
@@ -237,14 +238,30 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream) error {
 		if !c.NextArg() {
 			return c.ArgErr()
 		}
+
 		u.HealthCheck.Path = c.Val()
+
+		// Set defaults
 		u.HealthCheck.Interval = 30 * time.Second
-		if c.NextArg() {
-			dur, err := time.ParseDuration(c.Val())
-			if err != nil {
-				return err
+		u.HealthCheck.Timeout = 30 * time.Second
+
+		// Update defaults if provided
+		for _, v := range c.RemainingArgs() {
+			options := strings.Split(v, "=")
+			switch options[0] {
+			case "interval":
+				dur, err := time.ParseDuration(options[1])
+				if err != nil {
+					return err
+				}
+				u.HealthCheck.Interval = dur
+			case "timeout":
+				dur, err := time.ParseDuration(options[1])
+				if err != nil {
+					return err
+				}
+				u.HealthCheck.Timeout = dur
 			}
-			u.HealthCheck.Interval = dur
 		}
 	case "header_upstream":
 		fallthrough
@@ -287,9 +304,12 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream) error {
 }
 
 func (u *staticUpstream) healthCheck() {
+	client := http.Client{
+		Timeout: u.HealthCheck.Timeout,
+	}
 	for _, host := range u.Hosts {
 		hostURL := host.Name + u.HealthCheck.Path
-		if r, err := http.Get(hostURL); err == nil {
+		if r, err := client.Get(hostURL); err == nil {
 			io.Copy(ioutil.Discard, r.Body)
 			r.Body.Close()
 			host.Unhealthy = r.StatusCode < 200 || r.StatusCode >= 400

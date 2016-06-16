@@ -137,6 +137,53 @@ func TestAllowedPaths(t *testing.T) {
 	}
 }
 
+func TestParseBlockHealthCheck(t *testing.T) {
+	tests := []struct {
+		config   string
+		interval string
+		timeout  string
+	}{
+		// Test #1: both options set correct time
+		{"health_check /health interval=10s timeout=20s", "10s", "20s"},
+
+		// Test #2: no options set correct time
+		{"health_check /health", "30s", "30s"},
+
+		// Test #3: just interval sets time and timeout defaults to 30s
+		{"health_check /health interval=15s", "15s", "30s"},
+
+		// Test #4: incorrect "interval" still sets default
+		{"health_check /health interva=15s", "30s", "30s"},
+
+		// Test #5: just timeout sets time and interval defaults to 30s
+		{"health_check /health timeout=15s", "30s", "15s"},
+	}
+
+	for i, test := range tests {
+		u := staticUpstream{}
+		c := caddyfile.NewDispenser("Testfile", strings.NewReader(test.config))
+		for c.Next() {
+			parseBlock(&c, &u)
+			if u.HealthCheck.Interval.String() != test.interval {
+				t.Errorf(
+					"Test %d: HealthCheck interval not the same from config. Got %v. Expected: %v",
+					i+1,
+					u.HealthCheck.Interval,
+					test.interval,
+				)
+			}
+			if u.HealthCheck.Timeout.String() != test.timeout {
+				t.Errorf(
+					"Test %d: HealthCheck timeout not the same from config. Got %v. Expected: %v",
+					i+1,
+					u.HealthCheck.Timeout,
+					test.timeout,
+				)
+			}
+		}
+	}
+}
+
 func TestParseBlock(t *testing.T) {
 	tests := []struct {
 		config string
