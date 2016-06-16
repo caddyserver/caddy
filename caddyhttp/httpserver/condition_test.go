@@ -1,4 +1,4 @@
-package rewrite
+package httpserver
 
 import (
 	"net/http"

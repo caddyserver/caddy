@@ -50,7 +50,7 @@ func rewriteParse(c *caddy.Controller) ([]Rule, error) {
 
 		args := c.RemainingArgs()
 
-		var ifs []If
+		var cond httpserver.Cond
 
 		switch len(args) {
 		case 1:
@@ -58,6 +58,12 @@ func rewriteParse(c *caddy.Controller) ([]Rule, error) {
 			fallthrough
 		case 0:
 			for c.NextBlock() {
+				if ok, err := httpserver.ParseIf(c.Dispenser, &cond); ok && err == nil {
+					continue // parsed
+				} else if err != nil {
+					return nil, err
+				}
+
 				switch c.Val() {
 				case "r", "regexp":
 					if !c.NextArg() {
@@ -76,16 +82,6 @@ func rewriteParse(c *caddy.Controller) ([]Rule, error) {
 						return nil, c.ArgErr()
 					}
 					ext = args1
-				case "if":
-					args1 := c.RemainingArgs()
-					if len(args1) != 3 {
-						return nil, c.ArgErr()
-					}
-					ifCond, err := NewIf(args1[0], args1[1], args1[2])
-					if err != nil {
-						return nil, err
-					}
-					ifs = append(ifs, ifCond)
 				case "status":
 					if !c.NextArg() {
 						return nil, c.ArgErr()
@@ -102,7 +98,7 @@ func rewriteParse(c *caddy.Controller) ([]Rule, error) {
 			if to == "" && status == 0 {
 				return nil, c.ArgErr()
 			}
-			if rule, err = NewComplexRule(base, pattern, to, status, ext, ifs); err != nil {
+			if rule, err = NewComplexRule(base, pattern, to, status, ext, cond); err != nil {
 				return nil, err
 			}
 			regexpRules = append(regexpRules, rule)
