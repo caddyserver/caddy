@@ -243,7 +243,7 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream) error {
 
 		// Set defaults
 		u.HealthCheck.Interval = 30 * time.Second
-		u.HealthCheck.Timeout = 30 * time.Second
+		u.HealthCheck.Timeout = 60 * time.Second
 
 		// Update defaults if provided
 		for _, v := range c.RemainingArgs() {

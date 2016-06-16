@@ -143,20 +143,23 @@ func TestParseBlockHealthCheck(t *testing.T) {
 		interval string
 		timeout  string
 	}{
-		// Test #1: both options set correct time
+		// Test #1: Both options set correct time
 		{"health_check /health interval=10s timeout=20s", "10s", "20s"},
 
-		// Test #2: no options set correct time
+		// Test #2: No options set correct time
 		{"health_check /health", "30s", "30s"},
 
-		// Test #3: just interval sets time and timeout defaults to 30s
+		// Test #3: Just interval sets time and timeout defaults to 30s
 		{"health_check /health interval=15s", "15s", "30s"},
 
-		// Test #4: incorrect "interval" still sets default
+		// Test #4: Incorrect "interval" still sets default
 		{"health_check /health interva=15s", "30s", "30s"},
 
-		// Test #5: just timeout sets time and interval defaults to 30s
+		// Test #5: Just timeout sets time and interval defaults to 30s
 		{"health_check /health timeout=15s", "30s", "15s"},
+
+		// Test #6: Some funky spelling to make sure it still defaults
+		{"health_check /health timeout==15s", "30s", "30s"},
 	}
 
 	for i, test := range tests {
