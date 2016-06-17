@@ -97,15 +97,15 @@ type ComplexRule struct {
 	// Extensions to filter by
 	Exts []string
 
-	// If conditions
-	httpserver.Cond
+	// Request matcher
+	httpserver.RequestMatcher
 
 	*regexp.Regexp
 }
 
 // NewComplexRule creates a new RegexpRule. It returns an error if regexp
 // pattern (pattern) or extensions (ext) are invalid.
-func NewComplexRule(base, pattern, to string, status int, ext []string, cond httpserver.Cond) (*ComplexRule, error) {
+func NewComplexRule(base, pattern, to string, status int, ext []string, m httpserver.RequestMatcher) (*ComplexRule, error) {
 	// validate regexp if present
 	var r *regexp.Regexp
 	if pattern != "" {
@@ -127,12 +127,12 @@ func NewComplexRule(base, pattern, to string, status int, ext []string, cond htt
 	}
 
 	return &ComplexRule{
-		Base:   base,
-		To:     to,
-		Status: status,
-		Exts:   ext,
-		Cond:   cond,
-		Regexp: r,
+		Base:           base,
+		To:             to,
+		Status:         status,
+		Exts:           ext,
+		RequestMatcher: m,
+		Regexp:         r,
 	}, nil
 }
 
@@ -182,8 +182,8 @@ func (r *ComplexRule) Rewrite(fs http.FileSystem, req *http.Request) (re Result)
 		}
 	}
 
-	// validate rewrite conditions
-	if !r.True(req) {
+	// validate if conditions
+	if !r.RequestMatcher.Match(req) {
 		return
 	}
 

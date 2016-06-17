@@ -9,73 +9,90 @@ import (
 	"github.com/mholt/caddy/caddyfile"
 )
 
-// ParseIf parses 'if' or 'if_type' in the current dispenser block
-// and stores the config in cond.
-// It returns true if parsing is done and an error if any.
-//  var cond caddycond.Cond
+// SetupIfMatcher parses 'if' or 'if_type' in the current dispenser block.
+// It returns a RequestMatcher and an error if any.
+//  // Usage Example
+//  // Embed Matcher in plugin struct.
+//  type MyPlugin struct {
+//    ...
+//    httpserver.Matcher
+//  }
+//  ...
+//  // Parse conditions using caddy.Dispenser.
 //  for c.Next() {
-//    if ok, err := httpserver.ParseIf(c.Dispenser, &cond); ok && err == nil {
-//      continue // parsed
-//    } else if err != nil {
+//    matcher, err := httpserver.SetupIfMatcher(c.Dispenser)
+//    if err != nil {
 //      // handle error
 //    }
-//    switch c.Val() {
-//      ... // handle others
-//    }
+//    plugin.Matcher = matcher // add conditions to plugin
+//    // handle others
+//    for c.NextBlock() { ... }
+//  }
+//  ...
+//  // Check conditions in plugin's httpserver.Handler.
+//  func (m MyPlugin) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
+//    if m.Match(r) { ... }
 //  }
 //
-func ParseIf(c caddyfile.Dispenser, cond *Cond) (bool, error) {
-	switch c.Val() {
-	case "if":
-		args1 := c.RemainingArgs()
-		if len(args1) != 3 {
-			return false, c.ArgErr()
+func SetupIfMatcher(c caddyfile.Dispenser) (RequestMatcher, error) {
+	var matcher IfMatcher
+	for c.NextBlock() {
+		switch c.Val() {
+		case "if":
+			args1 := c.RemainingArgs()
+			if len(args1) != 3 {
+				return matcher, c.ArgErr()
+			}
+			ifc, err := newIfCond(args1[0], args1[1], args1[2])
+			if err != nil {
+				return matcher, err
+			}
+			matcher.ifs = append(matcher.ifs, ifc)
+		case "if_cond":
+			if !c.NextArg() {
+				return matcher, c.ArgErr()
+			}
+			switch c.Val() {
+			case "and":
+				matcher.isOr = false
+			case "or":
+				matcher.isOr = true
+			default:
+				return matcher, c.ArgErr()
+			}
 		}
-		ifCond, err := NewIf(args1[0], args1[1], args1[2])
-		if err != nil {
-			return false, err
-		}
-		cond.ifs = append(cond.ifs, ifCond)
-		return true, nil
-	case "if_cond":
-		args1 := c.RemainingArgs()
-		if len(args1) != 1 {
-			return false, c.ArgErr()
-		}
-		cond.or = true
-		return true, nil
 	}
-	return false, nil
+	return matcher, nil
 }
 
-// Operators
+// operators
 const (
-	Is         = "is"
-	Not        = "not"
-	Has        = "has"
-	NotHas     = "not_has"
-	StartsWith = "starts_with"
-	EndsWith   = "ends_with"
-	Match      = "match"
-	NotMatch   = "not_match"
+	isOp         = "is"
+	notOp        = "not"
+	hasOp        = "has"
+	notHasOp     = "not_has"
+	startsWithOp = "starts_with"
+	endsWithOp   = "ends_with"
+	matchOp      = "match"
+	notMatchOp   = "not_match"
 )
 
 func operatorError(operator string) error {
 	return fmt.Errorf("Invalid operator %v", operator)
 }
 
-// condition is a rewrite condition.
-type condition func(string, string) bool
+// ifCondition is a 'if' condition.
+type ifCondition func(string, string) bool
 
-var conditions = map[string]condition{
-	Is:         isFunc,
-	Not:        notFunc,
-	Has:        hasFunc,
-	NotHas:     notHasFunc,
-	StartsWith: startsWithFunc,
-	EndsWith:   endsWithFunc,
-	Match:      matchFunc,
-	NotMatch:   notMatchFunc,
+var ifConditions = map[string]ifCondition{
+	isOp:         isFunc,
+	notOp:        notFunc,
+	hasOp:        hasFunc,
+	notHasOp:     notHasFunc,
+	startsWithOp: startsWithFunc,
+	endsWithOp:   endsWithFunc,
+	matchOp:      matchFunc,
+	notMatchOp:   notMatchFunc,
 }
 
 // isFunc is condition for Is operator.
@@ -130,57 +147,58 @@ func notMatchFunc(a, b string) bool {
 	return !matched
 }
 
-// If is statement for a rewrite condition.
-type If struct {
-	A        string
-	Operator string
-	B        string
+// ifCond is statement for a IfMatcher condition.
+type ifCond struct {
+	a  string
+	op string
+	b  string
+}
+
+// newIfCond creates a new If condition.
+func newIfCond(a, operator, b string) (ifCond, error) {
+	if _, ok := ifConditions[operator]; !ok {
+		return ifCond{}, operatorError(operator)
+	}
+	return ifCond{
+		a:  a,
+		op: operator,
+		b:  b,
+	}, nil
 }
 
 // True returns true if the condition is true and false otherwise.
 // If r is not nil, it replaces placeholders before comparison.
-func (i If) True(r *http.Request) bool {
-	if c, ok := conditions[i.Operator]; ok {
-		a, b := i.A, i.B
+func (i ifCond) True(r *http.Request) bool {
+	if c, ok := ifConditions[i.op]; ok {
+		a, b := i.a, i.b
 		if r != nil {
 			replacer := NewReplacer(r, nil, "")
-			a = replacer.Replace(i.A)
-			b = replacer.Replace(i.B)
+			a = replacer.Replace(i.a)
+			b = replacer.Replace(i.b)
 		}
 		return c(a, b)
 	}
 	return false
 }
 
-// NewIf creates a new If condition.
-func NewIf(a, operator, b string) (If, error) {
-	if _, ok := conditions[operator]; !ok {
-		return If{}, operatorError(operator)
+// IfMatcher is a RequestMatcher for 'if' conditions.
+type IfMatcher struct {
+	ifs  []ifCond // list of If
+	isOr bool     // if true, conditions are 'or' instead of 'and'
+}
+
+// Match satisfies RequestMatcher interface.
+// It returns true if the conditions in m are true.
+func (m IfMatcher) Match(r *http.Request) bool {
+	if m.isOr {
+		return m.Or(r)
 	}
-	return If{
-		A:        a,
-		Operator: operator,
-		B:        b,
-	}, nil
+	return m.And(r)
 }
 
-// Cond is a combination of 'if' conditions.
-type Cond struct {
-	ifs []If // list of If
-	or  bool // if true, conditions are 'or' instead of 'and'
-}
-
-// True returns true if the conditions in c are true.
-func (c Cond) True(r *http.Request) bool {
-	if c.or {
-		return c.Or(r)
-	}
-	return c.And(r)
-}
-
-// And returns true if all conditions in c are true.
-func (c Cond) And(r *http.Request) bool {
-	for _, i := range c.ifs {
+// And returns true if all conditions in m are true.
+func (m IfMatcher) And(r *http.Request) bool {
+	for _, i := range m.ifs {
 		if !i.True(r) {
 			return false
 		}
@@ -188,12 +206,17 @@ func (c Cond) And(r *http.Request) bool {
 	return true
 }
 
-// Or returns true if any of the conditions in c is true.
-func (c Cond) Or(r *http.Request) bool {
-	for _, i := range c.ifs {
+// Or returns true if any of the conditions in m is true.
+func (m IfMatcher) Or(r *http.Request) bool {
+	for _, i := range m.ifs {
 		if i.True(r) {
 			return true
 		}
 	}
 	return false
+}
+
+// Keyword returns if k is a keyword for 'if' config block.
+func (m IfMatcher) Keyword(k string) bool {
+	return k == "if" || k == "if_cond"
 }

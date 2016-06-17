@@ -57,7 +57,7 @@ func TestConditions(t *testing.T) {
 
 	for i, test := range tests {
 		str := strings.Fields(test.condition)
-		ifCond, err := NewIf(str[0], str[1], str[2])
+		ifCond, err := newIfCond(str[0], str[1], str[2])
 		if err != nil {
 			t.Error(err)
 		}
@@ -69,7 +69,7 @@ func TestConditions(t *testing.T) {
 
 	invalidOperators := []string{"ss", "and", "if"}
 	for _, op := range invalidOperators {
-		_, err := NewIf("a", op, "b")
+		_, err := newIfCond("a", op, "b")
 		if err == nil {
 			t.Errorf("Invalid operator %v used, expected error.", op)
 		}
@@ -94,7 +94,7 @@ func TestConditions(t *testing.T) {
 			t.Error(err)
 		}
 		str := strings.Fields(test.condition)
-		ifCond, err := NewIf(str[0], str[1], str[2])
+		ifCond, err := newIfCond(str[0], str[1], str[2])
 		if err != nil {
 			t.Error(err)
 		}
