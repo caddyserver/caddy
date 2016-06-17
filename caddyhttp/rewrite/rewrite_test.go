@@ -85,7 +85,7 @@ func TestRewrite(t *testing.T) {
 		{"/abcde/abcde.html", "/a"},
 		{"/abcde/abcde.html#1234", "/a#1234"},
 		{"/ab/ab.jpg", "/ajpg"},
-		{"/reggrp/ad/12", "/a12"},
+		{"/reggrp/ad/12", "/a12/"},
 		{"/reggrp/ad/124a", "/a124/a"},
 		{"/reggrp/ad/124abc", "/a124/abc"},
 		{"/reg2grp/ad/124abc", "/ad/124abc"},
