@@ -91,8 +91,7 @@ func rewriteParse(c *caddy.Controller) ([]Rule, error) {
 						return nil, c.Err("status must be 2xx or 4xx")
 					}
 				default:
-					// ignore keywords for IfMatcher
-					if matcher.(httpserver.IfMatcher).Keyword(c.Val()) {
+					if httpserver.IfMatcherKeyword(c.Val()) {
 						continue block
 					}
 					return nil, c.ArgErr()
