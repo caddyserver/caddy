@@ -11,7 +11,6 @@ import (
 
 // SetupIfMatcher parses 'if' or 'if_type' in the current dispenser block.
 // It returns a RequestMatcher and an error if any.
-//  // Usage Example
 //  // Embed Matcher in plugin struct.
 //  type MyPlugin struct {
 //    ...

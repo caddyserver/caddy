@@ -1,9 +1,12 @@
 package httpserver
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/mholt/caddy"
 )
 
 func TestConditions(t *testing.T) {
@@ -63,7 +66,7 @@ func TestConditions(t *testing.T) {
 		}
 		isTrue := ifCond.True(nil)
 		if isTrue != test.isTrue {
-			t.Errorf("Test %v: expected %v found %v", i, test.isTrue, isTrue)
+			t.Errorf("Test %d: expected %v found %v", i, test.isTrue, isTrue)
 		}
 	}
 
@@ -101,6 +104,152 @@ func TestConditions(t *testing.T) {
 		isTrue := ifCond.True(r)
 		if isTrue != test.isTrue {
 			t.Errorf("Test %v: expected %v found %v", i, test.isTrue, isTrue)
+		}
+	}
+}
+
+func TestIfMatcher(t *testing.T) {
+	tests := []struct {
+		conditions []string
+		isOr       bool
+		isTrue     bool
+	}{
+		{
+			[]string{
+				"a is a",
+				"b is b",
+				"c is c",
+			},
+			false,
+			true,
+		},
+		{
+			[]string{
+				"a is b",
+				"b is c",
+				"c is c",
+			},
+			true,
+			true,
+		},
+		{
+			[]string{
+				"a is a",
+				"b is a",
+				"c is c",
+			},
+			false,
+			false,
+		},
+		{
+			[]string{
+				"a is b",
+				"b is c",
+				"c is a",
+			},
+			true,
+			false,
+		},
+	}
+
+	for i, test := range tests {
+		matcher := IfMatcher{isOr: test.isOr}
+		for _, condition := range test.conditions {
+			str := strings.Fields(condition)
+			ifCond, err := newIfCond(str[0], str[1], str[2])
+			if err != nil {
+				t.Error(err)
+			}
+			matcher.ifs = append(matcher.ifs, ifCond)
+		}
+		isTrue := matcher.Match(nil)
+		if isTrue != test.isTrue {
+			t.Errorf("Test %d: expected %v found %v", i, test.isTrue, isTrue)
+		}
+	}
+}
+
+func TestSetupIfMatcher(t *testing.T) {
+	tests := []struct {
+		input     string
+		shouldErr bool
+		expected  IfMatcher
+	}{
+		{`test {
+			if	a match b
+		 }`, false, IfMatcher{
+			ifs: []ifCond{
+				{a: "a", op: "match", b: "b"},
+			},
+		}},
+		{`test {
+			if a match b
+			if_cond or
+		 }`, false, IfMatcher{
+			ifs: []ifCond{
+				{a: "a", op: "match", b: "b"},
+			},
+			isOr: true,
+		}},
+		{`test {
+			if	a match
+		 }`, true, IfMatcher{},
+		},
+		{`test {
+			if	a isnt b
+		 }`, true, IfMatcher{},
+		},
+		{`test {
+			if a match b c
+		 }`, true, IfMatcher{},
+		},
+		{`test {
+			if goal has go
+			if cook not_has go 
+		 }`, false, IfMatcher{
+			ifs: []ifCond{
+				{a: "goal", op: "has", b: "go"},
+				{a: "cook", op: "not_has", b: "go"},
+			},
+		}},
+		{`test {
+			if goal has go
+			if cook not_has go 
+			if_cond and
+		 }`, false, IfMatcher{
+			ifs: []ifCond{
+				{a: "goal", op: "has", b: "go"},
+				{a: "cook", op: "not_has", b: "go"},
+			},
+		}},
+		{`test {
+			if goal has go
+			if cook not_has go 
+			if_cond not
+		 }`, true, IfMatcher{},
+		},
+	}
+
+	for i, test := range tests {
+		c := caddy.NewTestController(test.input)
+		c.Next()
+		matcher, err := SetupIfMatcher(c.Dispenser)
+		if err == nil && test.shouldErr {
+			t.Errorf("Test %d didn't error, but it should have", i)
+		} else if err != nil && !test.shouldErr {
+			t.Errorf("Test %d errored, but it shouldn't have; got '%v'", i, err)
+		} else if err != nil && test.shouldErr {
+			continue
+		}
+		if _, ok := matcher.(IfMatcher); !ok {
+			t.Error("RequestMatcher should be of type IfMatcher")
+		}
+		if err != nil {
+			t.Errorf("Expected no error, but got: %v", err)
+		}
+		if fmt.Sprint(matcher) != fmt.Sprint(test.expected) {
+			t.Errorf("Test %v: Expected %v, found %v", i,
+				fmt.Sprint(test.expected), fmt.Sprint(matcher))
 		}
 	}
 }
