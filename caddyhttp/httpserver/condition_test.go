@@ -150,6 +150,16 @@ func TestIfMatcher(t *testing.T) {
 			true,
 			false,
 		},
+		{
+			[]string{},
+			false,
+			true,
+		},
+		{
+			[]string{},
+			true,
+			false,
+		},
 	}
 
 	for i, test := range tests {

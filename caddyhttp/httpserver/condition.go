@@ -9,23 +9,21 @@ import (
 	"github.com/mholt/caddy/caddyfile"
 )
 
-// SetupIfMatcher parses 'if' or 'if_type' in the current dispenser block.
+// SetupIfMatcher parses `if` or `if_type` in the current dispenser block.
 // It returns a RequestMatcher and an error if any.
 //  // Embed Matcher in plugin struct.
 //  type MyPlugin struct {
 //    ...
-//    httpserver.Matcher
+//    httpserver.RequestMatcher
 //  }
 //  ...
 //  // Parse conditions using caddy.Dispenser.
 //  for c.Next() {
 //    matcher, err := httpserver.SetupIfMatcher(c.Dispenser)
-//    if err != nil {
-//      // handle error
-//    }
-//    plugin.Matcher = matcher // add conditions to plugin
-//    // handle others
-//    for c.NextBlock() { ... }
+//    ...
+//    plugin.RequestMatcher = matcher // add to plugin
+//
+//    for c.NextBlock() { ... } // handle others
 //  }
 //  ...
 //  // Check conditions in plugin's httpserver.Handler.

@@ -146,6 +146,7 @@ func (p Path) Matches(other string) bool {
 }
 
 // MergeRequestMatchers merges multiple RequestMatchers into one.
+// This allows a middleware to use multiple RequestMatchers.
 func MergeRequestMatchers(matchers ...RequestMatcher) RequestMatcher {
 	return requestMatchers(matchers)
 }
