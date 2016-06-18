@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"math"
 	"math/rand"
 	"sync"
 )
@@ -24,22 +25,23 @@ type Random struct{}
 
 // Select selects an up host at random from the specified pool.
 func (r *Random) Select(pool HostPool) *UpstreamHost {
-	// instead of just generating a random index
-	// this is done to prevent selecting a unavailable host
+
+	// Because the number of available hosts isn't known
+	// up front, the host is selected via reservoir sampling
+	// https://en.wikipedia.org/wiki/Reservoir_sampling
 	var randHost *UpstreamHost
 	count := 0
 	for _, host := range pool {
 		if !host.Available() {
 			continue
 		}
+
+		// (n % 1 == 0) holds for all n, therefore randHost
+		// will always get assigned a value if there is
+		// at least 1 available host
 		count++
-		if count == 1 {
+		if (rand.Int() % count) == 0 {
 			randHost = host
-		} else {
-			r := rand.Int() % count
-			if r == (count - 1) {
-				randHost = host
-			}
 		}
 	}
 	return randHost
@@ -54,26 +56,23 @@ type LeastConn struct{}
 func (r *LeastConn) Select(pool HostPool) *UpstreamHost {
 	var bestHost *UpstreamHost
 	count := 0
-	leastConn := int64(1<<63 - 1)
+	leastConn := int64(math.MaxInt64)
 	for _, host := range pool {
 		if !host.Available() {
 			continue
 		}
-		hostConns := host.Conns
-		if hostConns < leastConn {
-			bestHost = host
-			leastConn = hostConns
-			count = 1
-		} else if hostConns == leastConn {
-			// randomly select host among hosts with least connections
+
+		if host.Conns < leastConn {
+			leastConn = host.Conns
+			count = 0
+		}
+
+		// Among hosts with same least connections, perform a reservoir
+		// sample: https://en.wikipedia.org/wiki/Reservoir_sampling
+		if host.Conns == leastConn {
 			count++
-			if count == 1 {
+			if (rand.Int() % count) == 0 {
 				bestHost = host
-			} else {
-				r := rand.Int() % count
-				if r == (count - 1) {
-					bestHost = host
-				}
 			}
 		}
 	}
