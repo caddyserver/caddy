@@ -144,22 +144,22 @@ func TestParseBlockHealthCheck(t *testing.T) {
 		timeout  string
 	}{
 		// Test #1: Both options set correct time
-		{"health_check /health interval=10s timeout=20s", "10s", "20s"},
+		{"health_check /health\n health_check_interval 10s\n health_check_timeout 20s", "10s", "20s"},
 
-		// Test #2: No options set correct time
+		// Test #2: Health check options flipped around. Making sure health_check doesn't overwrite it
+		{"health_check_interval 10s\n health_check_timeout 20s\n health_check /health", "10s", "20s"},
+
+		// Test #3: No health_check options. So default.
 		{"health_check /health", "30s", "1m0s"},
 
-		// Test #3: Just interval sets time and timeout defaults to 1m
-		{"health_check /health interval=15s", "15s", "1m0s"},
+		// Test #4: Interval sets it to 15s and timeout defaults
+		{"health_check /health\n health_check_interval 15s", "15s", "1m0s"},
 
-		// Test #4: Incorrect "interval" still sets default
-		{"health_check /health interva=15s", "30s", "1m0s"},
-
-		// Test #5: Just timeout sets time and interval defaults to 1m
-		{"health_check /health timeout=15s", "30s", "15s"},
+		// Test #5: Timeout sets it to 15s and interval defaults
+		{"health_check /health\n health_check_timeout 15s", "30s", "15s"},
 
 		// Test #6: Some funky spelling to make sure it still defaults
-		{"health_check /health timeout==15s", "30s", "1m0s"},
+		{"health_check /health health_check_time 15s", "30s", "1m0s"},
 	}
 
 	for i, test := range tests {
@@ -167,22 +167,22 @@ func TestParseBlockHealthCheck(t *testing.T) {
 		c := caddyfile.NewDispenser("Testfile", strings.NewReader(test.config))
 		for c.Next() {
 			parseBlock(&c, &u)
-			if u.HealthCheck.Interval.String() != test.interval {
-				t.Errorf(
-					"Test %d: HealthCheck interval not the same from config. Got %v. Expected: %v",
-					i+1,
-					u.HealthCheck.Interval,
-					test.interval,
-				)
-			}
-			if u.HealthCheck.Timeout.String() != test.timeout {
-				t.Errorf(
-					"Test %d: HealthCheck timeout not the same from config. Got %v. Expected: %v",
-					i+1,
-					u.HealthCheck.Timeout,
-					test.timeout,
-				)
-			}
+		}
+		if u.HealthCheck.Interval.String() != test.interval {
+			t.Errorf(
+				"Test %d: HealthCheck interval not the same from config. Got %v. Expected: %v",
+				i+1,
+				u.HealthCheck.Interval,
+				test.interval,
+			)
+		}
+		if u.HealthCheck.Timeout.String() != test.timeout {
+			t.Errorf(
+				"Test %d: HealthCheck timeout not the same from config. Got %v. Expected: %v",
+				i+1,
+				u.HealthCheck.Timeout,
+				test.timeout,
+			)
 		}
 	}
 }
