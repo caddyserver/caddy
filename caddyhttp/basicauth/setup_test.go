@@ -12,11 +12,12 @@ import (
 )
 
 func TestSetup(t *testing.T) {
-	err := setup(caddy.NewTestController(`basicauth user pwd`))
+	c := caddy.NewTestController("http", `basicauth user pwd`)
+	err := setup(c)
 	if err != nil {
 		t.Errorf("Expected no errors, but got: %v", err)
 	}
-	mids := httpserver.GetConfig("").Middleware()
+	mids := httpserver.GetConfig(c).Middleware()
 	if len(mids) == 0 {
 		t.Fatal("Expected middleware, got 0 instead")
 	}
@@ -87,7 +88,7 @@ md5:$apr1$l42y8rex$pOA2VJ0x/0TwaFeAF9nX61`
 	}
 
 	for i, test := range tests {
-		actual, err := basicAuthParse(caddy.NewTestController(test.input))
+		actual, err := basicAuthParse(caddy.NewTestController("http", test.input))
 
 		if err == nil && test.shouldErr {
 			t.Errorf("Test %d didn't error, but it should have", i)

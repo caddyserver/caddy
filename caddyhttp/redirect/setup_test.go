@@ -44,13 +44,14 @@ func TestSetup(t *testing.T) {
 		// test case #9 tests the detection of duplicate redirections
 		{"redir {\n /bar /foo 304 \n} redir {\n /bar /foo 304 \n}", true, []Rule{{}}},
 	} {
-		err := setup(caddy.NewTestController(test.input))
+		c := caddy.NewTestController("http", test.input)
+		err := setup(c)
 		if err != nil && !test.shouldErr {
 			t.Errorf("Test case #%d recieved an error of %v", j, err)
 		} else if test.shouldErr {
 			continue
 		}
-		mids := httpserver.GetConfig("").Middleware()
+		mids := httpserver.GetConfig(c).Middleware()
 		recievedRules := mids[len(mids)-1](nil).(Redirect).Rules
 
 		for i, recievedRule := range recievedRules {

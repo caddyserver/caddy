@@ -8,11 +8,12 @@ import (
 )
 
 func TestSetup(t *testing.T) {
-	err := setup(caddy.NewTestController(`mime .txt text/plain`))
+	c := caddy.NewTestController("http", `mime .txt text/plain`)
+	err := setup(c)
 	if err != nil {
 		t.Errorf("Expected no errors, but got: %v", err)
 	}
-	mids := httpserver.GetConfig("").Middleware()
+	mids := httpserver.GetConfig(c).Middleware()
 	if len(mids) == 0 {
 		t.Fatal("Expected middleware, but had 0 instead")
 	}
@@ -52,7 +53,7 @@ func TestSetup(t *testing.T) {
 		{`mime .txt text/plain`, false},
 	}
 	for i, test := range tests {
-		m, err := mimeParse(caddy.NewTestController(test.input))
+		m, err := mimeParse(caddy.NewTestController("http", test.input))
 		if test.shouldErr && err == nil {
 			t.Errorf("Test %v: Expected error but found nil %v", i, m)
 		} else if !test.shouldErr && err != nil {

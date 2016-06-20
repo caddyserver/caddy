@@ -27,7 +27,7 @@ func setupTLS(c *caddy.Controller) error {
 	if !ok {
 		return fmt.Errorf("no caddytls.ConfigGetter for %s server type; must call RegisterConfigGetter", c.ServerType())
 	}
-	config := configGetter(c.Key)
+	config := configGetter(c)
 	if config == nil {
 		return fmt.Errorf("no caddytls.Config to set up for %s", c.Key)
 	}

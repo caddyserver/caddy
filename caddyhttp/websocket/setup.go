@@ -22,7 +22,7 @@ func setup(c *caddy.Controller) error {
 	GatewayInterface = caddy.AppName + "-CGI/1.1"
 	ServerSoftware = caddy.AppName + "/" + caddy.AppVersion
 
-	httpserver.GetConfig(c.Key).AddMiddleware(func(next httpserver.Handler) httpserver.Handler {
+	httpserver.GetConfig(c).AddMiddleware(func(next httpserver.Handler) httpserver.Handler {
 		return WebSocket{Next: next, Sockets: websocks}
 	})
 

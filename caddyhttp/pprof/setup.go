@@ -29,7 +29,7 @@ func setup(c *caddy.Controller) error {
 		found = true
 	}
 
-	httpserver.GetConfig(c.Key).AddMiddleware(func(next httpserver.Handler) httpserver.Handler {
+	httpserver.GetConfig(c).AddMiddleware(func(next httpserver.Handler) httpserver.Handler {
 		return &Handler{Next: next, Mux: NewMux()}
 	})
 

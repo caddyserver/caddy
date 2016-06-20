@@ -13,7 +13,7 @@ func init() {
 }
 
 func setupBind(c *caddy.Controller) error {
-	config := httpserver.GetConfig(c.Key)
+	config := httpserver.GetConfig(c)
 	for c.Next() {
 		if !c.Args(&config.ListenHost) {
 			return c.ArgErr()

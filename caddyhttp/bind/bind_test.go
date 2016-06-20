@@ -8,12 +8,13 @@ import (
 )
 
 func TestSetupBind(t *testing.T) {
-	err := setupBind(caddy.NewTestController(`bind 1.2.3.4`))
+	c := caddy.NewTestController("http", `bind 1.2.3.4`)
+	err := setupBind(c)
 	if err != nil {
 		t.Fatalf("Expected no errors, but got: %v", err)
 	}
 
-	cfg := httpserver.GetConfig("")
+	cfg := httpserver.GetConfig(c)
 	if got, want := cfg.ListenHost, "1.2.3.4"; got != want {
 		t.Errorf("Expected the config's ListenHost to be %s, was %s", want, got)
 	}

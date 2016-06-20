@@ -18,7 +18,7 @@ func setup(c *caddy.Controller) error {
 	if err != nil {
 		return err
 	}
-	httpserver.GetConfig(c.Key).AddMiddleware(func(next httpserver.Handler) httpserver.Handler {
+	httpserver.GetConfig(c).AddMiddleware(func(next httpserver.Handler) httpserver.Handler {
 		return Proxy{Next: next, Upstreams: upstreams}
 	})
 	return nil

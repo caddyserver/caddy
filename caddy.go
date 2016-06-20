@@ -67,7 +67,10 @@ type Instance struct {
 	// wg is used to wait for all servers to shut down
 	wg *sync.WaitGroup
 
-	// servers is the list of servers with their listeners...
+	// context is the context created for this instance.
+	context Context
+
+	// servers is the list of servers with their listeners.
 	servers []serverListener
 
 	// these are callbacks to execute when certain events happen
@@ -386,9 +389,12 @@ func startWithListenerFds(cdyfile Input, inst *Instance, restartFds map[string]r
 		return err
 	}
 
-	ctx := stype.NewContext()
+	inst.context = stype.NewContext()
+	if inst.context == nil {
+		return fmt.Errorf("server type %s produced a nil Context", stypeName)
+	}
 
-	sblocks, err = ctx.InspectServerBlocks(cdyfile.Path(), sblocks)
+	sblocks, err = inst.context.InspectServerBlocks(cdyfile.Path(), sblocks)
 	if err != nil {
 		return err
 	}
@@ -398,7 +404,7 @@ func startWithListenerFds(cdyfile Input, inst *Instance, restartFds map[string]r
 		return err
 	}
 
-	slist, err := ctx.MakeServers()
+	slist, err := inst.context.MakeServers()
 	if err != nil {
 		return err
 	}
@@ -496,7 +502,7 @@ func executeDirectives(inst *Instance, filename string,
 		if allCallbacks, ok := parsingCallbacks[inst.serverType]; ok {
 			callbacks := allCallbacks[dir]
 			for _, callback := range callbacks {
-				if err := callback(); err != nil {
+				if err := callback(inst.context); err != nil {
 					return err
 				}
 			}

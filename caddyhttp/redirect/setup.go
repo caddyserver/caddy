@@ -21,7 +21,7 @@ func setup(c *caddy.Controller) error {
 		return err
 	}
 
-	httpserver.GetConfig(c.Key).AddMiddleware(func(next httpserver.Handler) httpserver.Handler {
+	httpserver.GetConfig(c).AddMiddleware(func(next httpserver.Handler) httpserver.Handler {
 		return Redirect{Next: next, Rules: rules}
 	})
 
@@ -31,7 +31,7 @@ func setup(c *caddy.Controller) error {
 func redirParse(c *caddy.Controller) ([]Rule, error) {
 	var redirects []Rule
 
-	cfg := httpserver.GetConfig(c.Key)
+	cfg := httpserver.GetConfig(c)
 
 	// setRedirCode sets the redirect code for rule if it can, or returns an error
 	setRedirCode := func(code string, rule *Rule) error {

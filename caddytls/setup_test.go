@@ -33,8 +33,8 @@ func TestMain(m *testing.M) {
 
 func TestSetupParseBasic(t *testing.T) {
 	cfg := new(Config)
-	RegisterConfigGetter("", func(key string) *Config { return cfg })
-	c := caddy.NewTestController(`tls ` + certFile + ` ` + keyFile + ``)
+	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
+	c := caddy.NewTestController("http", `tls `+certFile+` `+keyFile+``)
 
 	err := setupTLS(c)
 	if err != nil {
@@ -92,7 +92,7 @@ func TestSetupParseBasic(t *testing.T) {
 
 func TestSetupParseIncompleteParams(t *testing.T) {
 	// Using tls without args is an error because it's unnecessary.
-	c := caddy.NewTestController(`tls`)
+	c := caddy.NewTestController("http", `tls`)
 	err := setupTLS(c)
 	if err == nil {
 		t.Error("Expected an error, but didn't get one")
@@ -105,8 +105,8 @@ func TestSetupParseWithOptionalParams(t *testing.T) {
             ciphers RSA-AES256-CBC-SHA ECDHE-RSA-AES128-GCM-SHA256 ECDHE-ECDSA-AES256-GCM-SHA384
         }`
 	cfg := new(Config)
-	RegisterConfigGetter("", func(key string) *Config { return cfg })
-	c := caddy.NewTestController(params)
+	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
+	c := caddy.NewTestController("http", params)
 
 	err := setupTLS(c)
 	if err != nil {
@@ -131,8 +131,8 @@ func TestSetupDefaultWithOptionalParams(t *testing.T) {
             ciphers RSA-3DES-EDE-CBC-SHA
         }`
 	cfg := new(Config)
-	RegisterConfigGetter("", func(key string) *Config { return cfg })
-	c := caddy.NewTestController(params)
+	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
+	c := caddy.NewTestController("http", params)
 
 	err := setupTLS(c)
 	if err != nil {
@@ -149,8 +149,8 @@ func TestSetupParseWithWrongOptionalParams(t *testing.T) {
 			protocols ssl tls
 		}`
 	cfg := new(Config)
-	RegisterConfigGetter("", func(key string) *Config { return cfg })
-	c := caddy.NewTestController(params)
+	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
+	c := caddy.NewTestController("http", params)
 	err := setupTLS(c)
 	if err == nil {
 		t.Errorf("Expected errors, but no error returned")
@@ -161,8 +161,8 @@ func TestSetupParseWithWrongOptionalParams(t *testing.T) {
 			ciphers not-valid-cipher
 		}`
 	cfg = new(Config)
-	RegisterConfigGetter("", func(key string) *Config { return cfg })
-	c = caddy.NewTestController(params)
+	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
+	c = caddy.NewTestController("http", params)
 	err = setupTLS(c)
 	if err == nil {
 		t.Errorf("Expected errors, but no error returned")
@@ -173,8 +173,8 @@ func TestSetupParseWithWrongOptionalParams(t *testing.T) {
 			key_type ab123
 		}`
 	cfg = new(Config)
-	RegisterConfigGetter("", func(key string) *Config { return cfg })
-	c = caddy.NewTestController(params)
+	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
+	c = caddy.NewTestController("http", params)
 	err = setupTLS(c)
 	if err == nil {
 		t.Errorf("Expected errors, but no error returned")
@@ -187,8 +187,8 @@ func TestSetupParseWithClientAuth(t *testing.T) {
 			clients
 		}`
 	cfg := new(Config)
-	RegisterConfigGetter("", func(key string) *Config { return cfg })
-	c := caddy.NewTestController(params)
+	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
+	c := caddy.NewTestController("http", params)
 	err := setupTLS(c)
 	if err == nil {
 		t.Errorf("Expected an error, but no error returned")
@@ -220,8 +220,8 @@ func TestSetupParseWithClientAuth(t *testing.T) {
 		}`, tls.VerifyClientCertIfGiven, true, noCAs},
 	} {
 		cfg := new(Config)
-		RegisterConfigGetter("", func(key string) *Config { return cfg })
-		c := caddy.NewTestController(caseData.params)
+		RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
+		c := caddy.NewTestController("http", caseData.params)
 		err := setupTLS(c)
 		if caseData.expectedErr {
 			if err == nil {
@@ -256,8 +256,8 @@ func TestSetupParseWithKeyType(t *testing.T) {
             key_type p384
         }`
 	cfg := new(Config)
-	RegisterConfigGetter("", func(key string) *Config { return cfg })
-	c := caddy.NewTestController(params)
+	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
+	c := caddy.NewTestController("http", params)
 
 	err := setupTLS(c)
 	if err != nil {

@@ -14,7 +14,7 @@ func init() {
 
 // setup configures a new instance of 'extensions' middleware for clean URLs.
 func setup(c *caddy.Controller) error {
-	cfg := httpserver.GetConfig(c.Key)
+	cfg := httpserver.GetConfig(c)
 	root := cfg.Root
 
 	exts, err := extParse(c)
@@ -22,7 +22,7 @@ func setup(c *caddy.Controller) error {
 		return err
 	}
 
-	httpserver.GetConfig(c.Key).AddMiddleware(func(next httpserver.Handler) httpserver.Handler {
+	httpserver.GetConfig(c).AddMiddleware(func(next httpserver.Handler) httpserver.Handler {
 		return Ext{
 			Next:       next,
 			Extensions: exts,

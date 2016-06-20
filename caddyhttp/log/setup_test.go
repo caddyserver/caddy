@@ -8,13 +8,12 @@ import (
 )
 
 func TestSetup(t *testing.T) {
-	cfg := httpserver.GetConfig("")
-
-	err := setup(caddy.NewTestController(`log`))
+	c := caddy.NewTestController("http", `log`)
+	err := setup(c)
 	if err != nil {
 		t.Errorf("Expected no errors, got: %v", err)
 	}
-
+	cfg := httpserver.GetConfig(c)
 	mids := cfg.Middleware()
 	if mids == nil {
 		t.Fatal("Expected middleware, was nil instead")
@@ -114,7 +113,7 @@ func TestLogParse(t *testing.T) {
 		}}},
 	}
 	for i, test := range tests {
-		c := caddy.NewTestController(test.inputLogRules)
+		c := caddy.NewTestController("http", test.inputLogRules)
 		actualLogRules, err := logParse(c)
 
 		if err == nil && test.shouldErr {

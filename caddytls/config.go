@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"time"
 
+	"github.com/mholt/caddy"
 	"github.com/xenolf/lego/acme"
 )
 
@@ -306,7 +307,7 @@ func MakeTLSConfig(configs []*Config) (*tls.Config, error) {
 }
 
 // ConfigGetter gets a Config keyed by key.
-type ConfigGetter func(key string) *Config
+type ConfigGetter func(c *caddy.Controller) *Config
 
 var configGetters = make(map[string]ConfigGetter)
 

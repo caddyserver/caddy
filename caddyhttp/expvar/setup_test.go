@@ -8,25 +8,27 @@ import (
 )
 
 func TestSetup(t *testing.T) {
-	err := setup(caddy.NewTestController(`expvar`))
+	c := caddy.NewTestController("http", `expvar`)
+	err := setup(c)
 	if err != nil {
 		t.Errorf("Expected no errors, got: %v", err)
 	}
-	mids := httpserver.GetConfig("").Middleware()
+	mids := httpserver.GetConfig(c).Middleware()
 	if len(mids) == 0 {
 		t.Fatal("Expected middleware, got 0 instead")
 	}
 
-	err = setup(caddy.NewTestController(`expvar /d/v`))
+	c = caddy.NewTestController("http", `expvar /d/v`)
+	err = setup(c)
 	if err != nil {
 		t.Errorf("Expected no errors, got: %v", err)
 	}
-	mids = httpserver.GetConfig("").Middleware()
+	mids = httpserver.GetConfig(c).Middleware()
 	if len(mids) == 0 {
 		t.Fatal("Expected middleware, got 0 instead")
 	}
 
-	handler := mids[1](httpserver.EmptyNext)
+	handler := mids[0](httpserver.EmptyNext)
 	myHandler, ok := handler.(ExpVar)
 	if !ok {
 		t.Fatalf("Expected handler to be type ExpVar, got: %#v", handler)
