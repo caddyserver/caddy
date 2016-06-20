@@ -71,6 +71,7 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 	// Enable QUIC if desired
 	if QUIC {
 		s.quicServer = &h2quic.Server{Server: s.Server}
+		s.Server.Handler = s.wrapWithSvcHeaders(s.Server.Handler)
 	}
 
 	// We have to bound our wg with one increment
@@ -103,6 +104,13 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 	}
 
 	return s, nil
+}
+
+func (s *Server) wrapWithSvcHeaders(previousHandler http.Handler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		s.quicServer.SetQuicHeaders(w.Header())
+		previousHandler.ServeHTTP(w, r)
+	}
 }
 
 // Listen creates an active listener for s that can be
