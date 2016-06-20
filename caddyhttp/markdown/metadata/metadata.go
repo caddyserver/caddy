@@ -33,7 +33,7 @@ type Metadata struct {
 	Flags map[string]bool
 }
 
-// NewMetadata() returns a new Metadata struct, loaded with the given map
+// NewMetadata returns a new Metadata struct, loaded with the given map
 func NewMetadata(parsedMap map[string]interface{}) Metadata {
 	md := Metadata{
 		Variables: make(map[string]string),
@@ -74,8 +74,8 @@ func (m *Metadata) load(parsedMap map[string]interface{}) {
 	}
 }
 
-// MetadataParser is a an interface that must be satisfied by each parser
-type MetadataParser interface {
+// Parser is a an interface that must be satisfied by each metadata parser
+type Parser interface {
 	// Initialize a parser
 	Init(b *bytes.Buffer) bool
 
@@ -90,7 +90,7 @@ type MetadataParser interface {
 }
 
 // GetParser returns a parser for the given data
-func GetParser(buf []byte) MetadataParser {
+func GetParser(buf []byte) Parser {
 	for _, p := range parsers() {
 		b := bytes.NewBuffer(buf)
 		if p.Init(b) {
@@ -102,8 +102,8 @@ func GetParser(buf []byte) MetadataParser {
 }
 
 // parsers returns all available parsers
-func parsers() []MetadataParser {
-	return []MetadataParser{
+func parsers() []Parser {
+	return []Parser{
 		&TOMLMetadataParser{},
 		&YAMLMetadataParser{},
 		&JSONMetadataParser{},

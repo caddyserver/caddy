@@ -15,7 +15,7 @@ func (j *JSONMetadataParser) Type() string {
 	return "JSON"
 }
 
-// Parse metadata/markdown file
+// Init initializes the JSON metadata parser.
 func (j *JSONMetadataParser) Init(b *bytes.Buffer) bool {
 	m := make(map[string]interface{})
 
@@ -23,11 +23,11 @@ func (j *JSONMetadataParser) Init(b *bytes.Buffer) bool {
 	if err != nil {
 		var offset int
 
-		if jerr, ok := err.(*json.SyntaxError); !ok {
+		jerr, ok := err.(*json.SyntaxError)
+		if !ok {
 			return false
-		} else {
-			offset = int(jerr.Offset)
 		}
+		offset = int(jerr.Offset)
 
 		m = make(map[string]interface{})
 		err = json.Unmarshal(b.Next(offset-1), &m)

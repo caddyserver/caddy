@@ -158,7 +158,7 @@ func TestParsers(t *testing.T) {
 	}
 
 	data := []struct {
-		parser   MetadataParser
+		parser   Parser
 		testData [5]string
 		name     string
 	}{
