@@ -28,7 +28,7 @@ func setup(c *caddy.Controller) error {
 
 	ev := ExpVar{Resource: resource}
 
-	httpserver.GetConfig(c.Key).AddMiddleware(func(next httpserver.Handler) httpserver.Handler {
+	httpserver.GetConfig(c).AddMiddleware(func(next httpserver.Handler) httpserver.Handler {
 		ev.Next = next
 		return ev
 	})

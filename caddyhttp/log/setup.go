@@ -53,7 +53,7 @@ func setup(c *caddy.Controller) error {
 		return nil
 	})
 
-	httpserver.GetConfig(c.Key).AddMiddleware(func(next httpserver.Handler) httpserver.Handler {
+	httpserver.GetConfig(c).AddMiddleware(func(next httpserver.Handler) httpserver.Handler {
 		return Logger{Next: next, Rules: rules, ErrorFunc: httpserver.DefaultErrorFunc}
 	})
 

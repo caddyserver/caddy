@@ -8,11 +8,12 @@ import (
 )
 
 func TestSetup(t *testing.T) {
-	err := setup(caddy.NewTestController(`internal /internal`))
+	c := caddy.NewTestController("http", `internal /internal`)
+	err := setup(c)
 	if err != nil {
 		t.Errorf("Expected no errors, got: %v", err)
 	}
-	mids := httpserver.GetConfig("").Middleware()
+	mids := httpserver.GetConfig(c).Middleware()
 	if len(mids) == 0 {
 		t.Fatal("Expected middleware, got 0 instead")
 	}
@@ -46,7 +47,7 @@ func TestInternalParse(t *testing.T) {
 		  internal /internal2`, false, []string{"/internal1", "/internal2"}},
 	}
 	for i, test := range tests {
-		actualInternalPaths, err := internalParse(caddy.NewTestController(test.inputInternalPaths))
+		actualInternalPaths, err := internalParse(caddy.NewTestController("http", test.inputInternalPaths))
 
 		if err == nil && test.shouldErr {
 			t.Errorf("Test %d didn't error, but it should have", i)

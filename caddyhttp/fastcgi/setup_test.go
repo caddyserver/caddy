@@ -9,11 +9,12 @@ import (
 )
 
 func TestSetup(t *testing.T) {
-	err := setup(caddy.NewTestController(`fastcgi / 127.0.0.1:9000`))
+	c := caddy.NewTestController("http", `fastcgi / 127.0.0.1:9000`)
+	err := setup(c)
 	if err != nil {
 		t.Errorf("Expected no errors, got: %v", err)
 	}
-	mids := httpserver.GetConfig("").Middleware()
+	mids := httpserver.GetConfig(c).Middleware()
 	if len(mids) == 0 {
 		t.Fatal("Expected middleware, got 0 instead")
 	}
@@ -73,7 +74,7 @@ func TestFastcgiParse(t *testing.T) {
 			}}},
 	}
 	for i, test := range tests {
-		actualFastcgiConfigs, err := fastcgiParse(caddy.NewTestController(test.inputFastcgiConfig))
+		actualFastcgiConfigs, err := fastcgiParse(caddy.NewTestController("http", test.inputFastcgiConfig))
 
 		if err == nil && test.shouldErr {
 			t.Errorf("Test %d didn't error, but it should have", i)

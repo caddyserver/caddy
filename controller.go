@@ -70,16 +70,22 @@ func (c *Controller) OnShutdown(fn func() error) {
 	c.instance.onShutdown = append(c.instance.onShutdown, fn)
 }
 
-// NewTestController creates a new *Controller for
+// Context gets the context associated with the instance associated with c.
+func (c *Controller) Context() Context {
+	return c.instance.context
+}
+
+// NewTestController creates a new Controller for
 // the input specified, with a filename of "Testfile".
 // The Config is bare, consisting only of a Root of cwd.
 //
 // Used primarily for testing but needs to be exported so
 // add-ons can use this as a convenience. Does not initialize
 // the server-block-related fields.
-func NewTestController(input string) *Controller {
+func NewTestController(serverType, input string) *Controller {
+	stype, _ := getServerType(serverType)
 	return &Controller{
-		instance:           &Instance{serverType: ""},
+		instance:           &Instance{serverType: serverType, context: stype.NewContext()},
 		Dispenser:          caddyfile.NewDispenser("Testfile", strings.NewReader(input)),
 		OncePerServerBlock: func(f func() error) error { return f() },
 	}

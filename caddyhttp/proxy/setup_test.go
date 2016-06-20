@@ -112,14 +112,15 @@ func TestSetup(t *testing.T) {
 			},
 		},
 	} {
-		err := setup(caddy.NewTestController(test.input))
+		c := caddy.NewTestController("http", test.input)
+		err := setup(c)
 		if err != nil && !test.shouldErr {
 			t.Errorf("Test case #%d received an error of %v", i, err)
 		} else if test.shouldErr {
 			continue
 		}
 
-		mids := httpserver.GetConfig("").Middleware()
+		mids := httpserver.GetConfig(c).Middleware()
 		mid := mids[len(mids)-1]
 
 		upstreams := mid(nil).(Proxy).Upstreams

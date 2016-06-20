@@ -16,7 +16,7 @@ func init() {
 
 // setup configures a new BasicAuth middleware instance.
 func setup(c *caddy.Controller) error {
-	cfg := httpserver.GetConfig(c.Key)
+	cfg := httpserver.GetConfig(c)
 	root := cfg.Root
 
 	rules, err := basicAuthParse(c)
@@ -37,7 +37,7 @@ func setup(c *caddy.Controller) error {
 
 func basicAuthParse(c *caddy.Controller) ([]Rule, error) {
 	var rules []Rule
-	cfg := httpserver.GetConfig(c.Key)
+	cfg := httpserver.GetConfig(c)
 
 	var err error
 	for c.Next() {

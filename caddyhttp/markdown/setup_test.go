@@ -12,11 +12,12 @@ import (
 )
 
 func TestSetup(t *testing.T) {
-	err := setup(caddy.NewTestController(`markdown /blog`))
+	c := caddy.NewTestController("http", `markdown /blog`)
+	err := setup(c)
 	if err != nil {
 		t.Errorf("Expected no errors, got: %v", err)
 	}
-	mids := httpserver.GetConfig("").Middleware()
+	mids := httpserver.GetConfig(c).Middleware()
 	if len(mids) == 0 {
 		t.Fatal("Expected middleware, got 0 instead")
 	}
@@ -78,8 +79,8 @@ func TestMarkdownParse(t *testing.T) {
 	SetTemplate(tmpl, "", "./testdata/tpl_with_include.html")
 
 	for i, test := range tests {
-		c := caddy.NewTestController(test.inputMarkdownConfig)
-		httpserver.GetConfig("").Root = "./testdata"
+		c := caddy.NewTestController("http", test.inputMarkdownConfig)
+		httpserver.GetConfig(c).Root = "./testdata"
 		actualMarkdownConfigs, err := markdownParse(c)
 
 		if err == nil && test.shouldErr {

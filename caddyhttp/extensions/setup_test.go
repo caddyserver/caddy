@@ -8,12 +8,13 @@ import (
 )
 
 func TestSetup(t *testing.T) {
-	err := setup(caddy.NewTestController(`ext .html .htm .php`))
+	c := caddy.NewTestController("http", `ext .html .htm .php`)
+	err := setup(c)
 	if err != nil {
 		t.Fatalf("Expected no errors, got: %v", err)
 	}
 
-	mids := httpserver.GetConfig("").Middleware()
+	mids := httpserver.GetConfig(c).Middleware()
 	if len(mids) == 0 {
 		t.Fatal("Expected middleware, had 0 instead")
 	}
@@ -51,7 +52,7 @@ func TestExtParse(t *testing.T) {
 		{`ext .txt .php .xml`, false, []string{".txt", ".php", ".xml"}},
 	}
 	for i, test := range tests {
-		actualExts, err := extParse(caddy.NewTestController(test.inputExts))
+		actualExts, err := extParse(caddy.NewTestController("http", test.inputExts))
 
 		if err == nil && test.shouldErr {
 			t.Errorf("Test %d didn't error, but it should have", i)

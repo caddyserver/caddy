@@ -44,16 +44,11 @@ func init() {
 	})
 	caddy.RegisterCaddyfileLoader("short", caddy.LoaderFunc(shortCaddyfileLoader))
 	caddy.RegisterParsingCallback(serverType, "tls", activateHTTPS)
-	caddytls.RegisterConfigGetter(serverType, func(key string) *caddytls.Config { return GetConfig(key).TLS })
+	caddytls.RegisterConfigGetter(serverType, func(c *caddy.Controller) *caddytls.Config { return GetConfig(c).TLS })
 }
 
-var contexts []*httpContext
-
 func newContext() caddy.Context {
-	context := &httpContext{keysToSiteConfigs: make(map[string]*SiteConfig)}
-	// put the new context at start to allow setup of directives on new instance
-	contexts = append([]*httpContext{context}, contexts...)
-	return context
+	return &httpContext{keysToSiteConfigs: make(map[string]*SiteConfig)}
 }
 
 type httpContext struct {
@@ -65,6 +60,11 @@ type httpContext struct {
 
 	// siteConfigs is the master list of all site configs.
 	siteConfigs []*SiteConfig
+}
+
+func (h *httpContext) saveConfig(key string, cfg *SiteConfig) {
+	h.siteConfigs = append(h.siteConfigs, cfg)
+	h.keysToSiteConfigs[key] = cfg
 }
 
 // InspectServerBlocks make sure that everything checks out before
@@ -89,15 +89,14 @@ func (h *httpContext) InspectServerBlocks(sourceFile string, serverBlocks []cadd
 				TLS:         &caddytls.Config{Hostname: addr.Host},
 				HiddenFiles: []string{sourceFile},
 			}
-			h.siteConfigs = append(h.siteConfigs, cfg)
-			h.keysToSiteConfigs[key] = cfg
+			h.saveConfig(key, cfg)
 		}
 	}
 
 	// For sites that have gzip (which gets chained in
 	// before the error handler) we should ensure that the
 	// errors directive also appears so error pages aren't
-	// written after the gzip writer is closed.
+	// written after the gzip writer is closed. See #616.
 	for _, sb := range serverBlocks {
 		_, hasGzip := sb.Tokens["gzip"]
 		_, hasErrors := sb.Tokens["errors"]
@@ -129,6 +128,12 @@ func (h *httpContext) MakeServers() ([]caddy.Server, error) {
 			// is incorrect for this site.
 			cfg.Addr.Scheme = "https"
 		}
+		if cfg.Addr.Port == "" {
+			// this is vital, otherwise the function call below that
+			// sets the listener address will use the default port
+			// instead of 443 because it doesn't know about TLS.
+			cfg.Addr.Port = "443"
+		}
 	}
 
 	// we must map (group) each config to a bind address
@@ -150,27 +155,19 @@ func (h *httpContext) MakeServers() ([]caddy.Server, error) {
 	return servers, nil
 }
 
-// GetConfig gets a SiteConfig that is keyed by addrKey.
-// It creates an empty one in the latest context if
-// the key does not exist in any context, so it
-// will never return nil. If no contexts exist (which
-// should never happen except in tests), it creates a
-// new context in which to put it.
-func GetConfig(addrKey string) *SiteConfig {
-	for _, context := range contexts {
-		if cfg, ok := context.keysToSiteConfigs[addrKey]; ok {
-			return cfg
-		}
+// GetConfig gets the SiteConfig that corresponds to c.
+// If none exist (should only happen in tests), then a
+// new, empty one will be created.
+func GetConfig(c *caddy.Controller) *SiteConfig {
+	ctx := c.Context().(*httpContext)
+	if cfg, ok := ctx.keysToSiteConfigs[c.Key]; ok {
+		return cfg
 	}
-	if len(contexts) == 0 {
-		// this shouldn't happen except in tests
-		newContext()
-	}
-	cfg := &SiteConfig{Root: Root, TLS: new(caddytls.Config)}
-	defaultCtx := contexts[len(contexts)-1]
-	defaultCtx.siteConfigs = append(defaultCtx.siteConfigs, cfg)
-	defaultCtx.keysToSiteConfigs[addrKey] = cfg
-	return cfg
+	// we should only get here during tests because directive
+	// actions typically skip the server blocks where we make
+	// the configs
+	ctx.saveConfig(c.Key, &SiteConfig{Root: Root, TLS: new(caddytls.Config)})
+	return GetConfig(c)
 }
 
 // shortCaddyfileLoader loads a Caddyfile if positional arguments are

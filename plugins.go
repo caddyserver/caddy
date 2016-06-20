@@ -25,7 +25,7 @@ var (
 	// to list of callback functions. These aren't really
 	// plugins on their own, but are often registered from
 	// plugins.
-	parsingCallbacks = make(map[string]map[string][]func() error)
+	parsingCallbacks = make(map[string]map[string][]ParsingCallback)
 
 	// caddyfileLoaders is the list of all Caddyfile loaders
 	// in registration order.
@@ -180,11 +180,16 @@ func RegisterPlugin(name string, plugin Plugin) {
 	plugins[plugin.ServerType][name] = plugin
 }
 
+// ParsingCallback is a function that is called after
+// a directive's setup functions have been executed
+// for all the server blocks.
+type ParsingCallback func(Context) error
+
 // RegisterParsingCallback registers callback to be called after
 // executing the directive afterDir for server type serverType.
-func RegisterParsingCallback(serverType, afterDir string, callback func() error) {
+func RegisterParsingCallback(serverType, afterDir string, callback ParsingCallback) {
 	if _, ok := parsingCallbacks[serverType]; !ok {
-		parsingCallbacks[serverType] = make(map[string][]func() error)
+		parsingCallbacks[serverType] = make(map[string][]ParsingCallback)
 	}
 	parsingCallbacks[serverType][afterDir] = append(parsingCallbacks[serverType][afterDir], callback)
 }

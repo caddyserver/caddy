@@ -13,8 +13,6 @@ import (
 )
 
 func TestRoot(t *testing.T) {
-	cfg := httpserver.GetConfig("")
-
 	// Predefined error substrings
 	parseErrContent := "Parse error:"
 	unableToAccessErrContent := "Unable to access root path"
@@ -65,8 +63,9 @@ func TestRoot(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		c := caddy.NewTestController(test.input)
+		c := caddy.NewTestController("http", test.input)
 		err := setupRoot(c)
+		cfg := httpserver.GetConfig(c)
 
 		if test.shouldErr && err == nil {
 			t.Errorf("Test %d: Expected error but found %s for input %s", i, err, test.input)

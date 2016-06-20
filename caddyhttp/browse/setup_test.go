@@ -49,14 +49,15 @@ func TestSetup(t *testing.T) {
 		{"browse " + tempDirPath + "\n browse " + tempDirPath, nil, true},
 	} {
 
-		err := setup(caddy.NewTestController(test.input))
+		c := caddy.NewTestController("http", test.input)
+		err := setup(c)
 		if err != nil && !test.shouldErr {
 			t.Errorf("Test case #%d recieved an error of %v", i, err)
 		}
 		if test.expectedPathScope == nil {
 			continue
 		}
-		mids := httpserver.GetConfig("").Middleware()
+		mids := httpserver.GetConfig(c).Middleware()
 		mid := mids[len(mids)-1]
 		recievedConfigs := mid(nil).(Browse).Configs
 		for j, config := range recievedConfigs {

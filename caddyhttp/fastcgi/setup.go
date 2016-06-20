@@ -18,7 +18,7 @@ func init() {
 
 // setup configures a new FastCGI middleware instance.
 func setup(c *caddy.Controller) error {
-	cfg := httpserver.GetConfig(c.Key)
+	cfg := httpserver.GetConfig(c)
 	absRoot, err := filepath.Abs(cfg.Root)
 	if err != nil {
 		return err

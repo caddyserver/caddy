@@ -29,7 +29,7 @@ func setup(c *caddy.Controller) error {
 		IgnoreIndexes: false,
 	}
 
-	httpserver.GetConfig(c.Key).AddMiddleware(func(next httpserver.Handler) httpserver.Handler {
+	httpserver.GetConfig(c).AddMiddleware(func(next httpserver.Handler) httpserver.Handler {
 		b.Next = next
 		return b
 	})
@@ -40,7 +40,7 @@ func setup(c *caddy.Controller) error {
 func browseParse(c *caddy.Controller) ([]Config, error) {
 	var configs []Config
 
-	cfg := httpserver.GetConfig(c.Key)
+	cfg := httpserver.GetConfig(c)
 
 	appendCfg := func(bc Config) error {
 		for _, c := range configs {
