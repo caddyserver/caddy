@@ -7,8 +7,10 @@ import (
 )
 
 // Controller is given to the setup function of directives which
-// gives them access to be able to read tokens and do whatever
-// they need to do.
+// gives them access to be able to read tokens with which to
+// configure themselves. It also stores state for the setup
+// functions, can get the current context, and can be used to
+// identify a particular server block using the Key field.
 type Controller struct {
 	caddyfile.Dispenser
 
@@ -80,12 +82,14 @@ func (c *Controller) Context() Context {
 // The Config is bare, consisting only of a Root of cwd.
 //
 // Used primarily for testing but needs to be exported so
-// add-ons can use this as a convenience. Does not initialize
-// the server-block-related fields.
+// add-ons can use this as a convenience.
 func NewTestController(serverType, input string) *Controller {
-	stype, _ := getServerType(serverType)
+	var ctx Context
+	if stype, err := getServerType(serverType); err == nil {
+		ctx = stype.NewContext()
+	}
 	return &Controller{
-		instance:           &Instance{serverType: serverType, context: stype.NewContext()},
+		instance:           &Instance{serverType: serverType, context: ctx},
 		Dispenser:          caddyfile.NewDispenser("Testfile", strings.NewReader(input)),
 		OncePerServerBlock: func(f func() error) error { return f() },
 	}

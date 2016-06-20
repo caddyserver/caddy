@@ -46,7 +46,7 @@ func TestStartup(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		c := caddy.NewTestController("http", test.input)
+		c := caddy.NewTestController("", test.input)
 		err := registerCallback(c, fakeRegister)
 		if err != nil {
 			t.Errorf("Expected no errors, got: %v", err)
