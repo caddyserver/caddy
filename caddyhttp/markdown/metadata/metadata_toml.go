@@ -16,7 +16,7 @@ func (t *TOMLMetadataParser) Type() string {
 	return "TOML"
 }
 
-// Parse metadata/markdown file
+// Init initializes the TOML metadata parser.
 func (t *TOMLMetadataParser) Init(b *bytes.Buffer) bool {
 	meta, data := splitBuffer(b, "+++")
 	if meta == nil || data == nil {

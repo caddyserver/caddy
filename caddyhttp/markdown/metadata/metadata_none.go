@@ -4,7 +4,7 @@ import (
 	"bytes"
 )
 
-// TOMLMetadataParser is the MetadataParser for TOML
+// NoneMetadataParser is a no-op MetadataParser.
 type NoneMetadataParser struct {
 	metadata Metadata
 	markdown *bytes.Buffer
@@ -14,7 +14,6 @@ func (n *NoneMetadataParser) Type() string {
 	return "None"
 }
 
-// Parse metadata/markdown file
 func (n *NoneMetadataParser) Init(b *bytes.Buffer) bool {
 	m := make(map[string]interface{})
 	n.metadata = NewMetadata(m)
