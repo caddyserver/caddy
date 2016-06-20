@@ -4,18 +4,19 @@ import (
 	"bytes"
 )
 
-// TOMLMetadataParser is the MetadataParser for TOML
-type NoneMetadataParser struct {
+// NoneParser is the parser for plaintext markdown with no metadata.
+type NoneParser struct {
 	metadata Metadata
 	markdown *bytes.Buffer
 }
 
-func (n *NoneMetadataParser) Type() string {
+// Type returns the kind of parser this struct is.
+func (n *NoneParser) Type() string {
 	return "None"
 }
 
-// Parse metadata/markdown file
-func (n *NoneMetadataParser) Init(b *bytes.Buffer) bool {
+// Init prepases and parses the metadata and markdown file
+func (n *NoneParser) Init(b *bytes.Buffer) bool {
 	m := make(map[string]interface{})
 	n.metadata = NewMetadata(m)
 	n.markdown = bytes.NewBuffer(b.Bytes())
@@ -24,16 +25,18 @@ func (n *NoneMetadataParser) Init(b *bytes.Buffer) bool {
 }
 
 // Parse the metadata
-func (n *NoneMetadataParser) Parse(b []byte) ([]byte, error) {
+func (n *NoneParser) Parse(b []byte) ([]byte, error) {
 	return nil, nil
 }
 
 // Metadata returns parsed metadata.  It should be called
 // only after a call to Parse returns without error.
-func (n *NoneMetadataParser) Metadata() Metadata {
+func (n *NoneParser) Metadata() Metadata {
 	return n.metadata
 }
 
-func (n *NoneMetadataParser) Markdown() []byte {
+// Markdown returns parsed markdown.  It should be called
+// only after a call to Parse returns without error.
+func (n *NoneParser) Markdown() []byte {
 	return n.markdown.Bytes()
 }

@@ -5,29 +5,31 @@ import (
 	"encoding/json"
 )
 
-// JSONMetadataParser is the MetadataParser for JSON
-type JSONMetadataParser struct {
+// JSONParser is the MetadataParser for JSON
+type JSONParser struct {
 	metadata Metadata
 	markdown *bytes.Buffer
 }
 
-func (j *JSONMetadataParser) Type() string {
+// Type returns the kind of metadata parser implemented by this struct.
+func (j *JSONParser) Type() string {
 	return "JSON"
 }
 
-// Parse metadata/markdown file
-func (j *JSONMetadataParser) Init(b *bytes.Buffer) bool {
+// Init prepares the metadata metadata/markdown file and parses it
+func (j *JSONParser) Init(b *bytes.Buffer) bool {
 	m := make(map[string]interface{})
 
 	err := json.Unmarshal(b.Bytes(), &m)
 	if err != nil {
 		var offset int
 
-		if jerr, ok := err.(*json.SyntaxError); !ok {
+		jerr, ok := err.(*json.SyntaxError)
+		if !ok {
 			return false
-		} else {
-			offset = int(jerr.Offset)
 		}
+
+		offset = int(jerr.Offset)
 
 		m = make(map[string]interface{})
 		err = json.Unmarshal(b.Next(offset-1), &m)
@@ -44,10 +46,11 @@ func (j *JSONMetadataParser) Init(b *bytes.Buffer) bool {
 
 // Metadata returns parsed metadata.  It should be called
 // only after a call to Parse returns without error.
-func (j *JSONMetadataParser) Metadata() Metadata {
+func (j *JSONParser) Metadata() Metadata {
 	return j.metadata
 }
 
-func (j *JSONMetadataParser) Markdown() []byte {
+// Markdown returns the markdown text.  It should be called only after a call to Parse returns without error.
+func (j *JSONParser) Markdown() []byte {
 	return j.markdown.Bytes()
 }

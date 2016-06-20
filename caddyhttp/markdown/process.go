@@ -11,11 +11,14 @@ import (
 	"github.com/russross/blackfriday"
 )
 
+// FileInfo represents a file in a particular server context. It wraps the os.FileInfo struct.
 type FileInfo struct {
 	os.FileInfo
 	ctx httpserver.Context
 }
 
+// Summarize returns an abbreviated string representation of the markdown stored in this file.
+// wordcount is the number of words returned in the summary.
 func (f FileInfo) Summarize(wordcount int) (string, error) {
 	fp, err := f.ctx.Root.Open(f.Name())
 	if err != nil {
