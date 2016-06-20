@@ -31,8 +31,10 @@ type staticUpstream struct {
 	MaxFails    int32
 	MaxConns    int64
 	HealthCheck struct {
+		Client   http.Client
 		Path     string
 		Interval time.Duration
+		Timeout  time.Duration
 	}
 	WithoutPathPrefix string
 	IgnoredSubPaths   []string
@@ -99,6 +101,9 @@ func NewStaticUpstreams(c caddyfile.Dispenser) ([]Upstream, error) {
 		}
 
 		if upstream.HealthCheck.Path != "" {
+			upstream.HealthCheck.Client = http.Client{
+				Timeout: upstream.HealthCheck.Timeout,
+			}
 			go upstream.HealthCheckWorker(nil)
 		}
 		upstreams = append(upstreams, upstream)
@@ -238,14 +243,34 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream) error {
 			return c.ArgErr()
 		}
 		u.HealthCheck.Path = c.Val()
-		u.HealthCheck.Interval = 30 * time.Second
-		if c.NextArg() {
-			dur, err := time.ParseDuration(c.Val())
-			if err != nil {
-				return err
-			}
-			u.HealthCheck.Interval = dur
+
+		// Set defaults
+		if u.HealthCheck.Interval == 0 {
+			u.HealthCheck.Interval = 30 * time.Second
 		}
+		if u.HealthCheck.Timeout == 0 {
+			u.HealthCheck.Timeout = 60 * time.Second
+		}
+	case "health_check_interval":
+		var interval string
+		if !c.Args(&interval) {
+			return c.ArgErr()
+		}
+		dur, err := time.ParseDuration(interval)
+		if err != nil {
+			return err
+		}
+		u.HealthCheck.Interval = dur
+	case "health_check_timeout":
+		var interval string
+		if !c.Args(&interval) {
+			return c.ArgErr()
+		}
+		dur, err := time.ParseDuration(interval)
+		if err != nil {
+			return err
+		}
+		u.HealthCheck.Timeout = dur
 	case "header_upstream":
 		fallthrough
 	case "proxy_header":
@@ -289,7 +314,7 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream) error {
 func (u *staticUpstream) healthCheck() {
 	for _, host := range u.Hosts {
 		hostURL := host.Name + u.HealthCheck.Path
-		if r, err := http.Get(hostURL); err == nil {
+		if r, err := u.HealthCheck.Client.Get(hostURL); err == nil {
 			io.Copy(ioutil.Discard, r.Body)
 			r.Body.Close()
 			host.Unhealthy = r.StatusCode < 200 || r.StatusCode >= 400
