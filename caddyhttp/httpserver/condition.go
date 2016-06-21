@@ -9,7 +9,7 @@ import (
 	"github.com/mholt/caddy/caddyfile"
 )
 
-// SetupIfMatcher parses `if` or `if_type` in the current dispenser block.
+// SetupIfMatcher parses `if` or `if_op` in the current dispenser block.
 // It returns a RequestMatcher and an error if any.
 func SetupIfMatcher(c caddyfile.Dispenser) (RequestMatcher, error) {
 	var matcher IfMatcher
@@ -195,5 +195,5 @@ func (m IfMatcher) Or(r *http.Request) bool {
 
 // IfMatcherKeyword returns if k is a keyword for 'if' config block.
 func IfMatcherKeyword(k string) bool {
-	return k == "if" || k == "if_cond"
+	return k == "if" || k == "if_op"
 }

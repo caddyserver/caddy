@@ -263,3 +263,24 @@ func TestSetupIfMatcher(t *testing.T) {
 		}
 	}
 }
+
+func TestIfMatcherKeyword(t *testing.T) {
+	tests := []struct {
+		keyword  string
+		expected bool
+	}{
+		{"if", true},
+		{"ifs", false},
+		{"tls", false},
+		{"http", false},
+		{"if_op", true},
+		{"if_type", false},
+		{"if_cond", false},
+	}
+	for i, test := range tests {
+		valid := IfMatcherKeyword(test.keyword)
+		if valid != test.expected {
+			t.Errorf("Test %d: expected %v found %v", i, test.expected, valid)
+		}
+	}
+}
