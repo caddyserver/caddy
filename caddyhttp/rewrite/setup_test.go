@@ -132,12 +132,6 @@ func TestRewriteParse(t *testing.T) {
 			&ComplexRule{},
 		}},
 		{`rewrite {
-			to	/to
-			if {path} is a
-		 }`, false, []Rule{
-			&ComplexRule{Base: "/", To: "/to", Ifs: []If{{A: "{path}", Operator: "is", B: "a"}}},
-		}},
-		{`rewrite {
 			status 500
 		 }`, true, []Rule{
 			&ComplexRule{},
@@ -227,11 +221,6 @@ func TestRewriteParse(t *testing.T) {
 					t.Errorf("Test %d, rule %d: Expected Pattern=%s, got %s",
 						i, j, expectedRule.String(), actualRule.String())
 				}
-			}
-
-			if fmt.Sprint(actualRule.Ifs) != fmt.Sprint(expectedRule.Ifs) {
-				t.Errorf("Test %d, rule %d: Expected Pattern=%s, got %s",
-					i, j, fmt.Sprint(expectedRule.Ifs), fmt.Sprint(actualRule.Ifs))
 			}
 
 		}

@@ -42,7 +42,7 @@ func TestRewrite(t *testing.T) {
 		if s := strings.Split(regexpRule[3], "|"); len(s) > 1 {
 			ext = s[:len(s)-1]
 		}
-		rule, err := NewComplexRule(regexpRule[0], regexpRule[1], regexpRule[2], 0, ext, nil)
+		rule, err := NewComplexRule(regexpRule[0], regexpRule[1], regexpRule[2], 0, ext, httpserver.IfMatcher{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -127,7 +127,7 @@ func TestRewrite(t *testing.T) {
 
 	for i, s := range statusTests {
 		urlPath := fmt.Sprintf("/status%d", i)
-		rule, err := NewComplexRule(s.base, s.regexp, s.to, s.status, nil, nil)
+		rule, err := NewComplexRule(s.base, s.regexp, s.to, s.status, nil, httpserver.IfMatcher{})
 		if err != nil {
 			t.Fatalf("Test %d: No error expected for rule but found %v", i, err)
 		}

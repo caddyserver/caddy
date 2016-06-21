@@ -45,6 +45,16 @@ type (
 	// ServeHTTP returns a status code and an error. See Handler
 	// documentation for more information.
 	HandlerFunc func(http.ResponseWriter, *http.Request) (int, error)
+
+	// RequestMatcher checks to see if current request should be handled
+	// by underlying handler.
+	//
+	// TODO The long term plan is to get all middleware implement this
+	// interface and have validation done before requests are dispatched
+	// to each middleware.
+	RequestMatcher interface {
+		Match(r *http.Request) bool
+	}
 )
 
 // ServeHTTP implements the Handler interface.
@@ -133,6 +143,24 @@ func (p Path) Matches(other string) bool {
 		return strings.HasPrefix(string(p), other)
 	}
 	return strings.HasPrefix(strings.ToLower(string(p)), strings.ToLower(other))
+}
+
+// MergeRequestMatchers merges multiple RequestMatchers into one.
+// This allows a middleware to use multiple RequestMatchers.
+func MergeRequestMatchers(matchers ...RequestMatcher) RequestMatcher {
+	return requestMatchers(matchers)
+}
+
+type requestMatchers []RequestMatcher
+
+// Match satisfies RequestMatcher interface.
+func (m requestMatchers) Match(r *http.Request) bool {
+	for _, matcher := range m {
+		if !matcher.Match(r) {
+			return false
+		}
+	}
+	return true
 }
 
 // currentTime, as it is defined here, returns time.Now().

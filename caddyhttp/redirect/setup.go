@@ -63,13 +63,23 @@ func redirParse(c *caddy.Controller) ([]Rule, error) {
 	}
 
 	for c.Next() {
+		matcher, err := httpserver.SetupIfMatcher(c.Dispenser)
+		if err != nil {
+			return nil, err
+		}
 		args := c.RemainingArgs()
 
 		var hadOptionalBlock bool
 		for c.NextBlock() {
+			if httpserver.IfMatcherKeyword(c.Val()) {
+				continue
+			}
+
 			hadOptionalBlock = true
 
-			var rule Rule
+			var rule = Rule{
+				RequestMatcher: matcher,
+			}
 
 			if cfg.TLS.Enabled {
 				rule.FromScheme = "https"
@@ -126,7 +136,9 @@ func redirParse(c *caddy.Controller) ([]Rule, error) {
 		}
 
 		if !hadOptionalBlock {
-			var rule Rule
+			var rule = Rule{
+				RequestMatcher: matcher,
+			}
 
 			if cfg.TLS.Enabled {
 				rule.FromScheme = "https"
