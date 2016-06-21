@@ -6,18 +6,19 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-// TOMLMetadataParser is the MetadataParser for TOML
-type TOMLMetadataParser struct {
+// TOMLParser is the Parser for TOML
+type TOMLParser struct {
 	metadata Metadata
 	markdown *bytes.Buffer
 }
 
-func (t *TOMLMetadataParser) Type() string {
+// Type returns the kind of parser this struct is.
+func (t *TOMLParser) Type() string {
 	return "TOML"
 }
 
-// Parse metadata/markdown file
-func (t *TOMLMetadataParser) Init(b *bytes.Buffer) bool {
+// Init prepares and parses the metadata and markdown file itself
+func (t *TOMLParser) Init(b *bytes.Buffer) bool {
 	meta, data := splitBuffer(b, "+++")
 	if meta == nil || data == nil {
 		return false
@@ -35,10 +36,11 @@ func (t *TOMLMetadataParser) Init(b *bytes.Buffer) bool {
 
 // Metadata returns parsed metadata.  It should be called
 // only after a call to Parse returns without error.
-func (t *TOMLMetadataParser) Metadata() Metadata {
+func (t *TOMLParser) Metadata() Metadata {
 	return t.metadata
 }
 
-func (t *TOMLMetadataParser) Markdown() []byte {
+// Markdown returns parser markdown.  It should be called only after a call to Parse returns without error.
+func (t *TOMLParser) Markdown() []byte {
 	return t.markdown.Bytes()
 }
