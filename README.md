@@ -1,153 +1,137 @@
-[![Caddy](https://caddyserver.com/resources/images/caddy-boxed.png)](https://caddyserver.com)
+<a href="https://caddyserver.com"><img src="https://caddyserver.com/resources/images/caddy-lower.png" alt="Caddy" width="350"></a>
 
-[![community](https://img.shields.io/badge/community-forum-ff69b4.svg?style=flat-square)](https://forum.caddyserver.com) 
-[![Documentation](https://img.shields.io/badge/godoc-reference-blue.svg?style=flat-square)](https://godoc.org/github.com/mholt/caddy) 
-[![Linux Build Status](https://img.shields.io/travis/mholt/caddy.svg?style=flat-square&label=linux+build)](https://travis-ci.org/mholt/caddy) 
-[![Windows Build Status](https://img.shields.io/appveyor/ci/mholt/caddy.svg?style=flat-square&label=windows+build)](https://ci.appveyor.com/project/mholt/caddy)
+[![community](https://img.shields.io/badge/community-forum-ff69b4.svg?style=flat-square)](https://forum.caddyserver.com) [![twitter](https://img.shields.io/badge/twitter-@caddyserver-55acee.svg?style=flat-square)](https://twitter.com/caddyserver) [![Documentation](https://img.shields.io/badge/godoc-reference-blue.svg?style=flat-square)](https://godoc.org/github.com/mholt/caddy) [![Linux Build Status](https://img.shields.io/travis/mholt/caddy.svg?style=flat-square&label=linux+build)](https://travis-ci.org/mholt/caddy) [![Windows Build Status](https://img.shields.io/appveyor/ci/mholt/caddy.svg?style=flat-square&label=windows+build)](https://ci.appveyor.com/project/mholt/caddy)
 
-Caddy is a lightweight, general-purpose web server for Windows, Mac, Linux, BSD 
-and [Android](https://github.com/mholt/caddy/wiki/Running-Caddy-on-Android). 
-It is a capable alternative to other popular and easy to use web servers. 
-([@caddyserver](https://twitter.com/caddyserver) on Twitter)
+Caddy is a general-purpose web server for Windows, Mac, Linux, BSD, and
+[Android](https://github.com/mholt/caddy/wiki/Running-Caddy-on-Android). It is
+a capable but easier aternative to other popular web servers.
 
-The most notable features are HTTP/2, [Let's Encrypt](https://letsencrypt.org) 
-support, Virtual Hosts, TLS + SNI, and easy configuration with a 
-[Caddyfile](https://caddyserver.com/docs/caddyfile). In development, you usually 
-put one Caddyfile with each site. In production, Caddy serves HTTPS by default 
-and manages all cryptographic assets for you.
-
-[Download](https://github.com/mholt/caddy/releases) · 
-[User Guide](https://caddyserver.com/docs)
+[Releases](https://github.com/mholt/caddy/releases) · 
+[User Guide](https://caddyserver.com/docs) · 
+[Community](https://forum.caddyserver.com)
 
 
+## Menu
 
-### Menu
-
-- [Getting Caddy](#getting-caddy)
+- [Features](#features)
 - [Quick Start](#quick-start)
 - [Running from Source](#running-from-source)
+- [Running in Production](#running-in-production)
 - [Contributing](#contributing)
 - [About the Project](#about-the-project)
 
 
 
+## Features
 
-## Getting Caddy
-
-Caddy binaries have no dependencies and are available for nearly every platform.
-
-[Latest release](https://github.com/mholt/caddy/releases/latest)
+- **Easy configuration** with Caddyfile
+- **Automatic HTTPS** via [Let's Encrypt](https://letsencrypt.org); Caddy
+obtains and manages all cryptographic assets for you
+- **HTTP/2** enabled by default (powered by Go standard library)
+- **Virtual hosting** for hundreds of sites per server instance, including TLS
+SNI
+- Experimental **QUIC support** for those that like speed
+- TLS session ticket **key rotation** for more secure connections
+- **Brilliant extensibility** so Caddy can be customized for your needs
+- **Runs anywhere** with **no external dependencies** (not even libc)
 
 
 
 ## Quick Start
 
-The website has [full documentation](https://caddyserver.com/docs) but this will 
-get you started in about 30 seconds:
+Caddy binaries have no dependencies and are available for every platform.
+Install Caddy any one of these ways:
 
-Place a file named "Caddyfile" with your site. Paste this into it and save:
+- [Download page](https://caddyserver.com/download) allows you to customize
+your build in your browser
+- [Latest release](https://github.com/mholt/caddy/releases/latest) for static
+file downloads
+- [curl getcaddy.com](https://getcaddy.com) for auto install:
+`curl https://getcaddy.com | bash`
 
-```
+Once `caddy` is in your PATH, you can `cd` to your website's folder and run
+`caddy` to serve it. By default, Caddy serves the current directory at 
+[localhost:2015](http://localhost:2015).
+
+To customize how your site is served, create a file named Caddyfile by your
+site and paste this into it:
+
+```plain
 localhost
 
 gzip
 browse
-ext .html
 websocket /echo cat
-log ../access.log
+ext    .html
+log    /var/log/access.log
+proxy  /api 127.0.0.1:7005
 header /api Access-Control-Allow-Origin *
 ```
 
-Run `caddy` from that directory, and it will automatically use that Caddyfile to 
-configure itself.
+When you run `caddy` in that directory, it will automatically find and use
+that Caddyfile to configure itself.
 
-That simple file enables compression, allows directory browsing (for folders 
-without an index file), serves clean URLs, hosts a WebSocket echo server at 
-/echo, logs requests to access.log, and adds the coveted 
-`Access-Control-Allow-Origin: *` header for all responses from some API.
+This simple file enables compression, allows directory browsing (for folders 
+without an index file), hosts a WebSocket echo server at /echo, serves clean
+URLs, logs requests to access.log, proxies all API requests to a backend on
+port 7005, and adds the coveted  `Access-Control-Allow-Origin: *` header for
+all responses from the API.
 
 Wow! Caddy can do a lot with just a few lines.
 
+To host multiple sites and do more with the Caddyfile, please see the
+[Caddyfile documentation](https://caddyserver.com/docs/caddyfile).
 
-#### Defining multiple sites
+Note that production sites (not localhost) are served over
+[HTTPS by default](https://caddyserver.com/docs/automatic-https).
 
-You can run multiple sites from the same Caddyfile, too:
+Caddy has a command line interface. Run `caddy -h` to view basic help or see
+the [CLI documentation](https://caddyserver.com/docs/cli) for details.
 
-```
-site1.com {
-	# ...
-}
-
-site2.com, sub.site2.com {
-	# ...
-}
-```
-
-Note that all these sites will automatically be served over HTTPS using Let's 
-Encrypt as the CA. Caddy will manage the certificates (including renewals) for 
-you. You don't even have to think about it.
-
-For more documentation, please view [the website](https://caddyserver.com/docs). 
-You may also be interested in the [developer guide]
-(https://github.com/mholt/caddy/wiki) on this project's GitHub wiki.
-
+**Running as root:** We advise against this. You can still listen on ports
+< 1024 using setcap like so: `sudo setcap cap_net_bind_service=+ep ./caddy`
 
 
 
 ## Running from Source
 
-Note: You will need **[Go 1.6](https://golang.org/dl/)** or newer (required for
-transparent automatic HTTP/2 support and to take advantage of performance improvements
-in the TLS and crypto libraries).
+Note: You will need **[Go 1.6](https://golang.org/dl/)** or newer.
 
-1. `$ go get github.com/mholt/caddy/caddy`
+1. `go get github.com/mholt/caddy`
 2. `cd` into your website's directory
 3. Run `caddy` (assumes `$GOPATH/bin` is in your `$PATH`)
 
-If you're tinkering, you can also use `./build.bash && ./ecaddy`.
-
-By default, Caddy serves the current directory at 
-[localhost:2015](http://localhost:2015). You can place a Caddyfile to configure 
-Caddy for serving your site.
-
-Caddy accepts some flags from the command line. Run `caddy -h` to view the help
- for flags or see the [CLI documentation](https://caddyserver.com/docs/cli).
-
-**Running as root:** We advise against this; use setcap instead, like so: 
-`setcap cap_net_bind_service=+ep ./caddy` This will allow you to listen on 
-ports < 1024 like 80 and 443.
+Caddy's `main()` is in the caddy subfolder. To recompile Caddy, use
+`build.bash` found in that folder.
 
 
 
-#### Docker Container
+## Running in Production
 
-Caddy is available as a Docker container from any of these sources:
+The Caddy project does not officially maintain any system-specific
+integrations, but your download file includes
+[unofficial resources](https://github.com/mholt/caddy/tree/master/dist/init)
+contributed by the community that you may find helpful for running Caddy in
+production.
 
-- [abiosoft/caddy](https://hub.docker.com/r/abiosoft/caddy/)
-- [darron/caddy](https://hub.docker.com/r/darron/caddy/)
-- [joshix/caddy](https://hub.docker.com/r/joshix/caddy/)
-- [jumanjiman/caddy](https://hub.docker.com/r/jumanjiman/caddy/)
-- [zenithar/nano-caddy](https://hub.docker.com/r/zenithar/nano-caddy/)
-- [zzrot/alpine-caddy](https://hub.docker.com/r/zzrot/alpine-caddy/)
-
-
-
-#### 3rd-party dependencies
-
-Although Caddy's binaries are completely static, Caddy relies on some excellent
-libraries. [Godoc.org](https://godoc.org/github.com/mholt/caddy) shows the
-packages that each Caddy package imports.
-
+How you choose to run Caddy is up to you. Many users are satisfied with
+`nohup caddy &`. Others use `screen`. Users who need Caddy to come back up
+after reboots either do so in the script that caused the reboot, add a command
+to an init script, or configure a service with their OS.
 
 
 
 ## Contributing
 
-**[Join our community](https://forum.caddyserver.com) where you can chat with other Caddy users and developers!**
+**[Join our community](https://forum.caddyserver.com) where you can chat with
+other Caddy users and developers!**
 
-Please see our [contributing guidelines](https://github.com/mholt/caddy/blob/master/CONTRIBUTING.md).
+Please see our [contributing guidelines](https://github.com/mholt/caddy/blob/master/CONTRIBUTING.md)
+and check out the [developer wiki](https://github.com/mholt/caddy/wiki).
 
-We use GitHub issues and pull requests *only* for bug reports and discussing specific changes to Caddy. We welcome all other topics on the [forum](https://forum.caddyserver.com)!
+We use GitHub issues and pull requests only for discussing bug reports and
+the development of specific changes. We welcome all other topics on the
+[forum](https://forum.caddyserver.com)!
 
 Thanks for making Caddy -- and the Web -- better!
 
@@ -157,8 +141,7 @@ for hosting the Caddy project.
 
 
 
-
-## About the project
+## About the Project
 
 Caddy was born out of the need for a "batteries-included" web server that runs
 anywhere and doesn't have to take its configuration with it. Caddy took
@@ -168,5 +151,8 @@ inspiration from [spark](https://github.com/rif/spark),
 and [Vagrant](https://www.vagrantup.com/),
 which provides a pleasant mixture of features from each of them.
 
+**The name "Caddy":** The name of the software is "Caddy", not "Caddy Server"
+or "CaddyServer". Please call it "Caddy" or, if you wish to clarify, "the
+Caddy web server". See [brand guidelines](https://caddyserver.com/brand).
 
-*Twitter: [@mholt6](https://twitter.com/mholt6)*
+*Author on Twitter: [@mholt6](https://twitter.com/mholt6)*

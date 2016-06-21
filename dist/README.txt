@@ -3,7 +3,7 @@ CADDY 0.9 beta 1
 Website
 	https://caddyserver.com
 
-Community Forum
+Community
 	https://forum.caddyserver.com
 
 Twitter
@@ -18,7 +18,7 @@ For instructions on using Caddy, please see the user guide on
 the website. For a list of what's new in this version, see
 CHANGES.txt.
 
-The Caddy project accepts pull requests! That means you can make
+The Caddy project accepts pull requests. That means you can make
 changes to the code and submit it for review, and if it's good,
 we'll use it! You can help thousands of Caddy users and level
 up your Go programming game by contributing to Caddy's source.
@@ -36,4 +36,4 @@ And thanks - you're awesome!
 
 
 ---
-(c) 2015 - 2016 Matthew Holt
+(c) 2015-2016 Matthew Holt
