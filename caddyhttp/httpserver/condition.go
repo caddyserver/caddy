@@ -11,34 +11,6 @@ import (
 
 // SetupIfMatcher parses `if` or `if_type` in the current dispenser block.
 // It returns a RequestMatcher and an error if any.
-//
-// TODO This can be done in a better way.
-//  // Embed RequestMatcher in middleware/plugin config.
-//  type Config struct {
-//    ...
-//    httpserver.RequestMatcher
-//  }
-//  ...
-//  // Parse conditions using caddy.Dispenser.
-//  for c.Next() {
-//    matcher, err := httpserver.SetupIfMatcher(c.Dispenser)
-//    ...
-//    config.RequestMatcher = matcher // add to config
-//    ...
-//    // handle others
-//    for c.NextBlock() {
-//      // ignore `if` and `if_type`
-//      if httpserver.IfMatcherKeyword(c.Val()) {
-//        continue
-//      }
-//    }
-//  }
-//  ...
-//  // Check conditions in middleware/plugin httpserver.Handler.
-//  func (m Middleware) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
-//    for _, c := range m.Configs { if c.Match(r) { ... } ... }
-//  }
-//
 func SetupIfMatcher(c caddyfile.Dispenser) (RequestMatcher, error) {
 	var matcher IfMatcher
 	for c.NextBlock() {
@@ -53,7 +25,7 @@ func SetupIfMatcher(c caddyfile.Dispenser) (RequestMatcher, error) {
 				return matcher, err
 			}
 			matcher.ifs = append(matcher.ifs, ifc)
-		case "if_cond":
+		case "if_op":
 			if !c.NextArg() {
 				return matcher, c.ArgErr()
 			}
