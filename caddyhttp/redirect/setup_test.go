@@ -20,10 +20,10 @@ func TestSetup(t *testing.T) {
 		// test case #1 tests the recognition of an invalid HTTP status code defined outside of block statement
 		{"redir 9000 {\n/ /foo\n}", true, []Rule{{}}},
 
-		// test case #2 tests the detection of a valid HTTP status code outside of a block statement being overriden by an invalid HTTP status code inside statement of a block statement
+		// test case #2 tests the detection of a valid HTTP status code outside of a block statement being overridden by an invalid HTTP status code inside statement of a block statement
 		{"redir 300 {\n/ /foo 9000\n}", true, []Rule{{}}},
 
-		// test case #3 tests the detection of an invalid HTTP status code outside of a block statement being overriden by a valid HTTP status code inside statement of a block statement
+		// test case #3 tests the detection of an invalid HTTP status code outside of a block statement being overridden by a valid HTTP status code inside statement of a block statement
 		{"redir 9000 {\n/ /foo 300\n}", true, []Rule{{}}},
 
 		// test case #4 tests the recognition of a TO redirection in a block statement.The HTTP status code is set to the default of 301 - MovedPermanently

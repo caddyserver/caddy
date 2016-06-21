@@ -82,6 +82,16 @@ func (h *httpContext) InspectServerBlocks(sourceFile string, serverBlocks []cadd
 			if err != nil {
 				return serverBlocks, err
 			}
+
+			// Fill in address components from command line so that middleware
+			// have access to the correct information during setup
+			if addr.Host == "" && Host != DefaultHost {
+				addr.Host = Host
+			}
+			if addr.Port == "" && Port != DefaultPort {
+				addr.Port = Port
+			}
+
 			// Save the config to our master list, and key it for lookups
 			cfg := &SiteConfig{
 				Addr:        addr,
@@ -222,7 +232,9 @@ func (sc *SiteConfig) AddMiddleware(m Middleware) {
 
 // Address represents a site address. It contains
 // the original input value, and the component
-// parts of an address.
+// parts of an address. The component parts may be
+// updated to the correct values as setup proceeds,
+// but the original value should never be changed.
 type Address struct {
 	Original, Scheme, Host, Port, Path string
 }

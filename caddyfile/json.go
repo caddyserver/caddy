@@ -15,7 +15,7 @@ const filename = "Caddyfile"
 func ToJSON(caddyfile []byte) ([]byte, error) {
 	var j EncodedCaddyfile
 
-	serverBlocks, err := ServerBlocks(filename, bytes.NewReader(caddyfile), nil)
+	serverBlocks, err := Parse(filename, bytes.NewReader(caddyfile), nil)
 	if err != nil {
 		return nil, err
 	}

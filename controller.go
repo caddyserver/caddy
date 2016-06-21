@@ -78,11 +78,14 @@ func (c *Controller) Context() Context {
 }
 
 // NewTestController creates a new Controller for
-// the input specified, with a filename of "Testfile".
-// The Config is bare, consisting only of a Root of cwd.
+// the server type and input specified. The filename
+// is "Testfile". If the server type is not empty and
+// is plugged in, a context will be created so that
+// the results of setup functions can be checked for
+// correctness.
 //
-// Used primarily for testing but needs to be exported so
-// add-ons can use this as a convenience.
+// Used only for testing, but exported so plugins can
+// use this for convenience.
 func NewTestController(serverType, input string) *Controller {
 	var ctx Context
 	if stype, err := getServerType(serverType); err == nil {

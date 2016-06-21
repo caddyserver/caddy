@@ -1,6 +1,11 @@
 package httpserver
 
-import "testing"
+import (
+	"strings"
+	"testing"
+
+	"github.com/mholt/caddy/caddyfile"
+)
 
 func TestStandardizeAddress(t *testing.T) {
 	for i, test := range []struct {
@@ -110,5 +115,24 @@ func TestAddressString(t *testing.T) {
 		if actual != test.expected {
 			t.Errorf("Test %d: expected '%s' but got '%s'", i, test.expected, actual)
 		}
+	}
+}
+
+func TestInspectServerBlocksWithCustomDefaultPort(t *testing.T) {
+	Port = "9999"
+	filename := "Testfile"
+	ctx := newContext().(*httpContext)
+	input := strings.NewReader(`localhost`)
+	sblocks, err := caddyfile.Parse(filename, input, nil)
+	if err != nil {
+		t.Fatalf("Expected no error setting up test, got: %v", err)
+	}
+	_, err = ctx.InspectServerBlocks(filename, sblocks)
+	if err != nil {
+		t.Fatalf("Didn't expect an error, but got: %v", err)
+	}
+	addr := ctx.keysToSiteConfigs["localhost"].Addr
+	if addr.Port != Port {
+		t.Errorf("Expected the port on the address to be set, but got: %#v", addr)
 	}
 }

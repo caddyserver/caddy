@@ -591,13 +591,13 @@ func getServerType(serverType string) (ServerType, error) {
 
 func loadServerBlocks(serverType, filename string, input io.Reader) ([]caddyfile.ServerBlock, error) {
 	validDirectives := ValidDirectives(serverType)
-	serverBlocks, err := caddyfile.ServerBlocks(filename, input, validDirectives)
+	serverBlocks, err := caddyfile.Parse(filename, input, validDirectives)
 	if err != nil {
 		return nil, err
 	}
 	if len(serverBlocks) == 0 && serverTypes[serverType].DefaultInput != nil {
 		newInput := serverTypes[serverType].DefaultInput()
-		serverBlocks, err = caddyfile.ServerBlocks(newInput.Path(),
+		serverBlocks, err = caddyfile.Parse(newInput.Path(),
 			bytes.NewReader(newInput.Body()), validDirectives)
 		if err != nil {
 			return nil, err
