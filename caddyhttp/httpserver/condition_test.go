@@ -241,7 +241,7 @@ func TestSetupIfMatcher(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		c := caddy.NewTestController(test.input)
+		c := caddy.NewTestController("http", test.input)
 		c.Next()
 		matcher, err := SetupIfMatcher(c.Dispenser)
 		if err == nil && test.shouldErr {
