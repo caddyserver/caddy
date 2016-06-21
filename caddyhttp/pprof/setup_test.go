@@ -21,7 +21,8 @@ func TestSetup(t *testing.T) {
           pprof`, true},
 	}
 	for i, test := range tests {
-		err := setup(caddy.NewTestController(test.input))
+		c := caddy.NewTestController("http", test.input)
+		err := setup(c)
 		if test.shouldErr && err == nil {
 			t.Errorf("Test %v: Expected error but found nil", i)
 		} else if !test.shouldErr && err != nil {

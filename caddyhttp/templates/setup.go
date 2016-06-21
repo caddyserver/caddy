@@ -21,7 +21,7 @@ func setup(c *caddy.Controller) error {
 		return err
 	}
 
-	cfg := httpserver.GetConfig(c.Key)
+	cfg := httpserver.GetConfig(c)
 
 	tmpls := Templates{
 		Rules:   rules,

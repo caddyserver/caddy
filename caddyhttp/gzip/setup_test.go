@@ -8,11 +8,12 @@ import (
 )
 
 func TestSetup(t *testing.T) {
-	err := setup(caddy.NewTestController(`gzip`))
+	c := caddy.NewTestController("http", `gzip`)
+	err := setup(c)
 	if err != nil {
 		t.Errorf("Expected no errors, but got: %v", err)
 	}
-	mids := httpserver.GetConfig("").Middleware()
+	mids := httpserver.GetConfig(c).Middleware()
 	if mids == nil {
 		t.Fatal("Expected middleware, was nil instead")
 	}
@@ -90,7 +91,7 @@ func TestSetup(t *testing.T) {
 		`, false},
 	}
 	for i, test := range tests {
-		_, err := gzipParse(caddy.NewTestController(test.input))
+		_, err := gzipParse(caddy.NewTestController("http", test.input))
 		if test.shouldErr && err == nil {
 			t.Errorf("Test %v: Expected error but found nil", i)
 		} else if !test.shouldErr && err != nil {

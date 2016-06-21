@@ -9,11 +9,12 @@ import (
 )
 
 func TestSetup(t *testing.T) {
-	err := setup(caddy.NewTestController(`templates`))
+	c := caddy.NewTestController("http", `templates`)
+	err := setup(c)
 	if err != nil {
 		t.Errorf("Expected no errors, got: %v", err)
 	}
-	mids := httpserver.GetConfig("").Middleware()
+	mids := httpserver.GetConfig(c).Middleware()
 	if len(mids) == 0 {
 		t.Fatal("Expected middleware, got 0 instead")
 	}
@@ -81,7 +82,7 @@ func TestTemplatesParse(t *testing.T) {
 		}}},
 	}
 	for i, test := range tests {
-		c := caddy.NewTestController(test.inputTemplateConfig)
+		c := caddy.NewTestController("http", test.inputTemplateConfig)
 		actualTemplateConfigs, err := templatesParse(c)
 
 		if err == nil && test.shouldErr {

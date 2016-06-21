@@ -8,11 +8,12 @@ import (
 )
 
 func TestWebSocket(t *testing.T) {
-	err := setup(caddy.NewTestController(`websocket cat`))
+	c := caddy.NewTestController("http", `websocket cat`)
+	err := setup(c)
 	if err != nil {
 		t.Errorf("Expected no errors, got: %v", err)
 	}
-	mids := httpserver.GetConfig("").Middleware()
+	mids := httpserver.GetConfig(c).Middleware()
 	if len(mids) == 0 {
 		t.Fatal("Expected middleware, got 0 instead")
 	}
@@ -72,7 +73,7 @@ func TestWebSocketParse(t *testing.T) {
 		}`, true, []Config{}},
 	}
 	for i, test := range tests {
-		c := caddy.NewTestController(test.inputWebSocketConfig)
+		c := caddy.NewTestController("http", test.inputWebSocketConfig)
 		actualWebSocketConfigs, err := webSocketParse(c)
 
 		if err == nil && test.shouldErr {

@@ -9,12 +9,13 @@ import (
 )
 
 func TestSetup(t *testing.T) {
-	err := setup(caddy.NewTestController(`header / Foo Bar`))
+	c := caddy.NewTestController("http", `header / Foo Bar`)
+	err := setup(c)
 	if err != nil {
 		t.Errorf("Expected no errors, but got: %v", err)
 	}
 
-	mids := httpserver.GetConfig("").Middleware()
+	mids := httpserver.GetConfig(c).Middleware()
 	if len(mids) == 0 {
 		t.Fatal("Expected middleware, had 0 instead")
 	}
@@ -52,7 +53,7 @@ func TestHeadersParse(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		actual, err := headersParse(caddy.NewTestController(test.input))
+		actual, err := headersParse(caddy.NewTestController("http", test.input))
 
 		if err == nil && test.shouldErr {
 			t.Errorf("Test %d didn't error, but it should have", i)

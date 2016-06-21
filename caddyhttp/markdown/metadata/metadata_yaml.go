@@ -6,17 +6,19 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-// YAMLMetadataParser is the MetadataParser for YAML
-type YAMLMetadataParser struct {
+// YAMLParser is the Parser for YAML
+type YAMLParser struct {
 	metadata Metadata
 	markdown *bytes.Buffer
 }
 
-func (y *YAMLMetadataParser) Type() string {
+// Type returns the kind of metadata parser.
+func (y *YAMLParser) Type() string {
 	return "YAML"
 }
 
-func (y *YAMLMetadataParser) Init(b *bytes.Buffer) bool {
+// Init prepares the metadata parser for parsing.
+func (y *YAMLParser) Init(b *bytes.Buffer) bool {
 	meta, data := splitBuffer(b, "---")
 	if meta == nil || data == nil {
 		return false
@@ -34,10 +36,11 @@ func (y *YAMLMetadataParser) Init(b *bytes.Buffer) bool {
 
 // Metadata returns parsed metadata.  It should be called
 // only after a call to Parse returns without error.
-func (y *YAMLMetadataParser) Metadata() Metadata {
+func (y *YAMLParser) Metadata() Metadata {
 	return y.metadata
 }
 
-func (y *YAMLMetadataParser) Markdown() []byte {
+// Markdown renders the text as a byte array
+func (y *YAMLParser) Markdown() []byte {
 	return y.markdown.Bytes()
 }

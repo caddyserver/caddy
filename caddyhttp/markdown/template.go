@@ -45,6 +45,7 @@ func execTemplate(c *Config, mdata metadata.Metadata, files []FileInfo, ctx http
 	return b.Bytes(), nil
 }
 
+// SetTemplate reads in the template with the filename provided. If the file does not exist or is not parsable, it will return an error.
 func SetTemplate(t *template.Template, name, filename string) error {
 
 	// Read template
@@ -64,6 +65,7 @@ func SetTemplate(t *template.Template, name, filename string) error {
 	return err
 }
 
+// GetDefaultTemplate returns the default template.
 func GetDefaultTemplate() *template.Template {
 	return template.Must(template.New("").Parse(defaultTemplate))
 }

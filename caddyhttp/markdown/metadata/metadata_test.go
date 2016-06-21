@@ -158,13 +158,13 @@ func TestParsers(t *testing.T) {
 	}
 
 	data := []struct {
-		parser   MetadataParser
+		parser   Parser
 		testData [5]string
 		name     string
 	}{
-		{&JSONMetadataParser{}, JSON, "JSON"},
-		{&YAMLMetadataParser{}, YAML, "YAML"},
-		{&TOMLMetadataParser{}, TOML, "TOML"},
+		{&JSONParser{}, JSON, "JSON"},
+		{&YAMLParser{}, YAML, "YAML"},
+		{&TOMLParser{}, TOML, "TOML"},
 	}
 
 	for _, v := range data {

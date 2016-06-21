@@ -62,7 +62,7 @@ func setup(c *caddy.Controller) error {
 		return nil
 	})
 
-	httpserver.GetConfig(c.Key).AddMiddleware(func(next httpserver.Handler) httpserver.Handler {
+	httpserver.GetConfig(c).AddMiddleware(func(next httpserver.Handler) httpserver.Handler {
 		handler.Next = next
 		return handler
 	})
@@ -76,7 +76,7 @@ func errorsParse(c *caddy.Controller) (*ErrorHandler, error) {
 	// same instance of the handler, not a copy.
 	handler := &ErrorHandler{ErrorPages: make(map[int]string)}
 
-	cfg := httpserver.GetConfig(c.Key)
+	cfg := httpserver.GetConfig(c)
 
 	optionalBlock := func() (bool, error) {
 		var hadBlock bool

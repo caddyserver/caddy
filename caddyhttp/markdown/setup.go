@@ -23,7 +23,7 @@ func setup(c *caddy.Controller) error {
 		return err
 	}
 
-	cfg := httpserver.GetConfig(c.Key)
+	cfg := httpserver.GetConfig(c)
 
 	md := Markdown{
 		Root:       cfg.Root,
@@ -82,7 +82,7 @@ func markdownParse(c *caddy.Controller) ([]*Config, error) {
 }
 
 func loadParams(c *caddy.Controller, mdc *Config) error {
-	cfg := httpserver.GetConfig(c.Key)
+	cfg := httpserver.GetConfig(c)
 
 	switch c.Val() {
 	case "ext":

@@ -7,13 +7,13 @@ import (
 	"strings"
 )
 
-// ServerBlocks parses the input just enough to group tokens,
-// in order, by server block. No further parsing is performed.
+// Parse parses the input just enough to group tokens, in
+// order, by server block. No further parsing is performed.
 // Server blocks are returned in the order in which they appear.
 // Directives that do not appear in validDirectives will cause
 // an error. If you do not want to check for valid directives,
 // pass in nil instead.
-func ServerBlocks(filename string, input io.Reader, validDirectives []string) ([]ServerBlock, error) {
+func Parse(filename string, input io.Reader, validDirectives []string) ([]ServerBlock, error) {
 	p := parser{Dispenser: NewDispenser(filename, input), validDirectives: validDirectives}
 	blocks, err := p.parseAll()
 	return blocks, err

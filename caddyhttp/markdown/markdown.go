@@ -127,11 +127,11 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 	}
 	defer f.Close()
 
-	if fs, err := f.Stat(); err != nil {
+	fs, err := f.Stat()
+	if err != nil {
 		return http.StatusGone, nil
-	} else {
-		lastModTime = latest(lastModTime, fs.ModTime())
 	}
+	lastModTime = latest(lastModTime, fs.ModTime())
 
 	ctx := httpserver.Context{
 		Root: md.FileSys,

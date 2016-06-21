@@ -23,7 +23,7 @@ func setup(c *caddy.Controller) error {
 		return err
 	}
 
-	cfg := httpserver.GetConfig(c.Key)
+	cfg := httpserver.GetConfig(c)
 
 	cfg.AddMiddleware(func(next httpserver.Handler) httpserver.Handler {
 		return Rewrite{

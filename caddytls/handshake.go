@@ -53,7 +53,7 @@ func (cg configGroup) getConfig(name string) *Config {
 // GetCertificate gets a certificate to satisfy clientHello. In getting
 // the certificate, it abides the rules and settings defined in the
 // Config that matches clientHello.ServerName. It first checks the in-
-// memory cache, then, if the config enables "OnDemand", it accessses
+// memory cache, then, if the config enables "OnDemand", it accesses
 // disk, then accesses the network if it must obtain a new certificate
 // via ACME.
 //
