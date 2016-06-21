@@ -6,8 +6,9 @@ import (
 )
 
 func TestNumProcs(t *testing.T) {
+	num := runtime.NumCPU()
 	n := numProcs()
-	if n != runtime.NumCPU()-1 {
-		t.Errorf("Expected numProcs to return NumCPU-1, got %d", n)
+	if num > 1 && n != num-1 {
+		t.Errorf("Expected numProcs to return max(NumCPU-1, 0) but got %d (NumCPU=%d)", n, num)
 	}
 }
