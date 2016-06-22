@@ -28,6 +28,10 @@ func To(fs http.FileSystem, r *http.Request, to string, replacer httpserver.Repl
 			query = tparts[1]
 		}
 
+		if strings.HasSuffix(tparts[0], "/") && !strings.HasSuffix(t, "/") {
+			t += "/"
+		}
+
 		// add trailing slash for directories, if present
 		if strings.HasSuffix(v, "/") && !strings.HasSuffix(t, "/") {
 			t += "/"
