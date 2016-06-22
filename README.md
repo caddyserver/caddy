@@ -4,7 +4,7 @@
 
 Caddy is a general-purpose web server for Windows, Mac, Linux, BSD, and
 [Android](https://github.com/mholt/caddy/wiki/Running-Caddy-on-Android). It is
-a capable but easier aternative to other popular web servers.
+a capable but easier alternative to other popular web servers.
 
 [Releases](https://github.com/mholt/caddy/releases) · 
 [User Guide](https://caddyserver.com/docs) · 
@@ -42,11 +42,11 @@ SNI
 Caddy binaries have no dependencies and are available for every platform.
 Install Caddy any one of these ways:
 
-- [Download page](https://caddyserver.com/download) allows you to customize
-your build in your browser
-- [Latest release](https://github.com/mholt/caddy/releases/latest) for static
-file downloads
-- [curl getcaddy.com](https://getcaddy.com) for auto install:
+- **[Download page](https://caddyserver.com/download)** allows you to
+customize your build in the browser
+- **[Latest release](https://github.com/mholt/caddy/releases/latest)** for
+pre-built binaries
+- **curl [getcaddy.com](https://getcaddy.com)** for auto install:
 `curl https://getcaddy.com | bash`
 
 Once `caddy` is in your PATH, you can `cd` to your website's folder and run
