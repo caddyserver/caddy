@@ -1,6 +1,6 @@
 CHANGES
 
-0.9 beta 1 (June 7, 2016)
+0.9 beta 2 (June 22, 2016)
 - New core
 - New experimental QUIC support with -quic flag (HTTPS only)
 - New -type flag to specify other server types
@@ -15,8 +15,9 @@ CHANGES
 - markdown: Overhauled; removed site generation features
 - proxy: More control of headers
 - proxy: Specify multiple upstreams with optional port ranges
+- proxy: New preset 'transparent' to simplify common pass-thrus
 - tls: Generate self-signed certificates in memory
-- tls: Support for ACME DNS challenge across 10 providers
+- tls: Support for ACME DNS challenge with 10 providers
 - tls: Support for TLS-SNI challenge during restarts
 - Various bug fixes and enhancements
 
