@@ -188,7 +188,7 @@ tr {
 	border-bottom: 1px dashed #dadada;
 }
 
-tr:not(:first-child):hover {
+tbody tr:hover {
 	background-color: #ffffec;
 }
 
