@@ -72,7 +72,7 @@ func allShutdownCallbacks() []error {
 	var errs []error
 	instancesMu.Lock()
 	for _, inst := range instances {
-		errs = append(errs, inst.shutdownCallbacks()...)
+		errs = append(errs, inst.ShutdownCallbacks()...)
 	}
 	instancesMu.Unlock()
 	return errs

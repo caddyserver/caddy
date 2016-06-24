@@ -73,10 +73,12 @@ type Instance struct {
 	// servers is the list of servers with their listeners.
 	servers []serverListener
 
-	// these are callbacks to execute when certain events happen
-	onStartup  []func() error
-	onRestart  []func() error
-	onShutdown []func() error
+	// these callbacks execute when certain events occur
+	onFirstStartup  []func() error // starting, not as part of a restart
+	onStartup       []func() error // starting, even as part of a restart
+	onRestart       []func() error // before restart commences
+	onShutdown      []func() error // stopping, even as part of a restart
+	onFinalShutdown []func() error // stopping, not as part of a restart
 }
 
 // Stop stops all servers contained in i. It does NOT
@@ -104,13 +106,20 @@ func (i *Instance) Stop() error {
 	return nil
 }
 
-// shutdownCallbacks executes all the shutdown callbacks of i.
-// An error returned from one does not stop execution of the rest.
-// All the errors will be returned.
-func (i *Instance) shutdownCallbacks() []error {
+// ShutdownCallbacks executes all the shutdown callbacks of i,
+// including ones that are scheduled only for the final shutdown
+// of i. An error returned from one does not stop execution of
+// the rest. All the non-nil errors will be returned.
+func (i *Instance) ShutdownCallbacks() []error {
 	var errs []error
 	for _, shutdownFunc := range i.onShutdown {
 		err := shutdownFunc()
+		if err != nil {
+			errs = append(errs, err)
+		}
+	}
+	for _, finalShutdownFunc := range i.onFinalShutdown {
+		err := finalShutdownFunc()
 		if err != nil {
 			errs = append(errs, err)
 		}
@@ -159,6 +168,12 @@ func (i *Instance) Restart(newCaddyfile Input) (*Instance, error) {
 	}
 
 	// success! stop the old instance
+	for _, shutdownFunc := range i.onShutdown {
+		err := shutdownFunc()
+		if err != nil {
+			return i, err
+		}
+	}
 	i.Stop()
 
 	log.Println("[INFO] Reloading complete")
@@ -409,6 +424,15 @@ func startWithListenerFds(cdyfile Input, inst *Instance, restartFds map[string]r
 		return err
 	}
 
+	// run startup callbacks
+	if restartFds == nil {
+		for _, firstStartupFunc := range inst.onFirstStartup {
+			err := firstStartupFunc()
+			if err != nil {
+				return err
+			}
+		}
+	}
 	for _, startupFunc := range inst.onStartup {
 		err := startupFunc()
 		if err != nil {

@@ -54,8 +54,14 @@ func (c *Controller) ServerType() string {
 	return c.instance.serverType
 }
 
+// OnFirstStartup adds fn to the list of callback functions to execute
+// when the server is about to be started NOT as part of a restart.
+func (c *Controller) OnFirstStartup(fn func() error) {
+	c.instance.onFirstStartup = append(c.instance.onFirstStartup, fn)
+}
+
 // OnStartup adds fn to the list of callback functions to execute
-// when the server is about to be started.
+// when the server is about to be started (including restarts).
 func (c *Controller) OnStartup(fn func() error) {
 	c.instance.onStartup = append(c.instance.onStartup, fn)
 }
@@ -67,9 +73,15 @@ func (c *Controller) OnRestart(fn func() error) {
 }
 
 // OnShutdown adds fn to the list of callback functions to execute
-// when the server is about to be shut down..
+// when the server is about to be shut down (including restarts).
 func (c *Controller) OnShutdown(fn func() error) {
 	c.instance.onShutdown = append(c.instance.onShutdown, fn)
+}
+
+// OnFinalShutdown adds fn to the list of callback functions to execute
+// when the server is about to be shut down NOT as part of a restart.
+func (c *Controller) OnFinalShutdown(fn func() error) {
+	c.instance.onFinalShutdown = append(c.instance.onFinalShutdown, fn)
 }
 
 // Context gets the context associated with the instance associated with c.

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
@@ -67,6 +68,7 @@ type Rule struct {
 	Format     string
 	Log        *log.Logger
 	Roller     *httpserver.LogRoller
+	file       *os.File // if logging to a file that needs to be closed
 }
 
 const (

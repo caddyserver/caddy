@@ -15,12 +15,12 @@ func init() {
 
 // Startup registers a startup callback to execute during server start.
 func Startup(c *caddy.Controller) error {
-	return registerCallback(c, c.OnStartup)
+	return registerCallback(c, c.OnFirstStartup)
 }
 
 // Shutdown registers a shutdown callback to execute during server stop.
 func Shutdown(c *caddy.Controller) error {
-	return registerCallback(c, c.OnShutdown)
+	return registerCallback(c, c.OnFinalShutdown)
 }
 
 // registerCallback registers a callback function to execute by

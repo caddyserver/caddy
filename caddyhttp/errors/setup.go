@@ -49,16 +49,23 @@ func setup(c *caddy.Controller) error {
 			}
 			if handler.LogRoller != nil {
 				file.Close()
-
 				handler.LogRoller.Filename = handler.LogFile
-
 				writer = handler.LogRoller.GetLogWriter()
 			} else {
+				handler.file = file
 				writer = file
 			}
 		}
 
 		handler.Log = log.New(writer, "", 0)
+		return nil
+	})
+
+	// When server stops, close any open log file
+	c.OnShutdown(func() error {
+		if handler.file != nil {
+			handler.file.Close()
+		}
 		return nil
 	})
 

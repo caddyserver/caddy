@@ -43,6 +43,7 @@ func setup(c *caddy.Controller) error {
 					rules[i].Roller.Filename = rules[i].OutputFile
 					writer = rules[i].Roller.GetLogWriter()
 				} else {
+					rules[i].file = file
 					writer = file
 				}
 			}
@@ -50,6 +51,16 @@ func setup(c *caddy.Controller) error {
 			rules[i].Log = log.New(writer, "", 0)
 		}
 
+		return nil
+	})
+
+	// When server stops, close any open log files
+	c.OnShutdown(func() error {
+		for _, rule := range rules {
+			if rule.file != nil {
+				rule.file.Close()
+			}
+		}
 		return nil
 	})
 

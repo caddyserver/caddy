@@ -29,7 +29,8 @@ type ErrorHandler struct {
 	LogFile    string
 	Log        *log.Logger
 	LogRoller  *httpserver.LogRoller
-	Debug      bool // if true, errors are written out to client rather than to a log
+	Debug      bool     // if true, errors are written out to client rather than to a log
+	file       *os.File // a log file to close when done
 }
 
 func (h ErrorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
