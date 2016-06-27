@@ -6,8 +6,8 @@ Caddy is a general-purpose web server for Windows, Mac, Linux, BSD, and
 [Android](https://github.com/mholt/caddy/wiki/Running-Caddy-on-Android). It is
 a capable but easier alternative to other popular web servers.
 
-[Releases](https://github.com/mholt/caddy/releases) · 
-[User Guide](https://caddyserver.com/docs) · 
+[Releases](https://github.com/mholt/caddy/releases) ·
+[User Guide](https://caddyserver.com/docs) ·
 [Community](https://forum.caddyserver.com)
 
 
@@ -50,7 +50,7 @@ pre-built binaries
 `curl https://getcaddy.com | bash`
 
 Once `caddy` is in your PATH, you can `cd` to your website's folder and run
-`caddy` to serve it. By default, Caddy serves the current directory at 
+`caddy` to serve it. By default, Caddy serves the current directory at
 [localhost:2015](http://localhost:2015).
 
 To customize how your site is served, create a file named Caddyfile by your
@@ -71,7 +71,7 @@ header /api Access-Control-Allow-Origin *
 When you run `caddy` in that directory, it will automatically find and use
 that Caddyfile to configure itself.
 
-This simple file enables compression, allows directory browsing (for folders 
+This simple file enables compression, allows directory browsing (for folders
 without an index file), hosts a WebSocket echo server at /echo, serves clean
 URLs, logs requests to access.log, proxies all API requests to a backend on
 port 7005, and adds the coveted  `Access-Control-Allow-Origin: *` header for
@@ -97,7 +97,7 @@ the [CLI documentation](https://caddyserver.com/docs/cli) for details.
 
 Note: You will need **[Go 1.6](https://golang.org/dl/)** or newer.
 
-1. `go get github.com/mholt/caddy`
+1. `go get github.com/mholt/caddy/caddy`
 2. `cd` into your website's directory
 3. Run `caddy` (assumes `$GOPATH/bin` is in your `$PATH`)
 
