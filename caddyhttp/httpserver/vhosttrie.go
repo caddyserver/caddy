@@ -11,8 +11,8 @@ import (
 // by longest matching path.
 type vhostTrie struct {
 	edges map[string]*vhostTrie
-	site  *SiteConfig // also known as a virtual host
-	path  string      // the path portion of the key for this node
+	site  *SiteConfig // site to match on this node; also known as a virtual host
+	path  string      // the path portion of the key for the associated site
 }
 
 // newVHostTrie returns a new vhostTrie.
@@ -136,4 +136,25 @@ func (t *vhostTrie) splitHostPath(key string) (host, path string) {
 		host = hostname
 	}
 	return
+}
+
+// String returns a list of all the entries in t; assumes that
+// t is a root node.
+func (t *vhostTrie) String() string {
+	var s string
+	for host, edge := range t.edges {
+		s += edge.str(host)
+	}
+	return s
+}
+
+func (t *vhostTrie) str(prefix string) string {
+	var s string
+	for key, edge := range t.edges {
+		if edge.site != nil {
+			s += prefix + key + "\n"
+		}
+		s += edge.str(prefix + key)
+	}
+	return s
 }

@@ -206,11 +206,11 @@ func groupSiteConfigsByListenAddr(configs []*SiteConfig) (map[string][]*SiteConf
 	groups := make(map[string][]*SiteConfig)
 
 	for _, conf := range configs {
-		if caddy.IsLoopback(conf.Addr.Host) && conf.ListenHost == "" {
-			// special case: one would not expect a site served
-			// at loopback to be connected to from the outside.
-			conf.ListenHost = conf.Addr.Host
-		}
+		// We would add a special case here so that localhost addresses
+		// bind to 127.0.0.1 if conf.ListenHost is not already set, which
+		// would prevent outsiders from even connecting; but that was problematic:
+		// https://forum.caddyserver.com/t/wildcard-virtual-domains-with-wildcard-roots/221/5?u=matt
+
 		if conf.Addr.Port == "" {
 			conf.Addr.Port = Port
 		}
