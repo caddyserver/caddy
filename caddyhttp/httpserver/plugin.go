@@ -372,9 +372,10 @@ var directives = []string{
 	"markdown",
 	"templates",
 	"browse",
-	"hugo",       // github.com/hacdias/caddy-hugo
-	"mailout",    // github.com/SchumacherFM/mailout
-	"prometheus", // github.com/miekg/caddy-prometheus
+	"filemanager", // github.com/hacdias/caddy-filemanager
+	"hugo",        // github.com/hacdias/caddy-hugo
+	"mailout",     // github.com/SchumacherFM/mailout
+	"prometheus",  // github.com/miekg/caddy-prometheus
 }
 
 const (
