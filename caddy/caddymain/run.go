@@ -179,11 +179,11 @@ func moveStorage() {
 	}
 	err = os.MkdirAll(string(newPath), 0700)
 	if err != nil {
-		log.Fatalf("[ERROR] Unable to make new certificate storage path: %v", err)
+		log.Fatalf("[ERROR] Unable to make new certificate storage path: %v\n\nPlease follow instructions at:\nhttps://github.com/mholt/caddy/issues/902#issuecomment-228876011", err)
 	}
 	err = os.Rename(oldPath, string(newPath))
 	if err != nil {
-		log.Fatalf("[ERROR] Unable to migrate certificate storage: %v", err)
+		log.Fatalf("[ERROR] Unable to migrate certificate storage: %v\n\nPlease follow instructions at:\nhttps://github.com/mholt/caddy/issues/902#issuecomment-228876011", err)
 	}
 	// convert mixed case folder and file names to lowercase
 	filepath.Walk(string(newPath), func(path string, info os.FileInfo, err error) error {
@@ -193,7 +193,7 @@ func moveStorage() {
 			lowerPath := filepath.Join(filepath.Dir(path), lowerBase)
 			err = os.Rename(path, lowerPath)
 			if err != nil {
-				log.Fatalf("[ERROR] Unable to lower-case: %v", err)
+				log.Fatalf("[ERROR] Unable to lower-case: %v\n\nPlease follow instructions at:\nhttps://github.com/mholt/caddy/issues/902#issuecomment-228876011", err)
 			}
 		}
 		return nil
