@@ -32,7 +32,7 @@ func TestNewReplacer(t *testing.T) {
 		if got, want := v.replacements["{status}"], ""; got != want {
 			t.Errorf("Expected status to NOT be set before Replace() is called; was: %s", got)
 		}
-		rep.Replace("foobar")
+		rep.Replace("{foobar}")
 		if got, want := v.replacements["{status}"], "200"; got != want {
 			t.Errorf("Expected status to be %s, was: %s", want, got)
 		}

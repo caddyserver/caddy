@@ -127,6 +127,11 @@ func NewReplacer(r *http.Request, rr *ResponseRecorder, emptyValue string) Repla
 // Replace performs a replacement of values on s and returns
 // the string with the replaced values.
 func (r *replacer) Replace(s string) string {
+	// Do not attempt replacements if no placeholder is found.
+	if !strings.ContainsAny(s, "{}") {
+		return s
+	}
+
 	// Make response placeholders now
 	if r.responseRecorder != nil {
 		r.replacements["{status}"] = strconv.Itoa(r.responseRecorder.status)

@@ -254,9 +254,11 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 		env["HTTPS"] = "on"
 	}
 
+	replacer := httpserver.NewReplacer(r, nil, "")
 	// Add env variables from config
 	for _, envVar := range rule.EnvVars {
-		env[envVar[0]] = envVar[1]
+		// replace request placeholders in environment variables
+		env[envVar[0]] = replacer.Replace(envVar[1])
 	}
 
 	// Add all HTTP headers to env variables
