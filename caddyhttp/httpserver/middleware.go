@@ -48,18 +48,46 @@ type (
 
 	// RequestMatcher checks to see if current request should be handled
 	// by underlying handler.
-	//
-	// TODO The long term plan is to get all middleware implement this
-	// interface and have validation done before requests are dispatched
-	// to each middleware.
 	RequestMatcher interface {
 		Match(r *http.Request) bool
 	}
+
+	// Config is a middleware configuration.
+	// This makes it possible for middlewares to have a common
+	// configuration interface.
+	//
+	// TODO The long term plan is to get all middleware implement this
+	// interface for configurations.
+	Config interface {
+		RequestMatcher
+		BasePath() string
+	}
+
+	// ConfigSelector selects a configuration.
+	//
+	// TODO The long term plan is to get all middleware to use this.
+	ConfigSelector []Config
 )
 
 // ServeHTTP implements the Handler interface.
 func (f HandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	return f(w, r)
+}
+
+// Select selects a Config.
+// This chooses the config with the longest length.
+//
+// TODO A better solution.
+func (c ConfigSelector) Select(r *http.Request) (config Config) {
+	for i := range c {
+		if !c[i].Match(r) {
+			continue
+		}
+		if config == nil || len(c[i].BasePath()) > len(config.BasePath()) {
+			config = c[i]
+		}
+	}
+	return config
 }
 
 // IndexFile looks for a file in /root/fpath/indexFile for each string
@@ -143,6 +171,14 @@ func (p Path) Matches(other string) bool {
 		return strings.HasPrefix(string(p), other)
 	}
 	return strings.HasPrefix(strings.ToLower(string(p)), strings.ToLower(other))
+}
+
+// PathMatcher is a Path RequestMatcher.
+type PathMatcher string
+
+// Match satisfies RequestMatcher.
+func (p PathMatcher) Match(r *http.Request) bool {
+	return Path(r.URL.Path).Matches(string(p))
 }
 
 // MergeRequestMatchers merges multiple RequestMatchers into one.

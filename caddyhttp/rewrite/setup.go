@@ -36,9 +36,9 @@ func setup(c *caddy.Controller) error {
 	return nil
 }
 
-func rewriteParse(c *caddy.Controller) ([]Rule, error) {
-	var simpleRules []Rule
-	var regexpRules []Rule
+func rewriteParse(c *caddy.Controller) ([]httpserver.Config, error) {
+	var simpleRules []httpserver.Config
+	var regexpRules []httpserver.Config
 
 	for c.Next() {
 		var rule Rule
