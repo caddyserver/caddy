@@ -210,8 +210,16 @@ func (p *parser) doImport() error {
 		return p.Err("Import takes only one argument (glob pattern or file)")
 	}
 
-	// do glob
-	matches, err := filepath.Glob(importPattern)
+	// make path relative to Caddyfile rather than current working directory (issue #867)
+	// and then use glob to get list of matching filenames
+	var matches []string
+	relImportPattern, err := filepath.Rel(filepath.Dir(p.Dispenser.filename), importPattern)
+	if err == nil {
+		matches, err = filepath.Glob(relImportPattern)
+	} else {
+		matches, err = filepath.Glob(importPattern)
+	}
+
 	if err != nil {
 		return p.Errf("Failed to use import pattern %s: %v", importPattern, err)
 	}
