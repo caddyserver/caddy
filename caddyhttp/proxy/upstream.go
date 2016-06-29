@@ -158,6 +158,7 @@ func (u *staticUpstream) NewHost(host string) (*UpstreamHost, error) {
 	if u.insecureSkipVerify {
 		uh.ReverseProxy.Transport = InsecureTransport
 	}
+
 	return uh, nil
 }
 

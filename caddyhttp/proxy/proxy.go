@@ -77,19 +77,21 @@ var tryDuration = 60 * time.Second
 
 // ServeHTTP satisfies the httpserver.Handler interface.
 func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
-	// Start by selecting most specific matching upstream config
+	// start by selecting most specific matching upstream config
 	upstream := p.match(r)
 	if upstream == nil {
 		return p.Next.ServeHTTP(w, r)
 	}
 
+	// this replacer is used to fill in header field values
 	var replacer httpserver.Replacer
-	start := time.Now()
 
+	// outreq is the request that makes a roundtrip to the backend
 	outreq := createUpstreamRequest(r)
 
-	// Since Select() should give us "up" hosts, keep retrying
+	// since Select() should give us "up" hosts, keep retrying
 	// hosts until timeout (or until we get a nil host).
+	start := time.Now()
 	for time.Now().Sub(start) < tryDuration {
 		host := upstream.Select()
 		if host == nil {
@@ -99,7 +101,11 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			rr.Replacer.Set("upstream", host.Name)
 		}
 
+		// for now, assume the backend's hostname is just a hostname; we'll
+		// handle extra information like scheme later
 		outreq.Host = host.Name
+
+		// set headers for request going upstream
 		if host.UpstreamHeaders != nil {
 			if replacer == nil {
 				rHost := r.Host
@@ -109,13 +115,15 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			if v, ok := host.UpstreamHeaders["Host"]; ok {
 				outreq.Host = replacer.Replace(v[len(v)-1])
 			}
-			// Modify headers for request that will be sent to the upstream host
+			// modify headers for request that will be sent to the upstream host
 			upHeaders := createHeadersByRules(host.UpstreamHeaders, r.Header, replacer)
 			for k, v := range upHeaders {
 				outreq.Header[k] = v
 			}
 		}
 
+		// prepare a function that will update response
+		// headers coming back downstream
 		var downHeaderUpdateFn respUpdateFn
 		if host.DownstreamHeaders != nil {
 			if replacer == nil {
@@ -123,23 +131,27 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 				replacer = httpserver.NewReplacer(r, nil, "")
 				outreq.Host = rHost
 			}
-			//Creates a function that is used to update headers the response received by the reverse proxy
 			downHeaderUpdateFn = createRespHeaderUpdateFn(host.DownstreamHeaders, replacer)
 		}
 
+		// a backend's name may contain more than just the host,
+		// so we parse it as a URL so we can isolate the host.
 		proxy := host.ReverseProxy
-		if baseURL, err := url.Parse(host.Name); err == nil {
-			r.Host = baseURL.Host
+		if nameURL, err := url.Parse(outreq.Host); err == nil {
+			outreq.Host = nameURL.Host
 			if proxy == nil {
-				proxy = NewSingleHostReverseProxy(baseURL, host.WithoutPathPrefix)
+				proxy = NewSingleHostReverseProxy(nameURL, host.WithoutPathPrefix)
 			}
 		} else if proxy == nil {
 			return http.StatusInternalServerError, err
 		}
 
+		// tell the proxy to serve the request
 		atomic.AddInt64(&host.Conns, 1)
 		backendErr := proxy.ServeHTTP(w, outreq, downHeaderUpdateFn)
 		atomic.AddInt64(&host.Conns, -1)
+
+		// if no errors, we're done here; otherwise failover
 		if backendErr == nil {
 			return 0, nil
 		}
@@ -186,9 +198,9 @@ func createUpstreamRequest(r *http.Request) *http.Request {
 		outreq.URL.Opaque = outreq.URL.RawPath
 	}
 
-	// Remove hop-by-hop headers to the backend.  Especially
+	// Remove hop-by-hop headers to the backend. Especially
 	// important is "Connection" because we want a persistent
-	// connection, regardless of what the client sent to us.  This
+	// connection, regardless of what the client sent to us. This
 	// is modifying the same underlying map from r (shallow
 	// copied above) so we only copy it if necessary.
 	for _, h := range hopHeaders {

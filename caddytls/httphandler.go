@@ -34,7 +34,7 @@ func HTTPChallengeHandler(w http.ResponseWriter, r *http.Request, altPort string
 
 	proxy := httputil.NewSingleHostReverseProxy(upstream)
 	proxy.Transport = &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // solver uses self-signed certs
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
 	proxy.ServeHTTP(w, r)
 
