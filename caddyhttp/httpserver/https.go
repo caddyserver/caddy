@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"fmt"
 	"net"
 	"net/http"
 
@@ -9,6 +10,10 @@ import (
 )
 
 func activateHTTPS(cctx caddy.Context) error {
+	if !caddy.Quiet {
+		fmt.Print("Activating privacy features...")
+	}
+
 	ctx := cctx.(*httpContext)
 
 	// pre-screen each config and earmark the ones that qualify for managed TLS
@@ -39,6 +44,9 @@ func activateHTTPS(cctx caddy.Context) error {
 		return err
 	}
 
+	if !caddy.Quiet {
+		fmt.Println(" done.")
+	}
 	return nil
 }
 

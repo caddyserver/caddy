@@ -225,11 +225,6 @@ func groupSiteConfigsByListenAddr(configs []*SiteConfig) (map[string][]*SiteConf
 	return groups, nil
 }
 
-// AddMiddleware adds a middleware to a site's middleware stack.
-func (sc *SiteConfig) AddMiddleware(m Middleware) {
-	sc.middleware = append(sc.middleware, m)
-}
-
 // Address represents a site address. It contains
 // the original input value, and the component
 // parts of an address. The component parts may be

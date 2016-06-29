@@ -32,6 +32,11 @@ type SiteConfig struct {
 	HiddenFiles []string
 }
 
+// AddMiddleware adds a middleware to a site's middleware stack.
+func (s *SiteConfig) AddMiddleware(m Middleware) {
+	s.middleware = append(s.middleware, m)
+}
+
 // TLSConfig returns s.TLS.
 func (s SiteConfig) TLSConfig() *caddytls.Config {
 	return s.TLS
