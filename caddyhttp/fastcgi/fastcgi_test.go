@@ -123,38 +123,77 @@ func TestBuildEnv(t *testing.T) {
 		t.Error("Unexpected error:", err.Error())
 	}
 
-	r := http.Request{
-		Method:     "GET",
-		URL:        url,
-		Proto:      "HTTP/1.1",
-		ProtoMajor: 1,
-		ProtoMinor: 1,
-		Host:       "localhost:2015",
-		RemoteAddr: "[2b02:1810:4f2d:9400:70ab:f822:be8a:9093]:51688",
-		RequestURI: "/fgci_test.php",
+	var newReq = func() *http.Request {
+		return &http.Request{
+			Method:     "GET",
+			URL:        url,
+			Proto:      "HTTP/1.1",
+			ProtoMajor: 1,
+			ProtoMinor: 1,
+			Host:       "localhost:2015",
+			RemoteAddr: "[2b02:1810:4f2d:9400:70ab:f822:be8a:9093]:51688",
+			RequestURI: "/fgci_test.php",
+		}
 	}
 
 	fpath := "/fgci_test.php"
 
-	var envExpected = map[string]string{
-		"REMOTE_ADDR":     "2b02:1810:4f2d:9400:70ab:f822:be8a:9093",
-		"REMOTE_PORT":     "51688",
-		"SERVER_PROTOCOL": "HTTP/1.1",
-		"QUERY_STRING":    "test=blabla",
-		"REQUEST_METHOD":  "GET",
-		"HTTP_HOST":       "localhost:2015",
+	var newEnv = func() map[string]string {
+		return map[string]string{
+			"REMOTE_ADDR":     "2b02:1810:4f2d:9400:70ab:f822:be8a:9093",
+			"REMOTE_PORT":     "51688",
+			"SERVER_PROTOCOL": "HTTP/1.1",
+			"QUERY_STRING":    "test=blabla",
+			"REQUEST_METHOD":  "GET",
+			"HTTP_HOST":       "localhost:2015",
+		}
 	}
 
+	// request
+	var r *http.Request
+
+	// expected environment variables
+	var envExpected map[string]string
+
 	// 1. Test for full canonical IPv6 address
-	testBuildEnv(&r, rule, fpath, envExpected)
+	r = newReq()
+	testBuildEnv(r, rule, fpath, envExpected)
 
 	// 2. Test for shorthand notation of IPv6 address
+	r = newReq()
 	r.RemoteAddr = "[::1]:51688"
+	envExpected = newEnv()
 	envExpected["REMOTE_ADDR"] = "::1"
-	testBuildEnv(&r, rule, fpath, envExpected)
+	testBuildEnv(r, rule, fpath, envExpected)
 
 	// 3. Test for IPv4 address
+	r = newReq()
 	r.RemoteAddr = "192.168.0.10:51688"
+	envExpected = newEnv()
 	envExpected["REMOTE_ADDR"] = "192.168.0.10"
-	testBuildEnv(&r, rule, fpath, envExpected)
+	testBuildEnv(r, rule, fpath, envExpected)
+
+	// 4. Test for environment variable
+	r = newReq()
+	rule.EnvVars = [][2]string{
+		{"HTTP_HOST", "localhost:2016"},
+		{"REQUEST_METHOD", "POST"},
+	}
+	envExpected = newEnv()
+	envExpected["HTTP_HOST"] = "localhost:2016"
+	envExpected["REQUEST_METHOD"] = "POST"
+	testBuildEnv(r, rule, fpath, envExpected)
+
+	// 5. Test for environment variable placeholders
+	r = newReq()
+	rule.EnvVars = [][2]string{
+		{"HTTP_HOST", "{host}"},
+		{"CUSTOM_URI", "custom_uri{uri}"},
+		{"CUSTOM_QUERY", "custom=true&{query}"},
+	}
+	envExpected = newEnv()
+	envExpected["HTTP_HOST"] = "localhost:2015"
+	envExpected["CUSTOM_URI"] = "custom_uri/fgci_test.php?test=blabla"
+	envExpected["CUSTOM_QUERY"] = "custom=true&test=blabla"
+	testBuildEnv(r, rule, fpath, envExpected)
 }
