@@ -576,6 +576,72 @@ func TestMultiReverseProxyFromClient(t *testing.T) {
 	}
 }
 
+func TestHostSimpleProxyNoHeaderForward(t *testing.T) {
+	var requestHost string
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestHost = r.Host
+		w.Write([]byte("Hello, client"))
+	}))
+	defer backend.Close()
+
+	// set up proxy
+	p := &Proxy{
+		Next:      httpserver.EmptyNext, // prevents panic in some cases when test fails
+		Upstreams: []Upstream{newFakeUpstream(backend.URL, false)},
+	}
+
+	r, err := http.NewRequest("GET", "/", nil)
+	r.Host = "test.com"
+
+	if err != nil {
+		t.Fatalf("Failed to create request: %v", err)
+	}
+	w := httptest.NewRecorder()
+
+	p.ServeHTTP(w, r)
+
+	if !strings.Contains(backend.URL, "//") {
+		t.Fatalf("The URL of the backend server doesn't contains //: %s", backend.URL)
+	}
+
+	expectedHost := strings.Split(backend.URL, "//")
+	if expectedHost[1] != requestHost {
+		t.Fatalf("Expected %s as a Host header got %s\n", expectedHost[1], requestHost)
+	}
+}
+
+func TestHostHeaderReplacedUsingForward(t *testing.T) {
+	var requestHost string
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestHost = r.Host
+		w.Write([]byte("Hello, client"))
+	}))
+	defer backend.Close()
+
+	upstream := newFakeUpstream(backend.URL, false)
+	proxyHostHeader := "test2.com"
+	upstream.host.UpstreamHeaders = http.Header{"Host": []string{proxyHostHeader}}
+	// set up proxy
+	p := &Proxy{
+		Next:      httpserver.EmptyNext, // prevents panic in some cases when test fails
+		Upstreams: []Upstream{upstream},
+	}
+
+	r, err := http.NewRequest("GET", "/", nil)
+	r.Host = "test.com"
+
+	if err != nil {
+		t.Fatalf("Failed to create request: %v", err)
+	}
+	w := httptest.NewRecorder()
+
+	p.ServeHTTP(w, r)
+
+	if proxyHostHeader != requestHost {
+		t.Fatalf("Expected %s as a Host header got %s\n", proxyHostHeader, requestHost)
+	}
+}
+
 func newFakeUpstream(name string, insecure bool) *fakeUpstream {
 	uri, _ := url.Parse(name)
 	u := &fakeUpstream{
