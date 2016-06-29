@@ -101,16 +101,26 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			rr.Replacer.Set("upstream", host.Name)
 		}
 
-		// for now, assume the backend's hostname is just a hostname; we'll
-		// handle extra information like scheme later
-		outreq.Host = host.Name
+		proxy := host.ReverseProxy
+
+		// a backend's name may contain more than just the host,
+		// so we parse it as a URL to try to isolate the host.
+		if nameURL, err := url.Parse(host.Name); err == nil {
+			outreq.Host = nameURL.Host
+			if proxy == nil {
+				proxy = NewSingleHostReverseProxy(nameURL, host.WithoutPathPrefix)
+			}
+		} else {
+			outreq.Host = host.Name
+		}
+		if proxy == nil {
+			return http.StatusInternalServerError, errors.New("proxy for host '" + host.Name + "' is nil")
+		}
 
 		// set headers for request going upstream
 		if host.UpstreamHeaders != nil {
 			if replacer == nil {
-				rHost := r.Host
 				replacer = httpserver.NewReplacer(r, nil, "")
-				outreq.Host = rHost
 			}
 			if v, ok := host.UpstreamHeaders["Host"]; ok {
 				outreq.Host = replacer.Replace(v[len(v)-1])
@@ -127,23 +137,9 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 		var downHeaderUpdateFn respUpdateFn
 		if host.DownstreamHeaders != nil {
 			if replacer == nil {
-				rHost := r.Host
 				replacer = httpserver.NewReplacer(r, nil, "")
-				outreq.Host = rHost
 			}
 			downHeaderUpdateFn = createRespHeaderUpdateFn(host.DownstreamHeaders, replacer)
-		}
-
-		// a backend's name may contain more than just the host,
-		// so we parse it as a URL so we can isolate the host.
-		proxy := host.ReverseProxy
-		if nameURL, err := url.Parse(outreq.Host); err == nil {
-			outreq.Host = nameURL.Host
-			if proxy == nil {
-				proxy = NewSingleHostReverseProxy(nameURL, host.WithoutPathPrefix)
-			}
-		} else if proxy == nil {
-			return http.StatusInternalServerError, err
 		}
 
 		// tell the proxy to serve the request
