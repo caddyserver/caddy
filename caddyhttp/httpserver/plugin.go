@@ -138,7 +138,7 @@ func (h *httpContext) MakeServers() ([]caddy.Server, error) {
 			// is incorrect for this site.
 			cfg.Addr.Scheme = "https"
 		}
-		if cfg.Addr.Port == "" {
+		if cfg.Addr.Port == "" && (!cfg.TLS.Manual || cfg.TLS.OnDemand) {
 			// this is vital, otherwise the function call below that
 			// sets the listener address will use the default port
 			// instead of 443 because it doesn't know about TLS.
