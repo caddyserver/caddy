@@ -18,10 +18,8 @@ import (
 type Result int
 
 const (
-	// RewriteIgnored is returned when rewrite is not done on request.
-	RewriteIgnored Result = iota
 	// RewriteDone is returned when rewrite is done on request.
-	RewriteDone
+	RewriteDone Result = iota
 	// RewriteStatus is returned when rewrite is not needed and status code should be set
 	// for the request.
 	RewriteStatus
@@ -73,15 +71,12 @@ func (s SimpleRule) Match(r *http.Request) bool { return s.From == r.URL.Path }
 
 // Rewrite rewrites the internal location of the current request.
 func (s SimpleRule) Rewrite(fs http.FileSystem, r *http.Request) Result {
-	if s.From == r.URL.Path {
-		// take note of this rewrite for internal use by fastcgi
-		// all we need is the URI, not full URL
-		r.Header.Set(headerFieldName, r.URL.RequestURI())
+	// take note of this rewrite for internal use by fastcgi
+	// all we need is the URI, not full URL
+	r.Header.Set(headerFieldName, r.URL.RequestURI())
 
-		// attempt rewrite
-		return To(fs, r, s.To, newReplacer(r))
-	}
-	return RewriteIgnored
+	// attempt rewrite
+	return To(fs, r, s.To, newReplacer(r))
 }
 
 // ComplexRule is a rewrite rule based on a regular expression
@@ -107,7 +102,7 @@ type ComplexRule struct {
 
 // NewComplexRule creates a new RegexpRule. It returns an error if regexp
 // pattern (pattern) or extensions (ext) are invalid.
-func NewComplexRule(base, pattern, to string, status int, ext []string, m httpserver.RequestMatcher) (*ComplexRule, error) {
+func NewComplexRule(base, pattern, to string, status int, ext []string, matcher httpserver.RequestMatcher) (*ComplexRule, error) {
 	// validate regexp if present
 	var r *regexp.Regexp
 	if pattern != "" {
@@ -128,9 +123,13 @@ func NewComplexRule(base, pattern, to string, status int, ext []string, m httpse
 		}
 	}
 
-	matcher := httpserver.MergeRequestMatchers(m,
-		// BasePath matcher
-		httpserver.PathMatcher(base))
+	// use both IfMatcher and PathMatcher
+	matcher = httpserver.MergeRequestMatchers(
+		// If condition matcher
+		matcher,
+		// Base path matcher
+		httpserver.PathMatcher(base),
+	)
 
 	return &ComplexRule{
 		Base:           base,
@@ -146,8 +145,11 @@ func NewComplexRule(base, pattern, to string, status int, ext []string, m httpse
 func (r *ComplexRule) BasePath() string { return r.Base }
 
 // Match satisfies httpserver.Config
+//
+// Though ComplexRule embeds a RequestMatcher, additional
+// checks are needed which requires a custom implementation.
 func (r *ComplexRule) Match(req *http.Request) bool {
-	// valid request matcher
+	// validate RequestMatcher
 	// includes if and path
 	if !r.RequestMatcher.Match(req) {
 		return false
