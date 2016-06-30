@@ -4,11 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -30,7 +28,7 @@ type ACMEClient struct {
 // newACMEClient creates a new ACMEClient given an email and whether
 // prompting the user is allowed. It's a variable so we can mock in tests.
 var newACMEClient = func(config *Config, allowPrompts bool) (*ACMEClient, error) {
-	storage, err := StorageFor(config.CAUrl)
+	storage, err := config.StorageFor(config.CAUrl)
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +178,7 @@ Attempts:
 		}
 
 		// Success - immediately save the certificate resource
-		storage, err := StorageFor(c.config.CAUrl)
+		storage, err := c.config.StorageFor(c.config.CAUrl)
 		if err != nil {
 			return err
 		}
@@ -204,21 +202,21 @@ Attempts:
 // Anyway, this function is safe for concurrent use.
 func (c *ACMEClient) Renew(name string) error {
 	// Get access to ACME storage
-	storage, err := StorageFor(c.config.CAUrl)
+	storage, err := c.config.StorageFor(c.config.CAUrl)
 	if err != nil {
 		return err
 	}
 
 	// Prepare for renewal (load PEM cert, key, and meta)
-	certBytes, err := ioutil.ReadFile(storage.SiteCertFile(name))
+	certBytes, err := storage.LoadSiteCert(name)
 	if err != nil {
 		return err
 	}
-	keyBytes, err := ioutil.ReadFile(storage.SiteKeyFile(name))
+	keyBytes, err := storage.LoadSiteKey(name)
 	if err != nil {
 		return err
 	}
-	metaBytes, err := ioutil.ReadFile(storage.SiteMetaFile(name))
+	metaBytes, err := storage.LoadSiteMeta(name)
 	if err != nil {
 		return err
 	}
@@ -265,17 +263,16 @@ func (c *ACMEClient) Renew(name string) error {
 // Revoke revokes the certificate for name and deltes
 // it from storage.
 func (c *ACMEClient) Revoke(name string) error {
-	storage, err := StorageFor(c.config.CAUrl)
+	storage, err := c.config.StorageFor(c.config.CAUrl)
 	if err != nil {
 		return err
 	}
 
-	if !existingCertAndKey(storage, name) {
+	if !storage.SiteInStorage(name) {
 		return errors.New("no certificate and key for " + name)
 	}
 
-	certFile := storage.SiteCertFile(name)
-	certBytes, err := ioutil.ReadFile(certFile)
+	certBytes, err := storage.LoadSiteCert(name)
 	if err != nil {
 		return err
 	}
@@ -285,7 +282,7 @@ func (c *ACMEClient) Revoke(name string) error {
 		return err
 	}
 
-	err = os.Remove(certFile)
+	err = storage.DeleteSiteCert(name)
 	if err != nil {
 		return errors.New("certificate revoked, but unable to delete certificate file: " + err.Error())
 	}

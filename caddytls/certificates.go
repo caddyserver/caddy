@@ -92,11 +92,19 @@ func getCertificate(name string) (cert Certificate, matched, defaulted bool) {
 //
 // This function is safe for concurrent use.
 func CacheManagedCertificate(domain string, cfg *Config) (Certificate, error) {
-	storage, err := StorageFor(cfg.CAUrl)
+	storage, err := cfg.StorageFor(cfg.CAUrl)
 	if err != nil {
 		return Certificate{}, err
 	}
-	cert, err := makeCertificateFromDisk(storage.SiteCertFile(domain), storage.SiteKeyFile(domain))
+	certPEMBlock, err := storage.LoadSiteCert(domain)
+	if err != nil {
+		return Certificate{}, err
+	}
+	keyPEMBlock, err := storage.LoadSiteKey(domain)
+	if err != nil {
+		return Certificate{}, err
+	}
+	cert, err := makeCertificate(certPEMBlock, keyPEMBlock)
 	if err != nil {
 		return cert, err
 	}
@@ -133,7 +141,7 @@ func cacheUnmanagedCertificatePEMBytes(certBytes, keyBytes []byte) error {
 	return nil
 }
 
-// makeCertificateFromDisk makes a Certificate by loading the
+// MakeCertificateFromDisk makes a Certificate by loading the
 // certificate and key files. It fills out all the fields in
 // the certificate except for the Managed and OnDemand flags.
 // (It is up to the caller to set those.)
@@ -149,7 +157,7 @@ func makeCertificateFromDisk(certFile, keyFile string) (Certificate, error) {
 	return makeCertificate(certPEMBlock, keyPEMBlock)
 }
 
-// makeCertificate turns a certificate PEM bundle and a key PEM block into
+// MakeCertificate turns a certificate PEM bundle and a key PEM block into
 // a Certificate, with OCSP and other relevant metadata tagged with it,
 // except for the OnDemand and Managed flags. It is up to the caller to
 // set those properties.

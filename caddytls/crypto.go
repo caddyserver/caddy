@@ -14,21 +14,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math/big"
 	"net"
-	"os"
 	"time"
 
 	"github.com/xenolf/lego/acme"
 )
 
-// loadPrivateKey loads a PEM-encoded ECC/RSA private key from file.
-func loadPrivateKey(file string) (crypto.PrivateKey, error) {
-	keyBytes, err := ioutil.ReadFile(file)
-	if err != nil {
-		return nil, err
-	}
+// loadPrivateKey loads a PEM-encoded ECC/RSA private key from an array of bytes.
+func loadPrivateKey(keyBytes []byte) (crypto.PrivateKey, error) {
 	keyBlock, _ := pem.Decode(keyBytes)
 
 	switch keyBlock.Type {
@@ -41,8 +35,8 @@ func loadPrivateKey(file string) (crypto.PrivateKey, error) {
 	return nil, errors.New("unknown private key type")
 }
 
-// savePrivateKey saves a PEM-encoded ECC/RSA private key to file.
-func savePrivateKey(key crypto.PrivateKey, file string) error {
+// savePrivateKey saves a PEM-encoded ECC/RSA private key to an array of bytes.
+func savePrivateKey(key crypto.PrivateKey) ([]byte, error) {
 	var pemType string
 	var keyBytes []byte
 	switch key := key.(type) {
@@ -51,7 +45,7 @@ func savePrivateKey(key crypto.PrivateKey, file string) error {
 		pemType = "EC"
 		keyBytes, err = x509.MarshalECPrivateKey(key)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	case *rsa.PrivateKey:
 		pemType = "RSA"
@@ -59,13 +53,7 @@ func savePrivateKey(key crypto.PrivateKey, file string) error {
 	}
 
 	pemKey := pem.Block{Type: pemType + " PRIVATE KEY", Bytes: keyBytes}
-	keyOut, err := os.Create(file)
-	if err != nil {
-		return err
-	}
-	keyOut.Chmod(0600)
-	defer keyOut.Close()
-	return pem.Encode(keyOut, &pemKey)
+	return pem.EncodeToMemory(&pemKey), nil
 }
 
 // stapleOCSP staples OCSP information to cert for hostname name.

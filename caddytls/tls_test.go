@@ -1,7 +1,6 @@
 package caddytls
 
 import (
-	"io/ioutil"
 	"os"
 	"testing"
 
@@ -80,7 +79,7 @@ func TestQualifiesForManagedTLS(t *testing.T) {
 }
 
 func TestSaveCertResource(t *testing.T) {
-	storage := Storage("./le_test_save")
+	storage := fileStorage("./le_test_save")
 	defer func() {
 		err := os.RemoveAll(string(storage))
 		if err != nil {
@@ -110,7 +109,7 @@ func TestSaveCertResource(t *testing.T) {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
 
-	certFile, err := ioutil.ReadFile(storage.SiteCertFile(domain))
+	certFile, err := storage.LoadSiteCert(domain)
 	if err != nil {
 		t.Errorf("Expected no error reading certificate file, got: %v", err)
 	}
@@ -118,7 +117,7 @@ func TestSaveCertResource(t *testing.T) {
 		t.Errorf("Expected certificate file to contain '%s', got '%s'", certContents, string(certFile))
 	}
 
-	keyFile, err := ioutil.ReadFile(storage.SiteKeyFile(domain))
+	keyFile, err := storage.LoadSiteKey(domain)
 	if err != nil {
 		t.Errorf("Expected no error reading private key file, got: %v", err)
 	}
@@ -126,7 +125,7 @@ func TestSaveCertResource(t *testing.T) {
 		t.Errorf("Expected private key file to contain '%s', got '%s'", keyContents, string(keyFile))
 	}
 
-	metaFile, err := ioutil.ReadFile(storage.SiteMetaFile(domain))
+	metaFile, err := storage.LoadSiteMeta(domain)
 	if err != nil {
 		t.Errorf("Expected no error reading meta file, got: %v", err)
 	}
@@ -136,7 +135,7 @@ func TestSaveCertResource(t *testing.T) {
 }
 
 func TestExistingCertAndKey(t *testing.T) {
-	storage := Storage("./le_test_existing")
+	storage := fileStorage("./le_test_existing")
 	defer func() {
 		err := os.RemoveAll(string(storage))
 		if err != nil {
@@ -146,7 +145,7 @@ func TestExistingCertAndKey(t *testing.T) {
 
 	domain := "example.com"
 
-	if existingCertAndKey(storage, domain) {
+	if storage.SiteInStorage(domain) {
 		t.Errorf("Did NOT expect %v to have existing cert or key, but it did", domain)
 	}
 
@@ -159,7 +158,7 @@ func TestExistingCertAndKey(t *testing.T) {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
 
-	if !existingCertAndKey(storage, domain) {
+	if !storage.SiteInStorage(domain) {
 		t.Errorf("Expected %v to have existing cert and key, but it did NOT", domain)
 	}
 }
