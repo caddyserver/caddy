@@ -31,7 +31,7 @@ func testPool() HostPool {
 			Name: workableServer.URL, // this should resolve (healthcheck test)
 		},
 		{
-			Name: "http://shouldnot.resolve", // this shouldn't
+			Name: "http://localhost:99998", // this shouldn't
 		},
 		{
 			Name: "http://C",
