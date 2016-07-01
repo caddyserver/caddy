@@ -58,14 +58,14 @@ func (s *StorageTest) runPostTest() {
 // AllFuncs returns all test functions that are part of this harness.
 func (s *StorageTest) AllFuncs() []TestFunc {
 	return []TestFunc{
-		TestFunc{"TestSiteInfoExists", s.TestSiteInfoExists},
-		TestFunc{"TestSiteInfoExistsNoCert", s.TestSiteInfoExistsNoCert},
-		TestFunc{"TestSiteCert", s.TestSiteCert},
-		TestFunc{"TestSiteKey", s.TestSiteKey},
-		TestFunc{"TestSiteMeta", s.TestSiteMeta},
-		TestFunc{"TestUserReg", s.TestUserReg},
-		TestFunc{"TestUserKey", s.TestUserKey},
-		TestFunc{"TestMostRecentUserEmail", s.TestMostRecentUserEmail},
+		{"TestSiteInfoExists", s.TestSiteInfoExists},
+		{"TestSiteInfoExistsNoCert", s.TestSiteInfoExistsNoCert},
+		{"TestSiteCert", s.TestSiteCert},
+		{"TestSiteKey", s.TestSiteKey},
+		{"TestSiteMeta", s.TestSiteMeta},
+		{"TestUserReg", s.TestUserReg},
+		{"TestUserKey", s.TestUserKey},
+		{"TestMostRecentUserEmail", s.TestMostRecentUserEmail},
 	}
 }
 
