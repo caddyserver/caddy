@@ -268,7 +268,7 @@ func (c *ACMEClient) Revoke(name string) error {
 		return err
 	}
 
-	if !storage.SiteInStorage(name) {
+	if !storage.SiteInfoExists(name) {
 		return errors.New("no certificate and key for " + name)
 	}
 

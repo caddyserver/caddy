@@ -183,4 +183,8 @@ func TestGetEmail(t *testing.T) {
 	}
 }
 
-var testStorage = fileStorage("./testdata")
+var testStorage = FileStorage("./testdata")
+
+func (s FileStorage) clean() error {
+	return os.RemoveAll(string(s))
+}

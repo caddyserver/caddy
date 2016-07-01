@@ -141,7 +141,7 @@ func cacheUnmanagedCertificatePEMBytes(certBytes, keyBytes []byte) error {
 	return nil
 }
 
-// MakeCertificateFromDisk makes a Certificate by loading the
+// makeCertificateFromDisk makes a Certificate by loading the
 // certificate and key files. It fills out all the fields in
 // the certificate except for the Managed and OnDemand flags.
 // (It is up to the caller to set those.)
@@ -157,7 +157,7 @@ func makeCertificateFromDisk(certFile, keyFile string) (Certificate, error) {
 	return makeCertificate(certPEMBlock, keyPEMBlock)
 }
 
-// MakeCertificate turns a certificate PEM bundle and a key PEM block into
+// makeCertificate turns a certificate PEM bundle and a key PEM block into
 // a Certificate, with OCSP and other relevant metadata tagged with it,
 // except for the OnDemand and Managed flags. It is up to the caller to
 // set those properties.

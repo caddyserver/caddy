@@ -79,7 +79,7 @@ func TestQualifiesForManagedTLS(t *testing.T) {
 }
 
 func TestSaveCertResource(t *testing.T) {
-	storage := fileStorage("./le_test_save")
+	storage := FileStorage("./le_test_save")
 	defer func() {
 		err := os.RemoveAll(string(storage))
 		if err != nil {
@@ -135,7 +135,7 @@ func TestSaveCertResource(t *testing.T) {
 }
 
 func TestExistingCertAndKey(t *testing.T) {
-	storage := fileStorage("./le_test_existing")
+	storage := FileStorage("./le_test_existing")
 	defer func() {
 		err := os.RemoveAll(string(storage))
 		if err != nil {
@@ -145,7 +145,7 @@ func TestExistingCertAndKey(t *testing.T) {
 
 	domain := "example.com"
 
-	if storage.SiteInStorage(domain) {
+	if storage.SiteInfoExists(domain) {
 		t.Errorf("Did NOT expect %v to have existing cert or key, but it did", domain)
 	}
 
@@ -158,7 +158,7 @@ func TestExistingCertAndKey(t *testing.T) {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
 
-	if !storage.SiteInStorage(domain) {
+	if !storage.SiteInfoExists(domain) {
 		t.Errorf("Expected %v to have existing cert and key, but it did NOT", domain)
 	}
 }

@@ -118,7 +118,7 @@ func (c *Config) obtainCertName(name string, allowPrompts bool) error {
 		return err
 	}
 
-	if !c.Managed || !HostQualifies(name) || storage.SiteInStorage(name) {
+	if !c.Managed || !HostQualifies(name) || storage.SiteInfoExists(name) {
 		return nil
 	}
 
@@ -201,6 +201,11 @@ func (c *Config) renewCertName(name string, allowPrompts bool) error {
 	return saveCertResource(storage, newCertMeta)
 }
 
+// StorageFor obtains a TLS Storage instance for the given CA URL which should
+// be unique for every different ACME CA. If a StorageCreator is set on this
+// Config, it will be used. Otherwise the default file storage implementation
+// is used. When the error is nil, this is guaranteed to return a non-nil
+// Storage instance.
 func (c *Config) StorageFor(caURL string) (Storage, error) {
 	// Validate CA URL
 	if caURL == "" {
@@ -226,13 +231,19 @@ func (c *Config) StorageFor(caURL string) (Storage, error) {
 	}
 
 	// Create the storage based on the URL
-	creator := c.StorageCreator
-	if creator == nil {
-		creator = DefaultFileStorageCreator
+	var s Storage
+	if c.StorageCreator != nil {
+		s, err = c.StorageCreator(u)
+		if err != nil {
+			return nil, fmt.Errorf("%s: unable to create custom storage: %v", caURL, err)
+		}
 	}
-	s, err := creator(u)
-	if err != nil {
-		return nil, fmt.Errorf("%s: unable to create storage: %v", caURL, err)
+	if s == nil {
+		// We trust that this does not return a nil s when there's a nil err
+		s, err = FileStorageCreator(u)
+		if err != nil {
+			return nil, fmt.Errorf("%s: unable to create file storage: %v", caURL, err)
+		}
 	}
 	return s, nil
 }
