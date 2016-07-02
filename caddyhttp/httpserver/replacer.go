@@ -69,7 +69,14 @@ func NewReplacer(r *http.Request, rr *ResponseRecorder, emptyValue string) Repla
 				}
 				return name
 			}(),
-			"{host}":          r.Host,
+			"{host}": r.Host,
+			"{hostonly}": func() string {
+				host, _, err := net.SplitHostPort(r.Host)
+				if err != nil {
+					return r.Host
+				}
+				return host
+			}(),
 			"{path}":          r.URL.Path,
 			"{path_escaped}":  url.QueryEscape(r.URL.Path),
 			"{query}":         r.URL.RawQuery,
