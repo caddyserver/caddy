@@ -93,7 +93,10 @@ func RenewManagedCertificates(allowPrompts bool) (err error) {
 				continue
 			}
 
-			// this works well because managed certs are only associated with one name per config
+			// This works well because managed certs are only associated with one name per config.
+			// Note, the renewal inside here may not actually occur and no error will be returned
+			// due to renewal lock (i.e. because a renewal is already happening). This lack of
+			// error is by intention to force cache invalidation as though it has renewed.
 			err := cert.Config.RenewCert(allowPrompts)
 
 			if err != nil {

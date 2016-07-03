@@ -93,51 +93,35 @@ func TestStorageForCustomNil(t *testing.T) {
 
 type fakeStorage string
 
-func (s fakeStorage) SiteInfoExists(domain string) bool {
+func (s fakeStorage) SiteExists(domain string) bool {
 	panic("no impl")
 }
 
-func (s fakeStorage) LoadSiteCert(domain string) ([]byte, error) {
+func (s fakeStorage) LoadSite(domain string) (*SiteData, error) {
 	panic("no impl")
 }
 
-func (s fakeStorage) StoreSiteCert(domain string, byts []byte) error {
+func (s fakeStorage) StoreSite(domain string, data *SiteData) error {
 	panic("no impl")
 }
 
-func (s fakeStorage) DeleteSiteCert(domain string) error {
+func (s fakeStorage) DeleteSite(domain string) error {
 	panic("no impl")
 }
 
-func (s fakeStorage) LoadSiteKey(domain string) ([]byte, error) {
+func (s fakeStorage) LockRegister(domain string) (bool, error) {
 	panic("no impl")
 }
 
-func (s fakeStorage) StoreSiteKey(domain string, byts []byte) error {
+func (s fakeStorage) UnlockRegister(domain string) error {
 	panic("no impl")
 }
 
-func (s fakeStorage) LoadSiteMeta(domain string) ([]byte, error) {
+func (s fakeStorage) LoadUser(email string) (*UserData, error) {
 	panic("no impl")
 }
 
-func (s fakeStorage) StoreSiteMeta(domain string, byts []byte) error {
-	panic("no impl")
-}
-
-func (s fakeStorage) LoadUserReg(email string) ([]byte, error) {
-	panic("no impl")
-}
-
-func (s fakeStorage) StoreUserReg(email string, byts []byte) error {
-	panic("no impl")
-}
-
-func (s fakeStorage) LoadUserKey(email string) ([]byte, error) {
-	panic("no impl")
-}
-
-func (s fakeStorage) StoreUserKey(email string, byts []byte) error {
+func (s fakeStorage) StoreUser(email string, data *UserData) error {
 	panic("no impl")
 }
 

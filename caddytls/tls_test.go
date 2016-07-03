@@ -109,28 +109,18 @@ func TestSaveCertResource(t *testing.T) {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
 
-	certFile, err := storage.LoadSiteCert(domain)
+	siteData, err := storage.LoadSite(domain)
 	if err != nil {
-		t.Errorf("Expected no error reading certificate file, got: %v", err)
+		t.Errorf("Expected no error reading site, got: %v", err)
 	}
-	if string(certFile) != certContents {
-		t.Errorf("Expected certificate file to contain '%s', got '%s'", certContents, string(certFile))
+	if string(siteData.Cert) != certContents {
+		t.Errorf("Expected certificate file to contain '%s', got '%s'", certContents, string(siteData.Cert))
 	}
-
-	keyFile, err := storage.LoadSiteKey(domain)
-	if err != nil {
-		t.Errorf("Expected no error reading private key file, got: %v", err)
+	if string(siteData.Key) != keyContents {
+		t.Errorf("Expected private key file to contain '%s', got '%s'", keyContents, string(siteData.Key))
 	}
-	if string(keyFile) != keyContents {
-		t.Errorf("Expected private key file to contain '%s', got '%s'", keyContents, string(keyFile))
-	}
-
-	metaFile, err := storage.LoadSiteMeta(domain)
-	if err != nil {
-		t.Errorf("Expected no error reading meta file, got: %v", err)
-	}
-	if string(metaFile) != metaContents {
-		t.Errorf("Expected meta file to contain '%s', got '%s'", metaContents, string(metaFile))
+	if string(siteData.Meta) != metaContents {
+		t.Errorf("Expected meta file to contain '%s', got '%s'", metaContents, string(siteData.Meta))
 	}
 }
 
@@ -145,7 +135,7 @@ func TestExistingCertAndKey(t *testing.T) {
 
 	domain := "example.com"
 
-	if storage.SiteInfoExists(domain) {
+	if storage.SiteExists(domain) {
 		t.Errorf("Did NOT expect %v to have existing cert or key, but it did", domain)
 	}
 
@@ -158,7 +148,7 @@ func TestExistingCertAndKey(t *testing.T) {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
 
-	if !storage.SiteInfoExists(domain) {
+	if !storage.SiteExists(domain) {
 		t.Errorf("Expected %v to have existing cert and key, but it did NOT", domain)
 	}
 }

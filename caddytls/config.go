@@ -11,6 +11,7 @@ import (
 
 	"github.com/mholt/caddy"
 	"github.com/xenolf/lego/acme"
+	"log"
 	"net/url"
 	"strings"
 )
@@ -99,7 +100,9 @@ type Config struct {
 
 	// The explicitly set storage creator or nil; use
 	// StorageFor() to get a guaranteed non-nil Storage
-	// instance
+	// instance. Note, Caddy may call this frequently so
+	// implementors are encouraged to cache any heavy
+	// instantiations.
 	StorageCreator StorageCreator
 }
 
@@ -118,9 +121,22 @@ func (c *Config) obtainCertName(name string, allowPrompts bool) error {
 		return err
 	}
 
-	if !c.Managed || !HostQualifies(name) || storage.SiteInfoExists(name) {
+	if !c.Managed || !HostQualifies(name) || storage.SiteExists(name) {
 		return nil
 	}
+
+	// We must lock the obtain with the storage engine
+	if lockObtained, err := storage.LockRegister(name); err != nil {
+		return err
+	} else if !lockObtained {
+		log.Printf("[INFO] Certificate for %v is already being obtained elsewhere", name)
+		return nil
+	}
+	defer func() {
+		if err := storage.UnlockRegister(name); err != nil {
+			log.Printf("[ERROR] Unable to unlock obtain lock for %v: %v", name, err)
+		}
+	}()
 
 	if c.ACMEEmail == "" {
 		c.ACMEEmail = getEmail(storage, allowPrompts)
@@ -134,34 +150,43 @@ func (c *Config) obtainCertName(name string, allowPrompts bool) error {
 	return client.Obtain([]string{name})
 }
 
-// RenewCert renews the certificate for c.Hostname.
+// RenewCert renews the certificate for c.Hostname. If there is already a lock
+// on renewal, this will not perform the renewal and no error will occur.
 func (c *Config) RenewCert(allowPrompts bool) error {
 	return c.renewCertName(c.Hostname, allowPrompts)
 }
 
+// renewCertName renews the certificate for the given name. If there is already
+// a lock on renewal, this will not perform the renewal and no error will
+// occur.
 func (c *Config) renewCertName(name string, allowPrompts bool) error {
 	storage, err := c.StorageFor(c.CAUrl)
 	if err != nil {
 		return err
 	}
 
+	// We must lock the renewal with the storage engine
+	if lockObtained, err := storage.LockRegister(name); err != nil {
+		return err
+	} else if !lockObtained {
+		log.Printf("[INFO] Certificate for %v is already being renewed elsewhere", name)
+		return nil
+	}
+	defer func() {
+		if err := storage.UnlockRegister(name); err != nil {
+			log.Printf("[ERROR] Unable to unlock renewal lock for %v: %v", name, err)
+		}
+	}()
+
 	// Prepare for renewal (load PEM cert, key, and meta)
-	certBytes, err := storage.LoadSiteCert(c.Hostname)
-	if err != nil {
-		return err
-	}
-	keyBytes, err := storage.LoadSiteKey(c.Hostname)
-	if err != nil {
-		return err
-	}
-	metaBytes, err := storage.LoadSiteMeta(c.Hostname)
+	siteData, err := storage.LoadSite(c.Hostname)
 	if err != nil {
 		return err
 	}
 	var certMeta acme.CertificateResource
-	err = json.Unmarshal(metaBytes, &certMeta)
-	certMeta.Certificate = certBytes
-	certMeta.PrivateKey = keyBytes
+	err = json.Unmarshal(siteData.Meta, &certMeta)
+	certMeta.Certificate = siteData.Cert
+	certMeta.PrivateKey = siteData.Key
 
 	client, err := newACMEClient(c, allowPrompts)
 	if err != nil {

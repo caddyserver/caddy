@@ -96,15 +96,11 @@ func CacheManagedCertificate(domain string, cfg *Config) (Certificate, error) {
 	if err != nil {
 		return Certificate{}, err
 	}
-	certPEMBlock, err := storage.LoadSiteCert(domain)
+	siteData, err := storage.LoadSite(domain)
 	if err != nil {
 		return Certificate{}, err
 	}
-	keyPEMBlock, err := storage.LoadSiteKey(domain)
-	if err != nil {
-		return Certificate{}, err
-	}
-	cert, err := makeCertificate(certPEMBlock, keyPEMBlock)
+	cert, err := makeCertificate(siteData.Cert, siteData.Key)
 	if err != nil {
 		return cert, err
 	}

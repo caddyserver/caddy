@@ -3,6 +3,7 @@
 package storagetest
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"github.com/mholt/caddy/caddytls"
@@ -58,13 +59,9 @@ func (s *StorageTest) runPostTest() {
 // AllFuncs returns all test functions that are part of this harness.
 func (s *StorageTest) AllFuncs() []TestFunc {
 	return []TestFunc{
-		{"TestSiteInfoExists", s.TestSiteInfoExists},
-		{"TestSiteInfoExistsNoCert", s.TestSiteInfoExistsNoCert},
-		{"TestSiteCert", s.TestSiteCert},
-		{"TestSiteKey", s.TestSiteKey},
-		{"TestSiteMeta", s.TestSiteMeta},
-		{"TestUserReg", s.TestUserReg},
-		{"TestUserKey", s.TestUserKey},
+		{"TestSiteInfoExists", s.TestSiteExists},
+		{"TestSite", s.TestSite},
+		{"TestUser", s.TestUser},
 		{"TestMostRecentUserEmail", s.TestMostRecentUserEmail},
 	}
 }
@@ -97,163 +94,129 @@ func (s *StorageTest) TestAll(eagerFail bool) (errs []error) {
 	return
 }
 
-// TestSiteInfoExists tests Storage.SiteInfoExists.
-func (s *StorageTest) TestSiteInfoExists() error {
+var simpleSiteData = &caddytls.SiteData{[]byte("foo"), []byte("bar"), []byte("baz")}
+var simpleSiteDataAlt = &caddytls.SiteData{[]byte("qux"), []byte("quux"), []byte("corge")}
+
+// TestSiteExists tests Storage.SiteExists.
+func (s *StorageTest) TestSiteExists() error {
 	if err := s.runPreTest(); err != nil {
 		return err
 	}
 	defer s.runPostTest()
 
 	// Should not exist at first
-	if s.SiteInfoExists("example.com") {
+	if s.SiteExists("example.com") {
 		return errors.New("Site should not exist")
 	}
 
-	// Still should not exist even if we just put the cert there
-	if err := s.StoreSiteCert("example.com", []byte("foo")); err != nil {
+	// Should exist after we store it
+	if err := s.StoreSite("example.com", simpleSiteData); err != nil {
 		return err
 	}
-	if s.SiteInfoExists("example.com") {
-		return errors.New("Site should not exist with just cert")
-	}
-
-	// Should exist after we put the key there
-	if err := s.StoreSiteKey("example.com", []byte("foo")); err != nil {
-		return err
-	}
-	if !s.SiteInfoExists("example.com") {
+	if !s.SiteExists("example.com") {
 		return errors.New("Expected site to exist")
 	}
 
 	// Site should no longer exist after we delete it
-	if err := s.DeleteSiteCert("example.com"); err != nil {
+	if err := s.DeleteSite("example.com"); err != nil {
 		return err
 	}
-	if s.SiteInfoExists("example.com") {
+	if s.SiteExists("example.com") {
 		return errors.New("Site should not exist after delete")
 	}
 	return nil
 }
 
-// TestSiteInfoExistsNoCert tests Storage.SiteInfoExists when a cert is not
-// present.
-func (s *StorageTest) TestSiteInfoExistsNoCert() error {
+// TestSite tests Storage.LoadSite, Storage.StoreSite, and Storage.DeleteSite.
+func (s *StorageTest) TestSite() error {
 	if err := s.runPreTest(); err != nil {
 		return err
 	}
 	defer s.runPostTest()
 
-	// Had to be separated from TestSiteInfoExists because this tests
-	// setting a key first without setting a cert
-	if err := s.StoreSiteKey("example.com", []byte("foo")); err != nil {
-		return err
-	}
-	if s.SiteInfoExists("example.com") {
-		return errors.New("Site should not exist with just key")
-	}
-	return nil
-}
-
-// loadFunc represents byte array loader.
-type loadFunc func(string) ([]byte, error)
-
-// storeFunc represents byte array persister.
-type storeFunc func(string, []byte) error
-
-// deleteFunc represents byte array deleter.
-type deleteFunc func(string) error
-
-// testLoadAndStore tests load, store, and delete functions of the storage. All
-// parameters must be non-nil except for deleteFn which can be nil.
-func testLoadAndStore(key string, loadFn loadFunc, storeFn storeFunc, deleteFn deleteFunc) error {
 	// Should be a not-found error at first
-	if _, err := loadFn(key); err != caddytls.ErrStorageNotFound {
+	if _, err := s.LoadSite("example.com"); err != caddytls.ErrStorageNotFound {
 		return fmt.Errorf("Expected ErrStorageNotFound from load, got: %v", err)
 	}
 
-	// If there is a delete, it should also be a not-found error at first
-	if deleteFn != nil {
-		if err := deleteFn(key); err != caddytls.ErrStorageNotFound {
-			return fmt.Errorf("Expected ErrStorageNotFound from delete, got: %v", err)
-		}
+	// Delete should also be a not-found error at first
+	if err := s.DeleteSite("example.com"); err != caddytls.ErrStorageNotFound {
+		return fmt.Errorf("Expected ErrStorageNotFound from delete, got: %v", err)
 	}
 
 	// Should store successfully and then load just fine
-	if err := storeFn(key, []byte("foo")); err != nil {
+	if err := s.StoreSite("example.com", simpleSiteData); err != nil {
 		return err
 	}
-	if byts, err := loadFn(key); err != nil {
+	if siteData, err := s.LoadSite("example.com"); err != nil {
 		return err
-	} else if string(byts) != "foo" {
-		return errors.New("Unexpected bytes returned after store")
+	} else if !bytes.Equal(siteData.Cert, simpleSiteData.Cert) {
+		return errors.New("Unexpected cert returned after store")
+	} else if !bytes.Equal(siteData.Key, simpleSiteData.Key) {
+		return errors.New("Unexpected key returned after store")
+	} else if !bytes.Equal(siteData.Meta, simpleSiteData.Meta) {
+		return errors.New("Unexpected meta returned after store")
 	}
 
 	// Overwrite should work just fine
-	if err := storeFn(key, []byte("bar")); err != nil {
+	if err := s.StoreSite("example.com", simpleSiteDataAlt); err != nil {
 		return err
 	}
-	if byts, err := loadFn(key); err != nil {
+	if siteData, err := s.LoadSite("example.com"); err != nil {
 		return err
-	} else if string(byts) != "bar" {
-		return errors.New("Unexpected bytes returned after overwrite")
+	} else if !bytes.Equal(siteData.Cert, simpleSiteDataAlt.Cert) {
+		return errors.New("Unexpected cert returned after overwrite")
 	}
 
-	// If there is a delete, it should delete fine and then not be there
-	if deleteFn != nil {
-		if err := deleteFn(key); err != nil {
-			return err
-		}
-		if _, err := loadFn(key); err != caddytls.ErrStorageNotFound {
-			return fmt.Errorf("Expected ErrStorageNotFound after delete, got: %v", err)
-		}
+	// It should delete fine and then not be there
+	if err := s.DeleteSite("example.com"); err != nil {
+		return err
+	}
+	if _, err := s.LoadSite("example.com"); err != caddytls.ErrStorageNotFound {
+		return fmt.Errorf("Expected ErrStorageNotFound after delete, got: %v", err)
 	}
 
 	return nil
 }
 
-// TestSiteCert tests Storage.*SiteCert.
-func (s *StorageTest) TestSiteCert() error {
-	if err := s.runPreTest(); err != nil {
-		return err
-	}
-	defer s.runPostTest()
-	return testLoadAndStore("example.com", s.LoadSiteCert, s.StoreSiteCert, s.DeleteSiteCert)
-}
+var simpleUserData = &caddytls.UserData{[]byte("foo"), []byte("bar")}
+var simpleUserDataAlt = &caddytls.UserData{[]byte("baz"), []byte("qux")}
 
-// TestSiteKey tests Storage.*SiteKey.
-func (s *StorageTest) TestSiteKey() error {
+// TestUser tests Storage.LoadUser and Storage.StoreUser.
+func (s *StorageTest) TestUser() error {
 	if err := s.runPreTest(); err != nil {
 		return err
 	}
 	defer s.runPostTest()
-	return testLoadAndStore("example.com", s.LoadSiteKey, s.StoreSiteKey, nil)
-}
 
-// TestSiteMeta tests Storage.*SiteMeta.
-func (s *StorageTest) TestSiteMeta() error {
-	if err := s.runPreTest(); err != nil {
-		return err
+	// Should be a not-found error at first
+	if _, err := s.LoadUser("foo@example.com"); err != caddytls.ErrStorageNotFound {
+		return fmt.Errorf("Expected ErrStorageNotFound from load, got: %v", err)
 	}
-	defer s.runPostTest()
-	return testLoadAndStore("example.com", s.LoadSiteMeta, s.StoreSiteMeta, nil)
-}
 
-// TestUserReg tests Storage.*UserReg.
-func (s *StorageTest) TestUserReg() error {
-	if err := s.runPreTest(); err != nil {
+	// Should store successfully and then load just fine
+	if err := s.StoreUser("foo@example.com", simpleUserData); err != nil {
 		return err
 	}
-	defer s.runPostTest()
-	return testLoadAndStore("foo@example.com", s.LoadUserReg, s.StoreUserReg, nil)
-}
+	if userData, err := s.LoadUser("foo@example.com"); err != nil {
+		return err
+	} else if !bytes.Equal(userData.Reg, simpleUserData.Reg) {
+		return errors.New("Unexpected reg returned after store")
+	} else if !bytes.Equal(userData.Key, simpleUserData.Key) {
+		return errors.New("Unexpected key returned after store")
+	}
 
-// TestUserKey tests Storage.*UserKey.
-func (s *StorageTest) TestUserKey() error {
-	if err := s.runPreTest(); err != nil {
+	// Overwrite should work just fine
+	if err := s.StoreUser("foo@example.com", simpleUserDataAlt); err != nil {
 		return err
 	}
-	defer s.runPostTest()
-	return testLoadAndStore("foo@example.com", s.LoadUserKey, s.StoreUserKey, nil)
+	if userData, err := s.LoadUser("foo@example.com"); err != nil {
+		return err
+	} else if !bytes.Equal(userData.Reg, simpleUserDataAlt.Reg) {
+		return errors.New("Unexpected reg returned after overwrite")
+	}
+
+	return nil
 }
 
 // TestMostRecentUserEmail tests Storage.MostRecentUserEmail.
@@ -268,19 +231,19 @@ func (s *StorageTest) TestMostRecentUserEmail() error {
 		return fmt.Errorf("Expected empty most recent user on first run, got: %v", e)
 	}
 
-	// If we store user reg, then that one should be returned
-	if err := s.StoreUserReg("foo1@example.com", []byte("foo")); err != nil {
+	// If we store user, then that one should be returned
+	if err := s.StoreUser("foo1@example.com", simpleUserData); err != nil {
 		return err
 	}
 	if s.AfterUserEmailStore != nil {
 		s.AfterUserEmailStore("foo1@example.com")
 	}
 	if e := s.MostRecentUserEmail(); e != "foo1@example.com" {
-		return fmt.Errorf("Unexpected most recent email after user reg: %v", e)
+		return fmt.Errorf("Unexpected most recent email after first store: %v", e)
 	}
 
-	// If we store user key, then that one should be returned
-	if err := s.StoreUserKey("foo2@example.com", []byte("foo")); err != nil {
+	// If we store another user, then that one should be returned
+	if err := s.StoreUser("foo2@example.com", simpleUserDataAlt); err != nil {
 		return err
 	}
 	if s.AfterUserEmailStore != nil {
@@ -288,17 +251,6 @@ func (s *StorageTest) TestMostRecentUserEmail() error {
 	}
 	if e := s.MostRecentUserEmail(); e != "foo2@example.com" {
 		return fmt.Errorf("Unexpected most recent email after user key: %v", e)
-	}
-
-	// If we store user reg again, it should NOT should be returned
-	if err := s.StoreUserReg("foo1@example.com", []byte("foo")); err != nil {
-		return err
-	}
-	if s.AfterUserEmailStore != nil {
-		s.AfterUserEmailStore("foo1@example.com")
-	}
-	if e := s.MostRecentUserEmail(); e != "foo1@example.com" {
-		return fmt.Errorf("Unexpected most recent email after second user reg: %v", e)
 	}
 	return nil
 }

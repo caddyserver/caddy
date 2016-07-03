@@ -101,7 +101,7 @@ func getUser(storage Storage, email string) (User, error) {
 	var user User
 
 	// open user reg
-	regBytes, err := storage.LoadUserReg(email)
+	userData, err := storage.LoadUser(email)
 	if err != nil {
 		if err == ErrStorageNotFound {
 			// create a new user
@@ -111,17 +111,13 @@ func getUser(storage Storage, email string) (User, error) {
 	}
 
 	// load user information
-	err = json.Unmarshal(regBytes, &user)
+	err = json.Unmarshal(userData.Reg, &user)
 	if err != nil {
 		return user, err
 	}
 
 	// load their private key
-	userKeyBytes, err := storage.LoadUserKey(email)
-	if err != nil {
-		return user, err
-	}
-	user.key, err = loadPrivateKey(userKeyBytes)
+	user.key, err = loadPrivateKey(userData.Key)
 	if err != nil {
 		return user, err
 	}
@@ -135,22 +131,17 @@ func getUser(storage Storage, email string) (User, error) {
 // wherein the user should be saved. It should be the storage
 // for the CA with which user has an account.
 func saveUser(storage Storage, user User) error {
-	// Save the private key
-	keyBytes, err := savePrivateKey(user.key)
-	if err != nil {
-		return err
+	// Save the private key and registration
+	userData := new(UserData)
+	var err error
+	userData.Key, err = savePrivateKey(user.key)
+	if err == nil {
+		userData.Reg, err = json.MarshalIndent(&user, "", "\t")
 	}
-	err = storage.StoreUserKey(user.Email, keyBytes)
-	if err != nil {
-		return err
+	if err == nil {
+		err = storage.StoreUser(user.Email, userData)
 	}
-
-	// Save registration file
-	jsonBytes, err := json.MarshalIndent(&user, "", "\t")
-	if err != nil {
-		return err
-	}
-	return storage.StoreUserReg(user.Email, jsonBytes)
+	return err
 }
 
 // promptUserAgreement prompts the user to agree to the agreement

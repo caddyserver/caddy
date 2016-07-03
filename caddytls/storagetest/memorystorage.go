@@ -31,128 +31,102 @@ func InMemoryStorageCreator(caURL *url.URL) (caddytls.Storage, error) {
 // InMemoryStorage is a caddytls.Storage implementation for use in testing.
 // It simply stores information in runtime memory.
 type InMemoryStorage struct {
-	siteCerts     map[string][]byte
-	siteKeys      map[string][]byte
-	siteMetas     map[string][]byte
-	userRegs      map[string][]byte
-	userKeys      map[string][]byte
-	lastUserEmail string
+	// Sites are exposed for testing purposes.
+	Sites map[string]*caddytls.SiteData
+	// Users are exposed for testing purposes.
+	Users map[string]*caddytls.UserData
+	// LastUserEmail is exposed for testing purposes.
+	LastUserEmail string
 }
 
 // NewInMemoryStorage constructs an InMemoryStorage instance. For use with
 // caddytls, the InMemoryStorageCreator should be used instead.
 func NewInMemoryStorage() *InMemoryStorage {
 	return &InMemoryStorage{
-		siteCerts: make(map[string][]byte),
-		siteKeys:  make(map[string][]byte),
-		siteMetas: make(map[string][]byte),
-		userRegs:  make(map[string][]byte),
-		userKeys:  make(map[string][]byte),
+		Sites: make(map[string]*caddytls.SiteData),
+		Users: make(map[string]*caddytls.UserData),
 	}
 }
 
-// SiteInfoExists implements caddytls.Storage.SiteInfoExists in memory.
-func (s *InMemoryStorage) SiteInfoExists(domain string) bool {
-	_, siteCertExists := s.siteCerts[domain]
-	_, siteKeyExists := s.siteKeys[domain]
-	return siteCertExists && siteKeyExists
-}
-
-// loadFromMap loads from a map, taking care to error with ErrStorageNotFound
-// as needed.
-func loadFromMap(key string, m map[string][]byte) ([]byte, error) {
-	v, ok := m[key]
-	if !ok {
-		return nil, caddytls.ErrStorageNotFound
-	}
-	return v, nil
-}
-
-// storeInMap stores in a map, taking care to copy the bytes instead of keeping
-// the slice reference.
-func storeInMap(key string, value []byte, m map[string][]byte) {
-	copiedBytes := make([]byte, len(value))
-	copy(copiedBytes, value)
-	m[key] = copiedBytes
+// SiteExists implements caddytls.Storage.SiteExists in memory.
+func (s *InMemoryStorage) SiteExists(domain string) bool {
+	_, siteExists := s.Sites[domain]
+	return siteExists
 }
 
 // Clear completely clears all values associated with this storage.
 func (s *InMemoryStorage) Clear() {
-	s.siteCerts = make(map[string][]byte)
-	s.siteKeys = make(map[string][]byte)
-	s.siteMetas = make(map[string][]byte)
-	s.userRegs = make(map[string][]byte)
-	s.userKeys = make(map[string][]byte)
-	s.lastUserEmail = ""
+	s.Sites = make(map[string]*caddytls.SiteData)
+	s.Users = make(map[string]*caddytls.UserData)
+	s.LastUserEmail = ""
 }
 
-// LoadSiteCert implements caddytls.Storage.LoadSiteCert in memory.
-func (s *InMemoryStorage) LoadSiteCert(domain string) ([]byte, error) {
-	return loadFromMap(domain, s.siteCerts)
+// LoadSite implements caddytls.Storage.LoadSite in memory.
+func (s *InMemoryStorage) LoadSite(domain string) (*caddytls.SiteData, error) {
+	siteData, ok := s.Sites[domain]
+	if !ok {
+		return nil, caddytls.ErrStorageNotFound
+	}
+	return siteData, nil
 }
 
-// StoreSiteCert implements caddytls.Storage.StoreSiteCert in memory.
-func (s *InMemoryStorage) StoreSiteCert(domain string, byts []byte) error {
-	storeInMap(domain, byts, s.siteCerts)
+func copyBytes(from []byte) []byte {
+	copiedBytes := make([]byte, len(from))
+	copy(copiedBytes, from)
+	return copiedBytes
+}
+
+// StoreSite implements caddytls.Storage.StoreSite in memory.
+func (s *InMemoryStorage) StoreSite(domain string, data *caddytls.SiteData) error {
+	copiedData := new(caddytls.SiteData)
+	copiedData.Cert = copyBytes(data.Cert)
+	copiedData.Key = copyBytes(data.Key)
+	copiedData.Meta = copyBytes(data.Meta)
+	s.Sites[domain] = copiedData
 	return nil
 }
 
-// DeleteSiteCert implements caddytls.Storage.DeleteSiteCert in memory.
-func (s *InMemoryStorage) DeleteSiteCert(domain string) error {
-	if _, ok := s.siteCerts[domain]; !ok {
+// DeleteSite implements caddytls.Storage.DeleteSite in memory.
+func (s *InMemoryStorage) DeleteSite(domain string) error {
+	if _, ok := s.Sites[domain]; !ok {
 		return caddytls.ErrStorageNotFound
 	}
-	delete(s.siteCerts, domain)
+	delete(s.Sites, domain)
 	return nil
 }
 
-// LoadSiteKey implements caddytls.Storage.LoadSiteKey in memory.
-func (s *InMemoryStorage) LoadSiteKey(domain string) ([]byte, error) {
-	return loadFromMap(domain, s.siteKeys)
+// LockRegister implements Storage.LockRegister by just returning true because
+// it is not a multi-server storage implementation.
+func (s *InMemoryStorage) LockRegister(domain string) (bool, error) {
+	return true, nil
 }
 
-// StoreSiteKey implements caddytls.Storage.StoreSiteKey in memory.
-func (s *InMemoryStorage) StoreSiteKey(domain string, byts []byte) error {
-	storeInMap(domain, byts, s.siteKeys)
+// UnlockRegister implements Storage.UnlockRegister as a no-op because it is
+// not a multi-server storage implementation.
+func (s *InMemoryStorage) UnlockRegister(domain string) error {
 	return nil
 }
 
-// LoadSiteMeta implements caddytls.Storage.LoadSiteMeta in memory.
-func (s *InMemoryStorage) LoadSiteMeta(domain string) ([]byte, error) {
-	return loadFromMap(domain, s.siteMetas)
+// LoadUser implements caddytls.Storage.LoadUser in memory.
+func (s *InMemoryStorage) LoadUser(email string) (*caddytls.UserData, error) {
+	userData, ok := s.Users[email]
+	if !ok {
+		return nil, caddytls.ErrStorageNotFound
+	}
+	return userData, nil
 }
 
-// StoreSiteMeta implements caddytls.Storage.StoreSiteMeta in memory.
-func (s *InMemoryStorage) StoreSiteMeta(domain string, byts []byte) error {
-	storeInMap(domain, byts, s.siteMetas)
-	return nil
-}
-
-// LoadUserReg implements caddytls.Storage.LoadUserReg in memory.
-func (s *InMemoryStorage) LoadUserReg(email string) ([]byte, error) {
-	return loadFromMap(email, s.userRegs)
-}
-
-// StoreUserReg implements caddytls.Storage.StoreUserReg in memory.
-func (s *InMemoryStorage) StoreUserReg(email string, byts []byte) error {
-	storeInMap(email, byts, s.userRegs)
-	s.lastUserEmail = email
-	return nil
-}
-
-// LoadUserKey implements caddytls.Storage.LoadUserKey in memory.
-func (s *InMemoryStorage) LoadUserKey(email string) ([]byte, error) {
-	return loadFromMap(email, s.userKeys)
-}
-
-// StoreUserKey implements caddytls.Storage.StoreUserKey in memory.
-func (s *InMemoryStorage) StoreUserKey(email string, byts []byte) error {
-	storeInMap(email, byts, s.userKeys)
-	s.lastUserEmail = email
+// StoreUser implements caddytls.Storage.StoreUser in memory.
+func (s *InMemoryStorage) StoreUser(email string, data *caddytls.UserData) error {
+	copiedData := new(caddytls.UserData)
+	copiedData.Reg = copyBytes(data.Reg)
+	copiedData.Key = copyBytes(data.Key)
+	s.Users[email] = copiedData
+	s.LastUserEmail = email
 	return nil
 }
 
 // MostRecentUserEmail implements caddytls.Storage.MostRecentUserEmail in memory.
 func (s *InMemoryStorage) MostRecentUserEmail() string {
-	return s.lastUserEmail
+	return s.LastUserEmail
 }

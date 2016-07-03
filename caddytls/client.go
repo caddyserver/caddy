@@ -207,23 +207,28 @@ func (c *ACMEClient) Renew(name string) error {
 		return err
 	}
 
+	// We must lock the renewal with the storage engine
+	if lockObtained, err := storage.LockRegister(name); err != nil {
+		return err
+	} else if !lockObtained {
+		log.Printf("[INFO] Certificate for %v is already being renewed elsewhere", name)
+		return nil
+	}
+	defer func() {
+		if err := storage.UnlockRegister(name); err != nil {
+			log.Printf("[ERROR] Unable to unlock renewal lock for %v: %v", name, err)
+		}
+	}()
+
 	// Prepare for renewal (load PEM cert, key, and meta)
-	certBytes, err := storage.LoadSiteCert(name)
-	if err != nil {
-		return err
-	}
-	keyBytes, err := storage.LoadSiteKey(name)
-	if err != nil {
-		return err
-	}
-	metaBytes, err := storage.LoadSiteMeta(name)
+	siteData, err := storage.LoadSite(name)
 	if err != nil {
 		return err
 	}
 	var certMeta acme.CertificateResource
-	err = json.Unmarshal(metaBytes, &certMeta)
-	certMeta.Certificate = certBytes
-	certMeta.PrivateKey = keyBytes
+	err = json.Unmarshal(siteData.Meta, &certMeta)
+	certMeta.Certificate = siteData.Cert
+	certMeta.PrivateKey = siteData.Key
 
 	// Perform renewal and retry if necessary, but not too many times.
 	var newCertMeta acme.CertificateResource
@@ -268,21 +273,21 @@ func (c *ACMEClient) Revoke(name string) error {
 		return err
 	}
 
-	if !storage.SiteInfoExists(name) {
+	if !storage.SiteExists(name) {
 		return errors.New("no certificate and key for " + name)
 	}
 
-	certBytes, err := storage.LoadSiteCert(name)
+	siteData, err := storage.LoadSite(name)
 	if err != nil {
 		return err
 	}
 
-	err = c.Client.RevokeCertificate(certBytes)
+	err = c.Client.RevokeCertificate(siteData.Cert)
 	if err != nil {
 		return err
 	}
 
-	err = storage.DeleteSiteCert(name)
+	err = storage.DeleteSite(name)
 	if err != nil {
 		return errors.New("certificate revoked, but unable to delete certificate file: " + err.Error())
 	}

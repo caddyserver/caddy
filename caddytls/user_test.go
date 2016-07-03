@@ -67,13 +67,9 @@ func TestSaveUser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error saving user: %v", err)
 	}
-	_, err = testStorage.LoadUserReg(email)
+	_, err = testStorage.LoadUser(email)
 	if err != nil {
-		t.Errorf("Cannot access user registration file, error: %v", err)
-	}
-	_, err = testStorage.LoadUserKey(email)
-	if err != nil {
-		t.Errorf("Cannot access user private key file, error: %v", err)
+		t.Errorf("Cannot access user data, error: %v", err)
 	}
 }
 

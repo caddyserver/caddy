@@ -119,9 +119,9 @@ func (s FileStorage) readFile(file string) ([]byte, error) {
 	return byts, err
 }
 
-// SiteInfoExists implements Storage.SiteInfoExists by checking for the
-// presence of cert and key files.
-func (s FileStorage) SiteInfoExists(domain string) bool {
+// SiteExists implements Storage.SiteExists by checking for the presence of
+// cert and key files.
+func (s FileStorage) SiteExists(domain string) bool {
 	_, err := os.Stat(s.siteCertFile(domain))
 	if err != nil {
 		return false
@@ -133,25 +133,42 @@ func (s FileStorage) SiteInfoExists(domain string) bool {
 	return true
 }
 
-// LoadSiteCert implements Storage.LoadSiteCert by loading it from disk. If it
-// is not present, the ErrStorageNotFound error instance is returned.
-func (s FileStorage) LoadSiteCert(domain string) ([]byte, error) {
-	return s.readFile(s.siteCertFile(domain))
+// LoadSite implements Storage.LoadSite by loading it from disk. If it is not
+// present, the ErrStorageNotFound error instance is returned.
+func (s FileStorage) LoadSite(domain string) (*SiteData, error) {
+	var err error
+	siteData := new(SiteData)
+	siteData.Cert, err = s.readFile(s.siteCertFile(domain))
+	if err == nil {
+		siteData.Key, err = s.readFile(s.siteKeyFile(domain))
+	}
+	if err == nil {
+		siteData.Meta, err = s.readFile(s.siteMetaFile(domain))
+	}
+	return siteData, err
 }
 
-// StoreSiteCert implements Storage.StoreSiteCert by writing it to disk. The
-// base directories needed for the file are automatically created as needed.
-func (s FileStorage) StoreSiteCert(domain string, byts []byte) error {
+// StoreSite implements Storage.StoreSite by writing it to disk. The base
+// directories needed for the file are automatically created as needed.
+func (s FileStorage) StoreSite(domain string, data *SiteData) error {
 	err := os.MkdirAll(s.site(domain), 0700)
 	if err != nil {
 		return err
 	}
-	return ioutil.WriteFile(s.siteCertFile(domain), byts, 0600)
+	err = ioutil.WriteFile(s.siteCertFile(domain), data.Cert, 0600)
+	if err == nil {
+		err = ioutil.WriteFile(s.siteKeyFile(domain), data.Key, 0600)
+	}
+	if err == nil {
+		err = ioutil.WriteFile(s.siteMetaFile(domain), data.Meta, 0600)
+	}
+	return err
 }
 
-// DeleteSiteCert implements Storage.DeleteSiteCert by deleting it from disk.
-// If it is not present, the ErrStorageNotFound error instance is returned.
-func (s FileStorage) DeleteSiteCert(domain string) error {
+// DeleteSite implements Storage.DeleteSite by deleting just the cert from
+// disk. If it is not present, the ErrStorageNotFound error instance is
+// returned.
+func (s FileStorage) DeleteSite(domain string) error {
 	err := os.Remove(s.siteCertFile(domain))
 	if os.IsNotExist(err) {
 		return ErrStorageNotFound
@@ -159,74 +176,48 @@ func (s FileStorage) DeleteSiteCert(domain string) error {
 	return err
 }
 
-// LoadSiteKey implements Storage.LoadSiteKey by loading it from disk. If it
-// is not present, the ErrStorageNotFound error instance is returned.
-func (s FileStorage) LoadSiteKey(domain string) ([]byte, error) {
-	return s.readFile(s.siteKeyFile(domain))
+// LockRegister implements Storage.LockRegister by just returning true because
+// it is not a multi-server storage implementation.
+func (s FileStorage) LockRegister(domain string) (bool, error) {
+	return true, nil
 }
 
-// StoreSiteKey implements Storage.StoreSiteKey by writing it to disk. The
-// base directories needed for the file are automatically created as needed.
-func (s FileStorage) StoreSiteKey(domain string, byts []byte) error {
-	err := os.MkdirAll(s.site(domain), 0700)
-	if err != nil {
-		return err
+// UnlockRegister implements Storage.UnlockRegister as a no-op because it is
+// not a multi-server storage implementation.
+func (s FileStorage) UnlockRegister(domain string) error {
+	return nil
+}
+
+// LoadUser implements Storage.LoadUser by loading it from disk. If it is not
+// present, the ErrStorageNotFound error instance is returned.
+func (s FileStorage) LoadUser(email string) (*UserData, error) {
+	var err error
+	userData := new(UserData)
+	userData.Reg, err = s.readFile(s.userRegFile(email))
+	if err == nil {
+		userData.Key, err = s.readFile(s.userKeyFile(email))
 	}
-	return ioutil.WriteFile(s.siteKeyFile(domain), byts, 0600)
+	return userData, err
 }
 
-// LoadSiteMeta implements Storage.LoadSiteMeta by loading it from disk. If it
-// is not present, the ErrStorageNotFound error instance is returned.
-func (s FileStorage) LoadSiteMeta(domain string) ([]byte, error) {
-	return s.readFile(s.siteMetaFile(domain))
-}
-
-// StoreSiteMeta implements Storage.StoreSiteMeta by writing it to disk. The
-// base directories needed for the file are automatically created as needed.
-func (s FileStorage) StoreSiteMeta(domain string, byts []byte) error {
-	err := os.MkdirAll(s.site(domain), 0700)
-	if err != nil {
-		return err
-	}
-	return ioutil.WriteFile(s.siteMetaFile(domain), byts, 0600)
-}
-
-// LoadUserReg implements Storage.LoadUserReg by loading it from disk. If it
-// is not present, the ErrStorageNotFound error instance is returned.
-func (s FileStorage) LoadUserReg(email string) ([]byte, error) {
-	return s.readFile(s.userRegFile(email))
-}
-
-// StoreUserReg implements Storage.StoreUserReg by writing it to disk. The
-// base directories needed for the file are automatically created as needed.
-func (s FileStorage) StoreUserReg(email string, byts []byte) error {
+// StoreUser implements Storage.StoreUser by writing it to disk. The base
+// directories needed for the file are automatically created as needed.
+func (s FileStorage) StoreUser(email string, data *UserData) error {
 	err := os.MkdirAll(s.user(email), 0700)
 	if err != nil {
 		return err
 	}
-	return ioutil.WriteFile(s.userRegFile(email), byts, 0600)
-}
-
-// LoadUserKey implements Storage.LoadUserKey by loading it from disk. If it
-// is not present, the ErrStorageNotFound error instance is returned.
-func (s FileStorage) LoadUserKey(email string) ([]byte, error) {
-	return s.readFile(s.userKeyFile(email))
-}
-
-// StoreUserKey implements Storage.StoreUserKey by writing it to disk. The
-// base directories needed for the file are automatically created as needed.
-func (s FileStorage) StoreUserKey(email string, byts []byte) error {
-	err := os.MkdirAll(s.user(email), 0700)
-	if err != nil {
-		return err
+	err = ioutil.WriteFile(s.userRegFile(email), data.Reg, 0600)
+	if err == nil {
+		err = ioutil.WriteFile(s.userKeyFile(email), data.Key, 0600)
 	}
-	return ioutil.WriteFile(s.userKeyFile(email), byts, 0600)
+	return err
 }
 
-// MostRecentUserEmail implements Storage.MostRecentEmail by finding the most
-// recently written sub directory in the users' directory. It is named after
-// the email address. This corresponds to the most recent call to StoreUserReg
-// or StoreUserKey.
+// MostRecentUserEmail implements Storage.MostRecentUserEmail by finding the
+// most recently written sub directory in the users' directory. It is named
+// after the email address. This corresponds to the most recent call to
+// StoreUser.
 func (s FileStorage) MostRecentUserEmail() string {
 	userDirs, err := ioutil.ReadDir(s.users())
 	if err != nil {

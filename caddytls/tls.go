@@ -49,29 +49,17 @@ func HostQualifies(hostname string) bool {
 // includes the certificate file itself, the private key, and the
 // metadata file.
 func saveCertResource(storage Storage, cert acme.CertificateResource) error {
-	// Save cert
-	err := storage.StoreSiteCert(cert.Domain, cert.Certificate)
-	if err != nil {
-		return err
+	// Save cert, private key, and metadata
+	siteData := &SiteData{
+		Cert: cert.Certificate,
+		Key:  cert.PrivateKey,
 	}
-
-	// Save private key
-	err = storage.StoreSiteKey(cert.Domain, cert.PrivateKey)
-	if err != nil {
-		return err
+	var err error
+	siteData.Meta, err = json.MarshalIndent(&cert, "", "\t")
+	if err == nil {
+		err = storage.StoreSite(cert.Domain, siteData)
 	}
-
-	// Save cert metadata
-	jsonBytes, err := json.MarshalIndent(&cert, "", "\t")
-	if err != nil {
-		return err
-	}
-	err = storage.StoreSiteMeta(cert.Domain, jsonBytes)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
 // Revoke revokes the certificate for host via ACME protocol.
