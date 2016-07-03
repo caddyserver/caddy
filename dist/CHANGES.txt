@@ -11,11 +11,16 @@ CHANGES
 - Renamed -directives flag to -plugins
 - Restarting no longer requires spawning a new process
 - Removed -restart option
-- log: New {request} placeholder to dump entire request (sans body)
+- fastcgi: Env variables now support placeholders
+- import: Import paths now relative to Caddyfile, not current working dir
+- log: New {request} placeholder to dump entire request (without body)
 - markdown: Overhauled; removed site generation features
-- proxy: More control of headers
+- proxy: More control of headers; deprecating proxy_header subdirective
 - proxy: Specify multiple upstreams with optional port ranges
-- proxy: New preset 'transparent' to simplify common pass-thrus
+- proxy: New preset 'transparent' to simplify common pass-thru headers
+- proxy: Chooses longest matching path; order declared is irrelevant
+- redir: Added if and if_op subdirectives to make conditional redirects
+- rewrite: Support for if_op to change how conditions are evaluated
 - tls: Generate self-signed certificates in memory
 - tls: Support for ACME DNS challenge with 10 providers
 - tls: Support for TLS-SNI challenge during restarts

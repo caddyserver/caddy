@@ -344,6 +344,7 @@ var directives = []string{
 	// directives that add middleware to the stack
 	"log",
 	"gzip",
+	"locale", // github.com/simia-tech/caddy-locale
 	"errors",
 	"minify",   // github.com/hacdias/caddy-minify
 	"ipfilter", // github.com/pyed/ipfilter
