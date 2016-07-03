@@ -94,8 +94,16 @@ func (s *StorageTest) TestAll(eagerFail bool) (errs []error) {
 	return
 }
 
-var simpleSiteData = &caddytls.SiteData{[]byte("foo"), []byte("bar"), []byte("baz")}
-var simpleSiteDataAlt = &caddytls.SiteData{[]byte("qux"), []byte("quux"), []byte("corge")}
+var simpleSiteData = &caddytls.SiteData{
+	Cert: []byte("foo"),
+	Key:  []byte("bar"),
+	Meta: []byte("baz"),
+}
+var simpleSiteDataAlt = &caddytls.SiteData{
+	Cert: []byte("qux"),
+	Key:  []byte("quux"),
+	Meta: []byte("corge"),
+}
 
 // TestSiteExists tests Storage.SiteExists.
 func (s *StorageTest) TestSiteExists() error {
@@ -179,8 +187,14 @@ func (s *StorageTest) TestSite() error {
 	return nil
 }
 
-var simpleUserData = &caddytls.UserData{[]byte("foo"), []byte("bar")}
-var simpleUserDataAlt = &caddytls.UserData{[]byte("baz"), []byte("qux")}
+var simpleUserData = &caddytls.UserData{
+	Reg: []byte("foo"),
+	Key: []byte("bar"),
+}
+var simpleUserDataAlt = &caddytls.UserData{
+	Reg: []byte("baz"),
+	Key: []byte("qux"),
+}
 
 // TestUser tests Storage.LoadUser and Storage.StoreUser.
 func (s *StorageTest) TestUser() error {
