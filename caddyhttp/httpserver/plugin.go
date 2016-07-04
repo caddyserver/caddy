@@ -343,6 +343,7 @@ var directives = []string{
 
 	// directives that add middleware to the stack
 	"log",
+	"acl",      // github.com/atenart/caddy-acl
 	"gzip",
 	"locale", // github.com/simia-tech/caddy-locale
 	"errors",
