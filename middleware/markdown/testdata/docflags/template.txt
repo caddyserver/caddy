@@ -1,4 +1,0 @@
-Doc.var_string {{.Doc.var_string}}
-Doc.var_bool {{.Doc.var_bool}}
-DocFlags.var_string {{.DocFlags.var_string}}
-DocFlags.var_bool {{.DocFlags.var_bool}}

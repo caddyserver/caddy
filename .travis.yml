@@ -1,7 +1,7 @@
 language: go
 
 go:
-  - 1.6
+  - 1.6.2
   - tip
 
 env:

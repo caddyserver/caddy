@@ -1,0 +1,101 @@
+package templates
+
+import (
+	"net/http"
+
+	"github.com/mholt/caddy"
+	"github.com/mholt/caddy/caddyhttp/httpserver"
+)
+
+func init() {
+	caddy.RegisterPlugin("templates", caddy.Plugin{
+		ServerType: "http",
+		Action:     setup,
+	})
+}
+
+// setup configures a new Templates middleware instance.
+func setup(c *caddy.Controller) error {
+	rules, err := templatesParse(c)
+	if err != nil {
+		return err
+	}
+
+	cfg := httpserver.GetConfig(c)
+
+	tmpls := Templates{
+		Rules:   rules,
+		Root:    cfg.Root,
+		FileSys: http.Dir(cfg.Root),
+	}
+
+	cfg.AddMiddleware(func(next httpserver.Handler) httpserver.Handler {
+		tmpls.Next = next
+		return tmpls
+	})
+
+	return nil
+}
+
+func templatesParse(c *caddy.Controller) ([]Rule, error) {
+	var rules []Rule
+
+	for c.Next() {
+		var rule Rule
+
+		rule.Path = defaultTemplatePath
+		rule.Extensions = defaultTemplateExtensions
+
+		args := c.RemainingArgs()
+
+		switch len(args) {
+		case 0:
+			// Optional block
+			for c.NextBlock() {
+				switch c.Val() {
+				case "path":
+					args := c.RemainingArgs()
+					if len(args) != 1 {
+						return nil, c.ArgErr()
+					}
+					rule.Path = args[0]
+
+				case "ext":
+					args := c.RemainingArgs()
+					if len(args) == 0 {
+						return nil, c.ArgErr()
+					}
+					rule.Extensions = args
+
+				case "between":
+					args := c.RemainingArgs()
+					if len(args) != 2 {
+						return nil, c.ArgErr()
+					}
+					rule.Delims[0] = args[0]
+					rule.Delims[1] = args[1]
+				}
+			}
+		default:
+			// First argument would be the path
+			rule.Path = args[0]
+
+			// Any remaining arguments are extensions
+			rule.Extensions = args[1:]
+			if len(rule.Extensions) == 0 {
+				rule.Extensions = defaultTemplateExtensions
+			}
+		}
+
+		for _, ext := range rule.Extensions {
+			rule.IndexFiles = append(rule.IndexFiles, "index"+ext)
+		}
+
+		rules = append(rules, rule)
+	}
+	return rules, nil
+}
+
+const defaultTemplatePath = "/"
+
+var defaultTemplateExtensions = []string{".html", ".htm", ".tmpl", ".tpl", ".txt"}
