@@ -49,7 +49,7 @@ chmod 0770 /etc/ssl/caddy
 [Service]
 ; an empty value clears the original (and preceding) settings
 ExecStart=
-ExecStart=/usr/bin/caddy -conf="/etc/caddy/myCaddy.conf"
+ExecStart=/usr/local/bin/caddy -conf="/etc/caddy/myCaddy.conf"
 ```
 
 - To view the resulting configuration use `systemctl cat caddy`
