@@ -343,6 +343,8 @@ var directives = []string{
 
 	// directives that add middleware to the stack
 	"log",
+	"rewrite",
+	"ext",
 	"gzip",
 	"locale", // github.com/simia-tech/caddy-locale
 	"errors",
@@ -350,10 +352,8 @@ var directives = []string{
 	"ipfilter", // github.com/pyed/ipfilter
 	"search",   // github.com/pedronasser/caddy-search
 	"header",
-	"cors", // github.com/captncraig/cors/caddy
-	"rewrite",
 	"redir",
-	"ext",
+	"cors", // github.com/captncraig/cors/caddy
 	"mime",
 	"basicauth",
 	"jwt",    // github.com/BTBurke/caddy-jwt
