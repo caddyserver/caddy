@@ -179,6 +179,12 @@ func TestRewriteParse(t *testing.T) {
 		 }`, true, []Rule{
 			&ComplexRule{},
 		}},
+		{`rewrite {
+			if {path} match /
+			to		/to
+		 }`, false, []Rule{
+			&ComplexRule{Base: "/", To: "/to"},
+		}},
 	}
 
 	for i, test := range regexpTests {

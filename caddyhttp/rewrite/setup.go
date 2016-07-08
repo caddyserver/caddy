@@ -92,6 +92,7 @@ func rewriteParse(c *caddy.Controller) ([]Rule, error) {
 					}
 				default:
 					if httpserver.IfMatcherKeyword(c.Val()) {
+						c.RemainingArgs()
 						continue block
 					}
 					return nil, c.ArgErr()
