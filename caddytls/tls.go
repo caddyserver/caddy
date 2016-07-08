@@ -16,9 +16,7 @@ package caddytls
 
 import (
 	"encoding/json"
-	"io/ioutil"
 	"net"
-	"os"
 	"strings"
 
 	"github.com/xenolf/lego/acme"
@@ -47,53 +45,21 @@ func HostQualifies(hostname string) bool {
 		net.ParseIP(hostname) == nil
 }
 
-// existingCertAndKey returns true if the hostname has
-// a certificate and private key in storage already under
-// the storage provided, otherwise it returns false.
-func existingCertAndKey(storage Storage, hostname string) bool {
-	_, err := os.Stat(storage.SiteCertFile(hostname))
-	if err != nil {
-		return false
-	}
-	_, err = os.Stat(storage.SiteKeyFile(hostname))
-	if err != nil {
-		return false
-	}
-	return true
-}
-
 // saveCertResource saves the certificate resource to disk. This
 // includes the certificate file itself, the private key, and the
 // metadata file.
 func saveCertResource(storage Storage, cert acme.CertificateResource) error {
-	err := os.MkdirAll(storage.Site(cert.Domain), 0700)
-	if err != nil {
-		return err
+	// Save cert, private key, and metadata
+	siteData := &SiteData{
+		Cert: cert.Certificate,
+		Key:  cert.PrivateKey,
 	}
-
-	// Save cert
-	err = ioutil.WriteFile(storage.SiteCertFile(cert.Domain), cert.Certificate, 0600)
-	if err != nil {
-		return err
+	var err error
+	siteData.Meta, err = json.MarshalIndent(&cert, "", "\t")
+	if err == nil {
+		err = storage.StoreSite(cert.Domain, siteData)
 	}
-
-	// Save private key
-	err = ioutil.WriteFile(storage.SiteKeyFile(cert.Domain), cert.PrivateKey, 0600)
-	if err != nil {
-		return err
-	}
-
-	// Save cert metadata
-	jsonBytes, err := json.MarshalIndent(&cert, "", "\t")
-	if err != nil {
-		return err
-	}
-	err = ioutil.WriteFile(storage.SiteMetaFile(cert.Domain), jsonBytes, 0600)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
 // Revoke revokes the certificate for host via ACME protocol.

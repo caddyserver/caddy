@@ -1,7 +1,6 @@
 package caddytls
 
 import (
-	"io/ioutil"
 	"os"
 	"testing"
 
@@ -80,7 +79,7 @@ func TestQualifiesForManagedTLS(t *testing.T) {
 }
 
 func TestSaveCertResource(t *testing.T) {
-	storage := Storage("./le_test_save")
+	storage := FileStorage("./le_test_save")
 	defer func() {
 		err := os.RemoveAll(string(storage))
 		if err != nil {
@@ -110,33 +109,23 @@ func TestSaveCertResource(t *testing.T) {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
 
-	certFile, err := ioutil.ReadFile(storage.SiteCertFile(domain))
+	siteData, err := storage.LoadSite(domain)
 	if err != nil {
-		t.Errorf("Expected no error reading certificate file, got: %v", err)
+		t.Errorf("Expected no error reading site, got: %v", err)
 	}
-	if string(certFile) != certContents {
-		t.Errorf("Expected certificate file to contain '%s', got '%s'", certContents, string(certFile))
+	if string(siteData.Cert) != certContents {
+		t.Errorf("Expected certificate file to contain '%s', got '%s'", certContents, string(siteData.Cert))
 	}
-
-	keyFile, err := ioutil.ReadFile(storage.SiteKeyFile(domain))
-	if err != nil {
-		t.Errorf("Expected no error reading private key file, got: %v", err)
+	if string(siteData.Key) != keyContents {
+		t.Errorf("Expected private key file to contain '%s', got '%s'", keyContents, string(siteData.Key))
 	}
-	if string(keyFile) != keyContents {
-		t.Errorf("Expected private key file to contain '%s', got '%s'", keyContents, string(keyFile))
-	}
-
-	metaFile, err := ioutil.ReadFile(storage.SiteMetaFile(domain))
-	if err != nil {
-		t.Errorf("Expected no error reading meta file, got: %v", err)
-	}
-	if string(metaFile) != metaContents {
-		t.Errorf("Expected meta file to contain '%s', got '%s'", metaContents, string(metaFile))
+	if string(siteData.Meta) != metaContents {
+		t.Errorf("Expected meta file to contain '%s', got '%s'", metaContents, string(siteData.Meta))
 	}
 }
 
 func TestExistingCertAndKey(t *testing.T) {
-	storage := Storage("./le_test_existing")
+	storage := FileStorage("./le_test_existing")
 	defer func() {
 		err := os.RemoveAll(string(storage))
 		if err != nil {
@@ -146,7 +135,7 @@ func TestExistingCertAndKey(t *testing.T) {
 
 	domain := "example.com"
 
-	if existingCertAndKey(storage, domain) {
+	if storage.SiteExists(domain) {
 		t.Errorf("Did NOT expect %v to have existing cert or key, but it did", domain)
 	}
 
@@ -159,7 +148,7 @@ func TestExistingCertAndKey(t *testing.T) {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
 
-	if !existingCertAndKey(storage, domain) {
+	if !storage.SiteExists(domain) {
 		t.Errorf("Expected %v to have existing cert and key, but it did NOT", domain)
 	}
 }

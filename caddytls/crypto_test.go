@@ -9,42 +9,24 @@ import (
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
-	"os"
-	"runtime"
 	"testing"
 	"time"
 )
 
 func TestSaveAndLoadRSAPrivateKey(t *testing.T) {
-	keyFile := "test.key"
-	defer os.Remove(keyFile)
-
 	privateKey, err := rsa.GenerateKey(rand.Reader, 128) // make tests faster; small key size OK for testing
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// test save
-	err = savePrivateKey(privateKey, keyFile)
+	savedBytes, err := savePrivateKey(privateKey)
 	if err != nil {
 		t.Fatal("error saving private key:", err)
 	}
 
-	// it doesn't make sense to test file permission on windows
-	if runtime.GOOS != "windows" {
-		// get info of the key file
-		info, err := os.Stat(keyFile)
-		if err != nil {
-			t.Fatal("error stating private key:", err)
-		}
-		// verify permission of key file is correct
-		if info.Mode().Perm() != 0600 {
-			t.Error("Expected key file to have permission 0600, but it wasn't")
-		}
-	}
-
 	// test load
-	loadedKey, err := loadPrivateKey(keyFile)
+	loadedKey, err := loadPrivateKey(savedBytes)
 	if err != nil {
 		t.Error("error loading private key:", err)
 	}
@@ -56,35 +38,19 @@ func TestSaveAndLoadRSAPrivateKey(t *testing.T) {
 }
 
 func TestSaveAndLoadECCPrivateKey(t *testing.T) {
-	keyFile := "test.key"
-	defer os.Remove(keyFile)
-
 	privateKey, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// test save
-	err = savePrivateKey(privateKey, keyFile)
+	savedBytes, err := savePrivateKey(privateKey)
 	if err != nil {
 		t.Fatal("error saving private key:", err)
 	}
 
-	// it doesn't make sense to test file permission on windows
-	if runtime.GOOS != "windows" {
-		// get info of the key file
-		info, err := os.Stat(keyFile)
-		if err != nil {
-			t.Fatal("error stating private key:", err)
-		}
-		// verify permission of key file is correct
-		if info.Mode().Perm() != 0600 {
-			t.Error("Expected key file to have permission 0600, but it wasn't")
-		}
-	}
-
 	// test load
-	loadedKey, err := loadPrivateKey(keyFile)
+	loadedKey, err := loadPrivateKey(savedBytes)
 	if err != nil {
 		t.Error("error loading private key:", err)
 	}

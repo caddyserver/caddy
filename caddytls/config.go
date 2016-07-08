@@ -11,6 +11,9 @@ import (
 
 	"github.com/mholt/caddy"
 	"github.com/xenolf/lego/acme"
+	"log"
+	"net/url"
+	"strings"
 )
 
 // Config describes how TLS should be configured and used.
@@ -94,6 +97,13 @@ type Config struct {
 	// The type of key to use when generating
 	// certificates
 	KeyType acme.KeyType
+
+	// The explicitly set storage creator or nil; use
+	// StorageFor() to get a guaranteed non-nil Storage
+	// instance. Note, Caddy may call this frequently so
+	// implementors are encouraged to cache any heavy
+	// instantiations.
+	StorageCreator StorageCreator
 }
 
 // ObtainCert obtains a certificate for c.Hostname, as long as a certificate
@@ -106,14 +116,27 @@ func (c *Config) ObtainCert(allowPrompts bool) error {
 }
 
 func (c *Config) obtainCertName(name string, allowPrompts bool) error {
-	storage, err := StorageFor(c.CAUrl)
+	storage, err := c.StorageFor(c.CAUrl)
 	if err != nil {
 		return err
 	}
 
-	if !c.Managed || !HostQualifies(name) || existingCertAndKey(storage, name) {
+	if !c.Managed || !HostQualifies(name) || storage.SiteExists(name) {
 		return nil
 	}
+
+	// We must lock the obtain with the storage engine
+	if lockObtained, err := storage.LockRegister(name); err != nil {
+		return err
+	} else if !lockObtained {
+		log.Printf("[INFO] Certificate for %v is already being obtained elsewhere", name)
+		return nil
+	}
+	defer func() {
+		if err := storage.UnlockRegister(name); err != nil {
+			log.Printf("[ERROR] Unable to unlock obtain lock for %v: %v", name, err)
+		}
+	}()
 
 	if c.ACMEEmail == "" {
 		c.ACMEEmail = getEmail(storage, allowPrompts)
@@ -127,34 +150,43 @@ func (c *Config) obtainCertName(name string, allowPrompts bool) error {
 	return client.Obtain([]string{name})
 }
 
-// RenewCert renews the certificate for c.Hostname.
+// RenewCert renews the certificate for c.Hostname. If there is already a lock
+// on renewal, this will not perform the renewal and no error will occur.
 func (c *Config) RenewCert(allowPrompts bool) error {
 	return c.renewCertName(c.Hostname, allowPrompts)
 }
 
+// renewCertName renews the certificate for the given name. If there is already
+// a lock on renewal, this will not perform the renewal and no error will
+// occur.
 func (c *Config) renewCertName(name string, allowPrompts bool) error {
-	storage, err := StorageFor(c.CAUrl)
+	storage, err := c.StorageFor(c.CAUrl)
 	if err != nil {
 		return err
 	}
 
+	// We must lock the renewal with the storage engine
+	if lockObtained, err := storage.LockRegister(name); err != nil {
+		return err
+	} else if !lockObtained {
+		log.Printf("[INFO] Certificate for %v is already being renewed elsewhere", name)
+		return nil
+	}
+	defer func() {
+		if err := storage.UnlockRegister(name); err != nil {
+			log.Printf("[ERROR] Unable to unlock renewal lock for %v: %v", name, err)
+		}
+	}()
+
 	// Prepare for renewal (load PEM cert, key, and meta)
-	certBytes, err := ioutil.ReadFile(storage.SiteCertFile(c.Hostname))
-	if err != nil {
-		return err
-	}
-	keyBytes, err := ioutil.ReadFile(storage.SiteKeyFile(c.Hostname))
-	if err != nil {
-		return err
-	}
-	metaBytes, err := ioutil.ReadFile(storage.SiteMetaFile(c.Hostname))
+	siteData, err := storage.LoadSite(c.Hostname)
 	if err != nil {
 		return err
 	}
 	var certMeta acme.CertificateResource
-	err = json.Unmarshal(metaBytes, &certMeta)
-	certMeta.Certificate = certBytes
-	certMeta.PrivateKey = keyBytes
+	err = json.Unmarshal(siteData.Meta, &certMeta)
+	certMeta.Certificate = siteData.Cert
+	certMeta.PrivateKey = siteData.Key
 
 	client, err := newACMEClient(c, allowPrompts)
 	if err != nil {
@@ -192,6 +224,53 @@ func (c *Config) renewCertName(name string, allowPrompts bool) error {
 	}
 
 	return saveCertResource(storage, newCertMeta)
+}
+
+// StorageFor obtains a TLS Storage instance for the given CA URL which should
+// be unique for every different ACME CA. If a StorageCreator is set on this
+// Config, it will be used. Otherwise the default file storage implementation
+// is used. When the error is nil, this is guaranteed to return a non-nil
+// Storage instance.
+func (c *Config) StorageFor(caURL string) (Storage, error) {
+	// Validate CA URL
+	if caURL == "" {
+		caURL = DefaultCAUrl
+	}
+	if caURL == "" {
+		return nil, fmt.Errorf("cannot create storage without CA URL")
+	}
+	caURL = strings.ToLower(caURL)
+
+	// scheme required or host will be parsed as path (as of Go 1.6)
+	if !strings.Contains(caURL, "://") {
+		caURL = "https://" + caURL
+	}
+
+	u, err := url.Parse(caURL)
+	if err != nil {
+		return nil, fmt.Errorf("%s: unable to parse CA URL: %v", caURL, err)
+	}
+
+	if u.Host == "" {
+		return nil, fmt.Errorf("%s: no host in CA URL", caURL)
+	}
+
+	// Create the storage based on the URL
+	var s Storage
+	if c.StorageCreator != nil {
+		s, err = c.StorageCreator(u)
+		if err != nil {
+			return nil, fmt.Errorf("%s: unable to create custom storage: %v", caURL, err)
+		}
+	}
+	if s == nil {
+		// We trust that this does not return a nil s when there's a nil err
+		s, err = FileStorageCreator(u)
+		if err != nil {
+			return nil, fmt.Errorf("%s: unable to create file storage: %v", caURL, err)
+		}
+	}
+	return s, nil
 }
 
 // MakeTLSConfig reduces configs into a single tls.Config.
