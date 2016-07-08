@@ -5,15 +5,17 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"io"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/xenolf/lego/acme"
+	"os"
 )
 
 func TestUser(t *testing.T) {
+	defer testStorage.clean()
+
 	privateKey, err := rsa.GenerateKey(rand.Reader, 128)
 	if err != nil {
 		t.Fatalf("Could not generate test private key: %v", err)
@@ -53,7 +55,7 @@ func TestNewUser(t *testing.T) {
 }
 
 func TestSaveUser(t *testing.T) {
-	defer os.RemoveAll(string(testStorage))
+	defer testStorage.clean()
 
 	email := "me@foobar.com"
 	user, err := newUser(email)
@@ -65,18 +67,14 @@ func TestSaveUser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error saving user: %v", err)
 	}
-	_, err = os.Stat(testStorage.UserRegFile(email))
+	_, err = testStorage.LoadUser(email)
 	if err != nil {
-		t.Errorf("Cannot access user registration file, error: %v", err)
-	}
-	_, err = os.Stat(testStorage.UserKeyFile(email))
-	if err != nil {
-		t.Errorf("Cannot access user private key file, error: %v", err)
+		t.Errorf("Cannot access user data, error: %v", err)
 	}
 }
 
 func TestGetUserDoesNotAlreadyExist(t *testing.T) {
-	defer os.RemoveAll(string(testStorage))
+	defer testStorage.clean()
 
 	user, err := getUser(testStorage, "user_does_not_exist@foobar.com")
 	if err != nil {
@@ -89,7 +87,7 @@ func TestGetUserDoesNotAlreadyExist(t *testing.T) {
 }
 
 func TestGetUserAlreadyExists(t *testing.T) {
-	defer os.RemoveAll(string(testStorage))
+	defer testStorage.clean()
 
 	email := "me@foobar.com"
 
@@ -128,7 +126,7 @@ func TestGetEmail(t *testing.T) {
 	os.Stdout = nil
 	defer func() { os.Stdout = origStdout }()
 
-	defer os.RemoveAll(string(testStorage))
+	defer testStorage.clean()
 	DefaultEmail = "test2@foo.com"
 
 	// Test1: Use default email from flag (or user previously typing it)
@@ -166,12 +164,12 @@ func TestGetEmail(t *testing.T) {
 		}
 
 		// Change modified time so they're all different, so the test becomes deterministic
-		f, err := os.Stat(testStorage.User(eml))
+		f, err := os.Stat(testStorage.user(eml))
 		if err != nil {
 			t.Fatalf("Could not access user folder for '%s': %v", eml, err)
 		}
 		chTime := f.ModTime().Add(-(time.Duration(i) * time.Second))
-		if err := os.Chtimes(testStorage.User(eml), chTime, chTime); err != nil {
+		if err := os.Chtimes(testStorage.user(eml), chTime, chTime); err != nil {
 			t.Fatalf("Could not change user folder mod time for '%s': %v", eml, err)
 		}
 	}
@@ -181,4 +179,8 @@ func TestGetEmail(t *testing.T) {
 	}
 }
 
-var testStorage = Storage("./testdata")
+var testStorage = FileStorage("./testdata")
+
+func (s FileStorage) clean() error {
+	return os.RemoveAll(string(s))
+}

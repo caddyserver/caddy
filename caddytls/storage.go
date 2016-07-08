@@ -1,134 +1,105 @@
 package caddytls
 
 import (
-	"fmt"
+	"errors"
 	"net/url"
-	"path/filepath"
-	"strings"
-
-	"github.com/mholt/caddy"
 )
 
-// StorageFor gets the storage value associated with the
-// caURL, which should be unique for every different
-// ACME CA.
-func StorageFor(caURL string) (Storage, error) {
-	if caURL == "" {
-		caURL = DefaultCAUrl
-	}
-	if caURL == "" {
-		return "", fmt.Errorf("cannot create storage without CA URL")
-	}
-	caURL = strings.ToLower(caURL)
+// ErrStorageNotFound is returned by Storage implementations when data is
+// expected to be present but is not.
+var ErrStorageNotFound = errors.New("data not found")
 
-	// scheme required or host will be parsed as path (as of Go 1.6)
-	if !strings.Contains(caURL, "://") {
-		caURL = "https://" + caURL
-	}
+// StorageCreator is a function type that is used in the Config to instantiate
+// a new Storage instance. This function can return a nil Storage even without
+// an error.
+type StorageCreator func(caURL *url.URL) (Storage, error)
 
-	u, err := url.Parse(caURL)
-	if err != nil {
-		return "", fmt.Errorf("%s: unable to parse CA URL: %v", caURL, err)
-	}
-
-	if u.Host == "" {
-		return "", fmt.Errorf("%s: no host in CA URL", caURL)
-	}
-
-	return Storage(filepath.Join(storageBasePath, u.Host)), nil
+// SiteData contains persisted items pertaining to an individual site.
+type SiteData struct {
+	// Cert is the public cert byte array.
+	Cert []byte
+	// Key is the private key byte array.
+	Key []byte
+	// Meta is metadata about the site used by Caddy.
+	Meta []byte
 }
 
-// Storage is a root directory and facilitates
-// forming file paths derived from it. It is used
-// to get file paths in a consistent, cross-
-// platform way for persisting ACME assets.
-// on the file system.
-type Storage string
-
-// Sites gets the directory that stores site certificate and keys.
-func (s Storage) Sites() string {
-	return filepath.Join(string(s), "sites")
+// UserData contains persisted items pertaining to a user.
+type UserData struct {
+	// Reg is the user registration byte array.
+	Reg []byte
+	// Key is the user key byte array.
+	Key []byte
 }
 
-// Site returns the path to the folder containing assets for domain.
-func (s Storage) Site(domain string) string {
-	domain = strings.ToLower(domain)
-	return filepath.Join(s.Sites(), domain)
-}
+// Storage is an interface abstracting all storage used by the Caddy's TLS
+// subsystem. Implementations of this interface store site data along with
+// user data.
+type Storage interface {
 
-// SiteCertFile returns the path to the certificate file for domain.
-func (s Storage) SiteCertFile(domain string) string {
-	domain = strings.ToLower(domain)
-	return filepath.Join(s.Site(domain), domain+".crt")
-}
+	// SiteDataExists returns true if this site info exists in storage.
+	// Site data is considered present when StoreSite has been called
+	// successfully (without DeleteSite having been called of course).
+	SiteExists(domain string) bool
 
-// SiteKeyFile returns the path to domain's private key file.
-func (s Storage) SiteKeyFile(domain string) string {
-	domain = strings.ToLower(domain)
-	return filepath.Join(s.Site(domain), domain+".key")
-}
+	// LoadSite obtains the site data from storage for the given domain and
+	// returns. If data for the domain does not exist, the
+	// ErrStorageNotFound error instance is returned. For multi-server
+	// storage, care should be taken to make this load atomic to prevent
+	// race conditions that happen with multiple data loads.
+	LoadSite(domain string) (*SiteData, error)
 
-// SiteMetaFile returns the path to the domain's asset metadata file.
-func (s Storage) SiteMetaFile(domain string) string {
-	domain = strings.ToLower(domain)
-	return filepath.Join(s.Site(domain), domain+".json")
-}
+	// StoreSite persists the given site data for the given domain in
+	// storage. For multi-server storage, care should be taken to make this
+	// call atomic to prevent half-written data on failure of an internal
+	// intermediate storage step. Implementers can trust that at runtime
+	// this function will only be invoked after LockRegister and before
+	// UnlockRegister of the same domain.
+	StoreSite(domain string, data *SiteData) error
 
-// Users gets the directory that stores account folders.
-func (s Storage) Users() string {
-	return filepath.Join(string(s), "users")
-}
+	// DeleteSite deletes the site for the given domain from storage.
+	// Multi-server implementations should attempt to make this atomic. If
+	// the site does not exist, the ErrStorageNotFound error instance is
+	// returned.
+	DeleteSite(domain string) error
 
-// User gets the account folder for the user with email.
-func (s Storage) User(email string) string {
-	if email == "" {
-		email = emptyEmail
-	}
-	email = strings.ToLower(email)
-	return filepath.Join(s.Users(), email)
-}
+	// LockRegister is called before Caddy attempts to obtain or renew a
+	// certificate. This function is used as a mutex/semaphore for making
+	// sure something else isn't already attempting obtain/renew. It should
+	// return true (without error) if the lock is successfully obtained
+	// meaning nothing else is attempting renewal. It should return false
+	// (without error) if this domain is already locked by something else
+	// attempting renewal. As a general rule, if this isn't multi-server
+	// shared storage, this should always return true. To prevent deadlocks
+	// for multi-server storage, all internal implementations should put a
+	// reasonable expiration on this lock in case UnlockRegister is unable to
+	// be called due to system crash. Errors should only be returned in
+	// exceptional cases. Any error will prevent renewal.
+	LockRegister(domain string) (bool, error)
 
-// UserRegFile gets the path to the registration file for
-// the user with the given email address.
-func (s Storage) UserRegFile(email string) string {
-	if email == "" {
-		email = emptyEmail
-	}
-	email = strings.ToLower(email)
-	fileName := emailUsername(email)
-	if fileName == "" {
-		fileName = "registration"
-	}
-	return filepath.Join(s.User(email), fileName+".json")
-}
+	// UnlockRegister is called after Caddy has attempted to obtain or renew
+	// a certificate, regardless of whether it was successful. If
+	// LockRegister essentially just returns true because this is not
+	// multi-server storage, this can be a no-op. Otherwise this should
+	// attempt to unlock the lock obtained in this process by LockRegister.
+	// If no lock exists, the implementation should not return an error. An
+	// error is only for exceptional cases.
+	UnlockRegister(domain string) error
 
-// UserKeyFile gets the path to the private key file for
-// the user with the given email address.
-func (s Storage) UserKeyFile(email string) string {
-	if email == "" {
-		email = emptyEmail
-	}
-	email = strings.ToLower(email)
-	fileName := emailUsername(email)
-	if fileName == "" {
-		fileName = "private"
-	}
-	return filepath.Join(s.User(email), fileName+".key")
-}
+	// LoadUser obtains user data from storage for the given email and
+	// returns it. If data for the email does not exist, the
+	// ErrStorageNotFound error instance is returned. Multi-server
+	// implementations should take care to make this operation atomic for
+	// all loaded data items.
+	LoadUser(email string) (*UserData, error)
 
-// emailUsername returns the username portion of an
-// email address (part before '@') or the original
-// input if it can't find the "@" symbol.
-func emailUsername(email string) string {
-	at := strings.Index(email, "@")
-	if at == -1 {
-		return email
-	} else if at == 0 {
-		return email[1:]
-	}
-	return email[:at]
-}
+	// StoreUser persists the given user data for the given email in
+	// storage. Multi-server implementations should take care to make this
+	// operation atomic for all stored data items.
+	StoreUser(email string, data *UserData) error
 
-// storageBasePath is the root path in which all TLS/ACME assets are
-//  stored. Do not change this value during the lifetime of the program.
-var storageBasePath = filepath.Join(caddy.AssetsPath(), "acme")
+	// MostRecentUserEmail provides the most recently used email parameter
+	// in StoreUser. The result is an empty string if there are no
+	// persisted users in storage.
+	MostRecentUserEmail() string
+}

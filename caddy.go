@@ -93,7 +93,7 @@ func (i *Instance) Stop() error {
 		}
 	}
 
-	// splice instance list to delete this one
+	// splice i out of instance list, causing it to be garbage-collected
 	instancesMu.Lock()
 	for j, other := range instances {
 		if other == i {

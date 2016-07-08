@@ -92,11 +92,15 @@ func getCertificate(name string) (cert Certificate, matched, defaulted bool) {
 //
 // This function is safe for concurrent use.
 func CacheManagedCertificate(domain string, cfg *Config) (Certificate, error) {
-	storage, err := StorageFor(cfg.CAUrl)
+	storage, err := cfg.StorageFor(cfg.CAUrl)
 	if err != nil {
 		return Certificate{}, err
 	}
-	cert, err := makeCertificateFromDisk(storage.SiteCertFile(domain), storage.SiteKeyFile(domain))
+	siteData, err := storage.LoadSite(domain)
+	if err != nil {
+		return Certificate{}, err
+	}
+	cert, err := makeCertificate(siteData.Cert, siteData.Key)
 	if err != nil {
 		return cert, err
 	}

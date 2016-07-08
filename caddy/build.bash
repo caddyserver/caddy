@@ -13,7 +13,7 @@
 set -euo pipefail
 
 : ${output_filename:="${1:-}"}
-: ${output_filename:="caddy"}
+: ${output_filename:=""}
 
 : ${git_repo:="${2:-}"}
 : ${git_repo:="."}

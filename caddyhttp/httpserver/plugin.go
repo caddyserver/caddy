@@ -138,7 +138,7 @@ func (h *httpContext) MakeServers() ([]caddy.Server, error) {
 			// is incorrect for this site.
 			cfg.Addr.Scheme = "https"
 		}
-		if cfg.Addr.Port == "" && (!cfg.TLS.Manual || cfg.TLS.OnDemand) {
+		if cfg.Addr.Port == "" && ((!cfg.TLS.Manual && !cfg.TLS.SelfSigned) || cfg.TLS.OnDemand) {
 			// this is vital, otherwise the function call below that
 			// sets the listener address will use the default port
 			// instead of 443 because it doesn't know about TLS.
@@ -343,16 +343,17 @@ var directives = []string{
 
 	// directives that add middleware to the stack
 	"log",
+	"rewrite",
+	"ext",
 	"gzip",
+	"locale", // github.com/simia-tech/caddy-locale
 	"errors",
 	"minify",   // github.com/hacdias/caddy-minify
 	"ipfilter", // github.com/pyed/ipfilter
 	"search",   // github.com/pedronasser/caddy-search
 	"header",
-	"cors", // github.com/captncraig/cors/caddy
-	"rewrite",
 	"redir",
-	"ext",
+	"cors", // github.com/captncraig/cors/caddy
 	"mime",
 	"basicauth",
 	"jwt",    // github.com/BTBurke/caddy-jwt

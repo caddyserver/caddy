@@ -1,8 +1,13 @@
-// Package basicauth implements HTTP Basic Authentication.
+// Package basicauth implements HTTP Basic Authentication for Caddy.
+//
+// This is useful for simple protections on a website, like requiring
+// a password to access an admin interface. This package assumes a
+// fairly small threat model.
 package basicauth
 
 import (
 	"bufio"
+	"crypto/sha1"
 	"crypto/subtle"
 	"fmt"
 	"io"
@@ -29,7 +34,6 @@ type BasicAuth struct {
 
 // ServeHTTP implements the httpserver.Handler interface.
 func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
-
 	var hasAuth bool
 	var isAuthenticated bool
 
@@ -47,7 +51,6 @@ func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 			if !ok ||
 				username != rule.Username ||
 				!rule.Password(password) {
-				//subtle.ConstantTimeCompare([]byte(password), []byte(rule.Password)) != 1 {
 				continue
 			}
 
@@ -140,9 +143,17 @@ func parseHtpasswd(pm map[string]PasswordMatcher, r io.Reader) error {
 }
 
 // PlainMatcher returns a PasswordMatcher that does a constant-time
-// byte-wise comparison.
+// byte comparison against the password passw.
 func PlainMatcher(passw string) PasswordMatcher {
+	// compare hashes of equal length instead of actual password
+	// to avoid leaking password length
+	passwHash := sha1.New()
+	passwHash.Write([]byte(passw))
+	passwSum := passwHash.Sum(nil)
 	return func(pw string) bool {
-		return subtle.ConstantTimeCompare([]byte(pw), []byte(passw)) == 1
+		pwHash := sha1.New()
+		pwHash.Write([]byte(pw))
+		pwSum := pwHash.Sum(nil)
+		return subtle.ConstantTimeCompare([]byte(pwSum), []byte(passwSum)) == 1
 	}
 }

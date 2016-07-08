@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"strings"
 
@@ -67,20 +66,9 @@ func getEmail(storage Storage, userPresent bool) string {
 	leEmail := DefaultEmail
 	if leEmail == "" {
 		// Then try to get most recent user email
-		userDirs, err := ioutil.ReadDir(storage.Users())
-		if err == nil {
-			var mostRecent os.FileInfo
-			for _, dir := range userDirs {
-				if !dir.IsDir() {
-					continue
-				}
-				if mostRecent == nil || dir.ModTime().After(mostRecent.ModTime()) {
-					leEmail = dir.Name()
-					DefaultEmail = leEmail // save for next time
-					mostRecent = dir
-				}
-			}
-		}
+		leEmail = storage.MostRecentUserEmail()
+		// Save for next time
+		DefaultEmail = leEmail
 	}
 	if leEmail == "" && userPresent {
 		// Alas, we must bother the user and ask for an email address;
@@ -112,25 +100,24 @@ func getEmail(storage Storage, userPresent bool) string {
 func getUser(storage Storage, email string) (User, error) {
 	var user User
 
-	// open user file
-	regFile, err := os.Open(storage.UserRegFile(email))
+	// open user reg
+	userData, err := storage.LoadUser(email)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if err == ErrStorageNotFound {
 			// create a new user
 			return newUser(email)
 		}
 		return user, err
 	}
-	defer regFile.Close()
 
 	// load user information
-	err = json.NewDecoder(regFile).Decode(&user)
+	err = json.Unmarshal(userData.Reg, &user)
 	if err != nil {
 		return user, err
 	}
 
 	// load their private key
-	user.key, err = loadPrivateKey(storage.UserKeyFile(email))
+	user.key, err = loadPrivateKey(userData.Key)
 	if err != nil {
 		return user, err
 	}
@@ -144,25 +131,17 @@ func getUser(storage Storage, email string) (User, error) {
 // wherein the user should be saved. It should be the storage
 // for the CA with which user has an account.
 func saveUser(storage Storage, user User) error {
-	// make user account folder
-	err := os.MkdirAll(storage.User(user.Email), 0700)
-	if err != nil {
-		return err
+	// Save the private key and registration
+	userData := new(UserData)
+	var err error
+	userData.Key, err = savePrivateKey(user.key)
+	if err == nil {
+		userData.Reg, err = json.MarshalIndent(&user, "", "\t")
 	}
-
-	// save private key file
-	err = savePrivateKey(user.key, storage.UserKeyFile(user.Email))
-	if err != nil {
-		return err
+	if err == nil {
+		err = storage.StoreUser(user.Email, userData)
 	}
-
-	// save registration file
-	jsonBytes, err := json.MarshalIndent(&user, "", "\t")
-	if err != nil {
-		return err
-	}
-
-	return ioutil.WriteFile(storage.UserRegFile(user.Email), jsonBytes, 0600)
+	return err
 }
 
 // promptUserAgreement prompts the user to agree to the agreement
