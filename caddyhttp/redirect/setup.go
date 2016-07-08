@@ -72,6 +72,7 @@ func redirParse(c *caddy.Controller) ([]Rule, error) {
 		var hadOptionalBlock bool
 		for c.NextBlock() {
 			if httpserver.IfMatcherKeyword(c.Val()) {
+				c.RemainingArgs()
 				continue
 			}
 
