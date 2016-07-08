@@ -12,7 +12,7 @@ import (
 
 // To attempts rewrite. It attempts to rewrite to first valid path
 // or the last path if none of the paths are valid.
-func To(fs http.FileSystem, r *http.Request, to string, replacer httpserver.Replacer) (result Result) {
+func To(fs http.FileSystem, r *http.Request, to string, replacer httpserver.Replacer) Result {
 	tos := strings.Fields(to)
 
 	// try each rewrite paths
@@ -44,7 +44,7 @@ func To(fs http.FileSystem, r *http.Request, to string, replacer httpserver.Repl
 		// Let the user know we got here. Rewrite is expected but
 		// the resulting url is invalid.
 		log.Printf("[ERROR] rewrite: resulting path '%v' is invalid. error: %v", t, err)
-		return
+		return RewriteIgnored
 	}
 
 	// take note of this rewrite for internal use by fastcgi

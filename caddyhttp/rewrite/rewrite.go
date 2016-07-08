@@ -18,8 +18,10 @@ import (
 type Result int
 
 const (
+	// RewriteIgnored is returned when rewrite is not done on request.
+	RewriteIgnored Result = iota
 	// RewriteDone is returned when rewrite is done on request.
-	RewriteDone Result = iota
+	RewriteDone
 	// RewriteStatus is returned when rewrite is not needed and status code should be set
 	// for the request.
 	RewriteStatus
@@ -29,7 +31,7 @@ const (
 type Rewrite struct {
 	Next    httpserver.Handler
 	FileSys http.FileSystem
-	Rules   []httpserver.Config
+	Rules   []httpserver.HandlerConfig
 }
 
 // ServeHTTP implements the httpserver.Handler interface.
@@ -48,7 +50,7 @@ func (rw Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error)
 
 // Rule describes an internal location rewrite rule.
 type Rule interface {
-	httpserver.Config
+	httpserver.HandlerConfig
 	// Rewrite rewrites the internal location of the current request.
 	Rewrite(http.FileSystem, *http.Request) Result
 }
@@ -144,7 +146,7 @@ func NewComplexRule(base, pattern, to string, status int, ext []string, matcher 
 // BasePath satisfies httpserver.Config
 func (r *ComplexRule) BasePath() string { return r.Base }
 
-// Match satisfies httpserver.Config
+// Match satisfies httpserver.Config.
 //
 // Though ComplexRule embeds a RequestMatcher, additional
 // checks are needed which requires a custom implementation.

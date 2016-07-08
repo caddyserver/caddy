@@ -51,21 +51,19 @@ type (
 		Match(r *http.Request) bool
 	}
 
-	// Config is a middleware configuration.
+	// HandlerConfig is a middleware configuration.
 	// This makes it possible for middlewares to have a common
 	// configuration interface.
 	//
 	// TODO The long term plan is to get all middleware implement this
 	// interface for configurations.
-	Config interface {
+	HandlerConfig interface {
 		RequestMatcher
 		BasePath() string
 	}
 
 	// ConfigSelector selects a configuration.
-	//
-	// TODO The long term plan is to get all middleware to use this.
-	ConfigSelector []Config
+	ConfigSelector []HandlerConfig
 )
 
 // ServeHTTP implements the Handler interface.
@@ -75,9 +73,7 @@ func (f HandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, err
 
 // Select selects a Config.
 // This chooses the config with the longest length.
-//
-// TODO A better solution.
-func (c ConfigSelector) Select(r *http.Request) (config Config) {
+func (c ConfigSelector) Select(r *http.Request) (config HandlerConfig) {
 	for i := range c {
 		if !c[i].Match(r) {
 			continue
