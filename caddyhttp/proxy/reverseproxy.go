@@ -12,6 +12,7 @@
 package proxy
 
 import (
+	"bufio"
 	"crypto/tls"
 	"io"
 	"net"
@@ -156,60 +157,79 @@ var InsecureTransport http.RoundTripper = &http.Transport{
 
 type respUpdateFn func(resp *http.Response)
 
-func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, respUpdateFn respUpdateFn) error {
-	transport := p.Transport
-	if transport == nil {
-		transport = http.DefaultTransport
+func hostPort(u *url.URL) (host, port string, err error) {
+	switch len(strings.Split(u.Host, ":")) {
+	default:
+		host, port, err = net.SplitHostPort(u.Host)
+		if err != nil {
+			return
+		}
+		port = ":" + port
+	case 1:
+		host = u.Host
+		switch u.Scheme {
+		case "http":
+			port = ":80"
+		case "https":
+			port = ":443"
+		}
 	}
+	return
+}
 
-	p.Director(outreq)
-	outreq.Proto = "HTTP/1.1"
-	outreq.ProtoMajor = 1
-	outreq.ProtoMinor = 1
-	outreq.Close = false
-
-	res, err := transport.RoundTrip(outreq)
+func (p *ReverseProxy) ServeHTTP(w http.ResponseWriter, r *http.Request, respUpdateFn respUpdateFn) error {
+	p.Director(r)
+	r.Proto = "HTTP/1.1"
+	r.ProtoMajor = 1
+	r.ProtoMinor = 1
+	r.Close = false
+	host, port, err := hostPort(r.URL)
 	if err != nil {
 		return err
-	} else if respUpdateFn != nil {
-		respUpdateFn(res)
 	}
-
-	if res.StatusCode == http.StatusSwitchingProtocols && strings.ToLower(res.Header.Get("Upgrade")) == "websocket" {
-		res.Body.Close()
-		hj, ok := rw.(http.Hijacker)
-		if !ok {
-			return nil
-		}
-
-		conn, _, err := hj.Hijack()
-		if err != nil {
+	conn, err := net.Dial("tcp", host+port)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	if r.URL.Scheme == "https" {
+		tconn := tls.Client(conn, &tls.Config{ServerName: host})
+		if err := tconn.Handshake(); err != nil {
 			return err
 		}
-		defer conn.Close()
-
-		backendConn, err := net.Dial("tcp", outreq.URL.Host)
-		if err != nil {
+		if err := tconn.VerifyHostname(host); err != nil {
 			return err
 		}
-		defer backendConn.Close()
-
-		outreq.Write(backendConn)
-
-		go func() {
-			io.Copy(backendConn, conn) // write tcp stream to backend.
-		}()
-		io.Copy(conn, backendConn) // read tcp stream from backend.
-	} else {
-		defer res.Body.Close()
+		conn = tconn
+	}
+	if err := r.Write(conn); err != nil {
+		return err
+	}
+	res, err := http.ReadResponse(bufio.NewReader(conn), r)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	copyHeader(w.Header(), res.Header)
+	w.WriteHeader(res.StatusCode)
+	if res.StatusCode != http.StatusSwitchingProtocols || strings.ToLower(res.Header.Get("Upgrade")) != "websocket" {
 		for _, h := range hopHeaders {
 			res.Header.Del(h)
 		}
-		copyHeader(rw.Header(), res.Header)
-		rw.WriteHeader(res.StatusCode)
-		p.copyResponse(rw, res.Body)
+		p.copyResponse(w, res.Body)
+		return nil
 	}
-
+	hj, ok := w.(http.Hijacker)
+	if !ok {
+		return nil
+	}
+	rconn, _, err := hj.Hijack()
+	if err != nil {
+		return err
+	}
+	defer rconn.Close()
+	go io.Copy(rconn, conn)
+	io.Copy(conn, rconn)
 	return nil
 }
 
