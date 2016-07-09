@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"os"
 	"path"
-	"strings"
 	"time"
 )
 
@@ -48,18 +47,42 @@ type (
 
 	// RequestMatcher checks to see if current request should be handled
 	// by underlying handler.
-	//
-	// TODO The long term plan is to get all middleware implement this
-	// interface and have validation done before requests are dispatched
-	// to each middleware.
 	RequestMatcher interface {
 		Match(r *http.Request) bool
 	}
+
+	// HandlerConfig is a middleware configuration.
+	// This makes it possible for middlewares to have a common
+	// configuration interface.
+	//
+	// TODO The long term plan is to get all middleware implement this
+	// interface for configurations.
+	HandlerConfig interface {
+		RequestMatcher
+		BasePath() string
+	}
+
+	// ConfigSelector selects a configuration.
+	ConfigSelector []HandlerConfig
 )
 
 // ServeHTTP implements the Handler interface.
 func (f HandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	return f(w, r)
+}
+
+// Select selects a Config.
+// This chooses the config with the longest length.
+func (c ConfigSelector) Select(r *http.Request) (config HandlerConfig) {
+	for i := range c {
+		if !c[i].Match(r) {
+			continue
+		}
+		if config == nil || len(c[i].BasePath()) > len(config.BasePath()) {
+			config = c[i]
+		}
+	}
+	return config
 }
 
 // IndexFile looks for a file in /root/fpath/indexFile for each string
@@ -128,21 +151,6 @@ func initCaseSettings() {
 	default:
 		CaseSensitivePath = true
 	}
-}
-
-// Path represents a URI path.
-type Path string
-
-// Matches checks to see if other matches p.
-//
-// Path matching will probably not always be a direct
-// comparison; this method assures that paths can be
-// easily and consistently matched.
-func (p Path) Matches(other string) bool {
-	if CaseSensitivePath {
-		return strings.HasPrefix(string(p), other)
-	}
-	return strings.HasPrefix(strings.ToLower(string(p)), strings.ToLower(other))
 }
 
 // MergeRequestMatchers merges multiple RequestMatchers into one.

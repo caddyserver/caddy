@@ -36,9 +36,8 @@ func setup(c *caddy.Controller) error {
 	return nil
 }
 
-func rewriteParse(c *caddy.Controller) ([]Rule, error) {
-	var simpleRules []Rule
-	var regexpRules []Rule
+func rewriteParse(c *caddy.Controller) ([]httpserver.HandlerConfig, error) {
+	var rules []httpserver.HandlerConfig
 
 	for c.Next() {
 		var rule Rule
@@ -105,16 +104,15 @@ func rewriteParse(c *caddy.Controller) ([]Rule, error) {
 			if rule, err = NewComplexRule(base, pattern, to, status, ext, matcher); err != nil {
 				return nil, err
 			}
-			regexpRules = append(regexpRules, rule)
+			rules = append(rules, rule)
 
 		// the only unhandled case is 2 and above
 		default:
 			rule = NewSimpleRule(args[0], strings.Join(args[1:], " "))
-			simpleRules = append(simpleRules, rule)
+			rules = append(rules, rule)
 		}
 
 	}
 
-	// put simple rules in front to avoid regexp computation for them
-	return append(simpleRules, regexpRules...), nil
+	return rules, nil
 }

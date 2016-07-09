@@ -13,7 +13,7 @@ import (
 func TestRewrite(t *testing.T) {
 	rw := Rewrite{
 		Next: httpserver.HandlerFunc(urlPrinter),
-		Rules: []Rule{
+		Rules: []httpserver.HandlerConfig{
 			NewSimpleRule("/from", "/to"),
 			NewSimpleRule("/a", "/b"),
 			NewSimpleRule("/b", "/b{uri}"),
@@ -131,7 +131,7 @@ func TestRewrite(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Test %d: No error expected for rule but found %v", i, err)
 		}
-		rw.Rules = []Rule{rule}
+		rw.Rules = []httpserver.HandlerConfig{rule}
 		req, err := http.NewRequest("GET", urlPath, nil)
 		if err != nil {
 			t.Fatalf("Test %d: Could not create HTTP request: %v", i, err)
