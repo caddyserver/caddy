@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"path"
 	"strings"
 	"text/template"
 	"time"
@@ -156,6 +157,13 @@ func (c Context) StripHTML(s string) string {
 		buf.WriteString(s[tagStart:])
 	}
 	return buf.String()
+}
+
+// Ext returns the suffix beginning at the final dot in the final
+// slash-separated element of the pathStr (or in other words, the
+// file extension).
+func (c Context) Ext(pathStr string) string {
+	return path.Ext(pathStr)
 }
 
 // StripExt returns the input string without the extension,
