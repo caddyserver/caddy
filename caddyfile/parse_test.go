@@ -394,6 +394,6 @@ func TestEnvironmentReplacement(t *testing.T) {
 
 func testParser(input string) parser {
 	buf := strings.NewReader(input)
-	p := parser{Dispenser: NewDispenser("./caddyfile/", buf)}
+	p := parser{Dispenser: NewDispenser("caddyfile/", buf)}
 	return p
 }
