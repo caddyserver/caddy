@@ -69,6 +69,19 @@ func NewStaticUpstreams(c caddyfile.Dispenser) ([]Upstream, error) {
 			to = append(to, parsed...)
 		}
 
+		if len(to) == 0 {
+			return upstreams, c.ArgErr()
+		}
+
+		upstream.Hosts = make([]*UpstreamHost, len(to))
+		for i, host := range to {
+			uh, err := upstream.NewHost(host)
+			if err != nil {
+				return upstreams, err
+			}
+			upstream.Hosts[i] = uh
+		}
+
 		for c.NextBlock() {
 			switch c.Val() {
 			case "upstream":
@@ -85,19 +98,6 @@ func NewStaticUpstreams(c caddyfile.Dispenser) ([]Upstream, error) {
 					return upstreams, err
 				}
 			}
-		}
-
-		if len(to) == 0 {
-			return upstreams, c.ArgErr()
-		}
-
-		upstream.Hosts = make([]*UpstreamHost, len(to))
-		for i, host := range to {
-			uh, err := upstream.NewHost(host)
-			if err != nil {
-				return upstreams, err
-			}
-			upstream.Hosts[i] = uh
 		}
 
 		if upstream.HealthCheck.Path != "" {
@@ -287,7 +287,7 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream) error {
 		}
 		u.downstreamHeaders.Add(header, value)
 	case "transparent":
-		u.upstreamHeaders.Add("Host", "{host}")
+		u.upstreamHeaders.Add("Host", u.Hosts[0].Name)
 		u.upstreamHeaders.Add("X-Real-IP", "{remote}")
 		u.upstreamHeaders.Add("X-Forwarded-For", "{remote}")
 		u.upstreamHeaders.Add("X-Forwarded-Proto", "{scheme}")
