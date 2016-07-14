@@ -187,7 +187,7 @@ func TestParseOneAndImport(t *testing.T) {
 
 		{`localhost
 		  dir1 arg1
-		  import ../testdata/import_test1.txt`, false, []string{
+		  import testdata/import_test1.txt`, false, []string{
 			"localhost",
 		}, map[string]int{
 			"dir1": 2,
@@ -195,16 +195,16 @@ func TestParseOneAndImport(t *testing.T) {
 			"dir3": 1,
 		}},
 
-		{`import ../testdata/import_test2.txt`, false, []string{
+		{`import testdata/import_test2.txt`, false, []string{
 			"host1",
 		}, map[string]int{
 			"dir1": 1,
 			"dir2": 2,
 		}},
 
-		{`import ../testdata/import_test1.txt ../testdata/import_test2.txt`, true, []string{}, map[string]int{}},
+		{`import testdata/import_test1.txt testdata/import_test2.txt`, true, []string{}, map[string]int{}},
 
-		{`import ../testdata/not_found.txt`, true, []string{}, map[string]int{}},
+		{`import testdata/not_found.txt`, true, []string{}, map[string]int{}},
 
 		{`""`, false, []string{}, map[string]int{}},
 
@@ -394,8 +394,6 @@ func TestEnvironmentReplacement(t *testing.T) {
 
 func testParser(input string) parser {
 	buf := strings.NewReader(input)
-	// use relative path to test that import paths are relative to
-	// the Caddyfile rather than the current working directory (issue #867)
-	p := parser{Dispenser: NewDispenser("../Test", buf)}
+	p := parser{Dispenser: NewDispenser("Caddyfile", buf)}
 	return p
 }

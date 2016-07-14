@@ -22,7 +22,6 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"path"
 	"runtime"
 	"strconv"
 	"strings"
@@ -399,7 +398,7 @@ func startWithListenerFds(cdyfile Input, inst *Instance, restartFds map[string]r
 
 	inst.caddyfileInput = cdyfile
 
-	sblocks, err := loadServerBlocks(stypeName, path.Base(cdyfile.Path()), bytes.NewReader(cdyfile.Body()))
+	sblocks, err := loadServerBlocks(stypeName, cdyfile.Path(), bytes.NewReader(cdyfile.Body()))
 	if err != nil {
 		return err
 	}
