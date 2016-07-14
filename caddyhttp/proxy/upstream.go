@@ -102,10 +102,6 @@ func NewStaticUpstreams(c caddyfile.Dispenser) ([]Upstream, error) {
 			upstream.Hosts[i] = uh
 		}
 
-		if upstream.transparent {
-			upstream.upstreamHeaders.Add("Host", upstream.Hosts[0].Name)
-		}
-
 		if upstream.HealthCheck.Path != "" {
 			upstream.HealthCheck.Client = http.Client{
 				Timeout: upstream.HealthCheck.Timeout,
@@ -370,6 +366,11 @@ func (u *staticUpstream) Select() *UpstreamHost {
 		return (&Random{}).Select(pool)
 	}
 	return u.Policy.Select(pool)
+}
+
+// Transparent returns true if upstream in transparent mode
+func (u *staticUpstream) Transparent() bool {
+	return u.transparent
 }
 
 func (u *staticUpstream) AllowedPath(requestPath string) bool {
