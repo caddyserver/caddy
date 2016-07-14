@@ -26,6 +26,7 @@ type staticUpstream struct {
 	Hosts              HostPool
 	Policy             Policy
 	insecureSkipVerify bool
+	transparent        bool
 
 	FailTimeout time.Duration
 	MaxFails    int32
@@ -54,6 +55,7 @@ func NewStaticUpstreams(c caddyfile.Dispenser) ([]Upstream, error) {
 			FailTimeout:       10 * time.Second,
 			MaxFails:          1,
 			MaxConns:          0,
+			transparent:       false,
 		}
 
 		if !c.Args(&upstream.from) {
@@ -67,19 +69,6 @@ func NewStaticUpstreams(c caddyfile.Dispenser) ([]Upstream, error) {
 				return upstreams, err
 			}
 			to = append(to, parsed...)
-		}
-
-		if len(to) == 0 {
-			return upstreams, c.ArgErr()
-		}
-
-		upstream.Hosts = make([]*UpstreamHost, len(to))
-		for i, host := range to {
-			uh, err := upstream.NewHost(host)
-			if err != nil {
-				return upstreams, err
-			}
-			upstream.Hosts[i] = uh
 		}
 
 		for c.NextBlock() {
@@ -98,6 +87,23 @@ func NewStaticUpstreams(c caddyfile.Dispenser) ([]Upstream, error) {
 					return upstreams, err
 				}
 			}
+		}
+
+		if len(to) == 0 {
+			return upstreams, c.ArgErr()
+		}
+
+		upstream.Hosts = make([]*UpstreamHost, len(to))
+		for i, host := range to {
+			uh, err := upstream.NewHost(host)
+			if err != nil {
+				return upstreams, err
+			}
+			upstream.Hosts[i] = uh
+		}
+
+		if upstream.transparent {
+			upstream.upstreamHeaders.Add("Host", upstream.Hosts[0].Name)
 		}
 
 		if upstream.HealthCheck.Path != "" {
@@ -287,7 +293,7 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream) error {
 		}
 		u.downstreamHeaders.Add(header, value)
 	case "transparent":
-		u.upstreamHeaders.Add("Host", u.Hosts[0].Name)
+		u.transparent = true
 		u.upstreamHeaders.Add("X-Real-IP", "{remote}")
 		u.upstreamHeaders.Add("X-Forwarded-For", "{remote}")
 		u.upstreamHeaders.Add("X-Forwarded-Proto", "{scheme}")

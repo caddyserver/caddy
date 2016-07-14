@@ -213,6 +213,10 @@ func TestParseBlock(t *testing.T) {
 				t.Errorf("Test %d: Could not find the Host header", i+1)
 			}
 
+			if v, _ := headers["Host"]; v[0] != upstream.Select().Name {
+				t.Errorf("Test %d: Host not match first hostname in upstream", i+1)
+			}
+
 			if _, ok := headers["X-Real-Ip"]; !ok {
 				t.Errorf("Test %d: Could not find the X-Real-Ip header", i+1)
 			}
