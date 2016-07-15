@@ -209,8 +209,8 @@ func TestParseBlock(t *testing.T) {
 		for _, upstream := range upstreams {
 			headers := upstream.Select().UpstreamHeaders
 
-			if _, ok := headers["Host"]; !ok {
-				t.Errorf("Test %d: Could not find the Host header", i+1)
+			if !upstream.Transparent() {
+				t.Errorf("Test %d: Upstream should be in transparent mode", i+1)
 			}
 
 			if _, ok := headers["X-Real-Ip"]; !ok {
