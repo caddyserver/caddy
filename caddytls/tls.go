@@ -19,6 +19,7 @@ import (
 	"net"
 	"strings"
 
+	"github.com/mholt/caddy"
 	"github.com/xenolf/lego/acme"
 )
 
@@ -149,6 +150,7 @@ var dnsProviders = make(map[string]DNSProviderConstructor)
 // RegisterDNSProvider registers provider by name for solving the ACME DNS challenge.
 func RegisterDNSProvider(name string, provider DNSProviderConstructor) {
 	dnsProviders[name] = provider
+	caddy.RegisterPlugin("tls.dns."+name, caddy.Plugin{})
 }
 
 var (
