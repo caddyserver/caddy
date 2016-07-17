@@ -146,6 +146,9 @@ func (s *Server) Listen() (net.Listener, error) {
 	return ln.(*net.TCPListener), nil
 }
 
+// ListenPacket is a noop to implement the Server interface.
+func (s *Server) ListenPacket() (net.PacketConn, error) { return nil, nil }
+
 // Serve serves requests on ln. It blocks until ln is closed.
 func (s *Server) Serve(ln net.Listener) error {
 	if tcpLn, ok := ln.(*net.TCPListener); ok {
@@ -185,6 +188,9 @@ func (s *Server) Serve(ln net.Listener) error {
 	}
 	return err
 }
+
+// ServePacket is a noop to implement the Server interface.
+func (s *Server) ServePacket(pc net.PacketConn) error { return nil }
 
 // ServeHTTP is the entry point of all HTTP requests.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {

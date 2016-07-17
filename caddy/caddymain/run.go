@@ -19,6 +19,8 @@ import (
 	"github.com/mholt/caddy"
 	// plug in the HTTP server type
 	_ "github.com/mholt/caddy/caddyhttp"
+	// plugin the DNS server type
+	_ "github.com/miekg/caddy-coredns/coredns"
 
 	"github.com/mholt/caddy/caddytls"
 	// This is where other plugins get plugged in (imported)
