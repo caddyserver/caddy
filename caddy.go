@@ -235,20 +235,9 @@ func listenerAddrEqual(ln net.Listener, addr string) bool {
 	return false
 }
 
-// Server is a type that can listen and serve.
-//
-// These methods must be implemented in pairs. If the server uses
-// TCP, it should implement Listen() and Serve(). If it uses UDP
-// or some other protocol, it should implement ListenPacket() and
-// ServePacket(). If it uses both, all four methods should be
-// implemented. Any unimplemented methods should be made as no-ops
-// that simply return nil values.
-//
-// A Server must associate with exactly or one listeners and
-// zero or one packetconns.
-type Server interface {
-	// TCP methods
-
+// TCPServer is a type that can listen and serve connections.
+// A TCPServer must associate with exactly or one net.Listeners.
+type TCPServer interface {
 	// Listen starts listening by creating a new listener
 	// and returning it. It does not start accepting
 	// connections. For UDP-only servers, this method
@@ -262,9 +251,11 @@ type Server interface {
 	// words, until the server is stopped. For UDP-only
 	// servers, this method can be a no-op that returns nil.
 	Serve(net.Listener) error
+}
 
-	// UDP methods
-
+// UDPServer is a type that can listen and serve packets.
+// A UDPServer must associate with exactly or one net.PacketConns.
+type UDPServer interface {
 	// ListenPacket starts listening by creating a new packetconn
 	// and returning it. It does not start accepting connections.
 	// TCP-only servers may leave this method blank and return
@@ -278,6 +269,20 @@ type Server interface {
 	// words, until the server is stopped. For TCP-only servers,
 	// this method can be a no-op that returns nil.
 	ServePacket(net.PacketConn) error
+}
+
+// Server is a type that can listen and serve. It supports both
+// TCP and UDP, although the UDPServer interface can be used
+// for more than just UDP.
+//
+// If the server uses TCP, it should implement TCPServer completely.
+// If it uses UDP or some other protocol, it should implement
+// UDPServer completely. If it uses both, both interfaces should be
+// fully implemented. Any unimplemented methods should be made as
+// no-ops that simply return nil values.
+type Server interface {
+	TCPServer
+	UDPServer
 }
 
 // Stopper is a type that can stop serving. The stop
