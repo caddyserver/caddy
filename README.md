@@ -82,7 +82,7 @@ Wow! Caddy can do a lot with just a few lines.
 To host multiple sites and do more with the Caddyfile, please see the
 [Caddyfile documentation](https://caddyserver.com/docs/caddyfile).
 
-Note that production sites (not localhost) are served over
+Note that production sites are served over
 [HTTPS by default](https://caddyserver.com/docs/automatic-https).
 
 Caddy has a command line interface. Run `caddy -h` to view basic help or see

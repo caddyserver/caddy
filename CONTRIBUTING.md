@@ -92,6 +92,11 @@ we see fit; this is not an insult, just a basic security precaution in case
 the account becomes inactive or abandoned. Privileges can always be restored
 later.
 
+**Reviewing pull requests:** Please help submit and review pull requests as
+you are able! We would ask that every pull request be reviewed by at least
+one collaborator who did not open the pull request before merging. This will
+help ensure high code quality as new collaborators are added to the project.
+
 
 ### Vulnerabilities
 

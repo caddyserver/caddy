@@ -274,9 +274,9 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream) error {
 			return err
 		}
 		u.HealthCheck.Timeout = dur
-	case "header_upstream":
+	case "proxy_header": // TODO: deprecate this shortly after 0.9
 		fallthrough
-	case "proxy_header":
+	case "header_upstream":
 		var header, value string
 		if !c.Args(&header, &value) {
 			return c.ArgErr()

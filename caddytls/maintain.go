@@ -106,7 +106,7 @@ func RenewManagedCertificates(allowPrompts bool) (err error) {
 					// that we used to do this any time a renewal failed at startup. However,
 					// after discussion in https://github.com/mholt/caddy/issues/642 we decided to
 					// only stop startup if the certificate is expired. We still log the error
-					// otherwise.
+					// otherwise. I'm not sure how permanent the change in #642 will be...
 					certCacheMu.RUnlock()
 					return err
 				}
