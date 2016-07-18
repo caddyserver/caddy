@@ -82,10 +82,11 @@ func ValidDirectives(serverType string) []string {
 	return stype.Directives
 }
 
-// serverListener pairs a server to its listener.
+// serverListener pairs a server to its listener and/or packetconn.
 type serverListener struct {
 	server   Server
 	listener net.Listener
+	packet   net.PacketConn
 }
 
 // Context is a type which carries a server type through

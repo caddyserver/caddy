@@ -148,12 +148,24 @@ func (i *Instance) Restart(newCaddyfile Input) (*Instance, error) {
 	}
 
 	// Add file descriptors of all the sockets that are capable of it
-	restartFds := make(map[string]restartPair)
+	restartFds := make(map[string]restartTriple)
 	for _, s := range i.servers {
 		gs, srvOk := s.server.(GracefulServer)
 		ln, lnOk := s.listener.(Listener)
-		if srvOk && lnOk {
-			restartFds[gs.Address()] = restartPair{server: gs, listener: ln}
+		pc, pcOk := s.packet.(PacketConn)
+		if srvOk {
+			if lnOk && pcOk {
+				restartFds[gs.Address()] = restartTriple{server: gs, listener: ln, packet: pc}
+				continue
+			}
+			if lnOk {
+				restartFds[gs.Address()] = restartTriple{server: gs, listener: ln}
+				continue
+			}
+			if pcOk {
+				restartFds[gs.Address()] = restartTriple{server: gs, packet: pc}
+				continue
+			}
 		}
 	}
 
@@ -223,35 +235,22 @@ func listenerAddrEqual(ln net.Listener, addr string) bool {
 	return false
 }
 
-/*
-// TODO: We should be able to support UDP servers... I'm considering this pattern.
-
-type UDPListener struct {
-	*net.UDPConn
-}
-
-func (u UDPListener) Accept() (net.Conn, error) {
-	return u.UDPConn, nil
-}
-
-func (u UDPListener) Close() error {
-	return u.UDPConn.Close()
-}
-
-func (u UDPListener) Addr() net.Addr {
-	return u.UDPConn.LocalAddr()
-}
-
-var _ net.Listener = UDPListener{}
-*/
-
 // Server is a type that can listen and serve. A Server
-// must associate with exactly zero or one listeners.
+// must associate with exactly zero or one listeners and packetconns.
+// The listed method "pair up", Listen() and Serve() are needed for a
+// TCP server and ListenPacket() and ServePacket() are needed for a
+// UDP server. Do both TCP and UDP means all four are needed.
 type Server interface {
 	// Listen starts listening by creating a new listener
 	// and returning it. It does not start accepting
 	// connections.
 	Listen() (net.Listener, error)
+
+	// ListenPacket starts listening by creating a new packetconn
+	// and returning it. It does not start accepting connections.
+	// For a TCP only server this method can be a noop and just
+	// return (nil, nil).
+	ListenPacket() (net.PacketConn, error)
 
 	// Serve starts serving using the provided listener.
 	// Serve must start the server loop nearly immediately,
@@ -259,6 +258,15 @@ type Server interface {
 	// loop begins. Serve blocks indefinitely, or in other
 	// words, until the server is stopped.
 	Serve(net.Listener) error
+
+	// ServePacket starts serving using the provided packetconn.
+	// ServePacket must start the server loop nearly immediately,
+	// or at least not return any errors before the server
+	// loop begins. ServePacket blocks indefinitely, or in other
+	// words, until the server is stopped.
+	// For a TCP only server this method can be a noop and just
+	// return nil.
+	ServePacket(net.PacketConn) error
 }
 
 // Stopper is a type that can stop serving. The stop
@@ -296,6 +304,15 @@ type GracefulServer interface {
 // to support zero-downtime reloads.
 type Listener interface {
 	net.Listener
+	File() (*os.File, error)
+}
+
+// PacketConn is a net.PacketConn with an underlying file descriptor.
+// A server's packetconn should implement this interface if it is
+// to support zero-downtime reloads (in sofar this holds true for datagram
+// connections).
+type PacketConn interface {
+	net.PacketConn
 	File() (*os.File, error)
 }
 
@@ -384,7 +401,7 @@ func Start(cdyfile Input) (*Instance, error) {
 	return inst, startWithListenerFds(cdyfile, inst, nil)
 }
 
-func startWithListenerFds(cdyfile Input, inst *Instance, restartFds map[string]restartPair) error {
+func startWithListenerFds(cdyfile Input, inst *Instance, restartFds map[string]restartTriple) error {
 	if cdyfile == nil {
 		cdyfile = CaddyfileInput{}
 	}
@@ -535,27 +552,45 @@ func executeDirectives(inst *Instance, filename string,
 	return nil
 }
 
-func startServers(serverList []Server, inst *Instance, restartFds map[string]restartPair) error {
+func startServers(serverList []Server, inst *Instance, restartFds map[string]restartTriple) error {
 	errChan := make(chan error, len(serverList))
 
 	for _, s := range serverList {
-		var ln net.Listener
-		var err error
+		var (
+			ln  net.Listener
+			pc  net.PacketConn
+			err error
+		)
 
 		// If this is a reload and s is a GracefulServer,
 		// reuse the listener for a graceful restart.
 		if gs, ok := s.(GracefulServer); ok && restartFds != nil {
 			addr := gs.Address()
 			if old, ok := restartFds[addr]; ok {
-				file, err := old.listener.File()
-				if err != nil {
-					return err
+				// listener
+				if old.listener != nil {
+					file, err := old.listener.File()
+					if err != nil {
+						return err
+					}
+					ln, err = net.FileListener(file)
+					if err != nil {
+						return err
+					}
+					file.Close()
 				}
-				ln, err = net.FileListener(file)
-				if err != nil {
-					return err
+				// packetconn
+				if old.packet != nil {
+					file, err := old.packet.File()
+					if err != nil {
+						return err
+					}
+					pc, err = net.FilePacketConn(file)
+					if err != nil {
+						return err
+					}
+					file.Close()
 				}
-				file.Close()
 			}
 		}
 
@@ -565,14 +600,25 @@ func startServers(serverList []Server, inst *Instance, restartFds map[string]res
 				return err
 			}
 		}
+		if pc == nil {
+			pc, err = s.ListenPacket()
+			if err != nil {
+				return err
+			}
+		}
 
-		inst.wg.Add(1)
-		go func(s Server, ln net.Listener, inst *Instance) {
+		inst.wg.Add(2)
+		go func(s Server, ln net.Listener, pc net.PacketConn, inst *Instance) {
 			defer inst.wg.Done()
-			errChan <- s.Serve(ln)
-		}(s, ln, inst)
 
-		inst.servers = append(inst.servers, serverListener{server: s, listener: ln})
+			go func() {
+				errChan <- s.Serve(ln)
+				defer inst.wg.Done()
+			}()
+			errChan <- s.ServePacket(pc)
+		}(s, ln, pc, inst)
+
+		inst.servers = append(inst.servers, serverListener{server: s, listener: ln, packet: pc})
 	}
 
 	// Log errors that may be returned from Serve() calls,
@@ -752,9 +798,10 @@ func writePidFile() error {
 	return ioutil.WriteFile(PidFile, pid, 0644)
 }
 
-type restartPair struct {
+type restartTriple struct {
 	server   GracefulServer
 	listener Listener
+	packet   PacketConn
 }
 
 var (
