@@ -235,37 +235,48 @@ func listenerAddrEqual(ln net.Listener, addr string) bool {
 	return false
 }
 
-// Server is a type that can listen and serve. A Server
-// must associate with exactly zero or one listeners and packetconns.
-// The listed method "pair up", Listen() and Serve() are needed for a
-// TCP server and ListenPacket() and ServePacket() are needed for a
-// UDP server. Do both TCP and UDP means all four are needed.
+// Server is a type that can listen and serve.
+//
+// These methods must be implemented in pairs. If the server uses
+// TCP, it should implement Listen() and Serve(). If it uses UDP
+// or some other protocol, it should implement ListenPacket() and
+// ServePacket(). If it uses both, all four methods should be
+// implemented. Any unimplemented methods should be made as no-ops
+// that simply return nil values.
+//
+// A Server must associate with exactly or one listeners and
+// zero or one packetconns.
 type Server interface {
+	// TCP methods
+
 	// Listen starts listening by creating a new listener
 	// and returning it. It does not start accepting
-	// connections.
+	// connections. For UDP-only servers, this method
+	// can be a no-op that returns (nil, nil).
 	Listen() (net.Listener, error)
-
-	// ListenPacket starts listening by creating a new packetconn
-	// and returning it. It does not start accepting connections.
-	// For a TCP only server this method can be a noop and just
-	// return (nil, nil).
-	ListenPacket() (net.PacketConn, error)
 
 	// Serve starts serving using the provided listener.
 	// Serve must start the server loop nearly immediately,
 	// or at least not return any errors before the server
 	// loop begins. Serve blocks indefinitely, or in other
-	// words, until the server is stopped.
+	// words, until the server is stopped. For UDP-only
+	// servers, this method can be a no-op that returns nil.
 	Serve(net.Listener) error
+
+	// UDP methods
+
+	// ListenPacket starts listening by creating a new packetconn
+	// and returning it. It does not start accepting connections.
+	// TCP-only servers may leave this method blank and return
+	// (nil, nil).
+	ListenPacket() (net.PacketConn, error)
 
 	// ServePacket starts serving using the provided packetconn.
 	// ServePacket must start the server loop nearly immediately,
 	// or at least not return any errors before the server
 	// loop begins. ServePacket blocks indefinitely, or in other
-	// words, until the server is stopped.
-	// For a TCP only server this method can be a noop and just
-	// return nil.
+	// words, until the server is stopped. For TCP-only servers,
+	// this method can be a no-op that returns nil.
 	ServePacket(net.PacketConn) error
 }
 
