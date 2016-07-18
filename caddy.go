@@ -236,7 +236,10 @@ func listenerAddrEqual(ln net.Listener, addr string) bool {
 }
 
 // Server is a type that can listen and serve. A Server
-// must associate with exactly zero or one listeners.
+// must associate with exactly zero or one listeners and packetconns.
+// The listed method "pair up", Listen() and Serve() are needed for a
+// TCP server and ListenPacket() and ServePacket() are needed for a
+// UDP server. Do both TCP and UDP means all four are needed.
 type Server interface {
 	// Listen starts listening by creating a new listener
 	// and returning it. It does not start accepting
@@ -244,8 +247,9 @@ type Server interface {
 	Listen() (net.Listener, error)
 
 	// ListenPacket starts listening by creating a new packetconn
-	// and returning it. It does not start accepting
-	// connections.
+	// and returning it. It does not start accepting connections.
+	// For a TCP only server this method can be a noop and just
+	// return (nil, nil).
 	ListenPacket() (net.PacketConn, error)
 
 	// Serve starts serving using the provided listener.
@@ -256,10 +260,12 @@ type Server interface {
 	Serve(net.Listener) error
 
 	// ServePacket starts serving using the provided packetconn.
-	// Serve must start the server loop nearly immediately,
+	// ServePacket must start the server loop nearly immediately,
 	// or at least not return any errors before the server
-	// loop begins. Serve blocks indefinitely, or in other
+	// loop begins. ServePacket blocks indefinitely, or in other
 	// words, until the server is stopped.
+	// For a TCP only server this method can be a noop and just
+	// return nil.
 	ServePacket(net.PacketConn) error
 }
 
