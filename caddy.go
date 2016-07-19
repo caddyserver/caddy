@@ -696,14 +696,19 @@ func loadServerBlocks(serverType, filename string, input io.Reader) ([]caddyfile
 // instances after stopping is completed. Do not re-use any
 // references to old instances after calling Stop.
 func Stop() error {
-	instancesMu.Lock()
-	for _, inst := range instances {
+	// This awkward for loop is to avoid a deadlock since
+	// inst.Stop() also acquires the instancesMu lock.
+	for {
+		instancesMu.Lock()
+		if len(instances) == 0 {
+			break
+		}
+		inst := instances[0]
+		instancesMu.Unlock()
 		if err := inst.Stop(); err != nil {
 			log.Printf("[ERROR] Stopping %s: %v", inst.serverType, err)
 		}
 	}
-	instances = []*Instance{}
-	instancesMu.Unlock()
 	return nil
 }
 
