@@ -1,4 +1,4 @@
-CADDY 0.9 beta 2
+CADDY 0.9
 
 Website
 	https://caddyserver.com

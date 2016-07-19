@@ -1,11 +1,13 @@
 CHANGES
 
-0.9 beta 2 (June 22, 2016)
+0.9 (July 18, 2016)
 - New core
 - New experimental QUIC support with -quic flag (HTTPS only)
-- New -type flag to specify other server types
+- New -type option to specify other server types
 - Moved ~/.caddy/letsencrypt to ~/.caddy/acme and reorganized assets
 - Moved caddy package to top level folder, and pushed main to subfolder
+- New {request} placeholder to dump entire request (without body)
+- New {hostonly} placeholder for only hostname portion of host value
 - Site addresses can have paths
 - Site addresses can make some use of wildcards in domains
 - Renamed -directives flag to -plugins
@@ -13,7 +15,6 @@ CHANGES
 - Removed -restart option
 - fastcgi: Env variables now support placeholders
 - import: Import paths now relative to Caddyfile, not current working dir
-- log: New {request} placeholder to dump entire request (without body)
 - markdown: Overhauled; removed site generation features
 - proxy: More control of headers; deprecating proxy_header subdirective
 - proxy: Specify multiple upstreams with optional port ranges
