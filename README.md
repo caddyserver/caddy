@@ -133,6 +133,8 @@ We use GitHub issues and pull requests only for discussing bug reports and
 the development of specific changes. We welcome all other topics on the
 [forum](https://forum.caddyserver.com)!
 
+If you want to contribute to the documentation, please submit pull requests to [caddyserver/caddyserver.com](https://github.com/caddyserver/caddyserver.com).
+
 Thanks for making Caddy -- and the Web -- better!
 
 Special thanks to
