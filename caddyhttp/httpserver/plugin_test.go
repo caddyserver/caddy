@@ -50,6 +50,7 @@ func TestStandardizeAddress(t *testing.T) {
 		{`https://host:443/path/foo`, "https", "host", "443", "/path/foo", false},
 		{`host:80/path`, "", "host", "80", "/path", false},
 		{`host:https/path`, "https", "host", "443", "/path", false},
+		{`/path`, "", "", "", "/path", false},
 	} {
 		actual, err := standardizeAddress(test.input)
 

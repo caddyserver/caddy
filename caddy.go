@@ -236,7 +236,7 @@ func listenerAddrEqual(ln net.Listener, addr string) bool {
 }
 
 // TCPServer is a type that can listen and serve connections.
-// A TCPServer must associate with exactly or one net.Listeners.
+// A TCPServer must associate with exactly zero or one net.Listeners.
 type TCPServer interface {
 	// Listen starts listening by creating a new listener
 	// and returning it. It does not start accepting
@@ -254,7 +254,7 @@ type TCPServer interface {
 }
 
 // UDPServer is a type that can listen and serve packets.
-// A UDPServer must associate with exactly or one net.PacketConns.
+// A UDPServer must associate with exactly zero or one net.PacketConns.
 type UDPServer interface {
 	// ListenPacket starts listening by creating a new packetconn
 	// and returning it. It does not start accepting connections.

@@ -273,12 +273,12 @@ func (a Address) VHost() string {
 }
 
 // standardizeAddress parses an address string into a structured format with separate
-// scheme, host, and port portions, as well as the original input string.
+// scheme, host, port, and path portions, as well as the original input string.
 func standardizeAddress(str string) (Address, error) {
 	input := str
 
 	// Split input into components (prepend with // to assert host by default)
-	if !strings.Contains(str, "//") {
+	if !strings.Contains(str, "//") && !strings.HasPrefix(str, "/") {
 		str = "//" + str
 	}
 	u, err := url.Parse(str)
