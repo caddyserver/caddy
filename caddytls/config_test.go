@@ -1,11 +1,33 @@
 package caddytls
 
 import (
+	"crypto/tls"
 	"errors"
 	"net/url"
 	"reflect"
 	"testing"
 )
+
+func TestMakeTLSConfig(t *testing.T) {
+	// same min and max protocol versions
+	configs := []*Config{
+		{
+			Enabled:            true,
+			ProtocolMinVersion: tls.VersionTLS12,
+			ProtocolMaxVersion: tls.VersionTLS12,
+		},
+	}
+	result, err := MakeTLSConfig(configs)
+	if err != nil {
+		t.Fatalf("Did not expect an error, but got %v", err)
+	}
+	if got, want := result.MinVersion, uint16(tls.VersionTLS12); got != want {
+		t.Errorf("Expected min version to be %x, got %x", want, got)
+	}
+	if got, want := result.MaxVersion, uint16(tls.VersionTLS12); got != want {
+		t.Errorf("Expected max version to be %x, got %x", want, got)
+	}
+}
 
 func TestStorageForNoURL(t *testing.T) {
 	c := &Config{}

@@ -88,6 +88,9 @@ func setupTLS(c *caddy.Controller) error {
 					return c.Errf("Wrong protocol name or protocol not supported: '%s'", args[1])
 				}
 				config.ProtocolMaxVersion = value
+				if config.ProtocolMinVersion > config.ProtocolMaxVersion {
+					return c.Errf("Minimum protocol version cannot be higher than maximum (reverse the order)")
+				}
 			case "ciphers":
 				for c.NextArg() {
 					value, ok := supportedCiphersMap[strings.ToUpper(c.Val())]

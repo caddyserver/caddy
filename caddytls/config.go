@@ -9,11 +9,12 @@ import (
 	"io/ioutil"
 	"time"
 
-	"github.com/mholt/caddy"
-	"github.com/xenolf/lego/acme"
 	"log"
 	"net/url"
 	"strings"
+
+	"github.com/mholt/caddy"
+	"github.com/xenolf/lego/acme"
 )
 
 // Config describes how TLS should be configured and used.
@@ -322,10 +323,10 @@ func MakeTLSConfig(configs []*Config) (*tls.Config, error) {
 		}
 
 		// Go with the widest range of protocol versions
-		if cfg.ProtocolMinVersion < config.MinVersion {
+		if config.MinVersion == 0 || cfg.ProtocolMinVersion < config.MinVersion {
 			config.MinVersion = cfg.ProtocolMinVersion
 		}
-		if cfg.ProtocolMaxVersion < config.MaxVersion {
+		if cfg.ProtocolMaxVersion > config.MaxVersion {
 			config.MaxVersion = cfg.ProtocolMaxVersion
 		}
 
