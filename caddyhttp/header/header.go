@@ -27,7 +27,7 @@ func (h Headers) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 				if strings.HasPrefix(header.Name, "-") {
 					w.Header().Del(strings.TrimLeft(header.Name, "-"))
 				} else {
-					w.Header().Set(header.Name, replacer.Replace(header.Value))
+					w.Header().Add(header.Name, replacer.Replace(header.Value))
 				}
 			}
 		}
