@@ -24,8 +24,12 @@ func (h Headers) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 	for _, rule := range h.Rules {
 		if httpserver.Path(r.URL.Path).Matches(rule.Path) {
 			for _, header := range rule.Headers {
+				// One can either delete a header, add multiple values to a header, or simply
+				// set a header.
 				if strings.HasPrefix(header.Name, "-") {
 					w.Header().Del(strings.TrimLeft(header.Name, "-"))
+				} else if strings.HasPrefix(header.Name, "+") {
+					w.Header().Add(strings.TrimLeft(header.Name, "+"), replacer.Replace(header.Value))
 				} else {
 					w.Header().Set(header.Name, replacer.Replace(header.Value))
 				}
