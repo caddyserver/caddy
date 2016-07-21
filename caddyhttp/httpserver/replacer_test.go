@@ -21,19 +21,26 @@ func TestNewReplacer(t *testing.T) {
 
 	switch v := rep.(type) {
 	case *replacer:
-		if v.replacements["{host}"] != "localhost" {
+		if v.replacements["{host}"]() != "localhost" {
 			t.Error("Expected host to be localhost")
 		}
-		if v.replacements["{method}"] != "POST" {
+		if v.replacements["{method}"]() != "POST" {
 			t.Error("Expected request method  to be POST")
 		}
 
 		// Response placeholders should only be set after call to Replace()
-		if got, want := v.replacements["{status}"], ""; got != want {
+		got, want := "", ""
+		if getReplacement, ok := v.replacements["{status}"]; ok {
+			got = getReplacement()
+		}
+		if want := ""; got != want {
 			t.Errorf("Expected status to NOT be set before Replace() is called; was: %s", got)
 		}
 		rep.Replace("{foobar}")
-		if got, want := v.replacements["{status}"], "200"; got != want {
+		if getReplacement, ok := v.replacements["{status}"]; ok {
+			got = getReplacement()
+		}
+		if want = "200"; got != want {
 			t.Errorf("Expected status to be %s, was: %s", want, got)
 		}
 	default:
@@ -84,10 +91,14 @@ func TestReplace(t *testing.T) {
 
 	complexCases := []struct {
 		template     string
-		replacements map[string]string
+		replacements map[string]func() string
 		expect       string
 	}{
-		{"/a{1}/{2}", map[string]string{"{1}": "12", "{2}": ""}, "/a12/"},
+		{"/a{1}/{2}",
+			map[string]func() string{
+				"{1}": func() string { return "12" },
+				"{2}": func() string { return "" }},
+			"/a12/"},
 	}
 
 	for _, c := range complexCases {

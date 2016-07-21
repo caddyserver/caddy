@@ -761,3 +761,37 @@ func (c *fakeConn) SetWriteDeadline(t time.Time) error { return nil }
 func (c *fakeConn) Close() error                       { return nil }
 func (c *fakeConn) Read(b []byte) (int, error)         { return c.readBuf.Read(b) }
 func (c *fakeConn) Write(b []byte) (int, error)        { return c.writeBuf.Write(b) }
+
+func BenchmarkProxy(b *testing.B) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Hello, client"))
+	}))
+	defer backend.Close()
+
+	upstream := newFakeUpstream(backend.URL, false)
+	upstream.host.UpstreamHeaders = http.Header{
+		"Hostname":          {"{hostname}"},
+		"Host":              {"{host}"},
+		"X-Real-IP":         {"{remote}"},
+		"X-Forwarded-Proto": {"{scheme}"},
+	}
+	// set up proxy
+	p := &Proxy{
+		Next:      httpserver.EmptyNext, // prevents panic in some cases when test fails
+		Upstreams: []Upstream{upstream},
+	}
+
+	w := httptest.NewRecorder()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		// create request and response recorder
+		r, err := http.NewRequest("GET", "/", nil)
+		if err != nil {
+			b.Fatalf("Failed to create request: %v", err)
+		}
+		b.StartTimer()
+		p.ServeHTTP(w, r)
+	}
+}

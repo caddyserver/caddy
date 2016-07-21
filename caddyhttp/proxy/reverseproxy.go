@@ -22,6 +22,12 @@ import (
 	"time"
 )
 
+var bufferPool = sync.Pool{New: createBuffer}
+
+func createBuffer() interface{} {
+	return make([]byte, 32*1024)
+}
+
 // onExitFlushLoop is a callback set by tests to detect the state of the
 // flushLoop() goroutine.
 var onExitFlushLoop func()
@@ -214,6 +220,9 @@ func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, r
 }
 
 func (p *ReverseProxy) copyResponse(dst io.Writer, src io.Reader) {
+	buf := bufferPool.Get()
+	defer bufferPool.Put(buf)
+
 	if p.FlushInterval != 0 {
 		if wf, ok := dst.(writeFlusher); ok {
 			mlw := &maxLatencyWriter{
@@ -226,7 +235,7 @@ func (p *ReverseProxy) copyResponse(dst io.Writer, src io.Reader) {
 			dst = mlw
 		}
 	}
-	io.Copy(dst, src)
+	io.CopyBuffer(dst, src, buf.([]byte))
 }
 
 type writeFlusher interface {
