@@ -30,8 +30,6 @@ type Upstream interface {
 	Select() *UpstreamHost
 	// Checks if subpath is not an ignored path
 	AllowedPath(string) bool
-	// Is Upstream in transparent mode?
-	Transparent() bool
 }
 
 // UpstreamHostDownFunc can be used to customize how Down behaves.
@@ -96,7 +94,6 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	start := time.Now()
 	for time.Now().Sub(start) < tryDuration {
 		host := upstream.Select()
-
 		if host == nil {
 			return http.StatusBadGateway, errUnreachable
 		}
@@ -127,9 +124,6 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			}
 			if v, ok := host.UpstreamHeaders["Host"]; ok {
 				outreq.Host = replacer.Replace(v[len(v)-1])
-			}
-			if upstream.Transparent() {
-				host.UpstreamHeaders.Set("Host", host.Name)
 			}
 			// modify headers for request that will be sent to the upstream host
 			upHeaders := createHeadersByRules(host.UpstreamHeaders, r.Header, replacer)

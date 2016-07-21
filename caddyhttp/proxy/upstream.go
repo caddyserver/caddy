@@ -26,7 +26,6 @@ type staticUpstream struct {
 	Hosts              HostPool
 	Policy             Policy
 	insecureSkipVerify bool
-	transparent        bool
 
 	FailTimeout time.Duration
 	MaxFails    int32
@@ -55,7 +54,6 @@ func NewStaticUpstreams(c caddyfile.Dispenser) ([]Upstream, error) {
 			FailTimeout:       10 * time.Second,
 			MaxFails:          1,
 			MaxConns:          0,
-			transparent:       false,
 		}
 
 		if !c.Args(&upstream.from) {
@@ -294,7 +292,7 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream) error {
 		}
 		u.downstreamHeaders.Add(header, value)
 	case "transparent":
-		u.transparent = true
+		u.upstreamHeaders.Add("Host", "{host}")
 		u.upstreamHeaders.Add("X-Real-IP", "{remote}")
 		u.upstreamHeaders.Add("X-Forwarded-For", "{remote}")
 		u.upstreamHeaders.Add("X-Forwarded-Proto", "{scheme}")
@@ -371,11 +369,6 @@ func (u *staticUpstream) Select() *UpstreamHost {
 		return (&Random{}).Select(pool)
 	}
 	return u.Policy.Select(pool)
-}
-
-// Transparent returns true if upstream in transparent mode
-func (u *staticUpstream) Transparent() bool {
-	return u.transparent
 }
 
 func (u *staticUpstream) AllowedPath(requestPath string) bool {
