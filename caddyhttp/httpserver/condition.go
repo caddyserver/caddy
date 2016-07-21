@@ -6,12 +6,13 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/mholt/caddy/caddyfile"
+	"github.com/mholt/caddy"
 )
 
 // SetupIfMatcher parses `if` or `if_op` in the current dispenser block.
 // It returns a RequestMatcher and an error if any.
-func SetupIfMatcher(c caddyfile.Dispenser) (RequestMatcher, error) {
+func SetupIfMatcher(controller *caddy.Controller) (RequestMatcher, error) {
+	var c = controller.Dispenser // copy the dispenser
 	var matcher IfMatcher
 	for c.NextBlock() {
 		switch c.Val() {
@@ -193,7 +194,13 @@ func (m IfMatcher) Or(r *http.Request) bool {
 	return false
 }
 
-// IfMatcherKeyword returns if k is a keyword for 'if' config block.
-func IfMatcherKeyword(k string) bool {
-	return k == "if" || k == "if_op"
+// IfMatcherKeyword checks if the next value in the dispenser is a keyword for 'if' config block.
+// If true, remaining arguments in the dispinser are cleard to keep the dispenser valid for use.
+func IfMatcherKeyword(c *caddy.Controller) bool {
+	if c.Val() == "if" || c.Val() == "if_op" {
+		// clear remainig args
+		c.RemainingArgs()
+		return true
+	}
+	return false
 }
