@@ -171,10 +171,15 @@ func parseUpstream(u string) ([]string, error) {
 
 		if colonIdx != -1 && colonIdx != protoIdx {
 			us := u[:colonIdx]
-			ports := u[len(us)+1:]
-			if separators := strings.Count(ports, "-"); separators > 1 {
-				return nil, fmt.Errorf("port range [%s] is invalid", ports)
-			} else if separators == 1 {
+			ue := ""
+			portsEnd := len(u)
+			if nextSlash := strings.Index(u[colonIdx:], "/"); nextSlash != -1 {
+				portsEnd = colonIdx + nextSlash
+				ue = u[portsEnd:]
+			}
+			ports := u[len(us)+1 : portsEnd]
+
+			if separators := strings.Count(ports, "-"); separators == 1 {
 				portsStr := strings.Split(ports, "-")
 				pIni, err := strconv.Atoi(portsStr[0])
 				if err != nil {
@@ -192,7 +197,7 @@ func parseUpstream(u string) ([]string, error) {
 
 				hosts := []string{}
 				for p := pIni; p <= pEnd; p++ {
-					hosts = append(hosts, fmt.Sprintf("%s:%d", us, p))
+					hosts = append(hosts, fmt.Sprintf("%s:%d%s", us, p, ue))
 				}
 				return hosts, nil
 			}
