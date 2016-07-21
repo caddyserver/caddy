@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"reflect"
+	"sort"
 	"testing"
 
 	"github.com/mholt/caddy/caddyhttp/httpserver"
@@ -53,5 +55,35 @@ func TestHeader(t *testing.T) {
 			t.Errorf("Test %d: Expected %s header to be %q but was %q",
 				i, test.name, test.value, got)
 		}
+	}
+}
+
+func TestMultipleHeaders(t *testing.T) {
+	he := Headers{
+		Next: httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
+			return 0, nil
+		}),
+		Rules: []Rule{
+			{Path: "/a", Headers: []Header{
+				{Name: "+Link", Value: "</images/image.png>; rel=preload"},
+				{Name: "+Link", Value: "</css/main.css>; rel=preload"},
+			}},
+		},
+	}
+
+	req, err := http.NewRequest("GET", "/a", nil)
+	if err != nil {
+		t.Fatalf("Could not create HTTP request: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	he.ServeHTTP(rec, req)
+
+	desiredHeaders := []string{"</css/main.css>; rel=preload", "</images/image.png>; rel=preload"}
+	actualHeaders := rec.HeaderMap[http.CanonicalHeaderKey("Link")]
+	sort.Strings(actualHeaders)
+
+	if !reflect.DeepEqual(desiredHeaders, actualHeaders) {
+		t.Errorf("Expected header to contain: %v but got: %v", desiredHeaders, actualHeaders)
 	}
 }
