@@ -111,6 +111,26 @@ func TestSetup(t *testing.T) {
 				"http://localhost:8085": {},
 			},
 		},
+		// test #10 test hyphen without port range
+		{
+			"proxy / http://localhost:8001/a--b",
+			false,
+			map[string]struct{}{
+				"http://localhost:8001/a--b": {},
+			},
+		},
+		// test #11 test hyphen with port range
+		{
+			"proxy / http://localhost:8001-8005/a--b",
+			false,
+			map[string]struct{}{
+				"http://localhost:8001/a--b": {},
+				"http://localhost:8002/a--b": {},
+				"http://localhost:8003/a--b": {},
+				"http://localhost:8004/a--b": {},
+				"http://localhost:8005/a--b": {},
+			},
+		},
 	} {
 		c := caddy.NewTestController("http", test.input)
 		err := setup(c)
