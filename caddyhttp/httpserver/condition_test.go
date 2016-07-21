@@ -243,7 +243,7 @@ func TestSetupIfMatcher(t *testing.T) {
 	for i, test := range tests {
 		c := caddy.NewTestController("http", test.input)
 		c.Next()
-		matcher, err := SetupIfMatcher(c.Dispenser)
+		matcher, err := SetupIfMatcher(c)
 		if err == nil && test.shouldErr {
 			t.Errorf("Test %d didn't error, but it should have", i)
 		} else if err != nil && !test.shouldErr {
@@ -277,8 +277,11 @@ func TestIfMatcherKeyword(t *testing.T) {
 		{"if_type", false},
 		{"if_cond", false},
 	}
+
 	for i, test := range tests {
-		valid := IfMatcherKeyword(test.keyword)
+		c := caddy.NewTestController("http", test.keyword)
+		c.Next()
+		valid := IfMatcherKeyword(c)
 		if valid != test.expected {
 			t.Errorf("Test %d: expected %v found %v", i, test.expected, valid)
 		}
