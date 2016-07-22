@@ -642,6 +642,73 @@ func TestHostHeaderReplacedUsingForward(t *testing.T) {
 	}
 }
 
+func TestBasicAuth(t *testing.T) {
+	basicAuthTestcase(t, nil, nil)
+	basicAuthTestcase(t, nil, url.UserPassword("username", "password"))
+	basicAuthTestcase(t, url.UserPassword("usename", "password"), nil)
+	basicAuthTestcase(t, url.UserPassword("unused", "unused"),
+		url.UserPassword("username", "password"))
+}
+
+func basicAuthTestcase(t *testing.T, upstreamUser, clientUser *url.Userinfo) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		u, p, ok := r.BasicAuth()
+
+		if ok {
+			w.Write([]byte(u))
+		}
+		if ok && p != "" {
+			w.Write([]byte(":"))
+			w.Write([]byte(p))
+		}
+	}))
+	defer backend.Close()
+
+	backUrl, err := url.Parse(backend.URL)
+	if err != nil {
+		t.Fatalf("Failed to parse URL: %v", err)
+	}
+	backUrl.User = upstreamUser
+
+	p := &Proxy{
+		Next:      httpserver.EmptyNext,
+		Upstreams: []Upstream{newFakeUpstream(backUrl.String(), false)},
+	}
+	r, err := http.NewRequest("GET", "/foo", nil)
+	if err != nil {
+		t.Fatalf("Failed to create request: %v", err)
+	}
+	if clientUser != nil {
+		u := clientUser.Username()
+		p, _ := clientUser.Password()
+		r.SetBasicAuth(u, p)
+	}
+	w := httptest.NewRecorder()
+
+	p.ServeHTTP(w, r)
+
+	if w.Code != 200 {
+		t.Fatalf("Invalid response code: %d", w.Code)
+	}
+	body, _ := ioutil.ReadAll(w.Body)
+
+	if clientUser != nil {
+		if string(body) != clientUser.String() {
+			t.Fatalf("Invalid auth info: %s", string(body))
+		}
+	} else {
+		if upstreamUser != nil {
+			if string(body) != upstreamUser.String() {
+				t.Fatalf("Invalid auth info: %s", string(body))
+			}
+		} else {
+			if string(body) != "" {
+				t.Fatalf("Invalid auth info: %s", string(body))
+			}
+		}
+	}
+}
+
 func newFakeUpstream(name string, insecure bool) *fakeUpstream {
 	uri, _ := url.Parse(name)
 	u := &fakeUpstream{

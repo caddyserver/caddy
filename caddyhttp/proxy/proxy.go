@@ -110,6 +110,12 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			if proxy == nil {
 				proxy = NewSingleHostReverseProxy(nameURL, host.WithoutPathPrefix)
 			}
+
+			// use upstream credentials by default
+			if outreq.Header.Get("Authorization") == "" && nameURL.User != nil {
+				pwd, _ := nameURL.User.Password()
+				outreq.SetBasicAuth(nameURL.User.Username(), pwd)
+			}
 		} else {
 			outreq.Host = host.Name
 		}
