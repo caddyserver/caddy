@@ -177,10 +177,11 @@ func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, r
 	res, err := transport.RoundTrip(outreq)
 	if err != nil {
 		return err
-	} else if respUpdateFn != nil {
-		respUpdateFn(res)
 	}
 
+	if respUpdateFn != nil {
+		respUpdateFn(res)
+	}
 	if res.StatusCode == http.StatusSwitchingProtocols && strings.ToLower(res.Header.Get("Upgrade")) == "websocket" {
 		res.Body.Close()
 		hj, ok := rw.(http.Hijacker)
