@@ -63,7 +63,7 @@ func redirParse(c *caddy.Controller) ([]Rule, error) {
 	}
 
 	for c.Next() {
-		matcher, err := httpserver.SetupIfMatcher(c.Dispenser)
+		matcher, err := httpserver.SetupIfMatcher(c)
 		if err != nil {
 			return nil, err
 		}
@@ -71,8 +71,7 @@ func redirParse(c *caddy.Controller) ([]Rule, error) {
 
 		var hadOptionalBlock bool
 		for c.NextBlock() {
-			if httpserver.IfMatcherKeyword(c.Val()) {
-				c.RemainingArgs()
+			if httpserver.IfMatcherKeyword(c) {
 				continue
 			}
 

@@ -57,12 +57,15 @@ func rewriteParse(c *caddy.Controller) ([]httpserver.HandlerConfig, error) {
 			fallthrough
 		case 0:
 			// Integrate request matcher for 'if' conditions.
-			matcher, err = httpserver.SetupIfMatcher(c.Dispenser)
+			matcher, err = httpserver.SetupIfMatcher(c)
 			if err != nil {
 				return nil, err
 			}
-		block:
+
 			for c.NextBlock() {
+				if httpserver.IfMatcherKeyword(c) {
+					continue
+				}
 				switch c.Val() {
 				case "r", "regexp":
 					if !c.NextArg() {
@@ -90,10 +93,6 @@ func rewriteParse(c *caddy.Controller) ([]httpserver.HandlerConfig, error) {
 						return nil, c.Err("status must be 2xx or 4xx")
 					}
 				default:
-					if httpserver.IfMatcherKeyword(c.Val()) {
-						c.RemainingArgs()
-						continue block
-					}
 					return nil, c.ArgErr()
 				}
 			}

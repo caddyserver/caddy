@@ -754,10 +754,6 @@ func (u *fakeUpstream) AllowedPath(requestPath string) bool {
 	return true
 }
 
-func (u *fakeUpstream) Transparent() bool {
-	return true
-}
-
 // newWebSocketTestProxy returns a test proxy that will
 // redirect to the specified backendAddr. The function
 // also sets up the rules/environment for testing WebSocket
@@ -797,10 +793,6 @@ func (u *fakeWsUpstream) Select() *UpstreamHost {
 }
 
 func (u *fakeWsUpstream) AllowedPath(requestPath string) bool {
-	return true
-}
-
-func (u *fakeWsUpstream) Transparent() bool {
 	return true
 }
 

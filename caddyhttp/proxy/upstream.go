@@ -26,7 +26,6 @@ type staticUpstream struct {
 	Hosts              HostPool
 	Policy             Policy
 	insecureSkipVerify bool
-	transparent        bool
 
 	FailTimeout time.Duration
 	MaxFails    int32
@@ -55,7 +54,6 @@ func NewStaticUpstreams(c caddyfile.Dispenser) ([]Upstream, error) {
 			FailTimeout:       10 * time.Second,
 			MaxFails:          1,
 			MaxConns:          0,
-			transparent:       false,
 		}
 
 		if !c.Args(&upstream.from) {
@@ -171,10 +169,15 @@ func parseUpstream(u string) ([]string, error) {
 
 		if colonIdx != -1 && colonIdx != protoIdx {
 			us := u[:colonIdx]
-			ports := u[len(us)+1:]
-			if separators := strings.Count(ports, "-"); separators > 1 {
-				return nil, fmt.Errorf("port range [%s] is invalid", ports)
-			} else if separators == 1 {
+			ue := ""
+			portsEnd := len(u)
+			if nextSlash := strings.Index(u[colonIdx:], "/"); nextSlash != -1 {
+				portsEnd = colonIdx + nextSlash
+				ue = u[portsEnd:]
+			}
+			ports := u[len(us)+1 : portsEnd]
+
+			if separators := strings.Count(ports, "-"); separators == 1 {
 				portsStr := strings.Split(ports, "-")
 				pIni, err := strconv.Atoi(portsStr[0])
 				if err != nil {
@@ -192,7 +195,7 @@ func parseUpstream(u string) ([]string, error) {
 
 				hosts := []string{}
 				for p := pIni; p <= pEnd; p++ {
-					hosts = append(hosts, fmt.Sprintf("%s:%d", us, p))
+					hosts = append(hosts, fmt.Sprintf("%s:%d%s", us, p, ue))
 				}
 				return hosts, nil
 			}
@@ -289,7 +292,7 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream) error {
 		}
 		u.downstreamHeaders.Add(header, value)
 	case "transparent":
-		u.transparent = true
+		u.upstreamHeaders.Add("Host", "{host}")
 		u.upstreamHeaders.Add("X-Real-IP", "{remote}")
 		u.upstreamHeaders.Add("X-Forwarded-For", "{remote}")
 		u.upstreamHeaders.Add("X-Forwarded-Proto", "{scheme}")
@@ -366,11 +369,6 @@ func (u *staticUpstream) Select() *UpstreamHost {
 		return (&Random{}).Select(pool)
 	}
 	return u.Policy.Select(pool)
-}
-
-// Transparent returns true if upstream in transparent mode
-func (u *staticUpstream) Transparent() bool {
-	return u.transparent
 }
 
 func (u *staticUpstream) AllowedPath(requestPath string) bool {
