@@ -348,9 +348,10 @@ var directives = []string{
 	"gzip",
 	"locale", // github.com/simia-tech/caddy-locale
 	"errors",
-	"minify",   // github.com/hacdias/caddy-minify
-	"ipfilter", // github.com/pyed/ipfilter
-	"search",   // github.com/pedronasser/caddy-search
+	"minify",    // github.com/hacdias/caddy-minify
+	"ipfilter",  // github.com/pyed/ipfilter
+	"ratelimit", // github.com/xuqingfeng/caddy-rate-limit
+	"search",    // github.com/pedronasser/caddy-search
 	"header",
 	"redir",
 	"cors", // github.com/captncraig/cors/caddy
