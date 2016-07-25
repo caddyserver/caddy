@@ -342,11 +342,11 @@ var directives = []string{
 	"git",    // github.com/abiosoft/caddy-git
 
 	// directives that add middleware to the stack
+	"locale", // github.com/simia-tech/caddy-locale
 	"log",
 	"rewrite",
 	"ext",
 	"gzip",
-	"locale", // github.com/simia-tech/caddy-locale
 	"errors",
 	"minify",    // github.com/hacdias/caddy-minify
 	"ipfilter",  // github.com/pyed/ipfilter
