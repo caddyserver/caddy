@@ -32,18 +32,17 @@ type UserData struct {
 	Key []byte
 }
 
-// Storage is an interface abstracting all storage used by the Caddy's TLS
-// subsystem. Implementations of this interface store site data along with
+// Storage is an interface abstracting all storage used by Caddy's TLS
+// subsystem. Implementations of this interface store both site and
 // user data.
 type Storage interface {
-
-	// SiteDataExists returns true if this site info exists in storage.
+	// SiteExists returns true if this site exists in storage.
 	// Site data is considered present when StoreSite has been called
-	// successfully (without DeleteSite having been called of course).
+	// successfully (without DeleteSite having been called, of course).
 	SiteExists(domain string) bool
 
 	// LoadSite obtains the site data from storage for the given domain and
-	// returns. If data for the domain does not exist, the
+	// returns it. If data for the domain does not exist, the
 	// ErrStorageNotFound error instance is returned. For multi-server
 	// storage, care should be taken to make this load atomic to prevent
 	// race conditions that happen with multiple data loads.

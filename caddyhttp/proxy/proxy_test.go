@@ -664,15 +664,15 @@ func basicAuthTestcase(t *testing.T, upstreamUser, clientUser *url.Userinfo) {
 	}))
 	defer backend.Close()
 
-	backUrl, err := url.Parse(backend.URL)
+	backURL, err := url.Parse(backend.URL)
 	if err != nil {
 		t.Fatalf("Failed to parse URL: %v", err)
 	}
-	backUrl.User = upstreamUser
+	backURL.User = upstreamUser
 
 	p := &Proxy{
 		Next:      httpserver.EmptyNext,
-		Upstreams: []Upstream{newFakeUpstream(backUrl.String(), false)},
+		Upstreams: []Upstream{newFakeUpstream(backURL.String(), false)},
 	}
 	r, err := http.NewRequest("GET", "/foo", nil)
 	if err != nil {
