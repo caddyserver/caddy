@@ -100,7 +100,7 @@ func (cg configGroup) getCertDuringHandshake(name string, loadIfNecessary, obtai
 			name = strings.ToLower(name)
 
 			// Make sure aren't over any applicable limits
-			err := cg.checkLimitsForObtainingNewCerts(name)
+			err := cg.checkLimitsForObtainingNewCerts(name, cfg)
 			if err != nil {
 				return Certificate{}, err
 			}
@@ -127,10 +127,11 @@ func (cg configGroup) getCertDuringHandshake(name string, loadIfNecessary, obtai
 // now according to mitigating factors we keep track of and preferences the
 // user has set. If a non-nil error is returned, do not issue a new certificate
 // for name.
-func (cg configGroup) checkLimitsForObtainingNewCerts(name string) error {
+func (cg configGroup) checkLimitsForObtainingNewCerts(name string, cfg *Config) error {
 	// User can set hard limit for number of certs for the process to issue
-	if onDemandMaxIssue > 0 && atomic.LoadInt32(OnDemandIssuedCount) >= onDemandMaxIssue {
-		return fmt.Errorf("%s: maximum certificates issued (%d)", name, onDemandMaxIssue)
+	if cfg.OnDemandState.MaxObtain > 0 &&
+		atomic.LoadInt32(&cfg.OnDemandState.ObtainedCount) >= cfg.OnDemandState.MaxObtain {
+		return fmt.Errorf("%s: maximum certificates issued (%d)", name, cfg.OnDemandState.MaxObtain)
 	}
 
 	// Make sure name hasn't failed a challenge recently
@@ -146,7 +147,7 @@ func (cg configGroup) checkLimitsForObtainingNewCerts(name string) error {
 	lastIssueTimeMu.Lock()
 	since := time.Since(lastIssueTime)
 	lastIssueTimeMu.Unlock()
-	if atomic.LoadInt32(OnDemandIssuedCount) >= 10 && since < 10*time.Minute {
+	if atomic.LoadInt32(&cfg.OnDemandState.ObtainedCount) >= 10 && since < 10*time.Minute {
 		return fmt.Errorf("%s: throttled; last certificate was obtained %v ago", name, since)
 	}
 
@@ -202,7 +203,7 @@ func (cg configGroup) obtainOnDemandCertificate(name string, cfg *Config) (Certi
 	}
 
 	// Success - update counters and stuff
-	atomic.AddInt32(OnDemandIssuedCount, 1)
+	atomic.AddInt32(&cfg.OnDemandState.ObtainedCount, 1)
 	lastIssueTimeMu.Lock()
 	lastIssueTime = time.Now()
 	lastIssueTimeMu.Unlock()
@@ -285,18 +286,6 @@ func (cg configGroup) renewDynamicCertificate(name string, cfg *Config) (Certifi
 // obtainCertWaitChans is used to coordinate obtaining certs for each hostname.
 var obtainCertWaitChans = make(map[string]chan struct{})
 var obtainCertWaitChansMu sync.Mutex
-
-// OnDemandIssuedCount is the number of certificates that have been issued
-// on-demand by this process. It is only safe to modify this count atomically.
-// If it reaches onDemandMaxIssue, on-demand issuances will fail.
-var OnDemandIssuedCount = new(int32)
-
-// onDemandMaxIssue is set based on max_certs in tls config. It specifies the
-// maximum number of certificates that can be issued.
-// TODO: This applies globally, but we should probably make a server-specific
-// way to keep track of these limits and counts, since it's specified in the
-// Caddyfile...
-var onDemandMaxIssue int32
 
 // failedIssuance is a set of names that we recently failed to get a
 // certificate for from the ACME CA. They are removed after some time.

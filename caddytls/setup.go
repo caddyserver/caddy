@@ -156,9 +156,7 @@ func setupTLS(c *caddy.Controller) error {
 			if err != nil || maxCertsNum < 1 {
 				return c.Err("max_certs must be a positive integer")
 			}
-			if onDemandMaxIssue == 0 || int32(maxCertsNum) < onDemandMaxIssue { // keep the minimum; TODO: We have to do this because it is global; should be per-server or per-vhost...
-				onDemandMaxIssue = int32(maxCertsNum)
-			}
+			config.OnDemandState.MaxObtain = int32(maxCertsNum)
 		}
 
 		// don't try to load certificates unless we're supposed to

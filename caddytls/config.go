@@ -75,7 +75,7 @@ type Config struct {
 	CAUrl string
 
 	// The host (ONLY the host, not port) to listen
-	//on if necessary to start a a listener to solve
+	// on if necessary to start a listener to solve
 	// an ACME challenge
 	ListenHost string
 
@@ -105,6 +105,22 @@ type Config struct {
 	// implementors are encouraged to cache any heavy
 	// instantiations.
 	StorageCreator StorageCreator
+
+	// The state needed to operate on-demand TLS
+	OnDemandState OnDemandState
+}
+
+// OnDemandState contains some state relevant for providing
+// on-demand TLS.
+type OnDemandState struct {
+	// The number of certificates that have been issued on-demand
+	// by this config. It is only safe to modify this count atomically.
+	// If it reaches MaxObtain, on-demand issuances must fail.
+	ObtainedCount int32
+
+	// Based on max_certs in tls config, it specifies the
+	// maximum number of certificates that can be issued.
+	MaxObtain int32
 }
 
 // ObtainCert obtains a certificate for c.Hostname, as long as a certificate
