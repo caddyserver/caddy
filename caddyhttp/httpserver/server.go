@@ -255,6 +255,10 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 	// defined as example.com/foo appears as /blog instead of /foo/blog.
 	if pathPrefix != "/" {
 		r.URL.Path = strings.TrimPrefix(r.URL.Path, pathPrefix)
+		if r.URL.Path == "" {
+			http.Redirect(w, r, pathPrefix+"/", http.StatusTemporaryRedirect)
+			return 0, nil
+		}
 		if !strings.HasPrefix(r.URL.Path, "/") {
 			r.URL.Path = "/" + r.URL.Path
 		}
