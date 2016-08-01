@@ -21,11 +21,10 @@ import (
 	"log"
 	"net"
 	"os"
-	"os/exec"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/mholt/caddy/caddyfile"
@@ -731,14 +730,12 @@ func checkFdlimit() {
 	const min = 8192
 
 	// Warn if ulimit is too low for production sites
-	if runtime.GOOS == "linux" || runtime.GOOS == "darwin" {
-		out, err := exec.Command("sh", "-c", "ulimit -n").Output() // use sh because ulimit isn't in Linux $PATH
-		if err == nil {
-			lim, err := strconv.Atoi(string(bytes.TrimSpace(out)))
-			if err == nil && lim < min {
-				fmt.Printf("WARNING: File descriptor limit %d is too low for production servers. "+
-					"At least %d is recommended. Fix with \"ulimit -n %d\".\n", lim, min, min)
-			}
+	rlimit := &syscall.Rlimit{}
+	err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, rlimit)
+	if err == nil {
+		if rlimit.Cur < min {
+			fmt.Printf("WARNING: File descriptor limit %d is too low for production servers. "+
+				"At least %d is recommended. Fix with \"ulimit -n %d\".\n", rlimit.Cur, min, min)
 		}
 	}
 }
