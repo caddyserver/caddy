@@ -716,11 +716,11 @@ func newFakeUpstream(name string, insecure bool) *fakeUpstream {
 		from: "/",
 		host: &UpstreamHost{
 			Name:         name,
-			ReverseProxy: NewSingleHostReverseProxy(uri, ""),
+			ReverseProxy: NewSingleHostReverseProxy(uri, "", 0),
 		},
 	}
 	if insecure {
-		u.host.ReverseProxy.Transport = InsecureTransport
+		u.host.ReverseProxy.UseInsecureTransport()
 	}
 	return u
 }
@@ -744,7 +744,7 @@ func (u *fakeUpstream) Select() *UpstreamHost {
 		}
 		u.host = &UpstreamHost{
 			Name:         u.name,
-			ReverseProxy: NewSingleHostReverseProxy(uri, u.without),
+			ReverseProxy: NewSingleHostReverseProxy(uri, u.without, 0),
 		}
 	}
 	return u.host
@@ -785,7 +785,7 @@ func (u *fakeWsUpstream) Select() *UpstreamHost {
 	uri, _ := url.Parse(u.name)
 	return &UpstreamHost{
 		Name:         u.name,
-		ReverseProxy: NewSingleHostReverseProxy(uri, u.without),
+		ReverseProxy: NewSingleHostReverseProxy(uri, u.without, 0),
 		UpstreamHeaders: http.Header{
 			"Connection": {"{>Connection}"},
 			"Upgrade":    {"{>Upgrade}"}},

@@ -83,7 +83,7 @@ func socketDial(hostName string) func(network, addr string) (conn net.Conn, err 
 // the target request will be for /base/dir.
 // Without logic: target's path is "/", incoming is "/api/messages",
 // without is "/api", then the target request will be for /messages.
-func NewSingleHostReverseProxy(target *url.URL, without string) *ReverseProxy {
+func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int) *ReverseProxy {
 	targetQuery := target.RawQuery
 	director := func(req *http.Request) {
 		if target.Scheme == "unix" {
@@ -122,8 +122,42 @@ func NewSingleHostReverseProxy(target *url.URL, without string) *ReverseProxy {
 		rp.Transport = &http.Transport{
 			Dial: socketDial(target.String()),
 		}
+	} else if keepalive != 0 {
+		rp.Transport = &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+			Dial: (&net.Dialer{
+				Timeout:   30 * time.Second,
+				KeepAlive: 30 * time.Second,
+			}).Dial,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+		}
+		if keepalive < 0 {
+			rp.Transport.(*http.Transport).DisableKeepAlives = true
+		} else {
+			rp.Transport.(*http.Transport).MaxIdleConnsPerHost = keepalive
+		}
 	}
 	return rp
+}
+
+// InsecureTransport is used to facilitate HTTPS proxying
+// when it is OK for upstream to be using a bad certificate,
+// since this transport skips verification.
+func (rp *ReverseProxy) UseInsecureTransport() {
+	if rp.Transport == nil {
+		rp.Transport = &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+			Dial: (&net.Dialer{
+				Timeout:   30 * time.Second,
+				KeepAlive: 30 * time.Second,
+			}).Dial,
+			TLSHandshakeTimeout: 10 * time.Second,
+			TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
+		}
+	} else if transport, ok := rp.Transport.(*http.Transport); ok {
+		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	}
 }
 
 func copyHeader(dst, src http.Header) {
@@ -145,19 +179,6 @@ var hopHeaders = []string{
 	"Trailers",
 	"Transfer-Encoding",
 	"Upgrade",
-}
-
-// InsecureTransport is used to facilitate HTTPS proxying
-// when it is OK for upstream to be using a bad certificate,
-// since this transport skips verification.
-var InsecureTransport http.RoundTripper = &http.Transport{
-	Proxy: http.ProxyFromEnvironment,
-	Dial: (&net.Dialer{
-		Timeout:   30 * time.Second,
-		KeepAlive: 30 * time.Second,
-	}).Dial,
-	TLSHandshakeTimeout: 10 * time.Second,
-	TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
 }
 
 type respUpdateFn func(resp *http.Response)

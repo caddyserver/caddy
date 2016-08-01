@@ -108,7 +108,7 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 		if nameURL, err := url.Parse(host.Name); err == nil {
 			outreq.Host = nameURL.Host
 			if proxy == nil {
-				proxy = NewSingleHostReverseProxy(nameURL, host.WithoutPathPrefix)
+				proxy = NewSingleHostReverseProxy(nameURL, host.WithoutPathPrefix, 0)
 			}
 
 			// use upstream credentials by default
