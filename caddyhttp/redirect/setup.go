@@ -33,15 +33,49 @@ func redirParse(c *caddy.Controller) ([]Rule, error) {
 
 	cfg := httpserver.GetConfig(c)
 
-	// setRedirCode sets the redirect code for rule if it can, or returns an error
-	setRedirCode := func(code string, rule *Rule) error {
+	initRule := func(rule *Rule, defaultCode string, args []string) error {
+		if cfg.TLS.Enabled {
+			rule.FromScheme = "https"
+		} else {
+			rule.FromScheme = "http"
+		}
+
+		var (
+			from = "/"
+			to   string
+			code = defaultCode
+		)
+		switch len(args) {
+		case 1:
+			// To specified (catch-all redirect)
+			// Not sure why user is doing this in a table, as it causes all other redirects to be ignored.
+			// As such, this feature remains undocumented.
+			to = args[0]
+		case 2:
+			// From and To specified
+			from = args[0]
+			to = args[1]
+		case 3:
+			// From, To, and Code specified
+			from = args[0]
+			to = args[1]
+			code = args[2]
+		default:
+			return c.ArgErr()
+		}
+
+		rule.FromPath = from
+		rule.To = to
 		if code == "meta" {
 			rule.Meta = true
-		} else if codeNumber, ok := httpRedirs[code]; ok {
+			code = defaultCode
+		}
+		if codeNumber, ok := httpRedirs[code]; ok {
 			rule.Code = codeNumber
 		} else {
 			return c.Errf("Invalid redirect code '%v'", code)
 		}
+
 		return nil
 	}
 
@@ -62,12 +96,14 @@ func redirParse(c *caddy.Controller) ([]Rule, error) {
 		return nil
 	}
 
+	const initDefaultCode = "301"
+
 	for c.Next() {
+		args := c.RemainingArgs()
 		matcher, err := httpserver.SetupIfMatcher(c)
 		if err != nil {
 			return nil, err
 		}
-		args := c.RemainingArgs()
 
 		var hadOptionalBlock bool
 		for c.NextBlock() {
@@ -77,103 +113,40 @@ func redirParse(c *caddy.Controller) ([]Rule, error) {
 
 			hadOptionalBlock = true
 
-			var rule = Rule{
+			rule := Rule{
 				RequestMatcher: matcher,
 			}
 
-			if cfg.TLS.Enabled {
-				rule.FromScheme = "https"
-			} else {
-				rule.FromScheme = "http"
-			}
-
+			defaultCode := initDefaultCode
 			// Set initial redirect code
-			// BUG: If the code is specified for a whole block and that code is invalid,
-			// the line number will appear on the first line inside the block, even if that
-			// line overwrites the block-level code with a valid redirect code. The program
-			// still functions correctly, but the line number in the error reporting is
-			// misleading to the user.
 			if len(args) == 1 {
-				err := setRedirCode(args[0], &rule)
-				if err != nil {
-					return redirects, err
-				}
-			} else {
-				rule.Code = http.StatusMovedPermanently // default code
+				defaultCode = args[0]
 			}
 
 			// RemainingArgs only gets the values after the current token, but in our
 			// case we want to include the current token to get an accurate count.
 			insideArgs := append([]string{c.Val()}, c.RemainingArgs()...)
-
-			switch len(insideArgs) {
-			case 1:
-				// To specified (catch-all redirect)
-				// Not sure why user is doing this in a table, as it causes all other redirects to be ignored.
-				// As such, this feature remains undocumented.
-				rule.FromPath = "/"
-				rule.To = insideArgs[0]
-			case 2:
-				// From and To specified
-				rule.FromPath = insideArgs[0]
-				rule.To = insideArgs[1]
-			case 3:
-				// From, To, and Code specified
-				rule.FromPath = insideArgs[0]
-				rule.To = insideArgs[1]
-				err := setRedirCode(insideArgs[2], &rule)
-				if err != nil {
-					return redirects, err
-				}
-			default:
-				return redirects, c.ArgErr()
+			err := initRule(&rule, defaultCode, insideArgs)
+			if err != nil {
+				return redirects, err
 			}
 
-			err := checkAndSaveRule(rule)
+			err = checkAndSaveRule(rule)
 			if err != nil {
 				return redirects, err
 			}
 		}
 
 		if !hadOptionalBlock {
-			var rule = Rule{
+			rule := Rule{
 				RequestMatcher: matcher,
 			}
-
-			if cfg.TLS.Enabled {
-				rule.FromScheme = "https"
-			} else {
-				rule.FromScheme = "http"
+			err := initRule(&rule, initDefaultCode, args)
+			if err != nil {
+				return redirects, err
 			}
 
-			rule.Code = http.StatusMovedPermanently // default
-
-			switch len(args) {
-			case 1:
-				// To specified (catch-all redirect)
-				rule.FromPath = "/"
-				rule.To = args[0]
-			case 2:
-				// To and Code specified (catch-all redirect)
-				rule.FromPath = "/"
-				rule.To = args[0]
-				err := setRedirCode(args[1], &rule)
-				if err != nil {
-					return redirects, err
-				}
-			case 3:
-				// From, To, and Code specified
-				rule.FromPath = args[0]
-				rule.To = args[1]
-				err := setRedirCode(args[2], &rule)
-				if err != nil {
-					return redirects, err
-				}
-			default:
-				return redirects, c.ArgErr()
-			}
-
-			err := checkAndSaveRule(rule)
+			err = checkAndSaveRule(rule)
 			if err != nil {
 				return redirects, err
 			}
