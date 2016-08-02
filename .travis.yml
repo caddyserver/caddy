@@ -4,9 +4,6 @@ go:
   - 1.6.3
   - tip
 
-env:
-  - CGO_ENABLED=0
-
 before_install:
   # Decrypts a script that installs an authenticated cookie
   # for git to use when cloning from googlesource.com.

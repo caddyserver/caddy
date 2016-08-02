@@ -6,7 +6,6 @@ clone_folder: c:\gopath\src\github.com\mholt\caddy
 
 environment:
   GOPATH: c:\gopath
-  CGO_ENABLED: 0
 
 install:
   - rmdir c:\go /s /q
