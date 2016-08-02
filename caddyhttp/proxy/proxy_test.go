@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -102,8 +103,8 @@ func TestReverseProxyInsecureSkipVerify(t *testing.T) {
 func TestWebSocketReverseProxyServeHTTPHandler(t *testing.T) {
 	// No-op websocket backend simply allows the WS connection to be
 	// accepted then it will be immediately closed. Perfect for testing.
-	var connCount int
-	wsNop := httptest.NewServer(websocket.Handler(func(ws *websocket.Conn) { connCount++ }))
+	var connCount int32
+	wsNop := httptest.NewServer(websocket.Handler(func(ws *websocket.Conn) { atomic.AddInt32(&connCount, 1) }))
 	defer wsNop.Close()
 
 	// Get proxy to use for the test
@@ -136,7 +137,7 @@ func TestWebSocketReverseProxyServeHTTPHandler(t *testing.T) {
 	if !bytes.Equal(actual, expected) {
 		t.Errorf("Expected backend to accept response:\n'%s'\nActually got:\n'%s'", expected, actual)
 	}
-	if connCount != 1 {
+	if atomic.LoadInt32(&connCount) != 1 {
 		t.Errorf("Expected 1 websocket connection, got %d", connCount)
 	}
 }
