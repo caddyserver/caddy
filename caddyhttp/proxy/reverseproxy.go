@@ -212,7 +212,7 @@ func newConnHijackerTransport(base http.RoundTripper) *connHijackerTransport {
 			KeepAlive: 30 * time.Second,
 		}).Dial,
 		TLSHandshakeTimeout: 10 * time.Second,
-		TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
+		DisableKeepAlives:   true,
 	}
 	if base != nil {
 		if baseTransport, ok := base.(*http.Transport); ok {
@@ -299,10 +299,9 @@ func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, r
 			if err != nil {
 				return err
 			}
-			defer backendConn.Close()
-
 			outreq.Write(backendConn)
 		}
+		defer backendConn.Close()
 
 		go func() {
 			io.Copy(backendConn, conn) // write tcp stream to backend.
