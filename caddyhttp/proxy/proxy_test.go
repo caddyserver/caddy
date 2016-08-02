@@ -736,7 +736,7 @@ func (u *fakeUpstream) From() string {
 	return u.from
 }
 
-func (u *fakeUpstream) Select() *UpstreamHost {
+func (u *fakeUpstream) Select(r *http.Request) *UpstreamHost {
 	if u.host == nil {
 		uri, err := url.Parse(u.name)
 		if err != nil {
@@ -781,7 +781,7 @@ func (u *fakeWsUpstream) From() string {
 	return "/"
 }
 
-func (u *fakeWsUpstream) Select() *UpstreamHost {
+func (u *fakeWsUpstream) Select(r *http.Request) *UpstreamHost {
 	uri, _ := url.Parse(u.name)
 	return &UpstreamHost{
 		Name:         u.name,
