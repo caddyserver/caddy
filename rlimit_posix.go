@@ -15,10 +15,9 @@ func checkFdlimit() {
 	// Warn if ulimit is too low for production sites
 	rlimit := &syscall.Rlimit{}
 	err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, rlimit)
-	if err == nil {
-		if rlimit.Cur < min {
-			fmt.Printf("WARNING: File descriptor limit %d is too low for production servers. "+
-				"At least %d is recommended. Fix with \"ulimit -n %d\".\n", rlimit.Cur, min, min)
-		}
+	if err == nil && rlimit.Cur < min {
+		fmt.Printf("WARNING: File descriptor limit %d is too low for production servers. "+
+			"At least %d is recommended. Fix with \"ulimit -n %d\".\n", rlimit.Cur, min, min)
 	}
+
 }
