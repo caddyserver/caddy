@@ -150,13 +150,13 @@ func (u *staticUpstream) NewHost(host string) (*UpstreamHost, error) {
 	}
 
 	if strings.Contains(uh.Name, "{host}") {
-    	uh.ReverseProxy = NewDynamicHostReverseProxy(uh.Name, uh.WithoutPathPrefix)
+		uh.ReverseProxy = NewDynamicHostReverseProxy(uh.Name, uh.WithoutPathPrefix)
 	} else {
-   	 	baseURL, err := url.Parse(uh.Name)
-    	if err != nil {
-        	return nil, err
-    	}
-    	uh.ReverseProxy = NewSingleHostReverseProxy(baseURL, uh.WithoutPathPrefix)
+		baseURL, err := url.Parse(uh.Name)
+		if err != nil {
+			return nil, err
+		}
+		uh.ReverseProxy = NewSingleHostReverseProxy(baseURL, uh.WithoutPathPrefix)
 	}
 
 	if u.insecureSkipVerify {

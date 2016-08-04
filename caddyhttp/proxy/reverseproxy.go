@@ -13,6 +13,7 @@ package proxy
 
 import (
 	"crypto/tls"
+	"github.com/mholt/caddy/caddyhttp/httpserver"
 	"io"
 	"net"
 	"net/http"
@@ -20,7 +21,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
 
 var bufferPool = sync.Pool{New: createBuffer}
@@ -139,7 +139,7 @@ func NewDynamicHostReverseProxy(templateUrl string, without string) *ReverseProx
 
 		req.URL.Scheme = target.Scheme
 		req.URL.Host = replacer.Replace(strings.Replace(target.Host, "HOST", "{host}", -1))
-		
+
 		req.URL.Path = singleJoiningSlash(target.Path, req.URL.Path)
 		if targetQuery == "" || req.URL.RawQuery == "" {
 			req.URL.RawQuery = targetQuery + req.URL.RawQuery
