@@ -20,6 +20,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
 
 var bufferPool = sync.Pool{New: createBuffer}
@@ -112,6 +113,40 @@ func NewSingleHostReverseProxy(target *url.URL, without string) *ReverseProxy {
 			socketPrefix := target.String()[len("unix://"):]
 			req.URL.Path = strings.TrimPrefix(req.URL.Path, socketPrefix)
 		}
+		// We are then safe to remove the `without` prefix.
+		if without != "" {
+			req.URL.Path = strings.TrimPrefix(req.URL.Path, without)
+		}
+	}
+	rp := &ReverseProxy{Director: director, FlushInterval: 250 * time.Millisecond} // flushing good for streaming & server-sent events
+	if target.Scheme == "unix" {
+		rp.Transport = &http.Transport{
+			Dial: socketDial(target.String()),
+		}
+	}
+	return rp
+}
+
+func NewDynamicHostReverseProxy(templateUrl string, without string) *ReverseProxy {
+	templateUrl = strings.Replace(strings.ToLower(templateUrl), "{host}", "HOST", -1)
+	target, err := url.Parse(templateUrl)
+	if err != nil {
+		return nil
+	}
+	targetQuery := target.RawQuery
+	director := func(req *http.Request) {
+		replacer := httpserver.NewReplacer(req, nil, "")
+
+		req.URL.Scheme = target.Scheme
+		req.URL.Host = replacer.Replace(strings.Replace(target.Host, "HOST", "{host}", -1))
+		
+		req.URL.Path = singleJoiningSlash(target.Path, req.URL.Path)
+		if targetQuery == "" || req.URL.RawQuery == "" {
+			req.URL.RawQuery = targetQuery + req.URL.RawQuery
+		} else {
+			req.URL.RawQuery = targetQuery + "&" + req.URL.RawQuery
+		}
+
 		// We are then safe to remove the `without` prefix.
 		if without != "" {
 			req.URL.Path = strings.TrimPrefix(req.URL.Path, without)
