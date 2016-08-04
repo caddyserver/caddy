@@ -159,7 +159,6 @@ func (u *staticUpstream) NewHost(host string) (*UpstreamHost, error) {
     	uh.ReverseProxy = NewSingleHostReverseProxy(baseURL, uh.WithoutPathPrefix)
 	}
 
-	uh.ReverseProxy = NewSingleHostReverseProxy(baseURL, uh.WithoutPathPrefix)
 	if u.insecureSkipVerify {
 		uh.ReverseProxy.Transport = InsecureTransport
 	}
