@@ -371,6 +371,7 @@ func TestUpstreamHeadersUpdate(t *testing.T) {
 		"+Add-Me":    {"Add-Value"},
 		"-Remove-Me": {""},
 		"Replace-Me": {"{hostname}"},
+		"Host":       {"{>Host}"},
 	}
 	// set up proxy
 	p := &Proxy{
@@ -389,6 +390,7 @@ func TestUpstreamHeadersUpdate(t *testing.T) {
 	r.Header.Add("Merge-Me", "Initial")
 	r.Header.Add("Remove-Me", "Remove-Value")
 	r.Header.Add("Replace-Me", "Replace-Value")
+	r.Header.Add("Host", "example.com")
 
 	p.ServeHTTP(w, r)
 
@@ -415,6 +417,15 @@ func TestUpstreamHeadersUpdate(t *testing.T) {
 	headerKey = "Replace-Me"
 	headerValue := replacer.Replace("{hostname}")
 	value, ok := actualHeaders[headerKey]
+	if !ok {
+		t.Errorf("Request sent to upstream backend should not remove %v header", headerKey)
+	} else if len(value) > 0 && headerValue != value[0] {
+		t.Errorf("Request sent to upstream backend should replace value of %v header with %v. Instead value was %v", headerKey, headerValue, value)
+	}
+
+	headerKey = "Host"
+	headerValue = "example.com"
+	value, ok = actualHeaders[headerKey]
 	if !ok {
 		t.Errorf("Request sent to upstream backend should not remove %v header", headerKey)
 	} else if len(value) > 0 && headerValue != value[0] {
