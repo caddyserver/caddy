@@ -37,12 +37,13 @@ ulimit -n 8192
 start() {
     $USERBIND $DAEMON
     start-stop-daemon --start --quiet --make-pidfile --pidfile $PIDFILE \
-        --background --chuid $DAEMONUSER --exec $DAEMON -- $DAEMONOPTS
+        --background --chuid $DAEMONUSER --oknodo --exec $DAEMON -- $DAEMONOPTS
 }
 
 stop() {
-    start-stop-daemon --stop --quiet --remove-pidfile --pidfile $PIDFILE \
-        --retry=$STOP_SCHEDULE --name $NAME --oknodo
+    start-stop-daemon --stop --quiet --pidfile $PIDFILE --retry=$STOP_SCHEDULE \
+        --name $NAME --oknodo
+    rm -f $PIDFILE
 }
 
 reload() {
