@@ -41,8 +41,9 @@ start() {
 }
 
 stop() {
-    start-stop-daemon --stop --quiet --remove-pidfile --pidfile $PIDFILE \
-        --retry=$STOP_SCHEDULE --name $NAME --oknodo
+    start-stop-daemon --stop --quiet --pidfile $PIDFILE --retry=$STOP_SCHEDULE \
+        --name $NAME --oknodo
+    rm -f $PIDFILE
 }
 
 reload() {
