@@ -25,6 +25,7 @@ type staticUpstream struct {
 	downstreamHeaders  http.Header
 	Hosts              HostPool
 	Policy             Policy
+	KeepAlive          int
 	insecureSkipVerify bool
 
 	FailTimeout time.Duration
@@ -54,6 +55,7 @@ func NewStaticUpstreams(c caddyfile.Dispenser) ([]Upstream, error) {
 			FailTimeout:       10 * time.Second,
 			MaxFails:          1,
 			MaxConns:          0,
+			KeepAlive:         http.DefaultMaxIdleConnsPerHost,
 		}
 
 		if !c.Args(&upstream.from) {
@@ -154,9 +156,9 @@ func (u *staticUpstream) NewHost(host string) (*UpstreamHost, error) {
 		return nil, err
 	}
 
-	uh.ReverseProxy = NewSingleHostReverseProxy(baseURL, uh.WithoutPathPrefix)
+	uh.ReverseProxy = NewSingleHostReverseProxy(baseURL, uh.WithoutPathPrefix, u.KeepAlive)
 	if u.insecureSkipVerify {
-		uh.ReverseProxy.Transport = InsecureTransport
+		uh.ReverseProxy.UseInsecureTransport()
 	}
 
 	return uh, nil
@@ -312,6 +314,18 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream) error {
 		u.IgnoredSubPaths = ignoredPaths
 	case "insecure_skip_verify":
 		u.insecureSkipVerify = true
+	case "keepalive":
+		if !c.NextArg() {
+			return c.ArgErr()
+		}
+		n, err := strconv.Atoi(c.Val())
+		if err != nil {
+			return err
+		}
+		if n < 0 {
+			return c.ArgErr()
+		}
+		u.KeepAlive = n
 	default:
 		return c.Errf("unknown property '%s'", c.Val())
 	}
