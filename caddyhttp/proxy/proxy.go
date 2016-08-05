@@ -27,7 +27,7 @@ type Upstream interface {
 	// The path this upstream host should be routed on
 	From() string
 	// Selects an upstream host to be routed to.
-	Select() *UpstreamHost
+	Select(*http.Request) *UpstreamHost
 	// Checks if subpath is not an ignored path
 	AllowedPath(string) bool
 }
@@ -93,7 +93,7 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	// hosts until timeout (or until we get a nil host).
 	start := time.Now()
 	for time.Now().Sub(start) < tryDuration {
-		host := upstream.Select()
+		host := upstream.Select(r)
 		if host == nil {
 			return http.StatusBadGateway, errUnreachable
 		}
@@ -108,7 +108,7 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 		if nameURL, err := url.Parse(host.Name); err == nil {
 			outreq.Host = nameURL.Host
 			if proxy == nil {
-				proxy = NewSingleHostReverseProxy(nameURL, host.WithoutPathPrefix, 0)
+				proxy = NewSingleHostReverseProxy(nameURL, host.WithoutPathPrefix, http.DefaultMaxIdleConnsPerHost)
 			}
 
 			// use upstream credentials by default

@@ -1,11 +1,8 @@
 language: go
 
 go:
-  - 1.6.2
+  - 1.6.3
   - tip
-
-env:
-  - CGO_ENABLED=0
 
 before_install:
   # Decrypts a script that installs an authenticated cookie
@@ -24,7 +21,7 @@ script:
   - diff <(echo -n) <(gofmt -s -d .)
   - ineffassign .
   - go vet ./...
-  - go test ./...
+  - go test -race ./...
 
 after_script:
   - golint ./...

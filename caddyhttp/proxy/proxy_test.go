@@ -362,9 +362,11 @@ func TestUpstreamHeadersUpdate(t *testing.T) {
 	defer log.SetOutput(os.Stderr)
 
 	var actualHeaders http.Header
+	var actualHost string
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Hello, client"))
 		actualHeaders = r.Header
+		actualHost = r.Host
 	}))
 	defer backend.Close()
 
@@ -376,6 +378,7 @@ func TestUpstreamHeadersUpdate(t *testing.T) {
 		"+Add-Me":    {"Add-Value"},
 		"-Remove-Me": {""},
 		"Replace-Me": {"{hostname}"},
+		"Host":       {"{>Host}"},
 	}
 	// set up proxy
 	p := &Proxy{
@@ -390,10 +393,12 @@ func TestUpstreamHeadersUpdate(t *testing.T) {
 	}
 	w := httptest.NewRecorder()
 
+	const expectHost = "example.com"
 	//add initial headers
 	r.Header.Add("Merge-Me", "Initial")
 	r.Header.Add("Remove-Me", "Remove-Value")
 	r.Header.Add("Replace-Me", "Replace-Value")
+	r.Header.Add("Host", expectHost)
 
 	p.ServeHTTP(w, r)
 
@@ -424,6 +429,10 @@ func TestUpstreamHeadersUpdate(t *testing.T) {
 		t.Errorf("Request sent to upstream backend should not remove %v header", headerKey)
 	} else if len(value) > 0 && headerValue != value[0] {
 		t.Errorf("Request sent to upstream backend should replace value of %v header with %v. Instead value was %v", headerKey, headerValue, value)
+	}
+
+	if actualHost != expectHost {
+		t.Errorf("Request sent to upstream backend should have value of Host with %s, but got %s", expectHost, actualHost)
 	}
 
 }
@@ -721,7 +730,7 @@ func newFakeUpstream(name string, insecure bool) *fakeUpstream {
 		from: "/",
 		host: &UpstreamHost{
 			Name:         name,
-			ReverseProxy: NewSingleHostReverseProxy(uri, "", 0),
+			ReverseProxy: NewSingleHostReverseProxy(uri, "", http.DefaultMaxIdleConnsPerHost),
 		},
 	}
 	if insecure {
@@ -741,7 +750,7 @@ func (u *fakeUpstream) From() string {
 	return u.from
 }
 
-func (u *fakeUpstream) Select() *UpstreamHost {
+func (u *fakeUpstream) Select(r *http.Request) *UpstreamHost {
 	if u.host == nil {
 		uri, err := url.Parse(u.name)
 		if err != nil {
@@ -749,7 +758,7 @@ func (u *fakeUpstream) Select() *UpstreamHost {
 		}
 		u.host = &UpstreamHost{
 			Name:         u.name,
-			ReverseProxy: NewSingleHostReverseProxy(uri, u.without, 0),
+			ReverseProxy: NewSingleHostReverseProxy(uri, u.without, http.DefaultMaxIdleConnsPerHost),
 		}
 	}
 	return u.host
@@ -786,11 +795,11 @@ func (u *fakeWsUpstream) From() string {
 	return "/"
 }
 
-func (u *fakeWsUpstream) Select() *UpstreamHost {
+func (u *fakeWsUpstream) Select(r *http.Request) *UpstreamHost {
 	uri, _ := url.Parse(u.name)
 	return &UpstreamHost{
 		Name:         u.name,
-		ReverseProxy: NewSingleHostReverseProxy(uri, u.without, 0),
+		ReverseProxy: NewSingleHostReverseProxy(uri, u.without, http.DefaultMaxIdleConnsPerHost),
 		UpstreamHeaders: http.Header{
 			"Connection": {"{>Connection}"},
 			"Upgrade":    {"{>Upgrade}"}},

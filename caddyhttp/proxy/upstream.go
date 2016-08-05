@@ -55,6 +55,7 @@ func NewStaticUpstreams(c caddyfile.Dispenser) ([]Upstream, error) {
 			FailTimeout:       10 * time.Second,
 			MaxFails:          1,
 			MaxConns:          0,
+			KeepAlive:         http.DefaultMaxIdleConnsPerHost,
 		}
 
 		if !c.Args(&upstream.from) {
@@ -321,6 +322,9 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream) error {
 		if err != nil {
 			return err
 		}
+		if n < 0 {
+			return c.ArgErr()
+		}
 		u.KeepAlive = n
 	default:
 		return c.Errf("unknown property '%s'", c.Val())
@@ -356,7 +360,7 @@ func (u *staticUpstream) HealthCheckWorker(stop chan struct{}) {
 	}
 }
 
-func (u *staticUpstream) Select() *UpstreamHost {
+func (u *staticUpstream) Select(r *http.Request) *UpstreamHost {
 	pool := u.Hosts
 	if len(pool) == 1 {
 		if !pool[0].Available() {
@@ -374,11 +378,10 @@ func (u *staticUpstream) Select() *UpstreamHost {
 	if allUnavailable {
 		return nil
 	}
-
 	if u.Policy == nil {
-		return (&Random{}).Select(pool)
+		return (&Random{}).Select(pool, r)
 	}
-	return u.Policy.Select(pool)
+	return u.Policy.Select(pool, r)
 }
 
 func (u *staticUpstream) AllowedPath(requestPath string) bool {
