@@ -122,7 +122,10 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int) *
 		rp.Transport = &http.Transport{
 			Dial: socketDial(target.String()),
 		}
-	} else if keepalive != 0 {
+	} else if keepalive != http.DefaultMaxIdleConnsPerHost {
+		// if keepalive is equal to the default,
+		// just use default transport, to avoid creating
+		// a brand new transport
 		rp.Transport = &http.Transport{
 			Proxy: http.ProxyFromEnvironment,
 			Dial: (&net.Dialer{
@@ -132,7 +135,7 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int) *
 			TLSHandshakeTimeout:   10 * time.Second,
 			ExpectContinueTimeout: 1 * time.Second,
 		}
-		if keepalive < 0 {
+		if keepalive == 0 {
 			rp.Transport.(*http.Transport).DisableKeepAlives = true
 		} else {
 			rp.Transport.(*http.Transport).MaxIdleConnsPerHost = keepalive

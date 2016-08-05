@@ -55,6 +55,7 @@ func NewStaticUpstreams(c caddyfile.Dispenser) ([]Upstream, error) {
 			FailTimeout:       10 * time.Second,
 			MaxFails:          1,
 			MaxConns:          0,
+			KeepAlive:         http.DefaultMaxIdleConnsPerHost,
 		}
 
 		if !c.Args(&upstream.from) {
@@ -320,6 +321,9 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream) error {
 		n, err := strconv.Atoi(c.Val())
 		if err != nil {
 			return err
+		}
+		if n < 0 {
+			return c.ArgErr()
 		}
 		u.KeepAlive = n
 	default:
