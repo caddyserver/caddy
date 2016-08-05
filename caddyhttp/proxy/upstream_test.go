@@ -1,11 +1,11 @@
 package proxy
 
 import (
+	"github.com/mholt/caddy/caddyfile"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/mholt/caddy/caddyfile"
 )
 
 func TestNewHost(t *testing.T) {
@@ -72,14 +72,15 @@ func TestSelect(t *testing.T) {
 		FailTimeout: 10 * time.Second,
 		MaxFails:    1,
 	}
+	r, _ := http.NewRequest("GET", "/", nil)
 	upstream.Hosts[0].Unhealthy = true
 	upstream.Hosts[1].Unhealthy = true
 	upstream.Hosts[2].Unhealthy = true
-	if h := upstream.Select(); h != nil {
+	if h := upstream.Select(r); h != nil {
 		t.Error("Expected select to return nil as all host are down")
 	}
 	upstream.Hosts[2].Unhealthy = false
-	if h := upstream.Select(); h == nil {
+	if h := upstream.Select(r); h == nil {
 		t.Error("Expected select to not return nil")
 	}
 	upstream.Hosts[0].Conns = 1
@@ -88,11 +89,11 @@ func TestSelect(t *testing.T) {
 	upstream.Hosts[1].MaxConns = 1
 	upstream.Hosts[2].Conns = 1
 	upstream.Hosts[2].MaxConns = 1
-	if h := upstream.Select(); h != nil {
+	if h := upstream.Select(r); h != nil {
 		t.Error("Expected select to return nil as all hosts are full")
 	}
 	upstream.Hosts[2].Conns = 0
-	if h := upstream.Select(); h == nil {
+	if h := upstream.Select(r); h == nil {
 		t.Error("Expected select to not return nil")
 	}
 }
@@ -188,6 +189,7 @@ func TestParseBlockHealthCheck(t *testing.T) {
 }
 
 func TestParseBlock(t *testing.T) {
+	r, _ := http.NewRequest("GET", "/", nil)
 	tests := []struct {
 		config string
 	}{
@@ -207,7 +209,7 @@ func TestParseBlock(t *testing.T) {
 			t.Error("Expected no error. Got:", err.Error())
 		}
 		for _, upstream := range upstreams {
-			headers := upstream.Select().UpstreamHeaders
+			headers := upstream.Select(r).UpstreamHeaders
 
 			if _, ok := headers["Host"]; !ok {
 				t.Errorf("Test %d: Could not find the Host header", i+1)

@@ -1,8 +1,11 @@
 package proxy
 
 import (
+	"hash/fnv"
 	"math"
 	"math/rand"
+	"net"
+	"net/http"
 	"sync"
 )
 
@@ -11,20 +14,21 @@ type HostPool []*UpstreamHost
 
 // Policy decides how a host will be selected from a pool.
 type Policy interface {
-	Select(pool HostPool) *UpstreamHost
+	Select(pool HostPool, r *http.Request) *UpstreamHost
 }
 
 func init() {
 	RegisterPolicy("random", func() Policy { return &Random{} })
 	RegisterPolicy("least_conn", func() Policy { return &LeastConn{} })
 	RegisterPolicy("round_robin", func() Policy { return &RoundRobin{} })
+	RegisterPolicy("ip_hash", func() Policy { return &IPHash{} })
 }
 
 // Random is a policy that selects up hosts from a pool at random.
 type Random struct{}
 
 // Select selects an up host at random from the specified pool.
-func (r *Random) Select(pool HostPool) *UpstreamHost {
+func (r *Random) Select(pool HostPool, request *http.Request) *UpstreamHost {
 
 	// Because the number of available hosts isn't known
 	// up front, the host is selected via reservoir sampling
@@ -53,7 +57,7 @@ type LeastConn struct{}
 // Select selects the up host with the least number of connections in the
 // pool.  If more than one host has the same least number of connections,
 // one of the hosts is chosen at random.
-func (r *LeastConn) Select(pool HostPool) *UpstreamHost {
+func (r *LeastConn) Select(pool HostPool, request *http.Request) *UpstreamHost {
 	var bestHost *UpstreamHost
 	count := 0
 	leastConn := int64(math.MaxInt64)
@@ -86,7 +90,7 @@ type RoundRobin struct {
 }
 
 // Select selects an up host from the pool using a round robin ordering scheme.
-func (r *RoundRobin) Select(pool HostPool) *UpstreamHost {
+func (r *RoundRobin) Select(pool HostPool, request *http.Request) *UpstreamHost {
 	poolLen := uint32(len(pool))
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
@@ -97,6 +101,38 @@ func (r *RoundRobin) Select(pool HostPool) *UpstreamHost {
 		if host.Available() {
 			return host
 		}
+	}
+	return nil
+}
+
+// IPHash is a policy that selects hosts based on hashing the request ip
+type IPHash struct{}
+
+func hash(s string) uint32 {
+	h := fnv.New32a()
+	h.Write([]byte(s))
+	return h.Sum32()
+}
+
+// Select selects an up host from the pool using a round robin ordering scheme.
+func (r *IPHash) Select(pool HostPool, request *http.Request) *UpstreamHost {
+	poolLen := uint32(len(pool))
+	clientIP, _, err := net.SplitHostPort(request.RemoteAddr)
+	if err != nil {
+		clientIP = request.RemoteAddr
+	}
+	hash := hash(clientIP)
+	for {
+		if poolLen == 0 {
+			break
+		}
+		index := hash % poolLen
+		host := pool[index]
+		if host.Available() {
+			return host
+		}
+		pool = append(pool[:index], pool[index+1:]...)
+		poolLen--
 	}
 	return nil
 }

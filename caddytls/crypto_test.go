@@ -79,19 +79,22 @@ func PrivateKeyBytes(key crypto.PrivateKey) []byte {
 }
 
 func TestStandaloneTLSTicketKeyRotation(t *testing.T) {
+	type syncPkt struct {
+		ticketKey [32]byte
+		keysInUse int
+	}
+
 	tlsGovChan := make(chan struct{})
 	defer close(tlsGovChan)
-	callSync := make(chan bool, 1)
+	callSync := make(chan *syncPkt, 1)
 	defer close(callSync)
 
 	oldHook := setSessionTicketKeysTestHook
 	defer func() {
 		setSessionTicketKeysTestHook = oldHook
 	}()
-	var keysInUse [][32]byte
 	setSessionTicketKeysTestHook = func(keys [][32]byte) [][32]byte {
-		keysInUse = keys
-		callSync <- true
+		callSync <- &syncPkt{keys[0], len(keys)}
 		return keys
 	}
 
@@ -104,17 +107,17 @@ func TestStandaloneTLSTicketKeyRotation(t *testing.T) {
 	var lastTicketKey [32]byte
 	for {
 		select {
-		case <-callSync:
-			if lastTicketKey == keysInUse[0] {
+		case pkt := <-callSync:
+			if lastTicketKey == pkt.ticketKey {
 				close(tlsGovChan)
 				t.Errorf("The same TLS ticket key has been used again (not rotated): %x.", lastTicketKey)
 				return
 			}
-			lastTicketKey = keysInUse[0]
+			lastTicketKey = pkt.ticketKey
 			rounds++
-			if rounds <= NumTickets && len(keysInUse) != rounds {
+			if rounds <= NumTickets && pkt.keysInUse != rounds {
 				close(tlsGovChan)
-				t.Errorf("Expected TLS ticket keys in use: %d; Got instead: %d.", rounds, len(keysInUse))
+				t.Errorf("Expected TLS ticket keys in use: %d; Got instead: %d.", rounds, pkt.keysInUse)
 				return
 			}
 			if c.SessionTicketsDisabled == true {

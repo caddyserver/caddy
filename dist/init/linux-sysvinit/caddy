@@ -20,9 +20,9 @@ DAEMONUSER=www-data
 PIDFILE=/var/run/$NAME.pid
 LOGFILE=/var/log/$NAME.log
 CONFIGFILE=/etc/caddy/Caddyfile
-DAEMONOPTS="-agree=true --pidfile=$PIDFILE log=$LOGFILE -conf=$CONFIGFILE"
+DAEMONOPTS="-agree=true -pidfile=$PIDFILE -log=$LOGFILE -conf=$CONFIGFILE"
 
-USERBIND="$(which setcap) cap_net_bind_service=+ep"
+USERBIND="setcap cap_net_bind_service=+ep"
 STOP_SCHEDULE="${STOP_SCHEDULE:-QUIT/5/TERM/5/KILL/5}"
 
 test -x $DAEMON || exit 0
@@ -37,12 +37,13 @@ ulimit -n 8192
 start() {
     $USERBIND $DAEMON
     start-stop-daemon --start --quiet --make-pidfile --pidfile $PIDFILE \
-        --background --chuid $DAEMONUSER --exec $DAEMON -- $DAEMONOPTS
+        --background --chuid $DAEMONUSER --oknodo --exec $DAEMON -- $DAEMONOPTS
 }
 
 stop() {
-    start-stop-daemon --stop --quiet --remove-pidfile --pidfile $PIDFILE \
-        --retry=$STOP_SCHEDULE --name $NAME --oknodo
+    start-stop-daemon --stop --quiet --pidfile $PIDFILE --retry=$STOP_SCHEDULE \
+        --name $NAME --oknodo
+    rm -f $PIDFILE
 }
 
 reload() {

@@ -360,7 +360,7 @@ func (u *staticUpstream) HealthCheckWorker(stop chan struct{}) {
 	}
 }
 
-func (u *staticUpstream) Select() *UpstreamHost {
+func (u *staticUpstream) Select(r *http.Request) *UpstreamHost {
 	pool := u.Hosts
 	if len(pool) == 1 {
 		if !pool[0].Available() {
@@ -378,11 +378,10 @@ func (u *staticUpstream) Select() *UpstreamHost {
 	if allUnavailable {
 		return nil
 	}
-
 	if u.Policy == nil {
-		return (&Random{}).Select(pool)
+		return (&Random{}).Select(pool, r)
 	}
-	return u.Policy.Select(pool)
+	return u.Policy.Select(pool, r)
 }
 
 func (u *staticUpstream) AllowedPath(requestPath string) bool {
