@@ -288,7 +288,7 @@ inScope:
 	// Browsing navigation gets messed up if browsing a directory
 	// that doesn't end in "/" (which it should, anyway)
 	if !strings.HasSuffix(r.URL.Path, "/") {
-		http.Redirect(w, r, r.URL.Path+"/", http.StatusTemporaryRedirect)
+		staticfiles.Redirect(w, r, r.URL.Path+"/", http.StatusTemporaryRedirect)
 		return 0, nil
 	}
 
