@@ -149,7 +149,7 @@ func (u *staticUpstream) NewHost(host string) (*UpstreamHost, error) {
 		MaxConns:          u.MaxConns,
 	}
 
-	if strings.Contains(uh.Name, "{host}") {
+	if strings.Contains(uh.Name, "{") && strings.Contains(uh.Name, "}") {
 		uh.ReverseProxy = NewDynamicHostReverseProxy(uh.Name, uh.WithoutPathPrefix)
 	} else {
 		baseURL, err := url.Parse(uh.Name)
