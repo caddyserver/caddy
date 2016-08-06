@@ -13,7 +13,6 @@ package proxy
 
 import (
 	"crypto/tls"
-	"github.com/mholt/caddy/caddyhttp/httpserver"
 	"io"
 	"net"
 	"net/http"
@@ -21,6 +20,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
 
 var bufferPool = sync.Pool{New: createBuffer}
