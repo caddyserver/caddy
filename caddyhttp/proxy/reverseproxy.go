@@ -86,38 +86,8 @@ func socketDial(hostName string) func(network, addr string) (conn net.Conn, err 
 // Without logic: target's path is "/", incoming is "/api/messages",
 // without is "/api", then the target request will be for /messages.
 func NewSingleHostReverseProxy(target *url.URL, without string) *ReverseProxy {
-	targetQuery := target.RawQuery
 	director := func(req *http.Request) {
-		if target.Scheme == "unix" {
-			// to make Dial work with unix URL,
-			// scheme and host have to be faked
-			req.URL.Scheme = "http"
-			req.URL.Host = "socket"
-		} else {
-			req.URL.Scheme = target.Scheme
-			req.URL.Host = target.Host
-		}
-		req.URL.Path = singleJoiningSlash(target.Path, req.URL.Path)
-		if targetQuery == "" || req.URL.RawQuery == "" {
-			req.URL.RawQuery = targetQuery + req.URL.RawQuery
-		} else {
-			req.URL.RawQuery = targetQuery + "&" + req.URL.RawQuery
-		}
-		// Trims the path of the socket from the URL path.
-		// This is done because req.URL passed to your proxied service
-		// will have the full path of the socket file prefixed to it.
-		// Calling /test on a server that proxies requests to
-		// unix:/var/run/www.socket will thus set the requested path
-		// to /var/run/www.socket/test, rendering paths useless.
-		if target.Scheme == "unix" {
-			// See comment on socketDial for the trim
-			socketPrefix := target.String()[len("unix://"):]
-			req.URL.Path = strings.TrimPrefix(req.URL.Path, socketPrefix)
-		}
-		// We are then safe to remove the `without` prefix.
-		if without != "" {
-			req.URL.Path = strings.TrimPrefix(req.URL.Path, without)
-		}
+		req = buildHttpRequest(req, target, without)
 	}
 	rp := &ReverseProxy{Director: director, FlushInterval: 250 * time.Millisecond} // flushing good for streaming & server-sent events
 	if target.Scheme == "unix" {
@@ -131,30 +101,50 @@ func NewSingleHostReverseProxy(target *url.URL, without string) *ReverseProxy {
 func NewDynamicHostReverseProxy(templateUrl string, without string) *ReverseProxy {
 	director := func(req *http.Request) {
 		replacer := httpserver.NewReplacer(req, nil, "")
-
 		templateUrl = replacer.Replace(templateUrl)
-
 		target, _ := url.Parse(templateUrl)
-		targetQuery := target.RawQuery
-
-		req.URL.Scheme = target.Scheme
-		req.URL.Host = target.Host
-
-		req.URL.Path = singleJoiningSlash(target.Path, req.URL.Path)
-		if targetQuery == "" || req.URL.RawQuery == "" {
-			req.URL.RawQuery = targetQuery + req.URL.RawQuery
-		} else {
-			req.URL.RawQuery = targetQuery + "&" + req.URL.RawQuery
-		}
-
-		// We are then safe to remove the `without` prefix.
-		if without != "" {
-			req.URL.Path = strings.TrimPrefix(req.URL.Path, without)
-		}
+		req = buildHttpRequest(req, target, without)
 	}
 	rp := &ReverseProxy{Director: director, FlushInterval: 250 * time.Millisecond} // flushing good for streaming & server-sent events
 
 	return rp
+}
+
+func buildHttpRequest(req *http.Request, target *url.URL, without string) *http.Request {
+	targetQuery := target.RawQuery
+
+	if target.Scheme == "unix" {
+		// to make Dial work with unix URL,
+		// scheme and host have to be faked
+		req.URL.Scheme = "http"
+		req.URL.Host = "socket"
+	} else {
+		req.URL.Scheme = target.Scheme
+		req.URL.Host = target.Host
+	}
+	req.URL.Path = singleJoiningSlash(target.Path, req.URL.Path)
+	if targetQuery == "" || req.URL.RawQuery == "" {
+		req.URL.RawQuery = targetQuery + req.URL.RawQuery
+	} else {
+		req.URL.RawQuery = targetQuery + "&" + req.URL.RawQuery
+	}
+	// Trims the path of the socket from the URL path.
+	// This is done because req.URL passed to your proxied service
+	// will have the full path of the socket file prefixed to it.
+	// Calling /test on a server that proxies requests to
+	// unix:/var/run/www.socket will thus set the requested path
+	// to /var/run/www.socket/test, rendering paths useless.
+	if target.Scheme == "unix" {
+		// See comment on socketDial for the trim
+		socketPrefix := target.String()[len("unix://"):]
+		req.URL.Path = strings.TrimPrefix(req.URL.Path, socketPrefix)
+	}
+	// We are then safe to remove the `without` prefix.
+	if without != "" {
+		req.URL.Path = strings.TrimPrefix(req.URL.Path, without)
+	}
+
+	return req
 }
 
 func copyHeader(dst, src http.Header) {
