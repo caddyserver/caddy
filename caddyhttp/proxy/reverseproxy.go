@@ -137,7 +137,7 @@ func NewDynamicHostReverseProxy(templateUrl string, without string) *ReverseProx
 		targetQuery := target.RawQuery
 
 		req.URL.Scheme = target.Scheme
-		req.URL.Host = replacer.Replace(strings.Replace(target.Host, "HOST", "{host}", -1))
+		req.URL.Host = target.Host
 
 		req.URL.Path = singleJoiningSlash(target.Path, req.URL.Path)
 		if targetQuery == "" || req.URL.RawQuery == "" {
