@@ -269,6 +269,28 @@ func TestSetupParseWithKeyType(t *testing.T) {
 	}
 }
 
+func TestSetupParseWithOneTLSProtocol(t *testing.T) {
+	params := `tls {
+            protocols tls1.2
+        }`
+	cfg := new(Config)
+	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
+	c := caddy.NewTestController("", params)
+
+	err := setupTLS(c)
+	if err != nil {
+		t.Errorf("Expected no errors, got: %v", err)
+	}
+
+	if cfg.ProtocolMinVersion != cfg.ProtocolMaxVersion {
+		t.Errorf("Expected ProtocolMinVersion to be the same as ProtocolMaxVersion")
+	}
+
+	if cfg.ProtocolMinVersion != tls.VersionTLS12 && cfg.ProtocolMaxVersion != tls.VersionTLS12 {
+		t.Errorf("Expected 'tls1.2 (0x0303)' as ProtocolMinVersion/ProtocolMaxVersion, got %v/%v", cfg.ProtocolMinVersion, cfg.ProtocolMaxVersion)
+	}
+}
+
 const (
 	certFile = "test_cert.pem"
 	keyFile  = "test_key.pem"
