@@ -75,21 +75,27 @@ func setupTLS(c *caddy.Controller) error {
 				config.KeyType = value
 			case "protocols":
 				args := c.RemainingArgs()
-				if len(args) != 2 {
-					return c.ArgErr()
-				}
-				value, ok := supportedProtocols[strings.ToLower(args[0])]
-				if !ok {
-					return c.Errf("Wrong protocol name or protocol not supported: '%s'", args[0])
-				}
-				config.ProtocolMinVersion = value
-				value, ok = supportedProtocols[strings.ToLower(args[1])]
-				if !ok {
-					return c.Errf("Wrong protocol name or protocol not supported: '%s'", args[1])
-				}
-				config.ProtocolMaxVersion = value
-				if config.ProtocolMinVersion > config.ProtocolMaxVersion {
-					return c.Errf("Minimum protocol version cannot be higher than maximum (reverse the order)")
+				if len(args) == 1 {
+					value, ok := supportedProtocols[strings.ToLower(args[0])]
+					if !ok {
+						return c.Errf("Wrong protocol name or protocol not supported: '%s'", args[0])
+					}
+
+					config.ProtocolMinVersion, config.ProtocolMaxVersion = value, value
+				} else {
+					value, ok := supportedProtocols[strings.ToLower(args[0])]
+					if !ok {
+						return c.Errf("Wrong protocol name or protocol not supported: '%s'", args[0])
+					}
+					config.ProtocolMinVersion = value
+					value, ok = supportedProtocols[strings.ToLower(args[1])]
+					if !ok {
+						return c.Errf("Wrong protocol name or protocol not supported: '%s'", args[1])
+					}
+					config.ProtocolMaxVersion = value
+					if config.ProtocolMinVersion > config.ProtocolMaxVersion {
+						return c.Errf("Minimum protocol version cannot be higher than maximum (reverse the order)")
+					}
 				}
 			case "ciphers":
 				for c.NextArg() {
