@@ -97,6 +97,10 @@ you are able! We would ask that every pull request be reviewed by at least
 one collaborator who did not open the pull request before merging. This will
 help ensure high code quality as new collaborators are added to the project.
 
+Read [CodeReviewComments](https://github.com/golang/go/wiki/CodeReviewComments)
+on the Go wiki for an idea of what we look for in good, clean Go code.
+
+
 
 ### Vulnerabilities
 

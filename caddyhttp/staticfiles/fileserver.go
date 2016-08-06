@@ -81,13 +81,13 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request, name stri
 	if d.IsDir() {
 		// Ensure / at end of directory url
 		if !strings.HasSuffix(url, "/") {
-			redirect(w, r, path.Base(url)+"/")
+			Redirect(w, r, path.Base(url)+"/", http.StatusMovedPermanently)
 			return http.StatusMovedPermanently, nil
 		}
 	} else {
 		// Ensure no / at end of file url
 		if strings.HasSuffix(url, "/") {
-			redirect(w, r, "../"+path.Base(url))
+			Redirect(w, r, "../"+path.Base(url), http.StatusMovedPermanently)
 			return http.StatusMovedPermanently, nil
 		}
 	}
@@ -149,14 +149,14 @@ func (fs FileServer) isHidden(d os.FileInfo) bool {
 	return false
 }
 
-// redirect is taken from http.localRedirect of the std lib. It
-// sends an HTTP permanent redirect to the client but will
-// preserve the query string for the new path.
-func redirect(w http.ResponseWriter, r *http.Request, newPath string) {
+// Redirect sends an HTTP redirect to the client but will preserve
+// the query string for the new path. Based on http.localRedirect
+// from the Go standard library.
+func Redirect(w http.ResponseWriter, r *http.Request, newPath string, statusCode int) {
 	if q := r.URL.RawQuery; q != "" {
 		newPath += "?" + q
 	}
-	http.Redirect(w, r, newPath, http.StatusMovedPermanently)
+	http.Redirect(w, r, newPath, statusCode)
 }
 
 // IndexPages is a list of pages that may be understood as
