@@ -133,7 +133,7 @@ func NewDynamicHostReverseProxy(templateUrl string, without string) *ReverseProx
 
 		templateUrl = replacer.Replace(templateUrl)
 
-		target,_ := url.Parse(templateUrl)
+		target, _ := url.Parse(templateUrl)
 		targetQuery := target.RawQuery
 
 		req.URL.Scheme = target.Scheme
