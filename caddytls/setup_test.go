@@ -287,7 +287,7 @@ func TestSetupParseWithOneTLSProtocol(t *testing.T) {
 	}
 
 	if cfg.ProtocolMinVersion != tls.VersionTLS12 && cfg.ProtocolMaxVersion != tls.VersionTLS12 {
-		t.Errorf("Expected 'tls1.2 (0x0303)' as ProtocolMinVersion/ProtocolMaxVersion/, got %v/%v", cfg.ProtocolMinVersion, cfg.ProtocolMaxVersion)
+		t.Errorf("Expected 'tls1.2 (0x0303)' as ProtocolMinVersion/ProtocolMaxVersion, got %v/%v", cfg.ProtocolMinVersion, cfg.ProtocolMaxVersion)
 	}
 }
 
