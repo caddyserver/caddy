@@ -144,7 +144,10 @@ func (r *replacer) Replace(s string) string {
 	if r.responseRecorder != nil {
 		r.replacements["{status}"] = func() string { return strconv.Itoa(r.responseRecorder.status) }
 		r.replacements["{size}"] = func() string { return strconv.Itoa(r.responseRecorder.size) }
-		r.replacements["{latency}"] = func() string { return time.Since(r.responseRecorder.start).String() }
+		r.replacements["{latency}"] = func() string {
+			dur := time.Since(r.responseRecorder.start)
+			return roundDuration(dur).String()
+		}
 	}
 
 	// Include custom placeholders, overwriting existing ones if necessary
@@ -185,6 +188,36 @@ func (r *replacer) Replace(s string) string {
 	}
 
 	return s
+}
+
+func roundDuration(d time.Duration) time.Duration {
+	if d >= time.Millisecond {
+		return round(d, time.Millisecond)
+	} else if d >= time.Microsecond {
+		return round(d, time.Microsecond)
+	}
+
+	return d
+}
+
+// round rounds d to the nearest r
+func round(d, r time.Duration) time.Duration {
+	if r <= 0 {
+		return d
+	}
+	neg := d < 0
+	if neg {
+		d = -d
+	}
+	if m := d % r; m+m < r {
+		d = d - m
+	} else {
+		d = d + r - m
+	}
+	if neg {
+		return -d
+	}
+	return d
 }
 
 // Set sets key to value in the r.customReplacements map.
