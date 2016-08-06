@@ -128,14 +128,13 @@ func NewSingleHostReverseProxy(target *url.URL, without string) *ReverseProxy {
 }
 
 func NewDynamicHostReverseProxy(templateUrl string, without string) *ReverseProxy {
-	templateUrl = strings.Replace(strings.ToLower(templateUrl), "{host}", "HOST", -1)
-	target, err := url.Parse(templateUrl)
-	if err != nil {
-		return nil
-	}
-	targetQuery := target.RawQuery
 	director := func(req *http.Request) {
 		replacer := httpserver.NewReplacer(req, nil, "")
+
+		templateUrl = replacer.Replace(templateUrl)
+
+		target,_ := url.Parse(templateUrl)
+		targetQuery := target.RawQuery
 
 		req.URL.Scheme = target.Scheme
 		req.URL.Host = replacer.Replace(strings.Replace(target.Host, "HOST", "{host}", -1))
@@ -153,11 +152,7 @@ func NewDynamicHostReverseProxy(templateUrl string, without string) *ReverseProx
 		}
 	}
 	rp := &ReverseProxy{Director: director, FlushInterval: 250 * time.Millisecond} // flushing good for streaming & server-sent events
-	if target.Scheme == "unix" {
-		rp.Transport = &http.Transport{
-			Dial: socketDial(target.String()),
-		}
-	}
+
 	return rp
 }
 
