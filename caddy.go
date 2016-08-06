@@ -21,8 +21,6 @@ import (
 	"log"
 	"net"
 	"os"
-	"os/exec"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -723,24 +721,6 @@ func IsLoopback(addr string) bool {
 	return host == "localhost" ||
 		strings.Trim(host, "[]") == "::1" ||
 		strings.HasPrefix(host, "127.")
-}
-
-// checkFdlimit issues a warning if the OS limit for
-// max file descriptors is below a recommended minimum.
-func checkFdlimit() {
-	const min = 8192
-
-	// Warn if ulimit is too low for production sites
-	if runtime.GOOS == "linux" || runtime.GOOS == "darwin" {
-		out, err := exec.Command("sh", "-c", "ulimit -n").Output() // use sh because ulimit isn't in Linux $PATH
-		if err == nil {
-			lim, err := strconv.Atoi(string(bytes.TrimSpace(out)))
-			if err == nil && lim < min {
-				fmt.Printf("WARNING: File descriptor limit %d is too low for production servers. "+
-					"At least %d is recommended. Fix with \"ulimit -n %d\".\n", lim, min, min)
-			}
-		}
-	}
 }
 
 // Upgrade re-launches the process, preserving the listeners
