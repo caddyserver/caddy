@@ -46,6 +46,7 @@ type UpstreamHost struct {
 	CheckDown         UpstreamHostDownFunc
 	WithoutPathPrefix string
 	MaxConns          int64
+	Dynamic           bool
 }
 
 // Down checks whether the upstream host is down or not.
