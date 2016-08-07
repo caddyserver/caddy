@@ -710,7 +710,7 @@ func basicAuthTestcase(t *testing.T, upstreamUser, clientUser *url.Userinfo) {
 }
 
 func newFakeUpstream(name string, insecure bool) *fakeUpstream {
-	if strings.Contains(name,"{") && strings.Contains(name,"}") {
+	if strings.Contains(name, "{") && strings.Contains(name, "}") {
 		ReverseProxy := NewDynamicHostReverseProxy(name, "")
 	} else {
 		uri, _ := url.Parse(name)
