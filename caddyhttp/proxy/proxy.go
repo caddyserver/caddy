@@ -13,8 +13,6 @@ import (
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
 
-var errUnreachable = errors.New("unreachable backend")
-
 // Proxy represents a middleware instance that can proxy requests.
 type Proxy struct {
 	Next      httpserver.Handler
@@ -95,7 +93,7 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	for time.Now().Sub(start) < tryDuration {
 		host := upstream.Select(r)
 		if host == nil {
-			return http.StatusBadGateway, errUnreachable
+			return http.StatusBadGateway, errors.New("unreachable backend: host is nil")
 		}
 		if rr, ok := w.(*httpserver.ResponseRecorder); ok && rr.Replacer != nil {
 			rr.Replacer.Set("upstream", host.Name)
@@ -159,7 +157,7 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 		}(host, timeout)
 	}
 
-	return http.StatusBadGateway, errUnreachable
+	return http.StatusBadGateway, errors.New("unreachable backend: timed out")
 }
 
 // match finds the best match for a proxy config based
