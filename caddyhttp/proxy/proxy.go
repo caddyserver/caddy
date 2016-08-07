@@ -119,7 +119,7 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			outreq.Host = host.Name
 		}
 		if proxy == nil {
-			return http.StatusInternalServerError, errors.New("proxy for host '" + host.Name + "' is nil. Previous host was " + lastHost)
+			return http.StatusInternalServerError, errors.New("proxy for host '" + host.Name + "' is nil.")
 		}
 
 		// set headers for request going upstream
