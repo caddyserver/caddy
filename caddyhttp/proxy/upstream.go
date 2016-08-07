@@ -138,6 +138,9 @@ func (u *staticUpstream) NewHost(host string) (*UpstreamHost, error) {
 				if uh.Unhealthy {
 					return true
 				}
+				if strings.Contains(uh.Name, "{") && strings.Contains(uh.Name, "}") {
+					return false
+				}
 				if uh.Fails >= u.MaxFails &&
 					u.MaxFails != 0 {
 					return true
