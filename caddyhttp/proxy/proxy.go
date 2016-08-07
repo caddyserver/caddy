@@ -90,10 +90,11 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	// since Select() should give us "up" hosts, keep retrying
 	// hosts until timeout (or until we get a nil host).
 	start := time.Now()
+
 	for time.Now().Sub(start) < tryDuration {
 		host := upstream.Select(r)
 		if host == nil {
-			return http.StatusBadGateway, errors.New("unreachable backend: host is nil")
+			return http.StatusBadGateway, errors.New("unreachable backend: no available upstream")
 		}
 		if rr, ok := w.(*httpserver.ResponseRecorder); ok && rr.Replacer != nil {
 			rr.Replacer.Set("upstream", host.Name)
@@ -118,7 +119,7 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			outreq.Host = host.Name
 		}
 		if proxy == nil {
-			return http.StatusInternalServerError, errors.New("proxy for host '" + host.Name + "' is nil")
+			return http.StatusInternalServerError, errors.New("proxy for host '" + host.Name + "' is nil. Previous host was " + lastHost)
 		}
 
 		// set headers for request going upstream

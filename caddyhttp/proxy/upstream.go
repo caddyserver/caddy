@@ -149,7 +149,7 @@ func (u *staticUpstream) NewHost(host string) (*UpstreamHost, error) {
 		MaxConns:          u.MaxConns,
 	}
 
-	if strings.Contains(uh.Name, "{") && strings.Contains(uh.Name, "}") && strings.Index(uh.Name,"unix:") != 0 {
+	if strings.Contains(uh.Name, "{") && strings.Contains(uh.Name, "}") && strings.Index(uh.Name, "unix:") != 0 {
 		uh.ReverseProxy = NewDynamicHostReverseProxy(uh.Name, uh.WithoutPathPrefix)
 	} else {
 		baseURL, err := url.Parse(uh.Name)
@@ -324,13 +324,17 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream) error {
 
 func (u *staticUpstream) healthCheck() {
 	for _, host := range u.Hosts {
-		hostURL := host.Name + u.HealthCheck.Path
-		if r, err := u.HealthCheck.Client.Get(hostURL); err == nil {
-			io.Copy(ioutil.Discard, r.Body)
-			r.Body.Close()
-			host.Unhealthy = r.StatusCode < 200 || r.StatusCode >= 400
+		if strings.Contains(host.Name, "{") && strings.Contains(host.Name, "}") {
+			host.Unhealthy = false //dynamic hosts can never be unhealthy
 		} else {
-			host.Unhealthy = true
+			hostURL := host.Name + u.HealthCheck.Path
+			if r, err := u.HealthCheck.Client.Get(hostURL); err == nil {
+				io.Copy(ioutil.Discard, r.Body)
+				r.Body.Close()
+				host.Unhealthy = r.StatusCode < 200 || r.StatusCode >= 400
+			} else {
+				host.Unhealthy = true
+			}
 		}
 	}
 }
