@@ -138,7 +138,7 @@ func (u *staticUpstream) NewHost(host string) (*UpstreamHost, error) {
 				if uh.Unhealthy {
 					return true
 				}
-				if strings.Contains(uh.Name, "{") && strings.Contains(uh.Name, "}") {
+				if uh.Dynamic {
 					return false
 				}
 				if uh.Fails >= u.MaxFails &&
@@ -329,7 +329,7 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream) error {
 
 func (u *staticUpstream) healthCheck() {
 	for _, host := range u.Hosts {
-		if strings.Contains(host.Name, "{") && strings.Contains(host.Name, "}") {
+		if host.Dynamic {
 			host.Unhealthy = false //dynamic hosts can never be unhealthy
 		} else {
 			hostURL := host.Name + u.HealthCheck.Path
