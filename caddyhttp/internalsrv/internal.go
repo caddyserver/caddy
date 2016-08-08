@@ -20,8 +20,10 @@ type Internal struct {
 }
 
 const (
-	redirectHeader   string = "X-Accel-Redirect"
-	maxRedirectCount int    = 10
+	redirectHeader        string = "X-Accel-Redirect"
+	contentLengthHeader   string = "Content-Length"
+	contentEncodingHeader string = "Content-Encoding"
+	maxRedirectCount      int    = 10
 )
 
 func isInternalRedirect(w http.ResponseWriter) bool {
@@ -68,11 +70,12 @@ type internalResponseWriter struct {
 	http.ResponseWriter
 }
 
-// ClearHeader removes all header fields that are already set.
+// ClearHeader removes script headers that would interfere with follow up
+// redirect requests.
 func (w internalResponseWriter) ClearHeader() {
-	for k := range w.Header() {
-		w.Header().Del(k)
-	}
+	w.Header().Del(redirectHeader)
+	w.Header().Del(contentLengthHeader)
+	w.Header().Del(contentEncodingHeader)
 }
 
 // WriteHeader ignores the call if the response should be redirected to an
