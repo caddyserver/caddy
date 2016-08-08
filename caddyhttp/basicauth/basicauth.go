@@ -61,7 +61,7 @@ func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 
 	if hasAuth {
 		if !isAuthenticated {
-			w.Header().Set("WWW-Authenticate", "Basic")
+			w.Header().Set("WWW-Authenticate", "Basic realm=\"Restricted\"")
 			return http.StatusUnauthorized, nil
 		}
 		// "It's an older code, sir, but it checks out. I was about to clear them."

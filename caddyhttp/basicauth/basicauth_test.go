@@ -52,7 +52,7 @@ func TestBasicAuth(t *testing.T) {
 		if result == http.StatusUnauthorized {
 			headers := rec.Header()
 			if val, ok := headers["Www-Authenticate"]; ok {
-				if val[0] != "Basic" {
+				if val[0] != "Basic realm=\"Restricted\"" {
 					t.Errorf("Test %d, Www-Authenticate should be %s provided %s", i, "Basic", val[0])
 				}
 			} else {

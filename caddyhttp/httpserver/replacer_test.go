@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestNewReplacer(t *testing.T) {
@@ -138,5 +139,25 @@ func TestSet(t *testing.T) {
 	}
 	if repl.Replace("The value of variable is {variable}") != "The value of variable is value" {
 		t.Error("Expected variable replacement failed")
+	}
+}
+
+func TestRound(t *testing.T) {
+	var tests = map[time.Duration]time.Duration{
+		// 599.935µs -> 560µs
+		559935 * time.Nanosecond: 560 * time.Microsecond,
+		// 1.55ms    -> 2ms
+		1550 * time.Microsecond: 2 * time.Millisecond,
+		// 1.5555s   -> 1.556s
+		1555500 * time.Microsecond: 1556 * time.Millisecond,
+		// 1m2.0035s -> 1m2.004s
+		62003500 * time.Microsecond: 62004 * time.Millisecond,
+	}
+
+	for dur, expected := range tests {
+		rounded := roundDuration(dur)
+		if rounded != expected {
+			t.Errorf("Expected %v, Got %v", expected, rounded)
+		}
 	}
 }
