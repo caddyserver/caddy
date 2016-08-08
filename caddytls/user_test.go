@@ -2,8 +2,9 @@ package caddytls
 
 import (
 	"bytes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/rsa"
 	"io"
 	"strings"
 	"testing"
@@ -16,7 +17,7 @@ import (
 func TestUser(t *testing.T) {
 	defer testStorage.clean()
 
-	privateKey, err := rsa.GenerateKey(rand.Reader, 128)
+	privateKey, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
 	if err != nil {
 		t.Fatalf("Could not generate test private key: %v", err)
 	}
