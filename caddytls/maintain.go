@@ -1,8 +1,13 @@
 package caddytls
 
 import (
+	"io/ioutil"
 	"log"
+	"os"
+	"path/filepath"
 	"time"
+
+	"github.com/mholt/caddy"
 
 	"golang.org/x/crypto/ocsp"
 )
@@ -47,6 +52,7 @@ func maintainAssets(stopChan chan struct{}) {
 		case <-ocspTicker.C:
 			log.Println("[INFO] Scanning for stale OCSP staples")
 			UpdateOCSPStaples()
+			DeleteOldStapleFiles()
 			log.Println("[INFO] Done checking OCSP staples")
 		case <-stopChan:
 			renewalTicker.Stop()
@@ -231,8 +237,49 @@ func UpdateOCSPStaples() {
 	certCacheMu.Unlock()
 }
 
+// DeleteOldStapleFiles deletes cached OCSP staples that have expired.
+// TODO: Should we do this for certificates too?
+func DeleteOldStapleFiles() {
+	files, err := ioutil.ReadDir(ocspFolder)
+	if err != nil {
+		// maybe just hasn't been created yet; no big deal
+		return
+	}
+	for _, file := range files {
+		if file.IsDir() {
+			// wierd, what's a folder doing inside the OCSP cache?
+			continue
+		}
+		stapleFile := filepath.Join(ocspFolder, file.Name())
+		ocspBytes, err := ioutil.ReadFile(stapleFile)
+		if err != nil {
+			continue
+		}
+		resp, err := ocsp.ParseResponse(ocspBytes, nil)
+		if err != nil {
+			// contents are invalid; delete it
+			err = os.Remove(stapleFile)
+			if err != nil {
+				log.Printf("[ERROR] Purging corrupt staple file %s: %v", stapleFile, err)
+			}
+		}
+		if time.Now().After(resp.NextUpdate) {
+			// response has expired; delete it
+			err = os.Remove(stapleFile)
+			if err != nil {
+				log.Printf("[ERROR] Purging expired staple file %s: %v", stapleFile, err)
+			}
+		}
+	}
+}
+
+// freshOCSP returns true if resp is still fresh,
+// meaning that it is not expedient to get an
+// updated response from the OCSP server.
 func freshOCSP(resp *ocsp.Response) bool {
 	// start checking OCSP staple about halfway through validity period for good measure
 	refreshTime := resp.ThisUpdate.Add(resp.NextUpdate.Sub(resp.ThisUpdate) / 2)
 	return time.Now().Before(refreshTime)
 }
+
+var ocspFolder = filepath.Join(caddy.AssetsPath(), "ocsp")
