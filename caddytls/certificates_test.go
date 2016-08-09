@@ -43,7 +43,7 @@ func TestCacheCertificate(t *testing.T) {
 		t.Error("Expected first cert to be cached by key 'example.com', but it wasn't")
 	}
 	if _, ok := certCache["sub.example.com"]; !ok {
-		t.Error("Expected first cert to be cached by key 'sub.exmaple.com', but it wasn't")
+		t.Error("Expected first cert to be cached by key 'sub.example.com', but it wasn't")
 	}
 	if cert, ok := certCache[""]; !ok || cert.Names[2] != "" {
 		t.Error("Expected first cert to be cached additionally as the default certificate with empty name added, but it wasn't")
