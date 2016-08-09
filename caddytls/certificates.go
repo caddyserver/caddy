@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/xenolf/lego/acme"
 	"golang.org/x/crypto/ocsp"
 )
 
@@ -183,19 +182,13 @@ func makeCertificate(certPEMBlock, keyPEMBlock []byte) (Certificate, error) {
 		}
 	}
 	cert.NotAfter = leaf.NotAfter
+	cert.Certificate = tlsCert
 
-	// Staple OCSP
-	ocspBytes, ocspResp, err := acme.GetOCSPForCert(certPEMBlock)
+	err = stapleOCSP(&cert, certPEMBlock)
 	if err != nil {
-		// An error here is not a problem because a certificate may simply
-		// not contain a link to an OCSP server. But we should log it anyway.
-		log.Printf("[WARNING] No OCSP stapling for %v: %v", cert.Names, err)
-	} else if ocspResp.Status == ocsp.Good {
-		tlsCert.OCSPStaple = ocspBytes
-		cert.OCSP = ocspResp
+		log.Printf("[WARNING] Stapling OCSP: %v", err)
 	}
 
-	cert.Certificate = tlsCert
 	return cert, nil
 }
 

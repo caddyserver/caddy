@@ -13,11 +13,19 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"io"
+	"io/ioutil"
+	"log"
 	"math/big"
 	"net"
+	"os"
+	"path/filepath"
 	"time"
 
+	"golang.org/x/crypto/ocsp"
+
+	"github.com/mholt/caddy"
 	"github.com/xenolf/lego/acme"
 )
 
@@ -59,7 +67,7 @@ func savePrivateKey(key crypto.PrivateKey) ([]byte, error) {
 // stapleOCSP staples OCSP information to cert for hostname name.
 // If you have it handy, you should pass in the PEM-encoded certificate
 // bundle; otherwise the DER-encoded cert will have to be PEM-encoded.
-// If you don't have the PEM blocks handy, just pass in nil.
+// If you don't have the PEM blocks already, just pass in nil.
 //
 // Errors here are not necessarily fatal, it could just be that the
 // certificate doesn't have an issuer URL.
@@ -73,13 +81,66 @@ func stapleOCSP(cert *Certificate, pemBundle []byte) error {
 		pemBundle = bundle.Bytes()
 	}
 
-	ocspBytes, ocspResp, err := acme.GetOCSPForCert(pemBundle)
-	if err != nil {
-		return err
+	var ocspBytes []byte
+	var ocspResp *ocsp.Response
+	var ocspErr error
+	var gotNewOCSP bool
+
+	// First try to load OCSP staple from storage and see if
+	// we can still use it.
+	// TODO: Use Storage interface instead of disk directly
+	ocspFolder := filepath.Join(caddy.AssetsPath(), "ocsp")
+	ocspFileName := cert.Names[0] + "-" + fastHash(pemBundle)
+	ocspCachePath := filepath.Join(ocspFolder, ocspFileName)
+	cachedOCSP, err := ioutil.ReadFile(ocspCachePath)
+	if err == nil {
+		resp, err := ocsp.ParseResponse(cachedOCSP, nil)
+		if err == nil {
+			if freshOCSP(resp) {
+				// staple is still fresh; use it
+				ocspBytes = cachedOCSP
+				ocspResp = resp
+			}
+		} else {
+			// invalid contents; delete the file
+			err := os.Remove(ocspCachePath)
+			if err != nil {
+				log.Printf("[WARNING] Unable to delete invalid OCSP staple file: %v", err)
+			}
+		}
 	}
 
-	cert.Certificate.OCSPStaple = ocspBytes
-	cert.OCSP = ocspResp
+	// If we couldn't get a fresh staple by reading the cache,
+	// then we need to request it from the OCSP responder
+	if ocspResp == nil || len(ocspBytes) == 0 {
+		ocspBytes, ocspResp, ocspErr = acme.GetOCSPForCert(pemBundle)
+		if ocspErr != nil {
+			// An error here is not a problem because a certificate may simply
+			// not contain a link to an OCSP server. But we should log it anyway.
+			// There's nothing else we can do to get OCSP for this certificate,
+			// so we can return here with the error.
+			return fmt.Errorf("no OCSP stapling for %v: %v", cert.Names, ocspErr)
+		}
+		gotNewOCSP = true
+	}
+
+	// By now, we should have a response. If good, staple it to
+	// the certificate. If the OCSP response was not loaded from
+	// storage, we persist it for next time.
+	if ocspResp.Status == ocsp.Good {
+		cert.Certificate.OCSPStaple = ocspBytes
+		cert.OCSP = ocspResp
+		if gotNewOCSP {
+			err := os.MkdirAll(filepath.Join(caddy.AssetsPath(), "ocsp"), 0700)
+			if err != nil {
+				return fmt.Errorf("unable to make OCSP staple path for %v: %v", cert.Names, err)
+			}
+			err = ioutil.WriteFile(ocspCachePath, ocspBytes, 0644)
+			if err != nil {
+				return fmt.Errorf("unable to write OCSP staple file for %v: %v", cert.Names, err)
+			}
+		}
+	}
 
 	return nil
 }
@@ -233,6 +294,15 @@ func standaloneTLSTicketKeyRotation(c *tls.Config, ticker *time.Ticker, exitChan
 			c.SetSessionTicketKeys(setSessionTicketKeysTestHook(keys))
 		}
 	}
+}
+
+// fastHash hashes input using a hashing algorithm that
+// is fast, and returns the hash as a hex-encoded string.
+// Do not use this for cryptographic purposes.
+func fastHash(input []byte) string {
+	h := fnv.New32a()
+	h.Write([]byte(input))
+	return fmt.Sprintf("%x", h.Sum32())
 }
 
 const (
