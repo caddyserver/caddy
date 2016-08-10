@@ -1,6 +1,8 @@
 package httpserver
 
 import (
+	"io/ioutil"
+	"log"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -119,6 +121,19 @@ func NewReplacer(r *http.Request, rr *ResponseRecorder, emptyValue string) Repla
 
 				return requestReplacer.Replace(string(dump))
 			},
+			"{request_body}": func() string {
+				if !canLogRequest(r) {
+					return ""
+				}
+
+				body, err := ioutil.ReadAll(r.Body)
+				if err != nil {
+					log.Printf("[WARNING] Cannot read request body %v", err)
+					return ""
+				}
+
+				return string(body)
+			},
 		},
 		emptyValue: emptyValue,
 	}
@@ -130,6 +145,19 @@ func NewReplacer(r *http.Request, rr *ResponseRecorder, emptyValue string) Repla
 	}
 
 	return rep
+}
+
+func canLogRequest(r *http.Request) (canLog bool) {
+	if r.Method == "POST" || r.Method == "PUT" {
+		for _, cType := range r.Header[headerContentType] {
+			// the cType could have charset and other info
+			if strings.Index(cType, contentTypeJSON) > -1 || strings.Index(cType, contentTypeXML) > -1 {
+				canLog = true
+				break
+			}
+		}
+	}
+	return
 }
 
 // Replace performs a replacement of values on s and returns
@@ -226,6 +254,9 @@ func (r *replacer) Set(key, value string) {
 }
 
 const (
-	timeFormat     = "02/Jan/2006:15:04:05 -0700"
-	headerReplacer = "{>"
+	timeFormat        = "02/Jan/2006:15:04:05 -0700"
+	headerReplacer    = "{>"
+	headerContentType = "Content-Type"
+	contentTypeJSON   = "application/json"
+	contentTypeXML    = "application/xml"
 )
