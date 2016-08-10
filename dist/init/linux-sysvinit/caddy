@@ -53,11 +53,10 @@ reload() {
 
 status() {
     if [ -f $PIDFILE ]; then
-        PID=`cat $PIDFILE`
-        if [ -z "`ps axf | grep ${PID} | grep -v grep`" ]; then
-            echo "$NAME process is dead, but pidfile exists"
-        else
+        if kill -0 $(cat "$PIDFILE"); then
             echo "$NAME is running"
+        else
+            echo "$NAME process is dead, but pidfile exists"
         fi
     else
         echo "$NAME is not running"

@@ -8,4 +8,4 @@ Usage
 * Save the SysVinit config file in `/etc/init.d/caddy`.
 * Ensure that the folder `/etc/caddy` exists and that the subfolder `ssl` is owned by `www-data`.
 * Create a Caddyfile in `/etc/caddy/Caddyfile`
-* Now you can use `sudo /etc/init.d/caddy start|stop|restart|reload|status`.
+* Now you can use `service caddy start|stop|restart|reload|status` as `root`.
