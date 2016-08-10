@@ -1,8 +1,13 @@
 package caddytls
 
 import (
+	"io/ioutil"
 	"log"
+	"os"
+	"path/filepath"
 	"time"
+
+	"github.com/mholt/caddy"
 
 	"golang.org/x/crypto/ocsp"
 )
@@ -17,11 +22,11 @@ const (
 	// RenewInterval is how often to check certificates for renewal.
 	RenewInterval = 12 * time.Hour
 
-	// OCSPInterval is how often to check if OCSP stapling needs updating.
-	OCSPInterval = 1 * time.Hour
-
 	// RenewDurationBefore is how long before expiration to renew certificates.
 	RenewDurationBefore = (24 * time.Hour) * 30
+
+	// OCSPInterval is how often to check if OCSP stapling needs updating.
+	OCSPInterval = 1 * time.Hour
 )
 
 // maintainAssets is a permanently-blocking function
@@ -47,6 +52,7 @@ func maintainAssets(stopChan chan struct{}) {
 		case <-ocspTicker.C:
 			log.Println("[INFO] Scanning for stale OCSP staples")
 			UpdateOCSPStaples()
+			DeleteOldStapleFiles()
 			log.Println("[INFO] Done checking OCSP staples")
 		case <-stopChan:
 			renewalTicker.Stop()
@@ -154,6 +160,10 @@ func RenewManagedCertificates(allowPrompts bool) (err error) {
 
 // UpdateOCSPStaples updates the OCSP stapling in all
 // eligible, cached certificates.
+//
+// OCSP maintenance strives to abide the relevant points on
+// Ryan Sleevi's recommendations for good OCSP support:
+// https://gist.github.com/sleevi/5efe9ef98961ecfb4da8
 func UpdateOCSPStaples() {
 	// Create a temporary place to store updates
 	// until we release the potentially long-lived
@@ -187,12 +197,9 @@ func UpdateOCSPStaples() {
 
 		var lastNextUpdate time.Time
 		if cert.OCSP != nil {
-			// start checking OCSP staple about halfway through validity period for good measure
 			lastNextUpdate = cert.OCSP.NextUpdate
-			refreshTime := cert.OCSP.ThisUpdate.Add(lastNextUpdate.Sub(cert.OCSP.ThisUpdate) / 2)
-
-			// since OCSP is already stapled, we need only check if we're in that "refresh window"
-			if time.Now().Before(refreshTime) {
+			if freshOCSP(cert.OCSP) {
+				// no need to update staple if ours is still fresh
 				continue
 			}
 		}
@@ -201,7 +208,7 @@ func UpdateOCSPStaples() {
 		if err != nil {
 			if cert.OCSP != nil {
 				// if there was no staple before, that's fine; otherwise we should log the error
-				log.Printf("[ERROR] Checking OCSP for %v: %v", cert.Names, err)
+				log.Printf("[ERROR] Checking OCSP: %v", err)
 			}
 			continue
 		}
@@ -229,3 +236,50 @@ func UpdateOCSPStaples() {
 	}
 	certCacheMu.Unlock()
 }
+
+// DeleteOldStapleFiles deletes cached OCSP staples that have expired.
+// TODO: Should we do this for certificates too?
+func DeleteOldStapleFiles() {
+	files, err := ioutil.ReadDir(ocspFolder)
+	if err != nil {
+		// maybe just hasn't been created yet; no big deal
+		return
+	}
+	for _, file := range files {
+		if file.IsDir() {
+			// wierd, what's a folder doing inside the OCSP cache?
+			continue
+		}
+		stapleFile := filepath.Join(ocspFolder, file.Name())
+		ocspBytes, err := ioutil.ReadFile(stapleFile)
+		if err != nil {
+			continue
+		}
+		resp, err := ocsp.ParseResponse(ocspBytes, nil)
+		if err != nil {
+			// contents are invalid; delete it
+			err = os.Remove(stapleFile)
+			if err != nil {
+				log.Printf("[ERROR] Purging corrupt staple file %s: %v", stapleFile, err)
+			}
+		}
+		if time.Now().After(resp.NextUpdate) {
+			// response has expired; delete it
+			err = os.Remove(stapleFile)
+			if err != nil {
+				log.Printf("[ERROR] Purging expired staple file %s: %v", stapleFile, err)
+			}
+		}
+	}
+}
+
+// freshOCSP returns true if resp is still fresh,
+// meaning that it is not expedient to get an
+// updated response from the OCSP server.
+func freshOCSP(resp *ocsp.Response) bool {
+	// start checking OCSP staple about halfway through validity period for good measure
+	refreshTime := resp.ThisUpdate.Add(resp.NextUpdate.Sub(resp.ThisUpdate) / 2)
+	return time.Now().Before(refreshTime)
+}
+
+var ocspFolder = filepath.Join(caddy.AssetsPath(), "ocsp")
