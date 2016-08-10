@@ -127,12 +127,9 @@ func NewReplacer(r *http.Request, rr *ResponseRecorder, emptyValue string) Repla
 					return ""
 				}
 
-				body, err := ioutil.ReadAll(r.Body)
-				// Create a new ReadCloser to keep the body from being drained.
-				r.Body = ioutil.NopCloser(bytes.NewBuffer(body))
-
+				body, err := readRequestBody(r)
 				if err != nil {
-					log.Printf("[WARNING] Cannot read request body %v", err)
+					log.Printf("[WARNING] Cannot copy request body %v", err)
 					return ""
 				}
 
@@ -162,6 +159,18 @@ func canLogRequest(r *http.Request) (canLog bool) {
 		}
 	}
 	return
+}
+
+// readRequestBody reads the request body and sets a
+// new io.ReadCloser that has not yet been read.
+func readRequestBody(r *http.Request) ([]byte, error) {
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		return nil, err
+	}
+	// Create a new ReadCloser to keep the body from being drained.
+	r.Body = ioutil.NopCloser(bytes.NewBuffer(body))
+	return body, nil
 }
 
 // Replace performs a replacement of values on s and returns

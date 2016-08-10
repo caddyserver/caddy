@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"bytes"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -159,5 +160,27 @@ func TestRound(t *testing.T) {
 		if rounded != expected {
 			t.Errorf("Expected %v, Got %v", expected, rounded)
 		}
+	}
+}
+
+func TestReadRequestBody(t *testing.T) {
+	r, err := http.NewRequest("POST", "/", strings.NewReader(`null`))
+	if err != nil {
+		t.Error(err)
+	}
+	defer r.Body.Close()
+
+	body, err := readRequestBody(r)
+	if err != nil {
+		t.Error("readRequestBody failed", err)
+	}
+
+	var data = make([]byte, len(body))
+	_, err = r.Body.Read(data)
+
+	if err != nil {
+		t.Error(err)
+	} else if !bytes.Equal(body, data) {
+		t.Error("Expceted equal bytes.")
 	}
 }
