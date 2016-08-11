@@ -10,7 +10,9 @@ import (
 )
 
 func activateHTTPS(cctx caddy.Context) error {
-	if !caddy.Quiet {
+	operatorPresent := !caddy.Started()
+
+	if !caddy.Quiet && operatorPresent {
 		fmt.Print("Activating privacy features...")
 	}
 
@@ -21,7 +23,7 @@ func activateHTTPS(cctx caddy.Context) error {
 
 	// place certificates and keys on disk
 	for _, c := range ctx.siteConfigs {
-		err := c.TLS.ObtainCert(true)
+		err := c.TLS.ObtainCert(operatorPresent)
 		if err != nil {
 			return err
 		}
@@ -44,9 +46,10 @@ func activateHTTPS(cctx caddy.Context) error {
 		return err
 	}
 
-	if !caddy.Quiet {
+	if !caddy.Quiet && operatorPresent {
 		fmt.Println(" done.")
 	}
+
 	return nil
 }
 
