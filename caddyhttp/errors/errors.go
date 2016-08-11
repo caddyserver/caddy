@@ -24,13 +24,14 @@ func init() {
 
 // ErrorHandler handles HTTP errors (and errors from other middleware).
 type ErrorHandler struct {
-	Next       httpserver.Handler
-	ErrorPages map[int]string // map of status code to filename
-	LogFile    string
-	Log        *log.Logger
-	LogRoller  *httpserver.LogRoller
-	Debug      bool     // if true, errors are written out to client rather than to a log
-	file       *os.File // a log file to close when done
+	Next             httpserver.Handler
+	GenericErrorPage string         // default error page filename
+	ErrorPages       map[int]string // map of status code to filename
+	LogFile          string
+	Log              *log.Logger
+	LogRoller        *httpserver.LogRoller
+	Debug            bool     // if true, errors are written out to client rather than to a log
+	file             *os.File // a log file to close when done
 }
 
 func (h ErrorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
@@ -63,7 +64,7 @@ func (h ErrorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, er
 // message is written instead, and the extra error is logged.
 func (h ErrorHandler) errorPage(w http.ResponseWriter, r *http.Request, code int) {
 	// See if an error page for this status code was specified
-	if pagePath, ok := h.ErrorPages[code]; ok {
+	if pagePath, ok := h.findErrorPage(code); ok {
 		// Try to open it
 		errorPage, err := os.Open(pagePath)
 		if err != nil {
@@ -92,6 +93,18 @@ func (h ErrorHandler) errorPage(w http.ResponseWriter, r *http.Request, code int
 
 	// Default error response
 	httpserver.DefaultErrorFunc(w, r, code)
+}
+
+func (h ErrorHandler) findErrorPage(code int) (string, bool) {
+	if pagePath, ok := h.ErrorPages[code]; ok {
+		return pagePath, true
+	}
+
+	if h.GenericErrorPage != "" {
+		return h.GenericErrorPage, true
+	}
+
+	return "", false
 }
 
 func (h ErrorHandler) recovery(w http.ResponseWriter, r *http.Request) {
