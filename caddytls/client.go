@@ -236,9 +236,11 @@ func (c *ACMEClient) Renew(name string) error {
 	var newCertMeta acme.CertificateResource
 	var success bool
 	for attempts := 0; attempts < 2; attempts++ {
+		namesObtaining.Add([]string{name})
 		acmeMu.Lock()
 		newCertMeta, err = c.RenewCertificate(certMeta, true)
 		acmeMu.Unlock()
+		namesObtaining.Remove([]string{name})
 		if err == nil {
 			success = true
 			break
