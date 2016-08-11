@@ -244,27 +244,6 @@ func (p *parser) doImport() error {
 		if err != nil {
 			return err
 		}
-		var importLine int
-		importDir := filepath.Dir(importFile)
-		for i, token := range newTokens {
-			if token.Text == "import" {
-				importLine = token.Line
-				continue
-			}
-			if token.Line == importLine {
-				var abs string
-				if !filepath.IsAbs(importFile) {
-					abs = filepath.Join(filepath.Dir(absFile), token.Text)
-				} else {
-					abs = filepath.Join(importDir, token.Text)
-				}
-				newTokens[i] = Token{
-					Text: abs,
-					Line: token.Line,
-					File: token.File,
-				}
-			}
-		}
 		importedTokens = append(importedTokens, newTokens...)
 	}
 
