@@ -2,8 +2,8 @@ package httpserver
 
 import (
 	"bytes"
+	"io"
 	"io/ioutil"
-	"log"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -127,13 +127,12 @@ func NewReplacer(r *http.Request, rr *ResponseRecorder, emptyValue string) Repla
 					return ""
 				}
 
-				body, err := readRequestBody(r)
+				body, err := readRequestBody(r, maxLogBodySize)
 				if err != nil {
-					log.Printf("[WARNING] Cannot copy request body %v", err)
 					return ""
 				}
 
-				return string(body)
+				return requestReplacer.Replace(string(body))
 			},
 		},
 		emptyValue: emptyValue,
@@ -163,13 +162,18 @@ func canLogRequest(r *http.Request) (canLog bool) {
 
 // readRequestBody reads the request body and sets a
 // new io.ReadCloser that has not yet been read.
-func readRequestBody(r *http.Request) ([]byte, error) {
-	body, err := ioutil.ReadAll(r.Body)
+func readRequestBody(r *http.Request, n int64) ([]byte, error) {
+	body, err := ioutil.ReadAll(io.LimitReader(r.Body, n))
 	if err != nil {
 		return nil, err
 	}
-	// Create a new ReadCloser to keep the body from being drained.
-	r.Body = ioutil.NopCloser(bytes.NewBuffer(body))
+
+	mr := io.MultiReader(
+		bytes.NewBuffer(body),
+		r.Body,
+	)
+
+	r.Body = ioutil.NopCloser(mr)
 	return body, nil
 }
 
@@ -272,4 +276,5 @@ const (
 	headerContentType = "Content-Type"
 	contentTypeJSON   = "application/json"
 	contentTypeXML    = "application/xml"
+	maxLogBodySize    = 100 * 1000
 )
