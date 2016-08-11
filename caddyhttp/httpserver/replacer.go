@@ -163,17 +163,21 @@ func canLogRequest(r *http.Request) (canLog bool) {
 // readRequestBody reads the request body and sets a
 // new io.ReadCloser that has not yet been read.
 func readRequestBody(r *http.Request, n int64) ([]byte, error) {
+	defer r.Body.Close()
+
 	body, err := ioutil.ReadAll(io.LimitReader(r.Body, n))
 	if err != nil {
 		return nil, err
 	}
 
-	mr := io.MultiReader(
-		bytes.NewBuffer(body),
-		r.Body,
-	)
+	// Read the remaining bytes
+	remaining, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		return nil, err
+	}
 
-	r.Body = ioutil.NopCloser(mr)
+	buf := bytes.NewBuffer(append(body, remaining...))
+	r.Body = ioutil.NopCloser(buf)
 	return body, nil
 }
 
