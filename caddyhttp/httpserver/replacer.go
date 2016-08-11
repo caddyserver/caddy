@@ -147,17 +147,16 @@ func NewReplacer(r *http.Request, rr *ResponseRecorder, emptyValue string) Repla
 	return rep
 }
 
-func canLogRequest(r *http.Request) (canLog bool) {
+func canLogRequest(r *http.Request) bool {
 	if r.Method == "POST" || r.Method == "PUT" {
 		for _, cType := range r.Header[headerContentType] {
 			// the cType could have charset and other info
 			if strings.Index(cType, contentTypeJSON) > -1 || strings.Index(cType, contentTypeXML) > -1 {
-				canLog = true
-				break
+				return true
 			}
 		}
 	}
-	return
+	return false
 }
 
 // readRequestBody reads the request body and sets a
@@ -280,5 +279,5 @@ const (
 	headerContentType = "Content-Type"
 	contentTypeJSON   = "application/json"
 	contentTypeXML    = "application/xml"
-	maxLogBodySize    = 100 * 1000
+	maxLogBodySize    = 100 * 1024
 )
