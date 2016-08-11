@@ -84,9 +84,6 @@ func NewReplacer(r *http.Request, rr *ResponseRecorder, emptyValue string) Repla
 			"{fragment}":      func() string { return r.URL.Fragment },
 			"{proto}":         func() string { return r.Proto },
 			"{remote}": func() string {
-				if fwdFor := r.Header.Get("X-Forwarded-For"); fwdFor != "" {
-					return fwdFor
-				}
 				host, _, err := net.SplitHostPort(r.RemoteAddr)
 				if err != nil {
 					return r.RemoteAddr
