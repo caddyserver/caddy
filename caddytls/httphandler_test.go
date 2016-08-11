@@ -8,13 +8,17 @@ import (
 )
 
 func TestHTTPChallengeHandlerNoOp(t *testing.T) {
-	// try base paths that aren't handled by this handler
+	namesObtaining.Add([]string{"localhost"})
+
+	// try base paths and host names that aren't
+	// handled by this handler
 	for _, url := range []string{
 		"http://localhost/",
 		"http://localhost/foo.html",
 		"http://localhost/.git",
 		"http://localhost/.well-known/",
 		"http://localhost/.well-known/acme-challenging",
+		"http://other/.well-known/acme-challenge/foo",
 	} {
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
@@ -45,6 +49,9 @@ func TestHTTPChallengeHandlerSuccess(t *testing.T) {
 		t.Fatalf("Unable to start test server listener: %v", err)
 	}
 	ts.Listener = ln
+
+	// Tell this package that we are handling a challenge for 127.0.0.1
+	namesObtaining.Add([]string{"127.0.0.1"})
 
 	// Start our engines and run the test
 	ts.Start()
