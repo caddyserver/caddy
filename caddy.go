@@ -50,6 +50,14 @@ var (
 	// was started as part of an upgrade, where a parent
 	// Caddy process started this one.
 	isUpgrade bool
+
+	// started will be set to true when the first
+	// instance is started; it never gets set to
+	// false after that.
+	started bool
+
+	// mu protects the variables 'isUpgrade' and 'started'.
+	mu sync.Mutex
 )
 
 // Instance contains the state of servers created as a result of
@@ -497,6 +505,10 @@ func startWithListenerFds(cdyfile Input, inst *Instance, restartFds map[string]r
 		}
 	}
 
+	mu.Lock()
+	started = true
+	mu.Unlock()
+
 	return nil
 }
 
@@ -737,7 +749,18 @@ func Upgrade() error {
 // where a parent caddy process spawned this one to ugprade
 // the binary.
 func IsUpgrade() bool {
+	mu.Lock()
+	defer mu.Unlock()
 	return isUpgrade
+}
+
+// Started returns true if at least one instance has been
+// started by this package. It never gets reset to false
+// once it is set to true.
+func Started() bool {
+	mu.Lock()
+	defer mu.Unlock()
+	return started
 }
 
 // CaddyfileInput represents a Caddyfile as input
