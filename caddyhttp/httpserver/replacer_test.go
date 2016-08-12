@@ -1,6 +1,8 @@
 package httpserver
 
 import (
+	"bytes"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -159,5 +161,30 @@ func TestRound(t *testing.T) {
 		if rounded != expected {
 			t.Errorf("Expected %v, Got %v", expected, rounded)
 		}
+	}
+}
+
+func TestReadRequestBody(t *testing.T) {
+	payload := []byte(`{ "foo": "bar" }`)
+	var readSize int64 = 5
+	r, err := http.NewRequest("POST", "/", bytes.NewReader(payload))
+	if err != nil {
+		t.Error(err)
+	}
+	defer r.Body.Close()
+
+	logBody, err := readRequestBody(r, readSize)
+	if err != nil {
+		t.Error("readRequestBody failed", err)
+	} else if !bytes.EqualFold(payload[0:readSize], logBody) {
+		t.Error("Expected log comparison failed")
+	}
+
+	// Ensure the Request body is the same as the original.
+	reqBody, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		t.Error("Unable to read request body", err)
+	} else if !bytes.EqualFold(payload, reqBody) {
+		t.Error("Expected request body comparison failed")
 	}
 }

@@ -1,6 +1,9 @@
 package httpserver
 
 import (
+	"bytes"
+	"io"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -116,6 +119,18 @@ func NewReplacer(r *http.Request, rr *ResponseRecorder, emptyValue string) Repla
 
 				return requestReplacer.Replace(string(dump))
 			},
+			"{request_body}": func() string {
+				if !canLogRequest(r) {
+					return ""
+				}
+
+				body, err := readRequestBody(r, maxLogBodySize)
+				if err != nil {
+					return ""
+				}
+
+				return requestReplacer.Replace(string(body))
+			},
 		},
 		emptyValue: emptyValue,
 	}
@@ -127,6 +142,39 @@ func NewReplacer(r *http.Request, rr *ResponseRecorder, emptyValue string) Repla
 	}
 
 	return rep
+}
+
+func canLogRequest(r *http.Request) bool {
+	if r.Method == "POST" || r.Method == "PUT" {
+		for _, cType := range r.Header[headerContentType] {
+			// the cType could have charset and other info
+			if strings.Index(cType, contentTypeJSON) > -1 || strings.Index(cType, contentTypeXML) > -1 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// readRequestBody reads the request body and sets a
+// new io.ReadCloser that has not yet been read.
+func readRequestBody(r *http.Request, n int64) ([]byte, error) {
+	defer r.Body.Close()
+
+	body, err := ioutil.ReadAll(io.LimitReader(r.Body, n))
+	if err != nil {
+		return nil, err
+	}
+
+	// Read the remaining bytes
+	remaining, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	buf := bytes.NewBuffer(append(body, remaining...))
+	r.Body = ioutil.NopCloser(buf)
+	return body, nil
 }
 
 // Replace performs a replacement of values on s and returns
@@ -223,6 +271,10 @@ func (r *replacer) Set(key, value string) {
 }
 
 const (
-	timeFormat     = "02/Jan/2006:15:04:05 -0700"
-	headerReplacer = "{>"
+	timeFormat        = "02/Jan/2006:15:04:05 -0700"
+	headerReplacer    = "{>"
+	headerContentType = "Content-Type"
+	contentTypeJSON   = "application/json"
+	contentTypeXML    = "application/xml"
+	maxLogBodySize    = 100 * 1024
 )
