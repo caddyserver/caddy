@@ -123,12 +123,20 @@ func errorsParse(c *caddy.Controller) (*ErrorHandler, error) {
 				f.Close()
 
 				if what == "*" {
+					if handler.GenericErrorPage != "" {
+						return hadBlock, c.Errf("Duplicate status code entry: %s", what)
+					}
 					handler.GenericErrorPage = where
 				} else {
 					whatInt, err := strconv.Atoi(what)
 					if err != nil {
 						return hadBlock, c.Err("Expecting a numeric status code or '*', got '" + what + "'")
 					}
+
+					if _, exists := handler.ErrorPages[whatInt]; exists {
+						return hadBlock, c.Errf("Duplicate status code entry: %s", what)
+					}
+
 					handler.ErrorPages[whatInt] = where
 				}
 			}
