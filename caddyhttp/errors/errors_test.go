@@ -18,19 +18,13 @@ import (
 
 func TestErrors(t *testing.T) {
 	// create a temporary page
-	path := filepath.Join(os.TempDir(), "errors_test.html")
-	f, err := os.Create(path)
+	const content = "This is a error page"
+
+	path, err := createErrorPageFile("errors_test.html", content)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.Remove(path)
-
-	const content = "This is a error page"
-	_, err = f.WriteString(content)
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.Close()
 
 	buf := bytes.Buffer{}
 	em := ErrorHandler{
@@ -157,6 +151,87 @@ func TestVisibleErrorWithPanic(t *testing.T) {
 	}
 }
 
+func TestGenericErrorPage(t *testing.T) {
+	// create temporary generic error page
+	const genericErrorContent = "This is a generic error page"
+
+	genericErrorPagePath, err := createErrorPageFile("generic_error_test.html", genericErrorContent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(genericErrorPagePath)
+
+	// create temporary error page
+	const notFoundErrorContent = "This is a error page"
+
+	notFoundErrorPagePath, err := createErrorPageFile("not_found.html", notFoundErrorContent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(notFoundErrorPagePath)
+
+	buf := bytes.Buffer{}
+	em := ErrorHandler{
+		GenericErrorPage: genericErrorPagePath,
+		ErrorPages: map[int]string{
+			http.StatusNotFound: notFoundErrorPagePath,
+		},
+		Log: log.New(&buf, "", 0),
+	}
+
+	tests := []struct {
+		next         httpserver.Handler
+		expectedCode int
+		expectedBody string
+		expectedLog  string
+		expectedErr  error
+	}{
+		{
+			next:         genErrorHandler(http.StatusNotFound, nil, ""),
+			expectedCode: 0,
+			expectedBody: notFoundErrorContent,
+			expectedLog:  "",
+			expectedErr:  nil,
+		},
+		{
+			next:         genErrorHandler(http.StatusInternalServerError, nil, ""),
+			expectedCode: 0,
+			expectedBody: genericErrorContent,
+			expectedLog:  "",
+			expectedErr:  nil,
+		},
+	}
+
+	req, err := http.NewRequest("GET", "/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for i, test := range tests {
+		em.Next = test.next
+		buf.Reset()
+		rec := httptest.NewRecorder()
+		code, err := em.ServeHTTP(rec, req)
+
+		if err != test.expectedErr {
+			t.Errorf("Test %d: Expected error %v, but got %v",
+				i, test.expectedErr, err)
+		}
+		if code != test.expectedCode {
+			t.Errorf("Test %d: Expected status code %d, but got %d",
+				i, test.expectedCode, code)
+		}
+		if body := rec.Body.String(); body != test.expectedBody {
+			t.Errorf("Test %d: Expected body %q, but got %q",
+				i, test.expectedBody, body)
+		}
+		if log := buf.String(); !strings.Contains(log, test.expectedLog) {
+			t.Errorf("Test %d: Expected log %q, but got %q",
+				i, test.expectedLog, log)
+		}
+	}
+}
+
 func genErrorHandler(status int, err error, body string) httpserver.Handler {
 	return httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
 		if len(body) > 0 {
@@ -165,4 +240,20 @@ func genErrorHandler(status int, err error, body string) httpserver.Handler {
 		}
 		return status, err
 	})
+}
+
+func createErrorPageFile(name string, content string) (string, error) {
+	errorPageFilePath := filepath.Join(os.TempDir(), name)
+	f, err := os.Create(errorPageFilePath)
+	if err != nil {
+		return "", err
+	}
+
+	_, err = f.WriteString(content)
+	if err != nil {
+		return "", err
+	}
+	f.Close()
+
+	return errorPageFilePath, nil
 }

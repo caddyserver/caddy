@@ -103,6 +103,18 @@ func TestErrorsParse(t *testing.T) {
 				LocalTime:  true,
 			},
 		}},
+		{`errors { log errors.txt
+        * generic_error.html
+        404 404.html
+        503 503.html
+}`, false, ErrorHandler{
+			LogFile:          "errors.txt",
+			GenericErrorPage: "generic_error.html",
+			ErrorPages: map[int]string{
+				404: "404.html",
+				503: "503.html",
+			},
+		}},
 	}
 	for i, test := range tests {
 		actualErrorsRule, err := errorsParse(caddy.NewTestController("http", test.inputErrorsRules))
@@ -149,6 +161,10 @@ func TestErrorsParse(t *testing.T) {
 				t.Fatalf("Test %d expected LogRoller LocalTime to be %t, but got %t",
 					i, test.expectedErrorHandler.LogRoller.LocalTime, actualErrorsRule.LogRoller.LocalTime)
 			}
+		}
+		if actualErrorsRule.GenericErrorPage != test.expectedErrorHandler.GenericErrorPage {
+			t.Fatalf("Test %d expected GenericErrorPage to be %v, but got %v",
+				i, test.expectedErrorHandler.GenericErrorPage, actualErrorsRule.GenericErrorPage)
 		}
 	}
 

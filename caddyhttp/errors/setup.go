@@ -122,11 +122,15 @@ func errorsParse(c *caddy.Controller) (*ErrorHandler, error) {
 				}
 				f.Close()
 
-				whatInt, err := strconv.Atoi(what)
-				if err != nil {
-					return hadBlock, c.Err("Expecting a numeric status code, got '" + what + "'")
+				if what == "*" {
+					handler.GenericErrorPage = where
+				} else {
+					whatInt, err := strconv.Atoi(what)
+					if err != nil {
+						return hadBlock, c.Err("Expecting a numeric status code or '*', got '" + what + "'")
+					}
+					handler.ErrorPages[whatInt] = where
 				}
-				handler.ErrorPages[whatInt] = where
 			}
 		}
 		return hadBlock, nil
