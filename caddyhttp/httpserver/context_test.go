@@ -224,6 +224,51 @@ func TestHeader(t *testing.T) {
 	}
 }
 
+func TestEnv(t *testing.T) {
+	context := getContextOrFail(t)
+
+	name := "ENV_TEST_NAME"
+	testValue := "TEST_VALUE"
+	os.Setenv(name, testValue)
+
+	notExisting := "ENV_TEST_NOT_EXISTING"
+	os.Unsetenv(notExisting)
+
+	env := context.Env()
+	if value := env[name]; value != testValue {
+		t.Errorf("Expected env-variable %s value '%s', found '%s'",
+			name, testValue, value)
+	}
+
+	if value, ok := env[notExisting]; ok {
+		t.Errorf("Expected empty env-variable %s, found '%s'",
+			notExisting, value)
+	}
+}
+
+func TestPrintEnv(t *testing.T) {
+	context := getContextOrFail(t)
+
+	name := "ENV_TEST_NAME"
+	testValue := "TEST_VALUE"
+	os.Setenv(name, testValue)
+
+	notExisting := "ENV_TEST_NOT_EXISTING"
+	os.Unsetenv(notExisting)
+
+	env := context.PrintEnv()
+
+	test1 := name + "=" + testValue
+	if strings.Contains(env, test1) == false {
+		t.Errorf("Expected env-variable %s in '%s'", name, env)
+	}
+
+	test2 := notExisting + "="
+	if strings.Contains(env, test2) == true {
+		t.Errorf("Not expecting env-variable %s in '%s'", notExisting, env)
+	}
+}
+
 func TestIP(t *testing.T) {
 	context := getContextOrFail(t)
 
