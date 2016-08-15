@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/russross/blackfriday"
+	"os"
 )
 
 // This file contains the context and functions available for
@@ -55,6 +56,19 @@ func (c Context) Cookie(name string) string {
 // Header gets the value of a request header with field name.
 func (c Context) Header(name string) string {
 	return c.Req.Header.Get(name)
+}
+
+// Env gets a map of the environment variables.
+func (c Context) Env() map[string]string {
+	osEnv := os.Environ()
+	envVars := make(map[string]string, len(osEnv))
+	for _, env := range osEnv {
+		data := strings.SplitN(env, "=", 2)
+		if len(data) == 2 {
+			envVars[data[0]] = data[1]
+		}
+	}
+	return envVars
 }
 
 // IP gets the (remote) IP address of the client making the request.
@@ -243,9 +257,14 @@ func (c Context) ToUpper(s string) string {
 	return strings.ToUpper(s)
 }
 
-// Split is a passthrough to strings.Split. It will split the first argument at each instance of the separator and return a slice of strings.
+// Split is a pass-through to strings.Split. It will split the first argument at each instance of the separator and return a slice of strings.
 func (c Context) Split(s string, sep string) []string {
 	return strings.Split(s, sep)
+}
+
+// Join is a pass-through to strings.Join. It will join the first argument slice with the separator in the second argument and return the result.
+func (c Context) Join(a []string, sep string) string {
+	return strings.Join(a, sep)
 }
 
 // Slice will convert the given arguments into a slice.
