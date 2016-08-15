@@ -64,7 +64,7 @@ func (c Context) Env() map[string]string {
 	envVars := make(map[string]string, len(osEnv))
 	for _, env := range osEnv {
 		data := strings.SplitN(env, "=", 2)
-		if len(data) == 2 {
+		if len(data) == 2 && len(data[0]) > 0 {
 			envVars[data[0]] = data[1]
 		}
 	}

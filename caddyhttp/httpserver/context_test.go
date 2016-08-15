@@ -234,6 +234,9 @@ func TestEnv(t *testing.T) {
 	notExisting := "ENV_TEST_NOT_EXISTING"
 	os.Unsetenv(notExisting)
 
+	invalidName := "ENV_TEST_INVALID_NAME"
+	os.Setenv("="+invalidName, testValue)
+
 	env := context.Env()
 	if value := env[name]; value != testValue {
 		t.Errorf("Expected env-variable %s value '%s', found '%s'",
@@ -244,6 +247,17 @@ func TestEnv(t *testing.T) {
 		t.Errorf("Expected empty env-variable %s, found '%s'",
 			notExisting, value)
 	}
+
+	for k, v := range env {
+		if strings.Contains(k, invalidName) {
+			t.Errorf("Expected invalid name not to be included in Env %s, found in key '%s'", invalidName, k)
+		}
+		if strings.Contains(v, invalidName) {
+			t.Errorf("Expected invalid name not be be included in Env %s, found in value '%s'", invalidName, v)
+		}
+	}
+
+	os.Unsetenv("=" + invalidName)
 }
 
 func TestIP(t *testing.T) {
