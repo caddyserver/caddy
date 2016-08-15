@@ -132,7 +132,7 @@ func TestErrorsParse(t *testing.T) {
 			t.Errorf("Test %d didn't error, but it should have", i)
 		} else if err != nil && !test.shouldErr {
 			t.Errorf("Test %d errored, but it shouldn't have; got '%v'", i, err)
-		} else {
+		} else if err != nil && test.shouldErr {
 			continue
 		}
 		if actualErrorsRule.LogFile != test.expectedErrorHandler.LogFile {
