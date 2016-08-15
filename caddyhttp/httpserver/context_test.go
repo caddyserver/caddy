@@ -246,29 +246,6 @@ func TestEnv(t *testing.T) {
 	}
 }
 
-func TestPrintEnv(t *testing.T) {
-	context := getContextOrFail(t)
-
-	name := "ENV_TEST_NAME"
-	testValue := "TEST_VALUE"
-	os.Setenv(name, testValue)
-
-	notExisting := "ENV_TEST_NOT_EXISTING"
-	os.Unsetenv(notExisting)
-
-	env := context.PrintEnv()
-
-	test1 := name + "=" + testValue
-	if strings.Contains(env, test1) == false {
-		t.Errorf("Expected env-variable %s in '%s'", name, env)
-	}
-
-	test2 := notExisting + "="
-	if strings.Contains(env, test2) == true {
-		t.Errorf("Not expecting env-variable %s in '%s'", notExisting, env)
-	}
-}
-
 func TestIP(t *testing.T) {
 	context := getContextOrFail(t)
 

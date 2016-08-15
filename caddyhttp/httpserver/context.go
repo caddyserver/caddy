@@ -71,11 +71,6 @@ func (c Context) Env() map[string]string {
 	return envVars
 }
 
-// PrintEnv gets the values of all environment variables (for debug purposes).
-func (c Context) PrintEnv() string {
-	return c.Join(os.Environ(), "\n")
-}
-
 // IP gets the (remote) IP address of the client making the request.
 func (c Context) IP() string {
 	ip, _, err := net.SplitHostPort(c.Req.RemoteAddr)
