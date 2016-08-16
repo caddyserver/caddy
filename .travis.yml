@@ -5,6 +5,11 @@ go:
   - 1.7
   - tip
 
+matrix:
+  allow_failures:
+    - go: tip
+  fast_finish: true
+
 before_install:
   # Decrypts a script that installs an authenticated cookie
   # for git to use when cloning from googlesource.com.
