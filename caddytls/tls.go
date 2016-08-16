@@ -157,6 +157,9 @@ var (
 	// DefaultEmail represents the Let's Encrypt account email to use if none provided.
 	DefaultEmail string
 
+	// Sets the maximum waiting time for the CA's HTTP responses
+	HTTPTimeout int
+
 	// Agreed indicates whether user has agreed to the Let's Encrypt SA.
 	Agreed bool
 
