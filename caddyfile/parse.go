@@ -201,11 +201,14 @@ func (p *parser) directives() error {
 // other words, call Next() to access the first token that was
 // imported.
 func (p *parser) doImport() error {
-	// syntax check
+	// syntax checks
 	if !p.NextArg() {
 		return p.ArgErr()
 	}
-	importPattern := p.Val()
+	importPattern := replaceEnvVars(p.Val())
+	if importPattern == "" {
+		return p.Err("Import requires a non-empty filepath")
+	}
 	if p.NextArg() {
 		return p.Err("Import takes only one argument (glob pattern or file)")
 	}
@@ -284,6 +287,13 @@ func (p *parser) doSingleImport(importFile string) ([]Token, error) {
 		return nil, p.Errf("Could not import %s: %v", importFile, err)
 	}
 	defer file.Close()
+
+	if info, err := file.Stat(); err != nil {
+		return nil, p.Errf("Could not import %s: %v", importFile, err)
+	} else if info.IsDir() {
+		return nil, p.Errf("Could not import %s: is a directory", importFile)
+	}
+
 	importedTokens := allTokens(file)
 
 	// Tack the filename onto these tokens so errors show the imported file's name
