@@ -271,12 +271,13 @@ func loadCaddyfileInput(serverType string) (Input, error) {
 	var loadedBy string
 	var caddyfileToUse Input
 	for _, l := range caddyfileLoaders {
-		if cdyfile, err := l.loader.Load(serverType); cdyfile != nil {
+		cdyfile, err := l.loader.Load(serverType)
+		if err != nil {
+			return nil, fmt.Errorf("loading Caddyfile via %s: %v", l.name, err)
+		}
+		if cdyfile != nil {
 			if caddyfileToUse != nil {
 				return nil, fmt.Errorf("Caddyfile loaded multiple times; first by %s, then by %s", loadedBy, l.name)
-			}
-			if err != nil {
-				return nil, err
 			}
 			loaderUsed = l
 			caddyfileToUse = cdyfile
