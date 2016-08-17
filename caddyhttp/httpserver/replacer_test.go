@@ -121,7 +121,7 @@ func TestSet(t *testing.T) {
 
 	request, err := http.NewRequest("POST", "http://localhost", reader)
 	if err != nil {
-		t.Fatalf("Request Formation Failed \n")
+		t.Fatalf("Request Formation Failed: %s\n", err.Error())
 	}
 	repl := NewReplacer(request, recordRequest, "")
 
