@@ -22,13 +22,17 @@ func Parse(filename string, input io.Reader, validDirectives []string) ([]Server
 // allTokens lexes the entire input, but does not parse it.
 // It returns all the tokens from the input, unstructured
 // and in order.
-func allTokens(input io.Reader) (tokens []Token) {
+func allTokens(input io.Reader) ([]Token, error) {
 	l := new(lexer)
-	l.load(input)
+	err := l.load(input)
+	if err != nil {
+		return nil, err
+	}
+	var tokens []Token
 	for l.next() {
 		tokens = append(tokens, l.token)
 	}
-	return
+	return tokens, nil
 }
 
 type parser struct {
@@ -294,7 +298,10 @@ func (p *parser) doSingleImport(importFile string) ([]Token, error) {
 		return nil, p.Errf("Could not import %s: is a directory", importFile)
 	}
 
-	importedTokens := allTokens(file)
+	importedTokens, err := allTokens(file)
+	if err != nil {
+		return nil, p.Errf("Could not read tokens while importing %s: %v", importFile, err)
+	}
 
 	// Tack the filename onto these tokens so errors show the imported file's name
 	filename := filepath.Base(importFile)

@@ -19,9 +19,10 @@ type Dispenser struct {
 
 // NewDispenser returns a Dispenser, ready to use for parsing the given input.
 func NewDispenser(filename string, input io.Reader) Dispenser {
+	tokens, _ := allTokens(input) // ignoring error because nothing to do with it
 	return Dispenser{
 		filename: filename,
-		tokens:   allTokens(input),
+		tokens:   tokens,
 		cursor:   -1,
 	}
 }

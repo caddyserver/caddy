@@ -9,8 +9,11 @@ import (
 func TestAllTokens(t *testing.T) {
 	input := strings.NewReader("a b c\nd e")
 	expected := []string{"a", "b", "c", "d", "e"}
-	tokens := allTokens(input)
+	tokens, err := allTokens(input)
 
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
 	if len(tokens) != len(expected) {
 		t.Fatalf("Expected %d tokens, got %d", len(expected), len(tokens))
 	}
