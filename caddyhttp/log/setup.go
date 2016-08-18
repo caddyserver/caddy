@@ -4,6 +4,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 
 	"github.com/hashicorp/go-syslog"
 	"github.com/mholt/caddy"
@@ -33,8 +34,11 @@ func setup(c *caddy.Controller) error {
 					return err
 				}
 			} else {
-				var file *os.File
-				file, err = os.OpenFile(rules[i].OutputFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+				err := os.MkdirAll(filepath.Dir(rules[i].OutputFile), 0744)
+				if err != nil {
+					return err
+				}
+				file, err := os.OpenFile(rules[i].OutputFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
 				if err != nil {
 					return err
 				}
