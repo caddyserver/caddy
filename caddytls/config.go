@@ -138,7 +138,12 @@ func (c *Config) obtainCertName(name string, allowPrompts bool) error {
 		return err
 	}
 
-	if !c.Managed || !HostQualifies(name) || storage.SiteExists(name) {
+	siteExists, err := storage.SiteExists(name)
+	if err != nil {
+		return err
+	}
+
+	if !c.Managed || !HostQualifies(name) || siteExists {
 		return nil
 	}
 

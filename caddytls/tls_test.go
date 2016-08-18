@@ -135,11 +135,16 @@ func TestExistingCertAndKey(t *testing.T) {
 
 	domain := "example.com"
 
-	if storage.SiteExists(domain) {
+	siteExists, err := storage.SiteExists(domain)
+	if err != nil {
+		t.Fatalf("Could not determine whether site exists: %v", err)
+	}
+
+	if siteExists {
 		t.Errorf("Did NOT expect %v to have existing cert or key, but it did", domain)
 	}
 
-	err := saveCertResource(storage, acme.CertificateResource{
+	err = saveCertResource(storage, acme.CertificateResource{
 		Domain:      domain,
 		PrivateKey:  []byte("key"),
 		Certificate: []byte("cert"),
@@ -148,7 +153,12 @@ func TestExistingCertAndKey(t *testing.T) {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
 
-	if !storage.SiteExists(domain) {
+	siteExists, err = storage.SiteExists(domain)
+	if err != nil {
+		t.Fatalf("Could not determine whether site exists: %v", err)
+	}
+
+	if !siteExists {
 		t.Errorf("Expected %v to have existing cert and key, but it did NOT", domain)
 	}
 }
