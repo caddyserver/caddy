@@ -276,5 +276,6 @@ const (
 	headerContentType = "Content-Type"
 	contentTypeJSON   = "application/json"
 	contentTypeXML    = "application/xml"
-	maxLogBodySize    = 100 * 1024
+	// MaxLogBodySize limits the size of logged request's body
+	MaxLogBodySize = 100 * 1024
 )

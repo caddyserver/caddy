@@ -2,6 +2,7 @@ package log
 
 import (
 	"bytes"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -58,5 +59,61 @@ func TestLoggedStatus(t *testing.T) {
 	// check custom placeholder
 	if !strings.Contains(logged, "foobar") {
 		t.Errorf("Expected the log entry to contain 'foobar' (custom placeholder), but it didn't: %s", logged)
+	}
+}
+
+func TestLogRequestBody(t *testing.T) {
+	var got bytes.Buffer
+	logger := Logger{
+		Rules: []Rule{{
+			PathScope: "/",
+			Format:    "{request_body}",
+			Log:       log.New(&got, "", 0),
+		}},
+		Next: httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
+			// drain up body
+			ioutil.ReadAll(r.Body)
+			return 0, nil
+		}),
+	}
+
+	for i, c := range []struct {
+		body   string
+		expect string
+	}{
+		{"", "\n"},
+		{"{hello} world!", "{hello} world!\n"},
+		{func() string {
+			length := httpserver.MaxLogBodySize + 100
+			b := make([]byte, length)
+			for i := 0; i < length; i++ {
+				b[i] = 0xab
+			}
+			return string(b)
+		}(), func() string {
+			b := make([]byte, httpserver.MaxLogBodySize)
+			for i := 0; i < httpserver.MaxLogBodySize; i++ {
+				b[i] = 0xab
+			}
+			return string(b) + "\n"
+		}(),
+		},
+	} {
+		got.Reset()
+		r, err := http.NewRequest("POST", "/", bytes.NewBufferString(c.body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.Header.Set("Content-Type", "application/json")
+		status, err := logger.ServeHTTP(httptest.NewRecorder(), r)
+		if status != 0 {
+			t.Errorf("case %d: Expected status to be 0, but was %d", i, status)
+		}
+		if err != nil {
+			t.Errorf("case %d: Expected error to be nil, instead got: %v", i, err)
+		}
+		if got.String() != c.expect {
+			t.Errorf("case %d: Expected body %q, but got %q", i, c.expect, got.String())
+		}
 	}
 }
