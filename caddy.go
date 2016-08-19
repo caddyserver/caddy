@@ -76,7 +76,7 @@ type Instance struct {
 	context Context
 
 	// servers is the list of servers with their listeners.
-	servers []serverListener
+	servers []ServerListener
 
 	// these callbacks execute when certain events occur
 	onFirstStartup  []func() error // starting, not as part of a restart
@@ -85,6 +85,9 @@ type Instance struct {
 	onShutdown      []func() error // stopping, even as part of a restart
 	onFinalShutdown []func() error // stopping, not as part of a restart
 }
+
+// Servers returns the ServerListeners in i.
+func (i *Instance) Servers() []ServerListener { return i.servers }
 
 // Stop stops all servers contained in i. It does NOT
 // execute shutdown callbacks.
@@ -202,7 +205,7 @@ func (i *Instance) Restart(newCaddyfile Input) (*Instance, error) {
 // internally-kept list of servers that is running. For
 // saved servers, graceful restarts will be provided.
 func (i *Instance) SaveServer(s Server, ln net.Listener) {
-	i.servers = append(i.servers, serverListener{server: s, listener: ln})
+	i.servers = append(i.servers, ServerListener{server: s, listener: ln})
 }
 
 // HasListenerWithAddress returns whether this package is
@@ -644,7 +647,7 @@ func startServers(serverList []Server, inst *Instance, restartFds map[string]res
 			errChan <- s.ServePacket(pc)
 		}(s, ln, pc, inst)
 
-		inst.servers = append(inst.servers, serverListener{server: s, listener: ln, packet: pc})
+		inst.servers = append(inst.servers, ServerListener{server: s, listener: ln, packet: pc})
 	}
 
 	// Log errors that may be returned from Serve() calls,
@@ -836,7 +839,7 @@ var (
 	instancesMu sync.Mutex
 )
 
-const (
+var (
 	// DefaultConfigFile is the name of the configuration file that is loaded
 	// by default if no other file is specified.
 	DefaultConfigFile = "Caddyfile"

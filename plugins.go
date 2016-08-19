@@ -82,11 +82,29 @@ func ValidDirectives(serverType string) []string {
 	return stype.Directives
 }
 
-// serverListener pairs a server to its listener and/or packetconn.
-type serverListener struct {
+// ServerListener pairs a server to its listener and/or packetconn.
+type ServerListener struct {
 	server   Server
 	listener net.Listener
 	packet   net.PacketConn
+}
+
+// LocalAddr returns the local network address of the packetconn. It returns
+// nil when it is not set.
+func (s ServerListener) LocalAddr() net.Addr {
+	if s.packet == nil {
+		return nil
+	}
+	return s.packet.LocalAddr()
+}
+
+// Addr returns the listener's network address. It returns nil when it is
+// not set.
+func (s ServerListener) Addr() net.Addr {
+	if s.listener == nil {
+		return nil
+	}
+	return s.listener.Addr()
 }
 
 // Context is a type which carries a server type through
