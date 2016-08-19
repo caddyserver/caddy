@@ -44,6 +44,36 @@ type replacer struct {
 	emptyValue         string
 	responseRecorder   *ResponseRecorder
 	request            *http.Request
+	requestBody        *limitWriter
+}
+
+type limitWriter struct {
+	w      bytes.Buffer
+	remain int
+}
+
+func newLimitWriter(max int) *limitWriter {
+	return &limitWriter{
+		w:      bytes.Buffer{},
+		remain: max,
+	}
+}
+
+func (lw *limitWriter) Write(p []byte) (int, error) {
+	// skip if we are full
+	if lw.remain <= 0 {
+		return len(p), nil
+	}
+	if n := len(p); n > lw.remain {
+		p = p[:lw.remain]
+	}
+	n, err := lw.w.Write(p)
+	lw.remain -= n
+	return n, err
+}
+
+func (lw *limitWriter) String() string {
+	return lw.w.String()
 }
 
 // NewReplacer makes a new replacer based on r and rr which
@@ -54,8 +84,16 @@ type replacer struct {
 // emptyValue should be the string that is used in place
 // of empty string (can still be empty string).
 func NewReplacer(r *http.Request, rr *ResponseRecorder, emptyValue string) Replacer {
+	rb := newLimitWriter(MaxLogBodySize)
+	if r.Body != nil {
+		r.Body = struct {
+			io.Reader
+			io.Closer
+		}{io.TeeReader(r.Body, rb), io.Closer(r.Body)}
+	}
 	rep := &replacer{
 		request:            r,
+		requestBody:        rb,
 		responseRecorder:   rr,
 		customReplacements: make(map[string]string),
 		emptyValue:         emptyValue,
@@ -79,27 +117,6 @@ func canLogRequest(r *http.Request) bool {
 		}
 	}
 	return false
-}
-
-// readRequestBody reads the request body and sets a
-// new io.ReadCloser that has not yet been read.
-func readRequestBody(r *http.Request, n int64) ([]byte, error) {
-	defer r.Body.Close()
-
-	body, err := ioutil.ReadAll(io.LimitReader(r.Body, n))
-	if err != nil {
-		return nil, err
-	}
-
-	// Read the remaining bytes
-	remaining, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	buf := bytes.NewBuffer(append(body, remaining...))
-	r.Body = ioutil.NopCloser(buf)
-	return body, nil
 }
 
 // Replace performs a replacement of values on s and returns
@@ -249,11 +266,11 @@ func (r *replacer) getSubstitution(key string) string {
 		if !canLogRequest(r.request) {
 			return r.emptyValue
 		}
-		body, err := readRequestBody(r.request, maxLogBodySize)
+		_, err := ioutil.ReadAll(r.request.Body)
 		if err != nil {
 			return r.emptyValue
 		}
-		return requestReplacer.Replace(string(body))
+		return requestReplacer.Replace(r.requestBody.String())
 	case "{status}":
 		if r.responseRecorder == nil {
 			return r.emptyValue
