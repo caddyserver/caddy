@@ -89,7 +89,11 @@ func stapleOCSP(cert *Certificate, pemBundle []byte) error {
 	// First try to load OCSP staple from storage and see if
 	// we can still use it.
 	// TODO: Use Storage interface instead of disk directly
-	ocspFileName := cert.Names[0] + "-" + fastHash(pemBundle)
+	var ocspFileNamePrefix string
+	if len(cert.Names) > 0 {
+		ocspFileNamePrefix = cert.Names[0] + "-"
+	}
+	ocspFileName := ocspFileNamePrefix + fastHash(pemBundle)
 	ocspCachePath := filepath.Join(ocspFolder, ocspFileName)
 	cachedOCSP, err := ioutil.ReadFile(ocspCachePath)
 	if err == nil {
