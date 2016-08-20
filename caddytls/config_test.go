@@ -115,7 +115,7 @@ func TestStorageForCustomNil(t *testing.T) {
 
 type fakeStorage string
 
-func (s fakeStorage) SiteExists(domain string) bool {
+func (s fakeStorage) SiteExists(domain string) (bool, error) {
 	panic("no impl")
 }
 

@@ -49,9 +49,9 @@ func NewInMemoryStorage() *InMemoryStorage {
 }
 
 // SiteExists implements caddytls.Storage.SiteExists in memory.
-func (s *InMemoryStorage) SiteExists(domain string) bool {
+func (s *InMemoryStorage) SiteExists(domain string) (bool, error) {
 	_, siteExists := s.Sites[domain]
-	return siteExists
+	return siteExists, nil
 }
 
 // Clear completely clears all values associated with this storage.
