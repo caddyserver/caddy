@@ -26,12 +26,14 @@ func TestLoggedStatus(t *testing.T) {
 	var next erroringMiddleware
 	rule := Rule{
 		PathScope: "/",
-		Format:    DefaultLogFormat + " {testval}",
-		Log:       log.New(&f, "", 0),
+		Entries: []*Entry{{
+			Format: DefaultLogFormat + " {testval}",
+			Log:    log.New(&f, "", 0),
+		}},
 	}
 
 	logger := Logger{
-		Rules: []Rule{rule},
+		Rules: []*Rule{&rule},
 		Next:  next,
 	}
 
@@ -65,10 +67,12 @@ func TestLoggedStatus(t *testing.T) {
 func TestLogRequestBody(t *testing.T) {
 	var got bytes.Buffer
 	logger := Logger{
-		Rules: []Rule{{
+		Rules: []*Rule{{
 			PathScope: "/",
-			Format:    "{request_body}",
-			Log:       log.New(&got, "", 0),
+			Entries: []*Entry{{
+				Format: "{request_body}",
+				Log:    log.New(&got, "", 0),
+			}},
 		}},
 		Next: httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
 			// drain up body

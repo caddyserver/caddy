@@ -20,39 +20,41 @@ func setup(c *caddy.Controller) error {
 
 	// Open the log files for writing when the server starts
 	c.OnStartup(func() error {
-		for i := 0; i < len(rules); i++ {
-			var err error
-			var writer io.Writer
+		for _, rule := range rules {
+			for _, entry := range rule.Entries {
+				var err error
+				var writer io.Writer
 
-			if rules[i].OutputFile == "stdout" {
-				writer = os.Stdout
-			} else if rules[i].OutputFile == "stderr" {
-				writer = os.Stderr
-			} else if rules[i].OutputFile == "syslog" {
-				writer, err = gsyslog.NewLogger(gsyslog.LOG_INFO, "LOCAL0", "caddy")
-				if err != nil {
-					return err
-				}
-			} else {
-				err := os.MkdirAll(filepath.Dir(rules[i].OutputFile), 0744)
-				if err != nil {
-					return err
-				}
-				file, err := os.OpenFile(rules[i].OutputFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
-				if err != nil {
-					return err
-				}
-				if rules[i].Roller != nil {
-					file.Close()
-					rules[i].Roller.Filename = rules[i].OutputFile
-					writer = rules[i].Roller.GetLogWriter()
+				if entry.OutputFile == "stdout" {
+					writer = os.Stdout
+				} else if entry.OutputFile == "stderr" {
+					writer = os.Stderr
+				} else if entry.OutputFile == "syslog" {
+					writer, err = gsyslog.NewLogger(gsyslog.LOG_INFO, "LOCAL0", "caddy")
+					if err != nil {
+						return err
+					}
 				} else {
-					rules[i].file = file
-					writer = file
+					err := os.MkdirAll(filepath.Dir(entry.OutputFile), 0744)
+					if err != nil {
+						return err
+					}
+					file, err := os.OpenFile(entry.OutputFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+					if err != nil {
+						return err
+					}
+					if entry.Roller != nil {
+						file.Close()
+						entry.Roller.Filename = entry.OutputFile
+						writer = entry.Roller.GetLogWriter()
+					} else {
+						entry.file = file
+						writer = file
+					}
 				}
-			}
 
-			rules[i].Log = log.New(writer, "", 0)
+				entry.Log = log.New(writer, "", 0)
+			}
 		}
 
 		return nil
@@ -61,8 +63,10 @@ func setup(c *caddy.Controller) error {
 	// When server stops, close any open log files
 	c.OnShutdown(func() error {
 		for _, rule := range rules {
-			if rule.file != nil {
-				rule.file.Close()
+			for _, entry := range rule.Entries {
+				if entry.file != nil {
+					entry.file.Close()
+				}
 			}
 		}
 		return nil
@@ -75,8 +79,8 @@ func setup(c *caddy.Controller) error {
 	return nil
 }
 
-func logParse(c *caddy.Controller) ([]Rule, error) {
-	var rules []Rule
+func logParse(c *caddy.Controller) ([]*Rule, error) {
+	var rules []*Rule
 
 	for c.Next() {
 		args := c.RemainingArgs()
@@ -103,16 +107,14 @@ func logParse(c *caddy.Controller) ([]Rule, error) {
 		}
 		if len(args) == 0 {
 			// Nothing specified; use defaults
-			rules = append(rules, Rule{
-				PathScope:  "/",
+			rules = appendEntry(rules, "/", &Entry{
 				OutputFile: DefaultLogFilename,
 				Format:     DefaultLogFormat,
 				Roller:     logRoller,
 			})
 		} else if len(args) == 1 {
 			// Only an output file specified
-			rules = append(rules, Rule{
-				PathScope:  "/",
+			rules = appendEntry(rules, "/", &Entry{
 				OutputFile: args[0],
 				Format:     DefaultLogFormat,
 				Roller:     logRoller,
@@ -133,8 +135,7 @@ func logParse(c *caddy.Controller) ([]Rule, error) {
 				}
 			}
 
-			rules = append(rules, Rule{
-				PathScope:  args[0],
+			rules = appendEntry(rules, args[0], &Entry{
 				OutputFile: args[1],
 				Format:     format,
 				Roller:     logRoller,
@@ -143,4 +144,20 @@ func logParse(c *caddy.Controller) ([]Rule, error) {
 	}
 
 	return rules, nil
+}
+
+func appendEntry(rules []*Rule, pathScope string, entry *Entry) []*Rule {
+	for _, rule := range rules {
+		if rule.PathScope == pathScope {
+			rule.Entries = append(rule.Entries, entry)
+			return rules
+		}
+	}
+
+	rules = append(rules, &Rule{
+		PathScope: pathScope,
+		Entries:   []*Entry{entry},
+	})
+
+	return rules
 }
