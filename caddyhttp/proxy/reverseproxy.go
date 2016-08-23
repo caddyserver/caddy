@@ -271,6 +271,8 @@ var hopHeaders = []string{
 	"Trailers",
 	"Transfer-Encoding",
 	"Upgrade",
+	"Alternate-Protocol",
+	"Alt-Svc",
 }
 
 type respUpdateFn func(resp *http.Response)
