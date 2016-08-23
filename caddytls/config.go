@@ -130,6 +130,9 @@ func (c *Config) ObtainCert(allowPrompts bool) error {
 	return c.obtainCertName(c.Hostname, allowPrompts)
 }
 
+// obtainCertName gets a certificate for name using the ACME config c
+// if c and name both qualify. It places the certificate in storage.
+// It is a no-op if the storage already has a certificate for name.
 func (c *Config) obtainCertName(name string, allowPrompts bool) error {
 	if !c.Managed || !HostQualifies(name) {
 		return nil
