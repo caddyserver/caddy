@@ -304,7 +304,7 @@ func newConnHijackerTransport(base http.RoundTripper) *connHijackerTransport {
 			KeepAlive: 30 * time.Second,
 		}).Dial,
 		TLSHandshakeTimeout: 10 * time.Second,
-		DisableKeepAlives:   true,
+		MaxIdleConnsPerHost: -1,
 	}
 	if base != nil {
 		if baseTransport, ok := base.(*http.Transport); ok {
@@ -313,7 +313,7 @@ func newConnHijackerTransport(base http.RoundTripper) *connHijackerTransport {
 			transport.TLSHandshakeTimeout = baseTransport.TLSHandshakeTimeout
 			transport.Dial = baseTransport.Dial
 			transport.DialTLS = baseTransport.DialTLS
-			transport.DisableKeepAlives = true
+			transport.MaxIdleConnsPerHost = -1
 		}
 	}
 	hjTransport := &connHijackerTransport{transport, nil, bufferPool.Get().([]byte)[:0]}
