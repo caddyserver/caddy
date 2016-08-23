@@ -9,6 +9,10 @@ import (
 	"strings"
 )
 
+func init() {
+	RegisterStorageProvider("file", FileStorageCreator)
+}
+
 // storageBasePath is the root path in which all TLS/ACME assets are
 // stored. Do not change this value during the lifetime of the program.
 var storageBasePath = filepath.Join(caddy.AssetsPath(), "acme")

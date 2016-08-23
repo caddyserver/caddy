@@ -168,3 +168,11 @@ var (
 	// when no other key type is specified.
 	DefaultKeyType = acme.RSA2048
 )
+
+var storageProviders = make(map[string]StorageCreator)
+
+// RegisterStorageProvider registers provider by name for storing tls data
+func RegisterStorageProvider(name string, provider StorageCreator) {
+	storageProviders[name] = provider
+	caddy.RegisterPlugin("tls.storage."+name, caddy.Plugin{})
+}

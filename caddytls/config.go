@@ -99,12 +99,10 @@ type Config struct {
 	// certificates
 	KeyType acme.KeyType
 
-	// The explicitly set storage creator or nil; use
-	// StorageFor() to get a guaranteed non-nil Storage
-	// instance. Note, Caddy may call this frequently so
-	// implementors are encouraged to cache any heavy
-	// instantiations.
-	StorageCreator StorageCreator
+	// The storage creator; use StorageFor() to get a guaranteed
+	// non-nil Storage instance. Note, Caddy may call this frequently
+	// so implementors are encouraged to cache any heavy instantiations.
+	StorageProvider string
 
 	// The state needed to operate on-demand TLS
 	OnDemandState OnDemandState
@@ -285,19 +283,20 @@ func (c *Config) StorageFor(caURL string) (Storage, error) {
 
 	// Create the storage based on the URL
 	var s Storage
-	if c.StorageCreator != nil {
-		s, err = c.StorageCreator(u)
-		if err != nil {
-			return nil, fmt.Errorf("%s: unable to create custom storage: %v", caURL, err)
-		}
+	if c.StorageProvider == "" {
+		c.StorageProvider = "file"
 	}
-	if s == nil {
-		// We trust that this does not return a nil s when there's a nil err
-		s, err = FileStorageCreator(u)
-		if err != nil {
-			return nil, fmt.Errorf("%s: unable to create file storage: %v", caURL, err)
-		}
+
+	creator, ok := storageProviders[c.StorageProvider]
+	if !ok {
+		return nil, fmt.Errorf("%s: Unknown storage: %v", caURL, c.StorageProvider)
 	}
+
+	s, err = creator(u)
+	if err != nil {
+		return nil, fmt.Errorf("%s: unable to create custom storage '%v': %v", caURL, c.StorageProvider, err)
+	}
+
 	return s, nil
 }
 
