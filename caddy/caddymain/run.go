@@ -40,6 +40,8 @@ func init() {
 	flag.StringVar(&revoke, "revoke", "", "Hostname for which to revoke the certificate")
 	flag.StringVar(&serverType, "type", "http", "Type of server to run")
 	flag.BoolVar(&version, "version", false, "Show version")
+	flag.StringVar(&caddytls.HTTPChallengePort, "external-port-80-is-local-port", "80", "Local port exposed externally as port 80")
+	flag.StringVar(&caddytls.TLSSNIChallengePort, "external-port-443-is-local-port", "443", "Local port exposed externally as port 443")
 
 	caddy.RegisterCaddyfileLoader("flag", caddy.LoaderFunc(confLoader))
 	caddy.SetDefaultCaddyfileLoader("default", caddy.LoaderFunc(defaultLoader))
