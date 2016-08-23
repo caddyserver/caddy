@@ -133,6 +133,10 @@ func (c *Config) ObtainCert(allowPrompts bool) error {
 }
 
 func (c *Config) obtainCertName(name string, allowPrompts bool) error {
+	if !c.Managed || !HostQualifies(name) {
+		return nil
+	}
+
 	storage, err := c.StorageFor(c.CAUrl)
 	if err != nil {
 		return err
@@ -143,7 +147,7 @@ func (c *Config) obtainCertName(name string, allowPrompts bool) error {
 		return err
 	}
 
-	if !c.Managed || !HostQualifies(name) || siteExists {
+	if siteExists {
 		return nil
 	}
 
