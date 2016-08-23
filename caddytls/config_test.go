@@ -38,11 +38,12 @@ func TestStorageForNoURL(t *testing.T) {
 
 func TestStorageForLowercasesAndPrefixesScheme(t *testing.T) {
 	resultStr := ""
+	RegisterStorageProvider("fake-TestStorageForLowercasesAndPrefixesScheme", func(caURL *url.URL) (Storage, error) {
+		resultStr = caURL.String()
+		return nil, nil
+	})
 	c := &Config{
-		StorageCreator: func(caURL *url.URL) (Storage, error) {
-			resultStr = caURL.String()
-			return nil, nil
-		},
+		StorageProvider: "fake-TestStorageForLowercasesAndPrefixesScheme",
 	}
 	if _, err := c.StorageFor("EXAMPLE.COM/BLAH"); err != nil {
 		t.Fatal(err)
@@ -71,11 +72,10 @@ func TestStorageForDefault(t *testing.T) {
 }
 
 func TestStorageForCustom(t *testing.T) {
-	storage := fakeStorage("fake")
+	storage := fakeStorage("fake-TestStorageForCustom")
+	RegisterStorageProvider("fake-TestStorageForCustom", func(caURL *url.URL) (Storage, error) { return storage, nil })
 	c := &Config{
-		StorageCreator: func(caURL *url.URL) (Storage, error) {
-			return storage, nil
-		},
+		StorageProvider: "fake-TestStorageForCustom",
 	}
 	s, err := c.StorageFor("example.com")
 	if err != nil {
@@ -87,10 +87,9 @@ func TestStorageForCustom(t *testing.T) {
 }
 
 func TestStorageForCustomError(t *testing.T) {
+	RegisterStorageProvider("fake-TestStorageForCustomError", func(caURL *url.URL) (Storage, error) { return nil, errors.New("some error") })
 	c := &Config{
-		StorageCreator: func(caURL *url.URL) (Storage, error) {
-			return nil, errors.New("some error")
-		},
+		StorageProvider: "fake-TestStorageForCustomError",
 	}
 	if _, err := c.StorageFor("example.com"); err == nil {
 		t.Fatal("Expecting error")
@@ -99,11 +98,7 @@ func TestStorageForCustomError(t *testing.T) {
 
 func TestStorageForCustomNil(t *testing.T) {
 	// Should fall through to the default
-	c := &Config{
-		StorageCreator: func(caURL *url.URL) (Storage, error) {
-			return nil, nil
-		},
-	}
+	c := &Config{StorageProvider: ""}
 	s, err := c.StorageFor("example.com")
 	if err != nil {
 		t.Fatal(err)
