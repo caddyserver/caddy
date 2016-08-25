@@ -379,8 +379,8 @@ func MakeTLSConfig(configs []*Config) (*tls.Config, error) {
 		config.CipherSuites = defaultCiphers
 	}
 
-	// For security, ensure TLS_FALLBACK_SCSV is always included
-	if config.CipherSuites[0] != tls.TLS_FALLBACK_SCSV {
+	// For security, ensure TLS_FALLBACK_SCSV is always included first
+	if len(config.CipherSuites) == 0 || config.CipherSuites[0] != tls.TLS_FALLBACK_SCSV {
 		config.CipherSuites = append([]uint16{tls.TLS_FALLBACK_SCSV}, config.CipherSuites...)
 	}
 
