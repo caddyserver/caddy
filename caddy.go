@@ -455,7 +455,7 @@ func startWithListenerFds(cdyfile Input, inst *Instance, restartFds map[string]r
 		return err
 	}
 
-	err = executeDirectives(inst, cdyfile.Path(), stype.Directives, sblocks)
+	err = executeDirectives(inst, cdyfile.Path(), stype.Directives(), sblocks)
 	if err != nil {
 		return err
 	}

@@ -26,7 +26,7 @@ func init() {
 	flag.BoolVar(&QUIC, "quic", false, "Use experimental QUIC")
 
 	caddy.RegisterServerType(serverType, caddy.ServerType{
-		Directives: directives,
+		Directives: func() []string { return directives },
 		DefaultInput: func() caddy.Input {
 			if Port == DefaultPort && Host != "" {
 				// by leaving the port blank in this case we give auto HTTPS
