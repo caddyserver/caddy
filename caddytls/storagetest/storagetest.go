@@ -113,7 +113,12 @@ func (s *StorageTest) TestSiteExists() error {
 	defer s.runPostTest()
 
 	// Should not exist at first
-	if s.SiteExists("example.com") {
+	siteExists, err := s.SiteExists("example.com")
+	if err != nil {
+		return err
+	}
+
+	if siteExists {
 		return errors.New("Site should not exist")
 	}
 
@@ -121,7 +126,13 @@ func (s *StorageTest) TestSiteExists() error {
 	if err := s.StoreSite("example.com", simpleSiteData); err != nil {
 		return err
 	}
-	if !s.SiteExists("example.com") {
+
+	siteExists, err = s.SiteExists("example.com")
+	if err != nil {
+		return err
+	}
+
+	if !siteExists {
 		return errors.New("Expected site to exist")
 	}
 
@@ -129,7 +140,13 @@ func (s *StorageTest) TestSiteExists() error {
 	if err := s.DeleteSite("example.com"); err != nil {
 		return err
 	}
-	if s.SiteExists("example.com") {
+
+	siteExists, err = s.SiteExists("example.com")
+	if err != nil {
+		return err
+	}
+
+	if siteExists {
 		return errors.New("Site should not exist after delete")
 	}
 	return nil

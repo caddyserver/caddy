@@ -48,7 +48,6 @@ func init() {
 // Run is Caddy's main() function.
 func Run() {
 	flag.Parse()
-	moveStorage() // TODO: This is temporary for the 0.9 release, or until most users upgrade to 0.9+
 
 	caddy.AppName = appName
 	caddy.AppVersion = appVersion
@@ -91,6 +90,8 @@ func Run() {
 		fmt.Println(caddy.DescribePlugins())
 		os.Exit(0)
 	}
+
+	moveStorage() // TODO: This is temporary for the 0.9 release, or until most users upgrade to 0.9+
 
 	// Set CPU cap
 	err := setCPU(cpu)

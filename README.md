@@ -99,7 +99,7 @@ Note: You will need **[Go 1.6](https://golang.org/dl/)** or newer.
 
 1. `go get github.com/mholt/caddy/caddy`
 2. `cd` into your website's directory
-3. Run `caddy` (assumes `$GOPATH/bin` is in your `$PATH`)
+3. Run `caddy` (assuming `$GOPATH/bin` is in your `$PATH`)
 
 Caddy's `main()` is in the caddy subfolder. To recompile Caddy, use
 `build.bash` found in that folder.

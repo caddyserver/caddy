@@ -146,6 +146,16 @@ func setupTLS(c *caddy.Controller) error {
 					return c.Errf("Unsupported DNS provider '%s'", args[0])
 				}
 				config.DNSProvider = args[0]
+			case "storage":
+				args := c.RemainingArgs()
+				if len(args) != 1 {
+					return c.ArgErr()
+				}
+				storageProvName := args[0]
+				if _, ok := storageProviders[storageProvName]; !ok {
+					return c.Errf("Unsupported Storage provider '%s'", args[0])
+				}
+				config.StorageProvider = args[0]
 			default:
 				return c.Errf("Unknown keyword '%s'", c.Val())
 			}

@@ -1,8 +1,6 @@
 package httpserver
 
 import (
-	"bytes"
-	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -24,27 +22,11 @@ func TestNewReplacer(t *testing.T) {
 
 	switch v := rep.(type) {
 	case *replacer:
-		if v.replacements["{host}"]() != "localhost" {
+		if v.getSubstitution("{host}") != "localhost" {
 			t.Error("Expected host to be localhost")
 		}
-		if v.replacements["{method}"]() != "POST" {
+		if v.getSubstitution("{method}") != "POST" {
 			t.Error("Expected request method  to be POST")
-		}
-
-		// Response placeholders should only be set after call to Replace()
-		got, want := "", ""
-		if getReplacement, ok := v.replacements["{status}"]; ok {
-			got = getReplacement()
-		}
-		if want := ""; got != want {
-			t.Errorf("Expected status to NOT be set before Replace() is called; was: %s", got)
-		}
-		rep.Replace("{foobar}")
-		if getReplacement, ok := v.replacements["{status}"]; ok {
-			got = getReplacement()
-		}
-		if want = "200"; got != want {
-			t.Errorf("Expected status to be %s, was: %s", want, got)
 		}
 	default:
 		t.Fatalf("Expected *replacer underlying Replacer type, got: %#v", rep)
@@ -94,19 +76,21 @@ func TestReplace(t *testing.T) {
 
 	complexCases := []struct {
 		template     string
-		replacements map[string]func() string
+		replacements map[string]string
 		expect       string
 	}{
-		{"/a{1}/{2}",
-			map[string]func() string{
-				"{1}": func() string { return "12" },
-				"{2}": func() string { return "" }},
+		{
+			"/a{1}/{2}",
+			map[string]string{
+				"{1}": "12",
+				"{2}": "",
+			},
 			"/a12/"},
 	}
 
 	for _, c := range complexCases {
 		repl := &replacer{
-			replacements: c.replacements,
+			customReplacements: c.replacements,
 		}
 		if expected, actual := c.expect, repl.Replace(c.template); expected != actual {
 			t.Errorf("for template '%s', expected '%s', got '%s'", c.template, expected, actual)
@@ -161,30 +145,5 @@ func TestRound(t *testing.T) {
 		if rounded != expected {
 			t.Errorf("Expected %v, Got %v", expected, rounded)
 		}
-	}
-}
-
-func TestReadRequestBody(t *testing.T) {
-	payload := []byte(`{ "foo": "bar" }`)
-	var readSize int64 = 5
-	r, err := http.NewRequest("POST", "/", bytes.NewReader(payload))
-	if err != nil {
-		t.Error(err)
-	}
-	defer r.Body.Close()
-
-	logBody, err := readRequestBody(r, readSize)
-	if err != nil {
-		t.Error("readRequestBody failed", err)
-	} else if !bytes.EqualFold(payload[0:readSize], logBody) {
-		t.Error("Expected log comparison failed")
-	}
-
-	// Ensure the Request body is the same as the original.
-	reqBody, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		t.Error("Unable to read request body", err)
-	} else if !bytes.EqualFold(payload, reqBody) {
-		t.Error("Expected request body comparison failed")
 	}
 }
