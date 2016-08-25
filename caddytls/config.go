@@ -350,6 +350,7 @@ func MakeTLSConfig(configs []*Config) (*tls.Config, error) {
 		if i > 0 && cfg.PreferServerCipherSuites != configs[i-1].PreferServerCipherSuites {
 			return nil, fmt.Errorf("cannot both use PreferServerCipherSuites and not use it")
 		}
+		config.PreferServerCipherSuites = cfg.PreferServerCipherSuites
 
 		// Go with the widest range of protocol versions
 		if config.MinVersion == 0 || cfg.ProtocolMinVersion < config.MinVersion {
