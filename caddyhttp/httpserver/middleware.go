@@ -21,17 +21,18 @@ type (
 	// Handler is like http.Handler except ServeHTTP may return a status
 	// code and/or error.
 	//
-	// If ServeHTTP writes to the response body, it should return a status
-	// code of 0. This signals to other handlers above it that the response
-	// body is already written, and that they should not write to it also.
+	// If ServeHTTP writes the response header, it should return a status
+	// code of 0. This signals to other handlers before it that the response
+	// is already handled, and that they should not write to it also. Keep
+	// in mind that writing to the response body writes the header, too.
 	//
 	// If ServeHTTP encounters an error, it should return the error value
 	// so it can be logged by designated error-handling middleware.
 	//
-	// If writing a response after calling another ServeHTTP method, the
+	// If writing a response after calling the next ServeHTTP method, the
 	// returned status code SHOULD be used when writing the response.
 	//
-	// If handling errors after calling another ServeHTTP method, the
+	// If handling errors after calling the next ServeHTTP method, the
 	// returned error value SHOULD be logged or handled accordingly.
 	//
 	// Otherwise, return values should be propagated down the middleware
