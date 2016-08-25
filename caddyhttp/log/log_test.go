@@ -121,3 +121,49 @@ func TestLogRequestBody(t *testing.T) {
 		}
 	}
 }
+
+func TestMultiEntries(t *testing.T) {
+	var (
+		got1 bytes.Buffer
+		got2 bytes.Buffer
+	)
+	logger := Logger{
+		Rules: []*Rule{{
+			PathScope: "/",
+			Entries: []*Entry{
+				{
+					Format: "foo {request_body}",
+					Log:    log.New(&got1, "", 0),
+				},
+				{
+					Format: "{method} {request_body}",
+					Log:    log.New(&got2, "", 0),
+				},
+			},
+		}},
+		Next: httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
+			// drain up body
+			ioutil.ReadAll(r.Body)
+			return 0, nil
+		}),
+	}
+
+	r, err := http.NewRequest("POST", "/", bytes.NewBufferString("hello world"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Header.Set("Content-Type", "application/json")
+	status, err := logger.ServeHTTP(httptest.NewRecorder(), r)
+	if status != 0 {
+		t.Errorf("Expected status to be 0, but was %d", status)
+	}
+	if err != nil {
+		t.Errorf("Expected error to be nil, instead got: %v", err)
+	}
+	if got, expect := got1.String(), "foo hello world\n"; got != expect {
+		t.Errorf("Expected %q, but got %q", expect, got)
+	}
+	if got, expect := got2.String(), "POST hello world\n"; got != expect {
+		t.Errorf("Expected %q, but got %q", expect, got)
+	}
+}
