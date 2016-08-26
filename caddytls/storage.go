@@ -39,7 +39,7 @@ type Storage interface {
 	// SiteExists returns true if this site exists in storage.
 	// Site data is considered present when StoreSite has been called
 	// successfully (without DeleteSite having been called, of course).
-	SiteExists(domain string) bool
+	SiteExists(domain string) (bool, error)
 
 	// LoadSite obtains the site data from storage for the given domain and
 	// returns it. If data for the domain does not exist, the

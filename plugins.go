@@ -79,14 +79,32 @@ func ValidDirectives(serverType string) []string {
 	if err != nil {
 		return nil
 	}
-	return stype.Directives
+	return stype.Directives()
 }
 
-// serverListener pairs a server to its listener and/or packetconn.
-type serverListener struct {
+// ServerListener pairs a server to its listener and/or packetconn.
+type ServerListener struct {
 	server   Server
 	listener net.Listener
 	packet   net.PacketConn
+}
+
+// LocalAddr returns the local network address of the packetconn. It returns
+// nil when it is not set.
+func (s ServerListener) LocalAddr() net.Addr {
+	if s.packet == nil {
+		return nil
+	}
+	return s.packet.LocalAddr()
+}
+
+// Addr returns the listener's network address. It returns nil when it is
+// not set.
+func (s ServerListener) Addr() net.Addr {
+	if s.listener == nil {
+		return nil
+	}
+	return s.listener.Addr()
 }
 
 // Context is a type which carries a server type through
@@ -127,10 +145,11 @@ func RegisterServerType(typeName string, srv ServerType) {
 
 // ServerType contains information about a server type.
 type ServerType struct {
-	// List of directives, in execution order, that are
-	// valid for this server type. Directives should be
-	// one word if possible and lower-cased.
-	Directives []string
+	// Function that returns the list of directives, in
+	// execution order, that are valid for this server
+	// type. Directives should be one word if possible
+	// and lower-cased.
+	Directives func() []string
 
 	// DefaultInput returns a default config input if none
 	// is otherwise loaded. This is optional, but highly
@@ -271,12 +290,13 @@ func loadCaddyfileInput(serverType string) (Input, error) {
 	var loadedBy string
 	var caddyfileToUse Input
 	for _, l := range caddyfileLoaders {
-		if cdyfile, err := l.loader.Load(serverType); cdyfile != nil {
+		cdyfile, err := l.loader.Load(serverType)
+		if err != nil {
+			return nil, fmt.Errorf("loading Caddyfile via %s: %v", l.name, err)
+		}
+		if cdyfile != nil {
 			if caddyfileToUse != nil {
 				return nil, fmt.Errorf("Caddyfile loaded multiple times; first by %s, then by %s", loadedBy, l.name)
-			}
-			if err != nil {
-				return nil, err
 			}
 			loaderUsed = l
 			caddyfileToUse = cdyfile

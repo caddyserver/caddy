@@ -165,5 +165,5 @@ var httpRedirs = map[string]int{
 	"304": http.StatusNotModified,
 	"305": http.StatusUseProxy,
 	"307": http.StatusTemporaryRedirect,
-	"308": 308, // Permanent Redirect
+	"308": 308, // Permanent Redirect (RFC 7238)
 }

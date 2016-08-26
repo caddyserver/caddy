@@ -89,7 +89,11 @@ func stapleOCSP(cert *Certificate, pemBundle []byte) error {
 	// First try to load OCSP staple from storage and see if
 	// we can still use it.
 	// TODO: Use Storage interface instead of disk directly
-	ocspFileName := cert.Names[0] + "-" + fastHash(pemBundle)
+	var ocspFileNamePrefix string
+	if len(cert.Names) > 0 {
+		ocspFileNamePrefix = cert.Names[0] + "-"
+	}
+	ocspFileName := ocspFileNamePrefix + fastHash(pemBundle)
 	ocspCachePath := filepath.Join(ocspFolder, ocspFileName)
 	cachedOCSP, err := ioutil.ReadFile(ocspCachePath)
 	if err == nil {
@@ -102,6 +106,11 @@ func stapleOCSP(cert *Certificate, pemBundle []byte) error {
 			}
 		} else {
 			// invalid contents; delete the file
+			// (we do this independently of the maintenance routine because
+			// in this case we know for sure this should be a staple file
+			// because we loaded it by name, whereas the maintenance routine
+			// just iterates the list of files, even if somehow a non-staple
+			// file gets in the folder. in this case we are sure it is corrupt.)
 			err := os.Remove(ocspCachePath)
 			if err != nil {
 				log.Printf("[WARNING] Unable to delete invalid OCSP staple file: %v", err)

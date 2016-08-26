@@ -1,5 +1,29 @@
 CHANGES
 
+0.9.1 (August 17, 2016)
+- New {request_body} placeholder to log request body
+- {remote} placeholder no longer uses X-Forwarded-For header
+- {latency} placeholder rounds to nice looking number
+- Add support for ratelimit plugin
+- basicauth: Declaring realm named "Restricted"
+- errors: Define catch-all/default error page with * character
+- header: More control to add, set, or remove headers
+- proxy: New keepalive setting to help accommodate busy servers
+- proxy: New load balancing policy ip_hash
+- proxy: Fixed WebSocket connections
+- proxy: Fixed broken header logic
+- proxy: Reuse existing connection for Upgrade requests
+- proxy: Support for basic auth from header or upstream address
+- templates: New .Env action to access environment variables
+- tls: OCSP staples persisted to disk
+- tls: ACME challenges honor bind directive
+- tls: Fix default protocol version (minimum TLS 1.1)
+- tls: Consume challenge requests only for names Caddy is solving for
+- tls: The protocol syntax allows just one value if desired
+- tls: Scoped max_certs limit to site instead of global maximum
+- Many other bug fixes and minor enhancements
+
+
 0.9 (July 18, 2016)
 - New core
 - New experimental QUIC support with -quic flag (HTTPS only)

@@ -137,3 +137,23 @@ func TestInspectServerBlocksWithCustomDefaultPort(t *testing.T) {
 		t.Errorf("Expected the port on the address to be set, but got: %#v", addr)
 	}
 }
+
+func TestDirectivesList(t *testing.T) {
+	for i, dir1 := range directives {
+		if dir1 == "" {
+			t.Errorf("directives[%d]: empty directive name", i)
+			continue
+		}
+		if got, want := dir1, strings.ToLower(dir1); got != want {
+			t.Errorf("directives[%d]: %s should be lower-cased", i, dir1)
+			continue
+		}
+		for j := i + 1; j < len(directives); j++ {
+			dir2 := directives[j]
+			if dir1 == dir2 {
+				t.Errorf("directives[%d] (%s) is a duplicate of directives[%d] (%s)",
+					j, dir2, i, dir1)
+			}
+		}
+	}
+}

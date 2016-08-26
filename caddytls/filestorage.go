@@ -9,6 +9,10 @@ import (
 	"strings"
 )
 
+func init() {
+	RegisterStorageProvider("file", FileStorageCreator)
+}
+
 // storageBasePath is the root path in which all TLS/ACME assets are
 // stored. Do not change this value during the lifetime of the program.
 var storageBasePath = filepath.Join(caddy.AssetsPath(), "acme")
@@ -121,16 +125,19 @@ func (s FileStorage) readFile(file string) ([]byte, error) {
 
 // SiteExists implements Storage.SiteExists by checking for the presence of
 // cert and key files.
-func (s FileStorage) SiteExists(domain string) bool {
+func (s FileStorage) SiteExists(domain string) (bool, error) {
 	_, err := os.Stat(s.siteCertFile(domain))
-	if err != nil {
-		return false
+	if os.IsNotExist(err) {
+		return false, nil
+	} else if err != nil {
+		return false, err
 	}
+
 	_, err = os.Stat(s.siteKeyFile(domain))
 	if err != nil {
-		return false
+		return false, err
 	}
-	return true
+	return true, nil
 }
 
 // LoadSite implements Storage.LoadSite by loading it from disk. If it is not

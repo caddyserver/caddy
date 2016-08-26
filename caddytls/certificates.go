@@ -167,12 +167,28 @@ func makeCertificate(certPEMBlock, keyPEMBlock []byte) (Certificate, error) {
 	if len(tlsCert.Certificate) == 0 {
 		return cert, errors.New("certificate is empty")
 	}
+	cert.Certificate = tlsCert
 
-	// Parse leaf certificate and extract relevant metadata
+	// Parse leaf certificate, extract relevant metadata, and staple OCSP
 	leaf, err := x509.ParseCertificate(tlsCert.Certificate[0])
 	if err != nil {
 		return cert, err
 	}
+	err = fillCertFromLeaf(&cert, leaf)
+	if err != nil {
+		return cert, err
+	}
+	err = stapleOCSP(&cert, certPEMBlock)
+	if err != nil {
+		log.Printf("[WARNING] Stapling OCSP: %v", err)
+	}
+
+	return cert, nil
+}
+
+// fillCertFromLeaf populates cert.Names and cert.NotAfter
+// using data in leaf.
+func fillCertFromLeaf(cert *Certificate, leaf *x509.Certificate) error {
 	if leaf.Subject.CommonName != "" {
 		cert.Names = []string{strings.ToLower(leaf.Subject.CommonName)}
 	}
@@ -181,15 +197,21 @@ func makeCertificate(certPEMBlock, keyPEMBlock []byte) (Certificate, error) {
 			cert.Names = append(cert.Names, strings.ToLower(name))
 		}
 	}
-	cert.NotAfter = leaf.NotAfter
-	cert.Certificate = tlsCert
-
-	err = stapleOCSP(&cert, certPEMBlock)
-	if err != nil {
-		log.Printf("[WARNING] Stapling OCSP: %v", err)
+	for _, ip := range leaf.IPAddresses {
+		if ipStr := ip.String(); ipStr != leaf.Subject.CommonName {
+			cert.Names = append(cert.Names, strings.ToLower(ipStr))
+		}
 	}
-
-	return cert, nil
+	for _, email := range leaf.EmailAddresses {
+		if email != leaf.Subject.CommonName {
+			cert.Names = append(cert.Names, strings.ToLower(email))
+		}
+	}
+	if len(cert.Names) == 0 {
+		return errors.New("certificate has no names")
+	}
+	cert.NotAfter = leaf.NotAfter
+	return nil
 }
 
 // cacheCertificate adds cert to the in-memory cache. If the cache is
