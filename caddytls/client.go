@@ -62,9 +62,7 @@ var newACMEClient = func(config *Config, allowPrompts bool) (*ACMEClient, error)
 	}
 
 	// Set timeout by replacing ACME's http.Client
-	if HTTPTimeout > 1 {
-		acme.HTTPClient = http.Client{Timeout: time.Duration(HTTPTimeout) * time.Second}
-	}
+	acme.HTTPClient = http.Client{Timeout: HTTPTimeout}
 
 	// The client facilitates our communication with the CA server.
 	client, err := acme.NewClient(caURL, &leUser, keyType)

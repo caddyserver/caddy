@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"gopkg.in/natefinch/lumberjack.v2"
 
@@ -34,7 +35,7 @@ func init() {
 	flag.StringVar(&cpu, "cpu", "100%", "CPU cap")
 	flag.BoolVar(&plugins, "plugins", false, "List installed plugins")
 	flag.StringVar(&caddytls.DefaultEmail, "email", "", "Default ACME CA account email address")
-	flag.IntVar(&caddytls.HTTPTimeout, "catimeout", 10, "ACME CA HTTP timeout in seconds")
+	flag.DurationVar(&caddytls.HTTPTimeout, "catimeout", 10*time.Second, "Default ACME CA HTTP timeout")
 	flag.StringVar(&logfile, "log", "", "Process log file")
 	flag.StringVar(&caddy.PidFile, "pidfile", "", "Path to write pid file")
 	flag.BoolVar(&caddy.Quiet, "quiet", false, "Quiet mode (no initialization output)")

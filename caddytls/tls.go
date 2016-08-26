@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"net"
 	"strings"
+	"time"
 
 	"github.com/mholt/caddy"
 	"github.com/xenolf/lego/acme"
@@ -158,7 +159,7 @@ var (
 	DefaultEmail string
 
 	// Sets the maximum waiting time for the CA's HTTP responses
-	HTTPTimeout int
+	HTTPTimeout time.Duration
 
 	// Agreed indicates whether user has agreed to the Let's Encrypt SA.
 	Agreed bool
