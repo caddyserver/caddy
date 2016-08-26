@@ -39,6 +39,20 @@ func TestMakeTLSConfigPreferServerCipherSuites(t *testing.T) {
 	if got, want := result.PreferServerCipherSuites, true; got != want {
 		t.Errorf("Expected PreferServerCipherSuites==%v but got %v", want, got)
 	}
+
+	// make sure we don't get an error if there's a conflict
+	// when both of the configs have TLS disabled
+	configs = []*Config{
+		{Enabled: false, PreferServerCipherSuites: false},
+		{Enabled: false, PreferServerCipherSuites: true},
+	}
+	result, err = MakeTLSConfig(configs)
+	if err != nil {
+		t.Fatalf("Did not expect an error when TLS is disabled, but got '%v'", err)
+	}
+	if result != nil {
+		t.Errorf("Expected nil result because TLS disabled, got: %+v", err)
+	}
 }
 
 func TestMakeTLSConfigTLSEnabledDisabled(t *testing.T) {
