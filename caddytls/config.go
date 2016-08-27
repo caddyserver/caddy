@@ -338,6 +338,10 @@ func MakeTLSConfig(configs []*Config) (*tls.Config, error) {
 				configs[i-1].Hostname, lastConfProto, cfg.Hostname, thisConfProto)
 		}
 
+		if !cfg.Enabled {
+			continue
+		}
+
 		// Union cipher suites
 		for _, ciph := range cfg.Ciphers {
 			if _, ok := ciphersAdded[ciph]; !ok {
@@ -348,8 +352,9 @@ func MakeTLSConfig(configs []*Config) (*tls.Config, error) {
 
 		// Can't resolve conflicting PreferServerCipherSuites settings
 		if i > 0 && cfg.PreferServerCipherSuites != configs[i-1].PreferServerCipherSuites {
-			return nil, fmt.Errorf("cannot both use PreferServerCipherSuites and not use it")
+			return nil, fmt.Errorf("cannot both PreferServerCipherSuites and not prefer them")
 		}
+		config.PreferServerCipherSuites = cfg.PreferServerCipherSuites
 
 		// Go with the widest range of protocol versions
 		if config.MinVersion == 0 || cfg.ProtocolMinVersion < config.MinVersion {
@@ -378,8 +383,8 @@ func MakeTLSConfig(configs []*Config) (*tls.Config, error) {
 		config.CipherSuites = defaultCiphers
 	}
 
-	// For security, ensure TLS_FALLBACK_SCSV is always included
-	if config.CipherSuites[0] != tls.TLS_FALLBACK_SCSV {
+	// For security, ensure TLS_FALLBACK_SCSV is always included first
+	if len(config.CipherSuites) == 0 || config.CipherSuites[0] != tls.TLS_FALLBACK_SCSV {
 		config.CipherSuites = append([]uint16{tls.TLS_FALLBACK_SCSV}, config.CipherSuites...)
 	}
 

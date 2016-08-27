@@ -79,7 +79,7 @@ func ValidDirectives(serverType string) []string {
 	if err != nil {
 		return nil
 	}
-	return stype.Directives
+	return stype.Directives()
 }
 
 // ServerListener pairs a server to its listener and/or packetconn.
@@ -145,10 +145,11 @@ func RegisterServerType(typeName string, srv ServerType) {
 
 // ServerType contains information about a server type.
 type ServerType struct {
-	// List of directives, in execution order, that are
-	// valid for this server type. Directives should be
-	// one word if possible and lower-cased.
-	Directives []string
+	// Function that returns the list of directives, in
+	// execution order, that are valid for this server
+	// type. Directives should be one word if possible
+	// and lower-cased.
+	Directives func() []string
 
 	// DefaultInput returns a default config input if none
 	// is otherwise loaded. This is optional, but highly
