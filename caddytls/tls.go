@@ -18,7 +18,6 @@ import (
 	"encoding/json"
 	"net"
 	"strings"
-	"time"
 
 	"github.com/mholt/caddy"
 	"github.com/xenolf/lego/acme"
@@ -157,9 +156,6 @@ func RegisterDNSProvider(name string, provider DNSProviderConstructor) {
 var (
 	// DefaultEmail represents the Let's Encrypt account email to use if none provided.
 	DefaultEmail string
-
-	// Sets the maximum waiting time for the CA's HTTP responses
-	HTTPTimeout time.Duration
 
 	// Agreed indicates whether user has agreed to the Let's Encrypt SA.
 	Agreed bool

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"net/http"
 	"net/url"
 	"strings"
 	"sync"
@@ -60,9 +59,6 @@ var newACMEClient = func(config *Config, allowPrompts bool) (*ACMEClient, error)
 	if u.Scheme != "https" && !caddy.IsLoopback(u.Host) && !strings.HasPrefix(u.Host, "10.") {
 		return nil, fmt.Errorf("%s: insecure CA URL (HTTPS required)", caURL)
 	}
-
-	// Set timeout by replacing ACME's http.Client
-	acme.HTTPClient = http.Client{Timeout: HTTPTimeout}
 
 	// The client facilitates our communication with the CA server.
 	client, err := acme.NewClient(caURL, &leUser, keyType)
