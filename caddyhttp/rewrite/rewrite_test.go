@@ -42,7 +42,7 @@ func TestRewrite(t *testing.T) {
 		if s := strings.Split(regexpRule[3], "|"); len(s) > 1 {
 			ext = s[:len(s)-1]
 		}
-		rule, err := NewComplexRule(regexpRule[0], regexpRule[1], regexpRule[2], 0, ext, httpserver.IfMatcher{})
+		rule, err := NewComplexRule(regexpRule[0], regexpRule[1], regexpRule[2], ext, httpserver.IfMatcher{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -108,51 +108,6 @@ func TestRewrite(t *testing.T) {
 		if rec.Body.String() != test.expectedTo {
 			t.Errorf("Test %d: Expected URL to be '%s' but was '%s'",
 				i, test.expectedTo, rec.Body.String())
-		}
-	}
-
-	statusTests := []struct {
-		status         int
-		base           string
-		to             string
-		regexp         string
-		statusExpected bool
-	}{
-		{400, "/status", "", "", true},
-		{400, "/ignore", "", "", false},
-		{400, "/", "", "^/ignore", false},
-		{400, "/", "", "(.*)", true},
-		{400, "/status", "", "", true},
-	}
-
-	for i, s := range statusTests {
-		urlPath := fmt.Sprintf("/status%d", i)
-		rule, err := NewComplexRule(s.base, s.regexp, s.to, s.status, nil, httpserver.IfMatcher{})
-		if err != nil {
-			t.Fatalf("Test %d: No error expected for rule but found %v", i, err)
-		}
-		rw.Rules = []httpserver.HandlerConfig{rule}
-		req, err := http.NewRequest("GET", urlPath, nil)
-		if err != nil {
-			t.Fatalf("Test %d: Could not create HTTP request: %v", i, err)
-		}
-
-		rec := httptest.NewRecorder()
-		code, err := rw.ServeHTTP(rec, req)
-		if err != nil {
-			t.Fatalf("Test %d: No error expected for handler but found %v", i, err)
-		}
-		if s.statusExpected {
-			if rec.Body.String() != "" {
-				t.Errorf("Test %d: Expected empty body but found %s", i, rec.Body.String())
-			}
-			if code != s.status {
-				t.Errorf("Test %d: Expected status code %d found %d", i, s.status, code)
-			}
-		} else {
-			if code != 0 {
-				t.Errorf("Test %d: Expected no status code found %d", i, code)
-			}
 		}
 	}
 }

@@ -22,9 +22,6 @@ const (
 	RewriteIgnored Result = iota
 	// RewriteDone is returned when rewrite is done on request.
 	RewriteDone
-	// RewriteStatus is returned when rewrite is not needed and status code should be set
-	// for the request.
-	RewriteStatus
 )
 
 // Rewrite is middleware to rewrite request locations internally before being handled.
@@ -37,14 +34,9 @@ type Rewrite struct {
 // ServeHTTP implements the httpserver.Handler interface.
 func (rw Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	if rule := httpserver.ConfigSelector(rw.Rules).Select(r); rule != nil {
-		switch result := rule.(Rule).Rewrite(rw.FileSys, r); result {
-		case RewriteStatus:
-			// only valid for complex rules.
-			if cRule, ok := rule.(*ComplexRule); ok && cRule.Status != 0 {
-				return cRule.Status, nil
-			}
-		}
+		rule.(Rule).Rewrite(rw.FileSys, r)
 	}
+
 	return rw.Next.ServeHTTP(w, r)
 }
 
@@ -89,10 +81,6 @@ type ComplexRule struct {
 	// Path to rewrite to
 	To string
 
-	// If set, neither performs rewrite nor proceeds
-	// with request. Only returns code.
-	Status int
-
 	// Extensions to filter by
 	Exts []string
 
@@ -104,7 +92,7 @@ type ComplexRule struct {
 
 // NewComplexRule creates a new RegexpRule. It returns an error if regexp
 // pattern (pattern) or extensions (ext) are invalid.
-func NewComplexRule(base, pattern, to string, status int, ext []string, matcher httpserver.RequestMatcher) (*ComplexRule, error) {
+func NewComplexRule(base, pattern, to string, ext []string, matcher httpserver.RequestMatcher) (*ComplexRule, error) {
 	// validate regexp if present
 	var r *regexp.Regexp
 	if pattern != "" {
@@ -136,7 +124,6 @@ func NewComplexRule(base, pattern, to string, status int, ext []string, matcher 
 	return &ComplexRule{
 		Base:           base,
 		To:             to,
-		Status:         status,
 		Exts:           ext,
 		RequestMatcher: matcher,
 		Regexp:         r,
@@ -197,11 +184,6 @@ func (r *ComplexRule) Rewrite(fs http.FileSystem, req *http.Request) (re Result)
 				replacer.Set(fmt.Sprint(i), matches[i])
 			}
 		}
-	}
-
-	// if status is present, stop rewrite and return it.
-	if r.Status != 0 {
-		return RewriteStatus
 	}
 
 	// attempt rewrite

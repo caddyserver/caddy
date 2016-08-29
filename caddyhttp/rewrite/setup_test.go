@@ -132,54 +132,6 @@ func TestRewriteParse(t *testing.T) {
 			&ComplexRule{},
 		}},
 		{`rewrite {
-			status 500
-		 }`, true, []Rule{
-			&ComplexRule{},
-		}},
-		{`rewrite {
-			status 400
-		 }`, false, []Rule{
-			&ComplexRule{Base: "/", Status: 400},
-		}},
-		{`rewrite {
-			to /to
-			status 400
-		 }`, false, []Rule{
-			&ComplexRule{Base: "/", To: "/to", Status: 400},
-		}},
-		{`rewrite {
-			status 399
-		 }`, true, []Rule{
-			&ComplexRule{},
-		}},
-		{`rewrite {
-			status 200
-		 }`, false, []Rule{
-			&ComplexRule{Base: "/", Status: 200},
-		}},
-		{`rewrite {
-			to /to
-			status 200
-		 }`, false, []Rule{
-			&ComplexRule{Base: "/", To: "/to", Status: 200},
-		}},
-		{`rewrite {
-			status 199
-		 }`, true, []Rule{
-			&ComplexRule{},
-		}},
-		{`rewrite {
-			status 0
-		 }`, true, []Rule{
-			&ComplexRule{},
-		}},
-		{`rewrite {
-			to /to
-			status 0
-		 }`, true, []Rule{
-			&ComplexRule{},
-		}},
-		{`rewrite {
 			if {path} match /
 			to		/to
 		 }`, false, []Rule{
