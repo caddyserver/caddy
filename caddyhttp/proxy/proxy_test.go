@@ -200,10 +200,11 @@ func TestUnixSocketProxy(t *testing.T) {
 	}))
 
 	// Get absolute path for unix: socket
-	socketPath, err := filepath.Abs("./test_socket")
+	dir, err := ioutil.TempDir("", "caddy_test")
 	if err != nil {
-		t.Fatalf("Unable to get absolute path: %v", err)
+		t.Fatalf("Failed to make temp dir to contain unix socket. %v", err)
 	}
+	socketPath := filepath.Join(dir, "test_socket")
 
 	// Change httptest.Server listener to listen to unix: socket
 	ln, err := net.Listen("unix", socketPath)
@@ -258,10 +259,11 @@ func GetSocketProxy(messageFormat string, prefix string) (*Proxy, *httptest.Serv
 		fmt.Fprintf(w, messageFormat, r.URL.String())
 	}))
 
-	socketPath, err := filepath.Abs("./test_socket")
+	dir, err := ioutil.TempDir("", "caddy_test")
 	if err != nil {
-		return nil, nil, fmt.Errorf("Unable to get absolute path: %v", err)
+		return nil, nil, fmt.Errorf("Failed to make temp dir to contain unix socket. %v", err)
 	}
+	socketPath := filepath.Join(dir, "test_socket")
 
 	ln, err := net.Listen("unix", socketPath)
 	if err != nil {
