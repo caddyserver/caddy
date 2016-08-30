@@ -412,6 +412,7 @@ var directives = []string{
 	"search",    // github.com/pedronasser/caddy-search
 	"header",
 	"redir",
+	"status",
 	"cors", // github.com/captncraig/cors/caddy
 	"mime",
 	"basicauth",
