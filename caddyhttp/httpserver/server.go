@@ -92,7 +92,8 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Since Go 1.7 HTTP/2 is enabled only if TLSConfig.NextProtos includes the string "h2".
+
+	// As of Go 1.7, HTTP/2 is enabled only if NextProtos includes the string "h2"
 	if HTTP2 && s.Server.TLSConfig != nil && len(s.Server.TLSConfig.NextProtos) == 0 {
 		s.Server.TLSConfig.NextProtos = []string{"h2"}
 	}

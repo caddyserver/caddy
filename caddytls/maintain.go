@@ -129,6 +129,7 @@ func RenewManagedCertificates(allowPrompts bool) (err error) {
 
 	// Apply changes to the cache
 	for _, cert := range renewed {
+		// TODO: Don't do these until we have valid OCSP for the new cert
 		if cert.Names[len(cert.Names)-1] == "" {
 			// Special case: This is the default certificate. We must
 			// flush it out of the cache so that we no longer point to

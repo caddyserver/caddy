@@ -1,24 +1,24 @@
 (Are you asking for help with using Caddy? Please use our forum instead: https://forum.caddyserver.com. If you are filing a bug report, please answer the following questions. If your issue is not a bug report, you do not need to use this template. Either way, please consider donating if we've helped you. Thanks!)
 
-#### 1. What version of Caddy are you running (`caddy -version`)?
+### 1. What version of Caddy are you running (`caddy -version`)?
 
 
-#### 2. What are you trying to do?
+### 2. What are you trying to do?
 
 
-#### 3. What is your entire Caddyfile?
+### 3. What is your entire Caddyfile?
 ```text
 (Put Caddyfile here)
 ```
 
-#### 4. How did you run Caddy (give the full command and describe the execution environment)?
+### 4. How did you run Caddy (give the full command and describe the execution environment)?
 
 
-#### 5. What did you expect to see?
+### 5. What did you expect to see?
 
 
-#### 6. What did you see instead (give full error messages and/or log)?
+### 6. What did you see instead (give full error messages and/or log)?
 
 
-#### 7. How can someone who is starting from scratch reproduce this behavior as minimally as possible?
+### 7. How can someone who is starting from scratch reproduce this behavior as minimally as possible?
 
