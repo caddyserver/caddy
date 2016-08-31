@@ -103,10 +103,10 @@ var newACMEClient = func(config *Config, allowPrompts bool) (*ACMEClient, error)
 		// Use HTTP and TLS-SNI challenges by default
 
 		// See if HTTP challenge needs to be proxied
-		useHTTPPort := "" // empty port value will use challenge default
+		useHTTPPort := HTTPChallengePort
 		if caddy.HasListenerWithAddress(net.JoinHostPort(config.ListenHost, HTTPChallengePort)) {
 			useHTTPPort = config.AltHTTPPort
-			if useHTTPPort == "" {
+			if useHTTPPort == HTTPChallengePort {
 				useHTTPPort = DefaultHTTPAlternatePort
 			}
 		}
@@ -121,7 +121,7 @@ var newACMEClient = func(config *Config, allowPrompts bool) (*ACMEClient, error)
 		if err != nil {
 			return nil, err
 		}
-		err = c.SetTLSAddress(net.JoinHostPort(config.ListenHost, ""))
+		err = c.SetTLSAddress(net.JoinHostPort(config.ListenHost, TLSSNIChallengePort))
 		if err != nil {
 			return nil, err
 		}

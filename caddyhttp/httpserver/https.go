@@ -108,6 +108,10 @@ func enableAutoHTTPS(configs []*SiteConfig, loadCertificates bool) error {
 func makePlaintextRedirects(allConfigs []*SiteConfig) []*SiteConfig {
 	for i, cfg := range allConfigs {
 		if cfg.TLS.Managed &&
+			// don't trigger automatic redirects if port 80 and 443 might not be
+			// bindable
+			caddytls.HTTPChallengePort == "80" &&
+			caddytls.TLSSNIChallengePort == "443" &&
 			!hostHasOtherPort(allConfigs, i, "80") &&
 			(cfg.Addr.Port == "443" || !hostHasOtherPort(allConfigs, i, "443")) {
 			allConfigs = append(allConfigs, redirPlaintextHost(cfg))

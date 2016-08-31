@@ -533,15 +533,15 @@ var defaultCiphers = []uint16{
 	tls.TLS_RSA_WITH_AES_128_CBC_SHA,
 }
 
-const (
-	// HTTPChallengePort is the officially designated port for
-	// the HTTP challenge.
+var (
+	// HTTPChallengePort must be externally visible as port 80.
 	HTTPChallengePort = "80"
 
-	// TLSSNIChallengePort is the officially designated port for
-	// the TLS-SNI challenge.
+	// TLSSNIChallengePort must be externally visible as port 443.
 	TLSSNIChallengePort = "443"
+)
 
+const (
 	// DefaultHTTPAlternatePort is the port on which the ACME
 	// client will open a listener and solve the HTTP challenge.
 	// If this alternate port is used instead of the default
