@@ -18,7 +18,7 @@ import (
 
 	"github.com/mholt/caddy"
 	// plug in the HTTP server type
-	_ "github.com/mholt/caddy/caddyhttp"
+	_ "github.com/echsecutor/caddy/caddyhttp"
 
 	"github.com/mholt/caddy/caddytls"
 	// This is where other plugins get plugged in (imported)

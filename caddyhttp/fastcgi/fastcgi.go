@@ -16,6 +16,9 @@ import (
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
 
+// for persistent fastcgi connections
+var persistent_connections map[string]*FCGIClient
+
 // Handler is a middleware type that can handle requests as a FastCGI client.
 type Handler struct {
 	Next    httpserver.Handler
@@ -73,9 +76,21 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 
 			// Connect to FastCGI gateway
 			network, address := rule.parseAddress()
-			fcgiBackend, err := Dial(network, address)
-			if err != nil {
-				return http.StatusBadGateway, err
+			// check if connection is already open
+			if persistent_connections == nil{
+					persistent_connections = make(map[string]*FCGIClient)
+			}
+
+			// re use connection, if possible
+			fcgiBackend, ok := persistent_connections[network+address]
+			// otherwise dial:
+			if(!ok || fcgiBackend == nil){
+				var err error
+				persistent_connections[network+address], err = Dial(network, address)
+				if err != nil {
+					return http.StatusBadGateway, err
+				}
+				fcgiBackend = persistent_connections[network+address]				
 			}
 
 			var resp *http.Response
@@ -91,11 +106,10 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 				resp, err = fcgiBackend.Post(env, r.Method, r.Header.Get("Content-Type"), r.Body, contentLength)
 			}
 
-			if resp.Body != nil {
-				defer resp.Body.Close()
-			}
-
+			
 			if err != nil && err != io.EOF {
+				persistent_connections[network+address].Close()
+				persistent_connections[network+address] = nil
 				return http.StatusBadGateway, err
 			}
 
@@ -112,6 +126,8 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			if fcgiBackend.stderr.Len() != 0 {
 				// Remove trailing newline, error logger already does this.
 				err = LogError(strings.TrimSuffix(fcgiBackend.stderr.String(), "\n"))
+				persistent_connections[network+address].Close()
+				persistent_connections[network+address] = nil
 			}
 
 			// Normally we would return the status code if it is an error status (>= 400),
