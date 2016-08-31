@@ -76,13 +76,14 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 
 			// Connect to FastCGI gateway
 			network, address := rule.parseAddress()
-			// check if connection is already open
+
+			
+			// re use connection, if possible
 			if persistent_connections == nil{
 					persistent_connections = make(map[string]*FCGIClient)
 			}
-
-			// re use connection, if possible
 			fcgiBackend, ok := persistent_connections[network+address]
+			
 			// otherwise dial:
 			if(!ok || fcgiBackend == nil){
 				var err error
