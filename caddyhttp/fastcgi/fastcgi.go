@@ -13,13 +13,14 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"runtime"
 
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
 
 // for persistent fastcgi connections
-var PersistentConnections map[string]*FCGIClient
-var PoorMansSerialisation map[string]*sync.Mutex
+var persistentConnections map[string]*FCGIClient
+var poorMansSerialisation map[string]*sync.Mutex
 
 // Handler is a middleware type that can handle requests as a FastCGI client.
 type Handler struct {
@@ -41,7 +42,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 	for _, rule := range h.Rules {
 
 		//TODO: add an option in Caddyfile and pass it down to here
-		UsePersistentFcgiConnections := true
+		usePersistentFcgiConnections := runtime.GOOS == "windows"
 
 		// First requirement: Base path must match and the path must be allowed.
 		if !httpserver.Path(r.URL.Path).Matches(rule.Path) || !rule.AllowedPath(r.URL.Path) {
@@ -85,20 +86,20 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			var fcgiBackend *FCGIClient
 			var mut *sync.Mutex
 			ok := false
-			if UsePersistentFcgiConnections {
+			if usePersistentFcgiConnections {
 				// re use connection, if possible
-				if PersistentConnections == nil {
-					PersistentConnections = make(map[string]*FCGIClient)
-					PoorMansSerialisation = make(map[string]*sync.Mutex)
+				if persistentConnections == nil {
+					persistentConnections = make(map[string]*FCGIClient)
+					poorMansSerialisation = make(map[string]*sync.Mutex)
 				}
-				mut, ok = PoorMansSerialisation[network+address]
+				mut, ok = poorMansSerialisation[network+address]
 				if !ok || mut == nil {
-					PoorMansSerialisation[network+address] = new(sync.Mutex)
+					poorMansSerialisation[network+address] = new(sync.Mutex)
 				}
-				PoorMansSerialisation[network+address].Lock()
-				defer PoorMansSerialisation[network+address].Unlock()
+				poorMansSerialisation[network+address].Lock()
+				defer poorMansSerialisation[network+address].Unlock()
 
-				fcgiBackend, ok = PersistentConnections[network+address]
+				fcgiBackend, ok = persistentConnections[network+address]
 			}
 
 			// otherwise dial:
@@ -124,13 +125,13 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			}
 
 			if err != nil && err != io.EOF {
-				PersistentConnections[network+address].Close()
-				PersistentConnections[network+address] = nil
+				persistentConnections[network+address].Close()
+				persistentConnections[network+address] = nil
 				return http.StatusBadGateway, err
 			}
 
-			if UsePersistentFcgiConnections {
-				PersistentConnections[network+address] = fcgiBackend
+			if usePersistentFcgiConnections {
+				persistentConnections[network+address] = fcgiBackend
 			} else {
 				defer fcgiBackend.Close()
 			}
@@ -148,8 +149,8 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			if fcgiBackend.stderr.Len() != 0 {
 				// Remove trailing newline, error logger already does this.
 				err = LogError(strings.TrimSuffix(fcgiBackend.stderr.String(), "\n"))
-				PersistentConnections[network+address].Close()
-				PersistentConnections[network+address] = nil
+				persistentConnections[network+address].Close()
+				persistentConnections[network+address] = nil
 			}
 
 			// Normally we would return the status code if it is an error status (>= 400),
