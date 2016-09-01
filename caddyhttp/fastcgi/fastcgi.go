@@ -12,12 +12,14 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
 
 // for persistent fastcgi connections
 var persistent_connections map[string]*FCGIClient
+var poor_mans_serialisation map[string]*sync.Mutex
 
 // Handler is a middleware type that can handle requests as a FastCGI client.
 type Handler struct {
@@ -77,21 +79,28 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			// Connect to FastCGI gateway
 			network, address := rule.parseAddress()
 
-			
 			// re use connection, if possible
-			if persistent_connections == nil{
-					persistent_connections = make(map[string]*FCGIClient)
+			if persistent_connections == nil {
+				persistent_connections = make(map[string]*FCGIClient)
+				poor_mans_serialisation = make(map[string]*sync.Mutex)
 			}
+			mut, ok := poor_mans_serialisation[network+address]
+			if !ok || mut == nil {
+				poor_mans_serialisation[network+address] = new(sync.Mutex)
+			}
+			poor_mans_serialisation[network+address].Lock()
+			defer poor_mans_serialisation[network+address].Unlock()
+
 			fcgiBackend, ok := persistent_connections[network+address]
-			
+
 			// otherwise dial:
-			if(!ok || fcgiBackend == nil){
+			if !ok || fcgiBackend == nil {
 				var err error
 				persistent_connections[network+address], err = Dial(network, address)
 				if err != nil {
 					return http.StatusBadGateway, err
 				}
-				fcgiBackend = persistent_connections[network+address]				
+				fcgiBackend = persistent_connections[network+address]
 			}
 
 			var resp *http.Response
@@ -107,7 +116,6 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 				resp, err = fcgiBackend.Post(env, r.Method, r.Header.Get("Content-Type"), r.Body, contentLength)
 			}
 
-			
 			if err != nil && err != io.EOF {
 				persistent_connections[network+address].Close()
 				persistent_connections[network+address] = nil
