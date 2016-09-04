@@ -10,10 +10,10 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
-	"runtime"
 
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
