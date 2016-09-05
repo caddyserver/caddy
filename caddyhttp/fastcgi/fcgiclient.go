@@ -546,6 +546,9 @@ func (c *FCGIClient) PostFile(p map[string]string, data url.Values, file map[str
 			return nil, e
 		}
 		_, err = io.Copy(part, fd)
+		if err != nil {
+			return
+		}
 	}
 
 	err = writer.Close()

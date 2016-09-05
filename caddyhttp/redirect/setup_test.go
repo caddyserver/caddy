@@ -69,25 +69,25 @@ func TestSetup(t *testing.T) {
 		c := caddy.NewTestController("http", test.input)
 		err := setup(c)
 		if err != nil && !test.shouldErr {
-			t.Errorf("Test case #%d recieved an error of %v", j, err)
+			t.Errorf("Test case #%d received an error of %v", j, err)
 		} else if test.shouldErr {
 			continue
 		}
 		mids := httpserver.GetConfig(c).Middleware()
-		recievedRules := mids[len(mids)-1](nil).(Redirect).Rules
+		receivedRules := mids[len(mids)-1](nil).(Redirect).Rules
 
-		for i, recievedRule := range recievedRules {
-			if recievedRule.FromPath != test.expectedRules[i].FromPath {
-				t.Errorf("Test case #%d.%d expected a from path of %s, but recieved a from path of %s", j, i, test.expectedRules[i].FromPath, recievedRule.FromPath)
+		for i, receivedRule := range receivedRules {
+			if receivedRule.FromPath != test.expectedRules[i].FromPath {
+				t.Errorf("Test case #%d.%d expected a from path of %s, but received a from path of %s", j, i, test.expectedRules[i].FromPath, receivedRule.FromPath)
 			}
-			if recievedRule.To != test.expectedRules[i].To {
-				t.Errorf("Test case #%d.%d expected a TO path of %s, but recieved a TO path of %s", j, i, test.expectedRules[i].To, recievedRule.To)
+			if receivedRule.To != test.expectedRules[i].To {
+				t.Errorf("Test case #%d.%d expected a TO path of %s, but received a TO path of %s", j, i, test.expectedRules[i].To, receivedRule.To)
 			}
-			if recievedRule.Code != test.expectedRules[i].Code {
-				t.Errorf("Test case #%d.%d expected a HTTP status code of %d, but recieved a code of %d", j, i, test.expectedRules[i].Code, recievedRule.Code)
+			if receivedRule.Code != test.expectedRules[i].Code {
+				t.Errorf("Test case #%d.%d expected a HTTP status code of %d, but received a code of %d", j, i, test.expectedRules[i].Code, receivedRule.Code)
 			}
-			if gotMatcher, expectMatcher := fmt.Sprint(recievedRule.RequestMatcher), fmt.Sprint(test.expectedRules[i].RequestMatcher); gotMatcher != expectMatcher {
-				t.Errorf("Test case #%d.%d expected a Matcher %s, but recieved a Matcher %s", j, i, expectMatcher, gotMatcher)
+			if gotMatcher, expectMatcher := fmt.Sprint(receivedRule.RequestMatcher), fmt.Sprint(test.expectedRules[i].RequestMatcher); gotMatcher != expectMatcher {
+				t.Errorf("Test case #%d.%d expected a Matcher %s, but received a Matcher %s", j, i, expectMatcher, gotMatcher)
 			}
 		}
 	}

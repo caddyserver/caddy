@@ -136,7 +136,7 @@ func confLoader(serverType string) (caddy.Input, error) {
 	}
 
 	if conf == "stdin" {
-		return caddy.CaddyfileFromPipe(os.Stdin)
+		return caddy.CaddyfileFromPipe(os.Stdin, serverType)
 	}
 
 	contents, err := ioutil.ReadFile(conf)
