@@ -96,7 +96,7 @@ func TestSort(t *testing.T) {
 func TestBrowseHTTPMethods(t *testing.T) {
 	tmpl, err := template.ParseFiles("testdata/photos.tpl")
 	if err != nil {
-		t.Fatalf("An error occured while parsing the template: %v", err)
+		t.Fatalf("An error occurred while parsing the template: %v", err)
 	}
 
 	b := Browse{
@@ -134,7 +134,7 @@ func TestBrowseHTTPMethods(t *testing.T) {
 func TestBrowseTemplate(t *testing.T) {
 	tmpl, err := template.ParseFiles("testdata/photos.tpl")
 	if err != nil {
-		t.Fatalf("An error occured while parsing the template: %v", err)
+		t.Fatalf("An error occurred while parsing the template: %v", err)
 	}
 
 	b := Browse{

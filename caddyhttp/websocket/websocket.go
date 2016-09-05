@@ -72,7 +72,7 @@ func (ws WebSocket) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, erro
 		}
 	}
 
-	// Didn't match a websocket path, so pass-thru
+	// Didn't match a websocket path, so pass-through
 	return ws.Next.ServeHTTP(w, r)
 }
 
