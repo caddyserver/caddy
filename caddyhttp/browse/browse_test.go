@@ -300,7 +300,7 @@ func TestBrowseJson(t *testing.T) {
 		req.Header.Set("Accept", "application/json")
 		rec := httptest.NewRecorder()
 
-		code, _ := b.ServeHTTP(rec, req)
+		code, err := b.ServeHTTP(rec, req)
 
 		if code != http.StatusOK {
 			t.Fatalf("In test %d: Wrong status, expected %d, got %d", i, http.StatusOK, code)

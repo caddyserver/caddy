@@ -55,7 +55,7 @@ var newACMEClient = func(config *Config, allowPrompts bool) (*ACMEClient, error)
 	if !strings.Contains(caURL, "://") {
 		caURL = "https://" + caURL
 	}
-	u, _ := url.Parse(caURL)
+	u, err := url.Parse(caURL)
 	if u.Scheme != "https" && !caddy.IsLoopback(u.Host) && !strings.HasPrefix(u.Host, "10.") {
 		return nil, fmt.Errorf("%s: insecure CA URL (HTTPS required)", caURL)
 	}

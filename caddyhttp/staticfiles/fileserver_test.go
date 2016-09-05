@@ -162,7 +162,7 @@ func TestServeHTTP(t *testing.T) {
 
 	for i, test := range tests {
 		responseRecorder := httptest.NewRecorder()
-		request, _ := http.NewRequest("GET", test.url, nil)
+		request, err := http.NewRequest("GET", test.url, nil)
 		// prevent any URL sanitization within Go: we need unmodified paths here
 		if u, _ := url.Parse(test.url); u.RawPath != "" {
 			request.URL.Path = u.RawPath
