@@ -19,7 +19,7 @@ import (
 
 // for persistent fastcgi connections
 var persistentConnections map[string]*FCGIClient = make(map[string]*FCGIClient)
-var metaMutex sync.RWMutex
+var metaMutex sync.Mutex
 var poorMansSerialisation map[string]*sync.Mutex = make(map[string]*sync.Mutex)
 
 // Handler is a middleware type that can handle requests as a FastCGI client.
@@ -86,16 +86,12 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			var fcgiBackend *FCGIClient
 			reuse := false
 			if usePersistentFcgiConnections {
-				metaMutex.RLock()
+				metaMutex.Lock()
 				// re use connection, if possible
 				if _, ok := poorMansSerialisation[network+address]; !ok {
-					metaMutex.RUnlock()
-					metaMutex.Lock()
 					poorMansSerialisation[network+address] = new(sync.Mutex)
-					metaMutex.Unlock()
-					metaMutex.RLock()
 				}
-				metaMutex.RUnlock()
+				metaMutex.Unlock()
 
 				poorMansSerialisation[network+address].Lock()
 				defer poorMansSerialisation[network+address].Unlock()
