@@ -103,7 +103,6 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request, name stri
 				defer ff.Close()
 				dd, err := ff.Stat()
 				if err == nil {
-					name = index
 					d = dd
 					f = ff
 					break
