@@ -21,7 +21,7 @@ type Ext struct {
 	// Next handler in the chain
 	Next httpserver.Handler
 
-	// Path to ther root of the site
+	// Path to site root
 	Root string
 
 	// List of extensions to try

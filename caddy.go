@@ -388,7 +388,7 @@ func (i *Instance) Wait() {
 // but the Input value will be nil. An error is only returned
 // if there was an error reading the pipe, even if the length
 // of what was read is 0.
-func CaddyfileFromPipe(f *os.File) (Input, error) {
+func CaddyfileFromPipe(f *os.File, serverType string) (Input, error) {
 	fi, err := f.Stat()
 	if err == nil && fi.Mode()&os.ModeCharDevice == 0 {
 		// Note that a non-nil error is not a problem. Windows
@@ -402,8 +402,9 @@ func CaddyfileFromPipe(f *os.File) (Input, error) {
 			return nil, err
 		}
 		return CaddyfileInput{
-			Contents: confBody,
-			Filepath: f.Name(),
+			Contents:       confBody,
+			Filepath:       f.Name(),
+			ServerTypeName: serverType,
 		}, nil
 	}
 

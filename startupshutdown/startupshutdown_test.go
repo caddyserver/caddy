@@ -56,11 +56,11 @@ func TestStartup(t *testing.T) {
 		}
 		err = registeredFunction()
 		if err != nil && !test.shouldExecutionErr {
-			t.Errorf("Test %d recieved an error of:\n%v", i, err)
+			t.Errorf("Test %d received an error of:\n%v", i, err)
 		}
 		err = os.Remove(osSenitiveTestDir)
 		if err != nil && !test.shouldRemoveErr {
-			t.Errorf("Test %d recieved an error of:\n%v", i, err)
+			t.Errorf("Test %d received an error of:\n%v", i, err)
 		}
 	}
 }

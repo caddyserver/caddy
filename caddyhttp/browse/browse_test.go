@@ -96,7 +96,7 @@ func TestSort(t *testing.T) {
 func TestBrowseHTTPMethods(t *testing.T) {
 	tmpl, err := template.ParseFiles("testdata/photos.tpl")
 	if err != nil {
-		t.Fatalf("An error occured while parsing the template: %v", err)
+		t.Fatalf("An error occurred while parsing the template: %v", err)
 	}
 
 	b := Browse{
@@ -134,7 +134,7 @@ func TestBrowseHTTPMethods(t *testing.T) {
 func TestBrowseTemplate(t *testing.T) {
 	tmpl, err := template.ParseFiles("testdata/photos.tpl")
 	if err != nil {
-		t.Fatalf("An error occured while parsing the template: %v", err)
+		t.Fatalf("An error occurred while parsing the template: %v", err)
 	}
 
 	b := Browse{
@@ -290,18 +290,19 @@ func TestBrowseJson(t *testing.T) {
 	for i, test := range tests {
 		var marsh []byte
 		req, err := http.NewRequest("GET", "/photos"+test.QueryURL, nil)
-
-		if err == nil && test.shouldErr {
-			t.Errorf("Test %d didn't error, but it should have", i)
-		} else if err != nil && !test.shouldErr {
-			t.Errorf("Test %d errored, but it shouldn't have; got '%v'", i, err)
+		if err != nil && !test.shouldErr {
+			t.Errorf("Test %d errored when making request, but it shouldn't have; got '%v'", i, err)
 		}
 
 		req.Header.Set("Accept", "application/json")
 		rec := httptest.NewRecorder()
 
 		code, err := b.ServeHTTP(rec, req)
-
+		if err == nil && test.shouldErr {
+			t.Errorf("Test %d didn't error, but it should have", i)
+		} else if err != nil && !test.shouldErr {
+			t.Errorf("Test %d errored, but it shouldn't have; got '%v'", i, err)
+		}
 		if code != http.StatusOK {
 			t.Fatalf("In test %d: Wrong status, expected %d, got %d", i, http.StatusOK, code)
 		}

@@ -248,7 +248,7 @@ func DeleteOldStapleFiles() {
 	}
 	for _, file := range files {
 		if file.IsDir() {
-			// wierd, what's a folder doing inside the OCSP cache?
+			// weird, what's a folder doing inside the OCSP cache?
 			continue
 		}
 		stapleFile := filepath.Join(ocspFolder, file.Name())

@@ -52,15 +52,15 @@ func TestSetup(t *testing.T) {
 		c := caddy.NewTestController("http", test.input)
 		err := setup(c)
 		if err != nil && !test.shouldErr {
-			t.Errorf("Test case #%d recieved an error of %v", i, err)
+			t.Errorf("Test case #%d received an error of %v", i, err)
 		}
 		if test.expectedPathScope == nil {
 			continue
 		}
 		mids := httpserver.GetConfig(c).Middleware()
 		mid := mids[len(mids)-1]
-		recievedConfigs := mid(nil).(Browse).Configs
-		for j, config := range recievedConfigs {
+		receivedConfigs := mid(nil).(Browse).Configs
+		for j, config := range receivedConfigs {
 			if config.PathScope != test.expectedPathScope[j] {
 				t.Errorf("Test case #%d expected a pathscope of %v, but got %v", i, test.expectedPathScope, config.PathScope)
 			}

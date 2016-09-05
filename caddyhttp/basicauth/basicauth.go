@@ -68,7 +68,7 @@ func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 		return a.Next.ServeHTTP(w, r)
 	}
 
-	// Pass-thru when no paths match
+	// Pass-through when no paths match
 	return a.Next.ServeHTTP(w, r)
 }
 
