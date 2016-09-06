@@ -17,22 +17,23 @@ import (
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
 
-// for persistent fastcgi connections
+// persistent fastcgi connections
+
 type serialClient struct {
-	backend *FCGIClient
 	// for read/write serialisation
-	mutex sync.Mutex
+	sync.Mutex
+	backend *FCGIClient
 }
 type concurrentPersistentConnectionsMap struct {
-	clientMap map[string]serialClient
 	// for thread safe acces to the map
-	mutex sync.Mutex
+	sync.Mutex
+	clientMap map[string]*serialClient
 }
 
-var persistentConnections concurrentPersistentConnectionsMap = concurrentPersistentConnectionsMap{clientMap: make(map[string]serialClient)}
+var persistentConnections *concurrentPersistentConnectionsMap = &(concurrentPersistentConnectionsMap{clientMap: make(map[string]*serialClient)})
 
 //TODO: add an option in Caddyfile and pass it down to here
-var UsePersistentFcgiConnections bool = false
+var UsePersistentFcgiConnections bool = true
 
 // Handler is a middleware type that can handle requests as a FastCGI client.
 type Handler struct {
@@ -93,17 +94,17 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			network, address := rule.parseAddress()
 
 			var fcgiBackend *FCGIClient
-			var client serialClient
+			var client *serialClient
 			reuse := false
 			if UsePersistentFcgiConnections {
-				persistentConnections.mutex.Lock()
+				persistentConnections.Lock()
 				client, reuse = persistentConnections.clientMap[network+address]
-				persistentConnections.mutex.Unlock()
+				persistentConnections.Unlock()
 			}
 
 			if reuse {
-				client.mutex.Lock()
-				defer client.mutex.Unlock()
+				client.Lock()
+				defer client.Unlock()
 				fcgiBackend = client.backend
 			} else {
 				fcgiBackend, err = Dial(network, address)
@@ -130,9 +131,9 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			}
 
 			if UsePersistentFcgiConnections {
-				persistentConnections.mutex.Lock()
-				persistentConnections.clientMap[network+address] = serialClient{backend: fcgiBackend}
-				persistentConnections.mutex.Unlock()
+				persistentConnections.Lock()
+				persistentConnections.clientMap[network+address] = &(serialClient{backend: fcgiBackend})
+				persistentConnections.Unlock()
 			} else {
 				defer fcgiBackend.Close()
 			}
@@ -148,12 +149,12 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 
 			// Log any stderr output from upstream
 			if fcgiBackend.stderr.Len() != 0 {
-				persistentConnections.mutex.Lock()
+				persistentConnections.Lock()
 				// Remove trailing newline, error logger already does this.
 				err = LogError(strings.TrimSuffix(fcgiBackend.stderr.String(), "\n"))
 				fcgiBackend.Close()
 				delete(persistentConnections.clientMap, network+address)
-				persistentConnections.mutex.Unlock()
+				persistentConnections.Unlock()
 			}
 
 			// Normally we would return the status code if it is an error status (>= 400),
