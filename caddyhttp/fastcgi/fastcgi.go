@@ -18,9 +18,21 @@ import (
 )
 
 // for persistent fastcgi connections
-var persistentConnections map[string]*FCGIClient = make(map[string]*FCGIClient)
-var metaMutex sync.Mutex
-var poorMansSerialisation map[string]*sync.Mutex = make(map[string]*sync.Mutex)
+type serialClient struct {
+	backend *FCGIClient
+	// for read/write serialisation
+	mutex sync.Mutex
+}
+type concurrentPersistentConnectionsMap struct {
+	clientMap map[string]serialClient
+	// for thread safe acces to the map
+	mutex sync.Mutex
+}
+
+var persistentConnections concurrentPersistentConnectionsMap = concurrentPersistentConnectionsMap{clientMap: make(map[string]serialClient)}
+
+//TODO: add an option in Caddyfile and pass it down to here
+var UsePersistentFcgiConnections bool = false
 
 // Handler is a middleware type that can handle requests as a FastCGI client.
 type Handler struct {
@@ -40,9 +52,6 @@ type Handler struct {
 // ServeHTTP satisfies the httpserver.Handler interface.
 func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	for _, rule := range h.Rules {
-
-		//TODO: add an option in Caddyfile and pass it down to here
-		usePersistentFcgiConnections := true
 
 		// First requirement: Base path must match and the path must be allowed.
 		if !httpserver.Path(r.URL.Path).Matches(rule.Path) || !rule.AllowedPath(r.URL.Path) {
@@ -84,24 +93,19 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			network, address := rule.parseAddress()
 
 			var fcgiBackend *FCGIClient
+			var client serialClient
 			reuse := false
-			if usePersistentFcgiConnections {
-				metaMutex.Lock()
-				// re use connection, if possible
-				if _, ok := poorMansSerialisation[network+address]; !ok {
-					poorMansSerialisation[network+address] = new(sync.Mutex)
-				}
-				metaMutex.Unlock()
-
-				poorMansSerialisation[network+address].Lock()
-				defer poorMansSerialisation[network+address].Unlock()
-
-				fcgiBackend, reuse = persistentConnections[network+address]
+			if UsePersistentFcgiConnections {
+				persistentConnections.mutex.Lock()
+				client, reuse = persistentConnections.clientMap[network+address]
+				persistentConnections.mutex.Unlock()
 			}
 
-			// otherwise dial:
-			if !reuse {
-				var err error
+			if reuse {
+				client.mutex.Lock()
+				defer client.mutex.Unlock()
+				fcgiBackend = client.backend
+			} else {
 				fcgiBackend, err = Dial(network, address)
 				if err != nil {
 					return http.StatusBadGateway, err
@@ -125,8 +129,10 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 				return http.StatusBadGateway, err
 			}
 
-			if usePersistentFcgiConnections {
-				persistentConnections[network+address] = fcgiBackend
+			if UsePersistentFcgiConnections {
+				persistentConnections.mutex.Lock()
+				persistentConnections.clientMap[network+address] = serialClient{backend: fcgiBackend}
+				persistentConnections.mutex.Unlock()
 			} else {
 				defer fcgiBackend.Close()
 			}
@@ -142,10 +148,12 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 
 			// Log any stderr output from upstream
 			if fcgiBackend.stderr.Len() != 0 {
+				persistentConnections.mutex.Lock()
 				// Remove trailing newline, error logger already does this.
 				err = LogError(strings.TrimSuffix(fcgiBackend.stderr.String(), "\n"))
-				persistentConnections[network+address].Close()
-				delete(persistentConnections, network+address)
+				fcgiBackend.Close()
+				delete(persistentConnections.clientMap, network+address)
+				persistentConnections.mutex.Unlock()
 			}
 
 			// Normally we would return the status code if it is an error status (>= 400),
