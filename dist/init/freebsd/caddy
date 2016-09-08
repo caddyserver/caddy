@@ -76,7 +76,7 @@ caddy_stop() {
     fi
 
     echo -n "Stopping ${name}..."
-    kill -QUIT $(cat $pidfile) 2> /dev/null && echo "stopped"
+    kill -KILL $(cat $pidfile) 2> /dev/null && echo "stopped"
     rm -f ${pidfile}
 }
 
