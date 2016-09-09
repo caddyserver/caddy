@@ -30,10 +30,10 @@ type concurrentPersistentConnectionsMap struct {
 	clientMap map[string]*serialClient
 }
 
-var persistentConnections *concurrentPersistentConnectionsMap = &(concurrentPersistentConnectionsMap{clientMap: make(map[string]*serialClient)})
+var persistentConnections = &(concurrentPersistentConnectionsMap{clientMap: make(map[string]*serialClient)})
 
-//TODO: add an option in Caddyfile and pass it down to here
-var UsePersistentFcgiConnections bool = true
+// UsePersistentFcgiConnections TODO: add an option in Caddyfile and pass it down to here
+var UsePersistentFcgiConnections = true
 
 // Handler is a middleware type that can handle requests as a FastCGI client.
 type Handler struct {
@@ -149,12 +149,12 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 
 			// Log any stderr output from upstream
 			if fcgiBackend.stderr.Len() != 0 {
-				persistentConnections.Lock()
 				// Remove trailing newline, error logger already does this.
 				err = LogError(strings.TrimSuffix(fcgiBackend.stderr.String(), "\n"))
-				fcgiBackend.Close()
+				persistentConnections.Lock()
 				delete(persistentConnections.clientMap, network+address)
 				persistentConnections.Unlock()
+				fcgiBackend.Close()
 			}
 
 			// Normally we would return the status code if it is an error status (>= 400),
