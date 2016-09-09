@@ -94,6 +94,8 @@ type Storage interface {
 	// persisted users in storage.
 	MostRecentUserEmail() string
 
+}
+
 // ErrNotExist is returned by Storage implementations when
 // a resource is not found. It is similar to os.ErrNotExist
 // except this is a type, not a variable.
