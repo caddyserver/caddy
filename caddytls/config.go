@@ -206,7 +206,7 @@ func (c *Config) renewCertName(name string, allowPrompts bool) error {
 	}()
 
 	// Prepare for renewal (load PEM cert, key, and meta)
-	siteData, err := storage.LoadSite(c.Hostname)
+	siteData, err := storage.LoadSite(name)
 	if err != nil {
 		return err
 	}
