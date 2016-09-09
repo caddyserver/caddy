@@ -103,7 +103,7 @@ func getUser(storage Storage, email string) (User, error) {
 	// open user reg
 	userData, err := storage.LoadUser(email)
 	if err != nil {
-		if err == ErrStorageNotFound {
+		if _, ok := err.(ErrNotExist); ok {
 			// create a new user
 			return newUser(email)
 		}

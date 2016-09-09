@@ -1,13 +1,6 @@
 package caddytls
 
-import (
-	"errors"
-	"net/url"
-)
-
-// ErrStorageNotFound is returned by Storage implementations when data is
-// expected to be present but is not.
-var ErrStorageNotFound = errors.New("data not found")
+import "net/url"
 
 // StorageCreator is a function type that is used in the Config to instantiate
 // a new Storage instance. This function can return a nil Storage even without
@@ -42,10 +35,10 @@ type Storage interface {
 	SiteExists(domain string) (bool, error)
 
 	// LoadSite obtains the site data from storage for the given domain and
-	// returns it. If data for the domain does not exist, the
-	// ErrStorageNotFound error instance is returned. For multi-server
-	// storage, care should be taken to make this load atomic to prevent
-	// race conditions that happen with multiple data loads.
+	// returns it. If data for the domain does not exist, an error value
+	// of type ErrNotExist is returned. For multi-server storage, care
+	// should be taken to make this load atomic to prevent race conditions
+	// that happen with multiple data loads.
 	LoadSite(domain string) (*SiteData, error)
 
 	// StoreSite persists the given site data for the given domain in
@@ -58,8 +51,7 @@ type Storage interface {
 
 	// DeleteSite deletes the site for the given domain from storage.
 	// Multi-server implementations should attempt to make this atomic. If
-	// the site does not exist, the ErrStorageNotFound error instance is
-	// returned.
+	// the site does not exist, an error value of type ErrNotExist is returned.
 	DeleteSite(domain string) error
 
 	// LockRegister is called before Caddy attempts to obtain or renew a
@@ -86,10 +78,10 @@ type Storage interface {
 	UnlockRegister(domain string) error
 
 	// LoadUser obtains user data from storage for the given email and
-	// returns it. If data for the email does not exist, the
-	// ErrStorageNotFound error instance is returned. Multi-server
-	// implementations should take care to make this operation atomic for
-	// all loaded data items.
+	// returns it. If data for the email does not exist, an error value
+	// of type ErrNotExist is returned. Multi-server implementations
+	// should take care to make this operation atomic for all loaded
+	// data items.
 	LoadUser(email string) (*UserData, error)
 
 	// StoreUser persists the given user data for the given email in
@@ -101,4 +93,10 @@ type Storage interface {
 	// in StoreUser. The result is an empty string if there are no
 	// persisted users in storage.
 	MostRecentUserEmail() string
+
+// ErrNotExist is returned by Storage implementations when
+// a resource is not found. It is similar to os.ErrNotExist
+// except this is a type, not a variable.
+type ErrNotExist interface {
+	error
 }
