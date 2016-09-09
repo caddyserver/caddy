@@ -93,7 +93,6 @@ type Storage interface {
 	// in StoreUser. The result is an empty string if there are no
 	// persisted users in storage.
 	MostRecentUserEmail() string
-
 }
 
 // ErrNotExist is returned by Storage implementations when
