@@ -1,12 +1,14 @@
 package caddytls
 
 import (
-	"github.com/mholt/caddy"
+	"fmt"
 	"io/ioutil"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/mholt/caddy"
 )
 
 func init() {
@@ -114,13 +116,14 @@ func (s FileStorage) userKeyFile(email string) string {
 }
 
 // readFile abstracts a simple ioutil.ReadFile, making sure to return an
-// ErrStorageNotFound instance when the file is not found.
+// ErrNotExist instance when the file is not found.
 func (s FileStorage) readFile(file string) ([]byte, error) {
-	byts, err := ioutil.ReadFile(file)
+	b, err := ioutil.ReadFile(file)
 	if os.IsNotExist(err) {
-		return nil, ErrStorageNotFound
+		return nil, ErrNotExist(err)
 	}
-	return byts, err
+	return b, err
+
 }
 
 // SiteExists implements Storage.SiteExists by checking for the presence of
@@ -141,18 +144,23 @@ func (s FileStorage) SiteExists(domain string) (bool, error) {
 }
 
 // LoadSite implements Storage.LoadSite by loading it from disk. If it is not
-// present, the ErrStorageNotFound error instance is returned.
+// present, an instance of ErrNotExist is returned.
 func (s FileStorage) LoadSite(domain string) (*SiteData, error) {
 	var err error
 	siteData := new(SiteData)
 	siteData.Cert, err = s.readFile(s.siteCertFile(domain))
-	if err == nil {
-		siteData.Key, err = s.readFile(s.siteKeyFile(domain))
+	if err != nil {
+		return nil, err
 	}
-	if err == nil {
-		siteData.Meta, err = s.readFile(s.siteMetaFile(domain))
+	siteData.Key, err = s.readFile(s.siteKeyFile(domain))
+	if err != nil {
+		return nil, err
 	}
-	return siteData, err
+	siteData.Meta, err = s.readFile(s.siteMetaFile(domain))
+	if err != nil {
+		return nil, err
+	}
+	return siteData, nil
 }
 
 // StoreSite implements Storage.StoreSite by writing it to disk. The base
@@ -160,27 +168,34 @@ func (s FileStorage) LoadSite(domain string) (*SiteData, error) {
 func (s FileStorage) StoreSite(domain string, data *SiteData) error {
 	err := os.MkdirAll(s.site(domain), 0700)
 	if err != nil {
-		return err
+		return fmt.Errorf("making site directory: %v", err)
 	}
 	err = ioutil.WriteFile(s.siteCertFile(domain), data.Cert, 0600)
-	if err == nil {
-		err = ioutil.WriteFile(s.siteKeyFile(domain), data.Key, 0600)
+	if err != nil {
+		return fmt.Errorf("writing certificate file: %v", err)
 	}
-	if err == nil {
-		err = ioutil.WriteFile(s.siteMetaFile(domain), data.Meta, 0600)
+	err = ioutil.WriteFile(s.siteKeyFile(domain), data.Key, 0600)
+	if err != nil {
+		return fmt.Errorf("writing key file: %v", err)
 	}
-	return err
+	err = ioutil.WriteFile(s.siteMetaFile(domain), data.Meta, 0600)
+	if err != nil {
+		return fmt.Errorf("writing cert meta file: %v", err)
+	}
+	return nil
 }
 
 // DeleteSite implements Storage.DeleteSite by deleting just the cert from
-// disk. If it is not present, the ErrStorageNotFound error instance is
-// returned.
+// disk. If it is not present, an instance of ErrNotExist is returned.
 func (s FileStorage) DeleteSite(domain string) error {
 	err := os.Remove(s.siteCertFile(domain))
-	if os.IsNotExist(err) {
-		return ErrStorageNotFound
+	if err != nil {
+		if os.IsNotExist(err) {
+			return ErrNotExist(err)
+		}
+		return err
 	}
-	return err
+	return nil
 }
 
 // LockRegister implements Storage.LockRegister by just returning true because
@@ -196,15 +211,19 @@ func (s FileStorage) UnlockRegister(domain string) error {
 }
 
 // LoadUser implements Storage.LoadUser by loading it from disk. If it is not
-// present, the ErrStorageNotFound error instance is returned.
+// present, an instance of ErrNotExist is returned.
 func (s FileStorage) LoadUser(email string) (*UserData, error) {
 	var err error
 	userData := new(UserData)
 	userData.Reg, err = s.readFile(s.userRegFile(email))
-	if err == nil {
-		userData.Key, err = s.readFile(s.userKeyFile(email))
+	if err != nil {
+		return nil, err
 	}
-	return userData, err
+	userData.Key, err = s.readFile(s.userKeyFile(email))
+	if err != nil {
+		return nil, err
+	}
+	return userData, nil
 }
 
 // StoreUser implements Storage.StoreUser by writing it to disk. The base
@@ -212,13 +231,17 @@ func (s FileStorage) LoadUser(email string) (*UserData, error) {
 func (s FileStorage) StoreUser(email string, data *UserData) error {
 	err := os.MkdirAll(s.user(email), 0700)
 	if err != nil {
-		return err
+		return fmt.Errorf("making user directory: %v", err)
 	}
 	err = ioutil.WriteFile(s.userRegFile(email), data.Reg, 0600)
-	if err == nil {
-		err = ioutil.WriteFile(s.userKeyFile(email), data.Key, 0600)
+	if err != nil {
+		return fmt.Errorf("writing user registration file: %v", err)
 	}
-	return err
+	err = ioutil.WriteFile(s.userKeyFile(email), data.Key, 0600)
+	if err != nil {
+		return fmt.Errorf("writing user key file: %v", err)
+	}
+	return nil
 }
 
 // MostRecentUserEmail implements Storage.MostRecentUserEmail by finding the
