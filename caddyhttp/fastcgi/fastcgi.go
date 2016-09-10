@@ -12,9 +12,28 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
+
+// persistent fastcgi connections
+
+type serialClient struct {
+	// for read/write serialisation
+	sync.Mutex
+	backend *FCGIClient
+}
+type concurrentPersistentConnectionsMap struct {
+	// for thread safe acces to the map
+	sync.Mutex
+	clientMap map[string]*serialClient
+}
+
+var persistentConnections = &(concurrentPersistentConnectionsMap{clientMap: make(map[string]*serialClient)})
+
+// UsePersistentFcgiConnections TODO: add an option in Caddyfile and pass it down to here
+var UsePersistentFcgiConnections = true
 
 // Handler is a middleware type that can handle requests as a FastCGI client.
 type Handler struct {
@@ -73,9 +92,25 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 
 			// Connect to FastCGI gateway
 			network, address := rule.parseAddress()
-			fcgiBackend, err := Dial(network, address)
-			if err != nil {
-				return http.StatusBadGateway, err
+
+			var fcgiBackend *FCGIClient
+			var client *serialClient
+			reuse := false
+			if UsePersistentFcgiConnections {
+				persistentConnections.Lock()
+				client, reuse = persistentConnections.clientMap[network+address]
+				persistentConnections.Unlock()
+			}
+
+			if reuse {
+				client.Lock()
+				defer client.Unlock()
+				fcgiBackend = client.backend
+			} else {
+				fcgiBackend, err = Dial(network, address)
+				if err != nil {
+					return http.StatusBadGateway, err
+				}
 			}
 
 			var resp *http.Response
@@ -91,12 +126,16 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 				resp, err = fcgiBackend.Post(env, r.Method, r.Header.Get("Content-Type"), r.Body, contentLength)
 			}
 
-			if resp.Body != nil {
-				defer resp.Body.Close()
-			}
-
 			if err != nil && err != io.EOF {
 				return http.StatusBadGateway, err
+			}
+
+			if UsePersistentFcgiConnections {
+				persistentConnections.Lock()
+				persistentConnections.clientMap[network+address] = &(serialClient{backend: fcgiBackend})
+				persistentConnections.Unlock()
+			} else {
+				defer fcgiBackend.Close()
 			}
 
 			// Write response header
@@ -112,6 +151,10 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			if fcgiBackend.stderr.Len() != 0 {
 				// Remove trailing newline, error logger already does this.
 				err = LogError(strings.TrimSuffix(fcgiBackend.stderr.String(), "\n"))
+				persistentConnections.Lock()
+				delete(persistentConnections.clientMap, network+address)
+				persistentConnections.Unlock()
+				fcgiBackend.Close()
 			}
 
 			// Normally we would return the status code if it is an error status (>= 400),
