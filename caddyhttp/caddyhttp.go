@@ -5,6 +5,7 @@ import (
 	_ "github.com/mholt/caddy/caddyhttp/httpserver"
 
 	// plug in the standard directives
+	_ "github.com/mholt/caddy/caddyhttp/awslambda"
 	_ "github.com/mholt/caddy/caddyhttp/basicauth"
 	_ "github.com/mholt/caddy/caddyhttp/bind"
 	_ "github.com/mholt/caddy/caddyhttp/browse"
