@@ -123,7 +123,6 @@ func (s FileStorage) readFile(file string) ([]byte, error) {
 		return nil, ErrNotExist(err)
 	}
 	return b, err
-
 }
 
 // SiteExists implements Storage.SiteExists by checking for the presence of
