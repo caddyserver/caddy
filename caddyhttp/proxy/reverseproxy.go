@@ -252,8 +252,28 @@ func (rp *ReverseProxy) copyResponse(dst io.Writer, src io.Reader) {
 	io.CopyBuffer(dst, src, buf.([]byte))
 }
 
+// skip these headers if they already exist.
+// see https://github.com/mholt/caddy/pull/1112#discussion_r80092582
+var skipHeaders = map[string]struct{}{
+	"Content-Type":        {},
+	"Content-Disposition": {},
+	"Accept-Ranges":       {},
+	"Set-Cookie":          {},
+	"Cache-Control":       {},
+	"Expires":             {},
+}
+
 func copyHeader(dst, src http.Header) {
 	for k, vv := range src {
+		if _, ok := dst[k]; ok {
+			// skip some predefined headers
+			// see https://github.com/mholt/caddy/issues/1086
+			if _, shouldSkip := skipHeaders[k]; shouldSkip {
+				continue
+			}
+			// otherwise, overwrite
+			dst.Del(k)
+		}
 		for _, v := range vv {
 			dst.Add(k, v)
 		}
