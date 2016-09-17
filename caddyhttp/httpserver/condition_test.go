@@ -206,7 +206,7 @@ func TestSetupIfMatcher(t *testing.T) {
 		 }`, true, IfMatcher{},
 		},
 		{`test {
-			if	a isnt b
+			if	a isn't b
 		 }`, true, IfMatcher{},
 		},
 		{`test {

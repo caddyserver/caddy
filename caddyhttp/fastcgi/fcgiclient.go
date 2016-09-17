@@ -385,7 +385,7 @@ func (w *streamReader) Read(p []byte) (n int, err error) {
 // Do made the request and returns a io.Reader that translates the data read
 // from fcgi responder out of fcgi packet before returning it.
 func (c *FCGIClient) Do(p map[string]string, req io.Reader) (r io.Reader, err error) {
-	err = c.writeBeginRequest(uint16(Responder), 0)
+	err = c.writeBeginRequest(uint16(Responder), FCGIKeepConn)
 	if err != nil {
 		return
 	}
@@ -546,6 +546,9 @@ func (c *FCGIClient) PostFile(p map[string]string, data url.Values, file map[str
 			return nil, e
 		}
 		_, err = io.Copy(part, fd)
+		if err != nil {
+			return
+		}
 	}
 
 	err = writer.Close()

@@ -99,12 +99,20 @@ func RenewManagedCertificates(allowPrompts bool) (err error) {
 				continue
 			}
 
-			// This works well because managed certs are only associated with one name per config.
-			// Note, the renewal inside here may not actually occur and no error will be returned
-			// due to renewal lock (i.e. because a renewal is already happening). This lack of
-			// error is by intention to force cache invalidation as though it has renewed.
-			err := cert.Config.RenewCert(allowPrompts)
+			// Get the name which we should use to renew this certificate;
+			// we only support managing certificates with one name per cert,
+			// so this should be easy. We can't rely on cert.Config.Hostname
+			// because it may be a wildcard value from the Caddyfile (e.g.
+			// *.something.com) which, as of 2016, is not supported by ACME.
+			var renewName string
+			for _, name := range cert.Names {
+				if name != "" {
+					renewName = name
+					break
+				}
+			}
 
+			err := cert.Config.RenewCert(renewName, allowPrompts)
 			if err != nil {
 				if allowPrompts && timeLeft < 0 {
 					// Certificate renewal failed, the operator is present, and the certificate
@@ -129,6 +137,7 @@ func RenewManagedCertificates(allowPrompts bool) (err error) {
 
 	// Apply changes to the cache
 	for _, cert := range renewed {
+		// TODO: Don't do these until we have valid OCSP for the new cert
 		if cert.Names[len(cert.Names)-1] == "" {
 			// Special case: This is the default certificate. We must
 			// flush it out of the cache so that we no longer point to
@@ -247,7 +256,7 @@ func DeleteOldStapleFiles() {
 	}
 	for _, file := range files {
 		if file.IsDir() {
-			// wierd, what's a folder doing inside the OCSP cache?
+			// weird, what's a folder doing inside the OCSP cache?
 			continue
 		}
 		stapleFile := filepath.Join(ocspFolder, file.Name())

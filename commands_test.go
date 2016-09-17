@@ -12,7 +12,7 @@ func TestParseUnixCommand(t *testing.T) {
 		input    string
 		expected []string
 	}{
-		// 0 - emtpy command
+		// 0 - empty command
 		{
 			input:    ``,
 			expected: []string{},
@@ -181,7 +181,7 @@ func TestSplitCommandAndArgs(t *testing.T) {
 		expectedArgs       []string
 		expectedErrContent string
 	}{
-		// 0 - emtpy command
+		// 0 - empty command
 		{
 			input:              ``,
 			expectedCommand:    ``,

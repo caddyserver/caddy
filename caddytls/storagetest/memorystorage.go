@@ -1,9 +1,11 @@
 package storagetest
 
 import (
-	"github.com/mholt/caddy/caddytls"
+	"errors"
 	"net/url"
 	"sync"
+
+	"github.com/mholt/caddy/caddytls"
 )
 
 // memoryMutex is a mutex used to control access to memoryStoragesByCAURL.
@@ -65,7 +67,7 @@ func (s *InMemoryStorage) Clear() {
 func (s *InMemoryStorage) LoadSite(domain string) (*caddytls.SiteData, error) {
 	siteData, ok := s.Sites[domain]
 	if !ok {
-		return nil, caddytls.ErrStorageNotFound
+		return nil, caddytls.ErrNotExist(errors.New("not found"))
 	}
 	return siteData, nil
 }
@@ -89,7 +91,7 @@ func (s *InMemoryStorage) StoreSite(domain string, data *caddytls.SiteData) erro
 // DeleteSite implements caddytls.Storage.DeleteSite in memory.
 func (s *InMemoryStorage) DeleteSite(domain string) error {
 	if _, ok := s.Sites[domain]; !ok {
-		return caddytls.ErrStorageNotFound
+		return caddytls.ErrNotExist(errors.New("not found"))
 	}
 	delete(s.Sites, domain)
 	return nil
@@ -111,7 +113,7 @@ func (s *InMemoryStorage) UnlockRegister(domain string) error {
 func (s *InMemoryStorage) LoadUser(email string) (*caddytls.UserData, error) {
 	userData, ok := s.Users[email]
 	if !ok {
-		return nil, caddytls.ErrStorageNotFound
+		return nil, caddytls.ErrNotExist(errors.New("not found"))
 	}
 	return userData, nil
 }
