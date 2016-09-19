@@ -275,33 +275,33 @@ func TestRecursiveImport(t *testing.T) {
 		return true
 	}
 
-	recursive_file1, err := filepath.Abs("testdata/recursive_import_test1")
+	recursiveFile1, err := filepath.Abs("testdata/recursive_import_test1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	recursive_file2, err := filepath.Abs("testdata/recursive_import_test2")
+	recursiveFile2, err := filepath.Abs("testdata/recursive_import_test2")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// test relative recursive import
-	err = ioutil.WriteFile(recursive_file1, []byte(
+	err = ioutil.WriteFile(recursiveFile1, []byte(
 		`localhost
 		dir1
 		import recursive_import_test2`), 0644)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(recursive_file1)
+	defer os.Remove(recursiveFile1)
 
-	err = ioutil.WriteFile(recursive_file2, []byte("dir2 1"), 0644)
+	err = ioutil.WriteFile(recursiveFile2, []byte("dir2 1"), 0644)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(recursive_file2)
+	defer os.Remove(recursiveFile2)
 
 	// import absolute path
-	result, err := testParseOne("import " + recursive_file1)
+	result, err := testParseOne("import " + recursiveFile1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -319,16 +319,16 @@ func TestRecursiveImport(t *testing.T) {
 	}
 
 	// test absolute recursive import
-	err = ioutil.WriteFile(recursive_file1, []byte(
+	err = ioutil.WriteFile(recursiveFile1, []byte(
 		`localhost
 		dir1
-		import `+recursive_file2), 0644)
+		import `+recursiveFile2), 0644)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// import absolute path
-	result, err = testParseOne("import " + recursive_file1)
+	result, err = testParseOne("import " + recursiveFile1)
 	if err != nil {
 		t.Fatal(err)
 	}
