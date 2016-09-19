@@ -7,11 +7,13 @@ import (
 	"crypto/rand"
 	"io"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
-	"github.com/xenolf/lego/acme"
 	"os"
+
+	"github.com/xenolf/lego/acme"
 )
 
 func TestUser(t *testing.T) {
@@ -120,7 +122,7 @@ func TestGetUserAlreadyExists(t *testing.T) {
 }
 
 func TestGetEmail(t *testing.T) {
-	storageBasePath = string(testStorage) // to contain calls that create a new Storage...
+	storageBasePath = testStorage.Path // to contain calls that create a new Storage...
 
 	// let's not clutter up the output
 	origStdout := os.Stdout
@@ -180,8 +182,8 @@ func TestGetEmail(t *testing.T) {
 	}
 }
 
-var testStorage = FileStorage("./testdata")
+var testStorage = &FileStorage{Path: "./testdata", nameLocks: make(map[string]*sync.WaitGroup)}
 
-func (s FileStorage) clean() error {
-	return os.RemoveAll(string(s))
+func (s *FileStorage) clean() error {
+	return os.RemoveAll(s.Path)
 }

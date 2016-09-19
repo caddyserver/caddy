@@ -7,67 +7,74 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/mholt/caddy"
 )
 
 func init() {
-	RegisterStorageProvider("file", FileStorageCreator)
+	RegisterStorageProvider("file", NewFileStorage)
 }
 
 // storageBasePath is the root path in which all TLS/ACME assets are
 // stored. Do not change this value during the lifetime of the program.
 var storageBasePath = filepath.Join(caddy.AssetsPath(), "acme")
 
-// FileStorageCreator creates a new Storage instance backed by the local
-// disk. The resulting Storage instance is guaranteed to be non-nil if
-// there is no error. This can be used by "middleware" implementations that
-// may want to proxy the disk storage.
-func FileStorageCreator(caURL *url.URL) (Storage, error) {
-	return FileStorage(filepath.Join(storageBasePath, caURL.Host)), nil
+// NewFileStorage is a StorageConstructor function that creates a new
+// Storage instance backed by the local disk. The resulting Storage
+// instance is guaranteed to be non-nil if there is no error.
+func NewFileStorage(caURL *url.URL) (Storage, error) {
+	return &FileStorage{
+		Path:      filepath.Join(storageBasePath, caURL.Host),
+		nameLocks: make(map[string]*sync.WaitGroup),
+	}, nil
 }
 
-// FileStorage is a root directory and facilitates forming file paths derived
-// from it. It is used to get file paths in a consistent, cross- platform way
-// for persisting ACME assets on the file system.
-type FileStorage string
+// FileStorage facilitates forming file paths derived from a root
+// directory. It is used to get file paths in a consistent,
+// cross-platform way or persisting ACME assets on the file system.
+type FileStorage struct {
+	Path        string
+	nameLocks   map[string]*sync.WaitGroup
+	nameLocksMu sync.Mutex
+}
 
 // sites gets the directory that stores site certificate and keys.
-func (s FileStorage) sites() string {
-	return filepath.Join(string(s), "sites")
+func (s *FileStorage) sites() string {
+	return filepath.Join(s.Path, "sites")
 }
 
 // site returns the path to the folder containing assets for domain.
-func (s FileStorage) site(domain string) string {
+func (s *FileStorage) site(domain string) string {
 	domain = strings.ToLower(domain)
 	return filepath.Join(s.sites(), domain)
 }
 
 // siteCertFile returns the path to the certificate file for domain.
-func (s FileStorage) siteCertFile(domain string) string {
+func (s *FileStorage) siteCertFile(domain string) string {
 	domain = strings.ToLower(domain)
 	return filepath.Join(s.site(domain), domain+".crt")
 }
 
 // siteKeyFile returns the path to domain's private key file.
-func (s FileStorage) siteKeyFile(domain string) string {
+func (s *FileStorage) siteKeyFile(domain string) string {
 	domain = strings.ToLower(domain)
 	return filepath.Join(s.site(domain), domain+".key")
 }
 
 // siteMetaFile returns the path to the domain's asset metadata file.
-func (s FileStorage) siteMetaFile(domain string) string {
+func (s *FileStorage) siteMetaFile(domain string) string {
 	domain = strings.ToLower(domain)
 	return filepath.Join(s.site(domain), domain+".json")
 }
 
 // users gets the directory that stores account folders.
-func (s FileStorage) users() string {
-	return filepath.Join(string(s), "users")
+func (s *FileStorage) users() string {
+	return filepath.Join(s.Path, "users")
 }
 
 // user gets the account folder for the user with email
-func (s FileStorage) user(email string) string {
+func (s *FileStorage) user(email string) string {
 	if email == "" {
 		email = emptyEmail
 	}
@@ -89,7 +96,7 @@ func emailUsername(email string) string {
 
 // userRegFile gets the path to the registration file for the user with the
 // given email address.
-func (s FileStorage) userRegFile(email string) string {
+func (s *FileStorage) userRegFile(email string) string {
 	if email == "" {
 		email = emptyEmail
 	}
@@ -103,7 +110,7 @@ func (s FileStorage) userRegFile(email string) string {
 
 // userKeyFile gets the path to the private key file for the user with the
 // given email address.
-func (s FileStorage) userKeyFile(email string) string {
+func (s *FileStorage) userKeyFile(email string) string {
 	if email == "" {
 		email = emptyEmail
 	}
@@ -117,7 +124,7 @@ func (s FileStorage) userKeyFile(email string) string {
 
 // readFile abstracts a simple ioutil.ReadFile, making sure to return an
 // ErrNotExist instance when the file is not found.
-func (s FileStorage) readFile(file string) ([]byte, error) {
+func (s *FileStorage) readFile(file string) ([]byte, error) {
 	b, err := ioutil.ReadFile(file)
 	if os.IsNotExist(err) {
 		return nil, ErrNotExist(err)
@@ -127,7 +134,7 @@ func (s FileStorage) readFile(file string) ([]byte, error) {
 
 // SiteExists implements Storage.SiteExists by checking for the presence of
 // cert and key files.
-func (s FileStorage) SiteExists(domain string) (bool, error) {
+func (s *FileStorage) SiteExists(domain string) (bool, error) {
 	_, err := os.Stat(s.siteCertFile(domain))
 	if os.IsNotExist(err) {
 		return false, nil
@@ -144,7 +151,7 @@ func (s FileStorage) SiteExists(domain string) (bool, error) {
 
 // LoadSite implements Storage.LoadSite by loading it from disk. If it is not
 // present, an instance of ErrNotExist is returned.
-func (s FileStorage) LoadSite(domain string) (*SiteData, error) {
+func (s *FileStorage) LoadSite(domain string) (*SiteData, error) {
 	var err error
 	siteData := new(SiteData)
 	siteData.Cert, err = s.readFile(s.siteCertFile(domain))
@@ -164,7 +171,7 @@ func (s FileStorage) LoadSite(domain string) (*SiteData, error) {
 
 // StoreSite implements Storage.StoreSite by writing it to disk. The base
 // directories needed for the file are automatically created as needed.
-func (s FileStorage) StoreSite(domain string, data *SiteData) error {
+func (s *FileStorage) StoreSite(domain string, data *SiteData) error {
 	err := os.MkdirAll(s.site(domain), 0700)
 	if err != nil {
 		return fmt.Errorf("making site directory: %v", err)
@@ -186,7 +193,7 @@ func (s FileStorage) StoreSite(domain string, data *SiteData) error {
 
 // DeleteSite implements Storage.DeleteSite by deleting just the cert from
 // disk. If it is not present, an instance of ErrNotExist is returned.
-func (s FileStorage) DeleteSite(domain string) error {
+func (s *FileStorage) DeleteSite(domain string) error {
 	err := os.Remove(s.siteCertFile(domain))
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -197,21 +204,9 @@ func (s FileStorage) DeleteSite(domain string) error {
 	return nil
 }
 
-// LockRegister implements Storage.LockRegister by just returning true because
-// it is not a multi-server storage implementation.
-func (s FileStorage) LockRegister(domain string) (bool, error) {
-	return true, nil
-}
-
-// UnlockRegister implements Storage.UnlockRegister as a no-op because it is
-// not a multi-server storage implementation.
-func (s FileStorage) UnlockRegister(domain string) error {
-	return nil
-}
-
 // LoadUser implements Storage.LoadUser by loading it from disk. If it is not
 // present, an instance of ErrNotExist is returned.
-func (s FileStorage) LoadUser(email string) (*UserData, error) {
+func (s *FileStorage) LoadUser(email string) (*UserData, error) {
 	var err error
 	userData := new(UserData)
 	userData.Reg, err = s.readFile(s.userRegFile(email))
@@ -227,7 +222,7 @@ func (s FileStorage) LoadUser(email string) (*UserData, error) {
 
 // StoreUser implements Storage.StoreUser by writing it to disk. The base
 // directories needed for the file are automatically created as needed.
-func (s FileStorage) StoreUser(email string, data *UserData) error {
+func (s *FileStorage) StoreUser(email string, data *UserData) error {
 	err := os.MkdirAll(s.user(email), 0700)
 	if err != nil {
 		return fmt.Errorf("making user directory: %v", err)
@@ -243,11 +238,41 @@ func (s FileStorage) StoreUser(email string, data *UserData) error {
 	return nil
 }
 
+// TryLock attempts to get a lock for name, otherwise it returns
+// a Waiter value to wait until the other process is finished.
+func (s *FileStorage) TryLock(name string) (Waiter, error) {
+	s.nameLocksMu.Lock()
+	defer s.nameLocksMu.Unlock()
+	wg, ok := s.nameLocks[name]
+	if ok {
+		// lock already obtained, let caller wait on it
+		return wg, nil
+	}
+	// caller gets lock
+	wg = new(sync.WaitGroup)
+	wg.Add(1)
+	s.nameLocks[name] = wg
+	return nil, nil
+}
+
+// Unlock unlocks name.
+func (s *FileStorage) Unlock(name string) error {
+	s.nameLocksMu.Lock()
+	defer s.nameLocksMu.Unlock()
+	wg, ok := s.nameLocks[name]
+	if !ok {
+		return fmt.Errorf("FileStorage: no lock to release for %s", name)
+	}
+	wg.Done()
+	delete(s.nameLocks, name)
+	return nil
+}
+
 // MostRecentUserEmail implements Storage.MostRecentUserEmail by finding the
 // most recently written sub directory in the users' directory. It is named
 // after the email address. This corresponds to the most recent call to
 // StoreUser.
-func (s FileStorage) MostRecentUserEmail() string {
+func (s *FileStorage) MostRecentUserEmail() string {
 	userDirs, err := ioutil.ReadDir(s.users())
 	if err != nil {
 		return ""

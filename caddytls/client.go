@@ -175,16 +175,18 @@ func (c *ACMEClient) Obtain(name string) error {
 		return err
 	}
 
-	// We must lock the obtain with the storage engine
-	if lockObtained, err := storage.LockRegister(name); err != nil {
+	waiter, err := storage.TryLock(name)
+	if err != nil {
 		return err
-	} else if !lockObtained {
-		log.Printf("[INFO] Certificate for %v is already being obtained elsewhere", name)
-		return nil
+	}
+	if waiter != nil {
+		log.Printf("[INFO] Certificate for %s is already being obtained elsewhere and stored; waiting", name)
+		waiter.Wait()
+		return nil // we assume the process with the lock succeeded, rather than hammering this execution path again
 	}
 	defer func() {
-		if err := storage.UnlockRegister(name); err != nil {
-			log.Printf("[ERROR] Unable to unlock obtain lock for %v: %v", name, err)
+		if err := storage.Unlock(name); err != nil {
+			log.Printf("[ERROR] Unable to unlock obtain call for %s: %v", name, err)
 		}
 	}()
 
@@ -249,16 +251,18 @@ func (c *ACMEClient) Renew(name string) error {
 		return err
 	}
 
-	// We must lock the renewal with the storage engine
-	if lockObtained, err := storage.LockRegister(name); err != nil {
+	waiter, err := storage.TryLock(name)
+	if err != nil {
 		return err
-	} else if !lockObtained {
-		log.Printf("[INFO] Certificate for %v is already being renewed elsewhere", name)
-		return nil
+	}
+	if waiter != nil {
+		log.Printf("[INFO] Certificate for %s is already being renewed elsewhere and stored; waiting", name)
+		waiter.Wait()
+		return nil // we assume the process with the lock succeeded, rather than hammering this execution path again
 	}
 	defer func() {
-		if err := storage.UnlockRegister(name); err != nil {
-			log.Printf("[ERROR] Unable to unlock renewal lock for %v: %v", name, err)
+		if err := storage.Unlock(name); err != nil {
+			log.Printf("[ERROR] Unable to unlock renew call for %s: %v", name, err)
 		}
 	}()
 

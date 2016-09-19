@@ -142,8 +142,8 @@ func TestStorageForDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reflect.TypeOf(s).Name() != "FileStorage" {
-		t.Fatalf("Unexpected storage type: %v", reflect.TypeOf(s).Name())
+	if _, ok := s.(*FileStorage); !ok {
+		t.Fatalf("Unexpected storage type: %#v", s)
 	}
 }
 
@@ -179,8 +179,8 @@ func TestStorageForCustomNil(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reflect.TypeOf(s).Name() != "FileStorage" {
-		t.Fatalf("Unexpected storage type: %v", reflect.TypeOf(s).Name())
+	if _, ok := s.(*FileStorage); !ok {
+		t.Fatalf("Unexpected storage type: %#v", s)
 	}
 }
 
@@ -202,11 +202,11 @@ func (s fakeStorage) DeleteSite(domain string) error {
 	panic("no impl")
 }
 
-func (s fakeStorage) LockRegister(domain string) (bool, error) {
+func (s fakeStorage) TryLock(domain string) (Waiter, error) {
 	panic("no impl")
 }
 
-func (s fakeStorage) UnlockRegister(domain string) error {
+func (s fakeStorage) Unlock(domain string) error {
 	panic("no impl")
 }
 
