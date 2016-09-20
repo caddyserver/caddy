@@ -423,6 +423,7 @@ var directives = []string{
 	"internal",
 	"pprof",
 	"expvar",
+	"prometheus", // github.com/miekg/caddy-prometheus
 	"proxy",
 	"fastcgi",
 	"websocket",
@@ -432,7 +433,6 @@ var directives = []string{
 	"filemanager", // github.com/hacdias/caddy-filemanager
 	"hugo",        // github.com/hacdias/caddy-hugo
 	"mailout",     // github.com/SchumacherFM/mailout
-	"prometheus",  // github.com/miekg/caddy-prometheus
 	"awslambda",   // github.com/coopernurse/caddy-awslambda
 }
 
