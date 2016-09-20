@@ -416,9 +416,10 @@ var directives = []string{
 	"cors", // github.com/captncraig/cors/caddy
 	"mime",
 	"basicauth",
-	"jwt",    // github.com/BTBurke/caddy-jwt
-	"jsonp",  // github.com/pschlump/caddy-jsonp
-	"upload", // blitznote.com/src/caddy.upload
+	"jwt",       // github.com/BTBurke/caddy-jwt
+	"jsonp",     // github.com/pschlump/caddy-jsonp
+	"upload",    // blitznote.com/src/caddy.upload
+	"multipass", // github.com/namsral/multipass/caddy
 	"internal",
 	"pprof",
 	"expvar",
