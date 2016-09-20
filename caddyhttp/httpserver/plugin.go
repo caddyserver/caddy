@@ -419,6 +419,7 @@ var directives = []string{
 	"jwt",    // github.com/BTBurke/caddy-jwt
 	"jsonp",  // github.com/pschlump/caddy-jsonp
 	"upload", // blitznote.com/src/caddy.upload
+	"multipass", // github.com/namsral/multipass/caddy
 	"internal",
 	"pprof",
 	"expvar",
