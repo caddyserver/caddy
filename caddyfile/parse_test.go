@@ -1,7 +1,9 @@
 package caddyfile
 
 import (
+	"io/ioutil"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -246,6 +248,101 @@ func TestParseOneAndImport(t *testing.T) {
 				continue
 			}
 		}
+	}
+}
+
+func TestRecursiveImport(t *testing.T) {
+	testParseOne := func(input string) (ServerBlock, error) {
+		p := testParser(input)
+		p.Next() // parseOne doesn't call Next() to start, so we must
+		err := p.parseOne()
+		return p.block, err
+	}
+
+	isExpected := func(got ServerBlock) bool {
+		if len(got.Keys) != 1 || got.Keys[0] != "localhost" {
+			t.Errorf("got keys unexpected: expect localhost, got %v", got.Keys)
+			return false
+		}
+		if len(got.Tokens) != 2 {
+			t.Errorf("got wrong number of tokens: expect 2, got %d", len(got.Tokens))
+			return false
+		}
+		if len(got.Tokens["dir1"]) != 1 || len(got.Tokens["dir2"]) != 2 {
+			t.Errorf("got unexpect tokens: %v", got.Tokens)
+			return false
+		}
+		return true
+	}
+
+	recursiveFile1, err := filepath.Abs("testdata/recursive_import_test1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	recursiveFile2, err := filepath.Abs("testdata/recursive_import_test2")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// test relative recursive import
+	err = ioutil.WriteFile(recursiveFile1, []byte(
+		`localhost
+		dir1
+		import recursive_import_test2`), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(recursiveFile1)
+
+	err = ioutil.WriteFile(recursiveFile2, []byte("dir2 1"), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(recursiveFile2)
+
+	// import absolute path
+	result, err := testParseOne("import " + recursiveFile1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !isExpected(result) {
+		t.Error("absolute+relative import failed")
+	}
+
+	// import relative path
+	result, err = testParseOne("import testdata/recursive_import_test1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !isExpected(result) {
+		t.Error("relative+relative import failed")
+	}
+
+	// test absolute recursive import
+	err = ioutil.WriteFile(recursiveFile1, []byte(
+		`localhost
+		dir1
+		import `+recursiveFile2), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// import absolute path
+	result, err = testParseOne("import " + recursiveFile1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !isExpected(result) {
+		t.Error("absolute+absolute import failed")
+	}
+
+	// import relative path
+	result, err = testParseOne("import testdata/recursive_import_test1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !isExpected(result) {
+		t.Error("relative+absolute import failed")
 	}
 }
 
