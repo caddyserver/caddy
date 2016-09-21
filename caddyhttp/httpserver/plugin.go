@@ -65,7 +65,7 @@ type httpContext struct {
 
 func (h *httpContext) saveConfig(key string, cfg *SiteConfig) {
 	h.siteConfigs = append(h.siteConfigs, cfg)
-	h.keysToSiteConfigs[key] = cfg
+	h.keysToSiteConfigs[strings.ToLower(key)] = cfg
 }
 
 // InspectServerBlocks make sure that everything checks out before
@@ -171,13 +171,14 @@ func (h *httpContext) MakeServers() ([]caddy.Server, error) {
 // new, empty one will be created.
 func GetConfig(c *caddy.Controller) *SiteConfig {
 	ctx := c.Context().(*httpContext)
-	if cfg, ok := ctx.keysToSiteConfigs[c.Key]; ok {
+	key := strings.ToLower(c.Key)
+	if cfg, ok := ctx.keysToSiteConfigs[key]; ok {
 		return cfg
 	}
 	// we should only get here during tests because directive
 	// actions typically skip the server blocks where we make
 	// the configs
-	ctx.saveConfig(c.Key, &SiteConfig{Root: Root, TLS: new(caddytls.Config)})
+	ctx.saveConfig(key, &SiteConfig{Root: Root, TLS: new(caddytls.Config)})
 	return GetConfig(c)
 }
 
