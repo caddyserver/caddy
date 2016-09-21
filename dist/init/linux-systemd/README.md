@@ -1,4 +1,4 @@
-# systemd service unit for caddy
+# systemd Service Unit for Caddy
 
 Please do not hesitate to ask on
 [caddyserver/support](https://gitter.im/caddyserver/support)
@@ -10,7 +10,7 @@ The provided file should work with systemd version 219 or later. It might work w
 The easiest way to check your systemd version is to look at the version of the installed package
 (e.g. 'sudo yum info systemd' on RedHat/Fedora systems).
 
-## Quickstart
+## Instructions
 
 We will assume the following:
 
@@ -100,8 +100,7 @@ Have the caddy service start automatically on boot if you like:
 sudo systemctl enable caddy.service
 ```
 
-If caddy didn't seem to start properly you can view the systemd log data to help
-figure out what the problem is:
+If caddy doesn't seem to start properly you can view the log data to help figure out what the problem is:
 
 ```bash
 journalctl --boot -u caddy.service
@@ -109,7 +108,7 @@ journalctl --boot -u caddy.service
 
 Use `log stdout` and `errors stderr` in your Caddyfile to fully utilize systemd journaling.
 
-If your GNU/Linux distribution does not use *systemd* with *journald* then check any logfiles in: `/var/log`
+If your GNU/Linux distribution does not use *journald* with *systemd* then check any logfiles in `/var/log`.
 
 If you want to follow the latest logs from caddy you can do so like this:
 
