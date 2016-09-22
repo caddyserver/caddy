@@ -23,7 +23,7 @@ func activateHTTPS(cctx caddy.Context) error {
 
 	// place certificates and keys on disk
 	for _, c := range ctx.siteConfigs {
-		err := c.TLS.ObtainCert(operatorPresent)
+		err := c.TLS.ObtainCert(c.TLS.Hostname, operatorPresent)
 		if err != nil {
 			return err
 		}

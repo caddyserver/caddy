@@ -260,7 +260,9 @@ func (p *parser) doImport() error {
 			}
 			if token.Line == importLine {
 				var abs string
-				if !filepath.IsAbs(importFile) {
+				if filepath.IsAbs(token.Text) {
+					abs = token.Text
+				} else if !filepath.IsAbs(importFile) {
 					abs = filepath.Join(filepath.Dir(absFile), token.Text)
 				} else {
 					abs = filepath.Join(importDir, token.Text)

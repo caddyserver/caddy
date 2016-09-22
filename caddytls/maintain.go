@@ -99,12 +99,20 @@ func RenewManagedCertificates(allowPrompts bool) (err error) {
 				continue
 			}
 
-			// This works well because managed certs are only associated with one name per config.
-			// Note, the renewal inside here may not actually occur and no error will be returned
-			// due to renewal lock (i.e. because a renewal is already happening). This lack of
-			// error is by intention to force cache invalidation as though it has renewed.
-			err := cert.Config.RenewCert(allowPrompts)
+			// Get the name which we should use to renew this certificate;
+			// we only support managing certificates with one name per cert,
+			// so this should be easy. We can't rely on cert.Config.Hostname
+			// because it may be a wildcard value from the Caddyfile (e.g.
+			// *.something.com) which, as of 2016, is not supported by ACME.
+			var renewName string
+			for _, name := range cert.Names {
+				if name != "" {
+					renewName = name
+					break
+				}
+			}
 
+			err := cert.Config.RenewCert(renewName, allowPrompts)
 			if err != nil {
 				if allowPrompts && timeLeft < 0 {
 					// Certificate renewal failed, the operator is present, and the certificate

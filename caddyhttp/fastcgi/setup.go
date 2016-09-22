@@ -4,6 +4,8 @@ import (
 	"errors"
 	"net/http"
 	"path/filepath"
+	"runtime"
+	"strconv"
 
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
@@ -51,6 +53,11 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 
 	for c.Next() {
 		var rule Rule
+
+		// The default for whether persistent fastcgi connections are used depends on the OS.
+		// On Windows, non-persistent connections are unusably slow, hence the default is to use persistent connections.
+		// Otherwise, the default is to not use this experimental feature for better stability.
+		rule.Persistent = (runtime.GOOS == "Windows")
 
 		args := c.RemainingArgs()
 
@@ -102,6 +109,17 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 					return rules, c.ArgErr()
 				}
 				rule.IgnoredSubPaths = ignoredPaths
+
+			case "persistent":
+				rule.Persistent = true
+				if c.NextArg() {
+					persistent := c.Val()
+					var err error
+					rule.Persistent, err = strconv.ParseBool(persistent)
+					if err != nil {
+						return rules, c.ArgErr()
+					}
+				}
 			}
 		}
 

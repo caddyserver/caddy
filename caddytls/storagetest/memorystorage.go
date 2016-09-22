@@ -97,15 +97,15 @@ func (s *InMemoryStorage) DeleteSite(domain string) error {
 	return nil
 }
 
-// LockRegister implements Storage.LockRegister by just returning true because
-// it is not a multi-server storage implementation.
-func (s *InMemoryStorage) LockRegister(domain string) (bool, error) {
-	return true, nil
+// TryLock implements Storage.TryLock by returning nil values because it
+// is not a multi-server storage implementation.
+func (s *InMemoryStorage) TryLock(domain string) (caddytls.Waiter, error) {
+	return nil, nil
 }
 
-// UnlockRegister implements Storage.UnlockRegister as a no-op because it is
+// Unlock implements Storage.Unlock as a no-op because it is
 // not a multi-server storage implementation.
-func (s *InMemoryStorage) UnlockRegister(domain string) error {
+func (s *InMemoryStorage) Unlock(domain string) error {
 	return nil
 }
 

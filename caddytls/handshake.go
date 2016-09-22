@@ -172,22 +172,25 @@ func (cg configGroup) obtainOnDemandCertificate(name string, cfg *Config) (Certi
 		return cg.getCertDuringHandshake(name, true, false)
 	}
 
-	// looks like it's up to us to do all the work and obtain the cert
+	// looks like it's up to us to do all the work and obtain the cert.
+	// make a chan others can wait on if needed
 	wait = make(chan struct{})
 	obtainCertWaitChans[name] = wait
 	obtainCertWaitChansMu.Unlock()
 
-	// Unblock waiters and delete waitgroup when we return
-	defer func() {
-		obtainCertWaitChansMu.Lock()
-		close(wait)
-		delete(obtainCertWaitChans, name)
-		obtainCertWaitChansMu.Unlock()
-	}()
-
+	// do the obtain
 	log.Printf("[INFO] Obtaining new certificate for %s", name)
+	err := cfg.ObtainCert(name, false)
 
-	if err := cfg.obtainCertName(name, false); err != nil {
+	// immediately unblock anyone waiting for it; doing this in
+	// a defer would risk deadlock because of the recursive call
+	// to getCertDuringHandshake below when we return!
+	obtainCertWaitChansMu.Lock()
+	close(wait)
+	delete(obtainCertWaitChans, name)
+	obtainCertWaitChansMu.Unlock()
+
+	if err != nil {
 		// Failed to solve challenge, so don't allow another on-demand
 		// issue for this name to be attempted for a little while.
 		failedIssuanceMu.Lock()
@@ -208,7 +211,7 @@ func (cg configGroup) obtainOnDemandCertificate(name string, cfg *Config) (Certi
 	lastIssueTime = time.Now()
 	lastIssueTimeMu.Unlock()
 
-	// The certificate is already on disk; now just start over to load it and serve it
+	// certificate is already on disk; now just start over to load it and serve it
 	return cg.getCertDuringHandshake(name, true, false)
 }
 
@@ -265,17 +268,18 @@ func (cg configGroup) renewDynamicCertificate(name string, cfg *Config) (Certifi
 	obtainCertWaitChans[name] = wait
 	obtainCertWaitChansMu.Unlock()
 
-	// unblock waiters and delete waitgroup when we return
-	defer func() {
-		obtainCertWaitChansMu.Lock()
-		close(wait)
-		delete(obtainCertWaitChans, name)
-		obtainCertWaitChansMu.Unlock()
-	}()
-
+	// do the renew
 	log.Printf("[INFO] Renewing certificate for %s", name)
+	err := cfg.RenewCert(name, false)
 
-	err := cfg.renewCertName(name, false)
+	// immediately unblock anyone waiting for it; doing this in
+	// a defer would risk deadlock because of the recursive call
+	// to getCertDuringHandshake below when we return!
+	obtainCertWaitChansMu.Lock()
+	close(wait)
+	delete(obtainCertWaitChans, name)
+	obtainCertWaitChansMu.Unlock()
+
 	if err != nil {
 		return Certificate{}, err
 	}
