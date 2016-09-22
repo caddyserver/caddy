@@ -412,6 +412,7 @@ var directives = []string{
 	"ratelimit", // github.com/xuqingfeng/caddy-rate-limit
 	"search",    // github.com/pedronasser/caddy-search
 	"header",
+	"expires", // github.com/epicagency/caddy-expires
 	"redir",
 	"status",
 	"cors", // github.com/captncraig/cors/caddy
