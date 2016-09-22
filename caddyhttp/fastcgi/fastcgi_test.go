@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strconv"
+	"sync"
 	"testing"
 )
 
@@ -48,6 +49,100 @@ func TestServeHTTP(t *testing.T) {
 	if got, want := w.Body.String(), body; got != want {
 		t.Errorf("Expected response body to be '%s', got: '%s'", want, got)
 	}
+}
+
+// listenerWithConnectionCounter adds a counter to keep track
+// of the number of accepted connections.
+type listenerWithConnectionCounter struct {
+	net.Listener
+	sync.RWMutex
+	ConnectionsAcceptedCounter int
+}
+
+func (l *listenerWithConnectionCounter) Accept() (net.Conn, error) {
+	l.Lock()
+	l.ConnectionsAcceptedCounter++
+	l.Unlock()
+	return l.Listener.Accept()
+}
+
+// TestPersistent ensures that persistent
+// as well as the non-persistent fastCGI servers
+// send the answers corresnponding to the correct request.
+// It also checks the number of tcp connections used.
+func TestPersistent(t *testing.T) {
+	for _, persistent := range [2]bool{true, false} {
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("Unable to create listener for test: %v", err)
+		}
+
+		listener := &listenerWithConnectionCounter{l, *new(sync.RWMutex), 0}
+
+		// this fcgi server replies with the request URL and the total number of tcp connections used
+		go fcgi.Serve(listener, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body := "This answers a request to " + r.URL.Path
+			bodyLenStr := strconv.Itoa(len(body))
+
+			w.Header().Set("Content-Length", bodyLenStr)
+			w.Write([]byte(body))
+		}))
+
+		handler := Handler{
+			Next:  nil,
+			Rules: []Rule{{Path: "/", Address: listener.Addr().String(), Persistent: persistent}},
+		}
+
+		numberOfRequests := 20
+		sem := make(chan int, numberOfRequests)
+		serialMutex := new(sync.Mutex)
+		// make some serial followed by some
+		// parallel requests to challenge the handler
+		for _, serialize := range [2]bool{true, false} {
+			for i := 0; i < numberOfRequests; i++ {
+				go func(i int) {
+					if serialize {
+						serialMutex.Lock()
+						defer serialMutex.Unlock()
+					}
+					r, err := http.NewRequest("GET", "/"+strconv.Itoa(i), nil)
+					if err != nil {
+						t.Errorf("Unable to create request: %v", err)
+					}
+					w := httptest.NewRecorder()
+
+					status, err := handler.ServeHTTP(w, r)
+
+					if status != 0 {
+						t.Errorf("Handler(persistent: %v) return status %v", persistent, status)
+					}
+					if err != nil {
+						t.Errorf("Handler(persistent: %v) Error: %v", persistent, err)
+					}
+					want := "This answers a request to /" + strconv.Itoa(i)
+					if got := w.Body.String(); got != want {
+						t.Errorf("Expected response from handler(persistent: %v) to be '%s', got: '%s'", persistent, want, got)
+					}
+					sem <- 0 // signal semaphore
+				}(i)
+			} //next request
+			// wait for semaphore
+			for j := 0; j < numberOfRequests; j++ {
+				<-sem
+			}
+		} // next set of requests (serial/parallel)
+
+		listener.Close()
+		listener.RLock()
+		if persistent && listener.ConnectionsAcceptedCounter != 2 {
+			t.Errorf("The persistent test used %v tcp connections", persistent, listener.ConnectionsAcceptedCounter)
+		}
+		if !persistent && listener.ConnectionsAcceptedCounter != 2*numberOfRequests+1 {
+			t.Errorf("The non-persistent test used %v tcp connections", persistent, listener.ConnectionsAcceptedCounter)
+		}
+
+		listener.RUnlock()
+	} // next handler (persistent/non-persistent)
 }
 
 func TestRuleParseAddress(t *testing.T) {
