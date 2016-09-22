@@ -1,5 +1,14 @@
 CHANGES
 
+0.9.2 (September 20, 2016)
+- New -catimeout option to customize ACME CA HTTP timeout
+- import: Fix nested import absolute/relative paths
+- log: Fix multiple log outputs
+- proxy: Fix for keepalive in certain cases
+- tls: Fix for PreferServerCipherSuites
+- Numerous other bug fixes and internal improvements
+
+
 0.9.1 (August 17, 2016)
 - New {request_body} placeholder to log request body
 - {remote} placeholder no longer uses X-Forwarded-For header

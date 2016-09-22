@@ -2,11 +2,12 @@ package storagetest
 
 import (
 	"fmt"
-	"github.com/mholt/caddy/caddytls"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/mholt/caddy/caddytls"
 )
 
 // TestFileStorage tests the file storage set with the test harness in this
@@ -14,7 +15,7 @@ import (
 func TestFileStorage(t *testing.T) {
 	emailCounter := 0
 	storageTest := &StorageTest{
-		Storage:  caddytls.FileStorage("./testdata"),
+		Storage:  &caddytls.FileStorage{Path: "./testdata"}, // nameLocks isn't made here, but it's okay because the tests don't call TryLock or Unlock
 		PostTest: func() { os.RemoveAll("./testdata") },
 		AfterUserEmailStore: func(email string) error {
 			// We need to change the dir mod time to show a

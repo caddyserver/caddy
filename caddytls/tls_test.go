@@ -2,6 +2,7 @@ package caddytls
 
 import (
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/xenolf/lego/acme"
@@ -79,11 +80,11 @@ func TestQualifiesForManagedTLS(t *testing.T) {
 }
 
 func TestSaveCertResource(t *testing.T) {
-	storage := FileStorage("./le_test_save")
+	storage := &FileStorage{Path: "./le_test_save", nameLocks: make(map[string]*sync.WaitGroup)}
 	defer func() {
-		err := os.RemoveAll(string(storage))
+		err := os.RemoveAll(storage.Path)
 		if err != nil {
-			t.Fatalf("Could not remove temporary storage directory (%s): %v", storage, err)
+			t.Fatalf("Could not remove temporary storage directory (%s): %v", storage.Path, err)
 		}
 	}()
 
@@ -125,11 +126,11 @@ func TestSaveCertResource(t *testing.T) {
 }
 
 func TestExistingCertAndKey(t *testing.T) {
-	storage := FileStorage("./le_test_existing")
+	storage := &FileStorage{Path: "./le_test_existing", nameLocks: make(map[string]*sync.WaitGroup)}
 	defer func() {
-		err := os.RemoveAll(string(storage))
+		err := os.RemoveAll(storage.Path)
 		if err != nil {
-			t.Fatalf("Could not remove temporary storage directory (%s): %v", storage, err)
+			t.Fatalf("Could not remove temporary storage directory (%s): %v", storage.Path, err)
 		}
 	}()
 

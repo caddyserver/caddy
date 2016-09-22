@@ -18,11 +18,13 @@ import (
 // acmeMu ensures that only one ACME challenge occurs at a time.
 var acmeMu sync.Mutex
 
-// ACMEClient is an acme.Client with custom state attached.
+// ACMEClient is a wrapper over acme.Client with
+// some custom state attached. It is used to obtain,
+// renew, and revoke certificates with ACME.
 type ACMEClient struct {
-	*acme.Client
 	AllowPrompts bool
 	config       *Config
+	acmeClient   *acme.Client
 }
 
 // newACMEClient creates a new ACMEClient given an email and whether
@@ -100,7 +102,11 @@ var newACMEClient = func(config *Config, allowPrompts bool) (*ACMEClient, error)
 		}
 	}
 
-	c := &ACMEClient{Client: client, AllowPrompts: allowPrompts, config: config}
+	c := &ACMEClient{
+		AllowPrompts: allowPrompts,
+		config:       config,
+		acmeClient:   client,
+	}
 
 	if config.DNSProvider == "" {
 		// Use HTTP and TLS-SNI challenges by default
@@ -116,15 +122,15 @@ var newACMEClient = func(config *Config, allowPrompts bool) (*ACMEClient, error)
 
 		// See if TLS challenge needs to be handled by our own facilities
 		if caddy.HasListenerWithAddress(net.JoinHostPort(config.ListenHost, TLSSNIChallengePort)) {
-			c.SetChallengeProvider(acme.TLSSNI01, tlsSniSolver{})
+			c.acmeClient.SetChallengeProvider(acme.TLSSNI01, tlsSniSolver{})
 		}
 
 		// Always respect user's bind preferences by using config.ListenHost
-		err := c.SetHTTPAddress(net.JoinHostPort(config.ListenHost, useHTTPPort))
+		err := c.acmeClient.SetHTTPAddress(net.JoinHostPort(config.ListenHost, useHTTPPort))
 		if err != nil {
 			return nil, err
 		}
-		err = c.SetTLSAddress(net.JoinHostPort(config.ListenHost, ""))
+		err = c.acmeClient.SetTLSAddress(net.JoinHostPort(config.ListenHost, ""))
 		if err != nil {
 			return nil, err
 		}
@@ -145,23 +151,52 @@ var newACMEClient = func(config *Config, allowPrompts bool) (*ACMEClient, error)
 		}
 
 		// Use the DNS challenge exclusively
-		c.ExcludeChallenges([]acme.Challenge{acme.HTTP01, acme.TLSSNI01})
-		c.SetChallengeProvider(acme.DNS01, prov)
+		c.acmeClient.ExcludeChallenges([]acme.Challenge{acme.HTTP01, acme.TLSSNI01})
+		c.acmeClient.SetChallengeProvider(acme.DNS01, prov)
 	}
 
 	return c, nil
 }
 
-// Obtain obtains a single certificate for names. It stores the certificate
-// on the disk if successful.
-func (c *ACMEClient) Obtain(names []string) error {
+// Obtain obtains a single certificate for name. It stores the certificate
+// on the disk if successful. This function is safe for concurrent use.
+//
+// Right now our storage mechanism only supports one name per certificate,
+// so this function (along with Renew and Revoke) only accepts one domain
+// as input. It can be easily modified to support SAN certificates if our
+// storage mechanism is upgraded later.
+//
+// Callers who have access to a Config value should use the ObtainCert
+// method on that instead of this lower-level method.
+func (c *ACMEClient) Obtain(name string) error {
+	// Get access to ACME storage
+	storage, err := c.config.StorageFor(c.config.CAUrl)
+	if err != nil {
+		return err
+	}
+
+	waiter, err := storage.TryLock(name)
+	if err != nil {
+		return err
+	}
+	if waiter != nil {
+		log.Printf("[INFO] Certificate for %s is already being obtained elsewhere and stored; waiting", name)
+		waiter.Wait()
+		return nil // we assume the process with the lock succeeded, rather than hammering this execution path again
+	}
+	defer func() {
+		if err := storage.Unlock(name); err != nil {
+			log.Printf("[ERROR] Unable to unlock obtain call for %s: %v", name, err)
+		}
+	}()
+
 Attempts:
 	for attempts := 0; attempts < 2; attempts++ {
-		namesObtaining.Add(names)
+		namesObtaining.Add([]string{name})
 		acmeMu.Lock()
-		certificate, failures := c.ObtainCertificate(names, true, nil)
+		certificate, failures := c.acmeClient.ObtainCertificate([]string{name}, true, nil)
 		acmeMu.Unlock()
-		namesObtaining.Remove(names)
+		namesObtaining.Remove([]string{name})
 		if len(failures) > 0 {
 			// Error - try to fix it or report it to the user and abort
 			var errMsg string             // we'll combine all the failures into a single error message
@@ -178,7 +213,7 @@ Attempts:
 						promptedForAgreement = true
 					}
 					if Agreed || !c.AllowPrompts {
-						err := c.AgreeToTOS()
+						err := c.acmeClient.AgreeToTOS()
 						if err != nil {
 							return errors.New("error agreeing to updated terms: " + err.Error())
 						}
@@ -193,13 +228,9 @@ Attempts:
 		}
 
 		// Success - immediately save the certificate resource
-		storage, err := c.config.StorageFor(c.config.CAUrl)
-		if err != nil {
-			return err
-		}
 		err = saveCertResource(storage, certificate)
 		if err != nil {
-			return fmt.Errorf("error saving assets for %v: %v", names, err)
+			return fmt.Errorf("error saving assets for %v: %v", name, err)
 		}
 
 		break
@@ -208,13 +239,11 @@ Attempts:
 	return nil
 }
 
-// Renew renews the managed certificate for name. Right now our storage
-// mechanism only supports one name per certificate, so this function only
-// accepts one domain as input. It can be easily modified to support SAN
-// certificates if, one day, they become desperately needed enough that our
-// storage mechanism is upgraded to be more complex to support SAN certs.
+// Renew renews the managed certificate for name. This function is
+// safe for concurrent use.
 //
-// Anyway, this function is safe for concurrent use.
+// Callers who have access to a Config value should use the RenewCert
+// method on that instead of this lower-level method.
 func (c *ACMEClient) Renew(name string) error {
 	// Get access to ACME storage
 	storage, err := c.config.StorageFor(c.config.CAUrl)
@@ -222,16 +251,18 @@ func (c *ACMEClient) Renew(name string) error {
 		return err
 	}
 
-	// We must lock the renewal with the storage engine
-	if lockObtained, err := storage.LockRegister(name); err != nil {
+	waiter, err := storage.TryLock(name)
+	if err != nil {
 		return err
-	} else if !lockObtained {
-		log.Printf("[INFO] Certificate for %v is already being renewed elsewhere", name)
-		return nil
+	}
+	if waiter != nil {
+		log.Printf("[INFO] Certificate for %s is already being renewed elsewhere and stored; waiting", name)
+		waiter.Wait()
+		return nil // we assume the process with the lock succeeded, rather than hammering this execution path again
 	}
 	defer func() {
-		if err := storage.UnlockRegister(name); err != nil {
-			log.Printf("[ERROR] Unable to unlock renewal lock for %v: %v", name, err)
+		if err := storage.Unlock(name); err != nil {
+			log.Printf("[ERROR] Unable to unlock renew call for %s: %v", name, err)
 		}
 	}()
 
@@ -251,7 +282,7 @@ func (c *ACMEClient) Renew(name string) error {
 	for attempts := 0; attempts < 2; attempts++ {
 		namesObtaining.Add([]string{name})
 		acmeMu.Lock()
-		newCertMeta, err = c.RenewCertificate(certMeta, true)
+		newCertMeta, err = c.acmeClient.RenewCertificate(certMeta, true)
 		acmeMu.Unlock()
 		namesObtaining.Remove([]string{name})
 		if err == nil {
@@ -259,10 +290,10 @@ func (c *ACMEClient) Renew(name string) error {
 			break
 		}
 
-		// If the legal terms changed and need to be agreed to again,
-		// we can handle that.
+		// If the legal terms were updated and need to be
+		// agreed to again, we can handle that.
 		if _, ok := err.(acme.TOSError); ok {
-			err := c.AgreeToTOS()
+			err := c.acmeClient.AgreeToTOS()
 			if err != nil {
 				return err
 			}
@@ -304,7 +335,7 @@ func (c *ACMEClient) Revoke(name string) error {
 		return err
 	}
 
-	err = c.Client.RevokeCertificate(siteData.Cert)
+	err = c.acmeClient.RevokeCertificate(siteData.Cert)
 	if err != nil {
 		return err
 	}

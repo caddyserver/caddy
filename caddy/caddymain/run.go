@@ -180,7 +180,7 @@ func moveStorage() {
 	if err != nil {
 		log.Fatalf("[ERROR] Unable to get new path for certificate storage: %v", err)
 	}
-	newPath := string(fileStorage.(caddytls.FileStorage))
+	newPath := fileStorage.(*caddytls.FileStorage).Path
 	err = os.MkdirAll(string(newPath), 0700)
 	if err != nil {
 		log.Fatalf("[ERROR] Unable to make new certificate storage path: %v\n\nPlease follow instructions at:\nhttps://github.com/mholt/caddy/issues/902#issuecomment-228876011", err)

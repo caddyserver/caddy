@@ -3,13 +3,9 @@ package caddytls
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"io/ioutil"
-	"time"
 
-	"log"
 	"net/url"
 	"strings"
 
@@ -116,24 +112,21 @@ type OnDemandState struct {
 	// If it reaches MaxObtain, on-demand issuances must fail.
 	ObtainedCount int32
 
-	// Based on max_certs in tls config, it specifies the
+	// Set from max_certs in tls config, it specifies the
 	// maximum number of certificates that can be issued.
 	MaxObtain int32
 }
 
-// ObtainCert obtains a certificate for c.Hostname, as long as a certificate
-// does not already exist in storage on disk. It only obtains and stores
-// certificates (and their keys) to disk, it does not load them into memory.
-// If allowPrompts is true, the user may be shown a prompt. If proxyACME is
-// true, the relevant ACME challenges will be proxied to the alternate port.
-func (c *Config) ObtainCert(allowPrompts bool) error {
-	return c.obtainCertName(c.Hostname, allowPrompts)
-}
-
-// obtainCertName gets a certificate for name using the ACME config c
-// if c and name both qualify. It places the certificate in storage.
-// It is a no-op if the storage already has a certificate for name.
-func (c *Config) obtainCertName(name string, allowPrompts bool) error {
+// ObtainCert obtains a certificate for name using c, as long
+// as a certificate does not already exist in storage for that
+// name. The name must qualify and c must be flagged as Managed.
+// This function is a no-op if storage already has a certificate
+// for name.
+//
+// It only obtains and stores certificates (and their keys),
+// it does not load them into memory. If allowPrompts is true,
+// the user may be shown a prompt.
+func (c *Config) ObtainCert(name string, allowPrompts bool) error {
 	if !c.Managed || !HostQualifies(name) {
 		return nil
 	}
@@ -142,29 +135,13 @@ func (c *Config) obtainCertName(name string, allowPrompts bool) error {
 	if err != nil {
 		return err
 	}
-
 	siteExists, err := storage.SiteExists(name)
 	if err != nil {
 		return err
 	}
-
 	if siteExists {
 		return nil
 	}
-
-	// We must lock the obtain with the storage engine
-	if lockObtained, err := storage.LockRegister(name); err != nil {
-		return err
-	} else if !lockObtained {
-		log.Printf("[INFO] Certificate for %v is already being obtained elsewhere", name)
-		return nil
-	}
-	defer func() {
-		if err := storage.UnlockRegister(name); err != nil {
-			log.Printf("[ERROR] Unable to unlock obtain lock for %v: %v", name, err)
-		}
-	}()
-
 	if c.ACMEEmail == "" {
 		c.ACMEEmail = getEmail(storage, allowPrompts)
 	}
@@ -173,86 +150,17 @@ func (c *Config) obtainCertName(name string, allowPrompts bool) error {
 	if err != nil {
 		return err
 	}
-
-	return client.Obtain([]string{name})
+	return client.Obtain(name)
 }
 
-// RenewCert renews the certificate for c.Hostname. If there is already a lock
-// on renewal, this will not perform the renewal and no error will occur.
-func (c *Config) RenewCert(allowPrompts bool) error {
-	return c.renewCertName(c.Hostname, allowPrompts)
-}
-
-// renewCertName renews the certificate for the given name. If there is already
-// a lock on renewal, this will not perform the renewal and no error will
-// occur.
-func (c *Config) renewCertName(name string, allowPrompts bool) error {
-	storage, err := c.StorageFor(c.CAUrl)
-	if err != nil {
-		return err
-	}
-
-	// We must lock the renewal with the storage engine
-	if lockObtained, err := storage.LockRegister(name); err != nil {
-		return err
-	} else if !lockObtained {
-		log.Printf("[INFO] Certificate for %v is already being renewed elsewhere", name)
-		return nil
-	}
-	defer func() {
-		if err := storage.UnlockRegister(name); err != nil {
-			log.Printf("[ERROR] Unable to unlock renewal lock for %v: %v", name, err)
-		}
-	}()
-
-	// Prepare for renewal (load PEM cert, key, and meta)
-	siteData, err := storage.LoadSite(name)
-	if err != nil {
-		return err
-	}
-	var certMeta acme.CertificateResource
-	err = json.Unmarshal(siteData.Meta, &certMeta)
-	certMeta.Certificate = siteData.Cert
-	certMeta.PrivateKey = siteData.Key
-
+// RenewCert renews the certificate for name using c. It stows the
+// renewed certificate and its assets in storage if successful.
+func (c *Config) RenewCert(name string, allowPrompts bool) error {
 	client, err := newACMEClient(c, allowPrompts)
 	if err != nil {
 		return err
 	}
-
-	// Perform renewal and retry if necessary, but not too many times.
-	var newCertMeta acme.CertificateResource
-	var success bool
-	for attempts := 0; attempts < 2; attempts++ {
-		namesObtaining.Add([]string{name})
-		acmeMu.Lock()
-		newCertMeta, err = client.RenewCertificate(certMeta, true)
-		acmeMu.Unlock()
-		namesObtaining.Remove([]string{name})
-		if err == nil {
-			success = true
-			break
-		}
-
-		// If the legal terms were updated and need to be
-		// agreed to again, we can handle that.
-		if _, ok := err.(acme.TOSError); ok {
-			err := client.AgreeToTOS()
-			if err != nil {
-				return err
-			}
-			continue
-		}
-
-		// For any other kind of error, wait 10s and try again.
-		time.Sleep(10 * time.Second)
-	}
-
-	if !success {
-		return errors.New("too many renewal attempts; last error: " + err.Error())
-	}
-
-	return saveCertResource(storage, newCertMeta)
+	return client.Renew(name)
 }
 
 // StorageFor obtains a TLS Storage instance for the given CA URL which should
