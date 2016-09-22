@@ -19,17 +19,13 @@ We will assume the following:
 
 Adjust as necessary or according to your preferences.
 
-First, put the caddy binary in the system wide binary directory:
+First, put the caddy binary in the system wide binary directory and give it
+appropriate ownership and permissions:
 
 ```bash
 sudo cp /path/to/caddy /usr/local/bin
-```
-
-Give the caddy binary the execution permissions it will need to execute
-as the www-data user:
-
-```bash
-XXXJOSH sudo chmod ??? /usr/local/bin/caddy
+sudo chown root:root /usr/local/bin/caddy
+sudo chmod 755 /usr/local/bin/caddy
 ```
 
 Give the caddy binary the ability to bind to privileged ports (e.g. 80, 443) as a non-root user:
@@ -55,17 +51,22 @@ sudo chown -R www-data:root /etc/ssl/caddy
 sudo chmod 0770 /etc/ssl/caddy
 ```
 
-Place your caddy configuration file ("Caddyfile") in the proper directory:
+Place your caddy configuration file ("Caddyfile") in the proper directory
+and give it appropriate ownership and permissions:
 
 ```bash
 sudo cp /path/to/Caddyfile /etc/caddy/
+sudo chown www-data:www-data /etc/caddy/Caddyfile
+sudo chmod 444 /etc/caddy/Caddyfile
 ```
 
-Create the home directory for the server and give it the appropriate permissions:
+Create the home directory for the server and give it appropriate ownership
+and permissions:
 
 ```bash
 sudo mkdir /var/www
-XXXJOSH sudo chmod ??? /var/www
+sudo chown www-data:www-data /var/www
+sudo chmod 555 /var/www
 ```
 
 Let's assume you have the contents of your website in a directory called 'example.com'.
@@ -73,10 +74,12 @@ Put your website into place for it to be served by caddy:
 
 ```bash
 sudo cp -R example.com /var/www/
+sudo chown -R www-data:www-data /var/www/example.com
+sudo chmod -R 555 /var/www/example.com
 ```
 
 You'll need to explicity configure caddy to serve the site from this location by adding
-the following to your Caddyfile:
+the following to your Caddyfile if you haven't already:
 
 ```
 example.com {
@@ -90,6 +93,8 @@ and start caddy:
 
 ```bash
 sudo cp caddy.service /etc/systemd/system/
+sudo chown root:root /etc/systemd/system/caddy.service
+sudo chmod 744 /etc/systemd/system/caddy.service
 sudo systemctl daemon-reload
 sudo systemctl start caddy.service
 ```
