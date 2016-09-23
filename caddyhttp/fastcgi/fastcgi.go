@@ -32,9 +32,6 @@ type concurrentPersistentConnectionsMap struct {
 
 var persistentConnections = &(concurrentPersistentConnectionsMap{clientMap: make(map[string]*serialClient)})
 
-// UsePersistentFcgiConnections TODO: add an option in Caddyfile and pass it down to here
-var UsePersistentFcgiConnections = true
-
 // Handler is a middleware type that can handle requests as a FastCGI client.
 type Handler struct {
 	Next    httpserver.Handler
@@ -93,10 +90,12 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			// Connect to FastCGI gateway
 			network, address := rule.parseAddress()
 
+			usePersistentFcgiConnections := rule.Persistent
+
 			var fcgiBackend *FCGIClient
 			var client *serialClient
 			reuse := false
-			if UsePersistentFcgiConnections {
+			if usePersistentFcgiConnections {
 				persistentConnections.Lock()
 				client, reuse = persistentConnections.clientMap[network+address]
 				persistentConnections.Unlock()
@@ -130,7 +129,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 				return http.StatusBadGateway, err
 			}
 
-			if UsePersistentFcgiConnections {
+			if usePersistentFcgiConnections {
 				persistentConnections.Lock()
 				persistentConnections.clientMap[network+address] = &(serialClient{backend: fcgiBackend})
 				persistentConnections.Unlock()
@@ -315,6 +314,7 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 }
 
 // Rule represents a FastCGI handling rule.
+// It is parsed from the fastcgi directive in the Caddyfile, see setup.go.
 type Rule struct {
 	// The base path to match. Required.
 	Path string
@@ -340,6 +340,9 @@ type Rule struct {
 
 	// Ignored paths
 	IgnoredSubPaths []string
+
+	// Toggles the use of (currently experimental) persistent tcp connections for fastcgi communication
+	Persistent bool
 }
 
 // canSplit checks if path can split into two based on rule.SplitPath.

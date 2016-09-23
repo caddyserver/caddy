@@ -2,6 +2,7 @@ package fastcgi
 
 import (
 	"fmt"
+	"runtime"
 	"testing"
 
 	"github.com/mholt/caddy"
@@ -48,6 +49,7 @@ func TestFastcgiParse(t *testing.T) {
 				Address:    "127.0.0.1:9000",
 				Ext:        ".php",
 				SplitPath:  ".php",
+				Persistent: (runtime.GOOS == "Windows"),
 				IndexFiles: []string{"index.php"},
 			}}},
 		{`fastcgi / 127.0.0.1:9001 {
@@ -58,6 +60,7 @@ func TestFastcgiParse(t *testing.T) {
 				Address:    "127.0.0.1:9001",
 				Ext:        "",
 				SplitPath:  ".html",
+				Persistent: (runtime.GOOS == "Windows"),
 				IndexFiles: []string{},
 			}}},
 		{`fastcgi / 127.0.0.1:9001 {
@@ -69,8 +72,42 @@ func TestFastcgiParse(t *testing.T) {
 				Address:         "127.0.0.1:9001",
 				Ext:             "",
 				SplitPath:       ".html",
+				Persistent:      (runtime.GOOS == "Windows"),
 				IndexFiles:      []string{},
 				IgnoredSubPaths: []string{"/admin", "/user"},
+			}}},
+		{`fastcgi / 127.0.0.1:9001 {
+	              persistent false
+	              }`,
+			false, []Rule{{
+				Path:       "/",
+				Address:    "127.0.0.1:9001",
+				Ext:        "",
+				SplitPath:  "",
+				Persistent: false,
+				IndexFiles: []string{},
+			}}},
+		{`fastcgi / 127.0.0.1:9001 {
+	              persistent true
+	              }`,
+			false, []Rule{{
+				Path:       "/",
+				Address:    "127.0.0.1:9001",
+				Ext:        "",
+				SplitPath:  "",
+				Persistent: true,
+				IndexFiles: []string{},
+			}}},
+		{`fastcgi / 127.0.0.1:9001 {
+	              persistent
+	              }`,
+			false, []Rule{{
+				Path:       "/",
+				Address:    "127.0.0.1:9001",
+				Ext:        "",
+				SplitPath:  "",
+				Persistent: true,
+				IndexFiles: []string{},
 			}}},
 	}
 	for i, test := range tests {
@@ -105,6 +142,11 @@ func TestFastcgiParse(t *testing.T) {
 			if actualFastcgiConfig.SplitPath != test.expectedFastcgiConfig[j].SplitPath {
 				t.Errorf("Test %d expected %dth FastCGI SplitPath to be  %s  , but got %s",
 					i, j, test.expectedFastcgiConfig[j].SplitPath, actualFastcgiConfig.SplitPath)
+			}
+
+			if actualFastcgiConfig.Persistent != test.expectedFastcgiConfig[j].Persistent {
+				t.Errorf("Test %d expected %dth FastCGI Persistent to be %v, but got %v",
+					i, j, test.expectedFastcgiConfig[j].Persistent, actualFastcgiConfig.Persistent)
 			}
 
 			if fmt.Sprint(actualFastcgiConfig.IndexFiles) != fmt.Sprint(test.expectedFastcgiConfig[j].IndexFiles) {
