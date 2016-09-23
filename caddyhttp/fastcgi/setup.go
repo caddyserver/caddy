@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"path/filepath"
+	"strconv"
 
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
@@ -72,6 +73,9 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 			}
 		}
 
+		network, address := parseAddress(rule.Address)
+		rule.dialer = basicDialer{network: network, address: address}
+
 		for c.NextBlock() {
 			switch c.Val() {
 			case "ext":
@@ -102,6 +106,13 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 					return rules, c.ArgErr()
 				}
 				rule.IgnoredSubPaths = ignoredPaths
+			case "pool":
+				if !c.NextArg() {
+					return rules, c.ArgErr()
+				}
+				if pool, _ := strconv.Atoi(c.Val()); pool > 0 {
+					rule.dialer = &persistentDialer{size: pool, network: network, address: address}
+				}
 			}
 		}
 

@@ -24,9 +24,10 @@ func TestServeHTTP(t *testing.T) {
 		w.Write([]byte(body))
 	}))
 
+	network, address := parseAddress(listener.Addr().String())
 	handler := Handler{
 		Next:  nil,
-		Rules: []Rule{{Path: "/", Address: listener.Addr().String()}},
+		Rules: []Rule{{Path: "/", Address: listener.Addr().String(), dialer: basicDialer{network, address}}},
 	}
 	r, err := http.NewRequest("GET", "/", nil)
 	if err != nil {
@@ -64,10 +65,10 @@ func TestRuleParseAddress(t *testing.T) {
 	}
 
 	for _, entry := range getClientTestTable {
-		if actualnetwork, _ := entry.rule.parseAddress(); actualnetwork != entry.expectednetwork {
+		if actualnetwork, _ := parseAddress(entry.rule.Address); actualnetwork != entry.expectednetwork {
 			t.Errorf("Unexpected network for address string %v. Got %v, expected %v", entry.rule.Address, actualnetwork, entry.expectednetwork)
 		}
-		if _, actualaddress := entry.rule.parseAddress(); actualaddress != entry.expectedaddress {
+		if _, actualaddress := parseAddress(entry.rule.Address); actualaddress != entry.expectedaddress {
 			t.Errorf("Unexpected parsed address for address string %v. Got %v, expected %v", entry.rule.Address, actualaddress, entry.expectedaddress)
 		}
 	}

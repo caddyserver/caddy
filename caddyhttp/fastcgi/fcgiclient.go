@@ -193,9 +193,9 @@ func Dial(network, address string) (fcgi *FCGIClient, err error) {
 	return DialWithDialer(network, address, net.Dialer{})
 }
 
-// Close closes fcgi connnection
-func (c *FCGIClient) Close() {
-	c.rwc.Close()
+// Close closes fcgi connnection.
+func (c *FCGIClient) Close() error {
+	return c.rwc.Close()
 }
 
 func (c *FCGIClient) writeRecord(recType uint8, content []byte) (err error) {
@@ -408,11 +408,11 @@ func (c *FCGIClient) Do(p map[string]string, req io.Reader) (r io.Reader, err er
 // clientCloser is a io.ReadCloser. It wraps a io.Reader with a Closer
 // that closes FCGIClient connection.
 type clientCloser struct {
-	*FCGIClient
+	f *FCGIClient
 	io.Reader
 }
 
-func (f clientCloser) Close() error { return f.rwc.Close() }
+func (c clientCloser) Close() error { return c.f.Close() }
 
 // Request returns a HTTP Response with Header and Body
 // from fcgi responder
