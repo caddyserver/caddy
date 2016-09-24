@@ -111,7 +111,7 @@ func canLogRequest(r *http.Request) bool {
 	if r.Method == "POST" || r.Method == "PUT" {
 		for _, cType := range r.Header[headerContentType] {
 			// the cType could have charset and other info
-			if strings.Index(cType, contentTypeJSON) > -1 || strings.Index(cType, contentTypeXML) > -1 {
+			if strings.Contains(cType, contentTypeJSON) || strings.Contains(cType, contentTypeXML) {
 				return true
 			}
 		}

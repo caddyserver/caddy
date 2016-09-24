@@ -4,7 +4,6 @@ import (
 	"errors"
 	"net/http"
 	"path/filepath"
-	"runtime"
 	"strconv"
 
 	"github.com/mholt/caddy"
@@ -54,11 +53,6 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 	for c.Next() {
 		var rule Rule
 
-		// The default for whether persistent fastcgi connections are used depends on the OS.
-		// On Windows, non-persistent connections are unusably slow, hence the default is to use persistent connections.
-		// Otherwise, the default is to not use this experimental feature for better stability.
-		rule.Persistent = (runtime.GOOS == "Windows")
-
 		args := c.RemainingArgs()
 
 		switch len(args) {
@@ -78,6 +72,9 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 				return rules, c.Err("Invalid fastcgi rule preset '" + args[2] + "'")
 			}
 		}
+
+		network, address := parseAddress(rule.Address)
+		rule.dialer = basicDialer{network: network, address: address}
 
 		for c.NextBlock() {
 			switch c.Val() {
@@ -109,16 +106,18 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 					return rules, c.ArgErr()
 				}
 				rule.IgnoredSubPaths = ignoredPaths
-
-			case "persistent":
-				rule.Persistent = true
-				if c.NextArg() {
-					persistent := c.Val()
-					var err error
-					rule.Persistent, err = strconv.ParseBool(persistent)
-					if err != nil {
-						return rules, c.ArgErr()
-					}
+			case "pool":
+				if !c.NextArg() {
+					return rules, c.ArgErr()
+				}
+				pool, err := strconv.Atoi(c.Val())
+				if err != nil {
+					return rules, err
+				}
+				if pool >= 0 {
+					rule.dialer = &persistentDialer{size: pool, network: network, address: address}
+				} else {
+					return rules, c.Errf("positive integer expected, found %d", pool)
 				}
 			}
 		}
