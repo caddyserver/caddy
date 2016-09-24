@@ -65,7 +65,7 @@ type httpContext struct {
 
 func (h *httpContext) saveConfig(key string, cfg *SiteConfig) {
 	h.siteConfigs = append(h.siteConfigs, cfg)
-	h.keysToSiteConfigs[strings.ToLower(key)] = cfg
+	h.keysToSiteConfigs[key] = cfg
 }
 
 // InspectServerBlocks make sure that everything checks out before
@@ -178,8 +178,9 @@ func GetConfig(c *caddy.Controller) *SiteConfig {
 	// we should only get here during tests because directive
 	// actions typically skip the server blocks where we make
 	// the configs
-	ctx.saveConfig(key, &SiteConfig{Root: Root, TLS: new(caddytls.Config)})
-	return GetConfig(c)
+	cfg := &SiteConfig{Root: Root, TLS: new(caddytls.Config)}
+	ctx.saveConfig(key, cfg)
+	return cfg
 }
 
 // shortCaddyfileLoader loads a Caddyfile if positional arguments are

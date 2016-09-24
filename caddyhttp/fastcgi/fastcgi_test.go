@@ -25,9 +25,10 @@ func TestServeHTTP(t *testing.T) {
 		w.Write([]byte(body))
 	}))
 
+	network, address := parseAddress(listener.Addr().String())
 	handler := Handler{
 		Next:  nil,
-		Rules: []Rule{{Path: "/", Address: listener.Addr().String()}},
+		Rules: []Rule{{Path: "/", Address: listener.Addr().String(), dialer: basicDialer{network, address}}},
 	}
 	r, err := http.NewRequest("GET", "/", nil)
 	if err != nil {
@@ -71,7 +72,10 @@ func (l *listenerWithConnectionCounter) Accept() (net.Conn, error) {
 // send the answers corresnponding to the correct request.
 // It also checks the number of tcp connections used.
 func TestPersistent(t *testing.T) {
-	for _, persistent := range [2]bool{true, false} {
+	numberOfRequests := 20
+
+	for _, poolsize := range []int{0, 1, 5, numberOfRequests} {
+		t.Logf("Testing pool size: %v", poolsize)
 		l, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
 			t.Fatalf("Unable to create listener for test: %v", err)
@@ -79,7 +83,7 @@ func TestPersistent(t *testing.T) {
 
 		listener := &listenerWithConnectionCounter{l, *new(sync.RWMutex), 0}
 
-		// this fcgi server replies with the request URL and the total number of tcp connections used
+		// this fcgi server replies with the request URL
 		go fcgi.Serve(listener, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			body := "This answers a request to " + r.URL.Path
 			bodyLenStr := strconv.Itoa(len(body))
@@ -88,17 +92,26 @@ func TestPersistent(t *testing.T) {
 			w.Write([]byte(body))
 		}))
 
+		network, address := parseAddress(listener.Addr().String())
 		handler := Handler{
 			Next:  nil,
-			Rules: []Rule{{Path: "/", Address: listener.Addr().String(), Persistent: persistent}},
+			Rules: []Rule{{Path: "/", Address: listener.Addr().String(), dialer: &persistentDialer{size: poolsize, network: network, address: address}}},
 		}
 
-		numberOfRequests := 20
 		sem := make(chan int, numberOfRequests)
 		serialMutex := new(sync.Mutex)
 		// make some serial followed by some
 		// parallel requests to challenge the handler
-		for _, serialize := range [2]bool{true, false} {
+		for _, serialize := range []bool{true, false} {
+			logMsg := "Testing " + strconv.Itoa(numberOfRequests)
+			if serialize {
+				logMsg += " serial"
+			} else {
+				logMsg += " parallel"
+			}
+			logMsg += " requests."
+			t.Log(logMsg)
+
 			for i := 0; i < numberOfRequests; i++ {
 				go func(i int) {
 					if serialize {
@@ -114,14 +127,14 @@ func TestPersistent(t *testing.T) {
 					status, err := handler.ServeHTTP(w, r)
 
 					if status != 0 {
-						t.Errorf("Handler(persistent: %v) return status %v", persistent, status)
+						t.Errorf("Handler(pool: %v) return status %v", poolsize, status)
 					}
 					if err != nil {
-						t.Errorf("Handler(persistent: %v) Error: %v", persistent, err)
+						t.Errorf("Handler(pool: %v) Error: %v", poolsize, err)
 					}
 					want := "This answers a request to /" + strconv.Itoa(i)
 					if got := w.Body.String(); got != want {
-						t.Errorf("Expected response from handler(persistent: %v) to be '%s', got: '%s'", persistent, want, got)
+						t.Errorf("Expected response from handler(pool: %v) to be '%s', got: '%s'", poolsize, want, got)
 					}
 					sem <- 0 // signal semaphore
 				}(i)
@@ -134,12 +147,7 @@ func TestPersistent(t *testing.T) {
 
 		listener.Close()
 		listener.RLock()
-		if persistent && listener.ConnectionsAcceptedCounter != 2 {
-			t.Errorf("The persistent test used %v tcp connections", persistent, listener.ConnectionsAcceptedCounter)
-		}
-		if !persistent && listener.ConnectionsAcceptedCounter != 2*numberOfRequests+1 {
-			t.Errorf("The non-persistent test used %v tcp connections", persistent, listener.ConnectionsAcceptedCounter)
-		}
+		t.Logf("The pool:%v test used %v tcp connections for %v requests.", poolsize, listener.ConnectionsAcceptedCounter, 2*numberOfRequests)
 
 		listener.RUnlock()
 	} // next handler (persistent/non-persistent)
@@ -159,10 +167,10 @@ func TestRuleParseAddress(t *testing.T) {
 	}
 
 	for _, entry := range getClientTestTable {
-		if actualnetwork, _ := entry.rule.parseAddress(); actualnetwork != entry.expectednetwork {
+		if actualnetwork, _ := parseAddress(entry.rule.Address); actualnetwork != entry.expectednetwork {
 			t.Errorf("Unexpected network for address string %v. Got %v, expected %v", entry.rule.Address, actualnetwork, entry.expectednetwork)
 		}
-		if _, actualaddress := entry.rule.parseAddress(); actualaddress != entry.expectedaddress {
+		if _, actualaddress := parseAddress(entry.rule.Address); actualaddress != entry.expectedaddress {
 			t.Errorf("Unexpected parsed address for address string %v. Got %v, expected %v", entry.rule.Address, actualaddress, entry.expectedaddress)
 		}
 	}
