@@ -19,15 +19,26 @@ type Proxy struct {
 	Upstreams []Upstream
 }
 
-// Upstream manages a pool of proxy upstream hosts. Select should return a
-// suitable upstream host, or nil if no such hosts are available.
+// Upstream manages a pool of proxy upstream hosts.
 type Upstream interface {
 	// The path this upstream host should be routed on
 	From() string
-	// Selects an upstream host to be routed to.
+
+	// Selects an upstream host to be routed to. It
+	// should return a suitable upstream host, or nil
+	// if no such hosts are available.
 	Select(*http.Request) *UpstreamHost
+
 	// Checks if subpath is not an ignored path
 	AllowedPath(string) bool
+
+	// Gets how long to try selecting upstream hosts
+	// in the case of cascading failures.
+	GetTryDuration() time.Duration
+
+	// Gets how long to wait between selecting upstream
+	// hosts in the case of cascading failures.
+	GetTryInterval() time.Duration
 }
 
 // UpstreamHostDownFunc can be used to customize how Down behaves.
@@ -91,7 +102,7 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	// hosts until timeout (or until we get a nil host).
 	start := time.Now()
 	var backendErr error
-	for time.Now().Sub(start) < tryDuration {
+	for {
 		host := upstream.Select(r)
 		if host == nil {
 			if backendErr == nil {
@@ -146,26 +157,35 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 		backendErr = proxy.ServeHTTP(w, outreq, downHeaderUpdateFn)
 		atomic.AddInt64(&host.Conns, -1)
 
-		// if no errors, we're done here; otherwise failover
+		// if no errors, we're done here
 		if backendErr == nil {
 			return 0, nil
 		}
+
+		// failover; remember this failure for some time if
+		// request failure counting is enabled
 		timeout := host.FailTimeout
-		if timeout == 0 {
-			timeout = 10 * time.Second
+		if timeout > 0 {
+			atomic.AddInt32(&host.Fails, 1)
+			go func(host *UpstreamHost, timeout time.Duration) {
+				time.Sleep(timeout)
+				atomic.AddInt32(&host.Fails, -1)
+			}(host, timeout)
 		}
-		atomic.AddInt32(&host.Fails, 1)
-		go func(host *UpstreamHost, timeout time.Duration) {
-			time.Sleep(timeout)
-			atomic.AddInt32(&host.Fails, -1)
-		}(host, timeout)
+
+		// if we've tried long enough, break
+		if time.Now().Sub(start) >= upstream.GetTryDuration() {
+			break
+		}
+
+		// otherwise, wait and try the next available host
+		time.Sleep(upstream.GetTryInterval())
 	}
 
 	return http.StatusBadGateway, backendErr
 }
 
-// match finds the best match for a proxy config based
-// on r.
+// match finds the best match for a proxy config based on r.
 func (p Proxy) match(r *http.Request) Upstream {
 	var u Upstream
 	var longestMatch int
