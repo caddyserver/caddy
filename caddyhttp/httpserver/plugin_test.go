@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyfile"
 )
 
@@ -138,6 +139,39 @@ func TestInspectServerBlocksWithCustomDefaultPort(t *testing.T) {
 	}
 }
 
+func TestInspectServerBlocksCaseInsensitiveKey(t *testing.T) {
+	filename := "Testfile"
+	ctx := newContext().(*httpContext)
+	input := strings.NewReader("localhost {\n}\nLOCALHOST {\n}")
+	sblocks, err := caddyfile.Parse(filename, input, nil)
+	if err != nil {
+		t.Fatalf("Expected no error setting up test, got: %v", err)
+	}
+	_, err = ctx.InspectServerBlocks(filename, sblocks)
+	if err == nil {
+		t.Error("Expected an error because keys on this server type are case-insensitive (so these are duplicated), but didn't get an error")
+	}
+}
+
+func TestGetConfig(t *testing.T) {
+	// case insensitivity for key
+	con := caddy.NewTestController("http", "")
+	con.Key = "foo"
+	cfg := GetConfig(con)
+	con.Key = "FOO"
+	cfg2 := GetConfig(con)
+	if cfg != cfg2 {
+		t.Errorf("Expected same config using same key with different case; got %p and %p", cfg, cfg2)
+	}
+
+	// make sure different key returns different config
+	con.Key = "foobar"
+	cfg3 := GetConfig(con)
+	if cfg == cfg3 {
+		t.Errorf("Expected different configs using when key is different; got %p and %p", cfg, cfg3)
+	}
+}
+
 func TestDirectivesList(t *testing.T) {
 	for i, dir1 := range directives {
 		if dir1 == "" {
@@ -155,5 +189,23 @@ func TestDirectivesList(t *testing.T) {
 					j, dir2, i, dir1)
 			}
 		}
+	}
+}
+
+func TestContextSaveConfig(t *testing.T) {
+	ctx := newContext().(*httpContext)
+	ctx.saveConfig("foo", new(SiteConfig))
+	if _, ok := ctx.keysToSiteConfigs["foo"]; !ok {
+		t.Error("Expected config to be saved, but it wasn't")
+	}
+	if got, want := len(ctx.siteConfigs), 1; got != want {
+		t.Errorf("Expected len(siteConfigs) == %d, but was %d", want, got)
+	}
+	ctx.saveConfig("Foobar", new(SiteConfig))
+	if _, ok := ctx.keysToSiteConfigs["foobar"]; ok {
+		t.Error("Did not expect to get config with case-insensitive key, but did")
+	}
+	if got, want := len(ctx.siteConfigs), 2; got != want {
+		t.Errorf("Expected len(siteConfigs) == %d, but was %d", want, got)
 	}
 }

@@ -1,11 +1,12 @@
 package proxy
 
 import (
-	"github.com/mholt/caddy/caddyfile"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mholt/caddy/caddyfile"
 )
 
 func TestNewHost(t *testing.T) {
@@ -197,7 +198,7 @@ func TestParseBlock(t *testing.T) {
 		{"proxy / localhost:8080 {\n transparent \n}"},
 
 		// Test #2: transparent preset with another param
-		{"proxy / localhost:8080 {\n transparent \nproxy_header X-Test Tester \n}"},
+		{"proxy / localhost:8080 {\n transparent \nheader_upstream X-Test Tester \n}"},
 
 		// Test #3: transparent preset on multiple sites
 		{"proxy / localhost:8080 {\n transparent \n} \nproxy /api localhost:8081 { \ntransparent \n}"},
