@@ -35,16 +35,12 @@ ProtectSystem=full
 ;   This merely retains r/w access rights, it does not add any new. Must still be writable on the host!
 ReadWriteDirectories=/etc/ssl/caddy
 
-; Drop all other capabilities. Important if you run caddy as privileged user (which you should not).
-CapabilityBoundingSet=CAP_NET_BIND_SERVICE
-; … but permit caddy to open ports reserved for system services.
-;   This could be redundant here, but is needed in case caddy runs as nobody:nogroup.
-AmbientCapabilities=CAP_NET_BIND_SERVICE
-; … and prevent gaining any new privileges.
-NoNewPrivileges=true
-
-; Caveat: Some plugins need additional capabilities. Add them to both above lines.
-; - plugin "upload" needs: CAP_LEASE
+; The following additional security directives only work with systemd v229 or later.
+; They further retrict privileges that can be gained by caddy. Uncomment if you like.
+; Note that you may have to add capabilities required by any plugins in use.
+;CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+;AmbientCapabilities=CAP_NET_BIND_SERVICE
+;NoNewPrivileges=true
 
 [Install]
 WantedBy=multi-user.target

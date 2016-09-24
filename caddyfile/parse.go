@@ -2,6 +2,7 @@ package caddyfile
 
 import (
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -237,7 +238,11 @@ func (p *parser) doImport() error {
 		return p.Errf("Failed to use import pattern %s: %v", importPattern, err)
 	}
 	if len(matches) == 0 {
-		return p.Errf("No files matching import pattern %s", importPattern)
+		if strings.Contains(globPattern, "*") {
+			log.Printf("[WARNING] No files matching import pattern: %s", importPattern)
+		} else {
+			return p.Errf("File to import not found: %s", importPattern)
+		}
 	}
 
 	// splice out the import directive and its argument (2 tokens total)
