@@ -24,10 +24,6 @@ import (
 	"golang.org/x/net/websocket"
 )
 
-func init() {
-	tryDuration = 50 * time.Millisecond // prevent tests from hanging
-}
-
 func TestReverseProxy(t *testing.T) {
 	log.SetOutput(ioutil.Discard)
 	defer log.SetOutput(os.Stderr)

@@ -94,17 +94,33 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	// outreq is the request that makes a roundtrip to the backend
 	outreq := createUpstreamRequest(r)
 
-	// since Select() should give us "up" hosts, keep retrying
-	// hosts until timeout (or until we get a nil host).
+	// The keepRetrying function will return true if we should
+	// loop and try to select another host, or false if we
+	// should break and stop retrying.
 	start := time.Now()
+	keepRetrying := func() bool {
+		// if we've tried long enough, break
+		if time.Now().Sub(start) >= upstream.GetTryDuration() {
+			return false
+		}
+		// otherwise, wait and try the next available host
+		time.Sleep(upstream.GetTryInterval())
+		return true
+	}
+
 	var backendErr error
 	for {
+		// since Select() should give us "up" hosts, keep retrying
+		// hosts until timeout (or until we get a nil host).
 		host := upstream.Select(r)
 		if host == nil {
 			if backendErr == nil {
 				backendErr = errors.New("no hosts available upstream")
 			}
-			return http.StatusBadGateway, backendErr
+			if !keepRetrying() {
+				break
+			}
+			continue
 		}
 		if rr, ok := w.(*httpserver.ResponseRecorder); ok && rr.Replacer != nil {
 			rr.Replacer.Set("upstream", host.Name)
@@ -170,12 +186,9 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 		}
 
 		// if we've tried long enough, break
-		if time.Now().Sub(start) >= upstream.GetTryDuration() {
+		if !keepRetrying() {
 			break
 		}
-
-		// otherwise, wait and try the next available host
-		time.Sleep(upstream.GetTryInterval())
 	}
 
 	return http.StatusBadGateway, backendErr
