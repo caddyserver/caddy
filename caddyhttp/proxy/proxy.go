@@ -80,10 +80,6 @@ func (uh *UpstreamHost) Available() bool {
 	return !uh.Down() && !uh.Full()
 }
 
-// tryDuration is how long to try upstream hosts; failures result in
-// immediate retries until this duration ends or we get a nil host.
-var tryDuration = 60 * time.Second
-
 // ServeHTTP satisfies the httpserver.Handler interface.
 func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	// start by selecting most specific matching upstream config
