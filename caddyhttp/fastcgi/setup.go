@@ -110,8 +110,14 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 				if !c.NextArg() {
 					return rules, c.ArgErr()
 				}
-				if pool, _ := strconv.Atoi(c.Val()); pool > 0 {
+				pool, err := strconv.Atoi(c.Val())
+				if err != nil {
+					return rules, err
+				}
+				if pool >= 0 {
 					rule.dialer = &persistentDialer{size: pool, network: network, address: address}
+				} else {
+					return rules, c.Errf("positive integer expected, found %d", pool)
 				}
 			}
 		}

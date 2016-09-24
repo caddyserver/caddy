@@ -49,10 +49,12 @@ func (p *persistentDialer) Close(client *FCGIClient) error {
 		// pool is not full yet, add connection for reuse
 		p.pool = append(p.pool, client)
 		p.Unlock()
-	} else {
-		// otherwise, close the connection.
-		p.Unlock()
-		return client.Close()
+
+		return nil
 	}
-	return nil
+
+	p.Unlock()
+
+	// otherwise, close the connection.
+	return client.Close()
 }
