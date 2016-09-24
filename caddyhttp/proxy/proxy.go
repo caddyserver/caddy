@@ -13,8 +13,6 @@ import (
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
 
-var errUnreachable = errors.New("unreachable backend")
-
 // Proxy represents a middleware instance that can proxy requests.
 type Proxy struct {
 	Next      httpserver.Handler
@@ -92,10 +90,14 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	// since Select() should give us "up" hosts, keep retrying
 	// hosts until timeout (or until we get a nil host).
 	start := time.Now()
+	var backendErr error
 	for time.Now().Sub(start) < tryDuration {
 		host := upstream.Select(r)
 		if host == nil {
-			return http.StatusBadGateway, errUnreachable
+			if backendErr == nil {
+				backendErr = errors.New("no hosts available upstream")
+			}
+			return http.StatusBadGateway, backendErr
 		}
 		if rr, ok := w.(*httpserver.ResponseRecorder); ok && rr.Replacer != nil {
 			rr.Replacer.Set("upstream", host.Name)
@@ -141,7 +143,7 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 
 		// tell the proxy to serve the request
 		atomic.AddInt64(&host.Conns, 1)
-		backendErr := proxy.ServeHTTP(w, outreq, downHeaderUpdateFn)
+		backendErr = proxy.ServeHTTP(w, outreq, downHeaderUpdateFn)
 		atomic.AddInt64(&host.Conns, -1)
 
 		// if no errors, we're done here; otherwise failover
@@ -159,7 +161,7 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 		}(host, timeout)
 	}
 
-	return http.StatusBadGateway, errUnreachable
+	return http.StatusBadGateway, backendErr
 }
 
 // match finds the best match for a proxy config based
