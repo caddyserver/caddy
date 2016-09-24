@@ -12,28 +12,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
-
-// persistent fastcgi connections
-
-type serialClient struct {
-	// for read/write serialisation
-	sync.Mutex
-	backend *FCGIClient
-}
-type concurrentPersistentConnectionsMap struct {
-	// for thread safe acces to the map
-	sync.Mutex
-	clientMap map[string]*serialClient
-}
-
-var persistentConnections = &(concurrentPersistentConnectionsMap{clientMap: make(map[string]*serialClient)})
-
-// UsePersistentFcgiConnections TODO: add an option in Caddyfile and pass it down to here
-var UsePersistentFcgiConnections = true
 
 // Handler is a middleware type that can handle requests as a FastCGI client.
 type Handler struct {
@@ -91,26 +72,9 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			}
 
 			// Connect to FastCGI gateway
-			network, address := rule.parseAddress()
-
-			var fcgiBackend *FCGIClient
-			var client *serialClient
-			reuse := false
-			if UsePersistentFcgiConnections {
-				persistentConnections.Lock()
-				client, reuse = persistentConnections.clientMap[network+address]
-				persistentConnections.Unlock()
-			}
-
-			if reuse {
-				client.Lock()
-				defer client.Unlock()
-				fcgiBackend = client.backend
-			} else {
-				fcgiBackend, err = Dial(network, address)
-				if err != nil {
-					return http.StatusBadGateway, err
-				}
+			fcgiBackend, err := rule.dialer.Dial()
+			if err != nil {
+				return http.StatusBadGateway, err
 			}
 
 			var resp *http.Response
@@ -126,16 +90,10 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 				resp, err = fcgiBackend.Post(env, r.Method, r.Header.Get("Content-Type"), r.Body, contentLength)
 			}
 
+			defer fcgiBackend.Close()
+
 			if err != nil && err != io.EOF {
 				return http.StatusBadGateway, err
-			}
-
-			if UsePersistentFcgiConnections {
-				persistentConnections.Lock()
-				persistentConnections.clientMap[network+address] = &(serialClient{backend: fcgiBackend})
-				persistentConnections.Unlock()
-			} else {
-				defer fcgiBackend.Close()
 			}
 
 			// Write response header
@@ -151,10 +109,6 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			if fcgiBackend.stderr.Len() != 0 {
 				// Remove trailing newline, error logger already does this.
 				err = LogError(strings.TrimSuffix(fcgiBackend.stderr.String(), "\n"))
-				persistentConnections.Lock()
-				delete(persistentConnections.clientMap, network+address)
-				persistentConnections.Unlock()
-				fcgiBackend.Close()
 			}
 
 			// Normally we would return the status code if it is an error status (>= 400),
@@ -170,28 +124,28 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 	return h.Next.ServeHTTP(w, r)
 }
 
-// parseAddress returns the network and address of r.
+// parseAddress returns the network and address of fcgiAddress.
 // The first string is the network, "tcp" or "unix", implied from the scheme and address.
-// The second string is r.Address, with scheme prefixes removed.
+// The second string is fcgiAddress, with scheme prefixes removed.
 // The two returned strings can be used as parameters to the Dial() function.
-func (r Rule) parseAddress() (string, string) {
+func parseAddress(fcgiAddress string) (string, string) {
 	// check if address has tcp scheme explicitly set
-	if strings.HasPrefix(r.Address, "tcp://") {
-		return "tcp", r.Address[len("tcp://"):]
+	if strings.HasPrefix(fcgiAddress, "tcp://") {
+		return "tcp", fcgiAddress[len("tcp://"):]
 	}
 	// check if address has fastcgi scheme explicitly set
-	if strings.HasPrefix(r.Address, "fastcgi://") {
-		return "tcp", r.Address[len("fastcgi://"):]
+	if strings.HasPrefix(fcgiAddress, "fastcgi://") {
+		return "tcp", fcgiAddress[len("fastcgi://"):]
 	}
 	// check if unix socket
-	if trim := strings.HasPrefix(r.Address, "unix"); strings.HasPrefix(r.Address, "/") || trim {
+	if trim := strings.HasPrefix(fcgiAddress, "unix"); strings.HasPrefix(fcgiAddress, "/") || trim {
 		if trim {
-			return "unix", r.Address[len("unix:"):]
+			return "unix", fcgiAddress[len("unix:"):]
 		}
-		return "unix", r.Address
+		return "unix", fcgiAddress
 	}
 	// default case, a plain tcp address with no scheme
-	return "tcp", r.Address
+	return "tcp", fcgiAddress
 }
 
 func writeHeader(w http.ResponseWriter, r *http.Response) {
@@ -340,6 +294,9 @@ type Rule struct {
 
 	// Ignored paths
 	IgnoredSubPaths []string
+
+	// FCGI dialer
+	dialer dialer
 }
 
 // canSplit checks if path can split into two based on rule.SplitPath.
