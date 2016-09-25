@@ -72,10 +72,9 @@ func (l *listenerWithConnectionCounter) Accept() (net.Conn, error) {
 // send the answers corresnponding to the correct request.
 // It also checks the number of tcp connections used.
 func TestPersistent(t *testing.T) {
-	numberOfRequests := 20
+	numberOfRequests := 32
 
 	for _, poolsize := range []int{0, 1, 5, numberOfRequests} {
-		t.Logf("Testing pool size: %v", poolsize)
 		l, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
 			t.Fatalf("Unable to create listener for test: %v", err)
@@ -100,17 +99,17 @@ func TestPersistent(t *testing.T) {
 
 		sem := make(chan int, numberOfRequests)
 		serialMutex := new(sync.Mutex)
+
+		serialCounter := 0
+		parallelCounter := 0
 		// make some serial followed by some
 		// parallel requests to challenge the handler
-		for _, serialize := range []bool{true, false} {
-			logMsg := "Testing " + strconv.Itoa(numberOfRequests)
+		for _, serialize := range []bool{true, false, false, false} {
 			if serialize {
-				logMsg += " serial"
+				serialCounter++
 			} else {
-				logMsg += " parallel"
+				parallelCounter++
 			}
-			logMsg += " requests."
-			t.Log(logMsg)
 
 			for i := 0; i < numberOfRequests; i++ {
 				go func(i int) {
@@ -147,7 +146,7 @@ func TestPersistent(t *testing.T) {
 
 		listener.Close()
 		listener.RLock()
-		t.Logf("The pool:%v test used %v tcp connections for %v requests.", poolsize, listener.ConnectionsAcceptedCounter, 2*numberOfRequests)
+		t.Logf("The pool: %v test used %v tcp connections to answer %v * %v serial and %v * %v parallel requests.", poolsize, listener.ConnectionsAcceptedCounter, serialCounter, numberOfRequests, parallelCounter, numberOfRequests)
 
 		listener.RUnlock()
 	} // next handler (persistent/non-persistent)
