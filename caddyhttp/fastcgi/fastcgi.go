@@ -90,8 +90,6 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 				resp, err = fcgiBackend.Post(env, r.Method, r.Header.Get("Content-Type"), r.Body, contentLength)
 			}
 
-			defer rule.dialer.Close(fcgiBackend)
-
 			if err != nil && err != io.EOF {
 				return http.StatusBadGateway, err
 			}
@@ -104,6 +102,8 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			if err != nil {
 				return http.StatusBadGateway, err
 			}
+
+			defer rule.dialer.Close(fcgiBackend)
 
 			// Log any stderr output from upstream
 			if fcgiBackend.stderr.Len() != 0 {
