@@ -25,29 +25,6 @@ type persistentDialer struct {
 	sync.Mutex
 }
 
-func (p *persistentDialer) Equals(q *persistentDialer) bool {
-	if p.size != q.size {
-		return false
-	}
-	if p.network != q.network {
-		return false
-	}
-	if p.address != q.address {
-		return false
-	}
-
-	if len(p.pool) != len(q.pool) {
-		return false
-	}
-	for i, client := range p.pool {
-		if client != q.pool[i] {
-			return false
-		}
-	}
-	// ignore mutex state
-	return true
-}
-
 func (p *persistentDialer) Dial() (*FCGIClient, error) {
 	p.Lock()
 	// connection is available, return first one.
