@@ -138,7 +138,7 @@ func (rec *record) read(r io.Reader) (buf []byte, err error) {
 		return
 	}
 	if rec.h.Version != 1 {
-		err = errors.New("fcgi: invalid header version")
+		err = errInvalidHeaderVersion
 		return
 	}
 	if rec.h.Type == EndRequest {
@@ -358,7 +358,9 @@ func (w *streamReader) Read(p []byte) (n int, err error) {
 				rec := &record{}
 				var buf []byte
 				buf, err = rec.read(w.c.rwc)
-				if err != nil {
+				if err == errInvalidHeaderVersion {
+					continue
+				} else if err != nil {
 					return
 				}
 				// standard error output
@@ -561,3 +563,5 @@ func (c *FCGIClient) PostFile(p map[string]string, data url.Values, file map[str
 
 // Checks whether chunked is part of the encodings stack
 func chunked(te []string) bool { return len(te) > 0 && te[0] == "chunked" }
+
+var errInvalidHeaderVersion = errors.New("fcgi: invalid header version")
