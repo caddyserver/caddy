@@ -388,6 +388,9 @@ func TestParseAll(t *testing.T) {
 			{"glob1.host0"},
 			{"glob2.host0"},
 		}},
+
+		{`import notfound/*`, false, [][]string{}},        // glob needn't error with no matches
+		{`import notfound/file.conf`, true, [][]string{}}, // but a specific file should
 	} {
 		p := testParser(test.input)
 		blocks, err := p.parseAll()
