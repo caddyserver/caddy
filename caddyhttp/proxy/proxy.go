@@ -100,7 +100,7 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	start := time.Now()
 	keepRetrying := func() bool {
 		// if we've tried long enough, break
-		if time.Now().Sub(start) >= upstream.GetTryDuration() {
+		if time.Since(start) >= upstream.GetTryDuration() {
 			return false
 		}
 		// otherwise, wait and try the next available host
