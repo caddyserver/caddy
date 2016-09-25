@@ -36,6 +36,29 @@ func TestSetup(t *testing.T) {
 
 }
 
+func (p *persistentDialer) Equals(q *persistentDialer) bool {
+	if p.size != q.size {
+		return false
+	}
+	if p.network != q.network {
+		return false
+	}
+	if p.address != q.address {
+		return false
+	}
+
+	if len(p.pool) != len(q.pool) {
+		return false
+	}
+	for i, client := range p.pool {
+		if client != q.pool[i] {
+			return false
+		}
+	}
+	// ignore mutex state
+	return true
+}
+
 func TestFastcgiParse(t *testing.T) {
 	defaultAddress := "127.0.0.1:9001"
 	network, address := parseAddress(defaultAddress)
