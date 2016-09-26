@@ -52,15 +52,15 @@ func TestServeHTTP(t *testing.T) {
 	}
 }
 
-// listenerWithConnectionCounter adds a counter to keep track
+// connectionCounter in fact is a listener with an added counter to keep track
 // of the number of accepted connections.
-type listenerWithConnectionCounter struct {
+type connectionCounter struct {
 	net.Listener
 	sync.Mutex
-	counter int // counts number of *accepted* connections
+	counter int
 }
 
-func (l *listenerWithConnectionCounter) Accept() (net.Conn, error) {
+func (l *connectionCounter) Accept() (net.Conn, error) {
 	l.Lock()
 	l.counter++
 	l.Unlock()
@@ -80,7 +80,7 @@ func TestPersistent(t *testing.T) {
 			t.Fatalf("Unable to create listener for test: %v", err)
 		}
 
-		listener := &listenerWithConnectionCounter{l, *new(sync.Mutex), 0}
+		listener := &connectionCounter{l, *new(sync.Mutex), 0}
 
 		// this fcgi server replies with the request URL
 		go fcgi.Serve(listener, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
