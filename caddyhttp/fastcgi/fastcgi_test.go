@@ -56,13 +56,13 @@ func TestServeHTTP(t *testing.T) {
 // of the number of accepted connections.
 type listenerWithConnectionCounter struct {
 	net.Listener
-	sync.RWMutex
-	ConnectionsAcceptedCounter int
+	sync.Mutex
+	counter int // counts number of *accepted* connections
 }
 
 func (l *listenerWithConnectionCounter) Accept() (net.Conn, error) {
 	l.Lock()
-	l.ConnectionsAcceptedCounter++
+	l.counter++
 	l.Unlock()
 	return l.Listener.Accept()
 }
@@ -80,7 +80,7 @@ func TestPersistent(t *testing.T) {
 			t.Fatalf("Unable to create listener for test: %v", err)
 		}
 
-		listener := &listenerWithConnectionCounter{l, *new(sync.RWMutex), 0}
+		listener := &listenerWithConnectionCounter{l, *new(sync.Mutex), 0}
 
 		// this fcgi server replies with the request URL
 		go fcgi.Serve(listener, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -97,7 +97,7 @@ func TestPersistent(t *testing.T) {
 			Rules: []Rule{{Path: "/", Address: listener.Addr().String(), dialer: &persistentDialer{size: poolsize, network: network, address: address}}},
 		}
 
-		sem := make(chan int, numberOfRequests)
+		var semaphore sync.WaitGroup
 		serialMutex := new(sync.Mutex)
 
 		serialCounter := 0
@@ -110,9 +110,11 @@ func TestPersistent(t *testing.T) {
 			} else {
 				parallelCounter++
 			}
+			semaphore.Add(numberOfRequests)
 
 			for i := 0; i < numberOfRequests; i++ {
-				go func(i int) {
+				go func(i int, serialize bool) {
+					defer semaphore.Done()
 					if serialize {
 						serialMutex.Lock()
 						defer serialMutex.Unlock()
@@ -135,20 +137,13 @@ func TestPersistent(t *testing.T) {
 					if got := w.Body.String(); got != want {
 						t.Errorf("Expected response from handler(pool: %v) to be '%s', got: '%s'", poolsize, want, got)
 					}
-					sem <- 0 // signal semaphore
-				}(i)
+				}(i, serialize)
 			} //next request
-			// wait for semaphore
-			for j := 0; j < numberOfRequests; j++ {
-				<-sem
-			}
+			semaphore.Wait()
 		} // next set of requests (serial/parallel)
 
 		listener.Close()
-		listener.RLock()
-		t.Logf("The pool: %v test used %v tcp connections to answer %v * %v serial and %v * %v parallel requests.", poolsize, listener.ConnectionsAcceptedCounter, serialCounter, numberOfRequests, parallelCounter, numberOfRequests)
-
-		listener.RUnlock()
+		t.Logf("The pool: %v test used %v tcp connections to answer %v * %v serial and %v * %v parallel requests.", poolsize, listener.counter, serialCounter, numberOfRequests, parallelCounter, numberOfRequests)
 	} // next handler (persistent/non-persistent)
 }
 
