@@ -169,11 +169,9 @@ func TestFastcgiParse(t *testing.T) {
 				case basicDialer:
 					equal = actualFastcgiConfig.dialer == test.expectedFastcgiConfig[j].dialer
 				case *persistentDialer:
-					// this is the weirdest way of type casting I have ever seen... ;)
-					switch expected := test.expectedFastcgiConfig[j].dialer.(type) {
-					case *persistentDialer:
+					if expected, ok := test.expectedFastcgiConfig[j].dialer.(*persistentDialer); ok {
 						equal = actual.Equals(expected)
-					default:
+					} else {
 						equal = false
 					}
 				default:
