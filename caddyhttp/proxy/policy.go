@@ -121,18 +121,13 @@ func (r *IPHash) Select(pool HostPool, request *http.Request) *UpstreamHost {
 	if err != nil {
 		clientIP = request.RemoteAddr
 	}
-	hash := hash(clientIP)
-	for {
-		if poolLen == 0 {
-			break
-		}
-		index := hash % poolLen
-		host := pool[index]
+	index := hash(clientIP) % poolLen
+	for i := uint32(0); i < poolLen; i++ {
+		index += i
+		host := pool[index%poolLen]
 		if host.Available() {
 			return host
 		}
-		pool = append(pool[:index], pool[index+1:]...)
-		poolLen--
 	}
 	return nil
 }
