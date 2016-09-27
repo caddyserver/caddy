@@ -25,10 +25,6 @@ import (
 	"golang.org/x/net/websocket"
 )
 
-func init() {
-	tryDuration = 50 * time.Millisecond // prevent tests from hanging
-}
-
 func TestReverseProxy(t *testing.T) {
 	log.SetOutput(ioutil.Discard)
 	defer log.SetOutput(os.Stderr)
@@ -792,9 +788,9 @@ func (u *fakeUpstream) Select(r *http.Request) *UpstreamHost {
 	return u.host
 }
 
-func (u *fakeUpstream) AllowedPath(requestPath string) bool {
-	return true
-}
+func (u *fakeUpstream) AllowedPath(requestPath string) bool { return true }
+func (u *fakeUpstream) GetTryDuration() time.Duration       { return 1 * time.Second }
+func (u *fakeUpstream) GetTryInterval() time.Duration       { return 250 * time.Millisecond }
 
 // newWebSocketTestProxy returns a test proxy that will
 // redirect to the specified backendAddr. The function
@@ -834,9 +830,9 @@ func (u *fakeWsUpstream) Select(r *http.Request) *UpstreamHost {
 	}
 }
 
-func (u *fakeWsUpstream) AllowedPath(requestPath string) bool {
-	return true
-}
+func (u *fakeWsUpstream) AllowedPath(requestPath string) bool { return true }
+func (u *fakeWsUpstream) GetTryDuration() time.Duration       { return 1 * time.Second }
+func (u *fakeWsUpstream) GetTryInterval() time.Duration       { return 250 * time.Millisecond }
 
 // recorderHijacker is a ResponseRecorder that can
 // be hijacked.

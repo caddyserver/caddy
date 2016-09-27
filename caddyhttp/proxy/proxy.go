@@ -13,23 +13,32 @@ import (
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
 
-var errUnreachable = errors.New("unreachable backend")
-
 // Proxy represents a middleware instance that can proxy requests.
 type Proxy struct {
 	Next      httpserver.Handler
 	Upstreams []Upstream
 }
 
-// Upstream manages a pool of proxy upstream hosts. Select should return a
-// suitable upstream host, or nil if no such hosts are available.
+// Upstream manages a pool of proxy upstream hosts.
 type Upstream interface {
 	// The path this upstream host should be routed on
 	From() string
-	// Selects an upstream host to be routed to.
+
+	// Selects an upstream host to be routed to. It
+	// should return a suitable upstream host, or nil
+	// if no such hosts are available.
 	Select(*http.Request) *UpstreamHost
+
 	// Checks if subpath is not an ignored path
 	AllowedPath(string) bool
+
+	// Gets how long to try selecting upstream hosts
+	// in the case of cascading failures.
+	GetTryDuration() time.Duration
+
+	// Gets how long to wait between selecting upstream
+	// hosts in the case of cascading failures.
+	GetTryInterval() time.Duration
 }
 
 // UpstreamHostDownFunc can be used to customize how Down behaves.
@@ -71,10 +80,6 @@ func (uh *UpstreamHost) Available() bool {
 	return !uh.Down() && !uh.Full()
 }
 
-// tryDuration is how long to try upstream hosts; failures result in
-// immediate retries until this duration ends or we get a nil host.
-var tryDuration = 60 * time.Second
-
 // ServeHTTP satisfies the httpserver.Handler interface.
 func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	// start by selecting most specific matching upstream config
@@ -89,13 +94,33 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	// outreq is the request that makes a roundtrip to the backend
 	outreq := createUpstreamRequest(r)
 
-	// since Select() should give us "up" hosts, keep retrying
-	// hosts until timeout (or until we get a nil host).
+	// The keepRetrying function will return true if we should
+	// loop and try to select another host, or false if we
+	// should break and stop retrying.
 	start := time.Now()
-	for time.Now().Sub(start) < tryDuration {
+	keepRetrying := func() bool {
+		// if we've tried long enough, break
+		if time.Since(start) >= upstream.GetTryDuration() {
+			return false
+		}
+		// otherwise, wait and try the next available host
+		time.Sleep(upstream.GetTryInterval())
+		return true
+	}
+
+	var backendErr error
+	for {
+		// since Select() should give us "up" hosts, keep retrying
+		// hosts until timeout (or until we get a nil host).
 		host := upstream.Select(r)
 		if host == nil {
-			return http.StatusBadGateway, errUnreachable
+			if backendErr == nil {
+				backendErr = errors.New("no hosts available upstream")
+			}
+			if !keepRetrying() {
+				break
+			}
+			continue
 		}
 		if rr, ok := w.(*httpserver.ResponseRecorder); ok && rr.Replacer != nil {
 			rr.Replacer.Set("upstream", host.Name)
@@ -141,29 +166,35 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 
 		// tell the proxy to serve the request
 		atomic.AddInt64(&host.Conns, 1)
-		backendErr := proxy.ServeHTTP(w, outreq, downHeaderUpdateFn)
+		backendErr = proxy.ServeHTTP(w, outreq, downHeaderUpdateFn)
 		atomic.AddInt64(&host.Conns, -1)
 
-		// if no errors, we're done here; otherwise failover
+		// if no errors, we're done here
 		if backendErr == nil {
 			return 0, nil
 		}
+
+		// failover; remember this failure for some time if
+		// request failure counting is enabled
 		timeout := host.FailTimeout
-		if timeout == 0 {
-			timeout = 10 * time.Second
+		if timeout > 0 {
+			atomic.AddInt32(&host.Fails, 1)
+			go func(host *UpstreamHost, timeout time.Duration) {
+				time.Sleep(timeout)
+				atomic.AddInt32(&host.Fails, -1)
+			}(host, timeout)
 		}
-		atomic.AddInt32(&host.Fails, 1)
-		go func(host *UpstreamHost, timeout time.Duration) {
-			time.Sleep(timeout)
-			atomic.AddInt32(&host.Fails, -1)
-		}(host, timeout)
+
+		// if we've tried long enough, break
+		if !keepRetrying() {
+			break
+		}
 	}
 
-	return http.StatusBadGateway, errUnreachable
+	return http.StatusBadGateway, backendErr
 }
 
-// match finds the best match for a proxy config based
-// on r.
+// match finds the best match for a proxy config based on r.
 func (p Proxy) match(r *http.Request) Upstream {
 	var u Upstream
 	var longestMatch int

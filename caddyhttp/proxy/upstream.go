@@ -31,6 +31,8 @@ type staticUpstream struct {
 
 	FailTimeout time.Duration
 	MaxFails    int32
+	TryDuration time.Duration
+	TryInterval time.Duration
 	MaxConns    int64
 	HealthCheck struct {
 		Client   http.Client
@@ -53,8 +55,8 @@ func NewStaticUpstreams(c caddyfile.Dispenser) ([]Upstream, error) {
 			downstreamHeaders: make(http.Header),
 			Hosts:             nil,
 			Policy:            &Random{},
-			FailTimeout:       10 * time.Second,
 			MaxFails:          1,
+			TryInterval:       250 * time.Millisecond,
 			MaxConns:          0,
 			KeepAlive:         http.DefaultMaxIdleConnsPerHost,
 		}
@@ -114,11 +116,6 @@ func NewStaticUpstreams(c caddyfile.Dispenser) ([]Upstream, error) {
 	return upstreams, nil
 }
 
-// RegisterPolicy adds a custom policy to the proxy.
-func RegisterPolicy(name string, policy func() Policy) {
-	supportedPolicies[name] = policy
-}
-
 func (u *staticUpstream) From() string {
 	return u.from
 }
@@ -141,8 +138,7 @@ func (u *staticUpstream) NewHost(host string) (*UpstreamHost, error) {
 				if uh.Unhealthy {
 					return true
 				}
-				if uh.Fails >= u.MaxFails &&
-					u.MaxFails != 0 {
+				if uh.Fails >= u.MaxFails {
 					return true
 				}
 				return false
@@ -237,7 +233,28 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream) error {
 		if err != nil {
 			return err
 		}
+		if n < 1 {
+			return c.Err("max_fails must be at least 1")
+		}
 		u.MaxFails = int32(n)
+	case "try_duration":
+		if !c.NextArg() {
+			return c.ArgErr()
+		}
+		dur, err := time.ParseDuration(c.Val())
+		if err != nil {
+			return err
+		}
+		u.TryDuration = dur
+	case "try_interval":
+		if !c.NextArg() {
+			return c.ArgErr()
+		}
+		interval, err := time.ParseDuration(c.Val())
+		if err != nil {
+			return err
+		}
+		u.TryInterval = interval
 	case "max_conns":
 		if !c.NextArg() {
 			return c.ArgErr()
@@ -396,4 +413,19 @@ func (u *staticUpstream) AllowedPath(requestPath string) bool {
 		}
 	}
 	return true
+}
+
+// GetTryDuration returns u.TryDuration.
+func (u *staticUpstream) GetTryDuration() time.Duration {
+	return u.TryDuration
+}
+
+// GetTryInterval returns u.TryInterval.
+func (u *staticUpstream) GetTryInterval() time.Duration {
+	return u.TryInterval
+}
+
+// RegisterPolicy adds a custom policy to the proxy.
+func RegisterPolicy(name string, policy func() Policy) {
+	supportedPolicies[name] = policy
 }
