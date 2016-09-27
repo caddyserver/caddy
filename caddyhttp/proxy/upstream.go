@@ -56,7 +56,7 @@ func NewStaticUpstreams(c caddyfile.Dispenser) ([]Upstream, error) {
 			Hosts:             nil,
 			Policy:            &Random{},
 			MaxFails:          1,
-			TryInterval:       1 * time.Second,
+			TryInterval:       250 * time.Millisecond,
 			MaxConns:          0,
 			KeepAlive:         http.DefaultMaxIdleConnsPerHost,
 		}
