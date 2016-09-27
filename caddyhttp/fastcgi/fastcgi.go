@@ -90,7 +90,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 				resp, err = fcgiBackend.Post(env, r.Method, r.Header.Get("Content-Type"), r.Body, contentLength)
 			}
 
-			defer fcgiBackend.Close()
+			defer rule.dialer.Close(fcgiBackend)
 
 			if err != nil && err != io.EOF {
 				return http.StatusBadGateway, err
