@@ -1,6 +1,7 @@
 package header
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -30,6 +31,8 @@ func TestHeader(t *testing.T) {
 	} {
 		he := Headers{
 			Next: httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
+				w.Header().Set("Bar", "Removed in /a")
+				fmt.Fprint(w, "This is a test")
 				return 0, nil
 			}),
 			Rules: []Rule{
@@ -47,7 +50,6 @@ func TestHeader(t *testing.T) {
 		}
 
 		rec := httptest.NewRecorder()
-		rec.Header().Set("Bar", "Removed in /a")
 
 		he.ServeHTTP(rec, req)
 
@@ -61,6 +63,7 @@ func TestHeader(t *testing.T) {
 func TestMultipleHeaders(t *testing.T) {
 	he := Headers{
 		Next: httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
+			fmt.Fprint(w, "This is a test")
 			return 0, nil
 		}),
 		Rules: []Rule{
