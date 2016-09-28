@@ -66,4 +66,16 @@ func TestSetup(t *testing.T) {
 			}
 		}
 	}
+
+	// test case #6 tests startup with missing root directory in combination with default browse settings
+	controller := caddy.NewTestController("http", "browse")
+	cfg := httpserver.GetConfig(controller)
+
+	//Manipulate the root to a nonexistent directory, must be done, cause the default test root exists
+	cfg.Root = nonExistantDirPath
+	err = setup(controller)
+
+	if err != nil {
+		t.Errorf("Test case #%d received an error of %v", 6, err)
+	}
 }
