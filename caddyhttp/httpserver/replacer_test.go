@@ -45,6 +45,8 @@ func TestReplace(t *testing.T) {
 	request.Header.Set("Custom", "foobarbaz")
 	request.Header.Set("ShorterVal", "1")
 	repl := NewReplacer(request, recordRequest, "-")
+	// add some headers after creating replacer
+	request.Header.Set("CustomAdd", "caddy")
 
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -60,7 +62,8 @@ func TestReplace(t *testing.T) {
 		{"This request method is {method}.", "This request method is POST."},
 		{"The response status is {status}.", "The response status is 200."},
 		{"The Custom header is {>Custom}.", "The Custom header is foobarbaz."},
-		{"The request is {request}.", "The request is POST / HTTP/1.1\\r\\nHost: localhost\\r\\nCustom: foobarbaz\\r\\nShorterval: 1\\r\\n\\r\\n."},
+		{"The CustomAdd header is {>CustomAdd}.", "The CustomAdd header is caddy."},
+		{"The request is {request}.", "The request is POST / HTTP/1.1\\r\\nHost: localhost\\r\\nCustom: foobarbaz\\r\\nCustomadd: caddy\\r\\nShorterval: 1\\r\\n\\r\\n."},
 		{"The cUsToM header is {>cUsToM}...", "The cUsToM header is foobarbaz..."},
 		{"The Non-Existent header is {>Non-Existent}.", "The Non-Existent header is -."},
 		{"Bad {host placeholder...", "Bad {host placeholder..."},

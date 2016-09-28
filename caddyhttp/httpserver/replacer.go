@@ -91,20 +91,13 @@ func NewReplacer(r *http.Request, rr *ResponseRecorder, emptyValue string) Repla
 			io.Closer
 		}{io.TeeReader(r.Body, rb), io.Closer(r.Body)}
 	}
-	rep := &replacer{
+	return &replacer{
 		request:            r,
 		requestBody:        rb,
 		responseRecorder:   rr,
 		customReplacements: make(map[string]string),
 		emptyValue:         emptyValue,
 	}
-
-	// Header placeholders (case-insensitive)
-	for header, values := range r.Header {
-		rep.customReplacements["{>"+strings.ToLower(header)+"}"] = strings.Join(values, ",")
-	}
-
-	return rep
 }
 
 func canLogRequest(r *http.Request) bool {
@@ -143,10 +136,6 @@ func (r *replacer) Replace(s string) string {
 
 		// get a replacement
 		placeholder := s[idxStart : idxEnd+1]
-		// Header replacements - they are case-insensitive
-		if placeholder[1] == '>' {
-			placeholder = strings.ToLower(placeholder)
-		}
 		replacement := r.getSubstitution(placeholder)
 
 		// append prefix + replacement
@@ -197,7 +186,18 @@ func (r *replacer) getSubstitution(key string) string {
 		return value
 	}
 
-	// search default replacements then
+	// search request headers then
+	if key[1] == '>' {
+		want := key[2 : len(key)-1]
+		for key, values := range r.request.Header {
+			// Header placeholders (case-insensitive)
+			if strings.EqualFold(key, want) {
+				return strings.Join(values, ",")
+			}
+		}
+	}
+
+	// search default replacements in the end
 	switch key {
 	case "{method}":
 		return r.request.Method
