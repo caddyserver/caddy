@@ -163,14 +163,14 @@ func TestIPHashPolicy(t *testing.T) {
 	request.RemoteAddr = "172.0.0.1"
 	pool[1].Unhealthy = true
 	h = ipHash.Select(pool, request)
-	if h != pool[0] {
-		t.Error("Expected ip hash policy host to be the first host.")
+	if h != pool[2] {
+		t.Error("Expected ip hash policy host to be the third host.")
 	}
 
 	request.RemoteAddr = "172.0.0.2"
 	h = ipHash.Select(pool, request)
-	if h != pool[1] {
-		t.Error("Expected ip hash policy host to be the second host.")
+	if h != pool[2] {
+		t.Error("Expected ip hash policy host to be the third host.")
 	}
 	pool[1].Unhealthy = false
 
@@ -182,8 +182,8 @@ func TestIPHashPolicy(t *testing.T) {
 	}
 	request.RemoteAddr = "172.0.0.4"
 	h = ipHash.Select(pool, request)
-	if h != pool[0] {
-		t.Error("Expected ip hash policy host to be the first host.")
+	if h != pool[1] {
+		t.Error("Expected ip hash policy host to be the second host.")
 	}
 
 	// We should be able to resize the host pool and still be able to predict
