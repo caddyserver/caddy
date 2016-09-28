@@ -1,5 +1,17 @@
 CHANGES
 
+0.9.3 (September 28, 2016)
+- Updated QUIC to newer version
+- import: Glob pattern matching 0 files is no longer an error
+- fastcgi: Fixed persistent connections (disabled by default)
+- fastcgi: Configurable connection pool size parameter
+- proxy: Improved failover load balancing logic
+- proxy: Avoids duplicating header fields that would be confusing
+- proxy: New try_duration and try_interval parameters
+- proxy: Fix for IP hash policy when downed hosts come back up
+- Several other bug fixes and new tests
+
+
 0.9.2 (September 20, 2016)
 - New -catimeout option to customize ACME CA HTTP timeout
 - import: Fix nested import absolute/relative paths
