@@ -18,7 +18,7 @@ func TestSetup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BeforeTest: Failed to find an existing directory for testing! Error was: %v", err)
 	}
-	nonExistantDirPath := filepath.Join(tempDirPath, strconv.Itoa(int(time.Now().UnixNano())))
+	nonExistentDirPath := filepath.Join(tempDirPath, strconv.Itoa(int(time.Now().UnixNano())))
 
 	tempTemplate, err := ioutil.TempFile(".", "tempTemplate")
 	if err != nil {
@@ -43,7 +43,7 @@ func TestSetup(t *testing.T) {
 		{"browse . " + tempTemplatePath, []string{"."}, false},
 
 		// test case #3 tests detection of non-existent template
-		{"browse . " + nonExistantDirPath, nil, true},
+		{"browse . " + nonExistentDirPath, nil, true},
 
 		// test case #4 tests detection of duplicate pathscopes
 		{"browse " + tempDirPath + "\n browse " + tempDirPath, nil, true},
@@ -65,5 +65,17 @@ func TestSetup(t *testing.T) {
 				t.Errorf("Test case #%d expected a pathscope of %v, but got %v", i, test.expectedPathScope, config.PathScope)
 			}
 		}
+	}
+
+	// test case #6 tests startup with missing root directory in combination with default browse settings
+	controller := caddy.NewTestController("http", "browse")
+	cfg := httpserver.GetConfig(controller)
+
+	// Make sure non-existent root path doesn't return error
+	cfg.Root = nonExistentDirPath
+	err = setup(controller)
+
+	if err != nil {
+		t.Errorf("Test for non-existent browse path received an error, but shouldn't have: %v", err)
 	}
 }

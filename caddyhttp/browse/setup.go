@@ -62,15 +62,6 @@ func browseParse(c *caddy.Controller) ([]Config, error) {
 			bc.PathScope = "/"
 		}
 		bc.Root = http.Dir(cfg.Root)
-		theRoot, err := bc.Root.Open("/") // catch a missing path early
-		if err != nil {
-			return configs, err
-		}
-		defer theRoot.Close()
-		_, err = theRoot.Readdir(-1)
-		if err != nil {
-			return configs, err
-		}
 
 		// Second argument would be the template file to use
 		var tplText string
