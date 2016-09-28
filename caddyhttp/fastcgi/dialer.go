@@ -27,7 +27,6 @@ type persistentDialer struct {
 
 func (p *persistentDialer) Dial() (*FCGIClient, error) {
 	p.Lock()
-
 	// connection is available, return first one.
 	if len(p.pool) > 0 {
 		client := p.pool[0]

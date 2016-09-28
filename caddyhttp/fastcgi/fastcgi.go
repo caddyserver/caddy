@@ -90,8 +90,6 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 				resp, err = fcgiBackend.Post(env, r.Method, r.Header.Get("Content-Type"), r.Body, contentLength)
 			}
 
-			defer fcgiBackend.Close()
-
 			if err != nil && err != io.EOF {
 				return http.StatusBadGateway, err
 			}
@@ -104,6 +102,8 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			if err != nil {
 				return http.StatusBadGateway, err
 			}
+
+			defer rule.dialer.Close(fcgiBackend)
 
 			// Log any stderr output from upstream
 			if fcgiBackend.stderr.Len() != 0 {
@@ -269,6 +269,7 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 }
 
 // Rule represents a FastCGI handling rule.
+// It is parsed from the fastcgi directive in the Caddyfile, see setup.go.
 type Rule struct {
 	// The base path to match. Required.
 	Path string

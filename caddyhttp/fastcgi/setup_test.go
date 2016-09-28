@@ -2,6 +2,7 @@ package fastcgi
 
 import (
 	"fmt"
+	"reflect"
 	"testing"
 
 	"github.com/mholt/caddy"
@@ -35,7 +36,34 @@ func TestSetup(t *testing.T) {
 
 }
 
+func (p *persistentDialer) Equals(q *persistentDialer) bool {
+	if p.size != q.size {
+		return false
+	}
+	if p.network != q.network {
+		return false
+	}
+	if p.address != q.address {
+		return false
+	}
+
+	if len(p.pool) != len(q.pool) {
+		return false
+	}
+	for i, client := range p.pool {
+		if client != q.pool[i] {
+			return false
+		}
+	}
+	// ignore mutex state
+	return true
+}
+
 func TestFastcgiParse(t *testing.T) {
+	defaultAddress := "127.0.0.1:9001"
+	network, address := parseAddress(defaultAddress)
+	t.Logf("Address '%v' was parsed to network '%v' and address '%v'", defaultAddress, network, address)
+
 	tests := []struct {
 		inputFastcgiConfig    string
 		shouldErr             bool
@@ -48,19 +76,21 @@ func TestFastcgiParse(t *testing.T) {
 				Address:    "127.0.0.1:9000",
 				Ext:        ".php",
 				SplitPath:  ".php",
+				dialer:     basicDialer{network: "tcp", address: "127.0.0.1:9000"},
 				IndexFiles: []string{"index.php"},
 			}}},
-		{`fastcgi / 127.0.0.1:9001 {
+		{`fastcgi / ` + defaultAddress + ` {
 	              split .html
 	              }`,
 			false, []Rule{{
 				Path:       "/",
-				Address:    "127.0.0.1:9001",
+				Address:    defaultAddress,
 				Ext:        "",
 				SplitPath:  ".html",
+				dialer:     basicDialer{network: network, address: address},
 				IndexFiles: []string{},
 			}}},
-		{`fastcgi / 127.0.0.1:9001 {
+		{`fastcgi / ` + defaultAddress + ` {
 	              split .html
 	              except /admin /user
 	              }`,
@@ -69,8 +99,31 @@ func TestFastcgiParse(t *testing.T) {
 				Address:         "127.0.0.1:9001",
 				Ext:             "",
 				SplitPath:       ".html",
+				dialer:          basicDialer{network: network, address: address},
 				IndexFiles:      []string{},
 				IgnoredSubPaths: []string{"/admin", "/user"},
+			}}},
+		{`fastcgi / ` + defaultAddress + ` {
+	              pool 0
+	              }`,
+			false, []Rule{{
+				Path:       "/",
+				Address:    defaultAddress,
+				Ext:        "",
+				SplitPath:  "",
+				dialer:     &persistentDialer{size: 0, network: network, address: address},
+				IndexFiles: []string{},
+			}}},
+		{`fastcgi / ` + defaultAddress + ` {
+	              pool 5
+	              }`,
+			false, []Rule{{
+				Path:       "/",
+				Address:    defaultAddress,
+				Ext:        "",
+				SplitPath:  "",
+				dialer:     &persistentDialer{size: 5, network: network, address: address},
+				IndexFiles: []string{},
 			}}},
 	}
 	for i, test := range tests {
@@ -105,6 +158,29 @@ func TestFastcgiParse(t *testing.T) {
 			if actualFastcgiConfig.SplitPath != test.expectedFastcgiConfig[j].SplitPath {
 				t.Errorf("Test %d expected %dth FastCGI SplitPath to be  %s  , but got %s",
 					i, j, test.expectedFastcgiConfig[j].SplitPath, actualFastcgiConfig.SplitPath)
+			}
+
+			if reflect.TypeOf(actualFastcgiConfig.dialer) != reflect.TypeOf(test.expectedFastcgiConfig[j].dialer) {
+				t.Errorf("Test %d expected %dth FastCGI dialer to be of type %T, but got %T",
+					i, j, test.expectedFastcgiConfig[j].dialer, actualFastcgiConfig.dialer)
+			} else {
+				equal := true
+				switch actual := actualFastcgiConfig.dialer.(type) {
+				case basicDialer:
+					equal = actualFastcgiConfig.dialer == test.expectedFastcgiConfig[j].dialer
+				case *persistentDialer:
+					if expected, ok := test.expectedFastcgiConfig[j].dialer.(*persistentDialer); ok {
+						equal = actual.Equals(expected)
+					} else {
+						equal = false
+					}
+				default:
+					t.Errorf("Unkonw dialer type %T", actualFastcgiConfig.dialer)
+				}
+				if !equal {
+					t.Errorf("Test %d expected %dth FastCGI dialer to be %v, but got %v",
+						i, j, test.expectedFastcgiConfig[j].dialer, actualFastcgiConfig.dialer)
+				}
 			}
 
 			if fmt.Sprint(actualFastcgiConfig.IndexFiles) != fmt.Sprint(test.expectedFastcgiConfig[j].IndexFiles) {
