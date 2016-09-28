@@ -21,22 +21,23 @@ type Headers struct {
 // setting headers on the response according to the configured rules.
 func (h Headers) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	replacer := httpserver.NewReplacer(r, nil, "")
+	rww := &responseWriterWrapper{w: w}
 	for _, rule := range h.Rules {
 		if httpserver.Path(r.URL.Path).Matches(rule.Path) {
 			for _, header := range rule.Headers {
 				// One can either delete a header, add multiple values to a header, or simply
 				// set a header.
 				if strings.HasPrefix(header.Name, "-") {
-					w.Header().Del(strings.TrimLeft(header.Name, "-"))
+					rww.delHeader(strings.TrimLeft(header.Name, "-"))
 				} else if strings.HasPrefix(header.Name, "+") {
-					w.Header().Add(strings.TrimLeft(header.Name, "+"), replacer.Replace(header.Value))
+					rww.addHeader(strings.TrimLeft(header.Name, "+"), replacer.Replace(header.Value))
 				} else {
-					w.Header().Set(header.Name, replacer.Replace(header.Value))
+					rww.setHeader(header.Name, replacer.Replace(header.Value))
 				}
 			}
 		}
 	}
-	return h.Next.ServeHTTP(w, r)
+	return h.Next.ServeHTTP(rww, r)
 }
 
 type (
@@ -53,3 +54,62 @@ type (
 		Value string
 	}
 )
+
+// headerOperation represents an operation on the header
+type headerOperation func(http.Header)
+
+// responseWriterWrapper wraps the real ResponseWriter.
+// It defers header operations until writeHeader
+type responseWriterWrapper struct {
+	w           http.ResponseWriter
+	ops         []headerOperation
+	wroteHeader bool
+}
+
+func (rww *responseWriterWrapper) Header() http.Header {
+	return rww.w.Header()
+}
+
+func (rww *responseWriterWrapper) Write(d []byte) (int, error) {
+	if !rww.wroteHeader {
+		rww.WriteHeader(http.StatusOK)
+	}
+	return rww.w.Write(d)
+}
+
+func (rww *responseWriterWrapper) WriteHeader(status int) {
+	if rww.wroteHeader {
+		return
+	}
+	rww.wroteHeader = true
+	// capture the original headers
+	h := rww.Header()
+
+	// perform our revisions
+	for _, op := range rww.ops {
+		op(h)
+	}
+
+	rww.w.WriteHeader(status)
+}
+
+// addHeader registers a http.Header.Add operation
+func (rww *responseWriterWrapper) addHeader(key, value string) {
+	rww.ops = append(rww.ops, func(h http.Header) {
+		h.Add(key, value)
+	})
+}
+
+// delHeader registers a http.Header.Del operation
+func (rww *responseWriterWrapper) delHeader(key string) {
+	rww.ops = append(rww.ops, func(h http.Header) {
+		h.Del(key)
+	})
+}
+
+// setHeader registers a http.Header.Set operation
+func (rww *responseWriterWrapper) setHeader(key, value string) {
+	rww.ops = append(rww.ops, func(h http.Header) {
+		h.Set(key, value)
+	})
+}
