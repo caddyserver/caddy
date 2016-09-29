@@ -120,12 +120,10 @@ var newACMEClient = func(config *Config, allowPrompts bool) (*ACMEClient, error)
 			}
 		}
 
-		// See if TLS challenge needs to be handled by our own facilities
-		if caddy.HasListenerWithAddress(net.JoinHostPort(config.ListenHost, TLSSNIChallengePort)) {
-			c.acmeClient.SetChallengeProvider(acme.TLSSNI01, tlsSniSolver{})
-		}
-
-		// Always respect user's bind preferences by using config.ListenHost
+		// Always respect user's bind preferences by using config.ListenHost.
+		// NOTE(Sep'16): At time of writing, SetHTTPAddress() and SetTLSaddress()
+		// must be called before SetChallengeProvider(), since they reset the
+		// challenge provider back to the default one!
 		err := c.acmeClient.SetHTTPAddress(net.JoinHostPort(config.ListenHost, useHTTPPort))
 		if err != nil {
 			return nil, err
@@ -133,6 +131,11 @@ var newACMEClient = func(config *Config, allowPrompts bool) (*ACMEClient, error)
 		err = c.acmeClient.SetTLSAddress(net.JoinHostPort(config.ListenHost, ""))
 		if err != nil {
 			return nil, err
+		}
+
+		// See if TLS challenge needs to be handled by our own facilities
+		if caddy.HasListenerWithAddress(net.JoinHostPort(config.ListenHost, TLSSNIChallengePort)) {
+			c.acmeClient.SetChallengeProvider(acme.TLSSNI01, tlsSniSolver{})
 		}
 	} else {
 		// Otherwise, DNS challenge it is
