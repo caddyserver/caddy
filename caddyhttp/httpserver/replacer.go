@@ -245,9 +245,9 @@ func (r *replacer) getSubstitution(key string) string {
 		}
 		return port
 	case "{uri}":
-		return r.request.URL.RequestURI()
+		return strings.TrimLeft(r.request.URL.RequestURI(), "/")
 	case "{uri_escaped}":
-		return url.QueryEscape(r.request.URL.RequestURI())
+		return url.QueryEscape(strings.TrimLeft(r.request.URL.RequestURI(), "/"))
 	case "{when}":
 		return time.Now().Format(timeFormat)
 	case "{file}":
