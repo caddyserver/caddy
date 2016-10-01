@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html"
 	"net/http"
+	"strings"
 
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
@@ -20,6 +21,9 @@ type Redirect struct {
 func (rd Redirect) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	for _, rule := range rd.Rules {
 		if (rule.FromPath == "/" || r.URL.Path == rule.FromPath) && schemeMatches(rule, r) && rule.Match(r) {
+			if rule.To == "{uri}" {
+				rule.To = strings.TrimLeft(rule.To, "/")
+			}
 			to := httpserver.NewReplacer(r, nil, "").Replace(rule.To)
 			if rule.Meta {
 				safeTo := html.EscapeString(to)
