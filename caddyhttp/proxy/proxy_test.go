@@ -592,7 +592,7 @@ func TestMultiReverseProxyFromClient(t *testing.T) {
 
 	for _, tt := range multiProxy {
 		// Create client request
-		reqURL := singleJoiningSlash(proxy.URL, tt.url)
+		reqURL := proxy.URL + tt.url
 		req, err := http.NewRequest("GET", reqURL, nil)
 		if err != nil {
 			t.Fatalf("Failed to create request: %v", err)
@@ -743,6 +743,70 @@ func basicAuthTestcase(t *testing.T, upstreamUser, clientUser *url.Userinfo) {
 			if string(body) != "" {
 				t.Fatalf("Invalid auth info: %s", string(body))
 			}
+		}
+	}
+}
+
+func TestProxyDirectorURL(t *testing.T) {
+	for i, c := range []struct {
+		requestURL string
+		targetURL  string
+		without    string
+		expectURL  string
+	}{
+		{
+			requestURL: `http://localhost:2020/test`,
+			targetURL:  `https://localhost:2021`,
+			expectURL:  `https://localhost:2021/test`,
+		},
+		{
+			requestURL: `http://localhost:2020/test`,
+			targetURL:  `https://localhost:2021/t`,
+			expectURL:  `https://localhost:2021/t/test`,
+		},
+		{
+			requestURL: `http://localhost:2020/test?t=w`,
+			targetURL:  `https://localhost:2021/t`,
+			expectURL:  `https://localhost:2021/t/test?t=w`,
+		},
+		{
+			requestURL: `http://localhost:2020/test`,
+			targetURL:  `https://localhost:2021/t?foo=bar`,
+			expectURL:  `https://localhost:2021/t/test?foo=bar`,
+		},
+		{
+			requestURL: `http://localhost:2020/test?t=w`,
+			targetURL:  `https://localhost:2021/t?foo=bar`,
+			expectURL:  `https://localhost:2021/t/test?foo=bar&t=w`,
+		},
+		{
+			requestURL: `http://localhost:2020/test?t=w`,
+			targetURL:  `https://localhost:2021/t?foo=bar`,
+			expectURL:  `https://localhost:2021/t?foo=bar&t=w`,
+			without:    "/test",
+		},
+		{
+			requestURL: `http://localhost:2020/test?t%3dw`,
+			targetURL:  `https://localhost:2021/t?foo%3dbar`,
+			expectURL:  `https://localhost:2021/t?foo%3dbar&t%3dw`,
+			without:    "/test",
+		},
+	} {
+		targetURL, err := url.Parse(c.targetURL)
+		if err != nil {
+			t.Errorf("case %d failed to parse target URL: %s", i, err)
+			continue
+		}
+		req, err := http.NewRequest("GET", c.requestURL, nil)
+		if err != nil {
+			t.Errorf("case %d failed to create request: %s", i, err)
+			continue
+		}
+
+		NewSingleHostReverseProxy(targetURL, c.without, 0).Director(req)
+		if expect, got := c.expectURL, req.URL.String(); expect != got {
+			t.Errorf("case %d url not equal: expect %q, but got %q",
+				i, expect, got)
 		}
 	}
 }

@@ -17,6 +17,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"path"
 	"strings"
 	"sync"
 	"time"
@@ -53,18 +54,6 @@ type ReverseProxy struct {
 	FlushInterval time.Duration
 }
 
-func singleJoiningSlash(a, b string) string {
-	aslash := strings.HasSuffix(a, "/")
-	bslash := strings.HasPrefix(b, "/")
-	switch {
-	case aslash && bslash:
-		return a + b[1:]
-	case !aslash && !bslash:
-		return a + "/" + b
-	}
-	return a + b
-}
-
 // Though the relevant directive prefix is just "unix:", url.Parse
 // will - assuming the regular URL scheme - add additional slashes
 // as if "unix" was a request protocol.
@@ -95,12 +84,19 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int) *
 			req.URL.Scheme = target.Scheme
 			req.URL.Host = target.Host
 		}
-		req.URL.Path = singleJoiningSlash(target.Path, req.URL.Path)
-		if targetQuery == "" || req.URL.RawQuery == "" {
-			req.URL.RawQuery = targetQuery + req.URL.RawQuery
-		} else {
-			req.URL.RawQuery = targetQuery + "&" + req.URL.RawQuery
+
+		// We should remove the `without` prefix at first.
+		if without != "" {
+			req.URL.Path = strings.TrimPrefix(req.URL.Path, without)
+			if req.URL.Opaque != "" {
+				req.URL.Opaque = strings.TrimPrefix(req.URL.Opaque, without)
+			}
+			if req.URL.RawPath != "" {
+				req.URL.RawPath = strings.TrimPrefix(req.URL.RawPath, without)
+			}
 		}
+
+		req.URL.Path = path.Join(target.Path, req.URL.Path)
 		// Trims the path of the socket from the URL path.
 		// This is done because req.URL passed to your proxied service
 		// will have the full path of the socket file prefixed to it.
@@ -112,9 +108,11 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int) *
 			socketPrefix := target.String()[len("unix://"):]
 			req.URL.Path = strings.TrimPrefix(req.URL.Path, socketPrefix)
 		}
-		// We are then safe to remove the `without` prefix.
-		if without != "" {
-			req.URL.Path = strings.TrimPrefix(req.URL.Path, without)
+
+		if targetQuery == "" || req.URL.RawQuery == "" {
+			req.URL.RawQuery = targetQuery + req.URL.RawQuery
+		} else {
+			req.URL.RawQuery = targetQuery + "&" + req.URL.RawQuery
 		}
 	}
 	rp := &ReverseProxy{Director: director, FlushInterval: 250 * time.Millisecond} // flushing good for streaming & server-sent events
