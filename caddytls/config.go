@@ -35,6 +35,9 @@ type Config struct {
 	// Whether to prefer server cipher suites
 	PreferServerCipherSuites bool
 
+	// The list of preferred curves
+	CurvePreferences []tls.CurveID
+
 	// Client authentication policy
 	ClientAuth tls.ClientAuthType
 
@@ -220,6 +223,7 @@ func MakeTLSConfig(configs []*Config) (*tls.Config, error) {
 
 	config := new(tls.Config)
 	ciphersAdded := make(map[uint16]struct{})
+	curvesAdded := make(map[tls.CurveID]struct{})
 	configMap := make(configGroup)
 
 	for i, cfg := range configs {
@@ -263,6 +267,14 @@ func MakeTLSConfig(configs []*Config) (*tls.Config, error) {
 			return nil, fmt.Errorf("cannot both PreferServerCipherSuites and not prefer them")
 		}
 		config.PreferServerCipherSuites = cfg.PreferServerCipherSuites
+
+		// Union curves
+		for _, curv := range cfg.CurvePreferences {
+			if _, ok := curvesAdded[curv]; !ok {
+				curvesAdded[curv] = struct{}{}
+				config.CurvePreferences = append(config.CurvePreferences, curv)
+			}
+		}
 
 		// Go with the widest range of protocol versions
 		if config.MinVersion == 0 || cfg.ProtocolMinVersion < config.MinVersion {
@@ -439,6 +451,14 @@ var defaultCiphers = []uint16{
 	tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
 	tls.TLS_RSA_WITH_AES_256_CBC_SHA,
 	tls.TLS_RSA_WITH_AES_128_CBC_SHA,
+}
+
+// Map of supported curves
+// https://golang.org/pkg/crypto/tls/#CurveID
+var supportedCurvesMap = map[string]tls.CurveID{
+	"P256": tls.CurveP256,
+	"P384": tls.CurveP384,
+	"P521": tls.CurveP521,
 }
 
 const (
