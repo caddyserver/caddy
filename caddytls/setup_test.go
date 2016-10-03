@@ -297,6 +297,13 @@ func TestSetupParseWithCurves(t *testing.T) {
 	if len(cfg.CurvePreferences) != 3 {
 		t.Errorf("Expected 3 curves, got %v", len(cfg.CurvePreferences))
 	}
+
+	expectedCurveOrder := []tls.CurveID{tls.CurveP256, tls.CurveP384, tls.CurveP521}
+	for i := range cfg.CurvePreferences {
+		if cfg.CurvePreferences[i] != expectedCurveOrder[i] {
+			t.Errorf("Expected %v as curve, got %v", expectedCurveOrder[i], cfg.CurvePreferences[i])
+		}
+	}
 }
 
 func TestSetupParseWithOneTLSProtocol(t *testing.T) {
