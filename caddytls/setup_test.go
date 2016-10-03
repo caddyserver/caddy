@@ -298,10 +298,12 @@ func TestSetupParseWithCurves(t *testing.T) {
 		t.Errorf("Expected 3 curves, got %v", len(cfg.CurvePreferences))
 	}
 
-	expectedCurveOrder := []tls.CurveID{tls.CurveP256, tls.CurveP384, tls.CurveP521}
-	for i := range cfg.CurvePreferences {
-		if cfg.CurvePreferences[i] != expectedCurveOrder[i] {
-			t.Errorf("Expected %v as curve, got %v", expectedCurveOrder[i], cfg.CurvePreferences[i])
+	expectedCurves := []tls.CurveID{tls.CurveP256, tls.CurveP384, tls.CurveP521}
+
+	// Ensure ordering is correct
+	for i, actual := range cfg.CurvePreferences {
+		if actual != expectedCurves[i] {
+			t.Errorf("Expected curve in position %d to be %v, got %v", i, expectedCurves[i], actual)
 		}
 	}
 }
