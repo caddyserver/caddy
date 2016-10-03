@@ -438,6 +438,7 @@ var directives = []string{
 	"mailout",   // github.com/SchumacherFM/mailout
 	"awslambda", // github.com/coopernurse/caddy-awslambda
 	"filter",    // github.com/echocat/caddy-filter
+	"maxrequestbody",
 }
 
 const (

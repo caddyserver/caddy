@@ -17,6 +17,7 @@ import (
 	_ "github.com/mholt/caddy/caddyhttp/internalsrv"
 	_ "github.com/mholt/caddy/caddyhttp/log"
 	_ "github.com/mholt/caddy/caddyhttp/markdown"
+	_ "github.com/mholt/caddy/caddyhttp/maxrequestbody"
 	_ "github.com/mholt/caddy/caddyhttp/mime"
 	_ "github.com/mholt/caddy/caddyhttp/pprof"
 	_ "github.com/mholt/caddy/caddyhttp/proxy"
