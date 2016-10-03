@@ -105,6 +105,14 @@ func setupTLS(c *caddy.Controller) error {
 					}
 					config.Ciphers = append(config.Ciphers, value)
 				}
+			case "curves":
+				for c.NextArg() {
+					value, ok := supportedCurvesMap[strings.ToUpper(c.Val())]
+					if !ok {
+						return c.Errf("Wrong curve name or curve not supported: '%s'", c.Val())
+					}
+					config.CurvePreferences = append(config.CurvePreferences, value)
+				}
 			case "clients":
 				clientCertList := c.RemainingArgs()
 				if len(clientCertList) == 0 {
