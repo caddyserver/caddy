@@ -286,9 +286,20 @@ func (r *replacer) getSubstitution(key string) string {
 			return r.emptyValue
 		}
 		return roundDuration(time.Since(r.responseRecorder.start)).String()
+	case "{latency_ms}":
+		if r.responseRecorder == nil {
+			return r.emptyValue
+		}
+		elapsedDuration := time.Since(r.responseRecorder.start)
+		return strconv.FormatInt(convertToMilliseconds(elapsedDuration), 10)
 	}
 
 	return r.emptyValue
+}
+
+//convertToMilliseconds returns the number of milliseconds in the given duration
+func convertToMilliseconds(d time.Duration) int64 {
+	return d.Nanoseconds() / 1e6
 }
 
 // Set sets key to value in the r.customReplacements map.

@@ -150,3 +150,21 @@ func TestRound(t *testing.T) {
 		}
 	}
 }
+
+func TestMillisecondConverstion(t *testing.T) {
+	var testCases = map[time.Duration]int64{
+		2 * time.Second:           2000,
+		9039492 * time.Nanosecond: 9,
+		1000 * time.Microsecond:   1,
+		127 * time.Nanosecond:     0,
+		0 * time.Millisecond:      0,
+		255 * time.Millisecond:    255,
+	}
+
+	for dur, expected := range testCases {
+		numMillisecond := convertToMilliseconds(dur)
+		if numMillisecond != expected {
+			t.Errorf("Expected %v. Got %v", expected, numMillisecond)
+		}
+	}
+}
