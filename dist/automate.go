@@ -81,12 +81,12 @@ func main() {
 			fmt.Printf("== Compressing %s\n", baseFilename)
 
 			if p.archive == "zip" {
-				err := archiver.Zip(archive, archiveContents)
+				err := archiver.Zip.Make(archive, archiveContents)
 				if err != nil {
 					log.Fatal(err)
 				}
 			} else if p.archive == "tar.gz" {
-				err := archiver.TarGz(archive, archiveContents)
+				err := archiver.TarGz.Make(archive, archiveContents)
 				if err != nil {
 					log.Fatal(err)
 				}
