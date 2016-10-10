@@ -189,7 +189,7 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, 
 		res.Body.Close()
 		hj, ok := rw.(http.Hijacker)
 		if !ok {
-			return nil
+			panic("not a hijacker")
 		}
 
 		conn, _, err := hj.Hijack()
