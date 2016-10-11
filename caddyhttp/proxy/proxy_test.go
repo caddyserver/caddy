@@ -97,6 +97,39 @@ func TestReverseProxyInsecureSkipVerify(t *testing.T) {
 	}
 }
 
+func TestWebSocketReverseProxyNonHijackerPanic(t *testing.T) {
+	// Capture the expected panic
+	defer func() {
+		r := recover()
+		if _, ok := r.(httpserver.NonHijackerError); !ok {
+			t.Error("not get the expected panic")
+		}
+	}()
+
+	var connCount int32
+	wsNop := httptest.NewServer(websocket.Handler(func(ws *websocket.Conn) { atomic.AddInt32(&connCount, 1) }))
+	defer wsNop.Close()
+
+	// Get proxy to use for the test
+	p := newWebSocketTestProxy(wsNop.URL)
+
+	// Create client request
+	r, err := http.NewRequest("GET", "/", nil)
+	if err != nil {
+		t.Fatalf("Failed to create request: %v", err)
+	}
+	r.Header = http.Header{
+		"Connection":            {"Upgrade"},
+		"Upgrade":               {"websocket"},
+		"Origin":                {wsNop.URL},
+		"Sec-WebSocket-Key":     {"x3JJHMbDL1EzLkh9GBhXDw=="},
+		"Sec-WebSocket-Version": {"13"},
+	}
+
+	nonHijacker := httptest.NewRecorder()
+	p.ServeHTTP(nonHijacker, r)
+}
+
 func TestWebSocketReverseProxyServeHTTPHandler(t *testing.T) {
 	// No-op websocket backend simply allows the WS connection to be
 	// accepted then it will be immediately closed. Perfect for testing.

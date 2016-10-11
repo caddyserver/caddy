@@ -21,6 +21,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
 
 var bufferPool = sync.Pool{New: createBuffer}
@@ -189,7 +191,7 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, 
 		res.Body.Close()
 		hj, ok := rw.(http.Hijacker)
 		if !ok {
-			panic("not a hijacker")
+			panic(httpserver.NonHijackerError{Underlying: rw})
 		}
 
 		conn, _, err := hj.Hijack()

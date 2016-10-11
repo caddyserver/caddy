@@ -5,7 +5,6 @@ package header
 
 import (
 	"bufio"
-	"errors"
 	"net"
 	"net/http"
 	"strings"
@@ -123,5 +122,5 @@ func (rww *responseWriterWrapper) Hijack() (net.Conn, *bufio.ReadWriter, error) 
 	if hj, ok := rww.w.(http.Hijacker); ok {
 		return hj.Hijack()
 	}
-	return nil, nil, errors.New("not a Hijacker")
+	return nil, nil, httpserver.NonHijackerError{Underlying: rww.w}
 }
