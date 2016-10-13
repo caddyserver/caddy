@@ -205,7 +205,6 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 	reqURI := r.URL.RequestURI()
 	if origURI := r.Header.Get(internalRewriteFieldName); origURI != "" {
 		reqURI = origURI
-		r.Header.Del(internalRewriteFieldName)
 	}
 
 	// Some variables are unused but cleared explicitly to prevent
