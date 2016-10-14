@@ -24,7 +24,7 @@ func (r renderer) BlockCode(out *bytes.Buffer, text []byte, land string) {}
 func (r renderer) BlockQuote(out *bytes.Buffer, text []byte) {}
 
 // BlockHtml is the HTML tag callback.
-func (r renderer) BlockHtml(out *bytes.Buffer, text []byte) {}
+func (r renderer) BlockHTML(out *bytes.Buffer, text []byte) {}
 
 // Header is the header tag callback.
 func (r renderer) Header(out *bytes.Buffer, text func() bool, level int, id string) {}
@@ -115,7 +115,7 @@ func (r renderer) Link(out *bytes.Buffer, link []byte, title []byte, content []b
 }
 
 // RawHtmlTag is the raw HTML tag callback.
-func (r renderer) RawHtmlTag(out *bytes.Buffer, tag []byte) {}
+func (r renderer) RawHTMLTag(out *bytes.Buffer, tag []byte) {}
 
 // TripleEmphasis is the triple emphasis tag callback.  Outputs a simple plain-text
 // version of the input.
