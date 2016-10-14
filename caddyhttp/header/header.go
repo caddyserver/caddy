@@ -4,6 +4,8 @@
 package header
 
 import (
+	"bufio"
+	"net"
 	"net/http"
 	"strings"
 
@@ -112,4 +114,13 @@ func (rww *responseWriterWrapper) setHeader(key, value string) {
 	rww.ops = append(rww.ops, func(h http.Header) {
 		h.Set(key, value)
 	})
+}
+
+// Hijack implements http.Hijacker. It simply wraps the underlying
+// ResponseWriter's Hijack method if there is one, or returns an error.
+func (rww *responseWriterWrapper) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if hj, ok := rww.w.(http.Hijacker); ok {
+		return hj.Hijack()
+	}
+	return nil, nil, httpserver.NonHijackerError{Underlying: rww.w}
 }

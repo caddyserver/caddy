@@ -5,7 +5,6 @@ package gzip
 import (
 	"bufio"
 	"compress/gzip"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"net"
@@ -144,7 +143,7 @@ func (w *gzipResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	if hj, ok := w.ResponseWriter.(http.Hijacker); ok {
 		return hj.Hijack()
 	}
-	return nil, nil, fmt.Errorf("not a Hijacker")
+	return nil, nil, httpserver.NonHijackerError{Underlying: w.ResponseWriter}
 }
 
 // Flush implements http.Flusher. It simply wraps the underlying
@@ -153,7 +152,7 @@ func (w *gzipResponseWriter) Flush() {
 	if f, ok := w.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	} else {
-		panic("not a Flusher") // should be recovered at the beginning of middleware stack
+		panic(httpserver.NonFlusherError{Underlying: w.ResponseWriter}) // should be recovered at the beginning of middleware stack
 	}
 }
 
@@ -163,5 +162,5 @@ func (w *gzipResponseWriter) CloseNotify() <-chan bool {
 	if cn, ok := w.ResponseWriter.(http.CloseNotifier); ok {
 		return cn.CloseNotify()
 	}
-	panic("not a CloseNotifier")
+	panic(httpserver.NonCloseNotifierError{Underlying: w.ResponseWriter})
 }
