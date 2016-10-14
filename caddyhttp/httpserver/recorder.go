@@ -2,7 +2,6 @@ package httpserver
 
 import (
 	"bufio"
-	"errors"
 	"net"
 	"net/http"
 	"time"
@@ -75,7 +74,7 @@ func (r *ResponseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	if hj, ok := r.ResponseWriter.(http.Hijacker); ok {
 		return hj.Hijack()
 	}
-	return nil, nil, errors.New("not a Hijacker")
+	return nil, nil, NonHijackerError{Underlying: r.ResponseWriter}
 }
 
 // Flush implements http.Flusher. It simply wraps the underlying
@@ -84,7 +83,7 @@ func (r *ResponseRecorder) Flush() {
 	if f, ok := r.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	} else {
-		panic("not a Flusher") // should be recovered at the beginning of middleware stack
+		panic(NonFlusherError{Underlying: r.ResponseWriter}) // should be recovered at the beginning of middleware stack
 	}
 }
 
@@ -94,5 +93,5 @@ func (r *ResponseRecorder) CloseNotify() <-chan bool {
 	if cn, ok := r.ResponseWriter.(http.CloseNotifier); ok {
 		return cn.CloseNotify()
 	}
-	panic("not a CloseNotifier")
+	panic(NonCloseNotifierError{Underlying: r.ResponseWriter})
 }
