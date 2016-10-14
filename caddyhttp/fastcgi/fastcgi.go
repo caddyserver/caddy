@@ -245,7 +245,6 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 		env["PATH_TRANSLATED"] = filepath.Join(h.AbsRoot, pathInfo) // Info: http://www.oreilly.com/openbook/cgi/ch02_04.html
 	}
 
-		
 	// Some web apps rely on knowing HTTPS or not
 	if r.TLS != nil {
 		env["HTTPS"] = "on"
@@ -260,16 +259,15 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 
 	// Add all HTTP headers (except Caddy-Rewrite-Original-URI ) to env variables
 	for field, val := range r.Header {
-		
-		if strings.ToUpper(field) != strings.ToUpper(internalRewriteFieldName) {
-		   header := strings.ToUpper(field)
-		   header = headerNameReplacer.Replace(header)
-		   env["HTTP_"+header] = strings.Join(val, ", ")
-		} 
+
+		if strings.ToLower(field) == strings.ToLower(internalRewriteFieldName) {
+			continue
+		}
+		header := strings.ToUpper(field)
+		header = headerNameReplacer.Replace(header)
+		env["HTTP_"+header] = strings.Join(val, ", ")
 
 	}
-
-	
 
 	return env, nil
 }
