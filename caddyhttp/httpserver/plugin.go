@@ -414,11 +414,11 @@ var directives = []string{
 	"search",    // github.com/pedronasser/caddy-search
 	"header",
 	"expires", // github.com/epicagency/caddy-expires
+	"basicauth",
 	"redir",
 	"status",
 	"cors", // github.com/captncraig/cors/caddy
 	"mime",
-	"basicauth",
 	"jwt",       // github.com/BTBurke/caddy-jwt
 	"jsonp",     // github.com/pschlump/caddy-jsonp
 	"upload",    // blitznote.com/src/caddy.upload
