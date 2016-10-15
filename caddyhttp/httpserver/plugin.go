@@ -437,6 +437,7 @@ var directives = []string{
 	"hugo",        // github.com/hacdias/caddy-hugo
 	"mailout",     // github.com/SchumacherFM/mailout
 	"awslambda",   // github.com/coopernurse/caddy-awslambda
+	"filter",      // github.com/echocat/caddy-filter
 }
 
 const (
