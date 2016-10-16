@@ -259,7 +259,6 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 
 	// Add all HTTP headers (except Caddy-Rewrite-Original-URI ) to env variables
 	for field, val := range r.Header {
-
 		if strings.ToLower(field) == strings.ToLower(internalRewriteFieldName) {
 			continue
 		}
@@ -268,7 +267,6 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 		env["HTTP_"+header] = strings.Join(val, ", ")
 
 	}
-
 	return env, nil
 }
 
