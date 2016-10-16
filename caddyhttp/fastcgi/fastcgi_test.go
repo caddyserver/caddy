@@ -297,7 +297,7 @@ func TestBuildEnv(t *testing.T) {
 	envExpected["CUSTOM_QUERY"] = "custom=true&test=blabla"
 	testBuildEnv(r, rule, fpath, envExpected)
 
-	// 6. {>Caddy-Rewrite-Original-URI}
+	// 6. Test Caddy-Rewrite-Original-URI header is not removed
 	const internalRewriteFieldName = "Caddy-Rewrite-Original-URI"
 	r = newReq()
 	rule.EnvVars = [][2]string{
