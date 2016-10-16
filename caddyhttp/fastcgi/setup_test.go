@@ -125,6 +125,17 @@ func TestFastcgiParse(t *testing.T) {
 				dialer:     &persistentDialer{size: 5, network: network, address: address},
 				IndexFiles: []string{},
 			}}},
+		{`fastcgi / ` + defaultAddress + ` {
+	              split .php
+	              }`,
+			false, []Rule{{
+				Path:       "/",
+				Address:    defaultAddress,
+				Ext:        "",
+				SplitPath:  ".php",
+				dialer:     basicDialer{network: network, address: address},
+				IndexFiles: []string{},
+			}}},
 	}
 	for i, test := range tests {
 		actualFastcgiConfigs, err := fastcgiParse(caddy.NewTestController("http", test.inputFastcgiConfig))
