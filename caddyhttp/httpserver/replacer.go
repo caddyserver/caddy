@@ -221,8 +221,12 @@ func (r *replacer) getSubstitution(key string) string {
 		}
 		return host
 	case "{path}":
-		return r.request.URL.Path
+		return r.request.Header.Get("Caddy-Rewrite-Original-URI")
 	case "{path_escaped}":
+		return url.QueryEscape(r.request.Header.Get("Caddy-Rewrite-Original-URI"))
+	case "{rewrite_path}":
+		return r.request.URL.Path
+	case "{rewrite_path_escaped}":
 		return url.QueryEscape(r.request.URL.Path)
 	case "{query}":
 		return r.request.URL.RawQuery
