@@ -78,7 +78,7 @@ sudo chown -R www-data:www-data /var/www/example.com
 sudo chmod -R 555 /var/www/example.com
 ```
 
-You'll need to explicity configure caddy to serve the site from this location by adding
+You'll need to explicitly configure caddy to serve the site from this location by adding
 the following to your Caddyfile if you haven't already:
 
 ```
