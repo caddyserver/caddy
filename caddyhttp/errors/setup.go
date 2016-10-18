@@ -115,7 +115,9 @@ func errorsParse(c *caddy.Controller) (*ErrorHandler, error) {
 				}
 			} else {
 				// Error page; ensure it exists
-				where = filepath.Join(cfg.Root, where)
+				if !filepath.IsAbs(where) {
+					where = filepath.Join(cfg.Root, where)
+				}
 				f, err := os.Open(where)
 				if err != nil {
 					log.Printf("[WARNING] Unable to open error page '%s': %v", where, err)
