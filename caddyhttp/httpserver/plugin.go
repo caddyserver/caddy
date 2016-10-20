@@ -430,10 +430,10 @@ var directives = []string{
 	"proxy",
 	"fastcgi",
 	"websocket",
+	"filemanager", // github.com/hacdias/caddy-filemanager
 	"markdown",
 	"templates",
 	"browse",
-	"filemanager", // github.com/hacdias/caddy-filemanager
 	"hugo",        // github.com/hacdias/caddy-hugo
 	"mailout",     // github.com/SchumacherFM/mailout
 	"awslambda",   // github.com/coopernurse/caddy-awslambda
