@@ -15,16 +15,21 @@ func TestLoadbalancingDialer(t *testing.T) {
 
 	// when
 	for i := 0; i < runs; i++ {
-		_, err := dialer.Dial()
+		client, err := dialer.Dial()
+		dialer.Close(client)
 
 		if err != nil {
-			t.Errorf("Did not expect error to occur")
+			t.Errorf("Expected error to be nil")
 		}
 	}
 
 	// then
 	if mockDialer1.dialCalled != mockDialer2.dialCalled && mockDialer1.dialCalled != 50 {
 		t.Errorf("Expected dialer to load balance to multiple backend dialers %d times [actual: %d, %d]", 50, mockDialer1.dialCalled, mockDialer2.dialCalled)
+	}
+
+	if mockDialer1.closeCalled != mockDialer2.closeCalled && mockDialer1.closeCalled != 50 {
+		t.Errorf("Expected dialer to load balance to multiple backend dialers %d times [actual: %d, %d]", 50, mockDialer1.closeCalled, mockDialer2.closeCalled)
 	}
 }
 

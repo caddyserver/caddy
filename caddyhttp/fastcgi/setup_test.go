@@ -219,7 +219,6 @@ func TestFastcgiParse(t *testing.T) {
 }
 
 func areDialersEqual(current, expected dialer, t *testing.T) bool {
-	var equal = true
 
 	switch actual := current.(type) {
 	case *loadBalancingDialer:
@@ -230,19 +229,19 @@ func areDialersEqual(current, expected dialer, t *testing.T) bool {
 				}
 			}
 		} else {
-			equal = false
+			return false
 		}
 	case basicDialer:
-		equal = current == expected
+		return current == expected
 	case *persistentDialer:
 		if expected, ok := expected.(*persistentDialer); ok {
-			equal = actual.Equals(expected)
-		} else {
-			equal = false
+			return actual.Equals(expected)
 		}
+		return false
+
 	default:
 		t.Errorf("Unknown dialer type %T", current)
 	}
 
-	return equal
+	return true
 }
