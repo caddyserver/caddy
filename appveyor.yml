@@ -9,8 +9,8 @@ environment:
 
 install:
   - rmdir c:\go /s /q
-  - appveyor DownloadFile https://storage.googleapis.com/golang/go1.7.windows-amd64.zip
-  - 7z x go1.7.windows-amd64.zip -y -oC:\ > NUL
+  - appveyor DownloadFile https://storage.googleapis.com/golang/go1.7.3.windows-amd64.zip
+  - 7z x go1.7.3.windows-amd64.zip -y -oC:\ > NUL
   - go version
   - go env
   - go get -t ./...
