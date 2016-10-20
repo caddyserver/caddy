@@ -43,10 +43,7 @@ func TestReverseProxy(t *testing.T) {
 	}
 
 	// create request and response recorder
-	r, err := http.NewRequest("GET", "/", nil)
-	if err != nil {
-		t.Fatalf("Failed to create request: %v", err)
-	}
+	r := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
 
 	p.ServeHTTP(w, r)
@@ -84,10 +81,7 @@ func TestReverseProxyInsecureSkipVerify(t *testing.T) {
 	}
 
 	// create request and response recorder
-	r, err := http.NewRequest("GET", "/", nil)
-	if err != nil {
-		t.Fatalf("Failed to create request: %v", err)
-	}
+	r := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
 
 	p.ServeHTTP(w, r)
@@ -114,10 +108,8 @@ func TestWebSocketReverseProxyNonHijackerPanic(t *testing.T) {
 	p := newWebSocketTestProxy(wsNop.URL)
 
 	// Create client request
-	r, err := http.NewRequest("GET", "/", nil)
-	if err != nil {
-		t.Fatalf("Failed to create request: %v", err)
-	}
+	r := httptest.NewRequest("GET", "/", nil)
+
 	r.Header = http.Header{
 		"Connection":            {"Upgrade"},
 		"Upgrade":               {"websocket"},
@@ -141,10 +133,8 @@ func TestWebSocketReverseProxyServeHTTPHandler(t *testing.T) {
 	p := newWebSocketTestProxy(wsNop.URL)
 
 	// Create client request
-	r, err := http.NewRequest("GET", "/", nil)
-	if err != nil {
-		t.Fatalf("Failed to create request: %v", err)
-	}
+	r := httptest.NewRequest("GET", "/", nil)
+
 	r.Header = http.Header{
 		"Connection":            {"Upgrade"},
 		"Upgrade":               {"websocket"},
@@ -195,6 +185,7 @@ func TestWebSocketReverseProxyFromWSClient(t *testing.T) {
 	// Set up WebSocket client
 	url := strings.Replace(echoProxy.URL, "http://", "ws://", 1)
 	ws, err := websocket.Dial(url, "", echoProxy.URL)
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,11 +193,18 @@ func TestWebSocketReverseProxyFromWSClient(t *testing.T) {
 
 	// Send test message
 	trialMsg := "Is it working?"
-	websocket.Message.Send(ws, trialMsg)
+
+	if sendErr := websocket.Message.Send(ws, trialMsg); sendErr != nil {
+		t.Fatal(sendErr)
+	}
 
 	// It should be echoed back to us
 	var actualMsg string
-	websocket.Message.Receive(ws, &actualMsg)
+
+	if rcvErr := websocket.Message.Receive(ws, &actualMsg); rcvErr != nil {
+		t.Fatal(rcvErr)
+	}
+
 	if actualMsg != trialMsg {
 		t.Errorf("Expected '%s' but got '%s' instead", trialMsg, actualMsg)
 	}
@@ -419,10 +417,7 @@ func TestUpstreamHeadersUpdate(t *testing.T) {
 	}
 
 	// create request and response recorder
-	r, err := http.NewRequest("GET", "/", nil)
-	if err != nil {
-		t.Fatalf("Failed to create request: %v", err)
-	}
+	r := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
 
 	const expectHost = "example.com"
@@ -499,10 +494,7 @@ func TestDownstreamHeadersUpdate(t *testing.T) {
 	}
 
 	// create request and response recorder
-	r, err := http.NewRequest("GET", "/", nil)
-	if err != nil {
-		t.Fatalf("Failed to create request: %v", err)
-	}
+	r := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
 	// set a predefined skip header
 	w.Header().Set("Content-Type", "text/css")
@@ -627,8 +619,9 @@ func TestMultiReverseProxyFromClient(t *testing.T) {
 		// Create client request
 		reqURL := proxy.URL + tt.url
 		req, err := http.NewRequest("GET", reqURL, nil)
+
 		if err != nil {
-			t.Fatalf("Failed to create request: %v", err)
+			t.Fatalf("Failed to make request: %v", err)
 		}
 
 		resp, err := http.DefaultClient.Do(req)
@@ -661,12 +654,9 @@ func TestHostSimpleProxyNoHeaderForward(t *testing.T) {
 		Upstreams: []Upstream{newFakeUpstream(backend.URL, false)},
 	}
 
-	r, err := http.NewRequest("GET", "/", nil)
+	r := httptest.NewRequest("GET", "/", nil)
 	r.Host = "test.com"
 
-	if err != nil {
-		t.Fatalf("Failed to create request: %v", err)
-	}
 	w := httptest.NewRecorder()
 
 	p.ServeHTTP(w, r)
@@ -698,12 +688,9 @@ func TestHostHeaderReplacedUsingForward(t *testing.T) {
 		Upstreams: []Upstream{upstream},
 	}
 
-	r, err := http.NewRequest("GET", "/", nil)
+	r := httptest.NewRequest("GET", "/", nil)
 	r.Host = "test.com"
 
-	if err != nil {
-		t.Fatalf("Failed to create request: %v", err)
-	}
 	w := httptest.NewRecorder()
 
 	p.ServeHTTP(w, r)
