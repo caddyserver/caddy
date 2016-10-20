@@ -154,6 +154,11 @@ func TestFastcgiParse(t *testing.T) {
 				dialer:     &loadBalancingDialer{dialers: []dialer{basicDialer{network: network, address: address}}},
 				IndexFiles: []string{},
 			}}},
+		{`fastcgi / {
+
+		              }`,
+			true, []Rule{},
+		},
 	}
 	for i, test := range tests {
 		actualFastcgiConfigs, err := fastcgiParse(caddy.NewTestController("http", test.inputFastcgiConfig))

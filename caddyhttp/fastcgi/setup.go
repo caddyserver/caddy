@@ -56,7 +56,7 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 
 		args := c.RemainingArgs()
 
-		if len(args) == 0 {
+		if !(len(args) > 1) {
 			return rules, c.ArgErr()
 		}
 
