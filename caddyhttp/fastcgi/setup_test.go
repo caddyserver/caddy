@@ -228,8 +228,8 @@ func areDialersEqual(current, expected dialer, t *testing.T) bool {
 					return false
 				}
 			}
-		} else {
-			return false
+
+			return true
 		}
 	case basicDialer:
 		return current == expected
@@ -237,11 +237,10 @@ func areDialersEqual(current, expected dialer, t *testing.T) bool {
 		if expected, ok := expected.(*persistentDialer); ok {
 			return actual.Equals(expected)
 		}
-		return false
 
 	default:
 		t.Errorf("Unknown dialer type %T", current)
 	}
 
-	return true
+	return false
 }
