@@ -363,7 +363,6 @@ func (s *Server) OnStartupComplete() {
 			output += " (only accessible on this machine)"
 		}
 		fmt.Println(output)
-		//Also print to -log.
 		log.Println(output)
 	}
 }
