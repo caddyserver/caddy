@@ -1,6 +1,7 @@
 package startupshutdown
 
 import (
+	"log"
 	"os"
 	"os/exec"
 	"strings"
@@ -53,8 +54,10 @@ func registerCallback(c *caddy.Controller, registerFunc func(func() error)) erro
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
 			if nonblock {
+				log.Printf("[INFO] Nonblocking Command:\"%s %s\"", command, strings.Join(args, " "))
 				return cmd.Start()
 			}
+			log.Printf("[INFO] Blocking Command:\"%s %s\"", command, strings.Join(args, " "))
 			return cmd.Run()
 		}
 
