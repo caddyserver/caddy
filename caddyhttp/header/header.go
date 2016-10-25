@@ -32,9 +32,9 @@ func (h Headers) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 				if strings.HasPrefix(header.Name, "-") {
 					rww.delHeader(strings.TrimLeft(header.Name, "-"))
 				} else if strings.HasPrefix(header.Name, "+") {
-					rww.addHeader(strings.TrimLeft(header.Name, "+"), replacer.Replace(header.Value))
+					rww.Header().Add(strings.TrimLeft(header.Name, "+"), replacer.Replace(header.Value))
 				} else {
-					rww.setHeader(header.Name, replacer.Replace(header.Value))
+					rww.Header().Set(header.Name, replacer.Replace(header.Value))
 				}
 			}
 		}
@@ -95,24 +95,15 @@ func (rww *responseWriterWrapper) WriteHeader(status int) {
 	rww.w.WriteHeader(status)
 }
 
-// addHeader registers a http.Header.Add operation
-func (rww *responseWriterWrapper) addHeader(key, value string) {
-	rww.ops = append(rww.ops, func(h http.Header) {
-		h.Add(key, value)
-	})
-}
-
-// delHeader registers a http.Header.Del operation
+// delHeader deletes the existing header according to the key
+// Also it will delete that header added later.
 func (rww *responseWriterWrapper) delHeader(key string) {
+	// remove the existing one if any
+	rww.Header().Del(key)
+
+	// register a future deletion
 	rww.ops = append(rww.ops, func(h http.Header) {
 		h.Del(key)
-	})
-}
-
-// setHeader registers a http.Header.Set operation
-func (rww *responseWriterWrapper) setHeader(key, value string) {
-	rww.ops = append(rww.ops, func(h http.Header) {
-		h.Set(key, value)
 	})
 }
 
