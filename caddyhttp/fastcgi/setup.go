@@ -63,11 +63,6 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 		rule.Path = args[0]
 		lastIndex := len(args)
 
-		// Last argument is preset
-		if err := fastcgiPreset(args[len(args)-1], &rule); err == nil {
-			lastIndex--
-		}
-
 		var addresses = args[1:lastIndex]
 		var dialers []dialer
 		var pooled bool
@@ -102,6 +97,18 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 					return rules, c.ArgErr()
 				}
 				rule.IgnoredSubPaths = ignoredPaths
+
+			case "preset":
+				presetArgs := c.RemainingArgs()
+
+				if len(presetArgs) < 2 {
+					return rules, c.ArgErr()
+				}
+
+				if err := fastcgiPreset(presetArgs[0], &rule); err != nil {
+					return rules, err
+				}
+
 			case "pool":
 				if !c.NextArg() {
 					return rules, c.ArgErr()

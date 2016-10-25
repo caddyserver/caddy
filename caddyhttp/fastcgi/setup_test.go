@@ -70,7 +70,7 @@ func TestFastcgiParse(t *testing.T) {
 		expectedFastcgiConfig []Rule
 	}{
 
-		{`fastcgi /blog 127.0.0.1:9000 php`,
+		{`fastcgi /blog 127.0.0.1:9000 { preset php }`,
 			false, []Rule{{
 				Path:       "/blog",
 				Address:    "127.0.0.1:9000",
@@ -79,7 +79,7 @@ func TestFastcgiParse(t *testing.T) {
 				dialer:     &loadBalancingDialer{dialers: []dialer{basicDialer{network: "tcp", address: "127.0.0.1:9000"}}},
 				IndexFiles: []string{"index.php"},
 			}}},
-		{`fastcgi /blog 127.0.0.1:9000 127.0.0.1:9001 php`,
+		{`fastcgi /blog 127.0.0.1:9000 127.0.0.1:9001 { preset php }`,
 			false, []Rule{{
 				Path:       "/blog",
 				Address:    "127.0.0.1:9000,127.0.0.1:9001",
@@ -215,7 +215,6 @@ func TestFastcgiParse(t *testing.T) {
 			}
 		}
 	}
-
 }
 
 func areDialersEqual(current, expected dialer, t *testing.T) bool {
