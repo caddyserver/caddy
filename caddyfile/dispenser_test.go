@@ -64,7 +64,7 @@ func TestDispenser_NextArg(t *testing.T) {
 	}
 
 	assertNextArg := func(expectedVal string, loadAnother bool, expectedCursor int) {
-		if d.NextArg() != true {
+		if !d.NextArg() {
 			t.Error("NextArg(): Should load next argument but got false instead")
 		}
 		if d.cursor != expectedCursor {
@@ -74,7 +74,7 @@ func TestDispenser_NextArg(t *testing.T) {
 			t.Errorf("Val(): Expected '%s' but got '%s'", expectedVal, val)
 		}
 		if !loadAnother {
-			if d.NextArg() != false {
+			if d.NextArg() {
 				t.Fatalf("NextArg(): Should NOT load another argument, but got true instead (val: '%s')", d.Val())
 			}
 			if d.cursor != expectedCursor {

@@ -46,17 +46,17 @@ type UpstreamHostDownFunc func(*UpstreamHost) bool
 
 // UpstreamHost represents a single proxy upstream
 type UpstreamHost struct {
-	Conns             int64  // must be first field to be 64-bit aligned on 32-bit systems
+	Conns             int64 // must be first field to be 64-bit aligned on 32-bit systems
+	MaxConns          int64
 	Name              string // hostname of this upstream host
-	ReverseProxy      *ReverseProxy
-	Fails             int32
-	FailTimeout       time.Duration
-	Unhealthy         bool
 	UpstreamHeaders   http.Header
 	DownstreamHeaders http.Header
+	FailTimeout       time.Duration
 	CheckDown         UpstreamHostDownFunc
 	WithoutPathPrefix string
-	MaxConns          int64
+	ReverseProxy      *ReverseProxy
+	Fails             int32
+	Unhealthy         bool
 }
 
 // Down checks whether the upstream host is down or not.

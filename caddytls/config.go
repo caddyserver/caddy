@@ -217,7 +217,7 @@ func (c *Config) StorageFor(caURL string) (Storage, error) {
 // MakeTLSConfig reduces configs into a single tls.Config.
 // If TLS is to be disabled, a nil tls.Config will be returned.
 func MakeTLSConfig(configs []*Config) (*tls.Config, error) {
-	if configs == nil || len(configs) == 0 {
+	if len(configs) == 0 {
 		return nil, nil
 	}
 
@@ -416,27 +416,6 @@ var supportedCiphersMap = map[string]uint16{
 	"RSA-AES256-CBC-SHA":            tls.TLS_RSA_WITH_AES_256_CBC_SHA,
 	"ECDHE-RSA-3DES-EDE-CBC-SHA":    tls.TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA,
 	"RSA-3DES-EDE-CBC-SHA":          tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA,
-}
-
-// List of supported cipher suites in descending order of preference.
-// Ordering is very important! Getting the wrong order will break
-// mainstream clients, especially with HTTP/2.
-//
-// Note that TLS_FALLBACK_SCSV is not in this list since it is always
-// added manually.
-var supportedCiphers = []uint16{
-	tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
-	tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-	tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
-	tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-	tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
-	tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
-	tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
-	tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
-	tls.TLS_RSA_WITH_AES_256_CBC_SHA,
-	tls.TLS_RSA_WITH_AES_128_CBC_SHA,
-	tls.TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA,
-	tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA,
 }
 
 // List of all the ciphers we want to use by default
