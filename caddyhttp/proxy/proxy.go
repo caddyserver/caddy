@@ -218,6 +218,11 @@ func (p Proxy) match(r *http.Request) Upstream {
 func createUpstreamRequest(r *http.Request) *http.Request {
 	outreq := new(http.Request)
 	*outreq = *r // includes shallow copies of maps, but okay
+	// We should set body to nil explicitly if request body is empty.
+	// For server requests the Request Body is always non-nil.
+	if r.ContentLength == 0 {
+		outreq.Body = nil
+	}
 
 	// Restore URL Path if it has been modified
 	if outreq.URL.RawPath != "" {
