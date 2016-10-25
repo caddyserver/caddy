@@ -71,11 +71,13 @@ func (m *loadBalancingDialer) Dial() (Client, error) {
 	nextDialerIndex := atomic.AddInt64(&m.current, 1) % int64(len(m.dialers))
 	currentDialer := m.dialers[nextDialerIndex]
 
-	if client, err := currentDialer.Dial(); err != nil {
+	client, err := currentDialer.Dial()
+
+	if err != nil {
 		return nil, err
-	} else {
-		return &dialerAwareClient{Client: client, dialer: currentDialer}, nil
 	}
+
+	return &dialerAwareClient{Client: client, dialer: currentDialer}, nil
 }
 
 func (m *loadBalancingDialer) Close(c Client) error {
