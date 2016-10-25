@@ -104,10 +104,7 @@ func TestLogRequestBody(t *testing.T) {
 		},
 	} {
 		got.Reset()
-		r, err := http.NewRequest("POST", "/", bytes.NewBufferString(c.body))
-		if err != nil {
-			t.Fatal(err)
-		}
+		r := httptest.NewRequest("POST", "/", bytes.NewBufferString(c.body))
 		r.Header.Set("Content-Type", "application/json")
 		status, err := logger.ServeHTTP(httptest.NewRecorder(), r)
 		if status != 0 {
