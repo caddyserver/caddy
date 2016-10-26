@@ -2,6 +2,8 @@ package header
 
 import (
 	"fmt"
+	"net/http"
+	"reflect"
 	"testing"
 
 	"github.com/mholt/caddy"
@@ -39,15 +41,15 @@ func TestHeadersParse(t *testing.T) {
 	}{
 		{`header /foo Foo "Bar Baz"`,
 			false, []Rule{
-				{Path: "/foo", Headers: []Header{
-					{Name: "Foo", Value: "Bar Baz"},
+				{Path: "/foo", Headers: http.Header{
+					"Foo": []string{"Bar Baz"},
 				}},
 			}},
 		{`header /bar { Foo "Bar Baz" Baz Qux }`,
 			false, []Rule{
-				{Path: "/bar", Headers: []Header{
-					{Name: "Foo", Value: "Bar Baz"},
-					{Name: "Baz", Value: "Qux"},
+				{Path: "/bar", Headers: http.Header{
+					"Foo": []string{"Bar Baz"},
+					"Baz": []string{"Qux"},
 				}},
 			}},
 	}
@@ -77,7 +79,7 @@ func TestHeadersParse(t *testing.T) {
 			expectedHeaders := fmt.Sprintf("%v", expectedRule.Headers)
 			actualHeaders := fmt.Sprintf("%v", actualRule.Headers)
 
-			if actualHeaders != expectedHeaders {
+			if !reflect.DeepEqual(actualRule.Headers, expectedRule.Headers) {
 				t.Errorf("Test %d, rule %d: Expected headers %s, but got %s",
 					i, j, expectedHeaders, actualHeaders)
 			}

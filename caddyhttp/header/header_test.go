@@ -37,11 +37,11 @@ func TestHeader(t *testing.T) {
 				return 0, nil
 			}),
 			Rules: []Rule{
-				{Path: "/a", Headers: []Header{
-					{Name: "Foo", Value: "Bar"},
-					{Name: "ServerName", Value: "{hostname}"},
-					{Name: "-Bar"},
-					{Name: "-Server"},
+				{Path: "/a", Headers: http.Header{
+					"Foo":        []string{"Bar"},
+					"ServerName": []string{"{hostname}"},
+					"-Bar":       []string{""},
+					"-Server":    []string{},
 				}},
 			},
 		}
@@ -71,9 +71,8 @@ func TestMultipleHeaders(t *testing.T) {
 			return 0, nil
 		}),
 		Rules: []Rule{
-			{Path: "/a", Headers: []Header{
-				{Name: "+Link", Value: "</images/image.png>; rel=preload"},
-				{Name: "+Link", Value: "</css/main.css>; rel=preload"},
+			{Path: "/a", Headers: http.Header{
+				"+Link": []string{"</images/image.png>; rel=preload", "</css/main.css>; rel=preload"},
 			}},
 		},
 	}

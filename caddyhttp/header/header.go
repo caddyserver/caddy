@@ -26,15 +26,21 @@ func (h Headers) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 	rww := &responseWriterWrapper{w: w}
 	for _, rule := range h.Rules {
 		if httpserver.Path(r.URL.Path).Matches(rule.Path) {
-			for _, header := range rule.Headers {
+			for name := range rule.Headers {
+
 				// One can either delete a header, add multiple values to a header, or simply
 				// set a header.
-				if strings.HasPrefix(header.Name, "-") {
-					rww.delHeader(strings.TrimLeft(header.Name, "-"))
-				} else if strings.HasPrefix(header.Name, "+") {
-					rww.Header().Add(strings.TrimLeft(header.Name, "+"), replacer.Replace(header.Value))
+
+				if strings.HasPrefix(name, "-") {
+					rww.delHeader(strings.TrimLeft(name, "-"))
+				} else if strings.HasPrefix(name, "+") {
+					for _, value := range rule.Headers[name] {
+						rww.Header().Add(strings.TrimLeft(name, "+"), replacer.Replace(value))
+					}
 				} else {
-					rww.Header().Set(header.Name, replacer.Replace(header.Value))
+					for _, value := range rule.Headers[name] {
+						rww.Header().Set(name, replacer.Replace(value))
+					}
 				}
 			}
 		}
@@ -44,16 +50,9 @@ func (h Headers) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 
 type (
 	// Rule groups a slice of HTTP headers by a URL pattern.
-	// TODO: use http.Header type instead?
 	Rule struct {
 		Path    string
-		Headers []Header
-	}
-
-	// Header represents a single HTTP header, simply a name and value.
-	Header struct {
-		Name  string
-		Value string
+		Headers http.Header
 	}
 )
 
