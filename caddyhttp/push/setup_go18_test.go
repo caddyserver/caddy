@@ -70,12 +70,12 @@ func TestConfigParse(t *testing.T) {
 						{
 							Path:   "/style.css",
 							Method: http.MethodGet,
-							Header: http.Header{},
+							Header: http.Header{"X-Push": []string{}},
 						},
 						{
 							Path:   "/style2.css",
 							Method: http.MethodGet,
-							Header: http.Header{},
+							Header: http.Header{"X-Push": []string{}},
 						},
 					},
 				},
@@ -96,6 +96,7 @@ func TestConfigParse(t *testing.T) {
 							Header: http.Header{
 								"Own-Header":  []string{"Value"},
 								"Own-Header2": []string{"Value2"},
+								"X-Push":      []string{},
 							},
 						},
 						{
@@ -104,6 +105,7 @@ func TestConfigParse(t *testing.T) {
 							Header: http.Header{
 								"Own-Header":  []string{"Value"},
 								"Own-Header2": []string{"Value2"},
+								"X-Push":      []string{},
 							},
 						},
 					},
@@ -127,14 +129,16 @@ func TestConfigParse(t *testing.T) {
 							Path:   "/index.css",
 							Method: http.MethodGet,
 							Header: http.Header{
-								"Name": []string{"value"},
+								"Name":   []string{"value"},
+								"X-Push": []string{},
 							},
 						},
 						{
 							Path:   "/index2.css",
 							Method: http.MethodHead,
 							Header: http.Header{
-								"Name2": []string{"value2"},
+								"Name2":  []string{"value2"},
+								"X-Push": []string{},
 							},
 						},
 					},
@@ -143,32 +147,32 @@ func TestConfigParse(t *testing.T) {
 		},
 	}
 
-	for i, test := range tests {
+	for _, test := range tests {
 		t.Run(test.name, func(t2 *testing.T) {
 			actual, err := parsePushRules(caddy.NewTestController("http", test.input))
 
 			if err == nil && test.shouldErr {
-				t2.Errorf("Test %d didn't error, but it should have", i)
+				t2.Errorf("Test %s didn't error, but it should have", test.name)
 			} else if err != nil && !test.shouldErr {
-				t2.Errorf("Test %d errored, but it shouldn't have; got '%v'", i, err)
+				t2.Errorf("Test %s errored, but it shouldn't have; got '%v'", test.name, err)
 			}
 
 			if len(actual) != len(test.expected) {
-				t2.Fatalf("Test %d expected %d rules, but got %d",
-					i, len(test.expected), len(actual))
+				t2.Fatalf("Test %s expected %d rules, but got %d",
+					test.name, len(test.expected), len(actual))
 			}
 
 			for j, expectedRule := range test.expected {
 				actualRule := actual[j]
 
 				if actualRule.Path != expectedRule.Path {
-					t.Errorf("Test %d, rule %d: Expected path %s, but got %s",
-						i, j, expectedRule.Path, actualRule.Path)
+					t.Errorf("Test %s, rule %d: Expected path %s, but got %s",
+						test.name, j, expectedRule.Path, actualRule.Path)
 				}
 
 				if !reflect.DeepEqual(actualRule.Resources, expectedRule.Resources) {
-					t.Errorf("Test %d, rule %d: Expected resources %v, but got %v",
-						i, j, expectedRule.Resources, actualRule.Resources)
+					t.Errorf("Test %s, rule %d: Expected resources %v, but got %v",
+						test.name, j, expectedRule.Resources, actualRule.Resources)
 				}
 			}
 		})

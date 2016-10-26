@@ -70,6 +70,41 @@ func TestMiddlewareWillPushResources(t *testing.T) {
 	comparePushedResources(t, expectedPushedResources, pushingWriter.pushed)
 }
 
+func TestMiddlewareShouldntDoRecursivePush(t *testing.T) {
+
+	// given
+	request, err := http.NewRequest(http.MethodGet, "/index.css", nil)
+	request.Header.Add(pushHeader, "")
+
+	writer := httptest.NewRecorder()
+
+	if err != nil {
+		t.Fatalf("Could not create HTTP request: %v", err)
+	}
+
+	middleware := Middleware{
+		Next: httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
+			return 0, nil
+		}),
+		Rules: []Rule{
+			{Path: "/", Resources: []Resource{
+				{Path: "/index.css", Method: http.MethodHead, Header: http.Header{"Test": []string{"Value"}}},
+				{Path: "/index2.css", Method: http.MethodGet},
+			}},
+		},
+	}
+
+	pushingWriter := &MockedPusher{ResponseWriter: writer}
+
+	// when
+	middleware.ServeHTTP(pushingWriter, request)
+
+	// then
+	if len(pushingWriter.pushed) > 0 {
+		t.Errorf("Expected 0 pushed resources, actual %d", len(pushingWriter.pushed))
+	}
+}
+
 func TestMiddlewareShouldStopPushingOnError(t *testing.T) {
 
 	// given

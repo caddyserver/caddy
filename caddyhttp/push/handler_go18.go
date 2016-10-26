@@ -3,6 +3,7 @@
 package push
 
 import (
+	"log"
 	"net/http"
 	"strings"
 
@@ -10,6 +11,12 @@ import (
 )
 
 func (h Middleware) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
+
+	// This is request for the pushed resource - it should not be recursive
+	if _, exists := r.Header[pushHeader]; exists {
+		return h.Next.ServeHTTP(w, r)
+	}
+
 	pusher, hasPusher := w.(http.Pusher)
 
 	// No Pusher, no cry
@@ -25,6 +32,7 @@ func (h Middleware) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, erro
 
 					if err != nil {
 						// If we cannot push (either not supported or concurrent streams are full - break)
+						log.Println(err)
 						break outer
 					}
 				}

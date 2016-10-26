@@ -26,6 +26,8 @@ var errInvalidHeader = errors.New("header directive requires [name] [value]")
 var errHeaderStartsWithColon = errors.New("header cannot start with colon")
 var errMethodNotSupported = errors.New("push supports only GET and HEAD methods")
 
+const pushHeader = "X-Push"
+
 // setup configures a new Push middleware
 func setup(c *caddy.Controller) error {
 
@@ -78,7 +80,7 @@ func parsePushRules(c *caddy.Controller) ([]Rule, error) {
 			resources = append(resources, Resource{
 				Path:   args[i],
 				Method: http.MethodGet,
-				Header: http.Header{},
+				Header: http.Header{pushHeader: []string{}},
 			})
 		}
 
