@@ -33,7 +33,7 @@ func headersParse(c *caddy.Controller) ([]Rule, error) {
 
 	for c.NextLine() {
 		var head Rule
-		head.Headers = make(http.Header)
+		head.Headers = http.Header{}
 		var isNewPattern bool
 
 		if !c.NextArg() {
