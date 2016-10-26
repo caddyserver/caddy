@@ -42,7 +42,7 @@ func TestMiddlewareWillPushResources(t *testing.T) {
 			return 0, nil
 		}),
 		Rules: []Rule{
-			Rule{Path: "/index.html", Resources: []Resource{
+			{Path: "/index.html", Resources: []Resource{
 				{Path: "/index.css", Method: "HEAD", Header: http.Header{"Test": []string{"Value"}}},
 				{Path: "/index2.css", Method: "GET"},
 			}},
@@ -56,12 +56,12 @@ func TestMiddlewareWillPushResources(t *testing.T) {
 
 	// then
 	expectedPushedResources := map[string]*http.PushOptions{
-		"/index.css": &http.PushOptions{
+		"/index.css": {
 			Method: "HEAD",
 			Header: http.Header{"Test": []string{"Value"}},
 		},
 
-		"/index2.css": &http.PushOptions{
+		"/index2.css": {
 			Method: "GET",
 			Header: nil,
 		},
@@ -85,7 +85,7 @@ func TestMiddlewareShouldStopPushingOnError(t *testing.T) {
 			return 0, nil
 		}),
 		Rules: []Rule{
-			Rule{Path: "/index.html", Resources: []Resource{
+			{Path: "/index.html", Resources: []Resource{
 				{Path: "/only.css", Method: "HEAD", Header: http.Header{"Test": []string{"Value"}}},
 				{Path: "/index2.css", Method: "GET"},
 				{Path: "/index3.css", Method: "GET"},
@@ -100,7 +100,7 @@ func TestMiddlewareShouldStopPushingOnError(t *testing.T) {
 
 	// then
 	expectedPushedResources := map[string]*http.PushOptions{
-		"/only.css": &http.PushOptions{
+		"/only.css": {
 			Method: "HEAD",
 			Header: http.Header{"Test": []string{"Value"}},
 		},
@@ -122,7 +122,7 @@ func TestMiddlewareWillNotPushResources(t *testing.T) {
 			return 0, nil
 		}),
 		Rules: []Rule{
-			Rule{Path: "/index.html", Resources: []Resource{
+			{Path: "/index.html", Resources: []Resource{
 				{Path: "/index.css", Method: "HEAD", Header: http.Header{"Test": []string{"Value"}}},
 				{Path: "/index2.css", Method: "GET"},
 			}},
@@ -172,15 +172,15 @@ func TestMiddlewareShouldInterceptLinkHeader(t *testing.T) {
 	}
 
 	expectedPushedResources := map[string]*http.PushOptions{
-		"/index.css": &http.PushOptions{
+		"/index.css": {
 			Method: "GET",
 			Header: nil,
 		},
-		"/index2.css": &http.PushOptions{
+		"/index2.css": {
 			Method: "GET",
 			Header: nil,
 		},
-		"/index3.css": &http.PushOptions{
+		"/index3.css": {
 			Method: "GET",
 			Header: nil,
 		},
@@ -218,7 +218,7 @@ func TestMiddlewareShouldInterceptLinkHeaderPusherError(t *testing.T) {
 	}
 
 	expectedPushedResources := map[string]*http.PushOptions{
-		"/index.css": &http.PushOptions{
+		"/index.css": {
 			Method: "GET",
 			Header: nil,
 		},

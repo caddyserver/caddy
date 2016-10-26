@@ -49,15 +49,15 @@ func TestConfigParse(t *testing.T) {
 		},
 		{
 			"ParseProperConfig", `push /index.html /style.css /style2.css`, false, []Rule{
-				Rule{
+				{
 					Path: "/index.html",
 					Resources: []Resource{
-						Resource{
+						{
 							Path:   "/style.css",
 							Method: "GET",
 							Header: http.Header{},
 						},
-						Resource{
+						{
 							Path:   "/style2.css",
 							Method: "GET",
 							Header: http.Header{},
@@ -72,10 +72,10 @@ func TestConfigParse(t *testing.T) {
 				header Own-Header Value
 				header Own-Header2 Value2
 			}`, false, []Rule{
-				Rule{
+				{
 					Path: "/index.html",
 					Resources: []Resource{
-						Resource{
+						{
 							Path:   "/style.css",
 							Method: "HEAD",
 							Header: http.Header{
@@ -83,7 +83,7 @@ func TestConfigParse(t *testing.T) {
 								"Own-Header2": []string{"Value2"},
 							},
 						},
-						Resource{
+						{
 							Path:   "/style2.css",
 							Method: "HEAD",
 							Header: http.Header{
@@ -105,17 +105,17 @@ func TestConfigParse(t *testing.T) {
 				method HEAD
 			}
 			`, false, []Rule{
-				Rule{
+				{
 					Path: "/index.html",
 					Resources: []Resource{
-						Resource{
+						{
 							Path:   "/index.css",
 							Method: "GET",
 							Header: http.Header{
 								"Name": []string{"value"},
 							},
 						},
-						Resource{
+						{
 							Path:   "/index2.css",
 							Method: "HEAD",
 							Header: http.Header{
