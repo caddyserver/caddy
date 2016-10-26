@@ -3,7 +3,6 @@
 package push
 
 import (
-	"log"
 	"net/http"
 	"strings"
 
@@ -21,25 +20,30 @@ func (h Middleware) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, erro
 
 	// No Pusher, no cry
 	if hasPusher {
+		// Serve file first
+		code, err := h.Next.ServeHTTP(w, r)
+
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+
 	outer:
 		for _, rule := range h.Rules {
 			if httpserver.Path(r.URL.Path).Matches(rule.Path) {
 				for _, resource := range rule.Resources {
-					err := pusher.Push(resource.Path, &http.PushOptions{
+					pushErr := pusher.Push(resource.Path, &http.PushOptions{
 						Method: resource.Method,
 						Header: resource.Header,
 					})
 
-					if err != nil {
+					if pushErr != nil {
 						// If we cannot push (either not supported or concurrent streams are full - break)
-						log.Println(err)
 						break outer
 					}
 				}
 			}
 		}
 
-		code, err := h.Next.ServeHTTP(w, r)
 		headers := w.Header()
 
 		if links, exists := headers["Link"]; exists {
