@@ -30,7 +30,7 @@ func (w *MockedPusher) Push(target string, options *http.PushOptions) error {
 func TestMiddlewareWillPushResources(t *testing.T) {
 
 	// given
-	request, err := http.NewRequest("GET", "/index.html", nil)
+	request, err := http.NewRequest(http.MethodGet, "/index.html", nil)
 	writer := httptest.NewRecorder()
 
 	if err != nil {
@@ -43,8 +43,8 @@ func TestMiddlewareWillPushResources(t *testing.T) {
 		}),
 		Rules: []Rule{
 			{Path: "/index.html", Resources: []Resource{
-				{Path: "/index.css", Method: "HEAD", Header: http.Header{"Test": []string{"Value"}}},
-				{Path: "/index2.css", Method: "GET"},
+				{Path: "/index.css", Method: http.MethodHead, Header: http.Header{"Test": []string{"Value"}}},
+				{Path: "/index2.css", Method: http.MethodGet},
 			}},
 		},
 	}
@@ -57,12 +57,12 @@ func TestMiddlewareWillPushResources(t *testing.T) {
 	// then
 	expectedPushedResources := map[string]*http.PushOptions{
 		"/index.css": {
-			Method: "HEAD",
+			Method: http.MethodHead,
 			Header: http.Header{"Test": []string{"Value"}},
 		},
 
 		"/index2.css": {
-			Method: "GET",
+			Method: http.MethodGet,
 			Header: nil,
 		},
 	}
@@ -73,7 +73,7 @@ func TestMiddlewareWillPushResources(t *testing.T) {
 func TestMiddlewareShouldStopPushingOnError(t *testing.T) {
 
 	// given
-	request, err := http.NewRequest("GET", "/index.html", nil)
+	request, err := http.NewRequest(http.MethodGet, "/index.html", nil)
 	writer := httptest.NewRecorder()
 
 	if err != nil {
@@ -86,9 +86,9 @@ func TestMiddlewareShouldStopPushingOnError(t *testing.T) {
 		}),
 		Rules: []Rule{
 			{Path: "/index.html", Resources: []Resource{
-				{Path: "/only.css", Method: "HEAD", Header: http.Header{"Test": []string{"Value"}}},
-				{Path: "/index2.css", Method: "GET"},
-				{Path: "/index3.css", Method: "GET"},
+				{Path: "/only.css", Method: http.MethodHead, Header: http.Header{"Test": []string{"Value"}}},
+				{Path: "/index2.css", Method: http.MethodGet},
+				{Path: "/index3.css", Method: http.MethodGet},
 			}},
 		},
 	}
@@ -101,7 +101,7 @@ func TestMiddlewareShouldStopPushingOnError(t *testing.T) {
 	// then
 	expectedPushedResources := map[string]*http.PushOptions{
 		"/only.css": {
-			Method: "HEAD",
+			Method: http.MethodHead,
 			Header: http.Header{"Test": []string{"Value"}},
 		},
 	}
@@ -111,7 +111,7 @@ func TestMiddlewareShouldStopPushingOnError(t *testing.T) {
 
 func TestMiddlewareWillNotPushResources(t *testing.T) {
 	// given
-	request, err := http.NewRequest("GET", "/index.html", nil)
+	request, err := http.NewRequest(http.MethodGet, "/index.html", nil)
 
 	if err != nil {
 		t.Fatalf("Could not create HTTP request: %v", err)
@@ -123,8 +123,8 @@ func TestMiddlewareWillNotPushResources(t *testing.T) {
 		}),
 		Rules: []Rule{
 			{Path: "/index.html", Resources: []Resource{
-				{Path: "/index.css", Method: "HEAD", Header: http.Header{"Test": []string{"Value"}}},
-				{Path: "/index2.css", Method: "GET"},
+				{Path: "/index.css", Method: http.MethodHead, Header: http.Header{"Test": []string{"Value"}}},
+				{Path: "/index2.css", Method: http.MethodGet},
 			}},
 		},
 	}
@@ -142,7 +142,7 @@ func TestMiddlewareWillNotPushResources(t *testing.T) {
 
 func TestMiddlewareShouldInterceptLinkHeader(t *testing.T) {
 	// given
-	request, err := http.NewRequest("GET", "/index.html", nil)
+	request, err := http.NewRequest(http.MethodGet, "/index.html", nil)
 	writer := httptest.NewRecorder()
 
 	if err != nil {
@@ -173,15 +173,15 @@ func TestMiddlewareShouldInterceptLinkHeader(t *testing.T) {
 
 	expectedPushedResources := map[string]*http.PushOptions{
 		"/index.css": {
-			Method: "GET",
+			Method: http.MethodGet,
 			Header: nil,
 		},
 		"/index2.css": {
-			Method: "GET",
+			Method: http.MethodGet,
 			Header: nil,
 		},
 		"/index3.css": {
-			Method: "GET",
+			Method: http.MethodGet,
 			Header: nil,
 		},
 	}
@@ -191,7 +191,7 @@ func TestMiddlewareShouldInterceptLinkHeader(t *testing.T) {
 
 func TestMiddlewareShouldInterceptLinkHeaderPusherError(t *testing.T) {
 	// given
-	request, err := http.NewRequest("GET", "/index.html", nil)
+	request, err := http.NewRequest(http.MethodGet, "/index.html", nil)
 	writer := httptest.NewRecorder()
 
 	if err != nil {
@@ -219,7 +219,7 @@ func TestMiddlewareShouldInterceptLinkHeaderPusherError(t *testing.T) {
 
 	expectedPushedResources := map[string]*http.PushOptions{
 		"/index.css": {
-			Method: "GET",
+			Method: http.MethodGet,
 			Header: nil,
 		},
 	}

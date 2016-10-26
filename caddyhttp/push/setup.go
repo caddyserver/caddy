@@ -2,7 +2,9 @@ package push
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
@@ -20,6 +22,9 @@ var ErrNotSupported = errors.New("push directive is available when build on gola
 
 var errInvalidFormat = errors.New("invalid format, expected push path [resources, ]")
 var errInvalidHeader = errors.New("header directive requires [name] [value]")
+
+var errHeaderStartsWithColon = errors.New("header cannot start with colon")
+var errMethodNotSupported = errors.New("push supports only GET and HEAD methods")
 
 // setup configures a new Push middleware
 func setup(c *caddy.Controller) error {
@@ -72,7 +77,7 @@ func parsePushRules(c *caddy.Controller) ([]Rule, error) {
 		for i := 0; i < len(args); i++ {
 			resources = append(resources, Resource{
 				Path:   args[i],
-				Method: "GET",
+				Method: http.MethodGet,
 				Header: http.Header{},
 			})
 		}
@@ -86,6 +91,10 @@ func parsePushRules(c *caddy.Controller) ([]Rule, error) {
 
 				method := c.Val()
 
+				if err := validateMethod(method); err != nil {
+					return emptyRules, errMethodNotSupported
+				}
+
 				for index := range resources {
 					resources[index].Method = method
 				}
@@ -95,6 +104,10 @@ func parsePushRules(c *caddy.Controller) ([]Rule, error) {
 
 				if len(args) != 2 {
 					return emptyRules, errInvalidHeader
+				}
+
+				if err := validateHeader(args[0]); err != nil {
+					return emptyRules, err
 				}
 
 				for index := range resources {
@@ -113,4 +126,27 @@ func parsePushRules(c *caddy.Controller) ([]Rule, error) {
 	}
 
 	return returnRules, nil
+}
+
+// rules based on https://go-review.googlesource.com/#/c/29439/4/http2/go18.go#75
+func validateHeader(header string) error {
+	if strings.HasPrefix(header, ":") {
+		return errHeaderStartsWithColon
+	}
+
+	switch strings.ToLower(header) {
+	case "content-length", "content-encoding", "trailer", "te", "expect", "host":
+		return fmt.Errorf("push headers cannot include %s", header)
+	}
+
+	return nil
+}
+
+// rules based on https://go-review.googlesource.com/#/c/29439/4/http2/go18.go#94
+func validateMethod(method string) error {
+	if method != http.MethodGet && method != http.MethodHead {
+		return errMethodNotSupported
+	}
+
+	return nil
 }

@@ -55,7 +55,7 @@ outer:
 
 		target := strings.TrimSuffix(strings.TrimPrefix(parts[0], "<"), ">")
 
-		err := pusher.Push(target, &http.PushOptions{Method: "GET"})
+		err := pusher.Push(target, &http.PushOptions{Method: http.MethodGet})
 		if err != nil {
 			break outer
 		}

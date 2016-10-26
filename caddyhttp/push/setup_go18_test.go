@@ -38,6 +38,21 @@ func TestConfigParse(t *testing.T) {
 			}`, true, []Rule{},
 		},
 		{
+			"ParseInvalidHeaderFormat", `push /index.html /index.css {
+				header :invalid value
+			}`, true, []Rule{},
+		},
+		{
+			"ParseForbiddenHeader", `push /index.html /index.css {
+				header Content-Length 1000
+			}`, true, []Rule{},
+		},
+		{
+			"ParseInvalidMethod", `push /index.html /index.css {
+				method POST
+			}`, true, []Rule{},
+		},
+		{
 			"ParseInvalidHeaderBlock", `push /index.html /index.css {
 				header
 			}`, true, []Rule{},
@@ -54,12 +69,12 @@ func TestConfigParse(t *testing.T) {
 					Resources: []Resource{
 						{
 							Path:   "/style.css",
-							Method: "GET",
+							Method: http.MethodGet,
 							Header: http.Header{},
 						},
 						{
 							Path:   "/style2.css",
-							Method: "GET",
+							Method: http.MethodGet,
 							Header: http.Header{},
 						},
 					},
@@ -77,7 +92,7 @@ func TestConfigParse(t *testing.T) {
 					Resources: []Resource{
 						{
 							Path:   "/style.css",
-							Method: "HEAD",
+							Method: http.MethodHead,
 							Header: http.Header{
 								"Own-Header":  []string{"Value"},
 								"Own-Header2": []string{"Value2"},
@@ -85,7 +100,7 @@ func TestConfigParse(t *testing.T) {
 						},
 						{
 							Path:   "/style2.css",
-							Method: "HEAD",
+							Method: http.MethodHead,
 							Header: http.Header{
 								"Own-Header":  []string{"Value"},
 								"Own-Header2": []string{"Value2"},
@@ -110,14 +125,14 @@ func TestConfigParse(t *testing.T) {
 					Resources: []Resource{
 						{
 							Path:   "/index.css",
-							Method: "GET",
+							Method: http.MethodGet,
 							Header: http.Header{
 								"Name": []string{"value"},
 							},
 						},
 						{
 							Path:   "/index2.css",
-							Method: "HEAD",
+							Method: http.MethodHead,
 							Header: http.Header{
 								"Name2": []string{"value2"},
 							},
