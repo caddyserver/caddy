@@ -301,5 +301,3 @@ var failedIssuanceMu sync.RWMutex
 // If this value is recent, do not make any on-demand certificate requests.
 var lastIssueTime time.Time
 var lastIssueTimeMu sync.Mutex
-
-var errNoCert = errors.New("no certificate available")
