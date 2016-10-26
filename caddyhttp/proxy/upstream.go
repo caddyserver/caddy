@@ -21,27 +21,26 @@ var (
 )
 
 type staticUpstream struct {
-	from               string
-	upstreamHeaders    http.Header
-	downstreamHeaders  http.Header
-	Hosts              HostPool
-	Policy             Policy
-	KeepAlive          int
-	insecureSkipVerify bool
-
-	FailTimeout time.Duration
-	MaxFails    int32
-	TryDuration time.Duration
-	TryInterval time.Duration
-	MaxConns    int64
-	HealthCheck struct {
+	from              string
+	upstreamHeaders   http.Header
+	downstreamHeaders http.Header
+	Hosts             HostPool
+	Policy            Policy
+	KeepAlive         int
+	FailTimeout       time.Duration
+	TryDuration       time.Duration
+	TryInterval       time.Duration
+	MaxConns          int64
+	HealthCheck       struct {
 		Client   http.Client
 		Path     string
 		Interval time.Duration
 		Timeout  time.Duration
 	}
-	WithoutPathPrefix string
-	IgnoredSubPaths   []string
+	WithoutPathPrefix  string
+	IgnoredSubPaths    []string
+	insecureSkipVerify bool
+	MaxFails           int32
 }
 
 // NewStaticUpstreams parses the configuration input and sets up
