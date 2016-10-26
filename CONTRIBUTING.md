@@ -65,7 +65,7 @@ Don't worry, that won't happen without an open discussion first.
 
 If you are going to spend significant time writing code for a new pull request,
 best to open an issue to "claim" it and get feedback before you invest a lot of
-time. Not all pull requests are merged, and that's okay.
+time. Not all pull requests are merged, and that's okay,
 [Read why.](https://github.com/turbolinks/turbolinks/pull/124#issuecomment-239826060)
 
 Remember: pull requests should always be thoroughly documented both via godoc
