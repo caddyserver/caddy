@@ -1,3 +1,5 @@
+// +build go1.8
+
 package push
 
 import (
@@ -9,8 +11,6 @@ import (
 
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
-
-// build go1.8
 
 type MockedPusher struct {
 	http.ResponseWriter
