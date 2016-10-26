@@ -6,20 +6,23 @@ import (
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
 
-type Middleware struct {
-	Next  httpserver.Handler
-	Rules []Rule
-}
-
 type (
+	// Rule describes conditions on which resources will be pushed
 	Rule struct {
-		Path     string
-		Resource PushResource
+		Path      string
+		Resources []Resource
 	}
 
-	PushResource struct {
+	// Resource describes resource to be pushed
+	Resource struct {
 		Path   string
 		Method string
 		Header http.Header
+	}
+
+	// Middleware supports pushing resources to clients
+	Middleware struct {
+		Next  httpserver.Handler
+		Rules []Rule
 	}
 )
