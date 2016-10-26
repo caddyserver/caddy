@@ -430,6 +430,7 @@ var directives = []string{
 	"git",    // github.com/abiosoft/caddy-git
 
 	// directives that add middleware to the stack
+	"push",
 	"locale", // github.com/simia-tech/caddy-locale
 	"log",
 	"rewrite",
