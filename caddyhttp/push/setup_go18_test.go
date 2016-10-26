@@ -1,3 +1,5 @@
+// +build go1.8
+
 package push
 
 import (
@@ -9,17 +11,7 @@ import (
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
 
-func TestPushUnavailableOnGolangPre18(t *testing.T) {
-	if !http2PushSupported() {
-		err := setup(caddy.NewTestController("http", "push /index.html /index.css"))
-
-		if err != ErrNotSupported {
-			t.Fatalf("Expected setup error")
-		}
-	}
-}
-
-func testPushAvailable(t *testing.T) {
+func TestPushAvailable(t *testing.T) {
 	err := setup(caddy.NewTestController("http", "push /index.html /available.css"))
 
 	if err != nil {
@@ -27,7 +19,7 @@ func testPushAvailable(t *testing.T) {
 	}
 }
 
-func testConfigParse(t *testing.T) {
+func TestConfigParse(t *testing.T) {
 	tests := []struct {
 		name      string
 		input     string
@@ -168,7 +160,7 @@ func testConfigParse(t *testing.T) {
 	}
 }
 
-func testSetupInstalledMiddleware(t *testing.T) {
+func TestSetupInstalledMiddleware(t *testing.T) {
 
 	// given
 	c := caddy.NewTestController("http", `push /index.html /test.js`)
@@ -199,7 +191,7 @@ func testSetupInstalledMiddleware(t *testing.T) {
 	}
 }
 
-func testSetupWithError(t *testing.T) {
+func TestSetupWithError(t *testing.T) {
 	// given
 	c := caddy.NewTestController("http", `push /index.html`)
 
@@ -210,15 +202,4 @@ func testSetupWithError(t *testing.T) {
 	if err == nil {
 		t.Error("Expected error but none occured")
 	}
-}
-
-func TestOnGo18(t *testing.T) {
-	if !http2PushSupported() {
-		t.Skip("Skipping test as HTTP2 Push is available on go1.8")
-	}
-
-	t.Run("ConfigParse", testConfigParse)
-	t.Run("PushAvailable", testPushAvailable)
-	t.Run("SetupWillReturnError", testSetupWithError)
-	t.Run("SetupInstalledMiddleware", testSetupInstalledMiddleware)
 }
