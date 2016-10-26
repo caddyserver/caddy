@@ -2,7 +2,6 @@ package push
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
 
 	"github.com/mholt/caddy"
@@ -19,7 +18,8 @@ func init() {
 // ErrNotSupported is returned when push directive is not available
 var ErrNotSupported = errors.New("push directive is available when build on golang 1.8")
 
-var invalidFormat = errors.New("push directive has invalid format, expected push path [resources, ]")
+var errInvalidFormat = errors.New("invalid format, expected push path [resources, ]")
+var errInvalidHeader = errors.New("header directive requires [name] [value]")
 
 // setup configures a new Push middleware
 func setup(c *caddy.Controller) error {
@@ -54,7 +54,7 @@ func parsePushRules(c *caddy.Controller) ([]Rule, error) {
 		args := c.RemainingArgs()
 
 		if len(args) < 1 {
-			return emptyRules, invalidFormat
+			return emptyRules, errInvalidFormat
 		}
 
 		var rule *Rule
@@ -67,8 +67,10 @@ func parsePushRules(c *caddy.Controller) ([]Rule, error) {
 			rules[rule.Path] = rule
 		}
 
+		var resources []Resource
+
 		for i := 0; i < len(args); i++ {
-			rule.Resources = append(rule.Resources, Resource{
+			resources = append(resources, Resource{
 				Path:   args[i],
 				Method: "GET",
 				Header: http.Header{},
@@ -78,9 +80,30 @@ func parsePushRules(c *caddy.Controller) ([]Rule, error) {
 		for c.NextBlock() {
 			switch c.Val() {
 			case "method":
-				fmt.Println(c.Val())
+				if !c.NextArg() {
+					return emptyRules, c.ArgErr()
+				}
+
+				method := c.Val()
+
+				for index := range resources {
+					resources[index].Method = method
+				}
+
+			case "header":
+				args := c.RemainingArgs()
+
+				if len(args) != 2 {
+					return emptyRules, errInvalidHeader
+				}
+
+				for index := range resources {
+					resources[index].Header.Add(args[0], args[1])
+				}
 			}
 		}
+
+		rule.Resources = append(rule.Resources, resources...)
 	}
 
 	var returnRules []Rule

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/mholt/caddy"
+	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
 
 func TestPushUnavailableOnGolangPre18(t *testing.T) {
@@ -34,6 +35,27 @@ func testConfigParse(t *testing.T) {
 		expected  []Rule
 	}{
 		{
+			"ParseInvalidEmptyConfig", `push`, true, []Rule{},
+		},
+		{
+			"ParseInvalidConfig", `push /index.html`, true, []Rule{},
+		},
+		{
+			"ParseInvalidConfigBlock", `push /index.html /index.css {
+				method
+			}`, true, []Rule{},
+		},
+		{
+			"ParseInvalidHeaderBlock", `push /index.html /index.css {
+				header
+			}`, true, []Rule{},
+		},
+		{
+			"ParseInvalidHeaderBlock2", `push /index.html /index.css {
+				header name
+			}`, true, []Rule{},
+		},
+		{
 			"ParseProperConfig", `push /index.html /style.css /style2.css`, false, []Rule{
 				Rule{
 					Path: "/index.html",
@@ -47,6 +69,66 @@ func testConfigParse(t *testing.T) {
 							Path:   "/style2.css",
 							Method: "GET",
 							Header: http.Header{},
+						},
+					},
+				},
+			},
+		},
+		{
+			"ParseProperConfigWithBlock", `push /index.html /style.css /style2.css {
+				method HEAD
+				header Own-Header Value
+				header Own-Header2 Value2
+			}`, false, []Rule{
+				Rule{
+					Path: "/index.html",
+					Resources: []Resource{
+						Resource{
+							Path:   "/style.css",
+							Method: "HEAD",
+							Header: http.Header{
+								"Own-Header":  []string{"Value"},
+								"Own-Header2": []string{"Value2"},
+							},
+						},
+						Resource{
+							Path:   "/style2.css",
+							Method: "HEAD",
+							Header: http.Header{
+								"Own-Header":  []string{"Value"},
+								"Own-Header2": []string{"Value2"},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			"ParseMergesRules", `push /index.html /index.css {
+				header name value
+			}
+
+			push /index.html /index2.css {
+				header name2 value2
+				method HEAD
+			}
+			`, false, []Rule{
+				Rule{
+					Path: "/index.html",
+					Resources: []Resource{
+						Resource{
+							Path:   "/index.css",
+							Method: "GET",
+							Header: http.Header{
+								"Name": []string{"value"},
+							},
+						},
+						Resource{
+							Path:   "/index2.css",
+							Method: "HEAD",
+							Header: http.Header{
+								"Name2": []string{"value2"},
+							},
 						},
 					},
 				},
@@ -79,10 +161,54 @@ func testConfigParse(t *testing.T) {
 
 				if !reflect.DeepEqual(actualRule.Resources, expectedRule.Resources) {
 					t.Errorf("Test %d, rule %d: Expected resources %v, but got %v",
-						i, j, actualRule.Resources, expectedRule.Resources)
+						i, j, expectedRule.Resources, actualRule.Resources)
 				}
 			}
 		})
+	}
+}
+
+func testSetupInstalledMiddleware(t *testing.T) {
+
+	// given
+	c := caddy.NewTestController("http", `push /index.html /test.js`)
+
+	// when
+	err := setup(c)
+
+	// then
+	if err != nil {
+		t.Errorf("Expected no errors, but got: %v", err)
+	}
+
+	middlewares := httpserver.GetConfig(c).Middleware()
+
+	if len(middlewares) != 1 {
+		t.Fatalf("Expected 1 middleware, had %d instead", len(middlewares))
+	}
+
+	handler := middlewares[0](httpserver.EmptyNext)
+	pushHandler, ok := handler.(Middleware)
+
+	if !ok {
+		t.Fatalf("Expected handler to be type Middleware, got: %#v", handler)
+	}
+
+	if !httpserver.SameNext(pushHandler.Next, httpserver.EmptyNext) {
+		t.Error("'Next' field of handler Middleware was not set properly")
+	}
+}
+
+func testSetupWithError(t *testing.T) {
+	// given
+	c := caddy.NewTestController("http", `push /index.html`)
+
+	// when
+	err := setup(c)
+
+	// then
+	if err == nil {
+		t.Error("Expected error but none occured")
 	}
 }
 
@@ -93,4 +219,6 @@ func TestOnGo18(t *testing.T) {
 
 	t.Run("ConfigParse", testConfigParse)
 	t.Run("PushAvailable", testPushAvailable)
+	t.Run("SetupWillReturnError", testSetupWithError)
+	t.Run("SetupInstalledMiddleware", testSetupInstalledMiddleware)
 }

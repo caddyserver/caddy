@@ -4,6 +4,7 @@ package push
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
@@ -29,9 +30,36 @@ func (h Middleware) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, erro
 				}
 			}
 		}
+
+		code, err := h.Next.ServeHTTP(w, r)
+		headers := w.Header()
+
+		if links, exists := headers["Link"]; exists {
+			h.pushLinks(pusher, links)
+		}
+
+		return code, err
 	}
 
 	return h.Next.ServeHTTP(w, r)
+}
+
+func (h Middleware) pushLinks(pusher http.Pusher, links []string) {
+outer:
+	for _, link := range links {
+		parts := strings.Split(link, ";")
+
+		if link == "" || strings.HasSuffix(link, "nopush") {
+			continue
+		}
+
+		target := strings.TrimSuffix(strings.TrimPrefix(parts[0], "<"), ">")
+
+		err := pusher.Push(target, &http.PushOptions{Method: "GET"})
+		if err != nil {
+			break outer
+		}
+	}
 }
 
 func http2PushSupported() bool {
