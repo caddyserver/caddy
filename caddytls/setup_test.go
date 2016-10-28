@@ -126,8 +126,8 @@ func TestSetupParseWithOptionalParams(t *testing.T) {
 		t.Errorf("Expected 3 Ciphers (not including TLS_FALLBACK_SCSV), got %v", len(cfg.Ciphers)-1)
 	}
 
-	if !mustStaple {
-		t.Errorf("Expected mustStaple to be true")
+	if !cfg.MustStaple {
+		t.Errorf("Expected must staple to be true")
 	}
 }
 

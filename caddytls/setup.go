@@ -165,7 +165,7 @@ func setupTLS(c *caddy.Controller) error {
 				}
 				config.StorageProvider = args[0]
 			case "muststaple":
-				mustStaple = true
+				config.MustStaple = true
 			default:
 				return c.Errf("Unknown keyword '%s'", c.Val())
 			}
