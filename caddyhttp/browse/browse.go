@@ -101,12 +101,12 @@ func (l Listing) BreadcrumbMap() map[string]string {
 
 // FileInfo is the info about a particular file or directory
 type FileInfo struct {
-	IsDir   bool
 	Name    string
 	Size    int64
 	URL     string
 	ModTime time.Time
 	Mode    os.FileMode
+	IsDir   bool
 }
 
 // HumanSize returns the size of the file as a human-readable string

@@ -216,10 +216,7 @@ func (r *ComplexRule) matchExt(rPath string) bool {
 		}
 	}
 
-	if mustUse {
-		return false
-	}
-	return true
+	return !mustUse
 }
 
 func (r *ComplexRule) regexpMatches(rPath string) []string {

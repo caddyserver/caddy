@@ -16,8 +16,7 @@ import (
 // pass in nil instead.
 func Parse(filename string, input io.Reader, validDirectives []string) ([]ServerBlock, error) {
 	p := parser{Dispenser: NewDispenser(filename, input), validDirectives: validDirectives}
-	blocks, err := p.parseAll()
-	return blocks, err
+	return p.parseAll()
 }
 
 // allTokens lexes the entire input, but does not parse it.
@@ -62,12 +61,7 @@ func (p *parser) parseAll() ([]ServerBlock, error) {
 func (p *parser) parseOne() error {
 	p.block = ServerBlock{Tokens: make(map[string][]Token)}
 
-	err := p.begin()
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return p.begin()
 }
 
 func (p *parser) begin() error {
@@ -76,6 +70,7 @@ func (p *parser) begin() error {
 	}
 
 	err := p.addresses()
+
 	if err != nil {
 		return err
 	}
@@ -86,12 +81,7 @@ func (p *parser) begin() error {
 		return nil
 	}
 
-	err = p.blockContents()
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return p.blockContents()
 }
 
 func (p *parser) addresses() error {
