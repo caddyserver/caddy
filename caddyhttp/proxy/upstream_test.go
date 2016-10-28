@@ -192,16 +192,56 @@ func TestParseBlockHealthCheck(t *testing.T) {
 func TestParseBlock(t *testing.T) {
 	r, _ := http.NewRequest("GET", "/", nil)
 	tests := []struct {
-		config string
+		config  string
+		headers map[string]string
 	}{
 		// Test #1: transparent preset
-		{"proxy / localhost:8080 {\n transparent \n}"},
+		{
+			"proxy / localhost:8080 {\n transparent \n}",
+			map[string]string{
+				"Host":              "{host}",
+				"X-Real-Ip":         "{remote}",
+				"X-Forwarded-For":   "{remote}",
+				"X-Forwarded-Proto": "{scheme}",
+			},
+		},
 
 		// Test #2: transparent preset with another param
-		{"proxy / localhost:8080 {\n transparent \nheader_upstream X-Test Tester \n}"},
+		{
+			"proxy / localhost:8080 {\n transparent \nheader_upstream X-Test Tester \n}",
+			map[string]string{
+				"Host":              "{host}",
+				"X-Real-Ip":         "{remote}",
+				"X-Forwarded-For":   "{remote}",
+				"X-Forwarded-Proto": "{scheme}",
+				"X-Test":            "Tester",
+			},
+		},
 
 		// Test #3: transparent preset on multiple sites
-		{"proxy / localhost:8080 {\n transparent \n} \nproxy /api localhost:8081 { \ntransparent \n}"},
+		{
+			"proxy / localhost:8080 {\n transparent \n} \nproxy /api localhost:8081 { \ntransparent \n}",
+			map[string]string{
+				"Host":              "{host}",
+				"X-Real-Ip":         "{remote}",
+				"X-Forwarded-For":   "{remote}",
+				"X-Forwarded-Proto": "{scheme}",
+			},
+		},
+
+		// Test #4: transparent and websocket preset
+		{
+			"proxy / localhost:8080 {\n transparent \n websocket \n}",
+			map[string]string{
+				"Host":                   "{host}",
+				"X-Real-Ip":              "{remote}",
+				"X-Forwarded-For":        "{remote}",
+				"X-Forwarded-Proto":      "{scheme}",
+				"Connection":             "{>Connection}",
+				"Upgrade":                "{>Upgrade}",
+				"Sec-Websocket-Protocol": "{>Sec-Websocket-Protocol}",
+			},
+		},
 	}
 
 	for i, test := range tests {
@@ -211,17 +251,14 @@ func TestParseBlock(t *testing.T) {
 		}
 		for _, upstream := range upstreams {
 			headers := upstream.Select(r).UpstreamHeaders
-
-			if _, ok := headers["Host"]; !ok {
-				t.Errorf("Test %d: Could not find the Host header", i+1)
-			}
-
-			if _, ok := headers["X-Real-Ip"]; !ok {
-				t.Errorf("Test %d: Could not find the X-Real-Ip header", i+1)
-			}
-
-			if _, ok := headers["X-Forwarded-Proto"]; !ok {
-				t.Errorf("Test %d: Could not find the X-Forwarded-Proto header", i+1)
+			for name, expected := range test.headers {
+				actual, ok := headers[name]
+				if !ok {
+					t.Errorf("Test %d: Could not find the %v header", i+1, name)
+				} else if expected != actual[0] {
+					t.Errorf("Test %d: Header %v not the same from config. Got %v. Expected %v.",
+						i+1, name, actual[0], expected)
+				}
 			}
 		}
 	}

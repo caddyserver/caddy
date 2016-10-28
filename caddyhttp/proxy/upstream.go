@@ -323,6 +323,7 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream) error {
 	case "websocket":
 		u.upstreamHeaders.Add("Connection", "{>Connection}")
 		u.upstreamHeaders.Add("Upgrade", "{>Upgrade}")
+		u.upstreamHeaders.Add("Sec-Websocket-Protocol", "{>Sec-Websocket-Protocol}")
 	case "without":
 		if !c.NextArg() {
 			return c.ArgErr()
