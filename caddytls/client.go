@@ -197,7 +197,7 @@ Attempts:
 	for attempts := 0; attempts < 2; attempts++ {
 		namesObtaining.Add([]string{name})
 		acmeMu.Lock()
-		certificate, failures := c.acmeClient.ObtainCertificate([]string{name}, true, nil)
+		certificate, failures := c.acmeClient.ObtainCertificate([]string{name}, true, nil, c.config.MustStaple)
 		acmeMu.Unlock()
 		namesObtaining.Remove([]string{name})
 		if len(failures) > 0 {
@@ -285,7 +285,7 @@ func (c *ACMEClient) Renew(name string) error {
 	for attempts := 0; attempts < 2; attempts++ {
 		namesObtaining.Add([]string{name})
 		acmeMu.Lock()
-		newCertMeta, err = c.acmeClient.RenewCertificate(certMeta, true)
+		newCertMeta, err = c.acmeClient.RenewCertificate(certMeta, true, c.config.MustStaple)
 		acmeMu.Unlock()
 		namesObtaining.Remove([]string{name})
 		if err == nil {
