@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -681,6 +682,106 @@ func TestTemplates(t *testing.T) {
 		}
 		if buf.String() != test.expected {
 			t.Errorf("Test %d: Results do not match. '%s' != '%s'", i, buf.String(), test.expected)
+		}
+	}
+}
+
+func TestFiles(t *testing.T) {
+	tests := []struct {
+		dirName              string
+		fileNames            []string
+		input                string
+		shouldErr            bool
+		expectedErrorContent string
+	}{
+		// Test 1 - directory and files exist
+		{
+			dirName:              "testFiles1",
+			fileNames:            []string{"file1", "file2"},
+			input:                "testFiles1",
+			shouldErr:            false,
+			expectedErrorContent: "",
+		},
+		// Test 2 - directory exists, no files
+		{
+			dirName:              "testFiles2",
+			fileNames:            []string{},
+			input:                "testFiles2",
+			shouldErr:            false,
+			expectedErrorContent: "",
+		},
+		// Test 3 - directory does not exist
+		{
+			dirName:              "",
+			fileNames:            nil,
+			input:                "testFiles3",
+			shouldErr:            true,
+			expectedErrorContent: "testFiles3: no such file or directory",
+		},
+		// Test 4 - directory and files exist, input is path to a file
+		{
+			dirName:              "testFiles4",
+			fileNames:            []string{"file1", "file2"},
+			input:                "testFiles4/file1",
+			shouldErr:            true,
+			expectedErrorContent: "testFiles4/file1 is not a directory",
+		},
+		// Test 5 - try to leave Context Root
+		{
+			dirName:              "",
+			fileNames:            nil,
+			input:                "../../../../../../etc",
+			shouldErr:            true,
+			expectedErrorContent: "no such file or directory",
+		},
+	}
+
+	for i, test := range tests {
+		context := getContextOrFail(t)
+		testPrefix := getTestPrefix(i + 1)
+
+		// Create directory / files from test case.
+		if test.fileNames != nil {
+			dirPath := fmt.Sprintf("%s/%s", context.Root, test.dirName)
+			if err := os.Mkdir(dirPath, os.ModeDir); err != nil {
+				t.Fatal(testPrefix+"Expected no error creating directory, got: '%s'", err.Error())
+			}
+			defer func() {
+				if err := os.RemoveAll(dirPath); err != nil && !os.IsNotExist(err) {
+					t.Fatal(testPrefix+"Expected no error removing directory, got: '%s'", err.Error())
+				}
+			}()
+
+			for _, name := range test.fileNames {
+				absFilePath := filepath.Join(dirPath, name)
+				if err := ioutil.WriteFile(absFilePath, []byte(""), os.ModePerm); err != nil {
+					t.Fatal(testPrefix+"Expected no error creating file, got: '%s'", err.Error())
+				}
+			}
+		}
+
+		// Perform test case.
+		actual, err := context.Files(test.input)
+		if err != nil {
+			if !test.shouldErr {
+				t.Errorf(testPrefix+"Expected no error, got: '%s'", err.Error())
+			}
+			if !strings.Contains(err.Error(), test.expectedErrorContent) {
+				t.Errorf(testPrefix+"Expected error content %s, got: %s",
+					test.expectedErrorContent, err.Error())
+			}
+		} else if test.shouldErr {
+			t.Errorf(testPrefix+"Expected error but had none")
+		} else {
+			numFiles := len(test.fileNames)
+			// reflect.DeepEqual does not consider two empty slices to be equal
+			if numFiles == 0 && len(actual) != 0 {
+				t.Errorf(testPrefix+"Expected files %v, got: %v",
+					test.fileNames, actual)
+			} else if numFiles > 0 && !reflect.DeepEqual(test.fileNames, actual) {
+				t.Errorf(testPrefix+"Expected files %v, got: %v",
+					test.fileNames, actual)
+			}
 		}
 	}
 }
