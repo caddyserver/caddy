@@ -103,6 +103,7 @@ func TestSetupParseWithOptionalParams(t *testing.T) {
 	params := `tls ` + certFile + ` ` + keyFile + ` {
             protocols tls1.0 tls1.2
             ciphers RSA-AES256-CBC-SHA ECDHE-RSA-AES128-GCM-SHA256 ECDHE-ECDSA-AES256-GCM-SHA384
+            muststaple
         }`
 	cfg := new(Config)
 	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
@@ -123,6 +124,10 @@ func TestSetupParseWithOptionalParams(t *testing.T) {
 
 	if len(cfg.Ciphers)-1 != 3 {
 		t.Errorf("Expected 3 Ciphers (not including TLS_FALLBACK_SCSV), got %v", len(cfg.Ciphers)-1)
+	}
+
+	if !cfg.MustStaple {
+		t.Errorf("Expected must staple to be true")
 	}
 }
 
