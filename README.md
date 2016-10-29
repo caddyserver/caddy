@@ -12,6 +12,7 @@ a capable but easier alternative to other popular web servers.
 [User Guide](https://caddyserver.com/docs) ·
 [Community](https://forum.caddyserver.com)
 
+Try browsing [the code on Sourcegraph](https://sourcegraph.com/github.com/mholt/caddy)!
 
 ## Menu
 
