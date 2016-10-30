@@ -689,7 +689,7 @@ func TestTemplates(t *testing.T) {
 func TestFiles(t *testing.T) {
 	tests := []struct {
 		fileNames []string
-		input     string
+		inputBase string
 		shouldErr bool
 		verifyErr func(error) bool
 	}{
@@ -706,14 +706,14 @@ func TestFiles(t *testing.T) {
 		// Test 3 - file or directory does not exist
 		{
 			fileNames: nil,
-			input:     "doesNotExist",
+			inputBase: "doesNotExist",
 			shouldErr: true,
 			verifyErr: os.IsNotExist,
 		},
 		// Test 4 - directory and files exist, but path to a file
 		{
 			fileNames: []string{"file1", "file2"},
-			input:     "file1",
+			inputBase: "file1",
 			shouldErr: true,
 			verifyErr: func(err error) bool {
 				return strings.HasSuffix(err.Error(), "is not a directory")
@@ -722,7 +722,7 @@ func TestFiles(t *testing.T) {
 		// Test 5 - try to leave Context Root
 		{
 			fileNames: nil,
-			input:     filepath.Join("..", "..", "..", "..", "..", "etc"),
+			inputBase: filepath.Join("..", "..", "..", "..", "..", "etc"),
 			shouldErr: true,
 			verifyErr: os.IsNotExist,
 		},
@@ -755,7 +755,7 @@ func TestFiles(t *testing.T) {
 		}
 
 		// Perform test case.
-		input := filepath.Join(filepath.Base(dirPath), test.input)
+		input := filepath.ToSlash(filepath.Join(filepath.Base(dirPath), test.inputBase))
 		actual, err := context.Files(input)
 		if err != nil {
 			if !test.shouldErr {
