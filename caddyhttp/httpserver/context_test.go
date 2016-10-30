@@ -688,62 +688,56 @@ func TestTemplates(t *testing.T) {
 
 func TestFiles(t *testing.T) {
 	tests := []struct {
-		dirName              string
-		fileNames            []string
-		input                string
-		shouldErr            bool
-		expectedErrorContent string
+		fileNames []string
+		input     string
+		shouldErr bool
+		verifyErr func(error) bool
 	}{
 		// Test 1 - directory and files exist
 		{
-			dirName:              "testFiles1",
-			fileNames:            []string{"file1", "file2"},
-			input:                "testFiles1",
-			shouldErr:            false,
-			expectedErrorContent: "",
+			fileNames: []string{"file1", "file2"},
+			shouldErr: false,
 		},
 		// Test 2 - directory exists, no files
 		{
-			dirName:              "testFiles2",
-			fileNames:            []string{},
-			input:                "testFiles2",
-			shouldErr:            false,
-			expectedErrorContent: "",
+			fileNames: []string{},
+			shouldErr: false,
 		},
-		// Test 3 - directory does not exist
+		// Test 3 - file or directory does not exist
 		{
-			dirName:              "",
-			fileNames:            nil,
-			input:                "testFiles3",
-			shouldErr:            true,
-			expectedErrorContent: "testFiles3: no such file or directory",
+			fileNames: nil,
+			input:     "doesNotExist",
+			shouldErr: true,
+			verifyErr: os.IsNotExist,
 		},
-		// Test 4 - directory and files exist, input is path to a file
+		// Test 4 - directory and files exist, but path to a file
 		{
-			dirName:              "testFiles4",
-			fileNames:            []string{"file1", "file2"},
-			input:                "testFiles4/file1",
-			shouldErr:            true,
-			expectedErrorContent: "testFiles4/file1 is not a directory",
+			fileNames: []string{"file1", "file2"},
+			input:     "file1",
+			shouldErr: true,
+			verifyErr: func(err error) bool {
+				return strings.HasSuffix(err.Error(), "is not a directory")
+			},
 		},
 		// Test 5 - try to leave Context Root
 		{
-			dirName:              "",
-			fileNames:            nil,
-			input:                "../../../../../../etc",
-			shouldErr:            true,
-			expectedErrorContent: "no such file or directory",
+			fileNames: nil,
+			input:     filepath.Join("..", "..", "..", "..", "..", "etc"),
+			shouldErr: true,
+			verifyErr: os.IsNotExist,
 		},
 	}
 
 	for i, test := range tests {
 		context := getContextOrFail(t)
 		testPrefix := getTestPrefix(i + 1)
+		var dirPath string
+		var err error
 
 		// Create directory / files from test case.
 		if test.fileNames != nil {
-			dirPath := filepath.Join(fmt.Sprintf("%s", context.Root), test.dirName)
-			if err := os.Mkdir(dirPath, os.ModePerm); err != nil {
+			dirPath, err = ioutil.TempDir(fmt.Sprintf("%s", context.Root), "caddy_test")
+			if err != nil {
 				t.Fatalf(testPrefix+"Expected no error creating directory, got: '%s'", err.Error())
 			}
 			defer func() {
@@ -754,21 +748,20 @@ func TestFiles(t *testing.T) {
 
 			for _, name := range test.fileNames {
 				absFilePath := filepath.Join(dirPath, name)
-				if err := ioutil.WriteFile(absFilePath, []byte(""), os.ModePerm); err != nil {
+				if err = ioutil.WriteFile(absFilePath, []byte(""), os.ModePerm); err != nil {
 					t.Fatalf(testPrefix+"Expected no error creating file, got: '%s'", err.Error())
 				}
 			}
 		}
 
 		// Perform test case.
-		actual, err := context.Files(test.input)
+		input := filepath.Join(filepath.Base(dirPath), test.input)
+		actual, err := context.Files(input)
 		if err != nil {
 			if !test.shouldErr {
 				t.Errorf(testPrefix+"Expected no error, got: '%s'", err.Error())
-			}
-			if !strings.Contains(err.Error(), test.expectedErrorContent) {
-				t.Errorf(testPrefix+"Expected error content %s, got: %s",
-					test.expectedErrorContent, err.Error())
+			} else if !test.verifyErr(err) {
+				t.Errorf(testPrefix+"Could not verify error content, got: '%s'", err.Error())
 			}
 		} else if test.shouldErr {
 			t.Errorf(testPrefix + "Expected error but had none")
