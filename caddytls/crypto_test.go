@@ -120,7 +120,7 @@ func TestStandaloneTLSTicketKeyRotation(t *testing.T) {
 				t.Errorf("Expected TLS ticket keys in use: %d; Got instead: %d.", rounds, pkt.keysInUse)
 				return
 			}
-			if c.SessionTicketsDisabled == true {
+			if c.SessionTicketsDisabled {
 				t.Error("Session tickets have been disabled unexpectedly.")
 				return
 			}
