@@ -742,20 +742,20 @@ func TestFiles(t *testing.T) {
 
 		// Create directory / files from test case.
 		if test.fileNames != nil {
-			dirPath := fmt.Sprintf("%s/%s", context.Root, test.dirName)
-			if err := os.Mkdir(dirPath, os.ModeDir); err != nil {
-				t.Fatal(testPrefix+"Expected no error creating directory, got: '%s'", err.Error())
+			dirPath := filepath.Join(fmt.Sprintf("%s", context.Root), test.dirName)
+			if err := os.Mkdir(dirPath, os.ModePerm); err != nil {
+				t.Fatalf(testPrefix+"Expected no error creating directory, got: '%s'", err.Error())
 			}
 			defer func() {
 				if err := os.RemoveAll(dirPath); err != nil && !os.IsNotExist(err) {
-					t.Fatal(testPrefix+"Expected no error removing directory, got: '%s'", err.Error())
+					t.Fatalf(testPrefix+"Expected no error removing directory, got: '%s'", err.Error())
 				}
 			}()
 
 			for _, name := range test.fileNames {
 				absFilePath := filepath.Join(dirPath, name)
 				if err := ioutil.WriteFile(absFilePath, []byte(""), os.ModePerm); err != nil {
-					t.Fatal(testPrefix+"Expected no error creating file, got: '%s'", err.Error())
+					t.Fatalf(testPrefix+"Expected no error creating file, got: '%s'", err.Error())
 				}
 			}
 		}
@@ -771,7 +771,7 @@ func TestFiles(t *testing.T) {
 					test.expectedErrorContent, err.Error())
 			}
 		} else if test.shouldErr {
-			t.Errorf(testPrefix+"Expected error but had none")
+			t.Errorf(testPrefix + "Expected error but had none")
 		} else {
 			numFiles := len(test.fileNames)
 			// reflect.DeepEqual does not consider two empty slices to be equal
