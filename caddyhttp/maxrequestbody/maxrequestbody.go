@@ -22,6 +22,12 @@ func init() {
 	})
 }
 
+// pathLimitUnparsed is a PathLimit before it's parsed
+type pathLimitUnparsed struct {
+	Path  string
+	Limit string
+}
+
 func setupMaxRequestBody(c *caddy.Controller) error {
 	config := httpserver.GetConfig(c)
 
@@ -30,7 +36,39 @@ func setupMaxRequestBody(c *caddy.Controller) error {
 	}
 
 	args := c.RemainingArgs()
-	pathLimit, err := parseArguments(args)
+	argList := []pathLimitUnparsed{}
+
+	switch len(args) {
+	case 0:
+		// Format: { <path> <limit> ... }
+		for c.NextBlock() {
+			path := c.Val()
+			if !c.NextBlock() {
+				// Uneven pairing of path/limit
+				return c.ArgErr()
+			}
+			argList = append(argList, pathLimitUnparsed{
+				Path:  path,
+				Limit: c.Val(),
+			})
+		}
+	case 1:
+		// Format: <limit>
+		argList = []pathLimitUnparsed{{
+			Path:  "/",
+			Limit: args[0],
+		}}
+	case 2:
+		// Format: <path> <limit>
+		argList = []pathLimitUnparsed{{
+			Path:  args[0],
+			Limit: args[1],
+		}}
+	default:
+		return c.ArgErr()
+	}
+
+	pathLimit, err := parseArguments(argList)
 	if err != nil {
 		return c.ArgErr()
 	}
@@ -42,26 +80,15 @@ func setupMaxRequestBody(c *caddy.Controller) error {
 	return nil
 }
 
-func parseArguments(args []string) ([]httpserver.PathLimit, error) {
+func parseArguments(args []pathLimitUnparsed) ([]httpserver.PathLimit, error) {
 	pathLimit := []httpserver.PathLimit{}
-	// Arguments appear in pairs of "<path> <limit>"
-	// If there's an argument that's not paired, it's assumed to be
-	// the limit used for all remaining paths ("/")
-	if len(args)%2 == 1 {
-		args = append([]string{"/"}, args...)
-	}
 
-	i := 0
-	for i < len(args) {
-		path := args[i]
-		limitStr := args[i+1]
-		i = i + 2
-
-		size := parseSize(limitStr)
+	for _, pair := range args {
+		size := parseSize(pair.Limit)
 		if size < 1 { // also disallow size = 0
 			return pathLimit, errors.New("Parse failed")
 		}
-		pathLimit = addPathLimit(pathLimit, path, size)
+		pathLimit = addPathLimit(pathLimit, pair.Path, size)
 	}
 	return pathLimit, nil
 }

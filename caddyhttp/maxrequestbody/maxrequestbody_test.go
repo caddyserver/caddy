@@ -15,52 +15,52 @@ const (
 
 func TestParseArguments(t *testing.T) {
 	cases := []struct {
-		arguments []string
+		arguments []pathLimitUnparsed
 		expected  []httpserver.PathLimit
 		hasError  bool
 	}{
 		// Parse errors
-		{arguments: []string{"123.5"}, expected: []httpserver.PathLimit{}, hasError: true},
-		{arguments: []string{"200LB"}, expected: []httpserver.PathLimit{}, hasError: true},
-		{arguments: []string{"path:999MB"}, expected: []httpserver.PathLimit{}, hasError: true},
-		{arguments: []string{"1_234_567"}, expected: []httpserver.PathLimit{}, hasError: true},
+		{arguments: []pathLimitUnparsed{{"/", "123.5"}}, expected: []httpserver.PathLimit{}, hasError: true},
+		{arguments: []pathLimitUnparsed{{"/", "200LB"}}, expected: []httpserver.PathLimit{}, hasError: true},
+		{arguments: []pathLimitUnparsed{{"/", "path:999MB"}}, expected: []httpserver.PathLimit{}, hasError: true},
+		{arguments: []pathLimitUnparsed{{"/", "1_234_567"}}, expected: []httpserver.PathLimit{}, hasError: true},
 
 		// Valid results
-		{arguments: []string{}, expected: []httpserver.PathLimit{}, hasError: false},
+		{arguments: []pathLimitUnparsed{}, expected: []httpserver.PathLimit{}, hasError: false},
 		{
-			arguments: []string{"100"},
+			arguments: []pathLimitUnparsed{{"/", "100"}},
 			expected:  []httpserver.PathLimit{{Path: "/", Limit: 100}},
 			hasError:  false,
 		},
 		{
-			arguments: []string{"100KB"},
+			arguments: []pathLimitUnparsed{{"/", "100KB"}},
 			expected:  []httpserver.PathLimit{{Path: "/", Limit: 100 * KB}},
 			hasError:  false,
 		},
 		{
-			arguments: []string{"100MB"},
+			arguments: []pathLimitUnparsed{{"/", "100MB"}},
 			expected:  []httpserver.PathLimit{{Path: "/", Limit: 100 * MB}},
 			hasError:  false,
 		},
 		{
-			arguments: []string{"100GB"},
+			arguments: []pathLimitUnparsed{{"/", "100GB"}},
 			expected:  []httpserver.PathLimit{{Path: "/", Limit: 100 * GB}},
 			hasError:  false,
 		},
 		{
-			arguments: []string{"index", "100"},
+			arguments: []pathLimitUnparsed{{"index", "100"}},
 			expected:  []httpserver.PathLimit{{Path: "/index", Limit: 100}},
 			hasError:  false,
 		},
 		{
-			arguments: []string{"/home", "100MB", "/upload/images", "500GB"},
+			arguments: []pathLimitUnparsed{{"/home", "100MB"}, {"/upload/images", "500GB"}},
 			expected: []httpserver.PathLimit{
 				{Path: "/home", Limit: 100 * MB},
 				{Path: "/upload/images", Limit: 500 * GB},
 			},
 			hasError: false},
 		{
-			arguments: []string{"999", "/home", "12345MB"},
+			arguments: []pathLimitUnparsed{{"/", "999"}, {"/home", "12345MB"}},
 			expected: []httpserver.PathLimit{
 				{Path: "/", Limit: 999},
 				{Path: "/home", Limit: 12345 * MB},
@@ -70,7 +70,7 @@ func TestParseArguments(t *testing.T) {
 
 		// Duplicates
 		{
-			arguments: []string{"/home", "999", "/home", "12345MB"},
+			arguments: []pathLimitUnparsed{{"/home", "999"}, {"/home", "12345MB"}},
 			expected: []httpserver.PathLimit{
 				{Path: "/home", Limit: 12345 * MB},
 			},
