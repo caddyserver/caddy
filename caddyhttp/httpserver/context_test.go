@@ -740,11 +740,6 @@ func TestFiles(t *testing.T) {
 			if err != nil {
 				t.Fatalf(testPrefix+"Expected no error creating directory, got: '%s'", err.Error())
 			}
-			defer func() {
-				if err := os.RemoveAll(dirPath); err != nil && !os.IsNotExist(err) {
-					t.Fatalf(testPrefix+"Expected no error removing directory, got: '%s'", err.Error())
-				}
-			}()
 
 			for _, name := range test.fileNames {
 				absFilePath := filepath.Join(dirPath, name)
@@ -775,6 +770,10 @@ func TestFiles(t *testing.T) {
 				t.Errorf(testPrefix+"Expected files %v, got: %v",
 					test.fileNames, actual)
 			}
+		}
+
+		if err := os.RemoveAll(dirPath); err != nil && !os.IsNotExist(err) {
+			t.Fatalf(testPrefix+"Expected no error removing directory, got: '%s'", err.Error())
 		}
 	}
 }
