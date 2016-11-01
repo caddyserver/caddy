@@ -296,6 +296,7 @@ func (c Context) Files(name string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer dir.Close()
 
 	stat, err := dir.Stat()
 	if err != nil {
