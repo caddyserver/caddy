@@ -94,6 +94,15 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	// outreq is the request that makes a roundtrip to the backend
 	outreq := createUpstreamRequest(r)
 
+	// record and replace outreq body
+	body, err := newBufferedBody(outreq.Body)
+	if err != nil {
+		return http.StatusBadRequest, errors.New("failed to read downstream request body")
+	}
+	if body != nil {
+		outreq.Body = body
+	}
+
 	// The keepRetrying function will return true if we should
 	// loop and try to select another host, or false if we
 	// should break and stop retrying.
@@ -162,6 +171,11 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 		var downHeaderUpdateFn respUpdateFn
 		if host.DownstreamHeaders != nil {
 			downHeaderUpdateFn = createRespHeaderUpdateFn(host.DownstreamHeaders, replacer)
+		}
+
+		// rewind request body to its beginning
+		if err := body.rewind(); err != nil {
+			return http.StatusInternalServerError, errors.New("unable to rewind downstream request body")
 		}
 
 		// tell the proxy to serve the request
