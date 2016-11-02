@@ -25,6 +25,7 @@ func TestHeader(t *testing.T) {
 		{"/a", "Foo", "Bar"},
 		{"/a", "Bar", ""},
 		{"/a", "Baz", ""},
+		{"/a", "Server", ""},
 		{"/a", "ServerName", hostname},
 		{"/b", "Foo", ""},
 		{"/b", "Bar", "Removed in /a"},
@@ -32,7 +33,7 @@ func TestHeader(t *testing.T) {
 		he := Headers{
 			Next: httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
 				w.Header().Set("Bar", "Removed in /a")
-				fmt.Fprint(w, "This is a test")
+				w.WriteHeader(http.StatusOK)
 				return 0, nil
 			}),
 			Rules: []Rule{
@@ -40,6 +41,7 @@ func TestHeader(t *testing.T) {
 					{Name: "Foo", Value: "Bar"},
 					{Name: "ServerName", Value: "{hostname}"},
 					{Name: "-Bar"},
+					{Name: "-Server"},
 				}},
 			},
 		}
@@ -50,6 +52,8 @@ func TestHeader(t *testing.T) {
 		}
 
 		rec := httptest.NewRecorder()
+		// preset header
+		rec.Header().Set("Server", "Caddy")
 
 		he.ServeHTTP(rec, req)
 
