@@ -311,9 +311,9 @@ func (c Context) Files(name string) ([]string, error) {
 		return nil, err
 	}
 
-	var names []string
-	for _, fileInfo := range dirInfo {
-		names = append(names, fileInfo.Name())
+	names := make([]string, len(dirInfo))
+	for i, fileInfo := range dirInfo {
+		names[i] = fileInfo.Name()
 	}
 
 	return names, nil

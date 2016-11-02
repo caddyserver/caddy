@@ -772,8 +772,10 @@ func TestFiles(t *testing.T) {
 			}
 		}
 
-		if err := os.RemoveAll(dirPath); err != nil && !os.IsNotExist(err) {
-			t.Fatalf(testPrefix+"Expected no error removing directory, got: '%s'", err.Error())
+		if dirPath != "" {
+			if err := os.RemoveAll(dirPath); err != nil && !os.IsNotExist(err) {
+				t.Fatalf(testPrefix+"Expected no error removing directory, got: '%s'", err.Error())
+			}
 		}
 	}
 }
