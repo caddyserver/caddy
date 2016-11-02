@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
 
@@ -12,6 +13,35 @@ const (
 	MB = 1024 * 1024
 	GB = 1024 * 1024 * 1024
 )
+
+func TestSetupMaxRequestBody(t *testing.T) {
+	cases := []struct {
+		input    string
+		hasError bool
+	}{
+		// Format: { <path> <limit> ... }
+		{input: "maxrequestbody / 20MB", hasError: false},
+		// Format: <limit>
+		{input: "maxrequestbody 999KB", hasError: false},
+		// Format: { <path> <limit> ... }
+		{input: "maxrequestbody { /images 50MB /upload 10MB\n/test 10KB }", hasError: false},
+
+		// Wrong formats
+		{input: "maxrequestbody typo { /images 50MB }", hasError: true},
+		{input: "maxrequestbody 999MB /home 20KB", hasError: true},
+	}
+	for caseNum, c := range cases {
+		controller := caddy.NewTestController("", c.input)
+		err := setupMaxRequestBody(controller)
+
+		if c.hasError && (err == nil) {
+			t.Errorf("Expecting error for case %v but none encountered", caseNum)
+		}
+		if !c.hasError && (err != nil) {
+			t.Errorf("Expecting no error for case %v but encountered %v", caseNum, err)
+		}
+	}
+}
 
 func TestParseArguments(t *testing.T) {
 	cases := []struct {
@@ -24,6 +54,7 @@ func TestParseArguments(t *testing.T) {
 		{arguments: []pathLimitUnparsed{{"/", "200LB"}}, expected: []httpserver.PathLimit{}, hasError: true},
 		{arguments: []pathLimitUnparsed{{"/", "path:999MB"}}, expected: []httpserver.PathLimit{}, hasError: true},
 		{arguments: []pathLimitUnparsed{{"/", "1_234_567"}}, expected: []httpserver.PathLimit{}, hasError: true},
+		{arguments: []pathLimitUnparsed{{"/", "0MB"}}, expected: []httpserver.PathLimit{}, hasError: true},
 
 		// Valid results
 		{arguments: []pathLimitUnparsed{}, expected: []httpserver.PathLimit{}, hasError: false},
