@@ -407,13 +407,13 @@ var directives = []string{
 	"rewrite",
 	"ext",
 	"gzip",
+	"header",
 	"errors",
 	"minify",    // github.com/hacdias/caddy-minify
 	"ipfilter",  // github.com/pyed/ipfilter
 	"ratelimit", // github.com/xuqingfeng/caddy-rate-limit
 	"search",    // github.com/pedronasser/caddy-search
-	"header",
-	"expires", // github.com/epicagency/caddy-expires
+	"expires",   // github.com/epicagency/caddy-expires
 	"basicauth",
 	"redir",
 	"status",
