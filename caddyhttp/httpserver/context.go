@@ -288,3 +288,33 @@ func (c Context) Map(values ...interface{}) (map[string]interface{}, error) {
 	}
 	return dict, nil
 }
+
+// Files reads and returns a slice of names from the given directory
+// relative to the root of Context c.
+func (c Context) Files(name string) ([]string, error) {
+	dir, err := c.Root.Open(path.Clean(name))
+	if err != nil {
+		return nil, err
+	}
+	defer dir.Close()
+
+	stat, err := dir.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !stat.IsDir() {
+		return nil, fmt.Errorf("%v is not a directory", name)
+	}
+
+	dirInfo, err := dir.Readdir(0)
+	if err != nil {
+		return nil, err
+	}
+
+	names := make([]string, len(dirInfo))
+	for i, fileInfo := range dirInfo {
+		names[i] = fileInfo.Name()
+	}
+
+	return names, nil
+}
