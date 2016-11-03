@@ -131,6 +131,22 @@ func TestSetup(t *testing.T) {
 				"http://localhost:8005/a--b": {},
 			},
 		},
+		// test #12 test value is optional when remove upstream header
+		{
+			"proxy / localhost:1984 {\n header_upstream -server \n}",
+			false,
+			map[string]struct{}{
+				"http://localhost:1984": {},
+			},
+		},
+		// test #13 test value is optional when remove downstream header
+		{
+			"proxy / localhost:1984 {\n header_downstream -server \n}",
+			false,
+			map[string]struct{}{
+				"http://localhost:1984": {},
+			},
+		},
 	} {
 		c := caddy.NewTestController("http", test.input)
 		err := setup(c)

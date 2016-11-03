@@ -305,13 +305,19 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream) error {
 	case "header_upstream":
 		var header, value string
 		if !c.Args(&header, &value) {
-			return c.ArgErr()
+			// When removing a header, the value can be optional.
+			if !strings.HasPrefix(header, "-") {
+				return c.ArgErr()
+			}
 		}
 		u.upstreamHeaders.Add(header, value)
 	case "header_downstream":
 		var header, value string
 		if !c.Args(&header, &value) {
-			return c.ArgErr()
+			// When removing a header, the value can be optional.
+			if !strings.HasPrefix(header, "-") {
+				return c.ArgErr()
+			}
 		}
 		u.downstreamHeaders.Add(header, value)
 	case "transparent":
