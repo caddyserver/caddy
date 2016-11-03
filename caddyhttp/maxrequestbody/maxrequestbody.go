@@ -43,7 +43,7 @@ func setupMaxRequestBody(c *caddy.Controller) error {
 		// Format: { <path> <limit> ... }
 		for c.NextBlock() {
 			path := c.Val()
-			if !c.NextBlock() {
+			if !c.NextArg() {
 				// Uneven pairing of path/limit
 				return c.ArgErr()
 			}
