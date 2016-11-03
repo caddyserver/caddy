@@ -1,6 +1,8 @@
 package header
 
 import (
+	"net/http"
+
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
@@ -31,6 +33,7 @@ func headersParse(c *caddy.Controller) ([]Rule, error) {
 
 	for c.NextLine() {
 		var head Rule
+		head.Headers = http.Header{}
 		var isNewPattern bool
 
 		if !c.NextArg() {
@@ -54,27 +57,26 @@ func headersParse(c *caddy.Controller) ([]Rule, error) {
 
 		for c.NextBlock() {
 			// A block of headers was opened...
-
-			h := Header{Name: c.Val()}
+			name := c.Val()
+			value := ""
 
 			if c.NextArg() {
-				h.Value = c.Val()
+				value = c.Val()
 			}
 
-			head.Headers = append(head.Headers, h)
+			head.Headers.Add(name, value)
 		}
 		if c.NextArg() {
 			// ... or single header was defined as an argument instead.
 
-			h := Header{Name: c.Val()}
-
-			h.Value = c.Val()
+			name := c.Val()
+			value := c.Val()
 
 			if c.NextArg() {
-				h.Value = c.Val()
+				value = c.Val()
 			}
 
-			head.Headers = append(head.Headers, h)
+			head.Headers.Add(name, value)
 		}
 
 		if isNewPattern {
