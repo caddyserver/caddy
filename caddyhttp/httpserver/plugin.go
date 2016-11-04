@@ -393,6 +393,7 @@ var directives = []string{
 	// primitive actions that set up the fundamental vitals of each config
 	"root",
 	"bind",
+	"maxrequestbody",
 	"tls",
 
 	// services/utilities, or other directives that don't necessarily inject handlers

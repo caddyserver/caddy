@@ -268,7 +268,9 @@ func (r *replacer) getSubstitution(key string) string {
 		}
 		_, err := ioutil.ReadAll(r.request.Body)
 		if err != nil {
-			return r.emptyValue
+			if _, ok := err.(MaxBytesExceeded); ok {
+				return r.emptyValue
+			}
 		}
 		return requestReplacer.Replace(r.requestBody.String())
 	case "{status}":
