@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
@@ -55,26 +56,16 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 
 		args := c.RemainingArgs()
 
-		switch len(args) {
-		case 0:
+		if !(len(args) > 1) {
 			return rules, c.ArgErr()
-		case 1:
-			rule.Path = "/"
-			rule.Address = args[0]
-		case 2:
-			rule.Path = args[0]
-			rule.Address = args[1]
-		case 3:
-			rule.Path = args[0]
-			rule.Address = args[1]
-			err := fastcgiPreset(args[2], &rule)
-			if err != nil {
-				return rules, c.Err("Invalid fastcgi rule preset '" + args[2] + "'")
-			}
 		}
 
-		network, address := parseAddress(rule.Address)
-		rule.dialer = basicDialer{network: network, address: address}
+		rule.Path = args[0]
+		lastIndex := len(args)
+
+		var addresses = args[1:lastIndex]
+		var dialers []dialer
+		var pooled bool
 
 		for c.NextBlock() {
 			switch c.Val() {
@@ -106,6 +97,18 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 					return rules, c.ArgErr()
 				}
 				rule.IgnoredSubPaths = ignoredPaths
+
+			case "preset":
+				presetArgs := c.RemainingArgs()
+
+				if len(presetArgs) < 2 {
+					return rules, c.ArgErr()
+				}
+
+				if err := fastcgiPreset(presetArgs[0], &rule); err != nil {
+					return rules, err
+				}
+
 			case "pool":
 				if !c.NextArg() {
 					return rules, c.ArgErr()
@@ -115,13 +118,26 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 					return rules, err
 				}
 				if pool >= 0 {
-					rule.dialer = &persistentDialer{size: pool, network: network, address: address}
+					pooled = true
+					for _, rawAddress := range addresses {
+						network, address := parseAddress(rawAddress)
+						dialers = append(dialers, &persistentDialer{size: pool, network: network, address: address})
+					}
 				} else {
 					return rules, c.Errf("positive integer expected, found %d", pool)
 				}
 			}
 		}
 
+		if !pooled {
+			for _, rawAddress := range addresses {
+				network, address := parseAddress(rawAddress)
+				dialers = append(dialers, basicDialer{network: network, address: address})
+			}
+		}
+
+		rule.dialer = &loadBalancingDialer{dialers: dialers}
+		rule.Address = strings.Join(addresses, ",")
 		rules = append(rules, rule)
 	}
 
