@@ -30,6 +30,16 @@ type SiteConfig struct {
 	// standardized way of loading files from disk
 	// for a request.
 	HiddenFiles []string
+
+	// Max amount of bytes a request can send on a given path
+	MaxRequestBodySizes []PathLimit
+}
+
+// PathLimit is a mapping from a site's path to its corresponding
+// maximum request body size (in bytes)
+type PathLimit struct {
+	Path  string
+	Limit int64
 }
 
 // AddMiddleware adds a middleware to a site's middleware stack.
