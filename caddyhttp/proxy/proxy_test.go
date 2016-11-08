@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mholt/caddy/caddyfile"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 
 	"golang.org/x/net/websocket"
@@ -833,6 +834,63 @@ func TestProxyDirectorURL(t *testing.T) {
 			t.Errorf("case %d url not equal: expect %q, but got %q",
 				i, expect, got)
 		}
+	}
+}
+
+func TestReverseProxyRetry(t *testing.T) {
+	log.SetOutput(ioutil.Discard)
+	defer log.SetOutput(os.Stderr)
+
+	// set up proxy
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.Copy(w, r.Body)
+		r.Body.Close()
+	}))
+	defer backend.Close()
+
+	su, err := NewStaticUpstreams(caddyfile.NewDispenser("Testfile", strings.NewReader(`
+	proxy / localhost:65535 localhost:65534 `+backend.URL+` {
+		policy round_robin
+		fail_timeout 5s
+		max_fails 1
+		try_duration 5s
+		try_interval 250ms
+	}
+	`)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p := &Proxy{
+		Next:      httpserver.EmptyNext, // prevents panic in some cases when test fails
+		Upstreams: su,
+	}
+
+	// middle is required to simulate closable downstream request body
+	middle := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, err = p.ServeHTTP(w, r)
+		if err != nil {
+			t.Error(err)
+		}
+	}))
+	defer middle.Close()
+
+	testcase := "test content"
+	r, err := http.NewRequest("POST", middle.URL, bytes.NewBufferString(testcase))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultTransport.RoundTrip(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := ioutil.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(b) != testcase {
+		t.Fatalf("string(b) = %s, want %s", string(b), testcase)
 	}
 }
 
