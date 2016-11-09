@@ -32,6 +32,11 @@ type BasicAuth struct {
 	Rules    []Rule
 }
 
+// When a rewrite is performed, a header field of this name
+// is added to the request
+// It contains the original request URI before the rewrite.
+const internalRewriteFieldName = "Caddy-Rewrite-Original-URI"
+
 // ServeHTTP implements the httpserver.Handler interface.
 func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	var hasAuth bool
@@ -39,6 +44,10 @@ func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 
 	for _, rule := range a.Rules {
 		for _, res := range rule.Resources {
+			if origPATH := r.Header.Get(internalRewriteFieldName); origPATH != "" {
+				r.URL.Path = origPATH
+			}
+
 			if !httpserver.Path(r.URL.Path).Matches(res) {
 				continue
 			}
