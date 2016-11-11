@@ -14,6 +14,7 @@ package proxy
 import (
 	"crypto/tls"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -98,11 +99,17 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int) *
 			}
 		}
 
-		hadTrailingSlash := strings.HasSuffix(req.URL.Path, "/")
-		req.URL.Path = path.Join(target.Path, req.URL.Path)
-		// path.Join will strip off the last /, so put it back if it was there.
-		if hadTrailingSlash && !strings.HasSuffix(req.URL.Path, "/") {
-			req.URL.Path = req.URL.Path + "/"
+		//If Empty path dont join path to avoid additional /
+		//fix for 1200
+		if req.URL.Path == "/" {
+			req.URL.Path = target.Path
+		} else {
+			hadTrailingSlash := strings.HasSuffix(req.URL.Path, "/")
+			req.URL.Path = path.Join(target.Path, req.URL.Path)
+			// path.Join will strip off the last /, so put it back if it was there.
+			if hadTrailingSlash && !strings.HasSuffix(req.URL.Path, "/") {
+				req.URL.Path = req.URL.Path + "/"
+			}
 		}
 
 		// Trims the path of the socket from the URL path.
@@ -122,6 +129,7 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int) *
 		} else {
 			req.URL.RawQuery = targetQuery + "&" + req.URL.RawQuery
 		}
+		log.Printf("[INFO] Proxied Query:%s", req.URL)
 	}
 	rp := &ReverseProxy{Director: director, FlushInterval: 250 * time.Millisecond} // flushing good for streaming & server-sent events
 	if target.Scheme == "unix" {
