@@ -15,6 +15,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"mime/multipart"
@@ -28,6 +29,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // FCGIListenSockFileno describes listen socket file number.
@@ -159,13 +161,14 @@ func (rec *record) read(r io.Reader) (buf []byte, err error) {
 // FCGIClient implements a FastCGI client, which is a standard for
 // interfacing external applications with Web servers.
 type FCGIClient struct {
-	mutex     sync.Mutex
-	rwc       io.ReadWriteCloser
-	h         header
-	buf       bytes.Buffer
-	stderr    bytes.Buffer
-	keepAlive bool
-	reqID     uint16
+	mutex       sync.Mutex
+	rwc         io.ReadWriteCloser
+	h           header
+	buf         bytes.Buffer
+	stderr      bytes.Buffer
+	keepAlive   bool
+	reqID       uint16
+	ReadTimeout time.Duration
 }
 
 // DialWithDialer connects to the fcgi responder at the specified network address, using custom net.Dialer.
@@ -188,8 +191,8 @@ func DialWithDialer(network, address string, dialer net.Dialer) (fcgi *FCGIClien
 
 // Dial connects to the fcgi responder at the specified network address, using default net.Dialer.
 // See func net.Dial for a description of the network and address parameters.
-func Dial(network, address string) (fcgi *FCGIClient, err error) {
-	return DialWithDialer(network, address, net.Dialer{})
+func Dial(network string, address string, timeout time.Duration) (fcgi *FCGIClient, err error) {
+	return DialWithDialer(network, address, net.Dialer{Timeout: timeout})
 }
 
 // Close closes fcgi connnection.
@@ -333,6 +336,15 @@ func (w *streamReader) Read(p []byte) (n int, err error) {
 			for {
 				rec := &record{}
 				var buf []byte
+				if w.c.ReadTimeout > 0 {
+					conn, ok := w.c.rwc.(net.Conn)
+					if ok {
+						conn.SetReadDeadline(time.Now().Add(w.c.ReadTimeout))
+					} else {
+						err = fmt.Errorf("Could not set FastCGI ReadTimeout")
+						return
+					}
+				}
 				buf, err = rec.read(w.c.rwc)
 				if err == errInvalidHeaderVersion {
 					continue

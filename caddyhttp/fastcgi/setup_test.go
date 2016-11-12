@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
@@ -135,6 +136,29 @@ func TestFastcgiParse(t *testing.T) {
 				SplitPath:  ".php",
 				dialer:     basicDialer{network: network, address: address},
 				IndexFiles: []string{},
+			}}},
+		{`fastcgi / ` + defaultAddress + ` {
+	              connect_timeout 5s
+	              }`,
+			false, []Rule{{
+				Path:       "/",
+				Address:    defaultAddress,
+				Ext:        "",
+				SplitPath:  "",
+				dialer:     basicDialer{network: network, address: address, timeout: 5 * time.Second},
+				IndexFiles: []string{},
+			}}},
+		{`fastcgi / ` + defaultAddress + ` {
+	              read_timeout 5s
+	              }`,
+			false, []Rule{{
+				Path:        "/",
+				Address:     defaultAddress,
+				Ext:         "",
+				SplitPath:   "",
+				dialer:      basicDialer{network: network, address: address},
+				IndexFiles:  []string{},
+				ReadTimeout: 5 * time.Second,
 			}}},
 	}
 	for i, test := range tests {

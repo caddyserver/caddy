@@ -103,7 +103,7 @@ func (s FastCGIServer) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 }
 
 func sendFcgi(reqType int, fcgiParams map[string]string, data []byte, posts map[string]string, files map[string]string) (content []byte) {
-	fcgi, err := Dial("tcp", ipPort)
+	fcgi, err := Dial("tcp", ipPort, 0)
 	if err != nil {
 		log.Println("err:", err)
 		return

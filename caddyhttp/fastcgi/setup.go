@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
@@ -73,8 +74,10 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 			}
 		}
 
-		network, address := parseAddress(rule.Address)
-		rule.dialer = basicDialer{network: network, address: address}
+		persistent := false
+		var err error
+		var pool int
+		var timeout time.Duration
 
 		for c.NextBlock() {
 			switch c.Val() {
@@ -110,18 +113,50 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 				if !c.NextArg() {
 					return rules, c.ArgErr()
 				}
-				pool, err := strconv.Atoi(c.Val())
+				pool, err = strconv.Atoi(c.Val())
 				if err != nil {
 					return rules, err
 				}
 				if pool >= 0 {
-					rule.dialer = &persistentDialer{size: pool, network: network, address: address}
+					persistent = true
 				} else {
 					return rules, c.Errf("positive integer expected, found %d", pool)
 				}
+			case "connect_timeout":
+				if !c.NextArg() {
+					return rules, c.ArgErr()
+				}
+				timeout, err = time.ParseDuration(c.Val())
+				if err != nil {
+					return rules, err
+				}
+			case "read_timeout":
+				if !c.NextArg() {
+					return rules, c.ArgErr()
+				}
+				readTimeout, err := time.ParseDuration(c.Val())
+				if err != nil {
+					return rules, err
+				}
+				rule.ReadTimeout = readTimeout
 			}
 		}
 
+		network, address := parseAddress(rule.Address)
+		if persistent == true {
+			rule.dialer = &persistentDialer{
+				size:    pool,
+				network: network,
+				address: address,
+				timeout: timeout,
+			}
+		} else {
+			rule.dialer = basicDialer{
+				network: network,
+				address: address,
+				timeout: timeout,
+			}
+		}
 		rules = append(rules, rule)
 	}
 

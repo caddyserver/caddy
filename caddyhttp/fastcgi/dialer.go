@@ -1,6 +1,9 @@
 package fastcgi
 
-import "sync"
+import (
+	"sync"
+	"time"
+)
 
 type dialer interface {
 	Dial() (*FCGIClient, error)
@@ -9,10 +12,12 @@ type dialer interface {
 
 // basicDialer is a basic dialer that wraps default fcgi functions.
 type basicDialer struct {
-	network, address string
+	network string
+	address string
+	timeout time.Duration
 }
 
-func (b basicDialer) Dial() (*FCGIClient, error) { return Dial(b.network, b.address) }
+func (b basicDialer) Dial() (*FCGIClient, error) { return Dial(b.network, b.address, b.timeout) }
 func (b basicDialer) Close(c *FCGIClient) error  { return c.Close() }
 
 // persistentDialer keeps a pool of fcgi connections.
@@ -21,6 +26,7 @@ type persistentDialer struct {
 	size    int
 	network string
 	address string
+	timeout time.Duration
 	pool    []*FCGIClient
 	sync.Mutex
 }
@@ -39,7 +45,7 @@ func (p *persistentDialer) Dial() (*FCGIClient, error) {
 	p.Unlock()
 
 	// no connection available, create new one
-	return Dial(p.network, p.address)
+	return Dial(p.network, p.address, p.timeout)
 }
 
 func (p *persistentDialer) Close(client *FCGIClient) error {
