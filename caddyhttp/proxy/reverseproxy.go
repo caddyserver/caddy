@@ -129,7 +129,6 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int) *
 		} else {
 			req.URL.RawQuery = targetQuery + "&" + req.URL.RawQuery
 		}
-		log.Printf("[INFO] Proxied Query:%s", req.URL)
 	}
 	rp := &ReverseProxy{Director: director, FlushInterval: 250 * time.Millisecond} // flushing good for streaming & server-sent events
 	if target.Scheme == "unix" {
