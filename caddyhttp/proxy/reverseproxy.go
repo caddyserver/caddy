@@ -14,7 +14,6 @@ package proxy
 import (
 	"crypto/tls"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"net/url"
