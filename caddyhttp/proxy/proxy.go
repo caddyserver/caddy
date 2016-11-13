@@ -273,7 +273,10 @@ func mutateHeadersByRules(headers, rules http.Header, repl httpserver.Replacer) 
 	for ruleField, ruleValues := range rules {
 		if strings.HasPrefix(ruleField, "+") {
 			for _, ruleValue := range ruleValues {
-				headers.Add(strings.TrimPrefix(ruleField, "+"), repl.Replace(ruleValue))
+				var replacement = repl.Replace(ruleValue)
+				if len(replacement) > 0 {
+					headers.Add(strings.TrimPrefix(ruleField, "+"), replacement)
+				}
 			}
 		} else if strings.HasPrefix(ruleField, "-") {
 			headers.Del(strings.TrimPrefix(ruleField, "-"))
