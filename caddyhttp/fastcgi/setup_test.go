@@ -70,7 +70,7 @@ func TestFastcgiParse(t *testing.T) {
 		expectedFastcgiConfig []Rule
 	}{
 
-		{`fastcgi /blog 127.0.0.1:9000 { preset php }`,
+		{`fastcgi /blog 127.0.0.1:9000 php`,
 			false, []Rule{{
 				Path:       "/blog",
 				Address:    "127.0.0.1:9000",
@@ -79,7 +79,9 @@ func TestFastcgiParse(t *testing.T) {
 				dialer:     &loadBalancingDialer{dialers: []dialer{basicDialer{network: "tcp", address: "127.0.0.1:9000"}}},
 				IndexFiles: []string{"index.php"},
 			}}},
-		{`fastcgi /blog 127.0.0.1:9000 127.0.0.1:9001 { preset php }`,
+		{`fastcgi /blog 127.0.0.1:9000 php {
+			upstream 127.0.0.1:9001
+		}`,
 			false, []Rule{{
 				Path:       "/blog",
 				Address:    "127.0.0.1:9000,127.0.0.1:9001",
@@ -88,7 +90,9 @@ func TestFastcgiParse(t *testing.T) {
 				dialer:     &loadBalancingDialer{dialers: []dialer{basicDialer{network: "tcp", address: "127.0.0.1:9000"}, basicDialer{network: "tcp", address: "127.0.0.1:9001"}}},
 				IndexFiles: []string{"index.php"},
 			}}},
-		{`fastcgi /blog 127.0.0.1:9000 127.0.0.1:9001`,
+		{`fastcgi /blog 127.0.0.1:9000 {
+			upstream 127.0.0.1:9001 
+		}`,
 			false, []Rule{{
 				Path:       "/blog",
 				Address:    "127.0.0.1:9000,127.0.0.1:9001",
@@ -132,7 +136,8 @@ func TestFastcgiParse(t *testing.T) {
 				dialer:     &loadBalancingDialer{dialers: []dialer{&persistentDialer{size: 0, network: network, address: address}}},
 				IndexFiles: []string{},
 			}}},
-		{`fastcgi / 127.0.0.1:8080 127.0.0.1:9000 {
+		{`fastcgi / 127.0.0.1:8080  {
+			upstream 127.0.0.1:9000
 	              pool 5
 	              }`,
 			false, []Rule{{

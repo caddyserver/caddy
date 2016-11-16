@@ -56,16 +56,21 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 
 		args := c.RemainingArgs()
 
-		if !(len(args) > 1) {
+		if len(args) < 2 || len(args) > 3 {
 			return rules, c.ArgErr()
 		}
 
 		rule.Path = args[0]
-		lastIndex := len(args)
+		upstreams := []string{args[1]}
 
-		var addresses = args[1:lastIndex]
+		if len(args) == 3 {
+			if err := fastcgiPreset(args[2], &rule); err != nil {
+				return rules, err
+			}
+		}
+
 		var dialers []dialer
-		var pooled bool
+		var poolSize = -1
 
 		for c.NextBlock() {
 			switch c.Val() {
@@ -85,6 +90,15 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 					return rules, c.ArgErr()
 				}
 				rule.IndexFiles = args
+
+			case "upstream":
+				args := c.RemainingArgs()
+
+				if len(args) != 1 {
+					return rules, c.ArgErr()
+				}
+
+				upstreams = append(upstreams, args[0])
 			case "env":
 				envArgs := c.RemainingArgs()
 				if len(envArgs) < 2 {
@@ -98,17 +112,6 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 				}
 				rule.IgnoredSubPaths = ignoredPaths
 
-			case "preset":
-				presetArgs := c.RemainingArgs()
-
-				if len(presetArgs) < 2 {
-					return rules, c.ArgErr()
-				}
-
-				if err := fastcgiPreset(presetArgs[0], &rule); err != nil {
-					return rules, err
-				}
-
 			case "pool":
 				if !c.NextArg() {
 					return rules, c.ArgErr()
@@ -118,26 +121,24 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 					return rules, err
 				}
 				if pool >= 0 {
-					pooled = true
-					for _, rawAddress := range addresses {
-						network, address := parseAddress(rawAddress)
-						dialers = append(dialers, &persistentDialer{size: pool, network: network, address: address})
-					}
+					poolSize = pool
 				} else {
 					return rules, c.Errf("positive integer expected, found %d", pool)
 				}
 			}
 		}
 
-		if !pooled {
-			for _, rawAddress := range addresses {
-				network, address := parseAddress(rawAddress)
+		for _, rawAddress := range upstreams {
+			network, address := parseAddress(rawAddress)
+			if poolSize >= 0 {
+				dialers = append(dialers, &persistentDialer{size: poolSize, network: network, address: address})
+			} else {
 				dialers = append(dialers, basicDialer{network: network, address: address})
 			}
 		}
 
 		rule.dialer = &loadBalancingDialer{dialers: dialers}
-		rule.Address = strings.Join(addresses, ",")
+		rule.Address = strings.Join(upstreams, ",")
 		rules = append(rules, rule)
 	}
 
