@@ -76,8 +76,30 @@ func TestFastcgiParse(t *testing.T) {
 				Address:    "127.0.0.1:9000",
 				Ext:        ".php",
 				SplitPath:  ".php",
-				dialer:     basicDialer{network: "tcp", address: "127.0.0.1:9000"},
+				dialer:     &loadBalancingDialer{dialers: []dialer{basicDialer{network: "tcp", address: "127.0.0.1:9000"}}},
 				IndexFiles: []string{"index.php"},
+			}}},
+		{`fastcgi /blog 127.0.0.1:9000 php {
+			upstream 127.0.0.1:9001
+		}`,
+			false, []Rule{{
+				Path:       "/blog",
+				Address:    "127.0.0.1:9000,127.0.0.1:9001",
+				Ext:        ".php",
+				SplitPath:  ".php",
+				dialer:     &loadBalancingDialer{dialers: []dialer{basicDialer{network: "tcp", address: "127.0.0.1:9000"}, basicDialer{network: "tcp", address: "127.0.0.1:9001"}}},
+				IndexFiles: []string{"index.php"},
+			}}},
+		{`fastcgi /blog 127.0.0.1:9000 {
+			upstream 127.0.0.1:9001 
+		}`,
+			false, []Rule{{
+				Path:       "/blog",
+				Address:    "127.0.0.1:9000,127.0.0.1:9001",
+				Ext:        "",
+				SplitPath:  "",
+				dialer:     &loadBalancingDialer{dialers: []dialer{basicDialer{network: "tcp", address: "127.0.0.1:9000"}, basicDialer{network: "tcp", address: "127.0.0.1:9001"}}},
+				IndexFiles: []string{},
 			}}},
 		{`fastcgi / ` + defaultAddress + ` {
 	              split .html
@@ -87,7 +109,7 @@ func TestFastcgiParse(t *testing.T) {
 				Address:    defaultAddress,
 				Ext:        "",
 				SplitPath:  ".html",
-				dialer:     basicDialer{network: network, address: address},
+				dialer:     &loadBalancingDialer{dialers: []dialer{basicDialer{network: network, address: address}}},
 				IndexFiles: []string{},
 			}}},
 		{`fastcgi / ` + defaultAddress + ` {
@@ -99,7 +121,7 @@ func TestFastcgiParse(t *testing.T) {
 				Address:         "127.0.0.1:9001",
 				Ext:             "",
 				SplitPath:       ".html",
-				dialer:          basicDialer{network: network, address: address},
+				dialer:          &loadBalancingDialer{dialers: []dialer{basicDialer{network: network, address: address}}},
 				IndexFiles:      []string{},
 				IgnoredSubPaths: []string{"/admin", "/user"},
 			}}},
@@ -111,18 +133,19 @@ func TestFastcgiParse(t *testing.T) {
 				Address:    defaultAddress,
 				Ext:        "",
 				SplitPath:  "",
-				dialer:     &persistentDialer{size: 0, network: network, address: address},
+				dialer:     &loadBalancingDialer{dialers: []dialer{&persistentDialer{size: 0, network: network, address: address}}},
 				IndexFiles: []string{},
 			}}},
-		{`fastcgi / ` + defaultAddress + ` {
+		{`fastcgi / 127.0.0.1:8080  {
+			upstream 127.0.0.1:9000
 	              pool 5
 	              }`,
 			false, []Rule{{
 				Path:       "/",
-				Address:    defaultAddress,
+				Address:    "127.0.0.1:8080,127.0.0.1:9000",
 				Ext:        "",
 				SplitPath:  "",
-				dialer:     &persistentDialer{size: 5, network: network, address: address},
+				dialer:     &loadBalancingDialer{dialers: []dialer{&persistentDialer{size: 5, network: "tcp", address: "127.0.0.1:8080"}, &persistentDialer{size: 5, network: "tcp", address: "127.0.0.1:9000"}}},
 				IndexFiles: []string{},
 			}}},
 		{`fastcgi / ` + defaultAddress + ` {
@@ -133,9 +156,14 @@ func TestFastcgiParse(t *testing.T) {
 				Address:    defaultAddress,
 				Ext:        "",
 				SplitPath:  ".php",
-				dialer:     basicDialer{network: network, address: address},
+				dialer:     &loadBalancingDialer{dialers: []dialer{basicDialer{network: network, address: address}}},
 				IndexFiles: []string{},
 			}}},
+		{`fastcgi / {
+
+		              }`,
+			true, []Rule{},
+		},
 	}
 	for i, test := range tests {
 		actualFastcgiConfigs, err := fastcgiParse(caddy.NewTestController("http", test.inputFastcgiConfig))
@@ -175,20 +203,7 @@ func TestFastcgiParse(t *testing.T) {
 				t.Errorf("Test %d expected %dth FastCGI dialer to be of type %T, but got %T",
 					i, j, test.expectedFastcgiConfig[j].dialer, actualFastcgiConfig.dialer)
 			} else {
-				equal := true
-				switch actual := actualFastcgiConfig.dialer.(type) {
-				case basicDialer:
-					equal = actualFastcgiConfig.dialer == test.expectedFastcgiConfig[j].dialer
-				case *persistentDialer:
-					if expected, ok := test.expectedFastcgiConfig[j].dialer.(*persistentDialer); ok {
-						equal = actual.Equals(expected)
-					} else {
-						equal = false
-					}
-				default:
-					t.Errorf("Unkonw dialer type %T", actualFastcgiConfig.dialer)
-				}
-				if !equal {
+				if !areDialersEqual(actualFastcgiConfig.dialer, test.expectedFastcgiConfig[j].dialer, t) {
 					t.Errorf("Test %d expected %dth FastCGI dialer to be %v, but got %v",
 						i, j, test.expectedFastcgiConfig[j].dialer, actualFastcgiConfig.dialer)
 				}
@@ -205,5 +220,31 @@ func TestFastcgiParse(t *testing.T) {
 			}
 		}
 	}
+}
 
+func areDialersEqual(current, expected dialer, t *testing.T) bool {
+
+	switch actual := current.(type) {
+	case *loadBalancingDialer:
+		if expected, ok := expected.(*loadBalancingDialer); ok {
+			for i := 0; i < len(actual.dialers); i++ {
+				if !areDialersEqual(actual.dialers[i], expected.dialers[i], t) {
+					return false
+				}
+			}
+
+			return true
+		}
+	case basicDialer:
+		return current == expected
+	case *persistentDialer:
+		if expected, ok := expected.(*persistentDialer); ok {
+			return actual.Equals(expected)
+		}
+
+	default:
+		t.Errorf("Unknown dialer type %T", current)
+	}
+
+	return false
 }
