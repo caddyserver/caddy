@@ -111,9 +111,9 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			defer rule.dialer.Close(fcgiBackend)
 
 			// Log any stderr output from upstream
-			if fcgiBackend.stderr.Len() != 0 {
+			if stderr := fcgiBackend.StdErr(); stderr.Len() != 0 {
 				// Remove trailing newline, error logger already does this.
-				err = LogError(strings.TrimSuffix(fcgiBackend.stderr.String(), "\n"))
+				err = LogError(strings.TrimSuffix(stderr.String(), "\n"))
 			}
 
 			// Normally we would return the status code if it is an error status (>= 400),

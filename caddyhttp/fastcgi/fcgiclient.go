@@ -106,6 +106,16 @@ const (
 	maxPad   = 255
 )
 
+// Client interface
+type Client interface {
+	Get(pair map[string]string) (response *http.Response, err error)
+	Head(pair map[string]string) (response *http.Response, err error)
+	Options(pairs map[string]string) (response *http.Response, err error)
+	Post(pairs map[string]string, method string, bodyType string, body io.Reader, contentLength int) (response *http.Response, err error)
+	Close() error
+	StdErr() bytes.Buffer
+}
+
 type header struct {
 	Version       uint8
 	Type          uint8
@@ -197,22 +207,29 @@ func (c *FCGIClient) Close() error {
 	return c.rwc.Close()
 }
 
-func (c *FCGIClient) writeRecord(recType uint8, content []byte) (err error) {
+func (c *FCGIClient) writeRecord(recType uint8, content []byte) error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	c.buf.Reset()
 	c.h.init(recType, c.reqID, len(content))
+
 	if err := binary.Write(&c.buf, binary.BigEndian, c.h); err != nil {
 		return err
 	}
+
 	if _, err := c.buf.Write(content); err != nil {
 		return err
 	}
+
 	if _, err := c.buf.Write(pad[:c.h.PaddingLength]); err != nil {
 		return err
 	}
-	_, err = c.rwc.Write(c.buf.Bytes())
-	return err
+
+	if _, err := c.rwc.Write(c.buf.Bytes()); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (c *FCGIClient) writeBeginRequest(role uint16, flags uint8) error {
@@ -358,6 +375,11 @@ func (w *streamReader) Read(p []byte) (n int, err error) {
 	}
 
 	return
+}
+
+// StdErr returns stderr stream
+func (c *FCGIClient) StdErr() bytes.Buffer {
+	return c.stderr
 }
 
 // Do made the request and returns a io.Reader that translates the data read

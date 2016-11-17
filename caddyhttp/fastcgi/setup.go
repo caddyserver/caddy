@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
@@ -55,26 +56,21 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 
 		args := c.RemainingArgs()
 
-		switch len(args) {
-		case 0:
+		if len(args) < 2 || len(args) > 3 {
 			return rules, c.ArgErr()
-		case 1:
-			rule.Path = "/"
-			rule.Address = args[0]
-		case 2:
-			rule.Path = args[0]
-			rule.Address = args[1]
-		case 3:
-			rule.Path = args[0]
-			rule.Address = args[1]
-			err := fastcgiPreset(args[2], &rule)
-			if err != nil {
-				return rules, c.Err("Invalid fastcgi rule preset '" + args[2] + "'")
+		}
+
+		rule.Path = args[0]
+		upstreams := []string{args[1]}
+
+		if len(args) == 3 {
+			if err := fastcgiPreset(args[2], &rule); err != nil {
+				return rules, err
 			}
 		}
 
-		network, address := parseAddress(rule.Address)
-		rule.dialer = basicDialer{network: network, address: address}
+		var dialers []dialer
+		var poolSize = -1
 
 		for c.NextBlock() {
 			switch c.Val() {
@@ -94,6 +90,15 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 					return rules, c.ArgErr()
 				}
 				rule.IndexFiles = args
+
+			case "upstream":
+				args := c.RemainingArgs()
+
+				if len(args) != 1 {
+					return rules, c.ArgErr()
+				}
+
+				upstreams = append(upstreams, args[0])
 			case "env":
 				envArgs := c.RemainingArgs()
 				if len(envArgs) < 2 {
@@ -106,6 +111,7 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 					return rules, c.ArgErr()
 				}
 				rule.IgnoredSubPaths = ignoredPaths
+
 			case "pool":
 				if !c.NextArg() {
 					return rules, c.ArgErr()
@@ -115,13 +121,24 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 					return rules, err
 				}
 				if pool >= 0 {
-					rule.dialer = &persistentDialer{size: pool, network: network, address: address}
+					poolSize = pool
 				} else {
 					return rules, c.Errf("positive integer expected, found %d", pool)
 				}
 			}
 		}
 
+		for _, rawAddress := range upstreams {
+			network, address := parseAddress(rawAddress)
+			if poolSize >= 0 {
+				dialers = append(dialers, &persistentDialer{size: poolSize, network: network, address: address})
+			} else {
+				dialers = append(dialers, basicDialer{network: network, address: address})
+			}
+		}
+
+		rule.dialer = &loadBalancingDialer{dialers: dialers}
+		rule.Address = strings.Join(upstreams, ",")
 		rules = append(rules, rule)
 	}
 
