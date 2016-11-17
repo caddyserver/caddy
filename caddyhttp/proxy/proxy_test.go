@@ -407,8 +407,10 @@ func TestUpstreamHeadersUpdate(t *testing.T) {
 		"Upgrade":    {"{>Upgrade}"},
 		"+Merge-Me":  {"Merge-Value"},
 		"+Add-Me":    {"Add-Value"},
+		"+Add-Empty": {"{}"},
 		"-Remove-Me": {""},
 		"Replace-Me": {"{hostname}"},
+		"Clear-Me":   {""},
 		"Host":       {"{>Host}"},
 	}
 	// set up proxy
@@ -448,6 +450,11 @@ func TestUpstreamHeadersUpdate(t *testing.T) {
 			headerKey, expect, got)
 	}
 
+	headerKey = "Add-Empty"
+	if _, ok := actualHeaders[headerKey]; ok {
+		t.Errorf("Request sent to upstream backend should not contain empty %v header", headerKey)
+	}
+
 	headerKey = "Remove-Me"
 	if _, ok := actualHeaders[headerKey]; ok {
 		t.Errorf("Request sent to upstream backend should not contain %v header", headerKey)
@@ -459,6 +466,11 @@ func TestUpstreamHeadersUpdate(t *testing.T) {
 	if !reflect.DeepEqual(got, expect) {
 		t.Errorf("Request sent to upstream backend does not contain expected %v header: expect %v, but got %v",
 			headerKey, expect, got)
+	}
+
+	headerKey = "Clear-Me"
+	if _, ok := actualHeaders[headerKey]; ok {
+		t.Errorf("Request sent to upstream backend should not contain empty %v header", headerKey)
 	}
 
 	if actualHost != expectHost {
