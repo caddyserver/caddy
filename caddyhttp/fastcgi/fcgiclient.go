@@ -108,6 +108,18 @@ const (
 	maxPad   = 255
 )
 
+// Client interface
+type Client interface {
+	Get(pair map[string]string) (response *http.Response, err error)
+	Head(pair map[string]string) (response *http.Response, err error)
+	Options(pairs map[string]string) (response *http.Response, err error)
+	Post(pairs map[string]string, method string, bodyType string, body io.Reader, contentLength int) (response *http.Response, err error)
+	Close() error
+	StdErr() bytes.Buffer
+	ReadTimeout() time.Duration
+	SetReadTimeout(time.Duration) error
+}
+
 type header struct {
 	Version       uint8
 	Type          uint8
@@ -168,7 +180,7 @@ type FCGIClient struct {
 	stderr      bytes.Buffer
 	keepAlive   bool
 	reqID       uint16
-	ReadTimeout time.Duration
+	readTimeout time.Duration
 }
 
 // DialWithDialer connects to the fcgi responder at the specified network address, using custom net.Dialer.
@@ -200,22 +212,29 @@ func (c *FCGIClient) Close() error {
 	return c.rwc.Close()
 }
 
-func (c *FCGIClient) writeRecord(recType uint8, content []byte) (err error) {
+func (c *FCGIClient) writeRecord(recType uint8, content []byte) error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	c.buf.Reset()
 	c.h.init(recType, c.reqID, len(content))
+
 	if err := binary.Write(&c.buf, binary.BigEndian, c.h); err != nil {
 		return err
 	}
+
 	if _, err := c.buf.Write(content); err != nil {
 		return err
 	}
+
 	if _, err := c.buf.Write(pad[:c.h.PaddingLength]); err != nil {
 		return err
 	}
-	_, err = c.rwc.Write(c.buf.Bytes())
-	return err
+
+	if _, err := c.rwc.Write(c.buf.Bytes()); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (c *FCGIClient) writeBeginRequest(role uint16, flags uint8) error {
@@ -336,12 +355,12 @@ func (w *streamReader) Read(p []byte) (n int, err error) {
 			for {
 				rec := &record{}
 				var buf []byte
-				if w.c.ReadTimeout > 0 {
+				if readTimeout := w.c.ReadTimeout(); readTimeout > 0 {
 					conn, ok := w.c.rwc.(net.Conn)
 					if ok {
-						conn.SetReadDeadline(time.Now().Add(w.c.ReadTimeout))
+						conn.SetReadDeadline(time.Now().Add(readTimeout))
 					} else {
-						err = fmt.Errorf("Could not set FastCGI ReadTimeout")
+						err = fmt.Errorf("Could not set Client ReadTimeout")
 						return
 					}
 				}
@@ -370,6 +389,11 @@ func (w *streamReader) Read(p []byte) (n int, err error) {
 	}
 
 	return
+}
+
+// StdErr returns stderr stream
+func (c *FCGIClient) StdErr() bytes.Buffer {
+	return c.stderr
 }
 
 // Do made the request and returns a io.Reader that translates the data read
@@ -547,6 +571,17 @@ func (c *FCGIClient) PostFile(p map[string]string, data url.Values, file map[str
 	}
 
 	return c.Post(p, "POST", bodyType, buf, buf.Len())
+}
+
+// ReadTimeout returns the read timeout for future calls that read from the
+// fcgi responder.
+func (c *FCGIClient) ReadTimeout() time.Duration { return c.readTimeout }
+
+// SetReadTimeout sets the read timeout for future calls that read from the
+// fcgi responder. A zero value for t means no timeout will be set.
+func (c *FCGIClient) SetReadTimeout(t time.Duration) error {
+	c.readTimeout = t
+	return nil
 }
 
 // Checks whether chunked is part of the encodings stack

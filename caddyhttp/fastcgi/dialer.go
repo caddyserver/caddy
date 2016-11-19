@@ -1,13 +1,15 @@
 package fastcgi
 
 import (
+	"errors"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
 type dialer interface {
-	Dial() (*FCGIClient, error)
-	Close(*FCGIClient) error
+	Dial() (Client, error)
+	Close(Client) error
 }
 
 // basicDialer is a basic dialer that wraps default fcgi functions.
@@ -17,8 +19,8 @@ type basicDialer struct {
 	timeout time.Duration
 }
 
-func (b basicDialer) Dial() (*FCGIClient, error) { return Dial(b.network, b.address, b.timeout) }
-func (b basicDialer) Close(c *FCGIClient) error  { return c.Close() }
+func (b basicDialer) Dial() (Client, error) { return Dial(b.network, b.address, b.timeout) }
+func (b basicDialer) Close(c Client) error  { return c.Close() }
 
 // persistentDialer keeps a pool of fcgi connections.
 // connections are not closed after use, rather added back to the pool for reuse.
@@ -27,11 +29,11 @@ type persistentDialer struct {
 	network string
 	address string
 	timeout time.Duration
-	pool    []*FCGIClient
+	pool    []Client
 	sync.Mutex
 }
 
-func (p *persistentDialer) Dial() (*FCGIClient, error) {
+func (p *persistentDialer) Dial() (Client, error) {
 	p.Lock()
 	// connection is available, return first one.
 	if len(p.pool) > 0 {
@@ -48,7 +50,7 @@ func (p *persistentDialer) Dial() (*FCGIClient, error) {
 	return Dial(p.network, p.address, p.timeout)
 }
 
-func (p *persistentDialer) Close(client *FCGIClient) error {
+func (p *persistentDialer) Close(client Client) error {
 	p.Lock()
 	if len(p.pool) < p.size {
 		// pool is not full yet, add connection for reuse
@@ -62,4 +64,36 @@ func (p *persistentDialer) Close(client *FCGIClient) error {
 
 	// otherwise, close the connection.
 	return client.Close()
+}
+
+type loadBalancingDialer struct {
+	dialers []dialer
+	current int64
+}
+
+func (m *loadBalancingDialer) Dial() (Client, error) {
+	nextDialerIndex := atomic.AddInt64(&m.current, 1) % int64(len(m.dialers))
+	currentDialer := m.dialers[nextDialerIndex]
+
+	client, err := currentDialer.Dial()
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &dialerAwareClient{Client: client, dialer: currentDialer}, nil
+}
+
+func (m *loadBalancingDialer) Close(c Client) error {
+	// Close the client according to dialer behaviour
+	if da, ok := c.(*dialerAwareClient); ok {
+		return da.dialer.Close(c)
+	}
+
+	return errors.New("Cannot close client")
+}
+
+type dialerAwareClient struct {
+	Client
+	dialer dialer
 }
