@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -766,9 +767,12 @@ func TestFiles(t *testing.T) {
 			if numFiles == 0 && len(actual) != 0 {
 				t.Errorf(testPrefix+"Expected files %v, got: %v",
 					test.fileNames, actual)
-			} else if numFiles > 0 && !reflect.DeepEqual(test.fileNames, actual) {
-				t.Errorf(testPrefix+"Expected files %v, got: %v",
-					test.fileNames, actual)
+			} else {
+				sort.Strings(actual)
+				if numFiles > 0 && !reflect.DeepEqual(test.fileNames, actual) {
+					t.Errorf(testPrefix+"Expected files %v, got: %v",
+						test.fileNames, actual)
+				}
 			}
 		}
 
