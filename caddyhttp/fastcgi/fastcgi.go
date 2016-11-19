@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
@@ -81,6 +82,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			if err != nil {
 				return http.StatusBadGateway, err
 			}
+			fcgiBackend.SetReadTimeout(rule.ReadTimeout)
 
 			var resp *http.Response
 			contentLength, _ := strconv.Atoi(r.Header.Get("Content-Length"))
@@ -300,6 +302,9 @@ type Rule struct {
 
 	// Ignored paths
 	IgnoredSubPaths []string
+
+	// The duration used to set a deadline when reading from the FastCGI server.
+	ReadTimeout time.Duration
 
 	// FCGI dialer
 	dialer dialer

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestServeHTTP(t *testing.T) {
@@ -28,8 +29,14 @@ func TestServeHTTP(t *testing.T) {
 
 	network, address := parseAddress(listener.Addr().String())
 	handler := Handler{
-		Next:  nil,
-		Rules: []Rule{{Path: "/", Address: listener.Addr().String(), dialer: basicDialer{network, address}}},
+		Next: nil,
+		Rules: []Rule{
+			{
+				Path:    "/",
+				Address: listener.Addr().String(),
+				dialer:  basicDialer{network: network, address: address},
+			},
+		},
 	}
 	r, err := http.NewRequest("GET", "/", nil)
 	if err != nil {
@@ -317,4 +324,40 @@ func TestBuildEnv(t *testing.T) {
 		t.Errorf("Error: Header Expected %v", internalRewriteFieldName)
 	}
 
+}
+
+func TestReadTimeout(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Unable to create listener for test: %v", err)
+	}
+	defer listener.Close()
+	go fcgi.Serve(listener, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(time.Second * 1)
+	}))
+
+	network, address := parseAddress(listener.Addr().String())
+	handler := Handler{
+		Next: nil,
+		Rules: []Rule{
+			{
+				Path:        "/",
+				Address:     listener.Addr().String(),
+				dialer:      basicDialer{network: network, address: address},
+				ReadTimeout: time.Millisecond * 100,
+			},
+		},
+	}
+	r, err := http.NewRequest("GET", "/", nil)
+	if err != nil {
+		t.Fatalf("Unable to create request: %v", err)
+	}
+	w := httptest.NewRecorder()
+
+	_, err = handler.ServeHTTP(w, r)
+	if err == nil {
+		t.Error("Expected i/o timeout error but had none")
+	} else if err, ok := err.(net.Error); !ok || !err.Timeout() {
+		t.Errorf("Expected i/o timeout error, got: '%s'", err.Error())
+	}
 }

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
@@ -69,6 +70,9 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 			}
 		}
 
+		var err error
+		var pool int
+		var timeout time.Duration
 		var dialers []dialer
 		var poolSize = -1
 
@@ -116,7 +120,7 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 				if !c.NextArg() {
 					return rules, c.ArgErr()
 				}
-				pool, err := strconv.Atoi(c.Val())
+				pool, err = strconv.Atoi(c.Val())
 				if err != nil {
 					return rules, err
 				}
@@ -125,15 +129,32 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 				} else {
 					return rules, c.Errf("positive integer expected, found %d", pool)
 				}
+			case "connect_timeout":
+				if !c.NextArg() {
+					return rules, c.ArgErr()
+				}
+				timeout, err = time.ParseDuration(c.Val())
+				if err != nil {
+					return rules, err
+				}
+			case "read_timeout":
+				if !c.NextArg() {
+					return rules, c.ArgErr()
+				}
+				readTimeout, err := time.ParseDuration(c.Val())
+				if err != nil {
+					return rules, err
+				}
+				rule.ReadTimeout = readTimeout
 			}
 		}
 
 		for _, rawAddress := range upstreams {
 			network, address := parseAddress(rawAddress)
 			if poolSize >= 0 {
-				dialers = append(dialers, &persistentDialer{size: poolSize, network: network, address: address})
+				dialers = append(dialers, &persistentDialer{size: poolSize, network: network, address: address, timeout: timeout})
 			} else {
-				dialers = append(dialers, basicDialer{network: network, address: address})
+				dialers = append(dialers, basicDialer{network: network, address: address, timeout: timeout})
 			}
 		}
 
