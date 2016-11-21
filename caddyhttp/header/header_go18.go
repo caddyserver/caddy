@@ -8,3 +8,6 @@ import "net/http"
 func (rww *responseWriterWrapper) Push(target string, opts *http.PushOptions) error {
 	return httpserver.Push(rww.ResponseWriter, target, opts)
 }
+
+// Interface guard
+var _ http.Flusher = (*responseWriterWrapper)(nil)

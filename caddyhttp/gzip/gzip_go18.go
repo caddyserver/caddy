@@ -11,3 +11,6 @@ import (
 func (w *gzipResponseWriter) Push(target string, opts *http.PushOptions) error {
 	return httpserver.Push(w.ResponseWriter, target, opts)
 }
+
+// Interface guard
+var _ http.Flusher = (*gzipResponseWriter)(nil)

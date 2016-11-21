@@ -118,10 +118,10 @@ func (rww *responseWriterWrapper) Hijack() (net.Conn, *bufio.ReadWriter, error) 
 // Flush implements http.Flusher. It simply wraps the underlying
 // ResponseWriter's Flush method if there is one, or panics.
 func (rww *responseWriterWrapper) Flush() {
-	if f, ok := rww.w.(http.Flusher); ok {
+	if f, ok := rww.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	} else {
-		panic(httpserver.NonFlusherError{Underlying: rww.w}) // should be recovered at the beginning of middleware stack
+		panic(httpserver.NonFlusherError{Underlying: rww.ResponseWriter}) // should be recovered at the beginning of middleware stack
 	}
 }
 
@@ -129,8 +129,8 @@ func (rww *responseWriterWrapper) Flush() {
 // It just inherits the underlying ResponseWriter's CloseNotify method.
 // It panics if the underlying ResponseWriter is not a CloseNotifier.
 func (rww *responseWriterWrapper) CloseNotify() <-chan bool {
-	if cn, ok := rww.w.(http.CloseNotifier); ok {
+	if cn, ok := rww.ResponseWriter.(http.CloseNotifier); ok {
 		return cn.CloseNotify()
 	}
-	panic(httpserver.NonCloseNotifierError{Underlying: rww.w})
+	panic(httpserver.NonCloseNotifierError{Underlying: rww.ResponseWriter})
 }

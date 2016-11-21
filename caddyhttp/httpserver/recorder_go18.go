@@ -21,3 +21,6 @@ func Push(w http.ResponseWriter, target string, opts *http.PushOptions) error {
 
 	return ErrPushUnavailable
 }
+
+// Interface guard
+var _ http.Flusher = (*ResponseRecorder)(nil)
