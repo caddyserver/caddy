@@ -104,7 +104,7 @@ func nextFunc(shouldGzip bool) httpserver.Handler {
 				return 0, fmt.Errorf("ResponseWriter should be gzipResponseWriter, found %T", w)
 			}
 			if strings.Contains(w.Header().Get("Content-Type"), "application/x-gzip") {
-				return 0, fmt.Errorf("Content type should not be gzip.")
+				return 0, fmt.Errorf("Content-Type should not be gzip")
 			}
 			return 0, nil
 		}

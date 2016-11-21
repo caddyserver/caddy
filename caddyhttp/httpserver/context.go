@@ -12,8 +12,9 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/russross/blackfriday"
 	"os"
+
+	"github.com/russross/blackfriday"
 )
 
 // This file contains the context and functions available for
@@ -24,10 +25,12 @@ type Context struct {
 	Root http.FileSystem
 	Req  *http.Request
 	URL  *url.URL
+	Args []interface{} // defined by arguments to .Include
 }
 
 // Include returns the contents of filename relative to the site root.
-func (c Context) Include(filename string) (string, error) {
+func (c Context) Include(filename string, args ...interface{}) (string, error) {
+	c.Args = args
 	return ContextInclude(filename, c, c.Root)
 }
 
