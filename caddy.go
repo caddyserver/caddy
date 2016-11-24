@@ -232,13 +232,16 @@ func HasListenerWithAddress(addr string) bool {
 func listenerAddrEqual(ln net.Listener, addr string) bool {
 	lnAddr := ln.Addr().String()
 	hostname, port, err := net.SplitHostPort(addr)
-	if err != nil || hostname != "" {
+	if err != nil {
 		return lnAddr == addr
 	}
 	if lnAddr == net.JoinHostPort("::", port) {
 		return true
 	}
 	if lnAddr == net.JoinHostPort("0.0.0.0", port) {
+		return true
+	}
+	if hostname != "" && lnAddr == addr {
 		return true
 	}
 	return false

@@ -113,7 +113,7 @@ var newACMEClient = func(config *Config, allowPrompts bool) (*ACMEClient, error)
 
 		// See if HTTP challenge needs to be proxied
 		useHTTPPort := "" // empty port value will use challenge default
-		if caddy.HasListenerWithAddress(net.JoinHostPort(config.ListenHost, HTTPChallengePort)) || config.OnDemand {
+		if caddy.HasListenerWithAddress(net.JoinHostPort(config.ListenHost, HTTPChallengePort)) {
 			useHTTPPort = config.AltHTTPPort
 			if useHTTPPort == "" {
 				useHTTPPort = DefaultHTTPAlternatePort
@@ -134,7 +134,7 @@ var newACMEClient = func(config *Config, allowPrompts bool) (*ACMEClient, error)
 		}
 
 		// See if TLS challenge needs to be handled by our own facilities
-		if caddy.HasListenerWithAddress(net.JoinHostPort(config.ListenHost, TLSSNIChallengePort)) || config.OnDemand {
+		if caddy.HasListenerWithAddress(net.JoinHostPort(config.ListenHost, TLSSNIChallengePort)) {
 			c.acmeClient.SetChallengeProvider(acme.TLSSNI01, tlsSniSolver{})
 		}
 	} else {
