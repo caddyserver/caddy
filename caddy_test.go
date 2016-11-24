@@ -1,6 +1,9 @@
 package caddy
 
-import "testing"
+import (
+	"net"
+	"testing"
+)
 
 /*
 // TODO
@@ -55,4 +58,39 @@ func TestIsLoopback(t *testing.T) {
 			t.Errorf("Test %d (%s): expected %v but was %v", i, test.input, want, got)
 		}
 	}
+}
+
+func TestListenerAddrEqual(t *testing.T) {
+	ln1, err := newLocalListener("[::]:2016")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln1.Close()
+
+	ln2, err := newLocalListener("[::]:2017")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln2.Close()
+
+	for i, test := range []struct {
+		ln     net.Listener
+		addr   string
+		expect bool
+	}{
+		{ln1, "0.0.0.0:2016", true},
+		{ln2, "0.0.0.0:2018", false},
+	} {
+		if got, want := listenerAddrEqual(test.ln, test.addr), test.expect; got != want {
+			t.Errorf("Test %d (%v == %v): expected %v but was %v", i, test.addr, test.ln.Addr().String(), want, got)
+		}
+	}
+}
+
+func newLocalListener(addr string) (net.Listener, error) {
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+	return ln, nil
 }
