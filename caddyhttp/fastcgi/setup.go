@@ -53,15 +53,13 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 	var rules []Rule
 
 	for c.Next() {
-		var rule Rule
-
 		args := c.RemainingArgs()
 
 		if len(args) < 2 || len(args) > 3 {
 			return rules, c.ArgErr()
 		}
 
-		rule.Path = args[0]
+		rule := Rule{Path: args[0], ReadTimeout: 60 * time.Second}
 		upstreams := []string{args[1]}
 
 		if len(args) == 3 {
@@ -72,7 +70,7 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 
 		var err error
 		var pool int
-		var timeout time.Duration
+		var connectTimeout = 60 * time.Second
 		var dialers []dialer
 		var poolSize = -1
 
@@ -133,7 +131,7 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 				if !c.NextArg() {
 					return rules, c.ArgErr()
 				}
-				timeout, err = time.ParseDuration(c.Val())
+				connectTimeout, err = time.ParseDuration(c.Val())
 				if err != nil {
 					return rules, err
 				}
@@ -152,9 +150,18 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 		for _, rawAddress := range upstreams {
 			network, address := parseAddress(rawAddress)
 			if poolSize >= 0 {
-				dialers = append(dialers, &persistentDialer{size: poolSize, network: network, address: address, timeout: timeout})
+				dialers = append(dialers, &persistentDialer{
+					size:    poolSize,
+					network: network,
+					address: address,
+					timeout: connectTimeout,
+				})
 			} else {
-				dialers = append(dialers, basicDialer{network: network, address: address, timeout: timeout})
+				dialers = append(dialers, basicDialer{
+					network: network,
+					address: address,
+					timeout: connectTimeout,
+				})
 			}
 		}
 
