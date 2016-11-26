@@ -2,6 +2,7 @@ package caddy
 
 import (
 	"net"
+	"strconv"
 	"testing"
 )
 
@@ -61,36 +62,37 @@ func TestIsLoopback(t *testing.T) {
 }
 
 func TestListenerAddrEqual(t *testing.T) {
-	ln1, err := newLocalListener("[::]:2016")
+	ln1, err := net.Listen("tcp", "[::]:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer ln1.Close()
 
-	ln2, err := newLocalListener("[::]:2017")
+	ln1port := strconv.Itoa(ln1.Addr().(*net.TCPAddr).Port)
+
+	ln2, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer ln2.Close()
+
+	ln2port := strconv.Itoa(ln2.Addr().(*net.TCPAddr).Port)
 
 	for i, test := range []struct {
 		ln     net.Listener
 		addr   string
 		expect bool
 	}{
-		{ln1, "0.0.0.0:2016", true},
-		{ln2, "0.0.0.0:2018", false},
+		{ln1, ":1234", false},
+		{ln1, "0.0.0.0:1234", false},
+		{ln1, ":" + ln1port + "", true},
+		{ln1, "0.0.0.0:" + ln1port + "", true},
+		{ln2, "127.0.0.1:1234", false},
+		{ln2, ":" + ln2port + "", false},
+		{ln2, "127.0.0.1:" + ln2port + "", true},
 	} {
 		if got, want := listenerAddrEqual(test.ln, test.addr), test.expect; got != want {
-			t.Errorf("Test %d (%v == %v): expected %v but was %v", i, test.addr, test.ln.Addr().String(), want, got)
+			t.Errorf("Test %d (%s == %s): expected %v but was %v", i, test.addr, test.ln.Addr().String(), want, got)
 		}
 	}
-}
-
-func newLocalListener(addr string) (net.Listener, error) {
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		return nil, err
-	}
-	return ln, nil
 }

@@ -241,10 +241,7 @@ func listenerAddrEqual(ln net.Listener, addr string) bool {
 	if lnAddr == net.JoinHostPort("0.0.0.0", port) {
 		return true
 	}
-	if hostname != "" && lnAddr == addr {
-		return true
-	}
-	return false
+	return hostname != "" && lnAddr == addr
 }
 
 // TCPServer is a type that can listen and serve connections.
