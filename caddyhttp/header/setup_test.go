@@ -45,13 +45,22 @@ func TestHeadersParse(t *testing.T) {
 					"Foo": []string{"Bar Baz"},
 				}},
 			}},
-		{`header /bar { Foo "Bar Baz" Baz Qux }`,
+		{`header /bar {
+			Foo "Bar Baz"
+			Baz Qux
+			Foobar
+		}`,
 			false, []Rule{
 				{Path: "/bar", Headers: http.Header{
-					"Foo": []string{"Bar Baz"},
-					"Baz": []string{"Qux"},
+					"Foo":    []string{"Bar Baz"},
+					"Baz":    []string{"Qux"},
+					"Foobar": []string{""},
 				}},
 			}},
+		{`header /foo {
+				Foo Bar Baz
+			}`, true,
+			[]Rule{}},
 	}
 
 	for i, test := range tests {
