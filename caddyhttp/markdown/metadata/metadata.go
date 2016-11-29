@@ -3,6 +3,8 @@ package metadata
 import (
 	"bufio"
 	"bytes"
+	"fmt"
+	"strconv"
 	"time"
 )
 
@@ -70,6 +72,13 @@ func (m *Metadata) load(parsedMap map[string]interface{}) {
 			m.Flags[key] = v
 		case string:
 			m.Variables[key] = v
+		case int:
+			m.Variables[key] = strconv.Itoa(v)
+		case int64:
+			m.Variables[key] = strconv.Itoa(int(v))
+		// json numbers will be encoded as floats :(
+		case float64:
+			m.Variables[key] = fmt.Sprintf("%v", v)
 		}
 	}
 }

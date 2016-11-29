@@ -18,6 +18,8 @@ template = "default"
 name = "value"
 positive = true
 negative = false
+number = 1410
+float = 1410.07
 `,
 	`+++
 title = "A title"
@@ -25,6 +27,8 @@ template = "default"
 name = "value"
 positive = true
 negative = false
+number = 1410
+float = 1410.07
 +++
 Page content
 	`,
@@ -34,6 +38,8 @@ template = "default"
 name = "value"
 positive = true
 negative = false
+number = 1410
+float = 1410.07
 	`,
 	`title = "A title" template = "default" [variables] name = "value"`,
 	`+++
@@ -42,6 +48,8 @@ template = "default"
 name = "value"
 positive = true
 negative = false
+number = 1410
+float = 1410.07
 +++
 `,
 }
@@ -52,6 +60,8 @@ template : default
 name : value
 positive : true
 negative : false
+number : 1410
+float : 1410.07
 `,
 	`---
 title : A title
@@ -59,6 +69,8 @@ template : default
 name : value
 positive : true
 negative : false
+number : 1410
+float : 1410.07
 ---
 	Page content
 	`,
@@ -66,6 +78,8 @@ negative : false
 title : A title
 template : default
 name : value
+number : 1410
+float : 1410.07
 	`,
 	`title : A title template : default variables : name : value : positive : true : negative : false`,
 	`---
@@ -74,6 +88,8 @@ template : default
 name : value
 positive : true
 negative : false
+number : 1410
+float : 1410.07
 ---
 `,
 }
@@ -83,14 +99,18 @@ var JSON = [5]string{`
 	"template" : "default",
 	"name" : "value",
 	"positive" : true,
-	"negative" : false
+	"negative" : false,
+	"number": 1410,
+	"float": 1410.07
 `,
 	`{
 	"title" : "A title",
 	"template" : "default",
 	"name" : "value",
 	"positive" : true,
-	"negative" : false
+	"negative" : false,
+	"number" : 1410,
+	"float": 1410.07
 }
 Page content
 	`,
@@ -100,7 +120,9 @@ Page content
 	"template" : "default",
 	"name" : "value",
 	"positive" : true,
-	"negative" : false
+	"negative" : false,
+	"number" : 1410,
+	"float": 1410.07
 	`,
 	`
 {
@@ -108,7 +130,9 @@ Page content
 	"template" : "default",
 	"name" : "value",
 	"positive" : true,
-	"negative" : false
+	"negative" : false,
+	"number" : 1410,
+	"float": 1410.07
 }
 	`,
 	`{
@@ -116,7 +140,9 @@ Page content
 	"template" : "default",
 	"name" : "value",
 	"positive" : true,
-	"negative" : false
+	"negative" : false,
+	"number" : 1410,
+	"float": 1410.07
 }
 `,
 }
@@ -129,6 +155,8 @@ func TestParsers(t *testing.T) {
 			"name":     "value",
 			"title":    "A title",
 			"template": "default",
+			"number":   "1410",
+			"float":    "1410.07",
 		},
 		Flags: map[string]bool{
 			"positive": true,
