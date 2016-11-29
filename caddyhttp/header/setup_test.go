@@ -61,6 +61,9 @@ func TestHeadersParse(t *testing.T) {
 				Foo Bar Baz
 			}`, true,
 			[]Rule{}},
+		{`header /foo {
+				Test "max-age=1814400";
+			}`, true, []Rule{}},
 	}
 
 	for i, test := range tests {
