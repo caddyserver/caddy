@@ -75,7 +75,7 @@ func (m *Metadata) load(parsedMap map[string]interface{}) {
 		case int:
 			m.Variables[key] = strconv.Itoa(v)
 		case int64:
-			m.Variables[key] = strconv.Itoa(int(v))
+			m.Variables[key] = strconv.FormatInt(v, 10)
 		// json numbers will be encoded as floats :(
 		case float64:
 			m.Variables[key] = fmt.Sprintf("%v", v)
