@@ -166,12 +166,12 @@ func TestGetEmail(t *testing.T) {
 			t.Fatalf("Error saving user %d: %v", i, err)
 		}
 
-		// Change modified time so they're all different, so the test becomes deterministic
+		// Change modified time so they're all different and the test becomes more deterministic
 		f, err := os.Stat(testStorage.user(eml))
 		if err != nil {
 			t.Fatalf("Could not access user folder for '%s': %v", eml, err)
 		}
-		chTime := f.ModTime().Add(-(time.Duration(i) * time.Second))
+		chTime := f.ModTime().Add(-(time.Duration(i) * time.Hour)) // 1 second isn't always enough space!
 		if err := os.Chtimes(testStorage.user(eml), chTime, chTime); err != nil {
 			t.Fatalf("Could not change user folder mod time for '%s': %v", eml, err)
 		}
