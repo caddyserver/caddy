@@ -60,8 +60,12 @@ func headersParse(c *caddy.Controller) ([]Rule, error) {
 			name := c.Val()
 			value := ""
 
-			if c.NextArg() {
-				value = c.Val()
+			args := c.RemainingArgs()
+
+			if len(args) > 1 {
+				return rules, c.ArgErr()
+			} else if len(args) == 1 {
+				value = args[0]
 			}
 
 			head.Headers.Add(name, value)
