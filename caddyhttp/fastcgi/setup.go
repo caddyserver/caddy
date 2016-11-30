@@ -59,7 +59,7 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 			return rules, c.ArgErr()
 		}
 
-		rule := Rule{Path: args[0], ReadTimeout: 60 * time.Second}
+		rule := Rule{Path: args[0], ReadTimeout: 60 * time.Second, SendTimeout: 60 * time.Second}
 		upstreams := []string{args[1]}
 
 		if len(args) == 3 {
@@ -144,6 +144,15 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 					return rules, err
 				}
 				rule.ReadTimeout = readTimeout
+			case "send_timeout":
+				if !c.NextArg() {
+					return rules, c.ArgErr()
+				}
+				sendTimeout, err := time.ParseDuration(c.Val())
+				if err != nil {
+					return rules, err
+				}
+				rule.SendTimeout = sendTimeout
 			}
 		}
 
