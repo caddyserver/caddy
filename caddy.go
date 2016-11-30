@@ -232,7 +232,7 @@ func HasListenerWithAddress(addr string) bool {
 func listenerAddrEqual(ln net.Listener, addr string) bool {
 	lnAddr := ln.Addr().String()
 	hostname, port, err := net.SplitHostPort(addr)
-	if err != nil || hostname != "" {
+	if err != nil {
 		return lnAddr == addr
 	}
 	if lnAddr == net.JoinHostPort("::", port) {
@@ -241,7 +241,7 @@ func listenerAddrEqual(ln net.Listener, addr string) bool {
 	if lnAddr == net.JoinHostPort("0.0.0.0", port) {
 		return true
 	}
-	return false
+	return hostname != "" && lnAddr == addr
 }
 
 // TCPServer is a type that can listen and serve connections.

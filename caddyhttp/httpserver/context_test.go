@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -29,6 +30,7 @@ func TestInclude(t *testing.T) {
 	}()
 
 	tests := []struct {
+		args                 []interface{}
 		fileContent          string
 		expectedContent      string
 		shouldErr            bool
@@ -41,7 +43,15 @@ func TestInclude(t *testing.T) {
 			shouldErr:            false,
 			expectedErrorContent: "",
 		},
-		// Test 1 - failure on template.Parse
+		// Test 1 - all good, with args
+		{
+			args:                 []interface{}{"hello", 5},
+			fileContent:          `str1 {{ .Root }} str2 {{index .Args 0}} {{index .Args 1}}`,
+			expectedContent:      fmt.Sprintf("str1 %s str2 %s %d", context.Root, "hello", 5),
+			shouldErr:            false,
+			expectedErrorContent: "",
+		},
+		// Test 2 - failure on template.Parse
 		{
 			fileContent:          `str1 {{ .Root } str2`,
 			expectedContent:      "",
@@ -72,7 +82,7 @@ func TestInclude(t *testing.T) {
 			t.Fatal(testPrefix+"Failed to create test file. Error was: %v", err)
 		}
 
-		content, err := context.Include(inputFilename)
+		content, err := context.Include(inputFilename, test.args...)
 		if err != nil {
 			if !test.shouldErr {
 				t.Errorf(testPrefix+"Expected no error, found [%s]", test.expectedErrorContent, err.Error())
@@ -736,14 +746,16 @@ func TestFiles(t *testing.T) {
 
 		// Create directory / files from test case.
 		if test.fileNames != nil {
-			dirPath, err = ioutil.TempDir(fmt.Sprintf("%s", context.Root), "caddy_test")
+			dirPath, err = ioutil.TempDir(fmt.Sprintf("%s", context.Root), "caddy_ctxtest")
 			if err != nil {
+				os.RemoveAll(dirPath)
 				t.Fatalf(testPrefix+"Expected no error creating directory, got: '%s'", err.Error())
 			}
 
 			for _, name := range test.fileNames {
 				absFilePath := filepath.Join(dirPath, name)
 				if err = ioutil.WriteFile(absFilePath, []byte(""), os.ModePerm); err != nil {
+					os.RemoveAll(dirPath)
 					t.Fatalf(testPrefix+"Expected no error creating file, got: '%s'", err.Error())
 				}
 			}
@@ -766,9 +778,12 @@ func TestFiles(t *testing.T) {
 			if numFiles == 0 && len(actual) != 0 {
 				t.Errorf(testPrefix+"Expected files %v, got: %v",
 					test.fileNames, actual)
-			} else if numFiles > 0 && !reflect.DeepEqual(test.fileNames, actual) {
-				t.Errorf(testPrefix+"Expected files %v, got: %v",
-					test.fileNames, actual)
+			} else {
+				sort.Strings(actual)
+				if numFiles > 0 && !reflect.DeepEqual(test.fileNames, actual) {
+					t.Errorf(testPrefix+"Expected files %v, got: %v",
+						test.fileNames, actual)
+				}
 			}
 		}
 

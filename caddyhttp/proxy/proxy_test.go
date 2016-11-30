@@ -227,10 +227,11 @@ func TestUnixSocketProxy(t *testing.T) {
 	}))
 
 	// Get absolute path for unix: socket
-	dir, err := ioutil.TempDir("", "caddy_test")
+	dir, err := ioutil.TempDir("", "caddy_proxytest")
 	if err != nil {
 		t.Fatalf("Failed to make temp dir to contain unix socket. %v", err)
 	}
+	defer os.RemoveAll(dir)
 	socketPath := filepath.Join(dir, "test_socket")
 
 	// Change httptest.Server listener to listen to unix: socket
@@ -281,20 +282,21 @@ func GetHTTPProxy(messageFormat string, prefix string) (*Proxy, *httptest.Server
 	return newPrefixedWebSocketTestProxy(ts.URL, prefix), ts
 }
 
-func GetSocketProxy(messageFormat string, prefix string) (*Proxy, *httptest.Server, error) {
+func GetSocketProxy(messageFormat string, prefix string) (*Proxy, *httptest.Server, string, error) {
 	ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, messageFormat, r.URL.String())
 	}))
 
-	dir, err := ioutil.TempDir("", "caddy_test")
+	dir, err := ioutil.TempDir("", "caddy_proxytest")
 	if err != nil {
-		return nil, nil, fmt.Errorf("Failed to make temp dir to contain unix socket. %v", err)
+		return nil, nil, dir, fmt.Errorf("Failed to make temp dir to contain unix socket. %v", err)
 	}
 	socketPath := filepath.Join(dir, "test_socket")
 
 	ln, err := net.Listen("unix", socketPath)
 	if err != nil {
-		return nil, nil, fmt.Errorf("Unable to listen: %v", err)
+		os.RemoveAll(dir)
+		return nil, nil, dir, fmt.Errorf("Unable to listen: %v", err)
 	}
 	ts.Listener = ln
 
@@ -302,7 +304,7 @@ func GetSocketProxy(messageFormat string, prefix string) (*Proxy, *httptest.Serv
 
 	tsURL := strings.Replace(ts.URL, "http://", "unix:", 1)
 
-	return newPrefixedWebSocketTestProxy(tsURL, prefix), ts, nil
+	return newPrefixedWebSocketTestProxy(tsURL, prefix), ts, dir, nil
 }
 
 func GetTestServerMessage(p *Proxy, ts *httptest.Server, path string) (string, error) {
@@ -368,8 +370,7 @@ func TestUnixSocketProxyPaths(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		p, ts, err := GetSocketProxy(greeting, test.prefix)
-
+		p, ts, tmpdir, err := GetSocketProxy(greeting, test.prefix)
 		if err != nil {
 			t.Fatalf("Getting socket proxy failed - %v", err)
 		}
@@ -377,12 +378,15 @@ func TestUnixSocketProxyPaths(t *testing.T) {
 		actualMsg, err := GetTestServerMessage(p, ts, test.url)
 
 		if err != nil {
+			os.RemoveAll(tmpdir)
 			t.Fatalf("Getting server message failed - %v", err)
 		}
 
 		if actualMsg != test.expected {
 			t.Errorf("Expected '%s' but got '%s' instead", test.expected, actualMsg)
 		}
+
+		os.RemoveAll(tmpdir)
 	}
 }
 
@@ -405,8 +409,10 @@ func TestUpstreamHeadersUpdate(t *testing.T) {
 		"Upgrade":    {"{>Upgrade}"},
 		"+Merge-Me":  {"Merge-Value"},
 		"+Add-Me":    {"Add-Value"},
+		"+Add-Empty": {"{}"},
 		"-Remove-Me": {""},
 		"Replace-Me": {"{hostname}"},
+		"Clear-Me":   {""},
 		"Host":       {"{>Host}"},
 	}
 	// set up proxy
@@ -446,6 +452,11 @@ func TestUpstreamHeadersUpdate(t *testing.T) {
 			headerKey, expect, got)
 	}
 
+	headerKey = "Add-Empty"
+	if _, ok := actualHeaders[headerKey]; ok {
+		t.Errorf("Request sent to upstream backend should not contain empty %v header", headerKey)
+	}
+
 	headerKey = "Remove-Me"
 	if _, ok := actualHeaders[headerKey]; ok {
 		t.Errorf("Request sent to upstream backend should not contain %v header", headerKey)
@@ -457,6 +468,11 @@ func TestUpstreamHeadersUpdate(t *testing.T) {
 	if !reflect.DeepEqual(got, expect) {
 		t.Errorf("Request sent to upstream backend does not contain expected %v header: expect %v, but got %v",
 			headerKey, expect, got)
+	}
+
+	headerKey = "Clear-Me"
+	if _, ok := actualHeaders[headerKey]; ok {
+		t.Errorf("Request sent to upstream backend should not contain empty %v header", headerKey)
 	}
 
 	if actualHost != expectHost {

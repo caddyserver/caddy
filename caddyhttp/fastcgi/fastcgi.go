@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
@@ -81,6 +82,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			if err != nil {
 				return http.StatusBadGateway, err
 			}
+			fcgiBackend.SetReadTimeout(rule.ReadTimeout)
 
 			var resp *http.Response
 			contentLength, _ := strconv.Atoi(r.Header.Get("Content-Length"))
@@ -111,9 +113,9 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			defer rule.dialer.Close(fcgiBackend)
 
 			// Log any stderr output from upstream
-			if fcgiBackend.stderr.Len() != 0 {
+			if stderr := fcgiBackend.StdErr(); stderr.Len() != 0 {
 				// Remove trailing newline, error logger already does this.
-				err = LogError(strings.TrimSuffix(fcgiBackend.stderr.String(), "\n"))
+				err = LogError(strings.TrimSuffix(stderr.String(), "\n"))
 			}
 
 			// Normally we would return the status code if it is an error status (>= 400),
@@ -300,6 +302,9 @@ type Rule struct {
 
 	// Ignored paths
 	IgnoredSubPaths []string
+
+	// The duration used to set a deadline when reading from the FastCGI server.
+	ReadTimeout time.Duration
 
 	// FCGI dialer
 	dialer dialer
