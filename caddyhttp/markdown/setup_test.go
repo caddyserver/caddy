@@ -131,7 +131,7 @@ func equalTemplates(i, j *template.Template) (bool, string, string) {
 
 	md := Data{
 		Context:  ctx,
-		Doc:      make(map[string]string),
+		Doc:      make(map[string]interface{}),
 		DocFlags: make(map[string]bool),
 		Styles:   []string{"style1"},
 		Scripts:  []string{"js1"},
