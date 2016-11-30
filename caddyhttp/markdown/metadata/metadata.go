@@ -3,8 +3,6 @@ package metadata
 import (
 	"bufio"
 	"bytes"
-	"fmt"
-	"strconv"
 	"time"
 )
 
@@ -29,7 +27,7 @@ type Metadata struct {
 	Date time.Time
 
 	// Variables to be used with Template
-	Variables map[string]string
+	Variables map[string]interface{}
 
 	// Flags to be used with Template
 	Flags map[string]bool
@@ -38,7 +36,7 @@ type Metadata struct {
 // NewMetadata returns a new Metadata struct, loaded with the given map
 func NewMetadata(parsedMap map[string]interface{}) Metadata {
 	md := Metadata{
-		Variables: make(map[string]string),
+		Variables: make(map[string]interface{}),
 		Flags:     make(map[string]bool),
 	}
 	md.load(parsedMap)
@@ -70,15 +68,8 @@ func (m *Metadata) load(parsedMap map[string]interface{}) {
 		switch v := val.(type) {
 		case bool:
 			m.Flags[key] = v
-		case string:
+		default:
 			m.Variables[key] = v
-		case int:
-			m.Variables[key] = strconv.Itoa(v)
-		case int64:
-			m.Variables[key] = strconv.FormatInt(v, 10)
-		// json numbers will be encoded as floats :(
-		case float64:
-			m.Variables[key] = fmt.Sprintf("%v", v)
 		}
 	}
 }

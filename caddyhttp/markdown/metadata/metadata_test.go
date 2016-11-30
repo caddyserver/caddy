@@ -2,6 +2,7 @@ package metadata
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -151,12 +152,12 @@ func TestParsers(t *testing.T) {
 	expected := Metadata{
 		Title:    "A title",
 		Template: "default",
-		Variables: map[string]string{
+		Variables: map[string]interface{}{
 			"name":     "value",
 			"title":    "A title",
 			"template": "default",
-			"number":   "1410",
-			"float":    "1410.07",
+			"number":   1410,
+			"float":    1410.07,
 		},
 		Flags: map[string]bool{
 			"positive": true,
@@ -171,7 +172,7 @@ func TestParsers(t *testing.T) {
 			return false
 		}
 		for k, v := range m.Variables {
-			if v != expected.Variables[k] {
+			if fmt.Sprintf("%v", v) != fmt.Sprintf("%v", expected.Variables[k]) {
 				return false
 			}
 		}
