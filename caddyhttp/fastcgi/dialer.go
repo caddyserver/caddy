@@ -19,8 +19,11 @@ type basicDialer struct {
 	timeout time.Duration
 }
 
-func (b basicDialer) Dial() (Client, error) { return Dial(b.network, b.address, b.timeout) }
-func (b basicDialer) Close(c Client) error  { return c.Close() }
+func (b basicDialer) Dial() (Client, error) {
+	return DialTimeout(b.network, b.address, b.timeout)
+}
+
+func (b basicDialer) Close(c Client) error { return c.Close() }
 
 // persistentDialer keeps a pool of fcgi connections.
 // connections are not closed after use, rather added back to the pool for reuse.
@@ -47,7 +50,7 @@ func (p *persistentDialer) Dial() (Client, error) {
 	p.Unlock()
 
 	// no connection available, create new one
-	return Dial(p.network, p.address, p.timeout)
+	return DialTimeout(p.network, p.address, p.timeout)
 }
 
 func (p *persistentDialer) Close(client Client) error {
