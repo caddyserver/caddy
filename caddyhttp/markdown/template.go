@@ -12,7 +12,7 @@ import (
 // Data represents a markdown document.
 type Data struct {
 	httpserver.Context
-	Doc      map[string]string
+	Doc      map[string]interface{}
 	DocFlags map[string]bool
 	Styles   []string
 	Scripts  []string
