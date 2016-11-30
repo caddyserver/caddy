@@ -98,9 +98,8 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int) *
 			}
 		}
 
-		//If Empty path dont join path to avoid additional /
-		//fix for 1200
-		if req.URL.Path == "/" {
+		// If Empty path dont join path to avoid additional "/" (issue 1200)
+		if req.URL.Path == "/" && target.Path != "" {
 			req.URL.Path = target.Path
 		} else {
 			hadTrailingSlash := strings.HasSuffix(req.URL.Path, "/")
