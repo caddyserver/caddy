@@ -212,6 +212,21 @@ func (c *FCGIClient) Close() error {
 	return c.rwc.Close()
 }
 
+// setReadDeadline sets a read deadline on FCGIClient based on the configured
+// readTimeout. A zero value for readTimeout means no deadline will be set.
+func (c *FCGIClient) setReadDeadline() error {
+	if c.readTimeout > 0 {
+		conn, ok := c.rwc.(net.Conn)
+		if ok {
+			conn.SetReadDeadline(time.Now().Add(c.readTimeout))
+		} else {
+			return fmt.Errorf("Could not set Client ReadTimeout")
+		}
+	}
+
+	return nil
+}
+
 func (c *FCGIClient) writeRecord(recType uint8, content []byte) error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
@@ -350,20 +365,10 @@ func (w *streamReader) Read(p []byte) (n int, err error) {
 
 	if len(p) > 0 {
 		if len(w.buf) == 0 {
-
 			// filter outputs for error log
 			for {
 				rec := &record{}
 				var buf []byte
-				if readTimeout := w.c.ReadTimeout(); readTimeout > 0 {
-					conn, ok := w.c.rwc.(net.Conn)
-					if ok {
-						conn.SetReadDeadline(time.Now().Add(readTimeout))
-					} else {
-						err = fmt.Errorf("Could not set Client ReadTimeout")
-						return
-					}
-				}
 				buf, err = rec.read(w.c.rwc)
 				if err == errInvalidHeaderVersion {
 					continue
@@ -440,6 +445,10 @@ func (c *FCGIClient) Request(p map[string]string, req io.Reader) (resp *http.Res
 	rb := bufio.NewReader(r)
 	tp := textproto.NewReader(rb)
 	resp = new(http.Response)
+
+	if err = c.setReadDeadline(); err != nil {
+		return
+	}
 
 	// Parse the response headers.
 	mimeHeader, err := tp.ReadMIMEHeader()

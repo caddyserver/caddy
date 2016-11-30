@@ -332,9 +332,6 @@ func TestReadTimeout(t *testing.T) {
 		t.Fatalf("Unable to create listener for test: %v", err)
 	}
 	defer listener.Close()
-	go fcgi.Serve(listener, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(time.Second * 1)
-	}))
 
 	network, address := parseAddress(listener.Addr().String())
 	handler := Handler{
@@ -353,6 +350,10 @@ func TestReadTimeout(t *testing.T) {
 		t.Fatalf("Unable to create request: %v", err)
 	}
 	w := httptest.NewRecorder()
+
+	go fcgi.Serve(listener, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(time.Millisecond * 130)
+	}))
 
 	_, err = handler.ServeHTTP(w, r)
 	if err == nil {
