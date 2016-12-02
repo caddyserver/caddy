@@ -746,14 +746,16 @@ func TestFiles(t *testing.T) {
 
 		// Create directory / files from test case.
 		if test.fileNames != nil {
-			dirPath, err = ioutil.TempDir(fmt.Sprintf("%s", context.Root), "caddy_test")
+			dirPath, err = ioutil.TempDir(fmt.Sprintf("%s", context.Root), "caddy_ctxtest")
 			if err != nil {
+				os.RemoveAll(dirPath)
 				t.Fatalf(testPrefix+"Expected no error creating directory, got: '%s'", err.Error())
 			}
 
 			for _, name := range test.fileNames {
 				absFilePath := filepath.Join(dirPath, name)
 				if err = ioutil.WriteFile(absFilePath, []byte(""), os.ModePerm); err != nil {
+					os.RemoveAll(dirPath)
 					t.Fatalf(testPrefix+"Expected no error creating file, got: '%s'", err.Error())
 				}
 			}

@@ -85,10 +85,12 @@ func TestListenerAddrEqual(t *testing.T) {
 	}{
 		{ln1, ":1234", false},
 		{ln1, "0.0.0.0:1234", false},
+		{ln1, "0.0.0.0", false},
 		{ln1, ":" + ln1port + "", true},
 		{ln1, "0.0.0.0:" + ln1port + "", true},
-		{ln2, "127.0.0.1:1234", false},
 		{ln2, ":" + ln2port + "", false},
+		{ln2, "127.0.0.1:1234", false},
+		{ln2, "127.0.0.1", false},
 		{ln2, "127.0.0.1:" + ln2port + "", true},
 	} {
 		if got, want := listenerAddrEqual(test.ln, test.addr), test.expect; got != want {
