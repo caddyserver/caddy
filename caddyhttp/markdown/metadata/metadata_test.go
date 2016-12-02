@@ -158,8 +158,6 @@ func TestParsers(t *testing.T) {
 			"template": "default",
 			"number":   1410,
 			"float":    1410.07,
-		},
-		Flags: map[string]bool{
 			"positive": true,
 			"negative": false,
 		},
@@ -176,14 +174,9 @@ func TestParsers(t *testing.T) {
 				return false
 			}
 		}
-		for k, v := range m.Flags {
-			if v != expected.Flags[k] {
-				return false
-			}
-		}
+
 		varLenOK := len(m.Variables) == len(expected.Variables)
-		flagLenOK := len(m.Flags) == len(expected.Flags)
-		return varLenOK && flagLenOK
+		return varLenOK
 	}
 
 	data := []struct {
