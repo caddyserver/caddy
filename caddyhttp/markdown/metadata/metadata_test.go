@@ -2,6 +2,7 @@ package metadata
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -18,6 +19,8 @@ template = "default"
 name = "value"
 positive = true
 negative = false
+number = 1410
+float = 1410.07
 `,
 	`+++
 title = "A title"
@@ -25,6 +28,8 @@ template = "default"
 name = "value"
 positive = true
 negative = false
+number = 1410
+float = 1410.07
 +++
 Page content
 	`,
@@ -34,6 +39,8 @@ template = "default"
 name = "value"
 positive = true
 negative = false
+number = 1410
+float = 1410.07
 	`,
 	`title = "A title" template = "default" [variables] name = "value"`,
 	`+++
@@ -42,6 +49,8 @@ template = "default"
 name = "value"
 positive = true
 negative = false
+number = 1410
+float = 1410.07
 +++
 `,
 }
@@ -52,6 +61,8 @@ template : default
 name : value
 positive : true
 negative : false
+number : 1410
+float : 1410.07
 `,
 	`---
 title : A title
@@ -59,6 +70,8 @@ template : default
 name : value
 positive : true
 negative : false
+number : 1410
+float : 1410.07
 ---
 	Page content
 	`,
@@ -66,6 +79,8 @@ negative : false
 title : A title
 template : default
 name : value
+number : 1410
+float : 1410.07
 	`,
 	`title : A title template : default variables : name : value : positive : true : negative : false`,
 	`---
@@ -74,6 +89,8 @@ template : default
 name : value
 positive : true
 negative : false
+number : 1410
+float : 1410.07
 ---
 `,
 }
@@ -83,14 +100,18 @@ var JSON = [5]string{`
 	"template" : "default",
 	"name" : "value",
 	"positive" : true,
-	"negative" : false
+	"negative" : false,
+	"number": 1410,
+	"float": 1410.07
 `,
 	`{
 	"title" : "A title",
 	"template" : "default",
 	"name" : "value",
 	"positive" : true,
-	"negative" : false
+	"negative" : false,
+	"number" : 1410,
+	"float": 1410.07
 }
 Page content
 	`,
@@ -100,7 +121,9 @@ Page content
 	"template" : "default",
 	"name" : "value",
 	"positive" : true,
-	"negative" : false
+	"negative" : false,
+	"number" : 1410,
+	"float": 1410.07
 	`,
 	`
 {
@@ -108,7 +131,9 @@ Page content
 	"template" : "default",
 	"name" : "value",
 	"positive" : true,
-	"negative" : false
+	"negative" : false,
+	"number" : 1410,
+	"float": 1410.07
 }
 	`,
 	`{
@@ -116,7 +141,9 @@ Page content
 	"template" : "default",
 	"name" : "value",
 	"positive" : true,
-	"negative" : false
+	"negative" : false,
+	"number" : 1410,
+	"float": 1410.07
 }
 `,
 }
@@ -125,12 +152,12 @@ func TestParsers(t *testing.T) {
 	expected := Metadata{
 		Title:    "A title",
 		Template: "default",
-		Variables: map[string]string{
+		Variables: map[string]interface{}{
 			"name":     "value",
 			"title":    "A title",
 			"template": "default",
-		},
-		Flags: map[string]bool{
+			"number":   1410,
+			"float":    1410.07,
 			"positive": true,
 			"negative": false,
 		},
@@ -143,18 +170,13 @@ func TestParsers(t *testing.T) {
 			return false
 		}
 		for k, v := range m.Variables {
-			if v != expected.Variables[k] {
+			if fmt.Sprintf("%v", v) != fmt.Sprintf("%v", expected.Variables[k]) {
 				return false
 			}
 		}
-		for k, v := range m.Flags {
-			if v != expected.Flags[k] {
-				return false
-			}
-		}
+
 		varLenOK := len(m.Variables) == len(expected.Variables)
-		flagLenOK := len(m.Flags) == len(expected.Flags)
-		return varLenOK && flagLenOK
+		return varLenOK
 	}
 
 	data := []struct {
