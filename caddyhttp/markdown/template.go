@@ -12,11 +12,10 @@ import (
 // Data represents a markdown document.
 type Data struct {
 	httpserver.Context
-	Doc      map[string]string
-	DocFlags map[string]bool
-	Styles   []string
-	Scripts  []string
-	Files    []FileInfo
+	Doc     map[string]interface{}
+	Styles  []string
+	Scripts []string
+	Files   []FileInfo
 }
 
 // Include "overrides" the embedded httpserver.Context's Include()
@@ -29,12 +28,11 @@ func (d Data) Include(filename string) (string, error) {
 // execTemplate executes a template given a requestPath, template, and metadata
 func execTemplate(c *Config, mdata metadata.Metadata, files []FileInfo, ctx httpserver.Context) ([]byte, error) {
 	mdData := Data{
-		Context:  ctx,
-		Doc:      mdata.Variables,
-		DocFlags: mdata.Flags,
-		Styles:   c.Styles,
-		Scripts:  c.Scripts,
-		Files:    files,
+		Context: ctx,
+		Doc:     mdata.Variables,
+		Styles:  c.Styles,
+		Scripts: c.Scripts,
+		Files:   files,
 	}
 
 	b := new(bytes.Buffer)
