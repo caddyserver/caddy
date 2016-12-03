@@ -81,6 +81,9 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			// Connect to FastCGI gateway
 			fcgiBackend, err := rule.dialer.Dial()
 			if err != nil {
+				if err, ok := err.(net.Error); ok && err.Timeout() {
+					return http.StatusGatewayTimeout, err
+				}
 				return http.StatusBadGateway, err
 			}
 			defer fcgiBackend.Close()
