@@ -27,6 +27,7 @@ func setup(c *caddy.Controller) error {
 	b := Browse{
 		Configs:       configs,
 		IgnoreIndexes: false,
+		HiddenFiles:   httpserver.GetConfig(c).HiddenFiles,
 	}
 
 	httpserver.GetConfig(c).AddMiddleware(func(next httpserver.Handler) httpserver.Handler {

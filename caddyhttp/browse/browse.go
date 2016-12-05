@@ -20,12 +20,19 @@ import (
 	"github.com/mholt/caddy/caddyhttp/staticfiles"
 )
 
+const (
+	sortByName = "name"
+	sortBySize = "size"
+	sortByTime = "time"
+)
+
 // Browse is an http.Handler that can show a file listing when
 // directories in the given paths are specified.
 type Browse struct {
 	Next          httpserver.Handler
 	Configs       []Config
 	IgnoreIndexes bool
+	HiddenFiles   []string
 }
 
 // Config is a configuration for browsing in a particular path.
@@ -161,11 +168,11 @@ func (l Listing) applySort() {
 	// Check '.Order' to know how to sort
 	if l.Order == "desc" {
 		switch l.Sort {
-		case "name":
+		case sortByName:
 			sort.Sort(sort.Reverse(byName(l)))
-		case "size":
+		case sortBySize:
 			sort.Sort(sort.Reverse(bySize(l)))
-		case "time":
+		case sortByTime:
 			sort.Sort(sort.Reverse(byTime(l)))
 		default:
 			// If not one of the above, do nothing
@@ -173,11 +180,11 @@ func (l Listing) applySort() {
 		}
 	} else { // If we had more Orderings we could add them here
 		switch l.Sort {
-		case "name":
+		case sortByName:
 			sort.Sort(byName(l))
-		case "size":
+		case sortBySize:
 			sort.Sort(bySize(l))
-		case "time":
+		case sortByTime:
 			sort.Sort(byTime(l))
 		default:
 			// If not one of the above, do nothing
@@ -186,7 +193,7 @@ func (l Listing) applySort() {
 	}
 }
 
-func directoryListing(files []os.FileInfo, canGoUp bool, urlPath string) (Listing, bool) {
+func directoryListing(files []os.FileInfo, canGoUp bool, urlPath string, hidden map[string]struct{}) (Listing, bool) {
 	var (
 		fileinfos           []FileInfo
 		dirCount, fileCount int
@@ -211,6 +218,10 @@ func directoryListing(files []os.FileInfo, canGoUp bool, urlPath string) (Listin
 		}
 
 		url := url.URL{Path: "./" + name} // prepend with "./" to fix paths with ':' in the name
+
+		if _, exists := hidden[f.Name()]; exists {
+			continue
+		}
 
 		fileinfos = append(fileinfos, FileInfo{
 			IsDir:   f.IsDir(),
@@ -311,8 +322,14 @@ func (b Browse) loadDirectoryContents(requestedFilepath http.File, urlPath strin
 		}
 	}
 
+	hiddenFiles := make(map[string]struct{})
+
+	for _, hidden := range b.HiddenFiles {
+		hiddenFiles[hidden] = struct{}{}
+	}
+
 	// Assemble listing of directory contents
-	listing, hasIndex := directoryListing(files, canGoUp, urlPath)
+	listing, hasIndex := directoryListing(files, canGoUp, urlPath, hiddenFiles)
 
 	return &listing, hasIndex, nil
 }
@@ -327,11 +344,11 @@ func (b Browse) handleSortOrder(w http.ResponseWriter, r *http.Request, scope st
 	// If the query 'sort' or 'order' is empty, use defaults or any values previously saved in Cookies
 	switch sort {
 	case "":
-		sort = "name"
+		sort = sortByName
 		if sortCookie, sortErr := r.Cookie("sort"); sortErr == nil {
 			sort = sortCookie.Value
 		}
-	case "name", "size", "type":
+	case sortByName, sortBySize, sortByTime:
 		http.SetCookie(w, &http.Cookie{Name: "sort", Value: sort, Path: scope, Secure: r.TLS != nil})
 	}
 

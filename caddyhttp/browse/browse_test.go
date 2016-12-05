@@ -138,6 +138,7 @@ func TestBrowseTemplate(t *testing.T) {
 	}
 
 	b := Browse{
+		HiddenFiles: []string{"hidden.html"},
 		Next: httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
 			t.Fatalf("Next shouldn't be called")
 			return 0, nil
