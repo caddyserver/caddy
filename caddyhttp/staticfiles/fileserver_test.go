@@ -33,6 +33,8 @@ var (
 var testFiles = map[string]string{
 	"unreachable.html":                                     "<h1>must not leak</h1>",
 	filepath.Join("webroot", "file1.html"):                 "<h1>file1.html</h1>",
+	filepath.Join("webroot", "gzipped.html"):               "<h1>gzipped.html</h1>",
+	filepath.Join("webroot", "gzipped.html.gz"):            "<h1>gzipped.html.gz</h1>",
 	filepath.Join("webroot", "dirwithindex", "index.html"): "<h1>dirwithindex/index.html</h1>",
 	filepath.Join("webroot", "dir", "file2.html"):          "<h1>dir/file2.html</h1>",
 	filepath.Join("webroot", "dir", "hidden.html"):         "<h1>dir/hidden.html</h1>",
@@ -157,6 +159,13 @@ func TestServeHTTP(t *testing.T) {
 		{
 			url:            "https://foo/%2f..%2funreachable.html",
 			expectedStatus: http.StatusNotFound,
+		},
+		// Test 18 - try to get pre-gzipped file.
+		{
+			url:                 "https://foo/gzipped.html",
+			expectedStatus:      http.StatusOK,
+			expectedBodyContent: testFiles["gzipped.html.gz"],
+			expectedEtag:        `W/"1e240-15"`,
 		},
 	}
 

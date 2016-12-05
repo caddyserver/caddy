@@ -25,6 +25,18 @@ func (l LengthFilter) ShouldCompress(w http.ResponseWriter) bool {
 	return l != 0 && int64(l) <= length
 }
 
+// SkipGzipped is ResponseFilter that will discard already gzipped files
+type SkipGzipped struct{}
+
+// ShouldCompress returns true if served file is not already gzipped
+func (n SkipGzipped) ShouldCompress(w http.ResponseWriter) bool {
+	if w.Header().Get("Content-Encoding") == "gzip" {
+		return false
+	}
+
+	return true
+}
+
 // ResponseFilterWriter validates ResponseFilters. It writes
 // gzip compressed data if ResponseFilters are satisfied or
 // uncompressed data otherwise.
