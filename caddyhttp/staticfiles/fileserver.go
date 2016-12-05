@@ -127,19 +127,23 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request, name stri
 
 	filename := d.Name()
 
-	if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
-		gf, err := fs.Root.Open(location + ".gz")
-
-		if err == nil {
-			defer gf.Close()
-
-			stat, err := gf.Stat()
+encodings:
+	for _, encoding := range staticEncodingPriority {
+		if strings.Contains(r.Header.Get("Accept-Encoding"), encoding) {
+			gf, err := fs.Root.Open(location + staticEncoding[encoding])
 			if err == nil {
-				d = stat
-				f = gf
+				defer gf.Close()
 
-				w.Header().Add("Vary", "Accept-Encoding")
-				w.Header().Set("Content-Encoding", "gzip")
+				stat, err := gf.Stat()
+				if err == nil {
+					d = stat
+					f = gf
+
+					w.Header().Add("Vary", "Accept-Encoding")
+					w.Header().Set("Content-Encoding", encoding)
+
+					break encodings
+				}
 			}
 		}
 	}
@@ -190,4 +194,14 @@ var IndexPages = []string{
 	"default.html",
 	"default.htm",
 	"default.txt",
+}
+
+var staticEncoding = map[string]string{
+	"gzip": ".gz",
+	"br":   ".br",
+}
+
+var staticEncodingPriority = []string{
+	"br",
+	"gzip",
 }

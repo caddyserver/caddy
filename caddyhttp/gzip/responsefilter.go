@@ -30,11 +30,7 @@ type SkipGzipped struct{}
 
 // ShouldCompress returns true if served file is not already gzipped
 func (n SkipGzipped) ShouldCompress(w http.ResponseWriter) bool {
-	if w.Header().Get("Content-Encoding") == "gzip" {
-		return false
-	}
-
-	return true
+	return w.Header().Get("Content-Encoding") == ""
 }
 
 // ResponseFilterWriter validates ResponseFilters. It writes

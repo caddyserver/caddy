@@ -35,6 +35,10 @@ var testFiles = map[string]string{
 	filepath.Join("webroot", "file1.html"):                 "<h1>file1.html</h1>",
 	filepath.Join("webroot", "sub", "gzipped.html"):        "<h1>gzipped.html</h1>",
 	filepath.Join("webroot", "sub", "gzipped.html.gz"):     "gzipped.html.gz",
+	filepath.Join("webroot", "sub", "gzipped.html.gz"):     "gzipped.html.gz",
+	filepath.Join("webroot", "sub", "brotli.html"):         "brotli.html",
+	filepath.Join("webroot", "sub", "brotli.html.gz"):      "brotli.html.gz",
+	filepath.Join("webroot", "sub", "brotli.html.br"):      "brotli.html.br",
 	filepath.Join("webroot", "dirwithindex", "index.html"): "<h1>dirwithindex/index.html</h1>",
 	filepath.Join("webroot", "dir", "file2.html"):          "<h1>dir/file2.html</h1>",
 	filepath.Join("webroot", "dir", "hidden.html"):         "<h1>dir/hidden.html</h1>",
@@ -167,13 +171,20 @@ func TestServeHTTP(t *testing.T) {
 			expectedBodyContent: testFiles[filepath.Join("webroot", "sub", "gzipped.html.gz")],
 			expectedEtag:        `W/"1e240-f"`,
 		},
+		// Test 19 - try to get pre-brotli encoded file.
+		{
+			url:                 "https://foo/sub/brotli.html",
+			expectedStatus:      http.StatusOK,
+			expectedBodyContent: testFiles[filepath.Join("webroot", "sub", "brotli.html.br")],
+			expectedEtag:        `W/"1e240-e"`,
+		},
 	}
 
 	for i, test := range tests {
 		responseRecorder := httptest.NewRecorder()
 		request, err := http.NewRequest("GET", test.url, nil)
 
-		request.Header.Add("Accept-Encoding", "gzip")
+		request.Header.Add("Accept-Encoding", "br,gzip")
 
 		if err != nil {
 			t.Errorf("Test %d: Error making request: %v", i, err)
