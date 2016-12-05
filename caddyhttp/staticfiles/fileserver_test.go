@@ -33,8 +33,8 @@ var (
 var testFiles = map[string]string{
 	"unreachable.html":                                     "<h1>must not leak</h1>",
 	filepath.Join("webroot", "file1.html"):                 "<h1>file1.html</h1>",
-	filepath.Join("webroot", "gzipped.html"):               "<h1>gzipped.html</h1>",
-	filepath.Join("webroot", "gzipped.html.gz"):            "<h1>gzipped.html.gz</h1>",
+	filepath.Join("webroot", "sub", "gzipped.html"):        "<h1>gzipped.html</h1>",
+	filepath.Join("webroot", "sub", "gzipped.html.gz"):     "gzipped.html.gz",
 	filepath.Join("webroot", "dirwithindex", "index.html"): "<h1>dirwithindex/index.html</h1>",
 	filepath.Join("webroot", "dir", "file2.html"):          "<h1>dir/file2.html</h1>",
 	filepath.Join("webroot", "dir", "hidden.html"):         "<h1>dir/hidden.html</h1>",
@@ -74,14 +74,14 @@ func TestServeHTTP(t *testing.T) {
 		{
 			url:                 "https://foo/file1.html",
 			expectedStatus:      http.StatusOK,
-			expectedBodyContent: testFiles["file1.html"],
+			expectedBodyContent: testFiles[filepath.Join("webroot", "file1.html")],
 			expectedEtag:        `W/"1e240-13"`,
 		},
 		// Test 3 - access folder with index file with trailing slash
 		{
 			url:                 "https://foo/dirwithindex/",
 			expectedStatus:      http.StatusOK,
-			expectedBodyContent: testFiles[filepath.Join("dirwithindex", "index.html")],
+			expectedBodyContent: testFiles[filepath.Join("webroot", "dirwithindex", "index.html")],
 			expectedEtag:        `W/"1e240-20"`,
 		},
 		// Test 4 - access folder with index file without trailing slash
@@ -121,7 +121,7 @@ func TestServeHTTP(t *testing.T) {
 		{
 			url:                 "https://foo/dirwithindex/index.html",
 			expectedStatus:      http.StatusOK,
-			expectedBodyContent: testFiles[filepath.Join("dirwithindex", "index.html")],
+			expectedBodyContent: testFiles[filepath.Join("webroot", "dirwithindex", "index.html")],
 			expectedEtag:        `W/"1e240-20"`,
 		},
 		// Test 11 - send a request with query params
@@ -162,16 +162,19 @@ func TestServeHTTP(t *testing.T) {
 		},
 		// Test 18 - try to get pre-gzipped file.
 		{
-			url:                 "https://foo/gzipped.html",
+			url:                 "https://foo/sub/gzipped.html",
 			expectedStatus:      http.StatusOK,
-			expectedBodyContent: testFiles["gzipped.html.gz"],
-			expectedEtag:        `W/"1e240-15"`,
+			expectedBodyContent: testFiles[filepath.Join("webroot", "sub", "gzipped.html.gz")],
+			expectedEtag:        `W/"1e240-f"`,
 		},
 	}
 
 	for i, test := range tests {
 		responseRecorder := httptest.NewRecorder()
 		request, err := http.NewRequest("GET", test.url, nil)
+
+		request.Header.Add("Accept-Encoding", "gzip")
+
 		if err != nil {
 			t.Errorf("Test %d: Error making request: %v", i, err)
 		}

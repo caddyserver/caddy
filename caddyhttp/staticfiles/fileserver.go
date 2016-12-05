@@ -43,6 +43,9 @@ func (fs FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, err
 // serveFile writes the specified file to the HTTP response.
 // name is '/'-separated, not filepath.Separator.
 func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request, name string) (int, error) {
+
+	location := name
+
 	// Prevent absolute path access on Windows.
 	// TODO remove when stdlib http.Dir fixes this.
 	if runtime.GOOS == "windows" {
@@ -105,6 +108,7 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request, name stri
 				if err == nil {
 					d = dd
 					f = ff
+					location = index
 					break
 				}
 			}
@@ -124,8 +128,7 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request, name stri
 	filename := d.Name()
 
 	if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
-
-		gf, err := fs.Root.Open(filename + ".gz")
+		gf, err := fs.Root.Open(location + ".gz")
 
 		if err == nil {
 			defer gf.Close()
