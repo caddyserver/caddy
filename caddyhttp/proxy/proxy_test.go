@@ -56,9 +56,7 @@ func TestReverseProxy(t *testing.T) {
 	// Make sure {upstream} placeholder is set
 	rr := httpserver.NewResponseRecorder(httptest.NewRecorder())
 	rr.Replacer = httpserver.NewReplacer(r, rr, "-")
-
 	p.ServeHTTP(rr, r)
-
 	if got, want := rr.Replacer.Replace("{upstream}"), backend.URL; got != want {
 		t.Errorf("Expected custom placeholder {upstream} to be set (%s), but it wasn't; got: %s", want, got)
 	}
@@ -832,6 +830,11 @@ func TestProxyDirectorURL(t *testing.T) {
 			requestURL: `http://localhost:2020/test/`,
 			targetURL:  `https://localhost:2021/t/`,
 			expectURL:  `https://localhost:2021/t/test/`,
+		},
+		{
+			requestURL: `http://localhost:2020/`,
+			targetURL:  `https://localhost:2021/t?foo%3dbar`,
+			expectURL:  `https://localhost:2021/t?foo%3dbar`,
 		},
 	} {
 		targetURL, err := url.Parse(c.targetURL)

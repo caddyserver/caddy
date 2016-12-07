@@ -98,11 +98,16 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int) *
 			}
 		}
 
-		hadTrailingSlash := strings.HasSuffix(req.URL.Path, "/")
-		req.URL.Path = path.Join(target.Path, req.URL.Path)
-		// path.Join will strip off the last /, so put it back if it was there.
-		if hadTrailingSlash && !strings.HasSuffix(req.URL.Path, "/") {
-			req.URL.Path = req.URL.Path + "/"
+		// If Empty path dont join path to avoid additional "/" (issue 1200)
+		if req.URL.Path == "/" && target.Path != "" {
+			req.URL.Path = target.Path
+		} else {
+			hadTrailingSlash := strings.HasSuffix(req.URL.Path, "/")
+			req.URL.Path = path.Join(target.Path, req.URL.Path)
+			// path.Join will strip off the last /, so put it back if it was there.
+			if hadTrailingSlash && !strings.HasSuffix(req.URL.Path, "/") {
+				req.URL.Path = req.URL.Path + "/"
+			}
 		}
 
 		// Trims the path of the socket from the URL path.
