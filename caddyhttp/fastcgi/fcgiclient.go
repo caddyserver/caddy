@@ -15,7 +15,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"mime/multipart"
@@ -116,8 +115,8 @@ type Client interface {
 	Post(pairs map[string]string, method string, bodyType string, body io.Reader, contentLength int) (response *http.Response, err error)
 	Close() error
 	StdErr() bytes.Buffer
-	ReadTimeout() time.Duration
 	SetReadTimeout(time.Duration) error
+	SetSendTimeout(time.Duration) error
 }
 
 type header struct {
@@ -174,57 +173,32 @@ func (rec *record) read(r io.Reader) (buf []byte, err error) {
 // interfacing external applications with Web servers.
 type FCGIClient struct {
 	mutex       sync.Mutex
-	rwc         io.ReadWriteCloser
+	conn        net.Conn
 	h           header
 	buf         bytes.Buffer
 	stderr      bytes.Buffer
 	keepAlive   bool
 	reqID       uint16
 	readTimeout time.Duration
+	sendTimeout time.Duration
 }
 
-// DialWithDialer connects to the fcgi responder at the specified network address, using custom net.Dialer.
+// DialTimeout connects to the fcgi responder at the specified network address, using default net.Dialer.
 // See func net.Dial for a description of the network and address parameters.
-func DialWithDialer(network, address string, dialer net.Dialer) (fcgi *FCGIClient, err error) {
-	var conn net.Conn
-	conn, err = dialer.Dial(network, address)
+func DialTimeout(network string, address string, timeout time.Duration) (fcgi *FCGIClient, err error) {
+	conn, err := net.DialTimeout(network, address, timeout)
 	if err != nil {
 		return
 	}
 
-	fcgi = &FCGIClient{
-		rwc:       conn,
-		keepAlive: false,
-		reqID:     1,
-	}
+	fcgi = &FCGIClient{conn: conn, keepAlive: false, reqID: 1}
 
-	return
-}
-
-// Dial connects to the fcgi responder at the specified network address, using default net.Dialer.
-// See func net.Dial for a description of the network and address parameters.
-func Dial(network string, address string, timeout time.Duration) (fcgi *FCGIClient, err error) {
-	return DialWithDialer(network, address, net.Dialer{Timeout: timeout})
+	return fcgi, nil
 }
 
 // Close closes fcgi connnection.
 func (c *FCGIClient) Close() error {
-	return c.rwc.Close()
-}
-
-// setReadDeadline sets a read deadline on FCGIClient based on the configured
-// readTimeout. A zero value for readTimeout means no deadline will be set.
-func (c *FCGIClient) setReadDeadline() error {
-	if c.readTimeout > 0 {
-		conn, ok := c.rwc.(net.Conn)
-		if ok {
-			conn.SetReadDeadline(time.Now().Add(c.readTimeout))
-		} else {
-			return fmt.Errorf("Could not set Client ReadTimeout")
-		}
-	}
-
-	return nil
+	return c.conn.Close()
 }
 
 func (c *FCGIClient) writeRecord(recType uint8, content []byte) error {
@@ -245,7 +219,13 @@ func (c *FCGIClient) writeRecord(recType uint8, content []byte) error {
 		return err
 	}
 
-	if _, err := c.rwc.Write(c.buf.Bytes()); err != nil {
+	if c.sendTimeout != 0 {
+		if err := c.conn.SetWriteDeadline(time.Now().Add(c.sendTimeout)); err != nil {
+			return err
+		}
+	}
+
+	if _, err := c.conn.Write(c.buf.Bytes()); err != nil {
 		return err
 	}
 
@@ -369,7 +349,7 @@ func (w *streamReader) Read(p []byte) (n int, err error) {
 			for {
 				rec := &record{}
 				var buf []byte
-				buf, err = rec.read(w.c.rwc)
+				buf, err = rec.read(w.c.conn)
 				if err == errInvalidHeaderVersion {
 					continue
 				} else if err != nil {
@@ -436,7 +416,6 @@ func (c clientCloser) Close() error { return c.f.Close() }
 // Request returns a HTTP Response with Header and Body
 // from fcgi responder
 func (c *FCGIClient) Request(p map[string]string, req io.Reader) (resp *http.Response, err error) {
-
 	r, err := c.Do(p, req)
 	if err != nil {
 		return
@@ -446,8 +425,10 @@ func (c *FCGIClient) Request(p map[string]string, req io.Reader) (resp *http.Res
 	tp := textproto.NewReader(rb)
 	resp = new(http.Response)
 
-	if err = c.setReadDeadline(); err != nil {
-		return
+	if c.readTimeout != 0 {
+		if err = c.conn.SetReadDeadline(time.Now().Add(c.readTimeout)); err != nil {
+			return
+		}
 	}
 
 	// Parse the response headers.
@@ -582,14 +563,17 @@ func (c *FCGIClient) PostFile(p map[string]string, data url.Values, file map[str
 	return c.Post(p, "POST", bodyType, buf, buf.Len())
 }
 
-// ReadTimeout returns the read timeout for future calls that read from the
-// fcgi responder.
-func (c *FCGIClient) ReadTimeout() time.Duration { return c.readTimeout }
-
 // SetReadTimeout sets the read timeout for future calls that read from the
 // fcgi responder. A zero value for t means no timeout will be set.
 func (c *FCGIClient) SetReadTimeout(t time.Duration) error {
 	c.readTimeout = t
+	return nil
+}
+
+// SetSendTimeout sets the read timeout for future calls that send data to
+// the fcgi responder. A zero value for t means no timeout will be set.
+func (c *FCGIClient) SetSendTimeout(t time.Duration) error {
+	c.sendTimeout = t
 	return nil
 }
 

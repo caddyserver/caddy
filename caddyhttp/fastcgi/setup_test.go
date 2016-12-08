@@ -80,6 +80,7 @@ func TestFastcgiParse(t *testing.T) {
 				dialer:      &loadBalancingDialer{dialers: []dialer{basicDialer{network: "tcp", address: "127.0.0.1:9000", timeout: 60 * time.Second}}},
 				IndexFiles:  []string{"index.php"},
 				ReadTimeout: 60 * time.Second,
+				SendTimeout: 60 * time.Second,
 			}}},
 		{`fastcgi /blog 127.0.0.1:9000 php {
 			upstream 127.0.0.1:9001
@@ -92,6 +93,7 @@ func TestFastcgiParse(t *testing.T) {
 				dialer:      &loadBalancingDialer{dialers: []dialer{basicDialer{network: "tcp", address: "127.0.0.1:9000", timeout: 60 * time.Second}, basicDialer{network: "tcp", address: "127.0.0.1:9001", timeout: 60 * time.Second}}},
 				IndexFiles:  []string{"index.php"},
 				ReadTimeout: 60 * time.Second,
+				SendTimeout: 60 * time.Second,
 			}}},
 		{`fastcgi /blog 127.0.0.1:9000 {
 			upstream 127.0.0.1:9001 
@@ -104,6 +106,7 @@ func TestFastcgiParse(t *testing.T) {
 				dialer:      &loadBalancingDialer{dialers: []dialer{basicDialer{network: "tcp", address: "127.0.0.1:9000", timeout: 60 * time.Second}, basicDialer{network: "tcp", address: "127.0.0.1:9001", timeout: 60 * time.Second}}},
 				IndexFiles:  []string{},
 				ReadTimeout: 60 * time.Second,
+				SendTimeout: 60 * time.Second,
 			}}},
 		{`fastcgi / ` + defaultAddress + ` {
 	              split .html
@@ -116,6 +119,7 @@ func TestFastcgiParse(t *testing.T) {
 				dialer:      &loadBalancingDialer{dialers: []dialer{basicDialer{network: network, address: address, timeout: 60 * time.Second}}},
 				IndexFiles:  []string{},
 				ReadTimeout: 60 * time.Second,
+				SendTimeout: 60 * time.Second,
 			}}},
 		{`fastcgi / ` + defaultAddress + ` {
 	              split .html
@@ -130,6 +134,7 @@ func TestFastcgiParse(t *testing.T) {
 				IndexFiles:      []string{},
 				IgnoredSubPaths: []string{"/admin", "/user"},
 				ReadTimeout:     60 * time.Second,
+				SendTimeout:     60 * time.Second,
 			}}},
 		{`fastcgi / ` + defaultAddress + ` {
 	              pool 0
@@ -142,6 +147,7 @@ func TestFastcgiParse(t *testing.T) {
 				dialer:      &loadBalancingDialer{dialers: []dialer{&persistentDialer{size: 0, network: network, address: address, timeout: 60 * time.Second}}},
 				IndexFiles:  []string{},
 				ReadTimeout: 60 * time.Second,
+				SendTimeout: 60 * time.Second,
 			}}},
 		{`fastcgi / 127.0.0.1:8080  {
 			upstream 127.0.0.1:9000
@@ -155,6 +161,7 @@ func TestFastcgiParse(t *testing.T) {
 				dialer:      &loadBalancingDialer{dialers: []dialer{&persistentDialer{size: 5, network: "tcp", address: "127.0.0.1:8080", timeout: 60 * time.Second}, &persistentDialer{size: 5, network: "tcp", address: "127.0.0.1:9000", timeout: 60 * time.Second}}},
 				IndexFiles:  []string{},
 				ReadTimeout: 60 * time.Second,
+				SendTimeout: 60 * time.Second,
 			}}},
 		{`fastcgi / ` + defaultAddress + ` {
 	              split .php
@@ -167,6 +174,7 @@ func TestFastcgiParse(t *testing.T) {
 				dialer:      &loadBalancingDialer{dialers: []dialer{basicDialer{network: network, address: address, timeout: 60 * time.Second}}},
 				IndexFiles:  []string{},
 				ReadTimeout: 60 * time.Second,
+				SendTimeout: 60 * time.Second,
 			}}},
 		{`fastcgi / ` + defaultAddress + ` {
 	              connect_timeout 5s
@@ -179,7 +187,13 @@ func TestFastcgiParse(t *testing.T) {
 				dialer:      &loadBalancingDialer{dialers: []dialer{basicDialer{network: network, address: address, timeout: 5 * time.Second}}},
 				IndexFiles:  []string{},
 				ReadTimeout: 60 * time.Second,
+				SendTimeout: 60 * time.Second,
 			}}},
+		{
+			`fastcgi / ` + defaultAddress + ` { connect_timeout BADVALUE }`,
+			true,
+			[]Rule{},
+		},
 		{`fastcgi / ` + defaultAddress + ` {
 	              read_timeout 5s
 	              }`,
@@ -191,7 +205,31 @@ func TestFastcgiParse(t *testing.T) {
 				dialer:      &loadBalancingDialer{dialers: []dialer{basicDialer{network: network, address: address, timeout: 60 * time.Second}}},
 				IndexFiles:  []string{},
 				ReadTimeout: 5 * time.Second,
+				SendTimeout: 60 * time.Second,
 			}}},
+		{
+			`fastcgi / ` + defaultAddress + ` { read_timeout BADVALUE }`,
+			true,
+			[]Rule{},
+		},
+		{`fastcgi / ` + defaultAddress + ` {
+	              send_timeout 5s
+	              }`,
+			false, []Rule{{
+				Path:        "/",
+				Address:     defaultAddress,
+				Ext:         "",
+				SplitPath:   "",
+				dialer:      &loadBalancingDialer{dialers: []dialer{basicDialer{network: network, address: address, timeout: 60 * time.Second}}},
+				IndexFiles:  []string{},
+				ReadTimeout: 60 * time.Second,
+				SendTimeout: 5 * time.Second,
+			}}},
+		{
+			`fastcgi / ` + defaultAddress + ` { send_timeout BADVALUE }`,
+			true,
+			[]Rule{},
+		},
 		{`fastcgi / {
 
 		              }`,
@@ -250,6 +288,16 @@ func TestFastcgiParse(t *testing.T) {
 			if fmt.Sprint(actualFastcgiConfig.IgnoredSubPaths) != fmt.Sprint(test.expectedFastcgiConfig[j].IgnoredSubPaths) {
 				t.Errorf("Test %d expected %dth FastCGI IgnoredSubPaths to be  %s  , but got %s",
 					i, j, test.expectedFastcgiConfig[j].IgnoredSubPaths, actualFastcgiConfig.IgnoredSubPaths)
+			}
+
+			if fmt.Sprint(actualFastcgiConfig.ReadTimeout) != fmt.Sprint(test.expectedFastcgiConfig[j].ReadTimeout) {
+				t.Errorf("Test %d expected %dth FastCGI ReadTimeout to be  %s  , but got %s",
+					i, j, test.expectedFastcgiConfig[j].ReadTimeout, actualFastcgiConfig.ReadTimeout)
+			}
+
+			if fmt.Sprint(actualFastcgiConfig.SendTimeout) != fmt.Sprint(test.expectedFastcgiConfig[j].SendTimeout) {
+				t.Errorf("Test %d expected %dth FastCGI SendTimeout to be  %s  , but got %s",
+					i, j, test.expectedFastcgiConfig[j].SendTimeout, actualFastcgiConfig.SendTimeout)
 			}
 		}
 	}
