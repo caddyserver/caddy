@@ -90,7 +90,7 @@ func TestResponseFilterWriter(t *testing.T) {
 
 func TestResponseGzippedOutput(t *testing.T) {
 	server := Gzip{Configs: []Config{
-		{ResponseFilters: []ResponseFilter{SkipGzipped{}}},
+		{ResponseFilters: []ResponseFilter{SkipCompressedFilter{}}},
 	}}
 
 	server.Next = httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {

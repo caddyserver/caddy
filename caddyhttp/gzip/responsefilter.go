@@ -25,12 +25,18 @@ func (l LengthFilter) ShouldCompress(w http.ResponseWriter) bool {
 	return l != 0 && int64(l) <= length
 }
 
-// SkipGzipped is ResponseFilter that will discard already gzipped files
-type SkipGzipped struct{}
+// SkipCompressedFilter is ResponseFilter that will discard already compressed responses
+type SkipCompressedFilter struct{}
 
-// ShouldCompress returns true if served file is not already gzipped
-func (n SkipGzipped) ShouldCompress(w http.ResponseWriter) bool {
-	return w.Header().Get("Content-Encoding") == ""
+// ShouldCompress returns true if served file is not already compressed
+// encodings via https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Encoding
+func (n SkipCompressedFilter) ShouldCompress(w http.ResponseWriter) bool {
+	switch w.Header().Get("Content-Encoding") {
+	case "gzip", "compress", "deflate", "br":
+		return false
+	default:
+		return true
+	}
 }
 
 // ResponseFilterWriter validates ResponseFilters. It writes

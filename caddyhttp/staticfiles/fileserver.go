@@ -127,7 +127,6 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request, name stri
 
 	filename := d.Name()
 
-encodings:
 	for _, encoding := range staticEncodingPriority {
 		if strings.Contains(r.Header.Get("Accept-Encoding"), encoding) {
 			gf, err := fs.Root.Open(location + staticEncoding[encoding])
@@ -142,7 +141,7 @@ encodings:
 					w.Header().Add("Vary", "Accept-Encoding")
 					w.Header().Set("Content-Encoding", encoding)
 
-					break encodings
+					break
 				}
 			}
 		}

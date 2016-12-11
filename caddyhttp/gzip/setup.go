@@ -106,7 +106,7 @@ func gzipParse(c *caddy.Controller) ([]Config, error) {
 			config.RequestFilters = append(config.RequestFilters, DefaultExtFilter())
 		}
 
-		config.ResponseFilters = append(config.ResponseFilters, SkipGzipped{})
+		config.ResponseFilters = append(config.ResponseFilters, SkipCompressedFilter{})
 
 		// Response Filters
 		// If min_length is specified, use it.

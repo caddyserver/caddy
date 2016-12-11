@@ -99,3 +99,31 @@ func TestSetup(t *testing.T) {
 		}
 	}
 }
+
+func TestShouldAddResponseFilters(t *testing.T) {
+	configs, err := gzipParse(caddy.NewTestController("http", `gzip { min_length 654 }`))
+
+	if err != nil {
+		t.Errorf("Test expected no error but found: %v", err)
+	}
+	filters := 0
+
+	for _, config := range configs {
+		for _, filter := range config.ResponseFilters {
+			switch filter.(type) {
+			case SkipCompressedFilter:
+				filters++
+			case LengthFilter:
+				filters++
+
+				if filter != LengthFilter(654) {
+					t.Errorf("Expected LengthFilter to have length 654, got: %v", filter)
+				}
+			}
+		}
+
+		if filters != 2 {
+			t.Errorf("Expected 2 response filters to be registered, got: %v", filters)
+		}
+	}
+}
