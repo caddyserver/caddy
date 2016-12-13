@@ -6,6 +6,8 @@ Wants=network-online.target systemd-networkd-wait-online.service
 
 [Service]
 Restart=on-failure
+StartLimitInterval=86400
+StartLimitBurst=5
 
 ; User and group the process will run as.
 User=www-data
