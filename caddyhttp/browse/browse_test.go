@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/mholt/caddy/caddyhttp/httpserver"
+	"github.com/mholt/caddy/caddyhttp/staticfiles"
 )
 
 func TestSort(t *testing.T) {
@@ -106,8 +107,10 @@ func TestBrowseHTTPMethods(t *testing.T) {
 		Configs: []Config{
 			{
 				PathScope: "/photos",
-				Root:      http.Dir("./testdata"),
-				Template:  tmpl,
+				Fs: staticfiles.FileServer{
+					Root: http.Dir("./testdata"),
+				},
+				Template: tmpl,
 			},
 		},
 	}
@@ -138,7 +141,6 @@ func TestBrowseTemplate(t *testing.T) {
 	}
 
 	b := Browse{
-		HiddenFiles: []string{"hidden.html"},
 		Next: httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
 			t.Fatalf("Next shouldn't be called")
 			return 0, nil
@@ -146,8 +148,11 @@ func TestBrowseTemplate(t *testing.T) {
 		Configs: []Config{
 			{
 				PathScope: "/photos",
-				Root:      http.Dir("./testdata"),
-				Template:  tmpl,
+				Fs: staticfiles.FileServer{
+					Root: http.Dir("./testdata"),
+					Hide: []string{"photos/hidden.html"},
+				},
+				Template: tmpl,
 			},
 		},
 	}
@@ -200,7 +205,9 @@ func TestBrowseJson(t *testing.T) {
 		Configs: []Config{
 			{
 				PathScope: "/photos/",
-				Root:      http.Dir("./testdata"),
+				Fs: staticfiles.FileServer{
+					Root: http.Dir("./testdata"),
+				},
 			},
 		},
 	}

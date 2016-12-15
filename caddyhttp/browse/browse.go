@@ -32,7 +32,6 @@ type Browse struct {
 	Next          httpserver.Handler
 	Configs       []Config
 	IgnoreIndexes bool
-	HiddenFiles   []string
 }
 
 // Config is a configuration for browsing in a particular path.
