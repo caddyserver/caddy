@@ -4,7 +4,6 @@ package errors
 import (
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"runtime"
@@ -27,11 +26,8 @@ type ErrorHandler struct {
 	Next             httpserver.Handler
 	GenericErrorPage string         // default error page filename
 	ErrorPages       map[int]string // map of status code to filename
-	LogFile          string
-	Log              *log.Logger
-	LogRoller        *httpserver.LogRoller
-	Debug            bool     // if true, errors are written out to client rather than to a log
-	file             *os.File // a log file to close when done
+	Log              *httpserver.Logger
+	Debug            bool // if true, errors are written out to client rather than to a log
 }
 
 func (h ErrorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {

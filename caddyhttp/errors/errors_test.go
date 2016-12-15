@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -32,7 +31,7 @@ func TestErrors(t *testing.T) {
 			http.StatusNotFound:  path,
 			http.StatusForbidden: "not_exist_file",
 		},
-		Log: log.New(&buf, "", 0),
+		Log: httpserver.NewTestLogger(&buf),
 	}
 	_, notExistErr := os.Open("not_exist_file")
 
@@ -176,7 +175,7 @@ func TestGenericErrorPage(t *testing.T) {
 		ErrorPages: map[int]string{
 			http.StatusNotFound: notFoundErrorPagePath,
 		},
-		Log: log.New(&buf, "", 0),
+		Log: httpserver.NewTestLogger(&buf),
 	}
 
 	tests := []struct {
