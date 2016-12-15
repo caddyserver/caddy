@@ -38,7 +38,7 @@ type Browse struct {
 // Config is a configuration for browsing in a particular path.
 type Config struct {
 	PathScope string
-	Root      http.FileSystem
+	Fs        staticfiles.FileServer
 	Variables interface{}
 	Template  *template.Template
 }
@@ -193,7 +193,7 @@ func (l Listing) applySort() {
 	}
 }
 
-func directoryListing(files []os.FileInfo, canGoUp bool, urlPath string, hidden map[string]struct{}) (Listing, bool) {
+func directoryListing(files []os.FileInfo, canGoUp bool, urlPath string, config *Config) (Listing, bool) {
 	var (
 		fileinfos           []FileInfo
 		dirCount, fileCount int
@@ -219,7 +219,7 @@ func directoryListing(files []os.FileInfo, canGoUp bool, urlPath string, hidden 
 
 		url := url.URL{Path: "./" + name} // prepend with "./" to fix paths with ':' in the name
 
-		if _, exists := hidden[f.Name()]; exists {
+		if config.Fs.IsHidden(f) {
 			continue
 		}
 
@@ -258,7 +258,7 @@ func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 inScope:
 
 	// Browse works on existing directories; delegate everything else
-	requestedFilepath, err := bc.Root.Open(r.URL.Path)
+	requestedFilepath, err := bc.Fs.Root.Open(r.URL.Path)
 	if err != nil {
 		switch {
 		case os.IsPermission(err):
@@ -306,7 +306,7 @@ inScope:
 	return b.ServeListing(w, r, requestedFilepath, bc)
 }
 
-func (b Browse) loadDirectoryContents(requestedFilepath http.File, urlPath string) (*Listing, bool, error) {
+func (b Browse) loadDirectoryContents(requestedFilepath http.File, urlPath string, config *Config) (*Listing, bool, error) {
 	files, err := requestedFilepath.Readdir(-1)
 	if err != nil {
 		return nil, false, err
@@ -322,14 +322,8 @@ func (b Browse) loadDirectoryContents(requestedFilepath http.File, urlPath strin
 		}
 	}
 
-	hiddenFiles := make(map[string]struct{})
-
-	for _, hidden := range b.HiddenFiles {
-		hiddenFiles[hidden] = struct{}{}
-	}
-
 	// Assemble listing of directory contents
-	listing, hasIndex := directoryListing(files, canGoUp, urlPath, hiddenFiles)
+	listing, hasIndex := directoryListing(files, canGoUp, urlPath, config)
 
 	return &listing, hasIndex, nil
 }
@@ -374,7 +368,7 @@ func (b Browse) handleSortOrder(w http.ResponseWriter, r *http.Request, scope st
 
 // ServeListing returns a formatted view of 'requestedFilepath' contents'.
 func (b Browse) ServeListing(w http.ResponseWriter, r *http.Request, requestedFilepath http.File, bc *Config) (int, error) {
-	listing, containsIndex, err := b.loadDirectoryContents(requestedFilepath, r.URL.Path)
+	listing, containsIndex, err := b.loadDirectoryContents(requestedFilepath, r.URL.Path, bc)
 	if err != nil {
 		switch {
 		case os.IsPermission(err):
@@ -389,7 +383,7 @@ func (b Browse) ServeListing(w http.ResponseWriter, r *http.Request, requestedFi
 		return b.Next.ServeHTTP(w, r)
 	}
 	listing.Context = httpserver.Context{
-		Root: bc.Root,
+		Root: bc.Fs.Root,
 		Req:  r,
 		URL:  r.URL,
 	}

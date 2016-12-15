@@ -117,7 +117,7 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request, name stri
 		return http.StatusNotFound, nil
 	}
 
-	if fs.isHidden(d) {
+	if fs.IsHidden(d) {
 		return http.StatusNotFound, nil
 	}
 
@@ -132,8 +132,8 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request, name stri
 	return http.StatusOK, nil
 }
 
-// isHidden checks if file with FileInfo d is on hide list.
-func (fs FileServer) isHidden(d os.FileInfo) bool {
+// IsHidden checks if file with FileInfo d is on hide list.
+func (fs FileServer) IsHidden(d os.FileInfo) bool {
 	// If the file is supposed to be hidden, return a 404
 	for _, hiddenPath := range fs.Hide {
 		// Check if the served file is exactly the hidden file.
