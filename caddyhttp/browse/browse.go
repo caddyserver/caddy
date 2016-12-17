@@ -20,6 +20,12 @@ import (
 	"github.com/mholt/caddy/caddyhttp/staticfiles"
 )
 
+const (
+	sortByName = "name"
+	sortBySize = "size"
+	sortByTime = "time"
+)
+
 // Browse is an http.Handler that can show a file listing when
 // directories in the given paths are specified.
 type Browse struct {
@@ -31,7 +37,7 @@ type Browse struct {
 // Config is a configuration for browsing in a particular path.
 type Config struct {
 	PathScope string
-	Root      http.FileSystem
+	Fs        staticfiles.FileServer
 	Variables interface{}
 	Template  *template.Template
 }
@@ -161,11 +167,11 @@ func (l Listing) applySort() {
 	// Check '.Order' to know how to sort
 	if l.Order == "desc" {
 		switch l.Sort {
-		case "name":
+		case sortByName:
 			sort.Sort(sort.Reverse(byName(l)))
-		case "size":
+		case sortBySize:
 			sort.Sort(sort.Reverse(bySize(l)))
-		case "time":
+		case sortByTime:
 			sort.Sort(sort.Reverse(byTime(l)))
 		default:
 			// If not one of the above, do nothing
@@ -173,11 +179,11 @@ func (l Listing) applySort() {
 		}
 	} else { // If we had more Orderings we could add them here
 		switch l.Sort {
-		case "name":
+		case sortByName:
 			sort.Sort(byName(l))
-		case "size":
+		case sortBySize:
 			sort.Sort(bySize(l))
-		case "time":
+		case sortByTime:
 			sort.Sort(byTime(l))
 		default:
 			// If not one of the above, do nothing
@@ -186,7 +192,7 @@ func (l Listing) applySort() {
 	}
 }
 
-func directoryListing(files []os.FileInfo, canGoUp bool, urlPath string) (Listing, bool) {
+func directoryListing(files []os.FileInfo, canGoUp bool, urlPath string, config *Config) (Listing, bool) {
 	var (
 		fileinfos           []FileInfo
 		dirCount, fileCount int
@@ -211,6 +217,10 @@ func directoryListing(files []os.FileInfo, canGoUp bool, urlPath string) (Listin
 		}
 
 		url := url.URL{Path: "./" + name} // prepend with "./" to fix paths with ':' in the name
+
+		if config.Fs.IsHidden(f) {
+			continue
+		}
 
 		fileinfos = append(fileinfos, FileInfo{
 			IsDir:   f.IsDir(),
@@ -247,7 +257,7 @@ func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 inScope:
 
 	// Browse works on existing directories; delegate everything else
-	requestedFilepath, err := bc.Root.Open(r.URL.Path)
+	requestedFilepath, err := bc.Fs.Root.Open(r.URL.Path)
 	if err != nil {
 		switch {
 		case os.IsPermission(err):
@@ -295,7 +305,7 @@ inScope:
 	return b.ServeListing(w, r, requestedFilepath, bc)
 }
 
-func (b Browse) loadDirectoryContents(requestedFilepath http.File, urlPath string) (*Listing, bool, error) {
+func (b Browse) loadDirectoryContents(requestedFilepath http.File, urlPath string, config *Config) (*Listing, bool, error) {
 	files, err := requestedFilepath.Readdir(-1)
 	if err != nil {
 		return nil, false, err
@@ -312,7 +322,7 @@ func (b Browse) loadDirectoryContents(requestedFilepath http.File, urlPath strin
 	}
 
 	// Assemble listing of directory contents
-	listing, hasIndex := directoryListing(files, canGoUp, urlPath)
+	listing, hasIndex := directoryListing(files, canGoUp, urlPath, config)
 
 	return &listing, hasIndex, nil
 }
@@ -327,11 +337,11 @@ func (b Browse) handleSortOrder(w http.ResponseWriter, r *http.Request, scope st
 	// If the query 'sort' or 'order' is empty, use defaults or any values previously saved in Cookies
 	switch sort {
 	case "":
-		sort = "name"
+		sort = sortByName
 		if sortCookie, sortErr := r.Cookie("sort"); sortErr == nil {
 			sort = sortCookie.Value
 		}
-	case "name", "size", "type":
+	case sortByName, sortBySize, sortByTime:
 		http.SetCookie(w, &http.Cookie{Name: "sort", Value: sort, Path: scope, Secure: r.TLS != nil})
 	}
 
@@ -357,7 +367,7 @@ func (b Browse) handleSortOrder(w http.ResponseWriter, r *http.Request, scope st
 
 // ServeListing returns a formatted view of 'requestedFilepath' contents'.
 func (b Browse) ServeListing(w http.ResponseWriter, r *http.Request, requestedFilepath http.File, bc *Config) (int, error) {
-	listing, containsIndex, err := b.loadDirectoryContents(requestedFilepath, r.URL.Path)
+	listing, containsIndex, err := b.loadDirectoryContents(requestedFilepath, r.URL.Path, bc)
 	if err != nil {
 		switch {
 		case os.IsPermission(err):
@@ -372,7 +382,7 @@ func (b Browse) ServeListing(w http.ResponseWriter, r *http.Request, requestedFi
 		return b.Next.ServeHTTP(w, r)
 	}
 	listing.Context = httpserver.Context{
-		Root: bc.Root,
+		Root: bc.Fs.Root,
 		Req:  r,
 		URL:  r.URL,
 	}

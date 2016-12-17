@@ -8,6 +8,7 @@ import (
 
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
+	"github.com/mholt/caddy/caddyhttp/staticfiles"
 )
 
 func init() {
@@ -61,7 +62,11 @@ func browseParse(c *caddy.Controller) ([]Config, error) {
 		} else {
 			bc.PathScope = "/"
 		}
-		bc.Root = http.Dir(cfg.Root)
+
+		bc.Fs = staticfiles.FileServer{
+			Root: http.Dir(cfg.Root),
+			Hide: httpserver.GetConfig(c).HiddenFiles,
+		}
 
 		// Second argument would be the template file to use
 		var tplText string
