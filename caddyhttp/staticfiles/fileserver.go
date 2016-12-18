@@ -135,13 +135,16 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request, name stri
 				stat, err := gf.Stat()
 
 				if err == nil {
+					// Close previous file - release fd
+					f.Close()
+
 					d = stat
 					f = gf
 
 					w.Header().Add("Vary", "Accept-Encoding")
 					w.Header().Set("Content-Encoding", encoding)
 
-					defer gf.Close()
+					defer f.Close()
 					break
 				}
 
