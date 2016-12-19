@@ -53,9 +53,6 @@ outer:
 			}
 		}
 
-		// Delete this header so gzipping is not repeated later in the chain
-		r.Header.Del("Accept-Encoding")
-
 		// gzipWriter modifies underlying writer at init,
 		// use a discard writer instead to leave ResponseWriter in
 		// original form.
