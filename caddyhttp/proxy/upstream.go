@@ -16,7 +16,7 @@ import (
 )
 
 var (
-	supportedPolicies            = make(map[string]func() Policy)
+	supportedPolicies = make(map[string]func() Policy)
 )
 
 type staticUpstream struct {
