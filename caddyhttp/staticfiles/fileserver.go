@@ -100,18 +100,27 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request, name stri
 		for _, indexPage := range IndexPages {
 			index := strings.TrimSuffix(name, "/") + "/" + indexPage
 			ff, err := fs.Root.Open(index)
-			if err == nil {
-				// this defer does not leak fds because previous iterations
-				// of the loop must have had an err, so nothing to close
-				defer ff.Close()
-				dd, err := ff.Stat()
-				if err == nil {
-					d = dd
-					f = ff
-					location = index
-					break
-				}
+			if err != nil {
+				continue
 			}
+
+			// this defer does not leak fds because previous iterations
+			// of the loop must have had an err, so nothing to close
+			defer ff.Close()
+
+			dd, err := ff.Stat()
+			if err != nil {
+				ff.Close()
+				continue
+			}
+
+			// Close previous file - release fd immediately
+			f.Close()
+
+			d = dd
+			f = ff
+			location = index
+			break
 		}
 	}
 
@@ -128,29 +137,36 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request, name stri
 	filename := d.Name()
 
 	for _, encoding := range staticEncodingPriority {
-		if strings.Contains(r.Header.Get("Accept-Encoding"), encoding) {
-			gf, err := fs.Root.Open(location + staticEncoding[encoding])
-
-			if err == nil {
-				stat, err := gf.Stat()
-
-				if err == nil {
-					// Close previous file - release fd
-					f.Close()
-
-					d = stat
-					f = gf
-
-					w.Header().Add("Vary", "Accept-Encoding")
-					w.Header().Set("Content-Encoding", encoding)
-
-					defer f.Close()
-					break
-				}
-
-				gf.Close()
-			}
+		if !strings.Contains(r.Header.Get("Accept-Encoding"), encoding) {
+			continue
 		}
+
+		encodedFile, err := fs.Root.Open(location + staticEncoding[encoding])
+		if err != nil {
+			continue
+		}
+
+		encodedFileInfo, err := encodedFile.Stat()
+		if err != nil {
+			encodedFile.Close()
+			continue
+		}
+
+		// Close previous file - release fd
+		f.Close()
+
+		// Stat is needed for generating valid ETag
+		d = encodedFileInfo
+
+		// Encoded file will be served
+		f = encodedFile
+
+		w.Header().Add("Vary", "Accept-Encoding")
+		w.Header().Set("Content-Encoding", encoding)
+
+		defer f.Close()
+		break
+
 	}
 
 	// Experimental ETag header
@@ -201,11 +217,16 @@ var IndexPages = []string{
 	"default.txt",
 }
 
+
+// staticEncoding is a map of content-encoding to a file extension.
+// If client accepts given encoding (via Accept-Encoding header) and compressed file with given extensions exists
+// it will be served to the client instead of original one.
 var staticEncoding = map[string]string{
 	"gzip": ".gz",
 	"br":   ".br",
 }
 
+// staticEncodingPriority is a list of preferred static encodings (most efficient compression to least one).
 var staticEncodingPriority = []string{
 	"br",
 	"gzip",
