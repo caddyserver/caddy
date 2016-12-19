@@ -217,7 +217,6 @@ var IndexPages = []string{
 	"default.txt",
 }
 
-
 // staticEncoding is a map of content-encoding to a file extension.
 // If client accepts given encoding (via Accept-Encoding header) and compressed file with given extensions exists
 // it will be served to the client instead of original one.
