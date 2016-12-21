@@ -22,6 +22,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/net/http2"
+
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
 
@@ -132,7 +134,7 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int) *
 		// if keepalive is equal to the default,
 		// just use default transport, to avoid creating
 		// a brand new transport
-		rp.Transport = &http.Transport{
+		transport := &http.Transport{
 			Proxy: http.ProxyFromEnvironment,
 			Dial: (&net.Dialer{
 				Timeout:   30 * time.Second,
@@ -142,10 +144,12 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int) *
 			ExpectContinueTimeout: 1 * time.Second,
 		}
 		if keepalive == 0 {
-			rp.Transport.(*http.Transport).DisableKeepAlives = true
+			transport.DisableKeepAlives = true
 		} else {
-			rp.Transport.(*http.Transport).MaxIdleConnsPerHost = keepalive
+			transport.MaxIdleConnsPerHost = keepalive
 		}
+		http2.ConfigureTransport(transport)
+		rp.Transport = transport
 	}
 	return rp
 }
@@ -155,7 +159,7 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int) *
 // since this transport skips verification.
 func (rp *ReverseProxy) UseInsecureTransport() {
 	if rp.Transport == nil {
-		rp.Transport = &http.Transport{
+		transport := &http.Transport{
 			Proxy: http.ProxyFromEnvironment,
 			Dial: (&net.Dialer{
 				Timeout:   30 * time.Second,
@@ -164,6 +168,8 @@ func (rp *ReverseProxy) UseInsecureTransport() {
 			TLSHandshakeTimeout: 10 * time.Second,
 			TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
 		}
+		http2.ConfigureTransport(transport)
+		rp.Transport = transport
 	} else if transport, ok := rp.Transport.(*http.Transport); ok {
 		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}

@@ -3,6 +3,7 @@ package proxy
 import (
 	"bufio"
 	"bytes"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -25,6 +26,17 @@ import (
 
 	"golang.org/x/net/websocket"
 )
+
+// This is a simple wrapper around httptest.NewTLSServer()
+// which forcefully enables (among others) HTTP/2 support.
+// The httptest package only supports HTTP/1.1 by default.
+func newTLSServer(handler http.Handler) *httptest.Server {
+	ts := httptest.NewUnstartedServer(handler)
+	ts.TLS = new(tls.Config)
+	ts.TLS.NextProtos = []string{"h2"}
+	ts.StartTLS()
+	return ts
+}
 
 func TestReverseProxy(t *testing.T) {
 	log.SetOutput(ioutil.Discard)
@@ -69,8 +81,10 @@ func TestReverseProxyInsecureSkipVerify(t *testing.T) {
 	defer log.SetOutput(os.Stderr)
 
 	var requestReceived bool
-	backend := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var requestWasHTTP2 bool
+	backend := newTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestReceived = true
+		requestWasHTTP2 = r.ProtoAtLeast(2, 0)
 		w.Write([]byte("Hello, client"))
 	}))
 	defer backend.Close()
@@ -89,6 +103,9 @@ func TestReverseProxyInsecureSkipVerify(t *testing.T) {
 
 	if !requestReceived {
 		t.Error("Even with insecure HTTPS, expected backend to receive request, but it didn't")
+	}
+	if !requestWasHTTP2 {
+		t.Error("Even with insecure HTTPS, expected proxy to use HTTP/2")
 	}
 }
 
