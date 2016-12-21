@@ -1,4 +1,4 @@
-CADDY 0.9.3
+CADDY 0.9.4
 
 Website
 	https://caddyserver.com
@@ -36,4 +36,4 @@ And thanks - you're awesome!
 
 
 ---
-(c) 2015-2016 Matthew Holt
+(c) 2015-2017 Matthew Holt
