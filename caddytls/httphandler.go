@@ -29,6 +29,10 @@ func HTTPChallengeHandler(w http.ResponseWriter, r *http.Request, listenHost, al
 		scheme = "https"
 	}
 
+	if listenHost == "" {
+		listenHost = "localhost"
+	}
+
 	upstream, err := url.Parse(fmt.Sprintf("%s://%s:%s", scheme, listenHost, altPort))
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
