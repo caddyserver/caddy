@@ -236,7 +236,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 	if vhost == nil {
 		// check for ACME challenge even if vhost is nil;
 		// could be a new host coming online soon
-		if caddytls.HTTPChallengeHandler(w, r, caddytls.DefaultHTTPAlternatePort) {
+		if caddytls.HTTPChallengeHandler(w, r, "localhost", caddytls.DefaultHTTPAlternatePort) {
 			return 0, nil
 		}
 		// otherwise, log the error and write a message to the client
@@ -297,7 +297,7 @@ func (s *Server) proxyHTTPChallenge(vhost *SiteConfig, w http.ResponseWriter, r 
 	if vhost.TLS != nil && vhost.TLS.AltHTTPPort != "" {
 		altPort = vhost.TLS.AltHTTPPort
 	}
-	return caddytls.HTTPChallengeHandler(w, r, altPort)
+	return caddytls.HTTPChallengeHandler(w, r, vhost.ListenHost, altPort)
 }
 
 // Address returns the address s was assigned to listen on.
