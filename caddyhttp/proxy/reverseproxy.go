@@ -253,7 +253,7 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, 
 }
 
 func (rp *ReverseProxy) copyResponse(dst io.Writer, src io.Reader) {
-	buf := bufferPool.Get()
+	buf := bufferPool.Get().([]byte)
 	defer bufferPool.Put(buf)
 
 	if rp.FlushInterval != 0 {
@@ -268,7 +268,10 @@ func (rp *ReverseProxy) copyResponse(dst io.Writer, src io.Reader) {
 			dst = mlw
 		}
 	}
-	io.CopyBuffer(dst, src, buf.([]byte))
+
+	// `CopyBuffer` only uses `buf` up to it's length and
+	// panics if it's 0 => Extend it's length up to it's capacity.
+	io.CopyBuffer(dst, src, buf[:cap(buf)])
 }
 
 // skip these headers if they already exist.
