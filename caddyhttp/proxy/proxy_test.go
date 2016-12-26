@@ -123,7 +123,7 @@ func TestWebSocketReverseProxyNonHijackerPanic(t *testing.T) {
 	defer wsNop.Close()
 
 	// Get proxy to use for the test
-	p := newWebSocketTestProxy(wsNop.URL)
+	p := newWebSocketTestProxy(wsNop.URL, false)
 
 	// Create client request
 	r := httptest.NewRequest("GET", "/", nil)
@@ -148,7 +148,7 @@ func TestWebSocketReverseProxyServeHTTPHandler(t *testing.T) {
 	defer wsNop.Close()
 
 	// Get proxy to use for the test
-	p := newWebSocketTestProxy(wsNop.URL)
+	p := newWebSocketTestProxy(wsNop.URL, false)
 
 	// Create client request
 	r := httptest.NewRequest("GET", "/", nil)
@@ -189,7 +189,7 @@ func TestWebSocketReverseProxyFromWSClient(t *testing.T) {
 	defer wsEcho.Close()
 
 	// Get proxy to use for the test
-	p := newWebSocketTestProxy(wsEcho.URL)
+	p := newWebSocketTestProxy(wsEcho.URL, false)
 
 	// This is a full end-end test, so the proxy handler
 	// has to be part of a server listening on a port. Our
@@ -203,6 +203,52 @@ func TestWebSocketReverseProxyFromWSClient(t *testing.T) {
 	// Set up WebSocket client
 	url := strings.Replace(echoProxy.URL, "http://", "ws://", 1)
 	ws, err := websocket.Dial(url, "", echoProxy.URL)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Close()
+
+	// Send test message
+	trialMsg := "Is it working?"
+
+	if sendErr := websocket.Message.Send(ws, trialMsg); sendErr != nil {
+		t.Fatal(sendErr)
+	}
+
+	// It should be echoed back to us
+	var actualMsg string
+
+	if rcvErr := websocket.Message.Receive(ws, &actualMsg); rcvErr != nil {
+		t.Fatal(rcvErr)
+	}
+
+	if actualMsg != trialMsg {
+		t.Errorf("Expected '%s' but got '%s' instead", trialMsg, actualMsg)
+	}
+}
+
+func TestWebSocketReverseProxyFromWSSClient(t *testing.T) {
+	wsEcho := newTLSServer(websocket.Handler(func(ws *websocket.Conn) {
+		io.Copy(ws, ws)
+	}))
+	defer wsEcho.Close()
+
+	p := newWebSocketTestProxy(wsEcho.URL, true)
+
+	echoProxy := newTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p.ServeHTTP(w, r)
+	}))
+	defer echoProxy.Close()
+
+	// Set up WebSocket client
+	url := strings.Replace(echoProxy.URL, "https://", "wss://", 1)
+	wsCfg, err := websocket.NewConfig(url, echoProxy.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wsCfg.TlsConfig = &tls.Config{InsecureSkipVerify: true}
+	ws, err := websocket.DialConfig(wsCfg)
 
 	if err != nil {
 		t.Fatal(err)
@@ -264,7 +310,7 @@ func TestUnixSocketProxy(t *testing.T) {
 	defer ts.Close()
 
 	url := strings.Replace(ts.URL, "http://", "unix:", 1)
-	p := newWebSocketTestProxy(url)
+	p := newWebSocketTestProxy(url, false)
 
 	echoProxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p.ServeHTTP(w, r)
@@ -982,10 +1028,14 @@ func (u *fakeUpstream) GetTryInterval() time.Duration       { return 250 * time.
 // redirect to the specified backendAddr. The function
 // also sets up the rules/environment for testing WebSocket
 // proxy.
-func newWebSocketTestProxy(backendAddr string) *Proxy {
+func newWebSocketTestProxy(backendAddr string, insecure bool) *Proxy {
 	return &Proxy{
-		Next:      httpserver.EmptyNext, // prevents panic in some cases when test fails
-		Upstreams: []Upstream{&fakeWsUpstream{name: backendAddr, without: ""}},
+		Next: httpserver.EmptyNext, // prevents panic in some cases when test fails
+		Upstreams: []Upstream{&fakeWsUpstream{
+			name:     backendAddr,
+			without:  "",
+			insecure: insecure,
+		}},
 	}
 }
 
@@ -997,8 +1047,9 @@ func newPrefixedWebSocketTestProxy(backendAddr string, prefix string) *Proxy {
 }
 
 type fakeWsUpstream struct {
-	name    string
-	without string
+	name     string
+	without  string
+	insecure bool
 }
 
 func (u *fakeWsUpstream) From() string {
@@ -1007,13 +1058,17 @@ func (u *fakeWsUpstream) From() string {
 
 func (u *fakeWsUpstream) Select(r *http.Request) *UpstreamHost {
 	uri, _ := url.Parse(u.name)
-	return &UpstreamHost{
+	host := &UpstreamHost{
 		Name:         u.name,
 		ReverseProxy: NewSingleHostReverseProxy(uri, u.without, http.DefaultMaxIdleConnsPerHost),
 		UpstreamHeaders: http.Header{
 			"Connection": {"{>Connection}"},
 			"Upgrade":    {"{>Upgrade}"}},
 	}
+	if u.insecure {
+		host.ReverseProxy.UseInsecureTransport()
+	}
+	return host
 }
 
 func (u *fakeWsUpstream) AllowedPath(requestPath string) bool { return true }
