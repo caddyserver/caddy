@@ -148,7 +148,9 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int) *
 		} else {
 			transport.MaxIdleConnsPerHost = keepalive
 		}
-		http2.ConfigureTransport(transport)
+		if httpserver.HTTP2 {
+			http2.ConfigureTransport(transport)
+		}
 		rp.Transport = transport
 	}
 	return rp
@@ -168,10 +170,15 @@ func (rp *ReverseProxy) UseInsecureTransport() {
 			TLSHandshakeTimeout: 10 * time.Second,
 			TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
 		}
-		http2.ConfigureTransport(transport)
+		if httpserver.HTTP2 {
+			http2.ConfigureTransport(transport)
+		}
 		rp.Transport = transport
 	} else if transport, ok := rp.Transport.(*http.Transport); ok {
 		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+		// No http2.ConfigureTransport() here.
+		// For now this is only added in places where
+		// an http.Transport is actually created.
 	}
 }
 
