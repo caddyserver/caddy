@@ -16,8 +16,7 @@ import (
 )
 
 var (
-	supportedPolicies            = make(map[string]func() Policy)
-	warnedProxyHeaderDeprecation bool // TODO: Temporary, until proxy_header is removed entirely
+	supportedPolicies = make(map[string]func() Policy)
 )
 
 type staticUpstream struct {
@@ -296,12 +295,6 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream) error {
 			return err
 		}
 		u.HealthCheck.Timeout = dur
-	case "proxy_header": // TODO: deprecate this shortly after 0.9
-		if !warnedProxyHeaderDeprecation {
-			fmt.Println("WARNING: proxy_header is deprecated and will be removed soon; use header_upstream instead.")
-			warnedProxyHeaderDeprecation = true
-		}
-		fallthrough
 	case "header_upstream":
 		var header, value string
 		if !c.Args(&header, &value) {

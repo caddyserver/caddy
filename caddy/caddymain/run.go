@@ -7,7 +7,6 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
-	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -92,8 +91,6 @@ func Run() {
 		os.Exit(0)
 	}
 
-	moveStorage() // TODO: This is temporary for the 0.9 release, or until most users upgrade to 0.9+
-
 	// Set CPU cap
 	err := setCPU(cpu)
 	if err != nil {
@@ -164,51 +161,6 @@ func defaultLoader(serverType string) (caddy.Input, error) {
 		Filepath:       caddy.DefaultConfigFile,
 		ServerTypeName: serverType,
 	}, nil
-}
-
-// moveStorage moves the old certificate storage location by
-// renaming the "letsencrypt" folder to the hostname of the
-// CA URL. This is TEMPORARY until most users have upgraded to 0.9+.
-func moveStorage() {
-	oldPath := filepath.Join(caddy.AssetsPath(), "letsencrypt")
-	_, err := os.Stat(oldPath)
-	if os.IsNotExist(err) {
-		return
-	}
-	// Just use a default config to get default (file) storage
-	fileStorage, err := new(caddytls.Config).StorageFor(caddytls.DefaultCAUrl)
-	if err != nil {
-		mustLogFatalf("[ERROR] Unable to get new path for certificate storage: %v", err)
-	}
-	newPath := fileStorage.(*caddytls.FileStorage).Path
-	err = os.MkdirAll(string(newPath), 0700)
-	if err != nil {
-		mustLogFatalf("[ERROR] Unable to make new certificate storage path: %v\n\nPlease follow instructions at:\nhttps://github.com/mholt/caddy/issues/902#issuecomment-228876011", err)
-	}
-	err = os.Rename(oldPath, string(newPath))
-	if err != nil {
-		mustLogFatalf("[ERROR] Unable to migrate certificate storage: %v\n\nPlease follow instructions at:\nhttps://github.com/mholt/caddy/issues/902#issuecomment-228876011", err)
-	}
-	// convert mixed case folder and file names to lowercase
-	var done bool // walking is recursive and preloads the file names, so we must restart walk after a change until no changes
-	for !done {
-		done = true
-		filepath.Walk(string(newPath), func(path string, info os.FileInfo, err error) error {
-			// must be careful to only lowercase the base of the path, not the whole thing!!
-			base := filepath.Base(path)
-			if lowerBase := strings.ToLower(base); base != lowerBase {
-				lowerPath := filepath.Join(filepath.Dir(path), lowerBase)
-				err = os.Rename(path, lowerPath)
-				if err != nil {
-					mustLogFatalf("[ERROR] Unable to lower-case: %v\n\nPlease follow instructions at:\nhttps://github.com/mholt/caddy/issues/902#issuecomment-228876011", err)
-				}
-				// terminate traversal and restart since Walk needs the updated file list with new file names
-				done = false
-				return errors.New("start over")
-			}
-			return nil
-		})
-	}
 }
 
 // setVersion figures out the version information
