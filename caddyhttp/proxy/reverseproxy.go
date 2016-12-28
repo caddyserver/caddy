@@ -27,15 +27,28 @@ import (
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
 
-var defaultDialer = &net.Dialer{
-	Timeout:   30 * time.Second,
-	KeepAlive: 30 * time.Second,
-}
+var (
+	defaultDialer = &net.Dialer{
+		Timeout:   30 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
 
-var bufferPool = sync.Pool{New: createBuffer}
+	bufferPool = sync.Pool{New: createBuffer}
+)
 
 func createBuffer() interface{} {
-	return make([]byte, 32*1024)
+	return make([]byte, 0, 32*1024)
+}
+
+func pooledIoCopy(dst io.Writer, src io.Reader) {
+	buf := bufferPool.Get().([]byte)
+	defer bufferPool.Put(buf)
+
+	// CopyBuffer only uses buf up to its length and panics if it's 0.
+	// Due to that we extend buf's length to its capacity here and
+	// ensure it's always non-zero.
+	bufCap := cap(buf)
+	io.CopyBuffer(dst, src, buf[0:bufCap:bufCap])
 }
 
 // onExitFlushLoop is a callback set by tests to detect the state of the
@@ -234,10 +247,8 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, 
 		}
 		defer backendConn.Close()
 
-		go func() {
-			io.Copy(backendConn, conn) // write tcp stream to backend.
-		}()
-		io.Copy(conn, backendConn) // read tcp stream from backend.
+		go pooledIoCopy(backendConn, conn) // write tcp stream to backend
+		pooledIoCopy(conn, backendConn)    // read tcp stream from backend
 	} else {
 		defer res.Body.Close()
 		for _, h := range hopHeaders {
@@ -252,9 +263,6 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, 
 }
 
 func (rp *ReverseProxy) copyResponse(dst io.Writer, src io.Reader) {
-	buf := bufferPool.Get().([]byte)
-	defer bufferPool.Put(buf)
-
 	if rp.FlushInterval != 0 {
 		if wf, ok := dst.(writeFlusher); ok {
 			mlw := &maxLatencyWriter{
@@ -267,10 +275,7 @@ func (rp *ReverseProxy) copyResponse(dst io.Writer, src io.Reader) {
 			dst = mlw
 		}
 	}
-
-	// `CopyBuffer` only uses `buf` up to it's length and
-	// panics if it's 0 => Extend it's length up to it's capacity.
-	io.CopyBuffer(dst, src, buf[:cap(buf)])
+	pooledIoCopy(dst, src)
 }
 
 // skip these headers if they already exist.
