@@ -205,10 +205,6 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, 
 	}
 
 	rp.Director(outreq)
-	outreq.Proto = "HTTP/1.1"
-	outreq.ProtoMajor = 1
-	outreq.ProtoMinor = 1
-	outreq.Close = false
 
 	res, err := transport.RoundTrip(outreq)
 	if err != nil {
