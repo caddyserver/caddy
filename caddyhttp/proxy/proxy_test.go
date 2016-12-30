@@ -42,10 +42,32 @@ func TestReverseProxy(t *testing.T) {
 	log.SetOutput(ioutil.Discard)
 	defer log.SetOutput(os.Stderr)
 
+	verifyHeaders := func(headers http.Header, trailers http.Header) {
+		if headers.Get("X-Header") != "header-value" {
+			t.Error("Expected header 'X-Header' to be proxied properly")
+		}
+
+		if trailers == nil {
+			t.Error("Expected to receive trailers")
+		}
+		if trailers.Get("X-Trailer") != "trailer-value" {
+			t.Error("Expected header 'X-Trailer' to be proxied properly")
+		}
+	}
+
 	var requestReceived bool
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// read the body (even if it's empty) to make Go parse trailers
+		io.Copy(ioutil.Discard, r.Body)
+		verifyHeaders(r.Header, r.Trailer)
+
 		requestReceived = true
+
+		w.Header().Set("Trailer", "X-Trailer")
+		w.Header().Set("X-Header", "header-value")
+		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("Hello, client"))
+		w.Header().Set("X-Trailer", "trailer-value")
 	}))
 	defer backend.Close()
 
@@ -59,11 +81,20 @@ func TestReverseProxy(t *testing.T) {
 	r := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
 
+	r.ContentLength = -1 // force chunked encoding (required for trailers)
+	r.Header.Set("X-Header", "header-value")
+	r.Trailer = map[string][]string{
+		"X-Trailer": {"trailer-value"},
+	}
+
 	p.ServeHTTP(w, r)
 
 	if !requestReceived {
 		t.Error("Expected backend to receive request, but it didn't")
 	}
+
+	res := w.Result()
+	verifyHeaders(res.Header, res.Trailer)
 
 	// Make sure {upstream} placeholder is set
 	rr := httpserver.NewResponseRecorder(httptest.NewRecorder())

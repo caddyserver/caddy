@@ -211,10 +211,27 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, 
 		return err
 	}
 
+	isWebsocket := res.StatusCode == http.StatusSwitchingProtocols && strings.ToLower(res.Header.Get("Upgrade")) == "websocket"
+
+	// Remove hop-by-hop headers listed in the
+	// "Connection" header of the response.
+	if c := res.Header.Get("Connection"); c != "" {
+		for _, f := range strings.Split(c, ",") {
+			if f = strings.TrimSpace(f); f != "" {
+				res.Header.Del(f)
+			}
+		}
+	}
+
+	for _, h := range hopHeaders {
+		res.Header.Del(h)
+	}
+
 	if respUpdateFn != nil {
 		respUpdateFn(res)
 	}
-	if res.StatusCode == http.StatusSwitchingProtocols && strings.ToLower(res.Header.Get("Upgrade")) == "websocket" {
+
+	if isWebsocket {
 		res.Body.Close()
 		hj, ok := rw.(http.Hijacker)
 		if !ok {
@@ -246,13 +263,30 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, 
 		go pooledIoCopy(backendConn, conn) // write tcp stream to backend
 		pooledIoCopy(conn, backendConn)    // read tcp stream from backend
 	} else {
-		defer res.Body.Close()
-		for _, h := range hopHeaders {
-			res.Header.Del(h)
-		}
 		copyHeader(rw.Header(), res.Header)
+
+		// The "Trailer" header isn't included in the Transport's response,
+		// at least for *http.Transport. Build it up from Trailer.
+		if len(res.Trailer) > 0 {
+			trailerKeys := make([]string, 0, len(res.Trailer))
+			for k := range res.Trailer {
+				trailerKeys = append(trailerKeys, k)
+			}
+			rw.Header().Add("Trailer", strings.Join(trailerKeys, ", "))
+		}
+
 		rw.WriteHeader(res.StatusCode)
+		if len(res.Trailer) > 0 {
+			// Force chunking if we saw a response trailer.
+			// This prevents net/http from calculating the length for short
+			// bodies and adding a Content-Length.
+			if fl, ok := rw.(http.Flusher); ok {
+				fl.Flush()
+			}
+		}
 		rp.copyResponse(rw, res.Body)
+		res.Body.Close() // close now, instead of defer, to populate res.Trailer
+		copyHeader(rw.Header(), res.Trailer)
 	}
 
 	return nil
@@ -305,16 +339,17 @@ func copyHeader(dst, src http.Header) {
 // Hop-by-hop headers. These are removed when sent to the backend.
 // http://www.w3.org/Protocols/rfc2616/rfc2616-sec13.html
 var hopHeaders = []string{
+	"Alt-Svc",
+	"Alternate-Protocol",
 	"Connection",
 	"Keep-Alive",
 	"Proxy-Authenticate",
 	"Proxy-Authorization",
-	"Te", // canonicalized version of "TE"
-	"Trailers",
+	"Proxy-Connection", // non-standard but still sent by libcurl and rejected by e.g. google
+	"Te",               // canonicalized version of "TE"
+	"Trailer",          // not Trailers per URL above; http://www.rfc-editor.org/errata_search.php?eid=4522
 	"Transfer-Encoding",
 	"Upgrade",
-	"Alternate-Protocol",
-	"Alt-Svc",
 }
 
 type respUpdateFn func(resp *http.Response)
