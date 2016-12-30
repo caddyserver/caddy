@@ -232,7 +232,7 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, 
 	}
 
 	if isWebsocket {
-		res.Body.Close()
+		defer res.Body.Close()
 		hj, ok := rw.(http.Hijacker)
 		if !ok {
 			panic(httpserver.NonHijackerError{Underlying: rw})
