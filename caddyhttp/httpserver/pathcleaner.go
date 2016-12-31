@@ -18,7 +18,7 @@ import (
 // (e.g., /api/endpoint/http://example.com).
 // This is a common pattern in many applications to allow passing URIs as path argument
 func CleanMaskedPath(p string, mask ...string) string {
-	t := ""
+	var t string
 	maskMap := make(map[string]string)
 
 	// Iterate over supplied masks and create temporary replacement strings
