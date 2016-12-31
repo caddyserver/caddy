@@ -7,25 +7,25 @@ import (
 
 var paths = map[string]map[string]string{
 	"/../a/b/../././/c": {
-		"preserve_all": "/../a/b/../././/c",
+		"preserve_all":      "/../a/b/../././/c",
 		"preserve_protocol": "/a/c",
-		"preserve_slashes": "/a//c",
-		"preserve_dots": "/../a/b/../././c",
-		"clean_all": "/a/c",
+		"preserve_slashes":  "/a//c",
+		"preserve_dots":     "/../a/b/../././c",
+		"clean_all":         "/a/c",
 	},
 	"/path/https://www.google.com": {
-		"preserve_all": "/path/https://www.google.com",
+		"preserve_all":      "/path/https://www.google.com",
 		"preserve_protocol": "/path/https://www.google.com",
-		"preserve_slashes": "/path/https://www.google.com",
-		"preserve_dots": "/path/https:/www.google.com",
-		"clean_all": "/path/https:/www.google.com",
+		"preserve_slashes":  "/path/https://www.google.com",
+		"preserve_dots":     "/path/https:/www.google.com",
+		"clean_all":         "/path/https:/www.google.com",
 	},
 	"/a/b/../././/c/http://example.com/foo//bar/../blah": {
-		"preserve_all": "/a/b/../././/c/http://example.com/foo//bar/../blah",
+		"preserve_all":      "/a/b/../././/c/http://example.com/foo//bar/../blah",
 		"preserve_protocol": "/a/c/http://example.com/foo/blah",
-		"preserve_slashes": "/a//c/http://example.com/foo/blah",
-		"preserve_dots": "/a/b/../././c/http:/example.com/foo/bar/../blah",
-		"clean_all": "/a/c/http:/example.com/foo/blah",
+		"preserve_slashes":  "/a//c/http://example.com/foo/blah",
+		"preserve_dots":     "/a/b/../././c/http:/example.com/foo/bar/../blah",
+		"clean_all":         "/a/c/http:/example.com/foo/blah",
 	},
 }
 
