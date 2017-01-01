@@ -49,7 +49,7 @@ func CleanPath(reqPath string) string {
 
 // An efficient and fast method for random string generation.
 // Inspired by http://stackoverflow.com/a/31832326.
-const randomStringLenght = 4
+const randomStringLength = 4
 const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 const (
 	letterIdxBits = 6
@@ -60,8 +60,8 @@ const (
 var src = rand.NewSource(time.Now().UnixNano())
 
 func generateRandomString() string {
-	b := make([]byte, randomStringLenght)
-	for i, cache, remain := randomStringLenght-1, src.Int63(), letterIdxMax; i >= 0; {
+	b := make([]byte, randomStringLength)
+	for i, cache, remain := randomStringLength-1, src.Int63(), letterIdxMax; i >= 0; {
 		if remain == 0 {
 			cache, remain = src.Int63(), letterIdxMax
 		}
