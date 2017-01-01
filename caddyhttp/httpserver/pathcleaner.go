@@ -43,8 +43,8 @@ func CleanMaskedPath(reqPath string, masks ...string) string {
 // CleanPath calls CleanMaskedPath() with the default mask of "://"
 // to preserve double slashes of protocols
 // such as "http://", "https://", and "ftp://" etc.
-func CleanPath(p string) string {
-	return CleanMaskedPath(p, "://")
+func CleanPath(reqPath string) string {
+	return CleanMaskedPath(reqPath, "://")
 }
 
 // An efficient and fast method for random string generation.
