@@ -77,7 +77,7 @@ func TestDefaultMask(t *testing.T) {
 
 func maskedBenchmarkRunner(b *testing.B, masks ...string) {
 	for n := 0; n < b.N; n++ {
-		for reqPath, _ := range paths {
+		for reqPath := range paths {
 			CleanMaskedPath(reqPath, masks...)
 		}
 	}
@@ -85,7 +85,7 @@ func maskedBenchmarkRunner(b *testing.B, masks ...string) {
 
 func BenchmarkPathClean(b *testing.B) {
 	for n := 0; n < b.N; n++ {
-		for reqPath, _ := range paths {
+		for reqPath := range paths {
 			path.Clean(reqPath)
 		}
 	}
@@ -113,7 +113,7 @@ func BenchmarkPreserveDots(b *testing.B) {
 
 func BenchmarkDefaultMask(b *testing.B) {
 	for n := 0; n < b.N; n++ {
-		for reqPath, _ := range paths {
+		for reqPath := range paths {
 			CleanPath(reqPath)
 		}
 	}
