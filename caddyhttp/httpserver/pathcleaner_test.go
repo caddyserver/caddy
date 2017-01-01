@@ -29,23 +29,23 @@ var paths = map[string]map[string]string{
 	},
 }
 
-func assertEqual(t *testing.T, exp, rcv string) {
-	if exp != rcv {
-		t.Errorf("\tExpected: %s\n\t\t\tRecieved: %s", exp, rcv)
+func assertEqual(t *testing.T, expected, received string) {
+	if expected != received {
+		t.Errorf("\tExpected: %s\n\t\t\tRecieved: %s", expected, received)
 	}
 }
 
-func maskedTestRunner(t *testing.T, variation string, mask ...string) {
-	for p, v := range paths {
-		assertEqual(t, v[variation], CleanMaskedPath(p, mask...))
+func maskedTestRunner(t *testing.T, variation string, masks ...string) {
+	for reqPath, transformation := range paths {
+		assertEqual(t, transformation[variation], CleanMaskedPath(reqPath, masks...))
 	}
 }
 
-// No need to test the built-in `path.Clean()` function.
-// However, it is useful to cross-examine the test dataset.
+// No need to test the built-in path.Clean() function.
+// However, it could be useful to cross-examine the test dataset.
 func TestPathClean(t *testing.T) {
-	for p, v := range paths {
-		assertEqual(t, v["clean_all"], path.Clean(p))
+	for reqPath, transformation := range paths {
+		assertEqual(t, transformation["clean_all"], path.Clean(reqPath))
 	}
 }
 
@@ -70,7 +70,51 @@ func TestPreserveDots(t *testing.T) {
 }
 
 func TestDefaultMask(t *testing.T) {
-	for p, v := range paths {
-		assertEqual(t, v["preserve_protocol"], CleanPath(p))
+	for reqPath, transformation := range paths {
+		assertEqual(t, transformation["preserve_protocol"], CleanPath(reqPath))
+	}
+}
+
+func maskedBenchmarkRunner(b *testing.B, masks ...string) {
+	for n := 0; n < b.N; n++ {
+		for reqPath, _ := range paths {
+			CleanMaskedPath(reqPath, masks...)
+		}
+	}
+}
+
+func BenchmarkPathClean(b *testing.B) {
+	for n := 0; n < b.N; n++ {
+		for reqPath, _ := range paths {
+			path.Clean(reqPath)
+		}
+	}
+}
+
+func BenchmarkCleanAll(b *testing.B) {
+	maskedBenchmarkRunner(b)
+}
+
+func BenchmarkPreserveAll(b *testing.B) {
+	maskedBenchmarkRunner(b, "//", "/..", "/.")
+}
+
+func BenchmarkPreserveProtocol(b *testing.B) {
+	maskedBenchmarkRunner(b, "://")
+}
+
+func BenchmarkPreserveSlashes(b *testing.B) {
+	maskedBenchmarkRunner(b, "//")
+}
+
+func BenchmarkPreserveDots(b *testing.B) {
+	maskedBenchmarkRunner(b, "/..", "/.")
+}
+
+func BenchmarkDefaultMask(b *testing.B) {
+	for n := 0; n < b.N; n++ {
+		for reqPath, _ := range paths {
+			CleanPath(reqPath)
+		}
 	}
 }
