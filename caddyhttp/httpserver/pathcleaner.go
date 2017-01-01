@@ -7,48 +7,49 @@ import (
 	"time"
 )
 
-// A proxy function to prevent one or more of the path cleanup operations:
+// CleanMaskedPath prevents one or more of the path cleanup operations:
 //   - collapse multiple slashes into one
 //   - eliminate "/." (current directory)
 //   - eliminate "<parent_directory>/.."
 // by masking certain patterns in the path with a temporary random string.
-// This could be helpful when certain patterns in the path are desired
-// that would otherwise be changed in the path clean up process.
+// This could be helpful when certain patterns in the path are desired to be preserved
+// that would otherwise be changed by path.Clean().
 // One such use case is the presence of the double slashes as protocol separator
 // (e.g., /api/endpoint/http://example.com).
-// This is a common pattern in many applications to allow passing URIs as path argument
-func CleanMaskedPath(p string, mask ...string) string {
-	var t string
+// This is a common pattern in many applications to allow passing URIs as path argument.
+func CleanMaskedPath(reqPath string, masks ...string) string {
+	var replacerVal string
 	maskMap := make(map[string]string)
 
 	// Iterate over supplied masks and create temporary replacement strings
 	// only for the masks that are present in the path, then replace all occurrences
-	for _, m := range mask {
-		if strings.Index(p, m) >= 0 {
-			t = "/_caddy" + generateRandomString() + "__"
-			maskMap[m] = t
-			p = strings.Replace(p, m, t, -1)
+	for _, mask := range masks {
+		if strings.Index(reqPath, mask) >= 0 {
+			replacerVal = "/_caddy" + generateRandomString() + "__"
+			maskMap[mask] = replacerVal
+			reqPath = strings.Replace(reqPath, mask, replacerVal, -1)
 		}
 	}
 
-	p = path.Clean(p)
+	reqPath = path.Clean(reqPath)
 
 	// Revert the replaced masks after path cleanup
-	for m, t := range maskMap {
-		p = strings.Replace(p, t, m, -1)
+	for mask, replacerVal := range maskMap {
+		reqPath = strings.Replace(reqPath, replacerVal, mask, -1)
 	}
-	return p
+	return reqPath
 }
 
+// CleanPath calls CleanMaskedPath() with the default mask of "://"
+// to preserve double slashes of protocols
+// such as "http://", "https://", and "ftp://" etc.
 func CleanPath(p string) string {
-	// Apply the default mask to preserve double slashes of protocols
-	// such as "http://", "https://", and "ftp://" etc.
 	return CleanMaskedPath(p, "://")
 }
 
-// The most efficient method for random string generation.
+// An efficient and fast method for random string generation.
 // Inspired by http://stackoverflow.com/a/31832326.
-const randomStringLenght = 10
+const randomStringLenght = 4
 const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 const (
 	letterIdxBits = 6
