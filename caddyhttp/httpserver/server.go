@@ -9,7 +9,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"path"
 	"runtime"
 	"strings"
 	"sync"
@@ -351,7 +350,7 @@ func sanitizePath(r *http.Request) {
 	if r.URL.Path == "/" {
 		return
 	}
-	cleanedPath := path.Clean(r.URL.Path)
+	cleanedPath := CleanPath(r.URL.Path)
 	if cleanedPath == "." {
 		r.URL.Path = "/"
 	} else {

@@ -27,10 +27,28 @@ import (
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
 
-var bufferPool = sync.Pool{New: createBuffer}
+var (
+	defaultDialer = &net.Dialer{
+		Timeout:   30 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+
+	bufferPool = sync.Pool{New: createBuffer}
+)
 
 func createBuffer() interface{} {
-	return make([]byte, 32*1024)
+	return make([]byte, 0, 32*1024)
+}
+
+func pooledIoCopy(dst io.Writer, src io.Reader) {
+	buf := bufferPool.Get().([]byte)
+	defer bufferPool.Put(buf)
+
+	// CopyBuffer only uses buf up to its length and panics if it's 0.
+	// Due to that we extend buf's length to its capacity here and
+	// ensure it's always non-zero.
+	bufCap := cap(buf)
+	io.CopyBuffer(dst, src, buf[0:bufCap:bufCap])
 }
 
 // onExitFlushLoop is a callback set by tests to detect the state of the
@@ -135,11 +153,8 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int) *
 		// just use default transport, to avoid creating
 		// a brand new transport
 		transport := &http.Transport{
-			Proxy: http.ProxyFromEnvironment,
-			Dial: (&net.Dialer{
-				Timeout:   30 * time.Second,
-				KeepAlive: 30 * time.Second,
-			}).Dial,
+			Proxy:                 http.ProxyFromEnvironment,
+			Dial:                  defaultDialer.Dial,
 			TLSHandshakeTimeout:   10 * time.Second,
 			ExpectContinueTimeout: 1 * time.Second,
 		}
@@ -148,7 +163,9 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int) *
 		} else {
 			transport.MaxIdleConnsPerHost = keepalive
 		}
-		http2.ConfigureTransport(transport)
+		if httpserver.HTTP2 {
+			http2.ConfigureTransport(transport)
+		}
 		rp.Transport = transport
 	}
 	return rp
@@ -160,18 +177,20 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int) *
 func (rp *ReverseProxy) UseInsecureTransport() {
 	if rp.Transport == nil {
 		transport := &http.Transport{
-			Proxy: http.ProxyFromEnvironment,
-			Dial: (&net.Dialer{
-				Timeout:   30 * time.Second,
-				KeepAlive: 30 * time.Second,
-			}).Dial,
+			Proxy:               http.ProxyFromEnvironment,
+			Dial:                defaultDialer.Dial,
 			TLSHandshakeTimeout: 10 * time.Second,
 			TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
 		}
-		http2.ConfigureTransport(transport)
+		if httpserver.HTTP2 {
+			http2.ConfigureTransport(transport)
+		}
 		rp.Transport = transport
 	} else if transport, ok := rp.Transport.(*http.Transport); ok {
 		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+		// No http2.ConfigureTransport() here.
+		// For now this is only added in places where
+		// an http.Transport is actually created.
 	}
 }
 
@@ -186,20 +205,33 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, 
 	}
 
 	rp.Director(outreq)
-	outreq.Proto = "HTTP/1.1"
-	outreq.ProtoMajor = 1
-	outreq.ProtoMinor = 1
-	outreq.Close = false
 
 	res, err := transport.RoundTrip(outreq)
 	if err != nil {
 		return err
 	}
 
+	isWebsocket := res.StatusCode == http.StatusSwitchingProtocols && strings.ToLower(res.Header.Get("Upgrade")) == "websocket"
+
+	// Remove hop-by-hop headers listed in the
+	// "Connection" header of the response.
+	if c := res.Header.Get("Connection"); c != "" {
+		for _, f := range strings.Split(c, ",") {
+			if f = strings.TrimSpace(f); f != "" {
+				res.Header.Del(f)
+			}
+		}
+	}
+
+	for _, h := range hopHeaders {
+		res.Header.Del(h)
+	}
+
 	if respUpdateFn != nil {
 		respUpdateFn(res)
 	}
-	if res.StatusCode == http.StatusSwitchingProtocols && strings.ToLower(res.Header.Get("Upgrade")) == "websocket" {
+
+	if isWebsocket {
 		res.Body.Close()
 		hj, ok := rw.(http.Hijacker)
 		if !ok {
@@ -228,27 +260,39 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, 
 		}
 		defer backendConn.Close()
 
-		go func() {
-			io.Copy(backendConn, conn) // write tcp stream to backend.
-		}()
-		io.Copy(conn, backendConn) // read tcp stream from backend.
+		go pooledIoCopy(backendConn, conn) // write tcp stream to backend
+		pooledIoCopy(conn, backendConn)    // read tcp stream from backend
 	} else {
-		defer res.Body.Close()
-		for _, h := range hopHeaders {
-			res.Header.Del(h)
-		}
 		copyHeader(rw.Header(), res.Header)
+
+		// The "Trailer" header isn't included in the Transport's response,
+		// at least for *http.Transport. Build it up from Trailer.
+		if len(res.Trailer) > 0 {
+			trailerKeys := make([]string, 0, len(res.Trailer))
+			for k := range res.Trailer {
+				trailerKeys = append(trailerKeys, k)
+			}
+			rw.Header().Add("Trailer", strings.Join(trailerKeys, ", "))
+		}
+
 		rw.WriteHeader(res.StatusCode)
+		if len(res.Trailer) > 0 {
+			// Force chunking if we saw a response trailer.
+			// This prevents net/http from calculating the length for short
+			// bodies and adding a Content-Length.
+			if fl, ok := rw.(http.Flusher); ok {
+				fl.Flush()
+			}
+		}
 		rp.copyResponse(rw, res.Body)
+		res.Body.Close() // close now, instead of defer, to populate res.Trailer
+		copyHeader(rw.Header(), res.Trailer)
 	}
 
 	return nil
 }
 
 func (rp *ReverseProxy) copyResponse(dst io.Writer, src io.Reader) {
-	buf := bufferPool.Get()
-	defer bufferPool.Put(buf)
-
 	if rp.FlushInterval != 0 {
 		if wf, ok := dst.(writeFlusher); ok {
 			mlw := &maxLatencyWriter{
@@ -261,7 +305,7 @@ func (rp *ReverseProxy) copyResponse(dst io.Writer, src io.Reader) {
 			dst = mlw
 		}
 	}
-	io.CopyBuffer(dst, src, buf.([]byte))
+	pooledIoCopy(dst, src)
 }
 
 // skip these headers if they already exist.
@@ -295,16 +339,17 @@ func copyHeader(dst, src http.Header) {
 // Hop-by-hop headers. These are removed when sent to the backend.
 // http://www.w3.org/Protocols/rfc2616/rfc2616-sec13.html
 var hopHeaders = []string{
+	"Alt-Svc",
+	"Alternate-Protocol",
 	"Connection",
 	"Keep-Alive",
 	"Proxy-Authenticate",
 	"Proxy-Authorization",
-	"Te", // canonicalized version of "TE"
-	"Trailers",
+	"Proxy-Connection", // non-standard but still sent by libcurl and rejected by e.g. google
+	"Te",               // canonicalized version of "TE"
+	"Trailer",          // not Trailers per URL above; http://www.rfc-editor.org/errata_search.php?eid=4522
 	"Transfer-Encoding",
 	"Upgrade",
-	"Alternate-Protocol",
-	"Alt-Svc",
 }
 
 type respUpdateFn func(resp *http.Response)
@@ -331,51 +376,169 @@ type connHijackerTransport struct {
 }
 
 func newConnHijackerTransport(base http.RoundTripper) *connHijackerTransport {
-	transport := &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
-		Dial: (&net.Dialer{
-			Timeout:   30 * time.Second,
-			KeepAlive: 30 * time.Second,
-		}).Dial,
-		TLSHandshakeTimeout: 10 * time.Second,
+	t := &http.Transport{
 		MaxIdleConnsPerHost: -1,
 	}
-	if base != nil {
-		if baseTransport, ok := base.(*http.Transport); ok {
-			transport.Proxy = baseTransport.Proxy
-			transport.TLSClientConfig = baseTransport.TLSClientConfig
-			transport.TLSHandshakeTimeout = baseTransport.TLSHandshakeTimeout
-			transport.Dial = baseTransport.Dial
-			transport.DialTLS = baseTransport.DialTLS
-			transport.MaxIdleConnsPerHost = -1
+	if b, _ := base.(*http.Transport); b != nil {
+		tlsClientConfig := b.TLSClientConfig
+		if tlsClientConfig.NextProtos != nil {
+			tlsClientConfig = cloneTLSClientConfig(tlsClientConfig)
+			tlsClientConfig.NextProtos = nil
 		}
+
+		t.Proxy = b.Proxy
+		t.TLSClientConfig = tlsClientConfig
+		t.TLSHandshakeTimeout = b.TLSHandshakeTimeout
+		t.Dial = b.Dial
+		t.DialTLS = b.DialTLS
+	} else {
+		t.Proxy = http.ProxyFromEnvironment
+		t.TLSHandshakeTimeout = 10 * time.Second
 	}
-	hjTransport := &connHijackerTransport{transport, nil, bufferPool.Get().([]byte)[:0]}
-	oldDial := transport.Dial
-	oldDialTLS := transport.DialTLS
-	if oldDial == nil {
-		oldDial = (&net.Dialer{
-			Timeout:   30 * time.Second,
-			KeepAlive: 30 * time.Second,
-		}).Dial
+	hj := &connHijackerTransport{t, nil, bufferPool.Get().([]byte)[:0]}
+
+	dial := getTransportDial(t)
+	dialTLS := getTransportDialTLS(t)
+	t.Dial = func(network, addr string) (net.Conn, error) {
+		c, err := dial(network, addr)
+		hj.Conn = c
+		return &hijackedConn{c, hj}, err
 	}
-	hjTransport.Dial = func(network, addr string) (net.Conn, error) {
-		c, err := oldDial(network, addr)
-		hjTransport.Conn = c
-		return &hijackedConn{c, hjTransport}, err
+	t.DialTLS = func(network, addr string) (net.Conn, error) {
+		c, err := dialTLS(network, addr)
+		hj.Conn = c
+		return &hijackedConn{c, hj}, err
 	}
-	if oldDialTLS != nil {
-		hjTransport.DialTLS = func(network, addr string) (net.Conn, error) {
-			c, err := oldDialTLS(network, addr)
-			hjTransport.Conn = c
-			return &hijackedConn{c, hjTransport}, err
+
+	return hj
+}
+
+// getTransportDial always returns a plain Dialer
+// and defaults to the existing t.Dial.
+func getTransportDial(t *http.Transport) func(network, addr string) (net.Conn, error) {
+	if t.Dial != nil {
+		return t.Dial
+	}
+	return defaultDialer.Dial
+}
+
+// getTransportDial always returns a TLS Dialer
+// and defaults to the existing t.DialTLS.
+func getTransportDialTLS(t *http.Transport) func(network, addr string) (net.Conn, error) {
+	if t.DialTLS != nil {
+		return t.DialTLS
+	}
+
+	// newConnHijackerTransport will modify t.Dial after calling this method
+	// => Create a backup reference.
+	plainDial := getTransportDial(t)
+
+	// The following DialTLS implementation stems from the Go stdlib and
+	// is identical to what happens if DialTLS is not provided.
+	// Source: https://github.com/golang/go/blob/230a376b5a67f0e9341e1fa47e670ff762213c83/src/net/http/transport.go#L1018-L1051
+	return func(network, addr string) (net.Conn, error) {
+		plainConn, err := plainDial(network, addr)
+		if err != nil {
+			return nil, err
 		}
+
+		tlsClientConfig := t.TLSClientConfig
+		if tlsClientConfig == nil {
+			tlsClientConfig = &tls.Config{}
+		}
+		if !tlsClientConfig.InsecureSkipVerify && tlsClientConfig.ServerName == "" {
+			tlsClientConfig.ServerName = stripPort(addr)
+		}
+
+		tlsConn := tls.Client(plainConn, tlsClientConfig)
+		errc := make(chan error, 2)
+		var timer *time.Timer
+		if d := t.TLSHandshakeTimeout; d != 0 {
+			timer = time.AfterFunc(d, func() {
+				errc <- tlsHandshakeTimeoutError{}
+			})
+		}
+		go func() {
+			err := tlsConn.Handshake()
+			if timer != nil {
+				timer.Stop()
+			}
+			errc <- err
+		}()
+		if err := <-errc; err != nil {
+			plainConn.Close()
+			return nil, err
+		}
+		if !tlsClientConfig.InsecureSkipVerify {
+			hostname := tlsClientConfig.ServerName
+			if hostname == "" {
+				hostname = stripPort(addr)
+			}
+			if err := tlsConn.VerifyHostname(hostname); err != nil {
+				plainConn.Close()
+				return nil, err
+			}
+		}
+
+		return tlsConn, nil
 	}
-	return hjTransport
+}
+
+// stripPort returns address without its port if it has one and
+// works with IP addresses as well as hostnames formatted as host:port.
+//
+// IPv6 addresses (excluding the port) must be enclosed in
+// square brackets similar to the requirements of Go's stdlib.
+func stripPort(address string) string {
+	// Keep in mind that the address might be a IPv6 address
+	// and thus contain a colon, but not have a port.
+	portIdx := strings.LastIndex(address, ":")
+	ipv6Idx := strings.LastIndex(address, "]")
+	if portIdx > ipv6Idx {
+		address = address[:portIdx]
+	}
+	return address
+}
+
+type tlsHandshakeTimeoutError struct{}
+
+func (tlsHandshakeTimeoutError) Timeout() bool   { return true }
+func (tlsHandshakeTimeoutError) Temporary() bool { return true }
+func (tlsHandshakeTimeoutError) Error() string   { return "net/http: TLS handshake timeout" }
+
+// cloneTLSClientConfig is like cloneTLSConfig but omits
+// the fields SessionTicketsDisabled and SessionTicketKey.
+// This makes it safe to call cloneTLSClientConfig on a config
+// in active use by a server.
+func cloneTLSClientConfig(cfg *tls.Config) *tls.Config {
+	if cfg == nil {
+		return &tls.Config{}
+	}
+	return &tls.Config{
+		Rand:                        cfg.Rand,
+		Time:                        cfg.Time,
+		Certificates:                cfg.Certificates,
+		NameToCertificate:           cfg.NameToCertificate,
+		GetCertificate:              cfg.GetCertificate,
+		RootCAs:                     cfg.RootCAs,
+		NextProtos:                  cfg.NextProtos,
+		ServerName:                  cfg.ServerName,
+		ClientAuth:                  cfg.ClientAuth,
+		ClientCAs:                   cfg.ClientCAs,
+		InsecureSkipVerify:          cfg.InsecureSkipVerify,
+		CipherSuites:                cfg.CipherSuites,
+		PreferServerCipherSuites:    cfg.PreferServerCipherSuites,
+		ClientSessionCache:          cfg.ClientSessionCache,
+		MinVersion:                  cfg.MinVersion,
+		MaxVersion:                  cfg.MaxVersion,
+		CurvePreferences:            cfg.CurvePreferences,
+		DynamicRecordSizingDisabled: cfg.DynamicRecordSizingDisabled,
+		Renegotiation:               cfg.Renegotiation,
+	}
 }
 
 func requestIsWebsocket(req *http.Request) bool {
-	return !(strings.ToLower(req.Header.Get("Upgrade")) != "websocket" || !strings.Contains(strings.ToLower(req.Header.Get("Connection")), "upgrade"))
+	return strings.ToLower(req.Header.Get("Upgrade")) == "websocket" && strings.Contains(strings.ToLower(req.Header.Get("Connection")), "upgrade")
 }
 
 type writeFlusher interface {
