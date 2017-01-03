@@ -411,8 +411,8 @@ var directives = []string{
 	"header",
 	"errors",
 	"filter", // github.com/echocat/caddy-filter - Required at this position because if it is
-	          //                                   enabled it captures the response of following
-	          //                                   middlewares and modifies it.
+	//                                             enabled it captures the response of following
+	//                                             middlewares and modifies it.
 	"minify",    // github.com/hacdias/caddy-minify
 	"ipfilter",  // github.com/pyed/ipfilter
 	"ratelimit", // github.com/xuqingfeng/caddy-rate-limit
