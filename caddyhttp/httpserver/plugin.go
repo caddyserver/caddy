@@ -410,9 +410,7 @@ var directives = []string{
 	"gzip",
 	"header",
 	"errors",
-	"filter", // github.com/echocat/caddy-filter - Required at this position because if it is
-	//                                             enabled it captures the response of following
-	//                                             middlewares and modifies it.
+	"filter",    // github.com/echocat/caddy-filter
 	"minify",    // github.com/hacdias/caddy-minify
 	"ipfilter",  // github.com/pyed/ipfilter
 	"ratelimit", // github.com/xuqingfeng/caddy-rate-limit
