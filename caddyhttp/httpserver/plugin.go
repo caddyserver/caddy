@@ -410,6 +410,7 @@ var directives = []string{
 	"gzip",
 	"header",
 	"errors",
+	"filter",    // github.com/echocat/caddy-filter
 	"minify",    // github.com/hacdias/caddy-minify
 	"ipfilter",  // github.com/pyed/ipfilter
 	"ratelimit", // github.com/xuqingfeng/caddy-rate-limit
@@ -438,7 +439,6 @@ var directives = []string{
 	"hugo",      // github.com/hacdias/caddy-hugo
 	"mailout",   // github.com/SchumacherFM/mailout
 	"awslambda", // github.com/coopernurse/caddy-awslambda
-	"filter",    // github.com/echocat/caddy-filter
 }
 
 const (
