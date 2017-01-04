@@ -102,6 +102,7 @@ const defaultTemplate = `<!DOCTYPE html>
 <html>
 	<head>
 		<title>{{.Name}}</title>
+		<meta charset="utf-8">
 		<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
 * { padding: 0; margin: 0; }
@@ -167,12 +168,17 @@ main {
 	font-size: 12px;
 	font-family: Verdana, sans-serif;
 	border-bottom: 1px solid #9C9C9C;
-	padding-top: 15px;
-	padding-bottom: 15px;
+	padding-top: 10px;
+	padding-bottom: 10px;
 }
 
 .meta-item {
 	margin-right: 1em;
+}
+
+#filter {
+	padding: 4px;
+	border: 1px solid #CCC;
 }
 
 table {
@@ -328,6 +334,7 @@ footer {
 					{{- if ne 0 .ItemsLimitedTo}}
 					<span class="meta-item">(of which only <b>{{.ItemsLimitedTo}}</b> are displayed)</span>
 					{{- end}}
+					<span class="meta-item"><input type="text" placeholder="filter" id="filter" onkeyup='filter()'></span>
 				</div>
 			</div>
 			<div class="listing">
@@ -376,7 +383,7 @@ footer {
 					</tr>
 					{{- end}}
 					{{- range .Items}}
-					<tr>
+					<tr class="file">
 						<td>
 							<a href="{{.URL}}">
 								{{- if .IsDir}}
@@ -402,7 +409,26 @@ footer {
 		<footer>
 			Served with <a rel="noopener noreferrer" href="https://caddyserver.com">Caddy</a>.
 		</footer>
-		<script type="text/javascript">
+		<script>
+			var filterEl = document.getElementById('filter');
+			function filter() {
+				var q = filterEl.value.trim().toLowerCase();
+				var elems = document.querySelectorAll('tr.file');
+				elems.forEach(function(el) {
+					if (!q) {
+						el.style.display = '';
+						return;
+					}
+					var nameEl = el.querySelector('.name');
+					var nameVal = nameEl.textContent.trim().toLowerCase();
+					if (nameVal.indexOf(q) !== -1) {
+						el.style.display = '';
+					} else {
+						el.style.display = 'none';
+					}
+				});
+			}
+
 			function localizeDatetime(e, index, ar) {
 				if (e.textContent === undefined) {
 					return;
