@@ -70,14 +70,9 @@ func Run() {
 		})
 	}
 
-	err := caddy.StartupHooks(serverType)
-	if err != nil {
-		mustLogFatalf(err.Error())
-	}
-
 	// Check for one-time actions
 	if revoke != "" {
-		err = caddytls.Revoke(revoke)
+		err := caddytls.Revoke(revoke)
 		if err != nil {
 			mustLogFatalf(err.Error())
 		}
@@ -97,7 +92,13 @@ func Run() {
 	}
 
 	// Set CPU cap
-	err = setCPU(cpu)
+	err := setCPU(cpu)
+	if err != nil {
+		mustLogFatalf(err.Error())
+	}
+
+	// Execute Startup Hooks
+	err = caddy.StartupHooks(serverType)
 	if err != nil {
 		mustLogFatalf(err.Error())
 	}
