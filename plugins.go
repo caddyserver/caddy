@@ -69,7 +69,7 @@ func DescribePlugins() string {
 	return str
 }
 
-// StartupHooks executes the startup hooks defined when the 
+// StartupHooks executes the startup hooks defined when the
 // plugins where registred and returns the first error
 // it encounters.
 func StartupHooks(serverType string) error {
