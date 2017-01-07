@@ -31,17 +31,18 @@ var (
 // '------ file2.html
 // '------ hidden.html
 var testFiles = map[string]string{
-	"unreachable.html":                                     "<h1>must not leak</h1>",
-	filepath.Join("webroot", "file1.html"):                 "<h1>file1.html</h1>",
-	filepath.Join("webroot", "sub", "gzipped.html"):        "<h1>gzipped.html</h1>",
-	filepath.Join("webroot", "sub", "gzipped.html.gz"):     "gzipped.html.gz",
-	filepath.Join("webroot", "sub", "gzipped.html.gz"):     "gzipped.html.gz",
-	filepath.Join("webroot", "sub", "brotli.html"):         "brotli.html",
-	filepath.Join("webroot", "sub", "brotli.html.gz"):      "brotli.html.gz",
-	filepath.Join("webroot", "sub", "brotli.html.br"):      "brotli.html.br",
-	filepath.Join("webroot", "dirwithindex", "index.html"): "<h1>dirwithindex/index.html</h1>",
-	filepath.Join("webroot", "dir", "file2.html"):          "<h1>dir/file2.html</h1>",
-	filepath.Join("webroot", "dir", "hidden.html"):         "<h1>dir/hidden.html</h1>",
+	"unreachable.html":                                            "<h1>must not leak</h1>",
+	filepath.Join("webroot", "file1.html"):                        "<h1>file1.html</h1>",
+	filepath.Join("webroot", "sub", "gzipped.html"):               "<h1>gzipped.html</h1>",
+	filepath.Join("webroot", "sub", "gzipped.html.gz"):            "gzipped.html.gz",
+	filepath.Join("webroot", "sub", "gzipped.html.gz"):            "gzipped.html.gz",
+	filepath.Join("webroot", "sub", "brotli.html"):                "brotli.html",
+	filepath.Join("webroot", "sub", "brotli.html.gz"):             "brotli.html.gz",
+	filepath.Join("webroot", "sub", "brotli.html.br"):             "brotli.html.br",
+	filepath.Join("webroot", "bar", "dirwithindex", "index.html"): "<h1>bar/dirwithindex/index.html</h1>",
+	filepath.Join("webroot", "dirwithindex", "index.html"):        "<h1>dirwithindex/index.html</h1>",
+	filepath.Join("webroot", "dir", "file2.html"):                 "<h1>dir/file2.html</h1>",
+	filepath.Join("webroot", "dir", "hidden.html"):                "<h1>dir/hidden.html</h1>",
 }
 
 // TestServeHTTP covers positive scenarios when serving files.
@@ -58,8 +59,10 @@ func TestServeHTTP(t *testing.T) {
 	movedPermanently := "Moved Permanently"
 
 	tests := []struct {
-		url string
+		url         string
+		cleanedPath string
 
+		expectedLocation    string
 		expectedStatus      int
 		expectedBodyContent string
 		expectedEtag        string
@@ -92,6 +95,7 @@ func TestServeHTTP(t *testing.T) {
 		{
 			url:                 "https://foo/dirwithindex",
 			expectedStatus:      http.StatusMovedPermanently,
+			expectedLocation:    "/dirwithindex/",
 			expectedBodyContent: movedPermanently,
 		},
 		// Test 5 - access folder without index file
@@ -103,12 +107,14 @@ func TestServeHTTP(t *testing.T) {
 		{
 			url:                 "https://foo/dir",
 			expectedStatus:      http.StatusMovedPermanently,
+			expectedLocation:    "/dir/",
 			expectedBodyContent: movedPermanently,
 		},
 		// Test 7 - access file with trailing slash
 		{
 			url:                 "https://foo/file1.html/",
 			expectedStatus:      http.StatusMovedPermanently,
+			expectedLocation:    "/file1.html",
 			expectedBodyContent: movedPermanently,
 		},
 		// Test 8 - access not existing path
@@ -132,6 +138,7 @@ func TestServeHTTP(t *testing.T) {
 		{
 			url:                 "https://foo/dir?param1=val",
 			expectedStatus:      http.StatusMovedPermanently,
+			expectedLocation:    "/dir/?param1=val",
 			expectedBodyContent: movedPermanently,
 		},
 		// Test 12 - attempt to bypass hidden file
@@ -178,6 +185,32 @@ func TestServeHTTP(t *testing.T) {
 			expectedBodyContent: testFiles[filepath.Join("webroot", "sub", "brotli.html.br")],
 			expectedEtag:        `W/"1e240-e"`,
 		},
+		// Test 20 - access folder with index file without trailing slash, with
+		// cleaned path
+		{
+			url:                 "https://foo/bar/dirwithindex",
+			cleanedPath:         "/dirwithindex",
+			expectedStatus:      http.StatusMovedPermanently,
+			expectedLocation:    "/bar/dirwithindex/",
+			expectedBodyContent: movedPermanently,
+		},
+		// Test 21 - access folder with index file without trailing slash, with
+		// cleaned path and query params
+		{
+			url:                 "https://foo/bar/dirwithindex?param1=val",
+			cleanedPath:         "/dirwithindex",
+			expectedStatus:      http.StatusMovedPermanently,
+			expectedLocation:    "/bar/dirwithindex/?param1=val",
+			expectedBodyContent: movedPermanently,
+		},
+		// Test 22 - access file with trailing slash with cleaned path
+		{
+			url:                 "https://foo/bar/file1.html/",
+			cleanedPath:         "file1.html/",
+			expectedStatus:      http.StatusMovedPermanently,
+			expectedLocation:    "/bar/file1.html",
+			expectedBodyContent: movedPermanently,
+		},
 	}
 
 	for i, test := range tests {
@@ -192,6 +225,15 @@ func TestServeHTTP(t *testing.T) {
 		// prevent any URL sanitization within Go: we need unmodified paths here
 		if u, _ := url.Parse(test.url); u.RawPath != "" {
 			request.URL.Path = u.RawPath
+		}
+		// Manually update RequestURI since http.NewRequest does not create a
+		// request for use with testing a Server Handler.
+		request.RequestURI = request.URL.RequestURI()
+		// Caddy may trim a request's URL path but leave the RequestURI intact.
+		// Overwrite the path with the cleanedPath to test redirects when the
+		// path has been modified.
+		if test.cleanedPath != "" {
+			request.URL.Path = test.cleanedPath
 		}
 		status, err := fileserver.ServeHTTP(responseRecorder, request)
 		etag := responseRecorder.Header().Get("Etag")
@@ -214,6 +256,13 @@ func TestServeHTTP(t *testing.T) {
 		// check body content
 		if !strings.Contains(responseRecorder.Body.String(), test.expectedBodyContent) {
 			t.Errorf("Test %d: Expected body to contain %q, found %q", i, test.expectedBodyContent, responseRecorder.Body.String())
+		}
+
+		if test.expectedLocation != "" {
+			l := responseRecorder.Header().Get("Location")
+			if test.expectedLocation != l {
+				t.Errorf("Test %d: Expected Location header %q, found %q", i, test.expectedLocation, l)
+			}
 		}
 	}
 

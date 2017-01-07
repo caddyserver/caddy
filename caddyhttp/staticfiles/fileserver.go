@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"os"
-	"path"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -80,17 +80,35 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request, name stri
 	}
 
 	// redirect to canonical path
-	url := r.URL.Path
+	u := r.URL.Path
 	if d.IsDir() {
 		// Ensure / at end of directory url
-		if !strings.HasSuffix(url, "/") {
-			Redirect(w, r, path.Base(url)+"/", http.StatusMovedPermanently)
+		if !strings.HasSuffix(u, "/") {
+			// Since the path in u may have been trimmed by Caddy, and Redirect
+			// requires the full path, parse the request's RequestURI and use the
+			// path.
+			redirurl, err := url.ParseRequestURI(r.RequestURI)
+			if err != nil {
+				return http.StatusInternalServerError, err
+			}
+			if !strings.HasSuffix(redirurl.Path, "/") {
+				redirurl.Path = redirurl.Path + "/"
+			}
+			Redirect(w, r, redirurl.Path, http.StatusMovedPermanently)
 			return http.StatusMovedPermanently, nil
 		}
 	} else {
 		// Ensure no / at end of file url
-		if strings.HasSuffix(url, "/") {
-			Redirect(w, r, "../"+path.Base(url), http.StatusMovedPermanently)
+		if strings.HasSuffix(u, "/") {
+			// Since the path in u may have been trimmed by Caddy, and Redirect
+			// requires the full path, parse the request's RequestURI and use the
+			// path.
+			redirurl, err := url.ParseRequestURI(r.RequestURI)
+			if err != nil {
+				return http.StatusInternalServerError, nil
+			}
+			redirurl.Path = strings.TrimSuffix(redirurl.Path, "/")
+			Redirect(w, r, redirurl.Path, http.StatusMovedPermanently)
 			return http.StatusMovedPermanently, nil
 		}
 	}
