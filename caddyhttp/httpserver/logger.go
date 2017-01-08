@@ -2,12 +2,13 @@ package httpserver
 
 import (
 	"bytes"
-	"github.com/hashicorp/go-syslog"
-	"github.com/mholt/caddy"
 	"io"
 	"log"
 	"os"
 	"strings"
+
+	"github.com/hashicorp/go-syslog"
+	"github.com/mholt/caddy"
 )
 
 var remoteSyslogPrefixes = map[string]string{
@@ -16,6 +17,8 @@ var remoteSyslogPrefixes = map[string]string{
 	"syslog://":     "udp",
 }
 
+// Logger is shared between errors and log plugins and supports both logging to
+// a file (with an optional file roller), local and remote syslog servers.
 type Logger struct {
 	Output string
 	*log.Logger
@@ -23,12 +26,15 @@ type Logger struct {
 	writer io.Writer
 }
 
+// NewTestLogger creates logger suitable for testing purposes
 func NewTestLogger(buffer *bytes.Buffer) *Logger {
 	return &Logger{
 		Logger: log.New(buffer, "", 0),
 	}
 }
 
+// Attach binds logger Start and Close functions to
+// controller's OnStartup and OnShutdown hooks.
 func (l *Logger) Attach(controller *caddy.Controller) {
 	if controller != nil {
 		// Opens file or connect to local/remote syslog
@@ -57,6 +63,7 @@ func parseSyslogAddress(location string) *syslogAddress {
 	return nil
 }
 
+// Start initializes logger opening files or local/remote syslog connections
 func (l *Logger) Start() error {
 	var err error
 
@@ -107,6 +114,7 @@ selectwriter:
 
 }
 
+// Close closes open log files or connections to syslog.
 func (l *Logger) Close() error {
 	// Will close local/remote syslog connections too :)
 	if closer, ok := l.writer.(io.WriteCloser); ok {
