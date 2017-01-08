@@ -63,6 +63,14 @@ func (c *Config) Markdown(title string, r io.Reader, dirents []os.FileInfo, ctx 
 		mdata.Variables["title"] = title
 	}
 
+	// move available and valid front matters to the meta values
+	mdata.Variables["meta"] = make(map[string]string)
+	for _, val := range getAllowedMeta() {
+		if _, ok := mdata.Variables[val]; ok {
+			mdata.Variables["meta"].(map[string]string)[val] = mdata.Variables[val].(string)
+		}
+	}
+
 	// massage possible files
 	files := []FileInfo{}
 	for _, ent := range dirents {
@@ -74,4 +82,14 @@ func (c *Config) Markdown(title string, r io.Reader, dirents []os.FileInfo, ctx 
 	}
 
 	return execTemplate(c, mdata, files, ctx)
+}
+
+func getAllowedMeta() []string {
+	return []string{
+		"author",
+		"copyright",
+		"description",
+		"language",
+		"subject",
+	}
 }

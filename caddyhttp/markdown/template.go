@@ -15,6 +15,7 @@ type Data struct {
 	Doc     map[string]interface{}
 	Styles  []string
 	Scripts []string
+	Meta	map[string]string
 	Files   []FileInfo
 }
 
@@ -32,6 +33,7 @@ func execTemplate(c *Config, mdata metadata.Metadata, files []FileInfo, ctx http
 		Doc:     mdata.Variables,
 		Styles:  c.Styles,
 		Scripts: c.Scripts,
+		Meta:	 mdata.Variables["meta"].(map[string]string),
 		Files:   files,
 	}
 
@@ -74,6 +76,9 @@ const (
 	<head>
 		<title>{{.Doc.title}}</title>
 		<meta charset="utf-8">
+		{{range $key, $val := .Meta}}
+		<meta name="{{$key}}" content="{{$val}}">
+		{{end}}
 		{{- range .Styles}}
 		<link rel="stylesheet" href="{{.}}">
 		{{- end}}
