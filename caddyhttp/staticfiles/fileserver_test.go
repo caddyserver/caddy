@@ -95,7 +95,7 @@ func TestServeHTTP(t *testing.T) {
 		{
 			url:                 "https://foo/dirwithindex",
 			expectedStatus:      http.StatusMovedPermanently,
-			expectedLocation:    "/dirwithindex/",
+			expectedLocation:    "https://foo/dirwithindex/",
 			expectedBodyContent: movedPermanently,
 		},
 		// Test 5 - access folder without index file
@@ -107,14 +107,14 @@ func TestServeHTTP(t *testing.T) {
 		{
 			url:                 "https://foo/dir",
 			expectedStatus:      http.StatusMovedPermanently,
-			expectedLocation:    "/dir/",
+			expectedLocation:    "https://foo/dir/",
 			expectedBodyContent: movedPermanently,
 		},
 		// Test 7 - access file with trailing slash
 		{
 			url:                 "https://foo/file1.html/",
 			expectedStatus:      http.StatusMovedPermanently,
-			expectedLocation:    "/file1.html",
+			expectedLocation:    "https://foo/file1.html",
 			expectedBodyContent: movedPermanently,
 		},
 		// Test 8 - access not existing path
@@ -138,7 +138,7 @@ func TestServeHTTP(t *testing.T) {
 		{
 			url:                 "https://foo/dir?param1=val",
 			expectedStatus:      http.StatusMovedPermanently,
-			expectedLocation:    "/dir/?param1=val",
+			expectedLocation:    "https://foo/dir/?param1=val",
 			expectedBodyContent: movedPermanently,
 		},
 		// Test 12 - attempt to bypass hidden file
@@ -191,7 +191,7 @@ func TestServeHTTP(t *testing.T) {
 			url:                 "https://foo/bar/dirwithindex",
 			cleanedPath:         "/dirwithindex",
 			expectedStatus:      http.StatusMovedPermanently,
-			expectedLocation:    "/bar/dirwithindex/",
+			expectedLocation:    "https://foo/bar/dirwithindex/",
 			expectedBodyContent: movedPermanently,
 		},
 		// Test 21 - access folder with index file without trailing slash, with
@@ -200,7 +200,7 @@ func TestServeHTTP(t *testing.T) {
 			url:                 "https://foo/bar/dirwithindex?param1=val",
 			cleanedPath:         "/dirwithindex",
 			expectedStatus:      http.StatusMovedPermanently,
-			expectedLocation:    "/bar/dirwithindex/?param1=val",
+			expectedLocation:    "https://foo/bar/dirwithindex/?param1=val",
 			expectedBodyContent: movedPermanently,
 		},
 		// Test 22 - access file with trailing slash with cleaned path
@@ -208,7 +208,7 @@ func TestServeHTTP(t *testing.T) {
 			url:                 "https://foo/bar/file1.html/",
 			cleanedPath:         "file1.html/",
 			expectedStatus:      http.StatusMovedPermanently,
-			expectedLocation:    "/bar/file1.html",
+			expectedLocation:    "https://foo/bar/file1.html",
 			expectedBodyContent: movedPermanently,
 		},
 	}

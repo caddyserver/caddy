@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"runtime"
 	"strings"
@@ -263,6 +264,11 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 		if !strings.HasPrefix(r.URL.Path, "/") {
 			r.URL.Path = "/" + r.URL.Path
 		}
+	}
+
+	if vhostURL, err := url.Parse(vhost.Addr.String()); err == nil {
+		r.URL.Scheme = vhostURL.Scheme
+		r.URL.Host = vhostURL.Host
 	}
 
 	// Apply the path-based request body size limit
