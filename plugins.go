@@ -202,7 +202,7 @@ type Plugin struct {
 	Action SetupFunc
 
 	// StartupHook is the plugin's function that is executed
-	// imediatelly after the flag parsing.
+	// immediately after the flag parsing.
 	StartupHook func() error
 }
 
