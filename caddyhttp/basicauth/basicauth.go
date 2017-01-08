@@ -34,8 +34,7 @@ type BasicAuth struct {
 
 // ServeHTTP implements the httpserver.Handler interface.
 func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
-	var hasAuth bool
-	var isAuthenticated bool
+	var protected, isAuthenticated bool
 
 	for _, rule := range a.Rules {
 		for _, res := range rule.Resources {
@@ -43,29 +42,33 @@ func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 				continue
 			}
 
-			// Path matches; parse auth header
-			username, password, ok := r.BasicAuth()
-			hasAuth = true
+			// path matches; this endpoint is protected
+			protected = true
 
-			// Check credentials
+			// parse auth header
+			username, password, ok := r.BasicAuth()
+
+			// check credentials
 			if !ok ||
 				username != rule.Username ||
 				!rule.Password(password) {
 				continue
 			}
 
-			// Flag set only on successful authentication
+			// by this point, authentication was successful
 			isAuthenticated = true
+
+			// remove credentials from request to avoid leaking upstream
+			r.Header.Del("Authorization")
 		}
 	}
 
-	if hasAuth {
-		if !isAuthenticated {
-			w.Header().Set("WWW-Authenticate", "Basic realm=\"Restricted\"")
-			return http.StatusUnauthorized, nil
-		}
-		// "It's an older code, sir, but it checks out. I was about to clear them."
-		return a.Next.ServeHTTP(w, r)
+	if protected && !isAuthenticated {
+		// browsers show a message that says something like:
+		// "The website says: <realm>"
+		// which is kinda dumb, but whatever.
+		w.Header().Set("WWW-Authenticate", "Basic realm=\"Restricted\"")
+		return http.StatusUnauthorized, nil
 	}
 
 	// Pass-through when no paths match
