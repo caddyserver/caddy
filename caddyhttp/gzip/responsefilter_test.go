@@ -87,3 +87,26 @@ func TestResponseFilterWriter(t *testing.T) {
 		}
 	}
 }
+
+func TestResponseGzippedOutput(t *testing.T) {
+	server := Gzip{Configs: []Config{
+		{ResponseFilters: []ResponseFilter{SkipCompressedFilter{}}},
+	}}
+
+	server.Next = httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Write([]byte("gzipped"))
+		return 200, nil
+	})
+
+	r := urlRequest("/")
+	r.Header.Set("Accept-Encoding", "gzip")
+
+	w := httptest.NewRecorder()
+	server.ServeHTTP(w, r)
+	resp := w.Body.String()
+
+	if resp != "gzipped" {
+		t.Errorf("Expected output not to be gzipped")
+	}
+}
