@@ -89,7 +89,6 @@ func getAllowedMeta() []string {
 		"author",
 		"copyright",
 		"description",
-		"language",
 		"subject",
 	}
 }
