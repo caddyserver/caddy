@@ -2,6 +2,7 @@ package fastcgi
 
 import (
 	"fmt"
+	"os"
 	"reflect"
 	"testing"
 	"time"
@@ -61,6 +62,11 @@ func (p *persistentDialer) Equals(q *persistentDialer) bool {
 }
 
 func TestFastcgiParse(t *testing.T) {
+	rootPath, err := os.Getwd()
+	if err != nil {
+		t.Errorf("Can't determine current working directory; got '%v'", err)
+	}
+
 	defaultAddress := "127.0.0.1:9001"
 	network, address := parseAddress(defaultAddress)
 	t.Logf("Address '%v' was parsed to network '%v' and address '%v'", defaultAddress, network, address)
@@ -73,6 +79,21 @@ func TestFastcgiParse(t *testing.T) {
 
 		{`fastcgi /blog 127.0.0.1:9000 php`,
 			false, []Rule{{
+				Root:        rootPath,
+				Path:        "/blog",
+				Address:     "127.0.0.1:9000",
+				Ext:         ".php",
+				SplitPath:   ".php",
+				dialer:      &loadBalancingDialer{dialers: []dialer{basicDialer{network: "tcp", address: "127.0.0.1:9000", timeout: 60 * time.Second}}},
+				IndexFiles:  []string{"index.php"},
+				ReadTimeout: 60 * time.Second,
+				SendTimeout: 60 * time.Second,
+			}}},
+		{`fastcgi /blog 127.0.0.1:9000 php {
+			root /tmp
+		}`,
+			false, []Rule{{
+				Root:        "/tmp",
 				Path:        "/blog",
 				Address:     "127.0.0.1:9000",
 				Ext:         ".php",
@@ -86,6 +107,7 @@ func TestFastcgiParse(t *testing.T) {
 			upstream 127.0.0.1:9001
 		}`,
 			false, []Rule{{
+				Root:        rootPath,
 				Path:        "/blog",
 				Address:     "127.0.0.1:9000,127.0.0.1:9001",
 				Ext:         ".php",
@@ -99,6 +121,7 @@ func TestFastcgiParse(t *testing.T) {
 			upstream 127.0.0.1:9001 
 		}`,
 			false, []Rule{{
+				Root:        rootPath,
 				Path:        "/blog",
 				Address:     "127.0.0.1:9000,127.0.0.1:9001",
 				Ext:         "",
@@ -112,6 +135,7 @@ func TestFastcgiParse(t *testing.T) {
 	              split .html
 	              }`,
 			false, []Rule{{
+				Root:        rootPath,
 				Path:        "/",
 				Address:     defaultAddress,
 				Ext:         "",
@@ -126,6 +150,7 @@ func TestFastcgiParse(t *testing.T) {
 	              except /admin /user
 	              }`,
 			false, []Rule{{
+				Root:            rootPath,
 				Path:            "/",
 				Address:         "127.0.0.1:9001",
 				Ext:             "",
@@ -140,6 +165,7 @@ func TestFastcgiParse(t *testing.T) {
 	              pool 0
 	              }`,
 			false, []Rule{{
+				Root:        rootPath,
 				Path:        "/",
 				Address:     defaultAddress,
 				Ext:         "",
@@ -154,6 +180,7 @@ func TestFastcgiParse(t *testing.T) {
 	              pool 5
 	              }`,
 			false, []Rule{{
+				Root:        rootPath,
 				Path:        "/",
 				Address:     "127.0.0.1:8080,127.0.0.1:9000",
 				Ext:         "",
@@ -167,6 +194,7 @@ func TestFastcgiParse(t *testing.T) {
 	              split .php
 	              }`,
 			false, []Rule{{
+				Root:        rootPath,
 				Path:        "/",
 				Address:     defaultAddress,
 				Ext:         "",
@@ -180,6 +208,7 @@ func TestFastcgiParse(t *testing.T) {
 	              connect_timeout 5s
 	              }`,
 			false, []Rule{{
+				Root:        rootPath,
 				Path:        "/",
 				Address:     defaultAddress,
 				Ext:         "",
@@ -198,6 +227,7 @@ func TestFastcgiParse(t *testing.T) {
 	              read_timeout 5s
 	              }`,
 			false, []Rule{{
+				Root:        rootPath,
 				Path:        "/",
 				Address:     defaultAddress,
 				Ext:         "",
@@ -216,6 +246,7 @@ func TestFastcgiParse(t *testing.T) {
 	              send_timeout 5s
 	              }`,
 			false, []Rule{{
+				Root:        rootPath,
 				Path:        "/",
 				Address:     defaultAddress,
 				Ext:         "",
@@ -249,6 +280,11 @@ func TestFastcgiParse(t *testing.T) {
 				i, len(test.expectedFastcgiConfig), len(actualFastcgiConfigs))
 		}
 		for j, actualFastcgiConfig := range actualFastcgiConfigs {
+
+			if actualFastcgiConfig.Root != test.expectedFastcgiConfig[j].Root {
+				t.Errorf("Test %d expected %dth FastCGI Root to be  %s  , but got %s",
+					i, j, test.expectedFastcgiConfig[j].Root, actualFastcgiConfig.Root)
+			}
 
 			if actualFastcgiConfig.Path != test.expectedFastcgiConfig[j].Path {
 				t.Errorf("Test %d expected %dth FastCGI Path to be  %s  , but got %s",
