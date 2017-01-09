@@ -532,43 +532,18 @@ func TestUpstreamHeadersUpdate(t *testing.T) {
 
 	replacer := httpserver.NewReplacer(r, nil, "")
 
-	headerKey := "Merge-Me"
-	got := actualHeaders[headerKey]
-	expect := []string{"Initial", "Merge-Value"}
-	if !reflect.DeepEqual(got, expect) {
-		t.Errorf("Request sent to upstream backend does not contain expected %v header: expect %v, but got %v",
-			headerKey, expect, got)
-	}
-
-	headerKey = "Add-Me"
-	got = actualHeaders[headerKey]
-	expect = []string{"Add-Value"}
-	if !reflect.DeepEqual(got, expect) {
-		t.Errorf("Request sent to upstream backend does not contain expected %v header: expect %v, but got %v",
-			headerKey, expect, got)
-	}
-
-	headerKey = "Add-Empty"
-	if _, ok := actualHeaders[headerKey]; ok {
-		t.Errorf("Request sent to upstream backend should not contain empty %v header", headerKey)
-	}
-
-	headerKey = "Remove-Me"
-	if _, ok := actualHeaders[headerKey]; ok {
-		t.Errorf("Request sent to upstream backend should not contain %v header", headerKey)
-	}
-
-	headerKey = "Replace-Me"
-	got = actualHeaders[headerKey]
-	expect = []string{replacer.Replace("{hostname}")}
-	if !reflect.DeepEqual(got, expect) {
-		t.Errorf("Request sent to upstream backend does not contain expected %v header: expect %v, but got %v",
-			headerKey, expect, got)
-	}
-
-	headerKey = "Clear-Me"
-	if _, ok := actualHeaders[headerKey]; ok {
-		t.Errorf("Request sent to upstream backend should not contain empty %v header", headerKey)
+	for headerKey, expect := range map[string][]string{
+		"Merge-Me":   {"Initial", "Merge-Value"},
+		"Add-Me":     {"Add-Value"},
+		"Add-Empty":  nil,
+		"Remove-Me":  nil,
+		"Replace-Me": {replacer.Replace("{hostname}")},
+		"Clear-Me":   nil,
+	} {
+		if got := actualHeaders[headerKey]; !reflect.DeepEqual(got, expect) {
+			t.Errorf("Upstream request does not contain expected %v header: expect %v, but got %v",
+				headerKey, expect, got)
+		}
 	}
 
 	if actualHost != expectHost {
@@ -617,49 +592,18 @@ func TestDownstreamHeadersUpdate(t *testing.T) {
 	replacer := httpserver.NewReplacer(r, nil, "")
 	actualHeaders := w.Header()
 
-	headerKey := "Merge-Me"
-	got := actualHeaders[headerKey]
-	expect := []string{"Initial", "Merge-Value"}
-	if !reflect.DeepEqual(got, expect) {
-		t.Errorf("Downstream response does not contain expected %s header: expect %v, but got %v",
-			headerKey, expect, got)
-	}
-
-	headerKey = "Add-Me"
-	got = actualHeaders[headerKey]
-	expect = []string{"Add-Value"}
-	if !reflect.DeepEqual(got, expect) {
-		t.Errorf("Downstream response does not contain expected %s header: expect %v, but got %v",
-			headerKey, expect, got)
-	}
-
-	headerKey = "Remove-Me"
-	if _, ok := actualHeaders[headerKey]; ok {
-		t.Errorf("Downstream response should not contain %v header received from upstream", headerKey)
-	}
-
-	headerKey = "Replace-Me"
-	got = actualHeaders[headerKey]
-	expect = []string{replacer.Replace("{hostname}")}
-	if !reflect.DeepEqual(got, expect) {
-		t.Errorf("Downstream response does not contain expected %s header: expect %v, but got %v",
-			headerKey, expect, got)
-	}
-
-	headerKey = "Content-Type"
-	got = actualHeaders[headerKey]
-	expect = []string{"text/css"}
-	if !reflect.DeepEqual(got, expect) {
-		t.Errorf("Downstream response does not contain expected %s header: expect %v, but got %v",
-			headerKey, expect, got)
-	}
-
-	headerKey = "Overwrite-Me"
-	got = actualHeaders[headerKey]
-	expect = []string{"Overwrite-Value"}
-	if !reflect.DeepEqual(got, expect) {
-		t.Errorf("Downstream response does not contain expected %s header: expect %v, but got %v",
-			headerKey, expect, got)
+	for headerKey, expect := range map[string][]string{
+		"Merge-Me":     {"Initial", "Merge-Value"},
+		"Add-Me":       {"Add-Value"},
+		"Remove-Me":    nil,
+		"Replace-Me":   {replacer.Replace("{hostname}")},
+		"Content-Type": {"text/css"},
+		"Overwrite-Me": {"Overwrite-Value"},
+	} {
+		if got := actualHeaders[headerKey]; !reflect.DeepEqual(got, expect) {
+			t.Errorf("Downstream response does not contain expected %s header: expect %v, but got %v",
+				headerKey, expect, got)
+		}
 	}
 }
 
