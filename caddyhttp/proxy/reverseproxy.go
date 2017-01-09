@@ -194,6 +194,28 @@ func (rp *ReverseProxy) UseInsecureTransport() {
 	}
 }
 
+var capitalHeaders = map[string]string{
+	strings.ToLower("Sec-WebSocket-Key"):        "Sec-WebSocket-Key",
+	strings.ToLower("Sec-WebSocket-Extensions"): "Sec-WebSocket-Extensions",
+	strings.ToLower("Sec-WebSocket-Accept"):     "Sec-WebSocket-Accept",
+	strings.ToLower("Sec-WebSocket-Protocol"):   "Sec-WebSocket-Protocol",
+	strings.ToLower("Sec-WebSocket-Version"):    "Sec-WebSocket-Version",
+}
+
+func capitalizeHeaders(headers http.Header) {
+	// Set the request headers using the capitalization for names.
+	// Although the capitalization shouldn't matter, there are
+	// servers that depend on it.
+	for k, v := range headers {
+		if cap, ok := capitalHeaders[strings.ToLower(k)]; ok && k != cap {
+			headers.Del(k)
+			// The Header.Set method is not used because the method
+			// canonicalizes the header names.
+			headers[cap] = v
+		}
+	}
+}
+
 // ServeHTTP serves the proxied request to the upstream by performing a roundtrip.
 // It is designed to handle websocket connection upgrades as well.
 func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, respUpdateFn respUpdateFn) error {
@@ -206,6 +228,7 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, 
 
 	rp.Director(outreq)
 
+	capitalizeHeaders(outreq.Header)
 	res, err := transport.RoundTrip(outreq)
 	if err != nil {
 		return err
