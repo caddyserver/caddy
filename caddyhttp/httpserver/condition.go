@@ -198,7 +198,7 @@ func (m IfMatcher) Or(r *http.Request) bool {
 // If true, remaining arguments in the dispinser are cleard to keep the dispenser valid for use.
 func IfMatcherKeyword(c *caddy.Controller) bool {
 	if c.Val() == "if" || c.Val() == "if_op" {
-		// clear remainig args
+		// clear remaining args
 		c.RemainingArgs()
 		return true
 	}
