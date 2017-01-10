@@ -40,6 +40,7 @@ func init() {
 	flag.StringVar(&revoke, "revoke", "", "Hostname for which to revoke the certificate")
 	flag.StringVar(&serverType, "type", "http", "Type of server to run")
 	flag.BoolVar(&version, "version", false, "Show version")
+	flag.BoolVar(&validate, "validate", false, "Validate Caddyfile and return")
 
 	caddy.RegisterCaddyfileLoader("flag", caddy.LoaderFunc(confLoader))
 	caddy.SetDefaultCaddyfileLoader("default", caddy.LoaderFunc(defaultLoader))
@@ -104,7 +105,7 @@ func Run() {
 	}
 
 	// Start your engines
-	instance, err := caddy.Start(caddyfile)
+	instance, err := caddy.Start(caddyfile, validate)
 	if err != nil {
 		mustLogFatalf(err.Error())
 	}
@@ -226,6 +227,7 @@ var (
 	revoke     string
 	version    bool
 	plugins    bool
+	validate   bool
 )
 
 // Build information obtained with the help of -ldflags

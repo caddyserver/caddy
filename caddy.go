@@ -182,7 +182,7 @@ func (i *Instance) Restart(newCaddyfile Input) (*Instance, error) {
 	newInst := &Instance{serverType: newCaddyfile.ServerType(), wg: i.wg}
 
 	// attempt to start new instance
-	err := startWithListenerFds(newCaddyfile, newInst, restartFds)
+	err := startWithListenerFds(newCaddyfile, newInst, restartFds, false)
 	if err != nil {
 		return i, err
 	}
@@ -357,6 +357,7 @@ type AfterStartup interface {
 // specify any default Caddyfile value, then an empty Caddyfile
 // is returned. Consequently, this function never returns a nil
 // value as long as there are no errors.
+//func LoadCaddyfile(serverType string, justValidate bool) (Input, error) {
 func LoadCaddyfile(serverType string) (Input, error) {
 	// Ask plugged-in loaders for a Caddyfile
 	cdyfile, err := loadCaddyfileInput(serverType)
@@ -421,13 +422,13 @@ func (i *Instance) Caddyfile() Input {
 // Start starts Caddy with the given Caddyfile.
 //
 // This function blocks until all the servers are listening.
-func Start(cdyfile Input) (*Instance, error) {
+func Start(cdyfile Input, justValidate bool) (*Instance, error) {
 	writePidFile()
 	inst := &Instance{serverType: cdyfile.ServerType(), wg: new(sync.WaitGroup)}
-	return inst, startWithListenerFds(cdyfile, inst, nil)
+	return inst, startWithListenerFds(cdyfile, inst, nil, justValidate)
 }
 
-func startWithListenerFds(cdyfile Input, inst *Instance, restartFds map[string]restartTriple) error {
+func startWithListenerFds(cdyfile Input, inst *Instance, restartFds map[string]restartTriple, justValidate bool) error {
 	if cdyfile == nil {
 		cdyfile = CaddyfileInput{}
 	}
@@ -441,9 +442,18 @@ func startWithListenerFds(cdyfile Input, inst *Instance, restartFds map[string]r
 
 	inst.caddyfileInput = cdyfile
 
+	if justValidate == true {
+		log.Println("[INFO] Validating Caddyfile")
+	}
+
 	sblocks, err := loadServerBlocks(stypeName, cdyfile.Path(), bytes.NewReader(cdyfile.Body()))
 	if err != nil {
 		return err
+	}
+
+	if justValidate == true {
+		log.Println("[INFO] Caddyfile Valid")
+		os.Exit(0)
 	}
 
 	inst.context = stype.NewContext()
