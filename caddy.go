@@ -453,6 +453,7 @@ func startWithListenerFds(cdyfile Input, inst *Instance, restartFds map[string]r
 
 	if justValidate == true {
 		log.Println("[INFO] Caddyfile Valid")
+		fmt.Println("[INFO] Caddyfile Valid")
 		os.Exit(0)
 	}
 
