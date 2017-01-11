@@ -1,7 +1,6 @@
 package caddymain
 
 import (
-	"bytes"
 	"errors"
 	"flag"
 	"fmt"
@@ -20,7 +19,6 @@ import (
 	// plug in the HTTP server type
 	_ "github.com/mholt/caddy/caddyhttp"
 
-	"github.com/mholt/caddy/caddyfile"
 	"github.com/mholt/caddy/caddytls"
 	// This is where other plugins get plugged in (imported)
 )
@@ -101,25 +99,23 @@ func Run() {
 	}
 
 	// Get Caddyfile input
-	caddyfile, err := caddy.LoadCaddyfile(serverType)
+	caddyfileinput, err := caddy.LoadCaddyfile(serverType)
 	if err != nil {
 		mustLogFatalf(err.Error())
 	}
 
 	if validate {
-		validDirectives := caddy.ValidDirectives(serverType)
-		_, err := caddyfile.Parse(caddyfile.Path(), bytes.NewReader(caddyfile.Body()), validDirectives)
+
+		_, err := caddy.ValidateCaddyFile(caddyfileinput, nil)
 		if err != nil {
 			mustLogFatalf(err.Error())
 		}
-
 		//Caddyfile is valid so exit without starting
 		os.Exit(0)
-
 	}
 
 	// Start your engines
-	instance, err := caddy.Start(caddyfile, validate)
+	instance, err := caddy.Start(caddyfileinput)
 	if err != nil {
 		mustLogFatalf(err.Error())
 	}

@@ -182,7 +182,7 @@ func (i *Instance) Restart(newCaddyfile Input) (*Instance, error) {
 	newInst := &Instance{serverType: newCaddyfile.ServerType(), wg: i.wg}
 
 	// attempt to start new instance
-	err := startWithListenerFds(newCaddyfile, newInst, restartFds, false)
+	err := startWithListenerFds(newCaddyfile, newInst, restartFds)
 	if err != nil {
 		return i, err
 	}
@@ -422,52 +422,18 @@ func (i *Instance) Caddyfile() Input {
 // Start starts Caddy with the given Caddyfile.
 //
 // This function blocks until all the servers are listening.
-func Start(cdyfile Input, justValidate bool) (*Instance, error) {
+func Start(cdyfile Input) (*Instance, error) {
 	writePidFile()
 	inst := &Instance{serverType: cdyfile.ServerType(), wg: new(sync.WaitGroup)}
-	return inst, startWithListenerFds(cdyfile, inst, nil, justValidate)
+	return inst, startWithListenerFds(cdyfile, inst, nil)
 }
 
-func startWithListenerFds(cdyfile Input, inst *Instance, restartFds map[string]restartTriple, justValidate bool) error {
+func startWithListenerFds(cdyfile Input, inst *Instance, restartFds map[string]restartTriple) error {
 	if cdyfile == nil {
 		cdyfile = CaddyfileInput{}
 	}
 
-	stypeName := cdyfile.ServerType()
-
-	stype, err := getServerType(stypeName)
-	if err != nil {
-		return err
-	}
-
-	inst.caddyfileInput = cdyfile
-
-	if justValidate == true {
-		log.Println("[INFO] Validating Caddyfile")
-	}
-
-	sblocks, err := loadServerBlocks(stypeName, cdyfile.Path(), bytes.NewReader(cdyfile.Body()))
-	if err != nil {
-		return err
-	}
-
-	if justValidate == true {
-		log.Println("[INFO] Caddyfile Valid")
-		fmt.Println("[INFO] Caddyfile Valid")
-		os.Exit(0)
-	}
-
-	inst.context = stype.NewContext()
-	if inst.context == nil {
-		return fmt.Errorf("server type %s produced a nil Context", stypeName)
-	}
-
-	sblocks, err = inst.context.InspectServerBlocks(cdyfile.Path(), sblocks)
-	if err != nil {
-		return err
-	}
-
-	err = executeDirectives(inst, cdyfile.Path(), stype.Directives(), sblocks)
+	_, err := ValidateCaddyFile(cdyfile, inst)
 	if err != nil {
 		return err
 	}
@@ -525,6 +491,46 @@ func startWithListenerFds(cdyfile Input, inst *Instance, restartFds map[string]r
 	mu.Unlock()
 
 	return nil
+}
+
+func ValidateCaddyFile(cdyfile Input, inst *Instance) (*Instance, error) {
+
+	if inst == nil {
+		log.Println("inst is nil")
+		inst = &Instance{serverType: cdyfile.ServerType(), wg: new(sync.WaitGroup)}
+	}
+
+	stypeName := cdyfile.ServerType()
+
+	stype, err := getServerType(stypeName)
+	if err != nil {
+		return nil, err
+	}
+
+	inst.caddyfileInput = cdyfile
+
+	sblocks, err := loadServerBlocks(stypeName, cdyfile.Path(), bytes.NewReader(cdyfile.Body()))
+	if err != nil {
+		return nil, err
+	}
+
+	inst.context = stype.NewContext()
+	if inst.context == nil {
+		return nil, fmt.Errorf("server type %s produced a nil Context", stypeName)
+	}
+
+	sblocks, err = inst.context.InspectServerBlocks(cdyfile.Path(), sblocks)
+	if err != nil {
+		return nil, err
+	}
+
+	err = executeDirectives(inst, cdyfile.Path(), stype.Directives(), sblocks)
+	if err != nil {
+		return nil, err
+	}
+
+	return inst, nil
+
 }
 
 func executeDirectives(inst *Instance, filename string,
