@@ -1,6 +1,7 @@
 package caddymain
 
 import (
+	"bytes"
 	"errors"
 	"flag"
 	"fmt"
@@ -19,6 +20,7 @@ import (
 	// plug in the HTTP server type
 	_ "github.com/mholt/caddy/caddyhttp"
 
+	"github.com/mholt/caddy/caddyfile"
 	"github.com/mholt/caddy/caddytls"
 	// This is where other plugins get plugged in (imported)
 )
@@ -40,7 +42,7 @@ func init() {
 	flag.StringVar(&revoke, "revoke", "", "Hostname for which to revoke the certificate")
 	flag.StringVar(&serverType, "type", "http", "Type of server to run")
 	flag.BoolVar(&version, "version", false, "Show version")
-	flag.BoolVar(&validate, "validate", false, "Validate Caddyfile and return")
+	flag.BoolVar(&validate, "validate", false, "Parse the Caddyfile but do not start the server")
 
 	caddy.RegisterCaddyfileLoader("flag", caddy.LoaderFunc(confLoader))
 	caddy.SetDefaultCaddyfileLoader("default", caddy.LoaderFunc(defaultLoader))
@@ -102,6 +104,18 @@ func Run() {
 	caddyfile, err := caddy.LoadCaddyfile(serverType)
 	if err != nil {
 		mustLogFatalf(err.Error())
+	}
+
+	if validate {
+		validDirectives := caddy.ValidDirectives(serverType)
+		_, err := caddyfile.Parse(caddyfile.Path(), bytes.NewReader(caddyfile.Body()), validDirectives)
+		if err != nil {
+			mustLogFatalf(err.Error())
+		}
+
+		//Caddyfile is valid so exit without starting
+		os.Exit(0)
+
 	}
 
 	// Start your engines
