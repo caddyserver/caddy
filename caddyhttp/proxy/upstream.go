@@ -423,6 +423,10 @@ func (u *staticUpstream) GetTryInterval() time.Duration {
 	return u.TryInterval
 }
 
+func (u *staticUpstream) GetHostCount() int {
+	return len(u.Hosts)
+}
+
 // RegisterPolicy adds a custom policy to the proxy.
 func RegisterPolicy(name string, policy func() Policy) {
 	supportedPolicies[name] = policy
