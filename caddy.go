@@ -495,8 +495,8 @@ func startWithListenerFds(cdyfile Input, inst *Instance, restartFds map[string]r
 
 func ValidateCaddyFile(cdyfile Input, inst *Instance) (*Instance, error) {
 
+	//If parsing only inst will be nil, create an instance for this function call only.
 	if inst == nil {
-		log.Println("inst is nil")
 		inst = &Instance{serverType: cdyfile.ServerType(), wg: new(sync.WaitGroup)}
 	}
 
