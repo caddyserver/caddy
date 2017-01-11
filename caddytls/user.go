@@ -171,6 +171,6 @@ var stdin = io.ReadWriter(os.Stdin)
 // address was not provided; default 'username' if you will.
 const emptyEmail = "default"
 
-// TODO: After Boulder implements the 'meta' field of the directoy,
+// TODO: After Boulder implements the 'meta' field of the directory,
 // we can get this link dynamically.
 const saURL = "https://acme-v01.api.letsencrypt.org/terms"
