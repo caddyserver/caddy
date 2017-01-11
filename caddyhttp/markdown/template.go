@@ -27,13 +27,13 @@ func (d Data) Include(filename string) (string, error) {
 }
 
 // execTemplate executes a template given a requestPath, template, and metadata
-func execTemplate(c *Config, mdata metadata.Metadata, files []FileInfo, ctx httpserver.Context) ([]byte, error) {
+func execTemplate(c *Config, mdata metadata.Metadata, meta map[string]string, files []FileInfo, ctx httpserver.Context) ([]byte, error) {
 	mdData := Data{
 		Context: ctx,
 		Doc:     mdata.Variables,
 		Styles:  c.Styles,
 		Scripts: c.Scripts,
-		Meta:    mdata.Variables["meta"].(map[string]string),
+		Meta:    meta,
 		Files:   files,
 	}
 
