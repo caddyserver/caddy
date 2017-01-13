@@ -21,10 +21,12 @@ install:
   - go get -t ./...
   - go get github.com/golang/lint/golint
   - go get github.com/gordonklaus/ineffassign
+  - go get github.com/client9/misspell/cmd/misspell
 
 script:
   - diff <(echo -n) <(gofmt -s -d .)
   - ineffassign .
+  - misspell -error .
   - go vet ./...
   - go test -race ./...
 
