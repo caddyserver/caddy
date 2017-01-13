@@ -569,13 +569,11 @@ func executeDirectives(inst *Instance, filename string,
 						ServerBlockStorage:  storages[i][dir],
 					}
 
-					
 					setup, err := DirectiveAction(inst.serverType, dir)
 					if err != nil {
 						return err
 					}
 
-					
 					err = setup(controller)
 					if err != nil {
 						return err
@@ -587,17 +585,11 @@ func executeDirectives(inst *Instance, filename string,
 		}
 
 		if !justValidate {
-
 			// See if there are any callbacks to execute after this directive
 			if allCallbacks, ok := parsingCallbacks[inst.serverType]; ok {
-
-				log.Println("Before Callbacks%v", dir)
 				callbacks := allCallbacks[dir]
-				log.Println("%v", dir)
 				for _, callback := range callbacks {
 					if err := callback(inst.context); err != nil {
-
-						log.Println("error %v", inst.context)
 						return err
 					}
 				}
