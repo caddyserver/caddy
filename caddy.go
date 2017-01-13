@@ -433,7 +433,7 @@ func startWithListenerFds(cdyfile Input, inst *Instance, restartFds map[string]r
 		cdyfile = CaddyfileInput{}
 	}
 
-	_, err := ValidateCaddyFile(cdyfile, inst)
+	_, err := ValidateAndExecuteDirectives(cdyfile, inst, false)
 	if err != nil {
 		return err
 	}
@@ -493,10 +493,10 @@ func startWithListenerFds(cdyfile Input, inst *Instance, restartFds map[string]r
 	return nil
 }
 
-func ValidateCaddyFile(cdyfile Input, inst *Instance) (*Instance, error) {
+func ValidateAndExecuteDirectives(cdyfile Input, inst *Instance, justValidate bool) (*Instance, error) {
 
 	//If parsing only inst will be nil, create an instance for this function call only.
-	if inst == nil {
+	if justValidate {
 		inst = &Instance{serverType: cdyfile.ServerType(), wg: new(sync.WaitGroup)}
 	}
 
@@ -524,7 +524,7 @@ func ValidateCaddyFile(cdyfile Input, inst *Instance) (*Instance, error) {
 		return nil, err
 	}
 
-	err = executeDirectives(inst, cdyfile.Path(), stype.Directives(), sblocks)
+	err = executeDirectives(inst, cdyfile.Path(), stype.Directives(), sblocks, justValidate)
 	if err != nil {
 		return nil, err
 	}
@@ -534,8 +534,7 @@ func ValidateCaddyFile(cdyfile Input, inst *Instance) (*Instance, error) {
 }
 
 func executeDirectives(inst *Instance, filename string,
-	directives []string, sblocks []caddyfile.ServerBlock) error {
-
+	directives []string, sblocks []caddyfile.ServerBlock, justValidate bool) error {
 	// map of server block ID to map of directive name to whatever.
 	storages := make(map[int]map[string]interface{})
 
@@ -570,11 +569,13 @@ func executeDirectives(inst *Instance, filename string,
 						ServerBlockStorage:  storages[i][dir],
 					}
 
+					
 					setup, err := DirectiveAction(inst.serverType, dir)
 					if err != nil {
 						return err
 					}
 
+					
 					err = setup(controller)
 					if err != nil {
 						return err
@@ -585,12 +586,20 @@ func executeDirectives(inst *Instance, filename string,
 			}
 		}
 
-		// See if there are any callbacks to execute after this directive
-		if allCallbacks, ok := parsingCallbacks[inst.serverType]; ok {
-			callbacks := allCallbacks[dir]
-			for _, callback := range callbacks {
-				if err := callback(inst.context); err != nil {
-					return err
+		if !justValidate {
+
+			// See if there are any callbacks to execute after this directive
+			if allCallbacks, ok := parsingCallbacks[inst.serverType]; ok {
+
+				log.Println("Before Callbacks%v", dir)
+				callbacks := allCallbacks[dir]
+				log.Println("%v", dir)
+				for _, callback := range callbacks {
+					if err := callback(inst.context); err != nil {
+
+						log.Println("error %v", inst.context)
+						return err
+					}
 				}
 			}
 		}
