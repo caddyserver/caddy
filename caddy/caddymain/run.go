@@ -111,7 +111,6 @@ func Run() {
 			mustLogFatalf(err.Error())
 		}
 		log.Println("[INFO] Caddyfile Valid")
-		//Caddyfile is valid so exit without starting
 		os.Exit(0)
 	}
 

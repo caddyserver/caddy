@@ -357,7 +357,6 @@ type AfterStartup interface {
 // specify any default Caddyfile value, then an empty Caddyfile
 // is returned. Consequently, this function never returns a nil
 // value as long as there are no errors.
-//func LoadCaddyfile(serverType string, justValidate bool) (Input, error) {
 func LoadCaddyfile(serverType string) (Input, error) {
 	// Ask plugged-in loaders for a Caddyfile
 	cdyfile, err := loadCaddyfileInput(serverType)
@@ -495,7 +494,7 @@ func startWithListenerFds(cdyfile Input, inst *Instance, restartFds map[string]r
 
 func ValidateAndExecuteDirectives(cdyfile Input, inst *Instance, justValidate bool) (*Instance, error) {
 
-	//If parsing only inst will be nil, create an instance for this function call only.
+	// If parsing only inst will be nil, create an instance for this function call only.
 	if justValidate {
 		inst = &Instance{serverType: cdyfile.ServerType(), wg: new(sync.WaitGroup)}
 	}
