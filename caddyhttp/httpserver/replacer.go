@@ -252,7 +252,7 @@ func (r *replacer) getSubstitution(key string) string {
 		return url.QueryEscape(r.request.URL.RequestURI())
 	case "{when}":
 		return now().Format(timeFormat)
-	case "{whenISO}":
+	case "{when_iso}":
 		return now().UTC().Format(timeFormatISOUTC)
 	case "{file}":
 		_, file := path.Split(r.request.URL.Path)
