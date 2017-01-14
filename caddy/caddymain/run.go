@@ -40,6 +40,7 @@ func init() {
 	flag.StringVar(&revoke, "revoke", "", "Hostname for which to revoke the certificate")
 	flag.StringVar(&serverType, "type", "http", "Type of server to run")
 	flag.BoolVar(&version, "version", false, "Show version")
+	flag.BoolVar(&validate, "validate", false, "Parse the Caddyfile but do not start the server")
 
 	caddy.RegisterCaddyfileLoader("flag", caddy.LoaderFunc(confLoader))
 	caddy.SetDefaultCaddyfileLoader("default", caddy.LoaderFunc(defaultLoader))
@@ -74,7 +75,7 @@ func Run() {
 	if revoke != "" {
 		err := caddytls.Revoke(revoke)
 		if err != nil {
-			mustLogFatalf(err.Error())
+			mustLogFatalf("%v", err.Error())
 		}
 		fmt.Printf("Revoked certificate for %s\n", revoke)
 		os.Exit(0)
@@ -94,19 +95,29 @@ func Run() {
 	// Set CPU cap
 	err := setCPU(cpu)
 	if err != nil {
-		mustLogFatalf(err.Error())
+		mustLogFatalf("%v", err.Error())
 	}
 
 	// Get Caddyfile input
-	caddyfile, err := caddy.LoadCaddyfile(serverType)
+	caddyfileinput, err := caddy.LoadCaddyfile(serverType)
 	if err != nil {
-		mustLogFatalf(err.Error())
+		mustLogFatalf("%v", err.Error())
+	}
+
+	if validate {
+		justValidate := true
+		err := caddy.ValidateAndExecuteDirectives(caddyfileinput, nil, justValidate)
+		if err != nil {
+			mustLogFatalf("%v", err.Error())
+		}
+		log.Println("[INFO] Caddyfile Valid")
+		os.Exit(0)
 	}
 
 	// Start your engines
-	instance, err := caddy.Start(caddyfile)
+	instance, err := caddy.Start(caddyfileinput)
 	if err != nil {
-		mustLogFatalf(err.Error())
+		mustLogFatalf("%v", err.Error())
 	}
 
 	// Twiddle your thumbs
@@ -226,6 +237,7 @@ var (
 	revoke     string
 	version    bool
 	plugins    bool
+	validate   bool
 )
 
 // Build information obtained with the help of -ldflags
