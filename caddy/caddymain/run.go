@@ -106,7 +106,7 @@ func Run() {
 
 	if validate {
 		justValidate := true
-		_, err := caddy.ValidateAndExecuteDirectives(caddyfileinput, nil, justValidate)
+		err := caddy.ValidateAndExecuteDirectives(caddyfileinput, nil, justValidate)
 		if err != nil {
 			mustLogFatalf("%v", err.Error())
 		}

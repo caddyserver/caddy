@@ -432,7 +432,7 @@ func startWithListenerFds(cdyfile Input, inst *Instance, restartFds map[string]r
 		cdyfile = CaddyfileInput{}
 	}
 
-	_, err := ValidateAndExecuteDirectives(cdyfile, inst, false)
+	err := ValidateAndExecuteDirectives(cdyfile, inst, false)
 	if err != nil {
 		return err
 	}
@@ -492,7 +492,7 @@ func startWithListenerFds(cdyfile Input, inst *Instance, restartFds map[string]r
 	return nil
 }
 
-func ValidateAndExecuteDirectives(cdyfile Input, inst *Instance, justValidate bool) (*Instance, error) {
+func ValidateAndExecuteDirectives(cdyfile Input, inst *Instance, justValidate bool) error {
 
 	// If parsing only inst will be nil, create an instance for this function call only.
 	if justValidate {
@@ -503,32 +503,32 @@ func ValidateAndExecuteDirectives(cdyfile Input, inst *Instance, justValidate bo
 
 	stype, err := getServerType(stypeName)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	inst.caddyfileInput = cdyfile
 
 	sblocks, err := loadServerBlocks(stypeName, cdyfile.Path(), bytes.NewReader(cdyfile.Body()))
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	inst.context = stype.NewContext()
 	if inst.context == nil {
-		return nil, fmt.Errorf("server type %s produced a nil Context", stypeName)
+		return fmt.Errorf("server type %s produced a nil Context", stypeName)
 	}
 
 	sblocks, err = inst.context.InspectServerBlocks(cdyfile.Path(), sblocks)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	err = executeDirectives(inst, cdyfile.Path(), stype.Directives(), sblocks, justValidate)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return inst, nil
+	return nil
 
 }
 
