@@ -97,10 +97,10 @@ func Run() {
 		mustLogFatalf(err.Error())
 	}
 
-	// Execute Startup Hooks
+	// Execute plugins that are registered to run as the process starts
 	err = caddy.StartupHooks(serverType)
 	if err != nil {
-		mustLogFatalf(err.Error())
+		mustLogFatalf("%v", err)
 	}
 
 	// Get Caddyfile input
