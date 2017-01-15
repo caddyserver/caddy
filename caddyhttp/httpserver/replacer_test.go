@@ -53,6 +53,13 @@ func TestReplace(t *testing.T) {
 		t.Fatal("Failed to determine hostname\n")
 	}
 
+	old := now
+	now = func() time.Time {
+		return time.Date(2006, 1, 2, 15, 4, 5, 02, time.FixedZone("hardcoded", -7))
+	}
+	defer func() {
+		now = old
+	}()
 	testCases := []struct {
 		template string
 		expect   string
@@ -61,6 +68,8 @@ func TestReplace(t *testing.T) {
 		{"This host is {host}.", "This host is localhost."},
 		{"This request method is {method}.", "This request method is POST."},
 		{"The response status is {status}.", "The response status is 200."},
+		{"{when}", "02/Jan/2006:15:04:05 +0000"},
+		{"{when_iso}", "2006-01-02T15:04:12Z"},
 		{"The Custom header is {>Custom}.", "The Custom header is foobarbaz."},
 		{"The CustomAdd header is {>CustomAdd}.", "The CustomAdd header is caddy."},
 		{"The request is {request}.", "The request is POST / HTTP/1.1\\r\\nHost: localhost\\r\\nCustom: foobarbaz\\r\\nCustomadd: caddy\\r\\nShorterval: 1\\r\\n\\r\\n."},

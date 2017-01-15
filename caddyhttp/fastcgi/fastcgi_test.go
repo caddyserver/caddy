@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestServeHTTP(t *testing.T) {
@@ -28,8 +29,14 @@ func TestServeHTTP(t *testing.T) {
 
 	network, address := parseAddress(listener.Addr().String())
 	handler := Handler{
-		Next:  nil,
-		Rules: []Rule{{Path: "/", Address: listener.Addr().String(), dialer: basicDialer{network, address}}},
+		Next: nil,
+		Rules: []Rule{
+			{
+				Path:    "/",
+				Address: listener.Addr().String(),
+				dialer:  basicDialer{network: network, address: address},
+			},
+		},
 	}
 	r, err := http.NewRequest("GET", "/", nil)
 	if err != nil {
@@ -317,4 +324,127 @@ func TestBuildEnv(t *testing.T) {
 		t.Errorf("Error: Header Expected %v", internalRewriteFieldName)
 	}
 
+}
+
+func TestReadTimeout(t *testing.T) {
+	tests := []struct {
+		sleep       time.Duration
+		readTimeout time.Duration
+		shouldErr   bool
+	}{
+		{75 * time.Millisecond, 50 * time.Millisecond, true},
+		{0, -1 * time.Second, true},
+		{0, time.Minute, false},
+	}
+
+	var wg sync.WaitGroup
+
+	for i, test := range tests {
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("Test %d: Unable to create listener for test: %v", i, err)
+		}
+		defer listener.Close()
+
+		network, address := parseAddress(listener.Addr().String())
+		handler := Handler{
+			Next: nil,
+			Rules: []Rule{
+				{
+					Path:        "/",
+					Address:     listener.Addr().String(),
+					dialer:      basicDialer{network: network, address: address},
+					ReadTimeout: test.readTimeout,
+				},
+			},
+		}
+		r, err := http.NewRequest("GET", "/", nil)
+		if err != nil {
+			t.Fatalf("Test %d: Unable to create request: %v", i, err)
+		}
+		w := httptest.NewRecorder()
+
+		wg.Add(1)
+		go fcgi.Serve(listener, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			time.Sleep(test.sleep)
+			w.WriteHeader(http.StatusOK)
+			wg.Done()
+		}))
+
+		got, err := handler.ServeHTTP(w, r)
+		if test.shouldErr {
+			if err == nil {
+				t.Errorf("Test %d: Expected i/o timeout error but had none", i)
+			} else if err, ok := err.(net.Error); !ok || !err.Timeout() {
+				t.Errorf("Test %d: Expected i/o timeout error, got: '%s'", i, err.Error())
+			}
+
+			want := http.StatusGatewayTimeout
+			if got != want {
+				t.Errorf("Test %d: Expected returned status code to be %d, got: %d",
+					i, want, got)
+			}
+		} else if err != nil {
+			t.Errorf("Test %d: Expected nil error, got: %v", i, err)
+		}
+
+		wg.Wait()
+	}
+}
+
+func TestSendTimeout(t *testing.T) {
+	tests := []struct {
+		sendTimeout time.Duration
+		shouldErr   bool
+	}{
+		{-1 * time.Second, true},
+		{time.Minute, false},
+	}
+
+	for i, test := range tests {
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("Test %d: Unable to create listener for test: %v", i, err)
+		}
+		defer listener.Close()
+
+		network, address := parseAddress(listener.Addr().String())
+		handler := Handler{
+			Next: nil,
+			Rules: []Rule{
+				{
+					Path:        "/",
+					Address:     listener.Addr().String(),
+					dialer:      basicDialer{network: network, address: address},
+					SendTimeout: test.sendTimeout,
+				},
+			},
+		}
+		r, err := http.NewRequest("GET", "/", nil)
+		if err != nil {
+			t.Fatalf("Test %d: Unable to create request: %v", i, err)
+		}
+		w := httptest.NewRecorder()
+
+		go fcgi.Serve(listener, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+
+		got, err := handler.ServeHTTP(w, r)
+		if test.shouldErr {
+			if err == nil {
+				t.Errorf("Test %d: Expected i/o timeout error but had none", i)
+			} else if err, ok := err.(net.Error); !ok || !err.Timeout() {
+				t.Errorf("Test %d: Expected i/o timeout error, got: '%s'", i, err.Error())
+			}
+
+			want := http.StatusGatewayTimeout
+			if got != want {
+				t.Errorf("Test %d: Expected returned status code to be %d, got: %d",
+					i, want, got)
+			}
+		} else if err != nil {
+			t.Errorf("Test %d: Expected nil error, got: %v", i, err)
+		}
+	}
 }

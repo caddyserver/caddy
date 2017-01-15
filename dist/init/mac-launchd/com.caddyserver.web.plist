@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+    <dict>
+        <key>Label</key>
+        <string>com.caddyserver.web</string>
+        <key>EnvironmentVariables</key>
+        <dict>
+            <key>HOME</key>
+            <string>/Users/mathias</string>
+        </dict>
+        <key>ProgramArguments</key>
+        <array>
+            <string>sh</string>
+            <string>-c</string>
+            <string>ulimit -n 8192; cd /Users/mathias/Sites; ./caddy -agree -email my_email@domain.com -conf=/Users/mathias/Sites/Caddyfile</string>
+        </array>
+        <key>UserName</key>
+        <string>www</string>
+        <key>RunAtLoad</key>
+        <true/>
+        <key>KeepAlive</key>
+        <true/>
+        <key>WorkingDirectory</key>
+        <string>/Users/mathias/Sites</string>
+        <key>StandardOutPath</key>
+        <string>/Users/mathias/Sites/caddy.log</string>
+        <key>StandardErrorPath</key>
+        <string>/Users/mathias/Sites/caddy_error.log</string>
+    </dict>
+</plist>

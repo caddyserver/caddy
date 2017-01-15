@@ -12,8 +12,9 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/russross/blackfriday"
 	"os"
+
+	"github.com/russross/blackfriday"
 )
 
 // This file contains the context and functions available for
@@ -24,10 +25,12 @@ type Context struct {
 	Root http.FileSystem
 	Req  *http.Request
 	URL  *url.URL
+	Args []interface{} // defined by arguments to .Include
 }
 
 // Include returns the contents of filename relative to the site root.
-func (c Context) Include(filename string) (string, error) {
+func (c Context) Include(filename string, args ...interface{}) (string, error) {
+	c.Args = args
 	return ContextInclude(filename, c, c.Root)
 }
 
@@ -287,4 +290,34 @@ func (c Context) Map(values ...interface{}) (map[string]interface{}, error) {
 		dict[key] = values[i+1]
 	}
 	return dict, nil
+}
+
+// Files reads and returns a slice of names from the given directory
+// relative to the root of Context c.
+func (c Context) Files(name string) ([]string, error) {
+	dir, err := c.Root.Open(path.Clean(name))
+	if err != nil {
+		return nil, err
+	}
+	defer dir.Close()
+
+	stat, err := dir.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !stat.IsDir() {
+		return nil, fmt.Errorf("%v is not a directory", name)
+	}
+
+	dirInfo, err := dir.Readdir(0)
+	if err != nil {
+		return nil, err
+	}
+
+	names := make([]string, len(dirInfo))
+	for i, fileInfo := range dirInfo {
+		names[i] = fileInfo.Name()
+	}
+
+	return names, nil
 }

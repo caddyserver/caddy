@@ -16,32 +16,30 @@ import (
 )
 
 var (
-	supportedPolicies            = make(map[string]func() Policy)
-	warnedProxyHeaderDeprecation bool // TODO: Temporary, until proxy_header is removed entirely
+	supportedPolicies = make(map[string]func() Policy)
 )
 
 type staticUpstream struct {
-	from               string
-	upstreamHeaders    http.Header
-	downstreamHeaders  http.Header
-	Hosts              HostPool
-	Policy             Policy
-	KeepAlive          int
-	insecureSkipVerify bool
-
-	FailTimeout time.Duration
-	MaxFails    int32
-	TryDuration time.Duration
-	TryInterval time.Duration
-	MaxConns    int64
-	HealthCheck struct {
+	from              string
+	upstreamHeaders   http.Header
+	downstreamHeaders http.Header
+	Hosts             HostPool
+	Policy            Policy
+	KeepAlive         int
+	FailTimeout       time.Duration
+	TryDuration       time.Duration
+	TryInterval       time.Duration
+	MaxConns          int64
+	HealthCheck       struct {
 		Client   http.Client
 		Path     string
 		Interval time.Duration
 		Timeout  time.Duration
 	}
-	WithoutPathPrefix string
-	IgnoredSubPaths   []string
+	WithoutPathPrefix  string
+	IgnoredSubPaths    []string
+	insecureSkipVerify bool
+	MaxFails           int32
 }
 
 // NewStaticUpstreams parses the configuration input and sets up
@@ -297,22 +295,22 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream) error {
 			return err
 		}
 		u.HealthCheck.Timeout = dur
-	case "proxy_header": // TODO: deprecate this shortly after 0.9
-		if !warnedProxyHeaderDeprecation {
-			fmt.Println("WARNING: proxy_header is deprecated and will be removed soon; use header_upstream instead.")
-			warnedProxyHeaderDeprecation = true
-		}
-		fallthrough
 	case "header_upstream":
 		var header, value string
 		if !c.Args(&header, &value) {
-			return c.ArgErr()
+			// When removing a header, the value can be optional.
+			if !strings.HasPrefix(header, "-") {
+				return c.ArgErr()
+			}
 		}
 		u.upstreamHeaders.Add(header, value)
 	case "header_downstream":
 		var header, value string
 		if !c.Args(&header, &value) {
-			return c.ArgErr()
+			// When removing a header, the value can be optional.
+			if !strings.HasPrefix(header, "-") {
+				return c.ArgErr()
+			}
 		}
 		u.downstreamHeaders.Add(header, value)
 	case "transparent":
@@ -423,6 +421,10 @@ func (u *staticUpstream) GetTryDuration() time.Duration {
 // GetTryInterval returns u.TryInterval.
 func (u *staticUpstream) GetTryInterval() time.Duration {
 	return u.TryInterval
+}
+
+func (u *staticUpstream) GetHostCount() int {
+	return len(u.Hosts)
 }
 
 // RegisterPolicy adds a custom policy to the proxy.

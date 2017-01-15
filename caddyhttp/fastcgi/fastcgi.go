@@ -6,12 +6,14 @@ package fastcgi
 import (
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
@@ -79,8 +81,14 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			// Connect to FastCGI gateway
 			fcgiBackend, err := rule.dialer.Dial()
 			if err != nil {
+				if err, ok := err.(net.Error); ok && err.Timeout() {
+					return http.StatusGatewayTimeout, err
+				}
 				return http.StatusBadGateway, err
 			}
+			defer fcgiBackend.Close()
+			fcgiBackend.SetReadTimeout(rule.ReadTimeout)
+			fcgiBackend.SetSendTimeout(rule.SendTimeout)
 
 			var resp *http.Response
 			contentLength, _ := strconv.Atoi(r.Header.Get("Content-Length"))
@@ -95,8 +103,12 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 				resp, err = fcgiBackend.Post(env, r.Method, r.Header.Get("Content-Type"), r.Body, contentLength)
 			}
 
-			if err != nil && err != io.EOF {
-				return http.StatusBadGateway, err
+			if err != nil {
+				if err, ok := err.(net.Error); ok && err.Timeout() {
+					return http.StatusGatewayTimeout, err
+				} else if err != io.EOF {
+					return http.StatusBadGateway, err
+				}
 			}
 
 			// Write response header
@@ -108,12 +120,10 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 				return http.StatusBadGateway, err
 			}
 
-			defer rule.dialer.Close(fcgiBackend)
-
 			// Log any stderr output from upstream
-			if fcgiBackend.stderr.Len() != 0 {
+			if stderr := fcgiBackend.StdErr(); stderr.Len() != 0 {
 				// Remove trailing newline, error logger already does this.
-				err = LogError(strings.TrimSuffix(fcgiBackend.stderr.String(), "\n"))
+				err = LogError(strings.TrimSuffix(stderr.String(), "\n"))
 			}
 
 			// Normally we would return the status code if it is an error status (>= 400),
@@ -300,6 +310,12 @@ type Rule struct {
 
 	// Ignored paths
 	IgnoredSubPaths []string
+
+	// The duration used to set a deadline when reading from the FastCGI server.
+	ReadTimeout time.Duration
+
+	// The duration used to set a deadline when sending to the FastCGI server.
+	SendTimeout time.Duration
 
 	// FCGI dialer
 	dialer dialer

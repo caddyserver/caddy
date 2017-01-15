@@ -27,17 +27,13 @@ type Metadata struct {
 	Date time.Time
 
 	// Variables to be used with Template
-	Variables map[string]string
-
-	// Flags to be used with Template
-	Flags map[string]bool
+	Variables map[string]interface{}
 }
 
 // NewMetadata returns a new Metadata struct, loaded with the given map
 func NewMetadata(parsedMap map[string]interface{}) Metadata {
 	md := Metadata{
-		Variables: make(map[string]string),
-		Flags:     make(map[string]bool),
+		Variables: make(map[string]interface{}),
 	}
 	md.load(parsedMap)
 
@@ -63,15 +59,7 @@ func (m *Metadata) load(parsedMap map[string]interface{}) {
 		}
 	}
 
-	// Store everything as a flag or variable
-	for key, val := range parsedMap {
-		switch v := val.(type) {
-		case bool:
-			m.Flags[key] = v
-		case string:
-			m.Variables[key] = v
-		}
-	}
+	m.Variables = parsedMap
 }
 
 // Parser is a an interface that must be satisfied by each parser

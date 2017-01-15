@@ -393,6 +393,7 @@ var directives = []string{
 	// primitive actions that set up the fundamental vitals of each config
 	"root",
 	"bind",
+	"maxrequestbody",
 	"tls",
 
 	// services/utilities, or other directives that don't necessarily inject handlers
@@ -407,13 +408,14 @@ var directives = []string{
 	"rewrite",
 	"ext",
 	"gzip",
+	"header",
 	"errors",
+	"filter",    // github.com/echocat/caddy-filter
 	"minify",    // github.com/hacdias/caddy-minify
 	"ipfilter",  // github.com/pyed/ipfilter
 	"ratelimit", // github.com/xuqingfeng/caddy-rate-limit
 	"search",    // github.com/pedronasser/caddy-search
-	"header",
-	"expires", // github.com/epicagency/caddy-expires
+	"expires",   // github.com/epicagency/caddy-expires
 	"basicauth",
 	"redir",
 	"status",
@@ -430,14 +432,13 @@ var directives = []string{
 	"proxy",
 	"fastcgi",
 	"websocket",
+	"filemanager", // github.com/hacdias/caddy-filemanager
 	"markdown",
 	"templates",
 	"browse",
-	"filemanager", // github.com/hacdias/caddy-filemanager
-	"hugo",        // github.com/hacdias/caddy-hugo
-	"mailout",     // github.com/SchumacherFM/mailout
-	"awslambda",   // github.com/coopernurse/caddy-awslambda
-	"filter",      // github.com/echocat/caddy-filter
+	"hugo",      // github.com/hacdias/caddy-hugo
+	"mailout",   // github.com/SchumacherFM/mailout
+	"awslambda", // github.com/coopernurse/caddy-awslambda
 }
 
 const (

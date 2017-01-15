@@ -6,13 +6,15 @@ Wants=network-online.target systemd-networkd-wait-online.service
 
 [Service]
 Restart=on-failure
+StartLimitInterval=86400
+StartLimitBurst=5
 
 ; User and group the process will run as.
 User=www-data
 Group=www-data
 
 ; Letsencrypt-issued certificates will be written to this directory.
-Environment=HOME=/etc/ssl/caddy
+Environment=CADDYPATH=/etc/ssl/caddy
 
 ; Always set "-root" to something safe in case it gets forgotten in the Caddyfile.
 ExecStart=/usr/local/bin/caddy -log stdout -agree=true -conf=/etc/caddy/Caddyfile -root=/var/tmp

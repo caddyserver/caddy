@@ -69,6 +69,30 @@ func DescribePlugins() string {
 	return str
 }
 
+// StartupHooks executes the startup hooks defined when the
+// plugins were registered and returns the first error
+// it encounters.
+func StartupHooks(serverType string) error {
+	for stype, stypePlugins := range plugins {
+		if stype != "" && stype != serverType {
+			continue
+		}
+
+		for name := range stypePlugins {
+			if stypePlugins[name].StartupHook == nil {
+				continue
+			}
+
+			err := stypePlugins[name].StartupHook()
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
 // ValidDirectives returns the list of all directives that are
 // recognized for the server type serverType. However, not all
 // directives may be installed. This makes it possible to give
@@ -176,6 +200,10 @@ type Plugin struct {
 	// Action is the plugin's setup function, if associated
 	// with a directive in the Caddyfile.
 	Action SetupFunc
+
+	// StartupHook is the plugin's function that is executed
+	// immediately after the flag parsing.
+	StartupHook func() error
 }
 
 // RegisterPlugin plugs in plugin. All plugins should register

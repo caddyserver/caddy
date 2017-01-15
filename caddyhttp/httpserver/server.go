@@ -4,11 +4,11 @@ package httpserver
 import (
 	"crypto/tls"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
 	"os"
-	"path"
 	"runtime"
 	"strings"
 	"sync"
@@ -235,7 +235,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 	if vhost == nil {
 		// check for ACME challenge even if vhost is nil;
 		// could be a new host coming online soon
-		if caddytls.HTTPChallengeHandler(w, r, caddytls.DefaultHTTPAlternatePort) {
+		if caddytls.HTTPChallengeHandler(w, r, "localhost", caddytls.DefaultHTTPAlternatePort) {
 			return 0, nil
 		}
 		// otherwise, log the error and write a message to the client
@@ -265,6 +265,19 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 		}
 	}
 
+	// Apply the path-based request body size limit
+	// The error returned by MaxBytesReader is meant to be handled
+	// by whichever middleware/plugin that receives it when calling
+	// .Read() or a similar method on the request body
+	if r.Body != nil {
+		for _, pathlimit := range vhost.MaxRequestBodySizes {
+			if Path(r.URL.Path).Matches(pathlimit.Path) {
+				r.Body = MaxBytesReader(w, r.Body, pathlimit.Limit)
+				break
+			}
+		}
+	}
+
 	return vhost.middlewareChain.ServeHTTP(w, r)
 }
 
@@ -283,7 +296,7 @@ func (s *Server) proxyHTTPChallenge(vhost *SiteConfig, w http.ResponseWriter, r 
 	if vhost.TLS != nil && vhost.TLS.AltHTTPPort != "" {
 		altPort = vhost.TLS.AltHTTPPort
 	}
-	return caddytls.HTTPChallengeHandler(w, r, altPort)
+	return caddytls.HTTPChallengeHandler(w, r, vhost.ListenHost, altPort)
 }
 
 // Address returns the address s was assigned to listen on.
@@ -337,7 +350,7 @@ func sanitizePath(r *http.Request) {
 	if r.URL.Path == "/" {
 		return
 	}
-	cleanedPath := path.Clean(r.URL.Path)
+	cleanedPath := CleanPath(r.URL.Path)
 	if cleanedPath == "." {
 		r.URL.Path = "/"
 	} else {
@@ -363,6 +376,7 @@ func (s *Server) OnStartupComplete() {
 			output += " (only accessible on this machine)"
 		}
 		fmt.Println(output)
+		log.Println(output)
 	}
 }
 
@@ -390,6 +404,74 @@ func (ln tcpKeepAliveListener) Accept() (c net.Conn, err error) {
 // File implements caddy.Listener; it returns the underlying file of the listener.
 func (ln tcpKeepAliveListener) File() (*os.File, error) {
 	return ln.TCPListener.File()
+}
+
+// MaxBytesExceeded is the error type returned by MaxBytesReader
+// when the request body exceeds the limit imposed
+type MaxBytesExceeded struct{}
+
+func (err MaxBytesExceeded) Error() string {
+	return "http: request body too large"
+}
+
+// MaxBytesReader and its associated methods are borrowed from the
+// Go Standard library (comments intact). The only difference is that
+// it returns a MaxBytesExceeded error instead of a generic error message
+// when the request body has exceeded the requested limit
+func MaxBytesReader(w http.ResponseWriter, r io.ReadCloser, n int64) io.ReadCloser {
+	return &maxBytesReader{w: w, r: r, n: n}
+}
+
+type maxBytesReader struct {
+	w   http.ResponseWriter
+	r   io.ReadCloser // underlying reader
+	n   int64         // max bytes remaining
+	err error         // sticky error
+}
+
+func (l *maxBytesReader) Read(p []byte) (n int, err error) {
+	if l.err != nil {
+		return 0, l.err
+	}
+	if len(p) == 0 {
+		return 0, nil
+	}
+	// If they asked for a 32KB byte read but only 5 bytes are
+	// remaining, no need to read 32KB. 6 bytes will answer the
+	// question of the whether we hit the limit or go past it.
+	if int64(len(p)) > l.n+1 {
+		p = p[:l.n+1]
+	}
+	n, err = l.r.Read(p)
+
+	if int64(n) <= l.n {
+		l.n -= int64(n)
+		l.err = err
+		return n, err
+	}
+
+	n = int(l.n)
+	l.n = 0
+
+	// The server code and client code both use
+	// maxBytesReader. This "requestTooLarge" check is
+	// only used by the server code. To prevent binaries
+	// which only using the HTTP Client code (such as
+	// cmd/go) from also linking in the HTTP server, don't
+	// use a static type assertion to the server
+	// "*response" type. Check this interface instead:
+	type requestTooLarger interface {
+		requestTooLarge()
+	}
+	if res, ok := l.w.(requestTooLarger); ok {
+		res.requestTooLarge()
+	}
+	l.err = MaxBytesExceeded{}
+	return n, l.err
+}
+
+func (l *maxBytesReader) Close() error {
+	return l.r.Close()
 }
 
 // DefaultErrorFunc responds to an HTTP request with a simple description

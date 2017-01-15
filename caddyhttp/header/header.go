@@ -26,15 +26,21 @@ func (h Headers) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 	rww := &responseWriterWrapper{w: w}
 	for _, rule := range h.Rules {
 		if httpserver.Path(r.URL.Path).Matches(rule.Path) {
-			for _, header := range rule.Headers {
+			for name := range rule.Headers {
+
 				// One can either delete a header, add multiple values to a header, or simply
 				// set a header.
-				if strings.HasPrefix(header.Name, "-") {
-					rww.delHeader(strings.TrimLeft(header.Name, "-"))
-				} else if strings.HasPrefix(header.Name, "+") {
-					rww.addHeader(strings.TrimLeft(header.Name, "+"), replacer.Replace(header.Value))
+
+				if strings.HasPrefix(name, "-") {
+					rww.delHeader(strings.TrimLeft(name, "-"))
+				} else if strings.HasPrefix(name, "+") {
+					for _, value := range rule.Headers[name] {
+						rww.Header().Add(strings.TrimLeft(name, "+"), replacer.Replace(value))
+					}
 				} else {
-					rww.setHeader(header.Name, replacer.Replace(header.Value))
+					for _, value := range rule.Headers[name] {
+						rww.Header().Set(name, replacer.Replace(value))
+					}
 				}
 			}
 		}
@@ -44,16 +50,9 @@ func (h Headers) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 
 type (
 	// Rule groups a slice of HTTP headers by a URL pattern.
-	// TODO: use http.Header type instead?
 	Rule struct {
 		Path    string
-		Headers []Header
-	}
-
-	// Header represents a single HTTP header, simply a name and value.
-	Header struct {
-		Name  string
-		Value string
+		Headers http.Header
 	}
 )
 
@@ -95,24 +94,15 @@ func (rww *responseWriterWrapper) WriteHeader(status int) {
 	rww.w.WriteHeader(status)
 }
 
-// addHeader registers a http.Header.Add operation
-func (rww *responseWriterWrapper) addHeader(key, value string) {
-	rww.ops = append(rww.ops, func(h http.Header) {
-		h.Add(key, value)
-	})
-}
-
-// delHeader registers a http.Header.Del operation
+// delHeader deletes the existing header according to the key
+// Also it will delete that header added later.
 func (rww *responseWriterWrapper) delHeader(key string) {
+	// remove the existing one if any
+	rww.Header().Del(key)
+
+	// register a future deletion
 	rww.ops = append(rww.ops, func(h http.Header) {
 		h.Del(key)
-	})
-}
-
-// setHeader registers a http.Header.Set operation
-func (rww *responseWriterWrapper) setHeader(key, value string) {
-	rww.ops = append(rww.ops, func(h http.Header) {
-		h.Set(key, value)
 	})
 }
 
@@ -123,4 +113,24 @@ func (rww *responseWriterWrapper) Hijack() (net.Conn, *bufio.ReadWriter, error) 
 		return hj.Hijack()
 	}
 	return nil, nil, httpserver.NonHijackerError{Underlying: rww.w}
+}
+
+// Flush implements http.Flusher. It simply wraps the underlying
+// ResponseWriter's Flush method if there is one, or panics.
+func (rww *responseWriterWrapper) Flush() {
+	if f, ok := rww.w.(http.Flusher); ok {
+		f.Flush()
+	} else {
+		panic(httpserver.NonFlusherError{Underlying: rww.w}) // should be recovered at the beginning of middleware stack
+	}
+}
+
+// CloseNotify implements http.CloseNotifier.
+// It just inherits the underlying ResponseWriter's CloseNotify method.
+// It panics if the underlying ResponseWriter is not a CloseNotifier.
+func (rww *responseWriterWrapper) CloseNotify() <-chan bool {
+	if cn, ok := rww.w.(http.CloseNotifier); ok {
+		return cn.CloseNotify()
+	}
+	panic(httpserver.NonCloseNotifierError{Underlying: rww.w})
 }

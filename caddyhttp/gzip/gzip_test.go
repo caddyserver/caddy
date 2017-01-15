@@ -91,9 +91,6 @@ func nextFunc(shouldGzip bool) httpserver.Handler {
 		}
 
 		if shouldGzip {
-			if r.Header.Get("Accept-Encoding") != "" {
-				return 0, fmt.Errorf("Accept-Encoding header not expected")
-			}
 			if w.Header().Get("Content-Encoding") != "gzip" {
 				return 0, fmt.Errorf("Content-Encoding must be gzip, found %v", r.Header.Get("Content-Encoding"))
 			}
@@ -104,7 +101,7 @@ func nextFunc(shouldGzip bool) httpserver.Handler {
 				return 0, fmt.Errorf("ResponseWriter should be gzipResponseWriter, found %T", w)
 			}
 			if strings.Contains(w.Header().Get("Content-Type"), "application/x-gzip") {
-				return 0, fmt.Errorf("Content type should not be gzip.")
+				return 0, fmt.Errorf("Content-Type should not be gzip")
 			}
 			return 0, nil
 		}

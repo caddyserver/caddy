@@ -144,7 +144,7 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Content-Length", strconv.FormatInt(int64(len(html)), 10))
+	w.Header().Set("Content-Length", strconv.Itoa(len(html)))
 	httpserver.SetLastModifiedHeader(w, lastModTime)
 	if r.Method == http.MethodGet {
 		w.Write(html)

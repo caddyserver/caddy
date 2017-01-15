@@ -1,5 +1,22 @@
 CHANGES
 
+0.9.4 (December 21, 2016)
+- Updated QUIC
+- New maxrequestbody directive to limit size of request body
+- New {latency_ms} placeholder for latency always in ms
+- Serve statically compressed .gz and .br files
+- fastcgi: Support for multiple backends with basic load balancing
+- proxy: Fixed handling of encoded 'without' paths
+- proxy: Preserve trailing slash if present in request
+- proxy: Fix HTTP/2 upstreams
+- templates: New .Files action to list files in a directory
+- templates: .Include can now pass arguments to included file
+- tls: Added ability to customize preferred curves
+- tls: Added support for Must-Staple on managed certificates
+- tls: Fixed subtle edge case bug with TLS-SNI challenge
+- Lots of minor fixes and improvements
+
+
 0.9.3 (September 28, 2016)
 - Updated QUIC to newer version
 - import: Glob pattern matching 0 files is no longer an error

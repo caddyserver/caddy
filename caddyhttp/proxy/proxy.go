@@ -39,6 +39,9 @@ type Upstream interface {
 	// Gets how long to wait between selecting upstream
 	// hosts in the case of cascading failures.
 	GetTryInterval() time.Duration
+
+	// Gets the number of upstream hosts.
+	GetHostCount() int
 }
 
 // UpstreamHostDownFunc can be used to customize how Down behaves.
@@ -46,17 +49,17 @@ type UpstreamHostDownFunc func(*UpstreamHost) bool
 
 // UpstreamHost represents a single proxy upstream
 type UpstreamHost struct {
-	Conns             int64  // must be first field to be 64-bit aligned on 32-bit systems
+	Conns             int64 // must be first field to be 64-bit aligned on 32-bit systems
+	MaxConns          int64
 	Name              string // hostname of this upstream host
-	ReverseProxy      *ReverseProxy
-	Fails             int32
-	FailTimeout       time.Duration
-	Unhealthy         bool
 	UpstreamHeaders   http.Header
 	DownstreamHeaders http.Header
+	FailTimeout       time.Duration
 	CheckDown         UpstreamHostDownFunc
 	WithoutPathPrefix string
-	MaxConns          int64
+	ReverseProxy      *ReverseProxy
+	Fails             int32
+	Unhealthy         bool
 }
 
 // Down checks whether the upstream host is down or not.
@@ -93,6 +96,28 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 
 	// outreq is the request that makes a roundtrip to the backend
 	outreq := createUpstreamRequest(r)
+
+	// If we have more than one upstream host defined and if retrying is enabled
+	// by setting try_duration to a non-zero value, caddy will try to
+	// retry the request at a different host if the first one failed.
+	//
+	// This requires us to possibly rewind and replay the request body though,
+	// which in turn requires us to buffer the request body first.
+	//
+	// An unbuffered request is usually preferrable, because it reduces latency
+	// as well as memory usage. Furthermore it enables different kinds of
+	// HTTP streaming applications like gRPC for instance.
+	requiresBuffering := upstream.GetHostCount() > 1 && upstream.GetTryDuration() != 0
+
+	if requiresBuffering {
+		body, err := newBufferedBody(outreq.Body)
+		if err != nil {
+			return http.StatusBadRequest, errors.New("failed to read downstream request body")
+		}
+		if body != nil {
+			outreq.Body = body
+		}
+	}
 
 	// The keepRetrying function will return true if we should
 	// loop and try to select another host, or false if we
@@ -164,14 +189,33 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			downHeaderUpdateFn = createRespHeaderUpdateFn(host.DownstreamHeaders, replacer)
 		}
 
+		// Before we retry the request we have to make sure
+		// that the body is rewound to it's beginning.
+		if bb, ok := outreq.Body.(*bufferedBody); ok {
+			if err := bb.rewind(); err != nil {
+				return http.StatusInternalServerError, errors.New("unable to rewind downstream request body")
+			}
+		}
+
 		// tell the proxy to serve the request
-		atomic.AddInt64(&host.Conns, 1)
-		backendErr = proxy.ServeHTTP(w, outreq, downHeaderUpdateFn)
-		atomic.AddInt64(&host.Conns, -1)
+		//
+		// NOTE:
+		//   The call to proxy.ServeHTTP can theoretically panic.
+		//   To prevent host.Conns from getting out-of-sync we thus have to
+		//   make sure that it's _always_ correctly decremented afterwards.
+		func() {
+			atomic.AddInt64(&host.Conns, 1)
+			defer atomic.AddInt64(&host.Conns, -1)
+			backendErr = proxy.ServeHTTP(w, outreq, downHeaderUpdateFn)
+		}()
 
 		// if no errors, we're done here
 		if backendErr == nil {
 			return 0, nil
+		}
+
+		if _, ok := backendErr.(httpserver.MaxBytesExceeded); ok {
+			return http.StatusRequestEntityTooLarge, backendErr
 		}
 
 		// failover; remember this failure for some time if
@@ -218,18 +262,39 @@ func (p Proxy) match(r *http.Request) Upstream {
 func createUpstreamRequest(r *http.Request) *http.Request {
 	outreq := new(http.Request)
 	*outreq = *r // includes shallow copies of maps, but okay
+	// We should set body to nil explicitly if request body is empty.
+	// For server requests the Request Body is always non-nil.
+	if r.ContentLength == 0 {
+		outreq.Body = nil
+	}
 
 	// Restore URL Path if it has been modified
 	if outreq.URL.RawPath != "" {
 		outreq.URL.Opaque = outreq.URL.RawPath
 	}
 
+	// We are modifying the same underlying map from req (shallow
+	// copied above) so we only copy it if necessary.
+	copiedHeaders := false
+
+	// Remove hop-by-hop headers listed in the "Connection" header.
+	// See RFC 2616, section 14.10.
+	if c := outreq.Header.Get("Connection"); c != "" {
+		for _, f := range strings.Split(c, ",") {
+			if f = strings.TrimSpace(f); f != "" {
+				if !copiedHeaders {
+					outreq.Header = make(http.Header)
+					copyHeader(outreq.Header, r.Header)
+					copiedHeaders = true
+				}
+				outreq.Header.Del(f)
+			}
+		}
+	}
+
 	// Remove hop-by-hop headers to the backend. Especially
 	// important is "Connection" because we want a persistent
-	// connection, regardless of what the client sent to us. This
-	// is modifying the same underlying map from r (shallow
-	// copied above) so we only copy it if necessary.
-	var copiedHeaders bool
+	// connection, regardless of what the client sent to us.
 	for _, h := range hopHeaders {
 		if outreq.Header.Get(h) != "" {
 			if !copiedHeaders {
@@ -264,12 +329,18 @@ func mutateHeadersByRules(headers, rules http.Header, repl httpserver.Replacer) 
 	for ruleField, ruleValues := range rules {
 		if strings.HasPrefix(ruleField, "+") {
 			for _, ruleValue := range ruleValues {
-				headers.Add(strings.TrimPrefix(ruleField, "+"), repl.Replace(ruleValue))
+				replacement := repl.Replace(ruleValue)
+				if len(replacement) > 0 {
+					headers.Add(strings.TrimPrefix(ruleField, "+"), replacement)
+				}
 			}
 		} else if strings.HasPrefix(ruleField, "-") {
 			headers.Del(strings.TrimPrefix(ruleField, "-"))
 		} else if len(ruleValues) > 0 {
-			headers.Set(ruleField, repl.Replace(ruleValues[len(ruleValues)-1]))
+			replacement := repl.Replace(ruleValues[len(ruleValues)-1])
+			if len(replacement) > 0 {
+				headers.Set(ruleField, replacement)
+			}
 		}
 	}
 }
