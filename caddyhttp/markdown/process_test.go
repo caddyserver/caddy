@@ -30,7 +30,7 @@ func TestConfig_Markdown(t *testing.T) {
 		toml = toml + "\n+++"
 
 		res, _ := config.Markdown("Test title", strings.NewReader(toml), []os.FileInfo{}, httpserver.Context{})
-		sRes := string(res[:])
+		sRes := string(res)
 
 		for key, val := range meta {
 			c := strings.Contains(sRes, "<meta name=\""+key+"\" content=\""+val+"\">")
