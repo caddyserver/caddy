@@ -432,31 +432,7 @@ func startWithListenerFds(cdyfile Input, inst *Instance, restartFds map[string]r
 		cdyfile = CaddyfileInput{}
 	}
 
-	stypeName := cdyfile.ServerType()
-
-	stype, err := getServerType(stypeName)
-	if err != nil {
-		return err
-	}
-
-	inst.caddyfileInput = cdyfile
-
-	sblocks, err := loadServerBlocks(stypeName, cdyfile.Path(), bytes.NewReader(cdyfile.Body()))
-	if err != nil {
-		return err
-	}
-
-	inst.context = stype.NewContext()
-	if inst.context == nil {
-		return fmt.Errorf("server type %s produced a nil Context", stypeName)
-	}
-
-	sblocks, err = inst.context.InspectServerBlocks(cdyfile.Path(), sblocks)
-	if err != nil {
-		return err
-	}
-
-	err = executeDirectives(inst, cdyfile.Path(), stype.Directives(), sblocks)
+	err := ValidateAndExecuteDirectives(cdyfile, inst, false)
 	if err != nil {
 		return err
 	}
@@ -516,9 +492,48 @@ func startWithListenerFds(cdyfile Input, inst *Instance, restartFds map[string]r
 	return nil
 }
 
-func executeDirectives(inst *Instance, filename string,
-	directives []string, sblocks []caddyfile.ServerBlock) error {
+func ValidateAndExecuteDirectives(cdyfile Input, inst *Instance, justValidate bool) error {
 
+	// If parsing only inst will be nil, create an instance for this function call only.
+	if justValidate {
+		inst = &Instance{serverType: cdyfile.ServerType(), wg: new(sync.WaitGroup)}
+	}
+
+	stypeName := cdyfile.ServerType()
+
+	stype, err := getServerType(stypeName)
+	if err != nil {
+		return err
+	}
+
+	inst.caddyfileInput = cdyfile
+
+	sblocks, err := loadServerBlocks(stypeName, cdyfile.Path(), bytes.NewReader(cdyfile.Body()))
+	if err != nil {
+		return err
+	}
+
+	inst.context = stype.NewContext()
+	if inst.context == nil {
+		return fmt.Errorf("server type %s produced a nil Context", stypeName)
+	}
+
+	sblocks, err = inst.context.InspectServerBlocks(cdyfile.Path(), sblocks)
+	if err != nil {
+		return err
+	}
+
+	err = executeDirectives(inst, cdyfile.Path(), stype.Directives(), sblocks, justValidate)
+	if err != nil {
+		return err
+	}
+
+	return nil
+
+}
+
+func executeDirectives(inst *Instance, filename string,
+	directives []string, sblocks []caddyfile.ServerBlock, justValidate bool) error {
 	// map of server block ID to map of directive name to whatever.
 	storages := make(map[int]map[string]interface{})
 
@@ -568,12 +583,14 @@ func executeDirectives(inst *Instance, filename string,
 			}
 		}
 
-		// See if there are any callbacks to execute after this directive
-		if allCallbacks, ok := parsingCallbacks[inst.serverType]; ok {
-			callbacks := allCallbacks[dir]
-			for _, callback := range callbacks {
-				if err := callback(inst.context); err != nil {
-					return err
+		if !justValidate {
+			// See if there are any callbacks to execute after this directive
+			if allCallbacks, ok := parsingCallbacks[inst.serverType]; ok {
+				callbacks := allCallbacks[dir]
+				for _, callback := range callbacks {
+					if err := callback(inst.context); err != nil {
+						return err
+					}
 				}
 			}
 		}
@@ -750,7 +767,7 @@ func Upgrade() error {
 }
 
 // IsUpgrade returns true if this process is part of an upgrade
-// where a parent caddy process spawned this one to ugprade
+// where a parent caddy process spawned this one to upgrade
 // the binary.
 func IsUpgrade() bool {
 	mu.Lock()
