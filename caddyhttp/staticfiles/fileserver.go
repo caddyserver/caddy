@@ -90,9 +90,7 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request, name stri
 			if err != nil {
 				return http.StatusInternalServerError, err
 			}
-			if !strings.HasSuffix(redirURL.Path, "/") {
-				redirURL.Path = redirURL.Path + "/"
-			}
+			redirURL.Path += "/"
 			toURL := r.URL.ResolveReference(redirURL)
 
 			http.Redirect(w, r, toURL.String(), http.StatusMovedPermanently)

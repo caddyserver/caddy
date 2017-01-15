@@ -266,6 +266,9 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 		}
 	}
 
+	// URL fields other than Path and RawQuery will be empty for most server
+	// requests. Hence, the request URL is updated with the scheme and host
+	// from the virtual host's site address.
 	if vhostURL, err := url.Parse(vhost.Addr.String()); err == nil {
 		r.URL.Scheme = vhostURL.Scheme
 		r.URL.Host = vhostURL.Host
