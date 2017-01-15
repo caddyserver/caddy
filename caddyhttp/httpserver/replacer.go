@@ -23,6 +23,8 @@ var requestReplacer = strings.NewReplacer(
 	"\n", "\\n",
 )
 
+var now = time.Now
+
 // Replacer is a type which can replace placeholder
 // substrings in a string with actual values from a
 // http.Request and ResponseRecorder. Always use
@@ -249,7 +251,9 @@ func (r *replacer) getSubstitution(key string) string {
 	case "{uri_escaped}":
 		return url.QueryEscape(r.request.URL.RequestURI())
 	case "{when}":
-		return time.Now().Format(timeFormat)
+		return now().Format(timeFormat)
+	case "{when_iso}":
+		return now().UTC().Format(timeFormatISOUTC)
 	case "{file}":
 		_, file := path.Split(r.request.URL.Path)
 		return file
@@ -311,6 +315,7 @@ func (r *replacer) Set(key, value string) {
 
 const (
 	timeFormat        = "02/Jan/2006:15:04:05 -0700"
+	timeFormatISOUTC  = "2006-01-02T15:04:05Z" // ISO 8601 with timezone to be assumed as UTC
 	headerContentType = "Content-Type"
 	contentTypeJSON   = "application/json"
 	contentTypeXML    = "application/xml"
