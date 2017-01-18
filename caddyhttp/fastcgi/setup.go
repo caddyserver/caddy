@@ -22,10 +22,6 @@ func init() {
 // setup configures a new FastCGI middleware instance.
 func setup(c *caddy.Controller) error {
 	cfg := httpserver.GetConfig(c)
-	absRoot, err := filepath.Abs(cfg.Root)
-	if err != nil {
-		return err
-	}
 
 	rules, err := fastcgiParse(c)
 	if err != nil {
@@ -37,7 +33,6 @@ func setup(c *caddy.Controller) error {
 			Next:            next,
 			Rules:           rules,
 			Root:            cfg.Root,
-			AbsRoot:         absRoot,
 			FileSys:         http.Dir(cfg.Root),
 			SoftwareName:    caddy.AppName,
 			SoftwareVersion: caddy.AppVersion,
@@ -52,6 +47,12 @@ func setup(c *caddy.Controller) error {
 func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 	var rules []Rule
 
+	cfg := httpserver.GetConfig(c)
+	absRoot, err := filepath.Abs(cfg.Root)
+	if err != nil {
+		return nil, err
+	}
+
 	for c.Next() {
 		args := c.RemainingArgs()
 
@@ -59,7 +60,12 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 			return rules, c.ArgErr()
 		}
 
-		rule := Rule{Path: args[0], ReadTimeout: 60 * time.Second, SendTimeout: 60 * time.Second}
+		rule := Rule{
+			Root:        absRoot,
+			Path:        args[0],
+			ReadTimeout: 60 * time.Second,
+			SendTimeout: 60 * time.Second,
+		}
 		upstreams := []string{args[1]}
 
 		if len(args) == 3 {
@@ -76,6 +82,12 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 
 		for c.NextBlock() {
 			switch c.Val() {
+			case "root":
+				if !c.NextArg() {
+					return rules, c.ArgErr()
+				}
+				rule.Root = c.Val()
+
 			case "ext":
 				if !c.NextArg() {
 					return rules, c.ArgErr()
