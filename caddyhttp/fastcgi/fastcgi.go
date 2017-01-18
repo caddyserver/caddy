@@ -23,7 +23,6 @@ type Handler struct {
 	Next    httpserver.Handler
 	Rules   []Rule
 	Root    string
-	AbsRoot string // same as root, but absolute path
 	FileSys http.FileSystem
 
 	// These are sent to CGI scripts in env variables
@@ -184,7 +183,7 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 	var env map[string]string
 
 	// Get absolute path of requested resource
-	absPath := filepath.Join(h.AbsRoot, fpath)
+	absPath := filepath.Join(rule.Root, fpath)
 
 	// Separate remote IP and port; more lenient than net.SplitHostPort
 	var ip, port string
@@ -244,7 +243,7 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 		"SERVER_SOFTWARE":   h.SoftwareName + "/" + h.SoftwareVersion,
 
 		// Other variables
-		"DOCUMENT_ROOT":   h.AbsRoot,
+		"DOCUMENT_ROOT":   rule.Root,
 		"DOCUMENT_URI":    docURI,
 		"HTTP_HOST":       r.Host, // added here, since not always part of headers
 		"REQUEST_URI":     reqURI,
@@ -256,7 +255,7 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 	// should only exist if PATH_INFO is defined.
 	// Info: https://www.ietf.org/rfc/rfc3875 Page 14
 	if env["PATH_INFO"] != "" {
-		env["PATH_TRANSLATED"] = filepath.Join(h.AbsRoot, pathInfo) // Info: http://www.oreilly.com/openbook/cgi/ch02_04.html
+		env["PATH_TRANSLATED"] = filepath.Join(rule.Root, pathInfo) // Info: http://www.oreilly.com/openbook/cgi/ch02_04.html
 	}
 
 	// Some web apps rely on knowing HTTPS or not
@@ -294,6 +293,10 @@ type Rule struct {
 
 	// Always process files with this extension with fastcgi.
 	Ext string
+
+	// Use this directory as the fastcgi root directory. Defaults to the root
+	// directory of the parent virtual host.
+	Root string
 
 	// The path in the URL will be split into two, with the first piece ending
 	// with the value of SplitPath. The first piece will be assumed as the
