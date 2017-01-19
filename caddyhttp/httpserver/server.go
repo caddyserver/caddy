@@ -3,6 +3,7 @@ package httpserver
 
 import (
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -25,11 +26,13 @@ type Server struct {
 	Server      *http.Server
 	quicServer  *h2quic.Server
 	listener    net.Listener
-	listenerMu  sync.Mutex
+	mu          sync.Mutex
 	sites       []*SiteConfig
-	connTimeout time.Duration  // max time to wait for a connection before force stop
-	connWg      sync.WaitGroup // one increment per connection
-	tlsGovChan  chan struct{}  // close to stop the TLS maintenance goroutine
+	closed      bool
+	connTimeout time.Duration               // max time to wait for a connection before force stop
+	connWg      *sync.WaitGroup             // one increment per connection
+	conns       map[net.Conn]http.ConnState // store idle connections
+	tlsGovChan  chan struct{}               // close to stop the TLS maintenance goroutine
 	vhosts      *vhostTrie
 }
 
@@ -50,18 +53,12 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 		vhosts:      newVHostTrie(),
 		sites:       group,
 		connTimeout: GracefulTimeout,
+		connWg:      &sync.WaitGroup{},
 	}
 	s.Server.Handler = s // this is weird, but whatever
-	s.Server.ConnState = func(c net.Conn, cs http.ConnState) {
-		if cs == http.StateIdle {
-			s.listenerMu.Lock()
-			// server stopped, close idle connection
-			if s.listener == nil {
-				c.Close()
-			}
-			s.listenerMu.Unlock()
-		}
-	}
+
+	// Track connection state
+	s.connState()
 
 	// Disable HTTP/2 if desired
 	if !HTTP2 {
@@ -73,14 +70,6 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 		s.quicServer = &h2quic.Server{Server: s.Server}
 		s.Server.Handler = s.wrapWithSvcHeaders(s.Server.Handler)
 	}
-
-	// We have to bound our wg with one increment
-	// to prevent a "race condition" that is hard-coded
-	// into sync.WaitGroup.Wait() - basically, an add
-	// with a positive delta must be guaranteed to
-	// occur before Wait() is called on the wg.
-	// In a way, this kind of acts as a safety barrier.
-	s.connWg.Add(1)
 
 	// Set up TLS configuration
 	var tlsConfigs []*caddytls.Config
@@ -160,11 +149,7 @@ func (s *Server) Serve(ln net.Listener) error {
 		ln = tcpKeepAliveListener{TCPListener: tcpLn}
 	}
 
-	ln = newGracefulListener(ln, &s.connWg)
-
-	s.listenerMu.Lock()
 	s.listener = ln
-	s.listenerMu.Unlock()
 
 	if s.Server.TLSConfig != nil {
 		// Create TLS listener - note that we do not replace s.listener
@@ -306,40 +291,98 @@ func (s *Server) Address() string {
 
 // Stop stops s gracefully (or forcefully after timeout) and
 // closes its listener.
-func (s *Server) Stop() (err error) {
-	s.Server.SetKeepAlivesEnabled(false)
+func (s *Server) Stop() error {
+	if s.closed {
+		return errors.New("Server has been closed")
+	}
 
-	if runtime.GOOS != "windows" {
-		// force connections to close after timeout
-		done := make(chan struct{})
-		go func() {
-			s.connWg.Done() // decrement our initial increment used as a barrier
-			s.connWg.Wait()
-			close(done)
-		}()
-
-		// Wait for remaining connections to finish or
-		// force them all to close after timeout
-		select {
-		case <-time.After(s.connTimeout):
-		case <-done:
+	// Make sure a listener was set
+	if s.listener != nil {
+		// Close the listener to stop all new connections
+		if err := s.listener.Close(); err != nil {
+			return err
 		}
 	}
 
-	// Close the listener now; this stops the server without delay
-	s.listenerMu.Lock()
-	if s.listener != nil {
-		err = s.listener.Close()
-		s.listener = nil
-	}
-	s.listenerMu.Unlock()
+	s.Server.SetKeepAlivesEnabled(false)
+	s.mu.Lock()
+	s.closed = true
+	s.mu.Unlock()
 
-	// Closing this signals any TLS governor goroutines to exit
-	if s.tlsGovChan != nil {
-		close(s.tlsGovChan)
-	}
+	// Wait for any connections to finish
+	wait := make(chan struct{})
+	go func() {
+		defer close(wait)
 
-	return
+		// Closing this signals any TLS governor goroutines to exit
+		if s.tlsGovChan != nil {
+			close(s.tlsGovChan)
+		}
+
+		s.connWg.Wait()
+	}()
+
+	// We block until all active connections are closed or the connTimeout happens
+	select {
+	case <-time.After(s.connTimeout):
+		s.mu.Lock()
+		for c, st := range s.conns {
+			// Force close any idle and new connections.
+			if st == http.StateIdle || st == http.StateNew {
+				c.Close()
+			}
+		}
+		s.mu.Unlock()
+		return nil
+	case <-wait:
+		return nil
+	}
+}
+
+// connState setups the ConnState tracking hook to know which connections are idle
+func (s *Server) connState() {
+	// Set our ConnState to track idle connections
+	s.Server.ConnState = func(c net.Conn, cs http.ConnState) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+
+		switch cs {
+		case http.StateNew:
+			// New connections increment the WaitGroup and are added the the conns dictionary
+			s.connWg.Add(1)
+			if s.conns == nil {
+				s.conns = make(map[net.Conn]http.ConnState)
+			}
+			s.conns[c] = cs
+		case http.StateActive:
+			// Only update status to StateActive if it's in the conns dictionary
+			if _, ok := s.conns[c]; ok {
+				s.conns[c] = cs
+			}
+		case http.StateIdle:
+			// Only update status to StateIdle if it's in the conns dictionary
+			if _, ok := s.conns[c]; ok {
+				s.conns[c] = cs
+			}
+
+			// If we've already closed then we need to close this connection.
+			// We don't allow connections to become idle after server is closed
+			if s.closed {
+				c.Close()
+			}
+		case http.StateHijacked, http.StateClosed:
+			// If the connection is hijacked or closed we forget it
+			s.forgetConn(c)
+		}
+	}
+}
+
+// forgetConn removes c from conns and decrements WaitGroup
+func (s *Server) forgetConn(c net.Conn) {
+	if _, ok := s.conns[c]; ok {
+		delete(s.conns, c)
+		s.connWg.Done()
+	}
 }
 
 // sanitizePath collapses any ./ ../ /// madness
