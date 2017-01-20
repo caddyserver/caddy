@@ -108,7 +108,7 @@ func TestParametersRedirect(t *testing.T) {
 
 	re = Redirect{
 		Rules: []Rule{
-			{FromPath: "/", Meta: false, To: "http://example.com/a{path}?b=c&{query}", RequestMatcher: httpserver.IfMatcher{}},
+			{FromPath: "/", Meta: false, To: "http://example.com/a{rewrite_path}?b=c&{query}", RequestMatcher: httpserver.IfMatcher{}},
 		},
 	}
 
