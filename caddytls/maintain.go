@@ -125,14 +125,13 @@ func RenewManagedCertificates(allowPrompts bool) (err error) {
 		// perform renewal
 		err := cert.Config.RenewCert(renewName, allowPrompts)
 		if err != nil {
-			if allowPrompts && cert.NotAfter.Sub(time.Now().UTC()) < 0 {
-				// Certificate renewal failed, the operator is present, and the certificate
-				// is already expired; we should stop immediately and return the error. Note
-				// that we used to do this any time a renewal failed at startup. However,
-				// after discussion in https://github.com/mholt/caddy/issues/642 we decided to
-				// only stop startup if the certificate is expired. We still log the error
-				// otherwise. I'm not sure how permanent the change in #642 will be...
-				// TODO: Get rid of the expiration check... always break on error.
+			if allowPrompts {
+				// Certificate renewal failed and the operator is present; we should stop
+				// immediately and return the error. See a discussion in issue 642
+				// about this. For a while, we only stopped if the certificate was
+				// expired, but in reality, there is no difference between reporting
+				// it now versus later, except that there's somebody present to deal
+				// with it now, so require it.
 				return err
 			}
 			log.Printf("[ERROR] %v", err)
