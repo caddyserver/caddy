@@ -229,7 +229,7 @@ func cacheCertificate(cert Certificate) {
 	}
 	certCacheMu.Lock()
 	if _, ok := certCache[""]; !ok {
-		// use as default - must be *appended* to list, or bad things happen!
+		// use as default - must be *appended* to end of list, or bad things happen!
 		cert.Names = append(cert.Names, "")
 		certCache[""] = cert
 	}
