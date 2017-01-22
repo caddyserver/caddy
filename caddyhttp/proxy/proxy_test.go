@@ -78,7 +78,7 @@ func TestReverseProxy(t *testing.T) {
 	}
 
 	// create request and response recorder
-	r := httptest.NewRequest("GET", "/", nil)
+	r := httptest.NewRequest("GET", "/", strings.NewReader("test"))
 	w := httptest.NewRecorder()
 
 	r.ContentLength = -1 // force chunked encoding (required for trailers)
@@ -97,6 +97,7 @@ func TestReverseProxy(t *testing.T) {
 	verifyHeaders(res.Header, res.Trailer)
 
 	// Make sure {upstream} placeholder is set
+	r.Body = ioutil.NopCloser(strings.NewReader("test"))
 	rr := httpserver.NewResponseRecorder(httptest.NewRecorder())
 	rr.Replacer = httpserver.NewReplacer(r, rr, "-")
 
