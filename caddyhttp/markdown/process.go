@@ -73,8 +73,8 @@ func (c *Config) Markdown(title string, r io.Reader, dirents []os.FileInfo, ctx 
 	// move available and valid front matters to the meta values
 	meta := make(map[string]string)
 	for _, val := range recognizedMetaTags {
-		if _, ok := mdata.Variables[val]; ok {
-			meta[val] = mdata.Variables[val].(string)
+		if mVal, ok := mdata.Variables[val]; ok {
+			meta[val] = mVal.(string)
 		}
 	}
 
