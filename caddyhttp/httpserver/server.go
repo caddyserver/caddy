@@ -40,13 +40,7 @@ var _ caddy.GracefulServer = new(Server)
 // and will serve the sites configured in group.
 func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 	s := &Server{
-		Server: &http.Server{
-			Addr: addr,
-			// TODO: Make these values configurable?
-			// ReadTimeout:    2 * time.Minute,
-			// WriteTimeout:   2 * time.Minute,
-			// MaxHeaderBytes: 1 << 16,
-		},
+		Server:      makeHTTPServer(addr, group),
 		vhosts:      newVHostTrie(),
 		sites:       group,
 		connTimeout: GracefulTimeout,
@@ -84,10 +78,10 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 
 	// Set up TLS configuration
 	var tlsConfigs []*caddytls.Config
-	var err error
 	for _, site := range group {
 		tlsConfigs = append(tlsConfigs, site.TLS)
 	}
+	var err error
 	s.Server.TLSConfig, err = caddytls.MakeTLSConfig(tlsConfigs)
 	if err != nil {
 		return nil, err
@@ -378,6 +372,74 @@ func (s *Server) OnStartupComplete() {
 		fmt.Println(output)
 		log.Println(output)
 	}
+}
+
+// defaultTimeouts stores the default timeout values to use
+// if left unset by user configuration. Default timeouts,
+// especially for ReadTimeout, are important for mitigating
+// slowloris attacks.
+var defaultTimeouts = Timeouts{
+	ReadTimeout:       10 * time.Second,
+	ReadHeaderTimeout: 10 * time.Second,
+	WriteTimeout:      20 * time.Second,
+	IdleTimeout:       2 * time.Minute,
+}
+
+// makeHTTPServer makes an http.Server from the group of configs
+// in a way that configures timeouts (or, if not set, it uses the
+// default timeouts) and other http.Server properties by combining
+// the configuration of each SiteConfig in the group. (Timeouts
+// are important for mitigating slowloris attacks.)
+func makeHTTPServer(addr string, group []*SiteConfig) *http.Server {
+	s := &http.Server{Addr: addr}
+
+	// find the minimum duration configured for each timeout
+	var min Timeouts
+	for _, cfg := range group {
+		if cfg.Timeouts.ReadTimeoutSet &&
+			(!min.ReadTimeoutSet || cfg.Timeouts.ReadTimeout < min.ReadTimeout) {
+			min.ReadTimeoutSet = true
+			min.ReadTimeout = cfg.Timeouts.ReadTimeout
+		}
+		if cfg.Timeouts.ReadHeaderTimeoutSet &&
+			(!min.ReadHeaderTimeoutSet || cfg.Timeouts.ReadHeaderTimeout < min.ReadHeaderTimeout) {
+			min.ReadHeaderTimeoutSet = true
+			min.ReadHeaderTimeout = cfg.Timeouts.ReadHeaderTimeout
+		}
+		if cfg.Timeouts.WriteTimeoutSet &&
+			(!min.WriteTimeoutSet || cfg.Timeouts.WriteTimeout < min.WriteTimeout) {
+			min.WriteTimeoutSet = true
+			min.WriteTimeout = cfg.Timeouts.WriteTimeout
+		}
+		if cfg.Timeouts.IdleTimeoutSet &&
+			(!min.IdleTimeoutSet || cfg.Timeouts.IdleTimeout < min.IdleTimeout) {
+			min.IdleTimeoutSet = true
+			min.IdleTimeout = cfg.Timeouts.IdleTimeout
+		}
+	}
+
+	// for the values that were not set, use defaults
+	if !min.ReadTimeoutSet {
+		min.ReadTimeout = defaultTimeouts.ReadTimeout
+	}
+	if !min.ReadHeaderTimeoutSet {
+		min.ReadHeaderTimeout = defaultTimeouts.ReadHeaderTimeout
+	}
+	if !min.WriteTimeoutSet {
+		min.WriteTimeout = defaultTimeouts.WriteTimeout
+	}
+	if !min.IdleTimeoutSet {
+		min.IdleTimeout = defaultTimeouts.IdleTimeout
+	}
+
+	// set the final values on the server
+	// TODO: ReadHeaderTimeout and IdleTimeout require Go 1.8
+	s.ReadTimeout = min.ReadTimeout
+	// s.ReadHeaderTimeout = min.ReadHeaderTimeout
+	s.WriteTimeout = min.WriteTimeout
+	// s.IdleTimeout = min.IdleTimeout
+
+	return s
 }
 
 // tcpKeepAliveListener sets TCP keep-alive timeouts on accepted
