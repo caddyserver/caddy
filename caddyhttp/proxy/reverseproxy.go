@@ -238,7 +238,7 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, 
 			panic(httpserver.NonHijackerError{Underlying: rw})
 		}
 
-		conn, _, err := hj.Hijack()
+		conn, brw, err := hj.Hijack()
 		if err != nil {
 			return err
 		}
@@ -260,8 +260,23 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, 
 		}
 		defer backendConn.Close()
 
-		go pooledIoCopy(backendConn, conn) // write tcp stream to backend
-		pooledIoCopy(conn, backendConn)    // read tcp stream from backend
+		// Proxy backend -> frontend.
+		go pooledIoCopy(conn, backendConn)
+
+		// Proxy frontend -> backend.
+		//
+		// NOTE: Hijack() sometimes returns buffered up bytes in brw which
+		// would be lost if we didn't read them out manually below.
+		if brw != nil {
+			if n := brw.Reader.Buffered(); n > 0 {
+				rbuf, err := brw.Reader.Peek(n)
+				if err != nil {
+					return err
+				}
+				backendConn.Write(rbuf)
+			}
+		}
+		pooledIoCopy(backendConn, conn)
 	} else {
 		copyHeader(rw.Header(), res.Header)
 
