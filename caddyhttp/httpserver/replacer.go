@@ -223,8 +223,22 @@ func (r *replacer) getSubstitution(key string) string {
 		}
 		return host
 	case "{path}":
-		return r.request.URL.Path
+		// if a rewrite has happened, the original URI should be used as the path
+		// rather than the rewritten URI
+		path := r.request.Header.Get("Caddy-Rewrite-Original-URI")
+		if path == "" {
+			path = r.request.URL.Path
+		}
+		return path
 	case "{path_escaped}":
+		path := r.request.Header.Get("Caddy-Rewrite-Original-URI")
+		if path == "" {
+			path = r.request.URL.Path
+		}
+		return url.QueryEscape(path)
+	case "{rewrite_path}":
+		return r.request.URL.Path
+	case "{rewrite_path_escaped}":
 		return url.QueryEscape(r.request.URL.Path)
 	case "{query}":
 		return r.request.URL.RawQuery
