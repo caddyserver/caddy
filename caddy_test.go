@@ -67,7 +67,6 @@ func TestListenerAddrEqual(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ln1.Close()
-
 	ln1port := strconv.Itoa(ln1.Addr().(*net.TCPAddr).Port)
 
 	ln2, err := net.Listen("tcp", "127.0.0.1:0")
@@ -75,7 +74,6 @@ func TestListenerAddrEqual(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ln2.Close()
-
 	ln2port := strconv.Itoa(ln2.Addr().(*net.TCPAddr).Port)
 
 	for i, test := range []struct {
@@ -86,12 +84,12 @@ func TestListenerAddrEqual(t *testing.T) {
 		{ln1, ":1234", false},
 		{ln1, "0.0.0.0:1234", false},
 		{ln1, "0.0.0.0", false},
-		{ln1, ":" + ln1port + "", true},
-		{ln1, "0.0.0.0:" + ln1port + "", true},
-		{ln2, ":" + ln2port + "", false},
+		{ln1, ":" + ln1port, true},
+		{ln1, "0.0.0.0:" + ln1port, true},
+		{ln2, ":" + ln2port, false},
 		{ln2, "127.0.0.1:1234", false},
 		{ln2, "127.0.0.1", false},
-		{ln2, "127.0.0.1:" + ln2port + "", true},
+		{ln2, "127.0.0.1:" + ln2port, true},
 	} {
 		if got, want := listenerAddrEqual(test.ln, test.addr), test.expect; got != want {
 			t.Errorf("Test %d (%s == %s): expected %v but was %v", i, test.addr, test.ln.Addr().String(), want, got)

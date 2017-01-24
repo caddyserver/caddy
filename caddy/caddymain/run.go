@@ -75,7 +75,7 @@ func Run() {
 	if revoke != "" {
 		err := caddytls.Revoke(revoke)
 		if err != nil {
-			mustLogFatalf("%v", err.Error())
+			mustLogFatalf("%v", err)
 		}
 		fmt.Printf("Revoked certificate for %s\n", revoke)
 		os.Exit(0)
@@ -95,7 +95,7 @@ func Run() {
 	// Set CPU cap
 	err := setCPU(cpu)
 	if err != nil {
-		mustLogFatalf("%v", err.Error())
+		mustLogFatalf("%v", err)
 	}
 
 	// Execute plugins that are registered to run as the process starts
@@ -107,23 +107,24 @@ func Run() {
 	// Get Caddyfile input
 	caddyfileinput, err := caddy.LoadCaddyfile(serverType)
 	if err != nil {
-		mustLogFatalf("%v", err.Error())
+		mustLogFatalf("%v", err)
 	}
 
 	if validate {
-		justValidate := true
-		err := caddy.ValidateAndExecuteDirectives(caddyfileinput, nil, justValidate)
+		err := caddy.ValidateAndExecuteDirectives(caddyfileinput, nil, true)
 		if err != nil {
-			mustLogFatalf("%v", err.Error())
+			mustLogFatalf("%v", err)
 		}
-		log.Println("[INFO] Caddyfile Valid")
+		msg := "Caddyfile is valid"
+		fmt.Println(msg)
+		log.Printf("[INFO] %s", msg)
 		os.Exit(0)
 	}
 
 	// Start your engines
 	instance, err := caddy.Start(caddyfileinput)
 	if err != nil {
-		mustLogFatalf("%v", err.Error())
+		mustLogFatalf("%v", err)
 	}
 
 	// Twiddle your thumbs

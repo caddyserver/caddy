@@ -38,6 +38,9 @@ type SiteConfig struct {
 	// Max amount of bytes a request can send on a given path
 	MaxRequestBodySizes []PathLimit
 
+	// The path to the Caddyfile used to generate this site config
+	originCaddyfile string
+
 	// These timeout values are used, in conjunction with other
 	// site configs on the same server instance, to set the
 	// respective timeout values on the http.Server that
