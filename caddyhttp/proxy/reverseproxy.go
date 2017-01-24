@@ -12,6 +12,7 @@
 package proxy
 
 import (
+	"context"
 	"crypto/tls"
 	"io"
 	"net"
@@ -205,6 +206,14 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, 
 	}
 
 	rp.Director(outreq)
+
+	// Original incoming server request may be canceled by the
+	// user or by std lib(e.g. too many idle connections).
+	// Now we issue the new outgoing client request which
+	// doesn't depend on the original one. (issue 1345)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	outreq = outreq.WithContext(ctx)
 
 	res, err := transport.RoundTrip(outreq)
 	if err != nil {

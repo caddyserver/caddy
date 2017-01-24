@@ -3,6 +3,7 @@ package proxy
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/tls"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httptrace"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -1014,6 +1016,47 @@ func TestReverseProxyLargeBody(t *testing.T) {
 	// request was not "streamed" to the upstream without buffering it first.
 	if totalAlloc >= bodySize {
 		t.Fatalf("proxy allocated too much memory: %d bytes", totalAlloc)
+	}
+}
+
+func TestCancelRequest(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Hello, client"))
+	}))
+	defer backend.Close()
+
+	// set up proxy
+	p := &Proxy{
+		Next:      httpserver.EmptyNext, // prevents panic in some cases when test fails
+		Upstreams: []Upstream{newFakeUpstream(backend.URL, false)},
+	}
+
+	// setup request with cancel ctx
+	req := httptest.NewRequest("GET", "/", nil)
+	ctx, cancel := context.WithCancel(req.Context())
+	defer cancel()
+	req = req.WithContext(ctx)
+
+	// add GotConn hook to cancel the request
+	gotC := make(chan struct{})
+	defer close(gotC)
+	trace := &httptrace.ClientTrace{
+		GotConn: func(connInfo httptrace.GotConnInfo) {
+			gotC <- struct{}{}
+		},
+	}
+	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
+
+	// wait for canceling the request
+	go func() {
+		<-gotC
+		cancel()
+	}()
+
+	status, err := p.ServeHTTP(httptest.NewRecorder(), req)
+	if status != 0 || err != nil {
+		t.Errorf("expect proxy handle normally, but not, status:%d, err:%q",
+			status, err)
 	}
 }
 
