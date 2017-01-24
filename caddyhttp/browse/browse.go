@@ -245,16 +245,17 @@ func directoryListing(files []os.FileInfo, canGoUp bool, urlPath string, config 
 // ServeHTTP determines if the request is for this plugin, and if all prerequisites are met.
 // If so, control is handed over to ServeListing.
 func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
-	var bc *Config
 	// See if there's a browse configuration to match the path
+	var bc *Config
 	for i := range b.Configs {
 		if httpserver.Path(r.URL.Path).Matches(b.Configs[i].PathScope) {
 			bc = &b.Configs[i]
-			goto inScope
+			break
 		}
 	}
-	return b.Next.ServeHTTP(w, r)
-inScope:
+	if bc == nil {
+		return b.Next.ServeHTTP(w, r)
+	}
 
 	// Browse works on existing directories; delegate everything else
 	requestedFilepath, err := bc.Fs.Root.Open(r.URL.Path)

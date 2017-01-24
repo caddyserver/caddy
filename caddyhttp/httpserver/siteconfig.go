@@ -33,6 +33,9 @@ type SiteConfig struct {
 
 	// Max amount of bytes a request can send on a given path
 	MaxRequestBodySizes []PathLimit
+
+	// The path to the Caddyfile used to generate this site config
+	originCaddyfile string
 }
 
 // PathLimit is a mapping from a site's path to its corresponding
