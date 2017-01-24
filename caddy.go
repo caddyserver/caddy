@@ -492,6 +492,11 @@ func startWithListenerFds(cdyfile Input, inst *Instance, restartFds map[string]r
 	return nil
 }
 
+// ValidateAndExecuteDirectives will load the server blocks from cdyfile
+// by parsing it, then execute the directives configured by it and store
+// the resulting server blocks into inst. If justValidate is true, parse
+// callbacks will not be executed between directives, since the purpose
+// is only to check the input for valid syntax.
 func ValidateAndExecuteDirectives(cdyfile Input, inst *Instance, justValidate bool) error {
 
 	// If parsing only inst will be nil, create an instance for this function call only.
