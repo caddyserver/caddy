@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/hashicorp/go-syslog"
 	"github.com/mholt/caddy"
@@ -65,7 +66,9 @@ func setup(c *caddy.Controller) error {
 		for _, rule := range rules {
 			for _, entry := range rule.Entries {
 				if entry.file != nil {
+					entry.fileMu.Lock()
 					entry.file.Close()
+					entry.fileMu.Unlock()
 				}
 			}
 		}
@@ -111,6 +114,7 @@ func logParse(c *caddy.Controller) ([]*Rule, error) {
 				OutputFile: DefaultLogFilename,
 				Format:     DefaultLogFormat,
 				Roller:     logRoller,
+				fileMu:     new(sync.RWMutex),
 			})
 		} else if len(args) == 1 {
 			// Only an output file specified
@@ -118,6 +122,7 @@ func logParse(c *caddy.Controller) ([]*Rule, error) {
 				OutputFile: args[0],
 				Format:     DefaultLogFormat,
 				Roller:     logRoller,
+				fileMu:     new(sync.RWMutex),
 			})
 		} else {
 			// Path scope, output file, and maybe a format specified
@@ -139,6 +144,7 @@ func logParse(c *caddy.Controller) ([]*Rule, error) {
 				OutputFile: args[1],
 				Format:     format,
 				Roller:     logRoller,
+				fileMu:     new(sync.RWMutex),
 			})
 		}
 	}

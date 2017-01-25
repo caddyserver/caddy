@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/mholt/caddy/caddyhttp/httpserver"
@@ -29,6 +30,7 @@ func TestLoggedStatus(t *testing.T) {
 		Entries: []*Entry{{
 			Format: DefaultLogFormat + " {testval}",
 			Log:    log.New(&f, "", 0),
+			fileMu: new(sync.RWMutex),
 		}},
 	}
 
@@ -72,6 +74,7 @@ func TestLogRequestBody(t *testing.T) {
 			Entries: []*Entry{{
 				Format: "{request_body}",
 				Log:    log.New(&got, "", 0),
+				fileMu: new(sync.RWMutex),
 			}},
 		}},
 		Next: httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
@@ -131,10 +134,12 @@ func TestMultiEntries(t *testing.T) {
 				{
 					Format: "foo {request_body}",
 					Log:    log.New(&got1, "", 0),
+					fileMu: new(sync.RWMutex),
 				},
 				{
 					Format: "{method} {request_body}",
 					Log:    log.New(&got2, "", 0),
+					fileMu: new(sync.RWMutex),
 				},
 			},
 		}},
