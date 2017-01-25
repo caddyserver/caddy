@@ -438,9 +438,10 @@ var defaultCiphers = []uint16{
 // Map of supported curves
 // https://golang.org/pkg/crypto/tls/#CurveID
 var supportedCurvesMap = map[string]tls.CurveID{
-	"P256": tls.CurveP256,
-	"P384": tls.CurveP384,
-	"P521": tls.CurveP521,
+	"X25519": tls.X25519,
+	"P256":   tls.CurveP256,
+	"P384":   tls.CurveP384,
+	"P521":   tls.CurveP521,
 }
 
 const (
