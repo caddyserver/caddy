@@ -2,6 +2,7 @@
 package httpserver
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"io"
@@ -27,9 +28,8 @@ type Server struct {
 	listener    net.Listener
 	listenerMu  sync.Mutex
 	sites       []*SiteConfig
-	connTimeout time.Duration  // max time to wait for a connection before force stop
-	connWg      sync.WaitGroup // one increment per connection
-	tlsGovChan  chan struct{}  // close to stop the TLS maintenance goroutine
+	connTimeout time.Duration // max time to wait for a connection before force stop
+	tlsGovChan  chan struct{} // close to stop the TLS maintenance goroutine
 	vhosts      *vhostTrie
 }
 
@@ -46,16 +46,6 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 		connTimeout: GracefulTimeout,
 	}
 	s.Server.Handler = s // this is weird, but whatever
-	s.Server.ConnState = func(c net.Conn, cs http.ConnState) {
-		if cs == http.StateIdle {
-			s.listenerMu.Lock()
-			// server stopped, close idle connection
-			if s.listener == nil {
-				c.Close()
-			}
-			s.listenerMu.Unlock()
-		}
-	}
 
 	// Disable HTTP/2 if desired
 	if !HTTP2 {
@@ -67,14 +57,6 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 		s.quicServer = &h2quic.Server{Server: s.Server}
 		s.Server.Handler = s.wrapWithSvcHeaders(s.Server.Handler)
 	}
-
-	// We have to bound our wg with one increment
-	// to prevent a "race condition" that is hard-coded
-	// into sync.WaitGroup.Wait() - basically, an add
-	// with a positive delta must be guaranteed to
-	// occur before Wait() is called on the wg.
-	// In a way, this kind of acts as a safety barrier.
-	s.connWg.Add(1)
 
 	// Set up TLS configuration
 	var tlsConfigs []*caddytls.Config
@@ -153,8 +135,6 @@ func (s *Server) Serve(ln net.Listener) error {
 	if tcpLn, ok := ln.(*net.TCPListener); ok {
 		ln = tcpKeepAliveListener{TCPListener: tcpLn}
 	}
-
-	ln = newGracefulListener(ln, &s.connWg)
 
 	s.listenerMu.Lock()
 	s.listener = ln
@@ -300,40 +280,21 @@ func (s *Server) Address() string {
 
 // Stop stops s gracefully (or forcefully after timeout) and
 // closes its listener.
-func (s *Server) Stop() (err error) {
-	s.Server.SetKeepAlivesEnabled(false)
+func (s *Server) Stop() error {
+	ctx, cancel := context.WithTimeout(context.Background(), s.connTimeout)
+	defer cancel()
 
-	if runtime.GOOS != "windows" {
-		// force connections to close after timeout
-		done := make(chan struct{})
-		go func() {
-			s.connWg.Done() // decrement our initial increment used as a barrier
-			s.connWg.Wait()
-			close(done)
-		}()
-
-		// Wait for remaining connections to finish or
-		// force them all to close after timeout
-		select {
-		case <-time.After(s.connTimeout):
-		case <-done:
-		}
+	err := s.Server.Shutdown(ctx)
+	if err != nil {
+		return err
 	}
 
-	// Close the listener now; this stops the server without delay
-	s.listenerMu.Lock()
-	if s.listener != nil {
-		err = s.listener.Close()
-		s.listener = nil
-	}
-	s.listenerMu.Unlock()
-
-	// Closing this signals any TLS governor goroutines to exit
+	// signal any TLS governor goroutines to exit
 	if s.tlsGovChan != nil {
 		close(s.tlsGovChan)
 	}
 
-	return
+	return nil
 }
 
 // sanitizePath collapses any ./ ../ /// madness
