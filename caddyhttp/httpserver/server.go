@@ -394,11 +394,10 @@ func makeHTTPServer(addr string, group []*SiteConfig) *http.Server {
 	}
 
 	// set the final values on the server
-	// TODO: ReadHeaderTimeout and IdleTimeout require Go 1.8
 	s.ReadTimeout = min.ReadTimeout
-	// s.ReadHeaderTimeout = min.ReadHeaderTimeout
+	s.ReadHeaderTimeout = min.ReadHeaderTimeout
 	s.WriteTimeout = min.WriteTimeout
-	// s.IdleTimeout = min.IdleTimeout
+	s.IdleTimeout = min.IdleTimeout
 
 	return s
 }
