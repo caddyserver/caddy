@@ -121,7 +121,7 @@ func TestLogParse(t *testing.T) {
 				Format:     "{when}",
 			}},
 		}}},
-		{`log access.log { rotate { size 2 age 10 keep 3 } }`, false, []Rule{{
+		{`log access.log { rotate_size 2 rotate_age 10 rotate_keep 3 }`, false, []Rule{{
 			PathScope: "/",
 			Entries: []*Entry{{
 				OutputFile: "access.log",

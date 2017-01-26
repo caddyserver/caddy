@@ -44,11 +44,11 @@ func ParseRoller(c *caddy.Controller) (*LogRoller, error) {
 		value := c.Val()
 		var err error
 		switch what {
-		case "size":
+		case "rotate_size":
 			size, err = strconv.Atoi(value)
-		case "age":
+		case "rotate_age":
 			age, err = strconv.Atoi(value)
-		case "keep":
+		case "rotate_keep":
 			keep, err = strconv.Atoi(value)
 		}
 		if err != nil {

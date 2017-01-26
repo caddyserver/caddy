@@ -87,7 +87,7 @@ func TestErrorsParse(t *testing.T) {
 			},
 			fileMu: new(sync.RWMutex),
 		}},
-		{`errors { log errors.txt { size 2 age 10 keep 3 } }`, false, ErrorHandler{
+		{`errors { log errors.txt { rotate_size 2 rotate_age 10 rotate_keep 3 } }`, false, ErrorHandler{
 			LogFile: "errors.txt",
 			LogRoller: &httpserver.LogRoller{
 				MaxSize:    2,
@@ -99,9 +99,9 @@ func TestErrorsParse(t *testing.T) {
 			fileMu:     new(sync.RWMutex),
 		}},
 		{`errors { log errors.txt {
-            size 3
-            age 11
-            keep 5
+            rotate_size 3
+            rotate_age 11
+            rotate_keep 5
         }
         404 404.html
         503 503.html
