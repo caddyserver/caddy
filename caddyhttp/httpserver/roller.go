@@ -66,11 +66,21 @@ func ParseRoller(c *caddy.Controller) (*LogRoller, error) {
 	}, nil
 }
 
+// DefaultLogRoller will roll logs by default.
+func DefaultLogRoller() *LogRoller {
+	return &LogRoller{
+		MaxSize:    DefaultRotateSize,
+		MaxAge:     DefaultRotateAge,
+		MaxBackups: DefaultRotateKeep,
+		LocalTime:  true,
+	}
+}
+
 const (
-	// DefaultRotateSize 100 MB
+	// DefaultRotateSize is 100 MB.
 	DefaultRotateSize = 100
-	// DefaultRotateAge 14 days
+	// DefaultRotateAge is 14 days.
 	DefaultRotateAge = 14
-	// DefaultRotateKeep 10 files
+	// DefaultRotateKeep is 10 files.
 	DefaultRotateKeep = 10
 )

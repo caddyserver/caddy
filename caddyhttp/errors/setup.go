@@ -105,6 +105,7 @@ func errorsParse(c *caddy.Controller) (*ErrorHandler, error) {
 					handler.Debug = true
 				} else {
 					handler.LogFile = where
+					handler.LogRoller = httpserver.DefaultLogRoller()
 					if c.NextArg() {
 						if c.Val() == "{" {
 							c.IncrNest()
@@ -167,6 +168,7 @@ func errorsParse(c *caddy.Controller) (*ErrorHandler, error) {
 					handler.Debug = true
 				} else {
 					handler.LogFile = c.Val()
+					handler.LogRoller = httpserver.DefaultLogRoller()
 				}
 			}
 		}

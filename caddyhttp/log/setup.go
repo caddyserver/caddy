@@ -89,6 +89,7 @@ func logParse(c *caddy.Controller) ([]*Rule, error) {
 		args := c.RemainingArgs()
 
 		var logRoller *httpserver.LogRoller
+		logRoller = httpserver.DefaultLogRoller()
 
 		if c.NextArg() {
 			if c.Val() == "{" {

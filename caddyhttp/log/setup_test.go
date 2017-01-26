@@ -35,8 +35,8 @@ func TestSetup(t *testing.T) {
 	if myHandler.Rules[0].Entries[0].Format != DefaultLogFormat {
 		t.Errorf("Expected %s as the default Log Format", DefaultLogFormat)
 	}
-	if myHandler.Rules[0].Entries[0].Roller != nil {
-		t.Errorf("Expected Roller to be nil, got: %v",
+	if *myHandler.Rules[0].Entries[0].Roller != *httpserver.DefaultLogRoller() {
+		t.Errorf("Expected Roller to be DefaultLogRoller, got: %v",
 			*myHandler.Rules[0].Entries[0].Roller)
 	}
 	if !httpserver.SameNext(myHandler.Next, httpserver.EmptyNext) {
@@ -56,6 +56,7 @@ func TestLogParse(t *testing.T) {
 			Entries: []*Entry{{
 				OutputFile: DefaultLogFilename,
 				Format:     DefaultLogFormat,
+				Roller:     httpserver.DefaultLogRoller(),
 			}},
 		}}},
 		{`log log.txt`, false, []Rule{{
@@ -63,6 +64,7 @@ func TestLogParse(t *testing.T) {
 			Entries: []*Entry{{
 				OutputFile: "log.txt",
 				Format:     DefaultLogFormat,
+				Roller:     httpserver.DefaultLogRoller(),
 			}},
 		}}},
 		{`log /api log.txt`, false, []Rule{{
@@ -70,6 +72,7 @@ func TestLogParse(t *testing.T) {
 			Entries: []*Entry{{
 				OutputFile: "log.txt",
 				Format:     DefaultLogFormat,
+				Roller:     httpserver.DefaultLogRoller(),
 			}},
 		}}},
 		{`log /serve stdout`, false, []Rule{{
@@ -77,6 +80,7 @@ func TestLogParse(t *testing.T) {
 			Entries: []*Entry{{
 				OutputFile: "stdout",
 				Format:     DefaultLogFormat,
+				Roller:     httpserver.DefaultLogRoller(),
 			}},
 		}}},
 		{`log /myapi log.txt {common}`, false, []Rule{{
@@ -84,6 +88,7 @@ func TestLogParse(t *testing.T) {
 			Entries: []*Entry{{
 				OutputFile: "log.txt",
 				Format:     CommonLogFormat,
+				Roller:     httpserver.DefaultLogRoller(),
 			}},
 		}}},
 		{`log /test accesslog.txt {combined}`, false, []Rule{{
@@ -91,6 +96,7 @@ func TestLogParse(t *testing.T) {
 			Entries: []*Entry{{
 				OutputFile: "accesslog.txt",
 				Format:     CombinedLogFormat,
+				Roller:     httpserver.DefaultLogRoller(),
 			}},
 		}}},
 		{`log /api1 log.txt
@@ -99,12 +105,14 @@ func TestLogParse(t *testing.T) {
 			Entries: []*Entry{{
 				OutputFile: "log.txt",
 				Format:     DefaultLogFormat,
+				Roller:     httpserver.DefaultLogRoller(),
 			}},
 		}, {
 			PathScope: "/api2",
 			Entries: []*Entry{{
 				OutputFile: "accesslog.txt",
 				Format:     CombinedLogFormat,
+				Roller:     httpserver.DefaultLogRoller(),
 			}},
 		}}},
 		{`log /api3 stdout {host}
@@ -113,12 +121,14 @@ func TestLogParse(t *testing.T) {
 			Entries: []*Entry{{
 				OutputFile: "stdout",
 				Format:     "{host}",
+				Roller:     httpserver.DefaultLogRoller(),
 			}},
 		}, {
 			PathScope: "/api4",
 			Entries: []*Entry{{
 				OutputFile: "log.txt",
 				Format:     "{when}",
+				Roller:     httpserver.DefaultLogRoller(),
 			}},
 		}}},
 		{`log access.log { rotate_size 2 rotate_age 10 rotate_keep 3 }`, false, []Rule{{
@@ -140,9 +150,11 @@ func TestLogParse(t *testing.T) {
 			Entries: []*Entry{{
 				OutputFile: "stdout",
 				Format:     "{host}",
+				Roller:     httpserver.DefaultLogRoller(),
 			}, {
 				OutputFile: "log.txt",
 				Format:     "{when}",
+				Roller:     httpserver.DefaultLogRoller(),
 			}},
 		}}},
 	}

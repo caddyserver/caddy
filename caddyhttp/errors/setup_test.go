@@ -64,6 +64,7 @@ func TestErrorsParse(t *testing.T) {
 		{`errors errors.txt`, false, ErrorHandler{
 			ErrorPages: map[int]string{},
 			LogFile:    "errors.txt",
+			LogRoller:  httpserver.DefaultLogRoller(),
 			fileMu:     new(sync.RWMutex),
 		}},
 		{`errors visible`, false, ErrorHandler{
@@ -80,7 +81,8 @@ func TestErrorsParse(t *testing.T) {
         404 404.html
         500 500.html
 }`, false, ErrorHandler{
-			LogFile: "errors.txt",
+			LogFile:   "errors.txt",
+			LogRoller: httpserver.DefaultLogRoller(),
 			ErrorPages: map[int]string{
 				404: "404.html",
 				500: "500.html",
@@ -125,6 +127,7 @@ func TestErrorsParse(t *testing.T) {
         503 503.html
 }`, false, ErrorHandler{
 			LogFile:          "errors.txt",
+			LogRoller:        httpserver.DefaultLogRoller(),
 			GenericErrorPage: "generic_error.html",
 			ErrorPages: map[int]string{
 				404: "404.html",
