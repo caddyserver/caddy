@@ -32,9 +32,9 @@ func (l LogRoller) GetLogWriter() io.Writer {
 // ParseRoller parses roller contents out of c.
 func ParseRoller(c *caddy.Controller) (*LogRoller, error) {
 	var size, age, keep int
-	size = DefaultRotateSize
-	age = DefaultRotateAge
-	keep = DefaultRotateKeep
+	size = defaultRotateSize
+	age = defaultRotateAge
+	keep = defaultRotateKeep
 	// This is kind of a hack to support nested blocks:
 	// As we are already in a block: either log or errors,
 	// c.nesting > 0 but, as soon as c meets a }, it thinks
@@ -69,18 +69,18 @@ func ParseRoller(c *caddy.Controller) (*LogRoller, error) {
 // DefaultLogRoller will roll logs by default.
 func DefaultLogRoller() *LogRoller {
 	return &LogRoller{
-		MaxSize:    DefaultRotateSize,
-		MaxAge:     DefaultRotateAge,
-		MaxBackups: DefaultRotateKeep,
+		MaxSize:    defaultRotateSize,
+		MaxAge:     defaultRotateAge,
+		MaxBackups: defaultRotateKeep,
 		LocalTime:  true,
 	}
 }
 
 const (
-	// DefaultRotateSize is 100 MB.
-	DefaultRotateSize = 100
-	// DefaultRotateAge is 14 days.
-	DefaultRotateAge = 14
-	// DefaultRotateKeep is 10 files.
-	DefaultRotateKeep = 10
+	// defaultRotateSize is 100 MB.
+	defaultRotateSize = 100
+	// defaultRotateAge is 14 days.
+	defaultRotateAge = 14
+	// defaultRotateKeep is 10 files.
+	defaultRotateKeep = 10
 )
