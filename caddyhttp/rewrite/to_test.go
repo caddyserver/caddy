@@ -23,6 +23,7 @@ func TestTo(t *testing.T) {
 		{"/?a=b", "/testdir /index.php?{query}", "/index.php?a=b"},
 		{"/?a=b", "/testdir/ /index.php?{query}", "/testdir/?a=b"},
 		{"/test?url=http://", " /p/{path}?{query}", "/p/test?url=http://"},
+		{"/test?url=http://", " /p/{rewrite_path}?{query}", "/p/test?url=http://"},
 		{"/test/?url=http://", " /{uri}", "/test/?url=http://"},
 	}
 

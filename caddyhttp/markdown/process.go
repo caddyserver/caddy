@@ -17,6 +17,13 @@ type FileInfo struct {
 	ctx httpserver.Context
 }
 
+var recognizedMetaTags = []string{
+	"author",
+	"copyright",
+	"description",
+	"subject",
+}
+
 // Summarize returns an abbreviated string representation of the markdown stored in this file.
 // wordcount is the number of words returned in the summary.
 func (f FileInfo) Summarize(wordcount int) (string, error) {
@@ -63,6 +70,14 @@ func (c *Config) Markdown(title string, r io.Reader, dirents []os.FileInfo, ctx 
 		mdata.Variables["title"] = title
 	}
 
+	// move available and valid front matters to the meta values
+	meta := make(map[string]string)
+	for _, val := range recognizedMetaTags {
+		if mVal, ok := mdata.Variables[val]; ok {
+			meta[val] = mVal.(string)
+		}
+	}
+
 	// massage possible files
 	files := []FileInfo{}
 	for _, ent := range dirents {
@@ -73,5 +88,5 @@ func (c *Config) Markdown(title string, r io.Reader, dirents []os.FileInfo, ctx 
 		files = append(files, file)
 	}
 
-	return execTemplate(c, mdata, files, ctx)
+	return execTemplate(c, mdata, meta, files, ctx)
 }

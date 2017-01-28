@@ -101,7 +101,7 @@ func browseParse(c *caddy.Controller) ([]Config, error) {
 const defaultTemplate = `<!DOCTYPE html>
 <html>
 	<head>
-		<title>{{.Name}}</title>
+		<title>{{html .Name}}</title>
 		<meta charset="utf-8">
 		<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
@@ -323,7 +323,7 @@ footer {
 
 		<header>
 			<h1>
-				{{range $url, $name := .BreadcrumbMap}}<a href="{{$url}}">{{$name}}</a>{{if ne $url "/"}}/{{end}}{{end}}
+				{{range $url, $name := .BreadcrumbMap}}<a href="{{html $url}}">{{html $name}}</a>{{if ne $url "/"}}/{{end}}{{end}}
 			</h1>
 		</header>
 		<main>
@@ -385,13 +385,13 @@ footer {
 					{{- range .Items}}
 					<tr class="file">
 						<td>
-							<a href="{{.URL}}">
+							<a href="{{html .URL}}">
 								{{- if .IsDir}}
 								<svg width="1.5em" height="1em" version="1.1" viewBox="0 0 35.678803 28.527945"><use xlink:href="#folder"></use></svg>
 								{{- else}}
 								<svg width="1.5em" height="1em" version="1.1" viewBox="0 0 26.604381 29.144726"><use xlink:href="#file"></use></svg>
 								{{- end}}
-								<span class="name">{{.Name}}</span>
+								<span class="name">{{html .Name}}</span>
 							</a>
 						</td>
 						{{- if .IsDir}}
@@ -407,7 +407,7 @@ footer {
 			</div>
 		</main>
 		<footer>
-			Served with <a rel="noopener noreferrer" href="https://caddyserver.com">Caddy</a>.
+			Served with <a rel="noopener noreferrer" href="https://caddyserver.com">Caddy</a>
 		</footer>
 		<script>
 			var filterEl = document.getElementById('filter');

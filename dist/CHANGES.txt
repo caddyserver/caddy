@@ -1,5 +1,25 @@
 CHANGES
 
+0.9.5 (January 24, 2017)
+- New -validate flag to only check a Caddyfile, then exit
+- New {when_iso} placeholder for timestamp ISO 8601 in UTC
+- New {rewrite_path} and {rewrite_path_escaped} placeholders
+- New 'timeouts' directive to configure or disable HTTP timeouts
+- HTTP-level timeouts enabled by default
+- basicauth: Authorization header stripped upon successful login
+- browse: Added textbox to filter listing in default template
+- browse: Sanitize file names and links in default template
+- browse: Ensure active Caddyfile is hidden regardless of cwd
+- fastcgi: New 'root' property, mainly for use with containers
+- markdown: Apply some front matter fields as <meta> tags
+- proxy: Fixed HTTP/2 upstream to backend; honors -http CLI flag
+- proxy: Fixed websockets over HTTPS
+- proxy: Reduced memory usage and improved performance
+- proxy: Added support for HTTP trailers
+- tls: Fixed deadlock that affected some background renewals
+- Several other smaller bugs squashed and improvements made
+
+
 0.9.4 (December 21, 2016)
 - Updated QUIC
 - New maxrequestbody directive to limit size of request body

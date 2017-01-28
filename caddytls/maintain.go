@@ -65,7 +65,7 @@ func maintainAssets(stopChan chan struct{}) {
 
 // RenewManagedCertificates renews managed certificates.
 func RenewManagedCertificates(allowPrompts bool) (err error) {
-	var renewed, deleted []Certificate
+	var renewQueue, deleteQueue []Certificate
 	visitedNames := make(map[string]struct{})
 
 	certCacheMu.RLock()
@@ -77,7 +77,7 @@ func RenewManagedCertificates(allowPrompts bool) (err error) {
 		// the list of names on this cert should never be empty...
 		if cert.Names == nil || len(cert.Names) == 0 {
 			log.Printf("[WARNING] Certificate keyed by '%s' has no names: %v - removing from cache", name, cert.Names)
-			deleted = append(deleted, cert)
+			deleteQueue = append(deleteQueue, cert)
 			continue
 		}
 
@@ -99,64 +99,71 @@ func RenewManagedCertificates(allowPrompts bool) (err error) {
 				continue
 			}
 
-			// Get the name which we should use to renew this certificate;
-			// we only support managing certificates with one name per cert,
-			// so this should be easy. We can't rely on cert.Config.Hostname
-			// because it may be a wildcard value from the Caddyfile (e.g.
-			// *.something.com) which, as of 2016, is not supported by ACME.
-			var renewName string
-			for _, name := range cert.Names {
-				if name != "" {
-					renewName = name
-					break
-				}
-			}
-
-			err := cert.Config.RenewCert(renewName, allowPrompts)
-			if err != nil {
-				if allowPrompts && timeLeft < 0 {
-					// Certificate renewal failed, the operator is present, and the certificate
-					// is already expired; we should stop immediately and return the error. Note
-					// that we used to do this any time a renewal failed at startup. However,
-					// after discussion in https://github.com/mholt/caddy/issues/642 we decided to
-					// only stop startup if the certificate is expired. We still log the error
-					// otherwise. I'm not sure how permanent the change in #642 will be...
-					certCacheMu.RUnlock()
-					return err
-				}
-				log.Printf("[ERROR] %v", err)
-				if cert.Config.OnDemand {
-					deleted = append(deleted, cert)
-				}
-			} else {
-				renewed = append(renewed, cert)
-			}
+			// queue for renewal when we aren't in a read lock anymore
+			// (the TLS-SNI challenge will need a write lock in order to
+			// present the certificate, so we renew outside of read lock)
+			renewQueue = append(renewQueue, cert)
 		}
 	}
 	certCacheMu.RUnlock()
 
-	// Apply changes to the cache
-	for _, cert := range renewed {
-		// TODO: Don't do these until we have valid OCSP for the new cert
-		if cert.Names[len(cert.Names)-1] == "" {
-			// Special case: This is the default certificate. We must
-			// flush it out of the cache so that we no longer point to
-			// the old, un-renewed certificate. Otherwise it will be
-			// renewed on every scan, which is too often. When we cache
-			// this certificate in a moment, it will be the default again.
-			certCacheMu.Lock()
-			delete(certCache, "")
-			certCacheMu.Unlock()
+	// Perform renewals that are queued
+	for _, cert := range renewQueue {
+		// Get the name which we should use to renew this certificate;
+		// we only support managing certificates with one name per cert,
+		// so this should be easy. We can't rely on cert.Config.Hostname
+		// because it may be a wildcard value from the Caddyfile (e.g.
+		// *.something.com) which, as of Jan. 2017, is not supported by ACME.
+		var renewName string
+		for _, name := range cert.Names {
+			if name != "" {
+				renewName = name
+				break
+			}
 		}
-		_, err := CacheManagedCertificate(cert.Names[0], cert.Config)
+
+		// perform renewal
+		err := cert.Config.RenewCert(renewName, allowPrompts)
 		if err != nil {
 			if allowPrompts {
-				return err // operator is present, so report error immediately
+				// Certificate renewal failed and the operator is present; we should stop
+				// immediately and return the error. See a discussion in issue 642
+				// about this. For a while, we only stopped if the certificate was
+				// expired, but in reality, there is no difference between reporting
+				// it now versus later, except that there's somebody present to deal
+				// with it now, so require it.
+				return err
 			}
 			log.Printf("[ERROR] %v", err)
+			if cert.Config.OnDemand {
+				deleteQueue = append(deleteQueue, cert)
+			}
+		} else {
+			// successful renewal, so update in-memory cache by loading
+			// renewed certificate so it will be used with handshakes
+			// TODO: Not until CA has valid OCSP response ready for the new cert... sigh.
+			if cert.Names[len(cert.Names)-1] == "" {
+				// Special case: This is the default certificate. We must
+				// flush it out of the cache so that we no longer point to
+				// the old, un-renewed certificate. Otherwise it will be
+				// renewed on every scan, which is too often. The next cert
+				// to be cached (probably this one) will become the default.
+				certCacheMu.Lock()
+				delete(certCache, "")
+				certCacheMu.Unlock()
+			}
+			_, err := CacheManagedCertificate(cert.Names[0], cert.Config)
+			if err != nil {
+				if allowPrompts {
+					return err // operator is present, so report error immediately
+				}
+				log.Printf("[ERROR] %v", err)
+			}
 		}
 	}
-	for _, cert := range deleted {
+
+	// Apply queued deletion changes to the cache
+	for _, cert := range deleteQueue {
 		certCacheMu.Lock()
 		for _, name := range cert.Names {
 			delete(certCache, name)

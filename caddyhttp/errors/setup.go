@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 
 	"github.com/hashicorp/go-syslog"
 	"github.com/mholt/caddy"
@@ -64,7 +65,9 @@ func setup(c *caddy.Controller) error {
 	// When server stops, close any open log file
 	c.OnShutdown(func() error {
 		if handler.file != nil {
+			handler.fileMu.Lock()
 			handler.file.Close()
+			handler.fileMu.Unlock()
 		}
 		return nil
 	})
@@ -81,7 +84,7 @@ func errorsParse(c *caddy.Controller) (*ErrorHandler, error) {
 	// Very important that we make a pointer because the startup
 	// function that opens the log file must have access to the
 	// same instance of the handler, not a copy.
-	handler := &ErrorHandler{ErrorPages: make(map[int]string)}
+	handler := &ErrorHandler{ErrorPages: make(map[int]string), fileMu: new(sync.RWMutex)}
 
 	cfg := httpserver.GetConfig(c)
 
