@@ -36,6 +36,9 @@ func IsLogRollerSubdirective(subdir string) bool {
 
 // ParseRoller parses roller contents out of c.
 func ParseRoller(l *LogRoller, what string, where string) error {
+	if l == nil {
+		l = DefaultLogRoller()
+	}
 	var value int
 	var err error
 	value, err = strconv.Atoi(where)

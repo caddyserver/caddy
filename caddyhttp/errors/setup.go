@@ -101,14 +101,10 @@ func errorsParse(c *caddy.Controller) (*ErrorHandler, error) {
 			where := c.Val()
 
 			if httpserver.IsLogRollerSubdirective(what) {
-				if handler.LogRoller == nil {
-					handler.LogRoller = httpserver.DefaultLogRoller()
-				} else {
-					var err error
-					err = httpserver.ParseRoller(handler.LogRoller, what, where)
-					if err != nil {
-						return hadBlock, err
-					}
+				var err error
+				err = httpserver.ParseRoller(handler.LogRoller, what, where)
+				if err != nil {
+					return hadBlock, err
 				}
 			} else {
 				// Error page; ensure it exists
