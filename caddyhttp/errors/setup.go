@@ -88,15 +88,12 @@ func errorsParse(c *caddy.Controller) (*ErrorHandler, error) {
 
 	cfg := httpserver.GetConfig(c)
 
-	optionalBlock := func() (bool, error) {
-		var hadBlock bool
-
+	optionalBlock := func() error {
 		for c.NextBlock() {
-			hadBlock = true
 
 			what := c.Val()
 			if !c.NextArg() {
-				return hadBlock, c.ArgErr()
+				return c.ArgErr()
 			}
 			where := c.Val()
 
@@ -104,7 +101,7 @@ func errorsParse(c *caddy.Controller) (*ErrorHandler, error) {
 				var err error
 				err = httpserver.ParseRoller(handler.LogRoller, what, where)
 				if err != nil {
-					return hadBlock, err
+					return err
 				}
 			} else {
 				// Error page; ensure it exists
@@ -119,24 +116,24 @@ func errorsParse(c *caddy.Controller) (*ErrorHandler, error) {
 
 				if what == "*" {
 					if handler.GenericErrorPage != "" {
-						return hadBlock, c.Errf("Duplicate status code entry: %s", what)
+						return c.Errf("Duplicate status code entry: %s", what)
 					}
 					handler.GenericErrorPage = where
 				} else {
 					whatInt, err := strconv.Atoi(what)
 					if err != nil {
-						return hadBlock, c.Err("Expecting a numeric status code or '*', got '" + what + "'")
+						return c.Err("Expecting a numeric status code or '*', got '" + what + "'")
 					}
 
 					if _, exists := handler.ErrorPages[whatInt]; exists {
-						return hadBlock, c.Errf("Duplicate status code entry: %s", what)
+						return c.Errf("Duplicate status code entry: %s", what)
 					}
 
 					handler.ErrorPages[whatInt] = where
 				}
 			}
 		}
-		return hadBlock, nil
+		return nil
 	}
 
 	for c.Next() {
@@ -158,7 +155,7 @@ func errorsParse(c *caddy.Controller) (*ErrorHandler, error) {
 		}
 
 		// Configuration may be in a block
-		_, err := optionalBlock()
+		err := optionalBlock()
 		if err != nil {
 			return handler, err
 		}
