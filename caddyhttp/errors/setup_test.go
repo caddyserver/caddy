@@ -72,12 +72,7 @@ func TestErrorsParse(t *testing.T) {
 			Debug:      true,
 			fileMu:     new(sync.RWMutex),
 		}},
-		{`errors { log visible }`, false, ErrorHandler{
-			ErrorPages: map[int]string{},
-			Debug:      true,
-			fileMu:     new(sync.RWMutex),
-		}},
-		{`errors { log errors.txt
+		{`errors errors.txt {
         404 404.html
         500 500.html
 }`, false, ErrorHandler{
@@ -89,7 +84,7 @@ func TestErrorsParse(t *testing.T) {
 			},
 			fileMu: new(sync.RWMutex),
 		}},
-		{`errors { log errors.txt { rotate_size 2 rotate_age 10 rotate_keep 3 } }`, false, ErrorHandler{
+		{`errors errors.txt { rotate_size 2 rotate_age 10 rotate_keep 3 }`, false, ErrorHandler{
 			LogFile: "errors.txt",
 			LogRoller: &httpserver.LogRoller{
 				MaxSize:    2,
@@ -100,11 +95,10 @@ func TestErrorsParse(t *testing.T) {
 			ErrorPages: map[int]string{},
 			fileMu:     new(sync.RWMutex),
 		}},
-		{`errors { log errors.txt {
-            rotate_size 3
-            rotate_age 11
-            rotate_keep 5
-        }
+		{`errors errors.txt {
+		rotate_size 3
+		rotate_age 11
+		rotate_keep 5
         404 404.html
         503 503.html
 }`, false, ErrorHandler{
@@ -121,7 +115,7 @@ func TestErrorsParse(t *testing.T) {
 			},
 			fileMu: new(sync.RWMutex),
 		}},
-		{`errors { log errors.txt
+		{`errors errors.txt {
         * generic_error.html
         404 404.html
         503 503.html
@@ -167,7 +161,7 @@ func TestErrorsParse(t *testing.T) {
 		}
 		if !reflect.DeepEqual(actualErrorsRule, &test.expectedErrorHandler) {
 			t.Errorf("Test %d expect %v, but got %v", i,
-				actualErrorsRule, test.expectedErrorHandler)
+				test.expectedErrorHandler, actualErrorsRule)
 		}
 	}
 }

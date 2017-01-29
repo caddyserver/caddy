@@ -4,8 +4,6 @@ import (
 	"io"
 	"strconv"
 
-	"github.com/mholt/caddy"
-
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
@@ -29,41 +27,30 @@ func (l LogRoller) GetLogWriter() io.Writer {
 	}
 }
 
+// IsLogRollerSubdirective is true if the subdirective is for the log roller.
+func IsLogRollerSubdirective(subdir string) bool {
+	return subdir == directiveRotateSize ||
+		subdir == directiveRotateAge ||
+		subdir == directiveRotateKeep
+}
+
 // ParseRoller parses roller contents out of c.
-func ParseRoller(c *caddy.Controller) (*LogRoller, error) {
-	var size, age, keep int
-	size = defaultRotateSize
-	age = defaultRotateAge
-	keep = defaultRotateKeep
-	// This is kind of a hack to support nested blocks:
-	// As we are already in a block: either log or errors,
-	// c.nesting > 0 but, as soon as c meets a }, it thinks
-	// the block is over and return false for c.NextBlock.
-	for c.NextBlock() {
-		what := c.Val()
-		if !c.NextArg() {
-			return nil, c.ArgErr()
-		}
-		value := c.Val()
-		var err error
-		switch what {
-		case "rotate_size":
-			size, err = strconv.Atoi(value)
-		case "rotate_age":
-			age, err = strconv.Atoi(value)
-		case "rotate_keep":
-			keep, err = strconv.Atoi(value)
-		}
-		if err != nil {
-			return nil, err
-		}
+func ParseRoller(l *LogRoller, what string, where string) error {
+	var value int
+	var err error
+	value, err = strconv.Atoi(where)
+	if err != nil {
+		return err
 	}
-	return &LogRoller{
-		MaxSize:    size,
-		MaxAge:     age,
-		MaxBackups: keep,
-		LocalTime:  true,
-	}, nil
+	switch what {
+	case directiveRotateSize:
+		l.MaxSize = value
+	case directiveRotateAge:
+		l.MaxAge = value
+	case directiveRotateKeep:
+		l.MaxBackups = value
+	}
+	return nil
 }
 
 // DefaultLogRoller will roll logs by default.
@@ -82,5 +69,8 @@ const (
 	// defaultRotateAge is 14 days.
 	defaultRotateAge = 14
 	// defaultRotateKeep is 10 files.
-	defaultRotateKeep = 10
+	defaultRotateKeep   = 10
+	directiveRotateSize = "rotate_size"
+	directiveRotateAge  = "rotate_age"
+	directiveRotateKeep = "rotate_keep"
 )

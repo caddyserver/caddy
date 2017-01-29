@@ -100,21 +100,14 @@ func errorsParse(c *caddy.Controller) (*ErrorHandler, error) {
 			}
 			where := c.Val()
 
-			if what == "log" {
-				if where == "visible" {
-					handler.Debug = true
-				} else {
-					handler.LogFile = where
+			if httpserver.IsLogRollerSubdirective(what) {
+				if handler.LogRoller == nil {
 					handler.LogRoller = httpserver.DefaultLogRoller()
-					if c.NextArg() {
-						if c.Val() == "{" {
-							c.IncrNest()
-							logRoller, err := httpserver.ParseRoller(c)
-							if err != nil {
-								return hadBlock, err
-							}
-							handler.LogRoller = logRoller
-						}
+				} else {
+					var err error
+					err = httpserver.ParseRoller(handler.LogRoller, what, where)
+					if err != nil {
+						return hadBlock, err
 					}
 				}
 			} else {
@@ -155,22 +148,23 @@ func errorsParse(c *caddy.Controller) (*ErrorHandler, error) {
 		if c.Val() == "}" {
 			continue
 		}
-		// Configuration may be in a block
-		hadBlock, err := optionalBlock()
-		if err != nil {
-			return handler, err
+
+		args := c.RemainingArgs()
+
+		if len(args) == 1 {
+			switch args[0] {
+			case "visible":
+				handler.Debug = true
+			default:
+				handler.LogFile = args[0]
+				handler.LogRoller = httpserver.DefaultLogRoller()
+			}
 		}
 
-		// Otherwise, the only argument would be an error log file name or 'visible'
-		if !hadBlock {
-			if c.NextArg() {
-				if c.Val() == "visible" {
-					handler.Debug = true
-				} else {
-					handler.LogFile = c.Val()
-					handler.LogRoller = httpserver.DefaultLogRoller()
-				}
-			}
+		// Configuration may be in a block
+		_, err := optionalBlock()
+		if err != nil {
+			return handler, err
 		}
 	}
 

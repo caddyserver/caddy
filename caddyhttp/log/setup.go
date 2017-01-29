@@ -91,11 +91,16 @@ func logParse(c *caddy.Controller) ([]*Rule, error) {
 		var logRoller *httpserver.LogRoller
 		logRoller = httpserver.DefaultLogRoller()
 
-		if c.NextArg() {
-			if c.Val() == "{" {
-				c.IncrNest()
+		for c.NextBlock() {
+			what := c.Val()
+			if !c.NextArg() {
+				return nil, c.ArgErr()
+			}
+			where := c.Val()
+
+			if httpserver.IsLogRollerSubdirective(what) {
 				var err error
-				logRoller, err = httpserver.ParseRoller(c)
+				err = httpserver.ParseRoller(logRoller, what, where)
 				if err != nil {
 					return nil, err
 				}
