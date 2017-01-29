@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+
+	"github.com/mholt/caddy"
 )
 
 // FileServer implements a production-ready file server
@@ -80,33 +82,32 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request, name stri
 	}
 
 	// redirect to canonical path
-	u := r.URL.Path
 	if d.IsDir() {
-		// Ensure / at end of directory url
-		if !strings.HasSuffix(u, "/") {
-			// Use the request's RequestURI since the path in u may have been
-			// trimmed by Caddy.
-			redirURL, err := url.ParseRequestURI(r.RequestURI)
-			if err != nil {
-				return http.StatusInternalServerError, err
+		// Ensure / at end of directory url. If the original URL path is
+		// used then ensure / exists as well.
+		if !strings.HasSuffix(r.URL.Path, "/") {
+			toURL, _ := url.Parse(r.URL.String())
+
+			path, ok := r.Context().Value(caddy.URLPathContextKey).(string)
+			if ok && !strings.HasSuffix(path, "/") {
+				toURL.Path = path
 			}
-			redirURL.Path += "/"
-			toURL := r.URL.ResolveReference(redirURL)
+			toURL.Path += "/"
 
 			http.Redirect(w, r, toURL.String(), http.StatusMovedPermanently)
 			return http.StatusMovedPermanently, nil
 		}
 	} else {
-		// Ensure no / at end of file url
-		if strings.HasSuffix(u, "/") {
-			// Use the request's RequestURI since the path in u may have been
-			// trimmed by Caddy.
-			redirURL, err := url.ParseRequestURI(r.RequestURI)
-			if err != nil {
-				return http.StatusInternalServerError, nil
+		// Ensure no / at end of file url. If the original URL path is
+		// used then ensure no / exists as well.
+		if strings.HasSuffix(r.URL.Path, "/") {
+			toURL, _ := url.Parse(r.URL.String())
+
+			path, ok := r.Context().Value(caddy.URLPathContextKey).(string)
+			if ok && strings.HasSuffix(path, "/") {
+				toURL.Path = path
 			}
-			redirURL.Path = strings.TrimSuffix(redirURL.Path, "/")
-			toURL := r.URL.ResolveReference(redirURL)
+			toURL.Path = strings.TrimSuffix(toURL.Path, "/")
 
 			http.Redirect(w, r, toURL.String(), http.StatusMovedPermanently)
 			return http.StatusMovedPermanently, nil

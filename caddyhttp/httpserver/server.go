@@ -2,6 +2,7 @@
 package httpserver
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"io"
@@ -204,6 +205,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	w.Header().Set("Server", "Caddy")
+	c := context.WithValue(r.Context(), caddy.URLPathContextKey, r.URL.Path)
+	r = r.WithContext(c)
 
 	sanitizePath(r)
 
@@ -345,10 +348,10 @@ func (s *Server) Stop() (err error) {
 	return
 }
 
-// sanitizePath collapses any ./ ../ /// madness
-// which helps prevent path traversal attacks.
-// Note to middleware: use URL.RawPath If you need
-// the "original" URL.Path value.
+// sanitizePath collapses any ./ ../ /// madness which helps prevent
+// path traversal attacks. Note to middleware: use the value within the
+// request's context at key caddy.URLPathContextKey to access the
+// "original" URL.Path value.
 func sanitizePath(r *http.Request) {
 	if r.URL.Path == "/" {
 		return

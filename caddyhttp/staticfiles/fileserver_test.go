@@ -1,6 +1,7 @@
 package staticfiles
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mholt/caddy"
 )
 
 var (
@@ -216,6 +219,8 @@ func TestServeHTTP(t *testing.T) {
 	for i, test := range tests {
 		responseRecorder := httptest.NewRecorder()
 		request, err := http.NewRequest("GET", test.url, nil)
+		ctx := context.WithValue(request.Context(), caddy.URLPathContextKey, request.URL.Path)
+		request = request.WithContext(ctx)
 
 		request.Header.Add("Accept-Encoding", "br,gzip")
 
@@ -226,12 +231,9 @@ func TestServeHTTP(t *testing.T) {
 		if u, _ := url.Parse(test.url); u.RawPath != "" {
 			request.URL.Path = u.RawPath
 		}
-		// Manually update RequestURI since http.NewRequest does not create a
-		// request for use with testing a Server Handler.
-		request.RequestURI = request.URL.RequestURI()
-		// Caddy may trim a request's URL path but leave the RequestURI intact.
-		// Overwrite the path with the cleanedPath to test redirects when the
-		// path has been modified.
+		// Caddy may trim a request's URL path. Overwrite the path with
+		// the cleanedPath to test redirects when the path has been
+		// modified.
 		if test.cleanedPath != "" {
 			request.URL.Path = test.cleanedPath
 		}
