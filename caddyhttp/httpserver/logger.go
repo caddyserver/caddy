@@ -82,6 +82,9 @@ func parseSyslogAddress(location string) *syslogAddress {
 
 // Start initializes logger opening files or local/remote syslog connections
 func (l *Logger) Start() error {
+	// initialize mutex on start
+	l.fileMu = new(sync.RWMutex)
+
 	var err error
 
 selectwriter:
