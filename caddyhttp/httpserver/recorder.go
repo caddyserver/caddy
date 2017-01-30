@@ -111,4 +111,3 @@ var _ http.Pusher = (*ResponseRecorder)(nil)
 var _ http.Flusher = (*ResponseRecorder)(nil)
 var _ http.CloseNotifier = (*ResponseRecorder)(nil)
 var _ http.Hijacker = (*ResponseRecorder)(nil)
-
