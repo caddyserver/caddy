@@ -1,6 +1,10 @@
 package httpserver
 
-import "github.com/mholt/caddy/caddytls"
+import (
+	"time"
+
+	"github.com/mholt/caddy/caddytls"
+)
 
 // SiteConfig contains information about a site
 // (also known as a virtual host).
@@ -33,6 +37,35 @@ type SiteConfig struct {
 
 	// Max amount of bytes a request can send on a given path
 	MaxRequestBodySizes []PathLimit
+
+	// The path to the Caddyfile used to generate this site config
+	originCaddyfile string
+
+	// These timeout values are used, in conjunction with other
+	// site configs on the same server instance, to set the
+	// respective timeout values on the http.Server that
+	// is created. Sensible values will mitigate slowloris
+	// attacks and overcome faulty networks, while still
+	// preserving functionality needed for proxying,
+	// websockets, etc.
+	Timeouts Timeouts
+}
+
+// Timeouts specify various timeouts for a server to use.
+// If the assocated bool field is true, then the duration
+// value should be treated literally (i.e. a zero-value
+// duration would mean "no timeout"). If false, the duration
+// was left unset, so a zero-value duration would mean to
+// use a default value (even if default is non-zero).
+type Timeouts struct {
+	ReadTimeout          time.Duration
+	ReadTimeoutSet       bool
+	ReadHeaderTimeout    time.Duration
+	ReadHeaderTimeoutSet bool
+	WriteTimeout         time.Duration
+	WriteTimeoutSet      bool
+	IdleTimeout          time.Duration
+	IdleTimeoutSet       bool
 }
 
 // PathLimit is a mapping from a site's path to its corresponding

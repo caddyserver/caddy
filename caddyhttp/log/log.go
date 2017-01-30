@@ -3,9 +3,10 @@ package log
 
 import (
 	"fmt"
+	"net/http"
+
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
-	"net/http"
 )
 
 func init() {

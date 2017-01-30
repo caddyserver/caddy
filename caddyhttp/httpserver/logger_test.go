@@ -5,13 +5,15 @@ package httpserver
 import (
 	"bytes"
 	"fmt"
-	"gopkg.in/mcuadros/go-syslog.v2"
-	"gopkg.in/mcuadros/go-syslog.v2/format"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+
+	"gopkg.in/mcuadros/go-syslog.v2"
+	"gopkg.in/mcuadros/go-syslog.v2/format"
 )
 
 func TestLoggingToStdout(t *testing.T) {
@@ -27,7 +29,7 @@ func TestLoggingToStdout(t *testing.T) {
 
 	for i, testCase := range testCases {
 		output := captureStdout(func() {
-			logger := Logger{Output: testCase.Output}
+			logger := Logger{Output: testCase.Output, fileMu: new(sync.RWMutex)}
 
 			if err := logger.Start(); err != nil {
 				t.Fatalf("Got unexpected error: %v", err)
@@ -60,7 +62,7 @@ func TestLoggingToStderr(t *testing.T) {
 
 	for i, testCase := range testCases {
 		output := captureStderr(func() {
-			logger := Logger{Output: testCase.Output}
+			logger := Logger{Output: testCase.Output, fileMu: new(sync.RWMutex)}
 
 			if err := logger.Start(); err != nil {
 				t.Fatalf("Got unexpected error: %v", err)
@@ -129,7 +131,7 @@ func TestLoggingToSyslog(t *testing.T) {
 			t.Errorf("Test #%d: expected no error during syslog server boot, got: %v", i, err)
 		}
 
-		logger := Logger{Output: testCase.Output}
+		logger := Logger{Output: testCase.Output, fileMu: new(sync.RWMutex)}
 
 		if err := logger.Start(); err != nil {
 			t.Errorf("Test #%d: expected no error during logger start, got: %v", i, err)

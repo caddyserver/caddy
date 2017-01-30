@@ -26,6 +26,7 @@ import (
 	_ "github.com/mholt/caddy/caddyhttp/root"
 	_ "github.com/mholt/caddy/caddyhttp/status"
 	_ "github.com/mholt/caddy/caddyhttp/templates"
+	_ "github.com/mholt/caddy/caddyhttp/timeouts"
 	_ "github.com/mholt/caddy/caddyhttp/websocket"
 	_ "github.com/mholt/caddy/startupshutdown"
 )

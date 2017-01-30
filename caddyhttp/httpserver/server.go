@@ -9,7 +9,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"path"
 	"runtime"
 	"strings"
 	"sync"
@@ -41,13 +40,7 @@ var _ caddy.GracefulServer = new(Server)
 // and will serve the sites configured in group.
 func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 	s := &Server{
-		Server: &http.Server{
-			Addr: addr,
-			// TODO: Make these values configurable?
-			// ReadTimeout:    2 * time.Minute,
-			// WriteTimeout:   2 * time.Minute,
-			// MaxHeaderBytes: 1 << 16,
-		},
+		Server:      makeHTTPServer(addr, group),
 		vhosts:      newVHostTrie(),
 		sites:       group,
 		connTimeout: GracefulTimeout,
@@ -85,10 +78,10 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 
 	// Set up TLS configuration
 	var tlsConfigs []*caddytls.Config
-	var err error
 	for _, site := range group {
 		tlsConfigs = append(tlsConfigs, site.TLS)
 	}
+	var err error
 	s.Server.TLSConfig, err = caddytls.MakeTLSConfig(tlsConfigs)
 	if err != nil {
 		return nil, err
@@ -152,8 +145,17 @@ func (s *Server) Listen() (net.Listener, error) {
 	return ln.(*net.TCPListener), nil
 }
 
-// ListenPacket is a noop to implement the Server interface.
-func (s *Server) ListenPacket() (net.PacketConn, error) { return nil, nil }
+// ListenPacket creates udp connection for QUIC if it is enabled,
+func (s *Server) ListenPacket() (net.PacketConn, error) {
+	if QUIC {
+		udpAddr, err := net.ResolveUDPAddr("udp", s.Server.Addr)
+		if err != nil {
+			return nil, err
+		}
+		return net.ListenUDP("udp", udpAddr)
+	}
+	return nil, nil
+}
 
 // Serve serves requests on ln. It blocks until ln is closed.
 func (s *Server) Serve(ln net.Listener) error {
@@ -179,15 +181,6 @@ func (s *Server) Serve(ln net.Listener) error {
 		s.tlsGovChan = caddytls.RotateSessionTicketKeys(s.Server.TLSConfig)
 	}
 
-	if QUIC {
-		go func() {
-			err := s.quicServer.ListenAndServe()
-			if err != nil {
-				log.Printf("[ERROR] listening for QUIC connections: %v", err)
-			}
-		}()
-	}
-
 	err := s.Server.Serve(ln)
 	if QUIC {
 		s.quicServer.Close()
@@ -195,8 +188,14 @@ func (s *Server) Serve(ln net.Listener) error {
 	return err
 }
 
-// ServePacket is a noop to implement the Server interface.
-func (s *Server) ServePacket(pc net.PacketConn) error { return nil }
+// ServePacket serves QUIC requests on pc until it is closed.
+func (s *Server) ServePacket(pc net.PacketConn) error {
+	if QUIC {
+		err := s.quicServer.Serve(pc.(*net.UDPConn))
+		return fmt.Errorf("serving QUIC connections: %v", err)
+	}
+	return nil
+}
 
 // ServeHTTP is the entry point of all HTTP requests.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -236,7 +235,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 	if vhost == nil {
 		// check for ACME challenge even if vhost is nil;
 		// could be a new host coming online soon
-		if caddytls.HTTPChallengeHandler(w, r, caddytls.DefaultHTTPAlternatePort) {
+		if caddytls.HTTPChallengeHandler(w, r, "localhost", caddytls.DefaultHTTPAlternatePort) {
 			return 0, nil
 		}
 		// otherwise, log the error and write a message to the client
@@ -297,7 +296,7 @@ func (s *Server) proxyHTTPChallenge(vhost *SiteConfig, w http.ResponseWriter, r 
 	if vhost.TLS != nil && vhost.TLS.AltHTTPPort != "" {
 		altPort = vhost.TLS.AltHTTPPort
 	}
-	return caddytls.HTTPChallengeHandler(w, r, altPort)
+	return caddytls.HTTPChallengeHandler(w, r, vhost.ListenHost, altPort)
 }
 
 // Address returns the address s was assigned to listen on.
@@ -351,7 +350,7 @@ func sanitizePath(r *http.Request) {
 	if r.URL.Path == "/" {
 		return
 	}
-	cleanedPath := path.Clean(r.URL.Path)
+	cleanedPath := CleanPath(r.URL.Path)
 	if cleanedPath == "." {
 		r.URL.Path = "/"
 	} else {
@@ -379,6 +378,74 @@ func (s *Server) OnStartupComplete() {
 		fmt.Println(output)
 		log.Println(output)
 	}
+}
+
+// defaultTimeouts stores the default timeout values to use
+// if left unset by user configuration. Default timeouts,
+// especially for ReadTimeout, are important for mitigating
+// slowloris attacks.
+var defaultTimeouts = Timeouts{
+	ReadTimeout:       10 * time.Second,
+	ReadHeaderTimeout: 10 * time.Second,
+	WriteTimeout:      20 * time.Second,
+	IdleTimeout:       2 * time.Minute,
+}
+
+// makeHTTPServer makes an http.Server from the group of configs
+// in a way that configures timeouts (or, if not set, it uses the
+// default timeouts) and other http.Server properties by combining
+// the configuration of each SiteConfig in the group. (Timeouts
+// are important for mitigating slowloris attacks.)
+func makeHTTPServer(addr string, group []*SiteConfig) *http.Server {
+	s := &http.Server{Addr: addr}
+
+	// find the minimum duration configured for each timeout
+	var min Timeouts
+	for _, cfg := range group {
+		if cfg.Timeouts.ReadTimeoutSet &&
+			(!min.ReadTimeoutSet || cfg.Timeouts.ReadTimeout < min.ReadTimeout) {
+			min.ReadTimeoutSet = true
+			min.ReadTimeout = cfg.Timeouts.ReadTimeout
+		}
+		if cfg.Timeouts.ReadHeaderTimeoutSet &&
+			(!min.ReadHeaderTimeoutSet || cfg.Timeouts.ReadHeaderTimeout < min.ReadHeaderTimeout) {
+			min.ReadHeaderTimeoutSet = true
+			min.ReadHeaderTimeout = cfg.Timeouts.ReadHeaderTimeout
+		}
+		if cfg.Timeouts.WriteTimeoutSet &&
+			(!min.WriteTimeoutSet || cfg.Timeouts.WriteTimeout < min.WriteTimeout) {
+			min.WriteTimeoutSet = true
+			min.WriteTimeout = cfg.Timeouts.WriteTimeout
+		}
+		if cfg.Timeouts.IdleTimeoutSet &&
+			(!min.IdleTimeoutSet || cfg.Timeouts.IdleTimeout < min.IdleTimeout) {
+			min.IdleTimeoutSet = true
+			min.IdleTimeout = cfg.Timeouts.IdleTimeout
+		}
+	}
+
+	// for the values that were not set, use defaults
+	if !min.ReadTimeoutSet {
+		min.ReadTimeout = defaultTimeouts.ReadTimeout
+	}
+	if !min.ReadHeaderTimeoutSet {
+		min.ReadHeaderTimeout = defaultTimeouts.ReadHeaderTimeout
+	}
+	if !min.WriteTimeoutSet {
+		min.WriteTimeout = defaultTimeouts.WriteTimeout
+	}
+	if !min.IdleTimeoutSet {
+		min.IdleTimeout = defaultTimeouts.IdleTimeout
+	}
+
+	// set the final values on the server
+	// TODO: ReadHeaderTimeout and IdleTimeout require Go 1.8
+	s.ReadTimeout = min.ReadTimeout
+	// s.ReadHeaderTimeout = min.ReadHeaderTimeout
+	s.WriteTimeout = min.WriteTimeout
+	// s.IdleTimeout = min.IdleTimeout
+
+	return s
 }
 
 // tcpKeepAliveListener sets TCP keep-alive timeouts on accepted

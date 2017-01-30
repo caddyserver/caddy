@@ -2,6 +2,7 @@ package caddytls
 
 import (
 	"crypto/tls"
+	"fmt"
 	"log"
 	"net/http"
 	"net/http/httputil"
@@ -15,7 +16,7 @@ const challengeBasePath = "/.well-known/acme-challenge"
 // request path starts with challengeBasePath. It returns true if it
 // handled the request and no more needs to be done; it returns false
 // if this call was a no-op and the request still needs handling.
-func HTTPChallengeHandler(w http.ResponseWriter, r *http.Request, altPort string) bool {
+func HTTPChallengeHandler(w http.ResponseWriter, r *http.Request, listenHost, altPort string) bool {
 	if !strings.HasPrefix(r.URL.Path, challengeBasePath) {
 		return false
 	}
@@ -28,7 +29,11 @@ func HTTPChallengeHandler(w http.ResponseWriter, r *http.Request, altPort string
 		scheme = "https"
 	}
 
-	upstream, err := url.Parse(scheme + "://localhost:" + altPort)
+	if listenHost == "" {
+		listenHost = "localhost"
+	}
+
+	upstream, err := url.Parse(fmt.Sprintf("%s://%s:%s", scheme, listenHost, altPort))
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		log.Printf("[ERROR] ACME proxy handler: %v", err)

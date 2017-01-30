@@ -23,6 +23,10 @@ func setupRoot(c *caddy.Controller) error {
 			return c.ArgErr()
 		}
 		config.Root = c.Val()
+		if c.NextArg() {
+			// only one argument allowed
+			return c.ArgErr()
+		}
 	}
 
 	// Check if root path exists

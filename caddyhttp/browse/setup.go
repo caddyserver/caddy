@@ -101,7 +101,8 @@ func browseParse(c *caddy.Controller) ([]Config, error) {
 const defaultTemplate = `<!DOCTYPE html>
 <html>
 	<head>
-		<title>{{.Name}}</title>
+		<title>{{html .Name}}</title>
+		<meta charset="utf-8">
 		<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
 * { padding: 0; margin: 0; }
@@ -167,12 +168,17 @@ main {
 	font-size: 12px;
 	font-family: Verdana, sans-serif;
 	border-bottom: 1px solid #9C9C9C;
-	padding-top: 15px;
-	padding-bottom: 15px;
+	padding-top: 10px;
+	padding-bottom: 10px;
 }
 
 .meta-item {
 	margin-right: 1em;
+}
+
+#filter {
+	padding: 4px;
+	border: 1px solid #CCC;
 }
 
 table {
@@ -317,7 +323,7 @@ footer {
 
 		<header>
 			<h1>
-				{{range $url, $name := .BreadcrumbMap}}<a href="{{$url}}">{{$name}}</a>{{if ne $url "/"}}/{{end}}{{end}}
+				{{range $url, $name := .BreadcrumbMap}}<a href="{{html $url}}">{{html $name}}</a>{{if ne $url "/"}}/{{end}}{{end}}
 			</h1>
 		</header>
 		<main>
@@ -328,6 +334,7 @@ footer {
 					{{- if ne 0 .ItemsLimitedTo}}
 					<span class="meta-item">(of which only <b>{{.ItemsLimitedTo}}</b> are displayed)</span>
 					{{- end}}
+					<span class="meta-item"><input type="text" placeholder="filter" id="filter" onkeyup='filter()'></span>
 				</div>
 			</div>
 			<div class="listing">
@@ -376,15 +383,15 @@ footer {
 					</tr>
 					{{- end}}
 					{{- range .Items}}
-					<tr>
+					<tr class="file">
 						<td>
-							<a href="{{.URL}}">
+							<a href="{{html .URL}}">
 								{{- if .IsDir}}
 								<svg width="1.5em" height="1em" version="1.1" viewBox="0 0 35.678803 28.527945"><use xlink:href="#folder"></use></svg>
 								{{- else}}
 								<svg width="1.5em" height="1em" version="1.1" viewBox="0 0 26.604381 29.144726"><use xlink:href="#file"></use></svg>
 								{{- end}}
-								<span class="name">{{.Name}}</span>
+								<span class="name">{{html .Name}}</span>
 							</a>
 						</td>
 						{{- if .IsDir}}
@@ -400,9 +407,28 @@ footer {
 			</div>
 		</main>
 		<footer>
-			Served with <a rel="noopener noreferrer" href="https://caddyserver.com">Caddy</a>.
+			Served with <a rel="noopener noreferrer" href="https://caddyserver.com">Caddy</a>
 		</footer>
-		<script type="text/javascript">
+		<script>
+			var filterEl = document.getElementById('filter');
+			function filter() {
+				var q = filterEl.value.trim().toLowerCase();
+				var elems = document.querySelectorAll('tr.file');
+				elems.forEach(function(el) {
+					if (!q) {
+						el.style.display = '';
+						return;
+					}
+					var nameEl = el.querySelector('.name');
+					var nameVal = nameEl.textContent.trim().toLowerCase();
+					if (nameVal.indexOf(q) !== -1) {
+						el.style.display = '';
+					} else {
+						el.style.display = 'none';
+					}
+				});
+			}
+
 			function localizeDatetime(e, index, ar) {
 				if (e.textContent === undefined) {
 					return;

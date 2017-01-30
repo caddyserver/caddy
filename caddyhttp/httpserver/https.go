@@ -149,6 +149,7 @@ func redirPlaintextHost(cfg *SiteConfig) *SiteConfig {
 				toURL += ":" + redirPort
 			}
 			toURL += r.URL.RequestURI()
+			w.Header().Set("Connection", "close")
 			http.Redirect(w, r, toURL, http.StatusMovedPermanently)
 			return 0, nil
 		})

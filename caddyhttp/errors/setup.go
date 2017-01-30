@@ -1,12 +1,13 @@
 package errors
 
 import (
-	"github.com/mholt/caddy"
-	"github.com/mholt/caddy/caddyhttp/httpserver"
 	"log"
 	"os"
 	"path/filepath"
 	"strconv"
+
+	"github.com/mholt/caddy"
+	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
 
 // setup configures a new errors middleware instance.

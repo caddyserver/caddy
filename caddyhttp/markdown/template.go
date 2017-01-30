@@ -15,6 +15,7 @@ type Data struct {
 	Doc     map[string]interface{}
 	Styles  []string
 	Scripts []string
+	Meta    map[string]string
 	Files   []FileInfo
 }
 
@@ -26,12 +27,13 @@ func (d Data) Include(filename string) (string, error) {
 }
 
 // execTemplate executes a template given a requestPath, template, and metadata
-func execTemplate(c *Config, mdata metadata.Metadata, files []FileInfo, ctx httpserver.Context) ([]byte, error) {
+func execTemplate(c *Config, mdata metadata.Metadata, meta map[string]string, files []FileInfo, ctx httpserver.Context) ([]byte, error) {
 	mdData := Data{
 		Context: ctx,
 		Doc:     mdata.Variables,
 		Styles:  c.Styles,
 		Scripts: c.Scripts,
+		Meta:    meta,
 		Files:   files,
 	}
 
@@ -74,6 +76,9 @@ const (
 	<head>
 		<title>{{.Doc.title}}</title>
 		<meta charset="utf-8">
+		{{range $key, $val := .Meta}}
+		<meta name="{{$key}}" content="{{$val}}">
+		{{end}}
 		{{- range .Styles}}
 		<link rel="stylesheet" href="{{.}}">
 		{{- end}}

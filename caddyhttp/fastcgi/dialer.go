@@ -70,8 +70,8 @@ func (p *persistentDialer) Close(client Client) error {
 }
 
 type loadBalancingDialer struct {
-	dialers []dialer
 	current int64
+	dialers []dialer
 }
 
 func (m *loadBalancingDialer) Dial() (Client, error) {

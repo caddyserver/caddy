@@ -75,9 +75,9 @@ func TestErrorsParse(t *testing.T) {
 			Log:        &httpserver.Logger{},
 		}},
 		{`errors { log errors.txt
-        404 404.html
-        500 500.html
-}`, false, ErrorHandler{
+			404 404.html
+			500 500.html
+		}`, false, ErrorHandler{
 			ErrorPages: map[int]string{
 				404: "404.html",
 				500: "500.html",
@@ -94,13 +94,13 @@ func TestErrorsParse(t *testing.T) {
 			}}},
 		},
 		{`errors { log errors.txt {
-            size 3
-            age 11
-            keep 5
-        }
-        404 404.html
-        503 503.html
-}`, false, ErrorHandler{
+		    size 3
+		    age 11
+		    keep 5
+		}
+		404 404.html
+		503 503.html
+		}`, false, ErrorHandler{
 			ErrorPages: map[int]string{
 				404: "404.html",
 				503: "503.html",
@@ -111,13 +111,12 @@ func TestErrorsParse(t *testing.T) {
 				MaxBackups: 5,
 				LocalTime:  true,
 			},
-			},
-		}},
+			}}},
 		{`errors { log errors.txt
-        * generic_error.html
-        404 404.html
-        503 503.html
-}`, false, ErrorHandler{
+			* generic_error.html
+			404 404.html
+			503 503.html
+		}`, false, ErrorHandler{
 			Log:              &httpserver.Logger{Output: "errors.txt"},
 			GenericErrorPage: "generic_error.html",
 			ErrorPages: map[int]string{
@@ -137,14 +136,16 @@ func TestErrorsParse(t *testing.T) {
 			}},
 		// Next two test cases is the detection of duplicate status codes
 		{`errors {
-        503 503.html
-        503 503.html
-}`, true, ErrorHandler{ErrorPages: map[int]string{}}},
+			503 503.html
+			503 503.html
+		}`, true, ErrorHandler{ErrorPages: map[int]string{}, Log: &httpserver.Logger{}}},
+
 		{`errors {
-        * generic_error.html
-        * generic_error.html
-}`, true, ErrorHandler{ErrorPages: map[int]string{}}},
+			* generic_error.html
+			* generic_error.html
+		}`, true, ErrorHandler{ErrorPages: map[int]string{}, Log: &httpserver.Logger{}}},
 	}
+
 	for i, test := range tests {
 		actualErrorsRule, err := errorsParse(caddy.NewTestController("http", test.inputErrorsRules))
 

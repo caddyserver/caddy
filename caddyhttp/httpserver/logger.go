@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/hashicorp/go-syslog"
 	"github.com/mholt/caddy"
@@ -24,13 +25,29 @@ type Logger struct {
 	*log.Logger
 	Roller *LogRoller
 	writer io.Writer
+	fileMu *sync.RWMutex
 }
 
 // NewTestLogger creates logger suitable for testing purposes
 func NewTestLogger(buffer *bytes.Buffer) *Logger {
 	return &Logger{
 		Logger: log.New(buffer, "", 0),
+		fileMu: new(sync.RWMutex),
 	}
+}
+
+// Println wraps underlying logger with mutex
+func (l Logger) Println(args ...interface{}) {
+	l.fileMu.RLock()
+	l.Logger.Println(args...)
+	l.fileMu.RUnlock()
+}
+
+// Printf wraps underlying logger with mutex
+func (l Logger) Printf(format string, args ...interface{}) {
+	l.fileMu.RLock()
+	l.Logger.Printf(format, args...)
+	l.fileMu.RUnlock()
 }
 
 // Attach binds logger Start and Close functions to
@@ -118,7 +135,10 @@ selectwriter:
 func (l *Logger) Close() error {
 	// Will close local/remote syslog connections too :)
 	if closer, ok := l.writer.(io.WriteCloser); ok {
-		return closer.Close()
+		l.fileMu.Lock()
+		err := closer.Close()
+		l.fileMu.Unlock()
+		return err
 	}
 
 	return nil
