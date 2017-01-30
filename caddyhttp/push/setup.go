@@ -20,7 +20,6 @@ func init() {
 // ErrNotSupported is returned when push directive is not available
 var ErrNotSupported = errors.New("push directive is available when build on golang 1.8")
 
-var errInvalidFormat = errors.New("invalid format, expected push path [resources, ]")
 var errInvalidHeader = errors.New("header directive requires [name] [value]")
 
 var errHeaderStartsWithColon = errors.New("header cannot start with colon")
@@ -28,13 +27,10 @@ var errMethodNotSupported = errors.New("push supports only GET and HEAD methods"
 
 const pushHeader = "X-Push"
 
+var emptyRules = []Rule{}
+
 // setup configures a new Push middleware
 func setup(c *caddy.Controller) error {
-
-	if !http2PushSupported() {
-		return ErrNotSupported
-	}
-
 	rules, err := parsePushRules(c)
 
 	if err != nil {
@@ -50,7 +46,6 @@ func setup(c *caddy.Controller) error {
 
 func parsePushRules(c *caddy.Controller) ([]Rule, error) {
 	var rules = make(map[string]*Rule)
-	var emptyRules = []Rule{}
 
 	for c.NextLine() {
 		if !c.NextArg() {
@@ -60,11 +55,9 @@ func parsePushRules(c *caddy.Controller) ([]Rule, error) {
 		path := c.Val()
 		args := c.RemainingArgs()
 
-		if len(args) < 1 {
-			return emptyRules, errInvalidFormat
-		}
-
 		var rule *Rule
+		var resources []Resource
+		var ops []ruleOp
 
 		if existingRule, ok := rules[path]; ok {
 			rule = existingRule
@@ -73,8 +66,6 @@ func parsePushRules(c *caddy.Controller) ([]Rule, error) {
 			rule.Path = path
 			rules[rule.Path] = rule
 		}
-
-		var resources []Resource
 
 		for i := 0; i < len(args); i++ {
 			resources = append(resources, Resource{
@@ -85,7 +76,9 @@ func parsePushRules(c *caddy.Controller) ([]Rule, error) {
 		}
 
 		for c.NextBlock() {
-			switch c.Val() {
+			val := c.Val()
+
+			switch val {
 			case "method":
 				if !c.NextArg() {
 					return emptyRules, c.ArgErr()
@@ -97,9 +90,7 @@ func parsePushRules(c *caddy.Controller) ([]Rule, error) {
 					return emptyRules, errMethodNotSupported
 				}
 
-				for index := range resources {
-					resources[index].Method = method
-				}
+				ops = append(ops, setMethodOp(method))
 
 			case "header":
 				args := c.RemainingArgs()
@@ -112,10 +103,20 @@ func parsePushRules(c *caddy.Controller) ([]Rule, error) {
 					return emptyRules, err
 				}
 
-				for index := range resources {
-					resources[index].Header.Add(args[0], args[1])
-				}
+				ops = append(ops, setHeaderOp(args[0], args[1]))
+
+			default:
+				resources = append(resources, Resource{
+					Path:   val,
+					Method: http.MethodGet,
+					Header: http.Header{pushHeader: []string{}},
+				})
 			}
+
+		}
+
+		for _, op := range ops {
+			op(resources)
 		}
 
 		rule.Resources = append(rule.Resources, resources...)
@@ -123,14 +124,34 @@ func parsePushRules(c *caddy.Controller) ([]Rule, error) {
 
 	var returnRules []Rule
 
-	for _, rule := range rules {
+	for path, rule := range rules {
+		if len(rule.Resources) == 0 {
+			return emptyRules, c.Errf("Rule %s has empty push resources list", path)
+		}
+
 		returnRules = append(returnRules, *rule)
 	}
 
 	return returnRules, nil
 }
 
-// rules based on https://go-review.googlesource.com/#/c/29439/4/http2/go18.go#75
+func setHeaderOp(key, value string) func(resources []Resource) {
+	return func(resources []Resource) {
+		for index := range resources {
+			resources[index].Header.Set(key, value)
+		}
+	}
+}
+
+func setMethodOp(method string) func(resources []Resource) {
+
+	return func(resources []Resource) {
+		for index := range resources {
+			resources[index].Method = method
+		}
+	}
+}
+
 func validateHeader(header string) error {
 	if strings.HasPrefix(header, ":") {
 		return errHeaderStartsWithColon

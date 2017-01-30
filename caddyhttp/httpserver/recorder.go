@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"time"
+	"errors"
 )
 
 // ResponseRecorder is a type of http.ResponseWriter that captures
@@ -95,3 +96,15 @@ func (r *ResponseRecorder) CloseNotify() <-chan bool {
 	}
 	panic(NonCloseNotifierError{Underlying: r.ResponseWriter})
 }
+
+// Push resource to client
+func (r *ResponseRecorder) Push(target string, opts *http.PushOptions) error {
+	if pusher, hasPusher := r.ResponseWriter.(http.Pusher); hasPusher {
+		return pusher.Push(target, opts)
+	}
+
+	return errors.New("push is unavailable (probably chained http.ResponseWriter does not implement http.Pusher)")
+}
+
+// Interface guard
+var _ http.Flusher = (*ResponseRecorder)(nil)

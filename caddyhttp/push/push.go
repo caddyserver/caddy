@@ -25,4 +25,6 @@ type (
 		Next  httpserver.Handler
 		Rules []Rule
 	}
+
+	ruleOp func([]Resource)
 )

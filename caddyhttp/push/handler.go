@@ -1,5 +1,3 @@
-// +build go1.8
-
 package push
 
 import (
@@ -38,7 +36,6 @@ outer:
 					Method: resource.Method,
 					Header: resource.Header,
 				})
-
 				if pushErr != nil {
 					// If we cannot push (either not supported or concurrent streams are full - break)
 					break outer
@@ -72,8 +69,4 @@ outer:
 			break outer
 		}
 	}
-}
-
-func http2PushSupported() bool {
-	return true
 }

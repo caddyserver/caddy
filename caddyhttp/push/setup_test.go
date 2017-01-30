@@ -1,5 +1,3 @@
-// +build go1.8
-
 package push
 
 import (
@@ -9,6 +7,7 @@ import (
 
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
+	"github.com/davecgh/go-spew/spew"
 )
 
 func TestPushAvailable(t *testing.T) {
@@ -70,16 +69,61 @@ func TestConfigParse(t *testing.T) {
 						{
 							Path:   "/style.css",
 							Method: http.MethodGet,
-							Header: http.Header{"X-Push": []string{}},
+							Header: http.Header{pushHeader: []string{}},
 						},
 						{
 							Path:   "/style2.css",
 							Method: http.MethodGet,
-							Header: http.Header{"X-Push": []string{}},
+							Header: http.Header{pushHeader: []string{}},
 						},
 					},
 				},
 			},
+		},
+		{
+			"ParseSimpleInlinePush", `push /index.html {
+				/style.css
+				/style2.css
+			}`, false, []Rule{
+				{
+					Path: "/index.html",
+					Resources: []Resource{
+						{
+							Path:   "/style.css",
+							Method: http.MethodGet,
+							Header: http.Header{pushHeader: []string{}},
+						},
+						{
+							Path:   "/style2.css",
+							Method: http.MethodGet,
+							Header: http.Header{pushHeader: []string{}},
+						},
+					},
+				},
+			},
+		},
+		{
+			"ParseSimpleInlinePushWithOps", `push /index.html {
+				/style.css
+				/style2.css
+				header Test Value
+			}`, false, []Rule{
+			{
+				Path: "/index.html",
+				Resources: []Resource{
+					{
+						Path:   "/style.css",
+						Method: http.MethodGet,
+						Header: http.Header{pushHeader: []string{}, "Test": []string{"Value"}},
+					},
+					{
+						Path:   "/style2.css",
+						Method: http.MethodGet,
+						Header: http.Header{pushHeader: []string{}, "Test": []string{"Value"}},
+					},
+				},
+			},
+		},
 		},
 		{
 			"ParseProperConfigWithBlock", `push /index.html /style.css /style2.css {
@@ -151,6 +195,7 @@ func TestConfigParse(t *testing.T) {
 		t.Run(test.name, func(t2 *testing.T) {
 			actual, err := parsePushRules(caddy.NewTestController("http", test.input))
 
+
 			if err == nil && test.shouldErr {
 				t2.Errorf("Test %s didn't error, but it should have", test.name)
 			} else if err != nil && !test.shouldErr {
@@ -171,6 +216,10 @@ func TestConfigParse(t *testing.T) {
 				}
 
 				if !reflect.DeepEqual(actualRule.Resources, expectedRule.Resources) {
+
+					spew.Dump(actualRule.Resources)
+					spew.Dump(expectedRule.Resources)
+
 					t.Errorf("Test %s, rule %d: Expected resources %v, but got %v",
 						test.name, j, expectedRule.Resources, actualRule.Resources)
 				}

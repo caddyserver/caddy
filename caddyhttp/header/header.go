@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/mholt/caddy/caddyhttp/httpserver"
+	"errors"
 )
 
 // Headers is middleware that adds headers to the responses
@@ -134,3 +135,14 @@ func (rww *responseWriterWrapper) CloseNotify() <-chan bool {
 	}
 	panic(httpserver.NonCloseNotifierError{Underlying: rww.ResponseWriter})
 }
+
+func (rww *responseWriterWrapper) Push(target string, opts *http.PushOptions) error {
+	if pusher, hasPusher := rww.ResponseWriter.(http.Pusher); hasPusher {
+		return pusher.Push(target, opts)
+	}
+
+	return errors.New("push is unavailable (probably chained http.ResponseWriter does not implement http.Pusher)")
+}
+
+// Interface guard
+var _ http.Flusher = (*responseWriterWrapper)(nil)
