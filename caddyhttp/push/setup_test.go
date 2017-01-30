@@ -14,7 +14,7 @@ func TestPushAvailable(t *testing.T) {
 	err := setup(caddy.NewTestController("http", "push /index.html /available.css"))
 
 	if err != nil {
-		t.Fatalf("Error %s occured, expected none", err)
+		t.Fatalf("Error %s occurred, expected none", err)
 	}
 }
 
@@ -268,6 +268,6 @@ func TestSetupWithError(t *testing.T) {
 
 	// then
 	if err == nil {
-		t.Error("Expected error but none occured")
+		t.Error("Expected error but none occurred")
 	}
 }
