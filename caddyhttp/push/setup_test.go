@@ -5,9 +5,9 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
-	"github.com/davecgh/go-spew/spew"
 )
 
 func TestPushAvailable(t *testing.T) {
@@ -108,22 +108,22 @@ func TestConfigParse(t *testing.T) {
 				/style2.css
 				header Test Value
 			}`, false, []Rule{
-			{
-				Path: "/index.html",
-				Resources: []Resource{
-					{
-						Path:   "/style.css",
-						Method: http.MethodGet,
-						Header: http.Header{pushHeader: []string{}, "Test": []string{"Value"}},
-					},
-					{
-						Path:   "/style2.css",
-						Method: http.MethodGet,
-						Header: http.Header{pushHeader: []string{}, "Test": []string{"Value"}},
+				{
+					Path: "/index.html",
+					Resources: []Resource{
+						{
+							Path:   "/style.css",
+							Method: http.MethodGet,
+							Header: http.Header{pushHeader: []string{}, "Test": []string{"Value"}},
+						},
+						{
+							Path:   "/style2.css",
+							Method: http.MethodGet,
+							Header: http.Header{pushHeader: []string{}, "Test": []string{"Value"}},
+						},
 					},
 				},
 			},
-		},
 		},
 		{
 			"ParseProperConfigWithBlock", `push /index.html /style.css /style2.css {
@@ -194,7 +194,6 @@ func TestConfigParse(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t2 *testing.T) {
 			actual, err := parsePushRules(caddy.NewTestController("http", test.input))
-
 
 			if err == nil && test.shouldErr {
 				t2.Errorf("Test %s didn't error, but it should have", test.name)

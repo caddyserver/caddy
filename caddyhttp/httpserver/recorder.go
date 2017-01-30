@@ -2,10 +2,10 @@ package httpserver
 
 import (
 	"bufio"
+	"errors"
 	"net"
 	"net/http"
 	"time"
-	"errors"
 )
 
 // ResponseRecorder is a type of http.ResponseWriter that captures

@@ -9,8 +9,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/mholt/caddy/caddyhttp/httpserver"
 	"errors"
+	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
 
 // Headers is middleware that adds headers to the responses

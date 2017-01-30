@@ -11,9 +11,9 @@ import (
 	"net/http"
 	"strings"
 
+	"errors"
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
-	"errors"
 )
 
 func init() {
