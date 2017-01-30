@@ -171,5 +171,8 @@ func (w *gzipResponseWriter) Push(target string, opts *http.PushOptions) error {
 	return errors.New("push is unavailable (probably chained http.ResponseWriter does not implement http.Pusher)")
 }
 
-// Interface guard
+// Interface guards
+var _ http.Pusher = (*gzipResponseWriter)(nil)
 var _ http.Flusher = (*gzipResponseWriter)(nil)
+var _ http.CloseNotifier = (*gzipResponseWriter)(nil)
+var _ http.Hijacker = (*gzipResponseWriter)(nil)

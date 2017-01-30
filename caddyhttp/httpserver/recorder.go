@@ -106,5 +106,9 @@ func (r *ResponseRecorder) Push(target string, opts *http.PushOptions) error {
 	return errors.New("push is unavailable (probably chained http.ResponseWriter does not implement http.Pusher)")
 }
 
-// Interface guard
+// Interface guards
+var _ http.Pusher = (*ResponseRecorder)(nil)
 var _ http.Flusher = (*ResponseRecorder)(nil)
+var _ http.CloseNotifier = (*ResponseRecorder)(nil)
+var _ http.Hijacker = (*ResponseRecorder)(nil)
+

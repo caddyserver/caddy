@@ -144,5 +144,8 @@ func (rww *responseWriterWrapper) Push(target string, opts *http.PushOptions) er
 	return errors.New("push is unavailable (probably chained http.ResponseWriter does not implement http.Pusher)")
 }
 
-// Interface guard
+// Interface guards
+var _ http.Pusher = (*responseWriterWrapper)(nil)
 var _ http.Flusher = (*responseWriterWrapper)(nil)
+var _ http.CloseNotifier = (*responseWriterWrapper)(nil)
+var _ http.Hijacker = (*responseWriterWrapper)(nil)
