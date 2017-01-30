@@ -72,7 +72,11 @@ func (cg ConfigGroup) GetCertificate(clientHello *tls.ClientHelloInfo) (*tls.Cer
 //
 // This method is safe for use as a tls.Config.GetCertificate callback.
 func (cg ConfigGroup) GetConfigForClient(clientHello *tls.ClientHelloInfo) (*tls.Config, error) {
+
 	config := cg.getConfig(clientHello.ServerName)
+
+	fmt.Println(clientHello)
+	fmt.Println(config)
 
 	if config != nil {
 		return config.tlsConfig, nil

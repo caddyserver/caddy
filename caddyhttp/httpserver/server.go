@@ -78,7 +78,7 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 	s.connWg.Add(1)
 
 	// Set up TLS configuration
-	var tlsConfigs caddytls.ConfigGroup
+	tlsConfigs := make(caddytls.ConfigGroup)
 	var allConfigs []*caddytls.Config
 
 	for _, site := range group {
