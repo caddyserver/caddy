@@ -31,6 +31,7 @@ type Server struct {
 	connWg      sync.WaitGroup // one increment per connection
 	tlsGovChan  chan struct{}  // close to stop the TLS maintenance goroutine
 	vhosts      *vhostTrie
+	tlsConfig   *[]caddytls.Config
 }
 
 // ensure it satisfies the interface
@@ -82,7 +83,7 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 		tlsConfigs = append(tlsConfigs, site.TLS)
 	}
 	var err error
-	s.Server.TLSConfig, err = caddytls.MakeTLSConfig(tlsConfigs)
+	s.tlsConfig = tlsConfigs
 	if err != nil {
 		return nil, err
 	}
