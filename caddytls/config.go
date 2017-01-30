@@ -220,7 +220,7 @@ func (c *Config) StorageFor(caURL string) (Storage, error) {
 	return s, nil
 }
 
-func (cfg *Config) Build() error {
+func (cfg *Config) Build(group ConfigGroup) error {
 	config, err := cfg.build()
 
 	if err != nil {
@@ -228,6 +228,7 @@ func (cfg *Config) Build() error {
 	}
 
 	cfg.tlsConfig = config
+	cfg.tlsConfig.GetCertificate = group.GetCertificate
 	return nil
 }
 
@@ -294,6 +295,8 @@ func (cfg *Config) build() (*tls.Config, error) {
 	if len(config.CipherSuites) == 0 || config.CipherSuites[0] != tls.TLS_FALLBACK_SCSV {
 		config.CipherSuites = append([]uint16{tls.TLS_FALLBACK_SCSV}, config.CipherSuites...)
 	}
+
+	config.NextProtos = []string{"h2"}
 
 	return config, nil
 }

@@ -83,7 +83,7 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 
 	for _, site := range group {
 
-		if err := site.TLS.Build(); err != nil {
+		if err := site.TLS.Build(tlsConfigs); err != nil {
 			return nil, err
 		}
 

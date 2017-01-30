@@ -75,9 +75,6 @@ func (cg ConfigGroup) GetConfigForClient(clientHello *tls.ClientHelloInfo) (*tls
 
 	config := cg.getConfig(clientHello.ServerName)
 
-	fmt.Println(clientHello)
-	fmt.Println(config)
-
 	if config != nil {
 		return config.tlsConfig, nil
 	}
