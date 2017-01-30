@@ -60,17 +60,17 @@ func TestMakeTLSConfigCipherSuites(t *testing.T) {
 		{Enabled: true, Ciphers: nil},
 	}
 
-	expectedCiphers := [][]uint16 {
+	expectedCiphers := [][]uint16{
 		{tls.TLS_FALLBACK_SCSV, 0xc02c, 0xc030},
 		{tls.TLS_FALLBACK_SCSV, 0xc012, 0xc030, 0xc00a},
 		append([]uint16{tls.TLS_FALLBACK_SCSV}, defaultCiphers...),
 	}
 
 	for i, config := range configs {
-		cfg,_ := config.build()
+		cfg, _ := config.build()
 
 		if !reflect.DeepEqual(cfg.CipherSuites, expectedCiphers[i]) {
-			t.Errorf("Expected ciphers %v but got %v",  expectedCiphers[i], cfg.CipherSuites)
+			t.Errorf("Expected ciphers %v but got %v", expectedCiphers[i], cfg.CipherSuites)
 		}
 
 	}

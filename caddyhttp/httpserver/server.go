@@ -58,7 +58,6 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 		}
 	}
 
-
 	// Disable HTTP/2 if desired
 	if !HTTP2 {
 		s.Server.TLSNextProto = make(map[string]func(*http.Server, *tls.Conn, http.Handler))
@@ -101,7 +100,7 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 
 	s.Server.TLSConfig = &tls.Config{
 		GetConfigForClient: s.tlsConfig.GetConfigForClient,
-		GetCertificate: s.tlsConfig.GetCertificate,
+		GetCertificate:     s.tlsConfig.GetCertificate,
 	}
 
 	// As of Go 1.7, HTTP/2 is enabled only if NextProtos includes the string "h2"

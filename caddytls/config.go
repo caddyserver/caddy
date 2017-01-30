@@ -220,7 +220,7 @@ func (c *Config) StorageFor(caURL string) (Storage, error) {
 	return s, nil
 }
 
-func (cfg *Config) Build() (error) {
+func (cfg *Config) Build() error {
 	config, err := cfg.build()
 
 	if err != nil {
@@ -324,7 +324,7 @@ func CheckConfigs(configs []*Config) error {
 		}
 	}
 
-	return  nil
+	return nil
 }
 
 // ConfigGetter gets a Config keyed by key.
