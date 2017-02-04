@@ -82,8 +82,8 @@ func TestReplace(t *testing.T) {
 		{"Bad {>Custom placeholder", "Bad {>Custom placeholder"},
 		{"Bad {>Custom placeholder {>ShorterVal}", "Bad -"},
 		{"Bad {}", "Bad -"},
-		{"Cookies are {@taste}", "Cookies are delicious"},
-		{"Missing cookie is {@missing}", "Missing cookie is -"},
+		{"Cookies are {:taste}", "Cookies are delicious"},
+		{"Missing cookie is {:missing}", "Missing cookie is -"},
 	}
 
 	for _, c := range testCases {

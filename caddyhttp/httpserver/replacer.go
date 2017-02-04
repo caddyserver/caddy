@@ -199,7 +199,7 @@ func (r *replacer) getSubstitution(key string) string {
 		}
 	}
 	// next check for cookies
-	if key[1] == '@' {
+	if key[1] == ':' {
 		name := key[2 : len(key)-1]
 		if cookie, err := r.request.Cookie(name); err == nil {
 			return cookie.Value
