@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sync"
 
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
@@ -54,7 +55,9 @@ func (l Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 
 			// Write log entries
 			for _, e := range rule.Entries {
+				e.fileMu.RLock()
 				e.Log.Println(rep.Replace(e.Format))
+				e.fileMu.RUnlock()
 			}
 
 			return status, err
@@ -69,7 +72,8 @@ type Entry struct {
 	Format     string
 	Log        *log.Logger
 	Roller     *httpserver.LogRoller
-	file       *os.File // if logging to a file that needs to be closed
+	file       *os.File      // if logging to a file that needs to be closed
+	fileMu     *sync.RWMutex // files can't be safely read/written in one goroutine and closed in another (issue #1371)
 }
 
 // Rule configures the logging middleware.

@@ -53,6 +53,9 @@ func TestRoot(t *testing.T) {
 			`root `, true, "", parseErrContent,
 		},
 		{
+			`root /a /b`, true, "", parseErrContent,
+		},
+		{
 			fmt.Sprintf(`root %s`, inaccessiblePath), true, "", unableToAccessErrContent,
 		},
 		{
@@ -68,7 +71,7 @@ func TestRoot(t *testing.T) {
 		cfg := httpserver.GetConfig(c)
 
 		if test.shouldErr && err == nil {
-			t.Errorf("Test %d: Expected error but found %s for input %s", i, err, test.input)
+			t.Errorf("Test %d: Expected error but got nil for input '%s'", i, test.input)
 		}
 
 		if err != nil {

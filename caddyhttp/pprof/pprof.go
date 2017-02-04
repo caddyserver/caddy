@@ -32,7 +32,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error)
 // https://golang.org/src/net/http/pprof/pprof.go#L67
 func NewMux() *http.ServeMux {
 	mux := http.NewServeMux()
-	mux.HandleFunc(BasePath+"/", pp.Index)
+	mux.HandleFunc(BasePath+"/", func(w http.ResponseWriter, r *http.Request) {
+		// this endpoint, as implemented in the standard library, doesn't set
+		// its Content-Type header, so using this can confuse clients, especially
+		// if gzipping...
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		pp.Index(w, r)
+	})
 	mux.HandleFunc(BasePath+"/cmdline", pp.Cmdline)
 	mux.HandleFunc(BasePath+"/profile", pp.Profile)
 	mux.HandleFunc(BasePath+"/symbol", pp.Symbol)
