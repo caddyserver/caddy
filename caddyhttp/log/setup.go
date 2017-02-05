@@ -23,38 +23,10 @@ func setup(c *caddy.Controller) error {
 	c.OnStartup(func() error {
 		for _, rule := range rules {
 			for _, entry := range rule.Entries {
-				var err error
-				var writer io.Writer
-
-				if entry.OutputFile == "stdout" {
-					writer = os.Stdout
-				} else if entry.OutputFile == "stderr" {
-					writer = os.Stderr
-				} else if entry.OutputFile == "syslog" {
-					writer, err = gsyslog.NewLogger(gsyslog.LOG_INFO, "LOCAL0", "caddy")
-					if err != nil {
-						return err
-					}
-				} else {
-					err := os.MkdirAll(filepath.Dir(entry.OutputFile), 0744)
-					if err != nil {
-						return err
-					}
-					file, err := os.OpenFile(entry.OutputFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
-					if err != nil {
-						return err
-					}
-					if entry.Roller != nil {
-						file.Close()
-						entry.Roller.Filename = entry.OutputFile
-						writer = entry.Roller.GetLogWriter()
-					} else {
-						entry.file = file
-						writer = file
-					}
+				err := OpenLogFile(entry)
+				if err != nil {
+					return err
 				}
-
-				entry.Log = log.New(writer, "", 0)
 			}
 		}
 
@@ -82,6 +54,43 @@ func setup(c *caddy.Controller) error {
 	return nil
 }
 
+func OpenLogFile(e *Entry) error {
+
+	var err error
+	var writer io.Writer
+
+	if e.OutputFile == "stdout" {
+		writer = os.Stdout
+	} else if e.OutputFile == "stderr" {
+		writer = os.Stderr
+	} else if e.OutputFile == "syslog" {
+		writer, err = gsyslog.NewLogger(gsyslog.LOG_INFO, "LOCAL0", "caddy")
+		if err != nil {
+			return err
+		}
+	} else {
+		err := os.MkdirAll(filepath.Dir(e.OutputFile), 0744)
+		if err != nil {
+			return err
+		}
+		file, err := os.OpenFile(e.OutputFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+		if err != nil {
+			return err
+		}
+		if e.Roller != nil {
+			file.Close()
+			e.Roller.Filename = e.OutputFile
+			writer = e.Roller.GetLogWriter()
+		} else {
+			e.file = file
+			writer = file
+		}
+	}
+
+	e.Log = log.New(writer, "", 0)
+	return nil
+}
+
 func logParse(c *caddy.Controller) ([]*Rule, error) {
 	var rules []*Rule
 
@@ -101,6 +110,7 @@ func logParse(c *caddy.Controller) ([]*Rule, error) {
 						// This part doesn't allow having something after the rotate block
 						if c.Next() {
 							if c.Val() != "}" {
+
 								return nil, c.ArgErr()
 							}
 						}
@@ -117,6 +127,7 @@ func logParse(c *caddy.Controller) ([]*Rule, error) {
 				fileMu:     new(sync.RWMutex),
 			})
 		} else if len(args) == 1 {
+			log.Println("%v", args[0])
 			// Only an output file specified
 			rules = appendEntry(rules, "/", &Entry{
 				OutputFile: args[0],
@@ -126,6 +137,7 @@ func logParse(c *caddy.Controller) ([]*Rule, error) {
 			})
 		} else {
 			// Path scope, output file, and maybe a format specified
+			log.Println("%v", args[1])
 
 			format := DefaultLogFormat
 

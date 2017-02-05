@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+
 	"sync"
 
 	"github.com/mholt/caddy"
@@ -55,6 +56,32 @@ func (l Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 
 			// Write log entries
 			for _, e := range rule.Entries {
+
+				// Store logfile as per caddyfile to revert.
+				entryOutputFile := e.OutputFile
+
+				// See if we need to replace anypart of the logfile name
+				// if different from current open file then close and reopen
+				logfn := rep.Replace(e.OutputFile)
+
+				if logfn != e.OutputFile && logfn != e.file.Name() {
+
+					// Close current Logfile
+					e.file.Close()
+					e.file.Name()
+
+					// TODO: not sure if i need to do something more with log before setting to nil
+					e.Log = nil
+
+					e.OutputFile = logfn
+					err := OpenLogFile(e)
+					if err != nil {
+						return status, err
+					}
+					// Reset back to outputfile as per caddyfile
+					e.OutputFile = entryOutputFile
+				}
+
 				e.fileMu.RLock()
 				e.Log.Println(rep.Replace(e.Format))
 				e.fileMu.RUnlock()
