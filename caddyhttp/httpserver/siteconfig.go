@@ -25,6 +25,9 @@ type SiteConfig struct {
 	// Compiled middleware stack
 	middlewareChain Handler
 
+	// listener middleware stack
+	listenerMiddleware []ListenerMiddleware
+
 	// Directory from which to serve files
 	Root string
 
@@ -80,6 +83,11 @@ func (s *SiteConfig) AddMiddleware(m Middleware) {
 	s.middleware = append(s.middleware, m)
 }
 
+// AddListenerMiddleware adds a listener middleware to a site's listenerMiddleware stack.
+func (s *SiteConfig) AddListenerMiddleware(l ListenerMiddleware) {
+	s.listenerMiddleware = append(s.listenerMiddleware, l)
+}
+
 // TLSConfig returns s.TLS.
 func (s SiteConfig) TLSConfig() *caddytls.Config {
 	return s.TLS
@@ -98,4 +106,9 @@ func (s SiteConfig) Port() string {
 // Middleware returns s.middleware (useful for tests).
 func (s SiteConfig) Middleware() []Middleware {
 	return s.middleware
+}
+
+// ListenerMiddleware returns s.listenerMiddleware
+func (s SiteConfig) ListenerMiddleware() []ListenerMiddleware {
+	return s.listenerMiddleware
 }
