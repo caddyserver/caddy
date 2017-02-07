@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"strconv"
 
-	lumberjack "gopkg.in/natefinch/lumberjack.v2"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 // LogRoller implements a type that provides a rolling logger.
