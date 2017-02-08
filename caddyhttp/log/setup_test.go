@@ -32,7 +32,10 @@ func TestSetup(t *testing.T) {
 		t.Errorf("Expected / as the default PathScope")
 	}
 
-	expectedLogger := &httpserver.Logger{Output: DefaultLogFilename}
+	expectedLogger := &httpserver.Logger{
+		Output: DefaultLogFilename,
+		Roller: httpserver.DefaultLogRoller(),
+	}
 
 	if !reflect.DeepEqual(myHandler.Rules[0].Entries[0].Log, expectedLogger) {
 		t.Errorf("Expected %v as the default Log, got: %v", expectedLogger, myHandler.Rules[0].Entries[0].Log)
@@ -40,7 +43,6 @@ func TestSetup(t *testing.T) {
 	if myHandler.Rules[0].Entries[0].Format != DefaultLogFormat {
 		t.Errorf("Expected %s as the default Log Format", DefaultLogFormat)
 	}
-
 	if !httpserver.SameNext(myHandler.Next, httpserver.EmptyNext) {
 		t.Error("'Next' field of handler was not set properly")
 	}
@@ -55,56 +57,80 @@ func TestLogParse(t *testing.T) {
 		{`log`, false, []Rule{{
 			PathScope: "/",
 			Entries: []*Entry{{
-				Log:    &httpserver.Logger{Output: DefaultLogFilename},
+				Log: &httpserver.Logger{
+					Output: DefaultLogFilename,
+					Roller: httpserver.DefaultLogRoller(),
+				},
 				Format: DefaultLogFormat,
 			}},
 		}}},
 		{`log log.txt`, false, []Rule{{
 			PathScope: "/",
 			Entries: []*Entry{{
-				Log:    &httpserver.Logger{Output: "log.txt"},
+				Log: &httpserver.Logger{
+					Output: "log.txt",
+					Roller: httpserver.DefaultLogRoller(),
+				},
 				Format: DefaultLogFormat,
 			}},
 		}}},
 		{`log syslog://127.0.0.1:5000`, false, []Rule{{
 			PathScope: "/",
 			Entries: []*Entry{{
-				Log:    &httpserver.Logger{Output: "syslog://127.0.0.1:5000"},
+				Log: &httpserver.Logger{
+					Output: "syslog://127.0.0.1:5000",
+					Roller: httpserver.DefaultLogRoller(),
+				},
 				Format: DefaultLogFormat,
 			}},
 		}}},
 		{`log syslog+tcp://127.0.0.1:5000`, false, []Rule{{
 			PathScope: "/",
 			Entries: []*Entry{{
-				Log:    &httpserver.Logger{Output: "syslog+tcp://127.0.0.1:5000"},
+				Log: &httpserver.Logger{
+					Output: "syslog+tcp://127.0.0.1:5000",
+					Roller: httpserver.DefaultLogRoller(),
+				},
 				Format: DefaultLogFormat,
 			}},
 		}}},
 		{`log /api log.txt`, false, []Rule{{
 			PathScope: "/api",
 			Entries: []*Entry{{
-				Log:    &httpserver.Logger{Output: "log.txt"},
+				Log: &httpserver.Logger{
+					Output: "log.txt",
+					Roller: httpserver.DefaultLogRoller(),
+				},
 				Format: DefaultLogFormat,
 			}},
 		}}},
 		{`log /serve stdout`, false, []Rule{{
 			PathScope: "/serve",
 			Entries: []*Entry{{
-				Log:    &httpserver.Logger{Output: "stdout"},
+				Log: &httpserver.Logger{
+					Output: "stdout",
+					Roller: httpserver.DefaultLogRoller(),
+				},
 				Format: DefaultLogFormat,
 			}},
 		}}},
 		{`log /myapi log.txt {common}`, false, []Rule{{
 			PathScope: "/myapi",
 			Entries: []*Entry{{
-				Log:    &httpserver.Logger{Output: "log.txt"},
+				Log: &httpserver.Logger{
+					Output: "log.txt",
+					Roller: httpserver.DefaultLogRoller(),
+				},
 				Format: CommonLogFormat,
 			}},
 		}}},
 		{`log /test accesslog.txt {combined}`, false, []Rule{{
 			PathScope: "/test",
 			Entries: []*Entry{{
-				Log:    &httpserver.Logger{Output: "accesslog.txt"},
+				Log: &httpserver.Logger{
+					Output: "accesslog.txt",
+					Roller: httpserver.DefaultLogRoller(),
+				},
 				Format: CombinedLogFormat,
 			}},
 		}}},
@@ -112,13 +138,19 @@ func TestLogParse(t *testing.T) {
 		  log /api2 accesslog.txt {combined}`, false, []Rule{{
 			PathScope: "/api1",
 			Entries: []*Entry{{
-				Log:    &httpserver.Logger{Output: "log.txt"},
+				Log: &httpserver.Logger{
+					Output: "log.txt",
+					Roller: httpserver.DefaultLogRoller(),
+				},
 				Format: DefaultLogFormat,
 			}},
 		}, {
 			PathScope: "/api2",
 			Entries: []*Entry{{
-				Log:    &httpserver.Logger{Output: "accesslog.txt"},
+				Log: &httpserver.Logger{
+					Output: "accesslog.txt",
+					Roller: httpserver.DefaultLogRoller(),
+				},
 				Format: CombinedLogFormat,
 			}},
 		}}},
@@ -126,25 +158,33 @@ func TestLogParse(t *testing.T) {
 		  log /api4 log.txt {when}`, false, []Rule{{
 			PathScope: "/api3",
 			Entries: []*Entry{{
-				Log:    &httpserver.Logger{Output: "stdout"},
+				Log: &httpserver.Logger{
+					Output: "stdout",
+					Roller: httpserver.DefaultLogRoller(),
+				},
 				Format: "{host}",
 			}},
 		}, {
 			PathScope: "/api4",
 			Entries: []*Entry{{
-				Log:    &httpserver.Logger{Output: "log.txt"},
+				Log: &httpserver.Logger{
+					Output: "log.txt",
+					Roller: httpserver.DefaultLogRoller(),
+				},
 				Format: "{when}",
 			}},
 		}}},
-		{`log access.log { rotate { size 2 age 10 keep 3 } }`, false, []Rule{{
+		{`log access.log { rotate_size 2 rotate_age 10 rotate_keep 3 }`, false, []Rule{{
 			PathScope: "/",
 			Entries: []*Entry{{
-				Log: &httpserver.Logger{Output: "access.log", Roller: &httpserver.LogRoller{
-					MaxSize:    2,
-					MaxAge:     10,
-					MaxBackups: 3,
-					LocalTime:  true,
-				}},
+				Log: &httpserver.Logger{
+					Output: "access.log",
+					Roller: &httpserver.LogRoller{
+						MaxSize:    2,
+						MaxAge:     10,
+						MaxBackups: 3,
+						LocalTime:  true,
+					}},
 				Format: DefaultLogFormat,
 			}},
 		}}},
@@ -152,10 +192,16 @@ func TestLogParse(t *testing.T) {
 		  log / log.txt {when}`, false, []Rule{{
 			PathScope: "/",
 			Entries: []*Entry{{
-				Log:    &httpserver.Logger{Output: "stdout"},
+				Log: &httpserver.Logger{
+					Output: "stdout",
+					Roller: httpserver.DefaultLogRoller(),
+				},
 				Format: "{host}",
 			}, {
-				Log:    &httpserver.Logger{Output: "log.txt"},
+				Log: &httpserver.Logger{
+					Output: "log.txt",
+					Roller: httpserver.DefaultLogRoller(),
+				},
 				Format: "{when}",
 			}},
 		}}},

@@ -32,25 +32,24 @@ func logParse(c *caddy.Controller) ([]*Rule, error) {
 		args := c.RemainingArgs()
 
 		var logRoller *httpserver.LogRoller
-		if c.NextBlock() {
-			if c.Val() == "rotate" {
-				if c.NextArg() {
-					if c.Val() == "{" {
-						var err error
-						logRoller, err = httpserver.ParseRoller(c)
-						if err != nil {
-							return nil, err
-						}
-						// This part doesn't allow having something after the rotate block
-						if c.Next() {
-							if c.Val() != "}" {
-								return nil, c.ArgErr()
-							}
-						}
-					}
+		logRoller = httpserver.DefaultLogRoller()
+
+		for c.NextBlock() {
+			what := c.Val()
+			if !c.NextArg() {
+				return nil, c.ArgErr()
+			}
+			where := c.Val()
+
+			if httpserver.IsLogRollerSubdirective(what) {
+				var err error
+				err = httpserver.ParseRoller(logRoller, what, where)
+				if err != nil {
+					return nil, err
 				}
 			}
 		}
+
 		if len(args) == 0 {
 			// Nothing specified; use defaults
 			rules = appendEntry(rules, "/", &Entry{

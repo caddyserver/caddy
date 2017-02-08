@@ -62,62 +62,70 @@ func TestErrorsParse(t *testing.T) {
 		}},
 		{`errors errors.txt`, false, ErrorHandler{
 			ErrorPages: map[int]string{},
-			Log:        &httpserver.Logger{Output: "errors.txt"},
+			Log: &httpserver.Logger{
+				Output: "errors.txt",
+				Roller: httpserver.DefaultLogRoller(),
+			},
 		}},
 		{`errors visible`, false, ErrorHandler{
 			ErrorPages: map[int]string{},
 			Debug:      true,
 			Log:        &httpserver.Logger{},
 		}},
-		{`errors { log visible }`, false, ErrorHandler{
-			ErrorPages: map[int]string{},
-			Debug:      true,
-			Log:        &httpserver.Logger{},
-		}},
-		{`errors { log errors.txt
-			404 404.html
-			500 500.html
-		}`, false, ErrorHandler{
+		{`errors errors.txt {
+        404 404.html
+        500 500.html
+}`, false, ErrorHandler{
 			ErrorPages: map[int]string{
 				404: "404.html",
 				500: "500.html",
 			},
-			Log: &httpserver.Logger{Output: "errors.txt"},
+			Log: &httpserver.Logger{
+				Output: "errors.txt",
+				Roller: httpserver.DefaultLogRoller(),
+			},
 		}},
-		{`errors { log errors.txt { size 2 age 10 keep 3 } }`, false, ErrorHandler{
+		{`errors errors.txt { rotate_size 2 rotate_age 10 rotate_keep 3 }`, false, ErrorHandler{
 			ErrorPages: map[int]string{},
-			Log: &httpserver.Logger{Output: "errors.txt", Roller: &httpserver.LogRoller{
-				MaxSize:    2,
-				MaxAge:     10,
-				MaxBackups: 3,
-				LocalTime:  true,
-			}}},
-		},
-		{`errors { log errors.txt {
-		    size 3
-		    age 11
-		    keep 5
-		}
-		404 404.html
-		503 503.html
-		}`, false, ErrorHandler{
+			Log: &httpserver.Logger{
+				Output: "errors.txt", Roller: &httpserver.LogRoller{
+					MaxSize:    2,
+					MaxAge:     10,
+					MaxBackups: 3,
+					LocalTime:  true,
+				},
+			},
+		}},
+		{`errors errors.txt {
+		rotate_size 3
+		rotate_age 11
+		rotate_keep 5
+        404 404.html
+        503 503.html
+}`, false, ErrorHandler{
 			ErrorPages: map[int]string{
 				404: "404.html",
 				503: "503.html",
 			},
-			Log: &httpserver.Logger{Output: "errors.txt", Roller: &httpserver.LogRoller{
-				MaxSize:    3,
-				MaxAge:     11,
-				MaxBackups: 5,
-				LocalTime:  true,
+			Log: &httpserver.Logger{
+				Output: "errors.txt",
+				Roller: &httpserver.LogRoller{
+					MaxSize:    3,
+					MaxAge:     11,
+					MaxBackups: 5,
+					LocalTime:  true,
+				},
 			},
-			}}},
-		{`errors { log errors.txt
-			* generic_error.html
-			404 404.html
-			503 503.html
-		}`, false, ErrorHandler{
-			Log:              &httpserver.Logger{Output: "errors.txt"},
+		}},
+		{`errors errors.txt {
+        * generic_error.html
+        404 404.html
+        503 503.html
+}`, false, ErrorHandler{
+			Log: &httpserver.Logger{
+				Output: "errors.txt",
+				Roller: httpserver.DefaultLogRoller(),
+			},
 			GenericErrorPage: "generic_error.html",
 			ErrorPages: map[int]string{
 				404: "404.html",
@@ -158,7 +166,7 @@ func TestErrorsParse(t *testing.T) {
 		}
 		if !reflect.DeepEqual(actualErrorsRule, &test.expectedErrorHandler) {
 			t.Errorf("Test %d expect %v, but got %v", i,
-				actualErrorsRule, test.expectedErrorHandler)
+				test.expectedErrorHandler, actualErrorsRule)
 		}
 	}
 }

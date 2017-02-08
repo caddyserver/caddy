@@ -40,33 +40,20 @@ func errorsParse(c *caddy.Controller) (*ErrorHandler, error) {
 
 	cfg := httpserver.GetConfig(c)
 
-	optionalBlock := func() (bool, error) {
-		var hadBlock bool
-
+	optionalBlock := func() error {
 		for c.NextBlock() {
-			hadBlock = true
 
 			what := c.Val()
 			if !c.NextArg() {
-				return hadBlock, c.ArgErr()
+				return c.ArgErr()
 			}
 			where := c.Val()
 
-			if what == "log" {
-				if where == "visible" {
-					handler.Debug = true
-				} else {
-					handler.Log.Output = where
-					if c.NextArg() {
-						if c.Val() == "{" {
-							c.IncrNest()
-							logRoller, err := httpserver.ParseRoller(c)
-							if err != nil {
-								return hadBlock, err
-							}
-							handler.Log.Roller = logRoller
-						}
-					}
+			if httpserver.IsLogRollerSubdirective(what) {
+				var err error
+				err = httpserver.ParseRoller(handler.Log.Roller, what, where)
+				if err != nil {
+					return err
 				}
 			} else {
 				// Error page; ensure it exists
@@ -82,24 +69,24 @@ func errorsParse(c *caddy.Controller) (*ErrorHandler, error) {
 
 				if what == "*" {
 					if handler.GenericErrorPage != "" {
-						return hadBlock, c.Errf("Duplicate status code entry: %s", what)
+						return c.Errf("Duplicate status code entry: %s", what)
 					}
 					handler.GenericErrorPage = where
 				} else {
 					whatInt, err := strconv.Atoi(what)
 					if err != nil {
-						return hadBlock, c.Err("Expecting a numeric status code or '*', got '" + what + "'")
+						return c.Err("Expecting a numeric status code or '*', got '" + what + "'")
 					}
 
 					if _, exists := handler.ErrorPages[whatInt]; exists {
-						return hadBlock, c.Errf("Duplicate status code entry: %s", what)
+						return c.Errf("Duplicate status code entry: %s", what)
 					}
 
 					handler.ErrorPages[whatInt] = where
 				}
 			}
 		}
-		return hadBlock, nil
+		return nil
 	}
 
 	for c.Next() {
@@ -107,21 +94,23 @@ func errorsParse(c *caddy.Controller) (*ErrorHandler, error) {
 		if c.Val() == "}" {
 			continue
 		}
-		// Configuration may be in a block
-		hadBlock, err := optionalBlock()
-		if err != nil {
-			return handler, err
+
+		args := c.RemainingArgs()
+
+		if len(args) == 1 {
+			switch args[0] {
+			case "visible":
+				handler.Debug = true
+			default:
+				handler.Log.Output = args[0]
+				handler.Log.Roller = httpserver.DefaultLogRoller()
+			}
 		}
 
-		// Otherwise, the only argument would be an error log file name or 'visible'
-		if !hadBlock {
-			if c.NextArg() {
-				if c.Val() == "visible" {
-					handler.Debug = true
-				} else {
-					handler.Log.Output = c.Val()
-				}
-			}
+		// Configuration may be in a block
+		err := optionalBlock()
+		if err != nil {
+			return handler, err
 		}
 	}
 
