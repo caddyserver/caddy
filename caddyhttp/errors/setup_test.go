@@ -3,7 +3,6 @@ package errors
 import (
 	"path/filepath"
 	"reflect"
-	"sync"
 	"testing"
 
 	"github.com/mholt/caddy"
@@ -27,12 +26,12 @@ func TestSetup(t *testing.T) {
 		t.Fatalf("Expected handler to be type ErrorHandler, got: %#v", handler)
 	}
 
-	if myHandler.LogFile != "" {
-		t.Errorf("Expected '%s' as the default LogFile", "")
+	expectedLogger := &httpserver.Logger{}
+
+	if !reflect.DeepEqual(expectedLogger, myHandler.Log) {
+		t.Errorf("Expected '%v' as the default Log, got: '%v'", expectedLogger, myHandler.Log)
 	}
-	if myHandler.LogRoller != nil {
-		t.Errorf("Expected LogRoller to be nil, got: %v", *myHandler.LogRoller)
-	}
+
 	if !httpserver.SameNext(myHandler.Next, httpserver.EmptyNext) {
 		t.Error("'Next' field of handler was not set properly")
 	}
@@ -59,78 +58,71 @@ func TestErrorsParse(t *testing.T) {
 	}{
 		{`errors`, false, ErrorHandler{
 			ErrorPages: map[int]string{},
-			fileMu:     new(sync.RWMutex),
+			Log:        &httpserver.Logger{},
 		}},
 		{`errors errors.txt`, false, ErrorHandler{
 			ErrorPages: map[int]string{},
-			LogFile:    "errors.txt",
-			fileMu:     new(sync.RWMutex),
+			Log:        &httpserver.Logger{Output: "errors.txt"},
 		}},
 		{`errors visible`, false, ErrorHandler{
 			ErrorPages: map[int]string{},
 			Debug:      true,
-			fileMu:     new(sync.RWMutex),
+			Log:        &httpserver.Logger{},
 		}},
 		{`errors { log visible }`, false, ErrorHandler{
 			ErrorPages: map[int]string{},
 			Debug:      true,
-			fileMu:     new(sync.RWMutex),
+			Log:        &httpserver.Logger{},
 		}},
 		{`errors { log errors.txt
-        404 404.html
-        500 500.html
-}`, false, ErrorHandler{
-			LogFile: "errors.txt",
+			404 404.html
+			500 500.html
+		}`, false, ErrorHandler{
 			ErrorPages: map[int]string{
 				404: "404.html",
 				500: "500.html",
 			},
-			fileMu: new(sync.RWMutex),
+			Log: &httpserver.Logger{Output: "errors.txt"},
 		}},
 		{`errors { log errors.txt { size 2 age 10 keep 3 } }`, false, ErrorHandler{
-			LogFile: "errors.txt",
-			LogRoller: &httpserver.LogRoller{
+			ErrorPages: map[int]string{},
+			Log: &httpserver.Logger{Output: "errors.txt", Roller: &httpserver.LogRoller{
 				MaxSize:    2,
 				MaxAge:     10,
 				MaxBackups: 3,
 				LocalTime:  true,
-			},
-			ErrorPages: map[int]string{},
-			fileMu:     new(sync.RWMutex),
-		}},
+			}}},
+		},
 		{`errors { log errors.txt {
-            size 3
-            age 11
-            keep 5
-        }
-        404 404.html
-        503 503.html
-}`, false, ErrorHandler{
-			LogFile: "errors.txt",
+		    size 3
+		    age 11
+		    keep 5
+		}
+		404 404.html
+		503 503.html
+		}`, false, ErrorHandler{
 			ErrorPages: map[int]string{
 				404: "404.html",
 				503: "503.html",
 			},
-			LogRoller: &httpserver.LogRoller{
+			Log: &httpserver.Logger{Output: "errors.txt", Roller: &httpserver.LogRoller{
 				MaxSize:    3,
 				MaxAge:     11,
 				MaxBackups: 5,
 				LocalTime:  true,
 			},
-			fileMu: new(sync.RWMutex),
-		}},
+			}}},
 		{`errors { log errors.txt
-        * generic_error.html
-        404 404.html
-        503 503.html
-}`, false, ErrorHandler{
-			LogFile:          "errors.txt",
+			* generic_error.html
+			404 404.html
+			503 503.html
+		}`, false, ErrorHandler{
+			Log:              &httpserver.Logger{Output: "errors.txt"},
 			GenericErrorPage: "generic_error.html",
 			ErrorPages: map[int]string{
 				404: "404.html",
 				503: "503.html",
 			},
-			fileMu: new(sync.RWMutex),
 		}},
 		// test absolute file path
 		{`errors {
@@ -140,18 +132,20 @@ func TestErrorsParse(t *testing.T) {
 				ErrorPages: map[int]string{
 					404: testAbs,
 				},
-				fileMu: new(sync.RWMutex),
+				Log: &httpserver.Logger{},
 			}},
 		// Next two test cases is the detection of duplicate status codes
 		{`errors {
-        503 503.html
-        503 503.html
-}`, true, ErrorHandler{ErrorPages: map[int]string{}, fileMu: new(sync.RWMutex)}},
+			503 503.html
+			503 503.html
+		}`, true, ErrorHandler{ErrorPages: map[int]string{}, Log: &httpserver.Logger{}}},
+
 		{`errors {
-        * generic_error.html
-        * generic_error.html
-}`, true, ErrorHandler{ErrorPages: map[int]string{}, fileMu: new(sync.RWMutex)}},
+			* generic_error.html
+			* generic_error.html
+		}`, true, ErrorHandler{ErrorPages: map[int]string{}, Log: &httpserver.Logger{}}},
 	}
+
 	for i, test := range tests {
 		actualErrorsRule, err := errorsParse(caddy.NewTestController("http", test.inputErrorsRules))
 

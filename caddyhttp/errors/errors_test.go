@@ -4,14 +4,12 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/mholt/caddy/caddyhttp/httpserver"
@@ -33,8 +31,7 @@ func TestErrors(t *testing.T) {
 			http.StatusNotFound:  path,
 			http.StatusForbidden: "not_exist_file",
 		},
-		Log:    log.New(&buf, "", 0),
-		fileMu: new(sync.RWMutex),
+		Log: httpserver.NewTestLogger(&buf),
 	}
 	_, notExistErr := os.Open("not_exist_file")
 
@@ -123,7 +120,6 @@ func TestVisibleErrorWithPanic(t *testing.T) {
 		Next: httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
 			panic(panicMsg)
 		}),
-		fileMu: new(sync.RWMutex),
 	}
 
 	req, err := http.NewRequest("GET", "/", nil)
@@ -179,8 +175,7 @@ func TestGenericErrorPage(t *testing.T) {
 		ErrorPages: map[int]string{
 			http.StatusNotFound: notFoundErrorPagePath,
 		},
-		Log:    log.New(&buf, "", 0),
-		fileMu: new(sync.RWMutex),
+		Log: httpserver.NewTestLogger(&buf),
 	}
 
 	tests := []struct {

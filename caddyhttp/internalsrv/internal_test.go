@@ -6,8 +6,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/mholt/caddy/caddyhttp/httpserver"
 	"strconv"
+
+	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
 
 const (
