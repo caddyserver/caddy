@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"strings"
 	"sync"
 
@@ -109,6 +110,17 @@ selectwriter:
 				return err
 			}
 
+			break selectwriter
+		}
+
+		if strings.HasPrefix(l.Output, "|") {
+			args := strings.Fields(l.Output[1:])
+			cmd := exec.Command(args[0], args[1:]...)
+			l.writer, err = cmd.StdinPipe()
+			if err != nil {
+				return err
+			}
+			cmd.Start()
 			break selectwriter
 		}
 
