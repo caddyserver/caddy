@@ -178,6 +178,11 @@ func TestServeHTTP(t *testing.T) {
 			expectedBodyContent: testFiles[filepath.Join("webroot", "sub", "brotli.html.br")],
 			expectedEtag:        `W/"1e240-e"`,
 		},
+		// Test 20 - treat existing file as a directory.
+		{
+			url:            "https://foo/file1.html/other",
+			expectedStatus: http.StatusNotFound,
+		},
 	}
 
 	for i, test := range tests {
