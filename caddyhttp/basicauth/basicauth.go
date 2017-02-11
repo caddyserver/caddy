@@ -60,6 +60,9 @@ func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 
 			// remove credentials from request to avoid leaking upstream
 			r.Header.Del("Authorization")
+
+			// let upstream middleware (e.g. fastcgi and cgi) know about authenticated user
+			r.Header.Set("Authorized", username)
 		}
 	}
 

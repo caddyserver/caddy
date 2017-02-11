@@ -234,8 +234,8 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 		"REMOTE_ADDR":       ip,
 		"REMOTE_HOST":       ip, // For speed, remote host lookups disabled
 		"REMOTE_PORT":       port,
-		"REMOTE_IDENT":      "", // Not used
-		"REMOTE_USER":       "", // Not used
+		"REMOTE_IDENT":      "",                         // Not used
+		"REMOTE_USER":       r.Header.Get("Authorized"), // Set by basicauth, blank otherwise
 		"REQUEST_METHOD":    r.Method,
 		"SERVER_NAME":       h.ServerName,
 		"SERVER_PORT":       h.ServerPort,
