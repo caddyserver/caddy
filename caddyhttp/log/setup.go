@@ -127,7 +127,6 @@ func logParse(c *caddy.Controller) ([]*Rule, error) {
 				fileMu:     new(sync.RWMutex),
 			})
 		} else if len(args) == 1 {
-			log.Println("%v", args[0])
 			// Only an output file specified
 			rules = appendEntry(rules, "/", &Entry{
 				OutputFile: args[0],
@@ -137,8 +136,6 @@ func logParse(c *caddy.Controller) ([]*Rule, error) {
 			})
 		} else {
 			// Path scope, output file, and maybe a format specified
-			log.Println("%v", args[1])
-
 			format := DefaultLogFormat
 
 			if len(args) > 2 {
