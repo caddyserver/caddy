@@ -4,12 +4,10 @@ package errors
 import (
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"runtime"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/mholt/caddy"
@@ -28,12 +26,8 @@ type ErrorHandler struct {
 	Next             httpserver.Handler
 	GenericErrorPage string         // default error page filename
 	ErrorPages       map[int]string // map of status code to filename
-	LogFile          string
-	Log              *log.Logger
-	LogRoller        *httpserver.LogRoller
-	Debug            bool          // if true, errors are written out to client rather than to a log
-	file             *os.File      // a log file to close when done
-	fileMu           *sync.RWMutex // like with log middleware, os.File can't "safely" be closed in a different goroutine
+	Log              *httpserver.Logger
+	Debug            bool // if true, errors are written out to client rather than to a log
 }
 
 func (h ErrorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
@@ -50,9 +44,7 @@ func (h ErrorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, er
 			fmt.Fprintln(w, errMsg)
 			return 0, err // returning 0 signals that a response has been written
 		}
-		h.fileMu.RLock()
 		h.Log.Println(errMsg)
-		h.fileMu.RUnlock()
 	}
 
 	if status >= 400 {
@@ -73,10 +65,8 @@ func (h ErrorHandler) errorPage(w http.ResponseWriter, r *http.Request, code int
 		errorPage, err := os.Open(pagePath)
 		if err != nil {
 			// An additional error handling an error... <insert grumpy cat here>
-			h.fileMu.RLock()
 			h.Log.Printf("%s [NOTICE %d %s] could not load error page: %v",
 				time.Now().Format(timeFormat), code, r.URL.String(), err)
-			h.fileMu.RUnlock()
 			httpserver.DefaultErrorFunc(w, r, code)
 			return
 		}
@@ -89,10 +79,8 @@ func (h ErrorHandler) errorPage(w http.ResponseWriter, r *http.Request, code int
 
 		if err != nil {
 			// Epic fail... sigh.
-			h.fileMu.RLock()
 			h.Log.Printf("%s [NOTICE %d %s] could not respond with %s: %v",
 				time.Now().Format(timeFormat), code, r.URL.String(), pagePath, err)
-			h.fileMu.RUnlock()
 			httpserver.DefaultErrorFunc(w, r, code)
 		}
 
@@ -154,9 +142,7 @@ func (h ErrorHandler) recovery(w http.ResponseWriter, r *http.Request) {
 		httpserver.WriteTextResponse(w, http.StatusInternalServerError, fmt.Sprintf("%s\n\n%s", panicMsg, stack))
 	} else {
 		// Currently we don't use the function name, since file:line is more conventional
-		h.fileMu.RLock()
 		h.Log.Printf(panicMsg)
-		h.fileMu.RUnlock()
 		h.errorPage(w, r, http.StatusInternalServerError)
 	}
 }
