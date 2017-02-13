@@ -55,12 +55,10 @@ func init() {
 func hideCaddyfile(cctx caddy.Context) error {
 	ctx := cctx.(*httpContext)
 	for _, cfg := range ctx.siteConfigs {
-
 		// if no Caddyfile exists exit.
 		if cfg.originCaddyfile == "" {
 			return nil
 		}
-
 		absRoot, err := filepath.Abs(cfg.Root)
 		if err != nil {
 			return err
