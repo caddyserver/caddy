@@ -30,7 +30,7 @@ func setupRoot(c *caddy.Controller) error {
 	}
 	//first check that the path is not a symlink, os.Stat panics when this is true
 	info, _ := os.Lstat(config.Root)
-	if info != nil && info.Mode() & os.ModeSymlink == os.ModeSymlink{
+	if info != nil && info.Mode()&os.ModeSymlink == os.ModeSymlink {
 		log.Printf("[INFO] Root path is symlink: %s", config.Root)
 	} else {
 		// Check if root path exists
