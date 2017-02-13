@@ -321,3 +321,14 @@ func (c Context) Files(name string) ([]string, error) {
 
 	return names, nil
 }
+
+// IsMITM returns true if it seems likely that the TLS connection
+// is being intercepted.
+func (c Context) IsMITM() bool {
+	if val, ok := c.Req.Context().Value(CtxKey("mitm")).(bool); ok {
+		return val
+	}
+	return false
+}
+
+type CtxKey string
