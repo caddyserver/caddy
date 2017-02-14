@@ -75,6 +75,49 @@ func (h *tlsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.next.ServeHTTP(w, r)
 }
 
+type clientHelloConn struct {
+	net.Conn
+	readHello bool
+	listener  *tlsHelloListener
+}
+
+func (c *clientHelloConn) Read(b []byte) (n int, err error) {
+	if !c.readHello {
+		// Read the header bytes.
+		hdr := make([]byte, 5)
+		n, err := io.ReadFull(c.Conn, hdr)
+		if err != nil {
+			return n, err
+		}
+
+		// Get the length of the ClientHello message and read it as well.
+		length := uint16(hdr[3])<<8 | uint16(hdr[4])
+		hello := make([]byte, int(length))
+		n, err = io.ReadFull(c.Conn, hello)
+		if err != nil {
+			return n, err
+		}
+
+		// Parse the ClientHello and store it in the map.
+		rawParsed := parseRawClientHello(hello)
+		c.listener.helloInfosMu.Lock()
+		c.listener.helloInfos[c.Conn.RemoteAddr().String()] = rawParsed
+		c.listener.helloInfosMu.Unlock()
+
+		// Since we buffered the header and ClientHello, pretend we were
+		// never here by lining up the buffered values to be read with a
+		// custom connection type, followed by the rest of the actual
+		// underlying connection.
+		mr := io.MultiReader(bytes.NewReader(hdr), bytes.NewReader(hello), c.Conn)
+		mc := multiConn{Conn: c.Conn, reader: mr}
+
+		c.Conn = mc
+
+		c.readHello = true
+	}
+	return c.Conn.Read(b)
+}
+
 // multiConn is a net.Conn that reads from the
 // given reader instead of the wire directly. This
 // is useful when some of the connection has already
@@ -233,49 +276,8 @@ func (l *tlsHelloListener) Accept() (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	// TODO: Reading from this connection in the same goroutine is blocking, is it not?
-
-	// Be careful to limit the amount of time to allow reading from this connection.
-	conn.SetDeadline(time.Now().Add(l.readTimeout))
-
-	// Read the header bytes.
-	hdr := make([]byte, 5)
-	_, err = io.ReadFull(conn, hdr)
-	if err != nil {
-		// returning an error will terminate the Accept loop
-		// in net/http, which isn't what we want; we'll just
-		// let the error occur naturally when it tries to read.
-		return conn, nil
-	}
-
-	// Get the length of the ClientHello message and read it as well.
-	length := uint16(hdr[3])<<8 | uint16(hdr[4])
-	hello := make([]byte, int(length))
-	_, err = io.ReadFull(conn, hello)
-	if err != nil {
-		return conn, nil
-	}
-
-	// Parse the ClientHello and store it in the map.
-	rawParsed := parseRawClientHello(hello)
-	l.helloInfosMu.Lock()
-	l.helloInfos[conn.RemoteAddr().String()] = rawParsed
-	l.helloInfosMu.Unlock()
-
-	// Since we buffered the header and ClientHello, pretend we were
-	// never here by lining up the buffered values to be read with a
-	// custom connection type, followed by the rest of the actual
-	// underlying connection.
-	mr := io.MultiReader(bytes.NewReader(hdr), bytes.NewReader(hello), conn)
-	mc := multiConn{Conn: conn, reader: mr}
-
-	// Clear the read timeout and let the built-in TLS server take care of
-	// it. This may not be a perfect way to do timeouts, but meh, it works.
-	conn.SetDeadline(time.Time{})
-
-	// Let the built-in TLS server handle the connection now as usual.
-	return tls.Server(mc, l.config), nil
+	helloConn := &clientHelloConn{Conn: conn, listener: l}
+	return tls.Server(helloConn, l.config), nil
 }
 
 // rawHelloInfo contains the "raw" data parsed from the TLS
@@ -508,7 +510,7 @@ func (info rawHelloInfo) looksLikeSafari() bool {
 		tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,    // 0xc009
 		tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,   // 0xc030
 		tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,   // 0xc02f
-		TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384,       //0xc028
+		TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384,       // 0xc028
 		tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256,   // 0xc027
 		tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,      // 0xc014
 		tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,      // 0xc013
