@@ -55,6 +55,10 @@ func init() {
 func hideCaddyfile(cctx caddy.Context) error {
 	ctx := cctx.(*httpContext)
 	for _, cfg := range ctx.siteConfigs {
+		// if no Caddyfile exists exit.
+		if cfg.originCaddyfile == "" {
+			return nil
+		}
 		absRoot, err := filepath.Abs(cfg.Root)
 		if err != nil {
 			return err
@@ -454,6 +458,7 @@ var directives = []string{
 	"prometheus", // github.com/miekg/caddy-prometheus
 	"proxy",
 	"fastcgi",
+	"cgi", // github.com/jung-kurt/caddy-cgi
 	"websocket",
 	"filemanager", // github.com/hacdias/caddy-filemanager
 	"markdown",
