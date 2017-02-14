@@ -482,12 +482,45 @@ func (info rawHelloInfo) looksLikeSafari() bool {
 	// will probably use Secure Transport which will also
 	// share the TLS handshake characteristics of Safari.
 
+	// Let's do the easy check first... should be sufficient in many cases.
 	if len(info.cipherSuites) < 1 {
 		return false
 	}
-	return info.cipherSuites[0] == scsvRenegotiation
-	// TODO: Implement checking of presence and ordering
-	// of cipher suites etc. as described by the paper.
+	if info.cipherSuites[0] != scsvRenegotiation {
+		return false
+	}
+
+	// We check for the presence and order of the extensions.
+	requiredExtensionsOrder := []uint16{10, 11, 13, 13172, 16, 5, 18, 23}
+	if !assertPresenceAndOrdering(requiredExtensionsOrder, info.extensions, true) {
+		return false
+	}
+
+	// We check for order of cipher suites but not presence, since
+	// according to the paper, cipher suites may be not be added
+	// or reordered by the user, but they may be disabled.
+	expectedCipherSuiteOrder := []uint16{
+		tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384, // 0xc02c
+		tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256, // 0xc02b
+		TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384,     // 0xc024
+		TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256,     // 0xc023
+		tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,    // 0xc00a
+		tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,    // 0xc009
+		tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,   // 0xc030
+		tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,   // 0xc02f
+		TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384,       //0xc028
+		tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256,   // 0xc027
+		tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,      // 0xc014
+		tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,      // 0xc013
+		tls.TLS_RSA_WITH_AES_256_GCM_SHA384,         // 0x9d
+		tls.TLS_RSA_WITH_AES_128_GCM_SHA256,         // 0x9c
+		TLS_RSA_WITH_AES_256_CBC_SHA256,             // 0x3d
+		TLS_RSA_WITH_AES_128_CBC_SHA256,             // 0x3c
+		tls.TLS_RSA_WITH_AES_256_CBC_SHA,            // 0x35
+		tls.TLS_RSA_WITH_AES_128_CBC_SHA,            // 0x2f
+	}
+	return assertPresenceAndOrdering(expectedCipherSuiteOrder, info.cipherSuites, false)
+	// TODO: Check curves: [23 24 25]
 }
 
 const (
@@ -505,6 +538,7 @@ const (
 	TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384       = 0xc024
 	TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256       = 0xc023
 	TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384         = 0xc028
+	TLS_RSA_WITH_AES_128_CBC_SHA256               = 0x3c
 	TLS_RSA_WITH_AES_256_CBC_SHA256               = 0x3d
 	TLS_DHE_RSA_WITH_AES_128_CBC_SHA              = 0x33
 	TLS_DHE_RSA_WITH_AES_256_CBC_SHA              = 0x39
