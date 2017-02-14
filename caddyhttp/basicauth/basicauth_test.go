@@ -130,8 +130,6 @@ func TestMultipleOverlappingRules(t *testing.T) {
 
 func contentHandler(w http.ResponseWriter, r *http.Request) (int, error) {
 	fmt.Fprintf(w, r.URL.String())
-	remoteUser, _ := r.Context().Value(string("remote_user")).(string)
-	fmt.Printf("remote_user (upstream) [%s]\n", remoteUser)
 	return http.StatusOK, nil
 }
 
