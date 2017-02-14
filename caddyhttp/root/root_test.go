@@ -123,7 +123,7 @@ func TestSymlinkRoot(t *testing.T) {
 	err = os.Symlink(origDir, symlinkDir)
 	if err != nil {
 		if strings.Contains(err.Error(), "A required privilege is not held by the client") {
-			t.Skip("BeforeTest:  A required privilege is not held by the client and is requried to create a symlink to run this test.")
+			t.Skip("BeforeTest:  A required privilege is not held by the client and is required to create a symlink to run this test.")
 		}
 		t.Fatalf("BeforeTest: Cannot create symlink! Error was: %v", err)
 	}
