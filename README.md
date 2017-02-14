@@ -2,6 +2,7 @@
 
 [![community](https://img.shields.io/badge/community-forum-ff69b4.svg?style=flat-square)](https://forum.caddyserver.com) [![twitter](https://img.shields.io/badge/twitter-@caddyserver-55acee.svg?style=flat-square)](https://twitter.com/caddyserver) [![Documentation](https://img.shields.io/badge/godoc-reference-blue.svg?style=flat-square)](https://godoc.org/github.com/mholt/caddy) [![Linux Build Status](https://img.shields.io/travis/mholt/caddy.svg?style=flat-square&label=linux+build)](https://travis-ci.org/mholt/caddy) [![Windows Build Status](https://img.shields.io/appveyor/ci/mholt/caddy.svg?style=flat-square&label=windows+build)](https://ci.appveyor.com/project/mholt/caddy)
 [![Go Report Card](https://goreportcard.com/badge/github.com/mholt/caddy?style=flat-square)](https://goreportcard.com/report/mholt/caddy)
+[![Sourcegraph Badge](https://sourcegraph.com/github.com/mholt/caddy/-/badge.svg)](https://sourcegraph.com/github.com/mholt/caddy?badge)
 
 
 Caddy is a general-purpose web server for Windows, Mac, Linux, BSD, and
