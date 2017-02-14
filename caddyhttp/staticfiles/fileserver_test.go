@@ -95,14 +95,14 @@ func TestServeHTTP(t *testing.T) {
 			url:                 "https://foo/file1.html",
 			expectedStatus:      http.StatusOK,
 			expectedBodyContent: testFiles[webrootFile1Html],
-			expectedEtag:        `"1e240-13"`,
+			expectedEtag:        `"2n9cj"`,
 		},
 		// Test 3 - access folder with index file with trailing slash
 		{
 			url:                 "https://foo/dirwithindex/",
 			expectedStatus:      http.StatusOK,
 			expectedBodyContent: testFiles[webrootDirwithindexIndeHtml],
-			expectedEtag:        `"1e240-20"`,
+			expectedEtag:        `"2n9cw"`,
 		},
 		// Test 4 - access folder with index file without trailing slash
 		{
@@ -142,7 +142,7 @@ func TestServeHTTP(t *testing.T) {
 			url:                 "https://foo/dirwithindex/index.html",
 			expectedStatus:      http.StatusOK,
 			expectedBodyContent: testFiles[webrootDirwithindexIndeHtml],
-			expectedEtag:        `"1e240-20"`,
+			expectedEtag:        `"2n9cw"`,
 		},
 		// Test 11 - send a request with query params
 		{
@@ -187,7 +187,7 @@ func TestServeHTTP(t *testing.T) {
 			acceptEncoding:      "gzip",
 			expectedStatus:      http.StatusOK,
 			expectedBodyContent: testFiles[webrootSubGzippedHtmlGz],
-			expectedEtag:        `W/"1e240-11"`,
+			expectedEtag:        `"2n9ch"`,
 			expectedVary:        "Accept-Encoding",
 			expectedEncoding:    "gzip",
 		},
@@ -197,7 +197,7 @@ func TestServeHTTP(t *testing.T) {
 			acceptEncoding:      "br,gzip",
 			expectedStatus:      http.StatusOK,
 			expectedBodyContent: testFiles[webrootSubBrotliHtmlBr],
-			expectedEtag:        `W/"1e240-10"`,
+			expectedEtag:        `"2n9cg"`,
 			expectedVary:        "Accept-Encoding",
 			expectedEncoding:    "br",
 		},
@@ -207,7 +207,9 @@ func TestServeHTTP(t *testing.T) {
 			acceptEncoding:      "nicebrew", // contains "br" substring but not "br"
 			expectedStatus:      http.StatusOK,
 			expectedBodyContent: testFiles[webrootSubBrotliHtml],
-			expectedEtag:        `"1e240-d"`,
+			expectedEtag:        `"2n9cd"`,
+			expectedVary:        "",
+			expectedEncoding:    "",
 		},
 	}
 
