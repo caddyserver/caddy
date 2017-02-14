@@ -99,7 +99,9 @@ one collaborator who did not open the pull request before merging. This will
 help ensure high code quality as new collaborators are added to the project.
 
 Read [CodeReviewComments](https://github.com/golang/go/wiki/CodeReviewComments)
-on the Go wiki for an idea of what we look for in good, clean Go code.
+on the Go wiki for an idea of what we look for in good, clean Go code, and
+check out [what Linus suggests](https://gist.github.com/matthewhudson/1475276)
+for good commit messages.
 
 
 

@@ -97,6 +97,8 @@ func (mc multiConn) Read(b []byte) (n int, err error) {
 // insufficient length or invalid length values) results in
 // a silent error and an incomplete info struct, since there
 // is no good way to handle an error like this during Accept().
+// The data is expected to contain the whole ClientHello and
+// ONLY the ClientHello.
 //
 // The majority of this code is borrowed from the Go standard
 // library, which is (c) The Go Authors. It has been modified
@@ -310,20 +312,13 @@ func (info rawHelloInfo) looksLikeFirefox() bool {
 	// of extensions, cipher suites, elliptic curves,
 	// EC point formats, and handshake compression methods."
 
-	// We check for both the presence of extensions and their ordering.
-	// Note: Firefox will sometimes have 21 (padding) as first extension,
-	// and other times it will not have it at all (Feb. 2017).
-	if len(info.extensions) > 0 && info.extensions[0] == 21 {
-		info.extensions = info.extensions[1:]
-	}
-	expectedExtensions := []uint16{0, 23, 65281, 10, 11, 35, 16, 5, 65283, 13}
-	if len(info.extensions) != len(expectedExtensions) {
+	// We check for the presence and order of the extensions.
+	// Note: Sometimes padding (21) is present, sometimes not.
+	// Note: Firefox 51+ does not advertise 0x3374 (13172, NPN).
+	// Note: Firefox doesn't advertise 0x0 (0, SNI) when connecting to IP addresses.
+	requiredExtensionsOrder := []uint16{23, 65281, 10, 11, 35, 16, 5, 65283, 13}
+	if !assertPresenceAndOrdering(requiredExtensionsOrder, info.extensions, true) {
 		return false
-	}
-	for i := range expectedExtensions {
-		if info.extensions[i] != expectedExtensions[i] {
-			return false
-		}
 	}
 
 	// We check for both presence of curves and their ordering.
@@ -341,39 +336,55 @@ func (info rawHelloInfo) looksLikeFirefox() bool {
 	// according to the paper, cipher suites may be not be added
 	// or reordered by the user, but they may be disabled.
 	expectedCipherSuiteOrder := []uint16{
-		tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
-		tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-		0xc02f, // tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
-		0xcca9, // tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
-		tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
-		tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-		tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
-		tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
-		tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
-		tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
-		0x33, // tls.TLS_DHE_RSA_WITH_AES_128_CBC_SHA,
-		0x39, // tls.TLS_DHE_RSA_WITH_AES_256_CBC_SHA,
-		tls.TLS_RSA_WITH_AES_128_CBC_SHA,
-		tls.TLS_RSA_WITH_AES_256_CBC_SHA,
-		tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA,
+		tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,   // 0xc02b
+		tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,     // 0xc02f
+		TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256, // 0xcca9
+		TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,   // 0xcca8
+		tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,   // 0xc02c
+		tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,     // 0xc030
+		tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,      // 0xc00a
+		tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,      // 0xc009
+		tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,        // 0xc013
+		tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,        // 0xc014
+		TLS_DHE_RSA_WITH_AES_128_CBC_SHA,              // 0x33
+		TLS_DHE_RSA_WITH_AES_256_CBC_SHA,              // 0x39
+		tls.TLS_RSA_WITH_AES_128_CBC_SHA,              // 0x2f
+		tls.TLS_RSA_WITH_AES_256_CBC_SHA,              // 0x35
+		tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA,             // 0xa
 	}
-	// this loop checks the order of cipher suites
-	// but tolerates missing ones
+	return assertPresenceAndOrdering(expectedCipherSuiteOrder, info.cipherSuites, false)
+}
+
+// assertPresenceAndOrdering will return true if candidateList contains
+// the items in requiredItems in the same order as requiredItems.
+//
+// If requiredIsSubset is true, then all items in requiredItems must be
+// present in candidateList. If requiredIsSubset is false, then requiredItems
+// may contain items that are not in candidateList.
+//
+// In all cases, the order of requiredItems is enforced.
+func assertPresenceAndOrdering(requiredItems, candidateList []uint16, requiredIsSubset bool) bool {
+	superset := requiredItems
+	subset := candidateList
+	if requiredIsSubset {
+		superset = candidateList
+		subset = requiredItems
+	}
+
 	var j int
-	for _, cipherSuite := range info.cipherSuites {
+	for _, item := range superset {
 		var found bool
-		for j < len(expectedCipherSuiteOrder) {
-			if expectedCipherSuiteOrder[j] == cipherSuite {
+		for j < len(subset) {
+			if subset[j] == item {
 				found = true
 				break
 			}
 			j++
 		}
-		if j == len(expectedCipherSuiteOrder)-1 && !found {
+		if j == len(subset)-1 && !found {
 			return false
 		}
 	}
-
 	return true
 }
 
@@ -402,17 +413,18 @@ func (info rawHelloInfo) looksLikeChrome() bool {
 	// TLS_DHE_RSA_WITH_AES_128_CBC_SHA (0x33)
 	// TLS_DHE_RSA_WITH_AES_256_CBC_SHA (0x39)
 
+	// Selected ciphers present in Chrome mobile (Feb. 2017):
+	// 0xc00a, 0xc014, 0xc009, 0x9c, 0x9d, 0x2f, 0x35, 0xa
+
 	chromeCipherExclusions := map[uint16]struct{}{
-		0xc024: {}, // TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384
-		0xc023: {}, // TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256
-		tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA: {},
-		tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA: {},
-		0xc028: {}, // TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384
-		tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256: {},
-		0x3d: {}, // TLS_RSA_WITH_AES_256_CBC_SHA256
-		tls.TLS_RSA_WITH_AES_128_CBC_SHA256: {},
-		0x33: {}, // TLS_DHE_RSA_WITH_AES_128_CBC_SHA
-		0x39: {}, // TLS_DHE_RSA_WITH_AES_256_CBC_SHA
+		TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384:   {}, // 0xc024
+		TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256:   {}, // 0xc023
+		TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384:     {}, // 0xc028
+		tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256: {}, // 0xc027
+		TLS_RSA_WITH_AES_256_CBC_SHA256:           {}, // 0x3d
+		tls.TLS_RSA_WITH_AES_128_CBC_SHA256:       {}, // 0x3c
+		TLS_DHE_RSA_WITH_AES_128_CBC_SHA:          {}, // 0x33
+		TLS_DHE_RSA_WITH_AES_256_CBC_SHA:          {}, // 0x39
 	}
 	for _, ext := range info.cipherSuites {
 		if _, ok := chromeCipherExclusions[ext]; ok {
@@ -420,7 +432,7 @@ func (info rawHelloInfo) looksLikeChrome() bool {
 		}
 	}
 
-	// Chrome does not include curve 25 (CurveP521).
+	// Chrome does not include curve 25 (CurveP521) (as of Chrome 56, Feb. 2017).
 	for _, curve := range info.curves {
 		if curve == 25 {
 			return false
@@ -437,20 +449,20 @@ func (info rawHelloInfo) looksLikeEdge() bool {
 	// is the only TLS library we tested that includes the OCSP status
 	// request extension before the supported groups and EC point formats
 	// extensions."
-	// NOTE - TODO: Chrome also puts 5 before 10 and 11...
-	var extPosOCSPStatusRequest, extPosSupportedGroups, extPosPointFormats int
+	//
+	// More specifically, the OCSP status request extension appears
+	// *directly* before the other two extensions, which occur in that
+	// order. (I contacted the authors for clarification and verified it.)
 	for i, ext := range info.extensions {
-		switch ext {
-		case extensionOCSPStatusRequest:
-			extPosOCSPStatusRequest = i
-		case extensionSupportedCurves:
-			extPosSupportedGroups = i
-		case extensionSupportedPoints:
-			extPosPointFormats = i
+		if ext == extensionOCSPStatusRequest {
+			if len(info.extensions) <= i+2 {
+				return false
+			}
+			return info.extensions[i+1] == extensionSupportedCurves &&
+				info.extensions[i+2] == extensionSupportedPoints
 		}
 	}
-	return extPosOCSPStatusRequest < extPosSupportedGroups &&
-		extPosOCSPStatusRequest < extPosPointFormats
+	return false
 }
 
 // looksLikeSafari returns true if info looks like a handshake
@@ -485,4 +497,15 @@ const (
 	extensionHeartbeat         = 15
 
 	scsvRenegotiation = 0xff
+
+	// cipher suites missing from the crypto/tls package,
+	// in no particular order here
+	TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256 = 0xcca9
+	TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256   = 0xcca8
+	TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384       = 0xc024
+	TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256       = 0xc023
+	TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384         = 0xc028
+	TLS_RSA_WITH_AES_256_CBC_SHA256               = 0x3d
+	TLS_DHE_RSA_WITH_AES_128_CBC_SHA              = 0x33
+	TLS_DHE_RSA_WITH_AES_256_CBC_SHA              = 0x39
 )
