@@ -9,6 +9,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/mholt/caddy/caddyfile"
@@ -128,15 +129,15 @@ func (u *staticUpstream) NewHost(host string) (*UpstreamHost, error) {
 		Conns:             0,
 		Fails:             0,
 		FailTimeout:       u.FailTimeout,
-		Unhealthy:         false,
+		Unhealthy:         0,
 		UpstreamHeaders:   u.upstreamHeaders,
 		DownstreamHeaders: u.downstreamHeaders,
 		CheckDown: func(u *staticUpstream) UpstreamHostDownFunc {
 			return func(uh *UpstreamHost) bool {
-				if uh.Unhealthy {
+				if atomic.LoadInt32(&uh.Unhealthy) != 0 {
 					return true
 				}
-				if uh.Fails >= u.MaxFails {
+				if atomic.LoadInt32(&uh.Fails) >= u.MaxFails {
 					return true
 				}
 				return false
@@ -355,12 +356,18 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream) error {
 func (u *staticUpstream) healthCheck() {
 	for _, host := range u.Hosts {
 		hostURL := host.Name + u.HealthCheck.Path
+		var unhealthy bool
 		if r, err := u.HealthCheck.Client.Get(hostURL); err == nil {
 			io.Copy(ioutil.Discard, r.Body)
 			r.Body.Close()
-			host.Unhealthy = r.StatusCode < 200 || r.StatusCode >= 400
+			unhealthy = r.StatusCode < 200 || r.StatusCode >= 400
 		} else {
-			host.Unhealthy = true
+			unhealthy = true
+		}
+		if unhealthy {
+			atomic.StoreInt32(&host.Unhealthy, 1)
+		} else {
+			atomic.StoreInt32(&host.Unhealthy, 0)
 		}
 	}
 }
