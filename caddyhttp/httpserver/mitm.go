@@ -340,21 +340,21 @@ func (info rawHelloInfo) looksLikeFirefox() bool {
 	// according to the paper, cipher suites may be not be added
 	// or reordered by the user, but they may be disabled.
 	expectedCipherSuiteOrder := []uint16{
-		tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,   // 0xc02b
-		tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,     // 0xc02f
-		TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256, // 0xcca9
-		TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,   // 0xcca8
-		tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,   // 0xc02c
-		tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,     // 0xc030
-		tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,      // 0xc00a
-		tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,      // 0xc009
-		tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,        // 0xc013
-		tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,        // 0xc014
-		TLS_DHE_RSA_WITH_AES_128_CBC_SHA,              // 0x33
-		TLS_DHE_RSA_WITH_AES_256_CBC_SHA,              // 0x39
-		tls.TLS_RSA_WITH_AES_128_CBC_SHA,              // 0x2f
-		tls.TLS_RSA_WITH_AES_256_CBC_SHA,              // 0x35
-		tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA,             // 0xa
+		tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256, // 0xc02b
+		tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,   // 0xc02f
+		tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,  // 0xcca9
+		tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,    // 0xcca8
+		tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384, // 0xc02c
+		tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,   // 0xc030
+		tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,    // 0xc00a
+		tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,    // 0xc009
+		tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,      // 0xc013
+		tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,      // 0xc014
+		TLS_DHE_RSA_WITH_AES_128_CBC_SHA,            // 0x33
+		TLS_DHE_RSA_WITH_AES_256_CBC_SHA,            // 0x39
+		tls.TLS_RSA_WITH_AES_128_CBC_SHA,            // 0x2f
+		tls.TLS_RSA_WITH_AES_256_CBC_SHA,            // 0x35
+		tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA,           // 0xa
 	}
 	return assertPresenceAndOrdering(expectedCipherSuiteOrder, info.cipherSuites, false)
 }
@@ -537,13 +537,11 @@ const (
 
 	// cipher suites missing from the crypto/tls package,
 	// in no particular order here
-	TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256 = 0xcca9
-	TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256   = 0xcca8
-	TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384       = 0xc024
-	TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256       = 0xc023
-	TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384         = 0xc028
-	TLS_RSA_WITH_AES_128_CBC_SHA256               = 0x3c
-	TLS_RSA_WITH_AES_256_CBC_SHA256               = 0x3d
-	TLS_DHE_RSA_WITH_AES_128_CBC_SHA              = 0x33
-	TLS_DHE_RSA_WITH_AES_256_CBC_SHA              = 0x39
+	TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384 = 0xc024
+	TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256 = 0xc023
+	TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384   = 0xc028
+	TLS_RSA_WITH_AES_128_CBC_SHA256         = 0x3c
+	TLS_RSA_WITH_AES_256_CBC_SHA256         = 0x3d
+	TLS_DHE_RSA_WITH_AES_128_CBC_SHA        = 0x33
+	TLS_DHE_RSA_WITH_AES_256_CBC_SHA        = 0x39
 )
