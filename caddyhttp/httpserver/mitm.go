@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -39,30 +40,36 @@ func (h *tlsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	info := h.listener.helloInfos[r.RemoteAddr]
 	h.listener.helloInfosMu.RUnlock()
 
-	// detectInterception uses heuristics to try to detect HTTPS interception.
-	// It returns true if it thinks the connection is being MITM'ed.
-	// It adds a "mitm" value to the request context containing the results
-	// of the inspection either way. Only call this function if the User-Agent
-	// is a recognized browser.
-	detectInterception := func(helloCheckFn func() bool) bool {
-		mitm := info.advertisesHeartbeatSupport() || // no major browsers have ever implemented Heartbeat
-			r.Header.Get("X-BlueCoat-Via") != "" || // Blue Coat
-			r.Header.Get("X-FCCKV2") != "" || // Fortinet
-			!helloCheckFn() // check if ClientHello doesn't match client as we would expect
-		r = r.WithContext(context.WithValue(r.Context(), CtxKey("mitm"), mitm))
-		return mitm
+	ua := r.Header.Get("User-Agent")
+
+	fmt.Printf("*******\nURI: %s\n", r.RequestURI)
+	fmt.Printf("User-Agent: %s\n", ua)
+	fmt.Printf("Headers: %+v\n", r.Header)
+	fmt.Printf("Parsed ClientHello: %+v\n", info)
+
+	var checked, mitm bool
+	if r.Header.Get("X-BlueCoat-Via") != "" || // Blue Coat (masks User-Agent header to generic values)
+		r.Header.Get("X-FCCKV2") != "" || // Fortinet
+		info.advertisesHeartbeatSupport() { // no major browsers have ever implemented Heartbeat
+		checked = true
+		mitm = true
+	} else if strings.Contains(ua, "Edge") || strings.Contains(ua, "MSIE") ||
+		strings.Contains(ua, "Trident") {
+		checked = true
+		mitm = !info.looksLikeEdge()
+	} else if strings.Contains(ua, "Chrome") {
+		checked = true
+		mitm = !info.looksLikeChrome()
+	} else if strings.Contains(ua, "Firefox") {
+		checked = true
+		mitm = !info.looksLikeFirefox()
+	} else if strings.Contains(ua, "Safari") {
+		checked = true
+		mitm = !info.looksLikeSafari()
 	}
 
-	ua := r.Header.Get("User-Agent")
-	var mitm bool
-	if strings.Contains(ua, "Edge") || strings.Contains(ua, "MSIE") { // check Edge first!
-		mitm = detectInterception(info.looksLikeEdge)
-	} else if strings.Contains(ua, "Chrome") {
-		mitm = detectInterception(info.looksLikeChrome)
-	} else if strings.Contains(ua, "Firefox") {
-		mitm = detectInterception(info.looksLikeFirefox)
-	} else if strings.Contains(ua, "Safari") {
-		mitm = detectInterception(info.looksLikeSafari)
+	if checked {
+		r = r.WithContext(context.WithValue(r.Context(), CtxKey("mitm"), mitm))
 	}
 
 	if mitm && h.closeOnMITM {
@@ -99,6 +106,7 @@ func (c *clientHelloConn) Read(b []byte) (n int, err error) {
 		if err != nil {
 			return n, err
 		}
+		fmt.Printf("RAW HELLO: %x\n", hello)
 
 		// Parse the ClientHello and store it in the map.
 		rawParsed := parseRawClientHello(hello)
