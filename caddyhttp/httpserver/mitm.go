@@ -55,7 +55,7 @@ func (h *tlsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	ua := r.Header.Get("User-Agent")
 	var mitm bool
-	if strings.Contains(ua, "Edge") || strings.Contains(ua, "MSIE") {
+	if strings.Contains(ua, "Edge") || strings.Contains(ua, "MSIE") { // check Edge first!
 		mitm = detectInterception(info.looksLikeEdge)
 	} else if strings.Contains(ua, "Chrome") {
 		mitm = detectInterception(info.looksLikeChrome)
@@ -462,11 +462,21 @@ func (info rawHelloInfo) looksLikeEdge() bool {
 			if len(info.extensions) <= i+2 {
 				return false
 			}
-			return info.extensions[i+1] == extensionSupportedCurves &&
-				info.extensions[i+2] == extensionSupportedPoints
+			if info.extensions[i+1] != extensionSupportedCurves ||
+				info.extensions[i+2] != extensionSupportedPoints {
+				return false
+			}
 		}
 	}
-	return false
+
+	// As of Feb. 2017, Edge does not have 0xff, but Avast adds it
+	for _, cs := range info.cipherSuites {
+		if cs == scsvRenegotiation {
+			return false
+		}
+	}
+
+	return true
 }
 
 // looksLikeSafari returns true if info looks like a handshake
