@@ -174,8 +174,6 @@ func TestReverseProxyMaxConnLimit(t *testing.T) {
 		Upstreams: su,
 	}
 
-	// testComplete := make(chan bool)
-	// go func() {
 	var jobs sync.WaitGroup
 
 	for i := 0; i < MaxTestConns; i++ {
@@ -210,15 +208,8 @@ func TestReverseProxyMaxConnLimit(t *testing.T) {
 	// Now let all the requests complete and verify the status codes for those:
 	close(connContinue)
 
+	// Wait for the initial requests to finish and check their results.
 	jobs.Wait()
-	// 	testComplete <- true
-	// }()
-
-	// select {
-	// case <-testComplete:
-	// case <-time.After(time.Second):
-	// 	t.Fatal("Timed out")
-	// }
 }
 
 func TestWebSocketReverseProxyNonHijackerPanic(t *testing.T) {
