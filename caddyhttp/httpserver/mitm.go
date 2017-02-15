@@ -16,8 +16,9 @@ import (
 // into the request context indicating if the TLS
 // connection is likely being intercepted.
 type tlsHandler struct {
-	next     http.Handler
-	listener *tlsHelloListener
+	next        http.Handler
+	listener    *tlsHelloListener
+	closeOnMITM bool // whether to close connection on MITM; TODO: expose through new directive
 }
 
 // ServeHTTP checks the User-Agent. For the four main browsers (Chrome,
@@ -34,44 +35,45 @@ type tlsHandler struct {
 // Halderman, et. al. in "The Security Impact of HTTPS Interception" (NDSS '17):
 // https://jhalderm.com/pub/papers/interception-ndss17.pdf
 func (h *tlsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	ua := r.Header.Get("User-Agent")
-	if strings.Contains(ua, "Edge") {
-		h.listener.helloInfosMu.RLock()
-		info := h.listener.helloInfos[r.RemoteAddr]
-		h.listener.helloInfosMu.RUnlock()
-		if info.advertisesHeartbeatSupport() || !info.looksLikeEdge() {
-			r = r.WithContext(context.WithValue(r.Context(), CtxKey("mitm"), true))
-		} else {
-			r = r.WithContext(context.WithValue(r.Context(), CtxKey("mitm"), false))
-		}
-	} else if strings.Contains(ua, "Chrome") {
-		h.listener.helloInfosMu.RLock()
-		info := h.listener.helloInfos[r.RemoteAddr]
-		h.listener.helloInfosMu.RUnlock()
-		if info.advertisesHeartbeatSupport() || !info.looksLikeChrome() {
-			r = r.WithContext(context.WithValue(r.Context(), CtxKey("mitm"), true))
-		} else {
-			r = r.WithContext(context.WithValue(r.Context(), CtxKey("mitm"), false))
-		}
-	} else if strings.Contains(ua, "Firefox") {
-		h.listener.helloInfosMu.RLock()
-		info := h.listener.helloInfos[r.RemoteAddr]
-		h.listener.helloInfosMu.RUnlock()
-		if info.advertisesHeartbeatSupport() || !info.looksLikeFirefox() {
-			r = r.WithContext(context.WithValue(r.Context(), CtxKey("mitm"), true))
-		} else {
-			r = r.WithContext(context.WithValue(r.Context(), CtxKey("mitm"), false))
-		}
-	} else if strings.Contains(ua, "Safari") {
-		h.listener.helloInfosMu.RLock()
-		info := h.listener.helloInfos[r.RemoteAddr]
-		h.listener.helloInfosMu.RUnlock()
-		if info.advertisesHeartbeatSupport() || !info.looksLikeSafari() {
-			r = r.WithContext(context.WithValue(r.Context(), CtxKey("mitm"), true))
-		} else {
-			r = r.WithContext(context.WithValue(r.Context(), CtxKey("mitm"), false))
-		}
+	h.listener.helloInfosMu.RLock()
+	info := h.listener.helloInfos[r.RemoteAddr]
+	h.listener.helloInfosMu.RUnlock()
+
+	// detectInterception uses heuristics to try to detect HTTPS interception.
+	// It returns true if it thinks the connection is being MITM'ed.
+	// It adds a "mitm" value to the request context containing the results
+	// of the inspection either way. Only call this function if the User-Agent
+	// is a recognized browser.
+	detectInterception := func(helloCheckFn func() bool) bool {
+		mitm := info.advertisesHeartbeatSupport() || // no major browsers have ever implemented Heartbeat
+			r.Header.Get("X-BlueCoat-Via") != "" || // Blue Coat
+			r.Header.Get("X-FCCKV2") != "" || // Fortinet
+			!helloCheckFn() // check if ClientHello doesn't match client as we would expect
+		r = r.WithContext(context.WithValue(r.Context(), CtxKey("mitm"), mitm))
+		return mitm
 	}
+
+	ua := r.Header.Get("User-Agent")
+	var mitm bool
+	if strings.Contains(ua, "Edge") || strings.Contains(ua, "MSIE") {
+		mitm = detectInterception(info.looksLikeEdge)
+	} else if strings.Contains(ua, "Chrome") {
+		mitm = detectInterception(info.looksLikeChrome)
+	} else if strings.Contains(ua, "Firefox") {
+		mitm = detectInterception(info.looksLikeFirefox)
+	} else if strings.Contains(ua, "Safari") {
+		mitm = detectInterception(info.looksLikeSafari)
+	}
+
+	if mitm && h.closeOnMITM {
+		// TODO: This termination might need to happen later in the middleware
+		// chain in order to be picked up by the log directive, in case the site
+		// owner still wants to log this event. It'll probably require a new
+		// directive. If this feature is useful, we can finish implementing this.
+		r.Close = true
+		return
+	}
+
 	h.next.ServeHTTP(w, r)
 }
 
