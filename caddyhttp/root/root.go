@@ -28,16 +28,22 @@ func setupRoot(c *caddy.Controller) error {
 			return c.ArgErr()
 		}
 	}
-
-	// Check if root path exists
-	_, err := os.Stat(config.Root)
+	//first check that the path is not a symlink, os.Stat panics when this is true
+	info, err := os.Lstat(config.Root)
 	if err != nil {
-		if os.IsNotExist(err) {
-			// Allow this, because the folder might appear later.
-			// But make sure the user knows!
-			log.Printf("[WARNING] Root path does not exist: %s", config.Root)
-		} else {
-			return c.Errf("Unable to access root path '%s': %v", config.Root, err)
+		return c.Errf("Unable to access root path '%s': %v", config.Root, err)
+	}
+	if info.Mode() & os.ModeSymlink != os.ModeSymlink{
+		// Check if root path exists
+		_, err := os.Stat(config.Root)
+		if err != nil {
+			if os.IsNotExist(err) {
+				// Allow this, because the folder might appear later.
+				// But make sure the user knows!
+				log.Printf("[WARNING] Root path does not exist: %s", config.Root)
+			} else {
+				return c.Errf("Unable to access root path '%s': %v", config.Root, err)
+			}
 		}
 	}
 
