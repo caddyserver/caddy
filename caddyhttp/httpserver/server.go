@@ -127,8 +127,17 @@ func (s *Server) Listen() (net.Listener, error) {
 	return ln.(*net.TCPListener), nil
 }
 
-// ListenPacket is a noop to implement the Server interface.
-func (s *Server) ListenPacket() (net.PacketConn, error) { return nil, nil }
+// ListenPacket creates udp connection for QUIC if it is enabled,
+func (s *Server) ListenPacket() (net.PacketConn, error) {
+	if QUIC {
+		udpAddr, err := net.ResolveUDPAddr("udp", s.Server.Addr)
+		if err != nil {
+			return nil, err
+		}
+		return net.ListenUDP("udp", udpAddr)
+	}
+	return nil, nil
+}
 
 // Serve serves requests on ln. It blocks until ln is closed.
 func (s *Server) Serve(ln net.Listener) error {
@@ -152,15 +161,6 @@ func (s *Server) Serve(ln net.Listener) error {
 		s.tlsGovChan = caddytls.RotateSessionTicketKeys(s.Server.TLSConfig)
 	}
 
-	if QUIC {
-		go func() {
-			err := s.quicServer.ListenAndServe()
-			if err != nil {
-				log.Printf("[ERROR] listening for QUIC connections: %v", err)
-			}
-		}()
-	}
-
 	err := s.Server.Serve(ln)
 	if QUIC {
 		s.quicServer.Close()
@@ -168,8 +168,14 @@ func (s *Server) Serve(ln net.Listener) error {
 	return err
 }
 
-// ServePacket is a noop to implement the Server interface.
-func (s *Server) ServePacket(pc net.PacketConn) error { return nil }
+// ServePacket serves QUIC requests on pc until it is closed.
+func (s *Server) ServePacket(pc net.PacketConn) error {
+	if QUIC {
+		err := s.quicServer.Serve(pc.(*net.UDPConn))
+		return fmt.Errorf("serving QUIC connections: %v", err)
+	}
+	return nil
+}
 
 // ServeHTTP is the entry point of all HTTP requests.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {

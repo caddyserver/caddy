@@ -49,6 +49,8 @@ type UpstreamHostDownFunc func(*UpstreamHost) bool
 
 // UpstreamHost represents a single proxy upstream
 type UpstreamHost struct {
+	// This field is read & written to concurrently, so all access must use
+	// atomic operations.
 	Conns             int64 // must be first field to be 64-bit aligned on 32-bit systems
 	MaxConns          int64
 	Name              string // hostname of this upstream host
@@ -59,7 +61,10 @@ type UpstreamHost struct {
 	WithoutPathPrefix string
 	ReverseProxy      *ReverseProxy
 	Fails             int32
-	Unhealthy         bool
+	// This is an int32 so that we can use atomic operations to do concurrent
+	// reads & writes to this value.  The default value of 0 indicates that it
+	// is healthy and any non-zero value indicates unhealthy.
+	Unhealthy int32
 }
 
 // Down checks whether the upstream host is down or not.
@@ -68,14 +73,14 @@ type UpstreamHost struct {
 func (uh *UpstreamHost) Down() bool {
 	if uh.CheckDown == nil {
 		// Default settings
-		return uh.Unhealthy || uh.Fails > 0
+		return atomic.LoadInt32(&uh.Unhealthy) != 0 || atomic.LoadInt32(&uh.Fails) > 0
 	}
 	return uh.CheckDown(uh)
 }
 
 // Full checks whether the upstream host has reached its maximum connections
 func (uh *UpstreamHost) Full() bool {
-	return uh.MaxConns > 0 && uh.Conns >= uh.MaxConns
+	return uh.MaxConns > 0 && atomic.LoadInt64(&uh.Conns) >= uh.MaxConns
 }
 
 // Available checks whether the upstream host is available for proxying to

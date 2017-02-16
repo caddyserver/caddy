@@ -3,6 +3,8 @@ package log
 import (
 	"testing"
 
+	"reflect"
+
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
@@ -29,20 +31,21 @@ func TestSetup(t *testing.T) {
 	if myHandler.Rules[0].PathScope != "/" {
 		t.Errorf("Expected / as the default PathScope")
 	}
-	if myHandler.Rules[0].Entries[0].OutputFile != DefaultLogFilename {
-		t.Errorf("Expected %s as the default OutputFile", DefaultLogFilename)
+
+	expectedLogger := &httpserver.Logger{
+		Output: DefaultLogFilename,
+		Roller: httpserver.DefaultLogRoller(),
+	}
+
+	if !reflect.DeepEqual(myHandler.Rules[0].Entries[0].Log, expectedLogger) {
+		t.Errorf("Expected %v as the default Log, got: %v", expectedLogger, myHandler.Rules[0].Entries[0].Log)
 	}
 	if myHandler.Rules[0].Entries[0].Format != DefaultLogFormat {
 		t.Errorf("Expected %s as the default Log Format", DefaultLogFormat)
 	}
-	if myHandler.Rules[0].Entries[0].Roller != nil {
-		t.Errorf("Expected Roller to be nil, got: %v",
-			*myHandler.Rules[0].Entries[0].Roller)
-	}
 	if !httpserver.SameNext(myHandler.Next, httpserver.EmptyNext) {
 		t.Error("'Next' field of handler was not set properly")
 	}
-
 }
 
 func TestLogParse(t *testing.T) {
@@ -54,95 +57,152 @@ func TestLogParse(t *testing.T) {
 		{`log`, false, []Rule{{
 			PathScope: "/",
 			Entries: []*Entry{{
-				OutputFile: DefaultLogFilename,
-				Format:     DefaultLogFormat,
+				Log: &httpserver.Logger{
+					Output: DefaultLogFilename,
+					Roller: httpserver.DefaultLogRoller(),
+				},
+				Format: DefaultLogFormat,
 			}},
 		}}},
 		{`log log.txt`, false, []Rule{{
 			PathScope: "/",
 			Entries: []*Entry{{
-				OutputFile: "log.txt",
-				Format:     DefaultLogFormat,
+				Log: &httpserver.Logger{
+					Output: "log.txt",
+					Roller: httpserver.DefaultLogRoller(),
+				},
+				Format: DefaultLogFormat,
+			}},
+		}}},
+		{`log syslog://127.0.0.1:5000`, false, []Rule{{
+			PathScope: "/",
+			Entries: []*Entry{{
+				Log: &httpserver.Logger{
+					Output: "syslog://127.0.0.1:5000",
+					Roller: httpserver.DefaultLogRoller(),
+				},
+				Format: DefaultLogFormat,
+			}},
+		}}},
+		{`log syslog+tcp://127.0.0.1:5000`, false, []Rule{{
+			PathScope: "/",
+			Entries: []*Entry{{
+				Log: &httpserver.Logger{
+					Output: "syslog+tcp://127.0.0.1:5000",
+					Roller: httpserver.DefaultLogRoller(),
+				},
+				Format: DefaultLogFormat,
 			}},
 		}}},
 		{`log /api log.txt`, false, []Rule{{
 			PathScope: "/api",
 			Entries: []*Entry{{
-				OutputFile: "log.txt",
-				Format:     DefaultLogFormat,
+				Log: &httpserver.Logger{
+					Output: "log.txt",
+					Roller: httpserver.DefaultLogRoller(),
+				},
+				Format: DefaultLogFormat,
 			}},
 		}}},
 		{`log /serve stdout`, false, []Rule{{
 			PathScope: "/serve",
 			Entries: []*Entry{{
-				OutputFile: "stdout",
-				Format:     DefaultLogFormat,
+				Log: &httpserver.Logger{
+					Output: "stdout",
+					Roller: httpserver.DefaultLogRoller(),
+				},
+				Format: DefaultLogFormat,
 			}},
 		}}},
 		{`log /myapi log.txt {common}`, false, []Rule{{
 			PathScope: "/myapi",
 			Entries: []*Entry{{
-				OutputFile: "log.txt",
-				Format:     CommonLogFormat,
+				Log: &httpserver.Logger{
+					Output: "log.txt",
+					Roller: httpserver.DefaultLogRoller(),
+				},
+				Format: CommonLogFormat,
 			}},
 		}}},
 		{`log /test accesslog.txt {combined}`, false, []Rule{{
 			PathScope: "/test",
 			Entries: []*Entry{{
-				OutputFile: "accesslog.txt",
-				Format:     CombinedLogFormat,
+				Log: &httpserver.Logger{
+					Output: "accesslog.txt",
+					Roller: httpserver.DefaultLogRoller(),
+				},
+				Format: CombinedLogFormat,
 			}},
 		}}},
 		{`log /api1 log.txt
 		  log /api2 accesslog.txt {combined}`, false, []Rule{{
 			PathScope: "/api1",
 			Entries: []*Entry{{
-				OutputFile: "log.txt",
-				Format:     DefaultLogFormat,
+				Log: &httpserver.Logger{
+					Output: "log.txt",
+					Roller: httpserver.DefaultLogRoller(),
+				},
+				Format: DefaultLogFormat,
 			}},
 		}, {
 			PathScope: "/api2",
 			Entries: []*Entry{{
-				OutputFile: "accesslog.txt",
-				Format:     CombinedLogFormat,
+				Log: &httpserver.Logger{
+					Output: "accesslog.txt",
+					Roller: httpserver.DefaultLogRoller(),
+				},
+				Format: CombinedLogFormat,
 			}},
 		}}},
 		{`log /api3 stdout {host}
 		  log /api4 log.txt {when}`, false, []Rule{{
 			PathScope: "/api3",
 			Entries: []*Entry{{
-				OutputFile: "stdout",
-				Format:     "{host}",
+				Log: &httpserver.Logger{
+					Output: "stdout",
+					Roller: httpserver.DefaultLogRoller(),
+				},
+				Format: "{host}",
 			}},
 		}, {
 			PathScope: "/api4",
 			Entries: []*Entry{{
-				OutputFile: "log.txt",
-				Format:     "{when}",
+				Log: &httpserver.Logger{
+					Output: "log.txt",
+					Roller: httpserver.DefaultLogRoller(),
+				},
+				Format: "{when}",
 			}},
 		}}},
-		{`log access.log { rotate { size 2 age 10 keep 3 } }`, false, []Rule{{
+		{`log access.log { rotate_size 2 rotate_age 10 rotate_keep 3 }`, false, []Rule{{
 			PathScope: "/",
 			Entries: []*Entry{{
-				OutputFile: "access.log",
-				Format:     DefaultLogFormat,
-				Roller: &httpserver.LogRoller{
-					MaxSize:    2,
-					MaxAge:     10,
-					MaxBackups: 3,
-					LocalTime:  true,
-				},
+				Log: &httpserver.Logger{
+					Output: "access.log",
+					Roller: &httpserver.LogRoller{
+						MaxSize:    2,
+						MaxAge:     10,
+						MaxBackups: 3,
+						LocalTime:  true,
+					}},
+				Format: DefaultLogFormat,
 			}},
 		}}},
 		{`log / stdout {host}
 		  log / log.txt {when}`, false, []Rule{{
 			PathScope: "/",
 			Entries: []*Entry{{
-				OutputFile: "stdout",
-				Format:     "{host}",
+				Log: &httpserver.Logger{
+					Output: "stdout",
+					Roller: httpserver.DefaultLogRoller(),
+				},
+				Format: "{host}",
 			}, {
-				OutputFile: "log.txt",
-				Format:     "{when}",
+				Log: &httpserver.Logger{
+					Output: "log.txt",
+					Roller: httpserver.DefaultLogRoller(),
+				},
+				Format: "{when}",
 			}},
 		}}},
 	}
@@ -172,43 +232,16 @@ func TestLogParse(t *testing.T) {
 			}
 
 			for k, actualEntry := range actualLogRule.Entries {
-				if actualEntry.OutputFile != test.expectedLogRules[j].Entries[k].OutputFile {
-					t.Errorf("Test %d expected %dth LogRule OutputFile to be  %s  , but got %s",
-						i, j, test.expectedLogRules[j].Entries[k].OutputFile, actualEntry.OutputFile)
+				if !reflect.DeepEqual(actualEntry.Log, test.expectedLogRules[j].Entries[k].Log) {
+					t.Errorf("Test %d expected %dth LogRule Log to be  %v  , but got %v",
+						i, j, test.expectedLogRules[j].Entries[k].Log, actualEntry.Log)
 				}
 
 				if actualEntry.Format != test.expectedLogRules[j].Entries[k].Format {
 					t.Errorf("Test %d expected %dth LogRule Format to be  %s  , but got %s",
 						i, j, test.expectedLogRules[j].Entries[k].Format, actualEntry.Format)
 				}
-				if actualEntry.Roller != nil && test.expectedLogRules[j].Entries[k].Roller == nil || actualEntry.Roller == nil && test.expectedLogRules[j].Entries[k].Roller != nil {
-					t.Fatalf("Test %d expected %dth LogRule Roller to be %v, but got %v",
-						i, j, test.expectedLogRules[j].Entries[k].Roller, actualEntry.Roller)
-				}
-				if actualEntry.Roller != nil && test.expectedLogRules[j].Entries[k].Roller != nil {
-					if actualEntry.Roller.Filename != test.expectedLogRules[j].Entries[k].Roller.Filename {
-						t.Fatalf("Test %d expected %dth LogRule Roller Filename to be %s, but got %s",
-							i, j, test.expectedLogRules[j].Entries[k].Roller.Filename, actualEntry.Roller.Filename)
-					}
-					if actualEntry.Roller.MaxAge != test.expectedLogRules[j].Entries[k].Roller.MaxAge {
-						t.Fatalf("Test %d expected %dth LogRule Roller MaxAge to be %d, but got %d",
-							i, j, test.expectedLogRules[j].Entries[k].Roller.MaxAge, actualEntry.Roller.MaxAge)
-					}
-					if actualEntry.Roller.MaxBackups != test.expectedLogRules[j].Entries[k].Roller.MaxBackups {
-						t.Fatalf("Test %d expected %dth LogRule Roller MaxBackups to be %d, but got %d",
-							i, j, test.expectedLogRules[j].Entries[k].Roller.MaxBackups, actualEntry.Roller.MaxBackups)
-					}
-					if actualEntry.Roller.MaxSize != test.expectedLogRules[j].Entries[k].Roller.MaxSize {
-						t.Fatalf("Test %d expected %dth LogRule Roller MaxSize to be %d, but got %d",
-							i, j, test.expectedLogRules[j].Entries[k].Roller.MaxSize, actualEntry.Roller.MaxSize)
-					}
-					if actualEntry.Roller.LocalTime != test.expectedLogRules[j].Entries[k].Roller.LocalTime {
-						t.Fatalf("Test %d expected %dth LogRule Roller LocalTime to be %t, but got %t",
-							i, j, test.expectedLogRules[j].Entries[k].Roller.LocalTime, actualEntry.Roller.LocalTime)
-					}
-				}
 			}
 		}
 	}
-
 }

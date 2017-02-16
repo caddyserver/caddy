@@ -1,10 +1,11 @@
 package markdown
 
 import (
-	"github.com/mholt/caddy/caddyhttp/httpserver"
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
 
 func TestConfig_Markdown(t *testing.T) {
