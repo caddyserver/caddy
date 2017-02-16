@@ -100,15 +100,14 @@ func TestMakeHTTPServer(t *testing.T) {
 		if got, want := actual.ReadTimeout, tc.expected.ReadTimeout; got != want {
 			t.Errorf("Test %d: Expected ReadTimeout=%v, but was %v", i, want, got)
 		}
-		// TODO: ReadHeaderTimeout and IdleTimeout require Go 1.8
-		// if got, want := actual.ReadHeaderTimeout, tc.expected.ReadHeaderTimeout; got != want {
-		// 	t.Errorf("Test %d: Expected ReadHeaderTimeout=%v, but was %v", i, want, got)
-		// }
+		if got, want := actual.ReadHeaderTimeout, tc.expected.ReadHeaderTimeout; got != want {
+			t.Errorf("Test %d: Expected ReadHeaderTimeout=%v, but was %v", i, want, got)
+		}
 		if got, want := actual.WriteTimeout, tc.expected.WriteTimeout; got != want {
 			t.Errorf("Test %d: Expected WriteTimeout=%v, but was %v", i, want, got)
 		}
-		// if got, want := actual.IdleTimeout, tc.expected.IdleTimeout; got != want {
-		// 	t.Errorf("Test %d: Expected IdleTimeout=%v, but was %v", i, want, got)
-		// }
+		if got, want := actual.IdleTimeout, tc.expected.IdleTimeout; got != want {
+			t.Errorf("Test %d: Expected IdleTimeout=%v, but was %v", i, want, got)
+		}
 	}
 }
