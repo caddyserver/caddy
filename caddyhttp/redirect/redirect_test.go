@@ -47,16 +47,16 @@ func TestRedirect(t *testing.T) {
 				return 0, nil
 			}),
 			Rules: []Rule{
-				{FromPath: "/from", To: "/to", Code: http.StatusMovedPermanently, RequestMatcher: httpserver.IfMatcher{}},
-				{FromPath: "/a", To: "/b", Code: http.StatusTemporaryRedirect, RequestMatcher: httpserver.IfMatcher{}},
+				{FromScheme: func() string { return "http" }, FromPath: "/from", To: "/to", Code: http.StatusMovedPermanently, RequestMatcher: httpserver.IfMatcher{}},
+				{FromScheme: func() string { return "http" }, FromPath: "/a", To: "/b", Code: http.StatusTemporaryRedirect, RequestMatcher: httpserver.IfMatcher{}},
 
 				// These http and https schemes would never actually be mixed in the same
 				// redirect rule with Caddy because http and https schemes have different listeners,
 				// so they don't share a redirect rule. So although these tests prove something
 				// impossible with Caddy, it's extra bulletproofing at very little cost.
-				{FromScheme: "http", FromPath: "/scheme", To: "https://localhost/scheme", Code: http.StatusMovedPermanently, RequestMatcher: httpserver.IfMatcher{}},
-				{FromScheme: "https", FromPath: "/scheme2", To: "http://localhost/scheme2", Code: http.StatusMovedPermanently, RequestMatcher: httpserver.IfMatcher{}},
-				{FromScheme: "", FromPath: "/scheme3", To: "https://localhost/scheme3", Code: http.StatusMovedPermanently, RequestMatcher: httpserver.IfMatcher{}},
+				{FromScheme: func() string { return "http" }, FromPath: "/scheme", To: "https://localhost/scheme", Code: http.StatusMovedPermanently, RequestMatcher: httpserver.IfMatcher{}},
+				{FromScheme: func() string { return "https" }, FromPath: "/scheme2", To: "http://localhost/scheme2", Code: http.StatusMovedPermanently, RequestMatcher: httpserver.IfMatcher{}},
+				{FromScheme: func() string { return "" }, FromPath: "/scheme3", To: "https://localhost/scheme3", Code: http.StatusMovedPermanently, RequestMatcher: httpserver.IfMatcher{}},
 			},
 		}
 
@@ -90,7 +90,7 @@ func TestRedirect(t *testing.T) {
 func TestParametersRedirect(t *testing.T) {
 	re := Redirect{
 		Rules: []Rule{
-			{FromPath: "/", Meta: false, To: "http://example.com{uri}", RequestMatcher: httpserver.IfMatcher{}},
+			{FromScheme: func() string { return "http" }, FromPath: "/", Meta: false, To: "http://example.com{uri}", RequestMatcher: httpserver.IfMatcher{}},
 		},
 	}
 
@@ -108,7 +108,7 @@ func TestParametersRedirect(t *testing.T) {
 
 	re = Redirect{
 		Rules: []Rule{
-			{FromPath: "/", Meta: false, To: "http://example.com/a{path}?b=c&{query}", RequestMatcher: httpserver.IfMatcher{}},
+			{FromScheme: func() string { return "http" }, FromPath: "/", Meta: false, To: "http://example.com/a{path}?b=c&{query}", RequestMatcher: httpserver.IfMatcher{}},
 		},
 	}
 
@@ -127,8 +127,8 @@ func TestParametersRedirect(t *testing.T) {
 func TestMetaRedirect(t *testing.T) {
 	re := Redirect{
 		Rules: []Rule{
-			{FromPath: "/whatever", Meta: true, To: "/something", RequestMatcher: httpserver.IfMatcher{}},
-			{FromPath: "/", Meta: true, To: "https://example.com/", RequestMatcher: httpserver.IfMatcher{}},
+			{FromScheme: func() string { return "http" }, FromPath: "/whatever", Meta: true, To: "/something", RequestMatcher: httpserver.IfMatcher{}},
+			{FromScheme: func() string { return "http" }, FromPath: "/", Meta: true, To: "https://example.com/", RequestMatcher: httpserver.IfMatcher{}},
 		},
 	}
 
