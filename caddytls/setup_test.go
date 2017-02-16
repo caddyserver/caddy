@@ -88,6 +88,18 @@ func TestSetupParseBasic(t *testing.T) {
 	if !cfg.PreferServerCipherSuites {
 		t.Error("Expected PreferServerCipherSuites = true, but was false")
 	}
+
+	// Ensure curve count is correct
+	if len(cfg.CurvePreferences) != len(defaultCurves) {
+		t.Errorf("Expected %v Curves, got %v", len(defaultCurves), len(cfg.CurvePreferences))
+	}
+
+	// Ensure curve ordering is correct
+	for i, actual := range cfg.CurvePreferences {
+		if actual != defaultCurves[i] {
+			t.Errorf("Expected curve in position %d to be %0x, got %0x", i, defaultCurves[i], actual)
+		}
+	}
 }
 
 func TestSetupParseIncompleteParams(t *testing.T) {
