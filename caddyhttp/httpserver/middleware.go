@@ -2,11 +2,12 @@ package httpserver
 
 import (
 	"fmt"
-	"net"
 	"net/http"
 	"os"
 	"path"
 	"time"
+
+	"github.com/mholt/caddy"
 )
 
 func init() {
@@ -21,7 +22,7 @@ type (
 
 	// ListenerMiddleware is similar to the Middleware type, except it
 	// chains one net.Listener to the next.
-	ListenerMiddleware func(net.Listener) net.Listener
+	ListenerMiddleware func(caddy.Listener) caddy.Listener
 
 	// Handler is like http.Handler except ServeHTTP may return a status
 	// code and/or error.
