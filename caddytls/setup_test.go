@@ -88,6 +88,18 @@ func TestSetupParseBasic(t *testing.T) {
 	if !cfg.PreferServerCipherSuites {
 		t.Error("Expected PreferServerCipherSuites = true, but was false")
 	}
+
+	// Ensure curve count is correct
+	if len(cfg.CurvePreferences) != len(defaultCurves) {
+		t.Errorf("Expected %v Curves, got %v", len(defaultCurves), len(cfg.CurvePreferences))
+	}
+
+	// Ensure curve ordering is correct
+	for i, actual := range cfg.CurvePreferences {
+		if actual != defaultCurves[i] {
+			t.Errorf("Expected curve in position %d to be %0x, got %0x", i, defaultCurves[i], actual)
+		}
+	}
 }
 
 func TestSetupParseIncompleteParams(t *testing.T) {
@@ -288,7 +300,7 @@ func TestSetupParseWithKeyType(t *testing.T) {
 
 func TestSetupParseWithCurves(t *testing.T) {
 	params := `tls {
-            curves p256 p384 p521
+            curves x25519 p256 p384 p521
         }`
 	cfg := new(Config)
 	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
@@ -299,11 +311,11 @@ func TestSetupParseWithCurves(t *testing.T) {
 		t.Errorf("Expected no errors, got: %v", err)
 	}
 
-	if len(cfg.CurvePreferences) != 3 {
-		t.Errorf("Expected 3 curves, got %v", len(cfg.CurvePreferences))
+	if len(cfg.CurvePreferences) != 4 {
+		t.Errorf("Expected 4 curves, got %v", len(cfg.CurvePreferences))
 	}
 
-	expectedCurves := []tls.CurveID{tls.CurveP256, tls.CurveP384, tls.CurveP521}
+	expectedCurves := []tls.CurveID{tls.X25519, tls.CurveP256, tls.CurveP384, tls.CurveP521}
 
 	// Ensure ordering is correct
 	for i, actual := range cfg.CurvePreferences {

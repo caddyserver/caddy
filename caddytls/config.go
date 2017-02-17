@@ -311,6 +311,11 @@ func MakeTLSConfig(configs []*Config) (*tls.Config, error) {
 		config.CipherSuites = append([]uint16{tls.TLS_FALLBACK_SCSV}, config.CipherSuites...)
 	}
 
+	// Default curves
+	if len(config.CurvePreferences) == 0 {
+		config.CurvePreferences = defaultCurves
+	}
+
 	// Set up client authentication if enabled
 	if config.ClientAuth != tls.NoClientCert {
 		pool := x509.NewCertPool()
@@ -366,6 +371,11 @@ func SetDefaultTLSParams(config *Config) {
 	// Not a cipher suite, but still important for mitigating protocol downgrade attacks
 	// (prepend since having it at end breaks http2 due to non-h2-approved suites before it)
 	config.Ciphers = append([]uint16{tls.TLS_FALLBACK_SCSV}, config.Ciphers...)
+
+	// If no curves provided, use default list
+	if len(config.CurvePreferences) == 0 {
+		config.CurvePreferences = defaultCurves
+	}
 
 	// Set default protocol min and max versions - must balance compatibility and security
 	if config.ProtocolMinVersion == 0 {
@@ -438,9 +448,20 @@ var defaultCiphers = []uint16{
 // Map of supported curves
 // https://golang.org/pkg/crypto/tls/#CurveID
 var supportedCurvesMap = map[string]tls.CurveID{
-	"P256": tls.CurveP256,
-	"P384": tls.CurveP384,
-	"P521": tls.CurveP521,
+	"X25519": tls.X25519,
+	"P256":   tls.CurveP256,
+	"P384":   tls.CurveP384,
+	"P521":   tls.CurveP521,
+}
+
+// List of all the curves we want to use by default
+//
+// This list should only include curves which are fast by design (e.g. X25519)
+// and those for which an optimized assembly implementation exists (e.g. P256).
+// The latter ones can be found here: https://github.com/golang/go/tree/master/src/crypto/elliptic
+var defaultCurves = []tls.CurveID{
+	tls.X25519,
+	tls.CurveP256,
 }
 
 const (
