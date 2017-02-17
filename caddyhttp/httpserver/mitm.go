@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -41,11 +40,6 @@ func (h *tlsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.listener.helloInfosMu.RUnlock()
 
 	ua := r.Header.Get("User-Agent")
-
-	fmt.Printf("*******\nURI: %s\n", r.RequestURI)
-	fmt.Printf("User-Agent: %s\n", ua)
-	fmt.Printf("Headers: %+v\n", r.Header)
-	fmt.Printf("Parsed ClientHello: %+v\n", info)
 
 	var checked, mitm bool
 	if r.Header.Get("X-BlueCoat-Via") != "" || // Blue Coat (masks User-Agent header to generic values)
@@ -106,7 +100,6 @@ func (c *clientHelloConn) Read(b []byte) (n int, err error) {
 		if err != nil {
 			return n, err
 		}
-		fmt.Printf("RAW HELLO: %x\n", hello)
 
 		// Parse the ClientHello and store it in the map.
 		rawParsed := parseRawClientHello(hello)
