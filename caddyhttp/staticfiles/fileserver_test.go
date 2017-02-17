@@ -211,6 +211,11 @@ func TestServeHTTP(t *testing.T) {
 			expectedVary:        "",
 			expectedEncoding:    "",
 		},
+		// Test 20 - treat existing file as a directory.
+		{
+			url:            "https://foo/file1.html/other",
+			expectedStatus: http.StatusNotFound,
+		},
 	}
 
 	for i, test := range tests {
