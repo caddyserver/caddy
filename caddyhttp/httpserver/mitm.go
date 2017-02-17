@@ -367,39 +367,6 @@ func (info rawHelloInfo) looksLikeFirefox() bool {
 	return assertPresenceAndOrdering(expectedCipherSuiteOrder, info.cipherSuites, false)
 }
 
-// assertPresenceAndOrdering will return true if candidateList contains
-// the items in requiredItems in the same order as requiredItems.
-//
-// If requiredIsSubset is true, then all items in requiredItems must be
-// present in candidateList. If requiredIsSubset is false, then requiredItems
-// may contain items that are not in candidateList.
-//
-// In all cases, the order of requiredItems is enforced.
-func assertPresenceAndOrdering(requiredItems, candidateList []uint16, requiredIsSubset bool) bool {
-	superset := requiredItems
-	subset := candidateList
-	if requiredIsSubset {
-		superset = candidateList
-		subset = requiredItems
-	}
-
-	var j int
-	for _, item := range superset {
-		var found bool
-		for j < len(subset) {
-			if subset[j] == item {
-				found = true
-				break
-			}
-			j++
-		}
-		if j == len(subset)-1 && !found {
-			return false
-		}
-	}
-	return true
-}
-
 // looksLikeChrome returns true if info looks like a handshake
 // from a modern version of Chrome.
 func (info rawHelloInfo) looksLikeChrome() bool {
@@ -477,9 +444,13 @@ func (info rawHelloInfo) looksLikeEdge() bool {
 		}
 	}
 
-	// As of Feb. 2017, Edge does not have 0xff, but Avast adds it
 	for _, cs := range info.cipherSuites {
+		// As of Feb. 2017, Edge does not have 0xff, but Avast adds it
 		if cs == scsvRenegotiation {
+			return false
+		}
+		// Edge and modern IE do not have 0x4 or 0x5, but Blue Coat does
+		if cs == TLS_RSA_WITH_RC4_128_MD5 || cs == tls.TLS_RSA_WITH_RC4_128_SHA {
 			return false
 		}
 	}
@@ -518,9 +489,7 @@ func (info rawHelloInfo) looksLikeSafari() bool {
 		return false
 	}
 
-	// We check for order of cipher suites but not presence, since
-	// according to the paper, cipher suites may be not be added
-	// or reordered by the user, but they may be disabled.
+	// We check for order and presence of cipher suites
 	expectedCipherSuiteOrder := []uint16{
 		tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384, // 0xc02c
 		tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256, // 0xc02b
@@ -541,8 +510,40 @@ func (info rawHelloInfo) looksLikeSafari() bool {
 		tls.TLS_RSA_WITH_AES_256_CBC_SHA,            // 0x35
 		tls.TLS_RSA_WITH_AES_128_CBC_SHA,            // 0x2f
 	}
-	return assertPresenceAndOrdering(expectedCipherSuiteOrder, info.cipherSuites, false)
-	// TODO: Check curves: [23 24 25]
+	return assertPresenceAndOrdering(expectedCipherSuiteOrder, info.cipherSuites, true)
+}
+
+// assertPresenceAndOrdering will return true if candidateList contains
+// the items in requiredItems in the same order as requiredItems.
+//
+// If requiredIsSubset is true, then all items in requiredItems must be
+// present in candidateList. If requiredIsSubset is false, then requiredItems
+// may contain items that are not in candidateList.
+//
+// In all cases, the order of requiredItems is enforced.
+func assertPresenceAndOrdering(requiredItems, candidateList []uint16, requiredIsSubset bool) bool {
+	superset := requiredItems
+	subset := candidateList
+	if requiredIsSubset {
+		superset = candidateList
+		subset = requiredItems
+	}
+
+	var j int
+	for _, item := range subset {
+		var found bool
+		for j < len(superset) {
+			if superset[j] == item {
+				found = true
+				break
+			}
+			j++
+		}
+		if j == len(superset) && !found {
+			return false
+		}
+	}
+	return true
 }
 
 const (
@@ -562,4 +563,5 @@ const (
 	TLS_RSA_WITH_AES_256_CBC_SHA256         = 0x3d
 	TLS_DHE_RSA_WITH_AES_128_CBC_SHA        = 0x33
 	TLS_DHE_RSA_WITH_AES_256_CBC_SHA        = 0x39
+	TLS_RSA_WITH_RC4_128_MD5                = 0x4
 )

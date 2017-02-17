@@ -121,7 +121,7 @@ func TestHeuristicFunctions(t *testing.T) {
 				helloHex:  `010000d2030358a295b513c8140c6ff880f4a8a73cc830ed2dab2c4f2068eb365228d828732e00002600ffc02cc02bc024c023c00ac009c030c02fc028c027c014c013009d009c003d003c0035002f010000830000000e000c0000096c6f63616c686f7374000a00080006001700180019000b00020100000d00120010040102010501060104030203050306033374000000100030002e0268320568322d31360568322d31350568322d313408737064792f332e3106737064792f3308687474702f312e310005000501000000000012000000170000`,
 			},
 		},
-		"Other": []clientHello{
+		"Other": []clientHello{ // these are either non-browser clients or intercepted client hellos
 			{
 				// openssl s_client (OpenSSL 0.9.8zh 14 Jan 2016)
 				helloHex: `0100012b03035d385236b8ca7b7946fa0336f164e76bf821ed90e8de26d97cc677671b6f36380000acc030c02cc028c024c014c00a00a500a300a1009f006b006a0069006800390038003700360088008700860085c032c02ec02ac026c00fc005009d003d00350084c02fc02bc027c023c013c00900a400a200a0009e00670040003f003e0033003200310030009a0099009800970045004400430042c031c02dc029c025c00ec004009c003c002f009600410007c011c007c00cc00200050004c012c008001600130010000dc00dc003000a00ff0201000055000b000403000102000a001c001a00170019001c001b0018001a0016000e000d000b000c0009000a00230000000d0020001e060106020603050105020503040104020403030103020303020102020203000f000101`,
@@ -156,6 +156,10 @@ func TestHeuristicFunctions(t *testing.T) {
 				userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.79 Safari/537.36 Edge/14.14393",
 				helloHex:  `010000ca0303fd83091207161eca6b4887db50587109c50e463beb190362736b1fcf9e05f807000036c02cc02bc030c02f009f009ec024c023c028c027c00ac009c014c01300390033009d009c003d003c0035002f006a00400038003200ff0100006b00000014001200000f66696e6572706978656c732e636f6d000b000403000102000a00080006001d0017001800230000000d001400120401050102010403050302030202060106030005000501000000000010000e000c02683208687474702f312e310016000000170000`,
 			},
+			{
+				// IE 11 on Windows 7, this connection was intercepted by Blue Coat
+				helloHex: "010000b1030358a3f3bae627f464da8cb35976b88e9119640032d41e62a107d608ed8d3e62b9000034c028c027c014c013009f009e009d009cc02cc02bc024c023c00ac009003d003c0035002f006a004000380032000a0013000500040100005400000014001200000f66696e6572706978656c732e636f6d000500050100000000000a00080006001700180019000b00020100000d0014001206010603040105010201040305030203020200170000ff01000100",
+			},
 		},
 	}
 
@@ -179,23 +183,23 @@ func TestHeuristicFunctions(t *testing.T) {
 			// should return false, with as little logic as possible,
 			// but with enough logic to force TLS proxies to do a
 			// good job preserving characterstics of the handshake.
-			var wrong bool
+			var correct bool
 			switch client {
 			case "Chrome":
-				wrong = !isChrome || isFirefox || isSafari || isEdge
+				correct = isChrome && !isFirefox && !isSafari && !isEdge
 			case "Firefox":
-				wrong = isChrome || !isFirefox || isSafari || isEdge
+				correct = !isChrome && isFirefox && !isSafari && !isEdge
 			case "Safari":
-				wrong = isChrome || isFirefox || !isSafari || isEdge
+				correct = !isChrome && !isFirefox && isSafari && !isEdge
 			case "Edge":
-				wrong = isChrome || isFirefox || isSafari || !isEdge
-			case "Others":
-				wrong = isChrome || isFirefox || isSafari || isEdge
+				correct = !isChrome && !isFirefox && !isSafari && isEdge
+			case "Other":
+				correct = !isChrome && !isFirefox && !isSafari && !isEdge
 			}
 
-			if wrong {
-				t.Errorf("[%s] Test %d: Chrome=%v, Firefox=%v, Safari=%v, Edge=%v",
-					client, i, isChrome, isFirefox, isSafari, isEdge)
+			if !correct {
+				t.Errorf("[%s] Test %d: Chrome=%v, Firefox=%v, Safari=%v, Edge=%v; parsed hello: %+v",
+					client, i, isChrome, isFirefox, isSafari, isEdge, parsed)
 			}
 		}
 	}
