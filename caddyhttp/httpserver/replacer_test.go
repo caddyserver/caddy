@@ -47,6 +47,7 @@ func TestReplace(t *testing.T) {
 	repl := NewReplacer(request, recordRequest, "-")
 	// add some headers after creating replacer
 	request.Header.Set("CustomAdd", "caddy")
+	request.Header.Set("Cookie", "foo=bar; taste=delicious")
 
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -72,12 +73,17 @@ func TestReplace(t *testing.T) {
 		{"{when_iso}", "2006-01-02T15:04:12Z"},
 		{"The Custom header is {>Custom}.", "The Custom header is foobarbaz."},
 		{"The CustomAdd header is {>CustomAdd}.", "The CustomAdd header is caddy."},
-		{"The request is {request}.", "The request is POST / HTTP/1.1\\r\\nHost: localhost\\r\\nCustom: foobarbaz\\r\\nCustomadd: caddy\\r\\nShorterval: 1\\r\\n\\r\\n."},
+		{"The request is {request}.", "The request is POST / HTTP/1.1\\r\\nHost: localhost\\r\\n" +
+			"Cookie: foo=bar; taste=delicious\\r\\nCustom: foobarbaz\\r\\nCustomadd: caddy\\r\\n" +
+			"Shorterval: 1\\r\\n\\r\\n."},
 		{"The cUsToM header is {>cUsToM}...", "The cUsToM header is foobarbaz..."},
 		{"The Non-Existent header is {>Non-Existent}.", "The Non-Existent header is -."},
 		{"Bad {host placeholder...", "Bad {host placeholder..."},
 		{"Bad {>Custom placeholder", "Bad {>Custom placeholder"},
 		{"Bad {>Custom placeholder {>ShorterVal}", "Bad -"},
+		{"Bad {}", "Bad -"},
+		{"Cookies are {~taste}", "Cookies are delicious"},
+		{"Missing cookie is {~missing}", "Missing cookie is -"},
 	}
 
 	for _, c := range testCases {
