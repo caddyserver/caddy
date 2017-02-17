@@ -2,6 +2,7 @@ package httpserver
 
 import (
 	"bufio"
+	"errors"
 	"net"
 	"net/http"
 	"time"
@@ -95,3 +96,18 @@ func (r *ResponseRecorder) CloseNotify() <-chan bool {
 	}
 	panic(NonCloseNotifierError{Underlying: r.ResponseWriter})
 }
+
+// Push resource to client
+func (r *ResponseRecorder) Push(target string, opts *http.PushOptions) error {
+	if pusher, hasPusher := r.ResponseWriter.(http.Pusher); hasPusher {
+		return pusher.Push(target, opts)
+	}
+
+	return errors.New("push is unavailable (probably chained http.ResponseWriter does not implement http.Pusher)")
+}
+
+// Interface guards
+var _ http.Pusher = (*ResponseRecorder)(nil)
+var _ http.Flusher = (*ResponseRecorder)(nil)
+var _ http.CloseNotifier = (*ResponseRecorder)(nil)
+var _ http.Hijacker = (*ResponseRecorder)(nil)

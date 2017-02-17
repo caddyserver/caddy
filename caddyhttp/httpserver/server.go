@@ -45,6 +45,7 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 		sites:       group,
 		connTimeout: GracefulTimeout,
 	}
+
 	s.Server.Handler = s // this is weird, but whatever
 
 	// Disable HTTP/2 if desired
