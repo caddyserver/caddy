@@ -99,7 +99,7 @@ the [CLI documentation](https://caddyserver.com/docs/cli) for details.
 
 ## Running from Source
 
-Note: You will need **[Go 1.7](https://golang.org/dl/)** or newer.
+Note: You will need **[Go 1.8](https://golang.org/dl/)** or newer.
 
 1. `go get github.com/mholt/caddy/caddy`
 2. `cd` into your website's directory

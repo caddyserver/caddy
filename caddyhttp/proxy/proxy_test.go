@@ -949,6 +949,26 @@ func TestProxyDirectorURL(t *testing.T) {
 			expectURL:  `https://localhost:2021/t/mypath`,
 			without:    "/test",
 		},
+		{
+			requestURL: `http://localhost:2020/%2C`,
+			targetURL:  `https://localhost:2021/t/`,
+			expectURL:  `https://localhost:2021/t/%2C`,
+		},
+		{
+			requestURL: `http://localhost:2020/%2C/`,
+			targetURL:  `https://localhost:2021/t/`,
+			expectURL:  `https://localhost:2021/t/%2C/`,
+		},
+		{
+			requestURL: `http://localhost:2020/test`,
+			targetURL:  `https://localhost:2021/%2C`,
+			expectURL:  `https://localhost:2021/%2C/test`,
+		},
+		{
+			requestURL: `http://localhost:2020/%2C`,
+			targetURL:  `https://localhost:2021/%2C`,
+			expectURL:  `https://localhost:2021/%2C/%2C`,
+		},
 	} {
 		targetURL, err := url.Parse(c.targetURL)
 		if err != nil {

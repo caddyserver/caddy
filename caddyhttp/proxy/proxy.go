@@ -273,11 +273,6 @@ func createUpstreamRequest(r *http.Request) *http.Request {
 		outreq.Body = nil
 	}
 
-	// Restore URL Path if it has been modified
-	if outreq.URL.RawPath != "" {
-		outreq.URL.Opaque = outreq.URL.RawPath
-	}
-
 	// We are modifying the same underlying map from req (shallow
 	// copied above) so we only copy it if necessary.
 	copiedHeaders := false
