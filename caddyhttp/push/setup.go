@@ -17,9 +17,6 @@ func init() {
 	})
 }
 
-// ErrNotSupported is returned when push directive is not available
-var ErrNotSupported = errors.New("push directive is available when build on golang 1.8")
-
 var errInvalidHeader = errors.New("header directive requires [name] [value]")
 
 var errHeaderStartsWithColon = errors.New("header cannot start with colon")

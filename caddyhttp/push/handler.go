@@ -44,9 +44,7 @@ outer:
 		}
 	}
 
-	headers := w.Header()
-
-	if links, exists := headers["Link"]; exists {
+	if links, exists := w.Header()["Link"]; exists {
 		h.pushLinks(pusher, links)
 	}
 

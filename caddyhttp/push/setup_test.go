@@ -5,7 +5,6 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
@@ -215,10 +214,6 @@ func TestConfigParse(t *testing.T) {
 				}
 
 				if !reflect.DeepEqual(actualRule.Resources, expectedRule.Resources) {
-
-					spew.Dump(actualRule.Resources)
-					spew.Dump(expectedRule.Resources)
-
 					t.Errorf("Test %s, rule %d: Expected resources %v, but got %v",
 						test.name, j, expectedRule.Resources, actualRule.Resources)
 				}
