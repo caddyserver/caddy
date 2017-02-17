@@ -198,6 +198,13 @@ func (r *replacer) getSubstitution(key string) string {
 			}
 		}
 	}
+	// next check for cookies
+	if key[1] == '~' {
+		name := key[2 : len(key)-1]
+		if cookie, err := r.request.Cookie(name); err == nil {
+			return cookie.Value
+		}
+	}
 
 	// search default replacements in the end
 	switch key {
@@ -291,6 +298,15 @@ func (r *replacer) getSubstitution(key string) string {
 			}
 		}
 		return requestReplacer.Replace(r.requestBody.String())
+	case "{mitm}":
+		if val, ok := r.request.Context().Value(CtxKey("mitm")).(bool); ok {
+			if val {
+				return "likely"
+			} else {
+				return "unlikely"
+			}
+		}
+		return "unknown"
 	case "{status}":
 		if r.responseRecorder == nil {
 			return r.emptyValue

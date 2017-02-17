@@ -459,6 +459,7 @@ var directives = []string{
 	"proxy",
 	"fastcgi",
 	"cgi", // github.com/jung-kurt/caddy-cgi
+	"push",
 	"websocket",
 	"filemanager", // github.com/hacdias/caddy-filemanager
 	"markdown",

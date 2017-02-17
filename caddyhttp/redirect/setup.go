@@ -34,10 +34,11 @@ func redirParse(c *caddy.Controller) ([]Rule, error) {
 	cfg := httpserver.GetConfig(c)
 
 	initRule := func(rule *Rule, defaultCode string, args []string) error {
-		if cfg.TLS.Enabled {
-			rule.FromScheme = "https"
-		} else {
-			rule.FromScheme = "http"
+		rule.FromScheme = func() string {
+			if cfg.TLS.Enabled {
+				return "https"
+			}
+			return "http"
 		}
 
 		var (

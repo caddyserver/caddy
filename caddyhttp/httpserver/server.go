@@ -2,6 +2,7 @@
 package httpserver
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"io"
@@ -27,9 +28,8 @@ type Server struct {
 	listener    net.Listener
 	listenerMu  sync.Mutex
 	sites       []*SiteConfig
-	connTimeout time.Duration  // max time to wait for a connection before force stop
-	connWg      sync.WaitGroup // one increment per connection
-	tlsGovChan  chan struct{}  // close to stop the TLS maintenance goroutine
+	connTimeout time.Duration // max time to wait for a connection before force stop
+	tlsGovChan  chan struct{} // close to stop the TLS maintenance goroutine
 	vhosts      *vhostTrie
 }
 
@@ -45,15 +45,18 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 		sites:       group,
 		connTimeout: GracefulTimeout,
 	}
+
 	s.Server.Handler = s // this is weird, but whatever
+	tlsh := &tlsHandler{next: s.Server.Handler}
 	s.Server.ConnState = func(c net.Conn, cs http.ConnState) {
-		if cs == http.StateIdle {
-			s.listenerMu.Lock()
-			// server stopped, close idle connection
-			if s.listener == nil {
-				c.Close()
+		// when a connection closes or is hijacked, delete its entry
+		// in the map, because we are done with it.
+		if tlsh.listener != nil {
+			if cs == http.StateHijacked || cs == http.StateClosed {
+				tlsh.listener.helloInfosMu.Lock()
+				delete(tlsh.listener.helloInfos, c.RemoteAddr().String())
+				tlsh.listener.helloInfosMu.Unlock()
 			}
-			s.listenerMu.Unlock()
 		}
 	}
 
@@ -67,14 +70,6 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 		s.quicServer = &h2quic.Server{Server: s.Server}
 		s.Server.Handler = s.wrapWithSvcHeaders(s.Server.Handler)
 	}
-
-	// We have to bound our wg with one increment
-	// to prevent a "race condition" that is hard-coded
-	// into sync.WaitGroup.Wait() - basically, an add
-	// with a positive delta must be guaranteed to
-	// occur before Wait() is called on the wg.
-	// In a way, this kind of acts as a safety barrier.
-	s.connWg.Add(1)
 
 	// Set up TLS configuration
 	var tlsConfigs []*caddytls.Config
@@ -90,6 +85,10 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 	// As of Go 1.7, HTTP/2 is enabled only if NextProtos includes the string "h2"
 	if HTTP2 && s.Server.TLSConfig != nil && len(s.Server.TLSConfig.NextProtos) == 0 {
 		s.Server.TLSConfig.NextProtos = []string{"h2"}
+	}
+
+	if s.Server.TLSConfig != nil {
+		s.Server.Handler = tlsh
 	}
 
 	// Compile custom middleware for every site (enables virtual hosting)
@@ -163,8 +162,6 @@ func (s *Server) Serve(ln net.Listener) error {
 		ln = tcpKeepAliveListener{TCPListener: tcpLn}
 	}
 
-	ln = newGracefulListener(ln, &s.connWg)
-
 	s.listenerMu.Lock()
 	s.listener = ln
 	s.listenerMu.Unlock()
@@ -175,7 +172,10 @@ func (s *Server) Serve(ln net.Listener) error {
 		// not implement the File() method we need for graceful restarts
 		// on POSIX systems.
 		// TODO: Is this ^ still relevant anymore? Maybe we can now that it's a net.Listener...
-		ln = tls.NewListener(ln, s.Server.TLSConfig)
+		ln = newTLSListener(ln, s.Server.TLSConfig, s.Server.ReadTimeout)
+		if handler, ok := s.Server.Handler.(*tlsHandler); ok {
+			handler.listener = ln.(*tlsHelloListener)
+		}
 
 		// Rotate TLS session ticket keys
 		s.tlsGovChan = caddytls.RotateSessionTicketKeys(s.Server.TLSConfig)
@@ -306,40 +306,21 @@ func (s *Server) Address() string {
 
 // Stop stops s gracefully (or forcefully after timeout) and
 // closes its listener.
-func (s *Server) Stop() (err error) {
-	s.Server.SetKeepAlivesEnabled(false)
+func (s *Server) Stop() error {
+	ctx, cancel := context.WithTimeout(context.Background(), s.connTimeout)
+	defer cancel()
 
-	if runtime.GOOS != "windows" {
-		// force connections to close after timeout
-		done := make(chan struct{})
-		go func() {
-			s.connWg.Done() // decrement our initial increment used as a barrier
-			s.connWg.Wait()
-			close(done)
-		}()
-
-		// Wait for remaining connections to finish or
-		// force them all to close after timeout
-		select {
-		case <-time.After(s.connTimeout):
-		case <-done:
-		}
+	err := s.Server.Shutdown(ctx)
+	if err != nil {
+		return err
 	}
 
-	// Close the listener now; this stops the server without delay
-	s.listenerMu.Lock()
-	if s.listener != nil {
-		err = s.listener.Close()
-		s.listener = nil
-	}
-	s.listenerMu.Unlock()
-
-	// Closing this signals any TLS governor goroutines to exit
+	// signal any TLS governor goroutines to exit
 	if s.tlsGovChan != nil {
 		close(s.tlsGovChan)
 	}
 
-	return
+	return nil
 }
 
 // sanitizePath collapses any ./ ../ /// madness
@@ -439,11 +420,10 @@ func makeHTTPServer(addr string, group []*SiteConfig) *http.Server {
 	}
 
 	// set the final values on the server
-	// TODO: ReadHeaderTimeout and IdleTimeout require Go 1.8
 	s.ReadTimeout = min.ReadTimeout
-	// s.ReadHeaderTimeout = min.ReadHeaderTimeout
+	s.ReadHeaderTimeout = min.ReadHeaderTimeout
 	s.WriteTimeout = min.WriteTimeout
-	// s.IdleTimeout = min.IdleTimeout
+	s.IdleTimeout = min.IdleTimeout
 
 	return s
 }

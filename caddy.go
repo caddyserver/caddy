@@ -5,6 +5,8 @@
 //   1. Set the AppName and AppVersion variables.
 //   2. Call LoadCaddyfile() to get the Caddyfile.
 //      Pass in the name of the server type (like "http").
+//      Make sure the server type's package is imported
+//      (import _ "github.com/mholt/caddy/caddyhttp").
 //   3. Call caddy.Start() to start Caddy. You get back
 //      an Instance, on which you can call Restart() to
 //      restart it or Stop() to stop it.
