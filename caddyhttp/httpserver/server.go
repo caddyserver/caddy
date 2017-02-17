@@ -47,6 +47,18 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 	}
 
 	s.Server.Handler = s // this is weird, but whatever
+	tlsh := &tlsHandler{next: s.Server.Handler}
+	s.Server.ConnState = func(c net.Conn, cs http.ConnState) {
+		// when a connection closes or is hijacked, delete its entry
+		// in the map, because we are done with it.
+		if tlsh.listener != nil {
+			if cs == http.StateHijacked || cs == http.StateClosed {
+				tlsh.listener.helloInfosMu.Lock()
+				delete(tlsh.listener.helloInfos, c.RemoteAddr().String())
+				tlsh.listener.helloInfosMu.Unlock()
+			}
+		}
+	}
 
 	// Disable HTTP/2 if desired
 	if !HTTP2 {
@@ -73,6 +85,10 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 	// As of Go 1.7, HTTP/2 is enabled only if NextProtos includes the string "h2"
 	if HTTP2 && s.Server.TLSConfig != nil && len(s.Server.TLSConfig.NextProtos) == 0 {
 		s.Server.TLSConfig.NextProtos = []string{"h2"}
+	}
+
+	if s.Server.TLSConfig != nil {
+		s.Server.Handler = tlsh
 	}
 
 	// Compile custom middleware for every site (enables virtual hosting)
@@ -156,7 +172,10 @@ func (s *Server) Serve(ln net.Listener) error {
 		// not implement the File() method we need for graceful restarts
 		// on POSIX systems.
 		// TODO: Is this ^ still relevant anymore? Maybe we can now that it's a net.Listener...
-		ln = tls.NewListener(ln, s.Server.TLSConfig)
+		ln = newTLSListener(ln, s.Server.TLSConfig, s.Server.ReadTimeout)
+		if handler, ok := s.Server.Handler.(*tlsHandler); ok {
+			handler.listener = ln.(*tlsHelloListener)
+		}
 
 		// Rotate TLS session ticket keys
 		s.tlsGovChan = caddytls.RotateSessionTicketKeys(s.Server.TLSConfig)
