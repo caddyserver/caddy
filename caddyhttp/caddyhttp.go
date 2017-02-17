@@ -21,6 +21,7 @@ import (
 	_ "github.com/mholt/caddy/caddyhttp/mime"
 	_ "github.com/mholt/caddy/caddyhttp/pprof"
 	_ "github.com/mholt/caddy/caddyhttp/proxy"
+	_ "github.com/mholt/caddy/caddyhttp/push"
 	_ "github.com/mholt/caddy/caddyhttp/redirect"
 	_ "github.com/mholt/caddy/caddyhttp/rewrite"
 	_ "github.com/mholt/caddy/caddyhttp/root"
