@@ -64,7 +64,8 @@ func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 
 			// let upstream middleware (e.g. fastcgi and cgi) know about authenticated
 			// user; this replaces the request with a wrapped instance
-			r = r.WithContext(context.WithValue(r.Context(), "remote_user", username))
+			r = r.WithContext(context.WithValue(r.Context(),
+				httpserver.CtxKey("remote_user"), username))
 		}
 	}
 
