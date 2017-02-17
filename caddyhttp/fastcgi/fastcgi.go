@@ -220,6 +220,10 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 		reqURI = origURI
 	}
 
+	// Retrieve name of remote user that was set by some downstream middleware,
+	// possibly basicauth.
+	remoteUser, _ := r.Context().Value(httpserver.CtxKey("remote_user")).(string) // Blank if not set
+
 	// Some variables are unused but cleared explicitly to prevent
 	// the parent environment from interfering.
 	env = map[string]string{
@@ -235,7 +239,7 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 		"REMOTE_HOST":       ip, // For speed, remote host lookups disabled
 		"REMOTE_PORT":       port,
 		"REMOTE_IDENT":      "", // Not used
-		"REMOTE_USER":       "", // Not used
+		"REMOTE_USER":       remoteUser,
 		"REQUEST_METHOD":    r.Method,
 		"SERVER_NAME":       h.ServerName,
 		"SERVER_PORT":       h.ServerPort,
