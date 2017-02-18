@@ -61,7 +61,51 @@ func TestMiddlewareWillPushResources(t *testing.T) {
 
 		"/index2.css": {
 			Method: http.MethodGet,
-			Header: nil,
+			Header: http.Header{},
+		},
+	}
+
+	comparePushedResources(t, expectedPushedResources, pushingWriter.pushed)
+}
+
+func TestMiddlewareWillPushResourcesWithMergedHeaders(t *testing.T) {
+
+	// given
+	request, err := http.NewRequest(http.MethodGet, "/index.html", nil)
+	request.Header = http.Header{"Accept-Encoding": []string{"br"}, "Invalid-Header": []string{"Should be filter out"}}
+	writer := httptest.NewRecorder()
+
+	if err != nil {
+		t.Fatalf("Could not create HTTP request: %v", err)
+	}
+
+	middleware := Middleware{
+		Next: httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
+			return 0, nil
+		}),
+		Rules: []Rule{
+			{Path: "/index.html", Resources: []Resource{
+				{Path: "/index.css", Method: http.MethodHead, Header: http.Header{"Test": []string{"Value"}}},
+				{Path: "/index2.css", Method: http.MethodGet},
+			}},
+		},
+	}
+
+	pushingWriter := &MockedPusher{ResponseWriter: writer}
+
+	// when
+	middleware.ServeHTTP(pushingWriter, request)
+
+	// then
+	expectedPushedResources := map[string]*http.PushOptions{
+		"/index.css": {
+			Method: http.MethodHead,
+			Header: http.Header{"Test": []string{"Value"}, "Accept-Encoding": []string{"br"}},
+		},
+
+		"/index2.css": {
+			Method: http.MethodGet,
+			Header: http.Header{"Accept-Encoding": []string{"br"}},
 		},
 	}
 
@@ -169,7 +213,7 @@ func TestMiddlewareWillNotPushResources(t *testing.T) {
 
 	// then
 	if err2 != nil {
-		t.Errorf("Should not return error")
+		t.Error("Should not return error")
 	}
 }
 
@@ -201,21 +245,21 @@ func TestMiddlewareShouldInterceptLinkHeader(t *testing.T) {
 
 	// then
 	if err2 != nil {
-		t.Errorf("Should not return error")
+		t.Error("Should not return error")
 	}
 
 	expectedPushedResources := map[string]*http.PushOptions{
 		"/index.css": {
 			Method: http.MethodGet,
-			Header: nil,
+			Header: http.Header{},
 		},
 		"/index2.css": {
 			Method: http.MethodGet,
-			Header: nil,
+			Header: http.Header{},
 		},
 		"/index3.css": {
 			Method: http.MethodGet,
-			Header: nil,
+			Header: http.Header{},
 		},
 	}
 
@@ -224,7 +268,10 @@ func TestMiddlewareShouldInterceptLinkHeader(t *testing.T) {
 
 func TestMiddlewareShouldInterceptLinkHeaderPusherError(t *testing.T) {
 	// given
+	expectedHeaders := http.Header{"Accept-Encoding": []string{"br"}}
 	request, err := http.NewRequest(http.MethodGet, "/index.html", nil)
+	request.Header = http.Header{"Accept-Encoding": []string{"br"}, "Invalid-Header": []string{"Should be filter out"}}
+
 	writer := httptest.NewRecorder()
 
 	if err != nil {
@@ -247,13 +294,13 @@ func TestMiddlewareShouldInterceptLinkHeaderPusherError(t *testing.T) {
 
 	// then
 	if err2 != nil {
-		t.Errorf("Should not return error")
+		t.Error("Should not return error")
 	}
 
 	expectedPushedResources := map[string]*http.PushOptions{
 		"/index.css": {
 			Method: http.MethodGet,
-			Header: nil,
+			Header: expectedHeaders,
 		},
 	}
 
@@ -273,7 +320,7 @@ func comparePushedResources(t *testing.T, expected, actual map[string]*http.Push
 			}
 
 			if !reflect.DeepEqual(expectedTarget.Header, actualTarget.Header) {
-				t.Errorf("Expected %s resource push headers to be %v, actual: %v", target, expectedTarget.Header, actualTarget.Header)
+				t.Errorf("Expected %s resource push headers to be %+v, actual: %+v", target, expectedTarget.Header, actualTarget.Header)
 			}
 		} else {
 			t.Errorf("Expected %s to be pushed", target)
