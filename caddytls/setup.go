@@ -164,6 +164,20 @@ func setupTLS(c *caddy.Controller) error {
 					return c.Errf("Unsupported Storage provider '%s'", args[0])
 				}
 				config.StorageProvider = args[0]
+
+			case "http2":
+				args := c.RemainingArgs()
+				if len(args) != 1 {
+					return c.ArgErr()
+				}
+
+				switch args[0] {
+				case "off":
+					config.DisableHTTP2 = true
+				default:
+					c.ArgErr()
+				}
+
 			case "muststaple":
 				config.MustStaple = true
 			default:

@@ -15,7 +15,7 @@ import (
 // (hostnames can have wildcard characters; use the getConfig
 // method to get a config by matching its hostname). Its
 // GetCertificate function can be used with tls.Config.
-type configGroup map[string]*Config
+type ConfigGroup map[string]*Config
 
 // getConfig gets the config by the first key match for name.
 // In other words, "sub.foo.bar" will get the config for "*.foo.bar"
@@ -24,7 +24,7 @@ type configGroup map[string]*Config
 //
 // This function follows nearly the same logic to lookup
 // a hostname as the getCertificate function uses.
-func (cg configGroup) getConfig(name string) *Config {
+func (cg ConfigGroup) getConfig(name string) *Config {
 	name = strings.ToLower(name)
 
 	// exact match? great, let's use it
@@ -58,9 +58,25 @@ func (cg configGroup) getConfig(name string) *Config {
 // via ACME.
 //
 // This method is safe for use as a tls.Config.GetCertificate callback.
-func (cg configGroup) GetCertificate(clientHello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+func (cg ConfigGroup) GetCertificate(clientHello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	cert, err := cg.getCertDuringHandshake(strings.ToLower(clientHello.ServerName), true, true)
 	return &cert.Certificate, err
+}
+
+// GetConfigForClient gets a TLS configuration satisfying clientHello. In getting
+// the configuration, it abides the rules and settings defined in the
+// Config that matches clientHello.ServerName.
+//
+// This method is safe for use as a tls.Config.GetConfigForClient callback.
+func (cg ConfigGroup) GetConfigForClient(clientHello *tls.ClientHelloInfo) (*tls.Config, error) {
+
+	config := cg.getConfig(clientHello.ServerName)
+
+	if config != nil {
+		return config.tlsConfig, nil
+	}
+
+	return nil, nil
 }
 
 // getCertDuringHandshake will get a certificate for name. It first tries
@@ -74,7 +90,7 @@ func (cg configGroup) GetCertificate(clientHello *tls.ClientHelloInfo) (*tls.Cer
 // certificate is available.
 //
 // This function is safe for concurrent use.
-func (cg configGroup) getCertDuringHandshake(name string, loadIfNecessary, obtainIfNecessary bool) (Certificate, error) {
+func (cg ConfigGroup) getCertDuringHandshake(name string, loadIfNecessary, obtainIfNecessary bool) (Certificate, error) {
 	// First check our in-memory cache to see if we've already loaded it
 	cert, matched, defaulted := getCertificate(name)
 	if matched {
@@ -127,7 +143,7 @@ func (cg configGroup) getCertDuringHandshake(name string, loadIfNecessary, obtai
 // now according to mitigating factors we keep track of and preferences the
 // user has set. If a non-nil error is returned, do not issue a new certificate
 // for name.
-func (cg configGroup) checkLimitsForObtainingNewCerts(name string, cfg *Config) error {
+func (cg ConfigGroup) checkLimitsForObtainingNewCerts(name string, cfg *Config) error {
 	// User can set hard limit for number of certs for the process to issue
 	if cfg.OnDemandState.MaxObtain > 0 &&
 		atomic.LoadInt32(&cfg.OnDemandState.ObtainedCount) >= cfg.OnDemandState.MaxObtain {
@@ -160,7 +176,7 @@ func (cg configGroup) checkLimitsForObtainingNewCerts(name string, cfg *Config) 
 // name, it will wait and use what the other goroutine obtained.
 //
 // This function is safe for use by multiple concurrent goroutines.
-func (cg configGroup) obtainOnDemandCertificate(name string, cfg *Config) (Certificate, error) {
+func (cg ConfigGroup) obtainOnDemandCertificate(name string, cfg *Config) (Certificate, error) {
 	// We must protect this process from happening concurrently, so synchronize.
 	obtainCertWaitChansMu.Lock()
 	wait, ok := obtainCertWaitChans[name]
@@ -219,7 +235,7 @@ func (cg configGroup) obtainOnDemandCertificate(name string, cfg *Config) (Certi
 // validity.
 //
 // This function is safe for use by multiple concurrent goroutines.
-func (cg configGroup) handshakeMaintenance(name string, cert Certificate) (Certificate, error) {
+func (cg ConfigGroup) handshakeMaintenance(name string, cert Certificate) (Certificate, error) {
 	// Check cert expiration
 	timeLeft := cert.NotAfter.Sub(time.Now().UTC())
 	if timeLeft < RenewDurationBefore {
@@ -252,7 +268,7 @@ func (cg configGroup) handshakeMaintenance(name string, cert Certificate) (Certi
 // usable. name should already be lower-cased before calling this function.
 //
 // This function is safe for use by multiple concurrent goroutines.
-func (cg configGroup) renewDynamicCertificate(name string, cfg *Config) (Certificate, error) {
+func (cg ConfigGroup) renewDynamicCertificate(name string, cfg *Config) (Certificate, error) {
 	obtainCertWaitChansMu.Lock()
 	wait, ok := obtainCertWaitChans[name]
 	if ok {
