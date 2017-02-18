@@ -28,13 +28,15 @@ func (h Middleware) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, erro
 		flusher.Flush()
 	}
 
+	headers := h.filterProxiedHeaders(r.Header)
+
 outer:
 	for _, rule := range h.Rules {
 		if httpserver.Path(r.URL.Path).Matches(rule.Path) {
 			for _, resource := range rule.Resources {
 				pushErr := pusher.Push(resource.Path, &http.PushOptions{
 					Method: resource.Method,
-					Header: resource.Header,
+					Header: h.mergeHeaders(headers, resource.Header),
 				})
 				if pushErr != nil {
 					// If we cannot push (either not supported or concurrent streams are full - break)
@@ -45,13 +47,13 @@ outer:
 	}
 
 	if links, exists := w.Header()["Link"]; exists {
-		h.pushLinks(pusher, links)
+		h.servePreloadLinks(pusher, headers, links)
 	}
 
 	return code, err
 }
 
-func (h Middleware) pushLinks(pusher http.Pusher, links []string) {
+func (h Middleware) servePreloadLinks(pusher http.Pusher, headers http.Header, links []string) {
 outer:
 	for _, link := range links {
 		parts := strings.Split(link, ";")
@@ -62,9 +64,51 @@ outer:
 
 		target := strings.TrimSuffix(strings.TrimPrefix(parts[0], "<"), ">")
 
-		err := pusher.Push(target, &http.PushOptions{Method: http.MethodGet})
+		err := pusher.Push(target, &http.PushOptions{
+			Method: http.MethodGet,
+			Header: headers,
+		})
+
 		if err != nil {
 			break outer
 		}
 	}
+}
+
+func (h Middleware) mergeHeaders(l, r http.Header) http.Header {
+
+	out := http.Header{}
+
+	for k, v := range l {
+		out[k] = v
+	}
+
+	for k, vv := range r {
+		for _, v := range vv {
+			out.Add(k, v)
+		}
+	}
+
+	return out
+}
+
+func (h Middleware) filterProxiedHeaders(headers http.Header) http.Header {
+
+	filter := http.Header{}
+
+	for _, header := range proxiedHeaders {
+		if val, ok := headers[http.CanonicalHeaderKey(header)]; ok {
+			filter[header] = val
+		}
+	}
+
+	return filter
+}
+
+var proxiedHeaders = []string{
+	"Accept-Encoding",
+	"Accept-Language",
+	"Cache-Control",
+	"Host",
+	"User-Agent",
 }
