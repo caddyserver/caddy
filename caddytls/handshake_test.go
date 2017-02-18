@@ -9,7 +9,7 @@ import (
 func TestGetCertificate(t *testing.T) {
 	defer func() { certCache = make(map[string]Certificate) }()
 
-	cg := make(configGroup)
+	cg := make(ConfigGroup)
 
 	hello := &tls.ClientHelloInfo{ServerName: "example.com"}
 	helloSub := &tls.ClientHelloInfo{ServerName: "sub.example.com"}

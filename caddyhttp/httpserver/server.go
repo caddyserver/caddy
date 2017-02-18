@@ -31,6 +31,7 @@ type Server struct {
 	connTimeout time.Duration // max time to wait for a connection before force stop
 	tlsGovChan  chan struct{} // close to stop the TLS maintenance goroutine
 	vhosts      *vhostTrie
+	tlsConfig   caddytls.ConfigGroup
 }
 
 // ensure it satisfies the interface
@@ -72,14 +73,29 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 	}
 
 	// Set up TLS configuration
-	var tlsConfigs []*caddytls.Config
+	tlsConfigs := make(caddytls.ConfigGroup)
+	var allConfigs []*caddytls.Config
+
 	for _, site := range group {
-		tlsConfigs = append(tlsConfigs, site.TLS)
+
+		if err := site.TLS.Build(tlsConfigs); err != nil {
+			return nil, err
+		}
+
+		tlsConfigs[site.TLS.Hostname] = site.TLS
+		allConfigs = append(allConfigs, site.TLS)
 	}
-	var err error
-	s.Server.TLSConfig, err = caddytls.MakeTLSConfig(tlsConfigs)
-	if err != nil {
+
+	// Check if configs are valid
+	if err := caddytls.CheckConfigs(allConfigs); err != nil {
 		return nil, err
+	}
+
+	s.tlsConfig = tlsConfigs
+
+	s.Server.TLSConfig = &tls.Config{
+		GetConfigForClient: s.tlsConfig.GetConfigForClient,
+		GetCertificate:     s.tlsConfig.GetCertificate,
 	}
 
 	// As of Go 1.7, HTTP/2 is enabled only if NextProtos includes the string "h2"
