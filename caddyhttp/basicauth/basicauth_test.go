@@ -14,19 +14,31 @@ import (
 )
 
 func TestBasicAuth(t *testing.T) {
+	var i int
+	// This handler is registered for tests in which the only authorized user is
+	// "okuser"
+	upstreamHandler := func(w http.ResponseWriter, r *http.Request) (int, error) {
+		remoteUser, _ := r.Context().Value(httpserver.CtxKey("remote_user")).(string)
+		if remoteUser != "okuser" {
+			t.Errorf("Test %d: expecting remote user 'okuser', got '%s'", i, remoteUser)
+		}
+		return http.StatusOK, nil
+	}
 	rw := BasicAuth{
-		Next: httpserver.HandlerFunc(contentHandler),
+		Next: httpserver.HandlerFunc(upstreamHandler),
 		Rules: []Rule{
 			{Username: "okuser", Password: PlainMatcher("okpass"), Resources: []string{"/testing"}},
 		},
 	}
 
-	tests := []struct {
+	type testType struct {
 		from     string
 		result   int
 		user     string
 		password string
-	}{
+	}
+
+	tests := []testType{
 		{"/testing", http.StatusOK, "okuser", "okpass"},
 		{"/testing", http.StatusUnauthorized, "baduser", "okpass"},
 		{"/testing", http.StatusUnauthorized, "okuser", "badpass"},
@@ -37,7 +49,8 @@ func TestBasicAuth(t *testing.T) {
 		{"/testing", http.StatusUnauthorized, "", ""},
 	}
 
-	for i, test := range tests {
+	var test testType
+	for i, test = range tests {
 		req, err := http.NewRequest("GET", test.from, nil)
 		if err != nil {
 			t.Fatalf("Test %d: Could not create HTTP request: %v", i, err)
