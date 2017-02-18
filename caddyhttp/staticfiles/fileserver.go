@@ -1,7 +1,6 @@
 package staticfiles
 
 import (
-	"fmt"
 	"math/rand"
 	"net/http"
 	"os"
@@ -45,7 +44,7 @@ func (fs FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, err
 func calculateEtag(d os.FileInfo) string {
 	t := strconv.FormatInt(d.ModTime().Unix(), 36)
 	s := strconv.FormatInt(d.Size(), 36)
-	return fmt.Sprintf(`"%s%s"`, t, s)
+	return `"` + t + s + `"`
 }
 
 // serveFile writes the specified file to the HTTP response.
