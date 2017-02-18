@@ -21,15 +21,9 @@ func (h Middleware) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, erro
 		return h.Next.ServeHTTP(w, r)
 	}
 
-	// Serve file first
-	code, err := h.Next.ServeHTTP(w, r)
-
-	if flusher, ok := w.(http.Flusher); ok {
-		flusher.Flush()
-	}
-
 	headers := h.filterProxiedHeaders(r.Header)
 
+	// Push first
 outer:
 	for _, rule := range h.Rules {
 		if httpserver.Path(r.URL.Path).Matches(rule.Path) {
@@ -46,8 +40,15 @@ outer:
 		}
 	}
 
+	// Serve later
+	code, err := h.Next.ServeHTTP(w, r)
+
 	if links, exists := w.Header()["Link"]; exists {
 		h.servePreloadLinks(pusher, headers, links)
+	}
+
+	if flusher, ok := w.(http.Flusher); ok {
+		flusher.Flush()
 	}
 
 	return code, err
