@@ -47,10 +47,6 @@ outer:
 		h.servePreloadLinks(pusher, headers, links)
 	}
 
-	if flusher, ok := w.(http.Flusher); ok {
-		flusher.Flush()
-	}
-
 	return code, err
 }
 
@@ -98,7 +94,7 @@ func (h Middleware) filterProxiedHeaders(headers http.Header) http.Header {
 	filter := http.Header{}
 
 	for _, header := range proxiedHeaders {
-		if val, ok := headers[http.CanonicalHeaderKey(header)]; ok {
+		if val, ok := headers[header]; ok {
 			filter[header] = val
 		}
 	}
