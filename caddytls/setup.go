@@ -174,8 +174,6 @@ func setupTLS(c *caddy.Controller) error {
 				switch args[0] {
 				case "off":
 					config.DisableHTTP2 = true
-				case "on":
-					config.DisableHTTP2 = false
 				default:
 					c.ArgErr()
 				}
