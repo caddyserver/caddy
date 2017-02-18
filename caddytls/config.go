@@ -300,7 +300,7 @@ func (cfg *Config) build() (*tls.Config, error) {
 	}
 
 	if cfg.DisableHTTP2 {
-		config.NextProtos = []string{"http/1.1"}
+		config.NextProtos = []string{}
 	} else {
 		config.NextProtos = []string{"h2"}
 	}
