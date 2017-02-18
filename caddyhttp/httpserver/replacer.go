@@ -298,6 +298,15 @@ func (r *replacer) getSubstitution(key string) string {
 			}
 		}
 		return requestReplacer.Replace(r.requestBody.String())
+	case "{mitm}":
+		if val, ok := r.request.Context().Value(CtxKey("mitm")).(bool); ok {
+			if val {
+				return "likely"
+			} else {
+				return "unlikely"
+			}
+		}
+		return "unknown"
 	case "{status}":
 		if r.responseRecorder == nil {
 			return r.emptyValue
