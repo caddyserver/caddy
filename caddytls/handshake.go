@@ -57,7 +57,6 @@ func (cg ConfigGroup) getConfig(name string) *Config {
 // disk, then accesses the network if it must obtain a new certificate
 // via ACME.
 //
-// This method is safe for use as a tls.Config.GetCertificate callback.
 func (cg ConfigGroup) GetCertificate(clientHello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	cert, err := cg.getCertDuringHandshake(strings.ToLower(clientHello.ServerName), true, true)
 	return &cert.Certificate, err
