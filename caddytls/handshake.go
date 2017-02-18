@@ -57,19 +57,17 @@ func (cg ConfigGroup) getConfig(name string) *Config {
 // disk, then accesses the network if it must obtain a new certificate
 // via ACME.
 //
+// This method is safe for use as a tls.Config.GetCertificate callback.
 func (cg ConfigGroup) GetCertificate(clientHello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	cert, err := cg.getCertDuringHandshake(strings.ToLower(clientHello.ServerName), true, true)
 	return &cert.Certificate, err
 }
 
-// GetCertificate gets a certificate to satisfy clientHello. In getting
-// the certificate, it abides the rules and settings defined in the
-// Config that matches clientHello.ServerName. It first checks the in-
-// memory cache, then, if the config enables "OnDemand", it accesses
-// disk, then accesses the network if it must obtain a new certificate
-// via ACME.
+// GetConfigForClient gets a TLS configuration satisfying clientHello. In getting
+// the configuration, it abides the rules and settings defined in the
+// Config that matches clientHello.ServerName.
 //
-// This method is safe for use as a tls.Config.GetCertificate callback.
+// This method is safe for use as a tls.Config.GetConfigForClient callback.
 func (cg ConfigGroup) GetConfigForClient(clientHello *tls.ClientHelloInfo) (*tls.Config, error) {
 
 	config := cg.getConfig(clientHello.ServerName)

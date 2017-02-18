@@ -91,6 +91,10 @@ func TestSetupParseBasic(t *testing.T) {
 		t.Error("Expected PreferServerCipherSuites = true, but was false")
 	}
 
+	if cfg.DisableHTTP2 {
+		t.Error("Expected HTTP2 to be enabled by default")
+	}
+
 	// Ensure curve count is correct
 	if len(cfg.CurvePreferences) != len(defaultCurves) {
 		t.Errorf("Expected %v Curves, got %v", len(defaultCurves), len(cfg.CurvePreferences))
@@ -118,6 +122,7 @@ func TestSetupParseWithOptionalParams(t *testing.T) {
             protocols tls1.0 tls1.2
             ciphers RSA-AES256-CBC-SHA ECDHE-RSA-AES128-GCM-SHA256 ECDHE-ECDSA-AES256-GCM-SHA384
             muststaple
+            http2 off
         }`
 	cfg := new(Config)
 	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
@@ -141,7 +146,11 @@ func TestSetupParseWithOptionalParams(t *testing.T) {
 	}
 
 	if !cfg.MustStaple {
-		t.Errorf("Expected must staple to be true")
+		t.Error("Expected must staple to be true")
+	}
+
+	if !cfg.DisableHTTP2 {
+		t.Error("Expected HTTP2 to be disabled")
 	}
 }
 
@@ -184,7 +193,7 @@ func TestSetupParseWithWrongOptionalParams(t *testing.T) {
 	c = caddy.NewTestController("", params)
 	err = setupTLS(c)
 	if err == nil {
-		t.Errorf("Expected errors, but no error returned")
+		t.Error("Expected errors, but no error returned")
 	}
 
 	// Test key_type wrong params
@@ -196,7 +205,7 @@ func TestSetupParseWithWrongOptionalParams(t *testing.T) {
 	c = caddy.NewTestController("", params)
 	err = setupTLS(c)
 	if err == nil {
-		t.Errorf("Expected errors, but no error returned")
+		t.Error("Expected errors, but no error returned")
 	}
 
 	// Test curves wrong params
@@ -208,7 +217,7 @@ func TestSetupParseWithWrongOptionalParams(t *testing.T) {
 	c = caddy.NewTestController("", params)
 	err = setupTLS(c)
 	if err == nil {
-		t.Errorf("Expected errors, but no error returned")
+		t.Error("Expected errors, but no error returned")
 	}
 }
 
@@ -222,7 +231,7 @@ func TestSetupParseWithClientAuth(t *testing.T) {
 	c := caddy.NewTestController("", params)
 	err := setupTLS(c)
 	if err == nil {
-		t.Errorf("Expected an error, but no error returned")
+		t.Error("Expected an error, but no error returned")
 	}
 
 	noCAs, twoCAs := []string{}, []string{"client_ca.crt", "client2_ca.crt"}
