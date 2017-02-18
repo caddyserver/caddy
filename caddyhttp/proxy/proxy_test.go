@@ -278,8 +278,8 @@ func TestWebSocketReverseProxyServeHTTPHandler(t *testing.T) {
 	if !bytes.Equal(actual, expected) {
 		t.Errorf("Expected backend to accept response:\n'%s'\nActually got:\n'%s'", expected, actual)
 	}
-	if atomic.LoadInt32(&connCount) != 1 {
-		t.Errorf("Expected 1 websocket connection, got %d", connCount)
+	if got, want := atomic.LoadInt32(&connCount), int32(1); got != want {
+		t.Errorf("Expected %d websocket connection, got %d", want, got)
 	}
 }
 
