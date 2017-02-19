@@ -93,9 +93,11 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 
 	s.tlsConfig = tlsConfigs
 
-	s.Server.TLSConfig = &tls.Config{
-		GetConfigForClient: s.tlsConfig.GetConfigForClient,
-		GetCertificate:     s.tlsConfig.GetCertificate,
+	if caddytls.HasTLSEnabled(allConfigs) {
+		s.Server.TLSConfig = &tls.Config{
+			GetConfigForClient: s.tlsConfig.GetConfigForClient,
+			GetCertificate:     s.tlsConfig.GetCertificate,
+		}
 	}
 
 	// As of Go 1.7, HTTP/2 is enabled only if NextProtos includes the string "h2"
