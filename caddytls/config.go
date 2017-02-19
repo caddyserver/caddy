@@ -230,13 +230,21 @@ func (cfg *Config) Build(group ConfigGroup) error {
 		return err
 	}
 
-	cfg.tlsConfig = config
-	cfg.tlsConfig.GetCertificate = group.GetCertificate
+	if config != nil {
+		cfg.tlsConfig = config
+		cfg.tlsConfig.GetCertificate = group.GetCertificate
+	}
+
 	return nil
+
 }
 
 func (cfg *Config) build() (*tls.Config, error) {
 	config := new(tls.Config)
+
+	if !cfg.Enabled {
+		return nil, nil
+	}
 
 	ciphersAdded := make(map[uint16]struct{})
 	curvesAdded := make(map[tls.CurveID]struct{})
@@ -335,6 +343,16 @@ func CheckConfigs(configs []*Config) error {
 	}
 
 	return nil
+}
+
+func HasTLSEnabled(configs []*Config) bool {
+	for _, config := range configs {
+		if config.Enabled {
+			return true
+		}
+	}
+
+	return false
 }
 
 // ConfigGetter gets a Config keyed by key.
