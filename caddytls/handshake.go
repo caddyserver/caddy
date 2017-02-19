@@ -70,6 +70,11 @@ func (cg ConfigGroup) GetCertificate(clientHello *tls.ClientHelloInfo) (*tls.Cer
 // This method is safe for use as a tls.Config.GetConfigForClient callback.
 func (cg ConfigGroup) GetConfigForClient(clientHello *tls.ClientHelloInfo) (*tls.Config, error) {
 
+	// Client does not support SNI
+	if clientHello.ServerName == "" {
+		return nil, errors.New("Clients without SNI are not supported")
+	}
+
 	config := cg.getConfig(clientHello.ServerName)
 
 	if config != nil {
