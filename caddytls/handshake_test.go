@@ -55,12 +55,11 @@ func TestGetCertificate(t *testing.T) {
 	}
 }
 
-
 func TestGetConfigForClientWithoutSNI(t *testing.T) {
 
 	cg := make(ConfigGroup)
 
-	if _, err := cg.GetConfigForClient(&tls.ClientHelloInfo{ServerName:""}); err == nil {
+	if _, err := cg.GetConfigForClient(&tls.ClientHelloInfo{ServerName: ""}); err == nil {
 		t.Error("Expected GetConfigForClient to fail is ServerName is not provided in ClientHelloInfo")
 	}
 }
