@@ -54,3 +54,12 @@ func TestGetCertificate(t *testing.T) {
 		t.Errorf("Expected default cert with no matches, got: %v", cert)
 	}
 }
+
+func TestGetConfigForClientWithoutSNI(t *testing.T) {
+
+	cg := make(ConfigGroup)
+
+	if _, err := cg.GetConfigForClient(&tls.ClientHelloInfo{ServerName: ""}); err == nil {
+		t.Error("Expected GetConfigForClient to fail is ServerName is not provided in ClientHelloInfo")
+	}
+}
