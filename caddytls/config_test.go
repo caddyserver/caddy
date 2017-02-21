@@ -8,14 +8,14 @@ import (
 	"testing"
 )
 
-func TestMakeTLSConfigProtocolVersions(t *testing.T) {
+func TestConvertTLSConfigProtocolVersions(t *testing.T) {
 	// same min and max protocol versions
-	config := Config{
+	config := &Config{
 		Enabled:            true,
 		ProtocolMinVersion: tls.VersionTLS12,
 		ProtocolMaxVersion: tls.VersionTLS12,
 	}
-	result, err := config.build()
+	result, err := config.convertToStandardTLSConfig()
 	if err != nil {
 		t.Fatalf("Did not expect an error, but got %v", err)
 	}
@@ -27,10 +27,10 @@ func TestMakeTLSConfigProtocolVersions(t *testing.T) {
 	}
 }
 
-func TestMakeTLSConfigPreferServerCipherSuites(t *testing.T) {
+func TestConvertTLSConfigPreferServerCipherSuites(t *testing.T) {
 	// prefer server cipher suites
 	config := Config{Enabled: true, PreferServerCipherSuites: true}
-	result, err := config.build()
+	result, err := config.convertToStandardTLSConfig()
 	if err != nil {
 		t.Fatalf("Did not expect an error, but got %v", err)
 	}
@@ -39,19 +39,19 @@ func TestMakeTLSConfigPreferServerCipherSuites(t *testing.T) {
 	}
 }
 
-func TestMakeTLSConfigTLSEnabledDisabled(t *testing.T) {
+func TestMakeTLSConfigTLSEnabledDisabledError(t *testing.T) {
 	// verify handling when Enabled is true and false
 	configs := []*Config{
 		{Enabled: true},
 		{Enabled: false},
 	}
-	err := CheckConfigs(configs)
+	_, err := MakeTLSConfig(configs)
 	if err == nil {
 		t.Fatalf("Expected an error, but got %v", err)
 	}
 }
 
-func TestMakeTLSConfigCipherSuites(t *testing.T) {
+func TestConvertTLSConfigCipherSuites(t *testing.T) {
 	// ensure cipher suites are unioned and
 	// that TLS_FALLBACK_SCSV is prepended
 	configs := []*Config{
@@ -67,10 +67,12 @@ func TestMakeTLSConfigCipherSuites(t *testing.T) {
 	}
 
 	for i, config := range configs {
-		cfg, _ := config.build()
-
+		cfg, err := config.convertToStandardTLSConfig()
+		if err != nil {
+			t.Errorf("Test %d: Expected no error, got: %v", i, err)
+		}
 		if !reflect.DeepEqual(cfg.CipherSuites, expectedCiphers[i]) {
-			t.Errorf("Expected ciphers %v but got %v", expectedCiphers[i], cfg.CipherSuites)
+			t.Errorf("Test %d: Expected ciphers %v but got %v", i, expectedCiphers[i], cfg.CipherSuites)
 		}
 
 	}

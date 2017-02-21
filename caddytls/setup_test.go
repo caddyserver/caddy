@@ -91,8 +91,8 @@ func TestSetupParseBasic(t *testing.T) {
 		t.Error("Expected PreferServerCipherSuites = true, but was false")
 	}
 
-	if cfg.DisableHTTP2 {
-		t.Error("Expected HTTP2 to be enabled by default")
+	if len(cfg.ALPN) != 0 {
+		t.Error("Expected ALPN empty by default")
 	}
 
 	// Ensure curve count is correct
@@ -121,8 +121,8 @@ func TestSetupParseWithOptionalParams(t *testing.T) {
 	params := `tls ` + certFile + ` ` + keyFile + ` {
             protocols tls1.0 tls1.2
             ciphers RSA-AES256-CBC-SHA ECDHE-RSA-AES128-GCM-SHA256 ECDHE-ECDSA-AES256-GCM-SHA384
-            muststaple
-            http2 off
+            must_staple
+            alpn http/1.1
         }`
 	cfg := new(Config)
 	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
@@ -149,8 +149,8 @@ func TestSetupParseWithOptionalParams(t *testing.T) {
 		t.Error("Expected must staple to be true")
 	}
 
-	if !cfg.DisableHTTP2 {
-		t.Error("Expected HTTP2 to be disabled")
+	if len(cfg.ALPN) != 1 || cfg.ALPN[0] != "http/1.1" {
+		t.Errorf("Expected ALPN to contain only 'http/1.1' but got: %v", cfg.ALPN)
 	}
 }
 

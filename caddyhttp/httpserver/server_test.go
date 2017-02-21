@@ -92,7 +92,7 @@ func TestMakeHTTPServer(t *testing.T) {
 			},
 		},
 	} {
-		actual := makeHTTPServer("127.0.0.1:9005", tc.group)
+		actual := makeHTTPServerWithTimeouts("127.0.0.1:9005", tc.group)
 
 		if got, want := actual.Addr, "127.0.0.1:9005"; got != want {
 			t.Errorf("Test %d: Expected Addr=%s, but was %s", i, want, got)
