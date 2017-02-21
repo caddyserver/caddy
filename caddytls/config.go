@@ -113,7 +113,7 @@ type Config struct {
 	// Protocol Negotation (ALPN).
 	ALPN []string
 
-	tlsConfig *tls.Config // the final tls.Config created by calling build()
+	tlsConfig *tls.Config // the final tls.Config created with buildStandardTLSConfig()
 }
 
 // OnDemandState contains some state relevant for providing
@@ -223,23 +223,20 @@ func (c *Config) StorageFor(caURL string) (Storage, error) {
 	return s, nil
 }
 
-func (cfg *Config) build() error {
-	tlsConfig, err := cfg.convertToStandardTLSConfig()
-	if err != nil {
-		return err
+// buildStandardTLSConfig converts cfg (*caddytls.Config) to a *tls.Config
+// and stores it in cfg so it can be used in servers. If TLS is disabled,
+// no tls.Config is created.
+func (cfg *Config) buildStandardTLSConfig() error {
+	if !cfg.Enabled {
+		return nil
 	}
-	tlsConfig.GetCertificate = cfg.GetCertificate
-	cfg.tlsConfig = tlsConfig
-	return nil
-}
 
-func (cfg *Config) convertToStandardTLSConfig() (*tls.Config, error) {
 	config := new(tls.Config)
 
 	ciphersAdded := make(map[uint16]struct{})
 	curvesAdded := make(map[tls.CurveID]struct{})
 
-	// Add cipher suites
+	// add cipher suites
 	for _, ciph := range cfg.Ciphers {
 		if _, ok := ciphersAdded[ciph]; !ok {
 			ciphersAdded[ciph] = struct{}{}
@@ -249,7 +246,7 @@ func (cfg *Config) convertToStandardTLSConfig() (*tls.Config, error) {
 
 	config.PreferServerCipherSuites = cfg.PreferServerCipherSuites
 
-	// Add curve preferences
+	// add curve preferences
 	for _, curv := range cfg.CurvePreferences {
 		if _, ok := curvesAdded[curv]; !ok {
 			curvesAdded[curv] = struct{}{}
@@ -261,8 +258,9 @@ func (cfg *Config) convertToStandardTLSConfig() (*tls.Config, error) {
 	config.MaxVersion = cfg.ProtocolMaxVersion
 	config.ClientAuth = cfg.ClientAuth
 	config.NextProtos = cfg.ALPN
+	config.GetCertificate = cfg.GetCertificate
 
-	// Set up client authentication if enabled
+	// set up client authentication if enabled
 	if config.ClientAuth != tls.NoClientCert {
 		pool := x509.NewCertPool()
 		clientCertsAdded := make(map[string]struct{})
@@ -277,28 +275,31 @@ func (cfg *Config) convertToStandardTLSConfig() (*tls.Config, error) {
 			// Any client with a certificate from this CA will be allowed to connect
 			caCrt, err := ioutil.ReadFile(caFile)
 			if err != nil {
-				return nil, err
+				return err
 			}
 
 			if !pool.AppendCertsFromPEM(caCrt) {
-				return nil, fmt.Errorf("error loading client certificate '%s': no certificates were successfully parsed", caFile)
+				return fmt.Errorf("error loading client certificate '%s': no certificates were successfully parsed", caFile)
 			}
 		}
 
 		config.ClientCAs = pool
 	}
 
-	// Default cipher suites
+	// default cipher suites
 	if len(config.CipherSuites) == 0 {
 		config.CipherSuites = defaultCiphers
 	}
 
-	// For security, ensure TLS_FALLBACK_SCSV is always included first
+	// for security, ensure TLS_FALLBACK_SCSV is always included first
 	if len(config.CipherSuites) == 0 || config.CipherSuites[0] != tls.TLS_FALLBACK_SCSV {
 		config.CipherSuites = append([]uint16{tls.TLS_FALLBACK_SCSV}, config.CipherSuites...)
 	}
 
-	return config, nil
+	// store the resulting new tls.Config
+	cfg.tlsConfig = config
+
+	return nil
 }
 
 // MakeTLSConfig makes a tls.Config from configs. The returned
@@ -332,7 +333,7 @@ func MakeTLSConfig(configs []*Config) (*tls.Config, error) {
 		}
 
 		// convert each caddytls.Config into a tls.Config
-		if err := cfg.build(); err != nil {
+		if err := cfg.buildStandardTLSConfig(); err != nil {
 			return nil, err
 		}
 

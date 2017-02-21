@@ -15,14 +15,14 @@ func TestConvertTLSConfigProtocolVersions(t *testing.T) {
 		ProtocolMinVersion: tls.VersionTLS12,
 		ProtocolMaxVersion: tls.VersionTLS12,
 	}
-	result, err := config.convertToStandardTLSConfig()
+	err := config.buildStandardTLSConfig()
 	if err != nil {
 		t.Fatalf("Did not expect an error, but got %v", err)
 	}
-	if got, want := result.MinVersion, uint16(tls.VersionTLS12); got != want {
+	if got, want := config.tlsConfig.MinVersion, uint16(tls.VersionTLS12); got != want {
 		t.Errorf("Expected min version to be %x, got %x", want, got)
 	}
-	if got, want := result.MaxVersion, uint16(tls.VersionTLS12); got != want {
+	if got, want := config.tlsConfig.MaxVersion, uint16(tls.VersionTLS12); got != want {
 		t.Errorf("Expected max version to be %x, got %x", want, got)
 	}
 }
@@ -30,11 +30,11 @@ func TestConvertTLSConfigProtocolVersions(t *testing.T) {
 func TestConvertTLSConfigPreferServerCipherSuites(t *testing.T) {
 	// prefer server cipher suites
 	config := Config{Enabled: true, PreferServerCipherSuites: true}
-	result, err := config.convertToStandardTLSConfig()
+	err := config.buildStandardTLSConfig()
 	if err != nil {
 		t.Fatalf("Did not expect an error, but got %v", err)
 	}
-	if got, want := result.PreferServerCipherSuites, true; got != want {
+	if got, want := config.tlsConfig.PreferServerCipherSuites, true; got != want {
 		t.Errorf("Expected PreferServerCipherSuites==%v but got %v", want, got)
 	}
 }
@@ -67,12 +67,13 @@ func TestConvertTLSConfigCipherSuites(t *testing.T) {
 	}
 
 	for i, config := range configs {
-		cfg, err := config.convertToStandardTLSConfig()
+		err := config.buildStandardTLSConfig()
 		if err != nil {
 			t.Errorf("Test %d: Expected no error, got: %v", i, err)
 		}
-		if !reflect.DeepEqual(cfg.CipherSuites, expectedCiphers[i]) {
-			t.Errorf("Test %d: Expected ciphers %v but got %v", i, expectedCiphers[i], cfg.CipherSuites)
+		if !reflect.DeepEqual(config.tlsConfig.CipherSuites, expectedCiphers[i]) {
+			t.Errorf("Test %d: Expected ciphers %v but got %v",
+				i, expectedCiphers[i], config.tlsConfig.CipherSuites)
 		}
 
 	}

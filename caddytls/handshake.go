@@ -59,9 +59,10 @@ func (cg configGroup) getConfig(name string) *Config {
 	return nil
 }
 
-// GetConfigForClient gets a TLS configuration satisfying clientHello. In getting
-// the configuration, it abides the rules and settings defined in the
-// Config that matches clientHello.ServerName.
+// GetConfigForClient gets a TLS configuration satisfying clientHello.
+// In getting the configuration, it abides the rules and settings
+// defined in the Config that matches clientHello.ServerName. If no
+// tls.Config is set on the matching Config, a nil value is returned.
 //
 // This method is safe for use as a tls.Config.GetConfigForClient callback.
 func (cg configGroup) GetConfigForClient(clientHello *tls.ClientHelloInfo) (*tls.Config, error) {
