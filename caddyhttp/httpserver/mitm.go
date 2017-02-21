@@ -35,6 +35,11 @@ type tlsHandler struct {
 // Halderman, et. al. in "The Security Impact of HTTPS Interception" (NDSS '17):
 // https://jhalderm.com/pub/papers/interception-ndss17.pdf
 func (h *tlsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if h.listener == nil {
+		h.next.ServeHTTP(w, r)
+		return
+	}
+
 	h.listener.helloInfosMu.RLock()
 	info := h.listener.helloInfos[r.RemoteAddr]
 	h.listener.helloInfosMu.RUnlock()

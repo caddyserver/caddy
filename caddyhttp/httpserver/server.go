@@ -73,11 +73,17 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 	}
 	s.Server.TLSConfig = tlsConfig
 
+	// Enable QUIC if desired
+	if QUIC {
+		s.quicServer = &h2quic.Server{Server: s.Server}
+		s.Server.Handler = s.wrapWithSvcHeaders(s.Server.Handler)
+	}
+
 	// if TLS is enabled, make sure we prepare the Server accordingly
 	if s.Server.TLSConfig != nil {
 		// wrap the HTTP handler with a handler that does MITM detection
 		tlsh := &tlsHandler{next: s.Server.Handler}
-		s.Server.Handler = tlsh
+		s.Server.Handler = tlsh // this needs to be the "outer" handler when Serve() is called, for type assertion
 
 		// when Serve() creates the TLS listener later, that listener should
 		// be adding a reference the ClientHello info to a map; this callback
@@ -103,12 +109,6 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 			// the connection will fail (as of Go 1.8, Feb. 2017).
 			s.Server.TLSConfig.NextProtos = defaultALPN
 		}
-	}
-
-	// Enable QUIC if desired
-	if QUIC {
-		s.quicServer = &h2quic.Server{Server: s.Server}
-		s.Server.Handler = s.wrapWithSvcHeaders(s.Server.Handler)
 	}
 
 	// Compile custom middleware for every site (enables virtual hosting)
