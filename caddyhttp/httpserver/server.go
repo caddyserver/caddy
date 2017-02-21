@@ -169,14 +169,14 @@ func makeHTTPServerWithTimeouts(addr string, group []*SiteConfig) *http.Server {
 		min.IdleTimeout = defaultTimeouts.IdleTimeout
 	}
 
-	// set the final values on the server
-	s := &http.Server{Addr: addr}
-	s.ReadTimeout = min.ReadTimeout
-	s.ReadHeaderTimeout = min.ReadHeaderTimeout
-	s.WriteTimeout = min.WriteTimeout
-	s.IdleTimeout = min.IdleTimeout
-
-	return s
+	// set the final values on the server and return it
+	return &http.Server{
+		Addr:              addr,
+		ReadTimeout:       min.ReadTimeout,
+		ReadHeaderTimeout: min.ReadHeaderTimeout,
+		WriteTimeout:      min.WriteTimeout,
+		IdleTimeout:       min.IdleTimeout,
+	}
 }
 
 func (s *Server) wrapWithSvcHeaders(previousHandler http.Handler) http.HandlerFunc {
