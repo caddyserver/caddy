@@ -31,40 +31,47 @@ type Server struct {
 	connTimeout time.Duration // max time to wait for a connection before force stop
 	tlsGovChan  chan struct{} // close to stop the TLS maintenance goroutine
 	vhosts      *vhostTrie
-	tlsConfig   caddytls.ConfigGroup
 }
 
 // ensure it satisfies the interface
 var _ caddy.GracefulServer = new(Server)
 
+var defaultALPN = []string{"h2", "http/1.1"}
+
+// makeTLSConfig extracts TLS settings from each site config to
+// build a tls.Config usable in Caddy HTTP servers. The returned
+// config will be nil if TLS is disabled for these sites.
+func makeTLSConfig(group []*SiteConfig) (*tls.Config, error) {
+	var tlsConfigs []*caddytls.Config
+	for i := range group {
+		if HTTP2 && len(group[i].TLS.ALPN) == 0 {
+			// if no application-level protocol was configured up to now,
+			// default to HTTP/2, then HTTP/1.1 if necessary
+			group[i].TLS.ALPN = defaultALPN
+		}
+		tlsConfigs = append(tlsConfigs, group[i].TLS)
+	}
+	return caddytls.MakeTLSConfig(tlsConfigs)
+}
+
 // NewServer creates a new Server instance that will listen on addr
 // and will serve the sites configured in group.
 func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 	s := &Server{
-		Server:      makeHTTPServer(addr, group),
+		Server:      makeHTTPServerWithTimeouts(addr, group),
 		vhosts:      newVHostTrie(),
 		sites:       group,
 		connTimeout: GracefulTimeout,
 	}
-
 	s.Server.Handler = s // this is weird, but whatever
-	tlsh := &tlsHandler{next: s.Server.Handler}
-	s.Server.ConnState = func(c net.Conn, cs http.ConnState) {
-		// when a connection closes or is hijacked, delete its entry
-		// in the map, because we are done with it.
-		if tlsh.listener != nil {
-			if cs == http.StateHijacked || cs == http.StateClosed {
-				tlsh.listener.helloInfosMu.Lock()
-				delete(tlsh.listener.helloInfos, c.RemoteAddr().String())
-				tlsh.listener.helloInfosMu.Unlock()
-			}
-		}
-	}
 
-	// Disable HTTP/2 if desired
-	if !HTTP2 {
-		s.Server.TLSNextProto = make(map[string]func(*http.Server, *tls.Conn, http.Handler))
+	// extract TLS settings from each site config to build
+	// a tls.Config, which will not be nil if TLS is enabled
+	tlsConfig, err := makeTLSConfig(group)
+	if err != nil {
+		return nil, err
 	}
+	s.Server.TLSConfig = tlsConfig
 
 	// Enable QUIC if desired
 	if QUIC {
@@ -72,41 +79,36 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 		s.Server.Handler = s.wrapWithSvcHeaders(s.Server.Handler)
 	}
 
-	// Set up TLS configuration
-	tlsConfigs := make(caddytls.ConfigGroup)
-	var allConfigs []*caddytls.Config
-
-	for _, site := range group {
-
-		if err := site.TLS.Build(tlsConfigs); err != nil {
-			return nil, err
-		}
-
-		tlsConfigs[site.TLS.Hostname] = site.TLS
-		allConfigs = append(allConfigs, site.TLS)
-	}
-
-	// Check if configs are valid
-	if err := caddytls.CheckConfigs(allConfigs); err != nil {
-		return nil, err
-	}
-
-	s.tlsConfig = tlsConfigs
-
-	if caddytls.HasTLSEnabled(allConfigs) {
-		s.Server.TLSConfig = &tls.Config{
-			GetConfigForClient: s.tlsConfig.GetConfigForClient,
-			GetCertificate:     s.tlsConfig.GetCertificate,
-		}
-	}
-
-	// As of Go 1.7, HTTP/2 is enabled only if NextProtos includes the string "h2"
-	if HTTP2 && s.Server.TLSConfig != nil && len(s.Server.TLSConfig.NextProtos) == 0 {
-		s.Server.TLSConfig.NextProtos = []string{"h2"}
-	}
-
+	// if TLS is enabled, make sure we prepare the Server accordingly
 	if s.Server.TLSConfig != nil {
-		s.Server.Handler = tlsh
+		// wrap the HTTP handler with a handler that does MITM detection
+		tlsh := &tlsHandler{next: s.Server.Handler}
+		s.Server.Handler = tlsh // this needs to be the "outer" handler when Serve() is called, for type assertion
+
+		// when Serve() creates the TLS listener later, that listener should
+		// be adding a reference the ClientHello info to a map; this callback
+		// will be sure to clear out that entry when the connection closes.
+		s.Server.ConnState = func(c net.Conn, cs http.ConnState) {
+			// when a connection closes or is hijacked, delete its entry
+			// in the map, because we are done with it.
+			if tlsh.listener != nil {
+				if cs == http.StateHijacked || cs == http.StateClosed {
+					tlsh.listener.helloInfosMu.Lock()
+					delete(tlsh.listener.helloInfos, c.RemoteAddr().String())
+					tlsh.listener.helloInfosMu.Unlock()
+				}
+			}
+		}
+
+		// As of Go 1.7, if the Server's TLSConfig is not nil, HTTP/2 is enabled only
+		// if TLSConfig.NextProtos includes the string "h2"
+		if HTTP2 && len(s.Server.TLSConfig.NextProtos) == 0 {
+			// some experimenting shows that this NextProtos must have at least
+			// one value that overlaps with the NextProtos of any other tls.Config
+			// that is returned from GetConfigForClient; if there is no overlap,
+			// the connection will fail (as of Go 1.8, Feb. 2017).
+			s.Server.TLSConfig.NextProtos = defaultALPN
+		}
 	}
 
 	// Compile custom middleware for every site (enables virtual hosting)
@@ -120,6 +122,61 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 	}
 
 	return s, nil
+}
+
+// makeHTTPServerWithTimeouts makes an http.Server from the group of
+// configs in a way that configures timeouts (or, if not set, it uses
+// the default timeouts) by combining the configuration of each
+// SiteConfig in the group. (Timeouts are important for mitigating
+// slowloris attacks.)
+func makeHTTPServerWithTimeouts(addr string, group []*SiteConfig) *http.Server {
+	// find the minimum duration configured for each timeout
+	var min Timeouts
+	for _, cfg := range group {
+		if cfg.Timeouts.ReadTimeoutSet &&
+			(!min.ReadTimeoutSet || cfg.Timeouts.ReadTimeout < min.ReadTimeout) {
+			min.ReadTimeoutSet = true
+			min.ReadTimeout = cfg.Timeouts.ReadTimeout
+		}
+		if cfg.Timeouts.ReadHeaderTimeoutSet &&
+			(!min.ReadHeaderTimeoutSet || cfg.Timeouts.ReadHeaderTimeout < min.ReadHeaderTimeout) {
+			min.ReadHeaderTimeoutSet = true
+			min.ReadHeaderTimeout = cfg.Timeouts.ReadHeaderTimeout
+		}
+		if cfg.Timeouts.WriteTimeoutSet &&
+			(!min.WriteTimeoutSet || cfg.Timeouts.WriteTimeout < min.WriteTimeout) {
+			min.WriteTimeoutSet = true
+			min.WriteTimeout = cfg.Timeouts.WriteTimeout
+		}
+		if cfg.Timeouts.IdleTimeoutSet &&
+			(!min.IdleTimeoutSet || cfg.Timeouts.IdleTimeout < min.IdleTimeout) {
+			min.IdleTimeoutSet = true
+			min.IdleTimeout = cfg.Timeouts.IdleTimeout
+		}
+	}
+
+	// for the values that were not set, use defaults
+	if !min.ReadTimeoutSet {
+		min.ReadTimeout = defaultTimeouts.ReadTimeout
+	}
+	if !min.ReadHeaderTimeoutSet {
+		min.ReadHeaderTimeout = defaultTimeouts.ReadHeaderTimeout
+	}
+	if !min.WriteTimeoutSet {
+		min.WriteTimeout = defaultTimeouts.WriteTimeout
+	}
+	if !min.IdleTimeoutSet {
+		min.IdleTimeout = defaultTimeouts.IdleTimeout
+	}
+
+	// set the final values on the server and return it
+	return &http.Server{
+		Addr:              addr,
+		ReadTimeout:       min.ReadTimeout,
+		ReadHeaderTimeout: min.ReadHeaderTimeout,
+		WriteTimeout:      min.WriteTimeout,
+		IdleTimeout:       min.IdleTimeout,
+	}
 }
 
 func (s *Server) wrapWithSvcHeaders(previousHandler http.Handler) http.HandlerFunc {
@@ -388,62 +445,6 @@ var defaultTimeouts = Timeouts{
 	ReadHeaderTimeout: 10 * time.Second,
 	WriteTimeout:      20 * time.Second,
 	IdleTimeout:       2 * time.Minute,
-}
-
-// makeHTTPServer makes an http.Server from the group of configs
-// in a way that configures timeouts (or, if not set, it uses the
-// default timeouts) and other http.Server properties by combining
-// the configuration of each SiteConfig in the group. (Timeouts
-// are important for mitigating slowloris attacks.)
-func makeHTTPServer(addr string, group []*SiteConfig) *http.Server {
-	s := &http.Server{Addr: addr}
-
-	// find the minimum duration configured for each timeout
-	var min Timeouts
-	for _, cfg := range group {
-		if cfg.Timeouts.ReadTimeoutSet &&
-			(!min.ReadTimeoutSet || cfg.Timeouts.ReadTimeout < min.ReadTimeout) {
-			min.ReadTimeoutSet = true
-			min.ReadTimeout = cfg.Timeouts.ReadTimeout
-		}
-		if cfg.Timeouts.ReadHeaderTimeoutSet &&
-			(!min.ReadHeaderTimeoutSet || cfg.Timeouts.ReadHeaderTimeout < min.ReadHeaderTimeout) {
-			min.ReadHeaderTimeoutSet = true
-			min.ReadHeaderTimeout = cfg.Timeouts.ReadHeaderTimeout
-		}
-		if cfg.Timeouts.WriteTimeoutSet &&
-			(!min.WriteTimeoutSet || cfg.Timeouts.WriteTimeout < min.WriteTimeout) {
-			min.WriteTimeoutSet = true
-			min.WriteTimeout = cfg.Timeouts.WriteTimeout
-		}
-		if cfg.Timeouts.IdleTimeoutSet &&
-			(!min.IdleTimeoutSet || cfg.Timeouts.IdleTimeout < min.IdleTimeout) {
-			min.IdleTimeoutSet = true
-			min.IdleTimeout = cfg.Timeouts.IdleTimeout
-		}
-	}
-
-	// for the values that were not set, use defaults
-	if !min.ReadTimeoutSet {
-		min.ReadTimeout = defaultTimeouts.ReadTimeout
-	}
-	if !min.ReadHeaderTimeoutSet {
-		min.ReadHeaderTimeout = defaultTimeouts.ReadHeaderTimeout
-	}
-	if !min.WriteTimeoutSet {
-		min.WriteTimeout = defaultTimeouts.WriteTimeout
-	}
-	if !min.IdleTimeoutSet {
-		min.IdleTimeout = defaultTimeouts.IdleTimeout
-	}
-
-	// set the final values on the server
-	s.ReadTimeout = min.ReadTimeout
-	s.ReadHeaderTimeout = min.ReadHeaderTimeout
-	s.WriteTimeout = min.WriteTimeout
-	s.IdleTimeout = min.IdleTimeout
-
-	return s
 }
 
 // tcpKeepAliveListener sets TCP keep-alive timeouts on accepted

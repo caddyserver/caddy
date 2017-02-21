@@ -152,7 +152,7 @@ func RenewManagedCertificates(allowPrompts bool) (err error) {
 				delete(certCache, "")
 				certCacheMu.Unlock()
 			}
-			_, err := CacheManagedCertificate(cert.Names[0], cert.Config)
+			_, err := cert.Config.CacheManagedCertificate(cert.Names[0])
 			if err != nil {
 				if allowPrompts {
 					return err // operator is present, so report error immediately

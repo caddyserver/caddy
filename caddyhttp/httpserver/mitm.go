@@ -35,6 +35,11 @@ type tlsHandler struct {
 // Halderman, et. al. in "The Security Impact of HTTPS Interception" (NDSS '17):
 // https://jhalderm.com/pub/papers/interception-ndss17.pdf
 func (h *tlsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if h.listener == nil {
+		h.next.ServeHTTP(w, r)
+		return
+	}
+
 	h.listener.helloInfosMu.RLock()
 	info := h.listener.helloInfos[r.RemoteAddr]
 	h.listener.helloInfosMu.RUnlock()
@@ -78,63 +83,62 @@ func (h *tlsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.next.ServeHTTP(w, r)
 }
 
+// clientHelloConn reads the ClientHello
+// and stores it in the attached listener.
 type clientHelloConn struct {
 	net.Conn
-	readHello bool
 	listener  *tlsHelloListener
+	readHello bool // whether ClientHello has been read
+	buf       *bytes.Buffer
 }
 
+// Read reads from c.Conn (by letting the standard library
+// do the reading off the wire), with the exception of
+// getting a copy of the ClientHello so it can parse it.
 func (c *clientHelloConn) Read(b []byte) (n int, err error) {
-	if !c.readHello {
-		// Read the header bytes.
-		hdr := make([]byte, 5)
-		n, err := io.ReadFull(c.Conn, hdr)
-		if err != nil {
-			return n, err
-		}
-
-		// Get the length of the ClientHello message and read it as well.
-		length := uint16(hdr[3])<<8 | uint16(hdr[4])
-		hello := make([]byte, int(length))
-		n, err = io.ReadFull(c.Conn, hello)
-		if err != nil {
-			return n, err
-		}
-
-		// Parse the ClientHello and store it in the map.
-		rawParsed := parseRawClientHello(hello)
-		c.listener.helloInfosMu.Lock()
-		c.listener.helloInfos[c.Conn.RemoteAddr().String()] = rawParsed
-		c.listener.helloInfosMu.Unlock()
-
-		// Since we buffered the header and ClientHello, pretend we were
-		// never here by lining up the buffered values to be read with a
-		// custom connection type, followed by the rest of the actual
-		// underlying connection.
-		mr := io.MultiReader(bytes.NewReader(hdr), bytes.NewReader(hello), c.Conn)
-		mc := multiConn{Conn: c.Conn, reader: mr}
-
-		c.Conn = mc
-
-		c.readHello = true
+	// if we've already read the ClientHello, pass thru
+	if c.readHello {
+		return c.Conn.Read(b)
 	}
-	return c.Conn.Read(b)
-}
 
-// multiConn is a net.Conn that reads from the
-// given reader instead of the wire directly. This
-// is useful when some of the connection has already
-// been read (like the TLS Client Hello) and the
-// reader is a io.MultiReader that starts with
-// the contents of the buffer.
-type multiConn struct {
-	net.Conn
-	reader io.Reader
-}
+	// we let the standard lib read off the wire for us, and
+	// tee that into our buffer so we can read the ClientHello
+	tee := io.TeeReader(c.Conn, c.buf)
+	n, err = tee.Read(b)
+	if err != nil {
+		return
+	}
+	if c.buf.Len() < 5 {
+		return // need to read more bytes for header
+	}
 
-// Read reads from mc.reader.
-func (mc multiConn) Read(b []byte) (n int, err error) {
-	return mc.reader.Read(b)
+	// read the header bytes
+	hdr := make([]byte, 5)
+	_, err = io.ReadFull(c.buf, hdr)
+	if err != nil {
+		return // this would be highly unusual and sad
+	}
+
+	// get length of the ClientHello message and read it
+	length := int(uint16(hdr[3])<<8 | uint16(hdr[4]))
+	if c.buf.Len() < length {
+		return // need to read more bytes
+	}
+	hello := make([]byte, length)
+	_, err = io.ReadFull(c.buf, hello)
+	if err != nil {
+		return
+	}
+	c.buf = nil // buffer no longer needed
+
+	// parse the ClientHello and store it in the map
+	rawParsed := parseRawClientHello(hello)
+	c.listener.helloInfosMu.Lock()
+	c.listener.helloInfos[c.Conn.RemoteAddr().String()] = rawParsed
+	c.listener.helloInfosMu.Unlock()
+
+	c.readHello = true
+	return
 }
 
 // parseRawClientHello parses data which contains the raw
@@ -279,7 +283,7 @@ func (l *tlsHelloListener) Accept() (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	helloConn := &clientHelloConn{Conn: conn, listener: l}
+	helloConn := &clientHelloConn{Conn: conn, listener: l, buf: new(bytes.Buffer)}
 	return tls.Server(helloConn, l.config), nil
 }
 
