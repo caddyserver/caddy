@@ -110,7 +110,7 @@ type Config struct {
 	MustStaple bool
 
 	// The list of protocols to choose from for Application Layer
-	// Protocol Negotation (ALPN).
+	// Protocol Negotiation (ALPN).
 	ALPN []string
 
 	tlsConfig *tls.Config // the final tls.Config created with buildStandardTLSConfig()
