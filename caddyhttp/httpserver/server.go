@@ -437,15 +437,9 @@ func (s *Server) OnStartupComplete() {
 }
 
 // defaultTimeouts stores the default timeout values to use
-// if left unset by user configuration. Default timeouts,
-// especially for ReadTimeout, are important for mitigating
-// slowloris attacks.
-var defaultTimeouts = Timeouts{
-	ReadTimeout:       10 * time.Second,
-	ReadHeaderTimeout: 10 * time.Second,
-	WriteTimeout:      20 * time.Second,
-	IdleTimeout:       2 * time.Minute,
-}
+// if left unset by user configuration. NOTE: Default timeouts
+// are disabled (see issue #1464).
+var defaultTimeouts Timeouts
 
 // tcpKeepAliveListener sets TCP keep-alive timeouts on accepted
 // connections. It's used by ListenAndServe and ListenAndServeTLS so
