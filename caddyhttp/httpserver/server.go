@@ -247,7 +247,7 @@ func (s *Server) Serve(ln net.Listener) error {
 		// not implement the File() method we need for graceful restarts
 		// on POSIX systems.
 		// TODO: Is this ^ still relevant anymore? Maybe we can now that it's a net.Listener...
-		ln = newTLSListener(ln, s.Server.TLSConfig, s.Server.ReadTimeout)
+		ln = newTLSListener(ln, s.Server.TLSConfig)
 		if handler, ok := s.Server.Handler.(*tlsHandler); ok {
 			handler.listener = ln.(*tlsHelloListener)
 		}

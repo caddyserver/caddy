@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"strings"
 	"sync"
-	"time"
 )
 
 // tlsHandler is a http.Handler that will inject a value
@@ -253,12 +252,11 @@ func parseRawClientHello(data []byte) (info rawHelloInfo) {
 }
 
 // newTLSListener returns a new tlsHelloListener that wraps ln.
-func newTLSListener(ln net.Listener, config *tls.Config, readTimeout time.Duration) *tlsHelloListener {
+func newTLSListener(ln net.Listener, config *tls.Config) *tlsHelloListener {
 	return &tlsHelloListener{
-		Listener:    ln,
-		config:      config,
-		readTimeout: readTimeout,
-		helloInfos:  make(map[string]rawHelloInfo),
+		Listener:   ln,
+		config:     config,
+		helloInfos: make(map[string]rawHelloInfo),
 	}
 }
 
@@ -270,7 +268,6 @@ func newTLSListener(ln net.Listener, config *tls.Config, readTimeout time.Durati
 type tlsHelloListener struct {
 	net.Listener
 	config       *tls.Config
-	readTimeout  time.Duration
 	helloInfos   map[string]rawHelloInfo
 	helloInfosMu sync.RWMutex
 }
