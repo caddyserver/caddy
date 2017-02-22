@@ -257,7 +257,7 @@ func TestServeHTTP(t *testing.T) {
 	for i, test := range tests {
 		responseRecorder := httptest.NewRecorder()
 		request, err := http.NewRequest("GET", test.url, nil)
-		ctx := context.WithValue(request.Context(), caddy.URLPathContextKey, request.URL.Path)
+		ctx := context.WithValue(request.Context(), caddy.URLPathCtxKey, request.URL.Path)
 		request = request.WithContext(ctx)
 
 		request.Header.Add("Accept-Encoding", test.acceptEncoding)

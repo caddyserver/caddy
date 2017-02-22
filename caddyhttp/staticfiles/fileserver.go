@@ -98,7 +98,7 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request, name stri
 		if !strings.HasSuffix(r.URL.Path, "/") {
 			toURL, _ := url.Parse(r.URL.String())
 
-			path, ok := r.Context().Value(caddy.URLPathContextKey).(string)
+			path, ok := r.Context().Value(caddy.URLPathCtxKey).(string)
 			if ok && !strings.HasSuffix(path, "/") {
 				toURL.Path = path
 			}
@@ -113,7 +113,7 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request, name stri
 		if strings.HasSuffix(r.URL.Path, "/") {
 			toURL, _ := url.Parse(r.URL.String())
 
-			path, ok := r.Context().Value(caddy.URLPathContextKey).(string)
+			path, ok := r.Context().Value(caddy.URLPathCtxKey).(string)
 			if ok && strings.HasSuffix(path, "/") {
 				toURL.Path = path
 			}

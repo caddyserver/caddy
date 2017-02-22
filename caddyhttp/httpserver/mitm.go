@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/mholt/caddy"
 )
 
 // tlsHandler is a http.Handler that will inject a value
@@ -68,7 +70,7 @@ func (h *tlsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if checked {
-		r = r.WithContext(context.WithValue(r.Context(), CtxKey("mitm"), mitm))
+		r = r.WithContext(context.WithValue(r.Context(), caddy.CtxKey("mitm"), mitm))
 	}
 
 	if mitm && h.closeOnMITM {
