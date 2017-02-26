@@ -146,6 +146,31 @@ func TestSet(t *testing.T) {
 	}
 }
 
+// Test function to test that various placeholders hold correct values after a rewrite
+// has been performed.  The NewRequest actually contains the rewritten value.
+func TestPathRewrite(t *testing.T) {
+	w := httptest.NewRecorder()
+	recordRequest := NewResponseRecorder(w)
+	reader := strings.NewReader(`{"username": "dennis"}`)
+
+	request, err := http.NewRequest("POST", "http://getcaddy.com/index.php", reader)
+	if err != nil {
+		t.Fatalf("Request Formation Failed: %s\n", err.Error())
+	}
+
+	request.Header.Set("Caddy-Rewrite-Original-URI", "a/custom/path.php?key=value")
+	repl := NewReplacer(request, recordRequest, "")
+
+	if repl.Replace("This path is '{path}'") != "This path is 'a/custom/path.php'" {
+		t.Error("Expected host replacement failed  (" + repl.Replace("This path is '{path}'") + ")")
+	}
+
+	if repl.Replace("This path is {rewrite_path}") != "This path is /index.php" {
+		t.Error("Expected host replacement failed (" + repl.Replace("This path is {rewrite_path}") + ")")
+	}
+
+}
+
 func TestRound(t *testing.T) {
 	var tests = map[time.Duration]time.Duration{
 		// 599.935µs -> 560µs
