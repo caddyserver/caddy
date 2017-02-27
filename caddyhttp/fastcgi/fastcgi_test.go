@@ -309,16 +309,14 @@ func TestBuildEnv(t *testing.T) {
 	r = newReq()
 	rule.EnvVars = [][2]string{
 		{"HTTP_HOST", "{host}"},
-		{"CUSTOM_URI", "custom_uri{uri}"},
-		{"CUSTOM_QUERY", "custom=true&{query}"},
+		{"CUSTOM_URI", "{uri}"},
 	}
 	envExpected = newEnv()
 	envExpected["HTTP_HOST"] = "localhost:2015"
 	envExpected["CUSTOM_URI"] = "custom_uri/fgci_test.php?test=blabla"
-	envExpected["CUSTOM_QUERY"] = "custom=true&test=blabla"
 	httpFieldName := strings.ToUpper(internalRewriteFieldName)
 	envExpected["HTTP_"+httpFieldName] = ""
-	r.Header.Add(internalRewriteFieldName, "/apath/torewrite/index.php")
+	r.Header.Add(internalRewriteFieldName, "custom_uri/fgci_test.php?test=blabla")
 	testBuildEnv(r, rule, fpath, envExpected)
 	if r.Header.Get(internalRewriteFieldName) == "" {
 		t.Errorf("Error: Header Expected %v", internalRewriteFieldName)
