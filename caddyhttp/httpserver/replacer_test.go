@@ -153,7 +153,7 @@ func TestPathRewrite(t *testing.T) {
 	recordRequest := NewResponseRecorder(w)
 	reader := strings.NewReader(`{"username": "dennis"}`)
 
-	request, err := http.NewRequest("POST", "http://getcaddy.com/index.php", reader)
+	request, err := http.NewRequest("POST", "http://getcaddy.com/index.php?key=value", reader)
 	if err != nil {
 		t.Fatalf("Request Formation Failed: %s\n", err.Error())
 	}
@@ -162,18 +162,18 @@ func TestPathRewrite(t *testing.T) {
 	repl := NewReplacer(request, recordRequest, "")
 
 	if repl.Replace("This path is '{path}'") != "This path is 'a/custom/path.php'" {
-		t.Error("Expected host replacement failed  (" + repl.Replace("This path is '{path}'") + ")")
+		t.Error("Expected host {path} replacement failed  (" + repl.Replace("This path is '{path}'") + ")")
 	}
 
 	if repl.Replace("This path is {rewrite_path}") != "This path is /index.php" {
-		t.Error("Expected host replacement failed (" + repl.Replace("This path is {rewrite_path}") + ")")
+		t.Error("Expected host {rewrite_path} replacement failed (" + repl.Replace("This path is {rewrite_path}") + ")")
 	}
 	if repl.Replace("This path is '{uri}'") != "This path is 'a/custom/path.php?key=value'" {
-		t.Error("Expected host replacement failed  (" + repl.Replace("This path is '{path}'") + ")")
+		t.Error("Expected host {uri} replacement failed  (" + repl.Replace("This path is '{uri}'") + ")")
 	}
 
 	if repl.Replace("This path is {rewrite_uri}") != "This path is /index.php?key=value" {
-		t.Error("Expected host replacement failed (" + repl.Replace("This path is {rewrite_path}") + ")")
+		t.Error("Expected host {rewrite_uri} replacement failed (" + repl.Replace("This path is {rewrite_uri}") + ")")
 	}
 
 }

@@ -287,6 +287,10 @@ func (r *replacer) getSubstitution(key string) string {
 			uri = r.request.URL.RequestURI()
 		}
 		return url.QueryEscape(uri)
+	case "{rewrite_uri}":
+		return r.request.URL.RequestURI()
+	case "{rewrite_uri_escaped}":
+		return url.QueryEscape(r.request.URL.RequestURI())
 	case "{when}":
 		return now().Format(timeFormat)
 	case "{when_iso}":
