@@ -276,9 +276,17 @@ func (r *replacer) getSubstitution(key string) string {
 		}
 		return port
 	case "{uri}":
-		return r.request.URL.RequestURI()
+		uri := r.request.Header.Get("Caddy-Rewrite-Original-URI")
+		if uri == "" {
+			uri = r.request.URL.RequestURI()
+		}
+		return uri
 	case "{uri_escaped}":
-		return url.QueryEscape(r.request.URL.RequestURI())
+		uri := r.request.Header.Get("Caddy-Rewrite-Original-URI")
+		if uri == "" {
+			uri = r.request.URL.RequestURI()
+		}
+		return url.QueryEscape(uri)
 	case "{when}":
 		return now().Format(timeFormat)
 	case "{when_iso}":

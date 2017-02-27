@@ -168,6 +168,13 @@ func TestPathRewrite(t *testing.T) {
 	if repl.Replace("This path is {rewrite_path}") != "This path is /index.php" {
 		t.Error("Expected host replacement failed (" + repl.Replace("This path is {rewrite_path}") + ")")
 	}
+	if repl.Replace("This path is '{uri}'") != "This path is 'a/custom/path.php?key=value'" {
+		t.Error("Expected host replacement failed  (" + repl.Replace("This path is '{path}'") + ")")
+	}
+
+	if repl.Replace("This path is {rewrite_uri}") != "This path is /index.php?key=value" {
+		t.Error("Expected host replacement failed (" + repl.Replace("This path is {rewrite_path}") + ")")
+	}
 
 }
 
