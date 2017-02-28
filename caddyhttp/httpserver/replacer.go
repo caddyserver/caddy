@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/mholt/caddy"
 )
 
 // requestReplacer is a strings.Replacer which is used to
@@ -299,7 +301,7 @@ func (r *replacer) getSubstitution(key string) string {
 		}
 		return requestReplacer.Replace(r.requestBody.String())
 	case "{mitm}":
-		if val, ok := r.request.Context().Value(CtxKey("mitm")).(bool); ok {
+		if val, ok := r.request.Context().Value(caddy.CtxKey("mitm")).(bool); ok {
 			if val {
 				return "likely"
 			} else {

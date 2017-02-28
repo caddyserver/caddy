@@ -14,6 +14,7 @@ import (
 
 	"os"
 
+	"github.com/mholt/caddy"
 	"github.com/russross/blackfriday"
 )
 
@@ -325,10 +326,8 @@ func (c Context) Files(name string) ([]string, error) {
 // IsMITM returns true if it seems likely that the TLS connection
 // is being intercepted.
 func (c Context) IsMITM() bool {
-	if val, ok := c.Req.Context().Value(CtxKey("mitm")).(bool); ok {
+	if val, ok := c.Req.Context().Value(caddy.CtxKey("mitm")).(bool); ok {
 		return val
 	}
 	return false
 }
-
-type CtxKey string
