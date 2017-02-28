@@ -58,6 +58,11 @@ func (h *tlsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	} else if strings.Contains(ua, "Chrome") {
 		checked = true
 		mitm = !info.looksLikeChrome()
+	} else if strings.Contains(ua, "CriOS") {
+		// Chrome on iOS sometimes uses iOS-provided TLS stack (which looks exactly like Safari)
+		// but for connections that don't render a web page (favicon, etc.) it uses its own...
+		checked = true
+		mitm = !info.looksLikeChrome() && !info.looksLikeSafari()
 	} else if strings.Contains(ua, "Firefox") {
 		checked = true
 		mitm = !info.looksLikeFirefox()
@@ -338,6 +343,10 @@ func (info rawHelloInfo) looksLikeFirefox() bool {
 		}
 	}
 
+	if hasGreaseCiphers(info.cipherSuites) {
+		return false
+	}
+
 	// We check for order of cipher suites but not presence, since
 	// according to the paper, cipher suites may be not be added
 	// or reordered by the user, but they may be disabled.
@@ -412,6 +421,10 @@ func (info rawHelloInfo) looksLikeChrome() bool {
 		}
 	}
 
+	if !hasGreaseCiphers(info.cipherSuites) {
+		return false
+	}
+
 	return true
 }
 
@@ -449,6 +462,10 @@ func (info rawHelloInfo) looksLikeEdge() bool {
 		}
 	}
 
+	if hasGreaseCiphers(info.cipherSuites) {
+		return false
+	}
+
 	return true
 }
 
@@ -480,6 +497,10 @@ func (info rawHelloInfo) looksLikeSafari() bool {
 	// We check for the presence and order of the extensions.
 	requiredExtensionsOrder := []uint16{10, 11, 13, 13172, 16, 5, 18, 23}
 	if !assertPresenceAndOrdering(requiredExtensionsOrder, info.extensions, true) {
+		return false
+	}
+
+	if hasGreaseCiphers(info.cipherSuites) {
 		return false
 	}
 
@@ -538,6 +559,34 @@ func assertPresenceAndOrdering(requiredItems, candidateList []uint16, requiredIs
 		}
 	}
 	return true
+}
+
+func hasGreaseCiphers(cipherSuites []uint16) bool {
+	for _, cipher := range cipherSuites {
+		if _, ok := greaseCiphers[cipher]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+var greaseCiphers = map[uint16]struct{}{
+	0x0A0A: {},
+	0x1A1A: {},
+	0x2A2A: {},
+	0x3A3A: {},
+	0x4A4A: {},
+	0x5A5A: {},
+	0x6A6A: {},
+	0x7A7A: {},
+	0x8A8A: {},
+	0x9A9A: {},
+	0xAAAA: {},
+	0xBABA: {},
+	0xCACA: {},
+	0xDADA: {},
+	0xEAEA: {},
+	0xFAFA: {},
 }
 
 const (
