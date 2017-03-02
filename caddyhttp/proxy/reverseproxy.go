@@ -224,7 +224,10 @@ func (rp *ReverseProxy) UseInsecureTransport() {
 		}
 		rp.Transport = transport
 	} else if transport, ok := rp.Transport.(*http.Transport); ok {
-		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+		if transport.TLSClientConfig == nil {
+			transport.TLSClientConfig = &tls.Config{}
+		}
+		transport.TLSClientConfig.InsecureSkipVerify = true
 		// No http2.ConfigureTransport() here.
 		// For now this is only added in places where
 		// an http.Transport is actually created.
