@@ -441,7 +441,7 @@ func newConnHijackerTransport(base http.RoundTripper) *connHijackerTransport {
 	}
 	if b, _ := base.(*http.Transport); b != nil {
 		tlsClientConfig := b.TLSClientConfig
-		if tlsClientConfig.NextProtos != nil {
+		if tlsClientConfig != nil && tlsClientConfig.NextProtos != nil {
 			tlsClientConfig = tlsClientConfig.Clone()
 			tlsClientConfig.NextProtos = nil
 		}
