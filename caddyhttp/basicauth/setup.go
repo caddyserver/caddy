@@ -51,13 +51,6 @@ func basicAuthParse(c *caddy.Controller) ([]Rule, error) {
 			if rule.Password, err = passwordMatcher(rule.Username, args[1], cfg.Root); err != nil {
 				return rules, c.Errf("Get password matcher from %s: %v", c.Val(), err)
 			}
-
-			for c.NextBlock() {
-				rule.Resources = append(rule.Resources, c.Val())
-				if c.NextArg() {
-					return rules, c.Errf("Expecting only one resource per line (extra '%s')", c.Val())
-				}
-			}
 		case 3:
 			rule.Resources = append(rule.Resources, args[0])
 			rule.Username = args[1]
@@ -66,6 +59,31 @@ func basicAuthParse(c *caddy.Controller) ([]Rule, error) {
 			}
 		default:
 			return rules, c.ArgErr()
+		}
+
+		// If nested block is present, process it here
+		for c.NextBlock() {
+			val := c.Val()
+			args = c.RemainingArgs()
+			switch len(args) {
+			case 0:
+				// For backwards compatibility, assume single argument is path resource
+				rule.Resources = append(rule.Resources, val)
+			case 1:
+				if val == "realm" {
+					if rule.Realm == "" {
+						rule.Realm = strings.Replace(args[0], `"`, `\"`, -1)
+					} else {
+						return rules, c.Errf("\"realm\"subdirective can only be specified once")
+					}
+				} else if val == "path" {
+					rule.Resources = append(rule.Resources, args[0])
+				} else {
+					return rules, c.Errf("expecting \"path\" or \"realm\", got \"%s\"", val)
+				}
+			default:
+				return rules, c.ArgErr()
+			}
 		}
 
 		rules = append(rules, rule)

@@ -28,7 +28,8 @@ func TestBasicAuth(t *testing.T) {
 	rw := BasicAuth{
 		Next: httpserver.HandlerFunc(upstreamHandler),
 		Rules: []Rule{
-			{Username: "okuser", Password: PlainMatcher("okpass"), Resources: []string{"/testing"}},
+			{Username: "okuser", Password: PlainMatcher("okpass"),
+				Resources: []string{"/testing"}, Realm: "Resources"},
 		},
 	}
 
@@ -70,7 +71,7 @@ func TestBasicAuth(t *testing.T) {
 		if test.result == http.StatusUnauthorized {
 			headers := rec.Header()
 			if val, ok := headers["Www-Authenticate"]; ok {
-				if got, want := val[0], "Basic realm=\"Restricted\""; got != want {
+				if got, want := val[0], "Basic realm=\"Resources\""; got != want {
 					t.Errorf("Test %d: Www-Authenticate header should be '%s', got: '%s'", i, want, got)
 				}
 			} else {
