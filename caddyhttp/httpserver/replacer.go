@@ -207,6 +207,12 @@ func (r *replacer) getSubstitution(key string) string {
 			return cookie.Value
 		}
 	}
+	// next check for query argument
+	if key[1] == '?' {
+		query := r.request.URL.Query()
+		name := key[2 : len(key)-1]
+		return query.Get(name)
+	}
 
 	// search default replacements in the end
 	switch key {
