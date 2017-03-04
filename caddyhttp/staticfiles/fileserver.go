@@ -3,12 +3,14 @@ package staticfiles
 import (
 	"math/rand"
 	"net/http"
+	"net/url"
 	"os"
-	"path"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
+
+	"github.com/mholt/caddy"
 )
 
 // FileServer implements a production-ready file server
@@ -90,17 +92,34 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request, name stri
 	}
 
 	// redirect to canonical path
-	url := r.URL.Path
 	if d.IsDir() {
-		// Ensure / at end of directory url
-		if !strings.HasSuffix(url, "/") {
-			Redirect(w, r, path.Base(url)+"/", http.StatusMovedPermanently)
+		// Ensure / at end of directory url. If the original URL path is
+		// used then ensure / exists as well.
+		if !strings.HasSuffix(r.URL.Path, "/") {
+			toURL, _ := url.Parse(r.URL.String())
+
+			path, ok := r.Context().Value(caddy.URLPathCtxKey).(string)
+			if ok && !strings.HasSuffix(path, "/") {
+				toURL.Path = path
+			}
+			toURL.Path += "/"
+
+			http.Redirect(w, r, toURL.String(), http.StatusMovedPermanently)
 			return http.StatusMovedPermanently, nil
 		}
 	} else {
-		// Ensure no / at end of file url
-		if strings.HasSuffix(url, "/") {
-			Redirect(w, r, "../"+path.Base(url), http.StatusMovedPermanently)
+		// Ensure no / at end of file url. If the original URL path is
+		// used then ensure no / exists as well.
+		if strings.HasSuffix(r.URL.Path, "/") {
+			toURL, _ := url.Parse(r.URL.String())
+
+			path, ok := r.Context().Value(caddy.URLPathCtxKey).(string)
+			if ok && strings.HasSuffix(path, "/") {
+				toURL.Path = path
+			}
+			toURL.Path = strings.TrimSuffix(toURL.Path, "/")
+
+			http.Redirect(w, r, toURL.String(), http.StatusMovedPermanently)
 			return http.StatusMovedPermanently, nil
 		}
 	}

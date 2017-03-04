@@ -38,7 +38,7 @@ func TestReplace(t *testing.T) {
 	recordRequest := NewResponseRecorder(w)
 	reader := strings.NewReader(`{"username": "dennis"}`)
 
-	request, err := http.NewRequest("POST", "http://localhost", reader)
+	request, err := http.NewRequest("POST", "http://localhost/?foo=bar", reader)
 	if err != nil {
 		t.Fatal("Request Formation Failed\n")
 	}
@@ -73,7 +73,7 @@ func TestReplace(t *testing.T) {
 		{"{when_iso}", "2006-01-02T15:04:12Z"},
 		{"The Custom header is {>Custom}.", "The Custom header is foobarbaz."},
 		{"The CustomAdd header is {>CustomAdd}.", "The CustomAdd header is caddy."},
-		{"The request is {request}.", "The request is POST / HTTP/1.1\\r\\nHost: localhost\\r\\n" +
+		{"The request is {request}.", "The request is POST /?foo=bar HTTP/1.1\\r\\nHost: localhost\\r\\n" +
 			"Cookie: foo=bar; taste=delicious\\r\\nCustom: foobarbaz\\r\\nCustomadd: caddy\\r\\n" +
 			"Shorterval: 1\\r\\n\\r\\n."},
 		{"The cUsToM header is {>cUsToM}...", "The cUsToM header is foobarbaz..."},
@@ -84,6 +84,9 @@ func TestReplace(t *testing.T) {
 		{"Bad {}", "Bad -"},
 		{"Cookies are {~taste}", "Cookies are delicious"},
 		{"Missing cookie is {~missing}", "Missing cookie is -"},
+		{"Query string is {query}", "Query string is foo=bar"},
+		{"Query string value for foo is {?foo}", "Query string value for foo is bar"},
+		{"Missing query string argument is {?missing}", "Missing query string argument is "},
 	}
 
 	for _, c := range testCases {
