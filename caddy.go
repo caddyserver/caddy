@@ -5,6 +5,8 @@
 //   1. Set the AppName and AppVersion variables.
 //   2. Call LoadCaddyfile() to get the Caddyfile.
 //      Pass in the name of the server type (like "http").
+//      Make sure the server type's package is imported
+//      (import _ "github.com/mholt/caddy/caddyhttp").
 //   3. Call caddy.Start() to start Caddy. You get back
 //      an Instance, on which you can call Restart() to
 //      restart it or Stop() to stop it.
@@ -867,3 +869,11 @@ var (
 	// by default if no other file is specified.
 	DefaultConfigFile = "Caddyfile"
 )
+
+// CtxKey is a value for use with context.WithValue.
+type CtxKey string
+
+// URLPathCtxKey is a context key. It can be used in HTTP handlers with
+// context.WithValue to access the original request URI that accompanied the
+// server request. The associated value will be of type string.
+const URLPathCtxKey CtxKey = "url_path"

@@ -1,6 +1,7 @@
 package staticfiles
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mholt/caddy"
 )
 
 var (
@@ -17,6 +20,20 @@ var (
 
 	testDir     = filepath.Join(os.TempDir(), "caddy_testdir")
 	testWebRoot = filepath.Join(testDir, "webroot")
+)
+
+var (
+	webrootFile1Html                   = filepath.Join("webroot", "file1.html")
+	webrootDirFile2Html                = filepath.Join("webroot", "dir", "file2.html")
+	webrootDirHiddenHtml               = filepath.Join("webroot", "dir", "hidden.html")
+	webrootDirwithindexIndeHtml        = filepath.Join("webroot", "dirwithindex", "index.html")
+	webrootSubGzippedHtml              = filepath.Join("webroot", "sub", "gzipped.html")
+	webrootSubGzippedHtmlGz            = filepath.Join("webroot", "sub", "gzipped.html.gz")
+	webrootSubGzippedHtmlBr            = filepath.Join("webroot", "sub", "gzipped.html.br")
+	webrootSubBrotliHtml               = filepath.Join("webroot", "sub", "brotli.html")
+	webrootSubBrotliHtmlGz             = filepath.Join("webroot", "sub", "brotli.html.gz")
+	webrootSubBrotliHtmlBr             = filepath.Join("webroot", "sub", "brotli.html.br")
+	webrootSubBarDirWithIndexIndexHTML = filepath.Join("webroot", "bar", "dirwithindex", "index.html")
 )
 
 // testFiles is a map with relative paths to test files as keys and file content as values.
@@ -31,17 +48,18 @@ var (
 // '------ file2.html
 // '------ hidden.html
 var testFiles = map[string]string{
-	"unreachable.html":                                     "<h1>must not leak</h1>",
-	filepath.Join("webroot", "file1.html"):                 "<h1>file1.html</h1>",
-	filepath.Join("webroot", "sub", "gzipped.html"):        "<h1>gzipped.html</h1>",
-	filepath.Join("webroot", "sub", "gzipped.html.gz"):     "gzipped.html.gz",
-	filepath.Join("webroot", "sub", "gzipped.html.gz"):     "gzipped.html.gz",
-	filepath.Join("webroot", "sub", "brotli.html"):         "brotli.html",
-	filepath.Join("webroot", "sub", "brotli.html.gz"):      "brotli.html.gz",
-	filepath.Join("webroot", "sub", "brotli.html.br"):      "brotli.html.br",
-	filepath.Join("webroot", "dirwithindex", "index.html"): "<h1>dirwithindex/index.html</h1>",
-	filepath.Join("webroot", "dir", "file2.html"):          "<h1>dir/file2.html</h1>",
-	filepath.Join("webroot", "dir", "hidden.html"):         "<h1>dir/hidden.html</h1>",
+	"unreachable.html":                 "<h1>must not leak</h1>",
+	webrootFile1Html:                   "<h1>file1.html</h1>",
+	webrootDirFile2Html:                "<h1>dir/file2.html</h1>",
+	webrootDirwithindexIndeHtml:        "<h1>dirwithindex/index.html</h1>",
+	webrootDirHiddenHtml:               "<h1>dir/hidden.html</h1>",
+	webrootSubGzippedHtml:              "<h1>gzipped.html</h1>",
+	webrootSubGzippedHtmlGz:            "1.gzipped.html.gz",
+	webrootSubGzippedHtmlBr:            "2.gzipped.html.br",
+	webrootSubBrotliHtml:               "3.brotli.html",
+	webrootSubBrotliHtmlGz:             "4.brotli.html.gz",
+	webrootSubBrotliHtmlBr:             "5.brotli.html.br",
+	webrootSubBarDirWithIndexIndexHTML: "<h1>bar/dirwithindex/index.html</h1>",
 }
 
 // TestServeHTTP covers positive scenarios when serving files.
@@ -58,11 +76,15 @@ func TestServeHTTP(t *testing.T) {
 	movedPermanently := "Moved Permanently"
 
 	tests := []struct {
-		url string
-
+		url                 string
+		cleanedPath         string
+		acceptEncoding      string
+		expectedLocation    string
 		expectedStatus      int
 		expectedBodyContent string
 		expectedEtag        string
+		expectedVary        string
+		expectedEncoding    string
 	}{
 		// Test 0 - access without any path
 		{
@@ -78,20 +100,21 @@ func TestServeHTTP(t *testing.T) {
 		{
 			url:                 "https://foo/file1.html",
 			expectedStatus:      http.StatusOK,
-			expectedBodyContent: testFiles[filepath.Join("webroot", "file1.html")],
-			expectedEtag:        `W/"1e240-13"`,
+			expectedBodyContent: testFiles[webrootFile1Html],
+			expectedEtag:        `"2n9cj"`,
 		},
 		// Test 3 - access folder with index file with trailing slash
 		{
 			url:                 "https://foo/dirwithindex/",
 			expectedStatus:      http.StatusOK,
-			expectedBodyContent: testFiles[filepath.Join("webroot", "dirwithindex", "index.html")],
-			expectedEtag:        `W/"1e240-20"`,
+			expectedBodyContent: testFiles[webrootDirwithindexIndeHtml],
+			expectedEtag:        `"2n9cw"`,
 		},
 		// Test 4 - access folder with index file without trailing slash
 		{
 			url:                 "https://foo/dirwithindex",
 			expectedStatus:      http.StatusMovedPermanently,
+			expectedLocation:    "https://foo/dirwithindex/",
 			expectedBodyContent: movedPermanently,
 		},
 		// Test 5 - access folder without index file
@@ -103,12 +126,14 @@ func TestServeHTTP(t *testing.T) {
 		{
 			url:                 "https://foo/dir",
 			expectedStatus:      http.StatusMovedPermanently,
+			expectedLocation:    "https://foo/dir/",
 			expectedBodyContent: movedPermanently,
 		},
 		// Test 7 - access file with trailing slash
 		{
 			url:                 "https://foo/file1.html/",
 			expectedStatus:      http.StatusMovedPermanently,
+			expectedLocation:    "https://foo/file1.html",
 			expectedBodyContent: movedPermanently,
 		},
 		// Test 8 - access not existing path
@@ -125,13 +150,14 @@ func TestServeHTTP(t *testing.T) {
 		{
 			url:                 "https://foo/dirwithindex/index.html",
 			expectedStatus:      http.StatusOK,
-			expectedBodyContent: testFiles[filepath.Join("webroot", "dirwithindex", "index.html")],
-			expectedEtag:        `W/"1e240-20"`,
+			expectedBodyContent: testFiles[webrootDirwithindexIndeHtml],
+			expectedEtag:        `"2n9cw"`,
 		},
 		// Test 11 - send a request with query params
 		{
 			url:                 "https://foo/dir?param1=val",
 			expectedStatus:      http.StatusMovedPermanently,
+			expectedLocation:    "https://foo/dir/?param1=val",
 			expectedBodyContent: movedPermanently,
 		},
 		// Test 12 - attempt to bypass hidden file
@@ -152,6 +178,7 @@ func TestServeHTTP(t *testing.T) {
 		// Test 15 - attempt to bypass hidden file
 		{
 			url:            "https://foo/dir/hidden.html%20.",
+			acceptEncoding: "br, gzip",
 			expectedStatus: http.StatusNotFound,
 		},
 		// Test 16 - serve another file with same name as hidden file.
@@ -167,24 +194,73 @@ func TestServeHTTP(t *testing.T) {
 		// Test 18 - try to get pre-gzipped file.
 		{
 			url:                 "https://foo/sub/gzipped.html",
+			acceptEncoding:      "gzip",
 			expectedStatus:      http.StatusOK,
-			expectedBodyContent: testFiles[filepath.Join("webroot", "sub", "gzipped.html.gz")],
-			expectedEtag:        `W/"1e240-f"`,
+			expectedBodyContent: testFiles[webrootSubGzippedHtmlGz],
+			expectedEtag:        `"2n9ch"`,
+			expectedVary:        "Accept-Encoding",
+			expectedEncoding:    "gzip",
 		},
 		// Test 19 - try to get pre-brotli encoded file.
 		{
 			url:                 "https://foo/sub/brotli.html",
+			acceptEncoding:      "br,gzip",
 			expectedStatus:      http.StatusOK,
-			expectedBodyContent: testFiles[filepath.Join("webroot", "sub", "brotli.html.br")],
-			expectedEtag:        `W/"1e240-e"`,
+			expectedBodyContent: testFiles[webrootSubBrotliHtmlBr],
+			expectedEtag:        `"2n9cg"`,
+			expectedVary:        "Accept-Encoding",
+			expectedEncoding:    "br",
+		},
+		// Test 20 - not allowed to get pre-brotli encoded file.
+		{
+			url:                 "https://foo/sub/brotli.html",
+			acceptEncoding:      "nicebrew", // contains "br" substring but not "br"
+			expectedStatus:      http.StatusOK,
+			expectedBodyContent: testFiles[webrootSubBrotliHtml],
+			expectedEtag:        `"2n9cd"`,
+			expectedVary:        "",
+			expectedEncoding:    "",
+		},
+		// Test 20 - treat existing file as a directory.
+		{
+			url:            "https://foo/file1.html/other",
+			expectedStatus: http.StatusNotFound,
+		},
+		// Test 20 - access folder with index file without trailing slash, with
+		// cleaned path
+		{
+			url:                 "https://foo/bar/dirwithindex",
+			cleanedPath:         "/dirwithindex",
+			expectedStatus:      http.StatusMovedPermanently,
+			expectedLocation:    "https://foo/bar/dirwithindex/",
+			expectedBodyContent: movedPermanently,
+		},
+		// Test 21 - access folder with index file without trailing slash, with
+		// cleaned path and query params
+		{
+			url:                 "https://foo/bar/dirwithindex?param1=val",
+			cleanedPath:         "/dirwithindex",
+			expectedStatus:      http.StatusMovedPermanently,
+			expectedLocation:    "https://foo/bar/dirwithindex/?param1=val",
+			expectedBodyContent: movedPermanently,
+		},
+		// Test 22 - access file with trailing slash with cleaned path
+		{
+			url:                 "https://foo/bar/file1.html/",
+			cleanedPath:         "file1.html/",
+			expectedStatus:      http.StatusMovedPermanently,
+			expectedLocation:    "https://foo/bar/file1.html",
+			expectedBodyContent: movedPermanently,
 		},
 	}
 
 	for i, test := range tests {
 		responseRecorder := httptest.NewRecorder()
 		request, err := http.NewRequest("GET", test.url, nil)
+		ctx := context.WithValue(request.Context(), caddy.URLPathCtxKey, request.URL.Path)
+		request = request.WithContext(ctx)
 
-		request.Header.Add("Accept-Encoding", "br,gzip")
+		request.Header.Add("Accept-Encoding", test.acceptEncoding)
 
 		if err != nil {
 			t.Errorf("Test %d: Error making request: %v", i, err)
@@ -193,8 +269,17 @@ func TestServeHTTP(t *testing.T) {
 		if u, _ := url.Parse(test.url); u.RawPath != "" {
 			request.URL.Path = u.RawPath
 		}
+		// Caddy may trim a request's URL path. Overwrite the path with
+		// the cleanedPath to test redirects when the path has been
+		// modified.
+		if test.cleanedPath != "" {
+			request.URL.Path = test.cleanedPath
+		}
 		status, err := fileserver.ServeHTTP(responseRecorder, request)
 		etag := responseRecorder.Header().Get("Etag")
+		body := responseRecorder.Body.String()
+		vary := responseRecorder.Header().Get("Vary")
+		encoding := responseRecorder.Header().Get("Content-Encoding")
 
 		// check if error matches expectations
 		if err != nil {
@@ -211,9 +296,26 @@ func TestServeHTTP(t *testing.T) {
 			t.Errorf("Test %d: Expected Etag header %s, found %s", i, test.expectedEtag, etag)
 		}
 
+		// check vary
+		if test.expectedVary != vary {
+			t.Errorf("Test %d: Expected Vary header %s, found %s", i, test.expectedVary, vary)
+		}
+
+		// check content-encoding
+		if test.expectedEncoding != encoding {
+			t.Errorf("Test %d: Expected Content-Encoding header %s, found %s", i, test.expectedEncoding, encoding)
+		}
+
 		// check body content
-		if !strings.Contains(responseRecorder.Body.String(), test.expectedBodyContent) {
-			t.Errorf("Test %d: Expected body to contain %q, found %q", i, test.expectedBodyContent, responseRecorder.Body.String())
+		if !strings.Contains(body, test.expectedBodyContent) {
+			t.Errorf("Test %d: Expected body to contain %q, found %q", i, test.expectedBodyContent, body)
+		}
+
+		if test.expectedLocation != "" {
+			l := responseRecorder.Header().Get("Location")
+			if test.expectedLocation != l {
+				t.Errorf("Test %d: Expected Location header %q, found %q", i, test.expectedLocation, l)
+			}
 		}
 	}
 
@@ -411,5 +513,55 @@ func TestServeHTTPFailingStat(t *testing.T) {
 		if actualErr != test.expectedErr {
 			t.Errorf("Test %d: Expected err %v, found %v", i, test.expectedErr, actualErr)
 		}
+	}
+}
+
+//-------------------------------------------------------------------------------------------------
+
+type fileInfo struct {
+	name    string
+	size    int64
+	mode    os.FileMode
+	modTime time.Time
+	isDir   bool
+}
+
+func (fi fileInfo) Name() string {
+	return fi.name
+}
+
+func (fi fileInfo) Size() int64 {
+	return fi.size
+}
+
+func (fi fileInfo) Mode() os.FileMode {
+	return fi.mode
+}
+
+func (fi fileInfo) ModTime() time.Time {
+	return fi.modTime
+}
+
+func (fi fileInfo) IsDir() bool {
+	return fi.isDir
+}
+
+func (fi fileInfo) Sys() interface{} {
+	return nil
+}
+
+var _ os.FileInfo = fileInfo{}
+
+//-------------------------------------------------------------------------------------------------
+
+func BenchmarkEtag(b *testing.B) {
+	d := fileInfo{
+		size:    1234567890,
+		modTime: time.Now(),
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		calculateEtag(d)
 	}
 }

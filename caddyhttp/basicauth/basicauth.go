@@ -7,6 +7,7 @@ package basicauth
 
 import (
 	"bufio"
+	"context"
 	"crypto/sha1"
 	"crypto/subtle"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 	"sync"
 
 	"github.com/jimstudt/http-authentication/basic"
+	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
 
@@ -60,6 +62,11 @@ func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 
 			// remove credentials from request to avoid leaking upstream
 			r.Header.Del("Authorization")
+
+			// let upstream middleware (e.g. fastcgi and cgi) know about authenticated
+			// user; this replaces the request with a wrapped instance
+			r = r.WithContext(context.WithValue(r.Context(),
+				caddy.CtxKey("remote_user"), username))
 		}
 	}
 

@@ -19,6 +19,7 @@ import (
 	"reflect"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -143,6 +144,74 @@ func TestReverseProxyInsecureSkipVerify(t *testing.T) {
 	}
 }
 
+// This test will fail when using the race detector without atomic reads &
+// writes of UpstreamHost.Conns and UpstreamHost.Unhealthy.
+func TestReverseProxyMaxConnLimit(t *testing.T) {
+	log.SetOutput(ioutil.Discard)
+	defer log.SetOutput(os.Stderr)
+
+	const MaxTestConns = 2
+	connReceived := make(chan bool, MaxTestConns)
+	connContinue := make(chan bool)
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		connReceived <- true
+		<-connContinue
+	}))
+	defer backend.Close()
+
+	su, err := NewStaticUpstreams(caddyfile.NewDispenser("Testfile", strings.NewReader(`
+		proxy / `+backend.URL+` {
+			max_conns `+fmt.Sprint(MaxTestConns)+`
+		}
+	`)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// set up proxy
+	p := &Proxy{
+		Next:      httpserver.EmptyNext, // prevents panic in some cases when test fails
+		Upstreams: su,
+	}
+
+	var jobs sync.WaitGroup
+
+	for i := 0; i < MaxTestConns; i++ {
+		jobs.Add(1)
+		go func(i int) {
+			defer jobs.Done()
+			w := httptest.NewRecorder()
+			code, err := p.ServeHTTP(w, httptest.NewRequest("GET", "/", nil))
+			if err != nil {
+				t.Errorf("Request %d failed: %v", i, err)
+			} else if code != 0 {
+				t.Errorf("Bad return code for request %d: %d", i, code)
+			} else if w.Code != 200 {
+				t.Errorf("Bad statuc code for request %d: %d", i, w.Code)
+			}
+		}(i)
+	}
+	// Wait for all the requests to hit the backend.
+	for i := 0; i < MaxTestConns; i++ {
+		<-connReceived
+	}
+
+	// Now we should have MaxTestConns requests connected and sitting on the backend
+	// server.  Verify that the next request is rejected.
+	w := httptest.NewRecorder()
+	code, err := p.ServeHTTP(w, httptest.NewRequest("GET", "/", nil))
+	if code != http.StatusBadGateway {
+		t.Errorf("Expected request to be rejected, but got: %d [%v]\nStatus code: %d",
+			code, err, w.Code)
+	}
+
+	// Now let all the requests complete and verify the status codes for those:
+	close(connContinue)
+
+	// Wait for the initial requests to finish and check their results.
+	jobs.Wait()
+}
+
 func TestWebSocketReverseProxyNonHijackerPanic(t *testing.T) {
 	// Capture the expected panic
 	defer func() {
@@ -209,8 +278,8 @@ func TestWebSocketReverseProxyServeHTTPHandler(t *testing.T) {
 	if !bytes.Equal(actual, expected) {
 		t.Errorf("Expected backend to accept response:\n'%s'\nActually got:\n'%s'", expected, actual)
 	}
-	if atomic.LoadInt32(&connCount) != 1 {
-		t.Errorf("Expected 1 websocket connection, got %d", connCount)
+	if got, want := atomic.LoadInt32(&connCount), int32(1); got != want {
+		t.Errorf("Expected %d websocket connection, got %d", want, got)
 	}
 }
 
@@ -879,6 +948,26 @@ func TestProxyDirectorURL(t *testing.T) {
 			targetURL:  `https://localhost:2021/t/`,
 			expectURL:  `https://localhost:2021/t/mypath`,
 			without:    "/test",
+		},
+		{
+			requestURL: `http://localhost:2020/%2C`,
+			targetURL:  `https://localhost:2021/t/`,
+			expectURL:  `https://localhost:2021/t/%2C`,
+		},
+		{
+			requestURL: `http://localhost:2020/%2C/`,
+			targetURL:  `https://localhost:2021/t/`,
+			expectURL:  `https://localhost:2021/t/%2C/`,
+		},
+		{
+			requestURL: `http://localhost:2020/test`,
+			targetURL:  `https://localhost:2021/%2C`,
+			expectURL:  `https://localhost:2021/%2C/test`,
+		},
+		{
+			requestURL: `http://localhost:2020/%2C`,
+			targetURL:  `https://localhost:2021/%2C`,
+			expectURL:  `https://localhost:2021/%2C/%2C`,
 		},
 	} {
 		targetURL, err := url.Parse(c.targetURL)

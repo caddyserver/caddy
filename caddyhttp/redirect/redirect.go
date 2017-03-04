@@ -34,15 +34,16 @@ func (rd Redirect) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 }
 
 func schemeMatches(rule Rule, req *http.Request) bool {
-	return (rule.FromScheme == "https" && req.TLS != nil) ||
-		(rule.FromScheme != "https" && req.TLS == nil)
+	return (rule.FromScheme() == "https" && req.TLS != nil) ||
+		(rule.FromScheme() != "https" && req.TLS == nil)
 }
 
 // Rule describes an HTTP redirect rule.
 type Rule struct {
-	FromScheme, FromPath, To string
-	Code                     int
-	Meta                     bool
+	FromScheme   func() string
+	FromPath, To string
+	Code         int
+	Meta         bool
 	httpserver.RequestMatcher
 }
 

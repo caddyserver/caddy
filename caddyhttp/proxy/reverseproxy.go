@@ -18,7 +18,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"path"
 	"strings"
 	"sync"
 	"time"
@@ -89,6 +88,18 @@ func socketDial(hostName string) func(network, addr string) (conn net.Conn, err 
 	}
 }
 
+func singleJoiningSlash(a, b string) string {
+	aslash := strings.HasSuffix(a, "/")
+	bslash := strings.HasPrefix(b, "/")
+	switch {
+	case aslash && bslash:
+		return a + b[1:]
+	case !aslash && !bslash && b != "":
+		return a + "/" + b
+	}
+	return a + b
+}
+
 // NewSingleHostReverseProxy returns a new ReverseProxy that rewrites
 // URLs to the scheme, host, and base path provided in target. If the
 // target's path is "/base" and the incoming request was for "/dir",
@@ -119,12 +130,31 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int) *
 			}
 		}
 
-		hadTrailingSlash := strings.HasSuffix(req.URL.Path, "/")
-		req.URL.Path = path.Join(target.Path, req.URL.Path)
-		// path.Join will strip off the last /, so put it back if it was there.
-		if hadTrailingSlash && !strings.HasSuffix(req.URL.Path, "/") {
-			req.URL.Path = req.URL.Path + "/"
+		// prefer returns val if it isn't empty, otherwise def
+		prefer := func(val, def string) string {
+			if val != "" {
+				return val
+			}
+			return def
 		}
+		// Make up the final URL by concatenating the request and target URL.
+		//
+		// If there is encoded part in request or target URL,
+		// the final URL should also be in encoded format.
+		// Here, we concatenate their encoded parts which are stored
+		// in URL.Opaque and URL.RawPath, if it is empty use
+		// URL.Path instead.
+		if req.URL.Opaque != "" || target.Opaque != "" {
+			req.URL.Opaque = singleJoiningSlash(
+				prefer(target.Opaque, target.Path),
+				prefer(req.URL.Opaque, req.URL.Path))
+		}
+		if req.URL.RawPath != "" || target.RawPath != "" {
+			req.URL.RawPath = singleJoiningSlash(
+				prefer(target.RawPath, target.Path),
+				prefer(req.URL.RawPath, req.URL.Path))
+		}
+		req.URL.Path = singleJoiningSlash(target.Path, req.URL.Path)
 
 		// Trims the path of the socket from the URL path.
 		// This is done because req.URL passed to your proxied service
@@ -136,6 +166,12 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int) *
 			// See comment on socketDial for the trim
 			socketPrefix := target.String()[len("unix://"):]
 			req.URL.Path = strings.TrimPrefix(req.URL.Path, socketPrefix)
+			if req.URL.Opaque != "" {
+				req.URL.Opaque = strings.TrimPrefix(req.URL.Opaque, socketPrefix)
+			}
+			if req.URL.RawPath != "" {
+				req.URL.RawPath = strings.TrimPrefix(req.URL.RawPath, socketPrefix)
+			}
 		}
 
 		if targetQuery == "" || req.URL.RawQuery == "" {
@@ -406,7 +442,7 @@ func newConnHijackerTransport(base http.RoundTripper) *connHijackerTransport {
 	if b, _ := base.(*http.Transport); b != nil {
 		tlsClientConfig := b.TLSClientConfig
 		if tlsClientConfig.NextProtos != nil {
-			tlsClientConfig = cloneTLSClientConfig(tlsClientConfig)
+			tlsClientConfig = tlsClientConfig.Clone()
 			tlsClientConfig.NextProtos = nil
 		}
 
@@ -529,37 +565,6 @@ type tlsHandshakeTimeoutError struct{}
 func (tlsHandshakeTimeoutError) Timeout() bool   { return true }
 func (tlsHandshakeTimeoutError) Temporary() bool { return true }
 func (tlsHandshakeTimeoutError) Error() string   { return "net/http: TLS handshake timeout" }
-
-// cloneTLSClientConfig is like cloneTLSConfig but omits
-// the fields SessionTicketsDisabled and SessionTicketKey.
-// This makes it safe to call cloneTLSClientConfig on a config
-// in active use by a server.
-func cloneTLSClientConfig(cfg *tls.Config) *tls.Config {
-	if cfg == nil {
-		return &tls.Config{}
-	}
-	return &tls.Config{
-		Rand:                        cfg.Rand,
-		Time:                        cfg.Time,
-		Certificates:                cfg.Certificates,
-		NameToCertificate:           cfg.NameToCertificate,
-		GetCertificate:              cfg.GetCertificate,
-		RootCAs:                     cfg.RootCAs,
-		NextProtos:                  cfg.NextProtos,
-		ServerName:                  cfg.ServerName,
-		ClientAuth:                  cfg.ClientAuth,
-		ClientCAs:                   cfg.ClientCAs,
-		InsecureSkipVerify:          cfg.InsecureSkipVerify,
-		CipherSuites:                cfg.CipherSuites,
-		PreferServerCipherSuites:    cfg.PreferServerCipherSuites,
-		ClientSessionCache:          cfg.ClientSessionCache,
-		MinVersion:                  cfg.MinVersion,
-		MaxVersion:                  cfg.MaxVersion,
-		CurvePreferences:            cfg.CurvePreferences,
-		DynamicRecordSizingDisabled: cfg.DynamicRecordSizingDisabled,
-		Renegotiation:               cfg.Renegotiation,
-	}
-}
 
 func requestIsWebsocket(req *http.Request) bool {
 	return strings.ToLower(req.Header.Get("Upgrade")) == "websocket" && strings.Contains(strings.ToLower(req.Header.Get("Connection")), "upgrade")

@@ -164,7 +164,15 @@ func setupTLS(c *caddy.Controller) error {
 					return c.Errf("Unsupported Storage provider '%s'", args[0])
 				}
 				config.StorageProvider = args[0]
-			case "muststaple":
+			case "alpn":
+				args := c.RemainingArgs()
+				if len(args) == 0 {
+					return c.ArgErr()
+				}
+				for _, arg := range args {
+					config.ALPN = append(config.ALPN, arg)
+				}
+			case "must_staple":
 				config.MustStaple = true
 			default:
 				return c.Errf("Unknown keyword '%s'", c.Val())

@@ -64,6 +64,8 @@ func TestSetupParseBasic(t *testing.T) {
 		tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
 		tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
 		tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+		tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
+		tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
 		tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
 		tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
 		tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
@@ -88,6 +90,22 @@ func TestSetupParseBasic(t *testing.T) {
 	if !cfg.PreferServerCipherSuites {
 		t.Error("Expected PreferServerCipherSuites = true, but was false")
 	}
+
+	if len(cfg.ALPN) != 0 {
+		t.Error("Expected ALPN empty by default")
+	}
+
+	// Ensure curve count is correct
+	if len(cfg.CurvePreferences) != len(defaultCurves) {
+		t.Errorf("Expected %v Curves, got %v", len(defaultCurves), len(cfg.CurvePreferences))
+	}
+
+	// Ensure curve ordering is correct
+	for i, actual := range cfg.CurvePreferences {
+		if actual != defaultCurves[i] {
+			t.Errorf("Expected curve in position %d to be %0x, got %0x", i, defaultCurves[i], actual)
+		}
+	}
 }
 
 func TestSetupParseIncompleteParams(t *testing.T) {
@@ -103,7 +121,8 @@ func TestSetupParseWithOptionalParams(t *testing.T) {
 	params := `tls ` + certFile + ` ` + keyFile + ` {
             protocols tls1.0 tls1.2
             ciphers RSA-AES256-CBC-SHA ECDHE-RSA-AES128-GCM-SHA256 ECDHE-ECDSA-AES256-GCM-SHA384
-            muststaple
+            must_staple
+            alpn http/1.1
         }`
 	cfg := new(Config)
 	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
@@ -127,7 +146,11 @@ func TestSetupParseWithOptionalParams(t *testing.T) {
 	}
 
 	if !cfg.MustStaple {
-		t.Errorf("Expected must staple to be true")
+		t.Error("Expected must staple to be true")
+	}
+
+	if len(cfg.ALPN) != 1 || cfg.ALPN[0] != "http/1.1" {
+		t.Errorf("Expected ALPN to contain only 'http/1.1' but got: %v", cfg.ALPN)
 	}
 }
 
@@ -170,7 +193,7 @@ func TestSetupParseWithWrongOptionalParams(t *testing.T) {
 	c = caddy.NewTestController("", params)
 	err = setupTLS(c)
 	if err == nil {
-		t.Errorf("Expected errors, but no error returned")
+		t.Error("Expected errors, but no error returned")
 	}
 
 	// Test key_type wrong params
@@ -182,7 +205,7 @@ func TestSetupParseWithWrongOptionalParams(t *testing.T) {
 	c = caddy.NewTestController("", params)
 	err = setupTLS(c)
 	if err == nil {
-		t.Errorf("Expected errors, but no error returned")
+		t.Error("Expected errors, but no error returned")
 	}
 
 	// Test curves wrong params
@@ -194,7 +217,7 @@ func TestSetupParseWithWrongOptionalParams(t *testing.T) {
 	c = caddy.NewTestController("", params)
 	err = setupTLS(c)
 	if err == nil {
-		t.Errorf("Expected errors, but no error returned")
+		t.Error("Expected errors, but no error returned")
 	}
 }
 
@@ -208,7 +231,7 @@ func TestSetupParseWithClientAuth(t *testing.T) {
 	c := caddy.NewTestController("", params)
 	err := setupTLS(c)
 	if err == nil {
-		t.Errorf("Expected an error, but no error returned")
+		t.Error("Expected an error, but no error returned")
 	}
 
 	noCAs, twoCAs := []string{}, []string{"client_ca.crt", "client2_ca.crt"}
@@ -288,7 +311,7 @@ func TestSetupParseWithKeyType(t *testing.T) {
 
 func TestSetupParseWithCurves(t *testing.T) {
 	params := `tls {
-            curves p256 p384 p521
+            curves x25519 p256 p384 p521
         }`
 	cfg := new(Config)
 	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
@@ -299,11 +322,11 @@ func TestSetupParseWithCurves(t *testing.T) {
 		t.Errorf("Expected no errors, got: %v", err)
 	}
 
-	if len(cfg.CurvePreferences) != 3 {
-		t.Errorf("Expected 3 curves, got %v", len(cfg.CurvePreferences))
+	if len(cfg.CurvePreferences) != 4 {
+		t.Errorf("Expected 4 curves, got %v", len(cfg.CurvePreferences))
 	}
 
-	expectedCurves := []tls.CurveID{tls.CurveP256, tls.CurveP384, tls.CurveP521}
+	expectedCurves := []tls.CurveID{tls.X25519, tls.CurveP256, tls.CurveP384, tls.CurveP521}
 
 	// Ensure ordering is correct
 	for i, actual := range cfg.CurvePreferences {

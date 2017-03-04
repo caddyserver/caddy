@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/mholt/caddy"
 )
 
 // requestReplacer is a strings.Replacer which is used to
@@ -198,6 +200,19 @@ func (r *replacer) getSubstitution(key string) string {
 			}
 		}
 	}
+	// next check for cookies
+	if key[1] == '~' {
+		name := key[2 : len(key)-1]
+		if cookie, err := r.request.Cookie(name); err == nil {
+			return cookie.Value
+		}
+	}
+	// next check for query argument
+	if key[1] == '?' {
+		query := r.request.URL.Query()
+		name := key[2 : len(key)-1]
+		return query.Get(name)
+	}
 
 	// search default replacements in the end
 	switch key {
@@ -291,6 +306,15 @@ func (r *replacer) getSubstitution(key string) string {
 			}
 		}
 		return requestReplacer.Replace(r.requestBody.String())
+	case "{mitm}":
+		if val, ok := r.request.Context().Value(caddy.CtxKey("mitm")).(bool); ok {
+			if val {
+				return "likely"
+			} else {
+				return "unlikely"
+			}
+		}
+		return "unknown"
 	case "{status}":
 		if r.responseRecorder == nil {
 			return r.emptyValue
