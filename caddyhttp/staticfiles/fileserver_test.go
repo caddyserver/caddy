@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -76,15 +77,16 @@ func TestServeHTTP(t *testing.T) {
 	movedPermanently := "Moved Permanently"
 
 	tests := []struct {
-		url                 string
-		cleanedPath         string
-		acceptEncoding      string
-		expectedLocation    string
-		expectedStatus      int
-		expectedBodyContent string
-		expectedEtag        string
-		expectedVary        string
-		expectedEncoding    string
+		url                   string
+		cleanedPath           string
+		acceptEncoding        string
+		expectedLocation      string
+		expectedStatus        int
+		expectedBodyContent   string
+		expectedEtag          string
+		expectedVary          string
+		expectedEncoding      string
+		expectedContentLength string
 	}{
 		// Test 0 - access without any path
 		{
@@ -98,17 +100,19 @@ func TestServeHTTP(t *testing.T) {
 		},
 		// Test 2 - access existing file
 		{
-			url:                 "https://foo/file1.html",
-			expectedStatus:      http.StatusOK,
-			expectedBodyContent: testFiles[webrootFile1Html],
-			expectedEtag:        `"2n9cj"`,
+			url:                   "https://foo/file1.html",
+			expectedStatus:        http.StatusOK,
+			expectedBodyContent:   testFiles[webrootFile1Html],
+			expectedEtag:          `"2n9cj"`,
+			expectedContentLength: strconv.Itoa(len(testFiles[webrootFile1Html])),
 		},
 		// Test 3 - access folder with index file with trailing slash
 		{
-			url:                 "https://foo/dirwithindex/",
-			expectedStatus:      http.StatusOK,
-			expectedBodyContent: testFiles[webrootDirwithindexIndeHtml],
-			expectedEtag:        `"2n9cw"`,
+			url:                   "https://foo/dirwithindex/",
+			expectedStatus:        http.StatusOK,
+			expectedBodyContent:   testFiles[webrootDirwithindexIndeHtml],
+			expectedEtag:          `"2n9cw"`,
+			expectedContentLength: strconv.Itoa(len(testFiles[webrootDirwithindexIndeHtml])),
 		},
 		// Test 4 - access folder with index file without trailing slash
 		{
@@ -148,10 +152,11 @@ func TestServeHTTP(t *testing.T) {
 		},
 		// Test 10 - access a index file directly
 		{
-			url:                 "https://foo/dirwithindex/index.html",
-			expectedStatus:      http.StatusOK,
-			expectedBodyContent: testFiles[webrootDirwithindexIndeHtml],
-			expectedEtag:        `"2n9cw"`,
+			url:                   "https://foo/dirwithindex/index.html",
+			expectedStatus:        http.StatusOK,
+			expectedBodyContent:   testFiles[webrootDirwithindexIndeHtml],
+			expectedEtag:          `"2n9cw"`,
+			expectedContentLength: strconv.Itoa(len(testFiles[webrootDirwithindexIndeHtml])),
 		},
 		// Test 11 - send a request with query params
 		{
@@ -193,33 +198,36 @@ func TestServeHTTP(t *testing.T) {
 		},
 		// Test 18 - try to get pre-gzipped file.
 		{
-			url:                 "https://foo/sub/gzipped.html",
-			acceptEncoding:      "gzip",
-			expectedStatus:      http.StatusOK,
-			expectedBodyContent: testFiles[webrootSubGzippedHtmlGz],
-			expectedEtag:        `"2n9ch"`,
-			expectedVary:        "Accept-Encoding",
-			expectedEncoding:    "gzip",
+			url:                   "https://foo/sub/gzipped.html",
+			acceptEncoding:        "gzip",
+			expectedStatus:        http.StatusOK,
+			expectedBodyContent:   testFiles[webrootSubGzippedHtmlGz],
+			expectedEtag:          `"2n9ch"`,
+			expectedVary:          "Accept-Encoding",
+			expectedEncoding:      "gzip",
+			expectedContentLength: strconv.Itoa(len(testFiles[webrootSubGzippedHtmlGz])),
 		},
 		// Test 19 - try to get pre-brotli encoded file.
 		{
-			url:                 "https://foo/sub/brotli.html",
-			acceptEncoding:      "br,gzip",
-			expectedStatus:      http.StatusOK,
-			expectedBodyContent: testFiles[webrootSubBrotliHtmlBr],
-			expectedEtag:        `"2n9cg"`,
-			expectedVary:        "Accept-Encoding",
-			expectedEncoding:    "br",
+			url:                   "https://foo/sub/brotli.html",
+			acceptEncoding:        "br,gzip",
+			expectedStatus:        http.StatusOK,
+			expectedBodyContent:   testFiles[webrootSubBrotliHtmlBr],
+			expectedEtag:          `"2n9cg"`,
+			expectedVary:          "Accept-Encoding",
+			expectedEncoding:      "br",
+			expectedContentLength: strconv.Itoa(len(testFiles[webrootSubBrotliHtmlBr])),
 		},
 		// Test 20 - not allowed to get pre-brotli encoded file.
 		{
-			url:                 "https://foo/sub/brotli.html",
-			acceptEncoding:      "nicebrew", // contains "br" substring but not "br"
-			expectedStatus:      http.StatusOK,
-			expectedBodyContent: testFiles[webrootSubBrotliHtml],
-			expectedEtag:        `"2n9cd"`,
-			expectedVary:        "",
-			expectedEncoding:    "",
+			url:                   "https://foo/sub/brotli.html",
+			acceptEncoding:        "nicebrew", // contains "br" substring but not "br"
+			expectedStatus:        http.StatusOK,
+			expectedBodyContent:   testFiles[webrootSubBrotliHtml],
+			expectedEtag:          `"2n9cd"`,
+			expectedVary:          "",
+			expectedEncoding:      "",
+			expectedContentLength: strconv.Itoa(len(testFiles[webrootSubBrotliHtml])),
 		},
 		// Test 20 - treat existing file as a directory.
 		{
@@ -280,6 +288,7 @@ func TestServeHTTP(t *testing.T) {
 		body := responseRecorder.Body.String()
 		vary := responseRecorder.Header().Get("Vary")
 		encoding := responseRecorder.Header().Get("Content-Encoding")
+		length := responseRecorder.Header().Get("Content-Length")
 
 		// check if error matches expectations
 		if err != nil {
@@ -316,6 +325,11 @@ func TestServeHTTP(t *testing.T) {
 			if test.expectedLocation != l {
 				t.Errorf("Test %d: Expected Location header %q, found %q", i, test.expectedLocation, l)
 			}
+		}
+
+		// check content length
+		if test.expectedContentLength != length {
+			t.Errorf("Test %d: Expected Content-Length header %s, found %s", i, test.expectedContentLength, length)
 		}
 	}
 
