@@ -120,12 +120,6 @@ func (d *Dispenser) NextBlock() bool {
 	return true
 }
 
-// IncrNest adds a level of nesting to the dispenser.
-func (d *Dispenser) IncrNest() {
-	d.nesting++
-	return
-}
-
 // Val gets the text of the current token. If there is no token
 // loaded, it returns empty string.
 func (d *Dispenser) Val() string {

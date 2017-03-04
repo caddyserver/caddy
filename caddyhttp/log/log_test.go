@@ -3,11 +3,9 @@ package log
 import (
 	"bytes"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/mholt/caddy/caddyhttp/httpserver"
@@ -29,8 +27,7 @@ func TestLoggedStatus(t *testing.T) {
 		PathScope: "/",
 		Entries: []*Entry{{
 			Format: DefaultLogFormat + " {testval}",
-			Log:    log.New(&f, "", 0),
-			fileMu: new(sync.RWMutex),
+			Log:    httpserver.NewTestLogger(&f),
 		}},
 	}
 
@@ -73,8 +70,7 @@ func TestLogRequestBody(t *testing.T) {
 			PathScope: "/",
 			Entries: []*Entry{{
 				Format: "{request_body}",
-				Log:    log.New(&got, "", 0),
-				fileMu: new(sync.RWMutex),
+				Log:    httpserver.NewTestLogger(&got),
 			}},
 		}},
 		Next: httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
@@ -133,13 +129,11 @@ func TestMultiEntries(t *testing.T) {
 			Entries: []*Entry{
 				{
 					Format: "foo {request_body}",
-					Log:    log.New(&got1, "", 0),
-					fileMu: new(sync.RWMutex),
+					Log:    httpserver.NewTestLogger(&got1),
 				},
 				{
 					Format: "{method} {request_body}",
-					Log:    log.New(&got2, "", 0),
-					fileMu: new(sync.RWMutex),
+					Log:    httpserver.NewTestLogger(&got2),
 				},
 			},
 		}},
