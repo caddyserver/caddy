@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/mholt/caddy"
 )
 
 // requestReplacer is a strings.Replacer which is used to
@@ -205,6 +207,12 @@ func (r *replacer) getSubstitution(key string) string {
 			return cookie.Value
 		}
 	}
+	// next check for query argument
+	if key[1] == '?' {
+		query := r.request.URL.Query()
+		name := key[2 : len(key)-1]
+		return query.Get(name)
+	}
 
 	// search default replacements in the end
 	switch key {
@@ -233,7 +241,7 @@ func (r *replacer) getSubstitution(key string) string {
 		// if a rewrite has happened, the original URI should be used as the path
 		// rather than the rewritten URI
 		var path string
-		origpath := r.request.Header.Get("Caddy-Rewrite-Original-URI")
+		origpath, _ := r.request.Context().Value(caddy.URIxRewriteCtxKey).(string)
 		if origpath == "" {
 			path = r.request.URL.Path
 		} else {
@@ -243,7 +251,7 @@ func (r *replacer) getSubstitution(key string) string {
 		return path
 	case "{path_escaped}":
 		var path string
-		origpath := r.request.Header.Get("Caddy-Rewrite-Original-URI")
+		origpath, _ := r.request.Context().Value(caddy.URIxRewriteCtxKey).(string)
 		if origpath == "" {
 			path = r.request.URL.Path
 		} else {
@@ -319,7 +327,7 @@ func (r *replacer) getSubstitution(key string) string {
 		}
 		return requestReplacer.Replace(r.requestBody.String())
 	case "{mitm}":
-		if val, ok := r.request.Context().Value(CtxKey("mitm")).(bool); ok {
+		if val, ok := r.request.Context().Value(caddy.CtxKey("mitm")).(bool); ok {
 			if val {
 				return "likely"
 			} else {
