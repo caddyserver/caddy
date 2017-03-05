@@ -65,9 +65,6 @@ func (s SimpleRule) Match(r *http.Request) bool { return s.From == r.URL.Path }
 
 // Rewrite rewrites the internal location of the current request.
 func (s SimpleRule) Rewrite(fs http.FileSystem, r *http.Request) Result {
-	// take note of this rewrite for internal use by fastcgi
-	// all we need is the URI, not full URL
-	//r.Header.Set(headerFieldName, r.URL.RequestURI())
 
 	// attempt rewrite
 	return To(fs, r, s.To, newReplacer(r))
