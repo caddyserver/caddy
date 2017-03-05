@@ -234,8 +234,3 @@ func (r *ComplexRule) regexpMatches(rPath string) []string {
 func newReplacer(r *http.Request) httpserver.Replacer {
 	return httpserver.NewReplacer(r, nil, "")
 }
-
-// When a rewrite is performed, this header is added to the request
-// and is for internal use only, specifically the fastcgi middleware.
-// It contains the original request URI before the rewrite.
-const headerFieldName = "Caddy-Rewrite-Original-URI"

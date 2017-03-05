@@ -241,14 +241,12 @@ func (r *replacer) getSubstitution(key string) string {
 		// if a rewrite has happened, the original URI should be used as the path
 		// rather than the rewritten URI
 		path, _ := r.request.Context().Value(caddy.URIxRewriteCtxKey).(string)
-		//path := r.request.Header.Get("Caddy-Rewrite-Original-URI")
 		if path == "" {
 			path = r.request.URL.Path
 		}
 		return path
 	case "{path_escaped}":
 		path, _ := r.request.Context().Value(caddy.URIxRewriteCtxKey).(string)
-		//path := r.request.Header.Get("Caddy-Rewrite-Original-URI")
 		if path == "" {
 			path = r.request.URL.Path
 		}
