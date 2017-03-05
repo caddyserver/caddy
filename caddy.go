@@ -878,6 +878,6 @@ type CtxKey string
 // server request. The associated value will be of type string.
 const URLPathCtxKey CtxKey = "url_path"
 
-// URIxRewriteCtxKey is a context key used to store origional unrewritten
+// URIxRewriteCtxKey is a context key used to store original unrewritten
 // URI in context.WithValue
 const URIxRewriteCtxKey CtxKey = "caddy_rewrite_original_uri"
