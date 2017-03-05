@@ -877,3 +877,4 @@ type CtxKey string
 // context.WithValue to access the original request URI that accompanied the
 // server request. The associated value will be of type string.
 const URLPathCtxKey CtxKey = "url_path"
+const URIxRewriteCtxKey CtxKey = "caddy_rewrite_original_uri"
