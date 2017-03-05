@@ -284,13 +284,13 @@ func (r *replacer) getSubstitution(key string) string {
 		}
 		return port
 	case "{uri}":
-		uri := r.request.Header.Get("Caddy-Rewrite-Original-URI")
+		uri, _ := r.request.Context().Value(caddy.URIxRewriteCtxKey).(string)
 		if uri == "" {
 			uri = r.request.URL.RequestURI()
 		}
 		return uri
 	case "{uri_escaped}":
-		uri := r.request.Header.Get("Caddy-Rewrite-Original-URI")
+		uri, _ := r.request.Context().Value(caddy.URIxRewriteCtxKey).(string)
 		if uri == "" {
 			uri = r.request.URL.RequestURI()
 		}

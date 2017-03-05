@@ -1,12 +1,15 @@
 package httpserver
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mholt/caddy"
 )
 
 func TestNewReplacer(t *testing.T) {
@@ -161,7 +164,9 @@ func TestPathRewrite(t *testing.T) {
 		t.Fatalf("Request Formation Failed: %s\n", err.Error())
 	}
 
-	request.Header.Set("Caddy-Rewrite-Original-URI", "a/custom/path.php?key=value")
+	ctx := context.WithValue(request.Context(), caddy.URIxRewriteCtxKey, "a/custom/path.php?key=value")
+	request = request.WithContext(ctx)
+
 	repl := NewReplacer(request, recordRequest, "")
 
 	if repl.Replace("This path is '{path}'") != "This path is 'a/custom/path.php'" {
