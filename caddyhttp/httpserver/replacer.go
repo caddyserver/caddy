@@ -245,8 +245,8 @@ func (r *replacer) getSubstitution(key string) string {
 		if origpath == "" {
 			path = r.request.URL.Path
 		} else {
-			origURL, _ := url.Parse(origpath)
-			path = origURL.Path
+			parsedURL, _ := url.Parse(origpath)
+			path = parsedURL.Path
 		}
 		return path
 	case "{path_escaped}":
@@ -255,8 +255,8 @@ func (r *replacer) getSubstitution(key string) string {
 		if origpath == "" {
 			path = r.request.URL.Path
 		} else {
-			origURL, _ := url.Parse(origpath)
-			path = origURL.Path
+			parsedURL, _ := url.Parse(origpath)
+			path = parsedURL.Path
 		}
 		return url.QueryEscape(path)
 	case "{rewrite_path}":
