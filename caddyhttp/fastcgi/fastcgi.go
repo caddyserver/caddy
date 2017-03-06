@@ -6,6 +6,7 @@ package fastcgi
 import (
 	"errors"
 	"io"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
@@ -92,6 +93,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 
 			var resp *http.Response
 			contentLength, _ := strconv.Atoi(r.Header.Get("Content-Length"))
+			
 			switch r.Method {
 			case "HEAD":
 				resp, err = fcgiBackend.Head(env)
@@ -100,6 +102,20 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			case "OPTIONS":
 				resp, err = fcgiBackend.Options(env)
 			default:
+				// since some chrome releases or quic clients are not sending the Content-Length
+				// in the request headers, caddy should re-calculate content-length by the body and fix it.
+				if contentLength == 0 {
+					var body []byte
+					if r.Body != nil {
+						body, _ = ioutil.ReadAll(r.Body)
+					}
+					r.Body = ioutil.NopCloser(bytes.NewBuffer(body))
+
+					size := len(body)
+					if contentLength != size {
+						contentLength = size
+					}
+				}
 				resp, err = fcgiBackend.Post(env, r.Method, r.Header.Get("Content-Type"), r.Body, contentLength)
 			}
 
