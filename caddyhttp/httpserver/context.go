@@ -111,7 +111,7 @@ func (c Context) Port() (string, error) {
 	if err != nil {
 		if !strings.Contains(c.Req.Host, ":") {
 			// common with sites served on the default port 80
-			return "80", nil
+			return HTTPPort, nil
 		}
 		return "", err
 	}
