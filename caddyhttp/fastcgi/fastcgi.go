@@ -97,7 +97,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			if r.ContentLength > 0 {
 				contentLength = r.ContentLength
 			} else {
-				contentLength, _ := strconv.ParseInt(r.Header.Get("Content-Length"), 10, 64)
+				contentLength, _ = strconv.ParseInt(r.Header.Get("Content-Length"), 10, 64)
 			}
 			switch r.Method {
 			case "HEAD":
