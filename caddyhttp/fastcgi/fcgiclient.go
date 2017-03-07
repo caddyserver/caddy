@@ -112,7 +112,7 @@ type Client interface {
 	Get(pair map[string]string) (response *http.Response, err error)
 	Head(pair map[string]string) (response *http.Response, err error)
 	Options(pairs map[string]string) (response *http.Response, err error)
-	Post(pairs map[string]string, method string, bodyType string, body io.Reader, contentLength int) (response *http.Response, err error)
+	Post(pairs map[string]string, method string, bodyType string, body io.Reader, contentLength int64) (response *http.Response, err error)
 	Close() error
 	StdErr() bytes.Buffer
 	SetReadTimeout(time.Duration) error
@@ -493,7 +493,7 @@ func (c *FCGIClient) Options(p map[string]string) (resp *http.Response, err erro
 
 // Post issues a POST request to the fcgi responder. with request body
 // in the format that bodyType specified
-func (c *FCGIClient) Post(p map[string]string, method string, bodyType string, body io.Reader, l int) (resp *http.Response, err error) {
+func (c *FCGIClient) Post(p map[string]string, method string, bodyType string, body io.Reader, l int64) (resp *http.Response, err error) {
 	if p == nil {
 		p = make(map[string]string)
 	}
@@ -504,7 +504,7 @@ func (c *FCGIClient) Post(p map[string]string, method string, bodyType string, b
 		p["REQUEST_METHOD"] = "POST"
 	}
 
-	p["CONTENT_LENGTH"] = strconv.Itoa(l)
+	p["CONTENT_LENGTH"] = strconv.FormatInt(l, 10)
 	if len(bodyType) > 0 {
 		p["CONTENT_TYPE"] = bodyType
 	} else {
@@ -518,7 +518,7 @@ func (c *FCGIClient) Post(p map[string]string, method string, bodyType string, b
 // as a string key to a list values (url.Values)
 func (c *FCGIClient) PostForm(p map[string]string, data url.Values) (resp *http.Response, err error) {
 	body := bytes.NewReader([]byte(data.Encode()))
-	return c.Post(p, "POST", "application/x-www-form-urlencoded", body, body.Len())
+	return c.Post(p, "POST", "application/x-www-form-urlencoded", body, int64(body.Len()))
 }
 
 // PostFile issues a POST to the fcgi responder in multipart(RFC 2046) standard,
@@ -560,7 +560,7 @@ func (c *FCGIClient) PostFile(p map[string]string, data url.Values, file map[str
 		return
 	}
 
-	return c.Post(p, "POST", bodyType, buf, buf.Len())
+	return c.Post(p, "POST", bodyType, buf, int64(buf.Len()))
 }
 
 // SetReadTimeout sets the read timeout for future calls that read from the
