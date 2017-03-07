@@ -84,6 +84,12 @@ type Config struct {
 	// coming in on port 80 to this alternate port
 	AltHTTPPort string
 
+	// The alternate port (ONLY port, not host)
+	// to use for the ACME TLS-SNI challenge.
+	// The system must forward the standard port
+	// for the TLS-SNI challenge to this port.
+	AltTLSSNIPort string
+
 	// The string identifier of the DNS provider
 	// to use when solving the ACME DNS challenge
 	DNSProvider string
@@ -479,11 +485,11 @@ var defaultCurves = []tls.CurveID{
 
 const (
 	// HTTPChallengePort is the officially designated port for
-	// the HTTP challenge.
+	// the HTTP challenge according to the ACME spec.
 	HTTPChallengePort = "80"
 
 	// TLSSNIChallengePort is the officially designated port for
-	// the TLS-SNI challenge.
+	// the TLS-SNI challenge according to the ACME spec.
 	TLSSNIChallengePort = "443"
 
 	// DefaultHTTPAlternatePort is the port on which the ACME
