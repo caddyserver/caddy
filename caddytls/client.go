@@ -143,6 +143,18 @@ var newACMEClient = func(config *Config, allowPrompts bool) (*ACMEClient, error)
 		if caddy.HasListenerWithAddress(net.JoinHostPort(config.ListenHost, useTLSSNIPort)) {
 			c.acmeClient.SetChallengeProvider(acme.TLSSNI01, tlsSniSolver{})
 		}
+
+		// Disable any challenges that should not be used
+		var disabledChallenges []acme.Challenge
+		if DisableHTTPChallenge {
+			disabledChallenges = append(disabledChallenges, acme.HTTP01)
+		}
+		if DisableTLSSNIChallenge {
+			disabledChallenges = append(disabledChallenges, acme.TLSSNI01)
+		}
+		if len(disabledChallenges) > 0 {
+			c.acmeClient.ExcludeChallenges(disabledChallenges)
+		}
 	} else {
 		// Otherwise, use DNS challenge exclusively
 
