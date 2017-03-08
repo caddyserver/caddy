@@ -144,6 +144,47 @@ func TestReverseProxyInsecureSkipVerify(t *testing.T) {
 	}
 }
 
+
+func TestReverseProxyRootCAs(t *testing.T) {
+	log.SetOutput(ioutil.Discard)
+	defer log.SetOutput(os.Stderr)
+
+	const CAPath = "./proxy_test_cert.pem" // todo add mocked .pem file into the repo?
+	var requestReceived bool
+	backend := newTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestReceived = true
+		w.Write([]byte("Hello, client"))
+	}))
+	defer backend.Close()
+
+	su, err := NewStaticUpstreams(caddyfile.NewDispenser("Testfile", strings.NewReader(`
+		proxy / `+backend.URL+` {
+			root_ca `+fmt.Sprint(CAPath)+`
+		}
+	`)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// set up proxy
+	p := &Proxy{
+		Next:      httpserver.EmptyNext, // prevents panic in some cases when test fails
+		Upstreams: su,
+	}
+
+	// create request and response recorder
+	r := httptest.NewRequest("GET", "/", nil)
+	w := httptest.NewRecorder()
+
+	p.ServeHTTP(w, r)
+
+	// todo
+	if !requestReceived {
+		t.Error("Even with self-signed certificate, expected backend to receive request, but it didn't")
+	}
+}
+
+
 // This test will fail when using the race detector without atomic reads &
 // writes of UpstreamHost.Conns and UpstreamHost.Unhealthy.
 func TestReverseProxyMaxConnLimit(t *testing.T) {
