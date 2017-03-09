@@ -112,33 +112,51 @@ var newACMEClient = func(config *Config, allowPrompts bool) (*ACMEClient, error)
 		// Use HTTP and TLS-SNI challenges by default
 
 		// See if HTTP challenge needs to be proxied
-		useHTTPPort := "" // empty port value will use challenge default
-		if caddy.HasListenerWithAddress(net.JoinHostPort(config.ListenHost, HTTPChallengePort)) {
+		useHTTPPort := HTTPChallengePort
+		if config.AltHTTPPort != "" {
 			useHTTPPort = config.AltHTTPPort
-			if useHTTPPort == "" {
-				useHTTPPort = DefaultHTTPAlternatePort
-			}
+		}
+		if caddy.HasListenerWithAddress(net.JoinHostPort(config.ListenHost, useHTTPPort)) {
+			useHTTPPort = DefaultHTTPAlternatePort
+		}
+
+		// See which port TLS-SNI challenges will be accomplished on
+		useTLSSNIPort := TLSSNIChallengePort
+		if config.AltTLSSNIPort != "" {
+			useTLSSNIPort = config.AltTLSSNIPort
 		}
 
 		// Always respect user's bind preferences by using config.ListenHost.
-		// NOTE(Sep'16): At time of writing, SetHTTPAddress() and SetTLSaddress()
+		// NOTE(Sep'16): At time of writing, SetHTTPAddress() and SetTLSAddress()
 		// must be called before SetChallengeProvider(), since they reset the
 		// challenge provider back to the default one!
 		err := c.acmeClient.SetHTTPAddress(net.JoinHostPort(config.ListenHost, useHTTPPort))
 		if err != nil {
 			return nil, err
 		}
-		err = c.acmeClient.SetTLSAddress(net.JoinHostPort(config.ListenHost, ""))
+		err = c.acmeClient.SetTLSAddress(net.JoinHostPort(config.ListenHost, useTLSSNIPort))
 		if err != nil {
 			return nil, err
 		}
 
 		// See if TLS challenge needs to be handled by our own facilities
-		if caddy.HasListenerWithAddress(net.JoinHostPort(config.ListenHost, TLSSNIChallengePort)) {
+		if caddy.HasListenerWithAddress(net.JoinHostPort(config.ListenHost, useTLSSNIPort)) {
 			c.acmeClient.SetChallengeProvider(acme.TLSSNI01, tlsSniSolver{})
 		}
+
+		// Disable any challenges that should not be used
+		var disabledChallenges []acme.Challenge
+		if DisableHTTPChallenge {
+			disabledChallenges = append(disabledChallenges, acme.HTTP01)
+		}
+		if DisableTLSSNIChallenge {
+			disabledChallenges = append(disabledChallenges, acme.TLSSNI01)
+		}
+		if len(disabledChallenges) > 0 {
+			c.acmeClient.ExcludeChallenges(disabledChallenges)
+		}
 	} else {
-		// Otherwise, DNS challenge it is
+		// Otherwise, use DNS challenge exclusively
 
 		// Load provider constructor function
 		provFn, ok := dnsProviders[config.DNSProvider]

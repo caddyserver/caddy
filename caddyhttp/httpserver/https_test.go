@@ -11,7 +11,7 @@ import (
 func TestRedirPlaintextHost(t *testing.T) {
 	cfg := redirPlaintextHost(&SiteConfig{
 		Addr: Address{
-			Host: "example.com",
+			Host: "foohost",
 			Port: "1234",
 		},
 		ListenHost: "93.184.216.34",
@@ -19,7 +19,7 @@ func TestRedirPlaintextHost(t *testing.T) {
 	})
 
 	// Check host and port
-	if actual, expected := cfg.Addr.Host, "example.com"; actual != expected {
+	if actual, expected := cfg.Addr.Host, "foohost"; actual != expected {
 		t.Errorf("Expected redir config to have host %s but got %s", expected, actual)
 	}
 	if actual, expected := cfg.ListenHost, "93.184.216.34"; actual != expected {
@@ -38,7 +38,7 @@ func TestRedirPlaintextHost(t *testing.T) {
 
 	// Check redirect for correctness
 	rec := httptest.NewRecorder()
-	req, err := http.NewRequest("GET", "http://foo/bar?q=1", nil)
+	req, err := http.NewRequest("GET", "http://foohost/bar?q=1", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,17 +52,17 @@ func TestRedirPlaintextHost(t *testing.T) {
 	if rec.Code != http.StatusMovedPermanently {
 		t.Errorf("Expected status %d but got %d", http.StatusMovedPermanently, rec.Code)
 	}
-	if got, want := rec.Header().Get("Location"), "https://foo:1234/bar?q=1"; got != want {
+	if got, want := rec.Header().Get("Location"), "https://foohost:1234/bar?q=1"; got != want {
 		t.Errorf("Expected Location: '%s' but got '%s'", want, got)
 	}
 
 	// browsers can infer a default port from scheme, so make sure the port
 	// doesn't get added in explicitly for default ports like 443 for https.
-	cfg = redirPlaintextHost(&SiteConfig{Addr: Address{Host: "example.com", Port: "443"}, TLS: new(caddytls.Config)})
+	cfg = redirPlaintextHost(&SiteConfig{Addr: Address{Host: "foohost", Port: "443"}, TLS: new(caddytls.Config)})
 	handler = cfg.middleware[0](nil)
 
 	rec = httptest.NewRecorder()
-	req, err = http.NewRequest("GET", "http://foo/bar?q=1", nil)
+	req, err = http.NewRequest("GET", "http://foohost/bar?q=1", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func TestRedirPlaintextHost(t *testing.T) {
 	if rec.Code != http.StatusMovedPermanently {
 		t.Errorf("Expected status %d but got %d", http.StatusMovedPermanently, rec.Code)
 	}
-	if got, want := rec.Header().Get("Location"), "https://foo/bar?q=1"; got != want {
+	if got, want := rec.Header().Get("Location"), "https://foohost/bar?q=1"; got != want {
 		t.Errorf("Expected Location: '%s' but got '%s'", want, got)
 	}
 }

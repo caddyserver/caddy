@@ -20,6 +20,9 @@ func HTTPChallengeHandler(w http.ResponseWriter, r *http.Request, listenHost, al
 	if !strings.HasPrefix(r.URL.Path, challengeBasePath) {
 		return false
 	}
+	if DisableHTTPChallenge {
+		return false
+	}
 	if !namesObtaining.Has(r.Host) {
 		return false
 	}

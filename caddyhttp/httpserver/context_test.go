@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -298,6 +299,44 @@ func TestIP(t *testing.T) {
 
 		if actualIP != test.expectedIP {
 			t.Errorf(testPrefix+"Expected IP %s, found %s", test.expectedIP, actualIP)
+		}
+	}
+}
+
+type myIP string
+
+func (ip myIP) mockInterfaces() ([]net.Addr, error) {
+	a := net.ParseIP(string(ip))
+
+	return []net.Addr{
+		&net.IPNet{IP: a, Mask: nil},
+	}, nil
+}
+
+func TestServerIP(t *testing.T) {
+	context := getContextOrFail(t)
+
+	tests := []string{
+		// Test 0 - ipv4
+		"1.1.1.1",
+		// Test 1 - ipv6
+		"2001:db8:a0b:12f0::1",
+	}
+
+	for i, expectedIP := range tests {
+		testPrefix := getTestPrefix(i)
+
+		// Mock the network interface
+		ip := myIP(expectedIP)
+		networkInterfacesFn = ip.mockInterfaces
+		defer func() {
+			networkInterfacesFn = net.InterfaceAddrs
+		}()
+
+		actualIP := context.ServerIP()
+
+		if actualIP != expectedIP {
+			t.Errorf("%sExpected IP \"%s\", found \"%s\".", testPrefix, expectedIP, actualIP)
 		}
 	}
 }
