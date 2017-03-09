@@ -64,6 +64,15 @@ md5:$apr1$l42y8rex$pOA2VJ0x/0TwaFeAF9nX61`
 		}`, false, "pwd", []Rule{
 			{Username: "user"},
 		}},
+		{`basicauth /resource1 user pwd {
+		}`, false, "pwd", []Rule{
+			{Username: "user", Resources: []string{"/resource1"}},
+		}},
+		{`basicauth /resource1 user pwd {
+			realm Resources
+		}`, false, "pwd", []Rule{
+			{Username: "user", Resources: []string{"/resource1"}, Realm: "Resources"},
+		}},
 		{`basicauth user pwd {
 			/resource1
 			/resource2
@@ -71,15 +80,9 @@ md5:$apr1$l42y8rex$pOA2VJ0x/0TwaFeAF9nX61`
 			{Username: "user", Resources: []string{"/resource1", "/resource2"}},
 		}},
 		{`basicauth user pwd {
-			path /resource1
-			path /resource2
-		}`, false, "pwd", []Rule{
-			{Username: "user", Resources: []string{"/resource1", "/resource2"}},
-		}},
-		{`basicauth user pwd {
 			/resource1
+			/resource2
 			realm "Secure resources"
-			path /resource2
 		}`, false, "pwd", []Rule{
 			{Username: "user", Resources: []string{"/resource1", "/resource2"}, Realm: "Secure resources"},
 		}},
@@ -87,12 +90,12 @@ md5:$apr1$l42y8rex$pOA2VJ0x/0TwaFeAF9nX61`
 			/resource1
 			realm "Secure resources"
 			realm Extra
-			path /resource2
+			/resource2
 		}`, true, "pwd", []Rule{}},
 		{`basicauth user pwd {
 			/resource1
 			foo "Resources"
-			path /resource2
+			/resource2
 		}`, true, "pwd", []Rule{}},
 		{`basicauth /resource user pwd`, false, "pwd", []Rule{
 			{Username: "user", Resources: []string{"/resource"}},

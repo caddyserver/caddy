@@ -67,7 +67,7 @@ func basicAuthParse(c *caddy.Controller) ([]Rule, error) {
 			args = c.RemainingArgs()
 			switch len(args) {
 			case 0:
-				// For backwards compatibility, assume single argument is path resource
+				// Assume single argument is path resource
 				rule.Resources = append(rule.Resources, val)
 			case 1:
 				if val == "realm" {
@@ -76,10 +76,8 @@ func basicAuthParse(c *caddy.Controller) ([]Rule, error) {
 					} else {
 						return rules, c.Errf("\"realm\" subdirective can only be specified once")
 					}
-				} else if val == "path" {
-					rule.Resources = append(rule.Resources, args[0])
 				} else {
-					return rules, c.Errf("expecting \"path\" or \"realm\", got \"%s\"", val)
+					return rules, c.Errf("expecting \"realm\", got \"%s\"", val)
 				}
 			default:
 				return rules, c.ArgErr()
