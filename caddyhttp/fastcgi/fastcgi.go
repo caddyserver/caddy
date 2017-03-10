@@ -33,11 +33,6 @@ type Handler struct {
 	ServerPort      string
 }
 
-// When a rewrite is performed, a header field of this name
-// is added to the request
-// It contains the original request URI before the rewrite.
-const internalRewriteFieldName = "Caddy-Rewrite-Original-URI"
-
 // ServeHTTP satisfies the httpserver.Handler interface.
 func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	for _, rule := range h.Rules {
@@ -219,12 +214,12 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 	// Strip PATH_INFO from SCRIPT_NAME
 	scriptName = strings.TrimSuffix(scriptName, pathInfo)
 
-	// Get the request URI. The request URI might be as it came in over the wire,
+	// Get the request URI from context. The request URI might be as it came in over the wire,
 	// or it might have been rewritten internally by the rewrite middleware (see issue #256).
-	// If it was rewritten, there will be a header indicating the original URL,
+	// If it was rewritten, there will be a context value with the original URL,
 	// which is needed to get the correct RequestURI value for PHP apps.
 	reqURI := r.URL.RequestURI()
-	if origURI := r.Header.Get(internalRewriteFieldName); origURI != "" {
+	if origURI, _ := r.Context().Value(caddy.URIxRewriteCtxKey).(string); origURI != "" {
 		reqURI = origURI
 	}
 
@@ -282,11 +277,8 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 		env[envVar[0]] = replacer.Replace(envVar[1])
 	}
 
-	// Add all HTTP headers (except Caddy-Rewrite-Original-URI ) to env variables
+	// Add all HTTP headers to env variables
 	for field, val := range r.Header {
-		if strings.ToLower(field) == strings.ToLower(internalRewriteFieldName) {
-			continue
-		}
 		header := strings.ToUpper(field)
 		header = headerNameReplacer.Replace(header)
 		env["HTTP_"+header] = strings.Join(val, ", ")
