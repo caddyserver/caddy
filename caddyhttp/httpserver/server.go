@@ -245,10 +245,6 @@ func (s *Server) ListenPacket() (net.PacketConn, error) {
 
 // Serve serves requests on ln. It blocks until ln is closed.
 func (s *Server) Serve(ln net.Listener) error {
-	if tcpLn, ok := ln.(*net.TCPListener); ok {
-		ln = tcpKeepAliveListener{TCPListener: tcpLn}
-	}
-
 	s.listenerMu.Lock()
 	s.listener = ln
 	s.listenerMu.Unlock()
