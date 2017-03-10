@@ -3,6 +3,7 @@ package caddytls
 import (
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -188,6 +189,7 @@ func (s *FileStorage) StoreSite(domain string, data *SiteData) error {
 	if err != nil {
 		return fmt.Errorf("writing cert meta file: %v", err)
 	}
+	log.Printf("[INFO][%v] Certificate written to disk: %v", domain, s.siteCertFile(domain))
 	return nil
 }
 

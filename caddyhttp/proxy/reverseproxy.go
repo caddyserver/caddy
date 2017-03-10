@@ -224,7 +224,10 @@ func (rp *ReverseProxy) UseInsecureTransport() {
 		}
 		rp.Transport = transport
 	} else if transport, ok := rp.Transport.(*http.Transport); ok {
-		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+		if transport.TLSClientConfig == nil {
+			transport.TLSClientConfig = &tls.Config{}
+		}
+		transport.TLSClientConfig.InsecureSkipVerify = true
 		// No http2.ConfigureTransport() here.
 		// For now this is only added in places where
 		// an http.Transport is actually created.
@@ -441,7 +444,7 @@ func newConnHijackerTransport(base http.RoundTripper) *connHijackerTransport {
 	}
 	if b, _ := base.(*http.Transport); b != nil {
 		tlsClientConfig := b.TLSClientConfig
-		if tlsClientConfig.NextProtos != nil {
+		if tlsClientConfig != nil && tlsClientConfig.NextProtos != nil {
 			tlsClientConfig = tlsClientConfig.Clone()
 			tlsClientConfig.NextProtos = nil
 		}
