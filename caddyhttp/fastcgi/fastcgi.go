@@ -91,7 +91,14 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			fcgiBackend.SetSendTimeout(rule.SendTimeout)
 
 			var resp *http.Response
-			contentLength, _ := strconv.Atoi(r.Header.Get("Content-Length"))
+
+			var contentLength int64
+			// if ContentLength is already set
+			if r.ContentLength > 0 {
+				contentLength = r.ContentLength
+			} else {
+				contentLength, _ = strconv.ParseInt(r.Header.Get("Content-Length"), 10, 64)
+			}
 			switch r.Method {
 			case "HEAD":
 				resp, err = fcgiBackend.Head(env)

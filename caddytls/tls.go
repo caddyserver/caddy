@@ -167,6 +167,12 @@ var (
 	// DefaultKeyType is used as the type of key for new certificates
 	// when no other key type is specified.
 	DefaultKeyType = acme.RSA2048
+
+	// DisableHTTPChallenge will disable all HTTP challenges.
+	DisableHTTPChallenge bool
+
+	// DisableTLSSNIChallenge will disable all TLS-SNI challenges.
+	DisableTLSSNIChallenge bool
 )
 
 var storageProviders = make(map[string]StorageConstructor)

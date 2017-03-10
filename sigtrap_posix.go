@@ -49,8 +49,14 @@ func trapSignalsPosix() {
 
 				// Start with the existing Caddyfile
 				instancesMu.Lock()
+				if len(instances) == 0 {
+					instancesMu.Unlock()
+					log.Println("[ERROR] SIGUSR1: No server instances are fully running")
+					continue
+				}
 				inst := instances[0] // we only support one instance at this time
 				instancesMu.Unlock()
+
 				updatedCaddyfile := inst.caddyfileInput
 				if updatedCaddyfile == nil {
 					// Hmm, did spawing process forget to close stdin? Anyhow, this is unusual.
