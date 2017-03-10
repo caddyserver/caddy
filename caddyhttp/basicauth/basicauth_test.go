@@ -92,8 +92,9 @@ func TestBasicAuth(t *testing.T) {
 					t.Errorf("Test %d: response should have a 'Www-Authenticate' header", i)
 				}
 			} else {
-				if got, want := req.Header.Get("Authorization"), ""; got != want {
-					t.Errorf("Test %d: Expected Authorization header to be stripped from request after successful authentication, but is: %s", i, got)
+				if req.Header.Get("Authorization") == "" {
+					// see issue #1508: https://github.com/mholt/caddy/issues/1508
+					t.Errorf("Test %d: Expected Authorization header to be retained after successful auth, but was empty", i)
 				}
 			}
 		}
