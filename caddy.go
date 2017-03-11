@@ -871,6 +871,8 @@ var (
 )
 
 // CtxKey is a value for use with context.WithValue.
+// TODO: Ideally CtxKey and consts will be moved to httpserver package.
+// currently blocked by circular import with staticfiles.
 type CtxKey string
 
 // URLPathCtxKey is a context key. It can be used in HTTP handlers with
