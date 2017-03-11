@@ -15,3 +15,5 @@ access.log
 Caddyfile
 
 og_static/
+
+.vscode/

@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strconv"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -304,26 +303,6 @@ func TestBuildEnv(t *testing.T) {
 	envExpected["CUSTOM_URI"] = "custom_uri/fgci_test.php?test=blabla"
 	envExpected["CUSTOM_QUERY"] = "custom=true&test=blabla"
 	testBuildEnv(r, rule, fpath, envExpected)
-
-	// 6. Test Caddy-Rewrite-Original-URI header is not removed
-	r = newReq()
-	rule.EnvVars = [][2]string{
-		{"HTTP_HOST", "{host}"},
-		{"CUSTOM_URI", "custom_uri{uri}"},
-		{"CUSTOM_QUERY", "custom=true&{query}"},
-	}
-	envExpected = newEnv()
-	envExpected["HTTP_HOST"] = "localhost:2015"
-	envExpected["CUSTOM_URI"] = "custom_uri/fgci_test.php?test=blabla"
-	envExpected["CUSTOM_QUERY"] = "custom=true&test=blabla"
-	httpFieldName := strings.ToUpper(internalRewriteFieldName)
-	envExpected["HTTP_"+httpFieldName] = ""
-	r.Header.Add(internalRewriteFieldName, "/apath/torewrite/index.php")
-	testBuildEnv(r, rule, fpath, envExpected)
-	if r.Header.Get(internalRewriteFieldName) == "" {
-		t.Errorf("Error: Header Expected %v", internalRewriteFieldName)
-	}
-
 }
 
 func TestReadTimeout(t *testing.T) {

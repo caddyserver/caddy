@@ -1,12 +1,14 @@
 package rewrite
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"net/url"
 	"path"
 	"strings"
 
+	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
 
@@ -49,7 +51,7 @@ func To(fs http.FileSystem, r *http.Request, to string, replacer httpserver.Repl
 
 	// take note of this rewrite for internal use by fastcgi
 	// all we need is the URI, not full URL
-	r.Header.Set(headerFieldName, r.URL.RequestURI())
+	*r = *r.WithContext(context.WithValue(r.Context(), caddy.URIxRewriteCtxKey, r.URL.RequestURI()))
 
 	// perform rewrite
 	r.URL.Path = u.Path
