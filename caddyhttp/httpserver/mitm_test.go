@@ -287,7 +287,7 @@ func TestHeuristicFunctionsAndHandler(t *testing.T) {
 			want := ch.interception
 			handler := &tlsHandler{
 				next: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					got, checked = r.Context().Value(caddy.CtxKey("mitm")).(bool)
+					got, checked = r.Context().Value(caddy.MitmCtxKey).(bool)
 				}),
 				listener: newTLSListener(nil, nil),
 			}

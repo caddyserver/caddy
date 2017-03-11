@@ -883,3 +883,9 @@ const URLPathCtxKey CtxKey = "url_path"
 // URIxRewriteCtxKey is a context key used to store original unrewritten
 // URI in context.WithValue
 const URIxRewriteCtxKey CtxKey = "caddy_rewrite_original_uri"
+
+// RemoteUserCtxKey is a context key used to store remote user for request
+const RemoteUserCtxKey CtxKey = "remote_user"
+
+// MitmCtxKey stores Mitm result
+const MitmCtxKey CtxKey = "mitm"
