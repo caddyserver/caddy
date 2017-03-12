@@ -94,7 +94,7 @@ and start caddy:
 ```bash
 sudo cp caddy.service /etc/systemd/system/
 sudo chown root:root /etc/systemd/system/caddy.service
-sudo chmod 744 /etc/systemd/system/caddy.service
+sudo chmod 644 /etc/systemd/system/caddy.service
 sudo systemctl daemon-reload
 sudo systemctl start caddy.service
 ```
