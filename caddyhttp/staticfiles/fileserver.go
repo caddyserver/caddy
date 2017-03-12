@@ -201,6 +201,7 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request, name stri
 
 		w.Header().Add("Vary", "Accept-Encoding")
 		w.Header().Set("Content-Encoding", encoding)
+		w.Header().Set("Content-Length", strconv.FormatInt(encodedFileInfo.Size(), 10))
 
 		defer f.Close()
 		break
