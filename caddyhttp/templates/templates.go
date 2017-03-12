@@ -4,6 +4,7 @@ package templates
 
 import (
 	"bytes"
+	"mime"
 	"net/http"
 	"os"
 	"path"
@@ -61,6 +62,16 @@ func (t Templates) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 				if err != nil {
 					return http.StatusInternalServerError, err
 				}
+
+				// If Content-Type isn't set here, http.ResponseWriter.Write
+				// will set it according to response body. But other middleware
+				// such as gzip can modify response body, then Content-Type
+				// detected by http.ResponseWriter.Write is wrong.
+				ctype := mime.TypeByExtension(ext)
+				if ctype == "" {
+					ctype = http.DetectContentType(buf.Bytes())
+				}
+				w.Header().Set("Content-Type", ctype)
 
 				templateInfo, err := os.Stat(templatePath)
 				if err == nil {

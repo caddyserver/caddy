@@ -6,6 +6,8 @@ import (
 	"os"
 	"path"
 	"time"
+
+	"github.com/mholt/caddy"
 )
 
 func init() {
@@ -17,6 +19,10 @@ type (
 	// idea of middleware: it chains one Handler to the next by being
 	// passed the next Handler in the chain.
 	Middleware func(Handler) Handler
+
+	// ListenerMiddleware is similar to the Middleware type, except it
+	// chains one net.Listener to the next.
+	ListenerMiddleware func(caddy.Listener) caddy.Listener
 
 	// Handler is like http.Handler except ServeHTTP may return a status
 	// code and/or error.

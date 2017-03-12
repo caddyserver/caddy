@@ -1,12 +1,15 @@
 package httpserver
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mholt/caddy"
 )
 
 func TestNewReplacer(t *testing.T) {
@@ -147,6 +150,40 @@ func TestSet(t *testing.T) {
 	if repl.Replace("The value of variable is {variable}") != "The value of variable is value" {
 		t.Error("Expected variable replacement failed")
 	}
+}
+
+// Test function to test that various placeholders hold correct values after a rewrite
+// has been performed.  The NewRequest actually contains the rewritten value.
+func TestPathRewrite(t *testing.T) {
+	w := httptest.NewRecorder()
+	recordRequest := NewResponseRecorder(w)
+	reader := strings.NewReader(`{"username": "dennis"}`)
+
+	request, err := http.NewRequest("POST", "http://getcaddy.com/index.php?key=value", reader)
+	if err != nil {
+		t.Fatalf("Request Formation Failed: %s\n", err.Error())
+	}
+
+	ctx := context.WithValue(request.Context(), caddy.URIxRewriteCtxKey, "a/custom/path.php?key=value")
+	request = request.WithContext(ctx)
+
+	repl := NewReplacer(request, recordRequest, "")
+
+	if repl.Replace("This path is '{path}'") != "This path is 'a/custom/path.php'" {
+		t.Error("Expected host {path} replacement failed  (" + repl.Replace("This path is '{path}'") + ")")
+	}
+
+	if repl.Replace("This path is {rewrite_path}") != "This path is /index.php" {
+		t.Error("Expected host {rewrite_path} replacement failed (" + repl.Replace("This path is {rewrite_path}") + ")")
+	}
+	if repl.Replace("This path is '{uri}'") != "This path is 'a/custom/path.php?key=value'" {
+		t.Error("Expected host {uri} replacement failed  (" + repl.Replace("This path is '{uri}'") + ")")
+	}
+
+	if repl.Replace("This path is {rewrite_uri}") != "This path is /index.php?key=value" {
+		t.Error("Expected host {rewrite_uri} replacement failed (" + repl.Replace("This path is {rewrite_uri}") + ")")
+	}
+
 }
 
 func TestRound(t *testing.T) {

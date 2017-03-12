@@ -871,9 +871,15 @@ var (
 )
 
 // CtxKey is a value for use with context.WithValue.
+// TODO: Ideally CtxKey and consts will be moved to httpserver package.
+// currently blocked by circular import with staticfiles.
 type CtxKey string
 
 // URLPathCtxKey is a context key. It can be used in HTTP handlers with
 // context.WithValue to access the original request URI that accompanied the
 // server request. The associated value will be of type string.
 const URLPathCtxKey CtxKey = "url_path"
+
+// URIxRewriteCtxKey is a context key used to store original unrewritten
+// URI in context.WithValue
+const URIxRewriteCtxKey CtxKey = "caddy_rewrite_original_uri"

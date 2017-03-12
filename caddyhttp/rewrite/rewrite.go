@@ -65,9 +65,6 @@ func (s SimpleRule) Match(r *http.Request) bool { return s.From == r.URL.Path }
 
 // Rewrite rewrites the internal location of the current request.
 func (s SimpleRule) Rewrite(fs http.FileSystem, r *http.Request) Result {
-	// take note of this rewrite for internal use by fastcgi
-	// all we need is the URI, not full URL
-	r.Header.Set(headerFieldName, r.URL.RequestURI())
 
 	// attempt rewrite
 	return To(fs, r, s.To, newReplacer(r))
@@ -234,8 +231,3 @@ func (r *ComplexRule) regexpMatches(rPath string) []string {
 func newReplacer(r *http.Request) httpserver.Replacer {
 	return httpserver.NewReplacer(r, nil, "")
 }
-
-// When a rewrite is performed, this header is added to the request
-// and is for internal use only, specifically the fastcgi middleware.
-// It contains the original request URI before the rewrite.
-const headerFieldName = "Caddy-Rewrite-Original-URI"
