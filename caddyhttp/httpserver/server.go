@@ -292,7 +292,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	w.Header().Set("Server", "Caddy")
-	c := context.WithValue(r.Context(), caddy.URLPathCtxKey, r.URL.Path)
+	c := context.WithValue(r.Context(), staticfiles.URLPathCtxKey, r.URL.Path)
 	r = r.WithContext(c)
 
 	sanitizePath(r)

@@ -241,7 +241,7 @@ func (r *replacer) getSubstitution(key string) string {
 		// if a rewrite has happened, the original URI should be used as the path
 		// rather than the rewritten URI
 		var path string
-		origpath, _ := r.request.Context().Value(caddy.URIxRewriteCtxKey).(string)
+		origpath, _ := r.request.Context().Value(URIxRewriteCtxKey).(string)
 		if origpath == "" {
 			path = r.request.URL.Path
 		} else {
@@ -251,7 +251,7 @@ func (r *replacer) getSubstitution(key string) string {
 		return path
 	case "{path_escaped}":
 		var path string
-		origpath, _ := r.request.Context().Value(caddy.URIxRewriteCtxKey).(string)
+		origpath, _ := r.request.Context().Value(URIxRewriteCtxKey).(string)
 		if origpath == "" {
 			path = r.request.URL.Path
 		} else {
@@ -284,13 +284,13 @@ func (r *replacer) getSubstitution(key string) string {
 		}
 		return port
 	case "{uri}":
-		uri, _ := r.request.Context().Value(caddy.URIxRewriteCtxKey).(string)
+		uri, _ := r.request.Context().Value(URIxRewriteCtxKey).(string)
 		if uri == "" {
 			uri = r.request.URL.RequestURI()
 		}
 		return uri
 	case "{uri_escaped}":
-		uri, _ := r.request.Context().Value(caddy.URIxRewriteCtxKey).(string)
+		uri, _ := r.request.Context().Value(URIxRewriteCtxKey).(string)
 		if uri == "" {
 			uri = r.request.URL.RequestURI()
 		}

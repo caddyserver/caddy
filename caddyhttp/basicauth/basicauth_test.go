@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
 
@@ -19,7 +18,7 @@ func TestBasicAuth(t *testing.T) {
 	// This handler is registered for tests in which the only authorized user is
 	// "okuser"
 	upstreamHandler := func(w http.ResponseWriter, r *http.Request) (int, error) {
-		remoteUser, _ := r.Context().Value(caddy.CtxKey("remote_user")).(string)
+		remoteUser, _ := r.Context().Value(httpserver.RemoteUserCtxKey).(string)
 		if remoteUser != "okuser" {
 			t.Errorf("Test %d: expecting remote user 'okuser', got '%s'", i, remoteUser)
 		}

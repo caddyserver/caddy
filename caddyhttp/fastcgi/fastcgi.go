@@ -15,7 +15,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
 
@@ -219,13 +218,13 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 	// If it was rewritten, there will be a context value with the original URL,
 	// which is needed to get the correct RequestURI value for PHP apps.
 	reqURI := r.URL.RequestURI()
-	if origURI, _ := r.Context().Value(caddy.URIxRewriteCtxKey).(string); origURI != "" {
+	if origURI, _ := r.Context().Value(httpserver.URIxRewriteCtxKey).(string); origURI != "" {
 		reqURI = origURI
 	}
 
 	// Retrieve name of remote user that was set by some downstream middleware,
 	// possibly basicauth.
-	remoteUser, _ := r.Context().Value(caddy.CtxKey("remote_user")).(string) // Blank if not set
+	remoteUser, _ := r.Context().Value(httpserver.RemoteUserCtxKey).(string) // Blank if not set
 
 	// Some variables are unused but cleared explicitly to prevent
 	// the parent environment from interfering.

@@ -8,8 +8,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/mholt/caddy"
 )
 
 func TestNewReplacer(t *testing.T) {
@@ -164,7 +162,7 @@ func TestPathRewrite(t *testing.T) {
 		t.Fatalf("Request Formation Failed: %s\n", err.Error())
 	}
 
-	ctx := context.WithValue(request.Context(), caddy.URIxRewriteCtxKey, "a/custom/path.php?key=value")
+	ctx := context.WithValue(request.Context(), URIxRewriteCtxKey, "a/custom/path.php?key=value")
 	request = request.WithContext(ctx)
 
 	repl := NewReplacer(request, recordRequest, "")
