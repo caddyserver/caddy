@@ -22,6 +22,7 @@ func init() {
 	RegisterPolicy("least_conn", func() Policy { return &LeastConn{} })
 	RegisterPolicy("round_robin", func() Policy { return &RoundRobin{} })
 	RegisterPolicy("ip_hash", func() Policy { return &IPHash{} })
+	RegisterPolicy("first", func() Policy { return &First{} })
 }
 
 // Random is a policy that selects up hosts from a pool at random.
@@ -125,6 +126,19 @@ func (r *IPHash) Select(pool HostPool, request *http.Request) *UpstreamHost {
 	for i := uint32(0); i < poolLen; i++ {
 		index += i
 		host := pool[index%poolLen]
+		if host.Available() {
+			return host
+		}
+	}
+	return nil
+}
+
+// First is a policy that selects the fist available host
+type First struct{}
+
+// Select selects the first host from the pool, that is available
+func (r *First) Select(pool HostPool, request *http.Request) *UpstreamHost {
+	for _, host := range pool {
 		if host.Available() {
 			return host
 		}
