@@ -98,7 +98,7 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request, name stri
 		if !strings.HasSuffix(r.URL.Path, "/") {
 			toURL, _ := url.Parse(r.URL.String())
 
-			path, ok := r.Context().Value(caddy.URLPathCtxKey).(string)
+			path, ok := r.Context().Value(URLPathCtxKey).(string)
 			if ok && !strings.HasSuffix(path, "/") {
 				toURL.Path = path
 			}
@@ -113,7 +113,7 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request, name stri
 		if strings.HasSuffix(r.URL.Path, "/") {
 			toURL, _ := url.Parse(r.URL.String())
 
-			path, ok := r.Context().Value(caddy.URLPathCtxKey).(string)
+			path, ok := r.Context().Value(URLPathCtxKey).(string)
 			if ok && strings.HasSuffix(path, "/") {
 				toURL.Path = path
 			}
@@ -300,3 +300,8 @@ func mapFSRootOpenErr(originalErr error) error {
 	}
 	return originalErr
 }
+
+// URLPathCtxKey is a context key. It can be used in HTTP handlers with
+// context.WithValue to access the original request URI that accompanied the
+// server request. The associated value will be of type string.
+const URLPathCtxKey caddy.CtxKey = "url_path"
