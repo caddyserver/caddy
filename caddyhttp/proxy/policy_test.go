@@ -240,6 +240,6 @@ func TestFirstPolicy(t *testing.T) {
 	pool[0].Unhealthy = 1
 	h = firstPolicy.Select(pool, req)
 	if h != pool[1] {
-		t.Error("Expected first policy host to be the first host.")
+		t.Error("Expected first policy host to be the second host.")
 	}
 }
