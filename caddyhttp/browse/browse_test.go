@@ -13,7 +13,6 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 	"github.com/mholt/caddy/caddyhttp/staticfiles"
 )
@@ -404,7 +403,7 @@ func TestBrowseRedirect(t *testing.T) {
 
 		req, err := http.NewRequest("GET", tc.url, nil)
 		u, _ := url.Parse(tc.url)
-		ctx := context.WithValue(req.Context(), caddy.URLPathCtxKey, u.Path)
+		ctx := context.WithValue(req.Context(), staticfiles.URLPathCtxKey, u.Path)
 		req = req.WithContext(ctx)
 		if err != nil {
 			t.Fatalf("Test %d - could not create HTTP request: %v", i, err)
