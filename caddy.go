@@ -870,10 +870,5 @@ var (
 	DefaultConfigFile = "Caddyfile"
 )
 
-// CtxKey is a value for use with context.WithValue.
+// CtxKey is a value type for use with context.WithValue.
 type CtxKey string
-
-// URLPathCtxKey is a context key. It can be used in HTTP handlers with
-// context.WithValue to access the original request URI that accompanied the
-// server request. The associated value will be of type string.
-const URLPathCtxKey CtxKey = "url_path"

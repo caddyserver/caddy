@@ -19,7 +19,6 @@ import (
 	"sync"
 
 	"github.com/jimstudt/http-authentication/basic"
-	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
 
@@ -37,6 +36,7 @@ type BasicAuth struct {
 // ServeHTTP implements the httpserver.Handler interface.
 func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	var protected, isAuthenticated bool
+	var realm string
 
 	for _, rule := range a.Rules {
 		for _, res := range rule.Resources {
@@ -46,6 +46,7 @@ func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 
 			// path matches; this endpoint is protected
 			protected = true
+			realm = rule.Realm
 
 			// parse auth header
 			username, password, ok := r.BasicAuth()
@@ -60,13 +61,10 @@ func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 			// by this point, authentication was successful
 			isAuthenticated = true
 
-			// remove credentials from request to avoid leaking upstream
-			r.Header.Del("Authorization")
-
 			// let upstream middleware (e.g. fastcgi and cgi) know about authenticated
 			// user; this replaces the request with a wrapped instance
 			r = r.WithContext(context.WithValue(r.Context(),
-				caddy.CtxKey("remote_user"), username))
+				httpserver.RemoteUserCtxKey, username))
 		}
 	}
 
@@ -74,7 +72,10 @@ func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 		// browsers show a message that says something like:
 		// "The website says: <realm>"
 		// which is kinda dumb, but whatever.
-		w.Header().Set("WWW-Authenticate", "Basic realm=\"Restricted\"")
+		if realm == "" {
+			realm = "Restricted"
+		}
+		w.Header().Set("WWW-Authenticate", "Basic realm=\""+realm+"\"")
 		return http.StatusUnauthorized, nil
 	}
 
@@ -89,6 +90,7 @@ type Rule struct {
 	Username  string
 	Password  func(string) bool
 	Resources []string
+	Realm     string // See RFC 1945 and RFC 2617, default: "Restricted"
 }
 
 // PasswordMatcher determines whether a password matches a rule.

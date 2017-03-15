@@ -167,5 +167,5 @@ func latest(t ...time.Time) time.Time {
 
 // title gives a backup generated title for a page
 func title(p string) string {
-	return strings.TrimRight(path.Base(p), path.Ext(p))
+	return strings.TrimSuffix(path.Base(p), path.Ext(p))
 }

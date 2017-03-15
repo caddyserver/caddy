@@ -232,7 +232,7 @@ func UpdateOCSPStaples() {
 		// By this point, we've obtained the latest OCSP response.
 		// If there was no staple before, or if the response is updated, make
 		// sure we apply the update to all names on the certificate.
-		if lastNextUpdate.IsZero() || lastNextUpdate != cert.OCSP.NextUpdate {
+		if cert.OCSP != nil && (lastNextUpdate.IsZero() || lastNextUpdate != cert.OCSP.NextUpdate) {
 			log.Printf("[INFO] Advancing OCSP staple for %v from %s to %s",
 				cert.Names, lastNextUpdate, cert.OCSP.NextUpdate)
 			for _, n := range cert.Names {

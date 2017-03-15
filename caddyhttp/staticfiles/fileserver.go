@@ -185,6 +185,7 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request, name stri
 
 		w.Header().Add("Vary", "Accept-Encoding")
 		w.Header().Set("Content-Encoding", encoding)
+		w.Header().Set("Content-Length", strconv.FormatInt(encodedFileInfo.Size(), 10))
 
 		defer f.Close()
 		break
@@ -223,7 +224,7 @@ func (fs FileServer) IsHidden(d os.FileInfo) bool {
 func RedirectToDir(w http.ResponseWriter, r *http.Request) {
 	toURL, _ := url.Parse(r.URL.String())
 
-	path, ok := r.Context().Value(caddy.URLPathCtxKey).(string)
+	path, ok := r.Context().Value(URLPathCtxKey).(string)
 	if ok && !strings.HasSuffix(path, "/") {
 		toURL.Path = path
 	}
@@ -238,7 +239,7 @@ func RedirectToDir(w http.ResponseWriter, r *http.Request) {
 func RedirectToFile(w http.ResponseWriter, r *http.Request) {
 	toURL, _ := url.Parse(r.URL.String())
 
-	path, ok := r.Context().Value(caddy.URLPathCtxKey).(string)
+	path, ok := r.Context().Value(URLPathCtxKey).(string)
 	if ok && strings.HasSuffix(path, "/") {
 		toURL.Path = path
 	}
@@ -303,3 +304,8 @@ func mapFSRootOpenErr(originalErr error) error {
 	}
 	return originalErr
 }
+
+// URLPathCtxKey is a context key. It can be used in HTTP handlers with
+// context.WithValue to access the original request URI that accompanied the
+// server request. The associated value will be of type string.
+const URLPathCtxKey caddy.CtxKey = "url_path"

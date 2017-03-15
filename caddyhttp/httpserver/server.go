@@ -215,9 +215,20 @@ func (s *Server) Listen() (net.Listener, error) {
 		}
 	}
 
+	if tcpLn, ok := ln.(*net.TCPListener); ok {
+		ln = tcpKeepAliveListener{TCPListener: tcpLn}
+	}
+
+	cln := ln.(caddy.Listener)
+	for _, site := range s.sites {
+		for _, m := range site.listenerMiddleware {
+			cln = m(cln)
+		}
+	}
+
 	// Very important to return a concrete caddy.Listener
 	// implementation for graceful restarts.
-	return ln.(*net.TCPListener), nil
+	return cln.(caddy.Listener), nil
 }
 
 // ListenPacket creates udp connection for QUIC if it is enabled,
@@ -234,10 +245,6 @@ func (s *Server) ListenPacket() (net.PacketConn, error) {
 
 // Serve serves requests on ln. It blocks until ln is closed.
 func (s *Server) Serve(ln net.Listener) error {
-	if tcpLn, ok := ln.(*net.TCPListener); ok {
-		ln = tcpKeepAliveListener{TCPListener: tcpLn}
-	}
-
 	s.listenerMu.Lock()
 	s.listener = ln
 	s.listenerMu.Unlock()
@@ -285,7 +292,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	w.Header().Set("Server", "Caddy")
-	c := context.WithValue(r.Context(), caddy.URLPathCtxKey, r.URL.Path)
+	c := context.WithValue(r.Context(), staticfiles.URLPathCtxKey, r.URL.Path)
 	r = r.WithContext(c)
 
 	sanitizePath(r)

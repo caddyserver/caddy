@@ -226,3 +226,20 @@ func TestIPHashPolicy(t *testing.T) {
 		t.Error("Expected ip hash policy host to be nil.")
 	}
 }
+
+func TestFirstPolicy(t *testing.T) {
+	pool := testPool()
+	firstPolicy := &First{}
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+
+	h := firstPolicy.Select(pool, req)
+	if h != pool[0] {
+		t.Error("Expected first policy host to be the first host.")
+	}
+
+	pool[0].Unhealthy = 1
+	h = firstPolicy.Select(pool, req)
+	if h != pool[1] {
+		t.Error("Expected first policy host to be the second host.")
+	}
+}

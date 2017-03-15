@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
 
@@ -19,16 +18,26 @@ func TestBasicAuth(t *testing.T) {
 	// This handler is registered for tests in which the only authorized user is
 	// "okuser"
 	upstreamHandler := func(w http.ResponseWriter, r *http.Request) (int, error) {
-		remoteUser, _ := r.Context().Value(caddy.CtxKey("remote_user")).(string)
+		remoteUser, _ := r.Context().Value(httpserver.RemoteUserCtxKey).(string)
 		if remoteUser != "okuser" {
 			t.Errorf("Test %d: expecting remote user 'okuser', got '%s'", i, remoteUser)
 		}
 		return http.StatusOK, nil
 	}
-	rw := BasicAuth{
-		Next: httpserver.HandlerFunc(upstreamHandler),
-		Rules: []Rule{
-			{Username: "okuser", Password: PlainMatcher("okpass"), Resources: []string{"/testing"}},
+	rws := []BasicAuth{
+		{
+			Next: httpserver.HandlerFunc(upstreamHandler),
+			Rules: []Rule{
+				{Username: "okuser", Password: PlainMatcher("okpass"),
+					Resources: []string{"/testing"}, Realm: "Resources"},
+			},
+		},
+		{
+			Next: httpserver.HandlerFunc(upstreamHandler),
+			Rules: []Rule{
+				{Username: "okuser", Password: PlainMatcher("okpass"),
+					Resources: []string{"/testing"}},
+			},
 		},
 	}
 
@@ -51,34 +60,41 @@ func TestBasicAuth(t *testing.T) {
 	}
 
 	var test testType
-	for i, test = range tests {
-		req, err := http.NewRequest("GET", test.from, nil)
-		if err != nil {
-			t.Fatalf("Test %d: Could not create HTTP request: %v", i, err)
+	for _, rw := range rws {
+		expectRealm := rw.Rules[0].Realm
+		if expectRealm == "" {
+			expectRealm = "Restricted" // Default if Realm not specified in rule
 		}
-		req.SetBasicAuth(test.user, test.password)
+		for i, test = range tests {
+			req, err := http.NewRequest("GET", test.from, nil)
+			if err != nil {
+				t.Fatalf("Test %d: Could not create HTTP request: %v", i, err)
+			}
+			req.SetBasicAuth(test.user, test.password)
 
-		rec := httptest.NewRecorder()
-		result, err := rw.ServeHTTP(rec, req)
-		if err != nil {
-			t.Fatalf("Test %d: Could not ServeHTTP: %v", i, err)
-		}
-		if result != test.result {
-			t.Errorf("Test %d: Expected status code %d but was %d",
-				i, test.result, result)
-		}
-		if test.result == http.StatusUnauthorized {
-			headers := rec.Header()
-			if val, ok := headers["Www-Authenticate"]; ok {
-				if got, want := val[0], "Basic realm=\"Restricted\""; got != want {
-					t.Errorf("Test %d: Www-Authenticate header should be '%s', got: '%s'", i, want, got)
+			rec := httptest.NewRecorder()
+			result, err := rw.ServeHTTP(rec, req)
+			if err != nil {
+				t.Fatalf("Test %d: Could not ServeHTTP: %v", i, err)
+			}
+			if result != test.result {
+				t.Errorf("Test %d: Expected status code %d but was %d",
+					i, test.result, result)
+			}
+			if test.result == http.StatusUnauthorized {
+				headers := rec.Header()
+				if val, ok := headers["Www-Authenticate"]; ok {
+					if got, want := val[0], "Basic realm=\""+expectRealm+"\""; got != want {
+						t.Errorf("Test %d: Www-Authenticate header should be '%s', got: '%s'", i, want, got)
+					}
+				} else {
+					t.Errorf("Test %d: response should have a 'Www-Authenticate' header", i)
 				}
 			} else {
-				t.Errorf("Test %d: response should have a 'Www-Authenticate' header", i)
-			}
-		} else {
-			if got, want := req.Header.Get("Authorization"), ""; got != want {
-				t.Errorf("Test %d: Expected Authorization header to be stripped from request after successful authentication, but is: %s", i, got)
+				if req.Header.Get("Authorization") == "" {
+					// see issue #1508: https://github.com/mholt/caddy/issues/1508
+					t.Errorf("Test %d: Expected Authorization header to be retained after successful auth, but was empty", i)
+				}
 			}
 		}
 	}
