@@ -299,7 +299,7 @@ func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	// Browsing navigation gets messed up if browsing a directory
 	// that doesn't end in "/" (which it should, anyway)
 	if !strings.HasSuffix(r.URL.Path, "/") {
-		staticfiles.Redirect(w, r, r.URL.Path+"/", http.StatusTemporaryRedirect)
+		staticfiles.RedirectToDir(w, r)
 		return 0, nil
 	}
 

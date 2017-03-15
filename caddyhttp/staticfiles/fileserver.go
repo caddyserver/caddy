@@ -96,30 +96,14 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request, name stri
 		// Ensure / at end of directory url. If the original URL path is
 		// used then ensure / exists as well.
 		if !strings.HasSuffix(r.URL.Path, "/") {
-			toURL, _ := url.Parse(r.URL.String())
-
-			path, ok := r.Context().Value(URLPathCtxKey).(string)
-			if ok && !strings.HasSuffix(path, "/") {
-				toURL.Path = path
-			}
-			toURL.Path += "/"
-
-			http.Redirect(w, r, toURL.String(), http.StatusMovedPermanently)
+			RedirectToDir(w, r)
 			return http.StatusMovedPermanently, nil
 		}
 	} else {
 		// Ensure no / at end of file url. If the original URL path is
 		// used then ensure no / exists as well.
 		if strings.HasSuffix(r.URL.Path, "/") {
-			toURL, _ := url.Parse(r.URL.String())
-
-			path, ok := r.Context().Value(URLPathCtxKey).(string)
-			if ok && strings.HasSuffix(path, "/") {
-				toURL.Path = path
-			}
-			toURL.Path = strings.TrimSuffix(toURL.Path, "/")
-
-			http.Redirect(w, r, toURL.String(), http.StatusMovedPermanently)
+			RedirectToFile(w, r)
 			return http.StatusMovedPermanently, nil
 		}
 	}
@@ -234,14 +218,34 @@ func (fs FileServer) IsHidden(d os.FileInfo) bool {
 	return false
 }
 
-// Redirect sends an HTTP redirect to the client but will preserve
-// the query string for the new path. Based on http.localRedirect
-// from the Go standard library.
-func Redirect(w http.ResponseWriter, r *http.Request, newPath string, statusCode int) {
-	if q := r.URL.RawQuery; q != "" {
-		newPath += "?" + q
+// RedirectToDir replies to the request with a redirect to the URL in r, which
+// has been transformed to indicate that the resource being requested is a
+// directory.
+func RedirectToDir(w http.ResponseWriter, r *http.Request) {
+	toURL, _ := url.Parse(r.URL.String())
+
+	path, ok := r.Context().Value(URLPathCtxKey).(string)
+	if ok && !strings.HasSuffix(path, "/") {
+		toURL.Path = path
 	}
-	http.Redirect(w, r, newPath, statusCode)
+	toURL.Path += "/"
+
+	http.Redirect(w, r, toURL.String(), http.StatusMovedPermanently)
+}
+
+// RedirectToFile replies to the request with a redirect to the URL in r, which
+// has been transformed to indicate that the resource being requested is a
+// file.
+func RedirectToFile(w http.ResponseWriter, r *http.Request) {
+	toURL, _ := url.Parse(r.URL.String())
+
+	path, ok := r.Context().Value(URLPathCtxKey).(string)
+	if ok && strings.HasSuffix(path, "/") {
+		toURL.Path = path
+	}
+	toURL.Path = strings.TrimSuffix(toURL.Path, "/")
+
+	http.Redirect(w, r, toURL.String(), http.StatusMovedPermanently)
 }
 
 // IndexPages is a list of pages that may be understood as

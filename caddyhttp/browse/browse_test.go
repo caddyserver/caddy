@@ -1,6 +1,7 @@
 package browse
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -361,4 +362,69 @@ func isReversed(data sort.Interface) bool {
 		}
 	}
 	return true
+}
+
+func TestBrowseRedirect(t *testing.T) {
+	testCases := []struct {
+		url        string
+		statusCode int
+		returnCode int
+		location   string
+	}{
+		{
+			"http://www.example.com/photos",
+			http.StatusMovedPermanently,
+			0,
+			"http://www.example.com/photos/",
+		},
+		{
+			"/photos",
+			http.StatusMovedPermanently,
+			0,
+			"/photos/",
+		},
+	}
+
+	for i, tc := range testCases {
+		b := Browse{
+			Next: httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
+				t.Fatalf("Test %d - Next shouldn't be called", i)
+				return 0, nil
+			}),
+			Configs: []Config{
+				{
+					PathScope: "/photos",
+					Fs: staticfiles.FileServer{
+						Root: http.Dir("./testdata"),
+					},
+				},
+			},
+		}
+
+		req, err := http.NewRequest("GET", tc.url, nil)
+		u, _ := url.Parse(tc.url)
+		ctx := context.WithValue(req.Context(), staticfiles.URLPathCtxKey, u.Path)
+		req = req.WithContext(ctx)
+		if err != nil {
+			t.Fatalf("Test %d - could not create HTTP request: %v", i, err)
+		}
+
+		rec := httptest.NewRecorder()
+
+		returnCode, _ := b.ServeHTTP(rec, req)
+		if returnCode != tc.returnCode {
+			t.Fatalf("Test %d - wrong return code, expected %d, got %d",
+				i, tc.returnCode, returnCode)
+		}
+
+		if got := rec.Code; got != tc.statusCode {
+			t.Errorf("Test %d - wrong status, expected %d, got %d",
+				i, tc.statusCode, got)
+		}
+
+		if got := rec.Header().Get("Location"); got != tc.location {
+			t.Errorf("Test %d - wrong Location header, expected %s, got %s",
+				i, tc.location, got)
+		}
+	}
 }
