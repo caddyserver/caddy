@@ -223,7 +223,7 @@ func TestStop(t *testing.T) {
 			var counter int64 = 0
 			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				r.Body.Close()
-				counter = atomic.AddInt64(&counter, 1)
+				atomic.AddInt64(&counter, 1)
 			}))
 
 			defer backend.Close()
