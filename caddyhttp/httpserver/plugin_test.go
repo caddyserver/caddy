@@ -153,6 +153,26 @@ func TestInspectServerBlocksCaseInsensitiveKey(t *testing.T) {
 	}
 }
 
+func TestInspectServerBlocksPathCaseSensitivity(t *testing.T) {
+	filename := "Testfile"
+	ctx := newContext().(*httpContext)
+	input := strings.NewReader("/path {\n}\n/PATH {\n}")
+	sblocks, err := caddyfile.Parse(filename, input, nil)
+	if err != nil {
+		t.Fatalf("Expected no error setting up test, got: %v", err)
+	}
+	CaseSensitivePath = true
+	_, err = ctx.InspectServerBlocks(filename, sblocks)
+	if err != nil {
+		t.Error("Expected no error with matching, differently-cased paths with CaseSensitivePath == true, but got error")
+	}
+	CaseSensitivePath = false
+	_, err = ctx.InspectServerBlocks(filename, sblocks)
+	if err == nil {
+		t.Error("Expected error with matching, differently-cased paths with CaseSensitivePath == false, but got error")
+	}
+}
+
 func TestGetConfig(t *testing.T) {
 	// case insensitivity for key
 	con := caddy.NewTestController("http", "")
