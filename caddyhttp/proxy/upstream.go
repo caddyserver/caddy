@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -26,9 +25,8 @@ type staticUpstream struct {
 	from              string
 	upstreamHeaders   http.Header
 	downstreamHeaders http.Header
-	context           context.Context
+	stop              chan struct{}
 	wg                sync.WaitGroup
-	shutdownFunc      func()
 	Hosts             HostPool
 	Policy            Policy
 	KeepAlive         int
@@ -53,12 +51,10 @@ type staticUpstream struct {
 func NewStaticUpstreams(c caddyfile.Dispenser) ([]Upstream, error) {
 	var upstreams []Upstream
 	for c.Next() {
-		ctx, cancel := context.WithCancel(context.Background())
 
 		upstream := &staticUpstream{
 			from:              "",
-			context:           ctx,
-			shutdownFunc:      cancel,
+			stop:              make(chan struct{}),
 			upstreamHeaders:   make(http.Header),
 			downstreamHeaders: make(http.Header),
 			Hosts:             nil,
@@ -120,7 +116,7 @@ func NewStaticUpstreams(c caddyfile.Dispenser) ([]Upstream, error) {
 			go func() {
 				upstream.wg.Add(1)
 				defer upstream.wg.Done()
-				upstream.HealthCheckWorker(upstream.context)
+				upstream.HealthCheckWorker(upstream.stop)
 			}()
 		}
 		upstreams = append(upstreams, upstream)
@@ -385,14 +381,14 @@ func (u *staticUpstream) healthCheck() {
 	}
 }
 
-func (u *staticUpstream) HealthCheckWorker(ctx context.Context) {
+func (u *staticUpstream) HealthCheckWorker(stop chan struct{}) {
 	ticker := time.NewTicker(u.HealthCheck.Interval)
 	u.healthCheck()
 	for {
 		select {
 		case <-ticker.C:
 			u.healthCheck()
-		case <-ctx.Done():
+		case <-stop:
 			return
 			// TODO: the library should provide a stop channel and global
 			// waitgroup to allow goroutines started by plugins a chance
@@ -451,7 +447,7 @@ func (u *staticUpstream) GetHostCount() int {
 // Stop sends a signal to all running goroutines to exit and waits for them to
 // finish before returning.
 func (u *staticUpstream) Stop() error {
-	u.shutdownFunc()
+	close(u.stop)
 	u.wg.Wait()
 	return nil
 }
