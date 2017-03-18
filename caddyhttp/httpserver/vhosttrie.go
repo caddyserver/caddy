@@ -33,6 +33,10 @@ func (t *vhostTrie) Insert(key string, site *SiteConfig) {
 // insertPath expects t to be a host node (not a root node),
 // and inserts site into the t according to remainingPath.
 func (t *vhostTrie) insertPath(remainingPath, originalPath string, site *SiteConfig) {
+	if !CaseSensitivePath {
+		remainingPath = strings.ToLower(remainingPath)
+		originalPath = strings.ToLower(originalPath)
+	}
 	if remainingPath == "" {
 		t.site = site
 		t.path = originalPath
@@ -103,6 +107,9 @@ func (t *vhostTrie) matchHost(host string) *vhostTrie {
 // remainingPath, and returns its node.
 func (t *vhostTrie) matchPath(remainingPath string) *vhostTrie {
 	var longestMatch *vhostTrie
+	if !CaseSensitivePath {
+		remainingPath = strings.ToLower(remainingPath)
+	}
 	for len(remainingPath) > 0 {
 		ch := string(remainingPath[0])
 		next, ok := t.edges[ch]

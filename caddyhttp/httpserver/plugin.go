@@ -103,13 +103,17 @@ func (h *httpContext) InspectServerBlocks(sourceFile string, serverBlocks []cadd
 	// For each address in each server block, make a new config
 	for _, sb := range serverBlocks {
 		for _, key := range sb.Keys {
-			// Lowercase entire address except path (assume path is at end).
-			var path string
-			addrTemp, err := standardizeAddress(key)
-			if err == nil {
-				path = addrTemp.Path
+			if CaseSensitivePath {
+				// Lowercase entire address except path (assume path is at end).
+				var path string
+				addrTemp, err := standardizeAddress(key)
+				if err == nil {
+					path = addrTemp.Path
+				}
+				key = strings.ToLower(key)[:len(key)-len(path)] + path
+			} else {
+				key = strings.ToLower(key)
 			}
-			key = strings.ToLower(key)[:len(key)-len(path)] + path
 			if _, dup := h.keysToSiteConfigs[key]; dup {
 				return serverBlocks, fmt.Errorf("duplicate site address: %s", key)
 			}
@@ -221,13 +225,18 @@ func (h *httpContext) MakeServers() ([]caddy.Server, error) {
 func GetConfig(c *caddy.Controller) *SiteConfig {
 	ctx := c.Context().(*httpContext)
 
-	// Lowercase entire address except path (assume path is at end).
-	var path string
-	addr, err := standardizeAddress(c.Key)
-	if err == nil {
-		path = addr.Path
+	var key string
+	if CaseSensitivePath {
+		// Lowercase entire address except path (assume path is at end).
+		var path string
+		addr, err := standardizeAddress(c.Key)
+		if err == nil {
+			path = addr.Path
+		}
+		key = strings.ToLower(c.Key)[:len(c.Key)-len(path)] + path
+	} else {
+		key = strings.ToLower(c.Key)
 	}
-	key := strings.ToLower(c.Key)[:len(c.Key)-len(path)] + path
 
 	if cfg, ok := ctx.keysToSiteConfigs[key]; ok {
 		return cfg

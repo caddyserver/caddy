@@ -344,7 +344,15 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 	// the URL path, so a request to example.com/foo/blog on the site
 	// defined as example.com/foo appears as /blog instead of /foo/blog.
 	if pathPrefix != "/" {
-		r.URL.Path = strings.TrimPrefix(r.URL.Path, pathPrefix)
+		if CaseSensitivePath {
+			r.URL.Path = strings.TrimPrefix(r.URL.Path, pathPrefix)
+		} else {
+			// The following is essentially a case-insensitive implementation
+			// of strings.TrimPrefix
+			if strings.HasPrefix(strings.ToLower(r.URL.Path), strings.ToLower(pathPrefix)) {
+				r.URL.Path = r.URL.Path[len(pathPrefix):]
+			}
+		}
 		if !strings.HasPrefix(r.URL.Path, "/") {
 			r.URL.Path = "/" + r.URL.Path
 		}
