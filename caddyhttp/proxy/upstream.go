@@ -24,11 +24,11 @@ var (
 
 type staticUpstream struct {
 	from              string
+	upstreamHeaders   http.Header
+	downstreamHeaders http.Header
 	context           context.Context
 	wg                sync.WaitGroup
 	shutdownFunc      func()
-	upstreamHeaders   http.Header
-	downstreamHeaders http.Header
 	Hosts             HostPool
 	Policy            Policy
 	KeepAlive         int
@@ -119,8 +119,8 @@ func NewStaticUpstreams(c caddyfile.Dispenser) ([]Upstream, error) {
 			}
 			go func() {
 				upstream.wg.Add(1)
+				defer upstream.wg.Done()
 				upstream.HealthCheckWorker(upstream.context)
-				upstream.wg.Done()
 			}()
 		}
 		upstreams = append(upstreams, upstream)
@@ -393,7 +393,6 @@ func (u *staticUpstream) HealthCheckWorker(ctx context.Context) {
 		case <-ticker.C:
 			u.healthCheck()
 		case <-ctx.Done():
-			u.wg.Done()
 			return
 			// TODO: the library should provide a stop channel and global
 			// waitgroup to allow goroutines started by plugins a chance
@@ -449,13 +448,12 @@ func (u *staticUpstream) GetHostCount() int {
 	return len(u.Hosts)
 }
 
-// GetShutdownFunc returns a function calls the shutdown function. The shutdown
-// function sends a signal to this upstream's running goroutines to stop working.
-func (u *staticUpstream) GetShutdownFunc() func() error {
-	return func() error {
-		u.shutdownFunc()
-		return nil
-	}
+// Stop sends a signal to all running goroutines to exit and waits for them to
+// finish before returning.
+func (u *staticUpstream) Stop() error {
+	u.shutdownFunc()
+	u.wg.Wait()
+	return nil
 }
 
 // RegisterPolicy adds a custom policy to the proxy.

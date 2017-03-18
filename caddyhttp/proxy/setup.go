@@ -22,8 +22,10 @@ func setup(c *caddy.Controller) error {
 		return Proxy{Next: next, Upstreams: upstreams}
 	})
 
+	// Register shutdown and restart handlers.
 	for _, upstream := range upstreams {
-		c.OnRestart(upstream.GetShutdownFunc())
+		c.OnRestart(upstream.Stop)
+		c.OnShutdown(upstream.Stop)
 	}
 
 	return nil
