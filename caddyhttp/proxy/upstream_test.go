@@ -220,7 +220,7 @@ func TestStop(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 
 			// Set up proxy.
-			var counter int64 = 0
+			var counter int64
 			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				r.Body.Close()
 				atomic.AddInt64(&counter, 1)
