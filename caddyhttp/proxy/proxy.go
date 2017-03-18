@@ -42,6 +42,10 @@ type Upstream interface {
 
 	// Gets the number of upstream hosts.
 	GetHostCount() int
+
+	// Gets the upstream's shutdown function for shutting
+	// down connections cleanly.
+	GetShutdownFunc() func() error
 }
 
 // UpstreamHostDownFunc can be used to customize how Down behaves.

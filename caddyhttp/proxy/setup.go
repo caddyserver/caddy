@@ -21,5 +21,10 @@ func setup(c *caddy.Controller) error {
 	httpserver.GetConfig(c).AddMiddleware(func(next httpserver.Handler) httpserver.Handler {
 		return Proxy{Next: next, Upstreams: upstreams}
 	})
+
+	for _, upstream := range upstreams {
+		c.OnRestart(upstream.GetShutdownFunc())
+	}
+
 	return nil
 }

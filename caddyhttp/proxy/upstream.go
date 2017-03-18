@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -9,6 +10,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -22,6 +24,9 @@ var (
 
 type staticUpstream struct {
 	from              string
+	context           context.Context
+	wg                sync.WaitGroup
+	shutdownFunc      func()
 	upstreamHeaders   http.Header
 	downstreamHeaders http.Header
 	Hosts             HostPool
@@ -48,8 +53,12 @@ type staticUpstream struct {
 func NewStaticUpstreams(c caddyfile.Dispenser) ([]Upstream, error) {
 	var upstreams []Upstream
 	for c.Next() {
+		ctx, cancel := context.WithCancel(context.Background())
+
 		upstream := &staticUpstream{
 			from:              "",
+			context:           ctx,
+			shutdownFunc:      cancel,
 			upstreamHeaders:   make(http.Header),
 			downstreamHeaders: make(http.Header),
 			Hosts:             nil,
@@ -108,7 +117,11 @@ func NewStaticUpstreams(c caddyfile.Dispenser) ([]Upstream, error) {
 			upstream.HealthCheck.Client = http.Client{
 				Timeout: upstream.HealthCheck.Timeout,
 			}
-			go upstream.HealthCheckWorker(nil)
+			go func() {
+				upstream.wg.Add(1)
+				upstream.HealthCheckWorker(upstream.context)
+				upstream.wg.Done()
+			}()
 		}
 		upstreams = append(upstreams, upstream)
 	}
@@ -372,14 +385,16 @@ func (u *staticUpstream) healthCheck() {
 	}
 }
 
-func (u *staticUpstream) HealthCheckWorker(stop chan struct{}) {
+func (u *staticUpstream) HealthCheckWorker(ctx context.Context) {
 	ticker := time.NewTicker(u.HealthCheck.Interval)
 	u.healthCheck()
 	for {
 		select {
 		case <-ticker.C:
 			u.healthCheck()
-		case <-stop:
+		case <-ctx.Done():
+			u.wg.Done()
+			return
 			// TODO: the library should provide a stop channel and global
 			// waitgroup to allow goroutines started by plugins a chance
 			// to clean themselves up.
@@ -432,6 +447,15 @@ func (u *staticUpstream) GetTryInterval() time.Duration {
 
 func (u *staticUpstream) GetHostCount() int {
 	return len(u.Hosts)
+}
+
+// GetShutdownFunc returns a function calls the shutdown function. The shutdown
+// function sends a signal to this upstream's running goroutines to stop working.
+func (u *staticUpstream) GetShutdownFunc() func() error {
+	return func() error {
+		u.shutdownFunc()
+		return nil
+	}
 }
 
 // RegisterPolicy adds a custom policy to the proxy.
