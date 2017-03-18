@@ -113,8 +113,8 @@ func NewStaticUpstreams(c caddyfile.Dispenser) ([]Upstream, error) {
 			upstream.HealthCheck.Client = http.Client{
 				Timeout: upstream.HealthCheck.Timeout,
 			}
+			upstream.wg.Add(1)
 			go func() {
-				upstream.wg.Add(1)
 				defer upstream.wg.Done()
 				upstream.HealthCheckWorker(upstream.stop)
 			}()

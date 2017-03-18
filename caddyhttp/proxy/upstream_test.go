@@ -242,7 +242,7 @@ func TestStop(t *testing.T) {
 				}
 			}
 
-			counterValueAfterShutdown := counter
+			counterValueAfterShutdown := atomic.LoadInt64(&counter)
 
 			// Give some time to see if healthchecks are still hitting the server.
 			time.Sleep(time.Duration(test.intervalInMilliseconds*test.numHealthcheckIntervals) * time.Millisecond)
@@ -251,8 +251,9 @@ func TestStop(t *testing.T) {
 				t.Error("Expected healthchecks to hit test server. Got no healthchecks.")
 			}
 
-			if counter != counterValueAfterShutdown {
-				t.Errorf("Expected no more healthchecks after shutdown. Got: %d healthchecks after shutdown", counter-counterValueAfterShutdown)
+			counterValueAfterWaiting := atomic.LoadInt64(&counter)
+			if counterValueAfterWaiting != counterValueAfterShutdown {
+				t.Errorf("Expected no more healthchecks after shutdown. Got: %d healthchecks after shutdown", counterValueAfterWaiting-counterValueAfterShutdown)
 			}
 
 		})
