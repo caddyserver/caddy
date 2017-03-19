@@ -181,9 +181,7 @@ func TestBrowseTemplate(t *testing.T) {
 
 <h1>/photos/</h1>
 
-<a href="./A%20Folder/">A Folder</a><br>
-
-<a href="./B%20Folder/">B Folder</a><br>
+<a href="./test1/">test1</a><br>
 
 <a href="./test.html">test.html</a><br>
 
