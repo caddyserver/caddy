@@ -167,7 +167,7 @@ func TestBrowseTemplate(t *testing.T) {
 
 	code, _ := b.ServeHTTP(rec, req)
 	if code != http.StatusOK {
-		t.Fatalf("Wrong status, expected '%d', got '%d'", http.StatusOK, code)
+		t.Fatalf("Wrong status, expected %d, got %d", http.StatusOK, code)
 	}
 
 	respBody := rec.Body.String()
