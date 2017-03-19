@@ -167,7 +167,7 @@ func TestBrowseTemplate(t *testing.T) {
 
 	code, _ := b.ServeHTTP(rec, req)
 	if code != http.StatusOK {
-		t.Fatalf("Wrong status, expected %d, got %d", http.StatusOK, code)
+		t.Fatalf("Wrong status, expected '%d', got '%d'", http.StatusOK, code)
 	}
 
 	respBody := rec.Body.String()
@@ -181,6 +181,10 @@ func TestBrowseTemplate(t *testing.T) {
 
 <h1>/photos/</h1>
 
+<a href="./A%20Folder/">A Folder</a><br>
+
+<a href="./B%20Folder/">B Folder</a><br>
+
 <a href="./test.html">test.html</a><br>
 
 <a href="./test2.html">test2.html</a><br>
@@ -192,7 +196,7 @@ func TestBrowseTemplate(t *testing.T) {
 `
 
 	if respBody != expectedBody {
-		t.Fatalf("Expected body: %v got: %v", expectedBody, respBody)
+		t.Fatalf("Expected body: '%v' got: '%v'", expectedBody, respBody)
 	}
 
 }

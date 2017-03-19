@@ -137,7 +137,14 @@ func (l byName) Swap(i, j int) { l.Items[i], l.Items[j] = l.Items[j], l.Items[i]
 
 // Treat upper and lower case equally
 func (l byName) Less(i, j int) bool {
-	return strings.ToLower(l.Items[i].Name) < strings.ToLower(l.Items[j].Name)
+
+	// if both are dir or file sort normally
+	if l.Items[i].IsDir == l.Items[j].IsDir {
+		return strings.ToLower(l.Items[i].Name) < strings.ToLower(l.Items[j].Name)
+	} else {
+		// always sort dir ahead of file
+		return l.Items[i].IsDir
+	}
 }
 
 // By Size
