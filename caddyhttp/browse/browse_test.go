@@ -70,6 +70,13 @@ func TestSort(t *testing.T) {
 		t.Errorf("The listing isn't time sorted: %v", listing.Items)
 	}
 
+	// sort by alpha
+	listing.Sort = "alpha"
+	listing.applySort()
+	if !sort.IsSorted(byAlpha(listing)) {
+		t.Errorf("The listing isn't alpha sorted: %v", listing.Items)
+	}
+
 	// reverse by name
 	listing.Sort = "name"
 	listing.Order = "desc"
@@ -92,6 +99,14 @@ func TestSort(t *testing.T) {
 	listing.applySort()
 	if !isReversed(byTime(listing)) {
 		t.Errorf("The listing isn't reversed by time: %v", listing.Items)
+	}
+
+	// reverse by alpha
+	listing.Sort = "alpha"
+	listing.Order = "desc"
+	listing.applySort()
+	if !isReversed(byAlpha(listing)) {
+		t.Errorf("The listing isn't reversed by alpha: %v", listing.Items)
 	}
 }
 

@@ -21,9 +21,10 @@ import (
 )
 
 const (
-	sortByName = "name"
-	sortBySize = "size"
-	sortByTime = "time"
+	sortByName  = "name"
+	sortBySize  = "size"
+	sortByTime  = "time"
+	sortByAlpha = "alpha"
 )
 
 // Browse is an http.Handler that can show a file listing when
@@ -130,6 +131,7 @@ func (fi FileInfo) HumanModTime(format string) string {
 type byName Listing
 type bySize Listing
 type byTime Listing
+type byAlpha Listing
 
 // By Name
 func (l byName) Len() int      { return len(l.Items) }
@@ -167,6 +169,15 @@ func (l bySize) Less(i, j int) bool {
 func (l byTime) Len() int           { return len(l.Items) }
 func (l byTime) Swap(i, j int)      { l.Items[i], l.Items[j] = l.Items[j], l.Items[i] }
 func (l byTime) Less(i, j int) bool { return l.Items[i].ModTime.Before(l.Items[j].ModTime) }
+
+// By Alpha
+func (l byAlpha) Len() int      { return len(l.Items) }
+func (l byAlpha) Swap(i, j int) { l.Items[i], l.Items[j] = l.Items[j], l.Items[i] }
+
+// Treat upper and lower case equally
+func (l byAlpha) Less(i, j int) bool {
+	return strings.ToLower(l.Items[i].Name) < strings.ToLower(l.Items[j].Name)
+}
 
 // Add sorting method to "Listing"
 // it will apply what's in ".Sort" and ".Order"
