@@ -191,6 +191,8 @@ func (l Listing) applySort() {
 			sort.Sort(sort.Reverse(bySize(l)))
 		case sortByTime:
 			sort.Sort(sort.Reverse(byTime(l)))
+		case sortByAlpha:
+			sort.Sort(sort.Reverse(byAlpha(l)))
 		default:
 			// If not one of the above, do nothing
 			return
@@ -203,6 +205,8 @@ func (l Listing) applySort() {
 			sort.Sort(bySize(l))
 		case sortByTime:
 			sort.Sort(byTime(l))
+		case sortByAlpha:
+			sort.Sort(byAlpha(l))
 		default:
 			// If not one of the above, do nothing
 			return
