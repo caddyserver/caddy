@@ -100,8 +100,8 @@ func Run() {
 		mustLogFatalf("%v", err)
 	}
 
-	// Execute plugins that are registered to run as the process starts
-	err = caddy.StartupHooks(serverType)
+	// Execute startup hooks
+	err = caddy.ExecuteHook(caddy.StartupEvent, serverType)
 	if err != nil {
 		mustLogFatalf("%v", err)
 	}
@@ -131,6 +131,12 @@ func Run() {
 
 	// Twiddle your thumbs
 	instance.Wait()
+
+	// Execute shutdown hooks
+	err = caddy.ExecuteHook(caddy.ShutdownEvent, serverType)
+	if err != nil {
+		mustLogFatalf("%v", err)
+	}
 }
 
 // mustLogFatalf wraps log.Fatalf() in a way that ensures the

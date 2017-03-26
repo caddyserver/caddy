@@ -1,6 +1,7 @@
 package caddy
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"sort"
@@ -20,6 +21,11 @@ var (
 	// irrelevant, the key is empty string (""). But all plugins
 	// must have a name.
 	plugins = make(map[string]map[string]Plugin)
+
+	// hooks is a map of server type to map of hook name to Hook.
+	// These hooks may or may not be associated with a specific server
+	// type. All hooks must have a name.
+	hooks = make(map[string]map[string]Hook)
 
 	// parsingCallbacks maps server type to map of directive
 	// to list of callback functions. These aren't really
@@ -69,21 +75,40 @@ func DescribePlugins() string {
 	return str
 }
 
-// StartupHooks executes the startup hooks defined when the
-// plugins were registered and returns the first error
-// it encounters.
-func StartupHooks(serverType string) error {
-	for stype, stypePlugins := range plugins {
+const (
+	// StartupEvent identifies a startup event type
+	StartupEvent = 0
+	// ShutdownEvent identifies a shutdown event hook
+	ShutdownEvent = 1
+)
+
+// ExecuteHook executes a determined type of event hook
+func ExecuteHook(event int, serverType string) error {
+	for stype, stypeHooks := range hooks {
 		if stype != "" && stype != serverType {
 			continue
 		}
 
-		for name := range stypePlugins {
-			if stypePlugins[name].StartupHook == nil {
-				continue
+		for name := range stypeHooks {
+			var err error
+
+			switch event {
+			case StartupEvent:
+				if stypeHooks[name].Startup == nil {
+					continue
+				}
+
+				err = stypeHooks[name].Startup()
+			case ShutdownEvent:
+				if stypeHooks[name].Shutdown == nil {
+					continue
+				}
+
+				err = stypeHooks[name].Shutdown()
+			default:
+				return errors.New("event type not defined")
 			}
 
-			err := stypePlugins[name].StartupHook()
 			if err != nil {
 				return err
 			}
@@ -200,10 +225,6 @@ type Plugin struct {
 	// Action is the plugin's setup function, if associated
 	// with a directive in the Caddyfile.
 	Action SetupFunc
-
-	// StartupHook is the plugin's function that is executed
-	// immediately after the flag parsing.
-	StartupHook func() error
 }
 
 // RegisterPlugin plugs in plugin. All plugins should register
@@ -226,6 +247,39 @@ func RegisterPlugin(name string, plugin Plugin) {
 		panic("plugin named " + name + " already registered for server type " + plugin.ServerType)
 	}
 	plugins[plugin.ServerType][name] = plugin
+}
+
+// Hook is a type which holds information about a startup hook plugin.
+type Hook struct {
+	// ServerType is the type of server this plugin is for.
+	// Can be empty if not applicable, or if the plugin
+	// can associate with any server type.
+	ServerType string
+
+	// Startup is the plugin's function that is executed
+	// immediately after the flag parsing.
+	Startup func() error
+
+	// Shutdown is executed before shutting down Caddy
+	Shutdown func() error
+}
+
+// RegisterHook plugs in hook. All the hooks should register themselves
+// and they should have at least one non-nil function.
+func RegisterHook(name string, hook Hook) {
+	if name == "" {
+		panic("hook must have a name")
+	}
+	if hook.Startup == nil || hook.Shutdown == nil {
+		panic("hook named " + name + " doesn't have a function associated")
+	}
+	if _, ok := hooks[hook.ServerType]; !ok {
+		hooks[hook.ServerType] = make(map[string]Hook)
+	}
+	if _, dup := hooks[hook.ServerType][name]; dup {
+		panic("hook named " + name + " already registered for server type " + hook.ServerType)
+	}
+	hooks[hook.ServerType][name] = hook
 }
 
 // ParsingCallback is a function that is called after
