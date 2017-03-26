@@ -100,11 +100,8 @@ func Run() {
 		mustLogFatalf("%v", err)
 	}
 
-	// Execute startup hooks
-	err = caddy.ExecuteHook(caddy.StartupEvent, serverType)
-	if err != nil {
-		mustLogFatalf("%v", err)
-	}
+	// Executes Startup events
+	caddy.EmitEvent(caddy.StartupEvent)
 
 	// Get Caddyfile input
 	caddyfileinput, err := caddy.LoadCaddyfile(serverType)
@@ -131,12 +128,6 @@ func Run() {
 
 	// Twiddle your thumbs
 	instance.Wait()
-
-	// Execute shutdown hooks
-	err = caddy.ExecuteHook(caddy.ShutdownEvent, serverType)
-	if err != nil {
-		mustLogFatalf("%v", err)
-	}
 }
 
 // mustLogFatalf wraps log.Fatalf() in a way that ensures the

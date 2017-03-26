@@ -52,6 +52,9 @@ func trapSignalsCrossPlatform() {
 // This function is idempotent; subsequent invocations always return 0.
 func executeShutdownCallbacks(signame string) (exitCode int) {
 	shutdownCallbacksOnce.Do(func() {
+		// execute third-party shutdown hooks
+		EmitEvent(ShutdownEvent)
+
 		errs := allShutdownCallbacks()
 		if len(errs) > 0 {
 			for _, err := range errs {
