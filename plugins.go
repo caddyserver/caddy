@@ -22,7 +22,8 @@ var (
 	// must have a name.
 	plugins = make(map[string]map[string]Plugin)
 
-	// eventHooks is a map of hook name to Hook. All hooks must have a name.
+	// eventHooks is a map of hook name to Hook. All hooks plugins
+	// must have a name.
 	eventHooks = make(map[string]EventHook)
 
 	// parsingCallbacks maps server type to map of directive
@@ -204,18 +205,16 @@ func RegisterPlugin(name string, plugin Plugin) {
 	plugins[plugin.ServerType][name] = plugin
 }
 
-// EventType represents the event type to be used with event hooks
-type EventType string
+// EventName represents the name of an event used with event hooks.
+type EventName string
 
 const (
-	// StartupEvent represents a startup event
-	StartupEvent = EventType("startup")
-	// ShutdownEvent represents a shutdown event
-	ShutdownEvent = EventType("shutdown")
+	StartupEvent  EventName = "startup"
+	ShutdownEvent EventName = "shutdown"
 )
 
 // EventHook is a type which holds information about a startup hook plugin.
-type EventHook func(eventType EventType) error
+type EventHook func(eventType EventName) error
 
 // RegisterEventHook plugs in hook. All the hooks should register themselves
 // and they must have a name.
@@ -232,7 +231,7 @@ func RegisterEventHook(name string, hook EventHook) {
 // EmitEvent executes the different hooks passing the EventType as an
 // argument. This is a blocking function. Hook developers should
 // use 'go' keyword if they don't want to block Caddy.
-func EmitEvent(event EventType) {
+func EmitEvent(event EventName) {
 	for name, hook := range eventHooks {
 		err := hook(event)
 
