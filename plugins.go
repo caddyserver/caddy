@@ -52,6 +52,12 @@ func DescribePlugins() string {
 	if defaultCaddyfileLoader.name != "" {
 		str += "  " + defaultCaddyfileLoader.name + "\n"
 	}
+	
+	// List the event hook plugins
+	str += "\nEvent hook plugins:\n"
+	for hookPlugin := range eventHooks {
+		str += "  hook." + hookPlugin + "\n"
+	}
 
 	// Let's alphabetize the rest of these...
 	var others []string
@@ -64,10 +70,6 @@ func DescribePlugins() string {
 			s += name
 			others = append(others, s)
 		}
-	}
-
-	for hookPlugin := range eventHooks {
-		others = append(others, hookPlugin)
 	}
 
 	sort.Strings(others)
