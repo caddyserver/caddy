@@ -65,6 +65,11 @@ func DescribePlugins() string {
 			others = append(others, s)
 		}
 	}
+
+	for hookPlugin := range eventHooks {
+		others = append(others, hookPlugin)
+	}
+
 	sort.Strings(others)
 	str += "\nOther plugins:\n"
 	for _, name := range others {
