@@ -309,6 +309,12 @@ func (r *replacer) getSubstitution(key string) string {
 	case "{dir}":
 		dir, _ := path.Split(r.request.URL.Path)
 		return dir
+	case "{user}":
+		user, _ := r.request.Context().Value(RemoteUserCtxKey).(string)
+		if user == "" {
+			user = "-"
+		}
+		return user
 	case "{request}":
 		dump, err := httputil.DumpRequest(r.request, false)
 		if err != nil {
