@@ -52,11 +52,13 @@ func DescribePlugins() string {
 	if defaultCaddyfileLoader.name != "" {
 		str += "  " + defaultCaddyfileLoader.name + "\n"
 	}
-	
-	// List the event hook plugins
-	str += "\nEvent hook plugins:\n"
-	for hookPlugin := range eventHooks {
-		str += "  hook." + hookPlugin + "\n"
+
+	if len(eventHooks) > 0 {
+		// List the event hook plugins
+		str += "\nEvent hook plugins:\n"
+		for hookPlugin := range eventHooks {
+			str += "  hook." + hookPlugin + "\n"
+		}
 	}
 
 	// Let's alphabetize the rest of these...
