@@ -25,7 +25,11 @@ type User struct {
 
 // GetEmail gets u's email.
 func (u User) GetEmail() string {
-	return u.Email
+	if (u.Email == "no_email") {
+		return ""
+	} else {
+		return u.Email
+	}
 }
 
 // GetRegistration gets u's registration resource.

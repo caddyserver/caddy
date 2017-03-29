@@ -40,6 +40,18 @@ func TestUser(t *testing.T) {
 	}
 }
 
+func TestUserNoEmail(t *testing.T) {
+	u := User{
+		Email:        "no_email",
+		Registration: nil,
+		key:          nil,
+	}
+
+	if expected, actual := "", u.GetEmail(); actual != expected {
+		t.Errorf("Expected email '%s' but got '%s'", expected, actual)
+	}
+}
+
 func TestNewUser(t *testing.T) {
 	email := "me@foobar.com"
 	user, err := newUser(email)

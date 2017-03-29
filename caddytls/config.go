@@ -95,9 +95,11 @@ type Config struct {
 	DNSProvider string
 
 	// The email address to use when creating or
-	// using an ACME account (fun fact: if this
-	// is set to "off" then this config will not
-	// qualify for managed TLS)
+	// using an ACME account. If this is set to
+	// "off" then this config will not qualify
+	// for managed TLS. If it is set to "no_email"
+	// registration will be done with an empty
+	// email address.
 	ACMEEmail string
 
 	// The type of key to use when generating
