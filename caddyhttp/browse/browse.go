@@ -21,10 +21,10 @@ import (
 )
 
 const (
+	sortByName         = "name"
 	sortByNameDirFirst = "namedirfirst"
 	sortBySize         = "size"
 	sortByTime         = "time"
-	sortByName         = "name"
 )
 
 // Browse is an http.Handler that can show a file listing when
@@ -128,10 +128,19 @@ func (fi FileInfo) HumanModTime(format string) string {
 }
 
 // Implement sorting for Listing
+type byName Listing
 type byNameDirFirst Listing
 type bySize Listing
 type byTime Listing
-type byName Listing
+
+// By Name
+func (l byName) Len() int      { return len(l.Items) }
+func (l byName) Swap(i, j int) { l.Items[i], l.Items[j] = l.Items[j], l.Items[i] }
+
+// Treat upper and lower case equally
+func (l byName) Less(i, j int) bool {
+	return strings.ToLower(l.Items[i].Name) < strings.ToLower(l.Items[j].Name)
+}
 
 // By Name
 func (l byNameDirFirst) Len() int      { return len(l.Items) }
@@ -170,43 +179,34 @@ func (l byTime) Len() int           { return len(l.Items) }
 func (l byTime) Swap(i, j int)      { l.Items[i], l.Items[j] = l.Items[j], l.Items[i] }
 func (l byTime) Less(i, j int) bool { return l.Items[i].ModTime.Before(l.Items[j].ModTime) }
 
-// By Name
-func (l byName) Len() int      { return len(l.Items) }
-func (l byName) Swap(i, j int) { l.Items[i], l.Items[j] = l.Items[j], l.Items[i] }
-
-// Treat upper and lower case equally
-func (l byName) Less(i, j int) bool {
-	return strings.ToLower(l.Items[i].Name) < strings.ToLower(l.Items[j].Name)
-}
-
 // Add sorting method to "Listing"
 // it will apply what's in ".Sort" and ".Order"
 func (l Listing) applySort() {
 	// Check '.Order' to know how to sort
 	if l.Order == "desc" {
 		switch l.Sort {
+		case sortByName:
+			sort.Sort(sort.Reverse(byName(l)))
 		case sortByNameDirFirst:
 			sort.Sort(sort.Reverse(byNameDirFirst(l)))
 		case sortBySize:
 			sort.Sort(sort.Reverse(bySize(l)))
 		case sortByTime:
 			sort.Sort(sort.Reverse(byTime(l)))
-		case sortByName:
-			sort.Sort(sort.Reverse(byName(l)))
 		default:
 			// If not one of the above, do nothing
 			return
 		}
 	} else { // If we had more Orderings we could add them here
 		switch l.Sort {
+		case sortByName:
+			sort.Sort(byName(l))
 		case sortByNameDirFirst:
 			sort.Sort(byNameDirFirst(l))
 		case sortBySize:
 			sort.Sort(bySize(l))
 		case sortByTime:
 			sort.Sort(byTime(l))
-		case sortByName:
-			sort.Sort(byName(l))
 		default:
 			// If not one of the above, do nothing
 			return
@@ -364,7 +364,7 @@ func (b Browse) handleSortOrder(w http.ResponseWriter, r *http.Request, scope st
 		if sortCookie, sortErr := r.Cookie("sort"); sortErr == nil {
 			sort = sortCookie.Value
 		}
-	case sortByNameDirFirst, sortBySize, sortByTime, sortByName:
+	case sortByName, sortByNameDirFirst, sortBySize, sortByTime:
 		http.SetCookie(w, &http.Cookie{Name: "sort", Value: sort, Path: scope, Secure: r.TLS != nil})
 	}
 
