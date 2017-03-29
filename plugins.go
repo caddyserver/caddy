@@ -2,6 +2,7 @@ package caddy
 
 import (
 	"fmt"
+	"log"
 	"net"
 	"sort"
 
@@ -20,6 +21,10 @@ var (
 	// irrelevant, the key is empty string (""). But all plugins
 	// must have a name.
 	plugins = make(map[string]map[string]Plugin)
+
+	// eventHooks is a map of hook name to Hook. All hooks plugins
+	// must have a name.
+	eventHooks = make(map[string]EventHook)
 
 	// parsingCallbacks maps server type to map of directive
 	// to list of callback functions. These aren't really
@@ -48,6 +53,14 @@ func DescribePlugins() string {
 		str += "  " + defaultCaddyfileLoader.name + "\n"
 	}
 
+	if len(eventHooks) > 0 {
+		// List the event hook plugins
+		str += "\nEvent hook plugins:\n"
+		for hookPlugin := range eventHooks {
+			str += "  hook." + hookPlugin + "\n"
+		}
+	}
+
 	// Let's alphabetize the rest of these...
 	var others []string
 	for stype, stypePlugins := range plugins {
@@ -60,6 +73,7 @@ func DescribePlugins() string {
 			others = append(others, s)
 		}
 	}
+
 	sort.Strings(others)
 	str += "\nOther plugins:\n"
 	for _, name := range others {
@@ -67,30 +81,6 @@ func DescribePlugins() string {
 	}
 
 	return str
-}
-
-// StartupHooks executes the startup hooks defined when the
-// plugins were registered and returns the first error
-// it encounters.
-func StartupHooks(serverType string) error {
-	for stype, stypePlugins := range plugins {
-		if stype != "" && stype != serverType {
-			continue
-		}
-
-		for name := range stypePlugins {
-			if stypePlugins[name].StartupHook == nil {
-				continue
-			}
-
-			err := stypePlugins[name].StartupHook()
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
 }
 
 // ValidDirectives returns the list of all directives that are
@@ -200,10 +190,6 @@ type Plugin struct {
 	// Action is the plugin's setup function, if associated
 	// with a directive in the Caddyfile.
 	Action SetupFunc
-
-	// StartupHook is the plugin's function that is executed
-	// immediately after the flag parsing.
-	StartupHook func() error
 }
 
 // RegisterPlugin plugs in plugin. All plugins should register
@@ -226,6 +212,42 @@ func RegisterPlugin(name string, plugin Plugin) {
 		panic("plugin named " + name + " already registered for server type " + plugin.ServerType)
 	}
 	plugins[plugin.ServerType][name] = plugin
+}
+
+// EventName represents the name of an event used with event hooks.
+type EventName string
+
+const (
+	StartupEvent  EventName = "startup"
+	ShutdownEvent EventName = "shutdown"
+)
+
+// EventHook is a type which holds information about a startup hook plugin.
+type EventHook func(eventType EventName) error
+
+// RegisterEventHook plugs in hook. All the hooks should register themselves
+// and they must have a name.
+func RegisterEventHook(name string, hook EventHook) {
+	if name == "" {
+		panic("event hook must have a name")
+	}
+	if _, dup := eventHooks[name]; dup {
+		panic("hook named " + name + " already registered")
+	}
+	eventHooks[name] = hook
+}
+
+// EmitEvent executes the different hooks passing the EventType as an
+// argument. This is a blocking function. Hook developers should
+// use 'go' keyword if they don't want to block Caddy.
+func EmitEvent(event EventName) {
+	for name, hook := range eventHooks {
+		err := hook(event)
+
+		if err != nil {
+			log.Printf("error on '%s' hook: %v", name, err)
+		}
+	}
 }
 
 // ParsingCallback is a function that is called after
