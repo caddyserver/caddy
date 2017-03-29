@@ -154,12 +154,21 @@ func (l bySize) Swap(i, j int) { l.Items[i], l.Items[j] = l.Items[j], l.Items[i]
 const directoryOffset = -1 << 31 // = math.MinInt32
 func (l bySize) Less(i, j int) bool {
 	iSize, jSize := l.Items[i].Size, l.Items[j].Size
+
+	// Directory sizes depend on the filesystem implementation,
+	// which is opaque to a visitor, and should indeed does not change if the operator choses to change the fs.
+	// For a consistent user experience directories are pulled to the front…
 	if l.Items[i].IsDir {
-		iSize = directoryOffset + iSize
+		iSize = directoryOffset
 	}
 	if l.Items[j].IsDir {
-		jSize = directoryOffset + jSize
+		jSize = directoryOffset
 	}
+	// … and sorted by name.
+	if l.Items[i].IsDir && l.Items[j].IsDir {
+		return strings.ToLower(l.Items[i].Name) < strings.ToLower(l.Items[j].Name)
+	}
+
 	return iSize < jSize
 }
 
