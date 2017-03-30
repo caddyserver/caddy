@@ -181,8 +181,6 @@ func TestBrowseTemplate(t *testing.T) {
 
 <h1>/photos/</h1>
 
-<a href="./test1/">test1</a><br>
-
 <a href="./test.html">test.html</a><br>
 
 <a href="./test2.html">test2.html</a><br>
@@ -194,7 +192,7 @@ func TestBrowseTemplate(t *testing.T) {
 `
 
 	if respBody != expectedBody {
-		t.Fatalf("Expected body: '%v' got: '%v'", expectedBody, respBody)
+		t.Fatalf("Expected body: %v got: %v", expectedBody, respBody)
 	}
 
 }
