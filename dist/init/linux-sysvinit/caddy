@@ -28,7 +28,7 @@ STOP_SCHEDULE="${STOP_SCHEDULE:-QUIT/5/TERM/5/KILL/5}"
 test -x $DAEMON || exit 0
 
 # Set the CADDYPATH; Let's Encrypt certificates will be written to this directory.
-export CADDYPATH=/etc/caddy/ssl
+export CADDYPATH=/etc/ssl/caddy
 
 # Set the ulimits
 ulimit -n 8192
