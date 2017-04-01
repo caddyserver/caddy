@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/mholt/caddy/caddyfile"
+	"reflect"
 )
 
 func TestNewHost(t *testing.T) {
@@ -222,6 +223,41 @@ func TestParseBlock(t *testing.T) {
 
 			if _, ok := headers["X-Forwarded-Proto"]; !ok {
 				t.Errorf("Test %d: Could not find the X-Forwarded-Proto header", i+1)
+			}
+		}
+	}
+
+	// tests for insecure skip verify
+	//re, _ := http.NewRequest("GET", "/", nil)
+	isv_re := []struct {
+		config string
+		flag   bool
+	}{
+		// Test #1: without flag
+		{"proxy / localhost:8080", false},
+
+		// Test #2: with flag
+		{"proxy / localhost:8080 {\n insecure_skip_verify \n}", true},
+	}
+
+	for i, test := range isv_re {
+		upstreams, err := NewStaticUpstreams(caddyfile.NewDispenser("Testfile", strings.NewReader(test.config)))
+		if err != nil {
+			t.Error("Expected no error. Got:", err.Error())
+		}
+		for _, upstream := range upstreams {
+			staticUpstream, ok := upstream.(*staticUpstream)
+			if !ok {
+				t.Error("Type mismatch")
+			}
+			transport, ok := staticUpstream.HealthCheck.Client.Transport.(*http.Transport)
+			if !ok {
+				t.Error(reflect.TypeOf(transport.TLSClientConfig))
+				t.Error("Type mismatch")
+				continue
+			}
+			if test.flag != transport.TLSClientConfig.InsecureSkipVerify {
+				t.Error("Test case #" + string(i) + "failed")
 			}
 		}
 	}
