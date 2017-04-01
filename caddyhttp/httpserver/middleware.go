@@ -2,6 +2,7 @@ package httpserver
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path"
@@ -106,13 +107,17 @@ func IndexFile(root http.FileSystem, fpath string, indexFiles []string) (string,
 	if fpath[len(fpath)-1] != '/' || root == nil {
 		return "", false
 	}
+	log.Printf("%+v", indexFiles)
 	for _, indexFile := range indexFiles {
 		// func (http.FileSystem).Open wants all paths separated by "/",
 		// regardless of operating system convention, so use
 		// path.Join instead of filepath.Join
+		log.Println("nxt Idx")
 		fp := path.Join(fpath, indexFile)
+		log.Println(fp)
 		f, err := root.Open(fp)
 		if err == nil {
+			log.Println("No Error " + fp)
 			f.Close()
 			return fp, true
 		}
