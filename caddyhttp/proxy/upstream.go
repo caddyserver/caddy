@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"crypto/tls"
+
 	"github.com/mholt/caddy/caddyfile"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
@@ -107,6 +109,9 @@ func NewStaticUpstreams(c caddyfile.Dispenser) ([]Upstream, error) {
 		if upstream.HealthCheck.Path != "" {
 			upstream.HealthCheck.Client = http.Client{
 				Timeout: upstream.HealthCheck.Timeout,
+				Transport: &http.Transport{
+					TLSClientConfig: &tls.Config{InsecureSkipVerify: upstream.insecureSkipVerify},
+				},
 			}
 			go upstream.HealthCheckWorker(nil)
 		}
