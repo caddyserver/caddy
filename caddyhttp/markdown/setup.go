@@ -78,7 +78,7 @@ func markdownParse(c *caddy.Controller) ([]*Config, error) {
 		// Make a list of index files to match extensions
 		i := 0
 		md.IndexFiles = make([]string, len(md.Extensions))
-		for ext, _ := range md.Extensions {
+		for ext := range md.Extensions {
 			indexName := "index" + ext
 			md.IndexFiles[i] = indexName
 			i++
