@@ -13,6 +13,10 @@ a capable but easier alternative to other popular web servers.
 [User Guide](https://caddyserver.com/docs) ·
 [Community](https://forum.caddyserver.com)
 
+**Attend the [Caddy launch event](https://www.facebook.com/events/1413078512092363/) on April 20! It's free, and we will try to get a live stream going.**
+
+<a href="https://www.facebook.com/events/1413078512092363/"><img src="http://i.imgur.com/CjGICWU.png" alt="Caddy launch event" width="500"></a>
+
 Try browsing [the code on Sourcegraph](https://sourcegraph.com/github.com/mholt/caddy)!
 
 ## Menu
