@@ -25,8 +25,8 @@ type staticUpstream struct {
 	from              string
 	upstreamHeaders   http.Header
 	downstreamHeaders http.Header
-	stop              chan struct{}
-	wg                sync.WaitGroup
+	stop              chan struct{}  // Signals running goroutines to stop.
+	wg                sync.WaitGroup // Used to wait for running goroutines to stop.
 	Hosts             HostPool
 	Policy            Policy
 	KeepAlive         int
@@ -389,10 +389,8 @@ func (u *staticUpstream) HealthCheckWorker(stop chan struct{}) {
 		case <-ticker.C:
 			u.healthCheck()
 		case <-stop:
+			ticker.Stop()
 			return
-			// TODO: the library should provide a stop channel and global
-			// waitgroup to allow goroutines started by plugins a chance
-			// to clean themselves up.
 		}
 	}
 }
@@ -444,8 +442,8 @@ func (u *staticUpstream) GetHostCount() int {
 	return len(u.Hosts)
 }
 
-// Stop sends a signal to all running goroutines to exit and waits for them to
-// finish before returning.
+// Stop sends a signal to all goroutines started by this staticUpstream to exit
+// and waits for them to finish before returning.
 func (u *staticUpstream) Stop() error {
 	close(u.stop)
 	u.wg.Wait()
