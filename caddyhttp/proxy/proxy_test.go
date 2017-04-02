@@ -1216,6 +1216,7 @@ func (u *fakeUpstream) AllowedPath(requestPath string) bool { return true }
 func (u *fakeUpstream) GetTryDuration() time.Duration       { return 1 * time.Second }
 func (u *fakeUpstream) GetTryInterval() time.Duration       { return 250 * time.Millisecond }
 func (u *fakeUpstream) GetHostCount() int                   { return 1 }
+func (u *fakeUpstream) Stop() error                         { return nil }
 
 // newWebSocketTestProxy returns a test proxy that will
 // redirect to the specified backendAddr. The function
@@ -1268,6 +1269,7 @@ func (u *fakeWsUpstream) AllowedPath(requestPath string) bool { return true }
 func (u *fakeWsUpstream) GetTryDuration() time.Duration       { return 1 * time.Second }
 func (u *fakeWsUpstream) GetTryInterval() time.Duration       { return 250 * time.Millisecond }
 func (u *fakeWsUpstream) GetHostCount() int                   { return 1 }
+func (u *fakeWsUpstream) Stop() error                         { return nil }
 
 // recorderHijacker is a ResponseRecorder that can
 // be hijacked.
