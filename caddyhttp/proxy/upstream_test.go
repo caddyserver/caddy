@@ -6,8 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"reflect"
-
 	"github.com/mholt/caddy/caddyfile"
 )
 
@@ -248,16 +246,16 @@ func TestParseBlock(t *testing.T) {
 		for _, upstream := range upstreams {
 			staticUpstream, ok := upstream.(*staticUpstream)
 			if !ok {
-				t.Error("Type mismatch")
+				t.Errorf("type mismatch: %#v", upstream)
+				continue
 			}
 			transport, ok := staticUpstream.HealthCheck.Client.Transport.(*http.Transport)
 			if !ok {
-				t.Error(reflect.TypeOf(transport.TLSClientConfig))
-				t.Error("Type mismatch")
+				t.Errorf("type mismatch: %#v", staticUpstream.HealthCheck.Client.Transport)
 				continue
 			}
 			if test.flag != transport.TLSClientConfig.InsecureSkipVerify {
-				t.Error("Test case #" + string(i) + "failed")
+				t.Errorf("test %d: expected transport.TLSClientCnfig.InsecureSkipVerify=%v, got %v", i, test.flag, transport.TLSClientConfig.InsecureSkipVerify)
 			}
 		}
 	}
