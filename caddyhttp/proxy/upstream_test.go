@@ -279,7 +279,7 @@ func TestParseBlock(t *testing.T) {
 	for i, test := range tests {
 		upstreams, err := NewStaticUpstreams(caddyfile.NewDispenser("Testfile", strings.NewReader(test.config)))
 		if err != nil {
-			t.Error("Expected no error. Got:", err.Error())
+			t.Errorf("Expected no error. Got: %s", err.Error())
 		}
 		for _, upstream := range upstreams {
 			headers := upstream.Select(r).UpstreamHeaders
@@ -294,6 +294,42 @@ func TestParseBlock(t *testing.T) {
 
 			if _, ok := headers["X-Forwarded-Proto"]; !ok {
 				t.Errorf("Test %d: Could not find the X-Forwarded-Proto header", i+1)
+			}
+		}
+	}
+}
+
+func TestHealthSetUp(t *testing.T) {
+	// tests for insecure skip verify
+	isv_tests := []struct {
+		config string
+		flag   bool
+	}{
+		// Test #1: without flag
+		{"proxy / localhost:8080 {\n health_check / \n}", false},
+
+		// Test #2: with flag
+		{"proxy / localhost:8080 {\n health_check / \n insecure_skip_verify \n}", true},
+	}
+
+	for i, test := range isv_tests {
+		upstreams, err := NewStaticUpstreams(caddyfile.NewDispenser("Testfile", strings.NewReader(test.config)))
+		if err != nil {
+			t.Errorf("Expected no error. Got: %s", err.Error())
+		}
+		for _, upstream := range upstreams {
+			staticUpstream, ok := upstream.(*staticUpstream)
+			if !ok {
+				t.Errorf("type mismatch: %#v", upstream)
+				continue
+			}
+			transport, ok := staticUpstream.HealthCheck.Client.Transport.(*http.Transport)
+			if !ok {
+				t.Errorf("type mismatch: %#v", staticUpstream.HealthCheck.Client.Transport)
+				continue
+			}
+			if test.flag != transport.TLSClientConfig.InsecureSkipVerify {
+				t.Errorf("test %d: expected transport.TLSClientCnfig.InsecureSkipVerify=%v, got %v", i, test.flag, transport.TLSClientConfig.InsecureSkipVerify)
 			}
 		}
 	}
