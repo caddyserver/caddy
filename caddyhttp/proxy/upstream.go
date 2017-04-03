@@ -9,6 +9,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -26,6 +27,8 @@ type staticUpstream struct {
 	from              string
 	upstreamHeaders   http.Header
 	downstreamHeaders http.Header
+	stop              chan struct{}  // Signals running goroutines to stop.
+	wg                sync.WaitGroup // Used to wait for running goroutines to stop.
 	Hosts             HostPool
 	Policy            Policy
 	KeepAlive         int
@@ -50,8 +53,10 @@ type staticUpstream struct {
 func NewStaticUpstreams(c caddyfile.Dispenser) ([]Upstream, error) {
 	var upstreams []Upstream
 	for c.Next() {
+
 		upstream := &staticUpstream{
 			from:              "",
+			stop:              make(chan struct{}),
 			upstreamHeaders:   make(http.Header),
 			downstreamHeaders: make(http.Header),
 			Hosts:             nil,
@@ -113,7 +118,11 @@ func NewStaticUpstreams(c caddyfile.Dispenser) ([]Upstream, error) {
 					TLSClientConfig: &tls.Config{InsecureSkipVerify: upstream.insecureSkipVerify},
 				},
 			}
-			go upstream.HealthCheckWorker(nil)
+			upstream.wg.Add(1)
+			go func() {
+				defer upstream.wg.Done()
+				upstream.HealthCheckWorker(upstream.stop)
+			}()
 		}
 		upstreams = append(upstreams, upstream)
 	}
@@ -385,9 +394,8 @@ func (u *staticUpstream) HealthCheckWorker(stop chan struct{}) {
 		case <-ticker.C:
 			u.healthCheck()
 		case <-stop:
-			// TODO: the library should provide a stop channel and global
-			// waitgroup to allow goroutines started by plugins a chance
-			// to clean themselves up.
+			ticker.Stop()
+			return
 		}
 	}
 }
@@ -437,6 +445,14 @@ func (u *staticUpstream) GetTryInterval() time.Duration {
 
 func (u *staticUpstream) GetHostCount() int {
 	return len(u.Hosts)
+}
+
+// Stop sends a signal to all goroutines started by this staticUpstream to exit
+// and waits for them to finish before returning.
+func (u *staticUpstream) Stop() error {
+	close(u.stop)
+	u.wg.Wait()
+	return nil
 }
 
 // RegisterPolicy adds a custom policy to the proxy.

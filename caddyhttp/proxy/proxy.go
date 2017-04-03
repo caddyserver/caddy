@@ -42,6 +42,9 @@ type Upstream interface {
 
 	// Gets the number of upstream hosts.
 	GetHostCount() int
+
+	// Stops the upstream from proxying requests to shutdown goroutines cleanly.
+	Stop() error
 }
 
 // UpstreamHostDownFunc can be used to customize how Down behaves.
