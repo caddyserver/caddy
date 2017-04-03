@@ -297,7 +297,9 @@ func TestParseBlock(t *testing.T) {
 			}
 		}
 	}
+}
 
+func TestHealthSetUp(t *testing.T) {
 	// tests for insecure skip verify
 	isv_tests := []struct {
 		config string
