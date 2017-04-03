@@ -279,7 +279,7 @@ func TestParseBlock(t *testing.T) {
 	for i, test := range tests {
 		upstreams, err := NewStaticUpstreams(caddyfile.NewDispenser("Testfile", strings.NewReader(test.config)))
 		if err != nil {
-			t.Error("Expected no error. Got:", err.Error())
+			t.Errorf("Expected no error. Got: %s", err.Error())
 		}
 		for _, upstream := range upstreams {
 			headers := upstream.Select(r).UpstreamHeaders
@@ -313,7 +313,7 @@ func TestParseBlock(t *testing.T) {
 	for i, test := range isv_tests {
 		upstreams, err := NewStaticUpstreams(caddyfile.NewDispenser("Testfile", strings.NewReader(test.config)))
 		if err != nil {
-			t.Error("Expected no error. Got:", err.Error())
+			t.Errorf("Expected no error. Got: %s", err.Error())
 		}
 		for _, upstream := range upstreams {
 			staticUpstream, ok := upstream.(*staticUpstream)
