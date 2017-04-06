@@ -5,18 +5,33 @@ After=network-online.target
 Wants=network-online.target systemd-networkd-wait-online.service
 
 [Service]
+; Only allow 1 restart with 10 seconds so that caddy doesn't get locked out by PAM
 Restart=on-failure
-StartLimitInterval=86400
-StartLimitBurst=5
+StartLimitInterval=10
+StartLimitBurst=1
 
 ; User and group the process will run as.
 User=www-data
 Group=www-data
 
+; Allow ExecStartPre to run as root, but restrict ExecStart
+PermissionsStartOnly=true
+
+; Make sure that /etc/ssl/caddy exists with the correct permissions
+ExecStartPre=/bin/mkdir -p /etc/ssl/caddy
+ExecStartPre=/bin/chown -R www-data:www-data /etc/ssl/caddy
+ExecStartPre=/bin/chmod 750 /etc/ssl/caddy
+
+; Change into a www-data writeable folder as /run/caddy (until #1565 is addressed)
+RuntimeDirectory=caddy
+RuntimeDirectoryMode=755
+
 ; Letsencrypt-issued certificates will be written to this directory.
 Environment=CADDYPATH=/etc/ssl/caddy
 
 ; Always set "-root" to something safe in case it gets forgotten in the Caddyfile.
+ExecStartPre=chdir /etc/ssl/caddy
+WorkingDirectory=/etc/ssl/caddy
 ExecStart=/usr/local/bin/caddy -log stdout -agree=true -conf=/etc/caddy/Caddyfile -root=/var/tmp
 ExecReload=/bin/kill -USR1 $MAINPID
 
