@@ -1,6 +1,9 @@
-package staticfiles
+package index
 
-import "github.com/mholt/caddy"
+import (
+	"github.com/mholt/caddy"
+	"github.com/mholt/caddy/caddyhttp/staticfiles"
+)
 
 func init() {
 	caddy.RegisterPlugin("index", caddy.Plugin{
@@ -23,7 +26,7 @@ func setupIndex(c *caddy.Controller) error {
 			index = append(index, in)
 		}
 
-		IndexPages = index
+		staticfiles.IndexPages = index
 	}
 
 	return nil

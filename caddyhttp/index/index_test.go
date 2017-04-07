@@ -1,9 +1,10 @@
-package staticfiles
+package index
 
 import (
 	"testing"
 
 	"github.com/mholt/caddy"
+	"github.com/mholt/caddy/caddyhttp/staticfiles"
 )
 
 func TestIndexIncompleteParams(t *testing.T) {
@@ -25,12 +26,12 @@ func TestIndex(t *testing.T) {
 
 	expectedIndex := []string{"a.html", "b.html", "c.html"}
 
-	if len(IndexPages) != 3 {
-		t.Errorf("Expected 3 values, got %v", len(IndexPages))
+	if len(staticfiles.IndexPages) != 3 {
+		t.Errorf("Expected 3 values, got %v", len(staticfiles.IndexPages))
 	}
 
 	// Ensure ordering is correct
-	for i, actual := range IndexPages {
+	for i, actual := range staticfiles.IndexPages {
 		if actual != expectedIndex[i] {
 			t.Errorf("Expected value in position %d to be %v, got %v", i, expectedIndex[i], actual)
 		}

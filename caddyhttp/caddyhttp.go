@@ -14,6 +14,7 @@ import (
 	_ "github.com/mholt/caddy/caddyhttp/fastcgi"
 	_ "github.com/mholt/caddy/caddyhttp/gzip"
 	_ "github.com/mholt/caddy/caddyhttp/header"
+	_ "github.com/mholt/caddy/caddyhttp/index"
 	_ "github.com/mholt/caddy/caddyhttp/internalsrv"
 	_ "github.com/mholt/caddy/caddyhttp/log"
 	_ "github.com/mholt/caddy/caddyhttp/markdown"
