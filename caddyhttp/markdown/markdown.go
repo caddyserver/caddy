@@ -107,7 +107,6 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 
 		// Set path to found index file
 		fpath = idx
-
 	}
 
 	// If not supported extension, pass on it
