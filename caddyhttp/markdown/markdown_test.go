@@ -33,9 +33,10 @@ func TestMarkdown(t *testing.T) {
 				Extensions: map[string]struct{}{
 					".md": {},
 				},
-				Styles:   []string{},
-				Scripts:  []string{},
-				Template: setDefaultTemplate(f("markdown_tpl.html")),
+				IndexFiles: []string{"index.md"},
+				Styles:     []string{},
+				Scripts:    []string{},
+				Template:   setDefaultTemplate(f("markdown_tpl.html")),
 			},
 			{
 				Renderer:  blackfriday.HtmlRenderer(0, "", ""),
@@ -43,9 +44,10 @@ func TestMarkdown(t *testing.T) {
 				Extensions: map[string]struct{}{
 					".md": {},
 				},
-				Styles:   []string{},
-				Scripts:  []string{},
-				Template: setDefaultTemplate(f("docflags/template.txt")),
+				IndexFiles: []string{"index.md"},
+				Styles:     []string{},
+				Scripts:    []string{},
+				Template:   setDefaultTemplate(f("docflags/template.txt")),
 			},
 			{
 				Renderer:  blackfriday.HtmlRenderer(0, "", ""),
@@ -53,9 +55,10 @@ func TestMarkdown(t *testing.T) {
 				Extensions: map[string]struct{}{
 					".md": {},
 				},
-				Styles:   []string{"/resources/css/log.css", "/resources/css/default.css"},
-				Scripts:  []string{"/resources/js/log.js", "/resources/js/default.js"},
-				Template: GetDefaultTemplate(),
+				IndexFiles: []string{"index.md"},
+				Styles:     []string{"/resources/css/log.css", "/resources/css/default.css"},
+				Scripts:    []string{"/resources/js/log.js", "/resources/js/default.js"},
+				Template:   GetDefaultTemplate(),
 			},
 			{
 				Renderer:  blackfriday.HtmlRenderer(0, "", ""),
@@ -63,12 +66,13 @@ func TestMarkdown(t *testing.T) {
 				Extensions: map[string]struct{}{
 					".md": {},
 				},
-				Styles:   []string{},
-				Scripts:  []string{},
-				Template: setDefaultTemplate(f("markdown_tpl.html")),
+				IndexFiles: []string{"index.md"},
+				Styles:     []string{},
+				Scripts:    []string{},
+				Template:   setDefaultTemplate(f("markdown_tpl.html")),
 			},
 		},
-		IndexFiles: []string{"index.html"},
+
 		Next: httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
 			t.Fatalf("Next shouldn't be called")
 			return 0, nil
