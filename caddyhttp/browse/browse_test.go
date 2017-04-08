@@ -70,6 +70,13 @@ func TestSort(t *testing.T) {
 		t.Errorf("The listing isn't time sorted: %v", listing.Items)
 	}
 
+	// sort by name dir first
+	listing.Sort = "namedirfirst"
+	listing.applySort()
+	if !sort.IsSorted(byNameDirFirst(listing)) {
+		t.Errorf("The listing isn't namedirfirst sorted: %v", listing.Items)
+	}
+
 	// reverse by name
 	listing.Sort = "name"
 	listing.Order = "desc"
@@ -92,6 +99,14 @@ func TestSort(t *testing.T) {
 	listing.applySort()
 	if !isReversed(byTime(listing)) {
 		t.Errorf("The listing isn't reversed by time: %v", listing.Items)
+	}
+
+	// reverse by name dir first
+	listing.Sort = "namedirfirst"
+	listing.Order = "desc"
+	listing.applySort()
+	if !isReversed(byNameDirFirst(listing)) {
+		t.Errorf("The listing isn't reversed by namedirfirst: %v", listing.Items)
 	}
 }
 
@@ -257,6 +272,9 @@ func TestBrowseJson(t *testing.T) {
 			Mode:    f.Mode(),
 		})
 	}
+
+	// Test that sort=name returns correct listing.
+
 	listing := Listing{Items: fileinfos} // this listing will be used for validation inside the tests
 
 	tests := []struct {
@@ -269,33 +287,33 @@ func TestBrowseJson(t *testing.T) {
 	}{
 		//test case 1: testing for default sort and  order and without the limit parameter, default sort is by name and the default order is ascending
 		//without the limit query entire listing will be produced
-		{"/", "", "", -1, false, listing.Items},
+		{"/?sort=name", "", "", -1, false, listing.Items},
 		//test case 2: limit is set to 1, orderBy and sortBy is default
-		{"/?limit=1", "", "", 1, false, listing.Items[:1]},
+		{"/?limit=1&sort=name", "", "", 1, false, listing.Items[:1]},
 		//test case 3 : if the listing request is bigger than total size of listing then it should return everything
-		{"/?limit=100000000", "", "", 100000000, false, listing.Items},
+		{"/?limit=100000000&sort=name", "", "", 100000000, false, listing.Items},
 		//test case 4 : testing for negative limit
-		{"/?limit=-1", "", "", -1, false, listing.Items},
+		{"/?limit=-1&sort=name", "", "", -1, false, listing.Items},
 		//test case 5 : testing with limit set to -1 and order set to descending
-		{"/?limit=-1&order=desc", "", "desc", -1, false, listing.Items},
+		{"/?limit=-1&order=desc&sort=name", "", "desc", -1, false, listing.Items},
 		//test case 6 : testing with limit set to 2 and order set to descending
-		{"/?limit=2&order=desc", "", "desc", 2, false, listing.Items},
+		{"/?limit=2&order=desc&sort=name", "", "desc", 2, false, listing.Items},
 		//test case 7 : testing with limit set to 3 and order set to descending
-		{"/?limit=3&order=desc", "", "desc", 3, false, listing.Items},
+		{"/?limit=3&order=desc&sort=name", "", "desc", 3, false, listing.Items},
 		//test case 8 : testing with limit set to 3 and order set to ascending
-		{"/?limit=3&order=asc", "", "asc", 3, false, listing.Items},
+		{"/?limit=3&order=asc&sort=name", "", "asc", 3, false, listing.Items},
 		//test case 9 : testing with limit set to 1111111 and order set to ascending
-		{"/?limit=1111111&order=asc", "", "asc", 1111111, false, listing.Items},
+		{"/?limit=1111111&order=asc&sort=name", "", "asc", 1111111, false, listing.Items},
 		//test case 10 : testing with limit set to default and order set to ascending and sorting by size
-		{"/?order=asc&sort=size", "size", "asc", -1, false, listing.Items},
+		{"/?order=asc&sort=size&sort=name", "size", "asc", -1, false, listing.Items},
 		//test case 11 : testing with limit set to default and order set to ascending and sorting by last modified
-		{"/?order=asc&sort=time", "time", "asc", -1, false, listing.Items},
+		{"/?order=asc&sort=time&sort=name", "time", "asc", -1, false, listing.Items},
 		//test case 12 : testing with limit set to 1 and order set to ascending and sorting by last modified
-		{"/?order=asc&sort=time&limit=1", "time", "asc", 1, false, listing.Items},
+		{"/?order=asc&sort=time&limit=1&sort=name", "time", "asc", 1, false, listing.Items},
 		//test case 13 : testing with limit set to -100 and order set to ascending and sorting by last modified
-		{"/?order=asc&sort=time&limit=-100", "time", "asc", -100, false, listing.Items},
+		{"/?order=asc&sort=time&limit=-100&sort=name", "time", "asc", -100, false, listing.Items},
 		//test case 14 : testing with limit set to -100 and order set to ascending and sorting by size
-		{"/?order=asc&sort=size&limit=-100", "size", "asc", -100, false, listing.Items},
+		{"/?order=asc&sort=size&limit=-100&sort=name", "size", "asc", -100, false, listing.Items},
 	}
 
 	for i, test := range tests {

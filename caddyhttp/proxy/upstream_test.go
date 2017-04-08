@@ -1,8 +1,11 @@
 package proxy
 
 import (
+	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -189,6 +192,75 @@ func TestParseBlockHealthCheck(t *testing.T) {
 	}
 }
 
+func TestStop(t *testing.T) {
+	config := "proxy / %s {\n health_check /healthcheck \nhealth_check_interval %dms \n}"
+	tests := []struct {
+		name                    string
+		intervalInMilliseconds  int
+		numHealthcheckIntervals int
+	}{
+		{
+			"No Healthchecks After Stop - 5ms, 1 intervals",
+			5,
+			1,
+		},
+		{
+			"No Healthchecks After Stop - 5ms, 2 intervals",
+			5,
+			2,
+		},
+		{
+			"No Healthchecks After Stop - 5ms, 3 intervals",
+			5,
+			3,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+
+			// Set up proxy.
+			var counter int64
+			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				r.Body.Close()
+				atomic.AddInt64(&counter, 1)
+			}))
+
+			defer backend.Close()
+
+			upstreams, err := NewStaticUpstreams(caddyfile.NewDispenser("Testfile", strings.NewReader(fmt.Sprintf(config, backend.URL, test.intervalInMilliseconds))))
+			if err != nil {
+				t.Error("Expected no error. Got:", err.Error())
+			}
+
+			// Give some time for healthchecks to hit the server.
+			time.Sleep(time.Duration(test.intervalInMilliseconds*test.numHealthcheckIntervals) * time.Millisecond)
+
+			for _, upstream := range upstreams {
+				if err := upstream.Stop(); err != nil {
+					t.Error("Expected no error stopping upstream. Got: ", err.Error())
+				}
+			}
+
+			counterValueAfterShutdown := atomic.LoadInt64(&counter)
+
+			// Give some time to see if healthchecks are still hitting the server.
+			time.Sleep(time.Duration(test.intervalInMilliseconds*test.numHealthcheckIntervals) * time.Millisecond)
+
+			if counterValueAfterShutdown == 0 {
+				t.Error("Expected healthchecks to hit test server. Got no healthchecks.")
+			}
+
+			counterValueAfterWaiting := atomic.LoadInt64(&counter)
+			if counterValueAfterWaiting != counterValueAfterShutdown {
+				t.Errorf("Expected no more healthchecks after shutdown. Got: %d healthchecks after shutdown", counterValueAfterWaiting-counterValueAfterShutdown)
+			}
+
+		})
+
+	}
+}
+
 func TestParseBlock(t *testing.T) {
 	r, _ := http.NewRequest("GET", "/", nil)
 	tests := []struct {
@@ -207,7 +279,7 @@ func TestParseBlock(t *testing.T) {
 	for i, test := range tests {
 		upstreams, err := NewStaticUpstreams(caddyfile.NewDispenser("Testfile", strings.NewReader(test.config)))
 		if err != nil {
-			t.Error("Expected no error. Got:", err.Error())
+			t.Errorf("Expected no error. Got: %s", err.Error())
 		}
 		for _, upstream := range upstreams {
 			headers := upstream.Select(r).UpstreamHeaders
@@ -222,6 +294,42 @@ func TestParseBlock(t *testing.T) {
 
 			if _, ok := headers["X-Forwarded-Proto"]; !ok {
 				t.Errorf("Test %d: Could not find the X-Forwarded-Proto header", i+1)
+			}
+		}
+	}
+}
+
+func TestHealthSetUp(t *testing.T) {
+	// tests for insecure skip verify
+	isv_tests := []struct {
+		config string
+		flag   bool
+	}{
+		// Test #1: without flag
+		{"proxy / localhost:8080 {\n health_check / \n}", false},
+
+		// Test #2: with flag
+		{"proxy / localhost:8080 {\n health_check / \n insecure_skip_verify \n}", true},
+	}
+
+	for i, test := range isv_tests {
+		upstreams, err := NewStaticUpstreams(caddyfile.NewDispenser("Testfile", strings.NewReader(test.config)))
+		if err != nil {
+			t.Errorf("Expected no error. Got: %s", err.Error())
+		}
+		for _, upstream := range upstreams {
+			staticUpstream, ok := upstream.(*staticUpstream)
+			if !ok {
+				t.Errorf("type mismatch: %#v", upstream)
+				continue
+			}
+			transport, ok := staticUpstream.HealthCheck.Client.Transport.(*http.Transport)
+			if !ok {
+				t.Errorf("type mismatch: %#v", staticUpstream.HealthCheck.Client.Transport)
+				continue
+			}
+			if test.flag != transport.TLSClientConfig.InsecureSkipVerify {
+				t.Errorf("test %d: expected transport.TLSClientCnfig.InsecureSkipVerify=%v, got %v", i, test.flag, transport.TLSClientConfig.InsecureSkipVerify)
 			}
 		}
 	}

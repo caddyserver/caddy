@@ -17,5 +17,3 @@ Caddyfile
 og_static/
 
 .vscode/
-
-caddyhttp/browse/temp*
