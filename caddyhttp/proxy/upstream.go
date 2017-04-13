@@ -382,9 +382,11 @@ func (u *staticUpstream) healthCheck() {
 		// set headers for request going upstream
 		if u.upstreamHeaders != nil {
 			hostHeader := u.upstreamHeaders.Get("Host")
+			fmt.Printf("Got header: %v\n", hostHeader)
 			if strings.Contains(hostHeader, "{host}") {
-				replacement := strings.Replace(hostHeader, "{host}", u.HealthCheck.Host, 0)
+				replacement := strings.Replace(hostHeader, "{host}", u.HealthCheck.Host, -1)
 				req.Header.Set("Host", replacement)
+				fmt.Printf("Added header: %v\n", req.Header)
 			}
 		}
 
