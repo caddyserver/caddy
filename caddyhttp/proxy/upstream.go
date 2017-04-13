@@ -41,6 +41,7 @@ type staticUpstream struct {
 		Path     string
 		Interval time.Duration
 		Timeout  time.Duration
+		Host     string
 	}
 	WithoutPathPrefix  string
 	IgnoredSubPaths    []string
@@ -50,7 +51,7 @@ type staticUpstream struct {
 
 // NewStaticUpstreams parses the configuration input and sets up
 // static upstreams for the proxy middleware.
-func NewStaticUpstreams(c caddyfile.Dispenser) ([]Upstream, error) {
+func NewStaticUpstreams(c caddyfile.Dispenser, host string) ([]Upstream, error) {
 	var upstreams []Upstream
 	for c.Next() {
 
@@ -117,6 +118,9 @@ func NewStaticUpstreams(c caddyfile.Dispenser) ([]Upstream, error) {
 				Transport: &http.Transport{
 					TLSClientConfig: &tls.Config{InsecureSkipVerify: upstream.insecureSkipVerify},
 				},
+			}
+			if host != nil {
+				upstream.HealthCheck.Host = host
 			}
 			upstream.wg.Add(1)
 			go func() {
@@ -371,7 +375,20 @@ func (u *staticUpstream) healthCheck() {
 	for _, host := range u.Hosts {
 		hostURL := host.Name + u.HealthCheck.Path
 		var unhealthy bool
-		if r, err := u.HealthCheck.Client.Get(hostURL); err == nil {
+
+		// set up request, needed to be able to modify headers
+		req, _ := http.NewRequest("GET", hostURL, nil)
+
+		// set headers for request going upstream
+		if u.upstreamHeaders != nil {
+			hostHeader := u.upstreamHeaders.Get("Host")
+			if strings.Contains(hostHeader, "{host}") {
+				replacement := strings.Replace(hostHeader, "{host}", u.HealthCheck.Host)
+				req.Header.Set("Host", replacement)
+			}
+		}
+
+		if r, err := u.HealthCheck.Client.Do(req); err == nil {
 			io.Copy(ioutil.Discard, r.Body)
 			r.Body.Close()
 			unhealthy = r.StatusCode < 200 || r.StatusCode >= 400
@@ -458,4 +475,24 @@ func (u *staticUpstream) Stop() error {
 // RegisterPolicy adds a custom policy to the proxy.
 func RegisterPolicy(name string, policy func() Policy) {
 	supportedPolicies[name] = policy
+}
+
+func mutateHeadersByRules(headers, rules http.Header, repl httpserver.Replacer) {
+	for ruleField, ruleValues := range rules {
+		if strings.HasPrefix(ruleField, "+") {
+			for _, ruleValue := range ruleValues {
+				replacement := repl.Replace(ruleValue)
+				if len(replacement) > 0 {
+					headers.Add(strings.TrimPrefix(ruleField, "+"), replacement)
+				}
+			}
+		} else if strings.HasPrefix(ruleField, "-") {
+			headers.Del(strings.TrimPrefix(ruleField, "-"))
+		} else if len(ruleValues) > 0 {
+			replacement := repl.Replace(ruleValues[len(ruleValues)-1])
+			if len(replacement) > 0 {
+				headers.Set(ruleField, replacement)
+			}
+		}
+	}
 }
