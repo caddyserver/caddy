@@ -383,7 +383,7 @@ func (u *staticUpstream) healthCheck() {
 		if u.upstreamHeaders != nil {
 			hostHeader := u.upstreamHeaders.Get("Host")
 			if strings.Contains(hostHeader, "{host}") {
-				replacement := strings.Replace(hostHeader, "{host}", u.HealthCheck.Host)
+				replacement := strings.Replace(hostHeader, "{host}", u.HealthCheck.Host, 0)
 				req.Header.Set("Host", replacement)
 			}
 		}
@@ -475,24 +475,4 @@ func (u *staticUpstream) Stop() error {
 // RegisterPolicy adds a custom policy to the proxy.
 func RegisterPolicy(name string, policy func() Policy) {
 	supportedPolicies[name] = policy
-}
-
-func mutateHeadersByRules(headers, rules http.Header, repl httpserver.Replacer) {
-	for ruleField, ruleValues := range rules {
-		if strings.HasPrefix(ruleField, "+") {
-			for _, ruleValue := range ruleValues {
-				replacement := repl.Replace(ruleValue)
-				if len(replacement) > 0 {
-					headers.Add(strings.TrimPrefix(ruleField, "+"), replacement)
-				}
-			}
-		} else if strings.HasPrefix(ruleField, "-") {
-			headers.Del(strings.TrimPrefix(ruleField, "-"))
-		} else if len(ruleValues) > 0 {
-			replacement := repl.Replace(ruleValues[len(ruleValues)-1])
-			if len(replacement) > 0 {
-				headers.Set(ruleField, replacement)
-			}
-		}
-	}
 }
