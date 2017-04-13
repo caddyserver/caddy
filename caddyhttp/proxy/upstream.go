@@ -392,6 +392,7 @@ func (u *staticUpstream) healthCheck() {
 			io.Copy(ioutil.Discard, r.Body)
 			r.Body.Close()
 			unhealthy = r.StatusCode < 200 || r.StatusCode >= 400
+			fmt.Printf("Upstream status: %v\n", r)
 		} else {
 			unhealthy = true
 		}
