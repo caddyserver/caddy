@@ -228,7 +228,7 @@ func TestStop(t *testing.T) {
 
 			defer backend.Close()
 
-			upstreams, err := NewStaticUpstreams(caddyfile.NewDispenser("Testfile", strings.NewReader(fmt.Sprintf(config, backend.URL, test.intervalInMilliseconds))), nil)
+			upstreams, err := NewStaticUpstreams(caddyfile.NewDispenser("Testfile", strings.NewReader(fmt.Sprintf(config, backend.URL, test.intervalInMilliseconds))), "")
 			if err != nil {
 				t.Error("Expected no error. Got:", err.Error())
 			}
@@ -277,7 +277,7 @@ func TestParseBlock(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		upstreams, err := NewStaticUpstreams(caddyfile.NewDispenser("Testfile", strings.NewReader(test.config)), nil)
+		upstreams, err := NewStaticUpstreams(caddyfile.NewDispenser("Testfile", strings.NewReader(test.config)), "")
 		if err != nil {
 			t.Errorf("Expected no error. Got: %s", err.Error())
 		}
@@ -313,7 +313,7 @@ func TestHealthSetUp(t *testing.T) {
 	}
 
 	for i, test := range isv_tests {
-		upstreams, err := NewStaticUpstreams(caddyfile.NewDispenser("Testfile", strings.NewReader(test.config)), nil)
+		upstreams, err := NewStaticUpstreams(caddyfile.NewDispenser("Testfile", strings.NewReader(test.config)), "")
 		if err != nil {
 			t.Errorf("Expected no error. Got: %s", err.Error())
 		}

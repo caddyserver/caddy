@@ -119,7 +119,7 @@ func NewStaticUpstreams(c caddyfile.Dispenser, host string) ([]Upstream, error) 
 					TLSClientConfig: &tls.Config{InsecureSkipVerify: upstream.insecureSkipVerify},
 				},
 			}
-			if host != nil {
+			if host != "" {
 				upstream.HealthCheck.Host = host
 			}
 			upstream.wg.Add(1)
