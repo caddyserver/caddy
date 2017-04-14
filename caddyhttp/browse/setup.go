@@ -323,7 +323,7 @@ footer {
 
 		<header>
 			<h1>
-				{{range $url, $name := .BreadcrumbMap}}<a href="{{html $url}}">{{html $name}}</a>{{if ne $url "/"}}/{{end}}{{end}}
+				{{range $i, $crumb := .Breadcrumbs}}<a href="{{html $crumb.Link}}">{{html $crumb.Text}}</a>{{if ne $i 0}}/{{end}}{{end}}
 			</h1>
 		</header>
 		<main>
