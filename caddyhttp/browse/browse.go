@@ -37,7 +37,7 @@ type Browse struct {
 
 // Config is a configuration for browsing in a particular path.
 type Config struct {
-	PathScope string
+	PathScope string // the base path the URL must match to enable browsing
 	Fs        staticfiles.FileServer
 	Variables interface{}
 	Template  *template.Template
@@ -78,10 +78,15 @@ type Listing struct {
 	httpserver.Context
 }
 
-// BreadcrumbMap returns l.Path where every element is a map
-// of URLs and path segment names.
-func (l Listing) BreadcrumbMap() map[string]string {
-	result := map[string]string{}
+// Crumb represents part of a breadcrumb menu.
+type Crumb struct {
+	Link, Text string
+}
+
+// Breadcrumbs returns l.Path where every element maps
+// the link to the text to display.
+func (l Listing) Breadcrumbs() []Crumb {
+	var result []Crumb
 
 	if len(l.Path) == 0 {
 		return result
@@ -94,13 +99,12 @@ func (l Listing) BreadcrumbMap() map[string]string {
 	}
 
 	parts := strings.Split(lpath, "/")
-	for i, part := range parts {
-		if i == 0 && part == "" {
-			// Leading slash (root)
-			result["/"] = "/"
-			continue
+	for i := range parts {
+		txt := parts[i]
+		if i == 0 && parts[i] == "" {
+			txt = "/"
 		}
-		result[strings.Join(parts[:i+1], "/")] = part
+		result = append(result, Crumb{Link: strings.Repeat("../", len(parts)-i-1), Text: txt})
 	}
 
 	return result
@@ -247,11 +251,11 @@ func directoryListing(files []os.FileInfo, canGoUp bool, urlPath string, config 
 			fileCount++
 		}
 
-		url := url.URL{Path: "./" + name} // prepend with "./" to fix paths with ':' in the name
-
 		if config.Fs.IsHidden(f) {
 			continue
 		}
+
+		url := url.URL{Path: "./" + name} // prepend with "./" to fix paths with ':' in the name
 
 		fileinfos = append(fileinfos, FileInfo{
 			IsDir:   f.IsDir(),
