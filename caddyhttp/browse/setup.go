@@ -240,6 +240,30 @@ td .goup {
 	white-space: pre-wrap;
 }
 
+.icon {
+	margin-right: 5px;
+}
+
+.icon.sort {
+	display: inline-block;
+	width: 1em;
+	height: 1em;
+	position: relative;
+	top: .2em;
+}
+
+.icon.sort .top {
+	position: absolute;
+	left: 0;
+	top: -1px;
+}
+
+.icon.sort .bottom {
+	position: absolute;
+	bottom: -1px;
+	left: 0;
+}
+
 footer {
 	padding: 40px 20px;
 	font-size: 12px;
@@ -343,35 +367,35 @@ footer {
 					<tr>
 						<th>
 							{{- if and (eq .Sort "namedirfirst") (ne .Order "desc")}}
-							<a href="?sort=namedirfirst&order=desc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}">Name <svg width="1em" height=".4em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#up-arrow"></use></svg></a>
+							<a href="?sort=namedirfirst&order=desc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}" class="icon"><svg width="1em" height=".5em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#up-arrow"></use></svg></a>
 							{{- else if and (eq .Sort "namedirfirst") (ne .Order "asc")}}
-							<a href="?sort=namedirfirst&order=asc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}">Name <svg width="1em" height=".4em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#down-arrow"></use></svg></a>
+							<a href="?sort=namedirfirst&order=asc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}" class="icon"><svg width="1em" height=".5em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#down-arrow"></use></svg></a>
 							{{- else}}
-							<a href="?sort=namedirfirst&order=asc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}">Name</a>
+							<a href="?sort=namedirfirst&order=asc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}" class="icon sort"><svg class="top" width="1em" height=".5em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#up-arrow"></use></svg><svg class="bottom" width="1em" height=".5em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#down-arrow"></use></svg></a>
 							{{- end}}
-							|
+							
 							{{- if and (eq .Sort "name") (ne .Order "desc")}}
-							<a href="?sort=name&order=desc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}">(a-z) <svg width="1em" height=".4em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#up-arrow"></use></svg></a>
+							<a href="?sort=name&order=desc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}">Name <svg width="1em" height=".5em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#up-arrow"></use></svg></a>
 							{{- else if and (eq .Sort "name") (ne .Order "asc")}}
-							<a href="?sort=name&order=asc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}">(a-z) <svg width="1em" height=".4em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#down-arrow"></use></svg></a>
+							<a href="?sort=name&order=asc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}">Name <svg width="1em" height=".5em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#down-arrow"></use></svg></a>
 							{{- else}}
-							<a href="?sort=name&order=asc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}">(a-z)</a>
+							<a href="?sort=name&order=asc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}">Name</a>
 							{{- end}}
 						</th>
 						<th>
 							{{- if and (eq .Sort "size") (ne .Order "desc")}}
-							<a href="?sort=size&order=desc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}">Size <svg width="1em" height=".4em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#up-arrow"></use></svg></a>
+							<a href="?sort=size&order=desc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}">Size <svg width="1em" height=".5em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#up-arrow"></use></svg></a>
 							{{- else if and (eq .Sort "size") (ne .Order "asc")}}
-							<a href="?sort=size&order=asc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}">Size <svg width="1em" height=".4em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#down-arrow"></use></svg></a>
+							<a href="?sort=size&order=asc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}">Size <svg width="1em" height=".5em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#down-arrow"></use></svg></a>
 							{{- else}}
 							<a href="?sort=size&order=asc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}">Size</a>
 							{{- end}}
 						</th>
 						<th class="hideable">
 							{{- if and (eq .Sort "time") (ne .Order "desc")}}
-							<a href="?sort=time&order=desc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}">Modified <svg width="1em" height=".4em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#up-arrow"></use></svg></a>
+							<a href="?sort=time&order=desc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}">Modified <svg width="1em" height=".5em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#up-arrow"></use></svg></a>
 							{{- else if and (eq .Sort "time") (ne .Order "asc")}}
-							<a href="?sort=time&order=asc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}">Modified <svg width="1em" height=".4em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#down-arrow"></use></svg></a>
+							<a href="?sort=time&order=asc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}">Modified <svg width="1em" height=".5em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#down-arrow"></use></svg></a>
 							{{- else}}
 							<a href="?sort=time&order=asc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}">Modified</a>
 							{{- end}}
