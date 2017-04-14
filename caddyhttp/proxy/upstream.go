@@ -385,18 +385,13 @@ func (u *staticUpstream) healthCheck() {
 			if strings.Contains(hostHeader, "{host}") {
 				replacement := strings.Replace(hostHeader, "{host}", u.HealthCheck.Host, -1)
 				req.Host = replacement
-				//req.Header.Set("Host", replacement)
-				//fmt.Printf("Header: %v\n", req.Header.Get("Host"))
 			}
 		}
-
-		fmt.Printf("Request: %v\n", req)
 
 		if r, err := u.HealthCheck.Client.Do(req); err == nil {
 			io.Copy(ioutil.Discard, r.Body)
 			r.Body.Close()
 			unhealthy = r.StatusCode < 200 || r.StatusCode >= 400
-			fmt.Printf("Upstream status: %v\n", r)
 		} else {
 			unhealthy = true
 		}
