@@ -384,8 +384,9 @@ func (u *staticUpstream) healthCheck() {
 			hostHeader := u.upstreamHeaders.Get("Host")
 			if strings.Contains(hostHeader, "{host}") {
 				replacement := strings.Replace(hostHeader, "{host}", u.HealthCheck.Host, -1)
-				req.Header.Set("Host", replacement)
-				fmt.Printf("Header: %v\n", req.Header.Get("Host"))
+				req.Host = replacement
+				//req.Header.Set("Host", replacement)
+				//fmt.Printf("Header: %v\n", req.Header.Get("Host"))
 			}
 		}
 
