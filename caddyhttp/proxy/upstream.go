@@ -50,7 +50,9 @@ type staticUpstream struct {
 }
 
 // NewStaticUpstreams parses the configuration input and sets up
-// static upstreams for the proxy middleware.
+// static upstreams for the proxy middleware. The host string parameter, 
+// if not empty, is used for setting the upstream Host header for the 
+// health checks if the upstream header config requires it.
 func NewStaticUpstreams(c caddyfile.Dispenser, host string) ([]Upstream, error) {
 	var upstreams []Upstream
 	for c.Next() {
@@ -119,8 +121,13 @@ func NewStaticUpstreams(c caddyfile.Dispenser, host string) ([]Upstream, error) 
 					TLSClientConfig: &tls.Config{InsecureSkipVerify: upstream.insecureSkipVerify},
 				},
 			}
+
+			// set up health check upstream host if we have one
 			if host != "" {
-				upstream.HealthCheck.Host = host
+				hostHeader := upstream.upstreamHeaders.Get("Host")
+				if strings.Contains(hostHeader, "{host}") {
+					upstream.HealthCheck.Host = strings.Replace(hostHeader, "{host}", host, -1)
+				}
 			}
 			upstream.wg.Add(1)
 			go func() {
@@ -379,13 +386,9 @@ func (u *staticUpstream) healthCheck() {
 		// set up request, needed to be able to modify headers
 		req, _ := http.NewRequest("GET", hostURL, nil)
 
-		// set headers for request going upstream
-		if u.upstreamHeaders != nil {
-			hostHeader := u.upstreamHeaders.Get("Host")
-			if strings.Contains(hostHeader, "{host}") {
-				replacement := strings.Replace(hostHeader, "{host}", u.HealthCheck.Host, -1)
-				req.Host = replacement
-			}
+		// set host for request going upstream
+		if u.HealthCheck.Host != "" {
+			req.Host = u.HealthCheck.Host
 		}
 
 		if r, err := u.HealthCheck.Client.Do(req); err == nil {
