@@ -367,12 +367,12 @@ func (c Context) RandomString(minLen, maxLen int) string {
 		letterIdxMax  = 63 / letterIdxBits   // # of letter indices fitting in 63 bits
 	)
 
-	if minLen < 0 || maxLen < 0 || maxLen <= minLen {
+	if minLen < 0 || maxLen < 0 || maxLen < minLen {
 		return ""
 	}
 
 	src := rand.NewSource(time.Now().UnixNano())
-	n := rand.Intn(maxLen-minLen) + minLen // choose actual length
+	n := rand.Intn(maxLen-minLen+1) + minLen // choose actual length
 	b := make([]byte, n)
 	for i, cache, remain := n-1, src.Int63(), letterIdxMax; i >= 0; {
 		if remain == 0 {
