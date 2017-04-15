@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"net"
 	"net/http"
 	"net/url"
@@ -352,4 +353,38 @@ func (c Context) IsMITM() bool {
 		return val
 	}
 	return false
+}
+
+// RandomString generates a random string of random length given
+// length bounds. Thanks to http://stackoverflow.com/a/31832326/1048862
+// for the clever technique that is fast and maintains proper
+// distributions over the dictionary.
+func (c Context) RandomString(minLen, maxLen int) string {
+	const (
+		letterBytes   = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+		letterIdxBits = 6                    // 6 bits to represent a letter index
+		letterIdxMask = 1<<letterIdxBits - 1 // All 1-bits, as many as letterIdxBits
+		letterIdxMax  = 63 / letterIdxBits   // # of letter indices fitting in 63 bits
+	)
+
+	if minLen < 0 || maxLen < 0 || maxLen <= minLen {
+		return ""
+	}
+
+	src := rand.NewSource(time.Now().UnixNano())
+	n := rand.Intn(maxLen-minLen) + minLen // choose actual length
+	b := make([]byte, n)
+	for i, cache, remain := n-1, src.Int63(), letterIdxMax; i >= 0; {
+		if remain == 0 {
+			cache, remain = src.Int63(), letterIdxMax
+		}
+		if idx := int(cache & letterIdxMask); idx < len(letterBytes) {
+			b[i] = letterBytes[idx]
+			i--
+		}
+		cache >>= letterIdxBits
+		remain--
+	}
+
+	return string(b)
 }
