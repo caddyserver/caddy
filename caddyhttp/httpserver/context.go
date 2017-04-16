@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"io/ioutil"
+	mathrand "math/rand"
 	"net"
 	"net/http"
 	"net/url"
@@ -356,35 +357,40 @@ func (c Context) IsMITM() bool {
 }
 
 // RandomString generates a random string of random length given
-// length bounds. Thanks to http://stackoverflow.com/a/31832326/1048862
-// for the clever technique that is fast and maintains proper
-// distributions over the dictionary.
+// length bounds. Thanks to http://stackoverflow.com/a/35615565/1048862
+// for the clever technique that is fairly fast, secure, and maintains
+// proper distributions over the dictionary.
 func (c Context) RandomString(minLen, maxLen int) string {
 	const (
 		letterBytes   = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-		letterIdxBits = 6                    // 6 bits to represent a letter index
-		letterIdxMask = 1<<letterIdxBits - 1 // All 1-bits, as many as letterIdxBits
-		letterIdxMax  = 63 / letterIdxBits   // # of letter indices fitting in 63 bits
+		letterIdxBits = 6                    // 6 bits to represent 64 possibilities (indexes)
+		letterIdxMask = 1<<letterIdxBits - 1 // all 1-bits, as many as letterIdxBits
 	)
 
 	if minLen < 0 || maxLen < 0 || maxLen < minLen {
 		return ""
 	}
 
-	src := rand.NewSource(time.Now().UnixNano())
-	n := rand.Intn(maxLen-minLen+1) + minLen // choose actual length
-	b := make([]byte, n)
-	for i, cache, remain := n-1, src.Int63(), letterIdxMax; i >= 0; {
-		if remain == 0 {
-			cache, remain = src.Int63(), letterIdxMax
-		}
-		if idx := int(cache & letterIdxMask); idx < len(letterBytes) {
-			b[i] = letterBytes[idx]
-			i--
-		}
-		cache >>= letterIdxBits
-		remain--
+	n := mathrand.Intn(maxLen-minLen+1) + minLen // choose actual length
+
+	// secureRandomBytes returns a number of bytes using crypto/rand.
+	secureRandomBytes := func(numBytes int) []byte {
+		randomBytes := make([]byte, numBytes)
+		rand.Read(randomBytes)
+		return randomBytes
 	}
 
-	return string(b)
+	result := make([]byte, n)
+	bufferSize := int(float64(n) * 1.3)
+	for i, j, randomBytes := 0, 0, []byte{}; i < n; j++ {
+		if j%bufferSize == 0 {
+			randomBytes = secureRandomBytes(bufferSize)
+		}
+		if idx := int(randomBytes[j%n] & letterIdxMask); idx < len(letterBytes) {
+			result[i] = letterBytes[idx]
+			i++
+		}
+	}
+
+	return string(result)
 }
