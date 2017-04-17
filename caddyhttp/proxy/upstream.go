@@ -41,6 +41,7 @@ type staticUpstream struct {
 		Path     string
 		Interval time.Duration
 		Timeout  time.Duration
+		Host     string
 	}
 	WithoutPathPrefix  string
 	IgnoredSubPaths    []string
@@ -49,8 +50,10 @@ type staticUpstream struct {
 }
 
 // NewStaticUpstreams parses the configuration input and sets up
-// static upstreams for the proxy middleware.
-func NewStaticUpstreams(c caddyfile.Dispenser) ([]Upstream, error) {
+// static upstreams for the proxy middleware. The host string parameter,
+// if not empty, is used for setting the upstream Host header for the
+// health checks if the upstream header config requires it.
+func NewStaticUpstreams(c caddyfile.Dispenser, host string) ([]Upstream, error) {
 	var upstreams []Upstream
 	for c.Next() {
 
@@ -117,6 +120,14 @@ func NewStaticUpstreams(c caddyfile.Dispenser) ([]Upstream, error) {
 				Transport: &http.Transport{
 					TLSClientConfig: &tls.Config{InsecureSkipVerify: upstream.insecureSkipVerify},
 				},
+			}
+
+			// set up health check upstream host if we have one
+			if host != "" {
+				hostHeader := upstream.upstreamHeaders.Get("Host")
+				if strings.Contains(hostHeader, "{host}") {
+					upstream.HealthCheck.Host = strings.Replace(hostHeader, "{host}", host, -1)
+				}
 			}
 			upstream.wg.Add(1)
 			go func() {
@@ -371,12 +382,25 @@ func (u *staticUpstream) healthCheck() {
 	for _, host := range u.Hosts {
 		hostURL := host.Name + u.HealthCheck.Path
 		var unhealthy bool
-		if r, err := u.HealthCheck.Client.Get(hostURL); err == nil {
-			io.Copy(ioutil.Discard, r.Body)
-			r.Body.Close()
-			unhealthy = r.StatusCode < 200 || r.StatusCode >= 400
-		} else {
+
+		// set up request, needed to be able to modify headers
+		// possible errors are bad HTTP methods or un-parsable urls
+		req, err := http.NewRequest("GET", hostURL, nil)
+		if err != nil {
 			unhealthy = true
+		} else {
+			// set host for request going upstream
+			if u.HealthCheck.Host != "" {
+				req.Host = u.HealthCheck.Host
+			}
+
+			if r, err := u.HealthCheck.Client.Do(req); err == nil {
+				io.Copy(ioutil.Discard, r.Body)
+				r.Body.Close()
+				unhealthy = r.StatusCode < 200 || r.StatusCode >= 400
+			} else {
+				unhealthy = true
+			}
 		}
 		if unhealthy {
 			atomic.StoreInt32(&host.Unhealthy, 1)

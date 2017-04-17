@@ -228,7 +228,7 @@ func TestStop(t *testing.T) {
 
 			defer backend.Close()
 
-			upstreams, err := NewStaticUpstreams(caddyfile.NewDispenser("Testfile", strings.NewReader(fmt.Sprintf(config, backend.URL, test.intervalInMilliseconds))))
+			upstreams, err := NewStaticUpstreams(caddyfile.NewDispenser("Testfile", strings.NewReader(fmt.Sprintf(config, backend.URL, test.intervalInMilliseconds))), "")
 			if err != nil {
 				t.Error("Expected no error. Got:", err.Error())
 			}
@@ -277,7 +277,7 @@ func TestParseBlock(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		upstreams, err := NewStaticUpstreams(caddyfile.NewDispenser("Testfile", strings.NewReader(test.config)))
+		upstreams, err := NewStaticUpstreams(caddyfile.NewDispenser("Testfile", strings.NewReader(test.config)), "")
 		if err != nil {
 			t.Errorf("Expected no error. Got: %s", err.Error())
 		}
@@ -301,7 +301,7 @@ func TestParseBlock(t *testing.T) {
 
 func TestHealthSetUp(t *testing.T) {
 	// tests for insecure skip verify
-	isv_tests := []struct {
+	tests := []struct {
 		config string
 		flag   bool
 	}{
@@ -312,24 +312,65 @@ func TestHealthSetUp(t *testing.T) {
 		{"proxy / localhost:8080 {\n health_check / \n insecure_skip_verify \n}", true},
 	}
 
-	for i, test := range isv_tests {
-		upstreams, err := NewStaticUpstreams(caddyfile.NewDispenser("Testfile", strings.NewReader(test.config)))
+	for i, test := range tests {
+		upstreams, err := NewStaticUpstreams(caddyfile.NewDispenser("Testfile", strings.NewReader(test.config)), "")
 		if err != nil {
 			t.Errorf("Expected no error. Got: %s", err.Error())
 		}
 		for _, upstream := range upstreams {
 			staticUpstream, ok := upstream.(*staticUpstream)
 			if !ok {
-				t.Errorf("type mismatch: %#v", upstream)
+				t.Errorf("Type mismatch: %#v", upstream)
 				continue
 			}
 			transport, ok := staticUpstream.HealthCheck.Client.Transport.(*http.Transport)
 			if !ok {
-				t.Errorf("type mismatch: %#v", staticUpstream.HealthCheck.Client.Transport)
+				t.Errorf("Type mismatch: %#v", staticUpstream.HealthCheck.Client.Transport)
 				continue
 			}
 			if test.flag != transport.TLSClientConfig.InsecureSkipVerify {
-				t.Errorf("test %d: expected transport.TLSClientCnfig.InsecureSkipVerify=%v, got %v", i, test.flag, transport.TLSClientConfig.InsecureSkipVerify)
+				t.Errorf("Test %d: expected transport.TLSClientCnfig.InsecureSkipVerify=%v, got %v", i, test.flag, transport.TLSClientConfig.InsecureSkipVerify)
+			}
+		}
+	}
+}
+
+func TestHealthCheckHost(t *testing.T) {
+	// tests for upstream host on health checks
+	tests := []struct {
+		config string
+		flag   bool
+		host   string
+	}{
+		// Test #1: without upstream header
+		{"proxy / localhost:8080 {\n health_check / \n}", false, "example.com"},
+
+		// Test #2: without upstream header, missing host
+		{"proxy / localhost:8080 {\n health_check / \n}", true, ""},
+
+		// Test #3: with upstream header (via transparent preset)
+		{"proxy / localhost:8080 {\n health_check / \n transparent \n}", true, "foo.example.com"},
+
+		// Test #4: with upstream header (explicit header)
+		{"proxy / localhost:8080 {\n health_check / \n header_upstream Host {host} \n}", true, "example.com"},
+
+		// Test #5: with upstream header, missing host
+		{"proxy / localhost:8080 {\n health_check / \n transparent \n}", true, ""},
+	}
+
+	for i, test := range tests {
+		upstreams, err := NewStaticUpstreams(caddyfile.NewDispenser("Testfile", strings.NewReader(test.config)), test.host)
+		if err != nil {
+			t.Errorf("Expected no error. Got: %s", err.Error())
+		}
+		for _, upstream := range upstreams {
+			staticUpstream, ok := upstream.(*staticUpstream)
+			if !ok {
+				t.Errorf("Type mismatch: %#v", upstream)
+				continue
+			}
+			if test.flag != (staticUpstream.HealthCheck.Host == test.host) {
+				t.Errorf("Test %d: expected staticUpstream.HealthCheck.Host=%v, got %v", i, test.host, staticUpstream.HealthCheck.Host)
 			}
 		}
 	}

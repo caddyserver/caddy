@@ -163,7 +163,7 @@ func TestReverseProxyMaxConnLimit(t *testing.T) {
 		proxy / `+backend.URL+` {
 			max_conns `+fmt.Sprint(MaxTestConns)+`
 		}
-	`)))
+	`)), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1008,7 +1008,7 @@ func TestReverseProxyRetry(t *testing.T) {
 		try_duration 5s
 		try_interval 250ms
 	}
-	`)))
+	`)), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1057,7 +1057,7 @@ func TestReverseProxyLargeBody(t *testing.T) {
 	}))
 	defer backend.Close()
 
-	su, err := NewStaticUpstreams(caddyfile.NewDispenser("Testfile", strings.NewReader(`proxy / `+backend.URL)))
+	su, err := NewStaticUpstreams(caddyfile.NewDispenser("Testfile", strings.NewReader(`proxy / `+backend.URL)), "")
 	if err != nil {
 		t.Fatal(err)
 	}
