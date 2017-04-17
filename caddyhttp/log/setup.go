@@ -41,12 +41,13 @@ func logParse(c *caddy.Controller) ([]*Rule, error) {
 			}
 			where := c.Val()
 
-			if httpserver.IsLogRollerSubdirective(what) {
-				var err error
-				err = httpserver.ParseRoller(logRoller, what, where)
-				if err != nil {
-					return nil, err
-				}
+			// only support roller related options inside a block
+			if !httpserver.IsLogRollerSubdirective(what) {
+				return nil, c.ArgErr()
+			}
+
+			if err := httpserver.ParseRoller(logRoller, what, where); err != nil {
+				return nil, err
 			}
 		}
 

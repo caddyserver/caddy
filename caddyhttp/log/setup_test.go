@@ -205,6 +205,8 @@ func TestLogParse(t *testing.T) {
 				Format: "{when}",
 			}},
 		}}},
+		{`log access.log { rotate_size }`, true, nil},
+		{`log access.log { invalid_option 1 }`, true, nil},
 	}
 	for i, test := range tests {
 		c := caddy.NewTestController("http", test.inputLogRules)
