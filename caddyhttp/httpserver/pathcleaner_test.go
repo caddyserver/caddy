@@ -31,7 +31,7 @@ var paths = map[string]map[string]string{
 
 func assertEqual(t *testing.T, expected, received string) {
 	if expected != received {
-		t.Errorf("\tExpected: %s\n\t\t\tRecieved: %s", expected, received)
+		t.Errorf("\tExpected: %s\n\t\t\tReceived: %s", expected, received)
 	}
 }
 
