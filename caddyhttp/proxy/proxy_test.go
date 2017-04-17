@@ -26,6 +26,7 @@ import (
 
 	"github.com/mholt/caddy/caddyfile"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
+	"github.com/mholt/caddy/caddyhttp/staticfiles"
 
 	"golang.org/x/net/websocket"
 )
@@ -896,10 +897,11 @@ func basicAuthTestcase(t *testing.T, upstreamUser, clientUser *url.Userinfo) {
 
 func TestProxyDirectorURL(t *testing.T) {
 	for i, c := range []struct {
-		requestURL string
-		targetURL  string
-		without    string
-		expectURL  string
+		originalPath string
+		requestURL   string
+		targetURL    string
+		without      string
+		expectURL    string
 	}{
 		{
 			requestURL: `http://localhost:2020/test`,
@@ -969,6 +971,12 @@ func TestProxyDirectorURL(t *testing.T) {
 			targetURL:  `https://localhost:2021/%2C`,
 			expectURL:  `https://localhost:2021/%2C/%2C`,
 		},
+		{
+			originalPath: `///test`,
+			requestURL:   `http://localhost:2020/%2F/test`,
+			targetURL:    `https://localhost:2021/`,
+			expectURL:    `https://localhost:2021/%2F/test`,
+		},
 	} {
 		targetURL, err := url.Parse(c.targetURL)
 		if err != nil {
@@ -980,6 +988,8 @@ func TestProxyDirectorURL(t *testing.T) {
 			t.Errorf("case %d failed to create request: %s", i, err)
 			continue
 		}
+		req = req.WithContext(context.WithValue(req.Context(),
+			staticfiles.URLPathCtxKey, c.originalPath))
 
 		NewSingleHostReverseProxy(targetURL, c.without, 0).Director(req)
 		if expect, got := c.expectURL, req.URL.String(); expect != got {
