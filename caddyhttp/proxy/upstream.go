@@ -384,19 +384,23 @@ func (u *staticUpstream) healthCheck() {
 		var unhealthy bool
 
 		// set up request, needed to be able to modify headers
-		req, _ := http.NewRequest("GET", hostURL, nil)
-
-		// set host for request going upstream
-		if u.HealthCheck.Host != "" {
-			req.Host = u.HealthCheck.Host
-		}
-
-		if r, err := u.HealthCheck.Client.Do(req); err == nil {
-			io.Copy(ioutil.Discard, r.Body)
-			r.Body.Close()
-			unhealthy = r.StatusCode < 200 || r.StatusCode >= 400
-		} else {
+		// possible errors are bad HTTP methods or un-parsable urls
+		req, err := http.NewRequest("GET", hostURL, nil)
+		if err != nil {
 			unhealthy = true
+		} else {
+			// set host for request going upstream
+			if u.HealthCheck.Host != "" {
+				req.Host = u.HealthCheck.Host
+			}
+
+			if r, err := u.HealthCheck.Client.Do(req); err == nil {
+				io.Copy(ioutil.Discard, r.Body)
+				r.Body.Close()
+				unhealthy = r.StatusCode < 200 || r.StatusCode >= 400
+			} else {
+				unhealthy = true
+			}
 		}
 		if unhealthy {
 			atomic.StoreInt32(&host.Unhealthy, 1)
