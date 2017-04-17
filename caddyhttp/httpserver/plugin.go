@@ -434,6 +434,7 @@ func RegisterDevDirective(name, before string) {
 var directives = []string{
 	// primitive actions that set up the fundamental vitals of each config
 	"root",
+	"index",
 	"bind",
 	"maxrequestbody", // TODO: 'limits'
 	"timeouts",
