@@ -2,8 +2,10 @@ package httpserver
 
 import (
 	"bytes"
+	"crypto/rand"
 	"fmt"
 	"io/ioutil"
+	mathrand "math/rand"
 	"net"
 	"net/http"
 	"net/url"
@@ -352,4 +354,43 @@ func (c Context) IsMITM() bool {
 		return val
 	}
 	return false
+}
+
+// RandomString generates a random string of random length given
+// length bounds. Thanks to http://stackoverflow.com/a/35615565/1048862
+// for the clever technique that is fairly fast, secure, and maintains
+// proper distributions over the dictionary.
+func (c Context) RandomString(minLen, maxLen int) string {
+	const (
+		letterBytes   = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+		letterIdxBits = 6                    // 6 bits to represent 64 possibilities (indexes)
+		letterIdxMask = 1<<letterIdxBits - 1 // all 1-bits, as many as letterIdxBits
+	)
+
+	if minLen < 0 || maxLen < 0 || maxLen < minLen {
+		return ""
+	}
+
+	n := mathrand.Intn(maxLen-minLen+1) + minLen // choose actual length
+
+	// secureRandomBytes returns a number of bytes using crypto/rand.
+	secureRandomBytes := func(numBytes int) []byte {
+		randomBytes := make([]byte, numBytes)
+		rand.Read(randomBytes)
+		return randomBytes
+	}
+
+	result := make([]byte, n)
+	bufferSize := int(float64(n) * 1.3)
+	for i, j, randomBytes := 0, 0, []byte{}; i < n; j++ {
+		if j%bufferSize == 0 {
+			randomBytes = secureRandomBytes(bufferSize)
+		}
+		if idx := int(randomBytes[j%n] & letterIdxMask); idx < len(letterBytes) {
+			result[i] = letterBytes[idx]
+			i++
+		}
+	}
+
+	return string(result)
 }
