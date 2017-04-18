@@ -166,6 +166,7 @@ func certificateHasExtension(cert *x509.Certificate, needle asn1.ObjectIdentifie
 	return false
 }
 
+// This is the OID for the embedded SCT X.509 extension (see the RFC 6962)
 var x509SCTOid = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 11129, 2, 4, 2}
 
 func certificateHasExtension(cert *x509.Certificate, needle asn1.ObjectIdentifier) bool {
