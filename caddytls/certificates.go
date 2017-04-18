@@ -186,7 +186,10 @@ func makeCertificate(certPEMBlock, keyPEMBlock []byte) (Certificate, error) {
 	// Config.Managed (with Let's Encrypt) specific values here.
 	// TODO: We can skip this if the leaf has SCTs in an X.509 extension.
 	scts, err := GetSCTSForCertificateChain(
-		// TODO: Venafi was just distrusted
+		// TODO: Venafi was just distrusted; one idea would be to fetch the
+		// Chrome list of trusted logs and just submit to everything until we
+		// have 1 Google and 1 non-Google. This would be hilarious, and pretty
+		// resillient.
 		tlsCert.Certificate, []string{"https://ct.googleapis.com/icarus", "https://ctlog.api.venafi.com"})
 	if err != nil {
 		log.Printf("[WARNING] Fetching SCTs: %v", err)
