@@ -192,6 +192,7 @@ func makeCertificate(certPEMBlock, keyPEMBlock []byte) (Certificate, error) {
 	}
 	// TODO: We don't have the Config.CTLogURLs here, just hardcoded some
 	// Config.Managed (with Let's Encrypt) specific values here.
+	// TODO: We can skip this if the leaf has SCTs in an X.509 extension.
 	scts, err := GetSCTSForCertificateChain(
 		c, []string{"https://ct.googleapis.com/icarus", "https://ctlog.api.venafi.com"})
 	if err != nil {
