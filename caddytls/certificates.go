@@ -168,6 +168,7 @@ func makeCertificateFromDisk(certFile, keyFile string) (Certificate, error) {
 	return makeCertificate(certPEMBlock, keyPEMBlock, []string{})
 }
 
+// This is the OID for the embedded SCT X.509 extension (see the RFC 6962)
 var x509SCTOid = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 11129, 2, 4, 2}
 
 func certificateHasExtension(cert *x509.Certificate, needle asn1.ObjectIdentifier) bool {
@@ -209,6 +210,7 @@ func makeCertificate(certPEMBlock, keyPEMBlock []byte, ctLogURLS []string) (Cert
 	if err != nil {
 		log.Printf("[WARNING] Stapling OCSP: %v", err)
 	}
+	// If the certificate has embedded SCTs no need to fetch new ones
 	if !certificateHasExtension(leaf, x509SCTOid) {
 		scts, err := GetSCTSForCertificateChain(tlsCert.Certificate, ctLogURLS)
 		if err != nil {
