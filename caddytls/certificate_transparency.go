@@ -97,6 +97,9 @@ func submitSCT(url string, payload []byte) (*signedCertificateTimestamp, error) 
 
 // GetSCTSForCertificateChain takes a certificate chain, and a list of target
 // log URLs, and returns a list of SCTs (byte slices) or an error.
+
+// TODO: support submitting to multiple logs and just getting as many SCTs as
+// we can, even if some logs error.
 func GetSCTSForCertificateChain(certChain [][]byte, logURLs []string) ([][]byte, error) {
 	sctBytes := make([][]byte, 0)
 	addReq := addChainRequest{}
