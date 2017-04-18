@@ -168,7 +168,7 @@ func certificateHasExtension(cert *x509.Certificate, needle asn1.ObjectIdentifie
 
 var x509SCTOid = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 11129, 2, 4, 2}
 
-func certificateHasExtension(cert x509.Certificate, needle asn1.ObjectIdentifier) {
+func certificateHasExtension(cert *x509.Certificate, needle asn1.ObjectIdentifier) bool {
 	for _, ext := range cert.Extensions {
 		if ext.Id.Equal(needle) {
 			return true
