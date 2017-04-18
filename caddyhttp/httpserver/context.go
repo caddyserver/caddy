@@ -264,8 +264,7 @@ func ContextInclude(filename string, ctx interface{}, fs http.FileSystem) (strin
 		return "", err
 	}
 
-	tpl := template.New(filename).Funcs(TemplateFuncs)
-	tpl, err = tpl.Parse(string(body))
+	tpl, err := template.New(filename).Funcs(TemplateFuncs).Parse(string(body))
 	if err != nil {
 		return "", err
 	}

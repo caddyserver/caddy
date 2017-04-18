@@ -121,6 +121,8 @@ func TestTemplates(t *testing.T) {
 
 	rec = httptest.NewRecorder()
 
+	// register custom function which is used in template
+	httpserver.TemplateFuncs["root"] = func() string { return "root" }
 	tmplroot.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
