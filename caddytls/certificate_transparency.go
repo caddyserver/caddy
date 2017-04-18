@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -84,7 +85,9 @@ func submitSCT(url string, payload []byte) (*signedCertificateTimestamp, error) 
 		return nil, fmt.Errorf("HTTP error %d", response.StatusCode)
 	}
 	sct := &signedCertificateTimestamp{}
-	err = json.NewDecoder(response.Body).Decode(&sct)
+	// Limit response to 10MB, there's no reason they should ever be that
+	// large, and this guards against malicious or poorly run servers.
+	err = json.NewDecoder(io.LimitReader(response.Body, 10*1024*1024)).Decode(&sct)
 	if err != nil {
 		return nil, err
 	}
