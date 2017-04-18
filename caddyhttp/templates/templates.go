@@ -44,6 +44,9 @@ func (t Templates) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 					tpl.Delims(rule.Delims[0], rule.Delims[1])
 				}
 
+				// Add custom functions
+				tpl.Funcs(httpserver.TemplateFuncs)
+
 				// Build the template
 				templatePath := filepath.Join(t.Root, fpath)
 				tpl, err := tpl.ParseFiles(templatePath)
