@@ -382,7 +382,7 @@ func TestSetupParseCertificateTransparencyOff(t *testing.T) {
 
 func TestSetupParseCTLogURLs(t *testing.T) {
 	params := `tls {
-		ct_logs https://ct.googleapis.com/icarus https://ct.googleapis.com/pilot
+		ct_logs ct.googleapis.com/icarus ct.googleapis.com/pilot
 	}`
 	cfg := new(Config)
 	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
