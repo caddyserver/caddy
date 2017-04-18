@@ -2,7 +2,6 @@ package caddytls
 
 import (
 	"bytes"
-	"crypto/x509"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
@@ -98,13 +97,13 @@ func submitSCT(url string, payload []byte) (*signedCertificateTimestamp, error) 
 
 // GetSCTSForCertificateChain takes a certificate chain, and a list of target
 // log URLs, and returns a list of SCTs (byte slices) or an error.
-func GetSCTSForCertificateChain(chain []x509.Certificate, logURLs []string) ([][]byte, error) {
+func GetSCTSForCertificateChain(certChain [][]byte, logURLs []string) ([][]byte, error) {
 	sctBytes := make([][]byte, 0)
 	addReq := addChainRequest{}
-	for _, cert := range chain {
-		addReq.Chain = append(addReq.Chain, base64.StdEncoding.EncodeToString(cert.Raw))
+	for _, cert := range certChain {
+		addReq.Chain = append(addReq.Chain, base64.StdEncoding.EncodeToString(cert))
 	}
-	payload, err := json.Marshal(addMsg)
+	payload, err := json.Marshal(addReq)
 	if err != nil {
 		return nil, err
 	}
