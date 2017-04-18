@@ -182,6 +182,23 @@ func makeCertificate(certPEMBlock, keyPEMBlock []byte) (Certificate, error) {
 	if err != nil {
 		log.Printf("[WARNING] Stapling OCSP: %v", err)
 	}
+	chain := make([]x509.Certificate, 0)
+	for _, certBytes := range tlsCert.Certificate {
+		c, err := x509.ParseCertificate(certBytes)
+		if err != nil {
+			return nil, err
+		}
+		chain = append(chain, c)
+	}
+	// TODO: We don't have the Config.CTLogURLs here, just hardcoded some
+	// Config.Managed (with Let's Encrypt) specific values here.
+	scts, err := GetSCTSForCertificateChain(
+		c, []string{"https://ct.googleapis.com/icarus", "https://ctlog.api.venafi.com"})
+	if err != nil {
+		log.Printf("[WARNING] Fetching SCTs: %v", err)
+	} else {
+		cert.Certificate.SignedCertificateTimestamps = scts
+	}
 
 	return cert, nil
 }

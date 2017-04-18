@@ -119,6 +119,10 @@ type Config struct {
 	// Protocol Negotiation (ALPN).
 	ALPN []string
 
+	// The list of CT logs to attempt to submit the certificate to in order to
+	// obtain SCTs to server in the handshake.
+	CTLogURL []string
+
 	tlsConfig *tls.Config // the final tls.Config created with buildStandardTLSConfig()
 }
 

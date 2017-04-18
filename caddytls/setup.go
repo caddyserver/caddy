@@ -174,6 +174,14 @@ func setupTLS(c *caddy.Controller) error {
 				}
 			case "must_staple":
 				config.MustStaple = true
+			case "ct_logs":
+				args := c.RemainingArgs()
+				if len(args) == 0 {
+					return c.ArgErr()
+				}
+				for _, arg := range args {
+					config.CTLogURLs = append(config.CTLogURLs, arg)
+				}
 			default:
 				return c.Errf("Unknown keyword '%s'", c.Val())
 			}
