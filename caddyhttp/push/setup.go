@@ -45,87 +45,94 @@ func parsePushRules(c *caddy.Controller) ([]Rule, error) {
 	var rules = make(map[string]*Rule)
 
 	for c.NextLine() {
-		if !c.NextArg() {
-			return emptyRules, c.ArgErr()
-		}
-
-		path := c.Val()
-		args := c.RemainingArgs()
-
 		var rule *Rule
 		var resources []Resource
 		var ops []ruleOp
 
-		if existingRule, ok := rules[path]; ok {
-			rule = existingRule
-		} else {
+		parseBlock := func() error {
+			for c.NextBlock() {
+				val := c.Val()
+
+				switch val {
+				case "method":
+					if !c.NextArg() {
+						return c.ArgErr()
+					}
+
+					method := c.Val()
+
+					if err := validateMethod(method); err != nil {
+						return errMethodNotSupported
+					}
+
+					ops = append(ops, setMethodOp(method))
+
+				case "header":
+					args := c.RemainingArgs()
+
+					if len(args) != 2 {
+						return errInvalidHeader
+					}
+
+					if err := validateHeader(args[0]); err != nil {
+						return err
+					}
+
+					ops = append(ops, setHeaderOp(args[0], args[1]))
+				default:
+					resources = append(resources, Resource{
+						Path:   val,
+						Method: http.MethodGet,
+						Header: http.Header{pushHeader: []string{}},
+					})
+				}
+			}
+			return nil
+		}
+
+		args := c.RemainingArgs()
+
+		if len(args) == 0 {
 			rule = new(Rule)
-			rule.Path = path
-			rules[rule.Path] = rule
-		}
+			rule.Path = "/"
+			rules["/"] = rule
+			err := parseBlock()
+			if err != nil {
+				return emptyRules, err
+			}
+		} else {
+			path := args[0]
 
-		for i := 0; i < len(args); i++ {
-			resources = append(resources, Resource{
-				Path:   args[i],
-				Method: http.MethodGet,
-				Header: http.Header{pushHeader: []string{}},
-			})
-		}
+			if existingRule, ok := rules[path]; ok {
+				rule = existingRule
+			} else {
+				rule = new(Rule)
+				rule.Path = path
+				rules[rule.Path] = rule
+			}
 
-		for c.NextBlock() {
-			val := c.Val()
-
-			switch val {
-			case "method":
-				if !c.NextArg() {
-					return emptyRules, c.ArgErr()
-				}
-
-				method := c.Val()
-
-				if err := validateMethod(method); err != nil {
-					return emptyRules, errMethodNotSupported
-				}
-
-				ops = append(ops, setMethodOp(method))
-
-			case "header":
-				args := c.RemainingArgs()
-
-				if len(args) != 2 {
-					return emptyRules, errInvalidHeader
-				}
-
-				if err := validateHeader(args[0]); err != nil {
-					return emptyRules, err
-				}
-
-				ops = append(ops, setHeaderOp(args[0], args[1]))
-
-			default:
+			for i := 1; i < len(args); i++ {
 				resources = append(resources, Resource{
-					Path:   val,
+					Path:   args[i],
 					Method: http.MethodGet,
 					Header: http.Header{pushHeader: []string{}},
 				})
 			}
 
+			err := parseBlock()
+			if err != nil {
+				return emptyRules, err
+			}
 		}
 
 		for _, op := range ops {
 			op(resources)
 		}
-
 		rule.Resources = append(rule.Resources, resources...)
 	}
 
 	var returnRules []Rule
-
-	for path, rule := range rules {
-		if len(rule.Resources) == 0 {
-			return emptyRules, c.Errf("Rule %s has empty push resources list", path)
-		}
-
+	for _, rule := range rules {
 		returnRules = append(returnRules, *rule)
 	}
 
@@ -141,7 +148,6 @@ func setHeaderOp(key, value string) func(resources []Resource) {
 }
 
 func setMethodOp(method string) func(resources []Resource) {
-
 	return func(resources []Resource) {
 		for index := range resources {
 			resources[index].Method = method

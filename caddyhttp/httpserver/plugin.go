@@ -475,11 +475,11 @@ var directives = []string{
 	"internal",
 	"pprof",
 	"expvar",
+	"push",
 	"prometheus", // github.com/miekg/caddy-prometheus
 	"proxy",
 	"fastcgi",
 	"cgi", // github.com/jung-kurt/caddy-cgi
-	"push",
 	"websocket",
 	"filemanager", // github.com/hacdias/caddy-filemanager
 	"markdown",

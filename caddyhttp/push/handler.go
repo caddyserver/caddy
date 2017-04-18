@@ -8,22 +8,21 @@ import (
 )
 
 func (h Middleware) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
-
 	pusher, hasPusher := w.(http.Pusher)
 
-	// No Pusher, no cry
+	// no push possible, carry on
 	if !hasPusher {
 		return h.Next.ServeHTTP(w, r)
 	}
 
-	// This is request for the pushed resource - it should not be recursive
+	// check if this is a request for the pushed resource (avoid recursion)
 	if _, exists := r.Header[pushHeader]; exists {
 		return h.Next.ServeHTTP(w, r)
 	}
 
 	headers := h.filterProxiedHeaders(r.Header)
 
-	// Push first
+	// push first
 outer:
 	for _, rule := range h.Rules {
 		if httpserver.Path(r.URL.Path).Matches(rule.Path) {
@@ -33,16 +32,17 @@ outer:
 					Header: h.mergeHeaders(headers, resource.Header),
 				})
 				if pushErr != nil {
-					// If we cannot push (either not supported or concurrent streams are full - break)
+					// if we cannot push (either not supported or concurrent streams are full - break)
 					break outer
 				}
 			}
 		}
 	}
 
-	// Serve later
+	// serve later
 	code, err := h.Next.ServeHTTP(w, r)
 
+	// push resources returned in Link headers from upstream middlewares or proxied apps
 	if links, exists := w.Header()["Link"]; exists {
 		h.servePreloadLinks(pusher, headers, links)
 	}
@@ -51,7 +51,6 @@ outer:
 }
 
 func (h Middleware) servePreloadLinks(pusher http.Pusher, headers http.Header, links []string) {
-outer:
 	for _, link := range links {
 		parts := strings.Split(link, ";")
 
@@ -67,13 +66,12 @@ outer:
 		})
 
 		if err != nil {
-			break outer
+			break
 		}
 	}
 }
 
 func (h Middleware) mergeHeaders(l, r http.Header) http.Header {
-
 	out := http.Header{}
 
 	for k, v := range l {
@@ -90,7 +88,6 @@ func (h Middleware) mergeHeaders(l, r http.Header) http.Header {
 }
 
 func (h Middleware) filterProxiedHeaders(headers http.Header) http.Header {
-
 	filter := http.Header{}
 
 	for _, header := range proxiedHeaders {
