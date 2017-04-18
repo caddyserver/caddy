@@ -99,7 +99,20 @@ func (cfg *Config) CacheManagedCertificate(domain string) (Certificate, error) {
 	if err != nil {
 		return Certificate{}, err
 	}
-	cert, err := makeCertificate(siteData.Cert, siteData.Key)
+
+	ctLogURLS := cfg.CTLogURLs
+	if len(ctLogURLS) == 0 {
+		// TODO: Venafi was just distrusted; one idea would be to fetch the
+		// Chrome list of trusted logs and just submit to everything until we
+		// have 1 Google and 1 non-Google. This would be hilarious, and pretty
+		// resillient.
+		ctLogURLS = []string{
+			"https://ct.googleapis.com/icarus",
+			"https://ctlog.api.venafi.com",
+		}
+	}
+
+	cert, err := makeCertificate(siteData.Cert, siteData.Key, ctLogURLs)
 	if err != nil {
 		return cert, err
 	}
@@ -128,7 +141,8 @@ func cacheUnmanagedCertificatePEMFile(certFile, keyFile string) error {
 //
 // This function is safe for concurrent use.
 func cacheUnmanagedCertificatePEMBytes(certBytes, keyBytes []byte) error {
-	cert, err := makeCertificate(certBytes, keyBytes)
+	// XXX: Get a Config and pass the real CTLogURLs
+	cert, err := makeCertificate(certBytes, keyBytes, []string{})
 	if err != nil {
 		return err
 	}
@@ -149,14 +163,15 @@ func makeCertificateFromDisk(certFile, keyFile string) (Certificate, error) {
 	if err != nil {
 		return Certificate{}, err
 	}
-	return makeCertificate(certPEMBlock, keyPEMBlock)
+	// XXX: Get a Config and pass the real CTLogURLs
+	return makeCertificate(certPEMBlock, keyPEMBlock, []string{})
 }
 
 // makeCertificate turns a certificate PEM bundle and a key PEM block into
 // a Certificate, with OCSP and other relevant metadata tagged with it,
 // except for the OnDemand and Managed flags. It is up to the caller to
 // set those properties.
-func makeCertificate(certPEMBlock, keyPEMBlock []byte) (Certificate, error) {
+func makeCertificate(certPEMBlock, keyPEMBlock []byte, ctLogURLS []string) (Certificate, error) {
 	var cert Certificate
 
 	// Convert to a tls.Certificate
@@ -182,18 +197,8 @@ func makeCertificate(certPEMBlock, keyPEMBlock []byte) (Certificate, error) {
 	if err != nil {
 		log.Printf("[WARNING] Stapling OCSP: %v", err)
 	}
-	// TODO: We don't have the Config.CTLogURLs here, just hardcoded some
-	// Config.Managed (with Let's Encrypt) specific values here.
-	// TODO: Venafi was just distrusted; one idea would be to fetch the
-	// Chrome list of trusted logs and just submit to everything until we
-	// have 1 Google and 1 non-Google. This would be hilarious, and pretty
-	// resillient.
-	sctLogURLs := []string{
-		"https://ct.googleapis.com/icarus",
-		"https://ctlog.api.venafi.com",
-	}
 	// TODO: We can skip this if the leaf has SCTs in an X.509 extension.
-	scts, err := GetSCTSForCertificateChain(tlsCert.Certificate, sctLogURLs)
+	scts, err := GetSCTSForCertificateChain(tlsCert.Certificate, ctLogURLS)
 	if err != nil {
 		log.Printf("[WARNING] Fetching SCTs: %v", err)
 	} else {
