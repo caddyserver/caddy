@@ -394,7 +394,7 @@ func TestSetupParseCTLogURLs(t *testing.T) {
 	}
 
 	expectedLogURLS := []string{
-		"https://ct.googleapis.com/icarus", "https://ct.googleapis.com/pilot",
+		"ct.googleapis.com/icarus", "ct.googleapis.com/pilot",
 	}
 	if !reflect.DeepEqual(cfg.CTLogURLs, expectedLogURLS) {
 		t.Errorf("Got unexpected logs: %v", cfg.CTLogURLs)
