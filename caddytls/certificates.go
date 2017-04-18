@@ -128,8 +128,8 @@ func (cfg *Config) CacheManagedCertificate(domain string) (Certificate, error) {
 // false.
 //
 // This function is safe for concurrent use.
-func cacheUnmanagedCertificatePEMFile(certFile, keyFile string) error {
-	cert, err := makeCertificateFromDisk(certFile, keyFile)
+func cacheUnmanagedCertificatePEMFile(certFile, keyFile string, cfg *Config) error {
+	cert, err := makeCertificateFromDisk(certFile, keyFile, cfg)
 	if err != nil {
 		return err
 	}
@@ -141,9 +141,8 @@ func cacheUnmanagedCertificatePEMFile(certFile, keyFile string) error {
 // of the certificate and key, then caches it in memory.
 //
 // This function is safe for concurrent use.
-func cacheUnmanagedCertificatePEMBytes(certBytes, keyBytes []byte) error {
-	// XXX: Get a Config and pass the real CTLogURLs
-	cert, err := makeCertificate(certBytes, keyBytes, []string{})
+func cacheUnmanagedCertificatePEMBytes(certBytes, keyBytes []byte, cfg *Config) error {
+	cert, err := makeCertificate(certBytes, keyBytes, cfg.CTLogURLs)
 	if err != nil {
 		return err
 	}
@@ -155,7 +154,7 @@ func cacheUnmanagedCertificatePEMBytes(certBytes, keyBytes []byte) error {
 // certificate and key files. It fills out all the fields in
 // the certificate except for the Managed and OnDemand flags.
 // (It is up to the caller to set those.)
-func makeCertificateFromDisk(certFile, keyFile string) (Certificate, error) {
+func makeCertificateFromDisk(certFile, keyFile string, cfg *Config) (Certificate, error) {
 	certPEMBlock, err := ioutil.ReadFile(certFile)
 	if err != nil {
 		return Certificate{}, err
@@ -164,8 +163,7 @@ func makeCertificateFromDisk(certFile, keyFile string) (Certificate, error) {
 	if err != nil {
 		return Certificate{}, err
 	}
-	// XXX: Get a Config and pass the real CTLogURLs
-	return makeCertificate(certPEMBlock, keyPEMBlock, []string{})
+	return makeCertificate(certPEMBlock, keyPEMBlock, cfg.CTLogURLs)
 }
 
 // This is the OID for the embedded SCT X.509 extension (see the RFC 6962)
