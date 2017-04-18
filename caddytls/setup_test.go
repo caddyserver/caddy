@@ -358,6 +358,27 @@ func TestSetupParseWithOneTLSProtocol(t *testing.T) {
 	}
 }
 
+func TestSetupParseCTLogURLs(t *testing.T) {
+	params := `tls {
+		ct_logs https://ct.googleapis.com/icarus https://ct.googleapis.com/pilot
+	}`
+	cfg := new(Config)
+	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
+	c := caddy.NewTestController("", params)
+
+	err := setupTLS(c)
+	if err != nil {
+		t.Errorf("Expected no errors, got: %v", err)
+	}
+
+	expectedLogURLS := []string{
+		"https://ct.googleapis.com/icarus", "https://ct.googleapis.com/pilot"
+	};
+	if !reflect.DeepEqual(cfg.CTLogURLs, expectedLogURLS) {
+		t.Errorf("Got unexpected logs: %v", cfg.CTLogURLs)
+	}
+}
+
 const (
 	certFile = "test_cert.pem"
 	keyFile  = "test_key.pem"
