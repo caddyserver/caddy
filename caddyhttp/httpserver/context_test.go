@@ -72,8 +72,16 @@ func TestInclude(t *testing.T) {
 			shouldErr:            true,
 			expectedErrorContent: `type httpserver.Context`,
 		},
+		// Test 4 - all good, with custom function
+		{
+			fileContent:          `hello {{ caddy }}`,
+			expectedContent:      "hello caddy",
+			shouldErr:            false,
+			expectedErrorContent: "",
+		},
 	}
 
+	TemplateFuncs["caddy"] = func() string { return "caddy" }
 	for i, test := range tests {
 		testPrefix := getTestPrefix(i)
 
