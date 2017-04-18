@@ -25,6 +25,7 @@ import (
 	"golang.org/x/net/http2"
 
 	"github.com/mholt/caddy/caddyhttp/httpserver"
+	"github.com/mholt/caddy/caddyhttp/staticfiles"
 )
 
 var (
@@ -154,7 +155,13 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int) *
 				prefer(target.RawPath, target.Path),
 				prefer(req.URL.RawPath, req.URL.Path))
 		}
-		req.URL.Path = singleJoiningSlash(target.Path, req.URL.Path)
+		untouchedPath, _ := req.Context().Value(staticfiles.URLPathCtxKey).(string)
+		req.URL.Path = singleJoiningSlash(target.Path,
+			prefer(untouchedPath, req.URL.Path))
+		// req.URL.Path must be consistent with decoded form of req.URL.RawPath if any
+		if req.URL.RawPath != "" && req.URL.RawPath != req.URL.EscapedPath() {
+			panic("RawPath doesn't match Path")
+		}
 
 		// Trims the path of the socket from the URL path.
 		// This is done because req.URL passed to your proxied service
