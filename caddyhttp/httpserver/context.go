@@ -63,6 +63,18 @@ func (c Context) Header(name string) string {
 	return c.Req.Header.Get(name)
 }
 
+// Hostname gets the (remote) hostname of the client making the request.
+func (c Context) Hostname() string {
+	ip := c.IP()
+
+	hostnameList, err := net.LookupAddr(ip)
+	if err != nil || len(hostnameList) == 0 {
+		return c.Req.RemoteAddr
+	}
+
+	return hostnameList[0]
+}
+
 // Env gets a map of the environment variables.
 func (c Context) Env() map[string]string {
 	osEnv := os.Environ()
