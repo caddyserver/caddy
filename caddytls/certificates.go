@@ -3,6 +3,7 @@ package caddytls
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/asn1"
 	"errors"
 	"io/ioutil"
 	"log"
@@ -167,6 +168,17 @@ func makeCertificateFromDisk(certFile, keyFile string) (Certificate, error) {
 	return makeCertificate(certPEMBlock, keyPEMBlock, []string{})
 }
 
+var x509SCTOid = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 11129, 2, 4, 2}
+
+func certificateHasExtension(cert x509.Certificate, needle asn1.ObjectIdentifier) {
+	for _, ext := range cert.Extensions {
+		if ext.Id.Equal(needle) {
+			return true
+		}
+	}
+	return false
+}
+
 // makeCertificate turns a certificate PEM bundle and a key PEM block into
 // a Certificate, with OCSP and other relevant metadata tagged with it,
 // except for the OnDemand and Managed flags. It is up to the caller to
@@ -197,12 +209,13 @@ func makeCertificate(certPEMBlock, keyPEMBlock []byte, ctLogURLS []string) (Cert
 	if err != nil {
 		log.Printf("[WARNING] Stapling OCSP: %v", err)
 	}
-	// TODO: We can skip this if the leaf has SCTs in an X.509 extension.
-	scts, err := GetSCTSForCertificateChain(tlsCert.Certificate, ctLogURLS)
-	if err != nil {
-		log.Printf("[WARNING] Fetching SCTs: %v", err)
-	} else {
-		cert.Certificate.SignedCertificateTimestamps = scts
+	if !certificateHasExtension(leaf, x509SCTOid) {
+		scts, err := GetSCTSForCertificateChain(tlsCert.Certificate, ctLogURLS)
+		if err != nil {
+			log.Printf("[WARNING] Fetching SCTs: %v", err)
+		} else {
+			cert.Certificate.SignedCertificateTimestamps = scts
+		}
 	}
 
 	return cert, nil
