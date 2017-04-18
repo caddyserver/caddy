@@ -23,6 +23,9 @@ func activateHTTPS(cctx caddy.Context) error {
 
 	// place certificates and keys on disk
 	for _, c := range ctx.siteConfigs {
+		if c.TLS.OnDemand {
+			continue // obtain these certificates on-demand instead
+		}
 		err := c.TLS.ObtainCert(c.TLS.Hostname, operatorPresent)
 		if err != nil {
 			return err
@@ -65,15 +68,15 @@ func markQualifiedForAutoHTTPS(configs []*SiteConfig) {
 }
 
 // enableAutoHTTPS configures each config to use TLS according to default settings.
-// It will only change configs that are marked as managed, and assumes that
-// certificates and keys are already on disk. If loadCertificates is true,
-// the certificates will be loaded from disk into the cache for this process
-// to use. If false, TLS will still be enabled and configured with default
-// settings, but no certificates will be parsed loaded into the cache, and
-// the returned error value will always be nil.
+// It will only change configs that are marked as managed but not on-demand, and
+// assumes that certificates and keys are already on disk. If loadCertificates is
+// true, the certificates will be loaded from disk into the cache for this process
+// to use. If false, TLS will still be enabled and configured with default settings,
+// but no certificates will be parsed loaded into the cache, and the returned error
+// value will always be nil.
 func enableAutoHTTPS(configs []*SiteConfig, loadCertificates bool) error {
 	for _, cfg := range configs {
-		if cfg == nil || cfg.TLS == nil || !cfg.TLS.Managed {
+		if cfg == nil || cfg.TLS == nil || !cfg.TLS.Managed || cfg.TLS.OnDemand {
 			continue
 		}
 		cfg.TLS.Enabled = true
