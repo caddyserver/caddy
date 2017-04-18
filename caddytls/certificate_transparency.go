@@ -63,17 +63,19 @@ func (sct *signedCertificateTimestamp) AsRawBytes() ([]byte, error) {
 	return b.Bytes(), nil
 }
 
+var httpClient = http.Client{Timeout: 30 * time.Second}
+
 // Makes an HTTP request to the log server and returns the parsed SCT response.
 // If the cert is already in the log, the log will simply return the previously
 // generated SCT, making this idempotent.
-func submitSCT(client http.Client, url string, payload []byte) (*signedCertificateTimestamp, error) {
+func submitSCT(url string, payload []byte) (*signedCertificateTimestamp, error) {
 	// Protocol must be HTTPS, so require people to omit it.
 	url = "https://" + url
 	if !strings.HasSuffix(url, "/") {
 		url = url + "/"
 	}
 
-	response, err := client.Post(url+"ct/v1/add-chain", "application/json", bytes.NewReader(payload))
+	response, err := httpClient.Post(url+"ct/v1/add-chain", "application/json", bytes.NewReader(payload))
 	if err != nil {
 		return nil, err
 	}
@@ -105,9 +107,8 @@ func GetSCTSForCertificateChain(certChain [][]byte, logURLs []string) ([][]byte,
 		return nil, err
 	}
 
-	httpClient := http.Client{Timeout: 30 * time.Second}
 	for _, url := range logURLs {
-		sct, err := submitSCT(httpClient, url, payload)
+		sct, err := submitSCT(url, payload)
 		if err != nil {
 			return nil, err
 		}
