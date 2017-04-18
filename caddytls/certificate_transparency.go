@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"strings"
 )
@@ -83,12 +82,8 @@ func submitSCT(url string, payload []byte) (*signedCertificateTimestamp, error) 
 	if response.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("HTTP error %d", response.StatusCode)
 	}
-	responseBody, err := ioutil.ReadAll(response.Body)
-	if err != nil {
-		return nil, err
-	}
 	sct := &signedCertificateTimestamp{}
-	err = json.Unmarshal(responseBody, &sct)
+	err := json.NewDecoder(response.Body).Decode(&sct)
 	if err != nil {
 		return nil, err
 	}
