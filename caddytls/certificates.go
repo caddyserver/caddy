@@ -188,7 +188,10 @@ func makeCertificate(certPEMBlock, keyPEMBlock []byte) (Certificate, error) {
 	// Chrome list of trusted logs and just submit to everything until we
 	// have 1 Google and 1 non-Google. This would be hilarious, and pretty
 	// resillient.
-	sctLogURLs := []string{"https://ct.googleapis.com/icarus", "https://ctlog.api.venafi.com"}
+	sctLogURLs := []string{
+		"https://ct.googleapis.com/icarus",
+		"https://ctlog.api.venafi.com",
+	}
 	// TODO: We can skip this if the leaf has SCTs in an X.509 extension.
 	scts, err := GetSCTSForCertificateChain(tlsCert.Certificate, sctLogURLs)
 	if err != nil {
