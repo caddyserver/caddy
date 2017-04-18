@@ -108,8 +108,8 @@ func (cfg *Config) CacheManagedCertificate(domain string) (Certificate, error) {
 		// have 1 Google and 1 non-Google. This would be hilarious, and pretty
 		// resillient.
 		ctLogURLs = []string{
-			"https://ct.googleapis.com/icarus",
-			"https://ctlog.api.venafi.com",
+			"ct.googleapis.com/icarus",
+			"ctlog.api.venafi.com",
 		}
 	}
 

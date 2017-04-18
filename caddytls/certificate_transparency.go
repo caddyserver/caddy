@@ -67,10 +67,8 @@ func (sct *signedCertificateTimestamp) AsRawBytes() ([]byte, error) {
 // If the cert is already in the log, the log will simply return the previously
 // generated SCT, making this idempotent.
 func submitSCT(client http.Client, url string, payload []byte) (*signedCertificateTimestamp, error) {
-	if !strings.Contains(url, "://") {
-		// Allow people to omit the protocol and default to HTTPS.
-		url = "https://" + url
-	}
+	// Protocol must be HTTPS, so require people to omit it.
+	url = "https://" + url
 	if !strings.HasSuffix(url, "/") {
 		url = url + "/"
 	}
