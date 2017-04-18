@@ -101,13 +101,13 @@ func (cfg *Config) CacheManagedCertificate(domain string) (Certificate, error) {
 		return Certificate{}, err
 	}
 
-	ctLogURLS := cfg.CTLogURLs
-	if len(ctLogURLS) == 0 {
+	ctLogURLs := cfg.CTLogURLs
+	if len(ctLogURLs) == 0 {
 		// TODO: Venafi was just distrusted; one idea would be to fetch the
 		// Chrome list of trusted logs and just submit to everything until we
 		// have 1 Google and 1 non-Google. This would be hilarious, and pretty
 		// resillient.
-		ctLogURLS = []string{
+		ctLogURLs = []string{
 			"https://ct.googleapis.com/icarus",
 			"https://ctlog.api.venafi.com",
 		}
@@ -170,7 +170,7 @@ func makeCertificateFromDisk(certFile, keyFile string) (Certificate, error) {
 
 var x509SCTOid = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 11129, 2, 4, 2}
 
-func certificateHasExtension(cert x509.Certificate, needle asn1.ObjectIdentifier) {
+func certificateHasExtension(cert *x509.Certificate, needle asn1.ObjectIdentifier) bool {
 	for _, ext := range cert.Extensions {
 		if ext.Id.Equal(needle) {
 			return true
