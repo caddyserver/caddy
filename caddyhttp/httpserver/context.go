@@ -244,6 +244,9 @@ func (c Context) Markdown(filename string) (string, error) {
 	return string(markdown), nil
 }
 
+// TemplateFuncs contains user defined functions
+var TemplateFuncs = template.FuncMap{}
+
 // ContextInclude opens filename using fs and executes a template with the context ctx.
 // This does the same thing that Context.Include() does, but with the ability to provide
 // your own context so that the included files can have access to additional fields your
@@ -261,7 +264,8 @@ func ContextInclude(filename string, ctx interface{}, fs http.FileSystem) (strin
 		return "", err
 	}
 
-	tpl, err := template.New(filename).Parse(string(body))
+	tpl := template.New(filename).Funcs(TemplateFuncs)
+	tpl, err = tpl.Parse(string(body))
 	if err != nil {
 		return "", err
 	}
