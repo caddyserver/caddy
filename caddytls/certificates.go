@@ -198,7 +198,7 @@ func makeCertificate(certPEMBlock, keyPEMBlock []byte, certificateTransparency b
 	}
 	// If the certificate has embedded SCTs no need to fetch new ones
 	if certificateTransparency && !certificateHasExtension(leaf, x509SCTOid) {
-		// TODO: cache this somewhere for a while. Also, recheck ocassionally,
+		// TODO: cache this somewhere for a while. Also, recheck occasionally,
 		// as we do for OCSP.
 		logs, err := GetTrustedCTLogs()
 		if err != nil {
