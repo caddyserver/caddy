@@ -123,3 +123,66 @@ func GetSCTSForCertificateChain(certChain [][]byte, logURLs []string) ([][]byte,
 	}
 	return sctBytes, nil
 }
+
+type ctLog struct {
+	url string
+	// Chrome's CT policy requires one SCT from a Google log, and one SCT from
+	// a non-Google log, so we track whether a log is Google or not.
+	is_google bool
+}
+
+type logList struct {
+	logs []struct {
+		description string
+		url         string
+		operated_by []int
+	}
+	operators []struct {
+		name string
+		id   int
+	}
+}
+
+// GetTrustedCTLogs returns a list of CT logs trusted by Chrome. As the
+// browser/CT ecosystem evolves it may return other CT logs as well.
+func GetTrustedCTLogs() ([]ctLog, error) {
+	response, err := http.Get("https://www.gstatic.com/ct/log_list/log_list.json")
+	if err != nil {
+		return nil, err
+	}
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP response error: %d", response.StatusCode)
+	}
+	list := logList{}
+	// Limit the amount we read to 10MB to defend against a DoS. Currently this
+	// file is ~2.5KB so this leaves us plenty of breathing room.
+	err = json.NewDecoder(io.LimitReader(response.Body, 10*1024*1024)).Decode(&list)
+	if err != nil {
+		return nil, err
+	}
+
+	var googleOperator int
+	for _, operator := range list.operators {
+		if operator.name == "Google" {
+			googleOperator = operator.id
+			break
+		}
+	}
+	logs := make([]ctLog, 0, len(list.logs))
+	for _, log := range list.logs {
+		logs = append(logs, ctLog{
+			url:       log.url,
+			is_google: intSliceContains(log.operated_by, googleOperator),
+		})
+	}
+	return logs, nil
+}
+
+func intSliceContains(data []int, needle int) bool {
+	for _, d := range data {
+		if d == needle {
+			return true
+		}
+	}
+	return false
+}
