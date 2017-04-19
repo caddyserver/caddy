@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"strings"
 
-	"errors"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
 
@@ -141,7 +140,7 @@ func (rww *responseWriterWrapper) Push(target string, opts *http.PushOptions) er
 		return pusher.Push(target, opts)
 	}
 
-	return errors.New("push is unavailable (probably chained http.ResponseWriter does not implement http.Pusher)")
+	return httpserver.NonPusherError{Underlying: rww.ResponseWriter}
 }
 
 // Interface guards

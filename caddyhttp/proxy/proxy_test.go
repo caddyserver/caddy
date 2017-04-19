@@ -12,7 +12,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/http/httptrace"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -101,7 +100,7 @@ func TestReverseProxy(t *testing.T) {
 
 	// Make sure {upstream} placeholder is set
 	r.Body = ioutil.NopCloser(strings.NewReader("test"))
-	rr := httpserver.NewResponseRecorder(httptest.NewRecorder())
+	rr := httpserver.NewResponseRecorder(testResponseRecorder{httptest.NewRecorder()})
 	rr.Replacer = httpserver.NewReplacer(r, rr, "-")
 
 	p.ServeHTTP(rr, r)
@@ -1123,7 +1122,18 @@ func TestReverseProxyLargeBody(t *testing.T) {
 }
 
 func TestCancelRequest(t *testing.T) {
+	reqInFlight := make(chan struct{})
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(reqInFlight) // cause the client to cancel its request
+
+		select {
+		case <-time.After(10 * time.Second):
+			t.Error("Handler never saw CloseNotify")
+			return
+		case <-w.(http.CloseNotifier).CloseNotify():
+		}
+
+		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("Hello, client"))
 	}))
 	defer backend.Close()
@@ -1140,26 +1150,21 @@ func TestCancelRequest(t *testing.T) {
 	defer cancel()
 	req = req.WithContext(ctx)
 
-	// add GotConn hook to cancel the request
-	gotC := make(chan struct{})
-	defer close(gotC)
-	trace := &httptrace.ClientTrace{
-		GotConn: func(connInfo httptrace.GotConnInfo) {
-			gotC <- struct{}{}
-		},
-	}
-	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
-
 	// wait for canceling the request
 	go func() {
-		<-gotC
+		<-reqInFlight
 		cancel()
 	}()
 
-	status, err := p.ServeHTTP(httptest.NewRecorder(), req)
-	if status != 0 || err != nil {
-		t.Errorf("expect proxy handle normally, but not, status:%d, err:%q",
-			status, err)
+	rec := httptest.NewRecorder()
+	status, err := p.ServeHTTP(rec, req)
+	expectedStatus, expectErr := http.StatusBadGateway, context.Canceled
+	if status != expectedStatus || err != expectErr {
+		t.Errorf("expect proxy handle return status[%d] with error[%v], but got status[%d] with error[%v]",
+			expectedStatus, expectErr, status, err)
+	}
+	if body := rec.Body.String(); body != "" {
+		t.Errorf("expect a blank response, but got %q", body)
 	}
 }
 
@@ -1309,6 +1314,28 @@ func (c *fakeConn) SetWriteDeadline(t time.Time) error { return nil }
 func (c *fakeConn) Close() error                       { return nil }
 func (c *fakeConn) Read(b []byte) (int, error)         { return c.readBuf.Read(b) }
 func (c *fakeConn) Write(b []byte) (int, error)        { return c.writeBuf.Write(b) }
+
+// testResponseRecorder wraps `httptest.ResponseRecorder`,
+// also implements `http.CloseNotifier`, `http.Hijacker` and `http.Pusher`.
+type testResponseRecorder struct {
+	*httptest.ResponseRecorder
+}
+
+func (testResponseRecorder) CloseNotify() <-chan bool { return nil }
+func (t testResponseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return nil, nil, httpserver.NonHijackerError{Underlying: t}
+}
+func (t testResponseRecorder) Push(target string, opts *http.PushOptions) error {
+	return httpserver.NonPusherError{Underlying: t}
+}
+
+// Interface guards
+var (
+	_ http.Pusher        = testResponseRecorder{}
+	_ http.Flusher       = testResponseRecorder{}
+	_ http.CloseNotifier = testResponseRecorder{}
+	_ http.Hijacker      = testResponseRecorder{}
+)
 
 func BenchmarkProxy(b *testing.B) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
