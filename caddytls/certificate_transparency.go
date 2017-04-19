@@ -104,7 +104,7 @@ func submitSCT(url string, payload []byte) (*signedCertificateTimestamp, error) 
 	return sct, nil
 }
 
-// GetSCTSForCertificateChain takes a certificate chain, and a list of target
+// getSCTSForCertificateChain takes a certificate chain, and a list of target
 // logs, and returns a list of SCTs (byte slices) or an error.
 func getSCTSForCertificateChain(certChain [][]byte, logs []ctLog) ([][]byte, error) {
 	sctBytes := make([][]byte, 0)
