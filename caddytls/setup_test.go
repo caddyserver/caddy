@@ -380,7 +380,9 @@ func TestSetupParseCertificateTransparencyOff(t *testing.T) {
 }
 
 func TestSetupParseCertificateTransparencyDefault(t *testing.T) {
+	// This isn't must_staple specific, we just need something in that block.
 	params := `tls {
+		must_staple
 	}`
 	cfg := new(Config)
 	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
