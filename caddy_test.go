@@ -61,6 +61,48 @@ func TestIsLoopback(t *testing.T) {
 	}
 }
 
+func TestIsPrivateNetwork(t *testing.T) {
+	for i, test := range []struct {
+		input  string
+		expect bool
+	}{
+		{"10.0.0.0", true},
+		{"10.0.0.5", true},
+		{"10.255.255.255", true},
+		{"10.0.0.5:1234", true},
+		{"172.16.0.0", true},
+		{"172.19.1.1", true},
+		{"172.31.255.255", true},
+		{"192.168.0.0", true},
+		{"192.168.1.12", true},
+		{"192.168.255.255", true},
+		{"fc00::1", true},
+		{"fd12:3456:789a:1::1", true},
+		{"fd12:3456:789a:1::1:1234", true},
+		{"fd3e:00c3:62a6:e2b3::", true},
+		{"fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff", true},
+		{"example.com", false},
+		{"localhost", false},
+		{"localhost:1234", false},
+		{"localhost:", false},
+		{"127.0.0.1", false},
+		{"127.0.0.1:443", false},
+		{"127.0.1.5", false},
+		{"12.7.0.1", false},
+		{"[::1]", false},
+		{"[::1]:1234", false},
+		{"::1", false},
+		{"::", false},
+		{"[::]", false},
+		{"local", false},
+		{"cc85:e78:948c:2ad6:5959:102d:10cb:31c4", false},
+	} {
+		if got, want := IsPrivateNetwork(test.input), test.expect; got != want {
+			t.Errorf("Test %d (%s): expected %v but was %v", i, test.input, want, got)
+		}
+	}
+}
+
 func TestListenerAddrEqual(t *testing.T) {
 	ln1, err := net.Listen("tcp", "[::]:0")
 	if err != nil {
