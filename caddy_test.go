@@ -66,21 +66,39 @@ func TestIsPrivateNetwork(t *testing.T) {
 		input  string
 		expect bool
 	}{
+		{"9.255.255.255", false},
 		{"10.0.0.0", true},
-		{"10.0.0.5", true},
+		{"10.0.0.1", true},
+		{"10.255.255.254", true},
 		{"10.255.255.255", true},
+		{"11.0.0.0", false},
 		{"10.0.0.5:1234", true},
+		{"11.0.0.5:1234", false},
+
+		{"172.15.255.255", false},
 		{"172.16.0.0", true},
-		{"172.19.1.1", true},
+		{"172.16.0.1", true},
+		{"172.31.255.254", true},
 		{"172.31.255.255", true},
+		{"172.32.0.0", false},
+		{"172.16.0.1:1234", true},
+
+		{"192.167.255.255", false},
 		{"192.168.0.0", true},
-		{"192.168.1.12", true},
+		{"192.168.0.1", true},
+		{"192.168.255.254", true},
 		{"192.168.255.255", true},
+		{"192.169.0.0", false},
+		{"192.168.0.1:1234", true},
+
+		{"fbff:ffff:ffff:ffff:ffff:ffff:ffff:ffff", false},
+		{"fc00::", true},
 		{"fc00::1", true},
-		{"fd12:3456:789a:1::1", true},
-		{"fd12:3456:789a:1::1:1234", true},
-		{"fd3e:00c3:62a6:e2b3::", true},
+		{"fdff:ffff:ffff:ffff:ffff:ffff:ffff:fffe", true},
 		{"fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff", true},
+		{"fe00::", false},
+		{"fd12:3456:789a:1::1:1234", true},
+
 		{"example.com", false},
 		{"localhost", false},
 		{"localhost:1234", false},
@@ -95,7 +113,6 @@ func TestIsPrivateNetwork(t *testing.T) {
 		{"::", false},
 		{"[::]", false},
 		{"local", false},
-		{"cc85:e78:948c:2ad6:5959:102d:10cb:31c4", false},
 	} {
 		if got, want := IsPrivateNetwork(test.input), test.expect; got != want {
 			t.Errorf("Test %d (%s): expected %v but was %v", i, test.input, want, got)
