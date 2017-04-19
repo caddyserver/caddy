@@ -5,26 +5,17 @@ After=network-online.target
 Wants=network-online.target systemd-networkd-wait-online.service
 
 [Service]
-; Only allow 1 restart with 10 seconds so that caddy doesn't get locked out by PAM
-Restart=on-failure
+; Restart on crash (bad signal), but not on 'clean' failure (error exit code)
+Restart=on-abnormal
+; Allow up to 3 restarts within 10 seconds
+; (it's unlikely that a user or properly-running script will do this)
 StartLimitInterval=10
-StartLimitBurst=1
+StartLimitBurst=3
 
-; User and group the process will run as.
+; User and group the process will run as
+; (www-data is the de facto standard on most systems)
 User=www-data
 Group=www-data
-
-; Allow ExecStartPre to run as root, but restrict ExecStart
-PermissionsStartOnly=true
-
-; Make sure that /etc/ssl/caddy exists with the correct permissions
-ExecStartPre=/bin/mkdir -p /etc/ssl/caddy
-ExecStartPre=/bin/chown -R www-data:www-data /etc/ssl/caddy
-ExecStartPre=/bin/chmod 750 /etc/ssl/caddy
-
-; Change into a www-data writeable folder as /run/caddy (until #1565 is addressed)
-RuntimeDirectory=caddy
-RuntimeDirectoryMode=755
 
 ; Letsencrypt-issued certificates will be written to this directory.
 Environment=CADDYPATH=/etc/ssl/caddy
@@ -47,16 +38,25 @@ PrivateDevices=true
 ProtectHome=true
 ; Make /usr, /boot, /etc and possibly some more folders read-only.
 ProtectSystem=full
-; … except /etc/ssl/caddy, because we want Letsencrypt-certificates there.
+; … except /etc/ssl/caddy, because we want Letsencrypt-certificates there
+;   and /var/log/caddy, because we want a place where logs can go.
 ;   This merely retains r/w access rights, it does not add any new. Must still be writable on the host!
-ReadWriteDirectories=/etc/ssl/caddy
+ReadWritePaths=/etc/ssl/caddy /var/log/caddy
 
 ; The following additional security directives only work with systemd v229 or later.
 ; They further retrict privileges that can be gained by caddy. Uncomment if you like.
 ; Note that you may have to add capabilities required by any plugins in use.
-;CapabilityBoundingSet=CAP_NET_BIND_SERVICE
-;AmbientCapabilities=CAP_NET_BIND_SERVICE
-;NoNewPrivileges=true
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+
+; Caveat: Some plugins need additional capabilities. Add them to both lines above.
+; - plugin "upload" needs: CAP_LEASE
 
 [Install]
 WantedBy=multi-user.target
+
+; Learn more:
+;
+;   * systemd: https://www.freedesktop.org/software/systemd/man/systemd.exec.html
+;   * why caddy's systemd file is what it is https://github.com/mholt/caddy/pull/1566/files
