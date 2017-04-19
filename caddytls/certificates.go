@@ -101,19 +101,7 @@ func (cfg *Config) CacheManagedCertificate(domain string) (Certificate, error) {
 		return Certificate{}, err
 	}
 
-	ctLogURLs := cfg.CTLogURLs
-	if len(ctLogURLs) == 0 {
-		// TODO: Venafi was just distrusted; one idea would be to fetch the
-		// Chrome list of trusted logs and just submit to everything until we
-		// have 1 Google and 1 non-Google. This would be hilarious, and pretty
-		// resillient.
-		ctLogURLs = []string{
-			"ct.googleapis.com/icarus",
-			"ctlog.api.venafi.com",
-		}
-	}
-
-	cert, err := makeCertificate(siteData.Cert, siteData.Key, ctLogURLs)
+	cert, err := makeCertificate(siteData.Cert, siteData.Key, cfg.CertificateTransparency)
 	if err != nil {
 		return cert, err
 	}
@@ -142,7 +130,7 @@ func cacheUnmanagedCertificatePEMFile(certFile, keyFile string, cfg *Config) err
 //
 // This function is safe for concurrent use.
 func cacheUnmanagedCertificatePEMBytes(certBytes, keyBytes []byte, cfg *Config) error {
-	cert, err := makeCertificate(certBytes, keyBytes, cfg.CTLogURLs)
+	cert, err := makeCertificate(certBytes, keyBytes, cfg.CertificateTransparency)
 	if err != nil {
 		return err
 	}
@@ -163,7 +151,7 @@ func makeCertificateFromDisk(certFile, keyFile string, cfg *Config) (Certificate
 	if err != nil {
 		return Certificate{}, err
 	}
-	return makeCertificate(certPEMBlock, keyPEMBlock, cfg.CTLogURLs)
+	return makeCertificate(certPEMBlock, keyPEMBlock, cfg.CertificateTransparency)
 }
 
 // This is the OID for the embedded SCT X.509 extension (see the RFC 6962)
@@ -182,7 +170,7 @@ func certificateHasExtension(cert *x509.Certificate, needle asn1.ObjectIdentifie
 // a Certificate, with OCSP and other relevant metadata tagged with it,
 // except for the OnDemand and Managed flags. It is up to the caller to
 // set those properties.
-func makeCertificate(certPEMBlock, keyPEMBlock []byte, ctLogURLS []string) (Certificate, error) {
+func makeCertificate(certPEMBlock, keyPEMBlock []byte, certificateTransparency bool) (Certificate, error) {
 	var cert Certificate
 
 	// Convert to a tls.Certificate
@@ -209,12 +197,19 @@ func makeCertificate(certPEMBlock, keyPEMBlock []byte, ctLogURLS []string) (Cert
 		log.Printf("[WARNING] Stapling OCSP: %v", err)
 	}
 	// If the certificate has embedded SCTs no need to fetch new ones
-	if !certificateHasExtension(leaf, x509SCTOid) {
-		scts, err := GetSCTSForCertificateChain(tlsCert.Certificate, ctLogURLS)
+	if certificateTransparency && !certificateHasExtension(leaf, x509SCTOid) {
+		// TODO: cache this somewhere for a while. Also, recheck ocassionally,
+		// as we do for OCSP.
+		logs, err := GetTrustedCTLogs()
 		if err != nil {
-			log.Printf("[WARNING] Fetching SCTs: %v", err)
+			log.Printf("[WARNING] Fetching trusted CT logs: %v", err)
 		} else {
-			cert.Certificate.SignedCertificateTimestamps = scts
+			scts, err := GetSCTSForCertificateChain(tlsCert.Certificate, logs)
+			if err != nil {
+				log.Printf("[WARNING] Fetching SCTs: %v", err)
+			} else {
+				cert.Certificate.SignedCertificateTimestamps = scts
+			}
 		}
 	}
 

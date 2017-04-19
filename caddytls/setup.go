@@ -33,6 +33,8 @@ func setupTLS(c *caddy.Controller) error {
 	}
 
 	config.Enabled = true
+	// This defaults to true, can be disabled by config
+	config.CertificateTransparency = true
 
 	for c.Next() {
 		var certificateFile, keyFile, loadDir, maxCerts string
@@ -174,13 +176,12 @@ func setupTLS(c *caddy.Controller) error {
 				}
 			case "must_staple":
 				config.MustStaple = true
-			case "ct_logs":
+			case "certificate_transparency":
 				args := c.RemainingArgs()
-				if len(args) == 0 {
-					return c.ArgErr()
-				}
-				for _, arg := range args {
-					config.CTLogURLs = append(config.CTLogURLs, arg)
+				if len(args) == 0 || args[0] == "yes" {
+					config.CertificateTransparency = true
+				} else if args[0] == "no" {
+					config.CertificateTransparency = false
 				}
 			default:
 				return c.Errf("Unknown keyword '%s'", c.Val())

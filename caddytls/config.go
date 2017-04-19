@@ -119,9 +119,11 @@ type Config struct {
 	// Protocol Negotiation (ALPN).
 	ALPN []string
 
-	// The list of CT logs to attempt to submit the certificate to in order to
-	// obtain SCTs to serve in the handshake.
-	CTLogURLs []string
+	// Whether to attempt to automatically submit certificates to Certificate
+	// Transparency logs and include SCTs in the TLS handshake. (Note that even
+	// if this is disabled, if a certificate has embedded SCTs, or OCSP
+	// responses contain SCTs, those will sill be served.)
+	CertificateTransparency bool
 
 	tlsConfig *tls.Config // the final tls.Config created with buildStandardTLSConfig()
 }

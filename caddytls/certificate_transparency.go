@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -95,11 +96,8 @@ func submitSCT(url string, payload []byte) (*signedCertificateTimestamp, error) 
 }
 
 // GetSCTSForCertificateChain takes a certificate chain, and a list of target
-// log URLs, and returns a list of SCTs (byte slices) or an error.
-
-// TODO: support submitting to multiple logs and just getting as many SCTs as
-// we can, even if some logs error.
-func GetSCTSForCertificateChain(certChain [][]byte, logURLs []string) ([][]byte, error) {
+// logs, and returns a list of SCTs (byte slices) or an error.
+func GetSCTSForCertificateChain(certChain [][]byte, logs []ctLog) ([][]byte, error) {
 	sctBytes := make([][]byte, 0)
 	addReq := addChainRequest{}
 	for _, cert := range certChain {
@@ -110,16 +108,36 @@ func GetSCTSForCertificateChain(certChain [][]byte, logURLs []string) ([][]byte,
 		return nil, err
 	}
 
-	for _, url := range logURLs {
-		sct, err := submitSCT(url, payload)
+	// Chrome CT policy requires at least 1 Google log and 1 non-Google log
+	needGoogle := true
+	needNonGoogle := true
+
+	// TODO: submit to all these concurrently
+	for _, ctLog := range logs {
+		// Skip logs that don't contribute to our needs.
+		if (ctLog.is_google && !needGoogle) || (!ctLog.is_google && !needNonGoogle) {
+			continue
+		}
+		sct, err := submitSCT(ctLog.url, payload)
+		// TODO: distinguish between ignorable errors (specifically, "this log
+		// doesn't trust this root") and ones that we should log!
 		if err != nil {
-			return nil, err
+			log.Printf("[WARNING] Error submitting to CT log: %v", err)
+			continue
 		}
 		bytes, err := sct.AsRawBytes()
 		if err != nil {
 			return nil, err
 		}
 		sctBytes = append(sctBytes, bytes)
+		if ctLog.is_google {
+			needGoogle = false
+		} else {
+			needNonGoogle = false
+		}
+		if !needGoogle && !needNonGoogle {
+			break
+		}
 	}
 	return sctBytes, nil
 }
