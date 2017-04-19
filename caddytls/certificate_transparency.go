@@ -150,6 +150,7 @@ func GetTrustedCTLogs() ([]ctLog, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("HTTP response error: %d", response.StatusCode)
 	}
