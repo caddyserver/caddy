@@ -5,7 +5,6 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
-	"reflect"
 	"testing"
 
 	"github.com/mholt/caddy"
@@ -380,9 +379,8 @@ func TestSetupParseCertificateTransparencyOff(t *testing.T) {
 	}
 }
 
-func TestSetupParseCTLogURLs(t *testing.T) {
+func TestSetupParseCertificateTransparencyDefault(t *testing.T) {
 	params := `tls {
-		ct_logs ct.googleapis.com/icarus ct.googleapis.com/pilot
 	}`
 	cfg := new(Config)
 	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
@@ -392,12 +390,42 @@ func TestSetupParseCTLogURLs(t *testing.T) {
 	if err != nil {
 		t.Errorf("Expected no errors, got: %v", err)
 	}
-
-	expectedLogURLS := []string{
-		"ct.googleapis.com/icarus", "ct.googleapis.com/pilot",
+	if !cfg.CertificateTransparency {
+		t.Errorf("Expected CertificateTransparency to be true")
 	}
-	if !reflect.DeepEqual(cfg.CTLogURLs, expectedLogURLS) {
-		t.Errorf("Got unexpected logs: %v", cfg.CTLogURLs)
+}
+
+func TestSetupParseCertificateTransparencyNo(t *testing.T) {
+	params := `tls {
+		certificate_transparency no
+	}`
+	cfg := new(Config)
+	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
+	c := caddy.NewTestController("", params)
+
+	err := setupTLS(c)
+	if err != nil {
+		t.Errorf("Expected no errors, got: %v", err)
+	}
+	if cfg.CertificateTransparency {
+		t.Errorf("Expected CertificateTransparency to be false")
+	}
+}
+
+func TestSetupParseCertificateTransparencyYes(t *testing.T) {
+	params := `tls {
+		certificate_transparency yes
+	}`
+	cfg := new(Config)
+	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
+	c := caddy.NewTestController("", params)
+
+	err := setupTLS(c)
+	if err != nil {
+		t.Errorf("Expected no errors, got: %v", err)
+	}
+	if !cfg.CertificateTransparency {
+		t.Errorf("Expected CertificateTransparency to be true")
 	}
 }
 
