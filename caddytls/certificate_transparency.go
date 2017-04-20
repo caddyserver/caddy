@@ -154,6 +154,7 @@ type logList struct {
 		Description string `json:"description"`
 		URL         string `json:"url"`
 		OperatedBy  []int  `json:"operated_by"`
+		DisqualifiedAt *int `json:"disqualified_at"`
 	} `json:"logs"`
 	Operators []struct {
 		Name string `json:"name"`
@@ -189,6 +190,9 @@ func GetTrustedCTLogs() ([]ctLog, error) {
 	}
 	logs := make([]ctLog, 0, len(list.Logs))
 	for _, log := range list.Logs {
+		if log.DisqualifiedAt != nil {
+			continue
+		}
 		logs = append(logs, ctLog{
 			url:       log.URL,
 			is_google: intSliceContains(log.OperatedBy, googleOperator),
