@@ -91,17 +91,14 @@ selectwriter:
 	switch l.Output {
 	case "", "stderr":
 		l.writer = os.Stderr
-
 	case "stdout":
 		l.writer = os.Stdout
-
 	case "syslog":
 		l.writer, err = gsyslog.NewLogger(gsyslog.LOG_ERR, "LOCAL0", "caddy")
 		if err != nil {
 			return err
 		}
 	default:
-
 		if address := parseSyslogAddress(l.Output); address != nil {
 			l.writer, err = gsyslog.DialLogger(address.network, address.address, gsyslog.LOG_ERR, "LOCAL0", "caddy")
 
@@ -136,6 +133,11 @@ selectwriter:
 
 // Close closes open log files or connections to syslog.
 func (l *Logger) Close() error {
+	// don't close stdout or stderr
+	if l.writer == os.Stdout || l.writer == os.Stderr {
+		return nil
+	}
+
 	// Will close local/remote syslog connections too :)
 	if closer, ok := l.writer.(io.WriteCloser); ok {
 		l.fileMu.Lock()
