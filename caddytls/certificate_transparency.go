@@ -151,10 +151,10 @@ type ctLog struct {
 
 type logList struct {
 	Logs []struct {
-		Description string `json:"description"`
-		URL         string `json:"url"`
-		OperatedBy  []int  `json:"operated_by"`
-		DisqualifiedAt *int `json:"disqualified_at"`
+		Description    string `json:"description"`
+		URL            string `json:"url"`
+		OperatedBy     []int  `json:"operated_by"`
+		DisqualifiedAt *int   `json:"disqualified_at"`
 	} `json:"logs"`
 	Operators []struct {
 		Name string `json:"name"`
