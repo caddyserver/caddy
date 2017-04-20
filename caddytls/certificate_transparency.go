@@ -97,7 +97,7 @@ func submitSCT(url string, payload []byte) (*signedCertificateTimestamp, error) 
 
 // GetSCTSForCertificateChain takes a certificate chain, and a list of target
 // logs, and returns a list of SCTs (byte slices) or an error.
-func GetSCTSForCertificateChain(certChain [][]byte, logs []ctLog) ([][]byte, error) {
+func getSCTSForCertificateChain(certChain [][]byte, logs []ctLog) ([][]byte, error) {
 	sctBytes := make([][]byte, 0)
 	addReq := addChainRequest{}
 	for _, cert := range certChain {
@@ -115,7 +115,7 @@ func GetSCTSForCertificateChain(certChain [][]byte, logs []ctLog) ([][]byte, err
 	// TODO: submit to all these concurrently
 	for _, ctLog := range logs {
 		// Skip logs that don't contribute to our needs.
-		if (ctLog.is_google && !needGoogle) || (!ctLog.is_google && !needNonGoogle) {
+		if (ctLog.isGoogle && !needGoogle) || (!ctLog.isGoogle && !needNonGoogle) {
 			continue
 		}
 		sct, err := submitSCT(ctLog.url, payload)
@@ -130,7 +130,7 @@ func GetSCTSForCertificateChain(certChain [][]byte, logs []ctLog) ([][]byte, err
 			return nil, err
 		}
 		sctBytes = append(sctBytes, bytes)
-		if ctLog.is_google {
+		if ctLog.isGoogle {
 			needGoogle = false
 		} else {
 			needNonGoogle = false
@@ -146,7 +146,7 @@ type ctLog struct {
 	url string
 	// Chrome's CT policy requires one SCT from a Google log, and one SCT from
 	// a non-Google log, so we track whether a log is Google or not.
-	is_google bool
+	isGoogle bool
 }
 
 type logList struct {
@@ -158,13 +158,13 @@ type logList struct {
 	} `json:"logs"`
 	Operators []struct {
 		Name string `json:"name"`
-		Id   int    `json:"id"`
+		ID   int    `json:"id"`
 	} `json:"operators"`
 }
 
 // GetTrustedCTLogs returns a list of CT logs trusted by Chrome. As the
 // browser/CT ecosystem evolves it may return other CT logs as well.
-func GetTrustedCTLogs() ([]ctLog, error) {
+func getTrustedCTLogs() ([]ctLog, error) {
 	response, err := httpClient.Get("https://www.gstatic.com/ct/log_list/log_list.json")
 	if err != nil {
 		return nil, err
@@ -184,7 +184,7 @@ func GetTrustedCTLogs() ([]ctLog, error) {
 	var googleOperator int
 	for _, operator := range list.Operators {
 		if operator.Name == "Google" {
-			googleOperator = operator.Id
+			googleOperator = operator.ID
 			break
 		}
 	}
@@ -195,7 +195,7 @@ func GetTrustedCTLogs() ([]ctLog, error) {
 		}
 		logs = append(logs, ctLog{
 			url:       log.URL,
-			is_google: intSliceContains(log.OperatedBy, googleOperator),
+			isGoogle: intSliceContains(log.OperatedBy, googleOperator),
 		})
 	}
 	return logs, nil

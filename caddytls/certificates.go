@@ -200,11 +200,11 @@ func makeCertificate(certPEMBlock, keyPEMBlock []byte, certificateTransparency b
 	if certificateTransparency && !certificateHasExtension(leaf, x509SCTOid) {
 		// TODO: cache this somewhere for a while. Also, recheck occasionally,
 		// as we do for OCSP.
-		logs, err := GetTrustedCTLogs()
+		logs, err := getTrustedCTLogs()
 		if err != nil {
 			log.Printf("[WARNING] Fetching trusted CT logs: %v", err)
 		} else {
-			scts, err := GetSCTSForCertificateChain(tlsCert.Certificate, logs)
+			scts, err := getSCTSForCertificateChain(tlsCert.Certificate, logs)
 			if err != nil {
 				log.Printf("[WARNING] Fetching SCTs: %v", err)
 			} else {
