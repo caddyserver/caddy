@@ -61,7 +61,7 @@ func TestIsLoopback(t *testing.T) {
 	}
 }
 
-func TestIsPrivateNetwork(t *testing.T) {
+func TestIsInternal(t *testing.T) {
 	for i, test := range []struct {
 		input  string
 		expect bool
@@ -114,7 +114,7 @@ func TestIsPrivateNetwork(t *testing.T) {
 		{"[::]", false},
 		{"local", false},
 	} {
-		if got, want := IsPrivateNetwork(test.input), test.expect; got != want {
+		if got, want := IsInternal(test.input), test.expect; got != want {
 			t.Errorf("Test %d (%s): expected %v but was %v", i, test.input, want, got)
 		}
 	}

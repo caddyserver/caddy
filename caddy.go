@@ -763,10 +763,11 @@ func IsLoopback(addr string) bool {
 		strings.HasPrefix(host, "127.")
 }
 
-// IsPrivateNetwork returns true if the IP of addr
+// IsInternal returns true if the IP of addr
 // belongs to a private network IP range. addr must only
 // be an IP or an IP:port combination.
-func IsPrivateNetwork(addr string) bool {
+// Loopback addresses are considered false.
+func IsInternal(addr string) bool {
 	private_networks := []string{
 		"10.0.0.0/8",
 		"172.16.0.0/12",
