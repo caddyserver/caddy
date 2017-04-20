@@ -163,6 +163,6 @@ which provides a pleasant mixture of features from each of them.
 
 **The name "Caddy":** The name of the software is "Caddy", not "Caddy Server"
 or "CaddyServer". Please call it "Caddy" or, if you wish to clarify, "the
-Caddy web server". See [brand guidelines](https://caddyserver.com/brand).
+Caddy web server", for guidance please see [brand guidelines](https://caddyserver.com/brand).
 
 *Author on Twitter: [@mholt6](https://twitter.com/mholt6)*
