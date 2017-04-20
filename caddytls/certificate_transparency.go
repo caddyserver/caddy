@@ -128,11 +128,11 @@ func getSCTSForCertificateChain(certChain [][]byte, logs []ctLog) ([][]byte, err
 			continue
 		}
 		sct, err := submitSCT(ctLog.url, payload)
-		// TODO: ignore HTTP 4xx errors, which generally indicate "this log
-		// isn't accepting new submissions" (we still want to submit in case
-		// they have a previous SCT for us) or "this log doesn't acecpt certs
-		// from this root"
 		if err != nil {
+			// Ignore HTTP 4xx errors, which generally indicate "this log isn't
+			// accepting new submissions" (we still want to submit in case they
+			// have a previous SCT for us) or "this log doesn't acecpt certs
+			// from this root"
 			if err := err.(*httpResponseError); err.statusCode >= 400 && err.statusCode < 500 {
 				continue
 			}
