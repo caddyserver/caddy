@@ -150,15 +150,15 @@ type ctLog struct {
 }
 
 type logList struct {
-	logs []struct {
-		description string
-		url         string
-		operated_by []int
-	}
-	operators []struct {
-		name string
-		id   int
-	}
+	Logs []struct {
+		Description string `json:"description"`
+		URL         string `json:"url"`
+		OperatedBy  []int  `json:"operated_by"`
+	} `json:"logs"`
+	Operators []struct {
+		Name string `json:"name"`
+		Id   int    `json:"id"`
+	} `json:"operators"`
 }
 
 // GetTrustedCTLogs returns a list of CT logs trusted by Chrome. As the
@@ -181,17 +181,17 @@ func GetTrustedCTLogs() ([]ctLog, error) {
 	}
 
 	var googleOperator int
-	for _, operator := range list.operators {
-		if operator.name == "Google" {
-			googleOperator = operator.id
+	for _, operator := range list.Operators {
+		if operator.Name == "Google" {
+			googleOperator = operator.Id
 			break
 		}
 	}
-	logs := make([]ctLog, 0, len(list.logs))
-	for _, log := range list.logs {
+	logs := make([]ctLog, 0, len(list.Logs))
+	for _, log := range list.Logs {
 		logs = append(logs, ctLog{
-			url:       log.url,
-			is_google: intSliceContains(log.operated_by, googleOperator),
+			url:       log.URL,
+			is_google: intSliceContains(log.OperatedBy, googleOperator),
 		})
 	}
 	return logs, nil
