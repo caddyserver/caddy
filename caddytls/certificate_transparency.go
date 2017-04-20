@@ -119,8 +119,10 @@ func getSCTSForCertificateChain(certChain [][]byte, logs []ctLog) ([][]byte, err
 			continue
 		}
 		sct, err := submitSCT(ctLog.url, payload)
-		// TODO: distinguish between ignorable errors (specifically, "this log
-		// doesn't trust this root") and ones that we should log!
+		// TODO: ignore HTTP 4xx errors, which generally indicate "this log
+		// isn't accepting new submissions" (we still want to submit in case
+		// they have a previous SCT for us) or "this log doesn't acecpt certs
+		// from this root"
 		if err != nil {
 			log.Printf("[WARNING] Error submitting to CT log: %v", err)
 			continue
@@ -194,7 +196,7 @@ func getTrustedCTLogs() ([]ctLog, error) {
 			continue
 		}
 		logs = append(logs, ctLog{
-			url:       log.URL,
+			url:      log.URL,
 			isGoogle: intSliceContains(log.OperatedBy, googleOperator),
 		})
 	}
