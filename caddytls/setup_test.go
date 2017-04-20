@@ -106,6 +106,10 @@ func TestSetupParseBasic(t *testing.T) {
 			t.Errorf("Expected curve in position %d to be %0x, got %0x", i, defaultCurves[i], actual)
 		}
 	}
+
+	if !cfg.CertificateTransparency {
+		t.Errorf("Expected CertificateTransparency to be true")
+	}
 }
 
 func TestSetupParseIncompleteParams(t *testing.T) {
@@ -358,27 +362,9 @@ func TestSetupParseWithOneTLSProtocol(t *testing.T) {
 	}
 }
 
-func TestSetupParseCertificateTransparencyDefault(t *testing.T) {
-	// This isn't must_staple specific, we just need something in that block.
+func TestSetupParseCertificateTransparencyOff(t *testing.T) {
 	params := `tls {
-		must_staple
-	}`
-	cfg := new(Config)
-	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
-	c := caddy.NewTestController("", params)
-
-	err := setupTLS(c)
-	if err != nil {
-		t.Errorf("Expected no errors, got: %v", err)
-	}
-	if !cfg.CertificateTransparency {
-		t.Errorf("Expected CertificateTransparency to be true")
-	}
-}
-
-func TestSetupParseCertificateTransparencyNo(t *testing.T) {
-	params := `tls {
-		certificate_transparency no
+		ct off
 	}`
 	cfg := new(Config)
 	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
@@ -390,23 +376,6 @@ func TestSetupParseCertificateTransparencyNo(t *testing.T) {
 	}
 	if cfg.CertificateTransparency {
 		t.Errorf("Expected CertificateTransparency to be false")
-	}
-}
-
-func TestSetupParseCertificateTransparencyYes(t *testing.T) {
-	params := `tls {
-		certificate_transparency yes
-	}`
-	cfg := new(Config)
-	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
-	c := caddy.NewTestController("", params)
-
-	err := setupTLS(c)
-	if err != nil {
-		t.Errorf("Expected no errors, got: %v", err)
-	}
-	if !cfg.CertificateTransparency {
-		t.Errorf("Expected CertificateTransparency to be true")
 	}
 }
 

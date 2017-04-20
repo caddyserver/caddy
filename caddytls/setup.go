@@ -56,6 +56,8 @@ func setupTLS(c *caddy.Controller) error {
 			// user might want a temporary, in-memory, self-signed cert
 			if args[0] == "self_signed" {
 				config.SelfSigned = true
+				// self-signed certs can't be reasonably submitted to CT
+				config.CertificateTransparency = false
 			}
 		case 2:
 			certificateFile = args[0]
@@ -176,13 +178,12 @@ func setupTLS(c *caddy.Controller) error {
 				}
 			case "must_staple":
 				config.MustStaple = true
-			case "certificate_transparency":
+			case "ct":
 				args := c.RemainingArgs()
-				if len(args) == 0 || args[0] == "yes" {
-					config.CertificateTransparency = true
-				} else if args[0] == "no" {
-					config.CertificateTransparency = false
+				if len(args) != 1 || args[0] != "off" {
+					return c.ArgErr()
 				}
+				config.CertificateTransparency = false
 			default:
 				return c.Errf("Unknown keyword '%s'", c.Val())
 			}
