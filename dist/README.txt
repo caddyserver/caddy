@@ -1,4 +1,4 @@
-CADDY 0.9.5
+CADDY 0.10
 
 Website
 	https://caddyserver.com
@@ -18,22 +18,22 @@ For instructions on using Caddy, please see the user guide on
 the website. For a list of what's new in this version, see
 CHANGES.txt.
 
-The Caddy project accepts pull requests. That means you can make
-changes to the code and submit it for review, and if it's good,
-we'll use it! You can help thousands of Caddy users and level
-up your Go programming game by contributing to Caddy's source.
-
-To report bugs or request features, open an issue on GitHub.
-
-Want to support the project financially? Consider donating,
-especially if your company is using Caddy. Believe me, your
-contributions do not go unnoticed! We also have sponsorship
-opportunities available.
-
 For a good time, follow @mholt6 on Twitter.
+
+Want to get involved with Caddy's development? We love to have
+contributions! Please file an issue on GitHub to discuss a
+change or fix you'd like to make, then submit a pull request
+and we'll review it! Your contributions will reach millions
+of people who connect to sites served by Caddy.
+
+Extend Caddy by developing a plugin for it! Instructions on
+the project wiki: https://github.com/mholt/caddy/wiki
 
 And thanks - you're awesome!
 
+If you think Caddy is awesome too, consider sponsoring it:
+https://caddyserver.com/pricing - and help keep Caddy free.
+
 
 ---
-(c) 2015-2017 Matthew Holt
+(c) 2015-2017 Light Code Labs, LLC.

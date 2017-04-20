@@ -1,5 +1,40 @@
 CHANGES
 
+0.10 (April 20, 2017)
+- Built on Go 1.8.1
+- HTTPS interception detection
+- Updated QUIC
+- SIGUSR1 (reload) now works with QUIC servers
+- New 'push' directive for HTTP/2 server push
+- New 'index' directive to change the names of index files
+- New -http-port and -https-port flags to change protocol ports
+- New -disable-http-challenge and -disable-tls-sni-challenge flags
+- New event hook plugin type
+- New listener middleware plugin type
+- New placeholders for cookie, query, and rewritten URI values
+- basicauth: Ability to customize realm
+- browse: Default template now sorts by name with directories first
+- errors, log: Roll all logs by default
+- errors, log: Ability to write to remote syslog
+- errors, log: Standardized, simplified directive syntax
+- log: Patched common log format by adding missing "-"
+- proxy: New 'max_conns' setting to limit connections to upstreams
+- proxy: New 'first' load balancing policy for first available host
+- proxy: Health checks respect Host and insecure_skip_verify settings
+- templates: New .RandomString action to add random padding to page
+- timeouts: Disabled default HTTP timeouts
+- tls: Settings now apply per-site rather than for entire listener
+- tls: New 'alpn' setting to disable either HTTP/2 or HTTP/1.1 on per-site basis
+- tls: Added curve X25519
+- tls: Added ChaCha20-Poly1305 cipher suites
+- tls: Renamed muststaple to must_staple
+- tls: Setting max_certs obtains certs during handshakes for all hostnames
+- Dozens of miscellaneous bug fixes and improvements
+- New website
+- New build infrastructure
+- New deployment system
+
+
 0.9.5 (January 24, 2017)
 - New -validate flag to only check a Caddyfile, then exit
 - New {when_iso} placeholder for timestamp ISO 8601 in UTC
