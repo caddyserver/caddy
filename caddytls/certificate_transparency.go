@@ -164,7 +164,7 @@ type logList struct {
 // GetTrustedCTLogs returns a list of CT logs trusted by Chrome. As the
 // browser/CT ecosystem evolves it may return other CT logs as well.
 func GetTrustedCTLogs() ([]ctLog, error) {
-	response, err := http.Get("https://www.gstatic.com/ct/log_list/log_list.json")
+	response, err := httpClient.Get("https://www.gstatic.com/ct/log_list/log_list.json")
 	if err != nil {
 		return nil, err
 	}
