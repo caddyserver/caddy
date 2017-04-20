@@ -67,6 +67,15 @@ func (sct *signedCertificateTimestamp) AsRawBytes() ([]byte, error) {
 
 var httpClient = http.Client{Timeout: 30 * time.Second}
 
+// Used for non-200 responses
+type httpResponseError struct {
+	statusCode int
+}
+
+func (e *httpResponseError) Error() string {
+	return fmt.Sprintf("HTTP error: %d", e.StatusCode)
+}
+
 // Makes an HTTP request to the log server and returns the parsed SCT response.
 // If the cert is already in the log, the log will simply return the previously
 // generated SCT, making this idempotent.
@@ -83,7 +92,7 @@ func submitSCT(url string, payload []byte) (*signedCertificateTimestamp, error) 
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP error %d", response.StatusCode)
+		return nil, &httpResponseError{response.StatusCode}
 	}
 	sct := &signedCertificateTimestamp{}
 	// Limit response to 10MB, there's no reason they should ever be that
@@ -124,6 +133,9 @@ func getSCTSForCertificateChain(certChain [][]byte, logs []ctLog) ([][]byte, err
 		// they have a previous SCT for us) or "this log doesn't acecpt certs
 		// from this root"
 		if err != nil {
+			if err := err.(*httpResponseError); err.statusCode >= 400 && err.statusCode < 500 {
+				continue
+			}
 			log.Printf("[WARNING] Error submitting to CT log: %v", err)
 			continue
 		}
