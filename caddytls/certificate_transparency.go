@@ -73,7 +73,7 @@ type httpResponseError struct {
 }
 
 func (e *httpResponseError) Error() string {
-	return fmt.Sprintf("HTTP error: %d", e.StatusCode)
+	return fmt.Sprintf("HTTP error: %d", e.statusCode)
 }
 
 // Makes an HTTP request to the log server and returns the parsed SCT response.
