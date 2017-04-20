@@ -6,14 +6,14 @@
         <string>com.caddyserver.web</string>
         <key>EnvironmentVariables</key>
         <dict>
-            <key>HOME</key>
-            <string>/Users/mathias</string>
+            <key>CADDYPATH</key>
+            <string>/etc/ssl/caddy</string>
         </dict>
         <key>ProgramArguments</key>
         <array>
             <string>sh</string>
             <string>-c</string>
-            <string>ulimit -n 8192; cd /Users/mathias/Sites; ./caddy -agree -email my_email@domain.com -conf=/Users/mathias/Sites/Caddyfile</string>
+            <string>ulimit -n 8192; /usr/local/bin/caddy -agree -conf=/etc/caddy/Caddyfile -root /var/tmp</string>
         </array>
         <key>UserName</key>
         <string>www</string>
@@ -22,10 +22,10 @@
         <key>KeepAlive</key>
         <true/>
         <key>WorkingDirectory</key>
-        <string>/Users/mathias/Sites</string>
+        <string>/etc/ssl/caddy</string>
         <key>StandardOutPath</key>
-        <string>/Users/mathias/Sites/caddy.log</string>
+        <string>/var/log/caddy/access.log</string>
         <key>StandardErrorPath</key>
-        <string>/Users/mathias/Sites/caddy_error.log</string>
+        <string>/var/log/caddy/error.log</string>
     </dict>
 </plist>
