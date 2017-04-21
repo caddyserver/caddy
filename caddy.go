@@ -777,9 +777,9 @@ func IsInternal(addr string) bool {
 
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
-		host = addr // happens if the addr is just a hostname
-		// if we encounter an error, the brackets need the be stripped
-		// because SplitHostPort didn't do it for us if there's no port
+		host = addr // happens if the addr is just a hostname, missing port
+		// if we encounter an error, the brackets need to be stripped
+		// because SplitHostPort didn't do it for us
 		host = strings.Trim(host, "[]")
 	}
 	ip := net.ParseIP(host)
