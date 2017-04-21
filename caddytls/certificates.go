@@ -166,18 +166,6 @@ func certificateHasExtension(cert *x509.Certificate, needle asn1.ObjectIdentifie
 	return false
 }
 
-// This is the OID for the embedded SCT X.509 extension (see the RFC 6962)
-var x509SCTOid = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 11129, 2, 4, 2}
-
-func certificateHasExtension(cert *x509.Certificate, needle asn1.ObjectIdentifier) bool {
-	for _, ext := range cert.Extensions {
-		if ext.Id.Equal(needle) {
-			return true
-		}
-	}
-	return false
-}
-
 // makeCertificate turns a certificate PEM bundle and a key PEM block into
 // a Certificate, with OCSP and other relevant metadata tagged with it,
 // except for the OnDemand and Managed flags. It is up to the caller to
