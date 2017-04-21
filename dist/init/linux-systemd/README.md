@@ -6,9 +6,9 @@ if you have any questions. Feel free to prepend to your question
 the username of whoever touched the file most recently, for example
 `@wmark re systemd: …`.
 
-The provided file should work with systemd version 229 or later. It might work with earlier versions.
+The provided file should work with systemd version 229 or later.
 The easiest way to check your systemd version is to look at the version of the installed package
-(e.g. 'sudo yum info systemd' on RedHat/Fedora systems).
+(e.g. 'sudo dpkg --status systemd | grep Version' on Debian/Ubuntu or 'sudo yum info systemd' on RedHat/Fedora systems).
 
 We will assume the following:
 
@@ -19,19 +19,28 @@ Adjust as necessary or according to your preferences.
 
 ## Install
 
-There's a full caddy install that works with systemd over at https://git.daplie.com/Daplie/caddy-installer
-if you'd like to try that out.
+Install Caddy to `/usr/local/bin`:
 
 ```bash
-# install caddy with a few features
-curl -L https://git.daplie.com/Daplie/caddy-installer/raw/master/install-caddy | bash -s -- minify,realip
+# Note: change amd64 to386,  arm5, arm6, or arm7 as necessary,
+#       also you can add plugins as desired
+curl --fail --silent --show-error --location \
+  'https://caddyserver.com/download/linux/amd64?plugins=' --output /tmp/caddy.tar.gz
+
+mkdir -p /tmp/caddy-package/
+tar xvf /tmp/caddy.tar.gz -C /tmp/caddy-package/
+sudo chmod 755 /tmp/caddy-package/caddy
+sudo chown root:root /tmp/caddy-package/caddy
+sudo mv /tmp/caddy-package/caddy /usr/local/bin/
 ```
 
-Otherwise just fetch `caddy.service` and `caddy.conf` and put them in the right places:
+Then install `/etc/systemd/system/caddy.service` and `/etc/tmpfiles.d/caddy.conf`:
 
-```bash
-curl -sL https://raw.githubusercontent.com/mholt/caddy/master/dist/init/linux-systemd/caddy.service -o caddy.service
-curl -sL https://raw.githubusercontent.com/mholt/caddy/master/dist/init/linux-systemd/caddy.conf -o caddy.conf
+```
+curl --fail --silent --show-error --location --remote-name-all \
+  https://raw.githubusercontent.com/mholt/caddy/master/dist/init/linux-systemd/caddy.service
+curl --fail --silent --show-error --location --remote-name-all \
+  https://raw.githubusercontent.com/mholt/caddy/master/dist/init/linux-systemd/caddy.conf
 
 sudo chown root:www-data caddy.service
 sudo chown root:www-data caddy.conf
@@ -54,7 +63,7 @@ sudo systemctl enable caddy.service
 If caddy doesn't seem to start properly you can view the log data to help figure out what the problem is:
 
 ```bash
-journalctl --boot -u caddy.service
+journalctl --pager-end --catalog --unit caddy.service
 ```
 
 Use `log stdout` and `errors stderr` in your Caddyfile to fully utilize systemd journaling.
@@ -64,7 +73,7 @@ If your GNU/Linux distribution does not use *journald* with *systemd* then check
 If you want to follow the latest logs from caddy you can do so like this:
 
 ```bash
-journalctl -f -u caddy.service
+journalctl --follow --unit caddy.service
 ```
 
 ## Directory Structure
@@ -132,7 +141,7 @@ Follow some of the discussion for this systemd service at <https://github.com/mh
 You can run your caddy configuration in the foreground like so:
 
 ```bash
-sudo -u www-data CADDYPATH=/etc/ssl/caddy /usr/local/bin/caddy -log stdout -agree=true -conf=/etc/caddy/Caddyfile -root=/var/tmp
+sudo --user=www-data CADDYPATH=/etc/ssl/caddy /usr/local/bin/caddy -log stdout -agree=true -conf=/etc/caddy/Caddyfile -root=/var/tmp
 ```
 
 ### Working with systemd v229 and earlier
@@ -149,6 +158,8 @@ You may need to comment out this section of `caddy.service`:
 ### Working with the upload feature
 
 You may need to comment the lines shown above these lines and uncomment these:
+
+```
 # Comment the section right above this section and uncomment this one
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_LEASE
 AmbientCapabilities=CAP_NET_BIND_SERVICE CAP_LEASE
