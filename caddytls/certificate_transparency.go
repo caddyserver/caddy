@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/rand"
 	"net/http"
 	"strings"
 	"time"
@@ -212,6 +213,9 @@ func getTrustedCTLogs() ([]ctLog, error) {
 			isGoogle: intSliceContains(log.OperatedBy, googleOperator),
 		})
 	}
+	// Shuffle the order of the logs so that across many consumers, we spread
+	// the load out between different logs.
+	shuffleLogs(logs)
 	return logs, nil
 }
 
@@ -222,4 +226,11 @@ func intSliceContains(data []int, needle int) bool {
 		}
 	}
 	return false
+}
+
+func shuffleLogs(logs []ctLog) {
+	for i := 1; i < len(logs); i++ {
+		j := rand.Intn(i)
+		logs[i], logs[j] = logs[j], logs[i]
+	}
 }
