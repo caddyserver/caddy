@@ -22,7 +22,7 @@ Adjust as necessary or according to your preferences.
 Install Caddy to `/usr/local/bin`:
 
 ```bash
-# Note: change amd64 to386,  arm5, arm6, or arm7 as necessary,
+# Note: change amd64 to 386, arm5, arm6, or arm7 as necessary,
 #       also you can add plugins as desired
 curl --fail --silent --show-error --location \
   'https://caddyserver.com/download/linux/amd64?plugins=' --output /tmp/caddy.tar.gz
