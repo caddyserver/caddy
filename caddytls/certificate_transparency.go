@@ -134,8 +134,10 @@ func getSCTSForCertificateChain(certChain [][]byte, logs []ctLog) ([][]byte, err
 			// accepting new submissions" (we still want to submit in case they
 			// have a previous SCT for us) or "this log doesn't acecpt certs
 			// from this root"
-			if err := err.(*httpResponseError); err.statusCode >= 400 && err.statusCode < 500 {
-				continue
+			if err, ok := err.(*httpResponseError); ok {
+				if err.statusCode >= 400 && err.statusCode < 500 {
+					continue
+				}
 			}
 			log.Printf("[WARNING] Error submitting to CT log: %v", err)
 			continue
