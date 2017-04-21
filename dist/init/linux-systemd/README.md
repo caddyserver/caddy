@@ -76,7 +76,7 @@ We expect that your directory structure for your caddy installation looks like t
 /etc/caddy/Caddyfile
 /etc/ssl/caddy/acme
 /etc/ssl/caddy/ocsp
-/etc/tempfiles.d/caddy.conf
+/etc/tmpfiles.d/caddy.conf
 /srv/www/localhost
 /var/log/caddy
 ```
