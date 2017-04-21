@@ -155,6 +155,12 @@ You may need to comment out this section of `caddy.service`:
 ; NoNewPrivileges=true
 ```
 
+Give the caddy binary the ability to bind to privileged ports (e.g. 80, 443) as a non-root user:
+
+```bash
+sudo setcap 'cap_net_bind_service=+ep' /usr/local/bin/caddy
+```
+
 ### Working with the upload feature
 
 You may need to comment the lines shown above these lines and uncomment these:
@@ -164,12 +170,6 @@ You may need to comment the lines shown above these lines and uncomment these:
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_LEASE
 AmbientCapabilities=CAP_NET_BIND_SERVICE CAP_LEASE
 NoNewPrivileges=true
-```
-
-Give the caddy binary the ability to bind to privileged ports (e.g. 80, 443) as a non-root user:
-
-```bash
-sudo setcap 'cap_net_bind_service=+ep' /usr/local/bin/caddy
 ```
 
 ## caddy command not found
