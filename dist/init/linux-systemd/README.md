@@ -23,6 +23,7 @@ There's a full caddy install that works with systemd over at https://git.daplie.
 if you'd like to try that out.
 
 ```bash
+# install caddy with a few features
 curl -L https://git.daplie.com/Daplie/caddy-installer/raw/master/install-caddy | bash -s -- minify,realip
 ```
 
