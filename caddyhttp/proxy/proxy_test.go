@@ -26,7 +26,6 @@ import (
 
 	"github.com/mholt/caddy/caddyfile"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
-	"github.com/mholt/caddy/caddyhttp/staticfiles"
 
 	"golang.org/x/net/websocket"
 )
@@ -995,8 +994,6 @@ func TestProxyDirectorURL(t *testing.T) {
 			t.Errorf("case %d failed to create request: %s", i, err)
 			continue
 		}
-		req = req.WithContext(context.WithValue(req.Context(),
-			staticfiles.URLPathCtxKey, c.originalPath))
 
 		NewSingleHostReverseProxy(targetURL, c.without, 0).Director(req)
 		if expect, got := c.expectURL, req.URL.String(); expect != got {
