@@ -133,7 +133,7 @@ func (c *clientHelloConn) Read(b []byte) (n int, err error) {
 	if err != nil {
 		return
 	}
-	c.buf = nil // buffer no longer needed
+	bufpool.Put(c.buf) // buffer no longer needed
 
 	// parse the ClientHello and store it in the map
 	rawParsed := parseRawClientHello(hello)
@@ -285,7 +285,9 @@ func (l *tlsHelloListener) Accept() (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	helloConn := &clientHelloConn{Conn: conn, listener: l, buf: new(bytes.Buffer)}
+	buf := bufpool.Get().(*bytes.Buffer)
+	buf.Reset()
+	helloConn := &clientHelloConn{Conn: conn, listener: l, buf: buf}
 	return tls.Server(helloConn, l.config), nil
 }
 
@@ -568,6 +570,13 @@ func hasGreaseCiphers(cipherSuites []uint16) bool {
 		}
 	}
 	return false
+}
+
+// pool buffers so we can reuse allocations over time
+var bufpool = sync.Pool{
+	New: func() interface{} {
+		return new(bytes.Buffer)
+	},
 }
 
 var greaseCiphers = map[uint16]struct{}{
