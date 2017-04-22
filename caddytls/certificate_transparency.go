@@ -144,7 +144,8 @@ func getSCTSForCertificateChain(certChain [][]byte, logs []ctLog) ([][]byte, err
 		}
 		bytes, err := sct.AsRawBytes()
 		if err != nil {
-			return nil, err
+			log.Printf("[WARNING] Got SCT which couldn't be converted to bytes: %v", err)
+			continue
 		}
 		sctBytes = append(sctBytes, bytes)
 		if ctLog.isGoogle {
