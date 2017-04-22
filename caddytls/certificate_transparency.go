@@ -125,7 +125,7 @@ func getSCTSForCertificateChain(certChain [][]byte, logs []ctLog) ([][]byte, err
 		err error
 	}
 	var wg sync.WaitGroup
-	// Buffered log so that the goroutines can just exit once they've got a
+	// Buffered chan so that the goroutines can just exit once they've got a
 	// result.
 	results := make(chan result, len(logs))
 	defer func() {
