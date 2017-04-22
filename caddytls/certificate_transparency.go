@@ -128,10 +128,6 @@ func getSCTSForCertificateChain(certChain [][]byte, logs []ctLog) ([][]byte, err
 	// Buffered chan so that the goroutines can just exit once they've got a
 	// result.
 	results := make(chan result, len(logs))
-	defer func() {
-		wg.Wait()
-		close(results)
-	}()
 	var submit = func(log ctLog) {
 		defer wg.Done()
 		sct, err := submitSCT(log.url, payload)
@@ -141,6 +137,8 @@ func getSCTSForCertificateChain(certChain [][]byte, logs []ctLog) ([][]byte, err
 	for _, ctLog := range logs {
 		go submit(ctLog)
 	}
+	wg.Wait()
+	close(results)
 
 	// Chrome CT policy requires at least 1 Google log and 1 non-Google log
 	needGoogle := true
