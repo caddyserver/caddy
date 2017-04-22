@@ -11,6 +11,7 @@ import (
 	"math/rand"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -118,37 +119,55 @@ func getSCTSForCertificateChain(certChain [][]byte, logs []ctLog) ([][]byte, err
 		return nil, err
 	}
 
+	type result struct {
+		log ctLog
+		sct *signedCertificateTimestamp
+		err error
+	}
+	var wg sync.WaitGroup
+	results := make(chan result)
+	defer func() {
+		wg.Wait()
+		close(results)
+	}()
+	var submit = func(log ctLog) {
+		defer wg.Done()
+		sct, err := submitSCT(log.url, payload)
+		results <- result{log, sct, err}
+	}
+	wg.Add(len(logs))
+	for _, ctLog := range logs {
+		go submit(ctLog)
+	}
+
 	// Chrome CT policy requires at least 1 Google log and 1 non-Google log
 	needGoogle := true
 	needNonGoogle := true
-
-	// TODO: submit to all these concurrently
-	for _, ctLog := range logs {
-		// Skip logs that don't contribute to our needs.
-		if (ctLog.isGoogle && !needGoogle) || (!ctLog.isGoogle && !needNonGoogle) {
-			continue
-		}
-		sct, err := submitSCT(ctLog.url, payload)
-		if err != nil {
+	for result := range results {
+		if result.err != nil {
 			// Ignore HTTP 4xx errors, which generally indicate "this log isn't
 			// accepting new submissions" (we still want to submit in case they
 			// have a previous SCT for us) or "this log doesn't acecpt certs
 			// from this root"
-			if err, ok := err.(*httpResponseError); ok {
+			if err, ok := result.err.(*httpResponseError); ok {
 				if err.statusCode >= 400 && err.statusCode < 500 {
 					continue
 				}
 			}
-			log.Printf("[WARNING] Error submitting to CT log: %v", err)
+			log.Printf("[WARNING] Error submitting to CT log: %v", result.err)
 			continue
 		}
-		bytes, err := sct.AsRawBytes()
+		// Skip logs that don't contribute to our needs.
+		if (result.log.isGoogle && !needGoogle) || (!result.log.isGoogle && !needNonGoogle) {
+			continue
+		}
+		bytes, err := result.sct.AsRawBytes()
 		if err != nil {
 			log.Printf("[WARNING] Got SCT which couldn't be converted to bytes: %v", err)
 			continue
 		}
 		sctBytes = append(sctBytes, bytes)
-		if ctLog.isGoogle {
+		if result.log.isGoogle {
 			needGoogle = false
 		} else {
 			needNonGoogle = false
