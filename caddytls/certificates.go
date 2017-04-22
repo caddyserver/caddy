@@ -3,6 +3,7 @@ package caddytls
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/asn1"
 	"errors"
 	"io/ioutil"
@@ -156,9 +157,10 @@ func makeCertificateFromDisk(certFile, keyFile string, cfg *Config) (Certificate
 
 // This is the OID for the embedded SCT X.509 extension (see the RFC 6962)
 var x509SCTOid = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 11129, 2, 4, 2}
+var ocspSCTOid = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 11129, 2, 4, 5}
 
-func certificateHasExtension(cert *x509.Certificate, needle asn1.ObjectIdentifier) bool {
-	for _, ext := range cert.Extensions {
+func hasExtension(extensions []pkix.Extension, needle asn1.ObjectIdentifier) bool {
+	for _, ext := range extensions {
 		if ext.Id.Equal(needle) {
 			return true
 		}
@@ -196,8 +198,9 @@ func makeCertificate(certPEMBlock, keyPEMBlock []byte, certificateTransparency b
 	if err != nil {
 		log.Printf("[WARNING] Stapling OCSP: %v", err)
 	}
-	// If the certificate has embedded SCTs no need to fetch new ones
-	if certificateTransparency && !certificateHasExtension(leaf, x509SCTOid) {
+	// If the certificate or OCSP Response has embedded SCTs no need to fetch
+	// new ones
+	if certificateTransparency && !hasExtension(leaf.Extensions, x509SCTOid) && !(cert.OCSP != nil && hasExtension(cert.OCSP.Extensions, ocspSCTOid)) {
 		// TODO: cache this somewhere for a while. Also, recheck occasionally,
 		// as we do for OCSP.
 		logs, err := getTrustedCTLogs()
