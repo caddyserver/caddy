@@ -199,7 +199,7 @@ func makeCertificate(certPEMBlock, keyPEMBlock []byte, certificateTransparency b
 		log.Printf("[WARNING] Stapling OCSP: %v", err)
 	}
 	// If the certificate or OCSP Response has embedded SCTs no need to fetch
-	// new ones
+	// new ones. TODO: validate that these SCTs are still from trusted logs.
 	if certificateTransparency && !hasExtension(leaf.Extensions, x509SCTOid) && !(cert.OCSP != nil && hasExtension(cert.OCSP.Extensions, ocspSCTOid)) {
 		// TODO: cache this somewhere for a while. Also, recheck occasionally,
 		// as we do for OCSP.
