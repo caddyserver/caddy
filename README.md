@@ -10,13 +10,13 @@
 	<a href="https://goreportcard.com/report/mholt/caddy"><img src="https://goreportcard.com/badge/github.com/mholt/caddy"></a>
 	<br>
 	<a href="https://twitter.com/caddyserver" title="@caddyserver on Twitter"><img src="https://img.shields.io/badge/twitter-@caddyserver-55acee.svg" alt="@caddyserver on Twitter"></a>
-	<a href="https://forum.caddyserver.com" title="Caddy Forum"><img src="https://img.shields.io/badge/community-forum-ff69b4.svg" alt="Caddy Forum"></a>
+	<a href="https://caddy.community" title="Caddy Forum"><img src="https://img.shields.io/badge/community-forum-ff69b4.svg" alt="Caddy Forum"></a>
 	<a href="https://sourcegraph.com/github.com/mholt/caddy?badge" title="Caddy on Sourcegraph"><img src="https://sourcegraph.com/github.com/mholt/caddy/-/badge.svg" alt="Caddy on Sourcegraph"></a>
 </p>
 <p align="center">
 	<a href="https://caddyserver.com/download">Download</a> ·
 	<a href="https://caddyserver.com/docs">Documentation</a> ·
-	<a href="https://forum.caddyserver.com">Community</a>
+	<a href="https://caddy.community">Community</a>
 </p>
 
 ---
@@ -126,11 +126,11 @@ How you choose to run Caddy is up to you. Many users are satisfied with `nohup c
 
 ## Contributing
 
-**[Join our forum](https://forum.caddyserver.com) where you can chat with other Caddy users and developers!**
+**[Join our forum](https://caddy.community) where you can chat with other Caddy users and developers!**
 
 Please see our [contributing guidelines](https://github.com/mholt/caddy/blob/master/CONTRIBUTING.md). If you want to write a plugin, check out the [developer wiki](https://github.com/mholt/caddy/wiki).
 
-We use GitHub issues and pull requests only for discussing bug reports and the development of specific changes. We welcome all other topics on the [forum](https://forum.caddyserver.com)!
+We use GitHub issues and pull requests only for discussing bug reports and the development of specific changes. We welcome all other topics on the [forum](https://caddy.community)!
 
 If you want to contribute to the documentation, please submit pull requests to [caddyserver/website](https://github.com/caddyserver/website).
 
