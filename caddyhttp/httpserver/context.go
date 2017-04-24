@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"sync"
 	"text/template"
 	"time"
 
@@ -256,9 +257,6 @@ func (c Context) Markdown(filename string) (string, error) {
 	return string(markdown), nil
 }
 
-// TemplateFuncs contains user defined functions
-var TemplateFuncs = template.FuncMap{}
-
 // ContextInclude opens filename using fs and executes a template with the context ctx.
 // This does the same thing that Context.Include() does, but with the ability to provide
 // your own context so that the included files can have access to additional fields your
@@ -281,8 +279,10 @@ func ContextInclude(filename string, ctx interface{}, fs http.FileSystem) (strin
 		return "", err
 	}
 
-	var buf bytes.Buffer
-	err = tpl.Execute(&buf, ctx)
+	buf := includeBufs.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer includeBufs.Put(buf)
+	err = tpl.Execute(buf, ctx)
 	if err != nil {
 		return "", err
 	}
@@ -409,3 +409,14 @@ func (c Context) RandomString(minLen, maxLen int) string {
 
 	return string(result)
 }
+
+// buffer pool for .Include context actions
+var includeBufs = sync.Pool{
+	New: func() interface{} {
+		return new(bytes.Buffer)
+	},
+}
+
+// TemplateFuncs contains user-defined functions
+// for execution in templates.
+var TemplateFuncs = template.FuncMap{}

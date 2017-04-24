@@ -25,7 +25,6 @@ import (
 	"golang.org/x/net/http2"
 
 	"github.com/mholt/caddy/caddyhttp/httpserver"
-	"github.com/mholt/caddy/caddyhttp/staticfiles"
 )
 
 var (
@@ -121,6 +120,8 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int) *
 		}
 
 		// We should remove the `without` prefix at first.
+		// TODO(mholt): See #1582 (and below)
+		// untouchedPath, _ := req.Context().Value(staticfiles.URLPathCtxKey).(string)
 		if without != "" {
 			req.URL.Path = strings.TrimPrefix(req.URL.Path, without)
 			if req.URL.Opaque != "" {
@@ -129,6 +130,10 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int) *
 			if req.URL.RawPath != "" {
 				req.URL.RawPath = strings.TrimPrefix(req.URL.RawPath, without)
 			}
+			// TODO(mholt): See #1582 (and above)
+			// if untouchedPath != "" {
+			// 	untouchedPath = strings.TrimPrefix(untouchedPath, without)
+			// }
 		}
 
 		// prefer returns val if it isn't empty, otherwise def
@@ -155,13 +160,7 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int) *
 				prefer(target.RawPath, target.Path),
 				prefer(req.URL.RawPath, req.URL.Path))
 		}
-		untouchedPath, _ := req.Context().Value(staticfiles.URLPathCtxKey).(string)
-		req.URL.Path = singleJoiningSlash(target.Path,
-			prefer(untouchedPath, req.URL.Path))
-		// req.URL.Path must be consistent with decoded form of req.URL.RawPath if any
-		if req.URL.RawPath != "" && req.URL.RawPath != req.URL.EscapedPath() {
-			panic("RawPath doesn't match Path")
-		}
+		req.URL.Path = singleJoiningSlash(target.Path, req.URL.Path)
 
 		// Trims the path of the socket from the URL path.
 		// This is done because req.URL passed to your proxied service

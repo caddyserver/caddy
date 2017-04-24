@@ -3,8 +3,8 @@ CADDY 0.10
 Website
 	https://caddyserver.com
 
-Community
-	https://forum.caddyserver.com
+Community Forum
+	https://caddy.community
 
 Twitter
 	@caddyserver
