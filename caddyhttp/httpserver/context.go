@@ -29,6 +29,20 @@ type Context struct {
 	Req  *http.Request
 	URL  *url.URL
 	Args []interface{} // defined by arguments to .Include
+
+	// just used for adding preload links for server push
+	responseHeader http.Header
+}
+
+// NewContextWithHeader creates a context with given response header.
+//
+// To plugin developer:
+// The returned context's exported fileds remain empty,
+// you should then initialize them if you want.
+func NewContextWithHeader(rh http.Header) Context {
+	return Context{
+		responseHeader: rh,
+	}
 }
 
 // Include returns the contents of filename relative to the site root.
@@ -408,6 +422,15 @@ func (c Context) RandomString(minLen, maxLen int) string {
 	}
 
 	return string(result)
+}
+
+// Push adds a preload link in response header for server push
+func (c Context) Push(link string) string {
+	if c.responseHeader == nil {
+		return ""
+	}
+	c.responseHeader.Add("Link", "<"+link+">; rel=preload")
+	return ""
 }
 
 // buffer pool for .Include context actions
