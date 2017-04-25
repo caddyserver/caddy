@@ -37,6 +37,8 @@ Here are some of the expectations we have of contributors:
 
 - **Write tests.** Tests are essential! Written properly, they ensure your change works, and that other changes in the future won't break your change. CI checks should pass.
 
+- **Benchmarks should be included for optimizations.** Optimizations sometimes make code harder to read or have changes that are less than obvious. They should be proven to work better with benchmarks or profiling.
+
 - **[Squash](http://gitready.com/advanced/2009/02/10/squashing-commits-with-rebase.html) insignificant commits.** Every commit should be significant. Commits which merely rewrite a comment or fix a typo can be combined into another commit that has more substance.
 
 - **Own your contributions.** Caddy is a growing project, and it's much better when individual contributors can help maintain their change after it is merged.
