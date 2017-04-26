@@ -7,8 +7,7 @@ the username of whoever touched the file most recently, for example
 `@wmark re systemd: …`.
 
 The provided file should work with systemd version 219 or later. It might work with earlier versions.
-The easiest way to check your systemd version is to look at the version of the installed package
-(e.g. 'sudo yum info systemd' on RedHat/Fedora systems).
+The easiest way to check your systemd version is to run `systemctl --version`.
 
 ## Instructions
 
