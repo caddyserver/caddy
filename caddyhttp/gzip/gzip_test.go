@@ -1,6 +1,7 @@
 package gzip
 
 import (
+	"compress/gzip"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -77,6 +78,22 @@ func TestGzipHandler(t *testing.T) {
 			t.Error(err)
 		}
 	}
+
+	// test all levels
+	w = httptest.NewRecorder()
+	gz.Next = nextFunc(true)
+	for i := 0; i <= gzip.BestCompression; i++ {
+		gz.Configs[0].Level = i
+		r, err := http.NewRequest("GET", "/file.txt", nil)
+		if err != nil {
+			t.Error(err)
+		}
+		r.Header.Set("Accept-Encoding", "gzip")
+		_, err = gz.ServeHTTP(w, r)
+		if err != nil {
+			t.Error(err)
+		}
+	}
 }
 
 func nextFunc(shouldGzip bool) httpserver.Handler {
@@ -116,4 +133,38 @@ func nextFunc(shouldGzip bool) httpserver.Handler {
 		}
 		return 0, nil
 	})
+}
+
+func BenchmarkGzip(b *testing.B) {
+	pathFilter := PathFilter{make(Set)}
+	badPaths := []string{"/bad", "/nogzip", "/nongzip"}
+	for _, p := range badPaths {
+		pathFilter.IgnoredPaths.Add(p)
+	}
+	extFilter := ExtFilter{make(Set)}
+	for _, e := range []string{".txt", ".html", ".css", ".md"} {
+		extFilter.Exts.Add(e)
+	}
+	gz := Gzip{Configs: []Config{
+		{
+			RequestFilters: []RequestFilter{pathFilter, extFilter},
+		},
+	}}
+
+	w := httptest.NewRecorder()
+	gz.Next = nextFunc(true)
+	url := "/file.txt"
+	r, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		b.Fatal(err)
+	}
+	r.Header.Set("Accept-Encoding", "gzip")
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err = gz.ServeHTTP(w, r)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
 }
