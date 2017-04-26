@@ -94,6 +94,8 @@ func TestIsInternal(t *testing.T) {
 		{"fbff:ffff:ffff:ffff:ffff:ffff:ffff:ffff", false},
 		{"fc00::", true},
 		{"fc00::1", true},
+		{"[fc00::1]", true},
+		{"[fc00::1]:8888", true},
 		{"fdff:ffff:ffff:ffff:ffff:ffff:ffff:fffe", true},
 		{"fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff", true},
 		{"fe00::", false},
