@@ -146,13 +146,20 @@ func redirPlaintextHost(cfg *SiteConfig) *SiteConfig {
 	}
 	redirMiddleware := func(next Handler) Handler {
 		return HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
+			// Construct the URL to which to redirect. Note that the Host in a request might
+			// contain a port, but we just need the hostname; we'll set the port if needed.
 			toURL := "https://"
+			requestHost, _, err := net.SplitHostPort(r.Host)
+			if err != nil {
+				requestHost = r.Host // Host did not contain a port; great
+			}
 			if redirPort == "" {
-				toURL += cfg.Addr.Host // don't use r.Host as it may have a port included
+				toURL += requestHost
 			} else {
-				toURL += net.JoinHostPort(cfg.Addr.Host, redirPort)
+				toURL += net.JoinHostPort(requestHost, redirPort)
 			}
 			toURL += r.URL.RequestURI()
+
 			w.Header().Set("Connection", "close")
 			http.Redirect(w, r, toURL, http.StatusMovedPermanently)
 			return 0, nil
