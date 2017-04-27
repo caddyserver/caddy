@@ -76,6 +76,10 @@ func rewriteParse(c *caddy.Controller) ([]httpserver.HandlerConfig, error) {
 						return nil, c.ArgErr()
 					}
 					to = strings.Join(args1, " ")
+					// ensure rewrite path begins with /
+					if !strings.HasPrefix(to, "/") {
+						return nil, c.RewritePathErr()
+					}
 				case "ext":
 					args1 := c.RemainingArgs()
 					if len(args1) == 0 {
@@ -90,6 +94,7 @@ func rewriteParse(c *caddy.Controller) ([]httpserver.HandlerConfig, error) {
 			if to == "" {
 				return nil, c.ArgErr()
 			}
+
 			if rule, err = NewComplexRule(base, pattern, to, ext, matcher); err != nil {
 				return nil, err
 			}
