@@ -102,8 +102,7 @@ func rewriteParse(c *caddy.Controller) ([]httpserver.HandlerConfig, error) {
 
 		// the only unhandled case is 2 and above 'from to'
 		default:
-
-			//ensure / at begining.
+			// ensure rewrite path begins with /
 			topath := strings.Join(args[1:], " ")
 			if !strings.HasPrefix(topath, "/") {
 				return nil, c.RewritePathErr()
