@@ -95,9 +95,15 @@ func rewriteParse(c *caddy.Controller) ([]httpserver.HandlerConfig, error) {
 			}
 			rules = append(rules, rule)
 
-		// the only unhandled case is 2 and above
+		// the only unhandled case is 2 and above 'from to'
 		default:
-			rule = NewSimpleRule(args[0], strings.Join(args[1:], " "))
+
+			//ensure / at begining.
+			topath := strings.Join(args[1:], " ")
+			if !strings.HasPrefix(topath, "/") {
+				return nil, c.RewritePathErr()
+			}
+			rule = NewSimpleRule(args[0], topath)
 			rules = append(rules, rule)
 		}
 
