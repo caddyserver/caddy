@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -94,16 +95,21 @@ func TestConditions(t *testing.T) {
 	for i, test := range replaceTests {
 		r, err := http.NewRequest("GET", test.url, nil)
 		if err != nil {
-			t.Error(err)
+			t.Errorf("Test %d: failed to create request: %v", i, err)
+			continue
 		}
+		ctx := context.WithValue(r.Context(), OriginalURLCtxKey, *r.URL)
+		r = r.WithContext(ctx)
 		str := strings.Fields(test.condition)
 		ifCond, err := newIfCond(str[0], str[1], str[2])
 		if err != nil {
-			t.Error(err)
+			t.Errorf("Test %d: failed to create 'if' condition %v", i, err)
+			continue
 		}
 		isTrue := ifCond.True(r)
 		if isTrue != test.isTrue {
 			t.Errorf("Test %v: expected %v found %v", i, test.isTrue, isTrue)
+			continue
 		}
 	}
 }

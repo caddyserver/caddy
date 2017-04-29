@@ -41,8 +41,11 @@ func TestReplace(t *testing.T) {
 
 	request, err := http.NewRequest("POST", "http://localhost/?foo=bar", reader)
 	if err != nil {
-		t.Fatal("Request Formation Failed\n")
+		t.Fatalf("Failed to make request: %v", err)
 	}
+	ctx := context.WithValue(request.Context(), OriginalURLCtxKey, *request.URL)
+	request = request.WithContext(ctx)
+
 	request.Header.Set("Custom", "foobarbaz")
 	request.Header.Set("ShorterVal", "1")
 	repl := NewReplacer(request, recordRequest, "-")
@@ -52,7 +55,7 @@ func TestReplace(t *testing.T) {
 
 	hostname, err := os.Hostname()
 	if err != nil {
-		t.Fatal("Failed to determine hostname\n")
+		t.Fatalf("Failed to determine hostname: %v", err)
 	}
 
 	old := now
@@ -161,25 +164,26 @@ func TestPathRewrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Request Formation Failed: %s\n", err.Error())
 	}
-
-	ctx := context.WithValue(request.Context(), URIxRewriteCtxKey, "a/custom/path.php?key=value")
+	urlCopy := *request.URL
+	urlCopy.Path = "a/custom/path.php"
+	ctx := context.WithValue(request.Context(), OriginalURLCtxKey, urlCopy)
 	request = request.WithContext(ctx)
 
 	repl := NewReplacer(request, recordRequest, "")
 
-	if repl.Replace("This path is '{path}'") != "This path is 'a/custom/path.php'" {
-		t.Error("Expected host {path} replacement failed  (" + repl.Replace("This path is '{path}'") + ")")
+	if got, want := repl.Replace("This path is '{path}'"), "This path is 'a/custom/path.php'"; got != want {
+		t.Errorf("{path} replacement failed; got '%s', want '%s'", got, want)
 	}
 
-	if repl.Replace("This path is {rewrite_path}") != "This path is /index.php" {
-		t.Error("Expected host {rewrite_path} replacement failed (" + repl.Replace("This path is {rewrite_path}") + ")")
+	if got, want := repl.Replace("This path is {rewrite_path}"), "This path is /index.php"; got != want {
+		t.Errorf("{rewrite_path} replacement failed; got '%s', want '%s'", got, want)
 	}
-	if repl.Replace("This path is '{uri}'") != "This path is 'a/custom/path.php?key=value'" {
-		t.Error("Expected host {uri} replacement failed  (" + repl.Replace("This path is '{uri}'") + ")")
+	if got, want := repl.Replace("This path is '{uri}'"), "This path is 'a/custom/path.php?key=value'"; got != want {
+		t.Errorf("{uri} replacement failed; got '%s', want '%s'", got, want)
 	}
 
-	if repl.Replace("This path is {rewrite_uri}") != "This path is /index.php?key=value" {
-		t.Error("Expected host {rewrite_uri} replacement failed (" + repl.Replace("This path is {rewrite_uri}") + ")")
+	if got, want := repl.Replace("This path is {rewrite_uri}"), "This path is /index.php?key=value"; got != want {
+		t.Errorf("{rewrite_uri} replacement failed; got '%s', want '%s'", got, want)
 	}
 
 }

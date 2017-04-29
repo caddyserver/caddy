@@ -1,6 +1,7 @@
 package fastcgi
 
 import (
+	"context"
 	"net"
 	"net/http"
 	"net/http/fcgi"
@@ -10,6 +11,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
 
 func TestServeHTTP(t *testing.T) {
@@ -130,6 +133,8 @@ func TestPersistent(t *testing.T) {
 					if err != nil {
 						t.Errorf("Unable to create request: %v", err)
 					}
+					ctx := context.WithValue(r.Context(), httpserver.OriginalURLCtxKey, *r.URL)
+					r = r.WithContext(ctx)
 					w := httptest.NewRecorder()
 
 					status, err := handler.ServeHTTP(w, r)
@@ -222,13 +227,13 @@ func TestBuildEnv(t *testing.T) {
 	}
 
 	rule := Rule{}
-	url, err := url.Parse("http://localhost:2015/fgci_test.php?test=blabla")
+	url, err := url.Parse("http://localhost:2015/fgci_test.php?test=foobar")
 	if err != nil {
 		t.Error("Unexpected error:", err.Error())
 	}
 
 	var newReq = func() *http.Request {
-		return &http.Request{
+		r := http.Request{
 			Method:     "GET",
 			URL:        url,
 			Proto:      "HTTP/1.1",
@@ -241,6 +246,8 @@ func TestBuildEnv(t *testing.T) {
 				"Foo": {"Bar", "two"},
 			},
 		}
+		ctx := context.WithValue(r.Context(), httpserver.OriginalURLCtxKey, *r.URL)
+		return r.WithContext(ctx)
 	}
 
 	fpath := "/fgci_test.php"
@@ -250,7 +257,7 @@ func TestBuildEnv(t *testing.T) {
 			"REMOTE_ADDR":     "2b02:1810:4f2d:9400:70ab:f822:be8a:9093",
 			"REMOTE_PORT":     "51688",
 			"SERVER_PROTOCOL": "HTTP/1.1",
-			"QUERY_STRING":    "test=blabla",
+			"QUERY_STRING":    "test=foobar",
 			"REQUEST_METHOD":  "GET",
 			"HTTP_HOST":       "localhost:2015",
 		}
@@ -300,8 +307,8 @@ func TestBuildEnv(t *testing.T) {
 	}
 	envExpected = newEnv()
 	envExpected["HTTP_HOST"] = "localhost:2015"
-	envExpected["CUSTOM_URI"] = "custom_uri/fgci_test.php?test=blabla"
-	envExpected["CUSTOM_QUERY"] = "custom=true&test=blabla"
+	envExpected["CUSTOM_URI"] = "custom_uri/fgci_test.php?test=foobar"
+	envExpected["CUSTOM_QUERY"] = "custom=true&test=foobar"
 	testBuildEnv(r, rule, fpath, envExpected)
 }
 

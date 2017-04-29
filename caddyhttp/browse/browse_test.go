@@ -142,6 +142,8 @@ func TestBrowseHTTPMethods(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Test: Could not create HTTP request: %v", err)
 		}
+		ctx := context.WithValue(req.Context(), httpserver.OriginalURLCtxKey, *req.URL)
+		req = req.WithContext(ctx)
 
 		code, _ := b.ServeHTTP(rec, req)
 		if code != expected {
@@ -177,6 +179,8 @@ func TestBrowseTemplate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Test: Could not create HTTP request: %v", err)
 	}
+	ctx := context.WithValue(req.Context(), httpserver.OriginalURLCtxKey, *req.URL)
+	req = req.WithContext(ctx)
 
 	rec := httptest.NewRecorder()
 
@@ -322,6 +326,8 @@ func TestBrowseJson(t *testing.T) {
 		if err != nil && !test.shouldErr {
 			t.Errorf("Test %d errored when making request, but it shouldn't have; got '%v'", i, err)
 		}
+		ctx := context.WithValue(req.Context(), httpserver.OriginalURLCtxKey, *req.URL)
+		req = req.WithContext(ctx)
 
 		req.Header.Set("Accept", "application/json")
 		rec := httptest.NewRecorder()
@@ -394,13 +400,13 @@ func TestBrowseRedirect(t *testing.T) {
 		{
 			"http://www.example.com/photos",
 			http.StatusMovedPermanently,
-			0,
+			http.StatusMovedPermanently,
 			"http://www.example.com/photos/",
 		},
 		{
 			"/photos",
 			http.StatusMovedPermanently,
-			0,
+			http.StatusMovedPermanently,
 			"/photos/",
 		},
 	}
@@ -422,12 +428,11 @@ func TestBrowseRedirect(t *testing.T) {
 		}
 
 		req, err := http.NewRequest("GET", tc.url, nil)
-		u, _ := url.Parse(tc.url)
-		ctx := context.WithValue(req.Context(), staticfiles.URLPathCtxKey, u.Path)
-		req = req.WithContext(ctx)
 		if err != nil {
 			t.Fatalf("Test %d - could not create HTTP request: %v", i, err)
 		}
+		ctx := context.WithValue(req.Context(), httpserver.OriginalURLCtxKey, *req.URL)
+		req = req.WithContext(ctx)
 
 		rec := httptest.NewRecorder()
 
