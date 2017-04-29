@@ -46,10 +46,8 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request) (int, err
 
 	// Prevent absolute path access on Windows.
 	// TODO remove when stdlib http.Dir fixes this.
-	if runtime.GOOS == "windows" {
-		if filepath.IsAbs(reqPath[1:]) {
-			return http.StatusNotFound, nil
-		}
+	if runtime.GOOS == "windows" && len(reqPath) > 0 && filepath.IsAbs(reqPath[1:]) {
+		return http.StatusNotFound, nil
 	}
 
 	// open the requested file
