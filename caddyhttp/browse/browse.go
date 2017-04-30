@@ -156,10 +156,10 @@ func (l byNameDirFirst) Less(i, j int) bool {
 	// if both are dir or file sort normally
 	if l.Items[i].IsDir == l.Items[j].IsDir {
 		return strings.ToLower(l.Items[i].Name) < strings.ToLower(l.Items[j].Name)
-	} else {
-		// always sort dir ahead of file
-		return l.Items[i].IsDir
 	}
+
+	// always sort dir ahead of file
+	return l.Items[i].IsDir
 }
 
 // By Size
