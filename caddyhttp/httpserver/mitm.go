@@ -161,11 +161,11 @@ func parseRawClientHello(data []byte) (info rawHelloInfo) {
 	if len(data) < 42 {
 		return
 	}
-	sessionIdLen := int(data[38])
-	if sessionIdLen > 32 || len(data) < 39+sessionIdLen {
+	sessionIDLen := int(data[38])
+	if sessionIDLen > 32 || len(data) < 39+sessionIDLen {
 		return
 	}
-	data = data[39+sessionIdLen:]
+	data = data[39+sessionIDLen:]
 	if len(data) < 2 {
 		return
 	}
@@ -598,6 +598,7 @@ var greaseCiphers = map[uint16]struct{}{
 	0xFAFA: {},
 }
 
+// Define variables used for TLS communication
 const (
 	extensionOCSPStatusRequest = 5
 	extensionSupportedCurves   = 10 // also called "SupportedGroups"
