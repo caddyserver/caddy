@@ -333,7 +333,7 @@ func (b Browse) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 
 	// Browsing navigation gets messed up if browsing a directory
 	// that doesn't end in "/" (which it should, anyway)
-	u := r.Context().Value(httpserver.OriginalURLCtxKey).(url.URL)
+	u := *r.URL
 	if u.Path == "" {
 		u.Path = "/"
 	}
