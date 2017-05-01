@@ -70,7 +70,7 @@ func hideCaddyfile(cctx caddy.Context) error {
 			return err
 		}
 		if strings.HasPrefix(absOriginCaddyfile, absRoot) {
-			cfg.HiddenFiles = append(cfg.HiddenFiles, strings.TrimPrefix(absOriginCaddyfile, absRoot))
+			cfg.HiddenFiles = append(cfg.HiddenFiles, filepath.ToSlash(strings.TrimPrefix(absOriginCaddyfile, absRoot)))
 		}
 	}
 	return nil
