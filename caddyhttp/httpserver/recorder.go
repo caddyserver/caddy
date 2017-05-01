@@ -2,7 +2,6 @@ package httpserver
 
 import (
 	"bufio"
-	"errors"
 	"net"
 	"net/http"
 	"time"
@@ -103,7 +102,7 @@ func (r *ResponseRecorder) Push(target string, opts *http.PushOptions) error {
 		return pusher.Push(target, opts)
 	}
 
-	return errors.New("push is unavailable (probably chained http.ResponseWriter does not implement http.Pusher)")
+	return NonPusherError{Underlying: r.ResponseWriter}
 }
 
 // Interface guards

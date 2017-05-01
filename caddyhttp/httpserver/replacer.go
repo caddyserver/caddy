@@ -330,9 +330,9 @@ func (r *replacer) getSubstitution(key string) string {
 		if val, ok := r.request.Context().Value(caddy.CtxKey("mitm")).(bool); ok {
 			if val {
 				return "likely"
-			} else {
-				return "unlikely"
 			}
+
+			return "unlikely"
 		}
 		return "unknown"
 	case "{status}":
