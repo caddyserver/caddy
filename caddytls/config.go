@@ -232,8 +232,8 @@ func (c *Config) StorageFor(caURL string) (Storage, error) {
 // buildStandardTLSConfig converts cfg (*caddytls.Config) to a *tls.Config
 // and stores it in cfg so it can be used in servers. If TLS is disabled,
 // no tls.Config is created.
-func (cfg *Config) buildStandardTLSConfig() error {
-	if !cfg.Enabled {
+func (c *Config) buildStandardTLSConfig() error {
+	if !c.Enabled {
 		return nil
 	}
 
@@ -243,35 +243,35 @@ func (cfg *Config) buildStandardTLSConfig() error {
 	curvesAdded := make(map[tls.CurveID]struct{})
 
 	// add cipher suites
-	for _, ciph := range cfg.Ciphers {
+	for _, ciph := range c.Ciphers {
 		if _, ok := ciphersAdded[ciph]; !ok {
 			ciphersAdded[ciph] = struct{}{}
 			config.CipherSuites = append(config.CipherSuites, ciph)
 		}
 	}
 
-	config.PreferServerCipherSuites = cfg.PreferServerCipherSuites
+	config.PreferServerCipherSuites = c.PreferServerCipherSuites
 
 	// add curve preferences
-	for _, curv := range cfg.CurvePreferences {
+	for _, curv := range c.CurvePreferences {
 		if _, ok := curvesAdded[curv]; !ok {
 			curvesAdded[curv] = struct{}{}
 			config.CurvePreferences = append(config.CurvePreferences, curv)
 		}
 	}
 
-	config.MinVersion = cfg.ProtocolMinVersion
-	config.MaxVersion = cfg.ProtocolMaxVersion
-	config.ClientAuth = cfg.ClientAuth
-	config.NextProtos = cfg.ALPN
-	config.GetCertificate = cfg.GetCertificate
+	config.MinVersion = c.ProtocolMinVersion
+	config.MaxVersion = c.ProtocolMaxVersion
+	config.ClientAuth = c.ClientAuth
+	config.NextProtos = c.ALPN
+	config.GetCertificate = c.GetCertificate
 
 	// set up client authentication if enabled
 	if config.ClientAuth != tls.NoClientCert {
 		pool := x509.NewCertPool()
 		clientCertsAdded := make(map[string]struct{})
 
-		for _, caFile := range cfg.ClientCerts {
+		for _, caFile := range c.ClientCerts {
 			// don't add cert to pool more than once
 			if _, ok := clientCertsAdded[caFile]; ok {
 				continue
@@ -303,7 +303,7 @@ func (cfg *Config) buildStandardTLSConfig() error {
 	}
 
 	// store the resulting new tls.Config
-	cfg.tlsConfig = config
+	c.tlsConfig = config
 
 	return nil
 }

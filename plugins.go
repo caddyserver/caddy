@@ -217,6 +217,7 @@ func RegisterPlugin(name string, plugin Plugin) {
 // EventName represents the name of an event used with event hooks.
 type EventName string
 
+// Define the event names for the startup and shutdown events
 const (
 	StartupEvent  EventName = "startup"
 	ShutdownEvent EventName = "shutdown"

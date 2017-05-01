@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -731,8 +732,9 @@ func initTestContext() (Context, error) {
 	if err != nil {
 		return Context{}, err
 	}
+	res := httptest.NewRecorder()
 
-	return Context{Root: http.Dir(os.TempDir()), Req: request}, nil
+	return Context{Root: http.Dir(os.TempDir()), responseHeader: res.Header(), Req: request}, nil
 }
 
 func getContextOrFail(t *testing.T) Context {
@@ -872,5 +874,37 @@ func TestFiles(t *testing.T) {
 				t.Fatalf(testPrefix+"Expected no error removing directory, got: '%s'", err.Error())
 			}
 		}
+	}
+}
+
+func TestPush(t *testing.T) {
+	for name, c := range map[string]struct {
+		input       string
+		expectLinks []string
+	}{
+		"oneLink": {
+			input:       `{{.Push "/test.css"}}`,
+			expectLinks: []string{"</test.css>; rel=preload"},
+		},
+		"multipleLinks": {
+			input:       `{{.Push "/test1.css"}} {{.Push "/test2.css"}}`,
+			expectLinks: []string{"</test1.css>; rel=preload", "</test2.css>; rel=preload"},
+		},
+	} {
+		c := c
+		t.Run(name, func(t *testing.T) {
+			ctx := getContextOrFail(t)
+			tmpl, err := template.New("").Parse(c.input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = tmpl.Execute(ioutil.Discard, ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := ctx.responseHeader["Link"]; !reflect.DeepEqual(got, c.expectLinks) {
+				t.Errorf("Result not match: expect %v, but got %v", c.expectLinks, got)
+			}
+		})
 	}
 }

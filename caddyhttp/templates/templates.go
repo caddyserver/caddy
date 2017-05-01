@@ -34,7 +34,10 @@ func (t Templates) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 		for _, ext := range rule.Extensions {
 			if reqExt == ext {
 				// Create execution context
-				ctx := httpserver.Context{Root: t.FileSys, Req: r, URL: r.URL}
+				ctx := httpserver.NewContextWithHeader(w.Header())
+				ctx.Root = t.FileSys
+				ctx.Req = r
+				ctx.URL = r.URL
 
 				// New template
 				templateName := filepath.Base(fpath)
