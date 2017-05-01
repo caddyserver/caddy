@@ -895,11 +895,10 @@ func basicAuthTestcase(t *testing.T, upstreamUser, clientUser *url.Userinfo) {
 
 func TestProxyDirectorURL(t *testing.T) {
 	for i, c := range []struct {
-		originalPath string
-		requestURL   string
-		targetURL    string
-		without      string
-		expectURL    string
+		requestURL string
+		targetURL  string
+		without    string
+		expectURL  string
 	}{
 		{
 			requestURL: `http://localhost:2020/test`,
@@ -970,17 +969,15 @@ func TestProxyDirectorURL(t *testing.T) {
 			expectURL:  `https://localhost:2021/%2C/%2C`,
 		},
 		{
-			originalPath: `///test`,
-			requestURL:   `http://localhost:2020/%2F/test`,
-			targetURL:    `https://localhost:2021/`,
-			expectURL:    `https://localhost:2021/%2F/test`,
+			requestURL: `http://localhost:2020/%2F/test`,
+			targetURL:  `https://localhost:2021/`,
+			expectURL:  `https://localhost:2021/%2F/test`,
 		},
 		{
-			originalPath: `/test///mypath`,
-			requestURL:   `http://localhost:2020/test/%2F/mypath`,
-			targetURL:    `https://localhost:2021/t/`,
-			expectURL:    `https://localhost:2021/t/%2F/mypath`,
-			without:      "/test",
+			requestURL: `http://localhost:2020/test/%2F/mypath`,
+			targetURL:  `https://localhost:2021/t/`,
+			expectURL:  `https://localhost:2021/t/%2F/mypath`,
+			without:    "/test",
 		},
 	} {
 		targetURL, err := url.Parse(c.targetURL)

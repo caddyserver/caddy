@@ -554,10 +554,8 @@ func WriteTextResponse(w http.ResponseWriter, status int, body string) {
 //
 // If opening a file, use http.Dir instead.
 func SafePath(siteRoot, reqPath string) string {
-	if filepath.Separator != '/' {
-		reqPath = strings.Replace(reqPath, string(filepath.Separator), "/", -1)
-	}
-	reqPath = strings.Replace(reqPath, "\x00", "", -1) // Go 1.9 checks for null bytes in the syscall package
+	reqpath = filepath.ToSlash(reqPath)
+	reqPath = strings.Replace(reqPath, "\x00", "", -1) // NOTE: Go 1.9 checks for null bytes in the syscall package
 	if siteRoot == "" {
 		siteRoot = "."
 	}
