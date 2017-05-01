@@ -76,6 +76,10 @@ func rewriteParse(c *caddy.Controller) ([]httpserver.HandlerConfig, error) {
 						return nil, c.ArgErr()
 					}
 					to = strings.Join(args1, " ")
+					// ensure rewrite path begins with /
+					if !strings.HasPrefix(to, "/") {
+						return nil, c.Errf("%s:%d - Syntax error: Rewrite path must begin with '/'. Provided: '%s'", c.File(), c.Line(), c.Val())
+					}
 				case "ext":
 					args1 := c.RemainingArgs()
 					if len(args1) == 0 {
@@ -90,14 +94,20 @@ func rewriteParse(c *caddy.Controller) ([]httpserver.HandlerConfig, error) {
 			if to == "" {
 				return nil, c.ArgErr()
 			}
+
 			if rule, err = NewComplexRule(base, pattern, to, ext, matcher); err != nil {
 				return nil, err
 			}
 			rules = append(rules, rule)
 
-		// the only unhandled case is 2 and above
+		// handle case of 2 arguments: "from to"
 		default:
-			rule = NewSimpleRule(args[0], strings.Join(args[1:], " "))
+			// ensure rewrite path begins with /
+			topath := strings.Join(args[1:], " ")
+			if !strings.HasPrefix(topath, "/") {
+				return nil, c.Errf("%s:%d - Syntax error: Rewrite path must begin with '/'. Provided: '%s'", c.File(), c.Line(), c.Val())
+			}
+			rule = NewSimpleRule(args[0], topath)
 			rules = append(rules, rule)
 		}
 
