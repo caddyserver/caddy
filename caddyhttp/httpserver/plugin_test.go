@@ -209,3 +209,27 @@ func TestContextSaveConfig(t *testing.T) {
 		t.Errorf("Expected len(siteConfigs) == %d, but was %d", want, got)
 	}
 }
+
+// Test to make sure we are correctly hiding the Caddyfile
+func TestHideCaddyfile(t *testing.T) {
+	ctx := newContext().(*httpContext)
+	ctx.saveConfig("test", &SiteConfig{
+		Root:            Root,
+		originCaddyfile: "Testfile",
+	})
+	err := hideCaddyfile(ctx)
+	if err != nil {
+		t.Fatalf("Failed to hide Caddyfile, got: %v", err)
+		return
+	}
+	if len(ctx.siteConfigs[0].HiddenFiles) == 0 {
+		t.Fatal("Failed to add Caddyfile to HiddenFiles.")
+		return
+	}
+	for _, file := range ctx.siteConfigs[0].HiddenFiles {
+		if file == "/Testfile" {
+			return
+		}
+	}
+	t.Fatal("Caddyfile missing from HiddenFiles")
+}

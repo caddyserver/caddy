@@ -141,7 +141,6 @@ func RenewManagedCertificates(allowPrompts bool) (err error) {
 		} else {
 			// successful renewal, so update in-memory cache by loading
 			// renewed certificate so it will be used with handshakes
-			// TODO: Not until CA has valid OCSP response ready for the new cert... sigh.
 			if cert.Names[len(cert.Names)-1] == "" {
 				// Special case: This is the default certificate. We must
 				// flush it out of the cache so that we no longer point to
