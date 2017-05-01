@@ -415,6 +415,12 @@ func sanitizePath(r *http.Request) {
 	if r.URL.Path == "/" {
 		return
 	}
+
+	// skip if there are some escaped forms in the original path (see issue 1582)
+	if r.URL.RawPath != "" {
+		return
+	}
+
 	cleanedPath := CleanPath(r.URL.Path)
 	if cleanedPath == "." {
 		r.URL.Path = "/"
