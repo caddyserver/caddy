@@ -497,7 +497,7 @@ func TestMethod(t *testing.T) {
 
 }
 
-func TestPathMatches(t *testing.T) {
+func TestContextPathMatches(t *testing.T) {
 	context := getContextOrFail(t)
 
 	tests := []struct {
