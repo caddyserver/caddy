@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -213,23 +214,19 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 	// Strip PATH_INFO from SCRIPT_NAME
 	scriptName = strings.TrimSuffix(scriptName, pathInfo)
 
-	// Get the request URI from context. The request URI might be as it came in over the wire,
-	// or it might have been rewritten internally by the rewrite middleware (see issue #256).
-	// If it was rewritten, there will be a context value with the original URL,
-	// which is needed to get the correct RequestURI value for PHP apps.
-	reqURI := r.URL.RequestURI()
-	if origURI, _ := r.Context().Value(httpserver.URIxRewriteCtxKey).(string); origURI != "" {
-		reqURI = origURI
-	}
+	// Get the request URI from context. The context stores the original URI in case
+	// it was changed by a middleware such as rewrite. By default, we pass the
+	// original URI in as the value of REQUEST_URI (the user can overwrite this
+	// if desired). Most PHP apps seem to want the original URI. Besides, this is
+	// how nginx defaults: http://stackoverflow.com/a/12485156/1048862
+	reqURL, _ := r.Context().Value(httpserver.OriginalURLCtxKey).(url.URL)
 
-	// Retrieve name of remote user that was set by some downstream middleware,
-	// possibly basicauth.
-	remoteUser, _ := r.Context().Value(httpserver.RemoteUserCtxKey).(string) // Blank if not set
+	// Retrieve name of remote user that was set by some downstream middleware such as basicauth.
+	remoteUser, _ := r.Context().Value(httpserver.RemoteUserCtxKey).(string)
 
 	// Some variables are unused but cleared explicitly to prevent
 	// the parent environment from interfering.
 	env = map[string]string{
-
 		// Variables defined in CGI 1.1 spec
 		"AUTH_TYPE":         "", // Not used
 		"CONTENT_LENGTH":    r.Header.Get("Content-Length"),
@@ -252,13 +249,13 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 		"DOCUMENT_ROOT":   rule.Root,
 		"DOCUMENT_URI":    docURI,
 		"HTTP_HOST":       r.Host, // added here, since not always part of headers
-		"REQUEST_URI":     reqURI,
+		"REQUEST_URI":     reqURL.RequestURI(),
 		"SCRIPT_FILENAME": scriptFilename,
 		"SCRIPT_NAME":     scriptName,
 	}
 
-	// compliance with the CGI specification that PATH_TRANSLATED
-	// should only exist if PATH_INFO is defined.
+	// compliance with the CGI specification requires that
+	// PATH_TRANSLATED should only exist if PATH_INFO is defined.
 	// Info: https://www.ietf.org/rfc/rfc3875 Page 14
 	if env["PATH_INFO"] != "" {
 		env["PATH_TRANSLATED"] = filepath.Join(rule.Root, pathInfo) // Info: http://www.oreilly.com/openbook/cgi/ch02_04.html
@@ -269,10 +266,9 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 		env["HTTPS"] = "on"
 	}
 
+	// Add env variables from config (with support for placeholders in values)
 	replacer := httpserver.NewReplacer(r, nil, "")
-	// Add env variables from config
 	for _, envVar := range rule.EnvVars {
-		// replace request placeholders in environment variables
 		env[envVar[0]] = replacer.Replace(envVar[1])
 	}
 

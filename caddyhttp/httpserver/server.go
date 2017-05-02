@@ -9,7 +9,10 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"path"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -290,11 +293,18 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	w.Header().Set("Server", "Caddy")
-	c := context.WithValue(r.Context(), staticfiles.URLPathCtxKey, r.URL.Path)
+	// copy the original, unchanged URL into the context
+	// so it can be referenced by middlewares
+	urlCopy := *r.URL
+	if r.URL.User != nil {
+		userInfo := new(url.Userinfo)
+		*userInfo = *r.URL.User
+		urlCopy.User = userInfo
+	}
+	c := context.WithValue(r.Context(), OriginalURLCtxKey, urlCopy)
 	r = r.WithContext(c)
 
-	sanitizePath(r)
+	w.Header().Set("Server", "Caddy")
 
 	status, _ := s.serveHTTP(w, r)
 
@@ -353,6 +363,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 	// The error returned by MaxBytesReader is meant to be handled
 	// by whichever middleware/plugin that receives it when calling
 	// .Read() or a similar method on the request body
+	// TODO: Make this middleware instead?
 	if r.Body != nil {
 		for _, pathlimit := range vhost.MaxRequestBodySizes {
 			if Path(r.URL.Path).Matches(pathlimit.Path) {
@@ -405,28 +416,6 @@ func (s *Server) Stop() error {
 	}
 
 	return nil
-}
-
-// sanitizePath collapses any ./ ../ /// madness which helps prevent
-// path traversal attacks. Note to middleware: use the value within the
-// request's context at key caddy.URLPathContextKey to access the
-// "original" URL.Path value.
-func sanitizePath(r *http.Request) {
-	if r.URL.Path == "/" {
-		return
-	}
-	cleanedPath := CleanPath(r.URL.Path)
-	if cleanedPath == "." {
-		r.URL.Path = "/"
-	} else {
-		if !strings.HasPrefix(cleanedPath, "/") {
-			cleanedPath = "/" + cleanedPath
-		}
-		if strings.HasSuffix(r.URL.Path, "/") && !strings.HasSuffix(cleanedPath, "/") {
-			cleanedPath = cleanedPath + "/"
-		}
-		r.URL.Path = cleanedPath
-	}
 }
 
 // OnStartupComplete lists the sites served by this server
@@ -558,3 +547,20 @@ func WriteTextResponse(w http.ResponseWriter, status int, body string) {
 	w.WriteHeader(status)
 	w.Write([]byte(body))
 }
+
+// SafePath joins siteRoot and reqPath and converts it to a path that can
+// be used to access a path on the local disk. It ensures the path does
+// not traverse outside of the site root.
+//
+// If opening a file, use http.Dir instead.
+func SafePath(siteRoot, reqPath string) string {
+	reqPath = filepath.ToSlash(reqPath)
+	reqPath = strings.Replace(reqPath, "\x00", "", -1) // NOTE: Go 1.9 checks for null bytes in the syscall package
+	if siteRoot == "" {
+		siteRoot = "."
+	}
+	return filepath.Join(siteRoot, filepath.FromSlash(path.Clean("/"+reqPath)))
+}
+
+// OriginalURLCtxKey is the key for accessing the original, incoming URL on an HTTP request.
+const OriginalURLCtxKey = caddy.CtxKey("original_url")

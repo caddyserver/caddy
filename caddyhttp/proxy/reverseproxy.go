@@ -118,9 +118,7 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int) *
 			req.URL.Host = target.Host
 		}
 
-		// We should remove the `without` prefix at first.
-		// TODO(mholt): See #1582 (and below)
-		// untouchedPath, _ := req.Context().Value(staticfiles.URLPathCtxKey).(string)
+		// remove the `without` prefix
 		if without != "" {
 			req.URL.Path = strings.TrimPrefix(req.URL.Path, without)
 			if req.URL.Opaque != "" {
@@ -129,10 +127,6 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int) *
 			if req.URL.RawPath != "" {
 				req.URL.RawPath = strings.TrimPrefix(req.URL.RawPath, without)
 			}
-			// TODO(mholt): See #1582 (and above)
-			// if untouchedPath != "" {
-			// 	untouchedPath = strings.TrimPrefix(untouchedPath, without)
-			// }
 		}
 
 		// prefer returns val if it isn't empty, otherwise def
@@ -142,6 +136,7 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int) *
 			}
 			return def
 		}
+
 		// Make up the final URL by concatenating the request and target URL.
 		//
 		// If there is encoded part in request or target URL,
