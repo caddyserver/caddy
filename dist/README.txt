@@ -1,4 +1,4 @@
-CADDY 0.10.1
+CADDY 0.10.2
 
 Website
 	https://caddyserver.com

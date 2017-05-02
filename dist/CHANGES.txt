@@ -1,5 +1,10 @@
 CHANGES
 
+0.10.2 (May 2, 2017)
+- Hot fix for rule paths of "/" so that they match every request
+- fastcgi: Match request paths that don't start with "/" even if rule does
+
+
 0.10.1 (May 1, 2017)
 - Reduced memory usage for gzip, templates, and MITM detection
 - Fixed automatic HTTP->HTTPS redirects for sites with wildcard labels
