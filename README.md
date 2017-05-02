@@ -1,7 +1,7 @@
 <p align="center">
 	<a href="https://caddyserver.com"><img src="https://cloud.githubusercontent.com/assets/1128849/25305033/12916fce-2731-11e7-86ec-580d4d31cb16.png" alt="Caddy" width="400"></a>
 </p>
-<h3 align="center">Every Site on HTTPS <!-- Serve Confidently. --></h3>
+<h3 align="center">Every Site on HTTPS <!-- Serve Confidently --></h3>
 <p align="center">Caddy is a general-purpose HTTP/2 web server that serves HTTPS by default.</p>
 <p align="center">
 	<a href="https://travis-ci.org/mholt/caddy"><img src="https://img.shields.io/travis/mholt/caddy.svg?label=linux+build"></a>
@@ -128,7 +128,7 @@ How you choose to run Caddy is up to you. Many users are satisfied with `nohup c
 
 **[Join our forum](https://caddy.community) where you can chat with other Caddy users and developers!**
 
-Please see our [contributing guidelines](https://github.com/mholt/caddy/blob/master/CONTRIBUTING.md). If you want to write a plugin, check out the [developer wiki](https://github.com/mholt/caddy/wiki).
+Please see our [contributing guidelines](https://github.com/mholt/caddy/blob/master/.github/CONTRIBUTING.md). If you want to write a plugin, check out the [developer wiki](https://github.com/mholt/caddy/wiki).
 
 We use GitHub issues and pull requests only for discussing bug reports and the development of specific changes. We welcome all other topics on the [forum](https://caddy.community)!
 
