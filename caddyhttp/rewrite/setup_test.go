@@ -45,18 +45,14 @@ func TestRewriteParse(t *testing.T) {
 			SimpleRule{From: "/from", To: "/to"},
 		}},
 		{`rewrite /from /to
-		  rewrite a /b`, false, []Rule{
+		  rewrite a b`, false, []Rule{
 			SimpleRule{From: "/from", To: "/to"},
-			SimpleRule{From: "a", To: "/b"},
+			SimpleRule{From: "a", To: "b"},
 		}},
-		{`rewrite a b`, true, []Rule{}},
 		{`rewrite a`, true, []Rule{}},
 		{`rewrite`, true, []Rule{}},
-		{`rewrite a b c`, true, []Rule{
+		{`rewrite a b c`, false, []Rule{
 			SimpleRule{From: "a", To: "b c"},
-		}},
-		{`rewrite a /b c`, false, []Rule{
-			SimpleRule{From: "a", To: "/b c"},
 		}},
 	}
 
