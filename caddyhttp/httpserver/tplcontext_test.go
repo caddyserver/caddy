@@ -877,18 +877,18 @@ func TestFiles(t *testing.T) {
 	}
 }
 
-func TestPush(t *testing.T) {
+func TestAddLink(t *testing.T) {
 	for name, c := range map[string]struct {
 		input       string
 		expectLinks []string
 	}{
 		"oneLink": {
-			input:       `{{.Push "/test.css"}}`,
+			input:       `{{.AddLink "</test.css>; rel=preload"}}`,
 			expectLinks: []string{"</test.css>; rel=preload"},
 		},
 		"multipleLinks": {
-			input:       `{{.Push "/test1.css"}} {{.Push "/test2.css"}}`,
-			expectLinks: []string{"</test1.css>; rel=preload", "</test2.css>; rel=preload"},
+			input:       `{{.AddLink "</test1.css>; rel=preload"}} {{.AddLink "</test2.css>; rel=meta"}}`,
+			expectLinks: []string{"</test1.css>; rel=preload", "</test2.css>; rel=meta"},
 		},
 	} {
 		c := c
