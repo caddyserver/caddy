@@ -1,5 +1,12 @@
 CHANGES
 
+0.10.1 (May 1, 2017)
+- Reduced memory usage for gzip, templates, and MITM detection
+- Fixed automatic HTTP->HTTPS redirects for sites with wildcard labels
+- proxy: Fix 'without' subdirective
+- A few other minor bug fixes and improvements
+
+
 0.10 (April 20, 2017)
 - Built on Go 1.8.1
 - HTTPS interception detection
