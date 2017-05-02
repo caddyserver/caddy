@@ -7,8 +7,6 @@
 package internalsrv
 
 import (
-	"bufio"
-	"net"
 	"net/http"
 
 	"github.com/mholt/caddy/caddyhttp/httpserver"
@@ -44,7 +42,7 @@ func (i Internal) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error)
 
 	// Use internal response writer to ignore responses that will be
 	// redirected to internal locations
-	iw := internalResponseWriter{ResponseWriter: w}
+	iw := internalResponseWriter{ResponseWriterWrapper: &httpserver.ResponseWriterWrapper{ResponseWriter: w}}
 	status, err := i.Next.ServeHTTP(iw, r)
 
 	for c := 0; c < maxRedirectCount && isInternalRedirect(iw); c++ {
@@ -69,7 +67,7 @@ func (i Internal) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error)
 // calls to Write and WriteHeader if the response should be redirected to an
 // internal location.
 type internalResponseWriter struct {
-	http.ResponseWriter
+	*httpserver.ResponseWriterWrapper
 }
 
 // ClearHeader removes script headers that would interfere with follow up
@@ -84,7 +82,7 @@ func (w internalResponseWriter) ClearHeader() {
 // internal location.
 func (w internalResponseWriter) WriteHeader(code int) {
 	if !isInternalRedirect(w) {
-		w.ResponseWriter.WriteHeader(code)
+		w.ResponseWriterWrapper.WriteHeader(code)
 	}
 }
 
@@ -94,53 +92,8 @@ func (w internalResponseWriter) Write(b []byte) (int, error) {
 	if isInternalRedirect(w) {
 		return 0, nil
 	}
-	return w.ResponseWriter.Write(b)
-}
-
-// Hijack implements http.Hijacker. It simply wraps the underlying
-// ResponseWriter's Hijack method if there is one, or returns an error.
-func (w internalResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	if hj, ok := w.ResponseWriter.(http.Hijacker); ok {
-		return hj.Hijack()
-	}
-	return nil, nil, httpserver.NonHijackerError{Underlying: w.ResponseWriter}
-}
-
-// Flush implements http.Flusher. It simply wraps the underlying
-// ResponseWriter's Flush method if there is one, or panics.
-func (w internalResponseWriter) Flush() {
-	if f, ok := w.ResponseWriter.(http.Flusher); ok {
-		f.Flush()
-	} else {
-		panic(httpserver.NonFlusherError{Underlying: w.ResponseWriter})
-	}
-}
-
-// CloseNotify implements http.CloseNotifier.
-// It just inherits the underlying ResponseWriter's CloseNotify method.
-// It panics if the underlying ResponseWriter is not a CloseNotifier.
-func (w internalResponseWriter) CloseNotify() <-chan bool {
-	if cn, ok := w.ResponseWriter.(http.CloseNotifier); ok {
-		return cn.CloseNotify()
-	}
-	panic(httpserver.NonCloseNotifierError{Underlying: w.ResponseWriter})
-}
-
-// Push implements http.Pusher.
-// It just inherits the underlying ResponseWriter's Push method.
-// It panics if the underlying ResponseWriter is not a Pusher.
-func (w internalResponseWriter) Push(target string, opts *http.PushOptions) error {
-	if pusher, hasPusher := w.ResponseWriter.(http.Pusher); hasPusher {
-		return pusher.Push(target, opts)
-	}
-
-	return httpserver.NonPusherError{Underlying: w.ResponseWriter}
+	return w.ResponseWriterWrapper.Write(b)
 }
 
 // Interface guards
-var (
-	_ http.Pusher        = internalResponseWriter{}
-	_ http.Flusher       = internalResponseWriter{}
-	_ http.CloseNotifier = internalResponseWriter{}
-	_ http.Hijacker      = internalResponseWriter{}
-)
+var _ httpserver.HTTPInterfaces = internalResponseWriter{}

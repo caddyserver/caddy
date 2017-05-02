@@ -100,7 +100,9 @@ func TestReverseProxy(t *testing.T) {
 
 	// Make sure {upstream} placeholder is set
 	r.Body = ioutil.NopCloser(strings.NewReader("test"))
-	rr := httpserver.NewResponseRecorder(testResponseRecorder{httptest.NewRecorder()})
+	rr := httpserver.NewResponseRecorder(testResponseRecorder{
+		ResponseWriterWrapper: &httpserver.ResponseWriterWrapper{ResponseWriter: httptest.NewRecorder()},
+	})
 	rr.Replacer = httpserver.NewReplacer(r, rr, "-")
 
 	p.ServeHTTP(rr, r)
@@ -1315,24 +1317,13 @@ func (c *fakeConn) Write(b []byte) (int, error)        { return c.writeBuf.Write
 // testResponseRecorder wraps `httptest.ResponseRecorder`,
 // also implements `http.CloseNotifier`, `http.Hijacker` and `http.Pusher`.
 type testResponseRecorder struct {
-	*httptest.ResponseRecorder
+	*httpserver.ResponseWriterWrapper
 }
 
 func (testResponseRecorder) CloseNotify() <-chan bool { return nil }
-func (t testResponseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	return nil, nil, httpserver.NonHijackerError{Underlying: t}
-}
-func (t testResponseRecorder) Push(target string, opts *http.PushOptions) error {
-	return httpserver.NonPusherError{Underlying: t}
-}
 
 // Interface guards
-var (
-	_ http.Pusher        = testResponseRecorder{}
-	_ http.Flusher       = testResponseRecorder{}
-	_ http.CloseNotifier = testResponseRecorder{}
-	_ http.Hijacker      = testResponseRecorder{}
-)
+var _ httpserver.HTTPInterfaces = testResponseRecorder{}
 
 func BenchmarkProxy(b *testing.B) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
