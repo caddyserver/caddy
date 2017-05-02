@@ -5,7 +5,7 @@ import "testing"
 func TestPathMatches(t *testing.T) {
 	for i, testcase := range []struct {
 		reqPath         Path
-		rulePath        string
+		rulePath        string // or "base path" as in Caddyfile docs
 		shouldMatch     bool
 		caseInsensitive bool
 	}{
@@ -48,7 +48,42 @@ func TestPathMatches(t *testing.T) {
 		},
 		{
 			reqPath:     "",
-			rulePath:    "/", // a lone forward slash means to match all requests (see issue #1645)
+			rulePath:    "/", // a lone forward slash means to match all requests (see issue #1645) - many future test cases related to this issue
+			shouldMatch: true,
+		},
+		{
+			reqPath:     "foobar.php",
+			rulePath:    "/",
+			shouldMatch: true,
+		},
+		{
+			reqPath:     "",
+			rulePath:    "",
+			shouldMatch: true,
+		},
+		{
+			reqPath:     "/foo/bar",
+			rulePath:    "",
+			shouldMatch: true,
+		},
+		{
+			reqPath:     "/foo/bar",
+			rulePath:    "",
+			shouldMatch: true,
+		},
+		{
+			reqPath:     "no/leading/slash",
+			rulePath:    "/",
+			shouldMatch: true,
+		},
+		{
+			reqPath:     "no/leading/slash",
+			rulePath:    "/no/leading/slash",
+			shouldMatch: false,
+		},
+		{
+			reqPath:     "no/leading/slash",
+			rulePath:    "",
 			shouldMatch: true,
 		},
 	} {

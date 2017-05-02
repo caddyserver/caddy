@@ -36,9 +36,25 @@ type Handler struct {
 // ServeHTTP satisfies the httpserver.Handler interface.
 func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	for _, rule := range h.Rules {
-
-		// First requirement: Base path must match and the path must be allowed.
-		if !httpserver.Path(r.URL.Path).Matches(rule.Path) || !rule.AllowedPath(r.URL.Path) {
+		// First requirement: Base path must match request path. If it doesn't,
+		// we check to make sure the leading slash is not missing, and if so,
+		// we check again with it prepended. This is in case people forget
+		// a leading slash when performing rewrites, and we don't want to expose
+		// the contents of the (likely PHP) script. See issue #1645.
+		hpath := httpserver.Path(r.URL.Path)
+		if !hpath.Matches(rule.Path) {
+			if strings.HasPrefix(string(hpath), "/") {
+				// this is a normal-looking path, and it doesn't match; try next rule
+				continue
+			}
+			hpath = httpserver.Path("/" + string(hpath)) // prepend leading slash
+			if !hpath.Matches(rule.Path) {
+				// even after fixing the request path, it still doesn't match; try next rule
+				continue
+			}
+		}
+		// The path must also be allowed (not ignored).
+		if !rule.AllowedPath(r.URL.Path) {
 			continue
 		}
 
