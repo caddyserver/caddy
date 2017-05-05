@@ -478,13 +478,13 @@ var directives = []string{
 	"expvar",
 	"push",
 	"prometheus", // github.com/miekg/caddy-prometheus
+	"templates",
 	"proxy",
 	"fastcgi",
 	"cgi", // github.com/jung-kurt/caddy-cgi
 	"websocket",
 	"filemanager", // github.com/hacdias/caddy-filemanager
 	"markdown",
-	"templates",
 	"browse",
 	"hugo",      // github.com/hacdias/caddy-hugo
 	"mailout",   // github.com/SchumacherFM/mailout

@@ -4,90 +4,92 @@ package templates
 
 import (
 	"bytes"
-	"mime"
 	"net/http"
-	"os"
+	"net/http/httptest"
 	"path"
 	"path/filepath"
 	"sync"
 	"text/template"
+	"time"
 
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
 
 // ServeHTTP implements the httpserver.Handler interface.
 func (t Templates) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
+	// TODO: This performs ~15% worse (req/s) than the old method; why?
+	// TODO: Need to somehow embed upcoming httpserver.ResponseWriterWrapper
+	// into the ResponseRecorder, so it implements the needed interfaces
+
 	for _, rule := range t.Rules {
 		if !httpserver.Path(r.URL.Path).Matches(rule.Path) {
 			continue
 		}
 
-		// Check for index files
+		// check for index files
 		fpath := r.URL.Path
 		if idx, ok := httpserver.IndexFile(t.FileSys, fpath, rule.IndexFiles); ok {
 			fpath = idx
 		}
 
-		// Check the extension
+		// check if extension matches
 		reqExt := path.Ext(fpath)
-
 		for _, ext := range rule.Extensions {
 			if reqExt == ext {
-				// Create execution context
+				// get a buffer from the pool and make a response recorder
+				buf := t.BufPool.Get().(*bytes.Buffer)
+				buf.Reset()
+				defer t.BufPool.Put(buf)
+				respRec := &httptest.ResponseRecorder{
+					HeaderMap: make(http.Header),
+					Body:      buf,
+				}
+
+				// pass request up the chain to let another middleware provide us the template
+				code, err := t.Next.ServeHTTP(respRec, r)
+				if code >= 300 {
+					return code, err
+				}
+
+				// copy the buffered response headers to the real response writer
+				for field, val := range respRec.HeaderMap {
+					w.Header()[field] = val
+				}
+
+				// create a new template
+				templateName := filepath.Base(fpath)
+				tpl := template.New(templateName)
+
+				// set delimiters
+				if rule.Delims != [2]string{} {
+					tpl.Delims(rule.Delims[0], rule.Delims[1])
+				}
+
+				// add custom functions
+				tpl.Funcs(httpserver.TemplateFuncs)
+
+				// parse the template
+				parsedTpl, err := tpl.Parse(respRec.Body.String())
+				if err != nil {
+					return http.StatusInternalServerError, err
+				}
+
+				// create execution context for the template template
 				ctx := httpserver.NewContextWithHeader(w.Header())
 				ctx.Root = t.FileSys
 				ctx.Req = r
 				ctx.URL = r.URL
 
-				// New template
-				templateName := filepath.Base(fpath)
-				tpl := template.New(templateName)
-
-				// Set delims
-				if rule.Delims != [2]string{} {
-					tpl.Delims(rule.Delims[0], rule.Delims[1])
-				}
-
-				// Add custom functions
-				tpl.Funcs(httpserver.TemplateFuncs)
-
-				// Build the template
-				templatePath := filepath.Join(t.Root, fpath)
-				tpl, err := tpl.ParseFiles(templatePath)
-				if err != nil {
-					if os.IsNotExist(err) {
-						return http.StatusNotFound, nil
-					} else if os.IsPermission(err) {
-						return http.StatusForbidden, nil
-					}
-					return http.StatusInternalServerError, err
-				}
-
-				// Execute it
-				buf := t.BufPool.Get().(*bytes.Buffer)
+				// execute the template
 				buf.Reset()
-				defer t.BufPool.Put(buf)
-				err = tpl.Execute(buf, ctx)
+				err = parsedTpl.Execute(buf, ctx)
 				if err != nil {
 					return http.StatusInternalServerError, err
 				}
 
-				// If Content-Type isn't set here, http.ResponseWriter.Write
-				// will set it according to response body. But other middleware
-				// such as gzip can modify response body, then Content-Type
-				// detected by http.ResponseWriter.Write is wrong.
-				ctype := mime.TypeByExtension(ext)
-				if ctype == "" {
-					ctype = http.DetectContentType(buf.Bytes())
-				}
-				w.Header().Set("Content-Type", ctype)
+				modTime, _ := time.Parse(http.TimeFormat, w.Header().Get("Last-Modified"))
 
-				templateInfo, err := os.Stat(templatePath)
-				if err == nil {
-					// add the Last-Modified header if we were able to read the stamp
-					httpserver.SetLastModifiedHeader(w, templateInfo.ModTime())
-				}
-				buf.WriteTo(w)
+				http.ServeContent(w, r, templateName, modTime, bytes.NewReader(buf.Bytes()))
 
 				return http.StatusOK, nil
 			}
