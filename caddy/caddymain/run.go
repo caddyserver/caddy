@@ -26,6 +26,7 @@ import (
 func init() {
 	caddy.TrapSignals()
 	setVersion()
+	setName()
 
 	flag.BoolVar(&caddytls.Agreed, "agree", false, "Agree to the CA's Subscriber Agreement")
 	flag.StringVar(&caddytls.DefaultCAUrl, "ca", "https://acme-v01.api.letsencrypt.org/directory", "URL to certificate authority's ACME server directory")
@@ -51,10 +52,6 @@ func init() {
 // Run is Caddy's main() function.
 func Run() {
 	flag.Parse()
-
-	caddy.AppName = appName
-	caddy.AppVersion = appVersion
-	acme.UserAgent = appName + "/" + appVersion
 
 	// Set up process log before anything bad happens
 	switch logfile {
@@ -83,7 +80,7 @@ func Run() {
 		os.Exit(0)
 	}
 	if version {
-		fmt.Printf("%s %s\n", appName, appVersion)
+		fmt.Printf("%s %s\n", caddy.AppName, caddy.AppVersion)
 		if devBuild && gitShortStat != "" {
 			fmt.Printf("%s\n%s\n", gitShortStat, gitFilesModified)
 		}
@@ -195,6 +192,13 @@ func setVersion() {
 			appVersion = strings.TrimPrefix(gitTag, "v")
 		}
 	}
+}
+
+// setName sets Caddy's http server plugin versioning information.
+func setName() {
+	caddy.AppName = appName
+	caddy.AppVersion = appVersion
+	acme.UserAgent = appName + "/" + appVersion
 }
 
 // setCPU parses string cpu and sets GOMAXPROCS
