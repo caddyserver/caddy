@@ -22,7 +22,8 @@ type Data struct {
 // Include "overrides" the embedded httpserver.Context's Include()
 // method so that included files have access to d's fields.
 // Note: using {{template 'template-name' .}} instead might be better.
-func (d Data) Include(filename string) (string, error) {
+func (d Data) Include(filename string, args ...interface{}) (string, error) {
+	d.Args = args
 	return httpserver.ContextInclude(filename, d, d.Root)
 }
 
