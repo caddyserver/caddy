@@ -247,8 +247,8 @@ func TestWebSocketReverseProxyNonHijackerPanic(t *testing.T) {
 func TestWebSocketReverseProxyServeHTTPHandler(t *testing.T) {
 	// No-op websocket backend simply allows the WS connection to be
 	// accepted then it will be immediately closed. Perfect for testing.
-	var connCount int32
-	wsNop := httptest.NewServer(websocket.Handler(func(ws *websocket.Conn) { atomic.AddInt32(&connCount, 1) }))
+	accepted := make(chan struct{})
+	wsNop := httptest.NewServer(websocket.Handler(func(ws *websocket.Conn) { close(accepted) }))
 	defer wsNop.Close()
 
 	// Get proxy to use for the test
@@ -279,8 +279,14 @@ func TestWebSocketReverseProxyServeHTTPHandler(t *testing.T) {
 	if !bytes.Equal(actual, expected) {
 		t.Errorf("Expected backend to accept response:\n'%s'\nActually got:\n'%s'", expected, actual)
 	}
-	if got, want := atomic.LoadInt32(&connCount), int32(1); got != want {
-		t.Errorf("Expected %d websocket connection, got %d", want, got)
+
+	// wait a minute for backend handling, see issue 1654.
+	time.Sleep(10 * time.Millisecond)
+
+	select {
+	case <-accepted:
+	default:
+		t.Error("Expect a accepted websocket connection, but not")
 	}
 }
 
