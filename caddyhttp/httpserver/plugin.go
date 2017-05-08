@@ -436,7 +436,7 @@ var directives = []string{
 	"root",
 	"index",
 	"bind",
-	"maxrequestbody", // TODO: 'limits'
+	"limits",
 	"timeouts",
 	"tls",
 

@@ -1,4 +1,4 @@
-package maxrequestbody
+package limits
 
 import (
 	"reflect"
@@ -14,32 +14,98 @@ const (
 	GB = 1024 * 1024 * 1024
 )
 
-func TestSetupMaxRequestBody(t *testing.T) {
-	cases := []struct {
-		input    string
-		hasError bool
+func TestParseLimits(t *testing.T) {
+	for name, c := range map[string]struct {
+		input     string
+		shouldErr bool
+		expect    httpserver.Limits
 	}{
-		// Format: { <path> <limit> ... }
-		{input: "maxrequestbody / 20MB", hasError: false},
-		// Format: <limit>
-		{input: "maxrequestbody 999KB", hasError: false},
-		// Format: { <path> <limit> ... }
-		{input: "maxrequestbody { /images 50MB /upload 10MB\n/test 10KB }", hasError: false},
-
-		// Wrong formats
-		{input: "maxrequestbody typo { /images 50MB }", hasError: true},
-		{input: "maxrequestbody 999MB /home 20KB", hasError: true},
-	}
-	for caseNum, c := range cases {
-		controller := caddy.NewTestController("", c.input)
-		err := setupMaxRequestBody(controller)
-
-		if c.hasError && (err == nil) {
-			t.Errorf("Expecting error for case %v but none encountered", caseNum)
-		}
-		if !c.hasError && (err != nil) {
-			t.Errorf("Expecting no error for case %v but encountered %v", caseNum, err)
-		}
+		"catchAll": {
+			input: `limits 2kb`,
+			expect: httpserver.Limits{
+				MaxRequestHeaderSize: 2 * KB,
+				MaxRequestBodySizes:  []httpserver.PathLimit{{Path: "/", Limit: 2 * KB}},
+			},
+		},
+		"onlyHeader": {
+			input: `limits {
+				header 2kb
+			}`,
+			expect: httpserver.Limits{
+				MaxRequestHeaderSize: 2 * KB,
+			},
+		},
+		"onlyBody": {
+			input: `limits {
+				body 2kb
+			}`,
+			expect: httpserver.Limits{
+				MaxRequestBodySizes: []httpserver.PathLimit{{Path: "/", Limit: 2 * KB}},
+			},
+		},
+		"onlyBodyWithPath": {
+			input: `limits {
+				body /test 2kb
+			}`,
+			expect: httpserver.Limits{
+				MaxRequestBodySizes: []httpserver.PathLimit{{Path: "/test", Limit: 2 * KB}},
+			},
+		},
+		"mixture": {
+			input: `limits {
+				header 1kb
+				body 2kb
+				body /bar 3kb
+			}`,
+			expect: httpserver.Limits{
+				MaxRequestHeaderSize: 1 * KB,
+				MaxRequestBodySizes: []httpserver.PathLimit{
+					{Path: "/bar", Limit: 3 * KB},
+					{Path: "/", Limit: 2 * KB},
+				},
+			},
+		},
+		"invalidFormat": {
+			input:     `limits a b`,
+			shouldErr: true,
+		},
+		"invalidHeaderFormat": {
+			input: `limits {
+				header / 100
+			}`,
+			shouldErr: true,
+		},
+		"invalidBodyFormat": {
+			input: `limits {
+				body / 100 200
+			}`,
+			shouldErr: true,
+		},
+		"invalidKind": {
+			input: `limits {
+				head 100
+			}`,
+			shouldErr: true,
+		},
+		"invalidLimitSize": {
+			input:     `limits 10bk`,
+			shouldErr: true,
+		},
+	} {
+		c := c
+		t.Run(name, func(t *testing.T) {
+			controller := caddy.NewTestController("", c.input)
+			_, err := parseLimits(controller)
+			if c.shouldErr && err == nil {
+				t.Error("failed to get expected error")
+			}
+			if !c.shouldErr && err != nil {
+				t.Errorf("got unexpected error: %v", err)
+			}
+			if got := httpserver.GetConfig(controller).Limits; !reflect.DeepEqual(got, c.expect) {
+				t.Errorf("expect %#v, but got %#v", c.expect, got)
+			}
+		})
 	}
 }
 

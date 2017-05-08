@@ -38,8 +38,8 @@ type SiteConfig struct {
 	// for a request.
 	HiddenFiles []string
 
-	// Max amount of bytes a request can send on a given path
-	MaxRequestBodySizes []PathLimit
+	// Max request's header/body size
+	Limits Limits
 
 	// The path to the Caddyfile used to generate this site config
 	originCaddyfile string
@@ -69,6 +69,12 @@ type Timeouts struct {
 	WriteTimeoutSet      bool
 	IdleTimeout          time.Duration
 	IdleTimeoutSet       bool
+}
+
+// Limits specify size limit of request's header and body.
+type Limits struct {
+	MaxRequestHeaderSize int64
+	MaxRequestBodySizes  []PathLimit
 }
 
 // PathLimit is a mapping from a site's path to its corresponding
