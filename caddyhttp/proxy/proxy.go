@@ -228,7 +228,7 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			return 0, nil
 		}
 
-		if _, ok := backendErr.(httpserver.MaxBytesExceeded); ok {
+		if backendErr == httpserver.MaxBytesExceededErr {
 			return http.StatusRequestEntityTooLarge, backendErr
 		}
 

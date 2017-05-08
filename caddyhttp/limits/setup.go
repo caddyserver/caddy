@@ -1,4 +1,4 @@
-package maxrequestbody
+package limits
 
 import (
 	"errors"
@@ -12,13 +12,13 @@ import (
 
 const (
 	serverType = "http"
-	pluginName = "maxrequestbody"
+	pluginName = "limits"
 )
 
 func init() {
 	caddy.RegisterPlugin(pluginName, caddy.Plugin{
 		ServerType: serverType,
-		Action:     setupMaxRequestBody,
+		Action:     setupLimits,
 	})
 }
 
@@ -28,56 +28,97 @@ type pathLimitUnparsed struct {
 	Limit string
 }
 
-func setupMaxRequestBody(c *caddy.Controller) error {
+func setupLimits(c *caddy.Controller) error {
+	bls, err := parseLimits(c)
+	if err != nil {
+		return err
+	}
+
+	httpserver.GetConfig(c).AddMiddleware(func(next httpserver.Handler) httpserver.Handler {
+		return Limit{Next: next, BodyLimits: bls}
+	})
+	return nil
+}
+
+func parseLimits(c *caddy.Controller) ([]httpserver.PathLimit, error) {
 	config := httpserver.GetConfig(c)
 
 	if !c.Next() {
-		return c.ArgErr()
+		return nil, c.ArgErr()
 	}
 
 	args := c.RemainingArgs()
 	argList := []pathLimitUnparsed{}
+	headerLimit := ""
 
 	switch len(args) {
 	case 0:
-		// Format: { <path> <limit> ... }
+		// Format: limits {
+		//	header <limit>
+		//	body <path> <limit>
+		//	body <limit>
+		//	...
+		// }
 		for c.NextBlock() {
-			path := c.Val()
-			if !c.NextArg() {
-				// Uneven pairing of path/limit
-				return c.ArgErr()
+			kind := c.Val()
+			pathOrLimit := c.RemainingArgs()
+			switch kind {
+			case "header":
+				if len(pathOrLimit) != 1 {
+					return nil, c.ArgErr()
+				}
+				headerLimit = pathOrLimit[0]
+			case "body":
+				if len(pathOrLimit) == 1 {
+					argList = append(argList, pathLimitUnparsed{
+						Path:  "/",
+						Limit: pathOrLimit[0],
+					})
+					break
+				}
+
+				if len(pathOrLimit) == 2 {
+					argList = append(argList, pathLimitUnparsed{
+						Path:  pathOrLimit[0],
+						Limit: pathOrLimit[1],
+					})
+					break
+				}
+
+				fallthrough
+			default:
+				return nil, c.ArgErr()
 			}
-			argList = append(argList, pathLimitUnparsed{
-				Path:  path,
-				Limit: c.Val(),
-			})
 		}
 	case 1:
-		// Format: <limit>
+		// Format: limits <limit>
+		headerLimit = args[0]
 		argList = []pathLimitUnparsed{{
 			Path:  "/",
 			Limit: args[0],
 		}}
-	case 2:
-		// Format: <path> <limit>
-		argList = []pathLimitUnparsed{{
-			Path:  args[0],
-			Limit: args[1],
-		}}
 	default:
-		return c.ArgErr()
+		return nil, c.ArgErr()
 	}
 
-	pathLimit, err := parseArguments(argList)
-	if err != nil {
-		return c.ArgErr()
+	if headerLimit != "" {
+		size := parseSize(headerLimit)
+		if size < 1 { // also disallow size = 0
+			return nil, c.ArgErr()
+		}
+		config.Limits.MaxRequestHeaderSize = size
 	}
 
-	SortPathLimits(pathLimit)
+	if len(argList) > 0 {
+		pathLimit, err := parseArguments(argList)
+		if err != nil {
+			return nil, c.ArgErr()
+		}
+		SortPathLimits(pathLimit)
+		config.Limits.MaxRequestBodySizes = pathLimit
+	}
 
-	config.MaxRequestBodySizes = pathLimit
-
-	return nil
+	return config.Limits.MaxRequestBodySizes, nil
 }
 
 func parseArguments(args []pathLimitUnparsed) ([]httpserver.PathLimit, error) {
