@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -372,6 +373,55 @@ func TestHealthCheckHost(t *testing.T) {
 			if test.flag != (staticUpstream.HealthCheck.Host == test.host) {
 				t.Errorf("Test %d: expected staticUpstream.HealthCheck.Host=%v, got %v", i, test.host, staticUpstream.HealthCheck.Host)
 			}
+		}
+	}
+}
+
+func TestHealthCheckPort(t *testing.T) {
+	var counter int64
+
+	healthCounter := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Body.Close()
+		atomic.AddInt64(&counter, 1)
+	}))
+
+	_, healthPort, err := net.SplitHostPort(healthCounter.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer healthCounter.Close()
+
+	tests := []struct {
+		config string
+	}{
+		// Test #1: upstream with port
+		{"proxy / localhost:8080 {\n health_check / health_check_port " + healthPort + "\n}"},
+
+		// Test #2: upstream without port (default to 80)
+		{"proxy / localhost {\n health_check / health_check_port " + healthPort + "\n}"},
+	}
+
+	for i, test := range tests {
+		counterValueAtStart := atomic.LoadInt64(&counter)
+		upstreams, err := NewStaticUpstreams(caddyfile.NewDispenser("Testfile", strings.NewReader(test.config)), "")
+		if err != nil {
+			t.Error("Expected no error. Got:", err.Error())
+		}
+
+		// Give some time for healthchecks to hit the server.
+		time.Sleep(500 * time.Millisecond)
+
+		for _, upstream := range upstreams {
+			if err := upstream.Stop(); err != nil {
+				t.Errorf("Test %d: Expected no error stopping upstream. Got: %v", i, err.Error())
+			}
+		}
+
+		counterValueAfterShutdown := atomic.LoadInt64(&counter)
+
+		if counterValueAfterShutdown == counterValueAtStart {
+			t.Errorf("Test %d: Expected healthchecks to hit test server. Got no healthchecks.", i)
 		}
 	}
 }
