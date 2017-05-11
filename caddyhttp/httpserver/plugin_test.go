@@ -52,6 +52,10 @@ func TestStandardizeAddress(t *testing.T) {
 		{`host:80/path`, "", "host", "80", "/path", false},
 		{`host:https/path`, "https", "host", "443", "/path", false},
 		{`/path`, "", "", "", "/path", false},
+		{`http://idnhost-öåä`, "http", "xn--idnhost--7zaj0q", "80", "", false},
+		{`https://idnhost-öåä`, "https", "xn--idnhost--7zaj0q", "443", "", false},
+		{`idnhost-öåä`, "", "xn--idnhost--7zaj0q", "", "", false},
+		{`idnhost-öåä:https/path`, "https", "xn--idnhost--7zaj0q", "443", "/path", false},
 	} {
 		actual, err := standardizeAddress(test.input)
 
@@ -80,16 +84,37 @@ func TestStandardizeAddress(t *testing.T) {
 	}
 }
 
+func TestHostIsIDN(t *testing.T) {
+	for i, test := range []struct {
+		host     string
+		expected bool
+	}{
+		{"idnhost-öåä", true},
+		{"host", false},
+		{"", false},
+		{"1.2.3.4", false},
+		{"::1", false},
+		{"[::1]", false},
+	} {
+		actual := isIDN(test.host)
+		if actual != test.expected {
+			t.Errorf("Test %d: expected '%t' but got '%t'", i, test.expected, actual)
+		}
+	}
+}
+
 func TestAddressVHost(t *testing.T) {
 	for i, test := range []struct {
 		addr     Address
 		expected string
 	}{
-		{Address{Original: "host:1234"}, "host:1234"},
-		{Address{Original: "host:1234/foo"}, "host:1234/foo"},
-		{Address{Original: "host/foo"}, "host/foo"},
-		{Address{Original: "http://host/foo"}, "host/foo"},
-		{Address{Original: "https://host/foo"}, "host/foo"},
+		{Address{Original: "host:1234", Scheme: "", Host: "host", Port: "1234", Path: ""}, "host:1234"},
+		{Address{Original: "host:1234/foo", Scheme: "", Host: "host", Port: "1234", Path: "/foo"}, "host:1234/foo"},
+		{Address{Original: "host/foo", Scheme: "", Host: "host", Port: "", Path: "/foo"}, "host/foo"},
+		{Address{Original: "http://host/foo", Scheme: "http", Host: "host", Port: "", Path: "/foo"}, "host/foo"},
+		{Address{Original: "https://host/foo", Scheme: "https", Host: "host", Port: "", Path: "/foo"}, "host/foo"},
+		{Address{Original: "idnhost-öåä:1234/foo", Scheme: "", Host: "xn--idnhost--7zaj0q", Port: "1234", Path: "/foo"}, "xn--idnhost--7zaj0q:1234/foo"},
+		{Address{Original: "http://idnhost-öåä:1234/foo", Scheme: "http", Host: "xn--idnhost--7zaj0q", Port: "1234", Path: "/foo"}, "xn--idnhost--7zaj0q:1234/foo"},
 	} {
 		actual := test.addr.VHost()
 		if actual != test.expected {

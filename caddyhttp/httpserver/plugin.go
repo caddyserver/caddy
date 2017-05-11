@@ -14,6 +14,8 @@ import (
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyfile"
 	"github.com/mholt/caddy/caddytls"
+
+	"golang.org/x/net/idna"
 )
 
 const serverType = "http"
@@ -311,10 +313,11 @@ func (a Address) String() string {
 // VHost returns a sensible concatenation of Host:Port/Path from a.
 // It's basically the a.Original but without the scheme.
 func (a Address) VHost() string {
-	if idx := strings.Index(a.Original, "://"); idx > -1 {
-		return a.Original[idx+3:]
+	vhost := a.String()
+	if idx := strings.Index(vhost, "://"); idx > -1 {
+		return vhost[idx+3:]
 	}
-	return a.Original
+	return vhost
 }
 
 // standardizeAddress parses an address string into a structured format with separate
@@ -338,6 +341,15 @@ func standardizeAddress(str string) (Address, error) {
 		if err != nil {
 			host = u.Host
 		}
+	}
+
+	// convert non-ascii (IDNA) host to Punycode
+	if isIDN(host) {
+		asciiHost, err := idna.ToASCII(host)
+		if err != nil {
+			return Address{}, fmt.Errorf("Failed to convert IDN to ASCII: %s", input)
+		}
+		host = asciiHost
 	}
 
 	// see if we can set port based off scheme
@@ -369,6 +381,16 @@ func standardizeAddress(str string) (Address, error) {
 	}
 
 	return Address{Original: input, Scheme: u.Scheme, Host: host, Port: port, Path: u.Path}, err
+}
+
+// isIDN return true if s contains non-ascii characters
+func isIDN(s string) bool {
+	for _, c := range s {
+		if c > 127 {
+			return true
+		}
+	}
+	return false
 }
 
 // RegisterDevDirective splices name into the list of directives
