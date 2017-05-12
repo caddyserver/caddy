@@ -259,7 +259,7 @@ func directoryListing(files []os.FileInfo, canGoUp bool, urlPath string, config 
 		url := url.URL{Path: "./" + name} // prepend with "./" to fix paths with ':' in the name
 
 		fileinfos = append(fileinfos, FileInfo{
-			IsDir:     f.IsDir() || (isSymlink(f) && isSymlinkTargetDir(f)),
+			IsDir:     f.IsDir() || isSymlinkTargetDir(f),
 			IsSymlink: isSymlink(f),
 			Name:      f.Name(),
 			Size:      f.Size(),
@@ -285,8 +285,11 @@ func isSymlink(f os.FileInfo) bool {
 }
 
 // isSymlinkTargetDir return true if f's symbolic link target
-// is a directory
+// is a directory. Return false if not a symbolic link.
 func isSymlinkTargetDir(f os.FileInfo) bool {
+	if !isSymlink(f) {
+		return false
+	}
 	target, err := os.Readlink(f.Name())
 	if err != nil {
 		return false
