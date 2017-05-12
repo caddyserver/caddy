@@ -1,6 +1,8 @@
 package log
 
 import (
+	"strings"
+
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
@@ -75,14 +77,8 @@ func logParse(c *caddy.Controller) ([]*Rule, error) {
 			format := DefaultLogFormat
 
 			if len(args) > 2 {
-				switch args[2] {
-				case "{common}":
-					format = CommonLogFormat
-				case "{combined}":
-					format = CombinedLogFormat
-				default:
-					format = args[2]
-				}
+				format = strings.Replace(args[2], "{common}", CommonLogFormat, -1)
+				format = strings.Replace(format, "{combined}", CombinedLogFormat, -1)
 			}
 
 			rules = appendEntry(rules, args[0], &Entry{
