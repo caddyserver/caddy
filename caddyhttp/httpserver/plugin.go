@@ -345,11 +345,10 @@ func standardizeAddress(str string) (Address, error) {
 
 	// convert non-ascii (IDNA) host to Punycode
 	if isIDN(host) {
-		asciiHost, err := idna.ToASCII(host)
+		host, err = idna.ToASCII(host)
 		if err != nil {
-			return Address{}, fmt.Errorf("Failed to convert IDN to ASCII: %s", input)
+			return Address{}, fmt.Errorf("failed to convert IDN to ASCII: %s", input)
 		}
-		host = asciiHost
 	}
 
 	// see if we can set port based off scheme
