@@ -44,32 +44,62 @@ func TestReverseProxy(t *testing.T) {
 	log.SetOutput(ioutil.Discard)
 	defer log.SetOutput(os.Stderr)
 
-	verifyHeaders := func(headers http.Header, trailers http.Header) {
-		if headers.Get("X-Header") != "header-value" {
-			t.Error("Expected header 'X-Header' to be proxied properly")
+	testHeaderValue := []string{"header-value"}
+	testHeaders := http.Header{
+		"X-Header-1": testHeaderValue,
+		"X-Header-2": testHeaderValue,
+		"X-Header-3": testHeaderValue,
+	}
+	testTrailerValue := []string{"trailer-value"}
+	testTrailers := http.Header{
+		"X-Trailer-1": testTrailerValue,
+		"X-Trailer-2": testTrailerValue,
+		"X-Trailer-3": testTrailerValue,
+	}
+	verifyHeaderValues := func(actual http.Header, expected http.Header) bool {
+		if actual == nil {
+			t.Error("Expected headers")
+			return true
 		}
 
-		if trailers == nil {
-			t.Error("Expected to receive trailers")
+		for k := range expected {
+			if expected.Get(k) != actual.Get(k) {
+				t.Errorf("Expected header '%s' to be proxied properly", k)
+				return true
+			}
 		}
-		if trailers.Get("X-Trailer") != "trailer-value" {
-			t.Error("Expected header 'X-Trailer' to be proxied properly")
+
+		return false
+	}
+	verifyHeadersTrailers := func(headers http.Header, trailers http.Header) {
+		if verifyHeaderValues(headers, testHeaders) || verifyHeaderValues(trailers, testTrailers) {
+			t.FailNow()
 		}
 	}
 
-	var requestReceived bool
+	requestReceived := false
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// read the body (even if it's empty) to make Go parse trailers
 		io.Copy(ioutil.Discard, r.Body)
-		verifyHeaders(r.Header, r.Trailer)
 
+		verifyHeadersTrailers(r.Header, r.Trailer)
 		requestReceived = true
 
-		w.Header().Set("Trailer", "X-Trailer")
-		w.Header().Set("X-Header", "header-value")
+		// Set headers.
+		copyHeader(w.Header(), testHeaders)
+
+		// Only announce one of the trailers to test wether
+		// unannounced trailers are proxied correctly.
+		for k := range testTrailers {
+			w.Header().Set("Trailer", k)
+			break
+		}
+
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("Hello, client"))
-		w.Header().Set("X-Trailer", "trailer-value")
+
+		// Set trailers.
+		shallowCopyTrailers(w.Header(), testTrailers, true)
 	}))
 	defer backend.Close()
 
@@ -79,24 +109,37 @@ func TestReverseProxy(t *testing.T) {
 		Upstreams: []Upstream{newFakeUpstream(backend.URL, false)},
 	}
 
-	// create request and response recorder
-	r := httptest.NewRequest("GET", "/", strings.NewReader("test"))
-	w := httptest.NewRecorder()
-
-	r.ContentLength = -1 // force chunked encoding (required for trailers)
-	r.Header.Set("X-Header", "header-value")
-	r.Trailer = map[string][]string{
-		"X-Trailer": {"trailer-value"},
+	// Create the fake request body.
+	// This will copy "trailersToSet" to r.Trailer right before it is closed and
+	// thus test for us wether unannounced client trailers are proxied correctly.
+	body := &trailerTestStringReader{
+		Reader:        *strings.NewReader("test"),
+		trailersToSet: testTrailers,
 	}
 
+	// Create the fake request with the above body.
+	r := httptest.NewRequest("GET", "/", body)
+	r.Trailer = make(http.Header)
+	body.request = r
+
+	copyHeader(r.Header, testHeaders)
+
+	// Only announce one of the trailers to test wether
+	// unannounced trailers are proxied correctly.
+	for k, v := range testTrailers {
+		r.Trailer[k] = v
+		break
+	}
+
+	w := httptest.NewRecorder()
 	p.ServeHTTP(w, r)
+	res := w.Result()
 
 	if !requestReceived {
 		t.Error("Expected backend to receive request, but it didn't")
 	}
 
-	res := w.Result()
-	verifyHeaders(res.Header, res.Trailer)
+	verifyHeadersTrailers(res.Header, res.Trailer)
 
 	// Make sure {upstream} placeholder is set
 	r.Body = ioutil.NopCloser(strings.NewReader("test"))
@@ -110,6 +153,21 @@ func TestReverseProxy(t *testing.T) {
 	if got, want := rr.Replacer.Replace("{upstream}"), backend.URL; got != want {
 		t.Errorf("Expected custom placeholder {upstream} to be set (%s), but it wasn't; got: %s", want, got)
 	}
+}
+
+// trailerTestStringReader is used to test unannounced trailers coming
+// from a client which should properly be proxied to the upstream.
+type trailerTestStringReader struct {
+	strings.Reader
+	request       *http.Request
+	trailersToSet http.Header
+}
+
+var _ io.ReadCloser = &trailerTestStringReader{}
+
+func (r *trailerTestStringReader) Close() error {
+	copyHeader(r.request.Trailer, r.trailersToSet)
+	return nil
 }
 
 func TestReverseProxyInsecureSkipVerify(t *testing.T) {
