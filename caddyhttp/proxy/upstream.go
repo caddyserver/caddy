@@ -512,6 +512,6 @@ func replacePort(originalURL string, newPort int) string {
 		parsedHost = parsedURL.Host
 	}
 
-	parsedURL.Host = fmt.Sprintf("%s:%d", parsedHost, newPort)
+	parsedURL.Host = net.JoinHostPort(parsedHost, strconv.Itoa(newPort))
 	return parsedURL.String()
 }
