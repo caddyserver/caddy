@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"net/url"
 	"path"
@@ -42,6 +43,7 @@ type staticUpstream struct {
 		Interval time.Duration
 		Timeout  time.Duration
 		Host     string
+		Port     string
 	}
 	WithoutPathPrefix  string
 	IgnoredSubPaths    []string
@@ -321,6 +323,20 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream) error {
 			return err
 		}
 		u.HealthCheck.Timeout = dur
+	case "health_check_port":
+		if !c.NextArg() {
+			return c.ArgErr()
+		}
+		port := c.Val()
+		n, err := strconv.Atoi(port)
+		if err != nil {
+			return err
+		}
+
+		if n < 0 {
+			return c.Errf("invalid health_check_port '%s'", port)
+		}
+		u.HealthCheck.Port = c.Val()
 	case "header_upstream":
 		var header, value string
 		if !c.Args(&header, &value) {
@@ -380,7 +396,12 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream) error {
 
 func (u *staticUpstream) healthCheck() {
 	for _, host := range u.Hosts {
-		hostURL := host.Name + u.HealthCheck.Path
+		hostURL := host.Name
+		if u.HealthCheck.Port != "" {
+			hostURL = replacePort(host.Name, u.HealthCheck.Port)
+		}
+		hostURL += u.HealthCheck.Path
+
 		var unhealthy bool
 
 		// set up request, needed to be able to modify headers
@@ -482,4 +503,20 @@ func (u *staticUpstream) Stop() error {
 // RegisterPolicy adds a custom policy to the proxy.
 func RegisterPolicy(name string, policy func() Policy) {
 	supportedPolicies[name] = policy
+}
+
+func replacePort(originalURL string, newPort string) string {
+	parsedURL, err := url.Parse(originalURL)
+	if err != nil {
+		return originalURL
+	}
+
+	// handles 'localhost' and 'localhost:8080'
+	parsedHost, _, err := net.SplitHostPort(parsedURL.Host)
+	if err != nil {
+		parsedHost = parsedURL.Host
+	}
+
+	parsedURL.Host = net.JoinHostPort(parsedHost, newPort)
+	return parsedURL.String()
 }
