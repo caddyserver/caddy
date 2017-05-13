@@ -424,4 +424,27 @@ func TestHealthCheckPort(t *testing.T) {
 			t.Errorf("Test %d: Expected healthchecks to hit test server. Got no healthchecks.", i)
 		}
 	}
+
+	t.Run("valid_port", func(t *testing.T) {
+		tests := []struct {
+			config string
+		}{
+			// Test #1: invalid port (nil)
+			{"proxy / localhost {\n health_check / health_check_port\n}"},
+
+			// Test #2: invalid port (string)
+			{"proxy / localhost {\n health_check / health_check_port abc\n}"},
+
+			// Test #3: invalid port (negative)
+			{"proxy / localhost {\n health_check / health_check_port -1\n}"},
+		}
+
+		for i, test := range tests {
+			_, err := NewStaticUpstreams(caddyfile.NewDispenser("Testfile", strings.NewReader(test.config)), "")
+			if err == nil {
+				t.Errorf("Test %d accepted invalid config", i)
+			}
+		}
+	})
+
 }

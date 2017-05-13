@@ -43,7 +43,7 @@ type staticUpstream struct {
 		Interval time.Duration
 		Timeout  time.Duration
 		Host     string
-		Port     int
+		Port     string
 	}
 	WithoutPathPrefix  string
 	IgnoredSubPaths    []string
@@ -327,11 +327,16 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream) error {
 		if !c.NextArg() {
 			return c.ArgErr()
 		}
-		n, err := strconv.Atoi(c.Val())
+		port := c.Val()
+		n, err := strconv.Atoi(port)
 		if err != nil {
 			return err
 		}
-		u.HealthCheck.Port = n
+
+		if n < 0 {
+			return c.Errf("invalid health_check_port '%s'", port)
+		}
+		u.HealthCheck.Port = c.Val()
 	case "header_upstream":
 		var header, value string
 		if !c.Args(&header, &value) {
@@ -392,7 +397,7 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream) error {
 func (u *staticUpstream) healthCheck() {
 	for _, host := range u.Hosts {
 		hostURL := host.Name
-		if u.HealthCheck.Port > 0 {
+		if u.HealthCheck.Port != "" {
 			hostURL = replacePort(host.Name, u.HealthCheck.Port)
 		}
 		hostURL += u.HealthCheck.Path
@@ -500,7 +505,7 @@ func RegisterPolicy(name string, policy func() Policy) {
 	supportedPolicies[name] = policy
 }
 
-func replacePort(originalURL string, newPort int) string {
+func replacePort(originalURL string, newPort string) string {
 	parsedURL, err := url.Parse(originalURL)
 	if err != nil {
 		return originalURL
@@ -512,6 +517,6 @@ func replacePort(originalURL string, newPort int) string {
 		parsedHost = parsedURL.Host
 	}
 
-	parsedURL.Host = net.JoinHostPort(parsedHost, strconv.Itoa(newPort))
+	parsedURL.Host = net.JoinHostPort(parsedHost, newPort)
 	return parsedURL.String()
 }
