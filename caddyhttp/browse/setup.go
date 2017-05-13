@@ -426,9 +426,7 @@ footer {
 								<span class="name">{{html .Name}}</span>
 							</a>
 						</td>
-						{{- if .IsSymlink }}
-						<td data-order="-1">symbolic link</td>
-						{{- else if .IsDir}}
+						{{- if .IsDir}}
 						<td data-order="-1">&mdash;</td>
 						{{- else}}
 						<td data-order="{{.Size}}">{{.HumanSize}}</td>
