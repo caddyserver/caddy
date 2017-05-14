@@ -336,7 +336,7 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream) error {
 		if n < 0 {
 			return c.Errf("invalid health_check_port '%s'", port)
 		}
-		u.HealthCheck.Port = c.Val()
+		u.HealthCheck.Port = port
 	case "header_upstream":
 		var header, value string
 		if !c.Args(&header, &value) {
