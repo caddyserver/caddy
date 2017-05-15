@@ -71,6 +71,9 @@ func logParse(c *caddy.Controller) ([]*Rule, error) {
 				},
 				Format: DefaultLogFormat,
 			})
+		} else if len(args) > 3 {
+			// Maxiumum number of args in log directive is 3.
+			return nil, c.ArgErr()
 		} else {
 			// Path scope, output file, and maybe a format specified
 
