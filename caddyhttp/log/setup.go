@@ -53,7 +53,8 @@ func logParse(c *caddy.Controller) ([]*Rule, error) {
 			}
 		}
 
-		if len(args) == 0 {
+		switch len(args) {
+		case 0:
 			// Nothing specified; use defaults
 			rules = appendEntry(rules, "/", &Entry{
 				Log: &httpserver.Logger{
@@ -62,7 +63,7 @@ func logParse(c *caddy.Controller) ([]*Rule, error) {
 				},
 				Format: DefaultLogFormat,
 			})
-		} else if len(args) == 1 {
+		case 1:
 			// Only an output file specified
 			rules = appendEntry(rules, "/", &Entry{
 				Log: &httpserver.Logger{
@@ -71,12 +72,8 @@ func logParse(c *caddy.Controller) ([]*Rule, error) {
 				},
 				Format: DefaultLogFormat,
 			})
-		} else if len(args) > 3 {
-			// Maxiumum number of args in log directive is 3.
-			return nil, c.ArgErr()
-		} else {
-			// Path scope, output file, and maybe a format specified
-
+		case 2:
+			// Path scope, output file
 			format := DefaultLogFormat
 
 			if len(args) > 2 {
@@ -91,6 +88,21 @@ func logParse(c *caddy.Controller) ([]*Rule, error) {
 				},
 				Format: format,
 			})
+		case 3:
+			// Path scope, output file, and format specified
+			format := strings.Replace(args[2], "{common}", CommonLogFormat, -1)
+			format = strings.Replace(format, "{combined}", CombinedLogFormat, -1)
+
+			rules = appendEntry(rules, args[0], &Entry{
+				Log: &httpserver.Logger{
+					Output: args[1],
+					Roller: logRoller,
+				},
+				Format: format,
+			})
+		default:
+			// Maxiumum number of args in log directive is 3.
+			return nil, c.ArgErr()
 		}
 	}
 
