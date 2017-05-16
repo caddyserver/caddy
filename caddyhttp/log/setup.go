@@ -72,7 +72,7 @@ func logParse(c *caddy.Controller) ([]*Rule, error) {
 				format = strings.Replace(format, "{combined}", CombinedLogFormat, -1)
 			}
 		default:
-			// Maxiumum number of args in log directive is 3.
+			// Maximum number of args in log directive is 3.
 			return nil, c.ArgErr()
 		}
 
