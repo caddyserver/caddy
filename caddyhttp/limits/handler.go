@@ -31,7 +31,7 @@ func (l Limit) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 
 // MaxBytesReader and its associated methods are borrowed from the
 // Go Standard library (comments intact). The only difference is that
-// it returns a MaxBytesExceeded error instead of a generic error message
+// it returns a ErrMaxBytesExceeded error instead of a generic error message
 // when the request body has exceeded the requested limit
 func MaxBytesReader(w http.ResponseWriter, r io.ReadCloser, n int64) io.ReadCloser {
 	return &maxBytesReader{w: w, r: r, n: n}
@@ -81,7 +81,7 @@ func (l *maxBytesReader) Read(p []byte) (n int, err error) {
 	if res, ok := l.w.(requestTooLarger); ok {
 		res.requestTooLarge()
 	}
-	l.err = httpserver.MaxBytesExceededErr
+	l.err = httpserver.ErrMaxBytesExceeded
 	return n, l.err
 }
 
