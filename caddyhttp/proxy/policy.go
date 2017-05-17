@@ -136,7 +136,7 @@ func (r *IPHash) Select(pool HostPool, request *http.Request) *UpstreamHost {
 // First is a policy that selects the first available host
 type First struct{}
 
-// Select selects the first up host from the pool
+// Select selects the first available host from the pool
 func (r *First) Select(pool HostPool, request *http.Request) *UpstreamHost {
 	for _, host := range pool {
 		if host.Available() {
