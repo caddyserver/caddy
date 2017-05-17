@@ -56,7 +56,7 @@ func (r *Random) Select(pool HostPool, request *http.Request) *UpstreamHost {
 type LeastConn struct{}
 
 // Select selects the up host with the least number of connections in the
-// pool.  If more than one host has the same least number of connections,
+// pool. If more than one host has the same least number of connections,
 // one of the hosts is chosen at random.
 func (r *LeastConn) Select(pool HostPool, request *http.Request) *UpstreamHost {
 	var bestHost *UpstreamHost
@@ -84,13 +84,13 @@ func (r *LeastConn) Select(pool HostPool, request *http.Request) *UpstreamHost {
 	return bestHost
 }
 
-// RoundRobin is a policy that selects hosts based on round robin ordering.
+// RoundRobin is a policy that selects hosts based on round-robin ordering.
 type RoundRobin struct {
 	robin uint32
 	mutex sync.Mutex
 }
 
-// Select selects an up host from the pool using a round robin ordering scheme.
+// Select selects an up host from the pool using a round-robin ordering scheme.
 func (r *RoundRobin) Select(pool HostPool, request *http.Request) *UpstreamHost {
 	poolLen := uint32(len(pool))
 	r.mutex.Lock()
@@ -106,7 +106,7 @@ func (r *RoundRobin) Select(pool HostPool, request *http.Request) *UpstreamHost 
 	return nil
 }
 
-// IPHash is a policy that selects hosts based on hashing the request ip
+// IPHash is a policy that selects hosts based on hashing the request IP
 type IPHash struct{}
 
 func hash(s string) uint32 {
@@ -115,7 +115,7 @@ func hash(s string) uint32 {
 	return h.Sum32()
 }
 
-// Select selects an up host from the pool using a round robin ordering scheme.
+// Select selects an up host from the pool based on hashing the request IP
 func (r *IPHash) Select(pool HostPool, request *http.Request) *UpstreamHost {
 	poolLen := uint32(len(pool))
 	clientIP, _, err := net.SplitHostPort(request.RemoteAddr)
@@ -133,10 +133,10 @@ func (r *IPHash) Select(pool HostPool, request *http.Request) *UpstreamHost {
 	return nil
 }
 
-// First is a policy that selects the fist available host
+// First is a policy that selects the first available host
 type First struct{}
 
-// Select selects the first host from the pool, that is available
+// Select selects the first available host from the pool
 func (r *First) Select(pool HostPool, request *http.Request) *UpstreamHost {
 	for _, host := range pool {
 		if host.Available() {
