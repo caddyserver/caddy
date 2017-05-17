@@ -478,9 +478,9 @@ func (ln tcpKeepAliveListener) File() (*os.File, error) {
 	return ln.TCPListener.File()
 }
 
-// MaxBytesExceeded is the error returned by MaxBytesReader
+// ErrMaxBytesExceeded is the error returned by MaxBytesReader
 // when the request body exceeds the limit imposed
-var MaxBytesExceededErr = errors.New("http: request body too large")
+var ErrMaxBytesExceeded = errors.New("http: request body too large")
 
 // DefaultErrorFunc responds to an HTTP request with a simple description
 // of the specified HTTP status code.

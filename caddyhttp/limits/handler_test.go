@@ -29,7 +29,7 @@ func TestBodySizeLimit(t *testing.T) {
 	if got := string(gotContent); got != expectContent {
 		t.Errorf("expected content[%s], got[%s]", expectContent, got)
 	}
-	if gotError != httpserver.MaxBytesExceededErr {
-		t.Errorf("expect error %v, got %v", httpserver.MaxBytesExceededErr, gotError)
+	if gotError != httpserver.ErrMaxBytesExceeded {
+		t.Errorf("expect error %v, got %v", httpserver.ErrMaxBytesExceeded, gotError)
 	}
 }
