@@ -1,8 +1,13 @@
 CHANGES
 
 0.10.3 (May 19, 2017)
-- Several minor changes and bug fixes; see commit log for details
+- Replace 'maxrequestbody' directive with 'limits' directive
+- proxy: Configurable port for health check
+- proxy: New load balance policy: uri_hash
+- templates: Renamed .Push context action to .AddLink
 - tls: Allow narrower certificate renewal window at startup (#1680)
+- tls: Prefer ChaCha20 if hardware does not have AES-NI
+
 
 0.10.2 (May 2, 2017)
 - Hot fix for rule paths of "/" so that they match every request
