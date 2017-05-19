@@ -1,5 +1,9 @@
 CHANGES
 
+0.10.3 (May 19, 2017)
+- Several minor changes and bug fixes; see commit log for details
+- tls: Allow narrower certificate renewal window at startup (#1680)
+
 0.10.2 (May 2, 2017)
 - Hot fix for rule paths of "/" so that they match every request
 - fastcgi: Match request paths that don't start with "/" even if rule does
