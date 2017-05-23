@@ -326,22 +326,32 @@ func (info rawHelloInfo) looksLikeFirefox() bool {
 	// EC point formats, and handshake compression methods."
 
 	// We check for the presence and order of the extensions.
-	// Note: Sometimes padding (21) is present, sometimes not.
+	// Note: Sometimes 0x15 (21, padding) is present, sometimes not.
 	// Note: Firefox 51+ does not advertise 0x3374 (13172, NPN).
 	// Note: Firefox doesn't advertise 0x0 (0, SNI) when connecting to IP addresses.
-	requiredExtensionsOrder := []uint16{23, 65281, 10, 11, 35, 16, 5, 65283, 13}
+	// Note: Firefox 55+ doesn't appear to advertise 0xFF03 (65283, short headers). It used to be between 5 and 13.
+	requiredExtensionsOrder := []uint16{23, 65281, 10, 11, 35, 16, 5, 13}
 	if !assertPresenceAndOrdering(requiredExtensionsOrder, info.extensions, true) {
 		return false
 	}
 
 	// We check for both presence of curves and their ordering.
-	expectedCurves := []tls.CurveID{29, 23, 24, 25}
-	if len(info.curves) != len(expectedCurves) {
+	requiredCurves := []tls.CurveID{29, 23, 24, 25}
+	if len(info.curves) < len(requiredCurves) {
 		return false
 	}
-	for i := range expectedCurves {
-		if info.curves[i] != expectedCurves[i] {
+	for i := range requiredCurves {
+		if info.curves[i] != requiredCurves[i] {
 			return false
+		}
+	}
+	if len(info.curves) > len(requiredCurves) {
+		// newer Firefox (55 Nightly?) may have additional curves at end of list
+		allowedCurves := []tls.CurveID{256, 257}
+		for i := range allowedCurves {
+			if info.curves[len(requiredCurves)+i] != allowedCurves[i] {
+				return false
+			}
 		}
 	}
 
@@ -353,6 +363,9 @@ func (info rawHelloInfo) looksLikeFirefox() bool {
 	// according to the paper, cipher suites may be not be added
 	// or reordered by the user, but they may be disabled.
 	expectedCipherSuiteOrder := []uint16{
+		TLS_AES_128_GCM_SHA256,                      // 0x1301
+		TLS_CHACHA20_POLY1305_SHA256,                // 0x1303
+		TLS_AES_256_GCM_SHA384,                      // 0x1302
 		tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256, // 0xc02b
 		tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,   // 0xc02f
 		tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,  // 0xcca9
@@ -401,14 +414,14 @@ func (info rawHelloInfo) looksLikeChrome() bool {
 	// 0xc00a, 0xc014, 0xc009, 0x9c, 0x9d, 0x2f, 0x35, 0xa
 
 	chromeCipherExclusions := map[uint16]struct{}{
-		TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384:   {}, // 0xc024
-		TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256:   {}, // 0xc023
-		TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384:     {}, // 0xc028
-		tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256: {}, // 0xc027
-		TLS_RSA_WITH_AES_256_CBC_SHA256:           {}, // 0x3d
-		tls.TLS_RSA_WITH_AES_128_CBC_SHA256:       {}, // 0x3c
-		TLS_DHE_RSA_WITH_AES_128_CBC_SHA:          {}, // 0x33
-		TLS_DHE_RSA_WITH_AES_256_CBC_SHA:          {}, // 0x39
+		TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384:     {}, // 0xc024
+		tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256: {}, // 0xc023
+		TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384:       {}, // 0xc028
+		tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256:   {}, // 0xc027
+		TLS_RSA_WITH_AES_256_CBC_SHA256:             {}, // 0x3d
+		tls.TLS_RSA_WITH_AES_128_CBC_SHA256:         {}, // 0x3c
+		TLS_DHE_RSA_WITH_AES_128_CBC_SHA:            {}, // 0x33
+		TLS_DHE_RSA_WITH_AES_256_CBC_SHA:            {}, // 0x39
 	}
 	for _, ext := range info.cipherSuites {
 		if _, ok := chromeCipherExclusions[ext]; ok {
@@ -511,7 +524,7 @@ func (info rawHelloInfo) looksLikeSafari() bool {
 		tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384, // 0xc02c
 		tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256, // 0xc02b
 		TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384,     // 0xc024
-		TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256,     // 0xc023
+		tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256, // 0xc023
 		tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,    // 0xc00a
 		tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,    // 0xc009
 		tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,   // 0xc030
@@ -523,7 +536,7 @@ func (info rawHelloInfo) looksLikeSafari() bool {
 		tls.TLS_RSA_WITH_AES_256_GCM_SHA384,         // 0x9d
 		tls.TLS_RSA_WITH_AES_128_GCM_SHA256,         // 0x9c
 		TLS_RSA_WITH_AES_256_CBC_SHA256,             // 0x3d
-		TLS_RSA_WITH_AES_128_CBC_SHA256,             // 0x3c
+		tls.TLS_RSA_WITH_AES_128_CBC_SHA256,         // 0x3c
 		tls.TLS_RSA_WITH_AES_256_CBC_SHA,            // 0x35
 		tls.TLS_RSA_WITH_AES_128_CBC_SHA,            // 0x2f
 	}
@@ -610,11 +623,17 @@ const (
 	// cipher suites missing from the crypto/tls package,
 	// in no particular order here
 	TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384 = 0xc024
-	TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256 = 0xc023
 	TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384   = 0xc028
-	TLS_RSA_WITH_AES_128_CBC_SHA256         = 0x3c
 	TLS_RSA_WITH_AES_256_CBC_SHA256         = 0x3d
 	TLS_DHE_RSA_WITH_AES_128_CBC_SHA        = 0x33
 	TLS_DHE_RSA_WITH_AES_256_CBC_SHA        = 0x39
 	TLS_RSA_WITH_RC4_128_MD5                = 0x4
+
+	// new PSK ciphers introduced by TLS 1.3, not (yet) in crypto/tls
+	// https://tlswg.github.io/tls13-spec/#rfc.appendix.A.4)
+	TLS_AES_128_GCM_SHA256       = 0x1301
+	TLS_AES_256_GCM_SHA384       = 0x1302
+	TLS_CHACHA20_POLY1305_SHA256 = 0x1303
+	TLS_AES_128_CCM_SHA256       = 0x1304
+	TLS_AES_128_CCM_8_SHA256     = 0x1305
 )
