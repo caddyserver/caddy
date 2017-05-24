@@ -45,14 +45,15 @@ func SetupIfMatcher(controller *caddy.Controller) (RequestMatcher, error) {
 
 // operators
 const (
-	isOp         = "is"
-	notOp        = "not"
-	hasOp        = "has"
-	notHasOp     = "not_has"
-	startsWithOp = "starts_with"
-	endsWithOp   = "ends_with"
-	matchOp      = "match"
-	notMatchOp   = "not_match"
+	isOp            = "is"
+	notOp           = "not"
+	hasOp           = "has"
+	notHasOp        = "not_has"
+	startsWithOp    = "starts_with"
+	notStartsWithOp = "not_starts_with"
+	endsWithOp      = "ends_with"
+	matchOp         = "match"
+	notMatchOp      = "not_match"
 )
 
 func operatorError(operator string) error {
@@ -63,14 +64,15 @@ func operatorError(operator string) error {
 type ifCondition func(string, string) bool
 
 var ifConditions = map[string]ifCondition{
-	isOp:         isFunc,
-	notOp:        notFunc,
-	hasOp:        hasFunc,
-	notHasOp:     notHasFunc,
-	startsWithOp: startsWithFunc,
-	endsWithOp:   endsWithFunc,
-	matchOp:      matchFunc,
-	notMatchOp:   notMatchFunc,
+	isOp:            isFunc,
+	notOp:           notFunc,
+	hasOp:           hasFunc,
+	notHasOp:        notHasFunc,
+	startsWithOp:    startsWithFunc,
+	notStartsWithOp: notStartsWithFunc,
+	endsWithOp:      endsWithFunc,
+	matchOp:         matchFunc,
+	notMatchOp:      notMatchFunc,
 }
 
 // isFunc is condition for Is operator.
@@ -101,6 +103,12 @@ func notHasFunc(a, b string) bool {
 // It checks if b is a prefix of a.
 func startsWithFunc(a, b string) bool {
 	return strings.HasPrefix(a, b)
+}
+
+// notStartsWithFunc is condition for NotStartsWith operator.
+// It checks if b is not a prefix of a.
+func notStartsWithFunc(a, b string) bool {
+	return !strings.HasPrefix(a, b)
 }
 
 // endsWithFunc is condition for EndsWith operator.
