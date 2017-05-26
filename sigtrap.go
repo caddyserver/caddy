@@ -53,7 +53,7 @@ func trapSignalsCrossPlatform() {
 func executeShutdownCallbacks(signame string) (exitCode int) {
 	shutdownCallbacksOnce.Do(func() {
 		// execute third-party shutdown hooks
-		EmitEvent(ShutdownEvent)
+		EmitEvent(ShutdownEvent, signame)
 
 		errs := allShutdownCallbacks()
 		if len(errs) > 0 {
