@@ -17,10 +17,6 @@ import (
 
 	"github.com/mholt/caddy"
 	// plug in the HTTP server type
-	_ "github.com/BTBurke/caddy-jwt"
-	_ "github.com/captncraig/cors/caddy"
-	_ "github.com/hacdias/caddy-filemanager"
-	_ "github.com/hacdias/caddy-minify"
 	_ "github.com/mholt/caddy/caddyhttp"
 	"github.com/mholt/caddy/caddytls"
 	// This is where other plugins get plugged in (imported)
