@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"crypto/x509"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -49,6 +50,8 @@ type staticUpstream struct {
 	IgnoredSubPaths    []string
 	insecureSkipVerify bool
 	MaxFails           int32
+	rootCAPath         string
+	rootCertPool       *x509.CertPool
 }
 
 // NewStaticUpstreams parses the configuration input and sets up
@@ -105,6 +108,18 @@ func NewStaticUpstreams(c caddyfile.Dispenser, host string) ([]Upstream, error) 
 
 		if len(to) == 0 {
 			return upstreams, c.ArgErr()
+		}
+
+		if upstream.rootCAPath != "" {
+			certPool := x509.NewCertPool()
+			certBytes, err := ioutil.ReadFile(upstream.rootCAPath)
+			if err != nil {
+				return upstreams, c.Errf("Unable to load root CAs PEM file: %v", err)
+			}
+			if !certPool.AppendCertsFromPEM(certBytes) {
+				return upstreams, c.Errf("Unable to load root CAs PEM file %s", upstream.rootCAPath)
+			}
+			upstream.rootCertPool = certPool
 		}
 
 		upstream.Hosts = make([]*UpstreamHost, len(to))
@@ -182,6 +197,9 @@ func (u *staticUpstream) NewHost(host string) (*UpstreamHost, error) {
 	uh.ReverseProxy = NewSingleHostReverseProxy(baseURL, uh.WithoutPathPrefix, u.KeepAlive)
 	if u.insecureSkipVerify {
 		uh.ReverseProxy.UseInsecureTransport()
+	}
+	if u.rootCertPool != nil {
+		uh.ReverseProxy.SetTransportCARoots(u.rootCertPool)
 	}
 
 	return uh, nil
@@ -376,6 +394,11 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream) error {
 		u.IgnoredSubPaths = ignoredPaths
 	case "insecure_skip_verify":
 		u.insecureSkipVerify = true
+	case "root_ca":
+		if !c.NextArg() {
+			return c.ArgErr()
+		}
+		u.rootCAPath = c.Val()
 	case "keepalive":
 		if !c.NextArg() {
 			return c.ArgErr()

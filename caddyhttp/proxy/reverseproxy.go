@@ -13,6 +13,7 @@ package proxy
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"io"
 	"net"
 	"net/http"
@@ -189,12 +190,8 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int) *
 		// if keepalive is equal to the default,
 		// just use default transport, to avoid creating
 		// a brand new transport
-		transport := &http.Transport{
-			Proxy:                 http.ProxyFromEnvironment,
-			Dial:                  defaultDialer.Dial,
-			TLSHandshakeTimeout:   10 * time.Second,
-			ExpectContinueTimeout: 1 * time.Second,
-		}
+		transport := createTransport()
+		transport.ExpectContinueTimeout = 1 * time.Second
 		if keepalive == 0 {
 			transport.DisableKeepAlives = true
 		} else {
@@ -213,25 +210,33 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int) *
 // since this transport skips verification.
 func (rp *ReverseProxy) UseInsecureTransport() {
 	if rp.Transport == nil {
-		transport := &http.Transport{
-			Proxy:               http.ProxyFromEnvironment,
-			Dial:                defaultDialer.Dial,
-			TLSHandshakeTimeout: 10 * time.Second,
-			TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
-		}
+		transport := createTransport();
 		if httpserver.HTTP2 {
 			http2.ConfigureTransport(transport)
 		}
 		rp.Transport = transport
-	} else if transport, ok := rp.Transport.(*http.Transport); ok {
-		if transport.TLSClientConfig == nil {
-			transport.TLSClientConfig = &tls.Config{}
-		}
-		transport.TLSClientConfig.InsecureSkipVerify = true
-		// No http2.ConfigureTransport() here.
-		// For now this is only added in places where
-		// an http.Transport is actually created.
 	}
+	rp.Transport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+}
+
+func (rp *ReverseProxy) SetTransportCARoots(certPool *x509.CertPool) {
+	if rp.Transport == nil {
+		transport := createTransport();
+		if httpserver.HTTP2 {
+			http2.ConfigureTransport(transport)
+		}
+		rp.Transport = transport
+	}
+	rp.Transport.(*http.Transport).TLSClientConfig = &tls.Config{RootCAs: certPool}
+}
+
+func createTransport() *http.Transport {
+	transport := &http.Transport{
+		Proxy:               http.ProxyFromEnvironment,
+		Dial:                defaultDialer.Dial,
+		TLSHandshakeTimeout: 10 * time.Second,
+	}
+	return transport
 }
 
 // ServeHTTP serves the proxied request to the upstream by performing a roundtrip.

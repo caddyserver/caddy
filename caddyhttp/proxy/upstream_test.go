@@ -50,6 +50,9 @@ func TestNewHost(t *testing.T) {
 	if !uh.CheckDown(uh) {
 		t.Error("Expected failed host to be down.")
 	}
+	if uh.ReverseProxy.Transport.(*http.Transport).TLSClientConfig.RootCAs != upstream.rootCertPool {
+		t.Error("Expected the RootsssCAs to be set")
+	}
 }
 
 func TestHealthCheck(t *testing.T) {
