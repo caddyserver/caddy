@@ -4,8 +4,8 @@ package httpserver
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"net/http"
@@ -66,6 +66,7 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 		sites:       group,
 		connTimeout: GracefulTimeout,
 	}
+	s.Server = makeHTTPServerWithHeaderLimit(s.Server, group)
 	s.Server.Handler = s // this is weird, but whatever
 
 	// extract TLS settings from each site config to build
@@ -125,6 +126,32 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 	}
 
 	return s, nil
+}
+
+// makeHTTPServerWithHeaderLimit apply minimum header limit within a group to given http.Server
+func makeHTTPServerWithHeaderLimit(s *http.Server, group []*SiteConfig) *http.Server {
+	var min int64
+	for _, cfg := range group {
+		limit := cfg.Limits.MaxRequestHeaderSize
+		if limit == 0 {
+			continue
+		}
+
+		// not set yet
+		if min == 0 {
+			min = limit
+		}
+
+		// find a better one
+		if limit < min {
+			min = limit
+		}
+	}
+
+	if min > 0 {
+		s.MaxHeaderBytes = int(min)
+	}
+	return s
 }
 
 // makeHTTPServerWithTimeouts makes an http.Server from the group of
@@ -359,20 +386,6 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 		}
 	}
 
-	// Apply the path-based request body size limit
-	// The error returned by MaxBytesReader is meant to be handled
-	// by whichever middleware/plugin that receives it when calling
-	// .Read() or a similar method on the request body
-	// TODO: Make this middleware instead?
-	if r.Body != nil {
-		for _, pathlimit := range vhost.MaxRequestBodySizes {
-			if Path(r.URL.Path).Matches(pathlimit.Path) {
-				r.Body = MaxBytesReader(w, r.Body, pathlimit.Limit)
-				break
-			}
-		}
-	}
-
 	return vhost.middlewareChain.ServeHTTP(w, r)
 }
 
@@ -465,73 +478,9 @@ func (ln tcpKeepAliveListener) File() (*os.File, error) {
 	return ln.TCPListener.File()
 }
 
-// MaxBytesExceeded is the error type returned by MaxBytesReader
+// ErrMaxBytesExceeded is the error returned by MaxBytesReader
 // when the request body exceeds the limit imposed
-type MaxBytesExceeded struct{}
-
-func (err MaxBytesExceeded) Error() string {
-	return "http: request body too large"
-}
-
-// MaxBytesReader and its associated methods are borrowed from the
-// Go Standard library (comments intact). The only difference is that
-// it returns a MaxBytesExceeded error instead of a generic error message
-// when the request body has exceeded the requested limit
-func MaxBytesReader(w http.ResponseWriter, r io.ReadCloser, n int64) io.ReadCloser {
-	return &maxBytesReader{w: w, r: r, n: n}
-}
-
-type maxBytesReader struct {
-	w   http.ResponseWriter
-	r   io.ReadCloser // underlying reader
-	n   int64         // max bytes remaining
-	err error         // sticky error
-}
-
-func (l *maxBytesReader) Read(p []byte) (n int, err error) {
-	if l.err != nil {
-		return 0, l.err
-	}
-	if len(p) == 0 {
-		return 0, nil
-	}
-	// If they asked for a 32KB byte read but only 5 bytes are
-	// remaining, no need to read 32KB. 6 bytes will answer the
-	// question of the whether we hit the limit or go past it.
-	if int64(len(p)) > l.n+1 {
-		p = p[:l.n+1]
-	}
-	n, err = l.r.Read(p)
-
-	if int64(n) <= l.n {
-		l.n -= int64(n)
-		l.err = err
-		return n, err
-	}
-
-	n = int(l.n)
-	l.n = 0
-
-	// The server code and client code both use
-	// maxBytesReader. This "requestTooLarge" check is
-	// only used by the server code. To prevent binaries
-	// which only using the HTTP Client code (such as
-	// cmd/go) from also linking in the HTTP server, don't
-	// use a static type assertion to the server
-	// "*response" type. Check this interface instead:
-	type requestTooLarger interface {
-		requestTooLarge()
-	}
-	if res, ok := l.w.(requestTooLarger); ok {
-		res.requestTooLarge()
-	}
-	l.err = MaxBytesExceeded{}
-	return n, l.err
-}
-
-func (l *maxBytesReader) Close() error {
-	return l.r.Close()
-}
+var ErrMaxBytesExceeded = errors.New("http: request body too large")
 
 // DefaultErrorFunc responds to an HTTP request with a simple description
 // of the specified HTTP status code.

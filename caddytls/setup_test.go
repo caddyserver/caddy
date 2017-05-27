@@ -58,21 +58,7 @@ func TestSetupParseBasic(t *testing.T) {
 	}
 
 	// Cipher checks
-	expectedCiphers := []uint16{
-		tls.TLS_FALLBACK_SCSV,
-		tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
-		tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-		tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
-		tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-		tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
-		tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
-		tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
-		tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
-		tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
-		tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
-		tls.TLS_RSA_WITH_AES_256_CBC_SHA,
-		tls.TLS_RSA_WITH_AES_128_CBC_SHA,
-	}
+	expectedCiphers := append([]uint16{tls.TLS_FALLBACK_SCSV}, getPreferredDefaultCiphers()...)
 
 	// Ensure count is correct (plus one for TLS_FALLBACK_SCSV)
 	if len(cfg.Ciphers) != len(expectedCiphers) {

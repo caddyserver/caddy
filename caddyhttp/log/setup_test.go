@@ -124,6 +124,16 @@ func TestLogParse(t *testing.T) {
 				Format: CommonLogFormat,
 			}},
 		}}},
+		{`log /myapi log.txt "prefix {common} suffix"`, false, []Rule{{
+			PathScope: "/myapi",
+			Entries: []*Entry{{
+				Log: &httpserver.Logger{
+					Output: "log.txt",
+					Roller: httpserver.DefaultLogRoller(),
+				},
+				Format: "prefix " + CommonLogFormat + " suffix",
+			}},
+		}}},
 		{`log /test accesslog.txt {combined}`, false, []Rule{{
 			PathScope: "/test",
 			Entries: []*Entry{{
@@ -132,6 +142,16 @@ func TestLogParse(t *testing.T) {
 					Roller: httpserver.DefaultLogRoller(),
 				},
 				Format: CombinedLogFormat,
+			}},
+		}}},
+		{`log /test accesslog.txt "prefix {combined} suffix"`, false, []Rule{{
+			PathScope: "/test",
+			Entries: []*Entry{{
+				Log: &httpserver.Logger{
+					Output: "accesslog.txt",
+					Roller: httpserver.DefaultLogRoller(),
+				},
+				Format: "prefix " + CombinedLogFormat + " suffix",
 			}},
 		}}},
 		{`log /api1 log.txt
@@ -207,6 +227,7 @@ func TestLogParse(t *testing.T) {
 		}}},
 		{`log access.log { rotate_size }`, true, nil},
 		{`log access.log { invalid_option 1 }`, true, nil},
+		{`log / acccess.log "{remote} - [{when}] "{method} {port}" {scheme} {mitm} "`, true, nil},
 	}
 	for i, test := range tests {
 		c := caddy.NewTestController("http", test.inputLogRules)

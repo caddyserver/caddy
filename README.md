@@ -123,6 +123,8 @@ The Caddy project does not officially maintain any system-specific integrations 
 
 How you choose to run Caddy is up to you. Many users are satisfied with `nohup caddy &`. Others use `screen`. Users who need Caddy to come back up after reboots either do so in the script that caused the reboot, add a command to an init script, or configure a service with their OS.
 
+If you have questions or concerns about Caddy' underlying crypto implementations, consult Go's [crypto packages](https://golang.org/pkg/crypto), starting with their documentation, then issues, then the code itself; as Caddy uses mainly those libraries.
+
 
 ## Contributing
 

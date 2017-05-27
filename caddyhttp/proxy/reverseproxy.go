@@ -318,30 +318,61 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, 
 		}
 		pooledIoCopy(backendConn, conn)
 	} else {
+		// NOTE:
+		//   Closing the Body involves acquiring a mutex, which is a
+		//   unnecessarily heavy operation, considering that this defer will
+		//   pretty much never be executed with the Body still unclosed.
+		bodyOpen := true
+		closeBody := func() {
+			if bodyOpen {
+				res.Body.Close()
+				bodyOpen = false
+			}
+		}
+		defer closeBody()
+
+		// Copy all headers over.
+		// res.Header does not include the "Trailer" header,
+		// which means we will have to do that manually below.
 		copyHeader(rw.Header(), res.Header)
 
-		// The "Trailer" header isn't included in the Transport's response,
-		// at least for *http.Transport. Build it up from Trailer.
-		if len(res.Trailer) > 0 {
-			trailerKeys := make([]string, 0, len(res.Trailer))
+		// The "Trailer" header isn't included in res' Header map, which
+		// is why we have to build one ourselves from res.Trailer.
+		//
+		// But res.Trailer does not necessarily contain all trailer keys at this
+		// point yet. The HTTP spec allows one to send "unannounced trailers"
+		// after a request and certain systems like gRPC make use of that.
+		announcedTrailerKeyCount := len(res.Trailer)
+		if announcedTrailerKeyCount > 0 {
+			vv := make([]string, 0, announcedTrailerKeyCount)
 			for k := range res.Trailer {
-				trailerKeys = append(trailerKeys, k)
+				vv = append(vv, k)
 			}
-			rw.Header().Add("Trailer", strings.Join(trailerKeys, ", "))
+			rw.Header()["Trailer"] = vv
 		}
 
+		// Now copy over the status code as well as the response body.
 		rw.WriteHeader(res.StatusCode)
-		if len(res.Trailer) > 0 {
+		if announcedTrailerKeyCount > 0 {
 			// Force chunking if we saw a response trailer.
-			// This prevents net/http from calculating the length for short
-			// bodies and adding a Content-Length.
+			// This prevents net/http from calculating the length
+			// for short bodies and adding a Content-Length.
 			if fl, ok := rw.(http.Flusher); ok {
 				fl.Flush()
 			}
 		}
 		rp.copyResponse(rw, res.Body)
-		res.Body.Close() // close now, instead of defer, to populate res.Trailer
-		copyHeader(rw.Header(), res.Trailer)
+
+		// Now close the body to fully populate res.Trailer.
+		closeBody()
+
+		// Since Go does not remove keys from res.Trailer we
+		// can safely do a length comparison to check wether
+		// we received further, unannounced trailers.
+		//
+		// Most of the time forceSetTrailers should be false.
+		forceSetTrailers := len(res.Trailer) != announcedTrailerKeyCount
+		shallowCopyTrailers(rw.Header(), res.Trailer, forceSetTrailers)
 	}
 
 	return nil
@@ -388,6 +419,22 @@ func copyHeader(dst, src http.Header) {
 		for _, v := range vv {
 			dst.Add(k, v)
 		}
+	}
+}
+
+// shallowCopyTrailers copies all headers from srcTrailer to dstHeader.
+//
+// If forceSetTrailers is set to true, the http.TrailerPrefix will be added to
+// all srcTrailer key names. Otherwise the Go stdlib will ignore all keys
+// which weren't listed in the Trailer map before submitting the Response.
+//
+// WARNING: Only a shallow copy will be created!
+func shallowCopyTrailers(dstHeader, srcTrailer http.Header, forceSetTrailers bool) {
+	for k, vv := range srcTrailer {
+		if forceSetTrailers {
+			k = http.TrailerPrefix + k
+		}
+		dstHeader[k] = vv
 	}
 }
 

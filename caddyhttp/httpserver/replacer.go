@@ -302,7 +302,7 @@ func (r *replacer) getSubstitution(key string) string {
 		}
 		_, err := ioutil.ReadAll(r.request.Body)
 		if err != nil {
-			if _, ok := err.(MaxBytesExceeded); ok {
+			if err == ErrMaxBytesExceeded {
 				return r.emptyValue
 			}
 		}

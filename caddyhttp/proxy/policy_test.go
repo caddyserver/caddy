@@ -243,3 +243,62 @@ func TestFirstPolicy(t *testing.T) {
 		t.Error("Expected first policy host to be the second host.")
 	}
 }
+
+func TestUriPolicy(t *testing.T) {
+	pool := testPool()
+	uriPolicy := &URIHash{}
+
+	request := httptest.NewRequest(http.MethodGet, "/test", nil)
+	h := uriPolicy.Select(pool, request)
+	if h != pool[0] {
+		t.Error("Expected uri policy host to be the first host.")
+	}
+
+	pool[0].Unhealthy = 1
+	h = uriPolicy.Select(pool, request)
+	if h != pool[1] {
+		t.Error("Expected uri policy host to be the first host.")
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/test_2", nil)
+	h = uriPolicy.Select(pool, request)
+	if h != pool[1] {
+		t.Error("Expected uri policy host to be the second host.")
+	}
+
+	// We should be able to resize the host pool and still be able to predict
+	// where a request will be routed with the same URI's used above
+	pool = []*UpstreamHost{
+		{
+			Name: workableServer.URL, // this should resolve (healthcheck test)
+		},
+		{
+			Name: "http://localhost:99998", // this shouldn't
+		},
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/test", nil)
+	h = uriPolicy.Select(pool, request)
+	if h != pool[0] {
+		t.Error("Expected uri policy host to be the first host.")
+	}
+
+	pool[0].Unhealthy = 1
+	h = uriPolicy.Select(pool, request)
+	if h != pool[1] {
+		t.Error("Expected uri policy host to be the first host.")
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/test_2", nil)
+	h = uriPolicy.Select(pool, request)
+	if h != pool[1] {
+		t.Error("Expected uri policy host to be the second host.")
+	}
+
+	pool[0].Unhealthy = 1
+	pool[1].Unhealthy = 1
+	h = uriPolicy.Select(pool, request)
+	if h != nil {
+		t.Error("Expected uri policy policy host to be nil.")
+	}
+}
