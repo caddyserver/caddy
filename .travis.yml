@@ -1,7 +1,7 @@
 language: go
 
 go:
-  - 1.8
+  - 1.8.3
   - tip
 
 matrix:
@@ -20,15 +20,20 @@ install:
   - if [ "$TRAVIS_PULL_REQUEST" = "false" ]; then bash dist/gitcookie.sh; fi
   - go get -t ./...
   - go get github.com/golang/lint/golint
-  - go get github.com/gordonklaus/ineffassign
+  - go get github.com/FiloSottile/vendorcheck
+  # Install gometalinter and certain linters
+  - go get github.com/alecthomas/gometalinter
   - go get github.com/client9/misspell/cmd/misspell
+  - go get github.com/gordonklaus/ineffassign
+  - go get golang.org/x/tools/cmd/goimports
+  - go get github.com/tsenart/deadcode
 
 script:
-  - diff <(echo -n) <(gofmt -s -d .)
-  - ineffassign .
-  - misspell -error .
-  - go vet ./...
-  - go test -race ./...
+  - gometalinter --disable-all -E vet -E gofmt -E misspell -E ineffassign -E goimports -E deadcode --tests --vendor ./...
+  - vendorcheck ./...
+  # TODO: When Go 1.9 is released, replace $(go list) subcommand with ./... because vendor folder should be ignored
+  - go test -race $(go list ./... | grep -v vendor)
 
 after_script:
-  - golint ./...
+  # TODO: When Go 1.9 is released, replace $(go list) subcommand with ./... because vendor folder should be ignored
+  - golint $(go list ./... | grep -v vendor)
