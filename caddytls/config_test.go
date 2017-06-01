@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"reflect"
 	"testing"
+
+	"github.com/codahale/aesnicheck"
 )
 
 func TestConvertTLSConfigProtocolVersions(t *testing.T) {
@@ -60,10 +62,11 @@ func TestConvertTLSConfigCipherSuites(t *testing.T) {
 		{Enabled: true, Ciphers: nil},
 	}
 
+	defaultCiphersExpected := getPreferredDefaultCiphers()
 	expectedCiphers := [][]uint16{
 		{tls.TLS_FALLBACK_SCSV, 0xc02c, 0xc030},
 		{tls.TLS_FALLBACK_SCSV, 0xc012, 0xc030, 0xc00a},
-		append([]uint16{tls.TLS_FALLBACK_SCSV}, defaultCiphers...),
+		append([]uint16{tls.TLS_FALLBACK_SCSV}, defaultCiphersExpected...),
 	}
 
 	for i, config := range configs {
@@ -76,6 +79,21 @@ func TestConvertTLSConfigCipherSuites(t *testing.T) {
 				i, expectedCiphers[i], config.tlsConfig.CipherSuites)
 		}
 
+	}
+}
+
+func TestGetPreferredDefaultCiphers(t *testing.T) {
+	expectedCiphers := defaultCiphers
+	if !aesnicheck.HasAESNI() {
+		expectedCiphers = defaultCiphersNonAESNI
+	}
+
+	// Ensure ordering is correct and ciphers are what we expected.
+	result := getPreferredDefaultCiphers()
+	for i, actual := range result {
+		if actual != expectedCiphers[i] {
+			t.Errorf("Expected cipher in position %d to be %0x, got %0x", i, expectedCiphers[i], actual)
+		}
 	}
 }
 

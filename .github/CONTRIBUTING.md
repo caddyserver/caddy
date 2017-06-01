@@ -37,9 +37,9 @@ Here are some of the expectations we have of contributors:
 
 - **Write tests.** Tests are essential! Written properly, they ensure your change works, and that other changes in the future won't break your change. CI checks should pass.
 
-- **Benchmarks should be included for optimizations.** Optimizations sometimes make code harder to read or have changes that are less than obvious. They should be proven to work better with benchmarks or profiling.
+- **Benchmarks should be included for optimizations.** Optimizations sometimes make code harder to read or have changes that are less than obvious. They should be proven with benchmarks or profiling.
 
-- **[Squash](http://gitready.com/advanced/2009/02/10/squashing-commits-with-rebase.html) insignificant commits.** Every commit should be significant. Commits which merely rewrite a comment or fix a typo can be combined into another commit that has more substance.
+- **[Squash](http://gitready.com/advanced/2009/02/10/squashing-commits-with-rebase.html) insignificant commits.** Every commit should be significant. Commits which merely rewrite a comment or fix a typo can be combined into another commit that has more substance. Interactive rebase can do this, or a simpler way is `git reset --soft <diverging-commit>` then `git commit -s`.
 
 - **Own your contributions.** Caddy is a growing project, and it's much better when individual contributors can help maintain their change after it is merged.
 
@@ -126,7 +126,9 @@ Collabators have push rights to the repository. We grant this permission after o
 
 - **Do not merge pull requests until they have been approved by one or two other collaborators.** If a project owner approves the PR, it can be merged (as long as the conversation has finished too).
 
-- **Prefer squashed commits over a messy merge.** If there are many little commits, please squash the commits so we don't clutter the commit history.
+- **Prefer squashed commits over a messy merge.** If there are many little commits, please [squash the commits](https://stackoverflow.com/a/11732910/1048862) so we don't clutter the commit history.
+
+- **Don't accept new dependencies lightly.** Dependencies can make the world crash and burn, but they are sometimes necessary. Choose carefully. Extremely small dependencies (a few lines of code) can be inlined. The rest may not be needed. For those that are, Caddy vendors all dependencies with the help of [gvt](https://github.com/FiloSottile/gvt). All external dependencies must be vendored, and _Caddy must not export any types defined by those dependencies_. Check this diligently!
 
 - **Be extra careful in some areas of the code.** There are some critical areas in the Caddy code base that we review extra meticulously: the `caddy` and `caddytls` packages especially.
 

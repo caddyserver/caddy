@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/codahale/aesnicheck"
 	"github.com/mholt/caddy"
 	"github.com/xenolf/lego/acme"
 )
@@ -294,7 +295,7 @@ func (c *Config) buildStandardTLSConfig() error {
 
 	// default cipher suites
 	if len(config.CipherSuites) == 0 {
-		config.CipherSuites = defaultCiphers
+		config.CipherSuites = getPreferredDefaultCiphers()
 	}
 
 	// for security, ensure TLS_FALLBACK_SCSV is always included first
@@ -380,7 +381,7 @@ func RegisterConfigGetter(serverType string, fn ConfigGetter) {
 func SetDefaultTLSParams(config *Config) {
 	// If no ciphers provided, use default list
 	if len(config.Ciphers) == 0 {
-		config.Ciphers = defaultCiphers
+		config.Ciphers = getPreferredDefaultCiphers()
 	}
 
 	// Not a cipher suite, but still important for mitigating protocol downgrade attacks
@@ -462,6 +463,35 @@ var defaultCiphers = []uint16{
 	tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
 	tls.TLS_RSA_WITH_AES_256_CBC_SHA,
 	tls.TLS_RSA_WITH_AES_128_CBC_SHA,
+}
+
+// List of ciphers we should prefer if native AESNI support is missing
+var defaultCiphersNonAESNI = []uint16{
+	tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
+	tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
+	tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+	tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+	tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+	tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+	tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+	tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
+	tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
+	tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
+	tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+	tls.TLS_RSA_WITH_AES_128_CBC_SHA,
+}
+
+// getPreferredDefaultCiphers returns an appropriate cipher suite to use, depending on
+// the hardware support available for AES-NI.
+//
+// See https://github.com/mholt/caddy/issues/1674
+func getPreferredDefaultCiphers() []uint16 {
+	if aesnicheck.HasAESNI() {
+		return defaultCiphers
+	}
+
+	// Return a cipher suite that prefers ChaCha20
+	return defaultCiphersNonAESNI
 }
 
 // Map of supported curves

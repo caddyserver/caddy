@@ -45,14 +45,16 @@ func SetupIfMatcher(controller *caddy.Controller) (RequestMatcher, error) {
 
 // operators
 const (
-	isOp         = "is"
-	notOp        = "not"
-	hasOp        = "has"
-	notHasOp     = "not_has"
-	startsWithOp = "starts_with"
-	endsWithOp   = "ends_with"
-	matchOp      = "match"
-	notMatchOp   = "not_match"
+	isOp            = "is"
+	notOp           = "not"
+	hasOp           = "has"
+	notHasOp        = "not_has"
+	startsWithOp    = "starts_with"
+	notStartsWithOp = "not_starts_with"
+	endsWithOp      = "ends_with"
+	notEndsWithOp   = "not_ends_with"
+	matchOp         = "match"
+	notMatchOp      = "not_match"
 )
 
 func operatorError(operator string) error {
@@ -63,14 +65,16 @@ func operatorError(operator string) error {
 type ifCondition func(string, string) bool
 
 var ifConditions = map[string]ifCondition{
-	isOp:         isFunc,
-	notOp:        notFunc,
-	hasOp:        hasFunc,
-	notHasOp:     notHasFunc,
-	startsWithOp: startsWithFunc,
-	endsWithOp:   endsWithFunc,
-	matchOp:      matchFunc,
-	notMatchOp:   notMatchFunc,
+	isOp:            isFunc,
+	notOp:           notFunc,
+	hasOp:           hasFunc,
+	notHasOp:        notHasFunc,
+	startsWithOp:    startsWithFunc,
+	notStartsWithOp: notStartsWithFunc,
+	endsWithOp:      endsWithFunc,
+	notEndsWithOp:   notEndsWithFunc,
+	matchOp:         matchFunc,
+	notMatchOp:      notMatchFunc,
 }
 
 // isFunc is condition for Is operator.
@@ -82,7 +86,7 @@ func isFunc(a, b string) bool {
 // notFunc is condition for Not operator.
 // It checks for inequality.
 func notFunc(a, b string) bool {
-	return a != b
+	return !isFunc(a, b)
 }
 
 // hasFunc is condition for Has operator.
@@ -94,7 +98,7 @@ func hasFunc(a, b string) bool {
 // notHasFunc is condition for NotHas operator.
 // It checks if b is not a substring of a.
 func notHasFunc(a, b string) bool {
-	return !strings.Contains(a, b)
+	return !hasFunc(a, b)
 }
 
 // startsWithFunc is condition for StartsWith operator.
@@ -103,10 +107,22 @@ func startsWithFunc(a, b string) bool {
 	return strings.HasPrefix(a, b)
 }
 
+// notStartsWithFunc is condition for NotStartsWith operator.
+// It checks if b is not a prefix of a.
+func notStartsWithFunc(a, b string) bool {
+	return !startsWithFunc(a, b)
+}
+
 // endsWithFunc is condition for EndsWith operator.
 // It checks if b is a suffix of a.
 func endsWithFunc(a, b string) bool {
 	return strings.HasSuffix(a, b)
+}
+
+// notEndsWithFunc is condition for NotEndsWith operator.
+// It checks if b is not a suffix of a.
+func notEndsWithFunc(a, b string) bool {
+	return !endsWithFunc(a, b)
 }
 
 // matchFunc is condition for Match operator.
@@ -121,8 +137,7 @@ func matchFunc(a, b string) bool {
 // It does regexp matching of a against pattern in b
 // and returns if they do not match.
 func notMatchFunc(a, b string) bool {
-	matched, _ := regexp.MatchString(b, a)
-	return !matched
+	return !matchFunc(a, b)
 }
 
 // ifCond is statement for a IfMatcher condition.

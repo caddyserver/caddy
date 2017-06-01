@@ -490,6 +490,7 @@ var directives = []string{
 	"hugo",      // github.com/hacdias/caddy-hugo
 	"mailout",   // github.com/SchumacherFM/mailout
 	"awslambda", // github.com/coopernurse/caddy-awslambda
+	"grpc",      // github.com/pieterlouw/caddy-grpc
 }
 
 const (
