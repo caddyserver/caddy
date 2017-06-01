@@ -112,12 +112,13 @@ func (l Listing) Breadcrumbs() []Crumb {
 
 // FileInfo is the info about a particular file or directory
 type FileInfo struct {
-	Name    string
-	Size    int64
-	URL     string
-	ModTime time.Time
-	Mode    os.FileMode
-	IsDir   bool
+	Name      string
+	Size      int64
+	URL       string
+	ModTime   time.Time
+	Mode      os.FileMode
+	IsDir     bool
+	IsSymlink bool
 }
 
 // HumanSize returns the size of the file as a human-readable string
@@ -258,12 +259,13 @@ func directoryListing(files []os.FileInfo, canGoUp bool, urlPath string, config 
 		url := url.URL{Path: "./" + name} // prepend with "./" to fix paths with ':' in the name
 
 		fileinfos = append(fileinfos, FileInfo{
-			IsDir:   f.IsDir(),
-			Name:    f.Name(),
-			Size:    f.Size(),
-			URL:     url.String(),
-			ModTime: f.ModTime().UTC(),
-			Mode:    f.Mode(),
+			IsDir:     f.IsDir() || isSymlinkTargetDir(f),
+			IsSymlink: isSymlink(f),
+			Name:      f.Name(),
+			Size:      f.Size(),
+			URL:       url.String(),
+			ModTime:   f.ModTime().UTC(),
+			Mode:      f.Mode(),
 		})
 	}
 
@@ -275,6 +277,28 @@ func directoryListing(files []os.FileInfo, canGoUp bool, urlPath string, config 
 		NumDirs:  dirCount,
 		NumFiles: fileCount,
 	}, hasIndexFile
+}
+
+// isSymlink return true if f is a symbolic link
+func isSymlink(f os.FileInfo) bool {
+	return f.Mode()&os.ModeSymlink != 0
+}
+
+// isSymlinkTargetDir return true if f's symbolic link target
+// is a directory. Return false if not a symbolic link.
+func isSymlinkTargetDir(f os.FileInfo) bool {
+	if !isSymlink(f) {
+		return false
+	}
+	target, err := os.Readlink(f.Name())
+	if err != nil {
+		return false
+	}
+	targetInfo, err := os.Lstat(target)
+	if err != nil {
+		return false
+	}
+	return targetInfo.IsDir()
 }
 
 // ServeHTTP determines if the request is for this plugin, and if all prerequisites are met.
