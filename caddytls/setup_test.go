@@ -277,6 +277,46 @@ func TestSetupParseWithClientAuth(t *testing.T) {
 	}
 }
 
+func TestSetupParseWithCAUrl(t *testing.T) {
+	testURL := "https://acme-staging.api.letsencrypt.org/directory"
+	for caseNumber, caseData := range []struct {
+		params        string
+		expectedErr   bool
+		expectedCAUrl string
+	}{
+		// Test working case
+		{`tls {
+				ca ` + testURL + `
+			}`, false, testURL},
+		// Test too few args
+		{`tls {
+				ca
+			}`, true, ""},
+		// Test too many args
+		{`tls {
+				ca 1 2
+			}`, true, ""},
+	} {
+		cfg := new(Config)
+		RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
+		c := caddy.NewTestController("", caseData.params)
+		err := setupTLS(c)
+		if caseData.expectedErr {
+			if err == nil {
+				t.Errorf("In case %d: Expected an error, got: %v", caseNumber, err)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("In case %d: Expected no errors, got: %v", caseNumber, err)
+		}
+
+		if cfg.CAUrl != caseData.expectedCAUrl {
+			t.Errorf("Expected '%v' as CAUrl, got %#v", caseData.expectedCAUrl, cfg.CAUrl)
+		}
+	}
+}
+
 func TestSetupParseWithKeyType(t *testing.T) {
 	params := `tls {
             key_type p384
