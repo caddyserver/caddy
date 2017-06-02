@@ -142,7 +142,7 @@ func QualifiesForManagedTLS(c ConfigHolder) bool {
 
 // DNSProviderConstructor is a function that takes credentials and
 // returns a type that can solve the ACME DNS challenges.
-type DNSProviderConstructor func(credentials ...string) (acme.ChallengeProvider, error)
+type DNSProviderConstructor func(credentials ...string) (ChallengeProvider, error)
 
 // dnsProviders is the list of DNS providers that have been plugged in.
 var dnsProviders = make(map[string]DNSProviderConstructor)
