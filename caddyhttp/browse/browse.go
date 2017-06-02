@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -259,7 +260,7 @@ func directoryListing(files []os.FileInfo, canGoUp bool, urlPath string, config 
 		url := url.URL{Path: "./" + name} // prepend with "./" to fix paths with ':' in the name
 
 		fileinfos = append(fileinfos, FileInfo{
-			IsDir:     f.IsDir() || isSymlinkTargetDir(f),
+			IsDir:     f.IsDir() || isSymlinkTargetDir(f, urlPath, config),
 			IsSymlink: isSymlink(f),
 			Name:      f.Name(),
 			Size:      f.Size(),
@@ -286,15 +287,19 @@ func isSymlink(f os.FileInfo) bool {
 
 // isSymlinkTargetDir return true if f's symbolic link target
 // is a directory. Return false if not a symbolic link.
-func isSymlinkTargetDir(f os.FileInfo) bool {
+func isSymlinkTargetDir(f os.FileInfo, urlPath string, config *Config) bool {
 	if !isSymlink(f) {
 		return false
 	}
-	target, err := os.Readlink(f.Name())
+	fullPath := func(fileName string) string {
+		fullPath := filepath.Join(string(config.Fs.Root.(http.Dir)), urlPath, fileName)
+		return filepath.Clean(fullPath)
+	}
+	target, err := os.Readlink(fullPath(f.Name()))
 	if err != nil {
 		return false
 	}
-	targetInfo, err := os.Lstat(target)
+	targetInfo, err := os.Lstat(fullPath(target))
 	if err != nil {
 		return false
 	}
