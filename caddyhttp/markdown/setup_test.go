@@ -71,12 +71,9 @@ func TestMarkdownParse(t *testing.T) {
 			Extensions: map[string]struct{}{
 				".md": {},
 			},
-			Template: GetDefaultTemplate(),
+			Template: setDefaultTemplate("./testdata/tpl_with_include.html"),
 		}}},
 	}
-	// Setup the extra template
-	tmpl := tests[1].expectedMarkdownConfig[0].Template
-	SetTemplate(tmpl, "", "./testdata/tpl_with_include.html")
 
 	for i, test := range tests {
 		c := caddy.NewTestController("http", test.inputMarkdownConfig)

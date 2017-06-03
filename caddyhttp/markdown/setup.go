@@ -115,15 +115,17 @@ func loadParams(c *caddy.Controller, mdc *Config) error {
 			fpath := filepath.ToSlash(filepath.Clean(cfg.Root + string(filepath.Separator) + tArgs[0]))
 
 			if err := SetTemplate(mdc.Template, "", fpath); err != nil {
-				c.Errf("default template parse error: %v", err)
+				return c.Errf("default template parse error: %v", err)
 			}
+
 			return nil
 		case 2:
 			fpath := filepath.ToSlash(filepath.Clean(cfg.Root + string(filepath.Separator) + tArgs[1]))
 
 			if err := SetTemplate(mdc.Template, tArgs[0], fpath); err != nil {
-				c.Errf("template parse error: %v", err)
+				return c.Errf("template parse error: %v", err)
 			}
+
 			return nil
 		}
 	case "templatedir":
@@ -132,11 +134,12 @@ func loadParams(c *caddy.Controller, mdc *Config) error {
 		}
 		_, err := mdc.Template.ParseGlob(c.Val())
 		if err != nil {
-			c.Errf("template load error: %v", err)
+			return c.Errf("template load error: %v", err)
 		}
 		if c.NextArg() {
 			return c.ArgErr()
 		}
+
 		return nil
 	default:
 		return c.Err("Expected valid markdown configuration property")
