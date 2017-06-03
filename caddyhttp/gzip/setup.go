@@ -146,11 +146,7 @@ func initWriterPool() {
 
 	// add default writer pool
 	defaultWriterPoolIndex = i
-	writerPool[defaultWriterPoolIndex] = &sync.Pool{
-		New: func() interface{} {
-			return gzip.NewWriter(ioutil.Discard)
-		},
-	}
+	writerPool[defaultWriterPoolIndex] = newWriterPool(gzip.DefaultCompression)
 }
 
 func getWriter(level int) *gzip.Writer {
