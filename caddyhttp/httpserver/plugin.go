@@ -452,6 +452,7 @@ var directives = []string{
 	// directives that add middleware to the stack
 	"locale", // github.com/simia-tech/caddy-locale
 	"log",
+	"basicauth",
 	"rewrite",
 	"ext",
 	"gzip",
@@ -464,7 +465,6 @@ var directives = []string{
 	"ratelimit", // github.com/xuqingfeng/caddy-rate-limit
 	"search",    // github.com/pedronasser/caddy-search
 	"expires",   // github.com/epicagency/caddy-expires
-	"basicauth",
 	"redir",
 	"status",
 	"cors", // github.com/captncraig/cors/caddy
