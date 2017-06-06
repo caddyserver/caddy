@@ -101,7 +101,7 @@ func Run() {
 	}
 
 	// Executes Startup events
-	caddy.EmitEvent(caddy.StartupEvent)
+	caddy.EmitEvent(caddy.StartupEvent, nil)
 
 	// Get Caddyfile input
 	caddyfileinput, err := caddy.LoadCaddyfile(serverType)
