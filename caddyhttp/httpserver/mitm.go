@@ -65,7 +65,16 @@ func (h *tlsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		mitm = !info.looksLikeChrome() && !info.looksLikeSafari()
 	} else if strings.Contains(ua, "Firefox") {
 		checked = true
-		mitm = !info.looksLikeFirefox()
+		if strings.Contains(ua, "Windows") {
+			ver := getVersion(ua, "Firefox")
+			if ver == 45.0 || ver == 52.0 {
+				mitm = !info.looksLikeTor()
+			} else {
+				mitm = !info.looksLikeFirefox()
+			}
+		} else {
+			mitm = !info.looksLikeFirefox()
+		}
 	} else if strings.Contains(ua, "Safari") {
 		checked = true
 		mitm = !info.looksLikeSafari()
@@ -85,6 +94,34 @@ func (h *tlsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.next.ServeHTTP(w, r)
+}
+
+// getVersion returns a (possibly simplified) representation of the version string
+// from a UserAgent string. It returns a float, so it can represent major and minor
+// versions; the rest of the version is just tacked on behind the decimal point.
+// The purpose of this is to stay simple while allowing for basic, fast comparisons.
+// If the version for softwareName is not found in ua, -1 is returned.
+func getVersion(ua, softwareName string) float64 {
+	search := softwareName + "/"
+	start := strings.Index(ua, search)
+	if start < 0 {
+		return -1
+	}
+	start += len(search)
+	end := strings.Index(ua[start:], " ")
+	if end < 0 {
+		end = len(ua)
+	}
+	strVer := strings.Replace(ua[start:end], "-", "", -1)
+	firstDot := strings.Index(strVer, ".")
+	if firstDot >= 0 {
+		strVer = strVer[:firstDot+1] + strings.Replace(strVer[firstDot+1:], ".", "", -1)
+	}
+	ver, err := strconv.ParseFloat(strVer, 64)
+	if err != nil {
+		return -1
+	}
+	return ver
 }
 
 // clientHelloConn reads the ClientHello
@@ -330,6 +367,7 @@ func (info rawHelloInfo) looksLikeFirefox() bool {
 	// Note: Firefox 51+ does not advertise 0x3374 (13172, NPN).
 	// Note: Firefox doesn't advertise 0x0 (0, SNI) when connecting to IP addresses.
 	// Note: Firefox 55+ doesn't appear to advertise 0xFF03 (65283, short headers). It used to be between 5 and 13.
+	// Note: Firefox on Fedora (or RedHat) doesn't include ECC suites because of patent liability.
 	requiredExtensionsOrder := []uint16{23, 65281, 10, 11, 35, 16, 5, 13}
 	if !assertPresenceAndOrdering(requiredExtensionsOrder, info.extensions, true) {
 		return false
@@ -541,6 +579,70 @@ func (info rawHelloInfo) looksLikeSafari() bool {
 		tls.TLS_RSA_WITH_AES_128_CBC_SHA,            // 0x2f
 	}
 	return assertPresenceAndOrdering(expectedCipherSuiteOrder, info.cipherSuites, true)
+}
+
+// looksLikeTor returns true if the info looks like a ClientHello from Tor browser
+// (based on Firefox).
+func (info rawHelloInfo) looksLikeTor() bool {
+	requiredExtensionsOrder := []uint16{10, 11, 16, 5, 13}
+	if !assertPresenceAndOrdering(requiredExtensionsOrder, info.extensions, true) {
+		return false
+	}
+
+	// check for session tickets support; Tor doesn't support them to prevent tracking
+	for _, ext := range info.extensions {
+		if ext == 35 {
+			return false
+		}
+	}
+
+	// We check for both presence of curves and their ordering, including
+	// an optional curve at the beginning (for Tor based on Firefox 52)
+	infoCurves := info.curves
+	if len(info.curves) == 4 {
+		if info.curves[0] != 29 {
+			return false
+		}
+		infoCurves = info.curves[1:]
+	}
+	requiredCurves := []tls.CurveID{23, 24, 25}
+	if len(infoCurves) < len(requiredCurves) {
+		return false
+	}
+	for i := range requiredCurves {
+		if infoCurves[i] != requiredCurves[i] {
+			return false
+		}
+	}
+
+	if hasGreaseCiphers(info.cipherSuites) {
+		return false
+	}
+
+	// We check for order of cipher suites but not presence, since
+	// according to the paper, cipher suites may be not be added
+	// or reordered by the user, but they may be disabled.
+	expectedCipherSuiteOrder := []uint16{
+		TLS_AES_128_GCM_SHA256,                      // 0x1301
+		TLS_CHACHA20_POLY1305_SHA256,                // 0x1303
+		TLS_AES_256_GCM_SHA384,                      // 0x1302
+		tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256, // 0xc02b
+		tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,   // 0xc02f
+		tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,  // 0xcca9
+		tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,    // 0xcca8
+		tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384, // 0xc02c
+		tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,   // 0xc030
+		tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,    // 0xc00a
+		tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,    // 0xc009
+		tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,      // 0xc013
+		tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,      // 0xc014
+		TLS_DHE_RSA_WITH_AES_128_CBC_SHA,            // 0x33
+		TLS_DHE_RSA_WITH_AES_256_CBC_SHA,            // 0x39
+		tls.TLS_RSA_WITH_AES_128_CBC_SHA,            // 0x2f
+		tls.TLS_RSA_WITH_AES_256_CBC_SHA,            // 0x35
+		tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA,           // 0xa
+	}
+	return assertPresenceAndOrdering(expectedCipherSuiteOrder, info.cipherSuites, false)
 }
 
 // assertPresenceAndOrdering will return true if candidateList contains
