@@ -336,7 +336,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	status, _ := s.serveHTTP(w, r)
 
 	// Fallback error response in case error handling wasn't chained in
-	if status >= 400 {
+	if status != 0 {
 		DefaultErrorFunc(w, r, status)
 	}
 }
