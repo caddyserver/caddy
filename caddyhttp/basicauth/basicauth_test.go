@@ -100,6 +100,62 @@ func TestBasicAuth(t *testing.T) {
 	}
 }
 
+func TestBasicAuthWithRewrite(t *testing.T) {
+	rw := BasicAuth{
+		Next: httpserver.HandlerFunc(contentHandler),
+		Rules: []Rule{
+			{Username: "test", Password: PlainMatcher("ttest"), Resources: []string{"/abc"}},
+		},
+	}
+
+	tests := []struct {
+		from   string
+		result int
+		cred   string
+	}{
+		{"/testing", http.StatusUnauthorized, "ttest:test"},
+		{"/testing", http.StatusOK, "test:ttest"},
+		{"/testing", http.StatusUnauthorized, ""},
+	}
+
+	for i, test := range tests {
+
+		req, err := http.NewRequest("GET", test.from, nil)
+		if err != nil {
+			t.Fatalf("Test %d: Could not create HTTP request %v", i, err)
+		}
+		auth := "Basic " + base64.StdEncoding.EncodeToString([]byte(test.cred))
+		req.Header.Set("Authorization", auth)
+
+		req.Header.Set(internalRewriteFieldName, "/abc")
+
+		rec := httptest.NewRecorder()
+		result, err := rw.ServeHTTP(rec, req)
+		if err != nil {
+			t.Fatalf("Test %d: Could not ServeHTTP %v", i, err)
+		}
+		if result != test.result {
+			t.Errorf("Test %d: Expected Header '%d' but was '%d'",
+				i, test.result, result)
+		}
+		if result == http.StatusUnauthorized {
+			headers := rec.Header()
+			if val, ok := headers["Www-Authenticate"]; ok {
+				if val[0] != "Basic realm=\"Restricted\"" {
+					t.Errorf("Test %d, Www-Authenticate should be %s provided %s", i, "Basic", val[0])
+				}
+			} else {
+				t.Errorf("Test %d, should provide a header Www-Authenticate", i)
+			}
+		}
+
+		if req.URL.Path != req.Header.Get(internalRewriteFieldName) {
+			t.Errorf("Test %d, expected URL Path %v, got %v", i, req.Header.Get(internalRewriteFieldName), req.URL.Path)
+		}
+	}
+
+}
+
 func TestMultipleOverlappingRules(t *testing.T) {
 	rw := BasicAuth{
 		Next: httpserver.HandlerFunc(contentHandler),
