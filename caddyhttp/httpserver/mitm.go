@@ -56,6 +56,9 @@ func (h *tlsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		strings.Contains(ua, "Trident") {
 		checked = true
 		mitm = !info.looksLikeEdge()
+	} else if strings.Contains(ua, "CRiOS") {
+		checked = true
+		mitm = !info.looksLikeChromeOniOS()
 	} else if strings.Contains(ua, "Chrome") {
 		checked = true
 		mitm = !info.looksLikeChrome()
@@ -422,6 +425,58 @@ func (info rawHelloInfo) looksLikeFirefox() bool {
 		tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA,           // 0xa
 	}
 	return assertPresenceAndOrdering(expectedCipherSuiteOrder, info.cipherSuites, false)
+}
+
+// looksLikeChromeOniOS returns true if info looks like a handshake
+// from a modern version of Chrome on iOS.
+func (info rawHelloInfo) looksLikeChromeOniOS() bool {
+	// "We check for ciphers and extensions that Chrome on iOS is known
+	// to not support, but do not check for the inclusion of
+	// specific ciphers or extensions, nor do we validate their
+	// order. When appropriate, we check the presence and order
+	// of elliptic curves, compression methods, and EC point formats."
+
+	// Not in Chrome 56 on iOS, but present in Safari 10 (Feb. 2017):
+	// TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256 (0xc023)
+	// TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA (0xc00a)
+	// TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA (0xc009)
+	// TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384 (0xc028)
+	// TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256 (0xc027)
+	// TLS_RSA_WITH_AES_256_CBC_SHA256 (0x3d)
+	// TLS_RSA_WITH_AES_128_CBC_SHA256 (0x3c)
+
+	// Not in Chrome 56 iOS, but present in Firefox 51 (Feb. 2017):
+	// TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA (0xc00a)
+	// TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA (0xc009)
+	// TLS_DHE_RSA_WITH_AES_128_CBC_SHA (0x33)
+	// TLS_DHE_RSA_WITH_AES_256_CBC_SHA (0x39)
+
+	// Selected ciphers present in Chrome mobile (Feb. 2017):
+	// 0xc00a, 0xc014, 0xc009, 0x9c, 0x9d, 0x2f, 0x35, 0xa
+
+	chromeCipherExclusions := map[uint16]struct{}{
+		TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256:   {}, // 0xc023
+		TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384:     {}, // 0xc028
+		tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256: {}, // 0xc027
+		TLS_RSA_WITH_AES_256_CBC_SHA256:           {}, // 0x3d
+		tls.TLS_RSA_WITH_AES_128_CBC_SHA256:       {}, // 0x3c
+		TLS_DHE_RSA_WITH_AES_128_CBC_SHA:          {}, // 0x33
+		TLS_DHE_RSA_WITH_AES_256_CBC_SHA:          {}, // 0x39
+	}
+	for _, ext := range info.cipherSuites {
+		if _, ok := chromeCipherExclusions[ext]; ok {
+			return false
+		}
+	}
+
+	// Chrome does not include curve 25 (CurveP521) (as of Chrome 56, Feb. 2017).
+	for _, curve := range info.curves {
+		if curve == 25 {
+			return false
+		}
+	}
+
+	return true
 }
 
 // looksLikeChrome returns true if info looks like a handshake
