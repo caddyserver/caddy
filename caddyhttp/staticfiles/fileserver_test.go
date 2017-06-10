@@ -230,8 +230,10 @@ func TestServeHTTP(t *testing.T) {
 			continue
 		}
 
-		// set the original URL on the context
+		// set the original URL and path prefix on the context
 		ctx := context.WithValue(request.Context(), caddy.CtxKey("original_url"), *request.URL)
+		request = request.WithContext(ctx)
+		ctx = context.WithValue(request.Context(), caddy.CtxKey("path_prefix"), test.stripPathPrefix)
 		request = request.WithContext(ctx)
 
 		request.Header.Add("Accept-Encoding", test.acceptEncoding)

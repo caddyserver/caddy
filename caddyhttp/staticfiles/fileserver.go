@@ -7,7 +7,6 @@ package staticfiles
 import (
 	"math/rand"
 	"net/http"
-	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -82,37 +81,41 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request) (int, err
 
 	// redirect to canonical path (being careful to preserve other parts of URL and
 	// considering cases where a site is defined with a path prefix that gets stripped)
-	u := r.Context().Value(caddy.CtxKey("original_url")).(url.URL)
-	if u.Path == "" {
-		u.Path = "/"
+	urlCopy := *r.URL
+	pathPrefix, _ := r.Context().Value(caddy.CtxKey("path_prefix")).(string)
+	if pathPrefix != "/" {
+		urlCopy.Path = pathPrefix + urlCopy.Path
+	}
+	if urlCopy.Path == "" {
+		urlCopy.Path = "/"
 	}
 	if d.IsDir() {
 		// ensure there is a trailing slash
-		if u.Path[len(u.Path)-1] != '/' {
-			u.Path += "/"
-			http.Redirect(w, r, u.String(), http.StatusMovedPermanently)
+		if urlCopy.Path[len(urlCopy.Path)-1] != '/' {
+			urlCopy.Path += "/"
+			http.Redirect(w, r, urlCopy.String(), http.StatusMovedPermanently)
 			return http.StatusMovedPermanently, nil
 		}
 	} else {
 		// ensure no trailing slash
 		redir := false
-		if u.Path[len(u.Path)-1] == '/' {
-			u.Path = u.Path[:len(u.Path)-1]
+		if urlCopy.Path[len(urlCopy.Path)-1] == '/' {
+			urlCopy.Path = urlCopy.Path[:len(urlCopy.Path)-1]
 			redir = true
 		}
 
 		// if an index file was explicitly requested, strip file name from the request
 		// ("/foo/index.html" -> "/foo/")
 		for _, indexPage := range IndexPages {
-			if strings.HasSuffix(u.Path, indexPage) {
-				u.Path = u.Path[:len(u.Path)-len(indexPage)]
+			if strings.HasSuffix(urlCopy.Path, indexPage) {
+				urlCopy.Path = urlCopy.Path[:len(urlCopy.Path)-len(indexPage)]
 				redir = true
 				break
 			}
 		}
 
 		if redir {
-			http.Redirect(w, r, u.String(), http.StatusMovedPermanently)
+			http.Redirect(w, r, urlCopy.String(), http.StatusMovedPermanently)
 			return http.StatusMovedPermanently, nil
 		}
 	}

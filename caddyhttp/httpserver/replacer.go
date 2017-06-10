@@ -317,7 +317,6 @@ func (r *replacer) getSubstitution(key string) string {
 			if val {
 				return "likely"
 			}
-
 			return "unlikely"
 		}
 		return "unknown"
