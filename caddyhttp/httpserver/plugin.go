@@ -488,6 +488,7 @@ var directives = []string{
 	"markdown",
 	"templates",
 	"browse",
+	"request_id",
 	"hugo",      // github.com/hacdias/caddy-hugo
 	"mailout",   // github.com/SchumacherFM/mailout
 	"awslambda", // github.com/coopernurse/caddy-awslambda
