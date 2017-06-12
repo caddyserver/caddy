@@ -457,6 +457,7 @@ var directives = []string{
 	"gzip",
 	"header",
 	"errors",
+	"authz",     // github.com/casbin/caddy-authz
 	"filter",    // github.com/echocat/caddy-filter
 	"minify",    // github.com/hacdias/caddy-minify
 	"ipfilter",  // github.com/pyed/ipfilter
