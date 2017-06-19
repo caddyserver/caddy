@@ -20,7 +20,6 @@ import (
 
 	"github.com/lucas-clemente/quic-go/h2quic"
 	"github.com/mholt/caddy"
-	"github.com/mholt/caddy/caddyhttp/requestid"
 	"github.com/mholt/caddy/caddyhttp/staticfiles"
 	"github.com/mholt/caddy/caddytls"
 )
@@ -333,12 +332,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r = r.WithContext(c)
 
 	w.Header().Set("Server", "Caddy")
-
-	if requestid.IsActive {
-		reqid := requestid.UUID()
-		c := context.WithValue(r.Context(), caddy.CtxKey("REQUESTID"), reqid)
-		r = r.WithContext(c)
-	}
 
 	status, _ := s.serveHTTP(w, r)
 

@@ -1,41 +1,33 @@
 package requestid
 
 import (
-	"fmt"
+	"context"
+	"log"
+	"net/http"
 
 	"github.com/mholt/caddy"
-	"github.com/nu7hatch/gouuid"
+	"github.com/mholt/caddy/caddyhttp/httpserver"
+	uuid "github.com/nu7hatch/gouuid"
 )
 
-// IsActive - Is RequestID Active?
-var IsActive = false
-
-func init() {
-	caddy.RegisterPlugin("request_id", caddy.Plugin{
-
-		ServerType: "http",
-		Action:     setup,
-	})
+// Handler is a middleware handler
+type Handler struct {
+	Next httpserver.Handler
 }
 
-func setup(c *caddy.Controller) error {
+func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
+	reqid := UUID()
+	c := context.WithValue(r.Context(), caddy.CtxKey("request_id"), reqid)
+	r = r.WithContext(c)
 
-	for c.Next() {
-
-		if c.NextArg() {
-			return c.ArgErr() //no arg expected.
-		}
-
-	}
-	IsActive = true
-	return nil
+	return h.Next.ServeHTTP(w, r)
 }
 
 // UUID returns U4 UUID
 func UUID() string {
 	u4, err := uuid.NewV4()
 	if err != nil {
-		fmt.Println("error:", err)
+		log.Printf("[ERROR] generating request ID: %v", err)
 		return ""
 	}
 

@@ -443,6 +443,7 @@ var directives = []string{
 	// services/utilities, or other directives that don't necessarily inject handlers
 	"startup",
 	"shutdown",
+	"requestid",
 	"realip", // github.com/captncraig/caddy-realip
 	"git",    // github.com/abiosoft/caddy-git
 
@@ -488,7 +489,6 @@ var directives = []string{
 	"markdown",
 	"templates",
 	"browse",
-	"request_id",
 	"hugo",      // github.com/hacdias/caddy-hugo
 	"mailout",   // github.com/SchumacherFM/mailout
 	"awslambda", // github.com/coopernurse/caddy-awslambda

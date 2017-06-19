@@ -244,7 +244,7 @@ func (r *replacer) getSubstitution(key string) string {
 		u, _ := r.request.Context().Value(OriginalURLCtxKey).(url.URL)
 		return url.QueryEscape(u.Path)
 	case "{request_id}":
-		reqid, _ := r.request.Context().Value(caddy.CtxKey("REQUESTID")).(string)
+		reqid, _ := r.request.Context().Value(caddy.CtxKey("request_id")).(string)
 		if reqid != "" {
 			return reqid
 		}
