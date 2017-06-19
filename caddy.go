@@ -606,16 +606,15 @@ func executeDirectives(inst *Instance, filename string,
 	return nil
 }
 
-func startServers(serverList []Server, inst *Instance, restartFds map[string]restartTriple) error {
+func startServers(serverList []Server, inst *Instance, restartFds map[string]restartTriple) (err error) {
 	errChan := make(chan error, len(serverList))
+	var (
+		ln  net.Listener
+		pc  net.PacketConn
+	)
 
 	for _, s := range serverList {
-		var (
-			ln  net.Listener
-			pc  net.PacketConn
-			err error
-		)
-
+	
 		// If this is a reload and s is a GracefulServer,
 		// reuse the listener for a graceful restart.
 		if gs, ok := s.(GracefulServer); ok && restartFds != nil {
