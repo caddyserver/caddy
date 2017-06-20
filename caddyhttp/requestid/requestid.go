@@ -5,7 +5,6 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 	uuid "github.com/nu7hatch/gouuid"
 )
@@ -17,7 +16,7 @@ type Handler struct {
 
 func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	reqid := UUID()
-	c := context.WithValue(r.Context(), caddy.CtxKey("request_id"), reqid)
+	c := context.WithValue(r.Context(), httpserver.RequestIDCtxKey, reqid)
 	r = r.WithContext(c)
 
 	return h.Next.ServeHTTP(w, r)

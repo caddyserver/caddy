@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/mholt/caddy"
+	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
 
 func TestRequestID(t *testing.T) {
@@ -15,12 +15,13 @@ func TestRequestID(t *testing.T) {
 	}
 
 	reqid := UUID()
-	c := context.WithValue(request.Context(), caddy.CtxKey("request_id"), reqid)
+
+	c := context.WithValue(request.Context(), httpserver.RequestIDCtxKey, reqid)
 
 	request = request.WithContext(c)
 
 	// See caddyhttp/replacer.go
-	value, _ := request.Context().Value(caddy.CtxKey("request_id")).(string)
+	value, _ := request.Context().Value(httpserver.RequestIDCtxKey).(string)
 
 	if value == "" {
 		t.Fatal("Request ID should not be empty")
