@@ -14,7 +14,7 @@
 
 DESC="the caddy web server"
 NAME=caddy
-DAEMON=$(which caddy)
+DAEMON=/usr/local/bin/caddy
 
 DAEMONUSER=www-data
 PIDFILE=/var/run/$NAME.pid
