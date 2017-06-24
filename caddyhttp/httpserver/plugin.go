@@ -494,6 +494,7 @@ var directives = []string{
 	"mailout",   // github.com/SchumacherFM/mailout
 	"awslambda", // github.com/coopernurse/caddy-awslambda
 	"grpc",      // github.com/pieterlouw/caddy-grpc
+	"gopkg",     // github.com/zikes/gopkg
 }
 
 const (
