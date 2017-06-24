@@ -20,8 +20,10 @@ type Internal struct {
 }
 
 const (
-	redirectHeader   string = "X-Accel-Redirect"
-	maxRedirectCount int    = 10
+	redirectHeader        string = "X-Accel-Redirect"
+	contentLengthHeader   string = "Content-Length"
+	contentEncodingHeader string = "Content-Encoding"
+	maxRedirectCount      int    = 10
 )
 
 func isInternalRedirect(w http.ResponseWriter) bool {
@@ -40,7 +42,7 @@ func (i Internal) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error)
 
 	// Use internal response writer to ignore responses that will be
 	// redirected to internal locations
-	iw := internalResponseWriter{ResponseWriter: w}
+	iw := internalResponseWriter{ResponseWriterWrapper: &httpserver.ResponseWriterWrapper{ResponseWriter: w}}
 	status, err := i.Next.ServeHTTP(iw, r)
 
 	for c := 0; c < maxRedirectCount && isInternalRedirect(iw); c++ {
@@ -65,21 +67,22 @@ func (i Internal) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error)
 // calls to Write and WriteHeader if the response should be redirected to an
 // internal location.
 type internalResponseWriter struct {
-	http.ResponseWriter
+	*httpserver.ResponseWriterWrapper
 }
 
-// ClearHeader removes all header fields that are already set.
+// ClearHeader removes script headers that would interfere with follow up
+// redirect requests.
 func (w internalResponseWriter) ClearHeader() {
-	for k := range w.Header() {
-		w.Header().Del(k)
-	}
+	w.Header().Del(redirectHeader)
+	w.Header().Del(contentLengthHeader)
+	w.Header().Del(contentEncodingHeader)
 }
 
 // WriteHeader ignores the call if the response should be redirected to an
 // internal location.
 func (w internalResponseWriter) WriteHeader(code int) {
 	if !isInternalRedirect(w) {
-		w.ResponseWriter.WriteHeader(code)
+		w.ResponseWriterWrapper.WriteHeader(code)
 	}
 }
 
@@ -89,5 +92,8 @@ func (w internalResponseWriter) Write(b []byte) (int, error) {
 	if isInternalRedirect(w) {
 		return 0, nil
 	}
-	return w.ResponseWriter.Write(b)
+	return w.ResponseWriterWrapper.Write(b)
 }
+
+// Interface guards
+var _ httpserver.HTTPInterfaces = internalResponseWriter{}

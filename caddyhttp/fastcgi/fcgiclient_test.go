@@ -103,7 +103,7 @@ func (s FastCGIServer) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 }
 
 func sendFcgi(reqType int, fcgiParams map[string]string, data []byte, posts map[string]string, files map[string]string) (content []byte) {
-	fcgi, err := Dial("tcp", ipPort)
+	fcgi, err := DialTimeout("tcp", ipPort, 0)
 	if err != nil {
 		log.Println("err:", err)
 		return
@@ -117,7 +117,7 @@ func sendFcgi(reqType int, fcgiParams map[string]string, data []byte, posts map[
 		if len(data) > 0 {
 			length = len(data)
 			rd := bytes.NewReader(data)
-			resp, err = fcgi.Post(fcgiParams, "", "", rd, rd.Len())
+			resp, err = fcgi.Post(fcgiParams, "", "", rd, int64(rd.Len()))
 		} else if len(posts) > 0 {
 			values := url.Values{}
 			for k, v := range posts {
@@ -155,7 +155,7 @@ func sendFcgi(reqType int, fcgiParams map[string]string, data []byte, posts map[
 	fcgi.Close()
 	time.Sleep(1 * time.Second)
 
-	if bytes.Index(content, []byte("FAILED")) >= 0 {
+	if bytes.Contains(content, []byte("FAILED")) {
 		globalt.Error("Server return failed message")
 	}
 

@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyfile"
 )
 
@@ -50,6 +51,7 @@ func TestStandardizeAddress(t *testing.T) {
 		{`https://host:443/path/foo`, "https", "host", "443", "/path/foo", false},
 		{`host:80/path`, "", "host", "80", "/path", false},
 		{`host:https/path`, "https", "host", "443", "/path", false},
+		{`/path`, "", "", "", "/path", false},
 	} {
 		actual, err := standardizeAddress(test.input)
 
@@ -135,4 +137,99 @@ func TestInspectServerBlocksWithCustomDefaultPort(t *testing.T) {
 	if addr.Port != Port {
 		t.Errorf("Expected the port on the address to be set, but got: %#v", addr)
 	}
+}
+
+func TestInspectServerBlocksCaseInsensitiveKey(t *testing.T) {
+	filename := "Testfile"
+	ctx := newContext().(*httpContext)
+	input := strings.NewReader("localhost {\n}\nLOCALHOST {\n}")
+	sblocks, err := caddyfile.Parse(filename, input, nil)
+	if err != nil {
+		t.Fatalf("Expected no error setting up test, got: %v", err)
+	}
+	_, err = ctx.InspectServerBlocks(filename, sblocks)
+	if err == nil {
+		t.Error("Expected an error because keys on this server type are case-insensitive (so these are duplicated), but didn't get an error")
+	}
+}
+
+func TestGetConfig(t *testing.T) {
+	// case insensitivity for key
+	con := caddy.NewTestController("http", "")
+	con.Key = "foo"
+	cfg := GetConfig(con)
+	con.Key = "FOO"
+	cfg2 := GetConfig(con)
+	if cfg != cfg2 {
+		t.Errorf("Expected same config using same key with different case; got %p and %p", cfg, cfg2)
+	}
+
+	// make sure different key returns different config
+	con.Key = "foobar"
+	cfg3 := GetConfig(con)
+	if cfg == cfg3 {
+		t.Errorf("Expected different configs using when key is different; got %p and %p", cfg, cfg3)
+	}
+}
+
+func TestDirectivesList(t *testing.T) {
+	for i, dir1 := range directives {
+		if dir1 == "" {
+			t.Errorf("directives[%d]: empty directive name", i)
+			continue
+		}
+		if got, want := dir1, strings.ToLower(dir1); got != want {
+			t.Errorf("directives[%d]: %s should be lower-cased", i, dir1)
+			continue
+		}
+		for j := i + 1; j < len(directives); j++ {
+			dir2 := directives[j]
+			if dir1 == dir2 {
+				t.Errorf("directives[%d] (%s) is a duplicate of directives[%d] (%s)",
+					j, dir2, i, dir1)
+			}
+		}
+	}
+}
+
+func TestContextSaveConfig(t *testing.T) {
+	ctx := newContext().(*httpContext)
+	ctx.saveConfig("foo", new(SiteConfig))
+	if _, ok := ctx.keysToSiteConfigs["foo"]; !ok {
+		t.Error("Expected config to be saved, but it wasn't")
+	}
+	if got, want := len(ctx.siteConfigs), 1; got != want {
+		t.Errorf("Expected len(siteConfigs) == %d, but was %d", want, got)
+	}
+	ctx.saveConfig("Foobar", new(SiteConfig))
+	if _, ok := ctx.keysToSiteConfigs["foobar"]; ok {
+		t.Error("Did not expect to get config with case-insensitive key, but did")
+	}
+	if got, want := len(ctx.siteConfigs), 2; got != want {
+		t.Errorf("Expected len(siteConfigs) == %d, but was %d", want, got)
+	}
+}
+
+// Test to make sure we are correctly hiding the Caddyfile
+func TestHideCaddyfile(t *testing.T) {
+	ctx := newContext().(*httpContext)
+	ctx.saveConfig("test", &SiteConfig{
+		Root:            Root,
+		originCaddyfile: "Testfile",
+	})
+	err := hideCaddyfile(ctx)
+	if err != nil {
+		t.Fatalf("Failed to hide Caddyfile, got: %v", err)
+		return
+	}
+	if len(ctx.siteConfigs[0].HiddenFiles) == 0 {
+		t.Fatal("Failed to add Caddyfile to HiddenFiles.")
+		return
+	}
+	for _, file := range ctx.siteConfigs[0].HiddenFiles {
+		if file == "/Testfile" {
+			return
+		}
+	}
+	t.Fatal("Caddyfile missing from HiddenFiles")
 }

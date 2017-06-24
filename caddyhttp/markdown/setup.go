@@ -26,10 +26,9 @@ func setup(c *caddy.Controller) error {
 	cfg := httpserver.GetConfig(c)
 
 	md := Markdown{
-		Root:       cfg.Root,
-		FileSys:    http.Dir(cfg.Root),
-		Configs:    mdconfigs,
-		IndexFiles: []string{"index.md"},
+		Root:    cfg.Root,
+		FileSys: http.Dir(cfg.Root),
+		Configs: mdconfigs,
 	}
 
 	cfg.AddMiddleware(func(next httpserver.Handler) httpserver.Handler {
@@ -48,6 +47,7 @@ func markdownParse(c *caddy.Controller) ([]*Config, error) {
 			Renderer:   blackfriday.HtmlRenderer(0, "", ""),
 			Extensions: make(map[string]struct{}),
 			Template:   GetDefaultTemplate(),
+			IndexFiles: []string{},
 		}
 
 		// Get the path scope
@@ -75,6 +75,10 @@ func markdownParse(c *caddy.Controller) ([]*Config, error) {
 			md.Extensions[".mdown"] = struct{}{}
 		}
 
+		// Make a list of index files to match extensions
+		for ext := range md.Extensions {
+			md.IndexFiles = append(md.IndexFiles, "index"+ext)
+		}
 		mdconfigs = append(mdconfigs, md)
 	}
 

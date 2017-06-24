@@ -4,11 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -20,17 +18,19 @@ import (
 // acmeMu ensures that only one ACME challenge occurs at a time.
 var acmeMu sync.Mutex
 
-// ACMEClient is an acme.Client with custom state attached.
+// ACMEClient is a wrapper over acme.Client with
+// some custom state attached. It is used to obtain,
+// renew, and revoke certificates with ACME.
 type ACMEClient struct {
-	*acme.Client
 	AllowPrompts bool
 	config       *Config
+	acmeClient   *acme.Client
 }
 
 // newACMEClient creates a new ACMEClient given an email and whether
 // prompting the user is allowed. It's a variable so we can mock in tests.
 var newACMEClient = func(config *Config, allowPrompts bool) (*ACMEClient, error) {
-	storage, err := StorageFor(config.CAUrl)
+	storage, err := config.StorageFor(config.CAUrl)
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +58,10 @@ var newACMEClient = func(config *Config, allowPrompts bool) (*ACMEClient, error)
 		caURL = "https://" + caURL
 	}
 	u, err := url.Parse(caURL)
-	if u.Scheme != "https" && !caddy.IsLoopback(u.Host) && !strings.HasPrefix(u.Host, "10.") {
+	if err != nil {
+		return nil, err
+	}
+	if u.Scheme != "https" && !caddy.IsLoopback(u.Host) && !caddy.IsInternal(u.Host) {
 		return nil, fmt.Errorf("%s: insecure CA URL (HTTPS required)", caURL)
 	}
 
@@ -99,26 +102,61 @@ var newACMEClient = func(config *Config, allowPrompts bool) (*ACMEClient, error)
 		}
 	}
 
-	c := &ACMEClient{Client: client, AllowPrompts: allowPrompts, config: config}
+	c := &ACMEClient{
+		AllowPrompts: allowPrompts,
+		config:       config,
+		acmeClient:   client,
+	}
 
 	if config.DNSProvider == "" {
 		// Use HTTP and TLS-SNI challenges by default
 
 		// See if HTTP challenge needs to be proxied
-		if caddy.HasListenerWithAddress(net.JoinHostPort(config.ListenHost, HTTPChallengePort)) {
-			altPort := config.AltHTTPPort
-			if altPort == "" {
-				altPort = DefaultHTTPAlternatePort
-			}
-			c.SetHTTPAddress(net.JoinHostPort(config.ListenHost, altPort))
+		useHTTPPort := HTTPChallengePort
+		if config.AltHTTPPort != "" {
+			useHTTPPort = config.AltHTTPPort
+		}
+		if caddy.HasListenerWithAddress(net.JoinHostPort(config.ListenHost, useHTTPPort)) {
+			useHTTPPort = DefaultHTTPAlternatePort
+		}
+
+		// See which port TLS-SNI challenges will be accomplished on
+		useTLSSNIPort := TLSSNIChallengePort
+		if config.AltTLSSNIPort != "" {
+			useTLSSNIPort = config.AltTLSSNIPort
+		}
+
+		// Always respect user's bind preferences by using config.ListenHost.
+		// NOTE(Sep'16): At time of writing, SetHTTPAddress() and SetTLSAddress()
+		// must be called before SetChallengeProvider(), since they reset the
+		// challenge provider back to the default one!
+		err := c.acmeClient.SetHTTPAddress(net.JoinHostPort(config.ListenHost, useHTTPPort))
+		if err != nil {
+			return nil, err
+		}
+		err = c.acmeClient.SetTLSAddress(net.JoinHostPort(config.ListenHost, useTLSSNIPort))
+		if err != nil {
+			return nil, err
 		}
 
 		// See if TLS challenge needs to be handled by our own facilities
-		if caddy.HasListenerWithAddress(net.JoinHostPort(config.ListenHost, TLSSNIChallengePort)) {
-			c.SetChallengeProvider(acme.TLSSNI01, tlsSniSolver{})
+		if caddy.HasListenerWithAddress(net.JoinHostPort(config.ListenHost, useTLSSNIPort)) {
+			c.acmeClient.SetChallengeProvider(acme.TLSSNI01, tlsSniSolver{})
+		}
+
+		// Disable any challenges that should not be used
+		var disabledChallenges []acme.Challenge
+		if DisableHTTPChallenge {
+			disabledChallenges = append(disabledChallenges, acme.HTTP01)
+		}
+		if DisableTLSSNIChallenge {
+			disabledChallenges = append(disabledChallenges, acme.TLSSNI01)
+		}
+		if len(disabledChallenges) > 0 {
+			c.acmeClient.ExcludeChallenges(disabledChallenges)
 		}
 	} else {
-		// Otherwise, DNS challenge it is
+		// Otherwise, use DNS challenge exclusively
 
 		// Load provider constructor function
 		provFn, ok := dnsProviders[config.DNSProvider]
@@ -126,29 +164,60 @@ var newACMEClient = func(config *Config, allowPrompts bool) (*ACMEClient, error)
 			return nil, errors.New("unknown DNS provider by name '" + config.DNSProvider + "'")
 		}
 
-		// we could pass credentials to create the provider, but for now
-		// we just let the solver package get them from the environment
+		// We could pass credentials to create the provider, but for now
+		// just let the solver package get them from the environment
 		prov, err := provFn()
 		if err != nil {
 			return nil, err
 		}
 
 		// Use the DNS challenge exclusively
-		c.ExcludeChallenges([]acme.Challenge{acme.HTTP01, acme.TLSSNI01})
-		c.SetChallengeProvider(acme.DNS01, prov)
+		c.acmeClient.ExcludeChallenges([]acme.Challenge{acme.HTTP01, acme.TLSSNI01})
+		c.acmeClient.SetChallengeProvider(acme.DNS01, prov)
 	}
 
 	return c, nil
 }
 
-// Obtain obtains a single certificate for names. It stores the certificate
-// on the disk if successful.
-func (c *ACMEClient) Obtain(names []string) error {
+// Obtain obtains a single certificate for name. It stores the certificate
+// on the disk if successful. This function is safe for concurrent use.
+//
+// Right now our storage mechanism only supports one name per certificate,
+// so this function (along with Renew and Revoke) only accepts one domain
+// as input. It can be easily modified to support SAN certificates if our
+// storage mechanism is upgraded later.
+//
+// Callers who have access to a Config value should use the ObtainCert
+// method on that instead of this lower-level method.
+func (c *ACMEClient) Obtain(name string) error {
+	// Get access to ACME storage
+	storage, err := c.config.StorageFor(c.config.CAUrl)
+	if err != nil {
+		return err
+	}
+
+	waiter, err := storage.TryLock(name)
+	if err != nil {
+		return err
+	}
+	if waiter != nil {
+		log.Printf("[INFO] Certificate for %s is already being obtained elsewhere and stored; waiting", name)
+		waiter.Wait()
+		return nil // we assume the process with the lock succeeded, rather than hammering this execution path again
+	}
+	defer func() {
+		if err := storage.Unlock(name); err != nil {
+			log.Printf("[ERROR] Unable to unlock obtain call for %s: %v", name, err)
+		}
+	}()
+
 Attempts:
 	for attempts := 0; attempts < 2; attempts++ {
+		namesObtaining.Add([]string{name})
 		acmeMu.Lock()
-		certificate, failures := c.ObtainCertificate(names, true, nil)
+		certificate, failures := c.acmeClient.ObtainCertificate([]string{name}, true, nil, c.config.MustStaple)
 		acmeMu.Unlock()
+		namesObtaining.Remove([]string{name})
 		if len(failures) > 0 {
 			// Error - try to fix it or report it to the user and abort
 			var errMsg string             // we'll combine all the failures into a single error message
@@ -165,7 +234,7 @@ Attempts:
 						promptedForAgreement = true
 					}
 					if Agreed || !c.AllowPrompts {
-						err := c.AgreeToTOS()
+						err := c.acmeClient.AgreeToTOS()
 						if err != nil {
 							return errors.New("error agreeing to updated terms: " + err.Error())
 						}
@@ -180,13 +249,9 @@ Attempts:
 		}
 
 		// Success - immediately save the certificate resource
-		storage, err := StorageFor(c.config.CAUrl)
-		if err != nil {
-			return err
-		}
 		err = saveCertResource(storage, certificate)
 		if err != nil {
-			return fmt.Errorf("error saving assets for %v: %v", names, err)
+			return fmt.Errorf("error saving assets for %v: %v", name, err)
 		}
 
 		break
@@ -195,54 +260,61 @@ Attempts:
 	return nil
 }
 
-// Renew renews the managed certificate for name. Right now our storage
-// mechanism only supports one name per certificate, so this function only
-// accepts one domain as input. It can be easily modified to support SAN
-// certificates if, one day, they become desperately needed enough that our
-// storage mechanism is upgraded to be more complex to support SAN certs.
+// Renew renews the managed certificate for name. This function is
+// safe for concurrent use.
 //
-// Anyway, this function is safe for concurrent use.
+// Callers who have access to a Config value should use the RenewCert
+// method on that instead of this lower-level method.
 func (c *ACMEClient) Renew(name string) error {
 	// Get access to ACME storage
-	storage, err := StorageFor(c.config.CAUrl)
+	storage, err := c.config.StorageFor(c.config.CAUrl)
 	if err != nil {
 		return err
 	}
 
+	waiter, err := storage.TryLock(name)
+	if err != nil {
+		return err
+	}
+	if waiter != nil {
+		log.Printf("[INFO] Certificate for %s is already being renewed elsewhere and stored; waiting", name)
+		waiter.Wait()
+		return nil // we assume the process with the lock succeeded, rather than hammering this execution path again
+	}
+	defer func() {
+		if err := storage.Unlock(name); err != nil {
+			log.Printf("[ERROR] Unable to unlock renew call for %s: %v", name, err)
+		}
+	}()
+
 	// Prepare for renewal (load PEM cert, key, and meta)
-	certBytes, err := ioutil.ReadFile(storage.SiteCertFile(name))
-	if err != nil {
-		return err
-	}
-	keyBytes, err := ioutil.ReadFile(storage.SiteKeyFile(name))
-	if err != nil {
-		return err
-	}
-	metaBytes, err := ioutil.ReadFile(storage.SiteMetaFile(name))
+	siteData, err := storage.LoadSite(name)
 	if err != nil {
 		return err
 	}
 	var certMeta acme.CertificateResource
-	err = json.Unmarshal(metaBytes, &certMeta)
-	certMeta.Certificate = certBytes
-	certMeta.PrivateKey = keyBytes
+	err = json.Unmarshal(siteData.Meta, &certMeta)
+	certMeta.Certificate = siteData.Cert
+	certMeta.PrivateKey = siteData.Key
 
 	// Perform renewal and retry if necessary, but not too many times.
 	var newCertMeta acme.CertificateResource
 	var success bool
 	for attempts := 0; attempts < 2; attempts++ {
+		namesObtaining.Add([]string{name})
 		acmeMu.Lock()
-		newCertMeta, err = c.RenewCertificate(certMeta, true)
+		newCertMeta, err = c.acmeClient.RenewCertificate(certMeta, true, c.config.MustStaple)
 		acmeMu.Unlock()
+		namesObtaining.Remove([]string{name})
 		if err == nil {
 			success = true
 			break
 		}
 
-		// If the legal terms changed and need to be agreed to again,
-		// we can handle that.
+		// If the legal terms were updated and need to be
+		// agreed to again, we can handle that.
 		if _, ok := err.(acme.TOSError); ok {
-			err := c.AgreeToTOS()
+			err := c.acmeClient.AgreeToTOS()
 			if err != nil {
 				return err
 			}
@@ -265,30 +337,78 @@ func (c *ACMEClient) Renew(name string) error {
 // Revoke revokes the certificate for name and deltes
 // it from storage.
 func (c *ACMEClient) Revoke(name string) error {
-	storage, err := StorageFor(c.config.CAUrl)
+	storage, err := c.config.StorageFor(c.config.CAUrl)
 	if err != nil {
 		return err
 	}
 
-	if !existingCertAndKey(storage, name) {
+	siteExists, err := storage.SiteExists(name)
+	if err != nil {
+		return err
+	}
+
+	if !siteExists {
 		return errors.New("no certificate and key for " + name)
 	}
 
-	certFile := storage.SiteCertFile(name)
-	certBytes, err := ioutil.ReadFile(certFile)
+	siteData, err := storage.LoadSite(name)
 	if err != nil {
 		return err
 	}
 
-	err = c.Client.RevokeCertificate(certBytes)
+	err = c.acmeClient.RevokeCertificate(siteData.Cert)
 	if err != nil {
 		return err
 	}
 
-	err = os.Remove(certFile)
+	err = storage.DeleteSite(name)
 	if err != nil {
 		return errors.New("certificate revoked, but unable to delete certificate file: " + err.Error())
 	}
 
 	return nil
+}
+
+// namesObtaining is a set of hostnames with thread-safe
+// methods. A name should be in this set only while this
+// package is in the process of obtaining a certificate
+// for the name. ACME challenges that are received for
+// names which are not in this set were not initiated by
+// this package and probably should not be handled by
+// this package.
+var namesObtaining = nameCoordinator{names: make(map[string]struct{})}
+
+type nameCoordinator struct {
+	names map[string]struct{}
+	mu    sync.RWMutex
+}
+
+// Add adds names to c. It is safe for concurrent use.
+func (c *nameCoordinator) Add(names []string) {
+	c.mu.Lock()
+	for _, name := range names {
+		c.names[strings.ToLower(name)] = struct{}{}
+	}
+	c.mu.Unlock()
+}
+
+// Remove removes names from c. It is safe for concurrent use.
+func (c *nameCoordinator) Remove(names []string) {
+	c.mu.Lock()
+	for _, name := range names {
+		delete(c.names, strings.ToLower(name))
+	}
+	c.mu.Unlock()
+}
+
+// Has returns true if c has name. It is safe for concurrent use.
+func (c *nameCoordinator) Has(name string) bool {
+	hostname, _, err := net.SplitHostPort(name)
+	if err != nil {
+		hostname = name
+	}
+	c.mu.RLock()
+	_, ok := c.names[strings.ToLower(hostname)]
+	c.mu.RUnlock()
+	return ok
 }

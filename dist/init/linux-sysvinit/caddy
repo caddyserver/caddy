@@ -1,0 +1,93 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          caddy
+# Required-Start:    $local_fs $network $named $time $syslog
+# Required-Stop:     $local_fs $network $named $time $syslog
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: starts the caddy web server
+# Description:       starts caddy using start-stop-daemon
+### END INIT INFO
+
+# Original Author: Frédéric Galusik (fredg)
+# Maintainer: Daniel van Dorp (djvdorp)
+
+DESC="the caddy web server"
+NAME=caddy
+DAEMON=/usr/local/bin/caddy
+
+DAEMONUSER=www-data
+PIDFILE=/var/run/$NAME.pid
+LOGFILE=/var/log/$NAME.log
+CONFIGFILE=/etc/caddy/Caddyfile
+DAEMONOPTS="-agree=true -pidfile=$PIDFILE -log=$LOGFILE -conf=$CONFIGFILE"
+
+USERBIND="setcap cap_net_bind_service=+ep"
+STOP_SCHEDULE="${STOP_SCHEDULE:-QUIT/5/TERM/5/KILL/5}"
+
+test -x $DAEMON || exit 0
+
+# Set the CADDYPATH; Let's Encrypt certificates will be written to this directory.
+export CADDYPATH=/etc/ssl/caddy
+
+# Set the ulimits
+ulimit -n 8192
+
+
+start() {
+    $USERBIND $DAEMON
+    start-stop-daemon --start --quiet --make-pidfile --pidfile $PIDFILE \
+        --background --chuid $DAEMONUSER --oknodo --exec $DAEMON -- $DAEMONOPTS
+}
+
+stop() {
+    start-stop-daemon --stop --quiet --pidfile $PIDFILE --retry=$STOP_SCHEDULE \
+        --name $NAME --oknodo
+    rm -f $PIDFILE
+}
+
+reload() {
+    start-stop-daemon --stop --quiet --signal USR1 --pidfile $PIDFILE \
+        --name $NAME
+}
+
+status() {
+    if [ -f $PIDFILE ]; then
+        if kill -0 $(cat "$PIDFILE"); then
+            echo "$NAME is running"
+        else
+            echo "$NAME process is dead, but pidfile exists"
+        fi
+    else
+        echo "$NAME is not running"
+    fi
+}
+
+case "$1" in
+    start)
+        echo "Starting $NAME"
+        start
+    ;;
+    stop)
+        echo "Stopping $NAME"
+        stop
+    ;;
+    restart)
+        echo "Restarting $NAME"
+        stop
+        start
+    ;;
+    reload)
+        echo "Reloading $NAME configuration"
+        reload
+    ;;
+    status)
+        status
+    ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|reload|status}"
+        exit 2
+    ;;
+esac
+
+exit 0

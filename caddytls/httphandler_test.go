@@ -8,20 +8,24 @@ import (
 )
 
 func TestHTTPChallengeHandlerNoOp(t *testing.T) {
-	// try base paths that aren't handled by this handler
+	namesObtaining.Add([]string{"localhost"})
+
+	// try base paths and host names that aren't
+	// handled by this handler
 	for _, url := range []string{
 		"http://localhost/",
 		"http://localhost/foo.html",
 		"http://localhost/.git",
 		"http://localhost/.well-known/",
 		"http://localhost/.well-known/acme-challenging",
+		"http://other/.well-known/acme-challenge/foo",
 	} {
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
 			t.Fatalf("Could not craft request, got error: %v", err)
 		}
 		rw := httptest.NewRecorder()
-		if HTTPChallengeHandler(rw, req, DefaultHTTPAlternatePort) {
+		if HTTPChallengeHandler(rw, req, "", DefaultHTTPAlternatePort) {
 			t.Errorf("Got true with this URL, but shouldn't have: %s", url)
 		}
 	}
@@ -46,6 +50,9 @@ func TestHTTPChallengeHandlerSuccess(t *testing.T) {
 	}
 	ts.Listener = ln
 
+	// Tell this package that we are handling a challenge for 127.0.0.1
+	namesObtaining.Add([]string{"127.0.0.1"})
+
 	// Start our engines and run the test
 	ts.Start()
 	defer ts.Close()
@@ -55,7 +62,7 @@ func TestHTTPChallengeHandlerSuccess(t *testing.T) {
 	}
 	rw := httptest.NewRecorder()
 
-	HTTPChallengeHandler(rw, req, DefaultHTTPAlternatePort)
+	HTTPChallengeHandler(rw, req, "", DefaultHTTPAlternatePort)
 
 	if !proxySuccess {
 		t.Fatal("Expected request to be proxied, but it wasn't")

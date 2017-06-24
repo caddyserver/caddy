@@ -3,6 +3,7 @@ Thumbs.db
 _gitignore/
 Vagrantfile
 .vagrant/
+/.idea
 
 dist/builds/
 dist/release/
@@ -14,3 +15,5 @@ access.log
 Caddyfile
 
 og_static/
+
+.vscode/

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>Caddy</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/usr/local/bin/caddy</string>
+		<string>-agree</string>
+		<string>-conf</string>
+		<string>/etc/caddy/Caddyfile</string>
+		<string>-root</string>
+		<string>/var/tmp</string>
+	</array>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>CADDYPATH</key>
+		<string>/etc/ssl/caddy</string>
+	</dict>
+
+	<key>UserName</key>
+	<string>root</string>
+	<key>GroupName</key>
+	<string>wheel</string>
+	<key>InitGroups</key>
+	<true/>
+
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<dict>
+		<key>Crashed</key>
+		<true/>
+	</dict>
+
+	<key>SoftResourceLimits</key>
+	<dict>
+		<key>NumberOfFiles</key>
+		<integer>8192</integer>
+	</dict>
+	<key>HardResourceLimits</key>
+	<dict/>
+
+	<key>WorkingDirectory</key>
+	<string>/etc/ssl/caddy</string>
+
+	<key>StandardErrorPath</key>
+	<string>/var/log/caddy/error.log</string>
+	<key>StandardOutPath</key>
+	<string>/var/log/caddy/info.log</string>
+</dict>
+</plist>

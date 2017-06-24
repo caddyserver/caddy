@@ -128,6 +128,12 @@ func TestLexer(t *testing.T) {
 				{Line: 2, Text: "characters"},
 			},
 		},
+		{
+			input: "\xEF\xBB\xBF:8080", // test with leading byte order mark
+			expected: []Token{
+				{Line: 1, Text: ":8080"},
+			},
+		},
 	}
 
 	for i, testCase := range testCases {

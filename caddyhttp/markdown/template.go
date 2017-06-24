@@ -12,29 +12,30 @@ import (
 // Data represents a markdown document.
 type Data struct {
 	httpserver.Context
-	Doc      map[string]string
-	DocFlags map[string]bool
-	Styles   []string
-	Scripts  []string
-	Files    []FileInfo
+	Doc     map[string]interface{}
+	Styles  []string
+	Scripts []string
+	Meta    map[string]string
+	Files   []FileInfo
 }
 
 // Include "overrides" the embedded httpserver.Context's Include()
 // method so that included files have access to d's fields.
 // Note: using {{template 'template-name' .}} instead might be better.
-func (d Data) Include(filename string) (string, error) {
+func (d Data) Include(filename string, args ...interface{}) (string, error) {
+	d.Args = args
 	return httpserver.ContextInclude(filename, d, d.Root)
 }
 
 // execTemplate executes a template given a requestPath, template, and metadata
-func execTemplate(c *Config, mdata metadata.Metadata, files []FileInfo, ctx httpserver.Context) ([]byte, error) {
+func execTemplate(c *Config, mdata metadata.Metadata, meta map[string]string, files []FileInfo, ctx httpserver.Context) ([]byte, error) {
 	mdData := Data{
-		Context:  ctx,
-		Doc:      mdata.Variables,
-		DocFlags: mdata.Flags,
-		Styles:   c.Styles,
-		Scripts:  c.Scripts,
-		Files:    files,
+		Context: ctx,
+		Doc:     mdata.Variables,
+		Styles:  c.Styles,
+		Scripts: c.Scripts,
+		Meta:    meta,
+		Files:   files,
 	}
 
 	b := new(bytes.Buffer)
@@ -76,6 +77,9 @@ const (
 	<head>
 		<title>{{.Doc.title}}</title>
 		<meta charset="utf-8">
+		{{range $key, $val := .Meta}}
+		<meta name="{{$key}}" content="{{$val}}">
+		{{end}}
 		{{- range .Styles}}
 		<link rel="stylesheet" href="{{.}}">
 		{{- end}}

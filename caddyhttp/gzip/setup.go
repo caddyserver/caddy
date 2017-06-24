@@ -1,9 +1,12 @@
 package gzip
 
 import (
+	"compress/gzip"
 	"fmt"
+	"io/ioutil"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
@@ -106,6 +109,8 @@ func gzipParse(c *caddy.Controller) ([]Config, error) {
 			config.RequestFilters = append(config.RequestFilters, DefaultExtFilter())
 		}
 
+		config.ResponseFilters = append(config.ResponseFilters, SkipCompressedFilter{})
+
 		// Response Filters
 		// If min_length is specified, use it.
 		if int64(lengthFilter) != 0 {
@@ -116,4 +121,49 @@ func gzipParse(c *caddy.Controller) ([]Config, error) {
 	}
 
 	return configs, nil
+}
+
+// pool gzip.Writer according to compress level
+// so we can reuse allocations over time
+var (
+	writerPool             = map[int]*sync.Pool{}
+	defaultWriterPoolIndex int
+)
+
+func initWriterPool() {
+	var i int
+	newWriterPool := func(level int) *sync.Pool {
+		return &sync.Pool{
+			New: func() interface{} {
+				w, _ := gzip.NewWriterLevel(ioutil.Discard, level)
+				return w
+			},
+		}
+	}
+	for i = gzip.BestSpeed; i <= gzip.BestCompression; i++ {
+		writerPool[i] = newWriterPool(i)
+	}
+
+	// add default writer pool
+	defaultWriterPoolIndex = i
+	writerPool[defaultWriterPoolIndex] = newWriterPool(gzip.DefaultCompression)
+}
+
+func getWriter(level int) *gzip.Writer {
+	index := defaultWriterPoolIndex
+	if level >= gzip.BestSpeed && level <= gzip.BestCompression {
+		index = level
+	}
+	w := writerPool[index].Get().(*gzip.Writer)
+	w.Reset(ioutil.Discard)
+	return w
+}
+
+func putWriter(level int, w *gzip.Writer) {
+	index := defaultWriterPoolIndex
+	if level >= gzip.BestSpeed && level <= gzip.BestCompression {
+		index = level
+	}
+	w.Close()
+	writerPool[index].Put(w)
 }

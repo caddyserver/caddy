@@ -3,9 +3,7 @@ package log
 
 import (
 	"fmt"
-	"log"
 	"net/http"
-	"os"
 
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
@@ -21,7 +19,7 @@ func init() {
 // Logger is a basic request logging middleware.
 type Logger struct {
 	Next      httpserver.Handler
-	Rules     []Rule
+	Rules     []*Rule
 	ErrorFunc func(http.ResponseWriter, *http.Request, int) // failover error handler
 }
 
@@ -52,8 +50,10 @@ func (l Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 				status = 0
 			}
 
-			// Write log entry
-			rule.Log.Println(rep.Replace(rule.Format))
+			// Write log entries
+			for _, e := range rule.Entries {
+				e.Log.Println(rep.Replace(e.Format))
+			}
 
 			return status, err
 		}
@@ -61,21 +61,23 @@ func (l Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	return l.Next.ServeHTTP(w, r)
 }
 
+// Entry represents a log entry under a path scope
+type Entry struct {
+	Format string
+	Log    *httpserver.Logger
+}
+
 // Rule configures the logging middleware.
 type Rule struct {
-	PathScope  string
-	OutputFile string
-	Format     string
-	Log        *log.Logger
-	Roller     *httpserver.LogRoller
-	file       *os.File // if logging to a file that needs to be closed
+	PathScope string
+	Entries   []*Entry
 }
 
 const (
 	// DefaultLogFilename is the default log filename.
 	DefaultLogFilename = "access.log"
 	// CommonLogFormat is the common log format.
-	CommonLogFormat = `{remote} ` + CommonLogEmptyValue + ` [{when}] "{method} {uri} {proto}" {status} {size}`
+	CommonLogFormat = `{remote} ` + CommonLogEmptyValue + " " + CommonLogEmptyValue + ` [{when}] "{method} {uri} {proto}" {status} {size}`
 	// CommonLogEmptyValue is the common empty log value.
 	CommonLogEmptyValue = "-"
 	// CombinedLogFormat is the combined log format.

@@ -10,7 +10,9 @@ import (
 )
 
 func activateHTTPS(cctx caddy.Context) error {
-	if !caddy.Quiet {
+	operatorPresent := !caddy.Started()
+
+	if !caddy.Quiet && operatorPresent {
 		fmt.Print("Activating privacy features...")
 	}
 
@@ -21,7 +23,10 @@ func activateHTTPS(cctx caddy.Context) error {
 
 	// place certificates and keys on disk
 	for _, c := range ctx.siteConfigs {
-		err := c.TLS.ObtainCert(true)
+		if c.TLS.OnDemand {
+			continue // obtain these certificates on-demand instead
+		}
+		err := c.TLS.ObtainCert(c.TLS.Hostname, operatorPresent)
 		if err != nil {
 			return err
 		}
@@ -44,9 +49,10 @@ func activateHTTPS(cctx caddy.Context) error {
 		return err
 	}
 
-	if !caddy.Quiet {
+	if !caddy.Quiet && operatorPresent {
 		fmt.Println(" done.")
 	}
+
 	return nil
 }
 
@@ -62,21 +68,21 @@ func markQualifiedForAutoHTTPS(configs []*SiteConfig) {
 }
 
 // enableAutoHTTPS configures each config to use TLS according to default settings.
-// It will only change configs that are marked as managed, and assumes that
-// certificates and keys are already on disk. If loadCertificates is true,
-// the certificates will be loaded from disk into the cache for this process
-// to use. If false, TLS will still be enabled and configured with default
-// settings, but no certificates will be parsed loaded into the cache, and
-// the returned error value will always be nil.
+// It will only change configs that are marked as managed but not on-demand, and
+// assumes that certificates and keys are already on disk. If loadCertificates is
+// true, the certificates will be loaded from disk into the cache for this process
+// to use. If false, TLS will still be enabled and configured with default settings,
+// but no certificates will be parsed loaded into the cache, and the returned error
+// value will always be nil.
 func enableAutoHTTPS(configs []*SiteConfig, loadCertificates bool) error {
 	for _, cfg := range configs {
-		if cfg == nil || cfg.TLS == nil || !cfg.TLS.Managed {
+		if cfg == nil || cfg.TLS == nil || !cfg.TLS.Managed || cfg.TLS.OnDemand {
 			continue
 		}
 		cfg.TLS.Enabled = true
 		cfg.Addr.Scheme = "https"
 		if loadCertificates && caddytls.HostQualifies(cfg.Addr.Host) {
-			_, err := caddytls.CacheManagedCertificate(cfg.Addr.Host, cfg.TLS)
+			_, err := cfg.TLS.CacheManagedCertificate(cfg.Addr.Host)
 			if err != nil {
 				return err
 			}
@@ -90,7 +96,7 @@ func enableAutoHTTPS(configs []*SiteConfig, loadCertificates bool) error {
 			cfg.TLS.Enabled &&
 			(!cfg.TLS.Manual || cfg.TLS.OnDemand) &&
 			cfg.Addr.Host != "localhost" {
-			cfg.Addr.Port = "443"
+			cfg.Addr.Port = HTTPSPort
 		}
 	}
 	return nil
@@ -105,8 +111,8 @@ func enableAutoHTTPS(configs []*SiteConfig, loadCertificates bool) error {
 func makePlaintextRedirects(allConfigs []*SiteConfig) []*SiteConfig {
 	for i, cfg := range allConfigs {
 		if cfg.TLS.Managed &&
-			!hostHasOtherPort(allConfigs, i, "80") &&
-			(cfg.Addr.Port == "443" || !hostHasOtherPort(allConfigs, i, "443")) {
+			!hostHasOtherPort(allConfigs, i, HTTPPort) &&
+			(cfg.Addr.Port == HTTPSPort || !hostHasOtherPort(allConfigs, i, HTTPSPort)) {
 			allConfigs = append(allConfigs, redirPlaintextHost(cfg))
 		}
 	}
@@ -132,31 +138,41 @@ func hostHasOtherPort(allConfigs []*SiteConfig, thisConfigIdx int, otherPort str
 // redirPlaintextHost returns a new plaintext HTTP configuration for
 // a virtualHost that simply redirects to cfg, which is assumed to
 // be the HTTPS configuration. The returned configuration is set
-// to listen on port 80. The TLS field of cfg must not be nil.
+// to listen on HTTPPort. The TLS field of cfg must not be nil.
 func redirPlaintextHost(cfg *SiteConfig) *SiteConfig {
 	redirPort := cfg.Addr.Port
-	if redirPort == "443" {
-		// default port is redundant
-		redirPort = ""
+	if redirPort == DefaultHTTPSPort {
+		redirPort = "" // default port is redundant
 	}
 	redirMiddleware := func(next Handler) Handler {
 		return HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
-			toURL := "https://" + r.Host
-			if redirPort != "" {
-				toURL += ":" + redirPort
+			// Construct the URL to which to redirect. Note that the Host in a request might
+			// contain a port, but we just need the hostname; we'll set the port if needed.
+			toURL := "https://"
+			requestHost, _, err := net.SplitHostPort(r.Host)
+			if err != nil {
+				requestHost = r.Host // Host did not contain a port; great
+			}
+			if redirPort == "" {
+				toURL += requestHost
+			} else {
+				toURL += net.JoinHostPort(requestHost, redirPort)
 			}
 			toURL += r.URL.RequestURI()
+
+			w.Header().Set("Connection", "close")
 			http.Redirect(w, r, toURL, http.StatusMovedPermanently)
 			return 0, nil
 		})
 	}
 	host := cfg.Addr.Host
-	port := "80"
+	port := HTTPPort
 	addr := net.JoinHostPort(host, port)
 	return &SiteConfig{
 		Addr:       Address{Original: addr, Host: host, Port: port},
 		ListenHost: cfg.ListenHost,
 		middleware: []Middleware{redirMiddleware},
-		TLS:        &caddytls.Config{AltHTTPPort: cfg.TLS.AltHTTPPort},
+		TLS:        &caddytls.Config{AltHTTPPort: cfg.TLS.AltHTTPPort, AltTLSSNIPort: cfg.TLS.AltTLSSNIPort},
+		Timeouts:   cfg.Timeouts,
 	}
 }

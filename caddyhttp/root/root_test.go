@@ -53,6 +53,9 @@ func TestRoot(t *testing.T) {
 			`root `, true, "", parseErrContent,
 		},
 		{
+			`root /a /b`, true, "", parseErrContent,
+		},
+		{
 			fmt.Sprintf(`root %s`, inaccessiblePath), true, "", unableToAccessErrContent,
 		},
 		{
@@ -68,7 +71,7 @@ func TestRoot(t *testing.T) {
 		cfg := httpserver.GetConfig(c)
 
 		if test.shouldErr && err == nil {
-			t.Errorf("Test %d: Expected error but found %s for input %s", i, err, test.input)
+			t.Errorf("Test %d: Expected error but got nil for input '%s'", i, test.input)
 		}
 
 		if err != nil {
@@ -88,7 +91,7 @@ func TestRoot(t *testing.T) {
 	}
 }
 
-// getTempDirPath returnes the path to the system temp directory. If it does not exists - an error is returned.
+// getTempDirPath returns the path to the system temp directory. If it does not exists - an error is returned.
 func getTempDirPath() (string, error) {
 	tempDir := os.TempDir()
 	_, err := os.Stat(tempDir)
@@ -100,4 +103,40 @@ func getTempDirPath() (string, error) {
 
 func getInaccessiblePath(file string) string {
 	return filepath.Join("C:", "file\x00name") // null byte in filename is not allowed on Windows AND unix
+}
+
+func TestSymlinkRoot(t *testing.T) {
+	origDir, err := ioutil.TempDir("", "root_test")
+	if err != nil {
+		t.Fatalf("BeforeTest: Failed to create temp dir for testing! Error was: %v", err)
+	}
+	defer func() {
+		os.Remove(origDir)
+	}()
+
+	tempDir, err := getTempDirPath()
+	if err != nil {
+		t.Fatalf("BeforeTest: Failed to find an existing directory for testing! Error was: %v", err)
+	}
+	symlinkDir := filepath.Join(tempDir, "symlink")
+
+	err = os.Symlink(origDir, symlinkDir)
+	if err != nil {
+		if strings.Contains(err.Error(), "A required privilege is not held by the client") {
+			t.Skip("BeforeTest:  A required privilege is not held by the client and is required to create a symlink to run this test.")
+		}
+		t.Fatalf("BeforeTest: Cannot create symlink! Error was: %v", err)
+	}
+	defer func() {
+		os.Remove(symlinkDir)
+	}()
+
+	input := fmt.Sprintf(`root %s`, symlinkDir)
+	c := caddy.NewTestController("http", input)
+	err = setupRoot(c)
+	_ = httpserver.GetConfig(c)
+
+	if err != nil {
+		t.Errorf("Test Symlink Root: Expected no error but found one for input %s. Error was: %v", input, err)
+	}
 }

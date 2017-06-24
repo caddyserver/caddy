@@ -1,6 +1,9 @@
 package httpserver
 
 import (
+	"bytes"
+	"io"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -10,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/mholt/caddy"
 )
 
 // requestReplacer is a strings.Replacer which is used to
@@ -19,6 +24,8 @@ var requestReplacer = strings.NewReplacer(
 	"\r", "\\r",
 	"\n", "\\n",
 )
+
+var now = time.Now
 
 // Replacer is a type which can replace placeholder
 // substrings in a string with actual values from a
@@ -37,10 +44,40 @@ type Replacer interface {
 // they will be used to overwrite other replacements
 // if there is a name conflict.
 type replacer struct {
-	replacements       map[string]string
 	customReplacements map[string]string
 	emptyValue         string
 	responseRecorder   *ResponseRecorder
+	request            *http.Request
+	requestBody        *limitWriter
+}
+
+type limitWriter struct {
+	w      bytes.Buffer
+	remain int
+}
+
+func newLimitWriter(max int) *limitWriter {
+	return &limitWriter{
+		w:      bytes.Buffer{},
+		remain: max,
+	}
+}
+
+func (lw *limitWriter) Write(p []byte) (int, error) {
+	// skip if we are full
+	if lw.remain <= 0 {
+		return len(p), nil
+	}
+	if n := len(p); n > lw.remain {
+		p = p[:lw.remain]
+	}
+	n, err := lw.w.Write(p)
+	lw.remain -= n
+	return n, err
+}
+
+func (lw *limitWriter) String() string {
+	return lw.w.String()
 }
 
 // NewReplacer makes a new replacer based on r and rr which
@@ -51,84 +88,32 @@ type replacer struct {
 // emptyValue should be the string that is used in place
 // of empty string (can still be empty string).
 func NewReplacer(r *http.Request, rr *ResponseRecorder, emptyValue string) Replacer {
-	rep := &replacer{
+	rb := newLimitWriter(MaxLogBodySize)
+	if r.Body != nil {
+		r.Body = struct {
+			io.Reader
+			io.Closer
+		}{io.TeeReader(r.Body, rb), io.Closer(r.Body)}
+	}
+	return &replacer{
+		request:            r,
+		requestBody:        rb,
 		responseRecorder:   rr,
 		customReplacements: make(map[string]string),
-		replacements: map[string]string{
-			"{method}": r.Method,
-			"{scheme}": func() string {
-				if r.TLS != nil {
-					return "https"
-				}
-				return "http"
-			}(),
-			"{hostname}": func() string {
-				name, err := os.Hostname()
-				if err != nil {
-					return ""
-				}
-				return name
-			}(),
-			"{host}": r.Host,
-			"{hostonly}": func() string {
-				host, _, err := net.SplitHostPort(r.Host)
-				if err != nil {
-					return r.Host
-				}
-				return host
-			}(),
-			"{path}":          r.URL.Path,
-			"{path_escaped}":  url.QueryEscape(r.URL.Path),
-			"{query}":         r.URL.RawQuery,
-			"{query_escaped}": url.QueryEscape(r.URL.RawQuery),
-			"{fragment}":      r.URL.Fragment,
-			"{proto}":         r.Proto,
-			"{remote}": func() string {
-				if fwdFor := r.Header.Get("X-Forwarded-For"); fwdFor != "" {
-					return fwdFor
-				}
-				host, _, err := net.SplitHostPort(r.RemoteAddr)
-				if err != nil {
-					return r.RemoteAddr
-				}
-				return host
-			}(),
-			"{port}": func() string {
-				_, port, err := net.SplitHostPort(r.RemoteAddr)
-				if err != nil {
-					return ""
-				}
-				return port
-			}(),
-			"{uri}":         r.URL.RequestURI(),
-			"{uri_escaped}": url.QueryEscape(r.URL.RequestURI()),
-			"{when}":        time.Now().Format(timeFormat),
-			"{file}": func() string {
-				_, file := path.Split(r.URL.Path)
-				return file
-			}(),
-			"{dir}": func() string {
-				dir, _ := path.Split(r.URL.Path)
-				return dir
-			}(),
-			"{request}": func() string {
-				dump, err := httputil.DumpRequest(r, false)
-				if err != nil {
-					return ""
-				}
-
-				return requestReplacer.Replace(string(dump))
-			}(),
-		},
-		emptyValue: emptyValue,
+		emptyValue:         emptyValue,
 	}
+}
 
-	// Header placeholders (case-insensitive)
-	for header, values := range r.Header {
-		rep.replacements[headerReplacer+strings.ToLower(header)+"}"] = strings.Join(values, ",")
+func canLogRequest(r *http.Request) bool {
+	if r.Method == "POST" || r.Method == "PUT" {
+		for _, cType := range r.Header[headerContentType] {
+			// the cType could have charset and other info
+			if strings.Contains(cType, contentTypeJSON) || strings.Contains(cType, contentTypeXML) {
+				return true
+			}
+		}
 	}
-
-	return rep
+	return false
 }
 
 // Replace performs a replacement of values on s and returns
@@ -139,44 +124,229 @@ func (r *replacer) Replace(s string) string {
 		return s
 	}
 
-	// Make response placeholders now
-	if r.responseRecorder != nil {
-		r.replacements["{status}"] = strconv.Itoa(r.responseRecorder.status)
-		r.replacements["{size}"] = strconv.Itoa(r.responseRecorder.size)
-		r.replacements["{latency}"] = time.Since(r.responseRecorder.start).String()
-	}
-
-	// Include custom placeholders, overwriting existing ones if necessary
-	for key, val := range r.customReplacements {
-		r.replacements[key] = val
-	}
-
-	// Header replacements - these are case-insensitive, so we can't just use strings.Replace()
-	for strings.Contains(s, headerReplacer) {
-		idxStart := strings.Index(s, headerReplacer)
-		endOffset := idxStart + len(headerReplacer)
-		idxEnd := strings.Index(s[endOffset:], "}")
-		if idxEnd > -1 {
-			placeholder := strings.ToLower(s[idxStart : endOffset+idxEnd+1])
-			replacement := r.replacements[placeholder]
-			if replacement == "" {
-				replacement = r.emptyValue
-			}
-			s = s[:idxStart] + replacement + s[endOffset+idxEnd+1:]
-		} else {
+	result := ""
+	for {
+		idxStart := strings.Index(s, "{")
+		if idxStart == -1 {
+			// no placeholder anymore
 			break
 		}
-	}
-
-	// Regular replacements - these are easier because they're case-sensitive
-	for placeholder, replacement := range r.replacements {
-		if replacement == "" {
-			replacement = r.emptyValue
+		idxEnd := strings.Index(s[idxStart:], "}")
+		if idxEnd == -1 {
+			// unpaired placeholder
+			break
 		}
-		s = strings.Replace(s, placeholder, replacement, -1)
+		idxEnd += idxStart
+
+		// get a replacement
+		placeholder := s[idxStart : idxEnd+1]
+		replacement := r.getSubstitution(placeholder)
+
+		// append prefix + replacement
+		result += s[:idxStart] + replacement
+
+		// strip out scanned parts
+		s = s[idxEnd+1:]
 	}
 
-	return s
+	// append unscanned parts
+	return result + s
+}
+
+func roundDuration(d time.Duration) time.Duration {
+	if d >= time.Millisecond {
+		return round(d, time.Millisecond)
+	} else if d >= time.Microsecond {
+		return round(d, time.Microsecond)
+	}
+
+	return d
+}
+
+// round rounds d to the nearest r
+func round(d, r time.Duration) time.Duration {
+	if r <= 0 {
+		return d
+	}
+	neg := d < 0
+	if neg {
+		d = -d
+	}
+	if m := d % r; m+m < r {
+		d = d - m
+	} else {
+		d = d + r - m
+	}
+	if neg {
+		return -d
+	}
+	return d
+}
+
+// getSubstitution retrieves value from corresponding key
+func (r *replacer) getSubstitution(key string) string {
+	// search custom replacements first
+	if value, ok := r.customReplacements[key]; ok {
+		return value
+	}
+
+	// search request headers then
+	if key[1] == '>' {
+		want := key[2 : len(key)-1]
+		for key, values := range r.request.Header {
+			// Header placeholders (case-insensitive)
+			if strings.EqualFold(key, want) {
+				return strings.Join(values, ",")
+			}
+		}
+	}
+	// next check for cookies
+	if key[1] == '~' {
+		name := key[2 : len(key)-1]
+		if cookie, err := r.request.Cookie(name); err == nil {
+			return cookie.Value
+		}
+	}
+	// next check for query argument
+	if key[1] == '?' {
+		query := r.request.URL.Query()
+		name := key[2 : len(key)-1]
+		return query.Get(name)
+	}
+
+	// search default replacements in the end
+	switch key {
+	case "{method}":
+		return r.request.Method
+	case "{scheme}":
+		if r.request.TLS != nil {
+			return "https"
+		}
+		return "http"
+	case "{hostname}":
+		name, err := os.Hostname()
+		if err != nil {
+			return r.emptyValue
+		}
+		return name
+	case "{host}":
+		return r.request.Host
+	case "{hostonly}":
+		host, _, err := net.SplitHostPort(r.request.Host)
+		if err != nil {
+			return r.request.Host
+		}
+		return host
+	case "{path}":
+		u, _ := r.request.Context().Value(OriginalURLCtxKey).(url.URL)
+		return u.Path
+	case "{path_escaped}":
+		u, _ := r.request.Context().Value(OriginalURLCtxKey).(url.URL)
+		return url.QueryEscape(u.Path)
+	case "{request_id}":
+		reqid, _ := r.request.Context().Value(RequestIDCtxKey).(string)
+		return reqid
+	case "{rewrite_path}":
+		return r.request.URL.Path
+	case "{rewrite_path_escaped}":
+		return url.QueryEscape(r.request.URL.Path)
+	case "{query}":
+		u, _ := r.request.Context().Value(OriginalURLCtxKey).(url.URL)
+		return u.RawQuery
+	case "{query_escaped}":
+		u, _ := r.request.Context().Value(OriginalURLCtxKey).(url.URL)
+		return url.QueryEscape(u.RawQuery)
+	case "{fragment}":
+		u, _ := r.request.Context().Value(OriginalURLCtxKey).(url.URL)
+		return u.Fragment
+	case "{proto}":
+		return r.request.Proto
+	case "{remote}":
+		host, _, err := net.SplitHostPort(r.request.RemoteAddr)
+		if err != nil {
+			return r.request.RemoteAddr
+		}
+		return host
+	case "{port}":
+		_, port, err := net.SplitHostPort(r.request.RemoteAddr)
+		if err != nil {
+			return r.emptyValue
+		}
+		return port
+	case "{uri}":
+		u, _ := r.request.Context().Value(OriginalURLCtxKey).(url.URL)
+		return u.RequestURI()
+	case "{uri_escaped}":
+		u, _ := r.request.Context().Value(OriginalURLCtxKey).(url.URL)
+		return url.QueryEscape(u.RequestURI())
+	case "{rewrite_uri}":
+		return r.request.URL.RequestURI()
+	case "{rewrite_uri_escaped}":
+		return url.QueryEscape(r.request.URL.RequestURI())
+	case "{when}":
+		return now().Format(timeFormat)
+	case "{when_iso}":
+		return now().UTC().Format(timeFormatISOUTC)
+	case "{file}":
+		_, file := path.Split(r.request.URL.Path)
+		return file
+	case "{dir}":
+		dir, _ := path.Split(r.request.URL.Path)
+		return dir
+	case "{request}":
+		dump, err := httputil.DumpRequest(r.request, false)
+		if err != nil {
+			return r.emptyValue
+		}
+		return requestReplacer.Replace(string(dump))
+	case "{request_body}":
+		if !canLogRequest(r.request) {
+			return r.emptyValue
+		}
+		_, err := ioutil.ReadAll(r.request.Body)
+		if err != nil {
+			if err == ErrMaxBytesExceeded {
+				return r.emptyValue
+			}
+		}
+		return requestReplacer.Replace(r.requestBody.String())
+	case "{mitm}":
+		if val, ok := r.request.Context().Value(caddy.CtxKey("mitm")).(bool); ok {
+			if val {
+				return "likely"
+			}
+			return "unlikely"
+		}
+		return "unknown"
+	case "{status}":
+		if r.responseRecorder == nil {
+			return r.emptyValue
+		}
+		return strconv.Itoa(r.responseRecorder.status)
+	case "{size}":
+		if r.responseRecorder == nil {
+			return r.emptyValue
+		}
+		return strconv.Itoa(r.responseRecorder.size)
+	case "{latency}":
+		if r.responseRecorder == nil {
+			return r.emptyValue
+		}
+		return roundDuration(time.Since(r.responseRecorder.start)).String()
+	case "{latency_ms}":
+		if r.responseRecorder == nil {
+			return r.emptyValue
+		}
+		elapsedDuration := time.Since(r.responseRecorder.start)
+		return strconv.FormatInt(convertToMilliseconds(elapsedDuration), 10)
+	}
+
+	return r.emptyValue
+}
+
+//convertToMilliseconds returns the number of milliseconds in the given duration
+func convertToMilliseconds(d time.Duration) int64 {
+	return d.Nanoseconds() / 1e6
 }
 
 // Set sets key to value in the r.customReplacements map.
@@ -185,6 +355,11 @@ func (r *replacer) Set(key, value string) {
 }
 
 const (
-	timeFormat     = "02/Jan/2006:15:04:05 -0700"
-	headerReplacer = "{>"
+	timeFormat        = "02/Jan/2006:15:04:05 -0700"
+	timeFormatISOUTC  = "2006-01-02T15:04:05Z" // ISO 8601 with timezone to be assumed as UTC
+	headerContentType = "Content-Type"
+	contentTypeJSON   = "application/json"
+	contentTypeXML    = "application/xml"
+	// MaxLogBodySize limits the size of logged request's body
+	MaxLogBodySize = 100 * 1024
 )

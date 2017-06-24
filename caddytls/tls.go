@@ -16,11 +16,10 @@ package caddytls
 
 import (
 	"encoding/json"
-	"io/ioutil"
 	"net"
-	"os"
 	"strings"
 
+	"github.com/mholt/caddy"
 	"github.com/xenolf/lego/acme"
 )
 
@@ -47,53 +46,21 @@ func HostQualifies(hostname string) bool {
 		net.ParseIP(hostname) == nil
 }
 
-// existingCertAndKey returns true if the hostname has
-// a certificate and private key in storage already under
-// the storage provided, otherwise it returns false.
-func existingCertAndKey(storage Storage, hostname string) bool {
-	_, err := os.Stat(storage.SiteCertFile(hostname))
-	if err != nil {
-		return false
-	}
-	_, err = os.Stat(storage.SiteKeyFile(hostname))
-	if err != nil {
-		return false
-	}
-	return true
-}
-
 // saveCertResource saves the certificate resource to disk. This
 // includes the certificate file itself, the private key, and the
 // metadata file.
 func saveCertResource(storage Storage, cert acme.CertificateResource) error {
-	err := os.MkdirAll(storage.Site(cert.Domain), 0700)
-	if err != nil {
-		return err
+	// Save cert, private key, and metadata
+	siteData := &SiteData{
+		Cert: cert.Certificate,
+		Key:  cert.PrivateKey,
 	}
-
-	// Save cert
-	err = ioutil.WriteFile(storage.SiteCertFile(cert.Domain), cert.Certificate, 0600)
-	if err != nil {
-		return err
+	var err error
+	siteData.Meta, err = json.MarshalIndent(&cert, "", "\t")
+	if err == nil {
+		err = storage.StoreSite(cert.Domain, siteData)
 	}
-
-	// Save private key
-	err = ioutil.WriteFile(storage.SiteKeyFile(cert.Domain), cert.PrivateKey, 0600)
-	if err != nil {
-		return err
-	}
-
-	// Save cert metadata
-	jsonBytes, err := json.MarshalIndent(&cert, "", "\t")
-	if err != nil {
-		return err
-	}
-	err = ioutil.WriteFile(storage.SiteMetaFile(cert.Domain), jsonBytes, 0600)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
 // Revoke revokes the certificate for host via ACME protocol.
@@ -173,9 +140,18 @@ func QualifiesForManagedTLS(c ConfigHolder) bool {
 		(HostQualifies(c.Host()) || tlsConfig.OnDemand)
 }
 
+// ChallengeProvider defines an own type that should be used in Caddy plugins
+// over acme.ChallengeProvider. Using acme.ChallengeProvider causes version mismatches
+// with vendored dependencies (see https://github.com/mattfarina/golang-broken-vendor)
+//
+// acme.ChallengeProvider is an interface that allows the implementation of custom
+// challenge providers. For more details, see:
+// https://godoc.org/github.com/xenolf/lego/acme#ChallengeProvider
+type ChallengeProvider acme.ChallengeProvider
+
 // DNSProviderConstructor is a function that takes credentials and
 // returns a type that can solve the ACME DNS challenges.
-type DNSProviderConstructor func(credentials ...string) (acme.ChallengeProvider, error)
+type DNSProviderConstructor func(credentials ...string) (ChallengeProvider, error)
 
 // dnsProviders is the list of DNS providers that have been plugged in.
 var dnsProviders = make(map[string]DNSProviderConstructor)
@@ -183,6 +159,7 @@ var dnsProviders = make(map[string]DNSProviderConstructor)
 // RegisterDNSProvider registers provider by name for solving the ACME DNS challenge.
 func RegisterDNSProvider(name string, provider DNSProviderConstructor) {
 	dnsProviders[name] = provider
+	caddy.RegisterPlugin("tls.dns."+name, caddy.Plugin{})
 }
 
 var (
@@ -199,4 +176,18 @@ var (
 	// DefaultKeyType is used as the type of key for new certificates
 	// when no other key type is specified.
 	DefaultKeyType = acme.RSA2048
+
+	// DisableHTTPChallenge will disable all HTTP challenges.
+	DisableHTTPChallenge bool
+
+	// DisableTLSSNIChallenge will disable all TLS-SNI challenges.
+	DisableTLSSNIChallenge bool
 )
+
+var storageProviders = make(map[string]StorageConstructor)
+
+// RegisterStorageProvider registers provider by name for storing tls data
+func RegisterStorageProvider(name string, provider StorageConstructor) {
+	storageProviders[name] = provider
+	caddy.RegisterPlugin("tls.storage."+name, caddy.Plugin{})
+}

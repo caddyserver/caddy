@@ -1,6 +1,7 @@
 package browse
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/mholt/caddy/caddyhttp/httpserver"
+	"github.com/mholt/caddy/caddyhttp/staticfiles"
 )
 
 func TestSort(t *testing.T) {
@@ -68,6 +70,13 @@ func TestSort(t *testing.T) {
 		t.Errorf("The listing isn't time sorted: %v", listing.Items)
 	}
 
+	// sort by name dir first
+	listing.Sort = "namedirfirst"
+	listing.applySort()
+	if !sort.IsSorted(byNameDirFirst(listing)) {
+		t.Errorf("The listing isn't namedirfirst sorted: %v", listing.Items)
+	}
+
 	// reverse by name
 	listing.Sort = "name"
 	listing.Order = "desc"
@@ -91,12 +100,20 @@ func TestSort(t *testing.T) {
 	if !isReversed(byTime(listing)) {
 		t.Errorf("The listing isn't reversed by time: %v", listing.Items)
 	}
+
+	// reverse by name dir first
+	listing.Sort = "namedirfirst"
+	listing.Order = "desc"
+	listing.applySort()
+	if !isReversed(byNameDirFirst(listing)) {
+		t.Errorf("The listing isn't reversed by namedirfirst: %v", listing.Items)
+	}
 }
 
 func TestBrowseHTTPMethods(t *testing.T) {
 	tmpl, err := template.ParseFiles("testdata/photos.tpl")
 	if err != nil {
-		t.Fatalf("An error occured while parsing the template: %v", err)
+		t.Fatalf("An error occurred while parsing the template: %v", err)
 	}
 
 	b := Browse{
@@ -106,8 +123,10 @@ func TestBrowseHTTPMethods(t *testing.T) {
 		Configs: []Config{
 			{
 				PathScope: "/photos",
-				Root:      http.Dir("./testdata"),
-				Template:  tmpl,
+				Fs: staticfiles.FileServer{
+					Root: http.Dir("./testdata"),
+				},
+				Template: tmpl,
 			},
 		},
 	}
@@ -123,6 +142,8 @@ func TestBrowseHTTPMethods(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Test: Could not create HTTP request: %v", err)
 		}
+		ctx := context.WithValue(req.Context(), httpserver.OriginalURLCtxKey, *req.URL)
+		req = req.WithContext(ctx)
 
 		code, _ := b.ServeHTTP(rec, req)
 		if code != expected {
@@ -134,7 +155,7 @@ func TestBrowseHTTPMethods(t *testing.T) {
 func TestBrowseTemplate(t *testing.T) {
 	tmpl, err := template.ParseFiles("testdata/photos.tpl")
 	if err != nil {
-		t.Fatalf("An error occured while parsing the template: %v", err)
+		t.Fatalf("An error occurred while parsing the template: %v", err)
 	}
 
 	b := Browse{
@@ -145,8 +166,11 @@ func TestBrowseTemplate(t *testing.T) {
 		Configs: []Config{
 			{
 				PathScope: "/photos",
-				Root:      http.Dir("./testdata"),
-				Template:  tmpl,
+				Fs: staticfiles.FileServer{
+					Root: http.Dir("./testdata"),
+					Hide: []string{"photos/hidden.html"},
+				},
+				Template: tmpl,
 			},
 		},
 	}
@@ -155,6 +179,8 @@ func TestBrowseTemplate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Test: Could not create HTTP request: %v", err)
 	}
+	ctx := context.WithValue(req.Context(), httpserver.OriginalURLCtxKey, *req.URL)
+	req = req.WithContext(ctx)
 
 	rec := httptest.NewRecorder()
 
@@ -174,6 +200,8 @@ func TestBrowseTemplate(t *testing.T) {
 
 <h1>/photos/</h1>
 
+<a href="./test1/">test1</a><br>
+
 <a href="./test.html">test.html</a><br>
 
 <a href="./test2.html">test2.html</a><br>
@@ -185,7 +213,7 @@ func TestBrowseTemplate(t *testing.T) {
 `
 
 	if respBody != expectedBody {
-		t.Fatalf("Expected body: %v got: %v", expectedBody, respBody)
+		t.Fatalf("Expected body: '%v' got: '%v'", expectedBody, respBody)
 	}
 
 }
@@ -199,7 +227,9 @@ func TestBrowseJson(t *testing.T) {
 		Configs: []Config{
 			{
 				PathScope: "/photos/",
-				Root:      http.Dir("./testdata"),
+				Fs: staticfiles.FileServer{
+					Root: http.Dir("./testdata"),
+				},
 			},
 		},
 	}
@@ -246,6 +276,9 @@ func TestBrowseJson(t *testing.T) {
 			Mode:    f.Mode(),
 		})
 	}
+
+	// Test that sort=name returns correct listing.
+
 	listing := Listing{Items: fileinfos} // this listing will be used for validation inside the tests
 
 	tests := []struct {
@@ -258,50 +291,53 @@ func TestBrowseJson(t *testing.T) {
 	}{
 		//test case 1: testing for default sort and  order and without the limit parameter, default sort is by name and the default order is ascending
 		//without the limit query entire listing will be produced
-		{"/", "", "", -1, false, listing.Items},
+		{"/?sort=name", "", "", -1, false, listing.Items},
 		//test case 2: limit is set to 1, orderBy and sortBy is default
-		{"/?limit=1", "", "", 1, false, listing.Items[:1]},
+		{"/?limit=1&sort=name", "", "", 1, false, listing.Items[:1]},
 		//test case 3 : if the listing request is bigger than total size of listing then it should return everything
-		{"/?limit=100000000", "", "", 100000000, false, listing.Items},
+		{"/?limit=100000000&sort=name", "", "", 100000000, false, listing.Items},
 		//test case 4 : testing for negative limit
-		{"/?limit=-1", "", "", -1, false, listing.Items},
+		{"/?limit=-1&sort=name", "", "", -1, false, listing.Items},
 		//test case 5 : testing with limit set to -1 and order set to descending
-		{"/?limit=-1&order=desc", "", "desc", -1, false, listing.Items},
+		{"/?limit=-1&order=desc&sort=name", "", "desc", -1, false, listing.Items},
 		//test case 6 : testing with limit set to 2 and order set to descending
-		{"/?limit=2&order=desc", "", "desc", 2, false, listing.Items},
+		{"/?limit=2&order=desc&sort=name", "", "desc", 2, false, listing.Items},
 		//test case 7 : testing with limit set to 3 and order set to descending
-		{"/?limit=3&order=desc", "", "desc", 3, false, listing.Items},
+		{"/?limit=3&order=desc&sort=name", "", "desc", 3, false, listing.Items},
 		//test case 8 : testing with limit set to 3 and order set to ascending
-		{"/?limit=3&order=asc", "", "asc", 3, false, listing.Items},
+		{"/?limit=3&order=asc&sort=name", "", "asc", 3, false, listing.Items},
 		//test case 9 : testing with limit set to 1111111 and order set to ascending
-		{"/?limit=1111111&order=asc", "", "asc", 1111111, false, listing.Items},
+		{"/?limit=1111111&order=asc&sort=name", "", "asc", 1111111, false, listing.Items},
 		//test case 10 : testing with limit set to default and order set to ascending and sorting by size
-		{"/?order=asc&sort=size", "size", "asc", -1, false, listing.Items},
+		{"/?order=asc&sort=size&sort=name", "size", "asc", -1, false, listing.Items},
 		//test case 11 : testing with limit set to default and order set to ascending and sorting by last modified
-		{"/?order=asc&sort=time", "time", "asc", -1, false, listing.Items},
+		{"/?order=asc&sort=time&sort=name", "time", "asc", -1, false, listing.Items},
 		//test case 12 : testing with limit set to 1 and order set to ascending and sorting by last modified
-		{"/?order=asc&sort=time&limit=1", "time", "asc", 1, false, listing.Items},
+		{"/?order=asc&sort=time&limit=1&sort=name", "time", "asc", 1, false, listing.Items},
 		//test case 13 : testing with limit set to -100 and order set to ascending and sorting by last modified
-		{"/?order=asc&sort=time&limit=-100", "time", "asc", -100, false, listing.Items},
+		{"/?order=asc&sort=time&limit=-100&sort=name", "time", "asc", -100, false, listing.Items},
 		//test case 14 : testing with limit set to -100 and order set to ascending and sorting by size
-		{"/?order=asc&sort=size&limit=-100", "size", "asc", -100, false, listing.Items},
+		{"/?order=asc&sort=size&limit=-100&sort=name", "size", "asc", -100, false, listing.Items},
 	}
 
 	for i, test := range tests {
 		var marsh []byte
 		req, err := http.NewRequest("GET", "/photos"+test.QueryURL, nil)
-
-		if err == nil && test.shouldErr {
-			t.Errorf("Test %d didn't error, but it should have", i)
-		} else if err != nil && !test.shouldErr {
-			t.Errorf("Test %d errored, but it shouldn't have; got '%v'", i, err)
+		if err != nil && !test.shouldErr {
+			t.Errorf("Test %d errored when making request, but it shouldn't have; got '%v'", i, err)
 		}
+		ctx := context.WithValue(req.Context(), httpserver.OriginalURLCtxKey, *req.URL)
+		req = req.WithContext(ctx)
 
 		req.Header.Set("Accept", "application/json")
 		rec := httptest.NewRecorder()
 
 		code, err := b.ServeHTTP(rec, req)
-
+		if err == nil && test.shouldErr {
+			t.Errorf("Test %d didn't error, but it should have", i)
+		} else if err != nil && !test.shouldErr {
+			t.Errorf("Test %d errored, but it shouldn't have; got '%v'", i, err)
+		}
 		if code != http.StatusOK {
 			t.Fatalf("In test %d: Wrong status, expected %d, got %d", i, http.StatusOK, code)
 		}
@@ -352,4 +388,68 @@ func isReversed(data sort.Interface) bool {
 		}
 	}
 	return true
+}
+
+func TestBrowseRedirect(t *testing.T) {
+	testCases := []struct {
+		url        string
+		statusCode int
+		returnCode int
+		location   string
+	}{
+		{
+			"http://www.example.com/photos",
+			http.StatusMovedPermanently,
+			http.StatusMovedPermanently,
+			"http://www.example.com/photos/",
+		},
+		{
+			"/photos",
+			http.StatusMovedPermanently,
+			http.StatusMovedPermanently,
+			"/photos/",
+		},
+	}
+
+	for i, tc := range testCases {
+		b := Browse{
+			Next: httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
+				t.Fatalf("Test %d - Next shouldn't be called", i)
+				return 0, nil
+			}),
+			Configs: []Config{
+				{
+					PathScope: "/photos",
+					Fs: staticfiles.FileServer{
+						Root: http.Dir("./testdata"),
+					},
+				},
+			},
+		}
+
+		req, err := http.NewRequest("GET", tc.url, nil)
+		if err != nil {
+			t.Fatalf("Test %d - could not create HTTP request: %v", i, err)
+		}
+		ctx := context.WithValue(req.Context(), httpserver.OriginalURLCtxKey, *req.URL)
+		req = req.WithContext(ctx)
+
+		rec := httptest.NewRecorder()
+
+		returnCode, _ := b.ServeHTTP(rec, req)
+		if returnCode != tc.returnCode {
+			t.Fatalf("Test %d - wrong return code, expected %d, got %d",
+				i, tc.returnCode, returnCode)
+		}
+
+		if got := rec.Code; got != tc.statusCode {
+			t.Errorf("Test %d - wrong status, expected %d, got %d",
+				i, tc.statusCode, got)
+		}
+
+		if got := rec.Header().Get("Location"); got != tc.location {
+			t.Errorf("Test %d - wrong Location header, expected %s, got %s",
+				i, tc.location, got)
+		}
+	}
 }

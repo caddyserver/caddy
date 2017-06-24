@@ -111,6 +111,42 @@ func TestSetup(t *testing.T) {
 				"http://localhost:8085": {},
 			},
 		},
+		// test #10 test hyphen without port range
+		{
+			"proxy / http://localhost:8001/a--b",
+			false,
+			map[string]struct{}{
+				"http://localhost:8001/a--b": {},
+			},
+		},
+		// test #11 test hyphen with port range
+		{
+			"proxy / http://localhost:8001-8005/a--b",
+			false,
+			map[string]struct{}{
+				"http://localhost:8001/a--b": {},
+				"http://localhost:8002/a--b": {},
+				"http://localhost:8003/a--b": {},
+				"http://localhost:8004/a--b": {},
+				"http://localhost:8005/a--b": {},
+			},
+		},
+		// test #12 test value is optional when remove upstream header
+		{
+			"proxy / localhost:1984 {\n header_upstream -server \n}",
+			false,
+			map[string]struct{}{
+				"http://localhost:1984": {},
+			},
+		},
+		// test #13 test value is optional when remove downstream header
+		{
+			"proxy / localhost:1984 {\n header_downstream -server \n}",
+			false,
+			map[string]struct{}{
+				"http://localhost:1984": {},
+			},
+		},
 	} {
 		c := caddy.NewTestController("http", test.input)
 		err := setup(c)

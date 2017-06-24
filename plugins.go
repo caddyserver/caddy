@@ -2,6 +2,7 @@ package caddy
 
 import (
 	"fmt"
+	"log"
 	"net"
 	"sort"
 
@@ -20,6 +21,10 @@ var (
 	// irrelevant, the key is empty string (""). But all plugins
 	// must have a name.
 	plugins = make(map[string]map[string]Plugin)
+
+	// eventHooks is a map of hook name to Hook. All hooks plugins
+	// must have a name.
+	eventHooks = make(map[string]EventHook)
 
 	// parsingCallbacks maps server type to map of directive
 	// to list of callback functions. These aren't really
@@ -48,6 +53,14 @@ func DescribePlugins() string {
 		str += "  " + defaultCaddyfileLoader.name + "\n"
 	}
 
+	if len(eventHooks) > 0 {
+		// List the event hook plugins
+		str += "\nEvent hook plugins:\n"
+		for hookPlugin := range eventHooks {
+			str += "  hook." + hookPlugin + "\n"
+		}
+	}
+
 	// Let's alphabetize the rest of these...
 	var others []string
 	for stype, stypePlugins := range plugins {
@@ -60,6 +73,7 @@ func DescribePlugins() string {
 			others = append(others, s)
 		}
 	}
+
 	sort.Strings(others)
 	str += "\nOther plugins:\n"
 	for _, name := range others {
@@ -79,13 +93,32 @@ func ValidDirectives(serverType string) []string {
 	if err != nil {
 		return nil
 	}
-	return stype.Directives
+	return stype.Directives()
 }
 
-// serverListener pairs a server to its listener.
-type serverListener struct {
+// ServerListener pairs a server to its listener and/or packetconn.
+type ServerListener struct {
 	server   Server
 	listener net.Listener
+	packet   net.PacketConn
+}
+
+// LocalAddr returns the local network address of the packetconn. It returns
+// nil when it is not set.
+func (s ServerListener) LocalAddr() net.Addr {
+	if s.packet == nil {
+		return nil
+	}
+	return s.packet.LocalAddr()
+}
+
+// Addr returns the listener's network address. It returns nil when it is
+// not set.
+func (s ServerListener) Addr() net.Addr {
+	if s.listener == nil {
+		return nil
+	}
+	return s.listener.Addr()
 }
 
 // Context is a type which carries a server type through
@@ -126,10 +159,11 @@ func RegisterServerType(typeName string, srv ServerType) {
 
 // ServerType contains information about a server type.
 type ServerType struct {
-	// List of directives, in execution order, that are
-	// valid for this server type. Directives should be
-	// one word if possible and lower-cased.
-	Directives []string
+	// Function that returns the list of directives, in
+	// execution order, that are valid for this server
+	// type. Directives should be one word if possible
+	// and lower-cased.
+	Directives func() []string
 
 	// DefaultInput returns a default config input if none
 	// is otherwise loaded. This is optional, but highly
@@ -178,6 +212,43 @@ func RegisterPlugin(name string, plugin Plugin) {
 		panic("plugin named " + name + " already registered for server type " + plugin.ServerType)
 	}
 	plugins[plugin.ServerType][name] = plugin
+}
+
+// EventName represents the name of an event used with event hooks.
+type EventName string
+
+// Define the event names for the startup and shutdown events
+const (
+	StartupEvent  EventName = "startup"
+	ShutdownEvent EventName = "shutdown"
+)
+
+// EventHook is a type which holds information about a startup hook plugin.
+type EventHook func(eventType EventName, eventInfo interface{}) error
+
+// RegisterEventHook plugs in hook. All the hooks should register themselves
+// and they must have a name.
+func RegisterEventHook(name string, hook EventHook) {
+	if name == "" {
+		panic("event hook must have a name")
+	}
+	if _, dup := eventHooks[name]; dup {
+		panic("hook named " + name + " already registered")
+	}
+	eventHooks[name] = hook
+}
+
+// EmitEvent executes the different hooks passing the EventType as an
+// argument. This is a blocking function. Hook developers should
+// use 'go' keyword if they don't want to block Caddy.
+func EmitEvent(event EventName, info interface{}) {
+	for name, hook := range eventHooks {
+		err := hook(event, info)
+
+		if err != nil {
+			log.Printf("error on '%s' hook: %v", name, err)
+		}
+	}
 }
 
 // ParsingCallback is a function that is called after
@@ -270,12 +341,13 @@ func loadCaddyfileInput(serverType string) (Input, error) {
 	var loadedBy string
 	var caddyfileToUse Input
 	for _, l := range caddyfileLoaders {
-		if cdyfile, err := l.loader.Load(serverType); cdyfile != nil {
+		cdyfile, err := l.loader.Load(serverType)
+		if err != nil {
+			return nil, fmt.Errorf("loading Caddyfile via %s: %v", l.name, err)
+		}
+		if cdyfile != nil {
 			if caddyfileToUse != nil {
 				return nil, fmt.Errorf("Caddyfile loaded multiple times; first by %s, then by %s", loadedBy, l.name)
-			}
-			if err != nil {
-				return nil, err
 			}
 			loaderUsed = l
 			caddyfileToUse = cdyfile

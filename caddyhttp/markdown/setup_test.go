@@ -130,11 +130,10 @@ func equalTemplates(i, j *template.Template) (bool, string, string) {
 	}
 
 	md := Data{
-		Context:  ctx,
-		Doc:      make(map[string]string),
-		DocFlags: make(map[string]bool),
-		Styles:   []string{"style1"},
-		Scripts:  []string{"js1"},
+		Context: ctx,
+		Doc:     make(map[string]interface{}),
+		Styles:  []string{"style1"},
+		Scripts: []string{"js1"},
 	}
 	md.Doc["title"] = "some title"
 	md.Doc["body"] = "some body"

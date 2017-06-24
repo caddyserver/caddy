@@ -9,42 +9,24 @@ import (
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
-	"os"
-	"runtime"
 	"testing"
 	"time"
 )
 
 func TestSaveAndLoadRSAPrivateKey(t *testing.T) {
-	keyFile := "test.key"
-	defer os.Remove(keyFile)
-
 	privateKey, err := rsa.GenerateKey(rand.Reader, 128) // make tests faster; small key size OK for testing
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// test save
-	err = savePrivateKey(privateKey, keyFile)
+	savedBytes, err := savePrivateKey(privateKey)
 	if err != nil {
 		t.Fatal("error saving private key:", err)
 	}
 
-	// it doesn't make sense to test file permission on windows
-	if runtime.GOOS != "windows" {
-		// get info of the key file
-		info, err := os.Stat(keyFile)
-		if err != nil {
-			t.Fatal("error stating private key:", err)
-		}
-		// verify permission of key file is correct
-		if info.Mode().Perm() != 0600 {
-			t.Error("Expected key file to have permission 0600, but it wasn't")
-		}
-	}
-
 	// test load
-	loadedKey, err := loadPrivateKey(keyFile)
+	loadedKey, err := loadPrivateKey(savedBytes)
 	if err != nil {
 		t.Error("error loading private key:", err)
 	}
@@ -56,35 +38,19 @@ func TestSaveAndLoadRSAPrivateKey(t *testing.T) {
 }
 
 func TestSaveAndLoadECCPrivateKey(t *testing.T) {
-	keyFile := "test.key"
-	defer os.Remove(keyFile)
-
 	privateKey, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// test save
-	err = savePrivateKey(privateKey, keyFile)
+	savedBytes, err := savePrivateKey(privateKey)
 	if err != nil {
 		t.Fatal("error saving private key:", err)
 	}
 
-	// it doesn't make sense to test file permission on windows
-	if runtime.GOOS != "windows" {
-		// get info of the key file
-		info, err := os.Stat(keyFile)
-		if err != nil {
-			t.Fatal("error stating private key:", err)
-		}
-		// verify permission of key file is correct
-		if info.Mode().Perm() != 0600 {
-			t.Error("Expected key file to have permission 0600, but it wasn't")
-		}
-	}
-
 	// test load
-	loadedKey, err := loadPrivateKey(keyFile)
+	loadedKey, err := loadPrivateKey(savedBytes)
 	if err != nil {
 		t.Error("error loading private key:", err)
 	}
@@ -113,19 +79,22 @@ func PrivateKeyBytes(key crypto.PrivateKey) []byte {
 }
 
 func TestStandaloneTLSTicketKeyRotation(t *testing.T) {
+	type syncPkt struct {
+		ticketKey [32]byte
+		keysInUse int
+	}
+
 	tlsGovChan := make(chan struct{})
 	defer close(tlsGovChan)
-	callSync := make(chan bool, 1)
+	callSync := make(chan *syncPkt, 1)
 	defer close(callSync)
 
 	oldHook := setSessionTicketKeysTestHook
 	defer func() {
 		setSessionTicketKeysTestHook = oldHook
 	}()
-	var keysInUse [][32]byte
 	setSessionTicketKeysTestHook = func(keys [][32]byte) [][32]byte {
-		keysInUse = keys
-		callSync <- true
+		callSync <- &syncPkt{keys[0], len(keys)}
 		return keys
 	}
 
@@ -138,20 +107,20 @@ func TestStandaloneTLSTicketKeyRotation(t *testing.T) {
 	var lastTicketKey [32]byte
 	for {
 		select {
-		case <-callSync:
-			if lastTicketKey == keysInUse[0] {
+		case pkt := <-callSync:
+			if lastTicketKey == pkt.ticketKey {
 				close(tlsGovChan)
 				t.Errorf("The same TLS ticket key has been used again (not rotated): %x.", lastTicketKey)
 				return
 			}
-			lastTicketKey = keysInUse[0]
+			lastTicketKey = pkt.ticketKey
 			rounds++
-			if rounds <= NumTickets && len(keysInUse) != rounds {
+			if rounds <= NumTickets && pkt.keysInUse != rounds {
 				close(tlsGovChan)
-				t.Errorf("Expected TLS ticket keys in use: %d; Got instead: %d.", rounds, len(keysInUse))
+				t.Errorf("Expected TLS ticket keys in use: %d; Got instead: %d.", rounds, pkt.keysInUse)
 				return
 			}
-			if c.SessionTicketsDisabled == true {
+			if c.SessionTicketsDisabled {
 				t.Error("Session tickets have been disabled unexpectedly.")
 				return
 			}

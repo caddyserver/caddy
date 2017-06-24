@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/xenolf/lego/acme"
 	"golang.org/x/crypto/ocsp"
 )
 
@@ -90,13 +89,17 @@ func getCertificate(name string) (cert Certificate, matched, defaulted bool) {
 // cache, flagging it as Managed and, if onDemand is true, as "OnDemand"
 // (meaning that it was obtained or loaded during a TLS handshake).
 //
-// This function is safe for concurrent use.
-func CacheManagedCertificate(domain string, cfg *Config) (Certificate, error) {
-	storage, err := StorageFor(cfg.CAUrl)
+// This method is safe for concurrent use.
+func (cfg *Config) CacheManagedCertificate(domain string) (Certificate, error) {
+	storage, err := cfg.StorageFor(cfg.CAUrl)
 	if err != nil {
 		return Certificate{}, err
 	}
-	cert, err := makeCertificateFromDisk(storage.SiteCertFile(domain), storage.SiteKeyFile(domain))
+	siteData, err := storage.LoadSite(domain)
+	if err != nil {
+		return Certificate{}, err
+	}
+	cert, err := makeCertificate(siteData.Cert, siteData.Key)
 	if err != nil {
 		return cert, err
 	}
@@ -164,12 +167,28 @@ func makeCertificate(certPEMBlock, keyPEMBlock []byte) (Certificate, error) {
 	if len(tlsCert.Certificate) == 0 {
 		return cert, errors.New("certificate is empty")
 	}
+	cert.Certificate = tlsCert
 
-	// Parse leaf certificate and extract relevant metadata
+	// Parse leaf certificate, extract relevant metadata, and staple OCSP
 	leaf, err := x509.ParseCertificate(tlsCert.Certificate[0])
 	if err != nil {
 		return cert, err
 	}
+	err = fillCertFromLeaf(&cert, leaf)
+	if err != nil {
+		return cert, err
+	}
+	err = stapleOCSP(&cert, certPEMBlock)
+	if err != nil {
+		log.Printf("[WARNING] Stapling OCSP: %v", err)
+	}
+
+	return cert, nil
+}
+
+// fillCertFromLeaf populates cert.Names and cert.NotAfter
+// using data in leaf.
+func fillCertFromLeaf(cert *Certificate, leaf *x509.Certificate) error {
 	if leaf.Subject.CommonName != "" {
 		cert.Names = []string{strings.ToLower(leaf.Subject.CommonName)}
 	}
@@ -178,21 +197,21 @@ func makeCertificate(certPEMBlock, keyPEMBlock []byte) (Certificate, error) {
 			cert.Names = append(cert.Names, strings.ToLower(name))
 		}
 	}
-	cert.NotAfter = leaf.NotAfter
-
-	// Staple OCSP
-	ocspBytes, ocspResp, err := acme.GetOCSPForCert(certPEMBlock)
-	if err != nil {
-		// An error here is not a problem because a certificate may simply
-		// not contain a link to an OCSP server. But we should log it anyway.
-		log.Printf("[WARNING] No OCSP stapling for %v: %v", cert.Names, err)
-	} else if ocspResp.Status == ocsp.Good {
-		tlsCert.OCSPStaple = ocspBytes
-		cert.OCSP = ocspResp
+	for _, ip := range leaf.IPAddresses {
+		if ipStr := ip.String(); ipStr != leaf.Subject.CommonName {
+			cert.Names = append(cert.Names, strings.ToLower(ipStr))
+		}
 	}
-
-	cert.Certificate = tlsCert
-	return cert, nil
+	for _, email := range leaf.EmailAddresses {
+		if email != leaf.Subject.CommonName {
+			cert.Names = append(cert.Names, strings.ToLower(email))
+		}
+	}
+	if len(cert.Names) == 0 {
+		return errors.New("certificate has no names")
+	}
+	cert.NotAfter = leaf.NotAfter
+	return nil
 }
 
 // cacheCertificate adds cert to the in-memory cache. If the cache is
@@ -210,7 +229,7 @@ func cacheCertificate(cert Certificate) {
 	}
 	certCacheMu.Lock()
 	if _, ok := certCache[""]; !ok {
-		// use as default - must be *appended* to list, or bad things happen!
+		// use as default - must be *appended* to end of list, or bad things happen!
 		cert.Names = append(cert.Names, "")
 		certCache[""] = cert
 	}

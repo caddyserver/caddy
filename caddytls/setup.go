@@ -66,6 +66,12 @@ func setupTLS(c *caddy.Controller) error {
 		for c.NextBlock() {
 			hadBlock = true
 			switch c.Val() {
+			case "ca":
+				arg := c.RemainingArgs()
+				if len(arg) != 1 {
+					return c.ArgErr()
+				}
+				config.CAUrl = arg[0]
 			case "key_type":
 				arg := c.RemainingArgs()
 				value, ok := supportedKeyTypes[strings.ToUpper(arg[0])]
@@ -75,19 +81,28 @@ func setupTLS(c *caddy.Controller) error {
 				config.KeyType = value
 			case "protocols":
 				args := c.RemainingArgs()
-				if len(args) != 2 {
-					return c.ArgErr()
+				if len(args) == 1 {
+					value, ok := supportedProtocols[strings.ToLower(args[0])]
+					if !ok {
+						return c.Errf("Wrong protocol name or protocol not supported: '%s'", args[0])
+					}
+
+					config.ProtocolMinVersion, config.ProtocolMaxVersion = value, value
+				} else {
+					value, ok := supportedProtocols[strings.ToLower(args[0])]
+					if !ok {
+						return c.Errf("Wrong protocol name or protocol not supported: '%s'", args[0])
+					}
+					config.ProtocolMinVersion = value
+					value, ok = supportedProtocols[strings.ToLower(args[1])]
+					if !ok {
+						return c.Errf("Wrong protocol name or protocol not supported: '%s'", args[1])
+					}
+					config.ProtocolMaxVersion = value
+					if config.ProtocolMinVersion > config.ProtocolMaxVersion {
+						return c.Errf("Minimum protocol version cannot be higher than maximum (reverse the order)")
+					}
 				}
-				value, ok := supportedProtocols[strings.ToLower(args[0])]
-				if !ok {
-					return c.Errf("Wrong protocol name or protocol not supported: '%s'", args[0])
-				}
-				config.ProtocolMinVersion = value
-				value, ok = supportedProtocols[strings.ToLower(args[1])]
-				if !ok {
-					return c.Errf("Wrong protocol name or protocol not supported: '%s'", args[1])
-				}
-				config.ProtocolMaxVersion = value
 			case "ciphers":
 				for c.NextArg() {
 					value, ok := supportedCiphersMap[strings.ToUpper(c.Val())]
@@ -95,6 +110,14 @@ func setupTLS(c *caddy.Controller) error {
 						return c.Errf("Wrong cipher name or cipher not supported: '%s'", c.Val())
 					}
 					config.Ciphers = append(config.Ciphers, value)
+				}
+			case "curves":
+				for c.NextArg() {
+					value, ok := supportedCurvesMap[strings.ToUpper(c.Val())]
+					if !ok {
+						return c.Errf("Wrong curve name or curve not supported: '%s'", c.Val())
+					}
+					config.CurvePreferences = append(config.CurvePreferences, value)
 				}
 			case "clients":
 				clientCertList := c.RemainingArgs()
@@ -137,6 +160,26 @@ func setupTLS(c *caddy.Controller) error {
 					return c.Errf("Unsupported DNS provider '%s'", args[0])
 				}
 				config.DNSProvider = args[0]
+			case "storage":
+				args := c.RemainingArgs()
+				if len(args) != 1 {
+					return c.ArgErr()
+				}
+				storageProvName := args[0]
+				if _, ok := storageProviders[storageProvName]; !ok {
+					return c.Errf("Unsupported Storage provider '%s'", args[0])
+				}
+				config.StorageProvider = args[0]
+			case "alpn":
+				args := c.RemainingArgs()
+				if len(args) == 0 {
+					return c.ArgErr()
+				}
+				for _, arg := range args {
+					config.ALPN = append(config.ALPN, arg)
+				}
+			case "must_staple":
+				config.MustStaple = true
 			default:
 				return c.Errf("Unknown keyword '%s'", c.Val())
 			}
@@ -153,9 +196,7 @@ func setupTLS(c *caddy.Controller) error {
 			if err != nil || maxCertsNum < 1 {
 				return c.Err("max_certs must be a positive integer")
 			}
-			if onDemandMaxIssue == 0 || int32(maxCertsNum) < onDemandMaxIssue { // keep the minimum; TODO: We have to do this because it is global; should be per-server or per-vhost...
-				onDemandMaxIssue = int32(maxCertsNum)
-			}
+			config.OnDemandState.MaxObtain = int32(maxCertsNum)
 		}
 
 		// don't try to load certificates unless we're supposed to

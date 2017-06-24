@@ -1,8 +1,14 @@
-// Package basicauth implements HTTP Basic Authentication.
+// Package basicauth implements HTTP Basic Authentication for Caddy.
+//
+// This is useful for simple protections on a website, like requiring
+// a password to access an admin interface. This package assumes a
+// fairly small threat model.
 package basicauth
 
 import (
 	"bufio"
+	"context"
+	"crypto/sha1"
 	"crypto/subtle"
 	"fmt"
 	"io"
@@ -29,9 +35,8 @@ type BasicAuth struct {
 
 // ServeHTTP implements the httpserver.Handler interface.
 func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
-
-	var hasAuth bool
-	var isAuthenticated bool
+	var protected, isAuthenticated bool
+	var realm string
 
 	for _, rule := range a.Rules {
 		for _, res := range rule.Resources {
@@ -39,33 +44,42 @@ func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 				continue
 			}
 
-			// Path matches; parse auth header
-			username, password, ok := r.BasicAuth()
-			hasAuth = true
+			// path matches; this endpoint is protected
+			protected = true
+			realm = rule.Realm
 
-			// Check credentials
+			// parse auth header
+			username, password, ok := r.BasicAuth()
+
+			// check credentials
 			if !ok ||
 				username != rule.Username ||
 				!rule.Password(password) {
-				//subtle.ConstantTimeCompare([]byte(password), []byte(rule.Password)) != 1 {
 				continue
 			}
 
-			// Flag set only on successful authentication
+			// by this point, authentication was successful
 			isAuthenticated = true
+
+			// let upstream middleware (e.g. fastcgi and cgi) know about authenticated
+			// user; this replaces the request with a wrapped instance
+			r = r.WithContext(context.WithValue(r.Context(),
+				httpserver.RemoteUserCtxKey, username))
 		}
 	}
 
-	if hasAuth {
-		if !isAuthenticated {
-			w.Header().Set("WWW-Authenticate", "Basic")
-			return http.StatusUnauthorized, nil
+	if protected && !isAuthenticated {
+		// browsers show a message that says something like:
+		// "The website says: <realm>"
+		// which is kinda dumb, but whatever.
+		if realm == "" {
+			realm = "Restricted"
 		}
-		// "It's an older code, sir, but it checks out. I was about to clear them."
-		return a.Next.ServeHTTP(w, r)
+		w.Header().Set("WWW-Authenticate", "Basic realm=\""+realm+"\"")
+		return http.StatusUnauthorized, nil
 	}
 
-	// Pass-thru when no paths match
+	// Pass-through when no paths match
 	return a.Next.ServeHTTP(w, r)
 }
 
@@ -76,6 +90,7 @@ type Rule struct {
 	Username  string
 	Password  func(string) bool
 	Resources []string
+	Realm     string // See RFC 1945 and RFC 2617, default: "Restricted"
 }
 
 // PasswordMatcher determines whether a password matches a rule.
@@ -140,9 +155,17 @@ func parseHtpasswd(pm map[string]PasswordMatcher, r io.Reader) error {
 }
 
 // PlainMatcher returns a PasswordMatcher that does a constant-time
-// byte-wise comparison.
+// byte comparison against the password passw.
 func PlainMatcher(passw string) PasswordMatcher {
+	// compare hashes of equal length instead of actual password
+	// to avoid leaking password length
+	passwHash := sha1.New()
+	passwHash.Write([]byte(passw))
+	passwSum := passwHash.Sum(nil)
 	return func(pw string) bool {
-		return subtle.ConstantTimeCompare([]byte(pw), []byte(passw)) == 1
+		pwHash := sha1.New()
+		pwHash.Write([]byte(pw))
+		pwSum := pwHash.Sum(nil)
+		return subtle.ConstantTimeCompare([]byte(pwSum), []byte(passwSum)) == 1
 	}
 }

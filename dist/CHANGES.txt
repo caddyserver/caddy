@@ -1,11 +1,151 @@
 CHANGES
 
-0.9 beta 2 (June 22, 2016)
+0.10.3 (May 19, 2017)
+- Replace 'maxrequestbody' directive with 'limits' directive
+- proxy: Configurable port for health check
+- proxy: New load balance policy: uri_hash
+- templates: Renamed .Push context action to .AddLink
+- tls: Allow narrower certificate renewal window at startup (#1680)
+- tls: Prefer ChaCha20 if hardware does not have AES-NI
+
+
+0.10.2 (May 2, 2017)
+- Hot fix for rule paths of "/" so that they match every request
+- fastcgi: Match request paths that don't start with "/" even if rule does
+
+
+0.10.1 (May 1, 2017)
+- Reduced memory usage for gzip, templates, and MITM detection
+- Fixed automatic HTTP->HTTPS redirects for sites with wildcard labels
+- proxy: Fix 'without' subdirective
+- A few other minor bug fixes and improvements
+
+
+0.10 (April 20, 2017)
+- Built on Go 1.8.1
+- HTTPS interception detection
+- Updated QUIC
+- SIGUSR1 (reload) now works with QUIC servers
+- New 'push' directive for HTTP/2 server push
+- New 'index' directive to change the names of index files
+- New -http-port and -https-port flags to change protocol ports
+- New -disable-http-challenge and -disable-tls-sni-challenge flags
+- New event hook plugin type
+- New listener middleware plugin type
+- New placeholders for cookie, query, and rewritten URI values
+- basicauth: Ability to customize realm
+- browse: Default template now sorts by name with directories first
+- errors, log: Roll all logs by default
+- errors, log: Ability to write to remote syslog
+- errors, log: Standardized, simplified directive syntax
+- log: Patched common log format by adding missing "-"
+- proxy: New 'max_conns' setting to limit connections to upstreams
+- proxy: New 'first' load balancing policy for first available host
+- proxy: Health checks respect Host and insecure_skip_verify settings
+- templates: New .RandomString action to add random padding to page
+- timeouts: Disabled default HTTP timeouts
+- tls: Settings now apply per-site rather than for entire listener
+- tls: New 'alpn' setting to disable either HTTP/2 or HTTP/1.1 on per-site basis
+- tls: Added curve X25519
+- tls: Added ChaCha20-Poly1305 cipher suites
+- tls: Renamed muststaple to must_staple
+- tls: Setting max_certs obtains certs during handshakes for all hostnames
+- Dozens of miscellaneous bug fixes and improvements
+- New website
+- New build infrastructure
+- New deployment system
+
+
+0.9.5 (January 24, 2017)
+- New -validate flag to only check a Caddyfile, then exit
+- New {when_iso} placeholder for timestamp ISO 8601 in UTC
+- New {rewrite_path} and {rewrite_path_escaped} placeholders
+- New 'timeouts' directive to configure or disable HTTP timeouts
+- HTTP-level timeouts enabled by default
+- basicauth: Authorization header stripped upon successful login
+- browse: Added textbox to filter listing in default template
+- browse: Sanitize file names and links in default template
+- browse: Ensure active Caddyfile is hidden regardless of cwd
+- fastcgi: New 'root' property, mainly for use with containers
+- markdown: Apply some front matter fields as <meta> tags
+- proxy: Fixed HTTP/2 upstream to backend; honors -http CLI flag
+- proxy: Fixed websockets over HTTPS
+- proxy: Reduced memory usage and improved performance
+- proxy: Added support for HTTP trailers
+- tls: Fixed deadlock that affected some background renewals
+- Several other smaller bugs squashed and improvements made
+
+
+0.9.4 (December 21, 2016)
+- Updated QUIC
+- New maxrequestbody directive to limit size of request body
+- New {latency_ms} placeholder for latency always in ms
+- Serve statically compressed .gz and .br files
+- fastcgi: Support for multiple backends with basic load balancing
+- proxy: Fixed handling of encoded 'without' paths
+- proxy: Preserve trailing slash if present in request
+- proxy: Fix HTTP/2 upstreams
+- templates: New .Files action to list files in a directory
+- templates: .Include can now pass arguments to included file
+- tls: Added ability to customize preferred curves
+- tls: Added support for Must-Staple on managed certificates
+- tls: Fixed subtle edge case bug with TLS-SNI challenge
+- Lots of minor fixes and improvements
+
+
+0.9.3 (September 28, 2016)
+- Updated QUIC to newer version
+- import: Glob pattern matching 0 files is no longer an error
+- fastcgi: Fixed persistent connections (disabled by default)
+- fastcgi: Configurable connection pool size parameter
+- proxy: Improved failover load balancing logic
+- proxy: Avoids duplicating header fields that would be confusing
+- proxy: New try_duration and try_interval parameters
+- proxy: Fix for IP hash policy when downed hosts come back up
+- Several other bug fixes and new tests
+
+
+0.9.2 (September 20, 2016)
+- New -catimeout option to customize ACME CA HTTP timeout
+- import: Fix nested import absolute/relative paths
+- log: Fix multiple log outputs
+- proxy: Fix for keepalive in certain cases
+- tls: Fix for PreferServerCipherSuites
+- Numerous other bug fixes and internal improvements
+
+
+0.9.1 (August 17, 2016)
+- New {request_body} placeholder to log request body
+- {remote} placeholder no longer uses X-Forwarded-For header
+- {latency} placeholder rounds to nice looking number
+- Add support for ratelimit plugin
+- basicauth: Declaring realm named "Restricted"
+- errors: Define catch-all/default error page with * character
+- header: More control to add, set, or remove headers
+- proxy: New keepalive setting to help accommodate busy servers
+- proxy: New load balancing policy ip_hash
+- proxy: Fixed WebSocket connections
+- proxy: Fixed broken header logic
+- proxy: Reuse existing connection for Upgrade requests
+- proxy: Support for basic auth from header or upstream address
+- templates: New .Env action to access environment variables
+- tls: OCSP staples persisted to disk
+- tls: ACME challenges honor bind directive
+- tls: Fix default protocol version (minimum TLS 1.1)
+- tls: Consume challenge requests only for names Caddy is solving for
+- tls: The protocol syntax allows just one value if desired
+- tls: Scoped max_certs limit to site instead of global maximum
+- Many other bug fixes and minor enhancements
+
+
+0.9 (July 18, 2016)
 - New core
 - New experimental QUIC support with -quic flag (HTTPS only)
-- New -type flag to specify other server types
+- New -type option to specify other server types
 - Moved ~/.caddy/letsencrypt to ~/.caddy/acme and reorganized assets
 - Moved caddy package to top level folder, and pushed main to subfolder
+- New {request} placeholder to dump entire request (without body)
+- New {hostonly} placeholder for only hostname portion of host value
 - Site addresses can have paths
 - Site addresses can make some use of wildcards in domains
 - Renamed -directives flag to -plugins
@@ -13,7 +153,6 @@ CHANGES
 - Removed -restart option
 - fastcgi: Env variables now support placeholders
 - import: Import paths now relative to Caddyfile, not current working dir
-- log: New {request} placeholder to dump entire request (without body)
 - markdown: Overhauled; removed site generation features
 - proxy: More control of headers; deprecating proxy_header subdirective
 - proxy: Specify multiple upstreams with optional port ranges

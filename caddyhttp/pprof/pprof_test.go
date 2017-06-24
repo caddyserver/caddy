@@ -45,7 +45,7 @@ func TestServeHTTP(t *testing.T) {
 		t.Errorf("Test two: Expected nil error, but got: %v", err)
 	}
 	if w.Body.String() != "content" {
-		t.Errorf("Expected pprof to pass the request thru, but it didn't; got: %s", w.Body.String())
+		t.Errorf("Expected pprof to pass the request through, but it didn't; got: %s", w.Body.String())
 	}
 }
 

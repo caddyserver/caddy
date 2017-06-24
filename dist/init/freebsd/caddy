@@ -1,8 +1,7 @@
 #!/bin/sh
 #
-
 # PROVIDE: caddy
-# REQUIRE: LOGIN NETWORKING named cleanvar sshd
+# REQUIRE: networking
 # KEYWORD: shutdown
 
 #
@@ -31,7 +30,7 @@
 . /etc/rc.subr
 
 name="caddy"
-rcvar=${name}_enable
+rcvar="${name}_enable"
 
 load_rc_config $name
 : ${caddy_enable:=no}
@@ -41,33 +40,44 @@ load_rc_config $name
 : ${caddy_config_path="/usr/local/www/Caddyfile"}
 : ${caddy_run_user="root"}
 
-if [ "$caddy_cert_email" = "" ] 
+if [ "$caddy_cert_email" = "" ]
 then
-	echo "rc variable \$caddy_cert_email is not set. Please provide a valid SSL certificate issuer email."
-	exit 1
+    echo "rc variable \$caddy_cert_email is not set. Please provide a valid SSL certificate issuer email."
+    exit 1
 fi
 
 pidfile="/var/run/caddy.pid"
 logfile="/var/log/caddy.log"
 
-command="${caddy_bin_path} -log ${logfile} -pidfile ${pidfile} -cpu ${caddy_cpu} -conf ${caddy_config_path} -agree -email ${caddy_cert_email}"
+command="${caddy_bin_path} -log ${logfile} -cpu ${caddy_cpu} -conf ${caddy_config_path} -agree -email ${caddy_cert_email}"
 
 start_cmd="caddy_start"
 status_cmd="caddy_status"
 stop_cmd="caddy_stop"
 
-caddy_start() {  
-    echo "Starting Caddy..."
-    /usr/sbin/daemon -u ${caddy_run_user} -c ${command} >> ${logfile}
+caddy_start() {
+    echo "Starting ${name}..."
+    /usr/sbin/daemon -u ${caddy_run_user} -c -p ${pidfile} -f ${command}
 }
 
 caddy_status() {
-    ps -p `cat ${pidfile} 2> /dev/null` > /dev/null 2>&1 && echo 'Running' || echo 'Not Running. Please note that upon startup it will take Caddy a few seconds to come up. So you might just wanna wait a few seconds before starting it again.'
+    if [ -f ${pidfile} ]; then
+      echo "${name} is running as $(cat $pidfile)."
+    else
+      echo "${name} is not running."
+      return 1
+    fi
 }
 
 caddy_stop() {
-    echo "Stopping Caddy..."
-    kill -QUIT `cat $pidfile 2> /dev/null`
+    if [ ! -f ${pidfile} ]; then
+      echo "${name} is not running."
+      return 1
+    fi
+
+    echo -n "Stopping ${name}..."
+    kill -KILL $(cat $pidfile) 2> /dev/null && echo "stopped"
+    rm -f ${pidfile}
 }
 
 run_rc_command "$1"

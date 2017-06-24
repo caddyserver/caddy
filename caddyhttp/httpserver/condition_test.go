@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -31,9 +32,15 @@ func TestConditions(t *testing.T) {
 		{"bab starts_with bb", false},
 		{"bab starts_with ba", true},
 		{"bab starts_with bab", true},
+		{"bab not_starts_with bb", true},
+		{"bab not_starts_with ba", false},
+		{"bab not_starts_with bab", false},
 		{"bab ends_with bb", false},
 		{"bab ends_with bab", true},
 		{"bab ends_with ab", true},
+		{"bab not_ends_with bb", true},
+		{"bab not_ends_with ab", false},
+		{"bab not_ends_with bab", false},
 		{"a match *", false},
 		{"a match a", true},
 		{"a match .*", true},
@@ -94,16 +101,21 @@ func TestConditions(t *testing.T) {
 	for i, test := range replaceTests {
 		r, err := http.NewRequest("GET", test.url, nil)
 		if err != nil {
-			t.Error(err)
+			t.Errorf("Test %d: failed to create request: %v", i, err)
+			continue
 		}
+		ctx := context.WithValue(r.Context(), OriginalURLCtxKey, *r.URL)
+		r = r.WithContext(ctx)
 		str := strings.Fields(test.condition)
 		ifCond, err := newIfCond(str[0], str[1], str[2])
 		if err != nil {
-			t.Error(err)
+			t.Errorf("Test %d: failed to create 'if' condition %v", i, err)
+			continue
 		}
 		isTrue := ifCond.True(r)
 		if isTrue != test.isTrue {
 			t.Errorf("Test %v: expected %v found %v", i, test.isTrue, isTrue)
+			continue
 		}
 	}
 }
@@ -189,7 +201,7 @@ func TestSetupIfMatcher(t *testing.T) {
 			if	a match b
 		 }`, false, IfMatcher{
 			ifs: []ifCond{
-				{a: "a", op: "match", b: "b"},
+				{a: "a", op: "match", b: "b", neg: false},
 			},
 		}},
 		{`test {
@@ -197,7 +209,7 @@ func TestSetupIfMatcher(t *testing.T) {
 			if_op or
 		 }`, false, IfMatcher{
 			ifs: []ifCond{
-				{a: "a", op: "match", b: "b"},
+				{a: "a", op: "match", b: "b", neg: false},
 			},
 			isOr: true,
 		}},
@@ -206,7 +218,7 @@ func TestSetupIfMatcher(t *testing.T) {
 		 }`, true, IfMatcher{},
 		},
 		{`test {
-			if	a isnt b
+			if	a isn't b
 		 }`, true, IfMatcher{},
 		},
 		{`test {
@@ -215,26 +227,26 @@ func TestSetupIfMatcher(t *testing.T) {
 		},
 		{`test {
 			if goal has go
-			if cook not_has go 
+			if cook not_has go
 		 }`, false, IfMatcher{
 			ifs: []ifCond{
-				{a: "goal", op: "has", b: "go"},
-				{a: "cook", op: "not_has", b: "go"},
+				{a: "goal", op: "has", b: "go", neg: false},
+				{a: "cook", op: "has", b: "go", neg: true},
 			},
 		}},
 		{`test {
 			if goal has go
-			if cook not_has go 
+			if cook not_has go
 			if_op and
 		 }`, false, IfMatcher{
 			ifs: []ifCond{
-				{a: "goal", op: "has", b: "go"},
-				{a: "cook", op: "not_has", b: "go"},
+				{a: "goal", op: "has", b: "go", neg: false},
+				{a: "cook", op: "has", b: "go", neg: true},
 			},
 		}},
 		{`test {
 			if goal has go
-			if cook not_has go 
+			if cook not_has go
 			if_op not
 		 }`, true, IfMatcher{},
 		},
@@ -243,7 +255,7 @@ func TestSetupIfMatcher(t *testing.T) {
 	for i, test := range tests {
 		c := caddy.NewTestController("http", test.input)
 		c.Next()
-		matcher, err := SetupIfMatcher(c.Dispenser)
+		matcher, err := SetupIfMatcher(c)
 		if err == nil && test.shouldErr {
 			t.Errorf("Test %d didn't error, but it should have", i)
 		} else if err != nil && !test.shouldErr {
@@ -277,8 +289,11 @@ func TestIfMatcherKeyword(t *testing.T) {
 		{"if_type", false},
 		{"if_cond", false},
 	}
+
 	for i, test := range tests {
-		valid := IfMatcherKeyword(test.keyword)
+		c := caddy.NewTestController("http", test.keyword)
+		c.Next()
+		valid := IfMatcherKeyword(c)
 		if valid != test.expected {
 			t.Errorf("Test %d: expected %v found %v", i, test.expected, valid)
 		}

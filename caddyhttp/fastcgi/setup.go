@@ -4,6 +4,9 @@ import (
 	"errors"
 	"net/http"
 	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
@@ -19,10 +22,6 @@ func init() {
 // setup configures a new FastCGI middleware instance.
 func setup(c *caddy.Controller) error {
 	cfg := httpserver.GetConfig(c)
-	absRoot, err := filepath.Abs(cfg.Root)
-	if err != nil {
-		return err
-	}
 
 	rules, err := fastcgiParse(c)
 	if err != nil {
@@ -34,7 +33,6 @@ func setup(c *caddy.Controller) error {
 			Next:            next,
 			Rules:           rules,
 			Root:            cfg.Root,
-			AbsRoot:         absRoot,
 			FileSys:         http.Dir(cfg.Root),
 			SoftwareName:    caddy.AppName,
 			SoftwareVersion: caddy.AppVersion,
@@ -49,31 +47,47 @@ func setup(c *caddy.Controller) error {
 func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 	var rules []Rule
 
-	for c.Next() {
-		var rule Rule
+	cfg := httpserver.GetConfig(c)
+	absRoot, err := filepath.Abs(cfg.Root)
+	if err != nil {
+		return nil, err
+	}
 
+	for c.Next() {
 		args := c.RemainingArgs()
 
-		switch len(args) {
-		case 0:
+		if len(args) < 2 || len(args) > 3 {
 			return rules, c.ArgErr()
-		case 1:
-			rule.Path = "/"
-			rule.Address = args[0]
-		case 2:
-			rule.Path = args[0]
-			rule.Address = args[1]
-		case 3:
-			rule.Path = args[0]
-			rule.Address = args[1]
-			err := fastcgiPreset(args[2], &rule)
-			if err != nil {
-				return rules, c.Err("Invalid fastcgi rule preset '" + args[2] + "'")
+		}
+
+		rule := Rule{
+			Root:        absRoot,
+			Path:        args[0],
+			ReadTimeout: 60 * time.Second,
+			SendTimeout: 60 * time.Second,
+		}
+		upstreams := []string{args[1]}
+
+		if len(args) == 3 {
+			if err := fastcgiPreset(args[2], &rule); err != nil {
+				return rules, err
 			}
 		}
 
+		var err error
+		var pool int
+		var connectTimeout = 60 * time.Second
+		var dialers []dialer
+		var poolSize = -1
+
 		for c.NextBlock() {
 			switch c.Val() {
+			case "root":
+				if !c.NextArg() {
+					return rules, c.ArgErr()
+				}
+				rule.Root = c.Val()
+
 			case "ext":
 				if !c.NextArg() {
 					return rules, c.ArgErr()
@@ -90,6 +104,15 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 					return rules, c.ArgErr()
 				}
 				rule.IndexFiles = args
+
+			case "upstream":
+				args := c.RemainingArgs()
+
+				if len(args) != 1 {
+					return rules, c.ArgErr()
+				}
+
+				upstreams = append(upstreams, args[0])
 			case "env":
 				envArgs := c.RemainingArgs()
 				if len(envArgs) < 2 {
@@ -102,9 +125,69 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 					return rules, c.ArgErr()
 				}
 				rule.IgnoredSubPaths = ignoredPaths
+
+			case "pool":
+				if !c.NextArg() {
+					return rules, c.ArgErr()
+				}
+				pool, err = strconv.Atoi(c.Val())
+				if err != nil {
+					return rules, err
+				}
+				if pool >= 0 {
+					poolSize = pool
+				} else {
+					return rules, c.Errf("positive integer expected, found %d", pool)
+				}
+			case "connect_timeout":
+				if !c.NextArg() {
+					return rules, c.ArgErr()
+				}
+				connectTimeout, err = time.ParseDuration(c.Val())
+				if err != nil {
+					return rules, err
+				}
+			case "read_timeout":
+				if !c.NextArg() {
+					return rules, c.ArgErr()
+				}
+				readTimeout, err := time.ParseDuration(c.Val())
+				if err != nil {
+					return rules, err
+				}
+				rule.ReadTimeout = readTimeout
+			case "send_timeout":
+				if !c.NextArg() {
+					return rules, c.ArgErr()
+				}
+				sendTimeout, err := time.ParseDuration(c.Val())
+				if err != nil {
+					return rules, err
+				}
+				rule.SendTimeout = sendTimeout
 			}
 		}
 
+		for _, rawAddress := range upstreams {
+			network, address := parseAddress(rawAddress)
+			if poolSize >= 0 {
+				dialers = append(dialers, &persistentDialer{
+					size:    poolSize,
+					network: network,
+					address: address,
+					timeout: connectTimeout,
+				})
+			} else {
+				dialers = append(dialers, basicDialer{
+					network: network,
+					address: address,
+					timeout: connectTimeout,
+				})
+			}
+		}
+
+		rule.dialer = &loadBalancingDialer{dialers: dialers}
+		rule.Address = strings.Join(upstreams, ",")
 		rules = append(rules, rule)
 	}
 

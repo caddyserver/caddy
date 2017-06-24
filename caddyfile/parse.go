@@ -2,6 +2,7 @@ package caddyfile
 
 import (
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,20 +16,23 @@ import (
 // pass in nil instead.
 func Parse(filename string, input io.Reader, validDirectives []string) ([]ServerBlock, error) {
 	p := parser{Dispenser: NewDispenser(filename, input), validDirectives: validDirectives}
-	blocks, err := p.parseAll()
-	return blocks, err
+	return p.parseAll()
 }
 
 // allTokens lexes the entire input, but does not parse it.
 // It returns all the tokens from the input, unstructured
 // and in order.
-func allTokens(input io.Reader) (tokens []Token) {
+func allTokens(input io.Reader) ([]Token, error) {
 	l := new(lexer)
-	l.load(input)
+	err := l.load(input)
+	if err != nil {
+		return nil, err
+	}
+	var tokens []Token
 	for l.next() {
 		tokens = append(tokens, l.token)
 	}
-	return
+	return tokens, nil
 }
 
 type parser struct {
@@ -57,12 +61,7 @@ func (p *parser) parseAll() ([]ServerBlock, error) {
 func (p *parser) parseOne() error {
 	p.block = ServerBlock{Tokens: make(map[string][]Token)}
 
-	err := p.begin()
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return p.begin()
 }
 
 func (p *parser) begin() error {
@@ -71,6 +70,7 @@ func (p *parser) begin() error {
 	}
 
 	err := p.addresses()
+
 	if err != nil {
 		return err
 	}
@@ -81,12 +81,7 @@ func (p *parser) begin() error {
 		return nil
 	}
 
-	err = p.blockContents()
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return p.blockContents()
 }
 
 func (p *parser) addresses() error {
@@ -201,30 +196,43 @@ func (p *parser) directives() error {
 // other words, call Next() to access the first token that was
 // imported.
 func (p *parser) doImport() error {
-	// syntax check
+	// syntax checks
 	if !p.NextArg() {
 		return p.ArgErr()
 	}
-	importPattern := p.Val()
+	importPattern := replaceEnvVars(p.Val())
+	if importPattern == "" {
+		return p.Err("Import requires a non-empty filepath")
+	}
 	if p.NextArg() {
 		return p.Err("Import takes only one argument (glob pattern or file)")
 	}
 
 	// make path relative to Caddyfile rather than current working directory (issue #867)
 	// and then use glob to get list of matching filenames
-	var matches []string
-	relImportPattern, err := filepath.Rel(filepath.Dir(p.Dispenser.filename), importPattern)
-	if err == nil {
-		matches, err = filepath.Glob(relImportPattern)
-	} else {
-		matches, err = filepath.Glob(importPattern)
+	absFile, err := filepath.Abs(p.Dispenser.filename)
+	if err != nil {
+		return p.Errf("Failed to get absolute path of file: %s", p.Dispenser.filename)
 	}
+
+	var matches []string
+	var globPattern string
+	if !filepath.IsAbs(importPattern) {
+		globPattern = filepath.Join(filepath.Dir(absFile), importPattern)
+	} else {
+		globPattern = importPattern
+	}
+	matches, err = filepath.Glob(globPattern)
 
 	if err != nil {
 		return p.Errf("Failed to use import pattern %s: %v", importPattern, err)
 	}
 	if len(matches) == 0 {
-		return p.Errf("No files matching import pattern %s", importPattern)
+		if strings.Contains(globPattern, "*") {
+			log.Printf("[WARNING] No files matching import pattern: %s", importPattern)
+		} else {
+			return p.Errf("File to import not found: %s", importPattern)
+		}
 	}
 
 	// splice out the import directive and its argument (2 tokens total)
@@ -237,6 +245,29 @@ func (p *parser) doImport() error {
 		newTokens, err := p.doSingleImport(importFile)
 		if err != nil {
 			return err
+		}
+		var importLine int
+		importDir := filepath.Dir(importFile)
+		for i, token := range newTokens {
+			if token.Text == "import" {
+				importLine = token.Line
+				continue
+			}
+			if token.Line == importLine {
+				var abs string
+				if filepath.IsAbs(token.Text) {
+					abs = token.Text
+				} else if !filepath.IsAbs(importFile) {
+					abs = filepath.Join(filepath.Dir(absFile), token.Text)
+				} else {
+					abs = filepath.Join(importDir, token.Text)
+				}
+				newTokens[i] = Token{
+					Text: abs,
+					Line: token.Line,
+					File: token.File,
+				}
+			}
 		}
 		importedTokens = append(importedTokens, newTokens...)
 	}
@@ -257,7 +288,17 @@ func (p *parser) doSingleImport(importFile string) ([]Token, error) {
 		return nil, p.Errf("Could not import %s: %v", importFile, err)
 	}
 	defer file.Close()
-	importedTokens := allTokens(file)
+
+	if info, err := file.Stat(); err != nil {
+		return nil, p.Errf("Could not import %s: %v", importFile, err)
+	} else if info.IsDir() {
+		return nil, p.Errf("Could not import %s: is a directory", importFile)
+	}
+
+	importedTokens, err := allTokens(file)
+	if err != nil {
+		return nil, p.Errf("Could not read tokens while importing %s: %v", importFile, err)
+	}
 
 	// Tack the filename onto these tokens so errors show the imported file's name
 	filename := filepath.Base(importFile)

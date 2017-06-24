@@ -1,8 +1,8 @@
 package caddytls
 
 import (
-	"io/ioutil"
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/xenolf/lego/acme"
@@ -80,11 +80,11 @@ func TestQualifiesForManagedTLS(t *testing.T) {
 }
 
 func TestSaveCertResource(t *testing.T) {
-	storage := Storage("./le_test_save")
+	storage := &FileStorage{Path: "./le_test_save", nameLocks: make(map[string]*sync.WaitGroup)}
 	defer func() {
-		err := os.RemoveAll(string(storage))
+		err := os.RemoveAll(storage.Path)
 		if err != nil {
-			t.Fatalf("Could not remove temporary storage directory (%s): %v", storage, err)
+			t.Fatalf("Could not remove temporary storage directory (%s): %v", storage.Path, err)
 		}
 	}()
 
@@ -110,47 +110,42 @@ func TestSaveCertResource(t *testing.T) {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
 
-	certFile, err := ioutil.ReadFile(storage.SiteCertFile(domain))
+	siteData, err := storage.LoadSite(domain)
 	if err != nil {
-		t.Errorf("Expected no error reading certificate file, got: %v", err)
+		t.Errorf("Expected no error reading site, got: %v", err)
 	}
-	if string(certFile) != certContents {
-		t.Errorf("Expected certificate file to contain '%s', got '%s'", certContents, string(certFile))
+	if string(siteData.Cert) != certContents {
+		t.Errorf("Expected certificate file to contain '%s', got '%s'", certContents, string(siteData.Cert))
 	}
-
-	keyFile, err := ioutil.ReadFile(storage.SiteKeyFile(domain))
-	if err != nil {
-		t.Errorf("Expected no error reading private key file, got: %v", err)
+	if string(siteData.Key) != keyContents {
+		t.Errorf("Expected private key file to contain '%s', got '%s'", keyContents, string(siteData.Key))
 	}
-	if string(keyFile) != keyContents {
-		t.Errorf("Expected private key file to contain '%s', got '%s'", keyContents, string(keyFile))
-	}
-
-	metaFile, err := ioutil.ReadFile(storage.SiteMetaFile(domain))
-	if err != nil {
-		t.Errorf("Expected no error reading meta file, got: %v", err)
-	}
-	if string(metaFile) != metaContents {
-		t.Errorf("Expected meta file to contain '%s', got '%s'", metaContents, string(metaFile))
+	if string(siteData.Meta) != metaContents {
+		t.Errorf("Expected meta file to contain '%s', got '%s'", metaContents, string(siteData.Meta))
 	}
 }
 
 func TestExistingCertAndKey(t *testing.T) {
-	storage := Storage("./le_test_existing")
+	storage := &FileStorage{Path: "./le_test_existing", nameLocks: make(map[string]*sync.WaitGroup)}
 	defer func() {
-		err := os.RemoveAll(string(storage))
+		err := os.RemoveAll(storage.Path)
 		if err != nil {
-			t.Fatalf("Could not remove temporary storage directory (%s): %v", storage, err)
+			t.Fatalf("Could not remove temporary storage directory (%s): %v", storage.Path, err)
 		}
 	}()
 
 	domain := "example.com"
 
-	if existingCertAndKey(storage, domain) {
+	siteExists, err := storage.SiteExists(domain)
+	if err != nil {
+		t.Fatalf("Could not determine whether site exists: %v", err)
+	}
+
+	if siteExists {
 		t.Errorf("Did NOT expect %v to have existing cert or key, but it did", domain)
 	}
 
-	err := saveCertResource(storage, acme.CertificateResource{
+	err = saveCertResource(storage, acme.CertificateResource{
 		Domain:      domain,
 		PrivateKey:  []byte("key"),
 		Certificate: []byte("cert"),
@@ -159,7 +154,12 @@ func TestExistingCertAndKey(t *testing.T) {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
 
-	if !existingCertAndKey(storage, domain) {
+	siteExists, err = storage.SiteExists(domain)
+	if err != nil {
+		t.Fatalf("Could not determine whether site exists: %v", err)
+	}
+
+	if !siteExists {
 		t.Errorf("Expected %v to have existing cert and key, but it did NOT", domain)
 	}
 }

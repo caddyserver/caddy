@@ -3,7 +3,7 @@ package metadata
 import (
 	"bytes"
 
-	"github.com/BurntSushi/toml"
+	"github.com/naoina/toml"
 )
 
 // TOMLParser is the Parser for TOML

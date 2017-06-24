@@ -1,0 +1,26 @@
+description "Caddy HTTP/2 web server"
+
+start on runlevel [2345]
+stop on runlevel [016]
+
+console log
+
+setuid www-data
+setgid www-data
+
+respawn
+respawn limit 10 5
+
+# 12.04 upstart version does not support reload
+#reload signal SIGUSR1
+
+# Let's Encrypt certificates will be written to this directory.
+env CADDYPATH=/etc/ssl/caddy
+
+limit nofile 1048576 1048576
+
+script
+        cd /etc/ssl/caddy
+        rootdir="$(mktemp -d -t "caddy-run.XXXXXX")"
+        exec /usr/local/bin/caddy -agree -log=stdout -conf=/etc/caddy/Caddyfile -root=$rootdir
+end script
