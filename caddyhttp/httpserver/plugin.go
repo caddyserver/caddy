@@ -471,6 +471,7 @@ var directives = []string{
 	"cors", // github.com/captncraig/cors/caddy
 	"mime",
 	"login",     // github.com/tarent/loginsrv/caddy
+	"reauth",    // github.com/freman/caddy-reauth
 	"jwt",       // github.com/BTBurke/caddy-jwt
 	"jsonp",     // github.com/pschlump/caddy-jsonp
 	"upload",    // blitznote.com/src/caddy.upload
