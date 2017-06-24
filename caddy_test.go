@@ -142,13 +142,13 @@ func TestListenerAddrEqual(t *testing.T) {
 		addr   string
 		expect bool
 	}{
-		{ln1, ":1234", false},
-		{ln1, "0.0.0.0:1234", false},
+		{ln1, ":" + ln2port, false},
+		{ln1, "0.0.0.0:" + ln2port, false},
 		{ln1, "0.0.0.0", false},
 		{ln1, ":" + ln1port, true},
 		{ln1, "0.0.0.0:" + ln1port, true},
 		{ln2, ":" + ln2port, false},
-		{ln2, "127.0.0.1:1234", false},
+		{ln2, "127.0.0.1:" + ln1port, false},
 		{ln2, "127.0.0.1", false},
 		{ln2, "127.0.0.1:" + ln2port, true},
 	} {
