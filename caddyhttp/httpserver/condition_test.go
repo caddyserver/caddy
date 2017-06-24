@@ -201,7 +201,7 @@ func TestSetupIfMatcher(t *testing.T) {
 			if	a match b
 		 }`, false, IfMatcher{
 			ifs: []ifCond{
-				{a: "a", op: "match", b: "b"},
+				{a: "a", op: "match", b: "b", neg: false},
 			},
 		}},
 		{`test {
@@ -209,7 +209,7 @@ func TestSetupIfMatcher(t *testing.T) {
 			if_op or
 		 }`, false, IfMatcher{
 			ifs: []ifCond{
-				{a: "a", op: "match", b: "b"},
+				{a: "a", op: "match", b: "b", neg: false},
 			},
 			isOr: true,
 		}},
@@ -230,8 +230,8 @@ func TestSetupIfMatcher(t *testing.T) {
 			if cook not_has go
 		 }`, false, IfMatcher{
 			ifs: []ifCond{
-				{a: "goal", op: "has", b: "go"},
-				{a: "cook", op: "not_has", b: "go"},
+				{a: "goal", op: "has", b: "go", neg: false},
+				{a: "cook", op: "has", b: "go", neg: true},
 			},
 		}},
 		{`test {
@@ -240,8 +240,8 @@ func TestSetupIfMatcher(t *testing.T) {
 			if_op and
 		 }`, false, IfMatcher{
 			ifs: []ifCond{
-				{a: "goal", op: "has", b: "go"},
-				{a: "cook", op: "not_has", b: "go"},
+				{a: "goal", op: "has", b: "go", neg: false},
+				{a: "cook", op: "has", b: "go", neg: true},
 			},
 		}},
 		{`test {
