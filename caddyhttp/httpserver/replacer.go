@@ -245,9 +245,7 @@ func (r *replacer) getSubstitution(key string) string {
 		return url.QueryEscape(u.Path)
 	case "{request_id}":
 		reqid, _ := r.request.Context().Value(RequestIDCtxKey).(string)
-		if reqid != "" {
-			return reqid
-		}
+		return reqid
 	case "{rewrite_path}":
 		return r.request.URL.Path
 	case "{rewrite_path_escaped}":
