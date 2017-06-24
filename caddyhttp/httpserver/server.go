@@ -331,7 +331,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	c := context.WithValue(r.Context(), OriginalURLCtxKey, urlCopy)
 	r = r.WithContext(c)
 
-	w.Header().Set("Server", "Caddy")
+	w.Header().Set("Server", caddy.AppName)
 
 	status, _ := s.serveHTTP(w, r)
 
