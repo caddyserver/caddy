@@ -243,6 +243,9 @@ func (r *replacer) getSubstitution(key string) string {
 	case "{path_escaped}":
 		u, _ := r.request.Context().Value(OriginalURLCtxKey).(url.URL)
 		return url.QueryEscape(u.Path)
+	case "{request_id}":
+		reqid, _ := r.request.Context().Value(RequestIDCtxKey).(string)
+		return reqid
 	case "{rewrite_path}":
 		return r.request.URL.Path
 	case "{rewrite_path_escaped}":

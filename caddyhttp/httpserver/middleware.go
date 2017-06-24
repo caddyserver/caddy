@@ -205,4 +205,7 @@ const (
 
 	// MitmCtxKey is the key for the result of MITM detection
 	MitmCtxKey caddy.CtxKey = "mitm"
+
+	// RequestIDCtxKey is the key for the U4 UUID value
+	RequestIDCtxKey caddy.CtxKey = "request_id"
 )

@@ -166,6 +166,14 @@
 			"notests": true
 		},
 		{
+			"importpath": "github.com/nu7hatch/gouuid",
+			"repository": "https://github.com/nu7hatch/gouuid",
+			"vcs": "git",
+			"revision": "179d4d0c4d8d407a32af483c2354df1d2c91e6c3",
+			"branch": "master",
+			"notests": true
+		},
+		{
 			"importpath": "github.com/russross/blackfriday",
 			"repository": "https://github.com/russross/blackfriday",
 			"vcs": "git",
