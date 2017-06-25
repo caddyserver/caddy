@@ -495,6 +495,7 @@ var directives = []string{
 	"awslambda", // github.com/coopernurse/caddy-awslambda
 	"grpc",      // github.com/pieterlouw/caddy-grpc
 	"gopkg",     // github.com/zikes/gopkg
+	"restic",    // github.com/mholt/caddy-restic
 }
 
 const (
