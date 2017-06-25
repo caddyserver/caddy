@@ -4,10 +4,12 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 	"text/template"
 
+	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 	"github.com/russross/blackfriday"
 )
@@ -127,7 +129,7 @@ Doc.var_bool true
 	<head>
 		<title>Markdown test 2</title>
 		<meta charset="utf-8">
-
+		
 		<link rel="stylesheet" href="/resources/css/log.css">
 		<link rel="stylesheet" href="/resources/css/default.css">
 		<script src="/resources/js/log.js"></script>
@@ -177,4 +179,69 @@ func setDefaultTemplate(filename string) *template.Template {
 	}
 
 	return template.Must(GetDefaultTemplate().Parse(string(buf)))
+}
+
+func TestTemplateReload(t *testing.T) {
+	const (
+		templateFile = "testdata/test.html"
+		targetFile   = "testdata/hello.md"
+	)
+	c := caddy.NewTestController("http", `markdown {
+		template `+templateFile+`
+	}`)
+
+	err := ioutil.WriteFile(templateFile, []byte("hello {{.Doc.body}}"), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = ioutil.WriteFile(targetFile, []byte("caddy"), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		os.Remove(templateFile)
+		os.Remove(targetFile)
+	}()
+
+	config, err := markdownParse(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	md := Markdown{
+		Root:    "./testdata",
+		FileSys: http.Dir("./testdata"),
+		Configs: config,
+		Next: httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
+			t.Fatalf("Next shouldn't be called")
+			return 0, nil
+		}),
+	}
+
+	req := httptest.NewRequest("GET", "/hello.md", nil)
+	get := func() string {
+		rec := httptest.NewRecorder()
+		code, err := md.ServeHTTP(rec, req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if code != http.StatusOK {
+			t.Fatalf("Wrong status, expected: %d and got %d", http.StatusOK, code)
+		}
+		return rec.Body.String()
+	}
+
+	if expect, got := "hello <p>caddy</p>\n", get(); expect != got {
+		t.Fatalf("Expected body:\n%q\nbut got:\n%q", expect, got)
+	}
+
+	// update template
+	err = ioutil.WriteFile(templateFile, []byte("hi {{.Doc.body}}"), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if expect, got := "hi <p>caddy</p>\n", get(); expect != got {
+		t.Fatalf("Expected body:\n%q\nbut got:\n%q", expect, got)
+	}
+
 }

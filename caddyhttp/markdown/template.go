@@ -38,8 +38,18 @@ func execTemplate(c *Config, mdata metadata.Metadata, meta map[string]string, fi
 		Files:   files,
 	}
 
+	templateName := mdata.Template
+	// reload template on every request for now
+	// TODO: cache templates by a general plugin
+	if templateFile, ok := c.TemplateFiles[templateName]; ok {
+		err := SetTemplate(c.Template, templateName, templateFile)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	b := new(bytes.Buffer)
-	if err := c.Template.ExecuteTemplate(b, mdata.Template, mdData); err != nil {
+	if err := c.Template.ExecuteTemplate(b, templateName, mdData); err != nil {
 		return nil, err
 	}
 
