@@ -413,8 +413,12 @@ func copyHeader(dst, src http.Header) {
 			if _, shouldSkip := skipHeaders[k]; shouldSkip {
 				continue
 			}
-			// otherwise, overwrite
-			dst.Del(k)
+			// otherwise, overwrite to avoid duplicated fields that can be
+			// problematic (see issue #1086) -- however, allow duplicate
+			// Server fields so we can see the reality of the proxying.
+			if k != "Server" {
+				dst.Del(k)
+			}
 		}
 		for _, v := range vv {
 			dst.Add(k, v)
