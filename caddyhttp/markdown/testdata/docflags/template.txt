@@ -1,0 +1,2 @@
+Doc.var_string {{.Doc.var_string}}
+Doc.var_bool {{.Doc.var_bool}}
