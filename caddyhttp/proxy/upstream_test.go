@@ -448,3 +448,56 @@ func TestHealthCheckPort(t *testing.T) {
 	})
 
 }
+
+func TestHealthCheckContentString(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "blablabla good blablabla")
+		r.Body.Close()
+	}))
+	_, port, err := net.SplitHostPort(server.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+
+	tests := []struct {
+		config        string
+		shouldContain bool
+	}{
+		{"proxy / localhost:" + port +
+			" { health_check /testhealth " +
+			" health_check_contains good\n}",
+			true,
+		},
+		{"proxy / localhost:" + port + " {\n health_check /testhealth health_check_port " + port +
+			" \n health_check_contains bad\n}",
+			false,
+		},
+	}
+	for i, test := range tests {
+		u, err := NewStaticUpstreams(caddyfile.NewDispenser("Testfile", strings.NewReader(test.config)), "")
+		if err != nil {
+			t.Error("Expected no error. Test %d Got:", i, err.Error())
+		}
+		for _, upstream := range u {
+			staticUpstream, ok := upstream.(*staticUpstream)
+			if !ok {
+				t.Errorf("Type mismatch: %#v", upstream)
+				continue
+			}
+			staticUpstream.healthCheck()
+			for _, host := range staticUpstream.Hosts {
+				if test.shouldContain && atomic.LoadInt32(&host.Unhealthy) == 0 {
+					// healthcheck url was hit and the required test string was found
+					continue
+				}
+				if !test.shouldContain && atomic.LoadInt32(&host.Unhealthy) != 0 {
+					// healthcheck url was hit and the required string was not found
+					continue
+				}
+				t.Errorf("Health check bad response")
+			}
+			upstream.Stop()
+		}
+	}
+}

@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -38,12 +39,13 @@ type staticUpstream struct {
 	TryInterval       time.Duration
 	MaxConns          int64
 	HealthCheck       struct {
-		Client   http.Client
-		Path     string
-		Interval time.Duration
-		Timeout  time.Duration
-		Host     string
-		Port     string
+		Client        http.Client
+		Path          string
+		Interval      time.Duration
+		Timeout       time.Duration
+		Host          string
+		Port          string
+		ContentString string
 	}
 	WithoutPathPrefix  string
 	IgnoredSubPaths    []string
@@ -337,6 +339,11 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream) error {
 			return c.Errf("invalid health_check_port '%s'", port)
 		}
 		u.HealthCheck.Port = port
+	case "health_check_contains":
+		if !c.NextArg() {
+			return c.ArgErr()
+		}
+		u.HealthCheck.ContentString = c.Val()
 	case "header_upstream":
 		var header, value string
 		if !c.Args(&header, &value) {
@@ -402,27 +409,42 @@ func (u *staticUpstream) healthCheck() {
 		}
 		hostURL += u.HealthCheck.Path
 
-		var unhealthy bool
-
-		// set up request, needed to be able to modify headers
-		// possible errors are bad HTTP methods or un-parsable urls
-		req, err := http.NewRequest("GET", hostURL, nil)
-		if err != nil {
-			unhealthy = true
-		} else {
+		unhealthy := func() bool {
+			// set up request, needed to be able to modify headers
+			// possible errors are bad HTTP methods or un-parsable urls
+			req, err := http.NewRequest("GET", hostURL, nil)
+			if err != nil {
+				return true
+			}
 			// set host for request going upstream
 			if u.HealthCheck.Host != "" {
 				req.Host = u.HealthCheck.Host
 			}
-
-			if r, err := u.HealthCheck.Client.Do(req); err == nil {
+			r, err := u.HealthCheck.Client.Do(req)
+			if err != nil {
+				return true
+			}
+			defer func() {
 				io.Copy(ioutil.Discard, r.Body)
 				r.Body.Close()
-				unhealthy = r.StatusCode < 200 || r.StatusCode >= 400
-			} else {
-				unhealthy = true
+			}()
+			if r.StatusCode < 200 || r.StatusCode >= 400 {
+				return true
 			}
-		}
+			if u.HealthCheck.ContentString == "" { // don't check for content string
+				return false
+			}
+			// TODO ReadAll will be replaced if deemed necessary
+			//      See https://github.com/mholt/caddy/pull/1691
+			buf, err := ioutil.ReadAll(r.Body)
+			if err != nil {
+				return true
+			}
+			if bytes.Contains(buf, []byte(u.HealthCheck.ContentString)) {
+				return false
+			}
+			return true
+		}()
 		if unhealthy {
 			atomic.StoreInt32(&host.Unhealthy, 1)
 		} else {
