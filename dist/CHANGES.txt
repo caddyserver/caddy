@@ -1,5 +1,20 @@
 CHANGES
 
+0.10.4 (June 28, 2017)
+- Vendor all dependencies
+- Improve MITM detection, add experimental Tor browser support
+- New requestid directive to add request IDs to each request
+- New HTTP plugins supported: authz, grpc, gopkg, reauth, restic
+- browse: Refreshed default UI and added symlink indicators
+- errors, log: Added rotate_compress directive to compress rolled logs
+- markdown: Template files loaded at each request instead of just once
+- proxy: Allow multiple Server header fields on downstream response
+- proxy: Perform health checks by body substring
+- rewrite,redir: Added 'not_starts_with' and 'not_ends_with' operators
+- tls: New ca subdirective to specify CA endpoint per-site
+- Several bug fixes
+
+
 0.10.3 (May 19, 2017)
 - Replace 'maxrequestbody' directive with 'limits' directive
 - proxy: Configurable port for health check
