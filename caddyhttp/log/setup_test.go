@@ -203,6 +203,7 @@ func TestLogParse(t *testing.T) {
 						MaxSize:    2,
 						MaxAge:     10,
 						MaxBackups: 3,
+						Compress:   false,
 						LocalTime:  true,
 					}},
 				Format: DefaultLogFormat,

@@ -14,6 +14,7 @@ type LogRoller struct {
 	MaxSize    int
 	MaxAge     int
 	MaxBackups int
+	Compress   bool
 	LocalTime  bool
 }
 
@@ -37,6 +38,7 @@ func (l LogRoller) GetLogWriter() io.Writer {
 			MaxSize:    l.MaxSize,
 			MaxAge:     l.MaxAge,
 			MaxBackups: l.MaxBackups,
+			Compress:   l.Compress,
 			LocalTime:  l.LocalTime,
 		}
 		lumberjacks[absPath] = lj
@@ -48,7 +50,8 @@ func (l LogRoller) GetLogWriter() io.Writer {
 func IsLogRollerSubdirective(subdir string) bool {
 	return subdir == directiveRotateSize ||
 		subdir == directiveRotateAge ||
-		subdir == directiveRotateKeep
+		subdir == directiveRotateKeep ||
+		subdir == directiveRotateCompress
 }
 
 // ParseRoller parses roller contents out of c.
@@ -59,7 +62,7 @@ func ParseRoller(l *LogRoller, what string, where string) error {
 	var value int
 	var err error
 	value, err = strconv.Atoi(where)
-	if err != nil {
+	if what != directiveRotateCompress && err != nil {
 		return err
 	}
 	switch what {
@@ -69,6 +72,8 @@ func ParseRoller(l *LogRoller, what string, where string) error {
 		l.MaxAge = value
 	case directiveRotateKeep:
 		l.MaxBackups = value
+	case directiveRotateCompress:
+		l.Compress = true
 	}
 	return nil
 }
@@ -79,6 +84,7 @@ func DefaultLogRoller() *LogRoller {
 		MaxSize:    defaultRotateSize,
 		MaxAge:     defaultRotateAge,
 		MaxBackups: defaultRotateKeep,
+		Compress:   false,
 		LocalTime:  true,
 	}
 }
@@ -89,10 +95,12 @@ const (
 	// defaultRotateAge is 14 days.
 	defaultRotateAge = 14
 	// defaultRotateKeep is 10 files.
-	defaultRotateKeep   = 10
-	directiveRotateSize = "rotate_size"
-	directiveRotateAge  = "rotate_age"
-	directiveRotateKeep = "rotate_keep"
+	defaultRotateKeep = 10
+
+	directiveRotateSize     = "rotate_size"
+	directiveRotateAge      = "rotate_age"
+	directiveRotateKeep     = "rotate_keep"
+	directiveRotateCompress = "rotate_compress"
 )
 
 // lumberjacks maps log filenames to the logger
