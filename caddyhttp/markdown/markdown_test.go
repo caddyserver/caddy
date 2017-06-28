@@ -81,14 +81,17 @@ func TestMarkdown(t *testing.T) {
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
 			t.Fatalf("Could not create HTTP request: %v", err)
+			return ""
 		}
 		rec := httptest.NewRecorder()
 		code, err := md.ServeHTTP(rec, req)
 		if err != nil {
 			t.Fatal(err)
+			return ""
 		}
 		if code != http.StatusOK {
 			t.Fatalf("Wrong status, expected: %d and got %d", http.StatusOK, code)
+			return ""
 		}
 		return rec.Body.String()
 	}
@@ -223,9 +226,11 @@ func TestTemplateReload(t *testing.T) {
 		code, err := md.ServeHTTP(rec, req)
 		if err != nil {
 			t.Fatal(err)
+			return ""
 		}
 		if code != http.StatusOK {
 			t.Fatalf("Wrong status, expected: %d and got %d", http.StatusOK, code)
+			return ""
 		}
 		return rec.Body.String()
 	}
