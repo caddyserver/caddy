@@ -194,7 +194,7 @@ func TestLogParse(t *testing.T) {
 				Format: "{when}",
 			}},
 		}}},
-		{`log access.log { rotate_size 2 rotate_age 10 rotate_keep 3 rotate_compress false }`, false, []Rule{{
+		{`log access.log { rotate_size 2 rotate_age 10 rotate_keep 3 }`, false, []Rule{{
 			PathScope: "/",
 			Entries: []*Entry{{
 				Log: &httpserver.Logger{

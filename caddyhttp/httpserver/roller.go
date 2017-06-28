@@ -60,14 +60,10 @@ func ParseRoller(l *LogRoller, what string, where string) error {
 		l = DefaultLogRoller()
 	}
 	var value int
-	var valueBool bool
 	var err error
 	value, err = strconv.Atoi(where)
-	if err != nil {
-		valueBool, err = strconv.ParseBool(where)
-		if err != nil {
-			return err
-		}
+	if what != directiveRotateCompress && err != nil {
+		return err
 	}
 	switch what {
 	case directiveRotateSize:
@@ -77,7 +73,7 @@ func ParseRoller(l *LogRoller, what string, where string) error {
 	case directiveRotateKeep:
 		l.MaxBackups = value
 	case directiveRotateCompress:
-		l.Compress = valueBool
+		l.Compress = true
 	}
 	return nil
 }
@@ -88,7 +84,7 @@ func DefaultLogRoller() *LogRoller {
 		MaxSize:    defaultRotateSize,
 		MaxAge:     defaultRotateAge,
 		MaxBackups: defaultRotateKeep,
-		Compress:   defaultRotateCompress,
+		Compress:   false,
 		LocalTime:  true,
 	}
 }
@@ -100,8 +96,6 @@ const (
 	defaultRotateAge = 14
 	// defaultRotateKeep is 10 files.
 	defaultRotateKeep = 10
-	// defaultRotateCompress is false.
-	defaultRotateCompress = false
 
 	directiveRotateSize     = "rotate_size"
 	directiveRotateAge      = "rotate_age"

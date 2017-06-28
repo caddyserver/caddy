@@ -85,7 +85,7 @@ func TestErrorsParse(t *testing.T) {
 				Roller: httpserver.DefaultLogRoller(),
 			},
 		}},
-		{`errors errors.txt { rotate_size 2 rotate_age 10 rotate_keep 3 rotate_compress true }`, false, ErrorHandler{
+		{`errors errors.txt { rotate_size 2 rotate_age 10 rotate_keep 3 rotate_compress }`, false, ErrorHandler{
 			ErrorPages: map[int]string{},
 			Log: &httpserver.Logger{
 				Output: "errors.txt", Roller: &httpserver.LogRoller{
