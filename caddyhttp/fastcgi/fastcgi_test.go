@@ -208,10 +208,10 @@ func TestBuildEnv(t *testing.T) {
 
 func TestBalancer(t *testing.T) {
 	tests := [][]string{
-		[]string{"localhost", "host.local"},
-		[]string{"localhost"},
-		[]string{"localhost", "host.local", "example.com"},
-		[]string{"localhost", "host.local", "example.com", "127.0.0.1"},
+		{"localhost", "host.local"},
+		{"localhost"},
+		{"localhost", "host.local", "example.com"},
+		{"localhost", "host.local", "example.com", "127.0.0.1"},
 	}
 	for i, test := range tests {
 		b := address(test...)
