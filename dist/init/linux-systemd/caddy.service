@@ -6,11 +6,6 @@ Wants=network-online.target systemd-networkd-wait-online.service
 
 [Service]
 Restart=on-failure
-; Renamed to StartLimitIntervalSec for systemd>=230
-; Set StartLimitInterval=0 to disable rate limiting.
-; To reset the restart counter run 'systemctl reset-failed caddy'
-StartLimitInterval=10
-StartLimitBurst=10
 
 ; User and group the process will run as.
 User=www-data
