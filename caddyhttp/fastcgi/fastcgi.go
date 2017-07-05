@@ -135,7 +135,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 				resp, err = fcgiBackend.Post(env, r.Method, r.Header.Get("Content-Type"), r.Body, contentLength)
 			}
 
-			if resp.Body != nil {
+			if resp != nil && resp.Body != nil {
 				defer resp.Body.Close()
 			}
 
