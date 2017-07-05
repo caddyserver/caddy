@@ -477,7 +477,7 @@ func TestHealthCheckContentString(t *testing.T) {
 	for i, test := range tests {
 		u, err := NewStaticUpstreams(caddyfile.NewDispenser("Testfile", strings.NewReader(test.config)), "")
 		if err != nil {
-			t.Error("Expected no error. Test %d Got:", i, err.Error())
+			t.Errorf("Expected no error. Test %d Got: %s", i, err.Error())
 		}
 		for _, upstream := range u {
 			staticUpstream, ok := upstream.(*staticUpstream)
