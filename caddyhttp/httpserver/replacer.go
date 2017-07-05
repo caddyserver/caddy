@@ -287,6 +287,8 @@ func (r *replacer) getSubstitution(key string) string {
 		return now().Format(timeFormat)
 	case "{when_iso}":
 		return now().UTC().Format(timeFormatISOUTC)
+	case "{when_unix}":
+		return strconv.FormatInt(now().Unix(), 10)
 	case "{file}":
 		_, file := path.Split(r.request.URL.Path)
 		return file
