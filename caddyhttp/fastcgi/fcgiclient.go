@@ -547,7 +547,7 @@ func (c *FCGIClient) PostFile(p map[string]string, data url.Values, file map[str
 // SetReadTimeout sets the read timeout for future calls that read from the
 // fcgi responder. A zero value for t means no timeout will be set.
 func (c *FCGIClient) SetReadTimeout(t time.Duration) error {
-	if conn, ok := c.rwc.(net.Conn); ok && t > 0 {
+	if conn, ok := c.rwc.(net.Conn); ok && t != 0 {
 		return conn.SetReadDeadline(time.Now().Add(t))
 	}
 	return nil
@@ -556,7 +556,7 @@ func (c *FCGIClient) SetReadTimeout(t time.Duration) error {
 // SetSendTimeout sets the read timeout for future calls that send data to
 // the fcgi responder. A zero value for t means no timeout will be set.
 func (c *FCGIClient) SetSendTimeout(t time.Duration) error {
-	if conn, ok := c.rwc.(net.Conn); ok && t > 0 {
+	if conn, ok := c.rwc.(net.Conn); ok && t != 0 {
 		return conn.SetWriteDeadline(time.Now().Add(t))
 	}
 	return nil
