@@ -75,6 +75,7 @@ func TestReplace(t *testing.T) {
 		{"The response status is {status}.", "The response status is 200."},
 		{"{when}", "02/Jan/2006:15:04:05 +0000"},
 		{"{when_iso}", "2006-01-02T15:04:12Z"},
+		{"{when_unix}", "1136214252"},
 		{"The Custom header is {>Custom}.", "The Custom header is foobarbaz."},
 		{"The CustomAdd header is {>CustomAdd}.", "The CustomAdd header is caddy."},
 		{"The request is {request}.", "The request is POST /?foo=bar HTTP/1.1\\r\\nHost: localhost\\r\\n" +
