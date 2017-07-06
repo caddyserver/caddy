@@ -34,7 +34,16 @@ type Rewrite struct {
 // ServeHTTP implements the httpserver.Handler interface.
 func (rw Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	if rule := httpserver.ConfigSelector(rw.Rules).Select(r); rule != nil {
-		rule.(Rule).Rewrite(rw.FileSys, r)
+		if result := rule.(Rule).Rewrite(rw.FileSys, r); result == RewriteDone {
+			// Check if this is a complex rule that requires a redirect.
+			if complexRule, ok := rule.(*ComplexRule); ok {
+				if complexRule.RedirectCode != 0 {
+					// Issue the redirect
+					http.Redirect(w, r, r.URL.String(), complexRule.RedirectCode)
+					return 0, nil
+				}
+			}
+		}
 	}
 
 	return rw.Next.ServeHTTP(w, r)
@@ -81,6 +90,9 @@ type ComplexRule struct {
 	// Extensions to filter by
 	Exts []string
 
+	// Desired redirect code
+	RedirectCode int
+
 	// Request matcher
 	httpserver.RequestMatcher
 
@@ -89,7 +101,7 @@ type ComplexRule struct {
 
 // NewComplexRule creates a new RegexpRule. It returns an error if regexp
 // pattern (pattern) or extensions (ext) are invalid.
-func NewComplexRule(base, pattern, to string, ext []string, matcher httpserver.RequestMatcher) (*ComplexRule, error) {
+func NewComplexRule(base, pattern, to string, ext []string, redirectCode int, matcher httpserver.RequestMatcher) (*ComplexRule, error) {
 	// validate regexp if present
 	var r *regexp.Regexp
 	if pattern != "" {
@@ -122,6 +134,7 @@ func NewComplexRule(base, pattern, to string, ext []string, matcher httpserver.R
 		Base:           base,
 		To:             to,
 		Exts:           ext,
+		RedirectCode:   redirectCode,
 		RequestMatcher: matcher,
 		Regexp:         r,
 	}, nil
