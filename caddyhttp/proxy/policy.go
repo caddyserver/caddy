@@ -18,12 +18,13 @@ type Policy interface {
 }
 
 func init() {
-	RegisterPolicy("random", func() Policy { return &Random{} })
-	RegisterPolicy("least_conn", func() Policy { return &LeastConn{} })
-	RegisterPolicy("round_robin", func() Policy { return &RoundRobin{} })
-	RegisterPolicy("ip_hash", func() Policy { return &IPHash{} })
-	RegisterPolicy("first", func() Policy { return &First{} })
-	RegisterPolicy("uri_hash", func() Policy { return &URIHash{} })
+	RegisterPolicy("random", func(arg string) Policy { return &Random{} })
+	RegisterPolicy("least_conn", func(arg string) Policy { return &LeastConn{} })
+	RegisterPolicy("round_robin", func(arg string) Policy { return &RoundRobin{} })
+	RegisterPolicy("ip_hash", func(arg string) Policy { return &IPHash{} })
+	RegisterPolicy("first", func(arg string) Policy { return &First{} })
+	RegisterPolicy("uri_hash", func(arg string) Policy { return &URIHash{} })
+	RegisterPolicy("header", func(arg string) Policy { return &Header{arg} })
 }
 
 // Random is a policy that selects up hosts from a pool at random.
@@ -159,4 +160,23 @@ func (r *First) Select(pool HostPool, request *http.Request) *UpstreamHost {
 		}
 	}
 	return nil
+}
+
+// Header is a policy that selects based on a hash of the given header
+type Header struct {
+	// The name of the request header, the value of which will determine
+	// how the request is routed
+	Name string
+}
+
+// Select selects the host based on hashing the header value
+func (r *Header) Select(pool HostPool, request *http.Request) *UpstreamHost {
+	if r.Name == "" {
+		return nil
+	}
+	val := request.Header.Get(r.Name)
+	if val == "" {
+		return nil
+	}
+	return hostByHashing(pool, val)
 }
