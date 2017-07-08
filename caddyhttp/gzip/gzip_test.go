@@ -38,6 +38,14 @@ func TestGzipHandler(t *testing.T) {
 			t.Error(err)
 		}
 		r.Header.Set("Accept-Encoding", "gzip")
+		w.Header().Set("ETag", `"2n9cd"`)
+		_, err = gz.ServeHTTP(w, r)
+		if err != nil {
+			t.Error(err)
+		}
+
+		// The second pass, test if the ETag is already weak
+		w.Header().Set("ETag", `W/"2n9cd"`)
 		_, err = gz.ServeHTTP(w, r)
 		if err != nil {
 			t.Error(err)
@@ -113,6 +121,10 @@ func nextFunc(shouldGzip bool) httpserver.Handler {
 			}
 			if w.Header().Get("Vary") != "Accept-Encoding" {
 				return 0, fmt.Errorf("Vary must be Accept-Encoding, found %v", w.Header().Get("Vary"))
+			}
+			etag := w.Header().Get("ETag")
+			if etag != "" && etag != `W/"2n9cd"` {
+				return 0, fmt.Errorf("ETag must be converted to weak Etag, found %v", w.Header().Get("ETag"))
 			}
 			if _, ok := w.(*gzipResponseWriter); !ok {
 				return 0, fmt.Errorf("ResponseWriter should be gzipResponseWriter, found %T", w)
