@@ -22,7 +22,7 @@ import (
 )
 
 var (
-	supportedPolicies = make(map[string]func() Policy)
+	supportedPolicies = make(map[string]func(string) Policy)
 )
 
 type staticUpstream struct {
@@ -243,7 +243,11 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream) error {
 		if !ok {
 			return c.ArgErr()
 		}
-		u.Policy = policyCreateFunc()
+		arg := ""
+		if c.NextArg() {
+			arg = c.Val()
+		}
+		u.Policy = policyCreateFunc(arg)
 	case "fail_timeout":
 		if !c.NextArg() {
 			return c.ArgErr()
@@ -523,7 +527,7 @@ func (u *staticUpstream) Stop() error {
 }
 
 // RegisterPolicy adds a custom policy to the proxy.
-func RegisterPolicy(name string, policy func() Policy) {
+func RegisterPolicy(name string, policy func(string) Policy) {
 	supportedPolicies[name] = policy
 }
 
