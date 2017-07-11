@@ -487,6 +487,7 @@ var directives = []string{
 	"cgi", // github.com/jung-kurt/caddy-cgi
 	"websocket",
 	"filemanager", // github.com/hacdias/caddy-filemanager
+	"webdav",      // github.com/hacdias/caddy-webdav
 	"markdown",
 	"templates",
 	"browse",
