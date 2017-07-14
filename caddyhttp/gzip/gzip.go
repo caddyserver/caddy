@@ -105,6 +105,10 @@ func (w *gzipResponseWriter) WriteHeader(code int) {
 	w.Header().Del("Content-Length")
 	w.Header().Set("Content-Encoding", "gzip")
 	w.Header().Add("Vary", "Accept-Encoding")
+	originalEtag := w.Header().Get("ETag")
+	if originalEtag != "" && !strings.HasPrefix(originalEtag, "W/") {
+		w.Header().Set("ETag", "W/"+originalEtag)
+	}
 	w.ResponseWriterWrapper.WriteHeader(code)
 	w.statusCodeWritten = true
 }
