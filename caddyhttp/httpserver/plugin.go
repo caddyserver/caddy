@@ -496,6 +496,7 @@ var directives = []string{
 	"grpc",      // github.com/pieterlouw/caddy-grpc
 	"gopkg",     // github.com/zikes/gopkg
 	"restic",    // github.com/restic/caddy
+	"nobots",    // github.com/Xumeiquer/nobots
 }
 
 const (
