@@ -443,7 +443,7 @@ var directives = []string{
 	// services/utilities, or other directives that don't necessarily inject handlers
 	"startup",
 	"shutdown",
-	"requestid",
+	"request_id",
 	"realip", // github.com/captncraig/caddy-realip
 	"git",    // github.com/abiosoft/caddy-git
 
@@ -453,6 +453,7 @@ var directives = []string{
 	// directives that add middleware to the stack
 	"locale", // github.com/simia-tech/caddy-locale
 	"log",
+	"cache", // github.com/nicolasazrak/caddy-cache
 	"rewrite",
 	"ext",
 	"gzip",
@@ -487,6 +488,7 @@ var directives = []string{
 	"cgi", // github.com/jung-kurt/caddy-cgi
 	"websocket",
 	"filemanager", // github.com/hacdias/caddy-filemanager
+	"webdav",      // github.com/hacdias/caddy-webdav
 	"markdown",
 	"templates",
 	"browse",

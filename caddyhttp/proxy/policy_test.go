@@ -302,3 +302,42 @@ func TestUriPolicy(t *testing.T) {
 		t.Error("Expected uri policy policy host to be nil.")
 	}
 }
+
+func TestHeaderPolicy(t *testing.T) {
+	pool := testPool()
+	tests := []struct {
+		Policy             *Header
+		RequestHeaderName  string
+		RequestHeaderValue string
+		NilHost            bool
+		HostIndex          int
+	}{
+		{&Header{""}, "", "", true, 0},
+		{&Header{""}, "Affinity", "somevalue", true, 0},
+		{&Header{""}, "Affinity", "", true, 0},
+
+		{&Header{"Affinity"}, "", "", true, 0},
+		{&Header{"Affinity"}, "Affinity", "somevalue", false, 1},
+		{&Header{"Affinity"}, "Affinity", "somevalue2", false, 0},
+		{&Header{"Affinity"}, "Affinity", "somevalue3", false, 2},
+		{&Header{"Affinity"}, "Affinity", "", true, 0},
+	}
+
+	for idx, test := range tests {
+		request, _ := http.NewRequest("GET", "/", nil)
+		if test.RequestHeaderName != "" {
+			request.Header.Add(test.RequestHeaderName, test.RequestHeaderValue)
+		}
+
+		host := test.Policy.Select(pool, request)
+		if test.NilHost && host != nil {
+			t.Errorf("%d: Expected host to be nil", idx)
+		}
+		if !test.NilHost && host == nil {
+			t.Errorf("%d: Did not expect host to be nil", idx)
+		}
+		if !test.NilHost && host != pool[test.HostIndex] {
+			t.Errorf("%d: Expected Header policy to be host %d", idx, test.HostIndex)
+		}
+	}
+}

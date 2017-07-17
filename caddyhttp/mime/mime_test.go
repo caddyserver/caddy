@@ -57,7 +57,7 @@ func nextFunc(shouldMime bool, contentType string) httpserver.Handler {
 	return httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
 		if shouldMime {
 			if w.Header().Get("Content-Type") != contentType {
-				return 0, fmt.Errorf("expected Content-Type: %v, found %v", contentType, r.Header.Get("Content-Type"))
+				return 0, fmt.Errorf("expected Content-Type: %v, found %v", contentType, w.Header().Get("Content-Type"))
 			}
 			return 0, nil
 		}
