@@ -453,7 +453,6 @@ var directives = []string{
 	// directives that add middleware to the stack
 	"locale", // github.com/simia-tech/caddy-locale
 	"log",
-	"nobots",    // github.com/Xumeiquer/nobots
 	"cache", // github.com/nicolasazrak/caddy-cache
 	"rewrite",
 	"ext",
@@ -470,7 +469,8 @@ var directives = []string{
 	"basicauth",
 	"redir",
 	"status",
-	"cors", // github.com/captncraig/cors/caddy
+	"cors",   // github.com/captncraig/cors/caddy
+	"nobots", // github.com/Xumeiquer/nobots
 	"mime",
 	"login",     // github.com/tarent/loginsrv/caddy
 	"reauth",    // github.com/freman/caddy-reauth
