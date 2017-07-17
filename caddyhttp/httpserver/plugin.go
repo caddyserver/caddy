@@ -453,6 +453,7 @@ var directives = []string{
 	// directives that add middleware to the stack
 	"locale", // github.com/simia-tech/caddy-locale
 	"log",
+	"nobots",    // github.com/Xumeiquer/nobots
 	"cache", // github.com/nicolasazrak/caddy-cache
 	"rewrite",
 	"ext",
@@ -498,7 +499,6 @@ var directives = []string{
 	"grpc",      // github.com/pieterlouw/caddy-grpc
 	"gopkg",     // github.com/zikes/gopkg
 	"restic",    // github.com/restic/caddy
-	"nobots",    // github.com/Xumeiquer/nobots
 }
 
 const (
