@@ -4,6 +4,7 @@
 package fastcgi
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net"
@@ -14,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/mholt/caddy/caddyhttp/httpserver"
@@ -90,16 +92,28 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			}
 
 			// Connect to FastCGI gateway
-			fcgiBackend, err := rule.dialer.Dial()
+			network, address := parseAddress(rule.Address())
+
+			ctx := context.Background()
+			if rule.ConnectTimeout > 0 {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, rule.ConnectTimeout)
+				defer cancel()
+			}
+
+			fcgiBackend, err := DialContext(ctx, network, address)
 			if err != nil {
-				if err, ok := err.(net.Error); ok && err.Timeout() {
-					return http.StatusGatewayTimeout, err
-				}
 				return http.StatusBadGateway, err
 			}
 			defer fcgiBackend.Close()
-			fcgiBackend.SetReadTimeout(rule.ReadTimeout)
-			fcgiBackend.SetSendTimeout(rule.SendTimeout)
+
+			// read/write timeouts
+			if err := fcgiBackend.SetReadTimeout(rule.ReadTimeout); err != nil {
+				return http.StatusInternalServerError, err
+			}
+			if err := fcgiBackend.SetSendTimeout(rule.SendTimeout); err != nil {
+				return http.StatusInternalServerError, err
+			}
 
 			var resp *http.Response
 
@@ -121,6 +135,10 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 				resp, err = fcgiBackend.Post(env, r.Method, r.Header.Get("Content-Type"), r.Body, contentLength)
 			}
 
+			if resp != nil && resp.Body != nil {
+				defer resp.Body.Close()
+			}
+
 			if err != nil {
 				if err, ok := err.(net.Error); ok && err.Timeout() {
 					return http.StatusGatewayTimeout, err
@@ -139,9 +157,9 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			}
 
 			// Log any stderr output from upstream
-			if stderr := fcgiBackend.StdErr(); stderr.Len() != 0 {
+			if fcgiBackend.stderr.Len() != 0 {
 				// Remove trailing newline, error logger already does this.
-				err = LogError(strings.TrimSuffix(stderr.String(), "\n"))
+				err = LogError(strings.TrimSuffix(fcgiBackend.stderr.String(), "\n"))
 			}
 
 			// Normally we would return the status code if it is an error status (>= 400),
@@ -303,8 +321,8 @@ type Rule struct {
 	// The base path to match. Required.
 	Path string
 
-	// The address of the FastCGI server. Required.
-	Address string
+	// upstream load balancer
+	balancer
 
 	// Always process files with this extension with fastcgi.
 	Ext string
@@ -329,14 +347,32 @@ type Rule struct {
 	// Ignored paths
 	IgnoredSubPaths []string
 
+	// The duration used to set a deadline when connecting to an upstream.
+	ConnectTimeout time.Duration
+
 	// The duration used to set a deadline when reading from the FastCGI server.
 	ReadTimeout time.Duration
 
 	// The duration used to set a deadline when sending to the FastCGI server.
 	SendTimeout time.Duration
+}
 
-	// FCGI dialer
-	dialer dialer
+// balancer is a fastcgi upstream load balancer.
+type balancer interface {
+	// Address picks an upstream address from the
+	// underlying load balancer.
+	Address() string
+}
+
+// roundRobin is a round robin balancer for fastcgi upstreams.
+type roundRobin struct {
+	addresses []string
+	index     int64
+}
+
+func (r *roundRobin) Address() string {
+	index := atomic.AddInt64(&r.index, 1) % int64(len(r.addresses))
+	return r.addresses[index]
 }
 
 // canSplit checks if path can split into two based on rule.SplitPath.
