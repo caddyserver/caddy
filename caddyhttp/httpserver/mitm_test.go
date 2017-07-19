@@ -108,20 +108,20 @@ func TestHeuristicFunctionsAndHandler(t *testing.T) {
 				helloHex:     `010000c003031dae75222dae1433a5a283ddcde8ddabaefbf16d84f250eee6fdff48cdfff8a00000201a1ac02bc02fc02cc030cca9cca8cc14cc13c013c014009c009d002f0035000a010000777a7a0000ff010001000000000e000c0000096c6f63616c686f73740017000000230000000d00140012040308040401050308050501080606010201000500050100000000001200000010000e000c02683208687474702f312e3175500000000b00020100000a000a0008aaaa001d001700182a2a000100`,
 				interception: false,
 			},
-			// TODO: Chrome on iOS will use iOS' TLS stack for requests that load
-			// the web page (apparently required by the dev ToS) but will use its
-			// own TLS stack for everything else, it seems. Figure out a decent way
-			// to test this with a nice, unified corpus that allows for this variance.
-			// {
-			// 	// Chrome on iOS
-			// 	userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 10_0_2 like Mac OS X) AppleWebKit/602.1.50 (KHTML, like Gecko) CriOS/56.0.2924.79 Mobile/14A456 Safari/602.1",
-			// 	helloHex:  `010000de030358b062c509b21410a6496b5a82bfec74436cdecebe8ea1da29799939bbd3c17200002c00ffc02cc02bc024c023c00ac009c008c030c02fc028c027c014c013c012009d009c003d003c0035002f000a0100008900000014001200000f66696e6572706978656c732e636f6d000a00080006001700180019000b00020100000d00120010040102010501060104030203050306033374000000100030002e0268320568322d31360568322d31350568322d313408737064792f332e3106737064792f3308687474702f312e310005000501000000000012000000170000`,
-			// },
-			// {
-			// 	// Chrome on iOS (requesting favicon)
-			// 	userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 10_0_2 like Mac OS X) AppleWebKit/602.1.50 (KHTML, like Gecko) CriOS/56.0.2924.79 Mobile/14A456 Safari/602.1",
-			// 	helloHex:  `010000c20303863eb64788e3b9638c261300318411cbdd8f09576d58eec1e744b6ce944f574f0000208a8acca9cca8cc14cc13c02bc02fc02cc030c013c014009c009d002f0035000a01000079baba0000ff0100010000000014001200000f66696e6572706978656c732e636f6d0017000000230000000d00140012040308040401050308050501080606010201000500050100000000001200000010000e000c02683208687474702f312e31000b00020100000a000a00083a3a001d001700184a4a000100`,
-			// },
+			{
+				// Chrome on iOS will use iOS' TLS stack for requests that load
+				// the web page (apparently required by the dev ToS) but will use its
+				// own TLS stack for everything else, it seems.
+
+				// Chrome on iOS
+				userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 10_0_2 like Mac OS X) AppleWebKit/602.1.50 (KHTML, like Gecko) CriOS/56.0.2924.79 Mobile/14A456 Safari/602.1",
+				helloHex:  `010000de030358b062c509b21410a6496b5a82bfec74436cdecebe8ea1da29799939bbd3c17200002c00ffc02cc02bc024c023c00ac009c008c030c02fc028c027c014c013c012009d009c003d003c0035002f000a0100008900000014001200000f66696e6572706978656c732e636f6d000a00080006001700180019000b00020100000d00120010040102010501060104030203050306033374000000100030002e0268320568322d31360568322d31350568322d313408737064792f332e3106737064792f3308687474702f312e310005000501000000000012000000170000`,
+			},
+			{
+				// Chrome on iOS (requesting favicon)
+				userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 10_0_2 like Mac OS X) AppleWebKit/602.1.50 (KHTML, like Gecko) CriOS/56.0.2924.79 Mobile/14A456 Safari/602.1",
+				helloHex:  `010000c20303863eb64788e3b9638c261300318411cbdd8f09576d58eec1e744b6ce944f574f0000208a8acca9cca8cc14cc13c02bc02fc02cc030c013c014009c009d002f0035000a01000079baba0000ff0100010000000014001200000f66696e6572706978656c732e636f6d0017000000230000000d00140012040308040401050308050501080606010201000500050100000000001200000010000e000c02683208687474702f312e31000b00020100000a000a00083a3a001d001700184a4a000100`,
+			},
 			{
 				userAgent:    "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/56.0.2924.87 Safari/537.36",
 				helloHex:     `010000c603036f717a88212c3e9e41940f82c42acb3473e0e4a64e8f52d9af33d34e972e08a30000206a6ac02bc02fc02cc030cca9cca8cc14cc13c013c014009c009d002f0035000a0100007d7a7a0000ff0100010000000014001200000f66696e6572706978656c732e636f6d0017000000230000000d00140012040308040401050308050501080606010201000500050100000000001200000010000e000c02683208687474702f312e3175500000000b00020100000a000a00087a7a001d001700188a8a000100`,
@@ -183,6 +183,11 @@ func TestHeuristicFunctionsAndHandler(t *testing.T) {
 			{
 				userAgent:    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_3) AppleWebKit/602.4.8 (KHTML, like Gecko) Version/10.0.3 Safari/602.4.8",
 				helloHex:     `010000d2030358a295b513c8140c6ff880f4a8a73cc830ed2dab2c4f2068eb365228d828732e00002600ffc02cc02bc024c023c00ac009c030c02fc028c027c014c013009d009c003d003c0035002f010000830000000e000c0000096c6f63616c686f7374000a00080006001700180019000b00020100000d00120010040102010501060104030203050306033374000000100030002e0268320568322d31360568322d31350568322d313408737064792f332e3106737064792f3308687474702f312e310005000501000000000012000000170000`,
+				interception: false,
+			},
+			{
+				userAgent:    "Mozilla/5.0 (iPhone; CPU iPhone OS 11_0 like Mac OS X) AppleWebKit/604.1.28 (KHTML, like Gecko) Version/11.0 Mobile/15A5318g Safari/604.1",
+				helloHex:     `010000e10303be294e11847ba01301e0bb6129f4a0d66344602141a8f0a1ab0750a1db145755000028c02cc02bc024c023cca9c00ac009c030c02fc028c027cca8c014c013009d009c003d003c0035002f01000090ff0100010000000014001200000f66696e6572706978656c732e636f6d00170000000d00140012040308040401050308050501080606010201000500050100000000337400000012000000100030002e0268320568322d31360568322d31350568322d313408737064792f332e3106737064792f3308687474702f312e31000b00020100000a00080006001d00170018`,
 				interception: false,
 			},
 		},
@@ -306,28 +311,17 @@ func TestHeuristicFunctionsAndHandler(t *testing.T) {
 			// should return false, with as little logic as possible,
 			// but with enough logic to force TLS proxies to do a
 			// good job preserving characterstics of the handshake.
-			var correct bool
-			switch client {
-			case "Chrome":
-				correct = isChrome && !isFirefox && !isSafari && !isEdge && !isTor
-			case "Firefox":
-				correct = !isChrome && isFirefox && !isSafari && !isEdge && !isTor
-			case "Safari":
-				correct = !isChrome && !isFirefox && isSafari && !isEdge && !isTor
-			case "Edge":
-				correct = !isChrome && !isFirefox && !isSafari && isEdge && !isTor
-			case "Tor":
-				correct = !isChrome && !isFirefox && !isSafari && !isEdge && isTor
-			case "Other":
-				correct = !isChrome && !isFirefox && !isSafari && !isEdge && !isTor
-			}
-
-			if !correct {
-				t.Errorf("[%s] Test %d: Chrome=%v Firefox=%v Safari=%v Edge=%v Tor=%v\n\tparsed hello dec: %+v\n\tparsed hello hex: %#x\n",
+			if (isChrome && (isFirefox || isSafari || isEdge || isTor)) ||
+				(isFirefox && (isChrome || isSafari || isEdge || isTor)) ||
+				(isSafari && (isChrome || isFirefox || isEdge || isTor)) ||
+				(isEdge && (isChrome || isFirefox || isSafari || isTor)) ||
+				(isTor && (isChrome || isFirefox || isSafari || isEdge)) {
+				t.Errorf("[%s] Test %d: Multiple fingerprinting functions matched: "+
+					"Chrome=%v Firefox=%v Safari=%v Edge=%v Tor=%v\n\tparsed hello dec: %+v\n\tparsed hello hex: %#x\n",
 					client, i, isChrome, isFirefox, isSafari, isEdge, isTor, parsed, parsed)
 			}
 
-			// test the handler too
+			// test the handler and detection results
 			var got, checked bool
 			want := ch.interception
 			handler := &tlsHandler{
@@ -352,6 +346,8 @@ func TestHeuristicFunctionsAndHandler(t *testing.T) {
 			if got != want {
 				t.Errorf("[%s] Test %d: Expected MITM=%v but got %v (type assertion OK (checked)=%v)",
 					client, i, want, got, checked)
+				t.Errorf("[%s] Test %d: Looks like Chrome=%v Firefox=%v Safari=%v Edge=%v Tor=%v\n\tparsed hello dec: %+v\n\tparsed hello hex: %#x\n",
+					client, i, isChrome, isFirefox, isSafari, isEdge, isTor, parsed, parsed)
 			}
 		}
 	}

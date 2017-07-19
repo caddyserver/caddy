@@ -361,7 +361,7 @@ func (info rawHelloInfo) looksLikeFirefox() bool {
 	// "To determine whether a Firefox session has been
 	// intercepted, we check for the presence and order
 	// of extensions, cipher suites, elliptic curves,
-	// EC point formats, and handshake compression methods."
+	// EC point formats, and handshake compression methods." (early 2016)
 
 	// We check for the presence and order of the extensions.
 	// Note: Sometimes 0x15 (21, padding) is present, sometimes not.
@@ -431,7 +431,7 @@ func (info rawHelloInfo) looksLikeChrome() bool {
 	// to not support, but do not check for the inclusion of
 	// specific ciphers or extensions, nor do we validate their
 	// order. When appropriate, we check the presence and order
-	// of elliptic curves, compression methods, and EC point formats."
+	// of elliptic curves, compression methods, and EC point formats." (early 2016)
 
 	// Not in Chrome 56, but present in Safari 10 (Feb. 2017):
 	// TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384 (0xc024)
@@ -488,7 +488,7 @@ func (info rawHelloInfo) looksLikeEdge() bool {
 	// "SChannel connections can by uniquely identified because SChannel
 	// is the only TLS library we tested that includes the OCSP status
 	// request extension before the supported groups and EC point formats
-	// extensions."
+	// extensions." (early 2016)
 	//
 	// More specifically, the OCSP status request extension appears
 	// *directly* before the other two extensions, which occur in that
@@ -534,24 +534,28 @@ func (info rawHelloInfo) looksLikeSafari() bool {
 	// in the HTTP User-Agent header. We allow for any of the
 	// updates when validating handshakes, and we check for the
 	// presence and ordering of ciphers, extensions, elliptic
-	// curves, and compression methods."
+	// curves, and compression methods." (early 2016)
 
 	// Note that any C lib (e.g. curl) compiled on macOS
 	// will probably use Secure Transport which will also
 	// share the TLS handshake characteristics of Safari.
 
-	// Let's do the easy check first... should be sufficient in many cases.
-	if len(info.cipherSuites) < 1 {
-		return false
-	}
-	if info.cipherSuites[0] != scsvRenegotiation {
-		return false
-	}
-
 	// We check for the presence and order of the extensions.
 	requiredExtensionsOrder := []uint16{10, 11, 13, 13172, 16, 5, 18, 23}
 	if !assertPresenceAndOrdering(requiredExtensionsOrder, info.extensions, true) {
-		return false
+		// Safari on iOS 11 (beta) uses different set/ordering of extensions
+		requiredExtensionsOrderiOS11 := []uint16{65281, 0, 23, 13, 5, 13172, 18, 16, 11, 10}
+		if !assertPresenceAndOrdering(requiredExtensionsOrderiOS11, info.extensions, true) {
+			return false
+		}
+	} else {
+		// For these versions of Safari, expect TLS_EMPTY_RENEGOTIATION_INFO_SCSV first.
+		if len(info.cipherSuites) < 1 {
+			return false
+		}
+		if info.cipherSuites[0] != scsvRenegotiation {
+			return false
+		}
 	}
 
 	if hasGreaseCiphers(info.cipherSuites) {
