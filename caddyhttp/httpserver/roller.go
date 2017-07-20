@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"errors"
 	"io"
 	"path/filepath"
 	"strconv"
@@ -54,17 +55,32 @@ func IsLogRollerSubdirective(subdir string) bool {
 		subdir == directiveRotateCompress
 }
 
+var invalidRollerParameterErr = errors.New("invalid roller parameter")
+
 // ParseRoller parses roller contents out of c.
-func ParseRoller(l *LogRoller, what string, where string) error {
+func ParseRoller(l *LogRoller, what string, where ...string) error {
 	if l == nil {
 		l = DefaultLogRoller()
 	}
-	var value int
-	var err error
-	value, err = strconv.Atoi(where)
-	if what != directiveRotateCompress && err != nil {
-		return err
+
+	// rotate_compress doesn't accept any parameters.
+	// others only accept one parameter
+	if (what == directiveRotateCompress && len(where) != 0) ||
+		(what != directiveRotateCompress && len(where) != 1) {
+		return invalidRollerParameterErr
 	}
+
+	var (
+		value int
+		err   error
+	)
+	if what != directiveRotateCompress {
+		value, err = strconv.Atoi(where[0])
+		if err != nil {
+			return err
+		}
+	}
+
 	switch what {
 	case directiveRotateSize:
 		l.MaxSize = value
