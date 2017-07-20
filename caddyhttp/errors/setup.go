@@ -44,18 +44,20 @@ func errorsParse(c *caddy.Controller) (*ErrorHandler, error) {
 		for c.NextBlock() {
 
 			what := c.Val()
-			if !c.NextArg() {
-				return c.ArgErr()
-			}
-			where := c.Val()
+			where := c.RemainingArgs()
 
 			if httpserver.IsLogRollerSubdirective(what) {
 				var err error
-				err = httpserver.ParseRoller(handler.Log.Roller, what, where)
+				err = httpserver.ParseRoller(handler.Log.Roller, what, where...)
 				if err != nil {
 					return err
 				}
 			} else {
+				if len(where) != 1 {
+					return c.ArgErr()
+				}
+				where := where[0]
+
 				// Error page; ensure it exists
 				if !filepath.IsAbs(where) {
 					where = filepath.Join(cfg.Root, where)

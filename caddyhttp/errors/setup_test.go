@@ -85,7 +85,12 @@ func TestErrorsParse(t *testing.T) {
 				Roller: httpserver.DefaultLogRoller(),
 			},
 		}},
-		{`errors errors.txt { rotate_size 2 rotate_age 10 rotate_keep 3 rotate_compress }`, false, ErrorHandler{
+		{`errors errors.txt {
+			rotate_size 2
+			rotate_age 10
+			rotate_keep 3
+			rotate_compress
+		}`, false, ErrorHandler{
 			ErrorPages: map[int]string{},
 			Log: &httpserver.Logger{
 				Output: "errors.txt", Roller: &httpserver.LogRoller{
@@ -144,6 +149,12 @@ func TestErrorsParse(t *testing.T) {
 				},
 				Log: &httpserver.Logger{},
 			}},
+		{`errors errors.txt { rotate_size 2 rotate_age 10 rotate_keep 3 rotate_compress }`,
+			true, ErrorHandler{ErrorPages: map[int]string{}, Log: &httpserver.Logger{}}},
+		{`errors errors.txt {
+			rotate_compress invalid
+		}`,
+			true, ErrorHandler{ErrorPages: map[int]string{}, Log: &httpserver.Logger{}}},
 		// Next two test cases is the detection of duplicate status codes
 		{`errors {
 			503 503.html
