@@ -1422,3 +1422,51 @@ func BenchmarkProxy(b *testing.B) {
 		p.ServeHTTP(w, r)
 	}
 }
+
+func TestChunkedWebSocketReverseProxy(t *testing.T) {
+	s := websocket.Server{
+		Handler: websocket.Handler(func(ws *websocket.Conn) {
+			for {
+				select {}
+			}
+		}),
+	}
+	s.Config.Header = http.Header(make(map[string][]string))
+	s.Config.Header.Set("Transfer-Encoding", "chunked")
+
+	wsNop := httptest.NewServer(s)
+	defer wsNop.Close()
+
+	// Get proxy to use for the test
+	p := newWebSocketTestProxy(wsNop.URL, false)
+
+	// Create client request
+	r := httptest.NewRequest("GET", "/", nil)
+
+	r.Header = http.Header{
+		"Connection":            {"Upgrade"},
+		"Upgrade":               {"websocket"},
+		"Origin":                {wsNop.URL},
+		"Sec-WebSocket-Key":     {"x3JJHMbDL1EzLkh9GBhXDw=="},
+		"Sec-WebSocket-Version": {"13"},
+	}
+
+	// Capture the request
+	w := &recorderHijacker{httptest.NewRecorder(), new(fakeConn)}
+
+	// Booya! Do the test.
+	_, err := p.ServeHTTP(w, r)
+
+	// Make sure the backend accepted the WS connection.
+	// Mostly interested in the Upgrade and Connection response headers
+	// and the 101 status code.
+	expected := []byte("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: HSmrc0sMlYUkAGmm5OPpG2HaGWk=\r\nTransfer-Encoding: chunked\r\n\r\n")
+	actual := w.fakeConn.writeBuf.Bytes()
+	if !bytes.Equal(actual, expected) {
+		t.Errorf("Expected backend to accept response:\n'%s'\nActually got:\n'%s'", expected, actual)
+	}
+
+	if err != nil {
+		t.Error(err)
+	}
+}
