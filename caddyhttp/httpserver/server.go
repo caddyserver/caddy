@@ -366,7 +366,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 		if err != nil {
 			remoteHost = r.RemoteAddr
 		}
-		WriteTextResponse(w, http.StatusNotFound, "No such site at "+s.Server.Addr)
+		WriteSiteNotFound(w, r) // don't add headers outside of this function
 		log.Printf("[INFO] %s - No such site at %s (Remote: %s, Referer: %s)",
 			hostname, s.Server.Addr, remoteHost, r.Header.Get("Referer"))
 		return 0, nil
@@ -488,6 +488,19 @@ var ErrMaxBytesExceeded = errors.New("http: request body too large")
 // of the specified HTTP status code.
 func DefaultErrorFunc(w http.ResponseWriter, r *http.Request, status int) {
 	WriteTextResponse(w, status, fmt.Sprintf("%d %s\n", status, http.StatusText(status)))
+}
+
+const httpStatusMisdirectedRequest = 421 // RFC 7540, 9.1.2
+
+// WriteSiteNotFound writes appropriate error code to w, signaling that
+// requested host is not served by Caddy on a given port.
+func WriteSiteNotFound(w http.ResponseWriter, r *http.Request) {
+	status := http.StatusNotFound
+	if r.ProtoMajor >= 2 {
+		// TODO: use http.StatusMisdirectedRequest when it gets defined
+		status = httpStatusMisdirectedRequest
+	}
+	WriteTextResponse(w, status, fmt.Sprintf("%d Site %s is not served on this interface\n", status, r.Host))
 }
 
 // WriteTextResponse writes body with code status to w. The body will
