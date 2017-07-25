@@ -112,6 +112,8 @@ func getVersion(ua, softwareName string) float64 {
 	end := strings.Index(ua[start:], " ")
 	if end < 0 {
 		end = len(ua)
+	} else {
+		end += start
 	}
 	strVer := strings.Replace(ua[start:end], "-", "", -1)
 	firstDot := strings.Index(strVer, ".")

@@ -352,3 +352,48 @@ func TestHeuristicFunctionsAndHandler(t *testing.T) {
 		}
 	}
 }
+
+func TestGetVersion(t *testing.T) {
+	for i, test := range []struct {
+		UserAgent    string
+		SoftwareName string
+		Version      float64
+	}{
+		{
+			UserAgent:    "Mozilla/5.0 (Windows NT 6.1; rv:45.0) Gecko/20100101 Firefox/45.0",
+			SoftwareName: "Firefox",
+			Version:      45.0,
+		},
+		{
+			UserAgent:    "Mozilla/5.0 (Windows NT 6.1; rv:45.0) Gecko/20100101 Firefox/45.0 more_stuff_here",
+			SoftwareName: "Firefox",
+			Version:      45.0,
+		},
+		{
+			UserAgent:    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.79 Safari/537.36 Edge/14.14393",
+			SoftwareName: "Safari",
+			Version:      537.36,
+		},
+		{
+			UserAgent:    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.79 Safari/537.36 Edge/14.14393",
+			SoftwareName: "Chrome",
+			Version:      51.0270479,
+		},
+		{
+			UserAgent:    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.79 Safari/537.36 Edge/14.14393",
+			SoftwareName: "Mozilla",
+			Version:      5.0,
+		},
+		{
+			UserAgent:    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.79 Safari/537.36 Edge/14.14393",
+			SoftwareName: "curl",
+			Version:      -1,
+		},
+	} {
+		actual := getVersion(test.UserAgent, test.SoftwareName)
+		if actual != test.Version {
+			t.Errorf("Test [%d]: Expected version=%f, got version=%f for %s in '%s'",
+				i, test.Version, actual, test.SoftwareName, test.UserAgent)
+		}
+	}
+}
