@@ -45,6 +45,12 @@ func (t *vhostTrie) insertPath(remainingPath, originalPath string, site *SiteCon
 	t.edges[ch].insertPath(remainingPath[1:], originalPath, site)
 }
 
+// When matching a site, the given host will be tried first.
+// Then, FallbackHosts will be tried in order.
+// Default FallbackHosts are following wildcards,
+// which could be modified by plugins and directives.
+var FallbackHosts = []string{"0.0.0.0", ""}
+
 // Match returns the virtual host (site) in v with
 // the closest match to key. If there was a match,
 // it returns the SiteConfig and the path portion of
@@ -57,13 +63,13 @@ func (t *vhostTrie) insertPath(remainingPath, originalPath string, site *SiteCon
 // A typical key will be in the form "host" or "host/path".
 func (t *vhostTrie) Match(key string) (*SiteConfig, string) {
 	host, path := t.splitHostPath(key)
-	// try the given host, then, if no match, try wildcard hosts
+	// try the given host, then, if no match, try fallback hosts
 	branch := t.matchHost(host)
-	if branch == nil {
-		branch = t.matchHost("0.0.0.0")
-	}
-	if branch == nil {
-		branch = t.matchHost("")
+	for _, h := range FallbackHosts {
+		if branch != nil {
+			break
+		}
+		branch = t.matchHost(h)
 	}
 	if branch == nil {
 		return nil, ""
