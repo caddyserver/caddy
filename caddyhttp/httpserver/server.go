@@ -77,14 +77,14 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 	}
 	s.Server.TLSConfig = tlsConfig
 
-	// Enable QUIC if desired
-	if QUIC {
-		s.quicServer = &h2quic.Server{Server: s.Server}
-		s.Server.Handler = s.wrapWithSvcHeaders(s.Server.Handler)
-	}
-
 	// if TLS is enabled, make sure we prepare the Server accordingly
 	if s.Server.TLSConfig != nil {
+		// enable QUIC if desired (requires HTTP/2)
+		if HTTP2 && QUIC {
+			s.quicServer = &h2quic.Server{Server: s.Server}
+			s.Server.Handler = s.wrapWithSvcHeaders(s.Server.Handler)
+		}
+
 		// wrap the HTTP handler with a handler that does MITM detection
 		tlsh := &tlsHandler{next: s.Server.Handler}
 		s.Server.Handler = tlsh // this needs to be the "outer" handler when Serve() is called, for type assertion
@@ -302,7 +302,7 @@ func (s *Server) Serve(ln net.Listener) error {
 
 // ServePacket serves QUIC requests on pc until it is closed.
 func (s *Server) ServePacket(pc net.PacketConn) error {
-	if QUIC {
+	if s.quicServer != nil {
 		err := s.quicServer.Serve(pc.(*net.UDPConn))
 		return fmt.Errorf("serving QUIC connections: %v", err)
 	}
