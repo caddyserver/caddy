@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -65,7 +66,16 @@ func (h *tlsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		mitm = !info.looksLikeChrome() && !info.looksLikeSafari()
 	} else if strings.Contains(ua, "Firefox") {
 		checked = true
-		mitm = !info.looksLikeFirefox()
+		if strings.Contains(ua, "Windows") {
+			ver := getVersion(ua, "Firefox")
+			if ver == 45.0 || ver == 52.0 {
+				mitm = !info.looksLikeTor()
+			} else {
+				mitm = !info.looksLikeFirefox()
+			}
+		} else {
+			mitm = !info.looksLikeFirefox()
+		}
 	} else if strings.Contains(ua, "Safari") {
 		checked = true
 		mitm = !info.looksLikeSafari()
@@ -85,6 +95,36 @@ func (h *tlsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.next.ServeHTTP(w, r)
+}
+
+// getVersion returns a (possibly simplified) representation of the version string
+// from a UserAgent string. It returns a float, so it can represent major and minor
+// versions; the rest of the version is just tacked on behind the decimal point.
+// The purpose of this is to stay simple while allowing for basic, fast comparisons.
+// If the version for softwareName is not found in ua, -1 is returned.
+func getVersion(ua, softwareName string) float64 {
+	search := softwareName + "/"
+	start := strings.Index(ua, search)
+	if start < 0 {
+		return -1
+	}
+	start += len(search)
+	end := strings.Index(ua[start:], " ")
+	if end < 0 {
+		end = len(ua)
+	} else {
+		end += start
+	}
+	strVer := strings.Replace(ua[start:end], "-", "", -1)
+	firstDot := strings.Index(strVer, ".")
+	if firstDot >= 0 {
+		strVer = strVer[:firstDot+1] + strings.Replace(strVer[firstDot+1:], ".", "", -1)
+	}
+	ver, err := strconv.ParseFloat(strVer, 64)
+	if err != nil {
+		return -1
+	}
+	return ver
 }
 
 // clientHelloConn reads the ClientHello
@@ -133,7 +173,7 @@ func (c *clientHelloConn) Read(b []byte) (n int, err error) {
 	if err != nil {
 		return
 	}
-	c.buf = nil // buffer no longer needed
+	bufpool.Put(c.buf) // buffer no longer needed
 
 	// parse the ClientHello and store it in the map
 	rawParsed := parseRawClientHello(hello)
@@ -161,11 +201,11 @@ func parseRawClientHello(data []byte) (info rawHelloInfo) {
 	if len(data) < 42 {
 		return
 	}
-	sessionIdLen := int(data[38])
-	if sessionIdLen > 32 || len(data) < 39+sessionIdLen {
+	sessionIDLen := int(data[38])
+	if sessionIDLen > 32 || len(data) < 39+sessionIDLen {
 		return
 	}
-	data = data[39+sessionIdLen:]
+	data = data[39+sessionIDLen:]
 	if len(data) < 2 {
 		return
 	}
@@ -285,7 +325,9 @@ func (l *tlsHelloListener) Accept() (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	helloConn := &clientHelloConn{Conn: conn, listener: l, buf: new(bytes.Buffer)}
+	buf := bufpool.Get().(*bytes.Buffer)
+	buf.Reset()
+	helloConn := &clientHelloConn{Conn: conn, listener: l, buf: buf}
 	return tls.Server(helloConn, l.config), nil
 }
 
@@ -321,25 +363,36 @@ func (info rawHelloInfo) looksLikeFirefox() bool {
 	// "To determine whether a Firefox session has been
 	// intercepted, we check for the presence and order
 	// of extensions, cipher suites, elliptic curves,
-	// EC point formats, and handshake compression methods."
+	// EC point formats, and handshake compression methods." (early 2016)
 
 	// We check for the presence and order of the extensions.
-	// Note: Sometimes padding (21) is present, sometimes not.
+	// Note: Sometimes 0x15 (21, padding) is present, sometimes not.
 	// Note: Firefox 51+ does not advertise 0x3374 (13172, NPN).
 	// Note: Firefox doesn't advertise 0x0 (0, SNI) when connecting to IP addresses.
-	requiredExtensionsOrder := []uint16{23, 65281, 10, 11, 35, 16, 5, 65283, 13}
+	// Note: Firefox 55+ doesn't appear to advertise 0xFF03 (65283, short headers). It used to be between 5 and 13.
+	// Note: Firefox on Fedora (or RedHat) doesn't include ECC suites because of patent liability.
+	requiredExtensionsOrder := []uint16{23, 65281, 10, 11, 35, 16, 5, 13}
 	if !assertPresenceAndOrdering(requiredExtensionsOrder, info.extensions, true) {
 		return false
 	}
 
 	// We check for both presence of curves and their ordering.
-	expectedCurves := []tls.CurveID{29, 23, 24, 25}
-	if len(info.curves) != len(expectedCurves) {
+	requiredCurves := []tls.CurveID{29, 23, 24, 25}
+	if len(info.curves) < len(requiredCurves) {
 		return false
 	}
-	for i := range expectedCurves {
-		if info.curves[i] != expectedCurves[i] {
+	for i := range requiredCurves {
+		if info.curves[i] != requiredCurves[i] {
 			return false
+		}
+	}
+	if len(info.curves) > len(requiredCurves) {
+		// newer Firefox (55 Nightly?) may have additional curves at end of list
+		allowedCurves := []tls.CurveID{256, 257}
+		for i := range allowedCurves {
+			if info.curves[len(requiredCurves)+i] != allowedCurves[i] {
+				return false
+			}
 		}
 	}
 
@@ -351,6 +404,9 @@ func (info rawHelloInfo) looksLikeFirefox() bool {
 	// according to the paper, cipher suites may be not be added
 	// or reordered by the user, but they may be disabled.
 	expectedCipherSuiteOrder := []uint16{
+		TLS_AES_128_GCM_SHA256,                      // 0x1301
+		TLS_CHACHA20_POLY1305_SHA256,                // 0x1303
+		TLS_AES_256_GCM_SHA384,                      // 0x1302
 		tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256, // 0xc02b
 		tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,   // 0xc02f
 		tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,  // 0xcca9
@@ -377,7 +433,7 @@ func (info rawHelloInfo) looksLikeChrome() bool {
 	// to not support, but do not check for the inclusion of
 	// specific ciphers or extensions, nor do we validate their
 	// order. When appropriate, we check the presence and order
-	// of elliptic curves, compression methods, and EC point formats."
+	// of elliptic curves, compression methods, and EC point formats." (early 2016)
 
 	// Not in Chrome 56, but present in Safari 10 (Feb. 2017):
 	// TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384 (0xc024)
@@ -399,14 +455,14 @@ func (info rawHelloInfo) looksLikeChrome() bool {
 	// 0xc00a, 0xc014, 0xc009, 0x9c, 0x9d, 0x2f, 0x35, 0xa
 
 	chromeCipherExclusions := map[uint16]struct{}{
-		TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384:   {}, // 0xc024
-		TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256:   {}, // 0xc023
-		TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384:     {}, // 0xc028
-		tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256: {}, // 0xc027
-		TLS_RSA_WITH_AES_256_CBC_SHA256:           {}, // 0x3d
-		tls.TLS_RSA_WITH_AES_128_CBC_SHA256:       {}, // 0x3c
-		TLS_DHE_RSA_WITH_AES_128_CBC_SHA:          {}, // 0x33
-		TLS_DHE_RSA_WITH_AES_256_CBC_SHA:          {}, // 0x39
+		TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384:     {}, // 0xc024
+		tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256: {}, // 0xc023
+		TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384:       {}, // 0xc028
+		tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256:   {}, // 0xc027
+		TLS_RSA_WITH_AES_256_CBC_SHA256:             {}, // 0x3d
+		tls.TLS_RSA_WITH_AES_128_CBC_SHA256:         {}, // 0x3c
+		TLS_DHE_RSA_WITH_AES_128_CBC_SHA:            {}, // 0x33
+		TLS_DHE_RSA_WITH_AES_256_CBC_SHA:            {}, // 0x39
 	}
 	for _, ext := range info.cipherSuites {
 		if _, ok := chromeCipherExclusions[ext]; ok {
@@ -434,7 +490,7 @@ func (info rawHelloInfo) looksLikeEdge() bool {
 	// "SChannel connections can by uniquely identified because SChannel
 	// is the only TLS library we tested that includes the OCSP status
 	// request extension before the supported groups and EC point formats
-	// extensions."
+	// extensions." (early 2016)
 	//
 	// More specifically, the OCSP status request extension appears
 	// *directly* before the other two extensions, which occur in that
@@ -480,24 +536,28 @@ func (info rawHelloInfo) looksLikeSafari() bool {
 	// in the HTTP User-Agent header. We allow for any of the
 	// updates when validating handshakes, and we check for the
 	// presence and ordering of ciphers, extensions, elliptic
-	// curves, and compression methods."
+	// curves, and compression methods." (early 2016)
 
 	// Note that any C lib (e.g. curl) compiled on macOS
 	// will probably use Secure Transport which will also
 	// share the TLS handshake characteristics of Safari.
 
-	// Let's do the easy check first... should be sufficient in many cases.
-	if len(info.cipherSuites) < 1 {
-		return false
-	}
-	if info.cipherSuites[0] != scsvRenegotiation {
-		return false
-	}
-
 	// We check for the presence and order of the extensions.
 	requiredExtensionsOrder := []uint16{10, 11, 13, 13172, 16, 5, 18, 23}
 	if !assertPresenceAndOrdering(requiredExtensionsOrder, info.extensions, true) {
-		return false
+		// Safari on iOS 11 (beta) uses different set/ordering of extensions
+		requiredExtensionsOrderiOS11 := []uint16{65281, 0, 23, 13, 5, 13172, 18, 16, 11, 10}
+		if !assertPresenceAndOrdering(requiredExtensionsOrderiOS11, info.extensions, true) {
+			return false
+		}
+	} else {
+		// For these versions of Safari, expect TLS_EMPTY_RENEGOTIATION_INFO_SCSV first.
+		if len(info.cipherSuites) < 1 {
+			return false
+		}
+		if info.cipherSuites[0] != scsvRenegotiation {
+			return false
+		}
 	}
 
 	if hasGreaseCiphers(info.cipherSuites) {
@@ -509,7 +569,7 @@ func (info rawHelloInfo) looksLikeSafari() bool {
 		tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384, // 0xc02c
 		tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256, // 0xc02b
 		TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384,     // 0xc024
-		TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256,     // 0xc023
+		tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256, // 0xc023
 		tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,    // 0xc00a
 		tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,    // 0xc009
 		tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,   // 0xc030
@@ -521,11 +581,75 @@ func (info rawHelloInfo) looksLikeSafari() bool {
 		tls.TLS_RSA_WITH_AES_256_GCM_SHA384,         // 0x9d
 		tls.TLS_RSA_WITH_AES_128_GCM_SHA256,         // 0x9c
 		TLS_RSA_WITH_AES_256_CBC_SHA256,             // 0x3d
-		TLS_RSA_WITH_AES_128_CBC_SHA256,             // 0x3c
+		tls.TLS_RSA_WITH_AES_128_CBC_SHA256,         // 0x3c
 		tls.TLS_RSA_WITH_AES_256_CBC_SHA,            // 0x35
 		tls.TLS_RSA_WITH_AES_128_CBC_SHA,            // 0x2f
 	}
 	return assertPresenceAndOrdering(expectedCipherSuiteOrder, info.cipherSuites, true)
+}
+
+// looksLikeTor returns true if the info looks like a ClientHello from Tor browser
+// (based on Firefox).
+func (info rawHelloInfo) looksLikeTor() bool {
+	requiredExtensionsOrder := []uint16{10, 11, 16, 5, 13}
+	if !assertPresenceAndOrdering(requiredExtensionsOrder, info.extensions, true) {
+		return false
+	}
+
+	// check for session tickets support; Tor doesn't support them to prevent tracking
+	for _, ext := range info.extensions {
+		if ext == 35 {
+			return false
+		}
+	}
+
+	// We check for both presence of curves and their ordering, including
+	// an optional curve at the beginning (for Tor based on Firefox 52)
+	infoCurves := info.curves
+	if len(info.curves) == 4 {
+		if info.curves[0] != 29 {
+			return false
+		}
+		infoCurves = info.curves[1:]
+	}
+	requiredCurves := []tls.CurveID{23, 24, 25}
+	if len(infoCurves) < len(requiredCurves) {
+		return false
+	}
+	for i := range requiredCurves {
+		if infoCurves[i] != requiredCurves[i] {
+			return false
+		}
+	}
+
+	if hasGreaseCiphers(info.cipherSuites) {
+		return false
+	}
+
+	// We check for order of cipher suites but not presence, since
+	// according to the paper, cipher suites may be not be added
+	// or reordered by the user, but they may be disabled.
+	expectedCipherSuiteOrder := []uint16{
+		TLS_AES_128_GCM_SHA256,                      // 0x1301
+		TLS_CHACHA20_POLY1305_SHA256,                // 0x1303
+		TLS_AES_256_GCM_SHA384,                      // 0x1302
+		tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256, // 0xc02b
+		tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,   // 0xc02f
+		tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,  // 0xcca9
+		tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,    // 0xcca8
+		tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384, // 0xc02c
+		tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,   // 0xc030
+		tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,    // 0xc00a
+		tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,    // 0xc009
+		tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,      // 0xc013
+		tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,      // 0xc014
+		TLS_DHE_RSA_WITH_AES_128_CBC_SHA,            // 0x33
+		TLS_DHE_RSA_WITH_AES_256_CBC_SHA,            // 0x39
+		tls.TLS_RSA_WITH_AES_128_CBC_SHA,            // 0x2f
+		tls.TLS_RSA_WITH_AES_256_CBC_SHA,            // 0x35
+		tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA,           // 0xa
+	}
+	return assertPresenceAndOrdering(expectedCipherSuiteOrder, info.cipherSuites, false)
 }
 
 // assertPresenceAndOrdering will return true if candidateList contains
@@ -570,6 +694,13 @@ func hasGreaseCiphers(cipherSuites []uint16) bool {
 	return false
 }
 
+// pool buffers so we can reuse allocations over time
+var bufpool = sync.Pool{
+	New: func() interface{} {
+		return new(bytes.Buffer)
+	},
+}
+
 var greaseCiphers = map[uint16]struct{}{
 	0x0A0A: {},
 	0x1A1A: {},
@@ -589,6 +720,7 @@ var greaseCiphers = map[uint16]struct{}{
 	0xFAFA: {},
 }
 
+// Define variables used for TLS communication
 const (
 	extensionOCSPStatusRequest = 5
 	extensionSupportedCurves   = 10 // also called "SupportedGroups"
@@ -600,11 +732,17 @@ const (
 	// cipher suites missing from the crypto/tls package,
 	// in no particular order here
 	TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384 = 0xc024
-	TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256 = 0xc023
 	TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384   = 0xc028
-	TLS_RSA_WITH_AES_128_CBC_SHA256         = 0x3c
 	TLS_RSA_WITH_AES_256_CBC_SHA256         = 0x3d
 	TLS_DHE_RSA_WITH_AES_128_CBC_SHA        = 0x33
 	TLS_DHE_RSA_WITH_AES_256_CBC_SHA        = 0x39
 	TLS_RSA_WITH_RC4_128_MD5                = 0x4
+
+	// new PSK ciphers introduced by TLS 1.3, not (yet) in crypto/tls
+	// https://tlswg.github.io/tls13-spec/#rfc.appendix.A.4)
+	TLS_AES_128_GCM_SHA256       = 0x1301
+	TLS_AES_256_GCM_SHA384       = 0x1302
+	TLS_CHACHA20_POLY1305_SHA256 = 0x1303
+	TLS_AES_128_CCM_SHA256       = 0x1304
+	TLS_AES_128_CCM_8_SHA256     = 0x1305
 )

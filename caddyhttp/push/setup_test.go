@@ -25,10 +25,10 @@ func TestConfigParse(t *testing.T) {
 		expected  []Rule
 	}{
 		{
-			"ParseInvalidEmptyConfig", `push`, true, []Rule{},
+			"ParseInvalidEmptyConfig", `push`, false, []Rule{{Path: "/"}},
 		},
 		{
-			"ParseInvalidConfig", `push /index.html`, true, []Rule{},
+			"ParseInvalidConfig", `push /index.html`, false, []Rule{{Path: "/index.html"}},
 		},
 		{
 			"ParseInvalidConfigBlock", `push /index.html /index.css {
@@ -255,7 +255,7 @@ func TestSetupInstalledMiddleware(t *testing.T) {
 
 func TestSetupWithError(t *testing.T) {
 	// given
-	c := caddy.NewTestController("http", `push /index.html`)
+	c := caddy.NewTestController("http", "push {\nmethod\n}")
 
 	// when
 	err := setup(c)

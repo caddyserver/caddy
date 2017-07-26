@@ -25,6 +25,13 @@ const (
 	// RenewDurationBefore is how long before expiration to renew certificates.
 	RenewDurationBefore = (24 * time.Hour) * 30
 
+	// RenewDurationBeforeAtStartup is how long before expiration to require
+	// a renewed certificate when the process is first starting up (see #1680).
+	// A wider window between RenewDurationBefore and this value will allow
+	// Caddy to start under duress but hopefully this duration will give it
+	// enough time for the blockage to be relieved.
+	RenewDurationBeforeAtStartup = (24 * time.Hour) * 7
+
 	// OCSPInterval is how often to check if OCSP stapling needs updating.
 	OCSPInterval = 1 * time.Hour
 )
@@ -126,13 +133,17 @@ func RenewManagedCertificates(allowPrompts bool) (err error) {
 		err := cert.Config.RenewCert(renewName, allowPrompts)
 		if err != nil {
 			if allowPrompts {
-				// Certificate renewal failed and the operator is present; we should stop
-				// immediately and return the error. See a discussion in issue 642
-				// about this. For a while, we only stopped if the certificate was
-				// expired, but in reality, there is no difference between reporting
-				// it now versus later, except that there's somebody present to deal
-				// with it now, so require it.
-				return err
+				// Certificate renewal failed and the operator is present. See a discussion
+				// about this in issue 642. For a while, we only stopped if the certificate
+				// was expired, but in reality, there is no difference between reporting
+				// it now versus later, except that there's somebody present to deal with
+				// it right now.
+				timeLeft := cert.NotAfter.Sub(time.Now().UTC())
+				if timeLeft < RenewDurationBeforeAtStartup {
+					// See issue 1680. Only fail at startup if the certificate is dangerously
+					// close to expiration.
+					return err
+				}
 			}
 			log.Printf("[ERROR] %v", err)
 			if cert.Config.OnDemand {
@@ -141,7 +152,6 @@ func RenewManagedCertificates(allowPrompts bool) (err error) {
 		} else {
 			// successful renewal, so update in-memory cache by loading
 			// renewed certificate so it will be used with handshakes
-			// TODO: Not until CA has valid OCSP response ready for the new cert... sigh.
 			if cert.Names[len(cert.Names)-1] == "" {
 				// Special case: This is the default certificate. We must
 				// flush it out of the cache so that we no longer point to

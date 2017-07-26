@@ -763,6 +763,38 @@ func IsLoopback(addr string) bool {
 		strings.HasPrefix(host, "127.")
 }
 
+// IsInternal returns true if the IP of addr
+// belongs to a private network IP range. addr must only
+// be an IP or an IP:port combination.
+// Loopback addresses are considered false.
+func IsInternal(addr string) bool {
+	privateNetworks := []string{
+		"10.0.0.0/8",
+		"172.16.0.0/12",
+		"192.168.0.0/16",
+		"fc00::/7",
+	}
+
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr // happens if the addr is just a hostname, missing port
+		// if we encounter an error, the brackets need to be stripped
+		// because SplitHostPort didn't do it for us
+		host = strings.Trim(host, "[]")
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	for _, privateNetwork := range privateNetworks {
+		_, ipnet, _ := net.ParseCIDR(privateNetwork)
+		if ipnet.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
 // Upgrade re-launches the process, preserving the listeners
 // for a graceful restart. It does NOT load new configuration;
 // it only starts the process anew with a fresh binary.

@@ -198,15 +198,14 @@ func SameNext(next1, next2 Handler) bool {
 	return fmt.Sprintf("%v", next1) == fmt.Sprintf("%v", next2)
 }
 
-// Context key constants
+// Context key constants.
 const (
-	// URIxRewriteCtxKey is a context key used to store original unrewritten
-	// URI in context.WithValue
-	URIxRewriteCtxKey caddy.CtxKey = "caddy_rewrite_original_uri"
-
-	// RemoteUserCtxKey is a context key used to store remote user for request
+	// RemoteUserCtxKey is the key for the remote user of the request, if any (basicauth).
 	RemoteUserCtxKey caddy.CtxKey = "remote_user"
 
-	// MitmCtxKey stores Mitm result
+	// MitmCtxKey is the key for the result of MITM detection
 	MitmCtxKey caddy.CtxKey = "mitm"
+
+	// RequestIDCtxKey is the key for the U4 UUID value
+	RequestIDCtxKey caddy.CtxKey = "request_id"
 )

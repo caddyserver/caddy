@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/codahale/aesnicheck"
 	"github.com/mholt/caddy"
 	"github.com/xenolf/lego/acme"
 )
@@ -232,8 +233,8 @@ func (c *Config) StorageFor(caURL string) (Storage, error) {
 // buildStandardTLSConfig converts cfg (*caddytls.Config) to a *tls.Config
 // and stores it in cfg so it can be used in servers. If TLS is disabled,
 // no tls.Config is created.
-func (cfg *Config) buildStandardTLSConfig() error {
-	if !cfg.Enabled {
+func (c *Config) buildStandardTLSConfig() error {
+	if !c.Enabled {
 		return nil
 	}
 
@@ -243,35 +244,35 @@ func (cfg *Config) buildStandardTLSConfig() error {
 	curvesAdded := make(map[tls.CurveID]struct{})
 
 	// add cipher suites
-	for _, ciph := range cfg.Ciphers {
+	for _, ciph := range c.Ciphers {
 		if _, ok := ciphersAdded[ciph]; !ok {
 			ciphersAdded[ciph] = struct{}{}
 			config.CipherSuites = append(config.CipherSuites, ciph)
 		}
 	}
 
-	config.PreferServerCipherSuites = cfg.PreferServerCipherSuites
+	config.PreferServerCipherSuites = c.PreferServerCipherSuites
 
 	// add curve preferences
-	for _, curv := range cfg.CurvePreferences {
+	for _, curv := range c.CurvePreferences {
 		if _, ok := curvesAdded[curv]; !ok {
 			curvesAdded[curv] = struct{}{}
 			config.CurvePreferences = append(config.CurvePreferences, curv)
 		}
 	}
 
-	config.MinVersion = cfg.ProtocolMinVersion
-	config.MaxVersion = cfg.ProtocolMaxVersion
-	config.ClientAuth = cfg.ClientAuth
-	config.NextProtos = cfg.ALPN
-	config.GetCertificate = cfg.GetCertificate
+	config.MinVersion = c.ProtocolMinVersion
+	config.MaxVersion = c.ProtocolMaxVersion
+	config.ClientAuth = c.ClientAuth
+	config.NextProtos = c.ALPN
+	config.GetCertificate = c.GetCertificate
 
 	// set up client authentication if enabled
 	if config.ClientAuth != tls.NoClientCert {
 		pool := x509.NewCertPool()
 		clientCertsAdded := make(map[string]struct{})
 
-		for _, caFile := range cfg.ClientCerts {
+		for _, caFile := range c.ClientCerts {
 			// don't add cert to pool more than once
 			if _, ok := clientCertsAdded[caFile]; ok {
 				continue
@@ -294,7 +295,7 @@ func (cfg *Config) buildStandardTLSConfig() error {
 
 	// default cipher suites
 	if len(config.CipherSuites) == 0 {
-		config.CipherSuites = defaultCiphers
+		config.CipherSuites = getPreferredDefaultCiphers()
 	}
 
 	// for security, ensure TLS_FALLBACK_SCSV is always included first
@@ -303,7 +304,7 @@ func (cfg *Config) buildStandardTLSConfig() error {
 	}
 
 	// store the resulting new tls.Config
-	cfg.tlsConfig = config
+	c.tlsConfig = config
 
 	return nil
 }
@@ -380,7 +381,7 @@ func RegisterConfigGetter(serverType string, fn ConfigGetter) {
 func SetDefaultTLSParams(config *Config) {
 	// If no ciphers provided, use default list
 	if len(config.Ciphers) == 0 {
-		config.Ciphers = defaultCiphers
+		config.Ciphers = getPreferredDefaultCiphers()
 	}
 
 	// Not a cipher suite, but still important for mitigating protocol downgrade attacks
@@ -432,18 +433,18 @@ var supportedProtocols = map[string]uint16{
 //
 // This map, like any map, is NOT ORDERED. Do not range over this map.
 var supportedCiphersMap = map[string]uint16{
-	"ECDHE-RSA-AES256-GCM-SHA384":        tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
 	"ECDHE-ECDSA-AES256-GCM-SHA384":      tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
-	"ECDHE-RSA-AES128-GCM-SHA256":        tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+	"ECDHE-RSA-AES256-GCM-SHA384":        tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
 	"ECDHE-ECDSA-AES128-GCM-SHA256":      tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
-	"ECDHE-RSA-WITH-CHACHA20-POLY1305":   tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
+	"ECDHE-RSA-AES128-GCM-SHA256":        tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
 	"ECDHE-ECDSA-WITH-CHACHA20-POLY1305": tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
-	"ECDHE-RSA-AES128-CBC-SHA":           tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
+	"ECDHE-RSA-WITH-CHACHA20-POLY1305":   tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
 	"ECDHE-RSA-AES256-CBC-SHA":           tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+	"ECDHE-RSA-AES128-CBC-SHA":           tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
 	"ECDHE-ECDSA-AES256-CBC-SHA":         tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
 	"ECDHE-ECDSA-AES128-CBC-SHA":         tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
-	"RSA-AES128-CBC-SHA":                 tls.TLS_RSA_WITH_AES_128_CBC_SHA,
 	"RSA-AES256-CBC-SHA":                 tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+	"RSA-AES128-CBC-SHA":                 tls.TLS_RSA_WITH_AES_128_CBC_SHA,
 	"ECDHE-RSA-3DES-EDE-CBC-SHA":         tls.TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA,
 	"RSA-3DES-EDE-CBC-SHA":               tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA,
 }
@@ -462,6 +463,35 @@ var defaultCiphers = []uint16{
 	tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
 	tls.TLS_RSA_WITH_AES_256_CBC_SHA,
 	tls.TLS_RSA_WITH_AES_128_CBC_SHA,
+}
+
+// List of ciphers we should prefer if native AESNI support is missing
+var defaultCiphersNonAESNI = []uint16{
+	tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
+	tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
+	tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+	tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+	tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+	tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+	tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+	tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
+	tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
+	tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
+	tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+	tls.TLS_RSA_WITH_AES_128_CBC_SHA,
+}
+
+// getPreferredDefaultCiphers returns an appropriate cipher suite to use, depending on
+// the hardware support available for AES-NI.
+//
+// See https://github.com/mholt/caddy/issues/1674
+func getPreferredDefaultCiphers() []uint16 {
+	if aesnicheck.HasAESNI() {
+		return defaultCiphers
+	}
+
+	// Return a cipher suite that prefers ChaCha20
+	return defaultCiphersNonAESNI
 }
 
 // Map of supported curves

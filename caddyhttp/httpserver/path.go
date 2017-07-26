@@ -5,19 +5,25 @@ import (
 	"strings"
 )
 
-// Path represents a URI path.
+// Path represents a URI path. It should usually be
+// set to the value of a request path.
 type Path string
 
-// Matches checks to see if other matches p.
+// Matches checks to see if base matches p. The correct
+// usage of this method sets p as the request path, and
+// base as a Caddyfile (user-defined) rule path.
 //
 // Path matching will probably not always be a direct
 // comparison; this method assures that paths can be
 // easily and consistently matched.
-func (p Path) Matches(other string) bool {
-	if CaseSensitivePath {
-		return strings.HasPrefix(string(p), other)
+func (p Path) Matches(base string) bool {
+	if base == "/" {
+		return true
 	}
-	return strings.HasPrefix(strings.ToLower(string(p)), strings.ToLower(other))
+	if CaseSensitivePath {
+		return strings.HasPrefix(string(p), base)
+	}
+	return strings.HasPrefix(strings.ToLower(string(p)), strings.ToLower(base))
 }
 
 // PathMatcher is a Path RequestMatcher.

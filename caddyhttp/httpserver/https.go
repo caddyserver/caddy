@@ -23,6 +23,9 @@ func activateHTTPS(cctx caddy.Context) error {
 
 	// place certificates and keys on disk
 	for _, c := range ctx.siteConfigs {
+		if c.TLS.OnDemand {
+			continue // obtain these certificates on-demand instead
+		}
 		err := c.TLS.ObtainCert(c.TLS.Hostname, operatorPresent)
 		if err != nil {
 			return err
@@ -65,15 +68,15 @@ func markQualifiedForAutoHTTPS(configs []*SiteConfig) {
 }
 
 // enableAutoHTTPS configures each config to use TLS according to default settings.
-// It will only change configs that are marked as managed, and assumes that
-// certificates and keys are already on disk. If loadCertificates is true,
-// the certificates will be loaded from disk into the cache for this process
-// to use. If false, TLS will still be enabled and configured with default
-// settings, but no certificates will be parsed loaded into the cache, and
-// the returned error value will always be nil.
+// It will only change configs that are marked as managed but not on-demand, and
+// assumes that certificates and keys are already on disk. If loadCertificates is
+// true, the certificates will be loaded from disk into the cache for this process
+// to use. If false, TLS will still be enabled and configured with default settings,
+// but no certificates will be parsed loaded into the cache, and the returned error
+// value will always be nil.
 func enableAutoHTTPS(configs []*SiteConfig, loadCertificates bool) error {
 	for _, cfg := range configs {
-		if cfg == nil || cfg.TLS == nil || !cfg.TLS.Managed {
+		if cfg == nil || cfg.TLS == nil || !cfg.TLS.Managed || cfg.TLS.OnDemand {
 			continue
 		}
 		cfg.TLS.Enabled = true
@@ -143,13 +146,20 @@ func redirPlaintextHost(cfg *SiteConfig) *SiteConfig {
 	}
 	redirMiddleware := func(next Handler) Handler {
 		return HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
+			// Construct the URL to which to redirect. Note that the Host in a request might
+			// contain a port, but we just need the hostname; we'll set the port if needed.
 			toURL := "https://"
+			requestHost, _, err := net.SplitHostPort(r.Host)
+			if err != nil {
+				requestHost = r.Host // Host did not contain a port; great
+			}
 			if redirPort == "" {
-				toURL += cfg.Addr.Host // don't use r.Host as it may have a port included
+				toURL += requestHost
 			} else {
-				toURL += net.JoinHostPort(cfg.Addr.Host, redirPort)
+				toURL += net.JoinHostPort(requestHost, redirPort)
 			}
 			toURL += r.URL.RequestURI()
+
 			w.Header().Set("Connection", "close")
 			http.Redirect(w, r, toURL, http.StatusMovedPermanently)
 			return 0, nil

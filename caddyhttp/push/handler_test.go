@@ -2,8 +2,11 @@ package push
 
 import (
 	"errors"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -305,6 +308,63 @@ func TestMiddlewareShouldInterceptLinkHeaderPusherError(t *testing.T) {
 	}
 
 	comparePushedResources(t, expectedPushedResources, pushingWriter.pushed)
+}
+
+func TestMiddlewareShouldPushIndexFile(t *testing.T) {
+	// given
+	indexFile := "/index.html"
+	request, err := http.NewRequest(http.MethodGet, "/", nil) // Request root directory, not indexfile itself
+	if err != nil {
+		t.Fatalf("Could not create HTTP request: %v", err)
+	}
+
+	root, err := ioutil.TempDir("", "caddy")
+	if err != nil {
+		t.Fatalf("Could not create temporary directory: %v", err)
+	}
+	defer os.Remove(root)
+
+	middleware := Middleware{
+		Next: httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
+			return 0, nil
+		}),
+		Rules: []Rule{
+			{Path: indexFile, Resources: []Resource{
+				{Path: "/index.css", Method: http.MethodGet},
+			}},
+		},
+		Root: http.Dir(root),
+	}
+
+	indexFilePath := filepath.Join(root, indexFile)
+	_, err = os.Create(indexFilePath)
+	if err != nil {
+		t.Fatalf("Could not create index file: %s: %v", indexFile, err)
+	}
+	defer os.Remove(indexFilePath)
+
+	pushingWriter := &MockedPusher{
+		ResponseWriter: httptest.NewRecorder(),
+		returnedError:  errors.New("Cannot push right now"),
+	}
+
+	// when
+	_, err2 := middleware.ServeHTTP(pushingWriter, request)
+
+	// then
+	if err2 != nil {
+		t.Error("Should not return error")
+	}
+
+	expectedPushedResources := map[string]*http.PushOptions{
+		"/index.css": {
+			Method: http.MethodGet,
+			Header: http.Header{},
+		},
+	}
+
+	comparePushedResources(t, expectedPushedResources, pushingWriter.pushed)
+
 }
 
 func comparePushedResources(t *testing.T, expected, actual map[string]*http.PushOptions) {

@@ -29,9 +29,6 @@ type Markdown struct {
 
 	// The list of markdown configurations
 	Configs []*Config
-
-	// The list of index files to try
-	IndexFiles []string
 }
 
 // Config stores markdown middleware configurations.
@@ -51,8 +48,14 @@ type Config struct {
 	// List of JavaScript files to load for each markdown file
 	Scripts []string
 
+	// The list of index files to try
+	IndexFiles []string
+
 	// Template(s) to render with
 	Template *template.Template
+
+	// a pair of template's name and its underlying file path
+	TemplateFiles map[string]string
 }
 
 // ServeHTTP implements the http.Handler interface.
@@ -78,7 +81,7 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 	var dirents []os.FileInfo
 	var lastModTime time.Time
 	fpath := r.URL.Path
-	if idx, ok := httpserver.IndexFile(md.FileSys, fpath, md.IndexFiles); ok {
+	if idx, ok := httpserver.IndexFile(md.FileSys, fpath, cfg.IndexFiles); ok {
 		// We're serving a directory index file, which may be a markdown
 		// file with a template.  Let's grab a list of files this directory
 		// URL points to, and pass that in to any possible template invocations,
@@ -133,11 +136,10 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 	}
 	lastModTime = latest(lastModTime, fs.ModTime())
 
-	ctx := httpserver.Context{
-		Root: md.FileSys,
-		Req:  r,
-		URL:  r.URL,
-	}
+	ctx := httpserver.NewContextWithHeader(w.Header())
+	ctx.Root = md.FileSys
+	ctx.Req = r
+	ctx.URL = r.URL
 	html, err := cfg.Markdown(title(fpath), f, dirents, ctx)
 	if err != nil {
 		return http.StatusInternalServerError, err

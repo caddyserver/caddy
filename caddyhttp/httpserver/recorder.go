@@ -1,9 +1,6 @@
 package httpserver
 
 import (
-	"bufio"
-	"errors"
-	"net"
 	"net/http"
 	"time"
 )
@@ -21,7 +18,7 @@ import (
 //
 // Beware when accessing the Replacer value; it may be nil!
 type ResponseRecorder struct {
-	http.ResponseWriter
+	*ResponseWriterWrapper
 	Replacer Replacer
 	status   int
 	size     int
@@ -36,9 +33,9 @@ type ResponseRecorder struct {
 // of 200 to cover the default case.
 func NewResponseRecorder(w http.ResponseWriter) *ResponseRecorder {
 	return &ResponseRecorder{
-		ResponseWriter: w,
-		status:         http.StatusOK,
-		start:          time.Now(),
+		ResponseWriterWrapper: &ResponseWriterWrapper{ResponseWriter: w},
+		status:                http.StatusOK,
+		start:                 time.Now(),
 	}
 }
 
@@ -46,13 +43,13 @@ func NewResponseRecorder(w http.ResponseWriter) *ResponseRecorder {
 // underlying ResponseWriter's WriteHeader method.
 func (r *ResponseRecorder) WriteHeader(status int) {
 	r.status = status
-	r.ResponseWriter.WriteHeader(status)
+	r.ResponseWriterWrapper.WriteHeader(status)
 }
 
 // Write is a wrapper that records the size of the body
 // that gets written.
 func (r *ResponseRecorder) Write(buf []byte) (int, error) {
-	n, err := r.ResponseWriter.Write(buf)
+	n, err := r.ResponseWriterWrapper.Write(buf)
 	if err == nil {
 		r.size += n
 	}
@@ -69,45 +66,5 @@ func (r *ResponseRecorder) Status() int {
 	return r.status
 }
 
-// Hijack implements http.Hijacker. It simply wraps the underlying
-// ResponseWriter's Hijack method if there is one, or returns an error.
-func (r *ResponseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	if hj, ok := r.ResponseWriter.(http.Hijacker); ok {
-		return hj.Hijack()
-	}
-	return nil, nil, NonHijackerError{Underlying: r.ResponseWriter}
-}
-
-// Flush implements http.Flusher. It simply wraps the underlying
-// ResponseWriter's Flush method if there is one, or does nothing.
-func (r *ResponseRecorder) Flush() {
-	if f, ok := r.ResponseWriter.(http.Flusher); ok {
-		f.Flush()
-	} else {
-		panic(NonFlusherError{Underlying: r.ResponseWriter}) // should be recovered at the beginning of middleware stack
-	}
-}
-
-// CloseNotify implements http.CloseNotifier.
-// It just inherits the underlying ResponseWriter's CloseNotify method.
-func (r *ResponseRecorder) CloseNotify() <-chan bool {
-	if cn, ok := r.ResponseWriter.(http.CloseNotifier); ok {
-		return cn.CloseNotify()
-	}
-	panic(NonCloseNotifierError{Underlying: r.ResponseWriter})
-}
-
-// Push resource to client
-func (r *ResponseRecorder) Push(target string, opts *http.PushOptions) error {
-	if pusher, hasPusher := r.ResponseWriter.(http.Pusher); hasPusher {
-		return pusher.Push(target, opts)
-	}
-
-	return errors.New("push is unavailable (probably chained http.ResponseWriter does not implement http.Pusher)")
-}
-
 // Interface guards
-var _ http.Pusher = (*ResponseRecorder)(nil)
-var _ http.Flusher = (*ResponseRecorder)(nil)
-var _ http.CloseNotifier = (*ResponseRecorder)(nil)
-var _ http.Hijacker = (*ResponseRecorder)(nil)
+var _ HTTPInterfaces = (*ResponseRecorder)(nil)

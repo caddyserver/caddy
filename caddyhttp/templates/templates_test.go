@@ -1,8 +1,10 @@
 package templates
 
 import (
+	"bytes"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 
 	"github.com/mholt/caddy/caddyhttp/httpserver"
@@ -28,6 +30,7 @@ func TestTemplates(t *testing.T) {
 		},
 		Root:    "./testdata",
 		FileSys: http.Dir("./testdata"),
+		BufPool: &sync.Pool{New: func() interface{} { return new(bytes.Buffer) }},
 	}
 
 	tmplroot := Templates{
@@ -43,6 +46,7 @@ func TestTemplates(t *testing.T) {
 		},
 		Root:    "./testdata",
 		FileSys: http.Dir("./testdata"),
+		BufPool: &sync.Pool{New: func() interface{} { return new(bytes.Buffer) }},
 	}
 
 	// Test tmpl on /photos/test.html
@@ -121,6 +125,8 @@ func TestTemplates(t *testing.T) {
 
 	rec = httptest.NewRecorder()
 
+	// register custom function which is used in template
+	httpserver.TemplateFuncs["root"] = func() string { return "root" }
 	tmplroot.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {

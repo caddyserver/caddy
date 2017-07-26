@@ -1,29 +1,36 @@
 package proxy
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"net/url"
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
+
+	"crypto/tls"
 
 	"github.com/mholt/caddy/caddyfile"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
 
 var (
-	supportedPolicies = make(map[string]func() Policy)
+	supportedPolicies = make(map[string]func(string) Policy)
 )
 
 type staticUpstream struct {
 	from              string
 	upstreamHeaders   http.Header
 	downstreamHeaders http.Header
+	stop              chan struct{}  // Signals running goroutines to stop.
+	wg                sync.WaitGroup // Used to wait for running goroutines to stop.
 	Hosts             HostPool
 	Policy            Policy
 	KeepAlive         int
@@ -32,10 +39,13 @@ type staticUpstream struct {
 	TryInterval       time.Duration
 	MaxConns          int64
 	HealthCheck       struct {
-		Client   http.Client
-		Path     string
-		Interval time.Duration
-		Timeout  time.Duration
+		Client        http.Client
+		Path          string
+		Interval      time.Duration
+		Timeout       time.Duration
+		Host          string
+		Port          string
+		ContentString string
 	}
 	WithoutPathPrefix  string
 	IgnoredSubPaths    []string
@@ -44,12 +54,16 @@ type staticUpstream struct {
 }
 
 // NewStaticUpstreams parses the configuration input and sets up
-// static upstreams for the proxy middleware.
-func NewStaticUpstreams(c caddyfile.Dispenser) ([]Upstream, error) {
+// static upstreams for the proxy middleware. The host string parameter,
+// if not empty, is used for setting the upstream Host header for the
+// health checks if the upstream header config requires it.
+func NewStaticUpstreams(c caddyfile.Dispenser, host string) ([]Upstream, error) {
 	var upstreams []Upstream
 	for c.Next() {
+
 		upstream := &staticUpstream{
 			from:              "",
+			stop:              make(chan struct{}),
 			upstreamHeaders:   make(http.Header),
 			downstreamHeaders: make(http.Header),
 			Hosts:             nil,
@@ -107,8 +121,23 @@ func NewStaticUpstreams(c caddyfile.Dispenser) ([]Upstream, error) {
 		if upstream.HealthCheck.Path != "" {
 			upstream.HealthCheck.Client = http.Client{
 				Timeout: upstream.HealthCheck.Timeout,
+				Transport: &http.Transport{
+					TLSClientConfig: &tls.Config{InsecureSkipVerify: upstream.insecureSkipVerify},
+				},
 			}
-			go upstream.HealthCheckWorker(nil)
+
+			// set up health check upstream host if we have one
+			if host != "" {
+				hostHeader := upstream.upstreamHeaders.Get("Host")
+				if strings.Contains(hostHeader, "{host}") {
+					upstream.HealthCheck.Host = strings.Replace(hostHeader, "{host}", host, -1)
+				}
+			}
+			upstream.wg.Add(1)
+			go func() {
+				defer upstream.wg.Done()
+				upstream.HealthCheckWorker(upstream.stop)
+			}()
 		}
 		upstreams = append(upstreams, upstream)
 	}
@@ -214,7 +243,11 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream) error {
 		if !ok {
 			return c.ArgErr()
 		}
-		u.Policy = policyCreateFunc()
+		arg := ""
+		if c.NextArg() {
+			arg = c.Val()
+		}
+		u.Policy = policyCreateFunc(arg)
 	case "fail_timeout":
 		if !c.NextArg() {
 			return c.ArgErr()
@@ -296,6 +329,25 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream) error {
 			return err
 		}
 		u.HealthCheck.Timeout = dur
+	case "health_check_port":
+		if !c.NextArg() {
+			return c.ArgErr()
+		}
+		port := c.Val()
+		n, err := strconv.Atoi(port)
+		if err != nil {
+			return err
+		}
+
+		if n < 0 {
+			return c.Errf("invalid health_check_port '%s'", port)
+		}
+		u.HealthCheck.Port = port
+	case "health_check_contains":
+		if !c.NextArg() {
+			return c.ArgErr()
+		}
+		u.HealthCheck.ContentString = c.Val()
 	case "header_upstream":
 		var header, value string
 		if !c.Args(&header, &value) {
@@ -355,15 +407,48 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream) error {
 
 func (u *staticUpstream) healthCheck() {
 	for _, host := range u.Hosts {
-		hostURL := host.Name + u.HealthCheck.Path
-		var unhealthy bool
-		if r, err := u.HealthCheck.Client.Get(hostURL); err == nil {
-			io.Copy(ioutil.Discard, r.Body)
-			r.Body.Close()
-			unhealthy = r.StatusCode < 200 || r.StatusCode >= 400
-		} else {
-			unhealthy = true
+		hostURL := host.Name
+		if u.HealthCheck.Port != "" {
+			hostURL = replacePort(host.Name, u.HealthCheck.Port)
 		}
+		hostURL += u.HealthCheck.Path
+
+		unhealthy := func() bool {
+			// set up request, needed to be able to modify headers
+			// possible errors are bad HTTP methods or un-parsable urls
+			req, err := http.NewRequest("GET", hostURL, nil)
+			if err != nil {
+				return true
+			}
+			// set host for request going upstream
+			if u.HealthCheck.Host != "" {
+				req.Host = u.HealthCheck.Host
+			}
+			r, err := u.HealthCheck.Client.Do(req)
+			if err != nil {
+				return true
+			}
+			defer func() {
+				io.Copy(ioutil.Discard, r.Body)
+				r.Body.Close()
+			}()
+			if r.StatusCode < 200 || r.StatusCode >= 400 {
+				return true
+			}
+			if u.HealthCheck.ContentString == "" { // don't check for content string
+				return false
+			}
+			// TODO ReadAll will be replaced if deemed necessary
+			//      See https://github.com/mholt/caddy/pull/1691
+			buf, err := ioutil.ReadAll(r.Body)
+			if err != nil {
+				return true
+			}
+			if bytes.Contains(buf, []byte(u.HealthCheck.ContentString)) {
+				return false
+			}
+			return true
+		}()
 		if unhealthy {
 			atomic.StoreInt32(&host.Unhealthy, 1)
 		} else {
@@ -380,9 +465,8 @@ func (u *staticUpstream) HealthCheckWorker(stop chan struct{}) {
 		case <-ticker.C:
 			u.healthCheck()
 		case <-stop:
-			// TODO: the library should provide a stop channel and global
-			// waitgroup to allow goroutines started by plugins a chance
-			// to clean themselves up.
+			ticker.Stop()
+			return
 		}
 	}
 }
@@ -434,7 +518,31 @@ func (u *staticUpstream) GetHostCount() int {
 	return len(u.Hosts)
 }
 
+// Stop sends a signal to all goroutines started by this staticUpstream to exit
+// and waits for them to finish before returning.
+func (u *staticUpstream) Stop() error {
+	close(u.stop)
+	u.wg.Wait()
+	return nil
+}
+
 // RegisterPolicy adds a custom policy to the proxy.
-func RegisterPolicy(name string, policy func() Policy) {
+func RegisterPolicy(name string, policy func(string) Policy) {
 	supportedPolicies[name] = policy
+}
+
+func replacePort(originalURL string, newPort string) string {
+	parsedURL, err := url.Parse(originalURL)
+	if err != nil {
+		return originalURL
+	}
+
+	// handles 'localhost' and 'localhost:8080'
+	parsedHost, _, err := net.SplitHostPort(parsedURL.Host)
+	if err != nil {
+		parsedHost = parsedURL.Host
+	}
+
+	parsedURL.Host = net.JoinHostPort(parsedHost, newPort)
+	return parsedURL.String()
 }
