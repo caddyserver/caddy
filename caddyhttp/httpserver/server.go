@@ -461,9 +461,9 @@ func (s *Server) OnStartupComplete() {
 }
 
 // defaultTimeouts stores the default timeout values to use
-// if left unset by user configuration. NOTE: Default timeouts
-// are disabled (see issue #1464).
-var defaultTimeouts Timeouts
+// if left unset by user configuration. NOTE: Most default
+// timeouts are disabled (see issues #1464 and #1733).
+var defaultTimeouts = Timeouts{IdleTimeout: 5 * time.Minute}
 
 // tcpKeepAliveListener sets TCP keep-alive timeouts on accepted
 // connections. It's used by ListenAndServe and ListenAndServeTLS so

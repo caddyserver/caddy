@@ -53,7 +53,8 @@ type SiteConfig struct {
 	// websockets, etc.
 	Timeouts Timeouts
 
-	// If true all unmatched requests will be served by this site
+	// If true, any requests not matching other site definitions
+	// may be served by this site.
 	FallbackSite bool
 }
 
