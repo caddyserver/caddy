@@ -504,7 +504,7 @@ type FieldExpression struct {
 	Name string
 
 	// Expr is evaluated to provide a custom content snippet for each document.
-	// See https://cloud.google.com/appengine/docs/go/search/options for
+	// See https://cloud.google.com/appengine/docs/standard/go/search/options for
 	// the supported expression syntax.
 	Expr string
 }
@@ -651,7 +651,7 @@ type SortOptions struct {
 // SortExpression defines a single dimension for sorting a document.
 type SortExpression struct {
 	// Expr is evaluated to provide a sorting value for each document.
-	// See https://cloud.google.com/appengine/docs/go/search/options for
+	// See https://cloud.google.com/appengine/docs/standard/go/search/options for
 	// the supported expression syntax.
 	Expr string
 

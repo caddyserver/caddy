@@ -1,26 +1,26 @@
 package utils
 
 import (
+	"fmt"
 	"log"
 	"os"
-	"strconv"
 	"time"
 )
 
 // LogLevel of quic-go
 type LogLevel uint8
 
-const (
-	logEnv = "QUIC_GO_LOG_LEVEL"
+const logEnv = "QUIC_GO_LOG_LEVEL"
 
-	// LogLevelDebug enables debug logs (e.g. packet contents)
-	LogLevelDebug LogLevel = iota
-	// LogLevelInfo enables info logs (e.g. packets)
-	LogLevelInfo
+const (
+	// LogLevelNothing disables
+	LogLevelNothing LogLevel = iota
 	// LogLevelError enables err logs
 	LogLevelError
-	// LogLevelNothing disables
-	LogLevelNothing
+	// LogLevelInfo enables info logs (e.g. packets)
+	LogLevelInfo
+	// LogLevelDebug enables debug logs (e.g. packet contents)
+	LogLevelDebug
 )
 
 var (
@@ -49,14 +49,14 @@ func Debugf(format string, args ...interface{}) {
 
 // Infof logs something
 func Infof(format string, args ...interface{}) {
-	if logLevel <= LogLevelInfo {
+	if logLevel >= LogLevelInfo {
 		logMessage(format, args...)
 	}
 }
 
 // Errorf logs something
 func Errorf(format string, args ...interface{}) {
-	if logLevel <= LogLevelError {
+	if logLevel >= LogLevelError {
 		logMessage(format, args...)
 	}
 }
@@ -79,13 +79,16 @@ func init() {
 }
 
 func readLoggingEnv() {
-	env := os.Getenv(logEnv)
-	if env == "" {
+	switch os.Getenv(logEnv) {
+	case "":
 		return
+	case "DEBUG":
+		logLevel = LogLevelDebug
+	case "INFO":
+		logLevel = LogLevelInfo
+	case "ERROR":
+		logLevel = LogLevelError
+	default:
+		fmt.Fprintln(os.Stderr, "invalid quic-go log level, see https://github.com/lucas-clemente/quic-go/wiki/Logging")
 	}
-	level, err := strconv.Atoi(env)
-	if err != nil {
-		return
-	}
-	logLevel = LogLevel(level)
 }

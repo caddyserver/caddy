@@ -111,14 +111,14 @@ func nextTokenOrQuoted(s string) (value string, rest string) {
 				case escape:
 					escape = false
 					p[j] = b
-					j += 1
+					j++
 				case b == '\\':
 					escape = true
 				case b == '"':
 					return string(p[:j]), s[i+1:]
 				default:
 					p[j] = b
-					j += 1
+					j++
 				}
 			}
 			return "", ""

@@ -79,7 +79,7 @@ result. Next will return Done when the iterator is exhausted.
 Search takes a string query to determine which documents to return. The query
 can be simple, such as a single word to match, or complex. The query
 language is described at
-https://cloud.google.com/appengine/docs/go/search/query_strings
+https://cloud.google.com/appengine/docs/standard/go/search/query_strings
 
 Search also takes an optional SearchOptions struct which gives much more
 control over how results are calculated and returned.

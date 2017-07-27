@@ -2,6 +2,7 @@ package quic
 
 import (
 	"bytes"
+	"crypto/tls"
 	"errors"
 	"net"
 	"sync"
@@ -9,9 +10,9 @@ import (
 
 	"github.com/lucas-clemente/quic-go/crypto"
 	"github.com/lucas-clemente/quic-go/handshake"
+	"github.com/lucas-clemente/quic-go/internal/utils"
 	"github.com/lucas-clemente/quic-go/protocol"
 	"github.com/lucas-clemente/quic-go/qerr"
-	"github.com/lucas-clemente/quic-go/utils"
 )
 
 // packetHandler handles packets
@@ -19,11 +20,13 @@ type packetHandler interface {
 	Session
 	handlePacket(*receivedPacket)
 	run() error
+	closeRemote(error)
 }
 
 // A Listener of QUIC
 type server struct {
-	config *Config
+	tlsConf *tls.Config
+	config  *Config
 
 	conn net.PacketConn
 
@@ -38,14 +41,15 @@ type server struct {
 	sessionQueue chan Session
 	errorChan    chan struct{}
 
-	newSession func(conn connection, v protocol.VersionNumber, connectionID protocol.ConnectionID, sCfg *handshake.ServerConfig, config *Config) (packetHandler, <-chan handshakeEvent, error)
+	newSession func(conn connection, v protocol.VersionNumber, connectionID protocol.ConnectionID, sCfg *handshake.ServerConfig, tlsConf *tls.Config, config *Config) (packetHandler, <-chan handshakeEvent, error)
 }
 
 var _ Listener = &server{}
 
 // ListenAddr creates a QUIC server listening on a given address.
 // The listener is not active until Serve() is called.
-func ListenAddr(addr string, config *Config) (Listener, error) {
+// The tls.Config must not be nil, the quic.Config may be nil.
+func ListenAddr(addr string, tlsConf *tls.Config, config *Config) (Listener, error) {
 	udpAddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
 		return nil, err
@@ -54,13 +58,14 @@ func ListenAddr(addr string, config *Config) (Listener, error) {
 	if err != nil {
 		return nil, err
 	}
-	return Listen(conn, config)
+	return Listen(conn, tlsConf, config)
 }
 
 // Listen listens for QUIC connections on a given net.PacketConn.
 // The listener is not active until Serve() is called.
-func Listen(conn net.PacketConn, config *Config) (Listener, error) {
-	certChain := crypto.NewCertChain(config.TLSConfig)
+// The tls.Config must not be nil, the quic.Config may be nil.
+func Listen(conn net.PacketConn, tlsConf *tls.Config, config *Config) (Listener, error) {
+	certChain := crypto.NewCertChain(tlsConf)
 	kex, err := crypto.NewCurve25519KEX()
 	if err != nil {
 		return nil, err
@@ -72,6 +77,7 @@ func Listen(conn net.PacketConn, config *Config) (Listener, error) {
 
 	s := &server{
 		conn:                      conn,
+		tlsConf:                   tlsConf,
 		config:                    populateServerConfig(config),
 		certChain:                 certChain,
 		scfg:                      scfg,
@@ -101,20 +107,42 @@ var defaultAcceptSTK = func(clientAddr net.Addr, stk *STK) bool {
 	return sourceAddr == stk.remoteAddr
 }
 
+// populateServerConfig populates fields in the quic.Config with their default values, if none are set
+// it may be called with nil
 func populateServerConfig(config *Config) *Config {
+	if config == nil {
+		config = &Config{}
+	}
 	versions := config.Versions
 	if len(versions) == 0 {
 		versions = protocol.SupportedVersions
 	}
+
 	vsa := defaultAcceptSTK
 	if config.AcceptSTK != nil {
 		vsa = config.AcceptSTK
 	}
 
+	handshakeTimeout := protocol.DefaultHandshakeTimeout
+	if config.HandshakeTimeout != 0 {
+		handshakeTimeout = config.HandshakeTimeout
+	}
+
+	maxReceiveStreamFlowControlWindow := config.MaxReceiveStreamFlowControlWindow
+	if maxReceiveStreamFlowControlWindow == 0 {
+		maxReceiveStreamFlowControlWindow = protocol.DefaultMaxReceiveStreamFlowControlWindowServer
+	}
+	maxReceiveConnectionFlowControlWindow := config.MaxReceiveConnectionFlowControlWindow
+	if maxReceiveConnectionFlowControlWindow == 0 {
+		maxReceiveConnectionFlowControlWindow = protocol.DefaultMaxReceiveConnectionFlowControlWindowServer
+	}
+
 	return &Config{
-		TLSConfig: config.TLSConfig,
-		Versions:  versions,
-		AcceptSTK: vsa,
+		Versions:                              versions,
+		HandshakeTimeout:                      handshakeTimeout,
+		AcceptSTK:                             vsa,
+		MaxReceiveStreamFlowControlWindow:     maxReceiveStreamFlowControlWindow,
+		MaxReceiveConnectionFlowControlWindow: maxReceiveConnectionFlowControlWindow,
 	}
 }
 
@@ -238,6 +266,7 @@ func (s *server) handlePacket(pconn net.PacketConn, remoteAddr net.Addr, packet 
 			version,
 			hdr.ConnectionID,
 			s.scfg,
+			s.tlsConf,
 			s.config,
 		)
 		if err != nil {

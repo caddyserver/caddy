@@ -7,9 +7,9 @@ import (
 
 	"github.com/lucas-clemente/quic-go/congestion"
 	"github.com/lucas-clemente/quic-go/handshake"
+	"github.com/lucas-clemente/quic-go/internal/utils"
 	"github.com/lucas-clemente/quic-go/protocol"
 	"github.com/lucas-clemente/quic-go/qerr"
-	"github.com/lucas-clemente/quic-go/utils"
 )
 
 type flowControlManager struct {
@@ -78,7 +78,7 @@ func (f *flowControlManager) ResetStream(streamID protocol.StreamID, byteOffset 
 	if streamFlowController.ContributesToConnection() {
 		f.connFlowController.IncrementHighestReceived(increment)
 		if f.connFlowController.CheckFlowControlViolation() {
-			return qerr.Error(qerr.FlowControlReceivedTooMuchData, fmt.Sprintf("Received %d bytes for the connection, allowed %d bytes", byteOffset, f.connFlowController.receiveWindow))
+			return qerr.Error(qerr.FlowControlReceivedTooMuchData, fmt.Sprintf("Received %d bytes for the connection, allowed %d bytes", f.connFlowController.highestReceived, f.connFlowController.receiveWindow))
 		}
 	}
 
@@ -107,7 +107,7 @@ func (f *flowControlManager) UpdateHighestReceived(streamID protocol.StreamID, b
 	if streamFlowController.ContributesToConnection() {
 		f.connFlowController.IncrementHighestReceived(increment)
 		if f.connFlowController.CheckFlowControlViolation() {
-			return qerr.Error(qerr.FlowControlReceivedTooMuchData, fmt.Sprintf("Received %d bytes for the connection, allowed %d bytes", byteOffset, f.connFlowController.receiveWindow))
+			return qerr.Error(qerr.FlowControlReceivedTooMuchData, fmt.Sprintf("Received %d bytes for the connection, allowed %d bytes", f.connFlowController.highestReceived, f.connFlowController.receiveWindow))
 		}
 	}
 
@@ -156,6 +156,11 @@ func (f *flowControlManager) GetWindowUpdates() (res []WindowUpdate) {
 func (f *flowControlManager) GetReceiveWindow(streamID protocol.StreamID) (protocol.ByteCount, error) {
 	f.mutex.RLock()
 	defer f.mutex.RUnlock()
+
+	// StreamID can be 0 when retransmitting
+	if streamID == 0 {
+		return f.connFlowController.receiveWindow, nil
+	}
 
 	flowController, err := f.getFlowController(streamID)
 	if err != nil {

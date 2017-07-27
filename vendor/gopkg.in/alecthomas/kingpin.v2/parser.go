@@ -216,11 +216,9 @@ func (p *ParseContext) Next() *Token {
 			return &Token{p.argi, TokenError, err.Error()}
 		}
 		if len(p.args) == 0 {
-			p.args = append(p.args, expanded...)
-		} else if p.argi >= len(p.args) {
-			p.args = append(p.args[:p.argi-1], expanded...)
+			p.args = expanded
 		} else {
-			p.args = append(p.args[:p.argi-1], append(expanded, p.args[p.argi+1:]...)...)
+			p.args = append(expanded, p.args...)
 		}
 		return p.Next()
 	}

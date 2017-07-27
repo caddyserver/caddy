@@ -107,15 +107,14 @@ func (c *certManager) Verify(hostname string) error {
 	var opts x509.VerifyOptions
 	if c.config != nil {
 		opts.Roots = c.config.RootCAs
-		opts.DNSName = c.config.ServerName
 		if c.config.Time == nil {
 			opts.CurrentTime = time.Now()
 		} else {
 			opts.CurrentTime = c.config.Time()
 		}
-	} else {
-		opts.DNSName = hostname
 	}
+	// we don't need to care about the tls.Config.ServerName here, since hostname has already been set to that value in the session setup
+	opts.DNSName = hostname
 
 	// the first certificate is the leaf certificate, all others are intermediates
 	if len(c.chain) > 1 {

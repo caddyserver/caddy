@@ -36,6 +36,9 @@ import (
 // operating system-specific cache or temp directory. This may not
 // be suitable for servers spanning multiple machines.
 //
+// The returned listener uses a *tls.Config that enables HTTP/2, and
+// should only be used with servers that support HTTP/2.
+//
 // The returned Listener also enables TCP keep-alives on the accepted
 // connections. The returned *tls.Conn are returned before their TLS
 // handshake has completed.
@@ -58,6 +61,9 @@ func NewListener(domains ...string) net.Listener {
 // Listener listens on the standard TLS port (443) on all interfaces
 // and returns a net.Listener returning *tls.Conn connections.
 //
+// The returned listener uses a *tls.Config that enables HTTP/2, and
+// should only be used with servers that support HTTP/2.
+//
 // The returned Listener also enables TCP keep-alives on the accepted
 // connections. The returned *tls.Conn are returned before their TLS
 // handshake has completed.
@@ -68,7 +74,8 @@ func (m *Manager) Listener() net.Listener {
 	ln := &listener{
 		m: m,
 		conf: &tls.Config{
-			GetCertificate: m.GetCertificate, // bonus: panic on nil m
+			GetCertificate: m.GetCertificate,           // bonus: panic on nil m
+			NextProtos:     []string{"h2", "http/1.1"}, // Enable HTTP/2
 		},
 	}
 	ln.tcpListener, ln.tcpListenErr = net.Listen("tcp", ":443")

@@ -10,9 +10,9 @@ import (
 	"sync"
 
 	"github.com/lucas-clemente/quic-go/crypto"
+	"github.com/lucas-clemente/quic-go/internal/utils"
 	"github.com/lucas-clemente/quic-go/protocol"
 	"github.com/lucas-clemente/quic-go/qerr"
-	"github.com/lucas-clemente/quic-go/utils"
 )
 
 // KeyDerivationFunction is used for key derivation
@@ -214,12 +214,16 @@ func (h *cryptoSetupServer) Open(dst, src []byte, packetNumber protocol.PacketNu
 func (h *cryptoSetupServer) GetSealer() (protocol.EncryptionLevel, Sealer) {
 	h.mutex.RLock()
 	defer h.mutex.RUnlock()
-
-	if h.forwardSecureAEAD != nil && h.sentSHLO {
+	if h.forwardSecureAEAD != nil {
 		return protocol.EncryptionForwardSecure, h.sealForwardSecure
-	} else if h.secureAEAD != nil {
-		// secureAEAD and forwardSecureAEAD are created at the same time (when receiving the CHLO)
-		// make sure that the SHLO isn't sent forward-secure
+	}
+	return protocol.EncryptionUnencrypted, h.sealUnencrypted
+}
+
+func (h *cryptoSetupServer) GetSealerForCryptoStream() (protocol.EncryptionLevel, Sealer) {
+	h.mutex.RLock()
+	defer h.mutex.RUnlock()
+	if h.secureAEAD != nil {
 		return protocol.EncryptionSecure, h.sealSecure
 	}
 	return protocol.EncryptionUnencrypted, h.sealUnencrypted
@@ -251,7 +255,6 @@ func (h *cryptoSetupServer) sealUnencrypted(dst, src []byte, packetNumber protoc
 }
 
 func (h *cryptoSetupServer) sealSecure(dst, src []byte, packetNumber protocol.PacketNumber, associatedData []byte) []byte {
-	h.sentSHLO = true
 	return h.secureAEAD.Seal(dst, src, packetNumber, associatedData)
 }
 

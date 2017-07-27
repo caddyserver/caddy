@@ -8,13 +8,6 @@ import (
 	"github.com/lucas-clemente/quic-go/protocol"
 )
 
-var (
-	// ErrDuplicatePacket occurres when a duplicate packet is received
-	ErrDuplicatePacket = errors.New("ReceivedPacketHandler: Duplicate Packet")
-	// ErrPacketSmallerThanLastStopWaiting occurs when a packet arrives with a packet number smaller than the largest LeastUnacked of a StopWaitingFrame. If this error occurs, the packet should be ignored
-	ErrPacketSmallerThanLastStopWaiting = errors.New("ReceivedPacketHandler: Packet number smaller than highest StopWaiting")
-)
-
 var errInvalidPacketNumber = errors.New("ReceivedPacketHandler: Invalid packet number")
 
 type receivedPacketHandler struct {
@@ -30,20 +23,14 @@ type receivedPacketHandler struct {
 	retransmittablePacketsReceivedSinceLastAck int
 	ackQueued                                  bool
 	ackAlarm                                   time.Time
-	ackAlarmResetCallback                      func(time.Time)
 	lastAck                                    *frames.AckFrame
 }
 
 // NewReceivedPacketHandler creates a new receivedPacketHandler
-func NewReceivedPacketHandler(ackAlarmResetCallback func(time.Time)) ReceivedPacketHandler {
-	// create a stopped timer, see https://github.com/golang/go/issues/12721#issuecomment-143010182
-	timer := time.NewTimer(0)
-	<-timer.C
-
+func NewReceivedPacketHandler() ReceivedPacketHandler {
 	return &receivedPacketHandler{
-		packetHistory:         newReceivedPacketHistory(),
-		ackAlarmResetCallback: ackAlarmResetCallback,
-		ackSendDelay:          protocol.AckSendDelay,
+		packetHistory: newReceivedPacketHistory(),
+		ackSendDelay:  protocol.AckSendDelay,
 	}
 }
 
@@ -52,19 +39,10 @@ func (h *receivedPacketHandler) ReceivedPacket(packetNumber protocol.PacketNumbe
 		return errInvalidPacketNumber
 	}
 
-	// if the packet number is smaller than the largest LeastUnacked value of a StopWaiting we received, we cannot detect if this packet has a duplicate number
-	// the packet has to be ignored anyway
-	if packetNumber <= h.ignorePacketsBelow {
-		return ErrPacketSmallerThanLastStopWaiting
-	}
-
-	if h.packetHistory.IsDuplicate(packetNumber) {
-		return ErrDuplicatePacket
-	}
-
-	err := h.packetHistory.ReceivedPacket(packetNumber)
-	if err != nil {
-		return err
+	if packetNumber > h.ignorePacketsBelow {
+		if err := h.packetHistory.ReceivedPacket(packetNumber); err != nil {
+			return err
+		}
 	}
 
 	if packetNumber > h.largestObserved {
@@ -89,7 +67,6 @@ func (h *receivedPacketHandler) ReceivedStopWaiting(f *frames.StopWaitingFrame) 
 }
 
 func (h *receivedPacketHandler) maybeQueueAck(packetNumber protocol.PacketNumber, shouldInstigateAck bool) {
-	var ackAlarmSet bool
 	h.packetsReceivedSinceLastAck++
 
 	if shouldInstigateAck {
@@ -124,7 +101,6 @@ func (h *receivedPacketHandler) maybeQueueAck(packetNumber protocol.PacketNumber
 		} else {
 			if h.ackAlarm.IsZero() {
 				h.ackAlarm = time.Now().Add(h.ackSendDelay)
-				ackAlarmSet = true
 			}
 		}
 	}
@@ -132,11 +108,6 @@ func (h *receivedPacketHandler) maybeQueueAck(packetNumber protocol.PacketNumber
 	if h.ackQueued {
 		// cancel the ack alarm
 		h.ackAlarm = time.Time{}
-		ackAlarmSet = false
-	}
-
-	if ackAlarmSet {
-		h.ackAlarmResetCallback(h.ackAlarm)
 	}
 }
 
@@ -164,3 +135,5 @@ func (h *receivedPacketHandler) GetAckFrame() *frames.AckFrame {
 
 	return ack
 }
+
+func (h *receivedPacketHandler) GetAlarmTimeout() time.Time { return h.ackAlarm }
