@@ -10,14 +10,15 @@ import (
 // wildcards as TLS certificates support them), then
 // by longest matching path.
 type vhostTrie struct {
-	edges map[string]*vhostTrie
-	site  *SiteConfig // site to match on this node; also known as a virtual host
-	path  string      // the path portion of the key for the associated site
+	fallbackHosts []string
+	edges         map[string]*vhostTrie
+	site          *SiteConfig // site to match on this node; also known as a virtual host
+	path          string      // the path portion of the key for the associated site
 }
 
 // newVHostTrie returns a new vhostTrie.
 func newVHostTrie() *vhostTrie {
-	return &vhostTrie{edges: make(map[string]*vhostTrie)}
+	return &vhostTrie{edges: make(map[string]*vhostTrie), fallbackHosts: []string{"0.0.0.0", ""}}
 }
 
 // Insert adds stack to t keyed by key. The key should be
@@ -45,12 +46,6 @@ func (t *vhostTrie) insertPath(remainingPath, originalPath string, site *SiteCon
 	t.edges[ch].insertPath(remainingPath[1:], originalPath, site)
 }
 
-// When matching a site, the given host will be tried first.
-// Then, FallbackHosts will be tried in order.
-// Default FallbackHosts are following wildcards,
-// which could be modified by plugins and directives.
-var FallbackHosts = []string{"0.0.0.0", ""}
-
 // Match returns the virtual host (site) in v with
 // the closest match to key. If there was a match,
 // it returns the SiteConfig and the path portion of
@@ -65,7 +60,7 @@ func (t *vhostTrie) Match(key string) (*SiteConfig, string) {
 	host, path := t.splitHostPath(key)
 	// try the given host, then, if no match, try fallback hosts
 	branch := t.matchHost(host)
-	for _, h := range FallbackHosts {
+	for _, h := range t.fallbackHosts {
 		if branch != nil {
 			break
 		}
