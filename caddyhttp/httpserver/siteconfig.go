@@ -52,6 +52,9 @@ type SiteConfig struct {
 	// preserving functionality needed for proxying,
 	// websockets, etc.
 	Timeouts Timeouts
+
+	// If true all unmatched requests will be served by this site
+	FallbackSite bool
 }
 
 // Timeouts specify various timeouts for a server to use.
