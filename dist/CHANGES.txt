@@ -1,5 +1,19 @@
 CHANGES
 
+0.10.5 (July 27, 2017)
+- Renamed requestid directive to request_id
+- Set default idle timeout of 5 minutes
+- New 3rd-party plugin directives: cache, nobots, webdav
+- New Unix timestamp placeholder {when_unix}
+- Improved MITM detection on iOS clients
+- errors, log: Fix log rolling parsing
+- gzip: Convert any ETag header to weak etag
+- fastcgi: Reverted persistent connections (issue #1736)
+- proxy: Added header loaded balancing policy
+- proxy: Fix hang on chunked WebSockets (e.g. with HomeAssistant)
+- Several other bug fixes and minor internal improvements
+
+
 0.10.4 (June 28, 2017)
 - Vendor all dependencies
 - Improve MITM detection, add experimental Tor browser support
