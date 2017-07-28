@@ -1,5 +1,9 @@
 CHANGES
 
+0.10.6 (July 28, 2017)
+- fastcgi: Fix runtime error for 32-bit and ARM architectures
+
+
 0.10.5 (July 27, 2017)
 - Renamed requestid directive to request_id
 - Set default idle timeout of 5 minutes
