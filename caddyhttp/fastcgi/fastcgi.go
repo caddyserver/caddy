@@ -366,8 +366,11 @@ type balancer interface {
 
 // roundRobin is a round robin balancer for fastcgi upstreams.
 type roundRobin struct {
-	addresses []string
+	// Known Go bug: https://golang.org/pkg/sync/atomic/#pkg-note-BUG
+	// must be first field for 64 bit alignment
+	// on x86 and arm.
 	index     int64
+	addresses []string
 }
 
 func (r *roundRobin) Address() string {
