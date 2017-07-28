@@ -488,12 +488,12 @@ var directives = []string{
 	"fastcgi",
 	"cgi", // github.com/jung-kurt/caddy-cgi
 	"websocket",
-	"filemanager", // github.com/hacdias/caddy-filemanager
+	"filemanager", // github.com/hacdias/filemanager/caddy/filemanager
 	"webdav",      // github.com/hacdias/caddy-webdav
 	"markdown",
 	"templates",
 	"browse",
-	"hugo",      // github.com/hacdias/caddy-hugo
+	"hugo",      // github.com/hacdias/filemanager/caddy/hugo
 	"mailout",   // github.com/SchumacherFM/mailout
 	"awslambda", // github.com/coopernurse/caddy-awslambda
 	"grpc",      // github.com/pieterlouw/caddy-grpc
