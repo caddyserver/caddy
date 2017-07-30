@@ -53,59 +53,8 @@ const (
 	matchOp      = "match"
 )
 
-func operatorError(operator string) error {
-	return fmt.Errorf("Invalid operator %v", operator)
-}
-
 // ifCondition is a 'if' condition.
-type ifCondition func(string, string) bool
-
-var ifConditions = map[string]ifCondition{
-	isOp:         isFunc,
-	notOp:        notFunc,
-	hasOp:        hasFunc,
-	startsWithOp: startsWithFunc,
-	endsWithOp:   endsWithFunc,
-	matchOp:      matchFunc,
-}
-
-// isFunc is condition for Is operator.
-// It checks for equality.
-func isFunc(a, b string) bool {
-	return a == b
-}
-
-// notFunc is condition for Not operator.
-// It checks for inequality.
-func notFunc(a, b string) bool {
-	return !isFunc(a, b)
-}
-
-// hasFunc is condition for Has operator.
-// It checks if b is a substring of a.
-func hasFunc(a, b string) bool {
-	return strings.Contains(a, b)
-}
-
-// startsWithFunc is condition for StartsWith operator.
-// It checks if b is a prefix of a.
-func startsWithFunc(a, b string) bool {
-	return strings.HasPrefix(a, b)
-}
-
-// endsWithFunc is condition for EndsWith operator.
-// It checks if b is a suffix of a.
-func endsWithFunc(a, b string) bool {
-	return strings.HasSuffix(a, b)
-}
-
-// matchFunc is condition for Match operator.
-// It does regexp matching of a against pattern in b
-// and returns if they match.
-func matchFunc(a, b string) bool {
-	matched, _ := regexp.MatchString(b, a)
-	return matched
-}
+type ifFunc func(a, b string) bool
 
 // ifCond is statement for a IfMatcher condition.
 type ifCond struct {
@@ -113,40 +62,79 @@ type ifCond struct {
 	op  string
 	b   string
 	neg bool
+	rex *regexp.Regexp
+	f   ifFunc
 }
 
 // newIfCond creates a new If condition.
-func newIfCond(a, operator, b string) (ifCond, error) {
-	neg := false
-	if strings.HasPrefix(operator, "not_") {
-		neg = true
-		operator = operator[4:]
+func newIfCond(a, op, b string) (ifCond, error) {
+	i := ifCond{a: a, op: op, b: b}
+	if strings.HasPrefix(op, "not_") {
+		i.neg = true
+		i.op = op[4:]
 	}
-	if _, ok := ifConditions[operator]; !ok {
-		return ifCond{}, operatorError(operator)
+
+	switch i.op {
+	case isOp:
+		// It checks for equality.
+		i.f = i.isFunc
+	case notOp:
+		// It checks for inequality.
+		i.f = i.notFunc
+	case hasOp:
+		// It checks if b is a substring of a.
+		i.f = strings.Contains
+	case startsWithOp:
+		// It checks if b is a prefix of a.
+		i.f = strings.HasPrefix
+	case endsWithOp:
+		// It checks if b is a suffix of a.
+		i.f = strings.HasSuffix
+	case matchOp:
+		// It does regexp matching of a against pattern in b and returns if they match.
+		var err error
+		if i.rex, err = regexp.Compile(i.b); err != nil {
+			return ifCond{}, fmt.Errorf("Invalid regular expression: '%s', %v", i.b, err)
+		}
+		i.f = i.matchFunc
+	default:
+		return ifCond{}, fmt.Errorf("Invalid operator %v", i.op)
 	}
-	return ifCond{
-		a:   a,
-		op:  operator,
-		b:   b,
-		neg: neg,
-	}, nil
+
+	return i, nil
+}
+
+// isFunc is condition for Is operator.
+func (i ifCond) isFunc(a, b string) bool {
+	return a == b
+}
+
+// notFunc is condition for Not operator.
+func (i ifCond) notFunc(a, b string) bool {
+	return a != b
+}
+
+// matchFunc is condition for Match operator.
+func (i ifCond) matchFunc(a, b string) bool {
+	return i.rex.MatchString(a)
 }
 
 // True returns true if the condition is true and false otherwise.
 // If r is not nil, it replaces placeholders before comparison.
 func (i ifCond) True(r *http.Request) bool {
-	if c, ok := ifConditions[i.op]; ok {
+	if i.f != nil {
 		a, b := i.a, i.b
 		if r != nil {
 			replacer := NewReplacer(r, nil, "")
 			a = replacer.Replace(i.a)
-			b = replacer.Replace(i.b)
+			if i.op != matchOp {
+				b = replacer.Replace(i.b)
+			}
 		}
 		if i.neg {
-			return !c(a, b)
+			return !i.f(a, b)
 		}
-		return c(a, b)
+		return i.f(a, b)
 	}
 	return i.neg // false if not negated, true otherwise
 }
