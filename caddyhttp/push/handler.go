@@ -58,24 +58,39 @@ outer:
 }
 
 func (h Middleware) servePreloadLinks(pusher http.Pusher, headers http.Header, links []string) {
+outer:
 	for _, link := range links {
-		parts := strings.Split(link, ";")
+		resources := strings.Split(link, ",")
 
-		if link == "" || strings.HasSuffix(link, "nopush") {
-			continue
-		}
+		for _, resource := range resources {
+			parts := strings.Split(resource, ";")
 
-		target := strings.TrimSuffix(strings.TrimPrefix(parts[0], "<"), ">")
+			if link == "" || strings.HasSuffix(resource, "nopush") {
+				continue
+			}
 
-		err := pusher.Push(target, &http.PushOptions{
-			Method: http.MethodGet,
-			Header: headers,
-		})
+			target := strings.TrimSuffix(strings.TrimPrefix(parts[0], "<"), ">")
 
-		if err != nil {
-			break
+			if h.IsRemoteResource(target) {
+				continue
+			}
+
+			err := pusher.Push(target, &http.PushOptions{
+				Method: http.MethodGet,
+				Header: headers,
+			})
+
+			if err != nil {
+				break outer
+			}
 		}
 	}
+}
+
+func (h Middleware) IsRemoteResource(resource string) bool {
+	return strings.HasPrefix(resource, "//") ||
+		strings.HasPrefix(resource, "http://") ||
+		strings.HasPrefix(resource, "https://")
 }
 
 func (h Middleware) mergeHeaders(l, r http.Header) http.Header {
