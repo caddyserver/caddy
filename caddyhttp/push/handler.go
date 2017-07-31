@@ -65,7 +65,7 @@ outer:
 		for _, resource := range resources {
 			parts := strings.Split(resource, ";")
 
-			if link == "" || strings.HasSuffix(resource, "nopush") {
+			if resource == "" || strings.HasSuffix(resource, "nopush") {
 				continue
 			}
 

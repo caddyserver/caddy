@@ -281,7 +281,7 @@ func TestMiddlewareShouldInterceptLinkHeaderWithMultipleResources(t *testing.T) 
 	middleware := Middleware{
 		Next: httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
 			w.Header().Add("Link", "</assets/css/screen.css?v=5fc240c512>; rel=preload; as=style,</content/images/2016/06/Timeouts-001.png>; rel=preload; as=image,</content/images/2016/06/Timeouts-002.png>; rel=preload; as=image")
-			w.Header().Add("Link", "<//cdn.bizible.com/scripts/bizible.js>; rel=preload; as=script")
+			w.Header().Add("Link", "<//cdn.bizible.com/scripts/bizible.js>; rel=preload; as=script,</resource.png>; rel=preload; as=script; nopush")
 			return 0, nil
 		}),
 		Rules: []Rule{},
