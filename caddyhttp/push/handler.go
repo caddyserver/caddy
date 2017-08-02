@@ -32,6 +32,7 @@ outer:
 		if !matches {
 			_, matches = httpserver.IndexFile(h.Root, urlPath, staticfiles.IndexPages)
 		}
+
 		if matches {
 			for _, resource := range rule.Resources {
 				pushErr := pusher.Push(resource.Path, &http.PushOptions{
@@ -57,25 +58,23 @@ outer:
 	return code, err
 }
 
-func (h Middleware) servePreloadLinks(pusher http.Pusher, headers http.Header, links []string) {
+// servePreloadLinks parses Link headers from backend and pushes resources found in them.
+// For accepted header formats check parseLinkHeader function.
+//
+// If resource has 'nopush' attribute then it will be omitted.
+func (h Middleware) servePreloadLinks(pusher http.Pusher, headers http.Header, resources []string) {
 outer:
-	for _, link := range links {
-		resources := strings.Split(link, ",")
-
-		for _, resource := range resources {
-			parts := strings.Split(resource, ";")
-
-			if resource == "" || strings.HasSuffix(resource, "nopush") {
+	for _, resource := range resources {
+		for _, resource := range parseLinkHeader(resource) {
+			if _, exists := resource.params["nopush"]; exists {
 				continue
 			}
 
-			target := strings.TrimSuffix(strings.TrimPrefix(parts[0], "<"), ">")
-
-			if h.IsRemoteResource(target) {
+			if h.isRemoteResource(resource.uri) {
 				continue
 			}
 
-			err := pusher.Push(target, &http.PushOptions{
+			err := pusher.Push(resource.uri, &http.PushOptions{
 				Method: http.MethodGet,
 				Header: headers,
 			})
@@ -87,7 +86,7 @@ outer:
 	}
 }
 
-func (h Middleware) IsRemoteResource(resource string) bool {
+func (h Middleware) isRemoteResource(resource string) bool {
 	return strings.HasPrefix(resource, "//") ||
 		strings.HasPrefix(resource, "http://") ||
 		strings.HasPrefix(resource, "https://")
