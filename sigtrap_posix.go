@@ -30,7 +30,7 @@ func trapSignalsPosix() {
 				err := Stop()
 				if err != nil {
 					log.Printf("[ERROR] SIGQUIT stop: %v", err)
-					exitCode = 1
+					exitCode = 3
 				}
 				if PidFile != "" {
 					os.Remove(PidFile)
