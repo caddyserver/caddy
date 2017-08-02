@@ -42,7 +42,9 @@ func trapSignalsCrossPlatform() {
 				os.Remove(PidFile)
 			}
 
-			go os.Exit(executeShutdownCallbacks("SIGINT"))
+			go func() {
+				os.Exit(executeShutdownCallbacks("SIGINT"))
+			}()
 		}
 	}()
 }
