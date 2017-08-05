@@ -16,6 +16,7 @@ func TestVHostTrie(t *testing.T) {
 		"example.com/foo/bar",
 		"*.example.com/test",
 	})
+	CaseSensitivePath = true
 	assertTestTrie(t, trie, []vhostTrieTest{
 		{"not-in-trie.com", false, "", "/"},
 		{"example", true, "example", "/"},
@@ -79,6 +80,19 @@ func TestVHostTriePort(t *testing.T) {
 	assertTestTrie(t, trie, []vhostTrieTest{
 		{"example.com/foo", true, "example.com:1234", "/"},
 	}, true)
+}
+
+func TestVHostTrieCaseSensitivePath(t *testing.T) {
+	trie := newVHostTrie()
+	populateTestTrie(trie, []string{
+		"example.com/PATH",
+		"example.com/path",
+	})
+	CaseSensitivePath = true
+	assertTestTrie(t, trie, []vhostTrieTest{
+		{"example.com/path", true, "example.com/path", "/path"},
+		{"example.com/PATH", true, "example.com/PATH", "/PATH"},
+	}, false)
 }
 
 func populateTestTrie(trie *vhostTrie, keys []string) {
