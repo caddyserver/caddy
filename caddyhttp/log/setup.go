@@ -1,6 +1,8 @@
 package log
 
 import (
+	"strings"
+
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
@@ -36,63 +38,48 @@ func logParse(c *caddy.Controller) ([]*Rule, error) {
 
 		for c.NextBlock() {
 			what := c.Val()
-			if !c.NextArg() {
-				return nil, c.ArgErr()
-			}
-			where := c.Val()
+			where := c.RemainingArgs()
 
 			// only support roller related options inside a block
 			if !httpserver.IsLogRollerSubdirective(what) {
 				return nil, c.ArgErr()
 			}
 
-			if err := httpserver.ParseRoller(logRoller, what, where); err != nil {
+			if err := httpserver.ParseRoller(logRoller, what, where...); err != nil {
 				return nil, err
 			}
 		}
 
-		if len(args) == 0 {
-			// Nothing specified; use defaults
-			rules = appendEntry(rules, "/", &Entry{
-				Log: &httpserver.Logger{
-					Output: DefaultLogFilename,
-					Roller: logRoller,
-				},
-				Format: DefaultLogFormat,
-			})
-		} else if len(args) == 1 {
+		path := "/"
+		format := DefaultLogFormat
+		output := DefaultLogFilename
+
+		switch len(args) {
+		case 0:
+			// nothing to change
+		case 1:
 			// Only an output file specified
-			rules = appendEntry(rules, "/", &Entry{
-				Log: &httpserver.Logger{
-					Output: args[0],
-					Roller: logRoller,
-				},
-				Format: DefaultLogFormat,
-			})
-		} else {
+			output = args[0]
+		case 2, 3:
 			// Path scope, output file, and maybe a format specified
-
-			format := DefaultLogFormat
-
+			path = args[0]
+			output = args[1]
 			if len(args) > 2 {
-				switch args[2] {
-				case "{common}":
-					format = CommonLogFormat
-				case "{combined}":
-					format = CombinedLogFormat
-				default:
-					format = args[2]
-				}
+				format = strings.Replace(args[2], "{common}", CommonLogFormat, -1)
+				format = strings.Replace(format, "{combined}", CombinedLogFormat, -1)
 			}
-
-			rules = appendEntry(rules, args[0], &Entry{
-				Log: &httpserver.Logger{
-					Output: args[1],
-					Roller: logRoller,
-				},
-				Format: format,
-			})
+		default:
+			// Maximum number of args in log directive is 3.
+			return nil, c.ArgErr()
 		}
+
+		rules = appendEntry(rules, path, &Entry{
+			Log: &httpserver.Logger{
+				Output: output,
+				Roller: logRoller,
+			},
+			Format: format,
+		})
 	}
 
 	return rules, nil

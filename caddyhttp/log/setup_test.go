@@ -124,6 +124,16 @@ func TestLogParse(t *testing.T) {
 				Format: CommonLogFormat,
 			}},
 		}}},
+		{`log /myapi log.txt "prefix {common} suffix"`, false, []Rule{{
+			PathScope: "/myapi",
+			Entries: []*Entry{{
+				Log: &httpserver.Logger{
+					Output: "log.txt",
+					Roller: httpserver.DefaultLogRoller(),
+				},
+				Format: "prefix " + CommonLogFormat + " suffix",
+			}},
+		}}},
 		{`log /test accesslog.txt {combined}`, false, []Rule{{
 			PathScope: "/test",
 			Entries: []*Entry{{
@@ -132,6 +142,16 @@ func TestLogParse(t *testing.T) {
 					Roller: httpserver.DefaultLogRoller(),
 				},
 				Format: CombinedLogFormat,
+			}},
+		}}},
+		{`log /test accesslog.txt "prefix {combined} suffix"`, false, []Rule{{
+			PathScope: "/test",
+			Entries: []*Entry{{
+				Log: &httpserver.Logger{
+					Output: "accesslog.txt",
+					Roller: httpserver.DefaultLogRoller(),
+				},
+				Format: "prefix " + CombinedLogFormat + " suffix",
 			}},
 		}}},
 		{`log /api1 log.txt
@@ -174,7 +194,12 @@ func TestLogParse(t *testing.T) {
 				Format: "{when}",
 			}},
 		}}},
-		{`log access.log { rotate_size 2 rotate_age 10 rotate_keep 3 }`, false, []Rule{{
+		{`log access.log {
+			rotate_size 2
+			rotate_age 10
+			rotate_keep 3
+			rotate_compress
+		}`, false, []Rule{{
 			PathScope: "/",
 			Entries: []*Entry{{
 				Log: &httpserver.Logger{
@@ -183,6 +208,7 @@ func TestLogParse(t *testing.T) {
 						MaxSize:    2,
 						MaxAge:     10,
 						MaxBackups: 3,
+						Compress:   true,
 						LocalTime:  true,
 					}},
 				Format: DefaultLogFormat,
@@ -205,8 +231,11 @@ func TestLogParse(t *testing.T) {
 				Format: "{when}",
 			}},
 		}}},
+		{`log access.log { rotate_size 2 rotate_age 10 rotate_keep 3 }`, true, nil},
+		{`log access.log { rotate_compress invalid }`, true, nil},
 		{`log access.log { rotate_size }`, true, nil},
 		{`log access.log { invalid_option 1 }`, true, nil},
+		{`log / acccess.log "{remote} - [{when}] "{method} {port}" {scheme} {mitm} "`, true, nil},
 	}
 	for i, test := range tests {
 		c := caddy.NewTestController("http", test.inputLogRules)

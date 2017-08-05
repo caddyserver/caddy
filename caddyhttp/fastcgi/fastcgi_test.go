@@ -29,16 +29,9 @@ func TestServeHTTP(t *testing.T) {
 		w.Write([]byte(body))
 	}))
 
-	network, address := parseAddress(listener.Addr().String())
 	handler := Handler{
-		Next: nil,
-		Rules: []Rule{
-			{
-				Path:    "/",
-				Address: listener.Addr().String(),
-				dialer:  basicDialer{network: network, address: address},
-			},
-		},
+		Next:  nil,
+		Rules: []Rule{{Path: "/", balancer: address(listener.Addr().String())}},
 	}
 	r, err := http.NewRequest("GET", "/", nil)
 	if err != nil {
@@ -62,122 +55,25 @@ func TestServeHTTP(t *testing.T) {
 	}
 }
 
-// connectionCounter in fact is a listener with an added counter to keep track
-// of the number of accepted connections.
-type connectionCounter struct {
-	net.Listener
-	sync.Mutex
-	counter int
-}
-
-func (l *connectionCounter) Accept() (net.Conn, error) {
-	l.Lock()
-	l.counter++
-	l.Unlock()
-	return l.Listener.Accept()
-}
-
-// TestPersistent ensures that persistent
-// as well as the non-persistent fastCGI servers
-// send the answers corresnponding to the correct request.
-// It also checks the number of tcp connections used.
-func TestPersistent(t *testing.T) {
-	numberOfRequests := 32
-
-	for _, poolsize := range []int{0, 1, 5, numberOfRequests} {
-		l, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			t.Fatalf("Unable to create listener for test: %v", err)
-		}
-
-		listener := &connectionCounter{l, *new(sync.Mutex), 0}
-
-		// this fcgi server replies with the request URL
-		go fcgi.Serve(listener, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			body := "This answers a request to " + r.URL.Path
-			bodyLenStr := strconv.Itoa(len(body))
-
-			w.Header().Set("Content-Length", bodyLenStr)
-			w.Write([]byte(body))
-		}))
-
-		network, address := parseAddress(listener.Addr().String())
-		handler := Handler{
-			Next:  nil,
-			Rules: []Rule{{Path: "/", Address: listener.Addr().String(), dialer: &persistentDialer{size: poolsize, network: network, address: address}}},
-		}
-
-		var semaphore sync.WaitGroup
-		serialMutex := new(sync.Mutex)
-
-		serialCounter := 0
-		parallelCounter := 0
-		// make some serial followed by some
-		// parallel requests to challenge the handler
-		for _, serialize := range []bool{true, false, false, false} {
-			if serialize {
-				serialCounter++
-			} else {
-				parallelCounter++
-			}
-			semaphore.Add(numberOfRequests)
-
-			for i := 0; i < numberOfRequests; i++ {
-				go func(i int, serialize bool) {
-					defer semaphore.Done()
-					if serialize {
-						serialMutex.Lock()
-						defer serialMutex.Unlock()
-					}
-					r, err := http.NewRequest("GET", "/"+strconv.Itoa(i), nil)
-					if err != nil {
-						t.Errorf("Unable to create request: %v", err)
-					}
-					ctx := context.WithValue(r.Context(), httpserver.OriginalURLCtxKey, *r.URL)
-					r = r.WithContext(ctx)
-					w := httptest.NewRecorder()
-
-					status, err := handler.ServeHTTP(w, r)
-
-					if status != 0 {
-						t.Errorf("Handler(pool: %v) return status %v", poolsize, status)
-					}
-					if err != nil {
-						t.Errorf("Handler(pool: %v) Error: %v", poolsize, err)
-					}
-					want := "This answers a request to /" + strconv.Itoa(i)
-					if got := w.Body.String(); got != want {
-						t.Errorf("Expected response from handler(pool: %v) to be '%s', got: '%s'", poolsize, want, got)
-					}
-				}(i, serialize)
-			} //next request
-			semaphore.Wait()
-		} // next set of requests (serial/parallel)
-
-		listener.Close()
-		t.Logf("The pool: %v test used %v tcp connections to answer %v * %v serial and %v * %v parallel requests.", poolsize, listener.counter, serialCounter, numberOfRequests, parallelCounter, numberOfRequests)
-	} // next handler (persistent/non-persistent)
-}
-
 func TestRuleParseAddress(t *testing.T) {
 	getClientTestTable := []struct {
 		rule            *Rule
 		expectednetwork string
 		expectedaddress string
 	}{
-		{&Rule{Address: "tcp://172.17.0.1:9000"}, "tcp", "172.17.0.1:9000"},
-		{&Rule{Address: "fastcgi://localhost:9000"}, "tcp", "localhost:9000"},
-		{&Rule{Address: "172.17.0.15"}, "tcp", "172.17.0.15"},
-		{&Rule{Address: "/my/unix/socket"}, "unix", "/my/unix/socket"},
-		{&Rule{Address: "unix:/second/unix/socket"}, "unix", "/second/unix/socket"},
+		{&Rule{balancer: address("tcp://172.17.0.1:9000")}, "tcp", "172.17.0.1:9000"},
+		{&Rule{balancer: address("fastcgi://localhost:9000")}, "tcp", "localhost:9000"},
+		{&Rule{balancer: address("172.17.0.15")}, "tcp", "172.17.0.15"},
+		{&Rule{balancer: address("/my/unix/socket")}, "unix", "/my/unix/socket"},
+		{&Rule{balancer: address("unix:/second/unix/socket")}, "unix", "/second/unix/socket"},
 	}
 
 	for _, entry := range getClientTestTable {
-		if actualnetwork, _ := parseAddress(entry.rule.Address); actualnetwork != entry.expectednetwork {
-			t.Errorf("Unexpected network for address string %v. Got %v, expected %v", entry.rule.Address, actualnetwork, entry.expectednetwork)
+		if actualnetwork, _ := parseAddress(entry.rule.Address()); actualnetwork != entry.expectednetwork {
+			t.Errorf("Unexpected network for address string %v. Got %v, expected %v", entry.rule.Address(), actualnetwork, entry.expectednetwork)
 		}
-		if _, actualaddress := parseAddress(entry.rule.Address); actualaddress != entry.expectedaddress {
-			t.Errorf("Unexpected parsed address for address string %v. Got %v, expected %v", entry.rule.Address, actualaddress, entry.expectedaddress)
+		if _, actualaddress := parseAddress(entry.rule.Address()); actualaddress != entry.expectedaddress {
+			t.Errorf("Unexpected parsed address for address string %v. Got %v, expected %v", entry.rule.Address(), actualaddress, entry.expectedaddress)
 		}
 	}
 }
@@ -332,14 +228,12 @@ func TestReadTimeout(t *testing.T) {
 		}
 		defer listener.Close()
 
-		network, address := parseAddress(listener.Addr().String())
 		handler := Handler{
 			Next: nil,
 			Rules: []Rule{
 				{
 					Path:        "/",
-					Address:     listener.Addr().String(),
-					dialer:      basicDialer{network: network, address: address},
+					balancer:    address(listener.Addr().String()),
 					ReadTimeout: test.readTimeout,
 				},
 			},
@@ -394,14 +288,12 @@ func TestSendTimeout(t *testing.T) {
 		}
 		defer listener.Close()
 
-		network, address := parseAddress(listener.Addr().String())
 		handler := Handler{
 			Next: nil,
 			Rules: []Rule{
 				{
 					Path:        "/",
-					Address:     listener.Addr().String(),
-					dialer:      basicDialer{network: network, address: address},
+					balancer:    address(listener.Addr().String()),
 					SendTimeout: test.sendTimeout,
 				},
 			},
@@ -432,5 +324,30 @@ func TestSendTimeout(t *testing.T) {
 		} else if err != nil {
 			t.Errorf("Test %d: Expected nil error, got: %v", i, err)
 		}
+	}
+}
+
+func TestBalancer(t *testing.T) {
+	tests := [][]string{
+		{"localhost", "host.local"},
+		{"localhost"},
+		{"localhost", "host.local", "example.com"},
+		{"localhost", "host.local", "example.com", "127.0.0.1"},
+	}
+	for i, test := range tests {
+		b := address(test...)
+		for _, host := range test {
+			a := b.Address()
+			if a != host {
+				t.Errorf("Test %d: expected %s, found %s", i, host, a)
+			}
+		}
+	}
+}
+
+func address(addresses ...string) balancer {
+	return &roundRobin{
+		addresses: addresses,
+		index:     -1,
 	}
 }

@@ -48,11 +48,9 @@ const (
 	isOp         = "is"
 	notOp        = "not"
 	hasOp        = "has"
-	notHasOp     = "not_has"
 	startsWithOp = "starts_with"
 	endsWithOp   = "ends_with"
 	matchOp      = "match"
-	notMatchOp   = "not_match"
 )
 
 func operatorError(operator string) error {
@@ -66,11 +64,9 @@ var ifConditions = map[string]ifCondition{
 	isOp:         isFunc,
 	notOp:        notFunc,
 	hasOp:        hasFunc,
-	notHasOp:     notHasFunc,
 	startsWithOp: startsWithFunc,
 	endsWithOp:   endsWithFunc,
 	matchOp:      matchFunc,
-	notMatchOp:   notMatchFunc,
 }
 
 // isFunc is condition for Is operator.
@@ -82,19 +78,13 @@ func isFunc(a, b string) bool {
 // notFunc is condition for Not operator.
 // It checks for inequality.
 func notFunc(a, b string) bool {
-	return a != b
+	return !isFunc(a, b)
 }
 
 // hasFunc is condition for Has operator.
 // It checks if b is a substring of a.
 func hasFunc(a, b string) bool {
 	return strings.Contains(a, b)
-}
-
-// notHasFunc is condition for NotHas operator.
-// It checks if b is not a substring of a.
-func notHasFunc(a, b string) bool {
-	return !strings.Contains(a, b)
 }
 
 // startsWithFunc is condition for StartsWith operator.
@@ -117,30 +107,29 @@ func matchFunc(a, b string) bool {
 	return matched
 }
 
-// notMatchFunc is condition for NotMatch operator.
-// It does regexp matching of a against pattern in b
-// and returns if they do not match.
-func notMatchFunc(a, b string) bool {
-	matched, _ := regexp.MatchString(b, a)
-	return !matched
-}
-
 // ifCond is statement for a IfMatcher condition.
 type ifCond struct {
-	a  string
-	op string
-	b  string
+	a   string
+	op  string
+	b   string
+	neg bool
 }
 
 // newIfCond creates a new If condition.
 func newIfCond(a, operator, b string) (ifCond, error) {
+	neg := false
+	if strings.HasPrefix(operator, "not_") {
+		neg = true
+		operator = operator[4:]
+	}
 	if _, ok := ifConditions[operator]; !ok {
 		return ifCond{}, operatorError(operator)
 	}
 	return ifCond{
-		a:  a,
-		op: operator,
-		b:  b,
+		a:   a,
+		op:  operator,
+		b:   b,
+		neg: neg,
 	}, nil
 }
 
@@ -154,9 +143,12 @@ func (i ifCond) True(r *http.Request) bool {
 			a = replacer.Replace(i.a)
 			b = replacer.Replace(i.b)
 		}
+		if i.neg {
+			return !c(a, b)
+		}
 		return c(a, b)
 	}
-	return false
+	return i.neg // false if not negated, true otherwise
 }
 
 // IfMatcher is a RequestMatcher for 'if' conditions.

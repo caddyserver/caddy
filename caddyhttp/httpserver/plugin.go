@@ -436,13 +436,14 @@ var directives = []string{
 	"root",
 	"index",
 	"bind",
-	"maxrequestbody", // TODO: 'limits'
+	"limits",
 	"timeouts",
 	"tls",
 
 	// services/utilities, or other directives that don't necessarily inject handlers
 	"startup",
 	"shutdown",
+	"request_id",
 	"realip", // github.com/captncraig/caddy-realip
 	"git",    // github.com/abiosoft/caddy-git
 
@@ -452,11 +453,13 @@ var directives = []string{
 	// directives that add middleware to the stack
 	"locale", // github.com/simia-tech/caddy-locale
 	"log",
+	"cache", // github.com/nicolasazrak/caddy-cache
 	"rewrite",
 	"ext",
 	"gzip",
 	"header",
 	"errors",
+	"authz",     // github.com/casbin/caddy-authz
 	"filter",    // github.com/echocat/caddy-filter
 	"minify",    // github.com/hacdias/caddy-minify
 	"ipfilter",  // github.com/pyed/ipfilter
@@ -466,9 +469,11 @@ var directives = []string{
 	"basicauth",
 	"redir",
 	"status",
-	"cors", // github.com/captncraig/cors/caddy
+	"cors",   // github.com/captncraig/cors/caddy
+	"nobots", // github.com/Xumeiquer/nobots
 	"mime",
 	"login",     // github.com/tarent/loginsrv/caddy
+	"reauth",    // github.com/freman/caddy-reauth
 	"jwt",       // github.com/BTBurke/caddy-jwt
 	"jsonp",     // github.com/pschlump/caddy-jsonp
 	"upload",    // blitznote.com/src/caddy.upload
@@ -477,18 +482,23 @@ var directives = []string{
 	"pprof",
 	"expvar",
 	"push",
+	"datadog",    // github.com/payintech/caddy-datadog
 	"prometheus", // github.com/miekg/caddy-prometheus
 	"templates",
 	"proxy",
 	"fastcgi",
 	"cgi", // github.com/jung-kurt/caddy-cgi
 	"websocket",
-	"filemanager", // github.com/hacdias/caddy-filemanager
+	"filemanager", // github.com/hacdias/filemanager/caddy/filemanager
+	"webdav",      // github.com/hacdias/caddy-webdav
 	"markdown",
 	"browse",
-	"hugo",      // github.com/hacdias/caddy-hugo
+	"hugo",      // github.com/hacdias/filemanager/caddy/hugo
 	"mailout",   // github.com/SchumacherFM/mailout
 	"awslambda", // github.com/coopernurse/caddy-awslambda
+	"grpc",      // github.com/pieterlouw/caddy-grpc
+	"gopkg",     // github.com/zikes/gopkg
+	"restic",    // github.com/restic/caddy
 }
 
 const (

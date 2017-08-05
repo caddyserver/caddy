@@ -34,8 +34,9 @@ func setup(c *caddy.Controller) error {
 		return err
 	}
 
-	httpserver.GetConfig(c).AddMiddleware(func(next httpserver.Handler) httpserver.Handler {
-		return Middleware{Next: next, Rules: rules}
+	cfg := httpserver.GetConfig(c)
+	cfg.AddMiddleware(func(next httpserver.Handler) httpserver.Handler {
+		return Middleware{Next: next, Rules: rules, Root: http.Dir(cfg.Root)}
 	})
 
 	return nil

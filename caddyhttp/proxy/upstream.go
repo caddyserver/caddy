@@ -1,9 +1,11 @@
 package proxy
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"net/url"
 	"path"
@@ -20,7 +22,7 @@ import (
 )
 
 var (
-	supportedPolicies = make(map[string]func() Policy)
+	supportedPolicies = make(map[string]func(string) Policy)
 )
 
 type staticUpstream struct {
@@ -37,11 +39,13 @@ type staticUpstream struct {
 	TryInterval       time.Duration
 	MaxConns          int64
 	HealthCheck       struct {
-		Client   http.Client
-		Path     string
-		Interval time.Duration
-		Timeout  time.Duration
-		Host     string
+		Client        http.Client
+		Path          string
+		Interval      time.Duration
+		Timeout       time.Duration
+		Host          string
+		Port          string
+		ContentString string
 	}
 	WithoutPathPrefix  string
 	IgnoredSubPaths    []string
@@ -239,7 +243,11 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream) error {
 		if !ok {
 			return c.ArgErr()
 		}
-		u.Policy = policyCreateFunc()
+		arg := ""
+		if c.NextArg() {
+			arg = c.Val()
+		}
+		u.Policy = policyCreateFunc(arg)
 	case "fail_timeout":
 		if !c.NextArg() {
 			return c.ArgErr()
@@ -321,6 +329,25 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream) error {
 			return err
 		}
 		u.HealthCheck.Timeout = dur
+	case "health_check_port":
+		if !c.NextArg() {
+			return c.ArgErr()
+		}
+		port := c.Val()
+		n, err := strconv.Atoi(port)
+		if err != nil {
+			return err
+		}
+
+		if n < 0 {
+			return c.Errf("invalid health_check_port '%s'", port)
+		}
+		u.HealthCheck.Port = port
+	case "health_check_contains":
+		if !c.NextArg() {
+			return c.ArgErr()
+		}
+		u.HealthCheck.ContentString = c.Val()
 	case "header_upstream":
 		var header, value string
 		if !c.Args(&header, &value) {
@@ -380,28 +407,48 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream) error {
 
 func (u *staticUpstream) healthCheck() {
 	for _, host := range u.Hosts {
-		hostURL := host.Name + u.HealthCheck.Path
-		var unhealthy bool
+		hostURL := host.Name
+		if u.HealthCheck.Port != "" {
+			hostURL = replacePort(host.Name, u.HealthCheck.Port)
+		}
+		hostURL += u.HealthCheck.Path
 
-		// set up request, needed to be able to modify headers
-		// possible errors are bad HTTP methods or un-parsable urls
-		req, err := http.NewRequest("GET", hostURL, nil)
-		if err != nil {
-			unhealthy = true
-		} else {
+		unhealthy := func() bool {
+			// set up request, needed to be able to modify headers
+			// possible errors are bad HTTP methods or un-parsable urls
+			req, err := http.NewRequest("GET", hostURL, nil)
+			if err != nil {
+				return true
+			}
 			// set host for request going upstream
 			if u.HealthCheck.Host != "" {
 				req.Host = u.HealthCheck.Host
 			}
-
-			if r, err := u.HealthCheck.Client.Do(req); err == nil {
+			r, err := u.HealthCheck.Client.Do(req)
+			if err != nil {
+				return true
+			}
+			defer func() {
 				io.Copy(ioutil.Discard, r.Body)
 				r.Body.Close()
-				unhealthy = r.StatusCode < 200 || r.StatusCode >= 400
-			} else {
-				unhealthy = true
+			}()
+			if r.StatusCode < 200 || r.StatusCode >= 400 {
+				return true
 			}
-		}
+			if u.HealthCheck.ContentString == "" { // don't check for content string
+				return false
+			}
+			// TODO ReadAll will be replaced if deemed necessary
+			//      See https://github.com/mholt/caddy/pull/1691
+			buf, err := ioutil.ReadAll(r.Body)
+			if err != nil {
+				return true
+			}
+			if bytes.Contains(buf, []byte(u.HealthCheck.ContentString)) {
+				return false
+			}
+			return true
+		}()
 		if unhealthy {
 			atomic.StoreInt32(&host.Unhealthy, 1)
 		} else {
@@ -480,6 +527,22 @@ func (u *staticUpstream) Stop() error {
 }
 
 // RegisterPolicy adds a custom policy to the proxy.
-func RegisterPolicy(name string, policy func() Policy) {
+func RegisterPolicy(name string, policy func(string) Policy) {
 	supportedPolicies[name] = policy
+}
+
+func replacePort(originalURL string, newPort string) string {
+	parsedURL, err := url.Parse(originalURL)
+	if err != nil {
+		return originalURL
+	}
+
+	// handles 'localhost' and 'localhost:8080'
+	parsedHost, _, err := net.SplitHostPort(parsedURL.Host)
+	if err != nil {
+		parsedHost = parsedURL.Host
+	}
+
+	parsedURL.Host = net.JoinHostPort(parsedHost, newPort)
+	return parsedURL.String()
 }

@@ -424,12 +424,13 @@ func (c Context) RandomString(minLen, maxLen int) string {
 	return string(result)
 }
 
-// Push adds a preload link in response header for server push
-func (c Context) Push(link string) string {
+// AddLink adds a link header in response
+// see https://www.w3.org/wiki/LinkHeader
+func (c Context) AddLink(link string) string {
 	if c.responseHeader == nil {
 		return ""
 	}
-	c.responseHeader.Add("Link", "<"+link+">; rel=preload")
+	c.responseHeader.Add("Link", link)
 	return ""
 }
 

@@ -53,6 +53,9 @@ type Config struct {
 
 	// Template(s) to render with
 	Template *template.Template
+
+	// a pair of template's name and its underlying file path
+	TemplateFiles map[string]string
 }
 
 // ServeHTTP implements the http.Handler interface.

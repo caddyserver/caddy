@@ -32,9 +32,15 @@ func TestConditions(t *testing.T) {
 		{"bab starts_with bb", false},
 		{"bab starts_with ba", true},
 		{"bab starts_with bab", true},
+		{"bab not_starts_with bb", true},
+		{"bab not_starts_with ba", false},
+		{"bab not_starts_with bab", false},
 		{"bab ends_with bb", false},
 		{"bab ends_with bab", true},
 		{"bab ends_with ab", true},
+		{"bab not_ends_with bb", true},
+		{"bab not_ends_with ab", false},
+		{"bab not_ends_with bab", false},
 		{"a match *", false},
 		{"a match a", true},
 		{"a match .*", true},
@@ -195,7 +201,7 @@ func TestSetupIfMatcher(t *testing.T) {
 			if	a match b
 		 }`, false, IfMatcher{
 			ifs: []ifCond{
-				{a: "a", op: "match", b: "b"},
+				{a: "a", op: "match", b: "b", neg: false},
 			},
 		}},
 		{`test {
@@ -203,7 +209,7 @@ func TestSetupIfMatcher(t *testing.T) {
 			if_op or
 		 }`, false, IfMatcher{
 			ifs: []ifCond{
-				{a: "a", op: "match", b: "b"},
+				{a: "a", op: "match", b: "b", neg: false},
 			},
 			isOr: true,
 		}},
@@ -221,26 +227,26 @@ func TestSetupIfMatcher(t *testing.T) {
 		},
 		{`test {
 			if goal has go
-			if cook not_has go 
+			if cook not_has go
 		 }`, false, IfMatcher{
 			ifs: []ifCond{
-				{a: "goal", op: "has", b: "go"},
-				{a: "cook", op: "not_has", b: "go"},
+				{a: "goal", op: "has", b: "go", neg: false},
+				{a: "cook", op: "has", b: "go", neg: true},
 			},
 		}},
 		{`test {
 			if goal has go
-			if cook not_has go 
+			if cook not_has go
 			if_op and
 		 }`, false, IfMatcher{
 			ifs: []ifCond{
-				{a: "goal", op: "has", b: "go"},
-				{a: "cook", op: "not_has", b: "go"},
+				{a: "goal", op: "has", b: "go", neg: false},
+				{a: "cook", op: "has", b: "go", neg: true},
 			},
 		}},
 		{`test {
 			if goal has go
-			if cook not_has go 
+			if cook not_has go
 			if_op not
 		 }`, true, IfMatcher{},
 		},

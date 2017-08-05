@@ -66,6 +66,12 @@ func setupTLS(c *caddy.Controller) error {
 		for c.NextBlock() {
 			hadBlock = true
 			switch c.Val() {
+			case "ca":
+				arg := c.RemainingArgs()
+				if len(arg) != 1 {
+					return c.ArgErr()
+				}
+				config.CAUrl = arg[0]
 			case "key_type":
 				arg := c.RemainingArgs()
 				value, ok := supportedKeyTypes[strings.ToUpper(arg[0])]

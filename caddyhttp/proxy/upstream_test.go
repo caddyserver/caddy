@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -105,7 +106,7 @@ func TestSelect(t *testing.T) {
 func TestRegisterPolicy(t *testing.T) {
 	name := "custom"
 	customPolicy := &customPolicy{}
-	RegisterPolicy(name, func() Policy { return customPolicy })
+	RegisterPolicy(name, func(string) Policy { return customPolicy })
 	if _, ok := supportedPolicies[name]; !ok {
 		t.Error("Expected supportedPolicies to have a custom policy.")
 	}
@@ -372,6 +373,131 @@ func TestHealthCheckHost(t *testing.T) {
 			if test.flag != (staticUpstream.HealthCheck.Host == test.host) {
 				t.Errorf("Test %d: expected staticUpstream.HealthCheck.Host=%v, got %v", i, test.host, staticUpstream.HealthCheck.Host)
 			}
+		}
+	}
+}
+
+func TestHealthCheckPort(t *testing.T) {
+	var counter int64
+
+	healthCounter := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Body.Close()
+		atomic.AddInt64(&counter, 1)
+	}))
+
+	_, healthPort, err := net.SplitHostPort(healthCounter.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer healthCounter.Close()
+
+	tests := []struct {
+		config string
+	}{
+		// Test #1: upstream with port
+		{"proxy / localhost:8080 {\n health_check / health_check_port " + healthPort + "\n}"},
+
+		// Test #2: upstream without port (default to 80)
+		{"proxy / localhost {\n health_check / health_check_port " + healthPort + "\n}"},
+	}
+
+	for i, test := range tests {
+		counterValueAtStart := atomic.LoadInt64(&counter)
+		upstreams, err := NewStaticUpstreams(caddyfile.NewDispenser("Testfile", strings.NewReader(test.config)), "")
+		if err != nil {
+			t.Error("Expected no error. Got:", err.Error())
+		}
+
+		// Give some time for healthchecks to hit the server.
+		time.Sleep(500 * time.Millisecond)
+
+		for _, upstream := range upstreams {
+			if err := upstream.Stop(); err != nil {
+				t.Errorf("Test %d: Expected no error stopping upstream. Got: %v", i, err.Error())
+			}
+		}
+
+		counterValueAfterShutdown := atomic.LoadInt64(&counter)
+
+		if counterValueAfterShutdown == counterValueAtStart {
+			t.Errorf("Test %d: Expected healthchecks to hit test server. Got no healthchecks.", i)
+		}
+	}
+
+	t.Run("valid_port", func(t *testing.T) {
+		tests := []struct {
+			config string
+		}{
+			// Test #1: invalid port (nil)
+			{"proxy / localhost {\n health_check / health_check_port\n}"},
+
+			// Test #2: invalid port (string)
+			{"proxy / localhost {\n health_check / health_check_port abc\n}"},
+
+			// Test #3: invalid port (negative)
+			{"proxy / localhost {\n health_check / health_check_port -1\n}"},
+		}
+
+		for i, test := range tests {
+			_, err := NewStaticUpstreams(caddyfile.NewDispenser("Testfile", strings.NewReader(test.config)), "")
+			if err == nil {
+				t.Errorf("Test %d accepted invalid config", i)
+			}
+		}
+	})
+
+}
+
+func TestHealthCheckContentString(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "blablabla good blablabla")
+		r.Body.Close()
+	}))
+	_, port, err := net.SplitHostPort(server.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+
+	tests := []struct {
+		config        string
+		shouldContain bool
+	}{
+		{"proxy / localhost:" + port +
+			" { health_check /testhealth " +
+			" health_check_contains good\n}",
+			true,
+		},
+		{"proxy / localhost:" + port + " {\n health_check /testhealth health_check_port " + port +
+			" \n health_check_contains bad\n}",
+			false,
+		},
+	}
+	for i, test := range tests {
+		u, err := NewStaticUpstreams(caddyfile.NewDispenser("Testfile", strings.NewReader(test.config)), "")
+		if err != nil {
+			t.Errorf("Expected no error. Test %d Got: %s", i, err.Error())
+		}
+		for _, upstream := range u {
+			staticUpstream, ok := upstream.(*staticUpstream)
+			if !ok {
+				t.Errorf("Type mismatch: %#v", upstream)
+				continue
+			}
+			staticUpstream.healthCheck()
+			for _, host := range staticUpstream.Hosts {
+				if test.shouldContain && atomic.LoadInt32(&host.Unhealthy) == 0 {
+					// healthcheck url was hit and the required test string was found
+					continue
+				}
+				if !test.shouldContain && atomic.LoadInt32(&host.Unhealthy) != 0 {
+					// healthcheck url was hit and the required string was not found
+					continue
+				}
+				t.Errorf("Health check bad response")
+			}
+			upstream.Stop()
 		}
 	}
 }

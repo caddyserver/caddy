@@ -243,6 +243,9 @@ func (r *replacer) getSubstitution(key string) string {
 	case "{path_escaped}":
 		u, _ := r.request.Context().Value(OriginalURLCtxKey).(url.URL)
 		return url.QueryEscape(u.Path)
+	case "{request_id}":
+		reqid, _ := r.request.Context().Value(RequestIDCtxKey).(string)
+		return reqid
 	case "{rewrite_path}":
 		return r.request.URL.Path
 	case "{rewrite_path_escaped}":
@@ -284,6 +287,8 @@ func (r *replacer) getSubstitution(key string) string {
 		return now().Format(timeFormat)
 	case "{when_iso}":
 		return now().UTC().Format(timeFormatISOUTC)
+	case "{when_unix}":
+		return strconv.FormatInt(now().Unix(), 10)
 	case "{file}":
 		_, file := path.Split(r.request.URL.Path)
 		return file
@@ -302,7 +307,7 @@ func (r *replacer) getSubstitution(key string) string {
 		}
 		_, err := ioutil.ReadAll(r.request.Body)
 		if err != nil {
-			if _, ok := err.(MaxBytesExceeded); ok {
+			if err == ErrMaxBytesExceeded {
 				return r.emptyValue
 			}
 		}
@@ -312,7 +317,6 @@ func (r *replacer) getSubstitution(key string) string {
 			if val {
 				return "likely"
 			}
-
 			return "unlikely"
 		}
 		return "unknown"
