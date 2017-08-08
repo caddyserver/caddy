@@ -3,7 +3,6 @@
 package caddy
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -84,23 +83,4 @@ func trapSignalsPosix() {
 			}
 		}
 	}()
-}
-
-// getCurrentCaddyfile gets the Caddyfile used by the
-// current (first) Instance and returns both of them.
-func getCurrentCaddyfile() (Input, *Instance, error) {
-	instancesMu.Lock()
-	if len(instances) == 0 {
-		instancesMu.Unlock()
-		return nil, nil, fmt.Errorf("no server instances are fully running")
-	}
-	inst := instances[0]
-	instancesMu.Unlock()
-
-	currentCaddyfile := inst.caddyfileInput
-	if currentCaddyfile == nil {
-		// hmm, did spawing process forget to close stdin? Anyhow, this is unusual.
-		return nil, inst, fmt.Errorf("no Caddyfile to reload (was stdin left open?)")
-	}
-	return currentCaddyfile, inst, nil
 }

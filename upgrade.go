@@ -16,40 +16,14 @@ func init() {
 	gob.Register(CaddyfileInput{})
 }
 
-// signalSuccessToParent tells the parent our status using pipe at index 3.
-// If this process is not a restart, this function does nothing.
-// Calling this function once this process has successfully initialized
-// is vital so that the parent process can unblock and kill itself.
-// This function is idempotent; it executes at most once per process.
-func signalSuccessToParent() {
-	signalParentOnce.Do(func() {
-		if IsUpgrade() {
-			ppipe := os.NewFile(3, "")               // parent is reading from pipe at index 3
-			_, err := ppipe.Write([]byte("success")) // we must send some bytes to the parent
-			if err != nil {
-				log.Printf("[ERROR] Communicating successful init to parent: %v", err)
-			}
-			ppipe.Close()
-		}
-	})
+// IsUpgrade returns true if this process is part of an upgrade
+// where a parent caddy process spawned this one to upgrade
+// the binary.
+func IsUpgrade() bool {
+	mu.Lock()
+	defer mu.Unlock()
+	return isUpgrade
 }
-
-// signalParentOnce is used to make sure that the parent is only
-// signaled once; doing so more than once breaks whatever socket is
-// at fd 4 (TODO: the reason for this is still unclear - to reproduce,
-// call Stop() and Start() in succession at least once after a
-// restart, then try loading first host of Caddyfile in the browser
-// - this was pre-v0.9; this code and godoc is borrowed from the
-// implementation then, but I'm not sure if it's been fixed yet, as
-// of v0.10.7). Do not use this directly; call signalSuccessToParent
-// instead.
-var signalParentOnce sync.Once
-
-// transferGob is used if this is a child process as part of
-// a graceful upgrade; it is used to map listeners to their
-// index in the list of inherited file descriptors. This
-// variable is not safe for concurrent access.
-var loadedGob transferGob
 
 // Upgrade re-launches the process, preserving the listeners
 // for a graceful upgrade. It does NOT load new configuration;
@@ -170,14 +144,59 @@ func Upgrade() error {
 	return Stop()
 }
 
-// IsUpgrade returns true if this process is part of an upgrade
-// where a parent caddy process spawned this one to upgrade
-// the binary.
-func IsUpgrade() bool {
-	mu.Lock()
-	defer mu.Unlock()
-	return isUpgrade
+// getCurrentCaddyfile gets the Caddyfile used by the
+// current (first) Instance and returns both of them.
+func getCurrentCaddyfile() (Input, *Instance, error) {
+	instancesMu.Lock()
+	if len(instances) == 0 {
+		instancesMu.Unlock()
+		return nil, nil, fmt.Errorf("no server instances are fully running")
+	}
+	inst := instances[0]
+	instancesMu.Unlock()
+
+	currentCaddyfile := inst.caddyfileInput
+	if currentCaddyfile == nil {
+		// hmm, did spawing process forget to close stdin? Anyhow, this is unusual.
+		return nil, inst, fmt.Errorf("no Caddyfile to reload (was stdin left open?)")
+	}
+	return currentCaddyfile, inst, nil
 }
+
+// signalSuccessToParent tells the parent our status using pipe at index 3.
+// If this process is not a restart, this function does nothing.
+// Calling this function once this process has successfully initialized
+// is vital so that the parent process can unblock and kill itself.
+// This function is idempotent; it executes at most once per process.
+func signalSuccessToParent() {
+	signalParentOnce.Do(func() {
+		if IsUpgrade() {
+			ppipe := os.NewFile(3, "")               // parent is reading from pipe at index 3
+			_, err := ppipe.Write([]byte("success")) // we must send some bytes to the parent
+			if err != nil {
+				log.Printf("[ERROR] Communicating successful init to parent: %v", err)
+			}
+			ppipe.Close()
+		}
+	})
+}
+
+// signalParentOnce is used to make sure that the parent is only
+// signaled once; doing so more than once breaks whatever socket is
+// at fd 4 (TODO: the reason for this is still unclear - to reproduce,
+// call Stop() and Start() in succession at least once after a
+// restart, then try loading first host of Caddyfile in the browser
+// - this was pre-v0.9; this code and godoc is borrowed from the
+// implementation then, but I'm not sure if it's been fixed yet, as
+// of v0.10.7). Do not use this directly; call signalSuccessToParent
+// instead.
+var signalParentOnce sync.Once
+
+// transferGob is used if this is a child process as part of
+// a graceful upgrade; it is used to map listeners to their
+// index in the list of inherited file descriptors. This
+// variable is not safe for concurrent access.
+var loadedGob transferGob
 
 // transferGob maps bind address to index of the file descriptor
 // in the Files array passed to the child process. It also contains
