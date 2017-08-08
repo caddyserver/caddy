@@ -106,8 +106,9 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request) (int, err
 
 		// if an index file was explicitly requested, strip file name from the request
 		// ("/foo/index.html" -> "/foo/")
+		var requestPage = path.Base(urlCopy.Path)
 		for _, indexPage := range IndexPages {
-			if strings.HasSuffix(urlCopy.Path, indexPage) {
+			if requestPage == indexPage {
 				urlCopy.Path = urlCopy.Path[:len(urlCopy.Path)-len(indexPage)]
 				redir = true
 				break
