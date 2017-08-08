@@ -8,7 +8,7 @@ import (
 	"sync"
 
 	"github.com/lucas-clemente/quic-go/h2quic"
-	"github.com/lucas-clemente/quic-go/utils"
+	"github.com/lucas-clemente/quic-go/internal/utils"
 )
 
 func main() {
@@ -24,7 +24,7 @@ func main() {
 	utils.SetLogTimeFormat("")
 
 	hclient := &http.Client{
-		Transport: &h2quic.QuicRoundTripper{},
+		Transport: &h2quic.RoundTripper{},
 	}
 
 	var wg sync.WaitGroup

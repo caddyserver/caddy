@@ -3,8 +3,8 @@ package quic
 import (
 	"github.com/lucas-clemente/quic-go/flowcontrol"
 	"github.com/lucas-clemente/quic-go/frames"
+	"github.com/lucas-clemente/quic-go/internal/utils"
 	"github.com/lucas-clemente/quic-go/protocol"
-	"github.com/lucas-clemente/quic-go/utils"
 )
 
 type streamFramer struct {
@@ -45,6 +45,28 @@ func (f *streamFramer) HasFramesForRetransmission() bool {
 	return len(f.retransmissionQueue) > 0
 }
 
+func (f *streamFramer) HasCryptoStreamFrame() bool {
+	// TODO(#657): Flow control
+	cs, _ := f.streamsMap.GetOrOpenStream(1)
+	return cs.lenOfDataForWriting() > 0
+}
+
+// TODO(lclemente): This is somewhat duplicate with the normal path for generating frames.
+// TODO(#657): Flow control
+func (f *streamFramer) PopCryptoStreamFrame(maxLen protocol.ByteCount) *frames.StreamFrame {
+	if !f.HasCryptoStreamFrame() {
+		return nil
+	}
+	cs, _ := f.streamsMap.GetOrOpenStream(1)
+	frame := &frames.StreamFrame{
+		StreamID: 1,
+		Offset:   cs.writeOffset,
+	}
+	frameHeaderBytes, _ := frame.MinLength(protocol.VersionWhatever) // can never error
+	frame.Data = cs.getDataForWriting(maxLen - frameHeaderBytes)
+	return frame
+}
+
 func (f *streamFramer) maybePopFramesForRetransmission(maxLen protocol.ByteCount) (res []*frames.StreamFrame, currentLen protocol.ByteCount) {
 	for len(f.retransmissionQueue) > 0 {
 		frame := f.retransmissionQueue[0]
@@ -76,7 +98,7 @@ func (f *streamFramer) maybePopNormalFrames(maxBytes protocol.ByteCount) (res []
 	var currentLen protocol.ByteCount
 
 	fn := func(s *stream) (bool, error) {
-		if s == nil {
+		if s == nil || s.streamID == 1 /* crypto stream is handled separately */ {
 			return true, nil
 		}
 
@@ -90,7 +112,8 @@ func (f *streamFramer) maybePopNormalFrames(maxBytes protocol.ByteCount) (res []
 		maxLen := maxBytes - currentLen - frameHeaderBytes
 
 		var sendWindowSize protocol.ByteCount
-		if s.lenOfDataForWriting() != 0 {
+		lenStreamData := s.lenOfDataForWriting()
+		if lenStreamData != 0 {
 			sendWindowSize, _ = f.flowControlManager.SendWindowSize(s.streamID)
 			maxLen = utils.MinByteCount(maxLen, sendWindowSize)
 		}
@@ -99,7 +122,12 @@ func (f *streamFramer) maybePopNormalFrames(maxBytes protocol.ByteCount) (res []
 			return true, nil
 		}
 
-		data := s.getDataForWriting(maxLen)
+		var data []byte
+		if lenStreamData != 0 {
+			// Only getDataForWriting() if we didn't have data earlier, so that we
+			// don't send without FC approval (if a Write() raced).
+			data = s.getDataForWriting(maxLen)
+		}
 
 		// This is unlikely, but check it nonetheless, the scheduler might have jumped in. Seems to happen in ~20% of cases in the tests.
 		shouldSendFin := s.shouldSendFin()

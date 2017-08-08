@@ -106,7 +106,7 @@ func main() {
 			if v.Format != "" {
 				return v.Format
 			}
-			return "fmt.Sprintf(\"%v\", *f)"
+			return "fmt.Sprintf(\"%v\", *f.v)"
 		},
 		"ValueName": func(v *Value) string {
 			name := valueName(v)

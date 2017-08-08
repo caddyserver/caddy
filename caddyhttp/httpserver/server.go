@@ -57,6 +57,16 @@ func makeTLSConfig(group []*SiteConfig) (*tls.Config, error) {
 	return caddytls.MakeTLSConfig(tlsConfigs)
 }
 
+func getFallbacks(sites []*SiteConfig) []string {
+	fallbacks := []string{}
+	for _, sc := range sites {
+		if sc.FallbackSite {
+			fallbacks = append(fallbacks, sc.Addr.Host)
+		}
+	}
+	return fallbacks
+}
+
 // NewServer creates a new Server instance that will listen on addr
 // and will serve the sites configured in group.
 func NewServer(addr string, group []*SiteConfig) (*Server, error) {
@@ -66,6 +76,7 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 		sites:       group,
 		connTimeout: GracefulTimeout,
 	}
+	s.vhosts.fallbackHosts = append(s.vhosts.fallbackHosts, getFallbacks(group)...)
 	s.Server = makeHTTPServerWithHeaderLimit(s.Server, group)
 	s.Server.Handler = s // this is weird, but whatever
 
@@ -294,7 +305,7 @@ func (s *Server) Serve(ln net.Listener) error {
 	}
 
 	err := s.Server.Serve(ln)
-	if QUIC {
+	if s.quicServer != nil {
 		s.quicServer.Close()
 	}
 	return err
@@ -450,9 +461,9 @@ func (s *Server) OnStartupComplete() {
 }
 
 // defaultTimeouts stores the default timeout values to use
-// if left unset by user configuration. NOTE: Default timeouts
-// are disabled (see issue #1464).
-var defaultTimeouts Timeouts
+// if left unset by user configuration. NOTE: Most default
+// timeouts are disabled (see issues #1464 and #1733).
+var defaultTimeouts = Timeouts{IdleTimeout: 5 * time.Minute}
 
 // tcpKeepAliveListener sets TCP keep-alive timeouts on accepted
 // connections. It's used by ListenAndServe and ListenAndServeTLS so

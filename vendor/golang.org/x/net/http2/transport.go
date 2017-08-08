@@ -694,7 +694,7 @@ func checkConnHeaders(req *http.Request) error {
 // req.ContentLength, where 0 actually means zero (not unknown) and -1
 // means unknown.
 func actualContentLength(req *http.Request) int64 {
-	if req.Body == nil {
+	if req.Body == nil || reqBodyIsNoBody(req.Body) {
 		return 0
 	}
 	if req.ContentLength != 0 {
@@ -725,8 +725,8 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 
 	body := req.Body
-	hasBody := body != nil
 	contentLen := actualContentLength(req)
+	hasBody := contentLen != 0
 
 	// TODO(bradfitz): this is a copy of the logic in net/http. Unify somewhere?
 	var requestedGzip bool
@@ -1713,16 +1713,27 @@ func (rl *clientConnReadLoop) processData(f *DataFrame) error {
 		}
 		// Return any padded flow control now, since we won't
 		// refund it later on body reads.
-		if pad := int32(f.Length) - int32(len(data)); pad > 0 {
-			cs.inflow.add(pad)
-			cc.inflow.add(pad)
+		var refund int
+		if pad := int(f.Length) - len(data); pad > 0 {
+			refund += pad
+		}
+		// Return len(data) now if the stream is already closed,
+		// since data will never be read.
+		didReset := cs.didReset
+		if didReset {
+			refund += len(data)
+		}
+		if refund > 0 {
+			cc.inflow.add(int32(refund))
 			cc.wmu.Lock()
-			cc.fr.WriteWindowUpdate(0, uint32(pad))
-			cc.fr.WriteWindowUpdate(cs.ID, uint32(pad))
+			cc.fr.WriteWindowUpdate(0, uint32(refund))
+			if !didReset {
+				cs.inflow.add(int32(refund))
+				cc.fr.WriteWindowUpdate(cs.ID, uint32(refund))
+			}
 			cc.bw.Flush()
 			cc.wmu.Unlock()
 		}
-		didReset := cs.didReset
 		cc.mu.Unlock()
 
 		if len(data) > 0 && !didReset {

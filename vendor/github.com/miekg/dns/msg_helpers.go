@@ -96,7 +96,7 @@ func unpackHeader(msg []byte, off int) (rr RR_Header, off1 int, truncmsg []byte,
 		return hdr, len(msg), msg, err
 	}
 	msg, err = truncateMsgFromRdlength(msg, off, hdr.Rdlength)
-	return hdr, off, msg, nil
+	return hdr, off, msg, err
 }
 
 // pack packs an RR header, returning the offset to the end of the header.

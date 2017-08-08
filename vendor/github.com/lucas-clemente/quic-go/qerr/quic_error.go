@@ -3,7 +3,7 @@ package qerr
 import (
 	"fmt"
 
-	"github.com/lucas-clemente/quic-go/utils"
+	"github.com/lucas-clemente/quic-go/internal/utils"
 )
 
 // ErrorCode can be used as a normal error without reason.
@@ -29,6 +29,16 @@ func Error(errorCode ErrorCode, errorMessage string) *QuicError {
 
 func (e *QuicError) Error() string {
 	return fmt.Sprintf("%s: %s", e.ErrorCode.String(), e.ErrorMessage)
+}
+
+func (e *QuicError) Timeout() bool {
+	switch e.ErrorCode {
+	case NetworkIdleTimeout,
+		HandshakeTimeout,
+		TimeoutsWithOpenStreams:
+		return true
+	}
+	return false
 }
 
 // ToQuicError converts an arbitrary error to a QuicError. It leaves QuicErrors

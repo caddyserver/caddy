@@ -210,10 +210,13 @@ func Kill(pid int, signum syscall.Signal) (err error) { return kill(pid, int(sig
 //sys	Dup2(from int, to int) (err error)
 //sys	Exchangedata(path1 string, path2 string, options int) (err error)
 //sys	Exit(code int)
+//sys	Faccessat(dirfd int, path string, mode uint32, flags int) (err error)
 //sys	Fchdir(fd int) (err error)
 //sys	Fchflags(fd int, flags int) (err error)
 //sys	Fchmod(fd int, mode uint32) (err error)
+//sys	Fchmodat(dirfd int, path string, mode uint32, flags int) (err error)
 //sys	Fchown(fd int, uid int, gid int) (err error)
+//sys	Fchownat(dirfd int, path string, uid int, gid int, flags int) (err error)
 //sys	Flock(fd int, how int) (err error)
 //sys	Fpathconf(fd int, name int) (val int, err error)
 //sys	Fstat(fd int, stat *Stat_t) (err error) = SYS_FSTAT64
@@ -238,23 +241,29 @@ func Kill(pid int, signum syscall.Signal) (err error) { return kill(pid, int(sig
 //sys	Kqueue() (fd int, err error)
 //sys	Lchown(path string, uid int, gid int) (err error)
 //sys	Link(path string, link string) (err error)
+//sys	Linkat(pathfd int, path string, linkfd int, link string, flags int) (err error)
 //sys	Listen(s int, backlog int) (err error)
 //sys	Lstat(path string, stat *Stat_t) (err error) = SYS_LSTAT64
 //sys	Mkdir(path string, mode uint32) (err error)
+//sys	Mkdirat(dirfd int, path string, mode uint32) (err error)
 //sys	Mkfifo(path string, mode uint32) (err error)
 //sys	Mknod(path string, mode uint32, dev int) (err error)
 //sys	Mlock(b []byte) (err error)
 //sys	Mlockall(flags int) (err error)
 //sys	Mprotect(b []byte, prot int) (err error)
+//sys	Msync(b []byte, flags int) (err error)
 //sys	Munlock(b []byte) (err error)
 //sys	Munlockall() (err error)
 //sys	Open(path string, mode int, perm uint32) (fd int, err error)
+//sys	Openat(dirfd int, path string, mode int, perm uint32) (fd int, err error)
 //sys	Pathconf(path string, name int) (val int, err error)
 //sys	Pread(fd int, p []byte, offset int64) (n int, err error)
 //sys	Pwrite(fd int, p []byte, offset int64) (n int, err error)
 //sys	read(fd int, p []byte) (n int, err error)
 //sys	Readlink(path string, buf []byte) (n int, err error)
+//sys	Readlinkat(dirfd int, path string, buf []byte) (n int, err error)
 //sys	Rename(from string, to string) (err error)
+//sys	Renameat(fromfd int, from string, tofd int, to string) (err error)
 //sys	Revoke(path string) (err error)
 //sys	Rmdir(path string) (err error)
 //sys	Seek(fd int, offset int64, whence int) (newoffset int64, err error) = SYS_LSEEK
@@ -275,11 +284,13 @@ func Kill(pid int, signum syscall.Signal) (err error) { return kill(pid, int(sig
 //sys	Stat(path string, stat *Stat_t) (err error) = SYS_STAT64
 //sys	Statfs(path string, stat *Statfs_t) (err error) = SYS_STATFS64
 //sys	Symlink(path string, link string) (err error)
+//sys	Symlinkat(oldpath string, newdirfd int, newpath string) (err error)
 //sys	Sync() (err error)
 //sys	Truncate(path string, length int64) (err error)
 //sys	Umask(newmask int) (oldmask int)
 //sys	Undelete(path string) (err error)
 //sys	Unlink(path string) (err error)
+//sys	Unlinkat(dirfd int, path string, flags int) (err error)
 //sys	Unmount(path string, flags int) (err error)
 //sys	write(fd int, p []byte) (n int, err error)
 //sys   mmap(addr uintptr, length uintptr, prot int, flag int, fd int, pos int64) (ret uintptr, err error)
@@ -469,7 +480,6 @@ func Kill(pid int, signum syscall.Signal) (err error) { return kill(pid, int(sig
 // Sendmsg_nocancel
 // Recvfrom_nocancel
 // Accept_nocancel
-// Msync_nocancel
 // Fcntl_nocancel
 // Select_nocancel
 // Fsync_nocancel

@@ -31,10 +31,7 @@ func main() {
 
 // Start a server that echos all data on the first stream opened by the client
 func echoServer() error {
-	cfgServer := &quic.Config{
-		TLSConfig: generateTLSConfig(),
-	}
-	listener, err := quic.ListenAddr(addr, cfgServer)
+	listener, err := quic.ListenAddr(addr, generateTLSConfig(), nil)
 	if err != nil {
 		return err
 	}
@@ -52,10 +49,7 @@ func echoServer() error {
 }
 
 func clientMain() error {
-	cfgClient := &quic.Config{
-		TLSConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-	session, err := quic.DialAddr(addr, cfgClient)
+	session, err := quic.DialAddr(addr, &tls.Config{InsecureSkipVerify: true}, nil)
 	if err != nil {
 		return err
 	}

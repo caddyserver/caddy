@@ -33,7 +33,7 @@ func trapSignalsCrossPlatform() {
 				if PidFile != "" {
 					os.Remove(PidFile)
 				}
-				os.Exit(1)
+				os.Exit(2)
 			}
 
 			log.Println("[INFO] SIGINT: Shutting down")
@@ -42,7 +42,9 @@ func trapSignalsCrossPlatform() {
 				os.Remove(PidFile)
 			}
 
-			go os.Exit(executeShutdownCallbacks("SIGINT"))
+			go func() {
+				os.Exit(executeShutdownCallbacks("SIGINT"))
+			}()
 		}
 	}()
 }
@@ -60,7 +62,7 @@ func executeShutdownCallbacks(signame string) (exitCode int) {
 			for _, err := range errs {
 				log.Printf("[ERROR] %s shutdown: %v", signame, err)
 			}
-			exitCode = 1
+			exitCode = 4
 		}
 	})
 	return

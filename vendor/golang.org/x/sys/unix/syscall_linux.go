@@ -36,6 +36,20 @@ func Creat(path string, mode uint32) (fd int, err error) {
 	return Open(path, O_CREAT|O_WRONLY|O_TRUNC, mode)
 }
 
+//sys	fchmodat(dirfd int, path string, mode uint32) (err error)
+
+func Fchmodat(dirfd int, path string, mode uint32, flags int) (err error) {
+	// Linux fchmodat doesn't support the flags parameter. Mimick glibc's behavior
+	// and check the flags. Otherwise the mode would be applied to the symlink
+	// destination which is not what the user expects.
+	if flags&^AT_SYMLINK_NOFOLLOW != 0 {
+		return EINVAL
+	} else if flags&AT_SYMLINK_NOFOLLOW != 0 {
+		return EOPNOTSUPP
+	}
+	return fchmodat(dirfd, path, mode)
+}
+
 //sys	ioctl(fd int, req uint, arg uintptr) (err error)
 
 // ioctl itself should not be exposed directly, but additional get/set
@@ -43,8 +57,16 @@ func Creat(path string, mode uint32) (fd int, err error) {
 
 // IoctlSetInt performs an ioctl operation which sets an integer value
 // on fd, using the specified request number.
-func IoctlSetInt(fd int, req uint, value int) (err error) {
+func IoctlSetInt(fd int, req uint, value int) error {
 	return ioctl(fd, req, uintptr(value))
+}
+
+func IoctlSetWinsize(fd int, req uint, value *Winsize) error {
+	return ioctl(fd, req, uintptr(unsafe.Pointer(value)))
+}
+
+func IoctlSetTermios(fd int, req uint, value *Termios) error {
+	return ioctl(fd, req, uintptr(unsafe.Pointer(value)))
 }
 
 // IoctlGetInt performs an ioctl operation which gets an integer value
@@ -53,6 +75,18 @@ func IoctlGetInt(fd int, req uint) (int, error) {
 	var value int
 	err := ioctl(fd, req, uintptr(unsafe.Pointer(&value)))
 	return value, err
+}
+
+func IoctlGetWinsize(fd int, req uint) (*Winsize, error) {
+	var value Winsize
+	err := ioctl(fd, req, uintptr(unsafe.Pointer(&value)))
+	return &value, err
+}
+
+func IoctlGetTermios(fd int, req uint) (*Termios, error) {
+	var value Termios
+	err := ioctl(fd, req, uintptr(unsafe.Pointer(&value)))
+	return &value, err
 }
 
 //sys	Linkat(olddirfd int, oldpath string, newdirfd int, newpath string, flags int) (err error)
@@ -318,8 +352,12 @@ func Wait4(pid int, wstatus *WaitStatus, options int, rusage *Rusage) (wpid int,
 	return
 }
 
-func Mkfifo(path string, mode uint32) (err error) {
+func Mkfifo(path string, mode uint32) error {
 	return Mknod(path, mode|S_IFIFO, 0)
+}
+
+func Mkfifoat(dirfd int, path string, mode uint32) error {
+	return Mknodat(dirfd, path, mode|S_IFIFO, 0)
 }
 
 func (sa *SockaddrInet4) sockaddr() (unsafe.Pointer, _Socklen, error) {
@@ -1171,12 +1209,12 @@ func Mount(source string, target string, fstype string, flags uintptr, data stri
 //sysnb	EpollCreate(size int) (fd int, err error)
 //sysnb	EpollCreate1(flag int) (fd int, err error)
 //sysnb	EpollCtl(epfd int, op int, fd int, event *EpollEvent) (err error)
+//sys	Eventfd(initval uint, flags int) (fd int, err error) = SYS_EVENTFD2
 //sys	Exit(code int) = SYS_EXIT_GROUP
 //sys	Faccessat(dirfd int, path string, mode uint32, flags int) (err error)
 //sys	Fallocate(fd int, mode uint32, off int64, len int64) (err error)
 //sys	Fchdir(fd int) (err error)
 //sys	Fchmod(fd int, mode uint32) (err error)
-//sys	Fchmodat(dirfd int, path string, mode uint32, flags int) (err error)
 //sys	Fchownat(dirfd int, path string, uid int, gid int, flags int) (err error)
 //sys	fcntl(fd int, cmd int, arg int) (val int, err error)
 //sys	Fdatasync(fd int) (err error)
@@ -1203,7 +1241,11 @@ func Getpgrp() (pid int) {
 //sysnb	InotifyRmWatch(fd int, watchdesc uint32) (success int, err error)
 //sysnb	Kill(pid int, sig syscall.Signal) (err error)
 //sys	Klogctl(typ int, buf []byte) (n int, err error) = SYS_SYSLOG
+//sys	Lgetxattr(path string, attr string, dest []byte) (sz int, err error)
 //sys	Listxattr(path string, dest []byte) (sz int, err error)
+//sys	Llistxattr(path string, dest []byte) (sz int, err error)
+//sys	Lremovexattr(path string, attr string) (err error)
+//sys	Lsetxattr(path string, attr string, data []byte, flags int) (err error)
 //sys	Mkdirat(dirfd int, path string, mode uint32) (err error)
 //sys	Mknodat(dirfd int, path string, mode uint32, dev int) (err error)
 //sys	Nanosleep(time *Timespec, leftover *Timespec) (err error)
@@ -1237,6 +1279,7 @@ func Setgid(uid int) (err error) {
 //sys	Setpriority(which int, who int, prio int) (err error)
 //sys	Setxattr(path string, attr string, data []byte, flags int) (err error)
 //sys	Sync()
+//sys	Syncfs(fd int) (err error)
 //sysnb	Sysinfo(info *Sysinfo_t) (err error)
 //sys	Tee(rfd int, wfd int, len int, flags int) (n int64, err error)
 //sysnb	Tgkill(tgid int, tid int, sig syscall.Signal) (err error)
@@ -1273,6 +1316,7 @@ func Munmap(b []byte) (err error) {
 //sys	Mlock(b []byte) (err error)
 //sys	Munlock(b []byte) (err error)
 //sys	Mlockall(flags int) (err error)
+//sys	Msync(b []byte, flags int) (err error)
 //sys	Munlockall() (err error)
 
 // Vmsplice splices user pages from a slice of Iovecs into a pipe specified by fd,
@@ -1312,7 +1356,6 @@ func Vmsplice(fd int, iovs []Iovec, flags int) (int, error) {
 // EpollCtlOld
 // EpollPwait
 // EpollWaitOld
-// Eventfd
 // Execve
 // Fgetxattr
 // Flistxattr
@@ -1334,11 +1377,7 @@ func Vmsplice(fd int, iovs []Iovec, flags int) (int, error) {
 // IoprioGet
 // IoprioSet
 // KexecLoad
-// Lgetxattr
-// Llistxattr
 // LookupDcookie
-// Lremovexattr
-// Lsetxattr
 // Mbind
 // MigratePages
 // Mincore
@@ -1357,7 +1396,6 @@ func Vmsplice(fd int, iovs []Iovec, flags int) (int, error) {
 // Msgget
 // Msgrcv
 // Msgsnd
-// Msync
 // Newfstatat
 // Nfsservctl
 // Personality

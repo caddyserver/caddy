@@ -102,3 +102,12 @@ func (cc *certChain) getCertForSNI(sni string) (*tls.Certificate, error) {
 	// If nothing matches, return the first certificate.
 	return &c.Certificates[0], nil
 }
+
+func maybeGetConfigForClient(c *tls.Config, sni string) (*tls.Config, error) {
+	if c.GetConfigForClient == nil {
+		return c, nil
+	}
+	return c.GetConfigForClient(&tls.ClientHelloInfo{
+		ServerName: sni,
+	})
+}

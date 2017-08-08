@@ -7,9 +7,9 @@ import (
 
 	"github.com/lucas-clemente/quic-go/congestion"
 	"github.com/lucas-clemente/quic-go/frames"
+	"github.com/lucas-clemente/quic-go/internal/utils"
 	"github.com/lucas-clemente/quic-go/protocol"
 	"github.com/lucas-clemente/quic-go/qerr"
-	"github.com/lucas-clemente/quic-go/utils"
 )
 
 const (
@@ -106,26 +106,27 @@ func (h *sentPacketHandler) SentPacket(packet *Packet) error {
 		}
 	}
 
-	now := time.Now()
-	packet.SendTime = now
-	if packet.Length == 0 {
-		return errors.New("SentPacketHandler: packet cannot be empty")
-	}
-	h.bytesInFlight += packet.Length
-
 	h.lastSentPacketNumber = packet.PacketNumber
-	h.packetHistory.PushBack(*packet)
+	now := time.Now()
+
+	packet.Frames = stripNonRetransmittableFrames(packet.Frames)
+	isRetransmittable := len(packet.Frames) != 0
+
+	if isRetransmittable {
+		packet.SendTime = now
+		h.bytesInFlight += packet.Length
+		h.packetHistory.PushBack(*packet)
+	}
 
 	h.congestion.OnPacketSent(
 		now,
 		h.bytesInFlight,
 		packet.PacketNumber,
 		packet.Length,
-		true, /* TODO: is retransmittable */
+		isRetransmittable,
 	)
 
 	h.updateLossDetectionAlarm()
-
 	return nil
 }
 
@@ -310,10 +311,11 @@ func (h *sentPacketHandler) DequeuePacketForRetransmission() *Packet {
 	if len(h.retransmissionQueue) == 0 {
 		return nil
 	}
-	queueLen := len(h.retransmissionQueue)
-	// packets are usually NACKed in descending order. So use the slice as a stack
-	packet := h.retransmissionQueue[queueLen-1]
-	h.retransmissionQueue = h.retransmissionQueue[:queueLen-1]
+	packet := h.retransmissionQueue[0]
+	// Shift the slice and don't retain anything that isn't needed.
+	copy(h.retransmissionQueue, h.retransmissionQueue[1:])
+	h.retransmissionQueue[len(h.retransmissionQueue)-1] = nil
+	h.retransmissionQueue = h.retransmissionQueue[:len(h.retransmissionQueue)-1]
 	return packet
 }
 
@@ -333,7 +335,11 @@ func (h *sentPacketHandler) SendingAllowed() bool {
 			h.bytesInFlight,
 			h.congestion.GetCongestionWindow())
 	}
-	return !(congestionLimited || maxTrackedLimited)
+	// Workaround for #555:
+	// Always allow sending of retransmissions. This should probably be limited
+	// to RTOs, but we currently don't have a nice way of distinguishing them.
+	haveRetransmissions := len(h.retransmissionQueue) > 0
+	return !maxTrackedLimited && (!congestionLimited || haveRetransmissions)
 }
 
 func (h *sentPacketHandler) retransmitOldestTwoPackets() {

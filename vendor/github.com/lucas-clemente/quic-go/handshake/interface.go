@@ -15,6 +15,7 @@ type CryptoSetup interface {
 
 	GetSealer() (protocol.EncryptionLevel, Sealer)
 	GetSealerWithEncryptionLevel(protocol.EncryptionLevel) (Sealer, error)
+	GetSealerForCryptoStream() (protocol.EncryptionLevel, Sealer)
 }
 
 // TransportParameters are parameters sent to the peer during the handshake

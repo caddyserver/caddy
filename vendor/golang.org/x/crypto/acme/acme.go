@@ -207,7 +207,7 @@ func (c *Client) CreateCert(ctx context.Context, csr []byte, exp time.Duration, 
 		return nil, "", responseError(res)
 	}
 
-	curl := res.Header.Get("location") // cert permanent URL
+	curl := res.Header.Get("Location") // cert permanent URL
 	if res.ContentLength == 0 {
 		// no cert in the body; poll until we get it
 		cert, err := c.FetchCert(ctx, curl, bundle)
@@ -240,7 +240,7 @@ func (c *Client) FetchCert(ctx context.Context, url string, bundle bool) ([][]by
 		if res.StatusCode > 299 {
 			return nil, responseError(res)
 		}
-		d := retryAfter(res.Header.Get("retry-after"), 3*time.Second)
+		d := retryAfter(res.Header.Get("Retry-After"), 3*time.Second)
 		select {
 		case <-time.After(d):
 			// retry
@@ -444,7 +444,7 @@ func (c *Client) WaitAuthorization(ctx context.Context, url string) (*Authorizat
 		if err != nil {
 			return nil, err
 		}
-		retry := res.Header.Get("retry-after")
+		retry := res.Header.Get("Retry-After")
 		if res.StatusCode != http.StatusOK && res.StatusCode != http.StatusAccepted {
 			res.Body.Close()
 			if err := sleep(retry, 1); err != nil {
@@ -703,7 +703,7 @@ func (c *Client) retryPostJWS(ctx context.Context, key crypto.Signer, url string
 				// clear any nonces that we might've stored that might now be
 				// considered bad
 				c.clearNonces()
-				retry := res.Header.Get("retry-after")
+				retry := res.Header.Get("Retry-After")
 				if err := sleep(retry, 1); err != nil {
 					return nil, err
 				}

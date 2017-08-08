@@ -1,7 +1,6 @@
 package quic
 
 import (
-	"crypto/tls"
 	"io"
 	"net"
 	"time"
@@ -11,12 +10,32 @@ import (
 
 // Stream is the interface implemented by QUIC streams
 type Stream interface {
+	// Read reads data from the stream.
+	// Read can be made to time out and return a net.Error with Timeout() == true
+	// after a fixed time limit; see SetDeadline and SetReadDeadline.
 	io.Reader
+	// Write writes data to the stream.
+	// Write can be made to time out and return a net.Error with Timeout() == true
+	// after a fixed time limit; see SetDeadline and SetWriteDeadline.
 	io.Writer
 	io.Closer
 	StreamID() protocol.StreamID
 	// Reset closes the stream with an error.
 	Reset(error)
+	// SetReadDeadline sets the deadline for future Read calls and
+	// any currently-blocked Read call.
+	// A zero value for t means Read will not time out.
+	SetReadDeadline(t time.Time) error
+	// SetWriteDeadline sets the deadline for future Write calls
+	// and any currently-blocked Write call.
+	// Even if write times out, it may return n > 0, indicating that
+	// some of the data was successfully written.
+	// A zero value for t means Write will not time out.
+	SetWriteDeadline(t time.Time) error
+	// SetDeadline sets the read and write deadlines associated
+	// with the connection. It is equivalent to calling both
+	// SetReadDeadline and SetWriteDeadline.
+	SetDeadline(t time.Time) error
 }
 
 // A Session is a QUIC connection between two peers.
@@ -37,6 +56,9 @@ type Session interface {
 	RemoteAddr() net.Addr
 	// Close closes the connection. The error will be sent to the remote peer in a CONNECTION_CLOSE frame. An error value of nil is allowed and will cause a normal PeerGoingAway to be sent.
 	Close(error) error
+	// WaitUntilClosed() blocks until the session is closed.
+	// Warning: This API should not be considered stable and might change soon.
+	WaitUntilClosed()
 }
 
 // A NonFWSession is a QUIC connection between two peers half-way through the handshake.
@@ -61,21 +83,31 @@ type STK struct {
 // Config contains all configuration data needed for a QUIC server or client.
 // More config parameters (such as timeouts) will be added soon, see e.g. https://github.com/lucas-clemente/quic-go/issues/441.
 type Config struct {
-	TLSConfig *tls.Config
 	// The QUIC versions that can be negotiated.
 	// If not set, it uses all versions available.
 	// Warning: This API should not be considered stable and will change soon.
 	Versions []protocol.VersionNumber
 	// Ask the server to truncate the connection ID sent in the Public Header.
-	// If not set, the default checks if
 	// This saves 8 bytes in the Public Header in every packet. However, if the IP address of the server changes, the connection cannot be migrated.
 	// Currently only valid for the client.
 	RequestConnectionIDTruncation bool
+	// HandshakeTimeout is the maximum duration that the cryptographic handshake may take.
+	// If the timeout is exceeded, the connection is closed.
+	// If this value is zero, the timeout is set to 10 seconds.
+	HandshakeTimeout time.Duration
 	// AcceptSTK determines if an STK is accepted.
 	// It is called with stk = nil if the client didn't send an STK.
-	// If not set, it verifies that the address matches, and that the STK was issued within the last 24 hours
+	// If not set, it verifies that the address matches, and that the STK was issued within the last 24 hours.
 	// This option is only valid for the server.
 	AcceptSTK func(clientAddr net.Addr, stk *STK) bool
+	// MaxReceiveStreamFlowControlWindow is the maximum stream-level flow control window for receiving data.
+	// If this value is zero, it will default to 1 MB for the server and 6 MB for the client.
+	MaxReceiveStreamFlowControlWindow protocol.ByteCount
+	// MaxReceiveConnectionFlowControlWindow is the connection-level flow control window for receiving data.
+	// If this value is zero, it will default to 1.5 MB for the server and 15 MB for the client.
+	MaxReceiveConnectionFlowControlWindow protocol.ByteCount
+	// KeepAlive defines whether this peer will periodically send PING frames to keep the connection alive.
+	KeepAlive bool
 }
 
 // A Listener for incoming QUIC connections

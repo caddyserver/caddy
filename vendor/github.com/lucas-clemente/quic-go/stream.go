@@ -3,12 +3,14 @@ package quic
 import (
 	"fmt"
 	"io"
+	"net"
 	"sync"
+	"time"
 
 	"github.com/lucas-clemente/quic-go/flowcontrol"
 	"github.com/lucas-clemente/quic-go/frames"
+	"github.com/lucas-clemente/quic-go/internal/utils"
 	"github.com/lucas-clemente/quic-go/protocol"
-	"github.com/lucas-clemente/quic-go/utils"
 )
 
 // A Stream assembles the data from StreamFrames and provides a super-convenient Read-Interface
@@ -40,31 +42,41 @@ type stream struct {
 	// resetRemotely is set if RegisterRemoteError() is called
 	resetRemotely utils.AtomicBool
 
-	frameQueue        *streamFrameSorter
-	newFrameOrErrCond sync.Cond
+	frameQueue   *streamFrameSorter
+	readChan     chan struct{}
+	readDeadline time.Time
 
-	dataForWriting       []byte
-	finSent              utils.AtomicBool
-	rstSent              utils.AtomicBool
-	doneWritingOrErrCond sync.Cond
+	dataForWriting []byte
+	finSent        utils.AtomicBool
+	rstSent        utils.AtomicBool
+	writeChan      chan struct{}
+	writeDeadline  time.Time
 
 	flowControlManager flowcontrol.FlowControlManager
 }
 
+type deadlineError struct{}
+
+func (deadlineError) Error() string   { return "deadline exceeded" }
+func (deadlineError) Temporary() bool { return true }
+func (deadlineError) Timeout() bool   { return true }
+
+var errDeadline net.Error = &deadlineError{}
+
 // newStream creates a new Stream
-func newStream(StreamID protocol.StreamID, onData func(), onReset func(protocol.StreamID, protocol.ByteCount), flowControlManager flowcontrol.FlowControlManager) (*stream, error) {
-	s := &stream{
+func newStream(StreamID protocol.StreamID,
+	onData func(),
+	onReset func(protocol.StreamID, protocol.ByteCount),
+	flowControlManager flowcontrol.FlowControlManager) *stream {
+	return &stream{
 		onData:             onData,
 		onReset:            onReset,
 		streamID:           StreamID,
 		flowControlManager: flowControlManager,
 		frameQueue:         newStreamFrameSorter(),
+		readChan:           make(chan struct{}, 1),
+		writeChan:          make(chan struct{}, 1),
 	}
-
-	s.newFrameOrErrCond.L = &s.mutex
-	s.doneWritingOrErrCond.L = &s.mutex
-
-	return s, nil
 }
 
 // Read implements io.Reader. It is not thread safe!
@@ -83,10 +95,10 @@ func (s *stream) Read(p []byte) (int, error) {
 	for bytesRead < len(p) {
 		s.mutex.Lock()
 		frame := s.frameQueue.Head()
-
 		if frame == nil && bytesRead > 0 {
+			err = s.err
 			s.mutex.Unlock()
-			return bytesRead, s.err
+			return bytesRead, err
 		}
 
 		var err error
@@ -96,11 +108,28 @@ func (s *stream) Read(p []byte) (int, error) {
 				err = s.err
 				break
 			}
+
+			deadline := s.readDeadline
+			if !deadline.IsZero() && !time.Now().Before(deadline) {
+				err = errDeadline
+				break
+			}
+
 			if frame != nil {
 				s.readPosInFrame = int(s.readOffset - frame.Offset)
 				break
 			}
-			s.newFrameOrErrCond.Wait()
+
+			s.mutex.Unlock()
+			if deadline.IsZero() {
+				<-s.readChan
+			} else {
+				select {
+				case <-s.readChan:
+				case <-time.After(deadline.Sub(time.Now())):
+				}
+			}
+			s.mutex.Lock()
 			frame = s.frameQueue.Head()
 		}
 		s.mutex.Unlock()
@@ -145,34 +174,49 @@ func (s *stream) Read(p []byte) (int, error) {
 }
 
 func (s *stream) Write(p []byte) (int, error) {
-	if s.resetLocally.Get() {
-		return 0, s.err
-	}
-
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
-	if s.err != nil {
+	if s.resetLocally.Get() || s.err != nil {
 		return 0, s.err
 	}
-
 	if len(p) == 0 {
 		return 0, nil
 	}
 
 	s.dataForWriting = make([]byte, len(p))
 	copy(s.dataForWriting, p)
-
 	s.onData()
 
-	for s.dataForWriting != nil && s.err == nil {
-		s.doneWritingOrErrCond.Wait()
+	var err error
+	for {
+		deadline := s.writeDeadline
+		if !deadline.IsZero() && !time.Now().Before(deadline) {
+			err = errDeadline
+			break
+		}
+		if s.dataForWriting == nil || s.err != nil {
+			break
+		}
+
+		s.mutex.Unlock()
+		if deadline.IsZero() {
+			<-s.writeChan
+		} else {
+			select {
+			case <-s.writeChan:
+			case <-time.After(deadline.Sub(time.Now())):
+			}
+		}
+		s.mutex.Lock()
 	}
 
+	if err != nil {
+		return 0, err
+	}
 	if s.err != nil {
-		return 0, s.err
+		return len(p) - len(s.dataForWriting), s.err
 	}
-
 	return len(p), nil
 }
 
@@ -188,14 +232,12 @@ func (s *stream) lenOfDataForWriting() protocol.ByteCount {
 
 func (s *stream) getDataForWriting(maxBytes protocol.ByteCount) []byte {
 	s.mutex.Lock()
-	if s.err != nil {
-		s.mutex.Unlock()
+	defer s.mutex.Unlock()
+
+	if s.err != nil || s.dataForWriting == nil {
 		return nil
 	}
-	if s.dataForWriting == nil {
-		s.mutex.Unlock()
-		return nil
-	}
+
 	var ret []byte
 	if protocol.ByteCount(len(s.dataForWriting)) > maxBytes {
 		ret = s.dataForWriting[:maxBytes]
@@ -203,10 +245,9 @@ func (s *stream) getDataForWriting(maxBytes protocol.ByteCount) []byte {
 	} else {
 		ret = s.dataForWriting
 		s.dataForWriting = nil
-		s.doneWritingOrErrCond.Signal()
+		s.signalWrite()
 	}
 	s.writeOffset += protocol.ByteCount(len(ret))
-	s.mutex.Unlock()
 	return ret
 }
 
@@ -249,7 +290,52 @@ func (s *stream) AddStreamFrame(frame *frames.StreamFrame) error {
 	if err != nil && err != errDuplicateStreamData {
 		return err
 	}
-	s.newFrameOrErrCond.Signal()
+	s.signalRead()
+	return nil
+}
+
+// signalRead performs a non-blocking send on the readChan
+func (s *stream) signalRead() {
+	select {
+	case s.readChan <- struct{}{}:
+	default:
+	}
+}
+
+// signalRead performs a non-blocking send on the writeChan
+func (s *stream) signalWrite() {
+	select {
+	case s.writeChan <- struct{}{}:
+	default:
+	}
+}
+
+func (s *stream) SetReadDeadline(t time.Time) error {
+	s.mutex.Lock()
+	oldDeadline := s.readDeadline
+	s.readDeadline = t
+	s.mutex.Unlock()
+	// if the new deadline is before the currently set deadline, wake up Read()
+	if t.Before(oldDeadline) {
+		s.signalRead()
+	}
+	return nil
+}
+
+func (s *stream) SetWriteDeadline(t time.Time) error {
+	s.mutex.Lock()
+	oldDeadline := s.writeDeadline
+	s.writeDeadline = t
+	s.mutex.Unlock()
+	if t.Before(oldDeadline) {
+		s.signalWrite()
+	}
+	return nil
+}
+
+func (s *stream) SetDeadline(t time.Time) error {
+	_ = s.SetReadDeadline(t)  // SetReadDeadline never errors
+	_ = s.SetWriteDeadline(t) // SetWriteDeadline never errors
 	return nil
 }
 
@@ -266,8 +352,8 @@ func (s *stream) Cancel(err error) {
 	// errors must not be changed!
 	if s.err == nil {
 		s.err = err
-		s.newFrameOrErrCond.Signal()
-		s.doneWritingOrErrCond.Signal()
+		s.signalRead()
+		s.signalWrite()
 	}
 	s.mutex.Unlock()
 }
@@ -282,8 +368,8 @@ func (s *stream) Reset(err error) {
 	// errors must not be changed!
 	if s.err == nil {
 		s.err = err
-		s.newFrameOrErrCond.Signal()
-		s.doneWritingOrErrCond.Signal()
+		s.signalRead()
+		s.signalWrite()
 	}
 	if s.shouldSendReset() {
 		s.onReset(s.streamID, s.writeOffset)
@@ -302,7 +388,7 @@ func (s *stream) RegisterRemoteError(err error) {
 	// errors must not be changed!
 	if s.err == nil {
 		s.err = err
-		s.doneWritingOrErrCond.Signal()
+		s.signalWrite()
 	}
 	if s.shouldSendReset() {
 		s.onReset(s.streamID, s.writeOffset)

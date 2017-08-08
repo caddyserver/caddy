@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"runtime"
 	"strings"
@@ -15,7 +16,17 @@ import (
 var UserAgent string
 
 // HTTPClient is an HTTP client with a reasonable timeout value.
-var HTTPClient = http.Client{Timeout: 10 * time.Second}
+var HTTPClient = http.Client{
+	Transport: &http.Transport{
+		Dial: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).Dial,
+		TLSHandshakeTimeout:   15 * time.Second,
+		ResponseHeaderTimeout: 15 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	},
+}
 
 const (
 	// defaultGoUserAgent is the Go HTTP package user agent string. Too

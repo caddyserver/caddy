@@ -115,27 +115,27 @@ const (
 	ClassNONE   = 254
 	ClassANY    = 255
 
-	// Message Response Codes.
-	RcodeSuccess        = 0
-	RcodeFormatError    = 1
-	RcodeServerFailure  = 2
-	RcodeNameError      = 3
-	RcodeNotImplemented = 4
-	RcodeRefused        = 5
-	RcodeYXDomain       = 6
-	RcodeYXRrset        = 7
-	RcodeNXRrset        = 8
-	RcodeNotAuth        = 9
-	RcodeNotZone        = 10
-	RcodeBadSig         = 16 // TSIG
-	RcodeBadVers        = 16 // EDNS0
-	RcodeBadKey         = 17
-	RcodeBadTime        = 18
-	RcodeBadMode        = 19 // TKEY
-	RcodeBadName        = 20
-	RcodeBadAlg         = 21
-	RcodeBadTrunc       = 22 // TSIG
-	RcodeBadCookie      = 23 // DNS Cookies
+	// Message Response Codes, see https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml
+	RcodeSuccess        = 0  // NoError   - No Error                          [DNS]
+	RcodeFormatError    = 1  // FormErr   - Format Error                      [DNS]
+	RcodeServerFailure  = 2  // ServFail  - Server Failure                    [DNS]
+	RcodeNameError      = 3  // NXDomain  - Non-Existent Domain               [DNS]
+	RcodeNotImplemented = 4  // NotImp    - Not Implemented                   [DNS]
+	RcodeRefused        = 5  // Refused   - Query Refused                     [DNS]
+	RcodeYXDomain       = 6  // YXDomain  - Name Exists when it should not    [DNS Update]
+	RcodeYXRrset        = 7  // YXRRSet   - RR Set Exists when it should not  [DNS Update]
+	RcodeNXRrset        = 8  // NXRRSet   - RR Set that should exist does not [DNS Update]
+	RcodeNotAuth        = 9  // NotAuth   - Server Not Authoritative for zone [DNS Update]
+	RcodeNotZone        = 10 // NotZone   - Name not contained in zone        [DNS Update/TSIG]
+	RcodeBadSig         = 16 // BADSIG    - TSIG Signature Failure            [TSIG]
+	RcodeBadVers        = 16 // BADVERS   - Bad OPT Version                   [EDNS0]
+	RcodeBadKey         = 17 // BADKEY    - Key not recognized                [TSIG]
+	RcodeBadTime        = 18 // BADTIME   - Signature out of time window      [TSIG]
+	RcodeBadMode        = 19 // BADMODE   - Bad TKEY Mode                     [TKEY]
+	RcodeBadName        = 20 // BADNAME   - Duplicate key name                [TKEY]
+	RcodeBadAlg         = 21 // BADALG    - Algorithm not supported           [TKEY]
+	RcodeBadTrunc       = 22 // BADTRUNC  - Bad Truncation                    [TSIG]
+	RcodeBadCookie      = 23 // BADCOOKIE - Bad/missing Server Cookie         [DNS Cookies]
 
 	// Message Opcodes. There is no 3.
 	OpcodeQuery  = 0

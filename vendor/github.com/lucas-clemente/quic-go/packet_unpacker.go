@@ -10,6 +10,11 @@ import (
 	"github.com/lucas-clemente/quic-go/qerr"
 )
 
+type unpackedPacket struct {
+	encryptionLevel protocol.EncryptionLevel
+	frames          []frames.Frame
+}
+
 type quicAEAD interface {
 	Open(dst, src []byte, packetNumber protocol.PacketNumber, associatedData []byte) ([]byte, protocol.EncryptionLevel, error)
 }

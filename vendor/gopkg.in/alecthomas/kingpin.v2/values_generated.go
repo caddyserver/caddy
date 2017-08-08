@@ -28,7 +28,7 @@ func (f *boolValue) Set(s string) error {
 
 func (f *boolValue) Get() interface{} { return (bool)(*f.v) }
 
-func (f *boolValue) String() string { return fmt.Sprintf("%v", *f) }
+func (f *boolValue) String() string { return fmt.Sprintf("%v", *f.v) }
 
 // Bool parses the next command-line value as bool.
 func (p *parserMixin) Bool() (target *bool) {
@@ -114,7 +114,7 @@ func (f *uintValue) Set(s string) error {
 
 func (f *uintValue) Get() interface{} { return (uint)(*f.v) }
 
-func (f *uintValue) String() string { return fmt.Sprintf("%v", *f) }
+func (f *uintValue) String() string { return fmt.Sprintf("%v", *f.v) }
 
 // Uint parses the next command-line value as uint.
 func (p *parserMixin) Uint() (target *uint) {
@@ -157,7 +157,7 @@ func (f *uint8Value) Set(s string) error {
 
 func (f *uint8Value) Get() interface{} { return (uint8)(*f.v) }
 
-func (f *uint8Value) String() string { return fmt.Sprintf("%v", *f) }
+func (f *uint8Value) String() string { return fmt.Sprintf("%v", *f.v) }
 
 // Uint8 parses the next command-line value as uint8.
 func (p *parserMixin) Uint8() (target *uint8) {
@@ -200,7 +200,7 @@ func (f *uint16Value) Set(s string) error {
 
 func (f *uint16Value) Get() interface{} { return (uint16)(*f.v) }
 
-func (f *uint16Value) String() string { return fmt.Sprintf("%v", *f) }
+func (f *uint16Value) String() string { return fmt.Sprintf("%v", *f.v) }
 
 // Uint16 parses the next command-line value as uint16.
 func (p *parserMixin) Uint16() (target *uint16) {
@@ -243,7 +243,7 @@ func (f *uint32Value) Set(s string) error {
 
 func (f *uint32Value) Get() interface{} { return (uint32)(*f.v) }
 
-func (f *uint32Value) String() string { return fmt.Sprintf("%v", *f) }
+func (f *uint32Value) String() string { return fmt.Sprintf("%v", *f.v) }
 
 // Uint32 parses the next command-line value as uint32.
 func (p *parserMixin) Uint32() (target *uint32) {
@@ -286,7 +286,7 @@ func (f *uint64Value) Set(s string) error {
 
 func (f *uint64Value) Get() interface{} { return (uint64)(*f.v) }
 
-func (f *uint64Value) String() string { return fmt.Sprintf("%v", *f) }
+func (f *uint64Value) String() string { return fmt.Sprintf("%v", *f.v) }
 
 // Uint64 parses the next command-line value as uint64.
 func (p *parserMixin) Uint64() (target *uint64) {
@@ -329,7 +329,7 @@ func (f *intValue) Set(s string) error {
 
 func (f *intValue) Get() interface{} { return (int)(*f.v) }
 
-func (f *intValue) String() string { return fmt.Sprintf("%v", *f) }
+func (f *intValue) String() string { return fmt.Sprintf("%v", *f.v) }
 
 // Int parses the next command-line value as int.
 func (p *parserMixin) Int() (target *int) {
@@ -372,7 +372,7 @@ func (f *int8Value) Set(s string) error {
 
 func (f *int8Value) Get() interface{} { return (int8)(*f.v) }
 
-func (f *int8Value) String() string { return fmt.Sprintf("%v", *f) }
+func (f *int8Value) String() string { return fmt.Sprintf("%v", *f.v) }
 
 // Int8 parses the next command-line value as int8.
 func (p *parserMixin) Int8() (target *int8) {
@@ -415,7 +415,7 @@ func (f *int16Value) Set(s string) error {
 
 func (f *int16Value) Get() interface{} { return (int16)(*f.v) }
 
-func (f *int16Value) String() string { return fmt.Sprintf("%v", *f) }
+func (f *int16Value) String() string { return fmt.Sprintf("%v", *f.v) }
 
 // Int16 parses the next command-line value as int16.
 func (p *parserMixin) Int16() (target *int16) {
@@ -458,7 +458,7 @@ func (f *int32Value) Set(s string) error {
 
 func (f *int32Value) Get() interface{} { return (int32)(*f.v) }
 
-func (f *int32Value) String() string { return fmt.Sprintf("%v", *f) }
+func (f *int32Value) String() string { return fmt.Sprintf("%v", *f.v) }
 
 // Int32 parses the next command-line value as int32.
 func (p *parserMixin) Int32() (target *int32) {
@@ -501,7 +501,7 @@ func (f *int64Value) Set(s string) error {
 
 func (f *int64Value) Get() interface{} { return (int64)(*f.v) }
 
-func (f *int64Value) String() string { return fmt.Sprintf("%v", *f) }
+func (f *int64Value) String() string { return fmt.Sprintf("%v", *f.v) }
 
 // Int64 parses the next command-line value as int64.
 func (p *parserMixin) Int64() (target *int64) {
@@ -544,7 +544,7 @@ func (f *float64Value) Set(s string) error {
 
 func (f *float64Value) Get() interface{} { return (float64)(*f.v) }
 
-func (f *float64Value) String() string { return fmt.Sprintf("%v", *f) }
+func (f *float64Value) String() string { return fmt.Sprintf("%v", *f.v) }
 
 // Float64 parses the next command-line value as float64.
 func (p *parserMixin) Float64() (target *float64) {
@@ -587,7 +587,7 @@ func (f *float32Value) Set(s string) error {
 
 func (f *float32Value) Get() interface{} { return (float32)(*f.v) }
 
-func (f *float32Value) String() string { return fmt.Sprintf("%v", *f) }
+func (f *float32Value) String() string { return fmt.Sprintf("%v", *f.v) }
 
 // Float32 parses the next command-line value as float32.
 func (p *parserMixin) Float32() (target *float32) {
@@ -708,7 +708,7 @@ func (f *regexpValue) Set(s string) error {
 
 func (f *regexpValue) Get() interface{} { return (*regexp.Regexp)(*f.v) }
 
-func (f *regexpValue) String() string { return fmt.Sprintf("%v", *f) }
+func (f *regexpValue) String() string { return fmt.Sprintf("%v", *f.v) }
 
 // Regexp parses the next command-line value as *regexp.Regexp.
 func (p *parserMixin) Regexp() (target **regexp.Regexp) {
@@ -751,7 +751,7 @@ func (f *resolvedIPValue) Set(s string) error {
 
 func (f *resolvedIPValue) Get() interface{} { return (net.IP)(*f.v) }
 
-func (f *resolvedIPValue) String() string { return fmt.Sprintf("%v", *f) }
+func (f *resolvedIPValue) String() string { return fmt.Sprintf("%v", *f.v) }
 
 // Resolve a hostname or IP to an IP.
 func (p *parserMixin) ResolvedIP() (target *net.IP) {
@@ -794,7 +794,7 @@ func (f *hexBytesValue) Set(s string) error {
 
 func (f *hexBytesValue) Get() interface{} { return ([]byte)(*f.v) }
 
-func (f *hexBytesValue) String() string { return fmt.Sprintf("%v", *f) }
+func (f *hexBytesValue) String() string { return fmt.Sprintf("%v", *f.v) }
 
 // Bytes as a hex string.
 func (p *parserMixin) HexBytes() (target *[]byte) {

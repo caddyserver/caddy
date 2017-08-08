@@ -17,6 +17,10 @@ which must be unique to the client that will use the returned token.
 Send sends a message to the client over the channel identified by clientID.
 
 	channel.Send(c, "player1", "Game over!")
+
+Deprecated: The Channel API feature has been deprecated and is going to be removed. See the Channel API Turndown document for details and timetable.
+
+https://cloud.google.com/appengine/docs/deprecations/channel
 */
 package channel // import "google.golang.org/appengine/channel"
 

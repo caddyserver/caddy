@@ -73,7 +73,7 @@ caddy_startprecmd()
 	fi
 
 	if [ ! -e "${caddy_logfile}" ]; then
-		install -o "${caddy_user}" -g "${caddy_group}" "dev/null" "${caddy_logfile}"
+		install -o "${caddy_user}" -g "${caddy_group}" "/dev/null" "${caddy_logfile}"
 	fi
 }
 
