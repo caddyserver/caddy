@@ -29,6 +29,10 @@ func IsUpgrade() bool {
 // for a graceful upgrade. It does NOT load new configuration;
 // it only starts the process anew with the current config.
 // This makes it possible to perform zero-downtime binary upgrades.
+//
+// TODO: For more information when debugging, see:
+// https://forum.golangbridge.org/t/bind-address-already-in-use-even-after-listener-closed/1510?u=matt
+// https://github.com/mholt/shared-conn
 func Upgrade() error {
 	log.Println("[INFO] Upgrading")
 

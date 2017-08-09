@@ -641,20 +641,18 @@ func startServers(serverList []Server, inst *Instance, restartFds map[string]res
 				if fdIndex, ok := loadedGob.ListenerFds["tcp"+addr]; ok {
 					file := os.NewFile(fdIndex, "")
 					ln, err = net.FileListener(file)
+					file.Close()
 					if err != nil {
-						file.Close()
 						return err
 					}
-					file.Close()
 				}
 				if fdIndex, ok := loadedGob.ListenerFds["udp"+addr]; ok {
 					file := os.NewFile(fdIndex, "")
 					pc, err = net.FilePacketConn(file)
+					file.Close()
 					if err != nil {
-						file.Close()
 						return err
 					}
-					file.Close()
 				}
 			}
 		}
