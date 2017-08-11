@@ -1,5 +1,8 @@
 version: "{build}"
 
+hosts:
+  quic.clemente.io: 127.0.0.1
+
 os: Windows Server 2012 R2
 
 clone_folder: c:\gopath\src\github.com\mholt\caddy
