@@ -467,6 +467,7 @@ var directives = []string{
 	"search",    // github.com/pedronasser/caddy-search
 	"expires",   // github.com/epicagency/caddy-expires
 	"basicauth",
+	"digestauth",
 	"redir",
 	"status",
 	"cors",   // github.com/captncraig/cors/caddy

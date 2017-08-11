@@ -8,6 +8,7 @@ import (
 	_ "github.com/mholt/caddy/caddyhttp/basicauth"
 	_ "github.com/mholt/caddy/caddyhttp/bind"
 	_ "github.com/mholt/caddy/caddyhttp/browse"
+	_ "github.com/mholt/caddy/caddyhttp/digestauth"
 	_ "github.com/mholt/caddy/caddyhttp/errors"
 	_ "github.com/mholt/caddy/caddyhttp/expvar"
 	_ "github.com/mholt/caddy/caddyhttp/extensions"
