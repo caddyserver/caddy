@@ -46,17 +46,17 @@ func digestAuthParse(c *caddy.Controller) ([]Rule, error) {
 		var rule Rule
 
 		args := c.RemainingArgs()
+		username := ""
+		password := ""
 
 		switch len(args) {
 		case 2:
-			if rule.Users, err = userStorage(args[0], args[1], cfg.Root); err != nil {
-				return rules, c.Errf("Get password matcher from %s: %v", c.Val(), err)
-			}
+			username = args[0]
+			password = args[1]
 		case 3:
 			rule.Resources = append(rule.Resources, args[0])
-			if rule.Users, err = userStorage(args[1], args[2], cfg.Root); err != nil {
-				return rules, c.Errf("Get password matcher from %s: %v", c.Val(), err)
-			}
+			username = args[1]
+			password = args[2]
 		default:
 			return rules, c.ArgErr()
 		}
@@ -84,16 +84,25 @@ func digestAuthParse(c *caddy.Controller) ([]Rule, error) {
 			}
 		}
 
+		err = nil
+
+		if username == "" {
+			return rules, c.Errf("Username can't be empty")
+		} else if password == "" {
+			return rules, c.Errf("Password can't be empty")
+		} else if strings.HasPrefix(password, "htdigest=") {
+			rule.Users, err = NewHtdigestUserStore(filepath.Join(cfg.Root, password[9:]), nil)
+		} else {
+			rule.Users, err = NewSimpleUserStore(map[string]string{username+":"+rule.Realm: password}), nil
+		}
+
+		if err != nil {
+			return rules, c.Errf("Get password storage: %v", err)
+		}
+
 		rule.Digester = NewDigestHandler(rule.Realm, nil, nil, rule.Users)
 		rules = append(rules, rule)
 	}
 
 	return rules, nil
-}
-
-func userStorage(username, hash, siteRoot string) (UserStore, error) {
-	if !strings.HasPrefix(hash, "htdigest=") {
-		return NewSimpleUserStore(map[string]string{username: hash}), nil
-	}
-	return NewHtdigestUserStore(filepath.Join(siteRoot, hash), nil)
 }
