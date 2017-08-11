@@ -84,6 +84,7 @@ func digestAuthParse(c *caddy.Controller) ([]Rule, error) {
 			}
 		}
 
+		rule.Digester = NewDigestHandler(rule.Realm, nil, nil, rule.Users)
 		rules = append(rules, rule)
 	}
 

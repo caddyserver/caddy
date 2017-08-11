@@ -1,6 +1,9 @@
 package digestauth
 
-import ()
+import (
+	"crypto/md5"
+	"encoding/hex"
+)
 
 // A simpleUserStore uses a map to lookup strings of "user:realm" into "ha1"
 type simpleUserStore struct {
@@ -16,9 +19,11 @@ func NewSimpleUserStore(users map[string]string) UserStore {
 	return &us
 }
 func (us *simpleUserStore) Lookup(user string, realm string) (string, bool, error) {
-	ha1, ok := us.userToHA1[user+":"+realm]
+	pass, ok := us.userToHA1[user+":"+realm]
+	v := md5.Sum([]byte(user + ":" + realm + ":" + pass))
+	hash := hex.EncodeToString(v[:])
 	if ok {
-		return ha1, true, nil
+		return hash, true, nil
 	} else {
 		return "", false, nil
 	}

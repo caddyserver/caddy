@@ -175,7 +175,7 @@ func (d *digest) EvaluateDigest(params map[string]string, method string) (int, s
 		return http.StatusUnauthorized, "", false
 	}
 
-	storedUserRealmPassHash, ok, err := d.users.Lookup(user, realm)
+	storedUserRealmPassHash , ok, err := d.users.Lookup(user, realm)
 
 	if !ok {
 		if d.logger != nil {
@@ -279,6 +279,7 @@ func (d *digest) EvaluateDigest(params map[string]string, method string) (int, s
 		return http.StatusOK, "", false
 	}
 
+	fmt.Printf("res: %s calc: %s\n", response, calculatedResponse)
 	return http.StatusUnauthorized, "", false
 }
 

@@ -7,7 +7,9 @@ package digestauth
 
 import (
 	"os"
+	"fmt"
 	"log"
+	"context"
 	"strings"
 	"net/http"
 
@@ -35,11 +37,10 @@ func (a DigestAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, erro
 				continue
 			}
 
-			digester := NewDigestHandler(rule.Realm, nil, nil, rule.Users)
-			digester.Log(log.New(os.Stdout, "digestauth: ", log.Ltime))
+			rule.Digester.Log(log.New(os.Stdout, "digestauth: ", log.Ltime))
 
 			if authHeader == "" || !strings.HasPrefix(authHeader, "Digest ") {
-				n, err := digester.MakeNonce()
+				n, err := rule.Digester.MakeNonce()
 				if err != nil {
 					return http.StatusUnauthorized, err
 				}
@@ -56,16 +57,18 @@ func (a DigestAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, erro
 				return http.StatusBadRequest, err
 			}
 
-			code, _, _ := digester.EvaluateDigest(params, r.Method)
+			code, body, smth := rule.Digester.EvaluateDigest(params, r.Method)
+			fmt.Printf("EvaluateDigest: code=%d body=%s smth=%t\n", code, body, smth)
 			switch code {
 				case http.StatusOK:
 					// don't do anything, we are authorized, pass along to the next handler
 				case http.StatusUnauthorized:
-					n, err := digester.MakeNonce()
+					n, err := rule.Digester.MakeNonce()
 					if err != nil {
-						return http.StatusUnauthorized, err
+						return http.StatusInternalServerError, err
 					}
 
+					fmt.Printf("")
 					w.Header().Add("WWW-Authenticate", "Digest realm=\""+rule.Realm+
 						"\", algorithm=\"MD5-sess\", qop=\"auth,auth-int\", nonce=\""+
 						n.Value()+"\"")
@@ -76,8 +79,8 @@ func (a DigestAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, erro
 
 			// let upstream middleware (e.g. fastcgi and cgi) know about authenticated
 			// user; this replaces the request with a wrapped instance
-			//r = r.WithContext(context.WithValue(r.Context(),
-			//httpserver.RemoteUserCtxKey, username))
+			r = r.WithContext(context.WithValue(r.Context(),
+				httpserver.RemoteUserCtxKey, params["username"]))
 		}
 	}
 
@@ -92,4 +95,5 @@ type Rule struct {
 	Realm     string // See RFC 1945 and RFC 2617, default: "Restricted"
 	Opaque    string
 	Users     UserStore
+	Digester  Digest
 }
