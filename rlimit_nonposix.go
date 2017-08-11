@@ -1,3 +1,5 @@
+// +build windows plan9
+
 package caddy
 
 // checkFdlimit issues a warning if the OS limit for

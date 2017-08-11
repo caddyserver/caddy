@@ -32,7 +32,6 @@ func isInternalRedirect(w http.ResponseWriter) bool {
 
 // ServeHTTP implements the httpserver.Handler interface.
 func (i Internal) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
-
 	// Internal location requested? -> Not found.
 	for _, prefix := range i.Paths {
 		if httpserver.Path(r.URL.Path).Matches(prefix) {
@@ -50,7 +49,6 @@ func (i Internal) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error)
 		// "down the chain"
 		r.URL.Path = iw.Header().Get(redirectHeader)
 		iw.ClearHeader()
-
 		status, err = i.Next.ServeHTTP(iw, r)
 	}
 
