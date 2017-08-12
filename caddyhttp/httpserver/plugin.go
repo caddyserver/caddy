@@ -493,6 +493,7 @@ var directives = []string{
 	"markdown",
 	"templates",
 	"browse",
+	"jekyll",    // github.com/hacdias/filemanager/caddy/jekyll
 	"hugo",      // github.com/hacdias/filemanager/caddy/hugo
 	"mailout",   // github.com/SchumacherFM/mailout
 	"awslambda", // github.com/coopernurse/caddy-awslambda
