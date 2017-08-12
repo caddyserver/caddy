@@ -496,6 +496,7 @@ var directives = []string{
 	"jekyll",    // github.com/hacdias/filemanager/caddy/jekyll
 	"hugo",      // github.com/hacdias/filemanager/caddy/hugo
 	"mailout",   // github.com/SchumacherFM/mailout
+	"awses",     // github.com/miquella/caddy-awses
 	"awslambda", // github.com/coopernurse/caddy-awslambda
 	"grpc",      // github.com/pieterlouw/caddy-grpc
 	"gopkg",     // github.com/zikes/gopkg
