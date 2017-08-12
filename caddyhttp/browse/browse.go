@@ -246,7 +246,9 @@ func directoryListing(files []os.FileInfo, canGoUp bool, urlPath string, config 
 			}
 		}
 
-		if f.IsDir() {
+		isDir := f.IsDir() || isSymlinkTargetDir(f, urlPath, config)
+
+		if isDir {
 			name += "/"
 			dirCount++
 		} else {
@@ -260,7 +262,7 @@ func directoryListing(files []os.FileInfo, canGoUp bool, urlPath string, config 
 		url := url.URL{Path: "./" + name} // prepend with "./" to fix paths with ':' in the name
 
 		fileinfos = append(fileinfos, FileInfo{
-			IsDir:     f.IsDir() || isSymlinkTargetDir(f, urlPath, config),
+			IsDir:     isDir,
 			IsSymlink: isSymlink(f),
 			Name:      f.Name(),
 			Size:      f.Size(),
@@ -291,19 +293,19 @@ func isSymlinkTargetDir(f os.FileInfo, urlPath string, config *Config) bool {
 	if !isSymlink(f) {
 		return false
 	}
-	fullPath := func(fileName string) string {
-		fullPath := filepath.Join(string(config.Fs.Root.(http.Dir)), urlPath, fileName)
-		return filepath.Clean(fullPath)
-	}
-	target, err := os.Readlink(fullPath(f.Name()))
+
+	// a bit strange but we want Stat thru the jailed filesystem to be safe
+	target, err := config.Fs.Root.Open(filepath.Join(urlPath, f.Name()))
 	if err != nil {
 		return false
 	}
-	targetInfo, err := os.Lstat(fullPath(target))
+	defer target.Close()
+	targetInto, err := target.Stat()
 	if err != nil {
 		return false
 	}
-	return targetInfo.IsDir()
+
+	return targetInto.IsDir()
 }
 
 // ServeHTTP determines if the request is for this plugin, and if all prerequisites are met.
