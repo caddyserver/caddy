@@ -44,9 +44,14 @@ func activateHTTPS(cctx caddy.Context) error {
 	// renew all relevant certificates that need renewal. this is important
 	// to do right away so we guarantee that renewals aren't missed, and
 	// also the user can respond to any potential errors that occur.
-	err = caddytls.RenewManagedCertificates(true)
-	if err != nil {
-		return err
+	// (skip if upgrading, because the parent process is likely already listening
+	// on the ports we'd need to do ACME before we finish starting; parent process
+	// already running renewal ticker, so renewal won't be missed anyway.)
+	if !caddy.IsUpgrade() {
+		err = caddytls.RenewManagedCertificates(true)
+		if err != nil {
+			return err
+		}
 	}
 
 	if !caddy.Quiet && operatorPresent {
