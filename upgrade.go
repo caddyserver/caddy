@@ -49,7 +49,7 @@ func Upgrade() error {
 	// tell the child that it's a restart
 	env := os.Environ()
 	if !IsUpgrade() {
-		env = append(env, "CADDY_UPGRADE=1")
+		env = append(env, "CADDY__UPGRADE=1")
 	}
 
 	// prepare our payload to the child process
