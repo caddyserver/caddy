@@ -2,6 +2,7 @@ package rewrite
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/mholt/caddy"
@@ -44,6 +45,7 @@ func rewriteParse(c *caddy.Controller) ([]httpserver.HandlerConfig, error) {
 		var base = "/"
 		var pattern, to string
 		var ext []string
+		var redirectCode int
 
 		args := c.RemainingArgs()
 
@@ -82,6 +84,14 @@ func rewriteParse(c *caddy.Controller) ([]httpserver.HandlerConfig, error) {
 						return nil, c.ArgErr()
 					}
 					ext = args1
+				case "redirect":
+					if !c.NextArg() {
+						return nil, c.ArgErr()
+					}
+					redirectCode, err = strconv.Atoi(c.Val())
+					if err != nil {
+						return nil, err
+					}
 				default:
 					return nil, c.ArgErr()
 				}
@@ -90,7 +100,7 @@ func rewriteParse(c *caddy.Controller) ([]httpserver.HandlerConfig, error) {
 			if to == "" {
 				return nil, c.ArgErr()
 			}
-			if rule, err = NewComplexRule(base, pattern, to, ext, matcher); err != nil {
+			if rule, err = NewComplexRule(base, pattern, to, ext, redirectCode, matcher); err != nil {
 				return nil, err
 			}
 			rules = append(rules, rule)

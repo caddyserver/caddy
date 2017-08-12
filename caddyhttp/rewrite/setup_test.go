@@ -137,6 +137,13 @@ func TestRewriteParse(t *testing.T) {
 		 }`, false, []Rule{
 			&ComplexRule{Base: "/", To: "/to"},
 		}},
+		{`rewrite /redir {
+			r   .*
+			to  /to{path}
+			redirect 301
+		}`, false, []Rule{
+			&ComplexRule{Base: "/redir", To: "/to{path}", Regexp: regexp.MustCompile(".*"), RedirectCode: 301},
+		}},
 	}
 
 	for i, test := range regexpTests {
@@ -181,6 +188,12 @@ func TestRewriteParse(t *testing.T) {
 				}
 			}
 
+			if actualRule.RedirectCode != 0 {
+				if actualRule.RedirectCode != expectedRule.RedirectCode {
+					t.Errorf("Test %d, rule %d: Expected RedirectCode=%d, got %d",
+						i, j, expectedRule.RedirectCode, actualRule.RedirectCode)
+				}
+			}
 		}
 	}
 
