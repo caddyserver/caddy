@@ -2,7 +2,6 @@
 
 package caddy
 
-// checkFdlimit issues a warning if the OS limit for
-// max file descriptors is below a recommended minimum.
-func checkFdlimit() {
+// SetRlimitOpenFiles set rlimit for NOFILE
+func SetRlimitOpenFiles(limit uint64) {
 }

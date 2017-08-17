@@ -4,20 +4,26 @@ package caddy
 
 import (
 	"fmt"
+	"os"
 	"syscall"
 )
 
-// checkFdlimit issues a warning if the OS limit for
-// max file descriptors is below a recommended minimum.
-func checkFdlimit() {
-	const min = 8192
-
-	// Warn if ulimit is too low for production sites
+// SetRlimitOpenFiles set rlimit for NOFILE
+// setcap cap_sys_resource+ep for the caddy binary is needed
+// if it is executed as non-root user
+func SetRlimitOpenFiles(limit uint64) {
 	rlimit := &syscall.Rlimit{}
-	err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, rlimit)
-	if err == nil && rlimit.Cur < min {
-		fmt.Printf("WARNING: File descriptor limit %d is too low for production servers. "+
-			"At least %d is recommended. Fix with \"ulimit -n %d\".\n", rlimit.Cur, min, min)
-	}
 
+	rlimit.Max = limit
+	rlimit.Cur = limit
+
+	if err := syscall.Setrlimit(syscall.RLIMIT_NOFILE, rlimit); err != nil {
+		if os.Getuid() != 0 {
+			fmt.Printf("Failed to set NOFILE rlimit. Capability not set. Please ")
+			fmt.Println("execute: sudo setcap cap_sys_resource+ep caddy")
+			return
+		}
+
+		fmt.Printf("WARNING !! Setting NOFILE rlimit failed with error: %s\n", err)
+	}
 }

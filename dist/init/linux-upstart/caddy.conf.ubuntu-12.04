@@ -17,8 +17,6 @@ respawn limit 10 5
 # Let's Encrypt certificates will be written to this directory.
 env CADDYPATH=/etc/ssl/caddy
 
-limit nofile 1048576 1048576
-
 script
         cd /etc/ssl/caddy
         rootdir="$(mktemp -d -t "caddy-run.XXXXXX")"
