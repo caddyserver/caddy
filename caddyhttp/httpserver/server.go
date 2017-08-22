@@ -305,7 +305,7 @@ func (s *Server) Serve(ln net.Listener) error {
 	}
 
 	err := s.Server.Serve(ln)
-	if QUIC {
+	if s.quicServer != nil {
 		s.quicServer.Close()
 	}
 	return err

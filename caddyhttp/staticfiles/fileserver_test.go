@@ -219,6 +219,13 @@ func TestServeHTTP(t *testing.T) {
 			expectedLocation:    "https://foo/bar/file1.html",
 			expectedBodyContent: movedPermanently,
 		},
+		{
+			url:                   "https://foo/notindex.html",
+			expectedStatus:        http.StatusOK,
+			expectedBodyContent:   testFiles[webrootNotIndexHTML],
+			expectedEtag:          `"2n9cm"`,
+			expectedContentLength: strconv.Itoa(len(testFiles[webrootNotIndexHTML])),
+		},
 	}
 
 	for i, test := range tests {
@@ -493,6 +500,7 @@ func TestServeHTTPFailingStat(t *testing.T) {
 // Paths for the fake site used temporarily during testing.
 var (
 	webrootFile1HTML                   = filepath.Join(webrootName, "file1.html")
+	webrootNotIndexHTML                = filepath.Join(webrootName, "notindex.html")
 	webrootDirFile2HTML                = filepath.Join(webrootName, "dir", "file2.html")
 	webrootDirHiddenHTML               = filepath.Join(webrootName, "dir", "hidden.html")
 	webrootDirwithindexIndeHTML        = filepath.Join(webrootName, "dirwithindex", "index.html")
@@ -519,6 +527,7 @@ var (
 var testFiles = map[string]string{
 	"unreachable.html":                 "<h1>must not leak</h1>",
 	webrootFile1HTML:                   "<h1>file1.html</h1>",
+	webrootNotIndexHTML:                "<h1>notindex.html</h1>",
 	webrootDirFile2HTML:                "<h1>dir/file2.html</h1>",
 	webrootDirwithindexIndeHTML:        "<h1>dirwithindex/index.html</h1>",
 	webrootDirHiddenHTML:               "<h1>dir/hidden.html</h1>",

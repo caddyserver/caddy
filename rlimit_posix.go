@@ -1,4 +1,4 @@
-// +build !windows
+// +build !windows,!plan9,!nacl
 
 package caddy
 
