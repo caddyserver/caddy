@@ -8,6 +8,7 @@ const (
 	Version35 VersionNumber = 35 + iota
 	Version36
 	Version37
+	Version38
 	VersionWhatever    VersionNumber = 0 // for when the version doesn't matter
 	VersionUnsupported VersionNumber = -1
 )
@@ -15,7 +16,10 @@ const (
 // SupportedVersions lists the versions that the server supports
 // must be in sorted descending order
 var SupportedVersions = []VersionNumber{
-	Version37, Version36, Version35,
+	Version38,
+	Version37,
+	Version36,
+	Version35,
 }
 
 // VersionNumberToTag maps version numbers ('32') to tags ('Q032')

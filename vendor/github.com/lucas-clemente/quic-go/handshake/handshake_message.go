@@ -87,7 +87,7 @@ func (h HandshakeMessage) Write(b *bytes.Buffer) {
 		v := data[Tag(t)]
 		b.Write(v)
 		offset += uint32(len(v))
-		binary.LittleEndian.PutUint32(indexData[i*8:], t)
+		binary.LittleEndian.PutUint32(indexData[i*8:], uint32(t))
 		binary.LittleEndian.PutUint32(indexData[i*8+4:], offset)
 	}
 
@@ -95,14 +95,16 @@ func (h HandshakeMessage) Write(b *bytes.Buffer) {
 	copy(b.Bytes()[indexStart:], indexData)
 }
 
-func (h *HandshakeMessage) getTagsSorted() []uint32 {
-	tags := make([]uint32, len(h.Data))
+func (h *HandshakeMessage) getTagsSorted() []Tag {
+	tags := make([]Tag, len(h.Data))
 	i := 0
 	for t := range h.Data {
-		tags[i] = uint32(t)
+		tags[i] = t
 		i++
 	}
-	sort.Sort(utils.Uint32Slice(tags))
+	sort.Slice(tags, func(i, j int) bool {
+		return tags[i] < tags[j]
+	})
 	return tags
 }
 
