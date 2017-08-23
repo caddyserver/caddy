@@ -246,6 +246,16 @@ func UpdateOCSPStaples() {
 			log.Printf("[INFO] Advancing OCSP staple for %v from %s to %s",
 				cert.Names, lastNextUpdate, cert.OCSP.NextUpdate)
 			for _, n := range cert.Names {
+				// BUG: If this certificate has names on it that appear on another
+				// certificate in the cache, AND the other certificate is keyed by
+				// that name in the cache, then this method of 'queueing' the staple
+				// update will cause this certificate's new OCSP to be stapled to
+				// a different certificate! See:
+				// https://caddy.community/t/random-ocsp-response-errors-for-random-clients/2473?u=matt
+				// This problem should be avoided if names on certificates in the
+				// cache don't overlap with regards to the cache keys.
+				// (This is isn't a bug anymore, since we're careful when we add
+				// certificates to the cache by skipping keying when key already exists.)
 				updated[n] = ocspUpdate{rawBytes: cert.Certificate.OCSPStaple, parsed: cert.OCSP}
 			}
 		}
