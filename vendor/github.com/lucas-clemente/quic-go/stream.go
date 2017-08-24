@@ -1,6 +1,7 @@
 package quic
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -18,6 +19,9 @@ import (
 // Read() and Write() may be called concurrently, but multiple calls to Read() or Write() individually must be synchronized manually.
 type stream struct {
 	mutex sync.Mutex
+
+	ctx       context.Context
+	ctxCancel context.CancelFunc
 
 	streamID protocol.StreamID
 	onData   func()
@@ -55,6 +59,8 @@ type stream struct {
 	flowControlManager flowcontrol.FlowControlManager
 }
 
+var _ Stream = &stream{}
+
 type deadlineError struct{}
 
 func (deadlineError) Error() string   { return "deadline exceeded" }
@@ -68,7 +74,7 @@ func newStream(StreamID protocol.StreamID,
 	onData func(),
 	onReset func(protocol.StreamID, protocol.ByteCount),
 	flowControlManager flowcontrol.FlowControlManager) *stream {
-	return &stream{
+	s := &stream{
 		onData:             onData,
 		onReset:            onReset,
 		streamID:           StreamID,
@@ -77,6 +83,8 @@ func newStream(StreamID protocol.StreamID,
 		readChan:           make(chan struct{}, 1),
 		writeChan:          make(chan struct{}, 1),
 	}
+	s.ctx, s.ctxCancel = context.WithCancel(context.Background())
+	return s
 }
 
 // Read implements io.Reader. It is not thread safe!
@@ -180,6 +188,9 @@ func (s *stream) Write(p []byte) (int, error) {
 	if s.resetLocally.Get() || s.err != nil {
 		return 0, s.err
 	}
+	if s.finishedWriting.Get() {
+		return 0, fmt.Errorf("write on closed stream %d", s.streamID)
+	}
 	if len(p) == 0 {
 		return 0, nil
 	}
@@ -254,6 +265,7 @@ func (s *stream) getDataForWriting(maxBytes protocol.ByteCount) []byte {
 // Close implements io.Closer
 func (s *stream) Close() error {
 	s.finishedWriting.Set(true)
+	s.ctxCancel()
 	s.onData()
 	return nil
 }
@@ -349,6 +361,7 @@ func (s *stream) CloseRemote(offset protocol.ByteCount) {
 func (s *stream) Cancel(err error) {
 	s.mutex.Lock()
 	s.cancelled.Set(true)
+	s.ctxCancel()
 	// errors must not be changed!
 	if s.err == nil {
 		s.err = err
@@ -365,6 +378,7 @@ func (s *stream) Reset(err error) {
 	}
 	s.mutex.Lock()
 	s.resetLocally.Set(true)
+	s.ctxCancel()
 	// errors must not be changed!
 	if s.err == nil {
 		s.err = err
@@ -385,6 +399,7 @@ func (s *stream) RegisterRemoteError(err error) {
 	}
 	s.mutex.Lock()
 	s.resetRemotely.Set(true)
+	s.ctxCancel()
 	// errors must not be changed!
 	if s.err == nil {
 		s.err = err
@@ -407,6 +422,10 @@ func (s *stream) finished() bool {
 		(s.resetRemotely.Get() && s.rstSent.Get()) ||
 		(s.finishedReading.Get() && s.rstSent.Get()) ||
 		(s.finishedWriteAndSentFin() && s.resetRemotely.Get())
+}
+
+func (s *stream) Context() context.Context {
+	return s.ctx
 }
 
 func (s *stream) StreamID() protocol.StreamID {

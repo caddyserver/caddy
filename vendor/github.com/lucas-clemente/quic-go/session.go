@@ -1,6 +1,7 @@
 package quic
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -78,10 +79,10 @@ type session struct {
 	sendingScheduled chan struct{}
 	// closeChan is used to notify the run loop that it should terminate.
 	closeChan chan closeError
-	// runClosed is closed once the run loop exits
-	// it is used to block Close() and WaitUntilClosed()
-	runClosed chan struct{}
 	closeOnce sync.Once
+
+	ctx       context.Context
+	ctxCancel context.CancelFunc
 
 	// when we receive too many undecryptable packets during the handshake, we send a Public reset
 	// but only after a time of protocol.PublicResetTimeout has passed
@@ -167,12 +168,12 @@ func (s *session) setup(
 	s.aeadChanged = aeadChanged
 	handshakeChan := make(chan handshakeEvent, 3)
 	s.handshakeChan = handshakeChan
-	s.runClosed = make(chan struct{})
 	s.handshakeCompleteChan = make(chan error, 1)
 	s.receivedPackets = make(chan *receivedPacket, protocol.MaxSessionUnprocessedPackets)
 	s.closeChan = make(chan closeError, 1)
 	s.sendingScheduled = make(chan struct{}, 1)
 	s.undecryptablePackets = make([]*receivedPacket, 0, protocol.MaxUndecryptablePackets)
+	s.ctx, s.ctxCancel = context.WithCancel(context.Background())
 
 	s.timer = utils.NewTimer()
 	now := time.Now()
@@ -333,12 +334,12 @@ runLoop:
 		s.handshakeChan <- handshakeEvent{err: closeErr.err}
 	}
 	s.handleCloseError(closeErr)
-	close(s.runClosed)
+	defer s.ctxCancel()
 	return closeErr.err
 }
 
-func (s *session) WaitUntilClosed() {
-	<-s.runClosed
+func (s *session) Context() context.Context {
+	return s.ctx
 }
 
 func (s *session) maybeResetTimer() {
@@ -445,7 +446,9 @@ func (s *session) handleFrames(fs []frames.Frame) error {
 		case *frames.GoawayFrame:
 			err = errors.New("unimplemented: handling GOAWAY frames")
 		case *frames.StopWaitingFrame:
-			err = s.receivedPacketHandler.ReceivedStopWaiting(frame)
+			// LeastUnacked is guaranteed to have LeastUnacked > 0
+			// therefore this will never underflow
+			s.receivedPacketHandler.SetLowerLimit(frame.LeastUnacked - 1)
 		case *frames.RstStreamFrame:
 			err = s.handleRstStreamFrame(frame)
 		case *frames.WindowUpdateFrame:
@@ -543,7 +546,7 @@ func (s *session) closeRemote(e error) {
 // It waits until the run loop has stopped before returning
 func (s *session) Close(e error) error {
 	s.closeLocal(e)
-	<-s.runClosed
+	<-s.ctx.Done()
 	return nil
 }
 
@@ -575,7 +578,9 @@ func (s *session) handleCloseError(closeErr closeError) error {
 		return nil
 	}
 
-	if quicErr.ErrorCode == qerr.DecryptionFailure || quicErr == handshake.ErrHOLExperiment {
+	if quicErr.ErrorCode == qerr.DecryptionFailure ||
+		quicErr == handshake.ErrHOLExperiment ||
+		quicErr == handshake.ErrNSTPExperiment {
 		return s.sendPublicReset(s.lastRcvdPacketNumber)
 	}
 	return s.sendConnectionClose(quicErr)

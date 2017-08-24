@@ -25,7 +25,7 @@ type SentPacketHandler interface {
 // ReceivedPacketHandler handles ACKs needed to send for incoming packets
 type ReceivedPacketHandler interface {
 	ReceivedPacket(packetNumber protocol.PacketNumber, shouldInstigateAck bool) error
-	ReceivedStopWaiting(*frames.StopWaitingFrame) error
+	SetLowerLimit(protocol.PacketNumber)
 
 	GetAlarmTimeout() time.Time
 	GetAckFrame() *frames.AckFrame

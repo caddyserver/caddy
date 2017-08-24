@@ -12,7 +12,7 @@ var errInvalidPacketNumber = errors.New("ReceivedPacketHandler: Invalid packet n
 
 type receivedPacketHandler struct {
 	largestObserved             protocol.PacketNumber
-	ignorePacketsBelow          protocol.PacketNumber
+	lowerLimit                  protocol.PacketNumber
 	largestObservedReceivedTime time.Time
 
 	packetHistory *receivedPacketHistory
@@ -39,31 +39,27 @@ func (h *receivedPacketHandler) ReceivedPacket(packetNumber protocol.PacketNumbe
 		return errInvalidPacketNumber
 	}
 
-	if packetNumber > h.ignorePacketsBelow {
-		if err := h.packetHistory.ReceivedPacket(packetNumber); err != nil {
-			return err
-		}
-	}
-
 	if packetNumber > h.largestObserved {
 		h.largestObserved = packetNumber
 		h.largestObservedReceivedTime = time.Now()
 	}
 
+	if packetNumber <= h.lowerLimit {
+		return nil
+	}
+
+	if err := h.packetHistory.ReceivedPacket(packetNumber); err != nil {
+		return err
+	}
 	h.maybeQueueAck(packetNumber, shouldInstigateAck)
 	return nil
 }
 
-func (h *receivedPacketHandler) ReceivedStopWaiting(f *frames.StopWaitingFrame) error {
-	// ignore if StopWaiting is unneeded, because we already received a StopWaiting with a higher LeastUnacked
-	if h.ignorePacketsBelow >= f.LeastUnacked {
-		return nil
-	}
-
-	h.ignorePacketsBelow = f.LeastUnacked - 1
-
-	h.packetHistory.DeleteBelow(f.LeastUnacked)
-	return nil
+// SetLowerLimit sets a lower limit for acking packets.
+// Packets with packet numbers smaller or equal than p will not be acked.
+func (h *receivedPacketHandler) SetLowerLimit(p protocol.PacketNumber) {
+	h.lowerLimit = p
+	h.packetHistory.DeleteUpTo(p)
 }
 
 func (h *receivedPacketHandler) maybeQueueAck(packetNumber protocol.PacketNumber, shouldInstigateAck bool) {

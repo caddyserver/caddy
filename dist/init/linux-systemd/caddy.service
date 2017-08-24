@@ -24,7 +24,7 @@ KillSignal=SIGQUIT
 TimeoutStopSec=5s
 
 ; Unmodified caddy is not expected to use more than that.
-LimitNPROC=64
+LimitNPROC=512
 
 ; Use private /tmp and /var/tmp, which are discarded after caddy stops.
 PrivateTmp=true

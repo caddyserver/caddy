@@ -14,7 +14,9 @@ import (
 )
 
 // certCache stores certificates in memory,
-// keying certificates by name.
+// keying certificates by name. Certificates
+// should not overlap in the names they serve,
+// because a name only maps to one certificate.
 var certCache = make(map[string]Certificate)
 var certCacheMu sync.RWMutex
 
@@ -27,6 +29,8 @@ type Certificate struct {
 
 	// Names is the list of names this certificate is written for.
 	// The first is the CommonName (if any), the rest are SAN.
+	// This should be the exact list of keys by which this cert
+	// is accessed in the cache, careful to avoid overlap.
 	Names []string
 
 	// NotAfter is when the certificate expires.
@@ -164,17 +168,9 @@ func makeCertificate(certPEMBlock, keyPEMBlock []byte) (Certificate, error) {
 	if err != nil {
 		return cert, err
 	}
-	if len(tlsCert.Certificate) == 0 {
-		return cert, errors.New("certificate is empty")
-	}
-	cert.Certificate = tlsCert
 
-	// Parse leaf certificate, extract relevant metadata, and staple OCSP
-	leaf, err := x509.ParseCertificate(tlsCert.Certificate[0])
-	if err != nil {
-		return cert, err
-	}
-	err = fillCertFromLeaf(&cert, leaf)
+	// Extract relevant metadata and staple OCSP
+	err = fillCertFromLeaf(&cert, tlsCert)
 	if err != nil {
 		return cert, err
 	}
@@ -186,9 +182,19 @@ func makeCertificate(certPEMBlock, keyPEMBlock []byte) (Certificate, error) {
 	return cert, nil
 }
 
-// fillCertFromLeaf populates cert.Names and cert.NotAfter
-// using data in leaf.
-func fillCertFromLeaf(cert *Certificate, leaf *x509.Certificate) error {
+// fillCertFromLeaf populates metadata fields on cert from tlsCert.
+func fillCertFromLeaf(cert *Certificate, tlsCert tls.Certificate) error {
+	if len(tlsCert.Certificate) == 0 {
+		return errors.New("certificate is empty")
+	}
+	cert.Certificate = tlsCert
+
+	// the leaf cert should be the one for the site; it has what we need
+	leaf, err := x509.ParseCertificate(tlsCert.Certificate[0])
+	if err != nil {
+		return err
+	}
+
 	if leaf.Subject.CommonName != "" {
 		cert.Names = []string{strings.ToLower(leaf.Subject.CommonName)}
 	}
@@ -210,7 +216,9 @@ func fillCertFromLeaf(cert *Certificate, leaf *x509.Certificate) error {
 	if len(cert.Names) == 0 {
 		return errors.New("certificate has no names")
 	}
+
 	cert.NotAfter = leaf.NotAfter
+
 	return nil
 }
 
@@ -231,7 +239,6 @@ func cacheCertificate(cert Certificate) {
 	if _, ok := certCache[""]; !ok {
 		// use as default - must be *appended* to end of list, or bad things happen!
 		cert.Names = append(cert.Names, "")
-		certCache[""] = cert
 	}
 	for len(certCache)+len(cert.Names) > 10000 {
 		// for simplicity, just remove random elements
@@ -243,7 +250,20 @@ func cacheCertificate(cert Certificate) {
 			break
 		}
 	}
-	for _, name := range cert.Names {
+	for i := 0; i < len(cert.Names); i++ {
+		name := cert.Names[i]
+		if _, ok := certCache[name]; ok {
+			// do not allow certificates to overlap in the names they serve;
+			// this ambiguity causes problems because it is confusing while
+			// maintaining certificates; see OCSP maintenance code and
+			// https://caddy.community/t/random-ocsp-response-errors-for-random-clients/2473?u=matt.
+			log.Printf("[NOTICE] There is already a certificate loaded for %s, "+
+				"so certificate for %v will not service that name",
+				name, cert.Names)
+			cert.Names = append(cert.Names[:i], cert.Names[i+1:]...)
+			i--
+			continue
+		}
 		certCache[name] = cert
 	}
 	certCacheMu.Unlock()
