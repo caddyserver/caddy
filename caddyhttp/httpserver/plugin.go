@@ -485,6 +485,7 @@ var directives = []string{
 	"push",
 	"datadog",    // github.com/payintech/caddy-datadog
 	"prometheus", // github.com/miekg/caddy-prometheus
+	"templates",
 	"proxy",
 	"fastcgi",
 	"cgi", // github.com/jung-kurt/caddy-cgi
@@ -492,7 +493,6 @@ var directives = []string{
 	"filemanager", // github.com/hacdias/filemanager/caddy/filemanager
 	"webdav",      // github.com/hacdias/caddy-webdav
 	"markdown",
-	"templates",
 	"browse",
 	"jekyll",    // github.com/hacdias/filemanager/caddy/jekyll
 	"hugo",      // github.com/hacdias/filemanager/caddy/hugo
