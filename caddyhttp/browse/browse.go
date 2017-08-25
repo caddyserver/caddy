@@ -299,7 +299,7 @@ func isSymlinkTargetDir(f os.FileInfo, urlPath string, config *Config) bool {
 	// a bit strange but we want Stat thru the jailed filesystem to be safe
 	target, err := config.Fs.Root.Open(filepath.Join(urlPath, f.Name()))
 	if err != nil {
-		fmt.Println("error opening target:", err)
+		fmt.Println("error opening target:", err, filepath.Join(urlPath, f.Name()))
 		return false
 	}
 	defer target.Close()
