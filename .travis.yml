@@ -1,7 +1,7 @@
 language: go
 
 go:
-  - 1.8.3
+  - 1.9
   - tip
 
 matrix:
@@ -31,9 +31,7 @@ install:
 script:
   - gometalinter --disable-all -E vet -E gofmt -E misspell -E ineffassign -E goimports -E deadcode --tests --vendor ./...
   - vendorcheck ./...
-  # TODO: When Go 1.9 is released, replace $(go list) subcommand with ./... because vendor folder should be ignored
-  - go test -race $(go list ./... | grep -v vendor)
+  - go test -race ./...
 
 after_script:
-  # TODO: When Go 1.9 is released, replace $(go list) subcommand with ./... because vendor folder should be ignored
-  - golint $(go list ./... | grep -v vendor)
+  - golint ./...
