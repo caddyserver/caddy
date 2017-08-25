@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"os"
 	"path"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -297,9 +296,9 @@ func isSymlinkTargetDir(f os.FileInfo, urlPath string, config *Config) bool {
 	}
 
 	// a bit strange but we want Stat thru the jailed filesystem to be safe
-	target, err := config.Fs.Root.Open(filepath.Join(urlPath, f.Name()))
+	target, err := config.Fs.Root.Open(path.Join(urlPath, f.Name()))
 	if err != nil {
-		fmt.Println("error opening target:", err, filepath.Join(urlPath, f.Name()))
+		fmt.Println("error opening target:", err, path.Join(urlPath, f.Name()))
 		return false
 	}
 	defer target.Close()
