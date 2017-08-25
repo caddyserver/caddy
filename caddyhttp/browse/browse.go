@@ -5,7 +5,6 @@ package browse
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/url"
 	"os"
@@ -291,24 +290,20 @@ func isSymlink(f os.FileInfo) bool {
 // is a directory. Return false if not a symbolic link.
 func isSymlinkTargetDir(f os.FileInfo, urlPath string, config *Config) bool {
 	if !isSymlink(f) {
-		fmt.Println(f, "is not a symlink")
 		return false
 	}
 
-	// a bit strange but we want Stat thru the jailed filesystem to be safe
+	// a bit strange, but we want Stat thru the jailed filesystem to be safe
 	target, err := config.Fs.Root.Open(path.Join(urlPath, f.Name()))
 	if err != nil {
-		fmt.Println("error opening target:", err, path.Join(urlPath, f.Name()))
 		return false
 	}
 	defer target.Close()
 	targetInfo, err := target.Stat()
 	if err != nil {
-		fmt.Println("error stat'ing target:", err)
 		return false
 	}
 
-	fmt.Println("target is dir:", targetInfo.IsDir())
 	return targetInfo.IsDir()
 }
 
