@@ -3,8 +3,6 @@ package caddytls
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"crypto/x509/pkix"
-	"encoding/asn1"
 	"errors"
 	"io/ioutil"
 	"log"
@@ -155,19 +153,6 @@ func makeCertificateFromDisk(certFile, keyFile string, cfg *Config) (Certificate
 	return makeCertificate(certPEMBlock, keyPEMBlock, cfg.CertificateTransparency)
 }
 
-// This is the OID for the embedded SCT X.509 extension (see the RFC 6962)
-var x509SCTOid = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 11129, 2, 4, 2}
-var ocspSCTOid = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 11129, 2, 4, 5}
-
-func hasExtension(extensions []pkix.Extension, needle asn1.ObjectIdentifier) bool {
-	for _, ext := range extensions {
-		if ext.Id.Equal(needle) {
-			return true
-		}
-	}
-	return false
-}
-
 // makeCertificate turns a certificate PEM bundle and a key PEM block into
 // a Certificate, with OCSP and other relevant metadata tagged with it,
 // except for the OnDemand and Managed flags. It is up to the caller to
@@ -200,7 +185,7 @@ func makeCertificate(certPEMBlock, keyPEMBlock []byte, certificateTransparency b
 	}
 	// If the certificate or OCSP Response has embedded SCTs no need to fetch
 	// new ones. TODO: validate that these SCTs are still from trusted logs.
-	if certificateTransparency && !hasExtension(leaf.Extensions, x509SCTOid) && !(cert.OCSP != nil && hasExtension(cert.OCSP.Extensions, ocspSCTOid)) {
+	if certificateTransparency && certificateNeedsSCTs(cert, leaf) {
 		// TODO: cache this somewhere for a while. Also, recheck occasionally,
 		// as we do for OCSP.
 		logs, err := getTrustedCTLogs()

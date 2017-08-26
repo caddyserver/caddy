@@ -256,3 +256,44 @@ func shuffleLogs(logs []ctLog) {
 		logs[i], logs[j] = logs[j], logs[i]
 	}
 }
+
+// Check whether two lists of CT logs contain the same logs (ignoring order).
+func logListsEqual(a []ctLog, b []ctLog) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	set := make(map[string]struct{})
+	// Make a set of the URLs in the first slice
+	for _, log := range a {
+		set[a.url] = struct{}
+	}
+	// If anything from the second slice isn't in the set, they're not equally.
+	for _, log := range b {
+		if _, ok := set[log.url]; !ok {
+			return false
+		}
+	}
+	// If everything from second slice was in the first, and they're the same
+	// length, the slices are equal.
+	return true
+}
+
+// This is the OID for the embedded SCT X.509 extension (see the RFC 6962)
+var x509SCTOid = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 11129, 2, 4, 2}
+var ocspSCTOid = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 11129, 2, 4, 5}
+
+func hasExtension(extensions []pkix.Extension, needle asn1.ObjectIdentifier) bool {
+	for _, ext := range extensions {
+		if ext.Id.Equal(needle) {
+			return true
+		}
+	}
+	return false
+}
+
+// Checks whether or not a certificate also requires external SCTs (because it
+// doesn't have any embedded SCTs and neither does its OCSP response)
+func certificateNeedsSCTs(cert *Certificate, leaf *x509.Certificate) bool {
+	return !hasExtension(leaf.Extensions, x509SCTOid) &&
+		!(cert.OCSP != nil && hasExtension(cert.OCSP.Extensions, ocspSCTOid))
+}

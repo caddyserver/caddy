@@ -27,6 +27,9 @@ const (
 
 	// OCSPInterval is how often to check if OCSP stapling needs updating.
 	OCSPInterval = 1 * time.Hour
+
+	// SCTInterval is how often to check if the SCTs need to be updated
+	SCTInterval = 24 * time.Hour
 )
 
 // maintainAssets is a permanently-blocking function
@@ -42,6 +45,9 @@ const (
 func maintainAssets(stopChan chan struct{}) {
 	renewalTicker := time.NewTicker(RenewInterval)
 	ocspTicker := time.NewTicker(OCSPInterval)
+	sctTicker := time.NewTicker(SCTInterval)
+
+	ctLogs := nil
 
 	for {
 		select {
@@ -54,9 +60,14 @@ func maintainAssets(stopChan chan struct{}) {
 			UpdateOCSPStaples()
 			DeleteOldStapleFiles()
 			log.Println("[INFO] Done checking OCSP staples")
+		case <-sctTicker.C:
+			log.Println("[INFO] Scanning for SCTs needing updates")
+			ctLogs = UpdateSCTs(ctLogs)
+			log.Println("[INFO] Done scanning for SCTs needing updates]")
 		case <-stopChan:
 			renewalTicker.Stop()
 			ocspTicker.Stop()
+			sctTicker.Stop()
 			log.Println("[INFO] Stopped background maintenance routine")
 			return
 		}
@@ -296,6 +307,29 @@ func freshOCSP(resp *ocsp.Response) bool {
 	// start checking OCSP staple about halfway through validity period for good measure
 	refreshTime := resp.ThisUpdate.Add(resp.NextUpdate.Sub(resp.ThisUpdate) / 2)
 	return time.Now().Before(refreshTime)
+}
+
+func UpdateSCTs(existingLogs []ctLog) []ctLog {
+	newLogs := getTrustedCTLogs()
+	if existingLogs == nil || !logListsEqual(existingLogs, newLogs) {
+		// For each cert, fetch SCTs and update the cert.
+		certCacheMu.RLock()
+		for _, cert := range certCache {
+			// If the cert doesn't have CT enabled, skip it
+			if !cert.Config.CertificateTransparency {
+				continue
+			}
+			scts, err := getSCTSForCertificateChain(cert.Certificate, newLogs)
+			if err != nil {
+				log.Println("[WARNING] Fetching SCTs: %v", err)
+			} else {
+				cert.Certificate.SignedCertificateTimestamps = scts
+			}
+		}
+		certCacheMu.RUnlock()
+		return newLogs
+	}
+	return existingLogs
 }
 
 var ocspFolder = filepath.Join(caddy.AssetsPath(), "ocsp")
