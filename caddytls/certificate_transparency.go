@@ -267,7 +267,7 @@ func logListsEqual(a []ctLog, b []ctLog) bool {
 	set := make(map[string]struct{})
 	// Make a set of the URLs in the first slice
 	for _, log := range a {
-		set[a.url] = struct{}
+		set[log.url] = struct{}
 	}
 	// If anything from the second slice isn't in the set, they're not equally.
 	for _, log := range b {
