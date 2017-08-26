@@ -54,7 +54,7 @@ func maintainAssets(stopChan chan struct{}) {
 	ocspTicker := time.NewTicker(OCSPInterval)
 	sctTicker := time.NewTicker(SCTInterval)
 
-	ctLogs := nil
+	ctLogs := make([]ctLog)
 
 	for {
 		select {
@@ -335,22 +335,29 @@ func UpdateSCTs(existingLogs []ctLog) []ctLog {
 		log.Printf("[WARNING] Fetching trusted CT logs: %v", err)
 		return existingLogs
 	}
-	if existingLogs == nil || !logListsEqual(existingLogs, newLogs) {
-		// For each cert, fetch SCTs and update the cert.
+	if !logListsEqual(existingLogs, newLogs) {
+		// For each cert, fetch SCTs and build a map of updates
 		certCacheMu.RLock()
-		for _, cert := range certCache {
+		updates := make(map[string][][]byte)
+		for name, cert := range certCache {
 			// If the cert doesn't have CT enabled, skip it
-			if !cert.Config.CertificateTransparency {
+			if !cert.Config.CertificateTransparency || !certificateNeedsSCTs(&cert) {
 				continue
 			}
 			scts, err := getSCTSForCertificateChain(cert.Certificate.Certificate, newLogs)
 			if err != nil {
 				log.Println("[WARNING] Fetching SCTs: %v", err)
 			} else {
-				cert.Certificate.SignedCertificateTimestamps = scts
+				updates[name] = scts
 			}
 		}
 		certCacheMu.RUnlock()
+
+		certCacheMu.Lock()
+		for name, scts := range updates {
+			certCache[name].Certificate.SignedCertificateTimestamps = scts
+		}
+		certCacheMu.Unlock()
 		return newLogs
 	}
 	return existingLogs
