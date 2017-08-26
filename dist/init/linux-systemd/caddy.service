@@ -5,9 +5,7 @@ After=network-online.target
 Wants=network-online.target systemd-networkd-wait-online.service
 
 [Service]
-Restart=on-failure
-StartLimitInterval=86400
-StartLimitBurst=5
+Restart=on-abnormal
 
 ; User and group the process will run as.
 User=www-data
@@ -20,10 +18,15 @@ Environment=CADDYPATH=/etc/ssl/caddy
 ExecStart=/usr/local/bin/caddy -log stdout -agree=true -conf=/etc/caddy/Caddyfile -root=/var/tmp
 ExecReload=/bin/kill -USR1 $MAINPID
 
+; Use graceful shutdown with a reasonable timeout
+KillMode=mixed
+KillSignal=SIGQUIT
+TimeoutStopSec=5s
+
 ; Limit the number of file descriptors; see `man systemd.exec` for more limit settings.
 LimitNOFILE=1048576
 ; Unmodified caddy is not expected to use more than that.
-LimitNPROC=64
+LimitNPROC=512
 
 ; Use private /tmp and /var/tmp, which are discarded after caddy stops.
 PrivateTmp=true

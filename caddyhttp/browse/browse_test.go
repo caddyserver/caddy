@@ -3,12 +3,16 @@ package browse
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
+	"strings"
 	"testing"
 	"text/template"
 	"time"
@@ -16,6 +20,8 @@ import (
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 	"github.com/mholt/caddy/caddyhttp/staticfiles"
 )
+
+const testDirPrefix = "caddy_browse_test"
 
 func TestSort(t *testing.T) {
 	// making up []fileInfo with bogus values;
@@ -142,6 +148,8 @@ func TestBrowseHTTPMethods(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Test: Could not create HTTP request: %v", err)
 		}
+		ctx := context.WithValue(req.Context(), httpserver.OriginalURLCtxKey, *req.URL)
+		req = req.WithContext(ctx)
 
 		code, _ := b.ServeHTTP(rec, req)
 		if code != expected {
@@ -177,6 +185,8 @@ func TestBrowseTemplate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Test: Could not create HTTP request: %v", err)
 	}
+	ctx := context.WithValue(req.Context(), httpserver.OriginalURLCtxKey, *req.URL)
+	req = req.WithContext(ctx)
 
 	rec := httptest.NewRecorder()
 
@@ -322,6 +332,8 @@ func TestBrowseJson(t *testing.T) {
 		if err != nil && !test.shouldErr {
 			t.Errorf("Test %d errored when making request, but it shouldn't have; got '%v'", i, err)
 		}
+		ctx := context.WithValue(req.Context(), httpserver.OriginalURLCtxKey, *req.URL)
+		req = req.WithContext(ctx)
 
 		req.Header.Set("Accept", "application/json")
 		rec := httptest.NewRecorder()
@@ -394,13 +406,13 @@ func TestBrowseRedirect(t *testing.T) {
 		{
 			"http://www.example.com/photos",
 			http.StatusMovedPermanently,
-			0,
+			http.StatusMovedPermanently,
 			"http://www.example.com/photos/",
 		},
 		{
 			"/photos",
 			http.StatusMovedPermanently,
-			0,
+			http.StatusMovedPermanently,
 			"/photos/",
 		},
 	}
@@ -422,12 +434,11 @@ func TestBrowseRedirect(t *testing.T) {
 		}
 
 		req, err := http.NewRequest("GET", tc.url, nil)
-		u, _ := url.Parse(tc.url)
-		ctx := context.WithValue(req.Context(), staticfiles.URLPathCtxKey, u.Path)
-		req = req.WithContext(ctx)
 		if err != nil {
 			t.Fatalf("Test %d - could not create HTTP request: %v", i, err)
 		}
+		ctx := context.WithValue(req.Context(), httpserver.OriginalURLCtxKey, *req.URL)
+		req = req.WithContext(ctx)
 
 		rec := httptest.NewRecorder()
 
@@ -446,5 +457,155 @@ func TestBrowseRedirect(t *testing.T) {
 			t.Errorf("Test %d - wrong Location header, expected %s, got %s",
 				i, tc.location, got)
 		}
+	}
+}
+
+func TestDirSymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// Windows support for symlinks is limited, and we had a hard time getting
+		// all these tests to pass with the permissions of CI; so just skip them
+		fmt.Println("Skipping browse symlink tests on Windows...")
+		return
+	}
+
+	testCases := []struct {
+		source       string
+		target       string
+		pathScope    string
+		url          string
+		expectedName string
+		expectedURL  string
+	}{
+		// test case can expect a directory "dir" and a symlink to it called "symlink"
+
+		{"dir", "$TMP/rel_symlink_to_dir", "/", "/",
+			"rel_symlink_to_dir", "./rel_symlink_to_dir/"},
+		{"$TMP/dir", "$TMP/abs_symlink_to_dir", "/", "/",
+			"abs_symlink_to_dir", "./abs_symlink_to_dir/"},
+
+		{"../../dir", "$TMP/sub/dir/rel_symlink_to_dir", "/", "/sub/dir/",
+			"rel_symlink_to_dir", "./rel_symlink_to_dir/"},
+		{"$TMP/dir", "$TMP/sub/dir/abs_symlink_to_dir", "/", "/sub/dir/",
+			"abs_symlink_to_dir", "./abs_symlink_to_dir/"},
+
+		{"../../dir", "$TMP/with/scope/rel_symlink_to_dir", "/with/scope", "/with/scope/",
+			"rel_symlink_to_dir", "./rel_symlink_to_dir/"},
+		{"$TMP/dir", "$TMP/with/scope/abs_symlink_to_dir", "/with/scope", "/with/scope/",
+			"abs_symlink_to_dir", "./abs_symlink_to_dir/"},
+
+		{"../../../../dir", "$TMP/with/scope/sub/dir/rel_symlink_to_dir", "/with/scope", "/with/scope/sub/dir/",
+			"rel_symlink_to_dir", "./rel_symlink_to_dir/"},
+		{"$TMP/dir", "$TMP/with/scope/sub/dir/abs_symlink_to_dir", "/with/scope", "/with/scope/sub/dir/",
+			"abs_symlink_to_dir", "./abs_symlink_to_dir/"},
+
+		{"symlink", "$TMP/rel_symlink_to_symlink", "/", "/",
+			"rel_symlink_to_symlink", "./rel_symlink_to_symlink/"},
+		{"$TMP/symlink", "$TMP/abs_symlink_to_symlink", "/", "/",
+			"abs_symlink_to_symlink", "./abs_symlink_to_symlink/"},
+
+		{"../../symlink", "$TMP/sub/dir/rel_symlink_to_symlink", "/", "/sub/dir/",
+			"rel_symlink_to_symlink", "./rel_symlink_to_symlink/"},
+		{"$TMP/symlink", "$TMP/sub/dir/abs_symlink_to_symlink", "/", "/sub/dir/",
+			"abs_symlink_to_symlink", "./abs_symlink_to_symlink/"},
+
+		{"../../symlink", "$TMP/with/scope/rel_symlink_to_symlink", "/with/scope", "/with/scope/",
+			"rel_symlink_to_symlink", "./rel_symlink_to_symlink/"},
+		{"$TMP/symlink", "$TMP/with/scope/abs_symlink_to_symlink", "/with/scope", "/with/scope/",
+			"abs_symlink_to_symlink", "./abs_symlink_to_symlink/"},
+
+		{"../../../../symlink", "$TMP/with/scope/sub/dir/rel_symlink_to_symlink", "/with/scope", "/with/scope/sub/dir/",
+			"rel_symlink_to_symlink", "./rel_symlink_to_symlink/"},
+		{"$TMP/symlink", "$TMP/with/scope/sub/dir/abs_symlink_to_symlink", "/with/scope", "/with/scope/sub/dir/",
+			"abs_symlink_to_symlink", "./abs_symlink_to_symlink/"},
+	}
+
+	for i, tc := range testCases {
+		func() {
+			tmpdir, err := ioutil.TempDir("", testDirPrefix)
+			if err != nil {
+				t.Fatalf("failed to create test directory: %v", err)
+			}
+			defer os.RemoveAll(tmpdir)
+
+			if err := os.MkdirAll(filepath.Join(tmpdir, "dir"), 0755); err != nil {
+				t.Fatalf("failed to create test dir 'dir': %v", err)
+			}
+			if err := os.Symlink("dir", filepath.Join(tmpdir, "symlink")); err != nil {
+				t.Fatalf("failed to create test symlink 'symlink': %v", err)
+			}
+
+			sourceResolved := strings.Replace(tc.source, "$TMP", tmpdir, -1)
+			targetResolved := strings.Replace(tc.target, "$TMP", tmpdir, -1)
+
+			if err := os.MkdirAll(filepath.Dir(sourceResolved), 0755); err != nil {
+				t.Fatalf("failed to create source symlink dir: %v", err)
+			}
+			if err := os.MkdirAll(filepath.Dir(targetResolved), 0755); err != nil {
+				t.Fatalf("failed to create target symlink dir: %v", err)
+			}
+			if err := os.Symlink(sourceResolved, targetResolved); err != nil {
+				t.Fatalf("failed to create test symlink: %v", err)
+			}
+
+			b := Browse{
+				Next: httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
+					t.Fatalf("Test %d - Next shouldn't be called", i)
+					return 0, nil
+				}),
+				Configs: []Config{
+					{
+						PathScope: tc.pathScope,
+						Fs: staticfiles.FileServer{
+							Root: http.Dir(tmpdir),
+						},
+					},
+				},
+			}
+
+			req, err := http.NewRequest("GET", tc.url, nil)
+			req.Header.Add("Accept", "application/json")
+			if err != nil {
+				t.Fatalf("Test %d - could not create HTTP request: %v", i, err)
+			}
+
+			rec := httptest.NewRecorder()
+
+			returnCode, _ := b.ServeHTTP(rec, req)
+			if returnCode != http.StatusOK {
+				t.Fatalf("Test %d - wrong return code, expected %d, got %d",
+					i, http.StatusOK, returnCode)
+			}
+
+			type jsonEntry struct {
+				Name      string
+				IsDir     bool
+				IsSymlink bool
+				URL       string
+			}
+			var entries []jsonEntry
+			if err := json.Unmarshal(rec.Body.Bytes(), &entries); err != nil {
+				t.Fatalf("Test %d - failed to parse json: %v", i, err)
+			}
+
+			found := false
+			for _, e := range entries {
+				if e.Name != tc.expectedName {
+					continue
+				}
+				found = true
+				if !e.IsDir {
+					t.Errorf("Test %d - expected to be a dir, got %v", i, e.IsDir)
+				}
+				if !e.IsSymlink {
+					t.Errorf("Test %d - expected to be a symlink, got %v", i, e.IsSymlink)
+				}
+				if e.URL != tc.expectedURL {
+					t.Errorf("Test %d - wrong URL, expected %v, got %v", i, tc.expectedURL, e.URL)
+				}
+			}
+			if !found {
+				t.Errorf("Test %d - failed, could not find name %v", i, tc.expectedName)
+			}
+		}()
 	}
 }

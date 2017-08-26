@@ -94,6 +94,8 @@ func TestIsInternal(t *testing.T) {
 		{"fbff:ffff:ffff:ffff:ffff:ffff:ffff:ffff", false},
 		{"fc00::", true},
 		{"fc00::1", true},
+		{"[fc00::1]", true},
+		{"[fc00::1]:8888", true},
 		{"fdff:ffff:ffff:ffff:ffff:ffff:ffff:fffe", true},
 		{"fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff", true},
 		{"fe00::", false},
@@ -140,13 +142,13 @@ func TestListenerAddrEqual(t *testing.T) {
 		addr   string
 		expect bool
 	}{
-		{ln1, ":1234", false},
-		{ln1, "0.0.0.0:1234", false},
+		{ln1, ":" + ln2port, false},
+		{ln1, "0.0.0.0:" + ln2port, false},
 		{ln1, "0.0.0.0", false},
 		{ln1, ":" + ln1port, true},
 		{ln1, "0.0.0.0:" + ln1port, true},
 		{ln2, ":" + ln2port, false},
-		{ln2, "127.0.0.1:1234", false},
+		{ln2, "127.0.0.1:" + ln1port, false},
 		{ln2, "127.0.0.1", false},
 		{ln2, "127.0.0.1:" + ln2port, true},
 	} {

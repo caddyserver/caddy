@@ -1,9 +1,12 @@
 package rewrite
 
 import (
+	"context"
 	"net/http"
 	"net/url"
 	"testing"
+
+	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
 
 func TestTo(t *testing.T) {
@@ -39,6 +42,8 @@ func TestTo(t *testing.T) {
 		if err != nil {
 			t.Error(err)
 		}
+		ctx := context.WithValue(r.Context(), httpserver.OriginalURLCtxKey, *r.URL)
+		r = r.WithContext(ctx)
 		To(fs, r, test.to, newReplacer(r))
 		if uri(r.URL) != test.expected {
 			t.Errorf("Test %v: expected %v found %v", i, test.expected, uri(r.URL))

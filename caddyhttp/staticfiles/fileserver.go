@@ -1,10 +1,14 @@
+// Package staticfiles provides middleware for serving static files from disk.
+// Its handler is the default HTTP handler for the HTTP server.
+//
+// TODO: Should this package be rolled into the httpserver package?
 package staticfiles
 
 import (
 	"math/rand"
 	"net/http"
-	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -25,47 +29,30 @@ import (
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 type FileServer struct {
-	// Jailed disk access
-	Root http.FileSystem
-
-	// List of files to treat as "Not Found"
-	Hide []string
+	Root http.FileSystem // jailed access to the file system
+	Hide []string        // list of files for which to respond with "Not Found"
 }
 
 // ServeHTTP serves static files for r according to fs's configuration.
 func (fs FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
-	// r.URL.Path has already been cleaned by Caddy.
-	if r.URL.Path == "" {
-		r.URL.Path = "/"
-	}
-	return fs.serveFile(w, r, r.URL.Path)
-}
-
-// calculateEtag produces a strong etag by default. Prefix the result with "W/" to convert this into a weak one.
-// see https://tools.ietf.org/html/rfc7232#section-2.3
-func calculateEtag(d os.FileInfo) string {
-	t := strconv.FormatInt(d.ModTime().Unix(), 36)
-	s := strconv.FormatInt(d.Size(), 36)
-	return `"` + t + s + `"`
+	return fs.serveFile(w, r)
 }
 
 // serveFile writes the specified file to the HTTP response.
 // name is '/'-separated, not filepath.Separator.
-func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request, name string) (int, error) {
-
-	location := name
+func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request) (int, error) {
+	reqPath := r.URL.Path
 
 	// Prevent absolute path access on Windows.
 	// TODO remove when stdlib http.Dir fixes this.
-	if runtime.GOOS == "windows" {
-		if filepath.IsAbs(name[1:]) {
-			return http.StatusNotFound, nil
-		}
+	if runtime.GOOS == "windows" && len(reqPath) > 0 && filepath.IsAbs(reqPath[1:]) {
+		return http.StatusNotFound, nil
 	}
 
-	f, err := fs.Root.Open(name)
+	// open the requested file
+	f, err := fs.Root.Open(reqPath)
 	if err != nil {
-		// TODO: remove when http.Dir handles this
+		// TODO: remove when http.Dir handles this (Go 1.9?)
 		// Go issue #18984
 		err = mapFSRootOpenErr(err)
 		if os.IsNotExist(err) {
@@ -73,13 +60,14 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request, name stri
 		} else if os.IsPermission(err) {
 			return http.StatusForbidden, err
 		}
-		// Likely the server is under load and ran out of file descriptors
+		// otherwise, maybe the server is under load and ran out of file descriptors?
 		backoff := int(3 + rand.Int31()%3) // 3–5 seconds to prevent a stampede
 		w.Header().Set("Retry-After", strconv.Itoa(backoff))
 		return http.StatusServiceUnavailable, err
 	}
 	defer f.Close()
 
+	// get information about the file
 	d, err := f.Stat()
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -87,84 +75,110 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request, name stri
 		} else if os.IsPermission(err) {
 			return http.StatusForbidden, err
 		}
-		// Return a different status code than above so as to distinguish these cases
+		// return a different status code than above to distinguish these cases
 		return http.StatusInternalServerError, err
 	}
 
-	// redirect to canonical path
+	// redirect to canonical path (being careful to preserve other parts of URL and
+	// considering cases where a site is defined with a path prefix that gets stripped)
+	urlCopy := *r.URL
+	pathPrefix, _ := r.Context().Value(caddy.CtxKey("path_prefix")).(string)
+	if pathPrefix != "/" {
+		urlCopy.Path = pathPrefix + urlCopy.Path
+	}
+	if urlCopy.Path == "" {
+		urlCopy.Path = "/"
+	}
 	if d.IsDir() {
-		// Ensure / at end of directory url. If the original URL path is
-		// used then ensure / exists as well.
-		if !strings.HasSuffix(r.URL.Path, "/") {
-			RedirectToDir(w, r)
+		// ensure there is a trailing slash
+		if urlCopy.Path[len(urlCopy.Path)-1] != '/' {
+			urlCopy.Path += "/"
+			http.Redirect(w, r, urlCopy.String(), http.StatusMovedPermanently)
 			return http.StatusMovedPermanently, nil
 		}
 	} else {
-		// Ensure no / at end of file url. If the original URL path is
-		// used then ensure no / exists as well.
-		if strings.HasSuffix(r.URL.Path, "/") {
-			RedirectToFile(w, r)
+		// ensure no trailing slash
+		redir := false
+		if urlCopy.Path[len(urlCopy.Path)-1] == '/' {
+			urlCopy.Path = urlCopy.Path[:len(urlCopy.Path)-1]
+			redir = true
+		}
+
+		// if an index file was explicitly requested, strip file name from the request
+		// ("/foo/index.html" -> "/foo/")
+		var requestPage = path.Base(urlCopy.Path)
+		for _, indexPage := range IndexPages {
+			if requestPage == indexPage {
+				urlCopy.Path = urlCopy.Path[:len(urlCopy.Path)-len(indexPage)]
+				redir = true
+				break
+			}
+		}
+
+		if redir {
+			http.Redirect(w, r, urlCopy.String(), http.StatusMovedPermanently)
 			return http.StatusMovedPermanently, nil
 		}
 	}
 
-	// use contents of an index file, if present, for directory
+	// use contents of an index file, if present, for directory requests
 	if d.IsDir() {
 		for _, indexPage := range IndexPages {
-			index := strings.TrimSuffix(name, "/") + "/" + indexPage
-			ff, err := fs.Root.Open(index)
+			indexPath := path.Join(reqPath, indexPage)
+			indexFile, err := fs.Root.Open(indexPath)
 			if err != nil {
 				continue
 			}
 
-			// this defer does not leak fds because previous iterations
-			// of the loop must have had an err, so nothing to close
-			defer ff.Close()
-
-			dd, err := ff.Stat()
+			indexInfo, err := indexFile.Stat()
 			if err != nil {
-				ff.Close()
+				indexFile.Close()
 				continue
 			}
 
-			// Close previous file - release fd immediately
+			// this defer does not leak fds even though we are in a loop,
+			// because previous iterations of the loop must have had an
+			// err, so there's nothing to close from earlier iterations.
+			defer indexFile.Close()
+
+			// close previously-opened file immediately to release fd
 			f.Close()
 
-			d = dd
-			f = ff
-			location = index
+			// switch to using the index file, and we're done here
+			d = indexInfo
+			f = indexFile
+			reqPath = indexPath
 			break
 		}
 	}
 
-	// Still a directory? (we didn't find an index file)
-	// Return 404 to hide the fact that the folder exists
-	if d.IsDir() {
+	// return Not Found if we either did not find an index file (and thus are
+	// still a directory) or if this file is supposed to be hidden
+	if d.IsDir() || fs.IsHidden(d) {
 		return http.StatusNotFound, nil
 	}
 
-	if fs.IsHidden(d) {
-		return http.StatusNotFound, nil
-	}
+	etag := calculateEtag(d)
 
-	filename := d.Name()
-	etag := calculateEtag(d) // strong
-
+	// look for compressed versions of the file on disk, if the client supports that encoding
 	for _, encoding := range staticEncodingPriority {
+		// see if the client accepts a compressed encoding we offer
 		acceptEncoding := strings.Split(r.Header.Get("Accept-Encoding"), ",")
-
 		accepted := false
 		for _, acc := range acceptEncoding {
-			if accepted || strings.TrimSpace(acc) == encoding {
+			if strings.TrimSpace(acc) == encoding {
 				accepted = true
+				break
 			}
 		}
 
+		// if client doesn't support this encoding, don't even bother; try next one
 		if !accepted {
 			continue
 		}
 
-		encodedFile, err := fs.Root.Open(location + staticEncoding[encoding])
+		// see if the compressed version of this file exists
+		encodedFile, err := fs.Root.Open(reqPath + staticEncoding[encoding])
 		if err != nil {
 			continue
 		}
@@ -175,19 +189,17 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request, name stri
 			continue
 		}
 
-		// Close previous file - release fd
+		// close the encoded file when we're done, and close the
+		// previously-opened file immediately to release the fd
+		defer encodedFile.Close()
 		f.Close()
 
-		etag = calculateEtag(encodedFileInfo)
-
-		// Encoded file will be served
+		// the encoded file is now what we're serving
 		f = encodedFile
-
+		etag = calculateEtag(encodedFileInfo)
 		w.Header().Add("Vary", "Accept-Encoding")
 		w.Header().Set("Content-Encoding", encoding)
 		w.Header().Set("Content-Length", strconv.FormatInt(encodedFileInfo.Size(), 10))
-
-		defer f.Close()
 		break
 	}
 
@@ -197,16 +209,17 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request, name stri
 
 	// Note: Errors generated by ServeContent are written immediately
 	// to the response. This usually only happens if seeking fails (rare).
-	http.ServeContent(w, r, filename, d.ModTime(), f)
+	// Its signature does not bubble the error up to us, so we cannot
+	// return it for any logging middleware to record. Oh well.
+	http.ServeContent(w, r, d.Name(), d.ModTime(), f)
 
 	return http.StatusOK, nil
 }
 
 // IsHidden checks if file with FileInfo d is on hide list.
 func (fs FileServer) IsHidden(d os.FileInfo) bool {
-	// If the file is supposed to be hidden, return a 404
 	for _, hiddenPath := range fs.Hide {
-		// Check if the served file is exactly the hidden file.
+		// TODO: Could these FileInfos be stored instead of their paths, to avoid opening them all the time?
 		if hFile, err := fs.Root.Open(hiddenPath); err == nil {
 			fs, _ := hFile.Stat()
 			hFile.Close()
@@ -218,34 +231,15 @@ func (fs FileServer) IsHidden(d os.FileInfo) bool {
 	return false
 }
 
-// RedirectToDir replies to the request with a redirect to the URL in r, which
-// has been transformed to indicate that the resource being requested is a
-// directory.
-func RedirectToDir(w http.ResponseWriter, r *http.Request) {
-	toURL, _ := url.Parse(r.URL.String())
-
-	path, ok := r.Context().Value(URLPathCtxKey).(string)
-	if ok && !strings.HasSuffix(path, "/") {
-		toURL.Path = path
-	}
-	toURL.Path += "/"
-
-	http.Redirect(w, r, toURL.String(), http.StatusMovedPermanently)
-}
-
-// RedirectToFile replies to the request with a redirect to the URL in r, which
-// has been transformed to indicate that the resource being requested is a
-// file.
-func RedirectToFile(w http.ResponseWriter, r *http.Request) {
-	toURL, _ := url.Parse(r.URL.String())
-
-	path, ok := r.Context().Value(URLPathCtxKey).(string)
-	if ok && strings.HasSuffix(path, "/") {
-		toURL.Path = path
-	}
-	toURL.Path = strings.TrimSuffix(toURL.Path, "/")
-
-	http.Redirect(w, r, toURL.String(), http.StatusMovedPermanently)
+// calculateEtag produces a strong etag by default, although, for
+// efficiency reasons, it does not actually consume the contents
+// of the file to make a hash of all the bytes. ¯\_(ツ)_/¯
+// Prefix the etag with "W/" to convert it into a weak etag.
+// See: https://tools.ietf.org/html/rfc7232#section-2.3
+func calculateEtag(d os.FileInfo) string {
+	t := strconv.FormatInt(d.ModTime().Unix(), 36)
+	s := strconv.FormatInt(d.Size(), 36)
+	return `"` + t + s + `"`
 }
 
 // IndexPages is a list of pages that may be understood as
@@ -277,7 +271,7 @@ var staticEncodingPriority = []string{
 // to a possibly better non-nil error. In particular, it turns OS-specific errors
 // about opening files in non-directories into os.ErrNotExist.
 //
-// TODO: remove when http.Dir handles this
+// TODO: remove when http.Dir handles this (slated for Go 1.9)
 // Go issue #18984
 func mapFSRootOpenErr(originalErr error) error {
 	if os.IsNotExist(originalErr) || os.IsPermission(originalErr) {
@@ -304,8 +298,3 @@ func mapFSRootOpenErr(originalErr error) error {
 	}
 	return originalErr
 }
-
-// URLPathCtxKey is a context key. It can be used in HTTP handlers with
-// context.WithValue to access the original request URI that accompanied the
-// server request. The associated value will be of type string.
-const URLPathCtxKey caddy.CtxKey = "url_path"

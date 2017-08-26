@@ -41,10 +41,14 @@ func TestInternalParse(t *testing.T) {
 		shouldErr             bool
 		expectedInternalPaths []string
 	}{
+		{`internal`, false, []string{}},
+
 		{`internal /internal`, false, []string{"/internal"}},
 
 		{`internal /internal1
 		  internal /internal2`, false, []string{"/internal1", "/internal2"}},
+
+		{`internal /internal1 /internal2`, true, nil},
 	}
 	for i, test := range tests {
 		actualInternalPaths, err := internalParse(caddy.NewTestController("http", test.inputInternalPaths))

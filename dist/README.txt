@@ -1,10 +1,10 @@
-CADDY 0.10
+CADDY 0.10.7
 
 Website
 	https://caddyserver.com
 
-Community
-	https://forum.caddyserver.com
+Community Forum
+	https://caddy.community
 
 Twitter
 	@caddyserver

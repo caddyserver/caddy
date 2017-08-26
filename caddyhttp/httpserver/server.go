@@ -4,12 +4,15 @@ package httpserver
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"path"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -54,6 +57,16 @@ func makeTLSConfig(group []*SiteConfig) (*tls.Config, error) {
 	return caddytls.MakeTLSConfig(tlsConfigs)
 }
 
+func getFallbacks(sites []*SiteConfig) []string {
+	fallbacks := []string{}
+	for _, sc := range sites {
+		if sc.FallbackSite {
+			fallbacks = append(fallbacks, sc.Addr.Host)
+		}
+	}
+	return fallbacks
+}
+
 // NewServer creates a new Server instance that will listen on addr
 // and will serve the sites configured in group.
 func NewServer(addr string, group []*SiteConfig) (*Server, error) {
@@ -63,6 +76,8 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 		sites:       group,
 		connTimeout: GracefulTimeout,
 	}
+	s.vhosts.fallbackHosts = append(s.vhosts.fallbackHosts, getFallbacks(group)...)
+	s.Server = makeHTTPServerWithHeaderLimit(s.Server, group)
 	s.Server.Handler = s // this is weird, but whatever
 
 	// extract TLS settings from each site config to build
@@ -73,14 +88,14 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 	}
 	s.Server.TLSConfig = tlsConfig
 
-	// Enable QUIC if desired
-	if QUIC {
-		s.quicServer = &h2quic.Server{Server: s.Server}
-		s.Server.Handler = s.wrapWithSvcHeaders(s.Server.Handler)
-	}
-
 	// if TLS is enabled, make sure we prepare the Server accordingly
 	if s.Server.TLSConfig != nil {
+		// enable QUIC if desired (requires HTTP/2)
+		if HTTP2 && QUIC {
+			s.quicServer = &h2quic.Server{Server: s.Server}
+			s.Server.Handler = s.wrapWithSvcHeaders(s.Server.Handler)
+		}
+
 		// wrap the HTTP handler with a handler that does MITM detection
 		tlsh := &tlsHandler{next: s.Server.Handler}
 		s.Server.Handler = tlsh // this needs to be the "outer" handler when Serve() is called, for type assertion
@@ -122,6 +137,32 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 	}
 
 	return s, nil
+}
+
+// makeHTTPServerWithHeaderLimit apply minimum header limit within a group to given http.Server
+func makeHTTPServerWithHeaderLimit(s *http.Server, group []*SiteConfig) *http.Server {
+	var min int64
+	for _, cfg := range group {
+		limit := cfg.Limits.MaxRequestHeaderSize
+		if limit == 0 {
+			continue
+		}
+
+		// not set yet
+		if min == 0 {
+			min = limit
+		}
+
+		// find a better one
+		if limit < min {
+			min = limit
+		}
+	}
+
+	if min > 0 {
+		s.MaxHeaderBytes = int(min)
+	}
+	return s
 }
 
 // makeHTTPServerWithTimeouts makes an http.Server from the group of
@@ -264,7 +305,7 @@ func (s *Server) Serve(ln net.Listener) error {
 	}
 
 	err := s.Server.Serve(ln)
-	if QUIC {
+	if s.quicServer != nil {
 		s.quicServer.Close()
 	}
 	return err
@@ -272,7 +313,7 @@ func (s *Server) Serve(ln net.Listener) error {
 
 // ServePacket serves QUIC requests on pc until it is closed.
 func (s *Server) ServePacket(pc net.PacketConn) error {
-	if QUIC {
+	if s.quicServer != nil {
 		err := s.quicServer.Serve(pc.(*net.UDPConn))
 		return fmt.Errorf("serving QUIC connections: %v", err)
 	}
@@ -290,11 +331,18 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	w.Header().Set("Server", "Caddy")
-	c := context.WithValue(r.Context(), staticfiles.URLPathCtxKey, r.URL.Path)
+	// copy the original, unchanged URL into the context
+	// so it can be referenced by middlewares
+	urlCopy := *r.URL
+	if r.URL.User != nil {
+		userInfo := new(url.Userinfo)
+		*userInfo = *r.URL.User
+		urlCopy.User = userInfo
+	}
+	c := context.WithValue(r.Context(), OriginalURLCtxKey, urlCopy)
 	r = r.WithContext(c)
 
-	sanitizePath(r)
+	w.Header().Set("Server", caddy.AppName)
 
 	status, _ := s.serveHTTP(w, r)
 
@@ -315,6 +363,8 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 
 	// look up the virtualhost; if no match, serve error
 	vhost, pathPrefix := s.vhosts.Match(hostname + r.URL.Path)
+	c := context.WithValue(r.Context(), caddy.CtxKey("path_prefix"), pathPrefix)
+	r = r.WithContext(c)
 
 	if vhost == nil {
 		// check for ACME challenge even if vhost is nil;
@@ -327,7 +377,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 		if err != nil {
 			remoteHost = r.RemoteAddr
 		}
-		WriteTextResponse(w, http.StatusNotFound, "No such site at "+s.Server.Addr)
+		WriteSiteNotFound(w, r) // don't add headers outside of this function
 		log.Printf("[INFO] %s - No such site at %s (Remote: %s, Referer: %s)",
 			hostname, s.Server.Addr, remoteHost, r.Header.Get("Referer"))
 		return 0, nil
@@ -346,19 +396,6 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 		r.URL.Path = strings.TrimPrefix(r.URL.Path, pathPrefix)
 		if !strings.HasPrefix(r.URL.Path, "/") {
 			r.URL.Path = "/" + r.URL.Path
-		}
-	}
-
-	// Apply the path-based request body size limit
-	// The error returned by MaxBytesReader is meant to be handled
-	// by whichever middleware/plugin that receives it when calling
-	// .Read() or a similar method on the request body
-	if r.Body != nil {
-		for _, pathlimit := range vhost.MaxRequestBodySizes {
-			if Path(r.URL.Path).Matches(pathlimit.Path) {
-				r.Body = MaxBytesReader(w, r.Body, pathlimit.Limit)
-				break
-			}
 		}
 	}
 
@@ -407,28 +444,6 @@ func (s *Server) Stop() error {
 	return nil
 }
 
-// sanitizePath collapses any ./ ../ /// madness which helps prevent
-// path traversal attacks. Note to middleware: use the value within the
-// request's context at key caddy.URLPathContextKey to access the
-// "original" URL.Path value.
-func sanitizePath(r *http.Request) {
-	if r.URL.Path == "/" {
-		return
-	}
-	cleanedPath := CleanPath(r.URL.Path)
-	if cleanedPath == "." {
-		r.URL.Path = "/"
-	} else {
-		if !strings.HasPrefix(cleanedPath, "/") {
-			cleanedPath = "/" + cleanedPath
-		}
-		if strings.HasSuffix(r.URL.Path, "/") && !strings.HasSuffix(cleanedPath, "/") {
-			cleanedPath = cleanedPath + "/"
-		}
-		r.URL.Path = cleanedPath
-	}
-}
-
 // OnStartupComplete lists the sites served by this server
 // and any relevant information, assuming caddy.Quiet == false.
 func (s *Server) OnStartupComplete() {
@@ -446,9 +461,9 @@ func (s *Server) OnStartupComplete() {
 }
 
 // defaultTimeouts stores the default timeout values to use
-// if left unset by user configuration. NOTE: Default timeouts
-// are disabled (see issue #1464).
-var defaultTimeouts Timeouts
+// if left unset by user configuration. NOTE: Most default
+// timeouts are disabled (see issues #1464 and #1733).
+var defaultTimeouts = Timeouts{IdleTimeout: 5 * time.Minute}
 
 // tcpKeepAliveListener sets TCP keep-alive timeouts on accepted
 // connections. It's used by ListenAndServe and ListenAndServeTLS so
@@ -476,78 +491,27 @@ func (ln tcpKeepAliveListener) File() (*os.File, error) {
 	return ln.TCPListener.File()
 }
 
-// MaxBytesExceeded is the error type returned by MaxBytesReader
+// ErrMaxBytesExceeded is the error returned by MaxBytesReader
 // when the request body exceeds the limit imposed
-type MaxBytesExceeded struct{}
-
-func (err MaxBytesExceeded) Error() string {
-	return "http: request body too large"
-}
-
-// MaxBytesReader and its associated methods are borrowed from the
-// Go Standard library (comments intact). The only difference is that
-// it returns a MaxBytesExceeded error instead of a generic error message
-// when the request body has exceeded the requested limit
-func MaxBytesReader(w http.ResponseWriter, r io.ReadCloser, n int64) io.ReadCloser {
-	return &maxBytesReader{w: w, r: r, n: n}
-}
-
-type maxBytesReader struct {
-	w   http.ResponseWriter
-	r   io.ReadCloser // underlying reader
-	n   int64         // max bytes remaining
-	err error         // sticky error
-}
-
-func (l *maxBytesReader) Read(p []byte) (n int, err error) {
-	if l.err != nil {
-		return 0, l.err
-	}
-	if len(p) == 0 {
-		return 0, nil
-	}
-	// If they asked for a 32KB byte read but only 5 bytes are
-	// remaining, no need to read 32KB. 6 bytes will answer the
-	// question of the whether we hit the limit or go past it.
-	if int64(len(p)) > l.n+1 {
-		p = p[:l.n+1]
-	}
-	n, err = l.r.Read(p)
-
-	if int64(n) <= l.n {
-		l.n -= int64(n)
-		l.err = err
-		return n, err
-	}
-
-	n = int(l.n)
-	l.n = 0
-
-	// The server code and client code both use
-	// maxBytesReader. This "requestTooLarge" check is
-	// only used by the server code. To prevent binaries
-	// which only using the HTTP Client code (such as
-	// cmd/go) from also linking in the HTTP server, don't
-	// use a static type assertion to the server
-	// "*response" type. Check this interface instead:
-	type requestTooLarger interface {
-		requestTooLarge()
-	}
-	if res, ok := l.w.(requestTooLarger); ok {
-		res.requestTooLarge()
-	}
-	l.err = MaxBytesExceeded{}
-	return n, l.err
-}
-
-func (l *maxBytesReader) Close() error {
-	return l.r.Close()
-}
+var ErrMaxBytesExceeded = errors.New("http: request body too large")
 
 // DefaultErrorFunc responds to an HTTP request with a simple description
 // of the specified HTTP status code.
 func DefaultErrorFunc(w http.ResponseWriter, r *http.Request, status int) {
 	WriteTextResponse(w, status, fmt.Sprintf("%d %s\n", status, http.StatusText(status)))
+}
+
+const httpStatusMisdirectedRequest = 421 // RFC 7540, 9.1.2
+
+// WriteSiteNotFound writes appropriate error code to w, signaling that
+// requested host is not served by Caddy on a given port.
+func WriteSiteNotFound(w http.ResponseWriter, r *http.Request) {
+	status := http.StatusNotFound
+	if r.ProtoMajor >= 2 {
+		// TODO: use http.StatusMisdirectedRequest when it gets defined
+		status = httpStatusMisdirectedRequest
+	}
+	WriteTextResponse(w, status, fmt.Sprintf("%d Site %s is not served on this interface\n", status, r.Host))
 }
 
 // WriteTextResponse writes body with code status to w. The body will
@@ -558,3 +522,20 @@ func WriteTextResponse(w http.ResponseWriter, status int, body string) {
 	w.WriteHeader(status)
 	w.Write([]byte(body))
 }
+
+// SafePath joins siteRoot and reqPath and converts it to a path that can
+// be used to access a path on the local disk. It ensures the path does
+// not traverse outside of the site root.
+//
+// If opening a file, use http.Dir instead.
+func SafePath(siteRoot, reqPath string) string {
+	reqPath = filepath.ToSlash(reqPath)
+	reqPath = strings.Replace(reqPath, "\x00", "", -1) // NOTE: Go 1.9 checks for null bytes in the syscall package
+	if siteRoot == "" {
+		siteRoot = "."
+	}
+	return filepath.Join(siteRoot, filepath.FromSlash(path.Clean("/"+reqPath)))
+}
+
+// OriginalURLCtxKey is the key for accessing the original, incoming URL on an HTTP request.
+const OriginalURLCtxKey = caddy.CtxKey("original_url")

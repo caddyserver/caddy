@@ -1,4 +1,4 @@
-// +build !windows
+// +build !windows,!plan9,!nacl
 
 package caddy
 
@@ -13,7 +13,7 @@ import (
 func trapSignalsPosix() {
 	go func() {
 		sigchan := make(chan os.Signal, 1)
-		signal.Notify(sigchan, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT, syscall.SIGUSR1)
+		signal.Notify(sigchan, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT, syscall.SIGUSR1, syscall.SIGUSR2)
 
 		for sig := range sigchan {
 			switch sig {
@@ -30,7 +30,7 @@ func trapSignalsPosix() {
 				err := Stop()
 				if err != nil {
 					log.Printf("[ERROR] SIGQUIT stop: %v", err)
-					exitCode = 1
+					exitCode = 3
 				}
 				if PidFile != "" {
 					os.Remove(PidFile)
@@ -48,19 +48,9 @@ func trapSignalsPosix() {
 				log.Println("[INFO] SIGUSR1: Reloading")
 
 				// Start with the existing Caddyfile
-				instancesMu.Lock()
-				if len(instances) == 0 {
-					instancesMu.Unlock()
-					log.Println("[ERROR] SIGUSR1: No server instances are fully running")
-					continue
-				}
-				inst := instances[0] // we only support one instance at this time
-				instancesMu.Unlock()
-
-				updatedCaddyfile := inst.caddyfileInput
-				if updatedCaddyfile == nil {
-					// Hmm, did spawing process forget to close stdin? Anyhow, this is unusual.
-					log.Println("[ERROR] SIGUSR1: no Caddyfile to reload (was stdin left open?)")
+				caddyfileToUse, inst, err := getCurrentCaddyfile()
+				if err != nil {
+					log.Printf("[ERROR] SIGUSR1: %v", err)
 					continue
 				}
 				if loaderUsed.loader == nil {
@@ -76,13 +66,19 @@ func trapSignalsPosix() {
 					continue
 				}
 				if newCaddyfile != nil {
-					updatedCaddyfile = newCaddyfile
+					caddyfileToUse = newCaddyfile
 				}
 
 				// Kick off the restart; our work is done
-				inst, err = inst.Restart(updatedCaddyfile)
+				inst, err = inst.Restart(caddyfileToUse)
 				if err != nil {
 					log.Printf("[ERROR] SIGUSR1: %v", err)
+				}
+
+			case syscall.SIGUSR2:
+				log.Println("[INFO] SIGUSR2: Upgrading")
+				if err := Upgrade(); err != nil {
+					log.Printf("[ERROR] SIGUSR2: upgrading: %v", err)
 				}
 			}
 		}

@@ -2,6 +2,7 @@
 package proxy
 
 import (
+	"context"
 	"errors"
 	"net"
 	"net/http"
@@ -103,7 +104,8 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	replacer := httpserver.NewReplacer(r, nil, "")
 
 	// outreq is the request that makes a roundtrip to the backend
-	outreq := createUpstreamRequest(r)
+	outreq, cancel := createUpstreamRequest(w, r)
+	defer cancel()
 
 	// If we have more than one upstream host defined and if retrying is enabled
 	// by setting try_duration to a non-zero value, caddy will try to
@@ -131,7 +133,11 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	// loop and try to select another host, or false if we
 	// should break and stop retrying.
 	start := time.Now()
-	keepRetrying := func() bool {
+	keepRetrying := func(backendErr error) bool {
+		// if downstream has canceled the request, break
+		if backendErr == context.Canceled {
+			return false
+		}
 		// if we've tried long enough, break
 		if time.Since(start) >= upstream.GetTryDuration() {
 			return false
@@ -150,7 +156,7 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			if backendErr == nil {
 				backendErr = errors.New("no hosts available upstream")
 			}
-			if !keepRetrying() {
+			if !keepRetrying(backendErr) {
 				break
 			}
 			continue
@@ -222,7 +228,7 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			return 0, nil
 		}
 
-		if _, ok := backendErr.(httpserver.MaxBytesExceeded); ok {
+		if backendErr == httpserver.ErrMaxBytesExceeded {
 			return http.StatusRequestEntityTooLarge, backendErr
 		}
 
@@ -238,7 +244,7 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 		}
 
 		// if we've tried long enough, break
-		if !keepRetrying() {
+		if !keepRetrying(backendErr) {
 			break
 		}
 	}
@@ -267,9 +273,23 @@ func (p Proxy) match(r *http.Request) Upstream {
 // that can be sent upstream.
 //
 // Derived from reverseproxy.go in the standard Go httputil package.
-func createUpstreamRequest(r *http.Request) *http.Request {
-	outreq := new(http.Request)
-	*outreq = *r // includes shallow copies of maps, but okay
+func createUpstreamRequest(rw http.ResponseWriter, r *http.Request) (*http.Request, context.CancelFunc) {
+	// Original incoming server request may be canceled by the
+	// user or by std lib(e.g. too many idle connections).
+	ctx, cancel := context.WithCancel(r.Context())
+	if cn, ok := rw.(http.CloseNotifier); ok {
+		notifyChan := cn.CloseNotify()
+		go func() {
+			select {
+			case <-notifyChan:
+				cancel()
+			case <-ctx.Done():
+			}
+		}()
+	}
+
+	outreq := r.WithContext(ctx) // includes shallow copies of maps, but okay
+
 	// We should set body to nil explicitly if request body is empty.
 	// For server requests the Request Body is always non-nil.
 	if r.ContentLength == 0 {
@@ -319,7 +339,7 @@ func createUpstreamRequest(r *http.Request) *http.Request {
 		outreq.Header.Set("X-Forwarded-For", clientIP)
 	}
 
-	return outreq
+	return outreq, cancel
 }
 
 func createRespHeaderUpdateFn(rules http.Header, replacer httpserver.Replacer) respUpdateFn {

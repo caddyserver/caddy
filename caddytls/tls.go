@@ -140,9 +140,18 @@ func QualifiesForManagedTLS(c ConfigHolder) bool {
 		(HostQualifies(c.Host()) || tlsConfig.OnDemand)
 }
 
+// ChallengeProvider defines an own type that should be used in Caddy plugins
+// over acme.ChallengeProvider. Using acme.ChallengeProvider causes version mismatches
+// with vendored dependencies (see https://github.com/mattfarina/golang-broken-vendor)
+//
+// acme.ChallengeProvider is an interface that allows the implementation of custom
+// challenge providers. For more details, see:
+// https://godoc.org/github.com/xenolf/lego/acme#ChallengeProvider
+type ChallengeProvider acme.ChallengeProvider
+
 // DNSProviderConstructor is a function that takes credentials and
 // returns a type that can solve the ACME DNS challenges.
-type DNSProviderConstructor func(credentials ...string) (acme.ChallengeProvider, error)
+type DNSProviderConstructor func(credentials ...string) (ChallengeProvider, error)
 
 // dnsProviders is the list of DNS providers that have been plugged in.
 var dnsProviders = make(map[string]DNSProviderConstructor)

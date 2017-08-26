@@ -1,5 +1,70 @@
 CHANGES
 
+0.10.7 (August 25, 2017)
+- Built with Go 1.9
+- New 3rd-party plugin directives: jekyll, awses, forwardproxy
+- Different exit codes
+- Plan 9 support
+- Graceful binary upgrades with SIGUSR2
+- internal: Support X-Accel-Redir without paths to protect
+- templates: Can execute templates loaded by other middleware
+- A few really good bug fixes
+
+
+0.10.6 (July 28, 2017)
+- fastcgi: Fix runtime error for 32-bit and ARM architectures
+
+
+0.10.5 (July 27, 2017)
+- Renamed requestid directive to request_id
+- Set default idle timeout of 5 minutes
+- New 3rd-party plugin directives: cache, nobots, webdav
+- New Unix timestamp placeholder {when_unix}
+- Improved MITM detection on iOS clients
+- errors, log: Fix log rolling parsing
+- gzip: Convert any ETag header to weak etag
+- fastcgi: Reverted persistent connections (issue #1736)
+- proxy: Added header loaded balancing policy
+- proxy: Fix hang on chunked WebSockets (e.g. with HomeAssistant)
+- Several other bug fixes and minor internal improvements
+
+
+0.10.4 (June 28, 2017)
+- Vendor all dependencies
+- Improve MITM detection, add experimental Tor browser support
+- New requestid directive to add request IDs to each request
+- New HTTP plugins supported: authz, grpc, gopkg, reauth, restic
+- browse: Refreshed default UI and added symlink indicators
+- errors, log: Added rotate_compress directive to compress rolled logs
+- markdown: Template files loaded at each request instead of just once
+- proxy: Allow multiple Server header fields on downstream response
+- proxy: Perform health checks by body substring
+- rewrite,redir: Added 'not_starts_with' and 'not_ends_with' operators
+- tls: New ca subdirective to specify CA endpoint per-site
+- Several bug fixes
+
+
+0.10.3 (May 19, 2017)
+- Replace 'maxrequestbody' directive with 'limits' directive
+- proxy: Configurable port for health check
+- proxy: New load balance policy: uri_hash
+- templates: Renamed .Push context action to .AddLink
+- tls: Allow narrower certificate renewal window at startup (#1680)
+- tls: Prefer ChaCha20 if hardware does not have AES-NI
+
+
+0.10.2 (May 2, 2017)
+- Hot fix for rule paths of "/" so that they match every request
+- fastcgi: Match request paths that don't start with "/" even if rule does
+
+
+0.10.1 (May 1, 2017)
+- Reduced memory usage for gzip, templates, and MITM detection
+- Fixed automatic HTTP->HTTPS redirects for sites with wildcard labels
+- proxy: Fix 'without' subdirective
+- A few other minor bug fixes and improvements
+
+
 0.10 (April 20, 2017)
 - Built on Go 1.8.1
 - HTTPS interception detection

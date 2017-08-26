@@ -53,6 +53,9 @@ type Config struct {
 
 	// Template(s) to render with
 	Template *template.Template
+
+	// a pair of template's name and its underlying file path
+	TemplateFiles map[string]string
 }
 
 // ServeHTTP implements the http.Handler interface.
@@ -133,11 +136,10 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 	}
 	lastModTime = latest(lastModTime, fs.ModTime())
 
-	ctx := httpserver.Context{
-		Root: md.FileSys,
-		Req:  r,
-		URL:  r.URL,
-	}
+	ctx := httpserver.NewContextWithHeader(w.Header())
+	ctx.Root = md.FileSys
+	ctx.Req = r
+	ctx.URL = r.URL
 	html, err := cfg.Markdown(title(fpath), f, dirents, ctx)
 	if err != nil {
 		return http.StatusInternalServerError, err

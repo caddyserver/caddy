@@ -17,6 +17,7 @@ package caddy
 
 import (
 	"bytes"
+	"encoding/gob"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -51,7 +52,7 @@ var (
 	// isUpgrade will be set to true if this process
 	// was started as part of an upgrade, where a parent
 	// Caddy process started this one.
-	isUpgrade bool
+	isUpgrade = os.Getenv("CADDY__UPGRADE") == "1"
 
 	// started will be set to true when the first
 	// instance is started; it never gets set to
@@ -360,6 +361,16 @@ type AfterStartup interface {
 // is returned. Consequently, this function never returns a nil
 // value as long as there are no errors.
 func LoadCaddyfile(serverType string) (Input, error) {
+	// If we are finishing an upgrade, we must obtain the Caddyfile
+	// from our parent process, regardless of configured loaders.
+	if IsUpgrade() {
+		err := gob.NewDecoder(os.Stdin).Decode(&loadedGob)
+		if err != nil {
+			return nil, err
+		}
+		return loadedGob.Caddyfile, nil
+	}
+
 	// Ask plugged-in loaders for a Caddyfile
 	cdyfile, err := loadCaddyfileInput(serverType)
 	if err != nil {
@@ -424,9 +435,16 @@ func (i *Instance) Caddyfile() Input {
 //
 // This function blocks until all the servers are listening.
 func Start(cdyfile Input) (*Instance, error) {
-	writePidFile()
 	inst := &Instance{serverType: cdyfile.ServerType(), wg: new(sync.WaitGroup)}
-	return inst, startWithListenerFds(cdyfile, inst, nil)
+	err := startWithListenerFds(cdyfile, inst, nil)
+	if err != nil {
+		return inst, err
+	}
+	signalSuccessToParent()
+	if pidErr := writePidFile(); pidErr != nil {
+		log.Printf("[ERROR] Could not write pidfile: %v", pidErr)
+	}
+	return inst, nil
 }
 
 func startWithListenerFds(cdyfile Input, inst *Instance, restartFds map[string]restartTriple) error {
@@ -445,7 +463,8 @@ func startWithListenerFds(cdyfile Input, inst *Instance, restartFds map[string]r
 	}
 
 	// run startup callbacks
-	if restartFds == nil {
+	if !IsUpgrade() && restartFds == nil {
+		// first startup means not a restart or upgrade
 		for _, firstStartupFunc := range inst.onFirstStartup {
 			err := firstStartupFunc()
 			if err != nil {
@@ -500,7 +519,6 @@ func startWithListenerFds(cdyfile Input, inst *Instance, restartFds map[string]r
 // callbacks will not be executed between directives, since the purpose
 // is only to check the input for valid syntax.
 func ValidateAndExecuteDirectives(cdyfile Input, inst *Instance, justValidate bool) error {
-
 	// If parsing only inst will be nil, create an instance for this function call only.
 	if justValidate {
 		inst = &Instance{serverType: cdyfile.ServerType(), wg: new(sync.WaitGroup)}
@@ -536,7 +554,6 @@ func ValidateAndExecuteDirectives(cdyfile Input, inst *Instance, justValidate bo
 	}
 
 	return nil
-
 }
 
 func executeDirectives(inst *Instance, filename string,
@@ -615,6 +632,30 @@ func startServers(serverList []Server, inst *Instance, restartFds map[string]res
 			pc  net.PacketConn
 			err error
 		)
+
+		// if performing an upgrade, obtain listener file descriptors
+		// from parent process
+		if IsUpgrade() {
+			if gs, ok := s.(GracefulServer); ok {
+				addr := gs.Address()
+				if fdIndex, ok := loadedGob.ListenerFds["tcp"+addr]; ok {
+					file := os.NewFile(fdIndex, "")
+					ln, err = net.FileListener(file)
+					file.Close()
+					if err != nil {
+						return err
+					}
+				}
+				if fdIndex, ok := loadedGob.ListenerFds["udp"+addr]; ok {
+					file := os.NewFile(fdIndex, "")
+					pc, err = net.FilePacketConn(file)
+					file.Close()
+					if err != nil {
+						return err
+					}
+				}
+			}
+		}
 
 		// If this is a reload and s is a GracefulServer,
 		// reuse the listener for a graceful restart.
@@ -768,7 +809,7 @@ func IsLoopback(addr string) bool {
 // be an IP or an IP:port combination.
 // Loopback addresses are considered false.
 func IsInternal(addr string) bool {
-	private_networks := []string{
+	privateNetworks := []string{
 		"10.0.0.0/8",
 		"172.16.0.0/12",
 		"192.168.0.0/16",
@@ -777,38 +818,22 @@ func IsInternal(addr string) bool {
 
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
-		host = addr // happens if the addr is just a hostname
+		host = addr // happens if the addr is just a hostname, missing port
+		// if we encounter an error, the brackets need to be stripped
+		// because SplitHostPort didn't do it for us
+		host = strings.Trim(host, "[]")
 	}
 	ip := net.ParseIP(host)
 	if ip == nil {
 		return false
 	}
-	for _, private_network := range private_networks {
-		_, ipnet, _ := net.ParseCIDR(private_network)
+	for _, privateNetwork := range privateNetworks {
+		_, ipnet, _ := net.ParseCIDR(privateNetwork)
 		if ipnet.Contains(ip) {
 			return true
 		}
 	}
 	return false
-}
-
-// Upgrade re-launches the process, preserving the listeners
-// for a graceful restart. It does NOT load new configuration;
-// it only starts the process anew with a fresh binary.
-//
-// TODO: This is not yet implemented
-func Upgrade() error {
-	return fmt.Errorf("not implemented")
-	// TODO: have child process set isUpgrade = true
-}
-
-// IsUpgrade returns true if this process is part of an upgrade
-// where a parent caddy process spawned this one to upgrade
-// the binary.
-func IsUpgrade() bool {
-	mu.Lock()
-	defer mu.Unlock()
-	return isUpgrade
 }
 
 // Started returns true if at least one instance has been

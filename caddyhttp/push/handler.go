@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/mholt/caddy/caddyhttp/httpserver"
+	"github.com/mholt/caddy/caddyhttp/staticfiles"
 )
 
 func (h Middleware) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
@@ -25,7 +26,13 @@ func (h Middleware) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, erro
 	// push first
 outer:
 	for _, rule := range h.Rules {
-		if httpserver.Path(r.URL.Path).Matches(rule.Path) {
+		urlPath := r.URL.Path
+		matches := httpserver.Path(urlPath).Matches(rule.Path)
+		// Also check IndexPages when requesting a directory
+		if !matches {
+			_, matches = httpserver.IndexFile(h.Root, urlPath, staticfiles.IndexPages)
+		}
+		if matches {
 			for _, resource := range rule.Resources {
 				pushErr := pusher.Push(resource.Path, &http.PushOptions{
 					Method: resource.Method,

@@ -33,7 +33,7 @@ func TestLengthFilter(t *testing.T) {
 		for j, filter := range filters {
 			r := httptest.NewRecorder()
 			r.Header().Set("Content-Length", fmt.Sprint(ts.length))
-			wWriter := NewResponseFilterWriter([]ResponseFilter{filter}, &gzipResponseWriter{gzip.NewWriter(r), r, false})
+			wWriter := NewResponseFilterWriter([]ResponseFilter{filter}, &gzipResponseWriter{gzip.NewWriter(r), &httpserver.ResponseWriterWrapper{ResponseWriter: r}, false})
 			if filter.ShouldCompress(wWriter) != ts.shouldCompress[j] {
 				t.Errorf("Test %v: Expected %v found %v", i, ts.shouldCompress[j], filter.ShouldCompress(r))
 			}

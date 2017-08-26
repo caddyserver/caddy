@@ -238,37 +238,27 @@ func (r *replacer) getSubstitution(key string) string {
 		}
 		return host
 	case "{path}":
-		// if a rewrite has happened, the original URI should be used as the path
-		// rather than the rewritten URI
-		var path string
-		origpath, _ := r.request.Context().Value(URIxRewriteCtxKey).(string)
-		if origpath == "" {
-			path = r.request.URL.Path
-		} else {
-			parsedURL, _ := url.Parse(origpath)
-			path = parsedURL.Path
-		}
-		return path
+		u, _ := r.request.Context().Value(OriginalURLCtxKey).(url.URL)
+		return u.Path
 	case "{path_escaped}":
-		var path string
-		origpath, _ := r.request.Context().Value(URIxRewriteCtxKey).(string)
-		if origpath == "" {
-			path = r.request.URL.Path
-		} else {
-			parsedURL, _ := url.Parse(origpath)
-			path = parsedURL.Path
-		}
-		return url.QueryEscape(path)
+		u, _ := r.request.Context().Value(OriginalURLCtxKey).(url.URL)
+		return url.QueryEscape(u.Path)
+	case "{request_id}":
+		reqid, _ := r.request.Context().Value(RequestIDCtxKey).(string)
+		return reqid
 	case "{rewrite_path}":
 		return r.request.URL.Path
 	case "{rewrite_path_escaped}":
 		return url.QueryEscape(r.request.URL.Path)
 	case "{query}":
-		return r.request.URL.RawQuery
+		u, _ := r.request.Context().Value(OriginalURLCtxKey).(url.URL)
+		return u.RawQuery
 	case "{query_escaped}":
-		return url.QueryEscape(r.request.URL.RawQuery)
+		u, _ := r.request.Context().Value(OriginalURLCtxKey).(url.URL)
+		return url.QueryEscape(u.RawQuery)
 	case "{fragment}":
-		return r.request.URL.Fragment
+		u, _ := r.request.Context().Value(OriginalURLCtxKey).(url.URL)
+		return u.Fragment
 	case "{proto}":
 		return r.request.Proto
 	case "{remote}":
@@ -284,17 +274,11 @@ func (r *replacer) getSubstitution(key string) string {
 		}
 		return port
 	case "{uri}":
-		uri, _ := r.request.Context().Value(URIxRewriteCtxKey).(string)
-		if uri == "" {
-			uri = r.request.URL.RequestURI()
-		}
-		return uri
+		u, _ := r.request.Context().Value(OriginalURLCtxKey).(url.URL)
+		return u.RequestURI()
 	case "{uri_escaped}":
-		uri, _ := r.request.Context().Value(URIxRewriteCtxKey).(string)
-		if uri == "" {
-			uri = r.request.URL.RequestURI()
-		}
-		return url.QueryEscape(uri)
+		u, _ := r.request.Context().Value(OriginalURLCtxKey).(url.URL)
+		return url.QueryEscape(u.RequestURI())
 	case "{rewrite_uri}":
 		return r.request.URL.RequestURI()
 	case "{rewrite_uri_escaped}":
@@ -303,6 +287,8 @@ func (r *replacer) getSubstitution(key string) string {
 		return now().Format(timeFormat)
 	case "{when_iso}":
 		return now().UTC().Format(timeFormatISOUTC)
+	case "{when_unix}":
+		return strconv.FormatInt(now().Unix(), 10)
 	case "{file}":
 		_, file := path.Split(r.request.URL.Path)
 		return file
@@ -321,7 +307,7 @@ func (r *replacer) getSubstitution(key string) string {
 		}
 		_, err := ioutil.ReadAll(r.request.Body)
 		if err != nil {
-			if _, ok := err.(MaxBytesExceeded); ok {
+			if err == ErrMaxBytesExceeded {
 				return r.emptyValue
 			}
 		}
@@ -330,9 +316,8 @@ func (r *replacer) getSubstitution(key string) string {
 		if val, ok := r.request.Context().Value(caddy.CtxKey("mitm")).(bool); ok {
 			if val {
 				return "likely"
-			} else {
-				return "unlikely"
 			}
+			return "unlikely"
 		}
 		return "unknown"
 	case "{status}":

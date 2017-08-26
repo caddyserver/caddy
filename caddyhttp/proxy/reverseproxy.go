@@ -12,7 +12,6 @@
 package proxy
 
 import (
-	"context"
 	"crypto/tls"
 	"io"
 	"net"
@@ -119,9 +118,7 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int) *
 			req.URL.Host = target.Host
 		}
 
-		// We should remove the `without` prefix at first.
-		// TODO(mholt): See #1582 (and below)
-		// untouchedPath, _ := req.Context().Value(staticfiles.URLPathCtxKey).(string)
+		// remove the `without` prefix
 		if without != "" {
 			req.URL.Path = strings.TrimPrefix(req.URL.Path, without)
 			if req.URL.Opaque != "" {
@@ -130,10 +127,6 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int) *
 			if req.URL.RawPath != "" {
 				req.URL.RawPath = strings.TrimPrefix(req.URL.RawPath, without)
 			}
-			// TODO(mholt): See #1582 (and above)
-			// if untouchedPath != "" {
-			// 	untouchedPath = strings.TrimPrefix(untouchedPath, without)
-			// }
 		}
 
 		// prefer returns val if it isn't empty, otherwise def
@@ -143,6 +136,7 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int) *
 			}
 			return def
 		}
+
 		// Make up the final URL by concatenating the request and target URL.
 		//
 		// If there is encoded part in request or target URL,
@@ -252,14 +246,6 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, 
 
 	rp.Director(outreq)
 
-	// Original incoming server request may be canceled by the
-	// user or by std lib(e.g. too many idle connections).
-	// Now we issue the new outgoing client request which
-	// doesn't depend on the original one. (issue 1345)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	outreq = outreq.WithContext(ctx)
-
 	res, err := transport.RoundTrip(outreq)
 	if err != nil {
 		return err
@@ -286,7 +272,7 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, 
 	}
 
 	if isWebsocket {
-		res.Body.Close()
+		defer res.Body.Close()
 		hj, ok := rw.(http.Hijacker)
 		if !ok {
 			panic(httpserver.NonHijackerError{Underlying: rw})
@@ -332,30 +318,61 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, 
 		}
 		pooledIoCopy(backendConn, conn)
 	} else {
+		// NOTE:
+		//   Closing the Body involves acquiring a mutex, which is a
+		//   unnecessarily heavy operation, considering that this defer will
+		//   pretty much never be executed with the Body still unclosed.
+		bodyOpen := true
+		closeBody := func() {
+			if bodyOpen {
+				res.Body.Close()
+				bodyOpen = false
+			}
+		}
+		defer closeBody()
+
+		// Copy all headers over.
+		// res.Header does not include the "Trailer" header,
+		// which means we will have to do that manually below.
 		copyHeader(rw.Header(), res.Header)
 
-		// The "Trailer" header isn't included in the Transport's response,
-		// at least for *http.Transport. Build it up from Trailer.
-		if len(res.Trailer) > 0 {
-			trailerKeys := make([]string, 0, len(res.Trailer))
+		// The "Trailer" header isn't included in res' Header map, which
+		// is why we have to build one ourselves from res.Trailer.
+		//
+		// But res.Trailer does not necessarily contain all trailer keys at this
+		// point yet. The HTTP spec allows one to send "unannounced trailers"
+		// after a request and certain systems like gRPC make use of that.
+		announcedTrailerKeyCount := len(res.Trailer)
+		if announcedTrailerKeyCount > 0 {
+			vv := make([]string, 0, announcedTrailerKeyCount)
 			for k := range res.Trailer {
-				trailerKeys = append(trailerKeys, k)
+				vv = append(vv, k)
 			}
-			rw.Header().Add("Trailer", strings.Join(trailerKeys, ", "))
+			rw.Header()["Trailer"] = vv
 		}
 
+		// Now copy over the status code as well as the response body.
 		rw.WriteHeader(res.StatusCode)
-		if len(res.Trailer) > 0 {
+		if announcedTrailerKeyCount > 0 {
 			// Force chunking if we saw a response trailer.
-			// This prevents net/http from calculating the length for short
-			// bodies and adding a Content-Length.
+			// This prevents net/http from calculating the length
+			// for short bodies and adding a Content-Length.
 			if fl, ok := rw.(http.Flusher); ok {
 				fl.Flush()
 			}
 		}
 		rp.copyResponse(rw, res.Body)
-		res.Body.Close() // close now, instead of defer, to populate res.Trailer
-		copyHeader(rw.Header(), res.Trailer)
+
+		// Now close the body to fully populate res.Trailer.
+		closeBody()
+
+		// Since Go does not remove keys from res.Trailer we
+		// can safely do a length comparison to check wether
+		// we received further, unannounced trailers.
+		//
+		// Most of the time forceSetTrailers should be false.
+		forceSetTrailers := len(res.Trailer) != announcedTrailerKeyCount
+		shallowCopyTrailers(rw.Header(), res.Trailer, forceSetTrailers)
 	}
 
 	return nil
@@ -396,12 +413,32 @@ func copyHeader(dst, src http.Header) {
 			if _, shouldSkip := skipHeaders[k]; shouldSkip {
 				continue
 			}
-			// otherwise, overwrite
-			dst.Del(k)
+			// otherwise, overwrite to avoid duplicated fields that can be
+			// problematic (see issue #1086) -- however, allow duplicate
+			// Server fields so we can see the reality of the proxying.
+			if k != "Server" {
+				dst.Del(k)
+			}
 		}
 		for _, v := range vv {
 			dst.Add(k, v)
 		}
+	}
+}
+
+// shallowCopyTrailers copies all headers from srcTrailer to dstHeader.
+//
+// If forceSetTrailers is set to true, the http.TrailerPrefix will be added to
+// all srcTrailer key names. Otherwise the Go stdlib will ignore all keys
+// which weren't listed in the Trailer map before submitting the Response.
+//
+// WARNING: Only a shallow copy will be created!
+func shallowCopyTrailers(dstHeader, srcTrailer http.Header, forceSetTrailers bool) {
+	for k, vv := range srcTrailer {
+		if forceSetTrailers {
+			k = http.TrailerPrefix + k
+		}
+		dstHeader[k] = vv
 	}
 }
 

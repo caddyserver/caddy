@@ -44,9 +44,14 @@ func activateHTTPS(cctx caddy.Context) error {
 	// renew all relevant certificates that need renewal. this is important
 	// to do right away so we guarantee that renewals aren't missed, and
 	// also the user can respond to any potential errors that occur.
-	err = caddytls.RenewManagedCertificates(true)
-	if err != nil {
-		return err
+	// (skip if upgrading, because the parent process is likely already listening
+	// on the ports we'd need to do ACME before we finish starting; parent process
+	// already running renewal ticker, so renewal won't be missed anyway.)
+	if !caddy.IsUpgrade() {
+		err = caddytls.RenewManagedCertificates(true)
+		if err != nil {
+			return err
+		}
 	}
 
 	if !caddy.Quiet && operatorPresent {
@@ -146,13 +151,20 @@ func redirPlaintextHost(cfg *SiteConfig) *SiteConfig {
 	}
 	redirMiddleware := func(next Handler) Handler {
 		return HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
+			// Construct the URL to which to redirect. Note that the Host in a request might
+			// contain a port, but we just need the hostname; we'll set the port if needed.
 			toURL := "https://"
+			requestHost, _, err := net.SplitHostPort(r.Host)
+			if err != nil {
+				requestHost = r.Host // Host did not contain a port; great
+			}
 			if redirPort == "" {
-				toURL += cfg.Addr.Host // don't use r.Host as it may have a port included
+				toURL += requestHost
 			} else {
-				toURL += net.JoinHostPort(cfg.Addr.Host, redirPort)
+				toURL += net.JoinHostPort(requestHost, redirPort)
 			}
 			toURL += r.URL.RequestURI()
+
 			w.Header().Set("Connection", "close")
 			http.Redirect(w, r, toURL, http.StatusMovedPermanently)
 			return 0, nil
