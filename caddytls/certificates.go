@@ -179,11 +179,7 @@ func makeCertificate(certPEMBlock, keyPEMBlock []byte, certificateTransparency b
 	if err != nil {
 		log.Printf("[WARNING] Stapling OCSP: %v", err)
 	}
-	// If the certificate or OCSP Response has embedded SCTs no need to fetch
-	// new ones. TODO: validate that these SCTs are still from trusted logs.
 	if certificateTransparency && certificateNeedsSCTs(&cert) {
-		// TODO: cache this somewhere for a while. Also, recheck occasionally,
-		// as we do for OCSP.
 		logs, err := getTrustedCTLogs()
 		if err != nil {
 			log.Printf("[WARNING] Fetching trusted CT logs: %v", err)
