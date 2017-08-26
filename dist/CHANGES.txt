@@ -2,9 +2,9 @@ CHANGES
 
 0.10.7 (August 25, 2017)
 - Built with Go 1.9
-- New 3rd-party plugin directives: jekyll, ases, forwardproxy
+- New 3rd-party plugin directives: jekyll, awses, forwardproxy
 - Different exit codes
-- Plan9 support
+- Plan 9 support
 - Graceful binary upgrades with SIGUSR2
 - internal: Support X-Accel-Redir without paths to protect
 - templates: Can execute templates loaded by other middleware
