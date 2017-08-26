@@ -323,7 +323,7 @@ func UpdateSCTs(existingLogs []ctLog) []ctLog {
 			if !cert.Config.CertificateTransparency {
 				continue
 			}
-			scts, err := getSCTSForCertificateChain(cert.Certificate, newLogs)
+			scts, err := getSCTSForCertificateChain(cert.Certificate.Certificate, newLogs)
 			if err != nil {
 				log.Println("[WARNING] Fetching SCTs: %v", err)
 			} else {
