@@ -2,6 +2,8 @@ package caddytls
 
 import (
 	"bytes"
+	"crypto/x509/pkix"
+	"encoding/asn1"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
