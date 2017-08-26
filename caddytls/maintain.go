@@ -346,7 +346,7 @@ func UpdateSCTs(existingLogs []ctLog) []ctLog {
 			}
 			scts, err := getSCTSForCertificateChain(cert.Certificate.Certificate, newLogs)
 			if err != nil {
-				log.Println("[WARNING] Fetching SCTs: %v", err)
+				log.Printf("[WARNING] Fetching SCTs: %v", err)
 			} else {
 				updates[name] = scts
 			}
