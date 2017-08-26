@@ -310,7 +310,11 @@ func freshOCSP(resp *ocsp.Response) bool {
 }
 
 func UpdateSCTs(existingLogs []ctLog) []ctLog {
-	newLogs := getTrustedCTLogs()
+	newLogs, err := getTrustedCTLogs()
+	if err != nil {
+		log.Printf("[WARNING] Fetching trusted CT logs: %v", err)
+		return existingLogs
+	}
 	if existingLogs == nil || !logListsEqual(existingLogs, newLogs) {
 		// For each cert, fetch SCTs and update the cert.
 		certCacheMu.RLock()
