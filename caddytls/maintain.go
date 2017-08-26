@@ -54,7 +54,7 @@ func maintainAssets(stopChan chan struct{}) {
 	ocspTicker := time.NewTicker(OCSPInterval)
 	sctTicker := time.NewTicker(SCTInterval)
 
-	ctLogs := make([]ctLog)
+	ctLogs := make([]ctLog, 0)
 
 	for {
 		select {
@@ -355,7 +355,9 @@ func UpdateSCTs(existingLogs []ctLog) []ctLog {
 
 		certCacheMu.Lock()
 		for name, scts := range updates {
-			certCache[name].Certificate.SignedCertificateTimestamps = scts
+			cert := certCache[name]
+			cert.Certificate.SignedCertificateTimestamps = scts
+			certCache[name] = cert
 		}
 		certCacheMu.Unlock()
 		return newLogs
