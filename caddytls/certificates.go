@@ -213,6 +213,8 @@ func fillCertFromLeaf(cert *Certificate, tlsCert tls.Certificate) error {
 		return err
 	}
 
+	cert.Leaf = leaf
+
 	if leaf.Subject.CommonName != "" {
 		cert.Names = []string{strings.ToLower(leaf.Subject.CommonName)}
 	}

@@ -296,6 +296,6 @@ func hasExtension(extensions []pkix.Extension, needle asn1.ObjectIdentifier) boo
 // Checks whether or not a certificate also requires external SCTs (because it
 // doesn't have any embedded SCTs and neither does its OCSP response)
 func certificateNeedsSCTs(cert *Certificate) bool {
-	return !hasExtension(cert.Certificate.Leaf.Extensions, x509SCTOid) &&
+	return !hasExtension(cert.Leaf.Extensions, x509SCTOid) &&
 		!(cert.OCSP != nil && hasExtension(cert.OCSP.Extensions, ocspSCTOid))
 }
