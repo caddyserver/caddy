@@ -335,7 +335,8 @@ func extractSCTLogIDs(sctExtension []byte) [][]byte {
 
 	sctLogIds := make([][]byte, 0)
 	for len(tlsExtensionData) != 0 {
-		tlsExtensionData, sct, e := readLengthPrefixedSlice(tlsExtensionData)
+		var sct []byte
+		tlsExtensionData, sct, e = readLengthPrefixedSlice(tlsExtensionData)
 		if e {
 			return nil
 		}
