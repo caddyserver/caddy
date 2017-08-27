@@ -2,6 +2,7 @@ package caddytls
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"crypto/x509/pkix"
 	"encoding/asn1"
 	"encoding/base64"
@@ -182,7 +183,8 @@ func getSCTSForCertificateChain(certChain [][]byte, logs []ctLog) ([][]byte, err
 }
 
 type ctLog struct {
-	url string
+	url   string
+	logID [sha256.Size]byte
 	// Chrome's CT policy requires one SCT from a Google log, and one SCT from
 	// a non-Google log, so we track whether a log is Google or not.
 	isGoogle bool
@@ -192,6 +194,7 @@ type logList struct {
 	Logs []struct {
 		Description    string `json:"description"`
 		URL            string `json:"url"`
+		Key            string `json:"key"`
 		OperatedBy     []int  `json:"operated_by"`
 		DisqualifiedAt *int   `json:"disqualified_at"`
 	} `json:"logs"`
@@ -232,8 +235,13 @@ func getTrustedCTLogs() ([]ctLog, error) {
 		if log.DisqualifiedAt != nil {
 			continue
 		}
+		key, err := base64.StdEncoding.DecodeString(log.Key)
+		if err != nil {
+			continue
+		}
 		logs = append(logs, ctLog{
 			url:      log.URL,
+			logID:    sha256.Sum256(key),
 			isGoogle: intSliceContains(log.OperatedBy, googleOperator),
 		})
 	}
