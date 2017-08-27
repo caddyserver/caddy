@@ -1495,14 +1495,16 @@ func TestQuic(t *testing.T) {
 			t.Errorf("Expected no error. Got: %s", err.Error())
 			return
 		}
-		certDir := path.Join(dir, "../../vendor/github.com/lucas-clemente/quic-go/example/")
-
 		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Write([]byte(content))
 			w.WriteHeader(200)
 		})
-
-		err = h2quic.ListenAndServeQUIC(upstream, path.Join(certDir, "fullchain.pem"), path.Join(certDir, "privkey.pem"), handler)
+		err = h2quic.ListenAndServeQUIC(
+			upstream,
+			path.Join(dir, "testdata", "fullchain.pem"),
+			path.Join(dir, "testdata", "privkey.pem"),
+			handler,
+		)
 		if err != nil {
 			t.Errorf("Expected no error. Got: %s", err.Error())
 			return
