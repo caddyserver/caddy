@@ -292,19 +292,78 @@ func logListsEqual(a []ctLog, b []ctLog) bool {
 var x509SCTOid = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 11129, 2, 4, 2}
 var ocspSCTOid = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 11129, 2, 4, 5}
 
-func hasExtension(extensions []pkix.Extension, needle asn1.ObjectIdentifier) bool {
+func getExtension(extensions []pkix.Extension, needle asn1.ObjectIdentifier) []byte {
 	for _, ext := range extensions {
 		if ext.Id.Equal(needle) {
-			return true
+			return ext.Value
 		}
 	}
-	return false
+	return nil
+}
+
+func readLengthPrefixedSlice(data []byte) ([]byte, []byte, bool) {
+	if len(data) < 2 {
+		return nil, nil, true
+	}
+	length := binary.BigEndian.Uint16(data[:2])
+	if length > len(data)-2 {
+		return nil, nil, true
+	}
+	return data[2+length:], data[2 : 2+length], false
+}
+
+func extractSCTLogId(sct []byte) []byte {
+	// The structure of an SCT is {Version, LogID, ...}, where Version is a
+	// Uint8, and LogID is a fixed length array of a SHA256 digest.
+	if len(sct) < 1+sha256.Size {
+		return nil
+	}
+	return sct[1 : 1+sha256.Size]
+}
+
+func extractSCTLogIds(sctExtension []byte) [][]byte {
+	var tlsExtensionData []byte
+	err := asn1.Unmarshal(sctExtension, &tlsExtensionData)
+	if err != nil {
+		return nil
+	}
+
+	_, tlsExtensionData, err := readLengthPrefixedSlice(tlsExtensionData)
+	if err {
+		return nil
+	}
+
+	sctLogIds := make([][]byte, 0)
+	for len(tlsExtensionData) != 0 {
+		tlsExtensionData, sct, err := readLengthPrefixedSlice(tlsExtensionData)
+		if err {
+			return nil
+		}
+		logID := extractSCTLogId(sct)
+		if logId == nil {
+			continue
+		}
+		sctLogIds = append(sctLogIds, logID)
+	}
+	return sctLogIds
 }
 
 // Checks whether or not a certificate also requires external SCTs (because it
 // doesn't have any embedded SCTs and neither does its OCSP response)
 func certificateNeedsSCTs(cert *Certificate) bool {
-	// TODO: validate that these SCTs are still from trusted logs.
-	return !hasExtension(cert.Leaf.Extensions, x509SCTOid) &&
-		!(cert.OCSP != nil && hasExtension(cert.OCSP.Extensions, ocspSCTOid))
+	certSCTs := getExtension(cert.Leaf.Extensions, x509SCTOid)
+	ocspSCTs := nil
+	if cert.OCSP != nil {
+		ocspSCTs = getExtension(cert.OCSP.Extensions, ocspSCTOid)
+	}
+	sctLogIDs := make([][]byte, 0)
+	if certSCTs != nil {
+		sctLogIDs = append(sctLogIDs, extractSCTLogIDs(certSCTs)...)
+	}
+	if ocspSCTs != nil {
+		sctLogIDs = append(sctLogIDs, extractSCTLogIDs(ocspSCTs)...)
+	}
+	// TODO: take []ctLog as an argument and verify these against the trusted
+	// log list
+	return len(sctLogIDs) >= 2
 }
