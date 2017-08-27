@@ -366,5 +366,5 @@ func certificateNeedsSCTs(cert *Certificate) bool {
 	}
 	// TODO: take []ctLog as an argument and verify these against the trusted
 	// log list
-	return len(sctLogIDs) >= 2
+	return len(sctLogIDs) < 2
 }
