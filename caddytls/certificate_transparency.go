@@ -328,15 +328,15 @@ func extractSCTLogIDs(sctExtension []byte) [][]byte {
 		return nil
 	}
 
-	_, tlsExtensionData, err = readLengthPrefixedSlice(tlsExtensionData)
-	if err {
+	_, tlsExtensionData, e := readLengthPrefixedSlice(tlsExtensionData)
+	if e {
 		return nil
 	}
 
 	sctLogIds := make([][]byte, 0)
 	for len(tlsExtensionData) != 0 {
-		tlsExtensionData, sct, err := readLengthPrefixedSlice(tlsExtensionData)
-		if err {
+		tlsExtensionData, sct, e := readLengthPrefixedSlice(tlsExtensionData)
+		if e {
 			return nil
 		}
 		logID := extractSCTLogId(sct)
