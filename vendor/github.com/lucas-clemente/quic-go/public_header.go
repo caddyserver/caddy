@@ -3,6 +3,7 @@ package quic
 import (
 	"bytes"
 	"errors"
+	"io"
 
 	"github.com/lucas-clemente/quic-go/internal/utils"
 	"github.com/lucas-clemente/quic-go/protocol"
@@ -166,9 +167,7 @@ func ParsePublicHeader(b *bytes.Reader, packetSentBy protocol.Perspective) (*Pub
 		// see https://github.com/lucas-clemente/quic-go/issues/232
 		if !header.VersionFlag && !header.ResetFlag {
 			header.DiversificationNonce = make([]byte, 32)
-			// this Read can never return an EOF for a valid packet, since the diversification nonce is followed by the packet number
-			_, err = b.Read(header.DiversificationNonce)
-			if err != nil {
+			if _, err := io.ReadFull(b, header.DiversificationNonce); err != nil {
 				return nil, err
 			}
 		}

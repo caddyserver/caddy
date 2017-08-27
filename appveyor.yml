@@ -9,8 +9,8 @@ environment:
 
 install:
   - rmdir c:\go /s /q
-  - appveyor DownloadFile https://storage.googleapis.com/golang/go1.8.3.windows-amd64.zip
-  - 7z x go1.8.3.windows-amd64.zip -y -oC:\ > NUL
+  - appveyor DownloadFile https://storage.googleapis.com/golang/go1.9.windows-amd64.zip
+  - 7z x go1.9.windows-amd64.zip -y -oC:\ > NUL
   - set PATH=%GOPATH%\bin;%PATH%
   - go version
   - go env
@@ -28,12 +28,10 @@ build: off
 
 test_script:
   - gometalinter --disable-all -E vet -E gofmt -E misspell -E ineffassign -E goimports -E deadcode --tests --vendor ./...
-  - vendorcheck ./... 
-  # TODO: When Go 1.9 comes out, replace this whole line with `go test -race ./...` b/c vendor folder should be ignored
-  - for /f "" %%G in ('go list ./... ^| find /i /v "/vendor/"') do (go test -race %%G & IF ERRORLEVEL == 1 EXIT 1)
+  - vendorcheck ./...
+  - go test -race ./...
 
 after_test:
-  # TODO: When Go 1.9 comes out, replace this whole line with `golint ./...` b/c vendor folder should be ignored
-  - for /f "" %%G in ('go list ./... ^| find /i /v "/vendor/"') do (golint %%G & IF ERRORLEVEL == 1 EXIT 1)
+  - golint ./...
 
 deploy: off

@@ -6,92 +6,103 @@ import (
 	"bytes"
 	"mime"
 	"net/http"
-	"os"
 	"path"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"text/template"
+	"time"
 
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
 
 // ServeHTTP implements the httpserver.Handler interface.
 func (t Templates) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
+	// iterate rules, to find first one that matches the request path
 	for _, rule := range t.Rules {
 		if !httpserver.Path(r.URL.Path).Matches(rule.Path) {
 			continue
 		}
 
-		// Check for index files
 		fpath := r.URL.Path
-		if idx, ok := httpserver.IndexFile(t.FileSys, fpath, rule.IndexFiles); ok {
-			fpath = idx
-		}
 
-		// Check the extension
-		reqExt := path.Ext(fpath)
+		// get a buffer from the pool and make a response recorder
+		buf := t.BufPool.Get().(*bytes.Buffer)
+		buf.Reset()
+		defer t.BufPool.Put(buf)
 
-		for _, ext := range rule.Extensions {
-			if reqExt == ext {
-				// Create execution context
-				ctx := httpserver.NewContextWithHeader(w.Header())
-				ctx.Root = t.FileSys
-				ctx.Req = r
-				ctx.URL = r.URL
-
-				// New template
-				templateName := filepath.Base(fpath)
-				tpl := template.New(templateName)
-
-				// Set delims
-				if rule.Delims != [2]string{} {
-					tpl.Delims(rule.Delims[0], rule.Delims[1])
-				}
-
-				// Add custom functions
-				tpl.Funcs(httpserver.TemplateFuncs)
-
-				// Build the template
-				templatePath := filepath.Join(t.Root, fpath)
-				tpl, err := tpl.ParseFiles(templatePath)
-				if err != nil {
-					if os.IsNotExist(err) {
-						return http.StatusNotFound, nil
-					} else if os.IsPermission(err) {
-						return http.StatusForbidden, nil
+		// only buffer the response when we want to execute a template
+		shouldBuf := func(status int, header http.Header) bool {
+			// see if this request matches a template extension
+			reqExt := path.Ext(fpath)
+			for _, ext := range rule.Extensions {
+				if reqExt == "" {
+					// request has no extension, so check response Content-Type
+					ct := mime.TypeByExtension(ext)
+					if strings.Contains(header.Get("Content-Type"), ct) {
+						return true
 					}
-					return http.StatusInternalServerError, err
+				} else if reqExt == ext {
+					return true
 				}
-
-				// Execute it
-				buf := t.BufPool.Get().(*bytes.Buffer)
-				buf.Reset()
-				defer t.BufPool.Put(buf)
-				err = tpl.Execute(buf, ctx)
-				if err != nil {
-					return http.StatusInternalServerError, err
-				}
-
-				// If Content-Type isn't set here, http.ResponseWriter.Write
-				// will set it according to response body. But other middleware
-				// such as gzip can modify response body, then Content-Type
-				// detected by http.ResponseWriter.Write is wrong.
-				ctype := mime.TypeByExtension(ext)
-				if ctype == "" {
-					ctype = http.DetectContentType(buf.Bytes())
-				}
-				w.Header().Set("Content-Type", ctype)
-
-				templateInfo, err := os.Stat(templatePath)
-				if err == nil {
-					// add the Last-Modified header if we were able to read the stamp
-					httpserver.SetLastModifiedHeader(w, templateInfo.ModTime())
-				}
-				buf.WriteTo(w)
-
-				return http.StatusOK, nil
 			}
+			return false
 		}
+
+		// prepare a buffer to hold the response, if applicable
+		rb := httpserver.NewResponseBuffer(buf, w, shouldBuf)
+
+		// pass request up the chain to let another middleware provide us the template
+		code, err := t.Next.ServeHTTP(rb, r)
+		if !rb.Buffered() || code >= 300 || err != nil {
+			return code, err
+		}
+
+		// create a new template
+		templateName := filepath.Base(fpath)
+		tpl := template.New(templateName)
+
+		// set delimiters
+		if rule.Delims != [2]string{} {
+			tpl.Delims(rule.Delims[0], rule.Delims[1])
+		}
+
+		// add custom functions
+		tpl.Funcs(httpserver.TemplateFuncs)
+
+		// parse the template
+		parsedTpl, err := tpl.Parse(rb.Buffer.String())
+		if err != nil {
+			return http.StatusInternalServerError, err
+		}
+
+		// create execution context for the template template
+		ctx := httpserver.NewContextWithHeader(w.Header())
+		ctx.Root = t.FileSys
+		ctx.Req = r
+		ctx.URL = r.URL
+
+		// execute the template
+		buf.Reset()
+		err = parsedTpl.Execute(buf, ctx)
+		if err != nil {
+			return http.StatusInternalServerError, err
+		}
+
+		// copy the buffered header into the real ResponseWriter
+		rb.CopyHeader()
+
+		// set the actual content length now that the template was executed
+		w.Header().Set("Content-Length", strconv.FormatInt(int64(buf.Len()), 10))
+
+		// get the modification time in preparation to ServeContent
+		modTime, _ := time.Parse(http.TimeFormat, w.Header().Get("Last-Modified"))
+
+		// at last, write the rendered template to the response
+		http.ServeContent(w, r, templateName, modTime, bytes.NewReader(buf.Bytes()))
+
+		return http.StatusOK, nil
 	}
 
 	return t.Next.ServeHTTP(w, r)

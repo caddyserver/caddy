@@ -14,7 +14,7 @@ import (
 
 func TestRoot(t *testing.T) {
 	// Predefined error substrings
-	parseErrContent := "Parse error:"
+	parseErrContent := "pars"
 	unableToAccessErrContent := "Unable to access root path"
 
 	existingDirPath, err := getTempDirPath()
@@ -80,7 +80,7 @@ func TestRoot(t *testing.T) {
 			}
 
 			if !strings.Contains(err.Error(), test.expectedErrContent) {
-				t.Errorf("Test %d: Expected error to contain: %v, found error: %v, input: %s", i, test.expectedErrContent, err, test.input)
+				t.Errorf("Test %d: Expected error to contain '%v', found error: %v, input: %s", i, test.expectedErrContent, err, test.input)
 			}
 		}
 

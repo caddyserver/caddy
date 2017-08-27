@@ -54,10 +54,14 @@ type cryptoSetupServer struct {
 
 var _ CryptoSetup = &cryptoSetupServer{}
 
-// ErrHOLExperiment is returned when the client sends the FHL2 tag in the CHLO
-// this is an expiremnt implemented by Chrome in QUIC 36, which we don't support
+// ErrHOLExperiment is returned when the client sends the FHL2 tag in the CHLO.
+// This is an experiment implemented by Chrome in QUIC 36, which we don't support.
 // TODO: remove this when dropping support for QUIC 36
 var ErrHOLExperiment = qerr.Error(qerr.InvalidCryptoMessageParameter, "HOL experiment. Unsupported")
+
+// ErrNSTPExperiment is returned when the client sends the NSTP tag in the CHLO.
+// This is an experiment implemented by Chrome in QUIC 38, which we don't support at this point.
+var ErrNSTPExperiment = qerr.Error(qerr.InvalidCryptoMessageParameter, "NSTP experiment. Unsupported")
 
 // NewCryptoSetup creates a new CryptoSetup instance for a server
 func NewCryptoSetup(
@@ -119,6 +123,9 @@ func (h *cryptoSetupServer) HandleCryptoStream() error {
 func (h *cryptoSetupServer) handleMessage(chloData []byte, cryptoData map[Tag][]byte) (bool, error) {
 	if _, isHOLExperiment := cryptoData[TagFHL2]; isHOLExperiment {
 		return false, ErrHOLExperiment
+	}
+	if _, isNSTPExperiment := cryptoData[TagNSTP]; isNSTPExperiment {
+		return false, ErrNSTPExperiment
 	}
 
 	sniSlice, ok := cryptoData[TagSNI]
