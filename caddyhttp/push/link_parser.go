@@ -42,11 +42,6 @@ func parseLinkHeader(header string) []linkResource {
 
 		for _, param := range strings.Split(strings.TrimSpace(link[ri+1:]), semicolonSeparator) {
 			parts := strings.SplitN(strings.TrimSpace(param), equalSeparator, 2)
-
-			if len(parts) < 1 {
-				continue
-			}
-
 			key := strings.TrimSpace(parts[0])
 
 			if key == "" {
