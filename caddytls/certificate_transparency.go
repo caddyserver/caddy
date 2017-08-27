@@ -306,7 +306,7 @@ func readLengthPrefixedSlice(data []byte) ([]byte, []byte, bool) {
 		return nil, nil, true
 	}
 	length := binary.BigEndian.Uint16(data[:2])
-	if length > len(data)-2 {
+	if int(length) > len(data)-2 {
 		return nil, nil, true
 	}
 	return data[2+length:], data[2 : 2+length], false
@@ -321,14 +321,14 @@ func extractSCTLogId(sct []byte) []byte {
 	return sct[1 : 1+sha256.Size]
 }
 
-func extractSCTLogIds(sctExtension []byte) [][]byte {
+func extractSCTLogIDs(sctExtension []byte) [][]byte {
 	var tlsExtensionData []byte
-	err := asn1.Unmarshal(sctExtension, &tlsExtensionData)
+	_, err := asn1.Unmarshal(sctExtension, &tlsExtensionData)
 	if err != nil {
 		return nil
 	}
 
-	_, tlsExtensionData, err := readLengthPrefixedSlice(tlsExtensionData)
+	_, tlsExtensionData, err = readLengthPrefixedSlice(tlsExtensionData)
 	if err {
 		return nil
 	}
@@ -340,7 +340,7 @@ func extractSCTLogIds(sctExtension []byte) [][]byte {
 			return nil
 		}
 		logID := extractSCTLogId(sct)
-		if logId == nil {
+		if logID == nil {
 			continue
 		}
 		sctLogIds = append(sctLogIds, logID)
@@ -352,7 +352,7 @@ func extractSCTLogIds(sctExtension []byte) [][]byte {
 // doesn't have any embedded SCTs and neither does its OCSP response)
 func certificateNeedsSCTs(cert *Certificate) bool {
 	certSCTs := getExtension(cert.Leaf.Extensions, x509SCTOid)
-	ocspSCTs := nil
+	ocspSCTs := []byte{}
 	if cert.OCSP != nil {
 		ocspSCTs = getExtension(cert.OCSP.Extensions, ocspSCTOid)
 	}
