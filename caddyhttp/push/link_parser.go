@@ -1,7 +1,6 @@
 package push
 
 import (
-	"regexp"
 	"strings"
 )
 
@@ -9,10 +8,6 @@ const (
 	commaSeparator     = ","
 	semicolonSeparator = ";"
 	equalSeparator     = "="
-)
-
-var (
-	resourceRegexp = regexp.MustCompile("^<(.*?)>;?(.*)$")
 )
 
 type linkResource struct {
