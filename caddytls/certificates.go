@@ -179,11 +179,11 @@ func makeCertificate(certPEMBlock, keyPEMBlock []byte, certificateTransparency b
 	if err != nil {
 		log.Printf("[WARNING] Stapling OCSP: %v", err)
 	}
-	if certificateTransparency && certificateNeedsSCTs(&cert) {
+	if certificateTransparency {
 		logs, err := getTrustedCTLogs()
 		if err != nil {
 			log.Printf("[WARNING] Fetching trusted CT logs: %v", err)
-		} else {
+		} else if certificateNeedsSCTs(cert, logs) {
 			scts, err := getSCTSForCertificateChain(tlsCert.Certificate, logs)
 			if err != nil {
 				log.Printf("[WARNING] Fetching SCTs: %v", err)
@@ -192,7 +192,6 @@ func makeCertificate(certPEMBlock, keyPEMBlock []byte, certificateTransparency b
 			}
 		}
 	}
-
 	return cert, nil
 }
 

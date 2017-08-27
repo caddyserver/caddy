@@ -351,7 +351,7 @@ func extractSCTLogIDs(sctExtension []byte) [][]byte {
 
 // Checks whether or not a certificate also requires external SCTs (because it
 // doesn't have any embedded SCTs and neither does its OCSP response)
-func certificateNeedsSCTs(cert *Certificate) bool {
+func certificateNeedsSCTs(cert *Certificate, logs []ctLog) bool {
 	certSCTs := getExtension(cert.Leaf.Extensions, x509SCTOid)
 	ocspSCTs := []byte{}
 	if cert.OCSP != nil {
@@ -364,7 +364,32 @@ func certificateNeedsSCTs(cert *Certificate) bool {
 	if ocspSCTs != nil {
 		sctLogIDs = append(sctLogIDs, extractSCTLogIDs(ocspSCTs)...)
 	}
-	// TODO: take []ctLog as an argument and verify these against the trusted
-	// log list
-	return len(sctLogIDs) < 2
+
+	return !checkSCTsAgainstPolicy(sctLogIDs, logs)
+}
+
+func findLogById(logs []ctLog, logID []byte) (ctLog, bool) {
+	for _, log := range logs {
+		if bytes.Equal(log.logID, LogID) {
+			return log, true
+		}
+	}
+	return nil, false
+}
+
+func checkSCTsAgainstPolicy(sctLogIDs [][]byte, logs []ctLog) bool {
+	hasGoogle := false
+	hasNonGoogle := false
+
+	for _, logID := range sctLogIDs {
+		if log, ok := findLogByID(logs, logID); ok {
+			if log.isGoogle {
+				hasGoogle = true
+			} else {
+				hasNonGoogle = true
+			}
+		}
+	}
+
+	return hasGoogle && hasNonGoogle
 }

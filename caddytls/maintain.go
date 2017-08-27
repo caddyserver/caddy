@@ -341,7 +341,7 @@ func UpdateSCTs(existingLogs []ctLog) []ctLog {
 		updates := make(map[string][][]byte)
 		for name, cert := range certCache {
 			// If the cert doesn't have CT enabled, skip it
-			if !cert.Config.CertificateTransparency || !certificateNeedsSCTs(&cert) {
+			if !cert.Config.CertificateTransparency || !certificateNeedsSCTs(&cert, newLogs) {
 				continue
 			}
 			scts, err := getSCTSForCertificateChain(cert.Certificate.Certificate, newLogs)
