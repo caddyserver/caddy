@@ -127,10 +127,3 @@ func WriteUint24(b *bytes.Buffer, i uint32) {
 func WriteUint16(b *bytes.Buffer, i uint16) {
 	b.Write([]byte{uint8(i), uint8(i >> 8)})
 }
-
-// Uint32Slice attaches the methods of sort.Interface to []uint32, sorting in increasing order.
-type Uint32Slice []uint32
-
-func (s Uint32Slice) Len() int           { return len(s) }
-func (s Uint32Slice) Less(i, j int) bool { return s[i] < s[j] }
-func (s Uint32Slice) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }

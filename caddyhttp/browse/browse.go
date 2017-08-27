@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"os"
 	"path"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -294,18 +293,18 @@ func isSymlinkTargetDir(f os.FileInfo, urlPath string, config *Config) bool {
 		return false
 	}
 
-	// a bit strange but we want Stat thru the jailed filesystem to be safe
-	target, err := config.Fs.Root.Open(filepath.Join(urlPath, f.Name()))
+	// a bit strange, but we want Stat thru the jailed filesystem to be safe
+	target, err := config.Fs.Root.Open(path.Join(urlPath, f.Name()))
 	if err != nil {
 		return false
 	}
 	defer target.Close()
-	targetInto, err := target.Stat()
+	targetInfo, err := target.Stat()
 	if err != nil {
 		return false
 	}
 
-	return targetInto.IsDir()
+	return targetInfo.IsDir()
 }
 
 // ServeHTTP determines if the request is for this plugin, and if all prerequisites are met.

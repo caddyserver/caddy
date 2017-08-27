@@ -2,19 +2,20 @@ package templates
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"sync"
 	"testing"
 
 	"github.com/mholt/caddy/caddyhttp/httpserver"
+	"github.com/mholt/caddy/caddyhttp/staticfiles"
 )
 
 func TestTemplates(t *testing.T) {
+	siteRoot := "./testdata"
 	tmpl := Templates{
-		Next: httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
-			return 0, nil
-		}),
+		Next: staticfiles.FileServer{Root: http.Dir(siteRoot)},
 		Rules: []Rule{
 			{
 				Extensions: []string{".html"},
@@ -28,15 +29,13 @@ func TestTemplates(t *testing.T) {
 				Delims:     [2]string{"{%", "%}"},
 			},
 		},
-		Root:    "./testdata",
-		FileSys: http.Dir("./testdata"),
+		Root:    siteRoot,
+		FileSys: http.Dir(siteRoot),
 		BufPool: &sync.Pool{New: func() interface{} { return new(bytes.Buffer) }},
 	}
 
 	tmplroot := Templates{
-		Next: httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
-			return 0, nil
-		}),
+		Next: staticfiles.FileServer{Root: http.Dir(siteRoot)},
 		Rules: []Rule{
 			{
 				Extensions: []string{".html"},
@@ -44,8 +43,8 @@ func TestTemplates(t *testing.T) {
 				Path:       "/",
 			},
 		},
-		Root:    "./testdata",
-		FileSys: http.Dir("./testdata"),
+		Root:    siteRoot,
+		FileSys: http.Dir(siteRoot),
 		BufPool: &sync.Pool{New: func() interface{} { return new(bytes.Buffer) }},
 	}
 
@@ -54,6 +53,7 @@ func TestTemplates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Test: Could not create HTTP request: %v", err)
 	}
+	req = req.WithContext(context.WithValue(req.Context(), httpserver.OriginalURLCtxKey, *req.URL))
 
 	rec := httptest.NewRecorder()
 
@@ -77,6 +77,7 @@ func TestTemplates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Could not create HTTP request: %v", err)
 	}
+	req = req.WithContext(context.WithValue(req.Context(), httpserver.OriginalURLCtxKey, *req.URL))
 
 	rec = httptest.NewRecorder()
 
@@ -100,6 +101,7 @@ func TestTemplates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Could not create HTTP request: %v", err)
 	}
+	req = req.WithContext(context.WithValue(req.Context(), httpserver.OriginalURLCtxKey, *req.URL))
 
 	rec = httptest.NewRecorder()
 
@@ -122,6 +124,7 @@ func TestTemplates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Could not create HTTP request: %v", err)
 	}
+	req = req.WithContext(context.WithValue(req.Context(), httpserver.OriginalURLCtxKey, *req.URL))
 
 	rec = httptest.NewRecorder()
 
