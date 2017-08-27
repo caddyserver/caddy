@@ -312,7 +312,7 @@ func readLengthPrefixedSlice(data []byte) ([]byte, []byte, bool) {
 	return data[2+length:], data[2 : 2+length], false
 }
 
-func extractSCTLogId(sct []byte) []byte {
+func extractSCTLogID(sct []byte) []byte {
 	// The structure of an SCT is {Version, LogID, ...}, where Version is a
 	// Uint8, and LogID is a fixed length array of a SHA256 digest.
 	if len(sct) < 1+sha256.Size {
@@ -340,7 +340,7 @@ func extractSCTLogIDs(sctExtension []byte) [][]byte {
 		if e {
 			return nil
 		}
-		logID := extractSCTLogId(sct)
+		logID := extractSCTLogID(sct)
 		if logID == nil {
 			continue
 		}

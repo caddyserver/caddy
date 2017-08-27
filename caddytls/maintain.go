@@ -329,6 +329,9 @@ func freshOCSP(resp *ocsp.Response) bool {
 	return time.Now().Before(refreshTime)
 }
 
+// UpdateSCTs refreshes the list of truested CT logs, and if they've changed,
+// checks each certificate to see if it needs new SCTs, and if so, fetches
+// them.
 func UpdateSCTs(existingLogs []ctLog) []ctLog {
 	newLogs, err := getTrustedCTLogs()
 	if err != nil {
