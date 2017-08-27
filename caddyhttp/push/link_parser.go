@@ -37,16 +37,20 @@ func parseLinkHeader(header string) []linkResource {
 	for _, link := range strings.Split(header, commaSeparator) {
 		l := linkResource{params: make(map[string]string)}
 
-		groups := resourceRegexp.FindAllStringSubmatch(link, -1)
+		li, ri := strings.Index(link, "<"), strings.Index(link, ">")
 
-		if len(groups) == 0 {
+		if li == -1 || ri == -1 {
 			continue
 		}
 
-		l.uri = strings.TrimSpace(groups[0][1])
+		l.uri = strings.TrimSpace(link[li+1 : ri])
 
-		for _, param := range strings.Split(strings.TrimSpace(groups[0][2]), semicolonSeparator) {
+		for _, param := range strings.Split(strings.TrimSpace(link[ri+1:]), semicolonSeparator) {
 			parts := strings.SplitN(strings.TrimSpace(param), equalSeparator, 2)
+
+			if len(parts) < 1 {
+				continue
+			}
 
 			key := strings.TrimSpace(parts[0])
 

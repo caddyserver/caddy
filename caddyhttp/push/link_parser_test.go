@@ -40,6 +40,26 @@ func TestDifferentParserInputs(t *testing.T) {
 				{uri: "/resource2", params: map[string]string{}},
 			},
 		},
+		{
+			header:            "malformed",
+			expectedResources: []linkResource{},
+		},
+		{
+			header:            "<malformed",
+			expectedResources: []linkResource{},
+		},
+		{
+			header:            ",",
+			expectedResources: []linkResource{},
+		},
+		{
+			header:            ";",
+			expectedResources: []linkResource{},
+		},
+		{
+			header:            "</resource> ; ",
+			expectedResources: []linkResource{{uri: "/resource", params: map[string]string{}}},
+		},
 	}
 
 	for i, test := range testCases {
