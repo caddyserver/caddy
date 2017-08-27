@@ -183,7 +183,7 @@ func makeCertificate(certPEMBlock, keyPEMBlock []byte, certificateTransparency b
 		logs, err := getTrustedCTLogs()
 		if err != nil {
 			log.Printf("[WARNING] Fetching trusted CT logs: %v", err)
-		} else if certificateNeedsSCTs(cert, logs) {
+		} else if certificateNeedsSCTs(&cert, logs) {
 			scts, err := getSCTSForCertificateChain(tlsCert.Certificate, logs)
 			if err != nil {
 				log.Printf("[WARNING] Fetching SCTs: %v", err)

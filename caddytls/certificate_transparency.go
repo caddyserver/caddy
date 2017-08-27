@@ -368,13 +368,13 @@ func certificateNeedsSCTs(cert *Certificate, logs []ctLog) bool {
 	return !checkSCTsAgainstPolicy(sctLogIDs, logs)
 }
 
-func findLogById(logs []ctLog, logID []byte) (ctLog, bool) {
+func findLogByID(logs []ctLog, logID []byte) (ctLog, bool) {
 	for _, log := range logs {
-		if bytes.Equal(log.logID, LogID) {
+		if bytes.Equal(log.logID[:], logID) {
 			return log, true
 		}
 	}
-	return nil, false
+	return ctLog{}, false
 }
 
 func checkSCTsAgainstPolicy(sctLogIDs [][]byte, logs []ctLog) bool {
