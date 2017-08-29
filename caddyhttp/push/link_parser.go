@@ -22,12 +22,11 @@ type linkResource struct {
 // Link: </resource>; as=script,</resource2>; as=style
 // Link: </resource>;</resource2>
 func parseLinkHeader(header string) []linkResource {
+	resources := []linkResource{}
 
 	if header == "" {
-		return make([]linkResource, 0)
+		return resources
 	}
-
-	resources := make([]linkResource, 0)
 
 	for _, link := range strings.Split(header, commaSeparator) {
 		l := linkResource{params: make(map[string]string)}
