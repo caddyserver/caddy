@@ -269,6 +269,52 @@ func TestMiddlewareShouldInterceptLinkHeader(t *testing.T) {
 	comparePushedResources(t, expectedPushedResources, pushingWriter.pushed)
 }
 
+func TestMiddlewareShouldInterceptLinkHeaderWithMultipleResources(t *testing.T) {
+	// given
+	request, err := http.NewRequest(http.MethodGet, "/index.html", nil)
+	writer := httptest.NewRecorder()
+
+	if err != nil {
+		t.Fatalf("Could not create HTTP request: %v", err)
+	}
+
+	middleware := Middleware{
+		Next: httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
+			w.Header().Add("Link", "</assets/css/screen.css?v=5fc240c512>; rel=preload; as=style,</content/images/2016/06/Timeouts-001.png>; rel=preload; as=image,</content/images/2016/06/Timeouts-002.png>; rel=preload; as=image")
+			w.Header().Add("Link", "<//cdn.bizible.com/scripts/bizible.js>; rel=preload; as=script,</resource.png>; rel=preload; as=script; nopush")
+			return 0, nil
+		}),
+		Rules: []Rule{},
+	}
+
+	pushingWriter := &MockedPusher{ResponseWriter: writer}
+
+	// when
+	_, err2 := middleware.ServeHTTP(pushingWriter, request)
+
+	// then
+	if err2 != nil {
+		t.Error("Should not return error")
+	}
+
+	expectedPushedResources := map[string]*http.PushOptions{
+		"/assets/css/screen.css?v=5fc240c512": {
+			Method: http.MethodGet,
+			Header: http.Header{},
+		},
+		"/content/images/2016/06/Timeouts-001.png": {
+			Method: http.MethodGet,
+			Header: http.Header{},
+		},
+		"/content/images/2016/06/Timeouts-002.png": {
+			Method: http.MethodGet,
+			Header: http.Header{},
+		},
+	}
+
+	comparePushedResources(t, expectedPushedResources, pushingWriter.pushed)
+}
+
 func TestMiddlewareShouldInterceptLinkHeaderPusherError(t *testing.T) {
 	// given
 	expectedHeaders := http.Header{"Accept-Encoding": []string{"br"}}
