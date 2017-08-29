@@ -222,11 +222,16 @@ th svg {
 }
 
 td {
+	white-space: nowrap;
 	font-size: 14px;
 }
 
 td:first-child {
-	width: 50%;
+	width: 100%;
+}
+
+td:nth-child(2) {
+	padding: 0 20px 0 20px;
 }
 
 th:last-child,
