@@ -21,6 +21,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/ocsp"
@@ -243,8 +244,9 @@ func RotateSessionTicketKeys(cfg *tls.Config) chan struct{} {
 
 // Functions that may be swapped out for testing
 var (
-	runTLSTicketKeyRotation      = standaloneTLSTicketKeyRotation
-	setSessionTicketKeysTestHook = func(keys [][32]byte) [][32]byte { return keys }
+	runTLSTicketKeyRotation        = standaloneTLSTicketKeyRotation
+	setSessionTicketKeysTestHook   = func(keys [][32]byte) [][32]byte { return keys }
+	setSessionTicketKeysTestHookMu sync.Mutex
 )
 
 // standaloneTLSTicketKeyRotation governs over the array of TLS ticket keys used to de/crypt TLS tickets.
@@ -271,7 +273,10 @@ func standaloneTLSTicketKeyRotation(c *tls.Config, ticker *time.Ticker, exitChan
 		c.SessionTicketsDisabled = true // bail if we don't have the entropy for the first one
 		return
 	}
-	c.SetSessionTicketKeys(setSessionTicketKeysTestHook(keys))
+	setSessionTicketKeysTestHookMu.Lock()
+	setSessionTicketKeysHook := setSessionTicketKeysTestHook
+	setSessionTicketKeysTestHookMu.Unlock()
+	c.SetSessionTicketKeys(setSessionTicketKeysHook(keys))
 
 	for {
 		select {
@@ -298,7 +303,7 @@ func standaloneTLSTicketKeyRotation(c *tls.Config, ticker *time.Ticker, exitChan
 				keys[0] = newTicketKey
 			}
 			// pushes the last key out, doesn't matter that we don't have a new one
-			c.SetSessionTicketKeys(setSessionTicketKeysTestHook(keys))
+			c.SetSessionTicketKeys(setSessionTicketKeysHook(keys))
 		}
 	}
 }

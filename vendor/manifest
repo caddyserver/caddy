@@ -88,7 +88,7 @@
 			"importpath": "github.com/hashicorp/go-syslog",
 			"repository": "https://github.com/hashicorp/go-syslog",
 			"vcs": "git",
-			"revision": "b609c7d9de4658cded34a7336b90886c56f9dbdb",
+			"revision": "326bf4a7f709d263f964a6a96558676b103f3534",
 			"branch": "master",
 			"notests": true
 		},

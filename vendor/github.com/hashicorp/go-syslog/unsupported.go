@@ -1,4 +1,4 @@
-// +build windows plan9
+// +build windows plan9 nacl
 
 package gsyslog
 

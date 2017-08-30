@@ -86,17 +86,20 @@ func TestStandaloneTLSTicketKeyRotation(t *testing.T) {
 
 	tlsGovChan := make(chan struct{})
 	defer close(tlsGovChan)
-	callSync := make(chan *syncPkt, 1)
-	defer close(callSync)
+	callSync := make(chan syncPkt)
 
+	setSessionTicketKeysTestHookMu.Lock()
 	oldHook := setSessionTicketKeysTestHook
 	defer func() {
+		setSessionTicketKeysTestHookMu.Lock()
 		setSessionTicketKeysTestHook = oldHook
+		setSessionTicketKeysTestHookMu.Unlock()
 	}()
 	setSessionTicketKeysTestHook = func(keys [][32]byte) [][32]byte {
-		callSync <- &syncPkt{keys[0], len(keys)}
+		callSync <- syncPkt{keys[0], len(keys)}
 		return keys
 	}
+	setSessionTicketKeysTestHookMu.Unlock()
 
 	c := new(tls.Config)
 	timer := time.NewTicker(time.Millisecond * 1)
