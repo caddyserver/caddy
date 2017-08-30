@@ -33,6 +33,14 @@
 		<key>Crashed</key>
 		<true/>
 	</dict>
+	
+	<key>SoftResourceLimits</key>
+ 	<dict>
+ 		<key>NumberOfFiles</key>
+ 		<integer>16384</integer>
+ 	</dict>
+ 	<key>HardResourceLimits</key>
+ 	<dict/>
 
 	<key>WorkingDirectory</key>
 	<string>/etc/ssl/caddy</string>
