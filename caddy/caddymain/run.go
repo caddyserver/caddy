@@ -43,7 +43,7 @@ func init() {
 	flag.StringVar(&serverType, "type", "http", "Type of server to run")
 	flag.BoolVar(&version, "version", false, "Show version")
 	flag.BoolVar(&validate, "validate", false, "Parse the Caddyfile but do not start the server")
-	flag.Uint64Var(&rlimitNofile, "rlimit-nofile", 8192, "Sets the NOFILE rlimit for the caddy process")
+	flag.Uint64Var(&rlimitNofile, "rlimit-nofile", 16384, "Sets the NOFILE rlimit for the caddy process")
 
 	caddy.RegisterCaddyfileLoader("flag", caddy.LoaderFunc(confLoader))
 	caddy.SetDefaultCaddyfileLoader("default", caddy.LoaderFunc(defaultLoader))
