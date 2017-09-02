@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
 
@@ -247,6 +248,11 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 
 	// Strip PATH_INFO from SCRIPT_NAME
 	scriptName = strings.TrimSuffix(scriptName, pathInfo)
+
+	// Add vhost path prefix to scriptName. Otherwise, some PHP software will
+	// have difficulty discovering its URL.
+	pathPrefix, _ := r.Context().Value(caddy.CtxKey("path_prefix")).(string)
+	scriptName = path.Join(pathPrefix, scriptName)
 
 	// Get the request URI from context. The context stores the original URI in case
 	// it was changed by a middleware such as rewrite. By default, we pass the
