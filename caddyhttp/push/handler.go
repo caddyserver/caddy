@@ -30,9 +30,11 @@ outer:
 		matches := httpserver.Path(urlPath).Matches(rule.Path)
 		// Also check IndexPages when requesting a directory
 		if !matches {
-			_, matches = httpserver.IndexFile(h.Root, urlPath, staticfiles.IndexPages)
+			indexFile, isIndexFile := httpserver.IndexFile(h.Root, urlPath, staticfiles.IndexPages)
+			if isIndexFile {
+				matches = httpserver.Path(indexFile).Matches(rule.Path)
+			}
 		}
-
 		if matches {
 			for _, resource := range rule.Resources {
 				pushErr := pusher.Push(resource.Path, &http.PushOptions{
