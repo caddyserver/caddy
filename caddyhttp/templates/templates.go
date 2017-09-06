@@ -94,7 +94,7 @@ func (t Templates) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 		rb.CopyHeader()
 
 		// set the actual content length now that the template was executed
-		w.Header().Set("Content-Length", strconv.FormatInt(int64(buf.Len()), 10))
+		w.Header().Set("Content-Length", strconv.Itoa(buf.Len()))
 
 		// get the modification time in preparation to ServeContent
 		modTime, _ := time.Parse(http.TimeFormat, w.Header().Get("Last-Modified"))
