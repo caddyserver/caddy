@@ -227,7 +227,7 @@ func TestBrowseTemplate(t *testing.T) {
 func TestBrowseJson(t *testing.T) {
 	b := Browse{
 		Next: httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
-			t.Fatalf("Next shouldn't be called")
+			t.Fatalf("Next shouldn't be called: %s", r.URL)
 			return 0, nil
 		}),
 		Configs: []Config{

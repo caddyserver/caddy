@@ -2,6 +2,7 @@ package httpserver
 
 import (
 	"net/http"
+	"path"
 	"strings"
 )
 
@@ -16,10 +17,27 @@ type Path string
 // Path matching will probably not always be a direct
 // comparison; this method assures that paths can be
 // easily and consistently matched.
+//
+// Multiple slashes are collapsed/merged. See issue #1859.
 func (p Path) Matches(base string) bool {
-	if base == "/" {
+	if base == "/" || base == "" {
 		return true
 	}
+
+	// sanitize the paths for comparison, very important
+	// (slightly lossy if the base path requires multiple
+	// consecutive forward slashes, since those will be merged)
+	pHasTrailingSlash := strings.HasSuffix(string(p), "/")
+	baseHasTrailingSlash := strings.HasSuffix(base, "/")
+	p = Path(path.Clean(string(p)))
+	base = path.Clean(base)
+	if pHasTrailingSlash {
+		p += "/"
+	}
+	if baseHasTrailingSlash {
+		base += "/"
+	}
+
 	if CaseSensitivePath {
 		return strings.HasPrefix(string(p), base)
 	}
