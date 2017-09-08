@@ -1,5 +1,11 @@
 CHANGES
 
+0.10.8 (September 8, 2017)
+- NACL compilation support
+- Merge multiple consecutive slashes when comparing paths
+- A few other bug fixes
+
+
 0.10.7 (August 25, 2017)
 - Built with Go 1.9
 - New 3rd-party plugin directives: jekyll, awses, forwardproxy

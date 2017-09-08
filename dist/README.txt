@@ -1,4 +1,4 @@
-CADDY 0.10.7
+CADDY 0.10.8
 
 Website
 	https://caddyserver.com
@@ -36,4 +36,4 @@ https://caddyserver.com/pricing - and help keep Caddy free.
 
 
 ---
-(c) 2015-2017 Light Code Labs, LLC.
+(c) 2015-2017 Light Code Labs, LLC
