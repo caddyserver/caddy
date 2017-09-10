@@ -24,7 +24,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/caddyserver/buildworker"
+	"github.com/caddyserver/builds"
 )
 
 var goos, goarch, goarm string
@@ -45,7 +45,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	ldflags, err := buildworker.MakeLdFlags(filepath.Join(pwd, ".."))
+	ldflags, err := builds.MakeLdFlags(filepath.Join(pwd, ".."))
 	if err != nil {
 		log.Fatal(err)
 	}
