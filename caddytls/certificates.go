@@ -227,8 +227,10 @@ func fillCertFromLeaf(cert *Certificate, tlsCert tls.Certificate) error {
 // full, random entries are deleted until there is room to map all the
 // names on the certificate.
 //
-// This certificate will be keyed to the names in cert.Names. Any name
-// that is already a key in the cache will be replaced with this cert.
+// This certificate will be keyed to the names in cert.Names. Any names
+// already used as a cache key will NOT be replaced by this cert; in
+// other words, no overlap is allowed, and this certificate will not
+// service those pre-existing names.
 //
 // This function is safe for concurrent use.
 func cacheCertificate(cert Certificate) {

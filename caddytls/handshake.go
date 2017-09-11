@@ -246,7 +246,7 @@ func (cfg *Config) handshakeMaintenance(name string, cert Certificate) (Certific
 	timeLeft := cert.NotAfter.Sub(time.Now().UTC())
 	if timeLeft < RenewDurationBefore {
 		log.Printf("[INFO] Certificate for %v expires in %v; attempting renewal", cert.Names, timeLeft)
-		return cfg.renewDynamicCertificate(name)
+		return cfg.renewDynamicCertificate(name, cert)
 	}
 
 	// Check OCSP staple validity
@@ -269,12 +269,12 @@ func (cfg *Config) handshakeMaintenance(name string, cert Certificate) (Certific
 }
 
 // renewDynamicCertificate renews the certificate for name using cfg. It returns the
-// certificate to use and an error, if any. currentCert may be returned even if an
-// error occurs, since we perform renewals before they expire and it may still be
-// usable. name should already be lower-cased before calling this function.
+// certificate to use and an error, if any. name should already be lower-cased before
+// calling this function. name is the name obtained directly from the handshake's
+// ClientHello.
 //
 // This function is safe for use by multiple concurrent goroutines.
-func (cfg *Config) renewDynamicCertificate(name string) (Certificate, error) {
+func (cfg *Config) renewDynamicCertificate(name string, currentCert Certificate) (Certificate, error) {
 	obtainCertWaitChansMu.Lock()
 	wait, ok := obtainCertWaitChans[name]
 	if ok {
@@ -290,9 +290,31 @@ func (cfg *Config) renewDynamicCertificate(name string) (Certificate, error) {
 	obtainCertWaitChans[name] = wait
 	obtainCertWaitChansMu.Unlock()
 
-	// do the renew
+	// do the renew and reload the certificate
 	log.Printf("[INFO] Renewing certificate for %s", name)
 	err := cfg.RenewCert(name, false)
+	if err == nil {
+		// immediately flush this certificate from the cache so
+		// the name doesn't overlap when we try to replace it,
+		// which would fail, because overlapping existing cert
+		// names isn't allowed
+		certCacheMu.Lock()
+		for _, certName := range currentCert.Names {
+			delete(certCache, certName)
+		}
+		certCacheMu.Unlock()
+
+		// even though the recursive nature of the dynamic cert loading
+		// would just call this function anyway, we do it here to
+		// make the replacement as atomic as possible. (TODO: similar
+		// to the note in maintain.go, it'd be nice if the clearing of
+		// the cache entries above and this load function were truly
+		// atomic...)
+		_, err := currentCert.Config.CacheManagedCertificate(name)
+		if err != nil {
+			log.Printf("[ERROR] loading renewed certificate: %v", err)
+		}
+	}
 
 	// immediately unblock anyone waiting for it; doing this in
 	// a defer would risk deadlock because of the recursive call
