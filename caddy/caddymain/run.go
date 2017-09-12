@@ -126,6 +126,9 @@ func Run() {
 		mustLogFatalf("%v", err)
 	}
 
+	// Executes Instance Startup events
+	caddy.EmitEvent(caddy.InstanceStartupEvent, nil)
+
 	// Twiddle your thumbs
 	instance.Wait()
 }

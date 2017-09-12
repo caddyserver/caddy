@@ -331,6 +331,9 @@ func (c *ACMEClient) Renew(name string) error {
 		return errors.New("too many renewal attempts; last error: " + err.Error())
 	}
 
+	// Executes Cert renew events
+	caddy.EmitEvent(caddy.CertRenewEvent, nil)
+
 	return saveCertResource(storage, newCertMeta)
 }
 
