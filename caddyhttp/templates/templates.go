@@ -40,7 +40,7 @@ func (t Templates) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 				if reqExt == "" {
 					// request has no extension, so check response Content-Type
 					ct := mime.TypeByExtension(ext)
-					if strings.Contains(header.Get("Content-Type"), ct) {
+					if ct != "" && strings.Contains(header.Get("Content-Type"), ct) {
 						return true
 					}
 				} else if reqExt == ext {
@@ -96,13 +96,14 @@ func (t Templates) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 		// set the actual content length now that the template was executed
 		w.Header().Set("Content-Length", strconv.Itoa(buf.Len()))
 
-		// get the modification time in preparation to ServeContent
+		// get the modification time in preparation for http.ServeContent
 		modTime, _ := time.Parse(http.TimeFormat, w.Header().Get("Last-Modified"))
 
-		// at last, write the rendered template to the response
-		http.ServeContent(w, r, templateName, modTime, bytes.NewReader(buf.Bytes()))
+		// at last, write the rendered template to the response; make sure to use
+		// use the proper status code, since ServeContent hard-codes 2xx codes...
+		http.ServeContent(rb.StatusCodeWriter(w), r, templateName, modTime, bytes.NewReader(buf.Bytes()))
 
-		return http.StatusOK, nil
+		return 0, nil
 	}
 
 	return t.Next.ServeHTTP(w, r)

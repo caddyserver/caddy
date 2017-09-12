@@ -195,6 +195,28 @@ func (rb *ResponseBuffer) ReadFrom(src io.Reader) (int64, error) {
 	return rb.Buffer.ReadFrom(src)
 }
 
+// StatusCodeWriter returns an http.ResponseWriter that always
+// writes the status code stored in rb from when a response
+// was buffered to it.
+func (rb *ResponseBuffer) StatusCodeWriter(w http.ResponseWriter) http.ResponseWriter {
+	return forcedStatusCodeWriter{w, rb}
+}
+
+// forcedStatusCodeWriter is used to force a status code when
+// writing the header. It uses the status code saved on rb.
+// This is useful if passing a http.ResponseWriter into
+// http.ServeContent because ServeContent hard-codes 2xx status
+// codes. If we buffered the response, we force that status code
+// instead.
+type forcedStatusCodeWriter struct {
+	http.ResponseWriter
+	rb *ResponseBuffer
+}
+
+func (fscw forcedStatusCodeWriter) WriteHeader(int) {
+	fscw.ResponseWriter.WriteHeader(fscw.rb.status)
+}
+
 // respBufPool is used for io.CopyBuffer when ResponseBuffer
 // is configured to stream a response.
 var respBufPool = &sync.Pool{
