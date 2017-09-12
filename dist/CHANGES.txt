@@ -1,5 +1,13 @@
 CHANGES
 
+0.10.9 (September 12, 2017)
+- EULA bundled with official binaries
+- Caddy-Sponsors header to indicate personal-use license
+- proxy: Support for QUIC backends
+- templates: Write proper status code if proxied
+- tls: Fix bug related to cert renewals
+
+
 0.10.8 (September 8, 2017)
 - NACL compilation support
 - Merge multiple consecutive slashes when comparing paths

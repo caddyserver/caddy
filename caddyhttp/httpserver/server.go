@@ -343,6 +343,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r = r.WithContext(c)
 
 	w.Header().Set("Server", caddy.AppName)
+	sponsors := "Minio, Uptime Robot, and Sourcegraph"
+	w.Header().Set("Caddy-Sponsors", "This free web server is made possible by its sponsors: "+sponsors)
 
 	status, _ := s.serveHTTP(w, r)
 
