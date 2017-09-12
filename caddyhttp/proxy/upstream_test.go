@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lucas-clemente/quic-go/h2quic"
 	"github.com/mholt/caddy/caddyfile"
 )
 
@@ -498,6 +499,41 @@ func TestHealthCheckContentString(t *testing.T) {
 				t.Errorf("Health check bad response")
 			}
 			upstream.Stop()
+		}
+	}
+}
+
+func TestQuicHost(t *testing.T) {
+	// tests for QUIC proxy
+	tests := []struct {
+		config string
+		flag   bool
+	}{
+		// Test #1: without flag
+		{"proxy / quic://localhost:8080", false},
+
+		// Test #2: with flag
+		{"proxy / quic://localhost:8080 {\n insecure_skip_verify \n}", true},
+	}
+
+	for _, test := range tests {
+		upstreams, err := NewStaticUpstreams(caddyfile.NewDispenser("Testfile", strings.NewReader(test.config)), "")
+		if err != nil {
+			t.Errorf("Expected no error. Got: %s", err.Error())
+		}
+		for _, upstream := range upstreams {
+			staticUpstream, ok := upstream.(*staticUpstream)
+			if !ok {
+				t.Errorf("Type mismatch: %#v", upstream)
+				continue
+			}
+			for _, host := range staticUpstream.Hosts {
+				_, ok := host.ReverseProxy.Transport.(*h2quic.RoundTripper)
+				if !ok {
+					t.Errorf("Type mismatch: %#v", host.ReverseProxy.Transport)
+					continue
+				}
+			}
 		}
 	}
 }

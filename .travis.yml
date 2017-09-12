@@ -1,5 +1,9 @@
 language: go
 
+addons:
+  hosts:
+    - quic.clemente.io
+
 go:
   - 1.9
   - tip

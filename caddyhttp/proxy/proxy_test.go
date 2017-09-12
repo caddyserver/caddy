@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -23,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lucas-clemente/quic-go/h2quic"
 	"github.com/mholt/caddy/caddyfile"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 
@@ -1468,5 +1470,61 @@ func TestChunkedWebSocketReverseProxy(t *testing.T) {
 
 	if err != nil {
 		t.Error(err)
+	}
+}
+
+func TestQuic(t *testing.T) {
+	upstream := "quic.clemente.io:8086"
+	config := "proxy / quic://" + upstream
+	content := "Hello, client"
+
+	// make proxy
+	upstreams, err := NewStaticUpstreams(caddyfile.NewDispenser("Testfile", strings.NewReader(config)), "")
+	if err != nil {
+		t.Errorf("Expected no error. Got: %s", err.Error())
+	}
+	p := &Proxy{
+		Next:      httpserver.EmptyNext, // prevents panic in some cases when test fails
+		Upstreams: upstreams,
+	}
+
+	// start QUIC server
+	go func() {
+		dir, err := os.Getwd()
+		if err != nil {
+			t.Errorf("Expected no error. Got: %s", err.Error())
+			return
+		}
+		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Write([]byte(content))
+			w.WriteHeader(200)
+		})
+		err = h2quic.ListenAndServeQUIC(
+			upstream,
+			path.Join(dir, "testdata", "fullchain.pem"),
+			path.Join(dir, "testdata", "privkey.pem"),
+			handler,
+		)
+		if err != nil {
+			t.Errorf("Expected no error. Got: %s", err.Error())
+			return
+		}
+	}()
+
+	r := httptest.NewRequest("GET", "/", nil)
+	w := httptest.NewRecorder()
+	_, err = p.ServeHTTP(w, r)
+	if err != nil {
+		t.Errorf("Expected no error. Got: %s", err.Error())
+		return
+	}
+
+	// check response
+	if w.Code != 200 {
+		t.Errorf("Expected response code 200, got: %d", w.Code)
+	}
+	responseContent := string(w.Body.Bytes())
+	if responseContent != content {
+		t.Errorf("Expected response body, got: %s", responseContent)
 	}
 }
