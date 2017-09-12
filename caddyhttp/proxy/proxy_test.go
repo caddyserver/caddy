@@ -1474,6 +1474,13 @@ func TestChunkedWebSocketReverseProxy(t *testing.T) {
 }
 
 func TestQuic(t *testing.T) {
+	if strings.ToLower(os.Getenv("CI")) != "true" {
+		// TODO. (#1782) This test requires configuring hosts
+		// file and updating the certificate in testdata. We
+		// should find a more robust way of testing this.
+		return
+	}
+
 	upstream := "quic.clemente.io:8086"
 	config := "proxy / quic://" + upstream
 	content := "Hello, client"
