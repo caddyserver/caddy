@@ -30,6 +30,11 @@ func TestPathMatches(t *testing.T) {
 			shouldMatch: false,
 		},
 		{
+			reqPath:     "/foo/",
+			rulePath:    "/foo/",
+			shouldMatch: true,
+		},
+		{
 			reqPath:     "/Foobar",
 			rulePath:    "/Foo",
 			shouldMatch: true,
@@ -86,10 +91,41 @@ func TestPathMatches(t *testing.T) {
 			rulePath:    "",
 			shouldMatch: true,
 		},
+		{
+			// see issue #1859
+			reqPath:     "//double-slash",
+			rulePath:    "/double-slash",
+			shouldMatch: true,
+		},
+		{
+			reqPath:     "/double//slash",
+			rulePath:    "/double/slash",
+			shouldMatch: true,
+		},
+		{
+			reqPath:     "//more/double//slashes",
+			rulePath:    "/more/double/slashes",
+			shouldMatch: true,
+		},
+		{
+			reqPath:     "/path/../traversal",
+			rulePath:    "/traversal",
+			shouldMatch: true,
+		},
+		{
+			reqPath:     "/path/../traversal",
+			rulePath:    "/path",
+			shouldMatch: false,
+		},
+		{
+			reqPath:     "/keep-slashes/http://something/foo/bar",
+			rulePath:    "/keep-slashes/http://something",
+			shouldMatch: true,
+		},
 	} {
 		CaseSensitivePath = !testcase.caseInsensitive
 		if got, want := testcase.reqPath.Matches(testcase.rulePath), testcase.shouldMatch; got != want {
-			t.Errorf("Test %d: For request path '%s' and other path '%s': expected %v, got %v",
+			t.Errorf("Test %d: For request path '%s' and base path '%s': expected %v, got %v",
 				i, testcase.reqPath, testcase.rulePath, want, got)
 		}
 	}

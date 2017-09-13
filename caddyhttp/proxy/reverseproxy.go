@@ -23,6 +23,8 @@ import (
 
 	"golang.org/x/net/http2"
 
+	"github.com/lucas-clemente/quic-go"
+	"github.com/lucas-clemente/quic-go/h2quic"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
 
@@ -33,6 +35,8 @@ var (
 	}
 
 	bufferPool = sync.Pool{New: createBuffer}
+
+	defaultCryptoHandshakeTimeout = 10 * time.Second
 )
 
 func createBuffer() interface{} {
@@ -180,10 +184,17 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int) *
 			req.URL.RawQuery = targetQuery + "&" + req.URL.RawQuery
 		}
 	}
+
 	rp := &ReverseProxy{Director: director, FlushInterval: 250 * time.Millisecond} // flushing good for streaming & server-sent events
 	if target.Scheme == "unix" {
 		rp.Transport = &http.Transport{
 			Dial: socketDial(target.String()),
+		}
+	} else if target.Scheme == "quic" {
+		rp.Transport = &h2quic.RoundTripper{
+			QuicConfig: &quic.Config{
+				HandshakeTimeout: defaultCryptoHandshakeTimeout,
+			},
 		}
 	} else if keepalive != http.DefaultMaxIdleConnsPerHost {
 		// if keepalive is equal to the default,
@@ -192,7 +203,7 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int) *
 		transport := &http.Transport{
 			Proxy:                 http.ProxyFromEnvironment,
 			Dial:                  defaultDialer.Dial,
-			TLSHandshakeTimeout:   10 * time.Second,
+			TLSHandshakeTimeout:   defaultCryptoHandshakeTimeout,
 			ExpectContinueTimeout: 1 * time.Second,
 		}
 		if keepalive == 0 {
@@ -216,7 +227,7 @@ func (rp *ReverseProxy) UseInsecureTransport() {
 		transport := &http.Transport{
 			Proxy:               http.ProxyFromEnvironment,
 			Dial:                defaultDialer.Dial,
-			TLSHandshakeTimeout: 10 * time.Second,
+			TLSHandshakeTimeout: defaultCryptoHandshakeTimeout,
 			TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
 		}
 		if httpserver.HTTP2 {
@@ -231,6 +242,11 @@ func (rp *ReverseProxy) UseInsecureTransport() {
 		// No http2.ConfigureTransport() here.
 		// For now this is only added in places where
 		// an http.Transport is actually created.
+	} else if transport, ok := rp.Transport.(*h2quic.RoundTripper); ok {
+		if transport.TLSClientConfig == nil {
+			transport.TLSClientConfig = &tls.Config{}
+		}
+		transport.TLSClientConfig.InsecureSkipVerify = true
 	}
 }
 
@@ -245,6 +261,10 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, 
 	}
 
 	rp.Director(outreq)
+
+	if outreq.URL.Scheme == "quic" {
+		outreq.URL.Scheme = "https" // Change scheme back to https for QUIC RoundTripper
+	}
 
 	res, err := transport.RoundTrip(outreq)
 	if err != nil {

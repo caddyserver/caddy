@@ -150,7 +150,8 @@ func (u *staticUpstream) From() string {
 
 func (u *staticUpstream) NewHost(host string) (*UpstreamHost, error) {
 	if !strings.HasPrefix(host, "http") &&
-		!strings.HasPrefix(host, "unix:") {
+		!strings.HasPrefix(host, "unix:") &&
+		!strings.HasPrefix(host, "quic:") {
 		host = "http://" + host
 	}
 	uh := &UpstreamHost{

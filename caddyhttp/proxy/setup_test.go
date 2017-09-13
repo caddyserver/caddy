@@ -147,6 +147,14 @@ func TestSetup(t *testing.T) {
 				"http://localhost:1984": {},
 			},
 		},
+		// test #14 test QUIC
+		{
+			"proxy / quic://localhost:443",
+			false,
+			map[string]struct{}{
+				"quic://localhost:443": {},
+			},
+		},
 	} {
 		c := caddy.NewTestController("http", test.input)
 		err := setup(c)

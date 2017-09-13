@@ -459,13 +459,14 @@ var directives = []string{
 	"gzip",
 	"header",
 	"errors",
-	"authz",     // github.com/casbin/caddy-authz
-	"filter",    // github.com/echocat/caddy-filter
-	"minify",    // github.com/hacdias/caddy-minify
-	"ipfilter",  // github.com/pyed/ipfilter
-	"ratelimit", // github.com/xuqingfeng/caddy-rate-limit
-	"search",    // github.com/pedronasser/caddy-search
-	"expires",   // github.com/epicagency/caddy-expires
+	"authz",        // github.com/casbin/caddy-authz
+	"filter",       // github.com/echocat/caddy-filter
+	"minify",       // github.com/hacdias/caddy-minify
+	"ipfilter",     // github.com/pyed/ipfilter
+	"ratelimit",    // github.com/xuqingfeng/caddy-rate-limit
+	"search",       // github.com/pedronasser/caddy-search
+	"expires",      // github.com/epicagency/caddy-expires
+	"forwardproxy", // github.com/caddyserver/forwardproxy
 	"basicauth",
 	"digestauth",
 	"redir",
@@ -485,6 +486,7 @@ var directives = []string{
 	"push",
 	"datadog",    // github.com/payintech/caddy-datadog
 	"prometheus", // github.com/miekg/caddy-prometheus
+	"templates",
 	"proxy",
 	"fastcgi",
 	"cgi", // github.com/jung-kurt/caddy-cgi
@@ -492,10 +494,11 @@ var directives = []string{
 	"filemanager", // github.com/hacdias/filemanager/caddy/filemanager
 	"webdav",      // github.com/hacdias/caddy-webdav
 	"markdown",
-	"templates",
 	"browse",
+	"jekyll",    // github.com/hacdias/filemanager/caddy/jekyll
 	"hugo",      // github.com/hacdias/filemanager/caddy/hugo
 	"mailout",   // github.com/SchumacherFM/mailout
+	"awses",     // github.com/miquella/caddy-awses
 	"awslambda", // github.com/coopernurse/caddy-awslambda
 	"grpc",      // github.com/pieterlouw/caddy-grpc
 	"gopkg",     // github.com/zikes/gopkg

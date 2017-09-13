@@ -81,7 +81,7 @@ func ParseStopWaitingFrame(r *bytes.Reader, packetNumber protocol.PacketNumber, 
 		return nil, err
 	}
 
-	if leastUnackedDelta > uint64(packetNumber) {
+	if leastUnackedDelta >= uint64(packetNumber) {
 		return nil, qerr.Error(qerr.InvalidStopWaitingData, "invalid LeastUnackedDelta")
 	}
 

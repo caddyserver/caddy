@@ -155,7 +155,7 @@ func sendFcgi(reqType int, fcgiParams map[string]string, data []byte, posts map[
 	fcgi.Close()
 	time.Sleep(1 * time.Second)
 
-	if bytes.Index(content, []byte("FAILED")) >= 0 {
+	if bytes.Contains(content, []byte("FAILED")) {
 		globalt.Error("Server return failed message")
 	}
 
