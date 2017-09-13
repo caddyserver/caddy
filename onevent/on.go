@@ -1,33 +1,33 @@
-package command
+package onevent
 
 import (
 	"strings"
 
 	"github.com/google/uuid"
 	"github.com/mholt/caddy"
-	"github.com/mholt/caddy/command/hook"
+	"github.com/mholt/caddy/onevent/hook"
 )
 
 func init() {
 	// Register Directive.
-	caddy.RegisterPlugin("command", caddy.Plugin{Action: setup})
+	caddy.RegisterPlugin("on", caddy.Plugin{Action: setup})
 }
 
 func setup(c *caddy.Controller) error {
-	config, err := commandParse(c)
+	config, err := onParse(c)
 	if err != nil {
 		return err
 	}
 
 	// Register Event Hooks.
 	for _, cfg := range config {
-		caddy.RegisterEventHook("command-"+cfg.ID, cfg.Hook)
+		caddy.RegisterEventHook("on-"+cfg.ID, cfg.Hook)
 	}
 
 	return nil
 }
 
-func commandParse(c *caddy.Controller) ([]*hook.Config, error) {
+func onParse(c *caddy.Controller) ([]*hook.Config, error) {
 	var config []*hook.Config
 
 	for c.Next() {
@@ -47,9 +47,9 @@ func commandParse(c *caddy.Controller) ([]*hook.Config, error) {
 		// Assign an unique ID.
 		cfg.ID = uuid.New().String()
 
-		// Extract commands and arguments.
 		args := c.RemainingArgs()
 
+		// Extract command and arguments.
 		command, args, err := caddy.SplitCommandAndArgs(strings.Join(args, " "))
 		if err != nil {
 			return config, c.Err(err.Error())

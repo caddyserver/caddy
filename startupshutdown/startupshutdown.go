@@ -5,7 +5,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/mholt/caddy"
-	"github.com/mholt/caddy/command/hook"
+	"github.com/mholt/caddy/onevent/hook"
 )
 
 func init() {
@@ -13,37 +13,37 @@ func init() {
 	caddy.RegisterPlugin("shutdown", caddy.Plugin{Action: Shutdown})
 }
 
-// Startup is an alias for command startup.
+// Startup is an "alias" for on startup.
 func Startup(c *caddy.Controller) error {
-	config, err := commandParse(c, caddy.InstanceStartupEvent)
+	config, err := onParse(c, caddy.InstanceStartupEvent)
 	if err != nil {
 		return c.ArgErr()
 	}
 
 	// Register Event Hooks.
 	for _, cfg := range config {
-		caddy.RegisterEventHook("command-"+cfg.ID, cfg.Hook)
+		caddy.RegisterEventHook("on-"+cfg.ID, cfg.Hook)
 	}
 
 	return nil
 }
 
-// Shutdown is an alias for command shutdown.
+// Shutdown is an "alias" for on shutdown.
 func Shutdown(c *caddy.Controller) error {
-	config, err := commandParse(c, caddy.ShutdownEvent)
+	config, err := onParse(c, caddy.ShutdownEvent)
 	if err != nil {
 		return c.ArgErr()
 	}
 
 	// Register Event Hooks.
 	for _, cfg := range config {
-		caddy.RegisterEventHook("command-"+cfg.ID, cfg.Hook)
+		caddy.RegisterEventHook("on-"+cfg.ID, cfg.Hook)
 	}
 
 	return nil
 }
 
-func commandParse(c *caddy.Controller, event caddy.EventName) ([]*hook.Config, error) {
+func onParse(c *caddy.Controller, event caddy.EventName) ([]*hook.Config, error) {
 	var config []*hook.Config
 
 	for c.Next() {

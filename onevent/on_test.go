@@ -1,10 +1,10 @@
-package command
+package onevent
 
 import (
 	"testing"
 
 	"github.com/mholt/caddy"
-	"github.com/mholt/caddy/command/hook"
+	"github.com/mholt/caddy/onevent/hook"
 )
 
 func TestSetup(t *testing.T) {
@@ -13,11 +13,11 @@ func TestSetup(t *testing.T) {
 		input     string
 		shouldErr bool
 	}{
-		{name: "noInput", input: "command", shouldErr: true},
-		{name: "nonExistent", input: "command xyz cmd arg", shouldErr: true},
-		{name: "startup", input: "command startup cmd arg", shouldErr: false},
-		{name: "shutdown", input: "command shutdown cmd arg &", shouldErr: false},
-		{name: "certrenew", input: "command certrenew cmd arg", shouldErr: false},
+		{name: "noInput", input: "on", shouldErr: true},
+		{name: "nonExistent", input: "on xyz cmd arg", shouldErr: true},
+		{name: "startup", input: "on startup cmd arg", shouldErr: false},
+		{name: "shutdown", input: "on shutdown cmd arg &", shouldErr: false},
+		{name: "certrenew", input: "on certrenew cmd arg", shouldErr: false},
 	}
 
 	for _, test := range tests {
@@ -43,16 +43,16 @@ func TestCommandParse(t *testing.T) {
 		shouldErr bool
 		config    hook.Config
 	}{
-		{name: "noInput", input: `command`, shouldErr: true},
-		{name: "nonExistent", input: "command xyz cmd arg", shouldErr: true},
-		{name: "startup", input: `command startup cmd arg1 arg2`, shouldErr: false, config: hook.Config{Event: caddy.InstanceStartupEvent, Command: "cmd", Args: []string{"arg1", "arg2"}}},
-		{name: "shutdown", input: `command shutdown cmd arg1 arg2 &`, shouldErr: false, config: hook.Config{Event: caddy.ShutdownEvent, Command: "cmd", Args: []string{"arg1", "arg2", "&"}}},
-		{name: "certrenew", input: `command certrenew cmd arg1 arg2`, shouldErr: false, config: hook.Config{Event: caddy.CertRenewEvent, Command: "cmd", Args: []string{"arg1", "arg2"}}},
+		{name: "noInput", input: `on`, shouldErr: true},
+		{name: "nonExistent", input: "on xyz cmd arg", shouldErr: true},
+		{name: "startup", input: `on startup cmd arg1 arg2`, shouldErr: false, config: hook.Config{Event: caddy.InstanceStartupEvent, Command: "cmd", Args: []string{"arg1", "arg2"}}},
+		{name: "shutdown", input: `on shutdown cmd arg1 arg2 &`, shouldErr: false, config: hook.Config{Event: caddy.ShutdownEvent, Command: "cmd", Args: []string{"arg1", "arg2", "&"}}},
+		{name: "certrenew", input: `on certrenew cmd arg1 arg2`, shouldErr: false, config: hook.Config{Event: caddy.CertRenewEvent, Command: "cmd", Args: []string{"arg1", "arg2"}}},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			config, err := commandParse(caddy.NewTestController("http", test.input))
+			config, err := onParse(caddy.NewTestController("http", test.input))
 
 			if err == nil && test.shouldErr {
 				t.Error("Test didn't error, but it should have")
