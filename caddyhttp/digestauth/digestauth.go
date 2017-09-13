@@ -6,12 +6,12 @@
 package digestauth
 
 import (
-	"os"
+	"context"
 	"fmt"
 	"log"
-	"context"
-	"strings"
 	"net/http"
+	"os"
+	"strings"
 
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
@@ -46,8 +46,8 @@ func (a DigestAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, erro
 				}
 
 				w.Header().Add("WWW-Authenticate", "Digest realm=\""+rule.Realm+
-				"\", algorithm=\"MD5-sess\", qop=\"auth,auth-int\", nonce=\""+
-				n.Value()+"\"")
+					"\", algorithm=\"MD5-sess\", qop=\"auth,auth-int\", nonce=\""+
+					n.Value()+"\"")
 				return http.StatusUnauthorized, nil
 			}
 
@@ -57,24 +57,23 @@ func (a DigestAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, erro
 				return http.StatusBadRequest, err
 			}
 
-			code, body, smth := rule.Digester.EvaluateDigest(params, r.Method)
-			fmt.Printf("EvaluateDigest: code=%d body=%s smth=%t\n", code, body, smth)
+			code, _, _ := rule.Digester.EvaluateDigest(params, r.Method)
 			switch code {
-				case http.StatusOK:
-					// don't do anything, we are authorized, pass along to the next handler
-				case http.StatusUnauthorized:
-					n, err := rule.Digester.MakeNonce()
-					if err != nil {
-						return http.StatusInternalServerError, err
-					}
+			case http.StatusOK:
+				// don't do anything, we are authorized, pass along to the next handler
+			case http.StatusUnauthorized:
+				n, err := rule.Digester.MakeNonce()
+				if err != nil {
+					return http.StatusInternalServerError, err
+				}
 
-					fmt.Printf("")
-					w.Header().Add("WWW-Authenticate", "Digest realm=\""+rule.Realm+
-						"\", algorithm=\"MD5-sess\", qop=\"auth,auth-int\", nonce=\""+
-						n.Value()+"\"")
-					return http.StatusUnauthorized, nil
-				default:
-					return code, nil
+				fmt.Printf("")
+				w.Header().Add("WWW-Authenticate", "Digest realm=\""+rule.Realm+
+					"\", algorithm=\"MD5-sess\", qop=\"auth,auth-int\", nonce=\""+
+					n.Value()+"\"")
+				return http.StatusUnauthorized, nil
+			default:
+				return code, nil
 			}
 
 			// let upstream middleware (e.g. fastcgi and cgi) know about authenticated

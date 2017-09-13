@@ -93,11 +93,15 @@ func digestAuthParse(c *caddy.Controller) ([]Rule, error) {
 		} else if strings.HasPrefix(password, "htdigest=") {
 			rule.Users, err = NewHtdigestUserStore(filepath.Join(cfg.Root, password[9:]), nil)
 		} else {
-			rule.Users, err = NewSimpleUserStore(map[string]string{username+":"+rule.Realm: password}), nil
+			rule.Users, err = NewSimpleUserStore(map[string]string{username: password}), nil
 		}
 
 		if err != nil {
 			return rules, c.Errf("Get password storage: %v", err)
+		}
+
+		if rule.Realm == "" {
+			rule.Realm = "Restricted"
 		}
 
 		rule.Digester = NewDigestHandler(rule.Realm, nil, nil, rule.Users)

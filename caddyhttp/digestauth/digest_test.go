@@ -6,9 +6,7 @@
 package digestauth
 
 import (
-	"log"
 	"net/http"
-	"os"
 	"testing"
 )
 
@@ -17,7 +15,7 @@ func Test_simpleNonce(t *testing.T) {
 	s, err := newSimpleNonce()
 
 	if err != nil {
-		t.Error("failed to allocated simpleNone: %v", err)
+		t.Errorf("failed to allocated simpleNone: %v", err)
 	}
 
 	if s.Value() == "" {
@@ -51,11 +49,6 @@ func Test_simpleNonce(t *testing.T) {
 }
 
 func Test_evaluateDigest(t *testing.T) {
-	logger := (*log.Logger)(nil)
-	if testing.Verbose() {
-		logger = log.New(os.Stderr, "digest:", 0)
-	}
-
 	nonces := newSimpleNonceStore()
 	nonces.Add(&simpleNonce{value: "dcd98b7102dd2f0e8b11d0f600bfb0c093", countersSeen: map[uint]bool{}})
 	nonces.Add(&simpleNonce{value: "9105d0da044827ad", countersSeen: map[uint]bool{}})
@@ -68,8 +61,10 @@ func Test_evaluateDigest(t *testing.T) {
 		"foo:mortal":                "3791e8e14a10b3666ba15d9e78e4b359", // bar
 	})
 
+	digester := NewDigestHandler("testrealm@host.com", nonces, nil, users)
+
 	// Sample data from RFC
-	code, msg, stale := evaluateDigest(
+	code, msg, stale := digester.EvaluateDigest(
 		map[string]string{
 			"username": "Mufasa",
 			"uri":      "/dir/index.html",
@@ -80,13 +75,13 @@ func Test_evaluateDigest(t *testing.T) {
 			"qop":      "auth",
 			"response": "6629fae49393a05397450978507c4ef1",
 		},
-		"GET", users, nonces, logger)
+		"GET")
 	if code != http.StatusOK {
-		t.Errorf("evaluateDigest failed: code=%v msg=%v stale=%v", code, msg, stale)
+		t.Errorf("EvaluateDigest failed: code=%v msg=%v stale=%v", code, msg, stale)
 	}
 
 	// Credentials from RFC, issued by curl
-	code, msg, stale = evaluateDigest(
+	code, msg, stale = digester.EvaluateDigest(
 		map[string]string{
 			"username": "Mufasa",
 			"uri":      "/img/lioness.jpg",
@@ -97,13 +92,15 @@ func Test_evaluateDigest(t *testing.T) {
 			"qop":      "auth",
 			"response": "15c49fd482012e38a720b8a05ff63920",
 		},
-		"GET", users, nonces, logger)
+		"GET")
 	if code != http.StatusOK {
-		t.Errorf("evaluateDigest failed: code=%v msg=%v stale=%v", code, msg, stale)
+		t.Errorf("EvaluateDigest failed: code=%v msg=%v stale=%v", code, msg, stale)
 	}
 
+	digester = NewDigestHandler("mortal", nonces, nil, users)
+
 	// MD5 auth
-	code, msg, stale = evaluateDigest(
+	code, msg, stale = digester.EvaluateDigest(
 		map[string]string{
 			"username": "foo",
 			"uri":      "/baz",
@@ -114,13 +111,13 @@ func Test_evaluateDigest(t *testing.T) {
 			"qop":      "auth",
 			"response": "6c6d6a0f4d13b799bc6afcc00a14bd58",
 		},
-		"GET", users, nonces, logger)
+		"GET")
 	if code != http.StatusOK {
-		t.Errorf("evaluateDigest failed: code=%v msg=%v stale=%v", code, msg, stale)
+		t.Errorf("EvaluateDigest failed: code=%v msg=%v stale=%v", code, msg, stale)
 	}
 
 	// No qop, legacy mode
-	code, msg, stale = evaluateDigest(
+	code, msg, stale = digester.EvaluateDigest(
 		map[string]string{
 			"username": "foo",
 			"uri":      "/baz",
@@ -129,13 +126,13 @@ func Test_evaluateDigest(t *testing.T) {
 			// no qop
 			"response": "a90e57e03e1e8a5d53eb48445ae0471f",
 		},
-		"GET", users, nonces, logger)
+		"GET")
 	if code != http.StatusOK {
-		t.Errorf("evaluateDigest failed: code=%v msg=%v stale=%v", code, msg, stale)
+		t.Errorf("EvaluateDigest failed: code=%v msg=%v stale=%v", code, msg, stale)
 	}
 
 	// MD5-sess, quth
-	code, msg, stale = evaluateDigest(
+	code, msg, stale = digester.EvaluateDigest(
 		map[string]string{
 			"username":  "foo",
 			"uri":       "/baz",
@@ -147,13 +144,13 @@ func Test_evaluateDigest(t *testing.T) {
 			"algorithm": "MD5-sess",
 			"response":  "ad522fee3cfb51d98914ddde2b7d2c77",
 		},
-		"GET", users, nonces, logger)
+		"GET")
 	if code != http.StatusOK {
-		t.Errorf("evaluateDigest failed: code=%v msg=%v stale=%v", code, msg, stale)
+		t.Errorf("EvaluateDigest failed: code=%v msg=%v stale=%v", code, msg, stale)
 	}
 
 	// MD5-sess, quth Replay -- should fail
-	code, msg, stale = evaluateDigest(
+	code, msg, stale = digester.EvaluateDigest(
 		map[string]string{
 			"username":  "foo",
 			"uri":       "/baz",
@@ -165,8 +162,8 @@ func Test_evaluateDigest(t *testing.T) {
 			"algorithm": "MD5-sess",
 			"response":  "ad522fee3cfb51d98914ddde2b7d2c77",
 		},
-		"GET", users, nonces, logger)
+		"GET")
 	if code != http.StatusUnauthorized || !stale {
-		t.Errorf("evaluateDigest failed to detect replayed nc: code=%v msg=%v stale=%v", code, msg, stale)
+		t.Errorf("EvaluateDigest failed to detect replayed nc: code=%v msg=%v stale=%v", code, msg, stale)
 	}
 }

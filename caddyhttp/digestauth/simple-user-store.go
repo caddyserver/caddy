@@ -19,7 +19,7 @@ func NewSimpleUserStore(users map[string]string) UserStore {
 	return &us
 }
 func (us *simpleUserStore) Lookup(user string, realm string) (string, bool, error) {
-	pass, ok := us.userToHA1[user+":"+realm]
+	pass, ok := us.userToHA1[user]
 	v := md5.Sum([]byte(user + ":" + realm + ":" + pass))
 	hash := hex.EncodeToString(v[:])
 	if ok {
