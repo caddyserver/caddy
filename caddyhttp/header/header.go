@@ -27,10 +27,6 @@ func (h Headers) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 	for _, rule := range h.Rules {
 		if httpserver.Path(r.URL.Path).Matches(rule.Path) {
 			for name := range rule.Headers {
-				if name == "Caddy-Sponsors" || name == "-Caddy-Sponsors" {
-					// see EULA
-					continue
-				}
 
 				// One can either delete a header, add multiple values to a header, or simply
 				// set a header.
