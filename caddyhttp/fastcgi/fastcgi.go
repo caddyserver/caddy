@@ -20,6 +20,7 @@ package fastcgi
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -107,7 +108,11 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			}
 
 			// Connect to FastCGI gateway
-			network, address := parseAddress(rule.Address())
+			address, err := rule.Address()
+			if err != nil {
+				return http.StatusBadGateway, err
+			}
+			network, address := parseAddress(address)
 
 			ctx := context.Background()
 			if rule.ConnectTimeout > 0 {
@@ -381,7 +386,7 @@ type Rule struct {
 type balancer interface {
 	// Address picks an upstream address from the
 	// underlying load balancer.
-	Address() string
+	Address() (string, error)
 }
 
 // roundRobin is a round robin balancer for fastcgi upstreams.
@@ -393,9 +398,34 @@ type roundRobin struct {
 	addresses []string
 }
 
-func (r *roundRobin) Address() string {
+func (r *roundRobin) Address() (string, error) {
 	index := atomic.AddInt64(&r.index, 1) % int64(len(r.addresses))
-	return r.addresses[index]
+	return r.addresses[index], nil
+}
+
+// srvResolver is a private interface used to abstract
+// the DNS resolver. It is mainly used to facilitate testing.
+type srvResolver interface {
+	LookupSRV(ctx context.Context, service, proto, name string) (string, []*net.SRV, error)
+}
+
+// srv is a service locator for fastcgi upstreams
+type srv struct {
+	resolver srvResolver
+	service  string
+}
+
+// Address looks up the service and returns the address:port
+// from first result in resolved list.
+// No explicit balancing is required because net.LookupSRV
+// sorts the results by priority and randomizes within priority.
+func (s *srv) Address() (string, error) {
+	_, addrs, err := s.resolver.LookupSRV(context.Background(), "", "", s.service)
+	if err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("%s:%d", strings.TrimRight(addrs[0].Target, "."), addrs[0].Port), nil
 }
 
 // canSplit checks if path can split into two based on rule.SplitPath.
