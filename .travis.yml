@@ -5,7 +5,7 @@ addons:
     - quic.clemente.io
 
 go:
-  - 1.9
+  - 1.x
   - tip
 
 matrix:
