@@ -1,6 +1,6 @@
 End-User License Agreement
 
-Last updated: September 5, 2017
+Last updated: September 14, 2017
 
 THIS SOFTWARE END-USER LICENSE AGREEMENT ("EULA") IS A LEGAL AGREEMENT ("Agreement") BETWEEN YOU (THE CUSTOMER, EITHER AS AN INDIVIDUAL OR, IF PURCHASED OR OTHERWISE ACQUIRED BY OR FOR AN ENTITY, AS AN ENTITY) AND LIGHT CODE LABS, LLC ("Licensor" and "Company"). READ IT CAREFULLY BEFORE COMPLETING THE INSTALLATION PROCESS AND USING OFFICIAL CADDY BINARIES AND RELATED SOFTWARE COMPONENTS ("Software"). IT PROVIDES A LICENSE TO USE THE SOFTWARE AND CONTAINS WARRANTY INFORMATION AND LIABILITY DISCLAIMERS. BY INSTALLING AND USING THE SOFTWARE, YOU ARE CONFIRMING YOUR ACCEPTANCE OF THE SOFTWARE AND AGREEING TO BECOME BOUND BY THE TERMS OF THIS AGREEMENT. THE SOFTWARE IS COPYRIGHTED AND IT IS LICENSED, NOT SOLD, TO YOU UNDER THIS AGREEMENT.
 
@@ -42,7 +42,6 @@ The open source code of this Software is licensed under the terms of the Apache 
 	{{- if eq .Type "personal"}}
 	(m) use or distribute the Software commercially, including to, for, or within a company or for business purposes;
 	(n) use or distribute the Software as any part of a formal or informal profitable venture, or as part of a product or service being sold either directly or indirectly;
-	(o) block, hide, obscure, modify, or remove the promotional header field named "Caddy-Sponsors" (and any case variants) from HTTP responses;
 	{{- end}}
 the violation of any of these is subject to the termination clauses in Section 7.
 
