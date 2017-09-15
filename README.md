@@ -57,7 +57,7 @@ Caddy binaries have no dependencies and are available for every platform. Get Ca
 customize your build in the browser
 - **[Latest release](https://github.com/mholt/caddy/releases/latest)** for
 pre-built, vanilla binaries
-- **go get** to build from source: `go get github.com/mholt/caddy/caddy` (requires Go 1.8 or newer) - to build with proper version information (required when filing issues), `cd` to the `caddy` folder and use `go run build.go`.
+- **go get** to build from source: `go get github.com/mholt/caddy/caddy` (requires Go 1.8 or newer) - to build with proper version information (required when filing issues), `cd` to the `caddy` folder and use `go get github.com/caddyserver/builds` followed by `go run build.go`.
 
 Then make sure the `caddy` binary is in your PATH.
 
