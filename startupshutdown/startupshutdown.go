@@ -1,11 +1,12 @@
 package startupshutdown
 
 import (
+	"log"
+	"os"
+	"os/exec"
 	"strings"
 
-	"github.com/google/uuid"
 	"github.com/mholt/caddy"
-	"github.com/mholt/caddy/onevent/hook"
 )
 
 func init() {
@@ -13,64 +14,60 @@ func init() {
 	caddy.RegisterPlugin("shutdown", caddy.Plugin{Action: Shutdown})
 }
 
-// Startup is an "alias" for on startup.
+// Startup registers a startup callback to execute during server start.
 func Startup(c *caddy.Controller) error {
-	config, err := onParse(c, caddy.InstanceStartupEvent)
-	if err != nil {
-		return c.ArgErr()
-	}
-
-	// Register Event Hooks.
-	for _, cfg := range config {
-		caddy.RegisterEventHook("on-"+cfg.ID, cfg.Hook)
-	}
-
-	return nil
+	return registerCallback(c, c.OnFirstStartup)
 }
 
-// Shutdown is an "alias" for on shutdown.
+// Shutdown registers a shutdown callback to execute during server stop.
 func Shutdown(c *caddy.Controller) error {
-	config, err := onParse(c, caddy.ShutdownEvent)
-	if err != nil {
-		return c.ArgErr()
-	}
-
-	// Register Event Hooks.
-	for _, cfg := range config {
-		caddy.RegisterEventHook("on-"+cfg.ID, cfg.Hook)
-	}
-
-	return nil
+	return registerCallback(c, c.OnFinalShutdown)
 }
 
-func onParse(c *caddy.Controller, event caddy.EventName) ([]*hook.Config, error) {
-	var config []*hook.Config
+// registerCallback registers a callback function to execute by
+// using c to parse the directive. It registers the callback
+// to be executed using registerFunc.
+func registerCallback(c *caddy.Controller, registerFunc func(func() error)) error {
+	var funcs []func() error
 
 	for c.Next() {
-		cfg := new(hook.Config)
-
 		args := c.RemainingArgs()
 		if len(args) == 0 {
-			return config, c.ArgErr()
+			return c.ArgErr()
 		}
 
-		// Configure Event.
-		cfg.Event = event
+		nonblock := false
+		if len(args) > 1 && args[len(args)-1] == "&" {
+			// Run command in background; non-blocking
+			nonblock = true
+			args = args[:len(args)-1]
+		}
 
-		// Assign an unique ID.
-		cfg.ID = uuid.New().String()
-
-		// Extract command and arguments.
 		command, args, err := caddy.SplitCommandAndArgs(strings.Join(args, " "))
 		if err != nil {
-			return config, c.Err(err.Error())
+			return c.Err(err.Error())
 		}
 
-		cfg.Command = command
-		cfg.Args = args
+		fn := func() error {
+			cmd := exec.Command(command, args...)
+			cmd.Stdin = os.Stdin
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			if nonblock {
+				log.Printf("[INFO] Nonblocking Command:\"%s %s\"", command, strings.Join(args, " "))
+				return cmd.Start()
+			}
+			log.Printf("[INFO] Blocking Command:\"%s %s\"", command, strings.Join(args, " "))
+			return cmd.Run()
+		}
 
-		config = append(config, cfg)
+		funcs = append(funcs, fn)
 	}
 
-	return config, nil
+	return c.OncePerServerBlock(func() error {
+		for _, fn := range funcs {
+			registerFunc(fn)
+		}
+		return nil
+	})
 }
