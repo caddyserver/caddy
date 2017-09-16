@@ -496,14 +496,6 @@ func startWithListenerFds(cdyfile Input, inst *Instance, restartFds map[string]r
 				srv.OnStartupComplete()
 			}
 		}
-		if !Quiet {
-			for _, srvln := range inst.servers {
-				if !IsLoopback(srvln.listener.Addr().String()) {
-					checkFdlimit()
-					break
-				}
-			}
-		}
 	}
 
 	mu.Lock()

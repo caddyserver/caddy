@@ -23,6 +23,7 @@ CONFIGFILE=/etc/caddy/Caddyfile
 DAEMONOPTS="-agree=true -pidfile=$PIDFILE -log=$LOGFILE -conf=$CONFIGFILE"
 
 USERBIND="setcap cap_net_bind_service=+ep"
+USERRESOURCE="setcap cap_sys_resource+ep"
 STOP_SCHEDULE="${STOP_SCHEDULE:-QUIT/5/TERM/5/KILL/5}"
 
 test -x $DAEMON || exit 0
@@ -30,12 +31,9 @@ test -x $DAEMON || exit 0
 # Set the CADDYPATH; Let's Encrypt certificates will be written to this directory.
 export CADDYPATH=/etc/ssl/caddy
 
-# Set the ulimits
-ulimit -n 8192
-
-
 start() {
     $USERBIND $DAEMON
+    $USERRESOURCE $DAEMON
     start-stop-daemon --start --quiet --make-pidfile --pidfile $PIDFILE \
         --background --chuid $DAEMONUSER --oknodo --exec $DAEMON -- $DAEMONOPTS
 }

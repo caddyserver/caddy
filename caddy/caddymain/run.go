@@ -43,6 +43,7 @@ func init() {
 	flag.StringVar(&serverType, "type", "http", "Type of server to run")
 	flag.BoolVar(&version, "version", false, "Show version")
 	flag.BoolVar(&validate, "validate", false, "Parse the Caddyfile but do not start the server")
+	flag.Uint64Var(&rlimitNofile, "rlimit-nofile", 16384, "Sets the NOFILE rlimit for the caddy process")
 
 	caddy.RegisterCaddyfileLoader("flag", caddy.LoaderFunc(confLoader))
 	caddy.SetDefaultCaddyfileLoader("default", caddy.LoaderFunc(defaultLoader))
@@ -99,6 +100,9 @@ func Run() {
 	if err != nil {
 		mustLogFatalf("%v", err)
 	}
+
+	// Set rlimit NOFILE
+	caddy.SetRlimitOpenFiles(rlimitNofile)
 
 	// Executes Startup events
 	caddy.EmitEvent(caddy.StartupEvent, nil)
@@ -240,14 +244,15 @@ const appName = "Caddy"
 
 // Flags that control program flow or startup
 var (
-	serverType string
-	conf       string
-	cpu        string
-	logfile    string
-	revoke     string
-	version    bool
-	plugins    bool
-	validate   bool
+	serverType   string
+	conf         string
+	cpu          string
+	logfile      string
+	revoke       string
+	version      bool
+	plugins      bool
+	validate     bool
+	rlimitNofile uint64
 )
 
 // Build information obtained with the help of -ldflags
