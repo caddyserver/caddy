@@ -18,6 +18,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"io/ioutil"
+
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
@@ -157,17 +159,20 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 				return http.StatusBadGateway, err
 			}
 
+			respBody, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				return http.StatusBadGateway, err
+			} else if resp.StatusCode >= 400 && http.StatusText(resp.StatusCode) != "" {
+				return resp.StatusCode, errors.New(string(respBody))
+			}
+
 			// Log any stderr output from upstream
 			if fcgiBackend.stderr.Len() != 0 {
 				// Remove trailing newline, error logger already does this.
 				err = LogError(strings.TrimSuffix(fcgiBackend.stderr.String(), "\n"))
 			}
 
-			// Normally we would return the status code if it is an error status (>= 400),
-			// however, upstream FastCGI apps don't know about our contract and have
-			// probably already written an error page. So we just return 0, indicating
-			// that the response body is already written. However, we do return any
-			// error value so it can be logged.
+			// Return any error value so it can be logged.
 			// Note that the proxy middleware works the same way, returning status=0.
 			return 0, err
 		}
