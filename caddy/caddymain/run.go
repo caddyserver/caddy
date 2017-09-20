@@ -140,6 +140,9 @@ func Run() {
 		mustLogFatalf("%v", err)
 	}
 
+	// Execute instantiation events
+	caddy.EmitEvent(caddy.InstanceStartupEvent, instance)
+
 	// Twiddle your thumbs
 	instance.Wait()
 }

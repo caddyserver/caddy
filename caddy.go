@@ -213,6 +213,9 @@ func (i *Instance) Restart(newCaddyfile Input) (*Instance, error) {
 	}
 	i.Stop()
 
+	// Execute instantiation events
+	EmitEvent(InstanceStartupEvent, newInst)
+
 	log.Println("[INFO] Reloading complete")
 
 	return newInst, nil
