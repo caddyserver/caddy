@@ -83,7 +83,7 @@ func Run() {
 		os.Exit(0)
 	}
 	if version {
-		fmt.Printf("%s %s\n", appName, appVersion)
+		fmt.Printf("%s %s (unofficial)\n", appName, appVersion)
 		if devBuild && gitShortStat != "" {
 			fmt.Printf("%s\n%s\n", gitShortStat, gitFilesModified)
 		}
