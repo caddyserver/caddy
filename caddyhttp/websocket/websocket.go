@@ -86,7 +86,9 @@ func serveWS(w http.ResponseWriter, r *http.Request, config *Config) (int, error
 	}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		return http.StatusBadRequest, err
+		// the connection has been "handled" -- WriteHeader was called with Upgrade,
+		// so don't return an error status code; just return an error
+		return 0, err
 	}
 	defer conn.Close()
 
