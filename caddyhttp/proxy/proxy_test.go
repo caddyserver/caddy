@@ -304,6 +304,40 @@ func TestWebSocketReverseProxyNonHijackerPanic(t *testing.T) {
 	p.ServeHTTP(nonHijacker, r)
 }
 
+func TestWebSocketReverseProxyBackendShutDown(t *testing.T) {
+	shutdown := make(chan struct{})
+	backend := httptest.NewServer(websocket.Handler(func(ws *websocket.Conn) {
+		shutdown <- struct{}{}
+	}))
+	defer backend.Close()
+
+	go func() {
+		<-shutdown
+		backend.Close()
+	}()
+
+	// Get proxy to use for the test
+	p := newWebSocketTestProxy(backend.URL, false)
+	backendProxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p.ServeHTTP(w, r)
+	}))
+	defer backendProxy.Close()
+
+	// Set up WebSocket client
+	url := strings.Replace(backendProxy.URL, "http://", "ws://", 1)
+	ws, err := websocket.Dial(url, "", backendProxy.URL)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Close()
+
+	var actualMsg string
+	if rcvErr := websocket.Message.Receive(ws, &actualMsg); rcvErr == nil {
+		t.Errorf("we don't get backend shutdown notification")
+	}
+}
+
 func TestWebSocketReverseProxyServeHTTPHandler(t *testing.T) {
 	// No-op websocket backend simply allows the WS connection to be
 	// accepted then it will be immediately closed. Perfect for testing.

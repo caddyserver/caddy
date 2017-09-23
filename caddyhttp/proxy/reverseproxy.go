@@ -320,8 +320,13 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, 
 		}
 		defer backendConn.Close()
 
+		proxyDone := make(chan struct{}, 2)
+
 		// Proxy backend -> frontend.
-		go pooledIoCopy(conn, backendConn)
+		go func() {
+			pooledIoCopy(conn, backendConn)
+			proxyDone <- struct{}{}
+		}()
 
 		// Proxy frontend -> backend.
 		//
@@ -336,7 +341,13 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, 
 				backendConn.Write(rbuf)
 			}
 		}
-		pooledIoCopy(backendConn, conn)
+		go func() {
+			pooledIoCopy(backendConn, conn)
+			proxyDone <- struct{}{}
+		}()
+
+		// If one side is done, we are done.
+		<-proxyDone
 	} else {
 		// NOTE:
 		//   Closing the Body involves acquiring a mutex, which is a
