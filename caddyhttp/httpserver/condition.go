@@ -40,6 +40,7 @@ func SetupIfMatcher(controller *caddy.Controller) (RequestMatcher, error) {
 				return matcher, err
 			}
 			matcher.ifs = append(matcher.ifs, ifc)
+			matcher.Enabled = true
 		case "if_op":
 			if !c.NextArg() {
 				return matcher, c.ArgErr()
@@ -155,8 +156,9 @@ func (i ifCond) True(r *http.Request) bool {
 
 // IfMatcher is a RequestMatcher for 'if' conditions.
 type IfMatcher struct {
-	ifs  []ifCond // list of If
-	isOr bool     // if true, conditions are 'or' instead of 'and'
+	Enabled bool     // if true, matcher has been configured; otherwise it's no-op
+	ifs     []ifCond // list of If
+	isOr    bool     // if true, conditions are 'or' instead of 'and'
 }
 
 // Match satisfies RequestMatcher interface.
