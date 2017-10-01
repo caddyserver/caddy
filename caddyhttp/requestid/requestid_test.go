@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
 
@@ -28,7 +29,7 @@ func TestRequestID(t *testing.T) {
 		t.Fatal("Could not create HTTP request:", err)
 	}
 
-	reqid := UUID()
+	reqid := uuid.New().String()
 
 	c := context.WithValue(request.Context(), httpserver.RequestIDCtxKey, reqid)
 
