@@ -77,6 +77,14 @@
 			"notests": true
 		},
 		{
+			"importpath": "github.com/google/uuid",
+			"repository": "https://github.com/google/uuid",
+			"vcs": "git",
+			"revision": "7e072fc3a7be179aee6d3359e46015aa8c995314",
+			"branch": "master",
+			"notests": true
+		},
+		{
 			"importpath": "github.com/gorilla/websocket",
 			"repository": "https://github.com/gorilla/websocket",
 			"vcs": "git",
@@ -162,14 +170,6 @@
 			"repository": "https://github.com/naoina/toml",
 			"vcs": "git",
 			"revision": "e6f5723bf2a66af014955e0888881314cf294129",
-			"branch": "master",
-			"notests": true
-		},
-		{
-			"importpath": "github.com/nu7hatch/gouuid",
-			"repository": "https://github.com/nu7hatch/gouuid",
-			"vcs": "git",
-			"revision": "179d4d0c4d8d407a32af483c2354df1d2c91e6c3",
 			"branch": "master",
 			"notests": true
 		},

@@ -1,3 +1,17 @@
+// Copyright 2015 Light Code Labs, LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package caddyfile
 
 import (
@@ -212,7 +226,7 @@ func (p *parser) doImport() error {
 	// and then use glob to get list of matching filenames
 	absFile, err := filepath.Abs(p.Dispenser.filename)
 	if err != nil {
-		return p.Errf("Failed to get absolute path of file: %s", p.Dispenser.filename)
+		return p.Errf("Failed to get absolute path of file: %s: %v", p.Dispenser.filename, err)
 	}
 
 	var matches []string
@@ -246,8 +260,8 @@ func (p *parser) doImport() error {
 		if err != nil {
 			return err
 		}
+
 		var importLine int
-		importDir := filepath.Dir(importFile)
 		for i, token := range newTokens {
 			if token.Text == "import" {
 				importLine = token.Line
@@ -260,7 +274,7 @@ func (p *parser) doImport() error {
 				} else if !filepath.IsAbs(importFile) {
 					abs = filepath.Join(filepath.Dir(absFile), token.Text)
 				} else {
-					abs = filepath.Join(importDir, token.Text)
+					abs = filepath.Join(filepath.Dir(importFile), token.Text)
 				}
 				newTokens[i] = Token{
 					Text: abs,
@@ -269,6 +283,7 @@ func (p *parser) doImport() error {
 				}
 			}
 		}
+
 		importedTokens = append(importedTokens, newTokens...)
 	}
 
@@ -300,8 +315,12 @@ func (p *parser) doSingleImport(importFile string) ([]Token, error) {
 		return nil, p.Errf("Could not read tokens while importing %s: %v", importFile, err)
 	}
 
-	// Tack the filename onto these tokens so errors show the imported file's name
-	filename := filepath.Base(importFile)
+	// Tack the file path onto these tokens so errors show the imported file's name
+	// (we use full, absolute path to avoid bugs: issue #1892)
+	filename, err := filepath.Abs(importFile)
+	if err != nil {
+		return nil, p.Errf("Failed to get absolute path of file: %s: %v", p.Dispenser.filename, err)
+	}
 	for i := 0; i < len(importedTokens); i++ {
 		importedTokens[i].File = filename
 	}
