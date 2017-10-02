@@ -15,12 +15,12 @@
 package startupshutdown
 
 import (
-	"log"
-	"os"
-	"os/exec"
+	"fmt"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/mholt/caddy"
+	"github.com/mholt/caddy/onevent/hook"
 )
 
 func init() {
@@ -28,60 +28,68 @@ func init() {
 	caddy.RegisterPlugin("shutdown", caddy.Plugin{Action: Shutdown})
 }
 
-// Startup registers a startup callback to execute during server start.
+// Startup (an alias for 'on startup') registers a startup callback to execute during server start.
 func Startup(c *caddy.Controller) error {
-	return registerCallback(c, c.OnFirstStartup)
-}
-
-// Shutdown registers a shutdown callback to execute during server stop.
-func Shutdown(c *caddy.Controller) error {
-	return registerCallback(c, c.OnFinalShutdown)
-}
-
-// registerCallback registers a callback function to execute by
-// using c to parse the directive. It registers the callback
-// to be executed using registerFunc.
-func registerCallback(c *caddy.Controller, registerFunc func(func() error)) error {
-	var funcs []func() error
-
-	for c.Next() {
-		args := c.RemainingArgs()
-		if len(args) == 0 {
-			return c.ArgErr()
-		}
-
-		nonblock := false
-		if len(args) > 1 && args[len(args)-1] == "&" {
-			// Run command in background; non-blocking
-			nonblock = true
-			args = args[:len(args)-1]
-		}
-
-		command, args, err := caddy.SplitCommandAndArgs(strings.Join(args, " "))
-		if err != nil {
-			return c.Err(err.Error())
-		}
-
-		fn := func() error {
-			cmd := exec.Command(command, args...)
-			cmd.Stdin = os.Stdin
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			if nonblock {
-				log.Printf("[INFO] Nonblocking Command:\"%s %s\"", command, strings.Join(args, " "))
-				return cmd.Start()
-			}
-			log.Printf("[INFO] Blocking Command:\"%s %s\"", command, strings.Join(args, " "))
-			return cmd.Run()
-		}
-
-		funcs = append(funcs, fn)
+	config, err := onParse(c, caddy.InstanceStartupEvent)
+	if err != nil {
+		return c.ArgErr()
 	}
 
-	return c.OncePerServerBlock(func() error {
-		for _, fn := range funcs {
-			registerFunc(fn)
+	// Register Event Hooks.
+	for _, cfg := range config {
+		caddy.RegisterEventHook("on-"+cfg.ID, cfg.Hook)
+	}
+
+	fmt.Println("NOTICE: Startup directive will be removed in a later version. Please migrate to 'on startup'")
+
+	return nil
+}
+
+// Shutdown (an alias for 'on shutdown') registers a shutdown callback to execute during server start.
+func Shutdown(c *caddy.Controller) error {
+	config, err := onParse(c, caddy.ShutdownEvent)
+	if err != nil {
+		return c.ArgErr()
+	}
+
+	// Register Event Hooks.
+	for _, cfg := range config {
+		caddy.RegisterEventHook("on-"+cfg.ID, cfg.Hook)
+	}
+
+	fmt.Println("NOTICE: Shutdown directive will be removed in a later version. Please migrate to 'on shutdown'")
+
+	return nil
+}
+
+func onParse(c *caddy.Controller, event caddy.EventName) ([]*hook.Config, error) {
+	var config []*hook.Config
+
+	for c.Next() {
+		cfg := new(hook.Config)
+
+		args := c.RemainingArgs()
+		if len(args) == 0 {
+			return config, c.ArgErr()
 		}
-		return nil
-	})
+
+		// Configure Event.
+		cfg.Event = event
+
+		// Assign an unique ID.
+		cfg.ID = uuid.New().String()
+
+		// Extract command and arguments.
+		command, args, err := caddy.SplitCommandAndArgs(strings.Join(args, " "))
+		if err != nil {
+			return config, c.Err(err.Error())
+		}
+
+		cfg.Command = command
+		cfg.Args = args
+
+		config = append(config, cfg)
+	}
+
+	return config, nil
 }
