@@ -16,8 +16,11 @@ package fastcgi
 
 import (
 	"errors"
+	"fmt"
+	"net"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/mholt/caddy"
@@ -76,7 +79,13 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 			Root: absRoot,
 			Path: args[0],
 		}
+
 		upstreams := []string{args[1]}
+
+		srvUpstream := false
+		if strings.HasPrefix(upstreams[0], "srv://") {
+			srvUpstream = true
+		}
 
 		if len(args) == 3 {
 			if err := fastcgiPreset(args[2], &rule); err != nil {
@@ -112,6 +121,10 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 				rule.IndexFiles = args
 
 			case "upstream":
+				if srvUpstream {
+					return rules, c.Err("additional upstreams are not supported with SRV upstream")
+				}
+
 				args := c.RemainingArgs()
 
 				if len(args) != 1 {
@@ -161,11 +174,30 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 			}
 		}
 
-		rule.balancer = &roundRobin{addresses: upstreams, index: -1}
+		if srvUpstream {
+			balancer, err := parseSRV(upstreams[0])
+			if err != nil {
+				return rules, c.Err("malformed service locator string: " + err.Error())
+			}
+			rule.balancer = balancer
+		} else {
+			rule.balancer = &roundRobin{addresses: upstreams, index: -1}
+		}
 
 		rules = append(rules, rule)
 	}
 	return rules, nil
+}
+
+func parseSRV(locator string) (*srv, error) {
+	if locator[6:] == "" {
+		return nil, fmt.Errorf("%s does not include the host", locator)
+	}
+
+	return &srv{
+		service:  locator[6:],
+		resolver: &net.Resolver{},
+	}, nil
 }
 
 // fastcgiPreset configures rule according to name. It returns an error if

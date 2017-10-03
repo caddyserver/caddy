@@ -15,7 +15,9 @@
 package fastcgi
 
 import (
+	"context"
 	"fmt"
+	"net"
 	"testing"
 
 	"github.com/mholt/caddy"
@@ -43,10 +45,14 @@ func TestSetup(t *testing.T) {
 	if myHandler.Rules[0].Path != "/" {
 		t.Errorf("Expected / as the Path")
 	}
-	if myHandler.Rules[0].Address() != "127.0.0.1:9000" {
-		t.Errorf("Expected 127.0.0.1:9000 as the Address")
+	addr, err := myHandler.Rules[0].Address()
+	if err != nil {
+		t.Errorf("Unexpected error in trying to retrieve address: %s", err.Error())
 	}
 
+	if addr != "127.0.0.1:9000" {
+		t.Errorf("Expected 127.0.0.1:9000 as the Address")
+	}
 }
 
 func TestFastcgiParse(t *testing.T) {
@@ -106,9 +112,19 @@ func TestFastcgiParse(t *testing.T) {
 					i, j, test.expectedFastcgiConfig[j].Path, actualFastcgiConfig.Path)
 			}
 
-			if actualFastcgiConfig.Address() != test.expectedFastcgiConfig[j].Address() {
+			actualAddr, err := actualFastcgiConfig.Address()
+			if err != nil {
+				t.Errorf("Test %d unexpected error in trying to retrieve %dth actual address: %s", i, j, err.Error())
+			}
+
+			expectedAddr, err := test.expectedFastcgiConfig[j].Address()
+			if err != nil {
+				t.Errorf("Test %d unexpected error in trying to retrieve %dth expected address: %s", i, j, err.Error())
+			}
+
+			if actualAddr != expectedAddr {
 				t.Errorf("Test %d expected %dth FastCGI Address to be  %s  , but got %s",
-					i, j, test.expectedFastcgiConfig[j].Address(), actualFastcgiConfig.Address())
+					i, j, expectedAddr, actualAddr)
 			}
 
 			if actualFastcgiConfig.Ext != test.expectedFastcgiConfig[j].Ext {
@@ -133,4 +149,76 @@ func TestFastcgiParse(t *testing.T) {
 		}
 	}
 
+}
+
+func TestFastCGIResolveSRV(t *testing.T) {
+	tests := []struct {
+		inputFastcgiConfig string
+		locator            string
+		target             string
+		port               uint16
+		shouldErr          bool
+	}{
+		{
+			`fastcgi / srv://fpm.tcp.service.consul {
+				upstream yolo
+			}`,
+			"fpm.tcp.service.consul",
+			"127.0.0.1",
+			9000,
+			true,
+		},
+		{
+			`fastcgi / srv://fpm.tcp.service.consul`,
+			"fpm.tcp.service.consul",
+			"127.0.0.1",
+			9000,
+			false,
+		},
+	}
+
+	for i, test := range tests {
+		actualFastcgiConfigs, err := fastcgiParse(caddy.NewTestController("http", test.inputFastcgiConfig))
+
+		if err == nil && test.shouldErr {
+			t.Errorf("Test %d didn't error, but it should have", i)
+		} else if err != nil && !test.shouldErr {
+			t.Errorf("Test %d errored, but it shouldn't have; got '%v'", i, err)
+		}
+
+		for _, actualFastcgiConfig := range actualFastcgiConfigs {
+			resolver, ok := (actualFastcgiConfig.balancer).(*srv)
+			if !ok {
+				t.Errorf("Test %d upstream balancer is not srv", i)
+			}
+			resolver.resolver = buildTestResolver(test.target, test.port)
+
+			addr, err := actualFastcgiConfig.Address()
+			if err != nil {
+				t.Errorf("Test %d failed to retrieve upstream address. %s", i, err.Error())
+			}
+
+			expectedAddr := fmt.Sprintf("%s:%d", test.target, test.port)
+			if addr != expectedAddr {
+				t.Errorf("Test %d expected upstream address to be %s, got %s", i, expectedAddr, addr)
+			}
+		}
+	}
+}
+
+func buildTestResolver(target string, port uint16) srvResolver {
+	return &testSRVResolver{target, port}
+}
+
+type testSRVResolver struct {
+	target string
+	port   uint16
+}
+
+func (r *testSRVResolver) LookupSRV(ctx context.Context, service, proto, name string) (string, []*net.SRV, error) {
+	return "", []*net.SRV{
+		{Target: r.target,
+			Port:     r.port,
+			Priority: 1,
+			Weight:   1}}, nil
 }
