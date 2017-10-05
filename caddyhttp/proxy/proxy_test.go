@@ -1530,7 +1530,7 @@ func TestQuic(t *testing.T) {
 	}
 
 	upstream := "quic.clemente.io:8086"
-	config := "proxy / quic://" + upstream
+	config := "proxy / quic://" + upstream + " {\n\tinsecure_skip_verify\n}"
 	content := "Hello, client"
 
 	// make proxy
@@ -1556,7 +1556,7 @@ func TestQuic(t *testing.T) {
 		})
 		err = h2quic.ListenAndServeQUIC(
 			upstream,
-			path.Join(dir, "testdata", "fullchain.pem"),
+			path.Join(dir, "testdata", "fullchain.pem"), // TODO: Use a dynamically-generated, self-signed cert instead
 			path.Join(dir, "testdata", "privkey.pem"),
 			handler,
 		)
