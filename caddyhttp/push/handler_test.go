@@ -393,7 +393,8 @@ func TestMiddlewareShouldPushIndexFile(t *testing.T) {
 				{Path: "/index.css", Method: http.MethodGet},
 			}},
 		},
-		Root: http.Dir(root),
+		Root:       http.Dir(root),
+		indexPages: []string{indexFile},
 	}
 
 	indexFilePath := filepath.Join(root, indexFile)

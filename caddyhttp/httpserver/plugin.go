@@ -27,6 +27,7 @@ import (
 
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyfile"
+	"github.com/mholt/caddy/caddyhttp/staticfiles"
 	"github.com/mholt/caddy/caddytls"
 )
 
@@ -155,6 +156,7 @@ func (h *httpContext) InspectServerBlocks(sourceFile string, serverBlocks []cadd
 					AltTLSSNIPort: altTLSSNIPort,
 				},
 				originCaddyfile: sourceFile,
+				IndexPages:      staticfiles.DefaultIndexPages,
 			}
 			h.saveConfig(key, cfg)
 		}
@@ -234,7 +236,7 @@ func GetConfig(c *caddy.Controller) *SiteConfig {
 	// we should only get here during tests because directive
 	// actions typically skip the server blocks where we make
 	// the configs
-	cfg := &SiteConfig{Root: Root, TLS: new(caddytls.Config)}
+	cfg := &SiteConfig{Root: Root, TLS: new(caddytls.Config), IndexPages: staticfiles.DefaultIndexPages}
 	ctx.saveConfig(key, cfg)
 	return cfg
 }
