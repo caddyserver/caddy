@@ -1,5 +1,15 @@
 CHANGES
 
+0.10.10 (October 9, 2017)
+- Built with Go 1.9.1
+- Removed Caddy-Sponsors header
+- New 'on' directive that deprecates 'startup' and 'shutdown'
+- Changed CASE_SENSITIVE_PATH default to false
+- fastcgi: Support for SRV upstreams
+- redir: Rules with if statements are not checked for duplicates
+- Several minor bug fixes
+
+
 0.10.9 (September 12, 2017)
 - EULA bundled with official binaries
 - Caddy-Sponsors header to indicate personal-use license
