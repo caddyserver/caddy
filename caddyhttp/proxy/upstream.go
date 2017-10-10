@@ -205,47 +205,62 @@ func (u *staticUpstream) NewHost(host string) (*UpstreamHost, error) {
 }
 
 func parseUpstream(u string) ([]string, error) {
-	if !strings.HasPrefix(u, "unix:") {
-		colonIdx := strings.LastIndex(u, ":")
-		protoIdx := strings.Index(u, "://")
-
-		if colonIdx != -1 && colonIdx != protoIdx {
-			us := u[:colonIdx]
-			ue := ""
-			portsEnd := len(u)
-			if nextSlash := strings.Index(u[colonIdx:], "/"); nextSlash != -1 {
-				portsEnd = colonIdx + nextSlash
-				ue = u[portsEnd:]
-			}
-			ports := u[len(us)+1 : portsEnd]
-
-			if separators := strings.Count(ports, "-"); separators == 1 {
-				portsStr := strings.Split(ports, "-")
-				pIni, err := strconv.Atoi(portsStr[0])
-				if err != nil {
-					return nil, err
-				}
-
-				pEnd, err := strconv.Atoi(portsStr[1])
-				if err != nil {
-					return nil, err
-				}
-
-				if pEnd <= pIni {
-					return nil, fmt.Errorf("port range [%s] is invalid", ports)
-				}
-
-				hosts := []string{}
-				for p := pIni; p <= pEnd; p++ {
-					hosts = append(hosts, fmt.Sprintf("%s:%d%s", us, p, ue))
-				}
-				return hosts, nil
-			}
-		}
+	if strings.HasPrefix(u, "unix:") {
+		return []string{u}, nil
 	}
 
-	return []string{u}, nil
+	isSrv := strings.HasPrefix(u, "srv://") || strings.HasPrefix(u, "srv+https://")
+	colonIdx := strings.LastIndex(u, ":")
+	protoIdx := strings.Index(u, "://")
 
+	if colonIdx == -1 || colonIdx == protoIdx {
+		return []string{u}, nil
+	}
+
+	if isSrv {
+		return nil, fmt.Errorf("service locator %s can not have port specified", u)
+	}
+
+	us := u[:colonIdx]
+	ue := ""
+	portsEnd := len(u)
+	if nextSlash := strings.Index(u[colonIdx:], "/"); nextSlash != -1 {
+		portsEnd = colonIdx + nextSlash
+		ue = u[portsEnd:]
+	}
+
+	ports := u[len(us)+1 : portsEnd]
+	separators := strings.Count(ports, "-")
+
+	if separators == 0 {
+		return []string{u}, nil
+	}
+
+	if separators > 1 {
+		return nil, fmt.Errorf("port range [%s] has %d separators", ports, separators)
+	}
+
+	portsStr := strings.Split(ports, "-")
+	pIni, err := strconv.Atoi(portsStr[0])
+	if err != nil {
+		return nil, err
+	}
+
+	pEnd, err := strconv.Atoi(portsStr[1])
+	if err != nil {
+		return nil, err
+	}
+
+	if pEnd <= pIni {
+		return nil, fmt.Errorf("port range [%s] is invalid", ports)
+	}
+
+	hosts := []string{}
+	for p := pIni; p <= pEnd; p++ {
+		hosts = append(hosts, fmt.Sprintf("%s:%d%s", us, p, ue))
+	}
+
+	return hosts, nil
 }
 
 func parseBlock(c *caddyfile.Dispenser, u *staticUpstream) error {
