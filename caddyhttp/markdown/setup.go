@@ -62,7 +62,7 @@ func markdownParse(c *caddy.Controller) ([]*Config, error) {
 			Extensions:    make(map[string]struct{}),
 			Template:      GetDefaultTemplate(),
 			IndexFiles:    []string{},
-			TemplateFiles: make(map[string]string),
+			TemplateFiles: make(map[string]*cachedFileInfo),
 		}
 
 		// Get the path scope
@@ -133,7 +133,9 @@ func loadParams(c *caddy.Controller, mdc *Config) error {
 				return c.Errf("default template parse error: %v", err)
 			}
 
-			mdc.TemplateFiles[""] = fpath
+			mdc.TemplateFiles[""] = &cachedFileInfo{
+				path: fpath,
+			}
 			return nil
 		case 2:
 			fpath := filepath.ToSlash(filepath.Clean(cfg.Root + string(filepath.Separator) + tArgs[1]))
@@ -142,7 +144,9 @@ func loadParams(c *caddy.Controller, mdc *Config) error {
 				return c.Errf("template parse error: %v", err)
 			}
 
-			mdc.TemplateFiles[tArgs[0]] = fpath
+			mdc.TemplateFiles[tArgs[0]] = &cachedFileInfo{
+				path: fpath,
+			}
 			return nil
 		}
 	case "templatedir":
@@ -164,7 +168,9 @@ func loadParams(c *caddy.Controller, mdc *Config) error {
 			return c.Errf("glob %q failed: %v", pattern, err)
 		}
 		for _, path := range paths {
-			mdc.TemplateFiles[filepath.Base(path)] = path
+			mdc.TemplateFiles[filepath.Base(path)] = &cachedFileInfo{
+				path: path,
+			}
 		}
 		return nil
 	default:

@@ -77,7 +77,7 @@ func TestMarkdownParse(t *testing.T) {
 			Styles:        []string{"/resources/css/blog.css"},
 			Scripts:       []string{"/resources/js/blog.js"},
 			Template:      GetDefaultTemplate(),
-			TemplateFiles: make(map[string]string),
+			TemplateFiles: make(map[string]*cachedFileInfo),
 		}}},
 		{`markdown /blog {
 	ext .md
@@ -88,8 +88,8 @@ func TestMarkdownParse(t *testing.T) {
 				".md": {},
 			},
 			Template: setDefaultTemplate("./testdata/tpl_with_include.html"),
-			TemplateFiles: map[string]string{
-				"": "testdata/tpl_with_include.html",
+			TemplateFiles: map[string]*cachedFileInfo{
+				"": {path: "testdata/tpl_with_include.html"},
 			},
 		}}},
 	}
