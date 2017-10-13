@@ -247,7 +247,7 @@ func (p *parser) doImport() error {
 	var importedTokens []Token
 
 	// first check macros. That is a simple, non-recursive replacement
-	if p.definedMacros[importPattern] != nil {
+	if p.definedMacros != nil && p.definedMacros[importPattern] != nil {
 		importedTokens = p.definedMacros[importPattern]
 	} else {
 		// make path relative to Caddyfile rather than current working directory (issue #867)
