@@ -54,6 +54,7 @@ type parser struct {
 	block           ServerBlock // current server block being parsed
 	validDirectives []string    // a directive must be valid or it's an error
 	eof             bool        // if we encounter a valid EOF in a hard place
+	definedMacros   map[string][]Token
 }
 
 func (p *parser) parseAll() ([]ServerBlock, error) {
@@ -92,6 +93,25 @@ func (p *parser) begin() error {
 	if p.eof {
 		// this happens if the Caddyfile consists of only
 		// a line of addresses and nothing else
+		return nil
+	}
+
+	if ok, name := p.isMacro(); ok {
+		if p.definedMacros == nil {
+			p.definedMacros = map[string][]Token{}
+		}
+		if p.definedMacros[name] != nil {
+			p.Errf("redeclaration of previously declared macro %s", name)
+		}
+
+		// consume all tokens til matched close brace
+		tokens, err := p.macroTokens()
+		if err != nil {
+			return err
+		}
+		p.definedMacros[name] = tokens
+		// empty block keys so we don't save this block as a real server.
+		p.block.Keys = nil
 		return nil
 	}
 
@@ -221,70 +241,75 @@ func (p *parser) doImport() error {
 	if p.NextArg() {
 		return p.Err("Import takes only one argument (glob pattern or file)")
 	}
-
-	// make path relative to Caddyfile rather than current working directory (issue #867)
-	// and then use glob to get list of matching filenames
-	absFile, err := filepath.Abs(p.Dispenser.filename)
-	if err != nil {
-		return p.Errf("Failed to get absolute path of file: %s: %v", p.Dispenser.filename, err)
-	}
-
-	var matches []string
-	var globPattern string
-	if !filepath.IsAbs(importPattern) {
-		globPattern = filepath.Join(filepath.Dir(absFile), importPattern)
-	} else {
-		globPattern = importPattern
-	}
-	matches, err = filepath.Glob(globPattern)
-
-	if err != nil {
-		return p.Errf("Failed to use import pattern %s: %v", importPattern, err)
-	}
-	if len(matches) == 0 {
-		if strings.Contains(globPattern, "*") {
-			log.Printf("[WARNING] No files matching import pattern: %s", importPattern)
-		} else {
-			return p.Errf("File to import not found: %s", importPattern)
-		}
-	}
-
 	// splice out the import directive and its argument (2 tokens total)
 	tokensBefore := p.tokens[:p.cursor-1]
 	tokensAfter := p.tokens[p.cursor+1:]
-
-	// collect all the imported tokens
 	var importedTokens []Token
-	for _, importFile := range matches {
-		newTokens, err := p.doSingleImport(importFile)
+
+	// first check macros. That is a simple, non-recursive replacement
+	if p.definedMacros[importPattern] != nil {
+		importedTokens = p.definedMacros[importPattern]
+	} else {
+		// make path relative to Caddyfile rather than current working directory (issue #867)
+		// and then use glob to get list of matching filenames
+		absFile, err := filepath.Abs(p.Dispenser.filename)
 		if err != nil {
-			return err
+			return p.Errf("Failed to get absolute path of file: %s: %v", p.Dispenser.filename, err)
 		}
 
-		var importLine int
-		for i, token := range newTokens {
-			if token.Text == "import" {
-				importLine = token.Line
-				continue
-			}
-			if token.Line == importLine {
-				var abs string
-				if filepath.IsAbs(token.Text) {
-					abs = token.Text
-				} else if !filepath.IsAbs(importFile) {
-					abs = filepath.Join(filepath.Dir(absFile), token.Text)
-				} else {
-					abs = filepath.Join(filepath.Dir(importFile), token.Text)
-				}
-				newTokens[i] = Token{
-					Text: abs,
-					Line: token.Line,
-					File: token.File,
-				}
+		var matches []string
+		var globPattern string
+		if !filepath.IsAbs(importPattern) {
+			globPattern = filepath.Join(filepath.Dir(absFile), importPattern)
+		} else {
+			globPattern = importPattern
+		}
+		matches, err = filepath.Glob(globPattern)
+
+		if err != nil {
+			return p.Errf("Failed to use import pattern %s: %v", importPattern, err)
+		}
+		if len(matches) == 0 {
+			if strings.Contains(globPattern, "*") {
+				log.Printf("[WARNING] No files matching import pattern: %s", importPattern)
+			} else {
+				return p.Errf("File to import not found: %s", importPattern)
 			}
 		}
 
-		importedTokens = append(importedTokens, newTokens...)
+		// collect all the imported tokens
+
+		for _, importFile := range matches {
+			newTokens, err := p.doSingleImport(importFile)
+			if err != nil {
+				return err
+			}
+
+			var importLine int
+			for i, token := range newTokens {
+				if token.Text == "import" {
+					importLine = token.Line
+					continue
+				}
+				if token.Line == importLine {
+					var abs string
+					if filepath.IsAbs(token.Text) {
+						abs = token.Text
+					} else if !filepath.IsAbs(importFile) {
+						abs = filepath.Join(filepath.Dir(absFile), token.Text)
+					} else {
+						abs = filepath.Join(filepath.Dir(importFile), token.Text)
+					}
+					newTokens[i] = Token{
+						Text: abs,
+						Line: token.Line,
+						File: token.File,
+					}
+				}
+			}
+
+			importedTokens = append(importedTokens, newTokens...)
+		}
 	}
 
 	// splice the imported tokens in the place of the import statement
@@ -432,4 +457,46 @@ func replaceEnvReferences(s, refStart, refEnd string) string {
 type ServerBlock struct {
 	Keys   []string
 	Tokens map[string][]Token
+}
+
+func (p *parser) isMacro() (bool, string) {
+	keys := p.block.Keys
+	// "macro foo {}" style
+	if len(keys) == 2 && keys[0] == "macro" {
+		return true, keys[1]
+	}
+	// (foo) style. What to do if more than one server key and some have ()?
+	if len(keys) == 1 && strings.HasPrefix(keys[0], "(") && strings.HasSuffix(keys[0], ")") {
+		return true, strings.TrimSuffix(keys[0][1:], ")")
+	}
+	return false, ""
+}
+
+// read and store everything in a block for later replay.
+func (p *parser) macroTokens() ([]Token, error) {
+	// TODO: disallow imports in macros for simplicity at import time
+	// macro must have curlies.
+	err := p.openCurlyBrace()
+	if err != nil {
+		return nil, err
+	}
+	count := 1
+	tokens := []Token{}
+	for p.Next() {
+		if p.Val() == "}" {
+			count--
+			if count == 0 {
+				break
+			}
+		}
+		if p.Val() == "{" {
+			count++
+		}
+		tokens = append(tokens, p.tokens[p.cursor])
+	}
+	// make sure we're matched up
+	if count != 0 {
+		return nil, p.SyntaxErr("}")
+	}
+	return tokens, nil
 }

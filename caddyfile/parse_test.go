@@ -15,6 +15,7 @@
 package caddyfile
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -513,4 +514,44 @@ func testParser(input string) parser {
 	buf := strings.NewReader(input)
 	p := parser{Dispenser: NewDispenser("Caddyfile", buf)}
 	return p
+}
+
+func TestMacro(t *testing.T) {
+	for _, tst := range []string{"(common)", "macro common"} {
+		t.Run(tst, func(t *testing.T) {
+			p := testParser(fmt.Sprintf(`
+				%s {
+					gzip foo
+					errors stderr
+				}	
+				http://example.com {
+					import common
+				}
+			`, tst))
+			blocks, err := p.parseAll()
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, b := range blocks {
+				t.Log(b.Keys)
+				t.Log(b.Tokens)
+			}
+			if len(blocks) != 1 {
+				t.Fatalf("Expect exactly one server block. Got %d.", len(blocks))
+			}
+			if actual, expected := blocks[0].Keys[0], "http://example.com"; expected != actual {
+				t.Errorf("Expected server name to be '%s' but was '%s'", expected, actual)
+			}
+			if len(blocks[0].Tokens) != 2 {
+				t.Fatalf("Server block should have tokens from import")
+			}
+			if actual, expected := blocks[0].Tokens["gzip"][0].Text, "gzip"; expected != actual {
+				t.Errorf("Expected argument to be '%s' but was '%s'", expected, actual)
+			}
+			if actual, expected := blocks[0].Tokens["errors"][1].Text, "stderr"; expected != actual {
+				t.Errorf("Expected argument to be '%s' but was '%s'", expected, actual)
+			}
+		})
+	}
+
 }
