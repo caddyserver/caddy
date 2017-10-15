@@ -461,11 +461,7 @@ type ServerBlock struct {
 
 func (p *parser) isMacro() (bool, string) {
 	keys := p.block.Keys
-	// "macro foo {}" style
-	if len(keys) == 2 && keys[0] == "macro" {
-		return true, keys[1]
-	}
-	// (foo) style. What to do if more than one server key and some have ()?
+	// A macro block is a single key with parens. Nothing else qualifies.
 	if len(keys) == 1 && strings.HasPrefix(keys[0], "(") && strings.HasSuffix(keys[0], ")") {
 		return true, strings.TrimSuffix(keys[0][1:], ")")
 	}
