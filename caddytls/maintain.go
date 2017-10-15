@@ -338,7 +338,7 @@ func freshOCSP(resp *ocsp.Response) bool {
         // If there is an OCSP responder certificate, and it expires before the
         // OCSP response, use its expiration date as the end of the OCSP
         // response's validity period.
-	if resp.Certificate && resp.Certificate.NotAfter.Before(nextUpdate) {
+	if resp.Certificate != nil && resp.Certificate.NotAfter.Before(nextUpdate) {
 		nextUpdate = resp.Certificate.NotAfter
 	}
 	// start checking OCSP staple about halfway through validity period for good measure
