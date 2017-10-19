@@ -128,8 +128,10 @@ func (cfg *Config) CacheManagedCertificate(domain string) (Certificate, error) {
 
 // cacheUnmanagedCertificatePEMFile loads a certificate for host using certFile
 // and keyFile, which must be in PEM format. It stores the certificate in
-// memory. The Managed and OnDemand flags of the certificate will be set to
-// false.
+// memory after evicting any other entries in the cache keyed by the names
+// on this certificate. In other words, it replaces existing certificates keyed
+// by the names on this certificate. The Managed and OnDemand flags of the
+// certificate will be set to false.
 //
 // This function is safe for concurrent use.
 func cacheUnmanagedCertificatePEMFile(certFile, keyFile string) error {
@@ -137,6 +139,16 @@ func cacheUnmanagedCertificatePEMFile(certFile, keyFile string) error {
 	if err != nil {
 		return err
 	}
+
+	// since this is manually managed, this call might be part of a reload after
+	// the owner renewed a certificate; so clear cache of any previous cert first,
+	// otherwise the renewed certificate may never be loaded
+	certCacheMu.Lock()
+	for _, name := range cert.Names {
+		delete(certCache, name)
+	}
+	certCacheMu.Unlock()
+
 	cacheCertificate(cert)
 	return nil
 }
