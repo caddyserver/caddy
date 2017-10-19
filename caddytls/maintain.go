@@ -334,8 +334,15 @@ func DeleteOldStapleFiles() {
 // meaning that it is not expedient to get an
 // updated response from the OCSP server.
 func freshOCSP(resp *ocsp.Response) bool {
+	nextUpdate := resp.NextUpdate
+	// If there is an OCSP responder certificate, and it expires before the
+	// OCSP response, use its expiration date as the end of the OCSP
+	// response's validity period.
+	if resp.Certificate != nil && resp.Certificate.NotAfter.Before(nextUpdate) {
+		nextUpdate = resp.Certificate.NotAfter
+	}
 	// start checking OCSP staple about halfway through validity period for good measure
-	refreshTime := resp.ThisUpdate.Add(resp.NextUpdate.Sub(resp.ThisUpdate) / 2)
+	refreshTime := resp.ThisUpdate.Add(nextUpdate.Sub(resp.ThisUpdate) / 2)
 	return time.Now().Before(refreshTime)
 }
 
