@@ -519,6 +519,7 @@ func TestMacro(t *testing.T) {
 	p := testParser(`(common) {
 					gzip foo
 					errors stderr
+					
 				}	
 				http://example.com {
 					import common
