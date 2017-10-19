@@ -100,10 +100,9 @@ func (p *parser) begin() error {
 		if p.definedMacros == nil {
 			p.definedMacros = map[string][]Token{}
 		}
-		if p.definedMacros[name] != nil {
-			p.Errf("redeclaration of previously declared macro %s", name)
+		if _, found := p.definedMacros[name]; found {
+			return p.Errf("redeclaration of previously declared macro %s", name)
 		}
-
 		// consume all tokens til matched close brace
 		tokens, err := p.macroTokens()
 		if err != nil {
