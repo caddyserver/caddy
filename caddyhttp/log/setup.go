@@ -46,7 +46,8 @@ func logParse(c *caddy.Controller) ([]*Rule, error) {
 
 	for c.Next() {
 		args := c.RemainingArgs()
-
+		ip4Mask := ""
+		ip6Mask := ""
 		var logRoller *httpserver.LogRoller
 		logRoller = httpserver.DefaultLogRoller()
 
@@ -54,14 +55,27 @@ func logParse(c *caddy.Controller) ([]*Rule, error) {
 			what := c.Val()
 			where := c.RemainingArgs()
 
-			// only support roller related options inside a block
-			if !httpserver.IsLogRollerSubdirective(what) {
+			if what == "ipmask" {
+
+				if len(where) == 0 {
+					return nil, c.ArgErr()
+				}
+				ip4Mask = where[0]
+				if len(where) > 1 {
+
+					ip6Mask = where[1]
+				}
+
+			} else if !httpserver.IsLogRollerSubdirective(what) {
+
+				if err := httpserver.ParseRoller(logRoller, what, where...); err != nil {
+					return nil, err
+				}
+
+			} else {
 				return nil, c.ArgErr()
 			}
 
-			if err := httpserver.ParseRoller(logRoller, what, where...); err != nil {
-				return nil, err
-			}
 		}
 
 		path := "/"
@@ -89,8 +103,10 @@ func logParse(c *caddy.Controller) ([]*Rule, error) {
 
 		rules = appendEntry(rules, path, &Entry{
 			Log: &httpserver.Logger{
-				Output: output,
-				Roller: logRoller,
+				Output:   output,
+				Roller:   logRoller,
+				V4ipMask: ip4Mask,
+				V6ipMask: ip6Mask,
 			},
 			Format: format,
 		})

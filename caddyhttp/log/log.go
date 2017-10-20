@@ -17,6 +17,7 @@ package log
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 
 	"github.com/mholt/caddy"
@@ -35,6 +36,7 @@ type Logger struct {
 	Next      httpserver.Handler
 	Rules     []*Rule
 	ErrorFunc func(http.ResponseWriter, *http.Request, int) // failover error handler
+
 }
 
 func (l Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
@@ -66,6 +68,14 @@ func (l Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 
 			// Write log entries
 			for _, e := range rule.Entries {
+
+				fmt.Println(r.RemoteAddr)
+				hostip, hostport, err := net.SplitHostPort(r.RemoteAddr)
+				if err == nil {
+					fmt.Println(r.RemoteAddr)
+					r.RemoteAddr = e.Log.MaskIP(hostip) + ":" + hostport
+				}
+
 				e.Log.Println(rep.Replace(e.Format))
 			}
 
