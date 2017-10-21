@@ -59,7 +59,7 @@ func TestPathCaseSensitiveEnv(t *testing.T) {
 		{"0", false},
 		{"false", false},
 		{"true", true},
-		{"", true},
+		{"", false},
 	}
 
 	for i, test := range tests {

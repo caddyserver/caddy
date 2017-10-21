@@ -16,7 +16,7 @@ func (cfg *Config) Hook(event caddy.EventName, info interface{}) error {
 	}
 
 	nonblock := false
-	if len(cfg.Args) > 1 && cfg.Args[len(cfg.Args)-1] == "&" {
+	if len(cfg.Args) >= 1 && cfg.Args[len(cfg.Args)-1] == "&" {
 		// Run command in background; non-blocking
 		nonblock = true
 		cfg.Args = cfg.Args[:len(cfg.Args)-1]

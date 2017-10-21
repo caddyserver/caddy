@@ -158,7 +158,7 @@ func SetLastModifiedHeader(w http.ResponseWriter, modTime time.Time) {
 
 // CaseSensitivePath determines if paths should be case sensitive.
 // This is configurable via CASE_SENSITIVE_PATH environment variable.
-var CaseSensitivePath = true
+var CaseSensitivePath = false
 
 const caseSensitivePathEnv = "CASE_SENSITIVE_PATH"
 
@@ -167,10 +167,10 @@ const caseSensitivePathEnv = "CASE_SENSITIVE_PATH"
 // This could have been in init, but init cannot be called from tests.
 func initCaseSettings() {
 	switch os.Getenv(caseSensitivePathEnv) {
-	case "0", "false":
-		CaseSensitivePath = false
-	default:
+	case "1", "true":
 		CaseSensitivePath = true
+	default:
+		CaseSensitivePath = false
 	}
 }
 

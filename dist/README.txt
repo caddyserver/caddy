@@ -1,4 +1,4 @@
-CADDY 0.10.9
+CADDY 0.10.10
 
 Website
 	https://caddyserver.com
@@ -14,8 +14,8 @@ Source Code
 	https://github.com/caddyserver
 
 
-For instructions on using Caddy, please see the user guide on
-the website. For a list of what's new in this version, see
+For instructions on using Caddy, please see the docs on the
+website. For a list of what's new in this version, see
 CHANGES.txt.
 
 For a good time, follow @mholt6 on Twitter.
