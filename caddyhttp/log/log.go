@@ -17,10 +17,11 @@ package log
 
 import (
 	"fmt"
-	"github.com/mholt/caddy"
-	"github.com/mholt/caddy/caddyhttp/httpserver"
 	"net"
 	"net/http"
+
+	"github.com/mholt/caddy"
+	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
 
 func init() {
