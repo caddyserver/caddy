@@ -25,14 +25,11 @@ install:
   - go get -t ./...
   - go get github.com/golang/lint/golint
   - go get github.com/FiloSottile/vendorcheck
-  # Install gometalinter and certain linters
+  # Install gometalinter
   - go get github.com/alecthomas/gometalinter
-  - go get github.com/client9/misspell/cmd/misspell
-  - go get github.com/gordonklaus/ineffassign
-  - go get golang.org/x/tools/cmd/goimports
-  - go get github.com/tsenart/deadcode
 
 script:
+  - gometalinter --install
   - gometalinter --disable-all -E vet -E gofmt -E misspell -E ineffassign -E goimports -E deadcode --tests --vendor ./...
   - vendorcheck ./...
   - go test -race ./...
