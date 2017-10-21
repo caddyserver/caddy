@@ -17,11 +17,10 @@ package log
 
 import (
 	"fmt"
-	"net"
-	"net/http"
-
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
+	"net"
+	"net/http"
 )
 
 func init() {
@@ -69,7 +68,6 @@ func (l Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			// Write log entries
 			for _, e := range rule.Entries {
 
-				fmt.Println(r.RemoteAddr)
 				// Mask IP Address, will not modify if default
 				hostip, hostport, err := net.SplitHostPort(r.RemoteAddr)
 				if err == nil {

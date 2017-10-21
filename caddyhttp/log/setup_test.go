@@ -47,8 +47,10 @@ func TestSetup(t *testing.T) {
 	}
 
 	expectedLogger := &httpserver.Logger{
-		Output: DefaultLogFilename,
-		Roller: httpserver.DefaultLogRoller(),
+		Output:   DefaultLogFilename,
+		Roller:   httpserver.DefaultLogRoller(),
+		V4ipMask: DefaultIP4Mask,
+		V6ipMask: DefaultIP6Mask,
 	}
 
 	if !reflect.DeepEqual(myHandler.Rules[0].Entries[0].Log, expectedLogger) {
@@ -72,8 +74,10 @@ func TestLogParse(t *testing.T) {
 			PathScope: "/",
 			Entries: []*Entry{{
 				Log: &httpserver.Logger{
-					Output: DefaultLogFilename,
-					Roller: httpserver.DefaultLogRoller(),
+					Output:   DefaultLogFilename,
+					Roller:   httpserver.DefaultLogRoller(),
+					V4ipMask: DefaultIP4Mask,
+					V6ipMask: DefaultIP6Mask,
 				},
 				Format: DefaultLogFormat,
 			}},
@@ -82,8 +86,10 @@ func TestLogParse(t *testing.T) {
 			PathScope: "/",
 			Entries: []*Entry{{
 				Log: &httpserver.Logger{
-					Output: "log.txt",
-					Roller: httpserver.DefaultLogRoller(),
+					Output:   "log.txt",
+					Roller:   httpserver.DefaultLogRoller(),
+					V4ipMask: DefaultIP4Mask,
+					V6ipMask: DefaultIP6Mask,
 				},
 				Format: DefaultLogFormat,
 			}},
@@ -92,8 +98,10 @@ func TestLogParse(t *testing.T) {
 			PathScope: "/",
 			Entries: []*Entry{{
 				Log: &httpserver.Logger{
-					Output: "syslog://127.0.0.1:5000",
-					Roller: httpserver.DefaultLogRoller(),
+					Output:   "syslog://127.0.0.1:5000",
+					Roller:   httpserver.DefaultLogRoller(),
+					V4ipMask: DefaultIP4Mask,
+					V6ipMask: DefaultIP6Mask,
 				},
 				Format: DefaultLogFormat,
 			}},
@@ -102,8 +110,10 @@ func TestLogParse(t *testing.T) {
 			PathScope: "/",
 			Entries: []*Entry{{
 				Log: &httpserver.Logger{
-					Output: "syslog+tcp://127.0.0.1:5000",
-					Roller: httpserver.DefaultLogRoller(),
+					Output:   "syslog+tcp://127.0.0.1:5000",
+					Roller:   httpserver.DefaultLogRoller(),
+					V4ipMask: DefaultIP4Mask,
+					V6ipMask: DefaultIP6Mask,
 				},
 				Format: DefaultLogFormat,
 			}},
@@ -112,8 +122,10 @@ func TestLogParse(t *testing.T) {
 			PathScope: "/api",
 			Entries: []*Entry{{
 				Log: &httpserver.Logger{
-					Output: "log.txt",
-					Roller: httpserver.DefaultLogRoller(),
+					Output:   "log.txt",
+					Roller:   httpserver.DefaultLogRoller(),
+					V4ipMask: DefaultIP4Mask,
+					V6ipMask: DefaultIP6Mask,
 				},
 				Format: DefaultLogFormat,
 			}},
@@ -122,8 +134,10 @@ func TestLogParse(t *testing.T) {
 			PathScope: "/serve",
 			Entries: []*Entry{{
 				Log: &httpserver.Logger{
-					Output: "stdout",
-					Roller: httpserver.DefaultLogRoller(),
+					Output:   "stdout",
+					Roller:   httpserver.DefaultLogRoller(),
+					V4ipMask: DefaultIP4Mask,
+					V6ipMask: DefaultIP6Mask,
 				},
 				Format: DefaultLogFormat,
 			}},
@@ -132,8 +146,10 @@ func TestLogParse(t *testing.T) {
 			PathScope: "/myapi",
 			Entries: []*Entry{{
 				Log: &httpserver.Logger{
-					Output: "log.txt",
-					Roller: httpserver.DefaultLogRoller(),
+					Output:   "log.txt",
+					Roller:   httpserver.DefaultLogRoller(),
+					V4ipMask: DefaultIP4Mask,
+					V6ipMask: DefaultIP6Mask,
 				},
 				Format: CommonLogFormat,
 			}},
@@ -142,8 +158,10 @@ func TestLogParse(t *testing.T) {
 			PathScope: "/myapi",
 			Entries: []*Entry{{
 				Log: &httpserver.Logger{
-					Output: "log.txt",
-					Roller: httpserver.DefaultLogRoller(),
+					Output:   "log.txt",
+					Roller:   httpserver.DefaultLogRoller(),
+					V4ipMask: DefaultIP4Mask,
+					V6ipMask: DefaultIP6Mask,
 				},
 				Format: "prefix " + CommonLogFormat + " suffix",
 			}},
@@ -152,8 +170,10 @@ func TestLogParse(t *testing.T) {
 			PathScope: "/test",
 			Entries: []*Entry{{
 				Log: &httpserver.Logger{
-					Output: "accesslog.txt",
-					Roller: httpserver.DefaultLogRoller(),
+					Output:   "accesslog.txt",
+					Roller:   httpserver.DefaultLogRoller(),
+					V4ipMask: DefaultIP4Mask,
+					V6ipMask: DefaultIP6Mask,
 				},
 				Format: CombinedLogFormat,
 			}},
@@ -162,8 +182,10 @@ func TestLogParse(t *testing.T) {
 			PathScope: "/test",
 			Entries: []*Entry{{
 				Log: &httpserver.Logger{
-					Output: "accesslog.txt",
-					Roller: httpserver.DefaultLogRoller(),
+					Output:   "accesslog.txt",
+					Roller:   httpserver.DefaultLogRoller(),
+					V4ipMask: DefaultIP4Mask,
+					V6ipMask: DefaultIP6Mask,
 				},
 				Format: "prefix " + CombinedLogFormat + " suffix",
 			}},
@@ -173,8 +195,10 @@ func TestLogParse(t *testing.T) {
 			PathScope: "/api1",
 			Entries: []*Entry{{
 				Log: &httpserver.Logger{
-					Output: "log.txt",
-					Roller: httpserver.DefaultLogRoller(),
+					Output:   "log.txt",
+					Roller:   httpserver.DefaultLogRoller(),
+					V4ipMask: DefaultIP4Mask,
+					V6ipMask: DefaultIP6Mask,
 				},
 				Format: DefaultLogFormat,
 			}},
@@ -182,8 +206,10 @@ func TestLogParse(t *testing.T) {
 			PathScope: "/api2",
 			Entries: []*Entry{{
 				Log: &httpserver.Logger{
-					Output: "accesslog.txt",
-					Roller: httpserver.DefaultLogRoller(),
+					Output:   "accesslog.txt",
+					Roller:   httpserver.DefaultLogRoller(),
+					V4ipMask: DefaultIP4Mask,
+					V6ipMask: DefaultIP6Mask,
 				},
 				Format: CombinedLogFormat,
 			}},
@@ -193,8 +219,10 @@ func TestLogParse(t *testing.T) {
 			PathScope: "/api3",
 			Entries: []*Entry{{
 				Log: &httpserver.Logger{
-					Output: "stdout",
-					Roller: httpserver.DefaultLogRoller(),
+					Output:   "stdout",
+					Roller:   httpserver.DefaultLogRoller(),
+					V4ipMask: DefaultIP4Mask,
+					V6ipMask: DefaultIP6Mask,
 				},
 				Format: "{host}",
 			}},
@@ -202,8 +230,10 @@ func TestLogParse(t *testing.T) {
 			PathScope: "/api4",
 			Entries: []*Entry{{
 				Log: &httpserver.Logger{
-					Output: "log.txt",
-					Roller: httpserver.DefaultLogRoller(),
+					Output:   "log.txt",
+					Roller:   httpserver.DefaultLogRoller(),
+					V4ipMask: DefaultIP4Mask,
+					V6ipMask: DefaultIP6Mask,
 				},
 				Format: "{when}",
 			}},
@@ -224,7 +254,11 @@ func TestLogParse(t *testing.T) {
 						MaxBackups: 3,
 						Compress:   true,
 						LocalTime:  true,
-					}},
+					},
+					V4ipMask: DefaultIP4Mask,
+					V6ipMask: DefaultIP6Mask,
+				},
+
 				Format: DefaultLogFormat,
 			}},
 		}}},
@@ -233,14 +267,18 @@ func TestLogParse(t *testing.T) {
 			PathScope: "/",
 			Entries: []*Entry{{
 				Log: &httpserver.Logger{
-					Output: "stdout",
-					Roller: httpserver.DefaultLogRoller(),
+					Output:   "stdout",
+					Roller:   httpserver.DefaultLogRoller(),
+					V4ipMask: DefaultIP4Mask,
+					V6ipMask: DefaultIP6Mask,
 				},
 				Format: "{host}",
 			}, {
 				Log: &httpserver.Logger{
-					Output: "log.txt",
-					Roller: httpserver.DefaultLogRoller(),
+					Output:   "log.txt",
+					Roller:   httpserver.DefaultLogRoller(),
+					V4ipMask: DefaultIP4Mask,
+					V6ipMask: DefaultIP6Mask,
 				},
 				Format: "{when}",
 			}},

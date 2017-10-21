@@ -77,8 +77,6 @@ func (l Logger) MaskIP(ip string) string {
 		return ip
 	}
 
-	log.Println(l.V4ipMask)
-
 	if myIP.To4() == nil {
 		// ipV6
 		maskIP = net.ParseIP(l.V6ipMask)
