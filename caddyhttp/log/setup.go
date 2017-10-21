@@ -15,7 +15,6 @@
 package log
 
 import (
-	"fmt"
 	"net"
 	"strings"
 
