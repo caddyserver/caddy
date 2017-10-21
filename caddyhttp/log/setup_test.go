@@ -262,6 +262,51 @@ func TestLogParse(t *testing.T) {
 				Format: DefaultLogFormat,
 			}},
 		}}},
+		{`log access.log {
+			ipmask 255.255.255.0 
+		}`, false, []Rule{{
+			PathScope: "/",
+			Entries: []*Entry{{
+				Log: &httpserver.Logger{
+					Output:   "access.log",
+					Roller:   httpserver.DefaultLogRoller(),
+					V4ipMask: "255.255.255.0",
+					V6ipMask: DefaultIP6Mask,
+				},
+
+				Format: DefaultLogFormat,
+			}},
+		}}},
+		{`log access.log {
+			ipmask "" ffff:ffff:ffff:ff00::
+		}`, false, []Rule{{
+			PathScope: "/",
+			Entries: []*Entry{{
+				Log: &httpserver.Logger{
+					Output:   "access.log",
+					Roller:   httpserver.DefaultLogRoller(),
+					V4ipMask: DefaultIP4Mask,
+					V6ipMask: "ffff:ffff:ffff:ff00::",
+				},
+
+				Format: DefaultLogFormat,
+			}},
+		}}},
+		{`log access.log {
+			ipmask 255.255.255.0 ffff:ffff:ffff:ff00::
+		}`, false, []Rule{{
+			PathScope: "/",
+			Entries: []*Entry{{
+				Log: &httpserver.Logger{
+					Output:   "access.log",
+					Roller:   httpserver.DefaultLogRoller(),
+					V4ipMask: "255.255.255.0",
+					V6ipMask: "ffff:ffff:ffff:ff00::",
+				},
+
+				Format: DefaultLogFormat,
+			}},
+		}}},
 		{`log / stdout {host}
 		  log / log.txt {when}`, false, []Rule{{
 			PathScope: "/",
@@ -286,6 +331,7 @@ func TestLogParse(t *testing.T) {
 		{`log access.log { rotate_size 2 rotate_age 10 rotate_keep 3 }`, true, nil},
 		{`log access.log { rotate_compress invalid }`, true, nil},
 		{`log access.log { rotate_size }`, true, nil},
+		{`log access.log { ipmask }`, true, nil},
 		{`log access.log { invalid_option 1 }`, true, nil},
 		{`log / acccess.log "{remote} - [{when}] "{method} {port}" {scheme} {mitm} "`, true, nil},
 	}
