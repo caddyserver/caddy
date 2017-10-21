@@ -15,6 +15,8 @@
 package log
 
 import (
+	"fmt"
+	"net"
 	"strings"
 
 	"github.com/mholt/caddy"
@@ -46,8 +48,10 @@ func logParse(c *caddy.Controller) ([]*Rule, error) {
 
 	for c.Next() {
 		args := c.RemainingArgs()
-		ip4Mask := ""
-		ip6Mask := ""
+
+		ip4Mask := DefaultIP4Mask
+		ip6Mask := DefaultIP6Mask
+
 		var logRoller *httpserver.LogRoller
 		logRoller = httpserver.DefaultLogRoller()
 
@@ -60,13 +64,21 @@ func logParse(c *caddy.Controller) ([]*Rule, error) {
 				if len(where) == 0 {
 					return nil, c.ArgErr()
 				}
-				ip4Mask = where[0]
+
+				if where[0] != "" {
+					ip4Mask = where[0]
+					testmask := net.ParseIP(ip4Mask).To4()
+					if testmask == nil {
+						return nil, c.Err("Mask not valid IP Format")
+					}
+				}
+
 				if len(where) > 1 {
 
 					ip6Mask = where[1]
 				}
 
-			} else if !httpserver.IsLogRollerSubdirective(what) {
+			} else if httpserver.IsLogRollerSubdirective(what) {
 
 				if err := httpserver.ParseRoller(logRoller, what, where...); err != nil {
 					return nil, err
@@ -130,3 +142,10 @@ func appendEntry(rules []*Rule, pathScope string, entry *Entry) []*Rule {
 
 	return rules
 }
+
+const (
+	// IP Masks that have no effect on IP Address
+	DefaultIP4Mask = "255.255.255.255"
+
+	DefaultIP6Mask = "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"
+)
