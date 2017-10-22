@@ -16,6 +16,7 @@
 package log
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 
@@ -28,6 +29,19 @@ func init() {
 		ServerType: "http",
 		Action:     setup,
 	})
+}
+
+type logReplacerKey struct{}
+
+var logReplacerCtxKey logReplacerKey
+
+// GetReplacer returns the log replacer for the given request, when present.
+// If no log directive in the configuration applied to this request, then the
+// returned value is nil. This method allows plugins to robustly make
+// placeholder values available to the logging directive.
+func GetReplacer(r *http.Request) httpserver.Replacer {
+	replacer, _ := r.Context().Value(logReplacerCtxKey).(httpserver.Replacer)
+	return replacer
 }
 
 // Logger is a basic request logging middleware.
@@ -47,6 +61,8 @@ func (l Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			// set their own placeholders if they want to.
 			rep := httpserver.NewReplacer(r, responseRecorder, CommonLogEmptyValue)
 			responseRecorder.Replacer = rep
+
+			r = r.WithContext(context.WithValue(r.Context(), logReplacerCtxKey, rep))
 
 			// Bon voyage, request!
 			status, err := l.Next.ServeHTTP(responseRecorder, r)

@@ -31,6 +31,9 @@ func (erroringMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) (int
 	if rr, ok := w.(*httpserver.ResponseRecorder); ok {
 		rr.Replacer.Set("testval", "foobar")
 	}
+	if repl := GetReplacer(r); repl != nil {
+		repl.Set("customval", "barbaz")
+	}
 	return http.StatusNotFound, nil
 }
 
@@ -40,7 +43,7 @@ func TestLoggedStatus(t *testing.T) {
 	rule := Rule{
 		PathScope: "/",
 		Entries: []*Entry{{
-			Format: DefaultLogFormat + " {testval}",
+			Format: DefaultLogFormat + " {testval} {customval}",
 			Log:    httpserver.NewTestLogger(&f),
 		}},
 	}
@@ -74,6 +77,10 @@ func TestLoggedStatus(t *testing.T) {
 	// check custom placeholder
 	if !strings.Contains(logged, "foobar") {
 		t.Errorf("Expected the log entry to contain 'foobar' (custom placeholder), but it didn't: %s", logged)
+	}
+	// check contains other placeholder
+	if !strings.Contains(logged, "barbaz") {
+		t.Errorf("Expected the log entry to contain 'barbaz' (custom placeholder from context), but it didn't: %s", logged)
 	}
 }
 
