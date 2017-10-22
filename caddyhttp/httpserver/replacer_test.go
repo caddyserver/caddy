@@ -147,6 +147,10 @@ func TestSet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Request Formation Failed: %s\n", err.Error())
 	}
+
+	ctx := context.WithValue(request.Context(), RemoteUserCtxKey, "admin")
+	request = request.WithContext(ctx)
+
 	repl := NewReplacer(request, recordRequest, "")
 
 	repl.Set("host", "getcaddy.com")
@@ -165,6 +169,9 @@ func TestSet(t *testing.T) {
 	}
 	if repl.Replace("The value of variable is {variable}") != "The value of variable is value" {
 		t.Error("Expected variable replacement failed")
+	}
+	if repl.Replace("The value of user is {user}") != "The value of user is admin" {
+		t.Error("Expected {user} replacement failed")
 	}
 }
 
