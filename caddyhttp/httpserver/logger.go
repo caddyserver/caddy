@@ -68,8 +68,7 @@ func (l Logger) Printf(format string, args ...interface{}) {
 }
 
 func (l Logger) MaskIP(ip string) string {
-	var myIP net.IP
-	var maskIP net.IP
+	var myIP, maskIP net.IP
 
 	// If unable to parse, simply return IP as provided.
 	myIP = net.ParseIP(ip)
@@ -78,15 +77,13 @@ func (l Logger) MaskIP(ip string) string {
 	}
 
 	if myIP.To4() == nil {
-		// ipV6
 		maskIP = net.ParseIP(l.V6ipMask)
 	} else {
 		maskIP = net.ParseIP(l.V4ipMask)
-
 	}
+
 	mask := net.IPMask(maskIP)
 	return myIP.Mask(mask).String()
-
 }
 
 // Attach binds logger Start and Close functions to

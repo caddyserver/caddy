@@ -36,7 +36,6 @@ type Logger struct {
 	Next      httpserver.Handler
 	Rules     []*Rule
 	ErrorFunc func(http.ResponseWriter, *http.Request, int) // failover error handler
-
 }
 
 func (l Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
@@ -68,7 +67,6 @@ func (l Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 
 			// Write log entries
 			for _, e := range rule.Entries {
-
 				// Mask IP Address, will not modify if default
 				hostip, hostport, err := net.SplitHostPort(r.RemoteAddr)
 				if err == nil {
