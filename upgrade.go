@@ -148,7 +148,7 @@ func Upgrade() error {
 
 	// determine whether child startup succeeded
 	answer, readErr := ioutil.ReadAll(sigrpipe)
-	if answer == nil || len(answer) == 0 {
+	if len(answer) == 0 {
 		cmdErr := cmd.Wait() // get exit status
 		errStr := fmt.Sprintf("child failed to initialize: %v", cmdErr)
 		if readErr != nil {

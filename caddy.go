@@ -565,12 +565,7 @@ func ValidateAndExecuteDirectives(cdyfile Input, inst *Instance, justValidate bo
 		return err
 	}
 
-	err = executeDirectives(inst, cdyfile.Path(), stype.Directives(), sblocks, justValidate)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return executeDirectives(inst, cdyfile.Path(), stype.Directives(), sblocks, justValidate)
 }
 
 func executeDirectives(inst *Instance, filename string,
