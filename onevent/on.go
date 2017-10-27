@@ -20,9 +20,12 @@ func setup(c *caddy.Controller) error {
 	}
 
 	// Register Event Hooks.
-	for _, cfg := range config {
-		caddy.RegisterEventHook("on-"+cfg.ID, cfg.Hook)
-	}
+	c.OncePerServerBlock(func() error {
+		for _, cfg := range config {
+			caddy.RegisterEventHook("on-"+cfg.ID, cfg.Hook)
+		}
+		return nil
+	})
 
 	return nil
 }
