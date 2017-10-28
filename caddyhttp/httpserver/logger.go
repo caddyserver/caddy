@@ -41,8 +41,8 @@ type Logger struct {
 	Roller   *LogRoller
 	writer   io.Writer
 	fileMu   *sync.RWMutex
-	V4ipMask string
-	V6ipMask string
+	V4ipMask net.IPMask
+	V6ipMask net.IPMask
 }
 
 // NewTestLogger creates logger suitable for testing purposes
@@ -68,22 +68,22 @@ func (l Logger) Printf(format string, args ...interface{}) {
 }
 
 func (l Logger) MaskIP(ip string) string {
-	var myIP, maskIP net.IP
+	var reqIP net.IP
+	var mask net.IPMask
 
 	// If unable to parse, simply return IP as provided.
-	myIP = net.ParseIP(ip)
-	if myIP == nil {
+	reqIP = net.ParseIP(ip)
+	if reqIP == nil {
 		return ip
 	}
 
-	if myIP.To4() == nil {
-		maskIP = net.ParseIP(l.V6ipMask)
+	if reqIP.To4() != nil {
+		mask = net.IPMask(l.V4ipMask)
 	} else {
-		maskIP = net.ParseIP(l.V4ipMask)
+		mask = net.IPMask(l.V6ipMask)
 	}
 
-	mask := net.IPMask(maskIP)
-	return myIP.Mask(mask).String()
+	return reqIP.Mask(mask).String()
 }
 
 // Attach binds logger Start and Close functions to

@@ -70,7 +70,7 @@ func (l Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 				// Mask IP Address, will not modify if default
 				hostip, hostport, err := net.SplitHostPort(r.RemoteAddr)
 				if err == nil {
-					r.RemoteAddr = e.Log.MaskIP(hostip) + ":" + hostport
+					r.RemoteAddr = net.JoinHostPort(e.Log.MaskIP(hostip), hostport)
 				}
 
 				e.Log.Println(rep.Replace(e.Format))
