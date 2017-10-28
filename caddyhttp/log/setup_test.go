@@ -15,9 +15,9 @@
 package log
 
 import (
-	"testing"
-
+	"net"
 	"reflect"
+	"testing"
 
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
@@ -49,8 +49,8 @@ func TestSetup(t *testing.T) {
 	expectedLogger := &httpserver.Logger{
 		Output:   DefaultLogFilename,
 		Roller:   httpserver.DefaultLogRoller(),
-		V4ipMask: DefaultIP4Mask,
-		V6ipMask: DefaultIP6Mask,
+		V4ipMask: net.IPMask(net.ParseIP(DefaultIP4Mask)),
+		V6ipMask: net.IPMask(net.ParseIP(DefaultIP6Mask)),
 	}
 
 	if !reflect.DeepEqual(myHandler.Rules[0].Entries[0].Log, expectedLogger) {
@@ -76,8 +76,8 @@ func TestLogParse(t *testing.T) {
 				Log: &httpserver.Logger{
 					Output:   DefaultLogFilename,
 					Roller:   httpserver.DefaultLogRoller(),
-					V4ipMask: DefaultIP4Mask,
-					V6ipMask: DefaultIP6Mask,
+					V4ipMask: net.IPMask(net.ParseIP(DefaultIP4Mask)),
+					V6ipMask: net.IPMask(net.ParseIP(DefaultIP6Mask)),
 				},
 				Format: DefaultLogFormat,
 			}},
@@ -88,8 +88,8 @@ func TestLogParse(t *testing.T) {
 				Log: &httpserver.Logger{
 					Output:   "log.txt",
 					Roller:   httpserver.DefaultLogRoller(),
-					V4ipMask: DefaultIP4Mask,
-					V6ipMask: DefaultIP6Mask,
+					V4ipMask: net.IPMask(net.ParseIP(DefaultIP4Mask)),
+					V6ipMask: net.IPMask(net.ParseIP(DefaultIP6Mask)),
 				},
 				Format: DefaultLogFormat,
 			}},
@@ -100,8 +100,8 @@ func TestLogParse(t *testing.T) {
 				Log: &httpserver.Logger{
 					Output:   "syslog://127.0.0.1:5000",
 					Roller:   httpserver.DefaultLogRoller(),
-					V4ipMask: DefaultIP4Mask,
-					V6ipMask: DefaultIP6Mask,
+					V4ipMask: net.IPMask(net.ParseIP(DefaultIP4Mask)),
+					V6ipMask: net.IPMask(net.ParseIP(DefaultIP6Mask)),
 				},
 				Format: DefaultLogFormat,
 			}},
@@ -112,8 +112,8 @@ func TestLogParse(t *testing.T) {
 				Log: &httpserver.Logger{
 					Output:   "syslog+tcp://127.0.0.1:5000",
 					Roller:   httpserver.DefaultLogRoller(),
-					V4ipMask: DefaultIP4Mask,
-					V6ipMask: DefaultIP6Mask,
+					V4ipMask: net.IPMask(net.ParseIP(DefaultIP4Mask)),
+					V6ipMask: net.IPMask(net.ParseIP(DefaultIP6Mask)),
 				},
 				Format: DefaultLogFormat,
 			}},
@@ -124,8 +124,8 @@ func TestLogParse(t *testing.T) {
 				Log: &httpserver.Logger{
 					Output:   "log.txt",
 					Roller:   httpserver.DefaultLogRoller(),
-					V4ipMask: DefaultIP4Mask,
-					V6ipMask: DefaultIP6Mask,
+					V4ipMask: net.IPMask(net.ParseIP(DefaultIP4Mask)),
+					V6ipMask: net.IPMask(net.ParseIP(DefaultIP6Mask)),
 				},
 				Format: DefaultLogFormat,
 			}},
@@ -136,8 +136,8 @@ func TestLogParse(t *testing.T) {
 				Log: &httpserver.Logger{
 					Output:   "stdout",
 					Roller:   httpserver.DefaultLogRoller(),
-					V4ipMask: DefaultIP4Mask,
-					V6ipMask: DefaultIP6Mask,
+					V4ipMask: net.IPMask(net.ParseIP(DefaultIP4Mask)),
+					V6ipMask: net.IPMask(net.ParseIP(DefaultIP6Mask)),
 				},
 				Format: DefaultLogFormat,
 			}},
@@ -148,8 +148,8 @@ func TestLogParse(t *testing.T) {
 				Log: &httpserver.Logger{
 					Output:   "log.txt",
 					Roller:   httpserver.DefaultLogRoller(),
-					V4ipMask: DefaultIP4Mask,
-					V6ipMask: DefaultIP6Mask,
+					V4ipMask: net.IPMask(net.ParseIP(DefaultIP4Mask)),
+					V6ipMask: net.IPMask(net.ParseIP(DefaultIP6Mask)),
 				},
 				Format: CommonLogFormat,
 			}},
@@ -160,8 +160,8 @@ func TestLogParse(t *testing.T) {
 				Log: &httpserver.Logger{
 					Output:   "log.txt",
 					Roller:   httpserver.DefaultLogRoller(),
-					V4ipMask: DefaultIP4Mask,
-					V6ipMask: DefaultIP6Mask,
+					V4ipMask: net.IPMask(net.ParseIP(DefaultIP4Mask)),
+					V6ipMask: net.IPMask(net.ParseIP(DefaultIP6Mask)),
 				},
 				Format: "prefix " + CommonLogFormat + " suffix",
 			}},
@@ -172,8 +172,8 @@ func TestLogParse(t *testing.T) {
 				Log: &httpserver.Logger{
 					Output:   "accesslog.txt",
 					Roller:   httpserver.DefaultLogRoller(),
-					V4ipMask: DefaultIP4Mask,
-					V6ipMask: DefaultIP6Mask,
+					V4ipMask: net.IPMask(net.ParseIP(DefaultIP4Mask)),
+					V6ipMask: net.IPMask(net.ParseIP(DefaultIP6Mask)),
 				},
 				Format: CombinedLogFormat,
 			}},
@@ -184,8 +184,8 @@ func TestLogParse(t *testing.T) {
 				Log: &httpserver.Logger{
 					Output:   "accesslog.txt",
 					Roller:   httpserver.DefaultLogRoller(),
-					V4ipMask: DefaultIP4Mask,
-					V6ipMask: DefaultIP6Mask,
+					V4ipMask: net.IPMask(net.ParseIP(DefaultIP4Mask)),
+					V6ipMask: net.IPMask(net.ParseIP(DefaultIP6Mask)),
 				},
 				Format: "prefix " + CombinedLogFormat + " suffix",
 			}},
@@ -197,8 +197,8 @@ func TestLogParse(t *testing.T) {
 				Log: &httpserver.Logger{
 					Output:   "log.txt",
 					Roller:   httpserver.DefaultLogRoller(),
-					V4ipMask: DefaultIP4Mask,
-					V6ipMask: DefaultIP6Mask,
+					V4ipMask: net.IPMask(net.ParseIP(DefaultIP4Mask)),
+					V6ipMask: net.IPMask(net.ParseIP(DefaultIP6Mask)),
 				},
 				Format: DefaultLogFormat,
 			}},
@@ -208,8 +208,8 @@ func TestLogParse(t *testing.T) {
 				Log: &httpserver.Logger{
 					Output:   "accesslog.txt",
 					Roller:   httpserver.DefaultLogRoller(),
-					V4ipMask: DefaultIP4Mask,
-					V6ipMask: DefaultIP6Mask,
+					V4ipMask: net.IPMask(net.ParseIP(DefaultIP4Mask)),
+					V6ipMask: net.IPMask(net.ParseIP(DefaultIP6Mask)),
 				},
 				Format: CombinedLogFormat,
 			}},
@@ -221,8 +221,8 @@ func TestLogParse(t *testing.T) {
 				Log: &httpserver.Logger{
 					Output:   "stdout",
 					Roller:   httpserver.DefaultLogRoller(),
-					V4ipMask: DefaultIP4Mask,
-					V6ipMask: DefaultIP6Mask,
+					V4ipMask: net.IPMask(net.ParseIP(DefaultIP4Mask)),
+					V6ipMask: net.IPMask(net.ParseIP(DefaultIP6Mask)),
 				},
 				Format: "{host}",
 			}},
@@ -232,8 +232,8 @@ func TestLogParse(t *testing.T) {
 				Log: &httpserver.Logger{
 					Output:   "log.txt",
 					Roller:   httpserver.DefaultLogRoller(),
-					V4ipMask: DefaultIP4Mask,
-					V6ipMask: DefaultIP6Mask,
+					V4ipMask: net.IPMask(net.ParseIP(DefaultIP4Mask)),
+					V6ipMask: net.IPMask(net.ParseIP(DefaultIP6Mask)),
 				},
 				Format: "{when}",
 			}},
@@ -255,53 +255,8 @@ func TestLogParse(t *testing.T) {
 						Compress:   true,
 						LocalTime:  true,
 					},
-					V4ipMask: DefaultIP4Mask,
-					V6ipMask: DefaultIP6Mask,
-				},
-
-				Format: DefaultLogFormat,
-			}},
-		}}},
-		{`log access.log {
-			ipmask 255.255.255.0 
-		}`, false, []Rule{{
-			PathScope: "/",
-			Entries: []*Entry{{
-				Log: &httpserver.Logger{
-					Output:   "access.log",
-					Roller:   httpserver.DefaultLogRoller(),
-					V4ipMask: "255.255.255.0",
-					V6ipMask: DefaultIP6Mask,
-				},
-
-				Format: DefaultLogFormat,
-			}},
-		}}},
-		{`log access.log {
-			ipmask "" ffff:ffff:ffff:ff00::
-		}`, false, []Rule{{
-			PathScope: "/",
-			Entries: []*Entry{{
-				Log: &httpserver.Logger{
-					Output:   "access.log",
-					Roller:   httpserver.DefaultLogRoller(),
-					V4ipMask: DefaultIP4Mask,
-					V6ipMask: "ffff:ffff:ffff:ff00::",
-				},
-
-				Format: DefaultLogFormat,
-			}},
-		}}},
-		{`log access.log {
-			ipmask 255.255.255.0 ffff:ffff:ffff:ff00::
-		}`, false, []Rule{{
-			PathScope: "/",
-			Entries: []*Entry{{
-				Log: &httpserver.Logger{
-					Output:   "access.log",
-					Roller:   httpserver.DefaultLogRoller(),
-					V4ipMask: "255.255.255.0",
-					V6ipMask: "ffff:ffff:ffff:ff00::",
+					V4ipMask: net.IPMask(net.ParseIP(DefaultIP4Mask)),
+					V6ipMask: net.IPMask(net.ParseIP(DefaultIP6Mask)),
 				},
 
 				Format: DefaultLogFormat,
@@ -314,16 +269,16 @@ func TestLogParse(t *testing.T) {
 				Log: &httpserver.Logger{
 					Output:   "stdout",
 					Roller:   httpserver.DefaultLogRoller(),
-					V4ipMask: DefaultIP4Mask,
-					V6ipMask: DefaultIP6Mask,
+					V4ipMask: net.IPMask(net.ParseIP(DefaultIP4Mask)),
+					V6ipMask: net.IPMask(net.ParseIP(DefaultIP6Mask)),
 				},
 				Format: "{host}",
 			}, {
 				Log: &httpserver.Logger{
 					Output:   "log.txt",
 					Roller:   httpserver.DefaultLogRoller(),
-					V4ipMask: DefaultIP4Mask,
-					V6ipMask: DefaultIP6Mask,
+					V4ipMask: net.IPMask(net.ParseIP(DefaultIP4Mask)),
+					V6ipMask: net.IPMask(net.ParseIP(DefaultIP6Mask)),
 				},
 				Format: "{when}",
 			}},
