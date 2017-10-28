@@ -66,7 +66,7 @@ func (l Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			}
 
 			// Write log entries
-			for _, e := range rule.Entries {				
+			for _, e := range rule.Entries {
 				if e.Log.IPMaskExists {
 					// Mask IP Address, will not modify if default
 					hostip, hostport, err := net.SplitHostPort(r.RemoteAddr)
