@@ -48,8 +48,9 @@ func logParse(c *caddy.Controller) ([]*Rule, error) {
 	for c.Next() {
 		args := c.RemainingArgs()
 
-		ip4Mask := net.IPMask(net.ParseIP(DefaultIP4Mask))
+		ip4Mask := net.IPMask(net.ParseIP(DefaultIP4Mask).To4())
 		ip6Mask := net.IPMask(net.ParseIP(DefaultIP6Mask))
+		ipMaskExists := false
 
 		var logRoller *httpserver.LogRoller
 		logRoller = httpserver.DefaultLogRoller()
@@ -72,6 +73,7 @@ func logParse(c *caddy.Controller) ([]*Rule, error) {
 						return nil, c.Err("IPv4 Mask not valid IP Mask Format")
 					} else {
 						ip4Mask = net.IPMask(ipv4)
+						ipMaskExists = true
 					}
 				}
 
@@ -84,6 +86,7 @@ func logParse(c *caddy.Controller) ([]*Rule, error) {
 						return nil, c.Err("IPv6 Mask not valid IP Mask Format")
 					} else {
 						ip6Mask = net.IPMask(ipv6)
+						ipMaskExists = true
 					}
 
 				}
@@ -125,10 +128,11 @@ func logParse(c *caddy.Controller) ([]*Rule, error) {
 
 		rules = appendEntry(rules, path, &Entry{
 			Log: &httpserver.Logger{
-				Output:   output,
-				Roller:   logRoller,
-				V4ipMask: ip4Mask,
-				V6ipMask: ip6Mask,
+				Output:       output,
+				Roller:       logRoller,
+				V4ipMask:     ip4Mask,
+				V6ipMask:     ip6Mask,
+				IPMaskExists: ipMaskExists,
 			},
 			Format: format,
 		})

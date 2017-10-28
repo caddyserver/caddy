@@ -38,11 +38,12 @@ var remoteSyslogPrefixes = map[string]string{
 type Logger struct {
 	Output string
 	*log.Logger
-	Roller   *LogRoller
-	writer   io.Writer
-	fileMu   *sync.RWMutex
-	V4ipMask net.IPMask
-	V6ipMask net.IPMask
+	Roller       *LogRoller
+	writer       io.Writer
+	fileMu       *sync.RWMutex
+	V4ipMask     net.IPMask
+	V6ipMask     net.IPMask
+	IPMaskExists bool
 }
 
 // NewTestLogger creates logger suitable for testing purposes

@@ -268,10 +268,11 @@ func TestLogParse(t *testing.T) {
 			PathScope: "/",
 			Entries: []*Entry{{
 				Log: &httpserver.Logger{
-					Output:   "access0.log",
-					Roller:   httpserver.DefaultLogRoller(),
-					V4ipMask: net.IPMask(net.ParseIP("255.255.255.0").To4()),
-					V6ipMask: net.IPMask(net.ParseIP(DefaultIP6Mask)),
+					Output:       "access0.log",
+					Roller:       httpserver.DefaultLogRoller(),
+					V4ipMask:     net.IPMask(net.ParseIP("255.255.255.0").To4()),
+					V6ipMask:     net.IPMask(net.ParseIP(DefaultIP6Mask)),
+					IPMaskExists: true,
 				},
 
 				Format: DefaultLogFormat,
@@ -283,10 +284,11 @@ func TestLogParse(t *testing.T) {
 			PathScope: "/",
 			Entries: []*Entry{{
 				Log: &httpserver.Logger{
-					Output:   "access1.log",
-					Roller:   httpserver.DefaultLogRoller(),
-					V4ipMask: net.IPMask(net.ParseIP(DefaultIP4Mask).To4()),
-					V6ipMask: net.IPMask(net.ParseIP("ffff:ffff:ffff:ff00::")),
+					Output:       "access1.log",
+					Roller:       httpserver.DefaultLogRoller(),
+					V4ipMask:     net.IPMask(net.ParseIP(DefaultIP4Mask).To4()),
+					V6ipMask:     net.IPMask(net.ParseIP("ffff:ffff:ffff:ff00::")),
+					IPMaskExists: true,
 				},
 
 				Format: DefaultLogFormat,
@@ -298,10 +300,11 @@ func TestLogParse(t *testing.T) {
 			PathScope: "/",
 			Entries: []*Entry{{
 				Log: &httpserver.Logger{
-					Output:   "access2.log",
-					Roller:   httpserver.DefaultLogRoller(),
-					V4ipMask: net.IPMask(net.ParseIP("255.255.255.0").To4()),
-					V6ipMask: net.IPMask(net.ParseIP("ffff:ffff:ffff:ff00::")),
+					Output:       "access2.log",
+					Roller:       httpserver.DefaultLogRoller(),
+					V4ipMask:     net.IPMask(net.ParseIP("255.255.255.0").To4()),
+					V6ipMask:     net.IPMask(net.ParseIP("ffff:ffff:ffff:ff00::")),
+					IPMaskExists: true,
 				},
 
 				Format: DefaultLogFormat,
