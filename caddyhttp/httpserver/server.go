@@ -142,7 +142,7 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 
 	// Compile custom middleware for every site (enables virtual hosting)
 	for _, site := range group {
-		stack := Handler(staticfiles.FileServer{Root: http.Dir(site.Root), Hide: site.HiddenFiles})
+		stack := Handler(staticfiles.FileServer{Root: http.Dir(site.Root), Hide: site.HiddenFiles, IndexPages: site.IndexPages})
 		for i := len(site.middleware) - 1; i >= 0; i-- {
 			stack = site.middleware[i](stack)
 		}

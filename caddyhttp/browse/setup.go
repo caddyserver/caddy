@@ -78,8 +78,9 @@ func browseParse(c *caddy.Controller) ([]Config, error) {
 		}
 
 		bc.Fs = staticfiles.FileServer{
-			Root: http.Dir(cfg.Root),
-			Hide: cfg.HiddenFiles,
+			Root:       http.Dir(cfg.Root),
+			Hide:       cfg.HiddenFiles,
+			IndexPages: cfg.IndexPages,
 		}
 
 		// Second argument would be the template file to use
