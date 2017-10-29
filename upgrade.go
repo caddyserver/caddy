@@ -136,7 +136,10 @@ func Upgrade() error {
 
 	// immediately close our dup'ed fds and the write end of our signal pipe
 	for _, f := range extraFiles {
-		f.Close()
+		err = f.Close()
+		if err != nil {
+			return err
+		}
 	}
 
 	// feed Caddyfile to the child
@@ -144,7 +147,10 @@ func Upgrade() error {
 	if err != nil {
 		return err
 	}
-	wpipe.Close()
+	err = wpipe.Close()
+	if err != nil {
+		return err
+	}
 
 	// determine whether child startup succeeded
 	answer, readErr := ioutil.ReadAll(sigrpipe)
