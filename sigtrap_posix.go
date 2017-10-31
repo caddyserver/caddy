@@ -84,7 +84,7 @@ func trapSignalsPosix() {
 				}
 
 				// Kick off the restart; our work is done
-				inst, err = inst.Restart(caddyfileToUse)
+				_, err = inst.Restart(caddyfileToUse)
 				if err != nil {
 					log.Printf("[ERROR] SIGUSR1: %v", err)
 				}
