@@ -148,6 +148,11 @@ type OnDemandState struct {
 	// Set from max_certs in tls config, it specifies the
 	// maximum number of certificates that can be issued.
 	MaxObtain int32
+
+	// The url to call to check if an on-demand tls certificate should
+	// be issued. If a request to the URL fails or returns a non 2xx
+	// status on-demand issuances must fail.
+	AskURL *url.URL
 }
 
 // ObtainCert obtains a certificate for name using c, as long
