@@ -25,9 +25,15 @@ func TestAssetsPath(t *testing.T) {
 		t.Errorf("Expected path to be a .caddy folder, got: %v", actual)
 	}
 
-	os.Setenv("CADDYPATH", "testpath")
+	err := os.Setenv("CADDYPATH", "testpath")
+	if err != nil {
+		t.Error("Could not set CADDYPATH")
+	}
 	if actual, expected := AssetsPath(), "testpath"; actual != expected {
 		t.Errorf("Expected path to be %v, got: %v", expected, actual)
 	}
-	os.Setenv("CADDYPATH", "")
+	err = os.Setenv("CADDYPATH", "")
+	if err != nil {
+		t.Error("Could not set CADDYPATH")
+	}
 }
