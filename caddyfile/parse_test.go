@@ -515,7 +515,7 @@ func testParser(input string) parser {
 	return p
 }
 
-func TestMacro(t *testing.T) {
+func TestSnippets(t *testing.T) {
 	p := testParser(`(common) {
 					gzip foo
 					errors stderr

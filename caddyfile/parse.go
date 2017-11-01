@@ -54,7 +54,7 @@ type parser struct {
 	block           ServerBlock // current server block being parsed
 	validDirectives []string    // a directive must be valid or it's an error
 	eof             bool        // if we encounter a valid EOF in a hard place
-	definedMacros   map[string][]Token
+	definedSnippets map[string][]Token
 }
 
 func (p *parser) parseAll() ([]ServerBlock, error) {
@@ -96,19 +96,19 @@ func (p *parser) begin() error {
 		return nil
 	}
 
-	if ok, name := p.isMacro(); ok {
-		if p.definedMacros == nil {
-			p.definedMacros = map[string][]Token{}
+	if ok, name := p.isSnippet(); ok {
+		if p.definedSnippets == nil {
+			p.definedSnippets = map[string][]Token{}
 		}
-		if _, found := p.definedMacros[name]; found {
-			return p.Errf("redeclaration of previously declared macro %s", name)
+		if _, found := p.definedSnippets[name]; found {
+			return p.Errf("redeclaration of previously declared snippet %s", name)
 		}
 		// consume all tokens til matched close brace
-		tokens, err := p.macroTokens()
+		tokens, err := p.snippetTokens()
 		if err != nil {
 			return err
 		}
-		p.definedMacros[name] = tokens
+		p.definedSnippets[name] = tokens
 		// empty block keys so we don't save this block as a real server.
 		p.block.Keys = nil
 		return nil
@@ -245,9 +245,9 @@ func (p *parser) doImport() error {
 	tokensAfter := p.tokens[p.cursor+1:]
 	var importedTokens []Token
 
-	// first check macros. That is a simple, non-recursive replacement
-	if p.definedMacros != nil && p.definedMacros[importPattern] != nil {
-		importedTokens = p.definedMacros[importPattern]
+	// first check snippets. That is a simple, non-recursive replacement
+	if p.definedSnippets != nil && p.definedSnippets[importPattern] != nil {
+		importedTokens = p.definedSnippets[importPattern]
 	} else {
 		// make path relative to Caddyfile rather than current working directory (issue #867)
 		// and then use glob to get list of matching filenames
@@ -458,9 +458,9 @@ type ServerBlock struct {
 	Tokens map[string][]Token
 }
 
-func (p *parser) isMacro() (bool, string) {
+func (p *parser) isSnippet() (bool, string) {
 	keys := p.block.Keys
-	// A macro block is a single key with parens. Nothing else qualifies.
+	// A snippet block is a single key with parens. Nothing else qualifies.
 	if len(keys) == 1 && strings.HasPrefix(keys[0], "(") && strings.HasSuffix(keys[0], ")") {
 		return true, strings.TrimSuffix(keys[0][1:], ")")
 	}
@@ -468,9 +468,9 @@ func (p *parser) isMacro() (bool, string) {
 }
 
 // read and store everything in a block for later replay.
-func (p *parser) macroTokens() ([]Token, error) {
-	// TODO: disallow imports in macros for simplicity at import time
-	// macro must have curlies.
+func (p *parser) snippetTokens() ([]Token, error) {
+	// TODO: disallow imports in snippets for simplicity at import time
+	// snippet must have curlies.
 	err := p.openCurlyBrace()
 	if err != nil {
 		return nil, err
