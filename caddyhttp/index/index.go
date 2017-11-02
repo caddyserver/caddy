@@ -16,7 +16,7 @@ package index
 
 import (
 	"github.com/mholt/caddy"
-	"github.com/mholt/caddy/caddyhttp/staticfiles"
+	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
 
 func init() {
@@ -29,6 +29,8 @@ func init() {
 func setupIndex(c *caddy.Controller) error {
 	var index []string
 
+	cfg := httpserver.GetConfig(c)
+
 	for c.Next() {
 		args := c.RemainingArgs()
 
@@ -40,7 +42,7 @@ func setupIndex(c *caddy.Controller) error {
 			index = append(index, in)
 		}
 
-		staticfiles.IndexPages = index
+		cfg.IndexPages = index
 	}
 
 	return nil

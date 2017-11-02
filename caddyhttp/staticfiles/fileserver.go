@@ -45,6 +45,10 @@ import (
 type FileServer struct {
 	Root http.FileSystem // jailed access to the file system
 	Hide []string        // list of files for which to respond with "Not Found"
+
+	// A list of pages that may be understood as the "index" files to directories.
+	// Injected from *SiteConfig.
+	IndexPages []string
 }
 
 // ServeHTTP serves static files for r according to fs's configuration.
@@ -118,7 +122,7 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request) (int, err
 		// if an index file was explicitly requested, strip file name from the request
 		// ("/foo/index.html" -> "/foo/")
 		var requestPage = path.Base(urlCopy.Path)
-		for _, indexPage := range IndexPages {
+		for _, indexPage := range fs.IndexPages {
 			if requestPage == indexPage {
 				urlCopy.Path = urlCopy.Path[:len(urlCopy.Path)-len(indexPage)]
 				redir = true
@@ -134,7 +138,7 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request) (int, err
 
 	// use contents of an index file, if present, for directory requests
 	if d.IsDir() {
-		for _, indexPage := range IndexPages {
+		for _, indexPage := range fs.IndexPages {
 			indexPath := path.Join(reqPath, indexPage)
 			indexFile, err := fs.Root.Open(indexPath)
 			if err != nil {
@@ -253,9 +257,9 @@ func calculateEtag(d os.FileInfo) string {
 	return `"` + t + s + `"`
 }
 
-// IndexPages is a list of pages that may be understood as
+// DefaultIndexPages is a list of pages that may be understood as
 // the "index" files to directories.
-var IndexPages = []string{
+var DefaultIndexPages = []string{
 	"index.html",
 	"index.htm",
 	"index.txt",
