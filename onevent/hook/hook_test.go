@@ -33,6 +33,7 @@ func TestHook(t *testing.T) {
 	}{
 		{name: "blocking", event: caddy.InstanceStartupEvent, command: "mkdir", args: []string{osSenitiveTestDir}, shouldErr: false, shouldRemoveErr: false},
 		{name: "nonBlocking", event: caddy.ShutdownEvent, command: "mkdir", args: []string{osSenitiveTestDir, "&"}, shouldErr: false, shouldRemoveErr: true},
+		{name: "nonBlocking2", event: caddy.ShutdownEvent, command: "echo", args: []string{"&"}, shouldErr: false, shouldRemoveErr: true},
 		{name: "nonExistent", event: caddy.CertRenewEvent, command: strconv.Itoa(int(time.Now().UnixNano())), shouldErr: true, shouldRemoveErr: true},
 	}
 

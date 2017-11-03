@@ -151,6 +151,13 @@ func stapleOCSP(cert *Certificate, pemBundle []byte) error {
 	// the certificate. If the OCSP response was not loaded from
 	// storage, we persist it for next time.
 	if ocspResp.Status == ocsp.Good {
+		if ocspResp.NextUpdate.After(cert.NotAfter) {
+			// uh oh, this OCSP response expires AFTER the certificate does, that's kinda bogus.
+			// it was the reason a lot of Symantec-validated sites (not Caddy) went down
+			// in October 2017. https://twitter.com/mattiasgeniar/status/919432824708648961
+			return fmt.Errorf("invalid: OCSP response for %v valid after certificate expiration (%s)",
+				cert.Names, cert.NotAfter.Sub(ocspResp.NextUpdate))
+		}
 		cert.Certificate.OCSPStaple = ocspBytes
 		cert.OCSP = ocspResp
 		if gotNewOCSP {

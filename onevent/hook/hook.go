@@ -16,7 +16,7 @@ func (cfg *Config) Hook(event caddy.EventName, info interface{}) error {
 	}
 
 	nonblock := false
-	if len(cfg.Args) > 1 && cfg.Args[len(cfg.Args)-1] == "&" {
+	if len(cfg.Args) >= 1 && cfg.Args[len(cfg.Args)-1] == "&" {
 		// Run command in background; non-blocking
 		nonblock = true
 		cfg.Args = cfg.Args[:len(cfg.Args)-1]
@@ -28,10 +28,10 @@ func (cfg *Config) Hook(event caddy.EventName, info interface{}) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if nonblock {
-		log.Printf("[INFO] Nonblocking Command with ID %s: \"%s %s\"", cfg.ID, cfg.Command, strings.Join(cfg.Args, " "))
+		log.Printf("[INFO] Nonblocking Command \"%s %s\" with ID %s", cfg.Command, strings.Join(cfg.Args, " "), cfg.ID)
 		return cmd.Start()
 	}
-	log.Printf("[INFO] Blocking Command with ID %s: \"%s %s\"", cfg.ID, cfg.Command, strings.Join(cfg.Args, " "))
+	log.Printf("[INFO] Blocking Command \"%s %s\" with ID %s", cfg.Command, strings.Join(cfg.Args, " "), cfg.ID)
 	err := cmd.Run()
 	if err != nil {
 		return err

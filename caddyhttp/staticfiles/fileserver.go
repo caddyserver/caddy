@@ -45,6 +45,10 @@ import (
 type FileServer struct {
 	Root http.FileSystem // jailed access to the file system
 	Hide []string        // list of files for which to respond with "Not Found"
+
+	// A list of pages that may be understood as the "index" files to directories.
+	// Injected from *SiteConfig.
+	IndexPages []string
 }
 
 // ServeHTTP serves static files for r according to fs's configuration.
@@ -66,9 +70,6 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request) (int, err
 	// open the requested file
 	f, err := fs.Root.Open(reqPath)
 	if err != nil {
-		// TODO: remove when http.Dir handles this (Go 1.9?)
-		// Go issue #18984
-		err = mapFSRootOpenErr(err)
 		if os.IsNotExist(err) {
 			return http.StatusNotFound, nil
 		} else if os.IsPermission(err) {
@@ -121,7 +122,7 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request) (int, err
 		// if an index file was explicitly requested, strip file name from the request
 		// ("/foo/index.html" -> "/foo/")
 		var requestPage = path.Base(urlCopy.Path)
-		for _, indexPage := range IndexPages {
+		for _, indexPage := range fs.IndexPages {
 			if requestPage == indexPage {
 				urlCopy.Path = urlCopy.Path[:len(urlCopy.Path)-len(indexPage)]
 				redir = true
@@ -137,7 +138,7 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request) (int, err
 
 	// use contents of an index file, if present, for directory requests
 	if d.IsDir() {
-		for _, indexPage := range IndexPages {
+		for _, indexPage := range fs.IndexPages {
 			indexPath := path.Join(reqPath, indexPage)
 			indexFile, err := fs.Root.Open(indexPath)
 			if err != nil {
@@ -256,9 +257,9 @@ func calculateEtag(d os.FileInfo) string {
 	return `"` + t + s + `"`
 }
 
-// IndexPages is a list of pages that may be understood as
+// DefaultIndexPages is a list of pages that may be understood as
 // the "index" files to directories.
-var IndexPages = []string{
+var DefaultIndexPages = []string{
 	"index.html",
 	"index.htm",
 	"index.txt",
@@ -279,36 +280,4 @@ var staticEncoding = map[string]string{
 var staticEncodingPriority = []string{
 	"br",
 	"gzip",
-}
-
-// mapFSRootOpenErr maps the provided non-nil error
-// to a possibly better non-nil error. In particular, it turns OS-specific errors
-// about opening files in non-directories into os.ErrNotExist.
-//
-// TODO: remove when http.Dir handles this (slated for Go 1.9)
-// Go issue #18984
-func mapFSRootOpenErr(originalErr error) error {
-	if os.IsNotExist(originalErr) || os.IsPermission(originalErr) {
-		return originalErr
-	}
-
-	perr, ok := originalErr.(*os.PathError)
-	if !ok {
-		return originalErr
-	}
-	name := perr.Path
-	parts := strings.Split(name, string(filepath.Separator))
-	for i := range parts {
-		if parts[i] == "" {
-			continue
-		}
-		fi, err := os.Stat(strings.Join(parts[:i+1], string(filepath.Separator)))
-		if err != nil {
-			return originalErr
-		}
-		if !fi.IsDir() {
-			return os.ErrNotExist
-		}
-	}
-	return originalErr
 }

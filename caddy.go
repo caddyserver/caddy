@@ -206,12 +206,15 @@ func (i *Instance) Restart(newCaddyfile Input) (*Instance, error) {
 
 	// success! stop the old instance
 	for _, shutdownFunc := range i.onShutdown {
-		err := shutdownFunc()
+		err = shutdownFunc()
 		if err != nil {
 			return i, err
 		}
 	}
-	i.Stop()
+	err = i.Stop()
+	if err != nil {
+		return i, err
+	}
 
 	// Execute instantiation events
 	EmitEvent(InstanceStartupEvent, newInst)
@@ -483,14 +486,14 @@ func startWithListenerFds(cdyfile Input, inst *Instance, restartFds map[string]r
 	if !IsUpgrade() && restartFds == nil {
 		// first startup means not a restart or upgrade
 		for _, firstStartupFunc := range inst.onFirstStartup {
-			err := firstStartupFunc()
+			err = firstStartupFunc()
 			if err != nil {
 				return err
 			}
 		}
 	}
 	for _, startupFunc := range inst.onStartup {
-		err := startupFunc()
+		err = startupFunc()
 		if err != nil {
 			return err
 		}
@@ -565,12 +568,7 @@ func ValidateAndExecuteDirectives(cdyfile Input, inst *Instance, justValidate bo
 		return err
 	}
 
-	err = executeDirectives(inst, cdyfile.Path(), stype.Directives(), sblocks, justValidate)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return executeDirectives(inst, cdyfile.Path(), stype.Directives(), sblocks, justValidate)
 }
 
 func executeDirectives(inst *Instance, filename string,
@@ -658,7 +656,10 @@ func startServers(serverList []Server, inst *Instance, restartFds map[string]res
 				if fdIndex, ok := loadedGob.ListenerFds["tcp"+addr]; ok {
 					file := os.NewFile(fdIndex, "")
 					ln, err = net.FileListener(file)
-					file.Close()
+					if err != nil {
+						return err
+					}
+					err = file.Close()
 					if err != nil {
 						return err
 					}
@@ -666,7 +667,10 @@ func startServers(serverList []Server, inst *Instance, restartFds map[string]res
 				if fdIndex, ok := loadedGob.ListenerFds["udp"+addr]; ok {
 					file := os.NewFile(fdIndex, "")
 					pc, err = net.FilePacketConn(file)
-					file.Close()
+					if err != nil {
+						return err
+					}
+					err = file.Close()
 					if err != nil {
 						return err
 					}
@@ -689,7 +693,10 @@ func startServers(serverList []Server, inst *Instance, restartFds map[string]res
 					if err != nil {
 						return err
 					}
-					file.Close()
+					err = file.Close()
+					if err != nil {
+						return err
+					}
 				}
 				// packetconn
 				if old.packet != nil {
@@ -701,7 +708,10 @@ func startServers(serverList []Server, inst *Instance, restartFds map[string]res
 					if err != nil {
 						return err
 					}
-					file.Close()
+					err = file.Close()
+					if err != nil {
+						return err
+					}
 				}
 			}
 		}

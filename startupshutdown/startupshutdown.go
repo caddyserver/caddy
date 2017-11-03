@@ -36,9 +36,12 @@ func Startup(c *caddy.Controller) error {
 	}
 
 	// Register Event Hooks.
-	for _, cfg := range config {
-		caddy.RegisterEventHook("on-"+cfg.ID, cfg.Hook)
-	}
+	c.OncePerServerBlock(func() error {
+		for _, cfg := range config {
+			caddy.RegisterEventHook("on-"+cfg.ID, cfg.Hook)
+		}
+		return nil
+	})
 
 	fmt.Println("NOTICE: Startup directive will be removed in a later version. Please migrate to 'on startup'")
 
