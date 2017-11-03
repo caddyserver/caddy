@@ -36,9 +36,10 @@ type (
 
 	// Middleware supports pushing resources to clients
 	Middleware struct {
-		Next  httpserver.Handler
-		Rules []Rule
-		Root  http.FileSystem
+		Next       httpserver.Handler
+		Rules      []Rule
+		Root       http.FileSystem
+		indexPages []string // will be injected from SiteConfig on setup
 	}
 
 	ruleOp func([]Resource)

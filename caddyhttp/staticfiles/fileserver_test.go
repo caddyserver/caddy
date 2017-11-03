@@ -36,8 +36,9 @@ func TestServeHTTP(t *testing.T) {
 	defer afterServeHTTPTest(t, tmpWebRootDir)
 
 	fileserver := FileServer{
-		Root: http.Dir(filepath.Join(tmpWebRootDir, webrootName)),
-		Hide: []string{"dir/hidden.html"},
+		Root:       http.Dir(filepath.Join(tmpWebRootDir, webrootName)),
+		Hide:       []string{"dir/hidden.html"},
+		IndexPages: DefaultIndexPages,
 	}
 
 	movedPermanently := "Moved Permanently"

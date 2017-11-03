@@ -26,6 +26,9 @@ type SiteConfig struct {
 	// The address of the site
 	Addr Address
 
+	// The list of viable index page names of the site
+	IndexPages []string
+
 	// The hostname to bind listener to;
 	// defaults to Addr.Host
 	ListenHost string
