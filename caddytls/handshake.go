@@ -19,6 +19,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -135,8 +137,8 @@ func (cfg *Config) getCertDuringHandshake(name string, loadIfNecessary, obtainIf
 
 			name = strings.ToLower(name)
 
-			// Make sure aren't over any applicable limits
-			err := cfg.checkLimitsForObtainingNewCerts(name)
+			// Make sure the certificate should be obtained based on config
+			err := cfg.checkIfCertShouldBeObtained(name)
 			if err != nil {
 				return Certificate{}, err
 			}
@@ -159,10 +161,52 @@ func (cfg *Config) getCertDuringHandshake(name string, loadIfNecessary, obtainIf
 	return Certificate{}, fmt.Errorf("no certificate available for %s", name)
 }
 
+// checkIfCertShouldBeObtained checks to see if an on-demand tls certificate
+// should be obtained for a given domain based upon the config settings.  If
+// a non-nil error is returned, do not issue a new certificate for name.
+func (cfg *Config) checkIfCertShouldBeObtained(name string) error {
+	// If the "ask" URL is defined in the config, use to determine if a
+	// cert should obtained
+	if cfg.OnDemandState.AskURL != nil {
+		return cfg.checkURLForObtainingNewCerts(name)
+	}
+
+	// Otherwise use the limit defined by the "max_certs" setting
+	return cfg.checkLimitsForObtainingNewCerts(name)
+}
+
+func (cfg *Config) checkURLForObtainingNewCerts(name string) error {
+	client := http.Client{
+		Timeout: 10 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return errors.New("following http redirects is not allowed")
+		},
+	}
+
+	// Copy the URL from the config in order to modify it for this request
+	askURL := new(url.URL)
+	*askURL = *cfg.OnDemandState.AskURL
+
+	query := askURL.Query()
+	query.Set("domain", name)
+	askURL.RawQuery = query.Encode()
+
+	resp, err := client.Get(askURL.String())
+	if err != nil {
+		return fmt.Errorf("error checking %v to deterine if certificate for hostname '%s' should be allowed: %v", cfg.OnDemandState.AskURL, name, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return fmt.Errorf("certificate for hostname '%s' not allowed, non-2xx status code %d returned from %v", name, resp.StatusCode, cfg.OnDemandState.AskURL)
+	}
+
+	return nil
+}
+
 // checkLimitsForObtainingNewCerts checks to see if name can be issued right
-// now according to mitigating factors we keep track of and preferences the
-// user has set. If a non-nil error is returned, do not issue a new certificate
-// for name.
+// now according the maximum count defined in the configuration. If a non-nil
+// error is returned, do not issue a new certificate for name.
 func (cfg *Config) checkLimitsForObtainingNewCerts(name string) error {
 	// User can set hard limit for number of certs for the process to issue
 	if cfg.OnDemandState.MaxObtain > 0 &&

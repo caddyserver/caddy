@@ -50,7 +50,7 @@ func setup(c *caddy.Controller) error {
 
 	cfg := httpserver.GetConfig(c)
 	cfg.AddMiddleware(func(next httpserver.Handler) httpserver.Handler {
-		return Middleware{Next: next, Rules: rules, Root: http.Dir(cfg.Root)}
+		return Middleware{Next: next, Rules: rules, Root: http.Dir(cfg.Root), indexPages: cfg.IndexPages}
 	})
 
 	return nil
