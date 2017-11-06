@@ -15,10 +15,15 @@
 package proxy
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"reflect"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -187,7 +192,7 @@ func TestParseBlockHealthCheck(t *testing.T) {
 		u := staticUpstream{}
 		c := caddyfile.NewDispenser("Testfile", strings.NewReader(test.config))
 		for c.Next() {
-			parseBlock(&c, &u)
+			parseBlock(&c, &u, false)
 		}
 		if u.HealthCheck.Interval.String() != test.interval {
 			t.Errorf(
@@ -548,6 +553,219 @@ func TestQuicHost(t *testing.T) {
 					continue
 				}
 			}
+		}
+	}
+}
+
+func TestParseSRVBlock(t *testing.T) {
+	tests := []struct {
+		config    string
+		shouldErr bool
+	}{
+		{"proxy / srv://bogus.service", false},
+		{"proxy / srv://bogus.service:80", true},
+		{"proxy / srv://bogus.service srv://bogus.service.fallback", true},
+		{"proxy / srv://bogus.service http://bogus.service.fallback", true},
+		{"proxy / http://bogus.service srv://bogus.service.fallback", true},
+		{"proxy / srv://bogus.service bogus.service.fallback", true},
+		{`proxy / srv://bogus.service {
+		    upstream srv://bogus.service
+		 }`, true},
+		{"proxy / srv+https://bogus.service", false},
+		{"proxy / srv+https://bogus.service:80", true},
+		{"proxy / srv+https://bogus.service srv://bogus.service.fallback", true},
+		{"proxy / srv+https://bogus.service http://bogus.service.fallback", true},
+		{"proxy / http://bogus.service srv+https://bogus.service.fallback", true},
+		{"proxy / srv+https://bogus.service bogus.service.fallback", true},
+		{`proxy / srv+https://bogus.service {
+		    upstream srv://bogus.service
+		 }`, true},
+		{`proxy / srv+https://bogus.service {
+			health_check_port 96
+		 }`, true},
+	}
+
+	for i, test := range tests {
+		_, err := NewStaticUpstreams(caddyfile.NewDispenser("Testfile", strings.NewReader(test.config)), "")
+		if err == nil && test.shouldErr {
+			t.Errorf("Case %d - Expected an error. got nothing", i)
+		}
+
+		if err != nil && !test.shouldErr {
+			t.Errorf("Case %d - Expected no error. got %s", i, err.Error())
+		}
+	}
+}
+
+type testResolver struct {
+	errOn  string
+	result []*net.SRV
+}
+
+func (r testResolver) LookupSRV(ctx context.Context, _, _, service string) (string, []*net.SRV, error) {
+	if service == r.errOn {
+		return "", nil, errors.New("an error occurred")
+	}
+
+	return "", r.result, nil
+}
+
+func TestResolveHost(t *testing.T) {
+	upstream := &staticUpstream{
+		resolver: testResolver{
+			errOn: "srv://problematic.service.name",
+			result: []*net.SRV{
+				{Target: "target-1.fqdn", Port: 85, Priority: 1, Weight: 1},
+				{Target: "target-2.fqdn", Port: 33, Priority: 1, Weight: 1},
+				{Target: "target-3.fqdn", Port: 94, Priority: 1, Weight: 1},
+			},
+		},
+	}
+
+	tests := []struct {
+		host      string
+		expect    []string
+		isSrv     bool
+		shouldErr bool
+	}{
+		// Static DNS records
+		{"http://subdomain.domain.service",
+			[]string{"http://subdomain.domain.service"},
+			false,
+			false},
+		{"https://subdomain.domain.service",
+			[]string{"https://subdomain.domain.service"},
+			false,
+			false},
+		{"http://subdomain.domain.service:76",
+			[]string{"http://subdomain.domain.service:76"},
+			false,
+			false},
+		{"https://subdomain.domain.service:65",
+			[]string{"https://subdomain.domain.service:65"},
+			false,
+			false},
+
+		// SRV lookups
+		{"srv://service.name", []string{
+			"http://target-1.fqdn:85",
+			"http://target-2.fqdn:33",
+			"http://target-3.fqdn:94",
+		}, true, false},
+		{"srv+https://service.name", []string{
+			"https://target-1.fqdn:85",
+			"https://target-2.fqdn:33",
+			"https://target-3.fqdn:94",
+		}, true, false},
+		{"srv://problematic.service.name", []string{}, true, true},
+	}
+
+	for i, test := range tests {
+		results, isSrv, err := upstream.resolveHost(test.host)
+		if err == nil && test.shouldErr {
+			t.Errorf("Test %d - expected an error, got none", i)
+		}
+
+		if err != nil && !test.shouldErr {
+			t.Errorf("Test %d - unexpected error %s", i, err.Error())
+		}
+
+		if test.isSrv && !isSrv {
+			t.Errorf("Test %d - expecting resolution to be SRV lookup but it isn't", i)
+		}
+
+		if isSrv && !test.isSrv {
+			t.Errorf("Test %d - expecting resolution to be normal lookup, got SRV", i)
+		}
+
+		if !reflect.DeepEqual(results, test.expect) {
+			t.Errorf("Test %d - resolution result %#v does not match expected value %#v", i, results, test.expect)
+		}
+	}
+}
+
+func TestSRVHealthCheck(t *testing.T) {
+	serverURL, err := url.Parse(workableServer.URL)
+	if err != nil {
+		t.Errorf("Failed to parse test server URL: %s", err.Error())
+	}
+
+	pp, err := strconv.Atoi(serverURL.Port())
+	if err != nil {
+		t.Errorf("Failed to parse test server port [%s]: %s", serverURL.Port(), err.Error())
+	}
+
+	port := uint16(pp)
+
+	allGoodResolver := testResolver{
+		result: []*net.SRV{
+			{Target: serverURL.Hostname(), Port: port, Priority: 1, Weight: 1},
+		},
+	}
+
+	partialFailureResolver := testResolver{
+		result: []*net.SRV{
+			{Target: serverURL.Hostname(), Port: port, Priority: 1, Weight: 1},
+			{Target: "target-2.fqdn", Port: 33, Priority: 1, Weight: 1},
+			{Target: "target-3.fqdn", Port: 94, Priority: 1, Weight: 1},
+		},
+	}
+
+	fullFailureResolver := testResolver{
+		result: []*net.SRV{
+			{Target: "target-1.fqdn", Port: 876, Priority: 1, Weight: 1},
+			{Target: "target-2.fqdn", Port: 33, Priority: 1, Weight: 1},
+			{Target: "target-3.fqdn", Port: 94, Priority: 1, Weight: 1},
+		},
+	}
+
+	resolutionErrorResolver := testResolver{
+		errOn:  "srv://tag.service.consul",
+		result: []*net.SRV{},
+	}
+
+	upstream := &staticUpstream{
+		Hosts: []*UpstreamHost{
+			{Name: "srv://tag.service.consul"},
+		},
+		FailTimeout: 10 * time.Second,
+		MaxFails:    1,
+	}
+
+	tests := []struct {
+		resolver   testResolver
+		shouldFail bool
+		shouldErr  bool
+	}{
+		{allGoodResolver, false, false},
+		{partialFailureResolver, false, false},
+		{fullFailureResolver, true, false},
+		{resolutionErrorResolver, true, true},
+	}
+
+	for i, test := range tests {
+		upstream.resolver = test.resolver
+		upstream.healthCheck()
+		if upstream.Hosts[0].Down() && !test.shouldFail {
+			t.Errorf("Test %d - expected all healthchecks to pass, all failing", i)
+		}
+
+		if test.shouldFail && !upstream.Hosts[0].Down() {
+			t.Errorf("Test %d - expected all healthchecks to fail, all passing", i)
+		}
+
+		status := fmt.Sprintf("%s", upstream.Hosts[0].HealthCheckResult.Load())
+
+		if test.shouldFail && !test.shouldErr && status != "Failed" {
+			t.Errorf("Test %d - Expected health check result to be 'Failed', got '%s'", i, status)
+		}
+
+		if !test.shouldFail && status != "OK" {
+			t.Errorf("Test %d - Expected health check result to be 'OK', got '%s'", i, status)
+		}
+
+		if test.shouldErr && status != "an error occurred" {
+			t.Errorf("Test %d - Expected health check result to be 'an error occured', got '%s'", i, status)
 		}
 	}
 }
