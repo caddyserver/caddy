@@ -16,7 +16,6 @@ package caddytls
 
 import (
 	"os"
-	"sync"
 	"testing"
 
 	"github.com/xenolf/lego/acme"
@@ -94,7 +93,7 @@ func TestQualifiesForManagedTLS(t *testing.T) {
 }
 
 func TestSaveCertResource(t *testing.T) {
-	storage := &FileStorage{Path: "./le_test_save", nameLocks: make(map[string]*sync.WaitGroup)}
+	storage := &FileStorage{Path: "./le_test_save"}
 	defer func() {
 		err := os.RemoveAll(storage.Path)
 		if err != nil {
@@ -140,7 +139,7 @@ func TestSaveCertResource(t *testing.T) {
 }
 
 func TestExistingCertAndKey(t *testing.T) {
-	storage := &FileStorage{Path: "./le_test_existing", nameLocks: make(map[string]*sync.WaitGroup)}
+	storage := &FileStorage{Path: "./le_test_existing"}
 	defer func() {
 		err := os.RemoveAll(storage.Path)
 		if err != nil {
