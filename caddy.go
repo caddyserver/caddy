@@ -518,9 +518,13 @@ func startWithListenerFds(cdyfile Input, inst *Instance, restartFds map[string]r
 		}
 		if !Quiet {
 			for _, srvln := range inst.servers {
-				if !IsLoopback(srvln.listener.Addr().String()) {
-					checkFdlimit()
-					break
+				// only show FD notice if the listener is not nil.
+				// This can happen when only serving UDP or TCP
+				if srvln.listener != nil {
+					if !IsLoopback(srvln.listener.Addr().String()) {
+						checkFdlimit()
+						break
+					}
 				}
 			}
 		}
