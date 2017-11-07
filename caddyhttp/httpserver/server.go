@@ -356,6 +356,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	c := context.WithValue(r.Context(), OriginalURLCtxKey, urlCopy)
 	r = r.WithContext(c)
 
+	// Setup a replacer for the request that keeps track of placeholder
+	// values across plugins.
+	replacer := NewReplacer(r, nil, "")
+	c = context.WithValue(r.Context(), ReplacerCtxKey, replacer)
+	r = r.WithContext(c)
+
 	w.Header().Set("Server", caddy.AppName)
 
 	status, _ := s.serveHTTP(w, r)
