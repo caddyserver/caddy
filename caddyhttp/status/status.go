@@ -34,11 +34,14 @@ type Rule struct {
 }
 
 // NewRule creates new Rule.
-func NewRule(basePath string, status int) *Rule {
+func NewRule(basePath string, status int, reqMatcher httpserver.RequestMatcher) *Rule {
+	if reqMatcher == nil {
+		reqMatcher = httpserver.PathMatcher(basePath)
+	}
 	return &Rule{
 		Base:           basePath,
 		StatusCode:     status,
-		RequestMatcher: httpserver.PathMatcher(basePath),
+		RequestMatcher: reqMatcher,
 	}
 }
 

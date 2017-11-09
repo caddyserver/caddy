@@ -33,6 +33,19 @@ func Parse(filename string, input io.Reader, validDirectives []string) ([]Server
 	return p.parseAll()
 }
 
+// ParseBlockTokens takes a list of tokens that come from the
+// body of a single block into a nicely parsed map of lists of
+// tokens, keyed by directive name. It's essentially parsing
+// only a partial input into lists of tokens by directive name;
+// no server blocks or labels.
+func ParseBlockTokens(tokens []Token, validDirectives []string) (map[string][]Token, error) {
+	p := parser{Dispenser: NewDispenserTokens("(no filename)", tokens), validDirectives: validDirectives}
+	p.block = ServerBlock{Tokens: make(map[string][]Token)}
+	p.Next() // move cursor to first token
+	err := p.blockContents()
+	return p.block.Tokens, err
+}
+
 // allTokens lexes the entire input, but does not parse it.
 // It returns all the tokens from the input, unstructured
 // and in order.

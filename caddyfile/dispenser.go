@@ -143,6 +143,14 @@ func (d *Dispenser) Val() string {
 	return d.tokens[d.cursor].Text
 }
 
+// Data returns the data of the current token.
+func (d *Dispenser) Data() interface{} {
+	if d.cursor > -1 && d.cursor < len(d.tokens) {
+		return d.tokens[d.cursor].Data
+	}
+	return nil
+}
+
 // Line gets the line number of the current token. If there is no token
 // loaded, it returns 0.
 func (d *Dispenser) Line() int {

@@ -44,7 +44,7 @@ func init() {
 	flag.BoolVar(&QUIC, "quic", false, "Use experimental QUIC")
 
 	caddy.RegisterServerType(serverType, caddy.ServerType{
-		Directives: func() []string { return directives },
+		Directives: func() []string { return append(directives, "if") },
 		DefaultInput: func() caddy.Input {
 			if Port == DefaultPort && Host != "" {
 				// by leaving the port blank in this case we give auto HTTPS
@@ -172,6 +172,32 @@ func (h *httpContext) InspectServerBlocks(sourceFile string, serverBlocks []cadd
 		if hasGzip && !hasErrors {
 			sb.Tokens["errors"] = []caddyfile.Token{{Text: "errors"}}
 		}
+	}
+
+	// Make RequestMatchers for 'if' statement blocks
+	for _, sb := range serverBlocks {
+		iftkns, ok := sb.Tokens["if"]
+		if !ok {
+			continue
+		}
+
+		innerTokens, err := parseIfTokens(iftkns)
+		if err != nil {
+			return serverBlocks, fmt.Errorf("parsing if statement: %v", err)
+		}
+
+		// re-integrate the inner tokens into the main ServerBlock
+		// map of directives to tokens; TODO: this destroys the
+		// original line ordering because we just append to whatever
+		// was there, but meh, if that is a problem, there might
+		// be a way to solve it by carefully splicing the directive's
+		// tokens in at the right place in the list... but we'll see
+		// if that ever becomes a problem; for now, just append
+		for dir, tokens := range innerTokens {
+			sb.Tokens[dir] = append(sb.Tokens[dir], tokens...)
+		}
+
+		delete(sb.Tokens, "if")
 	}
 
 	return serverBlocks, nil

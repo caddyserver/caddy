@@ -62,6 +62,7 @@ func (p Path) Matches(base string) bool {
 type PathMatcher string
 
 // Match satisfies RequestMatcher.
+// TODO: Why not just have Path satisfy RequestMater directly?
 func (p PathMatcher) Match(r *http.Request) bool {
 	return Path(r.URL.Path).Matches(string(p))
 }

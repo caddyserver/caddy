@@ -36,6 +36,7 @@ type (
 		File string
 		Line int
 		Text string
+		Data interface{} // could be set to something meaningful by the server type
 	}
 )
 

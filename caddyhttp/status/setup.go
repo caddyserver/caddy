@@ -50,6 +50,8 @@ func statusParse(c *caddy.Controller) ([]httpserver.HandlerConfig, error) {
 	var rules []httpserver.HandlerConfig
 
 	for c.Next() {
+		reqMatcher := httpserver.GetRequestMatcher(c)
+
 		hadBlock := false
 		args := c.RemainingArgs()
 
@@ -71,7 +73,7 @@ func statusParse(c *caddy.Controller) ([]httpserver.HandlerConfig, error) {
 					}
 				}
 
-				rule := NewRule(basePath, status)
+				rule := NewRule(basePath, status, reqMatcher)
 				rules = append(rules, rule)
 
 				if c.NextArg() {
@@ -79,7 +81,9 @@ func statusParse(c *caddy.Controller) ([]httpserver.HandlerConfig, error) {
 				}
 			}
 
-			if !hadBlock {
+			if !hadBlock && reqMatcher != nil {
+				rules = append(rules, NewRule("", status, reqMatcher))
+			} else if !hadBlock {
 				return rules, c.ArgErr()
 			}
 		case 2:
@@ -96,8 +100,7 @@ func statusParse(c *caddy.Controller) ([]httpserver.HandlerConfig, error) {
 				}
 			}
 
-			rule := NewRule(basePath, status)
-			rules = append(rules, rule)
+			rules = append(rules, NewRule(basePath, status, reqMatcher))
 		default:
 			return rules, c.ArgErr()
 		}
