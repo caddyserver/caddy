@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -49,7 +50,7 @@ func setupTLS(c *caddy.Controller) error {
 	config.Enabled = true
 
 	for c.Next() {
-		var certificateFile, keyFile, loadDir, maxCerts string
+		var certificateFile, keyFile, loadDir, maxCerts, askURL string
 
 		args := c.RemainingArgs()
 		switch len(args) {
@@ -164,6 +165,9 @@ func setupTLS(c *caddy.Controller) error {
 			case "max_certs":
 				c.Args(&maxCerts)
 				config.OnDemand = true
+			case "ask":
+				c.Args(&askURL)
+				config.OnDemand = true
 			case "dns":
 				args := c.RemainingArgs()
 				if len(args) != 1 {
@@ -211,6 +215,19 @@ func setupTLS(c *caddy.Controller) error {
 				return c.Err("max_certs must be a positive integer")
 			}
 			config.OnDemandState.MaxObtain = int32(maxCertsNum)
+		}
+
+		if askURL != "" {
+			parsedURL, err := url.Parse(askURL)
+			if err != nil {
+				return c.Err("ask must be a valid url")
+			}
+
+			if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+				return c.Err("ask URL must use http or https")
+			}
+
+			config.OnDemandState.AskURL = parsedURL
 		}
 
 		// don't try to load certificates unless we're supposed to

@@ -39,6 +39,7 @@ type ACMEClient struct {
 	AllowPrompts bool
 	config       *Config
 	acmeClient   *acme.Client
+	locker       Locker
 }
 
 // newACMEClient creates a new ACMEClient given an email and whether
@@ -120,6 +121,10 @@ var newACMEClient = func(config *Config, allowPrompts bool) (*ACMEClient, error)
 		AllowPrompts: allowPrompts,
 		config:       config,
 		acmeClient:   client,
+		locker: &syncLock{
+			nameLocks:   make(map[string]*sync.WaitGroup),
+			nameLocksMu: sync.Mutex{},
+		},
 	}
 
 	if config.DNSProvider == "" {
@@ -210,7 +215,7 @@ func (c *ACMEClient) Obtain(name string) error {
 		return err
 	}
 
-	waiter, err := storage.TryLock(name)
+	waiter, err := c.locker.TryLock(name)
 	if err != nil {
 		return err
 	}
@@ -220,7 +225,7 @@ func (c *ACMEClient) Obtain(name string) error {
 		return nil // we assume the process with the lock succeeded, rather than hammering this execution path again
 	}
 	defer func() {
-		if err := storage.Unlock(name); err != nil {
+		if err := c.locker.Unlock(name); err != nil {
 			log.Printf("[ERROR] Unable to unlock obtain call for %s: %v", name, err)
 		}
 	}()
@@ -286,7 +291,7 @@ func (c *ACMEClient) Renew(name string) error {
 		return err
 	}
 
-	waiter, err := storage.TryLock(name)
+	waiter, err := c.locker.TryLock(name)
 	if err != nil {
 		return err
 	}
@@ -296,7 +301,7 @@ func (c *ACMEClient) Renew(name string) error {
 		return nil // we assume the process with the lock succeeded, rather than hammering this execution path again
 	}
 	defer func() {
-		if err := storage.Unlock(name); err != nil {
+		if err := c.locker.Unlock(name); err != nil {
 			log.Printf("[ERROR] Unable to unlock renew call for %s: %v", name, err)
 		}
 	}()

@@ -16,6 +16,7 @@ package proxy
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -65,6 +66,11 @@ type staticUpstream struct {
 	IgnoredSubPaths    []string
 	insecureSkipVerify bool
 	MaxFails           int32
+	resolver           srvResolver
+}
+
+type srvResolver interface {
+	LookupSRV(context.Context, string, string, string) (string, []*net.SRV, error)
 }
 
 // NewStaticUpstreams parses the configuration input and sets up
@@ -86,6 +92,7 @@ func NewStaticUpstreams(c caddyfile.Dispenser, host string) ([]Upstream, error) 
 			TryInterval:       250 * time.Millisecond,
 			MaxConns:          0,
 			KeepAlive:         http.DefaultMaxIdleConnsPerHost,
+			resolver:          net.DefaultResolver,
 		}
 
 		if !c.Args(&upstream.from) {
@@ -93,7 +100,21 @@ func NewStaticUpstreams(c caddyfile.Dispenser, host string) ([]Upstream, error) 
 		}
 
 		var to []string
+		hasSrv := false
+
 		for _, t := range c.RemainingArgs() {
+			if len(to) > 0 && hasSrv {
+				return upstreams, c.Err("only one upstream is supported when using SRV locator")
+			}
+
+			if strings.HasPrefix(t, "srv://") || strings.HasPrefix(t, "srv+https://") {
+				if len(to) > 0 {
+					return upstreams, c.Err("service locator upstreams can not be mixed with host names")
+				}
+
+				hasSrv = true
+			}
+
 			parsed, err := parseUpstream(t)
 			if err != nil {
 				return upstreams, err
@@ -107,13 +128,18 @@ func NewStaticUpstreams(c caddyfile.Dispenser, host string) ([]Upstream, error) 
 				if !c.NextArg() {
 					return upstreams, c.ArgErr()
 				}
+
+				if hasSrv {
+					return upstreams, c.Err("upstream directive is not supported when backend is service locator")
+				}
+
 				parsed, err := parseUpstream(c.Val())
 				if err != nil {
 					return upstreams, err
 				}
 				to = append(to, parsed...)
 			default:
-				if err := parseBlock(&c, upstream); err != nil {
+				if err := parseBlock(&c, upstream, hasSrv); err != nil {
 					return upstreams, err
 				}
 			}
@@ -165,7 +191,9 @@ func (u *staticUpstream) From() string {
 func (u *staticUpstream) NewHost(host string) (*UpstreamHost, error) {
 	if !strings.HasPrefix(host, "http") &&
 		!strings.HasPrefix(host, "unix:") &&
-		!strings.HasPrefix(host, "quic:") {
+		!strings.HasPrefix(host, "quic:") &&
+		!strings.HasPrefix(host, "srv://") &&
+		!strings.HasPrefix(host, "srv+https://") {
 		host = "http://" + host
 	}
 	uh := &UpstreamHost{
@@ -189,6 +217,7 @@ func (u *staticUpstream) NewHost(host string) (*UpstreamHost, error) {
 		}(u),
 		WithoutPathPrefix: u.WithoutPathPrefix,
 		MaxConns:          u.MaxConns,
+		HealthCheckResult: atomic.Value{},
 	}
 
 	baseURL, err := url.Parse(uh.Name)
@@ -205,50 +234,65 @@ func (u *staticUpstream) NewHost(host string) (*UpstreamHost, error) {
 }
 
 func parseUpstream(u string) ([]string, error) {
-	if !strings.HasPrefix(u, "unix:") {
-		colonIdx := strings.LastIndex(u, ":")
-		protoIdx := strings.Index(u, "://")
-
-		if colonIdx != -1 && colonIdx != protoIdx {
-			us := u[:colonIdx]
-			ue := ""
-			portsEnd := len(u)
-			if nextSlash := strings.Index(u[colonIdx:], "/"); nextSlash != -1 {
-				portsEnd = colonIdx + nextSlash
-				ue = u[portsEnd:]
-			}
-			ports := u[len(us)+1 : portsEnd]
-
-			if separators := strings.Count(ports, "-"); separators == 1 {
-				portsStr := strings.Split(ports, "-")
-				pIni, err := strconv.Atoi(portsStr[0])
-				if err != nil {
-					return nil, err
-				}
-
-				pEnd, err := strconv.Atoi(portsStr[1])
-				if err != nil {
-					return nil, err
-				}
-
-				if pEnd <= pIni {
-					return nil, fmt.Errorf("port range [%s] is invalid", ports)
-				}
-
-				hosts := []string{}
-				for p := pIni; p <= pEnd; p++ {
-					hosts = append(hosts, fmt.Sprintf("%s:%d%s", us, p, ue))
-				}
-				return hosts, nil
-			}
-		}
+	if strings.HasPrefix(u, "unix:") {
+		return []string{u}, nil
 	}
 
-	return []string{u}, nil
+	isSrv := strings.HasPrefix(u, "srv://") || strings.HasPrefix(u, "srv+https://")
+	colonIdx := strings.LastIndex(u, ":")
+	protoIdx := strings.Index(u, "://")
 
+	if colonIdx == -1 || colonIdx == protoIdx {
+		return []string{u}, nil
+	}
+
+	if isSrv {
+		return nil, fmt.Errorf("service locator %s can not have port specified", u)
+	}
+
+	us := u[:colonIdx]
+	ue := ""
+	portsEnd := len(u)
+	if nextSlash := strings.Index(u[colonIdx:], "/"); nextSlash != -1 {
+		portsEnd = colonIdx + nextSlash
+		ue = u[portsEnd:]
+	}
+
+	ports := u[len(us)+1 : portsEnd]
+	separators := strings.Count(ports, "-")
+
+	if separators == 0 {
+		return []string{u}, nil
+	}
+
+	if separators > 1 {
+		return nil, fmt.Errorf("port range [%s] has %d separators", ports, separators)
+	}
+
+	portsStr := strings.Split(ports, "-")
+	pIni, err := strconv.Atoi(portsStr[0])
+	if err != nil {
+		return nil, err
+	}
+
+	pEnd, err := strconv.Atoi(portsStr[1])
+	if err != nil {
+		return nil, err
+	}
+
+	if pEnd <= pIni {
+		return nil, fmt.Errorf("port range [%s] is invalid", ports)
+	}
+
+	hosts := []string{}
+	for p := pIni; p <= pEnd; p++ {
+		hosts = append(hosts, fmt.Sprintf("%s:%d%s", us, p, ue))
+	}
+
+	return hosts, nil
 }
 
-func parseBlock(c *caddyfile.Dispenser, u *staticUpstream) error {
+func parseBlock(c *caddyfile.Dispenser, u *staticUpstream, hasSrv bool) error {
 	switch c.Val() {
 	case "policy":
 		if !c.NextArg() {
@@ -348,6 +392,11 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream) error {
 		if !c.NextArg() {
 			return c.ArgErr()
 		}
+
+		if hasSrv {
+			return c.Err("health_check_port directive is not allowed when upstream is SRV locator")
+		}
+
 		port := c.Val()
 		n, err := strconv.Atoi(port)
 		if err != nil {
@@ -420,54 +469,94 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream) error {
 	return nil
 }
 
+func (u *staticUpstream) resolveHost(h string) ([]string, bool, error) {
+	names := []string{}
+	proto := "http"
+	if !strings.HasPrefix(h, "srv://") && !strings.HasPrefix(h, "srv+https://") {
+		return []string{h}, false, nil
+	}
+
+	if strings.HasPrefix(h, "srv+https://") {
+		proto = "https"
+	}
+
+	_, addrs, err := u.resolver.LookupSRV(context.Background(), "", "", h)
+	if err != nil {
+		return names, true, err
+	}
+
+	for _, addr := range addrs {
+		names = append(names, fmt.Sprintf("%s://%s:%d", proto, addr.Target, addr.Port))
+	}
+
+	return names, true, nil
+}
+
 func (u *staticUpstream) healthCheck() {
 	for _, host := range u.Hosts {
-		hostURL := host.Name
-		if u.HealthCheck.Port != "" {
-			hostURL = replacePort(host.Name, u.HealthCheck.Port)
-		}
-		hostURL += u.HealthCheck.Path
-
-		unhealthy := func() bool {
-			// set up request, needed to be able to modify headers
-			// possible errors are bad HTTP methods or un-parsable urls
-			req, err := http.NewRequest("GET", hostURL, nil)
-			if err != nil {
-				return true
-			}
-			// set host for request going upstream
-			if u.HealthCheck.Host != "" {
-				req.Host = u.HealthCheck.Host
-			}
-			r, err := u.HealthCheck.Client.Do(req)
-			if err != nil {
-				return true
-			}
-			defer func() {
-				io.Copy(ioutil.Discard, r.Body)
-				r.Body.Close()
-			}()
-			if r.StatusCode < 200 || r.StatusCode >= 400 {
-				return true
-			}
-			if u.HealthCheck.ContentString == "" { // don't check for content string
-				return false
-			}
-			// TODO ReadAll will be replaced if deemed necessary
-			//      See https://github.com/mholt/caddy/pull/1691
-			buf, err := ioutil.ReadAll(r.Body)
-			if err != nil {
-				return true
-			}
-			if bytes.Contains(buf, []byte(u.HealthCheck.ContentString)) {
-				return false
-			}
-			return true
-		}()
-		if unhealthy {
+		candidates, isSrv, err := u.resolveHost(host.Name)
+		if err != nil {
+			host.HealthCheckResult.Store(err.Error())
 			atomic.StoreInt32(&host.Unhealthy, 1)
+			continue
+		}
+
+		unhealthyCount := 0
+		for _, addr := range candidates {
+			hostURL := addr
+			if !isSrv && u.HealthCheck.Port != "" {
+				hostURL = replacePort(hostURL, u.HealthCheck.Port)
+			}
+			hostURL += u.HealthCheck.Path
+
+			unhealthy := func() bool {
+				// set up request, needed to be able to modify headers
+				// possible errors are bad HTTP methods or un-parsable urls
+				req, err := http.NewRequest("GET", hostURL, nil)
+				if err != nil {
+					return true
+				}
+				// set host for request going upstream
+				if u.HealthCheck.Host != "" {
+					req.Host = u.HealthCheck.Host
+				}
+				r, err := u.HealthCheck.Client.Do(req)
+				if err != nil {
+					return true
+				}
+				defer func() {
+					io.Copy(ioutil.Discard, r.Body)
+					r.Body.Close()
+				}()
+				if r.StatusCode < 200 || r.StatusCode >= 400 {
+					return true
+				}
+				if u.HealthCheck.ContentString == "" { // don't check for content string
+					return false
+				}
+				// TODO ReadAll will be replaced if deemed necessary
+				//      See https://github.com/mholt/caddy/pull/1691
+				buf, err := ioutil.ReadAll(r.Body)
+				if err != nil {
+					return true
+				}
+				if bytes.Contains(buf, []byte(u.HealthCheck.ContentString)) {
+					return false
+				}
+				return true
+			}()
+
+			if unhealthy {
+				unhealthyCount++
+			}
+		}
+
+		if unhealthyCount == len(candidates) {
+			atomic.StoreInt32(&host.Unhealthy, 1)
+			host.HealthCheckResult.Store("Failed")
 		} else {
 			atomic.StoreInt32(&host.Unhealthy, 0)
+			host.HealthCheckResult.Store("OK")
 		}
 	}
 }

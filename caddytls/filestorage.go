@@ -22,7 +22,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	"github.com/mholt/caddy"
 )
@@ -40,8 +39,7 @@ var storageBasePath = filepath.Join(caddy.AssetsPath(), "acme")
 // instance is guaranteed to be non-nil if there is no error.
 func NewFileStorage(caURL *url.URL) (Storage, error) {
 	return &FileStorage{
-		Path:      filepath.Join(storageBasePath, caURL.Host),
-		nameLocks: make(map[string]*sync.WaitGroup),
+		Path: filepath.Join(storageBasePath, caURL.Host),
 	}, nil
 }
 
@@ -49,9 +47,7 @@ func NewFileStorage(caURL *url.URL) (Storage, error) {
 // directory. It is used to get file paths in a consistent,
 // cross-platform way or persisting ACME assets on the file system.
 type FileStorage struct {
-	Path        string
-	nameLocks   map[string]*sync.WaitGroup
-	nameLocksMu sync.Mutex
+	Path string
 }
 
 // sites gets the directory that stores site certificate and keys.
@@ -251,36 +247,6 @@ func (s *FileStorage) StoreUser(email string, data *UserData) error {
 	if err != nil {
 		return fmt.Errorf("writing user key file: %v", err)
 	}
-	return nil
-}
-
-// TryLock attempts to get a lock for name, otherwise it returns
-// a Waiter value to wait until the other process is finished.
-func (s *FileStorage) TryLock(name string) (Waiter, error) {
-	s.nameLocksMu.Lock()
-	defer s.nameLocksMu.Unlock()
-	wg, ok := s.nameLocks[name]
-	if ok {
-		// lock already obtained, let caller wait on it
-		return wg, nil
-	}
-	// caller gets lock
-	wg = new(sync.WaitGroup)
-	wg.Add(1)
-	s.nameLocks[name] = wg
-	return nil, nil
-}
-
-// Unlock unlocks name.
-func (s *FileStorage) Unlock(name string) error {
-	s.nameLocksMu.Lock()
-	defer s.nameLocksMu.Unlock()
-	wg, ok := s.nameLocks[name]
-	if !ok {
-		return fmt.Errorf("FileStorage: no lock to release for %s", name)
-	}
-	wg.Done()
-	delete(s.nameLocks, name)
 	return nil
 }
 
