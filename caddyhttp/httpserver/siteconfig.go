@@ -73,6 +73,10 @@ type SiteConfig struct {
 	// If true, any requests not matching other site definitions
 	// may be served by this site.
 	FallbackSite bool
+
+	// If true, do not trim the path portion of the site address
+	// from the beginning of the URL path
+	DontStripPath bool
 }
 
 // Timeouts specify various timeouts for a server to use.

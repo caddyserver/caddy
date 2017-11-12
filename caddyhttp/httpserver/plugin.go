@@ -449,6 +449,7 @@ func RegisterDevDirective(name, before string) {
 // The ordering of this list is important.
 var directives = []string{
 	// primitive actions that set up the fundamental vitals of each config
+	"dontstrip",
 	"root",
 	"index",
 	"bind",
