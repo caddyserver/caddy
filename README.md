@@ -61,7 +61,7 @@ pre-built, vanilla binaries
 ## Build
 To build from source you need **[Git](https://git-scm.com/downloads)** and **[Go](https://golang.org/doc/install)** (1.8 or newer). Follow these instruction for fast building:
 
-- Get source `go get github.com/mholt/caddy/caddy` and then run `go get github.com/caddyserver/builds`
+- Get source `go get github.com/mholt/caddy/` and then run `go get github.com/caddyserver/builds`
 - Now `cd` to `$GOPATH/src/github.com/mholt/caddy/caddy` and run `go run build.go`
 
 Then make sure the `caddy` binary is in your PATH.
