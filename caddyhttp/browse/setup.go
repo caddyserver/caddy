@@ -499,7 +499,11 @@ footer {
 						return;
 					}
 				}
-				e.textContent = d.toLocaleString();
+				//Remove +00:00 from e.textContent
+				e.textContent = e.textContent.substring(0, e.textContent.lastIndexOf(" "));
+				
+				//Add a ',' to separate date and time
+				e.textContent = e.textContent.replace(' ',', ');
 			}
 			var timeList = Array.prototype.slice.call(document.getElementsByTagName("time"));
 			timeList.forEach(localizeDatetime);
