@@ -21,7 +21,6 @@ import (
 	"crypto/rand"
 	"io"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -196,7 +195,7 @@ func TestGetEmail(t *testing.T) {
 	}
 }
 
-var testStorage = &FileStorage{Path: "./testdata", nameLocks: make(map[string]*sync.WaitGroup)}
+var testStorage = &FileStorage{Path: "./testdata"}
 
 func (s *FileStorage) clean() error {
 	return os.RemoveAll(s.Path)

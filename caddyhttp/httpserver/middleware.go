@@ -214,6 +214,9 @@ func SameNext(next1, next2 Handler) bool {
 
 // Context key constants.
 const (
+	// ReplacerCtxKey is the context key for a per-request replacer.
+	ReplacerCtxKey caddy.CtxKey = "replacer"
+
 	// RemoteUserCtxKey is the key for the remote user of the request, if any (basicauth).
 	RemoteUserCtxKey caddy.CtxKey = "remote_user"
 
