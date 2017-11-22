@@ -499,11 +499,7 @@ footer {
 						return;
 					}
 				}
-				//Remove +00:00 from e.textContent
-				e.textContent = e.textContent.substring(0, e.textContent.lastIndexOf(" "));
-				
-				//Add a ',' to separate date and time
-				e.textContent = e.textContent.replace(' ',', ');
+				e.textContent = d.toLocaleString([], {day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit"});
 			}
 			var timeList = Array.prototype.slice.call(document.getElementsByTagName("time"));
 			timeList.forEach(localizeDatetime);
