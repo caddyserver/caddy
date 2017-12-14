@@ -148,7 +148,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 			case "HEAD":
 				resp, err = fcgiBackend.Head(env)
 			case "GET":
-				resp, err = fcgiBackend.Get(env)
+				resp, err = fcgiBackend.Get(env, r.Body, contentLength)
 			case "OPTIONS":
 				resp, err = fcgiBackend.Options(env)
 			default:
