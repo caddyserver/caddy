@@ -82,7 +82,8 @@ type UpstreamHost struct {
 	// This is an int32 so that we can use atomic operations to do concurrent
 	// reads & writes to this value.  The default value of 0 indicates that it
 	// is healthy and any non-zero value indicates unhealthy.
-	Unhealthy int32
+	Unhealthy         int32
+	HealthCheckResult atomic.Value
 }
 
 // Down checks whether the upstream host is down or not.

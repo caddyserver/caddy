@@ -19,7 +19,6 @@ import (
 	"strings"
 
 	"github.com/mholt/caddy/caddyhttp/httpserver"
-	"github.com/mholt/caddy/caddyhttp/staticfiles"
 )
 
 func (h Middleware) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
@@ -44,7 +43,7 @@ outer:
 		matches := httpserver.Path(urlPath).Matches(rule.Path)
 		// Also check IndexPages when requesting a directory
 		if !matches {
-			indexFile, isIndexFile := httpserver.IndexFile(h.Root, urlPath, staticfiles.IndexPages)
+			indexFile, isIndexFile := httpserver.IndexFile(h.Root, urlPath, h.indexPages)
 			if isIndexFile {
 				matches = httpserver.Path(indexFile).Matches(rule.Path)
 			}

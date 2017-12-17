@@ -17,6 +17,8 @@ package markdown
 import (
 	"bytes"
 	"io/ioutil"
+	"os"
+	"sync"
 	"text/template"
 
 	"github.com/mholt/caddy/caddyhttp/httpserver"
@@ -41,6 +43,8 @@ func (d Data) Include(filename string, args ...interface{}) (string, error) {
 	return httpserver.ContextInclude(filename, d, d.Root)
 }
 
+var templateUpdateMu sync.RWMutex
+
 // execTemplate executes a template given a requestPath, template, and metadata
 func execTemplate(c *Config, mdata metadata.Metadata, meta map[string]string, files []FileInfo, ctx httpserver.Context) ([]byte, error) {
 	mdData := Data{
@@ -51,23 +55,63 @@ func execTemplate(c *Config, mdata metadata.Metadata, meta map[string]string, fi
 		Meta:    meta,
 		Files:   files,
 	}
-
 	templateName := mdata.Template
-	// reload template on every request for now
-	// TODO: cache templates by a general plugin
-	if templateFile, ok := c.TemplateFiles[templateName]; ok {
-		err := SetTemplate(c.Template, templateName, templateFile)
-		if err != nil {
-			return nil, err
+
+	updateTemplate := func() error {
+		templateUpdateMu.Lock()
+		defer templateUpdateMu.Unlock()
+
+		templateFile, ok := c.TemplateFiles[templateName]
+		if !ok {
+			return nil
 		}
+
+		currentFileInfo, err := os.Lstat(templateFile.path)
+		if err != nil {
+			return err
+		}
+
+		if !fileChanged(currentFileInfo, templateFile.fi) {
+			return nil
+		}
+
+		// update template due to file changes
+		err = SetTemplate(c.Template, templateName, templateFile.path)
+		if err != nil {
+			return err
+		}
+
+		templateFile.fi = currentFileInfo
+		return nil
+	}
+
+	if err := updateTemplate(); err != nil {
+		return nil, err
 	}
 
 	b := new(bytes.Buffer)
+	templateUpdateMu.RLock()
+	defer templateUpdateMu.RUnlock()
 	if err := c.Template.ExecuteTemplate(b, templateName, mdData); err != nil {
 		return nil, err
 	}
 
 	return b.Bytes(), nil
+}
+
+func fileChanged(new, old os.FileInfo) bool {
+	// never checked before
+	if old == nil {
+		return true
+	}
+
+	if new.Size() != old.Size() ||
+		new.Mode() != old.Mode() ||
+		new.ModTime() != old.ModTime() {
+		return true
+	}
+
+	return false
 }
 
 // SetTemplate reads in the template with the filename provided. If the file does not exist or is not parsable, it will return an error.

@@ -26,7 +26,9 @@
 package proxy
 
 import (
+	"context"
 	"crypto/tls"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -91,6 +93,8 @@ type ReverseProxy struct {
 	// response body.
 	// If zero, no periodic flushing is done.
 	FlushInterval time.Duration
+
+	srvResolver srvResolver
 }
 
 // Though the relevant directive prefix is just "unix:", url.Parse
@@ -102,6 +106,23 @@ type ReverseProxy struct {
 func socketDial(hostName string) func(network, addr string) (conn net.Conn, err error) {
 	return func(network, addr string) (conn net.Conn, err error) {
 		return net.Dial("unix", hostName[len("unix://"):])
+	}
+}
+
+func (rp *ReverseProxy) srvDialerFunc(locator string) func(network, addr string) (conn net.Conn, err error) {
+	service := locator
+	if strings.HasPrefix(locator, "srv://") {
+		service = locator[6:]
+	} else if strings.HasPrefix(locator, "srv+https://") {
+		service = locator[12:]
+	}
+
+	return func(network, addr string) (conn net.Conn, err error) {
+		_, addrs, err := rp.srvResolver.LookupSRV(context.Background(), "", "", service)
+		if err != nil {
+			return nil, err
+		}
+		return net.Dial("tcp", fmt.Sprintf("%s:%d", addrs[0].Target, addrs[0].Port))
 	}
 }
 
@@ -131,6 +152,12 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int) *
 			// scheme and host have to be faked
 			req.URL.Scheme = "http"
 			req.URL.Host = "socket"
+		} else if target.Scheme == "srv" {
+			req.URL.Scheme = "http"
+			req.URL.Host = target.Host
+		} else if target.Scheme == "srv+https" {
+			req.URL.Scheme = "https"
+			req.URL.Host = target.Host
 		} else {
 			req.URL.Scheme = target.Scheme
 			req.URL.Host = target.Host
@@ -199,7 +226,12 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int) *
 		}
 	}
 
-	rp := &ReverseProxy{Director: director, FlushInterval: 250 * time.Millisecond} // flushing good for streaming & server-sent events
+	rp := &ReverseProxy{
+		Director:      director,
+		FlushInterval: 250 * time.Millisecond, // flushing good for streaming & server-sent events
+		srvResolver:   net.DefaultResolver,
+	}
+
 	if target.Scheme == "unix" {
 		rp.Transport = &http.Transport{
 			Dial: socketDial(target.String()),
@@ -210,13 +242,15 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int) *
 				HandshakeTimeout: defaultCryptoHandshakeTimeout,
 			},
 		}
-	} else if keepalive != http.DefaultMaxIdleConnsPerHost {
-		// if keepalive is equal to the default,
-		// just use default transport, to avoid creating
-		// a brand new transport
+	} else if keepalive != http.DefaultMaxIdleConnsPerHost || strings.HasPrefix(target.Scheme, "srv") {
+		dialFunc := defaultDialer.Dial
+		if strings.HasPrefix(target.Scheme, "srv") {
+			dialFunc = rp.srvDialerFunc(target.String())
+		}
+
 		transport := &http.Transport{
 			Proxy:                 http.ProxyFromEnvironment,
-			Dial:                  defaultDialer.Dial,
+			Dial:                  dialFunc,
 			TLSHandshakeTimeout:   defaultCryptoHandshakeTimeout,
 			ExpectContinueTimeout: 1 * time.Second,
 		}

@@ -252,7 +252,7 @@ func directoryListing(files []os.FileInfo, canGoUp bool, urlPath string, config 
 	for _, f := range files {
 		name := f.Name()
 
-		for _, indexName := range staticfiles.IndexPages {
+		for _, indexName := range config.Fs.IndexPages {
 			if name == indexName {
 				hasIndexFile = true
 				break

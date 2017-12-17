@@ -102,20 +102,30 @@ func (lw *limitWriter) String() string {
 // emptyValue should be the string that is used in place
 // of empty string (can still be empty string).
 func NewReplacer(r *http.Request, rr *ResponseRecorder, emptyValue string) Replacer {
-	rb := newLimitWriter(MaxLogBodySize)
-	if r.Body != nil {
-		r.Body = struct {
-			io.Reader
-			io.Closer
-		}{io.TeeReader(r.Body, rb), io.Closer(r.Body)}
+	repl := &replacer{
+		request:          r,
+		responseRecorder: rr,
+		emptyValue:       emptyValue,
 	}
-	return &replacer{
-		request:            r,
-		requestBody:        rb,
-		responseRecorder:   rr,
-		customReplacements: make(map[string]string),
-		emptyValue:         emptyValue,
+
+	// extract customReplacements from a request replacer when present.
+	if existing, ok := r.Context().Value(ReplacerCtxKey).(*replacer); ok {
+		repl.requestBody = existing.requestBody
+		repl.customReplacements = existing.customReplacements
+	} else {
+		// if there is no existing replacer, build one from scratch.
+		rb := newLimitWriter(MaxLogBodySize)
+		if r.Body != nil {
+			r.Body = struct {
+				io.Reader
+				io.Closer
+			}{io.TeeReader(r.Body, rb), io.Closer(r.Body)}
+		}
+		repl.requestBody = rb
+		repl.customReplacements = make(map[string]string)
 	}
+
+	return repl
 }
 
 func canLogRequest(r *http.Request) bool {

@@ -142,7 +142,7 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 
 	// Compile custom middleware for every site (enables virtual hosting)
 	for _, site := range group {
-		stack := Handler(staticfiles.FileServer{Root: http.Dir(site.Root), Hide: site.HiddenFiles})
+		stack := Handler(staticfiles.FileServer{Root: http.Dir(site.Root), Hide: site.HiddenFiles, IndexPages: site.IndexPages})
 		for i := len(site.middleware) - 1; i >= 0; i-- {
 			stack = site.middleware[i](stack)
 		}
@@ -354,6 +354,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		urlCopy.User = userInfo
 	}
 	c := context.WithValue(r.Context(), OriginalURLCtxKey, urlCopy)
+	r = r.WithContext(c)
+
+	// Setup a replacer for the request that keeps track of placeholder
+	// values across plugins.
+	replacer := NewReplacer(r, nil, "")
+	c = context.WithValue(r.Context(), ReplacerCtxKey, replacer)
 	r = r.WithContext(c)
 
 	w.Header().Set("Server", caddy.AppName)
