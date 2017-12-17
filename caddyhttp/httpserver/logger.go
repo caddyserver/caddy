@@ -70,8 +70,6 @@ func (l Logger) Printf(format string, args ...interface{}) {
 
 func (l Logger) MaskIP(ip string) string {
 	var reqIP net.IP
-	//var mask net.IPMask
-
 	// If unable to parse, simply return IP as provided.
 	reqIP = net.ParseIP(ip)
 	if reqIP == nil {
