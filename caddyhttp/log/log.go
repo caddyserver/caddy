@@ -67,14 +67,16 @@ func (l Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 
 			// Write log entries
 			for _, e := range rule.Entries {
+
+				// Mask IP Address
 				if e.Log.IPMaskExists {
-					// Mask IP Address, will not modify if default
-					hostip, hostport, err := net.SplitHostPort(r.RemoteAddr)
+					hostip, _, err := net.SplitHostPort(r.RemoteAddr)
 					if err == nil {
-						r.RemoteAddr = net.JoinHostPort(e.Log.MaskIP(hostip), hostport)
+						maskedIP := e.Log.MaskIP(hostip)
+						// Overwrite log value with Masked version
+						rep.Set("remote", maskedIP)
 					}
 				}
-
 				e.Log.Println(rep.Replace(e.Format))
 			}
 
