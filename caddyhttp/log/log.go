@@ -91,7 +91,7 @@ const (
 	// DefaultLogFilename is the default log filename.
 	DefaultLogFilename = "access.log"
 	// CommonLogFormat is the common log format.
-	CommonLogFormat = `{remote} ` + CommonLogEmptyValue + " " + CommonLogEmptyValue + ` [{when}] "{method} {uri} {proto}" {status} {size}`
+	CommonLogFormat = `{remote} ` + CommonLogEmptyValue + ` {user} [{when}] "{method} {uri} {proto}" {status} {size}`
 	// CommonLogEmptyValue is the common empty log value.
 	CommonLogEmptyValue = "-"
 	// CombinedLogFormat is the combined log format.
