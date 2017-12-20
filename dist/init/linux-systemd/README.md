@@ -44,9 +44,9 @@ sudo useradd \
   --system --uid 33 www-data
 
 sudo mkdir /etc/caddy
-sudo chown -R www-data:www-data /etc/caddy
+sudo chown -R root:www-data /etc/caddy
 sudo mkdir /etc/ssl/caddy
-sudo chown -R www-data:www-data /etc/ssl/caddy
+sudo chown -R root:www-data /etc/ssl/caddy
 sudo chmod 0770 /etc/ssl/caddy
 ```
 
