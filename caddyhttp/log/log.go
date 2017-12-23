@@ -17,6 +17,7 @@ package log
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 
 	"github.com/mholt/caddy"
@@ -66,6 +67,16 @@ func (l Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 
 			// Write log entries
 			for _, e := range rule.Entries {
+
+				// Mask IP Address
+				if e.Log.IPMaskExists {
+					hostip, _, err := net.SplitHostPort(r.RemoteAddr)
+					if err == nil {
+						maskedIP := e.Log.MaskIP(hostip)
+						// Overwrite log value with Masked version
+						rep.Set("remote", maskedIP)
+					}
+				}
 				e.Log.Println(rep.Replace(e.Format))
 			}
 

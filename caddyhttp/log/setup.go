@@ -15,6 +15,7 @@
 package log
 
 import (
+	"net"
 	"strings"
 
 	"github.com/mholt/caddy"
@@ -47,6 +48,10 @@ func logParse(c *caddy.Controller) ([]*Rule, error) {
 	for c.Next() {
 		args := c.RemainingArgs()
 
+		ip4Mask := net.IPMask(net.ParseIP(DefaultIP4Mask).To4())
+		ip6Mask := net.IPMask(net.ParseIP(DefaultIP6Mask))
+		ipMaskExists := false
+
 		var logRoller *httpserver.LogRoller
 		logRoller = httpserver.DefaultLogRoller()
 
@@ -54,14 +59,48 @@ func logParse(c *caddy.Controller) ([]*Rule, error) {
 			what := c.Val()
 			where := c.RemainingArgs()
 
-			// only support roller related options inside a block
-			if !httpserver.IsLogRollerSubdirective(what) {
+			if what == "ipmask" {
+
+				if len(where) == 0 {
+					return nil, c.ArgErr()
+				}
+
+				if where[0] != "" {
+					ip4MaskStr := where[0]
+					ipv4 := net.ParseIP(ip4MaskStr).To4()
+
+					if ipv4 == nil {
+						return nil, c.Err("IPv4 Mask not valid IP Mask Format")
+					} else {
+						ip4Mask = net.IPMask(ipv4)
+						ipMaskExists = true
+					}
+				}
+
+				if len(where) > 1 {
+
+					ip6MaskStr := where[1]
+					ipv6 := net.ParseIP(ip6MaskStr)
+
+					if ipv6 == nil {
+						return nil, c.Err("IPv6 Mask not valid IP Mask Format")
+					} else {
+						ip6Mask = net.IPMask(ipv6)
+						ipMaskExists = true
+					}
+
+				}
+
+			} else if httpserver.IsLogRollerSubdirective(what) {
+
+				if err := httpserver.ParseRoller(logRoller, what, where...); err != nil {
+					return nil, err
+				}
+
+			} else {
 				return nil, c.ArgErr()
 			}
 
-			if err := httpserver.ParseRoller(logRoller, what, where...); err != nil {
-				return nil, err
-			}
 		}
 
 		path := "/"
@@ -89,8 +128,11 @@ func logParse(c *caddy.Controller) ([]*Rule, error) {
 
 		rules = appendEntry(rules, path, &Entry{
 			Log: &httpserver.Logger{
-				Output: output,
-				Roller: logRoller,
+				Output:       output,
+				Roller:       logRoller,
+				V4ipMask:     ip4Mask,
+				V6ipMask:     ip6Mask,
+				IPMaskExists: ipMaskExists,
 			},
 			Format: format,
 		})
@@ -114,3 +156,10 @@ func appendEntry(rules []*Rule, pathScope string, entry *Entry) []*Rule {
 
 	return rules
 }
+
+const (
+	// IP Masks that have no effect on IP Address
+	DefaultIP4Mask = "255.255.255.255"
+
+	DefaultIP6Mask = "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"
+)
