@@ -30,9 +30,9 @@ test -x $DAEMON || exit 0
 
 # allow overwriting variables
 #   Debian based
-[ -e "/etc/default/caddy" ] && source /etc/default/caddy
+[ -e "/etc/default/caddy" ] && . /etc/default/caddy
 #   CentOS based
-[ -e "/etc/sysconfig/caddy" ] && source /etc/sysconfig/caddy
+[ -e "/etc/sysconfig/caddy" ] && . /etc/sysconfig/caddy
 
 # daemon options
 DAEMONOPTS="-agree=true -log=$LOGFILE -conf=$CONFIGFILE"
