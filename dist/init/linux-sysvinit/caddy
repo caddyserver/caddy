@@ -20,7 +20,6 @@ DAEMONUSER=www-data
 PIDFILE=/var/run/$NAME.pid
 LOGFILE=/var/log/$NAME.log
 CONFIGFILE=/etc/caddy/Caddyfile
-DAEMONOPTS="-agree=true -log=$LOGFILE -conf=$CONFIGFILE"
 
 USERBIND="setcap cap_net_bind_service=+ep"
 STOP_SCHEDULE="${STOP_SCHEDULE:-QUIT/5/TERM/5/KILL/5}"
@@ -32,8 +31,11 @@ test -x $DAEMON || exit 0
 # allow overwriting variables
 #   Debian based
 [ -e "/etc/default/caddy" ] && source /etc/default/caddy
-#   Red Hat based
+#   CentOS based
 [ -e "/etc/sysconfig/caddy" ] && source /etc/sysconfig/caddy
+
+# daemon options
+DAEMONOPTS="-agree=true -log=$LOGFILE -conf=$CONFIGFILE"
 
 # Set the CADDYPATH; Let's Encrypt certificates will be written to this directory.
 export CADDYPATH
