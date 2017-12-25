@@ -24,14 +24,22 @@ DAEMONOPTS="-agree=true -log=$LOGFILE -conf=$CONFIGFILE"
 
 USERBIND="setcap cap_net_bind_service=+ep"
 STOP_SCHEDULE="${STOP_SCHEDULE:-QUIT/5/TERM/5/KILL/5}"
+CADDYPATH=/etc/ssl/caddy
+ULIMIT=8192
 
 test -x $DAEMON || exit 0
 
+# allow overwriting variables
+#   Debian based
+[ -e "/etc/default/caddy" ] && source /etc/default/caddy
+#   Red Hat based
+[ -e "/etc/sysconfig/caddy" ] && source /etc/sysconfig/caddy
+
 # Set the CADDYPATH; Let's Encrypt certificates will be written to this directory.
-export CADDYPATH=/etc/ssl/caddy
+export CADDYPATH
 
 # Set the ulimits
-ulimit -n 8192
+ulimit -n ${ULIMIT}
 
 
 start() {
