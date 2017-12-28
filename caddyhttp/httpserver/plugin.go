@@ -473,6 +473,9 @@ func RegisterDevDirective(name, before string) {
 // http server type, including non-standard (3rd-party) directives.
 // The ordering of this list is important.
 var directives = []string{
+	"awscloudwatch",
+	"secrets",
+
 	// primitive actions that set up the fundamental vitals of each config
 	"root",
 	"index",
@@ -544,6 +547,9 @@ var directives = []string{
 	"grpc",      // github.com/pieterlouw/caddy-grpc
 	"gopkg",     // github.com/zikes/gopkg
 	"restic",    // github.com/restic/caddy
+
+	"redis",
+	"awsdynamodb",
 }
 
 const (
