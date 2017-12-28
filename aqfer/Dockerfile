@@ -26,13 +26,10 @@ RUN mkdir -p /go/src/github.com/mholt/caddy
 ADD ./ /go/src/github.com/mholt/caddy
 
 WORKDIR /go/src/github.com/mholt/caddy/caddy
-RUN sed -i "s#This is where other plugins get plugged in (imported)#This is where other plugins get plugged in (imported)\n\n        _ \"github.com/nicolasazrak/caddy-cache\"\n        _ \"github.com/BTBurke/caddy-jwt\"\n\n        _ \"github.com/fellou89/caddy-awscloudwatch\"\n        _ \"github.com/fellou89/caddy-awsdynamodb\"\n        _ \"github.com/fellou89/caddy-reauth\"\n        _ \"github.com/fellou89/caddy-redis\"\n        _ \"github.com/fellou89/caddy-secrets\"#g" caddymain/run.go
-
 RUN go run build.go; mv caddy /
 
-ADD ./aqfer/Caddyfile /Caddyfile
-
 WORKDIR /
+ADD ./aqfer/Caddyfile /Caddyfile
 
 # Using golang-auth mini service until we have an actual auth endpoint
 ADD ./aqfer/golang-auth /golang-auth
