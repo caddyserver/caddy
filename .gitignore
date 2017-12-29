@@ -12,7 +12,7 @@ error.log
 access.log
 
 /*.conf
-Caddyfile
+./Caddyfile
 
 og_static/
 

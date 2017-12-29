@@ -1,0 +1,23 @@
+:8082 {
+  awscloudwatch debug aqfer.io development 65536
+  jwt /
+  reauth {
+    path /ids/v1
+    refresh url=http://0.0.0.0:8083,skipverify=true,timeout=5s,follow=true,cache_path=tmp,lock_timeout=5m
+    failure status code=403
+  }
+  proxy /dynamodb :8083
+  proxy /redis :8084
+}
+
+:8083 {
+  awsdynamodb
+}
+
+:8084 {
+  redis :6379 testing
+}
+
+# redis elasticachetest2.t67iza.0001.use1.cache.amazonaws.com:6379
+# secrets .secrets.yml
+# log ./log/access.log
