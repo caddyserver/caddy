@@ -3,7 +3,7 @@
   jwt /
   reauth {
     path /ids/v1
-    refresh url=http://0.0.0.0:8083,skipverify=true,timeout=5s,follow=true,cache_path=tmp,lock_timeout=5m
+    refresh url=http://0.0.0.0:8081,skipverify=true,timeout=5s,follow=true,cache_path=tmp,lock_timeout=5m
     failure status code=403
   }
   proxy /dynamodb :8083
