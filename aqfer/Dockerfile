@@ -14,6 +14,7 @@ RUN go get github.com/sirupsen/logrus
 RUN go get github.com/satori/go.uuid
 RUN go get gopkg.in/yaml.v2
 
+# additional modules currently imported in caddy/caddymain/run.go
 RUN mkdir -p /go/src/github.com/fellou89
 ADD ./aqfer/caddy-awscloudwatch /go/src/github.com/fellou89/caddy-awscloudwatch
 ADD ./aqfer/caddy-reauth /go/src/github.com/fellou89/caddy-reauth
@@ -21,16 +22,17 @@ ADD ./aqfer/caddy-secrets /go/src/github.com/fellou89/caddy-secrets
 ADD ./aqfer/caddy-awsdynamodb /go/src/github.com/fellou89/caddy-awsdynamodb
 ADD ./aqfer/caddy-redis /go/src/github.com/fellou89/caddy-redis
 
+# adds caddy source under caddy directory on container
 RUN go get github.com/caddyserver/builds
 RUN mkdir -p /go/src/github.com/mholt/caddy
 ADD ./ /go/src/github.com/mholt/caddy
 
+# builds caddy binary and moves to location of Caddyfile
+ADD ./aqfer/Caddyfile /Caddyfile
 WORKDIR /go/src/github.com/mholt/caddy/caddy
 RUN go run build.go; mv caddy /
 
 WORKDIR /
-ADD ./aqfer/Caddyfile /Caddyfile
-
 # Using golang-auth mini service until we have an actual auth endpoint
 ADD ./aqfer/golang-auth /golang-auth
 CMD cd /golang-auth/main; go run main.go & cd /; ./caddy
