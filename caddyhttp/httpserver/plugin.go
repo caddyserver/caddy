@@ -473,8 +473,8 @@ func RegisterDevDirective(name, before string) {
 // http server type, including non-standard (3rd-party) directives.
 // The ordering of this list is important.
 var directives = []string{
-	"awscloudwatch",
 	"secrets",
+	"awscloudwatch",
 
 	// primitive actions that set up the fundamental vitals of each config
 	"root",

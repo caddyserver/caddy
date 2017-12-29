@@ -28,9 +28,9 @@ RUN mkdir -p /go/src/github.com/mholt/caddy
 ADD ./ /go/src/github.com/mholt/caddy
 
 # builds caddy binary and moves to location of Caddyfile
-ADD ./aqfer/Caddyfile /Caddyfile
 WORKDIR /go/src/github.com/mholt/caddy/caddy
 RUN go run build.go; mv caddy /
+ADD ./aqfer/Caddyfile /Caddyfile
 
 WORKDIR /
 # Using golang-auth mini service until we have an actual auth endpoint
