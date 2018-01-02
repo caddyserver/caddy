@@ -359,7 +359,7 @@ func (r *replacer) getSubstitution(key string) string {
 			return r.emptyValue
 		}
 		elapsedDuration := time.Since(r.responseRecorder.start)
-		
+
 		if elapsedDuration == 0 {
 			return "0ms"
 		}
