@@ -205,13 +205,13 @@ func TestPathRewrite(t *testing.T) {
 
 func TestRound(t *testing.T) {
 	var tests = map[time.Duration]time.Duration{
-		// 599.935µs -> 560µs
+		// 559.935µs -> 0.560ms
 		559935 * time.Nanosecond: 560 * time.Microsecond,
 		// 1.55ms    -> 2ms
 		1550 * time.Microsecond: 2 * time.Millisecond,
-		// 1.5555s   -> 1.556s
+		// 1.5555s   -> 1556ms
 		1555500 * time.Microsecond: 1556 * time.Millisecond,
-		// 1m2.0035s -> 1m2.004s
+		// 1m2.0035s -> 62004ms
 		62003500 * time.Microsecond: 62004 * time.Millisecond,
 	}
 
