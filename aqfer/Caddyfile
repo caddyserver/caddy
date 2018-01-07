@@ -6,8 +6,12 @@
     refresh url=http://0.0.0.0:8081,skipverify=true,timeout=5s,follow=true,cache_path=tmp,lock_timeout=5m
     failure status code=403
   }
-  proxy /dynamodb :8083
-  proxy /redis :8084
+  proxy /dynamodb :8083 {
+    keepalive 400
+  }
+  proxy /redis :8084 {
+    keepalive 400
+  }
 }
 
 :8083 {

@@ -19,3 +19,6 @@ og_static/
 .vscode/
 
 *.bat
+
+tmp/
+aqfer/dax/node_modules/
