@@ -177,15 +177,22 @@ func (i *Instance) Restart(newCaddyfile Input) (*Instance, error) {
 	restartFds := make(map[string]restartTriple)
 	for _, s := range i.servers {
 		gs, srvOk := s.server.(GracefulServer)
-		ln, lnOk := s.listener.(Listener)
+		dupLn, dupLnOk := s.listener.(DuppableListener)
+		if !dupLnOk {
+			ln, lnOk := s.listener.(Listener)
+			if lnOk {
+				dupLn = makeDuppableListener(ln)
+				dupLnOk = true
+			}
+		}
 		pc, pcOk := s.packet.(PacketConn)
 		if srvOk {
-			if lnOk && pcOk {
-				restartFds[gs.Address()] = restartTriple{server: gs, listener: ln, packet: pc}
+			if dupLnOk && pcOk {
+				restartFds[gs.Address()] = restartTriple{server: gs, listener: dupLn, packet: pc}
 				continue
 			}
-			if lnOk {
-				restartFds[gs.Address()] = restartTriple{server: gs, listener: ln}
+			if dupLnOk {
+				restartFds[gs.Address()] = restartTriple{server: gs, listener: dupLn}
 				continue
 			}
 			if pcOk {
@@ -347,12 +354,29 @@ type GracefulServer interface {
 	Address() string
 }
 
-// Listener is a net.Listener with an underlying file descriptor.
-// A server's listener should implement this interface if it is
-// to support zero-downtime reloads.
+// Listener is a net.Listener with an underlying file descriptor. It is
+// assumed that the File() method returns a file descriptor that can be
+// passed to net.FileListener() to create a valid net.Listener for use
+// by Server.Serve().
+// A server's listener should implement this interface or the
+// DuppableListener interface below if it is to support zero-downtime reloads.
 type Listener interface {
 	net.Listener
 	File() (*os.File, error)
+}
+
+// DuppableListener is similar to Listener, however it assumes that
+// the Dup() method is implemented to perform the dup operation
+// which utilizes the underlying file descriptor itself. It is assumed
+// that the Dup() method returns a valid net.Listener for use by
+// Server.Serve()
+// A server's listener should implement this interface or the
+// Listener interface above if it is to support zero-downtime reloads.
+type DuppableListener interface {
+	net.Listener
+
+	// Returns new Listener and closes old file descriptor
+	Dup() (net.Listener, error)
 }
 
 // PacketConn is a net.PacketConn with an underlying file descriptor.
@@ -690,15 +714,7 @@ func startServers(serverList []Server, inst *Instance, restartFds map[string]res
 			if old, ok := restartFds[addr]; ok {
 				// listener
 				if old.listener != nil {
-					file, err := old.listener.File()
-					if err != nil {
-						return err
-					}
-					ln, err = net.FileListener(file)
-					if err != nil {
-						return err
-					}
-					err = file.Close()
+					ln, err = old.listener.Dup()
 					if err != nil {
 						return err
 					}
@@ -938,8 +954,35 @@ func writePidFile() error {
 
 type restartTriple struct {
 	server   GracefulServer
-	listener Listener
+	listener DuppableListener
 	packet   PacketConn
+}
+
+type duppableListener struct {
+	Listener
+}
+
+func (d duppableListener) Dup() (net.Listener, error) {
+	file, err := d.Listener.File()
+	if err != nil {
+		return nil, err
+	}
+
+	ln, err := net.FileListener(file)
+	if err != nil {
+		return nil, err
+	}
+
+	err = file.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	return ln, nil
+}
+
+func makeDuppableListener(l Listener) DuppableListener {
+	return duppableListener{Listener: l}
 }
 
 var (
