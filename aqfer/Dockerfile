@@ -14,6 +14,10 @@ RUN go get github.com/sirupsen/logrus
 RUN go get github.com/satori/go.uuid
 RUN go get gopkg.in/yaml.v2
 
+RUN curl -o- https://raw.githubusercontent.com/creationix/nvm/v0.32.0/install.sh | bash
+RUN nvm install 4.8.4
+RUN npm install amazon-dax-client
+
 # additional modules currently imported in caddy/caddymain/run.go
 RUN mkdir -p /go/src/github.com/fellou89
 ADD ./aqfer/caddy-awscloudwatch /go/src/github.com/fellou89/caddy-awscloudwatch

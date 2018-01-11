@@ -15,13 +15,14 @@
 }
 
 :8083 {
-  awsdynamodb
+  awsdynamodb aqfer-idsync partition-key sort-key DAX 8085 seconddax.t67iza.clustercfg.dax.use1.cache.amazonaws.com:8111
+  # awsdynamodb aqfer-idsync partition-key sort-key
 }
 
 :8084 {
-  redis :6379 testing
+  redis elasticachetest2.t67iza.0001.use1.cache.amazonaws.com:6379
+  # redis :6379 testing
 }
 
-# redis elasticachetest2.t67iza.0001.use1.cache.amazonaws.com:6379
 # secrets .secrets.yml
 # log ./log/access.log
