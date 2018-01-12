@@ -34,8 +34,10 @@ test -x $DAEMON || exit 0
 #   CentOS based
 [ -e "/etc/sysconfig/caddy" ] && . /etc/sysconfig/caddy
 
-# daemon options
-DAEMONOPTS="-agree=true -log=$LOGFILE -conf=$CONFIGFILE"
+if [ -z "$DAEMONOPTS" ]; then
+    # daemon options
+    DAEMONOPTS="-agree=true -log=$LOGFILE -conf=$CONFIGFILE"
+fi
 
 # Set the CADDYPATH; Let's Encrypt certificates will be written to this directory.
 export CADDYPATH
