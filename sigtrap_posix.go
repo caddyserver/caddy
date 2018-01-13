@@ -25,6 +25,8 @@ import (
 
 // trapSignalsPosix captures POSIX-only signals.
 func trapSignalsPosix() {
+	signalToString := map[os.Signal]string{syscall.SIGTERM: "SIGTERM", syscall.SIGQUIT: "SIGQUIT"}
+
 	go func() {
 		sigchan := make(chan os.Signal, 1)
 		signal.Notify(sigchan, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT, syscall.SIGUSR1, syscall.SIGUSR2)
@@ -32,18 +34,13 @@ func trapSignalsPosix() {
 		for sig := range sigchan {
 			switch sig {
 			case syscall.SIGTERM:
-				log.Println("[INFO] SIGTERM: Terminating process")
-				if PidFile != "" {
-					os.Remove(PidFile)
-				}
-				os.Exit(0)
-
+				fallthrough
 			case syscall.SIGQUIT:
-				log.Println("[INFO] SIGQUIT: Shutting down")
-				exitCode := executeShutdownCallbacks("SIGQUIT")
+				log.Printf("[INFO] %s: Shutting down", signalToString[sig])
+				exitCode := executeShutdownCallbacks(signalToString[sig])
 				err := Stop()
 				if err != nil {
-					log.Printf("[ERROR] SIGQUIT stop: %v", err)
+					log.Printf("[ERROR] %s stop: %v", signalToString[sig], err)
 					exitCode = 3
 				}
 				if PidFile != "" {
