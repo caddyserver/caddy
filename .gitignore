@@ -22,6 +22,6 @@ og_static/
 
 tmp/
 aqfer/.*
-aqfer/aws/AqferKeyPair.pem
+aqfer/aws/*.pem
 aqfer/aws/db_app_spec.yml
 aqfer/aws/ecs_app_spec.yml
