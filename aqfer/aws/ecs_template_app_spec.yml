@@ -11,12 +11,6 @@ Parameters:
   Jwt:
     Description: 'JWT secret'
     Type: String
-  Version:
-    Description: 'Application version'
-    Type: String
-  RootName:
-    Description: 'Application Name root'
-    Type: String
   AWSAccount:
     Description: 'Aws Account Id'
     Type: String
@@ -24,53 +18,71 @@ Parameters:
     Description: 'Ami template for linux EC2 instance'
     Default: 'ami-55ef662f'
     Type: String
-  AppName:
-    Description: 'Root name and version combination, for use in other components'
-    Type: String
-  InstanceType:
+  EC2InstanceType:
     Description: 'EC2 Instance Type'
     Default: 't2.micro'
     Type: String
   KeyPair:
     Description: 'EC2 Key Pair'
     Type: String
-  SecurityGroupName:
+  LoadBalancerName:
+    Description: 'Application Load Balancer name'
+    Type: String
+  LBSecurityGroupName:
+    Description: 'Load Balancer security group name'
+    Type: String
+  TargetGroupName:
+    Description: 'Target Group name'
+    Type: String
+  EC2SecurityGroupName:
     Description: 'Security Group name for EC2 instances'
     Type: String
   EC2InstanceRoleName:
     Description: 'IAM Role name for EC2 instances'
     Type: String
-  ClusterName:
+  ECSServiceName:
+    Description: 'ECS Service name'
+    Type: String
+  ECSServiceRoleName:
+    Description: 'ECS Service Role name'
+    Type: String
+  ECSClusterName:
     Description: 'ECS Cluster name'
     Type: String
-  TaskDefinitionName:
+  ECSTaskDefinitionName:
     Description: 'ECS Task Definition name'
     Type: String
   ECRRepoURI:
     Description: 'Repo URI for uplated ECR container'
     Type: String
-  DynamoTableName:
-    Description: 'Name for Dynamo table'
+  ContainerName:
+    Description: 'Docker container name'
+    Type: String
+  Subnet:
+    Description: 'Subnet 1 in Availability Zone'
+    Type: String
+  Subnet2:
+    Description: 'Subnet 2 in Availability Zone'
+    Type: String
+  Vpc:
+    Description: 'VPC Identifier'
+    Type: String
+  ECSLogGroupName:
+    Description: 'ECS LogGroup Name for Aqfer'
+    Type: String
+  AppLogGroupName:
+    Description: App LogGroup Name for Aqfer
     Type: String
 
 Resources:
-  DynamoDBTable:
-    Type: AWS::DynamoDB::Table
+  ApplicationLogGroup:
+    Type: AWS::Logs::LogGroup
     Properties:
-      AttributeDefinitions:
-      - AttributeName: partition-key
-        AttributeType: S
-      - AttributeName: sort-key
-        AttributeType: S
-      KeySchema:
-      - AttributeName: partition-key
-        KeyType: HASH
-      - AttributeName: sort-key
-        KeyType: RANGE
-      ProvisionedThroughput:
-        ReadCapacityUnits: '5'
-        WriteCapacityUnits: '5'
-      TableName: DynamoTableName
+      LogGroupName: !Ref AppLogGroupName
+  ECSLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties: 
+      LogGroupName: !Ref ECSLogGroupName
 
   EC2InstanceRole:
     Type: AWS::IAM::Role
@@ -122,7 +134,7 @@ Resources:
     Type: AWS::IAM::InstanceProfile
     Properties:
       Roles:
-      - Ref: EC2InstanceRole
+      - !Ref EC2InstanceRole
   LaunchConfiguration:
     Type: AWS::AutoScaling::LaunchConfiguration
     Metadata:
@@ -138,8 +150,8 @@ Resources:
               command: sudo service docker restart
             e:
               command: sudo start ecs
-            f:
-              command: !Sub 'aws ecs run-task --cluster ${ClusterName} --task-definition ${TaskDefinitionName} --region ${AWS::Region}'
+            # f:
+            #   command: !Sub 'aws ecs run-task --cluster ${ECSClusterName} --task-definition ${ECSTaskDefinitionName} --region ${AWS::Region}'
     Properties:
       AssociatePublicIpAddress: true
       BlockDeviceMappings:
@@ -148,22 +160,22 @@ Resources:
           VolumeSize: 22
           VolumeType: gp2
       EbsOptimized: false
-      IamInstanceProfile:
-        Ref: EC2InstanceProfile
+      IamInstanceProfile: !Ref EC2InstanceProfile
       ImageId: !Ref Ami
-      InstanceType: !Ref InstanceType
+      InstanceType: !Ref EC2InstanceType
       KeyName: !Ref KeyPair
       SecurityGroups:
-      - Ref: SecurityGroup
+      - !Ref EC2SecurityGroup
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
+          sudo yum update
 
           # Setup for EC2 instance to register to ECS cluster
           sudo yum install -y ecs-init
-          echo ECS_CLUSTER=${ClusterName} >> /etc/ecs/ecs.config
+          echo ECS_CLUSTER=${ECSClusterName} >> /etc/ecs/ecs.config
           echo ECS_LOGLEVEL=debug >> /etc/ecs/ecs.config
-          echo ECS_AVAILABLE_LOGGING_DRIVERS=''["awslogs"]'' >> /etc/ecs/ecs.config
+          echo ECS_AVAILABLE_LOGGING_DRIVERS=[\"awslogs\"] >> /etc/ecs/ecs.config
 
           # Cloudformation setup to signal and error -- cfn-bootstrap not needed with current ami
           # wget https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.amzn1.noarch.rpm
@@ -177,7 +189,7 @@ Resources:
           echo [/var/log/ecs/ecs-agent.log] >> /ecs_logs.conf
           echo file = /var/log/ecs/ecs-agent.log.* >> /ecs_logs.conf
           echo log_group_name = /var/log/ecs/ecs-agent.log >> /ecs_logs.conf
-          echo log_stream_name = ${ClusterName}/INSTANCE_ID >> /ecs_logs.conf
+          echo log_stream_name = ${ECSClusterName}/INSTANCE_ID >> /ecs_logs.conf
           /opt/aws/bin/ec2-metadata -i | sed 's/instance-id: //' >> /instance_id
           cat /ecs_logs.conf | sed ''s/INSTANCE_ID/''$(cat /instance_id)''/'' > /ecs_logs.conf
           mkdir -p /var/awslogs/etc/config
@@ -191,19 +203,17 @@ Resources:
 
           # Start Cloudformation Init
           /opt/aws/bin/cfn-init --stack ${AWS::StackName} --resource LaunchConfiguration --region ${AWS::Region}
-
   AutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
       TargetGroupARNs: []
-      DesiredCapacity: 1
-      Tags: []
+      DesiredCapacity: 4
       LoadBalancerNames: []
       Cooldown: 300
       MinSize: 0
-      MaxSize: 1
+      MaxSize: 4
       VPCZoneIdentifier:
-      - subnet-7a8a5255
+      - !Ref Subnet 
       HealthCheckGracePeriod: 0
       HealthCheckType: EC2
       TerminationPolicies:
@@ -213,53 +223,63 @@ Resources:
   ECSCluster:
     Type: AWS::ECS::Cluster
     Properties:
-      ClusterName: !Sub '${ClusterName}'
-  ECSTaskDefitinition:
+      ClusterName: !Ref ECSClusterName
+  ECSTaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
       Volumes: []
-      Family: !Ref TaskDefinitionName
+      Family: !Ref ECSTaskDefinitionName
       PlacementConstraints: []
       ContainerDefinitions:
       - DnsSearchDomains: []
         Environment:
-        - Name: "AWS_ACCESS_KEY_ID"
+        - Name: AWS_ACCESS_KEY_ID
           Value: !Ref Id
-        - Name: "AWS_SECRET_ACCESS_KEY"
+        - Name: AWS_SECRET_ACCESS_KEY
           Value: !Ref Secret
-        - Name: "AWS_REGION"
+        - Name: AWS_REGION
           Value: !Sub "${AWS::Region}"
-        - Name: "JWT_SECRET"
+        - Name: JWT_SECRET
           Value: !Ref Jwt
         ReadonlyRootFilesystem: false
-        Name: caddy
+        Name: !Ref ContainerName
         Links: []
         MountPoints: []
         Image: !Ref ECRRepoURI
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-region: !Sub "${AWS::Region}"
+            awslogs-stream-prefix: ecs
+            awslogs-group: !Ref ECSLogGroupName
         LinuxParameters:
           Capabilities: {}
         Essential: true
         PortMappings:
         - Protocol: tcp
+          HostPort: 0
           ContainerPort: 8082
-          HostPort: 8082
         DnsServers: []
         DockerSecurityOptions: []
         EntryPoint: []
-        Ulimits: []
+        Ulimits:
+        - Name: nofile
+          SoftLimit: 1024000
+          HardLimit: 1024000
         Privileged: false
-        Memory: 300
+        Memory: 800
         Command: []
         ExtraHosts: []
-        Cpu: 0
+        Cpu: 512
         VolumesFrom: []
         DockerLabels: {}
-  SecurityGroup:
+  EC2SecurityGroup:
     Type: AWS::EC2::SecurityGroup
+    DependsOn: LBSecurityGroup
     Properties:
-      GroupName: !Ref SecurityGroupName
-      GroupDescription: 'Security Group for EC2 instances'
-      VpcId: vpc-f582e28d
+      GroupName: !Ref EC2SecurityGroupName
+      GroupDescription: 'EC2 Instance Security Group'
+      VpcId: !Ref Vpc
       SecurityGroupIngress:
       - IpProtocol: tcp
         FromPort: '80'
@@ -269,7 +289,109 @@ Resources:
         FromPort: '22'
         ToPort: '22'
         CidrIp: 0.0.0.0/0
+      - IpProtocol: '-1'
+        FromPort: '-1'
+        ToPort: '-1'
+        SourceSecurityGroupName: !Ref LBSecurityGroupName
+  ECSServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref ECSServiceRoleName
+      AssumeRolePolicyDocument:
+        Version: '2008-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: ecs.amazonaws.com
+          Action: sts:AssumeRole
+      Path: "/"
+      Policies:
+      - PolicyName: ECSPolicy
+        PolicyDocument:
+          Statement:
+          - Effect: Allow
+            Action:
+            - ec2:AuthorizeSecurityGroupIngress
+            - ec2:Describe*
+            - elasticloadbalancing:DeregisterInstancesFromLoadBalancer
+            - elasticloadbalancing:DeregisterTargets
+            - elasticloadbalancing:Describe*
+            - elasticloadbalancing:RegisterInstancesWithLoadBalancer
+            - elasticloadbalancing:RegisterTargets
+            Resource: "*"
+  ECSService:
+    Type: AWS::ECS::Service
+    DependsOn: LBListener
+    Properties: 
+      ServiceName: !Ref ECSServiceName
+      Cluster: !Ref ECSCluster
+      TaskDefinition: !Ref ECSTaskDefinition
+      DesiredCount: 16
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 100
+        MaximumPercent: 200
+      LaunchType: EC2
+      LoadBalancers:
+      - ContainerName: !Ref ContainerName
+        ContainerPort: 8082
+        TargetGroupArn: !Ref LBTargetGroup
+      PlacementStrategies: 
+      - Field: attribute:ecs.availability-zone
+        Type: spread
+      - Field: instanceId
+        Type: spread
+      Role: !Ref ECSServiceRole
+  
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Ref LoadBalancerName
+      Type: application
+      IpAddressType: ipv4
+      Scheme: internet-facing
+      SecurityGroups:
+      - !Ref LBSecurityGroup
+      Subnets:
+      - !Ref Subnet
+      - !Ref Subnet2
+  LBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties: 
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref LBTargetGroup
+  LBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Ref TargetGroupName
+      Protocol: HTTP
+      Port: 80
+      TargetType: instance
+      VpcId: !Ref Vpc
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /
+      HealthCheckPort: traffic-port
+      HealthyThresholdCount: 5
+      UnhealthyThresholdCount: 2
+      Matcher: 
+        HttpCode: "200,401"
+      HealthCheckTimeoutSeconds: 20
+      HealthCheckIntervalSeconds: 30
+  LBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Ref LBSecurityGroupName
+      GroupDescription: 'Load balancer Security Group'
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
       - IpProtocol: tcp
-        FromPort: '8082'
-        ToPort: '8082'
+        FromPort: '80'
+        ToPort: '80'
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: '22'
+        ToPort: '22'
         CidrIp: 0.0.0.0/0

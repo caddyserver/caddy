@@ -21,4 +21,7 @@ og_static/
 *.bat
 
 tmp/
-aqfer/dax/node_modules/
+aqfer/.*
+aqfer/aws/AqferKeyPair.pem
+aqfer/aws/db_app_spec.yml
+aqfer/aws/ecs_app_spec.yml

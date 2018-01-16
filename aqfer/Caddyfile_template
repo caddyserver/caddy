@@ -4,7 +4,7 @@
   }
 
   secrets .secrets.yml
-  awscloudwatch debug aqfer.io development 65536
+  awscloudwatch debug APP_LOG_GROUP_NAME development 65536
 
   jwt /
   reauth {
@@ -25,15 +25,15 @@
 }
 
 :8083 {
-  awsdynamodb aqfer-idsync1 partition-key sort-key
+  awsdynamodb DYNAMO_TABLE PARTITION_KEY SORT_KEY
 }
 
 :8084 {
-  redis elasticacheaqfer1.elwwyl.0001.use1.cache.amazonaws.com:6379
+  redis EC_ENDPOINT
 }
 
 :8085 {
-  awsdynamodb aqfer-idsync1 partition-key sort-key DAX 8086 daxaqfer1.elwwyl.clustercfg.dax.use1.cache.amazonaws.com:8111
+  awsdynamodb DYNAMO_TABLE PARTITION_KEY SORT_KEY DAX 8086 DAX_ENDPOINT
 }
 
 # log ./log/access.log

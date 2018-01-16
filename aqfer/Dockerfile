@@ -14,10 +14,6 @@ RUN go get github.com/sirupsen/logrus
 RUN go get github.com/satori/go.uuid
 RUN go get gopkg.in/yaml.v2
 
-RUN curl -o- https://raw.githubusercontent.com/creationix/nvm/v0.32.0/install.sh | bash
-RUN nvm install 4.8.4
-RUN npm install amazon-dax-client
-
 # additional modules currently imported in caddy/caddymain/run.go
 RUN mkdir -p /go/src/github.com/fellou89
 ADD ./aqfer/caddy-awscloudwatch /go/src/github.com/fellou89/caddy-awscloudwatch
@@ -35,8 +31,25 @@ ADD ./ /go/src/github.com/mholt/caddy
 WORKDIR /go/src/github.com/mholt/caddy/caddy
 RUN go run build.go; mv caddy /
 ADD ./aqfer/Caddyfile /Caddyfile
+ADD ./aqfer/.secrets.yml /.secrets.yml
 
 WORKDIR /
+
+ENV NVM_DIR /root/.nvm
+ENV NODE_VERSION 8.5.0
+
+# use bash instead of sh so nvm can be sourced
+RUN rm /bin/sh && ln -s /bin/bash /bin/sh
+RUN curl -o- https://raw.githubusercontent.com/creationix/nvm/v0.32.0/install.sh | bash; . $NVM_DIR/nvm.sh; nvm install $NODE_VERSION; nvm use $NODE_VERSION
+
+ENV NODE_PATH $NVM_DIR/versions/node/v$NODE_VERSION/lib/node_modules
+ENV PATH $NVM_DIR/versions/node/v$NODE_VERSION/bin:$PATH
+
+RUN cd /go/src/github.com/fellou89/caddy-awsdynamodb; npm install amazon-dax-client
+
+RUN apt-get update
+RUN apt-get -y install vim
+
 # Using golang-auth mini service until we have an actual auth endpoint
 ADD ./aqfer/golang-auth /golang-auth
 CMD cd /golang-auth/main; go run main.go & cd /; ./caddy
