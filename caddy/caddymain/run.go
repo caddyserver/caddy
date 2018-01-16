@@ -170,10 +170,18 @@ func confLoader(serverType string) (caddy.Input, error) {
 		return caddy.CaddyfileFromPipe(os.Stdin, serverType)
 	}
 
-	contents, err := ioutil.ReadFile(conf)
-	if err != nil {
-		return nil, err
+	var contents []byte
+	if strings.Contains(conf, "*") {
+		// Let caddyfile.doImport logic handle the globbed path
+		contents = []byte("import " + conf)
+	} else {
+		var err error
+		contents, err = ioutil.ReadFile(conf)
+		if err != nil {
+			return nil, err
+		}
 	}
+
 	return caddy.CaddyfileInput{
 		Contents:       contents,
 		Filepath:       conf,
