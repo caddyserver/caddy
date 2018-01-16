@@ -17,6 +17,7 @@ package log
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 
 	"github.com/mholt/caddy"
@@ -66,6 +67,16 @@ func (l Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 
 			// Write log entries
 			for _, e := range rule.Entries {
+
+				// Mask IP Address
+				if e.Log.IPMaskExists {
+					hostip, _, err := net.SplitHostPort(r.RemoteAddr)
+					if err == nil {
+						maskedIP := e.Log.MaskIP(hostip)
+						// Overwrite log value with Masked version
+						rep.Set("remote", maskedIP)
+					}
+				}
 				e.Log.Println(rep.Replace(e.Format))
 			}
 
@@ -91,7 +102,7 @@ const (
 	// DefaultLogFilename is the default log filename.
 	DefaultLogFilename = "access.log"
 	// CommonLogFormat is the common log format.
-	CommonLogFormat = `{remote} ` + CommonLogEmptyValue + " " + CommonLogEmptyValue + ` [{when}] "{method} {uri} {proto}" {status} {size}`
+	CommonLogFormat = `{remote} ` + CommonLogEmptyValue + ` {user} [{when}] "{method} {uri} {proto}" {status} {size}`
 	// CommonLogEmptyValue is the common empty log value.
 	CommonLogEmptyValue = "-"
 	// CombinedLogFormat is the combined log format.
