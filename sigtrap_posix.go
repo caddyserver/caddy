@@ -25,25 +25,27 @@ import (
 
 // trapSignalsPosix captures POSIX-only signals.
 func trapSignalsPosix() {
+	signalToString := map[os.Signal]string{syscall.SIGHUP: "SIGHUP", syscall.SIGUSR1: "SIGUSR1"}
+
 	go func() {
 		sigchan := make(chan os.Signal, 1)
 		signal.Notify(sigchan, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT, syscall.SIGUSR1, syscall.SIGUSR2)
 
 		for sig := range sigchan {
 			switch sig {
-			case syscall.SIGTERM:
-				log.Println("[INFO] SIGTERM: Terminating process")
+			case syscall.SIGQUIT:
+				log.Println("[INFO] SIGQUIT: Terminating process")
 				if PidFile != "" {
 					os.Remove(PidFile)
 				}
 				os.Exit(0)
 
-			case syscall.SIGQUIT:
-				log.Println("[INFO] SIGQUIT: Shutting down")
-				exitCode := executeShutdownCallbacks("SIGQUIT")
+			case syscall.SIGTERM:
+				log.Println("[INFO] SIGTERM: Shutting down")
+				exitCode := executeShutdownCallbacks(signalToString[sig])
 				err := Stop()
 				if err != nil {
-					log.Printf("[ERROR] SIGQUIT stop: %v", err)
+					log.Printf("[ERROR] SIGTERM stop: %v", err)
 					exitCode = 3
 				}
 				if PidFile != "" {
@@ -51,32 +53,25 @@ func trapSignalsPosix() {
 				}
 				os.Exit(exitCode)
 
-			case syscall.SIGHUP:
-				log.Println("[INFO] SIGHUP: Hanging up")
-				err := Stop()
-				if err != nil {
-					log.Printf("[ERROR] SIGHUP stop: %v", err)
-				}
-
-			case syscall.SIGUSR1:
-				log.Println("[INFO] SIGUSR1: Reloading")
+			case syscall.SIGUSR1, syscall.SIGHUP:
+				log.Printf("[INFO] %s: Reloading", signalToString[sig])
 
 				// Start with the existing Caddyfile
 				caddyfileToUse, inst, err := getCurrentCaddyfile()
 				if err != nil {
-					log.Printf("[ERROR] SIGUSR1: %v", err)
+					log.Printf("[ERROR] %s: %v", signalToString[sig], err)
 					continue
 				}
 				if loaderUsed.loader == nil {
 					// This also should never happen
-					log.Println("[ERROR] SIGUSR1: no Caddyfile loader with which to reload Caddyfile")
+					log.Printf("[ERROR] %s: no Caddyfile loader with which to reload Caddyfile", signalToString[sig])
 					continue
 				}
 
 				// Load the updated Caddyfile
 				newCaddyfile, err := loaderUsed.loader.Load(inst.serverType)
 				if err != nil {
-					log.Printf("[ERROR] SIGUSR1: loading updated Caddyfile: %v", err)
+					log.Printf("[ERROR] %s: loading updated Caddyfile: %v", signalToString[sig], err)
 					continue
 				}
 				if newCaddyfile != nil {
@@ -86,7 +81,7 @@ func trapSignalsPosix() {
 				// Kick off the restart; our work is done
 				_, err = inst.Restart(caddyfileToUse)
 				if err != nil {
-					log.Printf("[ERROR] SIGUSR1: %v", err)
+					log.Printf("[ERROR] %s: %v", signalToString[sig], err)
 				}
 
 			case syscall.SIGUSR2:
