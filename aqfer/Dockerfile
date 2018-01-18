@@ -1,5 +1,25 @@
 FROM golang:1.8
 
+# NODE ONLY NEEDED WHILE DAX IS RUN AS NODE SERVER
+ENV NVM_DIR /root/.nvm
+ENV NODE_VERSION 8.5.0
+
+# use bash instead of sh so nvm can be sourced
+RUN rm /bin/sh && ln -s /bin/bash /bin/sh
+RUN curl -o- https://raw.githubusercontent.com/creationix/nvm/v0.32.0/install.sh | bash; . $NVM_DIR/nvm.sh; nvm install $NODE_VERSION; nvm use $NODE_VERSION
+
+ENV NODE_PATH $NVM_DIR/versions/node/v$NODE_VERSION/lib/node_modules
+ENV PATH $NVM_DIR/versions/node/v$NODE_VERSION/bin:$PATH
+
+RUN cd /go/src/github.com/fellou89/caddy-awsdynamodb; npm install amazon-dax-client
+
+# VIM ONLY USED FOR DEVELOPMENT OF CADDY STACK
+
+RUN apt-get update
+RUN apt-get -y install vim
+
+#################################################
+
 RUN go get github.com/aws/aws-sdk-go/aws
 RUN go get github.com/aws/aws-sdk-go/aws/awserr
 RUN go get github.com/aws/aws-sdk-go/aws/session
@@ -30,26 +50,12 @@ ADD ./ /go/src/github.com/mholt/caddy
 # builds caddy binary and moves to location of Caddyfile
 WORKDIR /go/src/github.com/mholt/caddy/caddy
 RUN go run build.go; mv caddy /
-ADD ./aqfer/Caddyfile /Caddyfile
-ADD ./aqfer/.secrets.yml /.secrets.yml
 
 WORKDIR /
 
-ENV NVM_DIR /root/.nvm
-ENV NODE_VERSION 8.5.0
-
-# use bash instead of sh so nvm can be sourced
-RUN rm /bin/sh && ln -s /bin/bash /bin/sh
-RUN curl -o- https://raw.githubusercontent.com/creationix/nvm/v0.32.0/install.sh | bash; . $NVM_DIR/nvm.sh; nvm install $NODE_VERSION; nvm use $NODE_VERSION
-
-ENV NODE_PATH $NVM_DIR/versions/node/v$NODE_VERSION/lib/node_modules
-ENV PATH $NVM_DIR/versions/node/v$NODE_VERSION/bin:$PATH
-
-RUN cd /go/src/github.com/fellou89/caddy-awsdynamodb; npm install amazon-dax-client
-
-RUN apt-get update
-RUN apt-get -y install vim
-
 # Using golang-auth mini service until we have an actual auth endpoint
 ADD ./aqfer/golang-auth /golang-auth
+
+ADD ./aqfer/Caddyfile /Caddyfile
+ADD ./aqfer/.secrets.yml /.secrets.yml
 CMD cd /golang-auth/main; go run main.go & cd /; ./caddy
