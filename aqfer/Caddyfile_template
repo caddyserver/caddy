@@ -1,39 +1,15 @@
 :8082 {
-  timeouts {
-    idle 90s
-  }
-
   secrets .secrets.yml
   awscloudwatch debug APP_LOG_GROUP_NAME development 65536
 
-  jwt /
   reauth {
-    path /ids/v1
-    refresh url=http://0.0.0.0:8081,skipverify=true,timeout=5s,follow=true,cache_path=tmp,lock_timeout=5m
+    path /
+    refresh url=http://0.0.0.0:8081,skipverify=true,timeout=5s,follow=true,cache_path=temp_cache,lock_timeout=5m
     failure status code=403
   }
 
-  proxy /dynamodb :8083 {
-    keepalive 400
-  }
-  proxy /redis :8084 {
-    keepalive 400
-  }
-  proxy /dax :8085 {
-    keepalive 400
-  }
-}
-
-:8083 {
-  awsdynamodb DYNAMO_TABLE PARTITION_KEY SORT_KEY
-}
-
-:8084 {
-  redis EC_ENDPOINT
-}
-
-:8085 {
   awsdynamodb DYNAMO_TABLE PARTITION_KEY SORT_KEY DAX 8086 DAX_ENDPOINT
+  redis EC_ENDPOINT testing
 }
 
 # log ./log/access.log

@@ -59,7 +59,7 @@ then
 fi
 ECRRepoURI=$(cat /tmp/ecrUri)
 
-if false
+if true
 then
   aws ecs list-tasks --cluster $ECS_CLUSTER_NAME --profile $AWS_PROFILE > /tmp/task_definition
   taskId1=$(cat /tmp/task_definition | sed -n "N;N;s/.*taskArns.*\n.*\"\(.*\)\".*/\1/p")

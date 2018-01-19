@@ -76,9 +76,13 @@ func (s *Service) GenerateAccessToken() (result *AccessToken, err error) {
 	}
 	now := time.Now().Unix()
 	sc := s.SecurityContext
+	id, err := uuid.NewV1()
+	if err != nil {
+		fmt.Println(err.Error())
+	}
 	claims := claims{
 		StandardClaims: jwt.StandardClaims{
-			Id:        uuid.NewV1().String(),
+			Id:        id.String(),
 			IssuedAt:  now,
 			ExpiresAt: now + accessTokenExpiry,
 		},
