@@ -1,9 +1,13 @@
+:80 {
+  redir / /test.go
+}
+
 :8082 {
   secrets .secrets.yml
   awscloudwatch debug APP_LOG_GROUP_NAME development 65536
 
   reauth {
-    path /
+    path /ids/v1
     refresh url=http://0.0.0.0:8081,skipverify=true,timeout=5s,follow=true,cache_path=temp_cache,lock_timeout=5m
     failure status code=403
   }

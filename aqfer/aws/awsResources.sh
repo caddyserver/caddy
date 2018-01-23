@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
 # set -e
 
-DBVERSION=1
-ECSVERSION=2
+DBVERSION=2
+ECSVERSION=1
 ROOT_NAME=aqfer
 
 # AWS_ACCOUNT='545654232789'
 # AWS_PROFILE=default
 AWS_ACCOUNT='392630614516'
-AWS_PROFILE=aqfer
+AWS_PROFILE=default
 
 ID=$(aws configure get aws_access_key_id --profile $AWS_PROFILE)
 SECRET=$(aws configure get aws_secret_access_key --profile $AWS_PROFILE)
 REGION=$(aws configure get region --profile $AWS_PROFILE)
 JWT=testkey
 
-AMI=ami-55ef662f
+AMI=ami-832b1cf9
 # AMI=ami-fad25980 # ecs optimized ami
-INSTANCE_SIZE=t2.medium
+INSTANCE_TYPE=c5.large
 VPC=vpc-5a340c22
 SUBNET=subnet-867f59cd
 SUBNET2=subnet-2cba2771
@@ -27,9 +27,10 @@ APP_LOG_GROUP_NAME=aqfer.io
 
 EC_SECURITY_GROUP=$ROOT_NAME'EC-sg'$DBVERSION
 EC_CLUSTER_NAME=elasticache$ROOT_NAME$DBVERSION
+EC_NODE_TYPE=cache.m4.large
 DAX_SECURITY_GROUP=$ROOT_NAME'DAX-sg'$DBVERSION
 DAX_CLUSTER_NAME=dax$ROOT_NAME$DBVERSION
-DAX_NODE_SIZE=dax.r3.large
+DAX_NODE_TYPE=dax.r3.large
 DYNAMO_TABLE=$ROOT_NAME-idsync$DBVERSION
 PARTITION_KEY='partition-key'
 SORT_KEY='sort-key'
@@ -69,12 +70,13 @@ then
     PartitionKey=$PARTITION_KEY \
     SortKey=$SORT_KEY \
     DaxName=$DAX_CLUSTER_NAME \
-    DaxNodeType=$DAX_NODE_SIZE \
+    DaxNodeType=$DAX_NODE_TYPE \
     DaxRoleName=$ROOT_NAME'DaxRole'$DBVERSION \
     DaxSubnetGroupName=dax-subnet-$ROOT_NAME$DBVERSION \
     DaxSecurityGroupName=$DAX_SECURITY_GROUP \
     ECSecurityGroupName=$EC_SECURITY_GROUP \
     ECSubnetGroupName=elasticache-subnet-$ROOT_NAME$DBVERSION \
+    ECNodeType=$EC_NODE_TYPE \
     ECClusterName=$EC_CLUSTER_NAME
 fi
 
@@ -98,7 +100,7 @@ cat /tmp/Caddyfile | sed 's/DAX_ENDPOINT/'$DAX_ENDPOINT'/g' > aqfer/Caddyfile
 
 
 # push repo
-if false
+if true
 then
   # Currently set to 0 so that only one ECS repo is used, but could use VERSION as param instead
   bash ./aqfer/aws/ecr.sh $REGION $ROOT_NAME 0 $AWS_PROFILE
@@ -126,7 +128,7 @@ then
     LoadBalancerName=$LOAD_BALANCER_NAME \
     LBSecurityGroupName=$LB_SECURITY_GROUP \
     TargetGroupName=$ROOT_NAME'TargetGroup'$ECSVERSION \
-    EC2InstanceType=$INSTANCE_SIZE \
+    EC2InstanceType=$INSTANCE_TYPE \
     EC2SecurityGroupName=$EC2_SECURITY_GROUP \
     EC2InstanceRoleName=$ROOT_NAME'EC2InstanceRole'$ECSVERSION \
     ECSClusterName=$ROOT_NAME'Cluster'$ECSVERSION \
@@ -149,12 +151,16 @@ then
 fi
 
 # deletes ecs stack, needs to disconnect security groups first
+instanceIds='i-07b91577af0cc9b5c'
 if false
 then
   aws ec2 revoke-security-group-ingress --group-name $EC_SECURITY_GROUP --source-group $EC2_SECURITY_GROUP \
     --port $ecPort --protocol tcp --profile $AWS_PROFILE
   aws ec2 revoke-security-group-ingress --group-name $DAX_SECURITY_GROUP --source-group $EC2_SECURITY_GROUP \
     --port $daxPort --protocol tcp --profile $AWS_PROFILE
+
+  aws ec2 terminate-instances --instance-ids $instanceIds --profile $AWS_PROFILE
+  aws ec2 wait instance-terminated --instance-ids $instanceIds --profile $AWS_PROFILE
 
   aws cloudformation delete-stack --stack-name 'ECS'$ROOT_NAME$ECSVERSION --profile $AWS_PROFILE
 fi

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # set -e
 
-DBVERSION=1
-ECSVERSION=2
+DBVERSION=2
+ECSVERSION=1
 ROOT_NAME=aqfer
 
 AWS_ACCOUNT='392630614516'
@@ -30,6 +30,8 @@ TASK_DEFINITION=$ROOT_NAME'TaskDefinition'$ECSVERSION
 ECS_LOG_GROUP_NAME=/ecs/$TASK_DEFINITION
 ECS_CLUSTER_NAME=$ROOT_NAME'Cluster'$ECSVERSION
 EC2_SECURITY_GROUP=$ROOT_NAME'EC2-sg'$ECSVERSION
+EC2_INSTANCE_TYPE=c5.large
+# EC2_INSTANCE_TYPE=t2.medium
 
 
 ARTIFACTS_BUCKET=cloudformation-art-$ROOT_NAME
@@ -59,19 +61,19 @@ then
 fi
 ECRRepoURI=$(cat /tmp/ecrUri)
 
-if true
+if false
 then
   aws ecs list-tasks --cluster $ECS_CLUSTER_NAME --profile $AWS_PROFILE > /tmp/task_definition
   taskId1=$(cat /tmp/task_definition | sed -n "N;N;s/.*taskArns.*\n.*\"\(.*\)\".*/\1/p")
-  taskId2=$(cat /tmp/task_definition | sed -n "N;N;N;s/.*taskArns.*\n.*\n.*\"\(.*\)\".*/\1/p")
+  # taskId2=$(cat /tmp/task_definition | sed -n "N;N;N;s/.*taskArns.*\n.*\n.*\"\(.*\)\".*/\1/p")
 
   aws ecs stop-task --cluster $ECS_CLUSTER_NAME --task $taskId1 --profile $AWS_PROFILE
   aws ecs stop-task --cluster $ECS_CLUSTER_NAME --task $taskId2 --profile $AWS_PROFILE
 
   bash ./aqfer/aws/ecr.sh $REGION $ROOT_NAME 0 $AWS_PROFILE
 
-  aws ecs run-task --cluster $ECS_CLUSTER_NAME --task-definition $TASK_DEFINITION'1:1' --region $REGION --profile $AWS_PROFILE
-  aws ecs run-task --cluster $ECS_CLUSTER_NAME --task-definition $TASK_DEFINITION'1:2' --region $REGION --profile $AWS_PROFILE
+  aws ecs run-task --cluster $ECS_CLUSTER_NAME --task-definition $TASK_DEFINITION':22' --region $REGION --profile $AWS_PROFILE
+  aws ecs run-task --cluster $ECS_CLUSTER_NAME --task-definition $TASK_DEFINITION':23' --region $REGION --profile $AWS_PROFILE
 fi
 
 if false
@@ -87,6 +89,7 @@ then
     Subnet=$SUBNET \
     Vpc=$VPC \
     KeyPair=$KEYPAIR_NAME \
+    EC2InstanceType=$EC2_INSTANCE_TYPE \
     EC2SecurityGroupName=$EC2_SECURITY_GROUP \
     EC2InstanceRoleName=$ROOT_NAME'EC2InstanceRole'$ECSVERSION \
     ECSClusterName=$ECS_CLUSTER_NAME \
@@ -103,7 +106,7 @@ then
 fi
 
 instanceIds=''
-if false
+if true
 then
   aws ec2 revoke-security-group-ingress --group-name $EC_SECURITY_GROUP --source-group $EC2_SECURITY_GROUP \
     --port $ecPort --protocol tcp --profile $AWS_PROFILE

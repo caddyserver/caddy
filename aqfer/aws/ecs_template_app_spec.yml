@@ -207,11 +207,11 @@ Resources:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
       TargetGroupARNs: []
-      DesiredCapacity: 4
+      DesiredCapacity: 1
       LoadBalancerNames: []
       Cooldown: 300
       MinSize: 0
-      MaxSize: 4
+      MaxSize: 1
       VPCZoneIdentifier:
       - !Ref Subnet 
       HealthCheckGracePeriod: 0
@@ -258,6 +258,9 @@ Resources:
         PortMappings:
         - Protocol: tcp
           HostPort: 0
+          ContainerPort: 80
+        - Protocol: tcp
+          HostPort: 0
           ContainerPort: 8082
         DnsServers: []
         DockerSecurityOptions: []
@@ -267,7 +270,7 @@ Resources:
           SoftLimit: 1024000
           HardLimit: 1024000
         Privileged: false
-        Memory: 800
+        Memory: 400
         Command: []
         ExtraHosts: []
         Cpu: 512
@@ -275,12 +278,15 @@ Resources:
         DockerLabels: {}
   EC2SecurityGroup:
     Type: AWS::EC2::SecurityGroup
-    DependsOn: LBSecurityGroup
     Properties:
       GroupName: !Ref EC2SecurityGroupName
       GroupDescription: 'EC2 Instance Security Group'
       VpcId: !Ref Vpc
       SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '8082'
+        ToPort: '8082'
+        CidrIp: 0.0.0.0/0
       - IpProtocol: tcp
         FromPort: '80'
         ToPort: '80'
@@ -289,10 +295,6 @@ Resources:
         FromPort: '22'
         ToPort: '22'
         CidrIp: 0.0.0.0/0
-      - IpProtocol: '-1'
-        FromPort: '-1'
-        ToPort: '-1'
-        SourceSecurityGroupName: !Ref LBSecurityGroupName
   ECSServiceRole:
     Type: AWS::IAM::Role
     Properties:
@@ -326,7 +328,7 @@ Resources:
       ServiceName: !Ref ECSServiceName
       Cluster: !Ref ECSCluster
       TaskDefinition: !Ref ECSTaskDefinition
-      DesiredCount: 16
+      DesiredCount: 4
       DeploymentConfiguration:
         MinimumHealthyPercent: 100
         MaximumPercent: 200
@@ -346,11 +348,9 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
       Name: !Ref LoadBalancerName
-      Type: application
+      Type: network
       IpAddressType: ipv4
       Scheme: internet-facing
-      SecurityGroups:
-      - !Ref LBSecurityGroup
       Subnets:
       - !Ref Subnet
       - !Ref Subnet2
@@ -359,7 +359,7 @@ Resources:
     Properties: 
       LoadBalancerArn: !Ref ApplicationLoadBalancer
       Port: 80
-      Protocol: HTTP
+      Protocol: TCP
       DefaultActions:
       - Type: forward
         TargetGroupArn: !Ref LBTargetGroup
@@ -367,31 +367,12 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
       Name: !Ref TargetGroupName
-      Protocol: HTTP
+      Protocol: TCP
       Port: 80
       TargetType: instance
       VpcId: !Ref Vpc
-      HealthCheckProtocol: HTTP
-      HealthCheckPath: /
-      HealthCheckPort: traffic-port
+      HealthCheckProtocol: TCP
+      HealthCheckPort: 80
       HealthyThresholdCount: 5
-      UnhealthyThresholdCount: 2
-      Matcher: 
-        HttpCode: "200,401"
-      HealthCheckTimeoutSeconds: 20
+      UnhealthyThresholdCount: 5
       HealthCheckIntervalSeconds: 30
-  LBSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupName: !Ref LBSecurityGroupName
-      GroupDescription: 'Load balancer Security Group'
-      VpcId: !Ref Vpc
-      SecurityGroupIngress:
-      - IpProtocol: tcp
-        FromPort: '80'
-        ToPort: '80'
-        CidrIp: 0.0.0.0/0
-      - IpProtocol: tcp
-        FromPort: '22'
-        ToPort: '22'
-        CidrIp: 0.0.0.0/0

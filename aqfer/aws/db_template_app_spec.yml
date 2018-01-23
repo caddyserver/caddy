@@ -14,6 +14,10 @@ Parameters:
   ECSubnetGroupName:
     Description: 'Subnet Group name for Elasticache'
     Type: String
+  ECNodeType:
+    Description: 'Elasticache cache size'
+    Default: 'cache.t2.micro'
+    Type: String
   DaxName:
     Description: 'DAX cluster name'
     Type: String
@@ -136,7 +140,7 @@ Resources:
     Properties:
       Engine: "redis"
       ClusterName: !Ref ECClusterName
-      CacheNodeType: "cache.t2.micro"
+      CacheNodeType: !Ref ECNodeType
       NumCacheNodes: 1
       PreferredAvailabilityZone: !Ref AvailabilityZone
       VpcSecurityGroupIds:

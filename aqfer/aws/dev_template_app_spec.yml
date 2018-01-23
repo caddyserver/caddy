@@ -16,7 +16,7 @@ Parameters:
     Type: String
   Ami:
     Description: 'Ami template for linux EC2 instance'
-    Default: 'ami-55ef662f'
+    Default: 'ami-832b1cf9'
     Type: String
   EC2InstanceType:
     Description: 'EC2 Instance Type'
@@ -137,10 +137,10 @@ Resources:
             e:
               command: sudo start ecs
             f:
-              command: !Sub 'aws ecs run-task --cluster ${ECSClusterName} --task-definition ${ECSTaskDefinitionName}:1 --region ${AWS::Region}'
+              command: !Sub 'aws ecs run-task --cluster ${ECSClusterName} --task-definition ${ECSTaskDefinitionName}:21 --region ${AWS::Region}'
     Properties:
             g:
-              command: !Sub 'aws ecs run-task --cluster ${ECSClusterName} --task-definition ${ECSTaskDefinitionName}:2 --region ${AWS::Region}'
+              command: !Sub 'aws ecs run-task --cluster ${ECSClusterName} --task-definition ${ECSTaskDefinitionName}:20 --region ${AWS::Region}'
     Properties:
       AssociatePublicIpAddress: true
       BlockDeviceMappings:
@@ -249,14 +249,8 @@ Resources:
           HostPort: 8082
           ContainerPort: 8082
         - Protocol: tcp
-          HostPort: 8083
-          ContainerPort: 8083
-        - Protocol: tcp
-          HostPort: 8084
-          ContainerPort: 8084
-        - Protocol: tcp
-          HostPort: 8085
-          ContainerPort: 8085
+          HostPort: 8081
+          ContainerPort: 8081
         DnsServers: []
         DockerSecurityOptions: []
         EntryPoint: []
@@ -307,14 +301,8 @@ Resources:
           HostPort: 7082
           ContainerPort: 8082
         - Protocol: tcp
-          HostPort: 7083
-          ContainerPort: 8083
-        - Protocol: tcp
-          HostPort: 7084
-          ContainerPort: 8084
-        - Protocol: tcp
-          HostPort: 7085
-          ContainerPort: 8085
+          HostPort: 7081
+          ContainerPort: 8081
         DnsServers: []
         DockerSecurityOptions: []
         EntryPoint: []
@@ -349,29 +337,14 @@ Resources:
         ToPort: 8082
         CidrIp: 0.0.0.0/0
       - IpProtocol: tcp
-        FromPort: 8083
-        ToPort: 8083
-        CidrIp: 0.0.0.0/0
-      - IpProtocol: tcp
-        FromPort: 8084
-        ToPort: 8084
-      - IpProtocol: tcp
-        FromPort: 8085
-        ToPort: 8085
-        CidrIp: 0.0.0.0/0
-      - IpProtocol: tcp
         FromPort: 7082
         ToPort: 7082
         CidrIp: 0.0.0.0/0
       - IpProtocol: tcp
-        FromPort: 7083
-        ToPort: 7083
+        FromPort: 8081
+        ToPort: 8081
         CidrIp: 0.0.0.0/0
       - IpProtocol: tcp
-        FromPort: 7084
-        ToPort: 7084
-        CidrIp: 0.0.0.0/0
-      - IpProtocol: tcp
-        FromPort: 7085
-        ToPort: 7085
+        FromPort: 7081
+        ToPort: 7081
         CidrIp: 0.0.0.0/0

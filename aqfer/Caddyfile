@@ -1,20 +1,19 @@
-:8082 {
-  timeouts {
-    idle 90s
-  }
+:80 {
+  redir / /test.go
+}
 
+:8082 {
   secrets .secrets.yml
   awscloudwatch debug aqfer.io development 65536
 
-  # jwt /
   reauth {
-    path /
+    path /ids/v1
     refresh url=http://0.0.0.0:8081,skipverify=true,timeout=5s,follow=true,cache_path=temp_cache,lock_timeout=5m
     failure status code=403
   }
 
-  awsdynamodb aqfer-idsync1 partition-key sort-key DAX 8086 daxaqfer1.elwwyl.clustercfg.dax.use1.cache.amazonaws.com:8111
-  redis elasticacheaqfer1.elwwyl.0001.use1.cache.amazonaws.com:6379 testing
+  awsdynamodb aqfer-idsync2 partition-key sort-key DAX 8086 daxaqfer2.elwwyl.clustercfg.dax.use1.cache.amazonaws.com:8111
+  redis elasticacheaqfer2.elwwyl.0001.use1.cache.amazonaws.com:6379 testing
 }
 
 # log ./log/access.log

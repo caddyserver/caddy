@@ -26,3 +26,4 @@ aqfer/aws/*.pem
 aqfer/aws/dev_app_spec.yml
 aqfer/aws/db_app_spec.yml
 aqfer/aws/ecs_app_spec.yml
+aqfer/Caddyfile
