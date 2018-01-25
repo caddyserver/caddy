@@ -13,3 +13,6 @@
 [submodule "aqfer/caddy-reauth"]
 	path = aqfer/caddy-reauth
 	url = git@github.com:fellou89/caddy-reauth.git
+[submodule "aqfer/caddy-transformrequest"]
+	path = aqfer/caddy-transformrequest
+	url = git@github.com:fellou89/caddy-transformrequest.git

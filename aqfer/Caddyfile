@@ -12,8 +12,10 @@
     failure status code=403
   }
 
+  transformrequest
+
   awsdynamodb aqfer-idsync2 partition-key sort-key DAX 8086 daxaqfer2.elwwyl.clustercfg.dax.use1.cache.amazonaws.com:8111
-  redis elasticacheaqfer2.elwwyl.0001.use1.cache.amazonaws.com:6379 testing
+  redis elasticacheaqfer2.elwwyl.0001.use1.cache.amazonaws.com:6379
 }
 
 # log ./log/access.log

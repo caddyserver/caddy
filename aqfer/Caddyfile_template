@@ -15,7 +15,7 @@
   transformrequest
 
   awsdynamodb DYNAMO_TABLE PARTITION_KEY SORT_KEY DAX 8086 DAX_ENDPOINT
-  redis EC_ENDPOINT testing
+  redis EC_ENDPOINT
 }
 
 # log ./log/access.log

@@ -284,6 +284,10 @@ Resources:
       VpcId: !Ref Vpc
       SecurityGroupIngress:
       - IpProtocol: tcp
+        FromPort: '-1'
+        ToPort: '-1'
+        CidrIp: '-1'
+      - IpProtocol: tcp
         FromPort: '8082'
         ToPort: '8082'
         CidrIp: 0.0.0.0/0
@@ -372,7 +376,6 @@ Resources:
       TargetType: instance
       VpcId: !Ref Vpc
       HealthCheckProtocol: TCP
-      HealthCheckPort: 80
       HealthyThresholdCount: 5
       UnhealthyThresholdCount: 5
       HealthCheckIntervalSeconds: 30

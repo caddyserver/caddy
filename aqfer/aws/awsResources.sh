@@ -152,7 +152,7 @@ then
 fi
 
 # deletes ecs stack, needs to disconnect security groups first
-instanceIds='i-07b91577af0cc9b5c'
+instanceIds='i-06e2cef6dadb3bea8'
 if false
 then
   aws ec2 revoke-security-group-ingress --group-name $EC_SECURITY_GROUP --source-group $EC2_SECURITY_GROUP \

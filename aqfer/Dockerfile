@@ -49,6 +49,7 @@ ADD ./ /go/src/github.com/mholt/caddy
 ADD ./aqfer/caddy-cache /go/src/github.com/fellou89/caddy-cache
 ADD ./aqfer/caddy-cache/storage /go/src/github.com/fellou89/caddy-cache/storage
 ADD ./aqfer/caddy-reauth /go/src/github.com/fellou89/caddy-reauth
+ADD ./aqfer/caddy-transformrequest /go/src/github.com/fellou89/caddy-transformrequest
 
 
 # builds caddy binary and moves to location of Caddyfile
