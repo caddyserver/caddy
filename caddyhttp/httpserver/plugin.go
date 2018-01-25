@@ -548,6 +548,7 @@ var directives = []string{
 	"gopkg",     // github.com/zikes/gopkg
 	"restic",    // github.com/restic/caddy
 
+	"transformrequest",
 	"redis",
 	"awsdynamodb",
 }

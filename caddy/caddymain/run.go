@@ -42,6 +42,7 @@ import (
 	_ "github.com/fellou89/caddy-awsdynamodb"
 	_ "github.com/fellou89/caddy-redis"
 	_ "github.com/fellou89/caddy-secrets"
+	_ "github.com/fellou89/caddy-transformrequest"
 
 	_ "github.com/fellou89/caddy-reauth"
 )

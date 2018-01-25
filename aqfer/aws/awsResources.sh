@@ -2,7 +2,7 @@
 # set -e
 
 DBVERSION=2
-ECSVERSION=1
+ECSVERSION=3
 ROOT_NAME=aqfer
 
 # AWS_ACCOUNT='545654232789'
@@ -17,7 +17,8 @@ JWT=testkey
 
 AMI=ami-832b1cf9
 # AMI=ami-fad25980 # ecs optimized ami
-INSTANCE_TYPE=c5.large
+INSTANCE_TYPE=t2.medium
+# INSTANCE_TYPE=c5.large
 VPC=vpc-5a340c22
 SUBNET=subnet-867f59cd
 SUBNET2=subnet-2cba2771
