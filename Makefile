@@ -1,10 +1,12 @@
-DBVERSION := 3
+DBVERSION := 2
 ECSVERSION := 3
 ROOT_NAME := aqfer
 DBNAME := DB${ROOT_NAME}${DBVERSION}
+ECSNAME := ECS${ROOT_NAME}${ECSVERSION}
 
 AWS_ACCOUNT := 392630614516
 JWT := testkey
+REPO_ID := 2
 
 AMI := ami-832b1cf9
 # AMI := ami-fad25980 # ecs optimized ami
@@ -48,52 +50,122 @@ setup: aws_build create_artifact_bucket create_keypair
 aws_build:
 	docker build -f aqfer/Dockerfile.aws -t aws_image .
 
-ID ?= $(shell docker-compose -f aqfer/docker-compose-aws.yml run \
-	aws-service echo $$(aws configure get aws_access_key_id))
-SECRET ?= $(shell docker-compose -f aqfer/docker-compose-aws.yml run \
-	aws-service echo $$(aws configure get aws_secret_access_key))
-REGION ?= $(shell docker-compose -f aqfer/docker-compose-aws.yml run \
-	aws-service echo $$(aws configure get region))
-
 .PHONY: create_artifact_bucket
 create_artifact_bucket:
 	docker-compose -f aqfer/docker-compose-aws.yml run \
-		aws-service echo $$(aws s3 mb s3://${ARTIFACTS_BUCKET}/ --region ${REGION})
+		aws-service aws s3 mb s3://${ARTIFACTS_BUCKET}/ --region $$AWS_DEFAULT_REGION
 
-
-.PHONY: create_keypair
-create_keypair:
-	aqfer/scripts/keypair.sh ${KEYPAIR_NAME}
+.PHONY: keypair
+keypair:
+	docker-compose -f aqfer/docker-compose-aws.yml run \
+	      aws-service /scripts/keypair.sh ${KEYPAIR_NAME} 2>&1 > keypair.pem
 
 .PHONY: launch_db
 launch_db:
-	docker-compose -f aqfer/docker-compose-aws.yml run \
-		aws-service aws cloudformation package --template-file aqfer/aws/db_template_app_spec.yml --output-template-file aqfer/aws/db_app_spec.yml --s3-bucket ${ARTIFACTS_BUCKET};\
-		aws cloudformation deploy --template-file aqfer/aws/db_app_spec.yml --stack-name ${DBNAME} --capabilities \
-		CAPABILITY_IAM CAPABILITY_NAMED_IAM --parameter-overrides \
-		AWSAccount=${AWS_ACCOUNT} \
-    AvailabilityZone=${ZONE} \
-    Subnet=${SUBNET} \
-    Vpc=${VPC} \
-    DynamoTableName=${DYNAMO_TABLE} \
-    PartitionKey=${PARTITION_KEY} \
-    SortKey=${SORT_KEY} \
-    DaxName=${DAX_CLUSTER_NAME} \
-    DaxNodeType=${DAX_NODE_TYPE} \
-    DaxRoleName=${ROOT_NAME}DaxRole${DBVERSION} \
-    DaxSubnetGroupName=dax-subnet-${ROOT_NAME}${DBVERSION} \
-    DaxSecurityGroupName=${DAX_SECURITY_GROUP} \
-    ECSecurityGroupName=${EC_SECURITY_GROUP} \
-    ECSubnetGroupName=elasticache-subnet-${ROOT_NAME}${DBVERSION} \
-    ECNodeType=${EC_NODE_TYPE} \
-    ECClusterName=${EC_CLUSTER_NAME}
+	docker-compose -f aqfer/docker-compose-aws.yml run aws-service \
+	      aws cloudformation package --template-file aqfer/aws/db_template_app_spec.yml --output-template-file \
+		  aqfer/aws/db_app_spec.yml --s3-bucket ${ARTIFACTS_BUCKET};\
+	      aws cloudformation deploy --template-file aqfer/aws/db_app_spec.yml --stack-name ${DBNAME} --capabilities \
+		  CAPABILITY_IAM CAPABILITY_NAMED_IAM --parameter-overrides \
+		  AWSAccount=${AWS_ACCOUNT} \
+		  AvailabilityZone=${ZONE} \
+		  Subnet=${SUBNET} \
+		  Vpc=${VPC} \
+		  DynamoTableName=${DYNAMO_TABLE} \
+		  PartitionKey=${PARTITION_KEY} \
+		  SortKey=${SORT_KEY} \
+		  DaxName=${DAX_CLUSTER_NAME} \
+		  DaxNodeType=${DAX_NODE_TYPE} \
+		  DaxRoleName=${ROOT_NAME}DaxRole${DBVERSION} \
+		  DaxSubnetGroupName=dax-subnet-${ROOT_NAME}${DBVERSION} \
+		  DaxSecurityGroupName=${DAX_SECURITY_GROUP} \
+		  ECSecurityGroupName=${EC_SECURITY_GROUP} \
+		  ECSubnetGroupName=elasticache-subnet-${ROOT_NAME}${DBVERSION} \
+		  ECNodeType=${EC_NODE_TYPE} \
+		  ECClusterName=${EC_CLUSTER_NAME}
+
+.PHONY: ready_caddyfile
+ready_caddyfile:
+	docker-compose -f aqfer/docker-compose-aws.yml run aws-service \
+	      /scripts/dax_endpoint.sh ${DAX_CLUSTER_NAME} 2>&1 > /tmp/dax_endpoint
+	docker-compose -f aqfer/docker-compose-aws.yml run aws-service \
+	      /scripts/ec_endpoint.sh ${EC_CLUSTER_NAME} 2>&1 > /tmp/ec_endpoint
+	cat aqfer/Caddyfile_template | sed 's/APP_LOG_GROUP_NAME/'${APP_LOG_GROUP_NAME}'/g' > /tmp/Caddyfile
+	perl -pi -e 's/DYNAMO_TABLE/'${DYNAMO_TABLE}'/g' /tmp/Caddyfile
+	perl -pi -e 's/PARTITION_KEY/'${PARTITION_KEY}'/g' /tmp/Caddyfile
+	perl -pi -e 's/SORT_KEY/'${SORT_KEY}'/g' /tmp/Caddyfile
+	perl -pi -e 's/EC_ENDPOINT/'$(shell cat /tmp/ec_endpoint)'/g' /tmp/Caddyfile
+	cat /tmp/Caddyfile | sed 's/DAX_ENDPOINT/'$(shell cat /tmp/dax_endpoint)'/g' > aqfer/Caddyfile
 
 .PHONY: delete_db
 delete_db:
-	docker-compose -f aqfer/docker-compose-aws.yml run \
-		aws-service aws cloudformation delete-stack --stack-name ${DBNAME}
+	docker-compose -f aqfer/docker-compose-aws.yml run aws-service \
+	      aws cloudformation delete-stack --stack-name ${DBNAME} --region $$AWS_DEFAULT_REGION
+
+.PHONY: ecr_repo_push
+ecr_repo_push:
+	# docker build -t ${ROOT_NAME}-caddy -f aqfer/Dockerfile .
+	docker-compose -f aqfer/docker-compose-aws.yml run aws-service \
+	      /scripts/ecr_create.sh ${ROOT_NAME} ${REPO_ID} 2>&1 > /tmp/ecrUri
+	$(eval ecrUri := $(shell cat /tmp/ecrUri))
+	docker-compose -f aqfer/docker-compose-aws.yml run aws-service \
+	      /scripts/ecr_login.sh $$AWS_DEFAULT_REGION 2>&1 > /tmp/ecrLogin
+	cat /tmp/ecrLogin | docker login -u AWS --password-stdin ${ecrUri}
+	docker tag ${ROOT_NAME}-caddy:latest ${ecrUri}
+	docker push ${ecrUri}
+
+.PHONY: launch_ecs
+launch_ecs:
+	docker-compose -f aqfer/docker-compose-aws.yml run aws-service \
+	      aws cloudformation package --template-file aqfer/aws/ecs_template_app_spec.yml --output-template-file \
+		  aqfer/aws/ecs_app_spec.yml --s3-bucket ${ARTIFACTS_BUCKET};\
+	      aws cloudformation deploy --template-file aqfer/aws/ecs_app_spec.yml --stack-name ${ECSNAME} --capabilities \
+		  CAPABILITY_IAM CAPABILITY_NAMED_IAM --parameter-overrides \
+		  Id=$$AWS_ACCESS_KEY_ID \
+		  Secret=$$AWS_SECRET_ACCESS_KEY \
+		  Jwt=${JWT} \
+		  AWSAccount=${AWS_ACCOUNT} \
+		  Ami=${AMI} \
+		  Subnet=${SUBNET} \
+		  Subnet2=${SUBNET2} \
+		  Vpc=${VPC} \
+		  AvailabilityZone=${ZONE} \
+		  KeyPair=${KEYPAIR_NAME} \
+		  LoadBalancerName=${LOAD_BALANCER_NAME} \
+		  LBSecurityGroupName=${LB_SECURITY_GROUP} \
+		  TargetGroupName=${ROOT_NAME}TargetGroup${ECSVERSION} \
+		  EC2InstanceType=${INSTANCE_TYPE} \
+		  EC2SecurityGroupName=${EC2_SECURITY_GROUP} \
+		  EC2InstanceRoleName=${ROOT_NAME}EC2InstanceRole${ECSVERSION} \
+		  ECSClusterName=${ROOT_NAME}Cluster${ECSVERSION} \
+		  ECSServiceRoleName=${ROOT_NAME}ECSServiceRole${ECSVERSION} \
+		  ECSTaskDefinitionName=${TASK_DEFINITION} \
+		  ECSServiceName=${ROOT_NAME}Service${ECSVERSION} \
+		  ECRRepoURI=$(shell cat /tmp/ecrUri)) \
+		  ContainerName=${ROOT_NAME-caddy} \
+		  AppLogGroupName=${APP_LOG_GROUP_NAME} \
+		  ECSLogGroupName=${ECS_LOG_GROUP_NAME};\
+	    aws ec2 authorize-security-group-ingress --group-name ${EC_SECURITY_GROUP} --source-group ${EC2_SECURITY_GROUP} --port \
+		  $(shell cat /tmp/ec_endpoint | sed -E "s/.*:([0-9]*)/\1/p") --protocol tcp;\
+	    aws ec2 authorize-security-group-ingress --group-name ${DAX_SECURITY_GROUP} --source-group ${EC2_SECURITY_GROUP} --port \
+		  $(shell cat /tmp/dax_endpoint | sed -E "s/.*([0-9]*)/\1/p") --protocol tcp;\
+
+.PHONY: get_dns_name
+get_dns_name:
+	docker-compose -f aqfer/docker-compose-aws.yml run aws-service \
+	      aws elbv2 describe-load-balancers --names ${LOAD_BALANCER_NAME} 2>&1 > /tmp/DNSName
+	@echo $(shell cat /tmp/DNSName | sed -n -E "s/.*\"DNSName\".*\"(.*)\",/\1/p")
+
+.PHONY: delete_ecs
+delete_ecs:
+	# need to add if statement here to check for passed in instances var
+	docker-compose -f aqfer/docker-compose-aws.yml run aws-service \
+	      aws ec2 revoke-security-group-ingress --group-name ${EC_SECURITY_GROUP} --source-group ${EC2_SECURITY_GROP} --port \
+		  $(shell cat /tmp/ec_endpoint | sed -E "s/.*:([0-9]*)/\1/p") --protocol tcp;\
+	      aws ec2 revoke-security-group-ingress --group-name ${DAX_SECURITY_GROUP} --source-group ${EC2_SECURITY_GROP} --port \
+		  $(shell cat /tmp/dax_endpoint | sed -E "s/.*:([0-9]*)/\1/p") --protocol tcp;\
+	      aws ec2 terminate-instances --instance-ids $(instances);\
+	      aws ec2 wait instance-terminated --instance-ids $(instances);\
+	      aws cloudformation delete-stack --stack-name ${ECNAME}
 
 
-# .PHONY: launch_ecs
-# launch_ecs:
-		

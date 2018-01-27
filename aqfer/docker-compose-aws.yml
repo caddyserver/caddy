@@ -5,5 +5,5 @@ services:
     environment:
       AWS_ACCESS_KEY_ID: AKIAJH2DU6TQIPP4MBSA
       AWS_SECRET_ACCESS_KEY: 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
-      AWS_REGION: us-east-1
+      AWS_DEFAULT_REGION: us-east-1
     image: aws_image
