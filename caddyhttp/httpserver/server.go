@@ -413,7 +413,12 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 	// the URL path, so a request to example.com/foo/blog on the site
 	// defined as example.com/foo appears as /blog instead of /foo/blog.
 	if pathPrefix != "/" {
-		r.URL.Path = strings.TrimPrefix(r.URL.Path, pathPrefix)
+		// We are unable to use strings.TrimPrefix to trim the pathPrefix as
+		// it will decode any url encoded characters. See #1927
+		idx := strings.Index(pathPrefix, r.URL.Path)
+		if idx > -1 {
+			r.URL.Path = r.URL.Path[idx:]
+		}
 		if !strings.HasPrefix(r.URL.Path, "/") {
 			r.URL.Path = "/" + r.URL.Path
 		}
