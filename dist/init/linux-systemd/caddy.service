@@ -41,7 +41,7 @@ ProtectSystem=full
 ReadWriteDirectories=/etc/ssl/caddy
 
 ; The following additional security directives only work with systemd v229 or later.
-; They further retrict privileges that can be gained by caddy. Uncomment if you like.
+; They further restrict privileges that can be gained by caddy. Uncomment if you like.
 ; Note that you may have to add capabilities required by any plugins in use.
 ;CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 ;AmbientCapabilities=CAP_NET_BIND_SERVICE
