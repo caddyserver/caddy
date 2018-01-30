@@ -2,13 +2,11 @@ version: '2'
 
 services:
   caddy:
-    # image: 545654232789.dkr.ecr.us-east-1.amazonaws.com/ecr-aqfer1
     image: aqfer-caddy
     build: .
     environment:
-      JWT_SECRET: "${JWT}"
-      AWS_ACCESS_KEY_ID: "${ID}"
-      AWS_SECRET_ACCESS_KEY: "${SECRET}"
-      AWS_REGION: "${REGION}"
+      AWS_ACCESS_KEY_ID: AKIAJH2DU6TQIPP4MBSA
+      AWS_SECRET_ACCESS_KEY: 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
+      AWS_REGION: us-east-1
     ports:
       - "8082:8082"

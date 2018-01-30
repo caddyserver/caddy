@@ -111,7 +111,7 @@ Resources:
             - logs:CreateLogStream
             - logs:PutLogEvents
             Resource:
-            - !Sub 'arn:aws:logs:us-east-1:${AWSAccount}:log-group:*'
+            - !Sub 'arn:aws:logs:${AWS::Region}:${AWSAccount}:log-group:*'
           - Effect: Allow
             Action:
             - cloudformation:*
@@ -284,9 +284,9 @@ Resources:
       VpcId: !Ref Vpc
       SecurityGroupIngress:
       - IpProtocol: tcp
-        FromPort: '-1'
-        ToPort: '-1'
-        CidrIp: '-1'
+        FromPort: '0'
+        ToPort: '65535'
+        CidrIp: 0.0.0.0/0
       - IpProtocol: tcp
         FromPort: '8082'
         ToPort: '8082'

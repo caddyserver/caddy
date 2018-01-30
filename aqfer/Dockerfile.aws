@@ -16,3 +16,7 @@ RUN curl -o /usr/local/bin/ecs-cli https://s3.amazonaws.com/amazon-ecs-cli/ecs-c
 RUN chmod +x /usr/local/bin/ecs-cli
 
 ADD aqfer/scripts /scripts
+ADD aqfer/aws/db_template_app_spec.yml /db_template_app_spec.yml
+ADD aqfer/aws/ecs_template_app_spec.yml /ecs_template_app_spec.yml
+
+WORKDIR /
