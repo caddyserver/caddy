@@ -34,11 +34,14 @@ RUN go get github.com/pquerna/cachecontrol/cacheobject
 # additional modules currently imported in caddy/caddymain/run.go
 RUN mkdir -p /go/src/github.com/fellou89
 ADD ./aqfer/caddy-awscloudwatch /go/src/github.com/fellou89/caddy-awscloudwatch
-ADD ./aqfer/caddy-secrets /go/src/github.com/fellou89/caddy-secrets
 ADD ./aqfer/caddy-redis /go/src/github.com/fellou89/caddy-redis
+ADD ./aqfer/caddy-transformrequest /go/src/github.com/fellou89/caddy-transformrequest
+
+ADD ./aqfer/caddy-cache /go/src/github.com/fellou89/caddy-cache
+ADD ./aqfer/caddy-cache/storage /go/src/github.com/fellou89/caddy-cache/storage
 
 ADD ./aqfer/caddy-awsdynamodb /go/src/github.com/fellou89/caddy-awsdynamodb 
-RUN cd /go/src/github.com/fellou89/caddy-awsdynamodb; npm install amazon-dax-client
+# RUN cd /go/src/github.com/fellou89/caddy-awsdynamodb; npm install amazon-dax-client
 
 # adds caddy source under caddy directory on container
 RUN go get github.com/caddyserver/builds
@@ -46,10 +49,17 @@ RUN mkdir -p /go/src/github.com/mholt/caddy
 ADD ./ /go/src/github.com/mholt/caddy
 
 
-ADD ./aqfer/caddy-cache /go/src/github.com/fellou89/caddy-cache
-ADD ./aqfer/caddy-cache/storage /go/src/github.com/fellou89/caddy-cache/storage
+
+ADD ./aqfer/Caddyfile /Caddyfile
+ADD ./aqfer/.secrets.yml /.secrets.yml
+ADD ./aqfer/test.go /test.go
+RUN mkdir /temp_cache
+
+
+
+ADD ./aqfer/caddy-secrets /go/src/github.com/fellou89/caddy-secrets
 ADD ./aqfer/caddy-reauth /go/src/github.com/fellou89/caddy-reauth
-ADD ./aqfer/caddy-transformrequest /go/src/github.com/fellou89/caddy-transformrequest
+
 
 
 # builds caddy binary and moves to location of Caddyfile
@@ -57,12 +67,4 @@ WORKDIR /go/src/github.com/mholt/caddy/caddy
 RUN go run build.go; mv caddy /
 
 WORKDIR /
-
-# Using golang-auth mini service until we have an actual auth endpoint
-ADD ./aqfer/golang-auth /golang-auth
-
-ADD ./aqfer/Caddyfile /Caddyfile
-ADD ./aqfer/.secrets.yml /.secrets.yml
-ADD ./aqfer/test.go /test.go
-RUN mkdir /temp_cache
-CMD cd /golang-auth/main; go run main.go & cd /; ./caddy & go run test.go
+CMD ./caddy & go run test.go

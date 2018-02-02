@@ -59,7 +59,7 @@ update_container_repo: ready_caddyfile ecr_repo_push
 spin_up_stacks: spin_up_db spin_up_ecs get_dns_name
 
 .PHONY: update_tasks
-update_tasks: upste_container_repo stop_tasks
+update_tasks: update_container_repo stop_tasks
 
 .PHONY: tear_down_stacks
 tear_down_stacks: tear_down_db tear_down_ecs
@@ -107,14 +107,14 @@ spin_up_db:
 # still need to test this one more time, if this works get rid of delete_db.sh
 .PHONY: tear_down_db
 tear_down_db:
-	docker-compose -f aqfer/docker-compose-aws.yml run aws-service docker-compose -f aqfer/docker-compose-aws.yml run aws-service ${DBNAME}
+	docker-compose -f aqfer/docker-compose-aws.yml run aws-service aws cloudformation delete-stack --stack-name ${DBNAME}
 
 
 
 .PHONY: get_db_endpoints
 get_db_endpoints:
-	docker-compose -f aqfer/docker-compose-aws.yml run aws-service \
-	      /scripts/dax_endpoint.sh ${DAX_CLUSTER_NAME} 2>&1 > /tmp/dax_endpoint
+	# docker-compose -f aqfer/docker-compose-aws.yml run aws-service \
+	#       /scripts/dax_endpoint.sh ${DAX_CLUSTER_NAME} 2>&1 > /tmp/dax_endpoint
 	docker-compose -f aqfer/docker-compose-aws.yml run aws-service \
 	      /scripts/ec_endpoint.sh ${EC_CLUSTER_NAME} 2>&1 > /tmp/ec_endpoint
 
@@ -124,12 +124,13 @@ ready_caddyfile: get_db_endpoints
 	perl -pi -e 's/DYNAMO_TABLE/'${DYNAMO_TABLE}'/g' /tmp/Caddyfile
 	perl -pi -e 's/PARTITION_KEY/'${PARTITION_KEY}'/g' /tmp/Caddyfile
 	perl -pi -e 's/SORT_KEY/'${SORT_KEY}'/g' /tmp/Caddyfile
-	perl -pi -e 's/EC_ENDPOINT/'$(shell cat /tmp/ec_endpoint)'/g' /tmp/Caddyfile
-	cat /tmp/Caddyfile | sed 's/DAX_ENDPOINT/'$(shell cat /tmp/dax_endpoint)'/g' > aqfer/Caddyfile
+	cat /tmp/Caddyfile | sed 's/EC_ENDPOINT/'$(shell cat /tmp/ec_endpoint)'/g' > aqfer/Caddyfile
+	# perl -pi -e 's/EC_ENDPOINT/'$(shell cat /tmp/ec_endpoint)'/g' /tmp/Caddyfile
+	# cat /tmp/Caddyfile | sed 's/DAX_ENDPOINT/'$(shell cat /tmp/dax_endpoint)'/g' > aqfer/Caddyfile
 
 # do I need to build the main docker container here? test by launching a db with a different version number and see if the container pushed has the right address
 .PHONY: ecr_repo_push
-ecr_repo_push:
+ecr_repo_push: build_caddy_image
 	docker-compose -f aqfer/docker-compose-aws.yml run aws-service /scripts/ecr_create.sh ${ROOT_NAME} ${REPO_ID} 2>&1 > /tmp/ecrUri
 	$(eval ecrUri := $(shell cat /tmp/ecrUri))
 	docker-compose -f aqfer/docker-compose-aws.yml run aws-service /scripts/ecr_login.sh 2>&1 > /tmp/ecrLogin
@@ -137,6 +138,9 @@ ecr_repo_push:
 	docker tag ${ROOT_NAME}-caddy:latest ${ecrUri}
 	docker push ${ecrUri}
 
+.PHONY: build_caddy_image
+build_caddy_image:
+	docker build -f aqfer/Dockerfile -t ${ROOT_NAME}-caddy .
 
 
 .PHONY: spin_up_ecs
@@ -188,6 +192,14 @@ get_dns_name:
 	docker-compose -f aqfer/docker-compose-aws.yml run aws-service \
 	      aws elbv2 describe-load-balancers --names ${LOAD_BALANCER_NAME} 2>&1 > /tmp/DNSName
 	@echo $(shell cat /tmp/DNSName | sed -n -E "s/.*\"DNSName\".*\"(.*)\",/\1/p")
+
+.PHONY: run_locally
+run_locally:
+	docker-compose -f aqfer/docker-compose.yml up
+
+.PHONY: launch_locally
+launch_locally: build_caddy_image run_locally
+	docker-compose -f aqfer/docker-compose.yml up
 
 .PHONY: stop_tasks
 stop_tasks:
