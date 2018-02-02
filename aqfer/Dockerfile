@@ -2,20 +2,20 @@ FROM golang:1.8
 
 
 # NODE ONLY NEEDED WHILE DAX IS RUN AS NODE SERVER
-ENV NVM_DIR /root/.nvm
-ENV NODE_VERSION 8.5.0
+# ENV NVM_DIR /root/.nvm
+# ENV NODE_VERSION 8.5.0
 
 # use bash instead of sh so nvm can be sourced
-RUN rm /bin/sh && ln -s /bin/bash /bin/sh
-RUN curl -o- https://raw.githubusercontent.com/creationix/nvm/v0.32.0/install.sh | bash; . $NVM_DIR/nvm.sh; nvm install $NODE_VERSION; nvm use $NODE_VERSION
+# RUN rm /bin/sh && ln -s /bin/bash /bin/sh
+# RUN curl -o- https://raw.githubusercontent.com/creationix/nvm/v0.32.0/install.sh | bash; . $NVM_DIR/nvm.sh; nvm install $NODE_VERSION; nvm use $NODE_VERSION
 
-ENV NODE_PATH $NVM_DIR/versions/node/v$NODE_VERSION/lib/node_modules
-ENV PATH $NVM_DIR/versions/node/v$NODE_VERSION/bin:$PATH
+# ENV NODE_PATH $NVM_DIR/versions/node/v$NODE_VERSION/lib/node_modules
+# ENV PATH $NVM_DIR/versions/node/v$NODE_VERSION/bin:$PATH
 
 
 # VIM ONLY USED FOR DEVELOPMENT OF CADDY STACK
-RUN apt-get update
-RUN apt-get -y install vim
+# RUN apt-get update
+# RUN apt-get -y install vim
 
 
 RUN go get github.com/aws/aws-sdk-go/aws
@@ -36,9 +36,7 @@ RUN mkdir -p /go/src/github.com/fellou89
 ADD ./aqfer/caddy-awscloudwatch /go/src/github.com/fellou89/caddy-awscloudwatch
 ADD ./aqfer/caddy-redis /go/src/github.com/fellou89/caddy-redis
 ADD ./aqfer/caddy-transformrequest /go/src/github.com/fellou89/caddy-transformrequest
-
 ADD ./aqfer/caddy-cache /go/src/github.com/fellou89/caddy-cache
-ADD ./aqfer/caddy-cache/storage /go/src/github.com/fellou89/caddy-cache/storage
 
 ADD ./aqfer/caddy-awsdynamodb /go/src/github.com/fellou89/caddy-awsdynamodb 
 # RUN cd /go/src/github.com/fellou89/caddy-awsdynamodb; npm install amazon-dax-client
@@ -51,7 +49,7 @@ ADD ./ /go/src/github.com/mholt/caddy
 
 
 ADD ./aqfer/Caddyfile /Caddyfile
-ADD ./aqfer/.secrets.yml /.secrets.yml
+# ADD ./aqfer/.secrets.yml /.secrets.yml
 ADD ./aqfer/test.go /test.go
 RUN mkdir /temp_cache
 

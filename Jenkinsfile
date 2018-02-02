@@ -3,12 +3,10 @@ pipeline {
   stages {
     stage('Build') {
       steps {
-        make build_caddy_image
+        sh 'git submodule update --init --recursive'
+        sh 'git submodule update --recursive --remote'
+        sh 'make build_caddy_image'
       }
-    }
-    stage('Integ') {
-    }
-    stage('Preprod') {
     }
   }
 }

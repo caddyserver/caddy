@@ -16,3 +16,6 @@
 [submodule "aqfer/caddy-transformrequest"]
 	path = aqfer/caddy-transformrequest
 	url = git@github.com:fellou89/caddy-transformrequest.git
+[submodule "aqfer/caddy-cache"]
+	path = aqfer/caddy-cache
+	url = git@github.com:fellou89/caddy-cache.git
