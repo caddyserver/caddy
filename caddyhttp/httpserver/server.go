@@ -413,8 +413,8 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 	// the URL path, so a request to example.com/foo/blog on the site
 	// defined as example.com/foo appears as /blog instead of /foo/blog.
 	if pathPrefix != "/" {
-		// We need to use URL.RawPath when trimming the pathPrefix as
-		// URL.Path will decode any url encoded characters. See #1927
+		// We need to use URL.EscapedPath() when trimming the pathPrefix as
+		// URL.Path is ambiguous about / or %2f - see docs. See #1927
 		r.URL, err = r.URL.Parse(strings.TrimPrefix(r.URL.EscapedPath(), pathPrefix))
 		if err != nil {
 			log.Printf("[ERROR] unable to parse url: %s, %v", r.URL.Path, err)
