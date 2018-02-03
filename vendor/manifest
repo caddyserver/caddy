@@ -80,7 +80,7 @@
 			"importpath": "github.com/google/uuid",
 			"repository": "https://github.com/google/uuid",
 			"vcs": "git",
-			"revision": "7e072fc3a7be179aee6d3359e46015aa8c995314",
+			"revision": "dec09d789f3dba190787f8b4454c7d3c936fed9e",
 			"branch": "master",
 			"notests": true
 		},

@@ -21,19 +21,19 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 
+	"github.com/google/uuid"
+	"github.com/mholt/caddy"
+	"github.com/mholt/caddy/caddytls"
+	"github.com/mholt/caddy/diagnostics"
+	"github.com/xenolf/lego/acme"
 	"gopkg.in/natefinch/lumberjack.v2"
 
-	"github.com/xenolf/lego/acme"
-
-	"github.com/mholt/caddy"
-	// plug in the HTTP server type
-	_ "github.com/mholt/caddy/caddyhttp"
-
-	"github.com/mholt/caddy/caddytls"
+	_ "github.com/mholt/caddy/caddyhttp" // plug in the HTTP server type
 	// This is where other plugins get plugged in (imported)
 )
 
@@ -86,6 +86,9 @@ func Run() {
 			MaxBackups: 10,
 		})
 	}
+
+	// initialize diagnostics client
+	initDiagnostics()
 
 	// Check for one-time actions
 	if revoke != "" {
@@ -264,6 +267,46 @@ func setCPU(cpu string) error {
 
 	runtime.GOMAXPROCS(numCPU)
 	return nil
+}
+
+// initDiagnostics initializes the diagnostics engine.
+func initDiagnostics() {
+	uuidFilename := filepath.Join(caddy.AssetsPath(), "uuid")
+
+	newUUID := func() uuid.UUID {
+		id := uuid.New()
+		err := ioutil.WriteFile(uuidFilename, id[:], 0644)
+		if err != nil {
+			log.Printf("[ERROR] Persisting instance UUID: %v", err)
+		}
+		return id
+	}
+
+	var id uuid.UUID
+
+	// load UUID from storage, or create one if we don't have one
+	if uuidFile, err := os.Open(uuidFilename); os.IsNotExist(err) {
+		// no UUID exists yet; create a new one and persist it
+		id = newUUID()
+	} else if err != nil {
+		log.Printf("[ERROR] Loading persistent UUID: %v", err)
+		id = newUUID()
+	} else {
+		defer uuidFile.Close()
+		uuidBytes, err := ioutil.ReadAll(uuidFile)
+		if err != nil {
+			log.Printf("[ERROR] Reading persistent UUID: %v", err)
+			id = newUUID()
+		} else {
+			id, err = uuid.FromBytes(uuidBytes)
+			if err != nil {
+				log.Printf("[ERROR] Parsing UUID: %v", err)
+				id = newUUID()
+			}
+		}
+	}
+
+	diagnostics.Init(id)
 }
 
 const appName = "Caddy"
