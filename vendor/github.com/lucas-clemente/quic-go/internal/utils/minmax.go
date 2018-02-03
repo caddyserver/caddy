@@ -4,7 +4,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/lucas-clemente/quic-go/protocol"
+	"github.com/lucas-clemente/quic-go/internal/protocol"
 )
 
 // InfDuration is a duration of infinite length
@@ -112,6 +112,14 @@ func MinTime(a, b time.Time) time.Time {
 		return b
 	}
 	return a
+}
+
+// MaxTime returns the later time
+func MaxTime(a, b time.Time) time.Time {
+	if a.After(b) {
+		return a
+	}
+	return b
 }
 
 // MaxPacketNumber returns the max packet number
