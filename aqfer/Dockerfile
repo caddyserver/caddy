@@ -51,6 +51,7 @@ ADD ./ /go/src/github.com/mholt/caddy
 ADD ./aqfer/Caddyfile /Caddyfile
 # ADD ./aqfer/.secrets.yml /.secrets.yml
 ADD ./aqfer/test.go /test.go
+ADD ./aqfer/scripts/run_tests.sh /run_tests.sh
 RUN mkdir /temp_cache
 
 

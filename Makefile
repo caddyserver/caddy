@@ -204,3 +204,10 @@ launch_locally: build_caddy_image run_locally
 .PHONY: stop_tasks
 stop_tasks:
 	docker-compose -f aqfer/docker-compose-aws.yml run aws-service /scripts/stop_tasks.sh ${ECS_CLUSTER_NAME}
+
+
+
+.PHONY: run_tests
+run_tests:
+	docker-compose -f aqfer/docker-compose.yml run caddy /run_tests.sh
+

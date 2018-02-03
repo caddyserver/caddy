@@ -8,5 +8,10 @@ pipeline {
         sh 'make build_caddy_image'
       }
     }
+    stage('Test') {
+      steps {
+        sh 'make run_tests'
+      }
+    }
   }
 }
