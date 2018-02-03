@@ -17,3 +17,5 @@ Caddyfile
 og_static/
 
 .vscode/
+
+*.bat
