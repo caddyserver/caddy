@@ -358,7 +358,12 @@ func (r *replacer) getSubstitution(key string) string {
 		if r.responseRecorder == nil {
 			return r.emptyValue
 		}
-		return roundDuration(time.Since(r.responseRecorder.start)).String()
+		elapsedDuration := time.Since(r.responseRecorder.start)
+
+		if elapsedDuration == 0 {
+			return "0ms"
+		}
+		return roundDuration(elapsedDuration).String()
 	case "{latency_ms}":
 		if r.responseRecorder == nil {
 			return r.emptyValue
