@@ -6,11 +6,7 @@ pipeline {
         sh 'git submodule update --init --recursive'
         sh 'git submodule update --recursive --remote'
         sh 'make build_caddy_image'
-      }
-    }
-    stage('Test') {
-      steps {
-        sh 'make run_tests'
+        sh 'make run_unit_tests'
       }
     }
   }
