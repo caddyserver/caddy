@@ -137,7 +137,7 @@ func TestAddressString(t *testing.T) {
 func TestInspectServerBlocksWithCustomDefaultPort(t *testing.T) {
 	Port = "9999"
 	filename := "Testfile"
-	ctx := newContext().(*httpContext)
+	ctx := newContext(&caddy.Instance{Storage: make(map[interface{}]interface{})}).(*httpContext)
 	input := strings.NewReader(`localhost`)
 	sblocks, err := caddyfile.Parse(filename, input, nil)
 	if err != nil {
@@ -155,7 +155,7 @@ func TestInspectServerBlocksWithCustomDefaultPort(t *testing.T) {
 
 func TestInspectServerBlocksCaseInsensitiveKey(t *testing.T) {
 	filename := "Testfile"
-	ctx := newContext().(*httpContext)
+	ctx := newContext(&caddy.Instance{Storage: make(map[interface{}]interface{})}).(*httpContext)
 	input := strings.NewReader("localhost {\n}\nLOCALHOST {\n}")
 	sblocks, err := caddyfile.Parse(filename, input, nil)
 	if err != nil {
@@ -207,7 +207,7 @@ func TestDirectivesList(t *testing.T) {
 }
 
 func TestContextSaveConfig(t *testing.T) {
-	ctx := newContext().(*httpContext)
+	ctx := newContext(&caddy.Instance{Storage: make(map[interface{}]interface{})}).(*httpContext)
 	ctx.saveConfig("foo", new(SiteConfig))
 	if _, ok := ctx.keysToSiteConfigs["foo"]; !ok {
 		t.Error("Expected config to be saved, but it wasn't")
@@ -226,7 +226,7 @@ func TestContextSaveConfig(t *testing.T) {
 
 // Test to make sure we are correctly hiding the Caddyfile
 func TestHideCaddyfile(t *testing.T) {
-	ctx := newContext().(*httpContext)
+	ctx := newContext(&caddy.Instance{Storage: make(map[interface{}]interface{})}).(*httpContext)
 	ctx.saveConfig("test", &SiteConfig{
 		Root:            Root,
 		originCaddyfile: "Testfile",

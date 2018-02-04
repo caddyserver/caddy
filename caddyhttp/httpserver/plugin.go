@@ -91,11 +91,13 @@ func hideCaddyfile(cctx caddy.Context) error {
 	return nil
 }
 
-func newContext() caddy.Context {
-	return &httpContext{keysToSiteConfigs: make(map[string]*SiteConfig)}
+func newContext(inst *caddy.Instance) caddy.Context {
+	return &httpContext{instance: inst, keysToSiteConfigs: make(map[string]*SiteConfig)}
 }
 
 type httpContext struct {
+	instance *caddy.Instance
+
 	// keysToSiteConfigs maps an address at the top of a
 	// server block (a "key") to its SiteConfig. Not all
 	// SiteConfigs will be represented here, only ones
@@ -146,15 +148,19 @@ func (h *httpContext) InspectServerBlocks(sourceFile string, serverBlocks []cadd
 				altTLSSNIPort = HTTPSPort
 			}
 
+			// Make our caddytls.Config, which has a pointer to the
+			// instance's certificate cache and enough information
+			// to use automatic HTTPS when the time comes
+			caddytlsConfig := caddytls.NewConfig(h.instance)
+			caddytlsConfig.Hostname = addr.Host
+			caddytlsConfig.AltHTTPPort = altHTTPPort
+			caddytlsConfig.AltTLSSNIPort = altTLSSNIPort
+
 			// Save the config to our master list, and key it for lookups
 			cfg := &SiteConfig{
-				Addr: addr,
-				Root: Root,
-				TLS: &caddytls.Config{
-					Hostname:      addr.Host,
-					AltHTTPPort:   altHTTPPort,
-					AltTLSSNIPort: altTLSSNIPort,
-				},
+				Addr:            addr,
+				Root:            Root,
+				TLS:             caddytlsConfig,
 				originCaddyfile: sourceFile,
 				IndexPages:      staticfiles.DefaultIndexPages,
 			}

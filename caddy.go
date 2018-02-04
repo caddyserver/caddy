@@ -79,6 +79,8 @@ var (
 
 // Instance contains the state of servers created as a result of
 // calling Start and can be used to access or control those servers.
+// It is literally an instance of a server type. Instance values
+// should NOT be copied. Use *Instance for safety.
 type Instance struct {
 	// serverType is the name of the instance's server type
 	serverType string
@@ -89,10 +91,11 @@ type Instance struct {
 	// wg is used to wait for all servers to shut down
 	wg *sync.WaitGroup
 
-	// context is the context created for this instance.
+	// context is the context created for this instance,
+	// used to coordinate the setting up of the server type
 	context Context
 
-	// servers is the list of servers with their listeners.
+	// servers is the list of servers with their listeners
 	servers []ServerListener
 
 	// these callbacks execute when certain events occur
@@ -101,6 +104,18 @@ type Instance struct {
 	onRestart       []func() error // before restart commences
 	onShutdown      []func() error // stopping, even as part of a restart
 	onFinalShutdown []func() error // stopping, not as part of a restart
+
+	// storing values on an instance is preferable to
+	// global state because these will get garbage-
+	// collected after in-process reloads when the
+	// old instances are destroyed; use StorageMu
+	// to access this value safely
+	Storage   map[interface{}]interface{}
+	StorageMu sync.RWMutex
+}
+
+func Instances() []*Instance {
+	return instances
 }
 
 // Servers returns the ServerListeners in i.
@@ -196,7 +211,7 @@ func (i *Instance) Restart(newCaddyfile Input) (*Instance, error) {
 	}
 
 	// create new instance; if the restart fails, it is simply discarded
-	newInst := &Instance{serverType: newCaddyfile.ServerType(), wg: i.wg}
+	newInst := &Instance{serverType: newCaddyfile.ServerType(), wg: i.wg, Storage: make(map[interface{}]interface{})}
 
 	// attempt to start new instance
 	err := startWithListenerFds(newCaddyfile, newInst, restartFds)
@@ -455,7 +470,7 @@ func (i *Instance) Caddyfile() Input {
 //
 // This function blocks until all the servers are listening.
 func Start(cdyfile Input) (*Instance, error) {
-	inst := &Instance{serverType: cdyfile.ServerType(), wg: new(sync.WaitGroup)}
+	inst := &Instance{serverType: cdyfile.ServerType(), wg: new(sync.WaitGroup), Storage: make(map[interface{}]interface{})}
 	err := startWithListenerFds(cdyfile, inst, nil)
 	if err != nil {
 		return inst, err
@@ -468,11 +483,34 @@ func Start(cdyfile Input) (*Instance, error) {
 }
 
 func startWithListenerFds(cdyfile Input, inst *Instance, restartFds map[string]restartTriple) error {
+	// save this instance in the list now so that
+	// plugins can access it if need be, for example
+	// the caddytls package, so it can perform cert
+	// renewals while starting up; we just have to
+	// remove the instance from the list later if
+	// it fails
+	instancesMu.Lock()
+	instances = append(instances, inst)
+	instancesMu.Unlock()
+	var err error
+	defer func() {
+		if err != nil {
+			instancesMu.Lock()
+			for i, otherInst := range instances {
+				if otherInst == inst {
+					instances = append(instances[:i], instances[i+1:]...)
+					break
+				}
+			}
+			instancesMu.Unlock()
+		}
+	}()
+
 	if cdyfile == nil {
 		cdyfile = CaddyfileInput{}
 	}
 
-	err := ValidateAndExecuteDirectives(cdyfile, inst, false)
+	err = ValidateAndExecuteDirectives(cdyfile, inst, false)
 	if err != nil {
 		return err
 	}
@@ -503,10 +541,6 @@ func startWithListenerFds(cdyfile Input, inst *Instance, restartFds map[string]r
 	if err != nil {
 		return err
 	}
-
-	instancesMu.Lock()
-	instances = append(instances, inst)
-	instancesMu.Unlock()
 
 	// run any AfterStartup callbacks if this is not
 	// part of a restart; then show file descriptor notice
@@ -546,7 +580,7 @@ func startWithListenerFds(cdyfile Input, inst *Instance, restartFds map[string]r
 func ValidateAndExecuteDirectives(cdyfile Input, inst *Instance, justValidate bool) error {
 	// If parsing only inst will be nil, create an instance for this function call only.
 	if justValidate {
-		inst = &Instance{serverType: cdyfile.ServerType(), wg: new(sync.WaitGroup)}
+		inst = &Instance{serverType: cdyfile.ServerType(), wg: new(sync.WaitGroup), Storage: make(map[interface{}]interface{})}
 	}
 
 	stypeName := cdyfile.ServerType()
@@ -563,7 +597,7 @@ func ValidateAndExecuteDirectives(cdyfile Input, inst *Instance, justValidate bo
 		return err
 	}
 
-	inst.context = stype.NewContext()
+	inst.context = stype.NewContext(inst)
 	if inst.context == nil {
 		return fmt.Errorf("server type %s produced a nil Context", stypeName)
 	}

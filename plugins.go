@@ -191,7 +191,7 @@ type ServerType struct {
 	// startup phases before this one. It's a way to keep
 	// each set of server instances separate and to reduce
 	// the amount of global state you need.
-	NewContext func() Context
+	NewContext func(inst *Instance) Context
 }
 
 // Plugin is a type which holds information about a plugin.

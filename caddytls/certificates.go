@@ -15,9 +15,11 @@
 package caddytls
 
 import (
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"strings"
@@ -27,24 +29,14 @@ import (
 	"golang.org/x/crypto/ocsp"
 )
 
-// certCache stores certificates in memory,
-// keying certificates by name. Certificates
-// should not overlap in the names they serve,
-// because a name only maps to one certificate.
-var certCache = make(map[string]Certificate)
-var certCacheMu sync.RWMutex
-
 // Certificate is a tls.Certificate with associated metadata tacked on.
 // Even if the metadata can be obtained by parsing the certificate,
-// we can be more efficient by extracting the metadata once so it's
-// just there, ready to use.
+// we are more efficient by extracting the metadata onto this struct.
 type Certificate struct {
 	tls.Certificate
 
 	// Names is the list of names this certificate is written for.
 	// The first is the CommonName (if any), the rest are SAN.
-	// This should be the exact list of keys by which this cert
-	// is accessed in the cache, careful to avoid overlap.
 	Names []string
 
 	// NotAfter is when the certificate expires.
@@ -53,59 +45,91 @@ type Certificate struct {
 	// OCSP contains the certificate's parsed OCSP response.
 	OCSP *ocsp.Response
 
-	// Config is the configuration with which the certificate was
-	// loaded or obtained and with which it should be maintained.
-	Config *Config
+	// The hex-encoded hash of this cert's chain's bytes.
+	Hash string
+
+	// configs is the list of configs that use or refer to
+	// The first one is assumed to be the config that is
+	// "in charge" of this certificate (i.e. determines
+	// whether it is managed, how it is managed, etc).
+	// This field will be populated by cacheCertificate.
+	// Only meddle with it if you know what you're doing!
+	configs []*Config
 }
 
-// getCertificate gets a certificate that matches name (a server name)
-// from the in-memory cache. If there is no exact match for name, it
-// will be checked against names of the form '*.example.com' (wildcard
-// certificates) according to RFC 6125. If a match is found, matched will
-// be true. If no matches are found, matched will be false and a default
-// certificate will be returned with defaulted set to true. If no default
-// certificate is set, defaulted will be set to false.
+// certificateCache is to be an instance-wide cache of certs
+// that site-specific TLS configs can refer to. Using a
+// central map like this avoids duplication of certs in
+// memory when the cert is used by multiple sites, and makes
+// maintenance easier. Because these are not to be global,
+// the cache will get garbage collected after a config reload
+// (a new instance will take its place).
+type certificateCache struct {
+	sync.RWMutex
+	cache map[string]Certificate // keyed by certificate hash
+}
+
+// replaceCertificate replaces oldCert with newCert in the cache, and
+// updates all configs that are pointing to the old certificate to
+// point to the new one instead. newCert must already be loaded into
+// the cache (this method does NOT load it into the cache).
 //
-// The logic in this function is adapted from the Go standard library,
-// which is by the Go Authors.
+// Note that all the names on the old certificate will be deleted
+// from the name lookup maps of each config, then all the names on
+// the new certificate will be added to the lookup maps as long as
+// they do not overwrite any entries.
 //
-// This function is safe for concurrent use.
-func getCertificate(name string) (cert Certificate, matched, defaulted bool) {
-	var ok bool
+// The newCert may be modified and its cache entry updated.
+//
+// This method is safe for concurrent use.
+func (certCache *certificateCache) replaceCertificate(oldCert, newCert Certificate) error {
+	certCache.Lock()
+	defer certCache.Unlock()
 
-	// Not going to trim trailing dots here since RFC 3546 says,
-	// "The hostname is represented ... without a trailing dot."
-	// Just normalize to lowercase.
-	name = strings.ToLower(name)
+	// have all the configs that are pointing to the old
+	// certificate point to the new certificate instead
+	for _, cfg := range oldCert.configs {
+		// first delete all the name lookup entries that
+		// pointed to the old certificate
+		for name, certKey := range cfg.Certificates {
+			if certKey == oldCert.Hash {
+				delete(cfg.Certificates, name)
+			}
+		}
 
-	certCacheMu.RLock()
-	defer certCacheMu.RUnlock()
-
-	// exact match? great, let's use it
-	if cert, ok = certCache[name]; ok {
-		matched = true
-		return
-	}
-
-	// try replacing labels in the name with wildcards until we get a match
-	labels := strings.Split(name, ".")
-	for i := range labels {
-		labels[i] = "*"
-		candidate := strings.Join(labels, ".")
-		if cert, ok = certCache[candidate]; ok {
-			matched = true
-			return
+		// then add name lookup entries for the names
+		// on the new certificate, but don't overwrite
+		// entries that may already exist, not only as
+		// a courtesy, but importantly: because if we
+		// overwrote a value here, and this config no
+		// longer pointed to a certain certificate in
+		// the cache, that certificate's list of configs
+		// referring to it would be incorrect; so just
+		// insert entries, don't overwrite any
+		for _, name := range newCert.Names {
+			if _, ok := cfg.Certificates[name]; !ok {
+				cfg.Certificates[name] = newCert.Hash
+			}
 		}
 	}
 
-	// if nothing matches, use the default certificate or bust
-	cert, defaulted = certCache[""]
-	return
+	// since caching a new certificate attaches only the config
+	// that loaded it, the new certificate needs to be given the
+	// list of all the configs that use it, so copy the list
+	// over from the old certificate to the new certificate
+	// in the cache
+	newCert.configs = oldCert.configs
+	certCache.cache[newCert.Hash] = newCert
+
+	// finally, delete the old certificate from the cache
+	delete(certCache.cache, oldCert.Hash)
+
+	return nil
 }
 
 // CacheManagedCertificate loads the certificate for domain into the
-// cache, flagging it as Managed and, if onDemand is true, as "OnDemand"
-// (meaning that it was obtained or loaded during a TLS handshake).
+// cache, from the TLS storage for managed certificates. It returns a
+// copy of the Certificate that was put into the cache.
 //
 // This method is safe for concurrent use.
 func (cfg *Config) CacheManagedCertificate(domain string) (Certificate, error) {
@@ -117,39 +141,24 @@ func (cfg *Config) CacheManagedCertificate(domain string) (Certificate, error) {
 	if err != nil {
 		return Certificate{}, err
 	}
-	cert, err := makeCertificate(siteData.Cert, siteData.Key)
+	cert, err := makeCertificateWithOCSP(siteData.Cert, siteData.Key)
 	if err != nil {
 		return cert, err
 	}
-	cert.Config = cfg
-	cacheCertificate(cert)
-	return cert, nil
+	return cfg.cacheCertificate(cert), nil
 }
 
 // cacheUnmanagedCertificatePEMFile loads a certificate for host using certFile
 // and keyFile, which must be in PEM format. It stores the certificate in
-// memory after evicting any other entries in the cache keyed by the names
-// on this certificate. In other words, it replaces existing certificates keyed
-// by the names on this certificate. The Managed and OnDemand flags of the
-// certificate will be set to false.
+// the in-memory cache.
 //
 // This function is safe for concurrent use.
-func cacheUnmanagedCertificatePEMFile(certFile, keyFile string) error {
-	cert, err := makeCertificateFromDisk(certFile, keyFile)
+func (cfg *Config) cacheUnmanagedCertificatePEMFile(certFile, keyFile string) error {
+	cert, err := makeCertificateFromDiskWithOCSP(certFile, keyFile)
 	if err != nil {
 		return err
 	}
-
-	// since this is manually managed, this call might be part of a reload after
-	// the owner renewed a certificate; so clear cache of any previous cert first,
-	// otherwise the renewed certificate may never be loaded
-	certCacheMu.Lock()
-	for _, name := range cert.Names {
-		delete(certCache, name)
-	}
-	certCacheMu.Unlock()
-
-	cacheCertificate(cert)
+	cfg.cacheCertificate(cert)
 	return nil
 }
 
@@ -157,20 +166,20 @@ func cacheUnmanagedCertificatePEMFile(certFile, keyFile string) error {
 // of the certificate and key, then caches it in memory.
 //
 // This function is safe for concurrent use.
-func cacheUnmanagedCertificatePEMBytes(certBytes, keyBytes []byte) error {
-	cert, err := makeCertificate(certBytes, keyBytes)
+func (cfg *Config) cacheUnmanagedCertificatePEMBytes(certBytes, keyBytes []byte) error {
+	cert, err := makeCertificateWithOCSP(certBytes, keyBytes)
 	if err != nil {
 		return err
 	}
-	cacheCertificate(cert)
+	cfg.cacheCertificate(cert)
 	return nil
 }
 
-// makeCertificateFromDisk makes a Certificate by loading the
+// makeCertificateFromDiskWithOCSP makes a Certificate by loading the
 // certificate and key files. It fills out all the fields in
 // the certificate except for the Managed and OnDemand flags.
-// (It is up to the caller to set those.)
-func makeCertificateFromDisk(certFile, keyFile string) (Certificate, error) {
+// (It is up to the caller to set those.) It staples OCSP.
+func makeCertificateFromDiskWithOCSP(certFile, keyFile string) (Certificate, error) {
 	certPEMBlock, err := ioutil.ReadFile(certFile)
 	if err != nil {
 		return Certificate{}, err
@@ -179,13 +188,14 @@ func makeCertificateFromDisk(certFile, keyFile string) (Certificate, error) {
 	if err != nil {
 		return Certificate{}, err
 	}
-	return makeCertificate(certPEMBlock, keyPEMBlock)
+	return makeCertificateWithOCSP(certPEMBlock, keyPEMBlock)
 }
 
 // makeCertificate turns a certificate PEM bundle and a key PEM block into
-// a Certificate, with OCSP and other relevant metadata tagged with it,
-// except for the OnDemand and Managed flags. It is up to the caller to
-// set those properties.
+// a Certificate with necessary metadata from parsing its bytes filled into
+// its struct fields for convenience (except for the OnDemand and Managed
+// flags; it is up to the caller to set those properties!). This function
+// does NOT staple OCSP.
 func makeCertificate(certPEMBlock, keyPEMBlock []byte) (Certificate, error) {
 	var cert Certificate
 
@@ -195,8 +205,19 @@ func makeCertificate(certPEMBlock, keyPEMBlock []byte) (Certificate, error) {
 		return cert, err
 	}
 
-	// Extract relevant metadata and staple OCSP
+	// Extract necessary metadata
 	err = fillCertFromLeaf(&cert, tlsCert)
+	if err != nil {
+		return cert, err
+	}
+
+	return cert, nil
+}
+
+// makeCertificateWithOCSP is the same as makeCertificate except that it also
+// staples OCSP to the certificate.
+func makeCertificateWithOCSP(certPEMBlock, keyPEMBlock []byte) (Certificate, error) {
+	cert, err := makeCertificate(certPEMBlock, keyPEMBlock)
 	if err != nil {
 		return cert, err
 	}
@@ -204,7 +225,6 @@ func makeCertificate(certPEMBlock, keyPEMBlock []byte) (Certificate, error) {
 	if err != nil {
 		log.Printf("[WARNING] Stapling OCSP: %v", err)
 	}
-
 	return cert, nil
 }
 
@@ -243,65 +263,104 @@ func fillCertFromLeaf(cert *Certificate, tlsCert tls.Certificate) error {
 		return errors.New("certificate has no names")
 	}
 
+	// save the hash of this certificate (chain) and
+	// expiration date, for necessity and efficiency
+	cert.Hash = hashCertificateChain(cert.Certificate.Certificate)
 	cert.NotAfter = leaf.NotAfter
 
 	return nil
 }
 
-// cacheCertificate adds cert to the in-memory cache. If the cache is
-// empty, cert will be used as the default certificate. If the cache is
-// full, random entries are deleted until there is room to map all the
-// names on the certificate.
+// hashCertificateChain computes the unique hash of certChain,
+// which is the chain of DER-encoded bytes. It returns the
+// hex encoding of the hash.
+func hashCertificateChain(certChain [][]byte) string {
+	h := sha256.New()
+	for _, certInChain := range certChain {
+		h.Write(certInChain)
+	}
+	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
+// managedCertInStorageExpiresSoon returns true if cert (being a
+// managed certificate) is expiring within RenewDurationBefore.
+// It returns false if there was an error checking the expiration
+// of the certificate as found in storage, or if the certificate
+// in storage is NOT expiring soon. A certificate that is expiring
+// soon in our cache but is not expiring soon in storage probably
+// means that another instance renewed the certificate in the
+// meantime, and it would be a good idea to simply load the cert
+// into our cache rather than repeating the renewal process again.
+func managedCertInStorageExpiresSoon(cert Certificate) (bool, error) {
+	if len(cert.configs) == 0 {
+		return false, fmt.Errorf("no configs for certificate")
+	}
+	storage, err := cert.configs[0].StorageFor(cert.configs[0].CAUrl)
+	if err != nil {
+		return false, err
+	}
+	siteData, err := storage.LoadSite(cert.Names[0])
+	if err != nil {
+		return false, err
+	}
+	tlsCert, err := tls.X509KeyPair(siteData.Cert, siteData.Key)
+	if err != nil {
+		return false, err
+	}
+	leaf, err := x509.ParseCertificate(tlsCert.Certificate[0])
+	if err != nil {
+		return false, err
+	}
+	timeLeft := leaf.NotAfter.Sub(time.Now().UTC())
+	return timeLeft < RenewDurationBefore, nil
+}
+
+// cacheCertificate adds cert to the in-memory cache. If a certificate
+// with the same hash is already cached, it is NOT overwritten; instead,
+// cfg is added to the existing certificate's list of configs if not
+// already in the list. Then all the names on cert are used to add
+// entries to cfg.Certificates (the config's name lookup map).
+// Then the certificate is stored/updated in the cache. It returns
+// a copy of the certificate that ends up being stored in the cache.
 //
-// This certificate will be keyed to the names in cert.Names. Any names
-// already used as a cache key will NOT be replaced by this cert; in
-// other words, no overlap is allowed, and this certificate will not
-// service those pre-existing names.
+// It is VERY important, even for some test cases, that the Hash field
+// of the cert be set properly.
 //
 // This function is safe for concurrent use.
-func cacheCertificate(cert Certificate) {
-	if cert.Config == nil {
-		cert.Config = new(Config)
+func (cfg *Config) cacheCertificate(cert Certificate) Certificate {
+	cfg.certCache.Lock()
+	defer cfg.certCache.Unlock()
+
+	// if this certificate already exists in the cache,
+	// use it instead of overwriting it -- very important!
+	if existingCert, ok := cfg.certCache.cache[cert.Hash]; ok {
+		cert = existingCert
 	}
-	certCacheMu.Lock()
-	if _, ok := certCache[""]; !ok {
-		// use as default - must be *appended* to end of list, or bad things happen!
-		cert.Names = append(cert.Names, "")
-	}
-	for len(certCache)+len(cert.Names) > 10000 {
-		// for simplicity, just remove random elements
-		for key := range certCache {
-			if key == "" { // ... but not the default cert
-				continue
-			}
-			delete(certCache, key)
+
+	// attach this config to the certificate so we know which
+	// configs are referencing/using the certificate, but don't
+	// duplicate entries
+	var found bool
+	for _, c := range cert.configs {
+		if c == cfg {
+			found = true
 			break
 		}
 	}
-	for i := 0; i < len(cert.Names); i++ {
-		name := cert.Names[i]
-		if _, ok := certCache[name]; ok {
-			// do not allow certificates to overlap in the names they serve;
-			// this ambiguity causes problems because it is confusing while
-			// maintaining certificates; see OCSP maintenance code and
-			// https://caddy.community/t/random-ocsp-response-errors-for-random-clients/2473?u=matt.
-			log.Printf("[NOTICE] There is already a certificate loaded for %s, "+
-				"so certificate for %v will not service that name",
-				name, cert.Names)
-			cert.Names = append(cert.Names[:i], cert.Names[i+1:]...)
-			i--
-			continue
-		}
-		certCache[name] = cert
+	if !found {
+		cert.configs = append(cert.configs, cfg)
 	}
-	certCacheMu.Unlock()
-}
 
-// uncacheCertificate deletes name's certificate from the
-// cache. If name is not a key in the certificate cache,
-// this function does nothing.
-func uncacheCertificate(name string) {
-	certCacheMu.Lock()
-	delete(certCache, name)
-	certCacheMu.Unlock()
+	// key the certificate by all its names for this config only,
+	// this is how we find the certificate during handshakes
+	// (yes, if certs overlap in the names they serve, one will
+	// overwrite another here, but that's just how it goes)
+	for _, name := range cert.Names {
+		cfg.Certificates[name] = cert.Hash
+	}
+
+	// store the certificate
+	cfg.certCache.cache[cert.Hash] = cert
+
+	return cert
 }

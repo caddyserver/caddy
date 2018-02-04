@@ -27,7 +27,7 @@ func activateHTTPS(cctx caddy.Context) error {
 	operatorPresent := !caddy.Started()
 
 	if !caddy.Quiet && operatorPresent {
-		fmt.Print("Activating privacy features...")
+		fmt.Print("Activating privacy features... ")
 	}
 
 	ctx := cctx.(*httpContext)
@@ -69,7 +69,7 @@ func activateHTTPS(cctx caddy.Context) error {
 	}
 
 	if !caddy.Quiet && operatorPresent {
-		fmt.Println(" done.")
+		fmt.Println("done.")
 	}
 
 	return nil
@@ -163,6 +163,7 @@ func redirPlaintextHost(cfg *SiteConfig) *SiteConfig {
 	if redirPort == DefaultHTTPSPort {
 		redirPort = "" // default port is redundant
 	}
+
 	redirMiddleware := func(next Handler) Handler {
 		return HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
 			// Construct the URL to which to redirect. Note that the Host in a request might
@@ -184,9 +185,11 @@ func redirPlaintextHost(cfg *SiteConfig) *SiteConfig {
 			return 0, nil
 		})
 	}
+
 	host := cfg.Addr.Host
 	port := HTTPPort
 	addr := net.JoinHostPort(host, port)
+
 	return &SiteConfig{
 		Addr:       Address{Original: addr, Host: host, Port: port},
 		ListenHost: cfg.ListenHost,

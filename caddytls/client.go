@@ -160,7 +160,7 @@ var newACMEClient = func(config *Config, allowPrompts bool) (*ACMEClient, error)
 
 		// See if TLS challenge needs to be handled by our own facilities
 		if caddy.HasListenerWithAddress(net.JoinHostPort(config.ListenHost, useTLSSNIPort)) {
-			c.acmeClient.SetChallengeProvider(acme.TLSSNI01, tlsSniSolver{})
+			c.acmeClient.SetChallengeProvider(acme.TLSSNI01, tlsSNISolver{certCache: config.certCache})
 		}
 
 		// Disable any challenges that should not be used
