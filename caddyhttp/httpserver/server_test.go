@@ -165,6 +165,12 @@ func TestTrimPathPrefix(t *testing.T) {
 			shouldFail: false,
 		},
 		{
+			path:       "/my/path///slash",
+			prefix:     "/my",
+			expected:   "/path///slash",
+			shouldFail: false,
+		},
+		{
 			path:       "/my/%2f/path/%2f",
 			prefix:     "/my",
 			expected:   "/%2f/path/%2f",
