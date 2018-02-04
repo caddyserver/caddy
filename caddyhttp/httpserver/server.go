@@ -413,18 +413,23 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 	// the URL path, so a request to example.com/foo/blog on the site
 	// defined as example.com/foo appears as /blog instead of /foo/blog.
 	if pathPrefix != "/" {
-		// We need to use URL.EscapedPath() when trimming the pathPrefix as
-		// URL.Path is ambiguous about / or %2f - see docs. See #1927
-		r.URL, err = r.URL.Parse(strings.TrimPrefix(r.URL.EscapedPath(), pathPrefix))
-		if err != nil {
-			log.Printf("[ERROR] unable to parse url: %s, %v", r.URL.Path, err)
-		}
-		if !strings.HasPrefix(r.URL.Path, "/") {
-			r.URL.Path = "/" + r.URL.Path
-		}
+		r.URL = trimPathPrefix(r.URL, pathPrefix)
 	}
 
 	return vhost.middlewareChain.ServeHTTP(w, r)
+}
+
+func trimPathPrefix(u *url.URL, prefix string) *url.URL {
+	// We need to use URL.EscapedPath() when trimming the pathPrefix as
+	// URL.Path is ambiguous about / or %2f - see docs. See #1927
+	u, err := u.Parse(strings.TrimPrefix(u.EscapedPath(), prefix))
+	if err != nil {
+		log.Printf("[ERROR] unable to parse url: %s, %v", u.Path, err)
+	}
+	if !strings.HasPrefix(u.Path, "/") {
+		u.Path = "/" + u.Path
+	}
+	return u
 }
 
 // proxyHTTPChallenge solves the ACME HTTP challenge if r is the HTTP
