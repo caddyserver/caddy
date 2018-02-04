@@ -422,12 +422,13 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 func trimPathPrefix(u *url.URL, prefix string) *url.URL {
 	// We need to use URL.EscapedPath() when trimming the pathPrefix as
 	// URL.Path is ambiguous about / or %2f - see docs. See #1927
-	u, err := u.Parse(strings.TrimPrefix(u.EscapedPath(), prefix))
+	trimmed := strings.TrimPrefix(u.EscapedPath(), prefix)
+	if !strings.HasPrefix(trimmed, "/") {
+		trimmed = "/" + trimmed
+	}
+	u, err := u.Parse(trimmed)
 	if err != nil {
 		log.Printf("[ERROR] unable to parse url: %s, %v", u.Path, err)
-	}
-	if !strings.HasPrefix(u.Path, "/") {
-		u.Path = "/" + u.Path
 	}
 	return u
 }
