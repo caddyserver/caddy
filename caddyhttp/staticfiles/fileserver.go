@@ -221,7 +221,7 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request) (int, err
 	// Set the ETag returned to the user-agent. Note that a conditional If-None-Match
 	// request is handled in http.ServeContent below, which checks against this ETag value.
 	w.Header().Set("ETag", etag)
-	
+
 	// Set the Server name
 	w.Header().Set("Server", caddy.AppName)
 
