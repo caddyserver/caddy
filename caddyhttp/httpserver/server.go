@@ -362,8 +362,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	c = context.WithValue(r.Context(), ReplacerCtxKey, replacer)
 	r = r.WithContext(c)
 
-	w.Header().Set("Server", caddy.AppName)
-
 	status, _ := s.serveHTTP(w, r)
 
 	// Fallback error response in case error handling wasn't chained in
