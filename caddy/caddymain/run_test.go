@@ -41,6 +41,7 @@ func TestSetCPU(t *testing.T) {
 		{"invalid input", currentCPU, true},
 		{"invalid input%", currentCPU, true},
 		{"9999", maxCPU, false}, // over available CPU
+		{"1%", 1, false},        // under a single CPU; assume maxCPU < 100
 	} {
 		err := setCPU(test.input)
 		if test.shouldErr && err == nil {

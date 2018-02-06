@@ -79,6 +79,10 @@ func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 			// user; this replaces the request with a wrapped instance
 			r = r.WithContext(context.WithValue(r.Context(),
 				httpserver.RemoteUserCtxKey, username))
+
+			// Provide username to be used in log by replacer
+			repl := httpserver.NewReplacer(r, nil, "-")
+			repl.Set("user", username)
 		}
 	}
 

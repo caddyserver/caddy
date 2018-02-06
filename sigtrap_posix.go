@@ -31,32 +31,25 @@ func trapSignalsPosix() {
 
 		for sig := range sigchan {
 			switch sig {
-			case syscall.SIGTERM:
-				log.Println("[INFO] SIGTERM: Terminating process")
+			case syscall.SIGQUIT:
+				log.Println("[INFO] SIGQUIT: Quitting process immediately")
 				if PidFile != "" {
 					os.Remove(PidFile)
 				}
 				os.Exit(0)
 
-			case syscall.SIGQUIT:
-				log.Println("[INFO] SIGQUIT: Shutting down")
-				exitCode := executeShutdownCallbacks("SIGQUIT")
+			case syscall.SIGTERM:
+				log.Println("[INFO] SIGTERM: Shutting down servers then terminating")
+				exitCode := executeShutdownCallbacks("SIGTERM")
 				err := Stop()
 				if err != nil {
-					log.Printf("[ERROR] SIGQUIT stop: %v", err)
+					log.Printf("[ERROR] SIGTERM stop: %v", err)
 					exitCode = 3
 				}
 				if PidFile != "" {
 					os.Remove(PidFile)
 				}
 				os.Exit(exitCode)
-
-			case syscall.SIGHUP:
-				log.Println("[INFO] SIGHUP: Hanging up")
-				err := Stop()
-				if err != nil {
-					log.Printf("[ERROR] SIGHUP stop: %v", err)
-				}
 
 			case syscall.SIGUSR1:
 				log.Println("[INFO] SIGUSR1: Reloading")
@@ -94,6 +87,9 @@ func trapSignalsPosix() {
 				if err := Upgrade(); err != nil {
 					log.Printf("[ERROR] SIGUSR2: upgrading: %v", err)
 				}
+
+			case syscall.SIGHUP:
+				// ignore; this signal is sometimes sent outside of the user's control
 			}
 		}
 	}()

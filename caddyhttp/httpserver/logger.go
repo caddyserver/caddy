@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"io"
 	"log"
+	"net"
 	"os"
 	"strings"
 	"sync"
@@ -37,9 +38,12 @@ var remoteSyslogPrefixes = map[string]string{
 type Logger struct {
 	Output string
 	*log.Logger
-	Roller *LogRoller
-	writer io.Writer
-	fileMu *sync.RWMutex
+	Roller       *LogRoller
+	writer       io.Writer
+	fileMu       *sync.RWMutex
+	V4ipMask     net.IPMask
+	V6ipMask     net.IPMask
+	IPMaskExists bool
 }
 
 // NewTestLogger creates logger suitable for testing purposes
@@ -62,6 +66,22 @@ func (l Logger) Printf(format string, args ...interface{}) {
 	l.fileMu.RLock()
 	l.Logger.Printf(format, args...)
 	l.fileMu.RUnlock()
+}
+
+func (l Logger) MaskIP(ip string) string {
+	var reqIP net.IP
+	// If unable to parse, simply return IP as provided.
+	reqIP = net.ParseIP(ip)
+	if reqIP == nil {
+		return ip
+	}
+
+	if reqIP.To4() != nil {
+		return reqIP.Mask(l.V4ipMask).String()
+	} else {
+		return reqIP.Mask(l.V6ipMask).String()
+	}
+
 }
 
 // Attach binds logger Start and Close functions to
