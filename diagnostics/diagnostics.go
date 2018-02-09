@@ -253,7 +253,7 @@ var (
 const (
 	// endpoint is the base URL to remote diagnostics server;
 	// the instance ID will be appended to it.
-	endpoint = "http://localhost:8081/update/"
+	endpoint = "https://diagnostics-staging.caddyserver.com/update/" // TODO: make configurable, "http://localhost:8081/update/"
 
 	// defaultUpdateInterval is how long to wait before emitting
 	// more diagnostic data. This value is only used if the
