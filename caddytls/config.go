@@ -23,7 +23,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/codahale/aesnicheck"
+	"github.com/klauspost/cpuid"
 	"github.com/mholt/caddy"
 	"github.com/xenolf/lego/acme"
 )
@@ -505,7 +505,7 @@ var defaultCiphersNonAESNI = []uint16{
 //
 // See https://github.com/mholt/caddy/issues/1674
 func getPreferredDefaultCiphers() []uint16 {
-	if aesnicheck.HasAESNI() {
+	if cpuid.CPU.AesNi() {
 		return defaultCiphers
 	}
 

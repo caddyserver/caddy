@@ -35,14 +35,6 @@
 			"notests": true
 		},
 		{
-			"importpath": "github.com/codahale/aesnicheck",
-			"repository": "https://github.com/codahale/aesnicheck",
-			"vcs": "git",
-			"revision": "349fcc471aaccc29cd074e1275f1a494323826cd",
-			"branch": "master",
-			"notests": true
-		},
-		{
 			"importpath": "github.com/dustin/go-humanize",
 			"repository": "https://github.com/dustin/go-humanize",
 			"vcs": "git",
