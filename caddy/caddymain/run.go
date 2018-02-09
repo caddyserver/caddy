@@ -27,6 +27,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/klauspost/cpuid"
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddytls"
 	"github.com/mholt/caddy/diagnostics"
@@ -51,6 +52,7 @@ func init() {
 	flag.StringVar(&caddytls.DefaultEmail, "email", "", "Default ACME CA account email address")
 	flag.DurationVar(&acme.HTTPClient.Timeout, "catimeout", acme.HTTPClient.Timeout, "Default ACME CA HTTP timeout")
 	flag.StringVar(&logfile, "log", "", "Process log file")
+	flag.BoolVar(&noDiag, "no-diagnostics", false, "Disable diagnostic reporting")
 	flag.StringVar(&caddy.PidFile, "pidfile", "", "Path to write pid file")
 	flag.BoolVar(&caddy.Quiet, "quiet", false, "Quiet mode (no initialization output)")
 	flag.StringVar(&revoke, "revoke", "", "Hostname for which to revoke the certificate")
@@ -88,7 +90,9 @@ func Run() {
 	}
 
 	// initialize diagnostics client
-	initDiagnostics()
+	if !noDiag {
+		initDiagnostics()
+	}
 
 	// Check for one-time actions
 	if revoke != "" {
@@ -145,6 +149,23 @@ func Run() {
 
 	// Execute instantiation events
 	caddy.EmitEvent(caddy.InstanceStartupEvent, instance)
+
+	// Begin diagnostics (these are no-ops if diagnostics disabled)
+	diagnostics.Set("caddy_version", appVersion)
+	// TODO: plugins
+	diagnostics.Set("num_listeners", len(instance.Servers()))
+	diagnostics.Set("os", runtime.GOOS)
+	diagnostics.Set("arch", runtime.GOARCH)
+	diagnostics.Set("cpu", struct {
+		NumLogical int    `json:"num_logical"`
+		AESNI      bool   `json:"aes_ni"`
+		BrandName  string `json:"brand_name"`
+	}{
+		NumLogical: runtime.NumCPU(),
+		AESNI:      cpuid.CPU.AesNi(),
+		BrandName:  cpuid.CPU.BrandName,
+	})
+	diagnostics.StartEmitting()
 
 	// Twiddle your thumbs
 	instance.Wait()
@@ -321,6 +342,7 @@ var (
 	version    bool
 	plugins    bool
 	validate   bool
+	noDiag     bool
 )
 
 // Build information obtained with the help of -ldflags

@@ -36,6 +36,7 @@ import (
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/staticfiles"
 	"github.com/mholt/caddy/caddytls"
+	"github.com/mholt/caddy/diagnostics"
 )
 
 // Server is the HTTP server implementation.
@@ -344,6 +345,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			DefaultErrorFunc(w, r, http.StatusInternalServerError)
 		}
 	}()
+
+	go diagnostics.AppendUniqueString("user_agent", r.Header.Get("User-Agent"))
 
 	// copy the original, unchanged URL into the context
 	// so it can be referenced by middlewares

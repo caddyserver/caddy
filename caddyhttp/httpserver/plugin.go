@@ -29,6 +29,7 @@ import (
 	"github.com/mholt/caddy/caddyfile"
 	"github.com/mholt/caddy/caddyhttp/staticfiles"
 	"github.com/mholt/caddy/caddytls"
+	"github.com/mholt/caddy/diagnostics"
 )
 
 const serverType = "http"
@@ -204,6 +205,8 @@ func (h *httpContext) MakeServers() ([]caddy.Server, error) {
 			cfg.Addr.Port = HTTPSPort
 		}
 	}
+
+	diagnostics.Set("num_sites", len(h.siteConfigs))
 
 	// we must map (group) each config to a bind address
 	groups, err := groupSiteConfigsByListenAddr(h.siteConfigs)

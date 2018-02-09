@@ -118,6 +118,14 @@
 			"notests": true
 		},
 		{
+			"importpath": "github.com/klauspost/cpuid",
+			"repository": "https://github.com/klauspost/cpuid",
+			"vcs": "git",
+			"revision": "ae832f27941af41db13bd6d8efd2493e3b22415a",
+			"branch": "master",
+			"notests": true
+		},
+		{
 			"importpath": "github.com/lucas-clemente/aes12",
 			"repository": "https://github.com/lucas-clemente/aes12",
 			"vcs": "git",

@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/mholt/caddy"
+	"github.com/mholt/caddy/diagnostics"
 	"github.com/xenolf/lego/acme"
 )
 
@@ -276,6 +277,8 @@ Attempts:
 		break
 	}
 
+	go diagnostics.Increment("acme_certificates_obtained")
+
 	return nil
 }
 
@@ -350,8 +353,9 @@ func (c *ACMEClient) Renew(name string) error {
 		return errors.New("too many renewal attempts; last error: " + err.Error())
 	}
 
-	// Executes Cert renew events
 	caddy.EmitEvent(caddy.CertRenewEvent, name)
+	go diagnostics.Increment("acme_certificates_obtained")
+	go diagnostics.Increment("acme_certificates_renewed")
 
 	return saveCertResource(storage, newCertMeta)
 }
