@@ -216,32 +216,39 @@ type Payload struct {
 	Data map[string]interface{} `json:"data,omitempty"`
 }
 
-// httpClient should be used for HTTP requests. It
-// is configured with a timeout for reliability.
-var httpClient = http.Client{Timeout: 1 * time.Minute}
+var (
+	// httpClient should be used for HTTP requests. It
+	// is configured with a timeout for reliability.
+	httpClient = http.Client{Timeout: 1 * time.Minute}
 
-// buffer holds the data that we are building up to send.
-var buffer = make(map[string]interface{})
-var bufferItemCount = 0
-var bufferMu sync.RWMutex // protects both the buffer and its count
+	// buffer holds the data that we are building up to send.
+	buffer          = make(map[string]interface{})
+	bufferItemCount = 0
+	bufferMu        sync.RWMutex // protects both the buffer and its count
 
-// updating is used to ensure only one
-// update happens at a time.
-var updating bool
-var updateMu sync.Mutex
+	// updating is used to ensure only one
+	// update happens at a time.
+	updating bool
+	updateMu sync.Mutex
 
-// updateTimer fires off the next update.
-// If no update is scheduled, this is nil.
-var updateTimer *time.Timer
-var updateTimerMu sync.Mutex
+	// updateTimer fires off the next update.
+	// If no update is scheduled, this is nil.
+	updateTimer   *time.Timer
+	updateTimerMu sync.Mutex
 
-// instanceUUID is the ID of the current instance.
-// This MUST be set to emit diagnostics.
-var instanceUUID uuid.UUID
+	// instanceUUID is the ID of the current instance.
+	// This MUST be set to emit diagnostics.
+	instanceUUID uuid.UUID
 
-// enabled indicates whether the package has
-// been initialized and can be actively used.
-var enabled bool
+	// enabled indicates whether the package has
+	// been initialized and can be actively used.
+	enabled bool
+
+	// maxBufferItems is the maximum number of items we'll allow
+	// in the buffer before we start dropping new ones, in a
+	// rough (simple) attempt to keep memory use under control.
+	maxBufferItems = 100000
+)
 
 const (
 	// endpoint is the base URL to remote diagnostics server;
@@ -255,9 +262,4 @@ const (
 	// this value should be a long duration to help alleviate
 	// extra load on the server.
 	defaultUpdateInterval = 1 * time.Hour
-
-	// maxBufferItems is the maximum number of items we'll allow
-	// in the buffer before we start dropping new ones, in a
-	// rough (simple) attempt to keep memory use under control.
-	maxBufferItems = 100000
 )
