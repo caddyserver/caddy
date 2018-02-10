@@ -53,29 +53,59 @@ var (
 
 // DescribePlugins returns a string describing the registered plugins.
 func DescribePlugins() string {
+	pl := ListPlugins()
+
 	str := "Server types:\n"
-	for name := range serverTypes {
+	for _, name := range pl["server_types"] {
 		str += "  " + name + "\n"
 	}
 
-	// List the loaders in registration order
 	str += "\nCaddyfile loaders:\n"
-	for _, loader := range caddyfileLoaders {
-		str += "  " + loader.name + "\n"
-	}
-	if defaultCaddyfileLoader.name != "" {
-		str += "  " + defaultCaddyfileLoader.name + "\n"
+	for _, name := range pl["caddyfile_loaders"] {
+		str += "  " + name + "\n"
 	}
 
 	if len(eventHooks) > 0 {
-		// List the event hook plugins
 		str += "\nEvent hook plugins:\n"
-		for hookPlugin := range eventHooks {
-			str += "  hook." + hookPlugin + "\n"
+		for _, name := range pl["event_hooks"] {
+			str += "  hook." + name + "\n"
 		}
 	}
 
-	// Let's alphabetize the rest of these...
+	str += "\nOther plugins:\n"
+	for _, name := range pl["others"] {
+		str += "  " + name + "\n"
+	}
+
+	return str
+}
+
+// ListPlugins makes a list of the registered plugins,
+// keyed by plugin type.
+func ListPlugins() map[string][]string {
+	p := make(map[string][]string)
+
+	// server type plugins
+	for name := range serverTypes {
+		p["server_types"] = append(p["server_types"], name)
+	}
+
+	// caddyfile loaders in registration order
+	for _, loader := range caddyfileLoaders {
+		p["caddyfile_loaders"] = append(p["caddyfile_loaders"], loader.name)
+	}
+	if defaultCaddyfileLoader.name != "" {
+		p["caddyfile_loaders"] = append(p["caddyfile_loaders"], defaultCaddyfileLoader.name)
+	}
+
+	// event hook plugins
+	if len(eventHooks) > 0 {
+		for name := range eventHooks {
+			p["event_hooks"] = append(p["event_hooks"], name)
+		}
+	}
+
+	// alphabetize the rest of the plugins
 	var others []string
 	for stype, stypePlugins := range plugins {
 		for name := range stypePlugins {
@@ -89,12 +119,11 @@ func DescribePlugins() string {
 	}
 
 	sort.Strings(others)
-	str += "\nOther plugins:\n"
 	for _, name := range others {
-		str += "  " + name + "\n"
+		p["others"] = append(p["others"], name)
 	}
 
-	return str
+	return p
 }
 
 // ValidDirectives returns the list of all directives that are

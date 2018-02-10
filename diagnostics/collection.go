@@ -113,7 +113,7 @@ func Set(key string, val interface{}) {
 // Append appends value to a list named key.
 // If key is new, a new list will be created.
 // If key maps to a type that is not a list,
-// an error is logged, and this is a no-op.
+// a panic is logged, and this is a no-op.
 //
 // TODO: is this function needed/useful?
 func Append(key string, value interface{}) {
@@ -142,66 +142,38 @@ func Append(key string, value interface{}) {
 	bufferMu.Unlock()
 }
 
-// AppendUniqueString adds value to a set named key.
+// AppendUnique adds value to a set  namedkey.
 // Set items are unordered. Values in the set
-// are unique, but repeat values are counted.
+// are unique, but how many times they are
+// appended is counted.
 //
-// If key is new, a new set will be created.
-// If key maps to a type that is not a string
-// set, an error is logged, and this is a no-op.
-func AppendUniqueString(key, value string) {
+// If key is new, a new set will be created for
+// values with that key. If key maps to a type
+// that is not a counting set, a panic is logged,
+// and this is a no-op.
+func AppendUnique(key string, value interface{}) {
 	if !enabled {
 		return
 	}
 	bufferMu.Lock()
-	if bufferItemCount >= maxBufferItems {
-		bufferMu.Unlock()
-		return
-	}
 	bufVal, inBuffer := buffer[key]
-	mapVal, mapOk := bufVal.(map[string]int)
-	if inBuffer && !mapOk {
+	setVal, setOk := bufVal.(countingSet)
+	if inBuffer && !setOk {
 		bufferMu.Unlock()
-		log.Printf("[PANIC] Diagnostics: key %s already used for non-map value", key)
+		log.Printf("[PANIC] Diagnostics: key %s already used for non-counting-set value", key)
 		return
 	}
-	if mapVal == nil {
-		buffer[key] = map[string]int{value: 1}
+	if setVal == nil {
+		// ensure the buffer is not too full, then add new unique value
+		if bufferItemCount >= maxBufferItems {
+			bufferMu.Unlock()
+			return
+		}
+		buffer[key] = countingSet{value: 1}
 		bufferItemCount++
-	} else if mapOk {
-		mapVal[value]++
-	}
-	bufferMu.Unlock()
-}
-
-// AppendUniqueInt adds value to a set named key.
-// Set items are unordered. Values in the set
-// are unique, but repeat values are counted.
-//
-// If key is new, a new set will be created.
-// If key maps to a type that is not an integer
-// set, an error is logged, and this is a no-op.
-func AppendUniqueInt(key string, value int) {
-	if !enabled {
-		return
-	}
-	bufferMu.Lock()
-	if bufferItemCount >= maxBufferItems {
-		bufferMu.Unlock()
-		return
-	}
-	bufVal, inBuffer := buffer[key]
-	mapVal, mapOk := bufVal.(map[int]int)
-	if inBuffer && !mapOk {
-		bufferMu.Unlock()
-		log.Printf("[PANIC] Diagnostics: key %s already used for non-map value", key)
-		return
-	}
-	if mapVal == nil {
-		buffer[key] = map[int]int{value: 1}
-		bufferItemCount++
-	} else if mapOk {
-		mapVal[value]++
+	} else if setOk {
+		// unique value already exists, so just increment counter
+		setVal[value]++
 	}
 	bufferMu.Unlock()
 }
@@ -209,7 +181,7 @@ func AppendUniqueInt(key string, value int) {
 // Increment adds 1 to a value named key.
 // If it does not exist, it is created with
 // a value of 1. If key maps to a type that
-// is not an integer, an error is logged,
+// is not an integer, a panic is logged,
 // and this is a no-op.
 func Increment(key string) {
 	incrementOrDecrement(key, true)

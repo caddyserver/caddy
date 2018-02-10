@@ -152,18 +152,18 @@ func Run() {
 
 	// Begin diagnostics (these are no-ops if diagnostics disabled)
 	diagnostics.Set("caddy_version", appVersion)
-	// TODO: plugins
 	diagnostics.Set("num_listeners", len(instance.Servers()))
+	diagnostics.Set("server_type", serverType)
 	diagnostics.Set("os", runtime.GOOS)
 	diagnostics.Set("arch", runtime.GOARCH)
 	diagnostics.Set("cpu", struct {
-		NumLogical int    `json:"num_logical"`
-		AESNI      bool   `json:"aes_ni"`
-		BrandName  string `json:"brand_name"`
+		BrandName  string `json:"brand_name,omitempty"`
+		NumLogical int    `json:"num_logical,omitempty"`
+		AESNI      bool   `json:"aes_ni,omitempty"`
 	}{
+		BrandName:  cpuid.CPU.BrandName,
 		NumLogical: runtime.NumCPU(),
 		AESNI:      cpuid.CPU.AesNi(),
-		BrandName:  cpuid.CPU.BrandName,
 	})
 	diagnostics.StartEmitting()
 

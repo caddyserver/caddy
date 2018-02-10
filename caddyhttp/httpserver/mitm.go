@@ -24,6 +24,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/mholt/caddy/diagnostics"
 )
 
 // tlsHandler is a http.Handler that will inject a value
@@ -97,6 +99,13 @@ func (h *tlsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if checked {
 		r = r.WithContext(context.WithValue(r.Context(), MitmCtxKey, mitm))
+		if mitm {
+			go diagnostics.AppendUnique("mitm", "likely")
+		} else {
+			go diagnostics.AppendUnique("mitm", "unlikely")
+		}
+	} else {
+		go diagnostics.AppendUnique("mitm", "unknown")
 	}
 
 	if mitm && h.closeOnMITM {

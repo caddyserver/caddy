@@ -346,7 +346,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	go diagnostics.AppendUniqueString("user_agent", r.Header.Get("User-Agent"))
+	go diagnostics.AppendUnique("user_agent", r.Header.Get("User-Agent"))
 
 	// copy the original, unchanged URL into the context
 	// so it can be referenced by middlewares

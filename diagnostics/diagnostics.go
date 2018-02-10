@@ -21,13 +21,16 @@
 // collection/aggregation functions. Call StartEmitting() when you are
 // ready to begin sending diagnostic updates.
 //
-// When collecting metrics (functions like Set, Append*, or Increment),
-// it may be desirable and even recommended to run invoke them in a new
+// When collecting metrics (functions like Set, AppendUnique, or Increment),
+// it may be desirable and even recommended to invoke them in a new
 // goroutine (use the go keyword) in case there is lock contention;
 // they are thread-safe (unless noted), and you may not want them to
 // block the main thread of execution. However, sometimes blocking
 // may be necessary too; for example, adding startup metrics to the
 // buffer before the call to StartEmitting().
+//
+// This package is designed to be as fast and space-efficient as reasonably
+// possible, so that it does not disrupt the flow of execution.
 package diagnostics
 
 import (
@@ -122,11 +125,6 @@ func emit(final bool) error {
 			continue
 		}
 
-		// ensure we won't slam the diagnostics server
-		if reply.NextUpdate < 1*time.Second {
-			reply.NextUpdate = defaultUpdateInterval
-		}
-
 		// make sure we didn't send the update too soon; if so,
 		// just wait and try again -- this is a special case of
 		// error that we handle differently, as you can see
@@ -150,6 +148,11 @@ func emit(final bool) error {
 	// even if there was an error after retrying, we should
 	// schedule the next update using our default update
 	// interval because the server might be healthy later
+
+	// ensure we won't slam the diagnostics server
+	if reply.NextUpdate < 1*time.Second {
+		reply.NextUpdate = defaultUpdateInterval
+	}
 
 	// schedule the next update (if this wasn't the last one and
 	// if the remote server didn't tell us to stop sending)
@@ -216,6 +219,30 @@ type Payload struct {
 	Data map[string]interface{} `json:"data,omitempty"`
 }
 
+// countingSet implements a set that counts how many
+// times a key is inserted. It marshals to JSON in a
+// way such that keys are converted to values next
+// to their associated counts.
+type countingSet map[interface{}]int
+
+// MarshalJSON implements the json.Marshaler interface.
+// It converts the set to an array so that the values
+// are JSON object values instead of keys, since keys
+// are difficult to query in databases.
+func (s countingSet) MarshalJSON() ([]byte, error) {
+	type Item struct {
+		Value interface{} `json:"value"`
+		Count int         `json:"count"`
+	}
+	var list []Item
+
+	for k, v := range s {
+		list = append(list, Item{Value: k, Count: v})
+	}
+
+	return json.Marshal(list)
+}
+
 var (
 	// httpClient should be used for HTTP requests. It
 	// is configured with a timeout for reliability.
@@ -253,7 +280,7 @@ var (
 const (
 	// endpoint is the base URL to remote diagnostics server;
 	// the instance ID will be appended to it.
-	endpoint = "https://diagnostics-staging.caddyserver.com/update/" // TODO: make configurable, "http://localhost:8081/update/"
+	endpoint = "https://diagnostics-staging.caddyserver.com/update/" // TODO: make configurable, "http://localhost:8085/update/"
 
 	// defaultUpdateInterval is how long to wait before emitting
 	// more diagnostic data. This value is only used if the
