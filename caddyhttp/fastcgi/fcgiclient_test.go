@@ -140,7 +140,8 @@ func sendFcgi(reqType int, fcgiParams map[string]string, data []byte, posts map[
 			}
 			resp, err = fcgi.PostForm(fcgiParams, values)
 		} else {
-			resp, err = fcgi.Get(fcgiParams)
+			rd := bytes.NewReader(data)
+			resp, err = fcgi.Get(fcgiParams, rd, int64(rd.Len()))
 		}
 
 	default:
