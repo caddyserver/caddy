@@ -296,7 +296,7 @@ func initDiagnostics() {
 
 	newUUID := func() uuid.UUID {
 		id := uuid.New()
-		err := ioutil.WriteFile(uuidFilename, id[:], 0644)
+		err := ioutil.WriteFile(uuidFilename, []byte(id.String()), 0644) // human-readable this way
 		if err != nil {
 			log.Printf("[ERROR] Persisting instance UUID: %v", err)
 		}
@@ -319,7 +319,7 @@ func initDiagnostics() {
 			log.Printf("[ERROR] Reading persistent UUID: %v", err)
 			id = newUUID()
 		} else {
-			id, err = uuid.FromBytes(uuidBytes)
+			id, err = uuid.ParseBytes(uuidBytes)
 			if err != nil {
 				log.Printf("[ERROR] Parsing UUID: %v", err)
 				id = newUUID()
