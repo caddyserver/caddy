@@ -77,9 +77,9 @@ func TestServeHTTP(t *testing.T) {
 		{
 			url:                   "https://foo/dirwithindex/",
 			expectedStatus:        http.StatusOK,
-			expectedBodyContent:   testFiles[webrootDirwithindexIndeHTML],
+			expectedBodyContent:   testFiles[webrootDirwithindexIndexHTML],
 			expectedEtag:          `"2n9cw"`,
-			expectedContentLength: strconv.Itoa(len(testFiles[webrootDirwithindexIndeHTML])),
+			expectedContentLength: strconv.Itoa(len(testFiles[webrootDirwithindexIndexHTML])),
 		},
 		// Test 4 - access folder with index file without trailing slash
 		{
@@ -235,16 +235,38 @@ func TestServeHTTP(t *testing.T) {
 			expectedBodyContent: movedPermanently,
 		},
 		{
+			// Test 27 - Check etag
 			url:                   "https://foo/notindex.html",
 			expectedStatus:        http.StatusOK,
 			expectedBodyContent:   testFiles[webrootNotIndexHTML],
 			expectedEtag:          `"2n9cm"`,
 			expectedContentLength: strconv.Itoa(len(testFiles[webrootNotIndexHTML])),
 		},
+		{
+			// Test 28 - Prevent path-based open redirects (directory)
+			url:                 "https://foo//example.com%2f..",
+			expectedStatus:      http.StatusMovedPermanently,
+			expectedLocation:    "https://foo/example.com/../",
+			expectedBodyContent: movedPermanently,
+		},
+		{
+			// Test 29 - Prevent path-based open redirects (file)
+			url:                 "https://foo//example.com%2f../dirwithindex/index.html",
+			expectedStatus:      http.StatusMovedPermanently,
+			expectedLocation:    "https://foo/example.com/../dirwithindex/",
+			expectedBodyContent: movedPermanently,
+		},
+		{
+			// Test 29 - Prevent path-based open redirects (extra leading slashes)
+			url:                 "https://foo///example.com%2f..",
+			expectedStatus:      http.StatusMovedPermanently,
+			expectedLocation:    "https://foo/example.com/../",
+			expectedBodyContent: movedPermanently,
+		},
 	}
 
 	for i, test := range tests {
-		// set up response writer and rewuest
+		// set up response writer and request
 		responseRecorder := httptest.NewRecorder()
 		request, err := http.NewRequest("GET", test.url, nil)
 		if err != nil {
@@ -518,7 +540,7 @@ var (
 	webrootNotIndexHTML                = filepath.Join(webrootName, "notindex.html")
 	webrootDirFile2HTML                = filepath.Join(webrootName, "dir", "file2.html")
 	webrootDirHiddenHTML               = filepath.Join(webrootName, "dir", "hidden.html")
-	webrootDirwithindexIndeHTML        = filepath.Join(webrootName, "dirwithindex", "index.html")
+	webrootDirwithindexIndexHTML       = filepath.Join(webrootName, "dirwithindex", "index.html")
 	webrootSubGzippedHTML              = filepath.Join(webrootName, "sub", "gzipped.html")
 	webrootSubGzippedHTMLGz            = filepath.Join(webrootName, "sub", "gzipped.html.gz")
 	webrootSubGzippedHTMLBr            = filepath.Join(webrootName, "sub", "gzipped.html.br")
@@ -544,7 +566,7 @@ var testFiles = map[string]string{
 	webrootFile1HTML:                   "<h1>file1.html</h1>",
 	webrootNotIndexHTML:                "<h1>notindex.html</h1>",
 	webrootDirFile2HTML:                "<h1>dir/file2.html</h1>",
-	webrootDirwithindexIndeHTML:        "<h1>dirwithindex/index.html</h1>",
+	webrootDirwithindexIndexHTML:       "<h1>dirwithindex/index.html</h1>",
 	webrootDirHiddenHTML:               "<h1>dir/hidden.html</h1>",
 	webrootSubGzippedHTML:              "<h1>gzipped.html</h1>",
 	webrootSubGzippedHTMLGz:            "1.gzipped.html.gz",

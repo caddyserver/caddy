@@ -107,6 +107,10 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request) (int, err
 	if d.IsDir() {
 		// ensure there is a trailing slash
 		if urlCopy.Path[len(urlCopy.Path)-1] != '/' {
+			for strings.HasPrefix(urlCopy.Path, "//") {
+				// prevent path-based open redirects
+				urlCopy.Path = strings.TrimPrefix(urlCopy.Path, "/")
+			}
 			urlCopy.Path += "/"
 			http.Redirect(w, r, urlCopy.String(), http.StatusMovedPermanently)
 			return http.StatusMovedPermanently, nil
@@ -131,6 +135,10 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request) (int, err
 		}
 
 		if redir {
+			for strings.HasPrefix(urlCopy.Path, "//") {
+				// prevent path-based open redirects
+				urlCopy.Path = strings.TrimPrefix(urlCopy.Path, "/")
+			}
 			http.Redirect(w, r, urlCopy.String(), http.StatusMovedPermanently)
 			return http.StatusMovedPermanently, nil
 		}
