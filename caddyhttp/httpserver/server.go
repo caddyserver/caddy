@@ -426,7 +426,7 @@ func trimPathPrefix(u *url.URL, prefix string) *url.URL {
 	if !strings.HasPrefix(trimmed, "/") {
 		trimmed = "/" + trimmed
 	}
-	u, err := u.Parse(trimmed)
+	u, err := url.Parse(trimmed)
 	if err != nil {
 		log.Printf("[ERROR] unable to parse url: %s, %v", u.Path, err)
 	}
