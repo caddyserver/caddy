@@ -4,7 +4,6 @@
 
 :8082 {
   secrets .secrets.yml
-
   awscloudwatch debug aqfer.io development 65536
 
   reauth {
@@ -15,9 +14,8 @@
 
   transformrequest
 
-  redis elasticacheaqfer2.elwwyl.0001.use1.cache.amazonaws.com:6379
-
   # awsdynamodb aqfer-idsync2 partition-key sort-key DAX 8086 DAX_ENDPOINT
+  redis elasticacheaqfer2.elwwyl.0001.use1.cache.amazonaws.com:6379
 }
 
 # log ./log/access.log

@@ -14,8 +14,8 @@ FROM golang:1.8
 
 
 # VIM ONLY USED FOR DEVELOPMENT OF CADDY STACK
-# RUN apt-get update
-# RUN apt-get -y install vim
+RUN apt-get update
+RUN apt-get -y install vim
 
 
 RUN go get github.com/aws/aws-sdk-go/aws
