@@ -29,34 +29,6 @@ import (
 	"golang.org/x/crypto/ocsp"
 )
 
-// Certificate is a tls.Certificate with associated metadata tacked on.
-// Even if the metadata can be obtained by parsing the certificate,
-// we are more efficient by extracting the metadata onto this struct.
-type Certificate struct {
-	tls.Certificate
-
-	// Names is the list of names this certificate is written for.
-	// The first is the CommonName (if any), the rest are SAN.
-	Names []string
-
-	// NotAfter is when the certificate expires.
-	NotAfter time.Time
-
-	// OCSP contains the certificate's parsed OCSP response.
-	OCSP *ocsp.Response
-
-	// The hex-encoded hash of this cert's chain's bytes.
-	Hash string
-
-	// configs is the list of configs that use or refer to
-	// The first one is assumed to be the config that is
-	// "in charge" of this certificate (i.e. determines
-	// whether it is managed, how it is managed, etc).
-	// This field will be populated by cacheCertificate.
-	// Only meddle with it if you know what you're doing!
-	configs []*Config
-}
-
 // certificateCache is to be an instance-wide cache of certs
 // that site-specific TLS configs can refer to. Using a
 // central map like this avoids duplication of certs in
@@ -125,6 +97,54 @@ func (certCache *certificateCache) replaceCertificate(oldCert, newCert Certifica
 	delete(certCache.cache, oldCert.Hash)
 
 	return nil
+}
+
+// reloadManagedCertificate reloads the certificate corresponding to the name(s)
+// on oldCert into the cache, from storage. This also replaces the old certificate
+// with the new one, so that all configurations that used the old cert now point
+// to the new cert.
+func (certCache *certificateCache) reloadManagedCertificate(oldCert Certificate) error {
+	// get the certificate from storage and cache it
+	newCert, err := oldCert.configs[0].CacheManagedCertificate(oldCert.Names[0])
+	if err != nil {
+		return fmt.Errorf("unable to reload certificate for %v into cache: %v", oldCert.Names, err)
+	}
+
+	// and replace the old certificate with the new one
+	err = certCache.replaceCertificate(oldCert, newCert)
+	if err != nil {
+		return fmt.Errorf("replacing certificate %v: %v", oldCert.Names, err)
+	}
+
+	return nil
+}
+
+// Certificate is a tls.Certificate with associated metadata tacked on.
+// Even if the metadata can be obtained by parsing the certificate,
+// we are more efficient by extracting the metadata onto this struct.
+type Certificate struct {
+	tls.Certificate
+
+	// Names is the list of names this certificate is written for.
+	// The first is the CommonName (if any), the rest are SAN.
+	Names []string
+
+	// NotAfter is when the certificate expires.
+	NotAfter time.Time
+
+	// OCSP contains the certificate's parsed OCSP response.
+	OCSP *ocsp.Response
+
+	// The hex-encoded hash of this cert's chain's bytes.
+	Hash string
+
+	// configs is the list of configs that use or refer to
+	// The first one is assumed to be the config that is
+	// "in charge" of this certificate (i.e. determines
+	// whether it is managed, how it is managed, etc).
+	// This field will be populated by cacheCertificate.
+	// Only meddle with it if you know what you're doing!
+	configs []*Config
 }
 
 // CacheManagedCertificate loads the certificate for domain into the

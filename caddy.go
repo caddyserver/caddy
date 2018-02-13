@@ -77,6 +77,14 @@ var (
 	mu sync.Mutex
 )
 
+func init() {
+	OnProcessExit = append(OnProcessExit, func() {
+		if PidFile != "" {
+			os.Remove(PidFile)
+		}
+	})
+}
+
 // Instance contains the state of servers created as a result of
 // calling Start and can be used to access or control those servers.
 // It is literally an instance of a server type. Instance values

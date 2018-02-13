@@ -160,17 +160,12 @@ func RenewManagedCertificates(allowPrompts bool) (err error) {
 			log.Printf("[INFO] Certificate for %v expires in %v, but is already renewed in storage; reloading stored certificate",
 				oldCert.Names, timeLeft)
 
-			// get the certificate from storage and cache it
-			newCert, err := oldCert.configs[0].CacheManagedCertificate(oldCert.Names[0])
+			err = certCache.reloadManagedCertificate(oldCert)
 			if err != nil {
-				log.Printf("[ERROR] Unable to reload certificate for %v into cache: %v", oldCert.Names, err)
-				continue
-			}
-
-			// and replace the old certificate with the new one
-			err = certCache.replaceCertificate(oldCert, newCert)
-			if err != nil {
-				log.Printf("[ERROR] Replacing certificate: %v", err)
+				if allowPrompts {
+					return err // operator is present, so report error immediately
+				}
+				log.Printf("[ERROR] Loading renewed certificate: %v", err)
 			}
 		}
 
@@ -212,20 +207,12 @@ func RenewManagedCertificates(allowPrompts bool) (err error) {
 
 			// successful renewal, so update in-memory cache by loading
 			// renewed certificate so it will be used with handshakes
-
-			// put the certificate in the cache
-			newCert, err := oldCert.configs[0].CacheManagedCertificate(renewName)
+			err = certCache.reloadManagedCertificate(oldCert)
 			if err != nil {
 				if allowPrompts {
 					return err // operator is present, so report error immediately
 				}
 				log.Printf("[ERROR] %v", err)
-			}
-
-			// replace the old certificate with the new one
-			err = certCache.replaceCertificate(oldCert, newCert)
-			if err != nil {
-				log.Printf("[ERROR] Replacing certificate: %v", err)
 			}
 		}
 

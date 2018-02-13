@@ -33,8 +33,8 @@ func trapSignalsPosix() {
 			switch sig {
 			case syscall.SIGTERM:
 				log.Println("[INFO] SIGTERM: Terminating process")
-				if PidFile != "" {
-					os.Remove(PidFile)
+				for _, f := range OnProcessExit {
+					f() // only perform important cleanup actions
 				}
 				os.Exit(0)
 
@@ -46,8 +46,8 @@ func trapSignalsPosix() {
 					log.Printf("[ERROR] SIGQUIT stop: %v", err)
 					exitCode = 3
 				}
-				if PidFile != "" {
-					os.Remove(PidFile)
+				for _, f := range OnProcessExit {
+					f() // only perform important cleanup actions
 				}
 				os.Exit(exitCode)
 
