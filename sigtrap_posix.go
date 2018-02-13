@@ -41,13 +41,13 @@ func trapSignalsPosix() {
 			case syscall.SIGTERM:
 				log.Println("[INFO] SIGTERM: Shutting down servers then terminating")
 				exitCode := executeShutdownCallbacks("SIGTERM")
+				for _, f := range OnProcessExit {
+					f() // only perform important cleanup actions
+				}
 				err := Stop()
 				if err != nil {
 					log.Printf("[ERROR] SIGTERM stop: %v", err)
 					exitCode = 3
-				}
-				for _, f := range OnProcessExit {
-					f() // only perform important cleanup actions
 				}
 				os.Exit(exitCode)
 
