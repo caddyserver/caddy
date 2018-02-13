@@ -1,5 +1,5 @@
 <p align="center">
-	<a href="https://caddyserver.com"><img src="https://cloud.githubusercontent.com/assets/1128849/25305033/12916fce-2731-11e7-86ec-580d4d31cb16.png" alt="Caddy" width="400"></a>
+	<a href="https://caddyserver.com"><img src="https://user-images.githubusercontent.com/1128849/36137292-bebc223a-1051-11e8-9a81-4ea9054c96ac.png" alt="Caddy" width="400"></a>
 </p>
 <h3 align="center">Every Site on HTTPS <!-- Serve Confidently --></h3>
 <p align="center">Caddy is a general-purpose HTTP/2 web server that serves HTTPS by default.</p>
