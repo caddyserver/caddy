@@ -27,14 +27,19 @@ func init() {
 }
 
 func setup(c *caddy.Controller) error {
+	var headerName string
+
 	for c.Next() {
 		if c.NextArg() {
-			return c.ArgErr() //no arg expected.
+			headerName = c.Val()
+		}
+		if c.NextArg() {
+			return c.ArgErr()
 		}
 	}
 
 	httpserver.GetConfig(c).AddMiddleware(func(next httpserver.Handler) httpserver.Handler {
-		return Handler{Next: next}
+		return Handler{Next: next, HeaderName: headerName}
 	})
 
 	return nil

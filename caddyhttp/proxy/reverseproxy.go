@@ -240,6 +240,7 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int) *
 		rp.Transport = &h2quic.RoundTripper{
 			QuicConfig: &quic.Config{
 				HandshakeTimeout: defaultCryptoHandshakeTimeout,
+				KeepAlive:        true,
 			},
 		}
 	} else if keepalive != http.DefaultMaxIdleConnsPerHost || strings.HasPrefix(target.Scheme, "srv") {

@@ -460,12 +460,12 @@ func (c *FCGIClient) Request(p map[string]string, req io.Reader) (resp *http.Res
 }
 
 // Get issues a GET request to the fcgi responder.
-func (c *FCGIClient) Get(p map[string]string) (resp *http.Response, err error) {
+func (c *FCGIClient) Get(p map[string]string, body io.Reader, l int64) (resp *http.Response, err error) {
 
 	p["REQUEST_METHOD"] = "GET"
-	p["CONTENT_LENGTH"] = "0"
+	p["CONTENT_LENGTH"] = strconv.FormatInt(l, 10)
 
-	return c.Request(p, nil)
+	return c.Request(p, body)
 }
 
 // Head issues a HEAD request to the fcgi responder.
