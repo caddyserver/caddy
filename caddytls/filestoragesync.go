@@ -61,6 +61,10 @@ func (s *fileStorageLock) TryLock(name string) (Waiter, error) {
 		filename: s.storage.siteCertFile(name) + ".lock",
 		wg:       new(sync.WaitGroup),
 	}
+	// parent dir must exist
+	if err := os.MkdirAll(s.storage.site(name), 0700); err != nil {
+		return nil, err
+	}
 	lf, err := os.OpenFile(fw.filename, os.O_CREATE|os.O_EXCL, 0644)
 	if err != nil {
 		if os.IsExist(err) {
