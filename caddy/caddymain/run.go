@@ -36,8 +36,6 @@ import (
 	"github.com/mholt/caddy/caddytls"
 	// This is where other plugins get plugged in (imported)
 
-	_ "github.com/BTBurke/caddy-jwt"
-
 	_ "github.com/fellou89/caddy-awscloudwatch"
 	_ "github.com/fellou89/caddy-awsdynamodb"
 	_ "github.com/fellou89/caddy-redis"

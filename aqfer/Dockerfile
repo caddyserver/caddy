@@ -1,4 +1,4 @@
-FROM golang:1.8
+FROM golang:1.9
 
 
 # NODE ONLY NEEDED WHILE DAX IS RUN AS NODE SERVER
@@ -24,7 +24,7 @@ RUN go get github.com/aws/aws-sdk-go/aws/session
 RUN go get github.com/aws/aws-sdk-go/service/cloudwatchlogs
 RUN go get github.com/aws/aws-sdk-go/service/dynamodb
 RUN go get github.com/garyburd/redigo/redis
-RUN go get github.com/BTBurke/caddy-jwt
+RUN go get github.com/dgrijalva/jwt-go
 RUN go get github.com/pkg/errors
 RUN go get github.com/sirupsen/logrus
 RUN go get github.com/satori/go.uuid
@@ -49,9 +49,9 @@ ADD ./ /go/src/github.com/mholt/caddy
 
 
 ADD ./aqfer/Caddyfile /Caddyfile
-# ADD ./aqfer/.secrets.yml /.secrets.yml
+ADD ./aqfer/.secrets.yml /.secrets.yml
 ADD ./aqfer/test.go /test.go
-ADD ./aqfer/scripts/run_tests.sh /run_tests.sh
+ADD ./aqfer/scripts/run_unit_tests.sh /run_unit_tests.sh
 RUN mkdir /temp_cache
 
 
