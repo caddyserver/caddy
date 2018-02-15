@@ -551,6 +551,7 @@ var directives = []string{
 	"transformrequest",
 	"redis",
 	"awsdynamodb",
+	"transformresponse",
 }
 
 const (
