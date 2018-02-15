@@ -117,12 +117,14 @@ func (h *httpContext) saveConfig(key string, cfg *SiteConfig) {
 // executing directives and otherwise prepares the directives to
 // be parsed and executed.
 func (h *httpContext) InspectServerBlocks(sourceFile string, serverBlocks []caddyfile.ServerBlock) ([]caddyfile.ServerBlock, error) {
+	siteAddrs := make(map[string]string)
+
 	// For each address in each server block, make a new config
 	for _, sb := range serverBlocks {
 		for _, key := range sb.Keys {
 			key = strings.ToLower(key)
 			if _, dup := h.keysToSiteConfigs[key]; dup {
-				return serverBlocks, fmt.Errorf("duplicate site address: %s", key)
+				return serverBlocks, fmt.Errorf("duplicate site key: %s", key)
 			}
 			addr, err := standardizeAddress(key)
 			if err != nil {
@@ -137,6 +139,23 @@ func (h *httpContext) InspectServerBlocks(sourceFile string, serverBlocks []cadd
 			if addr.Port == "" && Port != DefaultPort {
 				addr.Port = Port
 			}
+
+			// Make sure the adjusted site address is distinct
+			addrCopy := addr // make copy so we don't disturb the original, carefully-parsed address struct
+			if addrCopy.Port == "" && Port == DefaultPort {
+				addrCopy.Port = Port
+			}
+			addrStr := strings.ToLower(addrCopy.String())
+			if otherSiteKey, dup := siteAddrs[addrStr]; dup {
+				err := fmt.Errorf("duplicate site address: %s", addrStr)
+				if (addrCopy.Host == Host && Host != DefaultHost) ||
+					(addrCopy.Port == Port && Port != DefaultPort) {
+					err = fmt.Errorf("site defined as %s is a duplicate of %s because of modified "+
+						"default host and/or port values (usually via -host or -port flags)", key, otherSiteKey)
+				}
+				return serverBlocks, err
+			}
+			siteAddrs[addrStr] = key
 
 			// If default HTTP or HTTPS ports have been customized,
 			// make sure the ACME challenge ports match

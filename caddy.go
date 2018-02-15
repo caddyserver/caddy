@@ -612,7 +612,7 @@ func ValidateAndExecuteDirectives(cdyfile Input, inst *Instance, justValidate bo
 
 	sblocks, err = inst.context.InspectServerBlocks(cdyfile.Path(), sblocks)
 	if err != nil {
-		return err
+		return fmt.Errorf("error inspecting server blocks: %v", err)
 	}
 
 	return executeDirectives(inst, cdyfile.Path(), stype.Directives(), sblocks, justValidate)

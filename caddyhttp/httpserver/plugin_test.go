@@ -153,6 +153,23 @@ func TestInspectServerBlocksWithCustomDefaultPort(t *testing.T) {
 	}
 }
 
+// See discussion on PR #2015
+func TestInspectServerBlocksWithAdjustedAddress(t *testing.T) {
+	Port = DefaultPort
+	Host = "example.com"
+	filename := "Testfile"
+	ctx := newContext(&caddy.Instance{Storage: make(map[interface{}]interface{})}).(*httpContext)
+	input := strings.NewReader("example.com {\n}\n:2015 {\n}")
+	sblocks, err := caddyfile.Parse(filename, input, nil)
+	if err != nil {
+		t.Fatalf("Expected no error setting up test, got: %v", err)
+	}
+	_, err = ctx.InspectServerBlocks(filename, sblocks)
+	if err == nil {
+		t.Fatalf("Expected an error because site definitions should overlap, got: %v", err)
+	}
+}
+
 func TestInspectServerBlocksCaseInsensitiveKey(t *testing.T) {
 	filename := "Testfile"
 	ctx := newContext(&caddy.Instance{Storage: make(map[interface{}]interface{})}).(*httpContext)
