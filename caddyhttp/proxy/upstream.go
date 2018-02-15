@@ -433,7 +433,6 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream, hasSrv bool) error {
 	case "transparent":
 		u.upstreamHeaders.Add("Host", "{host}")
 		u.upstreamHeaders.Add("X-Real-IP", "{remote}")
-		u.upstreamHeaders.Add("X-Forwarded-For", "{remote}")
 		u.upstreamHeaders.Add("X-Forwarded-Proto", "{scheme}")
 	case "websocket":
 		u.upstreamHeaders.Add("Connection", "{>Connection}")
