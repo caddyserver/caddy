@@ -59,6 +59,14 @@ func (cg configGroup) getConfig(name string) *Config {
 		}
 	}
 
+	// try a config that serves all names (this
+	// is basically the same as a config defined
+	// for "*" -- I think -- but the above loop
+	// doesn't try an empty string)
+	if config, ok := cg[""]; ok {
+		return config
+	}
+
 	// no matches, so just serve up a random config
 	for _, config := range cg {
 		return config
