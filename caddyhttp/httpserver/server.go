@@ -389,7 +389,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 	if vhost == nil {
 		// check for ACME challenge even if vhost is nil;
 		// could be a new host coming online soon
-		if caddytls.HTTPChallengeHandler(w, r, "localhost", caddytls.DefaultHTTPAlternatePort) {
+		if caddytls.HTTPChallengeHandler(w, r, "localhost") {
 			return 0, nil
 		}
 		// otherwise, log the error and write a message to the client
@@ -405,7 +405,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 
 	// we still check for ACME challenge if the vhost exists,
 	// because we must apply its HTTP challenge config settings
-	if s.proxyHTTPChallenge(vhost, w, r) {
+	if caddytls.HTTPChallengeHandler(w, r, vhost.ListenHost) {
 		return 0, nil
 	}
 
@@ -418,6 +418,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 
 	return vhost.middlewareChain.ServeHTTP(w, r)
 }
+
 
 func trimPathPrefix(u *url.URL, prefix string) *url.URL {
 	// We need to use URL.EscapedPath() when trimming the pathPrefix as

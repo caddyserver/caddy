@@ -103,6 +103,20 @@ func (c *Controller) Context() Context {
 	return c.instance.context
 }
 
+// Get safely gets a value from the Instance's storage.
+func (c *Controller) Get(key interface{}) interface{} {
+	c.instance.StorageMu.RLock()
+	defer c.instance.StorageMu.RUnlock()
+	return c.instance.Storage[key]
+}
+
+// Set safely sets a value on the Instance's storage.
+func (c *Controller) Set(key, val interface{}) {
+	c.instance.StorageMu.Lock()
+	c.instance.Storage[key] = val
+	c.instance.StorageMu.Unlock()
+}
+
 // NewTestController creates a new Controller for
 // the server type and input specified. The filename
 // is "Testfile". If the server type is not empty and
@@ -113,12 +127,12 @@ func (c *Controller) Context() Context {
 // Used only for testing, but exported so plugins can
 // use this for convenience.
 func NewTestController(serverType, input string) *Controller {
-	var ctx Context
+	testInst := &Instance{serverType: serverType, Storage: make(map[interface{}]interface{})}
 	if stype, err := getServerType(serverType); err == nil {
-		ctx = stype.NewContext()
+		testInst.context = stype.NewContext(testInst)
 	}
 	return &Controller{
-		instance:           &Instance{serverType: serverType, context: ctx},
+		instance:           testInst,
 		Dispenser:          caddyfile.NewDispenser("Testfile", strings.NewReader(input)),
 		OncePerServerBlock: func(f func() error) error { return f() },
 	}
