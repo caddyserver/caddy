@@ -48,6 +48,8 @@ func setupTLS(c *caddy.Controller) error {
 	}
 
 	config.Enabled = true
+	// This defaults to true, can be disabled by config
+	config.CertificateTransparency = true
 
 	for c.Next() {
 		var certificateFile, keyFile, loadDir, maxCerts, askURL string
@@ -69,6 +71,8 @@ func setupTLS(c *caddy.Controller) error {
 			// user might want a temporary, in-memory, self-signed cert
 			if args[0] == "self_signed" {
 				config.SelfSigned = true
+				// self-signed certs can't be reasonably submitted to CT
+				config.CertificateTransparency = false
 			}
 		case 2:
 			certificateFile = args[0]
@@ -198,6 +202,12 @@ func setupTLS(c *caddy.Controller) error {
 				}
 			case "must_staple":
 				config.MustStaple = true
+			case "ct":
+				args := c.RemainingArgs()
+				if len(args) != 1 || args[0] != "off" {
+					return c.ArgErr()
+				}
+				config.CertificateTransparency = false
 			default:
 				return c.Errf("Unknown keyword '%s'", c.Val())
 			}
@@ -237,7 +247,7 @@ func setupTLS(c *caddy.Controller) error {
 
 		// load a single certificate and key, if specified
 		if certificateFile != "" && keyFile != "" {
-			err := cacheUnmanagedCertificatePEMFile(certificateFile, keyFile)
+			err := cacheUnmanagedCertificatePEMFile(certificateFile, keyFile, config)
 			if err != nil {
 				return c.Errf("Unable to load certificate and key files for '%s': %v", c.Key, err)
 			}
@@ -246,7 +256,7 @@ func setupTLS(c *caddy.Controller) error {
 
 		// load a directory of certificates, if specified
 		if loadDir != "" {
-			err := loadCertsInDir(c, loadDir)
+			err := loadCertsInDir(c, config, loadDir)
 			if err != nil {
 				return err
 			}
@@ -273,7 +283,7 @@ func setupTLS(c *caddy.Controller) error {
 // https://cbonte.github.io/haproxy-dconv/configuration-1.5.html#5.1-crt
 //
 // This function may write to the log as it walks the directory tree.
-func loadCertsInDir(c *caddy.Controller, dir string) error {
+func loadCertsInDir(c *caddy.Controller, cfg *Config, dir string) error {
 	return filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			log.Printf("[WARNING] Unable to traverse into %s; skipping", path)
@@ -336,7 +346,7 @@ func loadCertsInDir(c *caddy.Controller, dir string) error {
 				return c.Errf("%s: no private key block found", path)
 			}
 
-			err = cacheUnmanagedCertificatePEMBytes(certPEMBytes, keyPEMBytes)
+			err = cacheUnmanagedCertificatePEMBytes(certPEMBytes, keyPEMBytes, cfg)
 			if err != nil {
 				return c.Errf("%s: failed to load cert and key for '%s': %v", path, c.Key, err)
 			}

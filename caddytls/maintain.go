@@ -48,6 +48,9 @@ const (
 
 	// OCSPInterval is how often to check if OCSP stapling needs updating.
 	OCSPInterval = 1 * time.Hour
+
+	// SCTInterval is how often to check if the SCTs need to be updated
+	SCTInterval = 24 * time.Hour
 )
 
 // maintainAssets is a permanently-blocking function
@@ -63,6 +66,9 @@ const (
 func maintainAssets(stopChan chan struct{}) {
 	renewalTicker := time.NewTicker(RenewInterval)
 	ocspTicker := time.NewTicker(OCSPInterval)
+	sctTicker := time.NewTicker(SCTInterval)
+
+	ctLogs := make([]ctLog, 0)
 
 	for {
 		select {
@@ -75,9 +81,14 @@ func maintainAssets(stopChan chan struct{}) {
 			UpdateOCSPStaples()
 			DeleteOldStapleFiles()
 			log.Println("[INFO] Done checking OCSP staples")
+		case <-sctTicker.C:
+			log.Println("[INFO] Scanning for SCTs needing updates")
+			ctLogs = UpdateSCTs(ctLogs)
+			log.Println("[INFO] Done scanning for SCTs needing updates]")
 		case <-stopChan:
 			renewalTicker.Stop()
 			ocspTicker.Stop()
+			sctTicker.Stop()
 			log.Println("[INFO] Stopped background maintenance routine")
 			return
 		}
@@ -344,6 +355,45 @@ func freshOCSP(resp *ocsp.Response) bool {
 	// start checking OCSP staple about halfway through validity period for good measure
 	refreshTime := resp.ThisUpdate.Add(nextUpdate.Sub(resp.ThisUpdate) / 2)
 	return time.Now().Before(refreshTime)
+}
+
+// UpdateSCTs refreshes the list of truested CT logs, and if they've changed,
+// checks each certificate to see if it needs new SCTs, and if so, fetches
+// them.
+func UpdateSCTs(existingLogs []ctLog) []ctLog {
+	newLogs, err := getTrustedCTLogs()
+	if err != nil {
+		log.Printf("[WARNING] Fetching trusted CT logs: %v", err)
+		return existingLogs
+	}
+	if !logListsEqual(existingLogs, newLogs) {
+		// For each cert, fetch SCTs and build a map of updates
+		certCacheMu.RLock()
+		updates := make(map[string][][]byte)
+		for name, cert := range certCache {
+			// If the cert doesn't have CT enabled, skip it
+			if !cert.Config.CertificateTransparency || !certificateNeedsSCTs(&cert, newLogs) {
+				continue
+			}
+			scts, err := getSCTSForCertificateChain(cert.Certificate.Certificate, newLogs)
+			if err != nil {
+				log.Printf("[WARNING] Fetching SCTs: %v", err)
+			} else {
+				updates[name] = scts
+			}
+		}
+		certCacheMu.RUnlock()
+
+		certCacheMu.Lock()
+		for name, scts := range updates {
+			cert := certCache[name]
+			cert.Certificate.SignedCertificateTimestamps = scts
+			certCache[name] = cert
+		}
+		certCacheMu.Unlock()
+		return newLogs
+	}
+	return existingLogs
 }
 
 var ocspFolder = filepath.Join(caddy.AssetsPath(), "ocsp")

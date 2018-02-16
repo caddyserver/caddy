@@ -106,6 +106,10 @@ func TestSetupParseBasic(t *testing.T) {
 			t.Errorf("Expected curve in position %d to be %0x, got %0x", i, defaultCurves[i], actual)
 		}
 	}
+
+	if !cfg.CertificateTransparency {
+		t.Errorf("Expected CertificateTransparency to be true")
+	}
 }
 
 func TestSetupParseIncompleteParams(t *testing.T) {
@@ -395,6 +399,23 @@ func TestSetupParseWithOneTLSProtocol(t *testing.T) {
 
 	if cfg.ProtocolMinVersion != tls.VersionTLS12 && cfg.ProtocolMaxVersion != tls.VersionTLS12 {
 		t.Errorf("Expected 'tls1.2 (0x0303)' as ProtocolMinVersion/ProtocolMaxVersion, got %v/%v", cfg.ProtocolMinVersion, cfg.ProtocolMaxVersion)
+	}
+}
+
+func TestSetupParseCertificateTransparencyOff(t *testing.T) {
+	params := `tls {
+		ct off
+	}`
+	cfg := new(Config)
+	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
+	c := caddy.NewTestController("", params)
+
+	err := setupTLS(c)
+	if err != nil {
+		t.Errorf("Expected no errors, got: %v", err)
+	}
+	if cfg.CertificateTransparency {
+		t.Errorf("Expected CertificateTransparency to be false")
 	}
 }
 

@@ -117,7 +117,8 @@ func (cfg *Config) CacheManagedCertificate(domain string) (Certificate, error) {
 	if err != nil {
 		return Certificate{}, err
 	}
-	cert, err := makeCertificate(siteData.Cert, siteData.Key)
+
+	cert, err := makeCertificate(siteData.Cert, siteData.Key, cfg.CertificateTransparency)
 	if err != nil {
 		return cert, err
 	}
@@ -134,8 +135,8 @@ func (cfg *Config) CacheManagedCertificate(domain string) (Certificate, error) {
 // certificate will be set to false.
 //
 // This function is safe for concurrent use.
-func cacheUnmanagedCertificatePEMFile(certFile, keyFile string) error {
-	cert, err := makeCertificateFromDisk(certFile, keyFile)
+func cacheUnmanagedCertificatePEMFile(certFile, keyFile string, cfg *Config) error {
+	cert, err := makeCertificateFromDisk(certFile, keyFile, cfg)
 	if err != nil {
 		return err
 	}
@@ -157,8 +158,8 @@ func cacheUnmanagedCertificatePEMFile(certFile, keyFile string) error {
 // of the certificate and key, then caches it in memory.
 //
 // This function is safe for concurrent use.
-func cacheUnmanagedCertificatePEMBytes(certBytes, keyBytes []byte) error {
-	cert, err := makeCertificate(certBytes, keyBytes)
+func cacheUnmanagedCertificatePEMBytes(certBytes, keyBytes []byte, cfg *Config) error {
+	cert, err := makeCertificate(certBytes, keyBytes, cfg.CertificateTransparency)
 	if err != nil {
 		return err
 	}
@@ -170,7 +171,7 @@ func cacheUnmanagedCertificatePEMBytes(certBytes, keyBytes []byte) error {
 // certificate and key files. It fills out all the fields in
 // the certificate except for the Managed and OnDemand flags.
 // (It is up to the caller to set those.)
-func makeCertificateFromDisk(certFile, keyFile string) (Certificate, error) {
+func makeCertificateFromDisk(certFile, keyFile string, cfg *Config) (Certificate, error) {
 	certPEMBlock, err := ioutil.ReadFile(certFile)
 	if err != nil {
 		return Certificate{}, err
@@ -179,14 +180,14 @@ func makeCertificateFromDisk(certFile, keyFile string) (Certificate, error) {
 	if err != nil {
 		return Certificate{}, err
 	}
-	return makeCertificate(certPEMBlock, keyPEMBlock)
+	return makeCertificate(certPEMBlock, keyPEMBlock, cfg.CertificateTransparency)
 }
 
 // makeCertificate turns a certificate PEM bundle and a key PEM block into
 // a Certificate, with OCSP and other relevant metadata tagged with it,
 // except for the OnDemand and Managed flags. It is up to the caller to
 // set those properties.
-func makeCertificate(certPEMBlock, keyPEMBlock []byte) (Certificate, error) {
+func makeCertificate(certPEMBlock, keyPEMBlock []byte, certificateTransparency bool) (Certificate, error) {
 	var cert Certificate
 
 	// Convert to a tls.Certificate
@@ -204,7 +205,19 @@ func makeCertificate(certPEMBlock, keyPEMBlock []byte) (Certificate, error) {
 	if err != nil {
 		log.Printf("[WARNING] Stapling OCSP: %v", err)
 	}
-
+	if certificateTransparency {
+		logs, err := getTrustedCTLogs()
+		if err != nil {
+			log.Printf("[WARNING] Fetching trusted CT logs: %v", err)
+		} else if certificateNeedsSCTs(&cert, logs) {
+			scts, err := getSCTSForCertificateChain(tlsCert.Certificate, logs)
+			if err != nil {
+				log.Printf("[WARNING] Fetching SCTs: %v", err)
+			} else {
+				cert.Certificate.SignedCertificateTimestamps = scts
+			}
+		}
+	}
 	return cert, nil
 }
 
@@ -220,6 +233,8 @@ func fillCertFromLeaf(cert *Certificate, tlsCert tls.Certificate) error {
 	if err != nil {
 		return err
 	}
+
+	cert.Leaf = leaf
 
 	if leaf.Subject.CommonName != "" {
 		cert.Names = []string{strings.ToLower(leaf.Subject.CommonName)}
