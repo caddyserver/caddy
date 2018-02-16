@@ -195,7 +195,7 @@ type ServerType struct {
 	// startup phases before this one. It's a way to keep
 	// each set of server instances separate and to reduce
 	// the amount of global state you need.
-	NewContext func() Context
+	NewContext func(inst *Instance) Context
 }
 
 // Plugin is a type which holds information about a plugin.
@@ -386,6 +386,14 @@ func loadCaddyfileInput(serverType string) (Input, error) {
 	}
 	return caddyfileToUse, nil
 }
+
+// OnProcessExit is a list of functions to run when the process
+// exits -- they are ONLY for cleanup and should not block,
+// return errors, or do anything fancy. They will be run with
+// every signal, even if "shutdown callbacks" are not executed.
+// This variable must only be modified in the main goroutine
+// from init() functions.
+var OnProcessExit []func()
 
 // caddyfileLoader pairs the name of a loader to the loader.
 type caddyfileLoader struct {

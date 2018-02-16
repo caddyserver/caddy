@@ -237,15 +237,17 @@ func makeSelfSignedCert(config *Config) error {
 		return fmt.Errorf("could not create certificate: %v", err)
 	}
 
-	cacheCertificate(Certificate{
+	chain := [][]byte{derBytes}
+
+	config.cacheCertificate(Certificate{
 		Certificate: tls.Certificate{
-			Certificate: [][]byte{derBytes},
+			Certificate: chain,
 			PrivateKey:  privKey,
 			Leaf:        cert,
 		},
 		Names:    cert.DNSNames,
 		NotAfter: cert.NotAfter,
-		Config:   config,
+		Hash:     hashCertificateChain(chain),
 	})
 
 	return nil
