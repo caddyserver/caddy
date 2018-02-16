@@ -93,16 +93,17 @@ type Config struct {
 	// an ACME challenge
 	ListenHost string
 
-	// The alternate port (ONLY port, not host)
-	// to use for the ACME HTTP challenge; this
-	// port will be used if we proxy challenges
-	// coming in on port 80 to this alternate port
+	// The alternate port (ONLY port, not host) to
+	// use for the ACME HTTP challenge; if non-empty,
+	// this port will be used instead of
+	// HTTPChallengePort to spin up a listener for
+	// the HTTP challenge
 	AltHTTPPort string
 
 	// The alternate port (ONLY port, not host)
 	// to use for the ACME TLS-SNI challenge.
-	// The system must forward the standard port
-	// for the TLS-SNI challenge to this port.
+	// The system must forward TLSSNIChallengePort
+	// to this port for challenge to succeed
 	AltTLSSNIPort string
 
 	// The string identifier of the DNS provider

@@ -159,25 +159,29 @@ func hostHasOtherPort(allConfigs []*SiteConfig, thisConfigIdx int, otherPort str
 // be the HTTPS configuration. The returned configuration is set
 // to listen on HTTPPort. The TLS field of cfg must not be nil.
 func redirPlaintextHost(cfg *SiteConfig) *SiteConfig {
-	redirPort := cfg.Addr.Port
-	if redirPort == DefaultHTTPSPort {
-		redirPort = "" // default port is redundant
-	}
-
 	redirMiddleware := func(next Handler) Handler {
 		return HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
-			// Construct the URL to which to redirect. Note that the Host in a request might
-			// contain a port, but we just need the hostname; we'll set the port if needed.
+			// Construct the URL to which to redirect. Note that the Host in a
+			// request might contain a port, but we just need the hostname.
 			toURL := "https://"
 			requestHost, _, err := net.SplitHostPort(r.Host)
 			if err != nil {
-				requestHost = r.Host // Host did not contain a port; great
+				requestHost = r.Host // host did not contain a port; okay
 			}
-			if redirPort == "" {
-				toURL += requestHost
-			} else {
-				toURL += net.JoinHostPort(requestHost, redirPort)
-			}
+
+			// The rest of the URL will consist of the hostname and the URI.
+			// We do not append a port because if the HTTPSPort is changed
+			// from the default value, it is probably because there is port
+			// forwarding going on; and we do not need to specify the default
+			// HTTPS port in the redirect. Serving HTTPS on a port other than
+			// 443 is unusual, and is considered an advanced use case. If port
+			// forwarding IS happening, then redirecting the external client to
+			// this internal port will cause the connection to fail; and it
+			// definitely causes ACME HTTP-01 challenges to fail, because it
+			// only allows redirecting to port 80 or 443 (as of Feb 2018).
+			// If a user wants to redirect HTTP to HTTPS on an external port
+			// other than 443, they can easily configure that themselves.
+			toURL += requestHost
 			toURL += r.URL.RequestURI()
 
 			w.Header().Set("Connection", "close")
