@@ -53,7 +53,7 @@ func TestRedirPlaintextHost(t *testing.T) {
 		},
 		{
 			Host: "foohost",
-			Port: "443", // since this is the default HTTPS port, should not be included in Location value
+			Port: HTTPSPort, // since this is the 'default' HTTPS port, should not be included in Location value
 		},
 		{
 			Host:        "*.example.com",
