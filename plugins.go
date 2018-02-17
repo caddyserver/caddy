@@ -66,7 +66,7 @@ func DescribePlugins() string {
 		str += "  " + name + "\n"
 	}
 
-	if len(eventHooks) > 0 {
+	if len(pl["event_hooks"]) > 0 {
 		str += "\nEvent hook plugins:\n"
 		for _, name := range pl["event_hooks"] {
 			str += "  hook." + name + "\n"
@@ -100,15 +100,10 @@ func ListPlugins() map[string][]string {
 	}
 
 	// List the event hook plugins
-	hooks := ""
 	eventHooks.Range(func(k, _ interface{}) bool {
-		hooks += "  hook." + k.(string) + "\n"
+		p["event_hooks"] = append(p["event_hooks"], k.(string))
 		return true
 	})
-	if hooks != "" {
-		str += "\nEvent hook plugins:\n"
-		str += hooks
-	}
 
 	// alphabetize the rest of the plugins
 	var others []string
