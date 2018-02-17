@@ -40,7 +40,8 @@ type Logger struct {
 
 func (l Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	for _, rule := range l.Rules {
-		if httpserver.Path(r.URL.Path).Matches(rule.PathScope) {
+		if (httpserver.Path(r.URL.Path).Matches(rule.PathScope)) &&
+			(!httpserver.Path(r.URL.Path).Matches(rule.PathScope + "/health")) {
 			// Record the response
 			responseRecorder := httpserver.NewResponseRecorder(w)
 
