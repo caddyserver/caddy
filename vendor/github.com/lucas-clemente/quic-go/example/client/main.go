@@ -7,12 +7,15 @@ import (
 	"net/http"
 	"sync"
 
+	quic "github.com/lucas-clemente/quic-go"
 	"github.com/lucas-clemente/quic-go/h2quic"
+	"github.com/lucas-clemente/quic-go/internal/protocol"
 	"github.com/lucas-clemente/quic-go/internal/utils"
 )
 
 func main() {
 	verbose := flag.Bool("v", false, "verbose")
+	tls := flag.Bool("tls", false, "activate support for IETF QUIC (work in progress)")
 	flag.Parse()
 	urls := flag.Args()
 
@@ -23,8 +26,17 @@ func main() {
 	}
 	utils.SetLogTimeFormat("")
 
+	versions := protocol.SupportedVersions
+	if *tls {
+		versions = append([]protocol.VersionNumber{protocol.VersionTLS}, versions...)
+	}
+
+	roundTripper := &h2quic.RoundTripper{
+		QuicConfig: &quic.Config{Versions: versions},
+	}
+	defer roundTripper.Close()
 	hclient := &http.Client{
-		Transport: &h2quic.RoundTripper{},
+		Transport: roundTripper,
 	}
 
 	var wg sync.WaitGroup

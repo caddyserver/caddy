@@ -3,13 +3,13 @@ package quic
 import (
 	"errors"
 
-	"github.com/lucas-clemente/quic-go/frames"
+	"github.com/lucas-clemente/quic-go/internal/protocol"
 	"github.com/lucas-clemente/quic-go/internal/utils"
-	"github.com/lucas-clemente/quic-go/protocol"
+	"github.com/lucas-clemente/quic-go/internal/wire"
 )
 
 type streamFrameSorter struct {
-	queuedFrames map[protocol.ByteCount]*frames.StreamFrame
+	queuedFrames map[protocol.ByteCount]*wire.StreamFrame
 	readPosition protocol.ByteCount
 	gaps         *utils.ByteIntervalList
 }
@@ -23,13 +23,13 @@ var (
 func newStreamFrameSorter() *streamFrameSorter {
 	s := streamFrameSorter{
 		gaps:         utils.NewByteIntervalList(),
-		queuedFrames: make(map[protocol.ByteCount]*frames.StreamFrame),
+		queuedFrames: make(map[protocol.ByteCount]*wire.StreamFrame),
 	}
 	s.gaps.PushFront(utils.ByteInterval{Start: 0, End: protocol.MaxByteCount})
 	return &s
 }
 
-func (s *streamFrameSorter) Push(frame *frames.StreamFrame) error {
+func (s *streamFrameSorter) Push(frame *wire.StreamFrame) error {
 	if frame.DataLen() == 0 {
 		if frame.FinBit {
 			s.queuedFrames[frame.Offset] = frame
@@ -143,7 +143,7 @@ func (s *streamFrameSorter) Push(frame *frames.StreamFrame) error {
 	return nil
 }
 
-func (s *streamFrameSorter) Pop() *frames.StreamFrame {
+func (s *streamFrameSorter) Pop() *wire.StreamFrame {
 	frame := s.Head()
 	if frame != nil {
 		s.readPosition += frame.DataLen()
@@ -152,7 +152,7 @@ func (s *streamFrameSorter) Pop() *frames.StreamFrame {
 	return frame
 }
 
-func (s *streamFrameSorter) Head() *frames.StreamFrame {
+func (s *streamFrameSorter) Head() *wire.StreamFrame {
 	frame, ok := s.queuedFrames[s.readPosition]
 	if ok {
 		return frame

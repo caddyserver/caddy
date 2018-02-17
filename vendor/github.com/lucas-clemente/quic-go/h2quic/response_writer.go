@@ -8,8 +8,8 @@ import (
 	"sync"
 
 	quic "github.com/lucas-clemente/quic-go"
+	"github.com/lucas-clemente/quic-go/internal/protocol"
 	"github.com/lucas-clemente/quic-go/internal/utils"
-	"github.com/lucas-clemente/quic-go/protocol"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/hpack"
 )
@@ -83,7 +83,7 @@ func (w *responseWriter) Write(p []byte) (int, error) {
 
 func (w *responseWriter) Flush() {}
 
-// TODO: Implement a functional CloseNotify method.
+// This is a NOP. Use http.Request.Context
 func (w *responseWriter) CloseNotify() <-chan bool { return make(<-chan bool) }
 
 // test that we implement http.Flusher
