@@ -26,10 +26,10 @@ import (
 func TestStatus(t *testing.T) {
 	status := Status{
 		Rules: []httpserver.HandlerConfig{
-			NewRule("/foo", http.StatusNotFound),
-			NewRule("/teapot", http.StatusTeapot),
-			NewRule("/foo/bar1", http.StatusInternalServerError),
-			NewRule("/temporary-redirected", http.StatusTemporaryRedirect),
+			NewRule("/foo", http.StatusNotFound, nil),
+			NewRule("/teapot", http.StatusTeapot, nil),
+			NewRule("/foo/bar1", http.StatusInternalServerError, nil),
+			NewRule("/temporary-redirected", http.StatusTemporaryRedirect, nil),
 		},
 		Next: httpserver.HandlerFunc(urlPrinter),
 	}
