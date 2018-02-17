@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"math"
 	"time"
 
 	"github.com/lucas-clemente/quic-go/internal/protocol"
@@ -21,7 +20,9 @@ type TransportParameters struct {
 	StreamFlowControlWindow     protocol.ByteCount
 	ConnectionFlowControlWindow protocol.ByteCount
 
-	MaxStreams uint32
+	MaxBidiStreamID protocol.StreamID // only used for IETF QUIC
+	MaxUniStreamID  protocol.StreamID // only used for IETF QUIC
+	MaxStreams      uint32            // only used for gQUIC
 
 	OmitConnectionID bool
 	IdleTimeout      time.Duration
@@ -117,12 +118,14 @@ func readTransportParamters(paramsList []transportParameter) (*TransportParamete
 			if len(p.Value) != 4 {
 				return nil, fmt.Errorf("wrong length for initial_max_stream_id_bidi: %d (expected 4)", len(p.Value))
 			}
-			// TODO: handle this value
+			// TODO(#1154): validate the stream ID
+			params.MaxBidiStreamID = protocol.StreamID(binary.BigEndian.Uint32(p.Value))
 		case initialMaxStreamIDUniParameterID:
 			if len(p.Value) != 4 {
 				return nil, fmt.Errorf("wrong length for initial_max_stream_id_uni: %d (expected 4)", len(p.Value))
 			}
-			// TODO: handle this value
+			// TODO(#1154): validate the stream ID
+			params.MaxUniStreamID = protocol.StreamID(binary.BigEndian.Uint32(p.Value))
 		case idleTimeoutParameterID:
 			foundIdleTimeout = true
 			if len(p.Value) != 2 {
@@ -150,9 +153,10 @@ func (p *TransportParameters) getTransportParameters() []transportParameter {
 	binary.BigEndian.PutUint32(initialMaxStreamData, uint32(p.StreamFlowControlWindow))
 	initialMaxData := make([]byte, 4)
 	binary.BigEndian.PutUint32(initialMaxData, uint32(p.ConnectionFlowControlWindow))
-	initialMaxStreamIDBiDi := make([]byte, 4)
-	// TODO: use a reasonable value here
-	binary.BigEndian.PutUint32(initialMaxStreamIDBiDi, math.MaxUint32)
+	initialMaxBidiStreamID := make([]byte, 4)
+	binary.BigEndian.PutUint32(initialMaxBidiStreamID, uint32(p.MaxBidiStreamID))
+	initialMaxUniStreamID := make([]byte, 4)
+	binary.BigEndian.PutUint32(initialMaxUniStreamID, uint32(p.MaxUniStreamID))
 	idleTimeout := make([]byte, 2)
 	binary.BigEndian.PutUint16(idleTimeout, uint16(p.IdleTimeout/time.Second))
 	maxPacketSize := make([]byte, 2)
@@ -160,7 +164,8 @@ func (p *TransportParameters) getTransportParameters() []transportParameter {
 	params := []transportParameter{
 		{initialMaxStreamDataParameterID, initialMaxStreamData},
 		{initialMaxDataParameterID, initialMaxData},
-		{initialMaxStreamIDBiDiParameterID, initialMaxStreamIDBiDi},
+		{initialMaxStreamIDBiDiParameterID, initialMaxBidiStreamID},
+		{initialMaxStreamIDUniParameterID, initialMaxUniStreamID},
 		{idleTimeoutParameterID, idleTimeout},
 		{maxPacketSizeParameterID, maxPacketSize},
 	}

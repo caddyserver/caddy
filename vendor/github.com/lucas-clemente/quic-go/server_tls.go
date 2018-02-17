@@ -26,6 +26,11 @@ func (n *nullAEAD) Open(dst, src []byte, packetNumber protocol.PacketNumber, ass
 	return data, protocol.EncryptionUnencrypted, err
 }
 
+type tlsSession struct {
+	connID protocol.ConnectionID
+	sess   packetHandler
+}
+
 type serverTLS struct {
 	conn              net.PacketConn
 	config            *Config
@@ -35,7 +40,7 @@ type serverTLS struct {
 	params            *handshake.TransportParameters
 	newMintConn       func(*handshake.CryptoStreamConn, protocol.VersionNumber) (handshake.MintTLS, <-chan handshake.TransportParameters, error)
 
-	sessionChan chan<- packetHandler
+	sessionChan chan<- tlsSession
 }
 
 func newServerTLS(
@@ -43,7 +48,7 @@ func newServerTLS(
 	config *Config,
 	cookieHandler *handshake.CookieHandler,
 	tlsConf *tls.Config,
-) (*serverTLS, <-chan packetHandler, error) {
+) (*serverTLS, <-chan tlsSession, error) {
 	mconf, err := tlsToMintConfig(tlsConf, protocol.PerspectiveServer)
 	if err != nil {
 		return nil, nil, err
@@ -56,7 +61,7 @@ func newServerTLS(
 	mconf.CookieProtector = cs
 	mconf.CookieHandler = cookieHandler
 
-	sessionChan := make(chan packetHandler)
+	sessionChan := make(chan tlsSession)
 	s := &serverTLS{
 		conn:              conn,
 		config:            config,
@@ -66,8 +71,10 @@ func newServerTLS(
 		params: &handshake.TransportParameters{
 			StreamFlowControlWindow:     protocol.ReceiveStreamFlowControlWindow,
 			ConnectionFlowControlWindow: protocol.ReceiveConnectionFlowControlWindow,
-			MaxStreams:                  protocol.MaxIncomingStreams,
 			IdleTimeout:                 config.IdleTimeout,
+			// TODO(#523): make these values configurable
+			MaxBidiStreamID: protocol.MaxBidiStreamID(protocol.MaxIncomingStreams, protocol.PerspectiveServer),
+			MaxUniStreamID:  protocol.MaxUniStreamID(protocol.MaxIncomingStreams, protocol.PerspectiveServer),
 		},
 	}
 	s.newMintConn = s.newMintConnImpl
@@ -84,7 +91,10 @@ func (s *serverTLS) HandleInitial(remoteAddr net.Addr, hdr *wire.Header, data []
 	if sess == nil { // a stateless reset was done
 		return
 	}
-	s.sessionChan <- sess
+	s.sessionChan <- tlsSession{
+		connID: hdr.ConnectionID,
+		sess:   sess,
+	}
 }
 
 // will be set to s.newMintConn by the constructor

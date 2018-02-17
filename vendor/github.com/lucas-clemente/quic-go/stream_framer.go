@@ -81,22 +81,24 @@ func (f *streamFramer) maybePopFramesForRetransmission(maxTotalLen protocol.Byte
 		frame := f.retransmissionQueue[0]
 		frame.DataLenPresent = true
 
-		frameHeaderLen := frame.MinLength(f.version) // can never error
 		maxLen := maxTotalLen - currentLen
-		if frameHeaderLen+frame.DataLen() > maxLen && maxLen < protocol.MinStreamFrameSize {
+		if frame.Length(f.version) > maxLen && maxLen < protocol.MinStreamFrameSize {
 			break
 		}
 
-		splitFrame := maybeSplitOffFrame(frame, maxLen-frameHeaderLen)
-		if splitFrame != nil { // StreamFrame was split
+		splitFrame, err := frame.MaybeSplitOffFrame(maxLen, f.version)
+		if err != nil { // maxLen is too small. Can't split frame
+			break
+		}
+		if splitFrame != nil { // frame was split
 			res = append(res, splitFrame)
-			currentLen += frameHeaderLen + splitFrame.DataLen()
+			currentLen += splitFrame.Length(f.version)
 			break
 		}
 
 		f.retransmissionQueue = f.retransmissionQueue[1:]
 		res = append(res, frame)
-		currentLen += frameHeaderLen + frame.DataLen()
+		currentLen += frame.Length(f.version)
 	}
 	return
 }
@@ -131,28 +133,8 @@ func (f *streamFramer) maybePopNormalFrames(maxTotalLen protocol.ByteCount) []*w
 			continue
 		}
 		frames = append(frames, frame)
-		currentLen += frame.MinLength(f.version) + frame.DataLen()
+		currentLen += frame.Length(f.version)
 	}
 	f.streamQueueMutex.Unlock()
 	return frames
-}
-
-// maybeSplitOffFrame removes the first n bytes and returns them as a separate frame. If n >= len(frame), nil is returned and nothing is modified.
-func maybeSplitOffFrame(frame *wire.StreamFrame, n protocol.ByteCount) *wire.StreamFrame {
-	if n >= frame.DataLen() {
-		return nil
-	}
-
-	defer func() {
-		frame.Data = frame.Data[n:]
-		frame.Offset += n
-	}()
-
-	return &wire.StreamFrame{
-		FinBit:         false,
-		StreamID:       frame.StreamID,
-		Offset:         frame.Offset,
-		Data:           frame.Data[:n],
-		DataLenPresent: frame.DataLenPresent,
-	}
 }

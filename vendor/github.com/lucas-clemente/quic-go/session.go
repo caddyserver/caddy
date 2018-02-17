@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"net"
 	"sync"
 	"time"
@@ -29,7 +30,6 @@ type streamGetter interface {
 }
 
 type streamManager interface {
-	GetOrOpenStream(protocol.StreamID) (streamI, error)
 	GetOrOpenSendStream(protocol.StreamID) (sendStreamI, error)
 	GetOrOpenReceiveStream(protocol.StreamID) (receiveStreamI, error)
 	OpenStream() (Stream, error)
@@ -37,6 +37,7 @@ type streamManager interface {
 	AcceptStream() (Stream, error)
 	DeleteStream(protocol.StreamID) error
 	UpdateLimits(*handshake.TransportParameters)
+	HandleMaxStreamIDFrame(*wire.MaxStreamIDFrame) error
 	CloseWithError(error)
 }
 
@@ -325,7 +326,7 @@ func (s *session) postSetup(initialPacketNumber protocol.PacketNumber) error {
 	s.receivedPacketHandler = ackhandler.NewReceivedPacketHandler(s.version)
 
 	if s.version.UsesTLS() {
-		s.streamsMap = newStreamsMap(s.newStream, s.perspective)
+		s.streamsMap = newStreamsMap(s, s.newFlowController, s.perspective, s.version)
 	} else {
 		s.streamsMap = newStreamsMapLegacy(s.newStream, s.perspective)
 	}
@@ -563,8 +564,11 @@ func (s *session) handleFrames(fs []wire.Frame, encLevel protocol.EncryptionLeve
 			s.handleMaxDataFrame(frame)
 		case *wire.MaxStreamDataFrame:
 			err = s.handleMaxStreamDataFrame(frame)
+		case *wire.MaxStreamIDFrame:
+			err = s.handleMaxStreamIDFrame(frame)
 		case *wire.BlockedFrame:
 		case *wire.StreamBlockedFrame:
+		case *wire.StreamIDBlockedFrame:
 		case *wire.StopSendingFrame:
 			err = s.handleStopSendingFrame(frame)
 		case *wire.PingFrame:
@@ -632,6 +636,10 @@ func (s *session) handleMaxStreamDataFrame(frame *wire.MaxStreamDataFrame) error
 	}
 	str.handleMaxStreamDataFrame(frame)
 	return nil
+}
+
+func (s *session) handleMaxStreamIDFrame(frame *wire.MaxStreamIDFrame) error {
+	return s.streamsMap.HandleMaxStreamIDFrame(frame)
 }
 
 func (s *session) handleRstStreamFrame(frame *wire.RstStreamFrame) error {
@@ -892,14 +900,18 @@ func (s *session) logPacket(packet *packedPacket) {
 }
 
 // GetOrOpenStream either returns an existing stream, a newly opened stream, or nil if a stream with the provided ID is already closed.
-// Newly opened streams should only originate from the client. To open a stream from the server, OpenStream should be used.
+// It is *only* needed for gQUIC's H2.
+// It will be removed as soon as gQUIC moves towards the IETF H2/QUIC stream mapping.
 func (s *session) GetOrOpenStream(id protocol.StreamID) (Stream, error) {
-	str, err := s.streamsMap.GetOrOpenStream(id)
+	str, err := s.streamsMap.GetOrOpenSendStream(id)
 	if str != nil {
-		return str, err
+		if bstr, ok := str.(Stream); ok {
+			return bstr, err
+		}
+		return nil, fmt.Errorf("Stream %d is not a bidirectional stream", id)
 	}
 	// make sure to return an actual nil value here, not an Stream with value nil
-	return str, err
+	return nil, err
 }
 
 // AcceptStream returns the next stream openend by the peer
@@ -917,11 +929,16 @@ func (s *session) OpenStreamSync() (Stream, error) {
 }
 
 func (s *session) newStream(id protocol.StreamID) streamI {
+	flowController := s.newFlowController(id)
+	return newStream(id, s, flowController, s.version)
+}
+
+func (s *session) newFlowController(id protocol.StreamID) flowcontrol.StreamFlowController {
 	var initialSendWindow protocol.ByteCount
 	if s.peerParams != nil {
 		initialSendWindow = s.peerParams.StreamFlowControlWindow
 	}
-	flowController := flowcontrol.NewStreamFlowController(
+	return flowcontrol.NewStreamFlowController(
 		id,
 		s.version.StreamContributesToConnectionFlowControl(id),
 		s.connFlowController,
@@ -930,7 +947,6 @@ func (s *session) newStream(id protocol.StreamID) streamI {
 		initialSendWindow,
 		s.rttStats,
 	)
-	return newStream(id, s, flowController, s.version)
 }
 
 func (s *session) newCryptoStream() cryptoStreamI {

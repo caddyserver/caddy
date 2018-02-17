@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"math"
 
 	"github.com/lucas-clemente/quic-go/qerr"
 
@@ -105,8 +104,6 @@ func (h *extensionHandlerServer) Receive(hType mint.HandshakeType, el *mint.Exte
 	if err != nil {
 		return err
 	}
-	// TODO(#878): remove this when implementing the MAX_STREAM_ID frame
-	params.MaxStreams = math.MaxUint32
 	h.paramsChan <- *params
 	return nil
 }

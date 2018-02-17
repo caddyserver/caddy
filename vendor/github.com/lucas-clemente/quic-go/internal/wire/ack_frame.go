@@ -138,10 +138,10 @@ func (f *AckFrame) Write(b *bytes.Buffer, version protocol.VersionNumber) error 
 	return nil
 }
 
-// MinLength of a written frame
-func (f *AckFrame) MinLength(version protocol.VersionNumber) protocol.ByteCount {
+// Length of a written frame
+func (f *AckFrame) Length(version protocol.VersionNumber) protocol.ByteCount {
 	if !version.UsesIETFFrameFormat() {
-		return f.minLengthLegacy(version)
+		return f.lengthLegacy(version)
 	}
 
 	length := 1 + utils.VarIntLen(uint64(f.LargestAcked)) + utils.VarIntLen(uint64(encodeAckDelay(f.DelayTime)))

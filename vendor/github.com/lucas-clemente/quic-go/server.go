@@ -133,9 +133,12 @@ func (s *server) setupTLS() error {
 			select {
 			case <-s.errorChan:
 				return
-			case sess := <-sessionChan:
-				// TODO: think about what to do with connection ID collisions
-				connID := sess.(*session).connectionID
+			case tlsSession := <-sessionChan:
+				connID := tlsSession.connID
+				sess := tlsSession.sess
+				if _, ok := s.sessions[connID]; ok { // drop this session if it already exists
+					return
+				}
 				s.sessionsMutex.Lock()
 				s.sessions[connID] = sess
 				s.sessionsMutex.Unlock()

@@ -230,23 +230,23 @@ func (p *packetPacker) composeNextPacket(
 	// STOP_WAITING and ACK will always fit
 	if p.ackFrame != nil { // ACKs need to go first, so that the sentPacketHandler will recognize them
 		payloadFrames = append(payloadFrames, p.ackFrame)
-		l := p.ackFrame.MinLength(p.version)
+		l := p.ackFrame.Length(p.version)
 		payloadLength += l
 	}
 	if p.stopWaiting != nil { // a STOP_WAITING will only be queued when using gQUIC
 		payloadFrames = append(payloadFrames, p.stopWaiting)
-		payloadLength += p.stopWaiting.MinLength(p.version)
+		payloadLength += p.stopWaiting.Length(p.version)
 	}
 
 	p.controlFrameMutex.Lock()
 	for len(p.controlFrames) > 0 {
 		frame := p.controlFrames[len(p.controlFrames)-1]
-		minLength := frame.MinLength(p.version)
-		if payloadLength+minLength > maxFrameSize {
+		length := frame.Length(p.version)
+		if payloadLength+length > maxFrameSize {
 			break
 		}
 		payloadFrames = append(payloadFrames, frame)
-		payloadLength += minLength
+		payloadLength += length
 		p.controlFrames = p.controlFrames[:len(p.controlFrames)-1]
 	}
 	p.controlFrameMutex.Unlock()
@@ -366,8 +366,9 @@ func (p *packetPacker) writeAndSealPacket(
 			buffer.Write(bytes.Repeat([]byte{0}, paddingLen))
 		}
 	}
-	if protocol.ByteCount(buffer.Len()+sealer.Overhead()) > protocol.MaxPacketSize {
-		return nil, errors.New("PacketPacker BUG: packet too large")
+
+	if size := protocol.ByteCount(buffer.Len() + sealer.Overhead()); size > protocol.MaxPacketSize {
+		return nil, fmt.Errorf("PacketPacker BUG: packet too large (%d bytes, allowed %d bytes)", size, protocol.MaxPacketSize)
 	}
 
 	raw = raw[0:buffer.Len()]

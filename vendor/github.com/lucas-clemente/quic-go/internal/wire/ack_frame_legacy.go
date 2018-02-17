@@ -308,7 +308,7 @@ func (f *AckFrame) writeLegacy(b *bytes.Buffer, _ protocol.VersionNumber) error 
 	return nil
 }
 
-func (f *AckFrame) minLengthLegacy(_ protocol.VersionNumber) protocol.ByteCount {
+func (f *AckFrame) lengthLegacy(_ protocol.VersionNumber) protocol.ByteCount {
 	length := protocol.ByteCount(1 + 2 + 1) // 1 TypeByte, 2 ACK delay time, 1 Num Timestamp
 	length += protocol.ByteCount(protocol.GetPacketNumberLength(f.LargestAcked))
 

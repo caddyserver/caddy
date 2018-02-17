@@ -31,7 +31,7 @@ func (f *MaxStreamIDFrame) Write(b *bytes.Buffer, _ protocol.VersionNumber) erro
 	return nil
 }
 
-// MinLength of a written frame
-func (f *MaxStreamIDFrame) MinLength(protocol.VersionNumber) protocol.ByteCount {
+// Length of a written frame
+func (f *MaxStreamIDFrame) Length(protocol.VersionNumber) protocol.ByteCount {
 	return 1 + utils.VarIntLen(uint64(f.StreamID))
 }

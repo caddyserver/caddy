@@ -67,8 +67,8 @@ func ParseConnectionCloseFrame(r *bytes.Reader, version protocol.VersionNumber) 
 	}, nil
 }
 
-// MinLength of a written frame
-func (f *ConnectionCloseFrame) MinLength(version protocol.VersionNumber) protocol.ByteCount {
+// Length of a written frame
+func (f *ConnectionCloseFrame) Length(version protocol.VersionNumber) protocol.ByteCount {
 	if version.UsesIETFFrameFormat() {
 		return 1 + 2 + utils.VarIntLen(uint64(len(f.ReasonPhrase))) + protocol.ByteCount(len(f.ReasonPhrase))
 	}

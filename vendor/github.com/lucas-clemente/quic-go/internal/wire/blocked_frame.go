@@ -36,8 +36,8 @@ func (f *BlockedFrame) Write(b *bytes.Buffer, version protocol.VersionNumber) er
 	return nil
 }
 
-// MinLength of a written frame
-func (f *BlockedFrame) MinLength(version protocol.VersionNumber) protocol.ByteCount {
+// Length of a written frame
+func (f *BlockedFrame) Length(version protocol.VersionNumber) protocol.ByteCount {
 	if !version.UsesIETFFrameFormat() {
 		return 1 + 4
 	}

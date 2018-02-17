@@ -34,8 +34,8 @@ func ParseStopSendingFrame(r *bytes.Reader, _ protocol.VersionNumber) (*StopSend
 	}, nil
 }
 
-// MinLength of a written frame
-func (f *StopSendingFrame) MinLength(_ protocol.VersionNumber) protocol.ByteCount {
+// Length of a written frame
+func (f *StopSendingFrame) Length(_ protocol.VersionNumber) protocol.ByteCount {
 	return 1 + utils.VarIntLen(uint64(f.StreamID)) + 2
 }
 
