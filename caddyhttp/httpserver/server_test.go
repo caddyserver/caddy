@@ -16,6 +16,7 @@ package httpserver
 
 import (
 	"net/http"
+	"net/url"
 	"testing"
 	"time"
 )
@@ -122,6 +123,94 @@ func TestMakeHTTPServerWithTimeouts(t *testing.T) {
 		}
 		if got, want := actual.IdleTimeout, tc.expected.IdleTimeout; got != want {
 			t.Errorf("Test %d: Expected IdleTimeout=%v, but was %v", i, want, got)
+		}
+	}
+}
+
+func TestTrimPathPrefix(t *testing.T) {
+	for i, pt := range []struct {
+		path       string
+		prefix     string
+		expected   string
+		shouldFail bool
+	}{
+		{
+			path:       "/my/path",
+			prefix:     "/my",
+			expected:   "/path",
+			shouldFail: false,
+		},
+		{
+			path:       "/my/%2f/path",
+			prefix:     "/my",
+			expected:   "/%2f/path",
+			shouldFail: false,
+		},
+		{
+			path:       "/my/path",
+			prefix:     "/my/",
+			expected:   "/path",
+			shouldFail: false,
+		},
+		{
+			path:       "/my///path",
+			prefix:     "/my",
+			expected:   "/path",
+			shouldFail: true,
+		},
+		{
+			path:       "/my///path",
+			prefix:     "/my",
+			expected:   "///path",
+			shouldFail: false,
+		},
+		{
+			path:       "/my/path///slash",
+			prefix:     "/my",
+			expected:   "/path///slash",
+			shouldFail: false,
+		},
+		{
+			path:       "/my/%2f/path/%2f",
+			prefix:     "/my",
+			expected:   "/%2f/path/%2f",
+			shouldFail: false,
+		}, {
+			path:       "/my/%20/path",
+			prefix:     "/my",
+			expected:   "/%20/path",
+			shouldFail: false,
+		}, {
+			path:       "/path",
+			prefix:     "",
+			expected:   "/path",
+			shouldFail: false,
+		}, {
+			path:       "/path/my/",
+			prefix:     "/my",
+			expected:   "/path/my/",
+			shouldFail: false,
+		}, {
+			path:       "",
+			prefix:     "/my",
+			expected:   "/",
+			shouldFail: false,
+		}, {
+			path:       "/apath",
+			prefix:     "",
+			expected:   "/apath",
+			shouldFail: false,
+		},
+	} {
+
+		u, _ := url.Parse(pt.path)
+		if got, want := trimPathPrefix(u, pt.prefix), pt.expected; got.EscapedPath() != want {
+			if !pt.shouldFail {
+
+				t.Errorf("Test %d: Expected='%s', but was '%s' ", i, want, got.EscapedPath())
+			}
+		} else if pt.shouldFail {
+			t.Errorf("SHOULDFAIL Test %d: Expected='%s', and was '%s' but should fail", i, want, got.EscapedPath())
 		}
 	}
 }

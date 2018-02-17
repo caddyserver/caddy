@@ -93,16 +93,17 @@ type Config struct {
 	// an ACME challenge
 	ListenHost string
 
-	// The alternate port (ONLY port, not host)
-	// to use for the ACME HTTP challenge; this
-	// port will be used if we proxy challenges
-	// coming in on port 80 to this alternate port
+	// The alternate port (ONLY port, not host) to
+	// use for the ACME HTTP challenge; if non-empty,
+	// this port will be used instead of
+	// HTTPChallengePort to spin up a listener for
+	// the HTTP challenge
 	AltHTTPPort string
 
 	// The alternate port (ONLY port, not host)
 	// to use for the ACME TLS-SNI challenge.
-	// The system must forward the standard port
-	// for the TLS-SNI challenge to this port.
+	// The system must forward TLSSNIChallengePort
+	// to this port for challenge to succeed
 	AltTLSSNIPort string
 
 	// The string identifier of the DNS provider
@@ -134,7 +135,12 @@ type Config struct {
 	// Protocol Negotiation (ALPN).
 	ALPN []string
 
-	tlsConfig *tls.Config // the final tls.Config created with buildStandardTLSConfig()
+	// The map of hostname to certificate hash. This is used to complete
+	// handshakes and serve the right certificate given the SNI.
+	Certificates map[string]string
+
+	certCache *certificateCache // pointer to the Instance's certificate store
+	tlsConfig *tls.Config       // the final tls.Config created with buildStandardTLSConfig()
 }
 
 // OnDemandState contains some state relevant for providing
@@ -153,6 +159,25 @@ type OnDemandState struct {
 	// be issued. If a request to the URL fails or returns a non 2xx
 	// status on-demand issuances must fail.
 	AskURL *url.URL
+}
+
+// NewConfig returns a new Config with a pointer to the instance's
+// certificate cache. You will usually need to set Other fields on
+// the returned Config for successful practical use.
+func NewConfig(inst *caddy.Instance) *Config {
+	inst.StorageMu.RLock()
+	certCache, ok := inst.Storage[CertCacheInstStorageKey].(*certificateCache)
+	inst.StorageMu.RUnlock()
+	if !ok || certCache == nil {
+		certCache = &certificateCache{cache: make(map[string]Certificate)}
+		inst.StorageMu.Lock()
+		inst.Storage[CertCacheInstStorageKey] = certCache
+		inst.StorageMu.Unlock()
+	}
+	cfg := new(Config)
+	cfg.Certificates = make(map[string]string)
+	cfg.certCache = certCache
+	return cfg
 }
 
 // ObtainCert obtains a certificate for name using c, as long
@@ -330,7 +355,9 @@ func (c *Config) buildStandardTLSConfig() error {
 
 // MakeTLSConfig makes a tls.Config from configs. The returned
 // tls.Config is programmed to load the matching caddytls.Config
-// based on the hostname in SNI, but that's all.
+// based on the hostname in SNI, but that's all. This is used
+// to create a single TLS configuration for a listener (a group
+// of sites).
 func MakeTLSConfig(configs []*Config) (*tls.Config, error) {
 	if len(configs) == 0 {
 		return nil, nil
@@ -358,15 +385,28 @@ func MakeTLSConfig(configs []*Config) (*tls.Config, error) {
 				configs[i-1].Hostname, lastConfProto, cfg.Hostname, thisConfProto)
 		}
 
-		// convert each caddytls.Config into a tls.Config
+		// convert this caddytls.Config into a tls.Config
 		if err := cfg.buildStandardTLSConfig(); err != nil {
 			return nil, err
 		}
 
-		// Key this config by its hostname (overwriting
-		// configs with the same hostname pattern); during
-		// TLS handshakes, configs are loaded based on
-		// the hostname pattern, according to client's SNI.
+		// if an existing config with this hostname was already
+		// configured, then they must be identical (or at least
+		// compatible), otherwise that is a configuration error
+		if otherConfig, ok := configMap[cfg.Hostname]; ok {
+			if err := assertConfigsCompatible(cfg, otherConfig); err != nil {
+				return nil, fmt.Errorf("incompabile TLS configurations for the same SNI "+
+					"name (%s) on the same listener: %v",
+					cfg.Hostname, err)
+			}
+		}
+
+		// key this config by its hostname (overwrites
+		// configs with the same hostname pattern; should
+		// be OK since we already asserted they are roughly
+		// the same); during TLS handshakes, configs are
+		// loaded based on the hostname pattern, according
+		// to client's SNI
 		configMap[cfg.Hostname] = cfg
 	}
 
@@ -381,6 +421,63 @@ func MakeTLSConfig(configs []*Config) (*tls.Config, error) {
 	return &tls.Config{
 		GetConfigForClient: configMap.GetConfigForClient,
 	}, nil
+}
+
+// assertConfigsCompatible returns an error if the two Configs
+// do not have the same (or roughly compatible) configurations.
+// If one of the tlsConfig pointers on either Config is nil,
+// an error will be returned. If both are nil, no error.
+func assertConfigsCompatible(cfg1, cfg2 *Config) error {
+	c1, c2 := cfg1.tlsConfig, cfg2.tlsConfig
+
+	if (c1 == nil && c2 != nil) || (c1 != nil && c2 == nil) {
+		return fmt.Errorf("one config is not made")
+	}
+	if c1 == nil && c2 == nil {
+		return nil
+	}
+
+	if len(c1.CipherSuites) != len(c2.CipherSuites) {
+		return fmt.Errorf("different number of allowed cipher suites")
+	}
+	for i, ciph := range c1.CipherSuites {
+		if c2.CipherSuites[i] != ciph {
+			return fmt.Errorf("different cipher suites or different order")
+		}
+	}
+
+	if len(c1.CurvePreferences) != len(c2.CurvePreferences) {
+		return fmt.Errorf("different number of allowed cipher suites")
+	}
+	for i, curve := range c1.CurvePreferences {
+		if c2.CurvePreferences[i] != curve {
+			return fmt.Errorf("different curve preferences or different order")
+		}
+	}
+
+	if len(c1.NextProtos) != len(c2.NextProtos) {
+		return fmt.Errorf("different number of ALPN (NextProtos) values")
+	}
+	for i, proto := range c1.NextProtos {
+		if c2.NextProtos[i] != proto {
+			return fmt.Errorf("different ALPN (NextProtos) values or different order")
+		}
+	}
+
+	if c1.PreferServerCipherSuites != c2.PreferServerCipherSuites {
+		return fmt.Errorf("one prefers server cipher suites, the other does not")
+	}
+	if c1.MinVersion != c2.MinVersion {
+		return fmt.Errorf("minimum TLS version mismatch")
+	}
+	if c1.MaxVersion != c2.MaxVersion {
+		return fmt.Errorf("maximum TLS version mismatch")
+	}
+	if c1.ClientAuth != c2.ClientAuth {
+		return fmt.Errorf("client authentication policy mismatch")
+	}
+
+	return nil
 }
 
 // ConfigGetter gets a Config keyed by key.
@@ -522,7 +619,7 @@ var supportedCurvesMap = map[string]tls.CurveID{
 	"P521":   tls.CurveP521,
 }
 
-// List of all the curves we want to use by default
+// List of all the curves we want to use by default.
 //
 // This list should only include curves which are fast by design (e.g. X25519)
 // and those for which an optimized assembly implementation exists (e.g. P256).
@@ -548,4 +645,8 @@ const (
 	// be capable of proxying or forwarding the request to this
 	// alternate port.
 	DefaultHTTPAlternatePort = "5033"
+
+	// CertCacheInstStorageKey is the name of the key for
+	// accessing the certificate storage on the *caddy.Instance.
+	CertCacheInstStorageKey = "tls_cert_cache"
 )

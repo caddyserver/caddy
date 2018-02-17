@@ -39,7 +39,7 @@ func TestHTTPChallengeHandlerNoOp(t *testing.T) {
 			t.Fatalf("Could not craft request, got error: %v", err)
 		}
 		rw := httptest.NewRecorder()
-		if HTTPChallengeHandler(rw, req, "", DefaultHTTPAlternatePort) {
+		if HTTPChallengeHandler(rw, req, "") {
 			t.Errorf("Got true with this URL, but shouldn't have: %s", url)
 		}
 	}
@@ -76,7 +76,7 @@ func TestHTTPChallengeHandlerSuccess(t *testing.T) {
 	}
 	rw := httptest.NewRecorder()
 
-	HTTPChallengeHandler(rw, req, "", DefaultHTTPAlternatePort)
+	HTTPChallengeHandler(rw, req, "")
 
 	if !proxySuccess {
 		t.Fatal("Expected request to be proxied, but it wasn't")

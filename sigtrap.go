@@ -44,16 +44,17 @@ func trapSignalsCrossPlatform() {
 
 			if i > 0 {
 				log.Println("[INFO] SIGINT: Force quit")
-				if PidFile != "" {
-					os.Remove(PidFile)
+				for _, f := range OnProcessExit {
+					f() // important cleanup actions only
 				}
 				os.Exit(2)
 			}
 
 			log.Println("[INFO] SIGINT: Shutting down")
 
-			if PidFile != "" {
-				os.Remove(PidFile)
+			// important cleanup actions before shutdown callbacks
+			for _, f := range OnProcessExit {
+				f()
 			}
 
 			go func() {

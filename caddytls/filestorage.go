@@ -38,9 +38,9 @@ var storageBasePath = filepath.Join(caddy.AssetsPath(), "acme")
 // Storage instance backed by the local disk. The resulting Storage
 // instance is guaranteed to be non-nil if there is no error.
 func NewFileStorage(caURL *url.URL) (Storage, error) {
-	return &FileStorage{
-		Path: filepath.Join(storageBasePath, caURL.Host),
-	}, nil
+	storage := &FileStorage{Path: filepath.Join(storageBasePath, caURL.Host)}
+	storage.Locker = &fileStorageLock{caURL: caURL.Host, storage: storage}
+	return storage, nil
 }
 
 // FileStorage facilitates forming file paths derived from a root
@@ -48,6 +48,7 @@ func NewFileStorage(caURL *url.URL) (Storage, error) {
 // cross-platform way or persisting ACME assets on the file system.
 type FileStorage struct {
 	Path string
+	Locker
 }
 
 // sites gets the directory that stores site certificate and keys.

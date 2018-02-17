@@ -1,5 +1,5 @@
 <p align="center">
-	<a href="https://caddyserver.com"><img src="https://cloud.githubusercontent.com/assets/1128849/25305033/12916fce-2731-11e7-86ec-580d4d31cb16.png" alt="Caddy" width="400"></a>
+	<a href="https://caddyserver.com"><img src="https://user-images.githubusercontent.com/1128849/36137292-bebc223a-1051-11e8-9a81-4ea9054c96ac.png" alt="Caddy" width="400"></a>
 </p>
 <h3 align="center">Every Site on HTTPS <!-- Serve Confidently --></h3>
 <p align="center">Caddy is a general-purpose HTTP/2 web server that serves HTTPS by default.</p>
@@ -59,7 +59,7 @@ customize your build in the browser
 pre-built, vanilla binaries
 
 ## Build
-To build from source you need **[Git](https://git-scm.com/downloads)** and **[Go](https://golang.org/doc/install)** (1.8 or newer). Follow these instruction for fast building:
+To build from source you need **[Git](https://git-scm.com/downloads)** and **[Go](https://golang.org/doc/install)** (1.9 or newer). Follow these instruction for fast building:
 
 - Get source `go get github.com/mholt/caddy/caddy` and then run `go get github.com/caddyserver/builds`
 - Now `cd` to `$GOPATH/src/github.com/mholt/caddy/caddy` and run `go run build.go`

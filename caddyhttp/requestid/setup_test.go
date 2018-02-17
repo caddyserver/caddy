@@ -45,7 +45,15 @@ func TestSetup(t *testing.T) {
 }
 
 func TestSetupWithArg(t *testing.T) {
-	c := caddy.NewTestController("http", `requestid abc`)
+	c := caddy.NewTestController("http", `requestid X-Request-ID`)
+	err := setup(c)
+	if err != nil {
+		t.Errorf("Expected no error, got: %v", err)
+	}
+}
+
+func TestSetupWithTooManyArgs(t *testing.T) {
+	c := caddy.NewTestController("http", `requestid foo bar`)
 	err := setup(c)
 	if err == nil {
 		t.Errorf("Expected an error, got: %v", err)
