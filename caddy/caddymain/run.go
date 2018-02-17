@@ -170,10 +170,18 @@ func confLoader(serverType string) (caddy.Input, error) {
 		return caddy.CaddyfileFromPipe(os.Stdin, serverType)
 	}
 
-	contents, err := ioutil.ReadFile(conf)
-	if err != nil {
-		return nil, err
+	var contents []byte
+	if strings.Contains(conf, "*") {
+		// Let caddyfile.doImport logic handle the globbed path
+		contents = []byte("import " + conf)
+	} else {
+		var err error
+		contents, err = ioutil.ReadFile(conf)
+		if err != nil {
+			return nil, err
+		}
 	}
+
 	return caddy.CaddyfileInput{
 		Contents:       contents,
 		Filepath:       conf,
@@ -221,6 +229,8 @@ func setVersion() {
 // setCPU parses string cpu and sets GOMAXPROCS
 // according to its value. It accepts either
 // a number (e.g. 3) or a percent (e.g. 50%).
+// If the percent resolves to less than a single
+// GOMAXPROCS, it rounds it up to GOMAXPROCS=1.
 func setCPU(cpu string) error {
 	var numCPU int
 
@@ -236,6 +246,9 @@ func setCPU(cpu string) error {
 		}
 		percent = float32(pctInt) / 100
 		numCPU = int(float32(availCPU) * percent)
+		if numCPU < 1 {
+			numCPU = 1
+		}
 	} else {
 		// Number
 		num, err := strconv.Atoi(cpu)

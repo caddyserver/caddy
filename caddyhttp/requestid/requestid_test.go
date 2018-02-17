@@ -15,34 +15,53 @@
 package requestid
 
 import (
-	"context"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
 
-func TestRequestID(t *testing.T) {
-	request, err := http.NewRequest("GET", "http://localhost/", nil)
+func TestRequestIDHandler(t *testing.T) {
+	handler := Handler{
+		Next: httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
+			value, _ := r.Context().Value(httpserver.RequestIDCtxKey).(string)
+			if value == "" {
+				t.Error("Request ID should not be empty")
+			}
+			return 0, nil
+		}),
+	}
+
+	req, err := http.NewRequest("GET", "http://localhost/", nil)
 	if err != nil {
 		t.Fatal("Could not create HTTP request:", err)
 	}
+	rec := httptest.NewRecorder()
 
-	reqid := uuid.New().String()
+	handler.ServeHTTP(rec, req)
+}
 
-	c := context.WithValue(request.Context(), httpserver.RequestIDCtxKey, reqid)
-
-	request = request.WithContext(c)
-
-	// See caddyhttp/replacer.go
-	value, _ := request.Context().Value(httpserver.RequestIDCtxKey).(string)
-
-	if value == "" {
-		t.Fatal("Request ID should not be empty")
+func TestRequestIDFromHeader(t *testing.T) {
+	headerName := "X-Request-ID"
+	headerValue := "71a75329-d9f9-4d25-957e-e689a7b68d78"
+	handler := Handler{
+		Next: httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
+			value, _ := r.Context().Value(httpserver.RequestIDCtxKey).(string)
+			if value != headerValue {
+				t.Errorf("Request ID should be '%s' but got '%s'", headerValue, value)
+			}
+			return 0, nil
+		}),
+		HeaderName: headerName,
 	}
 
-	if value != reqid {
-		t.Fatal("Request ID does not match")
+	req, err := http.NewRequest("GET", "http://localhost/", nil)
+	if err != nil {
+		t.Fatal("Could not create HTTP request:", err)
 	}
+	req.Header.Set(headerName, headerValue)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
 }

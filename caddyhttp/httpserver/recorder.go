@@ -115,6 +115,7 @@ type ResponseBuffer struct {
 	shouldBuffer func(status int, header http.Header) bool
 	stream       bool
 	rw           http.ResponseWriter
+	wroteHeader  bool
 }
 
 // NewResponseBuffer returns a new ResponseBuffer that will
@@ -152,6 +153,11 @@ func (rb *ResponseBuffer) Header() http.Header {
 // upcoming body should be buffered, and then writes
 // the header to the response.
 func (rb *ResponseBuffer) WriteHeader(status int) {
+	if rb.wroteHeader {
+		return
+	}
+	rb.wroteHeader = true
+
 	rb.status = status
 	rb.stream = !rb.shouldBuffer(status, rb.header)
 	if rb.stream {
@@ -163,6 +169,10 @@ func (rb *ResponseBuffer) WriteHeader(status int) {
 // Write writes buf to rb.Buffer if buffering, otherwise
 // to the ResponseWriter directly if streaming.
 func (rb *ResponseBuffer) Write(buf []byte) (int, error) {
+	if !rb.wroteHeader {
+		rb.WriteHeader(http.StatusOK)
+	}
+
 	if rb.stream {
 		return rb.ResponseWriterWrapper.Write(buf)
 	}
@@ -190,6 +200,10 @@ func (rb *ResponseBuffer) CopyHeader() {
 // from ~8,200 to ~9,600 on templated files by ensuring that this type
 // implements io.ReaderFrom.
 func (rb *ResponseBuffer) ReadFrom(src io.Reader) (int64, error) {
+	if !rb.wroteHeader {
+		rb.WriteHeader(http.StatusOK)
+	}
+
 	if rb.stream {
 		// first see if we can avoid any allocations at all
 		if wt, ok := src.(io.WriterTo); ok {

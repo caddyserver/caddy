@@ -41,6 +41,11 @@ type RoundTripper struct {
 	// If nil, reasonable default values will be used.
 	QuicConfig *quic.Config
 
+	// Dial specifies an optional dial function for creating QUIC
+	// connections for requests.
+	// If Dial is nil, quic.DialAddr will be used.
+	Dial func(network, addr string, tlsCfg *tls.Config, cfg *quic.Config) (quic.Session, error)
+
 	clients map[string]roundTripCloser
 }
 
@@ -120,7 +125,13 @@ func (r *RoundTripper) getClient(hostname string, onlyCached bool) (http.RoundTr
 		if onlyCached {
 			return nil, ErrNoCachedConn
 		}
-		client = newClient(hostname, r.TLSClientConfig, &roundTripperOpts{DisableCompression: r.DisableCompression}, r.QuicConfig)
+		client = newClient(
+			hostname,
+			r.TLSClientConfig,
+			&roundTripperOpts{DisableCompression: r.DisableCompression},
+			r.QuicConfig,
+			r.Dial,
+		)
 		r.clients[hostname] = client
 	}
 	return client, nil

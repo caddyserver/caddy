@@ -107,6 +107,10 @@ type Storage interface {
 	// in StoreUser. The result is an empty string if there are no
 	// persisted users in storage.
 	MostRecentUserEmail() string
+
+	// Locker is necessary because synchronizing certificate maintenance
+	// depends on how storage is implemented.
+	Locker
 }
 
 // ErrNotExist is returned by Storage implementations when

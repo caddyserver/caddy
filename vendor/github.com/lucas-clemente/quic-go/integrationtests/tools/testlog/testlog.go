@@ -27,7 +27,7 @@ var _ = BeforeEach(func() {
 
 	if len(logFileName) > 0 {
 		var err error
-		logFile, err = os.Create("./log.txt")
+		logFile, err = os.Create(logFileName)
 		Expect(err).ToNot(HaveOccurred())
 		log.SetOutput(logFile)
 		utils.SetLogLevel(utils.LogLevelDebug)

@@ -30,8 +30,8 @@ LimitNPROC=512
 
 ; Use private /tmp and /var/tmp, which are discarded after caddy stops.
 PrivateTmp=true
-; Use a minimal /dev
-PrivateDevices=true
+; Use a minimal /dev (May bring additional security if switched to 'true', but it may not work on Raspberry Pi's or other devices, so it has been disabled in this dist.)
+PrivateDevices=false
 ; Hide /home, /root, and /run/user. Nobody will steal your SSH-keys.
 ProtectHome=true
 ; Make /usr, /boot, /etc and possibly some more folders read-only.
@@ -41,7 +41,7 @@ ProtectSystem=full
 ReadWriteDirectories=/etc/ssl/caddy
 
 ; The following additional security directives only work with systemd v229 or later.
-; They further retrict privileges that can be gained by caddy. Uncomment if you like.
+; They further restrict privileges that can be gained by caddy. Uncomment if you like.
 ; Note that you may have to add capabilities required by any plugins in use.
 ;CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 ;AmbientCapabilities=CAP_NET_BIND_SERVICE

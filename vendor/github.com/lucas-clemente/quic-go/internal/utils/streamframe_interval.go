@@ -1,6 +1,6 @@
 package utils
 
-import "github.com/lucas-clemente/quic-go/protocol"
+import "github.com/lucas-clemente/quic-go/internal/protocol"
 
 // ByteInterval is an interval from one ByteCount to the other
 // +gen linkedlist

@@ -35,6 +35,14 @@
 			"notests": true
 		},
 		{
+			"importpath": "github.com/bifurcation/mint",
+			"repository": "https://github.com/bifurcation/mint",
+			"vcs": "git",
+			"revision": "64af8ab8ccb81bd5d4eab356f79ba0939117d9f6",
+			"branch": "master",
+			"notests": true
+		},
+		{
 			"importpath": "github.com/codahale/aesnicheck",
 			"repository": "https://github.com/codahale/aesnicheck",
 			"vcs": "git",
@@ -137,7 +145,7 @@
 			"importpath": "github.com/lucas-clemente/quic-go",
 			"repository": "https://github.com/lucas-clemente/quic-go",
 			"vcs": "git",
-			"revision": "a9e2a28315406f825cdfe41f8652110addeb84a5",
+			"revision": "d71850eb2ff581620f2f5742b558a97de22c13f6",
 			"branch": "master",
 			"notests": true
 		},
@@ -212,7 +220,7 @@
 			"importpath": "golang.org/x/crypto/curve25519",
 			"repository": "https://go.googlesource.com/crypto",
 			"vcs": "git",
-			"revision": "2faea1465de239e4babd8f5905cc25b781712442",
+			"revision": "94eea52f7b742c7cbe0b03b22f0c4c8631ece122",
 			"branch": "master",
 			"path": "curve25519",
 			"notests": true
