@@ -44,6 +44,7 @@ type Logger struct {
 	V4ipMask     net.IPMask
 	V6ipMask     net.IPMask
 	IPMaskExists bool
+	Exceptions   []string
 }
 
 // NewTestLogger creates logger suitable for testing purposes

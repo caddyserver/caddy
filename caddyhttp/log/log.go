@@ -17,6 +17,7 @@ package log
 
 import (
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 
@@ -40,8 +41,8 @@ type Logger struct {
 
 func (l Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	for _, rule := range l.Rules {
-		if (httpserver.Path(r.URL.Path).Matches(rule.PathScope)) &&
-			(!httpserver.Path(r.URL.Path).Matches(rule.PathScope + "/health")) {
+		if httpserver.Path(r.URL.Path).Matches(rule.PathScope) {
+
 			// Record the response
 			responseRecorder := httpserver.NewResponseRecorder(w)
 
@@ -68,17 +69,30 @@ func (l Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 
 			// Write log entries
 			for _, e := range rule.Entries {
-
-				// Mask IP Address
-				if e.Log.IPMaskExists {
-					hostip, _, err := net.SplitHostPort(r.RemoteAddr)
-					if err == nil {
-						maskedIP := e.Log.MaskIP(hostip)
-						// Overwrite log value with Masked version
-						rep.Set("remote", maskedIP)
+				log.Printf("logexceptions %+v %s", e.Log.Exceptions, r.URL.Path)
+				shouldLog := true
+				for ex := 0; ex < len(e.Log.Exceptions); ex++ {
+					if httpserver.Path(r.URL.Path).Matches(e.Log.Exceptions[ex]) {
+						shouldLog = false
+						break
 					}
 				}
-				e.Log.Println(rep.Replace(e.Format))
+
+				if shouldLog {
+					// Mask IP Address
+					if e.Log.IPMaskExists {
+						hostip, _, err := net.SplitHostPort(r.RemoteAddr)
+						if err == nil {
+							maskedIP := e.Log.MaskIP(hostip)
+							// Overwrite log value with Masked version
+							rep.Set("remote", maskedIP)
+						}
+					}
+					e.Log.Println(rep.Replace(e.Format))
+				} else {
+					log.Println("Skipping " + r.URL.Path)
+				}
+
 			}
 
 			return status, err
