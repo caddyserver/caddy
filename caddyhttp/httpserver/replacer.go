@@ -224,6 +224,16 @@ func (r *replacer) getSubstitution(key string) string {
 			}
 		}
 	}
+	// search response headers then
+	if r.responseRecorder != nil && key[1] == '<' {
+		want := key[2 : len(key)-1]
+		for key, values := range r.responseRecorder.Header() {
+			// Header placeholders (case-insensitive)
+			if strings.EqualFold(key, want) {
+				return strings.Join(values, ",")
+			}
+		}
+	}
 	// next check for cookies
 	if key[1] == '~' {
 		name := key[2 : len(key)-1]
