@@ -92,15 +92,11 @@ func logParse(c *caddy.Controller) ([]*Rule, error) {
 				}
 
 			} else if what == "except" {
-				var logException string
-				for i := 0; i < len(where); i++ {
 
-					logException = where[i]
-					//if !strings.HasSuffix(logException, "/") {
-					//	logException = logException + "/"
-					//}
-					logExceptions = append(logExceptions, logException)
+				for i := 0; i < len(where); i++ {
+					logExceptions = append(logExceptions, where[i])
 				}
+
 			} else if httpserver.IsLogRollerSubdirective(what) {
 
 				if err := httpserver.ParseRoller(logRoller, what, where...); err != nil {

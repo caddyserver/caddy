@@ -69,7 +69,7 @@ func (l Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 
 			// Write log entries
 			for _, e := range rule.Entries {
-				log.Printf("logexceptions %+v %s", e.Log.Exceptions, r.URL.Path)
+
 				shouldLog := true
 				for ex := 0; ex < len(e.Log.Exceptions); ex++ {
 					if httpserver.Path(r.URL.Path).Matches(e.Log.Exceptions[ex]) {
@@ -89,8 +89,6 @@ func (l Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 						}
 					}
 					e.Log.Println(rep.Replace(e.Format))
-				} else {
-					log.Println("Skipping " + r.URL.Path)
 				}
 
 			}
