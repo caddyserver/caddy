@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -79,14 +80,14 @@ func init() {
 }
 
 func readLoggingEnv() {
-	switch os.Getenv(logEnv) {
+	switch strings.ToLower(os.Getenv(logEnv)) {
 	case "":
 		return
-	case "DEBUG":
+	case "debug":
 		logLevel = LogLevelDebug
-	case "INFO":
+	case "info":
 		logLevel = LogLevelInfo
-	case "ERROR":
+	case "error":
 		logLevel = LogLevelError
 	default:
 		fmt.Fprintln(os.Stderr, "invalid quic-go log level, see https://github.com/lucas-clemente/quic-go/wiki/Logging")

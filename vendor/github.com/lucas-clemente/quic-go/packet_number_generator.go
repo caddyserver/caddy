@@ -4,7 +4,7 @@ import (
 	"crypto/rand"
 	"math"
 
-	"github.com/lucas-clemente/quic-go/protocol"
+	"github.com/lucas-clemente/quic-go/internal/protocol"
 )
 
 // The packetNumberGenerator generates the packet number for the next packet
@@ -17,9 +17,9 @@ type packetNumberGenerator struct {
 	nextToSkip protocol.PacketNumber
 }
 
-func newPacketNumberGenerator(averagePeriod protocol.PacketNumber) *packetNumberGenerator {
+func newPacketNumberGenerator(initial, averagePeriod protocol.PacketNumber) *packetNumberGenerator {
 	return &packetNumberGenerator{
-		next:          1,
+		next:          initial,
 		averagePeriod: averagePeriod,
 	}
 }

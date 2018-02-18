@@ -413,13 +413,25 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 	// the URL path, so a request to example.com/foo/blog on the site
 	// defined as example.com/foo appears as /blog instead of /foo/blog.
 	if pathPrefix != "/" {
-		r.URL.Path = strings.TrimPrefix(r.URL.Path, pathPrefix)
-		if !strings.HasPrefix(r.URL.Path, "/") {
-			r.URL.Path = "/" + r.URL.Path
-		}
+		r.URL = trimPathPrefix(r.URL, pathPrefix)
 	}
 
 	return vhost.middlewareChain.ServeHTTP(w, r)
+}
+
+func trimPathPrefix(u *url.URL, prefix string) *url.URL {
+	// We need to use URL.EscapedPath() when trimming the pathPrefix as
+	// URL.Path is ambiguous about / or %2f - see docs. See #1927
+	trimmed := strings.TrimPrefix(u.EscapedPath(), prefix)
+	if !strings.HasPrefix(trimmed, "/") {
+		trimmed = "/" + trimmed
+	}
+	trimmedURL, err := url.Parse(trimmed)
+	if err != nil {
+		log.Printf("[ERROR] Unable to parse trimmed URL %s: %v", trimmed, err)
+		return u
+	}
+	return trimmedURL
 }
 
 // Address returns the address s was assigned to listen on.
