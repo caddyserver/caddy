@@ -17,7 +17,6 @@ package log
 
 import (
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 
