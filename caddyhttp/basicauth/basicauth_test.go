@@ -171,7 +171,7 @@ md5:$apr1$l42y8rex$pOA2VJ0x/0TwaFeAF9nX61`
 
 	htfh, err := ioutil.TempFile("", "basicauth-")
 	if err != nil {
-		t.Skipf("Error creating temp file (%v), will skip htpassword test")
+		t.Skip("Error creating temp file, will skip htpassword test")
 		return
 	}
 	defer os.Remove(htfh.Name())
