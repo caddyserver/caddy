@@ -21,9 +21,9 @@ const uFloat16MantissaBits = 16 - uFloat16ExponentBits                          
 const uFloat16MantissaEffectiveBits = uFloat16MantissaBits + 1                                     // 12
 const uFloat16MaxValue = ((uint64(1) << uFloat16MantissaEffectiveBits) - 1) << uFloat16MaxExponent // 0x3FFC0000000
 
-// ReadUfloat16 reads a float in the QUIC-float16 format and returns its uint64 representation
-func ReadUfloat16(b io.ByteReader) (uint64, error) {
-	val, err := ReadUint16(b)
+// readUfloat16 reads a float in the QUIC-float16 format and returns its uint64 representation
+func readUfloat16(b io.ByteReader, byteOrder ByteOrder) (uint64, error) {
+	val, err := byteOrder.ReadUint16(b)
 	if err != nil {
 		return 0, err
 	}
@@ -50,8 +50,8 @@ func ReadUfloat16(b io.ByteReader) (uint64, error) {
 	return res, nil
 }
 
-// WriteUfloat16 writes a float in the QUIC-float16 format from its uint64 representation
-func WriteUfloat16(b *bytes.Buffer, value uint64) {
+// writeUfloat16 writes a float in the QUIC-float16 format from its uint64 representation
+func writeUfloat16(b *bytes.Buffer, byteOrder ByteOrder, value uint64) {
 	var result uint16
 	if value < (uint64(1) << uFloat16MantissaEffectiveBits) {
 		// Fast path: either the value is denormalized, or has exponent zero.
@@ -82,5 +82,5 @@ func WriteUfloat16(b *bytes.Buffer, value uint64) {
 		result = (uint16(value) + (exponent << uFloat16MantissaBits))
 	}
 
-	WriteUint16(b, result)
+	byteOrder.WriteUint16(b, result)
 }
