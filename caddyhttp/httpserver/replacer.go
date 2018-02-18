@@ -225,7 +225,6 @@ func (r *replacer) getSubstitution(key string) string {
 			}
 		}
 	}
-	log.Printf("ResponseHEaders: %+v, %+V", r.responseRecorder.Header(), r.responseRecorder.Header())
 	// search response headers then
 	if key[1] == '<' {
 		want := key[2 : len(key)-1]
