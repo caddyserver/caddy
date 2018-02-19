@@ -18,6 +18,7 @@ var UserAgent string
 // HTTPClient is an HTTP client with a reasonable timeout value.
 var HTTPClient = http.Client{
 	Transport: &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
 		Dial: (&net.Dialer{
 			Timeout:   30 * time.Second,
 			KeepAlive: 30 * time.Second,

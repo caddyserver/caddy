@@ -295,17 +295,17 @@ const (
 
 // The enumerated reasons for revoking a certificate.  See RFC 5280.
 const (
-	Unspecified          = iota
-	KeyCompromise        = iota
-	CACompromise         = iota
-	AffiliationChanged   = iota
-	Superseded           = iota
-	CessationOfOperation = iota
-	CertificateHold      = iota
-	_                    = iota
-	RemoveFromCRL        = iota
-	PrivilegeWithdrawn   = iota
-	AACompromise         = iota
+	Unspecified          = 0
+	KeyCompromise        = 1
+	CACompromise         = 2
+	AffiliationChanged   = 3
+	Superseded           = 4
+	CessationOfOperation = 5
+	CertificateHold      = 6
+
+	RemoveFromCRL      = 8
+	PrivilegeWithdrawn = 9
+	AACompromise       = 10
 )
 
 // Request represents an OCSP request. See RFC 6960.
@@ -659,7 +659,7 @@ func CreateRequest(cert, issuer *x509.Certificate, opts *RequestOptions) ([]byte
 //
 // The issuer cert is used to puplate the IssuerNameHash and IssuerKeyHash fields.
 //
-// The template is used to populate the SerialNumber, RevocationStatus, RevokedAt,
+// The template is used to populate the SerialNumber, Status, RevokedAt,
 // RevocationReason, ThisUpdate, and NextUpdate fields.
 //
 // If template.IssuerHash is not set, SHA1 will be used.
@@ -760,7 +760,7 @@ func CreateResponse(issuer, responderCert *x509.Certificate, template Response, 
 	}
 	if template.Certificate != nil {
 		response.Certificates = []asn1.RawValue{
-			asn1.RawValue{FullBytes: template.Certificate.Raw},
+			{FullBytes: template.Certificate.Raw},
 		}
 	}
 	responseDER, err := asn1.Marshal(response)

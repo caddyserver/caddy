@@ -16,12 +16,19 @@ func Marshal(v interface{}) ([]byte, error) {
 	return e.Bytes(), nil
 }
 
+// Marshaler is the interface implemented by types that
+// have a defined TLS encoding.
+type Marshaler interface {
+	MarshalTLS() ([]byte, error)
+}
+
 // These are the options that can be specified in the struct tag.  Right now,
 // all of them apply to variable-length vectors and nothing else
 type encOpts struct {
-	head uint // length of length in bytes
-	min  uint // minimum size in bytes
-	max  uint // maximum size in bytes
+	head   uint // length of length in bytes
+	min    uint // minimum size in bytes
+	max    uint // maximum size in bytes
+	varint bool // whether to encode as a varint
 }
 
 type encodeState struct {
@@ -62,8 +69,14 @@ func typeEncoder(t reflect.Type) encoderFunc {
 	return newTypeEncoder(t)
 }
 
+var (
+	marshalerType = reflect.TypeOf(new(Marshaler)).Elem()
+)
+
 func newTypeEncoder(t reflect.Type) encoderFunc {
-	// Note: Does not support Marshaler, so don't need the allowAddr argument
+	if t.Implements(marshalerType) {
+		return marshalerEncoder
+	}
 
 	switch t.Kind() {
 	case reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
@@ -74,6 +87,8 @@ func newTypeEncoder(t reflect.Type) encoderFunc {
 		return newSliceEncoder(t)
 	case reflect.Struct:
 		return newStructEncoder(t)
+	case reflect.Ptr:
+		return newPointerEncoder(t)
 	default:
 		panic(fmt.Errorf("Unsupported type (%s)", t))
 	}
@@ -81,19 +96,65 @@ func newTypeEncoder(t reflect.Type) encoderFunc {
 
 ///// Specific encoders below
 
-func uintEncoder(e *encodeState, v reflect.Value, opts encOpts) {
-	u := v.Uint()
-	switch v.Type().Kind() {
-	case reflect.Uint8:
-		e.WriteByte(byte(u))
-	case reflect.Uint16:
-		e.Write([]byte{byte(u >> 8), byte(u)})
-	case reflect.Uint32:
-		e.Write([]byte{byte(u >> 24), byte(u >> 16), byte(u >> 8), byte(u)})
-	case reflect.Uint64:
-		e.Write([]byte{byte(u >> 56), byte(u >> 48), byte(u >> 40), byte(u >> 32),
-			byte(u >> 24), byte(u >> 16), byte(u >> 8), byte(u)})
+func marshalerEncoder(e *encodeState, v reflect.Value, opts encOpts) {
+	if v.Kind() == reflect.Ptr && v.IsNil() {
+		panic(fmt.Errorf("Cannot encode nil pointer"))
 	}
+
+	m, ok := v.Interface().(Marshaler)
+	if !ok {
+		panic(fmt.Errorf("Non-Marshaler passed to marshalerEncoder"))
+	}
+
+	b, err := m.MarshalTLS()
+	if err == nil {
+		_, err = e.Write(b)
+	}
+
+	if err != nil {
+		panic(err)
+	}
+}
+
+//////////
+
+func uintEncoder(e *encodeState, v reflect.Value, opts encOpts) {
+	if opts.varint {
+		varintEncoder(e, v, opts)
+		return
+	}
+
+	writeUint(e, v.Uint(), int(v.Type().Size()))
+}
+
+func varintEncoder(e *encodeState, v reflect.Value, opts encOpts) {
+	writeVarint(e, v.Uint())
+}
+
+func writeVarint(e *encodeState, u uint64) {
+	if (u >> 62) > 0 {
+		panic(fmt.Errorf("uint value is too big for varint"))
+	}
+
+	var varintLen int
+	for _, len := range []uint{1, 2, 4, 8} {
+		if u < (uint64(1) << (8*len - 2)) {
+			varintLen = int(len)
+			break
+		}
+	}
+
+	twoBits := map[int]uint64{1: 0x00, 2: 0x01, 4: 0x02, 8: 0x03}[varintLen]
+	shift := uint(8*varintLen - 2)
+	writeUint(e, u|(twoBits<<shift), varintLen)
+}
+
+func writeUint(e *encodeState, u uint64, len int) {
+	data := make([]byte, len)
+	for i := 0; i < len; i += 1 {
+		data[i] = byte(u >> uint(8*(len-i-1)))
+	}
+	e.Write(data)
 }
 
 //////////
@@ -121,27 +182,34 @@ type sliceEncoder struct {
 }
 
 func (se *sliceEncoder) encode(e *encodeState, v reflect.Value, opts encOpts) {
-	if opts.head == 0 {
-		panic(fmt.Errorf("Cannot encode a slice without a header length"))
-	}
-
 	arrayState := &encodeState{}
 	se.ae.encode(arrayState, v, opts)
 
 	n := uint(arrayState.Len())
+	if opts.head == 0 {
+		panic(fmt.Errorf("Cannot encode a slice without a header length"))
+	}
+
 	if opts.max > 0 && n > opts.max {
 		panic(fmt.Errorf("Encoded length more than max [%d > %d]", n, opts.max))
-	}
-	if n>>(8*opts.head) > 0 {
-		panic(fmt.Errorf("Encoded length too long for header length [%d, %d]", n, opts.head))
 	}
 	if n < opts.min {
 		panic(fmt.Errorf("Encoded length less than min [%d < %d]", n, opts.min))
 	}
 
-	for i := int(opts.head - 1); i >= 0; i -= 1 {
-		e.WriteByte(byte(n >> (8 * uint(i))))
+	switch opts.head {
+	case headValueNoHead:
+		// None.
+	case headValueVarint:
+		writeVarint(e, uint64(n))
+	default:
+		if n>>(8*opts.head) > 0 {
+			panic(fmt.Errorf("Encoded length too long for header length [%d, %d]", n, opts.head))
+		}
+
+		writeUint(e, uint64(n), int(opts.head))
 	}
+
 	e.Write(arrayState.Bytes())
 }
 
@@ -176,12 +244,33 @@ func newStructEncoder(t reflect.Type) encoderFunc {
 		tagOpts := parseTag(tag)
 
 		se.fieldOpts[i] = encOpts{
-			head: tagOpts["head"],
-			max:  tagOpts["max"],
-			min:  tagOpts["min"],
+			head:   tagOpts["head"],
+			max:    tagOpts["max"],
+			min:    tagOpts["min"],
+			varint: tagOpts[varintOption] > 0,
 		}
 		se.fieldEncs[i] = typeEncoder(f.Type)
 	}
 
 	return se.encode
+}
+
+//////////
+
+type pointerEncoder struct {
+	base encoderFunc
+}
+
+func (pe pointerEncoder) encode(e *encodeState, v reflect.Value, opts encOpts) {
+	if v.IsNil() {
+		panic(fmt.Errorf("Cannot marshal a struct containing a nil pointer"))
+	}
+
+	pe.base(e, v.Elem(), opts)
+}
+
+func newPointerEncoder(t reflect.Type) encoderFunc {
+	baseEncoder := typeEncoder(t.Elem())
+	pe := pointerEncoder{base: baseEncoder}
+	return pe.encode
 }

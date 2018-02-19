@@ -3,7 +3,6 @@ package mint
 import (
 	"bytes"
 	"fmt"
-
 	"github.com/bifurcation/mint/syntax"
 )
 
@@ -77,14 +76,40 @@ func (el *ExtensionList) Add(src ExtensionBody) error {
 	return nil
 }
 
-func (el ExtensionList) Find(dst ExtensionBody) bool {
-	for _, ext := range el {
-		if ext.ExtensionType == dst.Type() {
-			_, err := dst.Unmarshal(ext.ExtensionData)
-			return err == nil
+func (el ExtensionList) Parse(dsts []ExtensionBody) (map[ExtensionType]bool, error) {
+	found := make(map[ExtensionType]bool)
+
+	for _, dst := range dsts {
+		for _, ext := range el {
+			if ext.ExtensionType == dst.Type() {
+				if found[dst.Type()] {
+					return nil, fmt.Errorf("Duplicate extension of type [%v]", dst.Type())
+				}
+
+				err := safeUnmarshal(dst, ext.ExtensionData)
+				if err != nil {
+					return nil, err
+				}
+
+				found[dst.Type()] = true
+			}
 		}
 	}
-	return false
+
+	return found, nil
+}
+
+func (el ExtensionList) Find(dst ExtensionBody) (bool, error) {
+	for _, ext := range el {
+		if ext.ExtensionType == dst.Type() {
+			err := safeUnmarshal(dst, ext.ExtensionData)
+			if err != nil {
+				return true, err
+			}
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // struct {
@@ -529,7 +554,16 @@ func (alpn *ALPNExtension) Unmarshal(data []byte) (int, error) {
 //     ProtocolVersion versions<2..254>;
 // } SupportedVersions;
 type SupportedVersionsExtension struct {
+	HandshakeType HandshakeType
+	Versions      []uint16
+}
+
+type SupportedVersionsClientHelloInner struct {
 	Versions []uint16 `tls:"head=1,min=2,max=254"`
+}
+
+type SupportedVersionsServerHelloInner struct {
+	Version uint16
 }
 
 func (sv SupportedVersionsExtension) Type() ExtensionType {
@@ -537,11 +571,39 @@ func (sv SupportedVersionsExtension) Type() ExtensionType {
 }
 
 func (sv SupportedVersionsExtension) Marshal() ([]byte, error) {
-	return syntax.Marshal(sv)
+	switch sv.HandshakeType {
+	case HandshakeTypeClientHello:
+		return syntax.Marshal(SupportedVersionsClientHelloInner{sv.Versions})
+	case HandshakeTypeServerHello, HandshakeTypeHelloRetryRequest:
+		return syntax.Marshal(SupportedVersionsServerHelloInner{sv.Versions[0]})
+	default:
+		return nil, fmt.Errorf("tls.supported_versions: Handshake type not allowed")
+	}
 }
 
 func (sv *SupportedVersionsExtension) Unmarshal(data []byte) (int, error) {
-	return syntax.Unmarshal(data, sv)
+	switch sv.HandshakeType {
+	case HandshakeTypeClientHello:
+		var inner SupportedVersionsClientHelloInner
+		read, err := syntax.Unmarshal(data, &inner)
+		if err != nil {
+			return 0, err
+		}
+		sv.Versions = inner.Versions
+		return read, nil
+
+	case HandshakeTypeServerHello, HandshakeTypeHelloRetryRequest:
+		var inner SupportedVersionsServerHelloInner
+		read, err := syntax.Unmarshal(data, &inner)
+		if err != nil {
+			return 0, err
+		}
+		sv.Versions = []uint16{inner.Version}
+		return read, nil
+
+	default:
+		return 0, fmt.Errorf("tls.supported_versions: Handshake type not allowed")
+	}
 }
 
 // struct {
@@ -561,26 +623,4 @@ func (c CookieExtension) Marshal() ([]byte, error) {
 
 func (c *CookieExtension) Unmarshal(data []byte) (int, error) {
 	return syntax.Unmarshal(data, c)
-}
-
-// defaultCookieLength is the default length of a cookie
-const defaultCookieLength = 32
-
-type defaultCookieHandler struct {
-	data []byte
-}
-
-var _ CookieHandler = &defaultCookieHandler{}
-
-// NewRandomCookie generates a cookie with DefaultCookieLength bytes of random data
-func (h *defaultCookieHandler) Generate(*Conn) ([]byte, error) {
-	h.data = make([]byte, defaultCookieLength)
-	if _, err := prng.Read(h.data); err != nil {
-		return nil, err
-	}
-	return h.data, nil
-}
-
-func (h *defaultCookieHandler) Validate(_ *Conn, data []byte) bool {
-	return bytes.Equal(h.data, data)
 }

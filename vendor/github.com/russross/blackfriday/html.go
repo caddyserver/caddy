@@ -42,6 +42,7 @@ const (
 	HTML_SMARTYPANTS_DASHES                    // enable smart dashes (with HTML_USE_SMARTYPANTS)
 	HTML_SMARTYPANTS_LATEX_DASHES              // enable LaTeX-style dashes (with HTML_USE_SMARTYPANTS and HTML_SMARTYPANTS_DASHES)
 	HTML_SMARTYPANTS_ANGLED_QUOTES             // enable angled double quotes (with HTML_USE_SMARTYPANTS) for double quotes rendering
+	HTML_SMARTYPANTS_QUOTES_NBSP               // enable "French guillemets" (with HTML_USE_SMARTYPANTS)
 	HTML_FOOTNOTE_RETURN_LINKS                 // generate a link at the end of a footnote to return to the source
 )
 
@@ -619,7 +620,7 @@ func (options *Html) FootnoteRef(out *bytes.Buffer, ref []byte, id int) {
 	out.WriteString(`fnref:`)
 	out.WriteString(options.parameters.FootnoteAnchorPrefix)
 	out.Write(slug)
-	out.WriteString(`"><a rel="footnote" href="#`)
+	out.WriteString(`"><a href="#`)
 	out.WriteString(`fn:`)
 	out.WriteString(options.parameters.FootnoteAnchorPrefix)
 	out.Write(slug)

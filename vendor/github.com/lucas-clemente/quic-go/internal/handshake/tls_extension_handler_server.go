@@ -29,6 +29,8 @@ func NewExtensionHandlerServer(
 	supportedVersions []protocol.VersionNumber,
 	version protocol.VersionNumber,
 ) TLSExtensionHandler {
+	// Processing the ClientHello is performed statelessly (and from a single go-routine).
+	// Therefore, we have to use a buffered chan to pass the transport parameters to that go routine.
 	paramsChan := make(chan TransportParameters, 1)
 	return &extensionHandlerServer{
 		ourParams:         params,
