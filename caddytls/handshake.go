@@ -166,6 +166,15 @@ func (cfg *Config) getCertificate(name string) (cert Certificate, matched, defau
 		return
 	}
 
+	// if a certificate is keyed by an empty name, then use
+	// it as a fallback; this is for hosts defined like ":443"
+	// with self-signed certificates; see issue #2035
+	if certKey, ok = cfg.Certificates[""]; ok {
+		cert = cfg.certCache.cache[certKey]
+		matched = true
+		return
+	}
+
 	// if nothing matches and SNI was not provided, use a random
 	// certificate; at least there's a chance this older client
 	// can connect, and in the future we won't need this provision
