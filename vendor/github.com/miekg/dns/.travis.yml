@@ -1,0 +1,14 @@
+language: go
+sudo: false
+go:
+  - 1.7.x
+  - 1.8.x
+  - tip
+
+before_install:
+  # don't use the miekg/dns when testing forks
+  - mkdir -p $GOPATH/src/github.com/miekg
+  - ln -s $TRAVIS_BUILD_DIR $GOPATH/src/github.com/miekg/ || true
+
+script:
+  - go test -race -v -bench=.

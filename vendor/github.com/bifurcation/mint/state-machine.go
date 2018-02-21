@@ -1,6 +1,7 @@
 package mint
 
 import (
+	"crypto/x509"
 	"time"
 )
 
@@ -8,9 +9,11 @@ import (
 // state transitions.
 type HandshakeAction interface{}
 
-type SendHandshakeMessage struct {
+type QueueHandshakeMessage struct {
 	Message *HandshakeMessage
 }
+
+type SendQueuedHandshake struct{}
 
 type SendEarlyData struct{}
 
@@ -19,12 +22,12 @@ type ReadEarlyData struct{}
 type ReadPastEarlyData struct{}
 
 type RekeyIn struct {
-	Label  string
+	epoch  Epoch
 	KeySet keySet
 }
 
 type RekeyOut struct {
-	Label  string
+	epoch  Epoch
 	KeySet keySet
 }
 
@@ -33,35 +36,13 @@ type StorePSK struct {
 }
 
 type HandshakeState interface {
-	Next(hm *HandshakeMessage) (HandshakeState, []HandshakeAction, Alert)
+	Next(handshakeMessageReader) (HandshakeState, []HandshakeAction, Alert)
+	State() State
 }
 
 type AppExtensionHandler interface {
 	Send(hs HandshakeType, el *ExtensionList) error
 	Receive(hs HandshakeType, el *ExtensionList) error
-}
-
-// Capabilities objects represent the capabilities of a TLS client or server,
-// as an input to TLS negotiation
-type Capabilities struct {
-	// For both client and server
-	CipherSuites     []CipherSuite
-	Groups           []NamedGroup
-	SignatureSchemes []SignatureScheme
-	PSKs             PreSharedKeyCache
-	Certificates     []*Certificate
-	AuthCertificate  func(chain []CertificateEntry) error
-	ExtensionHandler AppExtensionHandler
-
-	// For client
-	PSKModes []PSKKeyExchangeMode
-
-	// For server
-	NextProtos        []string
-	AllowEarlyData    bool
-	RequireCookie     bool
-	CookieHandler     CookieHandler
-	RequireClientAuth bool
 }
 
 // ConnectionOptions objects represent per-connection settings for a client
@@ -86,15 +67,41 @@ type ConnectionParameters struct {
 	NextProto   string
 }
 
+// Working state for the handshake.
+type HandshakeContext struct {
+	hIn, hOut *HandshakeLayer
+}
+
+func (hc *HandshakeContext) SetVersion(version uint16) {
+	if hc.hIn.conn != nil {
+		hc.hIn.conn.SetVersion(version)
+	}
+	if hc.hOut.conn != nil {
+		hc.hOut.conn.SetVersion(version)
+	}
+}
+
 // StateConnected is symmetric between client and server
 type StateConnected struct {
 	Params              ConnectionParameters
+	hsCtx               HandshakeContext
 	isClient            bool
 	cryptoParams        CipherSuiteParams
 	resumptionSecret    []byte
 	clientTrafficSecret []byte
 	serverTrafficSecret []byte
 	exporterSecret      []byte
+	peerCertificates    []*x509.Certificate
+	verifiedChains      [][]*x509.Certificate
+}
+
+var _ HandshakeState = &StateConnected{}
+
+func (state StateConnected) State() State {
+	if state.isClient {
+		return StateClientConnected
+	}
+	return StateServerConnected
 }
 
 func (state *StateConnected) KeyUpdate(request KeyUpdateRequest) ([]HandshakeAction, Alert) {
@@ -109,15 +116,16 @@ func (state *StateConnected) KeyUpdate(request KeyUpdateRequest) ([]HandshakeAct
 		trafficKeys = makeTrafficKeys(state.cryptoParams, state.serverTrafficSecret)
 	}
 
-	kum, err := HandshakeMessageFromBody(&KeyUpdateBody{KeyUpdateRequest: request})
+	kum, err := state.hsCtx.hOut.HandshakeMessageFromBody(&KeyUpdateBody{KeyUpdateRequest: request})
 	if err != nil {
 		logf(logTypeHandshake, "[StateConnected] Error marshaling key update message: %v", err)
 		return nil, AlertInternalError
 	}
 
 	toSend := []HandshakeAction{
-		SendHandshakeMessage{kum},
-		RekeyOut{Label: "update", KeySet: trafficKeys},
+		QueueHandshakeMessage{kum},
+		SendQueuedHandshake{},
+		RekeyOut{epoch: EpochUpdate, KeySet: trafficKeys},
 	}
 	return toSend, AlertNoAlert
 }
@@ -149,7 +157,7 @@ func (state *StateConnected) NewSessionTicket(length int, lifetime, earlyDataLif
 		TicketAgeAdd: tkt.TicketAgeAdd,
 	}
 
-	tktm, err := HandshakeMessageFromBody(tkt)
+	tktm, err := state.hsCtx.hOut.HandshakeMessageFromBody(tkt)
 	if err != nil {
 		logf(logTypeHandshake, "[StateConnected] Error marshaling NewSessionTicket: %v", err)
 		return nil, AlertInternalError
@@ -157,12 +165,18 @@ func (state *StateConnected) NewSessionTicket(length int, lifetime, earlyDataLif
 
 	toSend := []HandshakeAction{
 		StorePSK{newPSK},
-		SendHandshakeMessage{tktm},
+		QueueHandshakeMessage{tktm},
+		SendQueuedHandshake{},
 	}
 	return toSend, AlertNoAlert
 }
 
-func (state StateConnected) Next(hm *HandshakeMessage) (HandshakeState, []HandshakeAction, Alert) {
+// Next does nothing for this state.
+func (state StateConnected) Next(hr handshakeMessageReader) (HandshakeState, []HandshakeAction, Alert) {
+	return state, nil, AlertNoAlert
+}
+
+func (state StateConnected) ProcessMessage(hm *HandshakeMessage) (HandshakeState, []HandshakeAction, Alert) {
 	if hm == nil {
 		logf(logTypeHandshake, "[StateConnected] Unexpected message")
 		return nil, nil, AlertUnexpectedMessage
@@ -187,20 +201,18 @@ func (state StateConnected) Next(hm *HandshakeMessage) (HandshakeState, []Handsh
 			trafficKeys = makeTrafficKeys(state.cryptoParams, state.serverTrafficSecret)
 		}
 
-		toSend := []HandshakeAction{RekeyIn{Label: "update", KeySet: trafficKeys}}
+		toSend := []HandshakeAction{RekeyIn{epoch: EpochUpdate, KeySet: trafficKeys}}
 
 		// If requested, roll outbound keys and send a KeyUpdate
 		if body.KeyUpdateRequest == KeyUpdateRequested {
+			logf(logTypeHandshake, "Received key update, update requested", body.KeyUpdateRequest)
 			moreToSend, alert := state.KeyUpdate(KeyUpdateNotRequested)
 			if alert != AlertNoAlert {
 				return nil, nil, alert
 			}
-
 			toSend = append(toSend, moreToSend...)
 		}
-
 		return state, toSend, AlertNoAlert
-
 	case *NewSessionTicketBody:
 		// XXX: Allow NewSessionTicket in both directions?
 		if !state.isClient {
@@ -209,7 +221,6 @@ func (state StateConnected) Next(hm *HandshakeMessage) (HandshakeState, []Handsh
 
 		resumptionKey := HkdfExpandLabel(state.cryptoParams.Hash, state.resumptionSecret,
 			labelResumption, body.TicketNonce, state.cryptoParams.Hash.Size())
-
 		psk := PreSharedKey{
 			CipherSuite:  state.cryptoParams.Suite,
 			IsResumption: true,

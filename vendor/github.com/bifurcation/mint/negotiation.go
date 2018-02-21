@@ -148,7 +148,7 @@ func CertificateSelection(serverName *string, signatureSchemes []SignatureScheme
 		}
 
 		if len(candidatesByName) == 0 {
-			return nil, 0, fmt.Errorf("No certificates available for server name")
+			return nil, 0, fmt.Errorf("No certificates available for server name: %s", *serverName)
 		}
 
 		candidates = candidatesByName
