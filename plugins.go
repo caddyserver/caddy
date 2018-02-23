@@ -271,6 +271,19 @@ func EmitEvent(event EventName, info interface{}) {
 	})
 }
 
+// purgeEventHooks purges all event hooks from the map
+func purgeEventHooks() {
+	eventHooks.Range(func(k, _ interface{}) bool {
+		eventHooks.Delete(k)
+		return true
+	})
+}
+
+// deleteEventHook deletes one event hook from the map
+func deleteEventHook(name string) {
+	eventHooks.Delete(name)
+}
+
 // ParsingCallback is a function that is called after
 // a directive's setup functions have been executed
 // for all the server blocks.

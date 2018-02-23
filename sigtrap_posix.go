@@ -76,6 +76,10 @@ func trapSignalsPosix() {
 					caddyfileToUse = newCaddyfile
 				}
 
+				// Purge the old event hooks
+				log.Println("[INFO: Purging old event hooks]")
+				purgeEventHooks()
+
 				// Kick off the restart; our work is done
 				_, err = inst.Restart(caddyfileToUse)
 				if err != nil {
