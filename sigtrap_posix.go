@@ -77,7 +77,6 @@ func trapSignalsPosix() {
 				}
 
 				// Purge the old event hooks
-				log.Println("[INFO: Purging old event hooks]")
 				purgeEventHooks()
 
 				// Kick off the restart; our work is done
