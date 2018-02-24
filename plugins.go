@@ -279,11 +279,6 @@ func purgeEventHooks() {
 	})
 }
 
-// deleteEventHook deletes one event hook from the map
-func deleteEventHook(name string) {
-	eventHooks.Delete(name)
-}
-
 // ParsingCallback is a function that is called after
 // a directive's setup functions have been executed
 // for all the server blocks.
