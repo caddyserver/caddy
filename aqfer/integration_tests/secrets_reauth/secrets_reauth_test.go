@@ -65,6 +65,7 @@ func TestIntegrationOfSecretsWithReauth(t *testing.T) {
 		t.Log(err)
 	}
 
+	// clientToken in request, refreshToken pulled from secrets file
 	clientToken := GetTokenWithRefresh("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE1NDg4Njk2OTMsImp0aSI6ImUxNjBjOTI2LTA1ZTMtMTFlOC05ZTVlLTBlNmQ0Y2U3MDRhYSIsImlhdCI6MTUxNzMzMzY5MywidXNlciI6IkFsZnJlZG8iLCJlbWFpbCI6ImFsZnJlZG9AY2xvdWRzcGFjZS5jb20iLCJzY29wZSI6eyJjaWRzIjpbImMwMDkiXX0sInR5cGUiOiJyZWZyZXNoX3Rva2VuIiwicm9sZXMiOlsiY2xpZW50X3VzZXIiLCJhY2Nlc3NfdG9rZW5fdmFsaWRhdG9yIl19.nLcVQSQSuz_FSdJkpVKJ-uNQHjuG_gCNQmuIF7_ApCE")
 	req.Header.Set("Authorization", "Bearer "+clientToken)
 
