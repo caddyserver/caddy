@@ -479,6 +479,7 @@ var directives = []string{
 	"bind",
 	"limits",
 	"timeouts",
+	"warp", // github.com/caddyserver/cloudflare-warp-plugin
 	"tls",
 
 	// services/utilities, or other directives that don't necessarily inject handlers
