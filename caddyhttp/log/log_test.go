@@ -17,7 +17,6 @@ package log
 import (
 	"bytes"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -181,58 +180,79 @@ func TestMultiEntries(t *testing.T) {
 
 func TestLogExcept(t *testing.T) {
 	tests := []struct {
+		LogRules  []Rule
 		logPath   string
 		shouldLog bool
-		LogRules  []Rule
 	}{
-		{`/soup`, false, []Rule{{
+		{[]Rule{{
 			PathScope: "/",
 			Entries: []*Entry{{
 				Log: &httpserver.Logger{
-					Output: DefaultLogFilename,
 
 					Exceptions: []string{"/soup"},
 				},
 				Format: DefaultLogFormat,
 			}},
-		}}},
-		{`/soup`, true, []Rule{{
+		}}, `/soup`, false},
+		{[]Rule{{
 			PathScope: "/",
 			Entries: []*Entry{{
 				Log: &httpserver.Logger{
-					Output: "log.txt",
 
 					Exceptions: []string{"/tart"},
 				},
 				Format: DefaultLogFormat,
 			}},
-		}}},
-		{`/tomatosoup`, true, []Rule{{
+		}}, `/soup`, true},
+		{[]Rule{{
 			PathScope: "/",
 			Entries: []*Entry{{
 				Log: &httpserver.Logger{
-					Output: "log.txt",
 
 					Exceptions: []string{"/soup"},
 				},
 				Format: DefaultLogFormat,
 			}},
-		}}},
+		}}, `/tomatosoup`, true},
+		{[]Rule{{
+			PathScope: "/",
+			Entries: []*Entry{{
+				Log: &httpserver.Logger{
+
+					Exceptions: []string{"/pie/"},
+				},
+				Format: DefaultLogFormat,
+			}},
+			// Check exception with a trailing slash does not match without
+		}}, `/pie`, true},
+		{[]Rule{{
+			PathScope: "/",
+			Entries: []*Entry{{
+				Log: &httpserver.Logger{
+
+					Exceptions: []string{"/pie.php"},
+				},
+				Format: DefaultLogFormat,
+			}},
+		}}, `/pie`, true},
+		{[]Rule{{
+			PathScope: "/",
+			Entries: []*Entry{{
+				Log: &httpserver.Logger{
+
+					Exceptions: []string{"/pie"},
+				},
+				Format: DefaultLogFormat,
+			}},
+			// Check that a word without trailing slash will match a filename
+		}}, `/pie.php`, false},
 	}
-	log.Println("log test")
 	for i, test := range tests {
-		//log.Println(test)
 		for _, LogRule := range test.LogRules {
 			for _, e := range LogRule.Entries {
-
-				log.Printf("testlog %s : matchpath %+v ", test.logPath, e.Log)
-
 				shouldLog := e.Log.ShouldLog(test.logPath)
-				log.Printf("shouldLog %d test.shouldLog %d", shouldLog, test.shouldLog)
 				if shouldLog != test.shouldLog {
-
-					t.Fatalf("Test %d expected %d no of Log rules %d,",
-						i, test.shouldLog, shouldLog)
+					t.Fatalf("Test  %d expected shouldLog=%s but got shouldLog=%s,", i, test.shouldLog, shouldLog)
 				}
 			}
 		}

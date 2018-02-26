@@ -86,12 +86,9 @@ func (l Logger) MaskIP(ip string) string {
 }
 
 func (l Logger) ShouldLog(path string) bool {
-	log.Println("ShouldLog P:ath:" + path)
 	shouldLog := true
 	for ex := 0; ex < len(l.Exceptions); ex++ {
-		log.Println("Exceptoin:" + l.Exceptions[ex])
 		if Path(path).Matches(l.Exceptions[ex]) {
-			log.Println("Exceptoin: Matches")
 			shouldLog = false
 			break
 		}
