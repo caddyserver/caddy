@@ -1,4 +1,4 @@
-CADDY 0.10.10
+CADDY 0.10.11
 
 Website
 	https://caddyserver.com
@@ -32,9 +32,9 @@ the project wiki: https://github.com/mholt/caddy/wiki
 And thanks - you're awesome!
 
 If you think Caddy is awesome too, consider sponsoring it:
-https://caddyserver.com/pricing - and help keep Caddy free
+https://caddyserver.com/sponsor - and help keep Caddy free
 for personal use.
 
 
 ---
-(c) 2015-2017 Light Code Labs, LLC
+(c) 2015-2018 Light Code Labs, LLC
