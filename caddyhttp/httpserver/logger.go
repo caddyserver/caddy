@@ -85,6 +85,17 @@ func (l Logger) MaskIP(ip string) string {
 
 }
 
+func (l Logger) ShouldLog(path string) bool {
+	shouldLog := true
+	for ex := 0; ex < len(l.Exceptions); ex++ {
+		if Path(path).Matches(l.Exceptions[ex]) {
+			shouldLog = false
+			break
+		}
+	}
+	return shouldLog
+}
+
 // Attach binds logger Start and Close functions to
 // controller's OnStartup and OnShutdown hooks.
 func (l *Logger) Attach(controller *caddy.Controller) {

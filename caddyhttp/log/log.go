@@ -67,16 +67,7 @@ func (l Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 
 			// Write log entries
 			for _, e := range rule.Entries {
-
-				shouldLog := true
-				for ex := 0; ex < len(e.Log.Exceptions); ex++ {
-					if httpserver.Path(r.URL.Path).Matches(e.Log.Exceptions[ex]) {
-						shouldLog = false
-						break
-					}
-				}
-
-				if shouldLog {
+				if len(e.Log.Exceptions) > 0 && e.Log.ShouldLog(r.URL.Path) {
 					// Mask IP Address
 					if e.Log.IPMaskExists {
 						hostip, _, err := net.SplitHostPort(r.RemoteAddr)
