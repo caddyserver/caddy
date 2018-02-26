@@ -1,5 +1,28 @@
 CHANGES
 
+0.10.11 (February 20, 2018)
+- Built with Go 1.10
+- Reusable snippets for the Caddyfile
+- Updated QUIC
+- Auto-HTTPS certificates may be shared by multiple instances
+- Expand globbed values in -conf flag
+- Swap behavior of SIGTERM and SIGQUIT; ignore SIGHUP
+- 9 new DNS provider plugins for the ACME DNS challenge
+- New placeholder for {<Response-Header} values
+- basicauth: Username put in {user} placeholder
+- fastcgi: GET requests can now send a body
+- proxy: Service discovery with DNS SRV load balancing
+- request_id: Allow reusing request ID from header field
+- tls: Improved efficiency of many certificates and reloads
+- tls: Raise error if conflicting TLS configurations collide
+- tls: Raise TLS alert if SNI used and no cert matched
+- tls: Reject OCSP responses that expire after the certificate
+- tls: Clients can use SNI to request a specific certificate
+- tls: Add option for backend to approve on-demand certificate
+- tls: Synchronize maintenance of shared, managed certificates
+- Numerous fabulous bug fixes
+
+
 0.10.10 (October 9, 2017)
 - Built with Go 1.9.1
 - Removed Caddy-Sponsors header
