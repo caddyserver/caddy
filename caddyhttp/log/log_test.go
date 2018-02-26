@@ -17,6 +17,7 @@ package log
 import (
 	"bytes"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -175,5 +176,66 @@ func TestMultiEntries(t *testing.T) {
 	}
 	if got, expect := got2.String(), "POST hello world\n"; got != expect {
 		t.Errorf("Expected %q, but got %q", expect, got)
+	}
+}
+
+func TestLogExcept(t *testing.T) {
+	tests := []struct {
+		logPath   string
+		shouldLog bool
+		LogRules  []Rule
+	}{
+		{`/soup`, false, []Rule{{
+			PathScope: "/",
+			Entries: []*Entry{{
+				Log: &httpserver.Logger{
+					Output: DefaultLogFilename,
+
+					Exceptions: []string{"/soup"},
+				},
+				Format: DefaultLogFormat,
+			}},
+		}}},
+		{`/soup`, true, []Rule{{
+			PathScope: "/",
+			Entries: []*Entry{{
+				Log: &httpserver.Logger{
+					Output: "log.txt",
+
+					Exceptions: []string{"/tart"},
+				},
+				Format: DefaultLogFormat,
+			}},
+		}}},
+		{`/tomatosoup`, true, []Rule{{
+			PathScope: "/",
+			Entries: []*Entry{{
+				Log: &httpserver.Logger{
+					Output: "log.txt",
+
+					Exceptions: []string{"/soup"},
+				},
+				Format: DefaultLogFormat,
+			}},
+		}}},
+	}
+	log.Println("log test")
+	for i, test := range tests {
+		//log.Println(test)
+		for _, LogRule := range test.LogRules {
+			for _, e := range LogRule.Entries {
+
+				log.Printf("testlog %s : matchpath %+v ", test.logPath, e.Log)
+
+				shouldLog := e.Log.ShouldLog(test.logPath)
+				log.Printf("shouldLog %d test.shouldLog %d", shouldLog, test.shouldLog)
+				if shouldLog != test.shouldLog {
+
+					t.Fatalf("Test %d expected %d no of Log rules %d,",
+						i, test.shouldLog, shouldLog)
+				}
+			}
+		}
+
 	}
 }
