@@ -252,7 +252,7 @@ func TestLogExcept(t *testing.T) {
 			for _, e := range LogRule.Entries {
 				shouldLog := e.Log.ShouldLog(test.logPath)
 				if shouldLog != test.shouldLog {
-					t.Fatalf("Test  %d expected shouldLog=%s but got shouldLog=%s,", i, test.shouldLog, shouldLog)
+					t.Fatalf("Test  %d expected shouldLog=%t but got shouldLog=%t,", i, test.shouldLog, shouldLog)
 				}
 			}
 		}
