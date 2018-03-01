@@ -24,23 +24,6 @@ import (
 	"github.com/codahale/aesnicheck"
 )
 
-func TestDefaultTLSConfigProtocolVersions(t *testing.T) {
-	config := &Config{
-		Enabled: true,
-	}
-	SetDefaultTLSParams(config)
-	err := config.buildStandardTLSConfig()
-	if err != nil {
-		t.Fatalf("Did not expect an error, but got %v", err)
-	}
-	if got, want := config.tlsConfig.MinVersion, uint16(tls.VersionTLS12); got != want {
-		t.Errorf("Expected min version to be %x, got %x", want, got)
-	}
-	if got, want := config.tlsConfig.MaxVersion, uint16(tls.VersionTLS12); got != want {
-		t.Errorf("Expected max version to be %x, got %x", want, got)
-	}
-}
-
 func TestConvertTLSConfigProtocolVersions(t *testing.T) {
 	// same min and max protocol versions
 	config := &Config{
