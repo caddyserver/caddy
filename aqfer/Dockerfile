@@ -18,6 +18,7 @@ RUN apt-get update
 RUN apt-get -y install vim
 
 
+RUN go get gopkg.in/yaml.v2
 RUN go get github.com/aws/aws-sdk-go/aws
 RUN go get github.com/aws/aws-sdk-go/aws/awserr
 RUN go get github.com/aws/aws-sdk-go/aws/session
@@ -28,23 +29,20 @@ RUN go get github.com/dgrijalva/jwt-go
 RUN go get github.com/pkg/errors
 RUN go get github.com/sirupsen/logrus
 RUN go get github.com/satori/go.uuid
-RUN go get gopkg.in/yaml.v2
 RUN go get github.com/pquerna/cachecontrol/cacheobject
+RUN go get github.com/lucas-clemente/quic-go
 
 # additional modules currently imported in caddy/caddymain/run.go
-RUN mkdir -p /go/src/github.com/fellou89
-ADD ./aqfer/caddy-awscloudwatch /go/src/github.com/fellou89/caddy-awscloudwatch
-ADD ./aqfer/caddy-transformresponse /go/src/github.com/fellou89/caddy-transformresponse
-ADD ./aqfer/caddy-cache /go/src/github.com/fellou89/caddy-cache
-ADD ./aqfer/caddy-secrets /go/src/github.com/fellou89/caddy-secrets
-ADD ./aqfer/caddy-reauth /go/src/github.com/fellou89/caddy-reauth
-
-ADD ./aqfer/caddy-awsdynamodb /go/src/github.com/fellou89/caddy-awsdynamodb 
-# RUN cd /go/src/github.com/fellou89/caddy-awsdynamodb; npm install amazon-dax-client
+RUN go get github.com/fellou89/caddy-awscloudwatch
+RUN go get github.com/fellou89/caddy-transformresponse
+RUN go get github.com/fellou89/caddy-cache
+RUN go get github.com/fellou89/caddy-secrets
+RUN go get github.com/fellou89/caddy-reauth
 
 # adds caddy source under caddy directory on container
 RUN go get github.com/caddyserver/builds
 RUN mkdir -p /go/src/github.com/mholt/caddy
+ADD ./ /go/src/github.com/mholt/caddy
 
 
 
@@ -56,12 +54,8 @@ RUN mkdir /temp_cache
 
 
 
-ADD ./ /go/src/github.com/mholt/caddy
-
-
-
-ADD ./aqfer/caddy-redis /go/src/github.com/fellou89/caddy-redis
-ADD ./aqfer/caddy-transformrequest /go/src/github.com/fellou89/caddy-transformrequest
+RUN go get github.com/fellou89/caddy-redis
+RUN go get github.com/fellou89/caddy-transformrequest
 
 
 
