@@ -34,10 +34,9 @@ import (
 	_ "github.com/mholt/caddy/caddyhttp"
 
 	"github.com/mholt/caddy/caddytls"
-	// This is where other plugins get plugged in (imported)
 
+	// This is where other plugins get plugged in (imported)
 	_ "github.com/fellou89/caddy-awscloudwatch"
-	_ "github.com/fellou89/caddy-awsdynamodb"
 	_ "github.com/fellou89/caddy-redis"
 	_ "github.com/fellou89/caddy-secrets"
 	_ "github.com/fellou89/caddy-transformrequest"
