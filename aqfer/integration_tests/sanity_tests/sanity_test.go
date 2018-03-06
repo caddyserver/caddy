@@ -401,6 +401,8 @@ func TestFullStack(t *testing.T) {
 	run("GET", path+"?"+securityContext, "404", t)
 
 	Cleanup()
+
+	// TODO: need to test for async hincrfloatby, or rollback not working?
 }
 
 type Entity struct {

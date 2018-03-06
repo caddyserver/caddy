@@ -4,9 +4,6 @@
 [submodule "aqfer/caddy-awscloudwatch"]
 	path = aqfer/caddy-awscloudwatch
 	url = git@github.com:fellou89/caddy-awscloudwatch.git
-[submodule "aqfer/caddy-awsdynamodb"]
-	path = aqfer/caddy-awsdynamodb
-	url = git@github.com:fellou89/caddy-awsdynamodb.git
 [submodule "aqfer/caddy-secrets"]
 	path = aqfer/caddy-secrets
 	url = git@github.com:fellou89/caddy-secrets.git
