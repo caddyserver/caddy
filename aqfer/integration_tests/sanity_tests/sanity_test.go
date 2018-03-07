@@ -42,7 +42,7 @@ func TestFullStack(t *testing.T) {
 	fmt.Println("-----TestFullStack-----")
 
 	RunDocker()
-	time.Sleep(5 * time.Second)
+	time.Sleep(10 * time.Second)
 
 	path := "/v1/cids/asdf/entity_types/asdf/domains/asdf/keys/asdf"
 	securityContext := "security_context={\"scope\":{\"cids\":[\"asdf\"]}}"
@@ -401,8 +401,6 @@ func TestFullStack(t *testing.T) {
 	run("GET", path+"?"+securityContext, "404", t)
 
 	Cleanup()
-
-	// TODO: need to test for async hincrfloatby, or rollback not working?
 }
 
 type Entity struct {

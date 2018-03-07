@@ -41,7 +41,7 @@ func TestIntegrationOftransformrequestWithRedis(t *testing.T) {
 
 	// Cleanup()
 	RunDocker()
-	time.Sleep(5 * time.Second)
+	time.Sleep(10 * time.Second)
 
 	t.Log("Testing request with missing path params")
 	run("GET", "/test.go", "400", t)

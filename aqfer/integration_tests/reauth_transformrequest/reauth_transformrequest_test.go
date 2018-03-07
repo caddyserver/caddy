@@ -15,7 +15,7 @@ func TestIntegrationOfReauthWithTransformrequest(t *testing.T) {
 	fmt.Println("-----TestIntegrationOfReauthWithTransformrequest-----")
 
 	RunDocker()
-	time.Sleep(5 * time.Second)
+	time.Sleep(10 * time.Second)
 
 	client := &http.Client{}
 

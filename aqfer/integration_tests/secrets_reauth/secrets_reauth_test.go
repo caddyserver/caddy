@@ -15,7 +15,7 @@ func TestIntegrationOfSecretsWithReauth(t *testing.T) {
 	fmt.Println("-----TestIntegrationOfSecretsWithReauth-----")
 
 	RunDocker()
-	time.Sleep(5 * time.Second)
+	time.Sleep(10 * time.Second)
 
 	client := &http.Client{}
 

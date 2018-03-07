@@ -23,7 +23,6 @@ RUN go get github.com/aws/aws-sdk-go/aws
 RUN go get github.com/aws/aws-sdk-go/aws/awserr
 RUN go get github.com/aws/aws-sdk-go/aws/session
 RUN go get github.com/aws/aws-sdk-go/service/cloudwatchlogs
-RUN go get github.com/aws/aws-sdk-go/service/dynamodb
 RUN go get github.com/garyburd/redigo/redis
 RUN go get github.com/dgrijalva/jwt-go
 RUN go get github.com/pkg/errors
@@ -38,26 +37,19 @@ RUN go get github.com/fellou89/caddy-transformresponse
 RUN go get github.com/fellou89/caddy-cache
 RUN go get github.com/fellou89/caddy-secrets
 RUN go get github.com/fellou89/caddy-reauth
+RUN go get github.com/fellou89/caddy-transformrequest
+RUN go get github.com/fellou89/caddy-redis
 
 # adds caddy source under caddy directory on container
 RUN go get github.com/caddyserver/builds
 RUN mkdir -p /go/src/github.com/mholt/caddy
 ADD ./ /go/src/github.com/mholt/caddy
 
-
-
 ADD ./aqfer/Caddyfile /Caddyfile
 ADD ./aqfer/.secrets.yml /.secrets.yml
 ADD ./aqfer/test.go /test.go
 ADD ./aqfer/scripts/run_unit_tests.sh /run_unit_tests.sh
 RUN mkdir /temp_cache
-
-
-
-RUN go get github.com/fellou89/caddy-redis
-RUN go get github.com/fellou89/caddy-transformrequest
-
-
 
 # builds caddy binary and moves to location of Caddyfile
 WORKDIR /go/src/github.com/mholt/caddy/caddy
