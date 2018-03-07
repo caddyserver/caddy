@@ -439,6 +439,14 @@
 			"notests": true
 		},
 		{
+			"importpath": "gopkg.in/mcuadros/go-syslog.v2",
+			"repository": "https://gopkg.in/mcuadros/go-syslog.v2",
+			"vcs": "git",
+			"revision": "9cf13b7327c0e153da3cba3540c2ae2b879c3859",
+			"branch": "master",
+			"notests": true
+		},
+		{
 			"importpath": "gopkg.in/natefinch/lumberjack.v2",
 			"repository": "https://gopkg.in/natefinch/lumberjack.v2",
 			"vcs": "git",
