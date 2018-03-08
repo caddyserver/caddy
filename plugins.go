@@ -275,7 +275,7 @@ func EmitEvent(event EventName, info interface{}) {
 func cloneEventHooks() *sync.Map {
 	c := &sync.Map{}
 	eventHooks.Range(func(k, v interface{}) bool {
-		c.LoadOrStore(k, v)
+		c.Store(k, v)
 		return true
 	})
 	return c
@@ -285,6 +285,18 @@ func cloneEventHooks() *sync.Map {
 func purgeEventHooks() {
 	eventHooks.Range(func(k, _ interface{}) bool {
 		eventHooks.Delete(k)
+		return true
+	})
+}
+
+// restoreEventHooks restores eventHooks with a provided *sync.Map
+func restoreEventHooks(m *sync.Map) {
+	// Purge old event hooks
+	purgeEventHooks()
+
+	// Restore event hooks
+	m.Range(func(k, v interface{}) bool {
+		eventHooks.Store(k, v)
 		return true
 	})
 }
