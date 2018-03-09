@@ -138,6 +138,10 @@ ecr_repo_push: build_caddy_image
 	docker tag ${ROOT_NAME}-caddy:latest ${ecrUri}
 	docker push ${ecrUri}
 
+.PHONY: build_new_caddy_image
+build_new_caddy_image:
+	docker build --no-cache -f aqfer/Dockerfile -t ${ROOT_NAME}-caddy .
+
 .PHONY: build_caddy_image
 build_caddy_image:
 	docker build -f aqfer/Dockerfile -t ${ROOT_NAME}-caddy .

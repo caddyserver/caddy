@@ -39,6 +39,7 @@ RUN go get github.com/fellou89/caddy-secrets
 RUN go get github.com/fellou89/caddy-reauth
 RUN go get github.com/fellou89/caddy-transformrequest
 RUN go get github.com/fellou89/caddy-redis
+# ADD ./aqfer/redis /go/src/github.com/fellou89/caddy-redis
 
 # adds caddy source under caddy directory on container
 RUN go get github.com/caddyserver/builds

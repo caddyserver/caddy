@@ -67,14 +67,14 @@ func TestIntegrationOftransformrequestWithRedis(t *testing.T) {
 	t.Log("Testing GET of exisiting key")
 	run("GET", path+"?"+securityContext, "200", t)
 
-	// redis nodule only passes on execution on a 200, so no longer need for a file at end of path
+	// redis module only passes on execution on a 200, so no longer need for a file at end of path
 	path = "/v1/cids/asdf/entity_types/asdf/domains/asdf/keys/asdf"
 
 	t.Log("Testing PUT non list value into existing redis key")
 	run("PUT", path+"?"+securityContext+"&value=asdf", "204", t)
 
 	t.Log("Testing PUT with different types of values on existing key over existing value")
-	run("PUT", path+"?"+securityContext+"&value=fdsa&firstlist=[asdf,fdsa]&number=1", "204", t)
+	run("PUT", path+"?"+securityContext+"&value=qwer&firstlist=[asdf,fdsa]&number=1", "204", t)
 
 	t.Log("Testing POST of list to exisiting key")
 	run("POST", path+"?"+securityContext+"&list=[]", "204", t)
@@ -94,7 +94,7 @@ func TestIntegrationOftransformrequestWithRedis(t *testing.T) {
 	t.Log("Testing POST add to non number value")
 	run("POST", path+"?"+securityContext+"&value=$ADD(1.2)", "409", t)
 
-	t.Log("Testing POST value to exiting key to replace")
+	t.Log("Testing POST value on existing key to replace")
 	run("POST", path+"?"+securityContext+"&value=1", "204", t)
 
 	t.Log("Testing POST incr to number value")
