@@ -36,11 +36,11 @@ import (
 	"github.com/mholt/caddy/caddytls"
 
 	// This is where other plugins get plugged in (imported)
-	_ "github.com/fellou89/caddy-awscloudwatch"
-	_ "github.com/fellou89/caddy-redis"
-	_ "github.com/fellou89/caddy-secrets"
-	_ "github.com/fellou89/caddy-transformrequest"
-	_ "github.com/fellou89/caddy-transformresponse"
+	_ "github.com/startsmartlabs/caddy-awscloudwatch"
+	_ "github.com/startsmartlabs/caddy-redis"
+	_ "github.com/startsmartlabs/caddy-secrets"
+	_ "github.com/startsmartlabs/caddy-transformrequest"
+	_ "github.com/startsmartlabs/caddy-transformresponse"
 
 	_ "github.com/fellou89/caddy-reauth"
 )

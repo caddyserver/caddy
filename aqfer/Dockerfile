@@ -32,14 +32,14 @@ RUN go get github.com/pquerna/cachecontrol/cacheobject
 RUN go get github.com/lucas-clemente/quic-go
 
 # additional modules currently imported in caddy/caddymain/run.go
-RUN go get github.com/fellou89/caddy-awscloudwatch
-RUN go get github.com/fellou89/caddy-transformresponse
 RUN go get github.com/fellou89/caddy-cache
-RUN go get github.com/fellou89/caddy-secrets
 RUN go get github.com/fellou89/caddy-reauth
-RUN go get github.com/fellou89/caddy-transformrequest
-RUN go get github.com/fellou89/caddy-redis
-# ADD ./aqfer/redis /go/src/github.com/fellou89/caddy-redis
+RUN go get github.com/startsmartlabs/caddy-secrets
+RUN go get github.com/startsmartlabs/caddy-awscloudwatch
+RUN go get github.com/startsmartlabs/caddy-transformresponse
+RUN go get github.com/startsmartlabs/caddy-transformrequest
+RUN go get github.com/startsmartlabs/caddy-redis
+# ADD ./aqfer/redis /go/src/github.com/startsmartlabs/caddy-redis
 
 # adds caddy source under caddy directory on container
 RUN go get github.com/caddyserver/builds

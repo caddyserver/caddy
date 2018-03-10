@@ -473,8 +473,8 @@ func RegisterDevDirective(name, before string) {
 // http server type, including non-standard (3rd-party) directives.
 // The ordering of this list is important.
 var directives = []string{
-	"secrets",       // github.com/fellou89/caddy-secrets
-	"awscloudwatch", // github.com/fellou89/caddy-awscloudwatch
+	"secrets",       // github.com/startsmartlabs/caddy-secrets
+	"awscloudwatch", // github.com/startsmartlabs/caddy-awscloudwatch
 
 	// primitive actions that set up the fundamental vitals of each config
 	"root",
@@ -548,9 +548,9 @@ var directives = []string{
 	"gopkg",     // github.com/zikes/gopkg
 	"restic",    // github.com/restic/caddy
 
-	"transformrequest",  // github.com/fellou89/caddy-transformrequest
-	"redis",             // github.com/fellou89/caddy-redis
-	"transformresponse", // github.com/fellou89/caddy-transformresponse
+	"transformrequest",  // github.com/startsmartlabs/caddy-transformrequest
+	"redis",             // github.com/startsmartlabs/caddy-redis
+	"transformresponse", // github.com/startsmartlabs/caddy-transformresponse
 }
 
 const (
