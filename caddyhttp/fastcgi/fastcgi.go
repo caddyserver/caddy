@@ -33,10 +33,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"crypto/tls"
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 	"github.com/mholt/caddy/caddytls"
-	"crypto/tls"
 )
 
 // Handler is a middleware type that can handle requests as a FastCGI client.
@@ -327,7 +327,7 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 		env["HTTPS"] = "on"
 		// and pass the protocol details like apache's mod_ssl
 		v, ok := sslProtocolToStringMap[r.TLS.Version]
-		if (ok) {
+		if ok {
 			env["SSL_PROTOCOL"] = v
 		}
 		// and pass the cipher like apache's mod_ssl
@@ -483,7 +483,7 @@ func (l LogError) Error() string {
 // Map of supported protocols to Apache ssl_mod format
 // Note that these are slightly different from SupportedProtocols in caddytls/config.go's
 var sslProtocolToStringMap = map[uint16]string{
-	tls.VersionTLS10 : "TLSv1",
-	tls.VersionTLS11 : "TLSv1.1",
-	tls.VersionTLS12 : "TLSv1.2",
+	tls.VersionTLS10: "TLSv1",
+	tls.VersionTLS11: "TLSv1.1",
+	tls.VersionTLS12: "TLSv1.2",
 }

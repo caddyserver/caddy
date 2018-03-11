@@ -537,6 +537,7 @@ var SupportedProtocols = map[string]uint16{
 	"tls1.1": tls.VersionTLS11,
 	"tls1.2": tls.VersionTLS12,
 }
+
 // NOTE: if updating the above map, also update sslProtocolToStringMap in caddyhttp/fastcgi/fastcgi.go
 
 // Map of supported ciphers, used only for parsing config.
