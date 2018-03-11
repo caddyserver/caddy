@@ -50,6 +50,8 @@ ADD ./aqfer/Caddyfile /Caddyfile
 ADD ./aqfer/.secrets.yml /.secrets.yml
 ADD ./aqfer/test.go /test.go
 ADD ./aqfer/scripts/run_unit_tests.sh /run_unit_tests.sh
+ADD ./aqfer/scripts/run_integration_tests.sh /run_integration_tests.sh
+ADD ./aqfer/scripts/run_sanity_tests.sh /run_sanity_tests.sh
 RUN mkdir /temp_cache
 
 # builds caddy binary and moves to location of Caddyfile
