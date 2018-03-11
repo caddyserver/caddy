@@ -551,6 +551,7 @@ var directives = []string{
 	"startup",  // TODO: Deprecate this directive
 	"shutdown", // TODO: Deprecate this directive
 	"on",
+	"supervisor", // github.com/lucaslorentz/caddy-supervisor
 	"request_id",
 	"realip", // github.com/captncraig/caddy-realip
 	"git",    // github.com/abiosoft/caddy-git
