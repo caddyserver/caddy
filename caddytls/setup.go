@@ -106,19 +106,19 @@ func setupTLS(c *caddy.Controller) error {
 			case "protocols":
 				args := c.RemainingArgs()
 				if len(args) == 1 {
-					value, ok := supportedProtocols[strings.ToLower(args[0])]
+					value, ok := SupportedProtocols[strings.ToLower(args[0])]
 					if !ok {
 						return c.Errf("Wrong protocol name or protocol not supported: '%s'", args[0])
 					}
 
 					config.ProtocolMinVersion, config.ProtocolMaxVersion = value, value
 				} else {
-					value, ok := supportedProtocols[strings.ToLower(args[0])]
+					value, ok := SupportedProtocols[strings.ToLower(args[0])]
 					if !ok {
 						return c.Errf("Wrong protocol name or protocol not supported: '%s'", args[0])
 					}
 					config.ProtocolMinVersion = value
-					value, ok = supportedProtocols[strings.ToLower(args[1])]
+					value, ok = SupportedProtocols[strings.ToLower(args[1])]
 					if !ok {
 						return c.Errf("Wrong protocol name or protocol not supported: '%s'", args[1])
 					}
@@ -129,7 +129,7 @@ func setupTLS(c *caddy.Controller) error {
 				}
 			case "ciphers":
 				for c.NextArg() {
-					value, ok := supportedCiphersMap[strings.ToUpper(c.Val())]
+					value, ok := SupportedCiphersMap[strings.ToUpper(c.Val())]
 					if !ok {
 						return c.Errf("Wrong cipher name or cipher not supported: '%s'", c.Val())
 					}
