@@ -1,7 +1,7 @@
 FROM aqfer-caddy:latest
 
-RUN apt-get update
-RUN apt-get -y install vim
+# RUN apt-get update
+# RUN apt-get -y install vim
 
 ADD ./Caddyfile /Caddyfile
 ADD ./test.yml /.secrets.yml
