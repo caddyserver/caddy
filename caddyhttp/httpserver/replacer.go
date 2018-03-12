@@ -376,17 +376,17 @@ func (r *replacer) getSubstitution(key string) string {
 		}
 		elapsedDuration := time.Since(r.responseRecorder.start)
 		return strconv.FormatInt(convertToMilliseconds(elapsedDuration), 10)
-	case "{ssl_protocol}":
+	case "{tls_protocol}":
 		if r.request.TLS != nil {
 			for k, v := range caddytls.SupportedProtocols {
 				if v == r.request.TLS.Version {
 					return k
 				}
 			}
-			return "yes" // this should never happen, but guard in case
+			return "tls" // this should never happen, but guard in case
 		}
-		return "none" // because not using a secure channel
-	case "{ssl_cipher}":
+		return r.emptyValue // because not using a secure channel
+	case "{tls_cipher}":
 		if r.request.TLS != nil {
 			for k, v := range caddytls.SupportedCiphersMap {
 				if v == r.request.TLS.CipherSuite {
@@ -395,7 +395,7 @@ func (r *replacer) getSubstitution(key string) string {
 			}
 			return "UNKNOWN" // this should never happen, but guard in case
 		}
-		return "na" // "not applicable" because not using a secure connection
+		return r.emptyValue
 	}
 
 	return r.emptyValue

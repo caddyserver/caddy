@@ -326,12 +326,13 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 	// Some web apps rely on knowing HTTPS or not
 	if r.TLS != nil {
 		env["HTTPS"] = "on"
-		// and pass the protocol details like apache's mod_ssl
-		v, ok := sslProtocolToStringMap[r.TLS.Version]
+		// and pass the protocol details in a manner compatible with apache's mod_ssl
+		// (which is why they have a SSL_ prefix and not TLS_).
+		v, ok := tlsProtocolStringToMap[r.TLS.Version]
 		if ok {
 			env["SSL_PROTOCOL"] = v
 		}
-		// and pass the cipher like apache's mod_ssl
+		// and pass the cipher suite in a manner compatible with apache's mod_ssl
 		for k, v := range caddytls.SupportedCiphersMap {
 			if v == r.TLS.CipherSuite {
 				env["SSL_CIPHER"] = k
@@ -483,7 +484,7 @@ func (l LogError) Error() string {
 
 // Map of supported protocols to Apache ssl_mod format
 // Note that these are slightly different from SupportedProtocols in caddytls/config.go's
-var sslProtocolToStringMap = map[uint16]string{
+var tlsProtocolStringToMap = map[uint16]string{
 	tls.VersionTLS10: "TLSv1",
 	tls.VersionTLS11: "TLSv1.1",
 	tls.VersionTLS12: "TLSv1.2",

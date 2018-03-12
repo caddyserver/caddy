@@ -532,13 +532,12 @@ var supportedKeyTypes = map[string]acme.KeyType{
 
 // Map of supported protocols.
 // HTTP/2 only supports TLS 1.2 and higher.
+// If updating this map, also update tlsProtocolStringToMap in caddyhttp/fastcgi/fastcgi.go
 var SupportedProtocols = map[string]uint16{
 	"tls1.0": tls.VersionTLS10,
 	"tls1.1": tls.VersionTLS11,
 	"tls1.2": tls.VersionTLS12,
 }
-
-// NOTE: if updating the above map, also update sslProtocolToStringMap in caddyhttp/fastcgi/fastcgi.go
 
 // Map of supported ciphers, used only for parsing config.
 //
