@@ -214,12 +214,3 @@ stop_tasks:
 .PHONY: run_unit_tests
 run_unit_tests:
 	docker-compose -f aqfer/docker-compose.yml run caddy /run_unit_tests.sh
-
-.PHONY: run_integration_tests
-run_integration_tests:
-	docker-compose -f aqfer/docker-compose.yml run caddy /run_integration_tests.sh
-
-.PHONY: run_sanity_tests
-run_sanity_tests:
-	docker-compose -f aqfer/docker-compose.yml run caddy /run_sanity_tests.sh
-

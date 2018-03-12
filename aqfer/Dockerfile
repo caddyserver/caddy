@@ -14,8 +14,8 @@ FROM golang:1.9
 
 
 # VIM ONLY USED FOR DEVELOPMENT OF CADDY STACK
-RUN apt-get update
-RUN apt-get -y install vim
+# RUN apt-get update
+# RUN apt-get -y install vim
 
 
 RUN go get gopkg.in/yaml.v2
@@ -30,6 +30,7 @@ RUN go get github.com/sirupsen/logrus
 RUN go get github.com/satori/go.uuid
 RUN go get github.com/pquerna/cachecontrol/cacheobject
 RUN go get github.com/lucas-clemente/quic-go
+RUN go get github.com/stretchr/testify/require
 
 # additional modules currently imported in caddy/caddymain/run.go
 RUN go get github.com/fellou89/caddy-cache
@@ -50,6 +51,7 @@ ADD ./aqfer/Caddyfile /Caddyfile
 ADD ./aqfer/.secrets.yml /.secrets.yml
 ADD ./aqfer/test.go /test.go
 ADD ./aqfer/scripts/run_unit_tests.sh /run_unit_tests.sh
+ADD ./aqfer/integration_tests/ /aqfer/integration_tests/
 ADD ./aqfer/scripts/run_integration_tests.sh /run_integration_tests.sh
 ADD ./aqfer/scripts/run_sanity_tests.sh /run_sanity_tests.sh
 RUN mkdir /temp_cache
