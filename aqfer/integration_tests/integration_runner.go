@@ -29,7 +29,8 @@ func RunDocker() {
 		fmt.Println(out.String())
 	}
 
-	docker = exec.Command("/bin/sh", "-c", "docker-compose -f ../docker-compose-integration.yml up")
+	// docker = exec.Command("/bin/sh", "-c", "docker-compose -f ../docker-compose-integration.yml up")
+	docker = exec.Command("/bin/sh", "-c", "docker run -p 8082:8082 aqfer-integration")
 	docker.Stdout = &out
 	docker.Stderr = &stderr
 
