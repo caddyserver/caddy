@@ -42,7 +42,7 @@ func TestFullStack(t *testing.T) {
 	fmt.Println("-----TestFullStack-----")
 
 	RunDocker()
-	time.Sleep(10 * time.Second)
+	time.Sleep(30 * time.Second)
 
 	path := "/v1/cids/asdf/entity_types/asdf/domains/asdf/keys/asdf"
 	securityContext := "security_context={\"scope\":{\"cids\":[\"asdf\"]}}"
