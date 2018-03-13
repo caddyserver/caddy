@@ -15,8 +15,8 @@
 
   transformrequest
 
-  # awsdynamodb aqfer-idsync2 partition-key sort-key DAX 8086 DAX_ENDPOINT
-  redis elasticacheaqfer2.elwwyl.0001.use1.cache.amazonaws.com:6379
+  # awsdynamodb DYNAMO_TABLE PARTITION_KEY SORT_KEY DAX 8086 DAX_ENDPOINT
+  redis elasticacheaqfer1.elwwyl.0001.use1.cache.amazonaws.com:6379
 
   transformresponse
 }

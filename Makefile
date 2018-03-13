@@ -1,5 +1,5 @@
-DBVERSION := 2
-ECSVERSION := 4
+DBVERSION := 1
+ECSVERSION := 1
 ROOT_NAME := aqfer
 DBNAME := DB${ROOT_NAME}${DBVERSION}
 ECSNAME := ECS${ROOT_NAME}${ECSVERSION}
@@ -43,10 +43,12 @@ LB_SECURITY_GROUP := ${ROOT_NAME}LB-sg${ECSVERSION}
 ARTIFACTS_BUCKET := cloudformation-art-${ROOT_NAME}
 
 .PHONY: setup_and_launch
-setup_and_launch: setup update_container_repo spin_up_stacks
+setup_and_launch: setup spin_up_db update_container_repo spin_up_ecs
 
 .PHONY: full_launch
-full_launch: update_container_repo spin_up_stacks
+full_launch: update_container_repo spin_up_db spin_up_ecs
+
+# run `make get_dns_name` to get service address
 
 
 .PHONY: setup
@@ -55,31 +57,31 @@ setup: aws_build create_artifact_bucket create_keypair
 .PHONY: update_container_repo
 update_container_repo: ready_caddyfile ecr_repo_push
 
-.PHONY: spin_up_stacks
-spin_up_stacks: spin_up_db spin_up_ecs get_dns_name
-
 .PHONY: update_tasks
 update_tasks: update_container_repo stop_tasks
 
 .PHONY: tear_down_stacks
 tear_down_stacks: tear_down_db tear_down_ecs
-
+# make instances=i-029aefe585538720b\ i-09abb841e51433e42 tear_down_stacks
+# must list specific ec2 instances to destroy (delimited by spaces)
+# this command will not destroy the EC2 KeyPair that was created
 
 
 
 .PHONY: aws_build
 aws_build:
-	docker build -f aqfer/Dockerfile.aws -t aws_image .
+	docker build --no-cache -f aqfer/Dockerfile.aws -t aws_image .
 
 .PHONY: create_artifact_bucket
 create_artifact_bucket:
 	docker-compose -f aqfer/docker-compose-aws.yml run \
 		aws-service aws s3 mb s3://${ARTIFACTS_BUCKET}/
 
-.PHONY: keypair
-keypair:
+.PHONY: create_keypair
+create_keypair:
 	docker-compose -f aqfer/docker-compose-aws.yml run \
-	aws-service /scripts/keypair.sh ${KEYPAIR_NAME} 2>&1 > keypair.pem
+	aws-service /scripts/keypair.sh ${KEYPAIR_NAME} 2>&1 > aqfer/aws/${KEYPAIR_NAME}.pem
+	chmod 700 aqfer/aws/${KEYPAIR_NAME}$1.pem
 
 
 
@@ -93,16 +95,18 @@ spin_up_db:
 	-e DynamoTableName=${DYNAMO_TABLE} \
 	-e PartitionKey=${PARTITION_KEY} \
 	-e SortKey=${SORT_KEY} \
-	-e DaxName=${DAX_CLUSTER_NAME} \
-	-e DaxNodeType=${DAX_NODE_TYPE} \
-	-e DaxRoleName=${ROOT_NAME}DaxRole${DBVERSION} \
-	-e DaxSubnetGroupName=dax-subnet-${ROOT_NAME}${DBVERSION} \
-	-e DaxSecurityGroupName=${DAX_SECURITY_GROUP} \
 	-e ECSecurityGroupName=${EC_SECURITY_GROUP} \
 	-e ECSubnetGroupName=${EC_SUBNET_GROUP} \
 	-e ECNodeType=${EC_NODE_TYPE} \
 	-e ECClusterName=${EC_CLUSTER_NAME} \
 	aws-service /scripts/spin_up_db.sh ${ARTIFACTS_BUCKET} ${DBNAME}
+
+# -e DaxName=${DAX_CLUSTER_NAME} \
+#	-e DaxNodeType=${DAX_NODE_TYPE} \
+#	-e DaxRoleName=${ROOT_NAME}DaxRole${DBVERSION} \
+#	-e DaxSubnetGroupName=dax-subnet-${ROOT_NAME}${DBVERSION} \
+#	-e DaxSecurityGroupName=${DAX_SECURITY_GROUP} \
+
 
 # still need to test this one more time, if this works get rid of delete_db.sh
 .PHONY: tear_down_db
@@ -121,9 +125,9 @@ get_db_endpoints:
 .PHONY: ready_caddyfile
 ready_caddyfile: get_db_endpoints
 	cat aqfer/Caddyfile_template | sed 's/APP_LOG_GROUP_NAME/'${APP_LOG_GROUP_NAME}'/g' > /tmp/Caddyfile
-	perl -pi -e 's/DYNAMO_TABLE/'${DYNAMO_TABLE}'/g' /tmp/Caddyfile
-	perl -pi -e 's/PARTITION_KEY/'${PARTITION_KEY}'/g' /tmp/Caddyfile
-	perl -pi -e 's/SORT_KEY/'${SORT_KEY}'/g' /tmp/Caddyfile
+	# perl -pi -e 's/DYNAMO_TABLE/'${DYNAMO_TABLE}'/g' /tmp/Caddyfile
+	# perl -pi -e 's/PARTITION_KEY/'${PARTITION_KEY}'/g' /tmp/Caddyfile
+	# perl -pi -e 's/SORT_KEY/'${SORT_KEY}'/g' /tmp/Caddyfile
 	cat /tmp/Caddyfile | sed 's/EC_ENDPOINT/'$(shell cat /tmp/ec_endpoint)'/g' > aqfer/Caddyfile
 	# perl -pi -e 's/EC_ENDPOINT/'$(shell cat /tmp/ec_endpoint)'/g' /tmp/Caddyfile
 	# cat /tmp/Caddyfile | sed 's/DAX_ENDPOINT/'$(shell cat /tmp/dax_endpoint)'/g' > aqfer/Caddyfile
@@ -173,21 +177,24 @@ spin_up_ecs:
 	-e AppLogGroupName=${APP_LOG_GROUP_NAME} \
 	-e ECSLogGroupName=${ECS_LOG_GROUP_NAME} \
 	aws-service /scripts/spin_up_ecs.sh ${ARTIFACTS_BUCKET} ${ECSNAME} \
-	${EC_SECURITY_GROUP} $(shell cat /tmp/ec_endpoint | sed -E "s/.*:([0-9]*).*/\1/") \
-	${DAX_SECURITY_GROUP} $(shell cat /tmp/dax_endpoint | sed -E "s/.*:([0-9]*).*/\1/")
+	${EC_SECURITY_GROUP} $(shell cat /tmp/ec_endpoint | sed -E "s/.*:([0-9]*).*/\1/")
 
+# ${DAX_SECURITY_GROUP} $(shell cat /tmp/dax_endpoint | sed -E "s/.*:([0-9]*).*/\1/")
+
+# make instances=i-029aefe585538720b\ i-09abb841e51433e42 tear_down_ecs
+# must list specific ec2 instances to destroy (delimited by spaces)
 .PHONY: tear_down_ecs
 tear_down_ecs: get_db_endpoints
 ifdef instances
 	docker-compose -f aqfer/docker-compose-aws.yml run aws-service \
 	     aws ec2 revoke-security-group-ingress --group-name ${EC_SECURITY_GROUP} --source-group ${EC2_SECURITY_GROUP} --port \
 			 	$(shell cat /tmp/ec_endpoint | sed -E "s/.*:([0-9]*)/\1/") --protocol tcp;\
-	     aws ec2 revoke-security-group-ingress --group-name ${DAX_SECURITY_GROUP} --source-group ${EC2_SECURITY_GROUP} --port \
-			 	$(shell cat /tmp/dax_endpoint | sed -E "s/.*:([0-9]*)/\1/") --protocol tcp;\
 	     aws ec2 terminate-instances --instance-ids $(instances);\
 	     aws ec2 wait instance-terminated --instance-ids $(instances);\
 	     aws cloudformation delete-stack --stack-name ${ECSNAME}
 endif
+#	     aws ec2 revoke-security-group-ingress --group-name ${DAX_SECURITY_GROUP} --source-group ${EC2_SECURITY_GROUP} --port \
+			 	$(shell cat /tmp/dax_endpoint | sed -E "s/.*:([0-9]*)/\1/") --protocol tcp;\
 
 
 
