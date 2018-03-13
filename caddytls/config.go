@@ -511,7 +511,7 @@ func SetDefaultTLSParams(config *Config) {
 
 	// Set default protocol min and max versions - must balance compatibility and security
 	if config.ProtocolMinVersion == 0 {
-		config.ProtocolMinVersion = tls.VersionTLS11
+		config.ProtocolMinVersion = tls.VersionTLS12
 	}
 	if config.ProtocolMaxVersion == 0 {
 		config.ProtocolMaxVersion = tls.VersionTLS12
