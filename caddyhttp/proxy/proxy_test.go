@@ -1107,7 +1107,7 @@ func TestProxyDirectorURL(t *testing.T) {
 			continue
 		}
 
-		NewSingleHostReverseProxy(targetURL, c.without, 0).Director(req)
+		NewSingleHostReverseProxy(targetURL, c.without, 0, 30*time.Second).Director(req)
 		if expect, got := c.expectURL, req.URL.String(); expect != got {
 			t.Errorf("case %d url not equal: expect %q, but got %q",
 				i, expect, got)
@@ -1310,7 +1310,7 @@ func newFakeUpstream(name string, insecure bool) *fakeUpstream {
 		from: "/",
 		host: &UpstreamHost{
 			Name:         name,
-			ReverseProxy: NewSingleHostReverseProxy(uri, "", http.DefaultMaxIdleConnsPerHost),
+			ReverseProxy: NewSingleHostReverseProxy(uri, "", http.DefaultMaxIdleConnsPerHost, 30*time.Second),
 		},
 	}
 	if insecure {
@@ -1324,6 +1324,7 @@ type fakeUpstream struct {
 	host    *UpstreamHost
 	from    string
 	without string
+	timeout time.Duration
 }
 
 func (u *fakeUpstream) From() string {
@@ -1338,7 +1339,7 @@ func (u *fakeUpstream) Select(r *http.Request) *UpstreamHost {
 		}
 		u.host = &UpstreamHost{
 			Name:         u.name,
-			ReverseProxy: NewSingleHostReverseProxy(uri, u.without, http.DefaultMaxIdleConnsPerHost),
+			ReverseProxy: NewSingleHostReverseProxy(uri, u.without, http.DefaultMaxIdleConnsPerHost, u.GetTimeout()),
 		}
 	}
 	return u.host
@@ -1347,6 +1348,7 @@ func (u *fakeUpstream) Select(r *http.Request) *UpstreamHost {
 func (u *fakeUpstream) AllowedPath(requestPath string) bool { return true }
 func (u *fakeUpstream) GetTryDuration() time.Duration       { return 1 * time.Second }
 func (u *fakeUpstream) GetTryInterval() time.Duration       { return 250 * time.Millisecond }
+func (u *fakeUpstream) GetTimeout() time.Duration           { return 30 * time.Second }
 func (u *fakeUpstream) GetHostCount() int                   { return 1 }
 func (u *fakeUpstream) Stop() error                         { return nil }
 
@@ -1386,7 +1388,7 @@ func (u *fakeWsUpstream) Select(r *http.Request) *UpstreamHost {
 	uri, _ := url.Parse(u.name)
 	host := &UpstreamHost{
 		Name:         u.name,
-		ReverseProxy: NewSingleHostReverseProxy(uri, u.without, http.DefaultMaxIdleConnsPerHost),
+		ReverseProxy: NewSingleHostReverseProxy(uri, u.without, http.DefaultMaxIdleConnsPerHost, 30*time.Second),
 		UpstreamHeaders: http.Header{
 			"Connection": {"{>Connection}"},
 			"Upgrade":    {"{>Upgrade}"}},
@@ -1400,6 +1402,7 @@ func (u *fakeWsUpstream) Select(r *http.Request) *UpstreamHost {
 func (u *fakeWsUpstream) AllowedPath(requestPath string) bool { return true }
 func (u *fakeWsUpstream) GetTryDuration() time.Duration       { return 1 * time.Second }
 func (u *fakeWsUpstream) GetTryInterval() time.Duration       { return 250 * time.Millisecond }
+func (u *fakeWsUpstream) GetTimeout() time.Duration           { return 30 * time.Second }
 func (u *fakeWsUpstream) GetHostCount() int                   { return 1 }
 func (u *fakeWsUpstream) Stop() error                         { return nil }
 

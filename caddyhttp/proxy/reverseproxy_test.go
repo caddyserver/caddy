@@ -21,6 +21,7 @@ import (
 	"net/url"
 	"strconv"
 	"testing"
+	"time"
 )
 
 const (
@@ -66,7 +67,7 @@ func TestSingleSRVHostReverseProxy(t *testing.T) {
 	}
 	port := uint16(pp)
 
-	rp := NewSingleHostReverseProxy(target, "", http.DefaultMaxIdleConnsPerHost)
+	rp := NewSingleHostReverseProxy(target, "", http.DefaultMaxIdleConnsPerHost, 30*time.Second)
 	rp.srvResolver = testResolver{
 		result: []*net.SRV{
 			{Target: upstream.Hostname(), Port: port, Priority: 1, Weight: 1},
