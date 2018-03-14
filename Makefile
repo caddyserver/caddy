@@ -208,8 +208,8 @@ get_dns_name:
 run_locally:
 	docker-compose -f aqfer/docker-compose.yml up
 
-.PHONY: launch_locally
-launch_locally: build_caddy_image run_locally
+.PHONY: startover_locally
+startover_locally: build_caddy_image run_locally
 	docker-compose -f aqfer/docker-compose.yml up
 
 .PHONY: stop_tasks

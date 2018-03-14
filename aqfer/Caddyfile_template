@@ -8,8 +8,8 @@
   awscloudwatch debug APP_LOG_GROUP_NAME development 65536
 
   reauth {
-    path /ids/v1
-    refresh url=https://n0pwyybuji.execute-api.us-west-2.amazonaws.com/pre_prod,skipverify=true,timeout=5s,follow=true,cache_path=temp_cache,lock_timeout=5m
+    path /v1
+    refresh url=https://auth.api-preprod.aqfer.net,skipverify=true,timeout=5s,follow=true,cache_path=temp_cache,lock_timeout=5m
     failure status code=401
   }
 
