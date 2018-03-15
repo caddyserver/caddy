@@ -112,7 +112,8 @@ func TestReplace(t *testing.T) {
 		{"Query string is {query}", "Query string is foo=bar"},
 		{"Query string value for foo is {?foo}", "Query string value for foo is bar"},
 		{"Missing query string argument is {?missing}", "Missing query string argument is "},
-		{"Label1 is {label1} and label2 is {label2} but label 3 is {label3}. {label4}", "Label1 is localhost and label2 is local but label 3 is -. -"},
+		{"{label1} {label2} {label3} {label4}", "localhost local - -"},
+		{"Label with missing number is {label} or {labelQQ}", "Label with missing number is - or -"},
 	}
 
 	for _, c := range testCases {
