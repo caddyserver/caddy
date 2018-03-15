@@ -25,7 +25,7 @@ import (
 
 	"github.com/codahale/aesnicheck"
 	"github.com/mholt/caddy"
-	"github.com/xenolf/lego/acme"
+	"github.com/xenolf/lego/acmev2"
 )
 
 // Config describes how TLS should be configured and used.
@@ -190,10 +190,15 @@ func NewConfig(inst *caddy.Instance) *Config {
 // it does not load them into memory. If allowPrompts is true,
 // the user may be shown a prompt.
 func (c *Config) ObtainCert(name string, allowPrompts bool) error {
-	if !c.Managed || !HostQualifies(name) {
+	skip, err := c.preObtainOrRenewChecks(name, allowPrompts)
+	if err != nil {
+		return err
+	}
+	if skip {
 		return nil
 	}
 
+	// we expect this to be a new (non-existent) site
 	storage, err := c.StorageFor(c.CAUrl)
 	if err != nil {
 		return err
@@ -204,9 +209,6 @@ func (c *Config) ObtainCert(name string, allowPrompts bool) error {
 	}
 	if siteExists {
 		return nil
-	}
-	if c.ACMEEmail == "" {
-		c.ACMEEmail = getEmail(storage, allowPrompts)
 	}
 
 	client, err := newACMEClient(c, allowPrompts)
@@ -219,11 +221,46 @@ func (c *Config) ObtainCert(name string, allowPrompts bool) error {
 // RenewCert renews the certificate for name using c. It stows the
 // renewed certificate and its assets in storage if successful.
 func (c *Config) RenewCert(name string, allowPrompts bool) error {
+	skip, err := c.preObtainOrRenewChecks(name, allowPrompts)
+	if err != nil {
+		return err
+	}
+	if skip {
+		return nil
+	}
+
 	client, err := newACMEClient(c, allowPrompts)
 	if err != nil {
 		return err
 	}
 	return client.Renew(name)
+}
+
+// preObtainOrRenewChecks perform a few simple checks before
+// obtaining or renewing a certificate with ACME, and returns
+// whether this name should be skipped (like if it's not
+// managed TLS) as well as any error. It ensures that the
+// config is Managed, that the name qualifies for a certificate,
+// and that an email address is available.
+func (c *Config) preObtainOrRenewChecks(name string, allowPrompts bool) (bool, error) {
+	if !c.Managed || !HostQualifies(name) {
+		return true, nil
+	}
+
+	// wildcard certificates require DNS challenge (as of March 2018)
+	if strings.Contains(name, "*") && c.DNSProvider == "" {
+		return false, fmt.Errorf("wildcard domain name (%s) requires DNS challenge; use dns subdirective to configure it", name)
+	}
+
+	if c.ACMEEmail == "" {
+		var err error
+		c.ACMEEmail, err = getEmail(c, allowPrompts)
+		if err != nil {
+			return false, err
+		}
+	}
+
+	return false, nil
 }
 
 // StorageFor obtains a TLS Storage instance for the given CA URL which should

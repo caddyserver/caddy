@@ -34,22 +34,26 @@ import (
 	"strings"
 
 	"github.com/mholt/caddy"
-	"github.com/xenolf/lego/acme"
+	"github.com/xenolf/lego/acmev2"
 )
 
 // HostQualifies returns true if the hostname alone
-// appears eligible for automatic HTTPS. For example,
+// appears eligible for automatic HTTPS. For example:
 // localhost, empty hostname, and IP addresses are
 // not eligible because we cannot obtain certificates
-// for those names.
+// for those names. Wildcard names are allowed, as long
+// as they conform to CABF requirements (only one wildcard
+// label, and it must be the left-most label).
 func HostQualifies(hostname string) bool {
 	return hostname != "localhost" && // localhost is ineligible
 
 		// hostname must not be empty
 		strings.TrimSpace(hostname) != "" &&
 
-		// must not contain wildcard (*) characters (until CA supports it)
-		!strings.Contains(hostname, "*") &&
+		// only one wildcard label allowed, and it must be left-most
+		(!strings.Contains(hostname, "*") ||
+			(strings.Count(hostname, "*") == 1 &&
+				strings.HasPrefix(hostname, "*."))) &&
 
 		// must not start or end with a dot
 		!strings.HasPrefix(hostname, ".") &&
@@ -88,40 +92,41 @@ func Revoke(host string) error {
 	return client.Revoke(host)
 }
 
-// tlsSNISolver is a type that can solve TLS-SNI challenges using
-// an existing listener and our custom, in-memory certificate cache.
-type tlsSNISolver struct {
-	certCache *certificateCache
-}
+// TODO: tls-sni challenge was removed in January 2018, but a variant of it might return
+// // tlsSNISolver is a type that can solve TLS-SNI challenges using
+// // an existing listener and our custom, in-memory certificate cache.
+// type tlsSNISolver struct {
+// 	certCache *certificateCache
+// }
 
-// Present adds the challenge certificate to the cache.
-func (s tlsSNISolver) Present(domain, token, keyAuth string) error {
-	cert, acmeDomain, err := acme.TLSSNI01ChallengeCert(keyAuth)
-	if err != nil {
-		return err
-	}
-	certHash := hashCertificateChain(cert.Certificate)
-	s.certCache.Lock()
-	s.certCache.cache[acmeDomain] = Certificate{
-		Certificate: cert,
-		Names:       []string{acmeDomain},
-		Hash:        certHash, // perhaps not necesssary
-	}
-	s.certCache.Unlock()
-	return nil
-}
+// // Present adds the challenge certificate to the cache.
+// func (s tlsSNISolver) Present(domain, token, keyAuth string) error {
+// 	cert, acmeDomain, err := acme.TLSSNI01ChallengeCert(keyAuth)
+// 	if err != nil {
+// 		return err
+// 	}
+// 	certHash := hashCertificateChain(cert.Certificate)
+// 	s.certCache.Lock()
+// 	s.certCache.cache[acmeDomain] = Certificate{
+// 		Certificate: cert,
+// 		Names:       []string{acmeDomain},
+// 		Hash:        certHash, // perhaps not necesssary
+// 	}
+// 	s.certCache.Unlock()
+// 	return nil
+// }
 
-// CleanUp removes the challenge certificate from the cache.
-func (s tlsSNISolver) CleanUp(domain, token, keyAuth string) error {
-	_, acmeDomain, err := acme.TLSSNI01ChallengeCert(keyAuth)
-	if err != nil {
-		return err
-	}
-	s.certCache.Lock()
-	delete(s.certCache.cache, acmeDomain)
-	s.certCache.Unlock()
-	return nil
-}
+// // CleanUp removes the challenge certificate from the cache.
+// func (s tlsSNISolver) CleanUp(domain, token, keyAuth string) error {
+// 	_, acmeDomain, err := acme.TLSSNI01ChallengeCert(keyAuth)
+// 	if err != nil {
+// 		return err
+// 	}
+// 	s.certCache.Lock()
+// 	delete(s.certCache.cache, acmeDomain)
+// 	s.certCache.Unlock()
+// 	return nil
+// }
 
 // ConfigHolder is any type that has a Config; it presumably is
 // connected to a hostname and port on which it is serving.
