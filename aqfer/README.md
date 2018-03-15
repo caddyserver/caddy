@@ -1,19 +1,19 @@
-*Architecture Description*
+# Architecture Description
 
-**AWS Stack**
+## AWS Stack
 
-***Databases***
-****EC Components****
+### Databases
+#### EC Components
 - ElastiCache with redis and 1 node as defaults. AvailabilityZone, NodeType, ClusterName are params set in configuration.
 - ElastiCache SecurityGroup has default generic description, SecurityGroupName and VPC are params set in configuration.
 - ElastiCache SubnetGroup has default generic description, SubnetGroupName and Subnet are params set in configuration.
 
-****Scripts****
+#### Scripts
 - spin_up_db.sh script will run `aws cloudformation package` command. Written for docker container, leverages environment variables.
 - Makefile target `spin_up_db` runs the script. ElastiCache params are meant to be configured in the Makefile.
 
-***Caddy Service***
-****ECS Components****
+### Caddy Service
+#### ECS Components
 - ECSCluster takes ClusterName as param set in configuration.
 - ECSTaskDefinition with 512cpu, 400mb memory, 1024000 file ulimit, 'awslogs' log driver, and portmappins at 80 and 8082 (ports used in Caddyfile) on containers as default. 
 - ECSTaskDefinition has TaskDefinitionName, ContainerName, ECRRepoUri, log driver variables, AWS and JWT environment variables as params set in configuration.
@@ -24,7 +24,7 @@
 - LBListener connects ECSService to NetworkLoadBalancer and LBTargetGroup on TCP port 80 by default.
 - LBTBTargetGroup will do health checks on ec2 instances on TCP port 80 by default. VPC and TargetGroupName are params set in configuration.
 
-****EC2 Components****
+#### EC2 Components
 - EC2InstanceProfile for EC2InstanceRole, Role has policies for S3 Get and List; create LogGroup and LogStream and PutLogs; cloudformation, codedeploy, ec2, ecs, ecr, iam role and profile.
 - EC2SecurityGroup has default generic description, SecurityGroup ingress for TCP ports 0-65535 (to allow load balancer automatically assigned ports), 22 (for ssh), 80 and 8082 (for docker/caddy).
 - EC2SecurityGroup GroupName and VPC are params set in configuration.
@@ -34,31 +34,31 @@
 - LaunchConfiguration UserData executes ecs-init scripts, writes variables into conf files for ecs logs and awslogs, signals LaunchConfiguration setup is done.
 - AutoScalingGroup has desired capacity of EC2 instances defaulted to 2, minsize of 0, maxsize of 2, cooldown at 300, and EC2 healthchecks. Subnet and LaunchConfiguration are params set in configuration.
 
-****Logs****
+#### Logs
 - ApplicationLogGroup and the ECSLogGroup are created in the ECS templates as well, the names for the logs are params set in configuration (only ECSLogGroup is referred to in other places within this template).
 
-****Scripts****
+#### Scripts
 - spin_up_ec.sh script will run `aws cloudformation package` command. Written for docker container, leverages environment variables.
 - Makefile target `spin_up_ecs` runs the script. ElasticContainerService params are meant to be configured in the Makefile.
 
 
-**Docker Containers**
+## Docker Containers
 
-***ECS Container***
+### ECS Container
 - Used to run service on AWS in docker containers, AWS credentials need to be setup in the docker-compose.yml and docker-compose-aws.yml files before running Makefile targets.
 - FROM golang:1.9
 - go gets all static libraries needed for caddy project
 - builds Caddy executable
 
-***AWS Container***
+### AWS Container
 - Used to deploy service, AWS credentials need to be setup in the docker-compose.yml and docker-compose-aws.yml files before running Makefile targets.
 - FROM ubuntu
 - apt-get installs apt-utils, python3, and curl
 - pip installs awscli
 - curls ecs-cli executable
 
-**Caddy**
-***Caddyfile modules and parameters***
+## Caddy
+### Caddyfile modules and parameters
 - Caddy standard module `redir` to a test file on port 80, only used for loadbalancer/targetgroup healthchecks
   - The service itself runs on port 8082, either of these ports can be changed but references to them have to be altered in the cloudformation templates
 - The `secrets` module makes static values available throughout service on package-level SliceMap; the one param this module tokes is the designated file(path) to read secrets from
@@ -79,10 +79,24 @@
 	- `fallback` - will first try to run the command on the designated Redis instance, if it fails it executes on the golang map
 - The `transformresponse` module converts request data in the filter chain into a Caddy service json response (used to put together entity object with values queried from Redis)
 
-***Updates***
+### Updates
 - Caddyfile is the result of replacing ALL-CAPS variable names with service values on the Caddyfile_template file, so any changes have to be made to the template file, not the Caddyfile file itself
 - After editing the template file, running `make update_tasks` will create an updated Caddyfile, make a new docker image, update the ecr repo with the image, and stop current ECS tasks
 - The ECS Service will spin up new tasks with the updated docker instances and the Caddy updates will have been propagated fully throughout the cluster once the tasks are up and running
 
-**Logging**
+## Monitoring
 
+### Logs
+- Filterchain errors handled in-service: AWSCloudWatchLogs, each ECSTask has own stream (stream name configured in Caddyfile), log group name configured in Makefile (APP_LOG_GROUP_NAME)
+- Docker stdout: AWSCloudWatchLogs, each ECSTask has own stream (stream name is the task id), log group name configured in Makefile (ECS_LOG_GROUP_NAME)
+- ECS logs: AWSCloudWatchLogs, each EC2Instance in the cluster has a stream (stream name is instance id), log group name configured in ECS template (LaunchConfiguration UserData)
+- ECS agent logs: ASCloudWatchLogs, each EC2Instance in the cluster has a stream (stream name is 'cluster name'/'instance id'), log group name configured in ECS template (LaunchConfiguration UserData)
+
+### Metrics
+- ECSCluster: MemoryReservation, CPUReservation, MemoryUtilization, CPUUtilization (Utilization can be separated by ECSService)
+  - CloudWatch Alarms on these metrics would tell us when tasks are failing to be updated due to cpu or mem limitations
+- LoadBalancer/TargetGroup: UnhealthyHostCount, HealthyHostCount (can be separated by AvailabilityZone)
+  - CloudWatch Alarms on these metrics would tell us when Caddy is failing to get up and running
+- Elasticache: https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CacheMetrics.Redis.html 
+  - CloudWatch Alarms on some of these metrics could explain lag or other runtime issues of the service
+- LogGroup: Incoming LogEvents (this might not be as useful, since logs are currently batched in every 5 secs)
