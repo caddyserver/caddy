@@ -375,6 +375,20 @@ func (r *replacer) getSubstitution(key string) string {
 		}
 		elapsedDuration := time.Since(r.responseRecorder.start)
 		return strconv.FormatInt(convertToMilliseconds(elapsedDuration), 10)
+	default:
+		// {labelN}
+		if strings.HasPrefix(key, "{label") {
+			nStr := key[6 : len(key)-1] // get the integer N in "{labelN}"
+			n, err := strconv.Atoi(nStr)
+			if err != nil || n < 1 {
+				return r.emptyValue
+			}
+			labels := strings.Split(r.request.Host, ".")
+			if n > len(labels) {
+				return r.emptyValue
+			}
+			return labels[n-1]
+		}
 	}
 
 	return r.emptyValue
