@@ -26,7 +26,7 @@ Parameters:
     Description: 'EC2 Key Pair'
     Type: String
   LoadBalancerName:
-    Description: 'Application Load Balancer name'
+    Description: 'Network Load Balancer name'
     Type: String
   LBSecurityGroupName:
     Description: 'Load Balancer security group name'
@@ -207,11 +207,11 @@ Resources:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
       TargetGroupARNs: []
-      DesiredCapacity: 1
+      DesiredCapacity: 2
       LoadBalancerNames: []
       Cooldown: 300
       MinSize: 0
-      MaxSize: 1
+      MaxSize: 2
       VPCZoneIdentifier:
       - !Ref Subnet 
       HealthCheckGracePeriod: 0
@@ -219,6 +219,29 @@ Resources:
       TerminationPolicies:
       - Default
       LaunchConfigurationName: !Ref LaunchConfiguration
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Ref EC2SecurityGroupName
+      GroupDescription: 'EC2 Instance Security Group'
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '0'
+        ToPort: '65535'
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: '8082'
+        ToPort: '8082'
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: '80'
+        ToPort: '80'
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: '22'
+        ToPort: '22'
+        CidrIp: 0.0.0.0/0
 
   ECSCluster:
     Type: AWS::ECS::Cluster
@@ -276,29 +299,6 @@ Resources:
         Cpu: 512
         VolumesFrom: []
         DockerLabels: {}
-  EC2SecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupName: !Ref EC2SecurityGroupName
-      GroupDescription: 'EC2 Instance Security Group'
-      VpcId: !Ref Vpc
-      SecurityGroupIngress:
-      - IpProtocol: tcp
-        FromPort: '0'
-        ToPort: '65535'
-        CidrIp: 0.0.0.0/0
-      - IpProtocol: tcp
-        FromPort: '8082'
-        ToPort: '8082'
-        CidrIp: 0.0.0.0/0
-      - IpProtocol: tcp
-        FromPort: '80'
-        ToPort: '80'
-        CidrIp: 0.0.0.0/0
-      - IpProtocol: tcp
-        FromPort: '22'
-        ToPort: '22'
-        CidrIp: 0.0.0.0/0
   ECSServiceRole:
     Type: AWS::IAM::Role
     Properties:
@@ -332,7 +332,7 @@ Resources:
       ServiceName: !Ref ECSServiceName
       Cluster: !Ref ECSCluster
       TaskDefinition: !Ref ECSTaskDefinition
-      DesiredCount: 4
+      DesiredCount: 8
       DeploymentConfiguration:
         MinimumHealthyPercent: 100
         MaximumPercent: 200
@@ -348,7 +348,7 @@ Resources:
         Type: spread
       Role: !Ref ECSServiceRole
   
-  ApplicationLoadBalancer:
+  NetworkLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
       Name: !Ref LoadBalancerName
@@ -361,7 +361,7 @@ Resources:
   LBListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
     Properties: 
-      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      LoadBalancerArn: !Ref NetworkLoadBalancer
       Port: 80
       Protocol: TCP
       DefaultActions:

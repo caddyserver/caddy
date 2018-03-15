@@ -43,10 +43,10 @@ LB_SECURITY_GROUP := ${ROOT_NAME}LB-sg${ECSVERSION}
 ARTIFACTS_BUCKET := cloudformation-art-${ROOT_NAME}
 
 .PHONY: setup_and_launch
-setup_and_launch: setup spin_up_db update_container_repo spin_up_ecs
+setup_and_launch: setup full_launch
 
 .PHONY: full_launch
-full_launch: update_container_repo spin_up_db spin_up_ecs
+full_launch: spin_up_db update_container_repo spin_up_ecs
 
 # run `make get_dns_name` to get service address
 
@@ -67,7 +67,6 @@ tear_down_stacks: tear_down_db tear_down_ecs
 # this command will not destroy the EC2 KeyPair that was created
 
 
-
 .PHONY: aws_build
 aws_build:
 	docker build --no-cache -f aqfer/Dockerfile.aws -t aws_image .
@@ -84,7 +83,6 @@ create_keypair:
 	chmod 700 aqfer/aws/${KEYPAIR_NAME}$1.pem
 
 
-
 .PHONY: spin_up_db
 spin_up_db:
 	docker-compose -f aqfer/docker-compose-aws.yml run \
@@ -92,43 +90,41 @@ spin_up_db:
 	-e AvailabilityZone=${ZONE} \
 	-e Subnet=${SUBNET} \
 	-e Vpc=${VPC} \
-	-e DynamoTableName=${DYNAMO_TABLE} \
-	-e PartitionKey=${PARTITION_KEY} \
-	-e SortKey=${SORT_KEY} \
 	-e ECSecurityGroupName=${EC_SECURITY_GROUP} \
 	-e ECSubnetGroupName=${EC_SUBNET_GROUP} \
 	-e ECNodeType=${EC_NODE_TYPE} \
 	-e ECClusterName=${EC_CLUSTER_NAME} \
 	aws-service /scripts/spin_up_db.sh ${ARTIFACTS_BUCKET} ${DBNAME}
 
+#	-e DynamoTableName=${DYNAMO_TABLE} \
+#	-e PartitionKey=${PARTITION_KEY} \
+#	-e SortKey=${SORT_KEY} \
 # -e DaxName=${DAX_CLUSTER_NAME} \
 #	-e DaxNodeType=${DAX_NODE_TYPE} \
 #	-e DaxRoleName=${ROOT_NAME}DaxRole${DBVERSION} \
 #	-e DaxSubnetGroupName=dax-subnet-${ROOT_NAME}${DBVERSION} \
 #	-e DaxSecurityGroupName=${DAX_SECURITY_GROUP} \
 
-
-# still need to test this one more time, if this works get rid of delete_db.sh
 .PHONY: tear_down_db
 tear_down_db:
 	docker-compose -f aqfer/docker-compose-aws.yml run aws-service aws cloudformation delete-stack --stack-name ${DBNAME}
 
 
-
 .PHONY: get_db_endpoints
 get_db_endpoints:
-	# docker-compose -f aqfer/docker-compose-aws.yml run aws-service \
-	#       /scripts/dax_endpoint.sh ${DAX_CLUSTER_NAME} 2>&1 > /tmp/dax_endpoint
 	docker-compose -f aqfer/docker-compose-aws.yml run aws-service \
 	      /scripts/ec_endpoint.sh ${EC_CLUSTER_NAME} 2>&1 > /tmp/ec_endpoint
+	# docker-compose -f aqfer/docker-compose-aws.yml run aws-service \
+	#       /scripts/dax_endpoint.sh ${DAX_CLUSTER_NAME} 2>&1 > /tmp/dax_endpoint
 
 .PHONY: ready_caddyfile
 ready_caddyfile: get_db_endpoints
 	cat aqfer/Caddyfile_template | sed 's/APP_LOG_GROUP_NAME/'${APP_LOG_GROUP_NAME}'/g' > /tmp/Caddyfile
+	cat /tmp/Caddyfile | sed 's/EC_ENDPOINT/'$(shell cat /tmp/ec_endpoint)'/g' > aqfer/Caddyfile
+
 	# perl -pi -e 's/DYNAMO_TABLE/'${DYNAMO_TABLE}'/g' /tmp/Caddyfile
 	# perl -pi -e 's/PARTITION_KEY/'${PARTITION_KEY}'/g' /tmp/Caddyfile
 	# perl -pi -e 's/SORT_KEY/'${SORT_KEY}'/g' /tmp/Caddyfile
-	cat /tmp/Caddyfile | sed 's/EC_ENDPOINT/'$(shell cat /tmp/ec_endpoint)'/g' > aqfer/Caddyfile
 	# perl -pi -e 's/EC_ENDPOINT/'$(shell cat /tmp/ec_endpoint)'/g' /tmp/Caddyfile
 	# cat /tmp/Caddyfile | sed 's/DAX_ENDPOINT/'$(shell cat /tmp/dax_endpoint)'/g' > aqfer/Caddyfile
 
@@ -192,6 +188,8 @@ ifdef instances
 	     aws ec2 terminate-instances --instance-ids $(instances);\
 	     aws ec2 wait instance-terminated --instance-ids $(instances);\
 	     aws cloudformation delete-stack --stack-name ${ECSNAME}
+else
+	@echo 'instances to destroy were not declared'
 endif
 #	     aws ec2 revoke-security-group-ingress --group-name ${DAX_SECURITY_GROUP} --source-group ${EC2_SECURITY_GROUP} --port \
 			 	$(shell cat /tmp/dax_endpoint | sed -E "s/.*:([0-9]*)/\1/") --protocol tcp;\
@@ -204,6 +202,10 @@ get_dns_name:
 	      aws elbv2 describe-load-balancers --names ${LOAD_BALANCER_NAME} 2>&1 > /tmp/DNSName
 	@echo $(shell cat /tmp/DNSName | sed -n -E "s/.*\"DNSName\".*\"(.*)\",/\1/p")
 
+.PHONY: stop_tasks
+stop_tasks:
+	docker-compose -f aqfer/docker-compose-aws.yml run aws-service /scripts/stop_tasks.sh ${ECS_CLUSTER_NAME}
+
 .PHONY: run_locally
 run_locally:
 	docker-compose -f aqfer/docker-compose.yml up
@@ -211,11 +213,6 @@ run_locally:
 .PHONY: startover_locally
 startover_locally: build_caddy_image run_locally
 	docker-compose -f aqfer/docker-compose.yml up
-
-.PHONY: stop_tasks
-stop_tasks:
-	docker-compose -f aqfer/docker-compose-aws.yml run aws-service /scripts/stop_tasks.sh ${ECS_CLUSTER_NAME}
-
 
 
 .PHONY: run_unit_tests

@@ -27,35 +27,8 @@ Parameters:
   Vpc:
     Description: 'VPC Identifier'
     Type: String
-  DynamoTableName:
-    Description: 'Name for Dynamo table'
-    Type: String
-  PartitionKey:
-    Description: 'Partition Key for Dynamo Table'
-    Type: String
-  SortKey:
-    Description: 'Sort Key for Dynamo Table'
-    Type: String
 
 Resources:
-  DynamoDBTable:
-    Type: AWS::DynamoDB::Table
-    Properties:
-      AttributeDefinitions:
-      - AttributeName: !Ref PartitionKey
-        AttributeType: S
-      - AttributeName: !Ref SortKey
-        AttributeType: S
-      KeySchema:
-      - AttributeName: !Ref PartitionKey
-        KeyType: HASH
-      - AttributeName: !Ref SortKey
-        KeyType: RANGE
-      ProvisionedThroughput:
-        ReadCapacityUnits: '500'
-        WriteCapacityUnits: '5'
-      TableName: !Ref DynamoTableName
-
   ElastiCache:
     Type: AWS::ElastiCache::CacheCluster
     Properties:

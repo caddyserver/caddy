@@ -7,12 +7,12 @@ ADD ./Caddyfile /Caddyfile
 ADD ./test.yml /.secrets.yml
 
 # auth test
-RUN mkdir -p /ids/v1
-# RUN cp /test.go /ids/v1/test.go
+RUN mkdir -p /v1
+RUN cp /test.go /v1/test.go
 
 # transformrequest test
 RUN mkdir -p /v1/cids/asdf/entity_types/asdf/domains/asdf/keys/asdf/
-# RUN cp /test.go /v1/cids/asdf/entity_types/asdf/domains/asdf/keys/asdf/test.go
+RUN cp /test.go /v1/cids/asdf/entity_types/asdf/domains/asdf/keys/asdf/test.go
 
 WORKDIR /
-CMD ./caddy # & go run test.go
+CMD ./caddy

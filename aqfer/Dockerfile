@@ -1,6 +1,5 @@
 FROM golang:1.9
 
-
 # NODE ONLY NEEDED WHILE DAX IS RUN AS NODE SERVER
 # ENV NVM_DIR /root/.nvm
 # ENV NODE_VERSION 8.5.0
@@ -12,11 +11,9 @@ FROM golang:1.9
 # ENV NODE_PATH $NVM_DIR/versions/node/v$NODE_VERSION/lib/node_modules
 # ENV PATH $NVM_DIR/versions/node/v$NODE_VERSION/bin:$PATH
 
-
 # VIM ONLY USED FOR DEVELOPMENT OF CADDY STACK
 # RUN apt-get update
 # RUN apt-get -y install vim
-
 
 RUN go get gopkg.in/yaml.v2
 RUN go get github.com/aws/aws-sdk-go/aws

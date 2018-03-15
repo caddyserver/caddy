@@ -3,7 +3,7 @@
 }
 
 :8082 {
-  errors stdout
+  # errors stdout
   secrets .secrets.yml
   awscloudwatch debug APP_LOG_GROUP_NAME development 65536
 

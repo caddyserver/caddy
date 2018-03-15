@@ -9,14 +9,14 @@ aws cloudformation deploy --template-file /ec_app_spec.yml --stack-name $2 --cap
   AvailabilityZone=$AvailabilityZone \
   Subnet=$Subnet \
   Vpc=$Vpc \
-  DynamoTableName=$DynamoTableName \
-  PartitionKey=$PartitionKey \
-  SortKey=$SortKey \
   ECSecurityGroupName=$ECSecurityGroupName \
   ECSubnetGroupName=$ECSubnetGroupName \
   ECNodeType=$ECNodeType \
   ECClusterName=$ECClusterName
 
+  # DynamoTableName=$DynamoTableName \
+  # PartitionKey=$PartitionKey \
+  # SortKey=$SortKey \
   # DaxName=$DaxName \
   # DaxNodeType=$DaxNodeType \
   # DaxRoleName=$DaxRoleName \

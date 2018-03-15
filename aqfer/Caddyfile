@@ -3,7 +3,7 @@
 }
 
 :8082 {
-  errors stdout
+  # errors stdout
   secrets .secrets.yml
   awscloudwatch debug aqfer.io development 65536
 

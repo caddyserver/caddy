@@ -4,11 +4,10 @@ ENV PATH /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 RUN apt-get update
 RUN apt-get -y install apt-utils locales
-RUN apt-get -y install python3 python3-pip python3-dev
 
+RUN apt-get -y install python3 python3-pip python3-dev
 RUN ln -s /usr/bin/pip3 /usr/bin/pip
 RUN ln -s /usr/bin/python3 /usr/bin/python
-
 RUN pip install awscli --upgrade
 
 RUN apt-get -y install curl
