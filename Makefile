@@ -1,5 +1,5 @@
-DBVERSION := 1
-ECSVERSION := 1
+DBVERSION := 0
+ECSVERSION := 0
 ROOT_NAME := aqfer
 DBNAME := DB${ROOT_NAME}${DBVERSION}
 ECSNAME := ECS${ROOT_NAME}${ECSVERSION}
@@ -189,7 +189,7 @@ ifdef instances
 	     aws ec2 wait instance-terminated --instance-ids $(instances);\
 	     aws cloudformation delete-stack --stack-name ${ECSNAME}
 else
-	@echo 'instances to destroy were not declared'
+	@echo 'instances to destroy were not declared, ecs cloudformation stack delete will not execute'
 endif
 #	     aws ec2 revoke-security-group-ingress --group-name ${DAX_SECURITY_GROUP} --source-group ${EC2_SECURITY_GROUP} --port \
 			 	$(shell cat /tmp/dax_endpoint | sed -E "s/.*:([0-9]*)/\1/") --protocol tcp;\

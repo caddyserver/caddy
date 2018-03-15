@@ -16,7 +16,7 @@
   transformrequest
 
   # awsdynamodb DYNAMO_TABLE PARTITION_KEY SORT_KEY DAX 8086 DAX_ENDPOINT
-  redis elasticacheaqfer1.elwwyl.0001.use1.cache.amazonaws.com:6379
+  redis elasticacheaqfer0.elwwyl.0001.use1.cache.amazonaws.com:6379
 
   transformresponse
 }
