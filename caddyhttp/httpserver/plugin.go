@@ -500,6 +500,7 @@ var directives = []string{
 	"ext",
 	"gzip",
 	"header",
+	"geoip", // github.com/kodnaplakal/caddy-geoip
 	"errors",
 	"authz",        // github.com/casbin/caddy-authz
 	"filter",       // github.com/echocat/caddy-filter
@@ -544,7 +545,6 @@ var directives = []string{
 	"grpc",      // github.com/pieterlouw/caddy-grpc
 	"gopkg",     // github.com/zikes/gopkg
 	"restic",    // github.com/restic/caddy
-	"geoip",     // github.com/kodnaplakal/caddy-geoip
 }
 
 const (
