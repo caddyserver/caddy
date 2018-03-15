@@ -35,6 +35,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -106,7 +107,8 @@ func stapleOCSP(cert *Certificate, pemBundle []byte) error {
 	// TODO: Use Storage interface instead of disk directly
 	var ocspFileNamePrefix string
 	if len(cert.Names) > 0 {
-		ocspFileNamePrefix = cert.Names[0] + "-"
+		firstName := strings.Replace(cert.Names[0], "*", "wildcard_", -1)
+		ocspFileNamePrefix = firstName + "-"
 	}
 	ocspFileName := ocspFileNamePrefix + fastHash(pemBundle)
 	ocspCachePath := filepath.Join(ocspFolder, ocspFileName)
