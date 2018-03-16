@@ -497,6 +497,7 @@ var directives = []string{
 	"log",
 	"cache", // github.com/nicolasazrak/caddy-cache
 	"rewrite",
+	"concat", // github.com/MrToy/caddy-concat
 	"ext",
 	"gzip",
 	"header",
