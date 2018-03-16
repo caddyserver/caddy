@@ -112,6 +112,7 @@ func TestReplace(t *testing.T) {
 		{"Query string is {query}", "Query string is foo=bar"},
 		{"Query string value for foo is {?foo}", "Query string value for foo is bar"},
 		{"Missing query string argument is {?missing}", "Missing query string argument is "},
+		{"\\{ 'hostname': '{hostname}' \\}", "{ 'hostname': '" + hostname + "' }"},
 	}
 
 	for _, c := range testCases {

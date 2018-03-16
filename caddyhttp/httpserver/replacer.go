@@ -140,6 +140,14 @@ func canLogRequest(r *http.Request) bool {
 	return false
 }
 
+// unescapeBraces finds escaped braces in s and returns
+// a string with those braces unescaped.
+func unescapeBraces(s string) string {
+	ret := strings.Replace(s, "\\{", "{", -1)
+	ret = strings.Replace(s, "\\}", "}", -1)
+	return ret
+}
+
 // Replace performs a replacement of values on s and returns
 // the string with the replaced values.
 func (r *replacer) Replace(s string) string {
@@ -149,32 +157,59 @@ func (r *replacer) Replace(s string) string {
 	}
 
 	result := ""
+Placeholders: // process each placeholder in sequence
 	for {
-		idxStart := strings.Index(s, "{")
-		if idxStart == -1 {
-			// no placeholder anymore
-			break
-		}
-		idxEnd := strings.Index(s[idxStart:], "}")
-		if idxEnd == -1 {
-			// unpaired placeholder
-			break
-		}
-		idxEnd += idxStart
+		var idxOffset, idxStart, idxEnd int
 
-		// get a replacement
-		placeholder := s[idxStart : idxEnd+1]
+		idxOffset = 0
+		for { // find first unescaped opening brace
+			searchSpace := s[idxOffset:]
+			idxStart = strings.Index(searchSpace, "{")
+			if idxStart == -1 {
+				// no more placeholders
+				break Placeholders
+			}
+			if idxStart == 0 || searchSpace[idxStart-1:idxStart] != "\\" {
+				// preceding character is not an escape
+				idxStart += idxOffset
+				break
+			}
+			// the brace we found was escaped
+			// search the rest of the string next
+			idxOffset += idxStart + 1
+		}
+
+		idxOffset = 0
+		for { // find first unescaped closing brace
+			searchSpace := s[idxStart+idxOffset:]
+			idxEnd = strings.Index(searchSpace, "}")
+			if idxEnd == -1 {
+				// unpaired placeholder
+				break Placeholders
+			}
+			if idxEnd == 0 || searchSpace[idxEnd-1:idxEnd] != "\\" {
+				// preceeding character is not an escape
+				idxEnd += idxOffset + idxStart
+				break
+			}
+			// the brace we found was escaped
+			// search the rest of the string next
+			idxOffset += idxEnd + 1
+		}
+
+		// get a replacement for the unescaped placeholder
+		placeholder := unescapeBraces(s[idxStart : idxEnd+1])
 		replacement := r.getSubstitution(placeholder)
 
-		// append prefix + replacement
-		result += s[:idxStart] + replacement
+		// append unescaped prefix + replacement
+		result += strings.TrimPrefix(unescapeBraces(s[:idxStart]), "\\") + replacement
 
 		// strip out scanned parts
 		s = s[idxEnd+1:]
 	}
 
 	// append unscanned parts
-	return result + s
+	return result + unescapeBraces(s)
 }
 
 func roundDuration(d time.Duration) time.Duration {
