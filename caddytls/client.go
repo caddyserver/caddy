@@ -137,20 +137,35 @@ var newACMEClient = func(config *Config, allowPrompts bool) (*ACMEClient, error)
 		// if config.AltTLSSNIPort != "" {
 		// 	useTLSSNIPort = config.AltTLSSNIPort
 		// }
-
-		// Always respect user's bind preferences by using config.ListenHost.
-		// NOTE(Sep'16): At time of writing, SetHTTPAddress() and SetTLSAddress()
-		// must be called before SetChallengeProvider(), since they reset the
-		// challenge provider back to the default one!
-		err := c.acmeClient.SetHTTPAddress(net.JoinHostPort(config.ListenHost, useHTTPPort))
-		if err != nil {
-			return nil, err
-		}
-		// TODO: tls-sni challenge was removed in January 2018, but a variant of it might return
-		// err = c.acmeClient.SetTLSAddress(net.JoinHostPort(config.ListenHost, useTLSSNIPort))
+		// err := c.acmeClient.SetTLSAddress(net.JoinHostPort(config.ListenHost, useTLSSNIPort))
 		// if err != nil {
 		// 	return nil, err
 		// }
+
+		// if using file storage, we can distribute the HTTP challenge across
+		// all instances sharing the acme folder; either way, we must still set
+		// the address for the default HTTP provider server
+		var useDistributedHTTPSolver bool
+		if storage, err := c.config.StorageFor(c.config.CAUrl); err == nil {
+			if _, ok := storage.(*FileStorage); ok {
+				useDistributedHTTPSolver = true
+			}
+		}
+		if useDistributedHTTPSolver {
+			c.acmeClient.SetChallengeProvider(acme.HTTP01, distributedHTTPSolver{
+				// being careful to respect user's listener bind preferences
+				httpProviderServer: acme.NewHTTPProviderServer(config.ListenHost, useHTTPPort),
+			})
+		} else {
+			// Always respect user's bind preferences by using config.ListenHost.
+			// NOTE(Sep'16): At time of writing, SetHTTPAddress() and SetTLSAddress()
+			// must be called before SetChallengeProvider() (see above), since they reset
+			// the challenge provider back to the default one! (still true in March 2018)
+			err := c.acmeClient.SetHTTPAddress(net.JoinHostPort(config.ListenHost, useHTTPPort))
+			if err != nil {
+				return nil, err
+			}
+		}
 
 		// TODO: tls-sni challenge was removed in January 2018, but a variant of it might return
 		// See if TLS challenge needs to be handled by our own facilities

@@ -30,7 +30,12 @@ package caddytls
 
 import (
 	"encoding/json"
+	"fmt"
+	"io/ioutil"
+	"log"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/mholt/caddy"
@@ -127,6 +132,91 @@ func Revoke(host string) error {
 // 	s.certCache.Unlock()
 // 	return nil
 // }
+
+// distributedHTTPSolver allows the HTTP-01 challenge to be solved by
+// an instance other than the one which initiated it. This is useful
+// behind load balancers or in other cluster/fleet configurations.
+// The only requirement is that this (the initiating) instance share
+// the $CADDYPATH/acme folder with the instance that will complete
+// the challenge. Mounting the folder locally should be sufficient.
+//
+// Obviously, the instance which completes the challenge must be
+// serving on the HTTPChallengePort to receive and handle the request.
+// The HTTP server which receives it must check if a file exists, e.g.:
+// $CADDYPATH/acme/challenge_tokens/example.com.json, and if so,
+// decode it and use it to serve up the correct response. Caddy's HTTP
+// server does this by default.
+//
+// So as long as the folder is shared, this will just work. There are
+// no other requirements. The instances may be on other machines or
+// even other networks, as long as they share the folder as part of
+// the local file system.
+//
+// This solver works by persisting the token and keyauth information
+// to disk in the shared folder when the authorization is presented,
+// and then deletes it when it is cleaned up.
+type distributedHTTPSolver struct {
+	// The distributed HTTPS solver only works if an instance (either
+	// this one or another one) is already listening and serving on the
+	// HTTPChallengePort. If not -- for example: if this is the only
+	// instance, and it is just starting up and hasn't started serving
+	// yet -- then we still need a listener open with an HTTP server
+	// to handle the challenge request. Set this field to have the
+	// standard HTTPProviderServer open its listener for the duration
+	// of the challenge. Make sure to configure its listen address
+	// correctly.
+	httpProviderServer *acme.HTTPProviderServer
+}
+
+type challengeInfo struct {
+	Domain, Token, KeyAuth string
+}
+
+// Present adds the challenge certificate to the cache.
+func (dhs distributedHTTPSolver) Present(domain, token, keyAuth string) error {
+	if dhs.httpProviderServer != nil {
+		err := dhs.httpProviderServer.Present(domain, token, keyAuth)
+		if err != nil {
+			return fmt.Errorf("presenting with standard HTTP provider server: %v", err)
+		}
+	}
+
+	err := os.MkdirAll(dhs.challengeTokensBasePath(), 0755)
+	if err != nil {
+		return err
+	}
+
+	infoBytes, err := json.Marshal(challengeInfo{
+		Domain:  domain,
+		Token:   token,
+		KeyAuth: keyAuth,
+	})
+	if err != nil {
+		return err
+	}
+
+	return ioutil.WriteFile(dhs.challengeTokensPath(domain), infoBytes, 0644)
+}
+
+// CleanUp removes the challenge certificate from the cache.
+func (dhs distributedHTTPSolver) CleanUp(domain, token, keyAuth string) error {
+	if dhs.httpProviderServer != nil {
+		err := dhs.httpProviderServer.CleanUp(domain, token, keyAuth)
+		if err != nil {
+			log.Printf("[ERROR] Cleaning up standard HTTP provider server: %v", err)
+		}
+	}
+	return os.Remove(dhs.challengeTokensPath(domain))
+}
+
+func (dhs distributedHTTPSolver) challengeTokensPath(domain string) string {
+	domainFile := strings.Replace(strings.ToLower(domain), "*", "wildcard_", -1)
+	return filepath.Join(dhs.challengeTokensBasePath(), domainFile+".json")
+}
+
+func (dhs distributedHTTPSolver) challengeTokensBasePath() string {
+	return filepath.Join(caddy.AssetsPath(), "acme", "challenge_tokens")
+}
 
 // ConfigHolder is any type that has a Config; it presumably is
 // connected to a hostname and port on which it is serving.
