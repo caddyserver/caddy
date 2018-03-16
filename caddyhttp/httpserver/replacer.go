@@ -143,9 +143,9 @@ func canLogRequest(r *http.Request) bool {
 // unescapeBraces finds escaped braces in s and returns
 // a string with those braces unescaped.
 func unescapeBraces(s string) string {
-	ret := strings.Replace(s, "\\{", "{", -1)
-	ret = strings.Replace(s, "\\}", "}", -1)
-	return ret
+	s = strings.Replace(s, "\\{", "{", -1)
+	s = strings.Replace(s, "\\}", "}", -1)
+	return s
 }
 
 // Replace performs a replacement of values on s and returns
@@ -188,7 +188,7 @@ Placeholders: // process each placeholder in sequence
 				break Placeholders
 			}
 			if idxEnd == 0 || searchSpace[idxEnd-1:idxEnd] != "\\" {
-				// preceeding character is not an escape
+				// preceding character is not an escape
 				idxEnd += idxOffset + idxStart
 				break
 			}
