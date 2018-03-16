@@ -25,7 +25,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/xenolf/lego/acme"
+	"github.com/xenolf/lego/acmev2"
 )
 
 const challengeBasePath = "/.well-known/acme-challenge"
