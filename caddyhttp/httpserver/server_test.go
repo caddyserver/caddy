@@ -129,88 +129,108 @@ func TestMakeHTTPServerWithTimeouts(t *testing.T) {
 
 func TestTrimPathPrefix(t *testing.T) {
 	for i, pt := range []struct {
-		path       string
+		url        string
 		prefix     string
 		expected   string
 		shouldFail bool
 	}{
 		{
-			path:       "/my/path",
+			url:        "/my/path",
 			prefix:     "/my",
 			expected:   "/path",
 			shouldFail: false,
 		},
 		{
-			path:       "/my/%2f/path",
+			url:        "/my/%2f/path",
 			prefix:     "/my",
 			expected:   "/%2f/path",
 			shouldFail: false,
 		},
 		{
-			path:       "/my/path",
+			url:        "/my/path",
 			prefix:     "/my/",
 			expected:   "/path",
 			shouldFail: false,
 		},
 		{
-			path:       "/my///path",
+			url:        "/my///path",
 			prefix:     "/my",
 			expected:   "/path",
 			shouldFail: true,
 		},
 		{
-			path:       "/my///path",
+			url:        "/my///path",
 			prefix:     "/my",
 			expected:   "///path",
 			shouldFail: false,
 		},
 		{
-			path:       "/my/path///slash",
+			url:        "/my/path///slash",
 			prefix:     "/my",
 			expected:   "/path///slash",
 			shouldFail: false,
 		},
 		{
-			path:       "/my/%2f/path/%2f",
+			url:        "/my/%2f/path/%2f",
 			prefix:     "/my",
 			expected:   "/%2f/path/%2f",
 			shouldFail: false,
 		}, {
-			path:       "/my/%20/path",
+			url:        "/my/%20/path",
 			prefix:     "/my",
 			expected:   "/%20/path",
 			shouldFail: false,
 		}, {
-			path:       "/path",
+			url:        "/path",
 			prefix:     "",
 			expected:   "/path",
 			shouldFail: false,
 		}, {
-			path:       "/path/my/",
+			url:        "/path/my/",
 			prefix:     "/my",
 			expected:   "/path/my/",
 			shouldFail: false,
 		}, {
-			path:       "",
+			url:        "",
 			prefix:     "/my",
 			expected:   "/",
 			shouldFail: false,
 		}, {
-			path:       "/apath",
+			url:        "/apath",
 			prefix:     "",
 			expected:   "/apath",
+			shouldFail: false,
+		}, {
+			url:        "/my/path/page.php?akey=value",
+			prefix:     "/my",
+			expected:   "/path/page.php?akey=value",
+			shouldFail: false,
+		}, {
+			url:        "/my/path/page?key=value#fragment",
+			prefix:     "/my",
+			expected:   "/path/page?key=value#fragment",
+			shouldFail: false,
+		}, {
+			url:        "/my/path/page#fragment",
+			prefix:     "/my",
+			expected:   "/path/page#fragment",
+			shouldFail: false,
+		}, {
+			url:        "/my/apath?",
+			prefix:     "/my",
+			expected:   "/apath?",
 			shouldFail: false,
 		},
 	} {
 
-		u, _ := url.Parse(pt.path)
-		if got, want := trimPathPrefix(u, pt.prefix), pt.expected; got.EscapedPath() != want {
+		u, _ := url.Parse(pt.url)
+		if got, want := trimPathPrefix(u, pt.prefix), pt.expected; got.String() != want {
 			if !pt.shouldFail {
 
-				t.Errorf("Test %d: Expected='%s', but was '%s' ", i, want, got.EscapedPath())
+				t.Errorf("Test %d: Expected='%s', but was '%s' ", i, want, got.String())
 			}
 		} else if pt.shouldFail {
-			t.Errorf("SHOULDFAIL Test %d: Expected='%s', and was '%s' but should fail", i, want, got.EscapedPath())
+			t.Errorf("SHOULDFAIL Test %d: Expected='%s', and was '%s' but should fail", i, want, got.String())
 		}
 	}
 }
