@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/mholt/caddy"
+	"github.com/mholt/caddy/caddytls"
 )
 
 // requestReplacer is a strings.Replacer which is used to
@@ -375,6 +376,26 @@ func (r *replacer) getSubstitution(key string) string {
 		}
 		elapsedDuration := time.Since(r.responseRecorder.start)
 		return strconv.FormatInt(convertToMilliseconds(elapsedDuration), 10)
+	case "{tls_protocol}":
+		if r.request.TLS != nil {
+			for k, v := range caddytls.SupportedProtocols {
+				if v == r.request.TLS.Version {
+					return k
+				}
+			}
+			return "tls" // this should never happen, but guard in case
+		}
+		return r.emptyValue // because not using a secure channel
+	case "{tls_cipher}":
+		if r.request.TLS != nil {
+			for k, v := range caddytls.SupportedCiphersMap {
+				if v == r.request.TLS.CipherSuite {
+					return k
+				}
+			}
+			return "UNKNOWN" // this should never happen, but guard in case
+		}
+		return r.emptyValue
 	}
 
 	return r.emptyValue
