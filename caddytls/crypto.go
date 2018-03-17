@@ -218,10 +218,13 @@ func makeSelfSignedCert(config *Config) error {
 		KeyUsage:     x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	}
+	var names []string
 	if ip := net.ParseIP(config.Hostname); ip != nil {
+		names = append(names, strings.ToLower(ip.String()))
 		cert.IPAddresses = append(cert.IPAddresses, ip)
 	} else {
-		cert.DNSNames = append(cert.DNSNames, config.Hostname)
+		names = append(names, strings.ToLower(config.Hostname))
+		cert.DNSNames = append(cert.DNSNames, strings.ToLower(config.Hostname))
 	}
 
 	publicKey := func(privKey interface{}) interface{} {
@@ -247,7 +250,7 @@ func makeSelfSignedCert(config *Config) error {
 			PrivateKey:  privKey,
 			Leaf:        cert,
 		},
-		Names:    cert.DNSNames,
+		Names:    names,
 		NotAfter: cert.NotAfter,
 		Hash:     hashCertificateChain(chain),
 	})
