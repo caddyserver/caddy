@@ -500,6 +500,7 @@ var directives = []string{
 	"ext",
 	"gzip",
 	"header",
+	"geoip", // github.com/kodnaplakal/caddy-geoip
 	"errors",
 	"authz",        // github.com/casbin/caddy-authz
 	"filter",       // github.com/echocat/caddy-filter
