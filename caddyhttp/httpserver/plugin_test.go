@@ -202,7 +202,13 @@ func TestInspectServerBlocksCaseInsensitiveKey(t *testing.T) {
 }
 
 func TestKeyNormalization(t *testing.T) {
-	data := []struct {
+	originalCaseSensitivePath := CaseSensitivePath
+	defer func() {
+		CaseSensitivePath = originalCaseSensitivePath
+	}()
+	CaseSensitivePath = true
+
+	caseSensitiveData := []struct {
 		orig string
 		res  string
 	}{
@@ -219,12 +225,38 @@ func TestKeyNormalization(t *testing.T) {
 			res:  "a:2015/Port",
 		},
 	}
-	for _, item := range data {
+	for _, item := range caseSensitiveData {
 		v := normalizedKey(item.orig)
 		if v != item.res {
-			t.Errorf("Normalization of `%s` must be equal to `%s`, got `%s` instead", item.orig, item.res, v)
+			t.Errorf("Normalization of `%s` with CaseSensitivePath option set to true must be equal to `%s`, got `%s` instead", item.orig, item.res, v)
 		}
 	}
+
+	CaseSensitivePath = false
+	caseInsensitiveData := []struct {
+		orig string
+		res  string
+	}{
+		{
+			orig: "HTTP://A/ABCDEF",
+			res:  "http://a/abcdef",
+		},
+		{
+			orig: "A/ABCDEF",
+			res:  "a/abcdef",
+		},
+		{
+			orig: "A:2015/Port",
+			res:  "a:2015/port",
+		},
+	}
+	for _, item := range caseInsensitiveData {
+		v := normalizedKey(item.orig)
+		if v != item.res {
+			t.Errorf("Normalization of `%s` with CaseSensitivePath option set to false must be equal to `%s`, got `%s` instead", item.orig, item.res, v)
+		}
+	}
+
 }
 
 func TestGetConfig(t *testing.T) {

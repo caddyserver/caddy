@@ -372,12 +372,16 @@ func (a Address) VHost() string {
 
 // Normalize normalizes URL: turn scheme and host names into lower case
 func (a Address) Normalize() Address {
+	path := a.Path
+	if !CaseSensitivePath {
+		path = strings.ToLower(path)
+	}
 	return Address{
 		Original: a.Original,
 		Scheme:   strings.ToLower(a.Scheme),
 		Host:     strings.ToLower(a.Host),
 		Port:     a.Port,
-		Path:     a.Path,
+		Path:     path,
 	}
 }
 
