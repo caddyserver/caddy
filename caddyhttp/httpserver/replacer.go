@@ -159,9 +159,9 @@ func (r *replacer) Replace(s string) string {
 	result := ""
 Placeholders: // process each placeholder in sequence
 	for {
-		var idxOffset, idxStart, idxEnd int
+		var idxStart, idxEnd int
 
-		idxOffset = 0
+		idxOffset := 0
 		for { // find first unescaped opening brace
 			searchSpace := s[idxOffset:]
 			idxStart = strings.Index(searchSpace, "{")
@@ -169,7 +169,7 @@ Placeholders: // process each placeholder in sequence
 				// no more placeholders
 				break Placeholders
 			}
-			if idxStart == 0 || searchSpace[idxStart-1:idxStart] != "\\" {
+			if idxStart == 0 || searchSpace[idxStart-1] != '\\' {
 				// preceding character is not an escape
 				idxStart += idxOffset
 				break
@@ -187,7 +187,7 @@ Placeholders: // process each placeholder in sequence
 				// unpaired placeholder
 				break Placeholders
 			}
-			if idxEnd == 0 || searchSpace[idxEnd-1:idxEnd] != "\\" {
+			if idxEnd == 0 || searchSpace[idxEnd-1] != '\\' {
 				// preceding character is not an escape
 				idxEnd += idxOffset + idxStart
 				break
