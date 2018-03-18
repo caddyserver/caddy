@@ -39,6 +39,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -99,8 +100,8 @@ func emit(final bool) error {
 		if i > 0 && err != nil {
 			// don't hammer the server; first failure might have been
 			// a fluke, but back off more after that
-			log.Printf("[WARNING] Sending diagnostics (attempt %d): %v - waiting and retrying", i, err)
-			time.Sleep(time.Duration(i*i*i) * time.Second)
+			log.Printf("[WARNING] Sending diagnostics (attempt %d): %v - backing off and retrying", i, err)
+			time.Sleep(time.Duration((i+1)*(i+1)*(i+1)) * time.Second)
 		}
 
 		// send it
@@ -113,7 +114,7 @@ func emit(final bool) error {
 		// ensure we can read the response
 		if ct := resp.Header.Get("Content-Type"); (resp.StatusCode < 300 || resp.StatusCode >= 400) &&
 			!strings.Contains(ct, "json") {
-			err = fmt.Errorf("diagnostics server replied with unknown content-type: %s", ct)
+			err = fmt.Errorf("diagnostics server replied with unknown content-type: '%s' and HTTP %s", ct, resp.Status)
 			resp.Body.Close()
 			continue
 		}
@@ -129,6 +130,12 @@ func emit(final bool) error {
 		// just wait and try again -- this is a special case of
 		// error that we handle differently, as you can see
 		if resp.StatusCode == http.StatusTooManyRequests {
+			if reply.NextUpdate <= 0 {
+				raStr := resp.Header.Get("Retry-After")
+				if ra, err := strconv.Atoi(raStr); err == nil {
+					reply.NextUpdate = time.Duration(ra) * time.Second
+				}
+			}
 			log.Printf("[NOTICE] Sending diagnostics: we were too early; waiting %s before trying again", reply.NextUpdate)
 			time.Sleep(reply.NextUpdate)
 			continue
@@ -141,11 +148,11 @@ func emit(final bool) error {
 	}
 	if err == nil {
 		// (remember, if there was an error, we return it
-		// below, so it will get logged if it's supposed to)
+		// below, so it WILL get logged if it's supposed to)
 		log.Println("[INFO] Sending diagnostics: success")
 	}
 
-	// even if there was an error after retrying, we should
+	// even if there was an error after all retries, we should
 	// schedule the next update using our default update
 	// interval because the server might be healthy later
 
@@ -283,10 +290,11 @@ const (
 	endpoint = "https://diagnostics-staging.caddyserver.com/update/" // TODO: make configurable, "http://localhost:8085/update/"
 
 	// defaultUpdateInterval is how long to wait before emitting
-	// more diagnostic data. This value is only used if the
-	// client receives a nonsensical value, or doesn't send one
-	// at all, indicating a likely problem with the server. Thus,
-	// this value should be a long duration to help alleviate
-	// extra load on the server.
+	// more diagnostic data if all retires fail. This value is
+	// only used if the client receives a nonsensical value, or
+	// doesn't send one at all, or if a connection can't be made,
+	// likely indicating a problem with the server. Thus, this
+	// value should be a long duration to help alleviate extra
+	// load on the server.
 	defaultUpdateInterval = 1 * time.Hour
 )
