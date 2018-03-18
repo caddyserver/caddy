@@ -39,7 +39,7 @@ var (
 
 	// eventHooks is a map of hook name to Hook. All hooks plugins
 	// must have a name.
-	eventHooks = sync.Map{}
+	eventHooks = &sync.Map{}
 
 	// parsingCallbacks maps server type to map of directive
 	// to list of callback functions. These aren't really
@@ -267,6 +267,36 @@ func EmitEvent(event EventName, info interface{}) {
 		if err != nil {
 			log.Printf("error on '%s' hook: %v", k.(string), err)
 		}
+		return true
+	})
+}
+
+// cloneEventHooks return a clone of the event hooks *sync.Map
+func cloneEventHooks() *sync.Map {
+	c := &sync.Map{}
+	eventHooks.Range(func(k, v interface{}) bool {
+		c.Store(k, v)
+		return true
+	})
+	return c
+}
+
+// purgeEventHooks purges all event hooks from the map
+func purgeEventHooks() {
+	eventHooks.Range(func(k, _ interface{}) bool {
+		eventHooks.Delete(k)
+		return true
+	})
+}
+
+// restoreEventHooks restores eventHooks with a provided *sync.Map
+func restoreEventHooks(m *sync.Map) {
+	// Purge old event hooks
+	purgeEventHooks()
+
+	// Restore event hooks
+	m.Range(func(k, v interface{}) bool {
+		eventHooks.Store(k, v)
 		return true
 	})
 }

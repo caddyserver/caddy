@@ -76,9 +76,17 @@ func trapSignalsPosix() {
 					caddyfileToUse = newCaddyfile
 				}
 
+				// Backup old event hooks
+				oldEventHooks := cloneEventHooks()
+
+				// Purge the old event hooks
+				purgeEventHooks()
+
 				// Kick off the restart; our work is done
 				_, err = inst.Restart(caddyfileToUse)
 				if err != nil {
+					restoreEventHooks(oldEventHooks)
+
 					log.Printf("[ERROR] SIGUSR1: %v", err)
 				}
 
