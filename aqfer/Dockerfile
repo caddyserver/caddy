@@ -15,6 +15,8 @@ FROM golang:1.9
 # RUN apt-get update
 # RUN apt-get -y install vim
 
+ENV GIT_TERMINAL_PROMPT 1
+
 RUN go get gopkg.in/yaml.v2
 RUN go get github.com/aws/aws-sdk-go/aws
 RUN go get github.com/aws/aws-sdk-go/aws/awserr
@@ -28,6 +30,28 @@ RUN go get github.com/satori/go.uuid
 RUN go get github.com/pquerna/cachecontrol/cacheobject
 RUN go get github.com/lucas-clemente/quic-go
 RUN go get github.com/stretchr/testify/require
+RUN go get github.com/caddyserver/builds
+
+# ===== neeeded for private repos ====
+RUN mkdir /root/.ssh/
+ARG SSH_PRIVATE_KEY
+ARG SSH_PUBLIC_KEY
+ARG GIT_USER
+
+RUN apt-get update && apt-get install -y openssh-server
+RUN mkdir -p /root/.ssh && \
+    chmod 0700 /root/.ssh && \
+    ssh-keyscan github.com > /root/.ssh/known_hosts
+
+RUN echo "$SSH_PRIVATE_KEY" | tr '?' '\n' > /root/.ssh/id_rsa
+RUN chmod 700 /root/.ssh/id_rsa
+RUN echo "$SSH_PUBLIC_KEY" | tr '?' '\n' > /root/.ssh/id_rsa.pub
+RUN chmod 700 /root/.ssh/id_rsa.pub
+
+RUN echo "    IdentityFile ~/.ssh/id_rsa" >> /etc/ssh/ssh_config
+RUN echo " User <$GIT_USER>" >> /root/.ssh/config
+RUN echo "[url \"git@github.com:\"]\n\tinsteadOf = https://github.com/" >> /root/.gitconfig
+# ===== neeeded for private repos ====
 
 # additional modules currently imported in caddy/caddymain/run.go
 RUN go get github.com/fellou89/caddy-cache
@@ -39,8 +63,11 @@ RUN go get github.com/startsmartlabs/caddy-transformrequest
 RUN go get github.com/startsmartlabs/caddy-redis
 # ADD ./aqfer/redis /go/src/github.com/startsmartlabs/caddy-redis
 
+# private git repo cleanup
+# TODO: this might not be secure enough since we are putting imge in ECR
+RUN rm -rf /root/.ssh/
+
 # adds caddy source under caddy directory on container
-RUN go get github.com/caddyserver/builds
 RUN mkdir -p /go/src/github.com/mholt/caddy
 ADD ./ /go/src/github.com/mholt/caddy
 

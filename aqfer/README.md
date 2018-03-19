@@ -21,7 +21,7 @@
 - ECSService for the ECSCluster using above ECSTaskDefinition; static values of **8** desired task count, **100** min health percent, **200** max health percent, **EC2** launch type, and loadbalancer dynamically mapped to containers on port **8082**.
 - ECSService uses 'spread' placement strategy across availability zones and instance ids. Container to use is designated by 'ContainerName' which is a configurable param.
 - ECSServiceRole with policies for EC2 SecurityGroupIngress authorization and describe actions, policies for ElasticLoadBalancing deregister, register, and describe actions; RoleName is a configurable param.
-- NetworkLoadBalancer has static values of **network** for the type, **ipv4** for address type, and **internet-facing** scheme. *LoadBalancerName* and *Subnets* configurable values (2 subnets minimum required).
+- NetworkLoadBalancer has static values of **network** for the type, **ipv4** for address type, and **internet-facing** scheme. *LoadBalancerName* and *Subnets* are configurable values (2 subnets minimum required).
 - LBListener connects ECSService to NetworkLoadBalancer and LBTargetGroup on TCP port 80 (static values on ecs template).
 - LBTBTargetGroup will do health checks on ec2 instances on TCP port 80 (static values on ecs template). *VPC* and *TargetGroupName* are configurable values.
 

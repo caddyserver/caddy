@@ -4,6 +4,7 @@ ROOT_NAME := aqfer
 DBNAME := DB${ROOT_NAME}${DBVERSION}
 ECSNAME := ECS${ROOT_NAME}${ECSVERSION}
 
+GIT_USER := fellou89
 AWS_ACCOUNT := 392630614516
 JWT := testkey
 REPO_ID := 2
@@ -71,6 +72,15 @@ tear_down_stacks: tear_down_db tear_down_ecs
 aws_build:
 	docker build --no-cache -f aqfer/Dockerfile.aws -t aws_image .
 
+.PHONY: build_caddy_image
+build_caddy_image:
+	docker build -f aqfer/Dockerfile --build-arg GIT_USER=${GIT_USER} --build-arg SSH_PUBLIC_KEY="$(shell cat ~/.ssh/id_rsa.pub | tr '\n' '?')" --build-arg SSH_PRIVATE_KEY="$(shell cat ~/.ssh/id_rsa | tr '\n' '?')" -t ${ROOT_NAME}-caddy .
+
+.PHONY: build_new_caddy_image
+build_new_caddy_image:
+	docker build --no-cache -f aqfer/Dockerfile --build-arg GIT_USER=${GIT_USER} --build-arg SSH_PUBLIC_KEY="$(shell cat ~/.ssh/id_rsa.pub | tr '\n' '?')" --build-arg SSH_PRIVATE_KEY="$(shell cat ~/.ssh/id_rsa | tr '\n' '?')" -t ${ROOT_NAME}-caddy .
+
+
 .PHONY: create_artifact_bucket
 create_artifact_bucket:
 	docker-compose -f aqfer/docker-compose-aws.yml run \
@@ -137,14 +147,6 @@ ecr_repo_push: build_caddy_image
 	cat /tmp/ecrLogin | docker login -u AWS --password-stdin ${ecrUri}
 	docker tag ${ROOT_NAME}-caddy:latest ${ecrUri}
 	docker push ${ecrUri}
-
-.PHONY: build_new_caddy_image
-build_new_caddy_image:
-	docker build --no-cache -f aqfer/Dockerfile -t ${ROOT_NAME}-caddy .
-
-.PHONY: build_caddy_image
-build_caddy_image:
-	docker build -f aqfer/Dockerfile -t ${ROOT_NAME}-caddy .
 
 
 .PHONY: spin_up_ecs
