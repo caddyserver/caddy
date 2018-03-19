@@ -27,7 +27,7 @@ func TestGetCertificate(t *testing.T) {
 	hello := &tls.ClientHelloInfo{ServerName: "example.com"}
 	helloSub := &tls.ClientHelloInfo{ServerName: "sub.example.com"}
 	helloNoSNI := &tls.ClientHelloInfo{}
-	helloNoMatch := &tls.ClientHelloInfo{ServerName: "nomatch"}
+	// helloNoMatch := &tls.ClientHelloInfo{ServerName: "nomatch"} // TODO (see below)
 
 	// When cache is empty
 	if cert, err := cfg.GetCertificate(hello); err == nil {
@@ -69,8 +69,9 @@ func TestGetCertificate(t *testing.T) {
 		t.Errorf("Expected random cert with no matches, got: %v", cert)
 	}
 
+	// TODO: Re-implement this behavior (it was reverted in #2037)
 	// When no certificate matches, raise an alert
-	if _, err := cfg.GetCertificate(helloNoMatch); err == nil {
-		t.Errorf("Expected an error when no certificate matched the SNI, got: %v", err)
-	}
+	// if _, err := cfg.GetCertificate(helloNoMatch); err == nil {
+	// 	t.Errorf("Expected an error when no certificate matched the SNI, got: %v", err)
+	// }
 }
