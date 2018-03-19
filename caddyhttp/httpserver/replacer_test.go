@@ -145,6 +145,70 @@ func TestReplace(t *testing.T) {
 	}
 }
 
+func BenchmarkReplace(b *testing.B) {
+	w := httptest.NewRecorder()
+	recordRequest := NewResponseRecorder(w)
+	reader := strings.NewReader(`{"username": "dennis"}`)
+
+	request, err := http.NewRequest("POST", "http://localhost/?foo=bar", reader)
+	if err != nil {
+		b.Fatalf("Failed to make request: %v", err)
+	}
+	ctx := context.WithValue(request.Context(), OriginalURLCtxKey, *request.URL)
+	request = request.WithContext(ctx)
+
+	request.Header.Set("Custom", "foobarbaz")
+	request.Header.Set("ShorterVal", "1")
+	repl := NewReplacer(request, recordRequest, "-")
+	// add some headers after creating replacer
+	request.Header.Set("CustomAdd", "caddy")
+	request.Header.Set("Cookie", "foo=bar; taste=delicious")
+
+	// add some respons headers
+	recordRequest.Header().Set("Custom", "CustomResponseHeader")
+
+	now = func() time.Time {
+		return time.Date(2006, 1, 2, 15, 4, 5, 02, time.FixedZone("hardcoded", -7))
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		repl.Replace("This hostname is {hostname}")
+	}
+}
+
+func BenchmarkReplaceEscaped(b *testing.B) {
+	w := httptest.NewRecorder()
+	recordRequest := NewResponseRecorder(w)
+	reader := strings.NewReader(`{"username": "dennis"}`)
+
+	request, err := http.NewRequest("POST", "http://localhost/?foo=bar", reader)
+	if err != nil {
+		b.Fatalf("Failed to make request: %v", err)
+	}
+	ctx := context.WithValue(request.Context(), OriginalURLCtxKey, *request.URL)
+	request = request.WithContext(ctx)
+
+	request.Header.Set("Custom", "foobarbaz")
+	request.Header.Set("ShorterVal", "1")
+	repl := NewReplacer(request, recordRequest, "-")
+	// add some headers after creating replacer
+	request.Header.Set("CustomAdd", "caddy")
+	request.Header.Set("Cookie", "foo=bar; taste=delicious")
+
+	// add some respons headers
+	recordRequest.Header().Set("Custom", "CustomResponseHeader")
+
+	now = func() time.Time {
+		return time.Date(2006, 1, 2, 15, 4, 5, 02, time.FixedZone("hardcoded", -7))
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		repl.Replace("\\{ 'hostname': '{hostname}' \\}")
+	}
+}
+
 func TestResponseRecorderNil(t *testing.T) {
 
 	reader := strings.NewReader(`{"username": "dennis"}`)
