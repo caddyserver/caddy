@@ -1,5 +1,11 @@
 # Architecture Description
 
+## Setup
+- Configure variables on first section fo Makefile
+- If needed, alter values on cloudformation templates
+- In the aqfer directory, copy .yml_template files (removing _template from file name), assign AWS credential values
+  - There is a line in the gitignore to keep docker-compose files with AWS credentials from being commited
+
 ## AWS Stack
 
 ### Databases
