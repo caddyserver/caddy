@@ -37,6 +37,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"strconv"
@@ -83,10 +84,7 @@ func emit(final bool) error {
 
 	// terminate any pending update if this is the last one
 	if final {
-		updateTimerMu.Lock()
-		updateTimer.Stop()
-		updateTimer = nil
-		updateTimerMu.Unlock()
+		stopUpdateTimer()
 	}
 
 	payloadBytes, err := makePayloadAndResetBuffer()
@@ -113,7 +111,37 @@ func emit(final bool) error {
 			continue
 		}
 
-		// ensure we can read the response
+		// check for any special-case response codes
+		if resp.StatusCode == http.StatusGone {
+			// the endpoint has been deprecated and is no longer servicing clients
+			err = fmt.Errorf("diagnostics server replied with HTTP %d; upgrade required", resp.StatusCode)
+			if clen := resp.Header.Get("Content-Length"); clen != "0" && clen != "" {
+				bodyBytes, readErr := ioutil.ReadAll(resp.Body)
+				if readErr != nil {
+					log.Printf("[ERROR] Reading response body from server: %v", readErr)
+				}
+				err = fmt.Errorf("%v - %s", err, bodyBytes)
+			}
+			resp.Body.Close()
+			reply.Stop = true
+			break
+		}
+		if resp.StatusCode == http.StatusUnavailableForLegalReasons {
+			// the endpoint is unavailable, at least to this client, for legal reasons (!)
+			err = fmt.Errorf("diagnostics server replied with HTTP %d %s: please consult the project website and developers for guidance", resp.StatusCode, resp.Status)
+			if clen := resp.Header.Get("Content-Length"); clen != "0" && clen != "" {
+				bodyBytes, readErr := ioutil.ReadAll(resp.Body)
+				if readErr != nil {
+					log.Printf("[ERROR] Reading response body from server: %v", readErr)
+				}
+				err = fmt.Errorf("%v - %s", err, bodyBytes)
+			}
+			resp.Body.Close()
+			reply.Stop = true
+			break
+		}
+
+		// okay, ensure we can interpret the response
 		if ct := resp.Header.Get("Content-Type"); (resp.StatusCode < 300 || resp.StatusCode >= 400) &&
 			!strings.Contains(ct, "json") {
 			err = fmt.Errorf("diagnostics server replied with unknown content-type: '%s' and HTTP %s", ct, resp.Status)
@@ -176,6 +204,13 @@ func emit(final bool) error {
 	}
 
 	return err
+}
+
+func stopUpdateTimer() {
+	updateTimerMu.Lock()
+	updateTimer.Stop()
+	updateTimer = nil
+	updateTimerMu.Unlock()
 }
 
 // makePayloadAndResetBuffer prepares a payload
