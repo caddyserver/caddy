@@ -346,7 +346,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	go diagnostics.AppendUnique("user_agent", r.Header.Get("User-Agent"))
+	// TODO: Somehow report UA string in conjunction with TLS handshake, if any (and just once per connection)
+	go diagnostics.AppendUnique("http_user_agent", r.Header.Get("User-Agent"))
+	go diagnostics.Increment("http_request_count")
 
 	// copy the original, unchanged URL into the context
 	// so it can be referenced by middlewares

@@ -100,24 +100,31 @@ func (cg configGroup) GetConfigForClient(clientHello *tls.ClientHelloInfo) (*tls
 //
 // This method is safe for use as a tls.Config.GetCertificate callback.
 func (cfg *Config) GetCertificate(clientHello *tls.ClientHelloInfo) (*tls.Certificate, error) {
-	go diagnostics.Append("client_hello", struct {
-		NoSNI             bool                  `json:"no_sni,omitempty"`
-		CipherSuites      []uint16              `json:"cipher_suites,omitempty"`
-		SupportedCurves   []tls.CurveID         `json:"curves,omitempty"`
-		SupportedPoints   []uint8               `json:"points,omitempty"`
-		SignatureSchemes  []tls.SignatureScheme `json:"sig_scheme,omitempty"`
-		ALPN              []string              `json:"alpn,omitempty"`
-		SupportedVersions []uint16              `json:"versions,omitempty"`
-	}{
-		NoSNI:             clientHello.ServerName == "",
-		CipherSuites:      clientHello.CipherSuites,
-		SupportedCurves:   clientHello.SupportedCurves,
-		SupportedPoints:   clientHello.SupportedPoints,
-		SignatureSchemes:  clientHello.SignatureSchemes,
-		ALPN:              clientHello.SupportedProtos,
-		SupportedVersions: clientHello.SupportedVersions,
-	})
+	// TODO: We need to collect this in a heavily de-duplicating way
+	// It would also be nice to associate a handshake with the UA string (but that is only for HTTP server type)
+	// go diagnostics.Append("tls_client_hello", struct {
+	// 	NoSNI             bool                  `json:"no_sni,omitempty"`
+	// 	CipherSuites      []uint16              `json:"cipher_suites,omitempty"`
+	// 	SupportedCurves   []tls.CurveID         `json:"curves,omitempty"`
+	// 	SupportedPoints   []uint8               `json:"points,omitempty"`
+	// 	SignatureSchemes  []tls.SignatureScheme `json:"sig_scheme,omitempty"`
+	// 	ALPN              []string              `json:"alpn,omitempty"`
+	// 	SupportedVersions []uint16              `json:"versions,omitempty"`
+	// }{
+	// 	NoSNI:             clientHello.ServerName == "",
+	// 	CipherSuites:      clientHello.CipherSuites,
+	// 	SupportedCurves:   clientHello.SupportedCurves,
+	// 	SupportedPoints:   clientHello.SupportedPoints,
+	// 	SignatureSchemes:  clientHello.SignatureSchemes,
+	// 	ALPN:              clientHello.SupportedProtos,
+	// 	SupportedVersions: clientHello.SupportedVersions,
+	// })
 	cert, err := cfg.getCertDuringHandshake(strings.ToLower(clientHello.ServerName), true, true)
+	if err == nil {
+		go diagnostics.Increment("tls_handshake_count")
+	} else {
+		go diagnostics.Append("tls_handshake_error", err.Error())
+	}
 	return &cert.Certificate, err
 }
 

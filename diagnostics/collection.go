@@ -33,7 +33,7 @@ func Init(instanceID uuid.UUID) {
 		panic("already initialized")
 	}
 	if str := instanceID.String(); str == "" ||
-		instanceID.String() == "00000000-0000-0000-0000-000000000000" {
+		str == "00000000-0000-0000-0000-000000000000" {
 		panic("empty UUID")
 	}
 	instanceUUID = instanceID
@@ -73,6 +73,10 @@ func StartEmitting() {
 //
 // It is a no-op if the package was never initialized
 // or if emitting was never started.
+//
+// NOTE: This function is blocking. Run in a goroutine if
+// you want to guarantee no blocking at critical times
+// like exiting the program.
 func StopEmitting() {
 	if !enabled {
 		return
@@ -83,7 +87,12 @@ func StopEmitting() {
 		return
 	}
 	updateTimerMu.Unlock()
-	logEmit(true)
+	logEmit(true) // likely too early; may take minutes to return
+}
+
+// Reset empties the current payload buffer.
+func Reset() {
+	resetBuffer()
 }
 
 // Set puts a value in the buffer to be included
@@ -142,7 +151,7 @@ func Append(key string, value interface{}) {
 	bufferMu.Unlock()
 }
 
-// AppendUnique adds value to a set  namedkey.
+// AppendUnique adds value to a set named key.
 // Set items are unordered. Values in the set
 // are unique, but how many times they are
 // appended is counted.
@@ -178,24 +187,23 @@ func AppendUnique(key string, value interface{}) {
 	bufferMu.Unlock()
 }
 
-// Increment adds 1 to a value named key.
+// Add adds amount to a value named key.
 // If it does not exist, it is created with
 // a value of 1. If key maps to a type that
 // is not an integer, a panic is logged,
 // and this is a no-op.
+func Add(key string, amount int) {
+	atomicAdd(key, amount)
+}
+
+// Increment is a shortcut for Add(key, 1)
 func Increment(key string) {
-	incrementOrDecrement(key, true)
+	atomicAdd(key, 1)
 }
 
-// Decrement is the same as increment except
-// it subtracts 1.
-func Decrement(key string) {
-	incrementOrDecrement(key, false)
-}
-
-// inc == true:  increment
-// inc == false: decrement
-func incrementOrDecrement(key string, inc bool) {
+// atomicAdd adds amount (negative to subtract)
+// to key.
+func atomicAdd(key string, amount int) {
 	if !enabled {
 		return
 	}
@@ -214,10 +222,6 @@ func incrementOrDecrement(key string, inc bool) {
 		}
 		bufferItemCount++
 	}
-	if inc {
-		buffer[key] = intVal + 1
-	} else {
-		buffer[key] = intVal - 1
-	}
+	buffer[key] = intVal + amount
 	bufferMu.Unlock()
 }

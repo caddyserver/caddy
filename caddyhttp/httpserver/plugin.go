@@ -29,6 +29,7 @@ import (
 	"github.com/mholt/caddy/caddyfile"
 	"github.com/mholt/caddy/caddyhttp/staticfiles"
 	"github.com/mholt/caddy/caddytls"
+	"github.com/mholt/caddy/diagnostics"
 )
 
 const serverType = "http"
@@ -205,9 +206,34 @@ func (h *httpContext) InspectServerBlocks(sourceFile string, serverBlocks []cadd
 // MakeServers uses the newly-created siteConfigs to
 // create and return a list of server instances.
 func (h *httpContext) MakeServers() ([]caddy.Server, error) {
-	// make sure TLS is disabled for explicitly-HTTP sites
-	// (necessary when HTTP address shares a block containing tls)
+	// make a rough estimate as to whether we're in a "production
+	// environment/system" - start by assuming that most production
+	// servers will set their default CA endpoint to a public,
+	// trusted CA (obviously not a perfect hueristic)
+	var looksLikeProductionCA bool
+	for _, publicCAEndpoint := range caddytls.KnownACMECAs {
+		if strings.Contains(caddytls.DefaultCAUrl, publicCAEndpoint) {
+			looksLikeProductionCA = true
+			break
+		}
+	}
+
+	var atLeastOneSiteLooksLikeProduction bool
 	for _, cfg := range h.siteConfigs {
+		// if we aren't sure yet whether it's a "production" server,
+		// continue to see if all the addresses (both sites and
+		// listeners) are loopback
+		if !atLeastOneSiteLooksLikeProduction {
+			if !caddy.IsLoopback(cfg.Addr.Host) &&
+				!caddy.IsLoopback(cfg.ListenHost) &&
+				(caddytls.QualifiesForManagedTLS(cfg) ||
+					caddytls.HostQualifies(cfg.Addr.Host)) {
+				atLeastOneSiteLooksLikeProduction = true
+			}
+		}
+
+		// make sure TLS is disabled for explicitly-HTTP sites
+		// (necessary when HTTP address shares a block containing tls)
 		if !cfg.TLS.Enabled {
 			continue
 		}
@@ -245,6 +271,18 @@ func (h *httpContext) MakeServers() ([]caddy.Server, error) {
 		}
 		servers = append(servers, s)
 	}
+
+	// NOTE: This value is only a "good" guess. Quite often, development
+	// environments will use internal DNS or a local hosts file to serve
+	// real-looking domains in local development. We can't easily tell
+	// which without doing a DNS lookup, so this guess is definitely naive,
+	// and if we ever want a better guess, we will have to do DNS lookups.
+	deploymentGuess := "dev"
+	if looksLikeProductionCA && atLeastOneSiteLooksLikeProduction {
+		deploymentGuess = "production"
+	}
+	diagnostics.Set("http_deployment_guess", deploymentGuess)
+	diagnostics.Set("http_num_sites", len(h.siteConfigs))
 
 	return servers, nil
 }

@@ -48,14 +48,16 @@ import (
 )
 
 // logEmit calls emit and then logs the error, if any.
+// See docs for emit.
 func logEmit(final bool) {
 	err := emit(final)
 	if err != nil {
-		log.Printf("[ERROR] Sending diganostics: %v", err)
+		log.Printf("[ERROR] Sending diagnostics: %v", err)
 	}
 }
 
 // emit sends an update to the diagnostics server.
+// Set final to true if this is the last call to emit.
 // If final is true, no future updates will be scheduled.
 // Otherwise, the next update will be scheduled.
 func emit(final bool) error {
@@ -136,9 +138,11 @@ func emit(final bool) error {
 					reply.NextUpdate = time.Duration(ra) * time.Second
 				}
 			}
-			log.Printf("[NOTICE] Sending diagnostics: we were too early; waiting %s before trying again", reply.NextUpdate)
-			time.Sleep(reply.NextUpdate)
-			continue
+			if !final {
+				log.Printf("[NOTICE] Sending diagnostics: we were too early; waiting %s before trying again", reply.NextUpdate)
+				time.Sleep(reply.NextUpdate)
+				continue
+			}
 		} else if resp.StatusCode >= 400 {
 			err = fmt.Errorf("diagnostics server returned status code %d", resp.StatusCode)
 			continue
@@ -146,7 +150,7 @@ func emit(final bool) error {
 
 		break
 	}
-	if err == nil {
+	if err == nil && !final {
 		// (remember, if there was an error, we return it
 		// below, so it WILL get logged if it's supposed to)
 		log.Println("[INFO] Sending diagnostics: success")
@@ -181,13 +185,7 @@ func emit(final bool) error {
 // resulting byte slice is lost, the payload is
 // gone with it.
 func makePayloadAndResetBuffer() ([]byte, error) {
-	// make a local pointer to the buffer, then reset
-	// the buffer to an empty map to clear it out
-	bufferMu.Lock()
-	bufCopy := buffer
-	buffer = make(map[string]interface{})
-	bufferItemCount = 0
-	bufferMu.Unlock()
+	bufCopy := resetBuffer()
 
 	// encode payload in preparation for transmission
 	payload := Payload{
@@ -196,6 +194,21 @@ func makePayloadAndResetBuffer() ([]byte, error) {
 		Data:       bufCopy,
 	}
 	return json.Marshal(payload)
+}
+
+// resetBuffer makes a local pointer to the buffer,
+// then resets the buffer by assigning to be a newly-
+// made value to clear it out, then sets the buffer
+// item count to 0. It returns the copied pointer to
+// the original map so the old buffer value can be
+// used locally.
+func resetBuffer() map[string]interface{} {
+	bufferMu.Lock()
+	bufCopy := buffer
+	buffer = make(map[string]interface{})
+	bufferItemCount = 0
+	bufferMu.Unlock()
+	return bufCopy
 }
 
 // Response contains the body of a response from the
@@ -222,8 +235,26 @@ type Payload struct {
 	// The UTC timestamp of the transmission
 	Timestamp time.Time `json:"timestamp"`
 
+	// The timestamp before which the next update is expected
+	// (NOT populated by client - the server fills this in
+	// before it stores the data)
+	ExpectNext time.Time `json:"expect_next,omitempty"`
+
 	// The metrics
 	Data map[string]interface{} `json:"data,omitempty"`
+}
+
+// Int returns the value of the data keyed by key
+// if it is an integer; otherwise it returns 0.
+func (p Payload) Int(key string) int {
+	val, _ := p.Data[key]
+	switch p.Data[key].(type) {
+	case int:
+		return val.(int)
+	case float64: // after JSON-decoding, int becomes float64...
+		return int(val.(float64))
+	}
+	return 0
 }
 
 // countingSet implements a set that counts how many
@@ -272,6 +303,7 @@ var (
 
 	// instanceUUID is the ID of the current instance.
 	// This MUST be set to emit diagnostics.
+	// This MUST NOT be openly exposed to clients, for privacy.
 	instanceUUID uuid.UUID
 
 	// enabled indicates whether the package has

@@ -51,6 +51,9 @@ type tlsHandler struct {
 // Halderman, et. al. in "The Security Impact of HTTPS Interception" (NDSS '17):
 // https://jhalderm.com/pub/papers/interception-ndss17.pdf
 func (h *tlsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// TODO: one request per connection, we should report UA in connection with
+	// handshake (reported in caddytls package) and our MITM assessment
+
 	if h.listener == nil {
 		h.next.ServeHTTP(w, r)
 		return
@@ -100,12 +103,12 @@ func (h *tlsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if checked {
 		r = r.WithContext(context.WithValue(r.Context(), MitmCtxKey, mitm))
 		if mitm {
-			go diagnostics.AppendUnique("mitm", "likely")
+			go diagnostics.AppendUnique("http_mitm", "likely")
 		} else {
-			go diagnostics.AppendUnique("mitm", "unlikely")
+			go diagnostics.AppendUnique("http_mitm", "unlikely")
 		}
 	} else {
-		go diagnostics.AppendUnique("mitm", "unknown")
+		go diagnostics.AppendUnique("http_mitm", "unknown")
 	}
 
 	if mitm && h.closeOnMITM {

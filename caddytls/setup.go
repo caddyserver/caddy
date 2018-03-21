@@ -28,6 +28,7 @@ import (
 	"strings"
 
 	"github.com/mholt/caddy"
+	"github.com/mholt/caddy/diagnostics"
 )
 
 func init() {
@@ -174,9 +175,11 @@ func setupTLS(c *caddy.Controller) error {
 			case "max_certs":
 				c.Args(&maxCerts)
 				config.OnDemand = true
+				diagnostics.Increment("tls_on_demand_count")
 			case "ask":
 				c.Args(&askURL)
 				config.OnDemand = true
+				diagnostics.Increment("tls_on_demand_count")
 			case "dns":
 				args := c.RemainingArgs()
 				if len(args) != 1 {
@@ -251,6 +254,7 @@ func setupTLS(c *caddy.Controller) error {
 				return c.Errf("Unable to load certificate and key files for '%s': %v", c.Key, err)
 			}
 			log.Printf("[INFO] Successfully loaded TLS assets from %s and %s", certificateFile, keyFile)
+			diagnostics.Increment("tls_manual_cert_count")
 		}
 
 		// load a directory of certificates, if specified
@@ -270,6 +274,7 @@ func setupTLS(c *caddy.Controller) error {
 		if err != nil {
 			return fmt.Errorf("self-signed: %v", err)
 		}
+		diagnostics.Increment("tls_self_signed_count")
 	}
 
 	return nil
@@ -350,6 +355,7 @@ func loadCertsInDir(cfg *Config, c *caddy.Controller, dir string) error {
 				return c.Errf("%s: failed to load cert and key for '%s': %v", path, c.Key, err)
 			}
 			log.Printf("[INFO] Successfully loaded TLS assets from %s", path)
+			diagnostics.Increment("tls_manual_cert_count")
 		}
 		return nil
 	})

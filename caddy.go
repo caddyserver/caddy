@@ -123,6 +123,7 @@ type Instance struct {
 	StorageMu sync.RWMutex
 }
 
+// Instances returns the list of instances.
 func Instances() []*Instance {
 	return instances
 }
@@ -616,7 +617,7 @@ func ValidateAndExecuteDirectives(cdyfile Input, inst *Instance, justValidate bo
 		return fmt.Errorf("error inspecting server blocks: %v", err)
 	}
 
-	diagnostics.Set("num_server_blocks", len(sblocks))
+	diagnostics.Set("http_num_server_blocks", len(sblocks))
 
 	return executeDirectives(inst, cdyfile.Path(), stype.Directives(), sblocks, justValidate)
 }
@@ -872,7 +873,7 @@ func Stop() error {
 // explicitly like a common local hostname. addr must only
 // be a host or a host:port combination.
 func IsLoopback(addr string) bool {
-	host, _, err := net.SplitHostPort(addr)
+	host, _, err := net.SplitHostPort(strings.ToLower(addr))
 	if err != nil {
 		host = addr // happens if the addr is just a hostname
 	}
