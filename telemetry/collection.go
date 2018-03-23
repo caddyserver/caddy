@@ -104,7 +104,7 @@ func Reset() {
 // go keyword after the call to SendHello so it
 // doesn't block crucial code.
 func Set(key string, val interface{}) {
-	if !enabled {
+	if !enabled || isDisabled(key) {
 		return
 	}
 	bufferMu.Lock()
@@ -123,10 +123,8 @@ func Set(key string, val interface{}) {
 // If key is new, a new list will be created.
 // If key maps to a type that is not a list,
 // a panic is logged, and this is a no-op.
-//
-// TODO: is this function needed/useful?
 func Append(key string, value interface{}) {
-	if !enabled {
+	if !enabled || isDisabled(key) {
 		return
 	}
 	bufferMu.Lock()
@@ -161,7 +159,7 @@ func Append(key string, value interface{}) {
 // that is not a counting set, a panic is logged,
 // and this is a no-op.
 func AppendUnique(key string, value interface{}) {
-	if !enabled {
+	if !enabled || isDisabled(key) {
 		return
 	}
 	bufferMu.Lock()
@@ -204,7 +202,7 @@ func Increment(key string) {
 // atomicAdd adds amount (negative to subtract)
 // to key.
 func atomicAdd(key string, amount int) {
-	if !enabled {
+	if !enabled || isDisabled(key) {
 		return
 	}
 	bufferMu.Lock()
@@ -224,4 +222,15 @@ func atomicAdd(key string, amount int) {
 	}
 	buffer[key] = intVal + amount
 	bufferMu.Unlock()
+}
+
+// isDisabled returns whether key is
+// a disabled metric key. ALL collection
+// functions should call this and not
+// save the value if this returns true.
+func isDisabled(key string) bool {
+	disabledMetricsMu.RLock()
+	_, ok := disabledMetrics[key]
+	disabledMetricsMu.RUnlock()
+	return ok
 }

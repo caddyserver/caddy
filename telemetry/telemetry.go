@@ -155,6 +155,18 @@ func emit(final bool) error {
 			continue
 		}
 
+		// update the list of enabled/disabled keys, if any
+		for _, key := range reply.EnableKeys {
+			disabledMetricsMu.Lock()
+			delete(disabledMetrics, key)
+			disabledMetricsMu.Unlock()
+		}
+		for _, key := range reply.DisableKeys {
+			disabledMetricsMu.Lock()
+			disabledMetrics[key] = struct{}{}
+			disabledMetricsMu.Unlock()
+		}
+
 		// make sure we didn't send the update too soon; if so,
 		// just wait and try again -- this is a special case of
 		// error that we handle differently, as you can see
@@ -259,6 +271,18 @@ type Response struct {
 	// Error will be populated with an error message, if any.
 	// This field should be empty if the status code is < 400.
 	Error string `json:"error,omitempty"`
+
+	// DisableKeys will contain a list of keys/metrics that
+	// should NOT be sent until further notice. The client
+	// must NOT store these items in its buffer or send them
+	// to the telemetry server while they are disabled. If
+	// this list and EnableKeys have the same value (which is
+	// not supposed to happen), this field should dominate.
+	DisableKeys []string `json:"disable_keys,omitempty"`
+
+	// EnableKeys will contain a list of keys/metrics that
+	// MAY be sent until further notice.
+	EnableKeys []string `json:"enable_keys,omitempty"`
 }
 
 // Payload is the data that gets sent to the telemetry server.
@@ -334,6 +358,12 @@ var (
 	// If no update is scheduled, this is nil.
 	updateTimer   *time.Timer
 	updateTimerMu sync.Mutex
+
+	// disabledMetrics is a list of metric keys
+	// that should NOT be saved to the buffer
+	// or sent to the telemetry server.
+	disabledMetrics   = make(map[string]struct{})
+	disabledMetricsMu sync.RWMutex
 
 	// instanceUUID is the ID of the current instance.
 	// This MUST be set to emit telemetry.
