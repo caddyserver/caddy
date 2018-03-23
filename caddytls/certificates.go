@@ -26,7 +26,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mholt/caddy/diagnostics"
+	"github.com/mholt/caddy/telemetry"
 	"golang.org/x/crypto/ocsp"
 )
 
@@ -166,7 +166,7 @@ func (cfg *Config) CacheManagedCertificate(domain string) (Certificate, error) {
 	if err != nil {
 		return cert, err
 	}
-	diagnostics.Increment("tls_managed_cert_count")
+	telemetry.Increment("tls_managed_cert_count")
 	return cfg.cacheCertificate(cert), nil
 }
 
@@ -181,7 +181,7 @@ func (cfg *Config) cacheUnmanagedCertificatePEMFile(certFile, keyFile string) er
 		return err
 	}
 	cfg.cacheCertificate(cert)
-	diagnostics.Increment("tls_manual_cert_count")
+	telemetry.Increment("tls_manual_cert_count")
 	return nil
 }
 
@@ -195,7 +195,7 @@ func (cfg *Config) cacheUnmanagedCertificatePEMBytes(certBytes, keyBytes []byte)
 		return err
 	}
 	cfg.cacheCertificate(cert)
-	diagnostics.Increment("tls_manual_cert_count")
+	telemetry.Increment("tls_manual_cert_count")
 	return nil
 }
 

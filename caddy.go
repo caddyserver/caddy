@@ -44,7 +44,7 @@ import (
 	"time"
 
 	"github.com/mholt/caddy/caddyfile"
-	"github.com/mholt/caddy/diagnostics"
+	"github.com/mholt/caddy/telemetry"
 )
 
 // Configurable application parameters
@@ -617,7 +617,7 @@ func ValidateAndExecuteDirectives(cdyfile Input, inst *Instance, justValidate bo
 		return fmt.Errorf("error inspecting server blocks: %v", err)
 	}
 
-	diagnostics.Set("http_num_server_blocks", len(sblocks))
+	telemetry.Set("http_num_server_blocks", len(sblocks))
 
 	return executeDirectives(inst, cdyfile.Path(), stype.Directives(), sblocks, justValidate)
 }

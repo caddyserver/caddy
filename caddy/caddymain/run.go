@@ -30,7 +30,7 @@ import (
 	"github.com/klauspost/cpuid"
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddytls"
-	"github.com/mholt/caddy/diagnostics"
+	"github.com/mholt/caddy/telemetry"
 	"github.com/xenolf/lego/acme"
 	"gopkg.in/natefinch/lumberjack.v2"
 
@@ -52,7 +52,6 @@ func init() {
 	flag.StringVar(&caddytls.DefaultEmail, "email", "", "Default ACME CA account email address")
 	flag.DurationVar(&acme.HTTPClient.Timeout, "catimeout", acme.HTTPClient.Timeout, "Default ACME CA HTTP timeout")
 	flag.StringVar(&logfile, "log", "", "Process log file")
-	flag.BoolVar(&noDiag, "no-diagnostics", false, "Disable diagnostic reporting")
 	flag.StringVar(&caddy.PidFile, "pidfile", "", "Path to write pid file")
 	flag.BoolVar(&caddy.Quiet, "quiet", false, "Quiet mode (no initialization output)")
 	flag.StringVar(&revoke, "revoke", "", "Hostname for which to revoke the certificate")
@@ -89,9 +88,9 @@ func Run() {
 		})
 	}
 
-	// initialize diagnostics client
-	if !noDiag {
-		initDiagnostics()
+	// initialize telemetry client
+	if enableTelemetry {
+		initTelemetry()
 	}
 
 	// Check for one-time actions
@@ -150,13 +149,13 @@ func Run() {
 	// Execute instantiation events
 	caddy.EmitEvent(caddy.InstanceStartupEvent, instance)
 
-	// Begin diagnostics (these are no-ops if diagnostics disabled)
-	diagnostics.Set("caddy_version", appVersion)
-	diagnostics.Set("num_listeners", len(instance.Servers()))
-	diagnostics.Set("server_type", serverType)
-	diagnostics.Set("os", runtime.GOOS)
-	diagnostics.Set("arch", runtime.GOARCH)
-	diagnostics.Set("cpu", struct {
+	// Begin telemetry (these are no-ops if telemetry disabled)
+	telemetry.Set("caddy_version", appVersion)
+	telemetry.Set("num_listeners", len(instance.Servers()))
+	telemetry.Set("server_type", serverType)
+	telemetry.Set("os", runtime.GOOS)
+	telemetry.Set("arch", runtime.GOARCH)
+	telemetry.Set("cpu", struct {
 		BrandName  string `json:"brand_name,omitempty"`
 		NumLogical int    `json:"num_logical,omitempty"`
 		AESNI      bool   `json:"aes_ni,omitempty"`
@@ -165,7 +164,7 @@ func Run() {
 		NumLogical: runtime.NumCPU(),
 		AESNI:      cpuid.CPU.AesNi(),
 	})
-	diagnostics.StartEmitting()
+	telemetry.StartEmitting()
 
 	// Twiddle your thumbs
 	instance.Wait()
@@ -290,8 +289,8 @@ func setCPU(cpu string) error {
 	return nil
 }
 
-// initDiagnostics initializes the diagnostics engine.
-func initDiagnostics() {
+// initTelemetry initializes the telemetry engine.
+func initTelemetry() {
 	uuidFilename := filepath.Join(caddy.AssetsPath(), "uuid")
 
 	newUUID := func() uuid.UUID {
@@ -327,7 +326,7 @@ func initDiagnostics() {
 		}
 	}
 
-	diagnostics.Init(id)
+	telemetry.Init(id)
 }
 
 const appName = "Caddy"
@@ -342,7 +341,6 @@ var (
 	version    bool
 	plugins    bool
 	validate   bool
-	noDiag     bool
 )
 
 // Build information obtained with the help of -ldflags
@@ -356,4 +354,6 @@ var (
 	gitCommit        string // git rev-parse HEAD
 	gitShortStat     string // git diff-index --shortstat
 	gitFilesModified string // git diff-index --name-only HEAD
+
+	enableTelemetry = true
 )

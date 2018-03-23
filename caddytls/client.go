@@ -26,7 +26,7 @@ import (
 	"time"
 
 	"github.com/mholt/caddy"
-	"github.com/mholt/caddy/diagnostics"
+	"github.com/mholt/caddy/telemetry"
 	"github.com/xenolf/lego/acme"
 )
 
@@ -268,7 +268,7 @@ Attempts:
 		break
 	}
 
-	go diagnostics.Increment("tls_acme_certs_obtained")
+	go telemetry.Increment("tls_acme_certs_obtained")
 
 	return nil
 }
@@ -340,7 +340,7 @@ func (c *ACMEClient) Renew(name string) error {
 	}
 
 	caddy.EmitEvent(caddy.CertRenewEvent, name)
-	go diagnostics.Increment("tls_acme_certs_renewed")
+	go telemetry.Increment("tls_acme_certs_renewed")
 
 	return saveCertResource(c.storage, newCertMeta)
 }
@@ -367,7 +367,7 @@ func (c *ACMEClient) Revoke(name string) error {
 		return err
 	}
 
-	go diagnostics.Increment("tls_acme_certs_revoked")
+	go telemetry.Increment("tls_acme_certs_revoked")
 
 	err = c.storage.DeleteSite(name)
 	if err != nil {

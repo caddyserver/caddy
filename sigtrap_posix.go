@@ -22,7 +22,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/mholt/caddy/diagnostics"
+	"github.com/mholt/caddy/telemetry"
 )
 
 // trapSignalsPosix captures POSIX-only signals.
@@ -52,14 +52,14 @@ func trapSignalsPosix() {
 					exitCode = 3
 				}
 
-				diagnostics.AppendUnique("sigtrap", "SIGTERM")
-				go diagnostics.StopEmitting() // won't finish in time, but that's OK - just don't block
+				telemetry.AppendUnique("sigtrap", "SIGTERM")
+				go telemetry.StopEmitting() // won't finish in time, but that's OK - just don't block
 
 				os.Exit(exitCode)
 
 			case syscall.SIGUSR1:
 				log.Println("[INFO] SIGUSR1: Reloading")
-				go diagnostics.AppendUnique("sigtrap", "SIGUSR1")
+				go telemetry.AppendUnique("sigtrap", "SIGUSR1")
 
 				// Start with the existing Caddyfile
 				caddyfileToUse, inst, err := getCurrentCaddyfile()
@@ -91,14 +91,14 @@ func trapSignalsPosix() {
 
 			case syscall.SIGUSR2:
 				log.Println("[INFO] SIGUSR2: Upgrading")
-				go diagnostics.AppendUnique("sigtrap", "SIGUSR2")
+				go telemetry.AppendUnique("sigtrap", "SIGUSR2")
 				if err := Upgrade(); err != nil {
 					log.Printf("[ERROR] SIGUSR2: upgrading: %v", err)
 				}
 
 			case syscall.SIGHUP:
 				// ignore; this signal is sometimes sent outside of the user's control
-				go diagnostics.AppendUnique("sigtrap", "SIGHUP")
+				go telemetry.AppendUnique("sigtrap", "SIGHUP")
 			}
 		}
 	}()

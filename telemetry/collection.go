@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package diagnostics
+package telemetry
 
 import (
 	"log"
@@ -139,7 +139,7 @@ func Append(key string, value interface{}) {
 	sliceVal, sliceOk := bufVal.([]interface{})
 	if inBuffer && !sliceOk {
 		bufferMu.Unlock()
-		log.Printf("[PANIC] Diagnostics: key %s already used for non-slice value", key)
+		log.Printf("[PANIC] Telemetry: key %s already used for non-slice value", key)
 		return
 	}
 	if sliceVal == nil {
@@ -169,7 +169,7 @@ func AppendUnique(key string, value interface{}) {
 	setVal, setOk := bufVal.(countingSet)
 	if inBuffer && !setOk {
 		bufferMu.Unlock()
-		log.Printf("[PANIC] Diagnostics: key %s already used for non-counting-set value", key)
+		log.Printf("[PANIC] Telemetry: key %s already used for non-counting-set value", key)
 		return
 	}
 	if setVal == nil {
@@ -212,7 +212,7 @@ func atomicAdd(key string, amount int) {
 	intVal, intOk := bufVal.(int)
 	if inBuffer && !intOk {
 		bufferMu.Unlock()
-		log.Printf("[PANIC] Diagnostics: key %s already used for non-integer value", key)
+		log.Printf("[PANIC] Telemetry: key %s already used for non-integer value", key)
 		return
 	}
 	if !inBuffer {

@@ -12,26 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package diagnostics implements the client for server-side diagnostics
+// Package telemetry implements the client for server-side telemetry
 // of the network. Functions in this package are synchronous and blocking
 // unless otherwise specified. For convenience, most functions here do
 // not return errors, but errors are logged to the standard logger.
 //
 // To use this package, first call Init(). You can then call any of the
 // collection/aggregation functions. Call StartEmitting() when you are
-// ready to begin sending diagnostic updates.
+// ready to begin sending telemetry updates.
 //
 // When collecting metrics (functions like Set, AppendUnique, or Increment),
 // it may be desirable and even recommended to invoke them in a new
-// goroutine (use the go keyword) in case there is lock contention;
-// they are thread-safe (unless noted), and you may not want them to
-// block the main thread of execution. However, sometimes blocking
-// may be necessary too; for example, adding startup metrics to the
-// buffer before the call to StartEmitting().
+// goroutine in case there is lock contention; they are thread-safe (unless
+// noted), and you may not want them to block the main thread of execution.
+// However, sometimes blocking may be necessary too; for example, adding
+// startup metrics to the buffer before the call to StartEmitting().
 //
 // This package is designed to be as fast and space-efficient as reasonably
 // possible, so that it does not disrupt the flow of execution.
-package diagnostics
+package telemetry
 
 import (
 	"bytes"
@@ -53,17 +52,17 @@ import (
 func logEmit(final bool) {
 	err := emit(final)
 	if err != nil {
-		log.Printf("[ERROR] Sending diagnostics: %v", err)
+		log.Printf("[ERROR] Sending telemetry: %v", err)
 	}
 }
 
-// emit sends an update to the diagnostics server.
+// emit sends an update to the telemetry server.
 // Set final to true if this is the last call to emit.
 // If final is true, no future updates will be scheduled.
 // Otherwise, the next update will be scheduled.
 func emit(final bool) error {
 	if !enabled {
-		return fmt.Errorf("diagnostics not enabled")
+		return fmt.Errorf("telemetry not enabled")
 	}
 
 	// ensure only one update happens at a time;
@@ -71,7 +70,7 @@ func emit(final bool) error {
 	updateMu.Lock()
 	if updating {
 		updateMu.Unlock()
-		log.Println("[NOTICE] Skipping this diagnostics update because previous one is still working")
+		log.Println("[NOTICE] Skipping this telemetry update because previous one is still working")
 		return nil
 	}
 	updating = true
@@ -100,7 +99,7 @@ func emit(final bool) error {
 		if i > 0 && err != nil {
 			// don't hammer the server; first failure might have been
 			// a fluke, but back off more after that
-			log.Printf("[WARNING] Sending diagnostics (attempt %d): %v - backing off and retrying", i, err)
+			log.Printf("[WARNING] Sending telemetry (attempt %d): %v - backing off and retrying", i, err)
 			time.Sleep(time.Duration((i+1)*(i+1)*(i+1)) * time.Second)
 		}
 
@@ -114,7 +113,7 @@ func emit(final bool) error {
 		// check for any special-case response codes
 		if resp.StatusCode == http.StatusGone {
 			// the endpoint has been deprecated and is no longer servicing clients
-			err = fmt.Errorf("diagnostics server replied with HTTP %d; upgrade required", resp.StatusCode)
+			err = fmt.Errorf("telemetry server replied with HTTP %d; upgrade required", resp.StatusCode)
 			if clen := resp.Header.Get("Content-Length"); clen != "0" && clen != "" {
 				bodyBytes, readErr := ioutil.ReadAll(resp.Body)
 				if readErr != nil {
@@ -128,7 +127,7 @@ func emit(final bool) error {
 		}
 		if resp.StatusCode == http.StatusUnavailableForLegalReasons {
 			// the endpoint is unavailable, at least to this client, for legal reasons (!)
-			err = fmt.Errorf("diagnostics server replied with HTTP %d %s: please consult the project website and developers for guidance", resp.StatusCode, resp.Status)
+			err = fmt.Errorf("telemetry server replied with HTTP %d %s: please consult the project website and developers for guidance", resp.StatusCode, resp.Status)
 			if clen := resp.Header.Get("Content-Length"); clen != "0" && clen != "" {
 				bodyBytes, readErr := ioutil.ReadAll(resp.Body)
 				if readErr != nil {
@@ -144,7 +143,7 @@ func emit(final bool) error {
 		// okay, ensure we can interpret the response
 		if ct := resp.Header.Get("Content-Type"); (resp.StatusCode < 300 || resp.StatusCode >= 400) &&
 			!strings.Contains(ct, "json") {
-			err = fmt.Errorf("diagnostics server replied with unknown content-type: '%s' and HTTP %s", ct, resp.Status)
+			err = fmt.Errorf("telemetry server replied with unknown content-type: '%s' and HTTP %s", ct, resp.Status)
 			resp.Body.Close()
 			continue
 		}
@@ -167,12 +166,12 @@ func emit(final bool) error {
 				}
 			}
 			if !final {
-				log.Printf("[NOTICE] Sending diagnostics: we were too early; waiting %s before trying again", reply.NextUpdate)
+				log.Printf("[NOTICE] Sending telemetry: we were too early; waiting %s before trying again", reply.NextUpdate)
 				time.Sleep(reply.NextUpdate)
 				continue
 			}
 		} else if resp.StatusCode >= 400 {
-			err = fmt.Errorf("diagnostics server returned status code %d", resp.StatusCode)
+			err = fmt.Errorf("telemetry server returned status code %d", resp.StatusCode)
 			continue
 		}
 
@@ -181,14 +180,14 @@ func emit(final bool) error {
 	if err == nil && !final {
 		// (remember, if there was an error, we return it
 		// below, so it WILL get logged if it's supposed to)
-		log.Println("[INFO] Sending diagnostics: success")
+		log.Println("[INFO] Sending telemetry: success")
 	}
 
 	// even if there was an error after all retries, we should
 	// schedule the next update using our default update
 	// interval because the server might be healthy later
 
-	// ensure we won't slam the diagnostics server
+	// ensure we won't slam the telemetry server
 	if reply.NextUpdate < 1*time.Second {
 		reply.NextUpdate = defaultUpdateInterval
 	}
@@ -247,13 +246,13 @@ func resetBuffer() map[string]interface{} {
 }
 
 // Response contains the body of a response from the
-// diagnostics server.
+// telemetry server.
 type Response struct {
 	// NextUpdate is how long to wait before the next update.
 	NextUpdate time.Duration `json:"next_update"`
 
-	// Stop instructs the diagnostics server to stop sending
-	// diagnostics. This would only be done under extenuating
+	// Stop instructs the telemetry server to stop sending
+	// telemetry. This would only be done under extenuating
 	// circumstances, but we are prepared for it nonetheless.
 	Stop bool `json:"stop,omitempty"`
 
@@ -262,7 +261,7 @@ type Response struct {
 	Error string `json:"error,omitempty"`
 }
 
-// Payload is the data that gets sent to the diagnostics server.
+// Payload is the data that gets sent to the telemetry server.
 type Payload struct {
 	// The universally unique ID of the instance
 	InstanceID string `json:"instance_id"`
@@ -337,7 +336,7 @@ var (
 	updateTimerMu sync.Mutex
 
 	// instanceUUID is the ID of the current instance.
-	// This MUST be set to emit diagnostics.
+	// This MUST be set to emit telemetry.
 	// This MUST NOT be openly exposed to clients, for privacy.
 	instanceUUID uuid.UUID
 
@@ -352,12 +351,12 @@ var (
 )
 
 const (
-	// endpoint is the base URL to remote diagnostics server;
+	// endpoint is the base URL to remote telemetry server;
 	// the instance ID will be appended to it.
-	endpoint = "https://diagnostics-staging.caddyserver.com/update/" // TODO: make configurable, "http://localhost:8085/update/"
+	endpoint = "https://telemetry-staging.caddyserver.com/v1/update/"
 
 	// defaultUpdateInterval is how long to wait before emitting
-	// more diagnostic data if all retires fail. This value is
+	// more telemetry data if all retires fail. This value is
 	// only used if the client receives a nonsensical value, or
 	// doesn't send one at all, or if a connection can't be made,
 	// likely indicating a problem with the server. Thus, this

@@ -26,7 +26,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/mholt/caddy/diagnostics"
+	"github.com/mholt/caddy/telemetry"
 )
 
 // configGroup is a type that keys configs by their hostname
@@ -102,7 +102,7 @@ func (cg configGroup) GetConfigForClient(clientHello *tls.ClientHelloInfo) (*tls
 func (cfg *Config) GetCertificate(clientHello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	// TODO: We need to collect this in a heavily de-duplicating way
 	// It would also be nice to associate a handshake with the UA string (but that is only for HTTP server type)
-	// go diagnostics.Append("tls_client_hello", struct {
+	// go telemetry.Append("tls_client_hello", struct {
 	// 	NoSNI             bool                  `json:"no_sni,omitempty"`
 	// 	CipherSuites      []uint16              `json:"cipher_suites,omitempty"`
 	// 	SupportedCurves   []tls.CurveID         `json:"curves,omitempty"`
@@ -121,9 +121,9 @@ func (cfg *Config) GetCertificate(clientHello *tls.ClientHelloInfo) (*tls.Certif
 	// })
 	cert, err := cfg.getCertDuringHandshake(strings.ToLower(clientHello.ServerName), true, true)
 	if err == nil {
-		go diagnostics.Increment("tls_handshake_count")
+		go telemetry.Increment("tls_handshake_count")
 	} else {
-		go diagnostics.Append("tls_handshake_error", err.Error())
+		go telemetry.Append("tls_handshake_error", err.Error())
 	}
 	return &cert.Certificate, err
 }

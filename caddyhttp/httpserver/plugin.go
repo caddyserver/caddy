@@ -29,7 +29,7 @@ import (
 	"github.com/mholt/caddy/caddyfile"
 	"github.com/mholt/caddy/caddyhttp/staticfiles"
 	"github.com/mholt/caddy/caddytls"
-	"github.com/mholt/caddy/diagnostics"
+	"github.com/mholt/caddy/telemetry"
 )
 
 const serverType = "http"
@@ -220,9 +220,9 @@ func (h *httpContext) MakeServers() ([]caddy.Server, error) {
 
 	var atLeastOneSiteLooksLikeProduction bool
 	for _, cfg := range h.siteConfigs {
-		// if we aren't sure yet whether it's a "production" server,
-		// continue to see if all the addresses (both sites and
-		// listeners) are loopback
+		// see if all the addresses (both sites and
+		// listeners) are loopback to help us determine
+		// if this is a "production" instance or not
 		if !atLeastOneSiteLooksLikeProduction {
 			if !caddy.IsLoopback(cfg.Addr.Host) &&
 				!caddy.IsLoopback(cfg.ListenHost) &&
@@ -272,17 +272,17 @@ func (h *httpContext) MakeServers() ([]caddy.Server, error) {
 		servers = append(servers, s)
 	}
 
-	// NOTE: This value is only a "good" guess. Quite often, development
+	// NOTE: This value is only a "good guess". Quite often, development
 	// environments will use internal DNS or a local hosts file to serve
 	// real-looking domains in local development. We can't easily tell
 	// which without doing a DNS lookup, so this guess is definitely naive,
 	// and if we ever want a better guess, we will have to do DNS lookups.
 	deploymentGuess := "dev"
 	if looksLikeProductionCA && atLeastOneSiteLooksLikeProduction {
-		deploymentGuess = "production"
+		deploymentGuess = "prod"
 	}
-	diagnostics.Set("http_deployment_guess", deploymentGuess)
-	diagnostics.Set("http_num_sites", len(h.siteConfigs))
+	telemetry.Set("http_deployment_guess", deploymentGuess)
+	telemetry.Set("http_num_sites", len(h.siteConfigs))
 
 	return servers, nil
 }
