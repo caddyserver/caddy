@@ -65,15 +65,20 @@ type Rule interface {
 type SimpleRule struct {
 	Regexp *regexp.Regexp
 	To     string
+	Negate bool
 }
 
 // NewSimpleRule creates a new Simple Rule
-func NewSimpleRule(from, to string) (*SimpleRule, error) {
+func NewSimpleRule(from, to string, negate bool) (*SimpleRule, error) {
 	r, err := regexp.Compile(from)
 	if err != nil {
 		return nil, err
 	}
-	return &SimpleRule{Regexp: r, To: to}, nil
+	return &SimpleRule{
+		Regexp: r,
+		To:     to,
+		Negate: negate,
+	}, nil
 }
 
 // BasePath satisfies httpserver.Config
@@ -81,7 +86,11 @@ func (s SimpleRule) BasePath() string { return "/" }
 
 // Match satisfies httpserver.Config
 func (s *SimpleRule) Match(r *http.Request) bool {
-	return len(regexpMatches(s.Regexp, "/", r.URL.Path)) > 0
+	matches := regexpMatches(s.Regexp, "/", r.URL.Path)
+	if s.Negate {
+		return len(matches) == 0
+	}
+	return len(matches) > 0
 }
 
 // Rewrite rewrites the internal location of the current request.

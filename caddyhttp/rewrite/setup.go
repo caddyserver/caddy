@@ -58,6 +58,7 @@ func rewriteParse(c *caddy.Controller) ([]httpserver.HandlerConfig, error) {
 		var base = "/"
 		var pattern, to string
 		var ext []string
+		var negate bool
 
 		args := c.RemainingArgs()
 
@@ -111,7 +112,11 @@ func rewriteParse(c *caddy.Controller) ([]httpserver.HandlerConfig, error) {
 
 		// the only unhandled case is 2 and above
 		default:
-			rule, err = NewSimpleRule(args[0], strings.Join(args[1:], " "))
+			if args[0] == "not" {
+				negate = true
+				args = args[1:]
+			}
+			rule, err = NewSimpleRule(args[0], strings.Join(args[1:], " "), negate)
 			if err != nil {
 				return nil, err
 			}

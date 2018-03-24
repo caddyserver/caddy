@@ -50,8 +50,13 @@ func TestSetup(t *testing.T) {
 	}
 }
 
-func newSimpleRule(t *testing.T, from, to string) Rule {
-	rule, err := NewSimpleRule(from, to)
+// newSimpleRule is convenience test function for SimpleRule.
+func newSimpleRule(t *testing.T, from, to string, negate ...bool) Rule {
+	var n bool
+	if len(negate) > 0 {
+		n = negate[0]
+	}
+	rule, err := NewSimpleRule(from, to, n)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,6 +81,9 @@ func TestRewriteParse(t *testing.T) {
 		{`rewrite`, true, []Rule{}},
 		{`rewrite a b c`, false, []Rule{
 			newSimpleRule(t, "a", "b c"),
+		}},
+		{`rewrite not a b c`, false, []Rule{
+			newSimpleRule(t, "a", "b c", true),
 		}},
 	}
 
@@ -107,6 +115,11 @@ func TestRewriteParse(t *testing.T) {
 			if actualRule.To != expectedRule.To {
 				t.Errorf("Test %d, rule %d: Expected To=%s, got %s",
 					i, j, expectedRule.Regexp.String(), actualRule.Regexp.String())
+			}
+
+			if actualRule.Negate != expectedRule.Negate {
+				t.Errorf("Test %d, rule %d: Expected Negate=%v, got %v",
+					i, j, expectedRule.Negate, actualRule.Negate)
 			}
 		}
 	}
