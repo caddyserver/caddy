@@ -136,7 +136,9 @@ func TestWordpress(t *testing.T) {
 	rw := Rewrite{
 		Next: httpserver.HandlerFunc(urlPrinter),
 		Rules: []httpserver.HandlerConfig{
+			// both rules are same, thanks to Go regexp (confusion).
 			newSimpleRule(t, "^/wp-admin", "{path} {path}/ /index.php?{query}", true),
+			newSimpleRule(t, "^\\/wp-admin", "{path} {path}/ /index.php?{query}", true),
 		},
 		FileSys: http.Dir("."),
 	}
