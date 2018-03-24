@@ -617,7 +617,7 @@ func ValidateAndExecuteDirectives(cdyfile Input, inst *Instance, justValidate bo
 		return fmt.Errorf("error inspecting server blocks: %v", err)
 	}
 
-	telemetry.Set("http_num_server_blocks", len(sblocks))
+	telemetry.Set("num_server_blocks", len(sblocks))
 
 	return executeDirectives(inst, cdyfile.Path(), stype.Directives(), sblocks, justValidate)
 }

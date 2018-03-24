@@ -254,7 +254,6 @@ func setupTLS(c *caddy.Controller) error {
 				return c.Errf("Unable to load certificate and key files for '%s': %v", c.Key, err)
 			}
 			log.Printf("[INFO] Successfully loaded TLS assets from %s and %s", certificateFile, keyFile)
-			telemetry.Increment("tls_manual_cert_count")
 		}
 
 		// load a directory of certificates, if specified
@@ -355,7 +354,6 @@ func loadCertsInDir(cfg *Config, c *caddy.Controller, dir string) error {
 				return c.Errf("%s: failed to load cert and key for '%s': %v", path, c.Key, err)
 			}
 			log.Printf("[INFO] Successfully loaded TLS assets from %s", path)
-			telemetry.Increment("tls_manual_cert_count")
 		}
 		return nil
 	})

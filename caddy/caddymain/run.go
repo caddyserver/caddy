@@ -46,6 +46,7 @@ func init() {
 	flag.StringVar(&caddytls.DefaultCAUrl, "ca", "https://acme-v01.api.letsencrypt.org/directory", "URL to certificate authority's ACME server directory")
 	flag.BoolVar(&caddytls.DisableHTTPChallenge, "disable-http-challenge", caddytls.DisableHTTPChallenge, "Disable the ACME HTTP challenge")
 	flag.BoolVar(&caddytls.DisableTLSSNIChallenge, "disable-tls-sni-challenge", caddytls.DisableTLSSNIChallenge, "Disable the ACME TLS-SNI challenge")
+	flag.StringVar(&disabledMetrics, "disabled-metrics", "", "Comma-separated list of telemetry metrics to disable")
 	flag.StringVar(&conf, "conf", "", "Caddyfile to load (default \""+caddy.DefaultConfigFile+"\")")
 	flag.StringVar(&cpu, "cpu", "100%", "CPU cap")
 	flag.BoolVar(&plugins, "plugins", false, "List installed plugins")
@@ -91,6 +92,8 @@ func Run() {
 	// initialize telemetry client
 	if enableTelemetry {
 		initTelemetry()
+	} else if disabledMetrics != "" {
+		mustLogFatalf("[ERROR] Cannot disable specific metrics because telemetry is disabled")
 	}
 
 	// Check for one-time actions
@@ -326,21 +329,22 @@ func initTelemetry() {
 		}
 	}
 
-	telemetry.Init(id)
+	telemetry.Init(id, strings.Split(disabledMetrics, ","))
 }
 
 const appName = "Caddy"
 
 // Flags that control program flow or startup
 var (
-	serverType string
-	conf       string
-	cpu        string
-	logfile    string
-	revoke     string
-	version    bool
-	plugins    bool
-	validate   bool
+	serverType      string
+	conf            string
+	cpu             string
+	logfile         string
+	revoke          string
+	version         bool
+	plugins         bool
+	validate        bool
+	disabledMetrics string
 )
 
 // Build information obtained with the help of -ldflags

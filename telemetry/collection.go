@@ -28,7 +28,11 @@ import (
 // may safely be used. If this function is not
 // called, the collector functions may still be
 // invoked, but they will be no-ops.
-func Init(instanceID uuid.UUID) {
+//
+// Any metrics keys that are passed in the second
+// argument will be permanently disabled for the
+// lifetime of the process.
+func Init(instanceID uuid.UUID, disabledMetricsKeys []string) {
 	if enabled {
 		panic("already initialized")
 	}
@@ -37,6 +41,11 @@ func Init(instanceID uuid.UUID) {
 		panic("empty UUID")
 	}
 	instanceUUID = instanceID
+	disabledMetricsMu.Lock()
+	for _, key := range disabledMetricsKeys {
+		disabledMetrics[key] = false
+	}
+	disabledMetricsMu.Unlock()
 	enabled = true
 }
 

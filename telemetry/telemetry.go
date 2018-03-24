@@ -158,12 +158,15 @@ func emit(final bool) error {
 		// update the list of enabled/disabled keys, if any
 		for _, key := range reply.EnableKeys {
 			disabledMetricsMu.Lock()
-			delete(disabledMetrics, key)
+			// only re-enable this metric if it is temporarily disabled
+			if temp, ok := disabledMetrics[key]; ok && temp {
+				delete(disabledMetrics, key)
+			}
 			disabledMetricsMu.Unlock()
 		}
 		for _, key := range reply.DisableKeys {
 			disabledMetricsMu.Lock()
-			disabledMetrics[key] = struct{}{}
+			disabledMetrics[key] = true // all remotely-disabled keys are "temporarily" disabled
 			disabledMetricsMu.Unlock()
 		}
 
@@ -359,10 +362,17 @@ var (
 	updateTimer   *time.Timer
 	updateTimerMu sync.Mutex
 
-	// disabledMetrics is a list of metric keys
+	// disabledMetrics is a set of metric keys
 	// that should NOT be saved to the buffer
-	// or sent to the telemetry server.
-	disabledMetrics   = make(map[string]struct{})
+	// or sent to the telemetry server. The value
+	// indicates whether the entry is temporary.
+	// If the value is true, it may be removed if
+	// the metric is re-enabled remotely later. If
+	// the value is false, it is permanent
+	// (presumably becaues the user explicitly
+	// disabled it) and can only be re-enabled
+	// with user consent.
+	disabledMetrics   = make(map[string]bool)
 	disabledMetricsMu sync.RWMutex
 
 	// instanceUUID is the ID of the current instance.
