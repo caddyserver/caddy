@@ -29,9 +29,9 @@ func TestRewrite(t *testing.T) {
 	rw := Rewrite{
 		Next: httpserver.HandlerFunc(urlPrinter),
 		Rules: []httpserver.HandlerConfig{
-			NewSimpleRule("/from", "/to"),
-			NewSimpleRule("/a", "/b"),
-			NewSimpleRule("/b", "/b{uri}"),
+			newSimpleRule(t, "^/from$", "/to"),
+			newSimpleRule(t, "^/a$", "/b"),
+			newSimpleRule(t, "^/b$", "/b{uri}"),
 		},
 		FileSys: http.Dir("."),
 	}

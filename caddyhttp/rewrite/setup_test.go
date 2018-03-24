@@ -50,6 +50,14 @@ func TestSetup(t *testing.T) {
 	}
 }
 
+func newSimpleRule(t *testing.T, from, to string) Rule {
+	rule, err := NewSimpleRule(from, to)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return rule
+}
+
 func TestRewriteParse(t *testing.T) {
 	simpleTests := []struct {
 		input     string
@@ -57,17 +65,17 @@ func TestRewriteParse(t *testing.T) {
 		expected  []Rule
 	}{
 		{`rewrite /from /to`, false, []Rule{
-			SimpleRule{From: "/from", To: "/to"},
+			newSimpleRule(t, "/from", "/to"),
 		}},
 		{`rewrite /from /to
 		  rewrite a b`, false, []Rule{
-			SimpleRule{From: "/from", To: "/to"},
-			SimpleRule{From: "a", To: "b"},
+			newSimpleRule(t, "/from", "/to"),
+			newSimpleRule(t, "a", "b"),
 		}},
 		{`rewrite a`, true, []Rule{}},
 		{`rewrite`, true, []Rule{}},
 		{`rewrite a b c`, false, []Rule{
-			SimpleRule{From: "a", To: "b c"},
+			newSimpleRule(t, "a", "b c"),
 		}},
 	}
 
@@ -88,17 +96,17 @@ func TestRewriteParse(t *testing.T) {
 		}
 
 		for j, e := range test.expected {
-			actualRule := actual[j].(SimpleRule)
-			expectedRule := e.(SimpleRule)
+			actualRule := actual[j].(*SimpleRule)
+			expectedRule := e.(*SimpleRule)
 
-			if actualRule.From != expectedRule.From {
+			if actualRule.Regexp.String() != expectedRule.Regexp.String() {
 				t.Errorf("Test %d, rule %d: Expected From=%s, got %s",
-					i, j, expectedRule.From, actualRule.From)
+					i, j, expectedRule.Regexp.String(), actualRule.Regexp.String())
 			}
 
 			if actualRule.To != expectedRule.To {
 				t.Errorf("Test %d, rule %d: Expected To=%s, got %s",
-					i, j, expectedRule.To, actualRule.To)
+					i, j, expectedRule.Regexp.String(), actualRule.Regexp.String())
 			}
 		}
 	}
