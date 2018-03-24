@@ -6,7 +6,7 @@ aws cloudformation deploy --template-file /ecs_app_spec.yml --stack-name $2 --ca
   Id=$AWS_ACCESS_KEY_ID \
   Secret=$AWS_SECRET_ACCESS_KEY \
   Jwt=$Jwt \
-  AWSAccount=$AWSAccount \
+  AWSAccount=$AWS_ACCOUNT \
   Ami=$Ami \
   Subnet=$Subnet \
   Subnet2=$Subnet2 \

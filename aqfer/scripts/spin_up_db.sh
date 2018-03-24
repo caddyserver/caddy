@@ -5,7 +5,7 @@
 # aws cloudformation deploy --template-file /db_app_spec.yml --stack-name $2 --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM --parameter-overrides \
 aws cloudformation package --template-file /ec_template_app_spec.yml --output-template-file /ec_app_spec.yml --s3-bucket $1
 aws cloudformation deploy --template-file /ec_app_spec.yml --stack-name $2 --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM --parameter-overrides \
-  AWSAccount=$AWSAccount \
+  AWSAccount=$AWS_ACCOUNT \
   AvailabilityZone=$AvailabilityZone \
   Subnet=$Subnet \
   Vpc=$Vpc \

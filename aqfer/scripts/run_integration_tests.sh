@@ -5,5 +5,5 @@
 # go test
 # cd aqfer/integration_tests/reauth_transformrequest/
 # go test
-cd /aqfer/integration_tests/transformrequest_redis
+cd ./aqfer/integration_tests/transformrequest_redis
 go test

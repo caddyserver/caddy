@@ -1,14 +1,18 @@
 # Architecture Description
 
 ## Setup
+
 - Configure variables on first section fo Makefile
 - If needed, alter values on cloudformation templates
 - In the aqfer directory, copy .yml_template files (removing _template from file name), assign AWS credential values
   - There is a line in the gitignore to keep docker-compose files with AWS credentials from being commited
+- Make sure that the docker-compose files are pointing to the right images
+- Make sure that the FROM commands are pointing to the right images in the Dockerfiles (including in integration tests)
 
 ## AWS Stack
 
 ### Databases
+
 #### EC Components
 - ElastiCache with static values of **1** node **redis** engine. *AvailabilityZone*, *NodeType*, *ClusterName* are configurable values.
 - ElastiCache SecurityGroup has generic description. *SecurityGroupName* and *VPC* are configurable values.

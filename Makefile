@@ -1,13 +1,12 @@
 DBVERSION := 0
 ECSVERSION := 0
+REPOVERSION := 0
 ROOT_NAME := aqfer
 DBNAME := DB${ROOT_NAME}${DBVERSION}
 ECSNAME := ECS${ROOT_NAME}${ECSVERSION}
 
-GIT_USER := fellou89
-AWS_ACCOUNT := 392630614516
 JWT := testkey
-REPO_ID := 2
+GIT_USER := fellou89
 
 AMI := ami-832b1cf9
 # AMI := ami-fad25980 # ecs optimized ami
@@ -44,41 +43,46 @@ LB_SECURITY_GROUP := ${ROOT_NAME}LB-sg${ECSVERSION}
 ARTIFACTS_BUCKET := cloudformation-art-${ROOT_NAME}
 
 .PHONY: setup_and_launch
-setup_and_launch: setup full_launch
+setup_and_launch: setup launch
 
-.PHONY: full_launch
-full_launch: spin_up_db update_container_repo spin_up_ecs
-
-# run `make get_dns_name` to get service address
-
-
+# only needed on first run, to make clean aws docker image
+# to make cloudformation artifacts bucket
+# and to make and store locally an ec2 keypair
 .PHONY: setup
 setup: aws_build create_artifact_bucket create_keypair
 
-.PHONY: update_container_repo
-update_container_repo: ready_caddyfile ecr_repo_push
+# this launches the full stack: first the db,
+# then update_container_repo writes the db endpoints on the caddyfile and updates the runtime image
+# and last, the runtime stack (ECS) goes up with the newly updated docker image
+.PHONY: launch
+launch: spin_up_db update_container_repo spin_up_ecs
 
+# updated the runtime environment image and kills current tasks
+# ECS service will spin up new tasks that will run updated docker containers
 .PHONY: update_tasks
 update_tasks: update_container_repo stop_tasks
 
-.PHONY: tear_down_stacks
-tear_down_stacks: tear_down_db tear_down_ecs
-# make instances=i-029aefe585538720b\ i-09abb841e51433e42 tear_down_stacks
-# must list specific ec2 instances to destroy (delimited by spaces)
-# this command will not destroy the EC2 KeyPair that was created
+
+# has to be run after databases are up or else the caddyfile database sections will point to nothing
+.PHONY: update_container_repo
+update_container_repo: ready_caddyfile ecr_repo_push
 
 
+# deployment environment image
 .PHONY: aws_build
 aws_build:
 	docker build --no-cache -f aqfer/Dockerfile.aws -t aws_image .
 
-.PHONY: build_caddy_image
-build_caddy_image:
-	docker build -f aqfer/Dockerfile --build-arg GIT_USER=${GIT_USER} --build-arg SSH_PUBLIC_KEY="$(shell cat ~/.ssh/id_rsa.pub | tr '\n' '?')" --build-arg SSH_PRIVATE_KEY="$(shell cat ~/.ssh/id_rsa | tr '\n' '?')" -t ${ROOT_NAME}-caddy .
-
+# runtime environment images
 .PHONY: build_new_caddy_image
 build_new_caddy_image:
-	docker build --no-cache -f aqfer/Dockerfile --build-arg GIT_USER=${GIT_USER} --build-arg SSH_PUBLIC_KEY="$(shell cat ~/.ssh/id_rsa.pub | tr '\n' '?')" --build-arg SSH_PRIVATE_KEY="$(shell cat ~/.ssh/id_rsa | tr '\n' '?')" -t ${ROOT_NAME}-caddy .
+	docker build --no-cache -f aqfer/Dockerfile.build --build-arg GIT_USER=${GIT_USER} --build-arg SSH_PUBLIC_KEY="$(shell cat ~/.ssh/id_rsa.pub | tr '\n' '?')" --build-arg SSH_PRIVATE_KEY="$(shell cat ~/.ssh/id_rsa | tr '\n' '?')" -t ${ROOT_NAME}-build .
+	docker build -f aqfer/Dockerfile -t ${ROOT_NAME}-caddy .
+
+.PHONY: build_caddy_image
+build_caddy_image:
+	docker build -f aqfer/Dockerfile.build --build-arg GIT_USER=${GIT_USER} --build-arg SSH_PUBLIC_KEY="$(shell cat ~/.ssh/id_rsa.pub | tr '\n' '?')" --build-arg SSH_PRIVATE_KEY="$(shell cat ~/.ssh/id_rsa | tr '\n' '?')" -t ${ROOT_NAME}-build .
+	docker build -f aqfer/Dockerfile -t ${ROOT_NAME}-caddy .
 
 
 .PHONY: create_artifact_bucket
@@ -96,7 +100,6 @@ create_keypair:
 .PHONY: spin_up_db
 spin_up_db:
 	docker-compose -f aqfer/docker-compose-aws.yml run \
-	-e AWSAccount=${AWS_ACCOUNT} \
 	-e AvailabilityZone=${ZONE} \
 	-e Subnet=${SUBNET} \
 	-e Vpc=${VPC} \
@@ -122,8 +125,7 @@ tear_down_db:
 
 .PHONY: get_db_endpoints
 get_db_endpoints:
-	docker-compose -f aqfer/docker-compose-aws.yml run aws-service \
-	      /scripts/ec_endpoint.sh ${EC_CLUSTER_NAME} 2>&1 > /tmp/ec_endpoint
+	docker-compose -f aqfer/docker-compose-aws.yml run aws-service /scripts/ec_endpoint.sh ${EC_CLUSTER_NAME} 2>&1 > /tmp/ec_endpoint
 
 # docker-compose -f aqfer/docker-compose-aws.yml run aws-service \
 #       /scripts/dax_endpoint.sh ${DAX_CLUSTER_NAME} 2>&1 > /tmp/dax_endpoint
@@ -141,10 +143,15 @@ ready_caddyfile: get_db_endpoints
 # cat /tmp/Caddyfile | sed 's/DAX_ENDPOINT/'$(shell cat /tmp/dax_endpoint)'/g' > aqfer/Caddyfile
 
 
-# do I need to build the main docker container here? test by launching a db with a different version number and see if the container pushed has the right address
 .PHONY: ecr_repo_push
-ecr_repo_push: build_caddy_image
-	docker-compose -f aqfer/docker-compose-aws.yml run aws-service /scripts/ecr_create.sh ${ROOT_NAME} ${REPO_ID} 2>&1 > /tmp/ecrUri
+ecr_repo_push: build_caddy_image ecr_create ecr_login
+
+.PHONY: ecr_create
+ecr_create:
+	docker-compose -f aqfer/docker-compose-aws.yml run aws-service /scripts/ecr_create.sh ${ROOT_NAME} ${REPOVERSION} 2>&1 > /tmp/ecrUri
+
+.PHONY: ecr_login
+ecr_login:
 	$(eval ecrUri := $(shell cat /tmp/ecrUri))
 	docker-compose -f aqfer/docker-compose-aws.yml run aws-service /scripts/ecr_login.sh 2>&1 > /tmp/ecrLogin
 	cat /tmp/ecrLogin | docker login -u AWS --password-stdin ${ecrUri}
@@ -156,7 +163,6 @@ ecr_repo_push: build_caddy_image
 spin_up_ecs:
 	docker-compose -f aqfer/docker-compose-aws.yml run \
 	-e Jwt=${JWT} \
-	-e AWSAccount=${AWS_ACCOUNT} \
 	-e Ami=${AMI} \
 	-e Subnet=${SUBNET} \
 	-e Subnet2=${SUBNET2} \
@@ -173,7 +179,7 @@ spin_up_ecs:
 	-e ECSServiceRoleName=${ROOT_NAME}ECSServiceRole${ECSVERSION} \
 	-e ECSTaskDefinitionName=${TASK_DEFINITION} \
 	-e ECSServiceName=${ROOT_NAME}Service${ECSVERSION} \
-	-e ECRRepoURI=${ecrUri} \
+	-e ECRRepoURI=$(shell cat /tmp/ecrUri) \
 	-e ContainerName=${ROOT_NAME}-caddy \
 	-e AppLogGroupName=${APP_LOG_GROUP_NAME} \
 	-e ECSLogGroupName=${ECS_LOG_GROUP_NAME} \
@@ -181,6 +187,7 @@ spin_up_ecs:
 	${EC_SECURITY_GROUP} $(shell cat /tmp/ec_endpoint | sed -E "s/.*:([0-9]*).*/\1/")
 
 # ${DAX_SECURITY_GROUP} $(shell cat /tmp/dax_endpoint | sed -E "s/.*:([0-9]*).*/\1/")
+
 
 # make instances=i-029aefe585538720b\ i-09abb841e51433e42 tear_down_ecs
 # must list specific ec2 instances to destroy (delimited by spaces)
@@ -194,23 +201,32 @@ ifdef instances
 	     aws ec2 wait instance-terminated --instance-ids $(instances);\
 	     aws cloudformation delete-stack --stack-name ${ECSNAME}
 else
-	@echo 'instances to destroy were not declared, ecs cloudformation stack delete will not execute'
+	@echo "\ninstances to destroy were not declared, cloudformation stack delete will not execute for ecs.\nRun `make instances=... tear_down_ecs`"
 endif
 
 #	     aws ec2 revoke-security-group-ingress --group-name ${DAX_SECURITY_GROUP} --source-group ${EC2_SECURITY_GROUP} --port \
 #			 	$(shell cat /tmp/dax_endpoint | sed -E "s/.*:([0-9]*)/\1/") --protocol tcp;\
 
 
+# `make instances=i-029aefe585538720b\ i-09abb841e51433e42 tear_down_stacks`
+# must list specific ec2 instances to destroy (delimited by spaces)
+# this command will not destroy the EC2 KeyPair that was created
+.PHONY: tear_down_stacks
+tear_down_stacks: tear_down_db tear_down_ecs
 
+
+# run `make get_dns_name` to get service address
 .PHONY: get_dns_name
 get_dns_name:
 	docker-compose -f aqfer/docker-compose-aws.yml run aws-service \
 	      aws elbv2 describe-load-balancers --names ${LOAD_BALANCER_NAME} 2>&1 > /tmp/DNSName
 	@echo $(shell cat /tmp/DNSName | sed -n -E "s/.*\"DNSName\".*\"(.*)\",/\1/p")
 
+
 .PHONY: stop_tasks
 stop_tasks:
 	docker-compose -f aqfer/docker-compose-aws.yml run aws-service /scripts/stop_tasks.sh ${ECS_CLUSTER_NAME}
+
 
 .PHONY: run_locally
 run_locally:
