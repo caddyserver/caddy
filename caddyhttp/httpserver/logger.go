@@ -86,14 +86,12 @@ func (l Logger) MaskIP(ip string) string {
 }
 
 func (l Logger) ShouldLog(path string) bool {
-	shouldLog := true
 	for ex := 0; ex < len(l.Exceptions); ex++ {
 		if Path(path).Matches(l.Exceptions[ex]) {
-			shouldLog = false
-			break
+			return false
 		}
 	}
-	return shouldLog
+	return true
 }
 
 // Attach binds logger Start and Close functions to
