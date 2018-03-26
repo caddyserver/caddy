@@ -122,13 +122,15 @@ func (h *httpContext) InspectServerBlocks(sourceFile string, serverBlocks []cadd
 	// For each address in each server block, make a new config
 	for _, sb := range serverBlocks {
 		for _, key := range sb.Keys {
-			key = strings.ToLower(key)
-			if _, dup := h.keysToSiteConfigs[key]; dup {
-				return serverBlocks, fmt.Errorf("duplicate site key: %s", key)
-			}
 			addr, err := standardizeAddress(key)
 			if err != nil {
 				return serverBlocks, err
+			}
+
+			addr = addr.Normalize()
+			key = addr.Key()
+			if _, dup := h.keysToSiteConfigs[key]; dup {
+				return serverBlocks, fmt.Errorf("duplicate site key: %s", key)
 			}
 
 			// Fill in address components from command line so that middleware
@@ -145,7 +147,7 @@ func (h *httpContext) InspectServerBlocks(sourceFile string, serverBlocks []cadd
 			if addrCopy.Port == "" && Port == DefaultPort {
 				addrCopy.Port = Port
 			}
-			addrStr := strings.ToLower(addrCopy.String())
+			addrStr := addrCopy.String()
 			if otherSiteKey, dup := siteAddrs[addrStr]; dup {
 				err := fmt.Errorf("duplicate site address: %s", addrStr)
 				if (addrCopy.Host == Host && Host != DefaultHost) ||
@@ -249,12 +251,22 @@ func (h *httpContext) MakeServers() ([]caddy.Server, error) {
 	return servers, nil
 }
 
+// normalizedKey returns "normalized" key representation:
+//  scheme and host names are lowered, everything else stays the same
+func normalizedKey(key string) string {
+	addr, err := standardizeAddress(key)
+	if err != nil {
+		return key
+	}
+	return addr.Normalize().Key()
+}
+
 // GetConfig gets the SiteConfig that corresponds to c.
 // If none exist (should only happen in tests), then a
 // new, empty one will be created.
 func GetConfig(c *caddy.Controller) *SiteConfig {
 	ctx := c.Context().(*httpContext)
-	key := strings.ToLower(c.Key)
+	key := normalizedKey(c.Key)
 	if cfg, ok := ctx.keysToSiteConfigs[key]; ok {
 		return cfg
 	}
@@ -356,6 +368,43 @@ func (a Address) VHost() string {
 		return a.Original[idx+3:]
 	}
 	return a.Original
+}
+
+// Normalize normalizes URL: turn scheme and host names into lower case
+func (a Address) Normalize() Address {
+	path := a.Path
+	if !CaseSensitivePath {
+		path = strings.ToLower(path)
+	}
+	return Address{
+		Original: a.Original,
+		Scheme:   strings.ToLower(a.Scheme),
+		Host:     strings.ToLower(a.Host),
+		Port:     a.Port,
+		Path:     path,
+	}
+}
+
+// Key is similar to String, just replaces scheme and host values with modified values.
+// Unlike String it doesn't add anything default (scheme, port, etc)
+func (a Address) Key() string {
+	res := ""
+	if a.Scheme != "" {
+		res += a.Scheme + "://"
+	}
+	if a.Host != "" {
+		res += a.Host
+	}
+	if a.Port != "" {
+		if strings.HasPrefix(a.Original[len(res):], ":"+a.Port) {
+			// insert port only if the original has its own explicit port
+			res += ":" + a.Port
+		}
+	}
+	if a.Path != "" {
+		res += a.Path
+	}
+	return res
 }
 
 // standardizeAddress parses an address string into a structured format with separate
