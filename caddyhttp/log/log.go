@@ -68,9 +68,10 @@ func (l Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			// Write log entries
 			for _, e := range rule.Entries {
 				// Check if there is an exception to prevent log being written
-				if len(e.Log.Exceptions) > 0 && !e.Log.ShouldLog(r.URL.Path) {
+				if !e.Log.ShouldLog(r.URL.Path) {
 					continue
 				}
+
 				// Mask IP Address
 				if e.Log.IPMaskExists {
 					hostip, _, err := net.SplitHostPort(r.RemoteAddr)

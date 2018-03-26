@@ -85,9 +85,11 @@ func (l Logger) MaskIP(ip string) string {
 
 }
 
+// ShouldLog returns true if the path is not exempted from
+// being logged (i.e. it is not found in l.Exceptions).
 func (l Logger) ShouldLog(path string) bool {
-	for ex := 0; ex < len(l.Exceptions); ex++ {
-		if Path(path).Matches(l.Exceptions[ex]) {
+	for _, exc := range l.Exceptions {
+		if Path(path).Matches(exc) {
 			return false
 		}
 	}
