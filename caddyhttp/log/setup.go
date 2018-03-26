@@ -44,7 +44,7 @@ func setup(c *caddy.Controller) error {
 
 func logParse(c *caddy.Controller) ([]*Rule, error) {
 	var rules []*Rule
-
+	var logExceptions []string
 	for c.Next() {
 		args := c.RemainingArgs()
 
@@ -91,6 +91,12 @@ func logParse(c *caddy.Controller) ([]*Rule, error) {
 
 				}
 
+			} else if what == "except" {
+
+				for i := 0; i < len(where); i++ {
+					logExceptions = append(logExceptions, where[i])
+				}
+
 			} else if httpserver.IsLogRollerSubdirective(what) {
 
 				if err := httpserver.ParseRoller(logRoller, what, where...); err != nil {
@@ -133,6 +139,7 @@ func logParse(c *caddy.Controller) ([]*Rule, error) {
 				V4ipMask:     ip4Mask,
 				V6ipMask:     ip6Mask,
 				IPMaskExists: ipMaskExists,
+				Exceptions:   logExceptions,
 			},
 			Format: format,
 		})
