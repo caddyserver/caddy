@@ -31,7 +31,7 @@ func TestInit(t *testing.T) {
 			t.Errorf("Second call to Init should have panicked")
 		}
 	}()
-	Init(id) // should panic
+	Init(id, nil) // should panic
 }
 
 func TestInitEmptyUUID(t *testing.T) {
@@ -41,7 +41,7 @@ func TestInitEmptyUUID(t *testing.T) {
 			t.Errorf("Call to Init with empty UUID should have panicked")
 		}
 	}()
-	Init(uuid.UUID([16]byte{}))
+	Init(uuid.UUID([16]byte{}), nil)
 }
 
 func TestSet(t *testing.T) {
@@ -92,7 +92,7 @@ func doInit(t *testing.T) uuid.UUID {
 	if err != nil {
 		t.Fatalf("Could not make UUID: %v", err)
 	}
-	Init(id)
+	Init(id, nil)
 	return id
 }
 

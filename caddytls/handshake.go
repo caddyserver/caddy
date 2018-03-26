@@ -121,9 +121,7 @@ func (cfg *Config) GetCertificate(clientHello *tls.ClientHelloInfo) (*tls.Certif
 	// })
 	cert, err := cfg.getCertDuringHandshake(strings.ToLower(clientHello.ServerName), true, true)
 	if err == nil {
-		go telemetry.Increment("tls_handshake_count")
-	} else {
-		go telemetry.Append("tls_handshake_error", err.Error())
+		go telemetry.Increment("tls_handshake_count") // TODO: This is a "best guess" for now, we need something listener-level
 	}
 	return &cert.Certificate, err
 }
