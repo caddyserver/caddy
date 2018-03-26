@@ -81,8 +81,8 @@ func (hc *HandshakeContext) SetVersion(version uint16) {
 	}
 }
 
-// StateConnected is symmetric between client and server
-type StateConnected struct {
+// stateConnected is symmetric between client and server
+type stateConnected struct {
 	Params              ConnectionParameters
 	hsCtx               HandshakeContext
 	isClient            bool
@@ -95,16 +95,16 @@ type StateConnected struct {
 	verifiedChains      [][]*x509.Certificate
 }
 
-var _ HandshakeState = &StateConnected{}
+var _ HandshakeState = &stateConnected{}
 
-func (state StateConnected) State() State {
+func (state stateConnected) State() State {
 	if state.isClient {
 		return StateClientConnected
 	}
 	return StateServerConnected
 }
 
-func (state *StateConnected) KeyUpdate(request KeyUpdateRequest) ([]HandshakeAction, Alert) {
+func (state *stateConnected) KeyUpdate(request KeyUpdateRequest) ([]HandshakeAction, Alert) {
 	var trafficKeys keySet
 	if state.isClient {
 		state.clientTrafficSecret = HkdfExpandLabel(state.cryptoParams.Hash, state.clientTrafficSecret,
@@ -130,7 +130,7 @@ func (state *StateConnected) KeyUpdate(request KeyUpdateRequest) ([]HandshakeAct
 	return toSend, AlertNoAlert
 }
 
-func (state *StateConnected) NewSessionTicket(length int, lifetime, earlyDataLifetime uint32) ([]HandshakeAction, Alert) {
+func (state *stateConnected) NewSessionTicket(length int, lifetime, earlyDataLifetime uint32) ([]HandshakeAction, Alert) {
 	tkt, err := NewSessionTicket(length, lifetime)
 	if err != nil {
 		logf(logTypeHandshake, "[StateConnected] Error generating NewSessionTicket: %v", err)
@@ -172,11 +172,11 @@ func (state *StateConnected) NewSessionTicket(length int, lifetime, earlyDataLif
 }
 
 // Next does nothing for this state.
-func (state StateConnected) Next(hr handshakeMessageReader) (HandshakeState, []HandshakeAction, Alert) {
+func (state stateConnected) Next(hr handshakeMessageReader) (HandshakeState, []HandshakeAction, Alert) {
 	return state, nil, AlertNoAlert
 }
 
-func (state StateConnected) ProcessMessage(hm *HandshakeMessage) (HandshakeState, []HandshakeAction, Alert) {
+func (state stateConnected) ProcessMessage(hm *HandshakeMessage) (HandshakeState, []HandshakeAction, Alert) {
 	if hm == nil {
 		logf(logTypeHandshake, "[StateConnected] Unexpected message")
 		return nil, nil, AlertUnexpectedMessage

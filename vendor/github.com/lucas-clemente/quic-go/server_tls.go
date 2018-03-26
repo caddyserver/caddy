@@ -36,7 +36,6 @@ type serverTLS struct {
 	config            *Config
 	supportedVersions []protocol.VersionNumber
 	mintConf          *mint.Config
-	cookieProtector   mint.CookieProtector
 	params            *handshake.TransportParameters
 	newMintConn       func(*handshake.CryptoStreamConn, protocol.VersionNumber) (handshake.MintTLS, <-chan handshake.TransportParameters, error)
 
@@ -72,9 +71,8 @@ func newServerTLS(
 			StreamFlowControlWindow:     protocol.ReceiveStreamFlowControlWindow,
 			ConnectionFlowControlWindow: protocol.ReceiveConnectionFlowControlWindow,
 			IdleTimeout:                 config.IdleTimeout,
-			// TODO(#523): make these values configurable
-			MaxBidiStreamID: protocol.MaxBidiStreamID(protocol.MaxIncomingStreams, protocol.PerspectiveServer),
-			MaxUniStreamID:  protocol.MaxUniStreamID(protocol.MaxIncomingStreams, protocol.PerspectiveServer),
+			MaxBidiStreams:              uint16(config.MaxIncomingStreams),
+			MaxUniStreams:               uint16(config.MaxIncomingUniStreams),
 		},
 	}
 	s.newMintConn = s.newMintConnImpl
@@ -85,7 +83,7 @@ func (s *serverTLS) HandleInitial(remoteAddr net.Addr, hdr *wire.Header, data []
 	utils.Debugf("Received a Packet. Handling it statelessly.")
 	sess, err := s.handleInitialImpl(remoteAddr, hdr, data)
 	if err != nil {
-		utils.Errorf("Error occured handling initial packet: %s", err)
+		utils.Errorf("Error occurred handling initial packet: %s", err)
 		return
 	}
 	if sess == nil { // a stateless reset was done
@@ -132,7 +130,7 @@ func (s *serverTLS) handleInitialImpl(remoteAddr net.Addr, hdr *wire.Header, dat
 	// check version, if not matching send VNP
 	if !protocol.IsSupportedVersion(s.supportedVersions, hdr.Version) {
 		utils.Debugf("Client offered version %s, sending VersionNegotiationPacket", hdr.Version)
-		_, err := s.conn.WriteTo(wire.ComposeVersionNegotiation(hdr.ConnectionID, hdr.PacketNumber, s.supportedVersions), remoteAddr)
+		_, err := s.conn.WriteTo(wire.ComposeVersionNegotiation(hdr.ConnectionID, s.supportedVersions), remoteAddr)
 		return nil, err
 	}
 
@@ -149,7 +147,7 @@ func (s *serverTLS) handleInitialImpl(remoteAddr net.Addr, hdr *wire.Header, dat
 	sess, err := s.handleUnpackedInitial(remoteAddr, hdr, frame, aead)
 	if err != nil {
 		if ccerr := s.sendConnectionClose(remoteAddr, hdr, aead, err); ccerr != nil {
-			utils.Debugf("Error sending CONNECTION_CLOSE: ", ccerr)
+			utils.Debugf("Error sending CONNECTION_CLOSE: %s", ccerr)
 		}
 		return nil, err
 	}

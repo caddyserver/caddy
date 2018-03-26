@@ -116,7 +116,7 @@ func (s *sendStream) Write(p []byte) (int, error) {
 		} else {
 			select {
 			case <-s.writeChan:
-			case <-time.After(deadline.Sub(time.Now())):
+			case <-time.After(time.Until(deadline)):
 			}
 		}
 		s.mutex.Lock()

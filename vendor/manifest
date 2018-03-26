@@ -145,7 +145,7 @@
 			"importpath": "github.com/lucas-clemente/quic-go",
 			"repository": "https://github.com/lucas-clemente/quic-go",
 			"vcs": "git",
-			"revision": "d71850eb2ff581620f2f5742b558a97de22c13f6",
+			"revision": "9fa739409e6edddbbd47c8031cb7bb3d1a209cc8",
 			"branch": "master",
 			"notests": true
 		},

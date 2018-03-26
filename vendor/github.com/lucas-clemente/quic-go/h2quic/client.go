@@ -108,7 +108,9 @@ func (c *client) handleHeaderStream() {
 	for err == nil {
 		err = c.readResponse(h2framer, decoder)
 	}
-	utils.Debugf("Error handling header stream: %s", err)
+	if quicErr, ok := err.(*qerr.QuicError); !ok || quicErr.ErrorCode != qerr.PeerGoingAway {
+		utils.Debugf("Error handling header stream: %s", err)
+	}
 	c.headerErr = qerr.Error(qerr.InvalidHeadersStreamData, err.Error())
 	// stop all running request
 	close(c.headerErrored)
@@ -202,6 +204,7 @@ func (c *client) RoundTrip(req *http.Request) (*http.Response, error) {
 		bodySent = true
 	}
 
+	ctx := req.Context()
 	for !(bodySent && receivedResponse) {
 		select {
 		case res = <-responseChan:
@@ -214,8 +217,16 @@ func (c *client) RoundTrip(req *http.Request) (*http.Response, error) {
 			if err != nil {
 				return nil, err
 			}
+		case <-ctx.Done():
+			// error code 6 signals that stream was canceled
+			dataStream.CancelRead(6)
+			dataStream.CancelWrite(6)
+			c.mutex.Lock()
+			delete(c.responses, dataStream.StreamID())
+			c.mutex.Unlock()
+			return nil, ctx.Err()
 		case <-c.headerErrored:
-			// an error occured on the header stream
+			// an error occurred on the header stream
 			_ = c.CloseWithError(c.headerErr)
 			return nil, c.headerErr
 		}

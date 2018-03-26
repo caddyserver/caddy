@@ -12,8 +12,6 @@ type streamFramer struct {
 	cryptoStream cryptoStreamI
 	version      protocol.VersionNumber
 
-	retransmissionQueue []*wire.StreamFrame
-
 	streamQueueMutex    sync.Mutex
 	activeStreams       map[protocol.StreamID]struct{}
 	streamQueue         []protocol.StreamID
@@ -33,10 +31,6 @@ func newStreamFramer(
 	}
 }
 
-func (f *streamFramer) AddFrameForRetransmission(frame *wire.StreamFrame) {
-	f.retransmissionQueue = append(f.retransmissionQueue, frame)
-}
-
 func (f *streamFramer) AddActiveStream(id protocol.StreamID) {
 	if id == f.version.CryptoStreamID() { // the crypto stream is handled separately
 		f.streamQueueMutex.Lock()
@@ -50,15 +44,6 @@ func (f *streamFramer) AddActiveStream(id protocol.StreamID) {
 		f.activeStreams[id] = struct{}{}
 	}
 	f.streamQueueMutex.Unlock()
-}
-
-func (f *streamFramer) PopStreamFrames(maxLen protocol.ByteCount) []*wire.StreamFrame {
-	fs, currentLen := f.maybePopFramesForRetransmission(maxLen)
-	return append(fs, f.maybePopNormalFrames(maxLen-currentLen)...)
-}
-
-func (f *streamFramer) HasFramesForRetransmission() bool {
-	return len(f.retransmissionQueue) > 0
 }
 
 func (f *streamFramer) HasCryptoStreamData() bool {
@@ -76,34 +61,7 @@ func (f *streamFramer) PopCryptoStreamFrame(maxLen protocol.ByteCount) *wire.Str
 	return frame
 }
 
-func (f *streamFramer) maybePopFramesForRetransmission(maxTotalLen protocol.ByteCount) (res []*wire.StreamFrame, currentLen protocol.ByteCount) {
-	for len(f.retransmissionQueue) > 0 {
-		frame := f.retransmissionQueue[0]
-		frame.DataLenPresent = true
-
-		maxLen := maxTotalLen - currentLen
-		if frame.Length(f.version) > maxLen && maxLen < protocol.MinStreamFrameSize {
-			break
-		}
-
-		splitFrame, err := frame.MaybeSplitOffFrame(maxLen, f.version)
-		if err != nil { // maxLen is too small. Can't split frame
-			break
-		}
-		if splitFrame != nil { // frame was split
-			res = append(res, splitFrame)
-			currentLen += splitFrame.Length(f.version)
-			break
-		}
-
-		f.retransmissionQueue = f.retransmissionQueue[1:]
-		res = append(res, frame)
-		currentLen += frame.Length(f.version)
-	}
-	return
-}
-
-func (f *streamFramer) maybePopNormalFrames(maxTotalLen protocol.ByteCount) []*wire.StreamFrame {
+func (f *streamFramer) PopStreamFrames(maxTotalLen protocol.ByteCount) []*wire.StreamFrame {
 	var currentLen protocol.ByteCount
 	var frames []*wire.StreamFrame
 	f.streamQueueMutex.Lock()

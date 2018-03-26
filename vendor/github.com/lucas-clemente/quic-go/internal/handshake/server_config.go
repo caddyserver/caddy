@@ -9,10 +9,10 @@ import (
 
 // ServerConfig is a server config
 type ServerConfig struct {
-	kex       crypto.KeyExchange
-	certChain crypto.CertChain
-	ID        []byte
-	obit      []byte
+	kex             crypto.KeyExchange
+	certChain       crypto.CertChain
+	ID              []byte
+	obit            []byte
 	cookieGenerator *CookieGenerator
 }
 
@@ -36,10 +36,10 @@ func NewServerConfig(kex crypto.KeyExchange, certChain crypto.CertChain) (*Serve
 	}
 
 	return &ServerConfig{
-		kex:       kex,
-		certChain: certChain,
-		ID:        id,
-		obit:      obit,
+		kex:             kex,
+		certChain:       certChain,
+		ID:              id,
+		obit:            obit,
 		cookieGenerator: cookieGenerator,
 	}, nil
 }

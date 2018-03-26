@@ -31,6 +31,7 @@ func (e *QuicError) Error() string {
 	return fmt.Sprintf("%s: %s", e.ErrorCode.String(), e.ErrorMessage)
 }
 
+// Timeout says if this error is a timeout.
 func (e *QuicError) Timeout() bool {
 	switch e.ErrorCode {
 	case NetworkIdleTimeout,
