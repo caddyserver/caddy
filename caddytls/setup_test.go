@@ -22,7 +22,7 @@ import (
 	"testing"
 
 	"github.com/mholt/caddy"
-	"github.com/xenolf/lego/acme"
+	"github.com/xenolf/lego/acmev2"
 )
 
 func TestMain(m *testing.M) {
@@ -67,8 +67,8 @@ func TestSetupParseBasic(t *testing.T) {
 	}
 
 	// Security defaults
-	if cfg.ProtocolMinVersion != tls.VersionTLS11 {
-		t.Errorf("Expected 'tls1.1 (0x0302)' as ProtocolMinVersion, got %#v", cfg.ProtocolMinVersion)
+	if cfg.ProtocolMinVersion != tls.VersionTLS12 {
+		t.Errorf("Expected 'tls1.2 (0x0303)' as ProtocolMinVersion, got %#v", cfg.ProtocolMinVersion)
 	}
 	if cfg.ProtocolMaxVersion != tls.VersionTLS12 {
 		t.Errorf("Expected 'tls1.2 (0x0303)' as ProtocolMaxVersion, got %v", cfg.ProtocolMaxVersion)

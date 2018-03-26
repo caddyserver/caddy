@@ -201,6 +201,8 @@ func (s State) String() string {
 		return "Client WAIT_CV"
 	case StateClientWaitFinished:
 		return "Client WAIT_FINISHED"
+	case StateClientWaitCertCR:
+		return "Client WAIT_CERT_CR"
 	case StateClientConnected:
 		return "Client CONNECTED"
 	case StateServerStart:

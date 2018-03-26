@@ -59,10 +59,9 @@ func (cg configGroup) getConfig(name string) *Config {
 		}
 	}
 
-	// try a config that serves all names (this
-	// is basically the same as a config defined
-	// for "*" -- I think -- but the above loop
-	// doesn't try an empty string)
+	// try a config that serves all names (the above
+	// loop doesn't try empty string; for hosts defined
+	// with only a port, for instance, like ":443")
 	if config, ok := cg[""]; ok {
 		return config
 	}
@@ -166,17 +165,19 @@ func (cfg *Config) getCertificate(name string) (cert Certificate, matched, defau
 		return
 	}
 
-	// if nothing matches and SNI was not provided, use a random
-	// certificate; at least there's a chance this older client
-	// can connect, and in the future we won't need this provision
-	// (if SNI is present, it's probably best to just raise a TLS
-	// alert by not serving a certificate)
-	if name == "" {
-		for _, certKey := range cfg.Certificates {
-			defaulted = true
-			cert = cfg.certCache.cache[certKey]
-			return
-		}
+	// if nothing matches, use a random certificate
+	// TODO: This is not my favorite behavior; I would rather serve
+	// no certificate if SNI is provided and cause a TLS alert, than
+	// serve the wrong certificate (but sometimes the 'wrong' cert
+	// is what is wanted, but in those cases I would prefer that the
+	// site owner explicitly configure a "default" certificate).
+	// (See issue 2035; any change to this behavior must account for
+	// hosts defined like ":443" or "0.0.0.0:443" where the hostname
+	// is empty or a catch-all IP or something.)
+	for _, certKey := range cfg.Certificates {
+		cert = cfg.certCache.cache[certKey]
+		defaulted = true
+		return
 	}
 
 	return

@@ -265,7 +265,7 @@ type Conn struct {
 
 	EarlyData []byte
 
-	state             StateConnected
+	state             stateConnected
 	hState            HandshakeState
 	handshakeMutex    sync.Mutex
 	handshakeAlert    Alert
@@ -345,7 +345,7 @@ func (c *Conn) consumeRecord() error {
 			}
 
 			var connected bool
-			c.state, connected = state.(StateConnected)
+			c.state, connected = state.(stateConnected)
 			if !connected {
 				logf(logTypeHandshake, "Disconnected after state transition: %v", alert)
 				c.sendAlert(alert)
@@ -385,7 +385,7 @@ func (c *Conn) consumeRecord() error {
 // Read application data up to the size of buffer.  Handshake and alert records
 // are consumed by the Conn object directly.
 func (c *Conn) Read(buffer []byte) (int, error) {
-	if _, connected := c.hState.(StateConnected); !connected && c.config.NonBlocking {
+	if _, connected := c.hState.(stateConnected); !connected {
 		return 0, errors.New("Read called before the handshake completed")
 	}
 	logf(logTypeHandshake, "conn.Read with buffer = %d", len(buffer))
@@ -661,7 +661,7 @@ func (c *Conn) HandshakeSetup() Alert {
 	}
 
 	if c.isClient {
-		state, actions, alert = ClientStateStart{Config: c.config, Opts: opts, hsCtx: c.hsCtx}.Next(nil)
+		state, actions, alert = clientStateStart{Config: c.config, Opts: opts, hsCtx: c.hsCtx}.Next(nil)
 		if alert != AlertNoAlert {
 			logf(logTypeHandshake, "Error initializing client state: %v", alert)
 			return alert
@@ -688,7 +688,7 @@ func (c *Conn) HandshakeSetup() Alert {
 				return AlertInternalError
 			}
 		}
-		state = ServerStateStart{Config: c.config, conn: c, hsCtx: c.hsCtx}
+		state = serverStateStart{Config: c.config, conn: c, hsCtx: c.hsCtx}
 	}
 
 	c.hState = state
@@ -751,7 +751,7 @@ func (c *Conn) Handshake() Alert {
 
 	logf(logTypeHandshake, "(Re-)entering handshake, state=%v", c.hState)
 	state := c.hState
-	_, connected := state.(StateConnected)
+	_, connected := state.(stateConnected)
 
 	hmr := &handshakeMessageReaderImpl{hsCtx: &c.hsCtx}
 	for !connected {
@@ -784,9 +784,9 @@ func (c *Conn) Handshake() Alert {
 
 		c.hState = state
 		logf(logTypeHandshake, "state is now %s", c.GetHsState())
-		_, connected = state.(StateConnected)
+		_, connected = state.(stateConnected)
 		if connected {
-			c.state = state.(StateConnected)
+			c.state = state.(stateConnected)
 			c.handshakeComplete = true
 		}
 
@@ -852,7 +852,7 @@ func (c *Conn) GetHsState() State {
 }
 
 func (c *Conn) ComputeExporter(label string, context []byte, keyLength int) ([]byte, error) {
-	_, connected := c.hState.(StateConnected)
+	_, connected := c.hState.(stateConnected)
 	if !connected {
 		return nil, fmt.Errorf("Cannot compute exporter when state is not connected")
 	}

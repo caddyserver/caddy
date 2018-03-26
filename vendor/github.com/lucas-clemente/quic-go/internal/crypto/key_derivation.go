@@ -1,19 +1,32 @@
 package crypto
 
 import (
+	"crypto"
+	"encoding/binary"
+
 	"github.com/bifurcation/mint"
 	"github.com/lucas-clemente/quic-go/internal/protocol"
 )
 
 const (
-	clientExporterLabel = "EXPORTER-QUIC client 1-RTT Secret"
-	serverExporterLabel = "EXPORTER-QUIC server 1-RTT Secret"
+	clientExporterLabel = "EXPORTER-QUIC client 1rtt"
+	serverExporterLabel = "EXPORTER-QUIC server 1rtt"
 )
 
 // A TLSExporter gets the negotiated ciphersuite and computes exporter
 type TLSExporter interface {
 	GetCipherSuite() mint.CipherSuiteParams
 	ComputeExporter(label string, context []byte, keyLength int) ([]byte, error)
+}
+
+func qhkdfExpand(secret []byte, label string, length int) []byte {
+	// The last byte should be 0x0.
+	// Since Go initializes the slice to 0, we don't need to set it explicitly.
+	qlabel := make([]byte, 2+1+5+len(label)+1)
+	binary.BigEndian.PutUint16(qlabel[0:2], uint16(length))
+	qlabel[2] = uint8(5 + len(label))
+	copy(qlabel[3:], []byte("QUIC "+label))
+	return mint.HkdfExpand(crypto.SHA256, secret, qlabel, length)
 }
 
 // DeriveAESKeys derives the AES keys and creates a matching AES-GCM AEAD instance
@@ -43,7 +56,7 @@ func computeKeyAndIV(tls TLSExporter, label string) (key, iv []byte, err error) 
 	if err != nil {
 		return nil, nil, err
 	}
-	key = mint.HkdfExpandLabel(cs.Hash, secret, "key", nil, cs.KeyLen)
-	iv = mint.HkdfExpandLabel(cs.Hash, secret, "iv", nil, cs.IvLen)
+	key = qhkdfExpand(secret, "key", cs.KeyLen)
+	iv = qhkdfExpand(secret, "iv", cs.IvLen)
 	return key, iv, nil
 }

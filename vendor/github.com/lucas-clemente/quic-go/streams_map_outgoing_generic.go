@@ -86,10 +86,11 @@ func (m *outgoingItemsMap) openStreamImpl() (item, error) {
 }
 
 func (m *outgoingItemsMap) GetStream(id protocol.StreamID) (item, error) {
+	m.mutex.RLock()
 	if id >= m.nextStream {
+		m.mutex.RUnlock()
 		return nil, qerr.Error(qerr.InvalidStreamID, fmt.Sprintf("peer attempted to open stream %d", id))
 	}
-	m.mutex.RLock()
 	s := m.streams[id]
 	m.mutex.RUnlock()
 	return s, nil

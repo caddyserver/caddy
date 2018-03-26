@@ -56,7 +56,7 @@ func ParseStreamFrame(r *bytes.Reader, version protocol.VersionNumber) (*StreamF
 		if err != nil {
 			return nil, err
 		}
-		// shortcut to prevent the unneccessary allocation of dataLen bytes
+		// shortcut to prevent the unnecessary allocation of dataLen bytes
 		// if the dataLen is larger than the remaining length of the packet
 		// reading the packet contents would result in EOF when attempting to READ
 		if dataLen > uint64(r.Len()) {

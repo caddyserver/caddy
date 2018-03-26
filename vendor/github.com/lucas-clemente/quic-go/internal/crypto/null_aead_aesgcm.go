@@ -31,14 +31,14 @@ func newNullAEADAESGCM(connectionID protocol.ConnectionID, pers protocol.Perspec
 func computeSecrets(connectionID protocol.ConnectionID) (clientSecret, serverSecret []byte) {
 	connID := make([]byte, 8)
 	binary.BigEndian.PutUint64(connID, uint64(connectionID))
-	cleartextSecret := mint.HkdfExtract(crypto.SHA256, []byte(quicVersion1Salt), connID)
-	clientSecret = mint.HkdfExpandLabel(crypto.SHA256, cleartextSecret, "QUIC client cleartext Secret", []byte{}, crypto.SHA256.Size())
-	serverSecret = mint.HkdfExpandLabel(crypto.SHA256, cleartextSecret, "QUIC server cleartext Secret", []byte{}, crypto.SHA256.Size())
+	handshakeSecret := mint.HkdfExtract(crypto.SHA256, quicVersion1Salt, connID)
+	clientSecret = qhkdfExpand(handshakeSecret, "client hs", crypto.SHA256.Size())
+	serverSecret = qhkdfExpand(handshakeSecret, "server hs", crypto.SHA256.Size())
 	return
 }
 
 func computeNullAEADKeyAndIV(secret []byte) (key, iv []byte) {
-	key = mint.HkdfExpandLabel(crypto.SHA256, secret, "key", nil, 16)
-	iv = mint.HkdfExpandLabel(crypto.SHA256, secret, "iv", nil, 12)
+	key = qhkdfExpand(secret, "key", 16)
+	iv = qhkdfExpand(secret, "iv", 12)
 	return
 }

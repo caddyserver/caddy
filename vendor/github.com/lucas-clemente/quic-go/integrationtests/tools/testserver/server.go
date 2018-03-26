@@ -22,7 +22,9 @@ const (
 )
 
 var (
-	PRData     = GeneratePRData(dataLen)
+	// PRData contains dataLen bytes of pseudo-random data.
+	PRData = GeneratePRData(dataLen)
+	// PRDataLong contains dataLenLong bytes of pseudo-random data.
 	PRDataLong = GeneratePRData(dataLenLong)
 
 	server         *h2quic.Server
@@ -105,11 +107,13 @@ func StartQuicServer(versions []protocol.VersionNumber) {
 	}()
 }
 
+// StopQuicServer stops the h2quic.Server.
 func StopQuicServer() {
 	Expect(server.Close()).NotTo(HaveOccurred())
 	Eventually(stoppedServing).Should(BeClosed())
 }
 
+// Port returns the UDP port of the QUIC server.
 func Port() string {
 	return port
 }
