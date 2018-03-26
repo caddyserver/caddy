@@ -207,8 +207,21 @@ func setupTLS(c *caddy.Controller) error {
 				}
 			case "must_staple":
 				config.MustStaple = true
+			case "wildcard":
+				if !HostQualifies(config.Hostname) {
+					return c.Errf("Hostname '%s' does not qualify for managed TLS, so cannot manage wildcard certificate for it", config.Hostname)
+				}
+				if strings.Contains(config.Hostname, "*") {
+					return c.Errf("Cannot convert domain name '%s' to a valid wildcard: already has a wildcard label", config.Hostname)
+				}
+				parts := strings.Split(config.Hostname, ".")
+				if len(parts) < 3 {
+					return c.Errf("Cannot convert domain name '%s' to a valid wildcard: too few labels", config.Hostname)
+				}
+				parts[0] = "*"
+				config.Hostname = strings.Join(parts, ".")
 			default:
-				return c.Errf("Unknown keyword '%s'", c.Val())
+				return c.Errf("Unknown subdirective '%s'", c.Val())
 			}
 		}
 

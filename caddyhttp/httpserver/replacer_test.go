@@ -53,7 +53,7 @@ func TestReplace(t *testing.T) {
 	recordRequest := NewResponseRecorder(w)
 	reader := strings.NewReader(`{"username": "dennis"}`)
 
-	request, err := http.NewRequest("POST", "http://localhost/?foo=bar", reader)
+	request, err := http.NewRequest("POST", "http://localhost.local/?foo=bar", reader)
 	if err != nil {
 		t.Fatalf("Failed to make request: %v", err)
 	}
@@ -87,7 +87,7 @@ func TestReplace(t *testing.T) {
 		expect   string
 	}{
 		{"This hostname is {hostname}", "This hostname is " + hostname},
-		{"This host is {host}.", "This host is localhost."},
+		{"This host is {host}.", "This host is localhost.local."},
 		{"This request method is {method}.", "This request method is POST."},
 		{"The response status is {status}.", "The response status is 200."},
 		{"{when}", "02/Jan/2006:15:04:05 +0000"},
@@ -97,7 +97,7 @@ func TestReplace(t *testing.T) {
 		{"The CustomAdd header is {>CustomAdd}.", "The CustomAdd header is caddy."},
 		{"The Custom response header is {<Custom}.", "The Custom response header is CustomResponseHeader."},
 		{"Bad {>Custom placeholder", "Bad {>Custom placeholder"},
-		{"The request is {request}.", "The request is POST /?foo=bar HTTP/1.1\\r\\nHost: localhost\\r\\n" +
+		{"The request is {request}.", "The request is POST /?foo=bar HTTP/1.1\\r\\nHost: localhost.local\\r\\n" +
 			"Cookie: foo=bar; taste=delicious\\r\\nCustom: foobarbaz\\r\\nCustomadd: caddy\\r\\n" +
 			"Shorterval: 1\\r\\n\\r\\n."},
 		{"The cUsToM header is {>cUsToM}...", "The cUsToM header is foobarbaz..."},
@@ -112,6 +112,8 @@ func TestReplace(t *testing.T) {
 		{"Query string is {query}", "Query string is foo=bar"},
 		{"Query string value for foo is {?foo}", "Query string value for foo is bar"},
 		{"Missing query string argument is {?missing}", "Missing query string argument is "},
+		{"{label1} {label2} {label3} {label4}", "localhost local - -"},
+		{"Label with missing number is {label} or {labelQQ}", "Label with missing number is - or -"},
 		{"\\{ 'hostname': '{hostname}' \\}", "{ 'hostname': '" + hostname + "' }"},
 	}
 

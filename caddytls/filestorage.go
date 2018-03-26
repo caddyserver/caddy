@@ -30,14 +30,14 @@ func init() {
 	RegisterStorageProvider("file", NewFileStorage)
 }
 
-// storageBasePath is the root path in which all TLS/ACME assets are
-// stored. Do not change this value during the lifetime of the program.
-var storageBasePath = filepath.Join(caddy.AssetsPath(), "acme")
-
 // NewFileStorage is a StorageConstructor function that creates a new
 // Storage instance backed by the local disk. The resulting Storage
 // instance is guaranteed to be non-nil if there is no error.
 func NewFileStorage(caURL *url.URL) (Storage, error) {
+	// storageBasePath is the root path in which all TLS/ACME assets are
+	// stored. Do not change this value during the lifetime of the program.
+	storageBasePath := filepath.Join(caddy.AssetsPath(), "acme")
+
 	storage := &FileStorage{Path: filepath.Join(storageBasePath, caURL.Host)}
 	storage.Locker = &fileStorageLock{caURL: caURL.Host, storage: storage}
 	return storage, nil
@@ -58,24 +58,29 @@ func (s *FileStorage) sites() string {
 
 // site returns the path to the folder containing assets for domain.
 func (s *FileStorage) site(domain string) string {
+	// Windows doesn't allow * in filenames, sigh...
+	domain = strings.Replace(domain, "*", "wildcard_", -1)
 	domain = strings.ToLower(domain)
 	return filepath.Join(s.sites(), domain)
 }
 
 // siteCertFile returns the path to the certificate file for domain.
 func (s *FileStorage) siteCertFile(domain string) string {
+	domain = strings.Replace(domain, "*", "wildcard_", -1)
 	domain = strings.ToLower(domain)
 	return filepath.Join(s.site(domain), domain+".crt")
 }
 
 // siteKeyFile returns the path to domain's private key file.
 func (s *FileStorage) siteKeyFile(domain string) string {
+	domain = strings.Replace(domain, "*", "wildcard_", -1)
 	domain = strings.ToLower(domain)
 	return filepath.Join(s.site(domain), domain+".key")
 }
 
 // siteMetaFile returns the path to the domain's asset metadata file.
 func (s *FileStorage) siteMetaFile(domain string) string {
+	domain = strings.Replace(domain, "*", "wildcard_", -1)
 	domain = strings.ToLower(domain)
 	return filepath.Join(s.site(domain), domain+".json")
 }

@@ -100,8 +100,8 @@ func enableAutoHTTPS(configs []*SiteConfig, loadCertificates bool) error {
 		}
 		cfg.TLS.Enabled = true
 		cfg.Addr.Scheme = "https"
-		if loadCertificates && caddytls.HostQualifies(cfg.Addr.Host) {
-			_, err := cfg.TLS.CacheManagedCertificate(cfg.Addr.Host)
+		if loadCertificates && caddytls.HostQualifies(cfg.TLS.Hostname) {
+			_, err := cfg.TLS.CacheManagedCertificate(cfg.TLS.Hostname)
 			if err != nil {
 				return err
 			}
