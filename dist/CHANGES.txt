@@ -1,5 +1,22 @@
 CHANGES
 
+0.10.12 (March 27, 2018)
+- Switch to Let's Encrypt ACMEv2 production endpoint
+- Support for automated wildcard certificates
+- Support distributed solving of HTTP-01 challenge
+- New {labelN}, {tls_cipher}, and {tls_version} placeholders
+- Curly braces can now be escaped when not used as placeholders
+- New third-party plugin: geoip
+- Updated QUIC
+- fastcgi: Add SSL_CIPHER and SSL_PROTOCOL environment variables
+- log: New 'except' subdirective to exempt paths from logging
+- startup/shutdown: Removed in favor of 'on'
+- tls: Default minimum version is TLS 1.2
+- tls: Revert to fallback cert if no cert matches SNI
+- tls: New 'wildcard' subdirective to force automated wildcard cert
+- Several significant bug fixes and improvements!
+
+
 0.10.11 (February 20, 2018)
 - Built with Go 1.10
 - Reusable snippets for the Caddyfile
