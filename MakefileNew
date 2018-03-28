@@ -1,0 +1,61 @@
+REPO_VERSION := 0
+SERVICE_VERSION := 0
+ROOT_NAME := aqfer
+SERVICE_NAME := aio
+
+APP_LOG_GROUP_NAME := aqfer.io
+
+EC_CLUSTER_NAME := elasticache${ROOT_NAME}${DBVERSION}
+
+# only needed on first run, to make clean aws docker image
+.PHONY: setup
+setup: aws_build
+
+# deployment environment image
+.PHONY: aws_build
+aws_build:
+	docker build --no-cache -f aqfer/Dockerfile.aws -t aws_image .
+
+.PHONY: startover_locally
+startover_locally: build_caddy_image run_locally
+	docker-compose -f aqfer/docker-compose.yml up
+
+.PHONY: run_locally
+run_locally:
+	docker-compose -f aqfer/docker-compose.yml up
+
+# has to be run after databases are up or else the caddyfile database sections will point to nothing
+.PHONY: update_container_repo
+update_container_repo: ready_caddyfile ecr_repo_push
+
+.PHONY: ready_caddyfile
+ready_caddyfile: get_db_endpoints
+	cat aqfer/Caddyfile_template | sed 's/APP_LOG_GROUP_NAME/'${APP_LOG_GROUP_NAME}'/g' > /tmp/Caddyfile
+	cat /tmp/Caddyfile | sed 's/EC_ENDPOINT/'$(shell cat /tmp/ec_endpoint)'/g' > aqfer/Caddyfile
+
+.PHONY: get_db_endpoints
+get_db_endpoints:
+	docker-compose -f aqfer/docker-compose-aws.yml run aws-service /scripts/ec_endpoint.sh ${EC_CLUSTER_NAME} 2>&1 > /tmp/ec_endpoint
+
+.PHONY: ecr_repo_push
+ecr_repo_push: build_caddy_image ecr_create ecr_login
+
+.PHONY: build_caddy_image
+build_caddy_image:
+	docker build -f aqfer/Dockerfile.caddy -t ${SERVICE_NAME} .
+
+.PHONY: ecr_create
+ecr_create:
+	docker-compose -f aqfer/docker-compose-aws.yml run aws-service /scripts/ecr_create.sh ${ROOT_NAME} ${REPO_VERSION} 2>&1 > /tmp/ecrUri
+
+.PHONY: ecr_login
+ecr_login:
+	$(eval ecrUri := $(shell cat /tmp/ecrUri))
+	docker-compose -f aqfer/docker-compose-aws.yml run aws-service /scripts/ecr_login.sh 2>&1 > /tmp/ecrLogin
+	cat /tmp/ecrLogin | docker login -u AWS --password-stdin ${ecrUri}
+	docker tag ${SERVICE_NAME} ${ecrUri}:${SERVICE_NAME}-${SERVICE_VERSION}
+	docker push ${ecrUri}
+
+.PHONY: run_unit_tests
+run_unit_tests:
+	docker-compose -f aqfer/docker-compose.yml run caddy /run_unit_tests.sh
