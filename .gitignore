@@ -29,3 +29,5 @@ aqfer/aws/ecs_app_spec.yml
 aqfer/Caddyfile
 aqfer/debug
 aqfer/debug/*
+
+caddy/caddy
