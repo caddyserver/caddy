@@ -58,30 +58,25 @@ func (s *FileStorage) sites() string {
 
 // site returns the path to the folder containing assets for domain.
 func (s *FileStorage) site(domain string) string {
-	// Windows doesn't allow * in filenames, sigh...
-	domain = strings.Replace(domain, "*", "wildcard_", -1)
-	domain = strings.ToLower(domain)
+	domain = fileSafe(domain)
 	return filepath.Join(s.sites(), domain)
 }
 
 // siteCertFile returns the path to the certificate file for domain.
 func (s *FileStorage) siteCertFile(domain string) string {
-	domain = strings.Replace(domain, "*", "wildcard_", -1)
-	domain = strings.ToLower(domain)
+	domain = fileSafe(domain)
 	return filepath.Join(s.site(domain), domain+".crt")
 }
 
 // siteKeyFile returns the path to domain's private key file.
 func (s *FileStorage) siteKeyFile(domain string) string {
-	domain = strings.Replace(domain, "*", "wildcard_", -1)
-	domain = strings.ToLower(domain)
+	domain = fileSafe(domain)
 	return filepath.Join(s.site(domain), domain+".key")
 }
 
 // siteMetaFile returns the path to the domain's asset metadata file.
 func (s *FileStorage) siteMetaFile(domain string) string {
-	domain = strings.Replace(domain, "*", "wildcard_", -1)
-	domain = strings.ToLower(domain)
+	domain = fileSafe(domain)
 	return filepath.Join(s.site(domain), domain+".json")
 }
 
@@ -95,7 +90,7 @@ func (s *FileStorage) user(email string) string {
 	if email == "" {
 		email = emptyEmail
 	}
-	email = strings.ToLower(email)
+	email = fileSafe(email)
 	return filepath.Join(s.users(), email)
 }
 
@@ -122,6 +117,7 @@ func (s *FileStorage) userRegFile(email string) string {
 	if fileName == "" {
 		fileName = "registration"
 	}
+	fileName = fileSafe(fileName)
 	return filepath.Join(s.user(email), fileName+".json")
 }
 
@@ -136,6 +132,7 @@ func (s *FileStorage) userKeyFile(email string) string {
 	if fileName == "" {
 		fileName = "private"
 	}
+	fileName = fileSafe(fileName)
 	return filepath.Join(s.user(email), fileName+".key")
 }
 
@@ -278,4 +275,30 @@ func (s *FileStorage) MostRecentUserEmail() string {
 		return mostRecent.Name()
 	}
 	return ""
+}
+
+// fileSafe standardizes and sanitizes str for use in a file path.
+func fileSafe(str string) string {
+	str = strings.ToLower(str)
+	str = strings.TrimSpace(str)
+	repl := strings.NewReplacer("..", "",
+		"/", "",
+		"\\", "",
+		// TODO: Consider also replacing "@" with "_at_" (but migrate existing accounts...)
+		"+", "_plus_",
+		"%", "",
+		"$", "",
+		"`", "",
+		"~", "",
+		":", "",
+		";", "",
+		"=", "",
+		"!", "",
+		"#", "",
+		"&", "",
+		"|", "",
+		"\"", "",
+		"'", "",
+		"*", "wildcard_")
+	return repl.Replace(str)
 }

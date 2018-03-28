@@ -91,7 +91,20 @@ func (s *fileStorageLock) Unlock(name string) error {
 	if !ok {
 		return fmt.Errorf("FileStorage: no lock to release for %s", name)
 	}
+	// remove lock file
 	os.Remove(fw.filename)
+
+	// if parent folder is now empty, remove it too to keep it tidy
+	lockParentFolder := s.storage.site(name)
+	dir, err := os.Open(lockParentFolder)
+	if err == nil {
+		items, _ := dir.Readdirnames(3) // OK to ignore error here
+		if len(items) == 0 {
+			os.Remove(lockParentFolder)
+		}
+		dir.Close()
+	}
+
 	fw.wg.Done()
 	delete(fileStorageNameLocks, s.caURL+name)
 	return nil

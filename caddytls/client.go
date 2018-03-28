@@ -257,6 +257,13 @@ func (c *ACMEClient) Obtain(name string) error {
 			return errors.New(errMsg)
 		}
 
+		// double-check that we actually got a certificate; check a couple fields
+		// TODO: This is a temporary workaround for what I think is a bug in the acmev2 package (March 2018)
+		// but it might not hurt to keep this extra check in place
+		if certificate.Domain == "" || certificate.Certificate == nil {
+			return errors.New("returned certificate was empty; probably an unchecked error obtaining it")
+		}
+
 		// Success - immediately save the certificate resource
 		err = saveCertResource(c.storage, certificate)
 		if err != nil {
@@ -311,8 +318,15 @@ func (c *ACMEClient) Renew(name string) error {
 		acmeMu.Unlock()
 		namesObtaining.Remove([]string{name})
 		if err == nil {
-			success = true
-			break
+			// double-check that we actually got a certificate; check a couple fields
+			// TODO: This is a temporary workaround for what I think is a bug in the acmev2 package (March 2018)
+			// but it might not hurt to keep this extra check in place
+			if newCertMeta.Domain == "" || newCertMeta.Certificate == nil {
+				err = errors.New("returned certificate was empty; probably an unchecked error renewing it")
+			} else {
+				success = true
+				break
+			}
 		}
 
 		// wait a little bit and try again
