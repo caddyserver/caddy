@@ -10,7 +10,7 @@ EC_CLUSTER_NAME := elasticache${ROOT_NAME}${DBVERSION}
 # only needed on first run, to make clean aws docker image
 .PHONY: setup
 setup:
-	echo "Nothing to setup :)"
+	@echo "Nothing to setup :)"
 
 .PHONY: startover_locally
 startover_locally: build_caddy_image run_locally
