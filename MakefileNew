@@ -1,7 +1,7 @@
-REPO_VERSION := 0
-SERVICE_VERSION := 0
 ROOT_NAME := aqfer
-SERVICE_NAME := aio
+SERVICE_NAME := imds
+SERVICE_VERSION := 0
+REPO_REGION := us-east-1
 
 APP_LOG_GROUP_NAME := aqfer.io
 
@@ -38,31 +38,23 @@ get_db_endpoints:
 	docker-compose -f aqfer/docker-compose-aws.yml run aws-service /scripts/ec_endpoint.sh ${EC_CLUSTER_NAME} 2>&1 > /tmp/ec_endpoint
 
 .PHONY: ecr_repo_push
-ecr_repo_push: build_caddy_image ecr_create ecr_login
+ecr_repo_push: build_caddy_image ecr_push
 
 .PHONY: build_new_caddy_image
 build_new_caddy_image: build_caddy
-	docker build --no-cache -f aqfer/Dockerfile.caddy -t ${SERVICE_NAME} .
+	docker build --no-cache -f aqfer/Dockerfile.caddy -t ${ROOT_NAME}_${SERVICE_NAME}:${SERVICE_VERSION} .
 
 .PHONY: build_caddy_image
 build_caddy_image: build_caddy
-	docker build -f aqfer/Dockerfile.caddy -t ${SERVICE_NAME} .
+	docker build -f aqfer/Dockerfile.caddy -t ${ROOT_NAME}_${SERVICE_NAME}:${SERVICE_VERSION} .
 
 .PHONY: build_caddy
 build_caddy:
 	cd caddy && go run build.go --goos linux
 
-.PHONY: ecr_create
-ecr_create:
-	docker-compose -f aqfer/docker-compose-aws.yml run aws-service /scripts/ecr_create.sh ${ROOT_NAME} ${REPO_VERSION} 2>&1 > /tmp/ecrUri
-
-.PHONY: ecr_login
-ecr_login:
-	$(eval ecrUri := $(shell cat /tmp/ecrUri))
-	docker-compose -f aqfer/docker-compose-aws.yml run aws-service /scripts/ecr_login.sh 2>&1 > /tmp/ecrLogin
-	cat /tmp/ecrLogin | docker login -u AWS --password-stdin ${ecrUri}
-	docker tag ${SERVICE_NAME} ${ecrUri}:${SERVICE_NAME}-${SERVICE_VERSION}
-	docker push ${ecrUri}
+.PHONY: ecr_push
+ecr_push:
+	cd aqfer/scripts && go get ./.. && go run push-docker-image.go ${ROOT_NAME}_${SERVICE_NAME} ${SERVICE_VERSION} ${REPO_REGION}
 
 .PHONY: run_unit_tests
 run_unit_tests:
