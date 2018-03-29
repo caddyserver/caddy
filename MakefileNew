@@ -9,12 +9,8 @@ EC_CLUSTER_NAME := elasticache${ROOT_NAME}${DBVERSION}
 
 # only needed on first run, to make clean aws docker image
 .PHONY: setup
-setup: aws_build
-
-# deployment environment image
-.PHONY: aws_build
-aws_build:
-	docker build --no-cache -f aqfer/Dockerfile.aws -t aws_image .
+setup:
+	echo "Nothing to setup :)"
 
 .PHONY: startover_locally
 startover_locally: build_caddy_image run_locally
@@ -23,15 +19,6 @@ startover_locally: build_caddy_image run_locally
 .PHONY: run_locally
 run_locally:
 	docker-compose -f aqfer/docker-compose.yml up
-
-# has to be run after databases are up or else the caddyfile database sections will point to nothing
-.PHONY: update_container_repo
-update_container_repo: ready_caddyfile ecr_repo_push
-
-.PHONY: ready_caddyfile
-ready_caddyfile: get_db_endpoints
-	cat aqfer/Caddyfile_template | sed 's/APP_LOG_GROUP_NAME/'${APP_LOG_GROUP_NAME}'/g' > /tmp/Caddyfile
-	cat /tmp/Caddyfile | sed 's/EC_ENDPOINT/'$(shell cat /tmp/ec_endpoint)'/g' > aqfer/Caddyfile
 
 .PHONY: get_db_endpoints
 get_db_endpoints:
