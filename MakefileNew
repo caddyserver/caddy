@@ -20,10 +20,6 @@ startover_locally: build_caddy_image run_locally
 run_locally:
 	docker-compose -f aqfer/docker-compose.yml up
 
-.PHONY: get_db_endpoints
-get_db_endpoints:
-	docker-compose -f aqfer/docker-compose-aws.yml run aws-service /scripts/ec_endpoint.sh ${EC_CLUSTER_NAME} 2>&1 > /tmp/ec_endpoint
-
 .PHONY: ecr_repo_push
 ecr_repo_push: build_caddy_image ecr_push
 
