@@ -9,8 +9,19 @@ EC_CLUSTER_NAME := elasticache${ROOT_NAME}${DBVERSION}
 
 # only needed on first run, to make clean aws docker image
 .PHONY: setup
-setup:
+setup: docker_aws_setup
 	@echo "Nothing to setup :)"
+
+.PHONY: docker_aws_setup
+docker_aws_setup:
+	sed -i.bak "s|AWS_ACCESS_KEY_ID:|AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}|" "aqfer/docker-compose.yml";
+	sed -i.bak "s|AWS_SECRET_ACCESS_KEY:|AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}|" "aqfer/docker-compose.yml";
+	sed -i.bak "s|AWS_REGION:|AWS_REGION: us-east-1|" "aqfer/docker-compose.yml";
+	sed -i.bak "s|AWS_ACCESS_KEY_ID:|AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}|" "aqfer/docker-compose-aws.yml";
+	sed -i.bak "s|AWS_SECRET_ACCESS_KEY:|AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}|" "aqfer/docker-compose-aws.yml";
+	sed -i.bak "s|AWS_DEFAULT_REGION:|AWS_DEFAULT_REGION: us-east-1|" "aqfer/docker-compose-aws.yml";
+	rm docker-compose.yml.bak docker-compose-aws.yml.bak
+
 
 .PHONY: startover_locally
 startover_locally: build_caddy_image run_locally
