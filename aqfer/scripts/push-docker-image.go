@@ -55,16 +55,17 @@ func versionSort(versions sort.StringSlice) sort.StringSlice {
 }
 
 func main() {
-	if len(os.Args) < 3 && len(os.Args) > 4 {
+	if len(os.Args) < 4 && len(os.Args) > 5 {
 		usage()
 	}
 
 	imageName := os.Args[1]
-	awsRegion := os.Args[2]
+	majorVersion := os.Args[2]
+	awsRegion := os.Args[3]
 
 	var repoName string
 	if len(os.Args) == 5 {
-		repoName = os.Args[3]
+		repoName = os.Args[4]
 	} else {
 		repoName = imageName
 	}
@@ -84,7 +85,7 @@ func main() {
 	}
 
 	var tags []string
-	versionPattern := regexp.MustCompile(`\A\d+\.\d+\.\d+\z`)
+	versionPattern := regexp.MustCompile(fmt.Sprintf(`\A%s\.\d+\.\d+\z`, majorVersion))
 
 	for _, img :=range lio.ImageIds {
 		tag := *img.ImageTag
@@ -197,7 +198,7 @@ func main() {
 		}
 	}
 
-	tagImage("latest")
+	//tagImage("latest")
 	tagImage(nextVersion)
 
 	pushImage := func(tag string) {
@@ -248,6 +249,6 @@ func main() {
 		resp.Body.Close()
 	}
 
-	pushImage("latest")
+	//pushImage("latest")
 	pushImage(nextVersion)
 }

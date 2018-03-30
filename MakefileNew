@@ -6,6 +6,9 @@ APP_LOG_GROUP_NAME := aqfer.io
 
 EC_CLUSTER_NAME := elasticache${ROOT_NAME}${DBVERSION}
 
+get_major_version:
+	@cat major_version
+
 # only needed on first run, to make clean aws docker image
 .PHONY: setup
 setup: docker_aws_setup
@@ -47,7 +50,7 @@ build_caddy:
 
 .PHONY: ecr_push
 ecr_push:
-	cd aqfer/scripts && go get ./.. && go run push-docker-image.go ${ROOT_NAME}_${SERVICE_NAME} ${REPO_REGION}
+	cd aqfer/scripts && go get ./.. && go run push-docker-image.go ${ROOT_NAME}_${SERVICE_NAME} ${MAJOR_VERSION} ${REPO_REGION}
 
 .PHONY: run_unit_tests
 run_unit_tests:
