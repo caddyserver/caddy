@@ -1,0 +1,161 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'DB deployment'
+Parameters:
+  AWSAccount:
+    Description: 'Aws Account Id'
+    Type: String
+  ECClusterName:
+    Description: 'Elasticache Cluster name'
+    Type: String
+  ECSecurityGroupName:
+    Description: 'Security Group name for Elasticache'
+    Type: String
+  ECSubnetGroupName:
+    Description: 'Subnet Group name for Elasticache'
+    Type: String
+  ECNodeType:
+    Description: 'Elasticache cache size'
+    Default: 'cache.t2.micro'
+    Type: String
+  DaxName:
+    Description: 'DAX cluster name'
+    Type: String
+  DaxSubnetGroupName:
+    Description: 'DAX Subnet Group name'
+    Type: String
+  DaxRoleName:
+    Description: 'IAM Role for DAX cluster'
+    Type: String
+  DaxNodeType:
+    Description: 'DAX cluster size'
+    Default: 'dax.r3.large'
+    Type: String
+  DaxSecurityGroupName:
+    Description: 'Security Group name for DAX cluster'
+    Type: String
+  AvailabilityZone:
+    Description: 'Availability Zone'
+    Type: String
+  Subnet:
+    Description: 'VPC Zone Identifier'
+    Type: String
+  Vpc:
+    Description: 'VPC Identifier'
+    Type: String
+  DynamoTableName:
+    Description: 'Name for Dynamo table'
+    Type: String
+  PartitionKey:
+    Description: 'Partition Key for Dynamo Table'
+    Type: String
+  SortKey:
+    Description: 'Sort Key for Dynamo Table'
+    Type: String
+
+Resources:
+  DynamoDBTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+      - AttributeName: !Ref PartitionKey
+        AttributeType: S
+      - AttributeName: !Ref SortKey
+        AttributeType: S
+      KeySchema:
+      - AttributeName: !Ref PartitionKey
+        KeyType: HASH
+      - AttributeName: !Ref SortKey
+        KeyType: RANGE
+      ProvisionedThroughput:
+        ReadCapacityUnits: '500'
+        WriteCapacityUnits: '5'
+      TableName: !Ref DynamoTableName
+  DaxCluster:
+    Type: AWS::DAX::Cluster
+    DependsOn: DaxSubnetGroup
+    Properties:
+      AvailabilityZones:
+      - !Ref AvailabilityZone
+      ClusterName: !Ref DaxName
+      IAMRoleARN: !GetAtt DaxRole.Arn
+      NodeType: !Ref DaxNodeType
+      ReplicationFactor: 1
+      SecurityGroupIds:
+      - !Ref DaxSecurityGroup
+      SubnetGroupName: !Ref DaxSubnetGroupName
+  DaxSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Ref DaxSecurityGroupName
+      GroupDescription: 'Dax Security Group'
+      VpcId: !Ref Vpc
+  DaxRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref DaxRoleName
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action: sts:AssumeRole
+          Principal:
+            Service: dax.amazonaws.com
+      Path: "/"
+      Policies:
+      - PolicyName: DaxPolicy
+        PolicyDocument:
+          Statement:
+          - Effect: Allow
+            Action:
+            - s3:Get*
+            - s3:List*
+            Resource: "*"
+          - Effect: Allow
+            Action:
+            - dynamodb:BatchGetItem
+            - dynamodb:GetItem
+            - dynamodb:Query
+            - dynamodb:Scan
+            - dynamodb:BatchWriteItem
+            - dynamodb:DeleteItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DescribeLimits
+            - dynamodb:DescribeTimeToLive
+            - dynamodb:DescribeTable
+            - dynamodb:ListTables
+            Resource:
+              - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWSAccount}:table/${DynamoTableName}"
+  DaxSubnetGroup:
+    Type: AWS::DAX::SubnetGroup
+    Properties:
+      SubnetGroupName: !Ref DaxSubnetGroupName
+      Description: "DAX Subnet Group"
+      SubnetIds:
+      - !Ref Subnet
+
+  ElastiCache:
+    Type: AWS::ElastiCache::CacheCluster
+    Properties:
+      Engine: "redis"
+      ClusterName: !Ref ECClusterName
+      CacheNodeType: !Ref ECNodeType
+      NumCacheNodes: 1
+      PreferredAvailabilityZone: !Ref AvailabilityZone
+      VpcSecurityGroupIds:
+      - !Ref ECSecurityGroup
+      CacheSubnetGroupName: !Ref ECSubnetGroup
+  ECSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Ref ECSecurityGroupName
+      GroupDescription: 'Elasticache Security Group'
+      VpcId: !Ref Vpc
+  ECSubnetGroup:
+    Type: AWS::ElastiCache::SubnetGroup
+    Properties:
+      CacheSubnetGroupName: !Ref ECSubnetGroupName
+      Description: 'Elasticache Subnet Group'
+      SubnetIds:
+      - !Ref Subnet

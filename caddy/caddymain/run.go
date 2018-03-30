@@ -34,7 +34,15 @@ import (
 	_ "github.com/mholt/caddy/caddyhttp"
 
 	"github.com/mholt/caddy/caddytls"
+
 	// This is where other plugins get plugged in (imported)
+	_ "github.com/startsmartlabs/caddy-awscloudwatch"
+	_ "github.com/startsmartlabs/caddy-redis"
+	_ "github.com/startsmartlabs/caddy-secrets"
+	_ "github.com/startsmartlabs/caddy-transformrequest"
+	_ "github.com/startsmartlabs/caddy-transformresponse"
+
+	_ "github.com/fellou89/caddy-reauth"
 )
 
 func init() {

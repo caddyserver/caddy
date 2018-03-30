@@ -1,0 +1,57 @@
+ROOT_NAME := aqfer
+SERVICE_NAME := imds
+REPO_REGION := us-east-1
+
+APP_LOG_GROUP_NAME := aqfer.io
+
+EC_CLUSTER_NAME := elasticache${ROOT_NAME}${DBVERSION}
+
+get_major_version:
+	@cat MAJOR_VERSION
+
+# only needed on first run, to make clean aws docker image
+.PHONY: setup
+setup: docker_aws_setup
+	@echo "Nothing to setup :)"
+
+.PHONY: docker_aws_setup
+docker_aws_setup:
+	sed -i.bak "s|AWS_ACCESS_KEY_ID:|AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}|" "aqfer/docker-compose.yml";
+	sed -i.bak "s|AWS_SECRET_ACCESS_KEY:|AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}|" "aqfer/docker-compose.yml";
+	sed -i.bak "s|AWS_REGION:|AWS_REGION: us-east-1|" "aqfer/docker-compose.yml";
+	sed -i.bak "s|AWS_ACCESS_KEY_ID:|AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}|" "aqfer/docker-compose-aws.yml";
+	sed -i.bak "s|AWS_SECRET_ACCESS_KEY:|AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}|" "aqfer/docker-compose-aws.yml";
+	sed -i.bak "s|AWS_DEFAULT_REGION:|AWS_DEFAULT_REGION: us-east-1|" "aqfer/docker-compose-aws.yml";
+	rm docker-compose.yml.bak docker-compose-aws.yml.bak
+
+
+.PHONY: startover_locally
+startover_locally: build_caddy_image run_locally
+	docker-compose -f aqfer/docker-compose.yml up
+
+.PHONY: run_locally
+run_locally:
+	docker-compose -f aqfer/docker-compose.yml up
+
+.PHONY: ecr_repo_push
+ecr_repo_push: build_caddy_image ecr_push
+
+.PHONY: build_new_caddy_image
+build_new_caddy_image: build_caddy
+	docker build --no-cache -f aqfer/Dockerfile.caddy -t ${ROOT_NAME}_${SERVICE_NAME} .
+
+.PHONY: build_caddy_image
+build_caddy_image: build_caddy
+	docker build -f aqfer/Dockerfile.caddy -t ${ROOT_NAME}_${SERVICE_NAME} .
+
+.PHONY: build_caddy
+build_caddy:
+	cd caddy && go run build.go --goos linux
+
+.PHONY: ecr_push
+ecr_push:
+	cd aqfer/scripts && go get ./.. && go run push-docker-image.go ${ROOT_NAME}_${SERVICE_NAME} ${MAJOR_VERSION} ${REPO_REGION}
+
+.PHONY: run_unit_tests
+run_unit_tests:
+	docker-compose -f aqfer/docker-compose.yml run caddy /run_unit_tests.sh

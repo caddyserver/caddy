@@ -1,0 +1,7 @@
+version: '2'
+
+services:
+  caddy:
+    image: aqfer-integration
+    ports:
+      - "8082:8082"

@@ -12,10 +12,22 @@ error.log
 access.log
 
 /*.conf
-Caddyfile
+./Caddyfile
 
 og_static/
 
 .vscode/
 
 *.bat
+
+tmp/
+aqfer/*.yml
+aqfer/aws/*.pem
+aqfer/aws/dev_app_spec.yml
+aqfer/aws/db_app_spec.yml
+aqfer/aws/ecs_app_spec.yml
+aqfer/Caddyfile
+aqfer/debug
+aqfer/debug/*
+
+caddy/caddy

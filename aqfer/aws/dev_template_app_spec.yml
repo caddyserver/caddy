@@ -1,0 +1,350 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'ECS deployment'
+Parameters:
+  Id:
+    Description: 'AWS access key id'
+    Type: String
+  Secret:
+    Description: 'AWS access secret key'
+    Type: String
+  Jwt:
+    Description: 'JWT secret'
+    Type: String
+  AWSAccount:
+    Description: 'Aws Account Id'
+    Type: String
+  Ami:
+    Description: 'Ami template for linux EC2 instance'
+    Default: 'ami-832b1cf9'
+    Type: String
+  EC2InstanceType:
+    Description: 'EC2 Instance Type'
+    Default: 't2.small'
+    Type: String
+  KeyPair:
+    Description: 'EC2 Key Pair'
+    Type: String
+  EC2SecurityGroupName:
+    Description: 'Security Group name for EC2 instances'
+    Type: String
+  EC2InstanceRoleName:
+    Description: 'IAM Role name for EC2 instances'
+    Type: String
+  ECSClusterName:
+    Description: 'ECS Cluster name'
+    Type: String
+  ECSTaskDefinitionName:
+    Description: 'ECS Task Definition name'
+    Type: String
+  ECRRepoURI:
+    Description: 'Repo URI for uplated ECR container'
+    Type: String
+  ContainerName:
+    Description: 'Docker container name'
+    Type: String
+  Subnet:
+    Description: 'Subnet 1 in Availability Zone'
+    Type: String
+  Vpc:
+    Description: 'VPC Identifier'
+    Type: String
+  ECSLogGroupName:
+    Description: 'ECS LogGroup Name for Aqfer'
+    Type: String
+  AppLogGroupName:
+    Description: App LogGroup Name for Aqfer
+    Type: String
+
+Resources:
+  ApplicationLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Ref AppLogGroupName
+  ECSLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties: 
+      LogGroupName: !Sub "${ECSLogGroupName}A"
+  ECSLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties: 
+      LogGroupName: !Sub "${ECSLogGroupName}B"
+
+  EC2InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref EC2InstanceRoleName
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: ec2.amazonaws.com
+          Action: sts:AssumeRole
+      Path: "/"
+      Policies:
+      - PolicyName: ECSPolicy
+        PolicyDocument:
+          Statement:
+          - Effect: Allow
+            Action:
+            - s3:Get*
+            - s3:List*
+            Resource: "*"
+          - Effect: Allow
+            Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            Resource:
+            - !Sub 'arn:aws:logs:us-east-1:${AWSAccount}:log-group:*'
+          - Effect: Allow
+            Action:
+            - cloudformation:*
+            - codedeploy:*
+            - ec2:*
+            - ecs:*
+            - ecr:*
+            - iam:AddRoleToInstanceProfile
+            - iam:CreateInstanceProfile
+            - iam:CreateRole
+            - iam:DeleteInstanceProfile
+            - iam:DeleteRole
+            - iam:DeleteRolePolicy
+            - iam:GetRole
+            - iam:PassRole
+            - iam:PutRolePolicy
+            - iam:RemoveRoleFromInstanceProfile
+            Resource: "*"
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+      - !Ref EC2InstanceRole
+  LaunchConfiguration:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          default:
+          - runtask
+        runtask:
+          commands:
+            c:
+              command: service awslogs restart
+            d:
+              command: sudo service docker restart
+            e:
+              command: sudo start ecs
+            f:
+              command: !Sub 'aws ecs run-task --cluster ${ECSClusterName} --task-definition ${ECSTaskDefinitionName}:21 --region ${AWS::Region}'
+    Properties:
+            g:
+              command: !Sub 'aws ecs run-task --cluster ${ECSClusterName} --task-definition ${ECSTaskDefinitionName}:20 --region ${AWS::Region}'
+    Properties:
+      AssociatePublicIpAddress: true
+      BlockDeviceMappings:
+      - DeviceName: "/dev/xvdcz"
+        Ebs:
+          VolumeSize: 22
+          VolumeType: gp2
+      EbsOptimized: false
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      ImageId: !Ref Ami
+      InstanceType: !Ref EC2InstanceType
+      KeyName: !Ref KeyPair
+      SecurityGroups:
+      - !Ref EC2SecurityGroup
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          sudo yum update
+
+          # Setup for EC2 instance to register to ECS cluster
+          sudo yum install -y ecs-init
+          echo ECS_CLUSTER=${ECSClusterName} >> /etc/ecs/ecs.config
+          echo ECS_LOGLEVEL=debug >> /etc/ecs/ecs.config
+          echo ECS_AVAILABLE_LOGGING_DRIVERS=[\"awslogs\"] >> /etc/ecs/ecs.config
+
+          # Cloudformation setup to signal and error -- cfn-bootstrap not needed with current ami
+          # wget https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.amzn1.noarch.rpm
+          yum -y install aws-cfn-bootstrap-latest.amzn1.noarch.rpm
+          function error_exit {
+            /opt/aws/bin/cfn-signal -e 1 --reason "$1" --stack ${AWS::StackName} --resource LaunchConfiguration --region ${AWS::Region}
+            exit 1
+          }
+
+          # Setup for ecs-agent cloudwatch logs configuration
+          echo [/var/log/ecs/ecs-agent.log] >> /ecs_logs.conf
+          echo file = /var/log/ecs/ecs-agent.log.* >> /ecs_logs.conf
+          echo log_group_name = /var/log/ecs/ecs-agent.log >> /ecs_logs.conf
+          echo log_stream_name = ${ECSClusterName}/INSTANCE_ID >> /ecs_logs.conf
+          /opt/aws/bin/ec2-metadata -i | sed 's/instance-id: //' >> /instance_id
+          cat /ecs_logs.conf | sed ''s/INSTANCE_ID/''$(cat /instance_id)''/'' > /ecs_logs.conf
+          mkdir -p /var/awslogs/etc/config
+          ln -s /ecs_logs.conf /var/awslogs/etc/config/ecs_logs.conf
+
+          # Setup awslogs agent, signal ecs setup complete
+          wget https://s3.amazonaws.com/aws-cloudwatch/downloads/latest/awslogs-agent-setup.py || error_exit 'Failed to download AWS Logs Agent.'
+          chmod +x ./awslogs-agent-setup.py
+          python awslogs-agent-setup.py -n -r ${AWS::Region} -c s3://aws-codedeploy-us-east-1/cloudwatch/awslogs.conf || error_exit 'Failed run awslogs-agent-setup.py.'
+          /opt/aws/bin/cfn-signal -e 0 --reason "AWS ECS Agent setup complete." --stack ${AWS::StackName} --resource LaunchConfiguration --region ${AWS::Region}
+
+          # Start Cloudformation Init
+          /opt/aws/bin/cfn-init --stack ${AWS::StackName} --resource LaunchConfiguration --region ${AWS::Region}
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      TargetGroupARNs: []
+      DesiredCapacity: 1
+      LoadBalancerNames: []
+      Cooldown: 300
+      MinSize: 0
+      MaxSize: 1
+      VPCZoneIdentifier:
+      - !Ref Subnet 
+      HealthCheckGracePeriod: 0
+      HealthCheckType: EC2
+      TerminationPolicies:
+      - Default
+      LaunchConfigurationName: !Ref LaunchConfiguration
+
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Ref ECSClusterName
+  ECSTaskDefinitionA:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Volumes: []
+      Family: !Ref ECSTaskDefinitionName
+      PlacementConstraints: []
+      ContainerDefinitions:
+      - DnsSearchDomains: []
+        Environment:
+        - Name: AWS_ACCESS_KEY_ID
+          Value: !Ref Id
+        - Name: AWS_SECRET_ACCESS_KEY
+          Value: !Ref Secret
+        - Name: AWS_REGION
+          Value: !Sub "${AWS::Region}"
+        - Name: JWT_SECRET
+          Value: !Ref Jwt
+        ReadonlyRootFilesystem: false
+        Name: !Ref ContainerName
+        Links: []
+        MountPoints: []
+        Image: !Ref ECRRepoURI
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-region: !Sub "${AWS::Region}"
+            awslogs-stream-prefix: ecs
+            awslogs-group: !Sub "${ECSLogGroupName}A"
+        LinuxParameters:
+          Capabilities: {}
+        Essential: true
+        PortMappings:
+        - Protocol: tcp
+          HostPort: 8082
+          ContainerPort: 8082
+        - Protocol: tcp
+          HostPort: 8081
+          ContainerPort: 8081
+        DnsServers: []
+        DockerSecurityOptions: []
+        EntryPoint: []
+        Ulimits:
+        - Name: nofile
+          SoftLimit: 1024000
+          HardLimit: 1024000
+        Privileged: false
+        Memory: 800
+        Command: []
+        ExtraHosts: []
+        Cpu: 512
+        VolumesFrom: []
+        DockerLabels: {}
+  ECSTaskDefinitionB:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Volumes: []
+      Family: !Ref ECSTaskDefinitionName
+      PlacementConstraints: []
+      ContainerDefinitions:
+      - DnsSearchDomains: []
+        Environment:
+        - Name: AWS_ACCESS_KEY_ID
+          Value: !Ref Id
+        - Name: AWS_SECRET_ACCESS_KEY
+          Value: !Ref Secret
+        - Name: AWS_REGION
+          Value: !Sub "${AWS::Region}"
+        - Name: JWT_SECRET
+          Value: !Ref Jwt
+        ReadonlyRootFilesystem: false
+        Name: !Ref ContainerName
+        Links: []
+        MountPoints: []
+        Image: !Ref ECRRepoURI
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-region: !Sub "${AWS::Region}"
+            awslogs-stream-prefix: ecs
+            awslogs-group: !Sub "${ECSLogGroupName}B"
+        LinuxParameters:
+          Capabilities: {}
+        Essential: true
+        PortMappings:
+        - Protocol: tcp
+          HostPort: 7082
+          ContainerPort: 8082
+        - Protocol: tcp
+          HostPort: 7081
+          ContainerPort: 8081
+        DnsServers: []
+        DockerSecurityOptions: []
+        EntryPoint: []
+        Ulimits:
+        - Name: nofile
+          SoftLimit: 1024000
+          HardLimit: 1024000
+        Privileged: false
+        Memory: 800
+        Command: []
+        ExtraHosts: []
+        Cpu: 512
+        VolumesFrom: []
+        DockerLabels: {}
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Ref EC2SecurityGroupName
+      GroupDescription: EC2 Instance Security Group
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 8082
+        ToPort: 8082
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 7082
+        ToPort: 7082
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 8081
+        ToPort: 8081
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 7081
+        ToPort: 7081
+        CidrIp: 0.0.0.0/0

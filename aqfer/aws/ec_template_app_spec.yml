@@ -1,0 +1,55 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'DB deployment'
+Parameters:
+  AWSAccount:
+    Description: 'Aws Account Id'
+    Type: String
+  ECClusterName:
+    Description: 'Elasticache Cluster name'
+    Type: String
+  ECSecurityGroupName:
+    Description: 'Security Group name for Elasticache'
+    Type: String
+  ECSubnetGroupName:
+    Description: 'Subnet Group name for Elasticache'
+    Type: String
+  ECNodeType:
+    Description: 'Elasticache cache size'
+    Default: 'cache.t2.micro'
+    Type: String
+  AvailabilityZone:
+    Description: 'Availability Zone'
+    Type: String
+  Subnet:
+    Description: 'VPC Zone Identifier'
+    Type: String
+  Vpc:
+    Description: 'VPC Identifier'
+    Type: String
+
+Resources:
+  ElastiCache:
+    Type: AWS::ElastiCache::CacheCluster
+    Properties:
+      Engine: "redis"
+      ClusterName: !Ref ECClusterName
+      CacheNodeType: !Ref ECNodeType
+      NumCacheNodes: 1
+      PreferredAvailabilityZone: !Ref AvailabilityZone
+      VpcSecurityGroupIds:
+      - !Ref ECSecurityGroup
+      CacheSubnetGroupName: !Ref ECSubnetGroup
+  ECSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Ref ECSecurityGroupName
+      GroupDescription: 'Elasticache Security Group'
+      VpcId: !Ref Vpc
+  ECSubnetGroup:
+    Type: AWS::ElastiCache::SubnetGroup
+    Properties:
+      CacheSubnetGroupName: !Ref ECSubnetGroupName
+      Description: 'Elasticache Subnet Group'
+      SubnetIds:
+      - !Ref Subnet

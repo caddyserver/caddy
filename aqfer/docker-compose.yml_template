@@ -1,0 +1,12 @@
+version: '2'
+
+services:
+  caddy:
+    image: aqfer-caddy
+    build: .
+    environment:
+      AWS_ACCESS_KEY_ID:
+      AWS_SECRET_ACCESS_KEY:
+      AWS_REGION:
+    ports:
+      - "8082:8082"
