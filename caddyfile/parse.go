@@ -263,6 +263,10 @@ func (p *parser) doImport() error {
 		} else {
 			globPattern = importPattern
 		}
+		if strings.Count(globPattern, "*") > 1 {
+			// See issue #2096 - a pattern with many wildcards can hang for too long
+			return p.Errf("Glob pattern may only contain one wildcard, but have multiple: %s", globPattern)
+		}
 		matches, err = filepath.Glob(globPattern)
 
 		if err != nil {
@@ -440,7 +444,7 @@ func replaceEnvReferences(s, refStart, refEnd string) string {
 	index := strings.Index(s, refStart)
 	for index != -1 {
 		endIndex := strings.Index(s, refEnd)
-		if endIndex != -1 {
+		if endIndex > index {
 			ref := s[index : endIndex+len(refEnd)]
 			s = strings.Replace(s, ref, os.Getenv(ref[len(refStart):len(ref)-len(refEnd)]), -1)
 		} else {

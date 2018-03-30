@@ -228,6 +228,10 @@ func TestParseOneAndImport(t *testing.T) {
 		{`""`, false, []string{}, map[string]int{}},
 
 		{``, false, []string{}, map[string]int{}},
+
+		// test cases found by fuzzing!
+		{`import }{$"`, true, []string{}, map[string]int{}},
+		{`import /*/*.txt`, true, []string{}, map[string]int{}},
 	} {
 		result, err := testParseOne(test.input)
 
