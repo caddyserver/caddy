@@ -263,9 +263,10 @@ func (p *parser) doImport() error {
 		} else {
 			globPattern = importPattern
 		}
-		if strings.Count(globPattern, "*") > 1 {
-			// See issue #2096 - a pattern with many wildcards can hang for too long
-			return p.Errf("Glob pattern may only contain one wildcard, but have multiple: %s", globPattern)
+		if strings.Count(globPattern, "*") > 1 || strings.Count(globPattern, "?") > 1 ||
+			(strings.Contains(globPattern, "[") && strings.Contains(globPattern, "]")) {
+			// See issue #2096 - a pattern with many glob expansions can hang for too long
+			return p.Errf("Glob pattern may only contain one wildcard (*), but has others: %s", globPattern)
 		}
 		matches, err = filepath.Glob(globPattern)
 
@@ -273,8 +274,8 @@ func (p *parser) doImport() error {
 			return p.Errf("Failed to use import pattern %s: %v", importPattern, err)
 		}
 		if len(matches) == 0 {
-			if strings.Contains(globPattern, "*") {
-				log.Printf("[WARNING] No files matching import pattern: %s", importPattern)
+			if strings.ContainsAny(globPattern, "*?[]") {
+				log.Printf("[WARNING] No files matching import glob pattern: %s", importPattern)
 			} else {
 				return p.Errf("File to import not found: %s", importPattern)
 			}
@@ -444,7 +445,7 @@ func replaceEnvReferences(s, refStart, refEnd string) string {
 	index := strings.Index(s, refStart)
 	for index != -1 {
 		endIndex := strings.Index(s, refEnd)
-		if endIndex > index {
+		if endIndex > index+len(refStart) {
 			ref := s[index : endIndex+len(refEnd)]
 			s = strings.Replace(s, ref, os.Getenv(ref[len(refStart):len(ref)-len(refEnd)]), -1)
 		} else {
