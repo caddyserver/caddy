@@ -15,6 +15,7 @@
 package httpserver
 
 import (
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"log"
@@ -207,8 +208,13 @@ func (h *httpContext) InspectServerBlocks(sourceFile string, serverBlocks []cadd
 // MakeServers uses the newly-created siteConfigs to
 // create and return a list of server instances.
 func (h *httpContext) MakeServers() ([]caddy.Server, error) {
-	// make sure TLS is disabled for explicitly-HTTP sites
-	// (necessary when HTTP address shares a block containing tls)
+	// Iterate each site configuration and make sure that:
+	// 1) TLS is disabled for explicitly-HTTP sites (necessary
+	//    when an HTTP address shares a block containing tls)
+	// 2) if QUIC is enabled, TLS ClientAuth is not, because
+	//    currently, QUIC does not support ClientAuth (TODO:
+	//    revisit this when our QUIC implementation supports it)
+	// 3) if TLS ClientAuth is used, StrictHostMatching is on
 	for _, cfg := range h.siteConfigs {
 		if !cfg.TLS.Enabled {
 			continue
@@ -229,6 +235,17 @@ func (h *httpContext) MakeServers() ([]caddy.Server, error) {
 			// sets the listener address will use the default port
 			// instead of 443 because it doesn't know about TLS.
 			cfg.Addr.Port = HTTPSPort
+		}
+		if cfg.TLS.ClientAuth != tls.NoClientCert {
+			if QUIC {
+				return nil, fmt.Errorf("cannot enable TLS client authentication with QUIC, because QUIC does not yet support it")
+			}
+			// this must be enabled so that a client cannot connect
+			// using SNI for another site on this listener that
+			// does NOT require ClientAuth, and then send HTTP
+			// requests with the Host header of this site which DOES
+			// require client auth, thus bypassing it...
+			cfg.StrictHostMatching = true
 		}
 	}
 
@@ -556,7 +573,6 @@ var directives = []string{
 	"minify",       // github.com/hacdias/caddy-minify
 	"ipfilter",     // github.com/pyed/ipfilter
 	"ratelimit",    // github.com/xuqingfeng/caddy-rate-limit
-	"search",       // github.com/pedronasser/caddy-search
 	"expires",      // github.com/epicagency/caddy-expires
 	"forwardproxy", // github.com/caddyserver/forwardproxy
 	"basicauth",

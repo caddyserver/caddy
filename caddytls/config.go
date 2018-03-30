@@ -513,6 +513,14 @@ func assertConfigsCompatible(cfg1, cfg2 *Config) error {
 	if c1.ClientAuth != c2.ClientAuth {
 		return fmt.Errorf("client authentication policy mismatch")
 	}
+	if c1.ClientAuth != tls.NoClientCert && c2.ClientAuth != tls.NoClientCert && c1.ClientCAs != c2.ClientCAs {
+		// Two hosts defined on the same listener are not compatible if they
+		// have ClientAuth enabled, because there's no guarantee beyond the
+		// hostname which config will be used (because SNI only has server name).
+		// To prevent clients from bypassing authentication, require that
+		// ClientAuth be configured in an unambiguous manner.
+		return fmt.Errorf("multiple hosts requiring client authentication ambiguously configured")
+	}
 
 	return nil
 }
