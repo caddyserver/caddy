@@ -128,62 +128,72 @@ func main() {
 		imageId = images[0].Id
 	}
 
-	tagUrl := fmt.Sprintf("http://unix/images/%s/tag?repo=%s&tag=%s", imageId, url.QueryEscape(repoUri), url.QueryEscape(imageVersion))
-	resp, err = httpc.Post(tagUrl, "application/json", nil)
-	if err != nil {
-		fail(fmt.Errorf("error tagging image: %s", err.Error()))
-	}
-	if resp.StatusCode >= 300 || resp.StatusCode < 200 {
-		bb, err := ioutil.ReadAll(resp.Body)
+	tagImage := func(tag string) {
+		tagUrl := fmt.Sprintf("http://unix/images/%s/tag?repo=%s&tag=%s", imageId, url.QueryEscape(repoUri), url.QueryEscape(tag))
+		resp, err = httpc.Post(tagUrl, "application/json", nil)
 		if err != nil {
-			fail(fmt.Errorf("error reading tag response: %s", err.Error()))
+			fail(fmt.Errorf("error tagging image: %s", err.Error()))
 		}
-		fail(fmt.Errorf("error tagging image: %s", bb))
+		if resp.StatusCode >= 300 || resp.StatusCode < 200 {
+			bb, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				fail(fmt.Errorf("error reading tag response: %s", err.Error()))
+			}
+			fail(fmt.Errorf("error tagging image: %s", bb))
+		}
 	}
 
-	pushUrl := fmt.Sprintf("http://unix/images/%s/push?tag=%s", url.PathEscape(repoUri),
-		url.QueryEscape(imageVersion))
-	req, err := http.NewRequest("POST", pushUrl, nil)
-	if err != nil {
-		fail(err)
-	}
-	authConfig := struct {
-		Username      string `json:"username"`
-		Password      string `json:"password"`
-		ServerAddress string `json:"serveraddress"`
-	}{
-		s[:pos], s[pos+1:], repoUri[:strings.Index(repoUri, "/")],
-	}
-	bb, err = json.Marshal(&authConfig)
-	if err != nil {
-		fail(fmt.Errorf("error marshalling auth config: %s", err.Error()))
-	}
-	auth := base64.StdEncoding.EncodeToString(bb)
-	log.Printf("Auth: %s", auth)
-	req.Header.Set("X-Registry-Auth", auth)
-	resp, err = httpc.Do(req)
-	if err != nil {
-		fail(fmt.Errorf("error pushing image: %s", err.Error()))
-	}
-	log.Printf("Push status: %s", resp.StatusCode)
-	if resp.StatusCode >= 300 || resp.StatusCode < 200 {
-		bb, err := ioutil.ReadAll(resp.Body)
+	tagImage("latest")
+	tagImage(imageVersion)
+
+	pushImage := func(tag string) {
+		pushUrl := fmt.Sprintf("http://unix/images/%s/push?tag=%s", url.PathEscape(repoUri),
+			url.QueryEscape(tag))
+		req, err := http.NewRequest("POST", pushUrl, nil)
 		if err != nil {
-			fail(fmt.Errorf("error reading push response: %s", err.Error()))
+			fail(err)
 		}
-		fail(fmt.Errorf("error pushing image: %s", bb))
-	}
-	buf := make([]byte, 1024)
-	for ; ; {
-		n, err := resp.Body.Read(buf)
+		authConfig := struct {
+			Username      string `json:"username"`
+			Password      string `json:"password"`
+			ServerAddress string `json:"serveraddress"`
+		}{
+			s[:pos], s[pos+1:], repoUri[:strings.Index(repoUri, "/")],
+		}
+		bb, err = json.Marshal(&authConfig)
 		if err != nil {
-			if err == io.EOF {
-				break
-			} else {
+			fail(fmt.Errorf("error marshalling auth config: %s", err.Error()))
+		}
+		auth := base64.StdEncoding.EncodeToString(bb)
+		log.Printf("Auth: %s", auth)
+		req.Header.Set("X-Registry-Auth", auth)
+		resp, err = httpc.Do(req)
+		if err != nil {
+			fail(fmt.Errorf("error pushing image: %s", err.Error()))
+		}
+		log.Printf("Push status: %s", resp.StatusCode)
+		if resp.StatusCode >= 300 || resp.StatusCode < 200 {
+			bb, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
 				fail(fmt.Errorf("error reading push response: %s", err.Error()))
 			}
+			fail(fmt.Errorf("error pushing image: %s", bb))
 		}
-		fmt.Print(string(buf[:n]))
+		buf := make([]byte, 1024)
+		for ; ; {
+			n, err := resp.Body.Read(buf)
+			if err != nil {
+				if err == io.EOF {
+					break
+				} else {
+					fail(fmt.Errorf("error reading push response: %s", err.Error()))
+				}
+			}
+			fmt.Print(string(buf[:n]))
+		}
+		resp.Body.Close()
 	}
-	resp.Body.Close()
+
+	pushImage("latest")
+	pushImage(imageVersion)
 }
