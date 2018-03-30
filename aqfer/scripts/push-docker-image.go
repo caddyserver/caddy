@@ -183,7 +183,7 @@ func main() {
 	}
 
 	tagImage := func(tag string) {
-		tagUrl := fmt.Sprintf("http://unix/images/%s/tag?repo=%s&tag=%s", imageId, url.QueryEscape(repoUri), url.QueryEscape(tag))
+		tagUrl := fmt.Sprintf("http://unix/images/%s/tag?repo=%s&tag=%s&force=1", imageId, url.QueryEscape(repoUri), url.QueryEscape(tag))
 		resp, err = httpc.Post(tagUrl, "application/json", nil)
 		if err != nil {
 			fail(fmt.Errorf("error tagging image: %s", err.Error()))
