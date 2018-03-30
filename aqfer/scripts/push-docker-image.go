@@ -98,11 +98,11 @@ func main() {
 		},
 	}
 
-	qs, err := json.Marshal(map[string][]string{"reference": {imageName + ":" + imageVersion}})
+	/*qs, err := json.Marshal(map[string][]string{"reference": {imageName + ":" + imageVersion}})
 	if err != nil {
 		fail(fmt.Errorf("error constructing image filter: %s", err.Error()))
-	}
-	inspectUrl := fmt.Sprintf("http://unix/images/json?filters=%s", url.QueryEscape(string(qs)))
+	}*/
+	inspectUrl := fmt.Sprintf("http://unix/v1.19/images/json?filter=%s", url.QueryEscape(imageName))
 	resp, err := httpc.Get(inspectUrl)
 	if err != nil {
 		fail(fmt.Errorf("error inspecting image: %s", err.Error()))
