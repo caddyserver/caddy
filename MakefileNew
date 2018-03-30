@@ -1,7 +1,3 @@
-ifeq (${VERSION},)
-SERVICE_VERSION = SNAPSHOT
-endif
-
 ROOT_NAME := aqfer
 SERVICE_NAME := imds
 REPO_REGION := us-east-1
@@ -39,11 +35,11 @@ ecr_repo_push: build_caddy_image ecr_push
 
 .PHONY: build_new_caddy_image
 build_new_caddy_image: build_caddy
-	docker build --no-cache -f aqfer/Dockerfile.caddy -t ${ROOT_NAME}_${SERVICE_NAME}:${SERVICE_VERSION} .
+	docker build --no-cache -f aqfer/Dockerfile.caddy -t ${ROOT_NAME}_${SERVICE_NAME} .
 
 .PHONY: build_caddy_image
 build_caddy_image: build_caddy
-	docker build -f aqfer/Dockerfile.caddy -t ${ROOT_NAME}_${SERVICE_NAME}:${SERVICE_VERSION} .
+	docker build -f aqfer/Dockerfile.caddy -t ${ROOT_NAME}_${SERVICE_NAME} .
 
 .PHONY: build_caddy
 build_caddy:
@@ -51,7 +47,7 @@ build_caddy:
 
 .PHONY: ecr_push
 ecr_push:
-	cd aqfer/scripts && go get ./.. && go run push-docker-image.go ${ROOT_NAME}_${SERVICE_NAME} ${SERVICE_VERSION} ${REPO_REGION}
+	cd aqfer/scripts && go get ./.. && go run push-docker-image.go ${ROOT_NAME}_${SERVICE_NAME} ${REPO_REGION}
 
 .PHONY: run_unit_tests
 run_unit_tests:
