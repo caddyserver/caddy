@@ -7,7 +7,7 @@ APP_LOG_GROUP_NAME := aqfer.io
 EC_CLUSTER_NAME := elasticache${ROOT_NAME}${DBVERSION}
 
 get_major_version:
-	@cat major_version
+	@cat MAJOR_VERSION
 
 # only needed on first run, to make clean aws docker image
 .PHONY: setup
