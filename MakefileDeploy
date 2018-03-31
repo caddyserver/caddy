@@ -1,0 +1,147 @@
+ROOT_NAME := aqfer
+SERVICE_NAME := imds
+SERVICE_VERSION := 0.0.3
+REPO_REGION := us-east-1
+
+DBVERSION := 0
+ECSVERSION := 0
+ECSNAME := ECS${ROOT_NAME}${ECSVERSION}
+
+JWT := testkey
+GIT_USER := fellou89
+
+AMI := ami-832b1cf9
+# AMI := ami-fad25980 # ecs optimized ami
+INSTANCE_TYPE := t2.medium
+# INSTANCE_TYPE := c5.large
+VPC := vpc-5a340c22
+SUBNET := subnet-867f59cd
+SUBNET2 := subnet-2cba2771
+ZONE := us-east-1a
+APP_LOG_GROUP_NAME := aqfer.io
+KEYPAIR_NAME := AqferKeyPair
+
+EC_SECURITY_GROUP := ${ROOT_NAME}EC-sg${DBVERSION}
+EC_CLUSTER_NAME := elasticache${ROOT_NAME}${DBVERSION}
+EC_NODE_TYPE := cache.m4.large
+EC_SUBNET_GROUP := elasticache-subnet-${ROOT_NAME}${DBVERSION}
+DAX_SECURITY_GROUP := ${ROOT_NAME}DAX-sg${DBVERSION}
+DAX_CLUSTER_NAME := dax${ROOT_NAME}${DBVERSION}
+DAX_NODE_TYPE := dax.r3.large
+DYNAMO_TABLE := ${ROOT_NAME}-idsync${DBVERSION}
+PARTITION_KEY := partition-key
+SORT_KEY := sort-key
+
+ECS_CLUSTER_NAME := ${ROOT_NAME}Cluster${ECSVERSION}
+TASK_DEFINITION := ${ROOT_NAME}TaskDefinition${ECSVERSION}
+ECS_LOG_GROUP_NAME := /ecs/${TASK_DEFINITION}
+ECS_SERVICE := ${ROOT_NAME}Service${ECSVERSION}
+EC2_SECURITY_GROUP := ${ROOT_NAME}EC2-sg${ECSVERSION}
+LOAD_BALANCER_NAME := ${ROOT_NAME}LoadBalancer${ECSVERSION}
+LB_SECURITY_GROUP := ${ROOT_NAME}LB-sg${ECSVERSION}
+
+
+# bucket name must be all lowercase, and start/end with lowecase letter or number
+ARTIFACTS_BUCKET := cloudformation-art-${ROOT_NAME}
+
+# only needed on first run, to make clean aws docker image
+# to make cloudformation artifacts bucket
+# and to make and store locally an ec2 keypair
+.PHONY: setup
+setup: aws_build create_artifact_bucket create_keypair ecr_create
+
+# updated the runtime environment image and kills current tasks
+# ECS service will spin up new tasks that will run updated docker containers
+.PHONY: update_tasks
+update_tasks: stop_tasks update_ecs
+
+
+# deployment environment image
+.PHONY: aws_build
+aws_build:
+	docker build --no-cache -f aqfer/Dockerfile.aws -t aws_image .
+
+
+.PHONY: create_artifact_bucket
+create_artifact_bucket:
+	docker-compose -f aqfer/docker-compose-aws.yml run \
+		aws-service aws s3 mb s3://${ARTIFACTS_BUCKET}/
+
+
+.PHONY: create_keypair
+create_keypair:
+	docker-compose -f aqfer/docker-compose-aws.yml run \
+	aws-service /scripts/keypair.sh ${KEYPAIR_NAME} 2>&1 > aqfer/aws/${KEYPAIR_NAME}.pem
+	chmod 700 aqfer/aws/${KEYPAIR_NAME}$1.pem
+
+.PHONY: ecr_create
+ecr_create:
+	docker-compose -f aqfer/docker-compose-aws.yml run aws-service /scripts/ecr_create.sh ${ROOT_NAME}_${SERVICE_NAME} 2>&1 > /tmp/ecrUri
+
+.PHONY: spin_up_ecs
+spin_up_ecs:
+	docker-compose -f aqfer/docker-compose-aws.yml run \
+	-e Jwt=${JWT} \
+	-e Ami=${AMI} \
+	-e Subnet=${SUBNET} \
+	-e Subnet2=${SUBNET2} \
+	-e Vpc=${VPC} \
+	-e AvailabilityZone=${ZONE} \
+	-e KeyPair=${KEYPAIR_NAME} \
+	-e LoadBalancerName=${LOAD_BALANCER_NAME} \
+	-e LBSecurityGroupName=${LB_SECURITY_GROUP} \
+	-e TargetGroupName=${ROOT_NAME}TargetGroup${ECSVERSION} \
+	-e EC2InstanceType=${INSTANCE_TYPE} \
+	-e EC2SecurityGroupName=${EC2_SECURITY_GROUP} \
+	-e EC2InstanceRoleName=${ROOT_NAME}EC2InstanceRole${ECSVERSION} \
+	-e ECSClusterName=${ECS_CLUSTER_NAME} \
+	-e ECSServiceRoleName=${ROOT_NAME}ECSServiceRole${ECSVERSION} \
+	-e ECSTaskDefinitionName=${TASK_DEFINITION} \
+	-e ECSServiceName=${ROOT_NAME}Service${ECSVERSION} \
+	-e ECRRepoURI=$(shell cat /tmp/ecrUri):${SERVICE_VERSION} \
+	-e ContainerName=${ROOT_NAME}-caddy \
+	-e AppLogGroupName=${APP_LOG_GROUP_NAME} \
+	-e ECSLogGroupName=${ECS_LOG_GROUP_NAME} \
+	aws-service /scripts/spin_up_ecs.sh ${ARTIFACTS_BUCKET} ${ECSNAME} \
+	${EC_SECURITY_GROUP} $(shell cat /tmp/ec_endpoint | sed -E "s/.*:([0-9]*).*/\1/")
+
+.PHONY: update_ecs
+update_ecs:
+	docker-compose -f aqfer/docker-compose-aws.yml run \
+	-e Jwt=${JWT} \
+	-e Ami=${AMI} \
+	-e Subnet=${SUBNET} \
+	-e Subnet2=${SUBNET2} \
+	-e Vpc=${VPC} \
+	-e AvailabilityZone=${ZONE} \
+	-e KeyPair=${KEYPAIR_NAME} \
+	-e LoadBalancerName=${LOAD_BALANCER_NAME} \
+	-e LBSecurityGroupName=${LB_SECURITY_GROUP} \
+	-e TargetGroupName=${ROOT_NAME}TargetGroup${ECSVERSION} \
+	-e EC2InstanceType=${INSTANCE_TYPE} \
+	-e EC2SecurityGroupName=${EC2_SECURITY_GROUP} \
+	-e EC2InstanceRoleName=${ROOT_NAME}EC2InstanceRole${ECSVERSION} \
+	-e ECSClusterName=${ECS_CLUSTER_NAME} \
+	-e ECSServiceRoleName=${ROOT_NAME}ECSServiceRole${ECSVERSION} \
+	-e ECSTaskDefinitionName=${TASK_DEFINITION} \
+	-e ECSServiceName=${ROOT_NAME}Service${ECSVERSION} \
+	-e ECRRepoURI=$(shell cat /tmp/ecrUri):${SERVICE_VERSION} \
+	-e ContainerName=${ROOT_NAME}-caddy \
+	-e AppLogGroupName=${APP_LOG_GROUP_NAME} \
+	-e ECSLogGroupName=${ECS_LOG_GROUP_NAME} \
+	aws-service /scripts/update_ecs.sh ${ARTIFACTS_BUCKET} ${ECSNAME} \
+	${EC_SECURITY_GROUP} $(shell cat /tmp/ec_endpoint | sed -E "s/.*:([0-9]*).*/\1/")
+
+#	-e ECRRepoURI=392630614516.dkr.ecr.us-east-1.amazonaws.com/ecr-aqfer0:latest \
+# run `make get_dns_name` to get service address
+.PHONY: get_dns_name
+get_dns_name:
+	docker-compose -f aqfer/docker-compose-aws.yml run aws-service \
+	      aws elbv2 describe-load-balancers --names ${LOAD_BALANCER_NAME} 2>&1 > /tmp/DNSName
+	@echo $(shell cat /tmp/DNSName | sed -n -E "s/.*\"DNSName\".*\"(.*)\",/\1/p")
+
+
+.PHONY: stop_tasks
+stop_tasks:
+	docker-compose -f aqfer/docker-compose-aws.yml run aws-service /scripts/stop_tasks.sh ${ECS_CLUSTER_NAME}
+
