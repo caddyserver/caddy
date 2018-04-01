@@ -1,6 +1,5 @@
 ROOT_NAME := aqfer
 SERVICE_NAME := imds
-SERVICE_VERSION := 0.0.3
 REPO_REGION := us-east-1
 
 DBVERSION := 0
@@ -144,4 +143,3 @@ get_dns_name:
 .PHONY: stop_tasks
 stop_tasks:
 	docker-compose -f aqfer/docker-compose-aws.yml run aws-service /scripts/stop_tasks.sh ${ECS_CLUSTER_NAME}
-
