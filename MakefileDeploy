@@ -47,7 +47,7 @@ ARTIFACTS_BUCKET := cloudformation-art-${ROOT_NAME}
 # to make cloudformation artifacts bucket
 # and to make and store locally an ec2 keypair
 .PHONY: setup
-setup: aws_build create_artifact_bucket create_keypair ecr_create
+setup: aws_build create_artifact_bucket create_keypair ecr_create get_db_endpoints
 
 # updated the runtime environment image and kills current tasks
 # ECS service will spin up new tasks that will run updated docker containers
@@ -63,19 +63,19 @@ aws_build:
 
 .PHONY: create_artifact_bucket
 create_artifact_bucket:
-	docker-compose -f aqfer/docker-compose-aws.yml run \
-		aws-service aws s3 mb s3://${ARTIFACTS_BUCKET}/
-
+	docker run -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION \
+	--entrypoint aws aws_image s3 mb s3://${ARTIFACTS_BUCKET}/
 
 .PHONY: create_keypair
 create_keypair:
-	docker-compose -f aqfer/docker-compose-aws.yml run \
-	aws-service /scripts/keypair.sh ${KEYPAIR_NAME} 2>&1 > aqfer/aws/${KEYPAIR_NAME}.pem
+	docker run -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION \
+	--entrypoint /scripts/keypair.sh aws_image ${KEYPAIR_NAME} > aqfer/aws/${KEYPAIR_NAME}.pem 2> /tmp/kayPairError
 	chmod 700 aqfer/aws/${KEYPAIR_NAME}$1.pem
 
 .PHONY: ecr_create
 ecr_create:
-	docker-compose -f aqfer/docker-compose-aws.yml run aws-service /scripts/ecr_create.sh ${ROOT_NAME}_${SERVICE_NAME} 2>&1 > /tmp/ecrUri
+	docker run -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION \
+	--entrypoint /scripts/ecr_create.sh aws_image ${ROOT_NAME}_${SERVICE_NAME} > /tmp/ecrUri 2> /tmp/ecrError
 
 .PHONY: spin_up_ecs
 spin_up_ecs:
@@ -104,9 +104,14 @@ spin_up_ecs:
 	aws-service /scripts/spin_up_ecs.sh ${ARTIFACTS_BUCKET} ${ECSNAME} \
 	${EC_SECURITY_GROUP} $(shell cat /tmp/ec_endpoint | sed -E "s/.*:([0-9]*).*/\1/")
 
+.PHONY: get_db_endpoints
+get_db_endpoints:
+	docker run -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION \
+	--entrypoint /scripts/ec_endpoint.sh aws_image ${EC_CLUSTER_NAME} 2>&1 > /tmp/ec_endpoint
+
 .PHONY: update_ecs
 update_ecs:
-	docker-compose -f aqfer/docker-compose-aws.yml run \
+	docker run -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION \
 	-e Jwt=${JWT} \
 	-e Ami=${AMI} \
 	-e Subnet=${SUBNET} \
@@ -128,7 +133,7 @@ update_ecs:
 	-e ContainerName=${ROOT_NAME}-caddy \
 	-e AppLogGroupName=${APP_LOG_GROUP_NAME} \
 	-e ECSLogGroupName=${ECS_LOG_GROUP_NAME} \
-	aws-service /scripts/update_ecs.sh ${ARTIFACTS_BUCKET} ${ECSNAME} \
+	--entrypoint /scripts/update_ecs.sh aws_image ${ARTIFACTS_BUCKET} ${ECSNAME} \
 	${EC_SECURITY_GROUP} $(shell cat /tmp/ec_endpoint | sed -E "s/.*:([0-9]*).*/\1/")
 
 #	-e ECRRepoURI=392630614516.dkr.ecr.us-east-1.amazonaws.com/ecr-aqfer0:latest \
@@ -142,4 +147,5 @@ get_dns_name:
 
 .PHONY: stop_tasks
 stop_tasks:
-	docker-compose -f aqfer/docker-compose-aws.yml run aws-service /scripts/stop_tasks.sh ${ECS_CLUSTER_NAME}
+	docker run -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION \
+	--entrypoint /scripts/stop_tasks.sh aws_image ${ECS_CLUSTER_NAME}
