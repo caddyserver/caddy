@@ -798,7 +798,7 @@ func startServers(serverList []Server, inst *Instance, restartFds map[string]res
 				continue
 			}
 			if strings.Contains(err.Error(), "use of closed network connection") {
-				// this error is normal when closing the listener
+				// this error is normal when closing the listener; see https://github.com/golang/go/issues/4373
 				continue
 			}
 			log.Println(err)

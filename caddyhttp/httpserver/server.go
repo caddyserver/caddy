@@ -319,6 +319,9 @@ func (s *Server) Serve(ln net.Listener) error {
 	}
 
 	err := s.Server.Serve(ln)
+	if err == http.ErrServerClosed {
+		err = nil // not an error worth reporting since closing a server is intentional
+	}
 	if s.quicServer != nil {
 		s.quicServer.Close()
 	}
