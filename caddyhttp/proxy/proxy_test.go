@@ -914,15 +914,14 @@ func TestHostSimpleProxyNoHeaderForward(t *testing.T) {
 }
 
 func TestReverseProxyTransparentHeaders(t *testing.T) {
-	testCases := []struct{
-		name string
-		remoteAddr string
+	testCases := []struct {
+		name               string
+		remoteAddr         string
 		forwardedForHeader string
-		expected []string
-	} {
+		expected           []string
+	}{
 		{"No header", "192.168.0.1:80", "", []string{"192.168.0.1"}},
 		{"Existing", "192.168.0.1:80", "1.1.1.1, 2.2.2.2", []string{"1.1.1.1, 2.2.2.2, 192.168.0.1"}},
-
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1005,17 +1004,16 @@ func TestHostHeaderReplacedUsingForward(t *testing.T) {
 }
 
 func TestBasicAuth(t *testing.T) {
-	testCases := []struct{
-		name string
+	testCases := []struct {
+		name         string
 		upstreamUser *url.Userinfo
-		clientUser *url.Userinfo
-	} {
+		clientUser   *url.Userinfo
+	}{
 		{"Nil Both", nil, nil},
 		{"Nil Upstream User", nil, url.UserPassword("username", "password")},
 		{"Nil Client User", url.UserPassword("usename", "password"), nil},
 		{"Both Provided", url.UserPassword("unused", "unused"),
-		url.UserPassword("username", "password")},
-
+			url.UserPassword("username", "password")},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
