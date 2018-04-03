@@ -2,9 +2,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: 'DB deployment'
 Parameters:
-  AWSAccount:
-    Description: 'Aws Account Id'
-    Type: String
   ECClusterName:
     Description: 'Elasticache Cluster name'
     Type: String
@@ -126,7 +123,7 @@ Resources:
             - dynamodb:DescribeTable
             - dynamodb:ListTables
             Resource:
-              - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWSAccount}:table/${DynamoTableName}"
+              - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${DynamoTableName}"
   DaxSubnetGroup:
     Type: AWS::DAX::SubnetGroup
     Properties:

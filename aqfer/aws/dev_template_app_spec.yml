@@ -11,9 +11,6 @@ Parameters:
   Jwt:
     Description: 'JWT secret'
     Type: String
-  AWSAccount:
-    Description: 'Aws Account Id'
-    Type: String
   Ami:
     Description: 'Ami template for linux EC2 instance'
     Default: 'ami-832b1cf9'
@@ -97,7 +94,7 @@ Resources:
             - logs:CreateLogStream
             - logs:PutLogEvents
             Resource:
-            - !Sub 'arn:aws:logs:us-east-1:${AWSAccount}:log-group:*'
+            - !Sub 'arn:aws:logs:us-east-1:${AWS::AccountId}:log-group:*'
           - Effect: Allow
             Action:
             - cloudformation:*

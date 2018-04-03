@@ -5,7 +5,7 @@
 :8082 {
   # errors stdout
   secrets .secrets.yml
-  awscloudwatch debug APP_LOG_GROUP_NAME development 65536
+  # awscloudwatch debug APP_LOG_GROUP_NAME development 65536
 
   reauth {
     path /v1

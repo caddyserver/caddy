@@ -1,0 +1,256 @@
+STAGE := preprod
+SERVICE_NAME := imds
+MAJOR_VERSION := 0
+SERVICE_VERSION := 0.0.0
+ROOT_NAME := aqfer
+DB_NAME := imdsCache-${STAGE}
+ECS_NAME := imds-${STAGE}
+REPO_REGION := us-west-2
+
+JWT := testkey
+GIT_USER := fellou89
+
+AMI := ami-0bc5713607472cef7
+# AMI := ami-fad25980 # ecs optimized ami
+INSTANCE_TYPE := t2.medium
+# INSTANCE_TYPE := c5.large
+VPC := vpc-fa6ba49e
+SUBNET := subnet-aadc37dc
+SUBNET2 := subnet-70c51314
+ZONE := us-west-2a
+APP_LOG_GROUP_NAME := ${SERVICE_NAME}
+KEYPAIR_NAME := ${ROOT_NAME}_${SERVICE_NAME}-${STAGE}
+
+EC_SECURITY_GROUP := ${SERVICE_NAME}EC-${STAGE}
+EC_CLUSTER_NAME := ${SERVICE_NAME}EC-${STAGE}
+EC_NODE_TYPE := cache.m4.large
+EC_SUBNET_GROUP := subnet-${SERVICE_NAME}EC-${STAGE}
+DAX_SECURITY_GROUP := ${SERVICE_NAME}DAX-${STAGE}
+DAX_CLUSTER_NAME := ${SERVICE_NAME}DAX-${STAGE}
+DAX_NODE_TYPE := dax.r3.large
+DYNAMO_TABLE := ${SERVICE_NAME}-idsync-${STAGE}
+PARTITION_KEY := partition-key
+SORT_KEY := sort-key
+
+TASK_DEFINITION := ${SERVICE_NAME}TaskDefinition-${STAGE}
+EC2_SECURITY_GROUP := ${SERVICE_NAME}EC2-${STAGE}
+EC2_INSTANCE_ROLE_NAME := ${SERVICE_NAME}EC2InstanceRole-${STAGE}
+ECS_CLUSTER_NAME := ${SERVICE_NAME}ECS-${STAGE}
+ECS_LOG_GROUP_NAME := /ecs/${TASK_DEFINITION}
+ECS_TARGET_GROUP_NAME := ${SERVICE_NAME}TargetGroup-${STAGE}
+ECS_SERVICE_NAME := ${SERVICE_NAME}Service-${STAGE}
+ECS_SERVICE_ROLE_NAME := ${SERVICE_NAME}ServiceRole-${STAGE}
+LOAD_BALANCER_NAME := ${SERVICE_NAME}-${STAGE}
+LB_SECURITY_GROUP := ${SERVICE_NAME}LB-${STAGE}
+
+
+# bucket name must be all lowercase, and start/end with lowercase letter or number
+ARTIFACTS_BUCKET := cloudformation-${SERVICE_NAME}-artifacts
+
+.PHONY: setup_and_launch
+setup_and_launch: setup launch
+
+# only needed on first run, to make clean aws docker image
+# to make cloud-formation artifacts bucket
+# and to make and store locally an ec2 keypair
+.PHONY: setup
+setup: aws_build create_artifact_bucket create_keypair
+
+# this launches the full stack: first the db,
+# then update_container_repo writes the db endpoints on the caddyfile and updates the runtime image
+# and last, the runtime stack (ECS) goes up with the newly updated docker image
+.PHONY: launch
+launch: spin_up_db update_container_repo spin_up_ecs
+
+# kills current tasks and update ecs to use the latest image
+# ECS service will spin up new tasks that will run updated docker containers
+.PHONY: update_tasks
+update_tasks: stop_tasks update_ecs
+
+
+# has to be run after databases are up or else the caddyfile database sections will point to nothing
+.PHONY: update_container_repo
+update_container_repo: ready_caddyfile ecr_repo_push
+
+
+# deployment environment image
+.PHONY: aws_build
+aws_build:
+	docker build --no-cache -f aqfer/Dockerfile.aws -t aws_image .
+
+
+.PHONY: build_new_caddy_image
+build_new_caddy_image: build_caddy
+	docker build --no-cache -f aqfer/Dockerfile.caddy -t ${ROOT_NAME}_${SERVICE_NAME} .
+
+.PHONY: build_caddy_image
+build_caddy_image: build_caddy
+	docker build -f aqfer/Dockerfile.caddy -t ${ROOT_NAME}_${SERVICE_NAME} .
+
+.PHONY: build_caddy
+build_caddy:
+	cd caddy && go run build.go --goos linux
+
+
+.PHONY: create_artifact_bucket
+create_artifact_bucket:
+	docker-compose -f aqfer/docker-compose-aws.yml run \
+		aws-service aws s3 mb s3://${ARTIFACTS_BUCKET}/
+
+.PHONY: create_keypair
+create_keypair:
+	docker-compose -f aqfer/docker-compose-aws.yml run \
+	aws-service /scripts/keypair.sh ${KEYPAIR_NAME} 2>&1 > aqfer/aws/${KEYPAIR_NAME}.pem
+	chmod 700 aqfer/aws/${KEYPAIR_NAME}$1.pem
+
+
+.PHONY: spin_up_db
+spin_up_db:
+	docker run \
+    -e AWS_ACCESS_KEY_ID \
+    -e AWS_SECRET_ACCESS_KEY \
+    -e AWS_DEFAULT_REGION \
+	-e AvailabilityZone=${ZONE} \
+	-e Subnet=${SUBNET} \
+	-e Vpc=${VPC} \
+	-e ECSecurityGroupName=${EC_SECURITY_GROUP} \
+	-e ECSubnetGroupName=${EC_SUBNET_GROUP} \
+	-e ECNodeType=${EC_NODE_TYPE} \
+	-e ECClusterName=${EC_CLUSTER_NAME} \
+	--entrypoint /scripts/spin_up_db.sh aws_image ${ARTIFACTS_BUCKET} ${DB_NAME}
+
+.PHONY: tear_down_db
+tear_down_db:
+	docker-compose -f aqfer/docker-compose-aws.yml run aws-service aws cloudformation delete-stack --stack-name ${DB_NAME}
+
+
+.PHONY: get_db_endpoints
+get_db_endpoints:
+	docker-compose -f aqfer/docker-compose-aws.yml run aws-service /scripts/ec_endpoint.sh ${EC_CLUSTER_NAME} 2>&1 > /tmp/ec_endpoint
+
+
+.PHONY: ready_caddyfile
+ready_caddyfile: get_db_endpoints
+	cat aqfer/Caddyfile_template | sed 's/APP_LOG_GROUP_NAME/'${APP_LOG_GROUP_NAME}'/g' > /tmp/Caddyfile
+	cat /tmp/Caddyfile | sed 's/EC_ENDPOINT/'$(shell cat /tmp/ec_endpoint)'/g' > aqfer/Caddyfile
+
+
+.PHONY: ecr_repo_push
+ecr_repo_push: build_caddy_image ecr_create ecr_push
+
+
+.PHONY: ecr_create
+ecr_create:
+	docker run -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION \
+	--entrypoint /scripts/ecr_create.sh aws_image ${ROOT_NAME}_${SERVICE_NAME} > /tmp/ecrUri 2> /tmp/ecrError
+
+
+.PHONY: ecr_push
+ecr_push:
+	cd aqfer/scripts && go get ./.. && go run push-docker-image.go ${ROOT_NAME}_${SERVICE_NAME} $(shell cat MAJOR_VERSION) ${REPO_REGION} > /tmp/pushDockerImage 2> /tmp/pushDockerImageErr
+	cat /tmp/pushDockerImageErr | sed -E -n "s/.*version ([0-9]+.[0-9]+.[0-9]+).*/\1/p" > /tmp/serviceVersion
+
+
+.PHONY: spin_up_ecs
+spin_up_ecs:
+	docker run -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION \
+	-e Jwt=${JWT} \
+	-e Ami=${AMI} \
+	-e Subnet=${SUBNET} \
+	-e Subnet2=${SUBNET2} \
+	-e Vpc=${VPC} \
+	-e AvailabilityZone=${ZONE} \
+	-e KeyPair=${KEYPAIR_NAME} \
+	-e LoadBalancerName=${LOAD_BALANCER_NAME} \
+	-e LBSecurityGroupName=${LB_SECURITY_GROUP} \
+	-e TargetGroupName=${ECS_TARGET_GROUP_NAME} \
+	-e EC2InstanceType=${INSTANCE_TYPE} \
+	-e EC2SecurityGroupName=${EC2_SECURITY_GROUP} \
+	-e EC2InstanceRoleName=${EC2_INSTANCE_ROLE_NAME} \
+	-e ECSClusterName=${ECS_CLUSTER_NAME} \
+	-e ECSServiceRoleName=${ECS_SERVICE_ROLE_NAME} \
+	-e ECSTaskDefinitionName=${TASK_DEFINITION} \
+	-e ECSServiceName=${ECS_SERVICE_NAME} \
+	-e ECRRepoURI=$(shell cat /tmp/ecrUri):$(shell cat /tmp/serviceVersion) \
+	-e ContainerName=${ROOT_NAME}-${SERVICE_NAME} \
+	-e AppLogGroupName=${APP_LOG_GROUP_NAME} \
+	-e ECSLogGroupName=${ECS_LOG_GROUP_NAME} \
+	--entrypoint /scripts/spin_up_ecs.sh aws_image ${ARTIFACTS_BUCKET} ${ECS_NAME} \
+	${EC_SECURITY_GROUP} $(shell cat /tmp/ec_endpoint | sed -E "s/.*:([0-9]*).*/\1/")
+
+
+.PHONY: update_ecs
+update_ecs:
+	docker run -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION \
+	-e Jwt=${JWT} \
+	-e Ami=${AMI} \
+	-e Subnet=${SUBNET} \
+	-e Subnet2=${SUBNET2} \
+	-e Vpc=${VPC} \
+	-e AvailabilityZone=${ZONE} \
+	-e KeyPair=${KEYPAIR_NAME} \
+	-e LoadBalancerName=${LOAD_BALANCER_NAME} \
+	-e LBSecurityGroupName=${LB_SECURITY_GROUP} \
+	-e TargetGroupName=${ROOT_NAME}TargetGroup${ECSVERSION} \
+	-e EC2InstanceType=${INSTANCE_TYPE} \
+	-e EC2SecurityGroupName=${EC2_SECURITY_GROUP} \
+	-e EC2InstanceRoleName=${ROOT_NAME}EC2InstanceRole${ECSVERSION} \
+	-e ECSClusterName=${ECS_CLUSTER_NAME} \
+	-e ECSServiceRoleName=${ROOT_NAME}ECSServiceRole${ECSVERSION} \
+	-e ECSTaskDefinitionName=${TASK_DEFINITION} \
+	-e ECSServiceName=${ROOT_NAME}Service${ECSVERSION} \
+	-e ECRRepoURI=$(shell cat /tmp/ecrUri):${SERVICE_VERSION} \
+	-e ContainerName=${ROOT_NAME}-caddy \
+	-e AppLogGroupName=${APP_LOG_GROUP_NAME} \
+	-e ECSLogGroupName=${ECS_LOG_GROUP_NAME} \
+	--entrypoint /scripts/update_ecs.sh aws_image ${ARTIFACTS_BUCKET} ${ECSNAME} \
+	${EC_SECURITY_GROUP} $(shell cat /tmp/ec_endpoint | sed -E "s/.*:([0-9]*).*/\1/")
+
+# make instances=i-029aefe585538720b\ i-09abb841e51433e42 tear_down_ecs
+# must list specific ec2 instances to destroy (delimited by spaces)
+.PHONY: tear_down_ecs
+tear_down_ecs: get_db_endpoints
+ifdef instances
+	docker-compose -f aqfer/docker-compose-aws.yml run aws-service \
+	     aws ec2 revoke-security-group-ingress --group-name ${EC_SECURITY_GROUP} --source-group ${EC2_SECURITY_GROUP} --port \
+			 	$(shell cat /tmp/ec_endpoint | sed -E "s/.*:([0-9]*)/\1/") --protocol tcp;\
+	     aws ec2 terminate-instances --instance-ids $(instances);\
+	     aws ec2 wait instance-terminated --instance-ids $(instances);\
+	     aws cloudformation delete-stack --stack-name ${ECS_NAME}
+else
+	@echo "\ninstances to destroy were not declared, cloudformation stack delete will not execute for ecs.\nRun `make instances=... tear_down_ecs`"
+endif
+
+
+# `make instances=i-029aefe585538720b\ i-09abb841e51433e42 tear_down_stacks`
+# must list specific ec2 instances to destroy (delimited by spaces)
+# this command will not destroy the EC2 KeyPair that was created
+.PHONY: tear_down_stacks
+tear_down_stacks: tear_down_db tear_down_ecs
+
+
+# run `make get_dns_name` to get service address
+.PHONY: get_dns_name
+get_dns_name:
+	docker-compose -f aqfer/docker-compose-aws.yml run aws-service \
+	      aws elbv2 describe-load-balancers --names ${LOAD_BALANCER_NAME} 2>&1 > /tmp/DNSName
+	@echo $(shell cat /tmp/DNSName | sed -n -E "s/.*\"DNSName\".*\"(.*)\",/\1/p")
+
+
+.PHONY: stop_tasks
+stop_tasks:
+	docker-compose -f aqfer/docker-compose-aws.yml run aws-service /scripts/stop_tasks.sh ${ECS_CLUSTER_NAME}
+
+
+.PHONY: run_locally
+run_locally:
+	docker-compose -f aqfer/docker-compose.yml up
+
+.PHONY: startover_locally
+startover_locally: build_caddy_image run_locally
+	docker-compose -f aqfer/docker-compose.yml up
+
+
+.PHONY: run_unit_tests
+run_unit_tests:
+	docker-compose -f aqfer/docker-compose.yml run caddy /run_unit_tests.sh
