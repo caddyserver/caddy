@@ -98,22 +98,28 @@ build_caddy:
 
 .PHONY: create_artifact_bucket
 create_artifact_bucket:
-	docker-compose -f aqfer/docker-compose-aws.yml run \
-		aws-service aws s3 mb s3://${ARTIFACTS_BUCKET}/
+	docker run \
+	-e AWS_ACCESS_KEY_ID \
+	-e AWS_SECRET_ACCESS_KEY \
+	-e AWS_DEFAULT_REGION \
+	--entrypoint aws aws_image s3 mb s3://${ARTIFACTS_BUCKET}/
 
 .PHONY: create_keypair
 create_keypair:
-	docker-compose -f aqfer/docker-compose-aws.yml run \
-	aws-service /scripts/keypair.sh ${KEYPAIR_NAME} 2>&1 > aqfer/aws/${KEYPAIR_NAME}.pem
+	docker run \
+	-e AWS_ACCESS_KEY_ID \
+	-e AWS_SECRET_ACCESS_KEY \
+	-e AWS_DEFAULT_REGION \
+	--entrypoint /scripts/keypair.sh aws_image ${KEYPAIR_NAME} 2>&1 > aqfer/aws/${KEYPAIR_NAME}.pem
 	chmod 700 aqfer/aws/${KEYPAIR_NAME}$1.pem
 
 
 .PHONY: spin_up_db
 spin_up_db:
 	docker run \
-    -e AWS_ACCESS_KEY_ID \
-    -e AWS_SECRET_ACCESS_KEY \
-    -e AWS_DEFAULT_REGION \
+	-e AWS_ACCESS_KEY_ID \
+	-e AWS_SECRET_ACCESS_KEY \
+	-e AWS_DEFAULT_REGION \
 	-e AvailabilityZone=${ZONE} \
 	-e Subnet=${SUBNET} \
 	-e Vpc=${VPC} \
@@ -125,12 +131,20 @@ spin_up_db:
 
 .PHONY: tear_down_db
 tear_down_db:
-	docker-compose -f aqfer/docker-compose-aws.yml run aws-service aws cloudformation delete-stack --stack-name ${DB_NAME}
+	docker run \
+	-e AWS_ACCESS_KEY_ID \
+	-e AWS_SECRET_ACCESS_KEY \
+	-e AWS_DEFAULT_REGION \
+	--entrypoint aws aws_image cloudformation delete-stack --stack-name ${DB_NAME}
 
 
 .PHONY: get_db_endpoints
 get_db_endpoints:
-	docker-compose -f aqfer/docker-compose-aws.yml run aws-service /scripts/ec_endpoint.sh ${EC_CLUSTER_NAME} 2>&1 > /tmp/ec_endpoint
+	docker run \
+	-e AWS_ACCESS_KEY_ID \
+	-e AWS_SECRET_ACCESS_KEY \
+	-e AWS_DEFAULT_REGION \
+	--entrypoint /scripts/ec_endpoint.sh aws_image ${EC_CLUSTER_NAME} 2>&1 > /tmp/ec_endpoint
 
 
 .PHONY: ready_caddyfile
@@ -215,12 +229,15 @@ update_ecs:
 .PHONY: tear_down_ecs
 tear_down_ecs: get_db_endpoints
 ifdef instances
-	docker-compose -f aqfer/docker-compose-aws.yml run aws-service \
-	     aws ec2 revoke-security-group-ingress --group-name ${EC_SECURITY_GROUP} --source-group ${EC2_SECURITY_GROUP} --port \
-			 	$(shell cat /tmp/ec_endpoint | sed -E "s/.*:([0-9]*)/\1/") --protocol tcp;\
-	     aws ec2 terminate-instances --instance-ids $(instances);\
-	     aws ec2 wait instance-terminated --instance-ids $(instances);\
-	     aws cloudformation delete-stack --stack-name ${ECS_NAME}
+	docker run \
+	-e AWS_ACCESS_KEY_ID \
+	-e AWS_SECRET_ACCESS_KEY \
+	-e AWS_DEFAULT_REGION \
+	--entrypoint aws aws_image ec2 revoke-security-group-ingress --group-name ${EC_SECURITY_GROUP} --source-group ${EC2_SECURITY_GROUP} --port \
+	$(shell cat /tmp/ec_endpoint | sed -E "s/.*:([0-9]*)/\1/") --protocol tcp;\
+	aws ec2 terminate-instances --instance-ids $(instances);\
+	aws ec2 wait instance-terminated --instance-ids $(instances);\
+	aws cloudformation delete-stack --stack-name ${ECS_NAME}
 else
 	@echo "\ninstances to destroy were not declared, cloudformation stack delete will not execute for ecs.\nRun `make instances=... tear_down_ecs`"
 endif
@@ -236,14 +253,21 @@ tear_down_stacks: tear_down_db tear_down_ecs
 # run `make get_dns_name` to get service address
 .PHONY: get_dns_name
 get_dns_name:
-	docker-compose -f aqfer/docker-compose-aws.yml run aws-service \
-	      aws elbv2 describe-load-balancers --names ${LOAD_BALANCER_NAME} 2>&1 > /tmp/DNSName
+	docker run \
+	-e AWS_ACCESS_KEY_ID \
+	-e AWS_SECRET_ACCESS_KEY \
+	-e AWS_DEFAULT_REGION \
+	--entrypoint aws aws_image elbv2 describe-load-balancers --names ${LOAD_BALANCER_NAME} 2>&1 > /tmp/DNSName
 	@echo $(shell cat /tmp/DNSName | sed -n -E "s/.*\"DNSName\".*\"(.*)\",/\1/p")
 
 
 .PHONY: stop_tasks
 stop_tasks:
-	docker-compose -f aqfer/docker-compose-aws.yml run aws-service /scripts/stop_tasks.sh ${ECS_CLUSTER_NAME}
+	docker run \
+	-e AWS_ACCESS_KEY_ID \
+	-e AWS_SECRET_ACCESS_KEY \
+	-e AWS_DEFAULT_REGION \
+	--entrypoint /scripts/stop_tasks.sh aws_image ${ECS_CLUSTER_NAME}
 
 
 .PHONY: run_locally
