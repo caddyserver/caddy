@@ -47,6 +47,10 @@ LB_SECURITY_GROUP := ${SERVICE_NAME}LB-${STAGE}
 # bucket name must be all lowercase, and start/end with lowercase letter or number
 ARTIFACTS_BUCKET := cloudformation-${SERVICE_NAME}-artifacts
 
+.PHONY: get_major_version
+get_major_version:
+	@cat MAJOR_VERSION
+
 .PHONY: setup_and_launch
 setup_and_launch: setup launch
 
