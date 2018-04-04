@@ -1,9 +1,10 @@
+# Defaults
 ROOT_NAME := aqfer
 SERVICE_NAME := imds
 REPO_REGION := us-east-1
 
+DBVERSION := 0
 APP_LOG_GROUP_NAME := aqfer.io
-
 EC_CLUSTER_NAME := elasticache${ROOT_NAME}${DBVERSION}
 
 get_major_version:
@@ -16,13 +17,15 @@ setup: docker_aws_setup
 
 .PHONY: docker_aws_setup
 docker_aws_setup:
+	cp aqfer/docker-compose.yml_template aqfer/docker-compose.yml
+	cp aqfer/docker-compose-aws.yml_template aqfer/docker-compose-aws.yml
 	sed -i.bak "s|AWS_ACCESS_KEY_ID:|AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}|" "aqfer/docker-compose.yml";
 	sed -i.bak "s|AWS_SECRET_ACCESS_KEY:|AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}|" "aqfer/docker-compose.yml";
 	sed -i.bak "s|AWS_REGION:|AWS_REGION: us-east-1|" "aqfer/docker-compose.yml";
 	sed -i.bak "s|AWS_ACCESS_KEY_ID:|AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}|" "aqfer/docker-compose-aws.yml";
 	sed -i.bak "s|AWS_SECRET_ACCESS_KEY:|AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}|" "aqfer/docker-compose-aws.yml";
 	sed -i.bak "s|AWS_DEFAULT_REGION:|AWS_DEFAULT_REGION: us-east-1|" "aqfer/docker-compose-aws.yml";
-	rm docker-compose.yml.bak docker-compose-aws.yml.bak
+	rm aqfer/docker-compose.yml.bak aqfer/docker-compose-aws.yml.bak
 
 
 .PHONY: startover_locally
@@ -51,6 +54,22 @@ build_caddy:
 .PHONY: ecr_push
 ecr_push:
 	cd aqfer/scripts && go get ./.. && go run push-docker-image.go ${ROOT_NAME}_${SERVICE_NAME} ${MAJOR_VERSION} ${REPO_REGION}
+
+
+## TO_BE_CONVERTED_TO_GO
+
+# has to be run after databases are up or else the caddyfile database sections will point to nothing
+.PHONY: update_container_repo
+update_container_repo: ready_caddyfile ecr_repo_push
+
+.PHONY: ready_caddyfile
+ready_caddyfile: get_db_endpoints
+	cat aqfer/Caddyfile_template | sed 's/APP_LOG_GROUP_NAME/'${APP_LOG_GROUP_NAME}'/g' > /tmp/Caddyfile
+	cat /tmp/Caddyfile | sed 's/EC_ENDPOINT/'$(shell cat /tmp/ec_endpoint)'/g' > aqfer/Caddyfile
+
+.PHONY: get_db_endpoints
+get_db_endpoints:
+	docker-compose -f aqfer/docker-compose-aws.yml run aws-service /scripts/ec_endpoint.sh ${EC_CLUSTER_NAME} 2>&1 > /tmp/ec_endpoint
 
 .PHONY: run_unit_tests
 run_unit_tests:
