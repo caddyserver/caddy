@@ -1,4 +1,4 @@
-# Defaults
+# Setting defaults 
 DBVERSION := 0
 ECSVERSION := 0
 REPOVERSION := 0
