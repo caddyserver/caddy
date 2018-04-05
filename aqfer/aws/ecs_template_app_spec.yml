@@ -68,7 +68,14 @@ Parameters:
     Description: 'ECS LogGroup Name for Aqfer'
     Type: String
   AppLogGroupName:
-    Description: App LogGroup Name for Aqfer
+    Description: 'App LogGroup Name for Aqfer'
+    Type: String
+  DomainCertificateId:
+    Description: 'Certificate id for the api domain'
+    Type: String
+  ELBSecurityPolicyName:
+    Description: 'ELB Security policy name'
+    Default: 'ELBSecurityPolicy-2016-08'
     Type: String
 
 Resources:
@@ -216,6 +223,10 @@ Resources:
       TerminationPolicies:
       - Default
       LaunchConfigurationName: !Ref LaunchConfiguration
+      Tags:
+      - Key: Name
+        Value: imds
+        PropagateAtLaunch: true
   EC2SecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -324,12 +335,14 @@ Resources:
             Resource: "*"
   ECSService:
     Type: AWS::ECS::Service
-    DependsOn: LBListener
+    DependsOn:
+    - LBListener
+    - LBListenerHTTPS
     Properties: 
       ServiceName: !Ref ECSServiceName
       Cluster: !Ref ECSCluster
       TaskDefinition: !Ref ECSTaskDefinition
-      DesiredCount: 8
+      DesiredCount: 4
       DeploymentConfiguration:
         MinimumHealthyPercent: 100
         MaximumPercent: 200
@@ -345,11 +358,11 @@ Resources:
         Type: spread
       Role: !Ref ECSServiceRole
   
-  NetworkLoadBalancer:
+  ApplicationLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
       Name: !Ref LoadBalancerName
-      Type: network
+      Type: application
       IpAddressType: ipv4
       Scheme: internet-facing
       Subnets:
@@ -360,10 +373,23 @@ Resources:
     Properties: 
       LoadBalancerArn: !Ref NetworkLoadBalancer
       Port: 80
-      Protocol: TCP
+      Protocol: RCP
       DefaultActions:
       - Type: forward
         TargetGroupArn: !Ref LBTargetGroup
+  LBListenerHTTPS:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      Certificates:
+      - CertificateArn:
+        - !Sub 'arn:aws:acm:${AWS::Region}:${AWS::AccountId}:certificate/${DomainCertificateId}'
+      LoadBalancerArn: !Ref NetworkLoadBalancer
+      Port: 443
+      Protocol: HTTPS
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref LBTargetGroup
+      SslPolicy: !Ref ELBSecurityPolicyName
   LBTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
