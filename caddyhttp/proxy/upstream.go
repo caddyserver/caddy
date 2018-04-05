@@ -431,9 +431,10 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream, hasSrv bool) error {
 		}
 		u.downstreamHeaders.Add(header, value)
 	case "transparent":
+		// Note: X-Forwarded-For header is always being appended for proxy connections
+		// See implementation of createUpstreamRequest in proxy.go
 		u.upstreamHeaders.Add("Host", "{host}")
 		u.upstreamHeaders.Add("X-Real-IP", "{remote}")
-		u.upstreamHeaders.Add("X-Forwarded-For", "{remote}")
 		u.upstreamHeaders.Add("X-Forwarded-Proto", "{scheme}")
 	case "websocket":
 		u.upstreamHeaders.Add("Connection", "{>Connection}")

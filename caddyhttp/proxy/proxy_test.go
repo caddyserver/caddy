@@ -913,6 +913,67 @@ func TestHostSimpleProxyNoHeaderForward(t *testing.T) {
 	}
 }
 
+func TestReverseProxyTransparentHeaders(t *testing.T) {
+	testCases := []struct {
+		name               string
+		remoteAddr         string
+		forwardedForHeader string
+		expected           []string
+	}{
+		{"No header", "192.168.0.1:80", "", []string{"192.168.0.1"}},
+		{"Existing", "192.168.0.1:80", "1.1.1.1, 2.2.2.2", []string{"1.1.1.1, 2.2.2.2, 192.168.0.1"}},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			testReverseProxyTransparentHeaders(t, tc.remoteAddr, tc.forwardedForHeader, tc.expected)
+		})
+	}
+}
+
+func testReverseProxyTransparentHeaders(t *testing.T, remoteAddr, forwardedForHeader string, expected []string) {
+	// Arrange
+	log.SetOutput(ioutil.Discard)
+	defer log.SetOutput(os.Stderr)
+
+	var actualHeaders http.Header
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		actualHeaders = r.Header
+	}))
+	defer backend.Close()
+
+	config := "proxy / " + backend.URL + " {\n transparent \n}"
+
+	// make proxy
+	upstreams, err := NewStaticUpstreams(caddyfile.NewDispenser("Testfile", strings.NewReader(config)), "")
+	if err != nil {
+		t.Errorf("Expected no error. Got: %s", err.Error())
+	}
+
+	// set up proxy
+	p := &Proxy{
+		Next:      httpserver.EmptyNext, // prevents panic in some cases when test fails
+		Upstreams: upstreams,
+	}
+
+	// create request and response recorder
+	r := httptest.NewRequest("GET", backend.URL, nil)
+	r.RemoteAddr = remoteAddr
+	if forwardedForHeader != "" {
+		r.Header.Set("X-Forwarded-For", forwardedForHeader)
+	}
+
+	w := httptest.NewRecorder()
+
+	// Act
+	p.ServeHTTP(w, r)
+
+	// Assert
+	if got := actualHeaders["X-Forwarded-For"]; !reflect.DeepEqual(got, expected) {
+		t.Errorf("Transparent proxy response does not contain expected %v header: expect %v, but got %v",
+			"X-Forwarded-For", expected, got)
+	}
+}
+
 func TestHostHeaderReplacedUsingForward(t *testing.T) {
 	var requestHost string
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -943,11 +1004,22 @@ func TestHostHeaderReplacedUsingForward(t *testing.T) {
 }
 
 func TestBasicAuth(t *testing.T) {
-	basicAuthTestcase(t, nil, nil)
-	basicAuthTestcase(t, nil, url.UserPassword("username", "password"))
-	basicAuthTestcase(t, url.UserPassword("usename", "password"), nil)
-	basicAuthTestcase(t, url.UserPassword("unused", "unused"),
-		url.UserPassword("username", "password"))
+	testCases := []struct {
+		name         string
+		upstreamUser *url.Userinfo
+		clientUser   *url.Userinfo
+	}{
+		{"Nil Both", nil, nil},
+		{"Nil Upstream User", nil, url.UserPassword("username", "password")},
+		{"Nil Client User", url.UserPassword("usename", "password"), nil},
+		{"Both Provided", url.UserPassword("unused", "unused"),
+			url.UserPassword("username", "password")},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			basicAuthTestcase(t, tc.upstreamUser, tc.clientUser)
+		})
+	}
 }
 
 func basicAuthTestcase(t *testing.T, upstreamUser, clientUser *url.Userinfo) {

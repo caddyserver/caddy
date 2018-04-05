@@ -282,7 +282,8 @@ func TestStop(t *testing.T) {
 	}
 }
 
-func TestParseBlock(t *testing.T) {
+func TestParseBlockTransparent(t *testing.T) {
+	// tests for transparent proxy presets
 	r, _ := http.NewRequest("GET", "/", nil)
 	tests := []struct {
 		config string
@@ -315,6 +316,10 @@ func TestParseBlock(t *testing.T) {
 
 			if _, ok := headers["X-Forwarded-Proto"]; !ok {
 				t.Errorf("Test %d: Could not find the X-Forwarded-Proto header", i+1)
+			}
+
+			if _, ok := headers["X-Forwarded-For"]; ok {
+				t.Errorf("Test %d: Found unexpected X-Forwarded-For header", i+1)
 			}
 		}
 	}
