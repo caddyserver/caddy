@@ -65,6 +65,7 @@ func init() {
 	caddy.RegisterCaddyfileLoader("short", caddy.LoaderFunc(shortCaddyfileLoader))
 	caddy.RegisterParsingCallback(serverType, "root", hideCaddyfile)
 	caddy.RegisterParsingCallback(serverType, "tls", activateHTTPS)
+	caddy.RegisterParsingCallback(serverType, "header", applyHeaderToRedirs)
 	caddytls.RegisterConfigGetter(serverType, func(c *caddy.Controller) *caddytls.Config { return GetConfig(c).TLS })
 }
 
@@ -413,6 +414,11 @@ func (a Address) Key() string {
 		res += a.Host
 	}
 	if a.Port != "" {
+		if a.Original == "" {
+			// This shouldn't really happen but its useful in tests when you supply an
+			// Address without the Original field and call this method
+			return ""
+		}
 		if strings.HasPrefix(a.Original[len(res):], ":"+a.Port) {
 			// insert port only if the original has its own explicit port
 			res += ":" + a.Port

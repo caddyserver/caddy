@@ -132,7 +132,16 @@ func makePlaintextRedirects(allConfigs []*SiteConfig) []*SiteConfig {
 		if cfg.TLS.Managed &&
 			!hostHasOtherPort(allConfigs, i, HTTPPort) &&
 			(cfg.Addr.Port == HTTPSPort || !hostHasOtherPort(allConfigs, i, HTTPSPort)) {
-			allConfigs = append(allConfigs, redirPlaintextHost(cfg))
+				// Mark the redirection config with a meta tag to be
+				// specifically used after the header directive is parsed
+				redirConfig := redirPlaintextHost(cfg)
+
+				if key := cfg.Addr.Key(); key != "" {
+					redirConfig.meta = make(map[siteConfigMetaTag]string)
+					redirConfig.meta[redirectToHttpsRef] = key
+				}
+
+				allConfigs = append(allConfigs, redirConfig)
 		}
 	}
 	return allConfigs
@@ -210,4 +219,45 @@ func redirPlaintextHost(cfg *SiteConfig) *SiteConfig {
 		TLS:        &caddytls.Config{AltHTTPPort: cfg.TLS.AltHTTPPort, AltTLSSNIPort: cfg.TLS.AltTLSSNIPort},
 		Timeouts:   cfg.Timeouts,
 	}
+}
+
+// applyHeaderToRedirs runs after the header directives have been applied to
+// the server blocks and it will do a reverse operation to find all metadata
+// configs that are created for http to https redirection. Then for all those
+// configs it will prepend the last middleware of the corresponding metadata reference
+// config which is the header middleware to their list of middleware.
+// Thus in the end each http redir config will have 2 middleware one for the redirects
+// and one for the headers
+func applyHeaderToRedirs(cctx caddy.Context) error {
+	ctx := cctx.(*httpContext)
+
+	var redirConfigs []*SiteConfig
+
+	// collect configs with relevant metadata
+	for _, cfg := range ctx.siteConfigs {
+		if cfg.meta != nil {
+			if _, ok := cfg.meta[redirectToHttpsRef]; ok {
+				redirConfigs = append(redirConfigs, cfg)
+			}
+		}
+	}
+
+	// apply header middleware to redir configs
+	if len(redirConfigs) > 0 {
+		for _, redirConfig := range redirConfigs {
+			refKey := redirConfig.meta[redirectToHttpsRef]
+
+			if config, ok := ctx.keysToSiteConfigs[refKey]; ok {
+				middleware := config.Middleware()
+				// parsing block is after 'header' so the last middleware even if
+				// is empty is a header one
+				headerMiddleware := middleware[len(middleware) - 1]
+				redirConfig.middleware = append([]Middleware{headerMiddleware}, redirConfig.middleware...)
+			}
+			// clean up metadata
+			delete(redirConfig.meta, redirectToHttpsRef)
+		}
+	}
+
+	return nil
 }

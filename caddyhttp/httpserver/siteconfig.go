@@ -83,7 +83,21 @@ type SiteConfig struct {
 	// If true, any requests not matching other site definitions
 	// may be served by this site.
 	FallbackSite bool
+
+	// meta represents a map of private meta tag symbols we can use to
+	// mark this site config with additional information. We try to keep this
+	// map private and optional
+	meta map[siteConfigMetaTag]string
 }
+
+type siteConfigMetaTag int
+
+const (
+	// Represents a reference to the site config key for the
+	// redirect from http to https server. This is used to apply
+	// any additional header directives on top of the redirect server
+	redirectToHttpsRef siteConfigMetaTag = iota
+)
 
 // Timeouts specify various timeouts for a server to use.
 // If the assocated bool field is true, then the duration
