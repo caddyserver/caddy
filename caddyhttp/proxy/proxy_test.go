@@ -287,6 +287,31 @@ func TestReverseProxyMaxConnLimit(t *testing.T) {
 	jobs.Wait()
 }
 
+func TestReverseProxyTimeout(t *testing.T) {
+	timeout := 2 * time.Second
+	errorMargin := 100 * time.Millisecond
+	log.SetOutput(ioutil.Discard)
+	defer log.SetOutput(os.Stderr)
+
+	// set up proxy
+	p := &Proxy{
+		Next:      httpserver.EmptyNext, // prevents panic in some cases when test fails
+		Upstreams: []Upstream{newFakeUpstreamWithTimeout("https://8.8.8.8", true, timeout)},
+	}
+
+	// create request and response recorder
+	r := httptest.NewRequest("GET", "/", nil)
+	w := httptest.NewRecorder()
+
+	start := time.Now()
+	p.ServeHTTP(w, r)
+	took := time.Since(start)
+
+	if took > timeout+errorMargin {
+		t.Errorf("Expected timeout ~ %v but got %v", timeout, took)
+	}
+}
+
 func TestWebSocketReverseProxyNonHijackerPanic(t *testing.T) {
 	// Capture the expected panic
 	defer func() {
@@ -1306,11 +1331,29 @@ func (r *noopReader) Read(b []byte) (int, error) {
 func newFakeUpstream(name string, insecure bool) *fakeUpstream {
 	uri, _ := url.Parse(name)
 	u := &fakeUpstream{
-		name: name,
-		from: "/",
+		name:    name,
+		from:    "/",
+		timeout: 30 * time.Second,
 		host: &UpstreamHost{
 			Name:         name,
 			ReverseProxy: NewSingleHostReverseProxy(uri, "", http.DefaultMaxIdleConnsPerHost, 30*time.Second),
+		},
+	}
+	if insecure {
+		u.host.ReverseProxy.UseInsecureTransport()
+	}
+	return u
+}
+
+func newFakeUpstreamWithTimeout(name string, insecure bool, timeout time.Duration) *fakeUpstream {
+	uri, _ := url.Parse(name)
+	u := &fakeUpstream{
+		name:    name,
+		from:    "/",
+		timeout: timeout,
+		host: &UpstreamHost{
+			Name:         name,
+			ReverseProxy: NewSingleHostReverseProxy(uri, "", http.DefaultMaxIdleConnsPerHost, timeout),
 		},
 	}
 	if insecure {
@@ -1348,7 +1391,7 @@ func (u *fakeUpstream) Select(r *http.Request) *UpstreamHost {
 func (u *fakeUpstream) AllowedPath(requestPath string) bool { return true }
 func (u *fakeUpstream) GetTryDuration() time.Duration       { return 1 * time.Second }
 func (u *fakeUpstream) GetTryInterval() time.Duration       { return 250 * time.Millisecond }
-func (u *fakeUpstream) GetTimeout() time.Duration           { return 30 * time.Second }
+func (u *fakeUpstream) GetTimeout() time.Duration           { return u.timeout }
 func (u *fakeUpstream) GetHostCount() int                   { return 1 }
 func (u *fakeUpstream) Stop() error                         { return nil }
 
@@ -1363,6 +1406,7 @@ func newWebSocketTestProxy(backendAddr string, insecure bool) *Proxy {
 			name:     backendAddr,
 			without:  "",
 			insecure: insecure,
+			timeout:  30 * time.Second,
 		}},
 	}
 }
@@ -1370,7 +1414,20 @@ func newWebSocketTestProxy(backendAddr string, insecure bool) *Proxy {
 func newPrefixedWebSocketTestProxy(backendAddr string, prefix string) *Proxy {
 	return &Proxy{
 		Next:      httpserver.EmptyNext, // prevents panic in some cases when test fails
-		Upstreams: []Upstream{&fakeWsUpstream{name: backendAddr, without: prefix}},
+		Upstreams: []Upstream{&fakeWsUpstream{name: backendAddr, without: prefix, timeout: 30 * time.Second}},
+	}
+}
+
+// newWebSocketTestProxyWithTimeout returns a WebSocket proxy with a configurable upstream timeout
+func newWebSocketTestProxyWithTimeout(backendAddr string, insecure bool, timeout time.Duration) *Proxy {
+	return &Proxy{
+		Next: httpserver.EmptyNext, // prevents panic in some cases when test fails
+		Upstreams: []Upstream{&fakeWsUpstream{
+			name:     backendAddr,
+			without:  "",
+			insecure: insecure,
+			timeout:  timeout,
+		}},
 	}
 }
 
@@ -1378,6 +1435,7 @@ type fakeWsUpstream struct {
 	name     string
 	without  string
 	insecure bool
+	timeout  time.Duration
 }
 
 func (u *fakeWsUpstream) From() string {
@@ -1388,7 +1446,7 @@ func (u *fakeWsUpstream) Select(r *http.Request) *UpstreamHost {
 	uri, _ := url.Parse(u.name)
 	host := &UpstreamHost{
 		Name:         u.name,
-		ReverseProxy: NewSingleHostReverseProxy(uri, u.without, http.DefaultMaxIdleConnsPerHost, 30*time.Second),
+		ReverseProxy: NewSingleHostReverseProxy(uri, u.without, http.DefaultMaxIdleConnsPerHost, u.GetTimeout()),
 		UpstreamHeaders: http.Header{
 			"Connection": {"{>Connection}"},
 			"Upgrade":    {"{>Upgrade}"}},
@@ -1402,7 +1460,7 @@ func (u *fakeWsUpstream) Select(r *http.Request) *UpstreamHost {
 func (u *fakeWsUpstream) AllowedPath(requestPath string) bool { return true }
 func (u *fakeWsUpstream) GetTryDuration() time.Duration       { return 1 * time.Second }
 func (u *fakeWsUpstream) GetTryInterval() time.Duration       { return 250 * time.Millisecond }
-func (u *fakeWsUpstream) GetTimeout() time.Duration           { return 30 * time.Second }
+func (u *fakeWsUpstream) GetTimeout() time.Duration           { return u.timeout }
 func (u *fakeWsUpstream) GetHostCount() int                   { return 1 }
 func (u *fakeWsUpstream) Stop() error                         { return nil }
 
