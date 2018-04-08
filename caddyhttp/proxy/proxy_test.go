@@ -1401,20 +1401,7 @@ func (r *noopReader) Read(b []byte) (int, error) {
 }
 
 func newFakeUpstream(name string, insecure bool) *fakeUpstream {
-	uri, _ := url.Parse(name)
-	u := &fakeUpstream{
-		name:    name,
-		from:    "/",
-		timeout: 30 * time.Second,
-		host: &UpstreamHost{
-			Name:         name,
-			ReverseProxy: NewSingleHostReverseProxy(uri, "", http.DefaultMaxIdleConnsPerHost, 30*time.Second),
-		},
-	}
-	if insecure {
-		u.host.ReverseProxy.UseInsecureTransport()
-	}
-	return u
+	return newFakeUpstreamWithTimeout(name, insecure, 30*time.Second)
 }
 
 func newFakeUpstreamWithTimeout(name string, insecure bool, timeout time.Duration) *fakeUpstream {
@@ -1472,15 +1459,7 @@ func (u *fakeUpstream) Stop() error                         { return nil }
 // also sets up the rules/environment for testing WebSocket
 // proxy.
 func newWebSocketTestProxy(backendAddr string, insecure bool) *Proxy {
-	return &Proxy{
-		Next: httpserver.EmptyNext, // prevents panic in some cases when test fails
-		Upstreams: []Upstream{&fakeWsUpstream{
-			name:     backendAddr,
-			without:  "",
-			insecure: insecure,
-			timeout:  30 * time.Second,
-		}},
-	}
+	return newWebSocketTestProxyWithTimeout(backendAddr, insecure, 30*time.Second)
 }
 
 func newPrefixedWebSocketTestProxy(backendAddr string, prefix string) *Proxy {
