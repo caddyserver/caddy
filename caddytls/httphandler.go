@@ -16,12 +16,16 @@ package caddytls
 
 import (
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
 	"strings"
+
+	"github.com/xenolf/lego/acmev2"
 )
 
 const challengeBasePath = "/.well-known/acme-challenge"
@@ -38,6 +42,13 @@ func HTTPChallengeHandler(w http.ResponseWriter, r *http.Request, listenHost str
 	if DisableHTTPChallenge {
 		return false
 	}
+
+	// see if another instance started the HTTP challenge for this name
+	if tryDistributedChallengeSolver(w, r) {
+		return true
+	}
+
+	// otherwise, if we aren't getting the name, then ignore this challenge
 	if !namesObtaining.Has(r.Host) {
 		return false
 	}
@@ -69,4 +80,41 @@ func HTTPChallengeHandler(w http.ResponseWriter, r *http.Request, listenHost str
 	proxy.ServeHTTP(w, r)
 
 	return true
+}
+
+// tryDistributedChallengeSolver checks to see if this challenge
+// request was initiated by another instance that shares file
+// storage, and attempts to complete the challenge for it. It
+// returns true if the challenge was handled; false otherwise.
+func tryDistributedChallengeSolver(w http.ResponseWriter, r *http.Request) bool {
+	filePath := distributedHTTPSolver{}.challengeTokensPath(r.Host)
+	f, err := os.Open(filePath)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Printf("[ERROR][%s] Opening distributed challenge token file: %v", r.Host, err)
+		}
+		return false
+	}
+	defer f.Close()
+
+	var chalInfo challengeInfo
+	err = json.NewDecoder(f).Decode(&chalInfo)
+	if err != nil {
+		log.Printf("[ERROR][%s] Decoding challenge token file %s (corrupted?): %v", r.Host, filePath, err)
+		return false
+	}
+
+	// this part borrowed from xenolf/lego's built-in HTTP-01 challenge solver (March 2018)
+	challengeReqPath := acme.HTTP01ChallengePath(chalInfo.Token)
+	if r.URL.Path == challengeReqPath &&
+		strings.HasPrefix(r.Host, chalInfo.Domain) &&
+		r.Method == "GET" {
+		w.Header().Add("Content-Type", "text/plain")
+		w.Write([]byte(chalInfo.KeyAuth))
+		r.Close = true
+		log.Printf("[INFO][%s] Served key authentication", chalInfo.Domain)
+		return true
+	}
+
+	return false
 }

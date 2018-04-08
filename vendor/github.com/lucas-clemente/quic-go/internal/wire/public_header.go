@@ -134,10 +134,9 @@ func parsePublicHeader(b *bytes.Reader, packetSentBy protocol.Perspective) (*Hea
 		}
 	}
 
+	// Contrary to what the gQUIC wire spec says, the 0x4 bit only indicates the presence of the diversification nonce for packets sent by the server.
+	// It doesn't have any meaning when sent by the client.
 	if packetSentBy == protocol.PerspectiveServer && publicFlagByte&0x04 > 0 {
-		// TODO: remove the if once the Google servers send the correct value
-		// assume that a packet doesn't contain a diversification nonce if the version flag or the reset flag is set, no matter what the public flag says
-		// see https://github.com/lucas-clemente/quic-go/issues/232
 		if !header.VersionFlag && !header.ResetFlag {
 			header.DiversificationNonce = make([]byte, 32)
 			if _, err := io.ReadFull(b, header.DiversificationNonce); err != nil {
@@ -148,7 +147,7 @@ func parsePublicHeader(b *bytes.Reader, packetSentBy protocol.Perspective) (*Hea
 
 	// Version (optional)
 	if !header.ResetFlag && header.VersionFlag {
-		if packetSentBy == protocol.PerspectiveServer { // parse the version negotiaton packet
+		if packetSentBy == protocol.PerspectiveServer { // parse the version negotiation packet
 			if b.Len() == 0 {
 				return nil, qerr.Error(qerr.InvalidVersionNegotiationPacket, "empty version list")
 			}
@@ -236,7 +235,7 @@ func (h *Header) logPublicHeader() {
 	}
 	ver := "(unset)"
 	if h.Version != 0 {
-		ver = fmt.Sprintf("%s", h.Version)
+		ver = h.Version.String()
 	}
 	utils.Debugf("   Public Header{ConnectionID: %s, PacketNumber: %#x, PacketNumberLen: %d, Version: %s, DiversificationNonce: %#v}", connID, h.PacketNumber, h.PacketNumberLen, ver, h.DiversificationNonce)
 }

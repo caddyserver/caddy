@@ -11,12 +11,19 @@ import (
 // +gen linkedlist
 type Packet struct {
 	PacketNumber    protocol.PacketNumber
+	PacketType      protocol.PacketType
 	Frames          []wire.Frame
 	Length          protocol.ByteCount
 	EncryptionLevel protocol.EncryptionLevel
 
 	largestAcked protocol.PacketNumber // if the packet contains an ACK, the LargestAcked value of that ACK
 	sendTime     time.Time
+
+	queuedForRetransmission bool
+	includedInBytesInFlight bool
+	retransmittedAs         []protocol.PacketNumber
+	isRetransmission        bool // we need a separate bool here because 0 is a valid packet number
+	retransmissionOf        protocol.PacketNumber
 }
 
 // GetFramesForRetransmission gets all the frames for retransmission

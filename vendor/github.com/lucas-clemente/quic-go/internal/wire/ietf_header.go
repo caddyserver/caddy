@@ -2,6 +2,7 @@ package wire
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 
 	"github.com/lucas-clemente/quic-go/internal/protocol"
@@ -31,15 +32,9 @@ func parseLongHeader(b *bytes.Reader, sentBy protocol.Perspective, typeByte byte
 	if err != nil {
 		return nil, err
 	}
-	pn, err := utils.BigEndian.ReadUint32(b)
-	if err != nil {
-		return nil, err
-	}
 	h := &Header{
-		ConnectionID:    protocol.ConnectionID(connID),
-		PacketNumber:    protocol.PacketNumber(pn),
-		PacketNumberLen: protocol.PacketNumberLen4,
-		Version:         protocol.VersionNumber(v),
+		ConnectionID: protocol.ConnectionID(connID),
+		Version:      protocol.VersionNumber(v),
 	}
 	if v == 0 { // version negotiation packet
 		if sentBy == protocol.PerspectiveClient {
@@ -60,6 +55,12 @@ func parseLongHeader(b *bytes.Reader, sentBy protocol.Perspective, typeByte byte
 		return h, nil
 	}
 	h.IsLongHeader = true
+	pn, err := utils.BigEndian.ReadUint32(b)
+	if err != nil {
+		return nil, err
+	}
+	h.PacketNumber = protocol.PacketNumber(pn)
+	h.PacketNumberLen = protocol.PacketNumberLen4
 	h.Type = protocol.PacketType(typeByte & 0x7f)
 	if sentBy == protocol.PerspectiveClient && (h.Type != protocol.PacketTypeInitial && h.Type != protocol.PacketTypeHandshake && h.Type != protocol.PacketType0RTT) {
 		return nil, qerr.Error(qerr.InvalidPacketHeader, fmt.Sprintf("Received packet with invalid packet type: %d", h.Type))
@@ -71,26 +72,40 @@ func parseLongHeader(b *bytes.Reader, sentBy protocol.Perspective, typeByte byte
 }
 
 func parseShortHeader(b *bytes.Reader, typeByte byte) (*Header, error) {
-	hasConnID := typeByte&0x40 > 0
+	omitConnID := typeByte&0x40 > 0
 	var connID uint64
-	if hasConnID {
+	if !omitConnID {
 		var err error
 		connID, err = utils.BigEndian.ReadUint64(b)
 		if err != nil {
 			return nil, err
 		}
 	}
-	pnLen := 1 << ((typeByte & 0x3) - 1)
+	// bit 4 must be set, bit 5 must be unset
+	if typeByte&0x18 != 0x10 {
+		return nil, errors.New("invalid bit 4 and 5")
+	}
+	var pnLen protocol.PacketNumberLen
+	switch typeByte & 0x7 {
+	case 0x0:
+		pnLen = protocol.PacketNumberLen1
+	case 0x1:
+		pnLen = protocol.PacketNumberLen2
+	case 0x2:
+		pnLen = protocol.PacketNumberLen4
+	default:
+		return nil, errors.New("invalid short header type")
+	}
 	pn, err := utils.BigEndian.ReadUintN(b, uint8(pnLen))
 	if err != nil {
 		return nil, err
 	}
 	return &Header{
 		KeyPhase:         int(typeByte&0x20) >> 5,
-		OmitConnectionID: !hasConnID,
+		OmitConnectionID: omitConnID,
 		ConnectionID:     protocol.ConnectionID(connID),
 		PacketNumber:     protocol.PacketNumber(pn),
-		PacketNumberLen:  protocol.PacketNumberLen(pnLen),
+		PacketNumberLen:  pnLen,
 	}, nil
 }
 
@@ -112,17 +127,17 @@ func (h *Header) writeLongHeader(b *bytes.Buffer) error {
 }
 
 func (h *Header) writeShortHeader(b *bytes.Buffer) error {
-	typeByte := byte(h.KeyPhase << 5)
-	if !h.OmitConnectionID {
+	typeByte := byte(0x10)
+	typeByte ^= byte(h.KeyPhase << 5)
+	if h.OmitConnectionID {
 		typeByte ^= 0x40
 	}
 	switch h.PacketNumberLen {
 	case protocol.PacketNumberLen1:
-		typeByte ^= 0x1
 	case protocol.PacketNumberLen2:
-		typeByte ^= 0x2
+		typeByte ^= 0x1
 	case protocol.PacketNumberLen4:
-		typeByte ^= 0x3
+		typeByte ^= 0x2
 	default:
 		return fmt.Errorf("invalid packet number length: %d", h.PacketNumberLen)
 	}

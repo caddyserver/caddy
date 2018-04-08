@@ -60,7 +60,7 @@ func ParseAckFrame(r *bytes.Reader, version protocol.VersionNumber) (*AckFrame, 
 	if ackBlock > frame.LargestAcked {
 		return nil, errors.New("invalid first ACK range")
 	}
-	smallest := frame.LargestAcked - protocol.PacketNumber(ackBlock)
+	smallest := frame.LargestAcked - ackBlock
 
 	// read all the other ACK ranges
 	if numBlocks > 0 {
@@ -86,7 +86,7 @@ func ParseAckFrame(r *bytes.Reader, version protocol.VersionNumber) (*AckFrame, 
 		if ackBlock > largest {
 			return nil, errInvalidAckRanges
 		}
-		smallest = largest - protocol.PacketNumber(ackBlock)
+		smallest = largest - ackBlock
 		frame.AckRanges = append(frame.AckRanges, AckRange{First: smallest, Last: largest})
 	}
 
@@ -144,7 +144,7 @@ func (f *AckFrame) Length(version protocol.VersionNumber) protocol.ByteCount {
 		return f.lengthLegacy(version)
 	}
 
-	length := 1 + utils.VarIntLen(uint64(f.LargestAcked)) + utils.VarIntLen(uint64(encodeAckDelay(f.DelayTime)))
+	length := 1 + utils.VarIntLen(uint64(f.LargestAcked)) + utils.VarIntLen(encodeAckDelay(f.DelayTime))
 
 	var lowestInFirstRange protocol.PacketNumber
 	if f.HasMissingRanges() {

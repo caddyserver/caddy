@@ -44,6 +44,7 @@ type Logger struct {
 	V4ipMask     net.IPMask
 	V6ipMask     net.IPMask
 	IPMaskExists bool
+	Exceptions   []string
 }
 
 // NewTestLogger creates logger suitable for testing purposes
@@ -82,6 +83,17 @@ func (l Logger) MaskIP(ip string) string {
 		return reqIP.Mask(l.V6ipMask).String()
 	}
 
+}
+
+// ShouldLog returns true if the path is not exempted from
+// being logged (i.e. it is not found in l.Exceptions).
+func (l Logger) ShouldLog(path string) bool {
+	for _, exc := range l.Exceptions {
+		if Path(path).Matches(exc) {
+			return false
+		}
+	}
+	return true
 }
 
 // Attach binds logger Start and Close functions to

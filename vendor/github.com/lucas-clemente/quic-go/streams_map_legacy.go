@@ -39,11 +39,10 @@ var _ streamManager = &streamsMapLegacy{}
 
 var errMapAccess = errors.New("streamsMap: Error accessing the streams map")
 
-func newStreamsMapLegacy(newStream func(protocol.StreamID) streamI, pers protocol.Perspective) streamManager {
+func newStreamsMapLegacy(newStream func(protocol.StreamID) streamI, maxStreams int, pers protocol.Perspective) streamManager {
 	// add some tolerance to the maximum incoming streams value
-	maxStreams := uint32(protocol.MaxIncomingStreams)
 	maxIncomingStreams := utils.MaxUint32(
-		maxStreams+protocol.MaxStreamsMinimumIncrement,
+		uint32(maxStreams)+protocol.MaxStreamsMinimumIncrement,
 		uint32(float64(maxStreams)*float64(protocol.MaxStreamsMultiplier)),
 	)
 	sm := streamsMapLegacy{
@@ -131,7 +130,10 @@ func (m *streamsMapLegacy) openRemoteStream(id protocol.StreamID) (streamI, erro
 	if m.numIncomingStreams >= m.maxIncomingStreams {
 		return nil, qerr.TooManyOpenStreams
 	}
-	if id+protocol.MaxNewStreamIDDelta < m.highestStreamOpenedByPeer {
+	// maxNewStreamIDDelta is the maximum difference between and a newly opened Stream and the highest StreamID that a client has ever opened
+	// note that the number of streams is half this value, since the client can only open streams with open StreamID
+	maxStreamIDDelta := protocol.StreamID(4 * m.maxIncomingStreams)
+	if id+maxStreamIDDelta < m.highestStreamOpenedByPeer {
 		return nil, qerr.Error(qerr.InvalidStreamID, fmt.Sprintf("attempted to open stream %d, which is a lot smaller than the highest opened stream, %d", id, m.highestStreamOpenedByPeer))
 	}
 
@@ -185,6 +187,14 @@ func (m *streamsMapLegacy) OpenStreamSync() (Stream, error) {
 	}
 }
 
+func (m *streamsMapLegacy) OpenUniStream() (SendStream, error) {
+	return nil, errors.New("gQUIC doesn't support unidirectional streams")
+}
+
+func (m *streamsMapLegacy) OpenUniStreamSync() (SendStream, error) {
+	return nil, errors.New("gQUIC doesn't support unidirectional streams")
+}
+
 // AcceptStream returns the next stream opened by the peer
 // it blocks until a new stream is opened
 func (m *streamsMapLegacy) AcceptStream() (Stream, error) {
@@ -204,6 +214,10 @@ func (m *streamsMapLegacy) AcceptStream() (Stream, error) {
 	}
 	m.nextStreamToAccept += 2
 	return str, nil
+}
+
+func (m *streamsMapLegacy) AcceptUniStream() (ReceiveStream, error) {
+	return nil, errors.New("gQUIC doesn't support unidirectional streams")
 }
 
 func (m *streamsMapLegacy) DeleteStream(id protocol.StreamID) error {

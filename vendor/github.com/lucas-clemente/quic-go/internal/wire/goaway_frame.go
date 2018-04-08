@@ -41,7 +41,7 @@ func ParseGoawayFrame(r *bytes.Reader, _ protocol.VersionNumber) (*GoawayFrame, 
 		return nil, err
 	}
 
-	if reasonPhraseLen > uint16(protocol.MaxPacketSize) {
+	if reasonPhraseLen > uint16(protocol.MaxReceivePacketSize) {
 		return nil, qerr.Error(qerr.InvalidGoawayData, "reason phrase too long")
 	}
 

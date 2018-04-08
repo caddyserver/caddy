@@ -35,13 +35,14 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"golang.org/x/crypto/ocsp"
 
 	"github.com/mholt/caddy"
-	"github.com/xenolf/lego/acme"
+	"github.com/xenolf/lego/acmev2"
 )
 
 // loadPrivateKey loads a PEM-encoded ECC/RSA private key from an array of bytes.
@@ -106,7 +107,8 @@ func stapleOCSP(cert *Certificate, pemBundle []byte) error {
 	// TODO: Use Storage interface instead of disk directly
 	var ocspFileNamePrefix string
 	if len(cert.Names) > 0 {
-		ocspFileNamePrefix = cert.Names[0] + "-"
+		firstName := strings.Replace(cert.Names[0], "*", "wildcard_", -1)
+		ocspFileNamePrefix = firstName + "-"
 	}
 	ocspFileName := ocspFileNamePrefix + fastHash(pemBundle)
 	ocspCachePath := filepath.Join(ocspFolder, ocspFileName)
@@ -216,10 +218,13 @@ func makeSelfSignedCert(config *Config) error {
 		KeyUsage:     x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	}
+	var names []string
 	if ip := net.ParseIP(config.Hostname); ip != nil {
+		names = append(names, strings.ToLower(ip.String()))
 		cert.IPAddresses = append(cert.IPAddresses, ip)
 	} else {
-		cert.DNSNames = append(cert.DNSNames, config.Hostname)
+		names = append(names, strings.ToLower(config.Hostname))
+		cert.DNSNames = append(cert.DNSNames, strings.ToLower(config.Hostname))
 	}
 
 	publicKey := func(privKey interface{}) interface{} {
@@ -245,7 +250,7 @@ func makeSelfSignedCert(config *Config) error {
 			PrivateKey:  privKey,
 			Leaf:        cert,
 		},
-		Names:    cert.DNSNames,
+		Names:    names,
 		NotAfter: cert.NotAfter,
 		Hash:     hashCertificateChain(chain),
 	})

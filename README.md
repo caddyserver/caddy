@@ -143,7 +143,7 @@ Please see our [contributing guidelines](https://github.com/mholt/caddy/blob/mas
 
 We use GitHub issues and pull requests only for discussing bug reports and the development of specific changes. We welcome all other topics on the [forum](https://caddy.community)!
 
-If you want to contribute to the documentation, please submit pull requests to [caddyserver/website](https://github.com/caddyserver/website).
+If you want to contribute to the documentation, please [submit an issue](https://github.com/mholt/caddy/issues/new) describing the change that should be made.
 
 Thanks for making Caddy -- and the Web -- better!
 
