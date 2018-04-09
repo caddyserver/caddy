@@ -337,7 +337,6 @@ Resources:
     Type: AWS::ECS::Service
     DependsOn:
     - LBListener
-    - LBListenerHTTPS
     Properties: 
       ServiceName: !Ref ECSServiceName
       Cluster: !Ref ECSCluster
@@ -358,11 +357,11 @@ Resources:
         Type: spread
       Role: !Ref ECSServiceRole
   
-  ApplicationLoadBalancer:
+  NetworkLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
       Name: !Ref LoadBalancerName
-      Type: application
+      Type: network
       IpAddressType: ipv4
       Scheme: internet-facing
       Subnets:
@@ -373,23 +372,10 @@ Resources:
     Properties: 
       LoadBalancerArn: !Ref NetworkLoadBalancer
       Port: 80
-      Protocol: RCP
+      Protocol: TCP
       DefaultActions:
       - Type: forward
         TargetGroupArn: !Ref LBTargetGroup
-  LBListenerHTTPS:
-    Type: AWS::ElasticLoadBalancingV2::Listener
-    Properties:
-      Certificates:
-      - CertificateArn:
-        - !Sub 'arn:aws:acm:${AWS::Region}:${AWS::AccountId}:certificate/${DomainCertificateId}'
-      LoadBalancerArn: !Ref NetworkLoadBalancer
-      Port: 443
-      Protocol: HTTPS
-      DefaultActions:
-      - Type: forward
-        TargetGroupArn: !Ref LBTargetGroup
-      SslPolicy: !Ref ELBSecurityPolicyName
   LBTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
