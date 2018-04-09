@@ -5,19 +5,20 @@ SERVICE_VERSION := 0.0.0
 ROOT_NAME := aqfer
 DB_NAME := imdsCache-${STAGE}
 ECS_NAME := imds-${STAGE}
-REPO_REGION := us-west-2
+AWS_REGION := us-east-1
 
 JWT := testkey
 GIT_USER := fellou89
 
-AMI := ami-0bc5713607472cef7
+AMI := ami-d74473ad
 # AMI := ami-fad25980 # ecs optimized ami
 INSTANCE_TYPE := t2.medium
 # INSTANCE_TYPE := c5.large
-VPC := vpc-fa6ba49e
-SUBNET := subnet-aadc37dc
-SUBNET2 := subnet-70c51314
-ZONE := us-west-2a
+VPC := vpc-23d7c047
+SUBNET := subnet-9cbdceea
+SUBNET2 := subnet-6a2ea632
+ZONE := us-east-1a
+SERVICE_DOMAIN_CERTIFICATE_ID := 90250d8c-396a-4c19-a488-82e301e283c0
 APP_LOG_GROUP_NAME := ${SERVICE_NAME}
 KEYPAIR_NAME := ${ROOT_NAME}_${SERVICE_NAME}-${STAGE}
 
@@ -25,10 +26,6 @@ EC_SECURITY_GROUP := ${SERVICE_NAME}EC-${STAGE}
 EC_CLUSTER_NAME := ${SERVICE_NAME}EC-${STAGE}
 EC_NODE_TYPE := cache.m4.large
 EC_SUBNET_GROUP := subnet-${SERVICE_NAME}EC-${STAGE}
-DAX_SECURITY_GROUP := ${SERVICE_NAME}DAX-${STAGE}
-DAX_CLUSTER_NAME := ${SERVICE_NAME}DAX-${STAGE}
-DAX_NODE_TYPE := dax.r3.large
-DYNAMO_TABLE := ${SERVICE_NAME}-idsync-${STAGE}
 PARTITION_KEY := partition-key
 SORT_KEY := sort-key
 
@@ -45,7 +42,7 @@ LB_SECURITY_GROUP := ${SERVICE_NAME}LB-${STAGE}
 
 
 # bucket name must be all lowercase, and start/end with lowercase letter or number
-ARTIFACTS_BUCKET := cloudformation-${SERVICE_NAME}-artifacts
+ARTIFACTS_BUCKET := cloudformation-${SERVICE_NAME}-art
 
 .PHONY: get_major_version
 get_major_version:
@@ -165,7 +162,7 @@ ecr_create:
 
 .PHONY: ecr_push
 ecr_push:
-	cd aqfer/scripts && go get ./.. && go run push-docker-image.go ${ROOT_NAME}_${SERVICE_NAME} $(shell cat MAJOR_VERSION) ${REPO_REGION} > /tmp/pushDockerImage 2> /tmp/pushDockerImageErr
+	cd aqfer/scripts && go get ./.. && go run push-docker-image.go ${ROOT_NAME}_${SERVICE_NAME} $(shell cat MAJOR_VERSION) ${AWS_REGION} > /tmp/pushDockerImage 2> /tmp/pushDockerImageErr
 	cat /tmp/pushDockerImageErr | sed -E -n "s/.*version ([0-9]+.[0-9]+.[0-9]+).*/\1/p" > /tmp/serviceVersion
 
 
@@ -193,6 +190,7 @@ spin_up_ecs:
 	-e ContainerName=${ROOT_NAME}-${SERVICE_NAME} \
 	-e AppLogGroupName=${APP_LOG_GROUP_NAME} \
 	-e ECSLogGroupName=${ECS_LOG_GROUP_NAME} \
+	-e DomainCertificateId=${SERVICE_DOMAIN_CERTIFICATE_ID} \
 	--entrypoint /scripts/spin_up_ecs.sh aws_image ${ARTIFACTS_BUCKET} ${ECS_NAME} \
 	${EC_SECURITY_GROUP} $(shell cat /tmp/ec_endpoint | sed -E "s/.*:([0-9]*).*/\1/")
 
@@ -221,6 +219,7 @@ update_ecs:
 	-e ContainerName=${ROOT_NAME}-${SERVICE_NAME} \
 	-e AppLogGroupName=${APP_LOG_GROUP_NAME} \
 	-e ECSLogGroupName=${ECS_LOG_GROUP_NAME} \
+	-e DomainCertificateId=${SERVICE_DOMAIN_CERTIFICATE_ID} \
 	--entrypoint /scripts/update_ecs.sh aws_image ${ARTIFACTS_BUCKET} ${ECS_NAME} \
 	${EC_SECURITY_GROUP} $(shell cat /tmp/ec_endpoint | sed -E "s/.*:([0-9]*).*/\1/")
 

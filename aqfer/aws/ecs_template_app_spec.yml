@@ -68,7 +68,14 @@ Parameters:
     Description: 'ECS LogGroup Name for Aqfer'
     Type: String
   AppLogGroupName:
-    Description: App LogGroup Name for Aqfer
+    Description: 'App LogGroup Name for Aqfer'
+    Type: String
+  DomainCertificateId:
+    Description: 'Certificate id for the api domain'
+    Type: String
+  ELBSecurityPolicyName:
+    Description: 'ELB Security policy name'
+    Default: 'ELBSecurityPolicy-2016-08'
     Type: String
 
 Resources:
@@ -216,6 +223,10 @@ Resources:
       TerminationPolicies:
       - Default
       LaunchConfigurationName: !Ref LaunchConfiguration
+      Tags:
+      - Key: Name
+        Value: imds
+        PropagateAtLaunch: true
   EC2SecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -324,12 +335,13 @@ Resources:
             Resource: "*"
   ECSService:
     Type: AWS::ECS::Service
-    DependsOn: LBListener
+    DependsOn:
+    - LBListener
     Properties: 
       ServiceName: !Ref ECSServiceName
       Cluster: !Ref ECSCluster
       TaskDefinition: !Ref ECSTaskDefinition
-      DesiredCount: 8
+      DesiredCount: 4
       DeploymentConfiguration:
         MinimumHealthyPercent: 100
         MaximumPercent: 200
