@@ -162,7 +162,7 @@ ecr_create:
 
 .PHONY: ecr_push
 ecr_push:
-	cd aqfer/scripts && go get ./.. && go run push-docker-image.go ${ROOT_NAME}_${SERVICE_NAME} $(shell cat MAJOR_VERSION) ${AWS_REGION} > /tmp/pushDockerImage 2> /tmp/pushDockerImageErr
+	cd aqfer/scripts && go get ./... && go run push-docker-image.go ${ROOT_NAME}_${SERVICE_NAME} $(shell cat MAJOR_VERSION) ${AWS_REGION} > /tmp/pushDockerImage 2> /tmp/pushDockerImageErr
 	cat /tmp/pushDockerImageErr | sed -E -n "s/.*version ([0-9]+.[0-9]+.[0-9]+).*/\1/p" > /tmp/serviceVersion
 
 
@@ -271,13 +271,22 @@ stop_tasks:
 
 .PHONY: run_locally
 run_locally:
-	docker-compose -f aqfer/docker-compose.yml up
+	docker run \
+	-e AWS_ACCESS_KEY_ID \
+	-e AWS_SECRET_ACCESS_KEY \
+	-e AWS_DEFAULT_REGION \
+	--expose 8082 -p 8082:8082 \
+	--entrypoint ./caddy aqfer_imds
 
 .PHONY: startover_locally
 startover_locally: build_caddy_image run_locally
-	docker-compose -f aqfer/docker-compose.yml up
 
 
 .PHONY: run_unit_tests
 run_unit_tests:
-	docker-compose -f aqfer/docker-compose.yml run caddy /run_unit_tests.sh
+	docker run \
+	-e AWS_ACCESS_KEY_ID \
+	-e AWS_SECRET_ACCESS_KEY \
+	-e AWS_DEFAULT_REGION \
+	--expose 8082 -p 8082:8082 \
+	--entrypoint /run_unit_tests.sh aqfer_imds
