@@ -48,6 +48,11 @@ ARTIFACTS_BUCKET := cloudformation-${SERVICE_NAME}-art
 get_major_version:
 	@cat MAJOR_VERSION
 
+.PHONY: get_next_version
+get_next_version:
+	cd aqfer/scripts && go get ./... && go run ecr_get_next_version/ecr-get-next-version.go ${ROOT_NAME}_${SERVICE_NAME} $(shell cat MAJOR_VERSION) ${AWS_REGION} > /tmp/serviceVersion
+
+
 .PHONY: setup_and_launch
 setup_and_launch: setup launch
 
@@ -162,7 +167,7 @@ ecr_create:
 
 .PHONY: ecr_push
 ecr_push:
-	cd aqfer/scripts && go get ./... && go run push-docker-image.go ${ROOT_NAME}_${SERVICE_NAME} $(shell cat MAJOR_VERSION) ${AWS_REGION} > /tmp/pushDockerImage 2> /tmp/pushDockerImageErr
+	cd aqfer/scripts && go get ./... && go run push_docker_image/push-docker-image.go ${ROOT_NAME}_${SERVICE_NAME} $(shell cat MAJOR_VERSION) ${AWS_REGION} > /tmp/pushDockerImage 2> /tmp/pushDockerImageErr
 	cat /tmp/pushDockerImageErr | sed -E -n "s/.*version ([0-9]+.[0-9]+.[0-9]+).*/\1/p" > /tmp/serviceVersion
 
 
