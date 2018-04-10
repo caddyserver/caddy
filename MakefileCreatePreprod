@@ -52,6 +52,10 @@ get_major_version:
 get_next_version:
 	@cd aqfer/scripts && go get ./... && go run ecr_get_next_version/ecr-get-next-version.go ${ROOT_NAME}_${SERVICE_NAME} $(shell cat MAJOR_VERSION) ${AWS_REGION}
 
+sanity:
+	${eval current_version=`build-tool -operation getcurrentversion -projecttype aio -versionurl http://imds.api-preprod.aqfer.net/version`}
+	echo current_version is ${current_version}
+	if [ ${current_version} = ${VERSION} ]; then echo "sanity test passed"; exit 0; else echo "sanity test failed"; exit 1; fi
 
 .PHONY: setup_and_launch
 setup_and_launch: setup launch
