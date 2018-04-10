@@ -94,7 +94,7 @@ build_caddy_image: build_caddy
 	docker build -f aqfer/Dockerfile.caddy -t ${ROOT_NAME}_${SERVICE_NAME} .
 
 .PHONY: build_caddy
-build_caddy:
+build_caddy: get_next_version
 	cd caddy && go run build.go --goos linux
 
 
