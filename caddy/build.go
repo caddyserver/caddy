@@ -64,6 +64,12 @@ func main() {
 		log.Fatal(err)
 	}
 
+	version, ok := os.LookupEnv("VERSION")
+	if !ok {
+		version = "SNAPSHOT"
+	}
+	ldflags += fmt.Sprintf(" -X github.com/startsmartlabs/caddy-transformrequest.Version=%s", version)
+
 	args := []string{"build", "-ldflags", ldflags}
 	args = append(args, "-asmflags", fmt.Sprintf("-trimpath=%s", gopath))
 	args = append(args, "-gcflags", fmt.Sprintf("-trimpath=%s", gopath))

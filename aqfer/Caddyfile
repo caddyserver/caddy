@@ -1,6 +1,6 @@
-:80 {
-  redir / /test.go
-}
+# :80 {
+#   redir / /test.go
+# }
 
 :8082 {
   # errors stdout
