@@ -50,7 +50,7 @@ get_major_version:
 
 .PHONY: get_next_version
 get_next_version:
-	cd aqfer/scripts && go get ./... && go run ecr_get_next_version/ecr-get-next-version.go ${ROOT_NAME}_${SERVICE_NAME} $(shell cat MAJOR_VERSION) ${AWS_REGION} > /tmp/serviceVersion
+	@cd aqfer/scripts && go get ./... && go run ecr_get_next_version/ecr-get-next-version.go ${ROOT_NAME}_${SERVICE_NAME} $(shell cat MAJOR_VERSION) ${AWS_REGION}
 
 
 .PHONY: setup_and_launch
@@ -167,8 +167,7 @@ ecr_create:
 
 .PHONY: ecr_push
 ecr_push:
-	cd aqfer/scripts && go get ./... && go run push_docker_image/push-docker-image.go ${ROOT_NAME}_${SERVICE_NAME} $(shell cat MAJOR_VERSION) ${AWS_REGION} > /tmp/pushDockerImage 2> /tmp/pushDockerImageErr
-	cat /tmp/pushDockerImageErr | sed -E -n "s/.*version ([0-9]+.[0-9]+.[0-9]+).*/\1/p" > /tmp/serviceVersion
+	cd aqfer/scripts && go get ./... && go run push_docker_image/push-docker-image.go ${ROOT_NAME}_${SERVICE_NAME} ${VERSION} ${AWS_REGION}
 
 
 .PHONY: spin_up_ecs
