@@ -97,6 +97,6 @@ func main() {
 		nextVersion = strings.Join(s, ".")
 	}
 
-	log.Printf("building version %s", nextVersion)
+	log.Printf("Next version %s", nextVersion)
 	fmt.Printf("%s", nextVersion)
 }
