@@ -4,7 +4,6 @@ import (
 	"os"
 	"fmt"
 	"github.com/aws/aws-sdk-go/aws/session"
-	"log"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ecr"
 	"strings"
@@ -96,7 +95,5 @@ func main() {
 		s[2] = "0"
 		nextVersion = strings.Join(s, ".")
 	}
-
-	log.Printf("Next version %s", nextVersion)
 	fmt.Printf("%s", nextVersion)
 }
