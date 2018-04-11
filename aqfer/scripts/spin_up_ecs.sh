@@ -27,6 +27,7 @@ aws cloudformation deploy --template-file /ecs_app_spec.yml --stack-name $2 --ca
   AppLogGroupName=$AppLogGroupName \
   ECSLogGroupName=$ECSLogGroupName \
   DomainCertificateId=$DomainCertificateId \
+  ServiceStage=$ServiceStage \
 
 # Elasticache security group ingress from ec2 security group
 aws ec2 authorize-security-group-ingress --group-name $3 --source-group $EC2SecurityGroupName --port $4 --protocol tcp
