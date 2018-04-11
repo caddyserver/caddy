@@ -199,6 +199,7 @@ spin_up_ecs:
 	-e AppLogGroupName=${APP_LOG_GROUP_NAME} \
 	-e ECSLogGroupName=${ECS_LOG_GROUP_NAME} \
 	-e DomainCertificateId=${SERVICE_DOMAIN_CERTIFICATE_ID} \
+	-e ServiceStage=${STAGE} \
 	--entrypoint /scripts/spin_up_ecs.sh aws_image ${ARTIFACTS_BUCKET} ${ECS_NAME} \
 	${EC_SECURITY_GROUP} $(shell cat /tmp/ec_endpoint | sed -E "s/.*:([0-9]*).*/\1/")
 
@@ -228,6 +229,7 @@ update_ecs:
 	-e AppLogGroupName=${APP_LOG_GROUP_NAME} \
 	-e ECSLogGroupName=${ECS_LOG_GROUP_NAME} \
 	-e DomainCertificateId=${SERVICE_DOMAIN_CERTIFICATE_ID} \
+	-e ServiceStage=${STAGE} \
 	--entrypoint /scripts/update_ecs.sh aws_image ${ARTIFACTS_BUCKET} ${ECS_NAME} \
 	${EC_SECURITY_GROUP} $(shell cat /tmp/ec_endpoint | sed -E "s/.*:([0-9]*).*/\1/")
 

@@ -77,6 +77,9 @@ Parameters:
     Description: 'ELB Security policy name'
     Default: 'ELBSecurityPolicy-2016-08'
     Type: String
+  ServiceStage:
+    Description: 'Stage of the service'
+    Type: String
 
 Resources:
   ApplicationLogGroup:
@@ -225,7 +228,7 @@ Resources:
       LaunchConfigurationName: !Ref LaunchConfiguration
       Tags:
       - Key: Name
-        Value: imds
+        Value: !Sub "imds-${ServiceStage}"
         PropagateAtLaunch: true
   EC2SecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -336,7 +339,8 @@ Resources:
   ECSService:
     Type: AWS::ECS::Service
     DependsOn:
-    - LBListener
+    - LBListenerHTTP
+    - LBListenerHTTPS
     Properties: 
       ServiceName: !Ref ECSServiceName
       Cluster: !Ref ECSCluster
@@ -356,35 +360,68 @@ Resources:
       - Field: instanceId
         Type: spread
       Role: !Ref ECSServiceRole
-  
-  NetworkLoadBalancer:
+
+  LBListenerHTTP:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref LBTargetGroup
+
+  LBListenerHTTPS:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+      - CertificateArn: !Sub "arn:aws:acm:${AWS::Region}:${AWS::AccountId}:certificate/${DomainCertificateId}"
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref LBTargetGroup
+
+  LBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Ref TargetGroupName
+      Protocol: HTTP
+      Port: 80
+      TargetType: instance
+      VpcId: !Ref Vpc
+      HealthCheckPath: "/version"
+      HealthCheckProtocol: HTTP
+      HealthyThresholdCount: 5
+      UnhealthyThresholdCount: 5
+      HealthCheckIntervalSeconds: 30
+
+  LBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Ref LBSecurityGroupName
+      GroupDescription: 'Application Load Balancer Security Group'
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '80'
+        ToPort: '80'
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: '443'
+        ToPort: '443'
+        CidrIp: 0.0.0.0/0
+
+  ApplicationLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
       Name: !Ref LoadBalancerName
-      Type: network
+      Type: application
       IpAddressType: ipv4
       Scheme: internet-facing
       Subnets:
       - !Ref Subnet
       - !Ref Subnet2
-  LBListener:
-    Type: AWS::ElasticLoadBalancingV2::Listener
-    Properties: 
-      LoadBalancerArn: !Ref NetworkLoadBalancer
-      Port: 80
-      Protocol: TCP
-      DefaultActions:
-      - Type: forward
-        TargetGroupArn: !Ref LBTargetGroup
-  LBTargetGroup:
-    Type: AWS::ElasticLoadBalancingV2::TargetGroup
-    Properties:
-      Name: !Ref TargetGroupName
-      Protocol: TCP
-      Port: 80
-      TargetType: instance
-      VpcId: !Ref Vpc
-      HealthCheckProtocol: TCP
-      HealthyThresholdCount: 5
-      UnhealthyThresholdCount: 5
-      HealthCheckIntervalSeconds: 30
+      SecurityGroups:
+      - !Ref LBSecurityGroup
