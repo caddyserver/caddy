@@ -48,6 +48,15 @@ ARTIFACTS_BUCKET := cloudformation-${SERVICE_NAME}-art
 get_major_version:
 	@cat MAJOR_VERSION
 
+.PHONY: get_next_version
+get_next_version:
+	@cd aqfer/scripts && go get ./... && go run ecr_get_next_version/ecr-get-next-version.go ${ROOT_NAME}_${SERVICE_NAME} $(shell cat MAJOR_VERSION) ${AWS_REGION}
+
+sanity:
+	${eval current_version=`build-tool -operation getcurrentversion -projecttype aio -versionurl http://imds.api-preprod.aqfer.net/version`}
+	echo current_version is ${current_version}
+	if [ ${current_version} = ${VERSION} ]; then echo "sanity test passed"; exit 0; else echo "sanity test failed"; exit 1; fi
+
 .PHONY: setup_and_launch
 setup_and_launch: setup launch
 
@@ -89,7 +98,7 @@ build_caddy_image: build_caddy
 	docker build -f aqfer/Dockerfile.caddy -t ${ROOT_NAME}_${SERVICE_NAME} .
 
 .PHONY: build_caddy
-build_caddy:
+build_caddy: get_next_version
 	cd caddy && go run build.go --goos linux
 
 
@@ -162,8 +171,7 @@ ecr_create:
 
 .PHONY: ecr_push
 ecr_push:
-	cd aqfer/scripts && go get ./... && go run push-docker-image.go ${ROOT_NAME}_${SERVICE_NAME} $(shell cat MAJOR_VERSION) ${AWS_REGION} > /tmp/pushDockerImage 2> /tmp/pushDockerImageErr
-	cat /tmp/pushDockerImageErr | sed -E -n "s/.*version ([0-9]+.[0-9]+.[0-9]+).*/\1/p" > /tmp/serviceVersion
+	cd aqfer/scripts && go get ./... && go run push_docker_image/push-docker-image.go ${ROOT_NAME}_${SERVICE_NAME} ${VERSION} ${AWS_REGION}
 
 
 .PHONY: spin_up_ecs
