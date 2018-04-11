@@ -95,5 +95,5 @@ func main() {
 		s[2] = "0"
 		nextVersion = strings.Join(s, ".")
 	}
-	fmt.Printf("%s", nextVersion)
+	fmt.Printf("%s\n", nextVersion)
 }
