@@ -163,7 +163,7 @@ ready_caddyfile: get_db_endpoints
 
 
 .PHONY: ecr_repo_push
-ecr_repo_push: build_caddy_image ecr_create ecr_push
+ecr_repo_push: ready_caddyfile build_caddy_image ecr_create ecr_push
 
 
 .PHONY: ecr_create
