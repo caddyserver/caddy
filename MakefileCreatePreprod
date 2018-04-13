@@ -1,7 +1,5 @@
 ifeq (${STAGE},)
 STAGE = dev
-else
-STAGE = ${STAGE}
 endif
 
 SERVICE_NAME := imds
