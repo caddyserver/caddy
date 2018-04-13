@@ -1,4 +1,9 @@
-STAGE := preprod
+ifeq (${STAGE},)
+STAGE = dev
+else
+STAGE = ${STAGE}
+endif
+
 SERVICE_NAME := imds
 MAJOR_VERSION := 0
 SERVICE_VERSION := 0.0.0
@@ -194,7 +199,7 @@ spin_up_ecs:
 	-e ECSServiceRoleName=${ECS_SERVICE_ROLE_NAME} \
 	-e ECSTaskDefinitionName=${TASK_DEFINITION} \
 	-e ECSServiceName=${ECS_SERVICE_NAME} \
-	-e ECRRepoURI=$(shell cat /tmp/ecrUri):$(shell cat /tmp/serviceVersion) \
+	-e ECRRepoURI=$(shell cat /tmp/ecrUri):${VERSION} \
 	-e ContainerName=${ROOT_NAME}-${SERVICE_NAME} \
 	-e AppLogGroupName=${APP_LOG_GROUP_NAME} \
 	-e ECSLogGroupName=${ECS_LOG_GROUP_NAME} \
@@ -224,7 +229,7 @@ update_ecs:
 	-e ECSServiceRoleName=${ECS_SERVICE_ROLE_NAME} \
 	-e ECSTaskDefinitionName=${TASK_DEFINITION} \
 	-e ECSServiceName=${ECS_SERVICE_NAME} \
-	-e ECRRepoURI=$(shell cat /tmp/ecrUri):$(shell cat /tmp/serviceVersion) \
+	-e ECRRepoURI=$(shell cat /tmp/ecrUri):${VERSION}} \
 	-e ContainerName=${ROOT_NAME}-${SERVICE_NAME} \
 	-e AppLogGroupName=${APP_LOG_GROUP_NAME} \
 	-e ECSLogGroupName=${ECS_LOG_GROUP_NAME} \
