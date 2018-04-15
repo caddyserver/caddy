@@ -63,22 +63,38 @@ type Rule interface {
 
 // SimpleRule is a simple rewrite rule.
 type SimpleRule struct {
-	From, To string
+	Regexp *regexp.Regexp
+	To     string
+	Negate bool
 }
 
 // NewSimpleRule creates a new Simple Rule
-func NewSimpleRule(from, to string) SimpleRule {
-	return SimpleRule{from, to}
+func NewSimpleRule(from, to string, negate bool) (*SimpleRule, error) {
+	r, err := regexp.Compile(from)
+	if err != nil {
+		return nil, err
+	}
+	return &SimpleRule{
+		Regexp: r,
+		To:     to,
+		Negate: negate,
+	}, nil
 }
 
 // BasePath satisfies httpserver.Config
-func (s SimpleRule) BasePath() string { return s.From }
+func (s SimpleRule) BasePath() string { return "/" }
 
 // Match satisfies httpserver.Config
-func (s SimpleRule) Match(r *http.Request) bool { return s.From == r.URL.Path }
+func (s *SimpleRule) Match(r *http.Request) bool {
+	matches := regexpMatches(s.Regexp, "/", r.URL.Path)
+	if s.Negate {
+		return len(matches) == 0
+	}
+	return len(matches) > 0
+}
 
 // Rewrite rewrites the internal location of the current request.
-func (s SimpleRule) Rewrite(fs http.FileSystem, r *http.Request) Result {
+func (s *SimpleRule) Rewrite(fs http.FileSystem, r *http.Request) Result {
 
 	// attempt rewrite
 	return To(fs, r, s.To, newReplacer(r))
@@ -165,7 +181,7 @@ func (r ComplexRule) Match(req *http.Request) bool {
 		return true
 	}
 	// otherwise validate regex
-	return r.regexpMatches(req.URL.Path) != nil
+	return regexpMatches(r.Regexp, r.Base, req.URL.Path) != nil
 }
 
 // Rewrite rewrites the internal location of the current request.
@@ -174,7 +190,7 @@ func (r ComplexRule) Rewrite(fs http.FileSystem, req *http.Request) (re Result) 
 
 	// validate regexp if present
 	if r.Regexp != nil {
-		matches := r.regexpMatches(req.URL.Path)
+		matches := regexpMatches(r.Regexp, r.Base, req.URL.Path)
 		switch len(matches) {
 		case 0:
 			// no match
@@ -230,14 +246,14 @@ func (r ComplexRule) matchExt(rPath string) bool {
 	return !mustUse
 }
 
-func (r ComplexRule) regexpMatches(rPath string) []string {
-	if r.Regexp != nil {
+func regexpMatches(regexp *regexp.Regexp, base, rPath string) []string {
+	if regexp != nil {
 		// include trailing slash in regexp if present
-		start := len(r.Base)
-		if strings.HasSuffix(r.Base, "/") {
+		start := len(base)
+		if strings.HasSuffix(base, "/") {
 			start--
 		}
-		return r.Regexp.FindStringSubmatch(rPath[start:])
+		return regexp.FindStringSubmatch(rPath[start:])
 	}
 	return nil
 }
