@@ -227,7 +227,7 @@ update_ecs:
 	-e ECSServiceRoleName=${ECS_SERVICE_ROLE_NAME} \
 	-e ECSTaskDefinitionName=${TASK_DEFINITION} \
 	-e ECSServiceName=${ECS_SERVICE_NAME} \
-	-e ECRRepoURI=$(shell cat /tmp/ecrUri):${VERSION}} \
+	-e ECRRepoURI=$(shell cat /tmp/ecrUri):${VERSION} \
 	-e ContainerName=${ROOT_NAME}-${SERVICE_NAME} \
 	-e AppLogGroupName=${APP_LOG_GROUP_NAME} \
 	-e ECSLogGroupName=${ECS_LOG_GROUP_NAME} \
