@@ -21,7 +21,14 @@ VPC := vpc-23d7c047
 SUBNET := subnet-9cbdceea
 SUBNET2 := subnet-6a2ea632
 ZONE := us-east-1a
-SERVICE_DOMAIN_CERTIFICATE_ID := 90250d8c-396a-4c19-a488-82e301e283c0
+# api-preprod.aqfer.net
+# R53_HOSTED_ZONE_NAME:= api-preprod.aqfer.net.
+# SERVICE_DOMAIN_CERTIFICATE_ID := 90250d8c-396a-4c19-a488-82e301e283c0
+# DNS_SUBDOMAIN := imds
+# api.aqfer.net
+R53_HOSTED_ZONE_NAME:= api.aqfer.net.
+SERVICE_DOMAIN_CERTIFICATE_ID := e858c27f-84c2-4f3d-a27f-be12b453f50e
+DNS_SUBDOMAIN := imds-preprod
 APP_LOG_GROUP_NAME := ${SERVICE_NAME}
 KEYPAIR_NAME := ${ROOT_NAME}_${SERVICE_NAME}-${STAGE}
 
@@ -32,7 +39,7 @@ EC_SUBNET_GROUP := subnet-${SERVICE_NAME}EC-${STAGE}
 PARTITION_KEY := partition-key
 SORT_KEY := sort-key
 
-TASK_DEFINITION := ${SERVICE_NAME}TaskDefinition${STAGE}
+TASK_DEFINITION := ${SERVICE_NAME}TaskDefinition-${STAGE}
 EC2_SECURITY_GROUP := ${SERVICE_NAME}EC2-${STAGE}
 EC2_INSTANCE_ROLE_NAME := ${SERVICE_NAME}EC2InstanceRole-${STAGE}
 ECS_CLUSTER_NAME := ${SERVICE_NAME}ECS-${STAGE}
@@ -75,10 +82,9 @@ setup: aws_build create_artifact_bucket create_keypair
 .PHONY: launch
 launch: spin_up_db update_container_repo spin_up_ecs
 
-# kills current tasks and update ecs to use the latest image
-# ECS service will spin up new tasks that will run updated docker containers
-.PHONY: update_tasks
-update_tasks: stop_tasks update_ecs
+# update ecs to use the latest image
+.PHONY: update_ecs
+update_ecs: aws_build spin_up_ecs
 
 
 # has to be run after databases are up or else the caddyfile database sections will point to nothing
@@ -203,37 +209,9 @@ spin_up_ecs:
 	-e ECSLogGroupName=${ECS_LOG_GROUP_NAME} \
 	-e DomainCertificateId=${SERVICE_DOMAIN_CERTIFICATE_ID} \
 	-e ServiceStage=${STAGE} \
+	-e R53HostedZoneName=${R53_HOSTED_ZONE_NAME} \
+	-e DNSSubDomain=${DNS_SUBDOMAIN} \
 	--entrypoint /scripts/spin_up_ecs.sh aws_image ${ARTIFACTS_BUCKET} ${ECS_NAME} \
-	${EC_SECURITY_GROUP} $(shell cat /tmp/ec_endpoint | sed -E "s/.*:([0-9]*).*/\1/")
-
-
-.PHONY: update_ecs
-update_ecs:
-	docker run -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION \
-	-e Jwt=${JWT} \
-	-e Ami=${AMI} \
-	-e Subnet=${SUBNET} \
-	-e Subnet2=${SUBNET2} \
-	-e Vpc=${VPC} \
-	-e AvailabilityZone=${ZONE} \
-	-e KeyPair=${KEYPAIR_NAME} \
-	-e LoadBalancerName=${LOAD_BALANCER_NAME} \
-	-e LBSecurityGroupName=${LB_SECURITY_GROUP} \
-	-e TargetGroupName=${ECS_TARGET_GROUP_NAME} \
-	-e EC2InstanceType=${INSTANCE_TYPE} \
-	-e EC2SecurityGroupName=${EC2_SECURITY_GROUP} \
-	-e EC2InstanceRoleName=${EC2_INSTANCE_ROLE_NAME} \
-	-e ECSClusterName=${ECS_CLUSTER_NAME} \
-	-e ECSServiceRoleName=${ECS_SERVICE_ROLE_NAME} \
-	-e ECSTaskDefinitionName=${TASK_DEFINITION} \
-	-e ECSServiceName=${ECS_SERVICE_NAME} \
-	-e ECRRepoURI=$(shell cat /tmp/ecrUri):${VERSION} \
-	-e ContainerName=${ROOT_NAME}-${SERVICE_NAME} \
-	-e AppLogGroupName=${APP_LOG_GROUP_NAME} \
-	-e ECSLogGroupName=${ECS_LOG_GROUP_NAME} \
-	-e DomainCertificateId=${SERVICE_DOMAIN_CERTIFICATE_ID} \
-	-e ServiceStage=${STAGE} \
-	--entrypoint /scripts/update_ecs.sh aws_image ${ARTIFACTS_BUCKET} ${ECS_NAME} \
 	${EC_SECURITY_GROUP} $(shell cat /tmp/ec_endpoint | sed -E "s/.*:([0-9]*).*/\1/")
 
 # make instances=i-029aefe585538720b\ i-09abb841e51433e42 tear_down_ecs
