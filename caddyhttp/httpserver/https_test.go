@@ -21,6 +21,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddytls"
 )
 
@@ -150,18 +151,18 @@ func TestHostHasOtherPort(t *testing.T) {
 func TestMakePlaintextRedirects(t *testing.T) {
 	configs := []*SiteConfig{
 		// Happy path = standard redirect from 80 to 443
-		{Addr: Address{Host: "example.com"}, TLS: &caddytls.Config{Managed: true}},
+		{Addr: Address{Original: "example.com", Host: "example.com"}, TLS: &caddytls.Config{Managed: true}},
 
 		// Host on port 80 already defined; don't change it (no redirect)
-		{Addr: Address{Host: "sub1.example.com", Port: "80", Scheme: "http"}, TLS: new(caddytls.Config)},
-		{Addr: Address{Host: "sub1.example.com"}, TLS: &caddytls.Config{Managed: true}},
+		{Addr: Address{Original: "http://sub1.example.com:80", Host: "sub1.example.com", Port: "80", Scheme: "http"}, TLS: new(caddytls.Config)},
+		{Addr: Address{Original: "sub1.example.com", Host: "sub1.example.com"}, TLS: &caddytls.Config{Managed: true}},
 
 		// Redirect from port 80 to port 5000 in this case
-		{Addr: Address{Host: "sub2.example.com", Port: "5000"}, TLS: &caddytls.Config{Managed: true}},
+		{Addr: Address{Original: "sub2.example.com:5000", Host: "sub2.example.com", Port: "5000"}, TLS: &caddytls.Config{Managed: true}},
 
 		// Can redirect from 80 to either 443 or 5001, but choose 443
-		{Addr: Address{Host: "sub3.example.com", Port: "443"}, TLS: &caddytls.Config{Managed: true}},
-		{Addr: Address{Host: "sub3.example.com", Port: "5001", Scheme: "https"}, TLS: &caddytls.Config{Managed: true}},
+		{Addr: Address{Original: "sub3.example.com:443", Host: "sub3.example.com", Port: "443"}, TLS: &caddytls.Config{Managed: true}},
+		{Addr: Address{Original: "https:://sub3.example.com:5001", Host: "sub3.example.com", Port: "5001", Scheme: "https"}, TLS: &caddytls.Config{Managed: true}},
 	}
 
 	result := makePlaintextRedirects(configs)
@@ -170,6 +171,69 @@ func TestMakePlaintextRedirects(t *testing.T) {
 	if len(result) != len(configs)+expectedRedirCount {
 		t.Errorf("Expected %d redirect(s) to be added, but got %d",
 			expectedRedirCount, len(result)-len(configs))
+	}
+}
+
+func TestApplyHeaderToRedirs(t *testing.T) {
+	testCases := []struct {
+		name                         string
+		siteConfig                   *SiteConfig
+		middlewareToAdd              []Middleware
+		expectedRedirsWithMetaCount  int
+		expectedRedirMiddlewareCount int
+	}{
+		{
+			"No initial middleware",
+			&SiteConfig{Addr: Address{Original: "example.com", Host: "example.com"}, TLS: &caddytls.Config{Managed: true}},
+			[]Middleware{},
+			1,
+			1,
+		},
+		{
+			"With initial middleware",
+			&SiteConfig{Addr: Address{Original: "example.com", Host: "example.com"}, TLS: &caddytls.Config{Managed: true}},
+			[]Middleware{func(handler Handler) Handler { return handler }},
+			1,
+			2,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := newContext(&caddy.Instance{Storage: make(map[interface{}]interface{})}).(*httpContext)
+
+			ctx.saveConfig(tc.siteConfig.Addr.Key(), tc.siteConfig)
+
+			allConfigs := makePlaintextRedirects([]*SiteConfig{tc.siteConfig})
+			redirConfigs := collectRedirsWithMetaTags(allConfigs)
+
+			if len(redirConfigs) != tc.expectedRedirsWithMetaCount {
+				t.Errorf("Expected %d redirect(s) with metadata to be present, but got %d",
+					tc.expectedRedirsWithMetaCount, len(redirConfigs))
+			}
+
+			tc.siteConfig.middleware = tc.middlewareToAdd
+
+			consumeRedirMetaTags(ctx, redirConfigs)
+			redirConfigs = collectRedirsWithMetaTags(allConfigs)
+
+			if len(redirConfigs) != 0 {
+				t.Errorf("Expected no redirects with metadata to be present, but got %d",
+					len(redirConfigs))
+			}
+
+			var finalRedirConfig *SiteConfig
+			for _, cfg := range allConfigs {
+				if tc.siteConfig.Addr.Key() != cfg.Addr.Key() {
+					finalRedirConfig = cfg
+				}
+			}
+
+			if len(finalRedirConfig.Middleware()) != tc.expectedRedirMiddlewareCount {
+				t.Errorf("Expected redirect to have %d middlewares, but got %d",
+					tc.expectedRedirMiddlewareCount, len(finalRedirConfig.Middleware()))
+			}
+		})
 	}
 }
 

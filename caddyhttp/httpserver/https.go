@@ -132,16 +132,16 @@ func makePlaintextRedirects(allConfigs []*SiteConfig) []*SiteConfig {
 		if cfg.TLS.Managed &&
 			!hostHasOtherPort(allConfigs, i, HTTPPort) &&
 			(cfg.Addr.Port == HTTPSPort || !hostHasOtherPort(allConfigs, i, HTTPSPort)) {
-				// Mark the redirection config with a meta tag to be
-				// specifically used after the header directive is parsed
-				redirConfig := redirPlaintextHost(cfg)
+			// Mark the redirection config with a meta tag to be
+			// specifically used after the header directive is parsed
+			redirConfig := redirPlaintextHost(cfg)
 
-				if key := cfg.Addr.Key(); key != "" {
-					redirConfig.meta = make(map[siteConfigMetaTag]string)
-					redirConfig.meta[redirectToHttpsRef] = key
-				}
+			if key := cfg.Addr.Key(); key != "" {
+				redirConfig.meta = make(map[siteConfigMetaTag]string)
+				redirConfig.meta[redirectToHttpsRef] = key
+			}
 
-				allConfigs = append(allConfigs, redirConfig)
+			allConfigs = append(allConfigs, redirConfig)
 		}
 	}
 	return allConfigs
@@ -225,16 +225,25 @@ func redirPlaintextHost(cfg *SiteConfig) *SiteConfig {
 // the server blocks and it will do a reverse operation to find all metadata
 // configs that are created for http to https redirection. Then for all those
 // configs it will prepend the last middleware of the corresponding metadata reference
-// config which is the header middleware to their list of middleware.
+// config, which is the header middleware to their list of middleware.
 // Thus in the end each http redir config will have 2 middleware one for the redirects
 // and one for the headers
 func applyHeaderToRedirs(cctx caddy.Context) error {
 	ctx := cctx.(*httpContext)
 
+	// collect redirection configs with relevant metadata
+	redirConfigs := collectRedirsWithMetaTags(ctx.siteConfigs)
+
+	// apply header middleware to redir configs
+	consumeRedirMetaTags(ctx, redirConfigs)
+
+	return nil
+}
+
+func collectRedirsWithMetaTags(siteConfigs []*SiteConfig) []*SiteConfig {
 	var redirConfigs []*SiteConfig
 
-	// collect configs with relevant metadata
-	for _, cfg := range ctx.siteConfigs {
+	for _, cfg := range siteConfigs {
 		if cfg.meta != nil {
 			if _, ok := cfg.meta[redirectToHttpsRef]; ok {
 				redirConfigs = append(redirConfigs, cfg)
@@ -242,22 +251,23 @@ func applyHeaderToRedirs(cctx caddy.Context) error {
 		}
 	}
 
-	// apply header middleware to redir configs
-	if len(redirConfigs) > 0 {
-		for _, redirConfig := range redirConfigs {
-			refKey := redirConfig.meta[redirectToHttpsRef]
+	return redirConfigs
+}
 
-			if config, ok := ctx.keysToSiteConfigs[refKey]; ok {
-				middleware := config.Middleware()
-				// parsing block is after 'header' so the last middleware even if
-				// is empty is a header one
-				headerMiddleware := middleware[len(middleware) - 1]
-				redirConfig.middleware = append([]Middleware{headerMiddleware}, redirConfig.middleware...)
+func consumeRedirMetaTags(ctx *httpContext, siteConfigs []*SiteConfig) {
+	for _, cfg := range siteConfigs {
+		refKey := cfg.meta[redirectToHttpsRef]
+
+		if config, ok := ctx.keysToSiteConfigs[refKey]; ok {
+			middleware := config.Middleware()
+			// parsing block is after 'header' so the last middleware even if
+			// is empty is a header one
+			if len(middleware) > 0 {
+				headerMiddleware := middleware[len(middleware)-1]
+				cfg.middleware = append([]Middleware{headerMiddleware}, cfg.middleware...)
 			}
-			// clean up metadata
-			delete(redirConfig.meta, redirectToHttpsRef)
 		}
+		// clean up metadata
+		delete(cfg.meta, redirectToHttpsRef)
 	}
-
-	return nil
 }
