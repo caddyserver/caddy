@@ -207,6 +207,7 @@ func TestApplyHeaderToRedirs(t *testing.T) {
 			allConfigs := makePlaintextRedirects([]*SiteConfig{tc.siteConfig})
 			redirConfigs := collectRedirsWithMetaTags(allConfigs)
 
+			// Check that meta-tags have been added in redirect configs before we consume them
 			if len(redirConfigs) != tc.expectedRedirsWithMetaCount {
 				t.Errorf("Expected %d redirect(s) with metadata to be present, but got %d",
 					tc.expectedRedirsWithMetaCount, len(redirConfigs))
@@ -217,6 +218,7 @@ func TestApplyHeaderToRedirs(t *testing.T) {
 			consumeRedirMetaTags(ctx, redirConfigs)
 			redirConfigs = collectRedirsWithMetaTags(allConfigs)
 
+			// Check that no meta-tags have been left in redirect configs after we consumed them
 			if len(redirConfigs) != 0 {
 				t.Errorf("Expected no redirects with metadata to be present, but got %d",
 					len(redirConfigs))
@@ -229,6 +231,7 @@ func TestApplyHeaderToRedirs(t *testing.T) {
 				}
 			}
 
+			// Find the redirect config after the meta-tags have been consumed and count the middleware
 			if len(finalRedirConfig.Middleware()) != tc.expectedRedirMiddlewareCount {
 				t.Errorf("Expected redirect to have %d middlewares, but got %d",
 					tc.expectedRedirMiddlewareCount, len(finalRedirConfig.Middleware()))
