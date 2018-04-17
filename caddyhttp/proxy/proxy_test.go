@@ -122,7 +122,7 @@ func TestReverseProxy(t *testing.T) {
 	// set up proxy
 	p := &Proxy{
 		Next:      httpserver.EmptyNext, // prevents panic in some cases when test fails
-		Upstreams: []Upstream{newFakeUpstream(backend.URL, false)},
+		Upstreams: []Upstream{newFakeUpstream(backend.URL, false, 30*time.Second)},
 	}
 
 	// Create the fake request body.
@@ -202,7 +202,7 @@ func TestReverseProxyInsecureSkipVerify(t *testing.T) {
 	// set up proxy
 	p := &Proxy{
 		Next:      httpserver.EmptyNext, // prevents panic in some cases when test fails
-		Upstreams: []Upstream{newFakeUpstream(backend.URL, true)},
+		Upstreams: []Upstream{newFakeUpstream(backend.URL, true, 30*time.Second)},
 	}
 
 	// create request and response recorder
@@ -287,6 +287,31 @@ func TestReverseProxyMaxConnLimit(t *testing.T) {
 	jobs.Wait()
 }
 
+func TestReverseProxyTimeout(t *testing.T) {
+	timeout := 2 * time.Second
+	errorMargin := 100 * time.Millisecond
+	log.SetOutput(ioutil.Discard)
+	defer log.SetOutput(os.Stderr)
+
+	// set up proxy
+	p := &Proxy{
+		Next:      httpserver.EmptyNext, // prevents panic in some cases when test fails
+		Upstreams: []Upstream{newFakeUpstream("https://8.8.8.8", true, timeout)},
+	}
+
+	// create request and response recorder
+	r := httptest.NewRequest("GET", "/", nil)
+	w := httptest.NewRecorder()
+
+	start := time.Now()
+	p.ServeHTTP(w, r)
+	took := time.Since(start)
+
+	if took > timeout+errorMargin {
+		t.Errorf("Expected timeout ~ %v but got %v", timeout, took)
+	}
+}
+
 func TestWebSocketReverseProxyNonHijackerPanic(t *testing.T) {
 	// Capture the expected panic
 	defer func() {
@@ -301,7 +326,7 @@ func TestWebSocketReverseProxyNonHijackerPanic(t *testing.T) {
 	defer wsNop.Close()
 
 	// Get proxy to use for the test
-	p := newWebSocketTestProxy(wsNop.URL, false)
+	p := newWebSocketTestProxy(wsNop.URL, false, 30*time.Second)
 
 	// Create client request
 	r := httptest.NewRequest("GET", "/", nil)
@@ -331,7 +356,7 @@ func TestWebSocketReverseProxyBackendShutDown(t *testing.T) {
 	}()
 
 	// Get proxy to use for the test
-	p := newWebSocketTestProxy(backend.URL, false)
+	p := newWebSocketTestProxy(backend.URL, false, 30*time.Second)
 	backendProxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p.ServeHTTP(w, r)
 	}))
@@ -360,7 +385,7 @@ func TestWebSocketReverseProxyServeHTTPHandler(t *testing.T) {
 	defer wsNop.Close()
 
 	// Get proxy to use for the test
-	p := newWebSocketTestProxy(wsNop.URL, false)
+	p := newWebSocketTestProxy(wsNop.URL, false, 30*time.Second)
 
 	// Create client request
 	r := httptest.NewRequest("GET", "/", nil)
@@ -407,7 +432,7 @@ func TestWebSocketReverseProxyFromWSClient(t *testing.T) {
 	defer wsEcho.Close()
 
 	// Get proxy to use for the test
-	p := newWebSocketTestProxy(wsEcho.URL, false)
+	p := newWebSocketTestProxy(wsEcho.URL, false, 30*time.Second)
 
 	// This is a full end-end test, so the proxy handler
 	// has to be part of a server listening on a port. Our
@@ -452,7 +477,7 @@ func TestWebSocketReverseProxyFromWSSClient(t *testing.T) {
 	}))
 	defer wsEcho.Close()
 
-	p := newWebSocketTestProxy(wsEcho.URL, true)
+	p := newWebSocketTestProxy(wsEcho.URL, true, 30*time.Second)
 
 	echoProxy := newTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p.ServeHTTP(w, r)
@@ -528,7 +553,7 @@ func TestUnixSocketProxy(t *testing.T) {
 	defer ts.Close()
 
 	url := strings.Replace(ts.URL, "http://", "unix:", 1)
-	p := newWebSocketTestProxy(url, false)
+	p := newWebSocketTestProxy(url, false, 30*time.Second)
 
 	echoProxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p.ServeHTTP(w, r)
@@ -686,7 +711,7 @@ func TestUpstreamHeadersUpdate(t *testing.T) {
 	}))
 	defer backend.Close()
 
-	upstream := newFakeUpstream(backend.URL, false)
+	upstream := newFakeUpstream(backend.URL, false, 30*time.Second)
 	upstream.host.UpstreamHeaders = http.Header{
 		"Connection": {"{>Connection}"},
 		"Upgrade":    {"{>Upgrade}"},
@@ -753,7 +778,7 @@ func TestDownstreamHeadersUpdate(t *testing.T) {
 	}))
 	defer backend.Close()
 
-	upstream := newFakeUpstream(backend.URL, false)
+	upstream := newFakeUpstream(backend.URL, false, 30*time.Second)
 	upstream.host.DownstreamHeaders = http.Header{
 		"+Merge-Me":  {"Merge-Value"},
 		"+Add-Me":    {"Add-Value"},
@@ -893,7 +918,7 @@ func TestHostSimpleProxyNoHeaderForward(t *testing.T) {
 	// set up proxy
 	p := &Proxy{
 		Next:      httpserver.EmptyNext, // prevents panic in some cases when test fails
-		Upstreams: []Upstream{newFakeUpstream(backend.URL, false)},
+		Upstreams: []Upstream{newFakeUpstream(backend.URL, false, 30*time.Second)},
 	}
 
 	r := httptest.NewRequest("GET", "/", nil)
@@ -982,7 +1007,7 @@ func TestHostHeaderReplacedUsingForward(t *testing.T) {
 	}))
 	defer backend.Close()
 
-	upstream := newFakeUpstream(backend.URL, false)
+	upstream := newFakeUpstream(backend.URL, false, 30*time.Second)
 	proxyHostHeader := "test2.com"
 	upstream.host.UpstreamHeaders = http.Header{"Host": []string{proxyHostHeader}}
 	// set up proxy
@@ -1044,7 +1069,7 @@ func basicAuthTestcase(t *testing.T, upstreamUser, clientUser *url.Userinfo) {
 
 	p := &Proxy{
 		Next:      httpserver.EmptyNext,
-		Upstreams: []Upstream{newFakeUpstream(backURL.String(), false)},
+		Upstreams: []Upstream{newFakeUpstream(backURL.String(), false, 30*time.Second)},
 	}
 	r, err := http.NewRequest("GET", "/foo", nil)
 	if err != nil {
@@ -1179,7 +1204,7 @@ func TestProxyDirectorURL(t *testing.T) {
 			continue
 		}
 
-		NewSingleHostReverseProxy(targetURL, c.without, 0).Director(req)
+		NewSingleHostReverseProxy(targetURL, c.without, 0, 30*time.Second).Director(req)
 		if expect, got := c.expectURL, req.URL.String(); expect != got {
 			t.Errorf("case %d url not equal: expect %q, but got %q",
 				i, expect, got)
@@ -1326,7 +1351,7 @@ func TestCancelRequest(t *testing.T) {
 	// set up proxy
 	p := &Proxy{
 		Next:      httpserver.EmptyNext, // prevents panic in some cases when test fails
-		Upstreams: []Upstream{newFakeUpstream(backend.URL, false)},
+		Upstreams: []Upstream{newFakeUpstream(backend.URL, false, 30*time.Second)},
 	}
 
 	// setup request with cancel ctx
@@ -1375,14 +1400,15 @@ func (r *noopReader) Read(b []byte) (int, error) {
 	return n, nil
 }
 
-func newFakeUpstream(name string, insecure bool) *fakeUpstream {
+func newFakeUpstream(name string, insecure bool, timeout time.Duration) *fakeUpstream {
 	uri, _ := url.Parse(name)
 	u := &fakeUpstream{
-		name: name,
-		from: "/",
+		name:    name,
+		from:    "/",
+		timeout: timeout,
 		host: &UpstreamHost{
 			Name:         name,
-			ReverseProxy: NewSingleHostReverseProxy(uri, "", http.DefaultMaxIdleConnsPerHost),
+			ReverseProxy: NewSingleHostReverseProxy(uri, "", http.DefaultMaxIdleConnsPerHost, timeout),
 		},
 	}
 	if insecure {
@@ -1396,6 +1422,7 @@ type fakeUpstream struct {
 	host    *UpstreamHost
 	from    string
 	without string
+	timeout time.Duration
 }
 
 func (u *fakeUpstream) From() string {
@@ -1410,7 +1437,7 @@ func (u *fakeUpstream) Select(r *http.Request) *UpstreamHost {
 		}
 		u.host = &UpstreamHost{
 			Name:         u.name,
-			ReverseProxy: NewSingleHostReverseProxy(uri, u.without, http.DefaultMaxIdleConnsPerHost),
+			ReverseProxy: NewSingleHostReverseProxy(uri, u.without, http.DefaultMaxIdleConnsPerHost, u.GetTimeout()),
 		}
 	}
 	return u.host
@@ -1419,6 +1446,7 @@ func (u *fakeUpstream) Select(r *http.Request) *UpstreamHost {
 func (u *fakeUpstream) AllowedPath(requestPath string) bool { return true }
 func (u *fakeUpstream) GetTryDuration() time.Duration       { return 1 * time.Second }
 func (u *fakeUpstream) GetTryInterval() time.Duration       { return 250 * time.Millisecond }
+func (u *fakeUpstream) GetTimeout() time.Duration           { return u.timeout }
 func (u *fakeUpstream) GetHostCount() int                   { return 1 }
 func (u *fakeUpstream) Stop() error                         { return nil }
 
@@ -1426,13 +1454,14 @@ func (u *fakeUpstream) Stop() error                         { return nil }
 // redirect to the specified backendAddr. The function
 // also sets up the rules/environment for testing WebSocket
 // proxy.
-func newWebSocketTestProxy(backendAddr string, insecure bool) *Proxy {
+func newWebSocketTestProxy(backendAddr string, insecure bool, timeout time.Duration) *Proxy {
 	return &Proxy{
 		Next: httpserver.EmptyNext, // prevents panic in some cases when test fails
 		Upstreams: []Upstream{&fakeWsUpstream{
 			name:     backendAddr,
 			without:  "",
 			insecure: insecure,
+			timeout:  timeout,
 		}},
 	}
 }
@@ -1440,7 +1469,7 @@ func newWebSocketTestProxy(backendAddr string, insecure bool) *Proxy {
 func newPrefixedWebSocketTestProxy(backendAddr string, prefix string) *Proxy {
 	return &Proxy{
 		Next:      httpserver.EmptyNext, // prevents panic in some cases when test fails
-		Upstreams: []Upstream{&fakeWsUpstream{name: backendAddr, without: prefix}},
+		Upstreams: []Upstream{&fakeWsUpstream{name: backendAddr, without: prefix, timeout: 30 * time.Second}},
 	}
 }
 
@@ -1448,6 +1477,7 @@ type fakeWsUpstream struct {
 	name     string
 	without  string
 	insecure bool
+	timeout  time.Duration
 }
 
 func (u *fakeWsUpstream) From() string {
@@ -1458,7 +1488,7 @@ func (u *fakeWsUpstream) Select(r *http.Request) *UpstreamHost {
 	uri, _ := url.Parse(u.name)
 	host := &UpstreamHost{
 		Name:         u.name,
-		ReverseProxy: NewSingleHostReverseProxy(uri, u.without, http.DefaultMaxIdleConnsPerHost),
+		ReverseProxy: NewSingleHostReverseProxy(uri, u.without, http.DefaultMaxIdleConnsPerHost, u.GetTimeout()),
 		UpstreamHeaders: http.Header{
 			"Connection": {"{>Connection}"},
 			"Upgrade":    {"{>Upgrade}"}},
@@ -1472,6 +1502,7 @@ func (u *fakeWsUpstream) Select(r *http.Request) *UpstreamHost {
 func (u *fakeWsUpstream) AllowedPath(requestPath string) bool { return true }
 func (u *fakeWsUpstream) GetTryDuration() time.Duration       { return 1 * time.Second }
 func (u *fakeWsUpstream) GetTryInterval() time.Duration       { return 250 * time.Millisecond }
+func (u *fakeWsUpstream) GetTimeout() time.Duration           { return u.timeout }
 func (u *fakeWsUpstream) GetHostCount() int                   { return 1 }
 func (u *fakeWsUpstream) Stop() error                         { return nil }
 
@@ -1517,7 +1548,7 @@ func BenchmarkProxy(b *testing.B) {
 	}))
 	defer backend.Close()
 
-	upstream := newFakeUpstream(backend.URL, false)
+	upstream := newFakeUpstream(backend.URL, false, 30*time.Second)
 	upstream.host.UpstreamHeaders = http.Header{
 		"Hostname":          {"{hostname}"},
 		"Host":              {"{host}"},
@@ -1560,7 +1591,7 @@ func TestChunkedWebSocketReverseProxy(t *testing.T) {
 	defer wsNop.Close()
 
 	// Get proxy to use for the test
-	p := newWebSocketTestProxy(wsNop.URL, false)
+	p := newWebSocketTestProxy(wsNop.URL, false, 30*time.Second)
 
 	// Create client request
 	r := httptest.NewRequest("GET", "/", nil)
