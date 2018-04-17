@@ -230,7 +230,7 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int, t
 		}
 	}
 
-	var dialer = *defaultDialer
+	dialer := *defaultDialer
 	if timeout != defaultDialer.Timeout {
 		dialer.Timeout = timeout
 	}

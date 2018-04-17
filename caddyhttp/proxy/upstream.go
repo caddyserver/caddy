@@ -472,7 +472,7 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream, hasSrv bool) error {
 		}
 		dur, err := time.ParseDuration(c.Val())
 		if err != nil {
-			return err
+			return c.Errf("unable to parse timeout duration '%s'", c.Val())
 		}
 		u.Timeout = dur
 	default:
