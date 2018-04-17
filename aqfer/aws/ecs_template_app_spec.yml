@@ -73,12 +73,31 @@ Parameters:
   DomainCertificateId:
     Description: 'Certificate id for the api domain'
     Type: String
-  ELBSecurityPolicyName:
-    Description: 'ELB Security policy name'
-    Default: 'ELBSecurityPolicy-2016-08'
-    Type: String
   ServiceStage:
     Description: 'Stage of the service'
+    Type: String
+    AllowedValues:
+      - dev
+      - preprod
+      - prod
+  ECSecurityGroupName:
+    Description: 'Name of the EC Security Group'
+    Type: String
+  ECInboundPort:
+    Description: 'Port to allow access for the inbound traffic from EC2'
+    Type: Number
+  ECInboundProtocol:
+    Description: 'Protocol to allow access for the inbound traffic from EC2'
+    Type: String
+  R53HostedZoneName:
+    Description: 'Hosted zone name for Route53'
+    Type: String
+  DNSSubDomain:
+    Description: 'Subdomain to use for the service'
+    Type: String
+  ELBHostedZoneId:
+    Description: 'HostedZone Id for the ELB'
+    Default: 'Z35SXDOTRQ7X7K'
     Type: String
 
 Resources:
@@ -102,7 +121,7 @@ Resources:
           Principal:
             Service: ec2.amazonaws.com
           Action: sts:AssumeRole
-      Path: "/"
+      Path: '/'
       Policies:
       - PolicyName: ECSPolicy
         PolicyDocument:
@@ -111,7 +130,7 @@ Resources:
             Action:
             - s3:Get*
             - s3:List*
-            Resource: "*"
+            Resource: '*'
           - Effect: Allow
             Action:
             - logs:CreateLogGroup
@@ -136,7 +155,7 @@ Resources:
             - iam:PassRole
             - iam:PutRolePolicy
             - iam:RemoveRoleFromInstanceProfile
-            Resource: "*"
+            Resource: '*'
   EC2InstanceProfile:
     Type: AWS::IAM::InstanceProfile
     Properties:
@@ -162,7 +181,7 @@ Resources:
     Properties:
       AssociatePublicIpAddress: true
       BlockDeviceMappings:
-      - DeviceName: "/dev/xvdcz"
+      - DeviceName: '/dev/xvdcz'
         Ebs:
           VolumeSize: 22
           VolumeType: gp2
@@ -228,7 +247,7 @@ Resources:
       LaunchConfigurationName: !Ref LaunchConfiguration
       Tags:
       - Key: Name
-        Value: !Sub "imds-${ServiceStage}"
+        Value: !Sub 'imds-${ServiceStage}'
         PropagateAtLaunch: true
   EC2SecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -253,6 +272,17 @@ Resources:
         FromPort: '22'
         ToPort: '22'
         CidrIp: 0.0.0.0/0
+  ECSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    DependsOn:
+      - EC2SecurityGroup
+    Properties:
+      GroupName: !Ref ECSecurityGroupName
+      Description: 'Allow traffic from EC2 security group'
+      IpProtocol: !Ref ECInboundProtocol
+      FromPort: !Ref ECInboundPort
+      ToPort: !Ref ECInboundPort
+      SourceSecurityGroupName: !Ref EC2SecurityGroupName
 
   ECSCluster:
     Type: AWS::ECS::Cluster
@@ -272,7 +302,7 @@ Resources:
         - Name: AWS_SECRET_ACCESS_KEY
           Value: !Ref Secret
         - Name: AWS_REGION
-          Value: !Sub "${AWS::Region}"
+          Value: !Ref AWS::Region
         - Name: JWT_SECRET
           Value: !Ref Jwt
         ReadonlyRootFilesystem: false
@@ -283,7 +313,7 @@ Resources:
         LogConfiguration:
           LogDriver: awslogs
           Options:
-            awslogs-region: !Sub "${AWS::Region}"
+            awslogs-region: !Ref AWS::Region
             awslogs-stream-prefix: ecs
             awslogs-group: !Ref ECSLogGroupName
         LinuxParameters:
@@ -321,7 +351,7 @@ Resources:
           Principal:
             Service: ecs.amazonaws.com
           Action: sts:AssumeRole
-      Path: "/"
+      Path: '/'
       Policies:
       - PolicyName: ECSPolicy
         PolicyDocument:
@@ -335,7 +365,7 @@ Resources:
             - elasticloadbalancing:Describe*
             - elasticloadbalancing:RegisterInstancesWithLoadBalancer
             - elasticloadbalancing:RegisterTargets
-            Resource: "*"
+            Resource: '*'
   ECSService:
     Type: AWS::ECS::Service
     DependsOn:
@@ -378,7 +408,7 @@ Resources:
       Port: 443
       Protocol: HTTPS
       Certificates:
-      - CertificateArn: !Sub "arn:aws:acm:${AWS::Region}:${AWS::AccountId}:certificate/${DomainCertificateId}"
+      - CertificateArn: !Sub 'arn:aws:acm:${AWS::Region}:${AWS::AccountId}:certificate/${DomainCertificateId}'
       DefaultActions:
       - Type: forward
         TargetGroupArn: !Ref LBTargetGroup
@@ -391,7 +421,7 @@ Resources:
       Port: 80
       TargetType: instance
       VpcId: !Ref Vpc
-      HealthCheckPath: "/version"
+      HealthCheckPath: '/version'
       HealthCheckProtocol: HTTP
       HealthyThresholdCount: 5
       UnhealthyThresholdCount: 5
@@ -425,3 +455,16 @@ Resources:
       - !Ref Subnet2
       SecurityGroups:
       - !Ref LBSecurityGroup
+
+  IMDSDNSRecord:
+    Type: AWS::Route53::RecordSet
+    DependsOn:
+      - ApplicationLoadBalancer
+    Properties:
+      HostedZoneName: !Ref R53HostedZoneName
+      Comment: DNS name for my instance
+      Name: !Sub '${DNSSubDomain}.${R53HostedZoneName}'
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt ApplicationLoadBalancer.DNSName
+        HostedZoneId: !Ref ELBHostedZoneId
