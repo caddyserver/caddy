@@ -31,15 +31,15 @@ Parameters:
   DaxSecurityGroupName:
     Description: 'Security Group name for DAX cluster'
     Type: String
-  AvailabilityZone:
-    Description: 'Availability Zone'
-    Type: String
-  Subnet:
-    Description: 'VPC Zone Identifier'
-    Type: String
   Vpc:
     Description: 'VPC Identifier'
     Type: String
+  AvailabilityZones:
+    Description: 'Availability Zones'
+    Type: CommaDelimitedList
+  Subnets:
+    Description: 'VPC Zone Identifier'
+    Type: CommaDelimitedList
   DynamoTableName:
     Description: 'Name for Dynamo table'
     Type: String
@@ -72,8 +72,7 @@ Resources:
     Type: AWS::DAX::Cluster
     DependsOn: DaxSubnetGroup
     Properties:
-      AvailabilityZones:
-      - !Ref AvailabilityZone
+      AvailabilityZones: !Ref AvailabilityZones
       ClusterName: !Ref DaxName
       IAMRoleARN: !GetAtt DaxRole.Arn
       NodeType: !Ref DaxNodeType
@@ -129,8 +128,7 @@ Resources:
     Properties:
       SubnetGroupName: !Ref DaxSubnetGroupName
       Description: "DAX Subnet Group"
-      SubnetIds:
-      - !Ref Subnet
+      SubnetIds: !Ref Subnets
 
   ElastiCache:
     Type: AWS::ElastiCache::CacheCluster
@@ -154,5 +152,4 @@ Resources:
     Properties:
       CacheSubnetGroupName: !Ref ECSubnetGroupName
       Description: 'Elasticache Subnet Group'
-      SubnetIds:
-      - !Ref Subnet
+      SubnetIds: !Ref Subnets

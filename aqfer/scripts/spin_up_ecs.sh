@@ -7,10 +7,9 @@ aws cloudformation deploy --template-file /ecs_app_spec.yml --stack-name $2 --ca
   Secret=$AWS_SECRET_ACCESS_KEY \
   Jwt=$Jwt \
   Ami=$Ami \
-  Subnet=$Subnet \
-  Subnet2=$Subnet2 \
+  Subnets=$Subnets \
   Vpc=$Vpc \
-  AvailabilityZone=$AvailabilityZone \
+  AvailabilityZones=$AvailabilityZones \
   KeyPair=$KeyPair \
   LoadBalancerName=$LoadBalancerName \
   LBSecurityGroupName=$LBSecurityGroupName \

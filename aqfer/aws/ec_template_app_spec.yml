@@ -15,15 +15,15 @@ Parameters:
     Description: 'Elasticache cache size'
     Default: 'cache.t2.micro'
     Type: String
-  AvailabilityZone:
-    Description: 'Availability Zone'
-    Type: String
-  Subnet:
-    Description: 'VPC Zone Identifier'
-    Type: String
   Vpc:
     Description: 'VPC Identifier'
     Type: String
+  AvailabilityZones:
+    Description: 'Availability Zones'
+    Type: CommaDelimitedList
+  Subnets:
+    Description: 'Subnets for the Availability Zones'
+    Type: CommaDelimitedList
 
 Resources:
   ElastiCache:
@@ -33,7 +33,7 @@ Resources:
       ClusterName: !Ref ECClusterName
       CacheNodeType: !Ref ECNodeType
       NumCacheNodes: 1
-      PreferredAvailabilityZone: !Ref AvailabilityZone
+      PreferredAvailabilityZone: !Ref AvailabilityZones
       VpcSecurityGroupIds:
       - !Ref ECSecurityGroup
       CacheSubnetGroupName: !Ref ECSubnetGroup
@@ -48,5 +48,4 @@ Resources:
     Properties:
       CacheSubnetGroupName: !Ref ECSubnetGroupName
       Description: 'Elasticache Subnet Group'
-      SubnetIds:
-      - !Ref Subnet
+      SubnetIds: !Ref Subnets

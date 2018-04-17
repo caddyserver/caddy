@@ -18,9 +18,8 @@ AMI := ami-d74473ad
 INSTANCE_TYPE := t2.medium
 # INSTANCE_TYPE := c5.large
 VPC := vpc-23d7c047
-SUBNET := subnet-9cbdceea
-SUBNET2 := subnet-6a2ea632
-ZONE := us-east-1a
+SUBNETS := subnet-9cbdceea,subnet-6a2ea632
+ZONES := us-east-1a,us-east-1b
 # api-preprod.aqfer.net
 # R53_HOSTED_ZONE_NAME:= api-preprod.aqfer.net.
 # SERVICE_DOMAIN_CERTIFICATE_ID := 90250d8c-396a-4c19-a488-82e301e283c0
@@ -135,8 +134,8 @@ spin_up_db:
 	-e AWS_ACCESS_KEY_ID \
 	-e AWS_SECRET_ACCESS_KEY \
 	-e AWS_DEFAULT_REGION \
-	-e AvailabilityZone=${ZONE} \
-	-e Subnet=${SUBNET} \
+	-e AvailabilityZones=${ZONES} \
+	-e Subnets=${SUBNETS} \
 	-e Vpc=${VPC} \
 	-e ECSecurityGroupName=${EC_SECURITY_GROUP} \
 	-e ECSubnetGroupName=${EC_SUBNET_GROUP} \
@@ -188,10 +187,9 @@ spin_up_ecs:
 	docker run -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION \
 	-e Jwt=${JWT} \
 	-e Ami=${AMI} \
-	-e Subnet=${SUBNET} \
-	-e Subnet2=${SUBNET2} \
+	-e Subnets=${SUBNETS} \
 	-e Vpc=${VPC} \
-	-e AvailabilityZone=${ZONE} \
+	-e AvailabilityZones=${ZONES} \
 	-e KeyPair=${KEYPAIR_NAME} \
 	-e LoadBalancerName=${LOAD_BALANCER_NAME} \
 	-e LBSecurityGroupName=${LB_SECURITY_GROUP} \

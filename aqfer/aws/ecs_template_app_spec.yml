@@ -55,15 +55,15 @@ Parameters:
   ContainerName:
     Description: 'Docker container name'
     Type: String
-  Subnet:
-    Description: 'Subnet 1 in Availability Zone'
-    Type: String
-  Subnet2:
-    Description: 'Subnet 2 in Availability Zone'
-    Type: String
   Vpc:
     Description: 'VPC Identifier'
     Type: String
+  Subnets:
+    Description: 'Subnets for the Availability Zones'
+    Type: CommaDelimitedList
+  AvailabilityZones:
+    Description: 'Availability Zones'
+    Type: CommaDelimitedList
   ECSLogGroupName:
     Description: 'ECS LogGroup Name for Aqfer'
     Type: String
@@ -232,14 +232,14 @@ Resources:
   AutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
+      AvailabilityZones: !Ref AvailabilityZones
       TargetGroupARNs: []
       DesiredCapacity: 2
       LoadBalancerNames: []
       Cooldown: 300
       MinSize: 0
       MaxSize: 2
-      VPCZoneIdentifier:
-      - !Ref Subnet 
+      VPCZoneIdentifier: !Ref Subnets
       HealthCheckGracePeriod: 0
       HealthCheckType: EC2
       TerminationPolicies:
@@ -450,9 +450,7 @@ Resources:
       Type: application
       IpAddressType: ipv4
       Scheme: internet-facing
-      Subnets:
-      - !Ref Subnet
-      - !Ref Subnet2
+      Subnets: !Ref Subnets
       SecurityGroups:
       - !Ref LBSecurityGroup
 
