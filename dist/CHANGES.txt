@@ -1,5 +1,20 @@
 CHANGES
 
+0.10.13 (April 18, 2018)
+- New third-party plugin: supervisor
+- Updated QUIC
+- proxy: Fix transparent pass-thru of X-Forwarded-For
+- proxy: Configurable timeout to upstream
+- rewrite: Now supports regular expressions on single-line
+- tls: StrictHostMatching mode to prevent client auth bypass
+- tls: Disable client auth when using QUIC
+- tls: Require same client auth cert pools per hostname
+- tls: Prevent On-Demand TLS directory traversal
+- tls: Fix empty files when using ACME fails to obtain cert
+- Fixed test broken by 1.1.1.1 resolving
+- Improved Caddyfile parser robustness by fuzzing
+
+
 0.10.12 (March 27, 2018)
 - Switch to Let's Encrypt ACMEv2 production endpoint
 - Support for automated wildcard certificates
