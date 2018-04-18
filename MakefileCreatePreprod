@@ -6,8 +6,8 @@ SERVICE_NAME := imds
 MAJOR_VERSION := 0
 SERVICE_VERSION := 0.0.0
 ROOT_NAME := aqfer
-DB_NAME := imdsCache-${STAGE}
-ECS_NAME := imds-${STAGE}
+DB_STACK_NAME := ${SERVICE_NAME}Cache-${STAGE}
+ECS_STACK_NAME := ${SERVICE_NAME}-${STAGE}
 AWS_REGION := us-east-1
 
 JWT := testkey
@@ -18,9 +18,8 @@ AMI := ami-d74473ad
 INSTANCE_TYPE := t2.medium
 # INSTANCE_TYPE := c5.large
 VPC := vpc-23d7c047
-SUBNET := subnet-9cbdceea
-SUBNET2 := subnet-6a2ea632
-ZONE := us-east-1a
+SUBNETS := subnet-9cbdceea,subnet-6a2ea632
+ZONES := us-east-1a,us-east-1b
 # api-preprod.aqfer.net
 # R53_HOSTED_ZONE_NAME:= api-preprod.aqfer.net.
 # SERVICE_DOMAIN_CERTIFICATE_ID := 90250d8c-396a-4c19-a488-82e301e283c0
@@ -88,13 +87,23 @@ update_ecs: aws_build spin_up_ecs
 
 
 # has to be run after databases are up or else the caddyfile database sections will point to nothing
+# has to be run after databases are up or else the caddyfile database sections will point to nothing
 .PHONY: update_container_repo
 update_container_repo: ready_caddyfile ecr_repo_push
 
 
+# deployment environment base image
+.PHONY: build_base_image
+build_base_image:
+	docker build -f aqfer/Dockerfile.base -t base_image .
+
+.PHONY: build_clean_base_image
+build_clean_base_image:
+	docker build --no-cache -f aqfer/Dockerfile.base -t base_image .
+
 # deployment environment image
 .PHONY: aws_build
-aws_build:
+aws_build: build_base_image
 	docker build --no-cache -f aqfer/Dockerfile.aws -t aws_image .
 
 
@@ -135,14 +144,15 @@ spin_up_db:
 	-e AWS_ACCESS_KEY_ID \
 	-e AWS_SECRET_ACCESS_KEY \
 	-e AWS_DEFAULT_REGION \
-	-e AvailabilityZone=${ZONE} \
-	-e Subnet=${SUBNET} \
+	-e AvailabilityZones=${ZONES} \
+	-e Subnets=${SUBNETS} \
 	-e Vpc=${VPC} \
 	-e ECSecurityGroupName=${EC_SECURITY_GROUP} \
 	-e ECSubnetGroupName=${EC_SUBNET_GROUP} \
 	-e ECNodeType=${EC_NODE_TYPE} \
 	-e ECClusterName=${EC_CLUSTER_NAME} \
-	--entrypoint /scripts/spin_up_db.sh aws_image ${ARTIFACTS_BUCKET} ${DB_NAME}
+	-e ServiceStage=${STAGE} \
+	--entrypoint /scripts/spin_up_db.sh aws_image ${ARTIFACTS_BUCKET} ${DB_STACK_NAME}
 
 .PHONY: tear_down_db
 tear_down_db:
@@ -150,22 +160,11 @@ tear_down_db:
 	-e AWS_ACCESS_KEY_ID \
 	-e AWS_SECRET_ACCESS_KEY \
 	-e AWS_DEFAULT_REGION \
-	--entrypoint aws aws_image cloudformation delete-stack --stack-name ${DB_NAME}
-
-
-.PHONY: get_db_endpoints
-get_db_endpoints:
-	docker run \
-	-e AWS_ACCESS_KEY_ID \
-	-e AWS_SECRET_ACCESS_KEY \
-	-e AWS_DEFAULT_REGION \
-	--entrypoint /scripts/ec_endpoint.sh aws_image ${EC_CLUSTER_NAME} 2>&1 > /tmp/ec_endpoint
-
+	--entrypoint aws aws_image cloudformation delete-stack --stack-name ${DB_STACK_NAME}
 
 .PHONY: ready_caddyfile
-ready_caddyfile: get_db_endpoints
+ready_caddyfile:
 	cat aqfer/Caddyfile_template | sed 's/APP_LOG_GROUP_NAME/'${APP_LOG_GROUP_NAME}'/g' > /tmp/Caddyfile
-	cat /tmp/Caddyfile | sed 's/EC_ENDPOINT/'$(shell cat /tmp/ec_endpoint)'/g' > aqfer/Caddyfile
 
 
 .PHONY: ecr_repo_push
@@ -188,10 +187,9 @@ spin_up_ecs:
 	docker run -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION \
 	-e Jwt=${JWT} \
 	-e Ami=${AMI} \
-	-e Subnet=${SUBNET} \
-	-e Subnet2=${SUBNET2} \
+	-e Subnets=${SUBNETS} \
 	-e Vpc=${VPC} \
-	-e AvailabilityZone=${ZONE} \
+	-e AvailabilityZones=${ZONES} \
 	-e KeyPair=${KEYPAIR_NAME} \
 	-e LoadBalancerName=${LOAD_BALANCER_NAME} \
 	-e LBSecurityGroupName=${LB_SECURITY_GROUP} \
@@ -211,23 +209,23 @@ spin_up_ecs:
 	-e ServiceStage=${STAGE} \
 	-e R53HostedZoneName=${R53_HOSTED_ZONE_NAME} \
 	-e DNSSubDomain=${DNS_SUBDOMAIN} \
-	--entrypoint /scripts/spin_up_ecs.sh aws_image ${ARTIFACTS_BUCKET} ${ECS_NAME} \
-	${EC_SECURITY_GROUP} $(shell cat /tmp/ec_endpoint | sed -E "s/.*:([0-9]*).*/\1/")
+	-e ECStackName=${DB_STACK_NAME} \
+	--entrypoint /scripts/spin_up_ecs.sh aws_image ${ARTIFACTS_BUCKET} ${ECS_STACK_NAME} \
+	${EC_SECURITY_GROUP}
 
 # make instances=i-029aefe585538720b\ i-09abb841e51433e42 tear_down_ecs
 # must list specific ec2 instances to destroy (delimited by spaces)
 .PHONY: tear_down_ecs
-tear_down_ecs: get_db_endpoints
+tear_down_ecs:
 ifdef instances
 	docker run \
 	-e AWS_ACCESS_KEY_ID \
 	-e AWS_SECRET_ACCESS_KEY \
 	-e AWS_DEFAULT_REGION \
 	--entrypoint aws aws_image ec2 revoke-security-group-ingress --group-name ${EC_SECURITY_GROUP} --source-group ${EC2_SECURITY_GROUP} --port \
-	$(shell cat /tmp/ec_endpoint | sed -E "s/.*:([0-9]*)/\1/") --protocol tcp;\
-	aws ec2 terminate-instances --instance-ids $(instances);\
+	ec2 terminate-instances --instance-ids $(instances);\
 	aws ec2 wait instance-terminated --instance-ids $(instances);\
-	aws cloudformation delete-stack --stack-name ${ECS_NAME}
+	aws cloudformation delete-stack --stack-name ${ECS_STACK_NAME}
 else
 	@echo "\ninstances to destroy were not declared, cloudformation stack delete will not execute for ecs.\nRun `make instances=... tear_down_ecs`"
 endif

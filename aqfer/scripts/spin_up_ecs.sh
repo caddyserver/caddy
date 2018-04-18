@@ -7,10 +7,9 @@ aws cloudformation deploy --template-file /ecs_app_spec.yml --stack-name $2 --ca
   Secret=$AWS_SECRET_ACCESS_KEY \
   Jwt=$Jwt \
   Ami=$Ami \
-  Subnet=$Subnet \
-  Subnet2=$Subnet2 \
+  Subnets=$Subnets \
   Vpc=$Vpc \
-  AvailabilityZone=$AvailabilityZone \
+  AvailabilityZones=$AvailabilityZones \
   KeyPair=$KeyPair \
   LoadBalancerName=$LoadBalancerName \
   LBSecurityGroupName=$LBSecurityGroupName \
@@ -29,10 +28,10 @@ aws cloudformation deploy --template-file /ecs_app_spec.yml --stack-name $2 --ca
   DomainCertificateId=$DomainCertificateId \
   ServiceStage=$ServiceStage \
   ECSecurityGroupName=$3 \
-  ECInboundPort=$4 \
   ECInboundProtocol=tcp \
   R53HostedZoneName=$R53HostedZoneName \
   DNSSubDomain=$DNSSubDomain \
+  ECStackName=$ECStackName \
 
 # Dax security group ingress from ec2 security group
 # aws ec2 authorize-security-group-ingress --group-name $5 --source-group $EC2SecurityGroupName --port $6 --protocol tcp
