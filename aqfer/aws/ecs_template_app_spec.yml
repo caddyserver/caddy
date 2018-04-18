@@ -83,9 +83,6 @@ Parameters:
   ECSecurityGroupName:
     Description: 'Name of the EC Security Group'
     Type: String
-  ECInboundPort:
-    Description: 'Port to allow access for the inbound traffic from EC2'
-    Type: Number
   ECInboundProtocol:
     Description: 'Protocol to allow access for the inbound traffic from EC2'
     Type: String
@@ -98,6 +95,9 @@ Parameters:
   ELBHostedZoneId:
     Description: 'HostedZone Id for the ELB'
     Default: 'Z35SXDOTRQ7X7K'
+    Type: String
+  ECStackName:
+    Description: 'Name of the EC Stack'
     Type: String
 
 Resources:
@@ -275,13 +275,18 @@ Resources:
   ECSecurityGroupIngress:
     Type: AWS::EC2::SecurityGroupIngress
     DependsOn:
+    DependsOn:
       - EC2SecurityGroup
     Properties:
       GroupName: !Ref ECSecurityGroupName
       Description: 'Allow traffic from EC2 security group'
       IpProtocol: !Ref ECInboundProtocol
-      FromPort: !Ref ECInboundPort
-      ToPort: !Ref ECInboundPort
+      FromPort:
+        Fn::ImportValue:
+          !Sub '${ECStackName}-ECInboundPort'
+      ToPort:
+        Fn::ImportValue:
+          !Sub '${ECStackName}-ECInboundPort'
       SourceSecurityGroupName: !Ref EC2SecurityGroupName
 
   ECSCluster:
@@ -305,6 +310,10 @@ Resources:
           Value: !Ref AWS::Region
         - Name: JWT_SECRET
           Value: !Ref Jwt
+        - Name: REDIS_ENDPOINT
+          Value:
+            Fn::ImportValue:
+              !Sub '${ECStackName}-ECEndpoint'
         ReadonlyRootFilesystem: false
         Name: !Ref ContainerName
         Links: []
@@ -375,7 +384,7 @@ Resources:
       ServiceName: !Ref ECSServiceName
       Cluster: !Ref ECSCluster
       TaskDefinition: !Ref ECSTaskDefinition
-      DesiredCount: 4
+      DesiredCount: 6
       DeploymentConfiguration:
         MinimumHealthyPercent: 100
         MaximumPercent: 200

@@ -6,8 +6,8 @@ SERVICE_NAME := imds
 MAJOR_VERSION := 0
 SERVICE_VERSION := 0.0.0
 ROOT_NAME := aqfer
-DB_NAME := imdsCache-${STAGE}
-ECS_NAME := imds-${STAGE}
+DB_STACK_NAME := ${SERVICE_NAME}Cache-${STAGE}
+ECS_STACK_NAME := ${SERVICE_NAME}-${STAGE}
 AWS_REGION := us-east-1
 
 JWT := testkey
@@ -79,7 +79,7 @@ setup: aws_build create_artifact_bucket create_keypair
 # then update_container_repo writes the db endpoints on the caddyfile and updates the runtime image
 # and last, the runtime stack (ECS) goes up with the newly updated docker image
 .PHONY: launch
-launch: spin_up_db update_container_repo spin_up_ecs
+launch: spin_up_db get_db_endpoints update_container_repo spin_up_ecs
 
 # update ecs to use the latest image
 .PHONY: update_ecs
@@ -87,13 +87,23 @@ update_ecs: aws_build spin_up_ecs
 
 
 # has to be run after databases are up or else the caddyfile database sections will point to nothing
+# has to be run after databases are up or else the caddyfile database sections will point to nothing
 .PHONY: update_container_repo
 update_container_repo: ready_caddyfile ecr_repo_push
 
 
+# deployment environment base image
+.PHONY: build_base_image
+build_base_image:
+	docker build -f aqfer/Dockerfile.base -t base_image .
+
+.PHONY: build_clean_base_image
+build_clean_base_image:
+	docker build --no-cache -f aqfer/Dockerfile.base -t base_image .
+
 # deployment environment image
 .PHONY: aws_build
-aws_build:
+aws_build: build_base_image
 	docker build --no-cache -f aqfer/Dockerfile.aws -t aws_image .
 
 
@@ -141,7 +151,8 @@ spin_up_db:
 	-e ECSubnetGroupName=${EC_SUBNET_GROUP} \
 	-e ECNodeType=${EC_NODE_TYPE} \
 	-e ECClusterName=${EC_CLUSTER_NAME} \
-	--entrypoint /scripts/spin_up_db.sh aws_image ${ARTIFACTS_BUCKET} ${DB_NAME}
+	-e ServiceStage=${STAGE} \
+	--entrypoint /scripts/spin_up_db.sh aws_image ${ARTIFACTS_BUCKET} ${DB_STACK_NAME}
 
 .PHONY: tear_down_db
 tear_down_db:
@@ -149,7 +160,7 @@ tear_down_db:
 	-e AWS_ACCESS_KEY_ID \
 	-e AWS_SECRET_ACCESS_KEY \
 	-e AWS_DEFAULT_REGION \
-	--entrypoint aws aws_image cloudformation delete-stack --stack-name ${DB_NAME}
+	--entrypoint aws aws_image cloudformation delete-stack --stack-name ${DB_STACK_NAME}
 
 
 .PHONY: get_db_endpoints
@@ -209,7 +220,8 @@ spin_up_ecs:
 	-e ServiceStage=${STAGE} \
 	-e R53HostedZoneName=${R53_HOSTED_ZONE_NAME} \
 	-e DNSSubDomain=${DNS_SUBDOMAIN} \
-	--entrypoint /scripts/spin_up_ecs.sh aws_image ${ARTIFACTS_BUCKET} ${ECS_NAME} \
+	-e ECStackName=${DB_STACK_NAME} \
+	--entrypoint /scripts/spin_up_ecs.sh aws_image ${ARTIFACTS_BUCKET} ${ECS_STACK_NAME} \
 	${EC_SECURITY_GROUP} $(shell cat /tmp/ec_endpoint | sed -E "s/.*:([0-9]*).*/\1/")
 
 # make instances=i-029aefe585538720b\ i-09abb841e51433e42 tear_down_ecs
@@ -225,7 +237,7 @@ ifdef instances
 	$(shell cat /tmp/ec_endpoint | sed -E "s/.*:([0-9]*)/\1/") --protocol tcp;\
 	aws ec2 terminate-instances --instance-ids $(instances);\
 	aws ec2 wait instance-terminated --instance-ids $(instances);\
-	aws cloudformation delete-stack --stack-name ${ECS_NAME}
+	aws cloudformation delete-stack --stack-name ${ECS_STACK_NAME}
 else
 	@echo "\ninstances to destroy were not declared, cloudformation stack delete will not execute for ecs.\nRun `make instances=... tear_down_ecs`"
 endif
