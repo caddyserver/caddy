@@ -79,7 +79,7 @@ setup: aws_build create_artifact_bucket create_keypair
 # then update_container_repo writes the db endpoints on the caddyfile and updates the runtime image
 # and last, the runtime stack (ECS) goes up with the newly updated docker image
 .PHONY: launch
-launch: spin_up_db get_db_endpoints update_container_repo spin_up_ecs
+launch: spin_up_db update_container_repo spin_up_ecs
 
 # update ecs to use the latest image
 .PHONY: update_ecs
@@ -162,20 +162,9 @@ tear_down_db:
 	-e AWS_DEFAULT_REGION \
 	--entrypoint aws aws_image cloudformation delete-stack --stack-name ${DB_STACK_NAME}
 
-
-.PHONY: get_db_endpoints
-get_db_endpoints:
-	docker run \
-	-e AWS_ACCESS_KEY_ID \
-	-e AWS_SECRET_ACCESS_KEY \
-	-e AWS_DEFAULT_REGION \
-	--entrypoint /scripts/ec_endpoint.sh aws_image ${EC_CLUSTER_NAME} 2>&1 > /tmp/ec_endpoint
-
-
 .PHONY: ready_caddyfile
-ready_caddyfile: get_db_endpoints
+ready_caddyfile:
 	cat aqfer/Caddyfile_template | sed 's/APP_LOG_GROUP_NAME/'${APP_LOG_GROUP_NAME}'/g' > /tmp/Caddyfile
-	cat /tmp/Caddyfile | sed 's/EC_ENDPOINT/'$(shell cat /tmp/ec_endpoint)'/g' > aqfer/Caddyfile
 
 
 .PHONY: ecr_repo_push
@@ -222,20 +211,19 @@ spin_up_ecs:
 	-e DNSSubDomain=${DNS_SUBDOMAIN} \
 	-e ECStackName=${DB_STACK_NAME} \
 	--entrypoint /scripts/spin_up_ecs.sh aws_image ${ARTIFACTS_BUCKET} ${ECS_STACK_NAME} \
-	${EC_SECURITY_GROUP} $(shell cat /tmp/ec_endpoint | sed -E "s/.*:([0-9]*).*/\1/")
+	${EC_SECURITY_GROUP}
 
 # make instances=i-029aefe585538720b\ i-09abb841e51433e42 tear_down_ecs
 # must list specific ec2 instances to destroy (delimited by spaces)
 .PHONY: tear_down_ecs
-tear_down_ecs: get_db_endpoints
+tear_down_ecs:
 ifdef instances
 	docker run \
 	-e AWS_ACCESS_KEY_ID \
 	-e AWS_SECRET_ACCESS_KEY \
 	-e AWS_DEFAULT_REGION \
 	--entrypoint aws aws_image ec2 revoke-security-group-ingress --group-name ${EC_SECURITY_GROUP} --source-group ${EC2_SECURITY_GROUP} --port \
-	$(shell cat /tmp/ec_endpoint | sed -E "s/.*:([0-9]*)/\1/") --protocol tcp;\
-	aws ec2 terminate-instances --instance-ids $(instances);\
+	ec2 terminate-instances --instance-ids $(instances);\
 	aws ec2 wait instance-terminated --instance-ids $(instances);\
 	aws cloudformation delete-stack --stack-name ${ECS_STACK_NAME}
 else
