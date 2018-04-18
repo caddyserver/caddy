@@ -265,7 +265,7 @@ func (c *Client) QueryRegistration() (*RegistrationResource, error) {
 // your issued certificate as a bundle.
 // This function will never return a partial certificate. If one domain in the list fails,
 // the whole certificate will fail.
-func (c *Client) ObtainCertificateForCSR(csr x509.CertificateRequest, bundle bool) (CertificateResource, map[string]error) {
+func (c *Client) ObtainCertificateForCSR(csr x509.CertificateRequest, bundle bool) (CertificateResource, error) {
 	// figure out what domains it concerns
 	// start with the common name
 	domains := []string{csr.Subject.CommonName}
@@ -292,11 +292,7 @@ DNSNames:
 
 	order, err := c.createOrderForIdentifiers(domains)
 	if err != nil {
-		identErrors := make(map[string]error)
-		for _, auth := range order.Identifiers {
-			identErrors[auth.Value] = err
-		}
-		return CertificateResource{}, identErrors
+		return CertificateResource{}, err
 	}
 	authz, failures := c.getAuthzForOrder(order)
 	// If any challenge fails - return. Do not generate partial SAN certificates.
@@ -338,7 +334,11 @@ DNSNames:
 // your issued certificate as a bundle.
 // This function will never return a partial certificate. If one domain in the list fails,
 // the whole certificate will fail.
-func (c *Client) ObtainCertificate(domains []string, bundle bool, privKey crypto.PrivateKey, mustStaple bool) (CertificateResource, map[string]error) {
+func (c *Client) ObtainCertificate(domains []string, bundle bool, privKey crypto.PrivateKey, mustStaple bool) (CertificateResource, error) {
+	if len(domains) == 0 {
+		return CertificateResource{}, errors.New("Passed no domains into ObtainCertificate")
+	}
+
 	if bundle {
 		logf("[INFO][%s] acme: Obtaining bundled SAN certificate", strings.Join(domains, ", "))
 	} else {
@@ -347,11 +347,7 @@ func (c *Client) ObtainCertificate(domains []string, bundle bool, privKey crypto
 
 	order, err := c.createOrderForIdentifiers(domains)
 	if err != nil {
-		identErrors := make(map[string]error)
-		for _, auth := range order.Identifiers {
-			identErrors[auth.Value] = err
-		}
-		return CertificateResource{}, identErrors
+		return CertificateResource{}, err
 	}
 	authz, failures := c.getAuthzForOrder(order)
 	// If any challenge fails - return. Do not generate partial SAN certificates.
@@ -433,7 +429,7 @@ func (c *Client) RenewCertificate(cert CertificateResource, bundle, mustStaple b
 			return CertificateResource{}, err
 		}
 		newCert, failures := c.ObtainCertificateForCSR(*csr, bundle)
-		return newCert, failures[cert.Domain]
+		return newCert, failures
 	}
 
 	var privKey crypto.PrivateKey
@@ -445,7 +441,6 @@ func (c *Client) RenewCertificate(cert CertificateResource, bundle, mustStaple b
 	}
 
 	var domains []string
-	var failures map[string]error
 	// check for SAN certificate
 	if len(x509Cert.DNSNames) > 1 {
 		domains = append(domains, x509Cert.Subject.CommonName)
@@ -459,8 +454,8 @@ func (c *Client) RenewCertificate(cert CertificateResource, bundle, mustStaple b
 		domains = append(domains, x509Cert.Subject.CommonName)
 	}
 
-	newCert, failures := c.ObtainCertificate(domains, bundle, privKey, mustStaple)
-	return newCert, failures[cert.Domain]
+	newCert, err := c.ObtainCertificate(domains, bundle, privKey, mustStaple)
+	return newCert, err
 }
 
 func (c *Client) createOrderForIdentifiers(domains []string) (orderResource, error) {
@@ -482,6 +477,7 @@ func (c *Client) createOrderForIdentifiers(domains []string) (orderResource, err
 
 	orderRes := orderResource{
 		URL:          hdr.Get("Location"),
+		Domains:      domains,
 		orderMessage: response,
 	}
 	return orderRes, nil
@@ -489,9 +485,9 @@ func (c *Client) createOrderForIdentifiers(domains []string) (orderResource, err
 
 // Looks through the challenge combinations to find a solvable match.
 // Then solves the challenges in series and returns.
-func (c *Client) solveChallengeForAuthz(authorizations []authorization) map[string]error {
+func (c *Client) solveChallengeForAuthz(authorizations []authorization) ObtainError {
 	// loop through the resources, basically through the domains.
-	failures := make(map[string]error)
+	failures := make(ObtainError)
 	for _, authz := range authorizations {
 		if authz.Status == "valid" {
 			// Boulder might recycle recent validated authz (see issue #267)
@@ -527,7 +523,7 @@ func (c *Client) chooseSolver(auth authorization, domain string) (int, solver) {
 }
 
 // Get the challenges needed to proof our identifier to the ACME server.
-func (c *Client) getAuthzForOrder(order orderResource) ([]authorization, map[string]error) {
+func (c *Client) getAuthzForOrder(order orderResource) ([]authorization, ObtainError) {
 	resc, errc := make(chan authorization), make(chan domainError)
 
 	delay := time.Second / overallRequestLimit
@@ -590,7 +586,7 @@ func (c *Client) requestCertificateForOrder(order orderResource, bundle bool, pr
 	}
 
 	// determine certificate name(s) based on the authorization resources
-	commonName := order.Identifiers[0].Value
+	commonName := order.Domains[0]
 	var san []string
 	for _, auth := range order.Identifiers {
 		san = append(san, auth.Value)
@@ -606,12 +602,7 @@ func (c *Client) requestCertificateForOrder(order orderResource, bundle bool, pr
 }
 
 func (c *Client) requestCertificateForCsr(order orderResource, bundle bool, csr []byte, privateKeyPem []byte) (CertificateResource, error) {
-	commonName := order.Identifiers[0].Value
-
-	var authURLs []string
-	for _, auth := range order.Identifiers[1:] {
-		authURLs = append(authURLs, auth.Value)
-	}
+	commonName := order.Domains[0]
 
 	csrString := base64.RawURLEncoding.EncodeToString(csr)
 	var retOrder orderMessage

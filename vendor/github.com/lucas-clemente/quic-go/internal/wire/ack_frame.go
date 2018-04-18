@@ -24,8 +24,8 @@ type AckFrame struct {
 	DelayTime          time.Duration
 }
 
-// ParseAckFrame reads an ACK frame
-func ParseAckFrame(r *bytes.Reader, version protocol.VersionNumber) (*AckFrame, error) {
+// parseAckFrame reads an ACK frame
+func parseAckFrame(r *bytes.Reader, version protocol.VersionNumber) (*AckFrame, error) {
 	if !version.UsesIETFFrameFormat() {
 		return parseAckFrameLegacy(r, version)
 	}

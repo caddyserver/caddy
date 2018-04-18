@@ -16,8 +16,8 @@ type RstStreamFrame struct {
 	ByteOffset protocol.ByteCount
 }
 
-// ParseRstStreamFrame parses a RST_STREAM frame
-func ParseRstStreamFrame(r *bytes.Reader, version protocol.VersionNumber) (*RstStreamFrame, error) {
+// parseRstStreamFrame parses a RST_STREAM frame
+func parseRstStreamFrame(r *bytes.Reader, version protocol.VersionNumber) (*RstStreamFrame, error) {
 	if _, err := r.ReadByte(); err != nil { // read the TypeByte
 		return nil, err
 	}

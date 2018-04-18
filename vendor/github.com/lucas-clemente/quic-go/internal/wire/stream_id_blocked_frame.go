@@ -12,8 +12,8 @@ type StreamIDBlockedFrame struct {
 	StreamID protocol.StreamID
 }
 
-// ParseStreamIDBlockedFrame parses a STREAM_ID_BLOCKED frame
-func ParseStreamIDBlockedFrame(r *bytes.Reader, _ protocol.VersionNumber) (*StreamIDBlockedFrame, error) {
+// parseStreamIDBlockedFrame parses a STREAM_ID_BLOCKED frame
+func parseStreamIDBlockedFrame(r *bytes.Reader, _ protocol.VersionNumber) (*StreamIDBlockedFrame, error) {
 	if _, err := r.ReadByte(); err != nil {
 		return nil, err
 	}

@@ -10,17 +10,9 @@ import (
 
 // ComposeGQUICVersionNegotiation composes a Version Negotiation Packet for gQUIC
 func ComposeGQUICVersionNegotiation(connID protocol.ConnectionID, versions []protocol.VersionNumber) []byte {
-	buf := &bytes.Buffer{}
-	ph := Header{
-		ConnectionID:         connID,
-		PacketNumber:         1,
-		VersionFlag:          true,
-		IsVersionNegotiation: true,
-	}
-	if err := ph.writePublicHeader(buf, protocol.PerspectiveServer, protocol.VersionWhatever); err != nil {
-		utils.Errorf("error composing version negotiation packet: %s", err.Error())
-		return nil
-	}
+	buf := bytes.NewBuffer(make([]byte, 0, 1+8+len(versions)*4))
+	buf.Write([]byte{0x1 | 0x8}) // type byte
+	utils.BigEndian.WriteUint64(buf, uint64(connID))
 	for _, v := range versions {
 		utils.BigEndian.WriteUint32(buf, uint32(v))
 	}

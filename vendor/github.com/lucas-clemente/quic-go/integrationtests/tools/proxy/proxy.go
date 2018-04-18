@@ -95,6 +95,8 @@ type QuicProxy struct {
 
 	// Mapping from client addresses (as host:port) to connection
 	clientDict map[string]*connection
+
+	logger utils.Logger
 }
 
 // NewQuicProxy creates a new UDP proxy
@@ -132,9 +134,10 @@ func NewQuicProxy(local string, version protocol.VersionNumber, opts *Opts) (*Qu
 		dropPacket:  packetDropper,
 		delayPacket: packetDelayer,
 		version:     version,
+		logger:      utils.DefaultLogger,
 	}
 
-	utils.Debugf("Starting UDP Proxy %s <-> %s", conn.LocalAddr(), raddr)
+	p.logger.Debugf("Starting UDP Proxy %s <-> %s", conn.LocalAddr(), raddr)
 	go p.runProxy()
 	return &p, nil
 }
@@ -200,8 +203,8 @@ func (p *QuicProxy) runProxy() error {
 		packetCount := atomic.AddUint64(&conn.incomingPacketCounter, 1)
 
 		if p.dropPacket(DirectionIncoming, packetCount) {
-			if utils.Debug() {
-				utils.Debugf("dropping incoming packet %d (%d bytes)", packetCount, n)
+			if p.logger.Debug() {
+				p.logger.Debugf("dropping incoming packet %d (%d bytes)", packetCount, n)
 			}
 			continue
 		}
@@ -209,16 +212,16 @@ func (p *QuicProxy) runProxy() error {
 		// Send the packet to the server
 		delay := p.delayPacket(DirectionIncoming, packetCount)
 		if delay != 0 {
-			if utils.Debug() {
-				utils.Debugf("delaying incoming packet %d (%d bytes) to %s by %s", packetCount, n, conn.ServerConn.RemoteAddr(), delay)
+			if p.logger.Debug() {
+				p.logger.Debugf("delaying incoming packet %d (%d bytes) to %s by %s", packetCount, n, conn.ServerConn.RemoteAddr(), delay)
 			}
 			time.AfterFunc(delay, func() {
 				// TODO: handle error
 				_, _ = conn.ServerConn.Write(raw)
 			})
 		} else {
-			if utils.Debug() {
-				utils.Debugf("forwarding incoming packet %d (%d bytes) to %s", packetCount, n, conn.ServerConn.RemoteAddr())
+			if p.logger.Debug() {
+				p.logger.Debugf("forwarding incoming packet %d (%d bytes) to %s", packetCount, n, conn.ServerConn.RemoteAddr())
 			}
 			if _, err := conn.ServerConn.Write(raw); err != nil {
 				return err
@@ -240,24 +243,24 @@ func (p *QuicProxy) runConnection(conn *connection) error {
 		packetCount := atomic.AddUint64(&conn.outgoingPacketCounter, 1)
 
 		if p.dropPacket(DirectionOutgoing, packetCount) {
-			if utils.Debug() {
-				utils.Debugf("dropping outgoing packet %d (%d bytes)", packetCount, n)
+			if p.logger.Debug() {
+				p.logger.Debugf("dropping outgoing packet %d (%d bytes)", packetCount, n)
 			}
 			continue
 		}
 
 		delay := p.delayPacket(DirectionOutgoing, packetCount)
 		if delay != 0 {
-			if utils.Debug() {
-				utils.Debugf("delaying outgoing packet %d (%d bytes) to %s by %s", packetCount, n, conn.ClientAddr, delay)
+			if p.logger.Debug() {
+				p.logger.Debugf("delaying outgoing packet %d (%d bytes) to %s by %s", packetCount, n, conn.ClientAddr, delay)
 			}
 			time.AfterFunc(delay, func() {
 				// TODO: handle error
 				_, _ = p.conn.WriteToUDP(raw, conn.ClientAddr)
 			})
 		} else {
-			if utils.Debug() {
-				utils.Debugf("forwarding outgoing packet %d (%d bytes) to %s", packetCount, n, conn.ClientAddr)
+			if p.logger.Debug() {
+				p.logger.Debugf("forwarding outgoing packet %d (%d bytes) to %s", packetCount, n, conn.ClientAddr)
 			}
 			if _, err := p.conn.WriteToUDP(raw, conn.ClientAddr); err != nil {
 				return err

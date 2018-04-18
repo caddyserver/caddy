@@ -16,8 +16,8 @@ type GoawayFrame struct {
 	ReasonPhrase   string
 }
 
-// ParseGoawayFrame parses a GOAWAY frame
-func ParseGoawayFrame(r *bytes.Reader, _ protocol.VersionNumber) (*GoawayFrame, error) {
+// parseGoawayFrame parses a GOAWAY frame
+func parseGoawayFrame(r *bytes.Reader, _ protocol.VersionNumber) (*GoawayFrame, error) {
 	frame := &GoawayFrame{}
 
 	if _, err := r.ReadByte(); err != nil {

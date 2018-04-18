@@ -174,14 +174,14 @@ func (h *Header) getHeaderLength() (protocol.ByteCount, error) {
 	return length, nil
 }
 
-func (h *Header) logHeader() {
+func (h *Header) logHeader(logger utils.Logger) {
 	if h.IsLongHeader {
-		utils.Debugf("   Long Header{Type: %s, ConnectionID: %#x, PacketNumber: %#x, Version: %s}", h.Type, h.ConnectionID, h.PacketNumber, h.Version)
+		logger.Debugf("   Long Header{Type: %s, ConnectionID: %#x, PacketNumber: %#x, Version: %s}", h.Type, h.ConnectionID, h.PacketNumber, h.Version)
 	} else {
 		connID := "(omitted)"
 		if !h.OmitConnectionID {
 			connID = fmt.Sprintf("%#x", h.ConnectionID)
 		}
-		utils.Debugf("   Short Header{ConnectionID: %s, PacketNumber: %#x, PacketNumberLen: %d, KeyPhase: %d}", connID, h.PacketNumber, h.PacketNumberLen, h.KeyPhase)
+		logger.Debugf("   Short Header{ConnectionID: %s, PacketNumber: %#x, PacketNumberLen: %d, KeyPhase: %d}", connID, h.PacketNumber, h.PacketNumberLen, h.KeyPhase)
 	}
 }

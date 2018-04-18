@@ -118,6 +118,9 @@ func (m *outgoingUniStreamsMap) SetMaxStream(id protocol.StreamID) {
 func (m *outgoingUniStreamsMap) CloseWithError(err error) {
 	m.mutex.Lock()
 	m.closeErr = err
+	for _, str := range m.streams {
+		str.closeForShutdown(err)
+	}
 	m.cond.Broadcast()
 	m.mutex.Unlock()
 }

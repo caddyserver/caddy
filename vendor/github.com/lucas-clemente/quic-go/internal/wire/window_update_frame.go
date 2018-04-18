@@ -12,11 +12,11 @@ type windowUpdateFrame struct {
 	ByteOffset protocol.ByteCount
 }
 
-// ParseWindowUpdateFrame parses a WINDOW_UPDATE frame
+// parseWindowUpdateFrame parses a WINDOW_UPDATE frame
 // The frame returned is
 // * a MAX_STREAM_DATA frame, if the WINDOW_UPDATE applies to a stream
 // * a MAX_DATA frame, if the WINDOW_UPDATE applies to the connection
-func ParseWindowUpdateFrame(r *bytes.Reader, _ protocol.VersionNumber) (Frame, error) {
+func parseWindowUpdateFrame(r *bytes.Reader, _ protocol.VersionNumber) (Frame, error) {
 	if _, err := r.ReadByte(); err != nil { // read the TypeByte
 		return nil, err
 	}

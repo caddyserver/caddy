@@ -21,10 +21,6 @@ func NewCurve25519KEX() (KeyExchange, error) {
 	if _, err := rand.Read(c.secret[:]); err != nil {
 		return nil, errors.New("Curve25519: could not create private key")
 	}
-	// See https://cr.yp.to/ecdh.html
-	c.secret[0] &= 248
-	c.secret[31] &= 127
-	c.secret[31] |= 64
 	curve25519.ScalarBaseMult(&c.public, &c.secret)
 	return c, nil
 }

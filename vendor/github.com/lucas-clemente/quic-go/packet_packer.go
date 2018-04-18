@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/lucas-clemente/quic-go/internal/ackhandler"
 	"github.com/lucas-clemente/quic-go/internal/handshake"
@@ -28,7 +29,14 @@ func (p *packedPacket) ToAckHandlerPacket() *ackhandler.Packet {
 		Frames:          p.frames,
 		Length:          protocol.ByteCount(len(p.raw)),
 		EncryptionLevel: p.encryptionLevel,
+		SendTime:        time.Now(),
 	}
+}
+
+type sealingManager interface {
+	GetSealer() (protocol.EncryptionLevel, handshake.Sealer)
+	GetSealerForCryptoStream() (protocol.EncryptionLevel, handshake.Sealer)
+	GetSealerWithEncryptionLevel(protocol.EncryptionLevel) (handshake.Sealer, error)
 }
 
 type streamFrameSource interface {
@@ -41,7 +49,8 @@ type packetPacker struct {
 	connectionID protocol.ConnectionID
 	perspective  protocol.Perspective
 	version      protocol.VersionNumber
-	cryptoSetup  handshake.CryptoSetup
+	divNonce     []byte
+	cryptoSetup  sealingManager
 
 	packetNumberGenerator *packetNumberGenerator
 	getPacketNumberLen    func(protocol.PacketNumber) protocol.PacketNumberLen
@@ -62,7 +71,8 @@ func newPacketPacker(connectionID protocol.ConnectionID,
 	initialPacketNumber protocol.PacketNumber,
 	getPacketNumberLen func(protocol.PacketNumber) protocol.PacketNumberLen,
 	remoteAddr net.Addr, // only used for determining the max packet size
-	cryptoSetup handshake.CryptoSetup,
+	divNonce []byte,
+	cryptoSetup sealingManager,
 	streamFramer streamFrameSource,
 	perspective protocol.Perspective,
 	version protocol.VersionNumber,
@@ -82,6 +92,7 @@ func newPacketPacker(connectionID protocol.ConnectionID,
 	}
 	return &packetPacker{
 		cryptoSetup:           cryptoSetup,
+		divNonce:              divNonce,
 		connectionID:          connectionID,
 		perspective:           perspective,
 		version:               version,
@@ -455,7 +466,7 @@ func (p *packetPacker) getHeader(encLevel protocol.EncryptionLevel) *wire.Header
 	}
 	if !p.version.UsesTLS() {
 		if p.perspective == protocol.PerspectiveServer && encLevel == protocol.EncryptionSecure {
-			header.DiversificationNonce = p.cryptoSetup.DiversificationNonce()
+			header.DiversificationNonce = p.divNonce
 		}
 		if p.perspective == protocol.PerspectiveClient && encLevel != protocol.EncryptionForwardSecure {
 			header.VersionFlag = true

@@ -13,8 +13,8 @@ type MaxStreamDataFrame struct {
 	ByteOffset protocol.ByteCount
 }
 
-// ParseMaxStreamDataFrame parses a MAX_STREAM_DATA frame
-func ParseMaxStreamDataFrame(r *bytes.Reader, version protocol.VersionNumber) (*MaxStreamDataFrame, error) {
+// parseMaxStreamDataFrame parses a MAX_STREAM_DATA frame
+func parseMaxStreamDataFrame(r *bytes.Reader, version protocol.VersionNumber) (*MaxStreamDataFrame, error) {
 	frame := &MaxStreamDataFrame{}
 
 	// read the TypeByte

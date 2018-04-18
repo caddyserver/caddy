@@ -31,6 +31,7 @@ func NewStreamFlowController(
 	maxReceiveWindow protocol.ByteCount,
 	initialSendWindow protocol.ByteCount,
 	rttStats *congestion.RTTStats,
+	logger utils.Logger,
 ) StreamFlowController {
 	return &streamFlowController{
 		streamID:                streamID,
@@ -42,6 +43,7 @@ func NewStreamFlowController(
 			receiveWindowSize:    receiveWindow,
 			maxReceiveWindowSize: maxReceiveWindow,
 			sendWindow:           initialSendWindow,
+			logger:               logger,
 		},
 	}
 }
@@ -137,7 +139,7 @@ func (c *streamFlowController) GetWindowUpdate() protocol.ByteCount {
 	oldWindowSize := c.receiveWindowSize
 	offset := c.baseFlowController.getWindowUpdate()
 	if c.receiveWindowSize > oldWindowSize { // auto-tuning enlarged the window size
-		utils.Debugf("Increasing receive flow control window for the connection to %d kB", c.receiveWindowSize/(1<<10))
+		c.logger.Debugf("Increasing receive flow control window for the connection to %d kB", c.receiveWindowSize/(1<<10))
 		if c.contributesToConnection {
 			c.connection.EnsureMinimumWindowSize(protocol.ByteCount(float64(c.receiveWindowSize) * protocol.ConnectionFlowControlMultiplier))
 		}

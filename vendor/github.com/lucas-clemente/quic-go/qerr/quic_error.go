@@ -2,8 +2,6 @@ package qerr
 
 import (
 	"fmt"
-
-	"github.com/lucas-clemente/quic-go/internal/utils"
 )
 
 // ErrorCode can be used as a normal error without reason.
@@ -51,6 +49,5 @@ func ToQuicError(err error) *QuicError {
 	case ErrorCode:
 		return Error(e, "")
 	}
-	utils.Errorf("Internal error: %v", err)
 	return Error(InternalError, err.Error())
 }

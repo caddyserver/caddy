@@ -12,8 +12,8 @@ type BlockedFrame struct {
 	Offset protocol.ByteCount
 }
 
-// ParseBlockedFrame parses a BLOCKED frame
-func ParseBlockedFrame(r *bytes.Reader, _ protocol.VersionNumber) (*BlockedFrame, error) {
+// parseBlockedFrame parses a BLOCKED frame
+func parseBlockedFrame(r *bytes.Reader, _ protocol.VersionNumber) (*BlockedFrame, error) {
 	if _, err := r.ReadByte(); err != nil {
 		return nil, err
 	}

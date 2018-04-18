@@ -129,7 +129,7 @@
 			"importpath": "github.com/lucas-clemente/aes12",
 			"repository": "https://github.com/lucas-clemente/aes12",
 			"vcs": "git",
-			"revision": "25700e67be5c860bcc999137275b9ef8b65932bd",
+			"revision": "cd47fb39b79f867c6e4e5cd39cf7abd799f71670",
 			"branch": "master",
 			"notests": true
 		},
@@ -145,7 +145,7 @@
 			"importpath": "github.com/lucas-clemente/quic-go",
 			"repository": "https://github.com/lucas-clemente/quic-go",
 			"vcs": "git",
-			"revision": "9fa739409e6edddbbd47c8031cb7bb3d1a209cc8",
+			"revision": "da7708e47066ab0aff0f20f66b21c1f329db1eff",
 			"branch": "master",
 			"notests": true
 		},
@@ -193,7 +193,7 @@
 			"importpath": "github.com/xenolf/lego/acmev2",
 			"repository": "https://github.com/xenolf/lego",
 			"vcs": "git",
-			"revision": "805eec97569ff533e1b75b16eac0bdd94e67bdd6",
+			"revision": "6e962fbfb37f9ea4a8201e32acb1b94ffb3b8398",
 			"branch": "acmev2",
 			"path": "/acmev2",
 			"notests": true

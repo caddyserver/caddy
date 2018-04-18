@@ -35,18 +35,28 @@ type MintTLS interface {
 	SetCryptoStream(io.ReadWriter)
 }
 
-// CryptoSetup is a crypto setup
-type CryptoSetup interface {
-	Open(dst, src []byte, packetNumber protocol.PacketNumber, associatedData []byte) ([]byte, protocol.EncryptionLevel, error)
+type baseCryptoSetup interface {
 	HandleCryptoStream() error
-	// TODO: clean up this interface
-	DiversificationNonce() []byte   // only needed for cryptoSetupServer
-	SetDiversificationNonce([]byte) // only needed for cryptoSetupClient
 	ConnectionState() ConnectionState
 
 	GetSealer() (protocol.EncryptionLevel, Sealer)
 	GetSealerWithEncryptionLevel(protocol.EncryptionLevel) (Sealer, error)
 	GetSealerForCryptoStream() (protocol.EncryptionLevel, Sealer)
+}
+
+// CryptoSetup is the crypto setup used by gQUIC
+type CryptoSetup interface {
+	baseCryptoSetup
+
+	Open(dst, src []byte, packetNumber protocol.PacketNumber, associatedData []byte) ([]byte, protocol.EncryptionLevel, error)
+}
+
+// CryptoSetupTLS is the crypto setup used by IETF QUIC
+type CryptoSetupTLS interface {
+	baseCryptoSetup
+
+	OpenHandshake(dst, src []byte, packetNumber protocol.PacketNumber, associatedData []byte) ([]byte, error)
+	Open1RTT(dst, src []byte, packetNumber protocol.PacketNumber, associatedData []byte) ([]byte, error)
 }
 
 // ConnectionState records basic details about the QUIC connection.

@@ -46,6 +46,8 @@ type client struct {
 	requestWriter *requestWriter
 
 	responses map[protocol.StreamID]chan *http.Response
+
+	logger utils.Logger
 }
 
 var _ http.RoundTripper = &client{}
@@ -75,6 +77,7 @@ func newClient(
 		opts:          opts,
 		headerErrored: make(chan struct{}),
 		dialer:        dialer,
+		logger:        utils.DefaultLogger,
 	}
 }
 
@@ -95,7 +98,7 @@ func (c *client) dial() error {
 	if err != nil {
 		return err
 	}
-	c.requestWriter = newRequestWriter(c.headerStream)
+	c.requestWriter = newRequestWriter(c.headerStream, c.logger)
 	go c.handleHeaderStream()
 	return nil
 }
@@ -109,7 +112,7 @@ func (c *client) handleHeaderStream() {
 		err = c.readResponse(h2framer, decoder)
 	}
 	if quicErr, ok := err.(*qerr.QuicError); !ok || quicErr.ErrorCode != qerr.PeerGoingAway {
-		utils.Debugf("Error handling header stream: %s", err)
+		c.logger.Debugf("Error handling header stream: %s", err)
 	}
 	c.headerErr = qerr.Error(qerr.InvalidHeadersStreamData, err.Error())
 	// stop all running request

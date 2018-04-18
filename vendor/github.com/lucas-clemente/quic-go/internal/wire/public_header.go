@@ -20,6 +20,9 @@ var (
 
 // writePublicHeader writes a Public Header.
 func (h *Header) writePublicHeader(b *bytes.Buffer, pers protocol.Perspective, _ protocol.VersionNumber) error {
+	if h.VersionFlag && pers == protocol.PerspectiveServer {
+		return errors.New("PublicHeader: Writing of Version Negotiation Packets not supported")
+	}
 	if h.VersionFlag && h.ResetFlag {
 		return errResetAndVersionFlagSet
 	}
@@ -228,7 +231,7 @@ func (h *Header) hasPacketNumber(packetSentBy protocol.Perspective) bool {
 	return true
 }
 
-func (h *Header) logPublicHeader() {
+func (h *Header) logPublicHeader(logger utils.Logger) {
 	connID := "(omitted)"
 	if !h.OmitConnectionID {
 		connID = fmt.Sprintf("%#x", h.ConnectionID)
@@ -237,5 +240,5 @@ func (h *Header) logPublicHeader() {
 	if h.Version != 0 {
 		ver = h.Version.String()
 	}
-	utils.Debugf("   Public Header{ConnectionID: %s, PacketNumber: %#x, PacketNumberLen: %d, Version: %s, DiversificationNonce: %#v}", connID, h.PacketNumber, h.PacketNumberLen, ver, h.DiversificationNonce)
+	logger.Debugf("   Public Header{ConnectionID: %s, PacketNumber: %#x, PacketNumberLen: %d, Version: %s, DiversificationNonce: %#v}", connID, h.PacketNumber, h.PacketNumberLen, ver, h.DiversificationNonce)
 }

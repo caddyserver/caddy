@@ -30,7 +30,7 @@ var _ = BeforeEach(func() {
 		logFile, err = os.Create(logFileName)
 		Expect(err).ToNot(HaveOccurred())
 		log.SetOutput(logFile)
-		utils.SetLogLevel(utils.LogLevelDebug)
+		utils.DefaultLogger.SetLogLevel(utils.LogLevelDebug)
 	}
 })
 

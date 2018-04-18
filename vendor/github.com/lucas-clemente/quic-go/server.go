@@ -50,8 +50,10 @@ type server struct {
 	errorChan    chan struct{}
 
 	// set as members, so they can be set in the tests
-	newSession                func(conn connection, v protocol.VersionNumber, connectionID protocol.ConnectionID, sCfg *handshake.ServerConfig, tlsConf *tls.Config, config *Config) (packetHandler, error)
+	newSession                func(conn connection, v protocol.VersionNumber, connectionID protocol.ConnectionID, sCfg *handshake.ServerConfig, tlsConf *tls.Config, config *Config, logger utils.Logger) (packetHandler, error)
 	deleteClosedSessionsAfter time.Duration
+
+	logger utils.Logger
 }
 
 var _ Listener = &server{}
@@ -110,6 +112,7 @@ func Listen(conn net.PacketConn, tlsConf *tls.Config, config *Config) (Listener,
 		sessionQueue:              make(chan Session, 5),
 		errorChan:                 make(chan struct{}),
 		supportsTLS:               supportsTLS,
+		logger:                    utils.DefaultLogger,
 	}
 	if supportsTLS {
 		if err := s.setupTLS(); err != nil {
@@ -117,16 +120,16 @@ func Listen(conn net.PacketConn, tlsConf *tls.Config, config *Config) (Listener,
 		}
 	}
 	go s.serve()
-	utils.Debugf("Listening for %s connections on %s", conn.LocalAddr().Network(), conn.LocalAddr().String())
+	s.logger.Debugf("Listening for %s connections on %s", conn.LocalAddr().Network(), conn.LocalAddr().String())
 	return s, nil
 }
 
 func (s *server) setupTLS() error {
-	cookieHandler, err := handshake.NewCookieHandler(s.config.AcceptCookie)
+	cookieHandler, err := handshake.NewCookieHandler(s.config.AcceptCookie, s.logger)
 	if err != nil {
 		return err
 	}
-	serverTLS, sessionChan, err := newServerTLS(s.conn, s.config, cookieHandler, s.tlsConf)
+	serverTLS, sessionChan, err := newServerTLS(s.conn, s.config, cookieHandler, s.tlsConf, s.logger)
 	if err != nil {
 		return err
 	}
@@ -245,7 +248,7 @@ func (s *server) serve() {
 		}
 		data = data[:n]
 		if err := s.handlePacket(s.conn, remoteAddr, data); err != nil {
-			utils.Errorf("error handling packet: %s", err.Error())
+			s.logger.Errorf("error handling packet: %s", err.Error())
 		}
 	}
 }
@@ -328,12 +331,12 @@ func (s *server) handlePacket(pconn net.PacketConn, remoteAddr net.Addr, packet 
 			var pr *wire.PublicReset
 			pr, err = wire.ParsePublicReset(r)
 			if err != nil {
-				utils.Infof("Received a Public Reset for connection %x. An error occurred parsing the packet.", hdr.ConnectionID)
+				s.logger.Infof("Received a Public Reset for connection %x. An error occurred parsing the packet.", hdr.ConnectionID)
 			} else {
-				utils.Infof("Received a Public Reset for connection %x, rejected packet number: 0x%x.", hdr.ConnectionID, pr.RejectedPacketNumber)
+				s.logger.Infof("Received a Public Reset for connection %x, rejected packet number: 0x%x.", hdr.ConnectionID, pr.RejectedPacketNumber)
 			}
 		} else {
-			utils.Infof("Received Public Reset for unknown connection %x.", hdr.ConnectionID)
+			s.logger.Infof("Received Public Reset for unknown connection %x.", hdr.ConnectionID)
 		}
 		return nil
 	}
@@ -360,7 +363,7 @@ func (s *server) handlePacket(pconn net.PacketConn, remoteAddr net.Addr, packet 
 		if len(packet) < protocol.MinClientHelloSize+len(hdr.Raw) {
 			return errors.New("dropping small packet with unknown version")
 		}
-		utils.Infof("Client offered version %s, sending Version Negotiation Packet", hdr.Version)
+		s.logger.Infof("Client offered version %s, sending Version Negotiation Packet", hdr.Version)
 		_, err := pconn.WriteTo(wire.ComposeGQUICVersionNegotiation(hdr.ConnectionID, s.config.Versions), remoteAddr)
 		return err
 	}
@@ -377,7 +380,7 @@ func (s *server) handlePacket(pconn net.PacketConn, remoteAddr net.Addr, packet 
 			return errors.New("Server BUG: negotiated version not supported")
 		}
 
-		utils.Infof("Serving new connection: %x, version %s from %v", hdr.ConnectionID, version, remoteAddr)
+		s.logger.Infof("Serving new connection: %x, version %s from %v", hdr.ConnectionID, version, remoteAddr)
 		session, err = s.newSession(
 			&conn{pconn: pconn, currentAddr: remoteAddr},
 			version,
@@ -385,6 +388,7 @@ func (s *server) handlePacket(pconn net.PacketConn, remoteAddr net.Addr, packet 
 			s.scfg,
 			s.tlsConf,
 			s.config,
+			s.logger,
 		)
 		if err != nil {
 			return err

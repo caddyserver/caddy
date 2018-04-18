@@ -4,6 +4,7 @@ import (
 	"bytes"
 
 	"github.com/lucas-clemente/quic-go/internal/protocol"
+	"github.com/lucas-clemente/quic-go/internal/utils"
 )
 
 // Header is the header of a QUIC packet.
@@ -103,10 +104,10 @@ func (h *Header) GetLength(pers protocol.Perspective, version protocol.VersionNu
 }
 
 // Log logs the Header
-func (h *Header) Log() {
+func (h *Header) Log(logger utils.Logger) {
 	if h.isPublicHeader {
-		h.logPublicHeader()
+		h.logPublicHeader(logger)
 	} else {
-		h.logHeader()
+		h.logHeader(logger)
 	}
 }

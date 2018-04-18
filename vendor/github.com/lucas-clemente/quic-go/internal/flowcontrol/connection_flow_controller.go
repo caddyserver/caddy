@@ -22,6 +22,7 @@ func NewConnectionFlowController(
 	receiveWindow protocol.ByteCount,
 	maxReceiveWindow protocol.ByteCount,
 	rttStats *congestion.RTTStats,
+	logger utils.Logger,
 ) ConnectionFlowController {
 	return &connectionFlowController{
 		baseFlowController: baseFlowController{
@@ -29,6 +30,7 @@ func NewConnectionFlowController(
 			receiveWindow:        receiveWindow,
 			receiveWindowSize:    receiveWindow,
 			maxReceiveWindowSize: maxReceiveWindow,
+			logger:               logger,
 		},
 	}
 }
@@ -65,7 +67,7 @@ func (c *connectionFlowController) GetWindowUpdate() protocol.ByteCount {
 	oldWindowSize := c.receiveWindowSize
 	offset := c.baseFlowController.getWindowUpdate()
 	if oldWindowSize < c.receiveWindowSize {
-		utils.Debugf("Increasing receive flow control window for the connection to %d kB", c.receiveWindowSize/(1<<10))
+		c.logger.Debugf("Increasing receive flow control window for the connection to %d kB", c.receiveWindowSize/(1<<10))
 	}
 	c.mutex.Unlock()
 	return offset

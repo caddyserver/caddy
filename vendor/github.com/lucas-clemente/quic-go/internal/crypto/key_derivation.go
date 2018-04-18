@@ -20,9 +20,7 @@ type TLSExporter interface {
 }
 
 func qhkdfExpand(secret []byte, label string, length int) []byte {
-	// The last byte should be 0x0.
-	// Since Go initializes the slice to 0, we don't need to set it explicitly.
-	qlabel := make([]byte, 2+1+5+len(label)+1)
+	qlabel := make([]byte, 2+1+5+len(label))
 	binary.BigEndian.PutUint16(qlabel[0:2], uint16(length))
 	qlabel[2] = uint8(5 + len(label))
 	copy(qlabel[3:], []byte("QUIC "+label))

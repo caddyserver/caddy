@@ -17,7 +17,6 @@ type SendAlgorithm interface {
 	SetNumEmulatedConnections(n int)
 	OnRetransmissionTimeout(packetsRetransmitted bool)
 	OnConnectionMigration()
-	RetransmissionDelay() time.Duration
 
 	// Experiments
 	SetSlowStartLargeReduction(enabled bool)

@@ -12,6 +12,8 @@ const (
 	SendAck
 	// SendRetransmission means that retransmissions should be sent
 	SendRetransmission
+	// SendRTO means that an RTO probe packet should be sent
+	SendRTO
 	// SendAny packet should be sent
 	SendAny
 )
@@ -24,6 +26,8 @@ func (s SendMode) String() string {
 		return "ack"
 	case SendRetransmission:
 		return "retransmission"
+	case SendRTO:
+		return "rto"
 	case SendAny:
 		return "any"
 	default:
