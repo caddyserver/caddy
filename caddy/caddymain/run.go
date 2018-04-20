@@ -298,7 +298,7 @@ func initTelemetry() {
 
 	newUUID := func() uuid.UUID {
 		id := uuid.New()
-		err := ioutil.WriteFile(uuidFilename, []byte(id.String()), 0644) // human-readable this way
+		err := ioutil.WriteFile(uuidFilename, []byte(id.String()), 0600) // human-readable as a string
 		if err != nil {
 			log.Printf("[ERROR] Persisting instance UUID: %v", err)
 		}
