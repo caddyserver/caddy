@@ -15,6 +15,7 @@
 package httpserver
 
 import (
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"log"
@@ -123,13 +124,15 @@ func (h *httpContext) InspectServerBlocks(sourceFile string, serverBlocks []cadd
 	// For each address in each server block, make a new config
 	for _, sb := range serverBlocks {
 		for _, key := range sb.Keys {
-			key = strings.ToLower(key)
-			if _, dup := h.keysToSiteConfigs[key]; dup {
-				return serverBlocks, fmt.Errorf("duplicate site key: %s", key)
-			}
 			addr, err := standardizeAddress(key)
 			if err != nil {
 				return serverBlocks, err
+			}
+
+			addr = addr.Normalize()
+			key = addr.Key()
+			if _, dup := h.keysToSiteConfigs[key]; dup {
+				return serverBlocks, fmt.Errorf("duplicate site key: %s", key)
 			}
 
 			// Fill in address components from command line so that middleware
@@ -146,7 +149,7 @@ func (h *httpContext) InspectServerBlocks(sourceFile string, serverBlocks []cadd
 			if addrCopy.Port == "" && Port == DefaultPort {
 				addrCopy.Port = Port
 			}
-			addrStr := strings.ToLower(addrCopy.String())
+			addrStr := addrCopy.String()
 			if otherSiteKey, dup := siteAddrs[addrStr]; dup {
 				err := fmt.Errorf("duplicate site address: %s", addrStr)
 				if (addrCopy.Host == Host && Host != DefaultHost) ||
@@ -218,6 +221,13 @@ func (h *httpContext) MakeServers() ([]caddy.Server, error) {
 		}
 	}
 
+	// Iterate each site configuration and make sure that:
+	// 1) TLS is disabled for explicitly-HTTP sites (necessary
+	//    when an HTTP address shares a block containing tls)
+	// 2) if QUIC is enabled, TLS ClientAuth is not, because
+	//    currently, QUIC does not support ClientAuth (TODO:
+	//    revisit this when our QUIC implementation supports it)
+	// 3) if TLS ClientAuth is used, StrictHostMatching is on
 	var atLeastOneSiteLooksLikeProduction bool
 	for _, cfg := range h.siteConfigs {
 		// see if all the addresses (both sites and
@@ -254,6 +264,17 @@ func (h *httpContext) MakeServers() ([]caddy.Server, error) {
 			// instead of 443 because it doesn't know about TLS.
 			cfg.Addr.Port = HTTPSPort
 		}
+		if cfg.TLS.ClientAuth != tls.NoClientCert {
+			if QUIC {
+				return nil, fmt.Errorf("cannot enable TLS client authentication with QUIC, because QUIC does not yet support it")
+			}
+			// this must be enabled so that a client cannot connect
+			// using SNI for another site on this listener that
+			// does NOT require ClientAuth, and then send HTTP
+			// requests with the Host header of this site which DOES
+			// require client auth, thus bypassing it...
+			cfg.StrictHostMatching = true
+		}
 	}
 
 	// we must map (group) each config to a bind address
@@ -287,12 +308,22 @@ func (h *httpContext) MakeServers() ([]caddy.Server, error) {
 	return servers, nil
 }
 
+// normalizedKey returns "normalized" key representation:
+//  scheme and host names are lowered, everything else stays the same
+func normalizedKey(key string) string {
+	addr, err := standardizeAddress(key)
+	if err != nil {
+		return key
+	}
+	return addr.Normalize().Key()
+}
+
 // GetConfig gets the SiteConfig that corresponds to c.
 // If none exist (should only happen in tests), then a
 // new, empty one will be created.
 func GetConfig(c *caddy.Controller) *SiteConfig {
 	ctx := c.Context().(*httpContext)
-	key := strings.ToLower(c.Key)
+	key := normalizedKey(c.Key)
 	if cfg, ok := ctx.keysToSiteConfigs[key]; ok {
 		return cfg
 	}
@@ -394,6 +425,43 @@ func (a Address) VHost() string {
 		return a.Original[idx+3:]
 	}
 	return a.Original
+}
+
+// Normalize normalizes URL: turn scheme and host names into lower case
+func (a Address) Normalize() Address {
+	path := a.Path
+	if !CaseSensitivePath {
+		path = strings.ToLower(path)
+	}
+	return Address{
+		Original: a.Original,
+		Scheme:   strings.ToLower(a.Scheme),
+		Host:     strings.ToLower(a.Host),
+		Port:     a.Port,
+		Path:     path,
+	}
+}
+
+// Key is similar to String, just replaces scheme and host values with modified values.
+// Unlike String it doesn't add anything default (scheme, port, etc)
+func (a Address) Key() string {
+	res := ""
+	if a.Scheme != "" {
+		res += a.Scheme + "://"
+	}
+	if a.Host != "" {
+		res += a.Host
+	}
+	if a.Port != "" {
+		if strings.HasPrefix(a.Original[len(res):], ":"+a.Port) {
+			// insert port only if the original has its own explicit port
+			res += ":" + a.Port
+		}
+	}
+	if a.Path != "" {
+		res += a.Path
+	}
+	return res
 }
 
 // standardizeAddress parses an address string into a structured format with separate
@@ -523,6 +591,7 @@ var directives = []string{
 	"startup",  // TODO: Deprecate this directive
 	"shutdown", // TODO: Deprecate this directive
 	"on",
+	"supervisor", // github.com/lucaslorentz/caddy-supervisor
 	"request_id",
 	"realip", // github.com/captncraig/caddy-realip
 	"git",    // github.com/abiosoft/caddy-git
@@ -538,13 +607,13 @@ var directives = []string{
 	"ext",
 	"gzip",
 	"header",
+	"geoip", // github.com/kodnaplakal/caddy-geoip
 	"errors",
 	"authz",        // github.com/casbin/caddy-authz
 	"filter",       // github.com/echocat/caddy-filter
 	"minify",       // github.com/hacdias/caddy-minify
 	"ipfilter",     // github.com/pyed/ipfilter
 	"ratelimit",    // github.com/xuqingfeng/caddy-rate-limit
-	"search",       // github.com/pedronasser/caddy-search
 	"expires",      // github.com/epicagency/caddy-expires
 	"forwardproxy", // github.com/caddyserver/forwardproxy
 	"basicauth",

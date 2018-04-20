@@ -1,5 +1,5 @@
 <p align="center">
-	<a href="https://caddyserver.com"><img src="https://user-images.githubusercontent.com/1128849/36137292-bebc223a-1051-11e8-9a81-4ea9054c96ac.png" alt="Caddy" width="400"></a>
+	<a href="https://caddyserver.com"><img src="https://user-images.githubusercontent.com/1128849/36338535-05fb646a-136f-11e8-987b-e6901e717d5a.png" alt="Caddy" width="450"></a>
 </p>
 <h3 align="center">Every Site on HTTPS <!-- Serve Confidently --></h3>
 <p align="center">Caddy is a general-purpose HTTP/2 web server that serves HTTPS by default.</p>
@@ -21,7 +21,7 @@
 
 ---
 
-Caddy is fast, easy to use, and makes you more productive.
+Caddy is a **production-ready** open-source web server that is fast, easy to use, and makes you more productive.
 
 Available for Windows, Mac, Linux, BSD, Solaris, and [Android](https://github.com/mholt/caddy/wiki/Running-Caddy-on-Android).
 
@@ -41,30 +41,34 @@ Available for Windows, Mac, Linux, BSD, Solaris, and [Android](https://github.co
 - **Automatic HTTPS** on by default (via [Let's Encrypt](https://letsencrypt.org))
 - **HTTP/2** by default
 - **Virtual hosting** so multiple sites just work
-- Experimental **QUIC support** for those that like speed
+- Experimental **QUIC support** for cutting-edge transmissions
 - TLS session ticket **key rotation** for more secure connections
 - **Extensible with plugins** because a convenient web server is a helpful one
 - **Runs anywhere** with **no external dependencies** (not even libc)
 
-There's way more, too! [See all features built into Caddy.](https://caddyserver.com/features) On top of all those, Caddy does even more with plugins: choose which plugins you want at [download](https://caddyserver.com/download).
+[See a more complete list of features built into Caddy.](https://caddyserver.com/features) On top of all those, Caddy does even more with plugins: choose which plugins you want at [download](https://caddyserver.com/download).
+
+Altogether, Caddy can do things other web servers simply cannot do. Its features and plugins save you time and mistakes, and will cheer you up. Your Caddy instance takes care of the details for you!
 
 
 ## Install
 
-Caddy binaries have no dependencies and are available for every platform. Get Caddy any one of these ways:
+Caddy binaries have no dependencies and are available for every platform. Get Caddy either of these ways:
 
-- **[Download page](https://caddyserver.com/download)** allows you to
-customize your build in the browser
-- **[Latest release](https://github.com/mholt/caddy/releases/latest)** for
-pre-built, vanilla binaries
+- **[Download page](https://caddyserver.com/download)** (RECOMMENDED) allows you to customize your build in the browser
+- **[Latest release](https://github.com/mholt/caddy/releases/latest)** for pre-built, vanilla binaries
+
 
 ## Build
+
 To build from source you need **[Git](https://git-scm.com/downloads)** and **[Go](https://golang.org/doc/install)** (1.9 or newer). Follow these instruction for fast building:
 
-- Get source `go get github.com/mholt/caddy/caddy` and then run `go get github.com/caddyserver/builds`
-- Now `cd` to `$GOPATH/src/github.com/mholt/caddy/caddy` and run `go run build.go`
+- Get the source with `go get github.com/mholt/caddy/caddy` and then run `go get github.com/caddyserver/builds`
+- Now `cd $GOPATH/src/github.com/mholt/caddy/caddy` and run `go run build.go`
 
 Then make sure the `caddy` binary is in your PATH.
+
+To build for other platforms, use build.go with the `--goos` and `--goarch` flags.
 
 
 ## Quick Start
@@ -85,7 +89,7 @@ If the `caddy` binary has permission to bind to low ports and your domain name's
 caddy -host example.com
 ```
 
-This command serves static files from the current directory over HTTPS. Certificates are automatically obtained and renewed for you!
+This command serves static files from the current directory over HTTPS. Certificates are automatically obtained and renewed for you! Caddy is also automatically configuring ports 80 and 443 for you, and redirecting HTTP to HTTPS. Cool, huh?
 
 ### Customizing your site
 
@@ -115,7 +119,7 @@ To host multiple sites and do more with the Caddyfile, please see the [Caddyfile
 
 Sites with qualifying hostnames are served over [HTTPS by default](https://caddyserver.com/docs/automatic-https).
 
-Caddy has a command line interface. Run `caddy -h` to view basic help or see the [CLI documentation](https://caddyserver.com/docs/cli) for details.
+Caddy has a nice little command line interface. Run `caddy -h` to view basic help or see the [CLI documentation](https://caddyserver.com/docs/cli) for details.
 
 
 ## Running in Production
@@ -139,7 +143,7 @@ Please see our [contributing guidelines](https://github.com/mholt/caddy/blob/mas
 
 We use GitHub issues and pull requests only for discussing bug reports and the development of specific changes. We welcome all other topics on the [forum](https://caddy.community)!
 
-If you want to contribute to the documentation, please submit pull requests to [caddyserver/website](https://github.com/caddyserver/website).
+If you want to contribute to the documentation, please [submit an issue](https://github.com/mholt/caddy/issues/new) describing the change that should be made.
 
 Thanks for making Caddy -- and the Web -- better!
 
@@ -158,6 +162,6 @@ We thank them for their services. **If you want to help keep Caddy free, please 
 Caddy was born out of the need for a "batteries-included" web server that runs anywhere and doesn't have to take its configuration with it. Caddy took inspiration from [spark](https://github.com/rif/spark), [nginx](https://github.com/nginx/nginx), lighttpd,
 [Websocketd](https://github.com/joewalnes/websocketd) and [Vagrant](https://www.vagrantup.com/), which provides a pleasant mixture of features from each of them.
 
-**The name "Caddy":** The name of the software is "Caddy", not "Caddy Server" or "CaddyServer". Please call it "Caddy" or, if you wish to clarify, "the Caddy web server". See [brand guidelines](https://caddyserver.com/brand).
+**The name "Caddy" is trademarked:** The name of the software is "Caddy", not "Caddy Server" or "CaddyServer". Please call it "Caddy" or, if you wish to clarify, "the Caddy web server". See [brand guidelines](https://caddyserver.com/brand). Caddy is a registered trademark of Light Code Labs, LLC.
 
 *Author on Twitter: [@mholt6](https://twitter.com/mholt6)*

@@ -25,6 +25,8 @@ type baseFlowController struct {
 	epochStartTime   time.Time
 	epochStartOffset protocol.ByteCount
 	rttStats         *congestion.RTTStats
+
+	logger utils.Logger
 }
 
 func (c *baseFlowController) AddBytesSent(n protocol.ByteCount) {

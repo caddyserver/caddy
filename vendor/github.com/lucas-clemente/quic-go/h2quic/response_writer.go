@@ -24,15 +24,24 @@ type responseWriter struct {
 	header        http.Header
 	status        int // status code passed to WriteHeader
 	headerWritten bool
+
+	logger utils.Logger
 }
 
-func newResponseWriter(headerStream quic.Stream, headerStreamMutex *sync.Mutex, dataStream quic.Stream, dataStreamID protocol.StreamID) *responseWriter {
+func newResponseWriter(
+	headerStream quic.Stream,
+	headerStreamMutex *sync.Mutex,
+	dataStream quic.Stream,
+	dataStreamID protocol.StreamID,
+	logger utils.Logger,
+) *responseWriter {
 	return &responseWriter{
 		header:            http.Header{},
 		headerStream:      headerStream,
 		headerStreamMutex: headerStreamMutex,
 		dataStream:        dataStream,
 		dataStreamID:      dataStreamID,
+		logger:            logger,
 	}
 }
 
@@ -57,7 +66,7 @@ func (w *responseWriter) WriteHeader(status int) {
 		}
 	}
 
-	utils.Infof("Responding with %d", status)
+	w.logger.Infof("Responding with %d", status)
 	w.headerStreamMutex.Lock()
 	defer w.headerStreamMutex.Unlock()
 	h2framer := http2.NewFramer(w.headerStream, nil)
@@ -67,7 +76,7 @@ func (w *responseWriter) WriteHeader(status int) {
 		BlockFragment: headers.Bytes(),
 	})
 	if err != nil {
-		utils.Errorf("could not write h2 header: %s", err.Error())
+		w.logger.Errorf("could not write h2 header: %s", err.Error())
 	}
 }
 

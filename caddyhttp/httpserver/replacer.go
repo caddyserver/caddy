@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/mholt/caddy"
+	"github.com/mholt/caddy/caddytls"
 )
 
 // requestReplacer is a strings.Replacer which is used to
@@ -140,6 +141,14 @@ func canLogRequest(r *http.Request) bool {
 	return false
 }
 
+// unescapeBraces finds escaped braces in s and returns
+// a string with those braces unescaped.
+func unescapeBraces(s string) string {
+	s = strings.Replace(s, "\\{", "{", -1)
+	s = strings.Replace(s, "\\}", "}", -1)
+	return s
+}
+
 // Replace performs a replacement of values on s and returns
 // the string with the replaced values.
 func (r *replacer) Replace(s string) string {
@@ -149,32 +158,59 @@ func (r *replacer) Replace(s string) string {
 	}
 
 	result := ""
+Placeholders: // process each placeholder in sequence
 	for {
-		idxStart := strings.Index(s, "{")
-		if idxStart == -1 {
-			// no placeholder anymore
-			break
-		}
-		idxEnd := strings.Index(s[idxStart:], "}")
-		if idxEnd == -1 {
-			// unpaired placeholder
-			break
-		}
-		idxEnd += idxStart
+		var idxStart, idxEnd int
 
-		// get a replacement
-		placeholder := s[idxStart : idxEnd+1]
+		idxOffset := 0
+		for { // find first unescaped opening brace
+			searchSpace := s[idxOffset:]
+			idxStart = strings.Index(searchSpace, "{")
+			if idxStart == -1 {
+				// no more placeholders
+				break Placeholders
+			}
+			if idxStart == 0 || searchSpace[idxStart-1] != '\\' {
+				// preceding character is not an escape
+				idxStart += idxOffset
+				break
+			}
+			// the brace we found was escaped
+			// search the rest of the string next
+			idxOffset += idxStart + 1
+		}
+
+		idxOffset = 0
+		for { // find first unescaped closing brace
+			searchSpace := s[idxStart+idxOffset:]
+			idxEnd = strings.Index(searchSpace, "}")
+			if idxEnd == -1 {
+				// unpaired placeholder
+				break Placeholders
+			}
+			if idxEnd == 0 || searchSpace[idxEnd-1] != '\\' {
+				// preceding character is not an escape
+				idxEnd += idxOffset + idxStart
+				break
+			}
+			// the brace we found was escaped
+			// search the rest of the string next
+			idxOffset += idxEnd + 1
+		}
+
+		// get a replacement for the unescaped placeholder
+		placeholder := unescapeBraces(s[idxStart : idxEnd+1])
 		replacement := r.getSubstitution(placeholder)
 
-		// append prefix + replacement
-		result += s[:idxStart] + replacement
+		// append unescaped prefix + replacement
+		result += strings.TrimPrefix(unescapeBraces(s[:idxStart]), "\\") + replacement
 
 		// strip out scanned parts
 		s = s[idxEnd+1:]
 	}
 
 	// append unscanned parts
-	return result + s
+	return result + unescapeBraces(s)
 }
 
 func roundDuration(d time.Duration) time.Duration {
@@ -218,6 +254,16 @@ func (r *replacer) getSubstitution(key string) string {
 	if key[1] == '>' {
 		want := key[2 : len(key)-1]
 		for key, values := range r.request.Header {
+			// Header placeholders (case-insensitive)
+			if strings.EqualFold(key, want) {
+				return strings.Join(values, ",")
+			}
+		}
+	}
+	// search response headers then
+	if r.responseRecorder != nil && key[1] == '<' {
+		want := key[2 : len(key)-1]
+		for key, values := range r.responseRecorder.Header() {
 			// Header placeholders (case-insensitive)
 			if strings.EqualFold(key, want) {
 				return strings.Join(values, ",")
@@ -365,12 +411,46 @@ func (r *replacer) getSubstitution(key string) string {
 		}
 		elapsedDuration := time.Since(r.responseRecorder.start)
 		return strconv.FormatInt(convertToMilliseconds(elapsedDuration), 10)
+	case "{tls_protocol}":
+		if r.request.TLS != nil {
+			for k, v := range caddytls.SupportedProtocols {
+				if v == r.request.TLS.Version {
+					return k
+				}
+			}
+			return "tls" // this should never happen, but guard in case
+		}
+		return r.emptyValue // because not using a secure channel
+	case "{tls_cipher}":
+		if r.request.TLS != nil {
+			for k, v := range caddytls.SupportedCiphersMap {
+				if v == r.request.TLS.CipherSuite {
+					return k
+				}
+			}
+			return "UNKNOWN" // this should never happen, but guard in case
+		}
+		return r.emptyValue
+	default:
+		// {labelN}
+		if strings.HasPrefix(key, "{label") {
+			nStr := key[6 : len(key)-1] // get the integer N in "{labelN}"
+			n, err := strconv.Atoi(nStr)
+			if err != nil || n < 1 {
+				return r.emptyValue
+			}
+			labels := strings.Split(r.request.Host, ".")
+			if n > len(labels) {
+				return r.emptyValue
+			}
+			return labels[n-1]
+		}
 	}
 
 	return r.emptyValue
 }
 
-//convertToMilliseconds returns the number of milliseconds in the given duration
+// convertToMilliseconds returns the number of milliseconds in the given duration
 func convertToMilliseconds(d time.Duration) int64 {
 	return d.Nanoseconds() / 1e6
 }

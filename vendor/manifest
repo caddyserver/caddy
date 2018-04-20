@@ -137,7 +137,7 @@
 			"importpath": "github.com/lucas-clemente/aes12",
 			"repository": "https://github.com/lucas-clemente/aes12",
 			"vcs": "git",
-			"revision": "25700e67be5c860bcc999137275b9ef8b65932bd",
+			"revision": "cd47fb39b79f867c6e4e5cd39cf7abd799f71670",
 			"branch": "master",
 			"notests": true
 		},
@@ -153,7 +153,7 @@
 			"importpath": "github.com/lucas-clemente/quic-go",
 			"repository": "https://github.com/lucas-clemente/quic-go",
 			"vcs": "git",
-			"revision": "d71850eb2ff581620f2f5742b558a97de22c13f6",
+			"revision": "da7708e47066ab0aff0f20f66b21c1f329db1eff",
 			"branch": "master",
 			"notests": true
 		},
@@ -198,12 +198,12 @@
 			"notests": true
 		},
 		{
-			"importpath": "github.com/xenolf/lego/acme",
+			"importpath": "github.com/xenolf/lego/acmev2",
 			"repository": "https://github.com/xenolf/lego",
 			"vcs": "git",
-			"revision": "4dde48a9b9916926a8dd4f69639c8dba40930355",
-			"branch": "master",
-			"path": "/acme",
+			"revision": "fad2257e11ae4ff31ed03739386873aa405dec2d",
+			"branch": "acmev2",
+			"path": "/acmev2",
 			"notests": true
 		},
 		{
@@ -216,21 +216,21 @@
 			"notests": true
 		},
 		{
-			"importpath": "golang.org/x/crypto/acme",
-			"repository": "https://go.googlesource.com/crypto",
-			"vcs": "git",
-			"revision": "2faea1465de239e4babd8f5905cc25b781712442",
-			"branch": "master",
-			"path": "acme",
-			"notests": true
-		},
-		{
 			"importpath": "golang.org/x/crypto/curve25519",
 			"repository": "https://go.googlesource.com/crypto",
 			"vcs": "git",
 			"revision": "94eea52f7b742c7cbe0b03b22f0c4c8631ece122",
 			"branch": "master",
 			"path": "curve25519",
+			"notests": true
+		},
+		{
+			"importpath": "golang.org/x/crypto/ed25519",
+			"repository": "https://go.googlesource.com/crypto",
+			"vcs": "git",
+			"revision": "c4a91bd4f524f10d064139674cf55852e055ad01",
+			"branch": "master",
+			"path": "/ed25519",
 			"notests": true
 		},
 		{
@@ -455,10 +455,10 @@
 			"notests": true
 		},
 		{
-			"importpath": "gopkg.in/square/go-jose.v1",
-			"repository": "https://gopkg.in/square/go-jose.v1",
+			"importpath": "gopkg.in/square/go-jose.v2",
+			"repository": "https://gopkg.in/square/go-jose.v2",
 			"vcs": "git",
-			"revision": "aa2e30fdd1fe9dd3394119af66451ae790d50e0d",
+			"revision": "6ee92191fea850cdcab9a18867abf5f521cdbadb",
 			"branch": "master",
 			"notests": true
 		},

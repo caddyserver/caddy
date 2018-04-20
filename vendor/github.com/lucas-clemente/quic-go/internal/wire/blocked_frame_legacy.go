@@ -11,11 +11,11 @@ type blockedFrameLegacy struct {
 	StreamID protocol.StreamID
 }
 
-// ParseBlockedFrameLegacy parses a BLOCKED frame (in gQUIC format)
+// parseBlockedFrameLegacy parses a BLOCKED frame (in gQUIC format)
 // The frame returned is
 // * a STREAM_BLOCKED frame, if the BLOCKED applies to a stream
 // * a BLOCKED frame, if the BLOCKED applies to the connection
-func ParseBlockedFrameLegacy(r *bytes.Reader, _ protocol.VersionNumber) (Frame, error) {
+func parseBlockedFrameLegacy(r *bytes.Reader, _ protocol.VersionNumber) (Frame, error) {
 	if _, err := r.ReadByte(); err != nil { // read the TypeByte
 		return nil, err
 	}

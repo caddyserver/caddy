@@ -107,19 +107,19 @@ func setupTLS(c *caddy.Controller) error {
 			case "protocols":
 				args := c.RemainingArgs()
 				if len(args) == 1 {
-					value, ok := supportedProtocols[strings.ToLower(args[0])]
+					value, ok := SupportedProtocols[strings.ToLower(args[0])]
 					if !ok {
 						return c.Errf("Wrong protocol name or protocol not supported: '%s'", args[0])
 					}
 
 					config.ProtocolMinVersion, config.ProtocolMaxVersion = value, value
 				} else {
-					value, ok := supportedProtocols[strings.ToLower(args[0])]
+					value, ok := SupportedProtocols[strings.ToLower(args[0])]
 					if !ok {
 						return c.Errf("Wrong protocol name or protocol not supported: '%s'", args[0])
 					}
 					config.ProtocolMinVersion = value
-					value, ok = supportedProtocols[strings.ToLower(args[1])]
+					value, ok = SupportedProtocols[strings.ToLower(args[1])]
 					if !ok {
 						return c.Errf("Wrong protocol name or protocol not supported: '%s'", args[1])
 					}
@@ -130,7 +130,7 @@ func setupTLS(c *caddy.Controller) error {
 				}
 			case "ciphers":
 				for c.NextArg() {
-					value, ok := supportedCiphersMap[strings.ToUpper(c.Val())]
+					value, ok := SupportedCiphersMap[strings.ToUpper(c.Val())]
 					if !ok {
 						return c.Errf("Wrong cipher name or cipher not supported: '%s'", c.Val())
 					}
@@ -210,8 +210,21 @@ func setupTLS(c *caddy.Controller) error {
 				}
 			case "must_staple":
 				config.MustStaple = true
+			case "wildcard":
+				if !HostQualifies(config.Hostname) {
+					return c.Errf("Hostname '%s' does not qualify for managed TLS, so cannot manage wildcard certificate for it", config.Hostname)
+				}
+				if strings.Contains(config.Hostname, "*") {
+					return c.Errf("Cannot convert domain name '%s' to a valid wildcard: already has a wildcard label", config.Hostname)
+				}
+				parts := strings.Split(config.Hostname, ".")
+				if len(parts) < 3 {
+					return c.Errf("Cannot convert domain name '%s' to a valid wildcard: too few labels", config.Hostname)
+				}
+				parts[0] = "*"
+				config.Hostname = strings.Join(parts, ".")
 			default:
-				return c.Errf("Unknown keyword '%s'", c.Val())
+				return c.Errf("Unknown subdirective '%s'", c.Val())
 			}
 		}
 

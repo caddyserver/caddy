@@ -124,7 +124,7 @@ func (s *receiveStream) Read(p []byte) (int, error) {
 			} else {
 				select {
 				case <-s.readChan:
-				case <-time.After(deadline.Sub(time.Now())):
+				case <-time.After(time.Until(deadline)):
 				}
 			}
 			s.mutex.Lock()

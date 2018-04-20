@@ -8,7 +8,7 @@ import (
 	"github.com/lucas-clemente/quic-go/internal/protocol"
 )
 
-var quicVersion1Salt = []byte{0xaf, 0xc8, 0x24, 0xec, 0x5f, 0xc7, 0x7e, 0xca, 0x1e, 0x9d, 0x36, 0xf3, 0x7f, 0xb2, 0xd4, 0x65, 0x18, 0xc3, 0x66, 0x39}
+var quicVersion1Salt = []byte{0x9c, 0x10, 0x8f, 0x98, 0x52, 0x0a, 0x5c, 0x5c, 0x32, 0x96, 0x8e, 0x95, 0x0e, 0x8a, 0x2c, 0x5f, 0xe0, 0x6d, 0x6c, 0x38}
 
 func newNullAEADAESGCM(connectionID protocol.ConnectionID, pers protocol.Perspective) (AEAD, error) {
 	clientSecret, serverSecret := computeSecrets(connectionID)
@@ -31,14 +31,14 @@ func newNullAEADAESGCM(connectionID protocol.ConnectionID, pers protocol.Perspec
 func computeSecrets(connectionID protocol.ConnectionID) (clientSecret, serverSecret []byte) {
 	connID := make([]byte, 8)
 	binary.BigEndian.PutUint64(connID, uint64(connectionID))
-	cleartextSecret := mint.HkdfExtract(crypto.SHA256, []byte(quicVersion1Salt), connID)
-	clientSecret = mint.HkdfExpandLabel(crypto.SHA256, cleartextSecret, "QUIC client cleartext Secret", []byte{}, crypto.SHA256.Size())
-	serverSecret = mint.HkdfExpandLabel(crypto.SHA256, cleartextSecret, "QUIC server cleartext Secret", []byte{}, crypto.SHA256.Size())
+	handshakeSecret := mint.HkdfExtract(crypto.SHA256, quicVersion1Salt, connID)
+	clientSecret = qhkdfExpand(handshakeSecret, "client hs", crypto.SHA256.Size())
+	serverSecret = qhkdfExpand(handshakeSecret, "server hs", crypto.SHA256.Size())
 	return
 }
 
 func computeNullAEADKeyAndIV(secret []byte) (key, iv []byte) {
-	key = mint.HkdfExpandLabel(crypto.SHA256, secret, "key", nil, 16)
-	iv = mint.HkdfExpandLabel(crypto.SHA256, secret, "iv", nil, 12)
+	key = qhkdfExpand(secret, "key", 16)
+	iv = qhkdfExpand(secret, "iv", 12)
 	return
 }

@@ -320,6 +320,9 @@ func (s *Server) Serve(ln net.Listener) error {
 	}
 
 	err := s.Server.Serve(ln)
+	if err == http.ErrServerClosed {
+		err = nil // not an error worth reporting since closing a server is intentional
+	}
 	if s.quicServer != nil {
 		s.quicServer.Close()
 	}
@@ -421,19 +424,39 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 		r.URL = trimPathPrefix(r.URL, pathPrefix)
 	}
 
+	// enforce strict host matching, which ensures that the SNI
+	// value (if any), matches the Host header; essential for
+	// sites that rely on TLS ClientAuth sharing a port with
+	// sites that do not - if mismatched, close the connection
+	if vhost.StrictHostMatching && r.TLS != nil &&
+		strings.ToLower(r.TLS.ServerName) != strings.ToLower(hostname) {
+		r.Close = true
+		log.Printf("[ERROR] %s - strict host matching: SNI (%s) and HTTP Host (%s) values differ",
+			vhost.Addr, r.TLS.ServerName, hostname)
+		return http.StatusForbidden, nil
+	}
+
 	return vhost.middlewareChain.ServeHTTP(w, r)
 }
 
 func trimPathPrefix(u *url.URL, prefix string) *url.URL {
 	// We need to use URL.EscapedPath() when trimming the pathPrefix as
 	// URL.Path is ambiguous about / or %2f - see docs. See #1927
-	trimmed := strings.TrimPrefix(u.EscapedPath(), prefix)
-	if !strings.HasPrefix(trimmed, "/") {
-		trimmed = "/" + trimmed
+	trimmedPath := strings.TrimPrefix(u.EscapedPath(), prefix)
+	if !strings.HasPrefix(trimmedPath, "/") {
+		trimmedPath = "/" + trimmedPath
 	}
-	trimmedURL, err := url.Parse(trimmed)
+	// After trimming path reconstruct uri string with Query before parsing
+	trimmedURI := trimmedPath
+	if u.RawQuery != "" || u.ForceQuery == true {
+		trimmedURI = trimmedPath + "?" + u.RawQuery
+	}
+	if u.Fragment != "" {
+		trimmedURI = trimmedURI + "#" + u.Fragment
+	}
+	trimmedURL, err := url.Parse(trimmedURI)
 	if err != nil {
-		log.Printf("[ERROR] Unable to parse trimmed URL %s: %v", trimmed, err)
+		log.Printf("[ERROR] Unable to parse trimmed URL %s: %v", trimmedURI, err)
 		return u
 	}
 	return trimmedURL

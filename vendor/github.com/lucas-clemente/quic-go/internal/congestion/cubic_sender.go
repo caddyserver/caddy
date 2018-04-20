@@ -292,11 +292,3 @@ func (c *cubicSender) OnConnectionMigration() {
 func (c *cubicSender) SetSlowStartLargeReduction(enabled bool) {
 	c.slowStartLargeReduction = enabled
 }
-
-// RetransmissionDelay gives the time to retransmission
-func (c *cubicSender) RetransmissionDelay() time.Duration {
-	if c.rttStats.SmoothedRTT() == 0 {
-		return 0
-	}
-	return c.rttStats.SmoothedRTT() + c.rttStats.MeanDeviation()*4
-}

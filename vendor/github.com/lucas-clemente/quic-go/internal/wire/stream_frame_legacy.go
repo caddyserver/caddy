@@ -52,7 +52,7 @@ func parseLegacyStreamFrame(r *bytes.Reader, _ protocol.VersionNumber) (*StreamF
 		}
 	}
 
-	// shortcut to prevent the unneccessary allocation of dataLen bytes
+	// shortcut to prevent the unnecessary allocation of dataLen bytes
 	// if the dataLen is larger than the remaining length of the packet
 	// reading the packet contents would result in EOF when attempting to READ
 	if int(dataLen) > r.Len() {

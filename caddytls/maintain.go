@@ -334,6 +334,7 @@ func DeleteOldStapleFiles() {
 			if err != nil {
 				log.Printf("[ERROR] Purging corrupt staple file %s: %v", stapleFile, err)
 			}
+			continue
 		}
 		if time.Now().After(resp.NextUpdate) {
 			// response has expired; delete it

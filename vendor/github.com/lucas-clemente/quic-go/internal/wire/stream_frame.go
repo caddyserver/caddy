@@ -19,8 +19,8 @@ type StreamFrame struct {
 	Data           []byte
 }
 
-// ParseStreamFrame reads a STREAM frame
-func ParseStreamFrame(r *bytes.Reader, version protocol.VersionNumber) (*StreamFrame, error) {
+// parseStreamFrame reads a STREAM frame
+func parseStreamFrame(r *bytes.Reader, version protocol.VersionNumber) (*StreamFrame, error) {
 	if !version.UsesIETFFrameFormat() {
 		return parseLegacyStreamFrame(r, version)
 	}
@@ -56,7 +56,7 @@ func ParseStreamFrame(r *bytes.Reader, version protocol.VersionNumber) (*StreamF
 		if err != nil {
 			return nil, err
 		}
-		// shortcut to prevent the unneccessary allocation of dataLen bytes
+		// shortcut to prevent the unnecessary allocation of dataLen bytes
 		// if the dataLen is larger than the remaining length of the packet
 		// reading the packet contents would result in EOF when attempting to READ
 		if dataLen > uint64(r.Len()) {
@@ -76,7 +76,8 @@ func ParseStreamFrame(r *bytes.Reader, version protocol.VersionNumber) (*StreamF
 	if frame.Offset+frame.DataLen() > protocol.MaxByteCount {
 		return nil, qerr.Error(qerr.InvalidStreamData, "data overflows maximum offset")
 	}
-	if !frame.FinBit && frame.DataLen() == 0 {
+	// empty frames are only allowed if they have offset 0 or the FIN bit set
+	if frame.DataLen() == 0 && !frame.FinBit && frame.Offset != 0 {
 		return nil, qerr.EmptyStreamFrameNoFin
 	}
 	return frame, nil

@@ -277,7 +277,7 @@ func TestHostname(t *testing.T) {
 		// // Test 3 - ipv6 without port and brackets
 		// {"2001:4860:4860::8888", "google-public-dns-a.google.com."},
 		// Test 4 - no hostname available
-		{"1.1.1.1", "1.1.1.1"},
+		{"0.0.0.0", "0.0.0.0"},
 	}
 
 	for i, test := range tests {

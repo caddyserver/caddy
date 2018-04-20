@@ -25,7 +25,7 @@ import (
 
 	"github.com/klauspost/cpuid"
 	"github.com/mholt/caddy"
-	"github.com/xenolf/lego/acme"
+	"github.com/xenolf/lego/acmev2"
 )
 
 // Config describes how TLS should be configured and used.
@@ -190,10 +190,15 @@ func NewConfig(inst *caddy.Instance) *Config {
 // it does not load them into memory. If allowPrompts is true,
 // the user may be shown a prompt.
 func (c *Config) ObtainCert(name string, allowPrompts bool) error {
-	if !c.Managed || !HostQualifies(name) {
+	skip, err := c.preObtainOrRenewChecks(name, allowPrompts)
+	if err != nil {
+		return err
+	}
+	if skip {
 		return nil
 	}
 
+	// we expect this to be a new (non-existent) site
 	storage, err := c.StorageFor(c.CAUrl)
 	if err != nil {
 		return err
@@ -204,9 +209,6 @@ func (c *Config) ObtainCert(name string, allowPrompts bool) error {
 	}
 	if siteExists {
 		return nil
-	}
-	if c.ACMEEmail == "" {
-		c.ACMEEmail = getEmail(storage, allowPrompts)
 	}
 
 	client, err := newACMEClient(c, allowPrompts)
@@ -219,11 +221,46 @@ func (c *Config) ObtainCert(name string, allowPrompts bool) error {
 // RenewCert renews the certificate for name using c. It stows the
 // renewed certificate and its assets in storage if successful.
 func (c *Config) RenewCert(name string, allowPrompts bool) error {
+	skip, err := c.preObtainOrRenewChecks(name, allowPrompts)
+	if err != nil {
+		return err
+	}
+	if skip {
+		return nil
+	}
+
 	client, err := newACMEClient(c, allowPrompts)
 	if err != nil {
 		return err
 	}
 	return client.Renew(name)
+}
+
+// preObtainOrRenewChecks perform a few simple checks before
+// obtaining or renewing a certificate with ACME, and returns
+// whether this name should be skipped (like if it's not
+// managed TLS) as well as any error. It ensures that the
+// config is Managed, that the name qualifies for a certificate,
+// and that an email address is available.
+func (c *Config) preObtainOrRenewChecks(name string, allowPrompts bool) (bool, error) {
+	if !c.Managed || !HostQualifies(name) {
+		return true, nil
+	}
+
+	// wildcard certificates require DNS challenge (as of March 2018)
+	if strings.Contains(name, "*") && c.DNSProvider == "" {
+		return false, fmt.Errorf("wildcard domain name (%s) requires DNS challenge; use dns subdirective to configure it", name)
+	}
+
+	if c.ACMEEmail == "" {
+		var err error
+		c.ACMEEmail, err = getEmail(c, allowPrompts)
+		if err != nil {
+			return false, err
+		}
+	}
+
+	return false, nil
 }
 
 // StorageFor obtains a TLS Storage instance for the given CA URL which should
@@ -476,6 +513,14 @@ func assertConfigsCompatible(cfg1, cfg2 *Config) error {
 	if c1.ClientAuth != c2.ClientAuth {
 		return fmt.Errorf("client authentication policy mismatch")
 	}
+	if c1.ClientAuth != tls.NoClientCert && c2.ClientAuth != tls.NoClientCert && c1.ClientCAs != c2.ClientCAs {
+		// Two hosts defined on the same listener are not compatible if they
+		// have ClientAuth enabled, because there's no guarantee beyond the
+		// hostname which config will be used (because SNI only has server name).
+		// To prevent clients from bypassing authentication, require that
+		// ClientAuth be configured in an unambiguous manner.
+		return fmt.Errorf("multiple hosts requiring client authentication ambiguously configured")
+	}
 
 	return nil
 }
@@ -511,7 +556,7 @@ func SetDefaultTLSParams(config *Config) {
 
 	// Set default protocol min and max versions - must balance compatibility and security
 	if config.ProtocolMinVersion == 0 {
-		config.ProtocolMinVersion = tls.VersionTLS11
+		config.ProtocolMinVersion = tls.VersionTLS12
 	}
 	if config.ProtocolMaxVersion == 0 {
 		config.ProtocolMaxVersion = tls.VersionTLS12
@@ -532,7 +577,8 @@ var supportedKeyTypes = map[string]acme.KeyType{
 
 // Map of supported protocols.
 // HTTP/2 only supports TLS 1.2 and higher.
-var supportedProtocols = map[string]uint16{
+// If updating this map, also update tlsProtocolStringToMap in caddyhttp/fastcgi/fastcgi.go
+var SupportedProtocols = map[string]uint16{
 	"tls1.0": tls.VersionTLS10,
 	"tls1.1": tls.VersionTLS11,
 	"tls1.2": tls.VersionTLS12,
@@ -548,7 +594,7 @@ var supportedProtocols = map[string]uint16{
 // it is always added (even though it is not technically a cipher suite).
 //
 // This map, like any map, is NOT ORDERED. Do not range over this map.
-var supportedCiphersMap = map[string]uint16{
+var SupportedCiphersMap = map[string]uint16{
 	"ECDHE-ECDSA-AES256-GCM-SHA384":      tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
 	"ECDHE-RSA-AES256-GCM-SHA384":        tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
 	"ECDHE-ECDSA-AES128-GCM-SHA256":      tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,

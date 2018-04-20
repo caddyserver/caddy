@@ -109,18 +109,6 @@ func (mr *MockSendAlgorithmMockRecorder) OnRetransmissionTimeout(arg0 interface{
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "OnRetransmissionTimeout", reflect.TypeOf((*MockSendAlgorithm)(nil).OnRetransmissionTimeout), arg0)
 }
 
-// RetransmissionDelay mocks base method
-func (m *MockSendAlgorithm) RetransmissionDelay() time.Duration {
-	ret := m.ctrl.Call(m, "RetransmissionDelay")
-	ret0, _ := ret[0].(time.Duration)
-	return ret0
-}
-
-// RetransmissionDelay indicates an expected call of RetransmissionDelay
-func (mr *MockSendAlgorithmMockRecorder) RetransmissionDelay() *gomock.Call {
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RetransmissionDelay", reflect.TypeOf((*MockSendAlgorithm)(nil).RetransmissionDelay))
-}
-
 // SetNumEmulatedConnections mocks base method
 func (m *MockSendAlgorithm) SetNumEmulatedConnections(arg0 int) {
 	m.ctrl.Call(m, "SetNumEmulatedConnections", arg0)

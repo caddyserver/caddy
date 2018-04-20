@@ -23,13 +23,16 @@ type requestWriter struct {
 
 	henc *hpack.Encoder
 	hbuf bytes.Buffer // HPACK encoder writes into this
+
+	logger utils.Logger
 }
 
 const defaultUserAgent = "quic-go"
 
-func newRequestWriter(headerStream quic.Stream) *requestWriter {
+func newRequestWriter(headerStream quic.Stream, logger utils.Logger) *requestWriter {
 	rw := &requestWriter{
 		headerStream: headerStream,
+		logger:       logger,
 	}
 	rw.henc = hpack.NewEncoder(&rw.hbuf)
 	return rw
@@ -76,9 +79,8 @@ func (w *requestWriter) encodeHeaders(req *http.Request, addGzipHeader bool, tra
 			if !validPseudoPath(path) {
 				if req.URL.Opaque != "" {
 					return nil, fmt.Errorf("invalid request :path %q from URL.Opaque = %q", orig, req.URL.Opaque)
-				} else {
-					return nil, fmt.Errorf("invalid request :path %q", orig)
 				}
+				return nil, fmt.Errorf("invalid request :path %q", orig)
 			}
 		}
 	}
@@ -157,7 +159,7 @@ func (w *requestWriter) encodeHeaders(req *http.Request, addGzipHeader bool, tra
 }
 
 func (w *requestWriter) writeHeader(name, value string) {
-	utils.Debugf("http2: Transport encoding header %q = %q", name, value)
+	w.logger.Debugf("http2: Transport encoding header %q = %q", name, value)
 	w.henc.WriteField(hpack.HeaderField{Name: name, Value: value})
 }
 

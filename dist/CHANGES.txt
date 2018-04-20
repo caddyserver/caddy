@@ -1,5 +1,64 @@
 CHANGES
 
+0.10.14 (April 19, 2018)
+- tls: Fix error handling bug when obtaining certificates
+
+
+0.10.13 (April 18, 2018)
+- New third-party plugin: supervisor
+- Updated QUIC
+- proxy: Fix transparent pass-thru of X-Forwarded-For
+- proxy: Configurable timeout to upstream
+- rewrite: Now supports regular expressions on single-line
+- tls: StrictHostMatching mode to prevent client auth bypass
+- tls: Disable client auth when using QUIC
+- tls: Require same client auth cert pools per hostname
+- tls: Prevent On-Demand TLS directory traversal
+- tls: Fix empty files when using ACME fails to obtain cert
+- Fixed test broken by 1.1.1.1 resolving
+- Improved Caddyfile parser robustness by fuzzing
+
+
+0.10.12 (March 27, 2018)
+- Switch to Let's Encrypt ACMEv2 production endpoint
+- Support for automated wildcard certificates
+- Support distributed solving of HTTP-01 challenge
+- New {labelN}, {tls_cipher}, and {tls_version} placeholders
+- Curly braces can now be escaped when not used as placeholders
+- New third-party plugin: geoip
+- Updated QUIC
+- fastcgi: Add SSL_CIPHER and SSL_PROTOCOL environment variables
+- log: New 'except' subdirective to exempt paths from logging
+- startup/shutdown: Removed in favor of 'on'
+- tls: Default minimum version is TLS 1.2
+- tls: Revert to fallback cert if no cert matches SNI
+- tls: New 'wildcard' subdirective to force automated wildcard cert
+- Several significant bug fixes and improvements!
+
+
+0.10.11 (February 20, 2018)
+- Built with Go 1.10
+- Reusable snippets for the Caddyfile
+- Updated QUIC
+- Auto-HTTPS certificates may be shared by multiple instances
+- Expand globbed values in -conf flag
+- Swap behavior of SIGTERM and SIGQUIT; ignore SIGHUP
+- 9 new DNS provider plugins for the ACME DNS challenge
+- New placeholder for {<Response-Header} values
+- basicauth: Username put in {user} placeholder
+- fastcgi: GET requests can now send a body
+- proxy: Service discovery with DNS SRV load balancing
+- request_id: Allow reusing request ID from header field
+- tls: Improved efficiency of many certificates and reloads
+- tls: Raise error if conflicting TLS configurations collide
+- tls: Raise TLS alert if SNI used and no cert matched
+- tls: Reject OCSP responses that expire after the certificate
+- tls: Clients can use SNI to request a specific certificate
+- tls: Add option for backend to approve on-demand certificate
+- tls: Synchronize maintenance of shared, managed certificates
+- Numerous fabulous bug fixes
+
+
 0.10.10 (October 9, 2017)
 - Built with Go 1.9.1
 - Removed Caddy-Sponsors header

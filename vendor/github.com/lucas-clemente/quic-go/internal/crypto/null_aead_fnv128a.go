@@ -1,10 +1,11 @@
 package crypto
 
 import (
-	"encoding/binary"
+	"bytes"
 	"errors"
+	"fmt"
+	"hash/fnv"
 
-	"github.com/lucas-clemente/fnv128a"
 	"github.com/lucas-clemente/quic-go/internal/protocol"
 )
 
@@ -21,7 +22,7 @@ func (n *nullAEADFNV128a) Open(dst, src []byte, packetNumber protocol.PacketNumb
 		return nil, errors.New("NullAEAD: ciphertext cannot be less than 12 bytes long")
 	}
 
-	hash := fnv128a.New()
+	hash := fnv.New128a()
 	hash.Write(associatedData)
 	hash.Write(src[12:])
 	if n.perspective == protocol.PerspectiveServer {
@@ -29,13 +30,13 @@ func (n *nullAEADFNV128a) Open(dst, src []byte, packetNumber protocol.PacketNumb
 	} else {
 		hash.Write([]byte("Server"))
 	}
-	testHigh, testLow := hash.Sum128()
+	sum := make([]byte, 0, 16)
+	sum = hash.Sum(sum)
+	// The tag is written in little endian, so we need to reverse the slice.
+	reverse(sum)
 
-	low := binary.LittleEndian.Uint64(src)
-	high := binary.LittleEndian.Uint32(src[8:])
-
-	if uint32(testHigh&0xffffffff) != high || testLow != low {
-		return nil, errors.New("NullAEAD: failed to authenticate received data")
+	if !bytes.Equal(sum[:12], src[:12]) {
+		return nil, fmt.Errorf("NullAEAD: failed to authenticate received data (%#v vs %#v)", sum[:12], src[:12])
 	}
 	return src[12:], nil
 }
@@ -48,7 +49,7 @@ func (n *nullAEADFNV128a) Seal(dst, src []byte, packetNumber protocol.PacketNumb
 		dst = dst[:12+len(src)]
 	}
 
-	hash := fnv128a.New()
+	hash := fnv.New128a()
 	hash.Write(associatedData)
 	hash.Write(src)
 
@@ -57,15 +58,22 @@ func (n *nullAEADFNV128a) Seal(dst, src []byte, packetNumber protocol.PacketNumb
 	} else {
 		hash.Write([]byte("Client"))
 	}
-
-	high, low := hash.Sum128()
+	sum := make([]byte, 0, 16)
+	sum = hash.Sum(sum)
+	// The tag is written in little endian, so we need to reverse the slice.
+	reverse(sum)
 
 	copy(dst[12:], src)
-	binary.LittleEndian.PutUint64(dst, low)
-	binary.LittleEndian.PutUint32(dst[8:], uint32(high))
+	copy(dst, sum[:12])
 	return dst
 }
 
 func (n *nullAEADFNV128a) Overhead() int {
 	return 12
+}
+
+func reverse(a []byte) {
+	for left, right := 0, len(a)-1; left < right; left, right = left+1, right-1 {
+		a[left], a[right] = a[right], a[left]
+	}
 }

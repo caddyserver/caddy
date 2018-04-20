@@ -4,6 +4,7 @@ import (
 	"bytes"
 
 	"github.com/lucas-clemente/quic-go/internal/protocol"
+	"github.com/lucas-clemente/quic-go/internal/utils"
 )
 
 // Header is the header of a QUIC packet.
@@ -50,6 +51,7 @@ func ParseHeaderSentByServer(b *bytes.Reader, version protocol.VersionNumber) (*
 		// the client knows the version that this packet was sent with
 		isPublicHeader = !version.UsesTLS()
 	}
+
 	return parsePacketHeader(b, protocol.PerspectiveServer, isPublicHeader)
 }
 
@@ -61,12 +63,13 @@ func ParseHeaderSentByClient(b *bytes.Reader) (*Header, error) {
 	}
 	_ = b.UnreadByte() // unread the type byte
 
-	// If this is a gQUIC header 0x80 and 0x40 will be set to 0.
-	// If this is an IETF QUIC header there are two options:
-	// * either 0x80 will be 1 (for the Long Header)
-	// * or 0x40 (the Connection ID Flag) will be 0 (for the Short Header), since we don't the client to omit it
-	isPublicHeader := typeByte&0xc0 == 0
-
+	// In an IETF QUIC packet header
+	// * either 0x80 is set (for the Long Header)
+	// * or 0x8 is unset (for the Short Header)
+	// In a gQUIC Public Header
+	// * 0x80 is always unset and
+	// * and 0x8 is always set (this is the Connection ID flag, which the client always sets)
+	isPublicHeader := typeByte&0x88 == 0x8
 	return parsePacketHeader(b, protocol.PerspectiveClient, isPublicHeader)
 }
 
@@ -101,10 +104,10 @@ func (h *Header) GetLength(pers protocol.Perspective, version protocol.VersionNu
 }
 
 // Log logs the Header
-func (h *Header) Log() {
+func (h *Header) Log(logger utils.Logger) {
 	if h.isPublicHeader {
-		h.logPublicHeader()
+		h.logPublicHeader(logger)
 	} else {
-		h.logHeader()
+		h.logHeader(logger)
 	}
 }

@@ -31,7 +31,7 @@ func (t *Timer) Reset(deadline time.Time) {
 	if !t.t.Stop() && !t.read {
 		<-t.t.C
 	}
-	t.t.Reset(deadline.Sub(time.Now()))
+	t.t.Reset(time.Until(deadline))
 
 	t.read = false
 	t.deadline = deadline

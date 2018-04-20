@@ -53,6 +53,8 @@ type Server struct {
 	closed        bool
 
 	supportedVersionsAsString string
+
+	logger utils.Logger // will be set by Server.serveImpl()
 }
 
 // ListenAndServe listens on the UDP address s.Addr and calls s.Handler to handle HTTP/2 requests on incoming connections.
@@ -88,6 +90,7 @@ func (s *Server) serveImpl(tlsConfig *tls.Config, conn net.PacketConn) error {
 	if s.Server == nil {
 		return errors.New("use of h2quic.Server without http.Server")
 	}
+	s.logger = utils.DefaultLogger
 	s.listenerMutex.Lock()
 	if s.closed {
 		s.listenerMutex.Unlock()
@@ -138,7 +141,7 @@ func (s *Server) handleHeaderStream(session streamCreator) {
 			// In this case, the session has already logged the error, so we don't
 			// need to log it again.
 			if _, ok := err.(*qerr.QuicError); !ok {
-				utils.Errorf("error handling h2 request: %s", err.Error())
+				s.logger.Errorf("error handling h2 request: %s", err.Error())
 			}
 			session.Close(err)
 			return
@@ -160,7 +163,7 @@ func (s *Server) handleRequest(session streamCreator, headerStream quic.Stream, 
 	}
 	headers, err := hpackDecoder.DecodeFull(h2headersFrame.HeaderBlockFragment())
 	if err != nil {
-		utils.Errorf("invalid http2 headers encoding: %s", err.Error())
+		s.logger.Errorf("invalid http2 headers encoding: %s", err.Error())
 		return err
 	}
 
@@ -169,10 +172,10 @@ func (s *Server) handleRequest(session streamCreator, headerStream quic.Stream, 
 		return err
 	}
 
-	if utils.Debug() {
-		utils.Infof("%s %s%s, on data stream %d", req.Method, req.Host, req.RequestURI, h2headersFrame.StreamID)
+	if s.logger.Debug() {
+		s.logger.Infof("%s %s%s, on data stream %d", req.Method, req.Host, req.RequestURI, h2headersFrame.StreamID)
 	} else {
-		utils.Infof("%s %s%s", req.Method, req.Host, req.RequestURI)
+		s.logger.Infof("%s %s%s", req.Method, req.Host, req.RequestURI)
 	}
 
 	dataStream, err := session.GetOrOpenStream(protocol.StreamID(h2headersFrame.StreamID))
@@ -201,7 +204,7 @@ func (s *Server) handleRequest(session streamCreator, headerStream quic.Stream, 
 
 		req.RemoteAddr = session.RemoteAddr().String()
 
-		responseWriter := newResponseWriter(headerStream, headerStreamMutex, dataStream, protocol.StreamID(h2headersFrame.StreamID))
+		responseWriter := newResponseWriter(headerStream, headerStreamMutex, dataStream, protocol.StreamID(h2headersFrame.StreamID), s.logger)
 
 		handler := s.Handler
 		if handler == nil {
@@ -215,7 +218,7 @@ func (s *Server) handleRequest(session streamCreator, headerStream quic.Stream, 
 					const size = 64 << 10
 					buf := make([]byte, size)
 					buf = buf[:runtime.Stack(buf, false)]
-					utils.Errorf("http: panic serving: %v\n%s", p, buf)
+					s.logger.Errorf("http: panic serving: %v\n%s", p, buf)
 					panicked = true
 				}
 			}()
