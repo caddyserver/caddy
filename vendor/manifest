@@ -193,7 +193,7 @@
 			"importpath": "github.com/xenolf/lego/acmev2",
 			"repository": "https://github.com/xenolf/lego",
 			"vcs": "git",
-			"revision": "6e962fbfb37f9ea4a8201e32acb1b94ffb3b8398",
+			"revision": "fad2257e11ae4ff31ed03739386873aa405dec2d",
 			"branch": "acmev2",
 			"path": "/acmev2",
 			"notests": true

@@ -244,10 +244,8 @@ func (c *ACMEClient) Obtain(name string) error {
 		acmeMu.Unlock()
 		namesObtaining.Remove([]string{name})
 		if err != nil {
-			// Error - try to fix it or report it to the user and abort
-
+			// for a certain kind of error, we can enumerate the error per-domain
 			if failures, ok := err.(acme.ObtainError); ok && len(failures) > 0 {
-				// in this case, we can enumerate the error per-domain
 				var errMsg string // combine all the failures into a single error message
 				for errDomain, obtainErr := range failures {
 					if obtainErr == nil {
@@ -261,9 +259,7 @@ func (c *ACMEClient) Obtain(name string) error {
 			return fmt.Errorf("[%s] failed to obtain certificate: %v", name, err)
 		}
 
-		// double-check that we actually got a certificate; check a couple fields
-		// TODO: This is a temporary workaround for what I think is a bug in the acmev2 package (March 2018)
-		// but it might not hurt to keep this extra check in place (April 18, 2018: might be fixed now.)
+		// double-check that we actually got a certificate, in case there's a bug upstream (see issue #2121)
 		if certificate.Domain == "" || certificate.Certificate == nil {
 			return errors.New("returned certificate was empty; probably an unchecked error obtaining it")
 		}
