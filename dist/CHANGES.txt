@@ -1,5 +1,9 @@
 CHANGES
 
+0.10.14 (April 19, 2018)
+- tls: Fix error handling bug when obtaining certificates
+
+
 0.10.13 (April 18, 2018)
 - New third-party plugin: supervisor
 - Updated QUIC
