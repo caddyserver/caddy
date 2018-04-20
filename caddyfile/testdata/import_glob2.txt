@@ -1,3 +1,0 @@
-glob2.host0 {
-	dir2 arg1
-}
