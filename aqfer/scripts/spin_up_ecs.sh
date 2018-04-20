@@ -2,26 +2,24 @@
 # set -e
 
 aws cloudformation package --template-file /ecs_template_app_spec.yml --output-template-file /ecs_app_spec.yml --s3-bucket $1
-aws cloudformation deploy --template-file /ecs_app_spec.yml --stack-name $2 --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM --parameter-overrides \
+aws --region $StackRegion cloudformation deploy --template-file /ecs_app_spec.yml --stack-name $2 --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM --parameter-overrides \
   Id=$AWS_ACCESS_KEY_ID \
   Secret=$AWS_SECRET_ACCESS_KEY \
   Jwt=$Jwt \
-  Ami=$Ami \
-  Subnets=$Subnets \
-  Vpc=$Vpc \
-  AvailabilityZones=$AvailabilityZones \
   KeyPair=$KeyPair \
   LoadBalancerName=$LoadBalancerName \
   LBSecurityGroupName=$LBSecurityGroupName \
   TargetGroupName=$TargetGroupName \
   EC2InstanceType=$EC2InstanceType \
   EC2SecurityGroupName=$EC2SecurityGroupName \
-  EC2InstanceRoleName=$EC2InstanceRoleName \
+  EC2InstanceProfileName=$EC2InstanceProfileName \
   ECSClusterName=$ECSClusterName \
   ECSServiceRoleName=$ECSServiceRoleName \
   ECSServiceName=$ECSServiceName \
   ECSTaskDefinitionName=$ECSTaskDefinitionName \
-  ECRRepoURI=$ECRRepoURI \
+  ECRRepoName=$ECRRepoName \
+  ECRRepoRegion=$ECRRepoRegion \
+  ImageVersion=$ImageVersion \
   ContainerName=$ContainerName \
   AppLogGroupName=$AppLogGroupName \
   ECSLogGroupName=$ECSLogGroupName \
@@ -29,8 +27,6 @@ aws cloudformation deploy --template-file /ecs_app_spec.yml --stack-name $2 --ca
   ServiceStage=$ServiceStage \
   ECSecurityGroupName=$3 \
   ECInboundProtocol=tcp \
-  R53HostedZoneName=$R53HostedZoneName \
-  DNSSubDomain=$DNSSubDomain \
   ECStackName=$ECStackName \
 
 # Dax security group ingress from ec2 security group
