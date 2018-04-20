@@ -38,6 +38,11 @@ Mappings:
     prod:
       servicedomain: imds
       hostedzonename: api.aqfer.net.
+  StageConfig:
+    preprod:
+      auth: auth.api-preprod.aqfer.net
+    prod:
+      auth: auth.api.aqfer.net
 
 Parameters:
   Id:
@@ -280,6 +285,8 @@ Resources:
           Value:
             Fn::ImportValue:
               !Sub '${ECStackName}-ECEndpoint'
+        - Name: AUTH_ENDPOINT
+          Value: !FindInMap [ StageConfig, !Ref 'ServiceStage', auth ]
         ReadonlyRootFilesystem: false
         Name: !Ref ContainerName
         Links: []
