@@ -1,0 +1,100 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'IAM Roles Setup'
+Parameters:
+  EC2InstanceRoleName:
+    Description: 'IAM Role name for EC2 instances'
+    Type: String
+  ECSServiceRoleName:
+    Description: 'ECS Service Role name'
+    Type: String
+  EC2InstanceProfileName:
+    Description: 'ECS Instance profile name'
+    Type: String
+  ECRRepoName:
+    Description: 'ECR Repository name'
+    Type: String
+
+Resources:
+  ECSServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref ECSServiceRoleName
+      AssumeRolePolicyDocument:
+        Version: '2008-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: ecs.amazonaws.com
+          Action: sts:AssumeRole
+      Path: '/'
+      Policies:
+      - PolicyName: ECSPolicy
+        PolicyDocument:
+          Statement:
+          - Effect: Allow
+            Action:
+            - ec2:AuthorizeSecurityGroupIngress
+            - ec2:Describe*
+            - elasticloadbalancing:DeregisterInstancesFromLoadBalancer
+            - elasticloadbalancing:DeregisterTargets
+            - elasticloadbalancing:Describe*
+            - elasticloadbalancing:RegisterInstancesWithLoadBalancer
+            - elasticloadbalancing:RegisterTargets
+            Resource: '*'
+  EC2InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref EC2InstanceRoleName
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: ec2.amazonaws.com
+          Action: sts:AssumeRole
+      Path: '/'
+      Policies:
+      - PolicyName: ECSPolicy
+        PolicyDocument:
+          Statement:
+          - Effect: Allow
+            Action:
+            - s3:Get*
+            - s3:List*
+            Resource: '*'
+          - Effect: Allow
+            Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            Resource:
+            - !Sub 'arn:aws:logs:*:${AWS::AccountId}:log-group:*'
+          - Effect: Allow
+            Action:
+            - cloudformation:*
+            - codedeploy:*
+            - ec2:*
+            - ecs:*
+            - ecr:*
+            - iam:AddRoleToInstanceProfile
+            - iam:CreateInstanceProfile
+            - iam:CreateRole
+            - iam:DeleteInstanceProfile
+            - iam:DeleteRole
+            - iam:DeleteRolePolicy
+            - iam:GetRole
+            - iam:PassRole
+            - iam:PutRolePolicy
+            - iam:RemoveRoleFromInstanceProfile
+            Resource: '*'
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+      - !Ref EC2InstanceRole
+      InstanceProfileName: !Ref EC2InstanceProfileName
+  ECRRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Ref ECRRepoName

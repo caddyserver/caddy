@@ -1,6 +1,21 @@
 ---
 AWSTemplateFormatVersion: '2010-09-09'
 Description: 'DB deployment'
+Mappings:
+  RegionSpecificParameters:
+    us-east-1:
+      vpc: vpc-23d7c047
+      azs: [us-east-1a, us-east-1b]
+      subnets: [subnet-9cbdceea, subnet-6a2ea632]
+    us-west-2:
+      vpc: vpc-fa6ba49e
+      azs: [us-west-2a, us-west-2b]
+      subnets: [subnet-aadc37dc, subnet-70c51314]
+    eu-west-1:
+      vpc: vpc-daa5bfbf
+      azs: [eu-west-1a, eu-west-1b]
+      subnets: [subnet-af529fcb, subnet-ed1de89b]
+
 Parameters:
   ECClusterName:
     Description: 'Elasticache Cluster name'
@@ -15,15 +30,6 @@ Parameters:
     Description: 'Elasticache cache size'
     Default: 'cache.t2.micro'
     Type: String
-  Vpc:
-    Description: 'VPC Identifier'
-    Type: String
-  AvailabilityZones:
-    Description: 'Availability Zones'
-    Type: CommaDelimitedList
-  Subnets:
-    Description: 'Subnets for the Availability Zones'
-    Type: CommaDelimitedList
 
 Resources:
   ECSecurityGroup:
@@ -31,13 +37,13 @@ Resources:
     Properties:
       GroupName: !Ref ECSecurityGroupName
       GroupDescription: 'Elasticache Security Group'
-      VpcId: !Ref Vpc
+      VpcId: !FindInMap [ RegionSpecificParameters, !Ref "AWS::Region", vpc ]
   ECSubnetGroup:
     Type: AWS::ElastiCache::SubnetGroup
     Properties:
       CacheSubnetGroupName: !Ref ECSubnetGroupName
       Description: 'Elasticache Subnet Group'
-      SubnetIds: !Ref Subnets
+      SubnetIds: !FindInMap [ RegionSpecificParameters, !Ref "AWS::Region", subnets ]
   ECReplicationGroup:
     Type: AWS::ElastiCache::ReplicationGroup
     DependsOn:
@@ -51,7 +57,7 @@ Resources:
       SecurityGroupIds:
         - !Ref ECSecurityGroup
       CacheNodeType: !Ref ECNodeType
-      PreferredCacheClusterAZs: !Ref AvailabilityZones
+      PreferredCacheClusterAZs: !FindInMap [ RegionSpecificParameters, !Ref "AWS::Region", azs ]
       AutomaticFailoverEnabled: true
       CacheSubnetGroupName: !Ref ECSubnetGroupName
       ReplicationGroupDescription: !Sub 'Replication group for ${ECClusterName}'
@@ -61,9 +67,9 @@ Outputs:
     Description: 'Endpoint for the redis cluster'
     Value: !Join [ ':' , [ !GetAtt ECReplicationGroup.PrimaryEndPoint.Address, !GetAtt ECReplicationGroup.PrimaryEndPoint.Port ]]
     Export:
-      Name: !Sub '${AWS::StackName}-ECEndpoint'
+      Name: !Sub '${ECClusterName}-ECEndpoint'
   ECInboundPort:
     Description: 'Inbound port for the redis cluster'
     Value: !GetAtt ECReplicationGroup.PrimaryEndPoint.Port
     Export:
-      Name: !Sub '${AWS::StackName}-ECInboundPort'
+      Name: !Sub '${ECClusterName}-ECInboundPort'

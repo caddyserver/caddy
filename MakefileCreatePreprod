@@ -8,18 +8,15 @@ SERVICE_VERSION := 0.0.0
 ROOT_NAME := aqfer
 DB_STACK_NAME := ${SERVICE_NAME}Cache-${STAGE}
 ECS_STACK_NAME := ${SERVICE_NAME}-${STAGE}
-AWS_REGION := us-east-1
+ROLE_STACK_NAME := ${SERVICE_NAME}Role-${STAGE}
+ECR_REGION := us-east-1
+# Update this when adding more regions
+AWS_REGIONS := us-east-1 us-west-2 eu-west-1
 
 JWT := testkey
-GIT_USER := fellou89
 
-AMI := ami-d74473ad
-# AMI := ami-fad25980 # ecs optimized ami
 INSTANCE_TYPE := t2.medium
 # INSTANCE_TYPE := c5.large
-VPC := vpc-23d7c047
-SUBNETS := subnet-9cbdceea,subnet-6a2ea632
-ZONES := us-east-1a,us-east-1b
 # api-preprod.aqfer.net
 # R53_HOSTED_ZONE_NAME:= api-preprod.aqfer.net.
 # SERVICE_DOMAIN_CERTIFICATE_ID := 90250d8c-396a-4c19-a488-82e301e283c0
@@ -31,16 +28,17 @@ DNS_SUBDOMAIN := imds-preprod
 APP_LOG_GROUP_NAME := ${SERVICE_NAME}
 KEYPAIR_NAME := ${ROOT_NAME}_${SERVICE_NAME}-${STAGE}
 
-EC_SECURITY_GROUP := ${SERVICE_NAME}EC-${STAGE}
-EC_CLUSTER_NAME := ${SERVICE_NAME}EC-${STAGE}
+EC_SECURITY_GROUP := ${SERVICE_NAME}Cache-${STAGE}
+EC_CLUSTER_NAME := ${SERVICE_NAME}Cache-${STAGE}
 EC_NODE_TYPE := cache.m4.large
-EC_SUBNET_GROUP := subnet-${SERVICE_NAME}EC-${STAGE}
+EC_SUBNET_GROUP := ${SERVICE_NAME}Cache-${STAGE}
 PARTITION_KEY := partition-key
 SORT_KEY := sort-key
 
 TASK_DEFINITION := ${SERVICE_NAME}TaskDefinition-${STAGE}
 EC2_SECURITY_GROUP := ${SERVICE_NAME}EC2-${STAGE}
 EC2_INSTANCE_ROLE_NAME := ${SERVICE_NAME}EC2InstanceRole-${STAGE}
+EC2_INSTANCE_PROFILE_NAME := ${SERVICE_NAME}EC2InstanceProfile-${STAGE}
 ECS_CLUSTER_NAME := ${SERVICE_NAME}ECS-${STAGE}
 ECS_LOG_GROUP_NAME := /ecs/${TASK_DEFINITION}
 ECS_TARGET_GROUP_NAME := ${SERVICE_NAME}TargetGroup-${STAGE}
@@ -59,7 +57,7 @@ get_major_version:
 
 .PHONY: get_next_version
 get_next_version:
-	@cd aqfer/scripts && go get ./... && go run ecr_get_next_version/ecr-get-next-version.go ${ROOT_NAME}_${SERVICE_NAME} $(shell cat MAJOR_VERSION) ${AWS_REGION}
+	@cd aqfer/scripts && go get ./... && go run ecr_get_next_version/ecr-get-next-version.go ${ROOT_NAME}_${SERVICE_NAME} $(shell cat MAJOR_VERSION) ${ECR_REGION}
 
 sanity:
 	${eval current_version=`build-tool -operation getcurrentversion -projecttype aio -versionurl http://imds-preprod.api.aqfer.net/version`}
@@ -130,29 +128,43 @@ create_artifact_bucket:
 
 .PHONY: create_keypair
 create_keypair:
+	for region in ${AWS_REGIONS} ; do \
+		docker run \
+		-e AWS_ACCESS_KEY_ID \
+		-e AWS_SECRET_ACCESS_KEY \
+		-e Region=$$region \
+		--entrypoint /scripts/keypair.sh aws_image ${KEYPAIR_NAME} 2>&1 > aqfer/aws/${KEYPAIR_NAME}_$$region.pem ; \
+		chmod 700 aqfer/aws/${KEYPAIR_NAME}_$$region.pem ; \
+	done
+
+.PHONY: setup_roles
+setup_roles:
 	docker run \
 	-e AWS_ACCESS_KEY_ID \
 	-e AWS_SECRET_ACCESS_KEY \
 	-e AWS_DEFAULT_REGION \
-	--entrypoint /scripts/keypair.sh aws_image ${KEYPAIR_NAME} 2>&1 > aqfer/aws/${KEYPAIR_NAME}.pem
-	chmod 700 aqfer/aws/${KEYPAIR_NAME}$1.pem
-
+	-e EC2InstanceRoleName=${EC2_INSTANCE_ROLE_NAME} \
+	-e EC2InstanceProfileName=${EC2_INSTANCE_PROFILE_NAME} \
+	-e ECSServiceRoleName=${ECS_SERVICE_ROLE_NAME} \
+	-e ECRRepoName=${ROOT_NAME}_${SERVICE_NAME} \
+	--entrypoint /scripts/setup_roles.sh aws_image ${ARTIFACTS_BUCKET} ${ROLE_STACK_NAME}
 
 .PHONY: spin_up_db
 spin_up_db:
-	docker run \
-	-e AWS_ACCESS_KEY_ID \
-	-e AWS_SECRET_ACCESS_KEY \
-	-e AWS_DEFAULT_REGION \
-	-e AvailabilityZones=${ZONES} \
-	-e Subnets=${SUBNETS} \
-	-e Vpc=${VPC} \
-	-e ECSecurityGroupName=${EC_SECURITY_GROUP} \
-	-e ECSubnetGroupName=${EC_SUBNET_GROUP} \
-	-e ECNodeType=${EC_NODE_TYPE} \
-	-e ECClusterName=${EC_CLUSTER_NAME} \
-	-e ServiceStage=${STAGE} \
-	--entrypoint /scripts/spin_up_db.sh aws_image ${ARTIFACTS_BUCKET} ${DB_STACK_NAME}
+	for region in ${AWS_REGIONS} ; do \
+		docker run \
+		-e AWS_ACCESS_KEY_ID \
+		-e AWS_SECRET_ACCESS_KEY \
+		-e AWS_DEFAULT_REGION \
+		-e ECSecurityGroupName=${EC_SECURITY_GROUP} \
+		-e ECSubnetGroupName=${EC_SUBNET_GROUP} \
+		-e ECNodeType=${EC_NODE_TYPE} \
+		-e ECClusterName=${EC_CLUSTER_NAME} \
+		-e ServiceStage=${STAGE} \
+		-e ArtifactBucket=${ARTIFACTS_BUCKET} \
+		-e StackRegion=$$region \
+		--entrypoint /scripts/spin_up_db.sh aws_image ${ARTIFACTS_BUCKET} ${DB_STACK_NAME} ; \
+ 	done
 
 .PHONY: tear_down_db
 tear_down_db:
@@ -168,50 +180,45 @@ ready_caddyfile:
 
 
 .PHONY: ecr_repo_push
-ecr_repo_push: ready_caddyfile build_caddy_image ecr_create ecr_push
-
-
-.PHONY: ecr_create
-ecr_create:
-	docker run -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION \
-	--entrypoint /scripts/ecr_create.sh aws_image ${ROOT_NAME}_${SERVICE_NAME} > /tmp/ecrUri 2> /tmp/ecrError
-
+ecr_repo_push: ready_caddyfile build_caddy_image ecr_push
 
 .PHONY: ecr_push
 ecr_push:
-	cd aqfer/scripts && go get ./... && go run push_docker_image/push-docker-image.go ${ROOT_NAME}_${SERVICE_NAME} ${VERSION} ${AWS_REGION}
+	cd aqfer/scripts && go get ./... && go run push_docker_image/push-docker-image.go ${ROOT_NAME}_${SERVICE_NAME} ${VERSION} ${ECR_REGION}
 
 
 .PHONY: spin_up_ecs
 spin_up_ecs:
-	docker run -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION \
-	-e Jwt=${JWT} \
-	-e Ami=${AMI} \
-	-e Subnets=${SUBNETS} \
-	-e Vpc=${VPC} \
-	-e AvailabilityZones=${ZONES} \
-	-e KeyPair=${KEYPAIR_NAME} \
-	-e LoadBalancerName=${LOAD_BALANCER_NAME} \
-	-e LBSecurityGroupName=${LB_SECURITY_GROUP} \
-	-e TargetGroupName=${ECS_TARGET_GROUP_NAME} \
-	-e EC2InstanceType=${INSTANCE_TYPE} \
-	-e EC2SecurityGroupName=${EC2_SECURITY_GROUP} \
-	-e EC2InstanceRoleName=${EC2_INSTANCE_ROLE_NAME} \
-	-e ECSClusterName=${ECS_CLUSTER_NAME} \
-	-e ECSServiceRoleName=${ECS_SERVICE_ROLE_NAME} \
-	-e ECSTaskDefinitionName=${TASK_DEFINITION} \
-	-e ECSServiceName=${ECS_SERVICE_NAME} \
-	-e ECRRepoURI=$(shell cat /tmp/ecrUri):${VERSION} \
-	-e ContainerName=${ROOT_NAME}-${SERVICE_NAME} \
-	-e AppLogGroupName=${APP_LOG_GROUP_NAME} \
-	-e ECSLogGroupName=${ECS_LOG_GROUP_NAME} \
-	-e DomainCertificateId=${SERVICE_DOMAIN_CERTIFICATE_ID} \
-	-e ServiceStage=${STAGE} \
-	-e R53HostedZoneName=${R53_HOSTED_ZONE_NAME} \
-	-e DNSSubDomain=${DNS_SUBDOMAIN} \
-	-e ECStackName=${DB_STACK_NAME} \
-	--entrypoint /scripts/spin_up_ecs.sh aws_image ${ARTIFACTS_BUCKET} ${ECS_STACK_NAME} \
-	${EC_SECURITY_GROUP}
+	for region in ${AWS_REGIONS} ; do \
+		docker run -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION \
+		-e Jwt=${JWT} \
+		-e KeyPair=${KEYPAIR_NAME} \
+		-e LoadBalancerName=${LOAD_BALANCER_NAME} \
+		-e LBSecurityGroupName=${LB_SECURITY_GROUP} \
+		-e TargetGroupName=${ECS_TARGET_GROUP_NAME} \
+		-e EC2InstanceType=${INSTANCE_TYPE} \
+		-e EC2SecurityGroupName=${EC2_SECURITY_GROUP} \
+		-e EC2InstanceRoleName=${EC2_INSTANCE_ROLE_NAME} \
+		-e EC2InstanceProfileName=${EC2_INSTANCE_PROFILE_NAME} \
+		-e ECSClusterName=${ECS_CLUSTER_NAME} \
+		-e ECSServiceRoleName=${ECS_SERVICE_ROLE_NAME} \
+		-e ECSTaskDefinitionName=${TASK_DEFINITION} \
+		-e ECSServiceName=${ECS_SERVICE_NAME} \
+		-e ECRRepoURI=$(shell cat aqfer/aws/ecrUri):${VERSION} \
+		-e ECRRepoName=${ROOT_NAME}_${SERVICE_NAME} \
+		-e ECRRepoRegion=${ECR_REGION} \
+		-e ImageVersion=${VERSION} \
+		-e ContainerName=${ROOT_NAME}-${SERVICE_NAME} \
+		-e AppLogGroupName=${APP_LOG_GROUP_NAME} \
+		-e ECSLogGroupName=${ECS_LOG_GROUP_NAME} \
+		-e DomainCertificateId=${SERVICE_DOMAIN_CERTIFICATE_ID} \
+		-e ServiceStage=${STAGE} \
+		-e ECStackName=${DB_STACK_NAME} \
+		-e ArtifactBucket=${ARTIFACTS_BUCKET} \
+		-e StackRegion=$$region \
+		--entrypoint /scripts/spin_up_ecs.sh aws_image ${ARTIFACTS_BUCKET} ${ECS_STACK_NAME} \
+		${EC_SECURITY_GROUP} ; \
+	done
 
 # make instances=i-029aefe585538720b\ i-09abb841e51433e42 tear_down_ecs
 # must list specific ec2 instances to destroy (delimited by spaces)

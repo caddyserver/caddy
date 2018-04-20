@@ -1,6 +1,49 @@
 ---
 AWSTemplateFormatVersion: '2010-09-09'
 Description: 'ECS deployment'
+Mappings:
+  RegionSpecificParameters:
+    us-east-1:
+      vpc: vpc-23d7c047
+      azs: [us-east-1a, us-east-1b]
+      subnets: [subnet-9cbdceea, subnet-6a2ea632]
+      ami: ami-d74473ad
+      hostedzoneid: Z35SXDOTRQ7X7K
+    us-west-2:
+      vpc: vpc-fa6ba49e
+      azs: [us-west-2a, us-west-2b]
+      subnets: [subnet-aadc37dc, subnet-70c51314]
+      ami: ami-0bc5713607472cef7
+      hostedzoneid: Z1H1FL5HABSF5
+    eu-west-1:
+      vpc: vpc-daa5bfbf
+      azs: [eu-west-1a, eu-west-1b]
+      subnets: [subnet-af529fcb, subnet-ed1de89b]
+      ami: ami-0da691820db958a25
+      hostedzoneid: Z32O12XQLNTSW2
+  CertificateId:
+    us-east-1:
+      preprod: e858c27f-84c2-4f3d-a27f-be12b453f50e
+      prod: e858c27f-84c2-4f3d-a27f-be12b453f50e
+    us-west-2:
+      preprod: a1d7a9ef-b6ce-4164-88c3-83cd85985769
+      prod: a1d7a9ef-b6ce-4164-88c3-83cd85985769
+    eu-west-1:
+      preprod: fed20ee0-943d-4cb7-9400-b539224f8781
+      prod: fed20ee0-943d-4cb7-9400-b539224f8781
+  LoadBalancerParams:
+    preprod:
+      servicedomain: imds-preprod
+      hostedzonename: api.aqfer.net.
+    prod:
+      servicedomain: imds
+      hostedzonename: api.aqfer.net.
+  StageConfig:
+    preprod:
+      auth: auth.api-preprod.aqfer.net
+    prod:
+      auth: auth.api.aqfer.net
+
 Parameters:
   Id:
     Description: 'AWS access key id'
@@ -11,10 +54,6 @@ Parameters:
   Jwt:
     Description: 'JWT secret'
     Type: String
-  Ami:
-    Description: 'Ami template for linux EC2 instance'
-    Default: 'ami-55ef662f'
-    Type: String
   EC2InstanceType:
     Description: 'EC2 Instance Type'
     Default: 't2.micro'
@@ -23,7 +62,7 @@ Parameters:
     Description: 'EC2 Key Pair'
     Type: String
   LoadBalancerName:
-    Description: 'Network Load Balancer name'
+    Description: 'Application Load Balancer name'
     Type: String
   LBSecurityGroupName:
     Description: 'Load Balancer security group name'
@@ -33,9 +72,6 @@ Parameters:
     Type: String
   EC2SecurityGroupName:
     Description: 'Security Group name for EC2 instances'
-    Type: String
-  EC2InstanceRoleName:
-    Description: 'IAM Role name for EC2 instances'
     Type: String
   ECSServiceName:
     Description: 'ECS Service name'
@@ -49,35 +85,28 @@ Parameters:
   ECSTaskDefinitionName:
     Description: 'ECS Task Definition name'
     Type: String
-  ECRRepoURI:
-    Description: 'Repo URI for uplated ECR container'
+  ECRRepoName:
+    Description: 'Repo Name for uploaded ECR container'
+    Type: String
+  ECRRepoRegion:
+    Description: 'Repo Region for uploaded ECR container'
+    Type: String
+  ImageVersion:
+    Description: 'Version of the docker image'
     Type: String
   ContainerName:
     Description: 'Docker container name'
     Type: String
-  Vpc:
-    Description: 'VPC Identifier'
-    Type: String
-  Subnets:
-    Description: 'Subnets for the Availability Zones'
-    Type: CommaDelimitedList
-  AvailabilityZones:
-    Description: 'Availability Zones'
-    Type: CommaDelimitedList
   ECSLogGroupName:
     Description: 'ECS LogGroup Name for Aqfer'
     Type: String
   AppLogGroupName:
     Description: 'App LogGroup Name for Aqfer'
     Type: String
-  DomainCertificateId:
-    Description: 'Certificate id for the api domain'
-    Type: String
   ServiceStage:
     Description: 'Stage of the service'
     Type: String
     AllowedValues:
-      - dev
       - preprod
       - prod
   ECSecurityGroupName:
@@ -86,18 +115,11 @@ Parameters:
   ECInboundProtocol:
     Description: 'Protocol to allow access for the inbound traffic from EC2'
     Type: String
-  R53HostedZoneName:
-    Description: 'Hosted zone name for Route53'
-    Type: String
-  DNSSubDomain:
-    Description: 'Subdomain to use for the service'
-    Type: String
-  ELBHostedZoneId:
-    Description: 'HostedZone Id for the ELB'
-    Default: 'Z35SXDOTRQ7X7K'
-    Type: String
   ECStackName:
     Description: 'Name of the EC Stack'
+    Type: String
+  EC2InstanceProfileName:
+    Description: 'ECS Instance profile name'
     Type: String
 
 Resources:
@@ -110,57 +132,6 @@ Resources:
     Properties: 
       LogGroupName: !Ref ECSLogGroupName
 
-  EC2InstanceRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: !Ref EC2InstanceRoleName
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-        - Effect: Allow
-          Principal:
-            Service: ec2.amazonaws.com
-          Action: sts:AssumeRole
-      Path: '/'
-      Policies:
-      - PolicyName: ECSPolicy
-        PolicyDocument:
-          Statement:
-          - Effect: Allow
-            Action:
-            - s3:Get*
-            - s3:List*
-            Resource: '*'
-          - Effect: Allow
-            Action:
-            - logs:CreateLogGroup
-            - logs:CreateLogStream
-            - logs:PutLogEvents
-            Resource:
-            - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:*'
-          - Effect: Allow
-            Action:
-            - cloudformation:*
-            - codedeploy:*
-            - ec2:*
-            - ecs:*
-            - ecr:*
-            - iam:AddRoleToInstanceProfile
-            - iam:CreateInstanceProfile
-            - iam:CreateRole
-            - iam:DeleteInstanceProfile
-            - iam:DeleteRole
-            - iam:DeleteRolePolicy
-            - iam:GetRole
-            - iam:PassRole
-            - iam:PutRolePolicy
-            - iam:RemoveRoleFromInstanceProfile
-            Resource: '*'
-  EC2InstanceProfile:
-    Type: AWS::IAM::InstanceProfile
-    Properties:
-      Roles:
-      - !Ref EC2InstanceRole
   LaunchConfiguration:
     Type: AWS::AutoScaling::LaunchConfiguration
     Metadata:
@@ -186,8 +157,8 @@ Resources:
           VolumeSize: 22
           VolumeType: gp2
       EbsOptimized: false
-      IamInstanceProfile: !Ref EC2InstanceProfile
-      ImageId: !Ref Ami
+      IamInstanceProfile: !Ref EC2InstanceProfileName
+      ImageId: !FindInMap [ RegionSpecificParameters, !Ref "AWS::Region", ami ]
       InstanceType: !Ref EC2InstanceType
       KeyName: !Ref KeyPair
       SecurityGroups:
@@ -232,14 +203,14 @@ Resources:
   AutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
-      AvailabilityZones: !Ref AvailabilityZones
+      AvailabilityZones: !FindInMap [ RegionSpecificParameters, !Ref "AWS::Region", azs ]
       TargetGroupARNs: []
       DesiredCapacity: 2
       LoadBalancerNames: []
       Cooldown: 300
       MinSize: 0
       MaxSize: 2
-      VPCZoneIdentifier: !Ref Subnets
+      VPCZoneIdentifier: !FindInMap [ RegionSpecificParameters, !Ref "AWS::Region", subnets ]
       HealthCheckGracePeriod: 0
       HealthCheckType: EC2
       TerminationPolicies:
@@ -247,14 +218,14 @@ Resources:
       LaunchConfigurationName: !Ref LaunchConfiguration
       Tags:
       - Key: Name
-        Value: !Sub 'imds-${ServiceStage}'
+        Value: !Ref AWS::StackName
         PropagateAtLaunch: true
   EC2SecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupName: !Ref EC2SecurityGroupName
       GroupDescription: 'EC2 Instance Security Group'
-      VpcId: !Ref Vpc
+      VpcId: !FindInMap [ RegionSpecificParameters, !Ref "AWS::Region", vpc ]
       SecurityGroupIngress:
       - IpProtocol: tcp
         FromPort: '0'
@@ -314,11 +285,13 @@ Resources:
           Value:
             Fn::ImportValue:
               !Sub '${ECStackName}-ECEndpoint'
+        - Name: AUTH_ENDPOINT
+          Value: !FindInMap [ StageConfig, !Ref 'ServiceStage', auth ]
         ReadonlyRootFilesystem: false
         Name: !Ref ContainerName
         Links: []
         MountPoints: []
-        Image: !Ref ECRRepoURI
+        Image: !Sub '${AWS::AccountId}.dkr.ecr.${ECRRepoRegion}.amazonaws.com/${ECRRepoName}:${ImageVersion}'
         LogConfiguration:
           LogDriver: awslogs
           Options:
@@ -349,32 +322,6 @@ Resources:
         Cpu: 512
         VolumesFrom: []
         DockerLabels: {}
-  ECSServiceRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: !Ref ECSServiceRoleName
-      AssumeRolePolicyDocument:
-        Version: '2008-10-17'
-        Statement:
-        - Effect: Allow
-          Principal:
-            Service: ecs.amazonaws.com
-          Action: sts:AssumeRole
-      Path: '/'
-      Policies:
-      - PolicyName: ECSPolicy
-        PolicyDocument:
-          Statement:
-          - Effect: Allow
-            Action:
-            - ec2:AuthorizeSecurityGroupIngress
-            - ec2:Describe*
-            - elasticloadbalancing:DeregisterInstancesFromLoadBalancer
-            - elasticloadbalancing:DeregisterTargets
-            - elasticloadbalancing:Describe*
-            - elasticloadbalancing:RegisterInstancesWithLoadBalancer
-            - elasticloadbalancing:RegisterTargets
-            Resource: '*'
   ECSService:
     Type: AWS::ECS::Service
     DependsOn:
@@ -398,7 +345,7 @@ Resources:
         Type: spread
       - Field: instanceId
         Type: spread
-      Role: !Ref ECSServiceRole
+      Role: !Ref ECSServiceRoleName
 
   LBListenerHTTP:
     Type: AWS::ElasticLoadBalancingV2::Listener
@@ -417,7 +364,7 @@ Resources:
       Port: 443
       Protocol: HTTPS
       Certificates:
-      - CertificateArn: !Sub 'arn:aws:acm:${AWS::Region}:${AWS::AccountId}:certificate/${DomainCertificateId}'
+      - CertificateArn: !Join [ '', [ 'arn:aws:acm:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':certificate/' , !FindInMap [ 'CertificateId', !Ref 'AWS::Region', !Ref ServiceStage ] ] ]
       DefaultActions:
       - Type: forward
         TargetGroupArn: !Ref LBTargetGroup
@@ -429,7 +376,7 @@ Resources:
       Protocol: HTTP
       Port: 80
       TargetType: instance
-      VpcId: !Ref Vpc
+      VpcId: !FindInMap [ RegionSpecificParameters, !Ref "AWS::Region", vpc ]
       HealthCheckPath: '/version'
       HealthCheckProtocol: HTTP
       HealthyThresholdCount: 5
@@ -441,7 +388,7 @@ Resources:
     Properties:
       GroupName: !Ref LBSecurityGroupName
       GroupDescription: 'Application Load Balancer Security Group'
-      VpcId: !Ref Vpc
+      VpcId: !FindInMap [ RegionSpecificParameters, !Ref "AWS::Region", vpc ]
       SecurityGroupIngress:
       - IpProtocol: tcp
         FromPort: '80'
@@ -459,7 +406,7 @@ Resources:
       Type: application
       IpAddressType: ipv4
       Scheme: internet-facing
-      Subnets: !Ref Subnets
+      Subnets: !FindInMap [ RegionSpecificParameters, !Ref "AWS::Region", subnets ]
       SecurityGroups:
       - !Ref LBSecurityGroup
 
@@ -468,10 +415,22 @@ Resources:
     DependsOn:
       - ApplicationLoadBalancer
     Properties:
-      HostedZoneName: !Ref R53HostedZoneName
+      HostedZoneName: !FindInMap [ LoadBalancerParams, !Ref ServiceStage, hostedzonename ]
       Comment: DNS name for my instance
-      Name: !Sub '${DNSSubDomain}.${R53HostedZoneName}'
+      Name: !Join
+        - '.'
+        - - !Join
+            - '-'
+            - - !FindInMap
+                - LoadBalancerParams
+                - !Ref ServiceStage
+                - servicedomain
+              - !Ref 'AWS::Region'
+          - !FindInMap
+            - LoadBalancerParams
+            - !Ref ServiceStage
+            - hostedzonename
       Type: A
       AliasTarget:
         DNSName: !GetAtt ApplicationLoadBalancer.DNSName
-        HostedZoneId: !Ref ELBHostedZoneId
+        HostedZoneId: !FindInMap [ RegionSpecificParameters, !Ref "AWS::Region", hostedzoneid ]
