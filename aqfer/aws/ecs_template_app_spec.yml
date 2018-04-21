@@ -434,3 +434,10 @@ Resources:
       AliasTarget:
         DNSName: !GetAtt ApplicationLoadBalancer.DNSName
         HostedZoneId: !FindInMap [ RegionSpecificParameters, !Ref "AWS::Region", hostedzoneid ]
+
+Outputs:
+  ELBDNSName:
+    Description: 'DNS Name for the load balancer'
+    Value: !GetAtt ApplicationLoadBalancer.DNSName
+    Export:
+      Name: !Sub '${ECSServiceName}-ELBDNSName'
