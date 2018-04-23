@@ -23,15 +23,21 @@ Mappings:
       hostedzoneid: Z32O12XQLNTSW2
   CertificateId:
     us-east-1:
+      actualpreprod: 90250d8c-396a-4c19-a488-82e301e283c0
       preprod: e858c27f-84c2-4f3d-a27f-be12b453f50e
       prod: e858c27f-84c2-4f3d-a27f-be12b453f50e
     us-west-2:
+      actualpreprod: 78b52fcf-933c-4719-a099-f7cce7a12b56
       preprod: a1d7a9ef-b6ce-4164-88c3-83cd85985769
       prod: a1d7a9ef-b6ce-4164-88c3-83cd85985769
     eu-west-1:
+      actualpreprod: 108bbba1-b8ef-47d3-bcd2-1754fdca6c37
       preprod: fed20ee0-943d-4cb7-9400-b539224f8781
       prod: fed20ee0-943d-4cb7-9400-b539224f8781
   LoadBalancerParams:
+    actualpreprod:
+      servicedomain: imds
+      hostedzonename: api-preprod.aqfer.net.
     preprod:
       servicedomain: imds-preprod
       hostedzonename: api.aqfer.net.
