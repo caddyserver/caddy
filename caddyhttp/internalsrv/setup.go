@@ -37,7 +37,7 @@ func setup(c *caddy.Controller) error {
 	config := httpserver.GetConfig(c)
 	config.HiddenFiles = append(config.HiddenFiles, paths...)
 
-	httpserver.GetConfig(c).AddMiddleware(func(next httpserver.Handler) httpserver.Handler {
+	config.AddMiddleware(func(next httpserver.Handler) httpserver.Handler {
 		return Internal{Next: next, Paths: paths}
 	})
 
