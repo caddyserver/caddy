@@ -176,7 +176,7 @@ tear_down_db:
 
 .PHONY: ready_caddyfile
 ready_caddyfile:
-	cat aqfer/Caddyfile_template | sed 's/APP_LOG_GROUP_NAME/'${APP_LOG_GROUP_NAME}'/g' > /tmp/Caddyfile
+	cat aqfer/Caddyfile_template | sed 's/APP_LOG_GROUP_NAME/'${APP_LOG_GROUP_NAME}'/g' > aqfer/Caddyfile
 
 
 .PHONY: ecr_repo_push
