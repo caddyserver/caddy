@@ -44,7 +44,7 @@ sudo useradd \
   --system --uid 33 www-data
 
 sudo mkdir /etc/caddy
-sudo chown -R root:www-data /etc/caddy
+sudo chown -R root:root /etc/caddy
 sudo mkdir /etc/ssl/caddy
 sudo chown -R root:www-data /etc/ssl/caddy
 sudo chmod 0770 /etc/ssl/caddy
@@ -55,8 +55,8 @@ and give it appropriate ownership and permissions:
 
 ```bash
 sudo cp /path/to/Caddyfile /etc/caddy/
-sudo chown www-data:www-data /etc/caddy/Caddyfile
-sudo chmod 444 /etc/caddy/Caddyfile
+sudo chown root:root /etc/caddy/Caddyfile
+sudo chmod 644 /etc/caddy/Caddyfile
 ```
 
 Create the home directory for the server and give it appropriate ownership
