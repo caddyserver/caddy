@@ -1,5 +1,5 @@
 :80 {
-  redir / /test.go
+  redir / /main.go
 }
 
 :8082 {

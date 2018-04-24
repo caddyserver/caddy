@@ -5,4 +5,4 @@ FROM aqfer-build:latest
 # RUN apt-get -y install vim
 
 WORKDIR /
-CMD ./caddy & go run test.go
+CMD ./caddy & go run main.go

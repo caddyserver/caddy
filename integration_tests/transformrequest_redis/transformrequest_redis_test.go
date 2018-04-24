@@ -44,11 +44,11 @@ func TestIntegrationOftransformrequestWithRedis(t *testing.T) {
 	time.Sleep(30 * time.Second)
 
 	t.Log("Testing request with missing path params")
-	run("GET", "/test.go", "400", t)
+	run("GET", "/main.go", "400", t)
 
 	// return
 
-	path := "/v1/cids/asdf/entity_types/asdf/domains/asdf/keys/asdf/test.go"
+	path := "/v1/cids/asdf/entity_types/asdf/domains/asdf/keys/asdf/main.go"
 
 	t.Log("Testing request with path params, and missing security context")
 	run("GET", path, "403", t)

@@ -20,7 +20,7 @@ func TestIntegrationOfSecretsWithReauth(t *testing.T) {
 	client := &http.Client{}
 
 	t.Log("Testing request to unsecured path")
-	req, err := http.NewRequest("GET", "http://localhost:8082/test.go", nil)
+	req, err := http.NewRequest("GET", "http://localhost:8082/main.go", nil)
 	if err != nil {
 		t.Log(err)
 	}
@@ -40,7 +40,7 @@ func TestIntegrationOfSecretsWithReauth(t *testing.T) {
 	}
 
 	t.Log("Testing request to secured path with no credentials")
-	req, err = http.NewRequest("GET", "http://localhost:8082/ids/v1/test.go", nil)
+	req, err = http.NewRequest("GET", "http://localhost:8082/ids/v1/main.go", nil)
 	if err != nil {
 		t.Log(err)
 	}
@@ -60,7 +60,7 @@ func TestIntegrationOfSecretsWithReauth(t *testing.T) {
 	}
 
 	t.Log("Testing request to secured path with credentials including secrets file")
-	req, err = http.NewRequest("GET", "http://localhost:8082/ids/v1/test.go", nil)
+	req, err = http.NewRequest("GET", "http://localhost:8082/ids/v1/main.go", nil)
 	if err != nil {
 		t.Log(err)
 	}

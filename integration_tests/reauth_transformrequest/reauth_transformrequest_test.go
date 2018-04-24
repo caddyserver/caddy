@@ -20,7 +20,7 @@ func TestIntegrationOfReauthWithTransformrequest(t *testing.T) {
 	client := &http.Client{}
 
 	t.Log("Testing request to secured path missing path params")
-	req, err := http.NewRequest("GET", "http://localhost:8082/ids/v1/test.go", nil)
+	req, err := http.NewRequest("GET", "http://localhost:8082/ids/v1/main.go", nil)
 	if err != nil {
 		t.Log(err)
 	}
@@ -43,7 +43,7 @@ func TestIntegrationOfReauthWithTransformrequest(t *testing.T) {
 	}
 
 	t.Log("Testing request to secured path with proper params but wrong cid")
-	req, err = http.NewRequest("GET", "http://localhost:8082/ids/v1/c008/asdf/asdf/asdf/test.go", nil)
+	req, err = http.NewRequest("GET", "http://localhost:8082/ids/v1/c008/asdf/asdf/asdf/main.go", nil)
 	if err != nil {
 		t.Log(err)
 	}
@@ -64,7 +64,7 @@ func TestIntegrationOfReauthWithTransformrequest(t *testing.T) {
 	}
 
 	t.Log("Testing request to secured path with proper path params")
-	req, err = http.NewRequest("GET", "http://localhost:8082/ids/v1/c009/asdf/asdf/asdf/test.go", nil)
+	req, err = http.NewRequest("GET", "http://localhost:8082/ids/v1/c009/asdf/asdf/asdf/main.go", nil)
 	if err != nil {
 		t.Log(err)
 	}

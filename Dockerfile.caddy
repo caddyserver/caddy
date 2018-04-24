@@ -4,7 +4,7 @@ FROM ubuntu
 ADD ./caddy/caddy /caddy
 ADD ./Caddyfile /Caddyfile
 ADD ./.secrets.yml /.secrets.yml
-ADD ./test.go /test.go
+ADD ./main.go /main.go
 ADD ./scripts/run_unit_tests.sh /run_unit_tests.sh
 ADD ./integration_tests/ /aqfer/integration_tests/
 ADD ./scripts/run_integration_tests.sh /run_integration_tests.sh
