@@ -23,18 +23,18 @@ Mappings:
       hostedzoneid: Z32O12XQLNTSW2
   CertificateId:
     us-east-1:
-      preprod: e858c27f-84c2-4f3d-a27f-be12b453f50e
+      preprod: 90250d8c-396a-4c19-a488-82e301e283c0
       prod: e858c27f-84c2-4f3d-a27f-be12b453f50e
     us-west-2:
-      preprod: a1d7a9ef-b6ce-4164-88c3-83cd85985769
+      preprod: 78b52fcf-933c-4719-a099-f7cce7a12b56
       prod: a1d7a9ef-b6ce-4164-88c3-83cd85985769
     eu-west-1:
-      preprod: fed20ee0-943d-4cb7-9400-b539224f8781
+      preprod: 108bbba1-b8ef-47d3-bcd2-1754fdca6c37
       prod: fed20ee0-943d-4cb7-9400-b539224f8781
   LoadBalancerParams:
     preprod:
-      servicedomain: imds-preprod
-      hostedzonename: api.aqfer.net.
+      servicedomain: imds
+      hostedzonename: api-preprod.aqfer.net.
     prod:
       servicedomain: imds
       hostedzonename: api.aqfer.net.
@@ -434,3 +434,10 @@ Resources:
       AliasTarget:
         DNSName: !GetAtt ApplicationLoadBalancer.DNSName
         HostedZoneId: !FindInMap [ RegionSpecificParameters, !Ref "AWS::Region", hostedzoneid ]
+
+Outputs:
+  ELBDNSName:
+    Description: 'DNS Name for the load balancer'
+    Value: !GetAtt ApplicationLoadBalancer.DNSName
+    Export:
+      Name: !Sub '${ECSServiceName}-ELBDNSName'
