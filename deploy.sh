@@ -13,7 +13,7 @@ export STAGE=preprod
 
 echo ${SERVICE_VERSION} > /tmp/serviceVersion
 export VERSION=${SERVICE_VERSION}
-go get ./caddy/...
+go get ./...
 
 #cversion=`build-tool -operation getcurrentversion -projecttype aio -versionurl http://imds.api-preprod.aqfer.net/version`
 #set +x;printf "#----------------------------\n# current version : ${cversion}\n#----------------------------\n";set -x
