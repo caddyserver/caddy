@@ -36,7 +36,6 @@ import (
 	"log"
 	"os"
 	"os/exec"
-	"path/filepath"
 
 	"github.com/caddyserver/builds"
 )
@@ -59,7 +58,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	ldflags, err := builds.MakeLdFlags(filepath.Join(pwd, ".."))
+	ldflags, err := builds.MakeLdFlags(pwd)
 	if err != nil {
 		log.Fatal(err)
 	}
