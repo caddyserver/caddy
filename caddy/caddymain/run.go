@@ -27,7 +27,7 @@ import (
 
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddytls"
-	"github.com/xenolf/lego/acmev2"
+	"github.com/xenolf/lego/acme"
 	"gopkg.in/natefinch/lumberjack.v2"
 
 	_ "github.com/fellou89/caddy-reauth"
