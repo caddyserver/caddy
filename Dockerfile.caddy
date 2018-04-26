@@ -3,10 +3,10 @@ FROM ubuntu
 # Throw away till here
 ADD ./caddy/caddy /caddy
 ADD ./Caddyfile /Caddyfile
-ADD ./.secrets.yml /.secrets.yml
-ADD ./main.go /main.go
+#ADD ./.secrets.yml /.secrets.yml
+#ADD ./main.go /main.go
 ADD ./scripts/run_unit_tests.sh /run_unit_tests.sh
-ADD ./integration_tests/ /aqfer/integration_tests/
+ADD ./integration_tests/ /integration_tests/
 ADD ./scripts/run_integration_tests.sh /run_integration_tests.sh
 ADD ./scripts/run_sanity_tests.sh /run_sanity_tests.sh
 RUN mkdir /temp_cache
