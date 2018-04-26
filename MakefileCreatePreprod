@@ -117,7 +117,7 @@ build_caddy_image: build_caddy
 
 .PHONY: build_caddy
 build_caddy: get_next_version
-	go run build.go --goos linux
+	cd caddy && go get ./... && go get gopkg.in/square/go-jose.v2 && go run build.go --goos linux
 
 .PHONY: create_artifact_bucket
 create_artifact_bucket:
