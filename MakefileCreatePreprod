@@ -62,7 +62,7 @@ get_next_version:
 	@cd scripts && go get ./... && go run ecr_get_next_version/ecr-get-next-version.go ${ROOT_NAME}_${SERVICE_NAME} $(shell cat MAJOR_VERSION) ${ECR_REGION}
 
 sanity:
-	${eval current_version=`build-tool -operation getcurrentversion -projecttype aio -versionurl http://imds-preprod.api.aqfer.net/version`}
+	${eval current_version=`build-tool -operation getcurrentversion -projecttype aio -versionurl http://imds.api-preprod.aqfer.net/version`}
 	echo current_version is ${current_version}
 	if [ ${current_version} = ${VERSION} ]; then echo "sanity test passed"; exit 0; else echo "sanity test failed"; exit 1; fi
 
@@ -117,8 +117,7 @@ build_caddy_image: build_caddy
 
 .PHONY: build_caddy
 build_caddy: get_next_version
-	cd caddy && go run build.go --goos linux
-
+	go run build.go --goos linux
 
 .PHONY: create_artifact_bucket
 create_artifact_bucket:
