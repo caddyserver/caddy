@@ -72,35 +72,35 @@ update_container_repo: ready_caddyfile ecr_repo_push
 # deployment environment image
 .PHONY: aws_build
 aws_build:
-	docker build --no-cache -f aqfer/Dockerfile.aws -t aws_image .
+	docker build --no-cache -f Dockerfile.aws -t aws_image .
 
 # runtime environment images
 .PHONY: build_new_caddy_image
 build_new_caddy_image:
-	docker build --no-cache -f aqfer/Dockerfile.build --build-arg GIT_USER=${GIT_USER} --build-arg SSH_PUBLIC_KEY="$(shell cat ~/.ssh/id_rsa.pub | tr '\n' '?')" --build-arg SSH_PRIVATE_KEY="$(shell cat ~/.ssh/id_rsa | tr '\n' '?')" -t ${ROOT_NAME}-build .
-	docker build -f aqfer/Dockerfile -t ${ROOT_NAME}-caddy .
+	docker build --no-cache -f Dockerfile.build --build-arg GIT_USER=${GIT_USER} --build-arg SSH_PUBLIC_KEY="$(shell cat ~/.ssh/id_rsa.pub | tr '\n' '?')" --build-arg SSH_PRIVATE_KEY="$(shell cat ~/.ssh/id_rsa | tr '\n' '?')" -t ${ROOT_NAME}-build .
+	docker build -f Dockerfile -t ${ROOT_NAME}-caddy .
 
 .PHONY: build_caddy_image
 build_caddy_image:
-	docker build -f aqfer/Dockerfile.build --build-arg GIT_USER=${GIT_USER} --build-arg SSH_PUBLIC_KEY="$(shell cat ~/.ssh/id_rsa.pub | tr '\n' '?')" --build-arg SSH_PRIVATE_KEY="$(shell cat ~/.ssh/id_rsa | tr '\n' '?')" -t ${ROOT_NAME}-build .
-	docker build -f aqfer/Dockerfile -t ${ROOT_NAME}-caddy .
+	docker build -f Dockerfile.build --build-arg GIT_USER=${GIT_USER} --build-arg SSH_PUBLIC_KEY="$(shell cat ~/.ssh/id_rsa.pub | tr '\n' '?')" --build-arg SSH_PRIVATE_KEY="$(shell cat ~/.ssh/id_rsa | tr '\n' '?')" -t ${ROOT_NAME}-build .
+	docker build -f Dockerfile -t ${ROOT_NAME}-caddy .
 
 
 .PHONY: create_artifact_bucket
 create_artifact_bucket:
-	docker-compose -f aqfer/docker-compose-aws.yml run \
+	docker-compose -f docker-compose-aws.yml run \
 		aws-service aws s3 mb s3://${ARTIFACTS_BUCKET}/
 
 .PHONY: create_keypair
 create_keypair:
-	docker-compose -f aqfer/docker-compose-aws.yml run \
-	aws-service /scripts/keypair.sh ${KEYPAIR_NAME} 2>&1 > aqfer/aws/${KEYPAIR_NAME}.pem
-	chmod 700 aqfer/aws/${KEYPAIR_NAME}$1.pem
+	docker-compose -f docker-compose-aws.yml run \
+	aws-service /scripts/keypair.sh ${KEYPAIR_NAME} 2>&1 > aws/${KEYPAIR_NAME}.pem
+	chmod 700 aws/${KEYPAIR_NAME}$1.pem
 
 
 .PHONY: spin_up_db
 spin_up_db:
-	docker-compose -f aqfer/docker-compose-aws.yml run \
+	docker-compose -f docker-compose-aws.yml run \
 	-e AvailabilityZone=${ZONE} \
 	-e Subnet=${SUBNET} \
 	-e Vpc=${VPC} \
@@ -121,27 +121,27 @@ spin_up_db:
 
 .PHONY: tear_down_db
 tear_down_db:
-	docker-compose -f aqfer/docker-compose-aws.yml run aws-service aws cloudformation delete-stack --stack-name ${DBNAME}
+	docker-compose -f docker-compose-aws.yml run aws-service aws cloudformation delete-stack --stack-name ${DBNAME}
 
 
 .PHONY: get_db_endpoints
 get_db_endpoints:
-	docker-compose -f aqfer/docker-compose-aws.yml run aws-service /scripts/ec_endpoint.sh ${EC_CLUSTER_NAME} 2>&1 > /tmp/ec_endpoint
+	docker-compose -f docker-compose-aws.yml run aws-service /scripts/ec_endpoint.sh ${EC_CLUSTER_NAME} 2>&1 > /tmp/ec_endpoint
 
-# docker-compose -f aqfer/docker-compose-aws.yml run aws-service \
+# docker-compose -f docker-compose-aws.yml run aws-service \
 #       /scripts/dax_endpoint.sh ${DAX_CLUSTER_NAME} 2>&1 > /tmp/dax_endpoint
 
 
 .PHONY: ready_caddyfile
 ready_caddyfile: get_db_endpoints
-	cat aqfer/Caddyfile_template | sed 's/APP_LOG_GROUP_NAME/'${APP_LOG_GROUP_NAME}'/g' > /tmp/Caddyfile
-	cat /tmp/Caddyfile | sed 's/EC_ENDPOINT/'$(shell cat /tmp/ec_endpoint)'/g' > aqfer/Caddyfile
+	cat Caddyfile_template | sed 's/APP_LOG_GROUP_NAME/'${APP_LOG_GROUP_NAME}'/g' > /tmp/Caddyfile
+	cat /tmp/Caddyfile | sed 's/EC_ENDPOINT/'$(shell cat /tmp/ec_endpoint)'/g' > Caddyfile
 
 # perl -pi -e 's/DYNAMO_TABLE/'${DYNAMO_TABLE}'/g' /tmp/Caddyfile
 # perl -pi -e 's/PARTITION_KEY/'${PARTITION_KEY}'/g' /tmp/Caddyfile
 # perl -pi -e 's/SORT_KEY/'${SORT_KEY}'/g' /tmp/Caddyfile
 # perl -pi -e 's/EC_ENDPOINT/'$(shell cat /tmp/ec_endpoint)'/g' /tmp/Caddyfile
-# cat /tmp/Caddyfile | sed 's/DAX_ENDPOINT/'$(shell cat /tmp/dax_endpoint)'/g' > aqfer/Caddyfile
+# cat /tmp/Caddyfile | sed 's/DAX_ENDPOINT/'$(shell cat /tmp/dax_endpoint)'/g' > Caddyfile
 
 
 .PHONY: ecr_repo_push
@@ -149,12 +149,12 @@ ecr_repo_push: build_caddy_image ecr_create ecr_login
 
 .PHONY: ecr_create
 ecr_create:
-	docker-compose -f aqfer/docker-compose-aws.yml run aws-service /scripts/ecr_create.sh ${ROOT_NAME} ${REPOVERSION} 2>&1 > /tmp/ecrUri
+	docker-compose -f docker-compose-aws.yml run aws-service /scripts/ecr_create.sh ${ROOT_NAME} ${REPOVERSION} 2>&1 > /tmp/ecrUri
 
 .PHONY: ecr_login
 ecr_login:
 	$(eval ecrUri := $(shell cat /tmp/ecrUri))
-	docker-compose -f aqfer/docker-compose-aws.yml run aws-service /scripts/ecr_login.sh 2>&1 > /tmp/ecrLogin
+	docker-compose -f docker-compose-aws.yml run aws-service /scripts/ecr_login.sh 2>&1 > /tmp/ecrLogin
 	cat /tmp/ecrLogin | docker login -u AWS --password-stdin ${ecrUri}
 	docker tag ${ROOT_NAME}-caddy:latest ${ecrUri}
 	docker push ${ecrUri}
@@ -162,7 +162,7 @@ ecr_login:
 
 .PHONY: spin_up_ecs
 spin_up_ecs:
-	docker-compose -f aqfer/docker-compose-aws.yml run \
+	docker-compose -f docker-compose-aws.yml run \
 	-e Jwt=${JWT} \
 	-e Ami=${AMI} \
 	-e Subnet=${SUBNET} \
@@ -195,7 +195,7 @@ spin_up_ecs:
 .PHONY: tear_down_ecs
 tear_down_ecs: get_db_endpoints
 ifdef instances
-	docker-compose -f aqfer/docker-compose-aws.yml run aws-service \
+	docker-compose -f docker-compose-aws.yml run aws-service \
 	     aws ec2 revoke-security-group-ingress --group-name ${EC_SECURITY_GROUP} --source-group ${EC2_SECURITY_GROUP} --port \
 			 	$(shell cat /tmp/ec_endpoint | sed -E "s/.*:([0-9]*)/\1/") --protocol tcp;\
 	     aws ec2 terminate-instances --instance-ids $(instances);\
@@ -219,25 +219,25 @@ tear_down_stacks: tear_down_db tear_down_ecs
 # run `make get_dns_name` to get service address
 .PHONY: get_dns_name
 get_dns_name:
-	docker-compose -f aqfer/docker-compose-aws.yml run aws-service \
+	docker-compose -f docker-compose-aws.yml run aws-service \
 	      aws elbv2 describe-load-balancers --names ${LOAD_BALANCER_NAME} 2>&1 > /tmp/DNSName
 	@echo $(shell cat /tmp/DNSName | sed -n -E "s/.*\"DNSName\".*\"(.*)\",/\1/p")
 
 
 .PHONY: stop_tasks
 stop_tasks:
-	docker-compose -f aqfer/docker-compose-aws.yml run aws-service /scripts/stop_tasks.sh ${ECS_CLUSTER_NAME}
+	docker-compose -f docker-compose-aws.yml run aws-service /scripts/stop_tasks.sh ${ECS_CLUSTER_NAME}
 
 
 .PHONY: run_locally
 run_locally:
-	docker-compose -f aqfer/docker-compose.yml up
+	docker-compose -f docker-compose.yml up
 
 .PHONY: startover_locally
 startover_locally: build_caddy_image run_locally
-	docker-compose -f aqfer/docker-compose.yml up
+	docker-compose -f docker-compose.yml up
 
 
 .PHONY: run_unit_tests
 run_unit_tests:
-	docker-compose -f aqfer/docker-compose.yml run caddy /run_unit_tests.sh
+	docker-compose -f docker-compose.yml run caddy /run_unit_tests.sh

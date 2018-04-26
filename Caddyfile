@@ -1,0 +1,24 @@
+:80 {
+  redir / /main.go
+}
+
+:8082 {
+  # errors stdout
+  secrets s3::https://s3.amazonaws.com/aqfer-secrets/secrets.yml
+  awscloudwatch debug imds development 65536
+
+  reauth {
+    path /v1
+    refresh url=https://{$AUTH_ENDPOINT},skipverify=true,timeout=5s,follow=true
+    failure status code=401
+  }
+
+  transformrequest
+
+  # awsdynamodb DYNAMO_TABLE PARTITION_KEY SORT_KEY DAX 8086 DAX_ENDPOINT
+  redis {$REDIS_ENDPOINT}
+
+  transformresponse
+}
+
+# log ./log/access.log

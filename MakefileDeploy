@@ -58,7 +58,7 @@ update_tasks: stop_tasks update_ecs
 # deployment environment image
 .PHONY: aws_build
 aws_build:
-	docker build --no-cache -f aqfer/Dockerfile.aws -t aws_image .
+	docker build --no-cache -f Dockerfile.aws -t aws_image .
 
 
 .PHONY: create_artifact_bucket
@@ -69,8 +69,8 @@ create_artifact_bucket:
 .PHONY: create_keypair
 create_keypair:
 	docker run -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION \
-	--entrypoint /scripts/keypair.sh aws_image ${KEYPAIR_NAME} > aqfer/aws/${KEYPAIR_NAME}.pem 2> /tmp/kayPairError
-	chmod 700 aqfer/aws/${KEYPAIR_NAME}$1.pem
+	--entrypoint /scripts/keypair.sh aws_image ${KEYPAIR_NAME} > aws/${KEYPAIR_NAME}.pem 2> /tmp/kayPairError
+	chmod 700 aws/${KEYPAIR_NAME}$1.pem
 
 .PHONY: ecr_create
 ecr_create:
@@ -79,7 +79,7 @@ ecr_create:
 
 .PHONY: spin_up_ecs
 spin_up_ecs:
-	docker-compose -f aqfer/docker-compose-aws.yml run \
+	docker-compose -f docker-compose-aws.yml run \
 	-e Jwt=${JWT} \
 	-e Ami=${AMI} \
 	-e Subnet=${SUBNET} \
@@ -133,14 +133,14 @@ update_ecs:
 	-e ContainerName=${ROOT_NAME}-caddy \
 	-e AppLogGroupName=${APP_LOG_GROUP_NAME} \
 	-e ECSLogGroupName=${ECS_LOG_GROUP_NAME} \
-	--entrypoint /scripts/update_ecs.sh aws_image ${ARTIFACTS_BUCKET} ${ECSNAME} \
+	--entrypoint /scripts/spin_up_ecs.sh aws_image ${ARTIFACTS_BUCKET} ${ECSNAME} \
 	${EC_SECURITY_GROUP} $(shell cat /tmp/ec_endpoint | sed -E "s/.*:([0-9]*).*/\1/")
 
 #	-e ECRRepoURI=392630614516.dkr.ecr.us-east-1.amazonaws.com/ecr-aqfer0:latest \
 # run `make get_dns_name` to get service address
 .PHONY: get_dns_name
 get_dns_name:
-	docker-compose -f aqfer/docker-compose-aws.yml run aws-service \
+	docker-compose -f docker-compose-aws.yml run aws-service \
 	      aws elbv2 describe-load-balancers --names ${LOAD_BALANCER_NAME} 2>&1 > /tmp/DNSName
 	@echo $(shell cat /tmp/DNSName | sed -n -E "s/.*\"DNSName\".*\"(.*)\",/\1/p")
 

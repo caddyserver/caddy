@@ -57,7 +57,7 @@ get_major_version:
 
 .PHONY: get_next_version
 get_next_version:
-	@cd aqfer/scripts && go get ./... && go run ecr_get_next_version/ecr-get-next-version.go ${ROOT_NAME}_${SERVICE_NAME} $(shell cat MAJOR_VERSION) ${ECR_REGION}
+	@cd scripts && go get ./... && go run ecr_get_next_version/ecr-get-next-version.go ${ROOT_NAME}_${SERVICE_NAME} $(shell cat MAJOR_VERSION) ${ECR_REGION}
 
 sanity:
 	${eval current_version=`build-tool -operation getcurrentversion -projecttype aio -versionurl http://imds-preprod.api.aqfer.net/version`}
@@ -93,25 +93,25 @@ update_container_repo: ready_caddyfile ecr_repo_push
 # deployment environment base image
 .PHONY: build_base_image
 build_base_image:
-	docker build -f aqfer/Dockerfile.base -t base_image .
+	docker build -f Dockerfile.base -t base_image .
 
 .PHONY: build_clean_base_image
 build_clean_base_image:
-	docker build --no-cache -f aqfer/Dockerfile.base -t base_image .
+	docker build --no-cache -f Dockerfile.base -t base_image .
 
 # deployment environment image
 .PHONY: aws_build
 aws_build: build_base_image
-	docker build --no-cache -f aqfer/Dockerfile.aws -t aws_image .
+	docker build --no-cache -f Dockerfile.aws -t aws_image .
 
 
 .PHONY: build_new_caddy_image
 build_new_caddy_image: build_caddy
-	docker build --no-cache -f aqfer/Dockerfile.caddy -t ${ROOT_NAME}_${SERVICE_NAME} .
+	docker build --no-cache -f Dockerfile.caddy -t ${ROOT_NAME}_${SERVICE_NAME} .
 
 .PHONY: build_caddy_image
 build_caddy_image: build_caddy
-	docker build -f aqfer/Dockerfile.caddy -t ${ROOT_NAME}_${SERVICE_NAME} .
+	docker build -f Dockerfile.caddy -t ${ROOT_NAME}_${SERVICE_NAME} .
 
 .PHONY: build_caddy
 build_caddy: get_next_version
@@ -133,8 +133,8 @@ create_keypair:
 		-e AWS_ACCESS_KEY_ID \
 		-e AWS_SECRET_ACCESS_KEY \
 		-e Region=$$region \
-		--entrypoint /scripts/keypair.sh aws_image ${KEYPAIR_NAME} 2>&1 > aqfer/aws/${KEYPAIR_NAME}_$$region.pem ; \
-		chmod 700 aqfer/aws/${KEYPAIR_NAME}_$$region.pem ; \
+		--entrypoint /scripts/keypair.sh aws_image ${KEYPAIR_NAME} 2>&1 > aws/${KEYPAIR_NAME}_$$region.pem ; \
+		chmod 700 aws/${KEYPAIR_NAME}_$$region.pem ; \
 	done
 
 .PHONY: setup_roles
@@ -176,7 +176,7 @@ tear_down_db:
 
 .PHONY: ready_caddyfile
 ready_caddyfile:
-	cat aqfer/Caddyfile_template | sed 's/APP_LOG_GROUP_NAME/'${APP_LOG_GROUP_NAME}'/g' > aqfer/Caddyfile
+	cat Caddyfile_template | sed 's/APP_LOG_GROUP_NAME/'${APP_LOG_GROUP_NAME}'/g' > Caddyfile
 
 
 .PHONY: ecr_repo_push
@@ -184,7 +184,7 @@ ecr_repo_push: ready_caddyfile build_caddy_image ecr_push
 
 .PHONY: ecr_push
 ecr_push:
-	cd aqfer/scripts && go get ./... && go run push_docker_image/push-docker-image.go ${ROOT_NAME}_${SERVICE_NAME} ${VERSION} ${ECR_REGION}
+	cd scripts && go get ./... && go run push_docker_image/push-docker-image.go ${ROOT_NAME}_${SERVICE_NAME} ${VERSION} ${ECR_REGION}
 
 
 .PHONY: spin_up_ecs
@@ -204,7 +204,7 @@ spin_up_ecs:
 		-e ECSServiceRoleName=${ECS_SERVICE_ROLE_NAME} \
 		-e ECSTaskDefinitionName=${TASK_DEFINITION} \
 		-e ECSServiceName=${ECS_SERVICE_NAME} \
-		-e ECRRepoURI=$(shell cat aqfer/aws/ecrUri):${VERSION} \
+		-e ECRRepoURI=$(shell cat aws/ecrUri):${VERSION} \
 		-e ECRRepoName=${ROOT_NAME}_${SERVICE_NAME} \
 		-e ECRRepoRegion=${ECR_REGION} \
 		-e ImageVersion=${VERSION} \

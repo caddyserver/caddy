@@ -1,0 +1,18 @@
+FROM aqfer-caddy:latest
+
+# RUN apt-get update
+# RUN apt-get -y install vim
+
+ADD ./Caddyfile /Caddyfile
+ADD ./test.yml /.secrets.yml
+
+# auth test
+RUN mkdir -p /v1
+RUN cp /main.go /v1/main.go
+
+# transformrequest test
+RUN mkdir -p /v1/cids/asdf/entity_types/asdf/domains/asdf/keys/asdf/
+RUN cp /main.go /v1/cids/asdf/entity_types/asdf/domains/asdf/keys/asdf/main.go
+
+WORKDIR /
+CMD ./caddy

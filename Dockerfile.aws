@@ -1,0 +1,10 @@
+FROM base_image
+
+ENV PATH /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+ADD scripts /scripts
+ADD aws/ec_template_app_spec.yml /ec_template_app_spec.yml
+ADD aws/ecs_template_app_spec.yml /ecs_template_app_spec.yml
+ADD aws/iam_template_app_spec.yml /iam_template_app_spec.yml
+
+WORKDIR /

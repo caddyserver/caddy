@@ -1,0 +1,90 @@
+FROM golang:1.9
+
+# NODE ONLY NEEDED WHILE DAX IS RUN AS NODE SERVER
+# ENV NVM_DIR /root/.nvm
+# ENV NODE_VERSION 8.5.0
+
+# use bash instead of sh so nvm can be sourced
+# RUN rm /bin/sh && ln -s /bin/bash /bin/sh
+# RUN curl -o- https://raw.githubusercontent.com/creationix/nvm/v0.32.0/install.sh | bash; . $NVM_DIR/nvm.sh; nvm install $NODE_VERSION; nvm use $NODE_VERSION
+
+# ENV NODE_PATH $NVM_DIR/versions/node/v$NODE_VERSION/lib/node_modules
+# ENV PATH $NVM_DIR/versions/node/v$NODE_VERSION/bin:$PATH
+
+RUN go get gopkg.in/yaml.v2
+RUN go get github.com/aws/aws-sdk-go/aws
+RUN go get github.com/aws/aws-sdk-go/aws/awserr
+RUN go get github.com/aws/aws-sdk-go/aws/session
+RUN go get github.com/aws/aws-sdk-go/service/cloudwatchlogs
+RUN go get github.com/garyburd/redigo/redis
+RUN go get github.com/dgrijalva/jwt-go
+RUN go get github.com/pkg/errors
+RUN go get github.com/sirupsen/logrus
+RUN go get github.com/satori/go.uuid
+RUN go get github.com/pquerna/cachecontrol/cacheobject
+RUN go get github.com/lucas-clemente/quic-go
+RUN go get github.com/stretchr/testify/require
+RUN go get github.com/caddyserver/builds
+RUN go get github.com/mholt/caddy
+
+# ===== neeeded for private repos ====
+ENV GIT_TERMINAL_PROMPT 1
+
+RUN mkdir /root/.ssh/
+ARG SSH_PRIVATE_KEY
+ARG SSH_PUBLIC_KEY
+ARG GIT_USER
+
+RUN apt-get update && apt-get install -y openssh-server
+RUN mkdir -p /root/.ssh && \
+    chmod 0700 /root/.ssh && \
+    ssh-keyscan github.com > /root/.ssh/known_hosts
+
+RUN echo "$SSH_PRIVATE_KEY" | tr '?' '\n' > /root/.ssh/id_rsa
+RUN chmod 700 /root/.ssh/id_rsa
+RUN echo "$SSH_PUBLIC_KEY" | tr '?' '\n' > /root/.ssh/id_rsa.pub
+RUN chmod 700 /root/.ssh/id_rsa.pub
+
+RUN echo "    IdentityFile ~/.ssh/id_rsa" >> /etc/ssh/ssh_config
+RUN echo " User <$GIT_USER>" >> /root/.ssh/config
+RUN echo "[url \"git@github.com:\"]\n\tinsteadOf = https://github.com/" >> /root/.gitconfig
+# ===== neeeded for private repos ====
+
+# additional modules currently imported in caddy/caddymain/run.go
+RUN go get github.com/fellou89/caddy-cache
+RUN go get github.com/fellou89/caddy-reauth
+RUN go get github.com/startsmartlabs/caddy-secrets
+RUN go get github.com/startsmartlabs/caddy-awscloudwatch
+RUN go get github.com/startsmartlabs/caddy-transformrequest
+RUN go get github.com/startsmartlabs/caddy-redis
+RUN go get github.com/startsmartlabs/caddy-transformresponse
+
+# ADD ./debug/cache /go/src/github.com/fellou89/caddy-cache
+# ADD ./debug/reauth /go/src/github.com/fellou89/caddy-reauth
+# ADD ./debug/secrets /go/src/github.com/startsmartlabs/caddy-secrets
+# ADD ./debug/watch /go/src/github.com/startsmartlabs/caddy-awscloudwatch
+# ADD ./debug/request /go/src/github.com/startsmartlabs/caddy-transformrequest
+# ADD ./debug/redis /go/src/github.com/startsmartlabs/caddy-redis
+# ADD ./debug/response /go/src/github.com/startsmartlabs/caddy-transformresponse
+
+# private git repo cleanup
+# TODO: this might not be secure enough since we are putting imge in ECR
+RUN rm -rf /root/.ssh/
+
+ADD ./Caddyfile /Caddyfile
+ADD ./scripts/run_unit_tests.sh /run_unit_tests.sh
+ADD ./scripts/run_integration_tests.sh /run_integration_tests.sh
+ADD ./scripts/run_sanity_tests.sh /run_sanity_tests.sh
+
+ADD ./integration_tests/ /aqfer/integration_tests/
+
+# file used to test health check
+ADD ./main.go /main.go
+
+
+# replace caddy main.go with our own to build binary
+WORKDIR /go/src/github.com/mholt/caddy/caddy
+RUN rm main.go
+ADD ./main.go ./main.go
+
+RUN go run build.go; mv caddy /
