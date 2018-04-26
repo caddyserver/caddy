@@ -10,6 +10,8 @@ ADD ./integration_tests/ /aqfer/integration_tests/
 ADD ./scripts/run_integration_tests.sh /run_integration_tests.sh
 ADD ./scripts/run_sanity_tests.sh /run_sanity_tests.sh
 RUN mkdir /temp_cache
+RUN apt-get -qq update
+RUN apt-get install ca-certificates -y
 
 WORKDIR /
 CMD ./caddy

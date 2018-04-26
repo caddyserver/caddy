@@ -34,7 +34,7 @@ RUN mkdir /root/.ssh/
 ARG SSH_PRIVATE_KEY
 ARG SSH_PUBLIC_KEY
 ARG GIT_USER
-
+RUN update-ca-certificates
 RUN apt-get update && apt-get install -y openssh-server
 RUN mkdir -p /root/.ssh && \
     chmod 0700 /root/.ssh && \

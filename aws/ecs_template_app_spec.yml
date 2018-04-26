@@ -129,7 +129,7 @@ Resources:
       LogGroupName: !Ref AppLogGroupName
   ECSLogGroup:
     Type: AWS::Logs::LogGroup
-    Properties: 
+    Properties:
       LogGroupName: !Ref ECSLogGroupName
 
   LaunchConfiguration:
@@ -327,7 +327,7 @@ Resources:
     DependsOn:
     - LBListenerHTTP
     - LBListenerHTTPS
-    Properties: 
+    Properties:
       ServiceName: !Ref ECSServiceName
       Cluster: !Ref ECSCluster
       TaskDefinition: !Ref ECSTaskDefinition
@@ -340,7 +340,7 @@ Resources:
       - ContainerName: !Ref ContainerName
         ContainerPort: 8082
         TargetGroupArn: !Ref LBTargetGroup
-      PlacementStrategies: 
+      PlacementStrategies:
       - Field: attribute:ecs.availability-zone
         Type: spread
       - Field: instanceId
