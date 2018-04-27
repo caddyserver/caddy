@@ -15,7 +15,6 @@
 package markdown
 
 import (
-	"io"
 	"io/ioutil"
 	"os"
 
@@ -57,13 +56,8 @@ func (f FileInfo) Summarize(wordcount int) (string, error) {
 
 // Markdown processes the contents of a page in b. It parses the metadata
 // (if any) and uses the template (if found).
-func (c *Config) Markdown(title string, r io.Reader, dirents []os.FileInfo, ctx httpserver.Context) ([]byte, error) {
-	body, err := ioutil.ReadAll(r)
-	if err != nil {
-		return nil, err
-	}
-
-	parser := metadata.GetParser(body)
+func (c *Config) Markdown(title string, body string, dirents []os.FileInfo, ctx httpserver.Context) ([]byte, error) {
+	parser := metadata.GetParser([]byte(body))
 	markdown := parser.Markdown()
 	mdata := parser.Metadata()
 

@@ -17,11 +17,14 @@
 package markdown
 
 import (
+	"bytes"
+	"mime"
 	"net/http"
 	"os"
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"text/template"
 	"time"
 
@@ -43,6 +46,8 @@ type Markdown struct {
 
 	// The list of markdown configurations
 	Configs []*Config
+
+	BufPool *sync.Pool // docs: "A Pool must not be copied after first use."
 }
 
 // Config stores markdown middleware configurations.
@@ -98,75 +103,60 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 	}
 
 	var dirents []os.FileInfo
-	var lastModTime time.Time
 	fpath := r.URL.Path
-	if idx, ok := httpserver.IndexFile(md.FileSys, fpath, cfg.IndexFiles); ok {
-		// We're serving a directory index file, which may be a markdown
-		// file with a template.  Let's grab a list of files this directory
-		// URL points to, and pass that in to any possible template invocations,
-		// so that templates can customize the look and feel of a directory.
-		fdp, err := md.FileSys.Open(fpath)
-		switch {
-		case err == nil: // nop
-		case os.IsPermission(err):
-			return http.StatusForbidden, err
-		case os.IsExist(err):
-			return http.StatusNotFound, nil
-		default: // did we run out of FD?
-			return http.StatusInternalServerError, err
+
+	// get a buffer from the pool and make a response recorder
+	buf := md.BufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer md.BufPool.Put(buf)
+
+	// only buffer the response when we want to execute markdown
+	shouldBuf := func(status int, header http.Header) bool {
+		// see if this request matches a markdown extension
+		reqExt := path.Ext(fpath)
+		for ext, _ := range cfg.Extensions {
+			if reqExt == "" {
+				// request has no extension, so check response Content-Type
+				ct := mime.TypeByExtension(ext)
+				if ct != "" && strings.Contains(header.Get("Content-Type"), ct) {
+					return true
+				}
+			} else if reqExt == ext {
+				return true
+			}
 		}
-		defer fdp.Close()
-
-		// Grab a possible set of directory entries.  Note, we do not check
-		// for errors here (unreadable directory, for example).  It may
-		// still be useful to have a directory template file, without the
-		// directory contents being present.  Note, the directory's last
-		// modification is also present here (entry ".").
-		dirents, _ = fdp.Readdir(-1)
-		for _, d := range dirents {
-			lastModTime = latest(lastModTime, d.ModTime())
-		}
-
-		// Set path to found index file
-		fpath = idx
+		return false
 	}
 
-	// If not supported extension, pass on it
-	if _, ok := cfg.Extensions[path.Ext(fpath)]; !ok {
-		return md.Next.ServeHTTP(w, r)
+	// prepare a buffer to hold the response, if applicable
+	rb := httpserver.NewResponseBuffer(buf, w, shouldBuf)
+
+	// pass request up the chain to let another middleware provide us markdown
+	code, err := md.Next.ServeHTTP(rb, r)
+	if !rb.Buffered() || code >= 300 || err != nil {
+		return code, err
 	}
 
-	// At this point we have a supported extension/markdown
-	f, err := md.FileSys.Open(fpath)
-	switch {
-	case err == nil: // nop
-	case os.IsPermission(err):
-		return http.StatusForbidden, err
-	case os.IsExist(err):
-		return http.StatusNotFound, nil
-	default: // did we run out of FD?
-		return http.StatusInternalServerError, err
-	}
-	defer f.Close()
-
-	fs, err := f.Stat()
-	if err != nil {
-		return http.StatusGone, nil
-	}
-	lastModTime = latest(lastModTime, fs.ModTime())
-
+	// At this point we have a supported extension or content type for markdown
+	// create an execution context
 	ctx := httpserver.NewContextWithHeader(w.Header())
 	ctx.Root = md.FileSys
 	ctx.Req = r
 	ctx.URL = r.URL
-	html, err := cfg.Markdown(title(fpath), f, dirents, ctx)
+
+	//buf.Reset()
+	// TODO replace "test" with rb.Buffer.String()
+	html, err := cfg.Markdown(title(fpath), "test", dirents, ctx)
 	if err != nil {
 		return http.StatusInternalServerError, err
 	}
 
+	// copy the buffered header into the real ResponseWriter
+	rb.CopyHeader()
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Content-Length", strconv.Itoa(len(html)))
-	httpserver.SetLastModifiedHeader(w, lastModTime)
+	//modTime, _ := time.Parse(http.TimeFormat, w.Header().Get("Last-Modified"))
 	if r.Method == http.MethodGet {
 		w.Write(html)
 	}
