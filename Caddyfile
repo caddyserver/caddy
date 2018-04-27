@@ -6,6 +6,7 @@
   # errors stdout
   secrets s3::https://s3.amazonaws.com/aqfer-secrets/secrets.yml
   awscloudwatch debug imds development 65536
+  awss3 debug aqfer-s3-logs
 
   reauth {
     path /v1
@@ -16,7 +17,7 @@
   transformrequest
 
   # awsdynamodb DYNAMO_TABLE PARTITION_KEY SORT_KEY DAX 8086 DAX_ENDPOINT
-  redis {$REDIS_ENDPOINT}
+  redis {$REDIS_ENDPOINT} testing
 
   transformresponse
 }
