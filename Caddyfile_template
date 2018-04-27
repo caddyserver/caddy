@@ -9,7 +9,7 @@
 
   reauth {
     path /v1
-    refresh url=https://{$AUTH_ENDPOINT},skipverify=true,timeout=5s,follow=true
+    refresh url=https://{$AUTH_ENDPOINT},skipverify=true,timeout=5s,follow=true,cache_path=temp_cache,lock_timeout=5m
     failure status code=401
   }
 
