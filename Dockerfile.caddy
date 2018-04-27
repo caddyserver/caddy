@@ -3,7 +3,8 @@ FROM ubuntu
 # Throw away till here
 ADD ./caddy/caddy /caddy
 ADD ./Caddyfile /Caddyfile
-ADD ./caddy/test.go /test.go
+ADD ./caddy/.secrets.yml /.secrets.yml
+ADD ./caddy/main.go /main.go
 ADD ./scripts/run_unit_tests.sh /run_unit_tests.sh
 ADD ./integration_tests/ /integration_tests/
 ADD ./scripts/run_integration_tests.sh /run_integration_tests.sh

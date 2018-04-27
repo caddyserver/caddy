@@ -4,7 +4,8 @@
 
 :8082 {
   # errors stdout
-  secrets s3::https://s3.amazonaws.com/aqfer-secrets/secrets.yml
+  #secrets s3::https://s3.amazonaws.com/aqfer-secrets/secrets.yml
+  secrets .secrets.yml
   awscloudwatch debug APP_LOG_GROUP_NAME development 65536
 
   reauth {
