@@ -85,6 +85,12 @@ Parameters:
   ECSTaskDefinitionName:
     Description: 'ECS Task Definition name'
     Type: String
+  ECSTaskCount:
+    Description: 'ECS Task Count (Default: 6)'
+    Type: Number
+    Default: 6
+    MaxValue: 20
+    MinValue: 1
   ECRRepoName:
     Description: 'Repo Name for uploaded ECR container'
     Type: String
@@ -331,7 +337,7 @@ Resources:
       ServiceName: !Ref ECSServiceName
       Cluster: !Ref ECSCluster
       TaskDefinition: !Ref ECSTaskDefinition
-      DesiredCount: 6
+      DesiredCount: !Ref ECSTaskCount
       DeploymentConfiguration:
         MinimumHealthyPercent: 100
         MaximumPercent: 200

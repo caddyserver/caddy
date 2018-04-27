@@ -37,6 +37,7 @@ EC_SUBNET_GROUP := ${SERVICE_NAME}Cache-${STAGE}
 PARTITION_KEY := partition-key
 SORT_KEY := sort-key
 
+TASK_COUNT := 4
 TASK_DEFINITION := ${SERVICE_NAME}TaskDefinition-${STAGE}
 EC2_INSTANCE_PROFILE_NAME := ${SERVICE_NAME}EC2InstanceProfile-${STAGE}
 EC2_INSTANCE_ROLE_NAME := ${SERVICE_NAME}EC2InstanceRole-${STAGE}
@@ -204,6 +205,7 @@ spin_up_ecs:
 		-e ECSClusterName=${ECS_CLUSTER_NAME} \
 		-e ECSServiceRoleName=${ECS_SERVICE_ROLE_NAME} \
 		-e ECSTaskDefinitionName=${TASK_DEFINITION} \
+		-e ECSTaskCount=${TASK_COUNT} \
 		-e ECSServiceName=${ECS_SERVICE_NAME} \
 		-e ECRRepoURI=$(shell cat aws/ecrUri):${VERSION} \
 		-e ECRRepoName=${ROOT_NAME}_${SERVICE_NAME} \
