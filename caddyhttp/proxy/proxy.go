@@ -232,7 +232,7 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 		// headers coming back downstream
 		var downHeaderUpdateFn respUpdateFn
 		if host.DownstreamHeaders != nil {
-			downHeaderUpdateFn = createRespHeaderUpdateFn(host.DownstreamHeaders, replacer, host.UpstreamHeaderReplacements)
+			downHeaderUpdateFn = createRespHeaderUpdateFn(host.DownstreamHeaders, replacer, host.DownstreamHeaderReplacements)
 		}
 
 		// Before we retry the request we have to make sure

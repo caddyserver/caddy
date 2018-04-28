@@ -467,7 +467,7 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream, hasSrv bool) error {
 			}
 			u.upstreamHeaderReplacements.Add(header, headerReplacement{r, replaced})
 		} else {
-			if !c.Args(&header, &value) {
+			if len(value) == 0 {
 				// When removing a header, the value can be optional.
 				if !strings.HasPrefix(header, "-") {
 					return c.ArgErr()
@@ -486,9 +486,9 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream, hasSrv bool) error {
 			if err != nil {
 				return c.ArgErr()
 			}
-			u.upstreamHeaderReplacements.Add(header, headerReplacement{r, replaced})
+			u.downstreamHeaderReplacements.Add(header, headerReplacement{r, replaced})
 		} else {
-			if !c.Args(&header, &value) {
+			if len(value) == 0 {
 				// When removing a header, the value can be optional.
 				if !strings.HasPrefix(header, "-") {
 					return c.ArgErr()

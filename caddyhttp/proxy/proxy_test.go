@@ -31,6 +31,7 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -724,6 +725,14 @@ func TestUpstreamHeadersUpdate(t *testing.T) {
 		"Clear-Me":   {""},
 		"Host":       {"{>Host}"},
 	}
+	regex1, _ := regexp.Compile("was originally")
+	regex2, _ := regexp.Compile("this")
+	regex3, _ := regexp.Compile("bad")
+	upstream.host.UpstreamHeaderReplacements = headerReplacements{
+		"Regex-Me":        {headerReplacement{regex1, "am now"}, headerReplacement{regex2, "that"}},
+		"Regexreplace-Me": {headerReplacement{regex3, "{hostname}"}},
+	}
+
 	// set up proxy
 	p := &Proxy{
 		Next:      httpserver.EmptyNext, // prevents panic in some cases when test fails
@@ -740,18 +749,22 @@ func TestUpstreamHeadersUpdate(t *testing.T) {
 	r.Header.Add("Remove-Me", "Remove-Value")
 	r.Header.Add("Replace-Me", "Replace-Value")
 	r.Header.Add("Host", expectHost)
+	r.Header.Add("Regex-Me", "I was originally this")
+	r.Header.Add("Regexreplace-Me", "The host is bad")
 
 	p.ServeHTTP(w, r)
 
 	replacer := httpserver.NewReplacer(r, nil, "")
 
 	for headerKey, expect := range map[string][]string{
-		"Merge-Me":   {"Initial", "Merge-Value"},
-		"Add-Me":     {"Add-Value"},
-		"Add-Empty":  nil,
-		"Remove-Me":  nil,
-		"Replace-Me": {replacer.Replace("{hostname}")},
-		"Clear-Me":   nil,
+		"Merge-Me":        {"Initial", "Merge-Value"},
+		"Add-Me":          {"Add-Value"},
+		"Add-Empty":       nil,
+		"Remove-Me":       nil,
+		"Replace-Me":      {replacer.Replace("{hostname}")},
+		"Clear-Me":        nil,
+		"Regex-Me":        {"I am now that"},
+		"Regexreplace-Me": {"The host is " + replacer.Replace("{hostname}")},
 	} {
 		if got := actualHeaders[headerKey]; !reflect.DeepEqual(got, expect) {
 			t.Errorf("Upstream request does not contain expected %v header: expect %v, but got %v",
@@ -775,6 +788,8 @@ func TestDownstreamHeadersUpdate(t *testing.T) {
 		w.Header().Add("Replace-Me", "Replace-Value")
 		w.Header().Add("Content-Type", "text/html")
 		w.Header().Add("Overwrite-Me", "Overwrite-Value")
+		w.Header().Add("Regex-Me", "I was originally this")
+		w.Header().Add("Regexreplace-Me", "The host is bad")
 		w.Write([]byte("Hello, client"))
 	}))
 	defer backend.Close()
@@ -785,6 +800,13 @@ func TestDownstreamHeadersUpdate(t *testing.T) {
 		"+Add-Me":    {"Add-Value"},
 		"-Remove-Me": {""},
 		"Replace-Me": {"{hostname}"},
+	}
+	regex1, _ := regexp.Compile("was originally")
+	regex2, _ := regexp.Compile("this")
+	regex3, _ := regexp.Compile("bad")
+	upstream.host.DownstreamHeaderReplacements = headerReplacements{
+		"Regex-Me":        {headerReplacement{regex1, "am now"}, headerReplacement{regex2, "that"}},
+		"Regexreplace-Me": {headerReplacement{regex3, "{hostname}"}},
 	}
 	// set up proxy
 	p := &Proxy{
@@ -806,12 +828,14 @@ func TestDownstreamHeadersUpdate(t *testing.T) {
 	actualHeaders := w.Header()
 
 	for headerKey, expect := range map[string][]string{
-		"Merge-Me":     {"Initial", "Merge-Value"},
-		"Add-Me":       {"Add-Value"},
-		"Remove-Me":    nil,
-		"Replace-Me":   {replacer.Replace("{hostname}")},
-		"Content-Type": {"text/css"},
-		"Overwrite-Me": {"Overwrite-Value"},
+		"Merge-Me":        {"Initial", "Merge-Value"},
+		"Add-Me":          {"Add-Value"},
+		"Remove-Me":       nil,
+		"Replace-Me":      {replacer.Replace("{hostname}")},
+		"Content-Type":    {"text/css"},
+		"Overwrite-Me":    {"Overwrite-Value"},
+		"Regex-Me":        {"I am now that"},
+		"Regexreplace-Me": {"The host is " + replacer.Replace("{hostname}")},
 	} {
 		if got := actualHeaders[headerKey]; !reflect.DeepEqual(got, expect) {
 			t.Errorf("Downstream response does not contain expected %s header: expect %v, but got %v",
