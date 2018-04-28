@@ -18,6 +18,7 @@ package markdown
 
 import (
 	"bytes"
+	"fmt"
 	"mime"
 	"net/http"
 	"os"
@@ -144,9 +145,7 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 	ctx.Req = r
 	ctx.URL = r.URL
 
-	//buf.Reset()
-	// TODO replace "test" with rb.Buffer.String()
-	html, err := cfg.Markdown(title(fpath), "test", dirents, ctx)
+	html, err := cfg.Markdown(title(fpath), rb.Buffer.String(), dirents, ctx)
 	if err != nil {
 		return http.StatusInternalServerError, err
 	}
@@ -160,7 +159,10 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 	if r.Method == http.MethodGet {
 		w.Write(html)
 	}
-	return http.StatusOK, nil
+	// return http.StatusOK, nil
+	// http.ServeContent(rb.StatusCodeWriter(w), r, "test", modTime, bytes.NewReader(buf.Bytes()))
+
+	return 0, nil
 }
 
 // latest returns the latest time.Time

@@ -15,8 +15,10 @@
 package markdown
 
 import (
+	"bytes"
 	"net/http"
 	"path/filepath"
+	"sync"
 
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
@@ -43,6 +45,11 @@ func setup(c *caddy.Controller) error {
 		Root:    cfg.Root,
 		FileSys: http.Dir(cfg.Root),
 		Configs: mdconfigs,
+		BufPool: &sync.Pool{
+			New: func() interface{} {
+				return new(bytes.Buffer)
+			},
+		},
 	}
 
 	cfg.AddMiddleware(func(next httpserver.Handler) httpserver.Handler {
