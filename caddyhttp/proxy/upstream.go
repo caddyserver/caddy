@@ -81,11 +81,14 @@ type srvResolver interface {
 	LookupSRV(context.Context, string, string, string) (string, []*net.SRV, error)
 }
 
+// headerReplacement stores a compiled regex matcher and a string replacer, for replacement rules
 type headerReplacement struct {
 	regexp *regexp.Regexp
 	to     string
 }
 
+// headerReplacements stores a mapping of canonical MIME header to headerReplacement
+// Implements a subset of http.Header functions, to allow convenient addition and deletion of rules
 type headerReplacements map[string][]headerReplacement
 
 func (h headerReplacements) Add(key string, value headerReplacement) {

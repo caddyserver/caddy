@@ -405,9 +405,11 @@ func mutateHeadersByRules(headers, rules http.Header, repl httpserver.Replacer, 
 
 	for ruleField, ruleValues := range replacements {
 		for _, ruleValue := range ruleValues {
+			// Replace variables in replacement string
 			replacement := repl.Replace(ruleValue.to)
 			original := headers.Get(ruleField)
 			if len(replacement) > 0 && len(original) > 0 {
+				// Replace matches in original string with replacement string
 				replaced := ruleValue.regexp.ReplaceAllString(original, replacement)
 				headers.Set(ruleField, replaced)
 			}
