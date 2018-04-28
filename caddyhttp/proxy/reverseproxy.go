@@ -85,7 +85,6 @@ type ReverseProxy struct {
 	Director func(*http.Request)
 
 	// The transport used to perform proxy requests.
-	// If nil, http.DefaultTransport is used.
 	Transport http.RoundTripper
 
 	// FlushInterval specifies the flush interval
@@ -274,6 +273,15 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int, t
 			http2.ConfigureTransport(transport)
 		}
 		rp.Transport = transport
+	} else {
+		transport := &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+			Dial:  rp.dialer.Dial,
+		}
+		if httpserver.HTTP2 {
+			http2.ConfigureTransport(transport)
+		}
+		rp.Transport = transport
 	}
 	return rp
 }
@@ -282,18 +290,7 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int, t
 // when it is OK for upstream to be using a bad certificate,
 // since this transport skips verification.
 func (rp *ReverseProxy) UseInsecureTransport() {
-	if rp.Transport == nil {
-		transport := &http.Transport{
-			Proxy:               http.ProxyFromEnvironment,
-			Dial:                rp.dialer.Dial,
-			TLSHandshakeTimeout: defaultCryptoHandshakeTimeout,
-			TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
-		}
-		if httpserver.HTTP2 {
-			http2.ConfigureTransport(transport)
-		}
-		rp.Transport = transport
-	} else if transport, ok := rp.Transport.(*http.Transport); ok {
+	if transport, ok := rp.Transport.(*http.Transport); ok {
 		if transport.TLSClientConfig == nil {
 			transport.TLSClientConfig = &tls.Config{}
 		}
@@ -315,10 +312,6 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, 
 	transport := rp.Transport
 	if requestIsWebsocket(outreq) {
 		transport = newConnHijackerTransport(transport)
-	} else if transport == nil {
-		transport = &http.Transport{
-			Dial: rp.dialer.Dial,
-		}
 	}
 
 	rp.Director(outreq)
