@@ -2,12 +2,12 @@ package tests
 
 import (
 	"fmt"
+	//"io/ioutil"
+	. "github.com/startsmartlabs/caddy/integration_tests"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
-
-	. ".."
 )
 
 var client *http.Client
@@ -29,9 +29,12 @@ func run(method, path, status string, t *testing.T) *http.Response {
 		t.Log(err)
 	}
 
-	if !strings.Contains(resp.Status, status) {
+	//if body, err := ioutil.ReadAll(resp.Body); err != nil {
+	//} else {
+	if resp != nil && !strings.Contains(resp.Status, status) {
 		t.Errorf("Unexpected Status: `%s`", resp.Status)
 	}
+	//}
 
 	return resp
 }
@@ -39,24 +42,21 @@ func run(method, path, status string, t *testing.T) *http.Response {
 func TestIntegrationOftransformrequestWithRedis(t *testing.T) {
 	fmt.Println("-----TestIntegrationOfTransformrequestWithRedis-----")
 
-	// Cleanup()
 	RunDocker()
-	time.Sleep(30 * time.Second)
+	time.Sleep(10 * time.Second)
 
 	t.Log("Testing request with missing path params")
 	run("GET", "/main.go", "400", t)
 
-	// return
-
-	path := "/v1/cids/asdf/entity_types/asdf/domains/asdf/keys/asdf/main.go"
+	path := "/v1/cids/c009/entity_types/asdf/domains/asdf/keys/asdf/main.go"
 
 	t.Log("Testing request with path params, and missing security context")
 	run("GET", path, "403", t)
 
 	t.Log("Testing request with path params and security context, but wrong cid")
-	run("GET", path+"?security_context={\"scope\":{\"cids\":[\"fdsa\"]}}", "403", t)
+	run("GET", path+"?security_context={\"scope\":{\"cids\":[\"c008\"]}}", "403", t)
 
-	securityContext := "security_context={\"scope\":{\"cids\":[\"asdf\"]}}"
+	securityContext := "security_context={\"scope\":{\"cids\":[\"c009\"]}}"
 
 	t.Log("Testing request with path params and security context to allowed cid, on missing redis key")
 	run("GET", path+"?"+securityContext, "404", t)
@@ -68,7 +68,7 @@ func TestIntegrationOftransformrequestWithRedis(t *testing.T) {
 	run("GET", path+"?"+securityContext, "200", t)
 
 	// redis module only passes on execution on a 200, so no longer need for a file at end of path
-	path = "/v1/cids/asdf/entity_types/asdf/domains/asdf/keys/asdf"
+	path = "/v1/cids/c009/entity_types/asdf/domains/asdf/keys/asdf"
 
 	t.Log("Testing PUT non list value into existing redis key")
 	run("PUT", path+"?"+securityContext+"&value=asdf", "204", t)

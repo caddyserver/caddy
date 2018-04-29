@@ -1,9 +1,10 @@
 :8082 {
   errors stdout
-  secrets .secrets.yml
+  secrets s3::https://s3.amazonaws.com/aqfer-secrets/secrets.yml
+
   reauth {
-    path /ids/v1
-    refresh url=https://n0pwyybuji.execute-api.us-west-2.amazonaws.com/pre_prod,skipverify=true,timeout=5s,follow=true,cache_path=temp_cache,lock_timeout=5m
+    path /v1
+    refresh url=https://{$AUTH_ENDPOINT},skipverify=true,timeout=5s,follow=true
     failure status code=401
   }
   transformrequest

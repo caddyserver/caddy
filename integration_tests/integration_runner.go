@@ -29,8 +29,8 @@ func RunDocker() {
 		fmt.Println(out.String())
 	}
 
-	// docker = exec.Command("/bin/sh", "-c", "docker-compose -f ../docker-compose-integration.yml up")
-	docker = exec.Command("/bin/sh", "-c", "docker run -p 8082:8082 aqfer-integration")
+	docker = exec.Command("/bin/sh", "-c", "docker-compose -f ../docker-compose-integration.yml up")
+	// docker = exec.Command("/bin/sh", "-c", "docker run -p 8082:8082 aqfer-integration")
 	docker.Stdout = &out
 	docker.Stderr = &stderr
 
@@ -46,7 +46,7 @@ func RunDocker() {
 }
 
 func GetTokenWithRefresh(token string) string {
-	cmd := exec.Command("/bin/sh", "-c", "curl -X POST \"https://n0pwyybuji.execute-api.us-west-2.amazonaws.com/pre_prod/aqfer/auth/v1/access_token\" -d \"grant_type=refresh_token&refresh_token="+token+"\" -H \"Content-Type : application/x-www-form-urlencoded\" | python -m json.tool")
+	cmd := exec.Command("/bin/sh", "-c", "curl -X POST \"https://auth.api-preprod.aqfer.net/v1/access_token\" -d \"grant_type=refresh_token&refresh_token="+token+"\" -H \"Content-Type : application/x-www-form-urlencoded\" | python -m json.tool")
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	var stderr bytes.Buffer

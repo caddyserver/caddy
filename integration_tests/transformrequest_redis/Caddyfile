@@ -1,5 +1,0 @@
-:8082 {
-  errors stdout
-  transformrequest
-  redis elasticacheaqfer2.elwwyl.0001.use1.cache.amazonaws.com:6379 testing
-}
