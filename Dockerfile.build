@@ -26,6 +26,7 @@ RUN go get github.com/lucas-clemente/quic-go
 RUN go get github.com/stretchr/testify/require
 RUN go get github.com/caddyserver/builds
 RUN go get github.com/mholt/caddy
+RUN go get github.com/gin-gonic/gin/json
 
 # ===== neeeded for private repos ====
 ENV GIT_TERMINAL_PROMPT 1
@@ -82,12 +83,12 @@ ADD ./scripts/run_sanity_tests.sh /run_sanity_tests.sh
 ADD ./integration_tests/ /aqfer/integration_tests/
 
 # file used to test health check
-ADD ./main.go /main.go
+ADD ./caddy/main.go /main.go
 
 
 # replace caddy main.go with our own to build binary
 WORKDIR /go/src/github.com/mholt/caddy/caddy
 RUN rm main.go
-ADD ./main.go ./main.go
+ADD ./caddy/main.go ./main.go
 
 RUN go run build.go; mv caddy /

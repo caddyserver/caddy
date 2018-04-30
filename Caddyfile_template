@@ -7,6 +7,7 @@
   #secrets s3::https://s3.amazonaws.com/aqfer-secrets/secrets.yml
   secrets .secrets.yml
   awscloudwatch debug APP_LOG_GROUP_NAME development 65536
+  awss3 debug APP_LOG_BUCKET
 
   reauth {
     path /v1

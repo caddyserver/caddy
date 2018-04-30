@@ -28,6 +28,7 @@ SERVICE_DOMAIN_CERTIFICATE_ID := 90250d8c-396a-4c19-a488-82e301e283c0
 #SERVICE_DOMAIN_CERTIFICATE_ID := e858c27f-84c2-4f3d-a27f-be12b453f50e
 
 APP_LOG_GROUP_NAME := ${SERVICE_NAME}
+APP_LOG_BUCKET := ${SERVICE_NAME}
 KEYPAIR_NAME := ${ROOT_NAME}_${SERVICE_NAME}-${STAGE}
 
 EC_CLUSTER_NAME := ${SERVICE_NAME}Cache-${STAGE}
@@ -178,7 +179,8 @@ tear_down_db:
 
 .PHONY: ready_caddyfile
 ready_caddyfile:
-	cat Caddyfile_template | sed 's/APP_LOG_GROUP_NAME/'${APP_LOG_GROUP_NAME}'/g' > Caddyfile
+	cat Caddyfile_template | sed 's/APP_LOG_GROUP_NAME/'${APP_LOG_GROUP_NAME}'/g' > /tmp/Caddyfile
+	cat /tmp/Caddyfile | sed 's/APP_LOG_BUCKET/'${APP_LOG_BUCKET}'/g' > Caddyfile
 
 
 .PHONY: ecr_repo_push

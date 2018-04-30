@@ -65,7 +65,8 @@ update_container_repo: ready_caddyfile ecr_repo_push
 .PHONY: ready_caddyfile
 ready_caddyfile: get_db_endpoints
 	cat Caddyfile_template | sed 's/APP_LOG_GROUP_NAME/'${APP_LOG_GROUP_NAME}'/g' > /tmp/Caddyfile
-	cat /tmp/Caddyfile | sed 's/EC_ENDPOINT/'$(shell cat /tmp/ec_endpoint)'/g' > Caddyfile
+	cat /tmp/Caddyfile | sed 's/APP_LOG_BUCKET/'${APP_LOG_BUCKET}'/g' > /tmp/Caddyfile2
+	cat /tmp/Caddyfile2 | sed 's/EC_ENDPOINT/'$(shell cat /tmp/ec_endpoint)'/g' > Caddyfile
 
 .PHONY: get_db_endpoints
 get_db_endpoints:
