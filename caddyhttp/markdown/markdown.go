@@ -116,7 +116,7 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 	shouldBuf := func(status int, header http.Header) bool {
 		// see if this request matches a markdown extension
 		reqExt := path.Ext(fpath)
-		for ext, _ := range cfg.Extensions {
+		for ext := range cfg.Extensions {
 			if reqExt == "" {
 				// request has no extension, so check response Content-Type
 				ct := mime.TypeByExtension(ext)
@@ -166,17 +166,17 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 
 // TODO: This is not currently used in new implementation, do we need it?
 // latest returns the latest time.Time
-func latest(t ...time.Time) time.Time {
-	var last time.Time
+// func latest(t ...time.Time) time.Time {
+// 	var last time.Time
 
-	for _, tt := range t {
-		if tt.After(last) {
-			last = tt
-		}
-	}
+// 	for _, tt := range t {
+// 		if tt.After(last) {
+// 			last = tt
+// 		}
+// 	}
 
-	return last
-}
+// 	return last
+// }
 
 // title gives a backup generated title for a page
 func title(p string) string {
