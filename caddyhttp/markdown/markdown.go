@@ -18,7 +18,6 @@ package markdown
 
 import (
 	"bytes"
-	"fmt"
 	"mime"
 	"net/http"
 	"os"
@@ -103,7 +102,9 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 		return http.StatusMethodNotAllowed, nil
 	}
 
+	// TODO: Deal with dirents variable in new implementation
 	var dirents []os.FileInfo
+
 	fpath := r.URL.Path
 
 	// get a buffer from the pool and make a response recorder
@@ -155,16 +156,15 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Content-Length", strconv.Itoa(len(html)))
-	//modTime, _ := time.Parse(http.TimeFormat, w.Header().Get("Last-Modified"))
+	w.WriteHeader(http.StatusOK)
 	if r.Method == http.MethodGet {
 		w.Write(html)
 	}
-	// return http.StatusOK, nil
-	// http.ServeContent(rb.StatusCodeWriter(w), r, "test", modTime, bytes.NewReader(buf.Bytes()))
 
 	return 0, nil
 }
 
+// TODO: This is not currently used in new implementation, do we need it?
 // latest returns the latest time.Time
 func latest(t ...time.Time) time.Time {
 	var last time.Time
