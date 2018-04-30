@@ -17,6 +17,7 @@ aws cloudformation deploy --template-file /ecs_app_spec.yml --stack-name $2 --re
   ECSServiceRoleName=$ECSServiceRoleName \
   ECSServiceName=$ECSServiceName \
   ECSTaskDefinitionName=$ECSTaskDefinitionName \
+  ECSTaskCount=$ECSTaskCount \
   ECRRepoName=$ECRRepoName \
   ECRRepoRegion=$ECRRepoRegion \
   ImageVersion=$ImageVersion \

@@ -6,5 +6,6 @@ ADD scripts /scripts
 ADD aws/ec_template_app_spec.yml /ec_template_app_spec.yml
 ADD aws/ecs_template_app_spec.yml /ecs_template_app_spec.yml
 ADD aws/iam_template_app_spec.yml /iam_template_app_spec.yml
+RUN update-ca-certificates
 
 WORKDIR /
