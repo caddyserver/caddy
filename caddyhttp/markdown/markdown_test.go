@@ -15,16 +15,19 @@
 package markdown
 
 import (
+	"bytes"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"text/template"
 
 	"github.com/mholt/caddy"
-	"github.com/mholt/caddy/caddyhttp/httpserver"
+	//"github.com/mholt/caddy/caddyhttp/httpserver"
+	"github.com/mholt/caddy/caddyhttp/staticfiles"
 	"github.com/russross/blackfriday"
 )
 
@@ -85,10 +88,12 @@ func TestMarkdown(t *testing.T) {
 			},
 		},
 
-		Next: httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
-			t.Fatalf("Next shouldn't be called")
-			return 0, nil
-		}),
+		// Next: httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
+		// 	t.Fatalf("Next shouldn't be called")
+		// 	return 0, nil
+		// }),
+		Next:    staticfiles.FileServer{Root: http.Dir(rootDir)},
+		BufPool: &sync.Pool{New: func() interface{} { return new(bytes.Buffer) }},
 	}
 
 	get := func(url string) string {
@@ -101,8 +106,8 @@ func TestMarkdown(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if code != http.StatusOK {
-			t.Fatalf("Wrong status, expected: %d and got %d", http.StatusOK, code)
+		if code != 0 {
+			t.Fatalf("Wrong status, expected: %d and got %d", 0, code)
 		}
 		return rec.Body.String()
 	}
@@ -200,6 +205,7 @@ func setDefaultTemplate(filename string) *template.Template {
 }
 
 func TestTemplateReload(t *testing.T) {
+	rootDir := "./testdata"
 	const (
 		templateFile = "testdata/test.html"
 		targetFile   = "testdata/hello.md"
@@ -226,13 +232,15 @@ func TestTemplateReload(t *testing.T) {
 		t.Fatal(err)
 	}
 	md := Markdown{
-		Root:    "./testdata",
+		Root:    rootDir,
 		FileSys: http.Dir("./testdata"),
 		Configs: config,
-		Next: httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
-			t.Fatalf("Next shouldn't be called")
-			return 0, nil
-		}),
+		// Next: httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
+		// 	t.Fatalf("Next shouldn't be called")
+		// 	return 0, nil
+		// }),
+		Next:    staticfiles.FileServer{Root: http.Dir(rootDir)},
+		BufPool: &sync.Pool{New: func() interface{} { return new(bytes.Buffer) }},
 	}
 
 	req := httptest.NewRequest("GET", "/hello.md", nil)
@@ -242,8 +250,8 @@ func TestTemplateReload(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if code != http.StatusOK {
-			t.Fatalf("Wrong status, expected: %d and got %d", http.StatusOK, code)
+		if code != 0 {
+			t.Fatalf("Wrong status, expected: %d and got %d", 0, code)
 		}
 		return rec.Body.String()
 	}
