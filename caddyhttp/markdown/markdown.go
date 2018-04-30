@@ -139,11 +139,6 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 		return code, err
 	}
 
-	// TODO: Skip markdown if not correct extension or Content-Type
-	// if _, ok := cfg.Extensions[path.Ext(fpath)]; !ok {
-	// 	return md.Next.ServeHTTP(w, r)
-	// }
-
 	// At this point we have a supported extension or content type for markdown
 	// create an execution context
 	ctx := httpserver.NewContextWithHeader(w.Header())
