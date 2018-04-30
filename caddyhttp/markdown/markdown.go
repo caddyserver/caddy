@@ -26,7 +26,6 @@ import (
 	"strings"
 	"sync"
 	"text/template"
-	"time"
 
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 	"github.com/russross/blackfriday"
