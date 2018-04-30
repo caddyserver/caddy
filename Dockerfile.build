@@ -57,18 +57,18 @@ RUN go get github.com/startsmartlabs/development/thiru/aqfer_io_handler_spec
 RUN go get github.com/freman/caddy-reauth
 RUN go get github.com/startsmartlabs/caddy-secrets
 RUN go get github.com/startsmartlabs/caddy-awscloudwatch
-# RUN go get github.com/startsmartlabs/caddy-awss3
+RUN go get github.com/startsmartlabs/caddy-awss3
 RUN go get github.com/startsmartlabs/caddy-transformrequest
-# RUN go get github.com/startsmartlabs/caddy-redis
-# RUN go get github.com/startsmartlabs/caddy-transformresponse
+RUN go get github.com/startsmartlabs/caddy-redis
+RUN go get github.com/startsmartlabs/caddy-transformresponse
 
 # ADD ./debug/reauth /go/src/github.com/freman/caddy-reauth
 # ADD ./debug/secrets /go/src/github.com/startsmartlabs/caddy-secrets
 # ADD ./debug/watch /go/src/github.com/startsmartlabs/caddy-awscloudwatch
-ADD ./debug/s3 /go/src/github.com/startsmartlabs/caddy-awss3
+# ADD ./debug/s3 /go/src/github.com/startsmartlabs/caddy-awss3
 # ADD ./debug/request /go/src/github.com/startsmartlabs/caddy-transformrequest
-ADD ./debug/redis /go/src/github.com/startsmartlabs/caddy-redis
-ADD ./debug/response /go/src/github.com/startsmartlabs/caddy-transformresponse
+# ADD ./debug/redis /go/src/github.com/startsmartlabs/caddy-redis
+# ADD ./debug/response /go/src/github.com/startsmartlabs/caddy-transformresponse
 
 # private git repo cleanup
 # TODO: this might not be secure enough since we are putting imge in ECR
