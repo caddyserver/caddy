@@ -121,7 +121,7 @@ func TestFullStack(t *testing.T) {
 		if (*data)["value"].S == "fdsa" {
 			t.Errorf("State of database is different than expected, got: `" + string(all) + "`")
 		}
-		if (*data)["value"].Sl != nil {
+		if (*data)["value"].Sl == nil {
 			t.Errorf("Expected entity to contain list, got: nil")
 		}
 	}
