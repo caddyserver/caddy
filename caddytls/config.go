@@ -432,7 +432,7 @@ func MakeTLSConfig(configs []*Config) (*tls.Config, error) {
 		// compatible), otherwise that is a configuration error
 		if otherConfig, ok := configMap[cfg.Hostname]; ok {
 			if err := assertConfigsCompatible(cfg, otherConfig); err != nil {
-				return nil, fmt.Errorf("incompabile TLS configurations for the same SNI "+
+				return nil, fmt.Errorf("incompatible TLS configurations for the same SNI "+
 					"name (%s) on the same listener: %v",
 					cfg.Hostname, err)
 			}
