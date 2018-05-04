@@ -26,7 +26,6 @@ import (
 	"text/template"
 
 	"github.com/mholt/caddy"
-	//"github.com/mholt/caddy/caddyhttp/httpserver"
 	"github.com/mholt/caddy/caddyhttp/staticfiles"
 	"github.com/russross/blackfriday"
 )
@@ -88,10 +87,6 @@ func TestMarkdown(t *testing.T) {
 			},
 		},
 
-		// Next: httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
-		// 	t.Fatalf("Next shouldn't be called")
-		// 	return 0, nil
-		// }),
 		Next:    staticfiles.FileServer{Root: http.Dir(rootDir)},
 		BufPool: &sync.Pool{New: func() interface{} { return new(bytes.Buffer) }},
 	}

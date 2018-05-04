@@ -47,7 +47,7 @@ type Markdown struct {
 	// The list of markdown configurations
 	Configs []*Config
 
-	BufPool *sync.Pool // docs: "A Pool must not be copied after first use."
+	BufPool *sync.Pool
 }
 
 // Config stores markdown middleware configurations.
@@ -160,20 +160,6 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 
 	return 0, nil
 }
-
-// TODO: This is not currently used in new implementation, do we need it?
-// latest returns the latest time.Time
-// func latest(t ...time.Time) time.Time {
-// 	var last time.Time
-
-// 	for _, tt := range t {
-// 		if tt.After(last) {
-// 			last = tt
-// 		}
-// 	}
-
-// 	return last
-// }
 
 // title gives a backup generated title for a page
 func title(p string) string {
