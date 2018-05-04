@@ -44,7 +44,7 @@ func TestConfig_Markdown(t *testing.T) {
 		}
 		toml = toml + "\n+++"
 
-		res, _ := config.Markdown("Test title", toml, []os.FileInfo{}, httpserver.Context{})
+		res, _ := config.Markdown("Test title", []byte(toml), []os.FileInfo{}, httpserver.Context{})
 		sRes := string(res)
 
 		for key, val := range meta {

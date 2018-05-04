@@ -26,6 +26,7 @@ import (
 	"strings"
 	"sync"
 	"text/template"
+	"time"
 
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 	"github.com/russross/blackfriday"
@@ -138,7 +139,13 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 	ctx.Req = r
 	ctx.URL = r.URL
 
-	html, err := cfg.Markdown(title(fpath), rb.Buffer.String(), dirents, ctx)
+	// Create html variable and fill it with markdown if possible
+	var html []byte
+	// Make sure the buffer is not empty
+	// This can happen in the case of a HEAD request
+	if rb.Buffer.Len() != 0 {
+		html, err = cfg.Markdown(title(fpath), rb.Buffer.Bytes(), dirents, ctx)
+	}
 	if err != nil {
 		return http.StatusInternalServerError, err
 	}
@@ -148,10 +155,8 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Content-Length", strconv.Itoa(len(html)))
-	w.WriteHeader(http.StatusOK)
-	if r.Method == http.MethodGet {
-		w.Write(html)
-	}
+	lastModTime, _ := time.Parse(http.TimeFormat, w.Header().Get("Last-Modified"))
+	http.ServeContent(rb.StatusCodeWriter(w), r, fpath, lastModTime, bytes.NewReader(html))
 
 	return 0, nil
 }
