@@ -613,7 +613,17 @@ func (u *staticUpstream) Select(r *http.Request) *UpstreamHost {
 
 func (u *staticUpstream) AllowedPath(requestPath string) bool {
 	for _, ignoredSubPath := range u.IgnoredSubPaths {
-		if httpserver.Path(path.Clean(requestPath)).Matches(path.Join(u.From(), ignoredSubPath)) {
+		p := httpserver.Path(path.Clean(requestPath))
+		e := path.Join(u.From(), ignoredSubPath)
+		// Re-add a trailing slashes if the
+		// excepted paths had one originally
+		if requestPath[len(requestPath)-1] == '/' {
+			p = p + "/"
+		}
+		if ignoredSubPath[len(ignoredSubPath)-1] == '/' {
+			e = e + "/"
+		}
+		if p.Matches(e) {
 			return false
 		}
 	}
