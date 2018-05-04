@@ -41,6 +41,11 @@ func setup(c *caddy.Controller) error {
 
 	cfg := httpserver.GetConfig(c)
 
+	// Add markdown index files to *SiteConfig.IndexPages
+	for _, mdc := range mdconfigs {
+		cfg.IndexPages = append(cfg.IndexPages, mdc.IndexFiles...)
+	}
+
 	md := Markdown{
 		Root:    cfg.Root,
 		FileSys: http.Dir(cfg.Root),

@@ -94,13 +94,6 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 		return md.Next.ServeHTTP(w, r) // exit early
 	}
 
-	// We only deal with HEAD/GET
-	switch r.Method {
-	case http.MethodGet, http.MethodHead:
-	default:
-		return http.StatusMethodNotAllowed, nil
-	}
-
 	// TODO: Deal with dirents variable in new implementation
 	var dirents []os.FileInfo
 
