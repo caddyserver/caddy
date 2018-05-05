@@ -43,7 +43,17 @@ func setup(c *caddy.Controller) error {
 
 	// Add markdown index files to *SiteConfig.IndexPages
 	for _, mdc := range mdconfigs {
-		cfg.IndexPages = append(cfg.IndexPages, mdc.IndexFiles...)
+		for _, indexFile := range mdc.IndexFiles {
+			inIndexPages := false
+			for _, indexPage := range cfg.IndexPages {
+				if indexFile == indexPage {
+					inIndexPages = true
+				}
+			}
+			if inIndexPages == false {
+				cfg.IndexPages = append(cfg.IndexPages, indexFile)
+			}
+		}
 	}
 
 	md := Markdown{
