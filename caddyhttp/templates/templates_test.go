@@ -114,6 +114,16 @@ func TestTemplates(t *testing.T) {
 			res: `<!DOCTYPE html><html><head><title>as it is</title></head><body>{{.Include "header.html"}}</body></html>
 `,
 		},
+
+		// test 301 redirects
+		{
+			tpl:      tmplroot,
+			req:      "/images",
+			respCode: http.StatusMovedPermanently,
+			res: `<a href="/images/">Moved Permanently</a>.
+
+`,
+		},
 	} {
 		c := c
 		t.Run("", func(t *testing.T) {
