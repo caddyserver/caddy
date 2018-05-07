@@ -48,6 +48,10 @@ func (t Templates) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 
 		// only buffer the response when we want to execute a template
 		shouldBuf := func(status int, header http.Header) bool {
+			// do not buffer if redirect or error
+			if status >= 300 {
+				return false
+			}
 			// see if this request matches a template extension
 			reqExt := path.Ext(fpath)
 			for _, ext := range rule.Extensions {
@@ -70,9 +74,6 @@ func (t Templates) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 		// pass request up the chain to let another middleware provide us the template
 		code, err := t.Next.ServeHTTP(rb, r)
 		if !rb.Buffered() || code >= 300 || err != nil {
-			if code >= 300 && code < 400 {
-				continue
-			}
 			return code, err
 		}
 
