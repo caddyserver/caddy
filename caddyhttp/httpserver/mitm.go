@@ -67,7 +67,7 @@ func (h *tlsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ua := r.Header.Get("User-Agent")
 
 	// report this request's UA in connection with this ClientHello
-	go telemetry.AppendUnique("tls_client_hello_ua:"+info.Key(), ua)
+	go telemetry.AppendUnique("tls_client_hello_ua:"+caddytls.ClientHelloInfo(info).Key(), ua)
 
 	var checked, mitm bool
 	if r.Header.Get("X-BlueCoat-Via") != "" || // Blue Coat (masks User-Agent header to generic values)
@@ -212,7 +212,7 @@ func (c *clientHelloConn) Read(b []byte) (n int, err error) {
 	c.listener.helloInfosMu.Unlock()
 
 	// report this ClientHello to telemetry
-	chKey := rawParsed.Key()
+	chKey := caddytls.ClientHelloInfo(rawParsed).Key()
 	go telemetry.SetNested("tls_client_hello", chKey, rawParsed)
 	go telemetry.AppendUnique("tls_client_hello_count", chKey)
 
@@ -374,7 +374,7 @@ func (l *tlsHelloListener) Accept() (net.Conn, error) {
 // by Durumeric, Halderman, et. al. in
 // "The Security Impact of HTTPS Interception":
 // https://jhalderm.com/pub/papers/interception-ndss17.pdf
-type rawHelloInfo struct{ caddytls.ClientHelloInfo }
+type rawHelloInfo caddytls.ClientHelloInfo
 
 // advertisesHeartbeatSupport returns true if info indicates
 // that the client supports the Heartbeat extension.
