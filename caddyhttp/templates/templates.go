@@ -73,7 +73,7 @@ func (t Templates) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 
 		// pass request up the chain to let another middleware provide us the template
 		code, err := t.Next.ServeHTTP(rb, r)
-		if !rb.Buffered() || code >= 300 || err != nil {
+		if !rb.Buffered() || err != nil {
 			return code, err
 		}
 
