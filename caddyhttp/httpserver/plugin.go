@@ -67,6 +67,12 @@ func init() {
 	caddy.RegisterParsingCallback(serverType, "root", hideCaddyfile)
 	caddy.RegisterParsingCallback(serverType, "tls", activateHTTPS)
 	caddytls.RegisterConfigGetter(serverType, func(c *caddy.Controller) *caddytls.Config { return GetConfig(c).TLS })
+
+	// disable the caddytls package reporting ClientHellos
+	// to telemetry, since our MITM detector does this but
+	// with more information than the standard lib provides
+	// (as of May 2018)
+	caddytls.ClientHelloTelemetry = false
 }
 
 // hideCaddyfile hides the source/origin Caddyfile if it is within the

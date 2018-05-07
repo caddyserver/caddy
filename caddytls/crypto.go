@@ -341,7 +341,7 @@ func standaloneTLSTicketKeyRotation(c *tls.Config, ticker *time.Ticker, exitChan
 // Do not use this for cryptographic purposes.
 func fastHash(input []byte) string {
 	h := fnv.New32a()
-	h.Write([]byte(input))
+	h.Write(input)
 	return fmt.Sprintf("%x", h.Sum32())
 }
 

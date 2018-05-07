@@ -16,6 +16,7 @@ package telemetry
 
 import (
 	"log"
+	"strings"
 
 	"github.com/google/uuid"
 )
@@ -117,14 +118,55 @@ func Set(key string, val interface{}) {
 		return
 	}
 	bufferMu.Lock()
-	if bufferItemCount >= maxBufferItems {
-		bufferMu.Unlock()
-		return
-	}
 	if _, ok := buffer[key]; !ok {
+		if bufferItemCount >= maxBufferItems {
+			bufferMu.Unlock()
+			return
+		}
 		bufferItemCount++
 	}
 	buffer[key] = val
+	bufferMu.Unlock()
+}
+
+// SetNested puts a value in the buffer to be included
+// in the next emission, nested under the top-level key
+// as subkey. It overwrites any previous value.
+//
+// This function is safe for multiple goroutines,
+// and it is recommended to call this using the
+// go keyword after the call to SendHello so it
+// doesn't block crucial code.
+func SetNested(key, subkey string, val interface{}) {
+	if !enabled || isDisabled(key) {
+		return
+	}
+	bufferMu.Lock()
+	if topLevel, ok1 := buffer[key]; ok1 {
+		topLevelMap, ok2 := topLevel.(map[string]interface{})
+		if !ok2 {
+			bufferMu.Unlock()
+			log.Printf("[PANIC] Telemetry: key %s is already used for non-nested-map value", key)
+			return
+		}
+		if _, ok3 := topLevelMap[subkey]; !ok3 {
+			// don't exceed max buffer size
+			if bufferItemCount >= maxBufferItems {
+				bufferMu.Unlock()
+				return
+			}
+			bufferItemCount++
+		}
+		topLevelMap[subkey] = val
+	} else {
+		// don't exceed max buffer size
+		if bufferItemCount >= maxBufferItems {
+			bufferMu.Unlock()
+			return
+		}
+		bufferItemCount++
+		buffer[key] = map[string]interface{}{subkey: val}
+	}
 	bufferMu.Unlock()
 }
 
@@ -161,7 +203,8 @@ func Append(key string, value interface{}) {
 // AppendUnique adds value to a set named key.
 // Set items are unordered. Values in the set
 // are unique, but how many times they are
-// appended is counted.
+// appended is counted. The value must be
+// hashable.
 //
 // If key is new, a new set will be created for
 // values with that key. If key maps to a type
@@ -238,8 +281,16 @@ func atomicAdd(key string, amount int) {
 // functions should call this and not
 // save the value if this returns true.
 func isDisabled(key string) bool {
+	// for keys that are augmented with data, such as
+	// "tls_client_hello_ua:<hash>", just
+	// check the prefix "tls_client_hello_ua"
+	checkKey := key
+	if idx := strings.Index(key, ":"); idx > -1 {
+		checkKey = key[:idx]
+	}
+
 	disabledMetricsMu.RLock()
-	_, ok := disabledMetrics[key]
+	_, ok := disabledMetrics[checkKey]
 	disabledMetricsMu.RUnlock()
 	return ok
 }

@@ -349,8 +349,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	// TODO: Somehow report UA string in conjunction with TLS handshake, if any (and just once per connection)
-	go telemetry.AppendUnique("http_user_agent", r.Header.Get("User-Agent"))
+	// record the User-Agent string (with a cap on its length to mitigate attacks)
+	ua := r.Header.Get("User-Agent")
+	if len(ua) > 512 {
+		ua = ua[:512]
+	}
+	go telemetry.AppendUnique("http_user_agent", ua)
 	go telemetry.Increment("http_request_count")
 
 	// copy the original, unchanged URL into the context

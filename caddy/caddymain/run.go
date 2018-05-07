@@ -91,7 +91,10 @@ func Run() {
 
 	// initialize telemetry client
 	if enableTelemetry {
-		initTelemetry()
+		err := initTelemetry()
+		if err != nil {
+			mustLogFatalf("[ERROR] Initializing telemetry: %v", err)
+		}
 	} else if disabledMetrics != "" {
 		mustLogFatalf("[ERROR] Cannot disable specific metrics because telemetry is disabled")
 	}
@@ -293,7 +296,7 @@ func setCPU(cpu string) error {
 }
 
 // initTelemetry initializes the telemetry engine.
-func initTelemetry() {
+func initTelemetry() error {
 	uuidFilename := filepath.Join(caddy.AssetsPath(), "uuid")
 
 	newUUID := func() uuid.UUID {
@@ -329,7 +332,34 @@ func initTelemetry() {
 		}
 	}
 
-	telemetry.Init(id, strings.Split(disabledMetrics, ","))
+	// parse and check the list of disabled metrics
+	var disabledMetricsSlice []string
+	if len(disabledMetrics) > 0 {
+		if len(disabledMetrics) > 1024 {
+			// mitigate disk space exhaustion at the collection endpoint
+			return fmt.Errorf("too many metrics to disable")
+		}
+		disabledMetricsSlice = strings.Split(disabledMetrics, ",")
+		for i, metric := range disabledMetricsSlice {
+			if metric == "instance_id" || metric == "timestamp" || metric == "disabled_metrics" {
+				return fmt.Errorf("instance_id, timestamp, and disabled_metrics cannot be disabled")
+			}
+			if metric == "" {
+				disabledMetricsSlice = append(disabledMetricsSlice[:i], disabledMetricsSlice[i+1:]...)
+			}
+		}
+	}
+
+	// initialize telemetry
+	telemetry.Init(id, disabledMetricsSlice)
+
+	// if any metrics were disabled, report it
+	if len(disabledMetricsSlice) > 0 {
+		telemetry.Set("disabled_metrics", disabledMetricsSlice)
+		log.Printf("[NOTICE] The following telemetry metrics are disabled: %s", disabledMetrics)
+	}
+
+	return nil
 }
 
 const appName = "Caddy"

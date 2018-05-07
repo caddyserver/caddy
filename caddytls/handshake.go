@@ -99,25 +99,23 @@ func (cg configGroup) GetConfigForClient(clientHello *tls.ClientHelloInfo) (*tls
 //
 // This method is safe for use as a tls.Config.GetCertificate callback.
 func (cfg *Config) GetCertificate(clientHello *tls.ClientHelloInfo) (*tls.Certificate, error) {
-	// TODO: We need to collect this in a heavily de-duplicating way
-	// It would also be nice to associate a handshake with the UA string (but that is only for HTTP server type)
-	// go telemetry.Append("tls_client_hello", struct {
-	// 	NoSNI             bool                  `json:"no_sni,omitempty"`
-	// 	CipherSuites      []uint16              `json:"cipher_suites,omitempty"`
-	// 	SupportedCurves   []tls.CurveID         `json:"curves,omitempty"`
-	// 	SupportedPoints   []uint8               `json:"points,omitempty"`
-	// 	SignatureSchemes  []tls.SignatureScheme `json:"sig_scheme,omitempty"`
-	// 	ALPN              []string              `json:"alpn,omitempty"`
-	// 	SupportedVersions []uint16              `json:"versions,omitempty"`
-	// }{
-	// 	NoSNI:             clientHello.ServerName == "",
-	// 	CipherSuites:      clientHello.CipherSuites,
-	// 	SupportedCurves:   clientHello.SupportedCurves,
-	// 	SupportedPoints:   clientHello.SupportedPoints,
-	// 	SignatureSchemes:  clientHello.SignatureSchemes,
-	// 	ALPN:              clientHello.SupportedProtos,
-	// 	SupportedVersions: clientHello.SupportedVersions,
-	// })
+	if ClientHelloTelemetry {
+		// If no other plugin (such as the HTTP server type) is implementing ClientHello telemetry, we do it.
+		// NOTE: The values in the Go standard lib's ClientHelloInfo aren't guaranteed to be in order.
+		info := ClientHelloInfo{
+			Version:                   clientHello.SupportedVersions[0], // report the highest
+			CipherSuites:              clientHello.CipherSuites,
+			ExtensionsUnknown:         true, // no extension info... :(
+			CompressionMethodsUnknown: true, // no compression methods... :(
+			Curves: clientHello.SupportedCurves,
+			Points: clientHello.SupportedPoints,
+			// We also have, but do not yet use: SignatureSchemes, ServerName, and SupportedProtos (ALPN)
+			// because the standard lib parses some extensions, but our MITM detector generally doesn't.
+		}
+		go telemetry.SetNested("tls_client_hello", info.Key(), info)
+	}
+
+	// get the certificate and serve it up
 	cert, err := cfg.getCertDuringHandshake(strings.ToLower(clientHello.ServerName), true, true)
 	if err == nil {
 		go telemetry.Increment("tls_handshake_count") // TODO: This is a "best guess" for now, we need something listener-level
@@ -487,6 +485,42 @@ func (cfg *Config) renewDynamicCertificate(name string, currentCert Certificate)
 	return cfg.getCertDuringHandshake(name, true, false)
 }
 
+// ClientHelloInfo is our own version of the standard lib's
+// tls.ClientHelloInfo. As of May 2018, any fields populated
+// by the Go standard library are not guaranteed to have their
+// values in the original order as on the wire.
+type ClientHelloInfo struct {
+	Version            uint16        `json:"version,omitempty"`
+	CipherSuites       []uint16      `json:"cipher_suites,omitempty"`
+	Extensions         []uint16      `json:"extensions,omitempty"`
+	CompressionMethods []byte        `json:"compression,omitempty"`
+	Curves             []tls.CurveID `json:"curves,omitempty"`
+	Points             []uint8       `json:"points,omitempty"`
+
+	// Whether a couple of fields are unknown; if not, the key will encode
+	// differently to reflect that, as opposed to being known empty values.
+	// (some fields may be unknown depending on what package is being used;
+	// i.e. the Go standard lib doesn't expose some things)
+	// (very important to NOT encode these to JSON)
+	ExtensionsUnknown         bool `json:"-"`
+	CompressionMethodsUnknown bool `json:"-"`
+}
+
+// Key returns a standardized string form of the data in info,
+// useful for identifying duplicates.
+func (info ClientHelloInfo) Key() string {
+	extensions, compressionMethods := "?", "?"
+	if !info.ExtensionsUnknown {
+		extensions = fmt.Sprintf("%x", info.Extensions)
+	}
+	if !info.CompressionMethodsUnknown {
+		compressionMethods = fmt.Sprintf("%x", info.CompressionMethods)
+	}
+	return fastHash([]byte(fmt.Sprintf("%x-%x-%s-%s-%x-%x",
+		info.Version, info.CipherSuites, extensions,
+		compressionMethods, info.Curves, info.Points)))
+}
+
 // obtainCertWaitChans is used to coordinate obtaining certs for each hostname.
 var obtainCertWaitChans = make(map[string]chan struct{})
 var obtainCertWaitChansMu sync.Mutex
@@ -501,3 +535,8 @@ var failedIssuanceMu sync.RWMutex
 // If this value is recent, do not make any on-demand certificate requests.
 var lastIssueTime time.Time
 var lastIssueTimeMu sync.Mutex
+
+// ClientHelloTelemetry determines whether to report
+// TLS ClientHellos to telemetry. Disable if doing
+// it from a different package.
+var ClientHelloTelemetry = true
