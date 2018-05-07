@@ -91,7 +91,7 @@ func TestMarkdown(t *testing.T) {
 		BufPool: &sync.Pool{New: func() interface{} { return new(bytes.Buffer) }},
 	}
 
-	get := func(url string) string {
+	get := func(url string, expectedCode int) string {
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
 			t.Fatalf("Could not create HTTP request: %v", err)
@@ -101,13 +101,13 @@ func TestMarkdown(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if code != 0 {
-			t.Fatalf("Wrong status, expected: %d and got %d", 0, code)
+		if code != expectedCode {
+			t.Fatalf("Wrong status, expected: %d and got %d", expectedCode, code)
 		}
 		return rec.Body.String()
 	}
 
-	respBody := get("/blog/test.md")
+	respBody := get("/blog/test.md", 0)
 	expectedBody := `<!DOCTYPE html>
 <html>
 <head>
@@ -132,7 +132,7 @@ Welcome to A Caddy website!
 		t.Fatalf("Expected body:\n%q\ngot:\n%q", expectedBody, respBody)
 	}
 
-	respBody = get("/docflags/test.md")
+	respBody = get("/docflags/test.md", 0)
 	expectedBody = `Doc.var_string hello
 Doc.var_bool true
 `
@@ -141,7 +141,7 @@ Doc.var_bool true
 		t.Fatalf("Expected body:\n%q\ngot:\n%q", expectedBody, respBody)
 	}
 
-	respBody = get("/log/test.md")
+	respBody = get("/log/test.md", 0)
 	expectedBody = `<!DOCTYPE html>
 <html>
 	<head>
@@ -170,7 +170,7 @@ Doc.var_bool true
 		t.Fatalf("Expected body:\n%q\ngot:\n%q", expectedBody, respBody)
 	}
 
-	respBody = get("/og/first.md")
+	respBody = get("/og/first.md", 0)
 	expectedBody = `<!DOCTYPE html>
 <html>
 <head>
@@ -183,6 +183,15 @@ Welcome to title!
 
 </body>
 </html>
+`
+
+	if respBody != expectedBody {
+		t.Fatalf("Expected body:\n%q\ngot:\n%q", expectedBody, respBody)
+	}
+
+	respBody = get("/blog", 301)
+	expectedBody = `<a href="/blog/">Moved Permanently</a>.
+
 `
 
 	if respBody != expectedBody {

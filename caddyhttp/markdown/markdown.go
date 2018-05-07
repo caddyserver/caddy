@@ -110,6 +110,10 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 		// see if this request matches a markdown extension
 		reqExt := path.Ext(fpath)
 		for ext := range cfg.Extensions {
+			// do not buffer if redirect or error
+			if status >= 300 {
+				return false
+			}
 			if reqExt == "" {
 				// request has no extension, so check response Content-Type
 				ct := mime.TypeByExtension(ext)
@@ -128,7 +132,7 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 
 	// pass request up the chain to let another middleware provide us markdown
 	code, err := md.Next.ServeHTTP(rb, r)
-	if !rb.Buffered() || code >= 300 || err != nil {
+	if !rb.Buffered() || err != nil {
 		return code, err
 	}
 
