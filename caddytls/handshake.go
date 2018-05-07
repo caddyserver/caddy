@@ -99,7 +99,7 @@ func (cg configGroup) GetConfigForClient(clientHello *tls.ClientHelloInfo) (*tls
 //
 // This method is safe for use as a tls.Config.GetCertificate callback.
 func (cfg *Config) GetCertificate(clientHello *tls.ClientHelloInfo) (*tls.Certificate, error) {
-	if ClientHelloTelemetry {
+	if ClientHelloTelemetry && len(clientHello.SupportedVersions) > 0 {
 		// If no other plugin (such as the HTTP server type) is implementing ClientHello telemetry, we do it.
 		// NOTE: The values in the Go standard lib's ClientHelloInfo aren't guaranteed to be in order.
 		info := ClientHelloInfo{
