@@ -70,7 +70,9 @@ func (c *Config) Markdown(title string, body []byte, dirents []os.FileInfo, ctx 
 	html := blackfriday.Markdown(markdown, c.Renderer, extns)
 
 	// set it as body for template
-	mdata.Variables["body"] = string(html)
+	if mdata.Variables["body"] == "" {
+		mdata.Variables["body"] = string(html)
+	}
 
 	// fixup title
 	mdata.Variables["title"] = mdata.Title
