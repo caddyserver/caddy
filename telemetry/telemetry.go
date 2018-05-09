@@ -38,6 +38,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math/rand"
 	"net/http"
 	"strconv"
 	"strings"
@@ -202,9 +203,9 @@ func emit(final bool) error {
 	// schedule the next update using our default update
 	// interval because the server might be healthy later
 
-	// ensure we won't slam the telemetry server
+	// ensure we won't slam the telemetry server; add a little variance
 	if reply.NextUpdate < 1*time.Second {
-		reply.NextUpdate = defaultUpdateInterval
+		reply.NextUpdate = defaultUpdateInterval + time.Duration(rand.Intn(int(1*time.Minute)))
 	}
 
 	// schedule the next update (if this wasn't the last one and
@@ -345,7 +346,13 @@ func (s countingSet) MarshalJSON() ([]byte, error) {
 var (
 	// httpClient should be used for HTTP requests. It
 	// is configured with a timeout for reliability.
-	httpClient = http.Client{Timeout: 1 * time.Minute}
+	httpClient = http.Client{
+		Transport: &http.Transport{
+			TLSHandshakeTimeout: 30 * time.Second,
+			DisableKeepAlives:   true,
+		},
+		Timeout: 1 * time.Minute,
+	}
 
 	// buffer holds the data that we are building up to send.
 	buffer          = make(map[string]interface{})

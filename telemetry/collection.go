@@ -44,7 +44,7 @@ func Init(instanceID uuid.UUID, disabledMetricsKeys []string) {
 	instanceUUID = instanceID
 	disabledMetricsMu.Lock()
 	for _, key := range disabledMetricsKeys {
-		disabledMetrics[key] = false
+		disabledMetrics[strings.TrimSpace(key)] = false
 	}
 	disabledMetricsMu.Unlock()
 	enabled = true

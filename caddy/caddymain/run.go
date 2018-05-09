@@ -388,6 +388,6 @@ var (
 	gitCommit        string // git rev-parse HEAD
 	gitShortStat     string // git diff-index --shortstat
 	gitFilesModified string // git diff-index --name-only HEAD
-
-	enableTelemetry = true
 )
+
+const enableTelemetry = true
