@@ -95,7 +95,8 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 	}
 
 	originalMethod := r.Method
-	// If HEAD request
+	// If HEAD request, temporarily set to GET so that staticfiles or proxy
+	// will send content and we can calculate content-length correctly for HEAD requests
 	if r.Method == http.MethodHead {
 		r.Method = http.MethodGet
 	}
