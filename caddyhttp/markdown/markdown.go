@@ -151,15 +151,16 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 		return http.StatusInternalServerError, err
 	}
 
+	// reset to original HTTP method if we changed it
+	if r.Method != originalMethod {
+		r.Method = originalMethod
+	}
+
 	// copy the buffered header into the real ResponseWriter
 	rb.CopyHeader()
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	lastModTime, _ := time.Parse(http.TimeFormat, w.Header().Get("Last-Modified"))
-	// reset to original HTTP method if we changed it
-	if r.Method != originalMethod {
-		r.Method = originalMethod
-	}
 	http.ServeContent(rb.StatusCodeWriter(w), r, fpath, lastModTime, bytes.NewReader(html))
 
 	return 0, nil
