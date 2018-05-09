@@ -21,7 +21,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/codahale/aesnicheck"
+	"github.com/klauspost/cpuid"
 )
 
 func TestConvertTLSConfigProtocolVersions(t *testing.T) {
@@ -98,7 +98,7 @@ func TestConvertTLSConfigCipherSuites(t *testing.T) {
 
 func TestGetPreferredDefaultCiphers(t *testing.T) {
 	expectedCiphers := defaultCiphers
-	if !aesnicheck.HasAESNI() {
+	if !cpuid.CPU.AesNi() {
 		expectedCiphers = defaultCiphersNonAESNI
 	}
 
