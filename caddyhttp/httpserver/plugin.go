@@ -30,6 +30,7 @@ import (
 	"github.com/mholt/caddy/caddyfile"
 	"github.com/mholt/caddy/caddyhttp/staticfiles"
 	"github.com/mholt/caddy/caddytls"
+	"github.com/mholt/caddy/telemetry"
 )
 
 const serverType = "http"
@@ -66,6 +67,12 @@ func init() {
 	caddy.RegisterParsingCallback(serverType, "root", hideCaddyfile)
 	caddy.RegisterParsingCallback(serverType, "tls", activateHTTPS)
 	caddytls.RegisterConfigGetter(serverType, func(c *caddy.Controller) *caddytls.Config { return GetConfig(c).TLS })
+
+	// disable the caddytls package reporting ClientHellos
+	// to telemetry, since our MITM detector does this but
+	// with more information than the standard lib provides
+	// (as of May 2018)
+	caddytls.ClientHelloTelemetry = false
 }
 
 // hideCaddyfile hides the source/origin Caddyfile if it is within the
@@ -208,6 +215,18 @@ func (h *httpContext) InspectServerBlocks(sourceFile string, serverBlocks []cadd
 // MakeServers uses the newly-created siteConfigs to
 // create and return a list of server instances.
 func (h *httpContext) MakeServers() ([]caddy.Server, error) {
+	// make a rough estimate as to whether we're in a "production
+	// environment/system" - start by assuming that most production
+	// servers will set their default CA endpoint to a public,
+	// trusted CA (obviously not a perfect hueristic)
+	var looksLikeProductionCA bool
+	for _, publicCAEndpoint := range caddytls.KnownACMECAs {
+		if strings.Contains(caddytls.DefaultCAUrl, publicCAEndpoint) {
+			looksLikeProductionCA = true
+			break
+		}
+	}
+
 	// Iterate each site configuration and make sure that:
 	// 1) TLS is disabled for explicitly-HTTP sites (necessary
 	//    when an HTTP address shares a block containing tls)
@@ -215,7 +234,22 @@ func (h *httpContext) MakeServers() ([]caddy.Server, error) {
 	//    currently, QUIC does not support ClientAuth (TODO:
 	//    revisit this when our QUIC implementation supports it)
 	// 3) if TLS ClientAuth is used, StrictHostMatching is on
+	var atLeastOneSiteLooksLikeProduction bool
 	for _, cfg := range h.siteConfigs {
+		// see if all the addresses (both sites and
+		// listeners) are loopback to help us determine
+		// if this is a "production" instance or not
+		if !atLeastOneSiteLooksLikeProduction {
+			if !caddy.IsLoopback(cfg.Addr.Host) &&
+				!caddy.IsLoopback(cfg.ListenHost) &&
+				(caddytls.QualifiesForManagedTLS(cfg) ||
+					caddytls.HostQualifies(cfg.Addr.Host)) {
+				atLeastOneSiteLooksLikeProduction = true
+			}
+		}
+
+		// make sure TLS is disabled for explicitly-HTTP sites
+		// (necessary when HTTP address shares a block containing tls)
 		if !cfg.TLS.Enabled {
 			continue
 		}
@@ -264,6 +298,18 @@ func (h *httpContext) MakeServers() ([]caddy.Server, error) {
 		}
 		servers = append(servers, s)
 	}
+
+	// NOTE: This value is only a "good guess". Quite often, development
+	// environments will use internal DNS or a local hosts file to serve
+	// real-looking domains in local development. We can't easily tell
+	// which without doing a DNS lookup, so this guess is definitely naive,
+	// and if we ever want a better guess, we will have to do DNS lookups.
+	deploymentGuess := "dev"
+	if looksLikeProductionCA && atLeastOneSiteLooksLikeProduction {
+		deploymentGuess = "prod"
+	}
+	telemetry.Set("http_deployment_guess", deploymentGuess)
+	telemetry.Set("http_num_sites", len(h.siteConfigs))
 
 	return servers, nil
 }

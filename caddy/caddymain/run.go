@@ -21,19 +21,20 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 
+	"github.com/google/uuid"
+	"github.com/klauspost/cpuid"
+	"github.com/mholt/caddy"
+	"github.com/mholt/caddy/caddytls"
+	"github.com/mholt/caddy/telemetry"
+	"github.com/xenolf/lego/acmev2"
 	"gopkg.in/natefinch/lumberjack.v2"
 
-	"github.com/xenolf/lego/acmev2"
-
-	"github.com/mholt/caddy"
-	// plug in the HTTP server type
-	_ "github.com/mholt/caddy/caddyhttp"
-
-	"github.com/mholt/caddy/caddytls"
+	_ "github.com/mholt/caddy/caddyhttp" // plug in the HTTP server type
 	// This is where other plugins get plugged in (imported)
 )
 
@@ -45,6 +46,7 @@ func init() {
 	flag.StringVar(&caddytls.DefaultCAUrl, "ca", "https://acme-v02.api.letsencrypt.org/directory", "URL to certificate authority's ACME server directory")
 	flag.BoolVar(&caddytls.DisableHTTPChallenge, "disable-http-challenge", caddytls.DisableHTTPChallenge, "Disable the ACME HTTP challenge")
 	flag.BoolVar(&caddytls.DisableTLSSNIChallenge, "disable-tls-sni-challenge", caddytls.DisableTLSSNIChallenge, "Disable the ACME TLS-SNI challenge")
+	flag.StringVar(&disabledMetrics, "disabled-metrics", "", "Comma-separated list of telemetry metrics to disable")
 	flag.StringVar(&conf, "conf", "", "Caddyfile to load (default \""+caddy.DefaultConfigFile+"\")")
 	flag.StringVar(&cpu, "cpu", "100%", "CPU cap")
 	flag.BoolVar(&plugins, "plugins", false, "List installed plugins")
@@ -85,6 +87,16 @@ func Run() {
 			MaxAge:     14,
 			MaxBackups: 10,
 		})
+	}
+
+	// initialize telemetry client
+	if enableTelemetry {
+		err := initTelemetry()
+		if err != nil {
+			mustLogFatalf("[ERROR] Initializing telemetry: %v", err)
+		}
+	} else if disabledMetrics != "" {
+		mustLogFatalf("[ERROR] Cannot disable specific metrics because telemetry is disabled")
 	}
 
 	// Check for one-time actions
@@ -142,6 +154,23 @@ func Run() {
 
 	// Execute instantiation events
 	caddy.EmitEvent(caddy.InstanceStartupEvent, instance)
+
+	// Begin telemetry (these are no-ops if telemetry disabled)
+	telemetry.Set("caddy_version", appVersion)
+	telemetry.Set("num_listeners", len(instance.Servers()))
+	telemetry.Set("server_type", serverType)
+	telemetry.Set("os", runtime.GOOS)
+	telemetry.Set("arch", runtime.GOARCH)
+	telemetry.Set("cpu", struct {
+		BrandName  string `json:"brand_name,omitempty"`
+		NumLogical int    `json:"num_logical,omitempty"`
+		AESNI      bool   `json:"aes_ni,omitempty"`
+	}{
+		BrandName:  cpuid.CPU.BrandName,
+		NumLogical: runtime.NumCPU(),
+		AESNI:      cpuid.CPU.AesNi(),
+	})
+	telemetry.StartEmitting()
 
 	// Twiddle your thumbs
 	instance.Wait()
@@ -266,18 +295,86 @@ func setCPU(cpu string) error {
 	return nil
 }
 
+// initTelemetry initializes the telemetry engine.
+func initTelemetry() error {
+	uuidFilename := filepath.Join(caddy.AssetsPath(), "uuid")
+
+	newUUID := func() uuid.UUID {
+		id := uuid.New()
+		err := ioutil.WriteFile(uuidFilename, []byte(id.String()), 0600) // human-readable as a string
+		if err != nil {
+			log.Printf("[ERROR] Persisting instance UUID: %v", err)
+		}
+		return id
+	}
+
+	var id uuid.UUID
+
+	// load UUID from storage, or create one if we don't have one
+	if uuidFile, err := os.Open(uuidFilename); os.IsNotExist(err) {
+		// no UUID exists yet; create a new one and persist it
+		id = newUUID()
+	} else if err != nil {
+		log.Printf("[ERROR] Loading persistent UUID: %v", err)
+		id = newUUID()
+	} else {
+		defer uuidFile.Close()
+		uuidBytes, err := ioutil.ReadAll(uuidFile)
+		if err != nil {
+			log.Printf("[ERROR] Reading persistent UUID: %v", err)
+			id = newUUID()
+		} else {
+			id, err = uuid.ParseBytes(uuidBytes)
+			if err != nil {
+				log.Printf("[ERROR] Parsing UUID: %v", err)
+				id = newUUID()
+			}
+		}
+	}
+
+	// parse and check the list of disabled metrics
+	var disabledMetricsSlice []string
+	if len(disabledMetrics) > 0 {
+		if len(disabledMetrics) > 1024 {
+			// mitigate disk space exhaustion at the collection endpoint
+			return fmt.Errorf("too many metrics to disable")
+		}
+		disabledMetricsSlice = strings.Split(disabledMetrics, ",")
+		for i, metric := range disabledMetricsSlice {
+			if metric == "instance_id" || metric == "timestamp" || metric == "disabled_metrics" {
+				return fmt.Errorf("instance_id, timestamp, and disabled_metrics cannot be disabled")
+			}
+			if metric == "" {
+				disabledMetricsSlice = append(disabledMetricsSlice[:i], disabledMetricsSlice[i+1:]...)
+			}
+		}
+	}
+
+	// initialize telemetry
+	telemetry.Init(id, disabledMetricsSlice)
+
+	// if any metrics were disabled, report it
+	if len(disabledMetricsSlice) > 0 {
+		telemetry.Set("disabled_metrics", disabledMetricsSlice)
+		log.Printf("[NOTICE] The following telemetry metrics are disabled: %s", disabledMetrics)
+	}
+
+	return nil
+}
+
 const appName = "Caddy"
 
 // Flags that control program flow or startup
 var (
-	serverType string
-	conf       string
-	cpu        string
-	logfile    string
-	revoke     string
-	version    bool
-	plugins    bool
-	validate   bool
+	serverType      string
+	conf            string
+	cpu             string
+	logfile         string
+	revoke          string
+	version         bool
+	plugins         bool
+	validate        bool
+	disabledMetrics string
 )
 
 // Build information obtained with the help of -ldflags
@@ -292,3 +389,5 @@ var (
 	gitShortStat     string // git diff-index --shortstat
 	gitFilesModified string // git diff-index --name-only HEAD
 )
+
+const enableTelemetry = true

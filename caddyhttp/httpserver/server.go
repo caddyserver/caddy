@@ -36,6 +36,7 @@ import (
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/staticfiles"
 	"github.com/mholt/caddy/caddytls"
+	"github.com/mholt/caddy/telemetry"
 )
 
 // Server is the HTTP server implementation.
@@ -347,6 +348,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			DefaultErrorFunc(w, r, http.StatusInternalServerError)
 		}
 	}()
+
+	// record the User-Agent string (with a cap on its length to mitigate attacks)
+	ua := r.Header.Get("User-Agent")
+	if len(ua) > 512 {
+		ua = ua[:512]
+	}
+	go telemetry.AppendUnique("http_user_agent", ua)
+	go telemetry.Increment("http_request_count")
 
 	// copy the original, unchanged URL into the context
 	// so it can be referenced by middlewares
