@@ -242,9 +242,6 @@ func (h Handler) exists(path string) bool {
 func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]string, error) {
 	var env map[string]string
 
-	// Get absolute path of requested resource
-	absPath := filepath.Join(rule.Root, fpath)
-
 	// Separate remote IP and port; more lenient than net.SplitHostPort
 	var ip, port string
 	if idx := strings.LastIndex(r.RemoteAddr, ":"); idx > -1 {
@@ -266,10 +263,12 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 	docURI := fpath[:splitPos+len(rule.SplitPath)]
 	pathInfo := fpath[splitPos+len(rule.SplitPath):]
 	scriptName := fpath
-	scriptFilename := absPath
 
 	// Strip PATH_INFO from SCRIPT_NAME
 	scriptName = strings.TrimSuffix(scriptName, pathInfo)
+
+	// SCRIPT_FILENAME is the absolute path of SCRIPT_NAME
+	scriptFilename := filepath.Join(rule.Root, scriptName)
 
 	// Add vhost path prefix to scriptName. Otherwise, some PHP software will
 	// have difficulty discovering its URL.
