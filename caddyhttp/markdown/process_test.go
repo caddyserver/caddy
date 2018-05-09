@@ -15,7 +15,6 @@
 package markdown
 
 import (
-	"os"
 	"strings"
 	"testing"
 
@@ -44,7 +43,7 @@ func TestConfig_Markdown(t *testing.T) {
 		}
 		toml = toml + "\n+++"
 
-		res, _ := config.Markdown("Test title", []byte(toml), []os.FileInfo{}, httpserver.Context{})
+		res, _ := config.Markdown("Test title", []byte(toml), httpserver.Context{})
 		sRes := string(res)
 
 		for key, val := range meta {

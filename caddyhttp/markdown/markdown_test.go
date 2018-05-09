@@ -239,10 +239,6 @@ func TestTemplateReload(t *testing.T) {
 		Root:    rootDir,
 		FileSys: http.Dir("./testdata"),
 		Configs: config,
-		// Next: httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
-		// 	t.Fatalf("Next shouldn't be called")
-		// 	return 0, nil
-		// }),
 		Next:    staticfiles.FileServer{Root: http.Dir(rootDir)},
 		BufPool: &sync.Pool{New: func() interface{} { return new(bytes.Buffer) }},
 	}

@@ -16,6 +16,7 @@ package markdown
 
 import (
 	"bytes"
+	"mime"
 	"net/http"
 	"path/filepath"
 	"sync"
@@ -40,6 +41,12 @@ func setup(c *caddy.Controller) error {
 	}
 
 	cfg := httpserver.GetConfig(c)
+
+	// Add content-types for markdown extensions so that staticfiles
+	// returns correct content-type.
+	mime.AddExtensionType(".md", "text/markdown")
+	mime.AddExtensionType(".markdown", "text/markdown")
+	mime.AddExtensionType(".mdown", "text/markdown")
 
 	// Add markdown index files to *SiteConfig.IndexPages
 	for _, mdc := range mdconfigs {

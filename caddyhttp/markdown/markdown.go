@@ -95,9 +95,6 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 		return md.Next.ServeHTTP(w, r) // exit early
 	}
 
-	// TODO: Deal with dirents variable in new implementation
-	var dirents []os.FileInfo
-
 	fpath := r.URL.Path
 
 	// get a buffer from the pool and make a response recorder
@@ -148,7 +145,7 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 	// Make sure the buffer is not empty
 	// This can happen in the case of a HEAD request
 	if rb.Buffer.Len() != 0 {
-		html, err = cfg.Markdown(title(fpath), rb.Buffer.Bytes(), dirents, ctx)
+		html, err = cfg.Markdown(title(fpath), rb.Buffer.Bytes(), ctx)
 	}
 	if err != nil {
 		return http.StatusInternalServerError, err

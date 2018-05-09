@@ -56,7 +56,7 @@ func (f FileInfo) Summarize(wordcount int) (string, error) {
 
 // Markdown processes the contents of a page in b. It parses the metadata
 // (if any) and uses the template (if found).
-func (c *Config) Markdown(title string, body []byte, dirents []os.FileInfo, ctx httpserver.Context) ([]byte, error) {
+func (c *Config) Markdown(title string, body []byte, ctx httpserver.Context) ([]byte, error) {
 	parser := metadata.GetParser(body)
 	markdown := parser.Markdown()
 	mdata := parser.Metadata()
@@ -69,8 +69,8 @@ func (c *Config) Markdown(title string, body []byte, dirents []os.FileInfo, ctx 
 	extns |= blackfriday.EXTENSION_DEFINITION_LISTS
 	html := blackfriday.Markdown(markdown, c.Renderer, extns)
 
-	// set it as body for template
-	if mdata.Variables["body"] == "" {
+	// set html as body for template if no body variable in front matter
+	if _, ok := mdata.Variables["body"]; !ok {
 		mdata.Variables["body"] = string(html)
 	}
 
@@ -88,15 +88,5 @@ func (c *Config) Markdown(title string, body []byte, dirents []os.FileInfo, ctx 
 		}
 	}
 
-	// massage possible files
-	files := []FileInfo{}
-	for _, ent := range dirents {
-		file := FileInfo{
-			FileInfo: ent,
-			ctx:      ctx,
-		}
-		files = append(files, file)
-	}
-
-	return execTemplate(c, mdata, meta, files, ctx)
+	return execTemplate(c, mdata, meta, ctx)
 }

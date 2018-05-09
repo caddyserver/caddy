@@ -46,14 +46,13 @@ func (d Data) Include(filename string, args ...interface{}) (string, error) {
 var templateUpdateMu sync.RWMutex
 
 // execTemplate executes a template given a requestPath, template, and metadata
-func execTemplate(c *Config, mdata metadata.Metadata, meta map[string]string, files []FileInfo, ctx httpserver.Context) ([]byte, error) {
+func execTemplate(c *Config, mdata metadata.Metadata, meta map[string]string, ctx httpserver.Context) ([]byte, error) {
 	mdData := Data{
 		Context: ctx,
 		Doc:     mdata.Variables,
 		Styles:  c.Styles,
 		Scripts: c.Scripts,
 		Meta:    meta,
-		Files:   files,
 	}
 	templateName := mdata.Template
 
