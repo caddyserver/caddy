@@ -57,6 +57,9 @@ func (f FileInfo) Summarize(wordcount int) (string, error) {
 // Markdown processes the contents of a page in b. It parses the metadata
 // (if any) and uses the template (if found).
 func (c *Config) Markdown(title string, body []byte, ctx httpserver.Context) ([]byte, error) {
+	if len(body) == 0 {
+		return []byte{}, nil
+	}
 	parser := metadata.GetParser(body)
 	markdown := parser.Markdown()
 	mdata := parser.Metadata()

@@ -22,7 +22,6 @@ import (
 	"net/http"
 	"os"
 	"path"
-	"strconv"
 	"strings"
 	"sync"
 	"text/template"
@@ -95,6 +94,12 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 		return md.Next.ServeHTTP(w, r) // exit early
 	}
 
+	originalMethod := r.Method
+	// If HEAD request
+	if r.Method == http.MethodHead {
+		r.Method = http.MethodGet
+	}
+
 	fpath := r.URL.Path
 
 	// get a buffer from the pool and make a response recorder
@@ -140,13 +145,7 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 	ctx.Req = r
 	ctx.URL = r.URL
 
-	// Create html variable and fill it with markdown if possible
-	var html []byte
-	// Make sure the buffer is not empty
-	// This can happen in the case of a HEAD request
-	if rb.Buffer.Len() != 0 {
-		html, err = cfg.Markdown(title(fpath), rb.Buffer.Bytes(), ctx)
-	}
+	html, err := cfg.Markdown(title(fpath), rb.Buffer.Bytes(), ctx)
 	if err != nil {
 		return http.StatusInternalServerError, err
 	}
@@ -155,8 +154,11 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 	rb.CopyHeader()
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Content-Length", strconv.Itoa(len(html)))
 	lastModTime, _ := time.Parse(http.TimeFormat, w.Header().Get("Last-Modified"))
+	// reset to original HTTP method if we changed it
+	if r.Method != originalMethod {
+		r.Method = originalMethod
+	}
 	http.ServeContent(rb.StatusCodeWriter(w), r, fpath, lastModTime, bytes.NewReader(html))
 
 	return 0, nil
