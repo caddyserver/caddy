@@ -28,6 +28,7 @@ import (
 	"strings"
 
 	"github.com/mholt/caddy"
+	"github.com/mholt/caddy/telemetry"
 )
 
 func init() {
@@ -174,9 +175,11 @@ func setupTLS(c *caddy.Controller) error {
 			case "max_certs":
 				c.Args(&maxCerts)
 				config.OnDemand = true
+				telemetry.Increment("tls_on_demand_count")
 			case "ask":
 				c.Args(&askURL)
 				config.OnDemand = true
+				telemetry.Increment("tls_on_demand_count")
 			case "dns":
 				args := c.RemainingArgs()
 				if len(args) != 1 {
@@ -283,6 +286,7 @@ func setupTLS(c *caddy.Controller) error {
 		if err != nil {
 			return fmt.Errorf("self-signed: %v", err)
 		}
+		telemetry.Increment("tls_self_signed_count")
 	}
 
 	return nil
