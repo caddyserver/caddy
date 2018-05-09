@@ -15,6 +15,7 @@
 package caddymain
 
 import (
+	"bufio"
 	"errors"
 	"flag"
 	"fmt"
@@ -170,6 +171,9 @@ func Run() {
 		NumLogical: runtime.NumCPU(),
 		AESNI:      cpuid.CPU.AesNi(),
 	})
+	if containerized := detectContainer(); containerized {
+		telemetry.Set("in_container", containerized)
+	}
 	telemetry.StartEmitting()
 
 	// Twiddle your thumbs
@@ -293,6 +297,46 @@ func setCPU(cpu string) error {
 
 	runtime.GOMAXPROCS(numCPU)
 	return nil
+}
+
+// detectContainer attemps to determine whether the process is
+// being run inside a container. References:
+// https://tuhrig.de/how-to-know-you-are-inside-a-docker-container/
+// https://stackoverflow.com/a/20012536/1048862
+// https://gist.github.com/anantkamath/623ce7f5432680749e087cf8cfba9b69
+func detectContainer() bool {
+	if runtime.GOOS != "linux" {
+		return false
+	}
+
+	file, err := os.Open("/proc/1/cgroup")
+	if err != nil {
+		return false
+	}
+	defer file.Close()
+
+	i := 0
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		i++
+		if i > 1000 {
+			return false
+		}
+
+		line := scanner.Text()
+		parts := strings.SplitN(line, ":", 3)
+		if len(parts) < 3 {
+			continue
+		}
+
+		if strings.Contains(parts[2], "docker") ||
+			strings.Contains(parts[2], "lxc") ||
+			strings.Contains(parts[2], "moby") {
+			return true
+		}
+	}
+
+	return false
 }
 
 // initTelemetry initializes the telemetry engine.
