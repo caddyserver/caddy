@@ -415,7 +415,7 @@ var (
 const (
 	// endpoint is the base URL to remote telemetry server;
 	// the instance ID will be appended to it.
-	endpoint = "https://telemetry-staging.caddyserver.com/v1/update/"
+	endpoint = "https://telemetry.caddyserver.com/v1/update/"
 
 	// defaultUpdateInterval is how long to wait before emitting
 	// more telemetry data if all retires fail. This value is
