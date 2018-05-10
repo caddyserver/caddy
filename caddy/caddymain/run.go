@@ -172,7 +172,7 @@ func Run() {
 		AESNI:      cpuid.CPU.AesNi(),
 	})
 	if containerized := detectContainer(); containerized {
-		telemetry.Set("in_container", containerized)
+		telemetry.Set("container", containerized)
 	}
 	telemetry.StartEmitting()
 
@@ -299,7 +299,7 @@ func setCPU(cpu string) error {
 	return nil
 }
 
-// detectContainer attemps to determine whether the process is
+// detectContainer attempts to determine whether the process is
 // being run inside a container. References:
 // https://tuhrig.de/how-to-know-you-are-inside-a-docker-container/
 // https://stackoverflow.com/a/20012536/1048862
@@ -397,7 +397,7 @@ func initTelemetry() error {
 	// initialize telemetry
 	telemetry.Init(id, disabledMetricsSlice)
 
-	// if any metrics were disabled, report it
+	// if any metrics were disabled, report which ones (so we know how representative the data is)
 	if len(disabledMetricsSlice) > 0 {
 		telemetry.Set("disabled_metrics", disabledMetricsSlice)
 		log.Printf("[NOTICE] The following telemetry metrics are disabled: %s", disabledMetrics)

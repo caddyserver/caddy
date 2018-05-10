@@ -40,6 +40,7 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -65,6 +66,9 @@ func emit(final bool) error {
 	if !enabled {
 		return fmt.Errorf("telemetry not enabled")
 	}
+
+	// some metrics are updated/set at time of emission
+	setEmitTimeMetrics()
 
 	// ensure only one update happens at a time;
 	// skip update if previous one still in progress
@@ -226,6 +230,17 @@ func stopUpdateTimer() {
 	updateTimer.Stop()
 	updateTimer = nil
 	updateTimerMu.Unlock()
+}
+
+// setEmitTimeMetrics sets some metrics that should
+// be recorded just before emitting.
+func setEmitTimeMetrics() {
+	Set("goroutines", runtime.NumGoroutine())
+
+	var mem runtime.MemStats
+	runtime.ReadMemStats(&mem)
+	SetNested("memory", "heap_alloc", mem.HeapAlloc)
+	SetNested("memory", "sys", mem.Sys)
 }
 
 // makePayloadAndResetBuffer prepares a payload
