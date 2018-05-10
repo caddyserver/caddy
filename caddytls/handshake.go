@@ -516,7 +516,7 @@ func (info ClientHelloInfo) Key() string {
 	if !info.CompressionMethodsUnknown {
 		compressionMethods = fmt.Sprintf("%x", info.CompressionMethods)
 	}
-	return fastHash([]byte(fmt.Sprintf("%x-%x-%s-%s-%x-%x",
+	return telemetry.FastHash([]byte(fmt.Sprintf("%x-%x-%s-%s-%x-%x",
 		info.Version, info.CipherSuites, extensions,
 		compressionMethods, info.Curves, info.Points)))
 }

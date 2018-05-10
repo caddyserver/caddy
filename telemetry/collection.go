@@ -15,6 +15,8 @@
 package telemetry
 
 import (
+	"fmt"
+	"hash/fnv"
 	"log"
 	"strings"
 
@@ -274,6 +276,15 @@ func atomicAdd(key string, amount int) {
 	}
 	buffer[key] = intVal + amount
 	bufferMu.Unlock()
+}
+
+// FastHash hashes input using a 32-bit hashing algorithm
+// that is fast, and returns the hash as a hex-encoded string.
+// Do not use this for cryptographic purposes.
+func FastHash(input []byte) string {
+	h := fnv.New32a()
+	h.Write(input)
+	return fmt.Sprintf("%x", h.Sum32())
 }
 
 // isDisabled returns whether key is
