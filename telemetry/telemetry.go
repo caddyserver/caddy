@@ -209,7 +209,7 @@ func emit(final bool) error {
 
 	// ensure we won't slam the telemetry server; add a little variance
 	if reply.NextUpdate < 1*time.Second {
-		reply.NextUpdate = defaultUpdateInterval + time.Duration(rand.Intn(int(1*time.Minute)))
+		reply.NextUpdate = defaultUpdateInterval + time.Duration(rand.Int63n(int64(1*time.Minute)))
 	}
 
 	// schedule the next update (if this wasn't the last one and
