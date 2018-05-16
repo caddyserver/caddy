@@ -342,6 +342,9 @@ func detectContainer() bool {
 // initTelemetry initializes the telemetry engine.
 func initTelemetry() error {
 	uuidFilename := filepath.Join(caddy.AssetsPath(), "uuid")
+	if customUUIDFile := os.Getenv("CADDY_UUID_FILE"); customUUIDFile != "" {
+		uuidFilename = customUUIDFile
+	}
 
 	newUUID := func() uuid.UUID {
 		id := uuid.New()
