@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/mholt/caddy"
+	"github.com/mholt/caddy/telemetry"
 	"github.com/xenolf/lego/acmev2"
 )
 
@@ -273,6 +274,8 @@ func (c *ACMEClient) Obtain(name string) error {
 		break
 	}
 
+	go telemetry.Increment("tls_acme_certs_obtained")
+
 	return nil
 }
 
@@ -340,6 +343,7 @@ func (c *ACMEClient) Renew(name string) error {
 	}
 
 	caddy.EmitEvent(caddy.CertRenewEvent, name)
+	go telemetry.Increment("tls_acme_certs_renewed")
 
 	return saveCertResource(c.storage, newCertMeta)
 }
@@ -365,6 +369,8 @@ func (c *ACMEClient) Revoke(name string) error {
 	if err != nil {
 		return err
 	}
+
+	go telemetry.Increment("tls_acme_certs_revoked")
 
 	err = c.storage.DeleteSite(name)
 	if err != nil {
@@ -416,4 +422,11 @@ func (c *nameCoordinator) Has(name string) bool {
 	_, ok := c.names[strings.ToLower(hostname)]
 	c.mu.RUnlock()
 	return ok
+}
+
+// KnownACMECAs is a list of ACME directory endpoints of
+// known, public, and trusted ACME-compatible certificate
+// authorities.
+var KnownACMECAs = []string{
+	"https://acme-v02.api.letsencrypt.org/directory",
 }

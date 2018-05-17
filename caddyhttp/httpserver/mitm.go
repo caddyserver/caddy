@@ -24,6 +24,9 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/mholt/caddy/caddytls"
+	"github.com/mholt/caddy/telemetry"
 )
 
 // tlsHandler is a http.Handler that will inject a value
@@ -49,6 +52,9 @@ type tlsHandler struct {
 // Halderman, et. al. in "The Security Impact of HTTPS Interception" (NDSS '17):
 // https://jhalderm.com/pub/papers/interception-ndss17.pdf
 func (h *tlsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// TODO: one request per connection, we should report UA in connection with
+	// handshake (reported in caddytls package) and our MITM assessment
+
 	if h.listener == nil {
 		h.next.ServeHTTP(w, r)
 		return
@@ -59,6 +65,10 @@ func (h *tlsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.listener.helloInfosMu.RUnlock()
 
 	ua := r.Header.Get("User-Agent")
+	uaHash := telemetry.FastHash([]byte(ua))
+
+	// report this request's UA in connection with this ClientHello
+	go telemetry.AppendUnique("tls_client_hello_ua:"+caddytls.ClientHelloInfo(info).Key(), uaHash)
 
 	var checked, mitm bool
 	if r.Header.Get("X-BlueCoat-Via") != "" || // Blue Coat (masks User-Agent header to generic values)
@@ -97,6 +107,13 @@ func (h *tlsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if checked {
 		r = r.WithContext(context.WithValue(r.Context(), MitmCtxKey, mitm))
+		if mitm {
+			go telemetry.AppendUnique("http_mitm", "likely")
+		} else {
+			go telemetry.AppendUnique("http_mitm", "unlikely")
+		}
+	} else {
+		go telemetry.AppendUnique("http_mitm", "unknown")
 	}
 
 	if mitm && h.closeOnMITM {
@@ -195,6 +212,11 @@ func (c *clientHelloConn) Read(b []byte) (n int, err error) {
 	c.listener.helloInfos[c.Conn.RemoteAddr().String()] = rawParsed
 	c.listener.helloInfosMu.Unlock()
 
+	// report this ClientHello to telemetry
+	chKey := caddytls.ClientHelloInfo(rawParsed).Key()
+	go telemetry.SetNested("tls_client_hello", chKey, rawParsed)
+	go telemetry.AppendUnique("tls_client_hello_count", chKey)
+
 	c.readHello = true
 	return
 }
@@ -215,6 +237,7 @@ func parseRawClientHello(data []byte) (info rawHelloInfo) {
 	if len(data) < 42 {
 		return
 	}
+	info.Version = uint16(data[4])<<8 | uint16(data[5])
 	sessionIDLen := int(data[38])
 	if sessionIDLen > 32 || len(data) < 39+sessionIDLen {
 		return
@@ -231,9 +254,9 @@ func parseRawClientHello(data []byte) (info rawHelloInfo) {
 	}
 	numCipherSuites := cipherSuiteLen / 2
 	// read in the cipher suites
-	info.cipherSuites = make([]uint16, numCipherSuites)
+	info.CipherSuites = make([]uint16, numCipherSuites)
 	for i := 0; i < numCipherSuites; i++ {
-		info.cipherSuites[i] = uint16(data[2+2*i])<<8 | uint16(data[3+2*i])
+		info.CipherSuites[i] = uint16(data[2+2*i])<<8 | uint16(data[3+2*i])
 	}
 	data = data[2+cipherSuiteLen:]
 	if len(data) < 1 {
@@ -244,7 +267,7 @@ func parseRawClientHello(data []byte) (info rawHelloInfo) {
 	if len(data) < 1+compressionMethodsLen {
 		return
 	}
-	info.compressionMethods = data[1 : 1+compressionMethodsLen]
+	info.CompressionMethods = data[1 : 1+compressionMethodsLen]
 
 	data = data[1+compressionMethodsLen:]
 
@@ -272,7 +295,7 @@ func parseRawClientHello(data []byte) (info rawHelloInfo) {
 		}
 
 		// record that the client advertised support for this extension
-		info.extensions = append(info.extensions, extension)
+		info.Extensions = append(info.Extensions, extension)
 
 		switch extension {
 		case extensionSupportedCurves:
@@ -285,10 +308,10 @@ func parseRawClientHello(data []byte) (info rawHelloInfo) {
 				return
 			}
 			numCurves := l / 2
-			info.curves = make([]tls.CurveID, numCurves)
+			info.Curves = make([]tls.CurveID, numCurves)
 			d := data[2:]
 			for i := 0; i < numCurves; i++ {
-				info.curves[i] = tls.CurveID(d[0])<<8 | tls.CurveID(d[1])
+				info.Curves[i] = tls.CurveID(d[0])<<8 | tls.CurveID(d[1])
 				d = d[2:]
 			}
 		case extensionSupportedPoints:
@@ -300,8 +323,8 @@ func parseRawClientHello(data []byte) (info rawHelloInfo) {
 			if length != l+1 {
 				return
 			}
-			info.points = make([]uint8, l)
-			copy(info.points, data[1:])
+			info.Points = make([]uint8, l)
+			copy(info.Points, data[1:])
 		}
 
 		data = data[length:]
@@ -352,18 +375,12 @@ func (l *tlsHelloListener) Accept() (net.Conn, error) {
 // by Durumeric, Halderman, et. al. in
 // "The Security Impact of HTTPS Interception":
 // https://jhalderm.com/pub/papers/interception-ndss17.pdf
-type rawHelloInfo struct {
-	cipherSuites       []uint16
-	extensions         []uint16
-	compressionMethods []byte
-	curves             []tls.CurveID
-	points             []uint8
-}
+type rawHelloInfo caddytls.ClientHelloInfo
 
 // advertisesHeartbeatSupport returns true if info indicates
 // that the client supports the Heartbeat extension.
 func (info rawHelloInfo) advertisesHeartbeatSupport() bool {
-	for _, ext := range info.extensions {
+	for _, ext := range info.Extensions {
 		if ext == extensionHeartbeat {
 			return true
 		}
@@ -386,31 +403,31 @@ func (info rawHelloInfo) looksLikeFirefox() bool {
 	// Note: Firefox 55+ doesn't appear to advertise 0xFF03 (65283, short headers). It used to be between 5 and 13.
 	// Note: Firefox on Fedora (or RedHat) doesn't include ECC suites because of patent liability.
 	requiredExtensionsOrder := []uint16{23, 65281, 10, 11, 35, 16, 5, 13}
-	if !assertPresenceAndOrdering(requiredExtensionsOrder, info.extensions, true) {
+	if !assertPresenceAndOrdering(requiredExtensionsOrder, info.Extensions, true) {
 		return false
 	}
 
 	// We check for both presence of curves and their ordering.
 	requiredCurves := []tls.CurveID{29, 23, 24, 25}
-	if len(info.curves) < len(requiredCurves) {
+	if len(info.Curves) < len(requiredCurves) {
 		return false
 	}
 	for i := range requiredCurves {
-		if info.curves[i] != requiredCurves[i] {
+		if info.Curves[i] != requiredCurves[i] {
 			return false
 		}
 	}
-	if len(info.curves) > len(requiredCurves) {
+	if len(info.Curves) > len(requiredCurves) {
 		// newer Firefox (55 Nightly?) may have additional curves at end of list
 		allowedCurves := []tls.CurveID{256, 257}
 		for i := range allowedCurves {
-			if info.curves[len(requiredCurves)+i] != allowedCurves[i] {
+			if info.Curves[len(requiredCurves)+i] != allowedCurves[i] {
 				return false
 			}
 		}
 	}
 
-	if hasGreaseCiphers(info.cipherSuites) {
+	if hasGreaseCiphers(info.CipherSuites) {
 		return false
 	}
 
@@ -437,7 +454,7 @@ func (info rawHelloInfo) looksLikeFirefox() bool {
 		tls.TLS_RSA_WITH_AES_256_CBC_SHA,            // 0x35
 		tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA,           // 0xa
 	}
-	return assertPresenceAndOrdering(expectedCipherSuiteOrder, info.cipherSuites, false)
+	return assertPresenceAndOrdering(expectedCipherSuiteOrder, info.CipherSuites, false)
 }
 
 // looksLikeChrome returns true if info looks like a handshake
@@ -478,20 +495,20 @@ func (info rawHelloInfo) looksLikeChrome() bool {
 		TLS_DHE_RSA_WITH_AES_128_CBC_SHA:            {}, // 0x33
 		TLS_DHE_RSA_WITH_AES_256_CBC_SHA:            {}, // 0x39
 	}
-	for _, ext := range info.cipherSuites {
+	for _, ext := range info.CipherSuites {
 		if _, ok := chromeCipherExclusions[ext]; ok {
 			return false
 		}
 	}
 
 	// Chrome does not include curve 25 (CurveP521) (as of Chrome 56, Feb. 2017).
-	for _, curve := range info.curves {
+	for _, curve := range info.Curves {
 		if curve == 25 {
 			return false
 		}
 	}
 
-	if !hasGreaseCiphers(info.cipherSuites) {
+	if !hasGreaseCiphers(info.CipherSuites) {
 		return false
 	}
 
@@ -509,19 +526,19 @@ func (info rawHelloInfo) looksLikeEdge() bool {
 	// More specifically, the OCSP status request extension appears
 	// *directly* before the other two extensions, which occur in that
 	// order. (I contacted the authors for clarification and verified it.)
-	for i, ext := range info.extensions {
+	for i, ext := range info.Extensions {
 		if ext == extensionOCSPStatusRequest {
-			if len(info.extensions) <= i+2 {
+			if len(info.Extensions) <= i+2 {
 				return false
 			}
-			if info.extensions[i+1] != extensionSupportedCurves ||
-				info.extensions[i+2] != extensionSupportedPoints {
+			if info.Extensions[i+1] != extensionSupportedCurves ||
+				info.Extensions[i+2] != extensionSupportedPoints {
 				return false
 			}
 		}
 	}
 
-	for _, cs := range info.cipherSuites {
+	for _, cs := range info.CipherSuites {
 		// As of Feb. 2017, Edge does not have 0xff, but Avast adds it
 		if cs == scsvRenegotiation {
 			return false
@@ -532,7 +549,7 @@ func (info rawHelloInfo) looksLikeEdge() bool {
 		}
 	}
 
-	if hasGreaseCiphers(info.cipherSuites) {
+	if hasGreaseCiphers(info.CipherSuites) {
 		return false
 	}
 
@@ -558,23 +575,23 @@ func (info rawHelloInfo) looksLikeSafari() bool {
 
 	// We check for the presence and order of the extensions.
 	requiredExtensionsOrder := []uint16{10, 11, 13, 13172, 16, 5, 18, 23}
-	if !assertPresenceAndOrdering(requiredExtensionsOrder, info.extensions, true) {
+	if !assertPresenceAndOrdering(requiredExtensionsOrder, info.Extensions, true) {
 		// Safari on iOS 11 (beta) uses different set/ordering of extensions
 		requiredExtensionsOrderiOS11 := []uint16{65281, 0, 23, 13, 5, 13172, 18, 16, 11, 10}
-		if !assertPresenceAndOrdering(requiredExtensionsOrderiOS11, info.extensions, true) {
+		if !assertPresenceAndOrdering(requiredExtensionsOrderiOS11, info.Extensions, true) {
 			return false
 		}
 	} else {
 		// For these versions of Safari, expect TLS_EMPTY_RENEGOTIATION_INFO_SCSV first.
-		if len(info.cipherSuites) < 1 {
+		if len(info.CipherSuites) < 1 {
 			return false
 		}
-		if info.cipherSuites[0] != scsvRenegotiation {
+		if info.CipherSuites[0] != scsvRenegotiation {
 			return false
 		}
 	}
 
-	if hasGreaseCiphers(info.cipherSuites) {
+	if hasGreaseCiphers(info.CipherSuites) {
 		return false
 	}
 
@@ -599,19 +616,19 @@ func (info rawHelloInfo) looksLikeSafari() bool {
 		tls.TLS_RSA_WITH_AES_256_CBC_SHA,            // 0x35
 		tls.TLS_RSA_WITH_AES_128_CBC_SHA,            // 0x2f
 	}
-	return assertPresenceAndOrdering(expectedCipherSuiteOrder, info.cipherSuites, true)
+	return assertPresenceAndOrdering(expectedCipherSuiteOrder, info.CipherSuites, true)
 }
 
 // looksLikeTor returns true if the info looks like a ClientHello from Tor browser
 // (based on Firefox).
 func (info rawHelloInfo) looksLikeTor() bool {
 	requiredExtensionsOrder := []uint16{10, 11, 16, 5, 13}
-	if !assertPresenceAndOrdering(requiredExtensionsOrder, info.extensions, true) {
+	if !assertPresenceAndOrdering(requiredExtensionsOrder, info.Extensions, true) {
 		return false
 	}
 
 	// check for session tickets support; Tor doesn't support them to prevent tracking
-	for _, ext := range info.extensions {
+	for _, ext := range info.Extensions {
 		if ext == 35 {
 			return false
 		}
@@ -619,12 +636,12 @@ func (info rawHelloInfo) looksLikeTor() bool {
 
 	// We check for both presence of curves and their ordering, including
 	// an optional curve at the beginning (for Tor based on Firefox 52)
-	infoCurves := info.curves
-	if len(info.curves) == 4 {
-		if info.curves[0] != 29 {
+	infoCurves := info.Curves
+	if len(info.Curves) == 4 {
+		if info.Curves[0] != 29 {
 			return false
 		}
-		infoCurves = info.curves[1:]
+		infoCurves = info.Curves[1:]
 	}
 	requiredCurves := []tls.CurveID{23, 24, 25}
 	if len(infoCurves) < len(requiredCurves) {
@@ -636,7 +653,7 @@ func (info rawHelloInfo) looksLikeTor() bool {
 		}
 	}
 
-	if hasGreaseCiphers(info.cipherSuites) {
+	if hasGreaseCiphers(info.CipherSuites) {
 		return false
 	}
 
@@ -663,7 +680,7 @@ func (info rawHelloInfo) looksLikeTor() bool {
 		tls.TLS_RSA_WITH_AES_256_CBC_SHA,            // 0x35
 		tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA,           // 0xa
 	}
-	return assertPresenceAndOrdering(expectedCipherSuiteOrder, info.cipherSuites, false)
+	return assertPresenceAndOrdering(expectedCipherSuiteOrder, info.CipherSuites, false)
 }
 
 // assertPresenceAndOrdering will return true if candidateList contains

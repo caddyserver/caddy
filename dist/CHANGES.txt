@@ -1,5 +1,11 @@
 CHANGES
 
+0.11 (May 10, 2018)
+- Built with Go 1.10.2
+- Integrated optional telemetry client
+- proxy: Fixed file descriptor leak
+
+
 0.10.14 (April 19, 2018)
 - tls: Fix error handling bug when obtaining certificates
 

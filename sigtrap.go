@@ -19,6 +19,8 @@ import (
 	"os"
 	"os/signal"
 	"sync"
+
+	"github.com/mholt/caddy/telemetry"
 )
 
 // TrapSignals create signal handlers for all applicable signals for this
@@ -51,6 +53,9 @@ func trapSignalsCrossPlatform() {
 			}
 
 			log.Println("[INFO] SIGINT: Shutting down")
+
+			telemetry.AppendUnique("sigtrap", "SIGINT")
+			go telemetry.StopEmitting() // not guaranteed to finish in time; that's OK (just don't block!)
 
 			// important cleanup actions before shutdown callbacks
 			for _, f := range OnProcessExit {

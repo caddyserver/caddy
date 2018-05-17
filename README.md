@@ -70,6 +70,8 @@ Then make sure the `caddy` binary is in your PATH.
 
 To build for other platforms, use build.go with the `--goos` and `--goarch` flags.
 
+When building from source, telemetry is enabled by default. You can disable it by changing `enableTelemetry` in run.go before compiling, or use the `-disabled-metrics` flag at runtime to disable only certain metrics.
+
 
 ## Quick Start
 
