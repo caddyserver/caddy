@@ -248,6 +248,12 @@ func TestBuildEnv(t *testing.T) {
 	envExpected["SCRIPT_NAME"] = "/fgci_test.php"
 	envExpected["SCRIPT_FILENAME"] = filepath.FromSlash("/fgci_test.php")
 	testBuildEnv(r, rule, fpath, envExpected)
+
+	// 8. Test REQUEST_SCHEME in env
+	r = newReq()
+	envExpected = newEnv()
+	envExpected["REQUEST_SCHEME"] = "http"
+	testBuildEnv(r, rule, fpath, envExpected)
 }
 
 func TestReadTimeout(t *testing.T) {
