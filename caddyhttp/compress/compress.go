@@ -75,6 +75,9 @@ outer:
 			ResponseWriterWrapper: &httpserver.ResponseWriterWrapper{ResponseWriter: w},
 		}
 
+		// if no filters are used, (the first branch of if), use vanilla gzipResponewriter
+		// if filters are used, use ResponseFilterWriter which has gzipResponseWriter and some more fields to
+		// keep track of ignored responses etc
 		var rw http.ResponseWriter
 		// if no response filter is used
 		if len(c.ResponseFilters) == 0 {
@@ -110,6 +113,8 @@ type gzipResponseWriter struct {
 	*httpserver.ResponseWriterWrapper
 	statusCodeWritten bool
 }
+
+// These 2 methods are called by Caddy for all the plugins - much like ServeHTTP
 
 // WriteHeader wraps the underlying WriteHeader method to prevent
 // problems with conflicting headers from proxied backends. For
