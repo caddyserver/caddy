@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package gzip
+package compress
 
 import (
 	"compress/gzip"
@@ -47,7 +47,7 @@ func TestLengthFilter(t *testing.T) {
 		for j, filter := range filters {
 			r := httptest.NewRecorder()
 			r.Header().Set("Content-Length", fmt.Sprint(ts.length))
-			wWriter := NewResponseFilterWriter([]ResponseFilter{filter}, &gzipResponseWriter{gzip.NewWriter(r), &httpserver.ResponseWriterWrapper{ResponseWriter: r}, false})
+			wWriter := NewResponseFilterWriter([]ResponseFilter{filter}, &compressResponseWriter{gzip.NewWriter(r), &httpserver.ResponseWriterWrapper{ResponseWriter: r}, false, "gzip"})
 			if filter.ShouldCompress(wWriter) != ts.shouldCompress[j] {
 				t.Errorf("Test %v: Expected %v found %v", i, ts.shouldCompress[j], filter.ShouldCompress(r))
 			}
@@ -70,8 +70,8 @@ func TestResponseFilterWriter(t *testing.T) {
 		LengthFilter(15),
 	}
 
-	server := Gzip{Configs: []Config{
-		{ResponseFilters: filters},
+	server := Compress{Configs: []Config{
+		{ResponseFilters: filters, Scheme: "gzip"},
 	}}
 
 	for i, ts := range tests {
@@ -103,8 +103,8 @@ func TestResponseFilterWriter(t *testing.T) {
 }
 
 func TestResponseGzippedOutput(t *testing.T) {
-	server := Gzip{Configs: []Config{
-		{ResponseFilters: []ResponseFilter{SkipCompressedFilter{}}},
+	server := Compress{Configs: []Config{
+		{ResponseFilters: []ResponseFilter{SkipCompressedFilter{}}, Scheme: "gzip"},
 	}}
 
 	server.Next = httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
