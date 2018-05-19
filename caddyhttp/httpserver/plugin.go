@@ -611,7 +611,7 @@ var directives = []string{
 	"cache", // github.com/nicolasazrak/caddy-cache
 	"rewrite",
 	"ext",
-	"gzip",
+	"compress",
 	"header",
 	"geoip", // github.com/kodnaplakal/caddy-geoip
 	"errors",

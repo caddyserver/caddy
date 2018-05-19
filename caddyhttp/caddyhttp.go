@@ -26,7 +26,7 @@ import (
 	_ "github.com/mholt/caddy/caddyhttp/expvar"
 	_ "github.com/mholt/caddy/caddyhttp/extensions"
 	_ "github.com/mholt/caddy/caddyhttp/fastcgi"
-	_ "github.com/mholt/caddy/caddyhttp/gzip"
+	_ "github.com/mholt/caddy/caddyhttp/compress"
 	_ "github.com/mholt/caddy/caddyhttp/header"
 	_ "github.com/mholt/caddy/caddyhttp/index"
 	_ "github.com/mholt/caddy/caddyhttp/internalsrv"
