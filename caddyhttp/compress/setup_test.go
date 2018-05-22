@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package gzip
+package compress
 
 import (
 	"testing"
@@ -22,7 +22,7 @@ import (
 )
 
 func TestSetup(t *testing.T) {
-	c := caddy.NewTestController("http", `gzip`)
+	c := caddy.NewTestController("http", `compress`)
 	err := setup(c)
 	if err != nil {
 		t.Errorf("Expected no errors, but got: %v", err)
@@ -33,9 +33,9 @@ func TestSetup(t *testing.T) {
 	}
 
 	handler := mids[0](httpserver.EmptyNext)
-	myHandler, ok := handler.(Gzip)
+	myHandler, ok := handler.(Compress)
 	if !ok {
-		t.Fatalf("Expected handler to be type Gzip, got: %#v", handler)
+		t.Fatalf("Expected handler to be type Compress, got: %#v", handler)
 	}
 
 	if !httpserver.SameNext(myHandler.Next, httpserver.EmptyNext) {
@@ -46,58 +46,65 @@ func TestSetup(t *testing.T) {
 		input     string
 		shouldErr bool
 	}{
-		{`gzip {`, true},
-		{`gzip {}`, true},
-		{`gzip a b`, true},
-		{`gzip a {`, true},
-		{`gzip { not f } `, true},
-		{`gzip { not } `, true},
-		{`gzip { not /file
+		{`compress`, false},
+		{`compress zstd`, false},
+		{`compress foo`, true},
+		{`compress gzip`, false},
+		{`compress gzip {`, true},
+		{`compress gzip {}`, true},
+		{`compress {}`, true},
+		{`compress gzip a b`, true},
+		{`compress gzip a {`, true},
+		{`compress gzip { not f } `, true},
+		{`compress gzip { not } `, true},
+		{`compress gzip { not /file
 		 ext .html
 		 level 1
 		} `, false},
-		{`gzip { level 9 } `, false},
-		{`gzip { ext } `, true},
-		{`gzip { ext /f
+		{`compress gzip { level 9 } `, false},
+		{`compress zstd { level 9 } `, false},
+		{`compress { level 9 } `, true},
+		{`compress gzip { ext } `, true},
+		{`compress gzip { ext /f
 		} `, true},
-		{`gzip { not /file
+		{`compress gzip { not /file
 		 ext .html
 		 level 1
 		}
-		gzip`, false},
-		{`gzip {
+		compress gzip`, false},
+		{`compress gzip {
 		 ext ""
 		}`, false},
-		{`gzip { not /file
+		{`compress gzip { not /file
 		 ext .html
 		 level 1
 		}
-		gzip { not /file1
+		compress gzip { not /file1
 		 ext .htm
 		 level 3
 		}
 		`, false},
-		{`gzip { not /file
+		{`compress gzip { not /file
 		 ext .html
 		 level 1
 		}
-		gzip { not /file1
+		compress gzip { not /file1
 		 ext .htm
 		 level 3
 		}
 		`, false},
-		{`gzip { not /file
+		{`compress gzip { not /file
 		 ext *
 		 level 1
 		}
 		`, false},
-		{`gzip { not /file
+		{`compress gzip { not /file
 		 ext *
 		 level 1
 		 min_length ab
 		}
 		`, true},
-		{`gzip { not /file
+		{`compress gzip { not /file
 		 ext *
 		 level 1
 		 min_length 1000
@@ -105,7 +112,7 @@ func TestSetup(t *testing.T) {
 		`, false},
 	}
 	for i, test := range tests {
-		_, err := gzipParse(caddy.NewTestController("http", test.input))
+		_, err := compressParse(caddy.NewTestController("http", test.input))
 		if test.shouldErr && err == nil {
 			t.Errorf("Test %v: Expected error but found nil", i)
 		} else if !test.shouldErr && err != nil {
@@ -115,7 +122,7 @@ func TestSetup(t *testing.T) {
 }
 
 func TestShouldAddResponseFilters(t *testing.T) {
-	configs, err := gzipParse(caddy.NewTestController("http", `gzip { min_length 654 }`))
+	configs, err := compressParse(caddy.NewTestController("http", `compress gzip { min_length 654 }`))
 
 	if err != nil {
 		t.Errorf("Test expected no error but found: %v", err)

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package gzip
+package compress
 
 import (
 	"compress/gzip"
@@ -36,12 +36,12 @@ func TestGzipHandler(t *testing.T) {
 	for _, e := range []string{".txt", ".html", ".css", ".md"} {
 		extFilter.Exts.Add(e)
 	}
-	gz := Gzip{Configs: []Config{
-		{RequestFilters: []RequestFilter{pathFilter, extFilter}},
+	cz := Compress{Configs: []Config{
+		{RequestFilters: []RequestFilter{pathFilter, extFilter}, Scheme: "gzip"},
 	}}
 
 	w := httptest.NewRecorder()
-	gz.Next = nextFunc(true)
+	cz.Next = nextFunc("gzip")
 	var exts = []string{
 		".html", ".css", ".md",
 	}
@@ -53,21 +53,21 @@ func TestGzipHandler(t *testing.T) {
 		}
 		r.Header.Set("Accept-Encoding", "gzip")
 		w.Header().Set("ETag", `"2n9cd"`)
-		_, err = gz.ServeHTTP(w, r)
+		_, err = cz.ServeHTTP(w, r)
 		if err != nil {
 			t.Error(err)
 		}
 
 		// The second pass, test if the ETag is already weak
 		w.Header().Set("ETag", `W/"2n9cd"`)
-		_, err = gz.ServeHTTP(w, r)
+		_, err = cz.ServeHTTP(w, r)
 		if err != nil {
 			t.Error(err)
 		}
 	}
 
 	w = httptest.NewRecorder()
-	gz.Next = nextFunc(false)
+	cz.Next = nextFunc("")
 	for _, p := range badPaths {
 		for _, e := range exts {
 			url := p + "/file" + e
@@ -76,7 +76,7 @@ func TestGzipHandler(t *testing.T) {
 				t.Error(err)
 			}
 			r.Header.Set("Accept-Encoding", "gzip")
-			_, err = gz.ServeHTTP(w, r)
+			_, err = cz.ServeHTTP(w, r)
 			if err != nil {
 				t.Error(err)
 			}
@@ -84,7 +84,7 @@ func TestGzipHandler(t *testing.T) {
 	}
 
 	w = httptest.NewRecorder()
-	gz.Next = nextFunc(false)
+	cz.Next = nextFunc("")
 	exts = []string{
 		".htm1", ".abc", ".mdx",
 	}
@@ -95,7 +95,7 @@ func TestGzipHandler(t *testing.T) {
 			t.Error(err)
 		}
 		r.Header.Set("Accept-Encoding", "gzip")
-		_, err = gz.ServeHTTP(w, r)
+		_, err = cz.ServeHTTP(w, r)
 		if err != nil {
 			t.Error(err)
 		}
@@ -103,22 +103,22 @@ func TestGzipHandler(t *testing.T) {
 
 	// test all levels
 	w = httptest.NewRecorder()
-	gz.Next = nextFunc(true)
+	cz.Next = nextFunc("gzip")
 	for i := 0; i <= gzip.BestCompression; i++ {
-		gz.Configs[0].Level = i
+		cz.Configs[0].Level = i
 		r, err := http.NewRequest("GET", "/file.txt", nil)
 		if err != nil {
 			t.Error(err)
 		}
 		r.Header.Set("Accept-Encoding", "gzip")
-		_, err = gz.ServeHTTP(w, r)
+		_, err = cz.ServeHTTP(w, r)
 		if err != nil {
 			t.Error(err)
 		}
 	}
 }
 
-func nextFunc(shouldGzip bool) httpserver.Handler {
+func nextFunc(compressScheme string) httpserver.Handler {
 	return httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
 		// write a relatively large text file
 		b, err := ioutil.ReadFile("testdata/test.txt")
@@ -129,7 +129,7 @@ func nextFunc(shouldGzip bool) httpserver.Handler {
 			return 500, err
 		}
 
-		if shouldGzip {
+		if compressScheme == "gzip" {
 			if w.Header().Get("Content-Encoding") != "gzip" {
 				return 0, fmt.Errorf("Content-Encoding must be gzip, found %v", w.Header().Get("Content-Encoding"))
 			}
@@ -140,8 +140,8 @@ func nextFunc(shouldGzip bool) httpserver.Handler {
 			if etag != "" && etag != `W/"2n9cd"` {
 				return 0, fmt.Errorf("ETag must be converted to weak Etag, found %v", w.Header().Get("ETag"))
 			}
-			if _, ok := w.(*gzipResponseWriter); !ok {
-				return 0, fmt.Errorf("ResponseWriter should be gzipResponseWriter, found %T", w)
+			if _, ok := w.(*compressResponseWriter); !ok {
+				return 0, fmt.Errorf("ResponseWriter should be compressResponseWriter, found %T", w)
 			}
 			if strings.Contains(w.Header().Get("Content-Type"), "application/x-gzip") {
 				return 0, fmt.Errorf("Content-Type should not be gzip")
@@ -154,8 +154,8 @@ func nextFunc(shouldGzip bool) httpserver.Handler {
 		if w.Header().Get("Content-Encoding") == "gzip" {
 			return 0, fmt.Errorf("Content-Encoding must not be gzip, found gzip")
 		}
-		if _, ok := w.(*gzipResponseWriter); ok {
-			return 0, fmt.Errorf("ResponseWriter should not be gzipResponseWriter")
+		if _, ok := w.(*compressResponseWriter); ok {
+			return 0, fmt.Errorf("ResponseWriter should not be compressResponseWriter")
 		}
 		return 0, nil
 	})
@@ -171,14 +171,14 @@ func BenchmarkGzip(b *testing.B) {
 	for _, e := range []string{".txt", ".html", ".css", ".md"} {
 		extFilter.Exts.Add(e)
 	}
-	gz := Gzip{Configs: []Config{
+	cz := Compress{Configs: []Config{
 		{
 			RequestFilters: []RequestFilter{pathFilter, extFilter},
 		},
 	}}
 
 	w := httptest.NewRecorder()
-	gz.Next = nextFunc(true)
+	cz.Next = nextFunc("gzip")
 	url := "/file.txt"
 	r, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -188,7 +188,7 @@ func BenchmarkGzip(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err = gz.ServeHTTP(w, r)
+		_, err = cz.ServeHTTP(w, r)
 		if err != nil {
 			b.Fatal(err)
 		}

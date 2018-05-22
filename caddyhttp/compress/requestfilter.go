@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package gzip
+package compress
 
 import (
 	"net/http"
@@ -21,14 +21,14 @@ import (
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
 
-// RequestFilter determines if a request should be gzipped.
+// RequestFilter determines if a request should be compressed.
 type RequestFilter interface {
-	// ShouldCompress tells if gzip compression
+	// ShouldCompress tells if compression
 	// should be done on the request.
 	ShouldCompress(*http.Request) bool
 }
 
-// defaultExtensions is the list of default extensions for which to enable gzipping.
+// defaultExtensions is the list of default extensions for which to enable compressing.
 var defaultExtensions = []string{"", ".txt", ".htm", ".html", ".css", ".php", ".js", ".json",
 	".md", ".mdown", ".xml", ".svg", ".go", ".cgi", ".py", ".pl", ".aspx", ".asp"}
 

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package gzip
+package compress
 
 import (
 	"compress/gzip"
@@ -20,7 +20,7 @@ import (
 	"strconv"
 )
 
-// ResponseFilter determines if the response should be gzipped.
+// ResponseFilter determines if the response should be compressed.
 type ResponseFilter interface {
 	ShouldCompress(http.ResponseWriter) bool
 }
@@ -60,12 +60,12 @@ type ResponseFilterWriter struct {
 	filters           []ResponseFilter
 	shouldCompress    bool
 	statusCodeWritten bool
-	*gzipResponseWriter
+	*compressResponseWriter
 }
 
 // NewResponseFilterWriter creates and initializes a new ResponseFilterWriter.
-func NewResponseFilterWriter(filters []ResponseFilter, gz *gzipResponseWriter) *ResponseFilterWriter {
-	return &ResponseFilterWriter{filters: filters, gzipResponseWriter: gz}
+func NewResponseFilterWriter(filters []ResponseFilter, cz *compressResponseWriter) *ResponseFilterWriter {
+	return &ResponseFilterWriter{filters: filters, compressResponseWriter: cz}
 }
 
 // WriteHeader wraps underlying WriteHeader method and
@@ -81,13 +81,13 @@ func (r *ResponseFilterWriter) WriteHeader(code int) {
 	}
 
 	if r.shouldCompress {
-		// replace discard writer with ResponseWriter
-		if gzWriter, ok := r.gzipResponseWriter.Writer.(*gzip.Writer); ok {
-			gzWriter.Reset(r.ResponseWriter)
+		// replace discard writer with ResponseWriter -- TODO_DARSHANIME - see if zstd's writer has Reset
+		if czWriter, ok := r.compressResponseWriter.Writer.(*gzip.Writer); ok {
+			czWriter.Reset(r.ResponseWriter)
 		}
 		// use gzip WriteHeader to include and delete
 		// necessary headers
-		r.gzipResponseWriter.WriteHeader(code)
+		r.compressResponseWriter.WriteHeader(code)
 	} else {
 		r.ResponseWriter.WriteHeader(code)
 	}
@@ -101,7 +101,7 @@ func (r *ResponseFilterWriter) Write(b []byte) (int, error) {
 		r.WriteHeader(http.StatusOK)
 	}
 	if r.shouldCompress {
-		return r.gzipResponseWriter.Write(b)
+		return r.compressResponseWriter.Write(b)
 	}
 	return r.ResponseWriter.Write(b)
 }

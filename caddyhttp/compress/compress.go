@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package gzip provides a middleware layer that performs
-// gzip compression on the response.
-package gzip
+// Package compress provides a middleware layer that performs
+// compression on the response.
+package compress
 
 import (
 	"io"
@@ -26,64 +26,75 @@ import (
 )
 
 func init() {
-	caddy.RegisterPlugin("gzip", caddy.Plugin{
+	caddy.RegisterPlugin("compress", caddy.Plugin{
 		ServerType: "http",
 		Action:     setup,
 	})
+	initGzipWriterPool()
+	initZstdWriterPool()
 
-	initWriterPool()
 }
 
-// Gzip is a middleware type which gzips HTTP responses. It is
-// imperative that any handler which writes to a gzipped response
+// Compress is a middleware type which compresses HTTP responses. It is
+// imperative that any handler which writes to a compressed response
 // specifies the Content-Type, otherwise some clients will assume
-// application/x-gzip and try to download a file.
-type Gzip struct {
+// application/* and try to download a file.
+type Compress struct {
 	Next    httpserver.Handler
 	Configs []Config
 }
 
-// Config holds the configuration for Gzip middleware
+// Config holds the configuration for Compress middleware
 type Config struct {
 	RequestFilters  []RequestFilter
 	ResponseFilters []ResponseFilter
 	Level           int // Compression level
+	Scheme string // the compression scheme used
 }
 
-// ServeHTTP serves a gzipped response if the client supports it.
-func (g Gzip) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
+// ServeHTTP serves a compressed response if the client supports it.
+func (g Compress) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
+
+	// TODO_DARSHANIME
 	if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
 		return g.Next.ServeHTTP(w, r)
 	}
+
 outer:
 	for _, c := range g.Configs {
-
-		// Check request filters to determine if gzipping is permitted for this request
+		// Check request filters to determine if compressing is permitted for this request
 		for _, filter := range c.RequestFilters {
 			if !filter.ShouldCompress(r) {
 				continue outer
 			}
 		}
 
-		// gzipWriter modifies underlying writer at init,
+		// compressWriter modifies underlying writer at init,
 		// use a discard writer instead to leave ResponseWriter in
 		// original form.
-		gzipWriter := getWriter(c.Level)
-		defer putWriter(c.Level, gzipWriter)
-		gz := &gzipResponseWriter{
-			Writer:                gzipWriter,
+		compressWriter, err := getWriter(c)
+		if err != nil {
+			return 0, err
+		}
+		defer putWriter(c, compressWriter)
+		cz := &compressResponseWriter{
+			Writer:                compressWriter,
 			ResponseWriterWrapper: &httpserver.ResponseWriterWrapper{ResponseWriter: w},
+			Scheme: c.Scheme,
 		}
 
+		// if no filters are used, (the first branch of if), use vanilla compressResponewriter
+		// if filters are used, use ResponseFilterWriter which has compressResponseWriter and some more fields to
+		// keep track of ignored responses etc
 		var rw http.ResponseWriter
 		// if no response filter is used
 		if len(c.ResponseFilters) == 0 {
 			// replace discard writer with ResponseWriter
-			gzipWriter.Reset(w)
-			rw = gz
+			compressWriter.Reset(w)
+			rw = cz
 		} else {
-			// wrap gzip writer with ResponseFilterWriter
-			rw = NewResponseFilterWriter(c.ResponseFilters, gz)
+			// wrap compress writer with ResponseFilterWriter
+			rw = NewResponseFilterWriter(c.ResponseFilters, cz)
 		}
 
 		// Any response in forward middleware will now be compressed
@@ -103,21 +114,30 @@ outer:
 	return g.Next.ServeHTTP(w, r)
 }
 
-// gzipResponeWriter wraps the underlying Write method
-// with a gzip.Writer to compress the output.
-type gzipResponseWriter struct {
+// compressResponeWriter wraps the underlying Write method
+// with a io.Writer to compress the output.
+type compressResponseWriter struct {
 	io.Writer
 	*httpserver.ResponseWriterWrapper
 	statusCodeWritten bool
+	Scheme string
 }
+
+type compressWriter interface {
+	io.Writer
+	io.Closer
+	Reset (io.Writer)
+}
+
+// These 2 methods are called by Caddy for all the plugins - much like ServeHTTP
 
 // WriteHeader wraps the underlying WriteHeader method to prevent
 // problems with conflicting headers from proxied backends. For
 // example, a backend system that calculates Content-Length would
 // be wrong because it doesn't know it's being gzipped.
-func (w *gzipResponseWriter) WriteHeader(code int) {
+func (w *compressResponseWriter) WriteHeader(code int) {
 	w.Header().Del("Content-Length")
-	w.Header().Set("Content-Encoding", "gzip")
+	w.Header().Set("Content-Encoding", w.Scheme)
 	w.Header().Add("Vary", "Accept-Encoding")
 	originalEtag := w.Header().Get("ETag")
 	if originalEtag != "" && !strings.HasPrefix(originalEtag, "W/") {
@@ -128,7 +148,7 @@ func (w *gzipResponseWriter) WriteHeader(code int) {
 }
 
 // Write wraps the underlying Write method to do compression.
-func (w *gzipResponseWriter) Write(b []byte) (int, error) {
+func (w *compressResponseWriter) Write(b []byte) (int, error) {
 	if w.Header().Get("Content-Type") == "" {
 		w.Header().Set("Content-Type", http.DetectContentType(b))
 	}
@@ -140,4 +160,4 @@ func (w *gzipResponseWriter) Write(b []byte) (int, error) {
 }
 
 // Interface guards
-var _ httpserver.HTTPInterfaces = (*gzipResponseWriter)(nil)
+var _ httpserver.HTTPInterfaces = (*compressResponseWriter)(nil)
