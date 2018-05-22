@@ -19,6 +19,8 @@ import (
 	"strconv"
 	"strings"
 
+	"compress/gzip"
+
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
@@ -172,6 +174,9 @@ func putWriter(c Config, w compressWriter) {
 	case "gzip":
 		gw := w.(*gzip.Writer)
 		putGzipWriter(c.Level, gw)
+	case "zstd":
+		zw := w.(*zstdWriter)
+		putZstdWriter(c.Level, zw)
 	default:
 		fmt.Println("in put writer, default case")
 	}
