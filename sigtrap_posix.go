@@ -90,6 +90,7 @@ func trapSignalsPosix() {
 				purgeEventHooks()
 
 				// Kick off the restart; our work is done
+				EmitEvent(InstanceRestartEvent, nil)
 				_, err = inst.Restart(caddyfileToUse)
 				if err != nil {
 					restoreEventHooks(oldEventHooks)
