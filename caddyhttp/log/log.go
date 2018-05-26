@@ -82,7 +82,7 @@ func (l Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 					}
 				}
 				// double log for test repo.
-				e.Log.Println(rep.Replace(e.Format))
+				//e.Log.Println(rep.Replace(e.Format))
 				e.Log.Println(rep.Replace(e.Format))
 
 			}
