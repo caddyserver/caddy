@@ -34,10 +34,17 @@ test_script:
 after_test:
   - golint ./...
   - ls -l
+  - go run caddy/build.go -goos=windows -goarch=amd64
 
 artifacts:
   - path: bin/caddy.exe
     name: CaddyEXE  
+
+  - path: caddy/caddy.exe
+    name: CaddyEXE2     
+
+  - path: caddy.exe
+    name: CaddyEXE3 
 
 deploy:
   provider: Webhook
