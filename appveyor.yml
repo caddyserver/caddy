@@ -36,8 +36,8 @@ after_test:
   - ls -l
 
 artifacts:
-  - path: c:\gopath\bin\caddy.exe
-    name: CaddyEXE3 
+  - path: ..\..\..\..\bin\caddy.exe
+    name: CaddyEXE 
 
 deploy:
   provider: Webhook
