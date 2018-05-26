@@ -32,7 +32,6 @@ test_script:
   - go test -race ./...
 
 after_test:
-  - golint ./...
   - go build
   - ls -l
 
