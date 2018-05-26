@@ -32,11 +32,11 @@ test_script:
   - go test -race ./...
 
 after_test:
-  - go build
+  - go build -o buildOutput\caddy.exe -i
   - ls -l
 
 artifacts:
-  - path: ..\..\..\..\bin\caddy.exe
+  - path: buildOutput\caddy.exe
     name: CaddyEXE 
 
 deploy:
