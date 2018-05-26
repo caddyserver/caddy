@@ -33,9 +33,10 @@ test_script:
 
 after_test:
   - golint ./...
+  - ls -l
 
 artifacts:
-  - path: caddy.exe
+  - path: bin/caddy.exe
     name: CaddyEXE  
 
 deploy:
