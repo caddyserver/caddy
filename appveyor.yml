@@ -35,7 +35,7 @@ after_test:
   - golint ./...
 
 artifacts:
-  - path: %GOPATH%\bin\caddy.exe
+  - path: caddy.exe
     name: CaddyEXE  
 
 deploy:
