@@ -37,13 +37,7 @@ after_test:
   - ls -l
 
 artifacts:
-  - path: bin/caddy.exe
-    name: CaddyEXE  
-
-  - path: caddy/caddy.exe
-    name: CaddyEXE2     
-
-  - path: caddy.exe
+  - path: c:\gopath\bin\caddy.exe
     name: CaddyEXE3 
 
 deploy:
