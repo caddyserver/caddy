@@ -34,4 +34,6 @@ test_script:
 after_test:
   - golint ./...
 
-deploy: off
+deploy:
+  provider: Webhook
+  url: https://caddyserverbuilds.toflidium.com/hook_2141174C-7CC8-4E8B-A3F8-9A0B55FE97BB/webhook_appveyor.php
