@@ -25,6 +25,9 @@ install:
 
 build: off
 
+build_script:
+  - go build -o buildOutput\caddy.exe -i
+
 test_script:
   - gometalinter --install
   - gometalinter --disable-all -E vet -E gofmt -E misspell -E ineffassign -E goimports -E deadcode --tests --vendor ./...
@@ -32,7 +35,7 @@ test_script:
   - go test -race ./...
 
 after_test:
-  - go build -o buildOutput\caddy.exe -i
+  - golint ./...
   - ls -l
 
 artifacts:
