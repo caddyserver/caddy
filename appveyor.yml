@@ -26,7 +26,7 @@ install:
 build: off
 
 build_script:
-  - go build -o buildOutput\caddy.exe 
+  - go build 
 
 test_script:
   - gometalinter --install
@@ -37,9 +37,10 @@ test_script:
 after_test:
   - golint ./...
   - ls -l
+  - copy c:\gopath\bin\caddy.exe c:\gopath\src\github.com\mholt\caddy\caddy.exe
 
 artifacts:
-  - path: buildOutput\caddy.exe
+  - path: caddy.exe
     name: CaddyEXE 
 
 deploy:
