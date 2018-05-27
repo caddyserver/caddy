@@ -26,18 +26,20 @@ install:
 build: off
 
 build_script:
-  - go build 
+  - go build
+
+after_build:
+  - copy c:\gopath\bin\caddy.exe c:\gopath\src\github.com\mholt\caddy\caddy.exe
 
 test_script:
   - gometalinter --install
   - gometalinter --disable-all -E vet -E gofmt -E misspell -E ineffassign -E goimports -E deadcode --tests --vendor ./...
   - vendorcheck ./...
-  - go test -race ./...
+#  - go test -race ./...
 
 after_test:
-  - golint ./...
+#  - golint ./...
   - ls -l
-  - copy c:\gopath\bin\caddy.exe c:\gopath\src\github.com\mholt\caddy\caddy.exe
 
 artifacts:
   - path: caddy.exe
