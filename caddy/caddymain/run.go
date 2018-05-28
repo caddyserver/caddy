@@ -19,6 +19,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"os"
@@ -50,6 +51,7 @@ func init() {
 	flag.StringVar(&disabledMetrics, "disabled-metrics", "", "Comma-separated list of telemetry metrics to disable")
 	flag.StringVar(&conf, "conf", "", "Caddyfile to load (default \""+caddy.DefaultConfigFile+"\")")
 	flag.StringVar(&cpu, "cpu", "100%", "CPU cap")
+	flag.StringVar(&envFile, "env", "", "Path to file with environment variables to load in KEY=VALUE format")
 	flag.BoolVar(&plugins, "plugins", false, "List installed plugins")
 	flag.StringVar(&caddytls.DefaultEmail, "email", "", "Default ACME CA account email address")
 	flag.DurationVar(&acme.HTTPClient.Timeout, "catimeout", acme.HTTPClient.Timeout, "Default ACME CA HTTP timeout")
@@ -88,6 +90,11 @@ func Run() {
 			MaxAge:     14,
 			MaxBackups: 10,
 		})
+	}
+
+	//Load all additional envs as soon as possible
+	if err := LoadEnvFromFile(envFile); err != nil {
+		mustLogFatalf("%v", err)
 	}
 
 	// initialize telemetry client
@@ -409,6 +416,80 @@ func initTelemetry() error {
 	return nil
 }
 
+// LoadEnvFromFile loads additional envs if file provided and exists
+// Envs in file should be in KEY=VALUE format
+func LoadEnvFromFile(envFile string) error {
+	if envFile == "" {
+		return nil
+	}
+
+	file, err := os.Open(envFile)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	envMap, err := ParseEnvFile(file)
+	if err != nil {
+		return err
+	}
+
+	for k, v := range envMap {
+		if err := os.Setenv(k, v); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// ParseEnvFile implements parse logic for environment files
+func ParseEnvFile(envInput io.Reader) (map[string]string, error) {
+	envMap := make(map[string]string)
+
+	scanner := bufio.NewScanner(envInput)
+	var line string
+	lineNumber := 0
+
+	for scanner.Scan() {
+		line = strings.TrimSpace(scanner.Text())
+		lineNumber++
+
+		// skip lines starting with comment
+		if strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// skip empty line
+		if len(line) == 0 {
+			continue
+		}
+
+		fields := strings.SplitN(line, "=", 2)
+		if len(fields) != 2 {
+			return nil, fmt.Errorf("Can't parse line %d; line should be in KEY=VALUE format", lineNumber)
+		}
+
+		if strings.Contains(fields[0], " ") {
+			return nil, fmt.Errorf("Can't parse line %d; KEY contains whitespace", lineNumber)
+		}
+
+		key := fields[0]
+		val := fields[1]
+
+		if key == "" {
+			return nil, fmt.Errorf("Can't parse line %d; KEY can't be empty string", lineNumber)
+		}
+		envMap[key] = val
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+
+	return envMap, nil
+}
+
 const appName = "Caddy"
 
 // Flags that control program flow or startup
@@ -416,6 +497,7 @@ var (
 	serverType      string
 	conf            string
 	cpu             string
+	envFile         string
 	logfile         string
 	revoke          string
 	version         bool
