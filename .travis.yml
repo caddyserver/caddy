@@ -37,6 +37,8 @@ script:
 after_script:
   - golint ./...
 
+
+
 notifications:
   webhooks:
     urls:
