@@ -98,7 +98,7 @@ func Run() {
 	}
 
 	// initialize telemetry client
-	if enableTelemetry {
+	if EnableTelemetry {
 		err := initTelemetry()
 		if err != nil {
 			mustLogFatalf("[ERROR] Initializing telemetry: %v", err)
@@ -519,4 +519,5 @@ var (
 	gitFilesModified string // git diff-index --name-only HEAD
 )
 
-const enableTelemetry = true
+// This variable defines whether telemetry is enabled in Run.
+var EnableTelemetry = true
