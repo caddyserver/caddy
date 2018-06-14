@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+
+	"github.com/xenolf/lego/log"
 )
 
 const (
@@ -28,9 +30,9 @@ func (*DNSProviderManual) Present(domain, token, keyAuth string) error {
 		return err
 	}
 
-	logf("[INFO] acme: Please create the following TXT record in your %s zone:", authZone)
-	logf("[INFO] acme: %s", dnsRecord)
-	logf("[INFO] acme: Press 'Enter' when you are done")
+	log.Printf("[INFO] acme: Please create the following TXT record in your %s zone:", authZone)
+	log.Printf("[INFO] acme: %s", dnsRecord)
+	log.Printf("[INFO] acme: Press 'Enter' when you are done")
 
 	reader := bufio.NewReader(os.Stdin)
 	_, _ = reader.ReadString('\n')
@@ -47,7 +49,7 @@ func (*DNSProviderManual) CleanUp(domain, token, keyAuth string) error {
 		return err
 	}
 
-	logf("[INFO] acme: You can now remove this TXT record from your %s zone:", authZone)
-	logf("[INFO] acme: %s", dnsRecord)
+	log.Printf("[INFO] acme: You can now remove this TXT record from your %s zone:", authZone)
+	log.Printf("[INFO] acme: %s", dnsRecord)
 	return nil
 }

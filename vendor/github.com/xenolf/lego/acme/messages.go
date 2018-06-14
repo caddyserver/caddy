@@ -1,6 +1,7 @@
 package acme
 
 import (
+	"encoding/json"
 	"time"
 )
 
@@ -26,11 +27,12 @@ type directory struct {
 }
 
 type accountMessage struct {
-	Status               string   `json:"status,omitempty"`
-	Contact              []string `json:"contact,omitempty"`
-	TermsOfServiceAgreed bool     `json:"termsOfServiceAgreed,omitempty"`
-	Orders               string   `json:"orders,omitempty"`
-	OnlyReturnExisting   bool     `json:"onlyReturnExisting,omitempty"`
+	Status                 string          `json:"status,omitempty"`
+	Contact                []string        `json:"contact,omitempty"`
+	TermsOfServiceAgreed   bool            `json:"termsOfServiceAgreed,omitempty"`
+	Orders                 string          `json:"orders,omitempty"`
+	OnlyReturnExisting     bool            `json:"onlyReturnExisting,omitempty"`
+	ExternalAccountBinding json.RawMessage `json:"externalAccountBinding,omitempty"`
 }
 
 type orderResource struct {
@@ -74,9 +76,6 @@ type challenge struct {
 
 type csrMessage struct {
 	Csr string `json:"csr"`
-}
-
-type emptyObjectMessage struct {
 }
 
 type revokeCertMessage struct {

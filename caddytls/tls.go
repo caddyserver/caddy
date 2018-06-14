@@ -39,7 +39,7 @@ import (
 	"strings"
 
 	"github.com/mholt/caddy"
-	"github.com/xenolf/lego/acmev2"
+	"github.com/xenolf/lego/acme"
 )
 
 // HostQualifies returns true if the hostname alone
@@ -72,7 +72,7 @@ func HostQualifies(hostname string) bool {
 // saveCertResource saves the certificate resource to disk. This
 // includes the certificate file itself, the private key, and the
 // metadata file.
-func saveCertResource(storage Storage, cert acme.CertificateResource) error {
+func saveCertResource(storage Storage, cert *acme.CertificateResource) error {
 	// Save cert, private key, and metadata
 	siteData := &SiteData{
 		Cert: cert.Certificate,
@@ -97,41 +97,48 @@ func Revoke(host string) error {
 	return client.Revoke(host)
 }
 
-// TODO: tls-sni challenge was removed in January 2018, but a variant of it might return
-// // tlsSNISolver is a type that can solve TLS-SNI challenges using
-// // an existing listener and our custom, in-memory certificate cache.
-// type tlsSNISolver struct {
-// 	certCache *certificateCache
-// }
+// tlsALPNSolver is a type that can solve TLS-ALPN challenges using
+// an existing listener and our custom, in-memory certificate cache.
+type tlsALPNSolver struct {
+	certCache *certificateCache
+}
 
-// // Present adds the challenge certificate to the cache.
-// func (s tlsSNISolver) Present(domain, token, keyAuth string) error {
-// 	cert, acmeDomain, err := acme.TLSSNI01ChallengeCert(keyAuth)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	certHash := hashCertificateChain(cert.Certificate)
-// 	s.certCache.Lock()
-// 	s.certCache.cache[acmeDomain] = Certificate{
-// 		Certificate: cert,
-// 		Names:       []string{acmeDomain},
-// 		Hash:        certHash, // perhaps not necesssary
-// 	}
-// 	s.certCache.Unlock()
-// 	return nil
-// }
+// Present adds the challenge certificate to the cache.
+func (s tlsALPNSolver) Present(domain, token, keyAuth string) error {
+	cert, err := acme.TLSALPNChallengeCert(domain, keyAuth)
+	if err != nil {
+		return err
+	}
+	certHash := hashCertificateChain(cert.Certificate)
+	s.certCache.Lock()
+	s.certCache.cache[tlsALPNCertKeyName(domain)] = Certificate{
+		Certificate: *cert,
+		Names:       []string{domain},
+		Hash:        certHash, // perhaps not necesssary
+	}
+	s.certCache.Unlock()
+	return nil
+}
 
-// // CleanUp removes the challenge certificate from the cache.
-// func (s tlsSNISolver) CleanUp(domain, token, keyAuth string) error {
-// 	_, acmeDomain, err := acme.TLSSNI01ChallengeCert(keyAuth)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	s.certCache.Lock()
-// 	delete(s.certCache.cache, acmeDomain)
-// 	s.certCache.Unlock()
-// 	return nil
-// }
+// CleanUp removes the challenge certificate from the cache.
+func (s tlsALPNSolver) CleanUp(domain, token, keyAuth string) error {
+	// _, acmeDomain, err := acme.TLSALPNChallengeCert(keyAuth)
+	// if err != nil {
+	// 	return err
+	// }
+	s.certCache.Lock()
+	delete(s.certCache.cache, domain)
+	s.certCache.Unlock()
+	return nil
+}
+
+// tlsALPNCertKeyName returns the key to use when caching a cert
+// for use with the TLS-ALPN ACME challenge. It is simply to help
+// avoid conflicts (although at time of writing, there shouldn't
+// be, since the cert cache is keyed by hash of certificate chain).
+func tlsALPNCertKeyName(sniName string) string {
+	return sniName + ":acme-tls-alpn"
+}
 
 // distributedHTTPSolver allows the HTTP-01 challenge to be solved by
 // an instance other than the one which initiated it. This is useful
@@ -297,8 +304,8 @@ var (
 	// DisableHTTPChallenge will disable all HTTP challenges.
 	DisableHTTPChallenge bool
 
-	// DisableTLSSNIChallenge will disable all TLS-SNI challenges.
-	DisableTLSSNIChallenge bool
+	// DisableTLSALPNChallenge will disable all TLS-ALPN challenges.
+	DisableTLSALPNChallenge bool
 )
 
 var storageProviders = make(map[string]StorageConstructor)

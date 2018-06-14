@@ -169,12 +169,12 @@ func (h *httpContext) InspectServerBlocks(sourceFile string, serverBlocks []cadd
 
 			// If default HTTP or HTTPS ports have been customized,
 			// make sure the ACME challenge ports match
-			var altHTTPPort, altTLSSNIPort string
+			var altHTTPPort, altTLSALPNPort string
 			if HTTPPort != DefaultHTTPPort {
 				altHTTPPort = HTTPPort
 			}
 			if HTTPSPort != DefaultHTTPSPort {
-				altTLSSNIPort = HTTPSPort
+				altTLSALPNPort = HTTPSPort
 			}
 
 			// Make our caddytls.Config, which has a pointer to the
@@ -183,7 +183,7 @@ func (h *httpContext) InspectServerBlocks(sourceFile string, serverBlocks []cadd
 			caddytlsConfig := caddytls.NewConfig(h.instance)
 			caddytlsConfig.Hostname = addr.Host
 			caddytlsConfig.AltHTTPPort = altHTTPPort
-			caddytlsConfig.AltTLSSNIPort = altTLSSNIPort
+			caddytlsConfig.AltTLSALPNPort = altTLSALPNPort
 
 			// Save the config to our master list, and key it for lookups
 			cfg := &SiteConfig{

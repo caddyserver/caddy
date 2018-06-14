@@ -146,7 +146,7 @@ func RenewManagedCertificates(allowPrompts bool) (err error) {
 				// happen to run their maintenance checks at approximately the same times;
 				// both might start renewal at about the same time and do two renewals and one
 				// will overwrite the other. Hence TLS storage plugins. This is sort of a TODO.
-				// NOTE 2: It is super-important to note that the TLS-SNI challenge requires
+				// NOTE 2: It is super-important to note that the TLS-ALPN challenge requires
 				// a write lock on the cache in order to complete its challenge, so it is extra
 				// vital that this renew operation does not happen inside our read lock!
 				renewQueue = append(renewQueue, cert)

@@ -27,7 +27,7 @@ import (
 
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/telemetry"
-	"github.com/xenolf/lego/acmev2"
+	"github.com/xenolf/lego/acme"
 )
 
 // acmeMu ensures that only one ACME challenge occurs at a time.
@@ -121,7 +121,7 @@ var newACMEClient = func(config *Config, allowPrompts bool) (*ACMEClient, error)
 	}
 
 	if config.DNSProvider == "" {
-		// Use HTTP and TLS-SNI challenges by default
+		// Use HTTP and TLS-ALPN challenges by default
 
 		// See if HTTP challenge needs to be proxied
 		useHTTPPort := HTTPChallengePort
@@ -132,16 +132,15 @@ var newACMEClient = func(config *Config, allowPrompts bool) (*ACMEClient, error)
 			useHTTPPort = DefaultHTTPAlternatePort
 		}
 
-		// TODO: tls-sni challenge was removed in January 2018, but a variant of it might return
-		// See which port TLS-SNI challenges will be accomplished on
-		// useTLSSNIPort := TLSSNIChallengePort
-		// if config.AltTLSSNIPort != "" {
-		// 	useTLSSNIPort = config.AltTLSSNIPort
-		// }
-		// err := c.acmeClient.SetTLSAddress(net.JoinHostPort(config.ListenHost, useTLSSNIPort))
-		// if err != nil {
-		// 	return nil, err
-		// }
+		// See which port TLS-ALPN challenges will be accomplished on
+		useTLSALPNPort := TLSALPNChallengePort
+		if config.AltTLSALPNPort != "" {
+			useTLSALPNPort = config.AltTLSALPNPort
+		}
+		err := c.acmeClient.SetTLSAddress(net.JoinHostPort(config.ListenHost, useTLSALPNPort))
+		if err != nil {
+			return nil, err
+		}
 
 		// if using file storage, we can distribute the HTTP challenge across
 		// all instances sharing the acme folder; either way, we must still set
@@ -168,21 +167,19 @@ var newACMEClient = func(config *Config, allowPrompts bool) (*ACMEClient, error)
 			}
 		}
 
-		// TODO: tls-sni challenge was removed in January 2018, but a variant of it might return
 		// See if TLS challenge needs to be handled by our own facilities
-		// if caddy.HasListenerWithAddress(net.JoinHostPort(config.ListenHost, useTLSSNIPort)) {
-		// 	c.acmeClient.SetChallengeProvider(acme.TLSSNI01, tlsSNISolver{certCache: config.certCache})
-		// }
+		if caddy.HasListenerWithAddress(net.JoinHostPort(config.ListenHost, useTLSALPNPort)) {
+			c.acmeClient.SetChallengeProvider(acme.TLSALPN01, tlsALPNSolver{certCache: config.certCache})
+		}
 
 		// Disable any challenges that should not be used
 		var disabledChallenges []acme.Challenge
 		if DisableHTTPChallenge {
 			disabledChallenges = append(disabledChallenges, acme.HTTP01)
 		}
-		// TODO: tls-sni challenge was removed in January 2018, but a variant of it might return
-		// if DisableTLSSNIChallenge {
-		// 	disabledChallenges = append(disabledChallenges, acme.TLSSNI01)
-		// }
+		if DisableTLSALPNChallenge {
+			disabledChallenges = append(disabledChallenges, acme.TLSALPN01)
+		}
 		if len(disabledChallenges) > 0 {
 			c.acmeClient.ExcludeChallenges(disabledChallenges)
 		}
@@ -203,9 +200,7 @@ var newACMEClient = func(config *Config, allowPrompts bool) (*ACMEClient, error)
 		}
 
 		// Use the DNS challenge exclusively
-		// TODO: tls-sni challenge was removed in January 2018, but a variant of it might return
-		// c.acmeClient.ExcludeChallenges([]acme.Challenge{acme.HTTP01, acme.TLSSNI01})
-		c.acmeClient.ExcludeChallenges([]acme.Challenge{acme.HTTP01})
+		c.acmeClient.ExcludeChallenges([]acme.Challenge{acme.HTTP01, acme.TLSALPN01})
 		c.acmeClient.SetChallengeProvider(acme.DNS01, prov)
 	}
 
@@ -312,7 +307,7 @@ func (c *ACMEClient) Renew(name string) error {
 	certMeta.PrivateKey = siteData.Key
 
 	// Perform renewal and retry if necessary, but not too many times.
-	var newCertMeta acme.CertificateResource
+	var newCertMeta *acme.CertificateResource
 	var success bool
 	for attempts := 0; attempts < 2; attempts++ {
 		namesObtaining.Add([]string{name})
@@ -321,10 +316,8 @@ func (c *ACMEClient) Renew(name string) error {
 		acmeMu.Unlock()
 		namesObtaining.Remove([]string{name})
 		if err == nil {
-			// double-check that we actually got a certificate; check a couple fields
-			// TODO: This is a temporary workaround for what I think is a bug in the acmev2 package (March 2018)
-			// but it might not hurt to keep this extra check in place
-			if newCertMeta.Domain == "" || newCertMeta.Certificate == nil {
+			// double-check that we actually got a certificate; check a couple fields, just in case
+			if newCertMeta == nil || newCertMeta.Domain == "" || newCertMeta.Certificate == nil {
 				err = errors.New("returned certificate was empty; probably an unchecked error renewing it")
 			} else {
 				success = true

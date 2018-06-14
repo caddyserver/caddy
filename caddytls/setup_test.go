@@ -22,7 +22,7 @@ import (
 	"testing"
 
 	"github.com/mholt/caddy"
-	"github.com/xenolf/lego/acmev2"
+	"github.com/xenolf/lego/acme"
 )
 
 func TestMain(m *testing.M) {

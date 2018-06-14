@@ -2,7 +2,8 @@ package acme
 
 import (
 	"fmt"
-	"log"
+
+	"github.com/xenolf/lego/log"
 )
 
 type httpChallenge struct {
@@ -18,7 +19,7 @@ func HTTP01ChallengePath(token string) string {
 
 func (s *httpChallenge) Solve(chlng challenge, domain string) error {
 
-	logf("[INFO][%s] acme: Trying to solve HTTP-01", domain)
+	log.Printf("[INFO][%s] acme: Trying to solve HTTP-01", domain)
 
 	// Generate the Key Authorization for the challenge
 	keyAuth, err := getKeyAuthorization(chlng.Token, s.jws.privKey)

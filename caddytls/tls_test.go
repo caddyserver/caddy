@@ -18,7 +18,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/xenolf/lego/acmev2"
+	"github.com/xenolf/lego/acme"
 )
 
 func TestHostQualifies(t *testing.T) {
@@ -116,7 +116,7 @@ func TestSaveCertResource(t *testing.T) {
 	"certStableUrl": "https://example.com/cert/stable"
 }`
 
-	cert := acme.CertificateResource{
+	cert := &acme.CertificateResource{
 		Domain:        domain,
 		CertURL:       "https://example.com/cert",
 		CertStableURL: "https://example.com/cert/stable",
@@ -164,7 +164,7 @@ func TestExistingCertAndKey(t *testing.T) {
 		t.Errorf("Did NOT expect %v to have existing cert or key, but it did", domain)
 	}
 
-	err = saveCertResource(storage, acme.CertificateResource{
+	err = saveCertResource(storage, &acme.CertificateResource{
 		Domain:      domain,
 		PrivateKey:  []byte("key"),
 		Certificate: []byte("cert"),

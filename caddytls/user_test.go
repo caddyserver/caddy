@@ -27,7 +27,7 @@ import (
 
 	"os"
 
-	"github.com/xenolf/lego/acmev2"
+	"github.com/xenolf/lego/acme"
 )
 
 func TestUser(t *testing.T) {
