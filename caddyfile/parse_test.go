@@ -583,7 +583,7 @@ func TestImportedFilesIgnoreNonDirectiveImportTokens(t *testing.T) {
 			gzip import foo
 		}
 	`)
-	// Parse the root file that defines (common) and then imports the other one.
+	// Parse the root file that imports the other one.
 	p := testParser(`import ` + fileName)
 	blocks, err := p.parseAll()
 	if err != nil {
