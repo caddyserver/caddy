@@ -577,14 +577,14 @@ func writeStringToTempFileOrDie(t *testing.T, str string) (pathToFile string) {
 }
 
 func TestImportedFilesIgnoreNonDirectiveImportTokens(t *testing.T) {
-	file2 := writeStringToTempFileOrDie(t, `
+	fileName := writeStringToTempFileOrDie(t, `
 		http://example.com {
 			# This isn't an import directive, it's just an arg with value 'import'
 			gzip import foo
 		}
 	`)
 	// Parse the root file that defines (common) and then imports the other one.
-	p := testParser(`import ` + file2)
+	p := testParser(`import ` + fileName)
 	blocks, err := p.parseAll()
 	if err != nil {
 		t.Fatal(err)
@@ -604,7 +604,7 @@ func TestImportedFilesIgnoreNonDirectiveImportTokens(t *testing.T) {
 
 func TestSnippetAcrossMultipleFiles(t *testing.T) {
 	// Make the derived Caddyfile that expects (common) to be defined.
-	file2 := writeStringToTempFileOrDie(t, `
+	fileName := writeStringToTempFileOrDie(t, `
 		http://example.com {
 			import common
 		}
@@ -615,7 +615,7 @@ func TestSnippetAcrossMultipleFiles(t *testing.T) {
 		(common) {
 			gzip foo
 		}
-		import ` + file2 + `
+		import ` + fileName + `
 	`)
 
 	blocks, err := p.parseAll()
