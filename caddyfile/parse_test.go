@@ -580,7 +580,7 @@ func TestImportedFilesIgnoreNonDirectiveImportTokens(t *testing.T) {
 	fileName := writeStringToTempFileOrDie(t, `
 		http://example.com {
 			# This isn't an import directive, it's just an arg with value 'import'
-			gzip import foo
+			basicauth / import password
 		}
 	`)
 	// Parse the root file that imports the other one.
@@ -593,12 +593,14 @@ func TestImportedFilesIgnoreNonDirectiveImportTokens(t *testing.T) {
 		t.Log(b.Keys)
 		t.Log(b.Tokens)
 	}
-	gzip := blocks[0].Tokens["gzip"]
-	line := gzip[0].Text + " " + gzip[1].Text + " " + gzip[2].Text
-	if line != "gzip import foo" {
-		// Previously, it would be 'gzip import /path/to/test/dir/foo' referencing
-		// a file that (probably) doesn't exist.
-		t.Errorf("Expected gzip tokens to be 'gzip import foo' but got %#q", line)
+	auth := blocks[0].Tokens["basicauth"]
+	line := auth[0].Text + " " + auth[1].Text + " " + auth[2].Text + " " + auth[3].Text
+	if line != "basicauth / import password" {
+		// Previously, it would be changed to:
+		//   basicauth / import /path/to/test/dir/password
+		// referencing a file that (probably) doesn't exist and changing the
+		// password!
+		t.Errorf("Expected basicauth tokens to be 'basicauth / import password' but got %#q", line)
 	}
 }
 
