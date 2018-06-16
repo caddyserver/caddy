@@ -527,15 +527,15 @@ func testParser(input string) parser {
 }
 
 func TestSnippets(t *testing.T) {
-	p := testParser(`(common) {
-					gzip foo
-					errors stderr
-					
-				}	
-				http://example.com {
-					import common
-				}
-			`)
+	p := testParser(`
+		(common) {
+			gzip foo
+			errors stderr
+		}
+		http://example.com {
+			import common
+		}
+	`)
 	blocks, err := p.parseAll()
 	if err != nil {
 		t.Fatal(err)
@@ -560,4 +560,82 @@ func TestSnippets(t *testing.T) {
 		t.Errorf("Expected argument to be '%s' but was '%s'", expected, actual)
 	}
 
+}
+
+func writeStringToTempFileOrDie(t *testing.T, str string) (pathToFile string) {
+	file, err := ioutil.TempFile("", t.Name())
+	if err != nil {
+		panic(err) // get a stack trace so we know where this was called from.
+	}
+	if _, err := file.WriteString(str); err != nil {
+		panic(err)
+	}
+	if err := file.Close(); err != nil {
+		panic(err)
+	}
+	return file.Name()
+}
+
+func TestImportedFilesIgnoreNonDirectiveImportTokens(t *testing.T) {
+	file2 := writeStringToTempFileOrDie(t, `
+		http://example.com {
+			# This isn't an import directive, it's just an arg with value 'import'
+			gzip import foo
+		}
+	`)
+	// Parse the root file that defines (common) and then imports the other one.
+	p := testParser(`import ` + file2)
+	blocks, err := p.parseAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, b := range blocks {
+		t.Log(b.Keys)
+		t.Log(b.Tokens)
+	}
+	gzip := blocks[0].Tokens["gzip"]
+	line := gzip[0].Text + " " + gzip[1].Text + " " + gzip[2].Text
+	if line != "gzip import foo" {
+		// Previously, it would be 'gzip import /path/to/test/dir/foo' referencing
+		// a file that (probably) doesn't exist.
+		t.Errorf("Expected gzip tokens to be 'gzip import foo' but got %#q", line)
+	}
+}
+
+func TestSnippetAcrossMultipleFiles(t *testing.T) {
+	// Make the derived Caddyfile that expects (common) to be defined.
+	file2 := writeStringToTempFileOrDie(t, `
+		http://example.com {
+			import common
+		}
+	`)
+
+	// Parse the root file that defines (common) and then imports the other one.
+	p := testParser(`
+		(common) {
+			gzip foo
+		}
+		import ` + file2 + `
+	`)
+
+	blocks, err := p.parseAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, b := range blocks {
+		t.Log(b.Keys)
+		t.Log(b.Tokens)
+	}
+	if len(blocks) != 1 {
+		t.Fatalf("Expect exactly one server block. Got %d.", len(blocks))
+	}
+	if actual, expected := blocks[0].Keys[0], "http://example.com"; expected != actual {
+		t.Errorf("Expected server name to be '%s' but was '%s'", expected, actual)
+	}
+	if len(blocks[0].Tokens) != 1 {
+		t.Fatalf("Server block should have tokens from import")
+	}
+	if actual, expected := blocks[0].Tokens["gzip"][0].Text, "gzip"; expected != actual {
+		t.Errorf("Expected argument to be '%s' but was '%s'", expected, actual)
+	}
 }
