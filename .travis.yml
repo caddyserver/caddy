@@ -32,16 +32,11 @@ script:
   - gometalinter --install
   - gometalinter --disable-all -E vet -E gofmt -E misspell -E ineffassign -E goimports -E deadcode --tests --vendor ./...
   - vendorcheck ./...
-  #- go test -race ./...
-  - ls -l
+  - go test -race ./...
+  
 
 after_script:
   - golint ./...
-
-addons:
-  artifacts:
-    paths: ./
-
 
 
 notifications:
