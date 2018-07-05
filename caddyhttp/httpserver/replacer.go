@@ -16,6 +16,9 @@ package httpserver
 
 import (
 	"bytes"
+	"crypto/sha1"
+	"encoding/pem"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net"
@@ -429,6 +432,68 @@ func (r *replacer) getSubstitution(key string) string {
 				}
 			}
 			return "UNKNOWN" // this should never happen, but guard in case
+		}
+		return r.emptyValue
+	case "{tls_client_escaped_cert}":
+		if r.request.TLS != nil && len(r.request.TLS.PeerCertificates) > 0 {
+			cert := r.request.TLS.PeerCertificates[0]
+			pemBlock := pem.Block{
+				Type: "CERTIFICATE",
+				Bytes: cert.Raw,
+			}
+			return url.QueryEscape(string(pem.EncodeToMemory(&pemBlock)))
+		}
+		return r.emptyValue
+	case "{tls_client_fingerprint}":
+		if r.request.TLS != nil && len(r.request.TLS.PeerCertificates) > 0 {
+			cert := r.request.TLS.PeerCertificates[0]
+			return fmt.Sprintf("%x", sha1.Sum(cert.Raw))
+		}
+		return r.emptyValue
+	case "{tls_client_i_dn}":
+		if r.request.TLS != nil && len(r.request.TLS.PeerCertificates) > 0 {
+			cert := r.request.TLS.PeerCertificates[0]
+			return cert.Issuer.String()
+		}
+		return r.emptyValue
+	case "{tls_client_raw_cert}":
+		if r.request.TLS != nil && len(r.request.TLS.PeerCertificates) > 0 {
+			cert := r.request.TLS.PeerCertificates[0]
+			return string(cert.Raw)
+		}
+		return r.emptyValue
+	case "{tls_client_s_dn}":
+		if r.request.TLS != nil && len(r.request.TLS.PeerCertificates) > 0 {
+			cert := r.request.TLS.PeerCertificates[0]
+			return cert.Subject.String()
+		}
+		return r.emptyValue
+	case "{tls_client_serial}":
+		if r.request.TLS != nil && len(r.request.TLS.PeerCertificates) > 0 {
+			cert := r.request.TLS.PeerCertificates[0]
+			return fmt.Sprintf("%x", cert.SerialNumber)
+		}
+		return r.emptyValue
+	case "{tls_client_v_end}":
+		if r.request.TLS != nil && len(r.request.TLS.PeerCertificates) > 0 {
+			cert := r.request.TLS.PeerCertificates[0]
+			// Forcing zone string GMT instead of UTC
+			return cert.NotAfter.In(time.UTC).Format("Jan 02 15:04:05 2006 GMT")
+		}
+		return r.emptyValue
+	case "{tls_client_v_remain}":
+		if r.request.TLS != nil && len(r.request.TLS.PeerCertificates) > 0 {
+			cert := r.request.TLS.PeerCertificates[0]
+			now := time.Now().In(time.UTC)
+			days := int64(cert.NotAfter.Sub(now).Seconds() / 86400)
+			return strconv.FormatInt(days, 10)
+		}
+		return r.emptyValue
+	case "{tls_client_v_start}":
+		if r.request.TLS != nil && len(r.request.TLS.PeerCertificates) > 0 {
+			cert := r.request.TLS.PeerCertificates[0]
+			// Forcing zone string GMT instead of UTC
+			return cert.NotBefore.Format("Jan 02 15:04:05 2006 GMT")
 		}
 		return r.emptyValue
 	default:
