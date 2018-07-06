@@ -17,6 +17,7 @@ package httpserver
 import (
 	"bytes"
 	"crypto/sha1"
+	"crypto/x509"
 	"encoding/pem"
 	"fmt"
 	"io"
@@ -246,6 +247,15 @@ func round(d, r time.Duration) time.Duration {
 	return d
 }
 
+// getPeerCert returns peer certificate
+func (r *replacer) getPeerCert() *x509.Certificate {
+	if r.request.TLS != nil && len(r.request.TLS.PeerCertificates) > 0 {
+		return r.request.TLS.PeerCertificates[0]
+	}
+
+	return nil
+}
+
 // getSubstitution retrieves value from corresponding key
 func (r *replacer) getSubstitution(key string) string {
 	// search custom replacements first
@@ -435,8 +445,8 @@ func (r *replacer) getSubstitution(key string) string {
 		}
 		return r.emptyValue
 	case "{tls_client_escaped_cert}":
-		if r.request.TLS != nil && len(r.request.TLS.PeerCertificates) > 0 {
-			cert := r.request.TLS.PeerCertificates[0]
+		cert := r.getPeerCert()
+		if cert != nil {
 			pemBlock := pem.Block{
 				Type: "CERTIFICATE",
 				Bytes: cert.Raw,
@@ -445,53 +455,53 @@ func (r *replacer) getSubstitution(key string) string {
 		}
 		return r.emptyValue
 	case "{tls_client_fingerprint}":
-		if r.request.TLS != nil && len(r.request.TLS.PeerCertificates) > 0 {
-			cert := r.request.TLS.PeerCertificates[0]
+		cert := r.getPeerCert()
+		if cert != nil {
 			return fmt.Sprintf("%x", sha1.Sum(cert.Raw))
 		}
 		return r.emptyValue
 	case "{tls_client_i_dn}":
-		if r.request.TLS != nil && len(r.request.TLS.PeerCertificates) > 0 {
-			cert := r.request.TLS.PeerCertificates[0]
+		cert := r.getPeerCert()
+		if cert != nil {
 			return cert.Issuer.String()
 		}
 		return r.emptyValue
 	case "{tls_client_raw_cert}":
-		if r.request.TLS != nil && len(r.request.TLS.PeerCertificates) > 0 {
-			cert := r.request.TLS.PeerCertificates[0]
+		cert := r.getPeerCert()
+		if cert != nil {
 			return string(cert.Raw)
 		}
 		return r.emptyValue
 	case "{tls_client_s_dn}":
-		if r.request.TLS != nil && len(r.request.TLS.PeerCertificates) > 0 {
-			cert := r.request.TLS.PeerCertificates[0]
+		cert := r.getPeerCert()
+		if cert != nil {
 			return cert.Subject.String()
 		}
 		return r.emptyValue
 	case "{tls_client_serial}":
-		if r.request.TLS != nil && len(r.request.TLS.PeerCertificates) > 0 {
-			cert := r.request.TLS.PeerCertificates[0]
+		cert := r.getPeerCert()
+		if cert != nil {
 			return fmt.Sprintf("%x", cert.SerialNumber)
 		}
 		return r.emptyValue
 	case "{tls_client_v_end}":
-		if r.request.TLS != nil && len(r.request.TLS.PeerCertificates) > 0 {
-			cert := r.request.TLS.PeerCertificates[0]
+		cert := r.getPeerCert()
+		if cert != nil {
 			// Forcing zone string GMT instead of UTC
 			return cert.NotAfter.In(time.UTC).Format("Jan 02 15:04:05 2006 GMT")
 		}
 		return r.emptyValue
 	case "{tls_client_v_remain}":
-		if r.request.TLS != nil && len(r.request.TLS.PeerCertificates) > 0 {
-			cert := r.request.TLS.PeerCertificates[0]
+		cert := r.getPeerCert()
+		if cert != nil {
 			now := time.Now().In(time.UTC)
 			days := int64(cert.NotAfter.Sub(now).Seconds() / 86400)
 			return strconv.FormatInt(days, 10)
 		}
 		return r.emptyValue
 	case "{tls_client_v_start}":
-		if r.request.TLS != nil && len(r.request.TLS.PeerCertificates) > 0 {
-			cert := r.request.TLS.PeerCertificates[0]
+		cert := r.getPeerCert()
+		if cert != nil {
 			// Forcing zone string GMT instead of UTC
 			return cert.NotBefore.Format("Jan 02 15:04:05 2006 GMT")
 		}
