@@ -438,6 +438,7 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream, hasSrv bool) error {
 		u.upstreamHeaders.Add("Host", "{host}")
 		u.upstreamHeaders.Add("X-Real-IP", "{remote}")
 		u.upstreamHeaders.Add("X-Forwarded-Proto", "{scheme}")
+		u.upstreamHeaders.Add("Forwarded", "for={remote}; host={host}; proto={scheme}")
 	case "websocket":
 		u.upstreamHeaders.Add("Connection", "{>Connection}")
 		u.upstreamHeaders.Add("Upgrade", "{>Upgrade}")
