@@ -487,8 +487,7 @@ func (r *replacer) getSubstitution(key string) string {
 	case "{tls_client_v_end}":
 		cert := r.getPeerCert()
 		if cert != nil {
-			// Forcing zone string GMT instead of UTC
-			return cert.NotAfter.In(time.UTC).Format("Jan 02 15:04:05 2006 GMT")
+			return cert.NotAfter.In(time.UTC).Format("Jan 02 15:04:05 2006 MST")
 		}
 		return r.emptyValue
 	case "{tls_client_v_remain}":
@@ -502,8 +501,7 @@ func (r *replacer) getSubstitution(key string) string {
 	case "{tls_client_v_start}":
 		cert := r.getPeerCert()
 		if cert != nil {
-			// Forcing zone string GMT instead of UTC
-			return cert.NotBefore.Format("Jan 02 15:04:05 2006 GMT")
+			return cert.NotBefore.Format("Jan 02 15:04:05 2006 MST")
 		}
 		return r.emptyValue
 	default:
