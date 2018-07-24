@@ -457,7 +457,7 @@ func (r *replacer) getSubstitution(key string) string {
 	case "{tls_client_fingerprint}":
 		cert := r.getPeerCert()
 		if cert != nil {
-			return fmt.Sprintf("%x", sha256.Sum(cert.Raw))
+			return fmt.Sprintf("%x", sha256.Sum256(cert.Raw))
 		}
 		return r.emptyValue
 	case "{tls_client_i_dn}":
