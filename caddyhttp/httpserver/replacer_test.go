@@ -29,6 +29,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mholt/caddy/caddytls"
 )
 
 func TestNewReplacer(t *testing.T) {
@@ -214,6 +216,8 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 		Bytes: cert.Raw,
 	}
 
+	protocol, _ := caddytls.GetSupportedProtocolName(request.TLS.Version)
+	cipher, _ := caddytls.GetSupportedCipherName(request.TLS.CipherSuite)
 	cEscapedCert := url.QueryEscape(string(pem.EncodeToMemory(&pemBlock)))
 	cFingerprint := fmt.Sprintf("%x", sha256.Sum256(cert.Raw))
 	cIDn := cert.Issuer.String()
@@ -228,8 +232,8 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 		template string
 		expect   string
 	}{
-		{"{tls_protocol}", "tls1.2"},
-		{"{tls_cipher}", "ECDHE-RSA-AES128-GCM-SHA256"},
+		{"{tls_protocol}", protocol},
+		{"{tls_cipher}", cipher},
 		{"{tls_client_escaped_cert}", cEscapedCert},
 		{"{tls_client_fingerprint}", cFingerprint},
 		{"{tls_client_i_dn}", cIDn},

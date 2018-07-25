@@ -17,6 +17,7 @@ package caddytls
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"io/ioutil"
 
@@ -584,6 +585,17 @@ var SupportedProtocols = map[string]uint16{
 	"tls1.2": tls.VersionTLS12,
 }
 
+// GetSupportedProtocolName returns the protocol name
+func GetSupportedProtocolName(protocol uint16) (string, error) {
+	for k, v := range SupportedProtocols {
+		if v == protocol {
+			return k, nil
+		}
+	}
+
+	return "", errors.New("name: unsuported protocol")
+}
+
 // Map of supported ciphers, used only for parsing config.
 //
 // Note that, at time of writing, HTTP/2 blacklists 276 cipher suites,
@@ -609,6 +621,17 @@ var SupportedCiphersMap = map[string]uint16{
 	"RSA-AES128-CBC-SHA":                 tls.TLS_RSA_WITH_AES_128_CBC_SHA,
 	"ECDHE-RSA-3DES-EDE-CBC-SHA":         tls.TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA,
 	"RSA-3DES-EDE-CBC-SHA":               tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA,
+}
+
+// GetSupportedCipherName returns the cipher name
+func GetSupportedCipherName(cipher uint16) (string, error) {
+	for k, v := range SupportedCiphersMap {
+		if v == cipher {
+			return k, nil
+		}
+	}
+
+	return "", errors.New("name: unsuported cipher")
 }
 
 // List of all the ciphers we want to use by default
