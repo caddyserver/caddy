@@ -448,7 +448,7 @@ func (r *replacer) getSubstitution(key string) string {
 		cert := r.getPeerCert()
 		if cert != nil {
 			pemBlock := pem.Block{
-				Type: "CERTIFICATE",
+				Type:  "CERTIFICATE",
 				Bytes: cert.Raw,
 			}
 			return url.QueryEscape(string(pem.EncodeToMemory(&pemBlock)))

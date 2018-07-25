@@ -210,7 +210,7 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 	now := time.Now().In(time.UTC)
 	days := int64(cert.NotAfter.Sub(now).Seconds() / 86400)
 	pemBlock := pem.Block{
-		Type: "CERTIFICATE",
+		Type:  "CERTIFICATE",
 		Bytes: cert.Raw,
 	}
 
