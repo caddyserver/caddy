@@ -645,12 +645,12 @@ var directives = []string{
 	"fastcgi",
 	"cgi", // github.com/jung-kurt/caddy-cgi
 	"websocket",
-	"filemanager", // github.com/hacdias/filemanager/caddy/filemanager
+	"filemanager", // github.com/filebrowser/filebrowser/caddy/filemanager
 	"webdav",      // github.com/hacdias/caddy-webdav
 	"markdown",
 	"browse",
-	"jekyll",    // github.com/hacdias/filemanager/caddy/jekyll
-	"hugo",      // github.com/hacdias/filemanager/caddy/hugo
+	"jekyll",    // github.com/filebrowser/filebrowser/caddy/jekyll
+	"hugo",      // github.com/filebrowser/filebrowser/caddy/hugo
 	"mailout",   // github.com/SchumacherFM/mailout
 	"awses",     // github.com/miquella/caddy-awses
 	"awslambda", // github.com/coopernurse/caddy-awslambda
