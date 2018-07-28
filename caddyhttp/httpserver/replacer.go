@@ -16,6 +16,10 @@ package httpserver
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/pem"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net"
@@ -243,6 +247,15 @@ func round(d, r time.Duration) time.Duration {
 	return d
 }
 
+// getPeerCert returns peer certificate
+func (r *replacer) getPeerCert() *x509.Certificate {
+	if r.request.TLS != nil && len(r.request.TLS.PeerCertificates) > 0 {
+		return r.request.TLS.PeerCertificates[0]
+	}
+
+	return nil
+}
+
 // getSubstitution retrieves value from corresponding key
 func (r *replacer) getSubstitution(key string) string {
 	// search custom replacements first
@@ -413,22 +426,80 @@ func (r *replacer) getSubstitution(key string) string {
 		return strconv.FormatInt(convertToMilliseconds(elapsedDuration), 10)
 	case "{tls_protocol}":
 		if r.request.TLS != nil {
-			for k, v := range caddytls.SupportedProtocols {
-				if v == r.request.TLS.Version {
-					return k
-				}
+			if name, err := caddytls.GetSupportedProtocolName(r.request.TLS.Version); err == nil {
+				return name
+			} else {
+				return "tls" // this should never happen, but guard in case
 			}
-			return "tls" // this should never happen, but guard in case
 		}
 		return r.emptyValue // because not using a secure channel
 	case "{tls_cipher}":
 		if r.request.TLS != nil {
-			for k, v := range caddytls.SupportedCiphersMap {
-				if v == r.request.TLS.CipherSuite {
-					return k
-				}
+			if name, err := caddytls.GetSupportedCipherName(r.request.TLS.CipherSuite); err == nil {
+				return name
+			} else {
+				return "UNKNOWN" // this should never happen, but guard in case
 			}
-			return "UNKNOWN" // this should never happen, but guard in case
+		}
+		return r.emptyValue
+	case "{tls_client_escaped_cert}":
+		cert := r.getPeerCert()
+		if cert != nil {
+			pemBlock := pem.Block{
+				Type:  "CERTIFICATE",
+				Bytes: cert.Raw,
+			}
+			return url.QueryEscape(string(pem.EncodeToMemory(&pemBlock)))
+		}
+		return r.emptyValue
+	case "{tls_client_fingerprint}":
+		cert := r.getPeerCert()
+		if cert != nil {
+			return fmt.Sprintf("%x", sha256.Sum256(cert.Raw))
+		}
+		return r.emptyValue
+	case "{tls_client_i_dn}":
+		cert := r.getPeerCert()
+		if cert != nil {
+			return cert.Issuer.String()
+		}
+		return r.emptyValue
+	case "{tls_client_raw_cert}":
+		cert := r.getPeerCert()
+		if cert != nil {
+			return string(cert.Raw)
+		}
+		return r.emptyValue
+	case "{tls_client_s_dn}":
+		cert := r.getPeerCert()
+		if cert != nil {
+			return cert.Subject.String()
+		}
+		return r.emptyValue
+	case "{tls_client_serial}":
+		cert := r.getPeerCert()
+		if cert != nil {
+			return fmt.Sprintf("%x", cert.SerialNumber)
+		}
+		return r.emptyValue
+	case "{tls_client_v_end}":
+		cert := r.getPeerCert()
+		if cert != nil {
+			return cert.NotAfter.In(time.UTC).Format("Jan 02 15:04:05 2006 MST")
+		}
+		return r.emptyValue
+	case "{tls_client_v_remain}":
+		cert := r.getPeerCert()
+		if cert != nil {
+			now := time.Now().In(time.UTC)
+			days := int64(cert.NotAfter.Sub(now).Seconds() / 86400)
+			return strconv.FormatInt(days, 10)
+		}
+		return r.emptyValue
+	case "{tls_client_v_start}":
+		cert := r.getPeerCert()
+		if cert != nil {
+			return cert.NotBefore.Format("Jan 02 15:04:05 2006 MST")
 		}
 		return r.emptyValue
 	default:
