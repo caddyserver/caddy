@@ -183,6 +183,8 @@ type Header struct {
 	Name string
 }
 
+var roundRobinPolicier RoundRobin
+
 // Select selects the host based on hashing the header value
 func (r *Header) Select(pool HostPool, request *http.Request) *UpstreamHost {
 	if r.Name == "" {
@@ -191,7 +193,7 @@ func (r *Header) Select(pool HostPool, request *http.Request) *UpstreamHost {
 	val := request.Header.Get(r.Name)
 	if val == "" {
 		// fallback to RoundRobin policy in case no Header in request
-		return (&RoundRobin{}).Select(pool, request)
+		return roundRobinPolicier.Select(pool, request)
 	}
 	return hostByHashing(pool, val)
 }
