@@ -16,12 +16,21 @@ package httpserver
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/pem"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mholt/caddy/caddytls"
 )
 
 func TestNewReplacer(t *testing.T) {
@@ -141,6 +150,102 @@ func TestReplace(t *testing.T) {
 		repl := &replacer{
 			customReplacements: c.replacements,
 		}
+		if expected, actual := c.expect, repl.Replace(c.template); expected != actual {
+			t.Errorf("for template '%s', expected '%s', got '%s'", c.template, expected, actual)
+		}
+	}
+}
+
+func TestTlsReplace(t *testing.T) {
+	w := httptest.NewRecorder()
+	recordRequest := NewResponseRecorder(w)
+
+	clientCertText := []byte(`-----BEGIN CERTIFICATE-----
+MIIB9jCCAV+gAwIBAgIBAjANBgkqhkiG9w0BAQsFADAYMRYwFAYDVQQDDA1DYWRk
+eSBUZXN0IENBMB4XDTE4MDcyNDIxMzUwNVoXDTI4MDcyMTIxMzUwNVowHTEbMBkG
+A1UEAwwSY2xpZW50LmxvY2FsZG9tYWluMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCB
+iQKBgQDFDEpzF0ew68teT3xDzcUxVFaTII+jXH1ftHXxxP4BEYBU4q90qzeKFneF
+z83I0nC0WAQ45ZwHfhLMYHFzHPdxr6+jkvKPASf0J2v2HDJuTM1bHBbik5Ls5eq+
+fVZDP8o/VHKSBKxNs8Goc2NTsr5b07QTIpkRStQK+RJALk4x9QIDAQABo0swSTAJ
+BgNVHRMEAjAAMAsGA1UdDwQEAwIHgDAaBgNVHREEEzARgglsb2NhbGhvc3SHBH8A
+AAEwEwYDVR0lBAwwCgYIKwYBBQUHAwIwDQYJKoZIhvcNAQELBQADgYEANSjz2Sk+
+eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
+3Q9fgDkiUod+uIK0IynzIKvw+Cjg+3nx6NQ0IM0zo8c7v398RzB4apbXKZyeeqUH
+9fNwfEi+OoXR6s+upSKobCmLGLGi9Na5s5g=
+-----END CERTIFICATE-----`)
+
+	block, _ := pem.Decode(clientCertText)
+	if block == nil {
+		t.Fatalf("failed to decode PEM certificate")
+	}
+
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatalf("failed to decode PEM certificate: %v", err)
+	}
+
+	request := &http.Request{
+		Method: "GET",
+		Host:   "foo.com",
+		URL: &url.URL{
+			Scheme: "https",
+			Path:   "/path/",
+			Host:   "foo.com",
+		},
+		Header:     http.Header{},
+		Proto:      "HTTP/1.1",
+		ProtoMajor: 1,
+		ProtoMinor: 1,
+		RemoteAddr: "192.0.2.1:1234",
+		RequestURI: "https://foo.com/path/",
+		TLS: &tls.ConnectionState{
+			Version:           tls.VersionTLS12,
+			HandshakeComplete: true,
+			ServerName:        "foo.com",
+			CipherSuite:       tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+			PeerCertificates:  []*x509.Certificate{cert},
+		},
+	}
+
+	repl := NewReplacer(request, recordRequest, "-")
+
+	now := time.Now().In(time.UTC)
+	days := int64(cert.NotAfter.Sub(now).Seconds() / 86400)
+	pemBlock := pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: cert.Raw,
+	}
+
+	protocol, _ := caddytls.GetSupportedProtocolName(request.TLS.Version)
+	cipher, _ := caddytls.GetSupportedCipherName(request.TLS.CipherSuite)
+	cEscapedCert := url.QueryEscape(string(pem.EncodeToMemory(&pemBlock)))
+	cFingerprint := fmt.Sprintf("%x", sha256.Sum256(cert.Raw))
+	cIDn := cert.Issuer.String()
+	cRawCert := string(cert.Raw)
+	cSDn := cert.Subject.String()
+	cSerial := fmt.Sprintf("%x", cert.SerialNumber)
+	cVEnd := cert.NotAfter.In(time.UTC).Format("Jan 02 15:04:05 2006 MST")
+	cVRemain := strconv.FormatInt(days, 10)
+	cVStart := cert.NotBefore.Format("Jan 02 15:04:05 2006 MST")
+
+	testCases := []struct {
+		template string
+		expect   string
+	}{
+		{"{tls_protocol}", protocol},
+		{"{tls_cipher}", cipher},
+		{"{tls_client_escaped_cert}", cEscapedCert},
+		{"{tls_client_fingerprint}", cFingerprint},
+		{"{tls_client_i_dn}", cIDn},
+		{"{tls_client_raw_cert}", cRawCert},
+		{"{tls_client_s_dn}", cSDn},
+		{"{tls_client_serial}", cSerial},
+		{"{tls_client_v_end}", cVEnd},
+		{"{tls_client_v_remain}", cVRemain},
+		{"{tls_client_v_start}", cVStart},
+	}
+
+	for _, c := range testCases {
 		if expected, actual := c.expect, repl.Replace(c.template); expected != actual {
 			t.Errorf("for template '%s', expected '%s', got '%s'", c.template, expected, actual)
 		}

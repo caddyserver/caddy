@@ -20,6 +20,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/mholt/caddy/telemetry"
 )
 
 // Parse parses the input just enough to group tokens, in
@@ -249,9 +251,10 @@ func (p *parser) doImport() error {
 	if p.definedSnippets != nil && p.definedSnippets[importPattern] != nil {
 		importedTokens = p.definedSnippets[importPattern]
 	} else {
-		// make path relative to Caddyfile rather than current working directory (issue #867)
-		// and then use glob to get list of matching filenames
-		absFile, err := filepath.Abs(p.Dispenser.filename)
+		// make path relative to the file of the _token_ being processed rather
+		// than current working directory (issue #867) and then use glob to get
+		// list of matching filenames
+		absFile, err := filepath.Abs(p.Dispenser.File())
 		if err != nil {
 			return p.Errf("Failed to get absolute path of file: %s: %v", p.Dispenser.filename, err)
 		}
@@ -288,30 +291,6 @@ func (p *parser) doImport() error {
 			if err != nil {
 				return err
 			}
-
-			var importLine int
-			for i, token := range newTokens {
-				if token.Text == "import" {
-					importLine = token.Line
-					continue
-				}
-				if token.Line == importLine {
-					var abs string
-					if filepath.IsAbs(token.Text) {
-						abs = token.Text
-					} else if !filepath.IsAbs(importFile) {
-						abs = filepath.Join(filepath.Dir(absFile), token.Text)
-					} else {
-						abs = filepath.Join(filepath.Dir(importFile), token.Text)
-					}
-					newTokens[i] = Token{
-						Text: abs,
-						Line: token.Line,
-						File: token.File,
-					}
-				}
-			}
-
 			importedTokens = append(importedTokens, newTokens...)
 		}
 	}
@@ -374,6 +353,7 @@ func (p *parser) directive() error {
 
 	// The directive itself is appended as a relevant token
 	p.block.Tokens[dir] = append(p.block.Tokens[dir], p.tokens[p.cursor])
+	telemetry.AppendUnique("directives", dir)
 
 	for p.Next() {
 		if p.Val() == "{" {

@@ -15,7 +15,9 @@
 package caddymain
 
 import (
+	"reflect"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -55,5 +57,36 @@ func TestSetCPU(t *testing.T) {
 		}
 		// teardown
 		runtime.GOMAXPROCS(currentCPU)
+	}
+}
+
+func TestParseEnvFile(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    map[string]string
+		wantErr bool
+	}{
+		{"parsing KEY=VALUE", "PORT=4096", map[string]string{"PORT": "4096"}, false},
+		{"empty KEY", "=4096", nil, true},
+		{"one value", "test", nil, true},
+		{"comments skipped", "#TEST=1\nPORT=8888", map[string]string{"PORT": "8888"}, false},
+		{"empty line", "\nPORT=7777", map[string]string{"PORT": "7777"}, false},
+		{"comments with space skipped", "  #TEST=1", map[string]string{}, false},
+		{"KEY with space", "PORT =8888", nil, true},
+		{"only spaces", "   ", map[string]string{}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reader := strings.NewReader(tt.input)
+			got, err := ParseEnvFile(reader)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ParseEnvFile() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("ParseEnvFile() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
