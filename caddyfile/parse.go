@@ -343,7 +343,7 @@ func (p *parser) doSingleImport(importFile string) ([]Token, error) {
 // are loaded into the current server block for later use
 // by directive setup functions.
 func (p *parser) directive() error {
-	dir := p.Val()
+	dir := replaceEnvVars(p.Val())
 	nesting := 0
 
 	// TODO: More helpful error message ("did you mean..." or "maybe you need to install its server type")

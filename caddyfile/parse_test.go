@@ -452,11 +452,19 @@ func TestEnvironmentReplacement(t *testing.T) {
 	os.Setenv("PORT", "8080")
 	os.Setenv("ADDRESS", "servername.com")
 	os.Setenv("FOOBAR", "foobar")
+	os.Setenv("PARTIAL_DIR", "r1")
 
 	// basic test; unix-style env vars
 	p := testParser(`{$ADDRESS}`)
 	blocks, _ := p.parseAll()
 	if actual, expected := blocks[0].Keys[0], "servername.com"; expected != actual {
+		t.Errorf("Expected key to be '%s' but was '%s'", expected, actual)
+	}
+
+	// basic test; unix-style env vars
+	p = testParser(`di{$PARTIAL_DIR}`)
+	blocks, _ = p.parseAll()
+	if actual, expected := blocks[0].Keys[0], "dir1"; expected != actual {
 		t.Errorf("Expected key to be '%s' but was '%s'", expected, actual)
 	}
 
