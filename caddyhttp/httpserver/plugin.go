@@ -623,6 +623,7 @@ var directives = []string{
 	"expires",      // github.com/epicagency/caddy-expires
 	"forwardproxy", // github.com/caddyserver/forwardproxy
 	"basicauth",
+	"digestauth",
 	"redir",
 	"status",
 	"cors",   // github.com/captncraig/cors/caddy
