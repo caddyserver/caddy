@@ -142,7 +142,7 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 	case err == nil: // nop
 	case os.IsPermission(err):
 		return http.StatusForbidden, err
-	case os.IsExist(err):
+	case os.IsNotExist(err):
 		return http.StatusNotFound, nil
 	default: // did we run out of FD?
 		return http.StatusInternalServerError, err
