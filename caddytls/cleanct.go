@@ -6,7 +6,7 @@ package caddytls
 
 import (
 	/*"bytes"
-	"context"
+	"context" 
 	"flag"*/
 	"fmt"
 	"log"
@@ -96,13 +96,13 @@ func checkUnmarshalError(err error) {
 // GetCaddyCerts retrieves the certificates that caddy monitors and returns them as a map of
 // their respective byte arrays casted as a string to the array of SAN
 func getCaddyCerts() ([]string, map[string]struct{}) {
-	fmt.Println("Inside getCaddyCerts")
+	//fmt.Println("Inside getCaddyCerts")
 	//var caddyCerts = make(map[string][]Certificate)
 	var caddyCerts = make(map[string]struct{})//the string will just be the cert type?
 	var caddyDNS = make([]string, 0, 10)
-	fmt.Printf("number of caddy instances: %v\n", len(caddy.Instances()))
+	//fmt.Printf("number of caddy instances: %v\n", len(caddy.Instances()))
 	for i, inst := range caddy.Instances() {
-		fmt.Printf("i: %v\n", i)
+		//fmt.Printf("i: %v\n", i)
 		inst.StorageMu.RLock()
 		certCache, ok := inst.Storage[CertCacheInstStorageKey].(*certificateCache)
 		//certCache, ok := inst.Storage["tls_cert_cache"].(*certificateCache)//Get help from Matt in the morning.
@@ -113,8 +113,8 @@ func getCaddyCerts() ([]string, map[string]struct{}) {
 
 		certCache.RLock()
 		for _, certificate := range certCache.cache {
-			fmt.Printf("Certificate Bytes: %#v\n", certificate.Certificate.Certificate[0])
-			fmt.Printf("dnsNames: %#v\n", certificate.Names)
+			//fmt.Printf("Certificate Bytes: %#v\n", certificate.Certificate.Certificate[0])
+			//fmt.Printf("dnsNames: %#v\n", certificate.Names)
 			caddyDNS = append(caddyDNS, certificate.Names...) 
 			if _, ok := caddyCerts[string(certificate.Certificate.Certificate[0])]; !ok {//Rework this once I can compile and make sure that I am using the right thing as the key.
 				caddyCerts[string(certificate.Certificate.Certificate[0])] = struct{}{}
@@ -122,7 +122,7 @@ func getCaddyCerts() ([]string, map[string]struct{}) {
 		}
 		certCache.RUnlock()
 	}
-	fmt.Printf("caddyCert len: %v\n", len(caddyCerts))
+	//fmt.Printf("caddyCert len: %v\n", len(caddyCerts))
 	return caddyDNS, caddyCerts
 }
 
@@ -161,7 +161,7 @@ func lookUpNames(caddyCertSANs []string, query string, subdomains bool, wildcard
 		//hasRun := false
 		var issuanceObjects []SslmateStruct
 		//issuanceObjects := make([]SslmateStruct, 1)
-		fmt.Println("DomainName: ", domainName)
+		//fmt.Println("DomainName: ", domainName)
 		for ok := true; ok; ok = len(issuanceObjects) > 0 { //do this until the size is 0, then do one more query and get the after field from the header.
 			//biggestId, err := strconv.Atoi(index)
 			//check(err)
@@ -187,11 +187,12 @@ func lookUpNames(caddyCertSANs []string, query string, subdomains bool, wildcard
 				//panic(err)
 				
 			}
-			fmt.Printf("%#v\n", issuanceObjects)
+			//fmt.Printf("%#v\n", issuanceObjects)
 			//fmt.Printf("size of response: %v\n", len(issuanceObjects))
 			//fmt.Println("issuanceObjects size: %v", len(issuanceObjects))
 			if len(issuanceObjects) > 0 {
 				for i, issuance := range issuanceObjects {
+					fmt.Printf("Issuance Data: %#v\n", issuance.Data)
 					/*h := sha256.New()
 					//aKey := h.Write(issuance.Cert) //this didn't work, ask matt
 					//aKey := h.Write([]byte(issuance.Cert.Data))
@@ -290,7 +291,21 @@ const (
 
 //I think I'm at the point that I can work on the waiting time. Maybe do a for over main, and have the waiting time after the call to putLatestId.
 
-func init() {//Maybe have a way of checking if the file is not found, then create it with value 0
+func init() {
+	fmt.Println("Waiting to start, cleanct.go init")
+	caddy.RegisterEventHook("ctmonitor", startMonitoring)
+	//go monitorCerts()
+}
+
+func startMonitoring(eventType caddy.EventName, eventInfo interface{}) error {
+	fmt.Println("StartMonitoring called")
+	go monitorCerts()
+	return nil
+}
+
+func monitorCerts() {
+	fmt.Println("Starting monitorCerts")
+	//Maybe have a way of checking if the file is not found, then create it with value 0
 	//filePath := "./latestCert.txt"
 	/*index, err := ioutil.ReadFile(FILE_PATH)
 	//fmt.Println(reflect.TypeOf(err))
@@ -324,7 +339,7 @@ func init() {//Maybe have a way of checking if the file is not found, then creat
 	if err != nil {
 		log.Printf("Error %v while getting starting index, starting at 0", err.Error())
 	}
-	fmt.Println("length of namesToLookUp: ", len(namesToLookUp))
+	//fmt.Println("length of namesToLookUp: ", len(namesToLookUp))
 	if len(namesToLookUp) == 0  {
 		namesToLookUp = []string{"gocyrus.net"}
 	}
@@ -346,7 +361,7 @@ func compareCerts(caddyCerts map[string]struct{}, fetchedCerts map[string]struct
 		enteredLoop = true
 		fmt.Printf("caddy key: %v\n", key)
 		if _, ok := fetchedCerts[key]; ok {
-			found = false
+			found = true
 		} else {//adds only unique certs to my set.
 			continue
 		}
