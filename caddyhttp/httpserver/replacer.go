@@ -461,7 +461,7 @@ func (r *replacer) getSubstitution(key string) string {
 	case "{tls_client_i_dn}":
 		cert := r.getPeerCert()
 		if cert != nil {
-			return cert.Issuer.String()
+			return string(cert.RawIssuer)
 		}
 		return r.emptyValue
 	case "{tls_client_raw_cert}":
@@ -473,7 +473,7 @@ func (r *replacer) getSubstitution(key string) string {
 	case "{tls_client_s_dn}":
 		cert := r.getPeerCert()
 		if cert != nil {
-			return cert.Subject.String()
+			return string(cert.RawSubject)
 		}
 		return r.emptyValue
 	case "{tls_client_serial}":
