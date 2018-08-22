@@ -611,13 +611,13 @@ var directives = []string{
 	"cache", // github.com/nicolasazrak/caddy-cache
 	"rewrite",
 	"ext",
+	"minify", // github.com/hacdias/caddy-minify
 	"gzip",
 	"header",
 	"geoip", // github.com/kodnaplakal/caddy-geoip
 	"errors",
 	"authz",        // github.com/casbin/caddy-authz
 	"filter",       // github.com/echocat/caddy-filter
-	"minify",       // github.com/hacdias/caddy-minify
 	"ipfilter",     // github.com/pyed/ipfilter
 	"ratelimit",    // github.com/xuqingfeng/caddy-rate-limit
 	"expires",      // github.com/epicagency/caddy-expires
