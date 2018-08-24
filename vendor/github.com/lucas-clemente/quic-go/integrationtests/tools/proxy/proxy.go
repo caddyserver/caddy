@@ -134,7 +134,7 @@ func NewQuicProxy(local string, version protocol.VersionNumber, opts *Opts) (*Qu
 		dropPacket:  packetDropper,
 		delayPacket: packetDelayer,
 		version:     version,
-		logger:      utils.DefaultLogger,
+		logger:      utils.DefaultLogger.WithPrefix("proxy"),
 	}
 
 	p.logger.Debugf("Starting UDP Proxy %s <-> %s", conn.LocalAddr(), raddr)
