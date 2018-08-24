@@ -61,7 +61,7 @@ Caddy binaries have no dependencies and are available for every platform. Get Ca
 
 ## Build
 
-To build from source you need **[Git](https://git-scm.com/downloads)** and **[Go](https://golang.org/doc/install)** (1.9 or newer). Follow these instruction for fast building:
+To build from source you need **[Git](https://git-scm.com/downloads)** and **[Go](https://golang.org/doc/install)** (1.10 or newer). Follow these instruction for fast building:
 
 - Get the source with `go get github.com/mholt/caddy/caddy` and then run `go get github.com/caddyserver/builds`
 - Now `cd $GOPATH/src/github.com/mholt/caddy/caddy` and run `go run build.go`
