@@ -17,7 +17,6 @@ type streamFrameSorter struct {
 var (
 	errTooManyGapsInReceivedStreamData = errors.New("Too many gaps in received StreamFrame data")
 	errDuplicateStreamData             = errors.New("Duplicate Stream Data")
-	errEmptyStreamData                 = errors.New("Stream Data empty")
 )
 
 func newStreamFrameSorter() *streamFrameSorter {
@@ -33,9 +32,8 @@ func (s *streamFrameSorter) Push(frame *wire.StreamFrame) error {
 	if frame.DataLen() == 0 {
 		if frame.FinBit {
 			s.queuedFrames[frame.Offset] = frame
-			return nil
 		}
-		return errEmptyStreamData
+		return nil
 	}
 
 	var wasCut bool
