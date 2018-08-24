@@ -1,7 +1,6 @@
 package mint
 
 import (
-	"bytes"
 	"crypto/cipher"
 	"fmt"
 	"io"
@@ -9,9 +8,10 @@ import (
 )
 
 const (
-	sequenceNumberLen = 8       // sequence number length
-	recordHeaderLen   = 5       // record header length
-	maxFragmentLen    = 1 << 14 // max number of bytes in a record
+	sequenceNumberLen   = 8       // sequence number length
+	recordHeaderLenTLS  = 5       // record header length (TLS)
+	recordHeaderLenDTLS = 13      // record header length (DTLS)
+	maxFragmentLen      = 1 << 14 // max number of bytes in a record
 )
 
 type DecryptError string
@@ -20,9 +20,16 @@ func (err DecryptError) Error() string {
 	return string(err)
 }
 
+type direction uint8
+
+const (
+	directionWrite = direction(1)
+	directionRead  = direction(2)
+)
+
 // struct {
 //     ContentType type;
-//     ProtocolVersion record_version = { 3, 1 };    /* TLS v1.x */
+//     ProtocolVersion record_version [0301 for CH, 0303 for others]
 //     uint16 length;
 //     opaque fragment[TLSPlaintext.length];
 // } TLSPlaintext;
@@ -30,87 +37,177 @@ type TLSPlaintext struct {
 	// Omitted: record_version (static)
 	// Omitted: length         (computed from fragment)
 	contentType RecordType
+	epoch       Epoch
+	seq         uint64
 	fragment    []byte
+}
+
+type cipherState struct {
+	epoch    Epoch       // DTLS epoch
+	ivLength int         // Length of the seq and nonce fields
+	seq      uint64      // Zero-padded sequence number
+	iv       []byte      // Buffer for the IV
+	cipher   cipher.AEAD // AEAD cipher
 }
 
 type RecordLayer struct {
 	sync.Mutex
-
+	label        string
+	direction    direction
+	version      uint16        // The current version number
 	conn         io.ReadWriter // The underlying connection
 	frame        *frameReader  // The buffered frame reader
 	nextData     []byte        // The next record to send
 	cachedRecord *TLSPlaintext // Last record read, cached to enable "peek"
 	cachedError  error         // Error on the last record read
 
-	ivLength int         // Length of the seq and nonce fields
-	seq      []byte      // Zero-padded sequence number
-	nonce    []byte      // Buffer for per-record nonces
-	cipher   cipher.AEAD // AEAD cipher
+	cipher      *cipherState
+	readCiphers map[Epoch]*cipherState
+
+	datagram bool
 }
 
-type recordLayerFrameDetails struct{}
+type recordLayerFrameDetails struct {
+	datagram bool
+}
 
 func (d recordLayerFrameDetails) headerLen() int {
-	return recordHeaderLen
+	if d.datagram {
+		return recordHeaderLenDTLS
+	}
+	return recordHeaderLenTLS
 }
 
 func (d recordLayerFrameDetails) defaultReadLen() int {
-	return recordHeaderLen + maxFragmentLen
+	return d.headerLen() + maxFragmentLen
 }
 
 func (d recordLayerFrameDetails) frameLen(hdr []byte) (int, error) {
-	return (int(hdr[3]) << 8) | int(hdr[4]), nil
+	return (int(hdr[d.headerLen()-2]) << 8) | int(hdr[d.headerLen()-1]), nil
 }
 
-func NewRecordLayer(conn io.ReadWriter) *RecordLayer {
+func newCipherStateNull() *cipherState {
+	return &cipherState{EpochClear, 0, 0, nil, nil}
+}
+
+func newCipherStateAead(epoch Epoch, factory aeadFactory, key []byte, iv []byte) (*cipherState, error) {
+	cipher, err := factory(key)
+	if err != nil {
+		return nil, err
+	}
+
+	return &cipherState{epoch, len(iv), 0, iv, cipher}, nil
+}
+
+func NewRecordLayerTLS(conn io.ReadWriter, dir direction) *RecordLayer {
 	r := RecordLayer{}
+	r.label = ""
+	r.direction = dir
 	r.conn = conn
-	r.frame = newFrameReader(recordLayerFrameDetails{})
-	r.ivLength = 0
+	r.frame = newFrameReader(recordLayerFrameDetails{false})
+	r.cipher = newCipherStateNull()
+	r.version = tls10Version
 	return &r
 }
 
-func (r *RecordLayer) Rekey(cipher aeadFactory, key []byte, iv []byte) error {
-	var err error
-	r.cipher, err = cipher(key)
+func NewRecordLayerDTLS(conn io.ReadWriter, dir direction) *RecordLayer {
+	r := RecordLayer{}
+	r.label = ""
+	r.direction = dir
+	r.conn = conn
+	r.frame = newFrameReader(recordLayerFrameDetails{true})
+	r.cipher = newCipherStateNull()
+	r.readCiphers = make(map[Epoch]*cipherState, 0)
+	r.readCiphers[0] = r.cipher
+	r.datagram = true
+	return &r
+}
+
+func (r *RecordLayer) SetVersion(v uint16) {
+	r.version = v
+}
+
+func (r *RecordLayer) ResetClear(seq uint64) {
+	r.cipher = newCipherStateNull()
+	r.cipher.seq = seq
+}
+
+func (r *RecordLayer) Rekey(epoch Epoch, factory aeadFactory, key []byte, iv []byte) error {
+	cipher, err := newCipherStateAead(epoch, factory, key, iv)
 	if err != nil {
 		return err
 	}
-
-	r.ivLength = len(iv)
-	r.seq = bytes.Repeat([]byte{0}, r.ivLength)
-	r.nonce = make([]byte, r.ivLength)
-	copy(r.nonce, iv)
+	r.cipher = cipher
+	if r.datagram && r.direction == directionRead {
+		r.readCiphers[epoch] = cipher
+	}
 	return nil
 }
 
-func (r *RecordLayer) incrementSequenceNumber() {
-	if r.ivLength == 0 {
+// TODO(ekr@rtfm.com): This is never used, which is a bug.
+func (r *RecordLayer) DiscardReadKey(epoch Epoch) {
+	if !r.datagram {
 		return
 	}
 
-	for i := r.ivLength - 1; i > r.ivLength-sequenceNumberLen; i-- {
-		r.seq[i]++
-		r.nonce[i] ^= (r.seq[i] - 1) ^ r.seq[i]
-		if r.seq[i] != 0 {
-			return
-		}
-	}
-
-	// Not allowed to let sequence number wrap.
-	// Instead, must renegotiate before it does.
-	// Not likely enough to bother.
-	panic("TLS: sequence number wraparound")
+	_, ok := r.readCiphers[epoch]
+	assert(ok)
+	delete(r.readCiphers, epoch)
 }
 
-func (r *RecordLayer) encrypt(pt *TLSPlaintext, padLen int) *TLSPlaintext {
+func (c *cipherState) combineSeq(datagram bool) uint64 {
+	seq := c.seq
+	if datagram {
+		seq |= uint64(c.epoch) << 48
+	}
+	return seq
+}
+
+func (c *cipherState) computeNonce(seq uint64) []byte {
+	nonce := make([]byte, len(c.iv))
+	copy(nonce, c.iv)
+
+	s := seq
+
+	offset := len(c.iv)
+	for i := 0; i < 8; i++ {
+		nonce[(offset-i)-1] ^= byte(s & 0xff)
+		s >>= 8
+	}
+	logf(logTypeCrypto, "Computing nonce for sequence # %x -> %x", seq, nonce)
+
+	return nonce
+}
+
+func (c *cipherState) incrementSequenceNumber() {
+	if c.seq >= (1<<48 - 1) {
+		// Not allowed to let sequence number wrap.
+		// Instead, must renegotiate before it does.
+		// Not likely enough to bother. This is the
+		// DTLS limit.
+		panic("TLS: sequence number wraparound")
+	}
+	c.seq++
+}
+
+func (c *cipherState) overhead() int {
+	if c.cipher == nil {
+		return 0
+	}
+	return c.cipher.Overhead()
+}
+
+func (r *RecordLayer) encrypt(cipher *cipherState, seq uint64, pt *TLSPlaintext, padLen int) *TLSPlaintext {
+	assert(r.direction == directionWrite)
+	logf(logTypeIO, "%s Encrypt seq=[%x]", r.label, seq)
 	// Expand the fragment to hold contentType, padding, and overhead
 	originalLen := len(pt.fragment)
 	plaintextLen := originalLen + 1 + padLen
-	ciphertextLen := plaintextLen + r.cipher.Overhead()
+	ciphertextLen := plaintextLen + cipher.overhead()
 
 	// Assemble the revised plaintext
 	out := &TLSPlaintext{
+
 		contentType: RecordTypeApplicationData,
 		fragment:    make([]byte, ciphertextLen),
 	}
@@ -122,25 +219,28 @@ func (r *RecordLayer) encrypt(pt *TLSPlaintext, padLen int) *TLSPlaintext {
 
 	// Encrypt the fragment
 	payload := out.fragment[:plaintextLen]
-	r.cipher.Seal(payload[:0], r.nonce, payload, nil)
+	cipher.cipher.Seal(payload[:0], cipher.computeNonce(seq), payload, nil)
 	return out
 }
 
-func (r *RecordLayer) decrypt(pt *TLSPlaintext) (*TLSPlaintext, int, error) {
-	if len(pt.fragment) < r.cipher.Overhead() {
-		msg := fmt.Sprintf("tls.record.decrypt: Record too short [%d] < [%d]", len(pt.fragment), r.cipher.Overhead())
+func (r *RecordLayer) decrypt(pt *TLSPlaintext, seq uint64) (*TLSPlaintext, int, error) {
+	assert(r.direction == directionRead)
+	logf(logTypeIO, "%s Decrypt seq=[%x]", r.label, seq)
+	if len(pt.fragment) < r.cipher.overhead() {
+		msg := fmt.Sprintf("tls.record.decrypt: Record too short [%d] < [%d]", len(pt.fragment), r.cipher.overhead())
 		return nil, 0, DecryptError(msg)
 	}
 
-	decryptLen := len(pt.fragment) - r.cipher.Overhead()
+	decryptLen := len(pt.fragment) - r.cipher.overhead()
 	out := &TLSPlaintext{
 		contentType: pt.contentType,
 		fragment:    make([]byte, decryptLen),
 	}
 
 	// Decrypt
-	_, err := r.cipher.Open(out.fragment[:0], r.nonce, pt.fragment, nil)
+	_, err := r.cipher.cipher.Open(out.fragment[:0], r.cipher.computeNonce(seq), pt.fragment, nil)
 	if err != nil {
+		logf(logTypeIO, "%s AEAD decryption failure [%x]", r.label, pt)
 		return nil, 0, DecryptError("tls.record.decrypt: AEAD decrypt failed")
 	}
 
@@ -155,6 +255,7 @@ func (r *RecordLayer) decrypt(pt *TLSPlaintext) (*TLSPlaintext, int, error) {
 
 	// Truncate the message to remove contentType, padding, overhead
 	out.fragment = out.fragment[:newLen]
+	out.seq = seq
 	return out, padLen, nil
 }
 
@@ -163,11 +264,11 @@ func (r *RecordLayer) PeekRecordType(block bool) (RecordType, error) {
 	var err error
 
 	for {
-		pt, err = r.nextRecord()
+		pt, err = r.nextRecord(false)
 		if err == nil {
 			break
 		}
-		if !block || err != WouldBlock {
+		if !block || err != AlertWouldBlock {
 			return 0, err
 		}
 	}
@@ -175,7 +276,7 @@ func (r *RecordLayer) PeekRecordType(block bool) (RecordType, error) {
 }
 
 func (r *RecordLayer) ReadRecord() (*TLSPlaintext, error) {
-	pt, err := r.nextRecord()
+	pt, err := r.nextRecord(false)
 
 	// Consume the cached record if there was one
 	r.cachedRecord = nil
@@ -184,9 +285,20 @@ func (r *RecordLayer) ReadRecord() (*TLSPlaintext, error) {
 	return pt, err
 }
 
-func (r *RecordLayer) nextRecord() (*TLSPlaintext, error) {
+func (r *RecordLayer) readRecordAnyEpoch() (*TLSPlaintext, error) {
+	pt, err := r.nextRecord(true)
+
+	// Consume the cached record if there was one
+	r.cachedRecord = nil
+	r.cachedError = nil
+
+	return pt, err
+}
+
+func (r *RecordLayer) nextRecord(allowOldEpoch bool) (*TLSPlaintext, error) {
+	cipher := r.cipher
 	if r.cachedRecord != nil {
-		logf(logTypeIO, "Returning cached record")
+		logf(logTypeIO, "%s Returning cached record", r.label)
 		return r.cachedRecord, r.cachedError
 	}
 
@@ -194,34 +306,35 @@ func (r *RecordLayer) nextRecord() (*TLSPlaintext, error) {
 	//
 	// 1. We get a frame
 	// 2. We try to read off the socket and get nothing, in which case
-	//    return WouldBlock
+	//    returnAlertWouldBlock
 	// 3. We get an error.
-	err := WouldBlock
+	var err error
+	err = AlertWouldBlock
 	var header, body []byte
 
 	for err != nil {
 		if r.frame.needed() > 0 {
-			buf := make([]byte, recordHeaderLen+maxFragmentLen)
+			buf := make([]byte, r.frame.details.headerLen()+maxFragmentLen)
 			n, err := r.conn.Read(buf)
 			if err != nil {
-				logf(logTypeIO, "Error reading, %v", err)
+				logf(logTypeIO, "%s Error reading, %v", r.label, err)
 				return nil, err
 			}
 
 			if n == 0 {
-				return nil, WouldBlock
+				return nil, AlertWouldBlock
 			}
 
-			logf(logTypeIO, "Read %v bytes", n)
+			logf(logTypeIO, "%s Read %v bytes", r.label, n)
 
 			buf = buf[:n]
 			r.frame.addChunk(buf)
 		}
 
 		header, body, err = r.frame.process()
-		// Loop around on WouldBlock to see if some
+		// Loop around onAlertWouldBlock to see if some
 		// data is now available.
-		if err != nil && err != WouldBlock {
+		if err != nil && err != AlertWouldBlock {
 			return nil, err
 		}
 	}
@@ -231,7 +344,7 @@ func (r *RecordLayer) nextRecord() (*TLSPlaintext, error) {
 	switch RecordType(header[0]) {
 	default:
 		return nil, fmt.Errorf("tls.record: Unknown content type %02x", header[0])
-	case RecordTypeAlert, RecordTypeHandshake, RecordTypeApplicationData:
+	case RecordTypeAlert, RecordTypeHandshake, RecordTypeApplicationData, RecordTypeAck:
 		pt.contentType = RecordType(header[0])
 	}
 
@@ -241,7 +354,8 @@ func (r *RecordLayer) nextRecord() (*TLSPlaintext, error) {
 	}
 
 	// Validate size < max
-	size := (int(header[3]) << 8) + int(header[4])
+	size := (int(header[len(header)-2]) << 8) + int(header[len(header)-1])
+
 	if size > maxFragmentLen+256 {
 		return nil, fmt.Errorf("tls.record: Ciphertext size too big")
 	}
@@ -249,33 +363,67 @@ func (r *RecordLayer) nextRecord() (*TLSPlaintext, error) {
 	pt.fragment = make([]byte, size)
 	copy(pt.fragment, body)
 
+	// TODO(ekr@rtfm.com): Enforce that for epoch > 0, the content type is app data.
+
 	// Attempt to decrypt fragment
-	if r.cipher != nil {
-		pt, _, err = r.decrypt(pt)
+	seq := cipher.seq
+	if r.datagram {
+		// TODO(ekr@rtfm.com): Handle duplicates.
+		seq, _ = decodeUint(header[3:11], 8)
+		epoch := Epoch(seq >> 48)
+
+		// Look up the cipher suite from the epoch
+		c, ok := r.readCiphers[epoch]
+		if !ok {
+			logf(logTypeIO, "%s Message from unknown epoch: [%v]", r.label, epoch)
+			return nil, AlertWouldBlock
+		}
+
+		if epoch != cipher.epoch {
+			logf(logTypeIO, "%s Message from non-current epoch: [%v != %v] out-of-epoch reads=%v", r.label, epoch,
+				cipher.epoch, allowOldEpoch)
+			if !allowOldEpoch {
+				return nil, AlertWouldBlock
+			}
+			cipher = c
+		}
+	}
+
+	if cipher.cipher != nil {
+		logf(logTypeIO, "%s RecordLayer.ReadRecord epoch=[%s] seq=[%x] [%d] ciphertext=[%x]", r.label, cipher.epoch.label(), seq, pt.contentType, pt.fragment)
+		pt, _, err = r.decrypt(pt, seq)
 		if err != nil {
+			logf(logTypeIO, "%s Decryption failed", r.label)
 			return nil, err
 		}
 	}
+	pt.epoch = cipher.epoch
 
 	// Check that plaintext length is not too long
 	if len(pt.fragment) > maxFragmentLen {
 		return nil, fmt.Errorf("tls.record: Plaintext size too big")
 	}
 
-	logf(logTypeIO, "RecordLayer.ReadRecord [%d] [%x]", pt.contentType, pt.fragment)
+	logf(logTypeIO, "%s RecordLayer.ReadRecord [%d] [%x]", r.label, pt.contentType, pt.fragment)
 
 	r.cachedRecord = pt
-	r.incrementSequenceNumber()
+	cipher.incrementSequenceNumber()
 	return pt, nil
 }
 
 func (r *RecordLayer) WriteRecord(pt *TLSPlaintext) error {
-	return r.WriteRecordWithPadding(pt, 0)
+	return r.writeRecordWithPadding(pt, r.cipher, 0)
 }
 
 func (r *RecordLayer) WriteRecordWithPadding(pt *TLSPlaintext, padLen int) error {
-	if r.cipher != nil {
-		pt = r.encrypt(pt, padLen)
+	return r.writeRecordWithPadding(pt, r.cipher, padLen)
+}
+
+func (r *RecordLayer) writeRecordWithPadding(pt *TLSPlaintext, cipher *cipherState, padLen int) error {
+	seq := cipher.combineSeq(r.datagram)
+	if cipher.cipher != nil {
+		logf(logTypeIO, "%s RecordLayer.WriteRecord epoch=[%s] seq=[%x] [%d] plaintext=[%x]", r.label, cipher.epoch.label(), cipher.seq, pt.contentType, pt.fragment)
+		pt = r.encrypt(cipher, seq, pt, padLen)
 	} else if padLen > 0 {
 		return fmt.Errorf("tls.record: Padding can only be done on encrypted records")
 	}
@@ -285,12 +433,26 @@ func (r *RecordLayer) WriteRecordWithPadding(pt *TLSPlaintext, padLen int) error
 	}
 
 	length := len(pt.fragment)
-	header := []byte{byte(pt.contentType), 0x03, 0x01, byte(length >> 8), byte(length)}
+	var header []byte
+
+	if !r.datagram {
+		header = []byte{byte(pt.contentType),
+			byte(r.version >> 8), byte(r.version & 0xff),
+			byte(length >> 8), byte(length)}
+	} else {
+		header = make([]byte, 13)
+		version := dtlsConvertVersion(r.version)
+		copy(header, []byte{byte(pt.contentType),
+			byte(version >> 8), byte(version & 0xff),
+		})
+		encodeUint(seq, 8, header[3:])
+		encodeUint(uint64(length), 2, header[11:])
+	}
 	record := append(header, pt.fragment...)
 
-	logf(logTypeIO, "RecordLayer.WriteRecord [%d] [%x]", pt.contentType, pt.fragment)
+	logf(logTypeIO, "%s RecordLayer.WriteRecord epoch=[%s] seq=[%x] [%d] ciphertext=[%x]", r.label, cipher.epoch.label(), cipher.seq, pt.contentType, pt.fragment)
 
-	r.incrementSequenceNumber()
+	cipher.incrementSequenceNumber()
 	_, err := r.conn.Write(record)
 	return err
 }

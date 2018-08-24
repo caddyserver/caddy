@@ -331,40 +331,6 @@ func newSigningKey(sig SignatureScheme) (crypto.Signer, error) {
 	}
 }
 
-func newSelfSigned(name string, alg SignatureScheme, priv crypto.Signer) (*x509.Certificate, error) {
-	sigAlg, ok := x509AlgMap[alg]
-	if !ok {
-		return nil, fmt.Errorf("tls.selfsigned: Unknown signature algorithm [%04x]", alg)
-	}
-	if len(name) == 0 {
-		return nil, fmt.Errorf("tls.selfsigned: No name provided")
-	}
-
-	serial, err := rand.Int(rand.Reader, big.NewInt(0xA0A0A0A0))
-	if err != nil {
-		return nil, err
-	}
-
-	template := &x509.Certificate{
-		SerialNumber:       serial,
-		NotBefore:          time.Now(),
-		NotAfter:           time.Now().AddDate(0, 0, 1),
-		SignatureAlgorithm: sigAlg,
-		Subject:            pkix.Name{CommonName: name},
-		DNSNames:           []string{name},
-		KeyUsage:           x509.KeyUsageDigitalSignature | x509.KeyUsageKeyAgreement | x509.KeyUsageKeyEncipherment,
-		ExtKeyUsage:        []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-	}
-	der, err := x509.CreateCertificate(prng, template, template, priv.Public(), priv)
-	if err != nil {
-		return nil, err
-	}
-
-	// It is safe to ignore the error here because we're parsing known-good data
-	cert, _ := x509.ParseCertificate(der)
-	return cert, nil
-}
-
 // XXX(rlb): Copied from crypto/x509
 type ecdsaSignature struct {
 	R, S *big.Int
@@ -651,4 +617,51 @@ func makeTrafficKeys(params CipherSuiteParams, secret []byte) keySet {
 		key:    HkdfExpandLabel(params.Hash, secret, "key", []byte{}, params.KeyLen),
 		iv:     HkdfExpandLabel(params.Hash, secret, "iv", []byte{}, params.IvLen),
 	}
+}
+
+func MakeNewSelfSignedCert(name string, alg SignatureScheme) (crypto.Signer, *x509.Certificate, error) {
+	priv, err := newSigningKey(alg)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	cert, err := newSelfSigned(name, alg, priv)
+	if err != nil {
+		return nil, nil, err
+	}
+	return priv, cert, nil
+}
+
+func newSelfSigned(name string, alg SignatureScheme, priv crypto.Signer) (*x509.Certificate, error) {
+	sigAlg, ok := x509AlgMap[alg]
+	if !ok {
+		return nil, fmt.Errorf("tls.selfsigned: Unknown signature algorithm [%04x]", alg)
+	}
+	if len(name) == 0 {
+		return nil, fmt.Errorf("tls.selfsigned: No name provided")
+	}
+
+	serial, err := rand.Int(rand.Reader, big.NewInt(0xA0A0A0A0))
+	if err != nil {
+		return nil, err
+	}
+
+	template := &x509.Certificate{
+		SerialNumber:       serial,
+		NotBefore:          time.Now(),
+		NotAfter:           time.Now().AddDate(0, 0, 1),
+		SignatureAlgorithm: sigAlg,
+		Subject:            pkix.Name{CommonName: name},
+		DNSNames:           []string{name},
+		KeyUsage:           x509.KeyUsageDigitalSignature | x509.KeyUsageKeyAgreement | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:        []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}
+	der, err := x509.CreateCertificate(prng, template, template, priv.Public(), priv)
+	if err != nil {
+		return nil, err
+	}
+
+	// It is safe to ignore the error here because we're parsing known-good data
+	cert, _ := x509.ParseCertificate(der)
+	return cert, nil
 }

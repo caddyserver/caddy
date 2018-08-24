@@ -16,12 +16,22 @@ func Unmarshal(data []byte, v interface{}) (int, error) {
 	return d.unmarshal(v)
 }
 
+// Unmarshaler is the interface implemented by types that can
+// unmarshal a TLS description of themselves.  Note that unlike the
+// JSON unmarshaler interface, it is not known a priori how much of
+// the input data will be consumed.  So the Unmarshaler must state
+// how much of the input data it consumed.
+type Unmarshaler interface {
+	UnmarshalTLS([]byte) (int, error)
+}
+
 // These are the options that can be specified in the struct tag.  Right now,
 // all of them apply to variable-length vectors and nothing else
 type decOpts struct {
-	head uint // length of length in bytes
-	min  uint // minimum size in bytes
-	max  uint // maximum size in bytes
+	head   uint // length of length in bytes
+	min    uint // minimum size in bytes
+	max    uint // maximum size in bytes
+	varint bool // whether to decode as a varint
 }
 
 type decodeState struct {
@@ -65,8 +75,14 @@ func typeDecoder(t reflect.Type) decoderFunc {
 	return newTypeDecoder(t)
 }
 
+var (
+	unmarshalerType = reflect.TypeOf(new(Unmarshaler)).Elem()
+)
+
 func newTypeDecoder(t reflect.Type) decoderFunc {
-	// Note: Does not support Marshaler, so don't need the allowAddr argument
+	if t.Kind() != reflect.Ptr && reflect.PtrTo(t).Implements(unmarshalerType) {
+		return unmarshalerDecoder
+	}
 
 	switch t.Kind() {
 	case reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
@@ -77,6 +93,8 @@ func newTypeDecoder(t reflect.Type) decoderFunc {
 		return newSliceDecoder(t)
 	case reflect.Struct:
 		return newStructDecoder(t)
+	case reflect.Ptr:
+		return newPointerDecoder(t)
 	default:
 		panic(fmt.Errorf("Unsupported type (%s)", t))
 	}
@@ -84,35 +102,87 @@ func newTypeDecoder(t reflect.Type) decoderFunc {
 
 ///// Specific decoders below
 
-func uintDecoder(d *decodeState, v reflect.Value, opts decOpts) int {
-	var uintLen int
-	switch v.Elem().Kind() {
-	case reflect.Uint8:
-		uintLen = 1
-	case reflect.Uint16:
-		uintLen = 2
-	case reflect.Uint32:
-		uintLen = 4
-	case reflect.Uint64:
-		uintLen = 8
+func unmarshalerDecoder(d *decodeState, v reflect.Value, opts decOpts) int {
+	um, ok := v.Interface().(Unmarshaler)
+	if !ok {
+		panic(fmt.Errorf("Non-Unmarshaler passed to unmarshalerEncoder"))
 	}
 
-	buf := make([]byte, uintLen)
-	n, err := d.Read(buf)
+	read, err := um.UnmarshalTLS(d.Bytes())
 	if err != nil {
 		panic(err)
 	}
-	if n != uintLen {
+
+	if read > d.Len() {
+		panic(fmt.Errorf("Invalid return value from UnmarshalTLS"))
+	}
+
+	d.Next(read)
+	return read
+}
+
+//////////
+
+func uintDecoder(d *decodeState, v reflect.Value, opts decOpts) int {
+	if opts.varint {
+		return varintDecoder(d, v, opts)
+	}
+
+	uintLen := int(v.Elem().Type().Size())
+	buf := d.Next(uintLen)
+	if len(buf) != uintLen {
 		panic(fmt.Errorf("Insufficient data to read uint"))
 	}
 
+	return setUintFromBuffer(v, buf)
+}
+
+func varintDecoder(d *decodeState, v reflect.Value, opts decOpts) int {
+	l, val := readVarint(d)
+
+	uintLen := int(v.Elem().Type().Size())
+	if uintLen < l {
+		panic(fmt.Errorf("Uint too small to fit varint: %d < %d", uintLen, l))
+	}
+
+	v.Elem().SetUint(val)
+
+	return l
+}
+
+func readVarint(d *decodeState) (int, uint64) {
+	// Read the first octet and decide the size of the presented varint
+	first := d.Next(1)
+	if len(first) != 1 {
+		panic(fmt.Errorf("Insufficient data to read varint length"))
+	}
+
+	twoBits := uint(first[0] >> 6)
+	varintLen := 1 << twoBits
+
+	rest := d.Next(varintLen - 1)
+	if len(rest) != varintLen-1 {
+		panic(fmt.Errorf("Insufficient data to read varint"))
+	}
+
+	buf := append(first, rest...)
+	buf[0] &= 0x3f
+
+	return len(buf), decodeUintFromBuffer(buf)
+}
+
+func decodeUintFromBuffer(buf []byte) uint64 {
 	val := uint64(0)
 	for _, b := range buf {
 		val = (val << 8) + uint64(b)
 	}
 
-	v.Elem().SetUint(val)
-	return uintLen
+	return val
+}
+
+func setUintFromBuffer(v reflect.Value, buf []byte) int {
+	v.Elem().SetUint(decodeUintFromBuffer(buf))
+	return len(buf)
 }
 
 //////////
@@ -143,44 +213,57 @@ type sliceDecoder struct {
 }
 
 func (sd *sliceDecoder) decode(d *decodeState, v reflect.Value, opts decOpts) int {
+	var length uint64
+	var read int
+	var data []byte
+
 	if opts.head == 0 {
 		panic(fmt.Errorf("Cannot decode a slice without a header length"))
 	}
 
-	lengthBytes := make([]byte, opts.head)
-	n, err := d.Read(lengthBytes)
-	if err != nil {
-		panic(err)
-	}
-	if uint(n) != opts.head {
-		panic(fmt.Errorf("Not enough data to read header"))
-	}
+	// If the caller indicated there is no header, then read everything from the buffer
+	if opts.head == headValueNoHead {
+		for {
+			chunk := d.Next(1024)
+			data = append(data, chunk...)
+			if len(chunk) != 1024 {
+				break
+			}
+		}
+		length = uint64(len(data))
+		if opts.max > 0 && length > uint64(opts.max) {
+			panic(fmt.Errorf("Length of vector exceeds declared max"))
+		}
+		if length < uint64(opts.min) {
+			panic(fmt.Errorf("Length of vector below declared min"))
+		}
+	} else {
+		if opts.head != headValueVarint {
+			lengthBytes := d.Next(int(opts.head))
+			if len(lengthBytes) != int(opts.head) {
+				panic(fmt.Errorf("Not enough data to read header"))
+			}
+			read = len(lengthBytes)
+			length = decodeUintFromBuffer(lengthBytes)
+		} else {
+			read, length = readVarint(d)
+		}
+		if opts.max > 0 && length > uint64(opts.max) {
+			panic(fmt.Errorf("Length of vector exceeds declared max"))
+		}
+		if length < uint64(opts.min) {
+			panic(fmt.Errorf("Length of vector below declared min"))
+		}
 
-	length := uint(0)
-	for _, b := range lengthBytes {
-		length = (length << 8) + uint(b)
-	}
-
-	if opts.max > 0 && length > opts.max {
-		panic(fmt.Errorf("Length of vector exceeds declared max"))
-	}
-	if length < opts.min {
-		panic(fmt.Errorf("Length of vector below declared min"))
-	}
-
-	data := make([]byte, length)
-	n, err = d.Read(data)
-	if err != nil {
-		panic(err)
-	}
-	if uint(n) != length {
-		panic(fmt.Errorf("Available data less than declared length [%04x < %04x]", n, length))
+		data = d.Next(int(length))
+		if len(data) != int(length) {
+			panic(fmt.Errorf("Available data less than declared length [%d < %d]", len(data), length))
+		}
 	}
 
 	elemBuf := &decodeState{}
 	elemBuf.Write(data)
 	elems := []reflect.Value{}
-	read := int(opts.head)
 	for elemBuf.Len() > 0 {
 		elem := reflect.New(sd.elementType)
 		read += sd.elementDec(elemBuf, elem, opts)
@@ -231,13 +314,31 @@ func newStructDecoder(t reflect.Type) decoderFunc {
 		tagOpts := parseTag(tag)
 
 		sd.fieldOpts[i] = decOpts{
-			head: tagOpts["head"],
-			max:  tagOpts["max"],
-			min:  tagOpts["min"],
+			head:   tagOpts["head"],
+			max:    tagOpts["max"],
+			min:    tagOpts["min"],
+			varint: tagOpts[varintOption] > 0,
 		}
 
 		sd.fieldDecs[i] = typeDecoder(f.Type)
 	}
 
 	return sd.decode
+}
+
+//////////
+
+type pointerDecoder struct {
+	base decoderFunc
+}
+
+func (pd *pointerDecoder) decode(d *decodeState, v reflect.Value, opts decOpts) int {
+	v.Elem().Set(reflect.New(v.Elem().Type().Elem()))
+	return pd.base(d, v.Elem(), opts)
+}
+
+func newPointerDecoder(t reflect.Type) decoderFunc {
+	baseDecoder := typeDecoder(t.Elem())
+	pd := pointerDecoder{base: baseDecoder}
+	return pd.decode
 }

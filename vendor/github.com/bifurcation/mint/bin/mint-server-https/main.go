@@ -25,6 +25,7 @@ var (
 	responseFile string
 	h2           bool
 	sendTickets  bool
+	genCert      bool
 )
 
 type responder []byte
@@ -113,6 +114,7 @@ func main() {
 	flag.StringVar(&serverName, "host", "example.com", "hostname")
 	flag.StringVar(&certFile, "cert", "", "certificate chain in PEM or DER")
 	flag.StringVar(&keyFile, "key", "", "private key in PEM format")
+	flag.BoolVar(&genCert, "gencert", false, "generate a self-signed cert")
 	flag.StringVar(&responseFile, "response", "", "file to serve")
 	flag.BoolVar(&h2, "h2", false, "whether to use HTTP/2 (exclusively)")
 	flag.BoolVar(&sendTickets, "tickets", true, "whether to send session tickets")
@@ -123,8 +125,14 @@ func main() {
 	var response []byte
 	var err error
 
-	// Load the key and certificate chain
 	if certFile != "" {
+		if keyFile == "" {
+			log.Fatalf("Can't specify -cert without -key")
+		}
+		if genCert {
+			log.Fatalf("Can't specify -cert and -gencert together")
+		}
+
 		certs, err := ioutil.ReadFile(certFile)
 		if err != nil {
 			log.Fatalf("Error: %v", err)
@@ -137,8 +145,7 @@ func main() {
 				}
 			}
 		}
-	}
-	if keyFile != "" {
+
 		keyPEM, err := ioutil.ReadFile(keyFile)
 		if err != nil {
 			log.Fatalf("Error: %v", err)
@@ -148,9 +155,19 @@ func main() {
 				log.Fatalf("Error parsing private key: %v", err)
 			}
 		}
-	}
-	if err != nil {
-		log.Fatalf("Error: %v", err)
+		if err != nil {
+			log.Fatalf("Error: %v", err)
+		}
+	} else if genCert {
+		if keyFile != "" {
+			log.Fatalf("Can't specify -gencert and -key together")
+		}
+
+		var cert *x509.Certificate
+		priv, cert, err = mint.MakeNewSelfSignedCert(serverName, mint.RSA_PKCS1_SHA256)
+		certChain = []*x509.Certificate{cert}
+	} else {
+		log.Fatalf("Must provide either -gencert or -key, -cert")
 	}
 
 	// Load response file
@@ -177,15 +194,16 @@ func main() {
 
 	config.SendSessionTickets = sendTickets
 
-	if certChain != nil && priv != nil {
+	if certFile != "" && keyFile != "" {
 		log.Printf("Loading cert: %v key: %v", certFile, keyFile)
-		config.Certificates = []*mint.Certificate{
-			{
-				Chain:      certChain,
-				PrivateKey: priv,
-			},
-		}
 	}
+	config.Certificates = []*mint.Certificate{
+		{
+			Chain:      certChain,
+			PrivateKey: priv,
+		},
+	}
+
 	config.Init(false)
 
 	service := "0.0.0.0:" + port

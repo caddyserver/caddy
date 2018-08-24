@@ -51,11 +51,14 @@ func (l *Listener) Accept() (c net.Conn, err error) {
 // Listener and wraps each connection with Server.
 // The configuration config must be non-nil and must include
 // at least one certificate or else set GetCertificate.
-func NewListener(inner net.Listener, config *Config) net.Listener {
+func NewListener(inner net.Listener, config *Config) (net.Listener, error) {
+	if config != nil && config.NonBlocking {
+		return nil, errors.New("listening not possible in non-blocking mode")
+	}
 	l := new(Listener)
 	l.Listener = inner
 	l.config = config
-	return l
+	return l, nil
 }
 
 // Listen creates a TLS listener accepting connections on the
@@ -70,7 +73,7 @@ func Listen(network, laddr string, config *Config) (net.Listener, error) {
 	if err != nil {
 		return nil, err
 	}
-	return NewListener(l, config), nil
+	return NewListener(l, config)
 }
 
 type TimeoutError struct{}
@@ -87,6 +90,10 @@ func (TimeoutError) Temporary() bool { return true }
 // DialWithDialer interprets a nil configuration as equivalent to the zero
 // configuration; see the documentation of Config for the defaults.
 func DialWithDialer(dialer *net.Dialer, network, addr string, config *Config) (*Conn, error) {
+	if config != nil && config.NonBlocking {
+		return nil, errors.New("dialing not possible in non-blocking mode")
+	}
+
 	// We want the Timeout and Deadline values from dialer to cover the
 	// whole process: TCP connection and TLS handshake. This means that we
 	// also need to start our own timers now.
@@ -121,15 +128,19 @@ func DialWithDialer(dialer *net.Dialer, network, addr string, config *Config) (*
 
 	if config == nil {
 		config = &Config{}
+	} else {
+		config = config.Clone()
 	}
+
 	// If no ServerName is set, infer the ServerName
 	// from the hostname we're connecting to.
 	if config.ServerName == "" {
-		// Make a copy to avoid polluting argument or default.
-		c := config.Clone()
-		c.ServerName = hostname
-		config = c
+		config.ServerName = hostname
+
 	}
+
+	// Set up DTLS as needed.
+	config.UseDTLS = (network == "udp")
 
 	conn := Client(rawConn, config)
 

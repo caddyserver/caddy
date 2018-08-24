@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/x509"
 	"flag"
 	"log"
 	"net"
@@ -14,6 +15,13 @@ func main() {
 	var config mint.Config
 	config.SendSessionTickets = true
 	config.ServerName = "localhost"
+	priv, cert, err := mint.MakeNewSelfSignedCert("localhost", mint.RSA_PKCS1_SHA256)
+	config.Certificates = []*mint.Certificate{
+		{
+			Chain:      []*x509.Certificate{cert},
+			PrivateKey: priv,
+		},
+	}
 	config.Init(false)
 
 	flag.StringVar(&port, "port", "4430", "port")

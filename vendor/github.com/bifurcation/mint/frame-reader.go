@@ -66,8 +66,8 @@ func (f *frameReader) process() (hdr []byte, body []byte, err error) {
 		f.remainder = f.remainder[copied:]
 		f.writeOffset += copied
 		if f.writeOffset < len(f.working) {
-			logf(logTypeFrameReader, "Read would have blocked 1")
-			return nil, nil, WouldBlock
+			logf(logTypeVerbose, "Read would have blocked 1")
+			return nil, nil, AlertWouldBlock
 		}
 		// Reset the write offset, because we are now full.
 		f.writeOffset = 0
@@ -93,6 +93,6 @@ func (f *frameReader) process() (hdr []byte, body []byte, err error) {
 		f.state = kFrameReaderBody
 	}
 
-	logf(logTypeFrameReader, "Read would have blocked 2")
-	return nil, nil, WouldBlock
+	logf(logTypeVerbose, "Read would have blocked 2")
+	return nil, nil, AlertWouldBlock
 }
