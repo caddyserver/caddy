@@ -1,11 +1,9 @@
 package handshake
 
 import (
-	"bytes"
 	"time"
 
 	"github.com/lucas-clemente/quic-go/internal/protocol"
-	"github.com/lucas-clemente/quic-go/internal/utils"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
@@ -104,6 +102,14 @@ var _ = Describe("Transport Parameters", func() {
 	})
 
 	Context("for TLS", func() {
+		paramsMapToList := func(p map[transportParameterID][]byte) []transportParameter {
+			var list []transportParameter
+			for id, val := range p {
+				list = append(list, transportParameter{id, val})
+			}
+			return list
+		}
+
 		It("has a string representation", func() {
 			p := &TransportParameters{
 				StreamFlowControlWindow:     0x1234,
@@ -116,25 +122,9 @@ var _ = Describe("Transport Parameters", func() {
 		})
 
 		Context("parsing", func() {
-			var (
-				params              *TransportParameters
-				parameters          map[transportParameterID][]byte
-				statelessResetToken []byte
-			)
-
-			marshal := func(p map[transportParameterID][]byte) []byte {
-				b := &bytes.Buffer{}
-				for id, val := range p {
-					utils.BigEndian.WriteUint16(b, uint16(id))
-					utils.BigEndian.WriteUint16(b, uint16(len(val)))
-					b.Write(val)
-				}
-				return b.Bytes()
-			}
+			var parameters map[transportParameterID][]byte
 
 			BeforeEach(func() {
-				params = &TransportParameters{}
-				statelessResetToken = bytes.Repeat([]byte{42}, 16)
 				parameters = map[transportParameterID][]byte{
 					initialMaxStreamDataParameterID:  {0x11, 0x22, 0x33, 0x44},
 					initialMaxDataParameterID:        {0x22, 0x33, 0x44, 0x55},
@@ -143,11 +133,10 @@ var _ = Describe("Transport Parameters", func() {
 					idleTimeoutParameterID:           {0x13, 0x37},
 					maxPacketSizeParameterID:         {0x73, 0x31},
 					disableMigrationParameterID:      {},
-					statelessResetTokenParameterID:   statelessResetToken,
 				}
 			})
 			It("reads parameters", func() {
-				err := params.unmarshal(marshal(parameters))
+				params, err := readTransportParameters(paramsMapToList(parameters))
 				Expect(err).ToNot(HaveOccurred())
 				Expect(params.StreamFlowControlWindow).To(Equal(protocol.ByteCount(0x11223344)))
 				Expect(params.ConnectionFlowControlWindow).To(Equal(protocol.ByteCount(0x22334455)))
@@ -157,12 +146,23 @@ var _ = Describe("Transport Parameters", func() {
 				Expect(params.OmitConnectionID).To(BeFalse())
 				Expect(params.MaxPacketSize).To(Equal(protocol.ByteCount(0x7331)))
 				Expect(params.DisableMigration).To(BeTrue())
-				Expect(params.StatelessResetToken).To(Equal(statelessResetToken))
+			})
+
+			It("rejects the parameters if the initial_max_stream_data is missing", func() {
+				delete(parameters, initialMaxStreamDataParameterID)
+				_, err := readTransportParameters(paramsMapToList(parameters))
+				Expect(err).To(MatchError("missing parameter"))
+			})
+
+			It("rejects the parameters if the initial_max_data is missing", func() {
+				delete(parameters, initialMaxDataParameterID)
+				_, err := readTransportParameters(paramsMapToList(parameters))
+				Expect(err).To(MatchError("missing parameter"))
 			})
 
 			It("rejects the parameters if the idle_timeout is missing", func() {
 				delete(parameters, idleTimeoutParameterID)
-				err := params.unmarshal(marshal(parameters))
+				_, err := readTransportParameters(paramsMapToList(parameters))
 				Expect(err).To(MatchError("missing parameter"))
 			})
 
@@ -170,95 +170,98 @@ var _ = Describe("Transport Parameters", func() {
 				t := 2 * time.Second
 				Expect(t).To(BeNumerically("<", protocol.MinRemoteIdleTimeout))
 				parameters[idleTimeoutParameterID] = []byte{0, uint8(t.Seconds())}
-				err := params.unmarshal(marshal(parameters))
+				params, err := readTransportParameters(paramsMapToList(parameters))
 				Expect(err).ToNot(HaveOccurred())
 				Expect(params.IdleTimeout).To(Equal(protocol.MinRemoteIdleTimeout))
 			})
 
 			It("rejects the parameters if the initial_max_stream_data has the wrong length", func() {
 				parameters[initialMaxStreamDataParameterID] = []byte{0x11, 0x22, 0x33} // should be 4 bytes
-				err := params.unmarshal(marshal(parameters))
+				_, err := readTransportParameters(paramsMapToList(parameters))
 				Expect(err).To(MatchError("wrong length for initial_max_stream_data: 3 (expected 4)"))
 			})
 
 			It("rejects the parameters if the initial_max_data has the wrong length", func() {
 				parameters[initialMaxDataParameterID] = []byte{0x11, 0x22, 0x33} // should be 4 bytes
-				err := params.unmarshal(marshal(parameters))
+				_, err := readTransportParameters(paramsMapToList(parameters))
 				Expect(err).To(MatchError("wrong length for initial_max_data: 3 (expected 4)"))
 			})
 
 			It("rejects the parameters if the initial_max_stream_id_bidi has the wrong length", func() {
 				parameters[initialMaxBidiStreamsParameterID] = []byte{0x11, 0x22, 0x33} // should be 2 bytes
-				err := params.unmarshal(marshal(parameters))
+				_, err := readTransportParameters(paramsMapToList(parameters))
 				Expect(err).To(MatchError("wrong length for initial_max_stream_id_bidi: 3 (expected 2)"))
 			})
 
 			It("rejects the parameters if the initial_max_stream_id_bidi has the wrong length", func() {
 				parameters[initialMaxUniStreamsParameterID] = []byte{0x11, 0x22, 0x33} // should be 2 bytes
-				err := params.unmarshal(marshal(parameters))
+				_, err := readTransportParameters(paramsMapToList(parameters))
 				Expect(err).To(MatchError("wrong length for initial_max_stream_id_uni: 3 (expected 2)"))
 			})
 
 			It("rejects the parameters if the initial_idle_timeout has the wrong length", func() {
 				parameters[idleTimeoutParameterID] = []byte{0x11, 0x22, 0x33} // should be 2 bytes
-				err := params.unmarshal(marshal(parameters))
+				_, err := readTransportParameters(paramsMapToList(parameters))
 				Expect(err).To(MatchError("wrong length for idle_timeout: 3 (expected 2)"))
 			})
 
 			It("rejects the parameters if max_packet_size has the wrong length", func() {
 				parameters[maxPacketSizeParameterID] = []byte{0x11} // should be 2 bytes
-				err := params.unmarshal(marshal(parameters))
+				_, err := readTransportParameters(paramsMapToList(parameters))
 				Expect(err).To(MatchError("wrong length for max_packet_size: 1 (expected 2)"))
 			})
 
 			It("rejects max_packet_sizes smaller than 1200 bytes", func() {
 				parameters[maxPacketSizeParameterID] = []byte{0x4, 0xaf} // 0x4af = 1199
-				err := params.unmarshal(marshal(parameters))
+				_, err := readTransportParameters(paramsMapToList(parameters))
 				Expect(err).To(MatchError("invalid value for max_packet_size: 1199 (minimum 1200)"))
 			})
 
 			It("rejects the parameters if disable_connection_migration has the wrong length", func() {
 				parameters[disableMigrationParameterID] = []byte{0x11} // should empty
-				err := params.unmarshal(marshal(parameters))
+				_, err := readTransportParameters(paramsMapToList(parameters))
 				Expect(err).To(MatchError("wrong length for disable_migration: 1 (expected empty)"))
-			})
-
-			It("rejects the parameters if the stateless_reset_token has the wrong length", func() {
-				parameters[statelessResetTokenParameterID] = statelessResetToken[1:]
-				err := params.unmarshal(marshal(parameters))
-				Expect(err).To(MatchError("wrong length for stateless_reset_token: 15 (expected 16)"))
 			})
 
 			It("ignores unknown parameters", func() {
 				parameters[1337] = []byte{42}
-				err := params.unmarshal(marshal(parameters))
+				_, err := readTransportParameters(paramsMapToList(parameters))
 				Expect(err).ToNot(HaveOccurred())
 			})
 		})
 
-		Context("marshalling", func() {
-			It("marshals", func() {
-				params := &TransportParameters{
+		Context("writing", func() {
+			var params *TransportParameters
+
+			paramsListToMap := func(l []transportParameter) map[transportParameterID][]byte {
+				p := make(map[transportParameterID][]byte)
+				for _, v := range l {
+					p[v.Parameter] = v.Value
+				}
+				return p
+			}
+
+			BeforeEach(func() {
+				params = &TransportParameters{
 					StreamFlowControlWindow:     0xdeadbeef,
 					ConnectionFlowControlWindow: 0xdecafbad,
 					IdleTimeout:                 0xcafe * time.Second,
 					MaxBidiStreams:              0x1234,
 					MaxUniStreams:               0x4321,
 					DisableMigration:            true,
-					StatelessResetToken:         bytes.Repeat([]byte{100}, 16),
 				}
-				b := &bytes.Buffer{}
-				params.marshal(b)
+			})
 
-				p := &TransportParameters{}
-				Expect(p.unmarshal(b.Bytes())).To(Succeed())
-				Expect(p.StreamFlowControlWindow).To(Equal(params.StreamFlowControlWindow))
-				Expect(p.ConnectionFlowControlWindow).To(Equal(params.ConnectionFlowControlWindow))
-				Expect(p.MaxUniStreams).To(Equal(params.MaxUniStreams))
-				Expect(p.MaxBidiStreams).To(Equal(params.MaxBidiStreams))
-				Expect(p.IdleTimeout).To(Equal(params.IdleTimeout))
-				Expect(p.DisableMigration).To(Equal(params.DisableMigration))
-				Expect(p.StatelessResetToken).To(Equal(params.StatelessResetToken))
+			It("creates the parameters list", func() {
+				values := paramsListToMap(params.getTransportParameters())
+				Expect(values).To(HaveLen(7))
+				Expect(values).To(HaveKeyWithValue(initialMaxStreamDataParameterID, []byte{0xde, 0xad, 0xbe, 0xef}))
+				Expect(values).To(HaveKeyWithValue(initialMaxDataParameterID, []byte{0xde, 0xca, 0xfb, 0xad}))
+				Expect(values).To(HaveKeyWithValue(initialMaxBidiStreamsParameterID, []byte{0x12, 0x34}))
+				Expect(values).To(HaveKeyWithValue(initialMaxUniStreamsParameterID, []byte{0x43, 0x21}))
+				Expect(values).To(HaveKeyWithValue(idleTimeoutParameterID, []byte{0xca, 0xfe}))
+				Expect(values).To(HaveKeyWithValue(maxPacketSizeParameterID, []byte{0x5, 0xac})) // 1452 = 0x5ac
+				Expect(values).To(HaveKeyWithValue(disableMigrationParameterID, []byte{}))
 			})
 		})
 	})

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net"
 	"time"
+
+	"github.com/bifurcation/mint"
 )
 
 const (
@@ -27,12 +29,12 @@ type token struct {
 
 // A CookieGenerator generates Cookies
 type CookieGenerator struct {
-	cookieProtector cookieProtector
+	cookieProtector mint.CookieProtector
 }
 
 // NewCookieGenerator initializes a new CookieGenerator
 func NewCookieGenerator() (*CookieGenerator, error) {
-	cookieProtector, err := newCookieProtector()
+	cookieProtector, err := mint.NewDefaultCookieProtector()
 	if err != nil {
 		return nil, err
 	}

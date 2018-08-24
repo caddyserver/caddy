@@ -7,6 +7,7 @@ import (
 	"github.com/lucas-clemente/quic-go/qerr"
 
 	"github.com/bifurcation/mint"
+	"github.com/bifurcation/mint/syntax"
 	"github.com/lucas-clemente/quic-go/internal/protocol"
 	"github.com/lucas-clemente/quic-go/internal/utils"
 )
@@ -51,12 +52,16 @@ func (h *extensionHandlerClient) Send(hType mint.HandshakeType, el *mint.Extensi
 	if hType != mint.HandshakeTypeClientHello {
 		return nil
 	}
+
 	h.logger.Debugf("Sending Transport Parameters: %s", h.ourParams)
-	chtp := &clientHelloTransportParameters{
-		InitialVersion: h.initialVersion,
-		Parameters:     *h.ourParams,
+	data, err := syntax.Marshal(clientHelloTransportParameters{
+		InitialVersion: uint32(h.initialVersion),
+		Parameters:     h.ourParams.getTransportParameters(),
+	})
+	if err != nil {
+		return err
 	}
-	return el.Add(&tlsExtensionBody{data: chtp.Marshal()})
+	return el.Add(&tlsExtensionBody{data})
 }
 
 func (h *extensionHandlerClient) Receive(hType mint.HandshakeType, el *mint.ExtensionList) error {
@@ -79,31 +84,50 @@ func (h *extensionHandlerClient) Receive(hType mint.HandshakeType, el *mint.Exte
 	}
 
 	eetp := &encryptedExtensionsTransportParameters{}
-	if err := eetp.Unmarshal(ext.data); err != nil {
+	if _, err := syntax.Unmarshal(ext.data, eetp); err != nil {
 		return err
 	}
+	serverSupportedVersions := make([]protocol.VersionNumber, len(eetp.SupportedVersions))
+	for i, v := range eetp.SupportedVersions {
+		serverSupportedVersions[i] = protocol.VersionNumber(v)
+	}
 	// check that the negotiated_version is the current version
-	if eetp.NegotiatedVersion != h.version {
+	if protocol.VersionNumber(eetp.NegotiatedVersion) != h.version {
 		return qerr.Error(qerr.VersionNegotiationMismatch, "current version doesn't match negotiated_version")
 	}
 	// check that the current version is included in the supported versions
-	if !protocol.IsSupportedVersion(eetp.SupportedVersions, h.version) {
+	if !protocol.IsSupportedVersion(serverSupportedVersions, h.version) {
 		return qerr.Error(qerr.VersionNegotiationMismatch, "current version not included in the supported versions")
 	}
 	// if version negotiation was performed, check that we would have selected the current version based on the supported versions sent by the server
 	if h.version != h.initialVersion {
-		negotiatedVersion, ok := protocol.ChooseSupportedVersion(h.supportedVersions, eetp.SupportedVersions)
+		negotiatedVersion, ok := protocol.ChooseSupportedVersion(h.supportedVersions, serverSupportedVersions)
 		if !ok || h.version != negotiatedVersion {
 			return qerr.Error(qerr.VersionNegotiationMismatch, "would have picked a different version")
 		}
 	}
 
-	// check that the server sent a stateless reset token
-	if len(eetp.Parameters.StatelessResetToken) == 0 {
+	// check that the server sent the stateless reset token
+	var foundStatelessResetToken bool
+	for _, p := range eetp.Parameters {
+		if p.Parameter == statelessResetTokenParameterID {
+			if len(p.Value) != 16 {
+				return fmt.Errorf("wrong length for stateless_reset_token: %d (expected 16)", len(p.Value))
+			}
+			foundStatelessResetToken = true
+			// TODO: handle this value
+		}
+	}
+	if !foundStatelessResetToken {
+		// TODO: return the right error here
 		return errors.New("server didn't sent stateless_reset_token")
 	}
-	h.logger.Debugf("Received Transport Parameters: %s", &eetp.Parameters)
-	h.paramsChan <- eetp.Parameters
+	params, err := readTransportParameters(eetp.Parameters)
+	if err != nil {
+		return err
+	}
+	h.logger.Debugf("Received Transport Parameters: %s", params)
+	h.paramsChan <- *params
 	return nil
 }
 

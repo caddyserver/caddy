@@ -24,6 +24,8 @@ const (
 	VersionTLS      VersionNumber = 101
 	VersionWhatever VersionNumber = 0 // for when the version doesn't matter
 	VersionUnknown  VersionNumber = math.MaxUint32
+
+	VersionMilestone0_9_0 VersionNumber = 0x51474f01
 )
 
 // SupportedVersions lists the versions that the server supports
@@ -36,12 +38,12 @@ var SupportedVersions = []VersionNumber{
 
 // IsValidVersion says if the version is known to quic-go
 func IsValidVersion(v VersionNumber) bool {
-	return v == VersionTLS || IsSupportedVersion(SupportedVersions, v)
+	return v == VersionMilestone0_9_0 || v == VersionTLS || IsSupportedVersion(SupportedVersions, v)
 }
 
 // UsesTLS says if this QUIC version uses TLS 1.3 for the handshake
 func (vn VersionNumber) UsesTLS() bool {
-	return vn == VersionTLS
+	return vn == VersionTLS || vn == VersionMilestone0_9_0
 }
 
 func (vn VersionNumber) String() string {
@@ -52,6 +54,8 @@ func (vn VersionNumber) String() string {
 		return "unknown"
 	case VersionTLS:
 		return "TLS dev version (WIP)"
+	case VersionMilestone0_9_0:
+		return "quic-go Milestone 0.9.0"
 	default:
 		if vn.isGQUIC() {
 			return fmt.Sprintf("gQUIC %d", vn.toGQUICVersion())

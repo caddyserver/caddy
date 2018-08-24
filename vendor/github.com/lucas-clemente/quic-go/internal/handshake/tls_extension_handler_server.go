@@ -1,12 +1,14 @@
 package handshake
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 
 	"github.com/lucas-clemente/quic-go/qerr"
 
 	"github.com/bifurcation/mint"
+	"github.com/bifurcation/mint/syntax"
 	"github.com/lucas-clemente/quic-go/internal/protocol"
 	"github.com/lucas-clemente/quic-go/internal/utils"
 )
@@ -47,13 +49,27 @@ func (h *extensionHandlerServer) Send(hType mint.HandshakeType, el *mint.Extensi
 	if hType != mint.HandshakeTypeEncryptedExtensions {
 		return nil
 	}
-	h.logger.Debugf("Sending Transport Parameters: %s", h.ourParams)
-	eetp := &encryptedExtensionsTransportParameters{
-		NegotiatedVersion: h.version,
-		SupportedVersions: protocol.GetGreasedVersions(h.supportedVersions),
-		Parameters:        *h.ourParams,
+
+	transportParams := append(
+		h.ourParams.getTransportParameters(),
+		// TODO(#855): generate a real token
+		transportParameter{statelessResetTokenParameterID, bytes.Repeat([]byte{42}, 16)},
+	)
+	supportedVersions := protocol.GetGreasedVersions(h.supportedVersions)
+	versions := make([]uint32, len(supportedVersions))
+	for i, v := range supportedVersions {
+		versions[i] = uint32(v)
 	}
-	return el.Add(&tlsExtensionBody{data: eetp.Marshal()})
+	h.logger.Debugf("Sending Transport Parameters: %s", h.ourParams)
+	data, err := syntax.Marshal(encryptedExtensionsTransportParameters{
+		NegotiatedVersion: uint32(h.version),
+		SupportedVersions: versions,
+		Parameters:        transportParams,
+	})
+	if err != nil {
+		return err
+	}
+	return el.Add(&tlsExtensionBody{data})
 }
 
 func (h *extensionHandlerServer) Receive(hType mint.HandshakeType, el *mint.ExtensionList) error {
@@ -74,24 +90,30 @@ func (h *extensionHandlerServer) Receive(hType mint.HandshakeType, el *mint.Exte
 		return errors.New("ClientHello didn't contain a QUIC extension")
 	}
 	chtp := &clientHelloTransportParameters{}
-	if err := chtp.Unmarshal(ext.data); err != nil {
+	if _, err := syntax.Unmarshal(ext.data, chtp); err != nil {
 		return err
 	}
+	initialVersion := protocol.VersionNumber(chtp.InitialVersion)
 
 	// perform the stateless version negotiation validation:
 	// make sure that we would have sent a Version Negotiation Packet if the client offered the initial version
 	// this is the case if and only if the initial version is not contained in the supported versions
-	if chtp.InitialVersion != h.version && protocol.IsSupportedVersion(h.supportedVersions, chtp.InitialVersion) {
+	if initialVersion != h.version && protocol.IsSupportedVersion(h.supportedVersions, initialVersion) {
 		return qerr.Error(qerr.VersionNegotiationMismatch, "Client should have used the initial version")
 	}
 
-	// check that the client didn't send a stateless reset token
-	if len(chtp.Parameters.StatelessResetToken) != 0 {
-		// TODO: return the correct error type
-		return errors.New("client sent a stateless reset token")
+	for _, p := range chtp.Parameters {
+		if p.Parameter == statelessResetTokenParameterID {
+			// TODO: return the correct error type
+			return errors.New("client sent a stateless reset token")
+		}
 	}
-	h.logger.Debugf("Received Transport Parameters: %s", &chtp.Parameters)
-	h.paramsChan <- chtp.Parameters
+	params, err := readTransportParameters(chtp.Parameters)
+	if err != nil {
+		return err
+	}
+	h.logger.Debugf("Received Transport Parameters: %s", params)
+	h.paramsChan <- *params
 	return nil
 }
 
