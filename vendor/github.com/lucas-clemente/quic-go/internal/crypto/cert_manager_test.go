@@ -317,10 +317,10 @@ var _ = Describe("Cert Manager", func() {
 			}
 
 			templateRoot := &x509.Certificate{
-				SerialNumber:          big.NewInt(1),
-				NotBefore:             time.Now().Add(-time.Hour),
-				NotAfter:              time.Now().Add(time.Hour),
-				IsCA:                  true,
+				SerialNumber: big.NewInt(1),
+				NotBefore:    time.Now().Add(-time.Hour),
+				NotAfter:     time.Now().Add(time.Hour),
+				IsCA:         true,
 				BasicConstraintsValid: true,
 			}
 			rootKey, rootCert := getCertificate(templateRoot)
