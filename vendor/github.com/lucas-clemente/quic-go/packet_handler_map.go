@@ -39,7 +39,7 @@ func newPacketHandlerMap(conn net.PacketConn, connIDLen int, logger utils.Logger
 		connIDLen:                 connIDLen,
 		handlers:                  make(map[string]packetHandler),
 		deleteClosedSessionsAfter: protocol.ClosedSessionDeleteTimeout,
-		logger:                    logger,
+		logger: logger,
 	}
 	go m.listen()
 	return m

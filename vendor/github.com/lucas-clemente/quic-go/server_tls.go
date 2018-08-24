@@ -51,8 +51,6 @@ func newServerTLS(
 		MaxBidiStreams:              uint16(config.MaxIncomingStreams),
 		MaxUniStreams:               uint16(config.MaxIncomingUniStreams),
 		DisableMigration:            true,
-		// TODO(#855): generate a real token
-		StatelessResetToken: bytes.Repeat([]byte{42}, 16),
 	}
 	mconf, err := tlsToMintConfig(tlsConf, protocol.PerspectiveServer)
 	if err != nil {
