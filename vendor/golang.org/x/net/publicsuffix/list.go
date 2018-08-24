@@ -5,8 +5,43 @@
 //go:generate go run gen.go
 
 // Package publicsuffix provides a public suffix list based on data from
-// http://publicsuffix.org/. A public suffix is one under which Internet users
-// can directly register names.
+// https://publicsuffix.org/
+//
+// A public suffix is one under which Internet users can directly register
+// names. It is related to, but different from, a TLD (top level domain).
+//
+// "com" is a TLD (top level domain). Top level means it has no dots.
+//
+// "com" is also a public suffix. Amazon and Google have registered different
+// siblings under that domain: "amazon.com" and "google.com".
+//
+// "au" is another TLD, again because it has no dots. But it's not "amazon.au".
+// Instead, it's "amazon.com.au".
+//
+// "com.au" isn't an actual TLD, because it's not at the top level (it has
+// dots). But it is an eTLD (effective TLD), because that's the branching point
+// for domain name registrars.
+//
+// Another name for "an eTLD" is "a public suffix". Often, what's more of
+// interest is the eTLD+1, or one more label than the public suffix. For
+// example, browsers partition read/write access to HTTP cookies according to
+// the eTLD+1. Web pages served from "amazon.com.au" can't read cookies from
+// "google.com.au", but web pages served from "maps.google.com" can share
+// cookies from "www.google.com", so you don't have to sign into Google Maps
+// separately from signing into Google Web Search. Note that all four of those
+// domains have 3 labels and 2 dots. The first two domains are each an eTLD+1,
+// the last two are not (but share the same eTLD+1: "google.com").
+//
+// All of these domains have the same eTLD+1:
+//  - "www.books.amazon.co.uk"
+//  - "books.amazon.co.uk"
+//  - "amazon.co.uk"
+// Specifically, the eTLD+1 is "amazon.co.uk", because the eTLD is "co.uk".
+//
+// There is no closed form algorithm to calculate the eTLD of a domain.
+// Instead, the calculation is data driven. This package provides a
+// pre-compiled snapshot of Mozilla's PSL (Public Suffix List) data at
+// https://publicsuffix.org/
 package publicsuffix // import "golang.org/x/net/publicsuffix"
 
 // TODO: specify case sensitivity and leading/trailing dot behavior for
