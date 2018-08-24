@@ -12,12 +12,20 @@ import (
 )
 
 var url string
+var dontValidate bool
 
 func main() {
+	c := mint.Config{}
+
 	url := flag.String("url", "https://localhost:4430", "URL to send request")
+	flag.BoolVar(&dontValidate, "dontvalidate", false, "don't validate certs")
 	flag.Parse()
+	if dontValidate {
+		c.InsecureSkipVerify = true
+	}
+
 	mintdial := func(network, addr string) (net.Conn, error) {
-		return mint.Dial(network, addr, nil)
+		return mint.Dial(network, addr, &c)
 	}
 
 	tr := &http.Transport{

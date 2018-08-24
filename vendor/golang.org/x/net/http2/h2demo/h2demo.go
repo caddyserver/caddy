@@ -8,6 +8,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"flag"
 	"fmt"
@@ -19,7 +20,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"os"
 	"path"
 	"regexp"
 	"runtime"
@@ -28,7 +28,9 @@ import (
 	"sync"
 	"time"
 
+	"cloud.google.com/go/storage"
 	"go4.org/syncutil/singleflight"
+	"golang.org/x/build/autocertcache"
 	"golang.org/x/crypto/acme/autocert"
 	"golang.org/x/net/http2"
 )
@@ -157,6 +159,9 @@ func echoCapitalHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "PUT" {
 		http.Error(w, "PUT required.", 400)
 		return
+	}
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
 	}
 	io.Copy(flushWriter{w}, capitalizeReader{r.Body})
 }
@@ -426,19 +431,10 @@ func httpHost() string {
 	}
 }
 
-func serveProdTLS() error {
-	const cacheDir = "/var/cache/autocert"
-	if err := os.MkdirAll(cacheDir, 0700); err != nil {
-		return err
-	}
-	m := autocert.Manager{
-		Cache:      autocert.DirCache(cacheDir),
-		Prompt:     autocert.AcceptTOS,
-		HostPolicy: autocert.HostWhitelist("http2.golang.org"),
-	}
+func serveProdTLS(autocertManager *autocert.Manager) error {
 	srv := &http.Server{
 		TLSConfig: &tls.Config{
-			GetCertificate: m.GetCertificate,
+			GetCertificate: autocertManager.GetCertificate,
 		},
 	}
 	http2.ConfigureServer(srv, &http2.Server{
@@ -468,9 +464,21 @@ func (ln tcpKeepAliveListener) Accept() (c net.Conn, err error) {
 }
 
 func serveProd() error {
+	log.Printf("running in production mode")
+
+	storageClient, err := storage.NewClient(context.Background())
+	if err != nil {
+		log.Fatalf("storage.NewClient: %v", err)
+	}
+	autocertManager := &autocert.Manager{
+		Prompt:     autocert.AcceptTOS,
+		HostPolicy: autocert.HostWhitelist("http2.golang.org"),
+		Cache:      autocertcache.NewGoogleCloudStorageCache(storageClient, "golang-h2demo-autocert"),
+	}
+
 	errc := make(chan error, 2)
-	go func() { errc <- http.ListenAndServe(":80", nil) }()
-	go func() { errc <- serveProdTLS() }()
+	go func() { errc <- http.ListenAndServe(":80", autocertManager.HTTPHandler(http.DefaultServeMux)) }()
+	go func() { errc <- serveProdTLS(autocertManager) }()
 	return <-errc
 }
 

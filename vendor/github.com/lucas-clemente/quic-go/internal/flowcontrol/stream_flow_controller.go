@@ -14,6 +14,8 @@ type streamFlowController struct {
 
 	streamID protocol.StreamID
 
+	queueWindowUpdate func()
+
 	connection              connectionFlowControllerI
 	contributesToConnection bool // does the stream contribute to connection level flow control
 
@@ -30,6 +32,7 @@ func NewStreamFlowController(
 	receiveWindow protocol.ByteCount,
 	maxReceiveWindow protocol.ByteCount,
 	initialSendWindow protocol.ByteCount,
+	queueWindowUpdate func(protocol.StreamID),
 	rttStats *congestion.RTTStats,
 	logger utils.Logger,
 ) StreamFlowController {
@@ -37,6 +40,7 @@ func NewStreamFlowController(
 		streamID:                streamID,
 		contributesToConnection: contributesToConnection,
 		connection:              cfc.(connectionFlowControllerI),
+		queueWindowUpdate:       func() { queueWindowUpdate(streamID) },
 		baseFlowController: baseFlowController{
 			rttStats:             rttStats,
 			receiveWindow:        receiveWindow,
@@ -111,20 +115,16 @@ func (c *streamFlowController) SendWindowSize() protocol.ByteCount {
 	return window
 }
 
-// IsBlocked says if it is blocked by stream-level flow control.
-// If it is blocked, the offset is returned.
-func (c *streamFlowController) IsBlocked() (bool, protocol.ByteCount) {
-	if c.sendWindowSize() != 0 {
-		return false, 0
-	}
-	return true, c.sendWindow
-}
-
-func (c *streamFlowController) HasWindowUpdate() bool {
+func (c *streamFlowController) MaybeQueueWindowUpdate() {
 	c.mutex.Lock()
 	hasWindowUpdate := !c.receivedFinalOffset && c.hasWindowUpdate()
 	c.mutex.Unlock()
-	return hasWindowUpdate
+	if hasWindowUpdate {
+		c.queueWindowUpdate()
+	}
+	if c.contributesToConnection {
+		c.connection.MaybeQueueWindowUpdate()
+	}
 }
 
 func (c *streamFlowController) GetWindowUpdate() protocol.ByteCount {
@@ -139,7 +139,7 @@ func (c *streamFlowController) GetWindowUpdate() protocol.ByteCount {
 	oldWindowSize := c.receiveWindowSize
 	offset := c.baseFlowController.getWindowUpdate()
 	if c.receiveWindowSize > oldWindowSize { // auto-tuning enlarged the window size
-		c.logger.Debugf("Increasing receive flow control window for the connection to %d kB", c.receiveWindowSize/(1<<10))
+		c.logger.Debugf("Increasing receive flow control window for stream %d to %d kB", c.streamID, c.receiveWindowSize/(1<<10))
 		if c.contributesToConnection {
 			c.connection.EnsureMinimumWindowSize(protocol.ByteCount(float64(c.receiveWindowSize) * protocol.ConnectionFlowControlMultiplier))
 		}

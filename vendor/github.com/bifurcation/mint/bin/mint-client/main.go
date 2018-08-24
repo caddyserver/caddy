@@ -8,12 +8,24 @@ import (
 )
 
 var addr string
+var dtls bool
+var dontValidate bool
 
 func main() {
-	flag.StringVar(&addr, "addr", "localhost:4430", "port")
-	flag.Parse()
+	c := mint.Config{}
 
-	conn, err := mint.Dial("tcp", addr, nil)
+	flag.StringVar(&addr, "addr", "localhost:4430", "port")
+	flag.BoolVar(&dtls, "dtls", false, "use DTLS")
+	flag.BoolVar(&dontValidate, "dontvalidate", false, "don't validate certs")
+	flag.Parse()
+	if dontValidate {
+		c.InsecureSkipVerify = true
+	}
+	network := "tcp"
+	if dtls {
+		network = "udp"
+	}
+	conn, err := mint.Dial(network, addr, &c)
 
 	if err != nil {
 		fmt.Println("TLS handshake failed:", err)

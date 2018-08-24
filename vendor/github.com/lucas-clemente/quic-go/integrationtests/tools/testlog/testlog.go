@@ -39,3 +39,8 @@ var _ = AfterEach(func() {
 		_ = logFile.Close()
 	}
 })
+
+// Debug says if this test is being logged
+func Debug() bool {
+	return len(logFileName) > 0
+}

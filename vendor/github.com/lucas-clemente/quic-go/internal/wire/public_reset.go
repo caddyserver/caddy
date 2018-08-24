@@ -16,11 +16,11 @@ type PublicReset struct {
 	Nonce                uint64
 }
 
-// WritePublicReset writes a Public Reset
+// WritePublicReset writes a PUBLIC_RESET
 func WritePublicReset(connectionID protocol.ConnectionID, rejectedPacketNumber protocol.PacketNumber, nonceProof uint64) []byte {
 	b := &bytes.Buffer{}
 	b.WriteByte(0x0a)
-	utils.BigEndian.WriteUint64(b, uint64(connectionID))
+	b.Write(connectionID)
 	utils.LittleEndian.WriteUint32(b, uint32(handshake.TagPRST))
 	utils.LittleEndian.WriteUint32(b, 2)
 	utils.LittleEndian.WriteUint32(b, uint32(handshake.TagRNON))
@@ -32,7 +32,7 @@ func WritePublicReset(connectionID protocol.ConnectionID, rejectedPacketNumber p
 	return b.Bytes()
 }
 
-// ParsePublicReset parses a Public Reset
+// ParsePublicReset parses a PUBLIC_RESET
 func ParsePublicReset(r *bytes.Reader) (*PublicReset, error) {
 	pr := PublicReset{}
 	msg, err := handshake.ParseHandshakeMessage(r)
@@ -44,7 +44,7 @@ func ParsePublicReset(r *bytes.Reader) (*PublicReset, error) {
 	}
 
 	// The RSEQ tag is mandatory according to the gQUIC wire spec.
-	// However, Google doesn't send RSEQ in their Public Resets.
+	// However, Google doesn't send RSEQ in their PUBLIC_RESETs.
 	// Therefore, we'll treat RSEQ as an optional field.
 	if rseq, ok := msg.Data[handshake.TagRSEQ]; ok {
 		if len(rseq) != 8 {
