@@ -9,6 +9,7 @@ package chacha // import "github.com/aead/chacha20/chacha"
 import (
 	"encoding/binary"
 	"errors"
+	"math"
 )
 
 const (
@@ -28,6 +29,7 @@ const (
 var (
 	useSSE2  bool
 	useSSSE3 bool
+	useAVX   bool
 	useAVX2  bool
 )
 
@@ -55,7 +57,7 @@ func setup(state *[64]byte, nonce, key []byte) (err error) {
 
 		copy(hNonce[:], nonce[:16])
 		copy(tmpKey[:], key)
-		hChaCha20(&tmpKey, &hNonce, &tmpKey)
+		HChaCha20(&tmpKey, &hNonce, &tmpKey)
 		copy(Nonce[8:], nonce[16:])
 		initialize(state, tmpKey[:], &Nonce)
 
@@ -161,6 +163,21 @@ func (c *Cipher) XORKeyStream(dst, src []byte) {
 		c.off = 0
 	}
 
+	// check for counter overflow
+	blocksToXOR := len(src) / 64
+	if len(src)%64 != 0 {
+		blocksToXOR++
+	}
+	var overflow bool
+	if c.noncesize == INonceSize {
+		overflow = binary.LittleEndian.Uint32(c.state[48:]) > math.MaxUint32-uint32(blocksToXOR)
+	} else {
+		overflow = binary.LittleEndian.Uint64(c.state[48:]) > math.MaxUint64-uint64(blocksToXOR)
+	}
+	if overflow {
+		panic("chacha20/chacha: counter overflow")
+	}
+
 	c.off += xorKeyStream(dst, src, &(c.block), &(c.state), c.rounds)
 }
 
@@ -174,3 +191,7 @@ func (c *Cipher) SetCounter(ctr uint64) {
 	}
 	c.off = 0
 }
+
+// HChaCha20 generates 32 pseudo-random bytes from a 128 bit nonce and a 256 bit secret key.
+// It can be used as a key-derivation-function (KDF).
+func HChaCha20(out *[32]byte, nonce *[16]byte, key *[32]byte) { hChaCha20(out, nonce, key) }

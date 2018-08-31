@@ -79,6 +79,16 @@ func (mr *MockConnectionFlowControllerMockRecorder) IsNewlyBlocked() *gomock.Cal
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsNewlyBlocked", reflect.TypeOf((*MockConnectionFlowController)(nil).IsNewlyBlocked))
 }
 
+// MaybeQueueWindowUpdate mocks base method
+func (m *MockConnectionFlowController) MaybeQueueWindowUpdate() {
+	m.ctrl.Call(m, "MaybeQueueWindowUpdate")
+}
+
+// MaybeQueueWindowUpdate indicates an expected call of MaybeQueueWindowUpdate
+func (mr *MockConnectionFlowControllerMockRecorder) MaybeQueueWindowUpdate() *gomock.Call {
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MaybeQueueWindowUpdate", reflect.TypeOf((*MockConnectionFlowController)(nil).MaybeQueueWindowUpdate))
+}
+
 // SendWindowSize mocks base method
 func (m *MockConnectionFlowController) SendWindowSize() protocol.ByteCount {
 	ret := m.ctrl.Call(m, "SendWindowSize")

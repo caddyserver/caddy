@@ -38,7 +38,7 @@ type cryptoSetupClient struct {
 	lastSentCHLO     []byte
 	certManager      crypto.CertManager
 
-	divNonceChan         <-chan []byte
+	divNonceChan         chan struct{}
 	diversificationNonce []byte
 
 	clientHelloCounter int
@@ -79,29 +79,31 @@ func NewCryptoSetupClient(
 	initialVersion protocol.VersionNumber,
 	negotiatedVersions []protocol.VersionNumber,
 	logger utils.Logger,
-) (CryptoSetup, chan<- []byte, error) {
+) (CryptoSetup, error) {
 	nullAEAD, err := crypto.NewNullAEAD(protocol.PerspectiveClient, connID, version)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	divNonceChan := make(chan []byte)
+	divNonceChan := make(chan struct{})
 	cs := &cryptoSetupClient{
-		cryptoStream:       cryptoStream,
-		hostname:           hostname,
-		connID:             connID,
-		version:            version,
-		certManager:        crypto.NewCertManager(tlsConfig),
-		params:             params,
-		keyDerivation:      crypto.DeriveQuicCryptoAESKeys,
-		nullAEAD:           nullAEAD,
-		paramsChan:         paramsChan,
-		handshakeEvent:     handshakeEvent,
-		initialVersion:     initialVersion,
-		negotiatedVersions: negotiatedVersions,
+		cryptoStream:   cryptoStream,
+		hostname:       hostname,
+		connID:         connID,
+		version:        version,
+		certManager:    crypto.NewCertManager(tlsConfig),
+		params:         params,
+		keyDerivation:  crypto.DeriveQuicCryptoAESKeys,
+		nullAEAD:       nullAEAD,
+		paramsChan:     paramsChan,
+		handshakeEvent: handshakeEvent,
+		initialVersion: initialVersion,
+		// The server might have sent greased versions in the Version Negotiation packet.
+		// We need strip those from the list, since they won't be included in the handshake tag.
+		negotiatedVersions: protocol.StripGreasedVersions(negotiatedVersions),
 		divNonceChan:       divNonceChan,
 		logger:             logger,
 	}
-	return cs, divNonceChan, nil
+	return cs, nil
 }
 
 func (h *cryptoSetupClient) HandleCryptoStream() error {
@@ -120,33 +122,26 @@ func (h *cryptoSetupClient) HandleCryptoStream() error {
 	}()
 
 	for {
-		err := h.maybeUpgradeCrypto()
-		if err != nil {
+		if err := h.maybeUpgradeCrypto(); err != nil {
 			return err
 		}
 
 		h.mutex.RLock()
 		sendCHLO := h.secureAEAD == nil
 		h.mutex.RUnlock()
-
 		if sendCHLO {
-			err = h.sendCHLO()
-			if err != nil {
+			if err := h.sendCHLO(); err != nil {
 				return err
 			}
 		}
 
 		var message HandshakeMessage
 		select {
-		case divNonce := <-h.divNonceChan:
-			if len(h.diversificationNonce) != 0 && !bytes.Equal(h.diversificationNonce, divNonce) {
-				return errConflictingDiversificationNonces
-			}
-			h.diversificationNonce = divNonce
+		case <-h.divNonceChan:
 			// there's no message to process, but we should try upgrading the crypto again
 			continue
 		case message = <-messageChan:
-		case err = <-errorChan:
+		case err := <-errorChan:
 			return err
 		}
 
@@ -281,6 +276,7 @@ func (h *cryptoSetupClient) handleSHLOMessage(cryptoData map[Tag][]byte) (*Trans
 	if err != nil {
 		return nil, err
 	}
+	h.logger.Debugf("Creating AEAD for forward-secure encryption. Stopping to accept all lower encryption levels.")
 
 	params, err := readHelloMap(cryptoData)
 	if err != nil {
@@ -326,6 +322,7 @@ func (h *cryptoSetupClient) Open(dst, src []byte, packetNumber protocol.PacketNu
 	if h.secureAEAD != nil {
 		data, err := h.secureAEAD.Open(dst, src, packetNumber, associatedData)
 		if err == nil {
+			h.logger.Debugf("Received first secure packet. Stopping to accept unencrypted packets.")
 			h.receivedSecurePacket = true
 			return data, protocol.EncryptionSecure, nil
 		}
@@ -384,6 +381,21 @@ func (h *cryptoSetupClient) ConnectionState() ConnectionState {
 		HandshakeComplete: h.forwardSecureAEAD != nil,
 		PeerCertificates:  h.certManager.GetChain(),
 	}
+}
+
+func (h *cryptoSetupClient) SetDiversificationNonce(divNonce []byte) error {
+	h.mutex.Lock()
+	if len(h.diversificationNonce) > 0 {
+		defer h.mutex.Unlock()
+		if !bytes.Equal(h.diversificationNonce, divNonce) {
+			return errConflictingDiversificationNonces
+		}
+		return nil
+	}
+	h.diversificationNonce = divNonce
+	h.mutex.Unlock()
+	h.divNonceChan <- struct{}{}
+	return nil
 }
 
 func (h *cryptoSetupClient) sendCHLO() error {
@@ -501,6 +513,7 @@ func (h *cryptoSetupClient) maybeUpgradeCrypto() error {
 		if err != nil {
 			return err
 		}
+		h.logger.Debugf("Creating AEAD for secure encryption.")
 		h.handshakeEvent <- struct{}{}
 	}
 	return nil

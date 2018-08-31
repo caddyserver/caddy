@@ -58,7 +58,7 @@ type clientStateStart struct {
 	cookie            []byte
 	firstClientHello  *HandshakeMessage
 	helloRetryRequest *HandshakeMessage
-	hsCtx             HandshakeContext
+	hsCtx             *HandshakeContext
 }
 
 var _ HandshakeState = &clientStateStart{}
@@ -172,8 +172,10 @@ func (state clientStateStart) Next(hr handshakeMessageReader) (HandshakeState, [
 		}
 		ch.CipherSuites = compatibleSuites
 
+		// TODO(ekr@rtfm.com): Check that the ticket can be used for early
+		// data.
 		// Signal early data if we're going to do it
-		if len(state.Opts.EarlyData) > 0 {
+		if state.Config.AllowEarlyData && state.helloRetryRequest == nil {
 			state.Params.ClientSendingEarlyData = true
 			ed = &EarlyDataExtension{}
 			err = ch.Extensions.Add(ed)
@@ -255,9 +257,6 @@ func (state clientStateStart) Next(hr handshakeMessageReader) (HandshakeState, [
 		earlyTrafficSecret := deriveSecret(params, earlySecret, labelEarlyTrafficSecret, chHash)
 		logf(logTypeCrypto, "early traffic secret: [%d] %x", len(earlyTrafficSecret), earlyTrafficSecret)
 		clientEarlyTrafficKeys = makeTrafficKeys(params, earlyTrafficSecret)
-	} else if len(state.Opts.EarlyData) > 0 {
-		logf(logTypeHandshake, "[ClientStateWaitSH] Early data without PSK")
-		return nil, nil, AlertInternalError
 	} else {
 		clientHello, err = state.hsCtx.hOut.HandshakeMessageFromBody(ch)
 		if err != nil {
@@ -291,7 +290,6 @@ func (state clientStateStart) Next(hr handshakeMessageReader) (HandshakeState, [
 	if state.Params.ClientSendingEarlyData {
 		toSend = append(toSend, []HandshakeAction{
 			RekeyOut{epoch: EpochEarlyData, KeySet: clientEarlyTrafficKeys},
-			SendEarlyData{},
 		}...)
 	}
 
@@ -302,7 +300,7 @@ type clientStateWaitSH struct {
 	Config     *Config
 	Opts       ConnectionOptions
 	Params     ConnectionParameters
-	hsCtx      HandshakeContext
+	hsCtx      *HandshakeContext
 	OfferedDH  map[NamedGroup][]byte
 	OfferedPSK PreSharedKey
 	PSK        []byte
@@ -412,6 +410,11 @@ func (state clientStateWaitSH) Next(hr handshakeMessageReader) (HandshakeState, 
 			body:    h.Sum(nil),
 		}
 
+		state.hsCtx.receivedEndOfFlight()
+
+		// TODO(ekr@rtfm.com): Need to rekey with cleartext if we are on 0-RTT
+		// mode. In DTLS, we also need to bump the sequence number.
+		// This is a pre-existing defect in Mint. Issue #175.
 		logf(logTypeHandshake, "[ClientStateWaitSH] -> [ClientStateStart]")
 		return clientStateStart{
 			Config:            state.Config,
@@ -420,7 +423,7 @@ func (state clientStateWaitSH) Next(hr handshakeMessageReader) (HandshakeState, 
 			cookie:            serverCookie.Cookie,
 			firstClientHello:  firstClientHello,
 			helloRetryRequest: hm,
-		}, nil, AlertNoAlert
+		}, []HandshakeAction{ResetOut{1}}, AlertNoAlert
 	}
 
 	// This is SH.
@@ -515,7 +518,6 @@ func (state clientStateWaitSH) Next(hr handshakeMessageReader) (HandshakeState, 
 	logf(logTypeCrypto, "master secret: [%d] %x", len(masterSecret), masterSecret)
 
 	serverHandshakeKeys := makeTrafficKeys(params, serverHandshakeTrafficSecret)
-
 	logf(logTypeHandshake, "[ClientStateWaitSH] -> [ClientStateWaitEE]")
 	nextState := clientStateWaitEE{
 		Config:                       state.Config,
@@ -530,13 +532,20 @@ func (state clientStateWaitSH) Next(hr handshakeMessageReader) (HandshakeState, 
 	toSend := []HandshakeAction{
 		RekeyIn{epoch: EpochHandshakeData, KeySet: serverHandshakeKeys},
 	}
+	// We're definitely not going to have to send anything with
+	// early data.
+	if !state.Params.ClientSendingEarlyData {
+		toSend = append(toSend, RekeyOut{epoch: EpochHandshakeData,
+			KeySet: makeTrafficKeys(params, clientHandshakeTrafficSecret)})
+	}
+
 	return nextState, toSend, AlertNoAlert
 }
 
 type clientStateWaitEE struct {
 	Config                       *Config
 	Params                       ConnectionParameters
-	hsCtx                        HandshakeContext
+	hsCtx                        *HandshakeContext
 	cryptoParams                 CipherSuiteParams
 	handshakeHash                hash.Hash
 	masterSecret                 []byte
@@ -596,6 +605,14 @@ func (state clientStateWaitEE) Next(hr handshakeMessageReader) (HandshakeState, 
 
 	state.handshakeHash.Write(hm.Marshal())
 
+	toSend := []HandshakeAction{}
+
+	if state.Params.ClientSendingEarlyData && !state.Params.UsingEarlyData {
+		// We didn't get 0-RTT, so rekey to handshake.
+		toSend = append(toSend, RekeyOut{epoch: EpochHandshakeData,
+			KeySet: makeTrafficKeys(state.cryptoParams, state.clientHandshakeTrafficSecret)})
+	}
+
 	if state.Params.UsingPSK {
 		logf(logTypeHandshake, "[ClientStateWaitEE] -> [ClientStateWaitFinished]")
 		nextState := clientStateWaitFinished{
@@ -608,7 +625,7 @@ func (state clientStateWaitEE) Next(hr handshakeMessageReader) (HandshakeState, 
 			clientHandshakeTrafficSecret: state.clientHandshakeTrafficSecret,
 			serverHandshakeTrafficSecret: state.serverHandshakeTrafficSecret,
 		}
-		return nextState, nil, AlertNoAlert
+		return nextState, toSend, AlertNoAlert
 	}
 
 	logf(logTypeHandshake, "[ClientStateWaitEE] -> [ClientStateWaitCertCR]")
@@ -622,13 +639,13 @@ func (state clientStateWaitEE) Next(hr handshakeMessageReader) (HandshakeState, 
 		clientHandshakeTrafficSecret: state.clientHandshakeTrafficSecret,
 		serverHandshakeTrafficSecret: state.serverHandshakeTrafficSecret,
 	}
-	return nextState, nil, AlertNoAlert
+	return nextState, toSend, AlertNoAlert
 }
 
 type clientStateWaitCertCR struct {
 	Config                       *Config
 	Params                       ConnectionParameters
-	hsCtx                        HandshakeContext
+	hsCtx                        *HandshakeContext
 	cryptoParams                 CipherSuiteParams
 	handshakeHash                hash.Hash
 	masterSecret                 []byte
@@ -706,7 +723,7 @@ func (state clientStateWaitCertCR) Next(hr handshakeMessageReader) (HandshakeSta
 type clientStateWaitCert struct {
 	Config        *Config
 	Params        ConnectionParameters
-	hsCtx         HandshakeContext
+	hsCtx         *HandshakeContext
 	cryptoParams  CipherSuiteParams
 	handshakeHash hash.Hash
 
@@ -760,7 +777,7 @@ func (state clientStateWaitCert) Next(hr handshakeMessageReader) (HandshakeState
 type clientStateWaitCV struct {
 	Config        *Config
 	Params        ConnectionParameters
-	hsCtx         HandshakeContext
+	hsCtx         *HandshakeContext
 	cryptoParams  CipherSuiteParams
 	handshakeHash hash.Hash
 
@@ -861,7 +878,7 @@ func (state clientStateWaitCV) Next(hr handshakeMessageReader) (HandshakeState, 
 
 type clientStateWaitFinished struct {
 	Params        ConnectionParameters
-	hsCtx         HandshakeContext
+	hsCtx         *HandshakeContext
 	cryptoParams  CipherSuiteParams
 	handshakeHash hash.Hash
 
@@ -933,6 +950,7 @@ func (state clientStateWaitFinished) Next(hr handshakeMessageReader) (HandshakeS
 	toSend := []HandshakeAction{}
 
 	if state.Params.UsingEarlyData {
+		logf(logTypeHandshake, "Sending end of early data")
 		// Note: We only send EOED if the server is actually going to use the early
 		// data.  Otherwise, it will never see it, and the transcripts will
 		// mismatch.
@@ -942,10 +960,11 @@ func (state clientStateWaitFinished) Next(hr handshakeMessageReader) (HandshakeS
 
 		state.handshakeHash.Write(eoedm.Marshal())
 		logf(logTypeCrypto, "input to handshake hash [%d]: %x", len(eoedm.Marshal()), eoedm.Marshal())
-	}
 
-	clientHandshakeKeys := makeTrafficKeys(state.cryptoParams, state.clientHandshakeTrafficSecret)
-	toSend = append(toSend, RekeyOut{epoch: EpochHandshakeData, KeySet: clientHandshakeKeys})
+		// And then rekey to handshake
+		toSend = append(toSend, RekeyOut{epoch: EpochHandshakeData,
+			KeySet: makeTrafficKeys(state.cryptoParams, state.clientHandshakeTrafficSecret)})
+	}
 
 	if state.Params.UsingClientAuth {
 		// Extract constraints from certicateRequest
@@ -1044,6 +1063,8 @@ func (state clientStateWaitFinished) Next(hr handshakeMessageReader) (HandshakeS
 		RekeyIn{epoch: EpochApplicationData, KeySet: serverTrafficKeys},
 		RekeyOut{epoch: EpochApplicationData, KeySet: clientTrafficKeys},
 	}...)
+
+	state.hsCtx.receivedEndOfFlight()
 
 	logf(logTypeHandshake, "[ClientStateWaitFinished] -> [StateConnected]")
 	nextState := stateConnected{
