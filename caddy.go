@@ -1,3 +1,17 @@
+// Copyright 2015 Light Code Labs, LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 // Package caddy implements the Caddy server manager.
 //
 // To use this package:
@@ -17,6 +31,7 @@ package caddy
 
 import (
 	"bytes"
+	"encoding/gob"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -29,6 +44,7 @@ import (
 	"time"
 
 	"github.com/mholt/caddy/caddyfile"
+	"github.com/mholt/caddy/telemetry"
 )
 
 // Configurable application parameters
@@ -51,7 +67,7 @@ var (
 	// isUpgrade will be set to true if this process
 	// was started as part of an upgrade, where a parent
 	// Caddy process started this one.
-	isUpgrade bool
+	isUpgrade = os.Getenv("CADDY__UPGRADE") == "1"
 
 	// started will be set to true when the first
 	// instance is started; it never gets set to
@@ -62,8 +78,18 @@ var (
 	mu sync.Mutex
 )
 
+func init() {
+	OnProcessExit = append(OnProcessExit, func() {
+		if PidFile != "" {
+			os.Remove(PidFile)
+		}
+	})
+}
+
 // Instance contains the state of servers created as a result of
 // calling Start and can be used to access or control those servers.
+// It is literally an instance of a server type. Instance values
+// should NOT be copied. Use *Instance for safety.
 type Instance struct {
 	// serverType is the name of the instance's server type
 	serverType string
@@ -74,10 +100,11 @@ type Instance struct {
 	// wg is used to wait for all servers to shut down
 	wg *sync.WaitGroup
 
-	// context is the context created for this instance.
+	// context is the context created for this instance,
+	// used to coordinate the setting up of the server type
 	context Context
 
-	// servers is the list of servers with their listeners.
+	// servers is the list of servers with their listeners
 	servers []ServerListener
 
 	// these callbacks execute when certain events occur
@@ -86,6 +113,19 @@ type Instance struct {
 	onRestart       []func() error // before restart commences
 	onShutdown      []func() error // stopping, even as part of a restart
 	onFinalShutdown []func() error // stopping, not as part of a restart
+
+	// storing values on an instance is preferable to
+	// global state because these will get garbage-
+	// collected after in-process reloads when the
+	// old instances are destroyed; use StorageMu
+	// to access this value safely
+	Storage   map[interface{}]interface{}
+	StorageMu sync.RWMutex
+}
+
+// Instances returns the list of instances.
+func Instances() []*Instance {
+	return instances
 }
 
 // Servers returns the ServerListeners in i.
@@ -181,7 +221,7 @@ func (i *Instance) Restart(newCaddyfile Input) (*Instance, error) {
 	}
 
 	// create new instance; if the restart fails, it is simply discarded
-	newInst := &Instance{serverType: newCaddyfile.ServerType(), wg: i.wg}
+	newInst := &Instance{serverType: newCaddyfile.ServerType(), wg: i.wg, Storage: make(map[interface{}]interface{})}
 
 	// attempt to start new instance
 	err := startWithListenerFds(newCaddyfile, newInst, restartFds)
@@ -191,12 +231,18 @@ func (i *Instance) Restart(newCaddyfile Input) (*Instance, error) {
 
 	// success! stop the old instance
 	for _, shutdownFunc := range i.onShutdown {
-		err := shutdownFunc()
+		err = shutdownFunc()
 		if err != nil {
 			return i, err
 		}
 	}
-	i.Stop()
+	err = i.Stop()
+	if err != nil {
+		return i, err
+	}
+
+	// Execute instantiation events
+	EmitEvent(InstanceStartupEvent, newInst)
 
 	log.Println("[INFO] Reloading complete")
 
@@ -360,6 +406,16 @@ type AfterStartup interface {
 // is returned. Consequently, this function never returns a nil
 // value as long as there are no errors.
 func LoadCaddyfile(serverType string) (Input, error) {
+	// If we are finishing an upgrade, we must obtain the Caddyfile
+	// from our parent process, regardless of configured loaders.
+	if IsUpgrade() {
+		err := gob.NewDecoder(os.Stdin).Decode(&loadedGob)
+		if err != nil {
+			return nil, err
+		}
+		return loadedGob.Caddyfile, nil
+	}
+
 	// Ask plugged-in loaders for a Caddyfile
 	cdyfile, err := loadCaddyfileInput(serverType)
 	if err != nil {
@@ -424,17 +480,47 @@ func (i *Instance) Caddyfile() Input {
 //
 // This function blocks until all the servers are listening.
 func Start(cdyfile Input) (*Instance, error) {
-	writePidFile()
-	inst := &Instance{serverType: cdyfile.ServerType(), wg: new(sync.WaitGroup)}
-	return inst, startWithListenerFds(cdyfile, inst, nil)
+	inst := &Instance{serverType: cdyfile.ServerType(), wg: new(sync.WaitGroup), Storage: make(map[interface{}]interface{})}
+	err := startWithListenerFds(cdyfile, inst, nil)
+	if err != nil {
+		return inst, err
+	}
+	signalSuccessToParent()
+	if pidErr := writePidFile(); pidErr != nil {
+		log.Printf("[ERROR] Could not write pidfile: %v", pidErr)
+	}
+	return inst, nil
 }
 
 func startWithListenerFds(cdyfile Input, inst *Instance, restartFds map[string]restartTriple) error {
+	// save this instance in the list now so that
+	// plugins can access it if need be, for example
+	// the caddytls package, so it can perform cert
+	// renewals while starting up; we just have to
+	// remove the instance from the list later if
+	// it fails
+	instancesMu.Lock()
+	instances = append(instances, inst)
+	instancesMu.Unlock()
+	var err error
+	defer func() {
+		if err != nil {
+			instancesMu.Lock()
+			for i, otherInst := range instances {
+				if otherInst == inst {
+					instances = append(instances[:i], instances[i+1:]...)
+					break
+				}
+			}
+			instancesMu.Unlock()
+		}
+	}()
+
 	if cdyfile == nil {
 		cdyfile = CaddyfileInput{}
 	}
 
-	err := ValidateAndExecuteDirectives(cdyfile, inst, false)
+	err = ValidateAndExecuteDirectives(cdyfile, inst, false)
 	if err != nil {
 		return err
 	}
@@ -445,16 +531,17 @@ func startWithListenerFds(cdyfile Input, inst *Instance, restartFds map[string]r
 	}
 
 	// run startup callbacks
-	if restartFds == nil {
+	if !IsUpgrade() && restartFds == nil {
+		// first startup means not a restart or upgrade
 		for _, firstStartupFunc := range inst.onFirstStartup {
-			err := firstStartupFunc()
+			err = firstStartupFunc()
 			if err != nil {
 				return err
 			}
 		}
 	}
 	for _, startupFunc := range inst.onStartup {
-		err := startupFunc()
+		err = startupFunc()
 		if err != nil {
 			return err
 		}
@@ -464,10 +551,6 @@ func startWithListenerFds(cdyfile Input, inst *Instance, restartFds map[string]r
 	if err != nil {
 		return err
 	}
-
-	instancesMu.Lock()
-	instances = append(instances, inst)
-	instancesMu.Unlock()
 
 	// run any AfterStartup callbacks if this is not
 	// part of a restart; then show file descriptor notice
@@ -479,6 +562,11 @@ func startWithListenerFds(cdyfile Input, inst *Instance, restartFds map[string]r
 		}
 		if !Quiet {
 			for _, srvln := range inst.servers {
+				// only show FD notice if the listener is not nil.
+				// This can happen when only serving UDP or TCP
+				if srvln.listener == nil {
+					continue
+				}
 				if !IsLoopback(srvln.listener.Addr().String()) {
 					checkFdlimit()
 					break
@@ -500,10 +588,9 @@ func startWithListenerFds(cdyfile Input, inst *Instance, restartFds map[string]r
 // callbacks will not be executed between directives, since the purpose
 // is only to check the input for valid syntax.
 func ValidateAndExecuteDirectives(cdyfile Input, inst *Instance, justValidate bool) error {
-
 	// If parsing only inst will be nil, create an instance for this function call only.
 	if justValidate {
-		inst = &Instance{serverType: cdyfile.ServerType(), wg: new(sync.WaitGroup)}
+		inst = &Instance{serverType: cdyfile.ServerType(), wg: new(sync.WaitGroup), Storage: make(map[interface{}]interface{})}
 	}
 
 	stypeName := cdyfile.ServerType()
@@ -520,23 +607,19 @@ func ValidateAndExecuteDirectives(cdyfile Input, inst *Instance, justValidate bo
 		return err
 	}
 
-	inst.context = stype.NewContext()
+	inst.context = stype.NewContext(inst)
 	if inst.context == nil {
 		return fmt.Errorf("server type %s produced a nil Context", stypeName)
 	}
 
 	sblocks, err = inst.context.InspectServerBlocks(cdyfile.Path(), sblocks)
 	if err != nil {
-		return err
+		return fmt.Errorf("error inspecting server blocks: %v", err)
 	}
 
-	err = executeDirectives(inst, cdyfile.Path(), stype.Directives(), sblocks, justValidate)
-	if err != nil {
-		return err
-	}
+	telemetry.Set("num_server_blocks", len(sblocks))
 
-	return nil
-
+	return executeDirectives(inst, cdyfile.Path(), stype.Directives(), sblocks, justValidate)
 }
 
 func executeDirectives(inst *Instance, filename string,
@@ -616,6 +699,36 @@ func startServers(serverList []Server, inst *Instance, restartFds map[string]res
 			err error
 		)
 
+		// if performing an upgrade, obtain listener file descriptors
+		// from parent process
+		if IsUpgrade() {
+			if gs, ok := s.(GracefulServer); ok {
+				addr := gs.Address()
+				if fdIndex, ok := loadedGob.ListenerFds["tcp"+addr]; ok {
+					file := os.NewFile(fdIndex, "")
+					ln, err = net.FileListener(file)
+					if err != nil {
+						return err
+					}
+					err = file.Close()
+					if err != nil {
+						return err
+					}
+				}
+				if fdIndex, ok := loadedGob.ListenerFds["udp"+addr]; ok {
+					file := os.NewFile(fdIndex, "")
+					pc, err = net.FilePacketConn(file)
+					if err != nil {
+						return err
+					}
+					err = file.Close()
+					if err != nil {
+						return err
+					}
+				}
+			}
+		}
+
 		// If this is a reload and s is a GracefulServer,
 		// reuse the listener for a graceful restart.
 		if gs, ok := s.(GracefulServer); ok && restartFds != nil {
@@ -631,7 +744,10 @@ func startServers(serverList []Server, inst *Instance, restartFds map[string]res
 					if err != nil {
 						return err
 					}
-					file.Close()
+					err = file.Close()
+					if err != nil {
+						return err
+					}
 				}
 				// packetconn
 				if old.packet != nil {
@@ -643,7 +759,10 @@ func startServers(serverList []Server, inst *Instance, restartFds map[string]res
 					if err != nil {
 						return err
 					}
-					file.Close()
+					err = file.Close()
+					if err != nil {
+						return err
+					}
 				}
 			}
 		}
@@ -683,7 +802,7 @@ func startServers(serverList []Server, inst *Instance, restartFds map[string]res
 				continue
 			}
 			if strings.Contains(err.Error(), "use of closed network connection") {
-				// this error is normal when closing the listener
+				// this error is normal when closing the listener; see https://github.com/golang/go/issues/4373
 				continue
 			}
 			log.Println(err)
@@ -754,7 +873,7 @@ func Stop() error {
 // explicitly like a common local hostname. addr must only
 // be a host or a host:port combination.
 func IsLoopback(addr string) bool {
-	host, _, err := net.SplitHostPort(addr)
+	host, _, err := net.SplitHostPort(strings.ToLower(addr))
 	if err != nil {
 		host = addr // happens if the addr is just a hostname
 	}
@@ -793,25 +912,6 @@ func IsInternal(addr string) bool {
 		}
 	}
 	return false
-}
-
-// Upgrade re-launches the process, preserving the listeners
-// for a graceful restart. It does NOT load new configuration;
-// it only starts the process anew with a fresh binary.
-//
-// TODO: This is not yet implemented
-func Upgrade() error {
-	return fmt.Errorf("not implemented")
-	// TODO: have child process set isUpgrade = true
-}
-
-// IsUpgrade returns true if this process is part of an upgrade
-// where a parent caddy process spawned this one to upgrade
-// the binary.
-func IsUpgrade() bool {
-	mu.Lock()
-	defer mu.Unlock()
-	return isUpgrade
 }
 
 // Started returns true if at least one instance has been

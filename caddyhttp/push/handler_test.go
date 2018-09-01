@@ -1,9 +1,26 @@
+// Copyright 2015 Light Code Labs, LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package push
 
 import (
 	"errors"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -266,6 +283,52 @@ func TestMiddlewareShouldInterceptLinkHeader(t *testing.T) {
 	comparePushedResources(t, expectedPushedResources, pushingWriter.pushed)
 }
 
+func TestMiddlewareShouldInterceptLinkHeaderWithMultipleResources(t *testing.T) {
+	// given
+	request, err := http.NewRequest(http.MethodGet, "/index.html", nil)
+	writer := httptest.NewRecorder()
+
+	if err != nil {
+		t.Fatalf("Could not create HTTP request: %v", err)
+	}
+
+	middleware := Middleware{
+		Next: httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
+			w.Header().Add("Link", "</assets/css/screen.css?v=5fc240c512>; rel=preload; as=style,</content/images/2016/06/Timeouts-001.png>; rel=preload; as=image,</content/images/2016/06/Timeouts-002.png>; rel=preload; as=image")
+			w.Header().Add("Link", "<//cdn.bizible.com/scripts/bizible.js>; rel=preload; as=script,</resource.png>; rel=preload; as=script; nopush")
+			return 0, nil
+		}),
+		Rules: []Rule{},
+	}
+
+	pushingWriter := &MockedPusher{ResponseWriter: writer}
+
+	// when
+	_, err2 := middleware.ServeHTTP(pushingWriter, request)
+
+	// then
+	if err2 != nil {
+		t.Error("Should not return error")
+	}
+
+	expectedPushedResources := map[string]*http.PushOptions{
+		"/assets/css/screen.css?v=5fc240c512": {
+			Method: http.MethodGet,
+			Header: http.Header{},
+		},
+		"/content/images/2016/06/Timeouts-001.png": {
+			Method: http.MethodGet,
+			Header: http.Header{},
+		},
+		"/content/images/2016/06/Timeouts-002.png": {
+			Method: http.MethodGet,
+			Header: http.Header{},
+		},
+	}
+
+	comparePushedResources(t, expectedPushedResources, pushingWriter.pushed)
+}
+
 func TestMiddlewareShouldInterceptLinkHeaderPusherError(t *testing.T) {
 	// given
 	expectedHeaders := http.Header{"Accept-Encoding": []string{"br"}}
@@ -303,6 +366,113 @@ func TestMiddlewareShouldInterceptLinkHeaderPusherError(t *testing.T) {
 			Header: expectedHeaders,
 		},
 	}
+
+	comparePushedResources(t, expectedPushedResources, pushingWriter.pushed)
+}
+
+func TestMiddlewareShouldPushIndexFile(t *testing.T) {
+	// given
+	indexFile := "/index.html"
+	request, err := http.NewRequest(http.MethodGet, "/", nil) // Request root directory, not indexfile itself
+	if err != nil {
+		t.Fatalf("Could not create HTTP request: %v", err)
+	}
+
+	root, err := ioutil.TempDir("", "caddy")
+	if err != nil {
+		t.Fatalf("Could not create temporary directory: %v", err)
+	}
+	defer os.Remove(root)
+
+	middleware := Middleware{
+		Next: httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
+			return 0, nil
+		}),
+		Rules: []Rule{
+			{Path: indexFile, Resources: []Resource{
+				{Path: "/index.css", Method: http.MethodGet},
+			}},
+		},
+		Root:       http.Dir(root),
+		indexPages: []string{indexFile},
+	}
+
+	indexFilePath := filepath.Join(root, indexFile)
+	_, err = os.Create(indexFilePath)
+	if err != nil {
+		t.Fatalf("Could not create index file: %s: %v", indexFile, err)
+	}
+	defer os.Remove(indexFilePath)
+
+	pushingWriter := &MockedPusher{
+		ResponseWriter: httptest.NewRecorder(),
+		returnedError:  errors.New("Cannot push right now"),
+	}
+
+	// when
+	_, err2 := middleware.ServeHTTP(pushingWriter, request)
+
+	// then
+	if err2 != nil {
+		t.Error("Should not return error")
+	}
+
+	expectedPushedResources := map[string]*http.PushOptions{
+		"/index.css": {
+			Method: http.MethodGet,
+			Header: http.Header{},
+		},
+	}
+
+	comparePushedResources(t, expectedPushedResources, pushingWriter.pushed)
+}
+
+func TestMiddlewareShouldNotPushIndexFileWhenNotARule(t *testing.T) {
+	// given
+	indexFile := "/index.html"
+	request, err := http.NewRequest(http.MethodGet, "/", nil) // Request root directory, not indexfile itself
+	if err != nil {
+		t.Fatalf("Could not create HTTP request: %v", err)
+	}
+
+	root, err := ioutil.TempDir("", "caddy")
+	if err != nil {
+		t.Fatalf("Could not create temporary directory: %v", err)
+	}
+	defer os.Remove(root)
+
+	middleware := Middleware{
+		Next: httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
+			return 0, nil
+		}),
+		Rules: []Rule{
+			{Path: "dummy.html", Resources: []Resource{
+				{Path: "/index.css", Method: http.MethodGet},
+			}}},
+		Root: http.Dir(root),
+	}
+
+	indexFilePath := filepath.Join(root, indexFile)
+	_, err = os.Create(indexFilePath)
+	if err != nil {
+		t.Fatalf("Could not create index file: %s: %v", indexFile, err)
+	}
+	defer os.Remove(indexFilePath)
+
+	pushingWriter := &MockedPusher{
+		ResponseWriter: httptest.NewRecorder(),
+		returnedError:  errors.New("Cannot push right now"),
+	}
+
+	// when
+	_, err2 := middleware.ServeHTTP(pushingWriter, request)
+
+	// then
+	if err2 != nil {
+		t.Error("Should not return error")
+	}
+
+	expectedPushedResources := map[string]*http.PushOptions{}
 
 	comparePushedResources(t, expectedPushedResources, pushingWriter.pushed)
 }

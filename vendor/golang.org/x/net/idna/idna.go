@@ -67,6 +67,15 @@ func VerifyDNSLength(verify bool) Option {
 	return func(o *options) { o.verifyDNSLength = verify }
 }
 
+// RemoveLeadingDots removes leading label separators. Leading runes that map to
+// dots, such as U+3002, are removed as well.
+//
+// This is the behavior suggested by the UTS #46 and is adopted by some
+// browsers.
+func RemoveLeadingDots(remove bool) Option {
+	return func(o *options) { o.removeLeadingDots = remove }
+}
+
 // ValidateLabels sets whether to check the mandatory label validation criteria
 // as defined in Section 5.4 of RFC 5891. This includes testing for correct use
 // of hyphens ('-'), normalization, validity of runes, and the context rules.
@@ -133,14 +142,16 @@ func MapForLookup() Option {
 		o.mapping = validateAndMap
 		StrictDomainName(true)(o)
 		ValidateLabels(true)(o)
+		RemoveLeadingDots(true)(o)
 	}
 }
 
 type options struct {
-	transitional    bool
-	useSTD3Rules    bool
-	validateLabels  bool
-	verifyDNSLength bool
+	transitional      bool
+	useSTD3Rules      bool
+	validateLabels    bool
+	verifyDNSLength   bool
+	removeLeadingDots bool
 
 	trie *idnaTrie
 
@@ -240,21 +251,23 @@ var (
 
 	punycode = &Profile{}
 	lookup   = &Profile{options{
-		transitional:   true,
-		useSTD3Rules:   true,
-		validateLabels: true,
-		trie:           trie,
-		fromPuny:       validateFromPunycode,
-		mapping:        validateAndMap,
-		bidirule:       bidirule.ValidString,
+		transitional:      true,
+		useSTD3Rules:      true,
+		validateLabels:    true,
+		removeLeadingDots: true,
+		trie:              trie,
+		fromPuny:          validateFromPunycode,
+		mapping:           validateAndMap,
+		bidirule:          bidirule.ValidString,
 	}}
 	display = &Profile{options{
-		useSTD3Rules:   true,
-		validateLabels: true,
-		trie:           trie,
-		fromPuny:       validateFromPunycode,
-		mapping:        validateAndMap,
-		bidirule:       bidirule.ValidString,
+		useSTD3Rules:      true,
+		validateLabels:    true,
+		removeLeadingDots: true,
+		trie:              trie,
+		fromPuny:          validateFromPunycode,
+		mapping:           validateAndMap,
+		bidirule:          bidirule.ValidString,
 	}}
 	registration = &Profile{options{
 		useSTD3Rules:    true,
@@ -293,7 +306,9 @@ func (p *Profile) process(s string, toASCII bool) (string, error) {
 		s, err = p.mapping(p, s)
 	}
 	// Remove leading empty labels.
-	for ; len(s) > 0 && s[0] == '.'; s = s[1:] {
+	if p.removeLeadingDots {
+		for ; len(s) > 0 && s[0] == '.'; s = s[1:] {
+		}
 	}
 	// It seems like we should only create this error on ToASCII, but the
 	// UTS 46 conformance tests suggests we should always check this.
@@ -373,23 +388,20 @@ func validateRegistration(p *Profile, s string) (string, error) {
 	if !norm.NFC.IsNormalString(s) {
 		return s, &labelError{s, "V1"}
 	}
-	var err error
 	for i := 0; i < len(s); {
 		v, sz := trie.lookupString(s[i:])
-		i += sz
 		// Copy bytes not copied so far.
 		switch p.simplify(info(v).category()) {
 		// TODO: handle the NV8 defined in the Unicode idna data set to allow
 		// for strict conformance to IDNA2008.
 		case valid, deviation:
 		case disallowed, mapped, unknown, ignored:
-			if err == nil {
-				r, _ := utf8.DecodeRuneInString(s[i:])
-				err = runeError(r)
-			}
+			r, _ := utf8.DecodeRuneInString(s[i:])
+			return s, runeError(r)
 		}
+		i += sz
 	}
-	return s, err
+	return s, nil
 }
 
 func validateAndMap(p *Profile, s string) (string, error) {
@@ -408,7 +420,7 @@ func validateAndMap(p *Profile, s string) (string, error) {
 			continue
 		case disallowed:
 			if err == nil {
-				r, _ := utf8.DecodeRuneInString(s[i:])
+				r, _ := utf8.DecodeRuneInString(s[start:])
 				err = runeError(r)
 			}
 			continue

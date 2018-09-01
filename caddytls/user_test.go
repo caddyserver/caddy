@@ -1,3 +1,17 @@
+// Copyright 2015 Light Code Labs, LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package caddytls
 
 import (
@@ -6,14 +20,14 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"io"
+	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	"os"
 
-	"github.com/xenolf/lego/acme"
+	"github.com/xenolf/lego/acmev2"
 )
 
 func TestUser(t *testing.T) {
@@ -122,7 +136,13 @@ func TestGetUserAlreadyExists(t *testing.T) {
 }
 
 func TestGetEmail(t *testing.T) {
-	storageBasePath = testStorage.Path // to contain calls that create a new Storage...
+	// ensure storage (via StorageFor) uses the local testdata folder that we delete later
+	origCaddypath := os.Getenv("CADDYPATH")
+	os.Setenv("CADDYPATH", "./testdata")
+	defer os.Setenv("CADDYPATH", origCaddypath)
+
+	agreementTestURL = "(none - testing)"
+	defer func() { agreementTestURL = "" }()
 
 	// let's not clutter up the output
 	origStdout := os.Stdout
@@ -133,7 +153,10 @@ func TestGetEmail(t *testing.T) {
 	DefaultEmail = "test2@foo.com"
 
 	// Test1: Use default email from flag (or user previously typing it)
-	actual := getEmail(testStorage, true)
+	actual, err := getEmail(testConfig, true)
+	if err != nil {
+		t.Fatalf("getEmail (1) error: %v", err)
+	}
 	if actual != DefaultEmail {
 		t.Errorf("Did not get correct email from memory; expected '%s' but got '%s'", DefaultEmail, actual)
 	}
@@ -141,16 +164,19 @@ func TestGetEmail(t *testing.T) {
 	// Test2: Get input from user
 	DefaultEmail = ""
 	stdin = new(bytes.Buffer)
-	_, err := io.Copy(stdin, strings.NewReader("test3@foo.com\n"))
+	_, err = io.Copy(stdin, strings.NewReader("test3@foo.com\n"))
 	if err != nil {
 		t.Fatalf("Could not simulate user input, error: %v", err)
 	}
-	actual = getEmail(testStorage, true)
+	actual, err = getEmail(testConfig, true)
+	if err != nil {
+		t.Fatalf("getEmail (2) error: %v", err)
+	}
 	if actual != "test3@foo.com" {
 		t.Errorf("Did not get correct email from user input prompt; expected '%s' but got '%s'", "test3@foo.com", actual)
 	}
 
-	// Test3: Get most recent email from before
+	// Test3: Get most recent email from before (in storage)
 	DefaultEmail = ""
 	for i, eml := range []string{
 		"TEST4-3@foo.com", // test case insensitivity
@@ -176,14 +202,20 @@ func TestGetEmail(t *testing.T) {
 			t.Fatalf("Could not change user folder mod time for '%s': %v", eml, err)
 		}
 	}
-	actual = getEmail(testStorage, true)
+	actual, err = getEmail(testConfig, true)
+	if err != nil {
+		t.Fatalf("getEmail (3) error: %v", err)
+	}
 	if actual != "test4-3@foo.com" {
 		t.Errorf("Did not get correct email from storage; expected '%s' but got '%s'", "test4-3@foo.com", actual)
 	}
 }
 
-var testStorage = &FileStorage{Path: "./testdata", nameLocks: make(map[string]*sync.WaitGroup)}
+var (
+	testStorageBase = "./testdata" // ephemeral folder that gets deleted after tests finish
+	testCAHost      = "localhost"
+	testConfig      = &Config{CAUrl: "http://" + testCAHost + "/directory", StorageProvider: "file"}
+	testStorage     = &FileStorage{Path: filepath.Join(testStorageBase, "acme", testCAHost)}
+)
 
-func (s *FileStorage) clean() error {
-	return os.RemoveAll(s.Path)
-}
+func (s *FileStorage) clean() error { return os.RemoveAll(testStorageBase) }

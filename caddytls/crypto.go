@@ -1,3 +1,17 @@
+// Copyright 2015 Light Code Labs, LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package caddytls
 
 import (
@@ -21,12 +35,14 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/ocsp"
 
 	"github.com/mholt/caddy"
-	"github.com/xenolf/lego/acme"
+	"github.com/xenolf/lego/acmev2"
 )
 
 // loadPrivateKey loads a PEM-encoded ECC/RSA private key from an array of bytes.
@@ -91,7 +107,8 @@ func stapleOCSP(cert *Certificate, pemBundle []byte) error {
 	// TODO: Use Storage interface instead of disk directly
 	var ocspFileNamePrefix string
 	if len(cert.Names) > 0 {
-		ocspFileNamePrefix = cert.Names[0] + "-"
+		firstName := strings.Replace(cert.Names[0], "*", "wildcard_", -1)
+		ocspFileNamePrefix = firstName + "-"
 	}
 	ocspFileName := ocspFileNamePrefix + fastHash(pemBundle)
 	ocspCachePath := filepath.Join(ocspFolder, ocspFileName)
@@ -136,6 +153,13 @@ func stapleOCSP(cert *Certificate, pemBundle []byte) error {
 	// the certificate. If the OCSP response was not loaded from
 	// storage, we persist it for next time.
 	if ocspResp.Status == ocsp.Good {
+		if ocspResp.NextUpdate.After(cert.NotAfter) {
+			// uh oh, this OCSP response expires AFTER the certificate does, that's kinda bogus.
+			// it was the reason a lot of Symantec-validated sites (not Caddy) went down
+			// in October 2017. https://twitter.com/mattiasgeniar/status/919432824708648961
+			return fmt.Errorf("invalid: OCSP response for %v valid after certificate expiration (%s)",
+				cert.Names, cert.NotAfter.Sub(ocspResp.NextUpdate))
+		}
 		cert.Certificate.OCSPStaple = ocspBytes
 		cert.OCSP = ocspResp
 		if gotNewOCSP {
@@ -194,10 +218,13 @@ func makeSelfSignedCert(config *Config) error {
 		KeyUsage:     x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	}
+	var names []string
 	if ip := net.ParseIP(config.Hostname); ip != nil {
+		names = append(names, strings.ToLower(ip.String()))
 		cert.IPAddresses = append(cert.IPAddresses, ip)
 	} else {
-		cert.DNSNames = append(cert.DNSNames, config.Hostname)
+		names = append(names, strings.ToLower(config.Hostname))
+		cert.DNSNames = append(cert.DNSNames, strings.ToLower(config.Hostname))
 	}
 
 	publicKey := func(privKey interface{}) interface{} {
@@ -215,15 +242,17 @@ func makeSelfSignedCert(config *Config) error {
 		return fmt.Errorf("could not create certificate: %v", err)
 	}
 
-	cacheCertificate(Certificate{
+	chain := [][]byte{derBytes}
+
+	config.cacheCertificate(Certificate{
 		Certificate: tls.Certificate{
-			Certificate: [][]byte{derBytes},
+			Certificate: chain,
 			PrivateKey:  privKey,
 			Leaf:        cert,
 		},
-		Names:    cert.DNSNames,
+		Names:    names,
 		NotAfter: cert.NotAfter,
-		Config:   config,
+		Hash:     hashCertificateChain(chain),
 	})
 
 	return nil
@@ -243,8 +272,9 @@ func RotateSessionTicketKeys(cfg *tls.Config) chan struct{} {
 
 // Functions that may be swapped out for testing
 var (
-	runTLSTicketKeyRotation      = standaloneTLSTicketKeyRotation
-	setSessionTicketKeysTestHook = func(keys [][32]byte) [][32]byte { return keys }
+	runTLSTicketKeyRotation        = standaloneTLSTicketKeyRotation
+	setSessionTicketKeysTestHook   = func(keys [][32]byte) [][32]byte { return keys }
+	setSessionTicketKeysTestHookMu sync.Mutex
 )
 
 // standaloneTLSTicketKeyRotation governs over the array of TLS ticket keys used to de/crypt TLS tickets.
@@ -271,7 +301,10 @@ func standaloneTLSTicketKeyRotation(c *tls.Config, ticker *time.Ticker, exitChan
 		c.SessionTicketsDisabled = true // bail if we don't have the entropy for the first one
 		return
 	}
-	c.SetSessionTicketKeys(setSessionTicketKeysTestHook(keys))
+	setSessionTicketKeysTestHookMu.Lock()
+	setSessionTicketKeysHook := setSessionTicketKeysTestHook
+	setSessionTicketKeysTestHookMu.Unlock()
+	c.SetSessionTicketKeys(setSessionTicketKeysHook(keys))
 
 	for {
 		select {
@@ -298,7 +331,7 @@ func standaloneTLSTicketKeyRotation(c *tls.Config, ticker *time.Ticker, exitChan
 				keys[0] = newTicketKey
 			}
 			// pushes the last key out, doesn't matter that we don't have a new one
-			c.SetSessionTicketKeys(setSessionTicketKeysTestHook(keys))
+			c.SetSessionTicketKeys(setSessionTicketKeysHook(keys))
 		}
 	}
 }
@@ -308,7 +341,7 @@ func standaloneTLSTicketKeyRotation(c *tls.Config, ticker *time.Ticker, exitChan
 // Do not use this for cryptographic purposes.
 func fastHash(input []byte) string {
 	h := fnv.New32a()
-	h.Write([]byte(input))
+	h.Write(input)
 	return fmt.Sprintf("%x", h.Sum32())
 }
 

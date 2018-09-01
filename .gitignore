@@ -13,7 +13,10 @@ access.log
 
 /*.conf
 Caddyfile
+!caddyfile/
 
 og_static/
 
 .vscode/
+
+*.bat

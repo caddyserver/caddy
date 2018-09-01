@@ -1,3 +1,17 @@
+// Copyright 2015 Light Code Labs, LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package httpserver
 
 import (
@@ -144,7 +158,7 @@ func SetLastModifiedHeader(w http.ResponseWriter, modTime time.Time) {
 
 // CaseSensitivePath determines if paths should be case sensitive.
 // This is configurable via CASE_SENSITIVE_PATH environment variable.
-var CaseSensitivePath = true
+var CaseSensitivePath = false
 
 const caseSensitivePathEnv = "CASE_SENSITIVE_PATH"
 
@@ -153,10 +167,10 @@ const caseSensitivePathEnv = "CASE_SENSITIVE_PATH"
 // This could have been in init, but init cannot be called from tests.
 func initCaseSettings() {
 	switch os.Getenv(caseSensitivePathEnv) {
-	case "0", "false":
-		CaseSensitivePath = false
-	default:
+	case "1", "true":
 		CaseSensitivePath = true
+	default:
+		CaseSensitivePath = false
 	}
 }
 
@@ -200,6 +214,9 @@ func SameNext(next1, next2 Handler) bool {
 
 // Context key constants.
 const (
+	// ReplacerCtxKey is the context key for a per-request replacer.
+	ReplacerCtxKey caddy.CtxKey = "replacer"
+
 	// RemoteUserCtxKey is the key for the remote user of the request, if any (basicauth).
 	RemoteUserCtxKey caddy.CtxKey = "remote_user"
 

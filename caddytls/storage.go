@@ -1,3 +1,17 @@
+// Copyright 2015 Light Code Labs, LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package caddytls
 
 import "net/url"
@@ -25,24 +39,9 @@ type UserData struct {
 	Key []byte
 }
 
-// Storage is an interface abstracting all storage used by Caddy's TLS
-// subsystem. Implementations of this interface store both site and
-// user data.
-type Storage interface {
-	// SiteExists returns true if this site exists in storage.
-	// Site data is considered present when StoreSite has been called
-	// successfully (without DeleteSite having been called, of course).
-	SiteExists(domain string) (bool, error)
-
-	// TryLock is called before Caddy attempts to obtain or renew a
-	// certificate for a certain name and store it. From the perspective
-	// of this method and its companion Unlock, the actions of
-	// obtaining/renewing and then storing the certificate are atomic,
-	// and both should occur within a lock. This prevents multiple
-	// processes -- maybe distributed ones -- from stepping on each
-	// other's space in the same shared storage, and from spamming
-	// certificate providers with multiple, redundant requests.
-	//
+// Locker provides support for mutual exclusion
+type Locker interface {
+	// TryLock will return immediatedly with or without acquiring the lock.
 	// If a lock could be obtained, (nil, nil) is returned and you may
 	// continue normally. If not (meaning another process is already
 	// working on that name), a Waiter value will be returned upon
@@ -59,8 +58,19 @@ type Storage interface {
 	// successfully obtained the lock (no Waiter value was returned)
 	// should call this method, and it should be called only after
 	// the obtain/renew and store are finished, even if there was
-	// an error (or a timeout).
+	// an error (or a timeout). Unlock should also clean up any
+	// unused resources allocated during TryLock.
 	Unlock(name string) error
+}
+
+// Storage is an interface abstracting all storage used by Caddy's TLS
+// subsystem. Implementations of this interface store both site and
+// user data.
+type Storage interface {
+	// SiteExists returns true if this site exists in storage.
+	// Site data is considered present when StoreSite has been called
+	// successfully (without DeleteSite having been called, of course).
+	SiteExists(domain string) (bool, error)
 
 	// LoadSite obtains the site data from storage for the given domain and
 	// returns it. If data for the domain does not exist, an error value
@@ -98,6 +108,10 @@ type Storage interface {
 	// in StoreUser. The result is an empty string if there are no
 	// persisted users in storage.
 	MostRecentUserEmail() string
+
+	// Locker is necessary because synchronizing certificate maintenance
+	// depends on how storage is implemented.
+	Locker
 }
 
 // ErrNotExist is returned by Storage implementations when

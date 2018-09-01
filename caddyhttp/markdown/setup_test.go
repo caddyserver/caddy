@@ -1,9 +1,24 @@
+// Copyright 2015 Light Code Labs, LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package markdown
 
 import (
 	"bytes"
 	"fmt"
 	"net/http"
+	"reflect"
 	"testing"
 	"text/template"
 
@@ -59,9 +74,10 @@ func TestMarkdownParse(t *testing.T) {
 				".md":  {},
 				".txt": {},
 			},
-			Styles:   []string{"/resources/css/blog.css"},
-			Scripts:  []string{"/resources/js/blog.js"},
-			Template: GetDefaultTemplate(),
+			Styles:        []string{"/resources/css/blog.css"},
+			Scripts:       []string{"/resources/js/blog.js"},
+			Template:      GetDefaultTemplate(),
+			TemplateFiles: make(map[string]*cachedFileInfo),
 		}}},
 		{`markdown /blog {
 	ext .md
@@ -71,12 +87,12 @@ func TestMarkdownParse(t *testing.T) {
 			Extensions: map[string]struct{}{
 				".md": {},
 			},
-			Template: GetDefaultTemplate(),
+			Template: setDefaultTemplate("./testdata/tpl_with_include.html"),
+			TemplateFiles: map[string]*cachedFileInfo{
+				"": {path: "testdata/tpl_with_include.html"},
+			},
 		}}},
 	}
-	// Setup the extra template
-	tmpl := tests[1].expectedMarkdownConfig[0].Template
-	SetTemplate(tmpl, "", "./testdata/tpl_with_include.html")
 
 	for i, test := range tests {
 		c := caddy.NewTestController("http", test.inputMarkdownConfig)
@@ -110,6 +126,10 @@ func TestMarkdownParse(t *testing.T) {
 			if ok, tx, ty := equalTemplates(actualMarkdownConfig.Template, test.expectedMarkdownConfig[j].Template); !ok {
 				t.Errorf("Test %d the %dth Markdown Config Templates did not match, expected %s to be %s", i, j, tx, ty)
 			}
+			if expect, got := test.expectedMarkdownConfig[j].TemplateFiles, actualMarkdownConfig.TemplateFiles; !reflect.DeepEqual(expect, got) {
+				t.Errorf("Test %d the %d Markdown config TemplateFiles did not match, expect %v, but got %v", i, j, expect, got)
+			}
+
 		}
 	}
 }

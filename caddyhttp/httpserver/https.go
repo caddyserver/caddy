@@ -1,3 +1,17 @@
+// Copyright 2015 Light Code Labs, LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package httpserver
 
 import (
@@ -13,7 +27,7 @@ func activateHTTPS(cctx caddy.Context) error {
 	operatorPresent := !caddy.Started()
 
 	if !caddy.Quiet && operatorPresent {
-		fmt.Print("Activating privacy features...")
+		fmt.Print("Activating privacy features... ")
 	}
 
 	ctx := cctx.(*httpContext)
@@ -44,13 +58,18 @@ func activateHTTPS(cctx caddy.Context) error {
 	// renew all relevant certificates that need renewal. this is important
 	// to do right away so we guarantee that renewals aren't missed, and
 	// also the user can respond to any potential errors that occur.
-	err = caddytls.RenewManagedCertificates(true)
-	if err != nil {
-		return err
+	// (skip if upgrading, because the parent process is likely already listening
+	// on the ports we'd need to do ACME before we finish starting; parent process
+	// already running renewal ticker, so renewal won't be missed anyway.)
+	if !caddy.IsUpgrade() {
+		err = caddytls.RenewManagedCertificates(true)
+		if err != nil {
+			return err
+		}
 	}
 
 	if !caddy.Quiet && operatorPresent {
-		fmt.Println(" done.")
+		fmt.Println("done.")
 	}
 
 	return nil
@@ -81,8 +100,8 @@ func enableAutoHTTPS(configs []*SiteConfig, loadCertificates bool) error {
 		}
 		cfg.TLS.Enabled = true
 		cfg.Addr.Scheme = "https"
-		if loadCertificates && caddytls.HostQualifies(cfg.Addr.Host) {
-			_, err := cfg.TLS.CacheManagedCertificate(cfg.Addr.Host)
+		if loadCertificates && caddytls.HostQualifies(cfg.TLS.Hostname) {
+			_, err := cfg.TLS.CacheManagedCertificate(cfg.TLS.Hostname)
 			if err != nil {
 				return err
 			}
@@ -141,23 +160,37 @@ func hostHasOtherPort(allConfigs []*SiteConfig, thisConfigIdx int, otherPort str
 // to listen on HTTPPort. The TLS field of cfg must not be nil.
 func redirPlaintextHost(cfg *SiteConfig) *SiteConfig {
 	redirPort := cfg.Addr.Port
-	if redirPort == DefaultHTTPSPort {
-		redirPort = "" // default port is redundant
+	if redirPort == HTTPSPort {
+		// By default, HTTPSPort should be DefaultHTTPSPort,
+		// which of course doesn't need to be explicitly stated
+		// in the Location header. Even if HTTPSPort is changed
+		// so that it is no longer DefaultHTTPSPort, we shouldn't
+		// append it to the URL in the Location because changing
+		// the HTTPS port is assumed to be an internal-only change
+		// (in other words, we assume port forwarding is going on);
+		// but redirects go back to a presumably-external client.
+		// (If redirect clients are also internal, that is more
+		// advanced, and the user should configure HTTP->HTTPS
+		// redirects themselves.)
+		redirPort = ""
 	}
+
 	redirMiddleware := func(next Handler) Handler {
 		return HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
-			// Construct the URL to which to redirect. Note that the Host in a request might
-			// contain a port, but we just need the hostname; we'll set the port if needed.
+			// Construct the URL to which to redirect. Note that the Host in a
+			// request might contain a port, but we just need the hostname from
+			// it; and we'll set the port if needed.
 			toURL := "https://"
 			requestHost, _, err := net.SplitHostPort(r.Host)
 			if err != nil {
-				requestHost = r.Host // Host did not contain a port; great
+				requestHost = r.Host // Host did not contain a port, so use the whole value
 			}
 			if redirPort == "" {
 				toURL += requestHost
 			} else {
 				toURL += net.JoinHostPort(requestHost, redirPort)
 			}
+
 			toURL += r.URL.RequestURI()
 
 			w.Header().Set("Connection", "close")
@@ -165,9 +198,11 @@ func redirPlaintextHost(cfg *SiteConfig) *SiteConfig {
 			return 0, nil
 		})
 	}
+
 	host := cfg.Addr.Host
 	port := HTTPPort
 	addr := net.JoinHostPort(host, port)
+
 	return &SiteConfig{
 		Addr:       Address{Original: addr, Host: host, Port: port},
 		ListenHost: cfg.ListenHost,

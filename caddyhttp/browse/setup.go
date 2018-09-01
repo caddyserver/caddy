@@ -1,3 +1,17 @@
+// Copyright 2015 Light Code Labs, LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package browse
 
 import (
@@ -64,8 +78,9 @@ func browseParse(c *caddy.Controller) ([]Config, error) {
 		}
 
 		bc.Fs = staticfiles.FileServer{
-			Root: http.Dir(cfg.Root),
-			Hide: cfg.HiddenFiles,
+			Root:       http.Dir(cfg.Root),
+			Hide:       cfg.HiddenFiles,
+			IndexPages: cfg.IndexPages,
 		}
 
 		// Second argument would be the template file to use
@@ -110,6 +125,7 @@ const defaultTemplate = `<!DOCTYPE html>
 body {
 	font-family: sans-serif;
 	text-rendering: optimizespeed;
+	background-color: #ffffff;
 }
 
 a {
@@ -130,12 +146,12 @@ header,
 
 th:first-child,
 td:first-child {
-	padding-left: 5%;
+	width: 5%;
 }
 
 th:last-child,
 td:last-child {
-	padding-right: 5%;
+	width: 5%;
 }
 
 header {
@@ -222,19 +238,24 @@ th svg {
 }
 
 td {
+	white-space: nowrap;
 	font-size: 14px;
 }
 
-td:first-child {
-	width: 50%;
+td:nth-child(2) {
+	width: 80%;
 }
 
-th:last-child,
-td:last-child {
+td:nth-child(3) {
+	padding: 0 20px 0 20px;
+}
+
+th:nth-child(4),
+td:nth-child(4) {
 	text-align: right;
 }
 
-td:first-child svg {
+td:nth-child(2) svg {
 	position: absolute;
 }
 
@@ -281,12 +302,12 @@ footer {
 		display: none;
 	}
 
-	td:first-child {
+	td:nth-child(2) {
 		width: auto;
 	}
 
-	th:nth-child(2),
-	td:nth-child(2) {
+	th:nth-child(3),
+	td:nth-child(3) {
 		padding-right: 5%;
 		text-align: right;
 	}
@@ -370,6 +391,7 @@ footer {
 				<table aria-describedby="summary">
 					<thead>
 					<tr>
+						<th></th>
 						<th>
 							{{- if and (eq .Sort "namedirfirst") (ne .Order "desc")}}
 							<a href="?sort=namedirfirst&order=desc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}" class="icon"><svg width="1em" height=".5em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#up-arrow"></use></svg></a>
@@ -405,11 +427,13 @@ footer {
 							<a href="?sort=time&order=asc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}">Modified</a>
 							{{- end}}
 						</th>
+						<th class="hideable"></th>
 					</tr>
 					</thead>
 					<tbody>
 					{{- if .CanGoUp}}
 					<tr>
+						<td></td>
 						<td>
 							<a href="..">
 								<span class="goup">Go up</span>
@@ -417,10 +441,12 @@ footer {
 						</td>
 						<td>&mdash;</td>
 						<td class="hideable">&mdash;</td>
+						<td class="hideable"></td>
 					</tr>
 					{{- end}}
 					{{- range .Items}}
 					<tr class="file">
+						<td></td>
 						<td>
 							<a href="{{html .URL}}">
 								{{- if .IsDir}}
@@ -437,6 +463,7 @@ footer {
 						<td data-order="{{.Size}}">{{.HumanSize}}</td>
 						{{- end}}
 						<td class="hideable"><time datetime="{{.HumanModTime "2006-01-02T15:04:05Z"}}">{{.HumanModTime "01/02/2006 03:04:05 PM -07:00"}}</time></td>
+						<td class="hideable"></td>
 					</tr>
 					{{- end}}
 					</tbody>
@@ -479,7 +506,7 @@ footer {
 						return;
 					}
 				}
-				e.textContent = d.toLocaleString();
+				e.textContent = d.toLocaleString([], {day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit"});
 			}
 			var timeList = Array.prototype.slice.call(document.getElementsByTagName("time"));
 			timeList.forEach(localizeDatetime);

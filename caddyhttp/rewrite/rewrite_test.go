@@ -1,3 +1,17 @@
+// Copyright 2015 Light Code Labs, LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package rewrite
 
 import (
@@ -15,9 +29,9 @@ func TestRewrite(t *testing.T) {
 	rw := Rewrite{
 		Next: httpserver.HandlerFunc(urlPrinter),
 		Rules: []httpserver.HandlerConfig{
-			NewSimpleRule("/from", "/to"),
-			NewSimpleRule("/a", "/b"),
-			NewSimpleRule("/b", "/b{uri}"),
+			newSimpleRule(t, "^/from$", "/to"),
+			newSimpleRule(t, "^/a$", "/b"),
+			newSimpleRule(t, "^/b$", "/b{uri}"),
 		},
 		FileSys: http.Dir("."),
 	}
@@ -98,6 +112,45 @@ func TestRewrite(t *testing.T) {
 		{"/hashtest/a%20%23%20test", "/a%20%23%20test"},
 		{"/hashtest/a%20%3F%20test", "/a%20%3F%20test"},
 		{"/hashtest/a%20%3F%23test", "/a%20%3F%23test"},
+	}
+
+	for i, test := range tests {
+		req, err := http.NewRequest("GET", test.from, nil)
+		if err != nil {
+			t.Fatalf("Test %d: Could not create HTTP request: %v", i, err)
+		}
+		ctx := context.WithValue(req.Context(), httpserver.OriginalURLCtxKey, *req.URL)
+		req = req.WithContext(ctx)
+
+		rec := httptest.NewRecorder()
+		rw.ServeHTTP(rec, req)
+
+		if got, want := rec.Body.String(), test.expectedTo; got != want {
+			t.Errorf("Test %d: Expected URL to be '%s' but was '%s'", i, want, got)
+		}
+	}
+}
+
+// TestWordpress is a test for wordpress usecase.
+func TestWordpress(t *testing.T) {
+	rw := Rewrite{
+		Next: httpserver.HandlerFunc(urlPrinter),
+		Rules: []httpserver.HandlerConfig{
+			// both rules are same, thanks to Go regexp (confusion).
+			newSimpleRule(t, "^/wp-admin", "{path} {path}/ /index.php?{query}", true),
+			newSimpleRule(t, "^\\/wp-admin", "{path} {path}/ /index.php?{query}", true),
+		},
+		FileSys: http.Dir("."),
+	}
+	tests := []struct {
+		from       string
+		expectedTo string
+	}{
+		{"/wp-admin", "/wp-admin"},
+		{"/wp-admin/login.php", "/wp-admin/login.php"},
+		{"/not-wp-admin/login.php?not=admin", "/index.php?not=admin"},
+		{"/loophole", "/index.php"},
+		{"/user?name=john", "/index.php?name=john"},
 	}
 
 	for i, test := range tests {

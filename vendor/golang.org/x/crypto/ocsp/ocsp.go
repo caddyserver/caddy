@@ -450,8 +450,8 @@ func ParseRequest(bytes []byte) (*Request, error) {
 // then the signature over the response is checked. If issuer is not nil then
 // it will be used to validate the signature or embedded certificate.
 //
-// Invalid signatures or parse failures will result in a ParseError. Error
-// responses will result in a ResponseError.
+// Invalid responses and parse failures will result in a ParseError.
+// Error responses will result in a ResponseError.
 func ParseResponse(bytes []byte, issuer *x509.Certificate) (*Response, error) {
 	return ParseResponseForCert(bytes, nil, issuer)
 }
@@ -462,8 +462,8 @@ func ParseResponse(bytes []byte, issuer *x509.Certificate) (*Response, error) {
 // issuer is not nil then it will be used to validate the signature or embedded
 // certificate.
 //
-// Invalid signatures or parse failures will result in a ParseError. Error
-// responses will result in a ResponseError.
+// Invalid responses and parse failures will result in a ParseError.
+// Error responses will result in a ResponseError.
 func ParseResponseForCert(bytes []byte, cert, issuer *x509.Certificate) (*Response, error) {
 	var resp responseASN1
 	rest, err := asn1.Unmarshal(bytes, &resp)
@@ -496,10 +496,32 @@ func ParseResponseForCert(bytes []byte, cert, issuer *x509.Certificate) (*Respon
 		return nil, ParseError("OCSP response contains bad number of responses")
 	}
 
+	var singleResp singleResponse
+	if cert == nil {
+		singleResp = basicResp.TBSResponseData.Responses[0]
+	} else {
+		match := false
+		for _, resp := range basicResp.TBSResponseData.Responses {
+			if cert.SerialNumber.Cmp(resp.CertID.SerialNumber) == 0 {
+				singleResp = resp
+				match = true
+				break
+			}
+		}
+		if !match {
+			return nil, ParseError("no response matching the supplied certificate")
+		}
+	}
+
 	ret := &Response{
 		TBSResponseData:    basicResp.TBSResponseData.Raw,
 		Signature:          basicResp.Signature.RightAlign(),
 		SignatureAlgorithm: getSignatureAlgorithmFromOID(basicResp.SignatureAlgorithm.Algorithm),
+		Extensions:         singleResp.SingleExtensions,
+		SerialNumber:       singleResp.CertID.SerialNumber,
+		ProducedAt:         basicResp.TBSResponseData.ProducedAt,
+		ThisUpdate:         singleResp.ThisUpdate,
+		NextUpdate:         singleResp.NextUpdate,
 	}
 
 	// Handle the ResponderID CHOICE tag. ResponderID can be flattened into
@@ -542,25 +564,14 @@ func ParseResponseForCert(bytes []byte, cert, issuer *x509.Certificate) (*Respon
 		}
 	}
 
-	var r singleResponse
-	for _, resp := range basicResp.TBSResponseData.Responses {
-		if cert == nil || cert.SerialNumber.Cmp(resp.CertID.SerialNumber) == 0 {
-			r = resp
-			break
-		}
-	}
-
-	for _, ext := range r.SingleExtensions {
+	for _, ext := range singleResp.SingleExtensions {
 		if ext.Critical {
 			return nil, ParseError("unsupported critical extension")
 		}
 	}
-	ret.Extensions = r.SingleExtensions
-
-	ret.SerialNumber = r.CertID.SerialNumber
 
 	for h, oid := range hashOIDs {
-		if r.CertID.HashAlgorithm.Algorithm.Equal(oid) {
+		if singleResp.CertID.HashAlgorithm.Algorithm.Equal(oid) {
 			ret.IssuerHash = h
 			break
 		}
@@ -570,19 +581,15 @@ func ParseResponseForCert(bytes []byte, cert, issuer *x509.Certificate) (*Respon
 	}
 
 	switch {
-	case bool(r.Good):
+	case bool(singleResp.Good):
 		ret.Status = Good
-	case bool(r.Unknown):
+	case bool(singleResp.Unknown):
 		ret.Status = Unknown
 	default:
 		ret.Status = Revoked
-		ret.RevokedAt = r.Revoked.RevocationTime
-		ret.RevocationReason = int(r.Revoked.Reason)
+		ret.RevokedAt = singleResp.Revoked.RevocationTime
+		ret.RevocationReason = int(singleResp.Revoked.Reason)
 	}
-
-	ret.ProducedAt = basicResp.TBSResponseData.ProducedAt
-	ret.ThisUpdate = r.ThisUpdate
-	ret.NextUpdate = r.NextUpdate
 
 	return ret, nil
 }

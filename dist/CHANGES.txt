@@ -1,5 +1,138 @@
 CHANGES
 
+0.11 (May 10, 2018)
+- Built with Go 1.10.2
+- Integrated optional telemetry client
+- proxy: Fixed file descriptor leak
+
+
+0.10.14 (April 19, 2018)
+- tls: Fix error handling bug when obtaining certificates
+
+
+0.10.13 (April 18, 2018)
+- New third-party plugin: supervisor
+- Updated QUIC
+- proxy: Fix transparent pass-thru of X-Forwarded-For
+- proxy: Configurable timeout to upstream
+- rewrite: Now supports regular expressions on single-line
+- tls: StrictHostMatching mode to prevent client auth bypass
+- tls: Disable client auth when using QUIC
+- tls: Require same client auth cert pools per hostname
+- tls: Prevent On-Demand TLS directory traversal
+- tls: Fix empty files when using ACME fails to obtain cert
+- Fixed test broken by 1.1.1.1 resolving
+- Improved Caddyfile parser robustness by fuzzing
+
+
+0.10.12 (March 27, 2018)
+- Switch to Let's Encrypt ACMEv2 production endpoint
+- Support for automated wildcard certificates
+- Support distributed solving of HTTP-01 challenge
+- New {labelN}, {tls_cipher}, and {tls_version} placeholders
+- Curly braces can now be escaped when not used as placeholders
+- New third-party plugin: geoip
+- Updated QUIC
+- fastcgi: Add SSL_CIPHER and SSL_PROTOCOL environment variables
+- log: New 'except' subdirective to exempt paths from logging
+- startup/shutdown: Removed in favor of 'on'
+- tls: Default minimum version is TLS 1.2
+- tls: Revert to fallback cert if no cert matches SNI
+- tls: New 'wildcard' subdirective to force automated wildcard cert
+- Several significant bug fixes and improvements!
+
+
+0.10.11 (February 20, 2018)
+- Built with Go 1.10
+- Reusable snippets for the Caddyfile
+- Updated QUIC
+- Auto-HTTPS certificates may be shared by multiple instances
+- Expand globbed values in -conf flag
+- Swap behavior of SIGTERM and SIGQUIT; ignore SIGHUP
+- 9 new DNS provider plugins for the ACME DNS challenge
+- New placeholder for {<Response-Header} values
+- basicauth: Username put in {user} placeholder
+- fastcgi: GET requests can now send a body
+- proxy: Service discovery with DNS SRV load balancing
+- request_id: Allow reusing request ID from header field
+- tls: Improved efficiency of many certificates and reloads
+- tls: Raise error if conflicting TLS configurations collide
+- tls: Raise TLS alert if SNI used and no cert matched
+- tls: Reject OCSP responses that expire after the certificate
+- tls: Clients can use SNI to request a specific certificate
+- tls: Add option for backend to approve on-demand certificate
+- tls: Synchronize maintenance of shared, managed certificates
+- Numerous fabulous bug fixes
+
+
+0.10.10 (October 9, 2017)
+- Built with Go 1.9.1
+- Removed Caddy-Sponsors header
+- New 'on' directive that deprecates 'startup' and 'shutdown'
+- Changed CASE_SENSITIVE_PATH default to false
+- fastcgi: Support for SRV upstreams
+- redir: Rules with if statements are not checked for duplicates
+- Several minor bug fixes
+
+
+0.10.9 (September 12, 2017)
+- EULA bundled with official binaries
+- Caddy-Sponsors header to indicate personal-use license
+- proxy: Support for QUIC backends
+- templates: Write proper status code if proxied
+- tls: Fix bug related to cert renewals
+
+
+0.10.8 (September 8, 2017)
+- NACL compilation support
+- Merge multiple consecutive slashes when comparing paths
+- A few other bug fixes
+
+
+0.10.7 (August 25, 2017)
+- Built with Go 1.9
+- New 3rd-party plugin directives: jekyll, awses, forwardproxy
+- Different exit codes
+- Plan 9 support
+- Graceful binary upgrades with SIGUSR2
+- internal: Support X-Accel-Redir without paths to protect
+- templates: Can execute templates loaded by other middleware
+- A few really good bug fixes
+
+
+0.10.6 (July 28, 2017)
+- fastcgi: Fix runtime error for 32-bit and ARM architectures
+
+
+0.10.5 (July 27, 2017)
+- Renamed requestid directive to request_id
+- Set default idle timeout of 5 minutes
+- New 3rd-party plugin directives: cache, nobots, webdav
+- New Unix timestamp placeholder {when_unix}
+- Improved MITM detection on iOS clients
+- errors, log: Fix log rolling parsing
+- gzip: Convert any ETag header to weak etag
+- fastcgi: Reverted persistent connections (issue #1736)
+- proxy: Added header loaded balancing policy
+- proxy: Fix hang on chunked WebSockets (e.g. with HomeAssistant)
+- Several other bug fixes and minor internal improvements
+
+
+0.10.4 (June 28, 2017)
+- Vendor all dependencies
+- Improve MITM detection, add experimental Tor browser support
+- New requestid directive to add request IDs to each request
+- New HTTP plugins supported: authz, grpc, gopkg, reauth, restic
+- browse: Refreshed default UI and added symlink indicators
+- errors, log: Added rotate_compress directive to compress rolled logs
+- markdown: Template files loaded at each request instead of just once
+- proxy: Allow multiple Server header fields on downstream response
+- proxy: Perform health checks by body substring
+- rewrite,redir: Added 'not_starts_with' and 'not_ends_with' operators
+- tls: New ca subdirective to specify CA endpoint per-site
+- Several bug fixes
+
+
 0.10.3 (May 19, 2017)
 - Replace 'maxrequestbody' directive with 'limits' directive
 - proxy: Configurable port for health check

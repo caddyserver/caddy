@@ -1,3 +1,17 @@
+// Copyright 2015 Light Code Labs, LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package push
 
 import (
@@ -25,7 +39,16 @@ func (h Middleware) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, erro
 	// push first
 outer:
 	for _, rule := range h.Rules {
-		if httpserver.Path(r.URL.Path).Matches(rule.Path) {
+		urlPath := r.URL.Path
+		matches := httpserver.Path(urlPath).Matches(rule.Path)
+		// Also check IndexPages when requesting a directory
+		if !matches {
+			indexFile, isIndexFile := httpserver.IndexFile(h.Root, urlPath, h.indexPages)
+			if isIndexFile {
+				matches = httpserver.Path(indexFile).Matches(rule.Path)
+			}
+		}
+		if matches {
 			for _, resource := range rule.Resources {
 				pushErr := pusher.Push(resource.Path, &http.PushOptions{
 					Method: resource.Method,
@@ -50,25 +73,38 @@ outer:
 	return code, err
 }
 
-func (h Middleware) servePreloadLinks(pusher http.Pusher, headers http.Header, links []string) {
-	for _, link := range links {
-		parts := strings.Split(link, ";")
+// servePreloadLinks parses Link headers from backend and pushes resources found in them.
+// For accepted header formats check parseLinkHeader function.
+//
+// If resource has 'nopush' attribute then it will be omitted.
+func (h Middleware) servePreloadLinks(pusher http.Pusher, headers http.Header, resources []string) {
+outer:
+	for _, resource := range resources {
+		for _, resource := range parseLinkHeader(resource) {
+			if _, exists := resource.params["nopush"]; exists {
+				continue
+			}
 
-		if link == "" || strings.HasSuffix(link, "nopush") {
-			continue
-		}
+			if h.isRemoteResource(resource.uri) {
+				continue
+			}
 
-		target := strings.TrimSuffix(strings.TrimPrefix(parts[0], "<"), ">")
+			err := pusher.Push(resource.uri, &http.PushOptions{
+				Method: http.MethodGet,
+				Header: headers,
+			})
 
-		err := pusher.Push(target, &http.PushOptions{
-			Method: http.MethodGet,
-			Header: headers,
-		})
-
-		if err != nil {
-			break
+			if err != nil {
+				break outer
+			}
 		}
 	}
+}
+
+func (h Middleware) isRemoteResource(resource string) bool {
+	return strings.HasPrefix(resource, "//") ||
+		strings.HasPrefix(resource, "http://") ||
+		strings.HasPrefix(resource, "https://")
 }
 
 func (h Middleware) mergeHeaders(l, r http.Header) http.Header {

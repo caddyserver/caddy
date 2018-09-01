@@ -1,3 +1,17 @@
+// Copyright 2015 Light Code Labs, LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package log
 
 import (
@@ -161,5 +175,87 @@ func TestMultiEntries(t *testing.T) {
 	}
 	if got, expect := got2.String(), "POST hello world\n"; got != expect {
 		t.Errorf("Expected %q, but got %q", expect, got)
+	}
+}
+
+func TestLogExcept(t *testing.T) {
+	tests := []struct {
+		LogRules  []Rule
+		logPath   string
+		shouldLog bool
+	}{
+		{[]Rule{{
+			PathScope: "/",
+			Entries: []*Entry{{
+				Log: &httpserver.Logger{
+
+					Exceptions: []string{"/soup"},
+				},
+				Format: DefaultLogFormat,
+			}},
+		}}, `/soup`, false},
+		{[]Rule{{
+			PathScope: "/",
+			Entries: []*Entry{{
+				Log: &httpserver.Logger{
+
+					Exceptions: []string{"/tart"},
+				},
+				Format: DefaultLogFormat,
+			}},
+		}}, `/soup`, true},
+		{[]Rule{{
+			PathScope: "/",
+			Entries: []*Entry{{
+				Log: &httpserver.Logger{
+
+					Exceptions: []string{"/soup"},
+				},
+				Format: DefaultLogFormat,
+			}},
+		}}, `/tomatosoup`, true},
+		{[]Rule{{
+			PathScope: "/",
+			Entries: []*Entry{{
+				Log: &httpserver.Logger{
+
+					Exceptions: []string{"/pie/"},
+				},
+				Format: DefaultLogFormat,
+			}},
+			// Check exception with a trailing slash does not match without
+		}}, `/pie`, true},
+		{[]Rule{{
+			PathScope: "/",
+			Entries: []*Entry{{
+				Log: &httpserver.Logger{
+
+					Exceptions: []string{"/pie.php"},
+				},
+				Format: DefaultLogFormat,
+			}},
+		}}, `/pie`, true},
+		{[]Rule{{
+			PathScope: "/",
+			Entries: []*Entry{{
+				Log: &httpserver.Logger{
+
+					Exceptions: []string{"/pie"},
+				},
+				Format: DefaultLogFormat,
+			}},
+			// Check that a word without trailing slash will match a filename
+		}}, `/pie.php`, false},
+	}
+	for i, test := range tests {
+		for _, LogRule := range test.LogRules {
+			for _, e := range LogRule.Entries {
+				shouldLog := e.Log.ShouldLog(test.logPath)
+				if shouldLog != test.shouldLog {
+					t.Fatalf("Test  %d expected shouldLog=%t but got shouldLog=%t,", i, test.shouldLog, shouldLog)
+				}
+			}
+		}
+
 	}
 }

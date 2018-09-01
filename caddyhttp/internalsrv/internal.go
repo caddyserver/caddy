@@ -1,3 +1,17 @@
+// Copyright 2015 Light Code Labs, LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 // Package internalsrv provides a simple middleware that (a) prevents access
 // to internal locations and (b) allows to return files from internal location
 // by setting a special header, e.g. in a proxy response.
@@ -32,7 +46,6 @@ func isInternalRedirect(w http.ResponseWriter) bool {
 
 // ServeHTTP implements the httpserver.Handler interface.
 func (i Internal) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
-
 	// Internal location requested? -> Not found.
 	for _, prefix := range i.Paths {
 		if httpserver.Path(r.URL.Path).Matches(prefix) {
@@ -50,7 +63,6 @@ func (i Internal) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error)
 		// "down the chain"
 		r.URL.Path = iw.Header().Get(redirectHeader)
 		iw.ClearHeader()
-
 		status, err = i.Next.ServeHTTP(iw, r)
 	}
 

@@ -1,3 +1,17 @@
+// Copyright 2015 Light Code Labs, LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package httpserver
 
 import (
@@ -10,14 +24,15 @@ import (
 // wildcards as TLS certificates support them), then
 // by longest matching path.
 type vhostTrie struct {
-	edges map[string]*vhostTrie
-	site  *SiteConfig // site to match on this node; also known as a virtual host
-	path  string      // the path portion of the key for the associated site
+	fallbackHosts []string
+	edges         map[string]*vhostTrie
+	site          *SiteConfig // site to match on this node; also known as a virtual host
+	path          string      // the path portion of the key for the associated site
 }
 
 // newVHostTrie returns a new vhostTrie.
 func newVHostTrie() *vhostTrie {
-	return &vhostTrie{edges: make(map[string]*vhostTrie)}
+	return &vhostTrie{edges: make(map[string]*vhostTrie), fallbackHosts: []string{"0.0.0.0", ""}}
 }
 
 // Insert adds stack to t keyed by key. The key should be
@@ -57,13 +72,13 @@ func (t *vhostTrie) insertPath(remainingPath, originalPath string, site *SiteCon
 // A typical key will be in the form "host" or "host/path".
 func (t *vhostTrie) Match(key string) (*SiteConfig, string) {
 	host, path := t.splitHostPath(key)
-	// try the given host, then, if no match, try wildcard hosts
+	// try the given host, then, if no match, try fallback hosts
 	branch := t.matchHost(host)
-	if branch == nil {
-		branch = t.matchHost("0.0.0.0")
-	}
-	if branch == nil {
-		branch = t.matchHost("")
+	for _, h := range t.fallbackHosts {
+		if branch != nil {
+			break
+		}
+		branch = t.matchHost(h)
 	}
 	if branch == nil {
 		return nil, ""

@@ -357,6 +357,9 @@ func Llistxattr(link string, dest []byte) (sz int, err error) {
  */
 //sys	Access(path string, mode uint32) (err error)
 //sys	Adjtime(delta *Timeval, olddelta *Timeval) (err error)
+//sys	CapEnter() (err error)
+//sys	capRightsGet(version int, fd int, rightsp *CapRights) (err error) = SYS___CAP_RIGHTS_GET
+//sys	capRightsLimit(fd int, rightsp *CapRights) (err error)
 //sys	Chdir(path string) (err error)
 //sys	Chflags(path string, flags int) (err error)
 //sys	Chmod(path string, mode uint32) (err error)
@@ -421,6 +424,7 @@ func Llistxattr(link string, dest []byte) (sz int, err error) {
 //sys	Munlockall() (err error)
 //sys	Nanosleep(time *Timespec, leftover *Timespec) (err error)
 //sys	Open(path string, mode int, perm uint32) (fd int, err error)
+//sys	Openat(fdat int, path string, mode int, perm uint32) (fd int, err error)
 //sys	Pathconf(path string, name int) (val int, err error)
 //sys	Pread(fd int, p []byte, offset int64) (n int, err error)
 //sys	Pwrite(fd int, p []byte, offset int64) (n int, err error)

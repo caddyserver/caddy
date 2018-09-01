@@ -1,8 +1,26 @@
+// Copyright 2015 Light Code Labs, LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package httpserver
 
 import (
 	"strings"
 	"testing"
+
+	"sort"
+
+	"fmt"
 
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyfile"
@@ -123,7 +141,7 @@ func TestAddressString(t *testing.T) {
 func TestInspectServerBlocksWithCustomDefaultPort(t *testing.T) {
 	Port = "9999"
 	filename := "Testfile"
-	ctx := newContext().(*httpContext)
+	ctx := newContext(&caddy.Instance{Storage: make(map[interface{}]interface{})}).(*httpContext)
 	input := strings.NewReader(`localhost`)
 	sblocks, err := caddyfile.Parse(filename, input, nil)
 	if err != nil {
@@ -133,15 +151,45 @@ func TestInspectServerBlocksWithCustomDefaultPort(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Didn't expect an error, but got: %v", err)
 	}
-	addr := ctx.keysToSiteConfigs["localhost"].Addr
+	localhostKey := "localhost"
+	item, ok := ctx.keysToSiteConfigs[localhostKey]
+	if !ok {
+		availableKeys := make(sort.StringSlice, len(ctx.keysToSiteConfigs))
+		i := 0
+		for key := range ctx.keysToSiteConfigs {
+			availableKeys[i] = fmt.Sprintf("'%s'", key)
+			i++
+		}
+		availableKeys.Sort()
+		t.Errorf("`%s` not found within registered keys, only these are available: %s", localhostKey, strings.Join(availableKeys, ", "))
+		return
+	}
+	addr := item.Addr
 	if addr.Port != Port {
 		t.Errorf("Expected the port on the address to be set, but got: %#v", addr)
 	}
 }
 
+// See discussion on PR #2015
+func TestInspectServerBlocksWithAdjustedAddress(t *testing.T) {
+	Port = DefaultPort
+	Host = "example.com"
+	filename := "Testfile"
+	ctx := newContext(&caddy.Instance{Storage: make(map[interface{}]interface{})}).(*httpContext)
+	input := strings.NewReader("example.com {\n}\n:2015 {\n}")
+	sblocks, err := caddyfile.Parse(filename, input, nil)
+	if err != nil {
+		t.Fatalf("Expected no error setting up test, got: %v", err)
+	}
+	_, err = ctx.InspectServerBlocks(filename, sblocks)
+	if err == nil {
+		t.Fatalf("Expected an error because site definitions should overlap, got: %v", err)
+	}
+}
+
 func TestInspectServerBlocksCaseInsensitiveKey(t *testing.T) {
 	filename := "Testfile"
-	ctx := newContext().(*httpContext)
+	ctx := newContext(&caddy.Instance{Storage: make(map[interface{}]interface{})}).(*httpContext)
 	input := strings.NewReader("localhost {\n}\nLOCALHOST {\n}")
 	sblocks, err := caddyfile.Parse(filename, input, nil)
 	if err != nil {
@@ -151,6 +199,64 @@ func TestInspectServerBlocksCaseInsensitiveKey(t *testing.T) {
 	if err == nil {
 		t.Error("Expected an error because keys on this server type are case-insensitive (so these are duplicated), but didn't get an error")
 	}
+}
+
+func TestKeyNormalization(t *testing.T) {
+	originalCaseSensitivePath := CaseSensitivePath
+	defer func() {
+		CaseSensitivePath = originalCaseSensitivePath
+	}()
+	CaseSensitivePath = true
+
+	caseSensitiveData := []struct {
+		orig string
+		res  string
+	}{
+		{
+			orig: "HTTP://A/ABCDEF",
+			res:  "http://a/ABCDEF",
+		},
+		{
+			orig: "A/ABCDEF",
+			res:  "a/ABCDEF",
+		},
+		{
+			orig: "A:2015/Port",
+			res:  "a:2015/Port",
+		},
+	}
+	for _, item := range caseSensitiveData {
+		v := normalizedKey(item.orig)
+		if v != item.res {
+			t.Errorf("Normalization of `%s` with CaseSensitivePath option set to true must be equal to `%s`, got `%s` instead", item.orig, item.res, v)
+		}
+	}
+
+	CaseSensitivePath = false
+	caseInsensitiveData := []struct {
+		orig string
+		res  string
+	}{
+		{
+			orig: "HTTP://A/ABCDEF",
+			res:  "http://a/abcdef",
+		},
+		{
+			orig: "A/ABCDEF",
+			res:  "a/abcdef",
+		},
+		{
+			orig: "A:2015/Port",
+			res:  "a:2015/port",
+		},
+	}
+	for _, item := range caseInsensitiveData {
+		v := normalizedKey(item.orig)
+		if v != item.res {
+			t.Errorf("Normalization of `%s` with CaseSensitivePath option set to false must be equal to `%s`, got `%s` instead", item.orig, item.res, v)
+		}
+	}
+
 }
 
 func TestGetConfig(t *testing.T) {
@@ -169,6 +275,14 @@ func TestGetConfig(t *testing.T) {
 	cfg3 := GetConfig(con)
 	if cfg == cfg3 {
 		t.Errorf("Expected different configs using when key is different; got %p and %p", cfg, cfg3)
+	}
+
+	con.Key = "foo/foobar"
+	cfg4 := GetConfig(con)
+	con.Key = "foo/Foobar"
+	cfg5 := GetConfig(con)
+	if cfg4 == cfg5 {
+		t.Errorf("Expected different cases in path to differentiate keys in general")
 	}
 }
 
@@ -193,7 +307,7 @@ func TestDirectivesList(t *testing.T) {
 }
 
 func TestContextSaveConfig(t *testing.T) {
-	ctx := newContext().(*httpContext)
+	ctx := newContext(&caddy.Instance{Storage: make(map[interface{}]interface{})}).(*httpContext)
 	ctx.saveConfig("foo", new(SiteConfig))
 	if _, ok := ctx.keysToSiteConfigs["foo"]; !ok {
 		t.Error("Expected config to be saved, but it wasn't")
@@ -212,7 +326,7 @@ func TestContextSaveConfig(t *testing.T) {
 
 // Test to make sure we are correctly hiding the Caddyfile
 func TestHideCaddyfile(t *testing.T) {
-	ctx := newContext().(*httpContext)
+	ctx := newContext(&caddy.Instance{Storage: make(map[interface{}]interface{})}).(*httpContext)
 	ctx.saveConfig("test", &SiteConfig{
 		Root:            Root,
 		originCaddyfile: "Testfile",

@@ -1,3 +1,17 @@
+// Copyright 2015 Light Code Labs, LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 // Package browse provides middleware for listing files in a directory
 // when directory path is requested instead of a specific file.
 package browse
@@ -9,7 +23,6 @@ import (
 	"net/url"
 	"os"
 	"path"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -239,14 +252,16 @@ func directoryListing(files []os.FileInfo, canGoUp bool, urlPath string, config 
 	for _, f := range files {
 		name := f.Name()
 
-		for _, indexName := range staticfiles.IndexPages {
+		for _, indexName := range config.Fs.IndexPages {
 			if name == indexName {
 				hasIndexFile = true
 				break
 			}
 		}
 
-		if f.IsDir() {
+		isDir := f.IsDir() || isSymlinkTargetDir(f, urlPath, config)
+
+		if isDir {
 			name += "/"
 			dirCount++
 		} else {
@@ -260,7 +275,7 @@ func directoryListing(files []os.FileInfo, canGoUp bool, urlPath string, config 
 		url := url.URL{Path: "./" + name} // prepend with "./" to fix paths with ':' in the name
 
 		fileinfos = append(fileinfos, FileInfo{
-			IsDir:     f.IsDir() || isSymlinkTargetDir(f, urlPath, config),
+			IsDir:     isDir,
 			IsSymlink: isSymlink(f),
 			Name:      f.Name(),
 			Size:      f.Size(),
@@ -291,18 +306,18 @@ func isSymlinkTargetDir(f os.FileInfo, urlPath string, config *Config) bool {
 	if !isSymlink(f) {
 		return false
 	}
-	fullPath := func(fileName string) string {
-		fullPath := filepath.Join(string(config.Fs.Root.(http.Dir)), urlPath, fileName)
-		return filepath.Clean(fullPath)
-	}
-	target, err := os.Readlink(fullPath(f.Name()))
+
+	// a bit strange, but we want Stat thru the jailed filesystem to be safe
+	target, err := config.Fs.Root.Open(path.Join(urlPath, f.Name()))
 	if err != nil {
 		return false
 	}
-	targetInfo, err := os.Lstat(fullPath(target))
+	defer target.Close()
+	targetInfo, err := target.Stat()
 	if err != nil {
 		return false
 	}
+
 	return targetInfo.IsDir()
 }
 

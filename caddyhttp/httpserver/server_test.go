@@ -1,7 +1,22 @@
+// Copyright 2015 Light Code Labs, LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package httpserver
 
 import (
 	"net/http"
+	"net/url"
 	"testing"
 	"time"
 )
@@ -108,6 +123,114 @@ func TestMakeHTTPServerWithTimeouts(t *testing.T) {
 		}
 		if got, want := actual.IdleTimeout, tc.expected.IdleTimeout; got != want {
 			t.Errorf("Test %d: Expected IdleTimeout=%v, but was %v", i, want, got)
+		}
+	}
+}
+
+func TestTrimPathPrefix(t *testing.T) {
+	for i, pt := range []struct {
+		url        string
+		prefix     string
+		expected   string
+		shouldFail bool
+	}{
+		{
+			url:        "/my/path",
+			prefix:     "/my",
+			expected:   "/path",
+			shouldFail: false,
+		},
+		{
+			url:        "/my/%2f/path",
+			prefix:     "/my",
+			expected:   "/%2f/path",
+			shouldFail: false,
+		},
+		{
+			url:        "/my/path",
+			prefix:     "/my/",
+			expected:   "/path",
+			shouldFail: false,
+		},
+		{
+			url:        "/my///path",
+			prefix:     "/my",
+			expected:   "/path",
+			shouldFail: true,
+		},
+		{
+			url:        "/my///path",
+			prefix:     "/my",
+			expected:   "///path",
+			shouldFail: false,
+		},
+		{
+			url:        "/my/path///slash",
+			prefix:     "/my",
+			expected:   "/path///slash",
+			shouldFail: false,
+		},
+		{
+			url:        "/my/%2f/path/%2f",
+			prefix:     "/my",
+			expected:   "/%2f/path/%2f",
+			shouldFail: false,
+		}, {
+			url:        "/my/%20/path",
+			prefix:     "/my",
+			expected:   "/%20/path",
+			shouldFail: false,
+		}, {
+			url:        "/path",
+			prefix:     "",
+			expected:   "/path",
+			shouldFail: false,
+		}, {
+			url:        "/path/my/",
+			prefix:     "/my",
+			expected:   "/path/my/",
+			shouldFail: false,
+		}, {
+			url:        "",
+			prefix:     "/my",
+			expected:   "/",
+			shouldFail: false,
+		}, {
+			url:        "/apath",
+			prefix:     "",
+			expected:   "/apath",
+			shouldFail: false,
+		}, {
+			url:        "/my/path/page.php?akey=value",
+			prefix:     "/my",
+			expected:   "/path/page.php?akey=value",
+			shouldFail: false,
+		}, {
+			url:        "/my/path/page?key=value#fragment",
+			prefix:     "/my",
+			expected:   "/path/page?key=value#fragment",
+			shouldFail: false,
+		}, {
+			url:        "/my/path/page#fragment",
+			prefix:     "/my",
+			expected:   "/path/page#fragment",
+			shouldFail: false,
+		}, {
+			url:        "/my/apath?",
+			prefix:     "/my",
+			expected:   "/apath?",
+			shouldFail: false,
+		},
+	} {
+
+		u, _ := url.Parse(pt.url)
+		if got, want := trimPathPrefix(u, pt.prefix), pt.expected; got.String() != want {
+			if !pt.shouldFail {
+
+				t.Errorf("Test %d: Expected='%s', but was '%s' ", i, want, got.String())
+			}
+		} else if pt.shouldFail {
+			t.Errorf("SHOULDFAIL Test %d: Expected='%s', and was '%s' but should fail", i, want, got.String())
 		}
 	}
 }

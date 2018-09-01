@@ -1,3 +1,17 @@
+// Copyright 2015 Light Code Labs, LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package staticfiles
 
 import (
@@ -22,8 +36,9 @@ func TestServeHTTP(t *testing.T) {
 	defer afterServeHTTPTest(t, tmpWebRootDir)
 
 	fileserver := FileServer{
-		Root: http.Dir(filepath.Join(tmpWebRootDir, webrootName)),
-		Hide: []string{"dir/hidden.html"},
+		Root:       http.Dir(filepath.Join(tmpWebRootDir, webrootName)),
+		Hide:       []string{"dir/hidden.html"},
+		IndexPages: DefaultIndexPages,
 	}
 
 	movedPermanently := "Moved Permanently"
@@ -62,9 +77,9 @@ func TestServeHTTP(t *testing.T) {
 		{
 			url:                   "https://foo/dirwithindex/",
 			expectedStatus:        http.StatusOK,
-			expectedBodyContent:   testFiles[webrootDirwithindexIndeHTML],
+			expectedBodyContent:   testFiles[webrootDirwithindexIndexHTML],
 			expectedEtag:          `"2n9cw"`,
-			expectedContentLength: strconv.Itoa(len(testFiles[webrootDirwithindexIndeHTML])),
+			expectedContentLength: strconv.Itoa(len(testFiles[webrootDirwithindexIndexHTML])),
 		},
 		// Test 4 - access folder with index file without trailing slash
 		{
@@ -219,10 +234,39 @@ func TestServeHTTP(t *testing.T) {
 			expectedLocation:    "https://foo/bar/file1.html",
 			expectedBodyContent: movedPermanently,
 		},
+		{
+			// Test 27 - Check etag
+			url:                   "https://foo/notindex.html",
+			expectedStatus:        http.StatusOK,
+			expectedBodyContent:   testFiles[webrootNotIndexHTML],
+			expectedEtag:          `"2n9cm"`,
+			expectedContentLength: strconv.Itoa(len(testFiles[webrootNotIndexHTML])),
+		},
+		{
+			// Test 28 - Prevent path-based open redirects (directory)
+			url:                 "https://foo//example.com%2f..",
+			expectedStatus:      http.StatusMovedPermanently,
+			expectedLocation:    "https://foo/example.com/../",
+			expectedBodyContent: movedPermanently,
+		},
+		{
+			// Test 29 - Prevent path-based open redirects (file)
+			url:                 "https://foo//example.com%2f../dirwithindex/index.html",
+			expectedStatus:      http.StatusMovedPermanently,
+			expectedLocation:    "https://foo/example.com/../dirwithindex/",
+			expectedBodyContent: movedPermanently,
+		},
+		{
+			// Test 29 - Prevent path-based open redirects (extra leading slashes)
+			url:                 "https://foo///example.com%2f..",
+			expectedStatus:      http.StatusMovedPermanently,
+			expectedLocation:    "https://foo/example.com/../",
+			expectedBodyContent: movedPermanently,
+		},
 	}
 
 	for i, test := range tests {
-		// set up response writer and rewuest
+		// set up response writer and request
 		responseRecorder := httptest.NewRecorder()
 		request, err := http.NewRequest("GET", test.url, nil)
 		if err != nil {
@@ -493,9 +537,10 @@ func TestServeHTTPFailingStat(t *testing.T) {
 // Paths for the fake site used temporarily during testing.
 var (
 	webrootFile1HTML                   = filepath.Join(webrootName, "file1.html")
+	webrootNotIndexHTML                = filepath.Join(webrootName, "notindex.html")
 	webrootDirFile2HTML                = filepath.Join(webrootName, "dir", "file2.html")
 	webrootDirHiddenHTML               = filepath.Join(webrootName, "dir", "hidden.html")
-	webrootDirwithindexIndeHTML        = filepath.Join(webrootName, "dirwithindex", "index.html")
+	webrootDirwithindexIndexHTML       = filepath.Join(webrootName, "dirwithindex", "index.html")
 	webrootSubGzippedHTML              = filepath.Join(webrootName, "sub", "gzipped.html")
 	webrootSubGzippedHTMLGz            = filepath.Join(webrootName, "sub", "gzipped.html.gz")
 	webrootSubGzippedHTMLBr            = filepath.Join(webrootName, "sub", "gzipped.html.br")
@@ -519,8 +564,9 @@ var (
 var testFiles = map[string]string{
 	"unreachable.html":                 "<h1>must not leak</h1>",
 	webrootFile1HTML:                   "<h1>file1.html</h1>",
+	webrootNotIndexHTML:                "<h1>notindex.html</h1>",
 	webrootDirFile2HTML:                "<h1>dir/file2.html</h1>",
-	webrootDirwithindexIndeHTML:        "<h1>dirwithindex/index.html</h1>",
+	webrootDirwithindexIndexHTML:       "<h1>dirwithindex/index.html</h1>",
 	webrootDirHiddenHTML:               "<h1>dir/hidden.html</h1>",
 	webrootSubGzippedHTML:              "<h1>gzipped.html</h1>",
 	webrootSubGzippedHTMLGz:            "1.gzipped.html.gz",

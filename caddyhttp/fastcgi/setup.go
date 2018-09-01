@@ -1,10 +1,25 @@
+// Copyright 2015 Light Code Labs, LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package fastcgi
 
 import (
 	"errors"
+	"fmt"
+	"net"
 	"net/http"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -61,12 +76,16 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 		}
 
 		rule := Rule{
-			Root:        absRoot,
-			Path:        args[0],
-			ReadTimeout: 60 * time.Second,
-			SendTimeout: 60 * time.Second,
+			Root: absRoot,
+			Path: args[0],
 		}
+
 		upstreams := []string{args[1]}
+
+		srvUpstream := false
+		if strings.HasPrefix(upstreams[0], "srv://") {
+			srvUpstream = true
+		}
 
 		if len(args) == 3 {
 			if err := fastcgiPreset(args[2], &rule); err != nil {
@@ -75,10 +94,6 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 		}
 
 		var err error
-		var pool int
-		var connectTimeout = 60 * time.Second
-		var dialers []dialer
-		var poolSize = -1
 
 		for c.NextBlock() {
 			switch c.Val() {
@@ -106,6 +121,10 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 				rule.IndexFiles = args
 
 			case "upstream":
+				if srvUpstream {
+					return rules, c.Err("additional upstreams are not supported with SRV upstream")
+				}
+
 				args := c.RemainingArgs()
 
 				if len(args) != 1 {
@@ -126,24 +145,11 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 				}
 				rule.IgnoredSubPaths = ignoredPaths
 
-			case "pool":
-				if !c.NextArg() {
-					return rules, c.ArgErr()
-				}
-				pool, err = strconv.Atoi(c.Val())
-				if err != nil {
-					return rules, err
-				}
-				if pool >= 0 {
-					poolSize = pool
-				} else {
-					return rules, c.Errf("positive integer expected, found %d", pool)
-				}
 			case "connect_timeout":
 				if !c.NextArg() {
 					return rules, c.ArgErr()
 				}
-				connectTimeout, err = time.ParseDuration(c.Val())
+				rule.ConnectTimeout, err = time.ParseDuration(c.Val())
 				if err != nil {
 					return rules, err
 				}
@@ -168,30 +174,30 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 			}
 		}
 
-		for _, rawAddress := range upstreams {
-			network, address := parseAddress(rawAddress)
-			if poolSize >= 0 {
-				dialers = append(dialers, &persistentDialer{
-					size:    poolSize,
-					network: network,
-					address: address,
-					timeout: connectTimeout,
-				})
-			} else {
-				dialers = append(dialers, basicDialer{
-					network: network,
-					address: address,
-					timeout: connectTimeout,
-				})
+		if srvUpstream {
+			balancer, err := parseSRV(upstreams[0])
+			if err != nil {
+				return rules, c.Err("malformed service locator string: " + err.Error())
 			}
+			rule.balancer = balancer
+		} else {
+			rule.balancer = &roundRobin{addresses: upstreams, index: -1}
 		}
 
-		rule.dialer = &loadBalancingDialer{dialers: dialers}
-		rule.Address = strings.Join(upstreams, ",")
 		rules = append(rules, rule)
 	}
-
 	return rules, nil
+}
+
+func parseSRV(locator string) (*srv, error) {
+	if locator[6:] == "" {
+		return nil, fmt.Errorf("%s does not include the host", locator)
+	}
+
+	return &srv{
+		service:  locator[6:],
+		resolver: &net.Resolver{},
+	}, nil
 }
 
 // fastcgiPreset configures rule according to name. It returns an error if

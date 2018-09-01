@@ -1,8 +1,23 @@
+// Copyright 2015 Light Code Labs, LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package rewrite
 
 import (
 	"fmt"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/mholt/caddy"
@@ -35,6 +50,19 @@ func TestSetup(t *testing.T) {
 	}
 }
 
+// newSimpleRule is convenience test function for SimpleRule.
+func newSimpleRule(t *testing.T, from, to string, negate ...bool) Rule {
+	var n bool
+	if len(negate) > 0 {
+		n = negate[0]
+	}
+	rule, err := NewSimpleRule(from, to, n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return rule
+}
+
 func TestRewriteParse(t *testing.T) {
 	simpleTests := []struct {
 		input     string
@@ -42,17 +70,20 @@ func TestRewriteParse(t *testing.T) {
 		expected  []Rule
 	}{
 		{`rewrite /from /to`, false, []Rule{
-			SimpleRule{From: "/from", To: "/to"},
+			newSimpleRule(t, "/from", "/to"),
 		}},
 		{`rewrite /from /to
 		  rewrite a b`, false, []Rule{
-			SimpleRule{From: "/from", To: "/to"},
-			SimpleRule{From: "a", To: "b"},
+			newSimpleRule(t, "/from", "/to"),
+			newSimpleRule(t, "a", "b"),
 		}},
 		{`rewrite a`, true, []Rule{}},
 		{`rewrite`, true, []Rule{}},
 		{`rewrite a b c`, false, []Rule{
-			SimpleRule{From: "a", To: "b c"},
+			newSimpleRule(t, "a", "b c"),
+		}},
+		{`rewrite not a b c`, false, []Rule{
+			newSimpleRule(t, "a", "b c", true),
 		}},
 	}
 
@@ -73,17 +104,22 @@ func TestRewriteParse(t *testing.T) {
 		}
 
 		for j, e := range test.expected {
-			actualRule := actual[j].(SimpleRule)
-			expectedRule := e.(SimpleRule)
+			actualRule := actual[j].(*SimpleRule)
+			expectedRule := e.(*SimpleRule)
 
-			if actualRule.From != expectedRule.From {
+			if actualRule.Regexp.String() != expectedRule.Regexp.String() {
 				t.Errorf("Test %d, rule %d: Expected From=%s, got %s",
-					i, j, expectedRule.From, actualRule.From)
+					i, j, expectedRule.Regexp.String(), actualRule.Regexp.String())
 			}
 
 			if actualRule.To != expectedRule.To {
 				t.Errorf("Test %d, rule %d: Expected To=%s, got %s",
-					i, j, expectedRule.To, actualRule.To)
+					i, j, expectedRule.Regexp.String(), actualRule.Regexp.String())
+			}
+
+			if actualRule.Negate != expectedRule.Negate {
+				t.Errorf("Test %d, rule %d: Expected Negate=%v, got %v",
+					i, j, expectedRule.Negate, actualRule.Negate)
 			}
 		}
 	}
@@ -97,14 +133,14 @@ func TestRewriteParse(t *testing.T) {
 			r	.*
 			to	/to /index.php?
 		 }`, false, []Rule{
-			&ComplexRule{Base: "/", To: "/to /index.php?", Regexp: regexp.MustCompile(".*")},
+			ComplexRule{Base: "/", To: "/to /index.php?", Regexp: regexp.MustCompile(".*")},
 		}},
 		{`rewrite {
 			regexp	.*
 			to		/to
 			ext		/ html txt
 		 }`, false, []Rule{
-			&ComplexRule{Base: "/", To: "/to", Exts: []string{"/", "html", "txt"}, Regexp: regexp.MustCompile(".*")},
+			ComplexRule{Base: "/", To: "/to", Exts: []string{"/", "html", "txt"}, Regexp: regexp.MustCompile(".*")},
 		}},
 		{`rewrite /path {
 			r	rr
@@ -115,27 +151,27 @@ func TestRewriteParse(t *testing.T) {
 		 	to 		/to /to2
 		 }
 		 `, false, []Rule{
-			&ComplexRule{Base: "/path", To: "/dest", Regexp: regexp.MustCompile("rr")},
-			&ComplexRule{Base: "/", To: "/to /to2", Regexp: regexp.MustCompile("[a-z]+")},
+			ComplexRule{Base: "/path", To: "/dest", Regexp: regexp.MustCompile("rr")},
+			ComplexRule{Base: "/", To: "/to /to2", Regexp: regexp.MustCompile("[a-z]+")},
 		}},
 		{`rewrite {
 			r	.*
 		 }`, true, []Rule{
-			&ComplexRule{},
+			ComplexRule{},
 		}},
 		{`rewrite {
 
 		 }`, true, []Rule{
-			&ComplexRule{},
+			ComplexRule{},
 		}},
 		{`rewrite /`, true, []Rule{
-			&ComplexRule{},
+			ComplexRule{},
 		}},
 		{`rewrite {
 			if {path} match /
 			to		/to
 		 }`, false, []Rule{
-			&ComplexRule{Base: "/", To: "/to"},
+			ComplexRule{Base: "/", To: "/to"},
 		}},
 	}
 
@@ -156,8 +192,8 @@ func TestRewriteParse(t *testing.T) {
 		}
 
 		for j, e := range test.expected {
-			actualRule := actual[j].(*ComplexRule)
-			expectedRule := e.(*ComplexRule)
+			actualRule := actual[j].(ComplexRule)
+			expectedRule := e.(ComplexRule)
 
 			if actualRule.Base != expectedRule.Base {
 				t.Errorf("Test %d, rule %d: Expected Base=%s, got %s",
@@ -175,13 +211,15 @@ func TestRewriteParse(t *testing.T) {
 			}
 
 			if actualRule.Regexp != nil {
-				if actualRule.String() != expectedRule.String() {
+				if actualRule.Regexp.String() != expectedRule.Regexp.String() {
 					t.Errorf("Test %d, rule %d: Expected Pattern=%s, got %s",
-						i, j, expectedRule.String(), actualRule.String())
+						i, j, actualRule.Regexp.String(), expectedRule.Regexp.String())
 				}
 			}
+		}
 
+		if rules_fmt := fmt.Sprintf("%v", actual); strings.HasPrefix(rules_fmt, "%!") {
+			t.Errorf("Test %d: Failed to string encode: %#v", i, rules_fmt)
 		}
 	}
-
 }

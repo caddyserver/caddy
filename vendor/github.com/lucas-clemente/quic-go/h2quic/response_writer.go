@@ -8,8 +8,8 @@ import (
 	"sync"
 
 	quic "github.com/lucas-clemente/quic-go"
-	"github.com/lucas-clemente/quic-go/protocol"
-	"github.com/lucas-clemente/quic-go/utils"
+	"github.com/lucas-clemente/quic-go/internal/protocol"
+	"github.com/lucas-clemente/quic-go/internal/utils"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/hpack"
 )
@@ -24,15 +24,24 @@ type responseWriter struct {
 	header        http.Header
 	status        int // status code passed to WriteHeader
 	headerWritten bool
+
+	logger utils.Logger
 }
 
-func newResponseWriter(headerStream quic.Stream, headerStreamMutex *sync.Mutex, dataStream quic.Stream, dataStreamID protocol.StreamID) *responseWriter {
+func newResponseWriter(
+	headerStream quic.Stream,
+	headerStreamMutex *sync.Mutex,
+	dataStream quic.Stream,
+	dataStreamID protocol.StreamID,
+	logger utils.Logger,
+) *responseWriter {
 	return &responseWriter{
 		header:            http.Header{},
 		headerStream:      headerStream,
 		headerStreamMutex: headerStreamMutex,
 		dataStream:        dataStream,
 		dataStreamID:      dataStreamID,
+		logger:            logger,
 	}
 }
 
@@ -57,7 +66,7 @@ func (w *responseWriter) WriteHeader(status int) {
 		}
 	}
 
-	utils.Infof("Responding with %d", status)
+	w.logger.Infof("Responding with %d", status)
 	w.headerStreamMutex.Lock()
 	defer w.headerStreamMutex.Unlock()
 	h2framer := http2.NewFramer(w.headerStream, nil)
@@ -67,7 +76,7 @@ func (w *responseWriter) WriteHeader(status int) {
 		BlockFragment: headers.Bytes(),
 	})
 	if err != nil {
-		utils.Errorf("could not write h2 header: %s", err.Error())
+		w.logger.Errorf("could not write h2 header: %s", err.Error())
 	}
 }
 
@@ -83,7 +92,7 @@ func (w *responseWriter) Write(p []byte) (int, error) {
 
 func (w *responseWriter) Flush() {}
 
-// TODO: Implement a functional CloseNotify method.
+// This is a NOP. Use http.Request.Context
 func (w *responseWriter) CloseNotify() <-chan bool { return make(<-chan bool) }
 
 // test that we implement http.Flusher

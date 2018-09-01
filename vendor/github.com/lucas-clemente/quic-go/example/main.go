@@ -17,8 +17,10 @@ import (
 
 	_ "net/http/pprof"
 
+	quic "github.com/lucas-clemente/quic-go"
 	"github.com/lucas-clemente/quic-go/h2quic"
-	"github.com/lucas-clemente/quic-go/utils"
+	"github.com/lucas-clemente/quic-go/internal/protocol"
+	"github.com/lucas-clemente/quic-go/internal/utils"
 )
 
 type binds []string
@@ -89,7 +91,7 @@ func init() {
 				}
 			}
 			if err != nil {
-				utils.Infof("Error receiving upload: %#v", err)
+				utils.DefaultLogger.Infof("Error receiving upload: %#v", err)
 			}
 		}
 		io.WriteString(w, `<html><body><form action="/demo/upload" method="post" enctype="multipart/form-data">
@@ -121,14 +123,22 @@ func main() {
 	certPath := flag.String("certpath", getBuildDir(), "certificate directory")
 	www := flag.String("www", "/var/www", "www data")
 	tcp := flag.Bool("tcp", false, "also listen on TCP")
+	tls := flag.Bool("tls", false, "activate support for IETF QUIC (work in progress)")
 	flag.Parse()
 
+	logger := utils.DefaultLogger
+
 	if *verbose {
-		utils.SetLogLevel(utils.LogLevelDebug)
+		logger.SetLogLevel(utils.LogLevelDebug)
 	} else {
-		utils.SetLogLevel(utils.LogLevelInfo)
+		logger.SetLogLevel(utils.LogLevelInfo)
 	}
-	utils.SetLogTimeFormat("")
+	logger.SetLogTimeFormat("")
+
+	versions := protocol.SupportedVersions
+	if *tls {
+		versions = append([]protocol.VersionNumber{protocol.VersionTLS}, versions...)
+	}
 
 	certFile := *certPath + "/fullchain.pem"
 	keyFile := *certPath + "/privkey.pem"
@@ -148,7 +158,11 @@ func main() {
 			if *tcp {
 				err = h2quic.ListenAndServe(bCap, certFile, keyFile, nil)
 			} else {
-				err = h2quic.ListenAndServeQUIC(bCap, certFile, keyFile, nil)
+				server := h2quic.Server{
+					Server:     &http.Server{Addr: bCap},
+					QuicConfig: &quic.Config{Versions: versions},
+				}
+				err = server.ListenAndServeTLS(certFile, keyFile)
 			}
 			if err != nil {
 				fmt.Println(err)

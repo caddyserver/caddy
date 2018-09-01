@@ -1,3 +1,17 @@
+// Copyright 2015 Light Code Labs, LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 // Package rewrite is middleware for rewriting requests internally to
 // a different path.
 package rewrite
@@ -49,22 +63,38 @@ type Rule interface {
 
 // SimpleRule is a simple rewrite rule.
 type SimpleRule struct {
-	From, To string
+	Regexp *regexp.Regexp
+	To     string
+	Negate bool
 }
 
 // NewSimpleRule creates a new Simple Rule
-func NewSimpleRule(from, to string) SimpleRule {
-	return SimpleRule{from, to}
+func NewSimpleRule(from, to string, negate bool) (*SimpleRule, error) {
+	r, err := regexp.Compile(from)
+	if err != nil {
+		return nil, err
+	}
+	return &SimpleRule{
+		Regexp: r,
+		To:     to,
+		Negate: negate,
+	}, nil
 }
 
 // BasePath satisfies httpserver.Config
-func (s SimpleRule) BasePath() string { return s.From }
+func (s SimpleRule) BasePath() string { return "/" }
 
 // Match satisfies httpserver.Config
-func (s SimpleRule) Match(r *http.Request) bool { return s.From == r.URL.Path }
+func (s *SimpleRule) Match(r *http.Request) bool {
+	matches := regexpMatches(s.Regexp, "/", r.URL.Path)
+	if s.Negate {
+		return len(matches) == 0
+	}
+	return len(matches) > 0
+}
 
 // Rewrite rewrites the internal location of the current request.
-func (s SimpleRule) Rewrite(fs http.FileSystem, r *http.Request) Result {
+func (s *SimpleRule) Rewrite(fs http.FileSystem, r *http.Request) Result {
 
 	// attempt rewrite
 	return To(fs, r, s.To, newReplacer(r))
@@ -84,19 +114,19 @@ type ComplexRule struct {
 	// Request matcher
 	httpserver.RequestMatcher
 
-	*regexp.Regexp
+	Regexp *regexp.Regexp
 }
 
 // NewComplexRule creates a new RegexpRule. It returns an error if regexp
 // pattern (pattern) or extensions (ext) are invalid.
-func NewComplexRule(base, pattern, to string, ext []string, matcher httpserver.RequestMatcher) (*ComplexRule, error) {
+func NewComplexRule(base, pattern, to string, ext []string, matcher httpserver.RequestMatcher) (ComplexRule, error) {
 	// validate regexp if present
 	var r *regexp.Regexp
 	if pattern != "" {
 		var err error
 		r, err = regexp.Compile(pattern)
 		if err != nil {
-			return nil, err
+			return ComplexRule{}, err
 		}
 	}
 
@@ -105,7 +135,7 @@ func NewComplexRule(base, pattern, to string, ext []string, matcher httpserver.R
 		if len(v) < 2 || (len(v) < 3 && v[0] == '!') {
 			// check if no extension is specified
 			if v != "/" && v != "!/" {
-				return nil, fmt.Errorf("invalid extension %v", v)
+				return ComplexRule{}, fmt.Errorf("invalid extension %v", v)
 			}
 		}
 	}
@@ -118,7 +148,7 @@ func NewComplexRule(base, pattern, to string, ext []string, matcher httpserver.R
 		httpserver.PathMatcher(base),
 	)
 
-	return &ComplexRule{
+	return ComplexRule{
 		Base:           base,
 		To:             to,
 		Exts:           ext,
@@ -128,13 +158,13 @@ func NewComplexRule(base, pattern, to string, ext []string, matcher httpserver.R
 }
 
 // BasePath satisfies httpserver.Config
-func (r *ComplexRule) BasePath() string { return r.Base }
+func (r ComplexRule) BasePath() string { return r.Base }
 
 // Match satisfies httpserver.Config.
 //
 // Though ComplexRule embeds a RequestMatcher, additional
 // checks are needed which requires a custom implementation.
-func (r *ComplexRule) Match(req *http.Request) bool {
+func (r ComplexRule) Match(req *http.Request) bool {
 	// validate RequestMatcher
 	// includes if and path
 	if !r.RequestMatcher.Match(req) {
@@ -151,16 +181,16 @@ func (r *ComplexRule) Match(req *http.Request) bool {
 		return true
 	}
 	// otherwise validate regex
-	return r.regexpMatches(req.URL.Path) != nil
+	return regexpMatches(r.Regexp, r.Base, req.URL.Path) != nil
 }
 
 // Rewrite rewrites the internal location of the current request.
-func (r *ComplexRule) Rewrite(fs http.FileSystem, req *http.Request) (re Result) {
+func (r ComplexRule) Rewrite(fs http.FileSystem, req *http.Request) (re Result) {
 	replacer := newReplacer(req)
 
 	// validate regexp if present
 	if r.Regexp != nil {
-		matches := r.regexpMatches(req.URL.Path)
+		matches := regexpMatches(r.Regexp, r.Base, req.URL.Path)
 		switch len(matches) {
 		case 0:
 			// no match
@@ -189,7 +219,7 @@ func (r *ComplexRule) Rewrite(fs http.FileSystem, req *http.Request) (re Result)
 
 // matchExt matches rPath against registered file extensions.
 // Returns true if a match is found and false otherwise.
-func (r *ComplexRule) matchExt(rPath string) bool {
+func (r ComplexRule) matchExt(rPath string) bool {
 	f := filepath.Base(rPath)
 	ext := path.Ext(f)
 	if ext == "" {
@@ -216,14 +246,14 @@ func (r *ComplexRule) matchExt(rPath string) bool {
 	return !mustUse
 }
 
-func (r *ComplexRule) regexpMatches(rPath string) []string {
-	if r.Regexp != nil {
+func regexpMatches(regexp *regexp.Regexp, base, rPath string) []string {
+	if regexp != nil {
 		// include trailing slash in regexp if present
-		start := len(r.Base)
-		if strings.HasSuffix(r.Base, "/") {
+		start := len(base)
+		if strings.HasSuffix(base, "/") {
 			start--
 		}
-		return r.FindStringSubmatch(rPath[start:])
+		return regexp.FindStringSubmatch(rPath[start:])
 	}
 	return nil
 }

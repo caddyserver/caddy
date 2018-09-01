@@ -1,3 +1,17 @@
+// Copyright 2015 Light Code Labs, LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package rewrite
 
 import (
@@ -44,6 +58,7 @@ func rewriteParse(c *caddy.Controller) ([]httpserver.HandlerConfig, error) {
 		var base = "/"
 		var pattern, to string
 		var ext []string
+		var negate bool
 
 		args := c.RemainingArgs()
 
@@ -97,7 +112,14 @@ func rewriteParse(c *caddy.Controller) ([]httpserver.HandlerConfig, error) {
 
 		// the only unhandled case is 2 and above
 		default:
-			rule = NewSimpleRule(args[0], strings.Join(args[1:], " "))
+			if args[0] == "not" {
+				negate = true
+				args = args[1:]
+			}
+			rule, err = NewSimpleRule(args[0], strings.Join(args[1:], " "), negate)
+			if err != nil {
+				return nil, err
+			}
 			rules = append(rules, rule)
 		}
 

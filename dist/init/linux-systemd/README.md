@@ -44,9 +44,9 @@ sudo useradd \
   --system --uid 33 www-data
 
 sudo mkdir /etc/caddy
-sudo chown -R root:www-data /etc/caddy
+sudo chown -R root:root /etc/caddy
 sudo mkdir /etc/ssl/caddy
-sudo chown -R www-data:root /etc/ssl/caddy
+sudo chown -R root:www-data /etc/ssl/caddy
 sudo chmod 0770 /etc/ssl/caddy
 ```
 
@@ -55,8 +55,8 @@ and give it appropriate ownership and permissions:
 
 ```bash
 sudo cp /path/to/Caddyfile /etc/caddy/
-sudo chown www-data:www-data /etc/caddy/Caddyfile
-sudo chmod 444 /etc/caddy/Caddyfile
+sudo chown root:root /etc/caddy/Caddyfile
+sudo chmod 644 /etc/caddy/Caddyfile
 ```
 
 Create the home directory for the server and give it appropriate ownership
@@ -91,6 +91,7 @@ Install the systemd service unit configuration file, reload the systemd daemon,
 and start caddy:
 
 ```bash
+wget https://raw.githubusercontent.com/mholt/caddy/master/dist/init/linux-systemd/caddy.service
 sudo cp caddy.service /etc/systemd/system/
 sudo chown root:root /etc/systemd/system/caddy.service
 sudo chmod 644 /etc/systemd/system/caddy.service

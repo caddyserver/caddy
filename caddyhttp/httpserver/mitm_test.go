@@ -1,3 +1,17 @@
+// Copyright 2015 Light Code Labs, LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package httpserver
 
 import (
@@ -18,44 +32,48 @@ func TestParseClientHello(t *testing.T) {
 			// curl 7.51.0 (x86_64-apple-darwin16.0) libcurl/7.51.0 SecureTransport zlib/1.2.8
 			inputHex: `010000a6030358a28c73a71bdfc1f09dee13fecdc58805dcce42ac44254df548f14645f7dc2c00004400ffc02cc02bc024c023c00ac009c008c030c02fc028c027c014c013c012009f009e006b0067003900330016009d009c003d003c0035002f000a00af00ae008d008c008b01000039000a00080006001700180019000b00020100000d00120010040102010501060104030203050306030005000501000000000012000000170000`,
 			expected: rawHelloInfo{
-				cipherSuites:       []uint16{255, 49196, 49195, 49188, 49187, 49162, 49161, 49160, 49200, 49199, 49192, 49191, 49172, 49171, 49170, 159, 158, 107, 103, 57, 51, 22, 157, 156, 61, 60, 53, 47, 10, 175, 174, 141, 140, 139},
-				extensions:         []uint16{10, 11, 13, 5, 18, 23},
-				compressionMethods: []byte{0},
-				curves:             []tls.CurveID{23, 24, 25},
-				points:             []uint8{0},
+				Version:            0x303,
+				CipherSuites:       []uint16{255, 49196, 49195, 49188, 49187, 49162, 49161, 49160, 49200, 49199, 49192, 49191, 49172, 49171, 49170, 159, 158, 107, 103, 57, 51, 22, 157, 156, 61, 60, 53, 47, 10, 175, 174, 141, 140, 139},
+				Extensions:         []uint16{10, 11, 13, 5, 18, 23},
+				CompressionMethods: []byte{0},
+				Curves:             []tls.CurveID{23, 24, 25},
+				Points:             []uint8{0},
 			},
 		},
 		{
 			// Chrome 56
 			inputHex: `010000c003031dae75222dae1433a5a283ddcde8ddabaefbf16d84f250eee6fdff48cdfff8a00000201a1ac02bc02fc02cc030cca9cca8cc14cc13c013c014009c009d002f0035000a010000777a7a0000ff010001000000000e000c0000096c6f63616c686f73740017000000230000000d00140012040308040401050308050501080606010201000500050100000000001200000010000e000c02683208687474702f312e3175500000000b00020100000a000a0008aaaa001d001700182a2a000100`,
 			expected: rawHelloInfo{
-				cipherSuites:       []uint16{6682, 49195, 49199, 49196, 49200, 52393, 52392, 52244, 52243, 49171, 49172, 156, 157, 47, 53, 10},
-				extensions:         []uint16{31354, 65281, 0, 23, 35, 13, 5, 18, 16, 30032, 11, 10, 10794},
-				compressionMethods: []byte{0},
-				curves:             []tls.CurveID{43690, 29, 23, 24},
-				points:             []uint8{0},
+				Version:            0x303,
+				CipherSuites:       []uint16{6682, 49195, 49199, 49196, 49200, 52393, 52392, 52244, 52243, 49171, 49172, 156, 157, 47, 53, 10},
+				Extensions:         []uint16{31354, 65281, 0, 23, 35, 13, 5, 18, 16, 30032, 11, 10, 10794},
+				CompressionMethods: []byte{0},
+				Curves:             []tls.CurveID{43690, 29, 23, 24},
+				Points:             []uint8{0},
 			},
 		},
 		{
 			// Firefox 51
 			inputHex: `010000bd030375f9022fc3a6562467f3540d68013b2d0b961979de6129e944efe0b35531323500001ec02bc02fcca9cca8c02cc030c00ac009c013c01400330039002f0035000a010000760000000e000c0000096c6f63616c686f737400170000ff01000100000a000a0008001d001700180019000b00020100002300000010000e000c02683208687474702f312e31000500050100000000ff030000000d0020001e040305030603020308040805080604010501060102010402050206020202`,
 			expected: rawHelloInfo{
-				cipherSuites:       []uint16{49195, 49199, 52393, 52392, 49196, 49200, 49162, 49161, 49171, 49172, 51, 57, 47, 53, 10},
-				extensions:         []uint16{0, 23, 65281, 10, 11, 35, 16, 5, 65283, 13},
-				compressionMethods: []byte{0},
-				curves:             []tls.CurveID{29, 23, 24, 25},
-				points:             []uint8{0},
+				Version:            0x303,
+				CipherSuites:       []uint16{49195, 49199, 52393, 52392, 49196, 49200, 49162, 49161, 49171, 49172, 51, 57, 47, 53, 10},
+				Extensions:         []uint16{0, 23, 65281, 10, 11, 35, 16, 5, 65283, 13},
+				CompressionMethods: []byte{0},
+				Curves:             []tls.CurveID{29, 23, 24, 25},
+				Points:             []uint8{0},
 			},
 		},
 		{
 			// openssl s_client (OpenSSL 0.9.8zh 14 Jan 2016)
 			inputHex: `0100012b03035d385236b8ca7b7946fa0336f164e76bf821ed90e8de26d97cc677671b6f36380000acc030c02cc028c024c014c00a00a500a300a1009f006b006a0069006800390038003700360088008700860085c032c02ec02ac026c00fc005009d003d00350084c02fc02bc027c023c013c00900a400a200a0009e00670040003f003e0033003200310030009a0099009800970045004400430042c031c02dc029c025c00ec004009c003c002f009600410007c011c007c00cc00200050004c012c008001600130010000dc00dc003000a00ff0201000055000b000403000102000a001c001a00170019001c001b0018001a0016000e000d000b000c0009000a00230000000d0020001e060106020603050105020503040104020403030103020303020102020203000f000101`,
 			expected: rawHelloInfo{
-				cipherSuites:       []uint16{49200, 49196, 49192, 49188, 49172, 49162, 165, 163, 161, 159, 107, 106, 105, 104, 57, 56, 55, 54, 136, 135, 134, 133, 49202, 49198, 49194, 49190, 49167, 49157, 157, 61, 53, 132, 49199, 49195, 49191, 49187, 49171, 49161, 164, 162, 160, 158, 103, 64, 63, 62, 51, 50, 49, 48, 154, 153, 152, 151, 69, 68, 67, 66, 49201, 49197, 49193, 49189, 49166, 49156, 156, 60, 47, 150, 65, 7, 49169, 49159, 49164, 49154, 5, 4, 49170, 49160, 22, 19, 16, 13, 49165, 49155, 10, 255},
-				extensions:         []uint16{11, 10, 35, 13, 15},
-				compressionMethods: []byte{1, 0},
-				curves:             []tls.CurveID{23, 25, 28, 27, 24, 26, 22, 14, 13, 11, 12, 9, 10},
-				points:             []uint8{0, 1, 2},
+				Version:            0x303,
+				CipherSuites:       []uint16{49200, 49196, 49192, 49188, 49172, 49162, 165, 163, 161, 159, 107, 106, 105, 104, 57, 56, 55, 54, 136, 135, 134, 133, 49202, 49198, 49194, 49190, 49167, 49157, 157, 61, 53, 132, 49199, 49195, 49191, 49187, 49171, 49161, 164, 162, 160, 158, 103, 64, 63, 62, 51, 50, 49, 48, 154, 153, 152, 151, 69, 68, 67, 66, 49201, 49197, 49193, 49189, 49166, 49156, 156, 60, 47, 150, 65, 7, 49169, 49159, 49164, 49154, 5, 4, 49170, 49160, 22, 19, 16, 13, 49165, 49155, 10, 255},
+				Extensions:         []uint16{11, 10, 35, 13, 15},
+				CompressionMethods: []byte{1, 0},
+				Curves:             []tls.CurveID{23, 25, 28, 27, 24, 26, 22, 14, 13, 11, 12, 9, 10},
+				Points:             []uint8{0, 1, 2},
 			},
 		},
 	} {
@@ -108,20 +126,20 @@ func TestHeuristicFunctionsAndHandler(t *testing.T) {
 				helloHex:     `010000c003031dae75222dae1433a5a283ddcde8ddabaefbf16d84f250eee6fdff48cdfff8a00000201a1ac02bc02fc02cc030cca9cca8cc14cc13c013c014009c009d002f0035000a010000777a7a0000ff010001000000000e000c0000096c6f63616c686f73740017000000230000000d00140012040308040401050308050501080606010201000500050100000000001200000010000e000c02683208687474702f312e3175500000000b00020100000a000a0008aaaa001d001700182a2a000100`,
 				interception: false,
 			},
-			// TODO: Chrome on iOS will use iOS' TLS stack for requests that load
-			// the web page (apparently required by the dev ToS) but will use its
-			// own TLS stack for everything else, it seems. Figure out a decent way
-			// to test this with a nice, unified corpus that allows for this variance.
-			// {
-			// 	// Chrome on iOS
-			// 	userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 10_0_2 like Mac OS X) AppleWebKit/602.1.50 (KHTML, like Gecko) CriOS/56.0.2924.79 Mobile/14A456 Safari/602.1",
-			// 	helloHex:  `010000de030358b062c509b21410a6496b5a82bfec74436cdecebe8ea1da29799939bbd3c17200002c00ffc02cc02bc024c023c00ac009c008c030c02fc028c027c014c013c012009d009c003d003c0035002f000a0100008900000014001200000f66696e6572706978656c732e636f6d000a00080006001700180019000b00020100000d00120010040102010501060104030203050306033374000000100030002e0268320568322d31360568322d31350568322d313408737064792f332e3106737064792f3308687474702f312e310005000501000000000012000000170000`,
-			// },
-			// {
-			// 	// Chrome on iOS (requesting favicon)
-			// 	userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 10_0_2 like Mac OS X) AppleWebKit/602.1.50 (KHTML, like Gecko) CriOS/56.0.2924.79 Mobile/14A456 Safari/602.1",
-			// 	helloHex:  `010000c20303863eb64788e3b9638c261300318411cbdd8f09576d58eec1e744b6ce944f574f0000208a8acca9cca8cc14cc13c02bc02fc02cc030c013c014009c009d002f0035000a01000079baba0000ff0100010000000014001200000f66696e6572706978656c732e636f6d0017000000230000000d00140012040308040401050308050501080606010201000500050100000000001200000010000e000c02683208687474702f312e31000b00020100000a000a00083a3a001d001700184a4a000100`,
-			// },
+			{
+				// Chrome on iOS will use iOS' TLS stack for requests that load
+				// the web page (apparently required by the dev ToS) but will use its
+				// own TLS stack for everything else, it seems.
+
+				// Chrome on iOS
+				userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 10_0_2 like Mac OS X) AppleWebKit/602.1.50 (KHTML, like Gecko) CriOS/56.0.2924.79 Mobile/14A456 Safari/602.1",
+				helloHex:  `010000de030358b062c509b21410a6496b5a82bfec74436cdecebe8ea1da29799939bbd3c17200002c00ffc02cc02bc024c023c00ac009c008c030c02fc028c027c014c013c012009d009c003d003c0035002f000a0100008900000014001200000f66696e6572706978656c732e636f6d000a00080006001700180019000b00020100000d00120010040102010501060104030203050306033374000000100030002e0268320568322d31360568322d31350568322d313408737064792f332e3106737064792f3308687474702f312e310005000501000000000012000000170000`,
+			},
+			{
+				// Chrome on iOS (requesting favicon)
+				userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 10_0_2 like Mac OS X) AppleWebKit/602.1.50 (KHTML, like Gecko) CriOS/56.0.2924.79 Mobile/14A456 Safari/602.1",
+				helloHex:  `010000c20303863eb64788e3b9638c261300318411cbdd8f09576d58eec1e744b6ce944f574f0000208a8acca9cca8cc14cc13c02bc02fc02cc030c013c014009c009d002f0035000a01000079baba0000ff0100010000000014001200000f66696e6572706978656c732e636f6d0017000000230000000d00140012040308040401050308050501080606010201000500050100000000001200000010000e000c02683208687474702f312e31000b00020100000a000a00083a3a001d001700184a4a000100`,
+			},
 			{
 				userAgent:    "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/56.0.2924.87 Safari/537.36",
 				helloHex:     `010000c603036f717a88212c3e9e41940f82c42acb3473e0e4a64e8f52d9af33d34e972e08a30000206a6ac02bc02fc02cc030cca9cca8cc14cc13c013c014009c009d002f0035000a0100007d7a7a0000ff0100010000000014001200000f66696e6572706978656c732e636f6d0017000000230000000d00140012040308040401050308050501080606010201000500050100000000001200000010000e000c02683208687474702f312e3175500000000b00020100000a000a00087a7a001d001700188a8a000100`,
@@ -183,6 +201,18 @@ func TestHeuristicFunctionsAndHandler(t *testing.T) {
 			{
 				userAgent:    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_3) AppleWebKit/602.4.8 (KHTML, like Gecko) Version/10.0.3 Safari/602.4.8",
 				helloHex:     `010000d2030358a295b513c8140c6ff880f4a8a73cc830ed2dab2c4f2068eb365228d828732e00002600ffc02cc02bc024c023c00ac009c030c02fc028c027c014c013009d009c003d003c0035002f010000830000000e000c0000096c6f63616c686f7374000a00080006001700180019000b00020100000d00120010040102010501060104030203050306033374000000100030002e0268320568322d31360568322d31350568322d313408737064792f332e3106737064792f3308687474702f312e310005000501000000000012000000170000`,
+				interception: false,
+			},
+			{
+				// I think this was iOS 11 beta
+				userAgent:    "Mozilla/5.0 (iPhone; CPU iPhone OS 11_0 like Mac OS X) AppleWebKit/604.1.28 (KHTML, like Gecko) Version/11.0 Mobile/15A5318g Safari/604.1",
+				helloHex:     `010000e10303be294e11847ba01301e0bb6129f4a0d66344602141a8f0a1ab0750a1db145755000028c02cc02bc024c023cca9c00ac009c030c02fc028c027cca8c014c013009d009c003d003c0035002f01000090ff0100010000000014001200000f66696e6572706978656c732e636f6d00170000000d00140012040308040401050308050501080606010201000500050100000000337400000012000000100030002e0268320568322d31360568322d31350568322d313408737064792f332e3106737064792f3308687474702f312e31000b00020100000a00080006001d00170018`,
+				interception: false,
+			},
+			{
+				// iOS 11 stable
+				userAgent:    "Mozilla/5.0 (iPhone; CPU iPhone OS 11_0 like Mac OS X) AppleWebKit/604.1.38 (KHTML, like Gecko) Version/11.0 Mobile/15A372 Safari/604.1",
+				helloHex:     `010000dc030327fafb16708fcbe489fda332260d32b1a22bea6672a72b5e61d7b9963df1b10d000028c02cc02bc024c023c00ac009cca9c030c02fc028c027c014c013cca8009d009c003d003c0035002f0100008bff010001000000000f000d00000a6d69746d2e776174636800170000000d00140012040308040401050308050501080606010201000500050100000000337400000012000000100030002e0268320568322d31360568322d31350568322d313408737064792f332e3106737064792f3308687474702f312e31000b00020100000a00080006001d00170018`,
 				interception: false,
 			},
 		},
@@ -306,28 +336,17 @@ func TestHeuristicFunctionsAndHandler(t *testing.T) {
 			// should return false, with as little logic as possible,
 			// but with enough logic to force TLS proxies to do a
 			// good job preserving characterstics of the handshake.
-			var correct bool
-			switch client {
-			case "Chrome":
-				correct = isChrome && !isFirefox && !isSafari && !isEdge && !isTor
-			case "Firefox":
-				correct = !isChrome && isFirefox && !isSafari && !isEdge && !isTor
-			case "Safari":
-				correct = !isChrome && !isFirefox && isSafari && !isEdge && !isTor
-			case "Edge":
-				correct = !isChrome && !isFirefox && !isSafari && isEdge && !isTor
-			case "Tor":
-				correct = !isChrome && !isFirefox && !isSafari && !isEdge && isTor
-			case "Other":
-				correct = !isChrome && !isFirefox && !isSafari && !isEdge && !isTor
+			if (isChrome && (isFirefox || isSafari || isEdge || isTor)) ||
+				(isFirefox && (isChrome || isSafari || isEdge || isTor)) ||
+				(isSafari && (isChrome || isFirefox || isEdge || isTor)) ||
+				(isEdge && (isChrome || isFirefox || isSafari || isTor)) ||
+				(isTor && (isChrome || isFirefox || isSafari || isEdge)) {
+				t.Errorf("[%s] Test %d: Multiple fingerprinting functions matched: "+
+					"Chrome=%v Firefox=%v Safari=%v Edge=%v Tor=%v\n\tparsed hello dec: %+v\n",
+					client, i, isChrome, isFirefox, isSafari, isEdge, isTor, parsed)
 			}
 
-			if !correct {
-				t.Errorf("[%s] Test %d: Chrome=%v Firefox=%v Safari=%v Edge=%v Tor=%v\n\tparsed hello dec: %+v\n\tparsed hello hex: %#x\n",
-					client, i, isChrome, isFirefox, isSafari, isEdge, isTor, parsed, parsed)
-			}
-
-			// test the handler too
+			// test the handler and detection results
 			var got, checked bool
 			want := ch.interception
 			handler := &tlsHandler{
@@ -352,7 +371,54 @@ func TestHeuristicFunctionsAndHandler(t *testing.T) {
 			if got != want {
 				t.Errorf("[%s] Test %d: Expected MITM=%v but got %v (type assertion OK (checked)=%v)",
 					client, i, want, got, checked)
+				t.Errorf("[%s] Test %d: Looks like Chrome=%v Firefox=%v Safari=%v Edge=%v Tor=%v\n\tparsed hello dec: %+v\n",
+					client, i, isChrome, isFirefox, isSafari, isEdge, isTor, parsed)
 			}
+		}
+	}
+}
+
+func TestGetVersion(t *testing.T) {
+	for i, test := range []struct {
+		UserAgent    string
+		SoftwareName string
+		Version      float64
+	}{
+		{
+			UserAgent:    "Mozilla/5.0 (Windows NT 6.1; rv:45.0) Gecko/20100101 Firefox/45.0",
+			SoftwareName: "Firefox",
+			Version:      45.0,
+		},
+		{
+			UserAgent:    "Mozilla/5.0 (Windows NT 6.1; rv:45.0) Gecko/20100101 Firefox/45.0 more_stuff_here",
+			SoftwareName: "Firefox",
+			Version:      45.0,
+		},
+		{
+			UserAgent:    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.79 Safari/537.36 Edge/14.14393",
+			SoftwareName: "Safari",
+			Version:      537.36,
+		},
+		{
+			UserAgent:    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.79 Safari/537.36 Edge/14.14393",
+			SoftwareName: "Chrome",
+			Version:      51.0270479,
+		},
+		{
+			UserAgent:    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.79 Safari/537.36 Edge/14.14393",
+			SoftwareName: "Mozilla",
+			Version:      5.0,
+		},
+		{
+			UserAgent:    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.79 Safari/537.36 Edge/14.14393",
+			SoftwareName: "curl",
+			Version:      -1,
+		},
+	} {
+		actual := getVersion(test.UserAgent, test.SoftwareName)
+		if actual != test.Version {
+			t.Errorf("Test [%d]: Expected version=%f, got version=%f for %s in '%s'",
+				i, test.Version, actual, test.SoftwareName, test.UserAgent)
 		}
 	}
 }

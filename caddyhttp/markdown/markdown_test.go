@@ -1,17 +1,29 @@
+// Copyright 2015 Light Code Labs, LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package markdown
 
 import (
-	"bufio"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"text/template"
-	"time"
 
+	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 	"github.com/russross/blackfriday"
 )
@@ -79,19 +91,23 @@ func TestMarkdown(t *testing.T) {
 		}),
 	}
 
-	req, err := http.NewRequest("GET", "/blog/test.md", nil)
-	if err != nil {
-		t.Fatalf("Could not create HTTP request: %v", err)
+	get := func(url string) string {
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			t.Fatalf("Could not create HTTP request: %v", err)
+		}
+		rec := httptest.NewRecorder()
+		code, err := md.ServeHTTP(rec, req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if code != http.StatusOK {
+			t.Fatalf("Wrong status, expected: %d and got %d", http.StatusOK, code)
+		}
+		return rec.Body.String()
 	}
 
-	rec := httptest.NewRecorder()
-
-	md.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("Wrong status, expected: %d and got %d", http.StatusOK, rec.Code)
-	}
-
-	respBody := rec.Body.String()
+	respBody := get("/blog/test.md")
 	expectedBody := `<!DOCTYPE html>
 <html>
 <head>
@@ -99,7 +115,6 @@ func TestMarkdown(t *testing.T) {
 </head>
 <body>
 <h1>Header for: Markdown test 1</h1>
-
 Welcome to A Caddy website!
 <h2>Welcome on the blog</h2>
 
@@ -113,46 +128,26 @@ Welcome to A Caddy website!
 </body>
 </html>
 `
-	if !equalStrings(respBody, expectedBody) {
-		t.Fatalf("Expected body: %v got: %v", expectedBody, respBody)
+	if respBody != expectedBody {
+		t.Fatalf("Expected body:\n%q\ngot:\n%q", expectedBody, respBody)
 	}
 
-	req, err = http.NewRequest("GET", "/docflags/test.md", nil)
-	if err != nil {
-		t.Fatalf("Could not create HTTP request: %v", err)
-	}
-	rec = httptest.NewRecorder()
-
-	md.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("Wrong status, expected: %d and got %d", http.StatusOK, rec.Code)
-	}
-	respBody = rec.Body.String()
+	respBody = get("/docflags/test.md")
 	expectedBody = `Doc.var_string hello
-Doc.var_bool <no value>
-DocFlags.var_string <no value>
-DocFlags.var_bool true`
+Doc.var_bool true
+`
 
-	if !equalStrings(respBody, expectedBody) {
-		t.Fatalf("Expected body: %v got: %v", expectedBody, respBody)
+	if respBody != expectedBody {
+		t.Fatalf("Expected body:\n%q\ngot:\n%q", expectedBody, respBody)
 	}
 
-	req, err = http.NewRequest("GET", "/log/test.md", nil)
-	if err != nil {
-		t.Fatalf("Could not create HTTP request: %v", err)
-	}
-	rec = httptest.NewRecorder()
-
-	md.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("Wrong status, expected: %d and got %d", http.StatusOK, rec.Code)
-	}
-	respBody = rec.Body.String()
+	respBody = get("/log/test.md")
 	expectedBody = `<!DOCTYPE html>
 <html>
 	<head>
 		<title>Markdown test 2</title>
 		<meta charset="utf-8">
+		
 		<link rel="stylesheet" href="/resources/css/log.css">
 		<link rel="stylesheet" href="/resources/css/default.css">
 		<script src="/resources/js/log.js"></script>
@@ -171,26 +166,11 @@ DocFlags.var_bool true`
 	</body>
 </html>`
 
-	if !equalStrings(respBody, expectedBody) {
-		t.Fatalf("Expected body: %v got: %v", expectedBody, respBody)
+	if respBody != expectedBody {
+		t.Fatalf("Expected body:\n%q\ngot:\n%q", expectedBody, respBody)
 	}
 
-	req, err = http.NewRequest("GET", "/og/first.md", nil)
-	if err != nil {
-		t.Fatalf("Could not create HTTP request: %v", err)
-	}
-	rec = httptest.NewRecorder()
-	currenttime := time.Now().Local().Add(-time.Second)
-	_ = os.Chtimes("testdata/og/first.md", currenttime, currenttime)
-	currenttime = time.Now().Local()
-	_ = os.Chtimes("testdata/og_static/og/first.md/index.html", currenttime, currenttime)
-	time.Sleep(time.Millisecond * 200)
-
-	md.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("Wrong status, expected: %d and got %d", http.StatusOK, rec.Code)
-	}
-	respBody = rec.Body.String()
+	respBody = get("/og/first.md")
 	expectedBody = `<!DOCTYPE html>
 <html>
 <head>
@@ -198,30 +178,16 @@ DocFlags.var_bool true`
 </head>
 <body>
 <h1>Header for: first_post</h1>
-
 Welcome to title!
 <h1>Test h1</h1>
 
 </body>
-</html>`
+</html>
+`
 
-	if !equalStrings(respBody, expectedBody) {
-		t.Fatalf("Expected body: %v got: %v", expectedBody, respBody)
+	if respBody != expectedBody {
+		t.Fatalf("Expected body:\n%q\ngot:\n%q", expectedBody, respBody)
 	}
-}
-
-func equalStrings(s1, s2 string) bool {
-	s1 = strings.TrimSpace(s1)
-	s2 = strings.TrimSpace(s2)
-	in := bufio.NewScanner(strings.NewReader(s1))
-	for in.Scan() {
-		txt := strings.TrimSpace(in.Text())
-		if !strings.HasPrefix(strings.TrimSpace(s2), txt) {
-			return false
-		}
-		s2 = strings.Replace(s2, txt, "", 1)
-	}
-	return true
 }
 
 func setDefaultTemplate(filename string) *template.Template {
@@ -231,4 +197,69 @@ func setDefaultTemplate(filename string) *template.Template {
 	}
 
 	return template.Must(GetDefaultTemplate().Parse(string(buf)))
+}
+
+func TestTemplateReload(t *testing.T) {
+	const (
+		templateFile = "testdata/test.html"
+		targetFile   = "testdata/hello.md"
+	)
+	c := caddy.NewTestController("http", `markdown {
+		template `+templateFile+`
+	}`)
+
+	err := ioutil.WriteFile(templateFile, []byte("hello {{.Doc.body}}"), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = ioutil.WriteFile(targetFile, []byte("caddy"), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		os.Remove(templateFile)
+		os.Remove(targetFile)
+	}()
+
+	config, err := markdownParse(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	md := Markdown{
+		Root:    "./testdata",
+		FileSys: http.Dir("./testdata"),
+		Configs: config,
+		Next: httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
+			t.Fatalf("Next shouldn't be called")
+			return 0, nil
+		}),
+	}
+
+	req := httptest.NewRequest("GET", "/hello.md", nil)
+	get := func() string {
+		rec := httptest.NewRecorder()
+		code, err := md.ServeHTTP(rec, req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if code != http.StatusOK {
+			t.Fatalf("Wrong status, expected: %d and got %d", http.StatusOK, code)
+		}
+		return rec.Body.String()
+	}
+
+	if expect, got := "hello <p>caddy</p>\n", get(); expect != got {
+		t.Fatalf("Expected body:\n%q\nbut got:\n%q", expect, got)
+	}
+
+	// update template
+	err = ioutil.WriteFile(templateFile, []byte("hi {{.Doc.body}}"), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if expect, got := "hi <p>caddy</p>\n", get(); expect != got {
+		t.Fatalf("Expected body:\n%q\nbut got:\n%q", expect, got)
+	}
+
 }

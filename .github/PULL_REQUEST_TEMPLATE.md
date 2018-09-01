@@ -1,4 +1,6 @@
-(Thank you for contributing to Caddy! Please fill this out to help us make the most of your pull request.)
+<!--
+Thank you for contributing to Caddy! Please fill this out to help us make the most of your pull request.
+-->
 
 ### 1. What does this change do, exactly?
 

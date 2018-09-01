@@ -1,3 +1,17 @@
+// Copyright 2015 Light Code Labs, LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package markdown
 
 import (
@@ -44,10 +58,11 @@ func markdownParse(c *caddy.Controller) ([]*Config, error) {
 
 	for c.Next() {
 		md := &Config{
-			Renderer:   blackfriday.HtmlRenderer(0, "", ""),
-			Extensions: make(map[string]struct{}),
-			Template:   GetDefaultTemplate(),
-			IndexFiles: []string{},
+			Renderer:      blackfriday.HtmlRenderer(0, "", ""),
+			Extensions:    make(map[string]struct{}),
+			Template:      GetDefaultTemplate(),
+			IndexFiles:    []string{},
+			TemplateFiles: make(map[string]*cachedFileInfo),
 		}
 
 		// Get the path scope
@@ -115,14 +130,22 @@ func loadParams(c *caddy.Controller, mdc *Config) error {
 			fpath := filepath.ToSlash(filepath.Clean(cfg.Root + string(filepath.Separator) + tArgs[0]))
 
 			if err := SetTemplate(mdc.Template, "", fpath); err != nil {
-				c.Errf("default template parse error: %v", err)
+				return c.Errf("default template parse error: %v", err)
+			}
+
+			mdc.TemplateFiles[""] = &cachedFileInfo{
+				path: fpath,
 			}
 			return nil
 		case 2:
 			fpath := filepath.ToSlash(filepath.Clean(cfg.Root + string(filepath.Separator) + tArgs[1]))
 
 			if err := SetTemplate(mdc.Template, tArgs[0], fpath); err != nil {
-				c.Errf("template parse error: %v", err)
+				return c.Errf("template parse error: %v", err)
+			}
+
+			mdc.TemplateFiles[tArgs[0]] = &cachedFileInfo{
+				path: fpath,
 			}
 			return nil
 		}
@@ -130,12 +153,24 @@ func loadParams(c *caddy.Controller, mdc *Config) error {
 		if !c.NextArg() {
 			return c.ArgErr()
 		}
-		_, err := mdc.Template.ParseGlob(c.Val())
+
+		pattern := c.Val()
+		_, err := mdc.Template.ParseGlob(pattern)
 		if err != nil {
-			c.Errf("template load error: %v", err)
+			return c.Errf("template load error: %v", err)
 		}
 		if c.NextArg() {
 			return c.ArgErr()
+		}
+
+		paths, err := filepath.Glob(pattern)
+		if err != nil {
+			return c.Errf("glob %q failed: %v", pattern, err)
+		}
+		for _, path := range paths {
+			mdc.TemplateFiles[filepath.Base(path)] = &cachedFileInfo{
+				path: path,
+			}
 		}
 		return nil
 	default:

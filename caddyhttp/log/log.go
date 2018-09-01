@@ -1,8 +1,23 @@
+// Copyright 2015 Light Code Labs, LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 // Package log implements request (access) logging middleware.
 package log
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 
 	"github.com/mholt/caddy"
@@ -52,7 +67,22 @@ func (l Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 
 			// Write log entries
 			for _, e := range rule.Entries {
+				// Check if there is an exception to prevent log being written
+				if !e.Log.ShouldLog(r.URL.Path) {
+					continue
+				}
+
+				// Mask IP Address
+				if e.Log.IPMaskExists {
+					hostip, _, err := net.SplitHostPort(r.RemoteAddr)
+					if err == nil {
+						maskedIP := e.Log.MaskIP(hostip)
+						// Overwrite log value with Masked version
+						rep.Set("remote", maskedIP)
+					}
+				}
 				e.Log.Println(rep.Replace(e.Format))
+
 			}
 
 			return status, err
@@ -77,7 +107,7 @@ const (
 	// DefaultLogFilename is the default log filename.
 	DefaultLogFilename = "access.log"
 	// CommonLogFormat is the common log format.
-	CommonLogFormat = `{remote} ` + CommonLogEmptyValue + " " + CommonLogEmptyValue + ` [{when}] "{method} {uri} {proto}" {status} {size}`
+	CommonLogFormat = `{remote} ` + CommonLogEmptyValue + ` {user} [{when}] "{method} {uri} {proto}" {status} {size}`
 	// CommonLogEmptyValue is the common empty log value.
 	CommonLogEmptyValue = "-"
 	// CombinedLogFormat is the combined log format.

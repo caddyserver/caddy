@@ -1,9 +1,24 @@
+// Copyright 2015 Light Code Labs, LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package httpserver
 
 import (
 	"bytes"
 	"io"
 	"log"
+	"net"
 	"os"
 	"strings"
 	"sync"
@@ -23,9 +38,13 @@ var remoteSyslogPrefixes = map[string]string{
 type Logger struct {
 	Output string
 	*log.Logger
-	Roller *LogRoller
-	writer io.Writer
-	fileMu *sync.RWMutex
+	Roller       *LogRoller
+	writer       io.Writer
+	fileMu       *sync.RWMutex
+	V4ipMask     net.IPMask
+	V6ipMask     net.IPMask
+	IPMaskExists bool
+	Exceptions   []string
 }
 
 // NewTestLogger creates logger suitable for testing purposes
@@ -48,6 +67,33 @@ func (l Logger) Printf(format string, args ...interface{}) {
 	l.fileMu.RLock()
 	l.Logger.Printf(format, args...)
 	l.fileMu.RUnlock()
+}
+
+func (l Logger) MaskIP(ip string) string {
+	var reqIP net.IP
+	// If unable to parse, simply return IP as provided.
+	reqIP = net.ParseIP(ip)
+	if reqIP == nil {
+		return ip
+	}
+
+	if reqIP.To4() != nil {
+		return reqIP.Mask(l.V4ipMask).String()
+	} else {
+		return reqIP.Mask(l.V6ipMask).String()
+	}
+
+}
+
+// ShouldLog returns true if the path is not exempted from
+// being logged (i.e. it is not found in l.Exceptions).
+func (l Logger) ShouldLog(path string) bool {
+	for _, exc := range l.Exceptions {
+		if Path(path).Matches(exc) {
+			return false
+		}
+	}
+	return true
 }
 
 // Attach binds logger Start and Close functions to

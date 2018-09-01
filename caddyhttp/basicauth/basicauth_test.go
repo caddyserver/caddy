@@ -1,3 +1,17 @@
+// Copyright 2015 Light Code Labs, LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package basicauth
 
 import (
@@ -157,7 +171,7 @@ md5:$apr1$l42y8rex$pOA2VJ0x/0TwaFeAF9nX61`
 
 	htfh, err := ioutil.TempFile("", "basicauth-")
 	if err != nil {
-		t.Skipf("Error creating temp file (%v), will skip htpassword test")
+		t.Skip("Error creating temp file, will skip htpassword test")
 		return
 	}
 	defer os.Remove(htfh.Name())

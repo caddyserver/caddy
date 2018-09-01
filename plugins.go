@@ -1,3 +1,17 @@
+// Copyright 2015 Light Code Labs, LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package caddy
 
 import (
@@ -5,6 +19,7 @@ import (
 	"log"
 	"net"
 	"sort"
+	"sync"
 
 	"github.com/mholt/caddy/caddyfile"
 )
@@ -24,7 +39,7 @@ var (
 
 	// eventHooks is a map of hook name to Hook. All hooks plugins
 	// must have a name.
-	eventHooks = make(map[string]EventHook)
+	eventHooks = &sync.Map{}
 
 	// parsingCallbacks maps server type to map of directive
 	// to list of callback functions. These aren't really
@@ -39,29 +54,58 @@ var (
 
 // DescribePlugins returns a string describing the registered plugins.
 func DescribePlugins() string {
+	pl := ListPlugins()
+
 	str := "Server types:\n"
-	for name := range serverTypes {
+	for _, name := range pl["server_types"] {
 		str += "  " + name + "\n"
 	}
 
-	// List the loaders in registration order
 	str += "\nCaddyfile loaders:\n"
-	for _, loader := range caddyfileLoaders {
-		str += "  " + loader.name + "\n"
-	}
-	if defaultCaddyfileLoader.name != "" {
-		str += "  " + defaultCaddyfileLoader.name + "\n"
+	for _, name := range pl["caddyfile_loaders"] {
+		str += "  " + name + "\n"
 	}
 
-	if len(eventHooks) > 0 {
-		// List the event hook plugins
+	if len(pl["event_hooks"]) > 0 {
 		str += "\nEvent hook plugins:\n"
-		for hookPlugin := range eventHooks {
-			str += "  hook." + hookPlugin + "\n"
+		for _, name := range pl["event_hooks"] {
+			str += "  hook." + name + "\n"
 		}
 	}
 
-	// Let's alphabetize the rest of these...
+	str += "\nOther plugins:\n"
+	for _, name := range pl["others"] {
+		str += "  " + name + "\n"
+	}
+
+	return str
+}
+
+// ListPlugins makes a list of the registered plugins,
+// keyed by plugin type.
+func ListPlugins() map[string][]string {
+	p := make(map[string][]string)
+
+	// server type plugins
+	for name := range serverTypes {
+		p["server_types"] = append(p["server_types"], name)
+	}
+
+	// caddyfile loaders in registration order
+	for _, loader := range caddyfileLoaders {
+		p["caddyfile_loaders"] = append(p["caddyfile_loaders"], loader.name)
+	}
+	if defaultCaddyfileLoader.name != "" {
+		p["caddyfile_loaders"] = append(p["caddyfile_loaders"], defaultCaddyfileLoader.name)
+	}
+
+	// List the event hook plugins
+	eventHooks.Range(func(k, _ interface{}) bool {
+		p["event_hooks"] = append(p["event_hooks"], k.(string))
+		return true
+	})
+
+	// alphabetize the rest of the plugins
 	var others []string
 	for stype, stypePlugins := range plugins {
 		for name := range stypePlugins {
@@ -75,12 +119,11 @@ func DescribePlugins() string {
 	}
 
 	sort.Strings(others)
-	str += "\nOther plugins:\n"
 	for _, name := range others {
-		str += "  " + name + "\n"
+		p["others"] = append(p["others"], name)
 	}
 
-	return str
+	return p
 }
 
 // ValidDirectives returns the list of all directives that are
@@ -177,7 +220,7 @@ type ServerType struct {
 	// startup phases before this one. It's a way to keep
 	// each set of server instances separate and to reduce
 	// the amount of global state you need.
-	NewContext func() Context
+	NewContext func(inst *Instance) Context
 }
 
 // Plugin is a type which holds information about a plugin.
@@ -217,10 +260,13 @@ func RegisterPlugin(name string, plugin Plugin) {
 // EventName represents the name of an event used with event hooks.
 type EventName string
 
-// Define the event names for the startup and shutdown events
+// Define names for the various events
 const (
-	StartupEvent  EventName = "startup"
-	ShutdownEvent EventName = "shutdown"
+	StartupEvent         EventName = "startup"
+	ShutdownEvent                  = "shutdown"
+	CertRenewEvent                 = "certrenew"
+	InstanceStartupEvent           = "instancestartup"
+	InstanceRestartEvent           = "instancerestart"
 )
 
 // EventHook is a type which holds information about a startup hook plugin.
@@ -232,23 +278,53 @@ func RegisterEventHook(name string, hook EventHook) {
 	if name == "" {
 		panic("event hook must have a name")
 	}
-	if _, dup := eventHooks[name]; dup {
+	_, dup := eventHooks.LoadOrStore(name, hook)
+	if dup {
 		panic("hook named " + name + " already registered")
 	}
-	eventHooks[name] = hook
 }
 
 // EmitEvent executes the different hooks passing the EventType as an
 // argument. This is a blocking function. Hook developers should
 // use 'go' keyword if they don't want to block Caddy.
 func EmitEvent(event EventName, info interface{}) {
-	for name, hook := range eventHooks {
-		err := hook(event, info)
-
+	eventHooks.Range(func(k, v interface{}) bool {
+		err := v.(EventHook)(event, info)
 		if err != nil {
-			log.Printf("error on '%s' hook: %v", name, err)
+			log.Printf("error on '%s' hook: %v", k.(string), err)
 		}
-	}
+		return true
+	})
+}
+
+// cloneEventHooks return a clone of the event hooks *sync.Map
+func cloneEventHooks() *sync.Map {
+	c := &sync.Map{}
+	eventHooks.Range(func(k, v interface{}) bool {
+		c.Store(k, v)
+		return true
+	})
+	return c
+}
+
+// purgeEventHooks purges all event hooks from the map
+func purgeEventHooks() {
+	eventHooks.Range(func(k, _ interface{}) bool {
+		eventHooks.Delete(k)
+		return true
+	})
+}
+
+// restoreEventHooks restores eventHooks with a provided *sync.Map
+func restoreEventHooks(m *sync.Map) {
+	// Purge old event hooks
+	purgeEventHooks()
+
+	// Restore event hooks
+	m.Range(func(k, v interface{}) bool {
+		eventHooks.Store(k, v)
+		return true
+	})
 }
 
 // ParsingCallback is a function that is called after
@@ -366,6 +442,14 @@ func loadCaddyfileInput(serverType string) (Input, error) {
 	}
 	return caddyfileToUse, nil
 }
+
+// OnProcessExit is a list of functions to run when the process
+// exits -- they are ONLY for cleanup and should not block,
+// return errors, or do anything fancy. They will be run with
+// every signal, even if "shutdown callbacks" are not executed.
+// This variable must only be modified in the main goroutine
+// from init() functions.
+var OnProcessExit []func()
 
 // caddyfileLoader pairs the name of a loader to the loader.
 type caddyfileLoader struct {

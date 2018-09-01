@@ -1,17 +1,32 @@
+// Copyright 2015 Light Code Labs, LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package caddytls
 
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"io/ioutil"
 
 	"net/url"
 	"strings"
 
-	"github.com/codahale/aesnicheck"
+	"github.com/klauspost/cpuid"
 	"github.com/mholt/caddy"
-	"github.com/xenolf/lego/acme"
+	"github.com/xenolf/lego/acmev2"
 )
 
 // Config describes how TLS should be configured and used.
@@ -79,16 +94,17 @@ type Config struct {
 	// an ACME challenge
 	ListenHost string
 
-	// The alternate port (ONLY port, not host)
-	// to use for the ACME HTTP challenge; this
-	// port will be used if we proxy challenges
-	// coming in on port 80 to this alternate port
+	// The alternate port (ONLY port, not host) to
+	// use for the ACME HTTP challenge; if non-empty,
+	// this port will be used instead of
+	// HTTPChallengePort to spin up a listener for
+	// the HTTP challenge
 	AltHTTPPort string
 
 	// The alternate port (ONLY port, not host)
 	// to use for the ACME TLS-SNI challenge.
-	// The system must forward the standard port
-	// for the TLS-SNI challenge to this port.
+	// The system must forward TLSSNIChallengePort
+	// to this port for challenge to succeed
 	AltTLSSNIPort string
 
 	// The string identifier of the DNS provider
@@ -120,7 +136,12 @@ type Config struct {
 	// Protocol Negotiation (ALPN).
 	ALPN []string
 
-	tlsConfig *tls.Config // the final tls.Config created with buildStandardTLSConfig()
+	// The map of hostname to certificate hash. This is used to complete
+	// handshakes and serve the right certificate given the SNI.
+	Certificates map[string]string
+
+	certCache *certificateCache // pointer to the Instance's certificate store
+	tlsConfig *tls.Config       // the final tls.Config created with buildStandardTLSConfig()
 }
 
 // OnDemandState contains some state relevant for providing
@@ -134,6 +155,30 @@ type OnDemandState struct {
 	// Set from max_certs in tls config, it specifies the
 	// maximum number of certificates that can be issued.
 	MaxObtain int32
+
+	// The url to call to check if an on-demand tls certificate should
+	// be issued. If a request to the URL fails or returns a non 2xx
+	// status on-demand issuances must fail.
+	AskURL *url.URL
+}
+
+// NewConfig returns a new Config with a pointer to the instance's
+// certificate cache. You will usually need to set Other fields on
+// the returned Config for successful practical use.
+func NewConfig(inst *caddy.Instance) *Config {
+	inst.StorageMu.RLock()
+	certCache, ok := inst.Storage[CertCacheInstStorageKey].(*certificateCache)
+	inst.StorageMu.RUnlock()
+	if !ok || certCache == nil {
+		certCache = &certificateCache{cache: make(map[string]Certificate)}
+		inst.StorageMu.Lock()
+		inst.Storage[CertCacheInstStorageKey] = certCache
+		inst.StorageMu.Unlock()
+	}
+	cfg := new(Config)
+	cfg.Certificates = make(map[string]string)
+	cfg.certCache = certCache
+	return cfg
 }
 
 // ObtainCert obtains a certificate for name using c, as long
@@ -146,10 +191,15 @@ type OnDemandState struct {
 // it does not load them into memory. If allowPrompts is true,
 // the user may be shown a prompt.
 func (c *Config) ObtainCert(name string, allowPrompts bool) error {
-	if !c.Managed || !HostQualifies(name) {
+	skip, err := c.preObtainOrRenewChecks(name, allowPrompts)
+	if err != nil {
+		return err
+	}
+	if skip {
 		return nil
 	}
 
+	// we expect this to be a new (non-existent) site
 	storage, err := c.StorageFor(c.CAUrl)
 	if err != nil {
 		return err
@@ -160,9 +210,6 @@ func (c *Config) ObtainCert(name string, allowPrompts bool) error {
 	}
 	if siteExists {
 		return nil
-	}
-	if c.ACMEEmail == "" {
-		c.ACMEEmail = getEmail(storage, allowPrompts)
 	}
 
 	client, err := newACMEClient(c, allowPrompts)
@@ -175,11 +222,46 @@ func (c *Config) ObtainCert(name string, allowPrompts bool) error {
 // RenewCert renews the certificate for name using c. It stows the
 // renewed certificate and its assets in storage if successful.
 func (c *Config) RenewCert(name string, allowPrompts bool) error {
+	skip, err := c.preObtainOrRenewChecks(name, allowPrompts)
+	if err != nil {
+		return err
+	}
+	if skip {
+		return nil
+	}
+
 	client, err := newACMEClient(c, allowPrompts)
 	if err != nil {
 		return err
 	}
 	return client.Renew(name)
+}
+
+// preObtainOrRenewChecks perform a few simple checks before
+// obtaining or renewing a certificate with ACME, and returns
+// whether this name should be skipped (like if it's not
+// managed TLS) as well as any error. It ensures that the
+// config is Managed, that the name qualifies for a certificate,
+// and that an email address is available.
+func (c *Config) preObtainOrRenewChecks(name string, allowPrompts bool) (bool, error) {
+	if !c.Managed || !HostQualifies(name) {
+		return true, nil
+	}
+
+	// wildcard certificates require DNS challenge (as of March 2018)
+	if strings.Contains(name, "*") && c.DNSProvider == "" {
+		return false, fmt.Errorf("wildcard domain name (%s) requires DNS challenge; use dns subdirective to configure it", name)
+	}
+
+	if c.ACMEEmail == "" {
+		var err error
+		c.ACMEEmail, err = getEmail(c, allowPrompts)
+		if err != nil {
+			return false, err
+		}
+	}
+
+	return false, nil
 }
 
 // StorageFor obtains a TLS Storage instance for the given CA URL which should
@@ -311,7 +393,9 @@ func (c *Config) buildStandardTLSConfig() error {
 
 // MakeTLSConfig makes a tls.Config from configs. The returned
 // tls.Config is programmed to load the matching caddytls.Config
-// based on the hostname in SNI, but that's all.
+// based on the hostname in SNI, but that's all. This is used
+// to create a single TLS configuration for a listener (a group
+// of sites).
 func MakeTLSConfig(configs []*Config) (*tls.Config, error) {
 	if len(configs) == 0 {
 		return nil, nil
@@ -339,15 +423,28 @@ func MakeTLSConfig(configs []*Config) (*tls.Config, error) {
 				configs[i-1].Hostname, lastConfProto, cfg.Hostname, thisConfProto)
 		}
 
-		// convert each caddytls.Config into a tls.Config
+		// convert this caddytls.Config into a tls.Config
 		if err := cfg.buildStandardTLSConfig(); err != nil {
 			return nil, err
 		}
 
-		// Key this config by its hostname (overwriting
-		// configs with the same hostname pattern); during
-		// TLS handshakes, configs are loaded based on
-		// the hostname pattern, according to client's SNI.
+		// if an existing config with this hostname was already
+		// configured, then they must be identical (or at least
+		// compatible), otherwise that is a configuration error
+		if otherConfig, ok := configMap[cfg.Hostname]; ok {
+			if err := assertConfigsCompatible(cfg, otherConfig); err != nil {
+				return nil, fmt.Errorf("incompatible TLS configurations for the same SNI "+
+					"name (%s) on the same listener: %v",
+					cfg.Hostname, err)
+			}
+		}
+
+		// key this config by its hostname (overwrites
+		// configs with the same hostname pattern; should
+		// be OK since we already asserted they are roughly
+		// the same); during TLS handshakes, configs are
+		// loaded based on the hostname pattern, according
+		// to client's SNI
 		configMap[cfg.Hostname] = cfg
 	}
 
@@ -362,6 +459,71 @@ func MakeTLSConfig(configs []*Config) (*tls.Config, error) {
 	return &tls.Config{
 		GetConfigForClient: configMap.GetConfigForClient,
 	}, nil
+}
+
+// assertConfigsCompatible returns an error if the two Configs
+// do not have the same (or roughly compatible) configurations.
+// If one of the tlsConfig pointers on either Config is nil,
+// an error will be returned. If both are nil, no error.
+func assertConfigsCompatible(cfg1, cfg2 *Config) error {
+	c1, c2 := cfg1.tlsConfig, cfg2.tlsConfig
+
+	if (c1 == nil && c2 != nil) || (c1 != nil && c2 == nil) {
+		return fmt.Errorf("one config is not made")
+	}
+	if c1 == nil && c2 == nil {
+		return nil
+	}
+
+	if len(c1.CipherSuites) != len(c2.CipherSuites) {
+		return fmt.Errorf("different number of allowed cipher suites")
+	}
+	for i, ciph := range c1.CipherSuites {
+		if c2.CipherSuites[i] != ciph {
+			return fmt.Errorf("different cipher suites or different order")
+		}
+	}
+
+	if len(c1.CurvePreferences) != len(c2.CurvePreferences) {
+		return fmt.Errorf("different number of allowed cipher suites")
+	}
+	for i, curve := range c1.CurvePreferences {
+		if c2.CurvePreferences[i] != curve {
+			return fmt.Errorf("different curve preferences or different order")
+		}
+	}
+
+	if len(c1.NextProtos) != len(c2.NextProtos) {
+		return fmt.Errorf("different number of ALPN (NextProtos) values")
+	}
+	for i, proto := range c1.NextProtos {
+		if c2.NextProtos[i] != proto {
+			return fmt.Errorf("different ALPN (NextProtos) values or different order")
+		}
+	}
+
+	if c1.PreferServerCipherSuites != c2.PreferServerCipherSuites {
+		return fmt.Errorf("one prefers server cipher suites, the other does not")
+	}
+	if c1.MinVersion != c2.MinVersion {
+		return fmt.Errorf("minimum TLS version mismatch")
+	}
+	if c1.MaxVersion != c2.MaxVersion {
+		return fmt.Errorf("maximum TLS version mismatch")
+	}
+	if c1.ClientAuth != c2.ClientAuth {
+		return fmt.Errorf("client authentication policy mismatch")
+	}
+	if c1.ClientAuth != tls.NoClientCert && c2.ClientAuth != tls.NoClientCert && c1.ClientCAs != c2.ClientCAs {
+		// Two hosts defined on the same listener are not compatible if they
+		// have ClientAuth enabled, because there's no guarantee beyond the
+		// hostname which config will be used (because SNI only has server name).
+		// To prevent clients from bypassing authentication, require that
+		// ClientAuth be configured in an unambiguous manner.
+		return fmt.Errorf("multiple hosts requiring client authentication ambiguously configured")
+	}
+
+	return nil
 }
 
 // ConfigGetter gets a Config keyed by key.
@@ -395,7 +557,7 @@ func SetDefaultTLSParams(config *Config) {
 
 	// Set default protocol min and max versions - must balance compatibility and security
 	if config.ProtocolMinVersion == 0 {
-		config.ProtocolMinVersion = tls.VersionTLS11
+		config.ProtocolMinVersion = tls.VersionTLS12
 	}
 	if config.ProtocolMaxVersion == 0 {
 		config.ProtocolMaxVersion = tls.VersionTLS12
@@ -416,10 +578,22 @@ var supportedKeyTypes = map[string]acme.KeyType{
 
 // Map of supported protocols.
 // HTTP/2 only supports TLS 1.2 and higher.
-var supportedProtocols = map[string]uint16{
+// If updating this map, also update tlsProtocolStringToMap in caddyhttp/fastcgi/fastcgi.go
+var SupportedProtocols = map[string]uint16{
 	"tls1.0": tls.VersionTLS10,
 	"tls1.1": tls.VersionTLS11,
 	"tls1.2": tls.VersionTLS12,
+}
+
+// GetSupportedProtocolName returns the protocol name
+func GetSupportedProtocolName(protocol uint16) (string, error) {
+	for k, v := range SupportedProtocols {
+		if v == protocol {
+			return k, nil
+		}
+	}
+
+	return "", errors.New("name: unsuported protocol")
 }
 
 // Map of supported ciphers, used only for parsing config.
@@ -432,7 +606,7 @@ var supportedProtocols = map[string]uint16{
 // it is always added (even though it is not technically a cipher suite).
 //
 // This map, like any map, is NOT ORDERED. Do not range over this map.
-var supportedCiphersMap = map[string]uint16{
+var SupportedCiphersMap = map[string]uint16{
 	"ECDHE-ECDSA-AES256-GCM-SHA384":      tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
 	"ECDHE-RSA-AES256-GCM-SHA384":        tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
 	"ECDHE-ECDSA-AES128-GCM-SHA256":      tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
@@ -449,6 +623,17 @@ var supportedCiphersMap = map[string]uint16{
 	"RSA-3DES-EDE-CBC-SHA":               tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA,
 }
 
+// GetSupportedCipherName returns the cipher name
+func GetSupportedCipherName(cipher uint16) (string, error) {
+	for k, v := range SupportedCiphersMap {
+		if v == cipher {
+			return k, nil
+		}
+	}
+
+	return "", errors.New("name: unsuported cipher")
+}
+
 // List of all the ciphers we want to use by default
 var defaultCiphers = []uint16{
 	tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
@@ -461,8 +646,6 @@ var defaultCiphers = []uint16{
 	tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
 	tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
 	tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
-	tls.TLS_RSA_WITH_AES_256_CBC_SHA,
-	tls.TLS_RSA_WITH_AES_128_CBC_SHA,
 }
 
 // List of ciphers we should prefer if native AESNI support is missing
@@ -477,8 +660,6 @@ var defaultCiphersNonAESNI = []uint16{
 	tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
 	tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
 	tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
-	tls.TLS_RSA_WITH_AES_256_CBC_SHA,
-	tls.TLS_RSA_WITH_AES_128_CBC_SHA,
 }
 
 // getPreferredDefaultCiphers returns an appropriate cipher suite to use, depending on
@@ -486,7 +667,7 @@ var defaultCiphersNonAESNI = []uint16{
 //
 // See https://github.com/mholt/caddy/issues/1674
 func getPreferredDefaultCiphers() []uint16 {
-	if aesnicheck.HasAESNI() {
+	if cpuid.CPU.AesNi() {
 		return defaultCiphers
 	}
 
@@ -503,7 +684,7 @@ var supportedCurvesMap = map[string]tls.CurveID{
 	"P521":   tls.CurveP521,
 }
 
-// List of all the curves we want to use by default
+// List of all the curves we want to use by default.
 //
 // This list should only include curves which are fast by design (e.g. X25519)
 // and those for which an optimized assembly implementation exists (e.g. P256).
@@ -529,4 +710,8 @@ const (
 	// be capable of proxying or forwarding the request to this
 	// alternate port.
 	DefaultHTTPAlternatePort = "5033"
+
+	// CertCacheInstStorageKey is the name of the key for
+	// accessing the certificate storage on the *caddy.Instance.
+	CertCacheInstStorageKey = "tls_cert_cache"
 )

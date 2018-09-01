@@ -1,3 +1,17 @@
+// Copyright 2015 Light Code Labs, LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package caddytls
 
 import (
@@ -8,7 +22,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	"github.com/mholt/caddy"
 )
@@ -17,27 +30,25 @@ func init() {
 	RegisterStorageProvider("file", NewFileStorage)
 }
 
-// storageBasePath is the root path in which all TLS/ACME assets are
-// stored. Do not change this value during the lifetime of the program.
-var storageBasePath = filepath.Join(caddy.AssetsPath(), "acme")
-
 // NewFileStorage is a StorageConstructor function that creates a new
 // Storage instance backed by the local disk. The resulting Storage
 // instance is guaranteed to be non-nil if there is no error.
 func NewFileStorage(caURL *url.URL) (Storage, error) {
-	return &FileStorage{
-		Path:      filepath.Join(storageBasePath, caURL.Host),
-		nameLocks: make(map[string]*sync.WaitGroup),
-	}, nil
+	// storageBasePath is the root path in which all TLS/ACME assets are
+	// stored. Do not change this value during the lifetime of the program.
+	storageBasePath := filepath.Join(caddy.AssetsPath(), "acme")
+
+	storage := &FileStorage{Path: filepath.Join(storageBasePath, caURL.Host)}
+	storage.Locker = &fileStorageLock{caURL: caURL.Host, storage: storage}
+	return storage, nil
 }
 
 // FileStorage facilitates forming file paths derived from a root
 // directory. It is used to get file paths in a consistent,
 // cross-platform way or persisting ACME assets on the file system.
 type FileStorage struct {
-	Path        string
-	nameLocks   map[string]*sync.WaitGroup
-	nameLocksMu sync.Mutex
+	Path string
+	Locker
 }
 
 // sites gets the directory that stores site certificate and keys.
@@ -47,25 +58,25 @@ func (s *FileStorage) sites() string {
 
 // site returns the path to the folder containing assets for domain.
 func (s *FileStorage) site(domain string) string {
-	domain = strings.ToLower(domain)
+	domain = fileSafe(domain)
 	return filepath.Join(s.sites(), domain)
 }
 
 // siteCertFile returns the path to the certificate file for domain.
 func (s *FileStorage) siteCertFile(domain string) string {
-	domain = strings.ToLower(domain)
+	domain = fileSafe(domain)
 	return filepath.Join(s.site(domain), domain+".crt")
 }
 
 // siteKeyFile returns the path to domain's private key file.
 func (s *FileStorage) siteKeyFile(domain string) string {
-	domain = strings.ToLower(domain)
+	domain = fileSafe(domain)
 	return filepath.Join(s.site(domain), domain+".key")
 }
 
 // siteMetaFile returns the path to the domain's asset metadata file.
 func (s *FileStorage) siteMetaFile(domain string) string {
-	domain = strings.ToLower(domain)
+	domain = fileSafe(domain)
 	return filepath.Join(s.site(domain), domain+".json")
 }
 
@@ -79,7 +90,7 @@ func (s *FileStorage) user(email string) string {
 	if email == "" {
 		email = emptyEmail
 	}
-	email = strings.ToLower(email)
+	email = fileSafe(email)
 	return filepath.Join(s.users(), email)
 }
 
@@ -106,6 +117,7 @@ func (s *FileStorage) userRegFile(email string) string {
 	if fileName == "" {
 		fileName = "registration"
 	}
+	fileName = fileSafe(fileName)
 	return filepath.Join(s.user(email), fileName+".json")
 }
 
@@ -120,6 +132,7 @@ func (s *FileStorage) userKeyFile(email string) string {
 	if fileName == "" {
 		fileName = "private"
 	}
+	fileName = fileSafe(fileName)
 	return filepath.Join(s.user(email), fileName+".key")
 }
 
@@ -240,36 +253,6 @@ func (s *FileStorage) StoreUser(email string, data *UserData) error {
 	return nil
 }
 
-// TryLock attempts to get a lock for name, otherwise it returns
-// a Waiter value to wait until the other process is finished.
-func (s *FileStorage) TryLock(name string) (Waiter, error) {
-	s.nameLocksMu.Lock()
-	defer s.nameLocksMu.Unlock()
-	wg, ok := s.nameLocks[name]
-	if ok {
-		// lock already obtained, let caller wait on it
-		return wg, nil
-	}
-	// caller gets lock
-	wg = new(sync.WaitGroup)
-	wg.Add(1)
-	s.nameLocks[name] = wg
-	return nil, nil
-}
-
-// Unlock unlocks name.
-func (s *FileStorage) Unlock(name string) error {
-	s.nameLocksMu.Lock()
-	defer s.nameLocksMu.Unlock()
-	wg, ok := s.nameLocks[name]
-	if !ok {
-		return fmt.Errorf("FileStorage: no lock to release for %s", name)
-	}
-	wg.Done()
-	delete(s.nameLocks, name)
-	return nil
-}
-
 // MostRecentUserEmail implements Storage.MostRecentUserEmail by finding the
 // most recently written sub directory in the users' directory. It is named
 // after the email address. This corresponds to the most recent call to
@@ -292,4 +275,30 @@ func (s *FileStorage) MostRecentUserEmail() string {
 		return mostRecent.Name()
 	}
 	return ""
+}
+
+// fileSafe standardizes and sanitizes str for use in a file path.
+func fileSafe(str string) string {
+	str = strings.ToLower(str)
+	str = strings.TrimSpace(str)
+	repl := strings.NewReplacer("..", "",
+		"/", "",
+		"\\", "",
+		// TODO: Consider also replacing "@" with "_at_" (but migrate existing accounts...)
+		"+", "_plus_",
+		"%", "",
+		"$", "",
+		"`", "",
+		"~", "",
+		":", "",
+		";", "",
+		"=", "",
+		"!", "",
+		"#", "",
+		"&", "",
+		"|", "",
+		"\"", "",
+		"'", "",
+		"*", "wildcard_")
+	return repl.Replace(str)
 }

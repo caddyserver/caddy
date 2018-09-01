@@ -1,3 +1,17 @@
+// Copyright 2015 Light Code Labs, LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package caddy
 
 import (
@@ -5,6 +19,8 @@ import (
 	"os"
 	"os/signal"
 	"sync"
+
+	"github.com/mholt/caddy/telemetry"
 )
 
 // TrapSignals create signal handlers for all applicable signals for this
@@ -30,19 +46,25 @@ func trapSignalsCrossPlatform() {
 
 			if i > 0 {
 				log.Println("[INFO] SIGINT: Force quit")
-				if PidFile != "" {
-					os.Remove(PidFile)
+				for _, f := range OnProcessExit {
+					f() // important cleanup actions only
 				}
-				os.Exit(1)
+				os.Exit(2)
 			}
 
 			log.Println("[INFO] SIGINT: Shutting down")
 
-			if PidFile != "" {
-				os.Remove(PidFile)
+			telemetry.AppendUnique("sigtrap", "SIGINT")
+			go telemetry.StopEmitting() // not guaranteed to finish in time; that's OK (just don't block!)
+
+			// important cleanup actions before shutdown callbacks
+			for _, f := range OnProcessExit {
+				f()
 			}
 
-			go os.Exit(executeShutdownCallbacks("SIGINT"))
+			go func() {
+				os.Exit(executeShutdownCallbacks("SIGINT"))
+			}()
 		}
 	}()
 }
@@ -60,7 +82,7 @@ func executeShutdownCallbacks(signame string) (exitCode int) {
 			for _, err := range errs {
 				log.Printf("[ERROR] %s shutdown: %v", signame, err)
 			}
-			exitCode = 1
+			exitCode = 4
 		}
 	})
 	return

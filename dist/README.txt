@@ -1,4 +1,4 @@
-CADDY 0.10.3
+CADDY 0.11
 
 Website
 	https://caddyserver.com
@@ -14,8 +14,8 @@ Source Code
 	https://github.com/caddyserver
 
 
-For instructions on using Caddy, please see the user guide on
-the website. For a list of what's new in this version, see
+For instructions on using Caddy, please see the docs on the
+website. For a list of what's new in this version, see
 CHANGES.txt.
 
 For a good time, follow @mholt6 on Twitter.
@@ -32,8 +32,9 @@ the project wiki: https://github.com/mholt/caddy/wiki
 And thanks - you're awesome!
 
 If you think Caddy is awesome too, consider sponsoring it:
-https://caddyserver.com/pricing - and help keep Caddy free.
+https://caddyserver.com/sponsor - and help keep Caddy free
+for personal use.
 
 
 ---
-(c) 2015-2017 Light Code Labs, LLC.
+(c) 2015-2018 Light Code Labs, LLC

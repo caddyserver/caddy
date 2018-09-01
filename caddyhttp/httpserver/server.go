@@ -1,3 +1,17 @@
+// Copyright 2015 Light Code Labs, LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 // Package httpserver implements an HTTP server on top of Caddy.
 package httpserver
 
@@ -22,6 +36,7 @@ import (
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/staticfiles"
 	"github.com/mholt/caddy/caddytls"
+	"github.com/mholt/caddy/telemetry"
 )
 
 // Server is the HTTP server implementation.
@@ -57,6 +72,16 @@ func makeTLSConfig(group []*SiteConfig) (*tls.Config, error) {
 	return caddytls.MakeTLSConfig(tlsConfigs)
 }
 
+func getFallbacks(sites []*SiteConfig) []string {
+	fallbacks := []string{}
+	for _, sc := range sites {
+		if sc.FallbackSite {
+			fallbacks = append(fallbacks, sc.Addr.Host)
+		}
+	}
+	return fallbacks
+}
+
 // NewServer creates a new Server instance that will listen on addr
 // and will serve the sites configured in group.
 func NewServer(addr string, group []*SiteConfig) (*Server, error) {
@@ -66,6 +91,7 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 		sites:       group,
 		connTimeout: GracefulTimeout,
 	}
+	s.vhosts.fallbackHosts = append(s.vhosts.fallbackHosts, getFallbacks(group)...)
 	s.Server = makeHTTPServerWithHeaderLimit(s.Server, group)
 	s.Server.Handler = s // this is weird, but whatever
 
@@ -77,14 +103,14 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 	}
 	s.Server.TLSConfig = tlsConfig
 
-	// Enable QUIC if desired
-	if QUIC {
-		s.quicServer = &h2quic.Server{Server: s.Server}
-		s.Server.Handler = s.wrapWithSvcHeaders(s.Server.Handler)
-	}
-
 	// if TLS is enabled, make sure we prepare the Server accordingly
 	if s.Server.TLSConfig != nil {
+		// enable QUIC if desired (requires HTTP/2)
+		if HTTP2 && QUIC {
+			s.quicServer = &h2quic.Server{Server: s.Server}
+			s.Server.Handler = s.wrapWithSvcHeaders(s.Server.Handler)
+		}
+
 		// wrap the HTTP handler with a handler that does MITM detection
 		tlsh := &tlsHandler{next: s.Server.Handler}
 		s.Server.Handler = tlsh // this needs to be the "outer" handler when Serve() is called, for type assertion
@@ -117,7 +143,7 @@ func NewServer(addr string, group []*SiteConfig) (*Server, error) {
 
 	// Compile custom middleware for every site (enables virtual hosting)
 	for _, site := range group {
-		stack := Handler(staticfiles.FileServer{Root: http.Dir(site.Root), Hide: site.HiddenFiles})
+		stack := Handler(staticfiles.FileServer{Root: http.Dir(site.Root), Hide: site.HiddenFiles, IndexPages: site.IndexPages})
 		for i := len(site.middleware) - 1; i >= 0; i-- {
 			stack = site.middleware[i](stack)
 		}
@@ -294,7 +320,10 @@ func (s *Server) Serve(ln net.Listener) error {
 	}
 
 	err := s.Server.Serve(ln)
-	if QUIC {
+	if err == http.ErrServerClosed {
+		err = nil // not an error worth reporting since closing a server is intentional
+	}
+	if s.quicServer != nil {
 		s.quicServer.Close()
 	}
 	return err
@@ -302,7 +331,7 @@ func (s *Server) Serve(ln net.Listener) error {
 
 // ServePacket serves QUIC requests on pc until it is closed.
 func (s *Server) ServePacket(pc net.PacketConn) error {
-	if QUIC {
+	if s.quicServer != nil {
 		err := s.quicServer.Serve(pc.(*net.UDPConn))
 		return fmt.Errorf("serving QUIC connections: %v", err)
 	}
@@ -320,6 +349,16 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
+	// record the User-Agent string (with a cap on its length to mitigate attacks)
+	ua := r.Header.Get("User-Agent")
+	if len(ua) > 512 {
+		ua = ua[:512]
+	}
+	uaHash := telemetry.FastHash([]byte(ua)) // this is a normalized field
+	go telemetry.SetNested("http_user_agent", uaHash, ua)
+	go telemetry.AppendUnique("http_user_agent_count", uaHash)
+	go telemetry.Increment("http_request_count")
+
 	// copy the original, unchanged URL into the context
 	// so it can be referenced by middlewares
 	urlCopy := *r.URL
@@ -329,6 +368,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		urlCopy.User = userInfo
 	}
 	c := context.WithValue(r.Context(), OriginalURLCtxKey, urlCopy)
+	r = r.WithContext(c)
+
+	// Setup a replacer for the request that keeps track of placeholder
+	// values across plugins.
+	replacer := NewReplacer(r, nil, "")
+	c = context.WithValue(r.Context(), ReplacerCtxKey, replacer)
 	r = r.WithContext(c)
 
 	w.Header().Set("Server", caddy.AppName)
@@ -358,7 +403,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 	if vhost == nil {
 		// check for ACME challenge even if vhost is nil;
 		// could be a new host coming online soon
-		if caddytls.HTTPChallengeHandler(w, r, "localhost", caddytls.DefaultHTTPAlternatePort) {
+		if caddytls.HTTPChallengeHandler(w, r, "localhost") {
 			return 0, nil
 		}
 		// otherwise, log the error and write a message to the client
@@ -366,7 +411,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 		if err != nil {
 			remoteHost = r.RemoteAddr
 		}
-		WriteTextResponse(w, http.StatusNotFound, "No such site at "+s.Server.Addr)
+		WriteSiteNotFound(w, r) // don't add headers outside of this function
 		log.Printf("[INFO] %s - No such site at %s (Remote: %s, Referer: %s)",
 			hostname, s.Server.Addr, remoteHost, r.Header.Get("Referer"))
 		return 0, nil
@@ -374,7 +419,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 
 	// we still check for ACME challenge if the vhost exists,
 	// because we must apply its HTTP challenge config settings
-	if s.proxyHTTPChallenge(vhost, w, r) {
+	if caddytls.HTTPChallengeHandler(w, r, vhost.ListenHost) {
 		return 0, nil
 	}
 
@@ -382,31 +427,45 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 	// the URL path, so a request to example.com/foo/blog on the site
 	// defined as example.com/foo appears as /blog instead of /foo/blog.
 	if pathPrefix != "/" {
-		r.URL.Path = strings.TrimPrefix(r.URL.Path, pathPrefix)
-		if !strings.HasPrefix(r.URL.Path, "/") {
-			r.URL.Path = "/" + r.URL.Path
-		}
+		r.URL = trimPathPrefix(r.URL, pathPrefix)
+	}
+
+	// enforce strict host matching, which ensures that the SNI
+	// value (if any), matches the Host header; essential for
+	// sites that rely on TLS ClientAuth sharing a port with
+	// sites that do not - if mismatched, close the connection
+	if vhost.StrictHostMatching && r.TLS != nil &&
+		strings.ToLower(r.TLS.ServerName) != strings.ToLower(hostname) {
+		r.Close = true
+		log.Printf("[ERROR] %s - strict host matching: SNI (%s) and HTTP Host (%s) values differ",
+			vhost.Addr, r.TLS.ServerName, hostname)
+		return http.StatusForbidden, nil
 	}
 
 	return vhost.middlewareChain.ServeHTTP(w, r)
 }
 
-// proxyHTTPChallenge solves the ACME HTTP challenge if r is the HTTP
-// request for the challenge. If it is, and if the request has been
-// fulfilled (response written), true is returned; false otherwise.
-// If you don't have a vhost, just call the challenge handler directly.
-func (s *Server) proxyHTTPChallenge(vhost *SiteConfig, w http.ResponseWriter, r *http.Request) bool {
-	if vhost.Addr.Port != caddytls.HTTPChallengePort {
-		return false
+func trimPathPrefix(u *url.URL, prefix string) *url.URL {
+	// We need to use URL.EscapedPath() when trimming the pathPrefix as
+	// URL.Path is ambiguous about / or %2f - see docs. See #1927
+	trimmedPath := strings.TrimPrefix(u.EscapedPath(), prefix)
+	if !strings.HasPrefix(trimmedPath, "/") {
+		trimmedPath = "/" + trimmedPath
 	}
-	if vhost.TLS != nil && vhost.TLS.Manual {
-		return false
+	// After trimming path reconstruct uri string with Query before parsing
+	trimmedURI := trimmedPath
+	if u.RawQuery != "" || u.ForceQuery == true {
+		trimmedURI = trimmedPath + "?" + u.RawQuery
 	}
-	altPort := caddytls.DefaultHTTPAlternatePort
-	if vhost.TLS != nil && vhost.TLS.AltHTTPPort != "" {
-		altPort = vhost.TLS.AltHTTPPort
+	if u.Fragment != "" {
+		trimmedURI = trimmedURI + "#" + u.Fragment
 	}
-	return caddytls.HTTPChallengeHandler(w, r, vhost.ListenHost, altPort)
+	trimmedURL, err := url.Parse(trimmedURI)
+	if err != nil {
+		log.Printf("[ERROR] Unable to parse trimmed URL %s: %v", trimmedURI, err)
+		return u
+	}
+	return trimmedURL
 }
 
 // Address returns the address s was assigned to listen on.
@@ -450,9 +509,9 @@ func (s *Server) OnStartupComplete() {
 }
 
 // defaultTimeouts stores the default timeout values to use
-// if left unset by user configuration. NOTE: Default timeouts
-// are disabled (see issue #1464).
-var defaultTimeouts Timeouts
+// if left unset by user configuration. NOTE: Most default
+// timeouts are disabled (see issues #1464 and #1733).
+var defaultTimeouts = Timeouts{IdleTimeout: 5 * time.Minute}
 
 // tcpKeepAliveListener sets TCP keep-alive timeouts on accepted
 // connections. It's used by ListenAndServe and ListenAndServeTLS so
@@ -488,6 +547,19 @@ var ErrMaxBytesExceeded = errors.New("http: request body too large")
 // of the specified HTTP status code.
 func DefaultErrorFunc(w http.ResponseWriter, r *http.Request, status int) {
 	WriteTextResponse(w, status, fmt.Sprintf("%d %s\n", status, http.StatusText(status)))
+}
+
+const httpStatusMisdirectedRequest = 421 // RFC 7540, 9.1.2
+
+// WriteSiteNotFound writes appropriate error code to w, signaling that
+// requested host is not served by Caddy on a given port.
+func WriteSiteNotFound(w http.ResponseWriter, r *http.Request) {
+	status := http.StatusNotFound
+	if r.ProtoMajor >= 2 {
+		// TODO: use http.StatusMisdirectedRequest when it gets defined
+		status = httpStatusMisdirectedRequest
+	}
+	WriteTextResponse(w, status, fmt.Sprintf("%d Site %s is not served on this interface\n", status, r.Host))
 }
 
 // WriteTextResponse writes body with code status to w. The body will

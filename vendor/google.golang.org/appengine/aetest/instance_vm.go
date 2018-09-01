@@ -269,7 +269,6 @@ application: %s
 version: 1
 runtime: go
 api_version: go1
-vm: true
 
 handlers:
 - url: /.*

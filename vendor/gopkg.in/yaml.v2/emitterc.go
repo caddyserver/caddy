@@ -994,7 +994,7 @@ func yaml_emitter_analyze_scalar(emitter *yaml_emitter_t, value []byte) bool {
 		break_space    = false
 		space_break    = false
 
-		preceeded_by_whitespace = false
+		preceded_by_whitespace = false
 		followed_by_whitespace  = false
 		previous_space          = false
 		previous_break          = false
@@ -1016,7 +1016,7 @@ func yaml_emitter_analyze_scalar(emitter *yaml_emitter_t, value []byte) bool {
 		flow_indicators = true
 	}
 
-	preceeded_by_whitespace = true
+	preceded_by_whitespace = true
 	for i, w := 0, 0; i < len(value); i += w {
 		w = width(value[i])
 		followed_by_whitespace = i+w >= len(value) || is_blank(value, i+w)
@@ -1047,7 +1047,7 @@ func yaml_emitter_analyze_scalar(emitter *yaml_emitter_t, value []byte) bool {
 					block_indicators = true
 				}
 			case '#':
-				if preceeded_by_whitespace {
+				if preceded_by_whitespace {
 					flow_indicators = true
 					block_indicators = true
 				}
@@ -1088,7 +1088,7 @@ func yaml_emitter_analyze_scalar(emitter *yaml_emitter_t, value []byte) bool {
 		}
 
 		// [Go]: Why 'z'? Couldn't be the end of the string as that's the loop condition.
-		preceeded_by_whitespace = is_blankz(value, i)
+		preceded_by_whitespace = is_blankz(value, i)
 	}
 
 	emitter.scalar_data.multiline = line_breaks

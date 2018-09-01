@@ -1,3 +1,17 @@
+// Copyright 2015 Light Code Labs, LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package proxy
 
 import (
@@ -18,12 +32,13 @@ type Policy interface {
 }
 
 func init() {
-	RegisterPolicy("random", func() Policy { return &Random{} })
-	RegisterPolicy("least_conn", func() Policy { return &LeastConn{} })
-	RegisterPolicy("round_robin", func() Policy { return &RoundRobin{} })
-	RegisterPolicy("ip_hash", func() Policy { return &IPHash{} })
-	RegisterPolicy("first", func() Policy { return &First{} })
-	RegisterPolicy("uri_hash", func() Policy { return &URIHash{} })
+	RegisterPolicy("random", func(arg string) Policy { return &Random{} })
+	RegisterPolicy("least_conn", func(arg string) Policy { return &LeastConn{} })
+	RegisterPolicy("round_robin", func(arg string) Policy { return &RoundRobin{} })
+	RegisterPolicy("ip_hash", func(arg string) Policy { return &IPHash{} })
+	RegisterPolicy("first", func(arg string) Policy { return &First{} })
+	RegisterPolicy("uri_hash", func(arg string) Policy { return &URIHash{} })
+	RegisterPolicy("header", func(arg string) Policy { return &Header{arg} })
 }
 
 // Random is a policy that selects up hosts from a pool at random.
@@ -159,4 +174,26 @@ func (r *First) Select(pool HostPool, request *http.Request) *UpstreamHost {
 		}
 	}
 	return nil
+}
+
+// Header is a policy that selects based on a hash of the given header
+type Header struct {
+	// The name of the request header, the value of which will determine
+	// how the request is routed
+	Name string
+}
+
+var roundRobinPolicier RoundRobin
+
+// Select selects the host based on hashing the header value
+func (r *Header) Select(pool HostPool, request *http.Request) *UpstreamHost {
+	if r.Name == "" {
+		return nil
+	}
+	val := request.Header.Get(r.Name)
+	if val == "" {
+		// fallback to RoundRobin policy in case no Header in request
+		return roundRobinPolicier.Select(pool, request)
+	}
+	return hostByHashing(pool, val)
 }

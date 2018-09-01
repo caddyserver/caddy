@@ -1,3 +1,17 @@
+// Copyright 2015 Light Code Labs, LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package proxy
 
 import (
@@ -300,5 +314,48 @@ func TestUriPolicy(t *testing.T) {
 	h = uriPolicy.Select(pool, request)
 	if h != nil {
 		t.Error("Expected uri policy policy host to be nil.")
+	}
+}
+
+func TestHeaderPolicy(t *testing.T) {
+	pool := testPool()
+	tests := []struct {
+		Name               string
+		Policy             *Header
+		RequestHeaderName  string
+		RequestHeaderValue string
+		NilHost            bool
+		HostIndex          int
+	}{
+		{"empty config", &Header{""}, "", "", true, 0},
+		{"empty config+header+value", &Header{""}, "Affinity", "somevalue", true, 0},
+		{"empty config+header", &Header{""}, "Affinity", "", true, 0},
+
+		{"no header(fallback to roundrobin)", &Header{"Affinity"}, "", "", false, 1},
+		{"no header(fallback to roundrobin)", &Header{"Affinity"}, "", "", false, 2},
+		{"no header(fallback to roundrobin)", &Header{"Affinity"}, "", "", false, 0},
+
+		{"hash route to host", &Header{"Affinity"}, "Affinity", "somevalue", false, 1},
+		{"hash route to host", &Header{"Affinity"}, "Affinity", "somevalue2", false, 0},
+		{"hash route to host", &Header{"Affinity"}, "Affinity", "somevalue3", false, 2},
+		{"hash route with empty value", &Header{"Affinity"}, "Affinity", "", false, 1},
+	}
+
+	for idx, test := range tests {
+		request, _ := http.NewRequest("GET", "/", nil)
+		if test.RequestHeaderName != "" {
+			request.Header.Add(test.RequestHeaderName, test.RequestHeaderValue)
+		}
+
+		host := test.Policy.Select(pool, request)
+		if test.NilHost && host != nil {
+			t.Errorf("%d: Expected host to be nil", idx)
+		}
+		if !test.NilHost && host == nil {
+			t.Errorf("%d: Did not expect host to be nil", idx)
+		}
+		if !test.NilHost && host != pool[test.HostIndex] {
+			t.Errorf("%d: Expected Header policy to be host %d", idx, test.HostIndex)
+		}
 	}
 }

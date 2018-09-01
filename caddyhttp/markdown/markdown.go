@@ -1,3 +1,17 @@
+// Copyright 2015 Light Code Labs, LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 // Package markdown is middleware to render markdown files as HTML
 // on-the-fly.
 package markdown
@@ -53,6 +67,14 @@ type Config struct {
 
 	// Template(s) to render with
 	Template *template.Template
+
+	// a pair of template's name and its underlying file information
+	TemplateFiles map[string]*cachedFileInfo
+}
+
+type cachedFileInfo struct {
+	path string
+	fi   os.FileInfo
 }
 
 // ServeHTTP implements the http.Handler interface.
@@ -120,7 +142,7 @@ func (md Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 	case err == nil: // nop
 	case os.IsPermission(err):
 		return http.StatusForbidden, err
-	case os.IsExist(err):
+	case os.IsNotExist(err):
 		return http.StatusNotFound, nil
 	default: // did we run out of FD?
 		return http.StatusInternalServerError, err
