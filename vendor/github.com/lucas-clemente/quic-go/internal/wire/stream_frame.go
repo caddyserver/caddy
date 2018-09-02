@@ -76,10 +76,6 @@ func parseStreamFrame(r *bytes.Reader, version protocol.VersionNumber) (*StreamF
 	if frame.Offset+frame.DataLen() > protocol.MaxByteCount {
 		return nil, qerr.Error(qerr.InvalidStreamData, "data overflows maximum offset")
 	}
-	// empty frames are only allowed if they have offset 0 or the FIN bit set
-	if frame.DataLen() == 0 && !frame.FinBit && frame.Offset != 0 {
-		return nil, qerr.EmptyStreamFrameNoFin
-	}
 	return frame, nil
 }
 

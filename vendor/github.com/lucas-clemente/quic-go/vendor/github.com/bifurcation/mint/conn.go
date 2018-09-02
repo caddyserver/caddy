@@ -13,8 +13,6 @@ import (
 	"time"
 )
 
-var WouldBlock = fmt.Errorf("Would have blocked")
-
 type Certificate struct {
 	Chain      []*x509.Certificate
 	PrivateKey crypto.Signer
@@ -253,6 +251,8 @@ type ConnectionState struct {
 	PeerCertificates []*x509.Certificate   // certificate chain presented by remote peer
 	VerifiedChains   [][]*x509.Certificate // verified chains built from PeerCertificates
 	NextProto        string                // Selected ALPN proto
+	UsingPSK         bool                  // Are we using PSK.
+	UsingEarlyData   bool                  // Did we negotiate 0-RTT.
 }
 
 // Conn implements the net.Conn interface, as with "crypto/tls"
@@ -263,8 +263,6 @@ type Conn struct {
 	conn     net.Conn
 	isClient bool
 
-	EarlyData []byte
-
 	state             stateConnected
 	hState            HandshakeState
 	handshakeMutex    sync.Mutex
@@ -273,22 +271,27 @@ type Conn struct {
 
 	readBuffer []byte
 	in, out    *RecordLayer
-	hsCtx      HandshakeContext
+	hsCtx      *HandshakeContext
 }
 
 func NewConn(conn net.Conn, config *Config, isClient bool) *Conn {
-	c := &Conn{conn: conn, config: config, isClient: isClient}
+	c := &Conn{conn: conn, config: config, isClient: isClient, hsCtx: &HandshakeContext{}}
 	if !config.UseDTLS {
-		c.in = NewRecordLayerTLS(c.conn)
-		c.out = NewRecordLayerTLS(c.conn)
-		c.hsCtx.hIn = NewHandshakeLayerTLS(c.in)
-		c.hsCtx.hOut = NewHandshakeLayerTLS(c.out)
+		c.in = NewRecordLayerTLS(c.conn, directionRead)
+		c.out = NewRecordLayerTLS(c.conn, directionWrite)
+		c.hsCtx.hIn = NewHandshakeLayerTLS(c.hsCtx, c.in)
+		c.hsCtx.hOut = NewHandshakeLayerTLS(c.hsCtx, c.out)
 	} else {
-		c.in = NewRecordLayerDTLS(c.conn)
-		c.out = NewRecordLayerDTLS(c.conn)
-		c.hsCtx.hIn = NewHandshakeLayerDTLS(c.in)
-		c.hsCtx.hOut = NewHandshakeLayerDTLS(c.out)
+		c.in = NewRecordLayerDTLS(c.conn, directionRead)
+		c.out = NewRecordLayerDTLS(c.conn, directionWrite)
+		c.hsCtx.hIn = NewHandshakeLayerDTLS(c.hsCtx, c.in)
+		c.hsCtx.hOut = NewHandshakeLayerDTLS(c.hsCtx, c.out)
+		c.hsCtx.timeoutMS = initialTimeout
+		c.hsCtx.timers = newTimerSet()
+		c.hsCtx.waitingNextFlight = true
 	}
+	c.in.label = c.label()
+	c.out.label = c.label()
 	c.hsCtx.hIn.nonblocking = c.config.NonBlocking
 	return c
 }
@@ -374,20 +377,54 @@ func (c *Conn) consumeRecord() error {
 			return io.EOF
 		}
 
+	case RecordTypeAck:
+		if !c.hsCtx.hIn.datagram {
+			logf(logTypeHandshake, "Received ACK in TLS mode")
+			return AlertUnexpectedMessage
+		}
+		return c.hsCtx.processAck(pt.fragment)
+
 	case RecordTypeApplicationData:
 		c.readBuffer = append(c.readBuffer, pt.fragment...)
 		logf(logTypeIO, "extended buffer: [%d] %x", len(c.readBuffer), c.readBuffer)
+
 	}
 
 	return err
+}
+
+func readPartial(in *[]byte, buffer []byte) int {
+	logf(logTypeIO, "conn.Read input buffer now has len %d", len((*in)))
+	read := copy(buffer, *in)
+	*in = (*in)[read:]
+
+	logf(logTypeVerbose, "Returning %v", string(buffer))
+	return read
 }
 
 // Read application data up to the size of buffer.  Handshake and alert records
 // are consumed by the Conn object directly.
 func (c *Conn) Read(buffer []byte) (int, error) {
 	if _, connected := c.hState.(stateConnected); !connected {
-		return 0, errors.New("Read called before the handshake completed")
+		// Clients can't call Read prior to handshake completion.
+		if c.isClient {
+			return 0, errors.New("Read called before the handshake completed")
+		}
+
+		// Neither can servers that don't allow early data.
+		if !c.config.AllowEarlyData {
+			return 0, errors.New("Read called before the handshake completed")
+		}
+
+		// If there's no early data, then return WouldBlock
+		if len(c.hsCtx.earlyData) == 0 {
+			return 0, AlertWouldBlock
+		}
+
+		return readPartial(&c.hsCtx.earlyData, buffer), nil
 	}
+
+	// The handshake is now connected.
 	logf(logTypeHandshake, "conn.Read with buffer = %d", len(buffer))
 	if alert := c.Handshake(); alert != AlertNoAlert {
 		return 0, alert
@@ -395,6 +432,13 @@ func (c *Conn) Read(buffer []byte) (int, error) {
 
 	if len(buffer) == 0 {
 		return 0, nil
+	}
+
+	// Run our timers.
+	if c.config.UseDTLS {
+		if err := c.hsCtx.timers.check(time.Now()); err != nil {
+			return 0, AlertInternalError
+		}
 	}
 
 	// Lock the input channel
@@ -406,30 +450,14 @@ func (c *Conn) Read(buffer []byte) (int, error) {
 		// err can be nil if consumeRecord processed a non app-data
 		// record.
 		if err != nil {
-			if c.config.NonBlocking || err != WouldBlock {
+			if c.config.NonBlocking || err != AlertWouldBlock {
 				logf(logTypeIO, "conn.Read returns err=%v", err)
 				return 0, err
 			}
 		}
 	}
 
-	var read int
-	n := len(buffer)
-	logf(logTypeIO, "conn.Read input buffer now has len %d", len(c.readBuffer))
-	if len(c.readBuffer) <= n {
-		buffer = buffer[:len(c.readBuffer)]
-		copy(buffer, c.readBuffer)
-		read = len(c.readBuffer)
-		c.readBuffer = c.readBuffer[:0]
-	} else {
-		logf(logTypeIO, "read buffer larger than input buffer (%d > %d)", len(c.readBuffer), n)
-		copy(buffer[:n], c.readBuffer[:n])
-		c.readBuffer = c.readBuffer[n:]
-		read = n
-	}
-
-	logf(logTypeVerbose, "Returning %v", string(buffer))
-	return read, nil
+	return readPartial(&c.readBuffer, buffer), nil
 }
 
 // Write application data
@@ -437,6 +465,10 @@ func (c *Conn) Write(buffer []byte) (int, error) {
 	// Lock the output channel
 	c.out.Lock()
 	defer c.out.Unlock()
+
+	if !c.Writable() {
+		return 0, errors.New("Write called before the handshake completed (and early data not in use)")
+	}
 
 	// Send full-size fragments
 	var start int
@@ -549,13 +581,23 @@ func (c *Conn) takeAction(actionGeneric HandshakeAction) Alert {
 		}
 
 	case SendQueuedHandshake:
-		err := c.hsCtx.hOut.SendQueuedMessages()
+		_, err := c.hsCtx.hOut.SendQueuedMessages()
 		if err != nil {
 			logf(logTypeHandshake, "%s Error writing handshake message: %v", label, err)
 			return AlertInternalError
 		}
+		if c.config.UseDTLS {
+			c.hsCtx.timers.start(retransmitTimerLabel,
+				c.hsCtx.handshakeRetransmit,
+				c.hsCtx.timeoutMS)
+		}
 	case RekeyIn:
 		logf(logTypeHandshake, "%s Rekeying in to %s: %+v", label, action.epoch.label(), action.KeySet)
+		// Check that we don't have an input data in the handshake frame parser.
+		if len(c.hsCtx.hIn.frame.remainder) > 0 {
+			logf(logTypeHandshake, "%s Rekey with data still in handshake buffers", label)
+			return AlertDecodeError
+		}
 		err := c.in.Rekey(action.epoch, action.KeySet.cipher, action.KeySet.key, action.KeySet.iv)
 		if err != nil {
 			logf(logTypeHandshake, "%s Unable to rekey inbound: %v", label, err)
@@ -570,61 +612,9 @@ func (c *Conn) takeAction(actionGeneric HandshakeAction) Alert {
 			return AlertInternalError
 		}
 
-	case SendEarlyData:
-		logf(logTypeHandshake, "%s Sending early data...", label)
-		_, err := c.Write(c.EarlyData)
-		if err != nil {
-			logf(logTypeHandshake, "%s Error writing early data: %v", label, err)
-			return AlertInternalError
-		}
-
-	case ReadPastEarlyData:
-		logf(logTypeHandshake, "%s Reading past early data...", label)
-		// Scan past all records that fail to decrypt
-		_, err := c.in.PeekRecordType(!c.config.NonBlocking)
-		if err == nil {
-			break
-		}
-		_, ok := err.(DecryptError)
-
-		for ok {
-			_, err = c.in.PeekRecordType(!c.config.NonBlocking)
-			if err == nil {
-				break
-			}
-			_, ok = err.(DecryptError)
-		}
-
-	case ReadEarlyData:
-		logf(logTypeHandshake, "%s Reading early data...", label)
-		t, err := c.in.PeekRecordType(!c.config.NonBlocking)
-		if err != nil {
-			logf(logTypeHandshake, "%s Error reading record type (1): %v", label, err)
-			return AlertInternalError
-		}
-		logf(logTypeHandshake, "%s Got record type(1): %v", label, t)
-
-		for t == RecordTypeApplicationData {
-			// Read a record into the buffer. Note that this is safe
-			// in blocking mode because we read the record in in
-			// PeekRecordType.
-			pt, err := c.in.ReadRecord()
-			if err != nil {
-				logf(logTypeHandshake, "%s Error reading early data record: %v", label, err)
-				return AlertInternalError
-			}
-
-			logf(logTypeHandshake, "%s Read early data: %x", label, pt.fragment)
-			c.EarlyData = append(c.EarlyData, pt.fragment...)
-
-			t, err = c.in.PeekRecordType(!c.config.NonBlocking)
-			if err != nil {
-				logf(logTypeHandshake, "%s Error reading record type (2): %v", label, err)
-				return AlertInternalError
-			}
-			logf(logTypeHandshake, "%s Got record type (2): %v", label, t)
-		}
-		logf(logTypeHandshake, "%s Done reading early data", label)
+	case ResetOut:
+		logf(logTypeHandshake, "%s Rekeying out to %s seq=%v", label, EpochClear, action.seq)
+		c.out.ResetClear(action.seq)
 
 	case StorePSK:
 		logf(logTypeHandshake, "%s Storing new session ticket with identity [%x]", label, action.PSK.Identity)
@@ -637,7 +627,8 @@ func (c *Conn) takeAction(actionGeneric HandshakeAction) Alert {
 		}
 
 	default:
-		logf(logTypeHandshake, "%s Unknown actionuction type", label)
+		logf(logTypeHandshake, "%s Unknown action type", label)
+		assert(false)
 		return AlertInternalError
 	}
 
@@ -657,7 +648,6 @@ func (c *Conn) HandshakeSetup() Alert {
 	opts := ConnectionOptions{
 		ServerName: c.config.ServerName,
 		NextProtos: c.config.NextProtos,
-		EarlyData:  c.EarlyData,
 	}
 
 	if c.isClient {
@@ -706,18 +696,21 @@ type handshakeMessageReaderImpl struct {
 var _ handshakeMessageReader = &handshakeMessageReaderImpl{}
 
 func (r *handshakeMessageReaderImpl) ReadMessage() (*HandshakeMessage, Alert) {
-	hm, err := r.hsCtx.hIn.ReadMessage()
-	if err == WouldBlock {
-		return nil, AlertWouldBlock
+	var hm *HandshakeMessage
+	var err error
+	for {
+		hm, err = r.hsCtx.hIn.ReadMessage()
+		if err == AlertWouldBlock {
+			return nil, AlertWouldBlock
+		}
+		if err != nil {
+			logf(logTypeHandshake, "Error reading message: %v", err)
+			return nil, AlertCloseNotify
+		}
+		if hm != nil {
+			break
+		}
 	}
-	if err != nil {
-		logf(logTypeHandshake, "[client] Error reading message: %v", err)
-		return nil, AlertCloseNotify
-	}
-
-	// Once you have read a message, you no longer need the outgoing queue
-	// for DTLS.
-	r.hsCtx.hOut.ClearQueuedMessages()
 
 	return hm, AlertNoAlert
 }
@@ -753,14 +746,21 @@ func (c *Conn) Handshake() Alert {
 	state := c.hState
 	_, connected := state.(stateConnected)
 
-	hmr := &handshakeMessageReaderImpl{hsCtx: &c.hsCtx}
+	hmr := &handshakeMessageReaderImpl{hsCtx: c.hsCtx}
 	for !connected {
 		var alert Alert
 		var actions []HandshakeAction
+
 		// Advance the state machine
 		state, actions, alert = state.Next(hmr)
-		if alert == WouldBlock {
+		if alert == AlertWouldBlock {
 			logf(logTypeHandshake, "%s Would block reading message: %s", label, alert)
+			// If we blocked, then run our timers to see if any have expired.
+			if c.hsCtx.hIn.datagram {
+				if err := c.hsCtx.timers.check(time.Now()); err != nil {
+					return AlertInternalError
+				}
+			}
 			return AlertWouldBlock
 		}
 		if alert == AlertCloseNotify {
@@ -788,6 +788,34 @@ func (c *Conn) Handshake() Alert {
 		if connected {
 			c.state = state.(stateConnected)
 			c.handshakeComplete = true
+
+			if !c.isClient {
+				// Send NewSessionTicket if configured to
+				if c.config.SendSessionTickets {
+					actions, alert := c.state.NewSessionTicket(
+						c.config.TicketLen,
+						c.config.TicketLifetime,
+						c.config.EarlyDataLifetime)
+
+					for _, action := range actions {
+						alert = c.takeAction(action)
+						if alert != AlertNoAlert {
+							logf(logTypeHandshake, "Error during handshake actions: %v", alert)
+							c.sendAlert(alert)
+							return alert
+						}
+					}
+				}
+
+				// If there is early data, move it into the main buffer
+				if c.hsCtx.earlyData != nil {
+					c.readBuffer = c.hsCtx.earlyData
+					c.hsCtx.earlyData = nil
+				}
+
+			} else {
+				assert(c.hsCtx.earlyData == nil)
+			}
 		}
 
 		if c.config.NonBlocking {
@@ -795,23 +823,6 @@ func (c *Conn) Handshake() Alert {
 				return AlertStatelessRetry
 			}
 			return AlertNoAlert
-		}
-	}
-
-	// Send NewSessionTicket if acting as server
-	if !c.isClient && c.config.SendSessionTickets {
-		actions, alert := c.state.NewSessionTicket(
-			c.config.TicketLen,
-			c.config.TicketLifetime,
-			c.config.EarlyDataLifetime)
-
-		for _, action := range actions {
-			alert = c.takeAction(action)
-			if alert != AlertNoAlert {
-				logf(logTypeHandshake, "Error during handshake actions: %v", alert)
-				c.sendAlert(alert)
-				return alert
-			}
 		}
 	}
 
@@ -848,6 +859,9 @@ func (c *Conn) SendKeyUpdate(requestUpdate bool) error {
 }
 
 func (c *Conn) GetHsState() State {
+	if c.hState == nil {
+		return StateInit
+	}
 	return c.hState.State()
 }
 
@@ -878,7 +892,30 @@ func (c *Conn) ConnectionState() ConnectionState {
 		state.NextProto = c.state.Params.NextProto
 		state.VerifiedChains = c.state.verifiedChains
 		state.PeerCertificates = c.state.peerCertificates
+		state.UsingPSK = c.state.Params.UsingPSK
+		state.UsingEarlyData = c.state.Params.UsingEarlyData
 	}
 
 	return state
+}
+
+func (c *Conn) Writable() bool {
+	// If we're connected, we're writable.
+	if _, connected := c.hState.(stateConnected); connected {
+		return true
+	}
+
+	// If we're a client in 0-RTT, then we're writable.
+	if c.isClient && c.out.cipher.epoch == EpochEarlyData {
+		return true
+	}
+
+	return false
+}
+
+func (c *Conn) label() string {
+	if c.isClient {
+		return "client"
+	}
+	return "server"
 }
