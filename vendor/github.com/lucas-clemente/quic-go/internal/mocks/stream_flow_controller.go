@@ -66,29 +66,27 @@ func (mr *MockStreamFlowControllerMockRecorder) GetWindowUpdate() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetWindowUpdate", reflect.TypeOf((*MockStreamFlowController)(nil).GetWindowUpdate))
 }
 
-// HasWindowUpdate mocks base method
-func (m *MockStreamFlowController) HasWindowUpdate() bool {
-	ret := m.ctrl.Call(m, "HasWindowUpdate")
-	ret0, _ := ret[0].(bool)
-	return ret0
-}
-
-// HasWindowUpdate indicates an expected call of HasWindowUpdate
-func (mr *MockStreamFlowControllerMockRecorder) HasWindowUpdate() *gomock.Call {
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HasWindowUpdate", reflect.TypeOf((*MockStreamFlowController)(nil).HasWindowUpdate))
-}
-
-// IsBlocked mocks base method
-func (m *MockStreamFlowController) IsBlocked() (bool, protocol.ByteCount) {
-	ret := m.ctrl.Call(m, "IsBlocked")
+// IsNewlyBlocked mocks base method
+func (m *MockStreamFlowController) IsNewlyBlocked() (bool, protocol.ByteCount) {
+	ret := m.ctrl.Call(m, "IsNewlyBlocked")
 	ret0, _ := ret[0].(bool)
 	ret1, _ := ret[1].(protocol.ByteCount)
 	return ret0, ret1
 }
 
-// IsBlocked indicates an expected call of IsBlocked
-func (mr *MockStreamFlowControllerMockRecorder) IsBlocked() *gomock.Call {
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsBlocked", reflect.TypeOf((*MockStreamFlowController)(nil).IsBlocked))
+// IsNewlyBlocked indicates an expected call of IsNewlyBlocked
+func (mr *MockStreamFlowControllerMockRecorder) IsNewlyBlocked() *gomock.Call {
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsNewlyBlocked", reflect.TypeOf((*MockStreamFlowController)(nil).IsNewlyBlocked))
+}
+
+// MaybeQueueWindowUpdate mocks base method
+func (m *MockStreamFlowController) MaybeQueueWindowUpdate() {
+	m.ctrl.Call(m, "MaybeQueueWindowUpdate")
+}
+
+// MaybeQueueWindowUpdate indicates an expected call of MaybeQueueWindowUpdate
+func (mr *MockStreamFlowControllerMockRecorder) MaybeQueueWindowUpdate() *gomock.Call {
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MaybeQueueWindowUpdate", reflect.TypeOf((*MockStreamFlowController)(nil).MaybeQueueWindowUpdate))
 }
 
 // SendWindowSize mocks base method

@@ -8,7 +8,6 @@ import (
 
 	"github.com/lucas-clemente/quic-go/internal/flowcontrol"
 	"github.com/lucas-clemente/quic-go/internal/protocol"
-	"github.com/lucas-clemente/quic-go/internal/utils"
 	"github.com/lucas-clemente/quic-go/internal/wire"
 )
 
@@ -28,9 +27,12 @@ type receiveStream struct {
 
 	sender streamSender
 
-	frameQueue     *streamFrameSorter
-	readPosInFrame int
-	readOffset     protocol.ByteCount
+	frameQueue *frameSorter
+	readOffset protocol.ByteCount
+
+	currentFrame       []byte
+	currentFrameIsLast bool // is the currentFrame the last frame on this stream
+	readPosInFrame     int
 
 	closeForShutdownErr error
 	cancelReadErr       error
@@ -61,7 +63,7 @@ func newReceiveStream(
 		streamID:       streamID,
 		sender:         sender,
 		flowController: flowController,
-		frameQueue:     newStreamFrameSorter(),
+		frameQueue:     newFrameSorter(),
 		readChan:       make(chan struct{}, 1),
 		version:        version,
 	}
@@ -73,48 +75,57 @@ func (s *receiveStream) StreamID() protocol.StreamID {
 
 // Read implements io.Reader. It is not thread safe!
 func (s *receiveStream) Read(p []byte) (int, error) {
+	completed, n, err := s.readImpl(p)
+	if completed {
+		s.sender.onStreamCompleted(s.streamID)
+	}
+	return n, err
+}
+
+func (s *receiveStream) readImpl(p []byte) (bool /*stream completed */, int, error) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
 	if s.finRead {
-		return 0, io.EOF
+		return false, 0, io.EOF
 	}
 	if s.canceledRead {
-		return 0, s.cancelReadErr
+		return false, 0, s.cancelReadErr
 	}
 	if s.resetRemotely {
-		return 0, s.resetRemotelyErr
+		return false, 0, s.resetRemotelyErr
 	}
 	if s.closedForShutdown {
-		return 0, s.closeForShutdownErr
+		return false, 0, s.closeForShutdownErr
 	}
 
 	bytesRead := 0
 	for bytesRead < len(p) {
-		frame := s.frameQueue.Head()
-		if frame == nil && bytesRead > 0 {
-			return bytesRead, s.closeForShutdownErr
+		if s.currentFrame == nil || s.readPosInFrame >= len(s.currentFrame) {
+			s.dequeueNextFrame()
+		}
+		if s.currentFrame == nil && bytesRead > 0 {
+			return false, bytesRead, s.closeForShutdownErr
 		}
 
 		for {
 			// Stop waiting on errors
 			if s.closedForShutdown {
-				return bytesRead, s.closeForShutdownErr
+				return false, bytesRead, s.closeForShutdownErr
 			}
 			if s.canceledRead {
-				return bytesRead, s.cancelReadErr
+				return false, bytesRead, s.cancelReadErr
 			}
 			if s.resetRemotely {
-				return bytesRead, s.resetRemotelyErr
+				return false, bytesRead, s.resetRemotelyErr
 			}
 
 			deadline := s.readDeadline
 			if !deadline.IsZero() && !time.Now().Before(deadline) {
-				return bytesRead, errDeadline
+				return false, bytesRead, errDeadline
 			}
 
-			if frame != nil {
-				s.readPosInFrame = int(s.readOffset - frame.Offset)
+			if s.currentFrame != nil || s.currentFrameIsLast {
 				break
 			}
 
@@ -128,20 +139,21 @@ func (s *receiveStream) Read(p []byte) (int, error) {
 				}
 			}
 			s.mutex.Lock()
-			frame = s.frameQueue.Head()
+			if s.currentFrame == nil {
+				s.dequeueNextFrame()
+			}
 		}
 
 		if bytesRead > len(p) {
-			return bytesRead, fmt.Errorf("BUG: bytesRead (%d) > len(p) (%d) in stream.Read", bytesRead, len(p))
+			return false, bytesRead, fmt.Errorf("BUG: bytesRead (%d) > len(p) (%d) in stream.Read", bytesRead, len(p))
 		}
-		if s.readPosInFrame > int(frame.DataLen()) {
-			return bytesRead, fmt.Errorf("BUG: readPosInFrame (%d) > frame.DataLen (%d) in stream.Read", s.readPosInFrame, frame.DataLen())
+		if s.readPosInFrame > len(s.currentFrame) {
+			return false, bytesRead, fmt.Errorf("BUG: readPosInFrame (%d) > frame.DataLen (%d) in stream.Read", s.readPosInFrame, len(s.currentFrame))
 		}
 
 		s.mutex.Unlock()
 
-		copy(p[bytesRead:], frame.Data[s.readPosInFrame:])
-		m := utils.Min(len(p)-bytesRead, int(frame.DataLen())-s.readPosInFrame)
+		m := copy(p[bytesRead:], s.currentFrame[s.readPosInFrame:])
 		s.readPosInFrame += m
 		bytesRead += m
 		s.readOffset += protocol.ByteCount(m)
@@ -151,21 +163,20 @@ func (s *receiveStream) Read(p []byte) (int, error) {
 		if !s.resetRemotely {
 			s.flowController.AddBytesRead(protocol.ByteCount(m))
 		}
-		// this call triggers the flow controller to increase the flow control window, if necessary
-		if s.flowController.HasWindowUpdate() {
-			s.sender.onHasWindowUpdate(s.streamID)
-		}
+		// increase the flow control window, if necessary
+		s.flowController.MaybeQueueWindowUpdate()
 
-		if s.readPosInFrame >= int(frame.DataLen()) {
-			s.frameQueue.Pop()
-			s.finRead = frame.FinBit
-			if frame.FinBit {
-				s.sender.onStreamCompleted(s.streamID)
-				return bytesRead, io.EOF
-			}
+		if s.readPosInFrame >= len(s.currentFrame) && s.currentFrameIsLast {
+			s.finRead = true
+			return true, bytesRead, io.EOF
 		}
 	}
-	return bytesRead, nil
+	return false, bytesRead, nil
+}
+
+func (s *receiveStream) dequeueNextFrame() {
+	s.currentFrame, s.currentFrameIsLast = s.frameQueue.Pop()
+	s.readPosInFrame = 0
 }
 
 func (s *receiveStream) CancelRead(errorCode protocol.ApplicationErrorCode) error {
@@ -198,7 +209,7 @@ func (s *receiveStream) handleStreamFrame(frame *wire.StreamFrame) error {
 
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-	if err := s.frameQueue.Push(frame); err != nil && err != errDuplicateStreamData {
+	if err := s.frameQueue.Push(frame.Data, frame.Offset, frame.FinBit); err != nil {
 		return err
 	}
 	s.signalRead()
@@ -206,25 +217,33 @@ func (s *receiveStream) handleStreamFrame(frame *wire.StreamFrame) error {
 }
 
 func (s *receiveStream) handleRstStreamFrame(frame *wire.RstStreamFrame) error {
+	completed, err := s.handleRstStreamFrameImpl(frame)
+	if completed {
+		s.sender.onStreamCompleted(s.streamID)
+	}
+	return err
+}
+
+func (s *receiveStream) handleRstStreamFrameImpl(frame *wire.RstStreamFrame) (bool /*completed */, error) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
 	if s.closedForShutdown {
-		return nil
+		return false, nil
 	}
 	if err := s.flowController.UpdateHighestReceived(frame.ByteOffset, true); err != nil {
-		return err
+		return false, err
 	}
 	// In gQUIC, error code 0 has a special meaning.
 	// The peer will reliably continue transmitting, but is not interested in reading from the stream.
 	// We should therefore just continue reading from the stream, until we encounter the FIN bit.
 	if !s.version.UsesIETFFrameFormat() && frame.ErrorCode == 0 {
-		return nil
+		return false, nil
 	}
 
 	// ignore duplicate RST_STREAM frames for this stream (after checking their final offset)
 	if s.resetRemotely {
-		return nil
+		return false, nil
 	}
 	s.resetRemotely = true
 	s.resetRemotelyErr = streamCanceledError{
@@ -232,8 +251,7 @@ func (s *receiveStream) handleRstStreamFrame(frame *wire.RstStreamFrame) error {
 		error:     fmt.Errorf("Stream %d was reset with error code %d", s.streamID, frame.ErrorCode),
 	}
 	s.signalRead()
-	s.sender.onStreamCompleted(s.streamID)
-	return nil
+	return true, nil
 }
 
 func (s *receiveStream) CloseRemote(offset protocol.ByteCount) {

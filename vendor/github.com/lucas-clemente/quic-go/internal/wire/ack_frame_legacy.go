@@ -9,11 +9,7 @@ import (
 	"github.com/lucas-clemente/quic-go/internal/utils"
 )
 
-var (
-	errInconsistentAckLargestAcked = errors.New("internal inconsistency: LargestAcked does not match ACK ranges")
-	errInconsistentAckLowestAcked  = errors.New("internal inconsistency: LowestAcked does not match ACK ranges")
-	errInvalidAckRanges            = errors.New("AckFrame: ACK frame contains invalid ACK ranges")
-)
+var errInvalidAckRanges = errors.New("AckFrame: ACK frame contains invalid ACK ranges")
 
 func parseAckFrameLegacy(r *bytes.Reader, _ protocol.VersionNumber) (*AckFrame, error) {
 	frame := &AckFrame{}
@@ -23,11 +19,7 @@ func parseAckFrameLegacy(r *bytes.Reader, _ protocol.VersionNumber) (*AckFrame, 
 		return nil, err
 	}
 
-	hasMissingRanges := false
-	if typeByte&0x20 == 0x20 {
-		hasMissingRanges = true
-	}
-
+	hasMissingRanges := typeByte&0x20 == 0x20
 	largestAckedLen := 2 * ((typeByte & 0x0C) >> 2)
 	if largestAckedLen == 0 {
 		largestAckedLen = 1
@@ -38,11 +30,11 @@ func parseAckFrameLegacy(r *bytes.Reader, _ protocol.VersionNumber) (*AckFrame, 
 		missingSequenceNumberDeltaLen = 1
 	}
 
-	largestAcked, err := utils.BigEndian.ReadUintN(r, largestAckedLen)
+	la, err := utils.BigEndian.ReadUintN(r, largestAckedLen)
 	if err != nil {
 		return nil, err
 	}
-	frame.LargestAcked = protocol.PacketNumber(largestAcked)
+	largestAcked := protocol.PacketNumber(la)
 
 	delay, err := utils.BigEndian.ReadUfloat16(r)
 	if err != nil {
@@ -62,11 +54,12 @@ func parseAckFrameLegacy(r *bytes.Reader, _ protocol.VersionNumber) (*AckFrame, 
 		return nil, errInvalidAckRanges
 	}
 
-	ackBlockLength, err := utils.BigEndian.ReadUintN(r, missingSequenceNumberDeltaLen)
+	abl, err := utils.BigEndian.ReadUintN(r, missingSequenceNumberDeltaLen)
 	if err != nil {
 		return nil, err
 	}
-	if frame.LargestAcked > 0 && ackBlockLength < 1 {
+	ackBlockLength := protocol.PacketNumber(abl)
+	if largestAcked > 0 && ackBlockLength < 1 {
 		return nil, errors.New("invalid first ACK range")
 	}
 
@@ -76,8 +69,8 @@ func parseAckFrameLegacy(r *bytes.Reader, _ protocol.VersionNumber) (*AckFrame, 
 
 	if hasMissingRanges {
 		ackRange := AckRange{
-			First: protocol.PacketNumber(largestAcked-ackBlockLength) + 1,
-			Last:  frame.LargestAcked,
+			Smallest: largestAcked - ackBlockLength + 1,
+			Largest:  largestAcked,
 		}
 		frame.AckRanges = append(frame.AckRanges, ackRange)
 
@@ -90,29 +83,27 @@ func parseAckFrameLegacy(r *bytes.Reader, _ protocol.VersionNumber) (*AckFrame, 
 				return nil, err
 			}
 
-			ackBlockLength, err = utils.BigEndian.ReadUintN(r, missingSequenceNumberDeltaLen)
+			abl, err := utils.BigEndian.ReadUintN(r, missingSequenceNumberDeltaLen)
 			if err != nil {
 				return nil, err
 			}
-
-			length := protocol.PacketNumber(ackBlockLength)
+			ackBlockLength := protocol.PacketNumber(abl)
 
 			if inLongBlock {
-				frame.AckRanges[len(frame.AckRanges)-1].First -= protocol.PacketNumber(gap) + length
-				frame.AckRanges[len(frame.AckRanges)-1].Last -= protocol.PacketNumber(gap)
+				frame.AckRanges[len(frame.AckRanges)-1].Smallest -= protocol.PacketNumber(gap) + ackBlockLength
+				frame.AckRanges[len(frame.AckRanges)-1].Largest -= protocol.PacketNumber(gap)
 			} else {
 				lastRangeComplete = false
 				ackRange := AckRange{
-					Last: frame.AckRanges[len(frame.AckRanges)-1].First - protocol.PacketNumber(gap) - 1,
+					Largest: frame.AckRanges[len(frame.AckRanges)-1].Smallest - protocol.PacketNumber(gap) - 1,
 				}
-				ackRange.First = ackRange.Last - length + 1
+				ackRange.Smallest = ackRange.Largest - ackBlockLength + 1
 				frame.AckRanges = append(frame.AckRanges, ackRange)
 			}
 
-			if length > 0 {
+			if ackBlockLength > 0 {
 				lastRangeComplete = true
 			}
-
 			inLongBlock = (ackBlockLength == 0)
 		}
 
@@ -121,13 +112,11 @@ func parseAckFrameLegacy(r *bytes.Reader, _ protocol.VersionNumber) (*AckFrame, 
 		if !lastRangeComplete {
 			frame.AckRanges = frame.AckRanges[:len(frame.AckRanges)-1]
 		}
-
-		frame.LowestAcked = frame.AckRanges[len(frame.AckRanges)-1].First
 	} else {
-		if frame.LargestAcked == 0 {
-			frame.LowestAcked = 0
-		} else {
-			frame.LowestAcked = protocol.PacketNumber(largestAcked + 1 - ackBlockLength)
+		frame.AckRanges = make([]AckRange, 1)
+		if largestAcked != 0 {
+			frame.AckRanges[0].Largest = largestAcked
+			frame.AckRanges[0].Smallest = largestAcked + 1 - ackBlockLength
 		}
 	}
 
@@ -171,7 +160,8 @@ func parseAckFrameLegacy(r *bytes.Reader, _ protocol.VersionNumber) (*AckFrame, 
 }
 
 func (f *AckFrame) writeLegacy(b *bytes.Buffer, _ protocol.VersionNumber) error {
-	largestAckedLen := protocol.GetPacketNumberLength(f.LargestAcked)
+	largestAcked := f.LargestAcked()
+	largestAckedLen := protocol.GetPacketNumberLength(largestAcked)
 
 	typeByte := uint8(0x40)
 
@@ -192,16 +182,15 @@ func (f *AckFrame) writeLegacy(b *bytes.Buffer, _ protocol.VersionNumber) error 
 
 	switch largestAckedLen {
 	case protocol.PacketNumberLen1:
-		b.WriteByte(uint8(f.LargestAcked))
+		b.WriteByte(uint8(largestAcked))
 	case protocol.PacketNumberLen2:
-		utils.BigEndian.WriteUint16(b, uint16(f.LargestAcked))
+		utils.BigEndian.WriteUint16(b, uint16(largestAcked))
 	case protocol.PacketNumberLen4:
-		utils.BigEndian.WriteUint32(b, uint32(f.LargestAcked))
+		utils.BigEndian.WriteUint32(b, uint32(largestAcked))
 	case protocol.PacketNumberLen6:
-		utils.BigEndian.WriteUint48(b, uint64(f.LargestAcked)&(1<<48-1))
+		utils.BigEndian.WriteUint48(b, uint64(largestAcked)&(1<<48-1))
 	}
 
-	f.DelayTime = time.Since(f.PacketReceivedTime)
 	utils.BigEndian.WriteUfloat16(b, uint64(f.DelayTime/time.Microsecond))
 
 	var numRanges uint64
@@ -216,15 +205,9 @@ func (f *AckFrame) writeLegacy(b *bytes.Buffer, _ protocol.VersionNumber) error 
 
 	var firstAckBlockLength protocol.PacketNumber
 	if !f.HasMissingRanges() {
-		firstAckBlockLength = f.LargestAcked - f.LowestAcked + 1
+		firstAckBlockLength = largestAcked - f.LowestAcked() + 1
 	} else {
-		if f.LargestAcked != f.AckRanges[0].Last {
-			return errInconsistentAckLargestAcked
-		}
-		if f.LowestAcked != f.AckRanges[len(f.AckRanges)-1].First {
-			return errInconsistentAckLowestAcked
-		}
-		firstAckBlockLength = f.LargestAcked - f.AckRanges[0].First + 1
+		firstAckBlockLength = largestAcked - f.AckRanges[0].Smallest + 1
 		numRangesWritten++
 	}
 
@@ -244,8 +227,8 @@ func (f *AckFrame) writeLegacy(b *bytes.Buffer, _ protocol.VersionNumber) error 
 			continue
 		}
 
-		length := ackRange.Last - ackRange.First + 1
-		gap := f.AckRanges[i-1].First - ackRange.Last - 1
+		length := ackRange.Largest - ackRange.Smallest + 1
+		gap := f.AckRanges[i-1].Smallest - ackRange.Largest - 1
 
 		num := gap/0xFF + 1
 		if gap%0xFF == 0 {
@@ -310,7 +293,7 @@ func (f *AckFrame) writeLegacy(b *bytes.Buffer, _ protocol.VersionNumber) error 
 
 func (f *AckFrame) lengthLegacy(_ protocol.VersionNumber) protocol.ByteCount {
 	length := protocol.ByteCount(1 + 2 + 1) // 1 TypeByte, 2 ACK delay time, 1 Num Timestamp
-	length += protocol.ByteCount(protocol.GetPacketNumberLength(f.LargestAcked))
+	length += protocol.ByteCount(protocol.GetPacketNumberLength(f.LargestAcked()))
 
 	missingSequenceNumberDeltaLen := protocol.ByteCount(f.getMissingSequenceNumberDeltaLen())
 
@@ -337,7 +320,7 @@ func (f *AckFrame) numWritableNackRanges() uint64 {
 		}
 
 		lastAckRange := f.AckRanges[i-1]
-		gap := lastAckRange.First - ackRange.Last - 1
+		gap := lastAckRange.Smallest - ackRange.Largest - 1
 		rangeLength := 1 + uint64(gap)/0xFF
 		if uint64(gap)%0xFF == 0 {
 			rangeLength--
@@ -358,13 +341,13 @@ func (f *AckFrame) getMissingSequenceNumberDeltaLen() protocol.PacketNumberLen {
 
 	if f.HasMissingRanges() {
 		for _, ackRange := range f.AckRanges {
-			rangeLength := ackRange.Last - ackRange.First + 1
+			rangeLength := ackRange.Largest - ackRange.Smallest + 1
 			if rangeLength > maxRangeLength {
 				maxRangeLength = rangeLength
 			}
 		}
 	} else {
-		maxRangeLength = f.LargestAcked - f.LowestAcked + 1
+		maxRangeLength = f.LargestAcked() - f.LowestAcked() + 1
 	}
 
 	if maxRangeLength <= 0xFF {

@@ -8,9 +8,9 @@ import (
 	"strings"
 	"sync"
 
+	"golang.org/x/net/http/httpguts"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/hpack"
-	"golang.org/x/net/lex/httplex"
 
 	quic "github.com/lucas-clemente/quic-go"
 	"github.com/lucas-clemente/quic-go/internal/protocol"
@@ -65,7 +65,7 @@ func (w *requestWriter) encodeHeaders(req *http.Request, addGzipHeader bool, tra
 	if host == "" {
 		host = req.URL.Host
 	}
-	host, err := httplex.PunycodeHostPort(host)
+	host, err := httpguts.PunycodeHostPort(host)
 	if err != nil {
 		return nil, err
 	}
@@ -89,11 +89,11 @@ func (w *requestWriter) encodeHeaders(req *http.Request, addGzipHeader bool, tra
 	// potentially pollute our hpack state. (We want to be able to
 	// continue to reuse the hpack encoder for future requests)
 	for k, vv := range req.Header {
-		if !httplex.ValidHeaderFieldName(k) {
+		if !httpguts.ValidHeaderFieldName(k) {
 			return nil, fmt.Errorf("invalid HTTP header name %q", k)
 		}
 		for _, v := range vv {
-			if !httplex.ValidHeaderFieldValue(v) {
+			if !httpguts.ValidHeaderFieldValue(v) {
 				return nil, fmt.Errorf("invalid HTTP header value %q for header %q", v, k)
 			}
 		}
