@@ -89,7 +89,7 @@ func (c *Controller) OnRestart(fn func() error) {
 // OnRestartFailed adds fn to the list of callback functions to execute
 // if the server failed to restart.
 func (c *Controller) OnRestartFailed(fn func() error) {
-	c.instance.OnRestartFailed = append(c.instance.OnRestartFailed, fn)
+	c.instance.onRestartFailed = append(c.instance.onRestartFailed, fn)
 }
 
 // OnShutdown adds fn to the list of callback functions to execute

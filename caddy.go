@@ -111,7 +111,7 @@ type Instance struct {
 	onFirstStartup  []func() error // starting, not as part of a restart
 	onStartup       []func() error // starting, even as part of a restart
 	onRestart       []func() error // before restart commences
-	OnRestartFailed []func() error // if restart failed
+	onRestartFailed []func() error // if restart failed
 	onShutdown      []func() error // stopping, even as part of a restart
 	onFinalShutdown []func() error // stopping, not as part of a restart
 
@@ -187,12 +187,15 @@ func (i *Instance) Restart(newCaddyfile Input) (inst *Instance, err error) {
 	i.wg.Add(1)
 	defer i.wg.Done()
 
-	// if something went wrong on restart then run OnRestartFailed callbacks
+	// if something went wrong on restart then run onRestartFailed callbacks
 	defer func() {
 		r := recover()
 		if err != nil || r != nil {
-			for _, fn := range i.OnRestartFailed {
-				fn()
+			for _, fn := range i.onRestartFailed {
+				err = fn()
+				if err != nil {
+					return
+				}
 			}
 			if r != nil {
 				panic(r)

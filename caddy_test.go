@@ -53,16 +53,16 @@ func TestCaddyStartStop(t *testing.T) {
 }
 */
 
-// TestContext implements Context interface
-type TestContext struct {
-	// If MakeServersFail is set to true then MakeServers returns error
+// CallbackTestContext implements Context interface
+type CallbackTestContext struct {
+	// If MakeServersFail is set to true then MakeServers returns an error
 	MakeServersFail bool
 }
 
-func (h *TestContext) InspectServerBlocks(name string, sblock []caddyfile.ServerBlock) ([]caddyfile.ServerBlock, error) {
+func (h *CallbackTestContext) InspectServerBlocks(name string, sblock []caddyfile.ServerBlock) ([]caddyfile.ServerBlock, error) {
 	return sblock, nil
 }
-func (h *TestContext) MakeServers() ([]Server, error) {
+func (h *CallbackTestContext) MakeServers() ([]Server, error) {
 	if h.MakeServersFail {
 		return make([]Server, 0), fmt.Errorf("MakeServers failed")
 	}
@@ -81,23 +81,16 @@ func TestCaddyRestartCallbacks(t *testing.T) {
 		// RegisterServerType to make successful restart possible
 		RegisterServerType(serverName, ServerType{
 			Directives: func() []string { return []string{} },
-			DefaultInput: func() Input {
-				return CaddyfileInput{
-					Contents:       []byte(fmt.Sprintf("")),
-					ServerTypeName: serverName,
-				}
-			},
-			// If MakeServersFail.MakeServersFail is true then restart wil fail because of context failure
-			NewContext: func(inst *Instance) Context { return &TestContext{MakeServersFail: test.restartFail} },
+			// If MakeServersFail is true then the restart will fail due to context failure
+			NewContext: func(inst *Instance) Context { return &CallbackTestContext{MakeServersFail: test.restartFail} },
 		})
 		c := NewTestController(serverName, "")
 		c.instance = &Instance{
 			serverType: serverName,
 			wg:         new(sync.WaitGroup),
-			Storage:    make(map[interface{}]interface{}),
 		}
 
-		// Register hoks which save the calls order
+		// Register callbacks which save the calls order
 		calls := make([]string, 0)
 		c.OnRestart(func() error {
 			calls = append(calls, "OnRestart")
@@ -115,7 +108,7 @@ func TestCaddyRestartCallbacks(t *testing.T) {
 		c.instance.Restart(CaddyfileInput{Contents: []byte(""), ServerTypeName: serverName})
 
 		if !reflect.DeepEqual(calls, test.expectedCalls) {
-			t.Errorf("Test %d: Callbacks expected: %v. But werecalled: %v", i, calls, test.expectedCalls)
+			t.Errorf("Test %d: Callbacks expected: %v, got: %v", i, test.expectedCalls, calls)
 		}
 
 		c.instance.Stop()
