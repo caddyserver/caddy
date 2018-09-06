@@ -1,6 +1,6 @@
 version: "{build}"
 
-image: Previous Visual Studio 2017
+image: Previous Visual Studio 2015
 
 hosts:
   quic.clemente.io: 127.0.0.1
