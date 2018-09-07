@@ -1,7 +1,5 @@
 version: "{build}"
 
-image: Previous Visual Studio 2015
-
 hosts:
   quic.clemente.io: 127.0.0.1
 
@@ -15,6 +13,7 @@ environment:
 stack: go 1.11
 
 install:
+  - set PATH=%GOPATH%\bin;%PATH%
   - go version
   - go env
   - go get -t ./...
