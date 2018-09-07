@@ -11,7 +11,7 @@ import (
 
 	quic "github.com/lucas-clemente/quic-go"
 
-	"golang.org/x/net/lex/httplex"
+	"golang.org/x/net/http/httpguts"
 )
 
 type roundTripCloser interface {
@@ -80,11 +80,11 @@ func (r *RoundTripper) RoundTripOpt(req *http.Request, opt RoundTripOpt) (*http.
 
 	if req.URL.Scheme == "https" {
 		for k, vv := range req.Header {
-			if !httplex.ValidHeaderFieldName(k) {
+			if !httpguts.ValidHeaderFieldName(k) {
 				return nil, fmt.Errorf("quic: invalid http header field name %q", k)
 			}
 			for _, v := range vv {
-				if !httplex.ValidHeaderFieldValue(v) {
+				if !httpguts.ValidHeaderFieldValue(v) {
 					return nil, fmt.Errorf("quic: invalid http header field value %q for key %v", v, k)
 				}
 			}
@@ -175,5 +175,5 @@ func validMethod(method string) bool {
 
 // copied from net/http/http.go
 func isNotToken(r rune) bool {
-	return !httplex.IsTokenRune(r)
+	return !httpguts.IsTokenRune(r)
 }

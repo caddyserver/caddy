@@ -68,13 +68,13 @@ func (mr *MockSendAlgorithmMockRecorder) OnConnectionMigration() *gomock.Call {
 }
 
 // OnPacketAcked mocks base method
-func (m *MockSendAlgorithm) OnPacketAcked(arg0 protocol.PacketNumber, arg1, arg2 protocol.ByteCount) {
-	m.ctrl.Call(m, "OnPacketAcked", arg0, arg1, arg2)
+func (m *MockSendAlgorithm) OnPacketAcked(arg0 protocol.PacketNumber, arg1, arg2 protocol.ByteCount, arg3 time.Time) {
+	m.ctrl.Call(m, "OnPacketAcked", arg0, arg1, arg2, arg3)
 }
 
 // OnPacketAcked indicates an expected call of OnPacketAcked
-func (mr *MockSendAlgorithmMockRecorder) OnPacketAcked(arg0, arg1, arg2 interface{}) *gomock.Call {
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "OnPacketAcked", reflect.TypeOf((*MockSendAlgorithm)(nil).OnPacketAcked), arg0, arg1, arg2)
+func (mr *MockSendAlgorithmMockRecorder) OnPacketAcked(arg0, arg1, arg2, arg3 interface{}) *gomock.Call {
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "OnPacketAcked", reflect.TypeOf((*MockSendAlgorithm)(nil).OnPacketAcked), arg0, arg1, arg2, arg3)
 }
 
 // OnPacketLost mocks base method
@@ -88,10 +88,8 @@ func (mr *MockSendAlgorithmMockRecorder) OnPacketLost(arg0, arg1, arg2 interface
 }
 
 // OnPacketSent mocks base method
-func (m *MockSendAlgorithm) OnPacketSent(arg0 time.Time, arg1 protocol.ByteCount, arg2 protocol.PacketNumber, arg3 protocol.ByteCount, arg4 bool) bool {
-	ret := m.ctrl.Call(m, "OnPacketSent", arg0, arg1, arg2, arg3, arg4)
-	ret0, _ := ret[0].(bool)
-	return ret0
+func (m *MockSendAlgorithm) OnPacketSent(arg0 time.Time, arg1 protocol.ByteCount, arg2 protocol.PacketNumber, arg3 protocol.ByteCount, arg4 bool) {
+	m.ctrl.Call(m, "OnPacketSent", arg0, arg1, arg2, arg3, arg4)
 }
 
 // OnPacketSent indicates an expected call of OnPacketSent

@@ -15,7 +15,7 @@ const (
 
 // A TLSExporter gets the negotiated ciphersuite and computes exporter
 type TLSExporter interface {
-	GetCipherSuite() mint.CipherSuiteParams
+	ConnectionState() mint.ConnectionState
 	ComputeExporter(label string, context []byte, keyLength int) ([]byte, error)
 }
 
@@ -49,7 +49,7 @@ func DeriveAESKeys(tls TLSExporter, pers protocol.Perspective) (AEAD, error) {
 }
 
 func computeKeyAndIV(tls TLSExporter, label string) (key, iv []byte, err error) {
-	cs := tls.GetCipherSuite()
+	cs := tls.ConnectionState().CipherSuite
 	secret, err := tls.ComputeExporter(label, nil, cs.Hash.Size())
 	if err != nil {
 		return nil, nil, err

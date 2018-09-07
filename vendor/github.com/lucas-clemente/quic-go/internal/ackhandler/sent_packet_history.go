@@ -10,6 +10,9 @@ type sentPacketHistory struct {
 	packetList *PacketList
 	packetMap  map[protocol.PacketNumber]*PacketElement
 
+	numOutstandingPackets          int
+	numOutstandingHandshakePackets int
+
 	firstOutstanding *PacketElement
 }
 
@@ -29,6 +32,12 @@ func (h *sentPacketHistory) sentPacketImpl(p *Packet) *PacketElement {
 	h.packetMap[p.PacketNumber] = el
 	if h.firstOutstanding == nil {
 		h.firstOutstanding = el
+	}
+	if p.canBeRetransmitted {
+		h.numOutstandingPackets++
+		if p.EncryptionLevel < protocol.EncryptionForwardSecure {
+			h.numOutstandingHandshakePackets++
+		}
 	}
 	return el
 }
@@ -92,6 +101,18 @@ func (h *sentPacketHistory) MarkCannotBeRetransmitted(pn protocol.PacketNumber) 
 	if !ok {
 		return fmt.Errorf("sent packet history: packet %d not found", pn)
 	}
+	if el.Value.canBeRetransmitted {
+		h.numOutstandingPackets--
+		if h.numOutstandingPackets < 0 {
+			panic("numOutstandingHandshakePackets negative")
+		}
+		if el.Value.EncryptionLevel < protocol.EncryptionForwardSecure {
+			h.numOutstandingHandshakePackets--
+			if h.numOutstandingHandshakePackets < 0 {
+				panic("numOutstandingHandshakePackets negative")
+			}
+		}
+	}
 	el.Value.canBeRetransmitted = false
 	if el == h.firstOutstanding {
 		h.readjustFirstOutstanding()
@@ -121,7 +142,27 @@ func (h *sentPacketHistory) Remove(p protocol.PacketNumber) error {
 	if el == h.firstOutstanding {
 		h.readjustFirstOutstanding()
 	}
+	if el.Value.canBeRetransmitted {
+		h.numOutstandingPackets--
+		if h.numOutstandingPackets < 0 {
+			panic("numOutstandingHandshakePackets negative")
+		}
+		if el.Value.EncryptionLevel < protocol.EncryptionForwardSecure {
+			h.numOutstandingHandshakePackets--
+			if h.numOutstandingHandshakePackets < 0 {
+				panic("numOutstandingHandshakePackets negative")
+			}
+		}
+	}
 	h.packetList.Remove(el)
 	delete(h.packetMap, p)
 	return nil
+}
+
+func (h *sentPacketHistory) HasOutstandingPackets() bool {
+	return h.numOutstandingPackets > 0
+}
+
+func (h *sentPacketHistory) HasOutstandingHandshakePackets() bool {
+	return h.numOutstandingHandshakePackets > 0
 }

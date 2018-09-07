@@ -25,6 +25,7 @@ const (
 	RecordTypeAlert           RecordType = 21
 	RecordTypeHandshake       RecordType = 22
 	RecordTypeApplicationData RecordType = 23
+	RecordTypeAck             RecordType = 25
 )
 
 // enum {...} HandshakeType;
@@ -166,6 +167,8 @@ const (
 type State uint8
 
 const (
+	StateInit = 0
+
 	// states valid for the client
 	StateClientStart State = iota
 	StateClientWaitSH
@@ -179,6 +182,7 @@ const (
 	StateServerStart State = iota
 	StateServerRecvdCH
 	StateServerNegotiated
+	StateServerReadPastEarlyData
 	StateServerWaitEOED
 	StateServerWaitFlight2
 	StateServerWaitCert
@@ -211,6 +215,8 @@ func (s State) String() string {
 		return "Server RECVD_CH"
 	case StateServerNegotiated:
 		return "Server NEGOTIATED"
+	case StateServerReadPastEarlyData:
+		return "Server READ_PAST_EARLY_DATA"
 	case StateServerWaitEOED:
 		return "Server WAIT_EOED"
 	case StateServerWaitFlight2:
@@ -251,4 +257,10 @@ func (e Epoch) label() string {
 		return "application data"
 	}
 	return "Application data (updated)"
+}
+
+func assert(b bool) {
+	if !b {
+		panic("Assertion failed")
+	}
 }

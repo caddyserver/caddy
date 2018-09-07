@@ -28,6 +28,7 @@ const logEnv = "QUIC_GO_LOG_LEVEL"
 type Logger interface {
 	SetLogLevel(LogLevel)
 	SetLogTimeFormat(format string)
+	WithPrefix(prefix string) Logger
 	Debug() bool
 
 	Errorf(format string, args ...interface{})
@@ -39,6 +40,8 @@ type Logger interface {
 var DefaultLogger Logger
 
 type defaultLogger struct {
+	prefix string
+
 	logLevel   LogLevel
 	timeFormat string
 }
@@ -79,10 +82,25 @@ func (l *defaultLogger) Errorf(format string, args ...interface{}) {
 }
 
 func (l *defaultLogger) logMessage(format string, args ...interface{}) {
+	var pre string
+
 	if len(l.timeFormat) > 0 {
-		log.Printf(time.Now().Format(l.timeFormat)+" "+format, args...)
-	} else {
-		log.Printf(format, args...)
+		pre = time.Now().Format(l.timeFormat) + " "
+	}
+	if len(l.prefix) > 0 {
+		pre += l.prefix + " "
+	}
+	log.Printf(pre+format, args...)
+}
+
+func (l *defaultLogger) WithPrefix(prefix string) Logger {
+	if len(l.prefix) > 0 {
+		prefix = l.prefix + " " + prefix
+	}
+	return &defaultLogger{
+		logLevel:   l.logLevel,
+		timeFormat: l.timeFormat,
+		prefix:     prefix,
 	}
 }
 

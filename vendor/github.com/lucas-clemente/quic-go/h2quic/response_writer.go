@@ -98,9 +98,6 @@ func (w *responseWriter) CloseNotify() <-chan bool { return make(<-chan bool) }
 // test that we implement http.Flusher
 var _ http.Flusher = &responseWriter{}
 
-// test that we implement http.CloseNotifier
-var _ http.CloseNotifier = &responseWriter{}
-
 // copied from http2/http2.go
 // bodyAllowedForStatus reports whether a given response status code
 // permits a body. See RFC 2616, section 4.4.
