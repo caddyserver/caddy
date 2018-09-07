@@ -14,6 +14,7 @@ stack: go 1.11
 
 install:
   - set PATH=%GOPATH%\bin;%PATH%
+  - set PATH=C:\msys64\mingw64\bin;%PATH%
   - go version
   - go env
   - go get -t ./...
