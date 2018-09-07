@@ -355,7 +355,12 @@ func initTelemetry() error {
 
 	newUUID := func() uuid.UUID {
 		id := uuid.New()
-		err := ioutil.WriteFile(uuidFilename, []byte(id.String()), 0600) // human-readable as a string
+		err := os.MkdirAll(caddy.AssetsPath(), 0700)
+		if err != nil {
+			log.Printf("[ERROR] Persisting instance UUID: %v", err)
+			return id
+		}
+		err = ioutil.WriteFile(uuidFilename, []byte(id.String()), 0600) // human-readable as a string
 		if err != nil {
 			log.Printf("[ERROR] Persisting instance UUID: %v", err)
 		}

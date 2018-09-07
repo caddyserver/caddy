@@ -107,8 +107,8 @@ func (cfg *Config) GetCertificate(clientHello *tls.ClientHelloInfo) (*tls.Certif
 			CipherSuites:              clientHello.CipherSuites,
 			ExtensionsUnknown:         true, // no extension info... :(
 			CompressionMethodsUnknown: true, // no compression methods... :(
-			Curves: clientHello.SupportedCurves,
-			Points: clientHello.SupportedPoints,
+			Curves:                    clientHello.SupportedCurves,
+			Points:                    clientHello.SupportedPoints,
 			// We also have, but do not yet use: SignatureSchemes, ServerName, and SupportedProtos (ALPN)
 			// because the standard lib parses some extensions, but our MITM detector generally doesn't.
 		}

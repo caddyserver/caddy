@@ -25,7 +25,6 @@ install:
   - go get -t ./...
   - go get github.com/golang/lint/golint
   - go get github.com/FiloSottile/vendorcheck
-  # Install gometalinter
   - go get github.com/alecthomas/gometalinter
 
 script:
