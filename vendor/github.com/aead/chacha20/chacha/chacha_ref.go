@@ -8,6 +8,13 @@ package chacha
 
 import "encoding/binary"
 
+func init() {
+	useSSE2 = false
+	useSSSE3 = false
+	useAVX = false
+	useAVX2 = false
+}
+
 func initialize(state *[64]byte, key []byte, nonce *[16]byte) {
 	binary.LittleEndian.PutUint32(state[0:], sigma[0])
 	binary.LittleEndian.PutUint32(state[4:], sigma[1])

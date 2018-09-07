@@ -372,6 +372,8 @@ func (r *replacer) getSubstitution(key string) string {
 		return now().UTC().Format(timeFormatISOUTC)
 	case "{when_unix}":
 		return strconv.FormatInt(now().Unix(), 10)
+	case "{when_unix_ms}":
+		return strconv.FormatInt(nanoToMilliseconds(now().UnixNano()), 10)
 	case "{file}":
 		_, file := path.Split(r.request.URL.Path)
 		return file
@@ -521,9 +523,13 @@ func (r *replacer) getSubstitution(key string) string {
 	return r.emptyValue
 }
 
+func nanoToMilliseconds(d int64) int64 {
+	return d / 1e6
+}
+
 // convertToMilliseconds returns the number of milliseconds in the given duration
 func convertToMilliseconds(d time.Duration) int64 {
-	return d.Nanoseconds() / 1e6
+	return nanoToMilliseconds(d.Nanoseconds())
 }
 
 // Set sets key to value in the r.customReplacements map.
