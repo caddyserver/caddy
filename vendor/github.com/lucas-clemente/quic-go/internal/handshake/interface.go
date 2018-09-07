@@ -2,7 +2,6 @@ package handshake
 
 import (
 	"crypto/x509"
-	"io"
 
 	"github.com/bifurcation/mint"
 	"github.com/lucas-clemente/quic-go/internal/crypto"
@@ -15,24 +14,18 @@ type Sealer interface {
 	Overhead() int
 }
 
+// mintTLS combines some methods needed to interact with mint.
+type mintTLS interface {
+	crypto.TLSExporter
+	Handshake() mint.Alert
+}
+
 // A TLSExtensionHandler sends and received the QUIC TLS extension.
 // It provides the parameters sent by the peer on a channel.
 type TLSExtensionHandler interface {
 	Send(mint.HandshakeType, *mint.ExtensionList) error
 	Receive(mint.HandshakeType, *mint.ExtensionList) error
 	GetPeerParams() <-chan TransportParameters
-}
-
-// MintTLS combines some methods needed to interact with mint.
-type MintTLS interface {
-	crypto.TLSExporter
-
-	// additional methods
-	Handshake() mint.Alert
-	State() mint.State
-	ConnectionState() mint.ConnectionState
-
-	SetCryptoStream(io.ReadWriter)
 }
 
 type baseCryptoSetup interface {

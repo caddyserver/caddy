@@ -49,6 +49,19 @@ func (mr *MockSentPacketHandlerMockRecorder) DequeuePacketForRetransmission() *g
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DequeuePacketForRetransmission", reflect.TypeOf((*MockSentPacketHandler)(nil).DequeuePacketForRetransmission))
 }
 
+// DequeueProbePacket mocks base method
+func (m *MockSentPacketHandler) DequeueProbePacket() (*ackhandler.Packet, error) {
+	ret := m.ctrl.Call(m, "DequeueProbePacket")
+	ret0, _ := ret[0].(*ackhandler.Packet)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// DequeueProbePacket indicates an expected call of DequeueProbePacket
+func (mr *MockSentPacketHandlerMockRecorder) DequeueProbePacket() *gomock.Call {
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DequeueProbePacket", reflect.TypeOf((*MockSentPacketHandler)(nil).DequeueProbePacket))
+}
+
 // GetAlarmTimeout mocks base method
 func (m *MockSentPacketHandler) GetAlarmTimeout() time.Time {
 	ret := m.ctrl.Call(m, "GetAlarmTimeout")

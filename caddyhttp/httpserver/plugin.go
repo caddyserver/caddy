@@ -611,13 +611,13 @@ var directives = []string{
 	"cache", // github.com/nicolasazrak/caddy-cache
 	"rewrite",
 	"ext",
+	"minify", // github.com/hacdias/caddy-minify
 	"gzip",
 	"header",
 	"geoip", // github.com/kodnaplakal/caddy-geoip
 	"errors",
 	"authz",        // github.com/casbin/caddy-authz
 	"filter",       // github.com/echocat/caddy-filter
-	"minify",       // github.com/hacdias/caddy-minify
 	"ipfilter",     // github.com/pyed/ipfilter
 	"ratelimit",    // github.com/xuqingfeng/caddy-rate-limit
 	"expires",      // github.com/epicagency/caddy-expires
@@ -645,12 +645,12 @@ var directives = []string{
 	"fastcgi",
 	"cgi", // github.com/jung-kurt/caddy-cgi
 	"websocket",
-	"filemanager", // github.com/filebrowser/filebrowser/caddy/filemanager
+	"filemanager", // github.com/filebrowser/caddy/filemanager
 	"webdav",      // github.com/hacdias/caddy-webdav
 	"markdown",
 	"browse",
-	"jekyll",    // github.com/filebrowser/filebrowser/caddy/jekyll
-	"hugo",      // github.com/filebrowser/filebrowser/caddy/hugo
+	"jekyll",    // github.com/filebrowser/caddy/jekyll
+	"hugo",      // github.com/filebrowser/caddy/hugo
 	"mailout",   // github.com/SchumacherFM/mailout
 	"awses",     // github.com/miquella/caddy-awses
 	"awslambda", // github.com/coopernurse/caddy-awslambda

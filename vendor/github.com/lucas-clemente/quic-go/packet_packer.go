@@ -46,11 +46,15 @@ type streamFrameSource interface {
 }
 
 type packetPacker struct {
-	connectionID protocol.ConnectionID
-	perspective  protocol.Perspective
-	version      protocol.VersionNumber
-	divNonce     []byte
-	cryptoSetup  sealingManager
+	destConnID protocol.ConnectionID
+	srcConnID  protocol.ConnectionID
+
+	perspective protocol.Perspective
+	version     protocol.VersionNumber
+	cryptoSetup sealingManager
+
+	token    []byte
+	divNonce []byte
 
 	packetNumberGenerator *packetNumberGenerator
 	getPacketNumberLen    func(protocol.PacketNumber) protocol.PacketNumberLen
@@ -67,10 +71,13 @@ type packetPacker struct {
 	numNonRetransmittableAcks int
 }
 
-func newPacketPacker(connectionID protocol.ConnectionID,
+func newPacketPacker(
+	destConnID protocol.ConnectionID,
+	srcConnID protocol.ConnectionID,
 	initialPacketNumber protocol.PacketNumber,
 	getPacketNumberLen func(protocol.PacketNumber) protocol.PacketNumberLen,
 	remoteAddr net.Addr, // only used for determining the max packet size
+	token []byte,
 	divNonce []byte,
 	cryptoSetup sealingManager,
 	streamFramer streamFrameSource,
@@ -93,7 +100,9 @@ func newPacketPacker(connectionID protocol.ConnectionID,
 	return &packetPacker{
 		cryptoSetup:           cryptoSetup,
 		divNonce:              divNonce,
-		connectionID:          connectionID,
+		token:                 token,
+		destConnID:            destConnID,
+		srcConnID:             srcConnID,
 		perspective:           perspective,
 		version:               version,
 		streams:               streamFramer,
@@ -167,7 +176,7 @@ func (p *packetPacker) PackRetransmission(packet *ackhandler.Packet) ([]*packedP
 		var payloadLength protocol.ByteCount
 
 		header := p.getHeader(encLevel)
-		headerLength, err := header.GetLength(p.perspective, p.version)
+		headerLength, err := header.GetLength(p.version)
 		if err != nil {
 			return nil, err
 		}
@@ -293,7 +302,7 @@ func (p *packetPacker) PackPacket() (*packedPacket, error) {
 	encLevel, sealer := p.cryptoSetup.GetSealer()
 
 	header := p.getHeader(encLevel)
-	headerLength, err := header.GetLength(p.perspective, p.version)
+	headerLength, err := header.GetLength(p.version)
 	if err != nil {
 		return nil, err
 	}
@@ -347,7 +356,7 @@ func (p *packetPacker) PackPacket() (*packedPacket, error) {
 func (p *packetPacker) packCryptoPacket() (*packedPacket, error) {
 	encLevel, sealer := p.cryptoSetup.GetSealerForCryptoStream()
 	header := p.getHeader(encLevel)
-	headerLength, err := header.GetLength(p.perspective, p.version)
+	headerLength, err := header.GetLength(p.version)
 	if err != nil {
 		return nil, err
 	}
@@ -446,35 +455,38 @@ func (p *packetPacker) getHeader(encLevel protocol.EncryptionLevel) *wire.Header
 	packetNumberLen := p.getPacketNumberLen(pnum)
 
 	header := &wire.Header{
-		ConnectionID:    p.connectionID,
 		PacketNumber:    pnum,
 		PacketNumberLen: packetNumberLen,
+		Version:         p.version,
 	}
 
-	if p.version.UsesTLS() && encLevel != protocol.EncryptionForwardSecure {
-		header.PacketNumberLen = protocol.PacketNumberLen4
+	if p.version.UsesIETFHeaderFormat() && encLevel != protocol.EncryptionForwardSecure {
 		header.IsLongHeader = true
+		header.SrcConnectionID = p.srcConnID
+		if !p.version.UsesVarintPacketNumbers() {
+			header.PacketNumberLen = protocol.PacketNumberLen4
+		}
+		// Set the payload len to maximum size.
+		// Since it is encoded as a varint, this guarantees us that the header will end up at most as big as GetLength() returns.
+		header.PayloadLen = p.maxPacketSize
 		if !p.hasSentPacket && p.perspective == protocol.PerspectiveClient {
 			header.Type = protocol.PacketTypeInitial
+			header.Token = p.token
 		} else {
 			header.Type = protocol.PacketTypeHandshake
 		}
 	}
 
-	if p.omitConnectionID && encLevel == protocol.EncryptionForwardSecure {
-		header.OmitConnectionID = true
+	if !p.omitConnectionID || encLevel != protocol.EncryptionForwardSecure {
+		header.DestConnectionID = p.destConnID
 	}
 	if !p.version.UsesTLS() {
 		if p.perspective == protocol.PerspectiveServer && encLevel == protocol.EncryptionSecure {
+			header.Type = protocol.PacketType0RTT
 			header.DiversificationNonce = p.divNonce
 		}
 		if p.perspective == protocol.PerspectiveClient && encLevel != protocol.EncryptionForwardSecure {
 			header.VersionFlag = true
-			header.Version = p.version
-		}
-	} else {
-		if encLevel != protocol.EncryptionForwardSecure {
-			header.Version = p.version
 		}
 	}
 	return header
@@ -487,6 +499,20 @@ func (p *packetPacker) writeAndSealPacket(
 ) ([]byte, error) {
 	raw := *getPacketBuffer()
 	buffer := bytes.NewBuffer(raw[:0])
+
+	// the payload length is only needed for Long Headers
+	if header.IsLongHeader {
+		if header.Type == protocol.PacketTypeInitial {
+			headerLen, _ := header.GetLength(p.version)
+			header.PayloadLen = protocol.ByteCount(protocol.MinInitialPacketSize) - headerLen
+		} else {
+			payloadLen := protocol.ByteCount(sealer.Overhead())
+			for _, frame := range payloadFrames {
+				payloadLen += frame.Length(p.version)
+			}
+			header.PayloadLen = payloadLen
+		}
+	}
 
 	if err := header.Write(buffer, p.perspective, p.version); err != nil {
 		return nil, err
@@ -539,6 +565,10 @@ func (p *packetPacker) canSendData(encLevel protocol.EncryptionLevel) bool {
 
 func (p *packetPacker) SetOmitConnectionID() {
 	p.omitConnectionID = true
+}
+
+func (p *packetPacker) ChangeDestConnectionID(connID protocol.ConnectionID) {
+	p.destConnID = connID
 }
 
 func (p *packetPacker) SetMaxPacketSize(size protocol.ByteCount) {

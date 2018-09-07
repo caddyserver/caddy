@@ -50,10 +50,6 @@ const (
 	// TagSFCW is the initial stream flow control receive window.
 	TagSFCW Tag = 'S' + 'F'<<8 + 'C'<<16 + 'W'<<24
 
-	// TagFHL2 forces head of line blocking.
-	// Chrome experiment (see https://codereview.chromium.org/2115033002)
-	// unsupported by quic-go
-	TagFHL2 Tag = 'F' + 'H'<<8 + 'L'<<16 + '2'<<24
 	// TagNSTP is the no STOP_WAITING experiment
 	// currently unsupported by quic-go
 	TagNSTP Tag = 'N' + 'S'<<8 + 'T'<<16 + 'P'<<24

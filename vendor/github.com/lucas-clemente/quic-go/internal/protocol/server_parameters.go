@@ -12,11 +12,13 @@ const MaxPacketSizeIPv6 = 1232
 // This makes sure that those packets can always be retransmitted without splitting the contained StreamFrames
 const NonForwardSecurePacketSizeReduction = 50
 
+const defaultMaxCongestionWindowPackets = 1000
+
 // DefaultMaxCongestionWindow is the default for the max congestion window
-const DefaultMaxCongestionWindow = 1000
+const DefaultMaxCongestionWindow ByteCount = defaultMaxCongestionWindowPackets * DefaultTCPMSS
 
 // InitialCongestionWindow is the initial congestion window in QUIC packets
-const InitialCongestionWindow = 32
+const InitialCongestionWindow ByteCount = 32 * DefaultTCPMSS
 
 // MaxUndecryptablePackets limits the number of undecryptable packets that a
 // session queues for later until it sends a public reset.
@@ -70,7 +72,7 @@ const MaxStreamsMultiplier = 1.1
 const MaxStreamsMinimumIncrement = 10
 
 // MaxSessionUnprocessedPackets is the max number of packets stored in each session that are not yet processed.
-const MaxSessionUnprocessedPackets = DefaultMaxCongestionWindow
+const MaxSessionUnprocessedPackets = defaultMaxCongestionWindowPackets
 
 // SkipPacketAveragePeriodLength is the average period length in which one packet number is skipped to prevent an Optimistic ACK attack
 const SkipPacketAveragePeriodLength PacketNumber = 500
@@ -84,7 +86,7 @@ const CookieExpiryTime = 24 * time.Hour
 // MaxOutstandingSentPackets is maximum number of packets saved for retransmission.
 // When reached, it imposes a soft limit on sending new packets:
 // Sending ACKs and retransmission is still allowed, but now new regular packets can be sent.
-const MaxOutstandingSentPackets = 2 * DefaultMaxCongestionWindow
+const MaxOutstandingSentPackets = 2 * defaultMaxCongestionWindowPackets
 
 // MaxTrackedSentPackets is maximum number of sent packets saved for retransmission.
 // When reached, no more packets will be sent.
@@ -92,7 +94,7 @@ const MaxOutstandingSentPackets = 2 * DefaultMaxCongestionWindow
 const MaxTrackedSentPackets = MaxOutstandingSentPackets * 5 / 4
 
 // MaxTrackedReceivedAckRanges is the maximum number of ACK ranges tracked
-const MaxTrackedReceivedAckRanges = DefaultMaxCongestionWindow
+const MaxTrackedReceivedAckRanges = defaultMaxCongestionWindowPackets
 
 // MaxNonRetransmittableAcks is the maximum number of packets containing an ACK, but no retransmittable frames, that we send in a row
 const MaxNonRetransmittableAcks = 19
@@ -133,7 +135,20 @@ const NumCachedCertificates = 128
 // 2. it reduces the head-of-line blocking, when a packet is lost
 const MinStreamFrameSize ByteCount = 128
 
+// MaxAckFrameSize is the maximum size for an (IETF QUIC) ACK frame that we write
+// Due to the varint encoding, ACK frames can grow (almost) indefinitely large.
+// The MaxAckFrameSize should be large enough to encode many ACK range,
+// but must ensure that a maximum size ACK frame fits into one packet.
+const MaxAckFrameSize ByteCount = 1000
+
 // MinPacingDelay is the minimum duration that is used for packet pacing
 // If the packet packing frequency is higher, multiple packets might be sent at once.
 // Example: For a packet pacing delay of 20 microseconds, we would send 5 packets at once, wait for 100 microseconds, and so forth.
 const MinPacingDelay time.Duration = 100 * time.Microsecond
+
+// DefaultConnectionIDLength is the connection ID length that is used for multiplexed connections
+// if no other value is configured.
+const DefaultConnectionIDLength = 4
+
+// MaxRetries is the maximum number of Retries a client will do before failing the connection.
+const MaxRetries = 3
