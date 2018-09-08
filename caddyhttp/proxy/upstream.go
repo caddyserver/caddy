@@ -329,6 +329,8 @@ func parseUpstream(u string) ([]string, error) {
 }
 
 func parseBlock(c *caddyfile.Dispenser, u *staticUpstream, hasSrv bool) error {
+	var isUpstream bool
+
 	switch c.Val() {
 	case "policy":
 		if !c.NextArg() {
@@ -458,26 +460,8 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream, hasSrv bool) error {
 		}
 		u.HealthCheck.ContentString = c.Val()
 	case "header_upstream":
-		var header, value, replaced string
-		if c.Args(&header, &value, &replaced) {
-			// Don't allow - or + in replacements
-			if strings.HasPrefix(header, "-") || strings.HasPrefix(header, "+") {
-				return c.ArgErr()
-			}
-			r, err := regexp.Compile(value)
-			if err != nil {
-				return c.ArgErr()
-			}
-			u.upstreamHeaderReplacements.Add(header, headerReplacement{r, replaced})
-		} else {
-			if len(value) == 0 {
-				// When removing a header, the value can be optional.
-				if !strings.HasPrefix(header, "-") {
-					return c.ArgErr()
-				}
-			}
-			u.upstreamHeaders.Add(header, value)
-		}
+		isUpstream = true
+		fallthrough
 	case "header_downstream":
 		var header, value, replaced string
 		if c.Args(&header, &value, &replaced) {
@@ -487,9 +471,13 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream, hasSrv bool) error {
 			}
 			r, err := regexp.Compile(value)
 			if err != nil {
-				return c.ArgErr()
+				return err
 			}
-			u.downstreamHeaderReplacements.Add(header, headerReplacement{r, replaced})
+			if isUpstream {
+				u.upstreamHeaderReplacements.Add(header, headerReplacement{r, replaced})
+			} else {
+				u.downstreamHeaderReplacements.Add(header, headerReplacement{r, replaced})
+			}
 		} else {
 			if len(value) == 0 {
 				// When removing a header, the value can be optional.
@@ -497,7 +485,11 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream, hasSrv bool) error {
 					return c.ArgErr()
 				}
 			}
-			u.downstreamHeaders.Add(header, value)
+			if isUpstream {
+				u.upstreamHeaders.Add(header, value)
+			} else {
+				u.downstreamHeaders.Add(header, value)
+			}
 		}
 	case "transparent":
 		// Note: X-Forwarded-For header is always being appended for proxy connections
