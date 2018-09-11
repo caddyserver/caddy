@@ -181,12 +181,13 @@ func (i *Instance) ShutdownCallbacks() []error {
 // Restart replaces the servers in i with new servers created from
 // executing the newCaddyfile. Upon success, it returns the new
 // instance to replace i. Upon failure, i will not be replaced.
-func (i *Instance) Restart(newCaddyfile Input) (inst *Instance, err error) {
+func (i *Instance) Restart(newCaddyfile Input) (*Instance, error) {
 	log.Println("[INFO] Reloading")
 
 	i.wg.Add(1)
 	defer i.wg.Done()
 
+	var err error
 	// if something went wrong on restart then run onRestartFailed callbacks
 	defer func() {
 		r := recover()
@@ -753,8 +754,7 @@ func startServers(serverList []Server, inst *Instance, restartFds map[string]res
 			if old, ok := restartFds[addr]; ok {
 				// listener
 				if old.listener != nil {
-					var file *os.File
-					file, err = old.listener.File()
+					file, err := old.listener.File()
 					if err != nil {
 						return err
 					}
@@ -769,8 +769,7 @@ func startServers(serverList []Server, inst *Instance, restartFds map[string]res
 				}
 				// packetconn
 				if old.packet != nil {
-					var file *os.File
-					file, err = old.packet.File()
+					file, err := old.packet.File()
 					if err != nil {
 						return err
 					}
