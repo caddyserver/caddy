@@ -9,7 +9,7 @@ import (
 
 type streamFramer struct {
 	streamGetter streamGetter
-	cryptoStream cryptoStreamI
+	cryptoStream cryptoStream
 	version      protocol.VersionNumber
 
 	streamQueueMutex    sync.Mutex
@@ -19,7 +19,7 @@ type streamFramer struct {
 }
 
 func newStreamFramer(
-	cryptoStream cryptoStreamI,
+	cryptoStream cryptoStream,
 	streamGetter streamGetter,
 	v protocol.VersionNumber,
 ) *streamFramer {

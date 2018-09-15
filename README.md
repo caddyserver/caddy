@@ -139,7 +139,7 @@ If you have questions or concerns about Caddy' underlying crypto implementations
 
 ## Contributing
 
-**[Join our forum](https://caddy.community) where you can chat with other Caddy users and developers!** To get familiar with the code base, try [Caddy code search on Sourcegraph](https://sourcegraph.com/github.com/mholt/caddy/-/search)!
+**[Join our forum](https://caddy.community) where you can chat with other Caddy users and developers!** To get familiar with the code base, try [Caddy code search on Sourcegraph](https://sourcegraph.com/github.com/mholt/caddy/)!
 
 Please see our [contributing guidelines](https://github.com/mholt/caddy/blob/master/.github/CONTRIBUTING.md) for instructions. If you want to write a plugin, check out the [developer wiki](https://github.com/mholt/caddy/wiki).
 

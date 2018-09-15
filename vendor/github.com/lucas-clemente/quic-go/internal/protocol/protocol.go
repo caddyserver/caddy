@@ -52,9 +52,6 @@ func (t PacketType) String() string {
 	}
 }
 
-// A ConnectionID in QUIC
-type ConnectionID uint64
-
 // A ByteCount in QUIC
 type ByteCount uint64
 
@@ -85,3 +82,9 @@ const MinInitialPacketSize = 1200
 // * one failure due to an incorrect or missing source-address token
 // * one failure due the server's certificate chain being unavailable and the server being unwilling to send it without a valid source-address token
 const MaxClientHellos = 3
+
+// ConnectionIDLenGQUIC is the length of the source Connection ID used on gQUIC QUIC packets.
+const ConnectionIDLenGQUIC = 8
+
+// MinConnectionIDLenInitial is the minimum length of the destination connection ID on an Initial packet.
+const MinConnectionIDLenInitial = 8

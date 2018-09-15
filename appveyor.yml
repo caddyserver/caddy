@@ -10,17 +10,16 @@ clone_folder: c:\gopath\src\github.com\mholt\caddy
 environment:
   GOPATH: c:\gopath
 
+stack: go 1.11
+
 install:
-  - rmdir c:\go /s /q
-  - appveyor DownloadFile https://storage.googleapis.com/golang/go1.11.windows-amd64.zip
-  - 7z x go1.11.windows-amd64.zip -y -oC:\ > NUL
   - set PATH=%GOPATH%\bin;%PATH%
+  - set PATH=C:\msys64\mingw64\bin;%PATH%
   - go version
   - go env
   - go get -t ./...
   - go get github.com/golang/lint/golint
   - go get github.com/FiloSottile/vendorcheck
-  # Install gometalinter
   - go get github.com/alecthomas/gometalinter
 
 build: off
