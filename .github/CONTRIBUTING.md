@@ -128,7 +128,7 @@ Collabators have push rights to the repository. We grant this permission after o
 
 - **Prefer squashed commits over a messy merge.** If there are many little commits, please [squash the commits](https://stackoverflow.com/a/11732910/1048862) so we don't clutter the commit history.
 
-- **Don't accept new dependencies lightly.** Dependencies can make the world crash and burn, but they are sometimes necessary. Choose carefully. Extremely small dependencies (a few lines of code) can be inlined. The rest may not be needed. For those that are, Caddy vendors all dependencies with the help of [gvt](https://github.com/FiloSottile/gvt). All external dependencies must be vendored, and _Caddy must not export any types defined by those dependencies_. Check this diligently!
+- **Don't accept new dependencies lightly.** Dependencies can make the world crash and burn, but they are sometimes necessary. Choose carefully. Extremely small dependencies (a few lines of code) can be inlined. The rest may not be needed. For those that are, Caddy vendors all dependencies using [Go modules](https://github.com/golang/go/wiki/Modules). All external dependencies must be vendored, and _Caddy must not export any types defined by those dependencies_. Check this diligently!
 
 - **Be extra careful in some areas of the code.** There are some critical areas in the Caddy code base that we review extra meticulously: the `caddy` and `caddytls` packages especially.
 
