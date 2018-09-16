@@ -18,7 +18,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/xenolf/lego/acmev2"
+	"github.com/xenolf/lego/acme"
 )
 
 func TestHostQualifies(t *testing.T) {

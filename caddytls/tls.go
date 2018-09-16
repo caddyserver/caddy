@@ -39,7 +39,7 @@ import (
 	"strings"
 
 	"github.com/mholt/caddy"
-	"github.com/xenolf/lego/acmev2"
+	"github.com/xenolf/lego/acme"
 )
 
 // HostQualifies returns true if the hostname alone

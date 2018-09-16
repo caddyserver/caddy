@@ -27,7 +27,7 @@ import (
 
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/telemetry"
-	"github.com/xenolf/lego/acmev2"
+	"github.com/xenolf/lego/acme"
 )
 
 // acmeMu ensures that only one ACME challenge occurs at a time.
@@ -266,7 +266,7 @@ func (c *ACMEClient) Obtain(name string) error {
 		}
 
 		// Success - immediately save the certificate resource
-		err = saveCertResource(c.storage, certificate)
+		err = saveCertResource(c.storage, *certificate)
 		if err != nil {
 			return fmt.Errorf("error saving assets for %v: %v", name, err)
 		}
@@ -312,7 +312,7 @@ func (c *ACMEClient) Renew(name string) error {
 	certMeta.PrivateKey = siteData.Key
 
 	// Perform renewal and retry if necessary, but not too many times.
-	var newCertMeta acme.CertificateResource
+	var newCertMeta *acme.CertificateResource
 	var success bool
 	for attempts := 0; attempts < 2; attempts++ {
 		namesObtaining.Add([]string{name})
@@ -345,7 +345,7 @@ func (c *ACMEClient) Renew(name string) error {
 	caddy.EmitEvent(caddy.CertRenewEvent, name)
 	go telemetry.Increment("tls_acme_certs_renewed")
 
-	return saveCertResource(c.storage, newCertMeta)
+	return saveCertResource(c.storage, *newCertMeta)
 }
 
 // Revoke revokes the certificate for name and deletes

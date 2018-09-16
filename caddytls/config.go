@@ -26,7 +26,7 @@ import (
 
 	"github.com/klauspost/cpuid"
 	"github.com/mholt/caddy"
-	"github.com/xenolf/lego/acmev2"
+	"github.com/xenolf/lego/acme"
 )
 
 // Config describes how TLS should be configured and used.
