@@ -42,6 +42,10 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// Intentionally export __val fields in Fsid and Sigset_t
+	valRegex := regexp.MustCompile(`type (Fsid|Sigset_t) struct {(\s+)X__val(\s+\S+\s+)}`)
+	b = valRegex.ReplaceAll(b, []byte("type $1 struct {${2}Val$3}"))
+
 	// If we have empty Ptrace structs, we should delete them. Only s390x emits
 	// nonempty Ptrace structs.
 	ptraceRexexp := regexp.MustCompile(`type Ptrace((Psw|Fpregs|Per) struct {\s*})`)
@@ -56,16 +60,22 @@ func main() {
 	removeFieldsRegex := regexp.MustCompile(`X__glibc\S*`)
 	b = removeFieldsRegex.ReplaceAll(b, []byte("_"))
 
-	// We refuse to export private fields on s390x
-	if goarch == "s390x" && goos == "linux" {
-		// Remove cgo padding fields
-		removeFieldsRegex := regexp.MustCompile(`Pad_cgo_\d+`)
-		b = removeFieldsRegex.ReplaceAll(b, []byte("_"))
+	// Convert [65]int8 to [65]byte in Utsname members to simplify
+	// conversion to string; see golang.org/issue/20753
+	convertUtsnameRegex := regexp.MustCompile(`((Sys|Node|Domain)name|Release|Version|Machine)(\s+)\[(\d+)\]u?int8`)
+	b = convertUtsnameRegex.ReplaceAll(b, []byte("$1$3[$4]byte"))
 
-		// Remove padding, hidden, or unused fields
-		removeFieldsRegex = regexp.MustCompile(`X_\S+`)
-		b = removeFieldsRegex.ReplaceAll(b, []byte("_"))
-	}
+	// Remove spare fields (e.g. in Statx_t)
+	spareFieldsRegex := regexp.MustCompile(`X__spare\S*`)
+	b = spareFieldsRegex.ReplaceAll(b, []byte("_"))
+
+	// Remove cgo padding fields
+	removePaddingFieldsRegex := regexp.MustCompile(`Pad_cgo_\d+`)
+	b = removePaddingFieldsRegex.ReplaceAll(b, []byte("_"))
+
+	// Remove padding, hidden, or unused fields
+	removeFieldsRegex = regexp.MustCompile(`\b(X_\S+|Padding)`)
+	b = removeFieldsRegex.ReplaceAll(b, []byte("_"))
 
 	// Remove the first line of warning from cgo
 	b = b[bytes.IndexByte(b, '\n')+1:]

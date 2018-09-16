@@ -25,7 +25,11 @@ import (
 //go:cgo_import_dynamic libc___xnet_recvmsg __xnet_recvmsg "libsocket.so"
 //go:cgo_import_dynamic libc___xnet_sendmsg __xnet_sendmsg "libsocket.so"
 //go:cgo_import_dynamic libc_acct acct "libc.so"
+//go:cgo_import_dynamic libc___makedev __makedev "libc.so"
+//go:cgo_import_dynamic libc___major __major "libc.so"
+//go:cgo_import_dynamic libc___minor __minor "libc.so"
 //go:cgo_import_dynamic libc_ioctl ioctl "libc.so"
+//go:cgo_import_dynamic libc_poll poll "libc.so"
 //go:cgo_import_dynamic libc_access access "libc.so"
 //go:cgo_import_dynamic libc_adjtime adjtime "libc.so"
 //go:cgo_import_dynamic libc_chdir chdir "libc.so"
@@ -37,14 +41,17 @@ import (
 //go:cgo_import_dynamic libc_dup dup "libc.so"
 //go:cgo_import_dynamic libc_dup2 dup2 "libc.so"
 //go:cgo_import_dynamic libc_exit exit "libc.so"
+//go:cgo_import_dynamic libc_faccessat faccessat "libc.so"
 //go:cgo_import_dynamic libc_fchdir fchdir "libc.so"
 //go:cgo_import_dynamic libc_fchmod fchmod "libc.so"
 //go:cgo_import_dynamic libc_fchmodat fchmodat "libc.so"
 //go:cgo_import_dynamic libc_fchown fchown "libc.so"
 //go:cgo_import_dynamic libc_fchownat fchownat "libc.so"
 //go:cgo_import_dynamic libc_fdatasync fdatasync "libc.so"
+//go:cgo_import_dynamic libc_flock flock "libc.so"
 //go:cgo_import_dynamic libc_fpathconf fpathconf "libc.so"
 //go:cgo_import_dynamic libc_fstat fstat "libc.so"
+//go:cgo_import_dynamic libc_fstatat fstatat "libc.so"
 //go:cgo_import_dynamic libc_fstatvfs fstatvfs "libc.so"
 //go:cgo_import_dynamic libc_getdents getdents "libc.so"
 //go:cgo_import_dynamic libc_getgid getgid "libc.so"
@@ -74,6 +81,7 @@ import (
 //go:cgo_import_dynamic libc_mlock mlock "libc.so"
 //go:cgo_import_dynamic libc_mlockall mlockall "libc.so"
 //go:cgo_import_dynamic libc_mprotect mprotect "libc.so"
+//go:cgo_import_dynamic libc_msync msync "libc.so"
 //go:cgo_import_dynamic libc_munlock munlock "libc.so"
 //go:cgo_import_dynamic libc_munlockall munlockall "libc.so"
 //go:cgo_import_dynamic libc_nanosleep nanosleep "libc.so"
@@ -89,6 +97,7 @@ import (
 //go:cgo_import_dynamic libc_renameat renameat "libc.so"
 //go:cgo_import_dynamic libc_rmdir rmdir "libc.so"
 //go:cgo_import_dynamic libc_lseek lseek "libc.so"
+//go:cgo_import_dynamic libc_select select "libc.so"
 //go:cgo_import_dynamic libc_setegid setegid "libc.so"
 //go:cgo_import_dynamic libc_seteuid seteuid "libc.so"
 //go:cgo_import_dynamic libc_setgid setgid "libc.so"
@@ -120,6 +129,7 @@ import (
 //go:cgo_import_dynamic libc___xnet_connect __xnet_connect "libsocket.so"
 //go:cgo_import_dynamic libc_mmap mmap "libc.so"
 //go:cgo_import_dynamic libc_munmap munmap "libc.so"
+//go:cgo_import_dynamic libc_sendfile sendfile "libsendfile.so"
 //go:cgo_import_dynamic libc___xnet_sendto __xnet_sendto "libsocket.so"
 //go:cgo_import_dynamic libc___xnet_socket __xnet_socket "libsocket.so"
 //go:cgo_import_dynamic libc___xnet_socketpair __xnet_socketpair "libsocket.so"
@@ -128,7 +138,6 @@ import (
 //go:cgo_import_dynamic libc_getpeername getpeername "libsocket.so"
 //go:cgo_import_dynamic libc_setsockopt setsockopt "libsocket.so"
 //go:cgo_import_dynamic libc_recvfrom recvfrom "libsocket.so"
-//go:cgo_import_dynamic libc_sysconf sysconf "libc.so"
 
 //go:linkname procpipe libc_pipe
 //go:linkname procgetsockname libc_getsockname
@@ -145,7 +154,11 @@ import (
 //go:linkname proc__xnet_recvmsg libc___xnet_recvmsg
 //go:linkname proc__xnet_sendmsg libc___xnet_sendmsg
 //go:linkname procacct libc_acct
+//go:linkname proc__makedev libc___makedev
+//go:linkname proc__major libc___major
+//go:linkname proc__minor libc___minor
 //go:linkname procioctl libc_ioctl
+//go:linkname procpoll libc_poll
 //go:linkname procAccess libc_access
 //go:linkname procAdjtime libc_adjtime
 //go:linkname procChdir libc_chdir
@@ -157,14 +170,17 @@ import (
 //go:linkname procDup libc_dup
 //go:linkname procDup2 libc_dup2
 //go:linkname procExit libc_exit
+//go:linkname procFaccessat libc_faccessat
 //go:linkname procFchdir libc_fchdir
 //go:linkname procFchmod libc_fchmod
 //go:linkname procFchmodat libc_fchmodat
 //go:linkname procFchown libc_fchown
 //go:linkname procFchownat libc_fchownat
 //go:linkname procFdatasync libc_fdatasync
+//go:linkname procFlock libc_flock
 //go:linkname procFpathconf libc_fpathconf
 //go:linkname procFstat libc_fstat
+//go:linkname procFstatat libc_fstatat
 //go:linkname procFstatvfs libc_fstatvfs
 //go:linkname procGetdents libc_getdents
 //go:linkname procGetgid libc_getgid
@@ -194,6 +210,7 @@ import (
 //go:linkname procMlock libc_mlock
 //go:linkname procMlockall libc_mlockall
 //go:linkname procMprotect libc_mprotect
+//go:linkname procMsync libc_msync
 //go:linkname procMunlock libc_munlock
 //go:linkname procMunlockall libc_munlockall
 //go:linkname procNanosleep libc_nanosleep
@@ -209,6 +226,7 @@ import (
 //go:linkname procRenameat libc_renameat
 //go:linkname procRmdir libc_rmdir
 //go:linkname proclseek libc_lseek
+//go:linkname procSelect libc_select
 //go:linkname procSetegid libc_setegid
 //go:linkname procSeteuid libc_seteuid
 //go:linkname procSetgid libc_setgid
@@ -240,6 +258,7 @@ import (
 //go:linkname proc__xnet_connect libc___xnet_connect
 //go:linkname procmmap libc_mmap
 //go:linkname procmunmap libc_munmap
+//go:linkname procsendfile libc_sendfile
 //go:linkname proc__xnet_sendto libc___xnet_sendto
 //go:linkname proc__xnet_socket libc___xnet_socket
 //go:linkname proc__xnet_socketpair libc___xnet_socketpair
@@ -248,7 +267,6 @@ import (
 //go:linkname procgetpeername libc_getpeername
 //go:linkname procsetsockopt libc_setsockopt
 //go:linkname procrecvfrom libc_recvfrom
-//go:linkname procsysconf libc_sysconf
 
 var (
 	procpipe,
@@ -266,7 +284,11 @@ var (
 	proc__xnet_recvmsg,
 	proc__xnet_sendmsg,
 	procacct,
+	proc__makedev,
+	proc__major,
+	proc__minor,
 	procioctl,
+	procpoll,
 	procAccess,
 	procAdjtime,
 	procChdir,
@@ -278,14 +300,17 @@ var (
 	procDup,
 	procDup2,
 	procExit,
+	procFaccessat,
 	procFchdir,
 	procFchmod,
 	procFchmodat,
 	procFchown,
 	procFchownat,
 	procFdatasync,
+	procFlock,
 	procFpathconf,
 	procFstat,
+	procFstatat,
 	procFstatvfs,
 	procGetdents,
 	procGetgid,
@@ -315,6 +340,7 @@ var (
 	procMlock,
 	procMlockall,
 	procMprotect,
+	procMsync,
 	procMunlock,
 	procMunlockall,
 	procNanosleep,
@@ -330,6 +356,7 @@ var (
 	procRenameat,
 	procRmdir,
 	proclseek,
+	procSelect,
 	procSetegid,
 	procSeteuid,
 	procSetgid,
@@ -361,6 +388,7 @@ var (
 	proc__xnet_connect,
 	procmmap,
 	procmunmap,
+	procsendfile,
 	proc__xnet_sendto,
 	proc__xnet_socket,
 	proc__xnet_socketpair,
@@ -368,8 +396,7 @@ var (
 	proc__xnet_getsockopt,
 	procgetpeername,
 	procsetsockopt,
-	procrecvfrom,
-	procsysconf syscallFunc
+	procrecvfrom syscallFunc
 )
 
 func pipe(p *[2]_C_int) (n int, err error) {
@@ -519,8 +546,35 @@ func acct(path *byte) (err error) {
 	return
 }
 
+func __makedev(version int, major uint, minor uint) (val uint64) {
+	r0, _, _ := sysvicall6(uintptr(unsafe.Pointer(&proc__makedev)), 3, uintptr(version), uintptr(major), uintptr(minor), 0, 0, 0)
+	val = uint64(r0)
+	return
+}
+
+func __major(version int, dev uint64) (val uint) {
+	r0, _, _ := sysvicall6(uintptr(unsafe.Pointer(&proc__major)), 2, uintptr(version), uintptr(dev), 0, 0, 0, 0)
+	val = uint(r0)
+	return
+}
+
+func __minor(version int, dev uint64) (val uint) {
+	r0, _, _ := sysvicall6(uintptr(unsafe.Pointer(&proc__minor)), 2, uintptr(version), uintptr(dev), 0, 0, 0, 0)
+	val = uint(r0)
+	return
+}
+
 func ioctl(fd int, req uint, arg uintptr) (err error) {
 	_, _, e1 := sysvicall6(uintptr(unsafe.Pointer(&procioctl)), 3, uintptr(fd), uintptr(req), uintptr(arg), 0, 0, 0)
+	if e1 != 0 {
+		err = e1
+	}
+	return
+}
+
+func poll(fds *PollFd, nfds int, timeout int) (n int, err error) {
+	r0, _, e1 := sysvicall6(uintptr(unsafe.Pointer(&procpoll)), 3, uintptr(unsafe.Pointer(fds)), uintptr(nfds), uintptr(timeout), 0, 0, 0)
+	n = int(r0)
 	if e1 != 0 {
 		err = e1
 	}
@@ -644,6 +698,19 @@ func Exit(code int) {
 	return
 }
 
+func Faccessat(dirfd int, path string, mode uint32, flags int) (err error) {
+	var _p0 *byte
+	_p0, err = BytePtrFromString(path)
+	if err != nil {
+		return
+	}
+	_, _, e1 := sysvicall6(uintptr(unsafe.Pointer(&procFaccessat)), 4, uintptr(dirfd), uintptr(unsafe.Pointer(_p0)), uintptr(mode), uintptr(flags), 0, 0)
+	if e1 != 0 {
+		err = e1
+	}
+	return
+}
+
 func Fchdir(fd int) (err error) {
 	_, _, e1 := sysvicall6(uintptr(unsafe.Pointer(&procFchdir)), 1, uintptr(fd), 0, 0, 0, 0, 0)
 	if e1 != 0 {
@@ -702,6 +769,14 @@ func Fdatasync(fd int) (err error) {
 	return
 }
 
+func Flock(fd int, how int) (err error) {
+	_, _, e1 := sysvicall6(uintptr(unsafe.Pointer(&procFlock)), 2, uintptr(fd), uintptr(how), 0, 0, 0, 0)
+	if e1 != 0 {
+		err = e1
+	}
+	return
+}
+
 func Fpathconf(fd int, name int) (val int, err error) {
 	r0, _, e1 := sysvicall6(uintptr(unsafe.Pointer(&procFpathconf)), 2, uintptr(fd), uintptr(name), 0, 0, 0, 0)
 	val = int(r0)
@@ -713,6 +788,19 @@ func Fpathconf(fd int, name int) (val int, err error) {
 
 func Fstat(fd int, stat *Stat_t) (err error) {
 	_, _, e1 := sysvicall6(uintptr(unsafe.Pointer(&procFstat)), 2, uintptr(fd), uintptr(unsafe.Pointer(stat)), 0, 0, 0, 0)
+	if e1 != 0 {
+		err = e1
+	}
+	return
+}
+
+func Fstatat(fd int, path string, stat *Stat_t, flags int) (err error) {
+	var _p0 *byte
+	_p0, err = BytePtrFromString(path)
+	if err != nil {
+		return
+	}
+	_, _, e1 := sysvicall6(uintptr(unsafe.Pointer(&procFstatat)), 4, uintptr(fd), uintptr(unsafe.Pointer(_p0)), uintptr(unsafe.Pointer(stat)), uintptr(flags), 0, 0)
 	if e1 != 0 {
 		err = e1
 	}
@@ -1009,6 +1097,18 @@ func Mprotect(b []byte, prot int) (err error) {
 	return
 }
 
+func Msync(b []byte, flags int) (err error) {
+	var _p0 *byte
+	if len(b) > 0 {
+		_p0 = &b[0]
+	}
+	_, _, e1 := sysvicall6(uintptr(unsafe.Pointer(&procMsync)), 3, uintptr(unsafe.Pointer(_p0)), uintptr(len(b)), uintptr(flags), 0, 0, 0)
+	if e1 != 0 {
+		err = e1
+	}
+	return
+}
+
 func Munlock(b []byte) (err error) {
 	var _p0 *byte
 	if len(b) > 0 {
@@ -1196,6 +1296,14 @@ func Rmdir(path string) (err error) {
 func Seek(fd int, offset int64, whence int) (newoffset int64, err error) {
 	r0, _, e1 := sysvicall6(uintptr(unsafe.Pointer(&proclseek)), 3, uintptr(fd), uintptr(offset), uintptr(whence), 0, 0, 0)
 	newoffset = int64(r0)
+	if e1 != 0 {
+		err = e1
+	}
+	return
+}
+
+func Select(n int, r *FdSet, w *FdSet, e *FdSet, timeout *Timeval) (err error) {
+	_, _, e1 := sysvicall6(uintptr(unsafe.Pointer(&procSelect)), 5, uintptr(n), uintptr(unsafe.Pointer(r)), uintptr(unsafe.Pointer(w)), uintptr(unsafe.Pointer(e)), uintptr(unsafe.Pointer(timeout)), 0)
 	if e1 != 0 {
 		err = e1
 	}
@@ -1500,6 +1608,15 @@ func munmap(addr uintptr, length uintptr) (err error) {
 	return
 }
 
+func sendfile(outfd int, infd int, offset *int64, count int) (written int, err error) {
+	r0, _, e1 := sysvicall6(uintptr(unsafe.Pointer(&procsendfile)), 4, uintptr(outfd), uintptr(infd), uintptr(unsafe.Pointer(offset)), uintptr(count), 0, 0)
+	written = int(r0)
+	if e1 != 0 {
+		err = e1
+	}
+	return
+}
+
 func sendto(s int, buf []byte, flags int, to unsafe.Pointer, addrlen _Socklen) (err error) {
 	var _p0 *byte
 	if len(buf) > 0 {
@@ -1573,15 +1690,6 @@ func recvfrom(fd int, p []byte, flags int, from *RawSockaddrAny, fromlen *_Sockl
 	}
 	r0, _, e1 := sysvicall6(uintptr(unsafe.Pointer(&procrecvfrom)), 6, uintptr(fd), uintptr(unsafe.Pointer(_p0)), uintptr(len(p)), uintptr(flags), uintptr(unsafe.Pointer(from)), uintptr(unsafe.Pointer(fromlen)))
 	n = int(r0)
-	if e1 != 0 {
-		err = e1
-	}
-	return
-}
-
-func sysconf(name int) (n int64, err error) {
-	r0, _, e1 := sysvicall6(uintptr(unsafe.Pointer(&procsysconf)), 1, uintptr(name), 0, 0, 0, 0, 0)
-	n = int64(r0)
 	if e1 != 0 {
 		err = e1
 	}

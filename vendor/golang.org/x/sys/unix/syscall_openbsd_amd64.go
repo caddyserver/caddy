@@ -6,21 +6,12 @@
 
 package unix
 
-func Getpagesize() int { return 4096 }
-
-func TimespecToNsec(ts Timespec) int64 { return int64(ts.Sec)*1e9 + int64(ts.Nsec) }
-
-func NsecToTimespec(nsec int64) (ts Timespec) {
-	ts.Sec = nsec / 1e9
-	ts.Nsec = nsec % 1e9
-	return
+func setTimespec(sec, nsec int64) Timespec {
+	return Timespec{Sec: sec, Nsec: nsec}
 }
 
-func NsecToTimeval(nsec int64) (tv Timeval) {
-	nsec += 999 // round up to microsecond
-	tv.Usec = nsec % 1e9 / 1e3
-	tv.Sec = nsec / 1e9
-	return
+func setTimeval(sec, usec int64) Timeval {
+	return Timeval{Sec: sec, Usec: usec}
 }
 
 func SetKevent(k *Kevent_t, fd, mode, flags int) {
@@ -40,3 +31,7 @@ func (msghdr *Msghdr) SetControllen(length int) {
 func (cmsg *Cmsghdr) SetLen(length int) {
 	cmsg.Len = uint32(length)
 }
+
+// SYS___SYSCTL is used by syscall_bsd.go for all BSDs, but in modern versions
+// of openbsd/amd64 the syscall is called sysctl instead of __sysctl.
+const SYS___SYSCTL = SYS_SYSCTL

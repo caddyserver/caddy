@@ -4,6 +4,7 @@ package dns
 
 import (
 	"bufio"
+	"context"
 	"io"
 	"text/scanner"
 )
@@ -12,13 +13,18 @@ type scan struct {
 	src      *bufio.Reader
 	position scanner.Position
 	eof      bool // Have we just seen a eof
+	ctx      context.Context
 }
 
-func scanInit(r io.Reader) *scan {
+func scanInit(r io.Reader) (*scan, context.CancelFunc) {
 	s := new(scan)
 	s.src = bufio.NewReader(r)
 	s.position.Line = 1
-	return s
+
+	ctx, cancel := context.WithCancel(context.Background())
+	s.ctx = ctx
+
+	return s, cancel
 }
 
 // tokenText returns the next byte from the input
@@ -27,6 +33,13 @@ func (s *scan) tokenText() (byte, error) {
 	if err != nil {
 		return c, err
 	}
+	select {
+	case <-s.ctx.Done():
+		return c, context.Canceled
+	default:
+		break
+	}
+
 	// delay the newline handling until the next token is delivered,
 	// fixes off-by-one errors when reporting a parse error.
 	if s.eof == true {

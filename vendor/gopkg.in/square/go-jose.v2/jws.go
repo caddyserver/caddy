@@ -93,7 +93,7 @@ func (sig Signature) mergedHeaders() rawHeader {
 }
 
 // Compute data to be signed
-func (obj JSONWebSignature) computeAuthData(signature *Signature) []byte {
+func (obj JSONWebSignature) computeAuthData(payload []byte, signature *Signature) []byte {
 	var serializedProtected string
 
 	if signature.original != nil && signature.original.Protected != nil {
@@ -106,7 +106,7 @@ func (obj JSONWebSignature) computeAuthData(signature *Signature) []byte {
 
 	return []byte(fmt.Sprintf("%s.%s",
 		serializedProtected,
-		base64.RawURLEncoding.EncodeToString(obj.payload)))
+		base64.RawURLEncoding.EncodeToString(payload)))
 }
 
 // parseSignedFull parses a message in full format.

@@ -37,7 +37,6 @@ func SetNodeInterface(name string) bool {
 }
 
 func setNodeInterface(name string) bool {
-
 	iname, addr := getHardwareInterface(name) // null implementation for js
 	if iname != "" && addr != nil {
 		ifname = iname

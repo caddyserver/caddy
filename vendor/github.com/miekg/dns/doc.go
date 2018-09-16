@@ -1,7 +1,7 @@
 /*
 Package dns implements a full featured interface to the Domain Name System.
 Server- and client-side programming is supported.
-The package allows complete control over what is send out to the DNS. The package
+The package allows complete control over what is sent out to the DNS. The package
 API follows the less-is-more principle, by presenting a small, clean interface.
 
 The package dns supports (asynchronous) querying/replying, incoming/outgoing zone transfers,
@@ -14,7 +14,7 @@ Basic usage pattern for creating a new resource record:
 
      r := new(dns.MX)
      r.Hdr = dns.RR_Header{Name: "miek.nl.", Rrtype: dns.TypeMX,
-	Class: dns.ClassINET, Ttl: 3600}
+     Class: dns.ClassINET, Ttl: 3600}
      r.Preference = 10
      r.Mx = "mx.miek.nl."
 
@@ -22,16 +22,16 @@ Or directly from a string:
 
      mx, err := dns.NewRR("miek.nl. 3600 IN MX 10 mx.miek.nl.")
 
-Or when the default TTL (3600) and class (IN) suit you:
+Or when the default origin (.) and TTL (3600) and class (IN) suit you:
 
-     mx, err := dns.NewRR("miek.nl. MX 10 mx.miek.nl.")
+     mx, err := dns.NewRR("miek.nl MX 10 mx.miek.nl")
 
 Or even:
 
      mx, err := dns.NewRR("$ORIGIN nl.\nmiek 1H IN MX 10 mx.miek")
 
 In the DNS messages are exchanged, these messages contain resource
-records (sets).  Use pattern for creating a message:
+records (sets). Use pattern for creating a message:
 
      m := new(dns.Msg)
      m.SetQuestion("miek.nl.", dns.TypeMX)
@@ -51,7 +51,7 @@ The following is slightly more verbose, but more flexible:
      m1.Question = make([]dns.Question, 1)
      m1.Question[0] = dns.Question{"miek.nl.", dns.TypeMX, dns.ClassINET}
 
-After creating a message it can be send.
+After creating a message it can be sent.
 Basic use pattern for synchronous querying the DNS at a
 server configured on 127.0.0.1 and port 53:
 
@@ -63,7 +63,23 @@ class) is as easy as setting:
 
 	c.SingleInflight = true
 
-If these "advanced" features are not needed, a simple UDP query can be send,
+More advanced options are available using a net.Dialer and the corresponding API.
+For example it is possible to set a timeout, or to specify a source IP address
+and port to use for the connection:
+
+	c := new(dns.Client)
+	laddr := net.UDPAddr{
+		IP: net.ParseIP("[::1]"),
+		Port: 12345,
+		Zone: "",
+	}
+	c.Dialer := &net.Dialer{
+		Timeout: 200 * time.Millisecond,
+		LocalAddr: &laddr,
+	}
+	in, rtt, err := c.Exchange(m1, "8.8.8.8:53")
+
+If these "advanced" features are not needed, a simple UDP query can be sent,
 with:
 
 	in, err := dns.Exchange(m1, "127.0.0.1:53")
@@ -151,6 +167,11 @@ The supported algorithms include: HmacMD5, HmacSHA1, HmacSHA256 and HmacSHA512.
 Basic use pattern when querying with a TSIG name "axfr." (note that these key names
 must be fully qualified - as they are domain names) and the base64 secret
 "so6ZGir4GPAqINNh9U5c3A==":
+
+If an incoming message contains a TSIG record it MUST be the last record in
+the additional section (RFC2845 3.2).  This means that you should make the
+call to SetTsig last, right before executing the query.  If you make any
+changes to the RRset after calling SetTsig() the signature will be incorrect.
 
 	c := new(dns.Client)
 	c.TsigSecret = map[string]string{"axfr.": "so6ZGir4GPAqINNh9U5c3A=="}

@@ -148,17 +148,10 @@ func (k *JSONWebKey) UnmarshalJSON(data []byte) (err error) {
 
 	if err == nil {
 		*k = JSONWebKey{Key: key, KeyID: raw.Kid, Algorithm: raw.Alg, Use: raw.Use}
-	}
 
-	k.Certificates = make([]*x509.Certificate, len(raw.X5c))
-	for i, cert := range raw.X5c {
-		raw, err := base64.StdEncoding.DecodeString(cert)
+		k.Certificates, err = parseCertificateChain(raw.X5c)
 		if err != nil {
-			return err
-		}
-		k.Certificates[i], err = x509.ParseCertificate(raw)
-		if err != nil {
-			return err
+			return fmt.Errorf("failed to unmarshal x5c field: %s", err)
 		}
 	}
 
@@ -196,6 +189,10 @@ func ecThumbprintInput(curve elliptic.Curve, x, y *big.Int) (string, error) {
 		return "", err
 	}
 
+	if len(x.Bytes()) > coordLength || len(y.Bytes()) > coordLength {
+		return "", errors.New("square/go-jose: invalid elliptic key (too large)")
+	}
+
 	return fmt.Sprintf(ecThumbprintTemplate, crv,
 		newFixedSizeBuffer(x.Bytes(), coordLength).base64(),
 		newFixedSizeBuffer(y.Bytes(), coordLength).base64()), nil
@@ -209,6 +206,9 @@ func rsaThumbprintInput(n *big.Int, e int) (string, error) {
 
 func edThumbprintInput(ed ed25519.PublicKey) (string, error) {
 	crv := "Ed25519"
+	if len(ed) > 32 {
+		return "", errors.New("square/go-jose: invalid elliptic key (too large)")
+	}
 	return fmt.Sprintf(edThumbprintTemplate, crv,
 		newFixedSizeBuffer(ed, 32).base64()), nil
 }

@@ -371,4 +371,7 @@ const (
 	SYS_PKEY_MPROTECT          = 4363
 	SYS_PKEY_ALLOC             = 4364
 	SYS_PKEY_FREE              = 4365
+	SYS_STATX                  = 4366
+	SYS_RSEQ                   = 4367
+	SYS_IO_PGETEVENTS          = 4368
 )

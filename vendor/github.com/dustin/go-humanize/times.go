@@ -91,7 +91,7 @@ func CustomRelTime(a, b time.Time, albl, blbl string, magnitudes []RelTimeMagnit
 	}
 
 	n := sort.Search(len(magnitudes), func(i int) bool {
-		return magnitudes[i].D >= diff
+		return magnitudes[i].D > diff
 	})
 
 	if n >= len(magnitudes) {

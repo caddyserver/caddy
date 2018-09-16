@@ -141,20 +141,24 @@ func truncateMsgFromRdlength(msg []byte, off int, rdlength uint16) (truncmsg []b
 	return msg[:lenrd], nil
 }
 
+var base32HexNoPadEncoding = base32.HexEncoding.WithPadding(base32.NoPadding)
+
 func fromBase32(s []byte) (buf []byte, err error) {
 	for i, b := range s {
 		if b >= 'a' && b <= 'z' {
 			s[i] = b - 32
 		}
 	}
-	buflen := base32.HexEncoding.DecodedLen(len(s))
+	buflen := base32HexNoPadEncoding.DecodedLen(len(s))
 	buf = make([]byte, buflen)
-	n, err := base32.HexEncoding.Decode(buf, s)
+	n, err := base32HexNoPadEncoding.Decode(buf, s)
 	buf = buf[:n]
 	return
 }
 
-func toBase32(b []byte) string { return base32.HexEncoding.EncodeToString(b) }
+func toBase32(b []byte) string {
+	return base32HexNoPadEncoding.EncodeToString(b)
+}
 
 func fromBase64(s []byte) (buf []byte, err error) {
 	buflen := base64.StdEncoding.DecodedLen(len(s))
@@ -219,8 +223,8 @@ func unpackUint48(msg []byte, off int) (i uint64, off1 int, err error) {
 		return 0, len(msg), &Error{err: "overflow unpacking uint64 as uint48"}
 	}
 	// Used in TSIG where the last 48 bits are occupied, so for now, assume a uint48 (6 bytes)
-	i = (uint64(uint64(msg[off])<<40 | uint64(msg[off+1])<<32 | uint64(msg[off+2])<<24 | uint64(msg[off+3])<<16 |
-		uint64(msg[off+4])<<8 | uint64(msg[off+5])))
+	i = uint64(uint64(msg[off])<<40 | uint64(msg[off+1])<<32 | uint64(msg[off+2])<<24 | uint64(msg[off+3])<<16 |
+		uint64(msg[off+4])<<8 | uint64(msg[off+5]))
 	off += 6
 	return i, off, nil
 }
@@ -359,7 +363,7 @@ func packStringHex(s string, msg []byte, off int) (int, error) {
 	if err != nil {
 		return len(msg), err
 	}
-	if off+(len(h)) > len(msg) {
+	if off+len(h) > len(msg) {
 		return len(msg), &Error{err: "overflow packing hex"}
 	}
 	copy(msg[off:off+len(h)], h)
@@ -406,16 +410,13 @@ Option:
 		}
 		edns = append(edns, e)
 		off += int(optlen)
-	case EDNS0SUBNET, EDNS0SUBNETDRAFT:
+	case EDNS0SUBNET:
 		e := new(EDNS0_SUBNET)
 		if err := e.unpack(msg[off : off+int(optlen)]); err != nil {
 			return nil, len(msg), err
 		}
 		edns = append(edns, e)
 		off += int(optlen)
-		if code == EDNS0SUBNETDRAFT {
-			e.DraftOption = true
-		}
 	case EDNS0COOKIE:
 		e := new(EDNS0_COOKIE)
 		if err := e.unpack(msg[off : off+int(optlen)]); err != nil {
@@ -453,6 +454,13 @@ Option:
 		off += int(optlen)
 	case EDNS0N3U:
 		e := new(EDNS0_N3U)
+		if err := e.unpack(msg[off : off+int(optlen)]); err != nil {
+			return nil, len(msg), err
+		}
+		edns = append(edns, e)
+		off += int(optlen)
+	case EDNS0PADDING:
+		e := new(EDNS0_PADDING)
 		if err := e.unpack(msg[off : off+int(optlen)]); err != nil {
 			return nil, len(msg), err
 		}
@@ -595,7 +603,7 @@ func packDataNsec(bitmap []uint16, msg []byte, off int) (int, error) {
 		// Setting the octets length
 		msg[off+1] = byte(length)
 		// Setting the bit value for the type in the right octet
-		msg[off+1+int(length)] |= byte(1 << (7 - (t % 8)))
+		msg[off+1+int(length)] |= byte(1 << (7 - t%8))
 		lastwindow, lastlength = window, length
 	}
 	off += int(lastlength) + 2

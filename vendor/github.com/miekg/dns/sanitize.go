@@ -3,8 +3,9 @@ package dns
 // Dedup removes identical RRs from rrs. It preserves the original ordering.
 // The lowest TTL of any duplicates is used in the remaining one. Dedup modifies
 // rrs.
-// m is used to store the RRs temporay. If it is nil a new map will be allocated.
+// m is used to store the RRs temporary. If it is nil a new map will be allocated.
 func Dedup(rrs []RR, m map[string]RR) []RR {
+
 	if m == nil {
 		m = make(map[string]RR)
 	}

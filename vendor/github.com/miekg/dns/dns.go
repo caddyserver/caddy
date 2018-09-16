@@ -6,9 +6,12 @@ const (
 	year68     = 1 << 31 // For RFC1982 (Serial Arithmetic) calculations in 32 bits.
 	defaultTtl = 3600    // Default internal TTL.
 
-	DefaultMsgSize = 4096  // DefaultMsgSize is the standard default for messages larger than 512 bytes.
-	MinMsgSize     = 512   // MinMsgSize is the minimal size of a DNS packet.
-	MaxMsgSize     = 65535 // MaxMsgSize is the largest possible DNS packet.
+	// DefaultMsgSize is the standard default for messages larger than 512 bytes.
+	DefaultMsgSize = 4096
+	// MinMsgSize is the minimal size of a DNS packet.
+	MinMsgSize = 512
+	// MaxMsgSize is the largest possible DNS packet.
+	MaxMsgSize = 65535
 )
 
 // Error represents a DNS error.
@@ -51,16 +54,6 @@ func (h *RR_Header) Header() *RR_Header { return h }
 
 // Just to implement the RR interface.
 func (h *RR_Header) copy() RR { return nil }
-
-func (h *RR_Header) copyHeader() *RR_Header {
-	r := new(RR_Header)
-	r.Name = h.Name
-	r.Rrtype = h.Rrtype
-	r.Class = h.Class
-	r.Ttl = h.Ttl
-	r.Rdlength = h.Rdlength
-	return r
-}
 
 func (h *RR_Header) String() string {
 	var s string

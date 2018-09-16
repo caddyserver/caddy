@@ -17,6 +17,7 @@ package unix
 #define KERNEL
 #include <dirent.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <signal.h>
 #include <termios.h>
 #include <stdio.h>
@@ -35,6 +36,7 @@ package unix
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/un.h>
+#include <sys/utsname.h>
 #include <sys/wait.h>
 #include <net/bpf.h>
 #include <net/if.h>
@@ -187,23 +189,6 @@ type _Gid_t C.gid_t
 
 // Files
 
-const ( // Directory mode bits
-	S_IFMT   = C.S_IFMT
-	S_IFIFO  = C.S_IFIFO
-	S_IFCHR  = C.S_IFCHR
-	S_IFDIR  = C.S_IFDIR
-	S_IFBLK  = C.S_IFBLK
-	S_IFREG  = C.S_IFREG
-	S_IFLNK  = C.S_IFLNK
-	S_IFSOCK = C.S_IFSOCK
-	S_ISUID  = C.S_ISUID
-	S_ISGID  = C.S_ISGID
-	S_ISVTX  = C.S_ISVTX
-	S_IRUSR  = C.S_IRUSR
-	S_IWUSR  = C.S_IWUSR
-	S_IXUSR  = C.S_IXUSR
-)
-
 type Stat_t C.struct_stat8
 
 type Statfs_t C.struct_statfs
@@ -213,6 +198,12 @@ type Flock_t C.struct_flock
 type Dirent C.struct_dirent
 
 type Fsid C.struct_fsid
+
+// File system limits
+
+const (
+	PathMax = C.PATH_MAX
+)
 
 // Advice to Fadvise
 
@@ -356,6 +347,39 @@ type BpfZbufHeader C.struct_bpf_zbuf_header
 
 type Termios C.struct_termios
 
+type Winsize C.struct_winsize
+
+// fchmodat-like syscalls.
+
+const (
+	AT_FDCWD            = C.AT_FDCWD
+	AT_REMOVEDIR        = C.AT_REMOVEDIR
+	AT_SYMLINK_FOLLOW   = C.AT_SYMLINK_FOLLOW
+	AT_SYMLINK_NOFOLLOW = C.AT_SYMLINK_NOFOLLOW
+)
+
+// poll
+
+type PollFd C.struct_pollfd
+
+const (
+	POLLERR      = C.POLLERR
+	POLLHUP      = C.POLLHUP
+	POLLIN       = C.POLLIN
+	POLLINIGNEOF = C.POLLINIGNEOF
+	POLLNVAL     = C.POLLNVAL
+	POLLOUT      = C.POLLOUT
+	POLLPRI      = C.POLLPRI
+	POLLRDBAND   = C.POLLRDBAND
+	POLLRDNORM   = C.POLLRDNORM
+	POLLWRBAND   = C.POLLWRBAND
+	POLLWRNORM   = C.POLLWRNORM
+)
+
 // Capabilities
 
 type CapRights C.struct_cap_rights
+
+// Uname
+
+type Utsname C.struct_utsname

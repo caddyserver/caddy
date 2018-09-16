@@ -208,6 +208,9 @@ func tsigBuffer(msgbuf []byte, rr *TSIG, requestMAC string, timersOnly bool) []b
 		rr.Fudge = 300 // Standard (RFC) default.
 	}
 
+	// Replace message ID in header with original ID from TSIG
+	binary.BigEndian.PutUint16(msgbuf[0:2], rr.OrigId)
+
 	if requestMAC != "" {
 		m := new(macWireFmt)
 		m.MACSize = uint16(len(requestMAC) / 2)
