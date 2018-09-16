@@ -86,7 +86,7 @@ func TestReplace(t *testing.T) {
 
 	old := now
 	now = func() time.Time {
-		return time.Date(2006, 1, 2, 15, 4, 5, 02, time.FixedZone("hardcoded", -7))
+		return time.Date(2006, 1, 2, 15, 4, 5, 99999999, time.FixedZone("hardcoded", -7))
 	}
 	defer func() {
 		now = old
@@ -102,6 +102,7 @@ func TestReplace(t *testing.T) {
 		{"{when}", "02/Jan/2006:15:04:05 +0000"},
 		{"{when_iso}", "2006-01-02T15:04:12Z"},
 		{"{when_unix}", "1136214252"},
+		{"{when_unix_ms}", "1136214252099"},
 		{"The Custom header is {>Custom}.", "The Custom header is foobarbaz."},
 		{"The CustomAdd header is {>CustomAdd}.", "The CustomAdd header is caddy."},
 		{"The Custom response header is {<Custom}.", "The Custom response header is CustomResponseHeader."},

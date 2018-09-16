@@ -61,7 +61,7 @@ Caddy binaries have no dependencies and are available for every platform. Get Ca
 
 ## Build
 
-To build from source you need **[Git](https://git-scm.com/downloads)** and **[Go](https://golang.org/doc/install)** (1.9 or newer). Follow these instruction for fast building:
+To build from source you need **[Git](https://git-scm.com/downloads)** and **[Go](https://golang.org/doc/install)** (1.10 or newer). Follow these instruction for fast building:
 
 - Get the source with `go get github.com/mholt/caddy/caddy` and then run `go get github.com/caddyserver/builds`
 - Now `cd $GOPATH/src/github.com/mholt/caddy/caddy` and run `go run build.go`
@@ -139,7 +139,7 @@ If you have questions or concerns about Caddy' underlying crypto implementations
 
 ## Contributing
 
-**[Join our forum](https://caddy.community) where you can chat with other Caddy users and developers!** To get familiar with the code base, try [Caddy code search on Sourcegraph](https://sourcegraph.com/github.com/mholt/caddy/-/search)!
+**[Join our forum](https://caddy.community) where you can chat with other Caddy users and developers!** To get familiar with the code base, try [Caddy code search on Sourcegraph](https://sourcegraph.com/github.com/mholt/caddy/)!
 
 Please see our [contributing guidelines](https://github.com/mholt/caddy/blob/master/.github/CONTRIBUTING.md) for instructions. If you want to write a plugin, check out the [developer wiki](https://github.com/mholt/caddy/wiki).
 
