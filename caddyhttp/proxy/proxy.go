@@ -255,6 +255,11 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			return http.StatusRequestEntityTooLarge, backendErr
 		}
 
+		// TODO: write an 499 HTTP status as constant in someplace (and also change in proxy_test.go on line: expectedStatus, expectErr := 499, context.Canceled)
+		if backendErr == context.Canceled {
+			return 499, backendErr
+		}
+
 		// failover; remember this failure for some time if
 		// request failure counting is enabled
 		timeout := host.FailTimeout
