@@ -7,95 +7,63 @@ import (
 	"time"
 )
 
-// The CryptoStreamConn is used as the net.Conn passed to mint.
-// It has two operating modes:
-// 1. It can read and write to bytes.Buffers.
-// 2. It can use a quic.Stream for reading and writing.
-// The buffer-mode is only used by the server, in order to statelessly handle retries.
-type CryptoStreamConn struct {
-	remoteAddr net.Addr
-
-	// the buffers are used before the session is initialized
-	readBuf  bytes.Buffer
-	writeBuf bytes.Buffer
-
-	// stream will be set once the session is initialized
+type cryptoStreamConn struct {
+	buffer *bytes.Buffer
 	stream io.ReadWriter
 }
 
-var _ net.Conn = &CryptoStreamConn{}
+var _ net.Conn = &cryptoStreamConn{}
 
-// NewCryptoStreamConn creates a new CryptoStreamConn
-func NewCryptoStreamConn(remoteAddr net.Addr) *CryptoStreamConn {
-	return &CryptoStreamConn{remoteAddr: remoteAddr}
-}
-
-func (c *CryptoStreamConn) Read(b []byte) (int, error) {
-	if c.stream != nil {
-		return c.stream.Read(b)
+func newCryptoStreamConn(stream io.ReadWriter) *cryptoStreamConn {
+	return &cryptoStreamConn{
+		stream: stream,
+		buffer: &bytes.Buffer{},
 	}
-	return c.readBuf.Read(b)
 }
 
-// AddDataForReading adds data to the read buffer.
-// This data will ONLY be read when the stream has not been set.
-func (c *CryptoStreamConn) AddDataForReading(data []byte) {
-	c.readBuf.Write(data)
+func (c *cryptoStreamConn) Read(b []byte) (int, error) {
+	return c.stream.Read(b)
 }
 
-func (c *CryptoStreamConn) Write(p []byte) (int, error) {
-	if c.stream != nil {
-		return c.stream.Write(p)
+func (c *cryptoStreamConn) Write(p []byte) (int, error) {
+	return c.buffer.Write(p)
+}
+
+func (c *cryptoStreamConn) Flush() error {
+	if c.buffer.Len() == 0 {
+		return nil
 	}
-	return c.writeBuf.Write(p)
-}
-
-// GetDataForWriting returns all data currently in the write buffer, and resets this buffer.
-func (c *CryptoStreamConn) GetDataForWriting() []byte {
-	defer c.writeBuf.Reset()
-	data := make([]byte, c.writeBuf.Len())
-	copy(data, c.writeBuf.Bytes())
-	return data
-}
-
-// SetStream sets the stream.
-// After setting the stream, the read and write buffer won't be used any more.
-func (c *CryptoStreamConn) SetStream(stream io.ReadWriter) {
-	c.stream = stream
-}
-
-// Flush copies the contents of the write buffer to the stream
-func (c *CryptoStreamConn) Flush() (int, error) {
-	n, err := io.Copy(c.stream, &c.writeBuf)
-	return int(n), err
+	_, err := c.stream.Write(c.buffer.Bytes())
+	c.buffer.Reset()
+	return err
 }
 
 // Close is not implemented
-func (c *CryptoStreamConn) Close() error {
+func (c *cryptoStreamConn) Close() error {
 	return nil
 }
 
 // LocalAddr is not implemented
-func (c *CryptoStreamConn) LocalAddr() net.Addr {
+func (c *cryptoStreamConn) LocalAddr() net.Addr {
 	return nil
 }
 
-// RemoteAddr returns the remote address
-func (c *CryptoStreamConn) RemoteAddr() net.Addr {
-	return c.remoteAddr
+// RemoteAddr is not implemented
+func (c *cryptoStreamConn) RemoteAddr() net.Addr {
+	return nil
 }
 
 // SetReadDeadline is not implemented
-func (c *CryptoStreamConn) SetReadDeadline(time.Time) error {
+func (c *cryptoStreamConn) SetReadDeadline(time.Time) error {
 	return nil
 }
 
 // SetWriteDeadline is not implemented
-func (c *CryptoStreamConn) SetWriteDeadline(time.Time) error {
+func (c *cryptoStreamConn) SetWriteDeadline(time.Time) error {
 	return nil
 }
 
 // SetDeadline is not implemented
-func (c *CryptoStreamConn) SetDeadline(time.Time) error {
+func (c *cryptoStreamConn) SetDeadline(time.Time) error {
 	return nil
 }

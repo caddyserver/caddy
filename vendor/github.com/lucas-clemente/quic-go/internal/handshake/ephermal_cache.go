@@ -35,7 +35,7 @@ func getEphermalKEX() (crypto.KeyExchange, error) {
 	kexMutex.Lock()
 	defer kexMutex.Unlock()
 	// Check if still unfulfilled
-	if kexCurrent == nil || time.Since(kexCurrentTime) > kexLifetime {
+	if kexCurrent == nil || time.Since(kexCurrentTime) >= kexLifetime {
 		kex, err := crypto.NewCurve25519KEX()
 		if err != nil {
 			return nil, err
