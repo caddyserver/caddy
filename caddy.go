@@ -876,6 +876,7 @@ func Stop() error {
 	for {
 		instancesMu.Lock()
 		if len(instances) == 0 {
+			instancesMu.Unlock()
 			break
 		}
 		inst := instances[0]
