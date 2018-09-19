@@ -380,8 +380,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	status, _ := s.serveHTTP(w, r)
 
-	if status == 204 {
-		w.WriteHeader(http.StatusNoContent)
+	if status >= 200 {
+		w.WriteHeader(status)
 	}
 
 	// Fallback error response in case error handling wasn't chained in
