@@ -30,6 +30,5 @@ func TestStandardPlugins(t *testing.T) {
 	s := caddy.DescribePlugins()
 	if got, want := strings.Count(s, "\n"), numStandardPlugins+numExtraNewLines; got != want {
 		t.Errorf("Expected all standard plugins to be plugged in, got:\n%s", s)
-		//t.Errorf("Got: %v want: %v\nExpected all standard plugins to be plugged in, got:\n%s", got, want, s)
 	}
 }
