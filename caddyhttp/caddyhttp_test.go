@@ -25,9 +25,11 @@ import (
 // ensure that the standard plugins are in fact plugged in
 // and registered properly; this is a quick/naive way to do it.
 func TestStandardPlugins(t *testing.T) {
-	numStandardPlugins := 31 // importing caddyhttp plugs in this many plugins
+	numExtraNewLines := 7 // number of extra new lines that the test will find
+	numStandardPlugins := 32 // importing caddyhttp plugs in this many plugins
 	s := caddy.DescribePlugins()
-	if got, want := strings.Count(s, "\n"), numStandardPlugins+5; got != want {
+	if got, want := strings.Count(s, "\n"), numStandardPlugins+numExtraNewLines; got != want {
 		t.Errorf("Expected all standard plugins to be plugged in, got:\n%s", s)
+		//t.Errorf("Got: %v want: %v\nExpected all standard plugins to be plugged in, got:\n%s", got, want, s)
 	}
 }
