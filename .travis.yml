@@ -5,8 +5,11 @@ addons:
     - quic.clemente.io
 
 go:
-  - 1.x
+  - 1.11.x
   - tip
+
+env:
+    - GO111MODULE=on
 
 matrix:
   allow_failures:
@@ -30,8 +33,7 @@ install:
 script:
   - gometalinter --install
   - gometalinter --disable-all -E vet -E gofmt -E misspell -E ineffassign -E goimports -E deadcode --tests --vendor ./...
-  - vendorcheck ./...
-  - go test -race ./...
+  - go test -mod=vendor -race ./...
 
 after_script:
   - golint ./...
