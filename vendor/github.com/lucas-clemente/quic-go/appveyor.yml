@@ -1,0 +1,35 @@
+version: "{build}"
+
+os: Windows Server 2012 R2
+
+environment:
+  GOPATH: c:\gopath
+  CGO_ENABLED: 0
+  TIMESCALE_FACTOR: 20
+  matrix:
+    - GOARCH: 386
+    - GOARCH: amd64
+
+clone_folder: c:\gopath\src\github.com\lucas-clemente\quic-go
+
+install:
+  - rmdir c:\go /s /q
+  - appveyor DownloadFile https://storage.googleapis.com/golang/go1.11.windows-amd64.zip
+  - 7z x go1.11.windows-amd64.zip -y -oC:\ > NUL
+  - set PATH=%PATH%;%GOPATH%\bin\windows_%GOARCH%;%GOPATH%\bin
+  - echo %PATH%
+  - echo %GOPATH%
+  - git submodule update --init --recursive
+  - go get github.com/onsi/ginkgo/ginkgo
+  - go get github.com/onsi/gomega
+  - go version
+  - go env
+  - go get -v -t ./...
+
+build_script:
+  - ginkgo -r -v -randomizeAllSpecs -randomizeSuites -trace -skipPackage benchmark,integrationtests
+  - ginkgo -randomizeAllSpecs -randomizeSuites -trace benchmark -- -samples=1
+
+test: off
+
+deploy: off

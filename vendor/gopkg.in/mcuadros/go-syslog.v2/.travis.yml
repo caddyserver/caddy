@@ -1,0 +1,22 @@
+language: go
+go: 
+ - 1.4
+ - 1.5
+ - 1.6
+ - 1.7
+ - tip
+
+matrix:
+  allow_failures:
+    - go: tip
+
+install:
+ - rm -rf $GOPATH/src/gopkg.in/mcuadros
+ - mkdir -p $GOPATH/src/gopkg.in/mcuadros
+ - ln -s $PWD $GOPATH/src/gopkg.in/mcuadros/go-syslog.v2
+ - cd $GOPATH/src/gopkg.in/mcuadros/go-syslog.v2 && go get -v -t ./...
+ 
+script:
+ - cd $GOPATH/src/gopkg.in/mcuadros/go-syslog.v2 && go test -v ./...
+ 
+sudo: false
