@@ -25,7 +25,7 @@ import (
 // ensure that the standard plugins are in fact plugged in
 // and registered properly; this is a quick/naive way to do it.
 func TestStandardPlugins(t *testing.T) {
-	numExtraNewLines := 7 // number of extra new lines that the test will find
+	numExtraNewLines := 7    // number of extra new lines that the test will find
 	numStandardPlugins := 32 // importing caddyhttp plugs in this many plugins
 	s := caddy.DescribePlugins()
 	if got, want := strings.Count(s, "\n"), numStandardPlugins+numExtraNewLines; got != want {
