@@ -71,10 +71,9 @@ func logParse(c *caddy.Controller) ([]*Rule, error) {
 
 					if ipv4 == nil {
 						return nil, c.Err("IPv4 Mask not valid IP Mask Format")
-					} else {
-						ip4Mask = net.IPMask(ipv4)
-						ipMaskExists = true
 					}
+					ip4Mask = net.IPMask(ipv4)
+					ipMaskExists = true
 				}
 
 				if len(where) > 1 {
@@ -84,11 +83,9 @@ func logParse(c *caddy.Controller) ([]*Rule, error) {
 
 					if ipv6 == nil {
 						return nil, c.Err("IPv6 Mask not valid IP Mask Format")
-					} else {
-						ip6Mask = net.IPMask(ipv6)
-						ipMaskExists = true
 					}
-
+					ip6Mask = net.IPMask(ipv6)
+					ipMaskExists = true
 				}
 
 			} else if what == "except" {

@@ -69,7 +69,7 @@ func IsLogRollerSubdirective(subdir string) bool {
 		subdir == directiveRotateCompress
 }
 
-var invalidRollerParameterErr = errors.New("invalid roller parameter")
+var errInvalidRollerParameter = errors.New("invalid roller parameter")
 
 // ParseRoller parses roller contents out of c.
 func ParseRoller(l *LogRoller, what string, where ...string) error {
@@ -81,7 +81,7 @@ func ParseRoller(l *LogRoller, what string, where ...string) error {
 	// others only accept one parameter
 	if (what == directiveRotateCompress && len(where) != 0) ||
 		(what != directiveRotateCompress && len(where) != 1) {
-		return invalidRollerParameterErr
+		return errInvalidRollerParameter
 	}
 
 	var (

@@ -752,6 +752,7 @@ var greaseCiphers = map[uint16]struct{}{
 }
 
 // Define variables used for TLS communication
+// nolint:golint
 const (
 	extensionOCSPStatusRequest = 5
 	extensionSupportedCurves   = 10 // also called "SupportedGroups"

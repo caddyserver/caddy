@@ -212,7 +212,7 @@ func TestIfMatcher(t *testing.T) {
 }
 
 func TestSetupIfMatcher(t *testing.T) {
-	rex_b, _ := regexp.Compile("b")
+	rexB, _ := regexp.Compile("b")
 	tests := []struct {
 		input     string
 		shouldErr bool
@@ -222,7 +222,7 @@ func TestSetupIfMatcher(t *testing.T) {
 			if	a match b
 		 }`, false, IfMatcher{
 			ifs: []ifCond{
-				{a: "a", op: "match", b: "b", neg: false, rex: rex_b},
+				{a: "a", op: "match", b: "b", neg: false, rex: rexB},
 			},
 		}},
 		{`test {
@@ -230,7 +230,7 @@ func TestSetupIfMatcher(t *testing.T) {
 			if_op or
 		 }`, false, IfMatcher{
 			ifs: []ifCond{
-				{a: "a", op: "match", b: "b", neg: false, rex: rex_b},
+				{a: "a", op: "match", b: "b", neg: false, rex: rexB},
 			},
 			isOr: true,
 		}},
@@ -286,7 +286,7 @@ func TestSetupIfMatcher(t *testing.T) {
 			continue
 		}
 
-		test_if, ok := matcher.(IfMatcher)
+		testIf, ok := matcher.(IfMatcher)
 		if !ok {
 			t.Error("RequestMatcher should be of type IfMatcher")
 		}
@@ -295,48 +295,48 @@ func TestSetupIfMatcher(t *testing.T) {
 			t.Errorf("Expected no error, but got: %v", err)
 		}
 
-		if len(test_if.ifs) != len(test.expected.ifs) {
+		if len(testIf.ifs) != len(test.expected.ifs) {
 			t.Errorf("Test %d: Expected %d ifConditions, found %v", i,
-				len(test.expected.ifs), len(test_if.ifs))
+				len(test.expected.ifs), len(testIf.ifs))
 		}
 
-		for j, if_c := range test_if.ifs {
-			expected_c := test.expected.ifs[j]
+		for j, ifCond := range testIf.ifs {
+			expectedC := test.expected.ifs[j]
 
-			if if_c.a != expected_c.a {
+			if ifCond.a != expectedC.a {
 				t.Errorf("Test %d, ifCond %d: Expected A=%s, got %s",
-					i, j, if_c.a, expected_c.a)
+					i, j, ifCond.a, expectedC.a)
 			}
 
-			if if_c.op != expected_c.op {
+			if ifCond.op != expectedC.op {
 				t.Errorf("Test %d, ifCond %d: Expected Op=%s, got %s",
-					i, j, if_c.op, expected_c.op)
+					i, j, ifCond.op, expectedC.op)
 			}
 
-			if if_c.b != expected_c.b {
+			if ifCond.b != expectedC.b {
 				t.Errorf("Test %d, ifCond %d: Expected B=%s, got %s",
-					i, j, if_c.b, expected_c.b)
+					i, j, ifCond.b, expectedC.b)
 			}
 
-			if if_c.neg != expected_c.neg {
+			if ifCond.neg != expectedC.neg {
 				t.Errorf("Test %d, ifCond %d: Expected Neg=%v, got %v",
-					i, j, if_c.neg, expected_c.neg)
+					i, j, ifCond.neg, expectedC.neg)
 			}
 
-			if expected_c.rex != nil && if_c.rex == nil {
+			if expectedC.rex != nil && ifCond.rex == nil {
 				t.Errorf("Test %d, ifCond %d: Expected Rex=%v, got <nil>",
-					i, j, expected_c.rex)
+					i, j, expectedC.rex)
 			}
 
-			if expected_c.rex == nil && if_c.rex != nil {
+			if expectedC.rex == nil && ifCond.rex != nil {
 				t.Errorf("Test %d, ifCond %d: Expected Rex=<nil>, got %v",
-					i, j, if_c.rex)
+					i, j, ifCond.rex)
 			}
 
-			if expected_c.rex != nil && if_c.rex != nil {
-				if if_c.rex.String() != expected_c.rex.String() {
+			if expectedC.rex != nil && ifCond.rex != nil {
+				if ifCond.rex.String() != expectedC.rex.String() {
 					t.Errorf("Test %d, ifCond %d: Expected Rex=%v, got %v",
-						i, j, if_c.rex, expected_c.rex)
+						i, j, ifCond.rex, expectedC.rex)
 				}
 			}
 		}

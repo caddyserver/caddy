@@ -430,18 +430,17 @@ func (r *replacer) getSubstitution(key string) string {
 		if r.request.TLS != nil {
 			if name, err := caddytls.GetSupportedProtocolName(r.request.TLS.Version); err == nil {
 				return name
-			} else {
-				return "tls" // this should never happen, but guard in case
 			}
+
+			return "tls" // this should never happen, but guard in case
 		}
 		return r.emptyValue // because not using a secure channel
 	case "{tls_cipher}":
 		if r.request.TLS != nil {
 			if name, err := caddytls.GetSupportedCipherName(r.request.TLS.CipherSuite); err == nil {
 				return name
-			} else {
-				return "UNKNOWN" // this should never happen, but guard in case
 			}
+			return "UNKNOWN" // this should never happen, but guard in case
 		}
 		return r.emptyValue
 	case "{tls_client_escaped_cert}":

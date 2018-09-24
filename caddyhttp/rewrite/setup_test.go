@@ -218,8 +218,8 @@ func TestRewriteParse(t *testing.T) {
 			}
 		}
 
-		if rules_fmt := fmt.Sprintf("%v", actual); strings.HasPrefix(rules_fmt, "%!") {
-			t.Errorf("Test %d: Failed to string encode: %#v", i, rules_fmt)
+		if rulesFmt := fmt.Sprintf("%v", actual); strings.HasPrefix(rulesFmt, "%!") {
+			t.Errorf("Test %d: Failed to string encode: %#v", i, rulesFmt)
 		}
 	}
 }
