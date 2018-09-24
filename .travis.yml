@@ -1,13 +1,6 @@
-language: go
-
 addons:
   hosts:
     - quic.clemente.io
-
-go:
-  - 1.x
-  - 1.11.x
-  - tip
 
 matrix:
   include:
@@ -16,10 +9,9 @@ matrix:
       env: GO111MODULE=on
     - language: go
       go: 1.x
-      env: GO111MODULE=auto
     - language: go
       go: tip
-      env: GO111MODULE=auto
+      env: GO111MODULE=on
 
 allow_failures:
   - go: tip
@@ -31,7 +23,7 @@ before_install:
   # Bypasses "bandwidth limit exceeded" errors.
   # See github.com/golang/go/issues/12933
   - if [ "$TRAVIS_PULL_REQUEST" = "false" ]; then openssl aes-256-cbc -K $encrypted_3df18f9af81d_key -iv $encrypted_3df18f9af81d_iv -in dist/gitcookie.sh.enc -out dist/gitcookie.sh -d; fi
-  - go get -u github.com/golangci/golangci-lint/cmd/golangci-lint
+  - curl -sfL https://install.goreleaser.com/github.com/golangci/golangci-lint.sh | bash -s -- -b $GOPATH/bin v1.10.2
 
 install:
   - if [ "$TRAVIS_PULL_REQUEST" = "false" ]; then bash dist/gitcookie.sh; fi
@@ -41,9 +33,6 @@ install:
   - go get github.com/alecthomas/gometalinter
 
 script:
-  - golangci-lint run --disable-all -E golint -E gofmt -E misspell -E ineffassign -E goimports -E deadcode ./...
+  - golangci-lint run --deadline=10m --disable-all -E golint -E gofmt -E misspell -E ineffassign -E goimports -E deadcode ./...
   - go test -mod=readonly -race ./...
   - go test -mod=vendor -race ./...
-
-after_script:
-  - golint ./...
