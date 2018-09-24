@@ -2,20 +2,24 @@ addons:
   hosts:
     - quic.clemente.io
 
+env:
+    global:
+        - GO111MODULE=on
+
 matrix:
   include:
     - language: go
       go: 1.11.x
       env:
-        - GO111MODULE=on TEST_ARGS="-mod=readonly"
-        - GO111MODULE=on TEST_ARGS="-mod=vendor"
+        - TEST_ARGS="-mod=readonly"
+        - TEST_ARGS="-mod=vendor"
     - language: go
       go: 1.x
     - language: go
       go: tip
       env:
-        - GO111MODULE=on TEST_ARGS="-mod=readonly"
-        - GO111MODULE=on TEST_ARGS="-mod=vendor"
+        - TEST_ARGS="-mod=readonly"
+        - TEST_ARGS="-mod=vendor"
 
 allow_failures:
   - go: tip
@@ -38,5 +42,4 @@ install:
 
 script:
   - golangci-lint run --deadline=10m --disable-all -E golint -E gofmt -E misspell -E ineffassign -E goimports -E deadcode ./...
-  - go test -mod=readonly -race ./...
-  - go test -mod=vendor -race ./...
+  - go test $TEST_ARGS -race ./...
