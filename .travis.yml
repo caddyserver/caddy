@@ -6,13 +6,19 @@ matrix:
   include:
     - language: go
       go: 1.11.x
-      env: GO111MODULE=on
+      env:
+        - TEST_ARGS="-mod=readonly"
+        - TEST_ARGS="-mod=vendor"
     - language: go
       go: 1.x
     - language: go
       go: tip
-      env: GO111MODULE=on
+      env:
+        - TEST_ARGS="-mod=readonly"
+        - TEST_ARGS="-mod=vendor"
 
+env:
+  - GO111MODULE=on
 allow_failures:
   - go: tip
 fast_finish: true
@@ -34,5 +40,4 @@ install:
 
 script:
   - golangci-lint run --deadline=10m --disable-all -E golint -E gofmt -E misspell -E ineffassign -E goimports -E deadcode ./...
-  - go test -mod=readonly -race ./...
-  - go test -mod=vendor -race ./...
+  - go test $TEST_ARGS -race ./...
