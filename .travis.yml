@@ -9,13 +9,21 @@ go:
   - 1.11.x
   - tip
 
-env:
-    - GO111MODULE=on
-
 matrix:
-  allow_failures:
-    - go: tip
-  fast_finish: true
+  include:
+    - language: go
+      go: 1.11.x
+      env: GO111MODULE=on
+    - language: go
+      go: 1.x
+      env: GO111MODULE=auto
+    - language: go
+      go: tip
+      env: GO111MODULE=auto
+
+allow_failures:
+  - go: tip
+fast_finish: true
 
 before_install:
   # Decrypts a script that installs an authenticated cookie
