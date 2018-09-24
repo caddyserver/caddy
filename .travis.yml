@@ -22,7 +22,8 @@ before_install:
   # for git to use when cloning from googlesource.com.
   # Bypasses "bandwidth limit exceeded" errors.
   # See github.com/golang/go/issues/12933
- - if [ "$TRAVIS_PULL_REQUEST" = "false" ]; then openssl aes-256-cbc -K $encrypted_3df18f9af81d_key -iv $encrypted_3df18f9af81d_iv -in dist/gitcookie.sh.enc -out dist/gitcookie.sh -d; fi
+  - if [ "$TRAVIS_PULL_REQUEST" = "false" ]; then openssl aes-256-cbc -K $encrypted_3df18f9af81d_key -iv $encrypted_3df18f9af81d_iv -in dist/gitcookie.sh.enc -out dist/gitcookie.sh -d; fi
+  - go get -u github.com/golangci/golangci-lint/cmd/golangci-lint
 
 install:
   - if [ "$TRAVIS_PULL_REQUEST" = "false" ]; then bash dist/gitcookie.sh; fi
@@ -32,8 +33,7 @@ install:
   - go get github.com/alecthomas/gometalinter
 
 script:
-  - gometalinter --install
-  - gometalinter --disable-all -E vet -E gofmt -E misspell -E ineffassign -E goimports -E deadcode --tests --vendor ./...
+  - golangci-lint run --disable-all -E golint -E gofmt -E misspell -E ineffassign -E goimports -E deadcode ./...
   - go test -mod=readonly -race ./...
   - go test -mod=vendor -race ./...
 
