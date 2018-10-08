@@ -11,15 +11,13 @@ matrix:
     - language: go
       go: 1.11.x
       env:
-        - TEST_ARGS="-mod=readonly"
-        - TEST_ARGS="-mod=vendor"
+        - GO_MOD=true
     - language: go
       go: 1.x
     - language: go
       go: tip
       env:
-        - TEST_ARGS="-mod=readonly"
-        - TEST_ARGS="-mod=vendor"
+        - GO_MOD=true
 
 allow_failures:
   - go: tip
@@ -42,4 +40,4 @@ install:
 
 script:
   - golangci-lint run --deadline=5m --disable-all -E golint -E gofmt -E misspell -E ineffassign -E goimports -E deadcode ./...
-  - go test $TEST_ARGS -race ./...
+  - if [ "$GO_MOD" = "true" ]; then go test -mod="readonly" -race ./...; go test -mod="vendor" -race ./...; else go test -race ./...; fi
