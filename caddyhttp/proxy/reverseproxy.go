@@ -48,6 +48,7 @@ var (
 	defaultDialer = &net.Dialer{
 		Timeout:   30 * time.Second,
 		KeepAlive: 30 * time.Second,
+		DualStack: true,
 	}
 
 	bufferPool = sync.Pool{New: createBuffer}
