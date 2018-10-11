@@ -89,6 +89,12 @@ type Config struct {
 	// CA we are to use
 	CAUrl string
 
+	// Self root CA name, to get certificate from Certificates map
+	SelfCAName string
+	SelfRootCA *tls.Certificate
+	// Wild mode means we obtain certificate with *.x.x
+	SelfRootWildMode bool
+
 	// The host (ONLY the host, not port) to listen
 	// on if necessary to start a listener to solve
 	// an ACME challenge
@@ -191,11 +197,34 @@ func NewConfig(inst *caddy.Instance) *Config {
 // it does not load them into memory. If allowPrompts is true,
 // the user may be shown a prompt.
 func (c *Config) ObtainCert(name string, allowPrompts bool) error {
+
 	skip, err := c.preObtainOrRenewChecks(name, allowPrompts)
 	if err != nil {
 		return err
 	}
 	if skip {
+		return nil
+	}
+
+	// if SelfCAName is not empty, we need to generate certificate with the root CA
+	if c.SelfRootCA != nil {
+		storage, err := c.StorageFor(c.CAUrl)
+		if err != nil {
+			return err
+		}
+		siteExists, err := storage.SiteExists(name)
+		if err != nil {
+			return err
+		}
+		if siteExists {
+			return nil
+		}
+
+		// self obtain certificate
+		if err := selfCAObtain(c, name); err != nil {
+			return fmt.Errorf("cannot obtain with self ca: %s", err.Error())
+		}
+
 		return nil
 	}
 
@@ -246,6 +275,11 @@ func (c *Config) RenewCert(name string, allowPrompts bool) error {
 func (c *Config) preObtainOrRenewChecks(name string, allowPrompts bool) (bool, error) {
 	if !c.Managed || !HostQualifies(name) {
 		return true, nil
+	}
+
+	// if we use root ca, everything will be ok
+	if c.SelfRootCA != nil {
+		return false, nil
 	}
 
 	// wildcard certificates require DNS challenge (as of March 2018)

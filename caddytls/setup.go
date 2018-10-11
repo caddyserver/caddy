@@ -27,6 +27,7 @@ import (
 	"strconv"
 	"strings"
 
+	"crypto/x509"
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/telemetry"
 )
@@ -84,6 +85,18 @@ func setupTLS(c *caddy.Controller) error {
 			certificateFile = args[0]
 			keyFile = args[1]
 			config.Manual = true
+		case 3:
+			if args[0] == "root_signed" {
+				config.SelfCAName = "default_self_ca" // ??? TODO
+				// Use CAUrl for root ca directory to store certs
+				// TODO: need to load the CA name out
+				config.CAUrl = "default_self_ca" // ??? TODO
+				// user might want a temporary, in-memory, self-signed cert with self-CA
+				certificateFile = args[1]
+				keyFile = args[2]
+			} else {
+				return c.Err("Do you want to set root_signed?")
+			}
 		}
 
 		// Optional block with extra parameters
@@ -223,6 +236,8 @@ func setupTLS(c *caddy.Controller) error {
 				}
 				parts[0] = "*"
 				config.Hostname = strings.Join(parts, ".")
+			case "root_signed_wild":
+				config.SelfRootWildMode = true
 			default:
 				return c.Errf("Unknown subdirective '%s'", c.Val())
 			}
@@ -253,6 +268,24 @@ func setupTLS(c *caddy.Controller) error {
 			}
 
 			config.OnDemandState.AskURL = parsedURL
+		}
+
+		// load root ca certificate
+		if len(args) == 3 && args[0] == "root_signed" {
+			var err error
+			var cert tls.Certificate
+			cert, err = tls.LoadX509KeyPair(certificateFile, keyFile)
+			if err != nil {
+				return c.Errf("load self root ca pair error: %s", err.Error())
+			}
+			if cert.Leaf, err = x509.ParseCertificate(cert.Certificate[0]); err != nil {
+				return c.Errf("ParseCertificate self root ca pair error: %s", err.Error())
+			}
+			// TODO: common name is a best one?
+			config.CAUrl = cert.Leaf.Subject.CommonName
+			config.SelfRootCA = &cert
+
+			config.OnDemand = true
 		}
 
 		// don't try to load certificates unless we're supposed to

@@ -25,13 +25,164 @@ import (
 	"sync"
 	"time"
 
+	"bytes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/telemetry"
 	"github.com/xenolf/lego/acmev2"
+	"math/big"
+	"os"
 )
 
 // acmeMu ensures that only one ACME challenge occurs at a time.
 var acmeMu sync.Mutex
+
+func genCertificate(config *Config, parent *tls.Certificate, name string) (tls.Certificate, error) {
+
+	var err error
+	var privKey interface{}
+
+	switch config.KeyType {
+	case "", acme.EC256:
+		privKey, err = ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	case acme.EC384:
+		privKey, err = ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+	case acme.RSA2048:
+		privKey, err = rsa.GenerateKey(rand.Reader, 2048)
+	case acme.RSA4096:
+		privKey, err = rsa.GenerateKey(rand.Reader, 4096)
+	case acme.RSA8192:
+		privKey, err = rsa.GenerateKey(rand.Reader, 8192)
+	default:
+		err = fmt.Errorf("cannot generate private key; unknown key type %v", config.KeyType)
+	}
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+
+	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
+	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+
+	notBefore := time.Now().Add(-24 * 30 * time.Hour)
+	notAfter := notBefore.Add(365 * 24 * time.Hour)
+
+	template := x509.Certificate{
+		SerialNumber: serialNumber,
+		Subject: pkix.Name{
+			Organization: []string{"Scrope Fake Certificates, Inc"},
+			CommonName:   name,
+		},
+		NotBefore:   notBefore,
+		NotAfter:    notAfter,
+		KeyUsage:    x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}
+
+	template.DNSNames = append(template.DNSNames, name)
+
+	var derBytes []byte
+	if derBytes, err = x509.CreateCertificate(rand.Reader, &template, parent.Leaf, publicKey(privKey), parent.PrivateKey); err != nil {
+		return tls.Certificate{}, err
+	}
+
+	chain := [][]byte{derBytes}
+
+	return tls.Certificate{
+		Certificate: chain,
+		PrivateKey:  privKey,
+		Leaf:        &template,
+	}, nil
+}
+
+func publicKey(priv interface{}) interface{} {
+	switch k := priv.(type) {
+	case *rsa.PrivateKey:
+		return &k.PublicKey
+	case *ecdsa.PrivateKey:
+		return &k.PublicKey
+	default:
+		return nil
+	}
+}
+
+func pemBlockForKey(priv interface{}) *pem.Block {
+	switch k := priv.(type) {
+	case *rsa.PrivateKey:
+		return &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(k)}
+	case *ecdsa.PrivateKey:
+		b, err := x509.MarshalECPrivateKey(k)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Unable to marshal ECDSA private key: %v", err)
+			os.Exit(2)
+		}
+		return &pem.Block{Type: "EC PRIVATE KEY", Bytes: b}
+	default:
+		return nil
+	}
+}
+
+// TODO: renew certificate
+
+var selfCAObtain = func(config *Config, name string) error {
+
+	storage, err := config.StorageFor(config.CAUrl)
+	if err != nil {
+		log.Printf("[ERROR] get storage with error for %s: %v", config.SelfCAName, err)
+		return err
+	}
+
+	waiter, err := storage.TryLock(name)
+	if err != nil {
+		return err
+	}
+	if waiter != nil {
+		log.Printf("[INFO] SelCA Certificate for %s is already being obtained elsewhere and stored; waiting", name)
+		waiter.Wait()
+		return nil // we assume the process with the lock succeeded, rather than hammering this execution path again
+	}
+	defer func() {
+		if err := storage.Unlock(name); err != nil {
+			log.Printf("[ERROR] SelfCA Unable to unlock obtain call for %s: %v", name, err)
+		}
+	}()
+
+	// use func to self obtain certificate
+	cert, err := genCertificate(config, config.SelfRootCA, name)
+
+	if err != nil {
+		return fmt.Errorf("SelfCA error gen certificate from root ca for %v: %v", name, err)
+	}
+
+	certOut := bytes.NewBuffer([]byte{})
+	keyOut := bytes.NewBuffer([]byte{})
+
+	pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: cert.Certificate[0]})
+	pem.Encode(keyOut, pemBlockForKey(cert.PrivateKey))
+
+	certificate := acme.CertificateResource{
+		PrivateKey:  keyOut.Bytes(),
+		Certificate: certOut.Bytes(),
+		Domain:      name,
+	}
+
+	// Success - immediately save the certificate resource
+	err = saveCertResource(storage, certificate)
+	if err != nil {
+		return fmt.Errorf("SelfCA error saving assets for %v: %v", name, err)
+	}
+
+	return nil
+}
 
 // ACMEClient is a wrapper over acme.Client with
 // some custom state attached. It is used to obtain,

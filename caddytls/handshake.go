@@ -217,6 +217,17 @@ func (cfg *Config) getCertificate(name string) (cert Certificate, matched, defau
 //
 // This function is safe for concurrent use.
 func (cfg *Config) getCertDuringHandshake(name string, loadIfNecessary, obtainIfNecessary bool) (Certificate, error) {
+	// if handle with wild mode
+	// we set the name to like *.x.x
+	if cfg.SelfRootWildMode {
+		labels := strings.Split(name, ".")
+		if len(labels) > 2 {
+			// replace name, one replace the first one
+			labels[0] = "*"
+			name = strings.Join(labels, ".")
+		}
+	}
+
 	// First check our in-memory cache to see if we've already loaded it
 	cert, matched, defaulted := cfg.getCertificate(name)
 	if matched {
@@ -235,6 +246,7 @@ func (cfg *Config) getCertDuringHandshake(name string, loadIfNecessary, obtainIf
 			}
 			return loadedCert, nil
 		}
+
 		if obtainIfNecessary {
 			// By this point, we need to ask the CA for a certificate
 
@@ -251,7 +263,6 @@ func (cfg *Config) getCertDuringHandshake(name string, loadIfNecessary, obtainIf
 				return cert, errors.New("hostname '" + name + "' does not qualify for certificate")
 			}
 
-			// Obtain certificate from the CA
 			return cfg.obtainOnDemandCertificate(name)
 		}
 	}
@@ -311,6 +322,11 @@ func (cfg *Config) checkURLForObtainingNewCerts(name string) error {
 // now according the maximum count defined in the configuration. If a non-nil
 // error is returned, do not issue a new certificate for name.
 func (cfg *Config) checkLimitsForObtainingNewCerts(name string) error {
+	// If we are in self root CA mode, ignore limit if MaxObtain is zero
+	if cfg.SelfRootCA != nil && cfg.OnDemandState.MaxObtain == 0 {
+		return nil
+	}
+
 	// User can set hard limit for number of certs for the process to issue
 	if cfg.OnDemandState.MaxObtain > 0 &&
 		atomic.LoadInt32(&cfg.OnDemandState.ObtainedCount) >= cfg.OnDemandState.MaxObtain {

@@ -196,6 +196,8 @@ func (cfg *Config) cacheUnmanagedCertificatePEMBytes(certBytes, keyBytes []byte)
 	}
 	cfg.cacheCertificate(cert)
 	telemetry.Increment("tls_manual_cert_count")
+
+	cfg.SelfCAName = cert.Names[0]
 	return nil
 }
 
