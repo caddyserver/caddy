@@ -17,6 +17,7 @@ package caddytls
 import (
 	"bytes"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/pem"
 	"fmt"
 	"io/ioutil"
@@ -27,7 +28,6 @@ import (
 	"strconv"
 	"strings"
 
-	"crypto/x509"
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/telemetry"
 )

@@ -34,11 +34,12 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"math/big"
+	"os"
+
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/telemetry"
 	"github.com/xenolf/lego/acmev2"
-	"math/big"
-	"os"
 )
 
 // acmeMu ensures that only one ACME challenge occurs at a time.
