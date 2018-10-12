@@ -179,9 +179,9 @@ func TestGetEmail(t *testing.T) {
 	// Test3: Get most recent email from before (in storage)
 	DefaultEmail = ""
 	for i, eml := range []string{
-		"TEST4-3@foo.com", // test case insensitivity
-		"test4-2@foo.com",
 		"test4-1@foo.com",
+		"test4-2@foo.com",
+		"TEST4-3@foo.com", // test case insensitivity
 	} {
 		u, err := newUser(eml)
 		if err != nil {
@@ -197,7 +197,7 @@ func TestGetEmail(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Could not access user folder for '%s': %v", eml, err)
 		}
-		chTime := f.ModTime().Add(-(time.Duration(i) * time.Hour)) // 1 second isn't always enough space!
+		chTime := f.ModTime().Add(time.Duration(i) * time.Hour) // 1 second isn't always enough space!
 		if err := os.Chtimes(testStorage.user(eml), chTime, chTime); err != nil {
 			t.Fatalf("Could not change user folder mod time for '%s': %v", eml, err)
 		}
