@@ -17,6 +17,7 @@ package httpserver
 import (
 	"bytes"
 	"crypto/rand"
+	"crypto/tls"
 	"fmt"
 	"io/ioutil"
 	mathrand "math/rand"
@@ -446,6 +447,20 @@ func (c Context) AddLink(link string) string {
 	}
 	c.responseHeader.Add("Link", link)
 	return ""
+}
+
+// Returns TLS protocol version
+func (c Context) TLSVersion() string {
+	switch c.Req.TLS.Version {
+	case tls.VersionTLS10:
+		return "1.0"
+	case tls.VersionTLS11:
+		return "1.1"
+	case tls.VersionTLS12:
+		return "1.2"
+	default:
+		return ""
+	}
 }
 
 // buffer pool for .Include context actions
