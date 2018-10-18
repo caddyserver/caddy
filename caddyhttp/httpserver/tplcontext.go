@@ -17,7 +17,6 @@ package httpserver
 import (
 	"bytes"
 	"crypto/rand"
-	"crypto/tls"
 	"fmt"
 	"io/ioutil"
 	mathrand "math/rand"
@@ -32,6 +31,7 @@ import (
 
 	"os"
 
+	"github.com/mholt/caddy/caddytls"
 	"github.com/russross/blackfriday"
 )
 
@@ -449,18 +449,13 @@ func (c Context) AddLink(link string) string {
 	return ""
 }
 
-// Returns TLS protocol version
-func (c Context) TLSVersion() string {
-	switch c.Req.TLS.Version {
-	case tls.VersionTLS10:
-		return "1.0"
-	case tls.VersionTLS11:
-		return "1.1"
-	case tls.VersionTLS12:
-		return "1.2"
-	default:
-		return ""
+// Returns either TLS protocol version if TLS used or empty string otherwise
+func (c Context) TLSVersion() (ret string) {
+	if c.Req.TLS != nil {
+		// Safe to ignore an error
+		ret, _ = caddytls.GetSupportedProtocolName(c.Req.TLS.Version)
 	}
+	return
 }
 
 // buffer pool for .Include context actions
