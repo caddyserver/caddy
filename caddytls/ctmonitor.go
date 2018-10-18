@@ -11,29 +11,32 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/mholt/caddy"
+	"github.com/mholt/caddy/telemetry"
 )
 
 func init() {
 	caddy.RegisterEventHook("ctmonitor", startMonitoring)
+	initializeCTMonitor()
 }
 
 const (
 	certSpotterAPIBase string = "https://api.certspotter.com/v1/issuances"
+	defaultWaitTime    string = "3600"
 )
 
 var (
-	filePath     string = filepath.Join(caddy.AssetsPath(), "ct_id")
-	ctConfigFile string = filepath.Join(caddy.AssetsPath(), "ct_config")
+	ctmonitor_config string = filepath.Join(caddy.AssetsPath(), "ct_config")
+	ctmonitor        CTMonitor
 )
 
-// CtConfig struct will allow me to get the config data from a file
-type CtConfig struct {
-	IncludeSubdomains bool `json:"subdomains"`
-	IncludeWildCards  bool `json:"wildCards"`
+// CTConfig is the configuration for the CT monitor.
+type CTConfig struct {
+	IncludeSubdomains bool `json:"inlcude_subdomains"`
+	IncludeWildcards  bool `json:"include_wildcards"`
+	LastID            int  `json:"last_id"`
 }
 
 // CertSpotterResponse is the json response formatting that is used in the program.
@@ -56,31 +59,96 @@ type CertSpotterResponse struct {
 	} `json:"cert"`
 }
 
-// QueryConfig is the configuration information for my queries.
+// QueryConfig is the configuration information for querying.
 type QueryConfig struct {
-	Subdomains bool
-	WildCards  bool
-	Query      string
-	Index      int
+	CTConfig
+	Query string
+	Index int
 }
 
-// CompareCerts compares the certificates that caddy is serving against the certificates
-// that certSpotter has found, if there are any that don't match the caddy certificates,
-// they are reported to the user.
-func CompareCerts(caddyCerts map[string]struct{}, certSpotterCerts map[string]string) {
-	for key := range certSpotterCerts {
-		if _, ok := caddyCerts[key]; !ok {
-			log.Printf("[WARNING] Certificate found that caddy is not monitoring, issued by: %v\n", certSpotterCerts[key])
+// CTMonitor holds a lot of the data that is used throughout the plugin.
+type CTMonitor struct {
+	// caddyCerts consists of the certs that caddy serves. Key = bytes of each cert, cast to a string
+	// caddyCertsSANs are the Subject Alternate Names that Caddy is hosting.
+	// used for individual queries, is an element in caddyCertsSANS
+	caddyCerts     map[string]struct{}
+	caddyCertsSANs []string
+	domainName     string
+
+	// issuance stored in the map entry in case the keys don't match.
+	// CertSpotterResponses, used in comparisons against the caddyCerts. map of bytes to issuance.
+	issuance       CertSpotterResponse
+	retrievedCerts map[string]CertSpotterResponse
+
+	// configuration struct for the CTMonitor
+	config QueryConfig
+
+	// used for terminating the routine when the shutdown event is called.
+	done chan struct{}
+
+	// retryAfter will contain the string arg from the response, used for next iteration.
+	// timeToWait is the numerical value of retryAfter.
+	retryAfter string
+	timeToWait int
+
+	// these variables are used while processing a CertSpotter response.
+	// biggestID is the most recent certID returned from CertSpotter.
+	// issuanceID is compared with biggestID to determine the most recent cert to store.
+	// lastIssuance tells it when to compare the biggestID with the issuanceID.
+	biggestID    int
+	issuanceID   int
+	lastIssuance bool
+}
+
+// BuildMapEntry adds only certificates to the map of retrievedCerts, and it gets the issuanceID and compares it to the biggestID we have seen so far.
+func buildMapEntry() error {
+	bytes, err := base64.StdEncoding.DecodeString(ctmonitor.issuance.Cert.Data)
+	if err != nil {
+		return fmt.Errorf("Decoding failed: %v", err)
+	}
+	aKey := string(bytes)
+	if _, ok := ctmonitor.retrievedCerts[aKey]; ok {
+		return nil
+	}
+	if ctmonitor.issuance.Cert.Type == "precert" {
+		return nil
+	}
+
+	ctmonitor.retrievedCerts[aKey] = ctmonitor.issuance
+	if ctmonitor.lastIssuance {
+		ctmonitor.issuanceID, err = strconv.Atoi(ctmonitor.issuance.ID)
+		if err != nil {
+			return fmt.Errorf("failed to convert issuance.ID to an int: %v", err)
+		}
+		if ctmonitor.issuanceID > ctmonitor.biggestID {
+			ctmonitor.biggestID = ctmonitor.issuanceID
 		}
 	}
+	return nil
+}
+
+// compareCerts compares the certificates that caddy is serving against the certificates
+// that certSpotter has found, if there are any that don't match the caddy certificates,
+// they are reported to the user.
+func compareCerts() int {
+	foundCerts := 0 // Used for testing purposes only.
+	for key := range ctmonitor.retrievedCerts {
+		if _, ok := ctmonitor.caddyCerts[key]; !ok {
+			issuance := ctmonitor.retrievedCerts[key]
+			foundCerts++
+			log.Printf("[WARNING] Certificate found that caddy is not monitoring, issued by: %v\n", issuance)
+			go telemetry.Append("ct_unrecognized_issuances", issuance)
+		}
+	}
+	return foundCerts
 }
 
 // getCaddyCerts retrieves the certificates that caddy monitors and returns them
 // as a map with the key being the bytes of the certificate cast to a string.
-func getCaddyCerts() ([]string, map[string]struct{}) {
+func getCaddyCerts() {
 	var (
-		caddyCerts = make(map[string]struct{}) //caddyCerts consists of the certificates that Caddy is serving.
-		caddyDNS   = make([]string, 0, 10)     //caddyDNS consists of the Subject Alternate Names that Caddy is hosting.
+		caddyCerts = make(map[string]struct{}) // caddyCerts consists of the certificates that Caddy is serving.
+		caddyDNS   = make([]string, 0)         // caddyDNS consists of the Subject Alternate Names that Caddy is hosting.
 	)
 	for _, inst := range caddy.Instances() {
 		inst.StorageMu.RLock()
@@ -99,200 +167,248 @@ func getCaddyCerts() ([]string, map[string]struct{}) {
 		}
 		certCache.RUnlock()
 	}
-	return caddyDNS, caddyCerts
+	ctmonitor.caddyCerts = caddyCerts
+	ctmonitor.caddyCertsSANs = caddyDNS
 }
 
-func getLatestIndex(fileName string) (int, error) {
-	fmt.Printf("ct_id FilePath: %v\n", fileName)
-	indexBytes, err := ioutil.ReadFile(fileName)
-	if os.IsNotExist(err) {
-		log.Println("getLatestIndex failed, could not find the file")
-		return 0, nil
-	}
-	if err != nil {
-		return 0, err
-	}
-	indexStr := strings.TrimSpace(string(indexBytes))
-	index, err := strconv.Atoi(indexStr)
-	if err != nil {
-		log.Println("Error converting file string to int.")
-		return 0, err
-	}
-	return index, nil
-}
+func getCertSpotterCerts() (numOfIssuanceObjects int, err error) {
+	// issuanceObjects consists of the issuanceObjects returned from CertSpotter.
+	var (
+		issuanceObjects []CertSpotterResponse
+		certQuery       string
+	)
 
-func loadConfig() (config CtConfig) {
-	configJSON, err := os.Open(ctConfigFile)
+	certQuery = prepareRequestURL()
+	response, err := http.Get(certQuery)
 	if err != nil {
-		log.Printf("loadConfig error: %v", err)
+		log.Printf("[ERROR] CT monitor: %v (url=%s)", err, certQuery)
+		numOfIssuanceObjects = 0
+		ctmonitor.retryAfter = response.Header.Get("Retry-After")
+		if ctmonitor.retryAfter == "" {
+			ctmonitor.retryAfter = defaultWaitTime
+		}
+		return numOfIssuanceObjects, fmt.Errorf("https get request failed: %v", err)
 	}
-	defer configJSON.Close()
-	//var config Config
-	err = json.NewDecoder(configJSON).Decode(&config)
+	defer response.Body.Close()
+
+	err = json.NewDecoder(response.Body).Decode(&issuanceObjects)
 	if err != nil {
-		log.Printf("[NOTICE] jsonDecode failed, error: %v\nUsing default values", err)
-		config.IncludeSubdomains = false
-		config.IncludeWildCards = false
+		numOfIssuanceObjects = 0
+		ctmonitor.retryAfter = response.Header.Get("Retry-After")
+		if ctmonitor.retryAfter == "" {
+			ctmonitor.retryAfter = defaultWaitTime
+		}
+		return numOfIssuanceObjects, fmt.Errorf("decoding json stream: %v", err)
+	}
+
+	numOfIssuanceObjects = len(issuanceObjects)
+	if numOfIssuanceObjects > 0 {
+		ctmonitor.lastIssuance = false
+		for i, issuance := range issuanceObjects {
+			ctmonitor.issuance = issuance
+			if i == numOfIssuanceObjects-1 {
+				ctmonitor.lastIssuance = true
+			}
+			err := buildMapEntry()
+			if err != nil {
+				return numOfIssuanceObjects, fmt.Errorf("buildMapEntry failed: %v", err)
+			}
+		}
+	} else {
+		ctmonitor.retryAfter = response.Header.Get("Retry-After")
 	}
 	return
+}
+
+func getLatestIndex() error {
+	var holder CTConfig
+	configBytes, err := ioutil.ReadFile(ctmonitor_config)
+	if os.IsNotExist(err) {
+		ctmonitor.config.CTConfig.LastID = 0
+		return fmt.Errorf("could not load last index file: %v", err)
+	}
+	if err != nil {
+		ctmonitor.config.CTConfig.LastID = 0
+		return err
+	}
+	if err := json.Unmarshal(configBytes, &holder); err != nil {
+		ctmonitor.config.CTConfig.LastID = 0
+		return fmt.Errorf("error reading configuration file: %v", err)
+	}
+	ctmonitor.config.CTConfig.LastID = holder.LastID
+	return nil
+}
+
+func initializeCTMonitor() {
+	// check if the datastructures are nil, if so, call make on them.
+	if ctmonitor.caddyCerts == nil {
+		ctmonitor.caddyCerts = make(map[string]struct{})
+	}
+	if ctmonitor.caddyCertsSANs == nil {
+		ctmonitor.caddyCertsSANs = make([]string, 0)
+	}
+	if ctmonitor.retrievedCerts == nil {
+		ctmonitor.retrievedCerts = make(map[string]CertSpotterResponse)
+	}
+}
+
+func loadConfig() error {
+	configJSON, err := os.Open(ctmonitor_config)
+	if os.IsNotExist(err) {
+		ctmonitor.config.CTConfig.IncludeSubdomains = false
+		ctmonitor.config.CTConfig.IncludeWildcards = false
+		ctmonitor.config.CTConfig.LastID = 0
+		err := putLatestIndex() // create the file if it didn't exist with default values.
+		if err != nil {
+			return fmt.Errorf("Creating ct_config failed: %v", err)
+		}
+		return nil
+	}
+	defer configJSON.Close()
+	err = json.NewDecoder(configJSON).Decode(&ctmonitor.config) // make sure that this is the right part to pass in. (was originally just config.
+	if err != nil {
+		ctmonitor.config.CTConfig.IncludeSubdomains = false
+		ctmonitor.config.CTConfig.IncludeWildcards = false
+		ctmonitor.config.CTConfig.LastID = 0
+		log.Printf("[ERROR] Decoding CT monitor configuration failed: %v", err)
+	}
+	return nil
 }
 
 // lookUpNames queries the certSpotter service for each SAN that Caddy is hosting
 // It then adds them to a set and returns a map of each certificate  mapped to a string
 // that contains identifying information for the cert.
-func lookUpNames(caddyCertsSANs []string, config QueryConfig) (map[string]string, int) {
+func lookUpNames() error {
 	// retrievedCerts is the bytes of a certificate mapped to the
 	// ID, issuer name, and before/after values.
-	retrievedCerts := make(map[string]string)
+	// retrievedCerts := make(map[string]CertSpotterResponse)
 
 	// biggestID is the most recent certificate id returned from CertSpotter.
-
 	// timeToWait is the amount of time you need to wait before querying again.
-	var biggestID, timeToWait int
+	// initialIndex saves the starting point for domainName queries.
+	var initialIndex int
 
 	// retryAfter is the timeToWait value from the response headers.
-	var retryAfter string
+
+	var err error
+
+	initialIndex = ctmonitor.config.CTConfig.LastID
 
 	// If the caddyCertsSANs is empty, it shouldn't run this at all.
-	for _, domainName := range caddyCertsSANs {
-		retryAfter = queryDomainName(domainName, config, &biggestID, retrievedCerts)
+	for _, domainName := range ctmonitor.caddyCertsSANs {
+		ctmonitor.domainName = domainName
+		ctmonitor.config.CTConfig.LastID = initialIndex // resets the index for the next query so that no certs are skipped.
+		err = queryDomainName()
+		if err != nil {
+			return fmt.Errorf("queryDomainName encountered error: %v", err)
+		}
 	}
-	err := putLatestID(biggestID, filePath)
+	err = putLatestIndex()
 	if err != nil {
-		//return fmt.Errorf("writing latest ID: %v", err)
-		log.Printf("[WARNING] writing latest ID (%v): %v", biggestID, err)
+		return fmt.Errorf("[ERROR] writing latest ID failed, err: %v", err)
 	}
-	timeToWait, err = strconv.Atoi(retryAfter)
+	ctmonitor.timeToWait, err = strconv.Atoi(ctmonitor.retryAfter)
 	if err != nil {
-		log.Printf(err.Error())
-		log.Print("Error retrieving time to wait, waiting 1 hour\n")
-		timeToWait = 3600
+		log.Printf("[ERROR] Bad Retry-After value from CT server: %v", err)
+		ctmonitor.timeToWait, _ = strconv.Atoi(defaultWaitTime)
 	}
 	// returning retrievedCerts because it is created here and timeToWait
-	// so that I wait enough time before trying again.
-	return retrievedCerts, timeToWait
+	// so that ctmonitor waits enough time before trying again.
+	return err
 }
 
 // monitorCerts continuously monitors the certificates that Caddy serves,
 // it queries again after the specified time.
 func monitorCerts() {
-	var queryConfig QueryConfig
-	config := loadConfig()
+	ctmonitor.timeToWait = 0
+	err := loadConfig()
+
+	if err != nil {
+		log.Printf("[ERROR] loading config: %v", err)
+		return
+	}
 	for {
-		namesToLookUp, caddyCerts := getCaddyCerts()
-		if len(namesToLookUp) == 0 {
-			log.Print("Could not retrieve DNS names from Caddy Certificate\n" +
-				"Make sure that you are serving on port 80 & 443\n" +
-				"Terminating monitorCerts.")
-			break
+		select {
+		case <-ctmonitor.done:
+			return // if shutdown signal received from Caddy, stop the thread.
+		case <-time.After(time.Duration(ctmonitor.timeToWait)):
+			getCaddyCerts()
+			if len(ctmonitor.caddyCertsSANs) == 0 {
+				log.Println("[INFO] Caddy is not serving any certificates; CT monitor disabled.")
+			}
+			err := getLatestIndex()
+			if err != nil {
+				log.Printf("[ERROR] Getting starting index: %v", err)
+				break
+			}
+			ctmonitor.config.Query = certSpotterAPIBase
+			err = lookUpNames()
+			// compareCerts runs even if there was an error.  If the error occurred after
+			// retrieving all of the certs, we can still compare them before quitting.
+			compareCerts()
+			if err != nil {
+				log.Printf("[ERROR] lookUpNames encountered an error %v, terminating ctmonitor.", err)
+				break
+			}
 		}
-		startingIndex, err := getLatestIndex(filePath)
-		if err != nil {
-			log.Printf("Error %v while getting starting index, starting at 0", err)
-		}
-		queryConfig.Subdomains = config.IncludeSubdomains
-		queryConfig.WildCards = config.IncludeWildCards
-		queryConfig.Query = certSpotterAPIBase
-		queryConfig.Index = startingIndex
-		fetchedCerts, pause := lookUpNames(namesToLookUp, queryConfig)
-		CompareCerts(caddyCerts, fetchedCerts)
-		time.Sleep(time.Duration(pause) * time.Second)
 	}
 }
 
-func prepQuery(domainName string, config QueryConfig) (query string) {
+func prepareRequestURL() (query string) {
 	v := url.Values{}
-	v.Set("domain", domainName)
-	if config.WildCards {
+	v.Set("domain", ctmonitor.domainName)
+	if ctmonitor.config.CTConfig.IncludeWildcards {
 		v.Set("match_wildcards", "true")
 	}
-	if config.Subdomains {
+	if ctmonitor.config.CTConfig.IncludeSubdomains {
 		v.Set("include_subdomains", "true")
 	}
-	v.Set("after", strconv.Itoa(config.Index))
+	v.Set("after", strconv.Itoa(ctmonitor.config.CTConfig.LastID))
 	v.Add("expand", "dns_names")
 	v.Add("expand", "issuer")
 	v.Add("expand", "cert")
 	encodedValue := v.Encode()
-	query = config.Query + "?" + encodedValue
+	query = ctmonitor.config.Query + "?" + encodedValue
 	return query
 }
 
-func putLatestID(currentID int, fileName string) error {
-	writeValue := strconv.Itoa(currentID)
-	return ioutil.WriteFile(fileName, []byte(writeValue), 0600)
-}
-
-func queryDomainName(domainName string, config QueryConfig, biggestID *int, retrievedCerts map[string]string) string {
-	var (
-		querySize  int
-		retryAfter string
-	)
-
-	for ok := true; ok; ok = querySize > 0 {
-		querySize, config.Index, retryAfter = getCertSpotterCerts(domainName, config, biggestID, retrievedCerts)
+func putLatestIndex() error {
+	file, err := os.Create(ctmonitor_config)
+	fmt.Println(ctmonitor_config)
+	if err != nil {
+		return fmt.Errorf("Opening %s file for writing: %v", ctmonitor_config, err)
 	}
-	return retryAfter
-}
-
-func startMonitoring(eventType caddy.EventName, eventInfo interface{}) error {
-	go monitorCerts()
+	defer file.Close()
+	err = json.NewEncoder(file).Encode(ctmonitor.config.CTConfig)
+	if err != nil {
+		return fmt.Errorf("writing CT monitor config: %v", err)
+	}
 	return nil
 }
 
-func getCertSpotterCerts(domainName string, config QueryConfig, biggestID *int, retrievedCerts map[string]string) (numOfIssuanceObjects int, issuanceID int, retryAfter string) {
-	// issuanceObjects consists of the issuanceObjects returned from CertSpotter.
-	issuanceID = config.Index
-	var (
-		issuanceObjects []CertSpotterResponse
-		certQuery       string
-	)
-	certQuery = prepQuery(domainName, config)
-
-	response, err := http.Get(certQuery)
-	if err != nil {
-		log.Printf("https get request failed on input %s \nError: %v", prepQuery(domainName, config), err)
-	}
-	defer response.Body.Close()
-
-	err = json.NewDecoder(response.Body).Decode(&issuanceObjects) // handle error
-	if err != nil {
-		//return fmt.Errorf("decoding json stream: %v", err)
-		log.Printf("[WARNING] error decoding json stream: %v", err)
-	}
-
-	numOfIssuanceObjects = len(issuanceObjects)
-	fmt.Printf("Length of issuanceObjects: %v\n", numOfIssuanceObjects)
-	if numOfIssuanceObjects > 0 {
-		for i, issuance := range issuanceObjects {
-			bytes, err := base64.StdEncoding.DecodeString(issuance.Cert.Data)
-			if err != nil {
-				log.Printf("Decoding failed: %v", err)
-			}
-			aKey := string(bytes)
-			if _, ok := retrievedCerts[aKey]; ok {
-				continue
-			}
-			if issuance.Cert.Type == "precert" {
-				continue
-			}
-			value := "ID: " + issuance.Cert.ID + " " + issuance.Issuer.Name + " not valid before: " + issuance.NotBefore +
-				" and not valid after: " + issuance.NotAfter
-			retrievedCerts[aKey] = value
-			if i == numOfIssuanceObjects-1 {
-				issuanceID, err = strconv.Atoi(issuance.ID)
-				if err != nil {
-					log.Printf(err.Error())
-					log.Print("Error occurred on line 277 of ctmonitor")
-				}
-				if issuanceID > *biggestID {
-					*biggestID = issuanceID
-				}
-			}
+func queryDomainName() error {
+	// numOfIssuanceObjects is used for paging the responses
+	var numOfIssuanceObjects int
+	var err error
+	for ok := true; ok; ok = numOfIssuanceObjects > 0 {
+		numOfIssuanceObjects, err = getCertSpotterCerts()
+		if err != nil {
+			return fmt.Errorf("error getting certs from certSpotter: %v", err)
 		}
-	} else {
-		retryAfter = response.Header.Get("Retry-After")
-		log.Printf("retryAfter: %v", retryAfter)
 	}
-	return
+	return nil
+}
+
+func startMonitoring(eventType caddy.EventName, eventInfo interface{}) error {
+	if eventType == caddy.StartupEvent { // caddy.InstanceStartUpEvent
+		go monitorCerts()
+
+	} else if eventType == caddy.ShutdownEvent {
+		ctmonitor.done <- struct{}{}
+	}
+	return nil
+}
+
+func String() string {
+	return fmt.Sprintf("ID: %v IssuerName: %s Not valid before: %s Not valid after: %s", ctmonitor.issuance.Cert.ID, ctmonitor.issuance.Issuer.Name, ctmonitor.issuance.NotBefore, ctmonitor.issuance.NotAfter)
 }
