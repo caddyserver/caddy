@@ -31,6 +31,7 @@ import (
 
 	"os"
 
+	"github.com/mholt/caddy/caddytls"
 	"github.com/russross/blackfriday"
 )
 
@@ -446,6 +447,15 @@ func (c Context) AddLink(link string) string {
 	}
 	c.responseHeader.Add("Link", link)
 	return ""
+}
+
+// Returns either TLS protocol version if TLS used or empty string otherwise
+func (c Context) TLSVersion() (ret string) {
+	if c.Req.TLS != nil {
+		// Safe to ignore an error
+		ret, _ = caddytls.GetSupportedProtocolName(c.Req.TLS.Version)
+	}
+	return
 }
 
 // buffer pool for .Include context actions
