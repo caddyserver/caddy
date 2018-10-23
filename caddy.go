@@ -195,7 +195,7 @@ func (i *Instance) Restart(newCaddyfile Input) (*Instance, error) {
 			for _, fn := range i.onRestartFailed {
 				err = fn()
 				if err != nil {
-					return
+					log.Printf("[ERROR] restart failed: %v", err)
 				}
 			}
 			if r != nil {
