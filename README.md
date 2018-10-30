@@ -53,10 +53,12 @@ Altogether, Caddy can do things other web servers simply cannot do. Its features
 
 ## Install
 
-Caddy binaries have no dependencies and are available for every platform. Get Caddy either of these ways:
+Caddy binaries have no dependencies and are available for every platform. Get Caddy any of these ways:
 
 - **[Download page](https://caddyserver.com/download)** (RECOMMENDED) allows you to customize your build in the browser
 - **[Latest release](https://github.com/mholt/caddy/releases/latest)** for pre-built, vanilla binaries
+- **[AWS Marketplace](https://aws.amazon.com/marketplace/pp/B07J1WNK75?qid=1539015041932&sr=0-1&ref_=srh_res_product_title&cl_spe=C)** makes it easy to deploy directly to your cloud environment. <a href="https://aws.amazon.com/marketplace/pp/B07J1WNK75?qid=1539015041932&sr=0-1&ref_=srh_res_product_title&cl_spe=C" target="_blank">
+<img src="https://s3.amazonaws.com/cloudformation-examples/cloudformation-launch-stack.png" alt="Get Caddy on the AWS Marketplace" height="25"/></a>
 
 
 ## Build
@@ -139,7 +141,7 @@ If you have questions or concerns about Caddy' underlying crypto implementations
 
 ## Contributing
 
-**[Join our forum](https://caddy.community) where you can chat with other Caddy users and developers!** To get familiar with the code base, try [Caddy code search on Sourcegraph](https://sourcegraph.com/github.com/mholt/caddy/-/search)!
+**[Join our forum](https://caddy.community) where you can chat with other Caddy users and developers!** To get familiar with the code base, try [Caddy code search on Sourcegraph](https://sourcegraph.com/github.com/mholt/caddy/)!
 
 Please see our [contributing guidelines](https://github.com/mholt/caddy/blob/master/.github/CONTRIBUTING.md) for instructions. If you want to write a plugin, check out the [developer wiki](https://github.com/mholt/caddy/wiki).
 

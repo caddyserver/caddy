@@ -16,6 +16,7 @@ package httpserver
 
 import (
 	"bytes"
+	"crypto/tls"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -920,5 +921,42 @@ func TestAddLink(t *testing.T) {
 				t.Errorf("Result not match: expect %v, but got %v", c.expectLinks, got)
 			}
 		})
+	}
+}
+
+func TestTlsVersion(t *testing.T) {
+	for _, test := range []struct {
+		tlsState       *tls.ConnectionState
+		expectedResult string
+	}{
+		{
+			&tls.ConnectionState{Version: tls.VersionTLS10},
+			"tls1.0",
+		},
+		{
+			&tls.ConnectionState{Version: tls.VersionTLS11},
+			"tls1.1",
+		},
+		{
+			&tls.ConnectionState{Version: tls.VersionTLS12},
+			"tls1.2",
+		},
+		// TLS not used
+		{
+			nil,
+			"",
+		},
+		// Unsupported version
+		{
+			&tls.ConnectionState{Version: 0x0399},
+			"",
+		},
+	} {
+		context := getContextOrFail(t)
+		context.Req.TLS = test.tlsState
+		result := context.TLSVersion()
+		if result != test.expectedResult {
+			t.Errorf("Expected %s got %s", test.expectedResult, result)
+		}
 	}
 }
