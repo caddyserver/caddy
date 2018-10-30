@@ -248,15 +248,15 @@ func (i *Instance) Restart(newCaddyfile Input) (*Instance, error) {
 	}
 
 	// success! stop the old instance
+	err = i.Stop()
+	if err != nil {
+		return i, err
+	}
 	for _, shutdownFunc := range i.onShutdown {
 		err = shutdownFunc()
 		if err != nil {
 			return i, err
 		}
-	}
-	err = i.Stop()
-	if err != nil {
-		return i, err
 	}
 
 	// Execute instantiation events
