@@ -526,6 +526,13 @@ func TestEnvironmentReplacement(t *testing.T) {
 	if actual, expected := blocks[0].Tokens["dir1"][1].Text, "Test foobar test"; expected != actual {
 		t.Errorf("Expected argument to be '%s' but was '%s'", expected, actual)
 	}
+
+	// after end token
+	p = testParser(":1234\nanswer \"{{ .Name }} {$FOOBAR}\"")
+	blocks, _ = p.parseAll()
+	if actual, expected := blocks[0].Tokens["answer"][1].Text, "{{ .Name }} foobar"; expected != actual {
+		t.Errorf("Expected argument to be '%s' but was '%s'", expected, actual)
+	}
 }
 
 func testParser(input string) parser {

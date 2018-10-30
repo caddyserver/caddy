@@ -424,7 +424,12 @@ func replaceEnvVars(s string) string {
 func replaceEnvReferences(s, refStart, refEnd string) string {
 	index := strings.Index(s, refStart)
 	for index != -1 {
-		endIndex := strings.Index(s, refEnd)
+		endIndex := strings.Index(s[index:], refEnd)
+		if endIndex == -1 {
+			break
+		}
+
+		endIndex += index
 		if endIndex > index+len(refStart) {
 			ref := s[index : endIndex+len(refEnd)]
 			s = strings.Replace(s, ref, os.Getenv(ref[len(refStart):len(ref)-len(refEnd)]), -1)
