@@ -23,7 +23,7 @@ before_install:
 install:
   - if [ "$TRAVIS_PULL_REQUEST" = "false" ]; then bash dist/gitcookie.sh; fi
   - go get -t ./...
-  - go get github.com/golang/lint/golint
+  - go get golang.org/x/lint/golint
   - go get github.com/FiloSottile/vendorcheck
   - go get github.com/alecthomas/gometalinter
 
