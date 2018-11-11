@@ -45,21 +45,22 @@ func setup(c *caddy.Controller) error {
 
 func webSocketParse(c *caddy.Controller) ([]Config, error) {
 	var websocks []Config
-	var respawn bool
-
-	optionalBlock := func() (hadBlock bool, err error) {
-		for c.NextBlock() {
-			hadBlock = true
-			if c.Val() == "respawn" {
-				respawn = true
-			} else {
-				return true, c.Err("Expected websocket configuration parameter in block")
-			}
-		}
-		return
-	}
 
 	for c.Next() {
+		var respawn bool
+
+		optionalBlock := func() (hadBlock bool, err error) {
+			for c.NextBlock() {
+				hadBlock = true
+				if c.Val() == "respawn" {
+					respawn = true
+				} else {
+					return true, c.Err("Expected websocket configuration parameter in block")
+				}
+			}
+			return
+		}
+
 		var val, path, command string
 
 		// Path or command; not sure which yet
