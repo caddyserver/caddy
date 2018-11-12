@@ -576,7 +576,7 @@ var supportedKeyTypes = map[string]acme.KeyType{
 	"RSA2048": acme.RSA2048,
 }
 
-// Map of supported protocols.
+// SupportedProtocols is a map of supported protocols.
 // HTTP/2 only supports TLS 1.2 and higher.
 // If updating this map, also update tlsProtocolStringToMap in caddyhttp/fastcgi/fastcgi.go
 var SupportedProtocols = map[string]uint16{
@@ -596,7 +596,7 @@ func GetSupportedProtocolName(protocol uint16) (string, error) {
 	return "", errors.New("name: unsuported protocol")
 }
 
-// Map of supported ciphers, used only for parsing config.
+// SupportedCiphersMap has supported ciphers, used only for parsing config.
 //
 // Note that, at time of writing, HTTP/2 blacklists 276 cipher suites,
 // including all but four of the suites below (the four GCM suites).
