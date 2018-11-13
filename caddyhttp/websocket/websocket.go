@@ -80,6 +80,25 @@ type (
 		Type      string
 		BufSize   int
 	}
+
+	wsGetUpgrader interface {
+		GetUpgrader() wsUpgrader
+	}
+
+	wsUpgrader interface {
+		Upgrade(w http.ResponseWriter, r *http.Request, responseHeader http.Header) (wsConn, error)
+	}
+
+	wsConn interface {
+		Close() error
+		ReadMessage() (messageType int, p []byte, err error)
+		SetPongHandler(h func(appData string) error)
+		SetReadDeadline(t time.Time) error
+		SetReadLimit(limit int64)
+		SetWriteDeadline(t time.Time) error
+		WriteControl(messageType int, data []byte, deadline time.Time) error
+		WriteMessage(messageType int, data []byte) error
+	}
 )
 
 // ServeHTTP converts the HTTP request to a WebSocket connection and serves it up.
@@ -97,12 +116,19 @@ func (ws WebSocket) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, erro
 // serveWS is used for setting and upgrading the HTTP connection to a websocket connection.
 // It also spawns the child process that is associated with matched HTTP path/url.
 func serveWS(w http.ResponseWriter, r *http.Request, config *Config) (int, error) {
-	upgrader := websocket.Upgrader{
-		ReadBufferSize:  1024,
-		WriteBufferSize: 1024,
-		CheckOrigin:     func(r *http.Request) bool { return true },
+	gu, castok := w.(wsGetUpgrader)
+	var u wsUpgrader
+	if gu != nil && castok {
+		u = gu.GetUpgrader()
+	} else {
+		u = &realWsUpgrader{o: &websocket.Upgrader{
+			ReadBufferSize:  1024,
+			WriteBufferSize: 1024,
+			CheckOrigin:     func(r *http.Request) bool { return true },
+		}}
 	}
-	conn, err := upgrader.Upgrade(w, r, nil)
+
+	conn, err := u.Upgrade(w, r, nil)
 	if err != nil {
 		// the connection has been "handled" -- WriteHeader was called with Upgrade,
 		// so don't return an error status code; just return an error
@@ -223,7 +249,7 @@ func buildEnv(cmdPath string, r *http.Request) (metavars []string, err error) {
 
 // pumpStdin handles reading data from the websocket connection and writing
 // it to stdin of the process.
-func pumpStdin(conn *websocket.Conn, stdin io.WriteCloser, config *Config) {
+func pumpStdin(conn wsConn, stdin io.WriteCloser, config *Config) {
 	// Setup our connection's websocket ping/pong handlers from our const values.
 	defer conn.Close()
 	conn.SetReadLimit(maxMessageSize)
@@ -253,7 +279,7 @@ func pumpStdin(conn *websocket.Conn, stdin io.WriteCloser, config *Config) {
 
 // pumpStdout handles reading data from stdout of the process and writing
 // it to websocket connection.
-func pumpStdout(conn *websocket.Conn, stdout io.Reader, done chan struct{}, config *Config) {
+func pumpStdout(conn wsConn, stdout io.Reader, done chan struct{}, config *Config) {
 	go pinger(conn, done)
 	defer func() {
 		_ = conn.Close()
@@ -348,7 +374,7 @@ func pumpStdout(conn *websocket.Conn, stdout io.Reader, done chan struct{}, conf
 }
 
 // pinger simulates the websocket to keep it alive with ping messages.
-func pinger(conn *websocket.Conn, done chan struct{}) {
+func pinger(conn wsConn, done chan struct{}) {
 	ticker := time.NewTicker(pingPeriod)
 	defer ticker.Stop()
 
@@ -366,6 +392,44 @@ func pinger(conn *websocket.Conn, done chan struct{}) {
 			return // clean up this routine.
 		}
 	}
+}
+
+type realWsUpgrader struct {
+	o *websocket.Upgrader
+}
+
+type realWsConn struct {
+	o *websocket.Conn
+}
+
+func (u *realWsUpgrader) Upgrade(w http.ResponseWriter, r *http.Request, responseHeader http.Header) (wsConn, error) {
+	a, b := u.o.Upgrade(w, r, responseHeader)
+	return &realWsConn{o: a}, b
+}
+
+func (c *realWsConn) Close() error {
+	return c.o.Close()
+}
+func (c *realWsConn) ReadMessage() (messageType int, p []byte, err error) {
+	return c.o.ReadMessage()
+}
+func (c *realWsConn) SetPongHandler(h func(appData string) error) {
+	c.o.SetPongHandler(h)
+}
+func (c *realWsConn) SetReadDeadline(t time.Time) error {
+	return c.o.SetReadDeadline(t)
+}
+func (c *realWsConn) SetReadLimit(limit int64) {
+	c.o.SetReadLimit(limit)
+}
+func (c *realWsConn) SetWriteDeadline(t time.Time) error {
+	return c.o.SetWriteDeadline(t)
+}
+func (c *realWsConn) WriteControl(messageType int, data []byte, deadline time.Time) error {
+	return c.o.WriteControl(messageType, data, deadline)
+}
+func (c *realWsConn) WriteMessage(messageType int, data []byte) error {
+	return c.o.WriteMessage(messageType, data)
 }
 
 func findIncompleteRuneLength(p []byte, length int) int {
