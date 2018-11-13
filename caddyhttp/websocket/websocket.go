@@ -28,6 +28,7 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/caddyserver/caddy/caddyhttp/httpserver"
 	"github.com/gorilla/websocket"
@@ -76,6 +77,8 @@ type (
 		Command   string
 		Arguments []string
 		Respawn   bool // TODO: Not used, but parser supports it until we decide on it
+		Type      string
+		BufSize   int
 	}
 )
 
@@ -133,8 +136,8 @@ func serveWS(w http.ResponseWriter, r *http.Request, config *Config) (int, error
 	}
 
 	done := make(chan struct{})
-	go pumpStdout(conn, stdout, done)
-	pumpStdin(conn, stdin)
+	go pumpStdout(conn, stdout, done, config)
+	pumpStdin(conn, stdin, config)
 
 	_ = stdin.Close() // close stdin to end the process
 
@@ -220,7 +223,7 @@ func buildEnv(cmdPath string, r *http.Request) (metavars []string, err error) {
 
 // pumpStdin handles reading data from the websocket connection and writing
 // it to stdin of the process.
-func pumpStdin(conn *websocket.Conn, stdin io.WriteCloser) {
+func pumpStdin(conn *websocket.Conn, stdin io.WriteCloser, config *Config) {
 	// Setup our connection's websocket ping/pong handlers from our const values.
 	defer conn.Close()
 	conn.SetReadLimit(maxMessageSize)
@@ -238,7 +241,10 @@ func pumpStdin(conn *websocket.Conn, stdin io.WriteCloser) {
 		if err != nil {
 			break
 		}
-		message = append(message, '\n')
+		if config.Type == "lines" {
+			// no '\n' from client, so append '\n' to spawned process
+			message = append(message, '\n')
+		}
 		if _, err := stdin.Write(message); err != nil {
 			break
 		}
@@ -247,26 +253,96 @@ func pumpStdin(conn *websocket.Conn, stdin io.WriteCloser) {
 
 // pumpStdout handles reading data from stdout of the process and writing
 // it to websocket connection.
-func pumpStdout(conn *websocket.Conn, stdout io.Reader, done chan struct{}) {
+func pumpStdout(conn *websocket.Conn, stdout io.Reader, done chan struct{}, config *Config) {
 	go pinger(conn, done)
 	defer func() {
 		_ = conn.Close()
 		close(done) // make sure to close the pinger when we are done.
 	}()
 
-	s := bufio.NewScanner(stdout)
-	for s.Scan() {
-		if err := conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
-			log.Println("[ERROR] failed to set write deadline: ", err)
+	if config.Type == "lines" {
+		// message must end with '\n'
+		s := bufio.NewScanner(stdout)
+		if config.BufSize > 0 {
+			s.Buffer(make([]byte, config.BufSize), config.BufSize)
 		}
-		if err := conn.WriteMessage(websocket.TextMessage, bytes.TrimSpace(s.Bytes())); err != nil {
-			break
+		for s.Scan() {
+			if err := conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
+				log.Println("[ERROR] failed to set write deadline: ", err)
+			}
+			if err := conn.WriteMessage(websocket.TextMessage, bytes.TrimSpace(s.Bytes())); err != nil {
+				break
+			}
 		}
-	}
-	if s.Err() != nil {
-		err := conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseGoingAway, s.Err().Error()), time.Time{})
-		if err != nil {
-			log.Println("[ERROR] WriteControl failed: ", err)
+		if s.Err() != nil {
+			err := conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseGoingAway, s.Err().Error()), time.Time{})
+			if err != nil {
+				log.Println("[ERROR] WriteControl failed: ", err)
+			}
+		}
+	} else if config.Type == "text" {
+		// handle UTF-8 text message, newline is not required
+		r := bufio.NewReader(stdout)
+		var err1 error
+		var len int
+		remainBuf := make([]byte, utf8.UTFMax)
+		remainLen := 0
+		bufSize := config.BufSize
+		if bufSize <= 0 {
+			bufSize = 2048
+		}
+		for {
+			out := make([]byte, bufSize)
+			copy(out[:remainLen], remainBuf[:remainLen])
+			len, err1 = r.Read(out[remainLen:])
+			if err1 != nil {
+				break
+			}
+			len += remainLen
+			remainLen = findIncompleteRuneLength(out, len)
+			if remainLen > 0 {
+				remainBuf = out[len-remainLen : len]
+			}
+			if err := conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
+				log.Println("[ERROR] failed to set write deadline: ", err)
+			}
+			if err := conn.WriteMessage(websocket.TextMessage, out[0:len-remainLen]); err != nil {
+				break
+			}
+		}
+		if err1 != nil {
+			err := conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseGoingAway, err1.Error()), time.Time{})
+			if err != nil {
+				log.Println("[ERROR] WriteControl failed: ", err)
+			}
+		}
+	} else if config.Type == "binary" {
+		// treat message as binary data
+		r := bufio.NewReader(stdout)
+		var err1 error
+		var len int
+		bufSize := config.BufSize
+		if bufSize <= 0 {
+			bufSize = 2048
+		}
+		for {
+			out := make([]byte, bufSize)
+			len, err1 = r.Read(out)
+			if err1 != nil {
+				break
+			}
+			if err := conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
+				log.Println("[ERROR] failed to set write deadline: ", err)
+			}
+			if err := conn.WriteMessage(websocket.BinaryMessage, out[0:len]); err != nil {
+				break
+			}
+		}
+		if err1 != nil {
+			err := conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseGoingAway, err1.Error()), time.Time{})
+			if err != nil {
+				log.Println("[ERROR] WriteControl failed: ", err)
+			}
 		}
 	}
 }
@@ -290,4 +366,53 @@ func pinger(conn *websocket.Conn, done chan struct{}) {
 			return // clean up this routine.
 		}
 	}
+}
+
+func findIncompleteRuneLength(p []byte, length int) int {
+	if length == 0 {
+		return 0
+	}
+	if rune(p[length-1]) < utf8.RuneSelf {
+		// ASCII 7-bit always complete
+		return 0
+	}
+
+	lowest := length - utf8.UTFMax
+	if lowest < 0 {
+		lowest = 0
+	}
+	for start := length - 1; start >= lowest; start-- {
+		if (p[start] >> 5) == 0x06 {
+			// 2-byte utf-8 start byte
+			if length-start >= 2 {
+				// enough bytes
+				return 0
+			}
+			// 1 byte outstanding
+			return 1
+		}
+
+		if (p[start] >> 4) == 0x0E {
+			// 3-byte utf-8 start byte
+			if length-start >= 3 {
+				// enough bytes
+				return 0
+			}
+			// some bytes outstanding
+			return length - start
+		}
+
+		if (p[start] >> 3) == 0x1E {
+			// 4-byte utf-8 start byte
+			if length-start >= 4 {
+				// enough bytes
+				return 0
+			}
+			// some bytes outstanding
+			return length - start
+		}
+	}
+
+	// No utf-8 start byte
+	return 0
 }
