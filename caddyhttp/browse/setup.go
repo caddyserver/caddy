@@ -125,6 +125,7 @@ const defaultTemplate = `<!DOCTYPE html>
 body {
 	font-family: sans-serif;
 	text-rendering: optimizespeed;
+	background-color: #ffffff;
 }
 
 a {
@@ -145,12 +146,12 @@ header,
 
 th:first-child,
 td:first-child {
-	padding-left: 5%;
+	width: 5%;
 }
 
 th:last-child,
 td:last-child {
-	padding-right: 5%;
+	width: 5%;
 }
 
 header {
@@ -241,20 +242,20 @@ td {
 	font-size: 14px;
 }
 
-td:first-child {
-	width: 100%;
+td:nth-child(2) {
+	width: 80%;
 }
 
-td:nth-child(2) {
+td:nth-child(3) {
 	padding: 0 20px 0 20px;
 }
 
-th:last-child,
-td:last-child {
+th:nth-child(4),
+td:nth-child(4) {
 	text-align: right;
 }
 
-td:first-child svg {
+td:nth-child(2) svg {
 	position: absolute;
 }
 
@@ -301,12 +302,12 @@ footer {
 		display: none;
 	}
 
-	td:first-child {
+	td:nth-child(2) {
 		width: auto;
 	}
 
-	th:nth-child(2),
-	td:nth-child(2) {
+	th:nth-child(3),
+	td:nth-child(3) {
 		padding-right: 5%;
 		text-align: right;
 	}
@@ -390,6 +391,7 @@ footer {
 				<table aria-describedby="summary">
 					<thead>
 					<tr>
+						<th></th>
 						<th>
 							{{- if and (eq .Sort "namedirfirst") (ne .Order "desc")}}
 							<a href="?sort=namedirfirst&order=desc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}" class="icon"><svg width="1em" height=".5em" version="1.1" viewBox="0 0 12.922194 6.0358899"><use xlink:href="#up-arrow"></use></svg></a>
@@ -425,11 +427,13 @@ footer {
 							<a href="?sort=time&order=asc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}">Modified</a>
 							{{- end}}
 						</th>
+						<th class="hideable"></th>
 					</tr>
 					</thead>
 					<tbody>
 					{{- if .CanGoUp}}
 					<tr>
+						<td></td>
 						<td>
 							<a href="..">
 								<span class="goup">Go up</span>
@@ -437,10 +441,12 @@ footer {
 						</td>
 						<td>&mdash;</td>
 						<td class="hideable">&mdash;</td>
+						<td class="hideable"></td>
 					</tr>
 					{{- end}}
 					{{- range .Items}}
 					<tr class="file">
+						<td></td>
 						<td>
 							<a href="{{html .URL}}">
 								{{- if .IsDir}}
@@ -457,6 +463,7 @@ footer {
 						<td data-order="{{.Size}}">{{.HumanSize}}</td>
 						{{- end}}
 						<td class="hideable"><time datetime="{{.HumanModTime "2006-01-02T15:04:05Z"}}">{{.HumanModTime "01/02/2006 03:04:05 PM -07:00"}}</time></td>
+						<td class="hideable"></td>
 					</tr>
 					{{- end}}
 					</tbody>

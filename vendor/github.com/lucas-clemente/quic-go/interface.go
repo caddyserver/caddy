@@ -16,8 +16,16 @@ type StreamID = protocol.StreamID
 // A VersionNumber is a QUIC version number.
 type VersionNumber = protocol.VersionNumber
 
-// VersionGQUIC39 is gQUIC version 39.
-const VersionGQUIC39 = protocol.Version39
+const (
+	// VersionGQUIC39 is gQUIC version 39.
+	VersionGQUIC39 = protocol.Version39
+	// VersionGQUIC43 is gQUIC version 43.
+	VersionGQUIC43 = protocol.Version43
+	// VersionGQUIC44 is gQUIC version 44.
+	VersionGQUIC44 = protocol.Version44
+	// VersionMilestone0_10_0 uses TLS
+	VersionMilestone0_10_0 = protocol.VersionMilestone0_10_0
+)
 
 // A Cookie can be used to verify the ownership of the client address.
 type Cookie = handshake.Cookie
@@ -139,8 +147,11 @@ type Session interface {
 	LocalAddr() net.Addr
 	// RemoteAddr returns the address of the peer.
 	RemoteAddr() net.Addr
-	// Close closes the connection. The error will be sent to the remote peer in a CONNECTION_CLOSE frame. An error value of nil is allowed and will cause a normal PeerGoingAway to be sent.
-	Close(error) error
+	// Close the connection.
+	io.Closer
+	// Close the connection with an error.
+	// The error must not be nil.
+	CloseWithError(ErrorCode, error) error
 	// The context is cancelled when the session is closed.
 	// Warning: This API should not be considered stable and might change soon.
 	Context() context.Context
@@ -159,6 +170,13 @@ type Config struct {
 	// This saves 8 bytes in the Public Header in every packet. However, if the IP address of the server changes, the connection cannot be migrated.
 	// Currently only valid for the client.
 	RequestConnectionIDOmission bool
+	// The length of the connection ID in bytes. Only valid for IETF QUIC.
+	// It can be 0, or any value between 4 and 18.
+	// If not set, the interpretation depends on where the Config is used:
+	// If used for dialing an address, a 0 byte connection ID will be used.
+	// If used for a server, or dialing on a packet conn, a 4 byte connection ID will be used.
+	// When dialing on a packet conn, the ConnectionIDLength value must be the same for every Dial call.
+	ConnectionIDLength int
 	// HandshakeTimeout is the maximum duration that the cryptographic handshake may take.
 	// If the timeout is exceeded, the connection is closed.
 	// If this value is zero, the timeout is set to 10 seconds.

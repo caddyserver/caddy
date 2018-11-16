@@ -53,15 +53,17 @@ Altogether, Caddy can do things other web servers simply cannot do. Its features
 
 ## Install
 
-Caddy binaries have no dependencies and are available for every platform. Get Caddy either of these ways:
+Caddy binaries have no dependencies and are available for every platform. Get Caddy any of these ways:
 
 - **[Download page](https://caddyserver.com/download)** (RECOMMENDED) allows you to customize your build in the browser
 - **[Latest release](https://github.com/mholt/caddy/releases/latest)** for pre-built, vanilla binaries
+- **[AWS Marketplace](https://aws.amazon.com/marketplace/pp/B07J1WNK75?qid=1539015041932&sr=0-1&ref_=srh_res_product_title&cl_spe=C)** makes it easy to deploy directly to your cloud environment. <a href="https://aws.amazon.com/marketplace/pp/B07J1WNK75?qid=1539015041932&sr=0-1&ref_=srh_res_product_title&cl_spe=C" target="_blank">
+<img src="https://s3.amazonaws.com/cloudformation-examples/cloudformation-launch-stack.png" alt="Get Caddy on the AWS Marketplace" height="25"/></a>
 
 
 ## Build
 
-To build from source you need **[Git](https://git-scm.com/downloads)** and **[Go](https://golang.org/doc/install)** (1.9 or newer). Follow these instruction for fast building:
+To build from source you need **[Git](https://git-scm.com/downloads)** and **[Go](https://golang.org/doc/install)** (1.10 or newer). Follow these instruction for fast building:
 
 - Get the source with `go get github.com/mholt/caddy/caddy` and then run `go get github.com/caddyserver/builds`
 - Now `cd $GOPATH/src/github.com/mholt/caddy/caddy` and run `go run build.go`
@@ -69,6 +71,8 @@ To build from source you need **[Git](https://git-scm.com/downloads)** and **[Go
 Then make sure the `caddy` binary is in your PATH.
 
 To build for other platforms, use build.go with the `--goos` and `--goarch` flags.
+
+When building from source, telemetry is enabled by default. You can disable it by changing `enableTelemetry` in run.go before compiling, or use the `-disabled-metrics` flag at runtime to disable only certain metrics.
 
 
 ## Quick Start
@@ -137,7 +141,7 @@ If you have questions or concerns about Caddy' underlying crypto implementations
 
 ## Contributing
 
-**[Join our forum](https://caddy.community) where you can chat with other Caddy users and developers!** To get familiar with the code base, try [Caddy code search on Sourcegraph](https://sourcegraph.com/github.com/mholt/caddy/-/search)!
+**[Join our forum](https://caddy.community) where you can chat with other Caddy users and developers!** To get familiar with the code base, try [Caddy code search on Sourcegraph](https://sourcegraph.com/github.com/mholt/caddy/)!
 
 Please see our [contributing guidelines](https://github.com/mholt/caddy/blob/master/.github/CONTRIBUTING.md) for instructions. If you want to write a plugin, check out the [developer wiki](https://github.com/mholt/caddy/wiki).
 

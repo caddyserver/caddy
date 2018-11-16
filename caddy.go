@@ -44,6 +44,7 @@ import (
 	"time"
 
 	"github.com/mholt/caddy/caddyfile"
+	"github.com/mholt/caddy/telemetry"
 )
 
 // Configurable application parameters
@@ -110,6 +111,7 @@ type Instance struct {
 	onFirstStartup  []func() error // starting, not as part of a restart
 	onStartup       []func() error // starting, even as part of a restart
 	onRestart       []func() error // before restart commences
+	onRestartFailed []func() error // if restart failed
 	onShutdown      []func() error // stopping, even as part of a restart
 	onFinalShutdown []func() error // stopping, not as part of a restart
 
@@ -122,6 +124,7 @@ type Instance struct {
 	StorageMu sync.RWMutex
 }
 
+// Instances returns the list of instances.
 func Instances() []*Instance {
 	return instances
 }
@@ -184,9 +187,26 @@ func (i *Instance) Restart(newCaddyfile Input) (*Instance, error) {
 	i.wg.Add(1)
 	defer i.wg.Done()
 
+	var err error
+	// if something went wrong on restart then run onRestartFailed callbacks
+	defer func() {
+		r := recover()
+		if err != nil || r != nil {
+			for _, fn := range i.onRestartFailed {
+				err = fn()
+				if err != nil {
+					log.Printf("[ERROR] restart failed: %v", err)
+				}
+			}
+			if r != nil {
+				panic(r)
+			}
+		}
+	}()
+
 	// run restart callbacks
 	for _, fn := range i.onRestart {
-		err := fn()
+		err = fn()
 		if err != nil {
 			return i, err
 		}
@@ -222,21 +242,21 @@ func (i *Instance) Restart(newCaddyfile Input) (*Instance, error) {
 	newInst := &Instance{serverType: newCaddyfile.ServerType(), wg: i.wg, Storage: make(map[interface{}]interface{})}
 
 	// attempt to start new instance
-	err := startWithListenerFds(newCaddyfile, newInst, restartFds)
+	err = startWithListenerFds(newCaddyfile, newInst, restartFds)
 	if err != nil {
 		return i, err
 	}
 
 	// success! stop the old instance
+	err = i.Stop()
+	if err != nil {
+		return i, err
+	}
 	for _, shutdownFunc := range i.onShutdown {
 		err = shutdownFunc()
 		if err != nil {
 			return i, err
 		}
-	}
-	err = i.Stop()
-	if err != nil {
-		return i, err
 	}
 
 	// Execute instantiation events
@@ -615,6 +635,8 @@ func ValidateAndExecuteDirectives(cdyfile Input, inst *Instance, justValidate bo
 		return fmt.Errorf("error inspecting server blocks: %v", err)
 	}
 
+	telemetry.Set("num_server_blocks", len(sblocks))
+
 	return executeDirectives(inst, cdyfile.Path(), stype.Directives(), sblocks, justValidate)
 }
 
@@ -854,6 +876,7 @@ func Stop() error {
 	for {
 		instancesMu.Lock()
 		if len(instances) == 0 {
+			instancesMu.Unlock()
 			break
 		}
 		inst := instances[0]
@@ -869,7 +892,7 @@ func Stop() error {
 // explicitly like a common local hostname. addr must only
 // be a host or a host:port combination.
 func IsLoopback(addr string) bool {
-	host, _, err := net.SplitHostPort(addr)
+	host, _, err := net.SplitHostPort(strings.ToLower(addr))
 	if err != nil {
 		host = addr // happens if the addr is just a hostname
 	}

@@ -17,13 +17,14 @@ package caddytls
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"io/ioutil"
 
 	"net/url"
 	"strings"
 
-	"github.com/codahale/aesnicheck"
+	"github.com/klauspost/cpuid"
 	"github.com/mholt/caddy"
 	"github.com/xenolf/lego/acmev2"
 )
@@ -575,7 +576,7 @@ var supportedKeyTypes = map[string]acme.KeyType{
 	"RSA2048": acme.RSA2048,
 }
 
-// Map of supported protocols.
+// SupportedProtocols is a map of supported protocols.
 // HTTP/2 only supports TLS 1.2 and higher.
 // If updating this map, also update tlsProtocolStringToMap in caddyhttp/fastcgi/fastcgi.go
 var SupportedProtocols = map[string]uint16{
@@ -584,7 +585,18 @@ var SupportedProtocols = map[string]uint16{
 	"tls1.2": tls.VersionTLS12,
 }
 
-// Map of supported ciphers, used only for parsing config.
+// GetSupportedProtocolName returns the protocol name
+func GetSupportedProtocolName(protocol uint16) (string, error) {
+	for k, v := range SupportedProtocols {
+		if v == protocol {
+			return k, nil
+		}
+	}
+
+	return "", errors.New("name: unsuported protocol")
+}
+
+// SupportedCiphersMap has supported ciphers, used only for parsing config.
 //
 // Note that, at time of writing, HTTP/2 blacklists 276 cipher suites,
 // including all but four of the suites below (the four GCM suites).
@@ -611,6 +623,17 @@ var SupportedCiphersMap = map[string]uint16{
 	"RSA-3DES-EDE-CBC-SHA":               tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA,
 }
 
+// GetSupportedCipherName returns the cipher name
+func GetSupportedCipherName(cipher uint16) (string, error) {
+	for k, v := range SupportedCiphersMap {
+		if v == cipher {
+			return k, nil
+		}
+	}
+
+	return "", errors.New("name: unsuported cipher")
+}
+
 // List of all the ciphers we want to use by default
 var defaultCiphers = []uint16{
 	tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
@@ -623,8 +646,6 @@ var defaultCiphers = []uint16{
 	tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
 	tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
 	tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
-	tls.TLS_RSA_WITH_AES_256_CBC_SHA,
-	tls.TLS_RSA_WITH_AES_128_CBC_SHA,
 }
 
 // List of ciphers we should prefer if native AESNI support is missing
@@ -639,8 +660,6 @@ var defaultCiphersNonAESNI = []uint16{
 	tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
 	tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
 	tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
-	tls.TLS_RSA_WITH_AES_256_CBC_SHA,
-	tls.TLS_RSA_WITH_AES_128_CBC_SHA,
 }
 
 // getPreferredDefaultCiphers returns an appropriate cipher suite to use, depending on
@@ -648,7 +667,7 @@ var defaultCiphersNonAESNI = []uint16{
 //
 // See https://github.com/mholt/caddy/issues/1674
 func getPreferredDefaultCiphers() []uint16 {
-	if aesnicheck.HasAESNI() {
+	if cpuid.CPU.AesNi() {
 		return defaultCiphers
 	}
 

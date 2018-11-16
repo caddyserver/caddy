@@ -48,6 +48,7 @@ var (
 	defaultDialer = &net.Dialer{
 		Timeout:   30 * time.Second,
 		KeepAlive: 30 * time.Second,
+		DualStack: true,
 	}
 
 	bufferPool = sync.Pool{New: createBuffer}
@@ -147,7 +148,7 @@ func singleJoiningSlash(a, b string) string {
 // the target request will be for /base/dir.
 // Without logic: target's path is "/", incoming is "/api/messages",
 // without is "/api", then the target request will be for /messages.
-func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int, timeout time.Duration) *ReverseProxy {
+func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int, timeout, fallbackDelay time.Duration) *ReverseProxy {
 	targetQuery := target.RawQuery
 	director := func(req *http.Request) {
 		if target.Scheme == "unix" {
@@ -232,6 +233,9 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int, t
 	dialer := *defaultDialer
 	if timeout != defaultDialer.Timeout {
 		dialer.Timeout = timeout
+	}
+	if fallbackDelay != defaultDialer.FallbackDelay {
+		dialer.FallbackDelay = fallbackDelay
 	}
 
 	rp := &ReverseProxy{
