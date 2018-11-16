@@ -262,6 +262,10 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			return http.StatusRequestEntityTooLarge, backendErr
 		}
 
+		if backendErr == context.Canceled {
+			return CustomStatusContextCancelled, backendErr
+		}
+
 		// failover; remember this failure for some time if
 		// request failure counting is enabled
 		timeout := host.FailTimeout
@@ -397,3 +401,5 @@ func mutateHeadersByRules(headers, rules http.Header, repl httpserver.Replacer) 
 		}
 	}
 }
+
+const CustomStatusContextCancelled = 499
