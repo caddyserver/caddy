@@ -11,8 +11,9 @@ import (
 
 type baseFlowController struct {
 	// for sending data
-	bytesSent  protocol.ByteCount
-	sendWindow protocol.ByteCount
+	bytesSent     protocol.ByteCount
+	sendWindow    protocol.ByteCount
+	lastBlockedAt protocol.ByteCount
 
 	// for receiving data
 	mutex                sync.RWMutex
@@ -27,6 +28,17 @@ type baseFlowController struct {
 	rttStats         *congestion.RTTStats
 
 	logger utils.Logger
+}
+
+// IsNewlyBlocked says if it is newly blocked by flow control.
+// For every offset, it only returns true once.
+// If it is blocked, the offset is returned.
+func (c *baseFlowController) IsNewlyBlocked() (bool, protocol.ByteCount) {
+	if c.sendWindowSize() != 0 || c.sendWindow == c.lastBlockedAt {
+		return false, 0
+	}
+	c.lastBlockedAt = c.sendWindow
+	return true, c.sendWindow
 }
 
 func (c *baseFlowController) AddBytesSent(n protocol.ByteCount) {

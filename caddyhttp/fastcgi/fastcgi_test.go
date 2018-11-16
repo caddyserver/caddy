@@ -21,6 +21,7 @@ import (
 	"net/http/fcgi"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"testing"
@@ -237,6 +238,21 @@ func TestBuildEnv(t *testing.T) {
 	r = r.WithContext(ctx)
 	envExpected = newEnv()
 	envExpected["SCRIPT_NAME"] = "/test/fgci_test.php"
+	testBuildEnv(r, rule, fpath, envExpected)
+
+	// 7. Test SCRIPT_NAME,SCRIPT_FILENAME do not include PATH_INFO
+	fpath = "/fgci_test.php/extra/paths"
+	r = newReq()
+	envExpected = newEnv()
+	envExpected["PATH_INFO"] = "/extra/paths"
+	envExpected["SCRIPT_NAME"] = "/fgci_test.php"
+	envExpected["SCRIPT_FILENAME"] = filepath.FromSlash("/fgci_test.php")
+	testBuildEnv(r, rule, fpath, envExpected)
+
+	// 8. Test REQUEST_SCHEME in env
+	r = newReq()
+	envExpected = newEnv()
+	envExpected["REQUEST_SCHEME"] = "http"
 	testBuildEnv(r, rule, fpath, envExpected)
 }
 

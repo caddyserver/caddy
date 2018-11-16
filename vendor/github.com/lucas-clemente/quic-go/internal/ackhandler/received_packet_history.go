@@ -104,7 +104,7 @@ func (h *receivedPacketHistory) GetAckRanges() []wire.AckRange {
 	ackRanges := make([]wire.AckRange, h.ranges.Len())
 	i := 0
 	for el := h.ranges.Back(); el != nil; el = el.Prev() {
-		ackRanges[i] = wire.AckRange{First: el.Value.Start, Last: el.Value.End}
+		ackRanges[i] = wire.AckRange{Smallest: el.Value.Start, Largest: el.Value.End}
 		i++
 	}
 	return ackRanges
@@ -114,8 +114,8 @@ func (h *receivedPacketHistory) GetHighestAckRange() wire.AckRange {
 	ackRange := wire.AckRange{}
 	if h.ranges.Len() > 0 {
 		r := h.ranges.Back().Value
-		ackRange.First = r.Start
-		ackRange.Last = r.End
+		ackRange.Smallest = r.Start
+		ackRange.Largest = r.End
 	}
 	return ackRange
 }

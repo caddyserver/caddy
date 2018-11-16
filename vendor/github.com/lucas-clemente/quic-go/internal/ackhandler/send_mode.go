@@ -14,7 +14,9 @@ const (
 	SendRetransmission
 	// SendRTO means that an RTO probe packet should be sent
 	SendRTO
-	// SendAny packet should be sent
+	// SendTLP means that a TLP probe packet should be sent
+	SendTLP
+	// SendAny means that any packet should be sent
 	SendAny
 )
 
@@ -28,6 +30,8 @@ func (s SendMode) String() string {
 		return "retransmission"
 	case SendRTO:
 		return "rto"
+	case SendTLP:
+		return "tlp"
 	case SendAny:
 		return "any"
 	default:
