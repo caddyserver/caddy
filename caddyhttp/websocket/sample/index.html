@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Caddy WebSocket Test</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style type="text/css">
+body, button {
+	font-family: Arial, Helvetica, sans-serif;
+}
+
+.aim {
+	background-color: lightyellow;
+}
+
+.console {
+	border: 1px solid black;
+	background-color: #EEEEEE;
+	color: #111111;
+	font-family: 'Courier New', Courier, monospace;
+}
+</style>
+
+<script type="text/javascript">
+function getWsUrl(path) {
+	let url = new URL(location.href);
+	url.protocol = url.protocol.replace('http', 'ws');
+	url.pathname = path;
+	return url.toString();
+}
+
+function replaceCrCr(str) {
+	for (let i = str.indexOf('\r\n'); i >= 0; i = str.indexOf('\r\n'))
+		str = str.substr(0, i) + str.substr(i + 1);
+	let firstIndex = str.indexOf('\r');
+	let lastIndex = str.lastIndexOf('\r');
+	if (firstIndex < 0)
+		return str;
+	if (firstIndex !== lastIndex)
+		return str.substr(0, firstIndex) + str.substr(lastIndex + 1);
+	let nIndex = str.lastIndexOf('\n');
+	if (nIndex >= 0)
+		return str.substr(0, nIndex + 1) + str.substr(lastIndex + 1);
+	return str;
+}
+
+function writeConsole(cs, str) {
+	let data = replaceCrCr(str);
+	let rIndex = data.indexOf('\r')
+	if (rIndex >= 0) {
+		let oldText = cs.innerText;
+		let nIndex = oldText.lastIndexOf('\n');
+		if (nIndex >= 0)
+			cs.innerText = oldText.substr(0, nIndex + 1) + data.substr(rIndex + 1);
+		else
+			cs.innerText = data.substr(rIndex + 1);
+	} else
+		cs.innerText += data;
+}
+
+function createTest(buttonId, consoleId, path, callback) {
+	document.getElementById(buttonId).addEventListener('click', () => {
+		let ws = new WebSocket(getWsUrl(path));
+		callback(ws, document.getElementById(consoleId));
+	});
+}
+
+let arraybufferToHexString = ab => Array.from(new Uint8Array(ab)).map(num => num.toString(16).padStart(2, '0')).join(' ');
+
+function hexStringToUint8Array(str) {
+	let arr = [];
+	let i = 0;
+	for (let i = 0; i < str.length; i += 2) {
+		for (; i < str.length; i++) {
+			let b = str.charAt(i);
+			if ((b === ' ') || (b === '\t') || (b === '\r') || (b === '\n'))
+				continue;
+			break;
+		}
+		let c = str.charAt(i);
+		let d = str.charAt(i + 1);
+		if (!(((c >= '0') && (c <= '9')) || ((c >= 'A') && (c <= 'F')) || ((c >= 'a') && (c <= 'f'))) ||
+			!(((d >= '0') && (d <= '9')) || ((d >= 'A') && (d <= 'F')) || ((d >= 'a') && (d <= 'f'))))
+			return null;
+		arr.push(parseInt(c + d, 16));
+	}
+	return new Uint8Array(arr);
+}
+
+function hexInputToUint8ArrayForEach(id, callback) {
+	let segments = document.getElementById(id).value.split('\n');
+	for (let segment of segments) {
+		let arr = hexStringToUint8Array(segment);
+		if (arr)
+			callback(arr);
+	}
+}
+
+function stringInputForEach(id, callback) {
+	let segments = document.getElementById(id).value.split('\n');
+	segments.forEach(callback);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+	createTest('test1', 'console1', 'cat-lines/', (ws, cs) => {
+		let send = 0;
+		let recv = 0;
+		ws.onopen = () => {
+			writeConsole(cs, '[WS OPEN]\n');
+			stringInputForEach('input1', str => {
+				ws.send(str);
+				send++;
+			});
+		};
+		ws.onmessage = e => {
+			writeConsole(cs, e.data + '\n');
+			recv++;
+			if (recv >= 3) {
+				writeConsole(cs, '[WS CLOSING]\n');
+				ws.close();
+			}
+		};
+		ws.onclose = e => writeConsole(cs, '[WS CLOSED] ' + e.reason + '\n');
+	});
+
+	createTest('test2a', 'console2a', 'cat-lines-32/', (ws, cs) => {
+		let send = 0;
+		let recv = 0;
+		ws.onopen = () => {
+			if (document.getElementById('hex2a').checked) {
+				writeConsole(cs, '[WS OPEN] Note: hex -> binary conversion is done at client-side!\n');
+				hexInputToUint8ArrayForEach('input2a', arr => {
+					ws.send(arr);
+					send++;
+				});
+			} else {
+				writeConsole(cs, '[WS OPEN]\n');
+				stringInputForEach('input2a', str => {
+					ws.send(str);
+					send++;
+				});
+			}
+		};
+		ws.onmessage = e => {
+			writeConsole(cs, e.data + '\n');
+			recv++;
+			if (recv >= send) {
+				writeConsole(cs, '[WS CLOSING]\n');
+				ws.close();
+			}
+		};
+		ws.onclose = e => writeConsole(cs, '[WS CLOSED] ' + e.reason + '\n');
+	});
+
+	createTest('test2b', 'console2b', 'cat-lines-32/', (ws, cs) => {
+		let send = 0;
+		let recv = 0;
+		ws.onopen = () => {
+			if (document.getElementById('hex2b').checked) {
+				writeConsole(cs, '[WS OPEN] Note: hex -> binary conversion is done at client-side!\n');
+				hexInputToUint8ArrayForEach('input2b', arr => {
+					ws.send(arr);
+					send++;
+				});
+			} else {
+				writeConsole(cs, '[WS OPEN]\n');
+				stringInputForEach('input2b', str => {
+					ws.send(str);
+					send++;
+				});
+			}
+		};
+		ws.onmessage = e => {
+			writeConsole(cs, e.data + '\n');
+			recv++;
+			if (recv >= send) {
+				writeConsole(cs, '[WS CLOSING]\n');
+				ws.close();
+			}
+		};
+		ws.onclose = e => writeConsole(cs, '[WS CLOSED] ' + e.reason + '\n');
+	});
+
+	createTest('test3', 'console3', 'cat-text/', (ws, cs) => {
+		let send = 0;
+		let recv = '';
+		ws.onopen = () => {
+			writeConsole(cs, '[WS OPEN]\n');
+			stringInputForEach('input3', str => {
+				ws.send(str + '\n');
+				send++;
+			});
+		};
+		ws.onmessage = e => {
+			writeConsole(cs, e.data);
+			recv += e.data;
+			let count = -1;
+			let pos = -1;
+			do {
+				count++;
+				pos = recv.indexOf('\n', pos + 1);
+			} while (pos >= 0);
+			if (count >= send) {
+				writeConsole(cs, '[WS CLOSING]\n');
+				ws.close();
+			}
+		};
+		ws.onclose = e => writeConsole(cs, '[WS CLOSED] ' + e.reason + '\n');
+	});
+
+	createTest('test4', 'console4', 'cat-text-32/', (ws, cs) => {
+		let send = 0;
+		let recv = '';
+		ws.onopen = () => {
+			writeConsole(cs, '[WS OPEN]\n');
+			stringInputForEach('input4', str => {
+				ws.send(str + '\n');
+				send++;
+			});
+		};
+		ws.onmessage = e => {
+			writeConsole(cs, e.data);
+			recv += e.data;
+			let count = -1;
+			let pos = -1;
+			do {
+				count++;
+				pos = recv.indexOf('\n', pos + 1);
+			} while (pos >= 0);
+			if (count >= send) {
+				writeConsole(cs, '[WS CLOSING]\n');
+				ws.close();
+			}
+		};
+		ws.onclose = e => writeConsole(cs, '[WS CLOSED] ' + e.reason + '\n');
+	});
+
+	createTest('test5', 'console5', 'cat-binary/', (ws, cs) => {
+		let send = 0;
+		let recv = 0;
+		ws.binaryType = 'arraybuffer';
+		ws.onopen = () => {
+			writeConsole(cs, '[WS OPEN] Note: hex <> binary conversion is done at client-side!\n');
+			hexInputToUint8ArrayForEach('input5', arr => {
+				ws.send(arr);
+				send += arr.byteLength;
+			});
+		};
+		ws.onmessage = e => {
+			writeConsole(cs, arraybufferToHexString(e.data) + '\n');
+			recv += e.data.byteLength;
+			if (recv >= send) {
+				writeConsole(cs, '[WS CLOSING]\n');
+				ws.close();
+			}
+		};
+		ws.onclose = e => writeConsole(cs, '[WS CLOSED] ' + e.reason + '\n');
+	});
+
+	createTest('test6', 'console6', 'cat-binary-32/', (ws, cs) => {
+		let send = 0;
+		let recv = 0;
+		ws.binaryType = 'arraybuffer';
+		ws.onopen = () => {
+			writeConsole(cs, '[WS OPEN] Note: hex <> binary conversion is done at client-side!\n');
+			hexInputToUint8ArrayForEach('input6', arr => {
+				ws.send(arr);
+				send += arr.byteLength;
+			});
+		};
+		ws.onmessage = e => {
+			writeConsole(cs, arraybufferToHexString(e.data) + '\n');
+			recv += e.data.byteLength;
+			if (recv >= send) {
+				writeConsole(cs, '[WS CLOSING]\n');
+				ws.close();
+			}
+		};
+		ws.onclose = e => writeConsole(cs, '[WS CLOSED] ' + e.reason + '\n');
+	});
+
+	createTest('test7', 'console7', 'curl-lines/', (ws, cs) => {
+		ws.onopen = () => {
+			writeConsole(cs, '[WS OPEN]\n');
+			ws.send(document.getElementById('output7').checked.toString());
+			ws.send(document.getElementById('url7').value);
+		};
+		ws.onmessage = e => writeConsole(cs, e.data + '\n');
+		ws.onclose = e => writeConsole(cs, '[WS CLOSED] ' + e.reason + '\n');
+	});
+
+	createTest('test9', 'console9', 'curl-text/', (ws, cs) => {
+		ws.onopen = () => {
+			writeConsole(cs, '[WS OPEN]\n');
+			ws.send(document.getElementById('output9').checked.toString() + '\n');
+			ws.send(document.getElementById('url9').value + '\n');
+		};
+		ws.onmessage = e => writeConsole(cs, e.data);
+		ws.onclose = e => writeConsole(cs, '[WS CLOSED] ' + e.reason + '\n');
+	});
+
+	createTest('test11', 'console11', 'curl-binary/', (ws, cs) => {
+		ws.binaryType = 'arraybuffer';
+		ws.onopen = () => {
+			writeConsole(cs, '[WS OPEN] Note: hex <> binary conversion is done at client-side!\n');
+			ws.send(document.getElementById('output11').checked.toString() + '\n');
+			ws.send(document.getElementById('url11').value + '\n');
+		};
+		ws.onmessage = e => writeConsole(cs, arraybufferToHexString(e.data) + '\n');
+		ws.onclose = e => writeConsole(cs, '[WS CLOSED] ' + e.reason + '\n');
+	});
+
+	createTest('test12', 'console12', 'curl-binary-32/', (ws, cs) => {
+		ws.binaryType = 'arraybuffer';
+		ws.onopen = () => {
+			writeConsole(cs, '[WS OPEN] Note: hex <> binary conversion is done at client-side!\n');
+			ws.send(document.getElementById('output12').checked.toString() + '\n');
+			ws.send(document.getElementById('url12').value + '\n');
+		};
+		ws.onmessage = e => writeConsole(cs, arraybufferToHexString(e.data) + '\n');
+		ws.onclose = e => writeConsole(cs, '[WS CLOSED] ' + e.reason + '\n');
+	});
+});
+
+</script>
+		
+</head>
+
+<body>
+<h3>Caddy WebSocket Test</h3>
+<button id="test1">Test 1</button> cat, type=lines,
+input=<textarea id="input1" cols="100" rows="3">first line
+0123456789ABCDEF0123456789ABCD✔✘EFabcdef
+ghijklmnopqrstuvwxyz</textarea>
+<br><span class="aim">Aim: as in v0.11, default setting.</span>
+<pre><div id="console1" class="console"></div></pre>
+
+<button id="test2a">Test 2A</button> cat, type=lines, bufsize=32,
+input=<textarea id="input2a" cols="100" rows="3">first line
+0123456789ABCDEF0123456789ABCDEFabcdef
+ghijklmnopqrstuvwxyz</textarea>
+<label for="hex2a">hex</label><input id="hex2a" type="checkbox">
+<br><span class="aim">Aim: Same input as Test 1, Line 2 is longer than bufsize, so server-side error occurred (bufio.Scanner: token too long).</span>
+<pre><div id="console2a" class="console"></div></pre>
+
+<button id="test2b">Test 2B</button> cat, type=lines, bufsize=32,
+input=<textarea id="input2b" cols="100" rows="3">30 31 32 33 34 35 36 37 38 39 41 42 43 44 45 46 30 31 32 33 34 35 36 37 38 39 41 E2 9C 94 46
+30 31 32 33 34 35 36 37 38 39 41 42 43 44 45 46 30 31 32 33 34 35 36 37 38 39 41 41 42 E2 9C
+67 68 69 6A 6B 6C 6D 6E 6F 70 71 72 73 74 75 76 77 78 79 7A</textarea>
+<label for="hex2b">hex</label><input id="hex2b" type="checkbox" checked>
+<br><span class="aim">Aim: Line 2 ends with an incomplete UTF-8 sequence, so web browser drops connection automatically.</span>
+<pre><div id="console2b" class="console"></div></pre>
+
+<button id="test3">Test 3</button> cat, type=text,
+input=<textarea id="input3" cols="100" rows="3">first line
+0123456789ABCDEF0123456789ABCD✔✘EFabcdef
+ghijklmnopqrstuvwxyz</textarea>
+<br><span class="aim">Aim: Same input as Test 1, but use type=text. Web browser receives Line 2 in a single websocket message.</span>
+<pre><div id="console3" class="console"></div></pre>
+
+<button id="test4">Test 4</button> cat, type=text, bufsize=32,
+input=<textarea id="input4" cols="100" rows="3">first line
+0123456789ABCDEF0123456789ABCD✔✘EFabcdef
+ghijklmnopqrstuvwxyz</textarea>
+<br><span class="aim">Aim: Same input as Test 2A, but use type=text. Server-side buffer can handle the case that UTF-8 character cut into 2 halves.</span>
+<pre><div id="console4" class="console"></div></pre>
+
+<button id="test5">Test 5</button> cat, type=binary,
+input=<textarea id="input5" cols="100" rows="3">02 03 16 30 41 52 63 00 00 49 9D 00 2A 01 FA C6
+FF 37 64 77 D8 FF E1 FF CF 4C 5B 57 8A 00 0D 0A 20 41</textarea>
+<label for="hex5">hex</label>✅
+<br><span class="aim">Aim: Test type=binary.</span>
+<pre><div id="console5" class="console"></div></pre>
+
+<button id="test6">Test 6</button> cat, type=binary, bufsize=32,
+input=<textarea id="input6" cols="100" rows="3">02 03 16 30 41 52 63 00 00 49 9D 00 2A 01 FA C6
+FF 37 64 77 D8 FF E1 FF CF 4C 5B 57 8A 00 0D 0A 20 41</textarea>
+<label for="hex6">hex</label>✅
+<br><span class="aim">Aim: Same input as Test 5, Web browser receives 2 packets when exceeding server-side buffer size.</span>
+<pre><div id="console6" class="console"></div></pre>
+
+<button id="test7">Test 7</button> curl, type=lines,
+<label for="output7">stdout=</label><input id="output7" type="checkbox" checked>,
+<label for="url7">url=</label><input id="url7" type="text" size="40" value="https://httpbin.org/delay/10">
+<br><span class="aim">Aim: as in v0.11, default setting. Cannot display CURL progress messages at real-time. Also, whitespaces are trimmed.</span>
+<pre><div id="console7" class="console"></div></pre>
+
+<button id="test9">Test 9</button> curl, type=text,
+<label for="output9">stdout=</label><input id="output9" type="checkbox" checked>,
+<label for="url9">url=</label><input id="url9" type="text" size="40" value="https://httpbin.org/delay/10">
+<br><span class="aim">Aim: Display real-time CURL progress messages. Do not trim whitespaces.</span>
+<pre><div id="console9" class="console"></div></pre>
+
+<button id="test11">Test 11</button> curl, type=binary,
+<label for="output11">stdout=</label><input id="output11" type="checkbox" checked>,
+<label for="url11">url=</label><input id="url11" type="text" size="40" value="https://httpbin.org/stream-bytes/8192">
+<br><span class="aim">Aim: Display CURL binary output.</span>
+<pre><div id="console11" class="console"></div></pre>
+
+<button id="test12">Test 12</button> curl, type=binary, bufsize=32,
+<label for="output12">stdout=</label><input id="output12" type="checkbox" checked>,
+<label for="url12">url=</label><input id="url12" type="text" size="40" value="https://httpbin.org/stream-bytes/256">
+<br><span class="aim">Aim: Display CURL binary output. Web browser receives more packets when exceeding server-side buffer size.</span>
+<pre><div id="console12" class="console"></div></pre>
+</body>
+</html>
