@@ -391,6 +391,12 @@ func groupSiteConfigsByListenAddr(configs []*SiteConfig) (map[string][]*SiteConf
 // parts of an address. The component parts may be
 // updated to the correct values as setup proceeds,
 // but the original value should never be changed.
+//
+// Important: In order for the fix for #2356 to work,
+// if Host is an IP address, it must be in a
+// normalized form (as presented by net.IP.String()).
+// For SNI matching in general, it needs to be
+// lowercase.
 type Address struct {
 	Original, Scheme, Host, Port, Path string
 }
@@ -439,10 +445,17 @@ func (a Address) Normalize() Address {
 	if !CaseSensitivePath {
 		path = strings.ToLower(path)
 	}
+
+	host := a.Host
+	if ip := net.ParseIP(host); ip != nil {
+		// Ensure that it's in a normalized form if it's an IP address.
+		host = ip.String()
+	}
+
 	return Address{
 		Original: a.Original,
 		Scheme:   strings.ToLower(a.Scheme),
-		Host:     strings.ToLower(a.Host),
+		Host:     strings.ToLower(host),
 		Port:     a.Port,
 		Path:     path,
 	}

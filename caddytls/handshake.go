@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -34,18 +35,28 @@ import (
 // method to get a config by matching its hostname).
 type configGroup map[string]*Config
 
-// getConfig gets the config by the first key match for name.
-// In other words, "sub.foo.bar" will get the config for "*.foo.bar"
-// if that is the closest match. If no match is found, the first
-// (random) config will be loaded, which will defer any TLS alerts
-// to the certificate validation (this may or may not be ideal;
-// let's talk about it if this becomes problematic).
-//
-// This function follows nearly the same logic to lookup
-// a hostname as the getCertificate function uses.
-func (cg configGroup) getConfig(name string) *Config {
-	name = strings.ToLower(name)
+func certificateIDFromHello(clientHello *tls.ClientHelloInfo) (name string) {
+	name = strings.TrimSpace(clientHello.ServerName)
 
+	// Per #2356, if lacking SNI, attempt to find certificate
+	// that matches local IP address.
+	if name == "" {
+		addr := clientHello.Conn.LocalAddr()
+		if s, ok := addr.(*net.TCPAddr); ok {
+			name = s.IP.String()
+		} else if s, ok := addr.(*net.UDPAddr); ok {
+			name = s.IP.String()
+		} else if s, ok := addr.(*net.IPAddr); ok {
+			name = s.IP.String()
+		}
+	}
+
+	// IP addresses should be lowercased, too
+	name = strings.ToLower(name)
+	return
+}
+
+func (cg configGroup) getConfig(name string) *Config {
 	// exact match? great, let's use it
 	if config, ok := cg[name]; ok {
 		return config
@@ -79,8 +90,8 @@ func (cg configGroup) getConfig(name string) *Config {
 //
 // This method is safe for use as a tls.Config.GetConfigForClient callback.
 func (cg configGroup) GetConfigForClient(clientHello *tls.ClientHelloInfo) (*tls.Config, error) {
-	config := cg.getConfig(clientHello.ServerName)
-	if config != nil {
+	name := certificateIDFromHello(clientHello)
+	if config := cg.getConfig(name); config != nil {
 		return config.tlsConfig, nil
 	}
 	return nil, nil
@@ -112,7 +123,8 @@ func (cfg *Config) GetCertificate(clientHello *tls.ClientHelloInfo) (*tls.Certif
 	}
 
 	// get the certificate and serve it up
-	cert, err := cfg.getCertDuringHandshake(strings.ToLower(clientHello.ServerName), true, true)
+	name := certificateIDFromHello(clientHello)
+	cert, err := cfg.getCertDuringHandshake(name, true, true)
 	if err == nil {
 		go telemetry.Increment("tls_handshake_count") // TODO: This is a "best guess" for now, we need something listener-level
 	}

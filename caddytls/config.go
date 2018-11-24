@@ -35,6 +35,12 @@ type Config struct {
 	// designated for; can contain wildcard characters
 	// according to RFC 6125 §6.4.3 - this field MUST
 	// be set in order for things to work as expected
+	//
+	// Important: In order for the fix for #2356 to work,
+	// if Host is an IP address, it must be in a
+	// normalized form (as presented by net.IP.String()).
+	// For SNI matching in general, it needs to be
+	// lowercase.
 	Hostname string
 
 	// Whether TLS is enabled
