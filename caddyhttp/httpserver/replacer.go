@@ -541,7 +541,7 @@ func (r *replacer) Set(key, value string) {
 
 const (
 	timeFormat        = "02/Jan/2006:15:04:05 -0700"
-	timeFormatISO     = "2006-01-02T15:04:05" // ISO 8601 with timezone to be assumed as local
+	timeFormatISO     = "2006-01-02T15:04:05"  // ISO 8601 with timezone to be assumed as local
 	timeFormatISOUTC  = "2006-01-02T15:04:05Z" // ISO 8601 with timezone to be assumed as UTC
 	headerContentType = "Content-Type"
 	contentTypeJSON   = "application/json"
