@@ -326,7 +326,7 @@ footer {
 }
 </style>
 	</head>
-	<body>
+	<body onload='filter()'>
 		<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" height="0" width="0" style="position: absolute;">
 			<defs>
 				<!-- Folder -->
