@@ -19,7 +19,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"testing"
 
 	"github.com/mholt/caddy/caddytls"
@@ -29,7 +28,7 @@ func TestRedirPlaintextHost(t *testing.T) {
 	for i, testcase := range []struct {
 		Host        string // used for the site config
 		Port        string
-		ListenHosts []string
+		ListenHost  string
 		RequestHost string // if different from Host
 	}{
 		{
@@ -44,17 +43,13 @@ func TestRedirPlaintextHost(t *testing.T) {
 			Port: "1234",
 		},
 		{
-			Host:        "foohost",
-			ListenHosts: []string{"93.184.216.34"},
+			Host:       "foohost",
+			ListenHost: "93.184.216.34",
 		},
 		{
-			Host:        "foohost",
-			Port:        "1234",
-			ListenHosts: []string{"93.184.216.34"},
-		},
-		{
-			Host:        "foohost",
-			ListenHosts: []string{"127.0.0.1", "127.0.0.2"},
+			Host:       "foohost",
+			Port:       "1234",
+			ListenHost: "93.184.216.34",
 		},
 		{
 			Host: "foohost",
@@ -75,15 +70,15 @@ func TestRedirPlaintextHost(t *testing.T) {
 				Host: testcase.Host,
 				Port: testcase.Port,
 			},
-			ListenHosts: testcase.ListenHosts,
-			TLS:         new(caddytls.Config),
+			ListenHost: testcase.ListenHost,
+			TLS:        new(caddytls.Config),
 		})
 
 		// Check host and port
 		if actual, expected := cfg.Addr.Host, testcase.Host; actual != expected {
 			t.Errorf("Test %d: Expected redir config to have host %s but got %s", i, expected, actual)
 		}
-		if actual, expected := cfg.ListenHosts, testcase.ListenHosts; !reflect.DeepEqual(actual, expected) {
+		if actual, expected := cfg.ListenHost, testcase.ListenHost; actual != expected {
 			t.Errorf("Test %d: Expected redir config to have bindhost %s but got %s", i, expected, actual)
 		}
 		if actual, expected := cfg.Addr.Port, HTTPPort; actual != expected {

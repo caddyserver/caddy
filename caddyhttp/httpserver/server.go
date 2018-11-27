@@ -419,7 +419,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 
 	// we still check for ACME challenge if the vhost exists,
 	// because we must apply its HTTP challenge config settings
-	if caddytls.HTTPChallengeHandler(w, r, vhost.ListenHosts[0]) {
+	if caddytls.HTTPChallengeHandler(w, r, vhost.ListenHost) {
 		return 0, nil
 	}
 

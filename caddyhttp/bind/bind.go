@@ -29,17 +29,10 @@ func init() {
 func setupBind(c *caddy.Controller) error {
 	config := httpserver.GetConfig(c)
 	for c.Next() {
-		args := c.RemainingArgs()
-
-		if len(args) == 0 {
-			return c.Errf("Expected at least one address")
+		if !c.Args(&config.ListenHost) {
+			return c.ArgErr()
 		}
-
-		for _, addr := range args {
-			config.ListenHosts = append(config.ListenHosts, addr)
-		}
-
-		config.TLS.ListenHost = config.ListenHosts[0] // necessary for ACME challenges, see issue #309
+		config.TLS.ListenHost = config.ListenHost // necessary for ACME challenges, see issue #309
 	}
 	return nil
 }

@@ -15,7 +15,6 @@
 package bind
 
 import (
-	"reflect"
 	"testing"
 
 	"github.com/mholt/caddy"
@@ -23,34 +22,17 @@ import (
 )
 
 func TestSetupBind(t *testing.T) {
-	for _, testcase := range []struct {
-		Bind    string
-		Hosts   []string
-		TLSHost string
-	}{
-		{
-			Bind:    "bind 1.2.3.4",
-			Hosts:   []string{"1.2.3.4"},
-			TLSHost: "1.2.3.4",
-		},
-		{
-			Bind:    "bind 1.2.3.4 5.6.7.8",
-			Hosts:   []string{"1.2.3.4", "5.6.7.8"},
-			TLSHost: "1.2.3.4",
-		},
-	} {
-		c := caddy.NewTestController("http", testcase.Bind)
-		err := setupBind(c)
-		if err != nil {
-			t.Fatalf("Expected no errors, but got: %v", err)
-		}
+	c := caddy.NewTestController("http", `bind 1.2.3.4`)
+	err := setupBind(c)
+	if err != nil {
+		t.Fatalf("Expected no errors, but got: %v", err)
+	}
 
-		cfg := httpserver.GetConfig(c)
-		if got, want := cfg.ListenHosts, testcase.Hosts; !reflect.DeepEqual(got, want) {
-			t.Errorf("Expected the config's ListenHost to be %s, was %s", want, got)
-		}
-		if got, want := cfg.TLS.ListenHost, testcase.TLSHost; got != want {
-			t.Errorf("Expected the TLS config's ListenHost to be %s, was %s", want, got)
-		}
+	cfg := httpserver.GetConfig(c)
+	if got, want := cfg.ListenHost, "1.2.3.4"; got != want {
+		t.Errorf("Expected the config's ListenHost to be %s, was %s", want, got)
+	}
+	if got, want := cfg.TLS.ListenHost, "1.2.3.4"; got != want {
+		t.Errorf("Expected the TLS config's ListenHost to be %s, was %s", want, got)
 	}
 }

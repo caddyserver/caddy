@@ -15,7 +15,6 @@
 package httpserver
 
 import (
-	"reflect"
 	"strings"
 	"testing"
 
@@ -347,29 +346,4 @@ func TestHideCaddyfile(t *testing.T) {
 		}
 	}
 	t.Fatal("Caddyfile missing from HiddenFiles")
-}
-
-func TestGroupSiteConfigsByListenAddr(t *testing.T) {
-	cfg := []*SiteConfig{
-		{
-			ListenHosts: []string{"127.0.0.1", "::1"},
-		},
-		{
-			Addr: Address{
-				Port: "80",
-			},
-		},
-	}
-	groups, err := groupSiteConfigsByListenAddr(cfg)
-	if err != nil {
-		t.Fatal("Failed to group SiteConfigs by listen address")
-	}
-	actual := []string{}
-	for k := range groups {
-		actual = append(actual, k)
-	}
-	expected := []string{"127.0.0.1:" + Port, "[::1]:" + Port, ":80"}
-	if !reflect.DeepEqual(actual, expected) {
-		t.Errorf("Expected listen on %#v, but got %#v", expected, actual)
-	}
 }

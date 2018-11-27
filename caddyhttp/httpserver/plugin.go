@@ -239,18 +239,9 @@ func (h *httpContext) MakeServers() ([]caddy.Server, error) {
 		// see if all the addresses (both sites and
 		// listeners) are loopback to help us determine
 		// if this is a "production" instance or not
-		for _, listenHost := range cfg.ListenHosts {
-			if !atLeastOneSiteLooksLikeProduction {
-				if !caddy.IsLoopback(cfg.Addr.Host) &&
-					!caddy.IsLoopback(listenHost) &&
-					(caddytls.QualifiesForManagedTLS(cfg) ||
-						caddytls.HostQualifies(cfg.Addr.Host)) {
-					atLeastOneSiteLooksLikeProduction = true
-				}
-			}
-		}
-		if !atLeastOneSiteLooksLikeProduction && len(cfg.ListenHosts) == 0 {
+		if !atLeastOneSiteLooksLikeProduction {
 			if !caddy.IsLoopback(cfg.Addr.Host) &&
+				!caddy.IsLoopback(cfg.ListenHost) &&
 				(caddytls.QualifiesForManagedTLS(cfg) ||
 					caddytls.HostQualifies(cfg.Addr.Host)) {
 				atLeastOneSiteLooksLikeProduction = true
@@ -377,30 +368,19 @@ func groupSiteConfigsByListenAddr(configs []*SiteConfig) (map[string][]*SiteConf
 
 	for _, conf := range configs {
 		// We would add a special case here so that localhost addresses
-		// bind to 127.0.0.1 if conf.ListenHosts is not already set, which
+		// bind to 127.0.0.1 if conf.ListenHost is not already set, which
 		// would prevent outsiders from even connecting; but that was problematic:
 		// https://caddy.community/t/wildcard-virtual-domains-with-wildcard-roots/221/5?u=matt
 
 		if conf.Addr.Port == "" {
 			conf.Addr.Port = Port
 		}
-
-		if len(conf.ListenHosts) == 0 {
-			addr, err := net.ResolveTCPAddr("tcp", net.JoinHostPort("", conf.Addr.Port))
-			if err != nil {
-				return nil, err
-			}
-			addrstr := addr.String()
-			groups[addrstr] = append(groups[addrstr], conf)
+		addr, err := net.ResolveTCPAddr("tcp", net.JoinHostPort(conf.ListenHost, conf.Addr.Port))
+		if err != nil {
+			return nil, err
 		}
-		for _, host := range conf.ListenHosts {
-			addr, err := net.ResolveTCPAddr("tcp", net.JoinHostPort(host, conf.Addr.Port))
-			if err != nil {
-				return nil, err
-			}
-			addrstr := addr.String()
-			groups[addrstr] = append(groups[addrstr], conf)
-		}
+		addrstr := addr.String()
+		groups[addrstr] = append(groups[addrstr], conf)
 	}
 
 	return groups, nil
