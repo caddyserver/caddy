@@ -204,10 +204,10 @@ func redirPlaintextHost(cfg *SiteConfig) *SiteConfig {
 	addr := net.JoinHostPort(host, port)
 
 	return &SiteConfig{
-		Addr:       Address{Original: addr, Host: host, Port: port},
-		ListenHost: cfg.ListenHost,
-		middleware: []Middleware{redirMiddleware},
-		TLS:        &caddytls.Config{AltHTTPPort: cfg.TLS.AltHTTPPort, AltTLSSNIPort: cfg.TLS.AltTLSSNIPort},
-		Timeouts:   cfg.Timeouts,
+		Addr:        Address{Original: addr, Host: host, Port: port},
+		ListenHosts: cfg.ListenHosts,
+		middleware:  []Middleware{redirMiddleware},
+		TLS:         &caddytls.Config{AltHTTPPort: cfg.TLS.AltHTTPPort, AltTLSSNIPort: cfg.TLS.AltTLSSNIPort},
+		Timeouts:    cfg.Timeouts,
 	}
 }
