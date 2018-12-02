@@ -524,5 +524,5 @@ var (
 	gitFilesModified string // git diff-index --name-only HEAD
 )
 
-// This variable defines whether telemetry is enabled in Run.
+// EnableTelemetry defines whether telemetry is enabled in Run.
 var EnableTelemetry = true
