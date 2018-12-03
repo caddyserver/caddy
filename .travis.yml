@@ -29,7 +29,7 @@ before_install:
   # Bypasses "bandwidth limit exceeded" errors.
   # See github.com/golang/go/issues/12933
   - if [ "$TRAVIS_PULL_REQUEST" = "false" ]; then openssl aes-256-cbc -K $encrypted_3df18f9af81d_key -iv $encrypted_3df18f9af81d_iv -in dist/gitcookie.sh.enc -out dist/gitcookie.sh -d; fi
-  - curl -sfL https://install.goreleaser.com/github.com/golangci/golangci-lint.sh | bash -s -- -b $GOPATH/bin v1.10.2
+  - curl -sfL https://install.goreleaser.com/github.com/golangci/golangci-lint.sh | sh -s -- -b $GOPATH/bin v1.12.3
 
 install:
   - if [ "$TRAVIS_PULL_REQUEST" = "false" ]; then bash dist/gitcookie.sh; fi
