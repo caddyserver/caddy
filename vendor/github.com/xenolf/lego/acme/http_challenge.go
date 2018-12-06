@@ -19,7 +19,7 @@ func HTTP01ChallengePath(token string) string {
 
 func (s *httpChallenge) Solve(chlng challenge, domain string) error {
 
-	log.Printf("[INFO][%s] acme: Trying to solve HTTP-01", domain)
+	log.Infof("[%s] acme: Trying to solve HTTP-01", domain)
 
 	// Generate the Key Authorization for the challenge
 	keyAuth, err := getKeyAuthorization(chlng.Token, s.jws.privKey)
@@ -34,7 +34,7 @@ func (s *httpChallenge) Solve(chlng challenge, domain string) error {
 	defer func() {
 		err := s.provider.CleanUp(domain, chlng.Token, keyAuth)
 		if err != nil {
-			log.Printf("[%s] error cleaning up: %v", domain, err)
+			log.Warnf("[%s] error cleaning up: %v", domain, err)
 		}
 	}()
 

@@ -215,9 +215,7 @@ func generatePrivateKey(keyType KeyType) (crypto.PrivateKey, error) {
 
 func generateCsr(privateKey crypto.PrivateKey, domain string, san []string, mustStaple bool) ([]byte, error) {
 	template := x509.CertificateRequest{
-		Subject: pkix.Name{
-			CommonName: domain,
-		},
+		Subject: pkix.Name{CommonName: domain},
 	}
 
 	if len(san) > 0 {

@@ -26,15 +26,16 @@ var (
 	HTTPClient = http.Client{
 		Transport: &http.Transport{
 			Proxy: http.ProxyFromEnvironment,
-			Dial: (&net.Dialer{
+			DialContext: (&net.Dialer{
 				Timeout:   30 * time.Second,
 				KeepAlive: 30 * time.Second,
-			}).Dial,
+			}).DialContext,
 			TLSHandshakeTimeout:   15 * time.Second,
 			ResponseHeaderTimeout: 15 * time.Second,
 			ExpectContinueTimeout: 1 * time.Second,
 			TLSClientConfig: &tls.Config{
-				RootCAs: initCertPool(),
+				ServerName: os.Getenv(caServerNameEnvVar),
+				RootCAs:    initCertPool(),
 			},
 		},
 	}
@@ -53,6 +54,12 @@ const (
 	// authenticate an ACME server with a HTTPS certificate not issued by a CA in
 	// the system-wide trusted root list.
 	caCertificatesEnvVar = "LEGO_CA_CERTIFICATES"
+
+	// caServerNameEnvVar is the environment variable name that can be used to
+	// specify the CA server name that can be used to
+	// authenticate an ACME server with a HTTPS certificate not issued by a CA in
+	// the system-wide trusted root list.
+	caServerNameEnvVar = "LEGO_CA_SERVER_NAME"
 )
 
 // initCertPool creates a *x509.CertPool populated with the PEM certificates
@@ -80,7 +87,7 @@ func initCertPool() *x509.CertPool {
 // httpHead performs a HEAD request with a proper User-Agent string.
 // The response body (resp.Body) is already closed when this function returns.
 func httpHead(url string) (resp *http.Response, err error) {
-	req, err := http.NewRequest("HEAD", url, nil)
+	req, err := http.NewRequest(http.MethodHead, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to head %q: %v", url, err)
 	}
@@ -98,7 +105,7 @@ func httpHead(url string) (resp *http.Response, err error) {
 // httpPost performs a POST request with a proper User-Agent string.
 // Callers should close resp.Body when done reading from it.
 func httpPost(url string, bodyType string, body io.Reader) (resp *http.Response, err error) {
-	req, err := http.NewRequest("POST", url, body)
+	req, err := http.NewRequest(http.MethodPost, url, body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to post %q: %v", url, err)
 	}
@@ -111,7 +118,7 @@ func httpPost(url string, bodyType string, body io.Reader) (resp *http.Response,
 // httpGet performs a GET request with a proper User-Agent string.
 // Callers should close resp.Body when done reading from it.
 func httpGet(url string) (resp *http.Response, err error) {
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get %q: %v", url, err)
 	}

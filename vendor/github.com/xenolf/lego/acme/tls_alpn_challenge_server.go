@@ -8,8 +8,8 @@ import (
 )
 
 const (
-	// acmeTLS1Protocol is the ALPN Protocol ID for the ACME-TLS/1 Protocol.
-	acmeTLS1Protocol = "acme-tls/1"
+	// ACMETLS1Protocol is the ALPN Protocol ID for the ACME-TLS/1 Protocol.
+	ACMETLS1Protocol = "acme-tls/1"
 
 	// defaultTLSPort is the port that the TLSALPNProviderServer will default to
 	// when no other port is provided.
@@ -55,7 +55,7 @@ func (t *TLSALPNProviderServer) Present(domain, token, keyAuth string) error {
 	// We must set that the `acme-tls/1` application level protocol is supported
 	// so that the protocol negotiation can succeed. Reference:
 	// https://tools.ietf.org/html/draft-ietf-acme-tls-alpn-01#section-5.2
-	tlsConf.NextProtos = []string{acmeTLS1Protocol}
+	tlsConf.NextProtos = []string{ACMETLS1Protocol}
 
 	// Create the listener with the created tls.Config.
 	t.listener, err = tls.Listen("tcp", net.JoinHostPort(t.iface, t.port), tlsConf)

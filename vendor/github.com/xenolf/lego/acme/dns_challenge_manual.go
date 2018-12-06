@@ -30,9 +30,9 @@ func (*DNSProviderManual) Present(domain, token, keyAuth string) error {
 		return err
 	}
 
-	log.Printf("[INFO] acme: Please create the following TXT record in your %s zone:", authZone)
-	log.Printf("[INFO] acme: %s", dnsRecord)
-	log.Printf("[INFO] acme: Press 'Enter' when you are done")
+	log.Infof("acme: Please create the following TXT record in your %s zone:", authZone)
+	log.Infof("acme: %s", dnsRecord)
+	log.Infof("acme: Press 'Enter' when you are done")
 
 	reader := bufio.NewReader(os.Stdin)
 	_, _ = reader.ReadString('\n')
@@ -49,7 +49,7 @@ func (*DNSProviderManual) CleanUp(domain, token, keyAuth string) error {
 		return err
 	}
 
-	log.Printf("[INFO] acme: You can now remove this TXT record from your %s zone:", authZone)
-	log.Printf("[INFO] acme: %s", dnsRecord)
+	log.Infof("acme: You can now remove this TXT record from your %s zone:", authZone)
+	log.Infof("acme: %s", dnsRecord)
 	return nil
 }

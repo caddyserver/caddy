@@ -60,12 +60,12 @@ func (s *HTTPProviderServer) serve(domain, token, keyAuth string) {
 	// For validation it then writes the token the server returned with the challenge
 	mux := http.NewServeMux()
 	mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.Host, domain) && r.Method == "GET" {
+		if strings.HasPrefix(r.Host, domain) && r.Method == http.MethodGet {
 			w.Header().Add("Content-Type", "text/plain")
 			w.Write([]byte(keyAuth))
-			log.Printf("[INFO][%s] Served key authentication", domain)
+			log.Infof("[%s] Served key authentication", domain)
 		} else {
-			log.Printf("[WARN] Received request for domain %s with method %s but the domain did not match any challenge. Please ensure your are passing the HOST header properly.", r.Host, r.Method)
+			log.Warnf("Received request for domain %s with method %s but the domain did not match any challenge. Please ensure your are passing the HOST header properly.", r.Host, r.Method)
 			w.Write([]byte("TEST"))
 		}
 	})
