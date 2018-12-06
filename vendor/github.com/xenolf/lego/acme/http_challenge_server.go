@@ -35,7 +35,7 @@ func (s *HTTPProviderServer) Present(domain, token, keyAuth string) error {
 	var err error
 	s.listener, err = net.Listen("tcp", net.JoinHostPort(s.iface, s.port))
 	if err != nil {
-		return fmt.Errorf("Could not start HTTP server for challenge -> %v", err)
+		return fmt.Errorf("could not start HTTP server for challenge -> %v", err)
 	}
 
 	s.done = make(chan bool)
@@ -62,20 +62,31 @@ func (s *HTTPProviderServer) serve(domain, token, keyAuth string) {
 	mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.Host, domain) && r.Method == http.MethodGet {
 			w.Header().Add("Content-Type", "text/plain")
-			w.Write([]byte(keyAuth))
+			_, err := w.Write([]byte(keyAuth))
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
 			log.Infof("[%s] Served key authentication", domain)
 		} else {
 			log.Warnf("Received request for domain %s with method %s but the domain did not match any challenge. Please ensure your are passing the HOST header properly.", r.Host, r.Method)
-			w.Write([]byte("TEST"))
+			_, err := w.Write([]byte("TEST"))
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
 		}
 	})
 
-	httpServer := &http.Server{
-		Handler: mux,
-	}
+	httpServer := &http.Server{Handler: mux}
+
 	// Once httpServer is shut down we don't want any lingering
 	// connections, so disable KeepAlives.
 	httpServer.SetKeepAlivesEnabled(false)
-	httpServer.Serve(s.listener)
+
+	err := httpServer.Serve(s.listener)
+	if err != nil {
+		log.Println(err)
+	}
 	s.done <- true
 }

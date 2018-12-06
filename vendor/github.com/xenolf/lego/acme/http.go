@@ -42,12 +42,14 @@ var (
 )
 
 const (
-	// defaultGoUserAgent is the Go HTTP package user agent string. Too
-	// bad it isn't exported. If it changes, we should update it here, too.
-	defaultGoUserAgent = "Go-http-client/1.1"
-
 	// ourUserAgent is the User-Agent of this underlying library package.
-	ourUserAgent = "xenolf-acme"
+	// NOTE: Update this with each tagged release.
+	ourUserAgent = "xenolf-acme/1.2.1"
+
+	// ourUserAgentComment is part of the UA comment linked to the version status of this underlying library package.
+	// values: detach|release
+	// NOTE: Update this with each tagged release.
+	ourUserAgentComment = "detach"
 
 	// caCertificatesEnvVar is the environment variable name that can be used to
 	// specify the path to PEM encoded CA Certificates that can be used to
@@ -148,59 +150,63 @@ func getJSON(uri string, respBody interface{}) (http.Header, error) {
 func postJSON(j *jws, uri string, reqBody, respBody interface{}) (http.Header, error) {
 	jsonBytes, err := json.Marshal(reqBody)
 	if err != nil {
-		return nil, errors.New("Failed to marshal network message")
+		return nil, errors.New("failed to marshal network message")
 	}
 
-	resp, err := j.post(uri, jsonBytes)
-	if err != nil {
-		return nil, fmt.Errorf("Failed to post JWS message. -> %v", err)
+	resp, err := post(j, uri, jsonBytes, respBody)
+	if resp == nil {
+		return nil, err
 	}
 
 	defer resp.Body.Close()
 
+	return resp.Header, err
+}
+
+func postAsGet(j *jws, uri string, respBody interface{}) (*http.Response, error) {
+	return post(j, uri, []byte{}, respBody)
+}
+
+func post(j *jws, uri string, reqBody []byte, respBody interface{}) (*http.Response, error) {
+	resp, err := j.post(uri, reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to post JWS message. -> %v", err)
+	}
+
 	if resp.StatusCode >= http.StatusBadRequest {
-
-		err := handleHTTPError(resp)
-
+		err = handleHTTPError(resp)
 		switch err.(type) {
-
 		case NonceError:
-
 			// Retry once if the nonce was invalidated
 
-			retryResp, err := j.post(uri, jsonBytes)
-			if err != nil {
-				return nil, fmt.Errorf("Failed to post JWS message. -> %v", err)
+			retryResp, errP := j.post(uri, reqBody)
+			if errP != nil {
+				return nil, fmt.Errorf("failed to post JWS message. -> %v", errP)
 			}
 
-			defer retryResp.Body.Close()
-
 			if retryResp.StatusCode >= http.StatusBadRequest {
-				return retryResp.Header, handleHTTPError(retryResp)
+				return retryResp, handleHTTPError(retryResp)
 			}
 
 			if respBody == nil {
-				return retryResp.Header, nil
+				return retryResp, nil
 			}
 
-			return retryResp.Header, json.NewDecoder(retryResp.Body).Decode(respBody)
-
+			return retryResp, json.NewDecoder(retryResp.Body).Decode(respBody)
 		default:
-			return resp.Header, err
-
+			return resp, err
 		}
-
 	}
 
 	if respBody == nil {
-		return resp.Header, nil
+		return resp, nil
 	}
 
-	return resp.Header, json.NewDecoder(resp.Body).Decode(respBody)
+	return resp, json.NewDecoder(resp.Body).Decode(respBody)
 }
 
 // userAgent builds and returns the User-Agent string to use in requests.
 func userAgent() string {
-	ua := fmt.Sprintf("%s %s (%s; %s) %s", UserAgent, ourUserAgent, runtime.GOOS, runtime.GOARCH, defaultGoUserAgent)
+	ua := fmt.Sprintf("%s %s (%s; %s; %s)", UserAgent, ourUserAgent, ourUserAgentComment, runtime.GOOS, runtime.GOARCH)
 	return strings.TrimSpace(ua)
 }

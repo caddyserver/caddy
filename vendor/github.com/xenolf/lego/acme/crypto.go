@@ -81,20 +81,20 @@ func GetOCSPForCert(bundle []byte) ([]byte, *ocsp.Response, error) {
 			return nil, nil, errors.New("no issuing certificate URL")
 		}
 
-		resp, err := httpGet(issuedCert.IssuingCertificateURL[0])
-		if err != nil {
-			return nil, nil, err
+		resp, errC := httpGet(issuedCert.IssuingCertificateURL[0])
+		if errC != nil {
+			return nil, nil, errC
 		}
 		defer resp.Body.Close()
 
-		issuerBytes, err := ioutil.ReadAll(limitReader(resp.Body, 1024*1024))
-		if err != nil {
-			return nil, nil, err
+		issuerBytes, errC := ioutil.ReadAll(limitReader(resp.Body, 1024*1024))
+		if errC != nil {
+			return nil, nil, errC
 		}
 
-		issuerCert, err := x509.ParseCertificate(issuerBytes)
-		if err != nil {
-			return nil, nil, err
+		issuerCert, errC := x509.ParseCertificate(issuerBytes)
+		if errC != nil {
+			return nil, nil, errC
 		}
 
 		// Insert it into the slice on position 0
@@ -256,15 +256,6 @@ func pemDecode(data []byte) (*pem.Block, error) {
 	}
 
 	return pemBlock, nil
-}
-
-func pemDecodeTox509(pem []byte) (*x509.Certificate, error) {
-	pemBlock, err := pemDecode(pem)
-	if pemBlock == nil {
-		return nil, err
-	}
-
-	return x509.ParseCertificate(pemBlock.Bytes)
 }
 
 func pemDecodeTox509CSR(pem []byte) (*x509.CertificateRequest, error) {

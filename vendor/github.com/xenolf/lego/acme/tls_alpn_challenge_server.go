@@ -3,6 +3,7 @@ package acme
 import (
 	"crypto/tls"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 )
@@ -65,7 +66,10 @@ func (t *TLSALPNProviderServer) Present(domain, token, keyAuth string) error {
 
 	// Shut the server down when we're finished.
 	go func() {
-		http.Serve(t.listener, nil)
+		err := http.Serve(t.listener, nil)
+		if err != nil {
+			log.Println(err)
+		}
 	}()
 
 	return nil
