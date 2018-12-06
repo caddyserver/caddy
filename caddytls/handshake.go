@@ -16,17 +16,20 @@ package caddytls
 
 import (
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/mholt/caddy/telemetry"
+	"github.com/xenolf/lego/acme"
 )
 
 // configGroup is a type that keys configs by their hostname
@@ -107,8 +110,8 @@ func (cfg *Config) GetCertificate(clientHello *tls.ClientHelloInfo) (*tls.Certif
 			CipherSuites:              clientHello.CipherSuites,
 			ExtensionsUnknown:         true, // no extension info... :(
 			CompressionMethodsUnknown: true, // no compression methods... :(
-			Curves: clientHello.SupportedCurves,
-			Points: clientHello.SupportedPoints,
+			Curves:                    clientHello.SupportedCurves,
+			Points:                    clientHello.SupportedPoints,
 			// We also have, but do not yet use: SignatureSchemes, ServerName, and SupportedProtos (ALPN)
 			// because the standard lib parses some extensions, but our MITM detector generally doesn't.
 		}
@@ -116,13 +119,25 @@ func (cfg *Config) GetCertificate(clientHello *tls.ClientHelloInfo) (*tls.Certif
 	}
 
 	// special case: serve up the certificate for a TLS-ALPN ACME challenge
-	// (https://tools.ietf.org/html/draft-ietf-acme-tls-alpn-01)
+	// (https://tools.ietf.org/html/draft-ietf-acme-tls-alpn-05)
 	for _, proto := range clientHello.SupportedProtos {
-		if proto == TLSALPNChallengeProto {
+		if proto == acme.ACMETLS1Protocol {
 			cfg.certCache.RLock()
 			challengeCert, ok := cfg.certCache.cache[tlsALPNCertKeyName(clientHello.ServerName)]
 			cfg.certCache.RUnlock()
 			if !ok {
+				// see if this challenge was started in a cluster; try distributed challenge solver
+				// (note that the tls.Config's ALPN settings must include the ACME TLS-ALPN challenge
+				// protocol string, otherwise a valid certificate will not solve the challenge; we
+				// should already have taken care of that when we made the tls.Config)
+				challengeCert, ok, err := cfg.tryDistributedChallengeSolver(clientHello)
+				if err != nil {
+					log.Printf("[ERROR][%s] TLS-ALPN: %v", clientHello.ServerName, err)
+				}
+				if ok {
+					return &challengeCert.Certificate, nil
+				}
+
 				return nil, fmt.Errorf("no certificate to complete TLS-ALPN challenge for SNI name: %s", clientHello.ServerName)
 			}
 			return &challengeCert.Certificate, nil
@@ -492,6 +507,39 @@ func (cfg *Config) renewDynamicCertificate(name string, currentCert Certificate)
 	}
 
 	return cfg.getCertDuringHandshake(name, true, false)
+}
+
+// tryDistributedChallengeSolver is to be called when the clientHello pertains to
+// a TLS-ALPN challenge and a certificate is required to solve it. This method
+// checks the distributed store of challenge info files and, if a matching ServerName
+// is present, it makes a certificate to solve this challenge and returns it.
+// A boolean true is returned if a valid certificate is returned.
+func (cfg *Config) tryDistributedChallengeSolver(clientHello *tls.ClientHelloInfo) (Certificate, bool, error) {
+	filePath := distributedSolver{}.challengeTokensPath(clientHello.ServerName)
+	f, err := os.Open(filePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return Certificate{}, false, nil
+		}
+		return Certificate{}, false, fmt.Errorf("opening distributed challenge token file %s: %v", filePath, err)
+	}
+	defer f.Close()
+
+	var chalInfo challengeInfo
+	err = json.NewDecoder(f).Decode(&chalInfo)
+	if err != nil {
+		return Certificate{}, false, fmt.Errorf("decoding challenge token file %s (corrupted?): %v", filePath, err)
+	}
+
+	cert, err := acme.TLSALPNChallengeCert(chalInfo.Domain, chalInfo.KeyAuth)
+	if err != nil {
+		return Certificate{}, false, fmt.Errorf("making TLS-ALPN challenge certificate: %v", err)
+	}
+	if cert == nil {
+		return Certificate{}, false, fmt.Errorf("got nil TLS-ALPN challenge certificate but no error")
+	}
+
+	return Certificate{Certificate: *cert}, true, nil
 }
 
 // ClientHelloInfo is our own version of the standard lib's

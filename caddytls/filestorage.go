@@ -281,11 +281,13 @@ func (s *FileStorage) MostRecentUserEmail() string {
 func fileSafe(str string) string {
 	str = strings.ToLower(str)
 	str = strings.TrimSpace(str)
-	repl := strings.NewReplacer("..", "",
+	repl := strings.NewReplacer(
+		"..", "",
 		"/", "",
 		"\\", "",
 		// TODO: Consider also replacing "@" with "_at_" (but migrate existing accounts...)
 		"+", "_plus_",
+		"*", "wildcard_",
 		"%", "",
 		"$", "",
 		"`", "",
@@ -297,8 +299,7 @@ func fileSafe(str string) string {
 		"#", "",
 		"&", "",
 		"|", "",
-		"\"", "",
-		"'", "",
-		"*", "wildcard_")
+		`"`, "",
+		"'", "")
 	return repl.Replace(str)
 }

@@ -123,51 +123,55 @@ var newACMEClient = func(config *Config, allowPrompts bool) (*ACMEClient, error)
 	if config.DNSProvider == "" {
 		// Use HTTP and TLS-ALPN challenges by default
 
-		// See if HTTP challenge needs to be proxied
+		// figure out which ports we'll be serving the challenges on
 		useHTTPPort := HTTPChallengePort
+		useTLSALPNPort := TLSALPNChallengePort
 		if config.AltHTTPPort != "" {
 			useHTTPPort = config.AltHTTPPort
+		}
+		if config.AltTLSALPNPort != "" {
+			useTLSALPNPort = config.AltTLSALPNPort
 		}
 		if caddy.HasListenerWithAddress(net.JoinHostPort(config.ListenHost, useHTTPPort)) {
 			useHTTPPort = DefaultHTTPAlternatePort
 		}
 
-		// See which port TLS-ALPN challenges will be accomplished on
-		useTLSALPNPort := TLSALPNChallengePort
-		if config.AltTLSALPNPort != "" {
-			useTLSALPNPort = config.AltTLSALPNPort
-		}
-		err := c.acmeClient.SetTLSAddress(net.JoinHostPort(config.ListenHost, useTLSALPNPort))
-		if err != nil {
-			return nil, err
-		}
-
-		// if using file storage, we can distribute the HTTP challenge across
-		// all instances sharing the acme folder; either way, we must still set
-		// the address for the default HTTP provider server
-		var useDistributedHTTPSolver bool
+		// if using file storage, we can distribute the HTTP or TLS-ALPN challenge
+		// across all instances sharing the acme folder; either way, we must still
+		// set the address for the default provider server
+		var useDistributedSolver bool
 		if storage, err := c.config.StorageFor(c.config.CAUrl); err == nil {
 			if _, ok := storage.(*FileStorage); ok {
-				useDistributedHTTPSolver = true
+				useDistributedSolver = true
 			}
 		}
-		if useDistributedHTTPSolver {
-			c.acmeClient.SetChallengeProvider(acme.HTTP01, distributedHTTPSolver{
-				// being careful to respect user's listener bind preferences
-				httpProviderServer: acme.NewHTTPProviderServer(config.ListenHost, useHTTPPort),
+		if useDistributedSolver {
+			// ... being careful to respect user's listener bind preferences
+			c.acmeClient.SetChallengeProvider(acme.HTTP01, distributedSolver{
+				providerServer: acme.NewHTTPProviderServer(config.ListenHost, useHTTPPort),
+			})
+			c.acmeClient.SetChallengeProvider(acme.TLSALPN01, distributedSolver{
+				providerServer: acme.NewTLSALPNProviderServer(config.ListenHost, useTLSALPNPort),
 			})
 		} else {
 			// Always respect user's bind preferences by using config.ListenHost.
-			// NOTE(Sep'16): At time of writing, SetHTTPAddress() and SetTLSAddress()
-			// must be called before SetChallengeProvider() (see above), since they reset
-			// the challenge provider back to the default one! (still true in March 2018)
+			// NOTE(Nov'18): At time of writing, SetHTTPAddress() and SetTLSAddress()
+			// reset the challenge provider back to the default one, overriding
+			// anything set by SetChalllengeProvider(). Calling them mutually
+			// excuslively is safe, as is calling Set*Address() before SetChallengeProvider().
 			err := c.acmeClient.SetHTTPAddress(net.JoinHostPort(config.ListenHost, useHTTPPort))
+			if err != nil {
+				return nil, err
+			}
+			err = c.acmeClient.SetTLSAddress(net.JoinHostPort(config.ListenHost, useTLSALPNPort))
 			if err != nil {
 				return nil, err
 			}
 		}
 
-		// See if TLS challenge needs to be handled by our own facilities
+		// if this server is already listening on the TLS-ALPN port we're supposed to use,
+		// then wire up this config's ACME client to use our own facilities for solving
+		// the challenge: our own certificate cache, since we already have a listener
 		if caddy.HasListenerWithAddress(net.JoinHostPort(config.ListenHost, useTLSALPNPort)) {
 			c.acmeClient.SetChallengeProvider(acme.TLSALPN01, tlsALPNSolver{certCache: config.certCache})
 		}

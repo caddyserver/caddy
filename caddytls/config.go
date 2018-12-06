@@ -342,6 +342,18 @@ func (c *Config) buildStandardTLSConfig() error {
 		}
 	}
 
+	// ensure ALPN includes the ACME TLS-ALPN protocol
+	var alpnFound bool
+	for _, a := range c.ALPN {
+		if a == acme.ACMETLS1Protocol {
+			alpnFound = true
+			break
+		}
+	}
+	if !alpnFound {
+		c.ALPN = append(c.ALPN, acme.ACMETLS1Protocol)
+	}
+
 	config.MinVersion = c.ProtocolMinVersion
 	config.MaxVersion = c.ProtocolMaxVersion
 	config.ClientAuth = c.ClientAuth
@@ -575,7 +587,7 @@ var supportedKeyTypes = map[string]acme.KeyType{
 	"RSA2048": acme.RSA2048,
 }
 
-// Map of supported protocols.
+// SupportedProtocols maps supported protocols.
 // HTTP/2 only supports TLS 1.2 and higher.
 // If updating this map, also update tlsProtocolStringToMap in caddyhttp/fastcgi/fastcgi.go
 var SupportedProtocols = map[string]uint16{
@@ -584,7 +596,7 @@ var SupportedProtocols = map[string]uint16{
 	"tls1.2": tls.VersionTLS12,
 }
 
-// Map of supported ciphers, used only for parsing config.
+// SupportedCiphersMap maps supported ciphers, used only for parsing config.
 //
 // Note that, at time of writing, HTTP/2 blacklists 276 cipher suites,
 // including all but four of the suites below (the four GCM suites).
@@ -623,8 +635,6 @@ var defaultCiphers = []uint16{
 	tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
 	tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
 	tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
-	tls.TLS_RSA_WITH_AES_256_CBC_SHA,
-	tls.TLS_RSA_WITH_AES_128_CBC_SHA,
 }
 
 // List of ciphers we should prefer if native AESNI support is missing
@@ -639,8 +649,6 @@ var defaultCiphersNonAESNI = []uint16{
 	tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
 	tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
 	tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
-	tls.TLS_RSA_WITH_AES_256_CBC_SHA,
-	tls.TLS_RSA_WITH_AES_128_CBC_SHA,
 }
 
 // getPreferredDefaultCiphers returns an appropriate cipher suite to use, depending on
@@ -683,11 +691,6 @@ const (
 	// TLSALPNChallengePort is the officially-designated port for
 	// the TLS-ALPN challenge according to the ACME spec.
 	TLSALPNChallengePort = "443"
-
-	// TLSALPNChallengeProto is the officially-designated ALPN
-	// string value when challenging the server to present the
-	// right certificafte for the TLS-ALPN ACME challenge.
-	TLSALPNChallengeProto = "acme-tls/1"
 
 	// DefaultHTTPAlternatePort is the port on which the ACME
 	// client will open a listener and solve the HTTP challenge.
