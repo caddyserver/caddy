@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build !windows,!plan9,!nacl
+// +build !windows,!plan9,!nacl,!js
 
 package caddy
 
@@ -31,7 +31,7 @@ func checkFdlimit() {
 	err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, rlimit)
 	if err == nil && rlimit.Cur < min {
 		fmt.Printf("WARNING: File descriptor limit %d is too low for production servers. "+
-			"At least %d is recommended. Fix with \"ulimit -n %d\".\n", rlimit.Cur, min, min)
+			"At least %d is recommended. Fix with `ulimit -n %d`.\n", rlimit.Cur, min, min)
 	}
 
 }

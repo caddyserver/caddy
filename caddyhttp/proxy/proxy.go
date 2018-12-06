@@ -47,6 +47,12 @@ type Upstream interface {
 	// Checks if subpath is not an ignored path
 	AllowedPath(string) bool
 
+	// Gets the duration of the headstart the first
+	// connection is given in the Go standard library's
+	// implementation of "Happy Eyeballs" when DualStack
+	// is enabled in net.Dialer.
+	GetFallbackDelay() time.Duration
+
 	// Gets how long to try selecting upstream hosts
 	// in the case of cascading failures.
 	GetTryDuration() time.Duration
@@ -195,6 +201,7 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 					host.WithoutPathPrefix,
 					http.DefaultMaxIdleConnsPerHost,
 					upstream.GetTimeout(),
+					upstream.GetFallbackDelay(),
 				)
 			}
 
@@ -253,6 +260,10 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 
 		if backendErr == httpserver.ErrMaxBytesExceeded {
 			return http.StatusRequestEntityTooLarge, backendErr
+		}
+
+		if backendErr == context.Canceled {
+			return CustomStatusContextCancelled, backendErr
 		}
 
 		// failover; remember this failure for some time if
@@ -390,3 +401,5 @@ func mutateHeadersByRules(headers, rules http.Header, repl httpserver.Replacer) 
 		}
 	}
 }
+
+const CustomStatusContextCancelled = 499

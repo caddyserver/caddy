@@ -2,111 +2,10 @@
 // Use of this source code is governed by a license that can be
 // found in the LICENSE file.
 
-// +build go1.7,amd64,!gccgo,!appengine,!nacl
+// +build amd64,!gccgo,!appengine,!nacl
 
-#include "textflag.h"
-
-DATA ·sigma_AVX<>+0x00(SB)/4, $0x61707865
-DATA ·sigma_AVX<>+0x04(SB)/4, $0x3320646e
-DATA ·sigma_AVX<>+0x08(SB)/4, $0x79622d32
-DATA ·sigma_AVX<>+0x0C(SB)/4, $0x6b206574
-GLOBL ·sigma_AVX<>(SB), (NOPTR+RODATA), $16
-
-DATA ·one_AVX<>+0x00(SB)/8, $1
-DATA ·one_AVX<>+0x08(SB)/8, $0
-GLOBL ·one_AVX<>(SB), (NOPTR+RODATA), $16
-
-DATA ·one_AVX2<>+0x00(SB)/8, $0
-DATA ·one_AVX2<>+0x08(SB)/8, $0
-DATA ·one_AVX2<>+0x10(SB)/8, $1
-DATA ·one_AVX2<>+0x18(SB)/8, $0
-GLOBL ·one_AVX2<>(SB), (NOPTR+RODATA), $32
-
-DATA ·two_AVX2<>+0x00(SB)/8, $2
-DATA ·two_AVX2<>+0x08(SB)/8, $0
-DATA ·two_AVX2<>+0x10(SB)/8, $2
-DATA ·two_AVX2<>+0x18(SB)/8, $0
-GLOBL ·two_AVX2<>(SB), (NOPTR+RODATA), $32
-
-DATA ·rol16_AVX2<>+0x00(SB)/8, $0x0504070601000302
-DATA ·rol16_AVX2<>+0x08(SB)/8, $0x0D0C0F0E09080B0A
-DATA ·rol16_AVX2<>+0x10(SB)/8, $0x0504070601000302
-DATA ·rol16_AVX2<>+0x18(SB)/8, $0x0D0C0F0E09080B0A
-GLOBL ·rol16_AVX2<>(SB), (NOPTR+RODATA), $32
-
-DATA ·rol8_AVX2<>+0x00(SB)/8, $0x0605040702010003
-DATA ·rol8_AVX2<>+0x08(SB)/8, $0x0E0D0C0F0A09080B
-DATA ·rol8_AVX2<>+0x10(SB)/8, $0x0605040702010003
-DATA ·rol8_AVX2<>+0x18(SB)/8, $0x0E0D0C0F0A09080B
-GLOBL ·rol8_AVX2<>(SB), (NOPTR+RODATA), $32
-
-#define ROTL(n, t, v) \
-	VPSLLD $n, v, t;      \
-	VPSRLD $(32-n), v, v; \
-	VPXOR  v, t, v
-
-#define CHACHA_QROUND(v0, v1, v2, v3, t, c16, c8) \
-	VPADDD  v0, v1, v0;  \
-	VPXOR   v3, v0, v3;  \
-	VPSHUFB c16, v3, v3; \
-	VPADDD  v2, v3, v2;  \
-	VPXOR   v1, v2, v1;  \
-	ROTL(12, t, v1);     \
-	VPADDD  v0, v1, v0;  \
-	VPXOR   v3, v0, v3;  \
-	VPSHUFB c8, v3, v3;  \
-	VPADDD  v2, v3, v2;  \
-	VPXOR   v1, v2, v1;  \
-	ROTL(7, t, v1)
-
-#define CHACHA_SHUFFLE(v1, v2, v3) \
-	VPSHUFD $0x39, v1, v1; \
-	VPSHUFD $0x4E, v2, v2; \
-	VPSHUFD $-109, v3, v3
-
-#define XOR_AVX2(dst, src, off, v0, v1, v2, v3, t0, t1) \
-	VMOVDQU    (0+off)(src), t0;  \
-	VPERM2I128 $32, v1, v0, t1;   \
-	VPXOR      t0, t1, t0;        \
-	VMOVDQU    t0, (0+off)(dst);  \
-	VMOVDQU    (32+off)(src), t0; \
-	VPERM2I128 $32, v3, v2, t1;   \
-	VPXOR      t0, t1, t0;        \
-	VMOVDQU    t0, (32+off)(dst); \
-	VMOVDQU    (64+off)(src), t0; \
-	VPERM2I128 $49, v1, v0, t1;   \
-	VPXOR      t0, t1, t0;        \
-	VMOVDQU    t0, (64+off)(dst); \
-	VMOVDQU    (96+off)(src), t0; \
-	VPERM2I128 $49, v3, v2, t1;   \
-	VPXOR      t0, t1, t0;        \
-	VMOVDQU    t0, (96+off)(dst)
-
-#define XOR_UPPER_AVX2(dst, src, off, v0, v1, v2, v3, t0, t1) \
-	VMOVDQU    (0+off)(src), t0;  \
-	VPERM2I128 $32, v1, v0, t1;   \
-	VPXOR      t0, t1, t0;        \
-	VMOVDQU    t0, (0+off)(dst);  \
-	VMOVDQU    (32+off)(src), t0; \
-	VPERM2I128 $32, v3, v2, t1;   \
-	VPXOR      t0, t1, t0;        \
-	VMOVDQU    t0, (32+off)(dst); \
-
-#define EXTRACT_LOWER(dst, v0, v1, v2, v3, t0) \
-	VPERM2I128 $49, v1, v0, t0; \
-	VMOVDQU    t0, 0(dst);      \
-	VPERM2I128 $49, v3, v2, t0; \
-	VMOVDQU    t0, 32(dst)
-
-#define XOR_AVX(dst, src, off, v0, v1, v2, v3, t0) \
-	VPXOR   0+off(src), v0, t0;  \
-	VMOVDQU t0, 0+off(dst);      \
-	VPXOR   16+off(src), v1, t0; \
-	VMOVDQU t0, 16+off(dst);     \
-	VPXOR   32+off(src), v2, t0; \
-	VMOVDQU t0, 32+off(dst);     \
-	VPXOR   48+off(src), v3, t0; \
-	VMOVDQU t0, 48+off(dst)
+#include "const.s"
+#include "macro.s"
 
 #define TWO 0(SP)
 #define C16 32(SP)
@@ -122,10 +21,10 @@ GLOBL ·rol8_AVX2<>(SB), (NOPTR+RODATA), $32
 TEXT ·xorKeyStreamAVX2(SB), 4, $320-80
 	MOVQ dst_base+0(FP), DI
 	MOVQ src_base+24(FP), SI
-	MOVQ src_len+32(FP), CX
 	MOVQ block+48(FP), BX
 	MOVQ state+56(FP), AX
 	MOVQ rounds+64(FP), DX
+	MOVQ src_len+32(FP), CX
 
 	MOVQ SP, R8
 	ADDQ $32, SP
@@ -185,28 +84,28 @@ at_least_512:
 
 chacha_loop_512:
 	VMOVDQA Y8, TMP_0
-	CHACHA_QROUND(Y0, Y1, Y2, Y3, Y8, C16, C8)
-	CHACHA_QROUND(Y4, Y5, Y6, Y7, Y8, C16, C8)
+	CHACHA_QROUND_AVX(Y0, Y1, Y2, Y3, Y8, C16, C8)
+	CHACHA_QROUND_AVX(Y4, Y5, Y6, Y7, Y8, C16, C8)
 	VMOVDQA TMP_0, Y8
 	VMOVDQA Y0, TMP_0
-	CHACHA_QROUND(Y8, Y9, Y10, Y11, Y0, C16, C8)
-	CHACHA_QROUND(Y12, Y13, Y14, Y15, Y0, C16, C8)
-	CHACHA_SHUFFLE(Y1, Y2, Y3)
-	CHACHA_SHUFFLE(Y5, Y6, Y7)
-	CHACHA_SHUFFLE(Y9, Y10, Y11)
-	CHACHA_SHUFFLE(Y13, Y14, Y15)
+	CHACHA_QROUND_AVX(Y8, Y9, Y10, Y11, Y0, C16, C8)
+	CHACHA_QROUND_AVX(Y12, Y13, Y14, Y15, Y0, C16, C8)
+	CHACHA_SHUFFLE_AVX(Y1, Y2, Y3)
+	CHACHA_SHUFFLE_AVX(Y5, Y6, Y7)
+	CHACHA_SHUFFLE_AVX(Y9, Y10, Y11)
+	CHACHA_SHUFFLE_AVX(Y13, Y14, Y15)
 
-	CHACHA_QROUND(Y12, Y13, Y14, Y15, Y0, C16, C8)
-	CHACHA_QROUND(Y8, Y9, Y10, Y11, Y0, C16, C8)
+	CHACHA_QROUND_AVX(Y12, Y13, Y14, Y15, Y0, C16, C8)
+	CHACHA_QROUND_AVX(Y8, Y9, Y10, Y11, Y0, C16, C8)
 	VMOVDQA TMP_0, Y0
 	VMOVDQA Y8, TMP_0
-	CHACHA_QROUND(Y4, Y5, Y6, Y7, Y8, C16, C8)
-	CHACHA_QROUND(Y0, Y1, Y2, Y3, Y8, C16, C8)
+	CHACHA_QROUND_AVX(Y4, Y5, Y6, Y7, Y8, C16, C8)
+	CHACHA_QROUND_AVX(Y0, Y1, Y2, Y3, Y8, C16, C8)
 	VMOVDQA TMP_0, Y8
-	CHACHA_SHUFFLE(Y3, Y2, Y1)
-	CHACHA_SHUFFLE(Y7, Y6, Y5)
-	CHACHA_SHUFFLE(Y11, Y10, Y9)
-	CHACHA_SHUFFLE(Y15, Y14, Y13)
+	CHACHA_SHUFFLE_AVX(Y3, Y2, Y1)
+	CHACHA_SHUFFLE_AVX(Y7, Y6, Y5)
+	CHACHA_SHUFFLE_AVX(Y11, Y10, Y9)
+	CHACHA_SHUFFLE_AVX(Y15, Y14, Y13)
 	SUBQ    $2, R9
 	JA      chacha_loop_512
 
@@ -289,18 +188,18 @@ between_320_and_448:
 	MOVQ DX, R9
 
 chacha_loop_384:
-	CHACHA_QROUND(Y0, Y1, Y2, Y3, Y13, Y14, Y15)
-	CHACHA_QROUND(Y4, Y5, Y6, Y7, Y13, Y14, Y15)
-	CHACHA_QROUND(Y8, Y9, Y10, Y11, Y13, Y14, Y15)
-	CHACHA_SHUFFLE(Y1, Y2, Y3)
-	CHACHA_SHUFFLE(Y5, Y6, Y7)
-	CHACHA_SHUFFLE(Y9, Y10, Y11)
-	CHACHA_QROUND(Y0, Y1, Y2, Y3, Y13, Y14, Y15)
-	CHACHA_QROUND(Y4, Y5, Y6, Y7, Y13, Y14, Y15)
-	CHACHA_QROUND(Y8, Y9, Y10, Y11, Y13, Y14, Y15)
-	CHACHA_SHUFFLE(Y3, Y2, Y1)
-	CHACHA_SHUFFLE(Y7, Y6, Y5)
-	CHACHA_SHUFFLE(Y11, Y10, Y9)
+	CHACHA_QROUND_AVX(Y0, Y1, Y2, Y3, Y13, Y14, Y15)
+	CHACHA_QROUND_AVX(Y4, Y5, Y6, Y7, Y13, Y14, Y15)
+	CHACHA_QROUND_AVX(Y8, Y9, Y10, Y11, Y13, Y14, Y15)
+	CHACHA_SHUFFLE_AVX(Y1, Y2, Y3)
+	CHACHA_SHUFFLE_AVX(Y5, Y6, Y7)
+	CHACHA_SHUFFLE_AVX(Y9, Y10, Y11)
+	CHACHA_QROUND_AVX(Y0, Y1, Y2, Y3, Y13, Y14, Y15)
+	CHACHA_QROUND_AVX(Y4, Y5, Y6, Y7, Y13, Y14, Y15)
+	CHACHA_QROUND_AVX(Y8, Y9, Y10, Y11, Y13, Y14, Y15)
+	CHACHA_SHUFFLE_AVX(Y3, Y2, Y1)
+	CHACHA_SHUFFLE_AVX(Y7, Y6, Y5)
+	CHACHA_SHUFFLE_AVX(Y11, Y10, Y9)
 	SUBQ $2, R9
 	JA   chacha_loop_384
 
@@ -361,14 +260,14 @@ between_192_and_320:
 	MOVQ DX, R9
 
 chacha_loop_256:
-	CHACHA_QROUND(Y4, Y5, Y6, Y7, Y13, Y14, Y15)
-	CHACHA_QROUND(Y8, Y9, Y10, Y11, Y13, Y14, Y15)
-	CHACHA_SHUFFLE(Y5, Y6, Y7)
-	CHACHA_SHUFFLE(Y9, Y10, Y11)
-	CHACHA_QROUND(Y4, Y5, Y6, Y7, Y13, Y14, Y15)
-	CHACHA_QROUND(Y8, Y9, Y10, Y11, Y13, Y14, Y15)
-	CHACHA_SHUFFLE(Y7, Y6, Y5)
-	CHACHA_SHUFFLE(Y11, Y10, Y9)
+	CHACHA_QROUND_AVX(Y4, Y5, Y6, Y7, Y13, Y14, Y15)
+	CHACHA_QROUND_AVX(Y8, Y9, Y10, Y11, Y13, Y14, Y15)
+	CHACHA_SHUFFLE_AVX(Y5, Y6, Y7)
+	CHACHA_SHUFFLE_AVX(Y9, Y10, Y11)
+	CHACHA_QROUND_AVX(Y4, Y5, Y6, Y7, Y13, Y14, Y15)
+	CHACHA_QROUND_AVX(Y8, Y9, Y10, Y11, Y13, Y14, Y15)
+	CHACHA_SHUFFLE_AVX(Y7, Y6, Y5)
+	CHACHA_SHUFFLE_AVX(Y11, Y10, Y9)
 	SUBQ $2, R9
 	JA   chacha_loop_256
 
@@ -413,10 +312,10 @@ between_64_and_192:
 	MOVQ DX, R9
 
 chacha_loop_128:
-	CHACHA_QROUND(Y4, Y5, Y6, Y7, Y13, Y14, Y15)
-	CHACHA_SHUFFLE(Y5, Y6, Y7)
-	CHACHA_QROUND(Y4, Y5, Y6, Y7, Y13, Y14, Y15)
-	CHACHA_SHUFFLE(Y7, Y6, Y5)
+	CHACHA_QROUND_AVX(Y4, Y5, Y6, Y7, Y13, Y14, Y15)
+	CHACHA_SHUFFLE_AVX(Y5, Y6, Y7)
+	CHACHA_QROUND_AVX(Y4, Y5, Y6, Y7, Y13, Y14, Y15)
+	CHACHA_SHUFFLE_AVX(Y7, Y6, Y5)
 	SUBQ $2, R9
 	JA   chacha_loop_128
 
@@ -455,10 +354,10 @@ between_0_and_64:
 	MOVQ DX, R9
 
 chacha_loop_64:
-	CHACHA_QROUND(X4, X5, X6, X7, X13, X14, X15)
-	CHACHA_SHUFFLE(X5, X6, X7)
-	CHACHA_QROUND(X4, X5, X6, X7, X13, X14, X15)
-	CHACHA_SHUFFLE(X7, X6, X5)
+	CHACHA_QROUND_AVX(X4, X5, X6, X7, X13, X14, X15)
+	CHACHA_SHUFFLE_AVX(X5, X6, X7)
+	CHACHA_QROUND_AVX(X4, X5, X6, X7, X13, X14, X15)
+	CHACHA_SHUFFLE_AVX(X7, X6, X5)
 	SUBQ $2, R9
 	JA   chacha_loop_64
 
@@ -466,7 +365,7 @@ chacha_loop_64:
 	VPADDD  X1, X5, X5
 	VPADDD  X2, X6, X6
 	VPADDD  X3, X7, X7
-	VMOVDQU ·one_AVX<>(SB), X0
+	VMOVDQU ·one<>(SB), X0
 	VPADDQ  X0, X3, X3
 
 	CMPQ CX, $64
@@ -505,38 +404,3 @@ done:
 	MOVQ    CX, ret+72(FP)
 	RET
 
-// func hChaCha20AVX(out *[32]byte, nonce *[16]byte, key *[32]byte)
-TEXT ·hChaCha20AVX(SB), 4, $0-24
-	MOVQ out+0(FP), DI
-	MOVQ nonce+8(FP), AX
-	MOVQ key+16(FP), BX
-
-	VMOVDQU ·sigma_AVX<>(SB), X0
-	VMOVDQU 0(BX), X1
-	VMOVDQU 16(BX), X2
-	VMOVDQU 0(AX), X3
-	VMOVDQU ·rol16_AVX2<>(SB), X5
-	VMOVDQU ·rol8_AVX2<>(SB), X6
-
-	MOVQ $20, CX
-
-chacha_loop:
-	CHACHA_QROUND(X0, X1, X2, X3, X4, X5, X6)
-	CHACHA_SHUFFLE(X1, X2, X3)
-	CHACHA_QROUND(X0, X1, X2, X3, X4, X5, X6)
-	CHACHA_SHUFFLE(X3, X2, X1)
-	SUBQ $2, CX
-	JNZ  chacha_loop
-
-	VMOVDQU X0, 0(DI)
-	VMOVDQU X3, 16(DI)
-	VZEROUPPER
-	RET
-
-// func supportsAVX2() bool
-TEXT ·supportsAVX2(SB), 4, $0-1
-	MOVQ runtime·support_avx(SB), AX
-	MOVQ runtime·support_avx2(SB), BX
-	ANDQ AX, BX
-	MOVB BX, ret+0(FP)
-	RET

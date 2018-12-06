@@ -282,7 +282,7 @@ func setupTLS(c *caddy.Controller) error {
 
 	// generate self-signed cert if needed
 	if config.SelfSigned {
-		err := makeSelfSignedCert(config)
+		err := makeSelfSignedCertForConfig(config)
 		if err != nil {
 			return fmt.Errorf("self-signed: %v", err)
 		}

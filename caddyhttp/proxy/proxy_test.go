@@ -122,7 +122,7 @@ func TestReverseProxy(t *testing.T) {
 	// set up proxy
 	p := &Proxy{
 		Next:      httpserver.EmptyNext, // prevents panic in some cases when test fails
-		Upstreams: []Upstream{newFakeUpstream(backend.URL, false, 30*time.Second)},
+		Upstreams: []Upstream{newFakeUpstream(backend.URL, false, 30*time.Second, 300*time.Millisecond)},
 	}
 
 	// Create the fake request body.
@@ -202,7 +202,7 @@ func TestReverseProxyInsecureSkipVerify(t *testing.T) {
 	// set up proxy
 	p := &Proxy{
 		Next:      httpserver.EmptyNext, // prevents panic in some cases when test fails
-		Upstreams: []Upstream{newFakeUpstream(backend.URL, true, 30*time.Second)},
+		Upstreams: []Upstream{newFakeUpstream(backend.URL, true, 30*time.Second, 300*time.Millisecond)},
 	}
 
 	// create request and response recorder
@@ -289,6 +289,7 @@ func TestReverseProxyMaxConnLimit(t *testing.T) {
 
 func TestReverseProxyTimeout(t *testing.T) {
 	timeout := 2 * time.Second
+	fallbackDelay := 300 * time.Millisecond
 	errorMargin := 100 * time.Millisecond
 	log.SetOutput(ioutil.Discard)
 	defer log.SetOutput(os.Stderr)
@@ -296,7 +297,7 @@ func TestReverseProxyTimeout(t *testing.T) {
 	// set up proxy
 	p := &Proxy{
 		Next:      httpserver.EmptyNext, // prevents panic in some cases when test fails
-		Upstreams: []Upstream{newFakeUpstream("https://8.8.8.8", true, timeout)},
+		Upstreams: []Upstream{newFakeUpstream("https://8.8.8.8", true, timeout, fallbackDelay)},
 	}
 
 	// create request and response recorder
@@ -711,7 +712,7 @@ func TestUpstreamHeadersUpdate(t *testing.T) {
 	}))
 	defer backend.Close()
 
-	upstream := newFakeUpstream(backend.URL, false, 30*time.Second)
+	upstream := newFakeUpstream(backend.URL, false, 30*time.Second, 300*time.Millisecond)
 	upstream.host.UpstreamHeaders = http.Header{
 		"Connection": {"{>Connection}"},
 		"Upgrade":    {"{>Upgrade}"},
@@ -778,7 +779,7 @@ func TestDownstreamHeadersUpdate(t *testing.T) {
 	}))
 	defer backend.Close()
 
-	upstream := newFakeUpstream(backend.URL, false, 30*time.Second)
+	upstream := newFakeUpstream(backend.URL, false, 30*time.Second, 300*time.Millisecond)
 	upstream.host.DownstreamHeaders = http.Header{
 		"+Merge-Me":  {"Merge-Value"},
 		"+Add-Me":    {"Add-Value"},
@@ -918,7 +919,7 @@ func TestHostSimpleProxyNoHeaderForward(t *testing.T) {
 	// set up proxy
 	p := &Proxy{
 		Next:      httpserver.EmptyNext, // prevents panic in some cases when test fails
-		Upstreams: []Upstream{newFakeUpstream(backend.URL, false, 30*time.Second)},
+		Upstreams: []Upstream{newFakeUpstream(backend.URL, false, 30*time.Second, 300*time.Millisecond)},
 	}
 
 	r := httptest.NewRequest("GET", "/", nil)
@@ -1007,7 +1008,7 @@ func TestHostHeaderReplacedUsingForward(t *testing.T) {
 	}))
 	defer backend.Close()
 
-	upstream := newFakeUpstream(backend.URL, false, 30*time.Second)
+	upstream := newFakeUpstream(backend.URL, false, 30*time.Second, 300*time.Millisecond)
 	proxyHostHeader := "test2.com"
 	upstream.host.UpstreamHeaders = http.Header{"Host": []string{proxyHostHeader}}
 	// set up proxy
@@ -1069,7 +1070,7 @@ func basicAuthTestcase(t *testing.T, upstreamUser, clientUser *url.Userinfo) {
 
 	p := &Proxy{
 		Next:      httpserver.EmptyNext,
-		Upstreams: []Upstream{newFakeUpstream(backURL.String(), false, 30*time.Second)},
+		Upstreams: []Upstream{newFakeUpstream(backURL.String(), false, 30*time.Second, 300*time.Millisecond)},
 	}
 	r, err := http.NewRequest("GET", "/foo", nil)
 	if err != nil {
@@ -1204,7 +1205,7 @@ func TestProxyDirectorURL(t *testing.T) {
 			continue
 		}
 
-		NewSingleHostReverseProxy(targetURL, c.without, 0, 30*time.Second).Director(req)
+		NewSingleHostReverseProxy(targetURL, c.without, 0, 30*time.Second, 300*time.Millisecond).Director(req)
 		if expect, got := c.expectURL, req.URL.String(); expect != got {
 			t.Errorf("case %d url not equal: expect %q, but got %q",
 				i, expect, got)
@@ -1351,7 +1352,7 @@ func TestCancelRequest(t *testing.T) {
 	// set up proxy
 	p := &Proxy{
 		Next:      httpserver.EmptyNext, // prevents panic in some cases when test fails
-		Upstreams: []Upstream{newFakeUpstream(backend.URL, false, 30*time.Second)},
+		Upstreams: []Upstream{newFakeUpstream(backend.URL, false, 30*time.Second, 300*time.Millisecond)},
 	}
 
 	// setup request with cancel ctx
@@ -1368,7 +1369,7 @@ func TestCancelRequest(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	status, err := p.ServeHTTP(rec, req)
-	expectedStatus, expectErr := http.StatusBadGateway, context.Canceled
+	expectedStatus, expectErr := CustomStatusContextCancelled, context.Canceled
 	if status != expectedStatus || err != expectErr {
 		t.Errorf("expect proxy handle return status[%d] with error[%v], but got status[%d] with error[%v]",
 			expectedStatus, expectErr, status, err)
@@ -1400,15 +1401,16 @@ func (r *noopReader) Read(b []byte) (int, error) {
 	return n, nil
 }
 
-func newFakeUpstream(name string, insecure bool, timeout time.Duration) *fakeUpstream {
+func newFakeUpstream(name string, insecure bool, timeout, fallbackDelay time.Duration) *fakeUpstream {
 	uri, _ := url.Parse(name)
 	u := &fakeUpstream{
-		name:    name,
-		from:    "/",
-		timeout: timeout,
+		name:          name,
+		from:          "/",
+		timeout:       timeout,
+		fallbackDelay: fallbackDelay,
 		host: &UpstreamHost{
 			Name:         name,
-			ReverseProxy: NewSingleHostReverseProxy(uri, "", http.DefaultMaxIdleConnsPerHost, timeout),
+			ReverseProxy: NewSingleHostReverseProxy(uri, "", http.DefaultMaxIdleConnsPerHost, timeout, fallbackDelay),
 		},
 	}
 	if insecure {
@@ -1418,11 +1420,12 @@ func newFakeUpstream(name string, insecure bool, timeout time.Duration) *fakeUps
 }
 
 type fakeUpstream struct {
-	name    string
-	host    *UpstreamHost
-	from    string
-	without string
-	timeout time.Duration
+	name          string
+	host          *UpstreamHost
+	from          string
+	without       string
+	timeout       time.Duration
+	fallbackDelay time.Duration
 }
 
 func (u *fakeUpstream) From() string {
@@ -1437,13 +1440,14 @@ func (u *fakeUpstream) Select(r *http.Request) *UpstreamHost {
 		}
 		u.host = &UpstreamHost{
 			Name:         u.name,
-			ReverseProxy: NewSingleHostReverseProxy(uri, u.without, http.DefaultMaxIdleConnsPerHost, u.GetTimeout()),
+			ReverseProxy: NewSingleHostReverseProxy(uri, u.without, http.DefaultMaxIdleConnsPerHost, u.GetTimeout(), u.GetFallbackDelay()),
 		}
 	}
 	return u.host
 }
 
 func (u *fakeUpstream) AllowedPath(requestPath string) bool { return true }
+func (u *fakeUpstream) GetFallbackDelay() time.Duration     { return 300 * time.Millisecond }
 func (u *fakeUpstream) GetTryDuration() time.Duration       { return 1 * time.Second }
 func (u *fakeUpstream) GetTryInterval() time.Duration       { return 250 * time.Millisecond }
 func (u *fakeUpstream) GetTimeout() time.Duration           { return u.timeout }
@@ -1474,10 +1478,11 @@ func newPrefixedWebSocketTestProxy(backendAddr string, prefix string) *Proxy {
 }
 
 type fakeWsUpstream struct {
-	name     string
-	without  string
-	insecure bool
-	timeout  time.Duration
+	name          string
+	without       string
+	insecure      bool
+	timeout       time.Duration
+	fallbackDelay time.Duration
 }
 
 func (u *fakeWsUpstream) From() string {
@@ -1488,7 +1493,7 @@ func (u *fakeWsUpstream) Select(r *http.Request) *UpstreamHost {
 	uri, _ := url.Parse(u.name)
 	host := &UpstreamHost{
 		Name:         u.name,
-		ReverseProxy: NewSingleHostReverseProxy(uri, u.without, http.DefaultMaxIdleConnsPerHost, u.GetTimeout()),
+		ReverseProxy: NewSingleHostReverseProxy(uri, u.without, http.DefaultMaxIdleConnsPerHost, u.GetTimeout(), u.GetFallbackDelay()),
 		UpstreamHeaders: http.Header{
 			"Connection": {"{>Connection}"},
 			"Upgrade":    {"{>Upgrade}"}},
@@ -1500,6 +1505,7 @@ func (u *fakeWsUpstream) Select(r *http.Request) *UpstreamHost {
 }
 
 func (u *fakeWsUpstream) AllowedPath(requestPath string) bool { return true }
+func (u *fakeWsUpstream) GetFallbackDelay() time.Duration     { return 300 * time.Millisecond }
 func (u *fakeWsUpstream) GetTryDuration() time.Duration       { return 1 * time.Second }
 func (u *fakeWsUpstream) GetTryInterval() time.Duration       { return 250 * time.Millisecond }
 func (u *fakeWsUpstream) GetTimeout() time.Duration           { return u.timeout }
@@ -1548,7 +1554,7 @@ func BenchmarkProxy(b *testing.B) {
 	}))
 	defer backend.Close()
 
-	upstream := newFakeUpstream(backend.URL, false, 30*time.Second)
+	upstream := newFakeUpstream(backend.URL, false, 30*time.Second, 300*time.Millisecond)
 	upstream.host.UpstreamHeaders = http.Header{
 		"Hostname":          {"{hostname}"},
 		"Host":              {"{host}"},

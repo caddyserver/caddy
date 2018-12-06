@@ -177,10 +177,7 @@ func stapleOCSP(cert *Certificate, pemBundle []byte) error {
 	return nil
 }
 
-// makeSelfSignedCert makes a self-signed certificate according
-// to the parameters in config. It then caches the certificate
-// in our cache.
-func makeSelfSignedCert(config *Config) error {
+func makeSelfSignedCertWithCustomSAN(sans []string, config *Config) (Certificate, error) {
 	// start by generating private key
 	var privKey interface{}
 	var err error
@@ -196,10 +193,10 @@ func makeSelfSignedCert(config *Config) error {
 	case acme.RSA8192:
 		privKey, err = rsa.GenerateKey(rand.Reader, 8192)
 	default:
-		return fmt.Errorf("cannot generate private key; unknown key type %v", config.KeyType)
+		return Certificate{}, fmt.Errorf("cannot generate private key; unknown key type %v", config.KeyType)
 	}
 	if err != nil {
-		return fmt.Errorf("failed to generate private key: %v", err)
+		return Certificate{}, fmt.Errorf("failed to generate private key: %v", err)
 	}
 
 	// create certificate structure with proper values
@@ -208,7 +205,7 @@ func makeSelfSignedCert(config *Config) error {
 	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
 	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
 	if err != nil {
-		return fmt.Errorf("failed to generate serial number: %v", err)
+		return Certificate{}, fmt.Errorf("failed to generate serial number: %v", err)
 	}
 	cert := &x509.Certificate{
 		SerialNumber: serialNumber,
@@ -218,13 +215,18 @@ func makeSelfSignedCert(config *Config) error {
 		KeyUsage:     x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	}
+	if len(sans) == 0 {
+		sans = []string{""}
+	}
 	var names []string
-	if ip := net.ParseIP(config.Hostname); ip != nil {
-		names = append(names, strings.ToLower(ip.String()))
-		cert.IPAddresses = append(cert.IPAddresses, ip)
-	} else {
-		names = append(names, strings.ToLower(config.Hostname))
-		cert.DNSNames = append(cert.DNSNames, strings.ToLower(config.Hostname))
+	for _, san := range sans {
+		if ip := net.ParseIP(san); ip != nil {
+			names = append(names, strings.ToLower(ip.String()))
+			cert.IPAddresses = append(cert.IPAddresses, ip)
+		} else {
+			names = append(names, strings.ToLower(san))
+			cert.DNSNames = append(cert.DNSNames, strings.ToLower(san))
+		}
 	}
 
 	publicKey := func(privKey interface{}) interface{} {
@@ -239,12 +241,12 @@ func makeSelfSignedCert(config *Config) error {
 	}
 	derBytes, err := x509.CreateCertificate(rand.Reader, cert, cert, publicKey(privKey), privKey)
 	if err != nil {
-		return fmt.Errorf("could not create certificate: %v", err)
+		return Certificate{}, fmt.Errorf("could not create certificate: %v", err)
 	}
 
 	chain := [][]byte{derBytes}
 
-	config.cacheCertificate(Certificate{
+	return Certificate{
 		Certificate: tls.Certificate{
 			Certificate: chain,
 			PrivateKey:  privKey,
@@ -253,8 +255,17 @@ func makeSelfSignedCert(config *Config) error {
 		Names:    names,
 		NotAfter: cert.NotAfter,
 		Hash:     hashCertificateChain(chain),
-	})
+	}, nil
+}
 
+// makeSelfSignedCertForConfig makes a self-signed certificate according
+// to the parameters in config and caches the new cert in config directly.
+func makeSelfSignedCertForConfig(config *Config) error {
+	cert, err := makeSelfSignedCertWithCustomSAN([]string{config.Hostname}, config)
+	if err != nil {
+		return err
+	}
+	config.cacheCertificate(cert)
 	return nil
 }
 

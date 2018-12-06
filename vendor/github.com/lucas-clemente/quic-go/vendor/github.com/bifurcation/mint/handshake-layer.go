@@ -35,7 +35,6 @@ type HandshakeMessage struct {
 	datagram bool
 	offset   uint32 // Used for DTLS
 	length   uint32
-	records  []uint64 // Used for DTLS
 	cipher   *cipherState
 }
 
@@ -119,6 +118,7 @@ func (h *HandshakeLayer) HandshakeMessageFromBody(body HandshakeMessageBody) (*H
 }
 
 type HandshakeLayer struct {
+	ctx            *HandshakeContext   // The handshake we are attached to
 	nonblocking    bool                // Should we operate in nonblocking mode
 	conn           *RecordLayer        // Used for reading/writing records
 	frame          *frameReader        // The buffered frame reader
@@ -126,6 +126,7 @@ type HandshakeLayer struct {
 	msgSeq         uint32              // The DTLS message sequence number
 	queued         []*HandshakeMessage // In/out queue
 	sent           []*HandshakeMessage // Sent messages for DTLS
+	recvdRecords   []uint64            // Records we have received.
 	maxFragmentLen int
 }
 
@@ -152,8 +153,9 @@ func (d handshakeLayerFrameDetails) frameLen(hdr []byte) (int, error) {
 	return int(val), nil
 }
 
-func NewHandshakeLayerTLS(r *RecordLayer) *HandshakeLayer {
+func NewHandshakeLayerTLS(c *HandshakeContext, r *RecordLayer) *HandshakeLayer {
 	h := HandshakeLayer{}
+	h.ctx = c
 	h.conn = r
 	h.datagram = false
 	h.frame = newFrameReader(&handshakeLayerFrameDetails{false})
@@ -161,8 +163,9 @@ func NewHandshakeLayerTLS(r *RecordLayer) *HandshakeLayer {
 	return &h
 }
 
-func NewHandshakeLayerDTLS(r *RecordLayer) *HandshakeLayer {
+func NewHandshakeLayerDTLS(c *HandshakeContext, r *RecordLayer) *HandshakeLayer {
 	h := HandshakeLayer{}
+	h.ctx = c
 	h.conn = r
 	h.datagram = true
 	h.frame = newFrameReader(&handshakeLayerFrameDetails{true})
@@ -172,14 +175,23 @@ func NewHandshakeLayerDTLS(r *RecordLayer) *HandshakeLayer {
 
 func (h *HandshakeLayer) readRecord() error {
 	logf(logTypeVerbose, "Trying to read record")
-	pt, err := h.conn.ReadRecord()
+	pt, err := h.conn.readRecordAnyEpoch()
 	if err != nil {
 		return err
 	}
 
-	if pt.contentType != RecordTypeHandshake &&
-		pt.contentType != RecordTypeAlert {
+	switch pt.contentType {
+	case RecordTypeHandshake, RecordTypeAlert, RecordTypeAck:
+	default:
 		return fmt.Errorf("tls.handshakelayer: Unexpected record type %d", pt.contentType)
+	}
+
+	if pt.contentType == RecordTypeAck {
+		if !h.datagram {
+			return fmt.Errorf("tls.handshakelayer: can't have ACK with TLS")
+		}
+		logf(logTypeIO, "read ACK")
+		return h.ctx.processAck(pt.fragment)
 	}
 
 	if pt.contentType == RecordTypeAlert {
@@ -191,6 +203,19 @@ func (h *HandshakeLayer) readRecord() error {
 		return Alert(pt.fragment[1])
 	}
 
+	assert(h.ctx.hIn.conn != nil)
+	if pt.epoch != h.ctx.hIn.conn.cipher.epoch {
+		// This is out of order but we're dropping it.
+		// TODO(ekr@rtfm.com): If server, need to retransmit Finished.
+		if pt.epoch == EpochClear || pt.epoch == EpochHandshakeData {
+			return nil
+		}
+
+		// Anything else shouldn't happen.
+		return AlertIllegalParameter
+	}
+
+	h.recvdRecords = append(h.recvdRecords, pt.seq)
 	h.frame.addChunk(pt.fragment)
 
 	return nil
@@ -227,8 +252,12 @@ func (h *HandshakeLayer) noteMessageDelivered(seq uint32) {
 
 func (h *HandshakeLayer) newFragmentReceived(hm *HandshakeMessage) (*HandshakeMessage, error) {
 	if hm.seq < h.msgSeq {
-		return nil, WouldBlock
+		return nil, nil
 	}
+
+	// TODO(ekr@rtfm.com): Send an ACK immediately if we got something
+	// out of order.
+	h.ctx.receivedHandshakeMessage()
 
 	if hm.seq == h.msgSeq && hm.offset == 0 && hm.length == uint32(len(hm.body)) {
 		// TODO(ekr@rtfm.com): Check the length?
@@ -259,12 +288,12 @@ func (h *HandshakeLayer) newFragmentReceived(hm *HandshakeMessage) (*HandshakeMe
 
 func (h *HandshakeLayer) checkMessageAvailable() (*HandshakeMessage, error) {
 	if len(h.queued) == 0 {
-		return nil, WouldBlock
+		return nil, nil
 	}
 
 	hm := h.queued[0]
 	if hm.seq != h.msgSeq {
-		return nil, WouldBlock
+		return nil, nil
 	}
 
 	if hm.seq == h.msgSeq && hm.offset == 0 && hm.length == uint32(len(hm.body)) {
@@ -307,7 +336,7 @@ func (h *HandshakeLayer) checkMessageAvailable() (*HandshakeMessage, error) {
 
 	}
 
-	return nil, WouldBlock
+	return nil, nil
 }
 
 func (h *HandshakeLayer) ReadMessage() (*HandshakeMessage, error) {
@@ -315,11 +344,11 @@ func (h *HandshakeLayer) ReadMessage() (*HandshakeMessage, error) {
 	var err error
 
 	hm, err := h.checkMessageAvailable()
-	if err == nil {
-		return hm, err
-	}
-	if err != WouldBlock {
+	if err != nil {
 		return nil, err
+	}
+	if hm != nil {
+		return hm, nil
 	}
 	for {
 		logf(logTypeVerbose, "ReadMessage() buffered=%v", len(h.frame.remainder))
@@ -327,7 +356,7 @@ func (h *HandshakeLayer) ReadMessage() (*HandshakeMessage, error) {
 			logf(logTypeVerbose, "Trying to read a new record")
 			err = h.readRecord()
 
-			if err != nil && (h.nonblocking || err != WouldBlock) {
+			if err != nil && (h.nonblocking || err != AlertWouldBlock) {
 				return nil, err
 			}
 		}
@@ -336,7 +365,7 @@ func (h *HandshakeLayer) ReadMessage() (*HandshakeMessage, error) {
 		if err == nil {
 			break
 		}
-		if err != nil && (h.nonblocking || err != WouldBlock) {
+		if err != nil && (h.nonblocking || err != AlertWouldBlock) {
 			return nil, err
 		}
 	}
@@ -370,12 +399,13 @@ func (h *HandshakeLayer) QueueMessage(hm *HandshakeMessage) error {
 	return nil
 }
 
-func (h *HandshakeLayer) SendQueuedMessages() error {
+func (h *HandshakeLayer) SendQueuedMessages() (int, error) {
 	logf(logTypeHandshake, "Sending outgoing messages")
-	err := h.WriteMessages(h.queued)
-	h.ClearQueuedMessages() // This isn't going to work for DTLS, but we'll
-	// get there.
-	return err
+	count, err := h.WriteMessages(h.queued)
+	if !h.datagram {
+		h.ClearQueuedMessages()
+	}
+	return count, err
 }
 
 func (h *HandshakeLayer) ClearQueuedMessages() {
@@ -383,7 +413,7 @@ func (h *HandshakeLayer) ClearQueuedMessages() {
 	h.queued = nil
 }
 
-func (h *HandshakeLayer) writeFragment(hm *HandshakeMessage, start int, room int) (int, error) {
+func (h *HandshakeLayer) writeFragment(hm *HandshakeMessage, start int, room int) (bool, int, error) {
 	var buf []byte
 
 	// Figure out if we're going to want the full header or just
@@ -408,17 +438,35 @@ func (h *HandshakeLayer) writeFragment(hm *HandshakeMessage, start int, room int
 	}
 	body := hm.body[start : start+bodylen]
 
+	// Now see if this chunk has been ACKed. This doesn't produce ideal
+	// retransmission but is simple.
+	if h.ctx.fragmentAcked(hm.seq, start, bodylen) {
+		logf(logTypeHandshake, "Fragment %v %v(%v) already acked. Skipping", hm.seq, start, bodylen)
+		return false, start + bodylen, nil
+	}
+
 	// Encode the data.
 	if hdrlen > 0 {
 		hm2 := *hm
 		hm2.offset = uint32(start)
 		hm2.body = body
 		buf = hm2.Marshal()
+		hm = &hm2
 	} else {
 		buf = body
 	}
 
-	return start + bodylen, h.conn.writeRecordWithPadding(
+	if h.datagram {
+		// Remember that we sent this.
+		h.ctx.sentFragments = append(h.ctx.sentFragments, &SentHandshakeFragment{
+			hm.seq,
+			start,
+			len(body),
+			h.conn.cipher.combineSeq(true),
+			false,
+		})
+	}
+	return true, start + bodylen, h.conn.writeRecordWithPadding(
 		&TLSPlaintext{
 			contentType: RecordTypeHandshake,
 			fragment:    buf,
@@ -426,38 +474,46 @@ func (h *HandshakeLayer) writeFragment(hm *HandshakeMessage, start int, room int
 		hm.cipher, 0)
 }
 
-func (h *HandshakeLayer) WriteMessage(hm *HandshakeMessage) error {
+func (h *HandshakeLayer) WriteMessage(hm *HandshakeMessage) (int, error) {
 	start := int(0)
 
 	if len(hm.body) > maxHandshakeMessageLen {
-		return fmt.Errorf("Tried to write a handshake message that's too long")
+		return 0, fmt.Errorf("Tried to write a handshake message that's too long")
 	}
+
+	written := 0
+	wrote := false
 
 	// Always make one pass through to allow EOED (which is empty).
 	for {
 		var err error
-		start, err = h.writeFragment(hm, start, h.maxFragmentLen)
+		wrote, start, err = h.writeFragment(hm, start, h.maxFragmentLen)
 		if err != nil {
-			return err
+			return 0, err
+		}
+		if wrote {
+			written++
 		}
 		if start >= len(hm.body) {
 			break
 		}
 	}
 
-	return nil
+	return written, nil
 }
 
-func (h *HandshakeLayer) WriteMessages(hms []*HandshakeMessage) error {
+func (h *HandshakeLayer) WriteMessages(hms []*HandshakeMessage) (int, error) {
+	written := 0
 	for _, hm := range hms {
 		logf(logTypeHandshake, "WriteMessage [%d] %x", hm.msgType, hm.body)
 
-		err := h.WriteMessage(hm)
+		wrote, err := h.WriteMessage(hm)
 		if err != nil {
-			return err
+			return 0, err
 		}
+		written += wrote
 	}
-	return nil
+	return written, nil
 }
 
 func encodeUint(v uint64, size int, out []byte) []byte {
