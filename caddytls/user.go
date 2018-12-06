@@ -27,7 +27,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/xenolf/lego/acmev2"
+	"github.com/xenolf/lego/acme"
 )
 
 // User represents a Let's Encrypt user account.

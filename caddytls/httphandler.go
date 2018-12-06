@@ -25,7 +25,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/xenolf/lego/acmev2"
+	"github.com/xenolf/lego/acme"
 )
 
 const challengeBasePath = "/.well-known/acme-challenge"
@@ -87,7 +87,7 @@ func HTTPChallengeHandler(w http.ResponseWriter, r *http.Request, listenHost str
 // storage, and attempts to complete the challenge for it. It
 // returns true if the challenge was handled; false otherwise.
 func tryDistributedChallengeSolver(w http.ResponseWriter, r *http.Request) bool {
-	filePath := distributedHTTPSolver{}.challengeTokensPath(r.Host)
+	filePath := distributedSolver{}.challengeTokensPath(r.Host)
 	f, err := os.Open(filePath)
 	if err != nil {
 		if !os.IsNotExist(err) {
@@ -112,7 +112,7 @@ func tryDistributedChallengeSolver(w http.ResponseWriter, r *http.Request) bool 
 		w.Header().Add("Content-Type", "text/plain")
 		w.Write([]byte(chalInfo.KeyAuth))
 		r.Close = true
-		log.Printf("[INFO][%s] Served key authentication", chalInfo.Domain)
+		log.Printf("[INFO][%s] Served key authentication (distributed)", chalInfo.Domain)
 		return true
 	}
 

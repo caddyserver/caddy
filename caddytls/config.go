@@ -26,7 +26,7 @@ import (
 
 	"github.com/klauspost/cpuid"
 	"github.com/mholt/caddy"
-	"github.com/xenolf/lego/acmev2"
+	"github.com/xenolf/lego/acme"
 )
 
 // Config describes how TLS should be configured and used.
@@ -102,10 +102,10 @@ type Config struct {
 	AltHTTPPort string
 
 	// The alternate port (ONLY port, not host)
-	// to use for the ACME TLS-SNI challenge.
-	// The system must forward TLSSNIChallengePort
+	// to use for the ACME TLS-ALPN challenge;
+	// the system must forward TLSALPNChallengePort
 	// to this port for challenge to succeed
-	AltTLSSNIPort string
+	AltTLSALPNPort string
 
 	// The string identifier of the DNS provider
 	// to use when solving the ACME DNS challenge
@@ -341,6 +341,18 @@ func (c *Config) buildStandardTLSConfig() error {
 			curvesAdded[curv] = struct{}{}
 			config.CurvePreferences = append(config.CurvePreferences, curv)
 		}
+	}
+
+	// ensure ALPN includes the ACME TLS-ALPN protocol
+	var alpnFound bool
+	for _, a := range c.ALPN {
+		if a == acme.ACMETLS1Protocol {
+			alpnFound = true
+			break
+		}
+	}
+	if !alpnFound {
+		c.ALPN = append(c.ALPN, acme.ACMETLS1Protocol)
 	}
 
 	config.MinVersion = c.ProtocolMinVersion
@@ -695,13 +707,13 @@ var defaultCurves = []tls.CurveID{
 }
 
 const (
-	// HTTPChallengePort is the officially designated port for
+	// HTTPChallengePort is the officially-designated port for
 	// the HTTP challenge according to the ACME spec.
 	HTTPChallengePort = "80"
 
-	// TLSSNIChallengePort is the officially designated port for
-	// the TLS-SNI challenge according to the ACME spec.
-	TLSSNIChallengePort = "443"
+	// TLSALPNChallengePort is the officially-designated port for
+	// the TLS-ALPN challenge according to the ACME spec.
+	TLSALPNChallengePort = "443"
 
 	// DefaultHTTPAlternatePort is the port on which the ACME
 	// client will open a listener and solve the HTTP challenge.

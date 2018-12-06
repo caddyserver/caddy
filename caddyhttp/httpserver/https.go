@@ -207,7 +207,7 @@ func redirPlaintextHost(cfg *SiteConfig) *SiteConfig {
 		Addr:       Address{Original: addr, Host: host, Port: port},
 		ListenHost: cfg.ListenHost,
 		middleware: []Middleware{redirMiddleware},
-		TLS:        &caddytls.Config{AltHTTPPort: cfg.TLS.AltHTTPPort, AltTLSSNIPort: cfg.TLS.AltTLSSNIPort},
+		TLS:        &caddytls.Config{AltHTTPPort: cfg.TLS.AltHTTPPort, AltTLSALPNPort: cfg.TLS.AltTLSALPNPort},
 		Timeouts:   cfg.Timeouts,
 	}
 }

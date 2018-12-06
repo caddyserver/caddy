@@ -9,6 +9,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/asn1"
 	"encoding/base64"
 	"encoding/pem"
 	"errors"
@@ -18,8 +19,6 @@ import (
 	"math/big"
 	"net/http"
 	"time"
-
-	"encoding/asn1"
 
 	"golang.org/x/crypto/ocsp"
 	jose "gopkg.in/square/go-jose.v2"
@@ -118,6 +117,10 @@ func GetOCSPForCert(bundle []byte) ([]byte, *ocsp.Response, error) {
 	defer req.Body.Close()
 
 	ocspResBytes, err := ioutil.ReadAll(limitReader(req.Body, 1024*1024))
+	if err != nil {
+		return nil, nil, err
+	}
+
 	ocspRes, err := ocsp.ParseResponse(ocspResBytes, issuerCert)
 	if err != nil {
 		return nil, nil, err
@@ -138,7 +141,7 @@ func getKeyAuthorization(token string, key interface{}) (string, error) {
 	// Generate the Key Authorization for the challenge
 	jwk := &jose.JSONWebKey{Key: publicKey}
 	if jwk == nil {
-		return "", errors.New("Could not generate JWK from key")
+		return "", errors.New("could not generate JWK from key")
 	}
 	thumbBytes, err := jwk.Thumbprint(crypto.SHA256)
 	if err != nil {
@@ -173,7 +176,7 @@ func parsePEMBundle(bundle []byte) ([]*x509.Certificate, error) {
 	}
 
 	if len(certificates) == 0 {
-		return nil, errors.New("No certificates were found while parsing the bundle")
+		return nil, errors.New("no certificates were found while parsing the bundle")
 	}
 
 	return certificates, nil
@@ -188,7 +191,7 @@ func parsePEMPrivateKey(key []byte) (crypto.PrivateKey, error) {
 	case "EC PRIVATE KEY":
 		return x509.ParseECPrivateKey(keyBlock.Bytes)
 	default:
-		return nil, errors.New("Unknown PEM header value")
+		return nil, errors.New("unknown PEM header value")
 	}
 }
 
@@ -207,14 +210,12 @@ func generatePrivateKey(keyType KeyType) (crypto.PrivateKey, error) {
 		return rsa.GenerateKey(rand.Reader, 8192)
 	}
 
-	return nil, fmt.Errorf("Invalid KeyType: %s", keyType)
+	return nil, fmt.Errorf("invalid KeyType: %s", keyType)
 }
 
 func generateCsr(privateKey crypto.PrivateKey, domain string, san []string, mustStaple bool) ([]byte, error) {
 	template := x509.CertificateRequest{
-		Subject: pkix.Name{
-			CommonName: domain,
-		},
+		Subject: pkix.Name{CommonName: domain},
 	}
 
 	if len(san) > 0 {
@@ -239,10 +240,8 @@ func pemEncode(data interface{}) []byte {
 		pemBlock = &pem.Block{Type: "EC PRIVATE KEY", Bytes: keyBytes}
 	case *rsa.PrivateKey:
 		pemBlock = &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}
-		break
 	case *x509.CertificateRequest:
 		pemBlock = &pem.Block{Type: "CERTIFICATE REQUEST", Bytes: key.Raw}
-		break
 	case derCertificateBytes:
 		pemBlock = &pem.Block{Type: "CERTIFICATE", Bytes: []byte(data.(derCertificateBytes))}
 	}
@@ -302,8 +301,8 @@ func getCertExpiration(cert []byte) (time.Time, error) {
 	return pCert.NotAfter, nil
 }
 
-func generatePemCert(privKey *rsa.PrivateKey, domain string) ([]byte, error) {
-	derBytes, err := generateDerCert(privKey, time.Time{}, domain)
+func generatePemCert(privKey *rsa.PrivateKey, domain string, extensions []pkix.Extension) ([]byte, error) {
+	derBytes, err := generateDerCert(privKey, time.Time{}, domain, extensions)
 	if err != nil {
 		return nil, err
 	}
@@ -311,7 +310,7 @@ func generatePemCert(privKey *rsa.PrivateKey, domain string) ([]byte, error) {
 	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derBytes}), nil
 }
 
-func generateDerCert(privKey *rsa.PrivateKey, expiration time.Time, domain string) ([]byte, error) {
+func generateDerCert(privKey *rsa.PrivateKey, expiration time.Time, domain string, extensions []pkix.Extension) ([]byte, error) {
 	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
 	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
 	if err != nil {
@@ -333,6 +332,7 @@ func generateDerCert(privKey *rsa.PrivateKey, expiration time.Time, domain strin
 		KeyUsage:              x509.KeyUsageKeyEncipherment,
 		BasicConstraintsValid: true,
 		DNSNames:              []string{domain},
+		ExtraExtensions:       extensions,
 	}
 
 	return x509.CreateCertificate(rand.Reader, &template, &template, &privKey.PublicKey, privKey)

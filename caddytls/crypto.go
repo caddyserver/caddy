@@ -42,7 +42,7 @@ import (
 	"golang.org/x/crypto/ocsp"
 
 	"github.com/mholt/caddy"
-	"github.com/xenolf/lego/acmev2"
+	"github.com/xenolf/lego/acme"
 )
 
 // loadPrivateKey loads a PEM-encoded ECC/RSA private key from an array of bytes.

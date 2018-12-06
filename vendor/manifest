@@ -167,12 +167,21 @@
 			"notests": true
 		},
 		{
-			"importpath": "github.com/xenolf/lego/acmev2",
+			"importpath": "github.com/xenolf/lego/acme",
 			"repository": "https://github.com/xenolf/lego",
 			"vcs": "git",
-			"revision": "fad2257e11ae4ff31ed03739386873aa405dec2d",
-			"branch": "acmev2",
-			"path": "/acmev2",
+			"revision": "04e2d74406d42a3727e7a132c1a39735ac527f51",
+			"branch": "master",
+			"path": "/acme",
+			"notests": true
+		},
+		{
+			"importpath": "github.com/xenolf/lego/log",
+			"repository": "https://github.com/xenolf/lego",
+			"vcs": "git",
+			"revision": "04e2d74406d42a3727e7a132c1a39735ac527f51",
+			"branch": "master",
+			"path": "log",
 			"notests": true
 		},
 		{
