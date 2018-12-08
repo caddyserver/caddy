@@ -625,8 +625,9 @@ var directives = []string{
 	"basicauth",
 	"redir",
 	"status",
-	"cors",   // github.com/captncraig/cors/caddy
-	"nobots", // github.com/Xumeiquer/nobots
+	"cors",      // github.com/captncraig/cors/caddy
+	"s3broswer", // github.com/techknowlogick/caddy-s3browser
+	"nobots",    // github.com/Xumeiquer/nobots
 	"mime",
 	"login",     // github.com/tarent/loginsrv/caddy
 	"reauth",    // github.com/freman/caddy-reauth
