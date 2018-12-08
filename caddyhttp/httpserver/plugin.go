@@ -626,7 +626,7 @@ var directives = []string{
 	"redir",
 	"status",
 	"cors",      // github.com/captncraig/cors/caddy
-	"s3broswer", // github.com/techknowlogick/caddy-s3browser
+	"s3browser", // github.com/techknowlogick/caddy-s3browser
 	"nobots",    // github.com/Xumeiquer/nobots
 	"mime",
 	"login",     // github.com/tarent/loginsrv/caddy
