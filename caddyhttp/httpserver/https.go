@@ -101,7 +101,8 @@ func markQualifiedForAutoHTTPS(configs []*SiteConfig) {
 // value will always be nil.
 func enableAutoHTTPS(configs []*SiteConfig, loadCertificates bool) error {
 	for _, cfg := range configs {
-		if cfg == nil || cfg.TLS == nil || !cfg.TLS.Managed || cfg.TLS.Manager.OnDemand != nil {
+		if cfg == nil || cfg.TLS == nil || !cfg.TLS.Managed ||
+			cfg.TLS.Manager == nil || cfg.TLS.Manager.OnDemand != nil {
 			continue
 		}
 		cfg.TLS.Enabled = true

@@ -346,7 +346,11 @@ func GetConfig(c *caddy.Controller) *SiteConfig {
 	// we should only get here during tests because directive
 	// actions typically skip the server blocks where we make
 	// the configs
-	cfg := &SiteConfig{Root: Root, TLS: new(caddytls.Config), IndexPages: staticfiles.DefaultIndexPages}
+	cfg := &SiteConfig{
+		Root:       Root,
+		TLS:        &caddytls.Config{Manager: certmagic.NewDefault()},
+		IndexPages: staticfiles.DefaultIndexPages,
+	}
 	ctx.saveConfig(key, cfg)
 	return cfg
 }
