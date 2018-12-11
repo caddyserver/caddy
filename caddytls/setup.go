@@ -35,8 +35,8 @@ import (
 func init() {
 	caddy.RegisterPlugin("tls", caddy.Plugin{Action: setupTLS})
 
-	// ensure TLS assets are stored and accessed from the CADDYPATH
-	certmagic.DefaultStorage = certmagic.FileStorage{Path: caddy.AssetsPath()}
+	// ensure the default Storage implementation is plugged in
+	caddy.RegisterClusterPlugin("file", constructDefaultClusterPlugin)
 }
 
 // setupTLS sets up the TLS configuration and installs certificates that
@@ -441,4 +441,8 @@ func loadCertsInDir(cfg *Config, c *caddy.Controller, dir string) error {
 		}
 		return nil
 	})
+}
+
+func constructDefaultClusterPlugin() (certmagic.Storage, error) {
+	return certmagic.FileStorage{Path: caddy.AssetsPath()}, nil
 }

@@ -31,9 +31,9 @@ import (
 // in order to share certificates and other TLS resources
 // with the cluster.
 type Storage interface {
-	// Exists returns true if the key exists
-	// and there was no error checking.
-	Exists(key string) bool
+	// Locker provides atomic synchronization
+	// operations, making Storage safe to share.
+	Locker
 
 	// Store puts value at key.
 	Store(key string, value []byte) error
@@ -44,11 +44,50 @@ type Storage interface {
 	// Delete deletes key.
 	Delete(key string) error
 
+	// Exists returns true if the key exists
+	// and there was no error checking.
+	Exists(key string) bool
+
 	// List returns all keys that match prefix.
 	List(prefix string) ([]string, error)
 
 	// Stat returns information about key.
 	Stat(key string) (KeyInfo, error)
+}
+
+// Locker facilitates synchronization of certificate tasks across
+// machines and networks.
+type Locker interface {
+	// TryLock will attempt to acquire the lock for key. If a
+	// lock could be obtained, nil values are returned as no
+	// waiting is required. If not (meaning another process is
+	// already working on key), a Waiter value will be returned,
+	// upon which you should Wait() until it is finished.
+	//
+	// The actual implementation of obtaining of a lock must be
+	// an atomic operation so that multiple TryLock calls at the
+	// same time always results in only one caller receiving the
+	// lock. TryLock always returns without waiting.
+	//
+	// To prevent deadlocks, all implementations (where this concern
+	// is relevant) should put a reasonable expiration on the lock in
+	// case Unlock is unable to be called due to some sort of network
+	// or system failure or crash.
+	TryLock(key string) (Waiter, error)
+
+	// Unlock releases the lock for key. This method must ONLY be
+	// called after a successful call to TryLock where no Waiter was
+	// returned, and only after the operation requiring the lock is
+	// finished, even if it errored or timed out. It is INCORRECT to
+	// call Unlock if any non-nil value was returned from a call to
+	// TryLock or if Unlock was not called at all. Unlock should also
+	// clean up any unused resources allocated during TryLock.
+	Unlock(key string) error
+}
+
+// Waiter is a type that can block until a lock is released.
+type Waiter interface {
+	Wait()
 }
 
 // KeyInfo holds information about a key in storage.
@@ -207,6 +246,3 @@ var defaultFileStorage = FileStorage{Path: dataDir()}
 
 // DefaultStorage is the default Storage implementation.
 var DefaultStorage Storage = defaultFileStorage
-
-// DefaultSync is a default sync to use.
-var DefaultSync Locker

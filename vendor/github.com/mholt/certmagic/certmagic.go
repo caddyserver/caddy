@@ -12,6 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package certmagic automates the obtaining and renewal of TLS certificates,
+// including TLS & HTTPS best practices such as robust OCSP stapling, caching,
+// HTTP->HTTPS redirects, and more.
+//
+// Its high-level API serves your HTTP handlers over HTTPS by simply giving
+// the domain name(s) and the http.Handler; CertMagic will create and run
+// the HTTPS server for you, fully managing certificates during the lifetime
+// of the server. Similarly, it can be used to start TLS listeners or return
+// a ready-to-use tls.Config -- whatever layer you need TLS for, CertMagic
+// makes it easy.
+//
+// If you need more control, create a Config using New() and then call
+// Manage() on the config; but you'll have to be sure to solve the HTTP
+// and TLS-ALPN challenges yourself (unless you disabled them or use the
+// DNS challenge) by using the provided Config.GetCertificate function
+// in your tls.Config and/or Config.HTTPChallangeHandler in your HTTP
+// handler.
+//
+// See the package's README for more instruction.
 package certmagic
 
 import (
@@ -164,46 +183,6 @@ func manageWithDefaultConfig(domainNames []string, disableHTTPChallenge bool) (*
 	cfg := NewDefault()
 	cfg.DisableHTTPChallenge = disableHTTPChallenge
 	return cfg, cfg.Manage(domainNames)
-}
-
-// Locker facilitates synchronization of certificate tasks across
-// machines and networks.
-type Locker interface {
-	// TryLock will attempt to acquire the lock for key. If a
-	// lock could be obtained, nil values are returned as no
-	// waiting is required. If not (meaning another process is
-	// already working on key), a Waiter value will be returned,
-	// upon which you should Wait() until it is finished.
-	//
-	// The key should be a carefully-chosen value that uniquely
-	// and precisely identifies the operation being locked. For
-	// example, if it is for a certificate obtain or renew with
-	// the ACME protocol to the same CA endpoint (remembering
-	// that an obtain and renew are the same according to ACME,
-	// thus both obtain and renew should share a lock key), a
-	// good key would identify that operation by some name,
-	// concatenated with the domain name and the CA endpoint.
-	//
-	// TryLock never blocks; it always returns without waiting.
-	//
-	// To prevent deadlocks, all implementations (where this concern
-	// is relevant) should put a reasonable expiration on the lock in
-	// case Unlock is unable to be called due to some sort of storage
-	// system failure or crash.
-	TryLock(key string) (Waiter, error)
-
-	// Unlock releases the lock for key. This method must ONLY be
-	// called after a successful call to TryLock where no Waiter was
-	// returned, and only after the operation requiring the lock is
-	// finished, even if it returned an error or timed out. Unlock
-	// should also clean up any unused resources allocated during
-	// TryLock.
-	Unlock(key string) error
-}
-
-// Waiter is a type that can block until a lock is released.
-type Waiter interface {
-	Wait()
 }
 
 // OnDemandConfig contains some state relevant for providing

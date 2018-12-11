@@ -217,23 +217,21 @@ func (cfg *Config) lockKey(op, domainName string) string {
 // Callers who have access to a Config value should use the ObtainCert
 // method on that instead of this lower-level method.
 func (c *acmeClient) Obtain(name string) error {
-	if c.config.Sync != nil {
-		lockKey := c.config.lockKey("cert_acme", name)
-		waiter, err := c.config.Sync.TryLock(lockKey)
-		if err != nil {
-			return err
-		}
-		if waiter != nil {
-			log.Printf("[INFO] Certificate for %s is already being obtained elsewhere and stored; waiting", name)
-			waiter.Wait()
-			return nil // we assume the process with the lock succeeded, rather than hammering this execution path again
-		}
-		defer func() {
-			if err := c.config.Sync.Unlock(lockKey); err != nil {
-				log.Printf("[ERROR] Unable to unlock obtain call for %s: %v", name, err)
-			}
-		}()
+	lockKey := c.config.lockKey("cert_acme", name)
+	waiter, err := c.config.certCache.storage.TryLock(lockKey)
+	if err != nil {
+		return err
 	}
+	if waiter != nil {
+		log.Printf("[INFO] Certificate for %s is already being obtained elsewhere and stored; waiting", name)
+		waiter.Wait()
+		return nil // we assume the process with the lock succeeded, rather than hammering this execution path again
+	}
+	defer func() {
+		if err := c.config.certCache.storage.Unlock(lockKey); err != nil {
+			log.Printf("[ERROR] Unable to unlock obtain call for %s: %v", name, err)
+		}
+	}()
 
 	for attempts := 0; attempts < 2; attempts++ {
 		request := certificate.ObtainRequest{
@@ -276,23 +274,21 @@ func (c *acmeClient) Obtain(name string) error {
 // Callers who have access to a Config value should use the RenewCert
 // method on that instead of this lower-level method.
 func (c *acmeClient) Renew(name string) error {
-	if c.config.Sync != nil {
-		lockKey := c.config.lockKey("cert_acme", name)
-		waiter, err := c.config.Sync.TryLock(lockKey)
-		if err != nil {
-			return err
-		}
-		if waiter != nil {
-			log.Printf("[INFO] Certificate for %s is already being renewed elsewhere and stored; waiting", name)
-			waiter.Wait()
-			return nil // assume that the worker that renewed the cert succeeded; avoid hammering this path over and over
-		}
-		defer func() {
-			if err := c.config.Sync.Unlock(lockKey); err != nil {
-				log.Printf("[ERROR] Unable to unlock renew call for %s: %v", name, err)
-			}
-		}()
+	lockKey := c.config.lockKey("cert_acme", name)
+	waiter, err := c.config.certCache.storage.TryLock(lockKey)
+	if err != nil {
+		return err
 	}
+	if waiter != nil {
+		log.Printf("[INFO] Certificate for %s is already being renewed elsewhere and stored; waiting", name)
+		waiter.Wait()
+		return nil // assume that the worker that renewed the cert succeeded to avoid hammering this path over and over
+	}
+	defer func() {
+		if err := c.config.certCache.storage.Unlock(lockKey); err != nil {
+			log.Printf("[ERROR] Unable to unlock renew call for %s: %v", name, err)
+		}
+	}()
 
 	// Prepare for renewal (load PEM cert, key, and meta)
 	certRes, err := c.config.loadCertResource(name)

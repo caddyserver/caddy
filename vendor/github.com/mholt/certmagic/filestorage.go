@@ -15,10 +15,13 @@
 package certmagic
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
+	"time"
 )
 
 // FileStorage facilitates forming file paths derived from a root
@@ -123,4 +126,114 @@ func dataDir() string {
 	return filepath.Join(baseDir, "certmagic")
 }
 
+// TryLock attempts to get a lock for name, otherwise it returns
+// a Waiter value to wait until the other process is finished.
+func (fs FileStorage) TryLock(key string) (Waiter, error) {
+	fileStorageNameLocksMu.Lock()
+	defer fileStorageNameLocksMu.Unlock()
+
+	// see if lock already exists within this process - allows
+	// for faster unlocking since we don't have to poll the disk
+	fw, ok := fileStorageNameLocks[key]
+	if ok {
+		// lock already created within process, let caller wait on it
+		return fw, nil
+	}
+
+	// attempt to persist lock to disk by creating lock file
+
+	// parent dir must exist
+	lockDir := fs.lockDir()
+	if err := os.MkdirAll(lockDir, 0700); err != nil {
+		return nil, err
+	}
+
+	fw = &fileStorageWaiter{
+		filename: filepath.Join(lockDir, safeKey(key)+".lock"),
+		wg:       new(sync.WaitGroup),
+	}
+
+	// create the file in a special mode such that an
+	// error is returned if it already exists
+	lf, err := os.OpenFile(fw.filename, os.O_CREATE|os.O_EXCL, 0644)
+	if err != nil {
+		if os.IsExist(err) {
+			// another process has the lock; use it to wait
+			return fw, nil
+		}
+		// otherwise, this was some unexpected error
+		return nil, err
+	}
+	lf.Close()
+
+	// looks like we get the lock
+	fw.wg.Add(1)
+	fileStorageNameLocks[key] = fw
+
+	return nil, nil
+}
+
+// Unlock releases the lock for name.
+func (fs FileStorage) Unlock(key string) error {
+	fileStorageNameLocksMu.Lock()
+	defer fileStorageNameLocksMu.Unlock()
+
+	fw, ok := fileStorageNameLocks[key]
+	if !ok {
+		return fmt.Errorf("FileStorage: no lock to release for %s", key)
+	}
+
+	// remove lock file
+	os.Remove(fw.filename)
+
+	// if parent folder is now empty, remove it too to keep it tidy
+	dir, err := os.Open(fs.lockDir()) // OK to ignore error here
+	if err == nil {
+		items, _ := dir.Readdirnames(3) // OK to ignore error here
+		if len(items) == 0 {
+			os.Remove(dir.Name())
+		}
+		dir.Close()
+	}
+
+	// clean up in memory
+	fw.wg.Done()
+	delete(fileStorageNameLocks, key)
+
+	return nil
+}
+
+func (fs FileStorage) lockDir() string {
+	return filepath.Join(fs.Path, "locks")
+}
+
+// fileStorageWaiter waits for a file to disappear; it
+// polls the file system to check for the existence of
+// a file. It also uses a WaitGroup to optimize the
+// polling in the case when this process is the only
+// one waiting. (Other processes that are waiting for
+// the lock will still block, but must wait for the
+// polling to get their answer.)
+type fileStorageWaiter struct {
+	filename string
+	wg       *sync.WaitGroup
+}
+
+// Wait waits until the lock is released.
+func (fw *fileStorageWaiter) Wait() {
+	start := time.Now()
+	fw.wg.Wait()
+	for time.Since(start) < 1*time.Hour {
+		_, err := os.Stat(fw.filename)
+		if os.IsNotExist(err) {
+			return
+		}
+		time.Sleep(1 * time.Second)
+	}
+}
+
+var fileStorageNameLocks = make(map[string]*fileStorageWaiter)
+var fileStorageNameLocksMu sync.Mutex
+
 var _ Storage = FileStorage{}
+var _ Waiter = &fileStorageWaiter{}

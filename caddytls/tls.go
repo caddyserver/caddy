@@ -108,13 +108,3 @@ func RegisterDNSProvider(name string, provider DNSProviderConstructor) {
 	dnsProviders[name] = provider
 	caddy.RegisterPlugin("tls.dns."+name, caddy.Plugin{})
 }
-
-// TODO...
-
-// var storageProviders = make(map[string]StorageConstructor)
-
-// // RegisterStorageProvider registers provider by name for storing tls data
-// func RegisterStorageProvider(name string, provider StorageConstructor) {
-// 	storageProviders[name] = provider
-// 	caddy.RegisterPlugin("tls.storage."+name, caddy.Plugin{})
-// }
