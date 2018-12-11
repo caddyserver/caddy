@@ -6,7 +6,17 @@ import (
 )
 
 // Logger is an optional custom logger.
-var Logger = log.New(os.Stdout, "", log.LstdFlags)
+var Logger StdLogger = log.New(os.Stdout, "", log.LstdFlags)
+
+// StdLogger interface for Standard Logger.
+type StdLogger interface {
+	Fatal(args ...interface{})
+	Fatalln(args ...interface{})
+	Fatalf(format string, args ...interface{})
+	Print(args ...interface{})
+	Println(args ...interface{})
+	Printf(format string, args ...interface{})
+}
 
 // Fatal writes a log entry.
 // It uses Logger if not nil, otherwise it uses the default log.Logger.

@@ -23,6 +23,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -31,6 +32,7 @@ import (
 	"github.com/mholt/caddy/caddyhttp/staticfiles"
 	"github.com/mholt/caddy/caddytls"
 	"github.com/mholt/caddy/telemetry"
+	"github.com/mholt/certmagic"
 )
 
 const serverType = "http"
@@ -169,12 +171,20 @@ func (h *httpContext) InspectServerBlocks(sourceFile string, serverBlocks []cadd
 
 			// If default HTTP or HTTPS ports have been customized,
 			// make sure the ACME challenge ports match
-			var altHTTPPort, altTLSALPNPort string
+			var altHTTPPort, altTLSALPNPort int
 			if HTTPPort != DefaultHTTPPort {
-				altHTTPPort = HTTPPort
+				portInt, err := strconv.Atoi(HTTPPort)
+				if err != nil {
+					return nil, err
+				}
+				altHTTPPort = portInt
 			}
 			if HTTPSPort != DefaultHTTPSPort {
-				altTLSALPNPort = HTTPSPort
+				portInt, err := strconv.Atoi(HTTPSPort)
+				if err != nil {
+					return nil, err
+				}
+				altTLSALPNPort = portInt
 			}
 
 			// Make our caddytls.Config, which has a pointer to the
@@ -182,8 +192,8 @@ func (h *httpContext) InspectServerBlocks(sourceFile string, serverBlocks []cadd
 			// to use automatic HTTPS when the time comes
 			caddytlsConfig := caddytls.NewConfig(h.instance)
 			caddytlsConfig.Hostname = addr.Host
-			caddytlsConfig.AltHTTPPort = altHTTPPort
-			caddytlsConfig.AltTLSALPNPort = altTLSALPNPort
+			caddytlsConfig.Manager.AltHTTPPort = altHTTPPort
+			caddytlsConfig.Manager.AltTLSALPNPort = altTLSALPNPort
 
 			// Save the config to our master list, and key it for lookups
 			cfg := &SiteConfig{
@@ -221,7 +231,7 @@ func (h *httpContext) MakeServers() ([]caddy.Server, error) {
 	// trusted CA (obviously not a perfect hueristic)
 	var looksLikeProductionCA bool
 	for _, publicCAEndpoint := range caddytls.KnownACMECAs {
-		if strings.Contains(caddytls.DefaultCAUrl, publicCAEndpoint) {
+		if strings.Contains(certmagic.CA, publicCAEndpoint) {
 			looksLikeProductionCA = true
 			break
 		}
@@ -243,7 +253,7 @@ func (h *httpContext) MakeServers() ([]caddy.Server, error) {
 			if !caddy.IsLoopback(cfg.Addr.Host) &&
 				!caddy.IsLoopback(cfg.ListenHost) &&
 				(caddytls.QualifiesForManagedTLS(cfg) ||
-					caddytls.HostQualifies(cfg.Addr.Host)) {
+					certmagic.HostQualifies(cfg.Addr.Host)) {
 				atLeastOneSiteLooksLikeProduction = true
 			}
 		}
@@ -264,7 +274,7 @@ func (h *httpContext) MakeServers() ([]caddy.Server, error) {
 			// is incorrect for this site.
 			cfg.Addr.Scheme = "https"
 		}
-		if cfg.Addr.Port == "" && ((!cfg.TLS.Manual && !cfg.TLS.SelfSigned) || cfg.TLS.OnDemand) {
+		if cfg.Addr.Port == "" && ((!cfg.TLS.Manual && !cfg.TLS.SelfSigned) || cfg.TLS.Manager.OnDemand != nil) {
 			// this is vital, otherwise the function call below that
 			// sets the listener address will use the default port
 			// instead of 443 because it doesn't know about TLS.
@@ -336,7 +346,11 @@ func GetConfig(c *caddy.Controller) *SiteConfig {
 	// we should only get here during tests because directive
 	// actions typically skip the server blocks where we make
 	// the configs
-	cfg := &SiteConfig{Root: Root, TLS: new(caddytls.Config), IndexPages: staticfiles.DefaultIndexPages}
+	cfg := &SiteConfig{
+		Root:       Root,
+		TLS:        &caddytls.Config{Manager: certmagic.NewDefault()},
+		IndexPages: staticfiles.DefaultIndexPages,
+	}
 	ctx.saveConfig(key, cfg)
 	return cfg
 }
