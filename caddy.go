@@ -108,12 +108,12 @@ type Instance struct {
 	servers []ServerListener
 
 	// these callbacks execute when certain events occur
-	onFirstStartup  []func() error // starting, not as part of a restart
-	onStartup       []func() error // starting, even as part of a restart
-	onRestart       []func() error // before restart commences
-	onRestartFailed []func() error // if restart failed
-	onShutdown      []func() error // stopping, even as part of a restart
-	onFinalShutdown []func() error // stopping, not as part of a restart
+	OnFirstStartup  []func() error // starting, not as part of a restart
+	OnStartup       []func() error // starting, even as part of a restart
+	OnRestart       []func() error // before restart commences
+	OnRestartFailed []func() error // if restart failed
+	OnShutdown      []func() error // stopping, even as part of a restart
+	OnFinalShutdown []func() error // stopping, not as part of a restart
 
 	// storing values on an instance is preferable to
 	// global state because these will get garbage-
@@ -163,13 +163,13 @@ func (i *Instance) Stop() error {
 // the rest. All the non-nil errors will be returned.
 func (i *Instance) ShutdownCallbacks() []error {
 	var errs []error
-	for _, shutdownFunc := range i.onShutdown {
+	for _, shutdownFunc := range i.OnShutdown {
 		err := shutdownFunc()
 		if err != nil {
 			errs = append(errs, err)
 		}
 	}
-	for _, finalShutdownFunc := range i.onFinalShutdown {
+	for _, finalShutdownFunc := range i.OnFinalShutdown {
 		err := finalShutdownFunc()
 		if err != nil {
 			errs = append(errs, err)
@@ -192,7 +192,7 @@ func (i *Instance) Restart(newCaddyfile Input) (*Instance, error) {
 	defer func() {
 		r := recover()
 		if err != nil || r != nil {
-			for _, fn := range i.onRestartFailed {
+			for _, fn := range i.OnRestartFailed {
 				err = fn()
 				if err != nil {
 					log.Printf("[ERROR] restart failed: %v", err)
@@ -205,7 +205,7 @@ func (i *Instance) Restart(newCaddyfile Input) (*Instance, error) {
 	}()
 
 	// run restart callbacks
-	for _, fn := range i.onRestart {
+	for _, fn := range i.OnRestart {
 		err = fn()
 		if err != nil {
 			return i, err
@@ -252,7 +252,7 @@ func (i *Instance) Restart(newCaddyfile Input) (*Instance, error) {
 	if err != nil {
 		return i, err
 	}
-	for _, shutdownFunc := range i.onShutdown {
+	for _, shutdownFunc := range i.OnShutdown {
 		err = shutdownFunc()
 		if err != nil {
 			return i, err
@@ -272,42 +272,6 @@ func (i *Instance) Restart(newCaddyfile Input) (*Instance, error) {
 // saved servers, graceful restarts will be provided.
 func (i *Instance) SaveServer(s Server, ln net.Listener) {
 	i.servers = append(i.servers, ServerListener{server: s, listener: ln})
-}
-
-// HasListenerWithAddress returns whether this package is
-// tracking a server using a listener with the address
-// addr.
-func HasListenerWithAddress(addr string) bool {
-	instancesMu.Lock()
-	defer instancesMu.Unlock()
-	for _, inst := range instances {
-		for _, sln := range inst.servers {
-			if listenerAddrEqual(sln.listener, addr) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// listenerAddrEqual compares a listener's address with
-// addr. Extra care is taken to match addresses with an
-// empty hostname portion, as listeners tend to report
-// [::]:80, for example, when the matching address that
-// created the listener might be simply :80.
-func listenerAddrEqual(ln net.Listener, addr string) bool {
-	lnAddr := ln.Addr().String()
-	hostname, port, err := net.SplitHostPort(addr)
-	if err != nil {
-		return lnAddr == addr
-	}
-	if lnAddr == net.JoinHostPort("::", port) {
-		return true
-	}
-	if lnAddr == net.JoinHostPort("0.0.0.0", port) {
-		return true
-	}
-	return hostname != "" && lnAddr == addr
 }
 
 // TCPServer is a type that can listen and serve connections.
@@ -551,14 +515,14 @@ func startWithListenerFds(cdyfile Input, inst *Instance, restartFds map[string]r
 	// run startup callbacks
 	if !IsUpgrade() && restartFds == nil {
 		// first startup means not a restart or upgrade
-		for _, firstStartupFunc := range inst.onFirstStartup {
+		for _, firstStartupFunc := range inst.OnFirstStartup {
 			err = firstStartupFunc()
 			if err != nil {
 				return err
 			}
 		}
 	}
-	for _, startupFunc := range inst.onStartup {
+	for _, startupFunc := range inst.OnStartup {
 		err = startupFunc()
 		if err != nil {
 			return err

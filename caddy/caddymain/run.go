@@ -33,8 +33,8 @@ import (
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddytls"
 	"github.com/mholt/caddy/telemetry"
-	"github.com/xenolf/lego/acme"
-	"gopkg.in/natefinch/lumberjack.v2"
+	"github.com/mholt/certmagic"
+	lumberjack "gopkg.in/natefinch/lumberjack.v2"
 
 	_ "github.com/mholt/caddy/caddyhttp" // plug in the HTTP server type
 	// This is where other plugins get plugged in (imported)
@@ -44,17 +44,17 @@ func init() {
 	caddy.TrapSignals()
 	setVersion()
 
-	flag.BoolVar(&caddytls.Agreed, "agree", false, "Agree to the CA's Subscriber Agreement")
-	flag.StringVar(&caddytls.DefaultCAUrl, "ca", "https://acme-v02.api.letsencrypt.org/directory", "URL to certificate authority's ACME server directory")
-	flag.BoolVar(&caddytls.DisableHTTPChallenge, "disable-http-challenge", caddytls.DisableHTTPChallenge, "Disable the ACME HTTP challenge")
-	flag.BoolVar(&caddytls.DisableTLSALPNChallenge, "disable-tls-alpn-challenge", caddytls.DisableTLSALPNChallenge, "Disable the ACME TLS-ALPN challenge")
+	flag.BoolVar(&certmagic.Agreed, "agree", false, "Agree to the CA's Subscriber Agreement")
+	flag.StringVar(&certmagic.CA, "ca", certmagic.CA, "URL to certificate authority's ACME server directory")
+	flag.BoolVar(&certmagic.DisableHTTPChallenge, "disable-http-challenge", certmagic.DisableHTTPChallenge, "Disable the ACME HTTP challenge")
+	flag.BoolVar(&certmagic.DisableTLSALPNChallenge, "disable-tls-alpn-challenge", certmagic.DisableTLSALPNChallenge, "Disable the ACME TLS-ALPN challenge")
 	flag.StringVar(&disabledMetrics, "disabled-metrics", "", "Comma-separated list of telemetry metrics to disable")
 	flag.StringVar(&conf, "conf", "", "Caddyfile to load (default \""+caddy.DefaultConfigFile+"\")")
 	flag.StringVar(&cpu, "cpu", "100%", "CPU cap")
 	flag.StringVar(&envFile, "env", "", "Path to file with environment variables to load in KEY=VALUE format")
 	flag.BoolVar(&plugins, "plugins", false, "List installed plugins")
-	flag.StringVar(&caddytls.DefaultEmail, "email", "", "Default ACME CA account email address")
-	flag.DurationVar(&acme.HTTPClient.Timeout, "catimeout", acme.HTTPClient.Timeout, "Default ACME CA HTTP timeout")
+	flag.StringVar(&certmagic.Email, "email", "", "Default ACME CA account email address")
+	flag.DurationVar(&certmagic.HTTPTimeout, "catimeout", certmagic.HTTPTimeout, "Default ACME CA HTTP timeout")
 	flag.StringVar(&logfile, "log", "", "Process log file")
 	flag.StringVar(&caddy.PidFile, "pidfile", "", "Path to write pid file")
 	flag.BoolVar(&caddy.Quiet, "quiet", false, "Quiet mode (no initialization output)")
@@ -73,7 +73,7 @@ func Run() {
 
 	caddy.AppName = appName
 	caddy.AppVersion = appVersion
-	acme.UserAgent = appName + "/" + appVersion
+	certmagic.UserAgent = appName + "/" + appVersion
 
 	// Set up process log before anything bad happens
 	switch logfile {

@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/mholt/caddy/caddytls"
+	"github.com/mholt/certmagic"
 )
 
 func TestRedirPlaintextHost(t *testing.T) {
@@ -150,18 +151,18 @@ func TestHostHasOtherPort(t *testing.T) {
 func TestMakePlaintextRedirects(t *testing.T) {
 	configs := []*SiteConfig{
 		// Happy path = standard redirect from 80 to 443
-		{Addr: Address{Host: "example.com"}, TLS: &caddytls.Config{Managed: true}},
+		{Addr: Address{Host: "example.com"}, TLS: &caddytls.Config{Manager: &certmagic.Config{Managed: true}}},
 
 		// Host on port 80 already defined; don't change it (no redirect)
 		{Addr: Address{Host: "sub1.example.com", Port: "80", Scheme: "http"}, TLS: new(caddytls.Config)},
-		{Addr: Address{Host: "sub1.example.com"}, TLS: &caddytls.Config{Managed: true}},
+		{Addr: Address{Host: "sub1.example.com"}, TLS: &caddytls.Config{Manager: &certmagic.Config{Managed: true}}},
 
 		// Redirect from port 80 to port 5000 in this case
-		{Addr: Address{Host: "sub2.example.com", Port: "5000"}, TLS: &caddytls.Config{Managed: true}},
+		{Addr: Address{Host: "sub2.example.com", Port: "5000"}, TLS: &caddytls.Config{Manager: &certmagic.Config{Managed: true}}},
 
 		// Can redirect from 80 to either 443 or 5001, but choose 443
-		{Addr: Address{Host: "sub3.example.com", Port: "443"}, TLS: &caddytls.Config{Managed: true}},
-		{Addr: Address{Host: "sub3.example.com", Port: "5001", Scheme: "https"}, TLS: &caddytls.Config{Managed: true}},
+		{Addr: Address{Host: "sub3.example.com", Port: "443"}, TLS: &caddytls.Config{Manager: &certmagic.Config{Managed: true}}},
+		{Addr: Address{Host: "sub3.example.com", Port: "5001", Scheme: "https"}, TLS: &caddytls.Config{Manager: &certmagic.Config{Managed: true}}},
 	}
 
 	result := makePlaintextRedirects(configs)
@@ -175,7 +176,7 @@ func TestMakePlaintextRedirects(t *testing.T) {
 
 func TestEnableAutoHTTPS(t *testing.T) {
 	configs := []*SiteConfig{
-		{Addr: Address{Host: "example.com"}, TLS: &caddytls.Config{Managed: true}},
+		{Addr: Address{Host: "example.com"}, TLS: &caddytls.Config{Manager: &certmagic.Config{Managed: true}}},
 		{}, // not managed - no changes!
 	}
 
@@ -215,7 +216,7 @@ func TestMarkQualifiedForAutoHTTPS(t *testing.T) {
 
 	count := 0
 	for _, cfg := range configs {
-		if cfg.TLS.Managed {
+		if cfg.TLS.Manager.Managed {
 			count++
 		}
 	}

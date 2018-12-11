@@ -402,24 +402,26 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 
 	if vhost == nil {
 		// check for ACME challenge even if vhost is nil;
-		// could be a new host coming online soon
-		if caddytls.HTTPChallengeHandler(w, r, "localhost") {
+		// could be a new host coming online soon - choose any
+		// vhost's cert manager configuration, I guess
+		if len(s.sites) > 0 && s.sites[0].TLS.Manager.HandleHTTPChallenge(w, r) {
 			return 0, nil
 		}
+
 		// otherwise, log the error and write a message to the client
 		remoteHost, _, err := net.SplitHostPort(r.RemoteAddr)
 		if err != nil {
 			remoteHost = r.RemoteAddr
 		}
-		WriteSiteNotFound(w, r) // don't add headers outside of this function
+		WriteSiteNotFound(w, r) // don't add headers outside of this function (http.forwardproxy)
 		log.Printf("[INFO] %s - No such site at %s (Remote: %s, Referer: %s)",
 			hostname, s.Server.Addr, remoteHost, r.Header.Get("Referer"))
 		return 0, nil
 	}
 
 	// we still check for ACME challenge if the vhost exists,
-	// because we must apply its HTTP challenge config settings
-	if caddytls.HTTPChallengeHandler(w, r, vhost.ListenHost) {
+	// because the HTTP challenge might be disabled by its config
+	if vhost.TLS.Manager.HandleHTTPChallenge(w, r) {
 		return 0, nil
 	}
 

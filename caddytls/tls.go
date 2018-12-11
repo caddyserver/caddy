@@ -15,7 +15,7 @@
 // Package caddytls facilitates the management of TLS assets and integrates
 // Let's Encrypt functionality into Caddy with first-class support for
 // creating and renewing certificates automatically. It also implements
-// the tls directive.
+// the tls directive. It's mostly powered by the CertMagic package.
 //
 // This package is meant to be used by Caddy server types. To use the
 // tls directive, a server type must import this package and call
@@ -29,195 +29,10 @@
 package caddytls
 
 import (
-	"encoding/json"
-	"fmt"
-	"io/ioutil"
-	"log"
-	"net"
-	"os"
-	"path/filepath"
-	"strings"
-
 	"github.com/mholt/caddy"
-	"github.com/xenolf/lego/acme"
+	"github.com/mholt/certmagic"
+	"github.com/xenolf/lego/challenge"
 )
-
-// HostQualifies returns true if the hostname alone
-// appears eligible for automatic HTTPS. For example:
-// localhost, empty hostname, and IP addresses are
-// not eligible because we cannot obtain certificates
-// for those names. Wildcard names are allowed, as long
-// as they conform to CABF requirements (only one wildcard
-// label, and it must be the left-most label).
-func HostQualifies(hostname string) bool {
-	return hostname != "localhost" && // localhost is ineligible
-
-		// hostname must not be empty
-		strings.TrimSpace(hostname) != "" &&
-
-		// only one wildcard label allowed, and it must be left-most
-		(!strings.Contains(hostname, "*") ||
-			(strings.Count(hostname, "*") == 1 &&
-				strings.HasPrefix(hostname, "*."))) &&
-
-		// must not start or end with a dot
-		!strings.HasPrefix(hostname, ".") &&
-		!strings.HasSuffix(hostname, ".") &&
-
-		// cannot be an IP address, see
-		// https://community.letsencrypt.org/t/certificate-for-static-ip/84/2?u=mholt
-		net.ParseIP(hostname) == nil
-}
-
-// saveCertResource saves the certificate resource to disk. This
-// includes the certificate file itself, the private key, and the
-// metadata file.
-func saveCertResource(storage Storage, cert *acme.CertificateResource) error {
-	// Save cert, private key, and metadata
-	siteData := &SiteData{
-		Cert: cert.Certificate,
-		Key:  cert.PrivateKey,
-	}
-	var err error
-	siteData.Meta, err = json.MarshalIndent(&cert, "", "\t")
-	if err == nil {
-		err = storage.StoreSite(cert.Domain, siteData)
-	}
-	return err
-}
-
-// Revoke revokes the certificate for host via ACME protocol.
-// It assumes the certificate was obtained from the
-// CA at DefaultCAUrl.
-func Revoke(host string) error {
-	client, err := newACMEClient(new(Config), true)
-	if err != nil {
-		return err
-	}
-	return client.Revoke(host)
-}
-
-// tlsALPNSolver is a type that can solve TLS-ALPN challenges using
-// an existing listener and our custom, in-memory certificate cache.
-type tlsALPNSolver struct {
-	certCache *certificateCache
-}
-
-// Present adds the challenge certificate to the cache.
-func (s tlsALPNSolver) Present(domain, token, keyAuth string) error {
-	cert, err := acme.TLSALPNChallengeCert(domain, keyAuth)
-	if err != nil {
-		return err
-	}
-	certHash := hashCertificateChain(cert.Certificate)
-	s.certCache.Lock()
-	s.certCache.cache[tlsALPNCertKeyName(domain)] = Certificate{
-		Certificate: *cert,
-		Names:       []string{domain},
-		Hash:        certHash, // perhaps not necesssary
-	}
-	s.certCache.Unlock()
-	return nil
-}
-
-// CleanUp removes the challenge certificate from the cache.
-func (s tlsALPNSolver) CleanUp(domain, token, keyAuth string) error {
-	s.certCache.Lock()
-	delete(s.certCache.cache, domain)
-	s.certCache.Unlock()
-	return nil
-}
-
-// tlsALPNCertKeyName returns the key to use when caching a cert
-// for use with the TLS-ALPN ACME challenge. It is simply to help
-// avoid conflicts (although at time of writing, there shouldn't
-// be, since the cert cache is keyed by hash of certificate chain).
-func tlsALPNCertKeyName(sniName string) string {
-	return sniName + ":acme-tls-alpn"
-}
-
-// distributedSolver allows the ACME HTTP-01 and TLS-ALPN challenges
-// to be solved by an instance other than the one which initiated it.
-// This is useful behind load balancers or in other cluster/fleet
-// configurations. The only requirement is that this (the initiating)
-// instance share the $CADDYPATH/acme folder with the instance that
-// will complete the challenge. Mounting the folder locally should be
-// sufficient.
-//
-// Obviously, the instance which completes the challenge must be
-// serving on the HTTPChallengePort for the HTTP-01 challenge or the
-// TLSALPNChallengePort for the TLS-ALPN-01 challenge (or have all
-// the packets port-forwarded) to receive and handle the request. The
-// server which receives the challenge must handle it by checking to
-// see if a file exists, e.g.:
-// $CADDYPATH/acme/challenge_tokens/example.com.json
-// and if so, decode it and use it to serve up the correct response.
-// Caddy's HTTP server does this by default (for HTTP-01) and so does
-// its TLS package (for TLS-ALPN-01).
-//
-// So as long as the folder is shared, this will just work. There are
-// no other requirements. The instances may be on other machines or
-// even other networks, as long as they share the folder as part of
-// the local file system.
-//
-// This solver works by persisting the token and keyauth information
-// to disk in the shared folder when the authorization is presented,
-// and then deletes it when it is cleaned up.
-type distributedSolver struct {
-	// As the distributedSolver is only a wrapper over the actual
-	// solver, place the actual solver here
-	providerServer ChallengeProvider
-}
-
-// Present adds the challenge certificate to the cache.
-func (dhs distributedSolver) Present(domain, token, keyAuth string) error {
-	if dhs.providerServer != nil {
-		err := dhs.providerServer.Present(domain, token, keyAuth)
-		if err != nil {
-			return fmt.Errorf("presenting with standard provider server: %v", err)
-		}
-	}
-
-	err := os.MkdirAll(dhs.challengeTokensBasePath(), 0755)
-	if err != nil {
-		return err
-	}
-
-	infoBytes, err := json.Marshal(challengeInfo{
-		Domain:  domain,
-		Token:   token,
-		KeyAuth: keyAuth,
-	})
-	if err != nil {
-		return err
-	}
-
-	return ioutil.WriteFile(dhs.challengeTokensPath(domain), infoBytes, 0644)
-}
-
-// CleanUp removes the challenge certificate from the cache.
-func (dhs distributedSolver) CleanUp(domain, token, keyAuth string) error {
-	if dhs.providerServer != nil {
-		err := dhs.providerServer.CleanUp(domain, token, keyAuth)
-		if err != nil {
-			log.Printf("[ERROR] Cleaning up standard provider server: %v", err)
-		}
-	}
-	return os.Remove(dhs.challengeTokensPath(domain))
-}
-
-func (dhs distributedSolver) challengeTokensPath(domain string) string {
-	domainFile := fileSafe(domain)
-	return filepath.Join(dhs.challengeTokensBasePath(), domainFile+".json")
-}
-
-func (dhs distributedSolver) challengeTokensBasePath() string {
-	return filepath.Join(caddy.AssetsPath(), "acme", "challenge_tokens")
-}
-
-type challengeInfo struct {
-	Domain, Token, KeyAuth string
-}
 
 // ConfigHolder is any type that has a Config; it presumably is
 // connected to a hostname and port on which it is serving.
@@ -240,11 +55,12 @@ func QualifiesForManagedTLS(c ConfigHolder) bool {
 		return false
 	}
 	tlsConfig := c.TLSConfig()
-	if tlsConfig == nil {
+	if tlsConfig == nil || tlsConfig.Manager == nil {
 		return false
 	}
+	onDemand := tlsConfig.Manager.OnDemand != nil
 
-	return (!tlsConfig.Manual || tlsConfig.OnDemand) && // user might provide own cert and key
+	return (!tlsConfig.Manual || onDemand) && // user might provide own cert and key
 
 		// if self-signed, we've already generated one to use
 		!tlsConfig.SelfSigned &&
@@ -255,17 +71,30 @@ func QualifiesForManagedTLS(c ConfigHolder) bool {
 
 		// we get can't certs for some kinds of hostnames, but
 		// on-demand TLS allows empty hostnames at startup
-		(HostQualifies(c.Host()) || tlsConfig.OnDemand)
+		(certmagic.HostQualifies(c.Host()) || onDemand)
+}
+
+// Revoke revokes the certificate fro host via the ACME protocol.
+// It assumes the certificate was obtained from certmagic.CA.
+func Revoke(domainName string) error {
+	return certmagic.NewDefault().RevokeCert(domainName, true)
+}
+
+// KnownACMECAs is a list of ACME directory endpoints of
+// known, public, and trusted ACME-compatible certificate
+// authorities.
+var KnownACMECAs = []string{
+	"https://acme-v02.api.letsencrypt.org/directory",
 }
 
 // ChallengeProvider defines an own type that should be used in Caddy plugins
-// over acme.ChallengeProvider. Using acme.ChallengeProvider causes version mismatches
+// over challenge.Provider. Using challenge.Provider causes version mismatches
 // with vendored dependencies (see https://github.com/mattfarina/golang-broken-vendor)
 //
-// acme.ChallengeProvider is an interface that allows the implementation of custom
+// challenge.Provider is an interface that allows the implementation of custom
 // challenge providers. For more details, see:
 // https://godoc.org/github.com/xenolf/lego/acme#ChallengeProvider
-type ChallengeProvider acme.ChallengeProvider
+type ChallengeProvider challenge.Provider
 
 // DNSProviderConstructor is a function that takes credentials and
 // returns a type that can solve the ACME DNS challenges.
@@ -280,32 +109,12 @@ func RegisterDNSProvider(name string, provider DNSProviderConstructor) {
 	caddy.RegisterPlugin("tls.dns."+name, caddy.Plugin{})
 }
 
-var (
-	// DefaultEmail represents the Let's Encrypt account email to use if none provided.
-	DefaultEmail string
+// TODO...
 
-	// Agreed indicates whether user has agreed to the Let's Encrypt SA.
-	Agreed bool
+// var storageProviders = make(map[string]StorageConstructor)
 
-	// DefaultCAUrl is the default URL to the CA's ACME directory endpoint.
-	// It's very important to set this unless you set it in every Config.
-	DefaultCAUrl string
-
-	// DefaultKeyType is used as the type of key for new certificates
-	// when no other key type is specified.
-	DefaultKeyType = acme.RSA2048
-
-	// DisableHTTPChallenge will disable all HTTP challenges.
-	DisableHTTPChallenge bool
-
-	// DisableTLSALPNChallenge will disable all TLS-ALPN challenges.
-	DisableTLSALPNChallenge bool
-)
-
-var storageProviders = make(map[string]StorageConstructor)
-
-// RegisterStorageProvider registers provider by name for storing tls data
-func RegisterStorageProvider(name string, provider StorageConstructor) {
-	storageProviders[name] = provider
-	caddy.RegisterPlugin("tls.storage."+name, caddy.Plugin{})
-}
+// // RegisterStorageProvider registers provider by name for storing tls data
+// func RegisterStorageProvider(name string, provider StorageConstructor) {
+// 	storageProviders[name] = provider
+// 	caddy.RegisterPlugin("tls.storage."+name, caddy.Plugin{})
+// }
