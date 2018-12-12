@@ -274,16 +274,26 @@ func (s *Server) Listen() (net.Listener, error) {
 		ln = tcpKeepAliveListener{TCPListener: tcpLn}
 	}
 
+	cln := s.WrapListener(ln)
+
+	// Very important to return a concrete caddy.Listener
+	// implementation for graceful restarts.
+	return cln.(caddy.Listener), nil
+}
+
+// WrapListener wraps ln in the listener middlewares configured
+// for this server.
+func (s *Server) WrapListener(ln net.Listener) net.Listener {
+	if ln == nil {
+		return nil
+	}
 	cln := ln.(caddy.Listener)
 	for _, site := range s.sites {
 		for _, m := range site.listenerMiddleware {
 			cln = m(cln)
 		}
 	}
-
-	// Very important to return a concrete caddy.Listener
-	// implementation for graceful restarts.
-	return cln.(caddy.Listener), nil
+	return cln
 }
 
 // ListenPacket creates udp connection for QUIC if it is enabled,

@@ -354,6 +354,11 @@ type GracefulServer interface {
 	// address; you must store the address the
 	// server is to serve on some other way.
 	Address() string
+
+	// WrapListener wraps a listener with the
+	// listener middlewares configured for this
+	// server, if any.
+	WrapListener(net.Listener) net.Listener
 }
 
 // Listener is a net.Listener with an underlying file descriptor.
@@ -729,6 +734,7 @@ func startServers(serverList []Server, inst *Instance, restartFds map[string]res
 						return err
 					}
 				}
+				ln = gs.WrapListener(ln)
 			}
 		}
 
@@ -767,6 +773,7 @@ func startServers(serverList []Server, inst *Instance, restartFds map[string]res
 						return err
 					}
 				}
+				ln = gs.WrapListener(ln)
 			}
 		}
 
