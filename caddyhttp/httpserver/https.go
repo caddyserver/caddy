@@ -38,6 +38,9 @@ func activateHTTPS(cctx caddy.Context) error {
 
 	// place certificates and keys on disk
 	for _, c := range ctx.siteConfigs {
+		if !c.TLS.Managed {
+			continue
+		}
 		if c.TLS.Manager.OnDemand != nil {
 			continue // obtain these certificates on-demand instead
 		}
