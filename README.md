@@ -57,6 +57,13 @@ Available for Windows, Mac, Linux, BSD, Solaris, and [Android](https://github.co
 Altogether, Caddy can do things other web servers simply cannot do. Its features and plugins save you time and mistakes, and will cheer you up. Your Caddy instance takes care of the details for you!
 
 
+<p align="center">
+	<b>Powered by</b>
+	<br>
+	<a href="https://github.com/mholt/certmagic"><img src="https://user-images.githubusercontent.com/1128849/49704830-49d37200-fbd5-11e8-8385-767e0cd033c3.png" alt="CertMagic" width="250"></a>
+</p>
+
+
 ## Install
 
 Caddy binaries have no dependencies and are available for every platform. Get Caddy any of these ways:
