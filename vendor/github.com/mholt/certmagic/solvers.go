@@ -134,13 +134,13 @@ func (dhs distributedSolver) CleanUp(domain, token, keyAuth string) error {
 
 // challengeTokensPrefix returns the key prefix for challenge info.
 func (dhs distributedSolver) challengeTokensPrefix() string {
-	return filepath.Join(prefixCA(dhs.config.CA), "challenge_tokens")
+	return filepath.Join(StorageKeys.CAPrefix(dhs.config.CA), "challenge_tokens")
 }
 
 // challengeTokensKey returns the key to use to store and access
 // challenge info for domain.
 func (dhs distributedSolver) challengeTokensKey(domain string) string {
-	return filepath.Join(dhs.challengeTokensPrefix(), safeKey(domain)+".json")
+	return filepath.Join(dhs.challengeTokensPrefix(), StorageKeys.safe(domain)+".json")
 }
 
 type challengeInfo struct {

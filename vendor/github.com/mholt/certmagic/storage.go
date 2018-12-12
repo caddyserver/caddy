@@ -117,91 +117,100 @@ type keyValue struct {
 	value []byte
 }
 
-const (
-	prefixACME = "acme"
-	prefixOCSP = "ocsp"
-)
+// KeyBuilder provides a namespace for methods that
+// build keys and key prefixes, for addressing items
+// in a Storage implementation.
+type KeyBuilder struct{}
 
-func prefixCA(ca string) string {
+// CAPrefix returns the storage key prefix for
+// the given certificate authority URL.
+func (keys KeyBuilder) CAPrefix(ca string) string {
 	caURL, err := url.Parse(ca)
 	if err != nil {
 		caURL = &url.URL{Host: ca}
 	}
-	return path.Join(prefixACME, safeKey(caURL.Host))
+	return path.Join(prefixACME, keys.safe(caURL.Host))
 }
 
-func prefixSite(ca, domain string) string {
-	return path.Join(prefixCA(ca), "sites", safeKey(domain))
+// SitePrefix returns a key prefix for items associated with
+// the site using the given CA URL.
+func (keys KeyBuilder) SitePrefix(ca, domain string) string {
+	return path.Join(keys.CAPrefix(ca), "sites", keys.safe(domain))
 }
 
-// prefixSiteCert returns the path to the certificate file for domain.
-func prefixSiteCert(ca, domain string) string {
-	return path.Join(prefixSite(ca, domain), safeKey(domain)+".crt")
+// SiteCert returns the path to the certificate file for domain.
+func (keys KeyBuilder) SiteCert(ca, domain string) string {
+	return path.Join(keys.SitePrefix(ca, domain), keys.safe(domain)+".crt")
 }
 
-// prefixSiteKey returns the path to domain's private key file.
-func prefixSiteKey(ca, domain string) string {
-	return path.Join(prefixSite(ca, domain), safeKey(domain)+".key")
+// SitePrivateKey returns the path to domain's private key file.
+func (keys KeyBuilder) SitePrivateKey(ca, domain string) string {
+	return path.Join(keys.SitePrefix(ca, domain), keys.safe(domain)+".key")
 }
 
-// prefixSiteMeta returns the path to the domain's asset metadata file.
-func prefixSiteMeta(ca, domain string) string {
-	return path.Join(prefixSite(ca, domain), safeKey(domain)+".json")
+// SiteMeta returns the path to the domain's asset metadata file.
+func (keys KeyBuilder) SiteMeta(ca, domain string) string {
+	return path.Join(keys.SitePrefix(ca, domain), keys.safe(domain)+".json")
 }
 
-func prefixUsers(ca string) string {
-	return path.Join(prefixCA(ca), "users")
+// UsersPrefix returns a key prefix for items related to
+// users associated with the given CA URL.
+func (keys KeyBuilder) UsersPrefix(ca string) string {
+	return path.Join(keys.CAPrefix(ca), "users")
 }
 
-// prefixUser gets the account folder for the user with email
-func prefixUser(ca, email string) string {
+// UserPrefix returns a key prefix for items related to
+// the user with the given email for the given CA URL.
+func (keys KeyBuilder) UserPrefix(ca, email string) string {
 	if email == "" {
 		email = emptyEmail
 	}
-	return path.Join(prefixUsers(ca), safeKey(email))
+	return path.Join(keys.UsersPrefix(ca), keys.safe(email))
 }
 
-// prefixUserReg gets the path to the registration file for the user with the
-// given email address.
-func prefixUserReg(ca, email string) string {
-	return safeUserKey(ca, email, "registration", ".json")
+// UserReg gets the path to the registration file for the user
+// with the given email address for the given CA URL.
+func (keys KeyBuilder) UserReg(ca, email string) string {
+	return keys.safeUserKey(ca, email, "registration", ".json")
 }
 
-// prefixUserKey gets the path to the private key file for the user with the
-// given email address.
-func prefixUserKey(ca, email string) string {
-	return safeUserKey(ca, email, "private", ".key")
+// UserPrivateKey gets the path to the private key file for the
+// user with the given email address on the given CA URL.
+func (keys KeyBuilder) UserPrivateKey(ca, email string) string {
+	return keys.safeUserKey(ca, email, "private", ".key")
 }
 
-func prefixOCSPStaple(cert *Certificate, pemBundle []byte) string {
+// OCSPStaple returns a key for the OCSP staple associated
+// with the given certificate. If you have the PEM bundle
+// handy, pass that in to save an extra encoding step.
+func (keys KeyBuilder) OCSPStaple(cert *Certificate, pemBundle []byte) string {
 	var ocspFileName string
 	if len(cert.Names) > 0 {
-		firstName := safeKey(cert.Names[0])
+		firstName := keys.safe(cert.Names[0])
 		ocspFileName = firstName + "-"
 	}
 	ocspFileName += fastHash(pemBundle)
 	return path.Join(prefixOCSP, ocspFileName)
 }
 
-// safeUserKey returns a key for the given email,
-// with the default filename, and the filename
-// ending in the given extension.
-func safeUserKey(ca, email, defaultFilename, extension string) string {
+// safeUserKey returns a key for the given email, with the default
+// filename, and the filename ending in the given extension.
+func (keys KeyBuilder) safeUserKey(ca, email, defaultFilename, extension string) string {
 	if email == "" {
 		email = emptyEmail
 	}
 	email = strings.ToLower(email)
-	filename := emailUsername(email)
+	filename := keys.emailUsername(email)
 	if filename == "" {
 		filename = defaultFilename
 	}
-	filename = safeKey(filename)
-	return path.Join(prefixUser(ca, email), filename+extension)
+	filename = keys.safe(filename)
+	return path.Join(keys.UserPrefix(ca, email), filename+extension)
 }
 
 // emailUsername returns the username portion of an email address (part before
 // '@') or the original input if it can't find the "@" symbol.
-func emailUsername(email string) string {
+func (keys KeyBuilder) emailUsername(email string) string {
 	at := strings.Index(email, "@")
 	if at == -1 {
 		return email
@@ -211,8 +220,9 @@ func emailUsername(email string) string {
 	return email[:at]
 }
 
-// safeKey standardizes and sanitizes str for use in a file path.
-func safeKey(str string) string {
+// safe standardizes and sanitizes str for use as
+// a storage key. This method is idempotent.
+func (keys KeyBuilder) safe(str string) string {
 	str = strings.ToLower(str)
 	str = strings.TrimSpace(str)
 
@@ -228,6 +238,19 @@ func safeKey(str string) string {
 	// finally remove all non-word characters
 	return safeKeyRE.ReplaceAllLiteralString(str, "")
 }
+
+// StorageKeys provides methods for accessing
+// keys and key prefixes for items in a Storage.
+// Typically, you will not need to use this
+// because accessing storage is abstracted away
+// for most cases. Only use this if you need to
+// directly access TLS assets in your application.
+var StorageKeys KeyBuilder
+
+const (
+	prefixACME = "acme"
+	prefixOCSP = "ocsp"
+)
 
 // safeKeyRE matches any undesirable characters in storage keys.
 // Note that this allows dots, so you'll have to strip ".." manually.

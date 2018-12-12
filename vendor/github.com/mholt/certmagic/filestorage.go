@@ -33,13 +33,13 @@ type FileStorage struct {
 
 // Exists returns true if key exists in fs.
 func (fs FileStorage) Exists(key string) bool {
-	_, err := os.Stat(fs.filename(key))
+	_, err := os.Stat(fs.Filename(key))
 	return !os.IsNotExist(err)
 }
 
 // Store saves value at key.
 func (fs FileStorage) Store(key string, value []byte) error {
-	filename := fs.filename(key)
+	filename := fs.Filename(key)
 	err := os.MkdirAll(filepath.Dir(filename), 0700)
 	if err != nil {
 		return err
@@ -49,7 +49,7 @@ func (fs FileStorage) Store(key string, value []byte) error {
 
 // Load retrieves the value at key.
 func (fs FileStorage) Load(key string) ([]byte, error) {
-	contents, err := ioutil.ReadFile(fs.filename(key))
+	contents, err := ioutil.ReadFile(fs.Filename(key))
 	if os.IsNotExist(err) {
 		return nil, ErrNotExist(err)
 	}
@@ -59,7 +59,7 @@ func (fs FileStorage) Load(key string) ([]byte, error) {
 // Delete deletes the value at key.
 // TODO: Delete any empty folders caused by this operation
 func (fs FileStorage) Delete(key string) error {
-	err := os.Remove(fs.filename(key))
+	err := os.Remove(fs.Filename(key))
 	if os.IsNotExist(err) {
 		return ErrNotExist(err)
 	}
@@ -68,7 +68,7 @@ func (fs FileStorage) Delete(key string) error {
 
 // List returns all keys that match prefix.
 func (fs FileStorage) List(prefix string) ([]string, error) {
-	d, err := os.Open(fs.filename(prefix))
+	d, err := os.Open(fs.Filename(prefix))
 	if os.IsNotExist(err) {
 		return nil, ErrNotExist(err)
 	}
@@ -81,7 +81,7 @@ func (fs FileStorage) List(prefix string) ([]string, error) {
 
 // Stat returns information about key.
 func (fs FileStorage) Stat(key string) (KeyInfo, error) {
-	fi, err := os.Stat(fs.filename(key))
+	fi, err := os.Stat(fs.Filename(key))
 	if os.IsNotExist(err) {
 		return KeyInfo{}, ErrNotExist(err)
 	}
@@ -95,7 +95,9 @@ func (fs FileStorage) Stat(key string) (KeyInfo, error) {
 	}, nil
 }
 
-func (fs FileStorage) filename(key string) string {
+// Filename returns the key as a path on the file
+// system prefixed by fs.Path.
+func (fs FileStorage) Filename(key string) string {
 	return filepath.Join(fs.Path, filepath.FromSlash(key))
 }
 
@@ -149,7 +151,7 @@ func (fs FileStorage) TryLock(key string) (Waiter, error) {
 	}
 
 	fw = &fileStorageWaiter{
-		filename: filepath.Join(lockDir, safeKey(key)+".lock"),
+		filename: filepath.Join(lockDir, StorageKeys.safe(key)+".lock"),
 		wg:       new(sync.WaitGroup),
 	}
 

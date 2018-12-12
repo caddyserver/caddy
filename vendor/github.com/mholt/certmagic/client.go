@@ -142,6 +142,12 @@ func (cfg *Config) newACMEClient(interactive bool) (*acmeClient, error) {
 		// figure out which ports we'll be serving the challenges on
 		useHTTPPort := HTTPChallengePort
 		useTLSALPNPort := TLSALPNChallengePort
+		if HTTPPort > 0 && HTTPPort != HTTPChallengePort {
+			useHTTPPort = HTTPPort
+		}
+		if HTTPSPort > 0 && HTTPSPort != TLSALPNChallengePort {
+			useTLSALPNPort = HTTPSPort
+		}
 		if cfg.AltHTTPPort > 0 {
 			useHTTPPort = cfg.AltHTTPPort
 		}
@@ -333,7 +339,7 @@ func (c *acmeClient) Renew(name string) error {
 // Revoke revokes the certificate for name and deletes
 // it from storage.
 func (c *acmeClient) Revoke(name string) error {
-	if !c.config.certCache.storage.Exists(prefixSiteKey(c.config.CA, name)) {
+	if !c.config.certCache.storage.Exists(StorageKeys.SitePrivateKey(c.config.CA, name)) {
 		return fmt.Errorf("private key not found for %s", name)
 	}
 
@@ -351,15 +357,15 @@ func (c *acmeClient) Revoke(name string) error {
 		c.config.OnEvent("acme_cert_revoked", name)
 	}
 
-	err = c.config.certCache.storage.Delete(prefixSiteCert(c.config.CA, name))
+	err = c.config.certCache.storage.Delete(StorageKeys.SiteCert(c.config.CA, name))
 	if err != nil {
 		return fmt.Errorf("certificate revoked, but unable to delete certificate file: %v", err)
 	}
-	err = c.config.certCache.storage.Delete(prefixSiteKey(c.config.CA, name))
+	err = c.config.certCache.storage.Delete(StorageKeys.SitePrivateKey(c.config.CA, name))
 	if err != nil {
 		return fmt.Errorf("certificate revoked, but unable to delete private key: %v", err)
 	}
-	err = c.config.certCache.storage.Delete(prefixSiteMeta(c.config.CA, name))
+	err = c.config.certCache.storage.Delete(StorageKeys.SiteMeta(c.config.CA, name))
 	if err != nil {
 		return fmt.Errorf("certificate revoked, but unable to delete certificate metadata: %v", err)
 	}

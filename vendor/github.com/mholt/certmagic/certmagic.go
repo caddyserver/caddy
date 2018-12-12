@@ -16,12 +16,12 @@
 // including TLS & HTTPS best practices such as robust OCSP stapling, caching,
 // HTTP->HTTPS redirects, and more.
 //
-// Its high-level API serves your HTTP handlers over HTTPS by simply giving
+// Its high-level API serves your HTTP handlers over HTTPS if you simply give
 // the domain name(s) and the http.Handler; CertMagic will create and run
 // the HTTPS server for you, fully managing certificates during the lifetime
 // of the server. Similarly, it can be used to start TLS listeners or return
 // a ready-to-use tls.Config -- whatever layer you need TLS for, CertMagic
-// makes it easy.
+// makes it easy. See the HTTPS, Listen, and TLS functions for that.
 //
 // If you need more control, create a Config using New() and then call
 // Manage() on the config; but you'll have to be sure to solve the HTTP
@@ -475,10 +475,14 @@ const (
 // forward packets from the defaults to whatever these
 // are set to; otherwise ACME challenges will fail.
 var (
-	// HTTPPort is the port on which to serve HTTP.
+	// HTTPPort is the port on which to serve HTTP
+	// and, by extension, the HTTP challenge (unless
+	// AltHTTPPort is set).
 	HTTPPort = 80
 
-	// HTTPSPort is the port on which to serve HTTPS.
+	// HTTPSPort is the port on which to serve HTTPS
+	// and, by extension, the TLS-ALPN challenge
+	// (unless AltTLSALPNPort is set).
 	HTTPSPort = 443
 )
 

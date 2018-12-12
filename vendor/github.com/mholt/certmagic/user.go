@@ -155,7 +155,7 @@ func (cfg *Config) getEmail(userPresent bool) (string, error) {
 func (cfg *Config) getUser(email string) (user, error) {
 	var user user
 
-	regBytes, err := cfg.certCache.storage.Load(prefixUserReg(cfg.CA, email))
+	regBytes, err := cfg.certCache.storage.Load(StorageKeys.UserReg(cfg.CA, email))
 	if err != nil {
 		if _, ok := err.(ErrNotExist); ok {
 			// create a new user
@@ -163,7 +163,7 @@ func (cfg *Config) getUser(email string) (user, error) {
 		}
 		return user, err
 	}
-	keyBytes, err := cfg.certCache.storage.Load(prefixUserKey(cfg.CA, email))
+	keyBytes, err := cfg.certCache.storage.Load(StorageKeys.UserPrivateKey(cfg.CA, email))
 	if err != nil {
 		if _, ok := err.(ErrNotExist); ok {
 			// create a new user
@@ -197,11 +197,11 @@ func (cfg *Config) saveUser(user user) error {
 
 	all := []keyValue{
 		{
-			key:   prefixUserReg(cfg.CA, user.Email),
+			key:   StorageKeys.UserReg(cfg.CA, user.Email),
 			value: regBytes,
 		},
 		{
-			key:   prefixUserKey(cfg.CA, user.Email),
+			key:   StorageKeys.UserPrivateKey(cfg.CA, user.Email),
 			value: keyBytes,
 		},
 	}
@@ -240,13 +240,13 @@ func (cfg *Config) askUserAgreement(agreementURL string) bool {
 // account, errors here are discarded to simplify code flow in
 // the caller, and errors are not important here anyway.
 func (cfg *Config) mostRecentUserEmail() string {
-	userList, err := cfg.certCache.storage.List(prefixUsers(cfg.CA))
+	userList, err := cfg.certCache.storage.List(StorageKeys.UsersPrefix(cfg.CA))
 	if err != nil || len(userList) == 0 {
 		return ""
 	}
 	sort.Slice(userList, func(i, j int) bool {
-		iInfo, _ := cfg.certCache.storage.Stat(prefixUser(cfg.CA, userList[i]))
-		jInfo, _ := cfg.certCache.storage.Stat(prefixUser(cfg.CA, userList[j]))
+		iInfo, _ := cfg.certCache.storage.Stat(StorageKeys.UserPrefix(cfg.CA, userList[i]))
+		jInfo, _ := cfg.certCache.storage.Stat(StorageKeys.UserPrefix(cfg.CA, userList[j]))
 		return jInfo.Modified.Before(iInfo.Modified)
 	})
 	user, err := cfg.getUser(userList[0])

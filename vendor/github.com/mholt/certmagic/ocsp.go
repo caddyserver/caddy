@@ -52,7 +52,7 @@ func (certCache *Cache) stapleOCSP(cert *Certificate, pemBundle []byte) error {
 
 	// First try to load OCSP staple from storage and see if
 	// we can still use it.
-	ocspStapleKey := prefixOCSPStaple(cert, pemBundle)
+	ocspStapleKey := StorageKeys.OCSPStaple(cert, pemBundle)
 	cachedOCSP, err := certCache.storage.Load(ocspStapleKey)
 	if err == nil {
 		resp, err := ocsp.ParseResponse(cachedOCSP, nil)

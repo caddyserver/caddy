@@ -104,15 +104,15 @@ func (cfg *Config) saveCertResource(cert *certificate.Resource) error {
 
 	all := []keyValue{
 		{
-			key:   prefixSiteCert(cfg.CA, cert.Domain),
+			key:   StorageKeys.SiteCert(cfg.CA, cert.Domain),
 			value: cert.Certificate,
 		},
 		{
-			key:   prefixSiteKey(cfg.CA, cert.Domain),
+			key:   StorageKeys.SitePrivateKey(cfg.CA, cert.Domain),
 			value: cert.PrivateKey,
 		},
 		{
-			key:   prefixSiteMeta(cfg.CA, cert.Domain),
+			key:   StorageKeys.SiteMeta(cfg.CA, cert.Domain),
 			value: metaBytes,
 		},
 	}
@@ -122,15 +122,15 @@ func (cfg *Config) saveCertResource(cert *certificate.Resource) error {
 
 func (cfg *Config) loadCertResource(domain string) (certificate.Resource, error) {
 	var certRes certificate.Resource
-	certBytes, err := cfg.certCache.storage.Load(prefixSiteCert(cfg.CA, domain))
+	certBytes, err := cfg.certCache.storage.Load(StorageKeys.SiteCert(cfg.CA, domain))
 	if err != nil {
 		return certRes, err
 	}
-	keyBytes, err := cfg.certCache.storage.Load(prefixSiteKey(cfg.CA, domain))
+	keyBytes, err := cfg.certCache.storage.Load(StorageKeys.SitePrivateKey(cfg.CA, domain))
 	if err != nil {
 		return certRes, err
 	}
-	metaBytes, err := cfg.certCache.storage.Load(prefixSiteMeta(cfg.CA, domain))
+	metaBytes, err := cfg.certCache.storage.Load(StorageKeys.SiteMeta(cfg.CA, domain))
 	if err != nil {
 		return certRes, err
 	}
