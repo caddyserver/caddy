@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"sync"
@@ -67,16 +68,34 @@ func (fs FileStorage) Delete(key string) error {
 }
 
 // List returns all keys that match prefix.
-func (fs FileStorage) List(prefix string) ([]string, error) {
-	d, err := os.Open(fs.Filename(prefix))
-	if os.IsNotExist(err) {
-		return nil, ErrNotExist(err)
-	}
-	if err != nil {
-		return nil, err
-	}
-	defer d.Close()
-	return d.Readdirnames(-1)
+func (fs FileStorage) List(prefix string, recursive bool) ([]string, error) {
+	var keys []string
+	walkPrefix := fs.Filename(prefix)
+
+	err := filepath.Walk(walkPrefix, func(fpath string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info == nil {
+			return fmt.Errorf("%s: file info is nil", fpath)
+		}
+		if fpath == walkPrefix {
+			return nil
+		}
+
+		suffix, err := filepath.Rel(walkPrefix, fpath)
+		if err != nil {
+			return fmt.Errorf("%s: could not make path relative: %v", fpath, err)
+		}
+		keys = append(keys, path.Join(prefix, suffix))
+
+		if !recursive && info.IsDir() {
+			return filepath.SkipDir
+		}
+		return nil
+	})
+
+	return keys, err
 }
 
 // Stat returns information about key.
@@ -89,9 +108,10 @@ func (fs FileStorage) Stat(key string) (KeyInfo, error) {
 		return KeyInfo{}, err
 	}
 	return KeyInfo{
-		Key:      key,
-		Modified: fi.ModTime(),
-		Size:     fi.Size(),
+		Key:        key,
+		Modified:   fi.ModTime(),
+		Size:       fi.Size(),
+		IsTerminal: !fi.IsDir(),
 	}, nil
 }
 

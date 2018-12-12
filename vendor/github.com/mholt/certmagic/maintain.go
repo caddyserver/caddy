@@ -261,7 +261,7 @@ func (certCache *Cache) updateOCSPStaples() {
 // deleteOldStapleFiles deletes cached OCSP staples that have expired.
 // TODO: We should do this for long-expired certificates, too.
 func (certCache *Cache) deleteOldStapleFiles() {
-	ocspKeys, err := certCache.storage.List(prefixOCSP)
+	ocspKeys, err := certCache.storage.List(prefixOCSP, false)
 	if err != nil {
 		// maybe just hasn't been created yet; no big deal
 		return

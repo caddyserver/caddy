@@ -49,7 +49,11 @@ type Storage interface {
 	Exists(key string) bool
 
 	// List returns all keys that match prefix.
-	List(prefix string) ([]string, error)
+	// If recursive is true, non-terminal keys
+	// will be enumerated (i.e. "directories"
+	// should be walked); otherwise, only keys
+	// prefixed exactly by prefix will be listed.
+	List(prefix string, recursive bool) ([]string, error)
 
 	// Stat returns information about key.
 	Stat(key string) (KeyInfo, error)
@@ -92,9 +96,10 @@ type Waiter interface {
 
 // KeyInfo holds information about a key in storage.
 type KeyInfo struct {
-	Key      string
-	Modified time.Time
-	Size     int64
+	Key        string
+	Modified   time.Time
+	Size       int64
+	IsTerminal bool // false for keys that only contain other keys (like directories)
 }
 
 // storeTx stores all the values or none at all.

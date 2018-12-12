@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"sort"
 	"strings"
 
@@ -240,16 +241,16 @@ func (cfg *Config) askUserAgreement(agreementURL string) bool {
 // account, errors here are discarded to simplify code flow in
 // the caller, and errors are not important here anyway.
 func (cfg *Config) mostRecentUserEmail() string {
-	userList, err := cfg.certCache.storage.List(StorageKeys.UsersPrefix(cfg.CA))
+	userList, err := cfg.certCache.storage.List(StorageKeys.UsersPrefix(cfg.CA), false)
 	if err != nil || len(userList) == 0 {
 		return ""
 	}
 	sort.Slice(userList, func(i, j int) bool {
-		iInfo, _ := cfg.certCache.storage.Stat(StorageKeys.UserPrefix(cfg.CA, userList[i]))
-		jInfo, _ := cfg.certCache.storage.Stat(StorageKeys.UserPrefix(cfg.CA, userList[j]))
+		iInfo, _ := cfg.certCache.storage.Stat(userList[i])
+		jInfo, _ := cfg.certCache.storage.Stat(userList[j])
 		return jInfo.Modified.Before(iInfo.Modified)
 	})
-	user, err := cfg.getUser(userList[0])
+	user, err := cfg.getUser(path.Base(userList[0]))
 	if err != nil {
 		return ""
 	}
