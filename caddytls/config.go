@@ -98,7 +98,7 @@ func NewConfig(inst *caddy.Instance) *Config {
 	certCache, ok := inst.Storage[CertCacheInstStorageKey].(*certmagic.Cache)
 	inst.StorageMu.RUnlock()
 	if !ok || certCache == nil {
-		certCache = certmagic.NewCache(certmagic.FileStorage{Path: caddy.AssetsPath()})
+		certCache = certmagic.NewCache(certmagic.DefaultStorage)
 		inst.OnShutdown = append(inst.OnShutdown, func() error {
 			certCache.Stop()
 			return nil
@@ -108,7 +108,7 @@ func NewConfig(inst *caddy.Instance) *Config {
 		inst.StorageMu.Unlock()
 	}
 	return &Config{
-		Manager: certmagic.NewWithCache(certCache, certmagic.Config{}), // TODO
+		Manager: certmagic.NewWithCache(certCache, certmagic.Config{}),
 	}
 }
 

@@ -17,6 +17,7 @@ package certmagic
 import (
 	"fmt"
 	"io/ioutil"
+	"log"
 	"os"
 	"path"
 	"path/filepath"
@@ -171,18 +172,36 @@ func (fs FileStorage) TryLock(key string) (Waiter, error) {
 	}
 
 	fw = &fileStorageWaiter{
+		key:      key,
 		filename: filepath.Join(lockDir, StorageKeys.safe(key)+".lock"),
 		wg:       new(sync.WaitGroup),
 	}
 
+	var checkedStaleLock bool // sentinel value to avoid infinite goto-ing
+
+createLock:
 	// create the file in a special mode such that an
 	// error is returned if it already exists
 	lf, err := os.OpenFile(fw.filename, os.O_CREATE|os.O_EXCL, 0644)
 	if err != nil {
 		if os.IsExist(err) {
-			// another process has the lock; use it to wait
+			// another process has the lock
+
+			// check to see if the lock is stale, if we haven't already
+			if !checkedStaleLock {
+				checkedStaleLock = true
+				if fs.lockFileStale(fw.filename) {
+					log.Printf("[INFO][%s] Lock for '%s' is stale; removing then retrying: %s",
+						fs, key, fw.filename)
+					os.Remove(fw.filename)
+					goto createLock
+				}
+			}
+
+			// if lock is not stale, wait upon it
 			return fw, nil
 		}
+
 		// otherwise, this was some unexpected error
 		return nil, err
 	}
@@ -225,8 +244,31 @@ func (fs FileStorage) Unlock(key string) error {
 	return nil
 }
 
+// UnlockAllObtained removes all locks obtained by
+// this instance of fs.
+func (fs FileStorage) UnlockAllObtained() {
+	for key, fw := range fileStorageNameLocks {
+		err := fs.Unlock(fw.key)
+		if err != nil {
+			log.Printf("[ERROR][%s] Releasing obtained lock for %s: %v", fs, key, err)
+		}
+	}
+}
+
+func (fs FileStorage) lockFileStale(filename string) bool {
+	info, err := os.Stat(filename)
+	if err != nil {
+		return true // no good way to handle this, really; lock is useless?
+	}
+	return time.Since(info.ModTime()) > staleLockDuration
+}
+
 func (fs FileStorage) lockDir() string {
 	return filepath.Join(fs.Path, "locks")
+}
+
+func (fs FileStorage) String() string {
+	return "FileStorage:" + fs.Path
 }
 
 // fileStorageWaiter waits for a file to disappear; it
@@ -237,6 +279,7 @@ func (fs FileStorage) lockDir() string {
 // the lock will still block, but must wait for the
 // polling to get their answer.)
 type fileStorageWaiter struct {
+	key      string
 	filename string
 	wg       *sync.WaitGroup
 }
@@ -259,3 +302,7 @@ var fileStorageNameLocksMu sync.Mutex
 
 var _ Storage = FileStorage{}
 var _ Waiter = &fileStorageWaiter{}
+
+// staleLockDuration is the length of time
+// before considering a lock to be stale.
+const staleLockDuration = 2 * time.Hour

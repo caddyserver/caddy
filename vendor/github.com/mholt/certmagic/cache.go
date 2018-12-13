@@ -165,6 +165,5 @@ func (certCache *Cache) reloadManagedCertificate(oldCert Certificate) error {
 	return nil
 }
 
-// defaultCache is a convenient, default certificate cache for
-// use by this process when no other certificate cache is provided.
-var defaultCache = NewCache(DefaultStorage)
+var defaultCache *Cache
+var defaultCacheMu sync.Mutex

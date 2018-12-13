@@ -125,15 +125,28 @@ func NewDefault() *Config {
 // a default certificate cache. All calls to
 // New() will use the same certificate cache.
 func New(cfg Config) *Config {
-	return NewWithCache(defaultCache, cfg)
+	return NewWithCache(nil, cfg)
 }
 
 // NewWithCache makes a valid new config based on cfg
-// and uses the provided certificate cache.
+// and uses the provided certificate cache. If certCache
+// is nil, a new, default one will be created using
+// DefaultStorage; or, if a default cache has already
+// been created, it will be reused.
 func NewWithCache(certCache *Cache, cfg Config) *Config {
-	// avoid nil pointers with sensible defaults
+	// avoid nil pointers with sensible defaults,
+	// careful to initialize a default cache (which
+	// begins its maintenance goroutine) only if
+	// needed - and only once (we don't initialize
+	// it at package init to give importers a chance
+	// to set DefaultStorage if they so desire)
 	if certCache == nil {
+		defaultCacheMu.Lock()
+		if defaultCache == nil {
+			defaultCache = NewCache(DefaultStorage)
+		}
 		certCache = defaultCache
+		defaultCacheMu.Unlock()
 	}
 	if certCache.storage == nil {
 		certCache.storage = DefaultStorage

@@ -57,7 +57,7 @@ func setupTLS(c *caddy.Controller) error {
 	// a single certificate cache is used by the whole caddy.Instance; get a pointer to it
 	certCache, ok := c.Get(CertCacheInstStorageKey).(*certmagic.Cache)
 	if !ok || certCache == nil {
-		certCache = certmagic.NewCache(certmagic.FileStorage{Path: caddy.AssetsPath()})
+		certCache = certmagic.NewCache(certmagic.DefaultStorage)
 		c.OnShutdown(func() error {
 			certCache.Stop()
 			return nil
@@ -252,18 +252,6 @@ func setupTLS(c *caddy.Controller) error {
 					return c.Errf("Setting up DNS provider '%s': %v", dnsProvName, err)
 				}
 				config.Manager.DNSProvider = dnsProv
-			// TODO
-			// case "storage":
-			// 	args := c.RemainingArgs()
-			// 	if len(args) != 1 {
-			// 		return c.ArgErr()
-			// 	}
-			// 	storageProvName := args[0]
-			// 	storageProvConstr, ok := storageProviders[storageProvName]
-			// 	if !ok {
-			// 		return c.Errf("Unsupported Storage provider '%s'", args[0])
-			// 	}
-			// 	config.Manager.Storage = storageProvConstr
 			case "alpn":
 				args := c.RemainingArgs()
 				if len(args) == 0 {

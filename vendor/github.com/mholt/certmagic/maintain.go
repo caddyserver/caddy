@@ -38,21 +38,21 @@ func (certCache *Cache) maintainAssets() {
 	for {
 		select {
 		case <-renewalTicker.C:
-			log.Println("[INFO] Scanning for expiring certificates")
+			log.Printf("[INFO][%s] Scanning for expiring certificates", certCache.storage)
 			err := certCache.RenewManagedCertificates(false)
 			if err != nil {
-				log.Printf("[ERROR] Renewing managed certificates: %v", err)
+				log.Printf("[ERROR][%s] Renewing managed certificates: %v", certCache.storage, err)
 			}
-			log.Println("[INFO] Done checking certificates")
+			log.Printf("[INFO][%s] Done scanning certificates", certCache.storage)
 		case <-ocspTicker.C:
-			log.Println("[INFO] Scanning for stale OCSP staples")
+			log.Printf("[INFO][%s] Scanning for stale OCSP staples", certCache.storage)
 			certCache.updateOCSPStaples()
 			certCache.deleteOldStapleFiles()
-			log.Println("[INFO] Done checking OCSP staples")
+			log.Printf("[INFO][%s] Done checking OCSP staples", certCache.storage)
 		case <-certCache.stopChan:
 			renewalTicker.Stop()
 			ocspTicker.Stop()
-			log.Println("[INFO] Stopped certificate maintenance routine")
+			log.Printf("[INFO][%s] Stopped certificate maintenance routine", certCache.storage)
 			return
 		}
 	}

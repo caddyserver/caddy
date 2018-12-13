@@ -469,9 +469,10 @@ func (i *Instance) Caddyfile() Input {
 //
 // This function blocks until all the servers are listening.
 func Start(cdyfile Input) (*Instance, error) {
-	// set up the clustering plugin, if there is one (this should be done
-	// exactly once -- but we can't do it during init when they're still
-	// getting plugged in, so do it when starting the first instance)
+	// set up the clustering plugin, if there is one (and there should
+	// always be one) -- this should be done exactly once, but we can't
+	// do it during init while plugins are still registering, so do it
+	// when starting the first instance)
 	if atomic.CompareAndSwapInt32(&clusterPluginSetup, 0, 1) {
 		clusterPluginName := os.Getenv("CADDY_CLUSTERING")
 		if clusterPluginName == "" {
@@ -486,6 +487,7 @@ func Start(cdyfile Input) (*Instance, error) {
 			return nil, fmt.Errorf("constructing cluster plugin %s: %v", clusterPluginName, err)
 		}
 		certmagic.DefaultStorage = storage
+		OnProcessExit = append(OnProcessExit, certmagic.DefaultStorage.UnlockAllObtained)
 	}
 
 	inst := &Instance{serverType: cdyfile.ServerType(), wg: new(sync.WaitGroup), Storage: make(map[interface{}]interface{})}

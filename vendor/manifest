@@ -138,7 +138,7 @@
 			"importpath": "github.com/mholt/certmagic",
 			"repository": "https://github.com/mholt/certmagic",
 			"vcs": "git",
-			"revision": "dc98c40439d15f67021f10f0d9219a39d7cf2990",
+			"revision": "fe722057f2654b33cd528b8fd8b90e53fa495564",
 			"branch": "master",
 			"notests": true
 		},

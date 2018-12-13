@@ -30,6 +30,8 @@ import (
 // same Storage value (its implementation and configuration)
 // in order to share certificates and other TLS resources
 // with the cluster.
+//
+// Implementations of Storage must be safe for concurrent use.
 type Storage interface {
 	// Locker provides atomic synchronization
 	// operations, making Storage safe to share.
@@ -87,6 +89,15 @@ type Locker interface {
 	// TryLock or if Unlock was not called at all. Unlock should also
 	// clean up any unused resources allocated during TryLock.
 	Unlock(key string) error
+
+	// UnlockAllObtained removes all locks obtained by this process,
+	// upon which others may be waiting. The importer should call
+	// this on shutdowns (and crashes, ideally) to avoid leaving stale
+	// locks, but Locker implementations must NOT rely on this being
+	// the case and should anticipate and handle stale locks. Errors
+	// should be printed or logged, since there could be multiple,
+	// with no good way to handle them anyway.
+	UnlockAllObtained()
 }
 
 // Waiter is a type that can block until a lock is released.

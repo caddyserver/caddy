@@ -94,7 +94,7 @@ func (cfg *Config) newACMEClient(interactive bool) (*acmeClient, error) {
 		legoCfg := lego.NewConfig(&leUser)
 		legoCfg.CADirURL = caURL
 		legoCfg.KeyType = keyType
-		legoCfg.UserAgent = UserAgent
+		legoCfg.UserAgent = buildUAString()
 		legoCfg.HTTPClient.Timeout = HTTPTimeout
 		client, err = lego.NewClient(legoCfg)
 		if err != nil {
@@ -371,6 +371,14 @@ func (c *acmeClient) Revoke(name string) error {
 	}
 
 	return nil
+}
+
+func buildUAString() string {
+	ua := "CertMagic"
+	if UserAgent != "" {
+		ua += " " + UserAgent
+	}
+	return ua
 }
 
 // Some default values passed down to the underlying lego client.
