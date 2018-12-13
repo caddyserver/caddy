@@ -47,11 +47,9 @@ func TestMain(m *testing.M) {
 }
 
 func TestSetupParseBasic(t *testing.T) {
-	cfg, certCache := testConfigForTLSSetup()
-
+	cfg := &Config{Manager: &certmagic.Config{}}
 	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
 	c := caddy.NewTestController("", `tls `+certFile+` `+keyFile+``)
-	c.Set(CertCacheInstStorageKey, certCache)
 
 	err := setupTLS(c)
 	if err != nil {
@@ -127,11 +125,10 @@ func TestSetupParseWithOptionalParams(t *testing.T) {
             must_staple
             alpn http/1.1
         }`
-	cfg, certCache := testConfigForTLSSetup()
 
+	cfg := &Config{Manager: &certmagic.Config{}}
 	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
 	c := caddy.NewTestController("", params)
-	c.Set(CertCacheInstStorageKey, certCache)
 
 	err := setupTLS(c)
 	if err != nil {
@@ -163,10 +160,9 @@ func TestSetupDefaultWithOptionalParams(t *testing.T) {
 	params := `tls {
             ciphers RSA-3DES-EDE-CBC-SHA
         }`
-	cfg, certCache := testConfigForTLSSetup()
+	cfg := &Config{Manager: &certmagic.Config{}}
 	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
 	c := caddy.NewTestController("", params)
-	c.Set(CertCacheInstStorageKey, certCache)
 
 	err := setupTLS(c)
 	if err != nil {
@@ -182,10 +178,9 @@ func TestSetupParseWithWrongOptionalParams(t *testing.T) {
 	params := `tls ` + certFile + ` ` + keyFile + ` {
 			protocols ssl tls
 		}`
-	cfg, certCache := testConfigForTLSSetup()
+	cfg := &Config{Manager: &certmagic.Config{}}
 	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
 	c := caddy.NewTestController("", params)
-	c.Set(CertCacheInstStorageKey, certCache)
 
 	err := setupTLS(c)
 	if err == nil {
@@ -196,10 +191,9 @@ func TestSetupParseWithWrongOptionalParams(t *testing.T) {
 	params = `tls ` + certFile + ` ` + keyFile + ` {
 			ciphers not-valid-cipher
 		}`
-	cfg = new(Config)
+	cfg = &Config{Manager: &certmagic.Config{}}
 	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
 	c = caddy.NewTestController("", params)
-	c.Set(CertCacheInstStorageKey, certCache)
 	err = setupTLS(c)
 	if err == nil {
 		t.Error("Expected errors, but no error returned")
@@ -209,7 +203,7 @@ func TestSetupParseWithWrongOptionalParams(t *testing.T) {
 	params = `tls {
 			key_type ab123
 		}`
-	cfg = new(Config)
+	cfg = &Config{Manager: &certmagic.Config{}}
 	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
 	c = caddy.NewTestController("", params)
 	err = setupTLS(c)
@@ -221,10 +215,9 @@ func TestSetupParseWithWrongOptionalParams(t *testing.T) {
 	params = `tls {
 			curves ab123, cd456, ef789
 		}`
-	cfg = new(Config)
+	cfg = &Config{Manager: &certmagic.Config{}}
 	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
 	c = caddy.NewTestController("", params)
-	c.Set(CertCacheInstStorageKey, certCache)
 	err = setupTLS(c)
 	if err == nil {
 		t.Error("Expected errors, but no error returned")
@@ -236,7 +229,7 @@ func TestSetupParseWithClientAuth(t *testing.T) {
 	params := `tls ` + certFile + ` ` + keyFile + ` {
 			clients
 		}`
-	cfg, _ := testConfigForTLSSetup()
+	cfg := &Config{Manager: &certmagic.Config{}}
 	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
 	c := caddy.NewTestController("", params)
 	err := setupTLS(c)
@@ -273,7 +266,7 @@ func TestSetupParseWithClientAuth(t *testing.T) {
 		cfg := &Config{Manager: certmagic.NewWithCache(certCache, certmagic.Config{})}
 		RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
 		c := caddy.NewTestController("", caseData.params)
-		c.Set(CertCacheInstStorageKey, certCache)
+
 		err := setupTLS(c)
 		if caseData.expectedErr {
 			if err == nil {
@@ -323,11 +316,10 @@ func TestSetupParseWithCAUrl(t *testing.T) {
 				ca 1 2
 			}`, true, ""},
 	} {
-		certCache := certmagic.NewCache(certmagic.DefaultStorage)
-		cfg := &Config{Manager: certmagic.NewWithCache(certCache, certmagic.Config{})}
+		cfg := &Config{Manager: &certmagic.Config{}}
 		RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
 		c := caddy.NewTestController("", caseData.params)
-		c.Set(CertCacheInstStorageKey, certCache)
+
 		err := setupTLS(c)
 		if caseData.expectedErr {
 			if err == nil {
@@ -349,10 +341,9 @@ func TestSetupParseWithKeyType(t *testing.T) {
 	params := `tls {
             key_type p384
         }`
-	cfg, certCache := testConfigForTLSSetup()
+	cfg := &Config{Manager: &certmagic.Config{}}
 	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
 	c := caddy.NewTestController("", params)
-	c.Set(CertCacheInstStorageKey, certCache)
 
 	err := setupTLS(c)
 	if err != nil {
@@ -368,10 +359,9 @@ func TestSetupParseWithCurves(t *testing.T) {
 	params := `tls {
             curves x25519 p256 p384 p521
         }`
-	cfg, certCache := testConfigForTLSSetup()
+	cfg := &Config{Manager: &certmagic.Config{}}
 	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
 	c := caddy.NewTestController("", params)
-	c.Set(CertCacheInstStorageKey, certCache)
 
 	err := setupTLS(c)
 	if err != nil {
@@ -396,10 +386,9 @@ func TestSetupParseWithOneTLSProtocol(t *testing.T) {
 	params := `tls {
             protocols tls1.2
         }`
-	cfg, certCache := testConfigForTLSSetup()
+	cfg := &Config{Manager: &certmagic.Config{}}
 	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
 	c := caddy.NewTestController("", params)
-	c.Set(CertCacheInstStorageKey, certCache)
 
 	err := setupTLS(c)
 	if err != nil {
@@ -413,14 +402,6 @@ func TestSetupParseWithOneTLSProtocol(t *testing.T) {
 	if cfg.ProtocolMinVersion != tls.VersionTLS12 && cfg.ProtocolMaxVersion != tls.VersionTLS12 {
 		t.Errorf("Expected 'tls1.2 (0x0303)' as ProtocolMinVersion/ProtocolMaxVersion, got %v/%v", cfg.ProtocolMinVersion, cfg.ProtocolMaxVersion)
 	}
-}
-
-func testConfigForTLSSetup() (*Config, *certmagic.Cache) {
-	certCache := certmagic.NewCache(nil)
-	certCache.Stop()
-	return &Config{
-		Manager: certmagic.NewWithCache(certCache, certmagic.Config{}),
-	}, certCache
 }
 
 const (
