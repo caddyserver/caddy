@@ -446,6 +446,12 @@ func (r *replacer) getSubstitution(key string) string {
 			}
 		}
 		return r.emptyValue
+	case "{tls_client_provided_cert}":
+		if r.getPeerCert() != nil {
+			return "true"
+		} else {
+			return "false"
+		}
 	case "{tls_client_escaped_cert}":
 		cert := r.getPeerCert()
 		if cert != nil {
