@@ -62,9 +62,9 @@ func TestSetCPU(t *testing.T) {
 
 func TestSplitTrim(t *testing.T) {
 	for i, test := range []struct {
-		input     string
-		output    []string
-		sep       string
+		input  string
+		output []string
+		sep    string
 	}{
 		{"os,arch,cpu,caddy_version", []string{"os", "arch", "cpu", "caddy_version"}, ","},
 		{"os,arch,cpu,caddy_version,", []string{"os", "arch", "cpu", "caddy_version"}, ","},
@@ -77,7 +77,7 @@ func TestSplitTrim(t *testing.T) {
 			t.Errorf("Test %d: spliteTrim() = %v, want %v", i, got, test.output)
 		}
 		for i, item := range test.output {
-			if item != got[i]  {
+			if item != got[i] {
 				t.Errorf("Test %d: spliteTrim() = %v, want %v", i, got, test.output)
 			}
 		}
