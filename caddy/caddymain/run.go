@@ -392,29 +392,31 @@ func initTelemetry() error {
 	}
 
 	// parse and check the list of disabled metrics
-	var disabledMetricsSlice []string
+	var fixedDisabledMetrics []string
 	if len(disabledMetrics) > 0 {
 		if len(disabledMetrics) > 1024 {
 			// mitigate disk space exhaustion at the collection endpoint
 			return fmt.Errorf("too many metrics to disable")
 		}
-		disabledMetricsSlice = strings.Split(disabledMetrics, ",")
-		for i, metric := range disabledMetricsSlice {
+		disabledMetricsSlice := strings.Split(disabledMetrics, ",")
+		fixedDisabledMetrics := make([]string, 0, len(disabledMetricsSlice))
+		for _, metric := range disabledMetricsSlice {
+			metric = strings.TrimSpace(metric)
 			if metric == "instance_id" || metric == "timestamp" || metric == "disabled_metrics" {
 				return fmt.Errorf("instance_id, timestamp, and disabled_metrics cannot be disabled")
 			}
-			if metric == "" {
-				disabledMetricsSlice = append(disabledMetricsSlice[:i], disabledMetricsSlice[i+1:]...)
+			if metric != "" {
+				fixedDisabledMetrics = append(fixedDisabledMetrics, metric)
 			}
 		}
 	}
 
 	// initialize telemetry
-	telemetry.Init(id, disabledMetricsSlice)
+	telemetry.Init(id, fixedDisabledMetrics)
 
 	// if any metrics were disabled, report which ones (so we know how representative the data is)
-	if len(disabledMetricsSlice) > 0 {
-		telemetry.Set("disabled_metrics", disabledMetricsSlice)
+	if len(fixedDisabledMetrics) > 0 {
+		telemetry.Set("disabled_metrics", fixedDisabledMetrics)
 		log.Printf("[NOTICE] The following telemetry metrics are disabled: %s", disabledMetrics)
 	}
 
