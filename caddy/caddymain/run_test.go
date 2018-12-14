@@ -74,7 +74,7 @@ func TestSplitTrim(t *testing.T) {
 	} {
 		got := splitTrim(test.input, test.sep)
 		if len(got) != len(test.output) {
-			t.Errorf("Test %d: spliteTrim() = %v, want %v", i, test.input, test.output)
+			t.Errorf("Test %d: spliteTrim() = %v, want %v", i, got, test.output)
 		}
 		for i, item := range test.output {
 			if item != got[i]  {
