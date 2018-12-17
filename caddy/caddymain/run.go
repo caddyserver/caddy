@@ -418,7 +418,7 @@ func initTelemetry() error {
 	return nil
 }
 
-// Split slices s into all substrings separated by sep and returns a slice of
+// Split string s into all substrings separated by sep and returns a slice of
 // the substrings between those separators.
 //
 // If s does not contain sep and sep is not empty, Split returns a
