@@ -75,8 +75,8 @@ func TestSetupParseBasic(t *testing.T) {
 	if cfg.ProtocolMinVersion != tls.VersionTLS12 {
 		t.Errorf("Expected 'tls1.2 (0x0303)' as ProtocolMinVersion, got %#v", cfg.ProtocolMinVersion)
 	}
-	if cfg.ProtocolMaxVersion != tls.VersionTLS12 {
-		t.Errorf("Expected 'tls1.2 (0x0303)' as ProtocolMaxVersion, got %v", cfg.ProtocolMaxVersion)
+	if cfg.ProtocolMaxVersion != tls.VersionTLS13 {
+		t.Errorf("Expected 'tls1.3 (0x0304)' as ProtocolMaxVersion, got %#v", cfg.ProtocolMaxVersion)
 	}
 
 	// Cipher checks
