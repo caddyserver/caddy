@@ -22,7 +22,6 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
-	"sync"
 	"time"
 )
 
@@ -34,13 +33,13 @@ type FileStorage struct {
 }
 
 // Exists returns true if key exists in fs.
-func (fs FileStorage) Exists(key string) bool {
+func (fs *FileStorage) Exists(key string) bool {
 	_, err := os.Stat(fs.Filename(key))
 	return !os.IsNotExist(err)
 }
 
 // Store saves value at key.
-func (fs FileStorage) Store(key string, value []byte) error {
+func (fs *FileStorage) Store(key string, value []byte) error {
 	filename := fs.Filename(key)
 	err := os.MkdirAll(filepath.Dir(filename), 0700)
 	if err != nil {
@@ -50,7 +49,7 @@ func (fs FileStorage) Store(key string, value []byte) error {
 }
 
 // Load retrieves the value at key.
-func (fs FileStorage) Load(key string) ([]byte, error) {
+func (fs *FileStorage) Load(key string) ([]byte, error) {
 	contents, err := ioutil.ReadFile(fs.Filename(key))
 	if os.IsNotExist(err) {
 		return nil, ErrNotExist(err)
@@ -59,8 +58,7 @@ func (fs FileStorage) Load(key string) ([]byte, error) {
 }
 
 // Delete deletes the value at key.
-// TODO: Delete any empty folders caused by this operation
-func (fs FileStorage) Delete(key string) error {
+func (fs *FileStorage) Delete(key string) error {
 	err := os.Remove(fs.Filename(key))
 	if os.IsNotExist(err) {
 		return ErrNotExist(err)
@@ -69,7 +67,7 @@ func (fs FileStorage) Delete(key string) error {
 }
 
 // List returns all keys that match prefix.
-func (fs FileStorage) List(prefix string, recursive bool) ([]string, error) {
+func (fs *FileStorage) List(prefix string, recursive bool) ([]string, error) {
 	var keys []string
 	walkPrefix := fs.Filename(prefix)
 
@@ -100,7 +98,7 @@ func (fs FileStorage) List(prefix string, recursive bool) ([]string, error) {
 }
 
 // Stat returns information about key.
-func (fs FileStorage) Stat(key string) (KeyInfo, error) {
+func (fs *FileStorage) Stat(key string) (KeyInfo, error) {
 	fi, err := os.Stat(fs.Filename(key))
 	if os.IsNotExist(err) {
 		return KeyInfo{}, ErrNotExist(err)
@@ -118,8 +116,125 @@ func (fs FileStorage) Stat(key string) (KeyInfo, error) {
 
 // Filename returns the key as a path on the file
 // system prefixed by fs.Path.
-func (fs FileStorage) Filename(key string) string {
+func (fs *FileStorage) Filename(key string) string {
 	return filepath.Join(fs.Path, filepath.FromSlash(key))
+}
+
+// Lock obtains a lock named by the given key. It blocks
+// until the lock can be obtained or an error is returned.
+func (fs *FileStorage) Lock(key string) error {
+	start := time.Now()
+	filename := fs.lockFilename(key)
+
+	for {
+		err := createLockfile(filename)
+		if err == nil {
+			// got the lock, yay
+			return nil
+		}
+		if !os.IsExist(err) {
+			// unexpected error
+			return fmt.Errorf("creating lock file: %v", err)
+		}
+
+		// lock file already exists
+
+		info, err := os.Stat(filename)
+		switch {
+		case os.IsNotExist(err):
+			// must have just been removed; try again to create it
+			continue
+
+		case err != nil:
+			// unexpected error
+			return fmt.Errorf("accessing lock file: %v", err)
+
+		case fileLockIsStale(info):
+			// lock file is stale - delete it and try again to create one
+			log.Printf("[INFO][%s] Lock for '%s' is stale; removing then retrying: %s",
+				fs, key, filename)
+			removeLockfile(filename)
+			continue
+
+		case time.Since(start) > staleLockDuration*2:
+			// should never happen, hopefully
+			return fmt.Errorf("possible deadlock: %s passed trying to obtain lock for %s",
+				time.Since(start), key)
+
+		default:
+			// lockfile exists and is not stale;
+			// just wait a moment and try again
+			time.Sleep(fileLockPollInterval)
+		}
+	}
+}
+
+// Unlock releases the lock for name.
+func (fs *FileStorage) Unlock(key string) error {
+	return removeLockfile(fs.lockFilename(key))
+}
+
+func (fs *FileStorage) String() string {
+	return "FileStorage:" + fs.Path
+}
+
+func (fs *FileStorage) lockFilename(key string) string {
+	return filepath.Join(fs.lockDir(), StorageKeys.safe(key)+".lock")
+}
+
+func (fs *FileStorage) lockDir() string {
+	return filepath.Join(fs.Path, "locks")
+}
+
+func fileLockIsStale(info os.FileInfo) bool {
+	if info == nil {
+		return true
+	}
+	return time.Since(info.ModTime()) > staleLockDuration
+}
+
+// createLockfile atomically creates the lockfile
+// identified by filename. A successfully created
+// lockfile should be removed with removeLockfile.
+func createLockfile(filename string) error {
+	err := atomicallyCreateFile(filename)
+	if err == nil {
+		// if the app crashes in removeLockfile(), there is a
+		// small chance the .unlock file is left behind; it's
+		// safe to simply remove it as it's a guard against
+		// double removal of the .lock file.
+		os.Remove(filename + ".unlock")
+	}
+	return err
+}
+
+// removeLockfile atomically removes filename,
+// which must be a lockfile created by createLockfile.
+// See discussion in PR #7 for more background:
+// https://github.com/mholt/certmagic/pull/7
+func removeLockfile(filename string) error {
+	unlockFilename := filename + ".unlock"
+	if err := atomicallyCreateFile(unlockFilename); err != nil {
+		if os.IsExist(err) {
+			// another process is handling the unlocking
+			return nil
+		}
+		return err
+	}
+	defer os.Remove(unlockFilename)
+	return os.Remove(filename)
+}
+
+// atomicallyCreateFile atomically creates the file
+// identified by filename if it doesn't already exist.
+func atomicallyCreateFile(filename string) error {
+	// no need to check this, we only really care about the file creation error
+	os.MkdirAll(filepath.Dir(filename), 0700)
+	f, err := os.OpenFile(filename, os.O_CREATE|os.O_EXCL, 0644)
+	if err == nil {
+		f.Close()
+	}
+	return err
 }
 
 // homeDir returns the best guess of the current user's home
@@ -149,160 +264,12 @@ func dataDir() string {
 	return filepath.Join(baseDir, "certmagic")
 }
 
-// TryLock attempts to get a lock for name, otherwise it returns
-// a Waiter value to wait until the other process is finished.
-func (fs FileStorage) TryLock(key string) (Waiter, error) {
-	fileStorageNameLocksMu.Lock()
-	defer fileStorageNameLocksMu.Unlock()
-
-	// see if lock already exists within this process - allows
-	// for faster unlocking since we don't have to poll the disk
-	fw, ok := fileStorageNameLocks[key]
-	if ok {
-		// lock already created within process, let caller wait on it
-		return fw, nil
-	}
-
-	// attempt to persist lock to disk by creating lock file
-
-	// parent dir must exist
-	lockDir := fs.lockDir()
-	if err := os.MkdirAll(lockDir, 0700); err != nil {
-		return nil, err
-	}
-
-	fw = &fileStorageWaiter{
-		key:      key,
-		filename: filepath.Join(lockDir, StorageKeys.safe(key)+".lock"),
-		wg:       new(sync.WaitGroup),
-	}
-
-	var checkedStaleLock bool // sentinel value to avoid infinite goto-ing
-
-createLock:
-	// create the file in a special mode such that an
-	// error is returned if it already exists
-	lf, err := os.OpenFile(fw.filename, os.O_CREATE|os.O_EXCL, 0644)
-	if err != nil {
-		if os.IsExist(err) {
-			// another process has the lock
-
-			// check to see if the lock is stale, if we haven't already
-			if !checkedStaleLock {
-				checkedStaleLock = true
-				if fs.lockFileStale(fw.filename) {
-					log.Printf("[INFO][%s] Lock for '%s' is stale; removing then retrying: %s",
-						fs, key, fw.filename)
-					os.Remove(fw.filename)
-					goto createLock
-				}
-			}
-
-			// if lock is not stale, wait upon it
-			return fw, nil
-		}
-
-		// otherwise, this was some unexpected error
-		return nil, err
-	}
-	lf.Close()
-
-	// looks like we get the lock
-	fw.wg.Add(1)
-	fileStorageNameLocks[key] = fw
-
-	return nil, nil
-}
-
-// Unlock releases the lock for name.
-func (fs FileStorage) Unlock(key string) error {
-	fileStorageNameLocksMu.Lock()
-	defer fileStorageNameLocksMu.Unlock()
-
-	fw, ok := fileStorageNameLocks[key]
-	if !ok {
-		return fmt.Errorf("FileStorage: no lock to release for %s", key)
-	}
-
-	// remove lock file
-	os.Remove(fw.filename)
-
-	// if parent folder is now empty, remove it too to keep it tidy
-	dir, err := os.Open(fs.lockDir()) // OK to ignore error here
-	if err == nil {
-		items, _ := dir.Readdirnames(3) // OK to ignore error here
-		if len(items) == 0 {
-			os.Remove(dir.Name())
-		}
-		dir.Close()
-	}
-
-	// clean up in memory
-	fw.wg.Done()
-	delete(fileStorageNameLocks, key)
-
-	return nil
-}
-
-// UnlockAllObtained removes all locks obtained by
-// this instance of fs.
-func (fs FileStorage) UnlockAllObtained() {
-	for key, fw := range fileStorageNameLocks {
-		err := fs.Unlock(fw.key)
-		if err != nil {
-			log.Printf("[ERROR][%s] Releasing obtained lock for %s: %v", fs, key, err)
-		}
-	}
-}
-
-func (fs FileStorage) lockFileStale(filename string) bool {
-	info, err := os.Stat(filename)
-	if err != nil {
-		return true // no good way to handle this, really; lock is useless?
-	}
-	return time.Since(info.ModTime()) > staleLockDuration
-}
-
-func (fs FileStorage) lockDir() string {
-	return filepath.Join(fs.Path, "locks")
-}
-
-func (fs FileStorage) String() string {
-	return "FileStorage:" + fs.Path
-}
-
-// fileStorageWaiter waits for a file to disappear; it
-// polls the file system to check for the existence of
-// a file. It also uses a WaitGroup to optimize the
-// polling in the case when this process is the only
-// one waiting. (Other processes that are waiting for
-// the lock will still block, but must wait for the
-// polling to get their answer.)
-type fileStorageWaiter struct {
-	key      string
-	filename string
-	wg       *sync.WaitGroup
-}
-
-// Wait waits until the lock is released.
-func (fw *fileStorageWaiter) Wait() {
-	start := time.Now()
-	fw.wg.Wait()
-	for time.Since(start) < 1*time.Hour {
-		_, err := os.Stat(fw.filename)
-		if os.IsNotExist(err) {
-			return
-		}
-		time.Sleep(1 * time.Second)
-	}
-}
-
-var fileStorageNameLocks = make(map[string]*fileStorageWaiter)
-var fileStorageNameLocksMu sync.Mutex
-
-var _ Storage = FileStorage{}
-var _ Waiter = &fileStorageWaiter{}
-
 // staleLockDuration is the length of time
 // before considering a lock to be stale.
 const staleLockDuration = 2 * time.Hour
+
+// fileLockPollInterval is how frequently
+// to check the existence of a lock file
+const fileLockPollInterval = 1 * time.Second
+
+var _ Storage = (*FileStorage)(nil)

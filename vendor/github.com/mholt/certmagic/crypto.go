@@ -19,12 +19,14 @@ import (
 	"crypto/ecdsa"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"hash/fnv"
 
+	"github.com/klauspost/cpuid"
 	"github.com/xenolf/lego/certificate"
 )
 
@@ -153,3 +155,34 @@ func hashCertificateChain(certChain [][]byte) string {
 	}
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
+
+// preferredDefaultCipherSuites returns an appropriate
+// cipher suite to use depending on hardware support
+// for AES-NI.
+//
+// See https://github.com/mholt/caddy/issues/1674
+func preferredDefaultCipherSuites() []uint16 {
+	if cpuid.CPU.AesNi() {
+		return defaultCiphersPreferAES
+	}
+	return defaultCiphersPreferChaCha
+}
+
+var (
+	defaultCiphersPreferAES = []uint16{
+		tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+		tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+		tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+		tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+		tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
+		tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
+	}
+	defaultCiphersPreferChaCha = []uint16{
+		tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
+		tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
+		tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+		tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+		tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+		tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+	}
+)
