@@ -487,7 +487,6 @@ func Start(cdyfile Input) (*Instance, error) {
 			return nil, fmt.Errorf("constructing cluster plugin %s: %v", clusterPluginName, err)
 		}
 		certmagic.DefaultStorage = storage
-		OnProcessExit = append(OnProcessExit, certmagic.DefaultStorage.UnlockAllObtained)
 	}
 
 	inst := &Instance{serverType: cdyfile.ServerType(), wg: new(sync.WaitGroup), Storage: make(map[interface{}]interface{})}

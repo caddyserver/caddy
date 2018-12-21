@@ -64,22 +64,24 @@ type Storage interface {
 // Locker facilitates synchronization of certificate tasks across
 // machines and networks.
 type Locker interface {
-	// TryLock will attempt to acquire the lock for key. If a
-	// lock could be obtained, nil values are returned as no
-	// waiting is required. If not (meaning another process is
-	// already working on key), a Waiter value will be returned,
-	// upon which you should Wait() until it is finished.
+	// Lock acquires the lock for key, blocking until the lock
+	// can be obtained or an error is returned. Note that, even
+	// after acquiring a lock, an idempotent operation may have
+	// already been performed by another process that acquired
+	// the lock before - so always check to make sure idempotent
+	// operations still need to be performed after acquiring the
+	// lock.
 	//
 	// The actual implementation of obtaining of a lock must be
-	// an atomic operation so that multiple TryLock calls at the
+	// an atomic operation so that multiple Lock calls at the
 	// same time always results in only one caller receiving the
-	// lock. TryLock always returns without waiting.
+	// lock at any given time.
 	//
 	// To prevent deadlocks, all implementations (where this concern
 	// is relevant) should put a reasonable expiration on the lock in
 	// case Unlock is unable to be called due to some sort of network
 	// or system failure or crash.
-	TryLock(key string) (Waiter, error)
+	Lock(key string) error
 
 	// Unlock releases the lock for key. This method must ONLY be
 	// called after a successful call to TryLock where no Waiter was
@@ -89,20 +91,6 @@ type Locker interface {
 	// TryLock or if Unlock was not called at all. Unlock should also
 	// clean up any unused resources allocated during TryLock.
 	Unlock(key string) error
-
-	// UnlockAllObtained removes all locks obtained by this process,
-	// upon which others may be waiting. The importer should call
-	// this on shutdowns (and crashes, ideally) to avoid leaving stale
-	// locks, but Locker implementations must NOT rely on this being
-	// the case and should anticipate and handle stale locks. Errors
-	// should be printed or logged, since there could be multiple,
-	// with no good way to handle them anyway.
-	UnlockAllObtained()
-}
-
-// Waiter is a type that can block until a lock is released.
-type Waiter interface {
-	Wait()
 }
 
 // KeyInfo holds information about a key in storage.
@@ -281,7 +269,7 @@ type ErrNotExist interface {
 
 // defaultFileStorage is a convenient, default storage
 // implementation using the local file system.
-var defaultFileStorage = FileStorage{Path: dataDir()}
+var defaultFileStorage = &FileStorage{Path: dataDir()}
 
 // DefaultStorage is the default Storage implementation.
 var DefaultStorage Storage = defaultFileStorage
