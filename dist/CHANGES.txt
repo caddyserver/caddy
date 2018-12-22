@@ -1,5 +1,18 @@
 CHANGES
 
+0.11.1 (November 12, 2018)
+- New -env-file flag to load environment from file
+- New event type 'instancerestart'
+- fastcgi: Strip PATH_INFO from SCRIPT_FILENAME
+- fastcgi: Add REQUEST_SCHEME to environment
+- gzip: Compress .m3u and .m3u8 files by default
+- telemetry: Honor CADDY_UUID_FILE env variable
+- templates: New .TLSVersion action
+- tls: Remove remaining RSA_CBC cipher suites from defaults
+- tls: Raise alert if no certificate matches exactly
+- Numerous other bug fixes and improvements
+
+
 0.11 (May 10, 2018)
 - Built with Go 1.10.2
 - Integrated optional telemetry client

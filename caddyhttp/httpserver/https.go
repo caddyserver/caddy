@@ -21,6 +21,7 @@ import (
 
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddytls"
+	"github.com/mholt/certmagic"
 )
 
 func activateHTTPS(cctx caddy.Context) error {
@@ -37,10 +38,13 @@ func activateHTTPS(cctx caddy.Context) error {
 
 	// place certificates and keys on disk
 	for _, c := range ctx.siteConfigs {
-		if c.TLS.OnDemand {
+		if !c.TLS.Managed {
+			continue
+		}
+		if c.TLS.Manager.OnDemand != nil {
 			continue // obtain these certificates on-demand instead
 		}
-		err := c.TLS.ObtainCert(c.TLS.Hostname, operatorPresent)
+		err := c.TLS.Manager.ObtainCert(c.TLS.Hostname, operatorPresent)
 		if err != nil {
 			return err
 		}
@@ -62,9 +66,14 @@ func activateHTTPS(cctx caddy.Context) error {
 	// on the ports we'd need to do ACME before we finish starting; parent process
 	// already running renewal ticker, so renewal won't be missed anyway.)
 	if !caddy.IsUpgrade() {
-		err = caddytls.RenewManagedCertificates(true)
-		if err != nil {
-			return err
+		ctx.instance.StorageMu.RLock()
+		certCache, ok := ctx.instance.Storage[caddytls.CertCacheInstStorageKey].(*certmagic.Cache)
+		ctx.instance.StorageMu.RUnlock()
+		if ok && certCache != nil {
+			err = certCache.RenewManagedCertificates(operatorPresent)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
@@ -95,13 +104,14 @@ func markQualifiedForAutoHTTPS(configs []*SiteConfig) {
 // value will always be nil.
 func enableAutoHTTPS(configs []*SiteConfig, loadCertificates bool) error {
 	for _, cfg := range configs {
-		if cfg == nil || cfg.TLS == nil || !cfg.TLS.Managed || cfg.TLS.OnDemand {
+		if cfg == nil || cfg.TLS == nil || !cfg.TLS.Managed ||
+			cfg.TLS.Manager == nil || cfg.TLS.Manager.OnDemand != nil {
 			continue
 		}
 		cfg.TLS.Enabled = true
 		cfg.Addr.Scheme = "https"
-		if loadCertificates && caddytls.HostQualifies(cfg.TLS.Hostname) {
-			_, err := cfg.TLS.CacheManagedCertificate(cfg.TLS.Hostname)
+		if loadCertificates && certmagic.HostQualifies(cfg.TLS.Hostname) {
+			_, err := cfg.TLS.Manager.CacheManagedCertificate(cfg.TLS.Hostname)
 			if err != nil {
 				return err
 			}
@@ -113,7 +123,7 @@ func enableAutoHTTPS(configs []*SiteConfig, loadCertificates bool) error {
 		// Set default port of 443 if not explicitly set
 		if cfg.Addr.Port == "" &&
 			cfg.TLS.Enabled &&
-			(!cfg.TLS.Manual || cfg.TLS.OnDemand) &&
+			(!cfg.TLS.Manual || cfg.TLS.Manager.OnDemand != nil) &&
 			cfg.Addr.Host != "localhost" {
 			cfg.Addr.Port = HTTPSPort
 		}
@@ -207,7 +217,7 @@ func redirPlaintextHost(cfg *SiteConfig) *SiteConfig {
 		Addr:       Address{Original: addr, Host: host, Port: port},
 		ListenHost: cfg.ListenHost,
 		middleware: []Middleware{redirMiddleware},
-		TLS:        &caddytls.Config{AltHTTPPort: cfg.TLS.AltHTTPPort, AltTLSSNIPort: cfg.TLS.AltTLSSNIPort},
+		TLS:        &caddytls.Config{Manager: cfg.TLS.Manager},
 		Timeouts:   cfg.Timeouts,
 	}
 }
