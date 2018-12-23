@@ -17,7 +17,9 @@ package basicauth
 import (
 	"fmt"
 	"io/ioutil"
+	"net"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -126,6 +128,34 @@ md5:$apr1$l42y8rex$pOA2VJ0x/0TwaFeAF9nX61`
 		{`basicauth sha1 htpasswd=` + htfh.Name(), false, htpasswdPasswd, []Rule{
 			{Username: "sha1"},
 		}},
+		{`basicauth user pwd {
+			/resource1
+			/resource2
+			realm "Secure resources"
+			allowed_cidr 127.0.0.1
+			allowed_cidr ::1
+			allowed_cidr 10.0.0.0/16
+		}`, false, "pwd", []Rule{
+			{Username: "user", Resources: []string{"/resource1", "/resource2"}, Realm: "Secure resources",
+				AllowedCIDR: []*net.IPNet{
+					{IP: net.ParseIP("127.0.0.1"), Mask: net.CIDRMask(32, 32)},
+					{IP: net.ParseIP("::1"), Mask: net.CIDRMask(128, 128)},
+					{IP: net.ParseIP("10.0.0.0").Mask(net.CIDRMask(32, 32)), Mask: net.CIDRMask(16, 32)},
+				},
+			},
+		}},
+		{`basicauth user pwd {
+			/resource1
+			allowed_cidr
+		}`, true, "pwd", []Rule{}},
+		{`basicauth user pwd {
+			/resource1
+			allowed_cidr 127.0.0
+		}`, true, "pwd", []Rule{}},
+		{`basicauth user pwd {
+			/resource1
+			allowed_cidr 127.0.0.0/128
+		}`, true, "pwd", []Rule{}},
 	}
 
 	for i, test := range tests {
@@ -153,6 +183,11 @@ md5:$apr1$l42y8rex$pOA2VJ0x/0TwaFeAF9nX61`
 			if actualRule.Realm != expectedRule.Realm {
 				t.Errorf("Test %d, rule %d: Expected realm '%s', got '%s'",
 					i, j, expectedRule.Realm, actualRule.Realm)
+			}
+
+			if !reflect.DeepEqual(actualRule.AllowedCIDR, expectedRule.AllowedCIDR) {
+				t.Errorf("Test %d, rule %d: Expected AllowedCIDR '%+v', got '%+v'",
+					i, j, expectedRule.AllowedCIDR, actualRule.AllowedCIDR)
 			}
 
 			if strings.Contains(test.input, "htpasswd=") && skipHtpassword {

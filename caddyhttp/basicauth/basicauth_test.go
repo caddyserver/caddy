@@ -18,6 +18,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -85,6 +86,7 @@ func TestBasicAuth(t *testing.T) {
 				t.Fatalf("Test %d: Could not create HTTP request: %v", i, err)
 			}
 			req.SetBasicAuth(test.user, test.password)
+			req.RemoteAddr = "127.0.0.1:62329"
 
 			rec := httptest.NewRecorder()
 			result, err := rw.ServeHTTP(rec, req)
@@ -111,6 +113,57 @@ func TestBasicAuth(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+func TestAllowedCIDR(t *testing.T) {
+	ba := BasicAuth{
+		Next: httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
+			return http.StatusOK, nil
+		}),
+		Rules: []Rule{
+			{Username: "okuser", Password: PlainMatcher("okpass"),
+				Resources: []string{"/testing"},
+				AllowedCIDR: []*net.IPNet{
+					{IP: net.ParseIP("127.0.0.1"), Mask: net.CIDRMask(32, 32)},
+					{IP: net.ParseIP("::1"), Mask: net.CIDRMask(128, 128)},
+					{IP: net.ParseIP("10.0.0.0").Mask(net.CIDRMask(32, 32)), Mask: net.CIDRMask(16, 32)},
+				},
+			},
+		},
+	}
+
+	tt := []struct {
+		name           string
+		ipFrom         string
+		expectedStatus int
+	}{
+		{"request from 127.0.0.1", "127.0.0.1", http.StatusOK},
+		{"request from 1.1.1.1", "1.1.1.1", http.StatusUnauthorized},
+		{"request from 10.10.1.12", "10.10.1.12", http.StatusUnauthorized},
+		{"request from 10.0.1.12", "10.0.1.12", http.StatusOK},
+		{"request from ::1", "::1", http.StatusOK},
+		{"request from fe80::5464:94ff:fef6:53dd::1", "fe80::5464:94ff:fef6:53dd::1", http.StatusUnauthorized},
+	}
+
+	for _, tc := range tt {
+		t.Run(tc.name, func(t *testing.T) {
+			req, err := http.NewRequest("GET", "/testing", nil)
+			if err != nil {
+				t.Fatalf("Could not create HTTP request: %q", err)
+			}
+			req.RemoteAddr = net.JoinHostPort(tc.ipFrom, "32892")
+
+			rec := httptest.NewRecorder()
+			status, err := ba.ServeHTTP(rec, req)
+			if err != nil {
+				t.Fatalf("Could not ServeHTTP: %q", err)
+			}
+
+			if status != tc.expectedStatus {
+				t.Fatalf("invalid http staus, expected %d got %d", tc.expectedStatus, status)
+			}
+		})
 	}
 }
 
@@ -144,6 +197,7 @@ func TestMultipleOverlappingRules(t *testing.T) {
 		}
 		auth := "Basic " + base64.StdEncoding.EncodeToString([]byte(test.cred))
 		req.Header.Set("Authorization", auth)
+		req.RemoteAddr = "127.0.0.1:62329"
 
 		rec := httptest.NewRecorder()
 		result, err := rw.ServeHTTP(rec, req)

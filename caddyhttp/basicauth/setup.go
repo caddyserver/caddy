@@ -15,6 +15,7 @@
 package basicauth
 
 import (
+	"net"
 	"strings"
 
 	"github.com/mholt/caddy"
@@ -81,17 +82,54 @@ func basicAuthParse(c *caddy.Controller) ([]Rule, error) {
 			args = c.RemainingArgs()
 			switch len(args) {
 			case 0:
-				// Assume single argument is path resource
-				rule.Resources = append(rule.Resources, val)
+				if strings.Contains(val, "/") {
+					// Assume single argument is path resource
+					rule.Resources = append(rule.Resources, val)
+				} else {
+					return rules, c.Errf("expected ressource starting with '/', got %q", val)
+				}
 			case 1:
-				if val == "realm" {
+				switch val {
+				case "realm":
 					if rule.Realm == "" {
 						rule.Realm = strings.Replace(args[0], `"`, `\"`, -1)
 					} else {
 						return rules, c.Errf("\"realm\" subdirective can only be specified once")
 					}
-				} else {
-					return rules, c.Errf("expecting \"realm\", got \"%s\"", val)
+				case "allowed_cidr":
+					var network *net.IPNet
+					if strings.Contains(args[0], "/") {
+						var err error
+						_, network, err = net.ParseCIDR(args[0])
+						if err != nil {
+							return rules, c.Errf("\"allowed_cidr\" failed to parse network %q: %q", args[0], err)
+						}
+					} else {
+						// This is an IP without network explicitly defined
+						ip := net.ParseIP(args[0])
+						if ip == nil {
+							return rules, c.Errf("\"allowed_cidr\" failed to parse ip %q", args[0])
+						}
+						bits := 128
+						if ip.To4() != nil {
+							bits = 32
+						}
+						network = &net.IPNet{
+							IP:   ip,
+							Mask: net.CIDRMask(bits, bits),
+						}
+					}
+
+					if network == nil {
+						return rules, c.Errf("\"allowed_cidr\" failed to parse network %q", args[0])
+					}
+
+					if rule.AllowedCIDR == nil {
+						rule.AllowedCIDR = []*net.IPNet{}
+					}
+					rule.AllowedCIDR = append(rule.AllowedCIDR, network)
+				default:
+					return rules, c.Errf("expecting \"realm\" or \"allowed_cidr\", got \"%s\"", val)
 				}
 			default:
 				return rules, c.ArgErr()

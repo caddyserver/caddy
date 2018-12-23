@@ -26,6 +26,7 @@ import (
 	"crypto/subtle"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -49,7 +50,7 @@ type BasicAuth struct {
 
 // ServeHTTP implements the httpserver.Handler interface.
 func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
-	var protected, isAuthenticated bool
+	var protected, isAuthenticated, isCIDRAllowed bool
 	var realm string
 
 	// do not check for basic auth on OPTIONS call
@@ -58,7 +59,24 @@ func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 		return a.Next.ServeHTTP(w, r)
 	}
 
+	// Get the remote ip
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return 0, err
+	}
+	remoteIP := net.ParseIP(host)
+
 	for _, rule := range a.Rules {
+		// Check if the IP is allowed
+		if len(rule.AllowedCIDR) != 0 {
+			for _, network := range rule.AllowedCIDR {
+				if network.Contains(remoteIP) {
+					isCIDRAllowed = true
+					break
+				}
+			}
+		}
+
 		for _, res := range rule.Resources {
 			if !httpserver.Path(r.URL.Path).Matches(res) {
 				continue
@@ -92,7 +110,7 @@ func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 		}
 	}
 
-	if protected && !isAuthenticated {
+	if protected && !isAuthenticated && !isCIDRAllowed {
 		// browsers show a message that says something like:
 		// "The website says: <realm>"
 		// which is kinda dumb, but whatever.
@@ -111,10 +129,11 @@ func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 // combination protect the associated resources, which are
 // file or directory paths.
 type Rule struct {
-	Username  string
-	Password  func(string) bool
-	Resources []string
-	Realm     string // See RFC 1945 and RFC 2617, default: "Restricted"
+	Username    string
+	Password    func(string) bool
+	Resources   []string
+	Realm       string       // See RFC 1945 and RFC 2617, default: "Restricted"
+	AllowedCIDR []*net.IPNet // List of networks authorized without basic auth
 }
 
 // PasswordMatcher determines whether a password matches a rule.
