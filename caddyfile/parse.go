@@ -365,6 +365,12 @@ func (p *parser) directive() error {
 			nesting--
 		} else if p.Val() == "}" && nesting == 0 {
 			return p.Err("Unexpected '}' because no matching opening brace")
+		} else if p.Val() == "import" && p.isNewLine() {
+			if err := p.doImport(); err != nil {
+				return err
+			}
+			p.cursor-- // cursor is advanced when we continue, so roll back one more
+			continue
 		}
 		p.tokens[p.cursor].Text = replaceEnvVars(p.tokens[p.cursor].Text)
 		p.block.Tokens[dir] = append(p.block.Tokens[dir], p.tokens[p.cursor])
