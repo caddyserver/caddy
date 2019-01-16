@@ -86,6 +86,7 @@ func TestReplace(t *testing.T) {
 
 	old := now
 	now = func() time.Time {
+		// Note that the `-7` is seconds, not hours.
 		return time.Date(2006, 1, 2, 15, 4, 5, 99999999, time.FixedZone("hardcoded", -7))
 	}
 	defer func() {
@@ -101,6 +102,7 @@ func TestReplace(t *testing.T) {
 		{"The response status is {status}.", "The response status is 200."},
 		{"{when}", "02/Jan/2006:15:04:05 +0000"},
 		{"{when_iso}", "2006-01-02T15:04:12Z"},
+		{"{when_iso_local}", "2006-01-02T15:04:05"},
 		{"{when_unix}", "1136214252"},
 		{"{when_unix_ms}", "1136214252099"},
 		{"The Custom header is {>Custom}.", "The Custom header is foobarbaz."},
@@ -276,6 +278,7 @@ func BenchmarkReplace(b *testing.B) {
 	recordRequest.Header().Set("Custom", "CustomResponseHeader")
 
 	now = func() time.Time {
+		// Note that the `-7` is seconds, not hours.
 		return time.Date(2006, 1, 2, 15, 4, 5, 02, time.FixedZone("hardcoded", -7))
 	}
 
@@ -308,6 +311,7 @@ func BenchmarkReplaceEscaped(b *testing.B) {
 	recordRequest.Header().Set("Custom", "CustomResponseHeader")
 
 	now = func() time.Time {
+		// Note that the `-7` is seconds, not hours.
 		return time.Date(2006, 1, 2, 15, 4, 5, 02, time.FixedZone("hardcoded", -7))
 	}
 
@@ -334,6 +338,7 @@ func TestResponseRecorderNil(t *testing.T) {
 
 	old := now
 	now = func() time.Time {
+		// Note that the `-7` is seconds, not hours.
 		return time.Date(2006, 1, 2, 15, 4, 5, 02, time.FixedZone("hardcoded", -7))
 	}
 	defer func() {

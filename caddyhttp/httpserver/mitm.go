@@ -74,6 +74,7 @@ func (h *tlsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("X-BlueCoat-Via") != "" || // Blue Coat (masks User-Agent header to generic values)
 		r.Header.Get("X-FCCKV2") != "" || // Fortinet
 		info.advertisesHeartbeatSupport() { // no major browsers have ever implemented Heartbeat
+		// TODO: Move the heartbeat check into each "looksLike" function...
 		checked = true
 		mitm = true
 	} else if strings.Contains(ua, "Edge") || strings.Contains(ua, "MSIE") ||

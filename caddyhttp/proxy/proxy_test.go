@@ -1369,7 +1369,7 @@ func TestCancelRequest(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	status, err := p.ServeHTTP(rec, req)
-	expectedStatus, expectErr := http.StatusBadGateway, context.Canceled
+	expectedStatus, expectErr := CustomStatusContextCancelled, context.Canceled
 	if status != expectedStatus || err != expectErr {
 		t.Errorf("expect proxy handle return status[%d] with error[%v], but got status[%d] with error[%v]",
 			expectedStatus, expectErr, status, err)

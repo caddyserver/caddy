@@ -25,6 +25,12 @@ Caddy is a **production-ready** open-source web server that is fast, easy to use
 
 Available for Windows, Mac, Linux, BSD, Solaris, and [Android](https://github.com/mholt/caddy/wiki/Running-Caddy-on-Android).
 
+<p align="center">
+	<b>Thanks to our special sponsor:</b>
+	<br><br>
+	<a href="https://relicabackup.com"><img src="https://caddyserver.com/resources/images/sponsors/relica.png" width="220" alt="Relica - Cross-platform file backup to the cloud, local disks, or other computers"></a>
+</p>
+
 ## Menu
 
 - [Features](#features)
@@ -49,6 +55,13 @@ Available for Windows, Mac, Linux, BSD, Solaris, and [Android](https://github.co
 [See a more complete list of features built into Caddy.](https://caddyserver.com/features) On top of all those, Caddy does even more with plugins: choose which plugins you want at [download](https://caddyserver.com/download).
 
 Altogether, Caddy can do things other web servers simply cannot do. Its features and plugins save you time and mistakes, and will cheer you up. Your Caddy instance takes care of the details for you!
+
+
+<p align="center">
+	<b>Powered by</b>
+	<br>
+	<a href="https://github.com/mholt/certmagic"><img src="https://user-images.githubusercontent.com/1128849/49704830-49d37200-fbd5-11e8-8385-767e0cd033c3.png" alt="CertMagic" width="250"></a>
+</p>
 
 
 ## Install

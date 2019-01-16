@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/mholt/caddy/caddytls"
+	"github.com/mholt/certmagic"
 )
 
 func TestRedirPlaintextHost(t *testing.T) {
@@ -175,7 +176,7 @@ func TestMakePlaintextRedirects(t *testing.T) {
 
 func TestEnableAutoHTTPS(t *testing.T) {
 	configs := []*SiteConfig{
-		{Addr: Address{Host: "example.com"}, TLS: &caddytls.Config{Managed: true}},
+		{Addr: Address{Host: "example.com"}, TLS: &caddytls.Config{Managed: true, Manager: &certmagic.Config{}}},
 		{}, // not managed - no changes!
 	}
 
@@ -196,18 +197,18 @@ func TestEnableAutoHTTPS(t *testing.T) {
 func TestMarkQualifiedForAutoHTTPS(t *testing.T) {
 	// TODO: caddytls.TestQualifiesForManagedTLS and this test share nearly the same config list...
 	configs := []*SiteConfig{
-		{Addr: Address{Host: ""}, TLS: new(caddytls.Config)},
-		{Addr: Address{Host: "localhost"}, TLS: new(caddytls.Config)},
-		{Addr: Address{Host: "123.44.3.21"}, TLS: new(caddytls.Config)},
-		{Addr: Address{Host: "example.com"}, TLS: new(caddytls.Config)},
+		{Addr: Address{Host: ""}, TLS: newManagedConfig()},
+		{Addr: Address{Host: "localhost"}, TLS: newManagedConfig()},
+		{Addr: Address{Host: "123.44.3.21"}, TLS: newManagedConfig()},
+		{Addr: Address{Host: "example.com"}, TLS: newManagedConfig()},
 		{Addr: Address{Host: "example.com"}, TLS: &caddytls.Config{Manual: true}},
 		{Addr: Address{Host: "example.com"}, TLS: &caddytls.Config{ACMEEmail: "off"}},
-		{Addr: Address{Host: "example.com"}, TLS: &caddytls.Config{ACMEEmail: "foo@bar.com"}},
-		{Addr: Address{Host: "example.com", Scheme: "http"}, TLS: new(caddytls.Config)},
-		{Addr: Address{Host: "example.com", Port: "80"}, TLS: new(caddytls.Config)},
-		{Addr: Address{Host: "example.com", Port: "1234"}, TLS: new(caddytls.Config)},
-		{Addr: Address{Host: "example.com", Scheme: "https"}, TLS: new(caddytls.Config)},
-		{Addr: Address{Host: "example.com", Port: "80", Scheme: "https"}, TLS: new(caddytls.Config)},
+		{Addr: Address{Host: "example.com"}, TLS: &caddytls.Config{ACMEEmail: "foo@bar.com", Manager: &certmagic.Config{}}},
+		{Addr: Address{Host: "example.com", Scheme: "http"}, TLS: newManagedConfig()},
+		{Addr: Address{Host: "example.com", Port: "80"}, TLS: newManagedConfig()},
+		{Addr: Address{Host: "example.com", Port: "1234"}, TLS: newManagedConfig()},
+		{Addr: Address{Host: "example.com", Scheme: "https"}, TLS: newManagedConfig()},
+		{Addr: Address{Host: "example.com", Port: "80", Scheme: "https"}, TLS: newManagedConfig()},
 	}
 	expectedManagedCount := 4
 
@@ -223,4 +224,8 @@ func TestMarkQualifiedForAutoHTTPS(t *testing.T) {
 	if count != expectedManagedCount {
 		t.Errorf("Expected %d managed configs, but got %d", expectedManagedCount, count)
 	}
+}
+
+func newManagedConfig() *caddytls.Config {
+	return &caddytls.Config{Manager: &certmagic.Config{}}
 }
