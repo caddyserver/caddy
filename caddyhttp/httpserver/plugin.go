@@ -126,7 +126,7 @@ func (h *httpContext) saveConfig(key string, cfg *SiteConfig) {
 // InspectServerBlocks make sure that everything checks out before
 // executing directives and otherwise prepares the directives to
 // be parsed and executed.
-func (h *httpContext) InspectServerBlocks(sourceFile string, serverBlocks []caddyfile.ServerBlock) ([]caddyfile.ServerBlock, error) {
+func (h *httpContext) InspectServerBlocks(sourceFile string, serverBlocks caddyfile.ServerBlocks) (caddyfile.ServerBlocks, error) {
 	siteAddrs := make(map[string]string)
 
 	// For each address in each server block, make a new config

@@ -15,9 +15,11 @@
 package caddyfile
 
 import (
+	"bytes"
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -716,5 +718,178 @@ func TestSnippetAcrossMultipleFiles(t *testing.T) {
 	}
 	if actual, expected := blocks[0].Tokens["gzip"][0].Text, "gzip"; expected != actual {
 		t.Errorf("Expected argument to be '%s' but was '%s'", expected, actual)
+	}
+}
+
+func TestFileSet(t *testing.T) {
+	testCases := []struct {
+		input    []string
+		expected []string // sorted slice of unique file names
+	}{
+		{
+			input:    []string{},
+			expected: []string{},
+		},
+		{
+			input:    []string{"file1"},
+			expected: []string{"file1"},
+		},
+		{
+			input:    []string{"file1", "file1", "file1", "file2"},
+			expected: []string{"file1", "file2"},
+		},
+		{
+			input:    []string{"file1", "file3", "file2", "file1"},
+			expected: []string{"file1", "file2", "file3"},
+		},
+	}
+
+	for _, tc := range testCases {
+		fs := make(FileSet)
+		fs.Add(tc.input...)
+		files := fs.Files()
+
+		actual := len(files)
+		expected := len(tc.expected)
+		if actual != expected {
+			t.Errorf("%d expected unique file names; actual = %d; %v", expected, actual, files)
+			continue
+		}
+
+		sort.Strings(files)
+		for i := 0; i < actual; i++ {
+			if files[i] != tc.expected[i] {
+				t.Errorf("%d: expected %q; actual %q", i, tc.expected[i], files[i])
+			}
+		}
+	}
+}
+
+func TestServerBlocksFiles(t *testing.T) {
+	testCases := []struct {
+		blocks   ServerBlocks
+		expected []string // sorted slice of unique file names across all blocks
+	}{
+		{
+			blocks: ServerBlocks{
+				ServerBlock{FileSet: make(FileSet)},
+			},
+			expected: []string{},
+		},
+		{
+			blocks: ServerBlocks{
+				ServerBlock{FileSet: FileSet{
+					"file1": struct{}{},
+				}},
+			},
+			expected: []string{"file1"},
+		},
+		{
+			blocks: ServerBlocks{
+				ServerBlock{FileSet: FileSet{
+					"file1": struct{}{},
+				}},
+				ServerBlock{FileSet: FileSet{
+					"file1": struct{}{},
+				}},
+			},
+			expected: []string{"file1"},
+		},
+		{
+			blocks: ServerBlocks{
+				ServerBlock{FileSet: FileSet{
+					"file1": struct{}{},
+					"file2": struct{}{},
+				}},
+				ServerBlock{FileSet: FileSet{
+					"file1": struct{}{},
+					"file3": struct{}{},
+					"file4": struct{}{},
+				}},
+				ServerBlock{FileSet: FileSet{
+					"file1": struct{}{},
+					"file3": struct{}{},
+					"file5": struct{}{},
+					"file6": struct{}{},
+				}},
+			},
+			expected: []string{"file1", "file2", "file3", "file4", "file5", "file6"},
+		},
+	}
+
+	for _, tc := range testCases {
+		files := tc.blocks.Files()
+		actual := len(files)
+		expected := len(tc.expected)
+		if actual != expected {
+			t.Errorf("%d expected unique file names; actual = %d; %v", expected, actual, files)
+			continue
+		}
+
+		sort.Strings(files)
+		for i := 0; i < actual; i++ {
+			if files[i] != tc.expected[i] {
+				t.Errorf("%d: expected %q; actual %q", i, tc.expected[i], files[i])
+			}
+		}
+	}
+}
+
+func TestServerBlocksParse(t *testing.T) {
+	defaultFile, err := filepath.Abs("Caddyfile")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expectedFiles := map[string]struct{}{
+		defaultFile: {},
+	}
+
+	recursiveFile1, err := filepath.Abs("testdata/recursive_import_test1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	recursiveFile2, err := filepath.Abs("testdata/recursive_import_test2")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = ioutil.WriteFile(recursiveFile1, []byte("import "+recursiveFile2), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(recursiveFile1)
+	expectedFiles[recursiveFile1] = struct{}{}
+
+	err = ioutil.WriteFile(recursiveFile2, []byte("dir2"), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(recursiveFile2)
+	expectedFiles[recursiveFile2] = struct{}{}
+
+	input := []byte(
+		`localhost
+		dir1
+		import testdata/recursive_import_test1`,
+	)
+
+	sbs, err := Parse(defaultFile, bytes.NewReader(input), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	files := sbs.Files()
+	expected := len(expectedFiles)
+	actual := len(files)
+	if expected != actual {
+		t.Fatalf("expected %d files in the server blocks; actual %d", expected, actual)
+	}
+
+	for _, f := range files {
+		if _, ok := expectedFiles[f]; !ok {
+			t.Fatalf("%q not found in expected files", f)
+		}
 	}
 }

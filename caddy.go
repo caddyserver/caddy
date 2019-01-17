@@ -632,7 +632,7 @@ func ValidateAndExecuteDirectives(cdyfile Input, inst *Instance, justValidate bo
 }
 
 func executeDirectives(inst *Instance, filename string,
-	directives []string, sblocks []caddyfile.ServerBlock, justValidate bool) error {
+	directives []string, sblocks caddyfile.ServerBlocks, justValidate bool) error {
 	// map of server block ID to map of directive name to whatever.
 	storages := make(map[int]map[string]interface{})
 
@@ -842,7 +842,7 @@ func getServerType(serverType string) (ServerType, error) {
 	return ServerType{}, fmt.Errorf("unknown server type '%s'", serverType)
 }
 
-func loadServerBlocks(serverType, filename string, input io.Reader) ([]caddyfile.ServerBlock, error) {
+func loadServerBlocks(serverType, filename string, input io.Reader) (caddyfile.ServerBlocks, error) {
 	validDirectives := ValidDirectives(serverType)
 	serverBlocks, err := caddyfile.Parse(filename, input, validDirectives)
 	if err != nil {
@@ -856,6 +856,9 @@ func loadServerBlocks(serverType, filename string, input io.Reader) ([]caddyfile
 			return nil, err
 		}
 	}
+
+	EmitEvent(CaddyfileParsedEvent, serverBlocks)
+
 	return serverBlocks, nil
 }
 

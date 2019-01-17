@@ -30,7 +30,7 @@ import (
 // Directives that do not appear in validDirectives will cause
 // an error. If you do not want to check for valid directives,
 // pass in nil instead.
-func Parse(filename string, input io.Reader, validDirectives []string) ([]ServerBlock, error) {
+func Parse(filename string, input io.Reader, validDirectives []string) (ServerBlocks, error) {
 	p := parser{Dispenser: NewDispenser(filename, input), validDirectives: validDirectives}
 	return p.parseAll()
 }
@@ -59,8 +59,8 @@ type parser struct {
 	definedSnippets map[string][]Token
 }
 
-func (p *parser) parseAll() ([]ServerBlock, error) {
-	var blocks []ServerBlock
+func (p *parser) parseAll() (ServerBlocks, error) {
+	var blocks ServerBlocks
 
 	for p.Next() {
 		err := p.parseOne()
@@ -76,7 +76,19 @@ func (p *parser) parseAll() ([]ServerBlock, error) {
 }
 
 func (p *parser) parseOne() error {
-	p.block = ServerBlock{Tokens: make(map[string][]Token)}
+	p.block = ServerBlock{
+		FileSet: make(FileSet),
+		Tokens:  make(map[string][]Token),
+	}
+
+	if p.Dispenser.File() != "" {
+		absFile, err := filepath.Abs(p.Dispenser.File())
+		if err != nil {
+			log.Printf("unable to resolve absolute file path for %q: %s", p.Dispenser.File(), err)
+		} else {
+			p.block.FileSet.Add(absFile)
+		}
+	}
 
 	return p.begin()
 }
@@ -292,6 +304,12 @@ func (p *parser) doImport() error {
 				return err
 			}
 			importedTokens = append(importedTokens, newTokens...)
+			absFile, err := filepath.Abs(importFile)
+			if err != nil {
+				log.Printf("unable to resolve absolute file path for %q: %s", importFile, err)
+				continue
+			}
+			p.block.FileSet.Add(absFile)
 		}
 	}
 
@@ -447,11 +465,53 @@ func replaceEnvReferences(s, refStart, refEnd string) string {
 	return s
 }
 
+// FileSet represents a set of files imported in to the Caddyfile inclusive.
+type FileSet map[string]struct{}
+
+// Add a file to the set.
+func (fs FileSet) Add(file ...string) {
+	for _, f := range file {
+		fs[f] = struct{}{}
+	}
+}
+
+// Files returns a slice of unique import files in the ServerBlock.
+func (fs FileSet) Files() []string {
+	files := make([]string, 0, len(fs))
+
+	for f := range fs {
+		files = append(files, f)
+	}
+
+	return files
+}
+
 // ServerBlock associates any number of keys (usually addresses
 // of some sort) with tokens (grouped by directive name).
 type ServerBlock struct {
-	Keys   []string
-	Tokens map[string][]Token
+	FileSet FileSet
+	Keys    []string
+	Tokens  map[string][]Token
+}
+
+// ServerBlocks is a slice of ServerBlock objects.
+type ServerBlocks []ServerBlock
+
+// Files returns a slice of all unique file names in all ServerBlock objects.
+func (sbs ServerBlocks) Files() []string {
+	if len(sbs) == 0 {
+		return make([]string, 0)
+	}
+
+	fs := make(FileSet)
+	for _, sb := range sbs {
+		if sb.FileSet == nil {
+			continue
+		}
+		fs.Add(sb.FileSet.Files()...)
+	}
+
+	return fs.Files()
 }
 
 func (p *parser) isSnippet() (bool, string) {

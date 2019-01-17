@@ -57,7 +57,7 @@ type CallbackTestContext struct {
 	MakeServersFail bool
 }
 
-func (h *CallbackTestContext) InspectServerBlocks(name string, sblock []caddyfile.ServerBlock) ([]caddyfile.ServerBlock, error) {
+func (h *CallbackTestContext) InspectServerBlocks(name string, sblock caddyfile.ServerBlocks) (caddyfile.ServerBlocks, error) {
 	return sblock, nil
 }
 func (h *CallbackTestContext) MakeServers() ([]Server, error) {

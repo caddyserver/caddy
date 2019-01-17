@@ -132,9 +132,7 @@ func ListPlugins() map[string][]string {
 	}
 
 	sort.Strings(others)
-	for _, name := range others {
-		p["others"] = append(p["others"], name)
-	}
+	p["others"] = append(p["others"], others...)
 
 	return p
 }
@@ -195,7 +193,7 @@ type Context interface {
 	//
 	// This function can be a no-op and simply return its
 	// input if there is nothing to do here.
-	InspectServerBlocks(string, []caddyfile.ServerBlock) ([]caddyfile.ServerBlock, error)
+	InspectServerBlocks(string, caddyfile.ServerBlocks) (caddyfile.ServerBlocks, error)
 
 	// This is what Caddy calls to make server instances.
 	// By this time, all directives have been executed and,
@@ -280,6 +278,7 @@ const (
 	CertRenewEvent                 = "certrenew"
 	InstanceStartupEvent           = "instancestartup"
 	InstanceRestartEvent           = "instancerestart"
+	CaddyfileParsedEvent           = "caddyfileparsed"
 )
 
 // EventHook is a type which holds information about a startup hook plugin.
