@@ -193,7 +193,7 @@ func (c *cubicSender) OnPacketLost(
 		if c.congestionWindow >= 2*c.initialCongestionWindow {
 			c.minSlowStartExitWindow = c.congestionWindow / 2
 		}
-		c.congestionWindow = c.congestionWindow - protocol.DefaultTCPMSS
+		c.congestionWindow -= protocol.DefaultTCPMSS
 	} else if c.reno {
 		c.congestionWindow = protocol.ByteCount(float32(c.congestionWindow) * c.RenoBeta())
 	} else {
