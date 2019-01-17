@@ -179,7 +179,7 @@ func (fs *FileStorage) String() string {
 }
 
 func (fs *FileStorage) lockFilename(key string) string {
-	return filepath.Join(fs.lockDir(), StorageKeys.safe(key)+".lock")
+	return filepath.Join(fs.lockDir(), StorageKeys.Safe(key)+".lock")
 }
 
 func (fs *FileStorage) lockDir() string {

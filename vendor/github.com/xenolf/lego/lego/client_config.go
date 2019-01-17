@@ -35,20 +35,28 @@ const (
 )
 
 type Config struct {
-	CADirURL   string
-	User       registration.User
-	KeyType    certcrypto.KeyType
-	UserAgent  string
-	HTTPClient *http.Client
+	CADirURL    string
+	User        registration.User
+	UserAgent   string
+	HTTPClient  *http.Client
+	Certificate CertificateConfig
 }
 
 func NewConfig(user registration.User) *Config {
 	return &Config{
 		CADirURL:   LEDirectoryProduction,
 		User:       user,
-		KeyType:    certcrypto.RSA2048,
 		HTTPClient: createDefaultHTTPClient(),
+		Certificate: CertificateConfig{
+			KeyType: certcrypto.RSA2048,
+			Timeout: 30 * time.Second,
+		},
 	}
+}
+
+type CertificateConfig struct {
+	KeyType certcrypto.KeyType
+	Timeout time.Duration
 }
 
 // createDefaultHTTPClient Creates an HTTP client with a reasonable timeout value
