@@ -14,7 +14,6 @@ type windowUpdateQueue struct {
 	queue      map[protocol.StreamID]bool // used as a set
 	queuedConn bool                       // connection-level window update
 
-	cryptoStream       cryptoStream
 	streamGetter       streamGetter
 	connFlowController flowcontrol.ConnectionFlowController
 	callback           func(wire.Frame)
@@ -22,14 +21,12 @@ type windowUpdateQueue struct {
 
 func newWindowUpdateQueue(
 	streamGetter streamGetter,
-	cryptoStream cryptoStream,
 	connFC flowcontrol.ConnectionFlowController,
 	cb func(wire.Frame),
 ) *windowUpdateQueue {
 	return &windowUpdateQueue{
 		queue:              make(map[protocol.StreamID]bool),
 		streamGetter:       streamGetter,
-		cryptoStream:       cryptoStream,
 		connFlowController: connFC,
 		callback:           cb,
 	}
@@ -55,17 +52,12 @@ func (q *windowUpdateQueue) QueueAll() {
 		q.queuedConn = false
 	}
 	// queue all stream-level window updates
-	var offset protocol.ByteCount
 	for id := range q.queue {
-		if id == q.cryptoStream.StreamID() {
-			offset = q.cryptoStream.getWindowUpdate()
-		} else {
-			str, err := q.streamGetter.GetOrOpenReceiveStream(id)
-			if err != nil || str == nil { // the stream can be nil if it was completed before dequeing the window update
-				continue
-			}
-			offset = str.getWindowUpdate()
+		str, err := q.streamGetter.GetOrOpenReceiveStream(id)
+		if err != nil || str == nil { // the stream can be nil if it was completed before dequeing the window update
+			continue
 		}
+		offset := str.getWindowUpdate()
 		if offset == 0 { // can happen if we received a final offset, right after queueing the window update
 			continue
 		}
