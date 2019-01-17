@@ -16,6 +16,7 @@ import (
 func main() {
 	verbose := flag.Bool("v", false, "verbose")
 	tls := flag.Bool("tls", false, "activate support for IETF QUIC (work in progress)")
+	quiet := flag.Bool("q", false, "don't print the data")
 	flag.Parse()
 	urls := flag.Args()
 
@@ -57,8 +58,12 @@ func main() {
 			if err != nil {
 				panic(err)
 			}
-			logger.Infof("Request Body:")
-			logger.Infof("%s", body.Bytes())
+			if *quiet {
+				logger.Infof("Request Body: %d bytes", body.Len())
+			} else {
+				logger.Infof("Request Body:")
+				logger.Infof("%s", body.Bytes())
+			}
 			wg.Done()
 		}(addr)
 	}

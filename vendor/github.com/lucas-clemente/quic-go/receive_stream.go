@@ -8,6 +8,7 @@ import (
 
 	"github.com/lucas-clemente/quic-go/internal/flowcontrol"
 	"github.com/lucas-clemente/quic-go/internal/protocol"
+	"github.com/lucas-clemente/quic-go/internal/utils"
 	"github.com/lucas-clemente/quic-go/internal/wire"
 )
 
@@ -43,8 +44,8 @@ type receiveStream struct {
 	canceledRead      bool // set when CancelRead() is called
 	resetRemotely     bool // set when HandleRstStreamFrame() is called
 
-	readChan     chan struct{}
-	readDeadline time.Time
+	readChan chan struct{}
+	deadline time.Time
 
 	flowController flowcontrol.StreamFlowController
 	version        protocol.VersionNumber
@@ -108,6 +109,7 @@ func (s *receiveStream) readImpl(p []byte) (bool /*stream completed */, int, err
 			return false, bytesRead, s.closeForShutdownErr
 		}
 
+		var deadlineTimer *utils.Timer
 		for {
 			// Stop waiting on errors
 			if s.closedForShutdown {
@@ -120,9 +122,15 @@ func (s *receiveStream) readImpl(p []byte) (bool /*stream completed */, int, err
 				return false, bytesRead, s.resetRemotelyErr
 			}
 
-			deadline := s.readDeadline
-			if !deadline.IsZero() && !time.Now().Before(deadline) {
-				return false, bytesRead, errDeadline
+			deadline := s.deadline
+			if !deadline.IsZero() {
+				if !time.Now().Before(deadline) {
+					return false, bytesRead, errDeadline
+				}
+				if deadlineTimer == nil {
+					deadlineTimer = utils.NewTimer()
+				}
+				deadlineTimer.Reset(deadline)
 			}
 
 			if s.currentFrame != nil || s.currentFrameIsLast {
@@ -135,7 +143,8 @@ func (s *receiveStream) readImpl(p []byte) (bool /*stream completed */, int, err
 			} else {
 				select {
 				case <-s.readChan:
-				case <-time.After(time.Until(deadline)):
+				case <-deadlineTimer.Chan():
+					deadlineTimer.SetRead()
 				}
 			}
 			s.mutex.Lock()
@@ -164,7 +173,9 @@ func (s *receiveStream) readImpl(p []byte) (bool /*stream completed */, int, err
 			s.flowController.AddBytesRead(protocol.ByteCount(m))
 		}
 		// increase the flow control window, if necessary
-		s.flowController.MaybeQueueWindowUpdate()
+		if s.streamID != s.version.CryptoStreamID() {
+			s.flowController.MaybeQueueWindowUpdate()
+		}
 
 		if s.readPosInFrame >= len(s.currentFrame) && s.currentFrameIsLast {
 			s.finRead = true
@@ -270,13 +281,9 @@ func (s *receiveStream) onClose(offset protocol.ByteCount) {
 
 func (s *receiveStream) SetReadDeadline(t time.Time) error {
 	s.mutex.Lock()
-	oldDeadline := s.readDeadline
-	s.readDeadline = t
+	s.deadline = t
 	s.mutex.Unlock()
-	// if the new deadline is before the currently set deadline, wake up Read()
-	if t.Before(oldDeadline) {
-		s.signalRead()
-	}
+	s.signalRead()
 	return nil
 }
 
