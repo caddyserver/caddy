@@ -64,12 +64,11 @@ func (c Certificate) NeedsRenewal() bool {
 	if c.NotAfter.IsZero() {
 		return false
 	}
-	timeLeft := c.NotAfter.UTC().Sub(time.Now().UTC())
 	renewDurationBefore := DefaultRenewDurationBefore
 	if len(c.configs) > 0 && c.configs[0].RenewDurationBefore > 0 {
 		renewDurationBefore = c.configs[0].RenewDurationBefore
 	}
-	return timeLeft < renewDurationBefore
+	return time.Until(c.NotAfter) < renewDurationBefore
 }
 
 // CacheManagedCertificate loads the certificate for domain into the

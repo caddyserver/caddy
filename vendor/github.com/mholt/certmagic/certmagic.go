@@ -52,6 +52,16 @@ import (
 // HTTPS serves mux for all domainNames using the HTTP
 // and HTTPS ports, redirecting all HTTP requests to HTTPS.
 //
+// This high-level convenience function is opinionated and
+// applies sane defaults for production use, including
+// timeouts for HTTP requests and responses. To allow very
+// long-lived requests or connections, you should make your
+// own http.Server values and use this package's Listen(),
+// TLS(), or Config.TLSConfig() functions to customize to
+// your needs. For example, servers which need to support
+// large uploads or downloads with slow clients may need to
+// use longer timeouts, thus this function is not suitable.
+//
 // Calling this function signifies your acceptance to
 // the CA's Subscriber Agreement and/or Terms of Service.
 func HTTPS(domainNames []string, mux http.Handler) error {
@@ -96,13 +106,32 @@ func HTTPS(domainNames []string, mux http.Handler) error {
 	hln, hsln := httpLn, httpsLn
 	lnMu.Unlock()
 
-	httpHandler := cfg.HTTPChallengeHandler(http.HandlerFunc(httpRedirectHandler))
+	// create HTTP/S servers that are configured
+	// with sane default timeouts and appropriate
+	// handlers (the HTTP server solves the HTTP
+	// challenge and issues redirects to HTTPS,
+	// while the HTTPS server simply serves the
+	// user's handler)
+	httpServer := &http.Server{
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       5 * time.Second,
+		WriteTimeout:      5 * time.Second,
+		IdleTimeout:       5 * time.Second,
+		Handler:           cfg.HTTPChallengeHandler(http.HandlerFunc(httpRedirectHandler)),
+	}
+	httpsServer := &http.Server{
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      2 * time.Minute,
+		IdleTimeout:       5 * time.Minute,
+		Handler:           mux,
+	}
 
 	log.Printf("%v Serving HTTP->HTTPS on %s and %s",
 		domainNames, hln.Addr(), hsln.Addr())
 
-	go http.Serve(hln, httpHandler)
-	return http.Serve(hsln, mux)
+	go httpServer.Serve(hln)
+	return httpsServer.Serve(hsln)
 }
 
 func httpRedirectHandler(w http.ResponseWriter, r *http.Request) {

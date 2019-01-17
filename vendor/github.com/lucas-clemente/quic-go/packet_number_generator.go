@@ -18,10 +18,12 @@ type packetNumberGenerator struct {
 }
 
 func newPacketNumberGenerator(initial, averagePeriod protocol.PacketNumber) *packetNumberGenerator {
-	return &packetNumberGenerator{
+	g := &packetNumberGenerator{
 		next:          initial,
 		averagePeriod: averagePeriod,
 	}
+	g.generateNewSkip()
+	return g
 }
 
 func (p *packetNumberGenerator) Peek() protocol.PacketNumber {
@@ -42,28 +44,19 @@ func (p *packetNumberGenerator) Pop() protocol.PacketNumber {
 	return next
 }
 
-func (p *packetNumberGenerator) generateNewSkip() error {
-	num, err := p.getRandomNumber()
-	if err != nil {
-		return err
-	}
-
+func (p *packetNumberGenerator) generateNewSkip() {
+	num := p.getRandomNumber()
 	skip := protocol.PacketNumber(num) * (p.averagePeriod - 1) / (math.MaxUint16 / 2)
 	// make sure that there are never two consecutive packet numbers that are skipped
 	p.nextToSkip = p.next + 2 + skip
-
-	return nil
 }
 
 // getRandomNumber() generates a cryptographically secure random number between 0 and MaxUint16 (= 65535)
 // The expectation value is 65535/2
-func (p *packetNumberGenerator) getRandomNumber() (uint16, error) {
+func (p *packetNumberGenerator) getRandomNumber() uint16 {
 	b := make([]byte, 2)
-	_, err := rand.Read(b)
-	if err != nil {
-		return 0, err
-	}
+	rand.Read(b) // ignore the error here
 
 	num := uint16(b[0])<<8 + uint16(b[1])
-	return num, nil
+	return num
 }

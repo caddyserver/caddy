@@ -371,6 +371,68 @@ func TestRecursiveImport(t *testing.T) {
 	}
 }
 
+func TestDirectiveImport(t *testing.T) {
+	testParseOne := func(input string) (ServerBlock, error) {
+		p := testParser(input)
+		p.Next() // parseOne doesn't call Next() to start, so we must
+		err := p.parseOne()
+		return p.block, err
+	}
+
+	isExpected := func(got ServerBlock) bool {
+		if len(got.Keys) != 1 || got.Keys[0] != "localhost" {
+			t.Errorf("got keys unexpected: expect localhost, got %v", got.Keys)
+			return false
+		}
+		if len(got.Tokens) != 2 {
+			t.Errorf("got wrong number of tokens: expect 2, got %d", len(got.Tokens))
+			return false
+		}
+		if len(got.Tokens["dir1"]) != 1 || len(got.Tokens["proxy"]) != 8 {
+			t.Errorf("got unexpect tokens: %v", got.Tokens)
+			return false
+		}
+		return true
+	}
+
+	directiveFile, err := filepath.Abs("testdata/directive_import_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = ioutil.WriteFile(directiveFile, []byte(`prop1 1
+	prop2 2`), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(directiveFile)
+
+	// import from existing file
+	result, err := testParseOne(`localhost
+	dir1
+	proxy {
+		import testdata/directive_import_test
+		transparent
+	}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !isExpected(result) {
+		t.Error("directive import failed")
+	}
+
+	// import from nonexisting file
+	_, err = testParseOne(`localhost
+	dir1
+	proxy {
+		import testdata/nonexistent_file
+		transparent
+	}`)
+	if err == nil {
+		t.Fatal("expected error when importing a nonexistent file")
+	}
+}
+
 func TestParseAll(t *testing.T) {
 	for i, test := range []struct {
 		input     string

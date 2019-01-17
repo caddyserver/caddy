@@ -432,5 +432,5 @@ func loadCertsInDir(cfg *Config, c *caddy.Controller, dir string) error {
 }
 
 func constructDefaultClusterPlugin() (certmagic.Storage, error) {
-	return certmagic.FileStorage{Path: caddy.AssetsPath()}, nil
+	return &certmagic.FileStorage{Path: caddy.AssetsPath()}, nil
 }

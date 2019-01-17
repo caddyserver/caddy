@@ -269,6 +269,13 @@ func MakeTLSConfig(configs []*Config) (*tls.Config, error) {
 	}
 
 	return &tls.Config{
+		// A tls.Config must have Certificates or GetCertificate
+		// set, in order to be accepted by tls.Listen and quic.Listen.
+		// TODO: remove this once the standard library allows a tls.Config with
+		// only GetConfigForClient set.
+		GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+			return nil, fmt.Errorf("all certificates configured via GetConfigForClient")
+		},
 		GetConfigForClient: configMap.GetConfigForClient,
 	}, nil
 }

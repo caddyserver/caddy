@@ -1,5 +1,21 @@
 CHANGES
 
+
+0.11.2 (January 16, 2019)
+- Extracted automagic TLS code into CertMagic library
+- Add support for new clustering plugins
+- New placeholder: '{when_iso_local}'
+- New third-party plugins: s3browser, filebrowser
+- Removed third-party plugins: jekyll, hugo
+- bind: Support multiple interface values
+- import: Can now be used within directive blocks
+- proxy: Status 499 when clients close connection early
+- templates: No longer emit ETag and Last-Modified headers
+- tls: Support for the ACME TLS-ALPN-01 challenge
+- KNOWN/UNRESOLVED REGRESSIONS: #2356, #2414
+- Several bug fixes and minor improvements
+
+
 0.11.1 (November 12, 2018)
 - New -env-file flag to load environment from file
 - New event type 'instancerestart'

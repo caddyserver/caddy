@@ -130,7 +130,7 @@
 			"importpath": "github.com/lucas-clemente/quic-go",
 			"repository": "https://github.com/lucas-clemente/quic-go",
 			"vcs": "git",
-			"revision": "71635f6961ad00ca5c088be625624e4a2cd1c066",
+			"revision": "f90751eabaa39364e3861ee5a8b179f140847d7e",
 			"branch": "HEAD",
 			"notests": true
 		},
@@ -138,7 +138,7 @@
 			"importpath": "github.com/mholt/certmagic",
 			"repository": "https://github.com/mholt/certmagic",
 			"vcs": "git",
-			"revision": "fe722057f2654b33cd528b8fd8b90e53fa495564",
+			"revision": "a3b276a1b44e1c2c3dcab752729976ea04f4839b",
 			"branch": "master",
 			"notests": true
 		},

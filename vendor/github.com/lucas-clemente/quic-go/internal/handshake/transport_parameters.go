@@ -3,8 +3,8 @@ package handshake
 import (
 	"bytes"
 	"encoding/binary"
-	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/lucas-clemente/quic-go/internal/protocol"
@@ -97,16 +97,18 @@ func (p *TransportParameters) getHelloMap() map[Tag][]byte {
 }
 
 func (p *TransportParameters) unmarshal(data []byte) error {
-	var foundIdleTimeout bool
+	// needed to check that every parameter is only sent at most once
+	var parameterIDs []transportParameterID
 
 	for len(data) >= 4 {
-		paramID := binary.BigEndian.Uint16(data[:2])
+		paramID := transportParameterID(binary.BigEndian.Uint16(data[:2]))
 		paramLen := int(binary.BigEndian.Uint16(data[2:4]))
 		data = data[4:]
 		if len(data) < paramLen {
 			return fmt.Errorf("remaining length (%d) smaller than parameter length (%d)", len(data), paramLen)
 		}
-		switch transportParameterID(paramID) {
+		parameterIDs = append(parameterIDs, paramID)
+		switch paramID {
 		case initialMaxStreamDataParameterID:
 			if paramLen != 4 {
 				return fmt.Errorf("wrong length for initial_max_stream_data: %d (expected 4)", paramLen)
@@ -128,7 +130,6 @@ func (p *TransportParameters) unmarshal(data []byte) error {
 			}
 			p.MaxUniStreams = binary.BigEndian.Uint16(data[:2])
 		case idleTimeoutParameterID:
-			foundIdleTimeout = true
 			if paramLen != 2 {
 				return fmt.Errorf("wrong length for idle_timeout: %d (expected 2)", paramLen)
 			}
@@ -156,11 +157,16 @@ func (p *TransportParameters) unmarshal(data []byte) error {
 		data = data[paramLen:]
 	}
 
+	// check that every transport parameter was sent at most once
+	sort.Slice(parameterIDs, func(i, j int) bool { return parameterIDs[i] < parameterIDs[j] })
+	for i := 0; i < len(parameterIDs)-1; i++ {
+		if parameterIDs[i] == parameterIDs[i+1] {
+			return fmt.Errorf("received duplicate transport parameter %#x", parameterIDs[i])
+		}
+	}
+
 	if len(data) != 0 {
 		return fmt.Errorf("should have read all data. Still have %d bytes", len(data))
-	}
-	if !foundIdleTimeout {
-		return errors.New("missing parameter")
 	}
 	return nil
 }

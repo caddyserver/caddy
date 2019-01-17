@@ -118,9 +118,6 @@ func (s *serverTLS) handleInitialImpl(p *receivedPacket) (quicSession, protocol.
 	mconf := s.mintConf.Clone()
 	mconf.ExtensionHandler = extHandler
 
-	// A server is allowed to perform multiple Retries.
-	// It doesn't make much sense, but it's something that our API allows.
-	// In that case it must use a source connection ID of at least 8 bytes.
 	connID, err := protocol.GenerateConnectionID(s.config.ConnectionIDLength)
 	if err != nil {
 		return nil, nil, err
@@ -152,7 +149,7 @@ func (s *serverTLS) sendRetry(remoteAddr net.Addr, hdr *wire.Header) error {
 	if err != nil {
 		return err
 	}
-	connID, err := protocol.GenerateConnectionIDForInitial()
+	connID, err := protocol.GenerateConnectionID(s.config.ConnectionIDLength)
 	if err != nil {
 		return err
 	}
