@@ -3,7 +3,6 @@ package resolver
 import (
 	"errors"
 	"fmt"
-	"net"
 	"sort"
 	"strconv"
 	"time"
@@ -21,7 +20,7 @@ type byType []acme.Challenge
 
 func (a byType) Len() int           { return len(a) }
 func (a byType) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a byType) Less(i, j int) bool { return a[i].Type < a[j].Type }
+func (a byType) Less(i, j int) bool { return a[i].Type > a[j].Type }
 
 type SolverManager struct {
 	core    *api.Core
@@ -29,53 +28,10 @@ type SolverManager struct {
 }
 
 func NewSolversManager(core *api.Core) *SolverManager {
-	solvers := map[challenge.Type]solver{
-		challenge.HTTP01:    http01.NewChallenge(core, validate, &http01.ProviderServer{}),
-		challenge.TLSALPN01: tlsalpn01.NewChallenge(core, validate, &tlsalpn01.ProviderServer{}),
-	}
-
 	return &SolverManager{
-		solvers: solvers,
+		solvers: map[challenge.Type]solver{},
 		core:    core,
 	}
-}
-
-// SetHTTP01Address specifies a custom interface:port to be used for HTTP based challenges.
-// If this option is not used, the default port 80 and all interfaces will be used.
-// To only specify a port and no interface use the ":port" notation.
-//
-// NOTE: This REPLACES any custom HTTP provider previously set by calling
-// c.SetProvider with the default HTTP challenge provider.
-func (c *SolverManager) SetHTTP01Address(iface string) error {
-	host, port, err := net.SplitHostPort(iface)
-	if err != nil {
-		return err
-	}
-
-	if chlng, ok := c.solvers[challenge.HTTP01]; ok {
-		chlng.(*http01.Challenge).SetProvider(http01.NewProviderServer(host, port))
-	}
-
-	return nil
-}
-
-// SetTLSALPN01Address specifies a custom interface:port to be used for TLS based challenges.
-// If this option is not used, the default port 443 and all interfaces will be used.
-// To only specify a port and no interface use the ":port" notation.
-//
-// NOTE: This REPLACES any custom TLS-ALPN provider previously set by calling
-// c.SetProvider with the default TLS-ALPN challenge provider.
-func (c *SolverManager) SetTLSALPN01Address(iface string) error {
-	host, port, err := net.SplitHostPort(iface)
-	if err != nil {
-		return err
-	}
-
-	if chlng, ok := c.solvers[challenge.TLSALPN01]; ok {
-		chlng.(*tlsalpn01.Challenge).SetProvider(tlsalpn01.NewProviderServer(host, port))
-	}
-
-	return nil
 }
 
 // SetHTTP01Provider specifies a custom provider p that can solve the given HTTP-01 challenge.
@@ -96,18 +52,15 @@ func (c *SolverManager) SetDNS01Provider(p challenge.Provider, opts ...dns01.Cha
 	return nil
 }
 
-// Exclude explicitly removes challenges from the pool for solving.
-func (c *SolverManager) Exclude(challenges []challenge.Type) {
-	// Loop through all challenges and delete the requested one if found.
-	for _, chlg := range challenges {
-		delete(c.solvers, chlg)
-	}
+// Remove Remove a challenge type from the available solvers.
+func (c *SolverManager) Remove(chlgType challenge.Type) {
+	delete(c.solvers, chlgType)
 }
 
 // Checks all challenges from the server in order and returns the first matching solver.
 func (c *SolverManager) chooseSolver(authz acme.Authorization) solver {
 	// Allow to have a deterministic challenge order
-	sort.Sort(sort.Reverse(byType(authz.Challenges)))
+	sort.Sort(byType(authz.Challenges))
 
 	domain := challenge.GetTargetedDomain(authz)
 	for _, chlg := range authz.Challenges {

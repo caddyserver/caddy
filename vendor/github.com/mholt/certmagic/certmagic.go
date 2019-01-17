@@ -476,6 +476,14 @@ var (
 	// certificates
 	KeyType = certcrypto.RSA2048
 
+	// The maximum amount of time to allow for
+	// obtaining a certificate. If empty, the
+	// default from the underlying lego lib is
+	// used. If set, it must not be too low so
+	// as to cancel orders too early, running
+	// the risk of rate limiting.
+	CertObtainTimeout time.Duration
+
 	// The state needed to operate on-demand TLS
 	OnDemand *OnDemandConfig
 

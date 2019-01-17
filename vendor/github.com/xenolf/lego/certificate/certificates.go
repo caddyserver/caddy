@@ -17,6 +17,7 @@ import (
 	"github.com/xenolf/lego/certcrypto"
 	"github.com/xenolf/lego/challenge"
 	"github.com/xenolf/lego/log"
+	"github.com/xenolf/lego/platform/wait"
 	"golang.org/x/crypto/ocsp"
 	"golang.org/x/net/idna"
 )
@@ -60,17 +61,24 @@ type resolver interface {
 	Solve(authorizations []acme.Authorization) error
 }
 
-type Certifier struct {
-	core     *api.Core
-	keyType  certcrypto.KeyType
-	resolver resolver
+type CertifierOptions struct {
+	KeyType certcrypto.KeyType
+	Timeout time.Duration
 }
 
-func NewCertifier(core *api.Core, keyType certcrypto.KeyType, resolver resolver) *Certifier {
+// Certifier A service to obtain/renew/revoke certificates.
+type Certifier struct {
+	core     *api.Core
+	resolver resolver
+	options  CertifierOptions
+}
+
+// NewCertifier creates a Certifier.
+func NewCertifier(core *api.Core, resolver resolver, options CertifierOptions) *Certifier {
 	return &Certifier{
 		core:     core,
-		keyType:  keyType,
 		resolver: resolver,
+		options:  options,
 	}
 }
 
@@ -191,7 +199,7 @@ func (c *Certifier) ObtainForCSR(csr x509.CertificateRequest, bundle bool) (*Res
 func (c *Certifier) getForOrder(domains []string, order acme.ExtendedOrder, bundle bool, privateKey crypto.PrivateKey, mustStaple bool) (*Resource, error) {
 	if privateKey == nil {
 		var err error
-		privateKey, err = certcrypto.GeneratePrivateKey(c.keyType)
+		privateKey, err = certcrypto.GeneratePrivateKey(c.options.KeyType)
 		if err != nil {
 			return nil, err
 		}
@@ -237,9 +245,9 @@ func (c *Certifier) getForCSR(domains []string, order acme.ExtendedOrder, bundle
 
 	if respOrder.Status == acme.StatusValid {
 		// if the certificate is available right away, short cut!
-		ok, err := c.checkResponse(respOrder, certRes, bundle)
-		if err != nil {
-			return nil, err
+		ok, errR := c.checkResponse(respOrder, certRes, bundle)
+		if errR != nil {
+			return nil, errR
 		}
 
 		if ok {
@@ -247,34 +255,26 @@ func (c *Certifier) getForCSR(domains []string, order acme.ExtendedOrder, bundle
 		}
 	}
 
-	return c.waitForCertificate(certRes, order.Location, bundle)
-}
-
-func (c *Certifier) waitForCertificate(certRes *Resource, orderURL string, bundle bool) (*Resource, error) {
-	stopTimer := time.NewTimer(30 * time.Second)
-	defer stopTimer.Stop()
-	retryTick := time.NewTicker(500 * time.Millisecond)
-	defer retryTick.Stop()
-
-	for {
-		select {
-		case <-stopTimer.C:
-			return nil, errors.New("certificate polling timed out")
-		case <-retryTick.C:
-			order, err := c.core.Orders.Get(orderURL)
-			if err != nil {
-				return nil, err
-			}
-
-			done, err := c.checkResponse(order, certRes, bundle)
-			if err != nil {
-				return nil, err
-			}
-			if done {
-				return certRes, nil
-			}
-		}
+	timeout := c.options.Timeout
+	if c.options.Timeout <= 0 {
+		timeout = 30 * time.Second
 	}
+
+	err = wait.For("certificate", timeout, timeout/60, func() (bool, error) {
+		ord, errW := c.core.Orders.Get(order.Location)
+		if errW != nil {
+			return false, errW
+		}
+
+		done, errW := c.checkResponse(ord, certRes, bundle)
+		if errW != nil {
+			return false, errW
+		}
+
+		return done, nil
+	})
+
+	return certRes, err
 }
 
 // checkResponse checks to see if the certificate is ready and a link is contained in the response.

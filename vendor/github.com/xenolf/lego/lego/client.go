@@ -53,9 +53,10 @@ func NewClient(config *Config) (*Client, error) {
 	solversManager := resolver.NewSolversManager(core)
 
 	prober := resolver.NewProber(solversManager)
+	certifier := certificate.NewCertifier(core, prober, certificate.CertifierOptions{KeyType: config.Certificate.KeyType, Timeout: config.Certificate.Timeout})
 
 	return &Client{
-		Certificate:  certificate.NewCertifier(core, config.KeyType, prober),
+		Certificate:  certifier,
 		Challenge:    solversManager,
 		Registration: registration.NewRegistrar(core, config.User),
 		core:         core,

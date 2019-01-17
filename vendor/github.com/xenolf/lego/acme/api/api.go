@@ -44,7 +44,7 @@ func New(httpClient *http.Client, userAgent string, caDirURL, kid string, privat
 
 	jws := secure.NewJWS(privateKey, kid, nonceManager)
 
-	c := &Core{doer: doer, nonceManager: nonceManager, jws: jws, directory: dir}
+	c := &Core{doer: doer, nonceManager: nonceManager, jws: jws, directory: dir, HTTPClient: httpClient}
 
 	c.common.core = c
 	c.Accounts = (*AccountService)(&c.common)
