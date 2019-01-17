@@ -148,6 +148,7 @@ func (h *sentPacketHandler) SentPacketsAsRetransmission(packets []*Packet, retra
 
 func (h *sentPacketHandler) sentPacketImpl(packet *Packet) bool /* isRetransmittable */ {
 	for p := h.lastSentPacketNumber + 1; p < packet.PacketNumber; p++ {
+		h.logger.Debugf("Skipping packet number %#x", p)
 		h.skippedPackets = append(h.skippedPackets, p)
 		if len(h.skippedPackets) > protocol.MaxTrackedSkippedPackets {
 			h.skippedPackets = h.skippedPackets[1:]
@@ -633,7 +634,7 @@ func (h *sentPacketHandler) computeRTOTimeout() time.Duration {
 	}
 	rto = utils.MaxDuration(rto, minRTOTimeout)
 	// Exponential backoff
-	rto = rto << h.rtoCount
+	rto <<= h.rtoCount
 	return utils.MinDuration(rto, maxRTOTimeout)
 }
 

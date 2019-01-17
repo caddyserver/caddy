@@ -69,10 +69,9 @@ var (
 // NewCryptoSetupClient creates a new CryptoSetup instance for a client
 func NewCryptoSetupClient(
 	cryptoStream io.ReadWriter,
-	hostname string,
 	connID protocol.ConnectionID,
 	version protocol.VersionNumber,
-	tlsConfig *tls.Config,
+	tlsConf *tls.Config,
 	params *TransportParameters,
 	paramsChan chan<- TransportParameters,
 	handshakeEvent chan<- struct{},
@@ -87,10 +86,10 @@ func NewCryptoSetupClient(
 	divNonceChan := make(chan struct{})
 	cs := &cryptoSetupClient{
 		cryptoStream:   cryptoStream,
-		hostname:       hostname,
+		hostname:       tlsConf.ServerName,
 		connID:         connID,
 		version:        version,
-		certManager:    crypto.NewCertManager(tlsConfig),
+		certManager:    crypto.NewCertManager(tlsConf),
 		params:         params,
 		keyDerivation:  crypto.DeriveQuicCryptoAESKeys,
 		nullAEAD:       nullAEAD,
