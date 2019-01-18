@@ -60,17 +60,18 @@ func TestBasicAuth(t *testing.T) {
 		result   int
 		user     string
 		password string
+		haserror bool
 	}
 
 	tests := []testType{
-		{"/testing", http.StatusOK, "okuser", "okpass"},
-		{"/testing", http.StatusUnauthorized, "baduser", "okpass"},
-		{"/testing", http.StatusUnauthorized, "okuser", "badpass"},
-		{"/testing", http.StatusUnauthorized, "OKuser", "okpass"},
-		{"/testing", http.StatusUnauthorized, "OKuser", "badPASS"},
-		{"/testing", http.StatusUnauthorized, "", "okpass"},
-		{"/testing", http.StatusUnauthorized, "okuser", ""},
-		{"/testing", http.StatusUnauthorized, "", ""},
+		{"/testing", http.StatusOK, "okuser", "okpass", false},
+		{"/testing", http.StatusUnauthorized, "baduser", "okpass", true},
+		{"/testing", http.StatusUnauthorized, "okuser", "badpass", true},
+		{"/testing", http.StatusUnauthorized, "OKuser", "okpass", true},
+		{"/testing", http.StatusUnauthorized, "OKuser", "badPASS", true},
+		{"/testing", http.StatusUnauthorized, "", "okpass", true},
+		{"/testing", http.StatusUnauthorized, "okuser", "", true},
+		{"/testing", http.StatusUnauthorized, "", "", true},
 	}
 
 	var test testType
@@ -82,7 +83,9 @@ func TestBasicAuth(t *testing.T) {
 		for i, test = range tests {
 			req, err := http.NewRequest("GET", test.from, nil)
 			if err != nil {
-				t.Fatalf("Test %d: Could not create HTTP request: %v", i, err)
+				if !test.haserror {
+					t.Fatalf("Test %d: Could not create HTTP request: %v", i, err)
+				}
 			}
 			req.SetBasicAuth(test.user, test.password)
 
@@ -148,7 +151,10 @@ func TestMultipleOverlappingRules(t *testing.T) {
 		rec := httptest.NewRecorder()
 		result, err := rw.ServeHTTP(rec, req)
 		if err != nil {
-			t.Fatalf("Test %d: Could not ServeHTTP %v", i, err)
+			if test.result != http.StatusUnauthorized {
+				t.Fatalf("Test %d: Could not ServeHTTP %v", i, err)
+			}
+
 		}
 		if result != test.result {
 			t.Errorf("Test %d: Expected Header '%d' but was '%d'",

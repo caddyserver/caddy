@@ -24,8 +24,10 @@ import (
 	"context"
 	"crypto/sha1"
 	"crypto/subtle"
+
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -51,6 +53,9 @@ type BasicAuth struct {
 func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	var protected, isAuthenticated bool
 	var realm string
+	var username string
+	var password string
+	var ok bool
 
 	for _, rule := range a.Rules {
 		for _, res := range rule.Resources {
@@ -63,12 +68,13 @@ func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 			realm = rule.Realm
 
 			// parse auth header
-			username, password, ok := r.BasicAuth()
-
+			username, password, ok = r.BasicAuth()
+			log.Println(username)
 			// check credentials
 			if !ok ||
 				username != rule.Username ||
 				!rule.Password(password) {
+
 				continue
 			}
 
@@ -86,15 +92,26 @@ func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 		}
 	}
 
+	//log.Println("Not print")
+	//if !isAuthenticated {
+	//	log.Printf("[ERROR] Stopping %s", username)
+	//	//LogError("Not Authenticated error" + username)
+	//}
+
 	if protected && !isAuthenticated {
-		// browsers show a message that says something like:
-		// "The website says: <realm>"
-		// which is kinda dumb, but whatever.
+
 		if realm == "" {
 			realm = "Restricted"
 		}
 		w.Header().Set("WWW-Authenticate", "Basic realm=\""+realm+"\"")
-		return http.StatusUnauthorized, nil
+
+		// Get a replacer so we can provide basic info for the error.
+		repl := httpserver.NewReplacer(r, nil, "-")
+		errstr := repl.Replace("BasicAuth: user \"%s\" was not found or password was incorrect. {remote}, {host}, \"{method} {uri} {proto}\" {status} {size}")
+
+		// Username will not exist in Replacer to provide here.
+		err := fmt.Errorf(errstr, username)
+		return http.StatusUnauthorized, err
 	}
 
 	// Pass-through when no paths match
