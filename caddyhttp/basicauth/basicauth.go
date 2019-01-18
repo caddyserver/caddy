@@ -24,10 +24,8 @@ import (
 	"context"
 	"crypto/sha1"
 	"crypto/subtle"
-
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -69,12 +67,11 @@ func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 
 			// parse auth header
 			username, password, ok = r.BasicAuth()
-			log.Println(username)
+
 			// check credentials
 			if !ok ||
 				username != rule.Username ||
 				!rule.Password(password) {
-
 				continue
 			}
 
@@ -92,12 +89,6 @@ func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 		}
 	}
 
-	//log.Println("Not print")
-	//if !isAuthenticated {
-	//	log.Printf("[ERROR] Stopping %s", username)
-	//	//LogError("Not Authenticated error" + username)
-	//}
-
 	if protected && !isAuthenticated {
 
 		if realm == "" {
@@ -105,11 +96,11 @@ func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 		}
 		w.Header().Set("WWW-Authenticate", "Basic realm=\""+realm+"\"")
 
-		// Get a replacer so we can provide basic info for the error.
+		// Get a replacer so we can provide basic info for the authentication error.
 		repl := httpserver.NewReplacer(r, nil, "-")
-		errstr := repl.Replace("BasicAuth: user \"%s\" was not found or password was incorrect. {remote}, {host}, \"{method} {uri} {proto}\" {status} {size}")
+		errstr := repl.Replace("BasicAuth: user \"%s\" was not found or password was incorrect. {remote} {host} {uri} {proto}")
 
-		// Username will not exist in Replacer to provide here.
+		// Username will not exist in Replacer so provide here.
 		err := fmt.Errorf(errstr, username)
 		return http.StatusUnauthorized, err
 	}

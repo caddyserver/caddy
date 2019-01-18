@@ -18,10 +18,12 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mholt/caddy/caddyhttp/httpserver"
@@ -83,16 +85,19 @@ func TestBasicAuth(t *testing.T) {
 		for i, test = range tests {
 			req, err := http.NewRequest("GET", test.from, nil)
 			if err != nil {
-				if !test.haserror {
-					t.Fatalf("Test %d: Could not create HTTP request: %v", i, err)
-				}
+
+				t.Fatalf("Test %d: Could not create HTTP request: %v", i, err)
+
 			}
 			req.SetBasicAuth(test.user, test.password)
 
 			rec := httptest.NewRecorder()
 			result, err := rw.ServeHTTP(rec, req)
 			if err != nil {
-				t.Fatalf("Test %d: Could not ServeHTTP: %v", i, err)
+
+				if !test.haserror || !strings.HasPrefix(err.Error(), "BasicAuth: user") {
+					t.Fatalf("Test %d: Could not ServeHTTP: %v", i, err)
+				}
 			}
 			if result != test.result {
 				t.Errorf("Test %d: Expected status code %d but was %d",
@@ -127,16 +132,17 @@ func TestMultipleOverlappingRules(t *testing.T) {
 	}
 
 	tests := []struct {
-		from   string
-		result int
-		cred   string
+		from     string
+		result   int
+		cred     string
+		haserror bool
 	}{
-		{"/t", http.StatusOK, "t:p1"},
-		{"/t/t", http.StatusOK, "t:p1"},
-		{"/t/t", http.StatusOK, "t1:p2"},
-		{"/a", http.StatusOK, "t1:p2"},
-		{"/t/t", http.StatusUnauthorized, "t1:p3"},
-		{"/t", http.StatusUnauthorized, "t1:p2"},
+		{"/t", http.StatusOK, "t:p1", false},
+		{"/t/t", http.StatusOK, "t:p1", false},
+		{"/t/t", http.StatusOK, "t1:p2", false},
+		{"/a", http.StatusOK, "t1:p2", false},
+		{"/t/t", http.StatusUnauthorized, "t1:p3", true},
+		{"/t", http.StatusUnauthorized, "t1:p2", true},
 	}
 
 	for i, test := range tests {
@@ -151,7 +157,7 @@ func TestMultipleOverlappingRules(t *testing.T) {
 		rec := httptest.NewRecorder()
 		result, err := rw.ServeHTTP(rec, req)
 		if err != nil {
-			if test.result != http.StatusUnauthorized {
+			if !test.haserror || !strings.HasPrefix(err.Error(), "BasicAuth: user") {
 				t.Fatalf("Test %d: Could not ServeHTTP %v", i, err)
 			}
 
