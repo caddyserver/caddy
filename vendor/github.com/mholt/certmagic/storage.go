@@ -84,12 +84,9 @@ type Locker interface {
 	Lock(key string) error
 
 	// Unlock releases the lock for key. This method must ONLY be
-	// called after a successful call to TryLock where no Waiter was
-	// returned, and only after the operation requiring the lock is
-	// finished, even if it errored or timed out. It is INCORRECT to
-	// call Unlock if any non-nil value was returned from a call to
-	// TryLock or if Unlock was not called at all. Unlock should also
-	// clean up any unused resources allocated during TryLock.
+	// called after a successful call to Lock, and only after the
+	// critical section is finished, even if it errored or timed
+	// out. Unlock cleans up any resources allocated during Lock.
 	Unlock(key string) error
 }
 
@@ -133,28 +130,28 @@ func (keys KeyBuilder) CAPrefix(ca string) string {
 	if err != nil {
 		caURL = &url.URL{Host: ca}
 	}
-	return path.Join(prefixACME, keys.safe(caURL.Host))
+	return path.Join(prefixACME, keys.Safe(caURL.Host))
 }
 
 // SitePrefix returns a key prefix for items associated with
 // the site using the given CA URL.
 func (keys KeyBuilder) SitePrefix(ca, domain string) string {
-	return path.Join(keys.CAPrefix(ca), "sites", keys.safe(domain))
+	return path.Join(keys.CAPrefix(ca), "sites", keys.Safe(domain))
 }
 
 // SiteCert returns the path to the certificate file for domain.
 func (keys KeyBuilder) SiteCert(ca, domain string) string {
-	return path.Join(keys.SitePrefix(ca, domain), keys.safe(domain)+".crt")
+	return path.Join(keys.SitePrefix(ca, domain), keys.Safe(domain)+".crt")
 }
 
 // SitePrivateKey returns the path to domain's private key file.
 func (keys KeyBuilder) SitePrivateKey(ca, domain string) string {
-	return path.Join(keys.SitePrefix(ca, domain), keys.safe(domain)+".key")
+	return path.Join(keys.SitePrefix(ca, domain), keys.Safe(domain)+".key")
 }
 
 // SiteMeta returns the path to the domain's asset metadata file.
 func (keys KeyBuilder) SiteMeta(ca, domain string) string {
-	return path.Join(keys.SitePrefix(ca, domain), keys.safe(domain)+".json")
+	return path.Join(keys.SitePrefix(ca, domain), keys.Safe(domain)+".json")
 }
 
 // UsersPrefix returns a key prefix for items related to
@@ -169,7 +166,7 @@ func (keys KeyBuilder) UserPrefix(ca, email string) string {
 	if email == "" {
 		email = emptyEmail
 	}
-	return path.Join(keys.UsersPrefix(ca), keys.safe(email))
+	return path.Join(keys.UsersPrefix(ca), keys.Safe(email))
 }
 
 // UserReg gets the path to the registration file for the user
@@ -190,7 +187,7 @@ func (keys KeyBuilder) UserPrivateKey(ca, email string) string {
 func (keys KeyBuilder) OCSPStaple(cert *Certificate, pemBundle []byte) string {
 	var ocspFileName string
 	if len(cert.Names) > 0 {
-		firstName := keys.safe(cert.Names[0])
+		firstName := keys.Safe(cert.Names[0])
 		ocspFileName = firstName + "-"
 	}
 	ocspFileName += fastHash(pemBundle)
@@ -208,7 +205,7 @@ func (keys KeyBuilder) safeUserKey(ca, email, defaultFilename, extension string)
 	if filename == "" {
 		filename = defaultFilename
 	}
-	filename = keys.safe(filename)
+	filename = keys.Safe(filename)
 	return path.Join(keys.UserPrefix(ca, email), filename+extension)
 }
 
@@ -224,9 +221,9 @@ func (keys KeyBuilder) emailUsername(email string) string {
 	return email[:at]
 }
 
-// safe standardizes and sanitizes str for use as
+// Safe standardizes and sanitizes str for use as
 // a storage key. This method is idempotent.
-func (keys KeyBuilder) safe(str string) string {
+func (keys KeyBuilder) Safe(str string) string {
 	str = strings.ToLower(str)
 	str = strings.TrimSpace(str)
 

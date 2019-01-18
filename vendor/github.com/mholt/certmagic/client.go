@@ -59,10 +59,14 @@ func (cfg *Config) newACMEClient(interactive bool) (*acmeClient, error) {
 		return nil, err
 	}
 
-	// ensure key type is set
-	keyType := KeyType
-	if cfg.KeyType != "" {
-		keyType = cfg.KeyType
+	// ensure key type and timeout are set
+	keyType := cfg.KeyType
+	if keyType == "" {
+		keyType = KeyType
+	}
+	certObtainTimeout := cfg.CertObtainTimeout
+	if certObtainTimeout == 0 {
+		certObtainTimeout = CertObtainTimeout
 	}
 
 	// ensure CA URL (directory endpoint) is set
@@ -93,9 +97,12 @@ func (cfg *Config) newACMEClient(interactive bool) (*acmeClient, error) {
 		// the client facilitates our communication with the CA server
 		legoCfg := lego.NewConfig(&leUser)
 		legoCfg.CADirURL = caURL
-		legoCfg.KeyType = keyType
 		legoCfg.UserAgent = buildUAString()
 		legoCfg.HTTPClient.Timeout = HTTPTimeout
+		legoCfg.Certificate = lego.CertificateConfig{
+			KeyType: keyType,
+			Timeout: certObtainTimeout,
+		}
 		client, err = lego.NewClient(legoCfg)
 		if err != nil {
 			cfg.acmeClientsMu.Unlock()
@@ -189,19 +196,16 @@ func (cfg *Config) newACMEClient(interactive bool) (*acmeClient, error) {
 		})
 
 		// disable any challenges that should not be used
-		var disabledChallenges []challenge.Type
 		if cfg.DisableHTTPChallenge {
-			disabledChallenges = append(disabledChallenges, challenge.HTTP01)
+			c.acmeClient.Challenge.Remove(challenge.HTTP01)
 		}
 		if cfg.DisableTLSALPNChallenge {
-			disabledChallenges = append(disabledChallenges, challenge.TLSALPN01)
-		}
-		if len(disabledChallenges) > 0 {
-			c.acmeClient.Challenge.Exclude(disabledChallenges)
+			c.acmeClient.Challenge.Remove(challenge.TLSALPN01)
 		}
 	} else {
 		// Otherwise, use DNS challenge exclusively
-		c.acmeClient.Challenge.Exclude([]challenge.Type{challenge.HTTP01, challenge.TLSALPN01})
+		c.acmeClient.Challenge.Remove(challenge.HTTP01)
+		c.acmeClient.Challenge.Remove(challenge.TLSALPN01)
 		c.acmeClient.Challenge.SetDNS01Provider(cfg.DNSProvider)
 	}
 

@@ -329,7 +329,7 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, 
 		return err
 	}
 
-	isWebsocket := res.StatusCode == http.StatusSwitchingProtocols && strings.ToLower(res.Header.Get("Upgrade")) == "websocket"
+	isWebsocket := res.StatusCode == http.StatusSwitchingProtocols && strings.EqualFold(res.Header.Get("Upgrade"), "websocket")
 
 	// Remove hop-by-hop headers listed in the
 	// "Connection" header of the response.
@@ -702,7 +702,7 @@ func (tlsHandshakeTimeoutError) Temporary() bool { return true }
 func (tlsHandshakeTimeoutError) Error() string   { return "net/http: TLS handshake timeout" }
 
 func requestIsWebsocket(req *http.Request) bool {
-	return strings.ToLower(req.Header.Get("Upgrade")) == "websocket" && strings.Contains(strings.ToLower(req.Header.Get("Connection")), "upgrade")
+	return strings.EqualFold(req.Header.Get("Upgrade"), "websocket") && strings.Contains(strings.ToLower(req.Header.Get("Connection")), "upgrade")
 }
 
 type writeFlusher interface {

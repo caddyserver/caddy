@@ -1,4 +1,4 @@
-CADDY 0.11.1
+CADDY 0.11.2
 
 Website
 	https://caddyserver.com
@@ -37,4 +37,4 @@ for personal use.
 
 
 ---
-(c) 2015-2018 Light Code Labs, LLC
+(c) 2015-2019 Light Code Labs, LLC

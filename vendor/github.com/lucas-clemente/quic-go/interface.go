@@ -23,8 +23,6 @@ const (
 	VersionGQUIC43 = protocol.Version43
 	// VersionGQUIC44 is gQUIC version 44.
 	VersionGQUIC44 = protocol.Version44
-	// VersionMilestone0_10_0 uses TLS
-	VersionMilestone0_10_0 = protocol.VersionMilestone0_10_0
 )
 
 // A Cookie can be used to verify the ownership of the client address.
