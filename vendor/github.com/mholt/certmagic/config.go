@@ -289,6 +289,10 @@ func (cfg *Config) ObtainCert(name string, interactive bool) error {
 		return nil
 	}
 
+	if cfg.storageHasCertResources(name) {
+		return nil
+	}
+
 	client, err := cfg.newACMEClient(interactive)
 	if err != nil {
 		return err
