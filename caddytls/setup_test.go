@@ -404,6 +404,26 @@ func TestSetupParseWithOneTLSProtocol(t *testing.T) {
 	}
 }
 
+func TestSetupParseWithEmail(t *testing.T) {
+	email := "user@example.com"
+	params := "tls " + email
+	cfg := &Config{Manager: &certmagic.Config{}}
+	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
+	c := caddy.NewTestController("", params)
+
+	err := setupTLS(c)
+	if err != nil {
+		t.Errorf("Expected no errors, got: %v", err)
+	}
+
+	if cfg.ACMEEmail != email {
+		t.Errorf("Expected cfg.ACMEEmail to be %#v, got %#v", email, cfg.ACMEEmail)
+	}
+	if cfg.Manager.Email != email {
+		t.Errorf("Expected cfg.Manager.Email to be %#v, got %#v", email, cfg.Manager.Email)
+	}
+}
+
 const (
 	certFile = "test_cert.pem"
 	keyFile  = "test_key.pem"

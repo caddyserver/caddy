@@ -123,15 +123,16 @@ func setupTLS(c *caddy.Controller) error {
 			// that value in the ACMEEmail field.
 			config.ACMEEmail = args[0]
 
+			switch args[0] {
 			// user can force-disable managed TLS this way
-			if args[0] == "off" {
+			case "off":
 				config.Enabled = false
 				return nil
-			}
-
 			// user might want a temporary, in-memory, self-signed cert
-			if args[0] == "self_signed" {
+			case "self_signed":
 				config.SelfSigned = true
+			default:
+				config.Manager.Email = args[0]
 			}
 		case 2:
 			certificateFile = args[0]
