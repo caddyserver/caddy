@@ -127,6 +127,7 @@ func TestReplace(t *testing.T) {
 		{"{label1} {label2} {label3} {label4}", "localhost local - -"},
 		{"Label with missing number is {label} or {labelQQ}", "Label with missing number is - or -"},
 		{"\\{ 'hostname': '{hostname}' \\}", "{ 'hostname': '" + hostname + "' }"},
+		{"{server_port}", "80"},
 	}
 
 	for _, c := range testCases {
@@ -156,6 +157,33 @@ func TestReplace(t *testing.T) {
 		if expected, actual := c.expect, repl.Replace(c.template); expected != actual {
 			t.Errorf("for template '%s', expected '%s', got '%s'", c.template, expected, actual)
 		}
+	}
+}
+
+func TestCustomServerPort(t *testing.T) {
+	w := httptest.NewRecorder()
+	recordRequest := NewResponseRecorder(w)
+	reader := strings.NewReader(`{"username": "dennis"}`)
+
+	request, err := http.NewRequest("POST", "http://localhost.local:8000/?foo=bar", reader)
+	if err != nil {
+		t.Fatalf("Failed to make request: %v", err)
+	}
+	ctx := context.WithValue(request.Context(), OriginalURLCtxKey, *request.URL)
+	request = request.WithContext(ctx)
+
+	repl := NewReplacer(request, recordRequest, "-")
+
+	testCase := struct {
+		template string
+		expect   string
+	}{
+		template: "{server_port}",
+		expect:   "8000",
+	}
+
+	if expected, actual := testCase.expect, repl.Replace(testCase.template); expected != actual {
+		t.Errorf("for template '%s', expected '%s', got '%s'", testCase.template, expected, actual)
 	}
 }
 
@@ -246,6 +274,7 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 		{"{tls_client_v_end}", cVEnd},
 		{"{tls_client_v_remain}", cVRemain},
 		{"{tls_client_v_start}", cVStart},
+		{"{server_port}", "443"},
 	}
 
 	for _, c := range testCases {
