@@ -405,6 +405,8 @@ func groupSiteConfigsByListenAddr(configs []*SiteConfig) (map[string][]*SiteConf
 // parts of an address. The component parts may be
 // updated to the correct values as setup proceeds,
 // but the original value should never be changed.
+//
+// The Host field must be in a normalized form.
 type Address struct {
 	Original, Scheme, Host, Port, Path string
 }
@@ -453,10 +455,17 @@ func (a Address) Normalize() Address {
 	if !CaseSensitivePath {
 		path = strings.ToLower(path)
 	}
+
+	// ensure host is normalized if it's an IP address
+	host := a.Host
+	if ip := net.ParseIP(host); ip != nil {
+		host = ip.String()
+	}
+
 	return Address{
 		Original: a.Original,
 		Scheme:   strings.ToLower(a.Scheme),
-		Host:     strings.ToLower(a.Host),
+		Host:     strings.ToLower(host),
 		Port:     a.Port,
 		Path:     path,
 	}
