@@ -33,7 +33,9 @@ type Config struct {
 	// The hostname or class of hostnames this config is
 	// designated for; can contain wildcard characters
 	// according to RFC 6125 §6.4.3 - this field MUST
-	// be set in order for things to work as expected
+	// be set in order for things to work as expected,
+	// must be normalized, and if an IP address, must
+	// be normalized
 	Hostname string
 
 	// Whether TLS is enabled
@@ -272,7 +274,7 @@ func MakeTLSConfig(configs []*Config) (*tls.Config, error) {
 		// A tls.Config must have Certificates or GetCertificate
 		// set, in order to be accepted by tls.Listen and quic.Listen.
 		// TODO: remove this once the standard library allows a tls.Config with
-		// only GetConfigForClient set.
+		// only GetConfigForClient set. https://github.com/mholt/caddy/pull/2404
 		GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
 			return nil, fmt.Errorf("all certificates configured via GetConfigForClient")
 		},

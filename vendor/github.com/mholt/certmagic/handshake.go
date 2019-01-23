@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -66,18 +67,24 @@ func (cfg *Config) GetCertificate(clientHello *tls.ClientHelloInfo) (*tls.Certif
 		}
 	}
 
+	wrapped := wrappedClientHelloInfo{
+		ClientHelloInfo: clientHello,
+		serverNameOrIP:  CertNameFromClientHello(clientHello),
+	}
+
 	// get the certificate and serve it up
-	cert, err := cfg.getCertDuringHandshake(strings.ToLower(clientHello.ServerName), true, true)
+	cert, err := cfg.getCertDuringHandshake(wrapped, true, true)
 	if err == nil && cfg.OnEvent != nil {
 		cfg.OnEvent("tls_handshake_completed", clientHello)
 	}
 	return &cert.Certificate, err
 }
 
-// getCertificate gets a certificate that matches name (a server name)
-// from the in-memory cache, according to the lookup table associated with
-// cfg. The lookup then points to a certificate in the Instance certificate
-// cache.
+// getCertificate gets a certificate that matches name from the in-memory
+// cache, according to the lookup table associated with cfg. The lookup then
+// points to a certificate in the Instance certificate cache.
+//
+// The name is expected to already be normalized (e.g. lowercased).
 //
 // If there is no exact match for name, it will be checked against names of
 // the form '*.example.com' (wildcard certificates) according to RFC 6125.
@@ -92,11 +99,6 @@ func (cfg *Config) GetCertificate(clientHello *tls.ClientHelloInfo) (*tls.Certif
 func (cfg *Config) getCertificate(name string) (cert Certificate, matched, defaulted bool) {
 	var certKey string
 	var ok bool
-
-	// Not going to trim trailing dots here since RFC 3546 says,
-	// "The hostname is represented ... without a trailing dot."
-	// Just normalize to lowercase.
-	name = strings.ToLower(name)
 
 	cfg.certCache.mu.RLock()
 	defer cfg.certCache.mu.RUnlock()
@@ -123,10 +125,11 @@ func (cfg *Config) getCertificate(name string) (cert Certificate, matched, defau
 	// check the certCache directly to see if the SNI name is
 	// already the key of the certificate it wants; this implies
 	// that the SNI can contain the hash of a specific cert
-	// (chain) it wants and we will still be able to serveit up
+	// (chain) it wants and we will still be able to serve it up
 	// (this behavior, by the way, could be controversial as to
 	// whether it complies with RFC 6066 about SNI, but I think
 	// it does, soooo...)
+	// (this is how we solved the former ACME TLS-SNI challenge)
 	if directCert, ok := cfg.certCache.cache[name]; ok {
 		cert = directCert
 		matched = true
@@ -147,9 +150,9 @@ func (cfg *Config) getCertificate(name string) (cert Certificate, matched, defau
 	return
 }
 
-// getCertDuringHandshake will get a certificate for name. It first tries
-// the in-memory cache. If no certificate for name is in the cache, the
-// config most closely corresponding to name will be loaded. If that config
+// getCertDuringHandshake will get a certificate for hello. It first tries
+// the in-memory cache. If no certificate for hello is in the cache, the
+// config most closely corresponding to hello will be loaded. If that config
 // allows it (OnDemand==true) and if loadIfNecessary == true, it goes to disk
 // to load it into the cache and serve it. If it's not on disk and if
 // obtainIfNecessary == true, the certificate will be obtained from the CA,
@@ -158,9 +161,9 @@ func (cfg *Config) getCertificate(name string) (cert Certificate, matched, defau
 // certificate is available.
 //
 // This function is safe for concurrent use.
-func (cfg *Config) getCertDuringHandshake(name string, loadIfNecessary, obtainIfNecessary bool) (Certificate, error) {
+func (cfg *Config) getCertDuringHandshake(hello wrappedClientHelloInfo, loadIfNecessary, obtainIfNecessary bool) (Certificate, error) {
 	// First check our in-memory cache to see if we've already loaded it
-	cert, matched, defaulted := cfg.getCertificate(name)
+	cert, matched, defaulted := cfg.getCertificate(hello.serverNameOrIP)
 	if matched {
 		return cert, nil
 	}
@@ -169,32 +172,30 @@ func (cfg *Config) getCertDuringHandshake(name string, loadIfNecessary, obtainIf
 	// obtain a needed certificate
 	if cfg.OnDemand != nil && loadIfNecessary {
 		// Then check to see if we have one on disk
-		loadedCert, err := cfg.CacheManagedCertificate(name)
+		loadedCert, err := cfg.CacheManagedCertificate(hello.serverNameOrIP)
 		if err == nil {
-			loadedCert, err = cfg.handshakeMaintenance(name, loadedCert)
+			loadedCert, err = cfg.handshakeMaintenance(hello, loadedCert)
 			if err != nil {
-				log.Printf("[ERROR] Maintaining newly-loaded certificate for %s: %v", name, err)
+				log.Printf("[ERROR] Maintaining newly-loaded certificate for %s: %v", hello.serverNameOrIP, err)
 			}
 			return loadedCert, nil
 		}
 		if obtainIfNecessary {
 			// By this point, we need to ask the CA for a certificate
 
-			name = strings.ToLower(name)
-
 			// Make sure the certificate should be obtained based on config
-			err := cfg.checkIfCertShouldBeObtained(name)
+			err := cfg.checkIfCertShouldBeObtained(hello.serverNameOrIP)
 			if err != nil {
 				return Certificate{}, err
 			}
 
 			// Name has to qualify for a certificate
-			if !HostQualifies(name) {
-				return cert, fmt.Errorf("hostname '%s' does not qualify for certificate", name)
+			if !HostQualifies(hello.serverNameOrIP) {
+				return cert, fmt.Errorf("hostname '%s' does not qualify for certificate", hello.serverNameOrIP)
 			}
 
 			// Obtain certificate from the CA
-			return cfg.obtainOnDemandCertificate(name)
+			return cfg.obtainOnDemandCertificate(hello)
 		}
 	}
 
@@ -203,7 +204,7 @@ func (cfg *Config) getCertDuringHandshake(name string, loadIfNecessary, obtainIf
 		return cert, nil
 	}
 
-	return Certificate{}, fmt.Errorf("no certificate available for %s", name)
+	return Certificate{}, fmt.Errorf("no certificate available for %s", hello.serverNameOrIP)
 }
 
 // checkIfCertShouldBeObtained checks to see if an on-demand tls certificate
@@ -216,52 +217,52 @@ func (cfg *Config) checkIfCertShouldBeObtained(name string) error {
 	return cfg.OnDemand.Allowed(name)
 }
 
-// obtainOnDemandCertificate obtains a certificate for name for the given
-// name. If another goroutine has already started obtaining a cert for
-// name, it will wait and use what the other goroutine obtained.
+// obtainOnDemandCertificate obtains a certificate for hello.
+// If another goroutine has already started obtaining a cert for
+// hello, it will wait and use what the other goroutine obtained.
 //
 // This function is safe for use by multiple concurrent goroutines.
-func (cfg *Config) obtainOnDemandCertificate(name string) (Certificate, error) {
+func (cfg *Config) obtainOnDemandCertificate(hello wrappedClientHelloInfo) (Certificate, error) {
 	// We must protect this process from happening concurrently, so synchronize.
 	obtainCertWaitChansMu.Lock()
-	wait, ok := obtainCertWaitChans[name]
+	wait, ok := obtainCertWaitChans[hello.serverNameOrIP]
 	if ok {
 		// lucky us -- another goroutine is already obtaining the certificate.
 		// wait for it to finish obtaining the cert and then we'll use it.
 		obtainCertWaitChansMu.Unlock()
 		<-wait
-		return cfg.getCertDuringHandshake(name, true, false)
+		return cfg.getCertDuringHandshake(hello, true, false)
 	}
 
 	// looks like it's up to us to do all the work and obtain the cert.
 	// make a chan others can wait on if needed
 	wait = make(chan struct{})
-	obtainCertWaitChans[name] = wait
+	obtainCertWaitChans[hello.serverNameOrIP] = wait
 	obtainCertWaitChansMu.Unlock()
 
 	// obtain the certificate
-	log.Printf("[INFO] Obtaining new certificate for %s", name)
-	err := cfg.ObtainCert(name, false)
+	log.Printf("[INFO] Obtaining new certificate for %s", hello.serverNameOrIP)
+	err := cfg.ObtainCert(hello.serverNameOrIP, false)
 
 	// immediately unblock anyone waiting for it; doing this in
 	// a defer would risk deadlock because of the recursive call
 	// to getCertDuringHandshake below when we return!
 	obtainCertWaitChansMu.Lock()
 	close(wait)
-	delete(obtainCertWaitChans, name)
+	delete(obtainCertWaitChans, hello.serverNameOrIP)
 	obtainCertWaitChansMu.Unlock()
 
 	if err != nil {
 		// Failed to solve challenge, so don't allow another on-demand
 		// issue for this name to be attempted for a little while.
 		failedIssuanceMu.Lock()
-		failedIssuance[name] = time.Now()
+		failedIssuance[hello.serverNameOrIP] = time.Now()
 		go func(name string) {
 			time.Sleep(5 * time.Minute)
 			failedIssuanceMu.Lock()
 			delete(failedIssuance, name)
 			failedIssuanceMu.Unlock()
-		}(name)
+		}(hello.serverNameOrIP)
 		failedIssuanceMu.Unlock()
 		return Certificate{}, err
 	}
@@ -273,19 +274,18 @@ func (cfg *Config) obtainOnDemandCertificate(name string) (Certificate, error) {
 	lastIssueTimeMu.Unlock()
 
 	// certificate is already on disk; now just start over to load it and serve it
-	return cfg.getCertDuringHandshake(name, true, false)
+	return cfg.getCertDuringHandshake(hello, true, false)
 }
 
-// handshakeMaintenance performs a check on cert for expiration and OCSP
-// validity.
+// handshakeMaintenance performs a check on cert for expiration and OCSP validity.
 //
 // This function is safe for use by multiple concurrent goroutines.
-func (cfg *Config) handshakeMaintenance(name string, cert Certificate) (Certificate, error) {
+func (cfg *Config) handshakeMaintenance(hello wrappedClientHelloInfo, cert Certificate) (Certificate, error) {
 	// Check cert expiration
 	timeLeft := cert.NotAfter.Sub(time.Now().UTC())
 	if timeLeft < cfg.RenewDurationBefore {
 		log.Printf("[INFO] Certificate for %v expires in %v; attempting renewal", cert.Names, timeLeft)
-		return cfg.renewDynamicCertificate(name, cert)
+		return cfg.renewDynamicCertificate(hello, cert)
 	}
 
 	// Check OCSP staple validity
@@ -296,7 +296,7 @@ func (cfg *Config) handshakeMaintenance(name string, cert Certificate) (Certific
 			if err != nil {
 				// An error with OCSP stapling is not the end of the world, and in fact, is
 				// quite common considering not all certs have issuer URLs that support it.
-				log.Printf("[ERROR] Getting OCSP for %s: %v", name, err)
+				log.Printf("[ERROR] Getting OCSP for %s: %v", hello.serverNameOrIP, err)
 			}
 			cfg.certCache.mu.Lock()
 			cfg.certCache.cache[cert.Hash] = cert
@@ -313,37 +313,38 @@ func (cfg *Config) handshakeMaintenance(name string, cert Certificate) (Certific
 // ClientHello.
 //
 // This function is safe for use by multiple concurrent goroutines.
-func (cfg *Config) renewDynamicCertificate(name string, currentCert Certificate) (Certificate, error) {
+func (cfg *Config) renewDynamicCertificate(hello wrappedClientHelloInfo, currentCert Certificate) (Certificate, error) {
+
 	obtainCertWaitChansMu.Lock()
-	wait, ok := obtainCertWaitChans[name]
+	wait, ok := obtainCertWaitChans[hello.serverNameOrIP]
 	if ok {
 		// lucky us -- another goroutine is already renewing the certificate.
 		// wait for it to finish, then we'll use the new one.
 		obtainCertWaitChansMu.Unlock()
 		<-wait
-		return cfg.getCertDuringHandshake(name, true, false)
+		return cfg.getCertDuringHandshake(hello, true, false)
 	}
 
 	// looks like it's up to us to do all the work and renew the cert
 	wait = make(chan struct{})
-	obtainCertWaitChans[name] = wait
+	obtainCertWaitChans[hello.serverNameOrIP] = wait
 	obtainCertWaitChansMu.Unlock()
 
 	// renew and reload the certificate
-	log.Printf("[INFO] Renewing certificate for %s", name)
-	err := cfg.RenewCert(name, false)
+	log.Printf("[INFO] Renewing certificate for %s", hello.serverNameOrIP)
+	err := cfg.RenewCert(hello.serverNameOrIP, false)
 	if err == nil {
 		// even though the recursive nature of the dynamic cert loading
 		// would just call this function anyway, we do it here to
 		// make the replacement as atomic as possible.
-		newCert, err := currentCert.configs[0].CacheManagedCertificate(name)
+		newCert, err := currentCert.configs[0].CacheManagedCertificate(hello.serverNameOrIP)
 		if err != nil {
-			log.Printf("[ERROR] loading renewed certificate for %s: %v", name, err)
+			log.Printf("[ERROR] loading renewed certificate for %s: %v", hello.serverNameOrIP, err)
 		} else {
 			// replace the old certificate with the new one
 			err = cfg.certCache.replaceCertificate(currentCert, newCert)
 			if err != nil {
-				log.Printf("[ERROR] Replacing certificate for %s: %v", name, err)
+				log.Printf("[ERROR] Replacing certificate for %s: %v", hello.serverNameOrIP, err)
 			}
 		}
 	}
@@ -353,14 +354,14 @@ func (cfg *Config) renewDynamicCertificate(name string, currentCert Certificate)
 	// to getCertDuringHandshake below when we return!
 	obtainCertWaitChansMu.Lock()
 	close(wait)
-	delete(obtainCertWaitChans, name)
+	delete(obtainCertWaitChans, hello.serverNameOrIP)
 	obtainCertWaitChansMu.Unlock()
 
 	if err != nil {
 		return Certificate{}, err
 	}
 
-	return cfg.getCertDuringHandshake(name, true, false)
+	return cfg.getCertDuringHandshake(hello, true, false)
 }
 
 // tryDistributedChallengeSolver is to be called when the clientHello pertains to
@@ -393,6 +394,38 @@ func (cfg *Config) tryDistributedChallengeSolver(clientHello *tls.ClientHelloInf
 	}
 
 	return Certificate{Certificate: *cert}, true, nil
+}
+
+// CertNameFromClientHello returns a normalized name for which to
+// look up a certificate given this ClientHelloInfo. If the client
+// did not send a ServerName value, the connection's local IP is
+// assumed.
+func CertNameFromClientHello(hello *tls.ClientHelloInfo) string {
+	// Not going to trim trailing dots here since RFC 3546 says,
+	// "The hostname is represented ... without a trailing dot."
+	// Just normalize to lowercase and remove any leading or
+	// trailing whitespace n case the hello was sloppily made
+	name := strings.ToLower(strings.TrimSpace(hello.ServerName))
+
+	// if SNI is not set, assume IP of listener
+	if name == "" && hello.Conn != nil {
+		addr := hello.Conn.LocalAddr().String()
+		ip, _, err := net.SplitHostPort(addr)
+		if err == nil {
+			name = ip
+		}
+	}
+
+	return name
+}
+
+// wrappedClientHelloInfo is a type that allows us to
+// attach a name with which to look for a certificate
+// to a given ClientHelloInfo, since not all clients
+// use SNI and some self-signed certificates use IP.
+type wrappedClientHelloInfo struct {
+	*tls.ClientHelloInfo
+	serverNameOrIP string
 }
 
 // obtainCertWaitChans is used to coordinate obtaining certs for each hostname.
