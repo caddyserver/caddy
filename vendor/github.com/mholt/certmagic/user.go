@@ -23,12 +23,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path"
 	"sort"
 	"strings"
 
-	"github.com/xenolf/lego/lego"
+	"github.com/xenolf/lego/acme"
 	"github.com/xenolf/lego/registration"
 )
 
@@ -71,81 +72,74 @@ func (cfg *Config) newUser(email string) (user, error) {
 
 // getEmail does everything it can to obtain an email address
 // from the user within the scope of memory and storage to use
-// for ACME TLS. If it cannot get an email address, it returns
-// empty string. (If user is present, it will warn the user of
+// for ACME TLS. If it cannot get an email address, it does nothing
+// (If user is prompted, it will warn the user of
 // the consequences of an empty email.) This function MAY prompt
-// the user for input. If userPresent is false, the operator
+// the user for input. If allowPrompts is false, the user
 // will NOT be prompted and an empty email may be returned.
-// If the user is prompted, a new User will be created and
-// stored in storage according to the email address they
-// provided (which might be blank).
-func (cfg *Config) getEmail(userPresent bool) (string, error) {
-	// First try memory
+func (cfg *Config) getEmail(allowPrompts bool) error {
 	leEmail := cfg.Email
+	// First try package default email
 	if leEmail == "" {
 		leEmail = Email
 	}
-
 	// Then try to get most recent user email from storage
 	if leEmail == "" {
 		leEmail = cfg.mostRecentUserEmail()
-		cfg.Email = leEmail // save for next time
 	}
-
-	// Looks like there is no email address readily available,
-	// so we will have to ask the user if we can.
-	if leEmail == "" && userPresent {
-		// evidently, no User data was present in storage;
-		// thus we must make a new User so that we can get
-		// the Terms of Service URL via our ACME client, phew!
-		user, err := cfg.newUser("")
+	if leEmail == "" && allowPrompts {
+		// Looks like there is no email address readily available,
+		// so we will have to ask the user if we can.
+		var err error
+		leEmail, err = cfg.promptUserForEmail()
 		if err != nil {
-			return "", err
+			return err
 		}
-
-		// get the agreement URL
-		agreementURL := agreementTestURL
-		if agreementURL == "" {
-			// we call acme.NewClient directly because newACMEClient
-			// would require that we already know the user's email
-			caURL := CA
-			if cfg.CA != "" {
-				caURL = cfg.CA
-			}
-			legoConfig := lego.NewConfig(user)
-			legoConfig.CADirURL = caURL
-			legoConfig.UserAgent = UserAgent
-			tempClient, err := lego.NewClient(legoConfig)
-			if err != nil {
-				return "", fmt.Errorf("making ACME client to get ToS URL: %v", err)
-			}
-			agreementURL = tempClient.GetToSURL()
-		}
-
-		// prompt the user for an email address and terms agreement
-		reader := bufio.NewReader(stdin)
-		cfg.promptUserAgreement(agreementURL)
-		fmt.Println("Please enter your email address to signify agreement and to be notified")
-		fmt.Println("in case of issues. You can leave it blank, but we don't recommend it.")
-		fmt.Print("  Email address: ")
-		leEmail, err = reader.ReadString('\n')
-		if err != nil && err != io.EOF {
-			return "", fmt.Errorf("reading email address: %v", err)
-		}
-		leEmail = strings.TrimSpace(leEmail)
-		cfg.Email = leEmail
 		cfg.Agreed = true
-
-		// save the new user to preserve this for next time
-		user.Email = leEmail
-		err = cfg.saveUser(user)
-		if err != nil {
-			return "", err
-		}
 	}
-
 	// lower-casing the email is important for consistency
-	return strings.ToLower(leEmail), nil
+	cfg.Email = strings.ToLower(leEmail)
+	return nil
+}
+
+func (cfg *Config) getAgreementURL() (string, error) {
+	if agreementTestURL != "" {
+		return agreementTestURL, nil
+	}
+	caURL := CA
+	if cfg.CA != "" {
+		caURL = cfg.CA
+	}
+	response, err := http.Get(caURL)
+	if err != nil {
+		return "", err
+	}
+	defer response.Body.Close()
+	var dir acme.Directory
+	err = json.NewDecoder(response.Body).Decode(&dir)
+	if err != nil {
+		return "", err
+	}
+	return dir.Meta.TermsOfService, nil
+}
+
+func (cfg *Config) promptUserForEmail() (string, error) {
+	agreementURL, err := cfg.getAgreementURL()
+	if err != nil {
+		return "", fmt.Errorf("get Agreement URL: %v", err)
+	}
+	// prompt the user for an email address and terms agreement
+	reader := bufio.NewReader(stdin)
+	cfg.promptUserAgreement(agreementURL)
+	fmt.Println("Please enter your email address to signify agreement and to be notified")
+	fmt.Println("in case of issues. You can leave it blank, but we don't recommend it.")
+	fmt.Print("  Email address: ")
+	leEmail, err := reader.ReadString('\n')
+	if err != nil && err != io.EOF {
+		return "", fmt.Errorf("reading email address: %v", err)
+	}
+	leEmail = strings.TrimSpace(leEmail)
+	return leEmail, nil
 }
 
 // getUser loads the user with the given email from disk

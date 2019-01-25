@@ -141,7 +141,7 @@ func (s *Server) handleHeaderStream(session streamCreator) {
 			// In this case, the session has already logged the error, so we don't
 			// need to log it again.
 			errorCode := qerr.InternalError
-			if qerr, ok := err.(*qerr.QuicError); !ok {
+			if qerr, ok := err.(*qerr.QuicError); ok {
 				errorCode = qerr.ErrorCode
 				s.logger.Errorf("error handling h2 request: %s", err.Error())
 			}

@@ -25,12 +25,9 @@ type client struct {
 	// If it is started with Dial, we take a packet conn as a parameter.
 	createdPacketConn bool
 
-	hostname string
-
 	packetHandlers packetHandlerManager
 
-	token      []byte
-	numRetries int
+	token []byte
 
 	versionNegotiated                bool // has the server accepted our version
 	receivedVersionNegotiationPacket bool
@@ -159,13 +156,12 @@ func newClient(
 	closeCallback func(protocol.ConnectionID),
 	createdPacketConn bool,
 ) (*client, error) {
-	var hostname string
-	if tlsConf != nil {
-		hostname = tlsConf.ServerName
+	if tlsConf == nil {
+		tlsConf = &tls.Config{}
 	}
-	if hostname == "" {
+	if tlsConf.ServerName == "" {
 		var err error
-		hostname, _, err = net.SplitHostPort(host)
+		tlsConf.ServerName, _, err = net.SplitHostPort(host)
 		if err != nil {
 			return nil, err
 		}
@@ -186,7 +182,6 @@ func newClient(
 	c := &client{
 		conn:              &conn{pconn: pconn, currentAddr: remoteAddr},
 		createdPacketConn: createdPacketConn,
-		hostname:          hostname,
 		tlsConf:           tlsConf,
 		config:            config,
 		version:           config.Versions[0],
@@ -286,7 +281,7 @@ func (c *client) generateConnectionIDs() error {
 }
 
 func (c *client) dial(ctx context.Context) error {
-	c.logger.Infof("Starting new connection to %s (%s -> %s), source connection ID %s, destination connection ID %s, version %s", c.hostname, c.conn.LocalAddr(), c.conn.RemoteAddr(), c.srcConnID, c.destConnID, c.version)
+	c.logger.Infof("Starting new connection to %s (%s -> %s), source connection ID %s, destination connection ID %s, version %s", c.tlsConf.ServerName, c.conn.LocalAddr(), c.conn.RemoteAddr(), c.srcConnID, c.destConnID, c.version)
 
 	var err error
 	if c.version.UsesTLS() {
@@ -324,7 +319,6 @@ func (c *client) dialTLS(ctx context.Context) error {
 		return err
 	}
 	mintConf.ExtensionHandler = extHandler
-	mintConf.ServerName = c.hostname
 	c.mintConf = mintConf
 
 	if err := c.createNewTLSSession(extHandler.GetPeerParams(), c.version); err != nil {
@@ -483,19 +477,18 @@ func (c *client) handleVersionNegotiationPacket(hdr *wire.Header) error {
 func (c *client) handleRetryPacket(hdr *wire.Header) {
 	c.logger.Debugf("<- Received Retry")
 	hdr.Log(c.logger)
-	// A server that performs multiple retries must use a source connection ID of at least 8 bytes.
-	// Only a server that won't send additional Retries can use shorter connection IDs.
-	if hdr.OrigDestConnectionID.Len() < protocol.MinConnectionIDLenInitial {
-		c.logger.Debugf("Received a Retry with a too short Original Destination Connection ID: %d bytes, must have at least %d bytes.", hdr.OrigDestConnectionID.Len(), protocol.MinConnectionIDLenInitial)
-		return
-	}
 	if !hdr.OrigDestConnectionID.Equal(c.destConnID) {
-		c.logger.Debugf("Received spoofed Retry. Original Destination Connection ID: %s, expected: %s", hdr.OrigDestConnectionID, c.destConnID)
+		c.logger.Debugf("Ignoring spoofed Retry. Original Destination Connection ID: %s, expected: %s", hdr.OrigDestConnectionID, c.destConnID)
 		return
 	}
-	c.numRetries++
-	if c.numRetries > protocol.MaxRetries {
-		c.session.destroy(qerr.CryptoTooManyRejects)
+	if hdr.SrcConnectionID.Equal(c.destConnID) {
+		c.logger.Debugf("Ignoring Retry, since the server didn't change the Source Connection ID.")
+		return
+	}
+	// If a token is already set, this means that we already received a Retry from the server.
+	// Ignore this Retry packet.
+	if len(c.token) > 0 {
+		c.logger.Debugf("Ignoring Retry, since a Retry was already received.")
 		return
 	}
 	c.destConnID = hdr.SrcConnectionID
@@ -513,7 +506,6 @@ func (c *client) createNewGQUICSession() error {
 	sess, err := newClientSession(
 		c.conn,
 		runner,
-		c.hostname,
 		c.version,
 		c.destConnID,
 		c.srcConnID,

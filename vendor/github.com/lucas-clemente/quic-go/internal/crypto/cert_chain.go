@@ -56,8 +56,7 @@ func (c *certChain) GetLeafCert(sni string) ([]byte, error) {
 }
 
 func (c *certChain) getCertForSNI(sni string) (*tls.Certificate, error) {
-	conf := c.config
-	conf, err := maybeGetConfigForClient(conf, sni)
+	conf, err := maybeGetConfigForClient(c.config, sni)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +106,13 @@ func maybeGetConfigForClient(c *tls.Config, sni string) (*tls.Config, error) {
 	if c.GetConfigForClient == nil {
 		return c, nil
 	}
-	return c.GetConfigForClient(&tls.ClientHelloInfo{
-		ServerName: sni,
-	})
+	confForClient, err := c.GetConfigForClient(&tls.ClientHelloInfo{ServerName: sni})
+	if err != nil {
+		return nil, err
+	}
+	// if GetConfigForClient returns nil, use the original config
+	if confForClient == nil {
+		return c, nil
+	}
+	return confForClient, nil
 }

@@ -123,7 +123,7 @@ func (c *Challenge) Solve(authz acme.Authorization) error {
 
 	log.Infof("[%s] acme: Checking DNS record propagation using %+v", domain, recursiveNameservers)
 
-	err = wait.For(timeout, interval, func() (bool, error) {
+	err = wait.For("propagation", timeout, interval, func() (bool, error) {
 		stop, errP := c.preCheck.call(fqdn, value)
 		if !stop || errP != nil {
 			log.Infof("[%s] acme: Waiting for DNS record propagation.", domain)
@@ -140,6 +140,8 @@ func (c *Challenge) Solve(authz acme.Authorization) error {
 
 // CleanUp cleans the challenge.
 func (c *Challenge) CleanUp(authz acme.Authorization) error {
+	log.Infof("[%s] acme: Cleaning DNS-01 challenge", challenge.GetTargetedDomain(authz))
+
 	chlng, err := challenge.FindChallenge(challenge.DNS01, authz)
 	if err != nil {
 		return err
