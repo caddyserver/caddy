@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"github.com/mholt/caddy/telemetry"
+	"github.com/mholt/certmagic"
 )
 
 // configGroup is a type that keys configs by their hostname
@@ -27,7 +28,7 @@ import (
 // method to get a config by matching its hostname).
 type configGroup map[string]*Config
 
-// getConfig gets the config by the first key match for name.
+// getConfig gets the config by the first key match for hello.
 // In other words, "sub.foo.bar" will get the config for "*.foo.bar"
 // if that is the closest match. If no match is found, the first
 // (random) config will be loaded, which will defer any TLS alerts
@@ -36,8 +37,8 @@ type configGroup map[string]*Config
 //
 // This function follows nearly the same logic to lookup
 // a hostname as the getCertificate function uses.
-func (cg configGroup) getConfig(name string) *Config {
-	name = strings.ToLower(name)
+func (cg configGroup) getConfig(hello *tls.ClientHelloInfo) *Config {
+	name := certmagic.CertNameFromClientHello(hello)
 
 	// exact match? great, let's use it
 	if config, ok := cg[name]; ok {
@@ -72,7 +73,7 @@ func (cg configGroup) getConfig(name string) *Config {
 //
 // This method is safe for use as a tls.Config.GetConfigForClient callback.
 func (cg configGroup) GetConfigForClient(clientHello *tls.ClientHelloInfo) (*tls.Config, error) {
-	config := cg.getConfig(clientHello.ServerName)
+	config := cg.getConfig(clientHello)
 	if config != nil {
 		return config.tlsConfig, nil
 	}

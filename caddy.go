@@ -498,6 +498,10 @@ func Start(cdyfile Input) (*Instance, error) {
 	if pidErr := writePidFile(); pidErr != nil {
 		log.Printf("[ERROR] Could not write pidfile: %v", pidErr)
 	}
+
+	// Execute instantiation events
+	EmitEvent(InstanceStartupEvent, inst)
+
 	return inst, nil
 }
 

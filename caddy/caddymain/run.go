@@ -160,9 +160,6 @@ func Run() {
 		mustLogFatalf("%v", err)
 	}
 
-	// Execute instantiation events
-	caddy.EmitEvent(caddy.InstanceStartupEvent, instance)
-
 	// Begin telemetry (these are no-ops if telemetry disabled)
 	telemetry.Set("caddy_version", appVersion)
 	telemetry.Set("num_listeners", len(instance.Servers()))

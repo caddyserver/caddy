@@ -93,6 +93,14 @@ type Config struct {
 	// certificates
 	KeyType certcrypto.KeyType
 
+	// The maximum amount of time to allow for
+	// obtaining a certificate. If empty, the
+	// default from the underlying lego lib is
+	// used. If set, it must not be too low so
+	// as to cancel orders too early, running
+	// the risk of rate limiting.
+	CertObtainTimeout time.Duration
+
 	// The state needed to operate on-demand TLS
 	OnDemand *OnDemandConfig
 
@@ -196,6 +204,9 @@ func NewWithCache(certCache *Cache, cfg Config) *Config {
 	if cfg.KeyType == "" {
 		cfg.KeyType = KeyType
 	}
+	if cfg.CertObtainTimeout == 0 {
+		cfg.CertObtainTimeout = CertObtainTimeout
+	}
 	if cfg.OnDemand == nil {
 		cfg.OnDemand = OnDemand
 	}
@@ -278,6 +289,10 @@ func (cfg *Config) ObtainCert(name string, interactive bool) error {
 		return nil
 	}
 
+	if cfg.storageHasCertResources(name) {
+		return nil
+	}
+
 	client, err := cfg.newACMEClient(interactive)
 	if err != nil {
 		return err
@@ -354,12 +369,9 @@ func (cfg *Config) preObtainOrRenewChecks(name string, allowPrompts bool) (bool,
 		return true, nil
 	}
 
-	if cfg.Email == "" {
-		var err error
-		cfg.Email, err = cfg.getEmail(allowPrompts)
-		if err != nil {
-			return false, err
-		}
+	err := cfg.getEmail(allowPrompts)
+	if err != nil {
+		return false, err
 	}
 
 	return false, nil

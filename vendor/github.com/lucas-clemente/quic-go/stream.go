@@ -52,6 +52,7 @@ type streamI interface {
 	handleRstStreamFrame(*wire.RstStreamFrame) error
 	getWindowUpdate() protocol.ByteCount
 	// for sending
+	hasData() bool
 	handleStopSendingFrame(*wire.StopSendingFrame)
 	popStreamFrame(maxBytes protocol.ByteCount) (*wire.StreamFrame, bool)
 	handleMaxStreamDataFrame(*wire.MaxStreamDataFrame)

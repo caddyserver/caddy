@@ -140,7 +140,7 @@ func (dhs distributedSolver) challengeTokensPrefix() string {
 // challengeTokensKey returns the key to use to store and access
 // challenge info for domain.
 func (dhs distributedSolver) challengeTokensKey(domain string) string {
-	return filepath.Join(dhs.challengeTokensPrefix(), StorageKeys.safe(domain)+".json")
+	return filepath.Join(dhs.challengeTokensPrefix(), StorageKeys.Safe(domain)+".json")
 }
 
 type challengeInfo struct {

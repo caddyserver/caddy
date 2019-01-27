@@ -3,7 +3,6 @@ package crypto
 import (
 	"crypto"
 
-	"github.com/bifurcation/mint"
 	"github.com/lucas-clemente/quic-go/internal/protocol"
 )
 
@@ -28,7 +27,7 @@ func newNullAEADAESGCM(connectionID protocol.ConnectionID, pers protocol.Perspec
 }
 
 func computeSecrets(connID protocol.ConnectionID) (clientSecret, serverSecret []byte) {
-	handshakeSecret := mint.HkdfExtract(crypto.SHA256, quicVersion1Salt, connID)
+	handshakeSecret := hkdfExtract(crypto.SHA256, connID, quicVersion1Salt)
 	clientSecret = qhkdfExpand(handshakeSecret, "client hs", crypto.SHA256.Size())
 	serverSecret = qhkdfExpand(handshakeSecret, "server hs", crypto.SHA256.Size())
 	return
