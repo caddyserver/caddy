@@ -52,39 +52,43 @@ func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 	var protected, isAuthenticated bool
 	var realm string
 
-	if r.Method != http.MethodOptions {
-		for _, rule := range a.Rules {
-			for _, res := range rule.Resources {
-				if !httpserver.Path(r.URL.Path).Matches(res) {
-					continue
-				}
+	// do not check for basic auth on OPTIONS call
+	if r.Method == http.MethodOptions {
+		// Pass-through when no paths match
+		return a.Next.ServeHTTP(w, r)
+	}
 
-				// path matches; this endpoint is protected
-				protected = true
-				realm = rule.Realm
-
-				// parse auth header
-				username, password, ok := r.BasicAuth()
-
-				// check credentials
-				if !ok ||
-					username != rule.Username ||
-					!rule.Password(password) {
-					continue
-				}
-
-				// by this point, authentication was successful
-				isAuthenticated = true
-
-				// let upstream middleware (e.g. fastcgi and cgi) know about authenticated
-				// user; this replaces the request with a wrapped instance
-				r = r.WithContext(context.WithValue(r.Context(),
-					httpserver.RemoteUserCtxKey, username))
-
-				// Provide username to be used in log by replacer
-				repl := httpserver.NewReplacer(r, nil, "-")
-				repl.Set("user", username)
+	for _, rule := range a.Rules {
+		for _, res := range rule.Resources {
+			if !httpserver.Path(r.URL.Path).Matches(res) {
+				continue
 			}
+
+			// path matches; this endpoint is protected
+			protected = true
+			realm = rule.Realm
+
+			// parse auth header
+			username, password, ok := r.BasicAuth()
+
+			// check credentials
+			if !ok ||
+				username != rule.Username ||
+				!rule.Password(password) {
+				continue
+			}
+
+			// by this point, authentication was successful
+			isAuthenticated = true
+
+			// let upstream middleware (e.g. fastcgi and cgi) know about authenticated
+			// user; this replaces the request with a wrapped instance
+			r = r.WithContext(context.WithValue(r.Context(),
+				httpserver.RemoteUserCtxKey, username))
+
+			// Provide username to be used in log by replacer
+			repl := httpserver.NewReplacer(r, nil, "-")
+			repl.Set("user", username)
 		}
 	}
 
