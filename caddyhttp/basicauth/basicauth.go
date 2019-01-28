@@ -52,6 +52,12 @@ func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 	var protected, isAuthenticated bool
 	var realm string
 
+	// do not check for basic auth on OPTIONS call
+	if r.Method == http.MethodOptions {
+		// Pass-through when no paths match
+		return a.Next.ServeHTTP(w, r)
+	}
+
 	for _, rule := range a.Rules {
 		for _, res := range rule.Resources {
 			if !httpserver.Path(r.URL.Path).Matches(res) {
