@@ -139,7 +139,5 @@ const (
 )
 
 // lumberjacks maps log filenames to the logger
-// that is being used to keep them rolled/maintained;
-// if rolling is disabled, it's just a regular
-// *os.File, not a lumberjack
+// that is being used to keep them rolled/maintained.
 var lumberjacks = make(map[string]io.Writer)
