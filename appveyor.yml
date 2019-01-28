@@ -34,3 +34,5 @@ after_test:
   - golint ./...
 
 deploy: off
+
+skip_branch_with_pr: true
