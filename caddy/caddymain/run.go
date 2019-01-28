@@ -56,6 +56,8 @@ func init() {
 	flag.StringVar(&certmagic.Email, "email", "", "Default ACME CA account email address")
 	flag.DurationVar(&certmagic.HTTPTimeout, "catimeout", certmagic.HTTPTimeout, "Default ACME CA HTTP timeout")
 	flag.StringVar(&logfile, "log", "", "Process log file")
+	flag.IntVar(&logRollMB, "log-roll-mb", 100, "Roll process log when it reaches this many megabytes (0 to disable rolling)")
+	flag.BoolVar(&logRollCompress, "log-roll-compress", true, "Gzip-compress rolled process log files")
 	flag.StringVar(&caddy.PidFile, "pidfile", "", "Path to write pid file")
 	flag.BoolVar(&caddy.Quiet, "quiet", false, "Quiet mode (no initialization output)")
 	flag.StringVar(&revoke, "revoke", "", "Hostname for which to revoke the certificate")
@@ -84,12 +86,26 @@ func Run() {
 	case "":
 		log.SetOutput(ioutil.Discard)
 	default:
-		log.SetOutput(&lumberjack.Logger{
-			Filename:   logfile,
-			MaxSize:    100,
-			MaxAge:     14,
-			MaxBackups: 10,
-		})
+		if logRollMB > 0 {
+			log.SetOutput(&lumberjack.Logger{
+				Filename:   logfile,
+				MaxSize:    logRollMB,
+				MaxAge:     14,
+				MaxBackups: 10,
+				Compress:   logRollCompress,
+			})
+		} else {
+			err := os.MkdirAll(filepath.Dir(logfile), 0755)
+			if err != nil {
+				mustLogFatalf("%v", err)
+			}
+			f, err := os.OpenFile(logfile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+			if err != nil {
+				mustLogFatalf("%v", err)
+			}
+			// don't close file; log should be writeable for duration of process
+			log.SetOutput(f)
+		}
 	}
 
 	//Load all additional envs as soon as possible
@@ -501,6 +517,8 @@ var (
 	cpu             string
 	envFile         string
 	logfile         string
+	logRollMB       int
+	logRollCompress bool
 	revoke          string
 	version         bool
 	plugins         bool
