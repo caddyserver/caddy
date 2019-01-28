@@ -321,6 +321,10 @@ func TestParseBlockTransparent(t *testing.T) {
 			if _, ok := headers["X-Forwarded-For"]; ok {
 				t.Errorf("Test %d: Found unexpected X-Forwarded-For header", i+1)
 			}
+
+			if _, ok := headers["X-Forwarded-Port"]; !ok {
+				t.Errorf("Test %d: Could not find the X-Forwarded-Port header", i+1)
+			}
 		}
 	}
 }
