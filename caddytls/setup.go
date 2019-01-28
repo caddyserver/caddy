@@ -64,7 +64,7 @@ func setupTLS(c *caddy.Controller) error {
 		})
 		c.Set(CertCacheInstStorageKey, certCache)
 	}
-	config.Manager = certmagic.NewWithCache(certCache, certmagic.Config{})
+	config.Manager = certmagic.NewWithCache(certCache, *config.Manager)
 
 	// we use certmagic events to collect metrics for telemetry
 	config.Manager.OnEvent = func(event string, data interface{}) {
