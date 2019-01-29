@@ -104,7 +104,7 @@ func TestReverseProxy(t *testing.T) {
 		// Set headers.
 		copyHeader(w.Header(), testHeaders)
 
-		// Only announce one of the trailers to test wether
+		// Only announce one of the trailers to test whether
 		// unannounced trailers are proxied correctly.
 		for k := range testTrailers {
 			w.Header().Set("Trailer", k)
@@ -127,7 +127,7 @@ func TestReverseProxy(t *testing.T) {
 
 	// Create the fake request body.
 	// This will copy "trailersToSet" to r.Trailer right before it is closed and
-	// thus test for us wether unannounced client trailers are proxied correctly.
+	// thus test for us whether unannounced client trailers are proxied correctly.
 	body := &trailerTestStringReader{
 		Reader:        *strings.NewReader("test"),
 		trailersToSet: testTrailers,
@@ -140,7 +140,7 @@ func TestReverseProxy(t *testing.T) {
 
 	copyHeader(r.Header, testHeaders)
 
-	// Only announce one of the trailers to test wether
+	// Only announce one of the trailers to test whether
 	// unannounced trailers are proxied correctly.
 	for k, v := range testTrailers {
 		r.Trailer[k] = v
