@@ -262,7 +262,7 @@ func TestReverseProxyMaxConnLimit(t *testing.T) {
 			} else if code != 0 {
 				t.Errorf("Bad return code for request %d: %d", i, code)
 			} else if w.Code != 200 {
-				t.Errorf("Bad statuc code for request %d: %d", i, w.Code)
+				t.Errorf("Bad status code for request %d: %d", i, w.Code)
 			}
 		}(i)
 	}
