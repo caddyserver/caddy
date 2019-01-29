@@ -366,25 +366,25 @@ func TestBrowseJson(t *testing.T) {
 		}
 
 		actualJSONResponse := rec.Body.String()
-		copyOflisting := listing
+		copyOfListing := listing
 		if test.SortBy == "" {
-			copyOflisting.Sort = "name"
+			copyOfListing.Sort = "name"
 		} else {
-			copyOflisting.Sort = test.SortBy
+			copyOfListing.Sort = test.SortBy
 		}
 		if test.OrderBy == "" {
-			copyOflisting.Order = "asc"
+			copyOfListing.Order = "asc"
 		} else {
-			copyOflisting.Order = test.OrderBy
+			copyOfListing.Order = test.OrderBy
 		}
 
-		copyOflisting.applySort()
+		copyOfListing.applySort()
 
 		limit := test.Limit
-		if limit <= len(copyOflisting.Items) && limit > 0 {
-			marsh, err = json.Marshal(copyOflisting.Items[:limit])
+		if limit <= len(copyOfListing.Items) && limit > 0 {
+			marsh, err = json.Marshal(copyOfListing.Items[:limit])
 		} else { // if the 'limit' query is empty, or has the wrong value, list everything
-			marsh, err = json.Marshal(copyOflisting.Items)
+			marsh, err = json.Marshal(copyOfListing.Items)
 		}
 
 		if err != nil {
