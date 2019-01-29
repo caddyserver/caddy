@@ -303,7 +303,7 @@ func (p Proxy) match(r *http.Request) Upstream {
 	return u
 }
 
-// createUpstremRequest shallow-copies r into a new request
+// createUpstreamRequest shallow-copies r into a new request
 // that can be sent upstream.
 //
 // Derived from reverseproxy.go in the standard Go httputil package.
