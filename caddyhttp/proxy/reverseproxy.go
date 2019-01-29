@@ -456,7 +456,7 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, 
 		closeBody()
 
 		// Since Go does not remove keys from res.Trailer we
-		// can safely do a length comparison to check wether
+		// can safely do a length comparison to check whether
 		// we received further, unannounced trailers.
 		//
 		// Most of the time forceSetTrailers should be false.

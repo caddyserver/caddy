@@ -44,7 +44,7 @@ import (
 // test fcgi protocol includes:
 // Get, Post, Post in multipart/form-data, and Post with files
 // each key should be the md5 of the value or the file uploaded
-// sepicify remote fcgi responer ip:port to test with php
+// specify remote fcgi responder ip:port to test with php
 // test failed if the remote fcgi(script) failed md5 verification
 // and output "FAILED" in response
 const (

@@ -114,7 +114,7 @@ outer:
 	return g.Next.ServeHTTP(w, r)
 }
 
-// gzipResponeWriter wraps the underlying Write method
+// gzipResponseWriter wraps the underlying Write method
 // with a gzip.Writer to compress the output.
 type gzipResponseWriter struct {
 	internalWriter io.Writer

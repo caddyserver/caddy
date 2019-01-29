@@ -414,7 +414,7 @@ func GetSupportedProtocolName(protocol uint16) (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("name: unsuported protocol")
+	return "", fmt.Errorf("name: unsupported protocol")
 }
 
 // SupportedCiphersMap has supported ciphers, used only for parsing config.
@@ -452,7 +452,7 @@ func GetSupportedCipherName(cipher uint16) (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("name: unsuported cipher")
+	return "", fmt.Errorf("name: unsupported cipher")
 }
 
 // List of all the ciphers we want to use by default
