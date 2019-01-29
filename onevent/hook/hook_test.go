@@ -20,8 +20,8 @@ func TestHook(t *testing.T) {
 		time.Sleep(500 * time.Millisecond)
 		os.RemoveAll(testDir)
 	}()
-	osSenitiveTestDir := filepath.FromSlash(testDir)
-	os.RemoveAll(osSenitiveTestDir) // start with a clean slate
+	osSensitiveTestDir := filepath.FromSlash(testDir)
+	os.RemoveAll(osSensitiveTestDir) // start with a clean slate
 
 	tests := []struct {
 		name            string
@@ -31,8 +31,8 @@ func TestHook(t *testing.T) {
 		shouldErr       bool
 		shouldRemoveErr bool
 	}{
-		{name: "blocking", event: caddy.InstanceStartupEvent, command: "mkdir", args: []string{osSenitiveTestDir}, shouldErr: false, shouldRemoveErr: false},
-		{name: "nonBlocking", event: caddy.ShutdownEvent, command: "mkdir", args: []string{osSenitiveTestDir, "&"}, shouldErr: false, shouldRemoveErr: true},
+		{name: "blocking", event: caddy.InstanceStartupEvent, command: "mkdir", args: []string{osSensitiveTestDir}, shouldErr: false, shouldRemoveErr: false},
+		{name: "nonBlocking", event: caddy.ShutdownEvent, command: "mkdir", args: []string{osSensitiveTestDir, "&"}, shouldErr: false, shouldRemoveErr: true},
 		{name: "nonBlocking2", event: caddy.ShutdownEvent, command: "echo", args: []string{"&"}, shouldErr: false, shouldRemoveErr: true},
 		{name: "nonExistent", event: caddy.CertRenewEvent, command: strconv.Itoa(int(time.Now().UnixNano())), shouldErr: true, shouldRemoveErr: true},
 	}
@@ -52,7 +52,7 @@ func TestHook(t *testing.T) {
 				t.Errorf("Test errored, but it shouldn't have; got '%v'", err)
 			}
 
-			err = os.Remove(osSenitiveTestDir)
+			err = os.Remove(osSensitiveTestDir)
 			if err != nil && !test.shouldRemoveErr {
 				t.Errorf("Test received an error of:\n%v", err)
 			}
