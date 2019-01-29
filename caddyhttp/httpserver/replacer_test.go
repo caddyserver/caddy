@@ -473,7 +473,7 @@ func TestRound(t *testing.T) {
 	}
 }
 
-func TestMillisecondConverstion(t *testing.T) {
+func TestMillisecondConversion(t *testing.T) {
 	var testCases = map[time.Duration]int64{
 		2 * time.Second:           2000,
 		9039492 * time.Nanosecond: 9,
