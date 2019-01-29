@@ -76,7 +76,7 @@ func TestReplace(t *testing.T) {
 	request.Header.Set("CustomAdd", "caddy")
 	request.Header.Set("Cookie", "foo=bar; taste=delicious")
 
-	// add some respons headers
+	// add some response headers
 	recordRequest.Header().Set("Custom", "CustomResponseHeader")
 
 	hostname, err := os.Hostname()
@@ -303,7 +303,7 @@ func BenchmarkReplace(b *testing.B) {
 	request.Header.Set("CustomAdd", "caddy")
 	request.Header.Set("Cookie", "foo=bar; taste=delicious")
 
-	// add some respons headers
+	// add some response headers
 	recordRequest.Header().Set("Custom", "CustomResponseHeader")
 
 	now = func() time.Time {
@@ -336,7 +336,7 @@ func BenchmarkReplaceEscaped(b *testing.B) {
 	request.Header.Set("CustomAdd", "caddy")
 	request.Header.Set("Cookie", "foo=bar; taste=delicious")
 
-	// add some respons headers
+	// add some response headers
 	recordRequest.Header().Set("Custom", "CustomResponseHeader")
 
 	now = func() time.Time {
