@@ -1037,7 +1037,7 @@ func TestBasicAuth(t *testing.T) {
 	}{
 		{"Nil Both", nil, nil},
 		{"Nil Upstream User", nil, url.UserPassword("username", "password")},
-		{"Nil Client User", url.UserPassword("usename", "password"), nil},
+		{"Nil Client User", url.UserPassword("username", "password"), nil},
 		{"Both Provided", url.UserPassword("unused", "unused"),
 			url.UserPassword("username", "password")},
 	}
