@@ -138,7 +138,7 @@
 			"importpath": "github.com/mholt/certmagic",
 			"repository": "https://github.com/mholt/certmagic",
 			"vcs": "git",
-			"revision": "707b20497ed70e559300ae4e91c6fd7db973fffc",
+			"revision": "c1d472b46046ee329c099086d689ada0c44d56b0",
 			"branch": "master",
 			"notests": true
 		},
@@ -733,7 +733,7 @@
 			"importpath": "gopkg.in/natefinch/lumberjack.v2",
 			"repository": "https://gopkg.in/natefinch/lumberjack.v2",
 			"vcs": "git",
-			"revision": "df99d62fd42d8b3752c8a42c6723555372c02a03",
+			"revision": "7d6a1875575e09256dc552b4c0e450dcd02bd10e",
 			"branch": "v2.0",
 			"notests": true
 		},

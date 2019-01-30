@@ -191,7 +191,7 @@ func (m IfMatcher) Or(r *http.Request) bool {
 }
 
 // IfMatcherKeyword checks if the next value in the dispenser is a keyword for 'if' config block.
-// If true, remaining arguments in the dispinser are cleard to keep the dispenser valid for use.
+// If true, remaining arguments in the dispenser are cleared to keep the dispenser valid for use.
 func IfMatcherKeyword(c *caddy.Controller) bool {
 	if c.Val() == "if" || c.Val() == "if_op" {
 		// clear remaining args

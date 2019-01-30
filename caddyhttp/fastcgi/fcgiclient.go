@@ -216,7 +216,7 @@ func Dial(network, address string) (fcgi *FCGIClient, err error) {
 	return DialContext(context.Background(), network, address)
 }
 
-// Close closes fcgi connnection
+// Close closes fcgi connection
 func (c *FCGIClient) Close() {
 	c.rwc.Close()
 }

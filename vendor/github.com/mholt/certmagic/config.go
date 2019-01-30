@@ -289,6 +289,10 @@ func (cfg *Config) ObtainCert(name string, interactive bool) error {
 		return nil
 	}
 
+	if cfg.storageHasCertResources(name) {
+		return nil
+	}
+
 	client, err := cfg.newACMEClient(interactive)
 	if err != nil {
 		return err
@@ -365,12 +369,9 @@ func (cfg *Config) preObtainOrRenewChecks(name string, allowPrompts bool) (bool,
 		return true, nil
 	}
 
-	if cfg.Email == "" {
-		var err error
-		cfg.Email, err = cfg.getEmail(allowPrompts)
-		if err != nil {
-			return false, err
-		}
+	err := cfg.getEmail(allowPrompts)
+	if err != nil {
+		return false, err
 	}
 
 	return false, nil

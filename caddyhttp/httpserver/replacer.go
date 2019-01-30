@@ -506,6 +506,16 @@ func (r *replacer) getSubstitution(key string) string {
 			return cert.NotBefore.Format("Jan 02 15:04:05 2006 MST")
 		}
 		return r.emptyValue
+	case "{server_port}":
+		_, port, err := net.SplitHostPort(r.request.Host)
+		if err != nil {
+			if r.request.TLS != nil {
+				return "443"
+			} else {
+				return "80"
+			}
+		}
+		return port
 	default:
 		// {labelN}
 		if strings.HasPrefix(key, "{label") {

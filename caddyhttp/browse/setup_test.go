@@ -53,7 +53,7 @@ func TestSetup(t *testing.T) {
 		// test case #1 tests instantiation of Config with default values
 		{"browse /", []string{"/"}, false},
 
-		// test case #2 tests detectaction of custom template
+		// test case #2 tests detection of custom template
 		{"browse . " + tempTemplatePath, []string{"."}, false},
 
 		// test case #3 tests detection of non-existent template

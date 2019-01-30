@@ -335,7 +335,7 @@ func TestHeuristicFunctionsAndHandler(t *testing.T) {
 			// in other words, if one returns true, the others
 			// should return false, with as little logic as possible,
 			// but with enough logic to force TLS proxies to do a
-			// good job preserving characterstics of the handshake.
+			// good job preserving characteristics of the handshake.
 			if (isChrome && (isFirefox || isSafari || isEdge || isTor)) ||
 				(isFirefox && (isChrome || isSafari || isEdge || isTor)) ||
 				(isSafari && (isChrome || isFirefox || isEdge || isTor)) ||
