@@ -109,7 +109,7 @@ func ListPlugins() map[string][]string {
 
 	// cluster plugins in registration order
 	for name := range clusterProviders {
-		p["clustering"] = append(p["clsutering"], name)
+		p["clustering"] = append(p["clustering"], name)
 	}
 
 	// List the event hook plugins

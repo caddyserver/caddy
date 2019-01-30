@@ -195,13 +195,16 @@ func (i *Instance) Restart(newCaddyfile Input) (*Instance, error) {
 		r := recover()
 		if err != nil || r != nil {
 			for _, fn := range i.OnRestartFailed {
-				err = fn()
-				if err != nil {
-					log.Printf("[ERROR] restart failed: %v", err)
+				err2 := fn()
+				if err2 != nil {
+					log.Printf("[ERROR] Restart failed callback returned error: %v", err2)
 				}
 			}
+			if err != nil {
+				log.Printf("[ERROR] Restart failed: %v", err)
+			}
 			if r != nil {
-				panic(r)
+				log.Printf("[PANIC] Restart: %v", r)
 			}
 		}
 	}()
@@ -246,7 +249,7 @@ func (i *Instance) Restart(newCaddyfile Input) (*Instance, error) {
 	// attempt to start new instance
 	err = startWithListenerFds(newCaddyfile, newInst, restartFds)
 	if err != nil {
-		return i, err
+		return i, fmt.Errorf("starting with listener file descriptors: %v", err)
 	}
 
 	// success! stop the old instance
@@ -721,22 +724,22 @@ func startServers(serverList []Server, inst *Instance, restartFds map[string]res
 					file := os.NewFile(fdIndex, "")
 					ln, err = net.FileListener(file)
 					if err != nil {
-						return err
+						return fmt.Errorf("making listener from file: %v", err)
 					}
 					err = file.Close()
 					if err != nil {
-						return err
+						return fmt.Errorf("closing copy of listener file: %v", err)
 					}
 				}
 				if fdIndex, ok := loadedGob.ListenerFds["udp"+addr]; ok {
 					file := os.NewFile(fdIndex, "")
 					pc, err = net.FilePacketConn(file)
 					if err != nil {
-						return err
+						return fmt.Errorf("making packet connection from file: %v", err)
 					}
 					err = file.Close()
 					if err != nil {
-						return err
+						return fmt.Errorf("closing copy of packet connection file: %v", err)
 					}
 				}
 				ln = gs.WrapListener(ln)
@@ -752,30 +755,30 @@ func startServers(serverList []Server, inst *Instance, restartFds map[string]res
 				if old.listener != nil {
 					file, err := old.listener.File()
 					if err != nil {
-						return err
+						return fmt.Errorf("getting old listener file: %v", err)
 					}
 					ln, err = net.FileListener(file)
 					if err != nil {
-						return err
+						return fmt.Errorf("getting file listener: %v", err)
 					}
 					err = file.Close()
 					if err != nil {
-						return err
+						return fmt.Errorf("closing copy of listener file: %v", err)
 					}
 				}
 				// packetconn
 				if old.packet != nil {
 					file, err := old.packet.File()
 					if err != nil {
-						return err
+						return fmt.Errorf("getting old packet file: %v", err)
 					}
 					pc, err = net.FilePacketConn(file)
 					if err != nil {
-						return err
+						return fmt.Errorf("getting file packet connection: %v", err)
 					}
 					err = file.Close()
 					if err != nil {
-						return err
+						return fmt.Errorf("close copy of packet file: %v", err)
 					}
 				}
 				ln = gs.WrapListener(ln)
@@ -785,13 +788,13 @@ func startServers(serverList []Server, inst *Instance, restartFds map[string]res
 		if ln == nil {
 			ln, err = s.Listen()
 			if err != nil {
-				return err
+				return fmt.Errorf("Listen: %v", err)
 			}
 		}
 		if pc == nil {
 			pc, err = s.ListenPacket()
 			if err != nil {
-				return err
+				return fmt.Errorf("ListenPacket: %v", err)
 			}
 		}
 

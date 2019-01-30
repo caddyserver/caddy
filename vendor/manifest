@@ -733,7 +733,7 @@
 			"importpath": "gopkg.in/natefinch/lumberjack.v2",
 			"repository": "https://gopkg.in/natefinch/lumberjack.v2",
 			"vcs": "git",
-			"revision": "df99d62fd42d8b3752c8a42c6723555372c02a03",
+			"revision": "7d6a1875575e09256dc552b4c0e450dcd02bd10e",
 			"branch": "v2.0",
 			"notests": true
 		},
