@@ -90,7 +90,9 @@ func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 	}
 
 	if protected && !isAuthenticated {
-
+		// browsers show a message that says something like:
+		// "The website says: <realm>"
+		// which is kinda dumb, but whatever.
 		if realm == "" {
 			realm = "Restricted"
 		}

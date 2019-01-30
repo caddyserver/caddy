@@ -84,16 +84,13 @@ func TestBasicAuth(t *testing.T) {
 		for i, test = range tests {
 			req, err := http.NewRequest("GET", test.from, nil)
 			if err != nil {
-
 				t.Fatalf("Test %d: Could not create HTTP request: %v", i, err)
-
 			}
 			req.SetBasicAuth(test.user, test.password)
 
 			rec := httptest.NewRecorder()
 			result, err := rw.ServeHTTP(rec, req)
 			if err != nil {
-
 				if !test.haserror || !strings.HasPrefix(err.Error(), "BasicAuth: user") {
 					t.Fatalf("Test %d: Could not ServeHTTP: %v", i, err)
 				}
@@ -159,7 +156,6 @@ func TestMultipleOverlappingRules(t *testing.T) {
 			if !test.haserror || !strings.HasPrefix(err.Error(), "BasicAuth: user") {
 				t.Fatalf("Test %d: Could not ServeHTTP %v", i, err)
 			}
-
 		}
 		if result != test.result {
 			t.Errorf("Test %d: Expected Header '%d' but was '%d'",
