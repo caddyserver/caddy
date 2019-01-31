@@ -29,7 +29,7 @@ func (n *NoneParser) Type() string {
 	return "None"
 }
 
-// Init prepases and parses the metadata and markdown file
+// Init preparses and parses the metadata and markdown file
 func (n *NoneParser) Init(b *bytes.Buffer) bool {
 	m := make(map[string]interface{})
 	n.metadata = NewMetadata(m)

@@ -186,7 +186,7 @@ func (l bySize) Less(i, j int) bool {
 	iSize, jSize := l.Items[i].Size, l.Items[j].Size
 
 	// Directory sizes depend on the filesystem implementation,
-	// which is opaque to a visitor, and should indeed does not change if the operator choses to change the fs.
+	// which is opaque to a visitor, and should indeed does not change if the operator chooses to change the fs.
 	// For a consistent user experience directories are pulled to the front…
 	if l.Items[i].IsDir {
 		iSize = directoryOffset

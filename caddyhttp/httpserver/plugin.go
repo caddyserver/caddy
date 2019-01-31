@@ -228,7 +228,7 @@ func (h *httpContext) MakeServers() ([]caddy.Server, error) {
 	// make a rough estimate as to whether we're in a "production
 	// environment/system" - start by assuming that most production
 	// servers will set their default CA endpoint to a public,
-	// trusted CA (obviously not a perfect hueristic)
+	// trusted CA (obviously not a perfect heuristic)
 	var looksLikeProductionCA bool
 	for _, publicCAEndpoint := range caddytls.KnownACMECAs {
 		if strings.Contains(certmagic.CA, publicCAEndpoint) {

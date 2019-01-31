@@ -86,7 +86,7 @@ type SiteConfig struct {
 }
 
 // Timeouts specify various timeouts for a server to use.
-// If the assocated bool field is true, then the duration
+// If the associated bool field is true, then the duration
 // value should be treated literally (i.e. a zero-value
 // duration would mean "no timeout"). If false, the duration
 // was left unset, so a zero-value duration would mean to

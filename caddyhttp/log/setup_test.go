@@ -336,7 +336,7 @@ func TestLogParse(t *testing.T) {
 		{`log access.log { rotate_size }`, true, nil},
 		{`log access.log { ipmask }`, true, nil},
 		{`log access.log { invalid_option 1 }`, true, nil},
-		{`log / acccess.log "{remote} - [{when}] "{method} {port}" {scheme} {mitm} "`, true, nil},
+		{`log / access.log "{remote} - [{when}] "{method} {port}" {scheme} {mitm} "`, true, nil},
 	}
 	for i, test := range tests {
 		c := caddy.NewTestController("http", test.inputLogRules)

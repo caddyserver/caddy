@@ -125,7 +125,7 @@ func TestParseWindowsCommand(t *testing.T) {
 			input:    `cmd "a ""quoted value"`,
 			expected: []string{`cmd`, `a "quoted value`},
 		},
-		// TODO - see how many quotes are dislayed if we use "", """, """""""
+		// TODO - see how many quotes are displayed if we use "", """, """""""
 		{ // 9 - two quotes outside an inQuote element
 			input:    `cmd a ""quoted value`,
 			expected: []string{`cmd`, `a`, `"quoted`, `value`},
