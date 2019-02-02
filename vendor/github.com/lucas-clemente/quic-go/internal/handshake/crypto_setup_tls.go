@@ -11,9 +11,6 @@ import (
 	"github.com/lucas-clemente/quic-go/internal/protocol"
 )
 
-// ErrCloseSessionForRetry is returned by HandleCryptoStream when the server wishes to perform a stateless retry
-var ErrCloseSessionForRetry = errors.New("closing session in order to recreate after a retry")
-
 // KeyDerivationFunction is used for key derivation
 type KeyDerivationFunction func(crypto.TLSExporter, protocol.Perspective) (crypto.AEAD, error)
 
@@ -26,46 +23,55 @@ type cryptoSetupTLS struct {
 	nullAEAD      crypto.AEAD
 	aead          crypto.AEAD
 
-	tls            MintTLS
-	cryptoStream   *CryptoStreamConn
+	tls            mintTLS
+	conn           *cryptoStreamConn
 	handshakeEvent chan<- struct{}
 }
 
+var _ CryptoSetupTLS = &cryptoSetupTLS{}
+
 // NewCryptoSetupTLSServer creates a new TLS CryptoSetup instance for a server
 func NewCryptoSetupTLSServer(
-	tls MintTLS,
-	cryptoStream *CryptoStreamConn,
-	nullAEAD crypto.AEAD,
+	cryptoStream io.ReadWriter,
+	connID protocol.ConnectionID,
+	config *mint.Config,
 	handshakeEvent chan<- struct{},
 	version protocol.VersionNumber,
-) CryptoSetup {
+) (CryptoSetupTLS, error) {
+	nullAEAD, err := crypto.NewNullAEAD(protocol.PerspectiveServer, connID, version)
+	if err != nil {
+		return nil, err
+	}
+	conn := newCryptoStreamConn(cryptoStream)
+	tls := mint.Server(conn, config)
 	return &cryptoSetupTLS{
 		tls:            tls,
-		cryptoStream:   cryptoStream,
+		conn:           conn,
 		nullAEAD:       nullAEAD,
 		perspective:    protocol.PerspectiveServer,
 		keyDerivation:  crypto.DeriveAESKeys,
 		handshakeEvent: handshakeEvent,
-	}
+	}, nil
 }
 
 // NewCryptoSetupTLSClient creates a new TLS CryptoSetup instance for a client
 func NewCryptoSetupTLSClient(
 	cryptoStream io.ReadWriter,
 	connID protocol.ConnectionID,
-	hostname string,
+	config *mint.Config,
 	handshakeEvent chan<- struct{},
-	tls MintTLS,
 	version protocol.VersionNumber,
-) (CryptoSetup, error) {
+) (CryptoSetupTLS, error) {
 	nullAEAD, err := crypto.NewNullAEAD(protocol.PerspectiveClient, connID, version)
 	if err != nil {
 		return nil, err
 	}
-
+	conn := newCryptoStreamConn(cryptoStream)
+	tls := mint.Client(conn, config)
 	return &cryptoSetupTLS{
-		perspective:    protocol.PerspectiveClient,
 		tls:            tls,
+		conn:           conn,
+		perspective:    protocol.PerspectiveClient,
 		nullAEAD:       nullAEAD,
 		keyDerivation:  crypto.DeriveAESKeys,
 		handshakeEvent: handshakeEvent,
@@ -73,24 +79,16 @@ func NewCryptoSetupTLSClient(
 }
 
 func (h *cryptoSetupTLS) HandleCryptoStream() error {
-	if h.perspective == protocol.PerspectiveServer {
-		// mint already wrote the ServerHello, EncryptedExtensions and the certificate chain to the buffer
-		// send out that data now
-		if _, err := h.cryptoStream.Flush(); err != nil {
-			return err
-		}
-	}
-
-handshakeLoop:
 	for {
 		if alert := h.tls.Handshake(); alert != mint.AlertNoAlert {
 			return fmt.Errorf("TLS handshake error: %s (Alert %d)", alert.String(), alert)
 		}
-		switch h.tls.State() {
-		case mint.StateClientStart: // this happens if a stateless retry is performed
-			return ErrCloseSessionForRetry
-		case mint.StateClientConnected, mint.StateServerConnected:
-			break handshakeLoop
+		state := h.tls.ConnectionState().HandshakeState
+		if err := h.conn.Flush(); err != nil {
+			return err
+		}
+		if state == mint.StateClientConnected || state == mint.StateServerConnected {
+			break
 		}
 	}
 
@@ -107,22 +105,18 @@ handshakeLoop:
 	return nil
 }
 
-func (h *cryptoSetupTLS) Open(dst, src []byte, packetNumber protocol.PacketNumber, associatedData []byte) ([]byte, protocol.EncryptionLevel, error) {
+func (h *cryptoSetupTLS) OpenHandshake(dst, src []byte, packetNumber protocol.PacketNumber, associatedData []byte) ([]byte, error) {
+	return h.nullAEAD.Open(dst, src, packetNumber, associatedData)
+}
+
+func (h *cryptoSetupTLS) Open1RTT(dst, src []byte, packetNumber protocol.PacketNumber, associatedData []byte) ([]byte, error) {
 	h.mutex.RLock()
 	defer h.mutex.RUnlock()
 
-	if h.aead != nil {
-		data, err := h.aead.Open(dst, src, packetNumber, associatedData)
-		if err != nil {
-			return nil, protocol.EncryptionUnspecified, err
-		}
-		return data, protocol.EncryptionForwardSecure, nil
+	if h.aead == nil {
+		return nil, errors.New("no 1-RTT sealer")
 	}
-	data, err := h.nullAEAD.Open(dst, src, packetNumber, associatedData)
-	if err != nil {
-		return nil, protocol.EncryptionUnspecified, err
-	}
-	return data, protocol.EncryptionUnencrypted, nil
+	return h.aead.Open(dst, src, packetNumber, associatedData)
 }
 
 func (h *cryptoSetupTLS) GetSealer() (protocol.EncryptionLevel, Sealer) {
@@ -155,14 +149,6 @@ func (h *cryptoSetupTLS) GetSealerWithEncryptionLevel(encLevel protocol.Encrypti
 
 func (h *cryptoSetupTLS) GetSealerForCryptoStream() (protocol.EncryptionLevel, Sealer) {
 	return protocol.EncryptionUnencrypted, h.nullAEAD
-}
-
-func (h *cryptoSetupTLS) DiversificationNonce() []byte {
-	panic("diversification nonce not needed for TLS")
-}
-
-func (h *cryptoSetupTLS) SetDiversificationNonce([]byte) {
-	panic("diversification nonce not needed for TLS")
 }
 
 func (h *cryptoSetupTLS) ConnectionState() ConnectionState {

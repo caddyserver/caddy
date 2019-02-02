@@ -6,13 +6,13 @@ import (
 )
 
 const (
-	clientExporterLabel = "EXPORTER-QUIC client 1-RTT Secret"
-	serverExporterLabel = "EXPORTER-QUIC server 1-RTT Secret"
+	clientExporterLabel = "EXPORTER-QUIC client 1rtt"
+	serverExporterLabel = "EXPORTER-QUIC server 1rtt"
 )
 
 // A TLSExporter gets the negotiated ciphersuite and computes exporter
 type TLSExporter interface {
-	GetCipherSuite() mint.CipherSuiteParams
+	ConnectionState() mint.ConnectionState
 	ComputeExporter(label string, context []byte, keyLength int) ([]byte, error)
 }
 
@@ -38,12 +38,12 @@ func DeriveAESKeys(tls TLSExporter, pers protocol.Perspective) (AEAD, error) {
 }
 
 func computeKeyAndIV(tls TLSExporter, label string) (key, iv []byte, err error) {
-	cs := tls.GetCipherSuite()
+	cs := tls.ConnectionState().CipherSuite
 	secret, err := tls.ComputeExporter(label, nil, cs.Hash.Size())
 	if err != nil {
 		return nil, nil, err
 	}
-	key = mint.HkdfExpandLabel(cs.Hash, secret, "key", nil, cs.KeyLen)
-	iv = mint.HkdfExpandLabel(cs.Hash, secret, "iv", nil, cs.IvLen)
+	key = qhkdfExpand(secret, "key", cs.KeyLen)
+	iv = qhkdfExpand(secret, "iv", cs.IvLen)
 	return key, iv, nil
 }

@@ -16,6 +16,15 @@ type StreamID = protocol.StreamID
 // A VersionNumber is a QUIC version number.
 type VersionNumber = protocol.VersionNumber
 
+const (
+	// VersionGQUIC39 is gQUIC version 39.
+	VersionGQUIC39 = protocol.Version39
+	// VersionGQUIC43 is gQUIC version 43.
+	VersionGQUIC43 = protocol.Version43
+	// VersionGQUIC44 is gQUIC version 44.
+	VersionGQUIC44 = protocol.Version44
+)
+
 // A Cookie can be used to verify the ownership of the client address.
 type Cookie = handshake.Cookie
 
@@ -113,21 +122,34 @@ type StreamError interface {
 // A Session is a QUIC connection between two peers.
 type Session interface {
 	// AcceptStream returns the next stream opened by the peer, blocking until one is available.
-	// Since stream 1 is reserved for the crypto stream, the first stream is either 2 (for a client) or 3 (for a server).
 	AcceptStream() (Stream, error)
-	// OpenStream opens a new QUIC stream, returning a special error when the peer's concurrent stream limit is reached.
-	// New streams always have the smallest possible stream ID.
-	// TODO: Enable testing for the special error
+	// AcceptUniStream returns the next unidirectional stream opened by the peer, blocking until one is available.
+	AcceptUniStream() (ReceiveStream, error)
+	// OpenStream opens a new bidirectional QUIC stream.
+	// It returns a special error when the peer's concurrent stream limit is reached.
+	// There is no signaling to the peer about new streams:
+	// The peer can only accept the stream after data has been sent on the stream.
+	// TODO(#1152): Enable testing for the special error
 	OpenStream() (Stream, error)
-	// OpenStreamSync opens a new QUIC stream, blocking until the peer's concurrent stream limit allows a new stream to be opened.
-	// It always picks the smallest possible stream ID.
+	// OpenStreamSync opens a new bidirectional QUIC stream.
+	// It blocks until the peer's concurrent stream limit allows a new stream to be opened.
 	OpenStreamSync() (Stream, error)
+	// OpenUniStream opens a new outgoing unidirectional QUIC stream.
+	// It returns a special error when the peer's concurrent stream limit is reached.
+	// TODO(#1152): Enable testing for the special error
+	OpenUniStream() (SendStream, error)
+	// OpenUniStreamSync opens a new outgoing unidirectional QUIC stream.
+	// It blocks until the peer's concurrent stream limit allows a new stream to be opened.
+	OpenUniStreamSync() (SendStream, error)
 	// LocalAddr returns the local address.
 	LocalAddr() net.Addr
 	// RemoteAddr returns the address of the peer.
 	RemoteAddr() net.Addr
-	// Close closes the connection. The error will be sent to the remote peer in a CONNECTION_CLOSE frame. An error value of nil is allowed and will cause a normal PeerGoingAway to be sent.
-	Close(error) error
+	// Close the connection.
+	io.Closer
+	// Close the connection with an error.
+	// The error must not be nil.
+	CloseWithError(ErrorCode, error) error
 	// The context is cancelled when the session is closed.
 	// Warning: This API should not be considered stable and might change soon.
 	Context() context.Context
@@ -146,6 +168,13 @@ type Config struct {
 	// This saves 8 bytes in the Public Header in every packet. However, if the IP address of the server changes, the connection cannot be migrated.
 	// Currently only valid for the client.
 	RequestConnectionIDOmission bool
+	// The length of the connection ID in bytes. Only valid for IETF QUIC.
+	// It can be 0, or any value between 4 and 18.
+	// If not set, the interpretation depends on where the Config is used:
+	// If used for dialing an address, a 0 byte connection ID will be used.
+	// If used for a server, or dialing on a packet conn, a 4 byte connection ID will be used.
+	// When dialing on a packet conn, the ConnectionIDLength value must be the same for every Dial call.
+	ConnectionIDLength int
 	// HandshakeTimeout is the maximum duration that the cryptographic handshake may take.
 	// If the timeout is exceeded, the connection is closed.
 	// If this value is zero, the timeout is set to 10 seconds.
@@ -166,6 +195,17 @@ type Config struct {
 	// MaxReceiveConnectionFlowControlWindow is the connection-level flow control window for receiving data.
 	// If this value is zero, it will default to 1.5 MB for the server and 15 MB for the client.
 	MaxReceiveConnectionFlowControlWindow uint64
+	// MaxIncomingStreams is the maximum number of concurrent bidirectional streams that a peer is allowed to open.
+	// If not set, it will default to 100.
+	// If set to a negative value, it doesn't allow any bidirectional streams.
+	// Values larger than 65535 (math.MaxUint16) are invalid.
+	MaxIncomingStreams int
+	// MaxIncomingUniStreams is the maximum number of concurrent unidirectional streams that a peer is allowed to open.
+	// This value doesn't have any effect in Google QUIC.
+	// If not set, it will default to 100.
+	// If set to a negative value, it doesn't allow any unidirectional streams.
+	// Values larger than 65535 (math.MaxUint16) are invalid.
+	MaxIncomingUniStreams int
 	// KeepAlive defines whether this peer will periodically send PING frames to keep the connection alive.
 	KeepAlive bool
 }

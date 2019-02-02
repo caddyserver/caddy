@@ -2,7 +2,6 @@ package handshake
 
 import (
 	"crypto/x509"
-	"io"
 
 	"github.com/bifurcation/mint"
 	"github.com/lucas-clemente/quic-go/internal/crypto"
@@ -15,6 +14,12 @@ type Sealer interface {
 	Overhead() int
 }
 
+// mintTLS combines some methods needed to interact with mint.
+type mintTLS interface {
+	crypto.TLSExporter
+	Handshake() mint.Alert
+}
+
 // A TLSExtensionHandler sends and received the QUIC TLS extension.
 // It provides the parameters sent by the peer on a channel.
 type TLSExtensionHandler interface {
@@ -23,30 +28,28 @@ type TLSExtensionHandler interface {
 	GetPeerParams() <-chan TransportParameters
 }
 
-// MintTLS combines some methods needed to interact with mint.
-type MintTLS interface {
-	crypto.TLSExporter
-
-	// additional methods
-	Handshake() mint.Alert
-	State() mint.State
-	ConnectionState() mint.ConnectionState
-
-	SetCryptoStream(io.ReadWriter)
-}
-
-// CryptoSetup is a crypto setup
-type CryptoSetup interface {
-	Open(dst, src []byte, packetNumber protocol.PacketNumber, associatedData []byte) ([]byte, protocol.EncryptionLevel, error)
+type baseCryptoSetup interface {
 	HandleCryptoStream() error
-	// TODO: clean up this interface
-	DiversificationNonce() []byte   // only needed for cryptoSetupServer
-	SetDiversificationNonce([]byte) // only needed for cryptoSetupClient
 	ConnectionState() ConnectionState
 
 	GetSealer() (protocol.EncryptionLevel, Sealer)
 	GetSealerWithEncryptionLevel(protocol.EncryptionLevel) (Sealer, error)
 	GetSealerForCryptoStream() (protocol.EncryptionLevel, Sealer)
+}
+
+// CryptoSetup is the crypto setup used by gQUIC
+type CryptoSetup interface {
+	baseCryptoSetup
+
+	Open(dst, src []byte, packetNumber protocol.PacketNumber, associatedData []byte) ([]byte, protocol.EncryptionLevel, error)
+}
+
+// CryptoSetupTLS is the crypto setup used by IETF QUIC
+type CryptoSetupTLS interface {
+	baseCryptoSetup
+
+	OpenHandshake(dst, src []byte, packetNumber protocol.PacketNumber, associatedData []byte) ([]byte, error)
+	Open1RTT(dst, src []byte, packetNumber protocol.PacketNumber, associatedData []byte) ([]byte, error)
 }
 
 // ConnectionState records basic details about the QUIC connection.

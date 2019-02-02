@@ -50,6 +50,19 @@ func TestSetup(t *testing.T) {
 	}
 }
 
+// newSimpleRule is convenience test function for SimpleRule.
+func newSimpleRule(t *testing.T, from, to string, negate ...bool) Rule {
+	var n bool
+	if len(negate) > 0 {
+		n = negate[0]
+	}
+	rule, err := NewSimpleRule(from, to, n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return rule
+}
+
 func TestRewriteParse(t *testing.T) {
 	simpleTests := []struct {
 		input     string
@@ -57,17 +70,20 @@ func TestRewriteParse(t *testing.T) {
 		expected  []Rule
 	}{
 		{`rewrite /from /to`, false, []Rule{
-			SimpleRule{From: "/from", To: "/to"},
+			newSimpleRule(t, "/from", "/to"),
 		}},
 		{`rewrite /from /to
 		  rewrite a b`, false, []Rule{
-			SimpleRule{From: "/from", To: "/to"},
-			SimpleRule{From: "a", To: "b"},
+			newSimpleRule(t, "/from", "/to"),
+			newSimpleRule(t, "a", "b"),
 		}},
 		{`rewrite a`, true, []Rule{}},
 		{`rewrite`, true, []Rule{}},
 		{`rewrite a b c`, false, []Rule{
-			SimpleRule{From: "a", To: "b c"},
+			newSimpleRule(t, "a", "b c"),
+		}},
+		{`rewrite not a b c`, false, []Rule{
+			newSimpleRule(t, "a", "b c", true),
 		}},
 	}
 
@@ -88,17 +104,22 @@ func TestRewriteParse(t *testing.T) {
 		}
 
 		for j, e := range test.expected {
-			actualRule := actual[j].(SimpleRule)
-			expectedRule := e.(SimpleRule)
+			actualRule := actual[j].(*SimpleRule)
+			expectedRule := e.(*SimpleRule)
 
-			if actualRule.From != expectedRule.From {
+			if actualRule.Regexp.String() != expectedRule.Regexp.String() {
 				t.Errorf("Test %d, rule %d: Expected From=%s, got %s",
-					i, j, expectedRule.From, actualRule.From)
+					i, j, expectedRule.Regexp.String(), actualRule.Regexp.String())
 			}
 
 			if actualRule.To != expectedRule.To {
 				t.Errorf("Test %d, rule %d: Expected To=%s, got %s",
-					i, j, expectedRule.To, actualRule.To)
+					i, j, expectedRule.Regexp.String(), actualRule.Regexp.String())
+			}
+
+			if actualRule.Negate != expectedRule.Negate {
+				t.Errorf("Test %d, rule %d: Expected Negate=%v, got %v",
+					i, j, expectedRule.Negate, actualRule.Negate)
 			}
 		}
 	}

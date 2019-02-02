@@ -177,3 +177,85 @@ func TestMultiEntries(t *testing.T) {
 		t.Errorf("Expected %q, but got %q", expect, got)
 	}
 }
+
+func TestLogExcept(t *testing.T) {
+	tests := []struct {
+		LogRules  []Rule
+		logPath   string
+		shouldLog bool
+	}{
+		{[]Rule{{
+			PathScope: "/",
+			Entries: []*Entry{{
+				Log: &httpserver.Logger{
+
+					Exceptions: []string{"/soup"},
+				},
+				Format: DefaultLogFormat,
+			}},
+		}}, `/soup`, false},
+		{[]Rule{{
+			PathScope: "/",
+			Entries: []*Entry{{
+				Log: &httpserver.Logger{
+
+					Exceptions: []string{"/tart"},
+				},
+				Format: DefaultLogFormat,
+			}},
+		}}, `/soup`, true},
+		{[]Rule{{
+			PathScope: "/",
+			Entries: []*Entry{{
+				Log: &httpserver.Logger{
+
+					Exceptions: []string{"/soup"},
+				},
+				Format: DefaultLogFormat,
+			}},
+		}}, `/tomatosoup`, true},
+		{[]Rule{{
+			PathScope: "/",
+			Entries: []*Entry{{
+				Log: &httpserver.Logger{
+
+					Exceptions: []string{"/pie/"},
+				},
+				Format: DefaultLogFormat,
+			}},
+			// Check exception with a trailing slash does not match without
+		}}, `/pie`, true},
+		{[]Rule{{
+			PathScope: "/",
+			Entries: []*Entry{{
+				Log: &httpserver.Logger{
+
+					Exceptions: []string{"/pie.php"},
+				},
+				Format: DefaultLogFormat,
+			}},
+		}}, `/pie`, true},
+		{[]Rule{{
+			PathScope: "/",
+			Entries: []*Entry{{
+				Log: &httpserver.Logger{
+
+					Exceptions: []string{"/pie"},
+				},
+				Format: DefaultLogFormat,
+			}},
+			// Check that a word without trailing slash will match a filename
+		}}, `/pie.php`, false},
+	}
+	for i, test := range tests {
+		for _, LogRule := range test.LogRules {
+			for _, e := range LogRule.Entries {
+				shouldLog := e.Log.ShouldLog(test.logPath)
+				if shouldLog != test.shouldLog {
+					t.Fatalf("Test  %d expected shouldLog=%t but got shouldLog=%t,", i, test.shouldLog, shouldLog)
+				}
+			}
+		}
+
+	}
+}

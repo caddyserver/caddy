@@ -16,15 +16,18 @@ import (
 func main() {
 	verbose := flag.Bool("v", false, "verbose")
 	tls := flag.Bool("tls", false, "activate support for IETF QUIC (work in progress)")
+	quiet := flag.Bool("q", false, "don't print the data")
 	flag.Parse()
 	urls := flag.Args()
 
+	logger := utils.DefaultLogger
+
 	if *verbose {
-		utils.SetLogLevel(utils.LogLevelDebug)
+		logger.SetLogLevel(utils.LogLevelDebug)
 	} else {
-		utils.SetLogLevel(utils.LogLevelInfo)
+		logger.SetLogLevel(utils.LogLevelInfo)
 	}
-	utils.SetLogTimeFormat("")
+	logger.SetLogTimeFormat("")
 
 	versions := protocol.SupportedVersions
 	if *tls {
@@ -42,21 +45,25 @@ func main() {
 	var wg sync.WaitGroup
 	wg.Add(len(urls))
 	for _, addr := range urls {
-		utils.Infof("GET %s", addr)
+		logger.Infof("GET %s", addr)
 		go func(addr string) {
 			rsp, err := hclient.Get(addr)
 			if err != nil {
 				panic(err)
 			}
-			utils.Infof("Got response for %s: %#v", addr, rsp)
+			logger.Infof("Got response for %s: %#v", addr, rsp)
 
 			body := &bytes.Buffer{}
 			_, err = io.Copy(body, rsp.Body)
 			if err != nil {
 				panic(err)
 			}
-			utils.Infof("Request Body:")
-			utils.Infof("%s", body.Bytes())
+			if *quiet {
+				logger.Infof("Request Body: %d bytes", body.Len())
+			} else {
+				logger.Infof("Request Body:")
+				logger.Infof("%s", body.Bytes())
+			}
 			wg.Done()
 		}(addr)
 	}

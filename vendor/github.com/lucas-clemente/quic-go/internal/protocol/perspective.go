@@ -9,6 +9,11 @@ const (
 	PerspectiveClient Perspective = 2
 )
 
+// Opposite returns the perspective of the peer
+func (p Perspective) Opposite() Perspective {
+	return 3 - p
+}
+
 func (p Perspective) String() string {
 	switch p {
 	case PerspectiveServer:

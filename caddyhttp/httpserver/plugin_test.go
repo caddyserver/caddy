@@ -18,6 +18,10 @@ import (
 	"strings"
 	"testing"
 
+	"sort"
+
+	"fmt"
+
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyfile"
 )
@@ -147,7 +151,20 @@ func TestInspectServerBlocksWithCustomDefaultPort(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Didn't expect an error, but got: %v", err)
 	}
-	addr := ctx.keysToSiteConfigs["localhost"].Addr
+	localhostKey := "localhost"
+	item, ok := ctx.keysToSiteConfigs[localhostKey]
+	if !ok {
+		availableKeys := make(sort.StringSlice, len(ctx.keysToSiteConfigs))
+		i := 0
+		for key := range ctx.keysToSiteConfigs {
+			availableKeys[i] = fmt.Sprintf("'%s'", key)
+			i++
+		}
+		availableKeys.Sort()
+		t.Errorf("`%s` not found within registered keys, only these are available: %s", localhostKey, strings.Join(availableKeys, ", "))
+		return
+	}
+	addr := item.Addr
 	if addr.Port != Port {
 		t.Errorf("Expected the port on the address to be set, but got: %#v", addr)
 	}
@@ -184,6 +201,64 @@ func TestInspectServerBlocksCaseInsensitiveKey(t *testing.T) {
 	}
 }
 
+func TestKeyNormalization(t *testing.T) {
+	originalCaseSensitivePath := CaseSensitivePath
+	defer func() {
+		CaseSensitivePath = originalCaseSensitivePath
+	}()
+	CaseSensitivePath = true
+
+	caseSensitiveData := []struct {
+		orig string
+		res  string
+	}{
+		{
+			orig: "HTTP://A/ABCDEF",
+			res:  "http://a/ABCDEF",
+		},
+		{
+			orig: "A/ABCDEF",
+			res:  "a/ABCDEF",
+		},
+		{
+			orig: "A:2015/Port",
+			res:  "a:2015/Port",
+		},
+	}
+	for _, item := range caseSensitiveData {
+		v := normalizedKey(item.orig)
+		if v != item.res {
+			t.Errorf("Normalization of `%s` with CaseSensitivePath option set to true must be equal to `%s`, got `%s` instead", item.orig, item.res, v)
+		}
+	}
+
+	CaseSensitivePath = false
+	caseInsensitiveData := []struct {
+		orig string
+		res  string
+	}{
+		{
+			orig: "HTTP://A/ABCDEF",
+			res:  "http://a/abcdef",
+		},
+		{
+			orig: "A/ABCDEF",
+			res:  "a/abcdef",
+		},
+		{
+			orig: "A:2015/Port",
+			res:  "a:2015/port",
+		},
+	}
+	for _, item := range caseInsensitiveData {
+		v := normalizedKey(item.orig)
+		if v != item.res {
+			t.Errorf("Normalization of `%s` with CaseSensitivePath option set to false must be equal to `%s`, got `%s` instead", item.orig, item.res, v)
+		}
+	}
+
+}
+
 func TestGetConfig(t *testing.T) {
 	// case insensitivity for key
 	con := caddy.NewTestController("http", "")
@@ -200,6 +275,14 @@ func TestGetConfig(t *testing.T) {
 	cfg3 := GetConfig(con)
 	if cfg == cfg3 {
 		t.Errorf("Expected different configs using when key is different; got %p and %p", cfg, cfg3)
+	}
+
+	con.Key = "foo/foobar"
+	cfg4 := GetConfig(con)
+	con.Key = "foo/Foobar"
+	cfg5 := GetConfig(con)
+	if cfg4 == cfg5 {
+		t.Errorf("Expected different cases in path to differentiate keys in general")
 	}
 }
 

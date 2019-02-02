@@ -71,31 +71,37 @@ func (c *Controller) ServerType() string {
 // OnFirstStartup adds fn to the list of callback functions to execute
 // when the server is about to be started NOT as part of a restart.
 func (c *Controller) OnFirstStartup(fn func() error) {
-	c.instance.onFirstStartup = append(c.instance.onFirstStartup, fn)
+	c.instance.OnFirstStartup = append(c.instance.OnFirstStartup, fn)
 }
 
 // OnStartup adds fn to the list of callback functions to execute
 // when the server is about to be started (including restarts).
 func (c *Controller) OnStartup(fn func() error) {
-	c.instance.onStartup = append(c.instance.onStartup, fn)
+	c.instance.OnStartup = append(c.instance.OnStartup, fn)
 }
 
 // OnRestart adds fn to the list of callback functions to execute
 // when the server is about to be restarted.
 func (c *Controller) OnRestart(fn func() error) {
-	c.instance.onRestart = append(c.instance.onRestart, fn)
+	c.instance.OnRestart = append(c.instance.OnRestart, fn)
+}
+
+// OnRestartFailed adds fn to the list of callback functions to execute
+// if the server failed to restart.
+func (c *Controller) OnRestartFailed(fn func() error) {
+	c.instance.OnRestartFailed = append(c.instance.OnRestartFailed, fn)
 }
 
 // OnShutdown adds fn to the list of callback functions to execute
 // when the server is about to be shut down (including restarts).
 func (c *Controller) OnShutdown(fn func() error) {
-	c.instance.onShutdown = append(c.instance.onShutdown, fn)
+	c.instance.OnShutdown = append(c.instance.OnShutdown, fn)
 }
 
 // OnFinalShutdown adds fn to the list of callback functions to execute
 // when the server is about to be shut down NOT as part of a restart.
 func (c *Controller) OnFinalShutdown(fn func() error) {
-	c.instance.onFinalShutdown = append(c.instance.onFinalShutdown, fn)
+	c.instance.OnFinalShutdown = append(c.instance.OnFinalShutdown, fn)
 }
 
 // Context gets the context associated with the instance associated with c.

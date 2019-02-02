@@ -6,7 +6,6 @@ import (
 
 	"github.com/lucas-clemente/quic-go/internal/crypto"
 	"github.com/lucas-clemente/quic-go/internal/protocol"
-	"github.com/lucas-clemente/quic-go/internal/utils"
 )
 
 var (
@@ -24,27 +23,26 @@ var (
 // used for all connections for 60 seconds is negligible. Thus we can amortise
 // the Diffie-Hellman key generation at the server over all the connections in a
 // small time span.
-func getEphermalKEX() (res crypto.KeyExchange) {
+func getEphermalKEX() (crypto.KeyExchange, error) {
 	kexMutex.RLock()
-	res = kexCurrent
+	res := kexCurrent
 	t := kexCurrentTime
 	kexMutex.RUnlock()
 	if res != nil && time.Since(t) < kexLifetime {
-		return res
+		return res, nil
 	}
 
 	kexMutex.Lock()
 	defer kexMutex.Unlock()
 	// Check if still unfulfilled
-	if kexCurrent == nil || time.Since(kexCurrentTime) > kexLifetime {
+	if kexCurrent == nil || time.Since(kexCurrentTime) >= kexLifetime {
 		kex, err := crypto.NewCurve25519KEX()
 		if err != nil {
-			utils.Errorf("could not set KEX: %s", err.Error())
-			return kexCurrent
+			return nil, err
 		}
 		kexCurrent = kex
 		kexCurrentTime = time.Now()
-		return kexCurrent
+		return kexCurrent, nil
 	}
-	return kexCurrent
+	return kexCurrent, nil
 }

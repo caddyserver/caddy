@@ -15,25 +15,28 @@
 package caddymain
 
 import (
+	"bufio"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 
-	"gopkg.in/natefinch/lumberjack.v2"
-
-	"github.com/xenolf/lego/acme"
-
+	"github.com/google/uuid"
+	"github.com/klauspost/cpuid"
 	"github.com/mholt/caddy"
-	// plug in the HTTP server type
-	_ "github.com/mholt/caddy/caddyhttp"
-
 	"github.com/mholt/caddy/caddytls"
+	"github.com/mholt/caddy/telemetry"
+	"github.com/mholt/certmagic"
+	lumberjack "gopkg.in/natefinch/lumberjack.v2"
+
+	_ "github.com/mholt/caddy/caddyhttp" // plug in the HTTP server type
 	// This is where other plugins get plugged in (imported)
 )
 
@@ -41,16 +44,20 @@ func init() {
 	caddy.TrapSignals()
 	setVersion()
 
-	flag.BoolVar(&caddytls.Agreed, "agree", false, "Agree to the CA's Subscriber Agreement")
-	flag.StringVar(&caddytls.DefaultCAUrl, "ca", "https://acme-v01.api.letsencrypt.org/directory", "URL to certificate authority's ACME server directory")
-	flag.BoolVar(&caddytls.DisableHTTPChallenge, "disable-http-challenge", caddytls.DisableHTTPChallenge, "Disable the ACME HTTP challenge")
-	flag.BoolVar(&caddytls.DisableTLSSNIChallenge, "disable-tls-sni-challenge", caddytls.DisableTLSSNIChallenge, "Disable the ACME TLS-SNI challenge")
+	flag.BoolVar(&certmagic.Agreed, "agree", false, "Agree to the CA's Subscriber Agreement")
+	flag.StringVar(&certmagic.CA, "ca", certmagic.CA, "URL to certificate authority's ACME server directory")
+	flag.BoolVar(&certmagic.DisableHTTPChallenge, "disable-http-challenge", certmagic.DisableHTTPChallenge, "Disable the ACME HTTP challenge")
+	flag.BoolVar(&certmagic.DisableTLSALPNChallenge, "disable-tls-alpn-challenge", certmagic.DisableTLSALPNChallenge, "Disable the ACME TLS-ALPN challenge")
+	flag.StringVar(&disabledMetrics, "disabled-metrics", "", "Comma-separated list of telemetry metrics to disable")
 	flag.StringVar(&conf, "conf", "", "Caddyfile to load (default \""+caddy.DefaultConfigFile+"\")")
 	flag.StringVar(&cpu, "cpu", "100%", "CPU cap")
+	flag.StringVar(&envFile, "env", "", "Path to file with environment variables to load in KEY=VALUE format")
 	flag.BoolVar(&plugins, "plugins", false, "List installed plugins")
-	flag.StringVar(&caddytls.DefaultEmail, "email", "", "Default ACME CA account email address")
-	flag.DurationVar(&acme.HTTPClient.Timeout, "catimeout", acme.HTTPClient.Timeout, "Default ACME CA HTTP timeout")
+	flag.StringVar(&certmagic.Email, "email", "", "Default ACME CA account email address")
+	flag.DurationVar(&certmagic.HTTPTimeout, "catimeout", certmagic.HTTPTimeout, "Default ACME CA HTTP timeout")
 	flag.StringVar(&logfile, "log", "", "Process log file")
+	flag.IntVar(&logRollMB, "log-roll-mb", 100, "Roll process log when it reaches this many megabytes (0 to disable rolling)")
+	flag.BoolVar(&logRollCompress, "log-roll-compress", true, "Gzip-compress rolled process log files")
 	flag.StringVar(&caddy.PidFile, "pidfile", "", "Path to write pid file")
 	flag.BoolVar(&caddy.Quiet, "quiet", false, "Quiet mode (no initialization output)")
 	flag.StringVar(&revoke, "revoke", "", "Hostname for which to revoke the certificate")
@@ -68,7 +75,7 @@ func Run() {
 
 	caddy.AppName = appName
 	caddy.AppVersion = appVersion
-	acme.UserAgent = appName + "/" + appVersion
+	certmagic.UserAgent = appName + "/" + appVersion
 
 	// Set up process log before anything bad happens
 	switch logfile {
@@ -79,12 +86,41 @@ func Run() {
 	case "":
 		log.SetOutput(ioutil.Discard)
 	default:
-		log.SetOutput(&lumberjack.Logger{
-			Filename:   logfile,
-			MaxSize:    100,
-			MaxAge:     14,
-			MaxBackups: 10,
-		})
+		if logRollMB > 0 {
+			log.SetOutput(&lumberjack.Logger{
+				Filename:   logfile,
+				MaxSize:    logRollMB,
+				MaxAge:     14,
+				MaxBackups: 10,
+				Compress:   logRollCompress,
+			})
+		} else {
+			err := os.MkdirAll(filepath.Dir(logfile), 0755)
+			if err != nil {
+				mustLogFatalf("%v", err)
+			}
+			f, err := os.OpenFile(logfile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+			if err != nil {
+				mustLogFatalf("%v", err)
+			}
+			// don't close file; log should be writeable for duration of process
+			log.SetOutput(f)
+		}
+	}
+
+	//Load all additional envs as soon as possible
+	if err := LoadEnvFromFile(envFile); err != nil {
+		mustLogFatalf("%v", err)
+	}
+
+	// initialize telemetry client
+	if EnableTelemetry {
+		err := initTelemetry()
+		if err != nil {
+			mustLogFatalf("[ERROR] Initializing telemetry: %v", err)
+		}
+	} else if disabledMetrics != "" {
+		mustLogFatalf("[ERROR] Cannot disable specific metrics because telemetry is disabled")
 	}
 
 	// Check for one-time actions
@@ -140,8 +176,25 @@ func Run() {
 		mustLogFatalf("%v", err)
 	}
 
-	// Execute instantiation events
-	caddy.EmitEvent(caddy.InstanceStartupEvent, instance)
+	// Begin telemetry (these are no-ops if telemetry disabled)
+	telemetry.Set("caddy_version", appVersion)
+	telemetry.Set("num_listeners", len(instance.Servers()))
+	telemetry.Set("server_type", serverType)
+	telemetry.Set("os", runtime.GOOS)
+	telemetry.Set("arch", runtime.GOARCH)
+	telemetry.Set("cpu", struct {
+		BrandName  string `json:"brand_name,omitempty"`
+		NumLogical int    `json:"num_logical,omitempty"`
+		AESNI      bool   `json:"aes_ni,omitempty"`
+	}{
+		BrandName:  cpuid.CPU.BrandName,
+		NumLogical: runtime.NumCPU(),
+		AESNI:      cpuid.CPU.AesNi(),
+	})
+	if containerized := detectContainer(); containerized {
+		telemetry.Set("container", containerized)
+	}
+	telemetry.StartEmitting()
 
 	// Twiddle your thumbs
 	instance.Wait()
@@ -266,18 +319,211 @@ func setCPU(cpu string) error {
 	return nil
 }
 
+// detectContainer attempts to determine whether the process is
+// being run inside a container. References:
+// https://tuhrig.de/how-to-know-you-are-inside-a-docker-container/
+// https://stackoverflow.com/a/20012536/1048862
+// https://gist.github.com/anantkamath/623ce7f5432680749e087cf8cfba9b69
+func detectContainer() bool {
+	if runtime.GOOS != "linux" {
+		return false
+	}
+
+	file, err := os.Open("/proc/1/cgroup")
+	if err != nil {
+		return false
+	}
+	defer file.Close()
+
+	i := 0
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		i++
+		if i > 1000 {
+			return false
+		}
+
+		line := scanner.Text()
+		parts := strings.SplitN(line, ":", 3)
+		if len(parts) < 3 {
+			continue
+		}
+
+		if strings.Contains(parts[2], "docker") ||
+			strings.Contains(parts[2], "lxc") ||
+			strings.Contains(parts[2], "moby") {
+			return true
+		}
+	}
+
+	return false
+}
+
+// initTelemetry initializes the telemetry engine.
+func initTelemetry() error {
+	uuidFilename := filepath.Join(caddy.AssetsPath(), "uuid")
+	if customUUIDFile := os.Getenv("CADDY_UUID_FILE"); customUUIDFile != "" {
+		uuidFilename = customUUIDFile
+	}
+
+	newUUID := func() uuid.UUID {
+		id := uuid.New()
+		err := os.MkdirAll(caddy.AssetsPath(), 0700)
+		if err != nil {
+			log.Printf("[ERROR] Persisting instance UUID: %v", err)
+			return id
+		}
+		err = ioutil.WriteFile(uuidFilename, []byte(id.String()), 0600) // human-readable as a string
+		if err != nil {
+			log.Printf("[ERROR] Persisting instance UUID: %v", err)
+		}
+		return id
+	}
+
+	var id uuid.UUID
+
+	// load UUID from storage, or create one if we don't have one
+	if uuidFile, err := os.Open(uuidFilename); os.IsNotExist(err) {
+		// no UUID exists yet; create a new one and persist it
+		id = newUUID()
+	} else if err != nil {
+		log.Printf("[ERROR] Loading persistent UUID: %v", err)
+		id = newUUID()
+	} else {
+		defer uuidFile.Close()
+		uuidBytes, err := ioutil.ReadAll(uuidFile)
+		if err != nil {
+			log.Printf("[ERROR] Reading persistent UUID: %v", err)
+			id = newUUID()
+		} else {
+			id, err = uuid.ParseBytes(uuidBytes)
+			if err != nil {
+				log.Printf("[ERROR] Parsing UUID: %v", err)
+				id = newUUID()
+			}
+		}
+	}
+
+	// parse and check the list of disabled metrics
+	var disabledMetricsSlice []string
+	if len(disabledMetrics) > 0 {
+		if len(disabledMetrics) > 1024 {
+			// mitigate disk space exhaustion at the collection endpoint
+			return fmt.Errorf("too many metrics to disable")
+		}
+		disabledMetricsSlice = strings.Split(disabledMetrics, ",")
+		for i, metric := range disabledMetricsSlice {
+			if metric == "instance_id" || metric == "timestamp" || metric == "disabled_metrics" {
+				return fmt.Errorf("instance_id, timestamp, and disabled_metrics cannot be disabled")
+			}
+			if metric == "" {
+				disabledMetricsSlice = append(disabledMetricsSlice[:i], disabledMetricsSlice[i+1:]...)
+			}
+		}
+	}
+
+	// initialize telemetry
+	telemetry.Init(id, disabledMetricsSlice)
+
+	// if any metrics were disabled, report which ones (so we know how representative the data is)
+	if len(disabledMetricsSlice) > 0 {
+		telemetry.Set("disabled_metrics", disabledMetricsSlice)
+		log.Printf("[NOTICE] The following telemetry metrics are disabled: %s", disabledMetrics)
+	}
+
+	return nil
+}
+
+// LoadEnvFromFile loads additional envs if file provided and exists
+// Envs in file should be in KEY=VALUE format
+func LoadEnvFromFile(envFile string) error {
+	if envFile == "" {
+		return nil
+	}
+
+	file, err := os.Open(envFile)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	envMap, err := ParseEnvFile(file)
+	if err != nil {
+		return err
+	}
+
+	for k, v := range envMap {
+		if err := os.Setenv(k, v); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// ParseEnvFile implements parse logic for environment files
+func ParseEnvFile(envInput io.Reader) (map[string]string, error) {
+	envMap := make(map[string]string)
+
+	scanner := bufio.NewScanner(envInput)
+	var line string
+	lineNumber := 0
+
+	for scanner.Scan() {
+		line = strings.TrimSpace(scanner.Text())
+		lineNumber++
+
+		// skip lines starting with comment
+		if strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// skip empty line
+		if len(line) == 0 {
+			continue
+		}
+
+		fields := strings.SplitN(line, "=", 2)
+		if len(fields) != 2 {
+			return nil, fmt.Errorf("Can't parse line %d; line should be in KEY=VALUE format", lineNumber)
+		}
+
+		if strings.Contains(fields[0], " ") {
+			return nil, fmt.Errorf("Can't parse line %d; KEY contains whitespace", lineNumber)
+		}
+
+		key := fields[0]
+		val := fields[1]
+
+		if key == "" {
+			return nil, fmt.Errorf("Can't parse line %d; KEY can't be empty string", lineNumber)
+		}
+		envMap[key] = val
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+
+	return envMap, nil
+}
+
 const appName = "Caddy"
 
 // Flags that control program flow or startup
 var (
-	serverType string
-	conf       string
-	cpu        string
-	logfile    string
-	revoke     string
-	version    bool
-	plugins    bool
-	validate   bool
+	serverType      string
+	conf            string
+	cpu             string
+	envFile         string
+	logfile         string
+	logRollMB       int
+	logRollCompress bool
+	revoke          string
+	version         bool
+	plugins         bool
+	validate        bool
+	disabledMetrics string
 )
 
 // Build information obtained with the help of -ldflags
@@ -292,3 +538,6 @@ var (
 	gitShortStat     string // git diff-index --shortstat
 	gitFilesModified string // git diff-index --name-only HEAD
 )
+
+// EnableTelemetry defines whether telemetry is enabled in Run.
+var EnableTelemetry = true

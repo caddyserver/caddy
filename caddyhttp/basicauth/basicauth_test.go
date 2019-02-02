@@ -194,3 +194,30 @@ md5:$apr1$l42y8rex$pOA2VJ0x/0TwaFeAF9nX61`
 		}
 	}
 }
+
+func TestOptionsMethod(t *testing.T) {
+	rw := BasicAuth{
+		Next: httpserver.HandlerFunc(contentHandler),
+		Rules: []Rule{
+			{Username: "username", Password: PlainMatcher("password"), Resources: []string{"/testing"}},
+		},
+	}
+
+	req, err := http.NewRequest(http.MethodOptions, "/testing", nil)
+	if err != nil {
+		t.Fatalf("Could not create HTTP request: %v", err)
+	}
+
+	// add basic auth with invalid username
+	// and password to make sure basic auth is ignored
+	req.SetBasicAuth("invaliduser", "invalidpassword")
+
+	rec := httptest.NewRecorder()
+	result, err := rw.ServeHTTP(rec, req)
+	if err != nil {
+		t.Fatalf("Could not ServeHTTP: %v", err)
+	}
+	if result != http.StatusOK {
+		t.Errorf("Expected status code %d but was %d", http.StatusOK, result)
+	}
+}

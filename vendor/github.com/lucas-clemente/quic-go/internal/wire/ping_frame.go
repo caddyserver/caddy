@@ -9,8 +9,8 @@ import (
 // A PingFrame is a ping frame
 type PingFrame struct{}
 
-// ParsePingFrame parses a Ping frame
-func ParsePingFrame(r *bytes.Reader, version protocol.VersionNumber) (*PingFrame, error) {
+// parsePingFrame parses a Ping frame
+func parsePingFrame(r *bytes.Reader, version protocol.VersionNumber) (*PingFrame, error) {
 	frame := &PingFrame{}
 
 	_, err := r.ReadByte()

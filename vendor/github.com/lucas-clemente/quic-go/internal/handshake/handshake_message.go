@@ -84,7 +84,7 @@ func (h HandshakeMessage) Write(b *bytes.Buffer) {
 
 	offset := uint32(0)
 	for i, t := range h.getTagsSorted() {
-		v := data[Tag(t)]
+		v := data[t]
 		b.Write(v)
 		offset += uint32(len(v))
 		binary.LittleEndian.PutUint32(indexData[i*8:], uint32(t))
@@ -111,8 +111,7 @@ func (h *HandshakeMessage) getTagsSorted() []Tag {
 func (h HandshakeMessage) String() string {
 	var pad string
 	res := tagToString(h.Tag) + ":\n"
-	for _, t := range h.getTagsSorted() {
-		tag := Tag(t)
+	for _, tag := range h.getTagsSorted() {
 		if tag == TagPAD {
 			pad = fmt.Sprintf("\t%s: (%d bytes)\n", tagToString(tag), len(h.Data[tag]))
 		} else {

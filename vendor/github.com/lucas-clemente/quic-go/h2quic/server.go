@@ -53,6 +53,8 @@ type Server struct {
 	closed        bool
 
 	supportedVersionsAsString string
+
+	logger utils.Logger // will be set by Server.serveImpl()
 }
 
 // ListenAndServe listens on the UDP address s.Addr and calls s.Handler to handle HTTP/2 requests on incoming connections.
@@ -88,6 +90,7 @@ func (s *Server) serveImpl(tlsConfig *tls.Config, conn net.PacketConn) error {
 	if s.Server == nil {
 		return errors.New("use of h2quic.Server without http.Server")
 	}
+	s.logger = utils.DefaultLogger.WithPrefix("server")
 	s.listenerMutex.Lock()
 	if s.closed {
 		s.listenerMutex.Unlock()
@@ -124,7 +127,7 @@ func (s *Server) serveImpl(tlsConfig *tls.Config, conn net.PacketConn) error {
 func (s *Server) handleHeaderStream(session streamCreator) {
 	stream, err := session.AcceptStream()
 	if err != nil {
-		session.Close(qerr.Error(qerr.InvalidHeadersStreamData, err.Error()))
+		session.CloseWithError(quic.ErrorCode(qerr.InvalidHeadersStreamData), err)
 		return
 	}
 
@@ -137,10 +140,12 @@ func (s *Server) handleHeaderStream(session streamCreator) {
 			// QuicErrors must originate from stream.Read() returning an error.
 			// In this case, the session has already logged the error, so we don't
 			// need to log it again.
-			if _, ok := err.(*qerr.QuicError); !ok {
-				utils.Errorf("error handling h2 request: %s", err.Error())
+			errorCode := qerr.InternalError
+			if qerr, ok := err.(*qerr.QuicError); ok {
+				errorCode = qerr.ErrorCode
+				s.logger.Errorf("error handling h2 request: %s", err.Error())
 			}
-			session.Close(err)
+			session.CloseWithError(quic.ErrorCode(errorCode), err)
 			return
 		}
 	}
@@ -151,16 +156,24 @@ func (s *Server) handleRequest(session streamCreator, headerStream quic.Stream, 
 	if err != nil {
 		return qerr.Error(qerr.HeadersStreamDataDecompressFailure, "cannot read frame")
 	}
-	h2headersFrame, ok := h2frame.(*http2.HeadersFrame)
-	if !ok {
+	var h2headersFrame *http2.HeadersFrame
+	switch f := h2frame.(type) {
+	case *http2.PriorityFrame:
+		// ignore PRIORITY frames
+		s.logger.Debugf("Ignoring H2 PRIORITY frame: %#v", f)
+		return nil
+	case *http2.HeadersFrame:
+		h2headersFrame = f
+	default:
 		return qerr.Error(qerr.InvalidHeadersStreamData, "expected a header frame")
 	}
+
 	if !h2headersFrame.HeadersEnded() {
 		return errors.New("http2 header continuation not implemented")
 	}
 	headers, err := hpackDecoder.DecodeFull(h2headersFrame.HeaderBlockFragment())
 	if err != nil {
-		utils.Errorf("invalid http2 headers encoding: %s", err.Error())
+		s.logger.Errorf("invalid http2 headers encoding: %s", err.Error())
 		return err
 	}
 
@@ -169,10 +182,10 @@ func (s *Server) handleRequest(session streamCreator, headerStream quic.Stream, 
 		return err
 	}
 
-	if utils.Debug() {
-		utils.Infof("%s %s%s, on data stream %d", req.Method, req.Host, req.RequestURI, h2headersFrame.StreamID)
+	if s.logger.Debug() {
+		s.logger.Infof("%s %s%s, on data stream %d", req.Method, req.Host, req.RequestURI, h2headersFrame.StreamID)
 	} else {
-		utils.Infof("%s %s%s", req.Method, req.Host, req.RequestURI)
+		s.logger.Infof("%s %s%s", req.Method, req.Host, req.RequestURI)
 	}
 
 	dataStream, err := session.GetOrOpenStream(protocol.StreamID(h2headersFrame.StreamID))
@@ -201,7 +214,7 @@ func (s *Server) handleRequest(session streamCreator, headerStream quic.Stream, 
 
 		req.RemoteAddr = session.RemoteAddr().String()
 
-		responseWriter := newResponseWriter(headerStream, headerStreamMutex, dataStream, protocol.StreamID(h2headersFrame.StreamID))
+		responseWriter := newResponseWriter(headerStream, headerStreamMutex, dataStream, protocol.StreamID(h2headersFrame.StreamID), s.logger)
 
 		handler := s.Handler
 		if handler == nil {
@@ -215,7 +228,7 @@ func (s *Server) handleRequest(session streamCreator, headerStream quic.Stream, 
 					const size = 64 << 10
 					buf := make([]byte, size)
 					buf = buf[:runtime.Stack(buf, false)]
-					utils.Errorf("http: panic serving: %v\n%s", p, buf)
+					s.logger.Errorf("http: panic serving: %v\n%s", p, buf)
 					panicked = true
 				}
 			}()
@@ -235,7 +248,7 @@ func (s *Server) handleRequest(session streamCreator, headerStream quic.Stream, 
 		}
 		if s.CloseAfterFirstRequest {
 			time.Sleep(100 * time.Millisecond)
-			session.Close(nil)
+			session.Close()
 		}
 	}()
 

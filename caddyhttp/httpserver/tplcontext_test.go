@@ -16,6 +16,7 @@ package httpserver
 
 import (
 	"bytes"
+	"crypto/tls"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -100,7 +101,7 @@ func TestInclude(t *testing.T) {
 	for i, test := range tests {
 		testPrefix := getTestPrefix(i)
 
-		// WriteFile truncates the contentt
+		// WriteFile truncates the content
 		err := ioutil.WriteFile(absInFilePath, []byte(test.fileContent), os.ModePerm)
 		if err != nil {
 			t.Fatal(testPrefix+"Failed to create test file. Error was: %v", err)
@@ -161,7 +162,7 @@ func TestMarkdown(t *testing.T) {
 	for i, test := range tests {
 		testPrefix := getTestPrefix(i)
 
-		// WriteFile truncates the contentt
+		// WriteFile truncates the content
 		err := ioutil.WriteFile(absInFilePath, []byte(test.fileContent), os.ModePerm)
 		if err != nil {
 			t.Fatal(testPrefix+"Failed to create test file. Error was: %v", err)
@@ -277,7 +278,7 @@ func TestHostname(t *testing.T) {
 		// // Test 3 - ipv6 without port and brackets
 		// {"2001:4860:4860::8888", "google-public-dns-a.google.com."},
 		// Test 4 - no hostname available
-		{"1.1.1.1", "1.1.1.1"},
+		{"0.0.0.0", "0.0.0.0"},
 	}
 
 	for i, test := range tests {
@@ -920,5 +921,42 @@ func TestAddLink(t *testing.T) {
 				t.Errorf("Result not match: expect %v, but got %v", c.expectLinks, got)
 			}
 		})
+	}
+}
+
+func TestTlsVersion(t *testing.T) {
+	for _, test := range []struct {
+		tlsState       *tls.ConnectionState
+		expectedResult string
+	}{
+		{
+			&tls.ConnectionState{Version: tls.VersionTLS10},
+			"tls1.0",
+		},
+		{
+			&tls.ConnectionState{Version: tls.VersionTLS11},
+			"tls1.1",
+		},
+		{
+			&tls.ConnectionState{Version: tls.VersionTLS12},
+			"tls1.2",
+		},
+		// TLS not used
+		{
+			nil,
+			"",
+		},
+		// Unsupported version
+		{
+			&tls.ConnectionState{Version: 0x0399},
+			"",
+		},
+	} {
+		context := getContextOrFail(t)
+		context.Req.TLS = test.tlsState
+		result := context.TLSVersion()
+		if result != test.expectedResult {
+			t.Errorf("Expected %s got %s", test.expectedResult, result)
+		}
 	}
 }

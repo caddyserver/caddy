@@ -69,20 +69,25 @@ func (m *incomingUniStreamsMap) AcceptStream() (receiveStreamI, error) {
 }
 
 func (m *incomingUniStreamsMap) GetOrOpenStream(id protocol.StreamID) (receiveStreamI, error) {
+	m.mutex.RLock()
 	if id > m.maxStream {
+		m.mutex.RUnlock()
 		return nil, fmt.Errorf("peer tried to open stream %d (current limit: %d)", id, m.maxStream)
 	}
 	// if the id is smaller than the highest we accepted
 	// * this stream exists in the map, and we can return it, or
 	// * this stream was already closed, then we can return the nil
 	if id <= m.highestStream {
-		m.mutex.RLock()
 		s := m.streams[id]
 		m.mutex.RUnlock()
 		return s, nil
 	}
+	m.mutex.RUnlock()
 
 	m.mutex.Lock()
+	// no need to check the two error conditions from above again
+	// * maxStream can only increase, so if the id was valid before, it definitely is valid now
+	// * highestStream is only modified by this function
 	var start protocol.StreamID
 	if m.highestStream == 0 {
 		start = m.nextStream
@@ -118,6 +123,9 @@ func (m *incomingUniStreamsMap) DeleteStream(id protocol.StreamID) error {
 func (m *incomingUniStreamsMap) CloseWithError(err error) {
 	m.mutex.Lock()
 	m.closeErr = err
+	for _, str := range m.streams {
+		str.closeForShutdown(err)
+	}
 	m.mutex.Unlock()
 	m.cond.Broadcast()
 }

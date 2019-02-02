@@ -320,21 +320,25 @@ func TestUriPolicy(t *testing.T) {
 func TestHeaderPolicy(t *testing.T) {
 	pool := testPool()
 	tests := []struct {
+		Name               string
 		Policy             *Header
 		RequestHeaderName  string
 		RequestHeaderValue string
 		NilHost            bool
 		HostIndex          int
 	}{
-		{&Header{""}, "", "", true, 0},
-		{&Header{""}, "Affinity", "somevalue", true, 0},
-		{&Header{""}, "Affinity", "", true, 0},
+		{"empty config", &Header{""}, "", "", true, 0},
+		{"empty config+header+value", &Header{""}, "Affinity", "somevalue", true, 0},
+		{"empty config+header", &Header{""}, "Affinity", "", true, 0},
 
-		{&Header{"Affinity"}, "", "", true, 0},
-		{&Header{"Affinity"}, "Affinity", "somevalue", false, 1},
-		{&Header{"Affinity"}, "Affinity", "somevalue2", false, 0},
-		{&Header{"Affinity"}, "Affinity", "somevalue3", false, 2},
-		{&Header{"Affinity"}, "Affinity", "", true, 0},
+		{"no header(fallback to roundrobin)", &Header{"Affinity"}, "", "", false, 1},
+		{"no header(fallback to roundrobin)", &Header{"Affinity"}, "", "", false, 2},
+		{"no header(fallback to roundrobin)", &Header{"Affinity"}, "", "", false, 0},
+
+		{"hash route to host", &Header{"Affinity"}, "Affinity", "somevalue", false, 1},
+		{"hash route to host", &Header{"Affinity"}, "Affinity", "somevalue2", false, 0},
+		{"hash route to host", &Header{"Affinity"}, "Affinity", "somevalue3", false, 2},
+		{"hash route with empty value", &Header{"Affinity"}, "Affinity", "", false, 1},
 	}
 
 	for idx, test := range tests {

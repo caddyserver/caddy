@@ -17,10 +17,6 @@ type SendQueuedHandshake struct{}
 
 type SendEarlyData struct{}
 
-type ReadEarlyData struct{}
-
-type ReadPastEarlyData struct{}
-
 type RekeyIn struct {
 	epoch  Epoch
 	KeySet keySet
@@ -29,6 +25,10 @@ type RekeyIn struct {
 type RekeyOut struct {
 	epoch  Epoch
 	KeySet keySet
+}
+
+type ResetOut struct {
+	seq uint64
 }
 
 type StorePSK struct {
@@ -50,7 +50,6 @@ type AppExtensionHandler interface {
 type ConnectionOptions struct {
 	ServerName string
 	NextProtos []string
-	EarlyData  []byte
 }
 
 // ConnectionParameters objects represent the parameters negotiated for a
@@ -60,6 +59,7 @@ type ConnectionParameters struct {
 	UsingDH                bool
 	ClientSendingEarlyData bool
 	UsingEarlyData         bool
+	RejectedEarlyData      bool
 	UsingClientAuth        bool
 
 	CipherSuite CipherSuite
@@ -69,7 +69,13 @@ type ConnectionParameters struct {
 
 // Working state for the handshake.
 type HandshakeContext struct {
-	hIn, hOut *HandshakeLayer
+	timeoutMS         uint32
+	timers            *timerSet
+	recvdRecords      []uint64
+	sentFragments     []*SentHandshakeFragment
+	hIn, hOut         *HandshakeLayer
+	waitingNextFlight bool
+	earlyData         []byte
 }
 
 func (hc *HandshakeContext) SetVersion(version uint16) {
@@ -81,10 +87,10 @@ func (hc *HandshakeContext) SetVersion(version uint16) {
 	}
 }
 
-// StateConnected is symmetric between client and server
-type StateConnected struct {
+// stateConnected is symmetric between client and server
+type stateConnected struct {
 	Params              ConnectionParameters
-	hsCtx               HandshakeContext
+	hsCtx               *HandshakeContext
 	isClient            bool
 	cryptoParams        CipherSuiteParams
 	resumptionSecret    []byte
@@ -95,16 +101,16 @@ type StateConnected struct {
 	verifiedChains      [][]*x509.Certificate
 }
 
-var _ HandshakeState = &StateConnected{}
+var _ HandshakeState = &stateConnected{}
 
-func (state StateConnected) State() State {
+func (state stateConnected) State() State {
 	if state.isClient {
 		return StateClientConnected
 	}
 	return StateServerConnected
 }
 
-func (state *StateConnected) KeyUpdate(request KeyUpdateRequest) ([]HandshakeAction, Alert) {
+func (state *stateConnected) KeyUpdate(request KeyUpdateRequest) ([]HandshakeAction, Alert) {
 	var trafficKeys keySet
 	if state.isClient {
 		state.clientTrafficSecret = HkdfExpandLabel(state.cryptoParams.Hash, state.clientTrafficSecret,
@@ -130,7 +136,7 @@ func (state *StateConnected) KeyUpdate(request KeyUpdateRequest) ([]HandshakeAct
 	return toSend, AlertNoAlert
 }
 
-func (state *StateConnected) NewSessionTicket(length int, lifetime, earlyDataLifetime uint32) ([]HandshakeAction, Alert) {
+func (state *stateConnected) NewSessionTicket(length int, lifetime, earlyDataLifetime uint32) ([]HandshakeAction, Alert) {
 	tkt, err := NewSessionTicket(length, lifetime)
 	if err != nil {
 		logf(logTypeHandshake, "[StateConnected] Error generating NewSessionTicket: %v", err)
@@ -172,11 +178,11 @@ func (state *StateConnected) NewSessionTicket(length int, lifetime, earlyDataLif
 }
 
 // Next does nothing for this state.
-func (state StateConnected) Next(hr handshakeMessageReader) (HandshakeState, []HandshakeAction, Alert) {
+func (state stateConnected) Next(hr handshakeMessageReader) (HandshakeState, []HandshakeAction, Alert) {
 	return state, nil, AlertNoAlert
 }
 
-func (state StateConnected) ProcessMessage(hm *HandshakeMessage) (HandshakeState, []HandshakeAction, Alert) {
+func (state stateConnected) ProcessMessage(hm *HandshakeMessage) (HandshakeState, []HandshakeAction, Alert) {
 	if hm == nil {
 		logf(logTypeHandshake, "[StateConnected] Unexpected message")
 		return nil, nil, AlertUnexpectedMessage

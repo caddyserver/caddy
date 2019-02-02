@@ -85,10 +85,11 @@ func (m *outgoingUniStreamsMap) openStreamImpl() (sendStreamI, error) {
 }
 
 func (m *outgoingUniStreamsMap) GetStream(id protocol.StreamID) (sendStreamI, error) {
+	m.mutex.RLock()
 	if id >= m.nextStream {
+		m.mutex.RUnlock()
 		return nil, qerr.Error(qerr.InvalidStreamID, fmt.Sprintf("peer attempted to open stream %d", id))
 	}
-	m.mutex.RLock()
 	s := m.streams[id]
 	m.mutex.RUnlock()
 	return s, nil
@@ -117,6 +118,9 @@ func (m *outgoingUniStreamsMap) SetMaxStream(id protocol.StreamID) {
 func (m *outgoingUniStreamsMap) CloseWithError(err error) {
 	m.mutex.Lock()
 	m.closeErr = err
+	for _, str := range m.streams {
+		str.closeForShutdown(err)
+	}
 	m.cond.Broadcast()
 	m.mutex.Unlock()
 }

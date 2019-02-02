@@ -14,7 +14,7 @@
 			"importpath": "github.com/aead/chacha20",
 			"repository": "https://github.com/aead/chacha20",
 			"vcs": "git",
-			"revision": "8d6ce0550041f9d97e7f15ec27ed489f8bbbb0fb",
+			"revision": "8b13a72661dae6e9e5dea04f344f0dc95ea29547",
 			"branch": "master",
 			"notests": true
 		},
@@ -31,14 +31,6 @@
 			"repository": "https://github.com/alecthomas/units",
 			"vcs": "git",
 			"revision": "2efee857e7cfd4f3d0138cc3cbb1b4966962b93a",
-			"branch": "master",
-			"notests": true
-		},
-		{
-			"importpath": "github.com/bifurcation/mint",
-			"repository": "https://github.com/bifurcation/mint",
-			"vcs": "git",
-			"revision": "64af8ab8ccb81bd5d4eab356f79ba0939117d9f6",
 			"branch": "master",
 			"notests": true
 		},
@@ -67,6 +59,15 @@
 			"notests": true
 		},
 		{
+			"importpath": "github.com/golang/mock/gomock",
+			"repository": "https://github.com/golang/mock",
+			"vcs": "git",
+			"revision": "600781dde9cca80734169b9e969d9054ccc57937",
+			"branch": "master",
+			"path": "/gomock",
+			"notests": true
+		},
+		{
 			"importpath": "github.com/golang/protobuf/proto",
 			"repository": "https://github.com/golang/protobuf",
 			"vcs": "git",
@@ -88,7 +89,7 @@
 			"importpath": "github.com/google/uuid",
 			"repository": "https://github.com/google/uuid",
 			"vcs": "git",
-			"revision": "7e072fc3a7be179aee6d3359e46015aa8c995314",
+			"revision": "dec09d789f3dba190787f8b4454c7d3c936fed9e",
 			"branch": "master",
 			"notests": true
 		},
@@ -109,14 +110,6 @@
 			"notests": true
 		},
 		{
-			"importpath": "github.com/hashicorp/golang-lru",
-			"repository": "https://github.com/hashicorp/golang-lru",
-			"vcs": "git",
-			"revision": "0a025b7e63adc15a622f29b0b2c4c3848243bbf6",
-			"branch": "master",
-			"notests": true
-		},
-		{
 			"importpath": "github.com/jimstudt/http-authentication/basic",
 			"repository": "https://github.com/jimstudt/http-authentication",
 			"vcs": "git",
@@ -126,18 +119,10 @@
 			"notests": true
 		},
 		{
-			"importpath": "github.com/lucas-clemente/aes12",
-			"repository": "https://github.com/lucas-clemente/aes12",
+			"importpath": "github.com/klauspost/cpuid",
+			"repository": "https://github.com/klauspost/cpuid",
 			"vcs": "git",
-			"revision": "25700e67be5c860bcc999137275b9ef8b65932bd",
-			"branch": "master",
-			"notests": true
-		},
-		{
-			"importpath": "github.com/lucas-clemente/fnv128a",
-			"repository": "https://github.com/lucas-clemente/fnv128a",
-			"vcs": "git",
-			"revision": "393af48d391698c6ae4219566bfbdfef67269997",
+			"revision": "ae832f27941af41db13bd6d8efd2493e3b22415a",
 			"branch": "master",
 			"notests": true
 		},
@@ -145,15 +130,15 @@
 			"importpath": "github.com/lucas-clemente/quic-go",
 			"repository": "https://github.com/lucas-clemente/quic-go",
 			"vcs": "git",
-			"revision": "d71850eb2ff581620f2f5742b558a97de22c13f6",
-			"branch": "master",
+			"revision": "f90751eabaa39364e3861ee5a8b179f140847d7e",
+			"branch": "HEAD",
 			"notests": true
 		},
 		{
-			"importpath": "github.com/lucas-clemente/quic-go-certificates",
-			"repository": "https://github.com/lucas-clemente/quic-go-certificates",
+			"importpath": "github.com/mholt/certmagic",
+			"repository": "https://github.com/mholt/certmagic",
 			"vcs": "git",
-			"revision": "d2f86524cced5186554df90d92529757d22c1cb6",
+			"revision": "c1d472b46046ee329c099086d689ada0c44d56b0",
 			"branch": "master",
 			"notests": true
 		},
@@ -193,9 +178,297 @@
 			"importpath": "github.com/xenolf/lego/acme",
 			"repository": "https://github.com/xenolf/lego",
 			"vcs": "git",
-			"revision": "4dde48a9b9916926a8dd4f69639c8dba40930355",
+			"revision": "a43ec709e8034f388aab28d14b97aeed0e7aa98c",
 			"branch": "master",
-			"path": "/acme",
+			"path": "acme",
+			"notests": true
+		},
+		{
+			"importpath": "github.com/xenolf/lego/certcrypto",
+			"repository": "https://github.com/xenolf/lego",
+			"vcs": "git",
+			"revision": "a43ec709e8034f388aab28d14b97aeed0e7aa98c",
+			"branch": "master",
+			"path": "certcrypto",
+			"notests": true
+		},
+		{
+			"importpath": "github.com/xenolf/lego/certificate",
+			"repository": "https://github.com/xenolf/lego",
+			"vcs": "git",
+			"revision": "a43ec709e8034f388aab28d14b97aeed0e7aa98c",
+			"branch": "master",
+			"path": "certificate",
+			"notests": true
+		},
+		{
+			"importpath": "github.com/xenolf/lego/challenge",
+			"repository": "https://github.com/xenolf/lego",
+			"vcs": "git",
+			"revision": "a43ec709e8034f388aab28d14b97aeed0e7aa98c",
+			"branch": "master",
+			"path": "/challenge",
+			"notests": true
+		},
+		{
+			"importpath": "github.com/xenolf/lego/lego",
+			"repository": "https://github.com/xenolf/lego",
+			"vcs": "git",
+			"revision": "a43ec709e8034f388aab28d14b97aeed0e7aa98c",
+			"branch": "master",
+			"path": "/lego",
+			"notests": true
+		},
+		{
+			"importpath": "github.com/xenolf/lego/log",
+			"repository": "https://github.com/xenolf/lego",
+			"vcs": "git",
+			"revision": "b05b54d1f69a31ceed92e2995243c5b17821c9e4",
+			"branch": "master",
+			"path": "log",
+			"notests": true
+		},
+		{
+			"importpath": "github.com/xenolf/lego/platform/wait",
+			"repository": "https://github.com/xenolf/lego",
+			"vcs": "git",
+			"revision": "a43ec709e8034f388aab28d14b97aeed0e7aa98c",
+			"branch": "master",
+			"path": "platform/wait",
+			"notests": true
+		},
+		{
+			"importpath": "github.com/xenolf/lego/registration",
+			"repository": "https://github.com/xenolf/lego",
+			"vcs": "git",
+			"revision": "a43ec709e8034f388aab28d14b97aeed0e7aa98c",
+			"branch": "master",
+			"path": "registration",
+			"notests": true
+		},
+		{
+			"importpath": "github.com/xenolf/lego/vendor/github.com/miekg/dns",
+			"repository": "https://github.com/xenolf/lego",
+			"vcs": "git",
+			"revision": "b05b54d1f69a31ceed92e2995243c5b17821c9e4",
+			"branch": "master",
+			"path": "vendor/github.com/miekg/dns",
+			"notests": true
+		},
+		{
+			"importpath": "github.com/xenolf/lego/vendor/golang.org/x/crypto/ed25519",
+			"repository": "https://github.com/xenolf/lego",
+			"vcs": "git",
+			"revision": "b05b54d1f69a31ceed92e2995243c5b17821c9e4",
+			"branch": "master",
+			"path": "vendor/golang.org/x/crypto/ed25519",
+			"notests": true
+		},
+		{
+			"importpath": "github.com/xenolf/lego/vendor/golang.org/x/crypto/ocsp",
+			"repository": "https://github.com/xenolf/lego",
+			"vcs": "git",
+			"revision": "b05b54d1f69a31ceed92e2995243c5b17821c9e4",
+			"branch": "master",
+			"path": "vendor/golang.org/x/crypto/ocsp",
+			"notests": true
+		},
+		{
+			"importpath": "github.com/xenolf/lego/vendor/golang.org/x/crypto/pbkdf2",
+			"repository": "https://github.com/xenolf/lego",
+			"vcs": "git",
+			"revision": "b05b54d1f69a31ceed92e2995243c5b17821c9e4",
+			"branch": "master",
+			"path": "vendor/golang.org/x/crypto/pbkdf2",
+			"notests": true
+		},
+		{
+			"importpath": "github.com/xenolf/lego/vendor/golang.org/x/net/bpf",
+			"repository": "https://github.com/xenolf/lego",
+			"vcs": "git",
+			"revision": "b05b54d1f69a31ceed92e2995243c5b17821c9e4",
+			"branch": "master",
+			"path": "vendor/golang.org/x/net/bpf",
+			"notests": true
+		},
+		{
+			"importpath": "github.com/xenolf/lego/vendor/golang.org/x/net/idna",
+			"repository": "https://github.com/xenolf/lego",
+			"vcs": "git",
+			"revision": "b05b54d1f69a31ceed92e2995243c5b17821c9e4",
+			"branch": "master",
+			"path": "vendor/golang.org/x/net/idna",
+			"notests": true
+		},
+		{
+			"importpath": "github.com/xenolf/lego/vendor/golang.org/x/net/internal/iana",
+			"repository": "https://github.com/xenolf/lego",
+			"vcs": "git",
+			"revision": "b05b54d1f69a31ceed92e2995243c5b17821c9e4",
+			"branch": "master",
+			"path": "vendor/golang.org/x/net/internal/iana",
+			"notests": true
+		},
+		{
+			"importpath": "github.com/xenolf/lego/vendor/golang.org/x/net/internal/socket",
+			"repository": "https://github.com/xenolf/lego",
+			"vcs": "git",
+			"revision": "b05b54d1f69a31ceed92e2995243c5b17821c9e4",
+			"branch": "master",
+			"path": "vendor/golang.org/x/net/internal/socket",
+			"notests": true
+		},
+		{
+			"importpath": "github.com/xenolf/lego/vendor/golang.org/x/net/ipv4",
+			"repository": "https://github.com/xenolf/lego",
+			"vcs": "git",
+			"revision": "b05b54d1f69a31ceed92e2995243c5b17821c9e4",
+			"branch": "master",
+			"path": "vendor/golang.org/x/net/ipv4",
+			"notests": true
+		},
+		{
+			"importpath": "github.com/xenolf/lego/vendor/golang.org/x/net/ipv6",
+			"repository": "https://github.com/xenolf/lego",
+			"vcs": "git",
+			"revision": "b05b54d1f69a31ceed92e2995243c5b17821c9e4",
+			"branch": "master",
+			"path": "vendor/golang.org/x/net/ipv6",
+			"notests": true
+		},
+		{
+			"importpath": "github.com/xenolf/lego/vendor/golang.org/x/sys/unix",
+			"repository": "https://github.com/xenolf/lego",
+			"vcs": "git",
+			"revision": "b05b54d1f69a31ceed92e2995243c5b17821c9e4",
+			"branch": "master",
+			"path": "vendor/golang.org/x/sys/unix",
+			"notests": true
+		},
+		{
+			"importpath": "github.com/xenolf/lego/vendor/golang.org/x/text/collate",
+			"repository": "https://github.com/xenolf/lego",
+			"vcs": "git",
+			"revision": "b05b54d1f69a31ceed92e2995243c5b17821c9e4",
+			"branch": "master",
+			"path": "vendor/golang.org/x/text/collate",
+			"notests": true
+		},
+		{
+			"importpath": "github.com/xenolf/lego/vendor/golang.org/x/text/internal/colltab",
+			"repository": "https://github.com/xenolf/lego",
+			"vcs": "git",
+			"revision": "b05b54d1f69a31ceed92e2995243c5b17821c9e4",
+			"branch": "master",
+			"path": "vendor/golang.org/x/text/internal/colltab",
+			"notests": true
+		},
+		{
+			"importpath": "github.com/xenolf/lego/vendor/golang.org/x/text/internal/gen",
+			"repository": "https://github.com/xenolf/lego",
+			"vcs": "git",
+			"revision": "b05b54d1f69a31ceed92e2995243c5b17821c9e4",
+			"branch": "master",
+			"path": "vendor/golang.org/x/text/internal/gen",
+			"notests": true
+		},
+		{
+			"importpath": "github.com/xenolf/lego/vendor/golang.org/x/text/internal/tag",
+			"repository": "https://github.com/xenolf/lego",
+			"vcs": "git",
+			"revision": "b05b54d1f69a31ceed92e2995243c5b17821c9e4",
+			"branch": "master",
+			"path": "vendor/golang.org/x/text/internal/tag",
+			"notests": true
+		},
+		{
+			"importpath": "github.com/xenolf/lego/vendor/golang.org/x/text/internal/triegen",
+			"repository": "https://github.com/xenolf/lego",
+			"vcs": "git",
+			"revision": "b05b54d1f69a31ceed92e2995243c5b17821c9e4",
+			"branch": "master",
+			"path": "vendor/golang.org/x/text/internal/triegen",
+			"notests": true
+		},
+		{
+			"importpath": "github.com/xenolf/lego/vendor/golang.org/x/text/internal/ucd",
+			"repository": "https://github.com/xenolf/lego",
+			"vcs": "git",
+			"revision": "b05b54d1f69a31ceed92e2995243c5b17821c9e4",
+			"branch": "master",
+			"path": "vendor/golang.org/x/text/internal/ucd",
+			"notests": true
+		},
+		{
+			"importpath": "github.com/xenolf/lego/vendor/golang.org/x/text/language",
+			"repository": "https://github.com/xenolf/lego",
+			"vcs": "git",
+			"revision": "b05b54d1f69a31ceed92e2995243c5b17821c9e4",
+			"branch": "master",
+			"path": "vendor/golang.org/x/text/language",
+			"notests": true
+		},
+		{
+			"importpath": "github.com/xenolf/lego/vendor/golang.org/x/text/secure/bidirule",
+			"repository": "https://github.com/xenolf/lego",
+			"vcs": "git",
+			"revision": "b05b54d1f69a31ceed92e2995243c5b17821c9e4",
+			"branch": "master",
+			"path": "vendor/golang.org/x/text/secure/bidirule",
+			"notests": true
+		},
+		{
+			"importpath": "github.com/xenolf/lego/vendor/golang.org/x/text/transform",
+			"repository": "https://github.com/xenolf/lego",
+			"vcs": "git",
+			"revision": "b05b54d1f69a31ceed92e2995243c5b17821c9e4",
+			"branch": "master",
+			"path": "vendor/golang.org/x/text/transform",
+			"notests": true
+		},
+		{
+			"importpath": "github.com/xenolf/lego/vendor/golang.org/x/text/unicode/bidi",
+			"repository": "https://github.com/xenolf/lego",
+			"vcs": "git",
+			"revision": "b05b54d1f69a31ceed92e2995243c5b17821c9e4",
+			"branch": "master",
+			"path": "vendor/golang.org/x/text/unicode/bidi",
+			"notests": true
+		},
+		{
+			"importpath": "github.com/xenolf/lego/vendor/golang.org/x/text/unicode/cldr",
+			"repository": "https://github.com/xenolf/lego",
+			"vcs": "git",
+			"revision": "b05b54d1f69a31ceed92e2995243c5b17821c9e4",
+			"branch": "master",
+			"path": "vendor/golang.org/x/text/unicode/cldr",
+			"notests": true
+		},
+		{
+			"importpath": "github.com/xenolf/lego/vendor/golang.org/x/text/unicode/norm",
+			"repository": "https://github.com/xenolf/lego",
+			"vcs": "git",
+			"revision": "b05b54d1f69a31ceed92e2995243c5b17821c9e4",
+			"branch": "master",
+			"path": "vendor/golang.org/x/text/unicode/norm",
+			"notests": true
+		},
+		{
+			"importpath": "github.com/xenolf/lego/vendor/golang.org/x/text/unicode/rangetable",
+			"repository": "https://github.com/xenolf/lego",
+			"vcs": "git",
+			"revision": "b05b54d1f69a31ceed92e2995243c5b17821c9e4",
+			"branch": "master",
+			"path": "vendor/golang.org/x/text/unicode/rangetable",
+			"notests": true
+		},
+		{
+			"importpath": "github.com/xenolf/lego/vendor/gopkg.in/square/go-jose.v2",
+			"repository": "https://github.com/xenolf/lego",
+			"vcs": "git",
+			"revision": "b05b54d1f69a31ceed92e2995243c5b17821c9e4",
+			"branch": "master",
+			"path": "vendor/gopkg.in/square/go-jose.v2",
 			"notests": true
 		},
 		{
@@ -208,21 +481,21 @@
 			"notests": true
 		},
 		{
-			"importpath": "golang.org/x/crypto/acme",
-			"repository": "https://go.googlesource.com/crypto",
-			"vcs": "git",
-			"revision": "2faea1465de239e4babd8f5905cc25b781712442",
-			"branch": "master",
-			"path": "acme",
-			"notests": true
-		},
-		{
 			"importpath": "golang.org/x/crypto/curve25519",
 			"repository": "https://go.googlesource.com/crypto",
 			"vcs": "git",
 			"revision": "94eea52f7b742c7cbe0b03b22f0c4c8631ece122",
 			"branch": "master",
 			"path": "curve25519",
+			"notests": true
+		},
+		{
+			"importpath": "golang.org/x/crypto/ed25519",
+			"repository": "https://go.googlesource.com/crypto",
+			"vcs": "git",
+			"revision": "c4a91bd4f524f10d064139674cf55852e055ad01",
+			"branch": "master",
+			"path": "/ed25519",
 			"notests": true
 		},
 		{
@@ -259,6 +532,15 @@
 			"revision": "f5079bd7f6f74e23c4d65efa0f4ce14cbd6a3c0f",
 			"branch": "master",
 			"path": "context",
+			"notests": true
+		},
+		{
+			"importpath": "golang.org/x/net/http/httpguts",
+			"repository": "https://go.googlesource.com/net",
+			"vcs": "git",
+			"revision": "8a410e7b638dca158bf9e766925842f6651ff828",
+			"branch": "master",
+			"path": "/http/httpguts",
 			"notests": true
 		},
 		{
@@ -303,6 +585,15 @@
 			"vcs": "git",
 			"revision": "b53b38ad8a6435bd399ea76d0fa74f23149cca4e",
 			"branch": "master",
+			"notests": true
+		},
+		{
+			"importpath": "golang.org/x/sys/cpu",
+			"repository": "https://go.googlesource.com/sys",
+			"vcs": "git",
+			"revision": "49385e6e15226593f68b26af201feec29d5bba22",
+			"branch": "master",
+			"path": "/cpu",
 			"notests": true
 		},
 		{
@@ -442,15 +733,15 @@
 			"importpath": "gopkg.in/natefinch/lumberjack.v2",
 			"repository": "https://gopkg.in/natefinch/lumberjack.v2",
 			"vcs": "git",
-			"revision": "df99d62fd42d8b3752c8a42c6723555372c02a03",
+			"revision": "7d6a1875575e09256dc552b4c0e450dcd02bd10e",
 			"branch": "v2.0",
 			"notests": true
 		},
 		{
-			"importpath": "gopkg.in/square/go-jose.v1",
-			"repository": "https://gopkg.in/square/go-jose.v1",
+			"importpath": "gopkg.in/square/go-jose.v2",
+			"repository": "https://gopkg.in/square/go-jose.v2",
 			"vcs": "git",
-			"revision": "aa2e30fdd1fe9dd3394119af66451ae790d50e0d",
+			"revision": "6ee92191fea850cdcab9a18867abf5f521cdbadb",
 			"branch": "master",
 			"notests": true
 		},

@@ -47,6 +47,12 @@ type Upstream interface {
 	// Checks if subpath is not an ignored path
 	AllowedPath(string) bool
 
+	// Gets the duration of the headstart the first
+	// connection is given in the Go standard library's
+	// implementation of "Happy Eyeballs" when DualStack
+	// is enabled in net.Dialer.
+	GetFallbackDelay() time.Duration
+
 	// Gets how long to try selecting upstream hosts
 	// in the case of cascading failures.
 	GetTryDuration() time.Duration
@@ -57,6 +63,10 @@ type Upstream interface {
 
 	// Gets the number of upstream hosts.
 	GetHostCount() int
+
+	// Gets how long to wait before timing out
+	// the request
+	GetTimeout() time.Duration
 
 	// Stops the upstream from proxying requests to shutdown goroutines cleanly.
 	Stop() error
@@ -187,7 +197,12 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 		if nameURL, err := url.Parse(host.Name); err == nil {
 			outreq.Host = nameURL.Host
 			if proxy == nil {
-				proxy = NewSingleHostReverseProxy(nameURL, host.WithoutPathPrefix, http.DefaultMaxIdleConnsPerHost)
+				proxy = NewSingleHostReverseProxy(nameURL,
+					host.WithoutPathPrefix,
+					http.DefaultMaxIdleConnsPerHost,
+					upstream.GetTimeout(),
+					upstream.GetFallbackDelay(),
+				)
 			}
 
 			// use upstream credentials by default
@@ -247,6 +262,10 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			return http.StatusRequestEntityTooLarge, backendErr
 		}
 
+		if backendErr == context.Canceled {
+			return CustomStatusContextCancelled, backendErr
+		}
+
 		// failover; remember this failure for some time if
 		// request failure counting is enabled
 		timeout := host.FailTimeout
@@ -284,7 +303,7 @@ func (p Proxy) match(r *http.Request) Upstream {
 	return u
 }
 
-// createUpstremRequest shallow-copies r into a new request
+// createUpstreamRequest shallow-copies r into a new request
 // that can be sent upstream.
 //
 // Derived from reverseproxy.go in the standard Go httputil package.
@@ -382,3 +401,5 @@ func mutateHeadersByRules(headers, rules http.Header, repl httpserver.Replacer) 
 		}
 	}
 }
+
+const CustomStatusContextCancelled = 499

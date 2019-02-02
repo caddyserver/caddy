@@ -104,7 +104,7 @@ type Logger struct {
 	LocalTime bool `json:"localtime" yaml:"localtime"`
 
 	// Compress determines if the rotated log files should be compressed
-	// using gzip.
+	// using gzip. The default is not to perform compression.
 	Compress bool `json:"compress" yaml:"compress"`
 
 	size int64

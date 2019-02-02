@@ -4,10 +4,11 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"fmt"
+	"math"
 )
 
 // VersionNumber is a version number as int
-type VersionNumber int32
+type VersionNumber uint32
 
 // gQUIC version range as defined in the wiki: https://github.com/quicwg/base-drafts/wiki/QUIC-Versions
 const (
@@ -17,21 +18,30 @@ const (
 
 // The version numbers, making grepping easier
 const (
-	Version39       VersionNumber = gquicVersion0 + 3*0x100 + 0x9 + iota
+	Version39       VersionNumber = gquicVersion0 + 3*0x100 + 0x9
+	Version43       VersionNumber = gquicVersion0 + 4*0x100 + 0x3
+	Version44       VersionNumber = gquicVersion0 + 4*0x100 + 0x4
 	VersionTLS      VersionNumber = 101
 	VersionWhatever VersionNumber = 0 // for when the version doesn't matter
-	VersionUnknown  VersionNumber = -1
+	VersionUnknown  VersionNumber = math.MaxUint32
 )
 
 // SupportedVersions lists the versions that the server supports
 // must be in sorted descending order
 var SupportedVersions = []VersionNumber{
+	Version44,
+	Version43,
 	Version39,
+}
+
+// IsValidVersion says if the version is known to quic-go
+func IsValidVersion(v VersionNumber) bool {
+	return v == VersionTLS || IsSupportedVersion(SupportedVersions, v)
 }
 
 // UsesTLS says if this QUIC version uses TLS 1.3 for the handshake
 func (vn VersionNumber) UsesTLS() bool {
-	return vn == VersionTLS
+	return !vn.isGQUIC()
 }
 
 func (vn VersionNumber) String() string {
@@ -46,7 +56,7 @@ func (vn VersionNumber) String() string {
 		if vn.isGQUIC() {
 			return fmt.Sprintf("gQUIC %d", vn.toGQUICVersion())
 		}
-		return fmt.Sprintf("%d", vn)
+		return fmt.Sprintf("%#x", uint32(vn))
 	}
 }
 
@@ -68,7 +78,32 @@ func (vn VersionNumber) CryptoStreamID() StreamID {
 
 // UsesIETFFrameFormat tells if this version uses the IETF frame format
 func (vn VersionNumber) UsesIETFFrameFormat() bool {
-	return vn != Version39
+	return !vn.isGQUIC()
+}
+
+// UsesIETFHeaderFormat tells if this version uses the IETF header format
+func (vn VersionNumber) UsesIETFHeaderFormat() bool {
+	return !vn.isGQUIC() || vn >= Version44
+}
+
+// UsesLengthInHeader tells if this version uses the Length field in the IETF header
+func (vn VersionNumber) UsesLengthInHeader() bool {
+	return !vn.isGQUIC()
+}
+
+// UsesTokenInHeader tells if this version uses the Token field in the IETF header
+func (vn VersionNumber) UsesTokenInHeader() bool {
+	return !vn.isGQUIC()
+}
+
+// UsesStopWaitingFrames tells if this version uses STOP_WAITING frames
+func (vn VersionNumber) UsesStopWaitingFrames() bool {
+	return vn.isGQUIC() && vn <= Version43
+}
+
+// UsesVarintPacketNumbers tells if this version uses 7/14/30 bit packet numbers
+func (vn VersionNumber) UsesVarintPacketNumbers() bool {
+	return !vn.isGQUIC()
 }
 
 // StreamContributesToConnectionFlowControl says if a stream contributes to connection-level flow control
@@ -132,4 +167,15 @@ func GetGreasedVersions(supported []VersionNumber) []VersionNumber {
 	greased[randPos] = generateReservedVersion()
 	copy(greased[randPos+1:], supported[randPos:])
 	return greased
+}
+
+// StripGreasedVersions strips all greased versions from a slice of versions
+func StripGreasedVersions(versions []VersionNumber) []VersionNumber {
+	realVersions := make([]VersionNumber, 0, len(versions))
+	for _, v := range versions {
+		if v&0x0f0f0f0f != 0x0a0a0a0a {
+			realVersions = append(realVersions, v)
+		}
+	}
+	return realVersions
 }

@@ -46,6 +46,8 @@ type client struct {
 	requestWriter *requestWriter
 
 	responses map[protocol.StreamID]chan *http.Response
+
+	logger utils.Logger
 }
 
 var _ http.RoundTripper = &client{}
@@ -75,6 +77,7 @@ func newClient(
 		opts:          opts,
 		headerErrored: make(chan struct{}),
 		dialer:        dialer,
+		logger:        utils.DefaultLogger.WithPrefix("client"),
 	}
 }
 
@@ -95,7 +98,7 @@ func (c *client) dial() error {
 	if err != nil {
 		return err
 	}
-	c.requestWriter = newRequestWriter(c.headerStream)
+	c.requestWriter = newRequestWriter(c.headerStream, c.logger)
 	go c.handleHeaderStream()
 	return nil
 }
@@ -108,7 +111,9 @@ func (c *client) handleHeaderStream() {
 	for err == nil {
 		err = c.readResponse(h2framer, decoder)
 	}
-	utils.Debugf("Error handling header stream: %s", err)
+	if quicErr, ok := err.(*qerr.QuicError); !ok || quicErr.ErrorCode != qerr.PeerGoingAway {
+		c.logger.Debugf("Error handling header stream: %s", err)
+	}
 	c.headerErr = qerr.Error(qerr.InvalidHeadersStreamData, err.Error())
 	// stop all running request
 	close(c.headerErrored)
@@ -167,7 +172,7 @@ func (c *client) RoundTrip(req *http.Request) (*http.Response, error) {
 	responseChan := make(chan *http.Response)
 	dataStream, err := c.session.OpenStreamSync()
 	if err != nil {
-		_ = c.CloseWithError(err)
+		_ = c.closeWithError(err)
 		return nil, err
 	}
 	c.mutex.Lock()
@@ -182,7 +187,7 @@ func (c *client) RoundTrip(req *http.Request) (*http.Response, error) {
 	endStream := !hasBody
 	err = c.requestWriter.WriteRequest(req, dataStream.StreamID(), endStream, requestedGzip)
 	if err != nil {
-		_ = c.CloseWithError(err)
+		_ = c.closeWithError(err)
 		return nil, err
 	}
 
@@ -202,6 +207,7 @@ func (c *client) RoundTrip(req *http.Request) (*http.Response, error) {
 		bodySent = true
 	}
 
+	ctx := req.Context()
 	for !(bodySent && receivedResponse) {
 		select {
 		case res = <-responseChan:
@@ -214,9 +220,17 @@ func (c *client) RoundTrip(req *http.Request) (*http.Response, error) {
 			if err != nil {
 				return nil, err
 			}
+		case <-ctx.Done():
+			// error code 6 signals that stream was canceled
+			dataStream.CancelRead(6)
+			dataStream.CancelWrite(6)
+			c.mutex.Lock()
+			delete(c.responses, dataStream.StreamID())
+			c.mutex.Unlock()
+			return nil, ctx.Err()
 		case <-c.headerErrored:
-			// an error occured on the header stream
-			_ = c.CloseWithError(c.headerErr)
+			// an error occurred on the header stream
+			_ = c.closeWithError(c.headerErr)
 			return nil, c.headerErr
 		}
 	}
@@ -261,16 +275,19 @@ func (c *client) writeRequestBody(dataStream quic.Stream, body io.ReadCloser) (e
 	return dataStream.Close()
 }
 
-// Close closes the client
-func (c *client) CloseWithError(e error) error {
+func (c *client) closeWithError(e error) error {
 	if c.session == nil {
 		return nil
 	}
-	return c.session.Close(e)
+	return c.session.CloseWithError(quic.ErrorCode(qerr.InternalError), e)
 }
 
+// Close closes the client
 func (c *client) Close() error {
-	return c.CloseWithError(nil)
+	if c.session == nil {
+		return nil
+	}
+	return c.session.Close()
 }
 
 // copied from net/transport.go

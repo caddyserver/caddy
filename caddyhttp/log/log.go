@@ -67,6 +67,10 @@ func (l Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 
 			// Write log entries
 			for _, e := range rule.Entries {
+				// Check if there is an exception to prevent log being written
+				if !e.Log.ShouldLog(r.URL.Path) {
+					continue
+				}
 
 				// Mask IP Address
 				if e.Log.IPMaskExists {
@@ -78,6 +82,7 @@ func (l Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 					}
 				}
 				e.Log.Println(rep.Replace(e.Format))
+
 			}
 
 			return status, err

@@ -33,8 +33,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"crypto/tls"
+
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
+	"github.com/mholt/caddy/caddytls"
 )
 
 // Handler is a middleware type that can handle requests as a FastCGI client.
@@ -239,9 +242,6 @@ func (h Handler) exists(path string) bool {
 func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]string, error) {
 	var env map[string]string
 
-	// Get absolute path of requested resource
-	absPath := filepath.Join(rule.Root, fpath)
-
 	// Separate remote IP and port; more lenient than net.SplitHostPort
 	var ip, port string
 	if idx := strings.LastIndex(r.RemoteAddr, ":"); idx > -1 {
@@ -263,10 +263,12 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 	docURI := fpath[:splitPos+len(rule.SplitPath)]
 	pathInfo := fpath[splitPos+len(rule.SplitPath):]
 	scriptName := fpath
-	scriptFilename := absPath
 
 	// Strip PATH_INFO from SCRIPT_NAME
 	scriptName = strings.TrimSuffix(scriptName, pathInfo)
+
+	// SCRIPT_FILENAME is the absolute path of SCRIPT_NAME
+	scriptFilename := filepath.Join(rule.Root, scriptName)
 
 	// Add vhost path prefix to scriptName. Otherwise, some PHP software will
 	// have difficulty discovering its URL.
@@ -282,6 +284,11 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 
 	// Retrieve name of remote user that was set by some downstream middleware such as basicauth.
 	remoteUser, _ := r.Context().Value(httpserver.RemoteUserCtxKey).(string)
+
+	requestScheme := "http"
+	if r.TLS != nil {
+		requestScheme = "https"
+	}
 
 	// Some variables are unused but cleared explicitly to prevent
 	// the parent environment from interfering.
@@ -299,6 +306,7 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 		"REMOTE_IDENT":      "", // Not used
 		"REMOTE_USER":       remoteUser,
 		"REQUEST_METHOD":    r.Method,
+		"REQUEST_SCHEME":    requestScheme,
 		"SERVER_NAME":       h.ServerName,
 		"SERVER_PORT":       h.ServerPort,
 		"SERVER_PROTOCOL":   r.Proto,
@@ -323,6 +331,19 @@ func (h Handler) buildEnv(r *http.Request, rule Rule, fpath string) (map[string]
 	// Some web apps rely on knowing HTTPS or not
 	if r.TLS != nil {
 		env["HTTPS"] = "on"
+		// and pass the protocol details in a manner compatible with apache's mod_ssl
+		// (which is why they have a SSL_ prefix and not TLS_).
+		v, ok := tlsProtocolStringToMap[r.TLS.Version]
+		if ok {
+			env["SSL_PROTOCOL"] = v
+		}
+		// and pass the cipher suite in a manner compatible with apache's mod_ssl
+		for k, v := range caddytls.SupportedCiphersMap {
+			if v == r.TLS.CipherSuite {
+				env["SSL_CIPHER"] = k
+				break
+			}
+		}
 	}
 
 	// Add env variables from config (with support for placeholders in values)
@@ -464,4 +485,12 @@ type LogError string
 // Error satisfies error interface.
 func (l LogError) Error() string {
 	return string(l)
+}
+
+// Map of supported protocols to Apache ssl_mod format
+// Note that these are slightly different from SupportedProtocols in caddytls/config.go's
+var tlsProtocolStringToMap = map[uint16]string{
+	tls.VersionTLS10: "TLSv1",
+	tls.VersionTLS11: "TLSv1.1",
+	tls.VersionTLS12: "TLSv1.2",
 }

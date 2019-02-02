@@ -49,6 +49,8 @@ type staticUpstream struct {
 	Hosts             HostPool
 	Policy            Policy
 	KeepAlive         int
+	FallbackDelay     time.Duration
+	Timeout           time.Duration
 	FailTimeout       time.Duration
 	TryDuration       time.Duration
 	TryInterval       time.Duration
@@ -92,6 +94,7 @@ func NewStaticUpstreams(c caddyfile.Dispenser, host string) ([]Upstream, error) 
 			TryInterval:       250 * time.Millisecond,
 			MaxConns:          0,
 			KeepAlive:         http.DefaultMaxIdleConnsPerHost,
+			Timeout:           30 * time.Second,
 			resolver:          net.DefaultResolver,
 		}
 
@@ -225,7 +228,7 @@ func (u *staticUpstream) NewHost(host string) (*UpstreamHost, error) {
 		return nil, err
 	}
 
-	uh.ReverseProxy = NewSingleHostReverseProxy(baseURL, uh.WithoutPathPrefix, u.KeepAlive)
+	uh.ReverseProxy = NewSingleHostReverseProxy(baseURL, uh.WithoutPathPrefix, u.KeepAlive, u.Timeout, u.FallbackDelay)
 	if u.insecureSkipVerify {
 		uh.ReverseProxy.UseInsecureTransport()
 	}
@@ -307,6 +310,15 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream, hasSrv bool) error {
 			arg = c.Val()
 		}
 		u.Policy = policyCreateFunc(arg)
+	case "fallback_delay":
+		if !c.NextArg() {
+			return c.ArgErr()
+		}
+		dur, err := time.ParseDuration(c.Val())
+		if err != nil {
+			return err
+		}
+		u.FallbackDelay = dur
 	case "fail_timeout":
 		if !c.NextArg() {
 			return c.ArgErr()
@@ -431,10 +443,12 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream, hasSrv bool) error {
 		}
 		u.downstreamHeaders.Add(header, value)
 	case "transparent":
+		// Note: X-Forwarded-For header is always being appended for proxy connections
+		// See implementation of createUpstreamRequest in proxy.go
 		u.upstreamHeaders.Add("Host", "{host}")
 		u.upstreamHeaders.Add("X-Real-IP", "{remote}")
-		u.upstreamHeaders.Add("X-Forwarded-For", "{remote}")
 		u.upstreamHeaders.Add("X-Forwarded-Proto", "{scheme}")
+		u.upstreamHeaders.Add("X-Forwarded-Port", "{server_port}")
 	case "websocket":
 		u.upstreamHeaders.Add("Connection", "{>Connection}")
 		u.upstreamHeaders.Add("Upgrade", "{>Upgrade}")
@@ -463,6 +477,15 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream, hasSrv bool) error {
 			return c.ArgErr()
 		}
 		u.KeepAlive = n
+	case "timeout":
+		if !c.NextArg() {
+			return c.ArgErr()
+		}
+		dur, err := time.ParseDuration(c.Val())
+		if err != nil {
+			return c.Errf("unable to parse timeout duration '%s'", c.Val())
+		}
+		u.Timeout = dur
 	default:
 		return c.Errf("unknown property '%s'", c.Val())
 	}
@@ -608,6 +631,11 @@ func (u *staticUpstream) AllowedPath(requestPath string) bool {
 	return true
 }
 
+// GetFallbackDelay returns u.FallbackDelay.
+func (u *staticUpstream) GetFallbackDelay() time.Duration {
+	return u.FallbackDelay
+}
+
 // GetTryDuration returns u.TryDuration.
 func (u *staticUpstream) GetTryDuration() time.Duration {
 	return u.TryDuration
@@ -616,6 +644,11 @@ func (u *staticUpstream) GetTryDuration() time.Duration {
 // GetTryInterval returns u.TryInterval.
 func (u *staticUpstream) GetTryInterval() time.Duration {
 	return u.TryInterval
+}
+
+// GetTimeout returns u.Timeout.
+func (u *staticUpstream) GetTimeout() time.Duration {
+	return u.Timeout
 }
 
 func (u *staticUpstream) GetHostCount() int {

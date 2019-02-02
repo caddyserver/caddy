@@ -181,7 +181,7 @@ func getCurrentCaddyfile() (Input, *Instance, error) {
 
 	currentCaddyfile := inst.caddyfileInput
 	if currentCaddyfile == nil {
-		// hmm, did spawing process forget to close stdin? Anyhow, this is unusual.
+		// hmm, did spawning process forget to close stdin? Anyhow, this is unusual.
 		return nil, inst, fmt.Errorf("no Caddyfile to reload (was stdin left open?)")
 	}
 	return currentCaddyfile, inst, nil

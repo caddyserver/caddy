@@ -17,8 +17,8 @@ type ConnectionCloseFrame struct {
 	ReasonPhrase string
 }
 
-// ParseConnectionCloseFrame reads a CONNECTION_CLOSE frame
-func ParseConnectionCloseFrame(r *bytes.Reader, version protocol.VersionNumber) (*ConnectionCloseFrame, error) {
+// parseConnectionCloseFrame reads a CONNECTION_CLOSE frame
+func parseConnectionCloseFrame(r *bytes.Reader, version protocol.VersionNumber) (*ConnectionCloseFrame, error) {
 	if _, err := r.ReadByte(); err != nil { // read the TypeByte
 		return nil, err
 	}
@@ -48,7 +48,7 @@ func ParseConnectionCloseFrame(r *bytes.Reader, version protocol.VersionNumber) 
 		reasonPhraseLen = uint64(length)
 	}
 
-	// shortcut to prevent the unneccessary allocation of dataLen bytes
+	// shortcut to prevent the unnecessary allocation of dataLen bytes
 	// if the dataLen is larger than the remaining length of the packet
 	// reading the whole reason phrase would result in EOF when attempting to READ
 	if int(reasonPhraseLen) > r.Len() {
@@ -62,7 +62,7 @@ func ParseConnectionCloseFrame(r *bytes.Reader, version protocol.VersionNumber) 
 	}
 
 	return &ConnectionCloseFrame{
-		ErrorCode:    qerr.ErrorCode(errorCode),
+		ErrorCode:    errorCode,
 		ReasonPhrase: string(reasonPhrase),
 	}, nil
 }

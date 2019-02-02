@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"net"
 	"testing"
+	"time"
 
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
@@ -53,6 +54,18 @@ func TestSetup(t *testing.T) {
 	if addr != "127.0.0.1:9000" {
 		t.Errorf("Expected 127.0.0.1:9000 as the Address")
 	}
+
+	if myHandler.Rules[0].ConnectTimeout != 60*time.Second {
+		t.Errorf("Expected default value of 60 seconds")
+	}
+
+	if myHandler.Rules[0].ReadTimeout != 60*time.Second {
+		t.Errorf("Expected default value of 60 seconds")
+	}
+
+	if myHandler.Rules[0].SendTimeout != 60*time.Second {
+		t.Errorf("Expected default value of 60 seconds")
+	}
 }
 
 func TestFastcgiParse(t *testing.T) {
@@ -64,21 +77,23 @@ func TestFastcgiParse(t *testing.T) {
 
 		{`fastcgi /blog 127.0.0.1:9000 php`,
 			false, []Rule{{
-				Path:       "/blog",
-				balancer:   &roundRobin{addresses: []string{"127.0.0.1:9000"}},
-				Ext:        ".php",
-				SplitPath:  ".php",
-				IndexFiles: []string{"index.php"},
+				Path:        "/blog",
+				balancer:    &roundRobin{addresses: []string{"127.0.0.1:9000"}},
+				Ext:         ".php",
+				SplitPath:   ".php",
+				IndexFiles:  []string{"index.php"},
+				SendTimeout: 60 * time.Second,
 			}}},
 		{`fastcgi / 127.0.0.1:9001 {
 	              split .html
 	              }`,
 			false, []Rule{{
-				Path:       "/",
-				balancer:   &roundRobin{addresses: []string{"127.0.0.1:9001"}},
-				Ext:        "",
-				SplitPath:  ".html",
-				IndexFiles: []string{},
+				Path:        "/",
+				balancer:    &roundRobin{addresses: []string{"127.0.0.1:9001"}},
+				Ext:         "",
+				SplitPath:   ".html",
+				IndexFiles:  []string{},
+				SendTimeout: 60 * time.Second,
 			}}},
 		{`fastcgi / 127.0.0.1:9001 {
 	              split .html
@@ -91,6 +106,17 @@ func TestFastcgiParse(t *testing.T) {
 				SplitPath:       ".html",
 				IndexFiles:      []string{},
 				IgnoredSubPaths: []string{"/admin", "/user"},
+				SendTimeout:     60 * time.Second,
+			}}},
+		{`fastcgi / 127.0.0.1:9001 {
+					send_timeout 30s
+				}`,
+			false, []Rule{{
+				Path:        "/",
+				balancer:    &roundRobin{addresses: []string{"127.0.0.1:9001"}},
+				Ext:         "",
+				IndexFiles:  []string{},
+				SendTimeout: 30 * time.Second,
 			}}},
 	}
 	for i, test := range tests {
@@ -145,6 +171,11 @@ func TestFastcgiParse(t *testing.T) {
 			if fmt.Sprint(actualFastcgiConfig.IgnoredSubPaths) != fmt.Sprint(test.expectedFastcgiConfig[j].IgnoredSubPaths) {
 				t.Errorf("Test %d expected %dth FastCGI IgnoredSubPaths to be  %s  , but got %s",
 					i, j, test.expectedFastcgiConfig[j].IgnoredSubPaths, actualFastcgiConfig.IgnoredSubPaths)
+			}
+
+			if actualFastcgiConfig.SendTimeout != test.expectedFastcgiConfig[j].SendTimeout {
+				t.Errorf("Test %d expected %dth FastCGI SendTimeout to be %s   , but got %s",
+					i, j, test.expectedFastcgiConfig[j].SendTimeout, actualFastcgiConfig.SendTimeout)
 			}
 		}
 	}

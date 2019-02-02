@@ -4,13 +4,10 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/cheekybits/genny/generic"
 	"github.com/lucas-clemente/quic-go/internal/protocol"
 	"github.com/lucas-clemente/quic-go/internal/wire"
 	"github.com/lucas-clemente/quic-go/qerr"
 )
-
-type item generic.Type
 
 //go:generate genny -in $GOFILE -out streams_map_outgoing_bidi.go gen "item=streamI Item=BidiStream"
 //go:generate genny -in $GOFILE -out streams_map_outgoing_uni.go gen "item=sendStreamI Item=UniStream"
@@ -86,10 +83,11 @@ func (m *outgoingItemsMap) openStreamImpl() (item, error) {
 }
 
 func (m *outgoingItemsMap) GetStream(id protocol.StreamID) (item, error) {
+	m.mutex.RLock()
 	if id >= m.nextStream {
+		m.mutex.RUnlock()
 		return nil, qerr.Error(qerr.InvalidStreamID, fmt.Sprintf("peer attempted to open stream %d", id))
 	}
-	m.mutex.RLock()
 	s := m.streams[id]
 	m.mutex.RUnlock()
 	return s, nil
@@ -118,6 +116,9 @@ func (m *outgoingItemsMap) SetMaxStream(id protocol.StreamID) {
 func (m *outgoingItemsMap) CloseWithError(err error) {
 	m.mutex.Lock()
 	m.closeErr = err
+	for _, str := range m.streams {
+		str.closeForShutdown(err)
+	}
 	m.cond.Broadcast()
 	m.mutex.Unlock()
 }

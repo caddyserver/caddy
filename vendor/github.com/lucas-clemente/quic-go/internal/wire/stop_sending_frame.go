@@ -13,8 +13,8 @@ type StopSendingFrame struct {
 	ErrorCode protocol.ApplicationErrorCode
 }
 
-// ParseStopSendingFrame parses a STOP_SENDING frame
-func ParseStopSendingFrame(r *bytes.Reader, _ protocol.VersionNumber) (*StopSendingFrame, error) {
+// parseStopSendingFrame parses a STOP_SENDING frame
+func parseStopSendingFrame(r *bytes.Reader, _ protocol.VersionNumber) (*StopSendingFrame, error) {
 	if _, err := r.ReadByte(); err != nil { // read the TypeByte
 		return nil, err
 	}

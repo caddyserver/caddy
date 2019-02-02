@@ -15,9 +15,12 @@
 package caddy
 
 import (
-	"net"
-	"strconv"
+	"fmt"
+	"reflect"
+	"sync"
 	"testing"
+
+	"github.com/mholt/caddy/caddyfile"
 )
 
 /*
@@ -47,6 +50,70 @@ func TestCaddyStartStop(t *testing.T) {
 	}
 }
 */
+
+// CallbackTestContext implements Context interface
+type CallbackTestContext struct {
+	// If MakeServersFail is set to true then MakeServers returns an error
+	MakeServersFail bool
+}
+
+func (h *CallbackTestContext) InspectServerBlocks(name string, sblock []caddyfile.ServerBlock) ([]caddyfile.ServerBlock, error) {
+	return sblock, nil
+}
+func (h *CallbackTestContext) MakeServers() ([]Server, error) {
+	if h.MakeServersFail {
+		return make([]Server, 0), fmt.Errorf("MakeServers failed")
+	}
+	return make([]Server, 0), nil
+}
+
+func TestCaddyRestartCallbacks(t *testing.T) {
+	for i, test := range []struct {
+		restartFail   bool
+		expectedCalls []string
+	}{
+		{false, []string{"OnRestart", "OnShutdown"}},
+		{true, []string{"OnRestart", "OnRestartFailed"}},
+	} {
+		serverName := fmt.Sprintf("%v", i)
+		// RegisterServerType to make successful restart possible
+		RegisterServerType(serverName, ServerType{
+			Directives: func() []string { return []string{} },
+			// If MakeServersFail is true then the restart will fail due to context failure
+			NewContext: func(inst *Instance) Context { return &CallbackTestContext{MakeServersFail: test.restartFail} },
+		})
+		c := NewTestController(serverName, "")
+		c.instance = &Instance{
+			serverType: serverName,
+			wg:         new(sync.WaitGroup),
+		}
+
+		// Register callbacks which save the calls order
+		calls := make([]string, 0)
+		c.OnRestart(func() error {
+			calls = append(calls, "OnRestart")
+			return nil
+		})
+		c.OnRestartFailed(func() error {
+			calls = append(calls, "OnRestartFailed")
+			return nil
+		})
+		c.OnShutdown(func() error {
+			calls = append(calls, "OnShutdown")
+			return nil
+		})
+
+		c.instance.Restart(CaddyfileInput{Contents: []byte(""), ServerTypeName: serverName})
+
+		if !reflect.DeepEqual(calls, test.expectedCalls) {
+			t.Errorf("Test %d: Callbacks expected: %v, got: %v", i, test.expectedCalls, calls)
+		}
+
+		c.instance.Stop()
+		c.instance.Wait()
+	}
+
+}
 
 func TestIsLoopback(t *testing.T) {
 	for i, test := range []struct {
@@ -132,42 +199,6 @@ func TestIsInternal(t *testing.T) {
 	} {
 		if got, want := IsInternal(test.input), test.expect; got != want {
 			t.Errorf("Test %d (%s): expected %v but was %v", i, test.input, want, got)
-		}
-	}
-}
-
-func TestListenerAddrEqual(t *testing.T) {
-	ln1, err := net.Listen("tcp", "[::]:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ln1.Close()
-	ln1port := strconv.Itoa(ln1.Addr().(*net.TCPAddr).Port)
-
-	ln2, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ln2.Close()
-	ln2port := strconv.Itoa(ln2.Addr().(*net.TCPAddr).Port)
-
-	for i, test := range []struct {
-		ln     net.Listener
-		addr   string
-		expect bool
-	}{
-		{ln1, ":" + ln2port, false},
-		{ln1, "0.0.0.0:" + ln2port, false},
-		{ln1, "0.0.0.0", false},
-		{ln1, ":" + ln1port, true},
-		{ln1, "0.0.0.0:" + ln1port, true},
-		{ln2, ":" + ln2port, false},
-		{ln2, "127.0.0.1:" + ln1port, false},
-		{ln2, "127.0.0.1", false},
-		{ln2, "127.0.0.1:" + ln2port, true},
-	} {
-		if got, want := listenerAddrEqual(test.ln, test.addr), test.expect; got != want {
-			t.Errorf("Test %d (%s == %s): expected %v but was %v", i, test.addr, test.ln.Addr().String(), want, got)
 		}
 	}
 }

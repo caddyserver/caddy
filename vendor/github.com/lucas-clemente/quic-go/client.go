@@ -2,14 +2,14 @@ package quic
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
-	"strings"
 	"sync"
-	"time"
 
+	"github.com/bifurcation/mint"
 	"github.com/lucas-clemente/quic-go/internal/handshake"
 	"github.com/lucas-clemente/quic-go/internal/protocol"
 	"github.com/lucas-clemente/quic-go/internal/utils"
@@ -20,35 +20,65 @@ import (
 type client struct {
 	mutex sync.Mutex
 
-	conn     connection
-	hostname string
+	conn connection
+	// If the client is created with DialAddr, we create a packet conn.
+	// If it is started with Dial, we take a packet conn as a parameter.
+	createdPacketConn bool
 
-	versionNegotiationChan           chan struct{} // the versionNegotiationChan is closed as soon as the server accepted the suggested version
-	versionNegotiated                bool          // has the server accepted our version
+	packetHandlers packetHandlerManager
+
+	token []byte
+
+	versionNegotiated                bool // has the server accepted our version
 	receivedVersionNegotiationPacket bool
 	negotiatedVersions               []protocol.VersionNumber // the list of versions from the version negotiation packet
 
-	tlsConf *tls.Config
-	config  *Config
-	tls     handshake.MintTLS // only used when using TLS
+	tlsConf  *tls.Config
+	mintConf *mint.Config
+	config   *Config
 
-	connectionID protocol.ConnectionID
+	srcConnID  protocol.ConnectionID
+	destConnID protocol.ConnectionID
 
 	initialVersion protocol.VersionNumber
 	version        protocol.VersionNumber
 
-	session packetHandler
+	handshakeChan chan struct{}
+	closeCallback func(protocol.ConnectionID)
+
+	session quicSession
+
+	logger utils.Logger
 }
+
+var _ packetHandler = &client{}
 
 var (
 	// make it possible to mock connection ID generation in the tests
-	generateConnectionID         = utils.GenerateConnectionID
-	errCloseSessionForNewVersion = errors.New("closing session in order to recreate it with a new version")
+	generateConnectionID           = protocol.GenerateConnectionID
+	generateConnectionIDForInitial = protocol.GenerateConnectionIDForInitial
+	errCloseSessionForNewVersion   = errors.New("closing session in order to recreate it with a new version")
+	errCloseSessionForRetry        = errors.New("closing session in response to a stateless retry")
 )
 
 // DialAddr establishes a new QUIC connection to a server.
 // The hostname for SNI is taken from the given address.
-func DialAddr(addr string, tlsConf *tls.Config, config *Config) (Session, error) {
+func DialAddr(
+	addr string,
+	tlsConf *tls.Config,
+	config *Config,
+) (Session, error) {
+	return DialAddrContext(context.Background(), addr, tlsConf, config)
+}
+
+// DialAddrContext establishes a new QUIC connection to a server using the provided context.
+// The hostname for SNI is taken from the given address.
+func DialAddrContext(
+	ctx context.Context,
+	addr string,
+	tlsConf *tls.Config,
+	config *Config,
+) (Session, error) {
 	udpAddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
 		return nil, err
@@ -57,7 +87,7 @@ func DialAddr(addr string, tlsConf *tls.Config, config *Config) (Session, error)
 	if err != nil {
 		return nil, err
 	}
-	return Dial(udpConn, udpAddr, addr, tlsConf, config)
+	return dialContext(ctx, udpConn, udpAddr, addr, tlsConf, config, true)
 }
 
 // Dial establishes a new QUIC connection to a server using a net.PacketConn.
@@ -69,44 +99,102 @@ func Dial(
 	tlsConf *tls.Config,
 	config *Config,
 ) (Session, error) {
-	connID, err := generateConnectionID()
+	return DialContext(context.Background(), pconn, remoteAddr, host, tlsConf, config)
+}
+
+// DialContext establishes a new QUIC connection to a server using a net.PacketConn using the provided context.
+// The host parameter is used for SNI.
+func DialContext(
+	ctx context.Context,
+	pconn net.PacketConn,
+	remoteAddr net.Addr,
+	host string,
+	tlsConf *tls.Config,
+	config *Config,
+) (Session, error) {
+	return dialContext(ctx, pconn, remoteAddr, host, tlsConf, config, false)
+}
+
+func dialContext(
+	ctx context.Context,
+	pconn net.PacketConn,
+	remoteAddr net.Addr,
+	host string,
+	tlsConf *tls.Config,
+	config *Config,
+	createdPacketConn bool,
+) (Session, error) {
+	config = populateClientConfig(config, createdPacketConn)
+	if !createdPacketConn {
+		for _, v := range config.Versions {
+			if v == protocol.Version44 {
+				return nil, errors.New("Cannot multiplex connections using gQUIC 44, see https://groups.google.com/a/chromium.org/forum/#!topic/proto-quic/pE9NlLLjizE. Please disable gQUIC 44 in the quic.Config, or use DialAddr")
+			}
+		}
+	}
+	packetHandlers, err := getMultiplexer().AddConn(pconn, config.ConnectionIDLength)
 	if err != nil {
 		return nil, err
 	}
-
-	var hostname string
-	if tlsConf != nil {
-		hostname = tlsConf.ServerName
+	c, err := newClient(pconn, remoteAddr, config, tlsConf, host, packetHandlers.Remove, createdPacketConn)
+	if err != nil {
+		return nil, err
 	}
-	if hostname == "" {
-		hostname, _, err = net.SplitHostPort(host)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	clientConfig := populateClientConfig(config)
-	c := &client{
-		conn:                   &conn{pconn: pconn, currentAddr: remoteAddr},
-		connectionID:           connID,
-		hostname:               hostname,
-		tlsConf:                tlsConf,
-		config:                 clientConfig,
-		version:                clientConfig.Versions[0],
-		versionNegotiationChan: make(chan struct{}),
-	}
-
-	utils.Infof("Starting new connection to %s (%s -> %s), connectionID %x, version %s", hostname, c.conn.LocalAddr().String(), c.conn.RemoteAddr().String(), c.connectionID, c.version)
-
-	if err := c.dial(); err != nil {
+	c.packetHandlers = packetHandlers
+	if err := c.dial(ctx); err != nil {
 		return nil, err
 	}
 	return c.session, nil
 }
 
+func newClient(
+	pconn net.PacketConn,
+	remoteAddr net.Addr,
+	config *Config,
+	tlsConf *tls.Config,
+	host string,
+	closeCallback func(protocol.ConnectionID),
+	createdPacketConn bool,
+) (*client, error) {
+	if tlsConf == nil {
+		tlsConf = &tls.Config{}
+	}
+	if tlsConf.ServerName == "" {
+		var err error
+		tlsConf.ServerName, _, err = net.SplitHostPort(host)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// check that all versions are actually supported
+	if config != nil {
+		for _, v := range config.Versions {
+			if !protocol.IsValidVersion(v) {
+				return nil, fmt.Errorf("%s is not a valid QUIC version", v)
+			}
+		}
+	}
+	onClose := func(protocol.ConnectionID) {}
+	if closeCallback != nil {
+		onClose = closeCallback
+	}
+	c := &client{
+		conn:              &conn{pconn: pconn, currentAddr: remoteAddr},
+		createdPacketConn: createdPacketConn,
+		tlsConf:           tlsConf,
+		config:            config,
+		version:           config.Versions[0],
+		handshakeChan:     make(chan struct{}),
+		closeCallback:     onClose,
+		logger:            utils.DefaultLogger.WithPrefix("client"),
+	}
+	return c, c.generateConnectionIDs()
+}
+
 // populateClientConfig populates fields in the quic.Config with their default values, if none are set
 // it may be called with nil
-func populateClientConfig(config *Config) *Config {
+func populateClientConfig(config *Config, createdPacketConn bool) *Config {
 	if config == nil {
 		config = &Config{}
 	}
@@ -132,76 +220,115 @@ func populateClientConfig(config *Config) *Config {
 	if maxReceiveConnectionFlowControlWindow == 0 {
 		maxReceiveConnectionFlowControlWindow = protocol.DefaultMaxReceiveConnectionFlowControlWindowClient
 	}
+	maxIncomingStreams := config.MaxIncomingStreams
+	if maxIncomingStreams == 0 {
+		maxIncomingStreams = protocol.DefaultMaxIncomingStreams
+	} else if maxIncomingStreams < 0 {
+		maxIncomingStreams = 0
+	}
+	maxIncomingUniStreams := config.MaxIncomingUniStreams
+	if maxIncomingUniStreams == 0 {
+		maxIncomingUniStreams = protocol.DefaultMaxIncomingUniStreams
+	} else if maxIncomingUniStreams < 0 {
+		maxIncomingUniStreams = 0
+	}
+	connIDLen := config.ConnectionIDLength
+	if connIDLen == 0 && !createdPacketConn {
+		connIDLen = protocol.DefaultConnectionIDLength
+	}
+	for _, v := range versions {
+		if v == protocol.Version44 {
+			connIDLen = 0
+		}
+	}
 
 	return &Config{
 		Versions:                              versions,
 		HandshakeTimeout:                      handshakeTimeout,
 		IdleTimeout:                           idleTimeout,
 		RequestConnectionIDOmission:           config.RequestConnectionIDOmission,
+		ConnectionIDLength:                    connIDLen,
 		MaxReceiveStreamFlowControlWindow:     maxReceiveStreamFlowControlWindow,
 		MaxReceiveConnectionFlowControlWindow: maxReceiveConnectionFlowControlWindow,
-		KeepAlive: config.KeepAlive,
+		MaxIncomingStreams:                    maxIncomingStreams,
+		MaxIncomingUniStreams:                 maxIncomingUniStreams,
+		KeepAlive:                             config.KeepAlive,
 	}
 }
 
-func (c *client) dial() error {
+func (c *client) generateConnectionIDs() error {
+	connIDLen := protocol.ConnectionIDLenGQUIC
+	if c.version.UsesTLS() {
+		connIDLen = c.config.ConnectionIDLength
+	}
+	srcConnID, err := generateConnectionID(connIDLen)
+	if err != nil {
+		return err
+	}
+	destConnID := srcConnID
+	if c.version.UsesTLS() {
+		destConnID, err = generateConnectionIDForInitial()
+		if err != nil {
+			return err
+		}
+	}
+	c.srcConnID = srcConnID
+	c.destConnID = destConnID
+	if c.version == protocol.Version44 {
+		c.srcConnID = nil
+	}
+	return nil
+}
+
+func (c *client) dial(ctx context.Context) error {
+	c.logger.Infof("Starting new connection to %s (%s -> %s), source connection ID %s, destination connection ID %s, version %s", c.tlsConf.ServerName, c.conn.LocalAddr(), c.conn.RemoteAddr(), c.srcConnID, c.destConnID, c.version)
+
 	var err error
 	if c.version.UsesTLS() {
-		err = c.dialTLS()
+		err = c.dialTLS(ctx)
 	} else {
-		err = c.dialGQUIC()
-	}
-	if err == errCloseSessionForNewVersion {
-		return c.dial()
+		err = c.dialGQUIC(ctx)
 	}
 	return err
 }
 
-func (c *client) dialGQUIC() error {
+func (c *client) dialGQUIC(ctx context.Context) error {
 	if err := c.createNewGQUICSession(); err != nil {
 		return err
 	}
-	go c.listen()
-	return c.establishSecureConnection()
+	err := c.establishSecureConnection(ctx)
+	if err == errCloseSessionForNewVersion {
+		return c.dial(ctx)
+	}
+	return err
 }
 
-func (c *client) dialTLS() error {
+func (c *client) dialTLS(ctx context.Context) error {
 	params := &handshake.TransportParameters{
 		StreamFlowControlWindow:     protocol.ReceiveStreamFlowControlWindow,
 		ConnectionFlowControlWindow: protocol.ReceiveConnectionFlowControlWindow,
 		IdleTimeout:                 c.config.IdleTimeout,
 		OmitConnectionID:            c.config.RequestConnectionIDOmission,
-		// TODO(#523): make these values configurable
-		MaxBidiStreamID: protocol.MaxBidiStreamID(protocol.MaxIncomingStreams, protocol.PerspectiveClient),
-		MaxUniStreamID:  protocol.MaxUniStreamID(protocol.MaxIncomingStreams, protocol.PerspectiveClient),
+		MaxBidiStreams:              uint16(c.config.MaxIncomingStreams),
+		MaxUniStreams:               uint16(c.config.MaxIncomingUniStreams),
+		DisableMigration:            true,
 	}
-	csc := handshake.NewCryptoStreamConn(nil)
-	extHandler := handshake.NewExtensionHandlerClient(params, c.initialVersion, c.config.Versions, c.version)
+	extHandler := handshake.NewExtensionHandlerClient(params, c.initialVersion, c.config.Versions, c.version, c.logger)
 	mintConf, err := tlsToMintConfig(c.tlsConf, protocol.PerspectiveClient)
 	if err != nil {
 		return err
 	}
 	mintConf.ExtensionHandler = extHandler
-	mintConf.ServerName = c.hostname
-	c.tls = newMintController(csc, mintConf, protocol.PerspectiveClient)
+	c.mintConf = mintConf
 
 	if err := c.createNewTLSSession(extHandler.GetPeerParams(), c.version); err != nil {
 		return err
 	}
-	go c.listen()
-	if err := c.establishSecureConnection(); err != nil {
-		if err != handshake.ErrCloseSessionForRetry {
-			return err
-		}
-		utils.Infof("Received a Retry packet. Recreating session.")
-		if err := c.createNewTLSSession(extHandler.GetPeerParams(), c.version); err != nil {
-			return err
-		}
-		if err := c.establishSecureConnection(); err != nil {
-			return err
-		}
+	err = c.establishSecureConnection(ctx)
+	if err == errCloseSessionForRetry || err == errCloseSessionForNewVersion {
+		return c.dial(ctx)
 	}
-	return nil
+	return err
 }
 
 // establishSecureConnection runs the session, and tries to establish a secure connection
@@ -210,134 +337,114 @@ func (c *client) dialTLS() error {
 // - handshake.ErrCloseSessionForRetry when the server performs a stateless retry (for IETF QUIC)
 // - any other error that might occur
 // - when the connection is secure (for gQUIC), or forward-secure (for IETF QUIC)
-func (c *client) establishSecureConnection() error {
-	var runErr error
-	errorChan := make(chan struct{})
+func (c *client) establishSecureConnection(ctx context.Context) error {
+	errorChan := make(chan error, 1)
+
 	go func() {
-		runErr = c.session.run() // returns as soon as the session is closed
-		close(errorChan)
-		utils.Infof("Connection %x closed.", c.connectionID)
-		if runErr != handshake.ErrCloseSessionForRetry && runErr != errCloseSessionForNewVersion {
+		err := c.session.run() // returns as soon as the session is closed
+		if err != errCloseSessionForRetry && err != errCloseSessionForNewVersion && c.createdPacketConn {
 			c.conn.Close()
 		}
+		errorChan <- err
 	}()
 
-	// wait until the server accepts the QUIC version (or an error occurs)
 	select {
-	case <-errorChan:
-		return runErr
-	case <-c.versionNegotiationChan:
-	}
-
-	select {
-	case <-errorChan:
-		return runErr
-	case err := <-c.session.handshakeStatus():
+	case <-ctx.Done():
+		// The session will send a PeerGoingAway error to the server.
+		c.session.Close()
+		return ctx.Err()
+	case err := <-errorChan:
 		return err
+	case <-c.handshakeChan:
+		// handshake successfully completed
+		return nil
 	}
 }
 
-// Listen listens on the underlying connection and passes packets on for handling.
-// It returns when the connection is closed.
-func (c *client) listen() {
-	var err error
-
-	for {
-		var n int
-		var addr net.Addr
-		data := getPacketBuffer()
-		data = data[:protocol.MaxReceivePacketSize]
-		// The packet size should not exceed protocol.MaxReceivePacketSize bytes
-		// If it does, we only read a truncated packet, which will then end up undecryptable
-		n, addr, err = c.conn.Read(data)
-		if err != nil {
-			if !strings.HasSuffix(err.Error(), "use of closed network connection") {
-				c.mutex.Lock()
-				if c.session != nil {
-					c.session.Close(err)
-				}
-				c.mutex.Unlock()
-			}
-			break
-		}
-		c.handlePacket(addr, data[:n])
+func (c *client) handlePacket(p *receivedPacket) {
+	if err := c.handlePacketImpl(p); err != nil {
+		c.logger.Errorf("error handling packet: %s", err)
 	}
 }
 
-func (c *client) handlePacket(remoteAddr net.Addr, packet []byte) {
-	rcvTime := time.Now()
-
-	r := bytes.NewReader(packet)
-	hdr, err := wire.ParseHeaderSentByServer(r, c.version)
-	if err != nil {
-		utils.Errorf("error parsing packet from %s: %s", remoteAddr.String(), err.Error())
-		// drop this packet if we can't parse the header
-		return
-	}
-	// reject packets with truncated connection id if we didn't request truncation
-	if hdr.OmitConnectionID && !c.config.RequestConnectionIDOmission {
-		return
-	}
-	hdr.Raw = packet[:len(packet)-r.Len()]
-
+func (c *client) handlePacketImpl(p *receivedPacket) error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
-	// reject packets with the wrong connection ID
-	if !hdr.OmitConnectionID && hdr.ConnectionID != c.connectionID {
-		return
-	}
-
-	if hdr.ResetFlag {
-		cr := c.conn.RemoteAddr()
-		// check if the remote address and the connection ID match
-		// otherwise this might be an attacker trying to inject a PUBLIC_RESET to kill the connection
-		if cr.Network() != remoteAddr.Network() || cr.String() != remoteAddr.String() || hdr.ConnectionID != c.connectionID {
-			utils.Infof("Received a spoofed Public Reset. Ignoring.")
-			return
-		}
-		pr, err := wire.ParsePublicReset(r)
-		if err != nil {
-			utils.Infof("Received a Public Reset. An error occurred parsing the packet: %s", err)
-			return
-		}
-		utils.Infof("Received Public Reset, rejected packet number: %#x.", pr.RejectedPacketNumber)
-		c.session.closeRemote(qerr.Error(qerr.PublicReset, fmt.Sprintf("Received a Public Reset for packet number %#x", pr.RejectedPacketNumber)))
-		return
-	}
-
 	// handle Version Negotiation Packets
-	if hdr.IsVersionNegotiation {
-		// ignore delayed / duplicated version negotiation packets
-		if c.receivedVersionNegotiationPacket || c.versionNegotiated {
-			return
+	if p.header.IsVersionNegotiation {
+		err := c.handleVersionNegotiationPacket(p.header)
+		if err != nil {
+			c.session.destroy(err)
 		}
-
 		// version negotiation packets have no payload
-		if err := c.handleVersionNegotiationPacket(hdr); err != nil {
-			c.session.Close(err)
+		return err
+	}
+
+	if !c.version.UsesIETFHeaderFormat() {
+		connID := p.header.DestConnectionID
+		// reject packets with truncated connection id if we didn't request truncation
+		if !c.config.RequestConnectionIDOmission && connID.Len() == 0 {
+			return errors.New("received packet with truncated connection ID, but didn't request truncation")
 		}
-		return
+		// reject packets with the wrong connection ID
+		if connID.Len() > 0 && !connID.Equal(c.srcConnID) {
+			return fmt.Errorf("received a packet with an unexpected connection ID (%s, expected %s)", connID, c.srcConnID)
+		}
+		if p.header.ResetFlag {
+			return c.handlePublicReset(p)
+		}
+	} else {
+		// reject packets with the wrong connection ID
+		if !p.header.DestConnectionID.Equal(c.srcConnID) {
+			return fmt.Errorf("received a packet with an unexpected connection ID (%s, expected %s)", p.header.DestConnectionID, c.srcConnID)
+		}
+	}
+
+	if p.header.IsLongHeader {
+		switch p.header.Type {
+		case protocol.PacketTypeRetry:
+			c.handleRetryPacket(p.header)
+			return nil
+		case protocol.PacketTypeHandshake, protocol.PacketType0RTT:
+		default:
+			return fmt.Errorf("Received unsupported packet type: %s", p.header.Type)
+		}
 	}
 
 	// this is the first packet we are receiving
 	// since it is not a Version Negotiation Packet, this means the server supports the suggested version
 	if !c.versionNegotiated {
 		c.versionNegotiated = true
-		close(c.versionNegotiationChan)
 	}
 
-	// TODO: validate packet number and connection ID on Retry packets (for IETF QUIC)
+	c.session.handlePacket(p)
+	return nil
+}
 
-	c.session.handlePacket(&receivedPacket{
-		remoteAddr: remoteAddr,
-		header:     hdr,
-		data:       packet[len(packet)-r.Len():],
-		rcvTime:    rcvTime,
-	})
+func (c *client) handlePublicReset(p *receivedPacket) error {
+	cr := c.conn.RemoteAddr()
+	// check if the remote address and the connection ID match
+	// otherwise this might be an attacker trying to inject a PUBLIC_RESET to kill the connection
+	if cr.Network() != p.remoteAddr.Network() || cr.String() != p.remoteAddr.String() || !p.header.DestConnectionID.Equal(c.srcConnID) {
+		return errors.New("Received a spoofed Public Reset")
+	}
+	pr, err := wire.ParsePublicReset(bytes.NewReader(p.data))
+	if err != nil {
+		return fmt.Errorf("Received a Public Reset. An error occurred parsing the packet: %s", err)
+	}
+	c.session.closeRemote(qerr.Error(qerr.PublicReset, fmt.Sprintf("Received a Public Reset for packet number %#x", pr.RejectedPacketNumber)))
+	c.logger.Infof("Received Public Reset, rejected packet number: %#x", pr.RejectedPacketNumber)
+	return nil
 }
 
 func (c *client) handleVersionNegotiationPacket(hdr *wire.Header) error {
+	// ignore delayed / duplicated version negotiation packets
+	if c.receivedVersionNegotiationPacket || c.versionNegotiated {
+		c.logger.Debugf("Received a delayed Version Negotiation Packet.")
+		return nil
+	}
+
 	for _, v := range hdr.SupportedVersions {
 		if v == c.version {
 			// the version negotiation packet contains the version that we offered
@@ -347,6 +454,7 @@ func (c *client) handleVersionNegotiationPacket(hdr *wire.Header) error {
 		}
 	}
 
+	c.logger.Infof("Received a Version Negotiation Packet. Supported Versions: %s", hdr.SupportedVersions)
 	newVersion, ok := protocol.ChooseSupportedVersion(c.config.Versions, hdr.SupportedVersions)
 	if !ok {
 		return qerr.InvalidVersion
@@ -357,47 +465,123 @@ func (c *client) handleVersionNegotiationPacket(hdr *wire.Header) error {
 	// switch to negotiated version
 	c.initialVersion = c.version
 	c.version = newVersion
-	var err error
-	c.connectionID, err = utils.GenerateConnectionID()
-	if err != nil {
+	if err := c.generateConnectionIDs(); err != nil {
 		return err
 	}
-	utils.Infof("Switching to QUIC version %s. New connection ID: %x", newVersion, c.connectionID)
-	c.session.Close(errCloseSessionForNewVersion)
+
+	c.logger.Infof("Switching to QUIC version %s. New connection ID: %s", newVersion, c.destConnID)
+	c.session.destroy(errCloseSessionForNewVersion)
 	return nil
 }
 
-func (c *client) createNewGQUICSession() (err error) {
+func (c *client) handleRetryPacket(hdr *wire.Header) {
+	c.logger.Debugf("<- Received Retry")
+	hdr.Log(c.logger)
+	if !hdr.OrigDestConnectionID.Equal(c.destConnID) {
+		c.logger.Debugf("Ignoring spoofed Retry. Original Destination Connection ID: %s, expected: %s", hdr.OrigDestConnectionID, c.destConnID)
+		return
+	}
+	if hdr.SrcConnectionID.Equal(c.destConnID) {
+		c.logger.Debugf("Ignoring Retry, since the server didn't change the Source Connection ID.")
+		return
+	}
+	// If a token is already set, this means that we already received a Retry from the server.
+	// Ignore this Retry packet.
+	if len(c.token) > 0 {
+		c.logger.Debugf("Ignoring Retry, since a Retry was already received.")
+		return
+	}
+	c.destConnID = hdr.SrcConnectionID
+	c.token = hdr.Token
+	c.session.destroy(errCloseSessionForRetry)
+}
+
+func (c *client) createNewGQUICSession() error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	c.session, err = newClientSession(
+	runner := &runner{
+		onHandshakeCompleteImpl: func(_ Session) { close(c.handshakeChan) },
+		removeConnectionIDImpl:  c.closeCallback,
+	}
+	sess, err := newClientSession(
 		c.conn,
-		c.hostname,
+		runner,
 		c.version,
-		c.connectionID,
+		c.destConnID,
+		c.srcConnID,
 		c.tlsConf,
 		c.config,
 		c.initialVersion,
 		c.negotiatedVersions,
+		c.logger,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	c.session = sess
+	c.packetHandlers.Add(c.srcConnID, c)
+	if c.config.RequestConnectionIDOmission {
+		c.packetHandlers.Add(protocol.ConnectionID{}, c)
+	}
+	return nil
 }
 
 func (c *client) createNewTLSSession(
 	paramsChan <-chan handshake.TransportParameters,
 	version protocol.VersionNumber,
-) (err error) {
+) error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	c.session, err = newTLSClientSession(
+	runner := &runner{
+		onHandshakeCompleteImpl: func(_ Session) { close(c.handshakeChan) },
+		removeConnectionIDImpl:  c.closeCallback,
+	}
+	sess, err := newTLSClientSession(
 		c.conn,
-		c.hostname,
-		c.version,
-		c.connectionID,
+		runner,
+		c.token,
+		c.destConnID,
+		c.srcConnID,
 		c.config,
-		c.tls,
+		c.mintConf,
 		paramsChan,
 		1,
+		c.logger,
+		c.version,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	c.session = sess
+	c.packetHandlers.Add(c.srcConnID, c)
+	return nil
+}
+
+func (c *client) Close() error {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	if c.session == nil {
+		return nil
+	}
+	return c.session.Close()
+}
+
+func (c *client) destroy(e error) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	if c.session == nil {
+		return
+	}
+	c.session.destroy(e)
+}
+
+func (c *client) GetVersion() protocol.VersionNumber {
+	c.mutex.Lock()
+	v := c.version
+	c.mutex.Unlock()
+	return v
+}
+
+func (c *client) GetPerspective() protocol.Perspective {
+	return protocol.PerspectiveClient
 }

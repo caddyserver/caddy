@@ -27,14 +27,14 @@ const (
 type PacketType uint8
 
 const (
-	// PacketTypeInitial is the packet type of a Initial packet
-	PacketTypeInitial PacketType = 2
+	// PacketTypeInitial is the packet type of an Initial packet
+	PacketTypeInitial PacketType = 0x7f
 	// PacketTypeRetry is the packet type of a Retry packet
-	PacketTypeRetry PacketType = 3
-	// PacketTypeHandshake is the packet type of a Cleartext packet
-	PacketTypeHandshake PacketType = 4
+	PacketTypeRetry PacketType = 0x7e
+	// PacketTypeHandshake is the packet type of a Handshake packet
+	PacketTypeHandshake PacketType = 0x7d
 	// PacketType0RTT is the packet type of a 0-RTT packet
-	PacketType0RTT PacketType = 5
+	PacketType0RTT PacketType = 0x7c
 )
 
 func (t PacketType) String() string {
@@ -51,9 +51,6 @@ func (t PacketType) String() string {
 		return fmt.Sprintf("unknown packet type: %d", t)
 	}
 }
-
-// A ConnectionID in QUIC
-type ConnectionID uint64
 
 // A ByteCount in QUIC
 type ByteCount uint64
@@ -77,11 +74,17 @@ const DefaultTCPMSS ByteCount = 1460
 // MinClientHelloSize is the minimum size the server expects an inchoate CHLO to have (in gQUIC)
 const MinClientHelloSize = 1024
 
-// MinInitialPacketSize is the minimum size an Initial packet (in IETF QUIC) is requried to have.
+// MinInitialPacketSize is the minimum size an Initial packet (in IETF QUIC) is required to have.
 const MinInitialPacketSize = 1200
 
 // MaxClientHellos is the maximum number of times we'll send a client hello
 // The value 3 accounts for:
 // * one failure due to an incorrect or missing source-address token
-// * one failure due the server's certificate chain being unavailible and the server being unwilling to send it without a valid source-address token
+// * one failure due the server's certificate chain being unavailable and the server being unwilling to send it without a valid source-address token
 const MaxClientHellos = 3
+
+// ConnectionIDLenGQUIC is the length of the source Connection ID used on gQUIC QUIC packets.
+const ConnectionIDLenGQUIC = 8
+
+// MinConnectionIDLenInitial is the minimum length of the destination connection ID on an Initial packet.
+const MinConnectionIDLenInitial = 8
