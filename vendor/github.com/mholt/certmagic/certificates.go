@@ -315,7 +315,7 @@ func (cfg *Config) cacheCertificate(cert Certificate) Certificate {
 	// (yes, if certs overlap in the names they serve, one will
 	// overwrite another here, but that's just how it goes)
 	for _, name := range cert.Names {
-		cfg.certificates[name] = cert.Hash
+		cfg.certificates[NormalizedName(name)] = cert.Hash
 	}
 
 	// store the certificate

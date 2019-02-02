@@ -93,7 +93,7 @@ type Config struct {
 }
 
 // NewConfig returns a new Config with a pointer to the instance's
-// certificate cache. You will usually need to set Other fields on
+// certificate cache. You will usually need to set other fields on
 // the returned Config for successful practical use.
 func NewConfig(inst *caddy.Instance) *Config {
 	inst.StorageMu.RLock()
@@ -257,9 +257,13 @@ func MakeTLSConfig(configs []*Config) (*tls.Config, error) {
 		// configs with the same hostname pattern; should
 		// be OK since we already asserted they are roughly
 		// the same); during TLS handshakes, configs are
-		// loaded based on the hostname pattern, according
-		// to client's SNI
-		configMap[cfg.Hostname] = cfg
+		// loaded based on the hostname pattern according
+		// to client's ServerName (SNI) value
+		if cfg.Hostname == "0.0.0.0" || cfg.Hostname == "::" {
+			configMap[""] = cfg
+		} else {
+			configMap[cfg.Hostname] = cfg
+		}
 	}
 
 	// Is TLS disabled? By now, we know that all
