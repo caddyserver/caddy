@@ -395,7 +395,7 @@ func (cfg *Config) renewDynamicCertificate(hello *tls.ClientHelloInfo, currentCe
 // is present, it makes a certificate to solve this challenge and returns it.
 // A boolean true is returned if a valid certificate is returned.
 func (cfg *Config) tryDistributedChallengeSolver(clientHello *tls.ClientHelloInfo) (Certificate, bool, error) {
-	tokenKey := distributedSolver{}.challengeTokensKey(clientHello.ServerName)
+	tokenKey := distributedSolver{config: cfg}.challengeTokensKey(clientHello.ServerName)
 	chalInfoBytes, err := cfg.certCache.storage.Load(tokenKey)
 	if err != nil {
 		if _, ok := err.(ErrNotExist); ok {
