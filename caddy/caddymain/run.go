@@ -46,7 +46,7 @@ func init() {
 
 	flag.BoolVar(&certmagic.Agreed, "agree", false, "Agree to the CA's Subscriber Agreement")
 	flag.StringVar(&certmagic.CA, "ca", certmagic.CA, "URL to certificate authority's ACME server directory")
-	flag.StringVar(&certmagic.DefaultServerName, "default-sni", certmagic.DefaultServerName, "If a ClientHello ServerName is empty, assume this value")
+	flag.StringVar(&certmagic.DefaultServerName, "default-sni", certmagic.DefaultServerName, "If a ClientHello ServerName is empty, use this ServerName to choose a TLS certificate")
 	flag.BoolVar(&certmagic.DisableHTTPChallenge, "disable-http-challenge", certmagic.DisableHTTPChallenge, "Disable the ACME HTTP challenge")
 	flag.BoolVar(&certmagic.DisableTLSALPNChallenge, "disable-tls-alpn-challenge", certmagic.DisableTLSALPNChallenge, "Disable the ACME TLS-ALPN challenge")
 	flag.StringVar(&disabledMetrics, "disabled-metrics", "", "Comma-separated list of telemetry metrics to disable")
