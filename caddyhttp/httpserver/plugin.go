@@ -428,11 +428,12 @@ func (a Address) String() string {
 	if s != "" {
 		s += "://"
 	}
-	s += a.Host
 	if a.Port != "" &&
 		((scheme == "https" && a.Port != DefaultHTTPSPort) ||
 			(scheme == "http" && a.Port != DefaultHTTPPort)) {
-		s += ":" + a.Port
+		s += net.JoinHostPort(a.Host, a.Port)
+	} else {
+		s += a.Host
 	}
 	if a.Path != "" {
 		s += a.Path
