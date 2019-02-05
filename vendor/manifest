@@ -214,7 +214,7 @@
 			"importpath": "github.com/xenolf/lego/lego",
 			"repository": "https://github.com/xenolf/lego",
 			"vcs": "git",
-			"revision": "a43ec709e8034f388aab28d14b97aeed0e7aa98c",
+			"revision": "f05aa4c241fd8b43da9dc8cab8c8965e5b3c1b55",
 			"branch": "master",
 			"path": "/lego",
 			"notests": true
