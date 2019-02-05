@@ -217,7 +217,7 @@ func (rb *ResponseBuffer) ReadFrom(src io.Reader) (int64, error) {
 		// https://go-review.googlesource.com/c/22134#message-ff351762308fe05f6b72a487d6842e3988916486
 		buf := respBufPool.Get().([]byte)
 		n, err := io.CopyBuffer(rb.ResponseWriterWrapper, src, buf)
-		respBufPool.Put(buf) // defer'ing this slowed down benchmarks a smidgin, I think
+		respBufPool.Put(buf) // deferring this slowed down benchmarks a smidgin, I think
 		return n, err
 	}
 	return rb.Buffer.ReadFrom(src)

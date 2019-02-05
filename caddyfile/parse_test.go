@@ -421,7 +421,7 @@ func TestDirectiveImport(t *testing.T) {
 		t.Error("directive import failed")
 	}
 
-	// import from nonexisting file
+	// import from nonexistent file
 	_, err = testParseOne(`localhost
 	dir1
 	proxy {

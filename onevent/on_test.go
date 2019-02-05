@@ -45,8 +45,7 @@ func TestCommandParse(t *testing.T) {
 	}{
 		{name: "noInput", input: `on`, shouldErr: true},
 		{name: "nonExistent", input: "on xyz cmd arg", shouldErr: true},
-		{name: "startup", input: `on startup cmd arg1 arg2`, shouldErr: false, config: hook.Config{Event: caddy.StartupEvent, Command: "cmd", Args: []string{"arg1", "arg2"}}},
-		{name: "instance_startup", input: `on instance_startup cmd arg1 arg2`, shouldErr: false, config: hook.Config{Event: caddy.InstanceStartupEvent, Command: "cmd", Args: []string{"arg1", "arg2"}}},
+		{name: "startup", input: `on startup cmd arg1 arg2`, shouldErr: false, config: hook.Config{Event: caddy.InstanceStartupEvent, Command: "cmd", Args: []string{"arg1", "arg2"}}},
 		{name: "shutdown", input: `on shutdown cmd arg1 arg2 &`, shouldErr: false, config: hook.Config{Event: caddy.ShutdownEvent, Command: "cmd", Args: []string{"arg1", "arg2", "&"}}},
 		{name: "certrenew", input: `on certrenew cmd arg1 arg2`, shouldErr: false, config: hook.Config{Event: caddy.CertRenewEvent, Command: "cmd", Args: []string{"arg1", "arg2"}}},
 	}

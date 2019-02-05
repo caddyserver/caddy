@@ -228,7 +228,7 @@ func (h *httpContext) MakeServers() ([]caddy.Server, error) {
 	// make a rough estimate as to whether we're in a "production
 	// environment/system" - start by assuming that most production
 	// servers will set their default CA endpoint to a public,
-	// trusted CA (obviously not a perfect hueristic)
+	// trusted CA (obviously not a perfect heuristic)
 	var looksLikeProductionCA bool
 	for _, publicCAEndpoint := range caddytls.KnownACMECAs {
 		if strings.Contains(certmagic.CA, publicCAEndpoint) {
@@ -428,11 +428,12 @@ func (a Address) String() string {
 	if s != "" {
 		s += "://"
 	}
-	s += a.Host
 	if a.Port != "" &&
 		((scheme == "https" && a.Port != DefaultHTTPSPort) ||
 			(scheme == "http" && a.Port != DefaultHTTPPort)) {
-		s += ":" + a.Port
+		s += net.JoinHostPort(a.Host, a.Port)
+	} else {
+		s += a.Host
 	}
 	if a.Path != "" {
 		s += a.Path

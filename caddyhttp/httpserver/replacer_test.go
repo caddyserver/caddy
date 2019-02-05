@@ -76,7 +76,7 @@ func TestReplace(t *testing.T) {
 	request.Header.Set("CustomAdd", "caddy")
 	request.Header.Set("Cookie", "foo=bar; taste=delicious")
 
-	// add some respons headers
+	// add some response headers
 	recordRequest.Header().Set("Custom", "CustomResponseHeader")
 
 	hostname, err := os.Hostname()
@@ -303,7 +303,7 @@ func BenchmarkReplace(b *testing.B) {
 	request.Header.Set("CustomAdd", "caddy")
 	request.Header.Set("Cookie", "foo=bar; taste=delicious")
 
-	// add some respons headers
+	// add some response headers
 	recordRequest.Header().Set("Custom", "CustomResponseHeader")
 
 	now = func() time.Time {
@@ -336,7 +336,7 @@ func BenchmarkReplaceEscaped(b *testing.B) {
 	request.Header.Set("CustomAdd", "caddy")
 	request.Header.Set("Cookie", "foo=bar; taste=delicious")
 
-	// add some respons headers
+	// add some response headers
 	recordRequest.Header().Set("Custom", "CustomResponseHeader")
 
 	now = func() time.Time {
@@ -473,7 +473,7 @@ func TestRound(t *testing.T) {
 	}
 }
 
-func TestMillisecondConverstion(t *testing.T) {
+func TestMillisecondConversion(t *testing.T) {
 	var testCases = map[time.Duration]int64{
 		2 * time.Second:           2000,
 		9039492 * time.Nanosecond: 9,
