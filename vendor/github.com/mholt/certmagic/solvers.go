@@ -50,7 +50,7 @@ func (s tlsALPNSolver) Present(domain, token, keyAuth string) error {
 // CleanUp removes the challenge certificate from the cache.
 func (s tlsALPNSolver) CleanUp(domain, token, keyAuth string) error {
 	s.certCache.mu.Lock()
-	delete(s.certCache.cache, domain)
+	delete(s.certCache.cache, tlsALPNCertKeyName(domain))
 	s.certCache.mu.Unlock()
 	return nil
 }

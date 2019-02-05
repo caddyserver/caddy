@@ -60,6 +60,32 @@ func TestSetCPU(t *testing.T) {
 	}
 }
 
+func TestSplitTrim(t *testing.T) {
+	for i, test := range []struct {
+		input  string
+		output []string
+		sep    string
+	}{
+		{"os,arch,cpu,caddy_version", []string{"os", "arch", "cpu", "caddy_version"}, ","},
+		{"os,arch,cpu,caddy_version,", []string{"os", "arch", "cpu", "caddy_version"}, ","},
+		{"os,,, arch, cpu, caddy_version,", []string{"os", "arch", "cpu", "caddy_version"}, ","},
+		{", , os, arch, cpu , caddy_version,, ,", []string{"os", "arch", "cpu", "caddy_version"}, ","},
+		{"os, ,, arch, cpu , caddy_version,, ,", []string{"os", "arch", "cpu", "caddy_version"}, ","},
+	} {
+		got := splitTrim(test.input, test.sep)
+		if len(got) != len(test.output) {
+			t.Errorf("Test %d: spliteTrim() = %v, want %v", i, got, test.output)
+			continue
+		}
+		for j, item := range test.output {
+			if item != got[j] {
+				t.Errorf("Test %d: spliteTrim() = %v, want %v", i, got, test.output)
+				break
+			}
+		}
+	}
+}
+
 func TestParseEnvFile(t *testing.T) {
 	tests := []struct {
 		name    string

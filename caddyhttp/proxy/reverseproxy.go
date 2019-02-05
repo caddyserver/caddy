@@ -28,6 +28,7 @@ package proxy
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io"
 	"net"
@@ -307,6 +308,25 @@ func (rp *ReverseProxy) UseInsecureTransport() {
 			transport.TLSClientConfig = &tls.Config{}
 		}
 		transport.TLSClientConfig.InsecureSkipVerify = true
+	}
+}
+
+// UseOwnCertificate is used to facilitate HTTPS proxying
+// with locally provided certificate.
+func (rp *ReverseProxy) UseOwnCACertificates(CaCertPool *x509.CertPool) {
+	if transport, ok := rp.Transport.(*http.Transport); ok {
+		if transport.TLSClientConfig == nil {
+			transport.TLSClientConfig = &tls.Config{}
+		}
+		transport.TLSClientConfig.RootCAs = CaCertPool
+		// No http2.ConfigureTransport() here.
+		// For now this is only added in places where
+		// an http.Transport is actually created.
+	} else if transport, ok := rp.Transport.(*h2quic.RoundTripper); ok {
+		if transport.TLSClientConfig == nil {
+			transport.TLSClientConfig = &tls.Config{}
+		}
+		transport.TLSClientConfig.RootCAs = CaCertPool
 	}
 }
 

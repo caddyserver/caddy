@@ -101,6 +101,11 @@ type Config struct {
 	// the risk of rate limiting.
 	CertObtainTimeout time.Duration
 
+	// DefaultServerName specifies a server name
+	// to use when choosing a certificate if the
+	// ClientHello's ServerName field is empty
+	DefaultServerName string
+
 	// The state needed to operate on-demand TLS
 	OnDemand *OnDemandConfig
 
@@ -206,6 +211,9 @@ func NewWithCache(certCache *Cache, cfg Config) *Config {
 	}
 	if cfg.CertObtainTimeout == 0 {
 		cfg.CertObtainTimeout = CertObtainTimeout
+	}
+	if cfg.DefaultServerName == "" {
+		cfg.DefaultServerName = DefaultServerName
 	}
 	if cfg.OnDemand == nil {
 		cfg.OnDemand = OnDemand

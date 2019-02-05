@@ -484,6 +484,12 @@ var (
 	// the risk of rate limiting.
 	CertObtainTimeout time.Duration
 
+	// Set the default server name for clients
+	// not indicating a server name using SNI.
+	// In most cases this will be the primary
+	// domain that is being served.
+	DefaultServerName string
+
 	// The state needed to operate on-demand TLS
 	OnDemand *OnDemandConfig
 

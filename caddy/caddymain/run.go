@@ -46,6 +46,7 @@ func init() {
 
 	flag.BoolVar(&certmagic.Agreed, "agree", false, "Agree to the CA's Subscriber Agreement")
 	flag.StringVar(&certmagic.CA, "ca", certmagic.CA, "URL to certificate authority's ACME server directory")
+	flag.StringVar(&certmagic.DefaultServerName, "default-sni", certmagic.DefaultServerName, "If a ClientHello ServerName is empty, use this ServerName to choose a TLS certificate")
 	flag.BoolVar(&certmagic.DisableHTTPChallenge, "disable-http-challenge", certmagic.DisableHTTPChallenge, "Disable the ACME HTTP challenge")
 	flag.BoolVar(&certmagic.DisableTLSALPNChallenge, "disable-tls-alpn-challenge", certmagic.DisableTLSALPNChallenge, "Disable the ACME TLS-ALPN challenge")
 	flag.StringVar(&disabledMetrics, "disabled-metrics", "", "Comma-separated list of telemetry metrics to disable")
@@ -108,7 +109,7 @@ func Run() {
 		}
 	}
 
-	//Load all additional envs as soon as possible
+	// load all additional envs as soon as possible
 	if err := LoadEnvFromFile(envFile); err != nil {
 		mustLogFatalf("%v", err)
 	}
@@ -411,13 +412,10 @@ func initTelemetry() error {
 			// mitigate disk space exhaustion at the collection endpoint
 			return fmt.Errorf("too many metrics to disable")
 		}
-		disabledMetricsSlice = strings.Split(disabledMetrics, ",")
-		for i, metric := range disabledMetricsSlice {
+		disabledMetricsSlice = splitTrim(disabledMetrics, ",")
+		for _, metric := range disabledMetricsSlice {
 			if metric == "instance_id" || metric == "timestamp" || metric == "disabled_metrics" {
 				return fmt.Errorf("instance_id, timestamp, and disabled_metrics cannot be disabled")
-			}
-			if metric == "" {
-				disabledMetricsSlice = append(disabledMetricsSlice[:i], disabledMetricsSlice[i+1:]...)
 			}
 		}
 	}
@@ -432,6 +430,27 @@ func initTelemetry() error {
 	}
 
 	return nil
+}
+
+// Split string s into all substrings separated by sep and returns a slice of
+// the substrings between those separators.
+//
+// If s does not contain sep and sep is not empty, Split returns a
+// slice of length 1 whose only element is s.
+//
+// If sep is empty, Split splits after each UTF-8 sequence. If both s
+// and sep are empty, Split returns an empty slice.
+//
+// Each item that in result is trim space and not empty string
+func splitTrim(s string, sep string) []string {
+	splitItems := strings.Split(s, sep)
+	trimItems := make([]string, 0, len(splitItems))
+	for _, item := range splitItems {
+		if item = strings.TrimSpace(item); item != "" {
+			trimItems = append(trimItems, item)
+		}
+	}
+	return trimItems
 }
 
 // LoadEnvFromFile loads additional envs if file provided and exists

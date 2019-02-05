@@ -215,7 +215,7 @@ func (cfg *Config) newACMEClient(interactive bool) (*acmeClient, error) {
 // lockKey returns a key for a lock that is specific to the operation
 // named op being performed related to domainName and this config's CA.
 func (cfg *Config) lockKey(op, domainName string) string {
-	return fmt.Sprintf("%s:%s:%s", op, domainName, cfg.CA)
+	return fmt.Sprintf("%s_%s_%s", op, domainName, cfg.CA)
 }
 
 // Obtain obtains a single certificate for name. It stores the certificate
