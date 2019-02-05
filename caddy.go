@@ -788,13 +788,13 @@ func startServers(serverList []Server, inst *Instance, restartFds map[string]res
 		if ln == nil {
 			ln, err = s.Listen()
 			if err != nil {
-				return fmt.Errorf("Listen: %v", err)
+				return fmt.Errorf("listen: %v", err)
 			}
 		}
 		if pc == nil {
 			pc, err = s.ListenPacket()
 			if err != nil {
-				return fmt.Errorf("ListenPacket: %v", err)
+				return fmt.Errorf("listenPacket: %v", err)
 			}
 		}
 

@@ -436,7 +436,7 @@ func loadCaddyfileInput(serverType string) (Input, error) {
 		}
 		if cdyfile != nil {
 			if caddyfileToUse != nil {
-				return nil, fmt.Errorf("Caddyfile loaded multiple times; first by %s, then by %s", loadedBy, l.name)
+				return nil, fmt.Errorf("caddyfile loaded multiple times; first by %s, then by %s", loadedBy, l.name)
 			}
 			loaderUsed = l
 			caddyfileToUse = cdyfile

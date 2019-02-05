@@ -109,11 +109,11 @@ func newIfCond(a, op, b string) (ifCond, error) {
 		// It does regexp matching of a against pattern in b and returns if they match.
 		var err error
 		if i.rex, err = regexp.Compile(i.b); err != nil {
-			return ifCond{}, fmt.Errorf("Invalid regular expression: '%s', %v", i.b, err)
+			return ifCond{}, fmt.Errorf("invalid regular expression: '%s', %v", i.b, err)
 		}
 		i.f = i.matchFunc
 	default:
-		return ifCond{}, fmt.Errorf("Invalid operator %v", i.op)
+		return ifCond{}, fmt.Errorf("invalid operator %v", i.op)
 	}
 
 	return i, nil

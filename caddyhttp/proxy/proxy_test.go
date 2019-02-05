@@ -598,14 +598,14 @@ func GetSocketProxy(messageFormat string, prefix string) (*Proxy, *httptest.Serv
 
 	dir, err := ioutil.TempDir("", "caddy_proxytest")
 	if err != nil {
-		return nil, nil, dir, fmt.Errorf("Failed to make temp dir to contain unix socket. %v", err)
+		return nil, nil, dir, fmt.Errorf("failed to make temp dir to contain unix socket. %v", err)
 	}
 	socketPath := filepath.Join(dir, "test_socket")
 
 	ln, err := net.Listen("unix", socketPath)
 	if err != nil {
 		os.RemoveAll(dir)
-		return nil, nil, dir, fmt.Errorf("Unable to listen: %v", err)
+		return nil, nil, dir, fmt.Errorf("unable to listen: %v", err)
 	}
 	ts.Listener = ln
 
@@ -627,13 +627,13 @@ func GetTestServerMessage(p *Proxy, ts *httptest.Server, path string) (string, e
 
 	res, err := http.Get(echoProxy.URL + path)
 	if err != nil {
-		return "", fmt.Errorf("Unable to GET: %v", err)
+		return "", fmt.Errorf("unable to GET: %v", err)
 	}
 
 	greeting, err := ioutil.ReadAll(res.Body)
 	res.Body.Close()
 	if err != nil {
-		return "", fmt.Errorf("Unable to read body: %v", err)
+		return "", fmt.Errorf("unable to read body: %v", err)
 	}
 
 	return fmt.Sprintf("%s", greeting), nil

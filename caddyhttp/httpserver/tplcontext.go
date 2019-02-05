@@ -348,13 +348,13 @@ func (c Context) Slice(elems ...interface{}) []interface{} {
 // if you are using subtemplates or things like that.
 func (c Context) Map(values ...interface{}) (map[string]interface{}, error) {
 	if len(values)%2 != 0 {
-		return nil, fmt.Errorf("Map expects an even number of arguments")
+		return nil, fmt.Errorf("map expects an even number of arguments")
 	}
 	dict := make(map[string]interface{}, len(values)/2)
 	for i := 0; i < len(values); i += 2 {
 		key, ok := values[i].(string)
 		if !ok {
-			return nil, fmt.Errorf("Map keys must be strings")
+			return nil, fmt.Errorf("map keys must be strings")
 		}
 		dict[key] = values[i+1]
 	}

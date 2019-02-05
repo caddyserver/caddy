@@ -131,31 +131,31 @@ func nextFunc(shouldGzip bool) httpserver.Handler {
 
 		if shouldGzip {
 			if w.Header().Get("Content-Encoding") != "gzip" {
-				return 0, fmt.Errorf("Content-Encoding must be gzip, found %v", w.Header().Get("Content-Encoding"))
+				return 0, fmt.Errorf("content-Encoding must be gzip, found %v", w.Header().Get("Content-Encoding"))
 			}
 			if w.Header().Get("Vary") != "Accept-Encoding" {
-				return 0, fmt.Errorf("Vary must be Accept-Encoding, found %v", w.Header().Get("Vary"))
+				return 0, fmt.Errorf("vary must be Accept-Encoding, found %v", w.Header().Get("Vary"))
 			}
 			etag := w.Header().Get("ETag")
 			if etag != "" && etag != `W/"2n9cd"` {
-				return 0, fmt.Errorf("ETag must be converted to weak Etag, found %v", w.Header().Get("ETag"))
+				return 0, fmt.Errorf("eTag must be converted to weak Etag, found %v", w.Header().Get("ETag"))
 			}
 			if _, ok := w.(*gzipResponseWriter); !ok {
-				return 0, fmt.Errorf("ResponseWriter should be gzipResponseWriter, found %T", w)
+				return 0, fmt.Errorf("responseWriter should be gzipResponseWriter, found %T", w)
 			}
 			if strings.Contains(w.Header().Get("Content-Type"), "application/x-gzip") {
-				return 0, fmt.Errorf("Content-Type should not be gzip")
+				return 0, fmt.Errorf("content-Type should not be gzip")
 			}
 			return 0, nil
 		}
 		if r.Header.Get("Accept-Encoding") == "" {
-			return 0, fmt.Errorf("Accept-Encoding header expected")
+			return 0, fmt.Errorf("accept-Encoding header expected")
 		}
 		if w.Header().Get("Content-Encoding") == "gzip" {
-			return 0, fmt.Errorf("Content-Encoding must not be gzip, found gzip")
+			return 0, fmt.Errorf("content-Encoding must not be gzip, found gzip")
 		}
 		if _, ok := w.(*gzipResponseWriter); ok {
-			return 0, fmt.Errorf("ResponseWriter should not be gzipResponseWriter")
+			return 0, fmt.Errorf("responseWriter should not be gzipResponseWriter")
 		}
 		return 0, nil
 	})

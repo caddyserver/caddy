@@ -62,7 +62,7 @@ func (h *CallbackTestContext) InspectServerBlocks(name string, sblock []caddyfil
 }
 func (h *CallbackTestContext) MakeServers() ([]Server, error) {
 	if h.MakeServersFail {
-		return make([]Server, 0), fmt.Errorf("MakeServers failed")
+		return make([]Server, 0), fmt.Errorf("makeServers failed")
 	}
 	return make([]Server, 0), nil
 }

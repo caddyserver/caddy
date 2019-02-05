@@ -76,7 +76,7 @@ func nextFunc(shouldMime bool, contentType string) httpserver.Handler {
 			return 0, nil
 		}
 		if w.Header().Get("Content-Type") != "" {
-			return 0, fmt.Errorf("Content-Type header not expected")
+			return 0, fmt.Errorf("content-Type header not expected")
 		}
 		return 0, nil
 	})

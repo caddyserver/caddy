@@ -171,7 +171,7 @@ func bootServer(location string, ch chan format.LogParts) (*syslog.Server, error
 	address := parseSyslogAddress(location)
 
 	if address == nil {
-		return nil, fmt.Errorf("Could not parse syslog address: %s", location)
+		return nil, fmt.Errorf("could not parse syslog address: %s", location)
 	}
 
 	server := syslog.NewServer()

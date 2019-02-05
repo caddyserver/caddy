@@ -246,7 +246,7 @@ func (s *Server) wrapWithSvcHeaders(previousHandler http.Handler) http.HandlerFu
 // used to serve requests.
 func (s *Server) Listen() (net.Listener, error) {
 	if s.Server == nil {
-		return nil, fmt.Errorf("Server field is nil")
+		return nil, fmt.Errorf("server field is nil")
 	}
 
 	ln, err := net.Listen("tcp", s.Server.Addr)
