@@ -17,6 +17,7 @@ package proxy
 import (
 	"bytes"
 	"context"
+	"crypto/x509"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -69,6 +70,7 @@ type staticUpstream struct {
 	insecureSkipVerify bool
 	MaxFails           int32
 	resolver           srvResolver
+	CaCertPool         *x509.CertPool
 }
 
 type srvResolver interface {
@@ -231,6 +233,10 @@ func (u *staticUpstream) NewHost(host string) (*UpstreamHost, error) {
 	uh.ReverseProxy = NewSingleHostReverseProxy(baseURL, uh.WithoutPathPrefix, u.KeepAlive, u.Timeout, u.FallbackDelay)
 	if u.insecureSkipVerify {
 		uh.ReverseProxy.UseInsecureTransport()
+	}
+
+	if u.CaCertPool != nil {
+		uh.ReverseProxy.UseOwnCACertificates(u.CaCertPool)
 	}
 
 	return uh, nil
@@ -465,6 +471,34 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream, hasSrv bool) error {
 		u.IgnoredSubPaths = ignoredPaths
 	case "insecure_skip_verify":
 		u.insecureSkipVerify = true
+	case "ca_certificates":
+		caCertificates := c.RemainingArgs()
+		if len(caCertificates) == 0 {
+			return c.ArgErr()
+		}
+
+		pool := x509.NewCertPool()
+		caCertificatesAdded := make(map[string]struct{})
+		for _, caFile := range caCertificates {
+			// don't add cert to pool more than once
+			if _, ok := caCertificatesAdded[caFile]; ok {
+				continue
+			}
+			caCertificatesAdded[caFile] = struct{}{}
+
+			// any client with a certificate from this CA will be allowed to connect
+			caCrt, err := ioutil.ReadFile(caFile)
+			if err != nil {
+				return c.Err(err.Error())
+			}
+
+			// attempt to parse pem and append to cert pool
+			if ok := pool.AppendCertsFromPEM(caCrt); !ok {
+				return c.Errf("loading CA certificate '%s': no certificates were successfully parsed", caFile)
+			}
+		}
+
+		u.CaCertPool = pool
 	case "keepalive":
 		if !c.NextArg() {
 			return c.ArgErr()
@@ -489,6 +523,13 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream, hasSrv bool) error {
 	default:
 		return c.Errf("unknown property '%s'", c.Val())
 	}
+
+	// these settings are at odds with one another. insecure_skip_verify disables security features over HTTPS
+	// which is what we are trying to achieve with ca_certificates
+	if u.insecureSkipVerify && u.CaCertPool != nil {
+		return c.Errf("both insecure_skip_verify and ca_certificates cannot be set in the proxy directive")
+	}
+
 	return nil
 }
 

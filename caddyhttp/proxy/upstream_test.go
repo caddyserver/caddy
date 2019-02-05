@@ -163,6 +163,61 @@ func TestAllowedPaths(t *testing.T) {
 	}
 }
 
+func TestParseBlockCACertificates(t *testing.T) {
+	tests := []struct {
+		config        string
+		shouldPass    bool
+		subjectLength int
+	}{
+		// Test #1: ca_certificates set but invalid file path provided
+		{"ca_certificates ./test.pem\n", false, 0},
+
+		// Test #2: ca_certificates set but no arguments provided
+		{"ca_certificates \n", false, 0},
+
+		// Test #3 valid ca_certificate (fullchain) and invalid public cert passed (privkey). CACertPool should not be set
+		{"ca_certificates ./testdata/fullchain.pem ./testdata/privkey.pem", false, 0},
+
+		// Test #4 valid ca_certificate section
+		{"ca_certificates ./testdata/fullchain.pem", true, 2},
+
+		// Test #5 ca_certificates and insecure_skip_verify cannot both be set
+		{"ca_certificates ./testdata/fullchain.pem\ninsecure_skip_verify", false, 0},
+	}
+
+	for i, test := range tests {
+		u := staticUpstream{}
+		c := caddyfile.NewDispenser("Testfile", strings.NewReader(test.config))
+		for c.Next() {
+			err := parseBlock(&c, &u, false)
+			if err != nil && test.shouldPass {
+				t.Errorf(
+					"Test %d: Could not parse CACertificates. %v.",
+					i+1,
+					err,
+				)
+			}
+		}
+
+		if test.shouldPass && u.CaCertPool == nil {
+			t.Errorf(
+				"Test %d: CACertificates not parsed correctly. CaCertPool %v. Expected value to be set.",
+				i+1,
+				u.CaCertPool,
+			)
+		}
+
+		if test.shouldPass && test.subjectLength != len(u.CaCertPool.Subjects()) {
+			t.Errorf(
+				"Test %d: CACertPool subject length incorrect. Got %v. Expected %v.",
+				i+1,
+				len(u.CaCertPool.Subjects()),
+				test.subjectLength,
+			)
+		}
+	}
+}
+
 func TestParseBlockHealthCheck(t *testing.T) {
 	tests := []struct {
 		config   string
