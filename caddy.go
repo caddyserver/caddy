@@ -16,7 +16,7 @@
 //
 // To use this package:
 //
-//   1. Set the AppName and AppVersion variables.
+//   1. Set the AppName and AppVersion variables, and SetCAAgreement(true)
 //   2. Call LoadCaddyfile() to get the Caddyfile.
 //      Pass in the name of the server type (like "http").
 //      Make sure the server type's package is imported
@@ -466,6 +466,11 @@ func CaddyfileFromPipe(f *os.File, serverType string) (Input, error) {
 // Caddyfile returns the Caddyfile used to create i.
 func (i *Instance) Caddyfile() Input {
 	return i.caddyfileInput
+}
+
+// Set CA subscriber agreement status
+func SetCAAgreement(agreed bool) {
+	certmagic.Agreed = agreed
 }
 
 // Start starts Caddy with the given Caddyfile.
