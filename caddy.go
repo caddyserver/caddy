@@ -999,6 +999,5 @@ var (
 	DefaultConfigFile = "Caddyfile"
 )
 
-
 // CtxKey is a value type for use with context.WithValue.
 type CtxKey string
