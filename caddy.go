@@ -999,7 +999,6 @@ var (
 	DefaultConfigFile = "Caddyfile"
 )
 
-var clusterPluginSetup int32 // access atomically
 
 // CtxKey is a value type for use with context.WithValue.
 type CtxKey string
