@@ -41,12 +41,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/mholt/caddy/caddyfile"
 	"github.com/mholt/caddy/telemetry"
-	"github.com/mholt/certmagic"
 )
 
 // Configurable application parameters
@@ -472,26 +470,6 @@ func (i *Instance) Caddyfile() Input {
 //
 // This function blocks until all the servers are listening.
 func Start(cdyfile Input) (*Instance, error) {
-	// set up the clustering plugin, if there is one (and there should
-	// always be one) -- this should be done exactly once, but we can't
-	// do it during init while plugins are still registering, so do it
-	// when starting the first instance)
-	if atomic.CompareAndSwapInt32(&clusterPluginSetup, 0, 1) {
-		clusterPluginName := os.Getenv("CADDY_CLUSTERING")
-		if clusterPluginName == "" {
-			clusterPluginName = "file" // name of default storage plugin as registered in caddytls package
-		}
-		clusterFn, ok := clusterProviders[clusterPluginName]
-		if !ok {
-			return nil, fmt.Errorf("unrecognized cluster plugin (was it included in the Caddy build?): %s", clusterPluginName)
-		}
-		storage, err := clusterFn()
-		if err != nil {
-			return nil, fmt.Errorf("constructing cluster plugin %s: %v", clusterPluginName, err)
-		}
-		certmagic.DefaultStorage = storage
-	}
-
 	inst := &Instance{serverType: cdyfile.ServerType(), wg: new(sync.WaitGroup), Storage: make(map[interface{}]interface{})}
 	err := startWithListenerFds(cdyfile, inst, nil)
 	if err != nil {

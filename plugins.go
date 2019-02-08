@@ -22,7 +22,6 @@ import (
 	"sync"
 
 	"github.com/mholt/caddy/caddyfile"
-	"github.com/mholt/certmagic"
 )
 
 // These are all the registered plugins.
@@ -105,11 +104,6 @@ func ListPlugins() map[string][]string {
 	}
 	if defaultCaddyfileLoader.name != "" {
 		p["caddyfile_loaders"] = append(p["caddyfile_loaders"], defaultCaddyfileLoader.name)
-	}
-
-	// cluster plugins in registration order
-	for name := range clusterProviders {
-		p["clustering"] = append(p["clustering"], name)
 	}
 
 	// List the event hook plugins
@@ -454,21 +448,6 @@ func loadCaddyfileInput(serverType string) (Input, error) {
 		}
 	}
 	return caddyfileToUse, nil
-}
-
-// ClusterPluginConstructor is a function type that is used to
-// instantiate a new implementation of both certmagic.Storage
-// and certmagic.Locker, which are required for successful
-// use in cluster environments.
-type ClusterPluginConstructor func() (certmagic.Storage, error)
-
-// clusterProviders is the list of storage providers
-var clusterProviders = make(map[string]ClusterPluginConstructor)
-
-// RegisterClusterPlugin registers provider by name for facilitating
-// cluster-wide operations like storage and synchronization.
-func RegisterClusterPlugin(name string, provider ClusterPluginConstructor) {
-	clusterProviders[name] = provider
 }
 
 // OnProcessExit is a list of functions to run when the process

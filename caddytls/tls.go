@@ -108,3 +108,19 @@ func RegisterDNSProvider(name string, provider DNSProviderConstructor) {
 	dnsProviders[name] = provider
 	caddy.RegisterPlugin("tls.dns."+name, caddy.Plugin{})
 }
+
+// ClusterPluginConstructor is a function type that is used to
+// instantiate a new implementation of both certmagic.Storage
+// and certmagic.Locker, which are required for successful
+// use in cluster environments.
+type ClusterPluginConstructor func() (certmagic.Storage, error)
+
+// clusterProviders is the list of storage providers
+var clusterProviders = make(map[string]ClusterPluginConstructor)
+
+// RegisterClusterPlugin registers provider by name for facilitating
+// cluster-wide operations like storage and synchronization.
+func RegisterClusterPlugin(name string, provider ClusterPluginConstructor) {
+	clusterProviders[name] = provider
+	caddy.RegisterPlugin("tls.cluster."+name, caddy.Plugin{})
+}
