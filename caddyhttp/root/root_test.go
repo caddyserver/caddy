@@ -36,7 +36,7 @@ func TestRoot(t *testing.T) {
 		t.Fatalf("BeforeTest: Failed to find an existing directory for testing! Error was: %v", err)
 	}
 
-	nonExistingDir := filepath.Join(existingDirPath, "highly_unlikely_to_exist_dir")
+	nonexistentDir := filepath.Join(existingDirPath, "highly_unlikely_to_exist_dir")
 
 	existingFile, err := ioutil.TempFile("", "root_test")
 	if err != nil {
@@ -57,7 +57,7 @@ func TestRoot(t *testing.T) {
 	}{
 		// positive
 		{
-			fmt.Sprintf(`root %s`, nonExistingDir), false, nonExistingDir, "",
+			fmt.Sprintf(`root %s`, nonexistentDir), false, nonexistentDir, "",
 		},
 		{
 			fmt.Sprintf(`root %s`, existingDirPath), false, existingDirPath, "",

@@ -47,6 +47,7 @@ func init() {
 
 	flag.BoolVar(&certmagic.Agreed, "agree", false, "Agree to the CA's Subscriber Agreement")
 	flag.StringVar(&certmagic.CA, "ca", certmagic.CA, "URL to certificate authority's ACME server directory")
+	flag.StringVar(&certmagic.DefaultServerName, "default-sni", certmagic.DefaultServerName, "If a ClientHello ServerName is empty, use this ServerName to choose a TLS certificate")
 	flag.BoolVar(&certmagic.DisableHTTPChallenge, "disable-http-challenge", certmagic.DisableHTTPChallenge, "Disable the ACME HTTP challenge")
 	flag.BoolVar(&certmagic.DisableTLSALPNChallenge, "disable-tls-alpn-challenge", certmagic.DisableTLSALPNChallenge, "Disable the ACME TLS-ALPN challenge")
 	flag.StringVar(&disabledMetrics, "disabled-metrics", "", "Comma-separated list of telemetry metrics to disable")
@@ -58,6 +59,8 @@ func init() {
 	flag.StringVar(&certmagic.Email, "email", "", "Default ACME CA account email address")
 	flag.DurationVar(&certmagic.HTTPTimeout, "catimeout", certmagic.HTTPTimeout, "Default ACME CA HTTP timeout")
 	flag.StringVar(&logfile, "log", "", "Process log file")
+	flag.IntVar(&logRollMB, "log-roll-mb", 100, "Roll process log when it reaches this many megabytes (0 to disable rolling)")
+	flag.BoolVar(&logRollCompress, "log-roll-compress", true, "Gzip-compress rolled process log files")
 	flag.StringVar(&caddy.PidFile, "pidfile", "", "Path to write pid file")
 	flag.BoolVar(&caddy.Quiet, "quiet", false, "Quiet mode (no initialization output)")
 	flag.StringVar(&revoke, "revoke", "", "Hostname for which to revoke the certificate")
@@ -87,15 +90,29 @@ func Run() {
 	case "":
 		log.SetOutput(ioutil.Discard)
 	default:
-		log.SetOutput(&lumberjack.Logger{
-			Filename:   logfile,
-			MaxSize:    100,
-			MaxAge:     14,
-			MaxBackups: 10,
-		})
+		if logRollMB > 0 {
+			log.SetOutput(&lumberjack.Logger{
+				Filename:   logfile,
+				MaxSize:    logRollMB,
+				MaxAge:     14,
+				MaxBackups: 10,
+				Compress:   logRollCompress,
+			})
+		} else {
+			err := os.MkdirAll(filepath.Dir(logfile), 0755)
+			if err != nil {
+				mustLogFatalf("%v", err)
+			}
+			f, err := os.OpenFile(logfile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+			if err != nil {
+				mustLogFatalf("%v", err)
+			}
+			// don't close file; log should be writeable for duration of process
+			log.SetOutput(f)
+		}
 	}
 
-	//Load all additional envs as soon as possible
+	// load all additional envs as soon as possible
 	if err := LoadEnvFromFile(envFile); err != nil {
 		mustLogFatalf("%v", err)
 	}
@@ -165,9 +182,6 @@ func Run() {
 	if err != nil {
 		mustLogFatalf("%v", err)
 	}
-
-	// Execute instantiation events
-	caddy.EmitEvent(caddy.InstanceStartupEvent, instance)
 
 	// Begin telemetry (these are no-ops if telemetry disabled)
 	telemetry.Set("caddy_version", appVersion)
@@ -435,13 +449,10 @@ func initTelemetry() error {
 			// mitigate disk space exhaustion at the collection endpoint
 			return fmt.Errorf("too many metrics to disable")
 		}
-		disabledMetricsSlice = strings.Split(disabledMetrics, ",")
-		for i, metric := range disabledMetricsSlice {
+		disabledMetricsSlice = splitTrim(disabledMetrics, ",")
+		for _, metric := range disabledMetricsSlice {
 			if metric == "instance_id" || metric == "timestamp" || metric == "disabled_metrics" {
 				return fmt.Errorf("instance_id, timestamp, and disabled_metrics cannot be disabled")
-			}
-			if metric == "" {
-				disabledMetricsSlice = append(disabledMetricsSlice[:i], disabledMetricsSlice[i+1:]...)
 			}
 		}
 	}
@@ -456,6 +467,27 @@ func initTelemetry() error {
 	}
 
 	return nil
+}
+
+// Split string s into all substrings separated by sep and returns a slice of
+// the substrings between those separators.
+//
+// If s does not contain sep and sep is not empty, Split returns a
+// slice of length 1 whose only element is s.
+//
+// If sep is empty, Split splits after each UTF-8 sequence. If both s
+// and sep are empty, Split returns an empty slice.
+//
+// Each item that in result is trim space and not empty string
+func splitTrim(s string, sep string) []string {
+	splitItems := strings.Split(s, sep)
+	trimItems := make([]string, 0, len(splitItems))
+	for _, item := range splitItems {
+		if item = strings.TrimSpace(item); item != "" {
+			trimItems = append(trimItems, item)
+		}
+	}
+	return trimItems
 }
 
 // LoadEnvFromFile loads additional envs if file provided and exists
@@ -542,6 +574,8 @@ var (
 	envFile         string
 	fromJSON        bool
 	logfile         string
+	logRollMB       int
+	logRollCompress bool
 	revoke          string
 	toJSON          bool
 	version         bool

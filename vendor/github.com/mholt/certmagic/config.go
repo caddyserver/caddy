@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/xenolf/lego/certcrypto"
+	"github.com/xenolf/lego/certificate"
 	"github.com/xenolf/lego/challenge"
 	"github.com/xenolf/lego/challenge/tlsalpn01"
 	"github.com/xenolf/lego/lego"
@@ -91,6 +92,19 @@ type Config struct {
 	// The type of key to use when generating
 	// certificates
 	KeyType certcrypto.KeyType
+
+	// The maximum amount of time to allow for
+	// obtaining a certificate. If empty, the
+	// default from the underlying lego lib is
+	// used. If set, it must not be too low so
+	// as to cancel orders too early, running
+	// the risk of rate limiting.
+	CertObtainTimeout time.Duration
+
+	// DefaultServerName specifies a server name
+	// to use when choosing a certificate if the
+	// ClientHello's ServerName field is empty
+	DefaultServerName string
 
 	// The state needed to operate on-demand TLS
 	OnDemand *OnDemandConfig
@@ -195,6 +209,12 @@ func NewWithCache(certCache *Cache, cfg Config) *Config {
 	if cfg.KeyType == "" {
 		cfg.KeyType = KeyType
 	}
+	if cfg.CertObtainTimeout == 0 {
+		cfg.CertObtainTimeout = CertObtainTimeout
+	}
+	if cfg.DefaultServerName == "" {
+		cfg.DefaultServerName = DefaultServerName
+	}
 	if cfg.OnDemand == nil {
 		cfg.OnDemand = OnDemand
 	}
@@ -277,9 +297,7 @@ func (cfg *Config) ObtainCert(name string, interactive bool) error {
 		return nil
 	}
 
-	// we expect this to be a new site; if the
-	// cert already exists, then no-op
-	if cfg.certCache.storage.Exists(StorageKeys.SiteCert(cfg.CA, name)) {
+	if cfg.storageHasCertResources(name) {
 		return nil
 	}
 
@@ -317,23 +335,36 @@ func (cfg *Config) RevokeCert(domain string, interactive bool) error {
 	return client.Revoke(domain)
 }
 
-// TLSConfig returns a TLS configuration that
-// can be used to configure TLS listeners. It
-// supports the TLS-ALPN challenge and serves
-// up certificates managed by cfg.
+// TLSConfig is an opinionated method that returns a
+// recommended, modern TLS configuration that can be
+// used to configure TLS listeners, which also supports
+// the TLS-ALPN challenge and serves up certificates
+// managed by cfg.
+//
+// Unlike the package TLS() function, this method does
+// not, by itself, enable certificate management for
+// any domain names.
+//
+// Feel free to further customize the returned tls.Config,
+// but do not mess with the GetCertificate or NextProtos
+// fields unless you know what you're doing, as they're
+// necessary to solve the TLS-ALPN challenge.
 func (cfg *Config) TLSConfig() *tls.Config {
 	return &tls.Config{
+		// these two fields necessary for TLS-ALPN challenge
 		GetCertificate: cfg.GetCertificate,
 		NextProtos:     []string{"h2", "http/1.1", tlsalpn01.ACMETLS1Protocol},
+
+		// the rest recommended for modern TLS servers
+		MinVersion: tls.VersionTLS12,
+		CurvePreferences: []tls.CurveID{
+			tls.X25519,
+			tls.CurveP256,
+		},
+		CipherSuites:             preferredDefaultCipherSuites(),
+		PreferServerCipherSuites: true,
 	}
 }
-
-// RenewAllCerts triggers a renewal check of all
-// certificates in the cache. It only renews
-// certificates if they need to be renewed.
-// func (cfg *Config) RenewAllCerts(interactive bool) error {
-// 	return cfg.certCache.RenewManagedCertificates(interactive)
-// }
 
 // preObtainOrRenewChecks perform a few simple checks before
 // obtaining or renewing a certificate with ACME, and returns
@@ -346,13 +377,34 @@ func (cfg *Config) preObtainOrRenewChecks(name string, allowPrompts bool) (bool,
 		return true, nil
 	}
 
-	if cfg.Email == "" {
-		var err error
-		cfg.Email, err = cfg.getEmail(allowPrompts)
-		if err != nil {
-			return false, err
-		}
+	err := cfg.getEmail(allowPrompts)
+	if err != nil {
+		return false, err
 	}
 
 	return false, nil
+}
+
+// storageHasCertResources returns true if the storage
+// associated with cfg's certificate cache has all the
+// resources related to the certificate for domain: the
+// certificate, the private key, and the metadata.
+func (cfg *Config) storageHasCertResources(domain string) bool {
+	certKey := StorageKeys.SiteCert(cfg.CA, domain)
+	keyKey := StorageKeys.SitePrivateKey(cfg.CA, domain)
+	metaKey := StorageKeys.SiteMeta(cfg.CA, domain)
+	return cfg.certCache.storage.Exists(certKey) &&
+		cfg.certCache.storage.Exists(keyKey) &&
+		cfg.certCache.storage.Exists(metaKey)
+}
+
+// managedCertNeedsRenewal returns true if certRes is
+// expiring soon or already expired, or if the process
+// of checking the expiration returned an error.
+func (cfg *Config) managedCertNeedsRenewal(certRes certificate.Resource) bool {
+	cert, err := cfg.makeCertificate(certRes.Certificate, certRes.PrivateKey)
+	if err != nil {
+		return true
+	}
+	return cert.NeedsRenewal()
 }

@@ -28,6 +28,7 @@ package proxy
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io"
 	"net"
@@ -310,6 +311,25 @@ func (rp *ReverseProxy) UseInsecureTransport() {
 	}
 }
 
+// UseOwnCertificate is used to facilitate HTTPS proxying
+// with locally provided certificate.
+func (rp *ReverseProxy) UseOwnCACertificates(CaCertPool *x509.CertPool) {
+	if transport, ok := rp.Transport.(*http.Transport); ok {
+		if transport.TLSClientConfig == nil {
+			transport.TLSClientConfig = &tls.Config{}
+		}
+		transport.TLSClientConfig.RootCAs = CaCertPool
+		// No http2.ConfigureTransport() here.
+		// For now this is only added in places where
+		// an http.Transport is actually created.
+	} else if transport, ok := rp.Transport.(*h2quic.RoundTripper); ok {
+		if transport.TLSClientConfig == nil {
+			transport.TLSClientConfig = &tls.Config{}
+		}
+		transport.TLSClientConfig.RootCAs = CaCertPool
+	}
+}
+
 // ServeHTTP serves the proxied request to the upstream by performing a roundtrip.
 // It is designed to handle websocket connection upgrades as well.
 func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, respUpdateFn respUpdateFn) error {
@@ -329,7 +349,7 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, 
 		return err
 	}
 
-	isWebsocket := res.StatusCode == http.StatusSwitchingProtocols && strings.ToLower(res.Header.Get("Upgrade")) == "websocket"
+	isWebsocket := res.StatusCode == http.StatusSwitchingProtocols && strings.EqualFold(res.Header.Get("Upgrade"), "websocket")
 
 	// Remove hop-by-hop headers listed in the
 	// "Connection" header of the response.
@@ -456,7 +476,7 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, 
 		closeBody()
 
 		// Since Go does not remove keys from res.Trailer we
-		// can safely do a length comparison to check wether
+		// can safely do a length comparison to check whether
 		// we received further, unannounced trailers.
 		//
 		// Most of the time forceSetTrailers should be false.
@@ -702,7 +722,7 @@ func (tlsHandshakeTimeoutError) Temporary() bool { return true }
 func (tlsHandshakeTimeoutError) Error() string   { return "net/http: TLS handshake timeout" }
 
 func requestIsWebsocket(req *http.Request) bool {
-	return strings.ToLower(req.Header.Get("Upgrade")) == "websocket" && strings.Contains(strings.ToLower(req.Header.Get("Connection")), "upgrade")
+	return strings.EqualFold(req.Header.Get("Upgrade"), "websocket") && strings.Contains(strings.ToLower(req.Header.Get("Connection")), "upgrade")
 }
 
 type writeFlusher interface {

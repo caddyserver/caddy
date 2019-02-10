@@ -101,7 +101,7 @@ func TestInclude(t *testing.T) {
 	for i, test := range tests {
 		testPrefix := getTestPrefix(i)
 
-		// WriteFile truncates the contentt
+		// WriteFile truncates the content
 		err := ioutil.WriteFile(absInFilePath, []byte(test.fileContent), os.ModePerm)
 		if err != nil {
 			t.Fatal(testPrefix+"Failed to create test file. Error was: %v", err)
@@ -162,7 +162,7 @@ func TestMarkdown(t *testing.T) {
 	for i, test := range tests {
 		testPrefix := getTestPrefix(i)
 
-		// WriteFile truncates the contentt
+		// WriteFile truncates the content
 		err := ioutil.WriteFile(absInFilePath, []byte(test.fileContent), os.ModePerm)
 		if err != nil {
 			t.Fatal(testPrefix+"Failed to create test file. Error was: %v", err)

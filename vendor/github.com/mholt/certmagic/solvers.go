@@ -50,7 +50,7 @@ func (s tlsALPNSolver) Present(domain, token, keyAuth string) error {
 // CleanUp removes the challenge certificate from the cache.
 func (s tlsALPNSolver) CleanUp(domain, token, keyAuth string) error {
 	s.certCache.mu.Lock()
-	delete(s.certCache.cache, domain)
+	delete(s.certCache.cache, tlsALPNCertKeyName(domain))
 	s.certCache.mu.Unlock()
 	return nil
 }
@@ -140,7 +140,7 @@ func (dhs distributedSolver) challengeTokensPrefix() string {
 // challengeTokensKey returns the key to use to store and access
 // challenge info for domain.
 func (dhs distributedSolver) challengeTokensKey(domain string) string {
-	return filepath.Join(dhs.challengeTokensPrefix(), StorageKeys.safe(domain)+".json")
+	return filepath.Join(dhs.challengeTokensPrefix(), StorageKeys.Safe(domain)+".json")
 }
 
 type challengeInfo struct {

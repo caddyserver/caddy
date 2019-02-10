@@ -368,6 +368,8 @@ func (r *replacer) getSubstitution(key string) string {
 		return url.QueryEscape(r.request.URL.RequestURI())
 	case "{when}":
 		return now().Format(timeFormat)
+	case "{when_iso_local}":
+		return now().Format(timeFormatISO)
 	case "{when_iso}":
 		return now().UTC().Format(timeFormatISOUTC)
 	case "{when_unix}":
@@ -504,6 +506,16 @@ func (r *replacer) getSubstitution(key string) string {
 			return cert.NotBefore.Format("Jan 02 15:04:05 2006 MST")
 		}
 		return r.emptyValue
+	case "{server_port}":
+		_, port, err := net.SplitHostPort(r.request.Host)
+		if err != nil {
+			if r.request.TLS != nil {
+				return "443"
+			} else {
+				return "80"
+			}
+		}
+		return port
 	default:
 		// {labelN}
 		if strings.HasPrefix(key, "{label") {
@@ -539,6 +551,7 @@ func (r *replacer) Set(key, value string) {
 
 const (
 	timeFormat        = "02/Jan/2006:15:04:05 -0700"
+	timeFormatISO     = "2006-01-02T15:04:05"  // ISO 8601 with timezone to be assumed as local
 	timeFormatISOUTC  = "2006-01-02T15:04:05Z" // ISO 8601 with timezone to be assumed as UTC
 	headerContentType = "Content-Type"
 	contentTypeJSON   = "application/json"

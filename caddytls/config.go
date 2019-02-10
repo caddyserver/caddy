@@ -33,7 +33,9 @@ type Config struct {
 	// The hostname or class of hostnames this config is
 	// designated for; can contain wildcard characters
 	// according to RFC 6125 §6.4.3 - this field MUST
-	// be set in order for things to work as expected
+	// be set in order for things to work as expected,
+	// must be normalized, and if an IP address, must
+	// be normalized
 	Hostname string
 
 	// Whether TLS is enabled
@@ -91,7 +93,7 @@ type Config struct {
 }
 
 // NewConfig returns a new Config with a pointer to the instance's
-// certificate cache. You will usually need to set Other fields on
+// certificate cache. You will usually need to set other fields on
 // the returned Config for successful practical use.
 func NewConfig(inst *caddy.Instance) *Config {
 	inst.StorageMu.RLock()
@@ -255,9 +257,13 @@ func MakeTLSConfig(configs []*Config) (*tls.Config, error) {
 		// configs with the same hostname pattern; should
 		// be OK since we already asserted they are roughly
 		// the same); during TLS handshakes, configs are
-		// loaded based on the hostname pattern, according
-		// to client's SNI
-		configMap[cfg.Hostname] = cfg
+		// loaded based on the hostname pattern according
+		// to client's ServerName (SNI) value
+		if cfg.Hostname == "0.0.0.0" || cfg.Hostname == "::" {
+			configMap[""] = cfg
+		} else {
+			configMap[cfg.Hostname] = cfg
+		}
 	}
 
 	// Is TLS disabled? By now, we know that all
@@ -269,6 +275,13 @@ func MakeTLSConfig(configs []*Config) (*tls.Config, error) {
 	}
 
 	return &tls.Config{
+		// A tls.Config must have Certificates or GetCertificate
+		// set, in order to be accepted by tls.Listen and quic.Listen.
+		// TODO: remove this once the standard library allows a tls.Config with
+		// only GetConfigForClient set. https://github.com/mholt/caddy/pull/2404
+		GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+			return nil, fmt.Errorf("all certificates configured via GetConfigForClient")
+		},
 		GetConfigForClient: configMap.GetConfigForClient,
 	}, nil
 }
@@ -405,7 +418,7 @@ func GetSupportedProtocolName(protocol uint16) (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("name: unsuported protocol")
+	return "", fmt.Errorf("name: unsupported protocol")
 }
 
 // SupportedCiphersMap has supported ciphers, used only for parsing config.
@@ -443,7 +456,7 @@ func GetSupportedCipherName(cipher uint16) (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("name: unsuported cipher")
+	return "", fmt.Errorf("name: unsupported cipher")
 }
 
 // List of all the ciphers we want to use by default

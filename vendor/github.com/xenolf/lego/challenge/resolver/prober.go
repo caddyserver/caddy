@@ -110,7 +110,7 @@ func sequentialSolve(authSolvers []*selectedAuthSolver, failures obtainError) {
 		// Solve challenge
 		err := authSolver.solver.Solve(authSolver.authz)
 		if err != nil {
-			failures[authSolver.authz.Identifier.Value] = err
+			failures[domain] = err
 			cleanUp(authSolver.solver, authSolver.authz)
 			continue
 		}
@@ -149,14 +149,15 @@ func parallelSolve(authSolvers []*selectedAuthSolver, failures obtainError) {
 	// Finally solve all challenges for real
 	for _, authSolver := range authSolvers {
 		authz := authSolver.authz
-		if failures[authz.Identifier.Value] != nil {
+		domain := challenge.GetTargetedDomain(authz)
+		if failures[domain] != nil {
 			// already failed in previous loop
 			continue
 		}
 
 		err := authSolver.solver.Solve(authz)
 		if err != nil {
-			failures[authz.Identifier.Value] = err
+			failures[domain] = err
 		}
 	}
 }

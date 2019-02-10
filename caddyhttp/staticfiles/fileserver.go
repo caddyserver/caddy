@@ -53,6 +53,9 @@ type FileServer struct {
 
 // ServeHTTP serves static files for r according to fs's configuration.
 func (fs FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
+	if r.Method != "GET" {
+		return http.StatusMethodNotAllowed, nil
+	}
 	return fs.serveFile(w, r)
 }
 

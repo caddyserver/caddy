@@ -228,7 +228,7 @@ func (h *httpContext) MakeServers() ([]caddy.Server, error) {
 	// make a rough estimate as to whether we're in a "production
 	// environment/system" - start by assuming that most production
 	// servers will set their default CA endpoint to a public,
-	// trusted CA (obviously not a perfect hueristic)
+	// trusted CA (obviously not a perfect heuristic)
 	var looksLikeProductionCA bool
 	for _, publicCAEndpoint := range caddytls.KnownACMECAs {
 		if strings.Contains(certmagic.CA, publicCAEndpoint) {
@@ -405,6 +405,8 @@ func groupSiteConfigsByListenAddr(configs []*SiteConfig) (map[string][]*SiteConf
 // parts of an address. The component parts may be
 // updated to the correct values as setup proceeds,
 // but the original value should never be changed.
+//
+// The Host field must be in a normalized form.
 type Address struct {
 	Original, Scheme, Host, Port, Path string
 }
@@ -426,11 +428,12 @@ func (a Address) String() string {
 	if s != "" {
 		s += "://"
 	}
-	s += a.Host
 	if a.Port != "" &&
 		((scheme == "https" && a.Port != DefaultHTTPSPort) ||
 			(scheme == "http" && a.Port != DefaultHTTPPort)) {
-		s += ":" + a.Port
+		s += net.JoinHostPort(a.Host, a.Port)
+	} else {
+		s += a.Host
 	}
 	if a.Path != "" {
 		s += a.Path
@@ -453,10 +456,17 @@ func (a Address) Normalize() Address {
 	if !CaseSensitivePath {
 		path = strings.ToLower(path)
 	}
+
+	// ensure host is normalized if it's an IP address
+	host := a.Host
+	if ip := net.ParseIP(host); ip != nil {
+		host = ip.String()
+	}
+
 	return Address{
 		Original: a.Original,
 		Scheme:   strings.ToLower(a.Scheme),
-		Host:     strings.ToLower(a.Host),
+		Host:     strings.ToLower(host),
 		Port:     a.Port,
 		Path:     path,
 	}
@@ -645,6 +655,7 @@ var directives = []string{
 	"mime",
 	"login",     // github.com/tarent/loginsrv/caddy
 	"reauth",    // github.com/freman/caddy-reauth
+	"extauth",   // github.com/BTBurke/caddy-extauth
 	"jwt",       // github.com/BTBurke/caddy-jwt
 	"jsonp",     // github.com/pschlump/caddy-jsonp
 	"upload",    // blitznote.com/src/caddy.upload
@@ -660,12 +671,10 @@ var directives = []string{
 	"fastcgi",
 	"cgi", // github.com/jung-kurt/caddy-cgi
 	"websocket",
-	"filemanager", // github.com/filebrowser/caddy/filemanager
+	"filebrowser", // github.com/filebrowser/caddy
 	"webdav",      // github.com/hacdias/caddy-webdav
 	"markdown",
 	"browse",
-	"jekyll",    // github.com/filebrowser/caddy/jekyll
-	"hugo",      // github.com/filebrowser/caddy/hugo
 	"mailout",   // github.com/SchumacherFM/mailout
 	"awses",     // github.com/miquella/caddy-awses
 	"awslambda", // github.com/coopernurse/caddy-awslambda

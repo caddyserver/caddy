@@ -47,11 +47,18 @@ func TestMain(m *testing.M) {
 }
 
 func TestSetupParseBasic(t *testing.T) {
-	cfg := &Config{Manager: &certmagic.Config{}}
+	tmpdir, err := ioutil.TempDir("", "caddytls_setup_test_")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpdir)
+
+	certCache := certmagic.NewCache(&certmagic.FileStorage{Path: tmpdir})
+	cfg := &Config{Manager: certmagic.NewWithCache(certCache, certmagic.Config{})}
 	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
 	c := caddy.NewTestController("", `tls `+certFile+` `+keyFile+``)
 
-	err := setupTLS(c)
+	err = setupTLS(c)
 	if err != nil {
 		t.Errorf("Expected no errors, got: %v", err)
 	}
@@ -126,11 +133,18 @@ func TestSetupParseWithOptionalParams(t *testing.T) {
             alpn http/1.1
         }`
 
-	cfg := &Config{Manager: &certmagic.Config{}}
+	tmpdir, err := ioutil.TempDir("", "caddytls_setup_test_")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpdir)
+
+	certCache := certmagic.NewCache(&certmagic.FileStorage{Path: tmpdir})
+	cfg := &Config{Manager: certmagic.NewWithCache(certCache, certmagic.Config{})}
 	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
 	c := caddy.NewTestController("", params)
 
-	err := setupTLS(c)
+	err = setupTLS(c)
 	if err != nil {
 		t.Errorf("Expected no errors, got: %v", err)
 	}
@@ -401,6 +415,26 @@ func TestSetupParseWithOneTLSProtocol(t *testing.T) {
 
 	if cfg.ProtocolMinVersion != tls.VersionTLS12 && cfg.ProtocolMaxVersion != tls.VersionTLS12 {
 		t.Errorf("Expected 'tls1.2 (0x0303)' as ProtocolMinVersion/ProtocolMaxVersion, got %v/%v", cfg.ProtocolMinVersion, cfg.ProtocolMaxVersion)
+	}
+}
+
+func TestSetupParseWithEmail(t *testing.T) {
+	email := "user@example.com"
+	params := "tls " + email
+	cfg := &Config{Manager: &certmagic.Config{}}
+	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
+	c := caddy.NewTestController("", params)
+
+	err := setupTLS(c)
+	if err != nil {
+		t.Errorf("Expected no errors, got: %v", err)
+	}
+
+	if cfg.ACMEEmail != email {
+		t.Errorf("Expected cfg.ACMEEmail to be %#v, got %#v", email, cfg.ACMEEmail)
+	}
+	if cfg.Manager.Email != email {
+		t.Errorf("Expected cfg.Manager.Email to be %#v, got %#v", email, cfg.Manager.Email)
 	}
 }
 

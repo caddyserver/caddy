@@ -35,6 +35,8 @@ func (certCache *Cache) maintainAssets() {
 	renewalTicker := time.NewTicker(certCache.RenewInterval)
 	ocspTicker := time.NewTicker(certCache.OCSPInterval)
 
+	log.Printf("[INFO][%s] Started certificate maintenance routine", certCache.storage)
+
 	for {
 		select {
 		case <-renewalTicker.C:

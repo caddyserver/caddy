@@ -111,7 +111,7 @@ Note that plugin documentation is not hosted by the Caddy website, other than ba
 
 ## Collaborator Instructions
 
-Collabators have push rights to the repository. We grant this permission after one or more successful, high-quality PRs are merged! We thank them for their help.The expectations we have of collaborators are:
+Collaborators have push rights to the repository. We grant this permission after one or more successful, high-quality PRs are merged! We thank them for their help.The expectations we have of collaborators are:
 
 - **Help review pull requests.** Be meticulous, but also kind. We love our contributors, but we critique the contribution to make it better. Multiple, thorough reviews make for the best contributions! Here are some questions to consider:
 	- Can the change be made more elegant?

@@ -123,6 +123,9 @@ func Listen(conn net.PacketConn, tlsConf *tls.Config, config *Config) (Listener,
 }
 
 func listen(conn net.PacketConn, tlsConf *tls.Config, config *Config) (*server, error) {
+	if tlsConf == nil || (len(tlsConf.Certificates) == 0 && tlsConf.GetCertificate == nil) {
+		return nil, errors.New("quic: neither Certificates nor GetCertificate set in tls.Config")
+	}
 	certChain := crypto.NewCertChain(tlsConf)
 	kex, err := crypto.NewCurve25519KEX()
 	if err != nil {

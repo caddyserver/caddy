@@ -22,6 +22,8 @@ import (
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/lucas-clemente/quic-go/h2quic"
 )
 
 const (
@@ -30,6 +32,20 @@ const (
 )
 
 var upstreamHost *httptest.Server
+var upstreamHostTLS *httptest.Server
+
+func setupTLSServer() {
+	upstreamHostTLS = httptest.NewTLSServer(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/test-path" {
+				w.WriteHeader(expectedStatus)
+				w.Write([]byte(expectedResponse))
+			} else {
+				w.WriteHeader(404)
+				w.Write([]byte("Not found"))
+			}
+		}))
+}
 
 func setupTest() {
 	upstreamHost = httptest.NewServer(http.HandlerFunc(
@@ -44,10 +60,76 @@ func setupTest() {
 		}))
 }
 
+func tearDownTLSServer() {
+	upstreamHostTLS.Close()
+}
+
 func tearDownTest() {
 	upstreamHost.Close()
 }
 
+func TestReverseProxyWithOwnCACertificates(t *testing.T) {
+	setupTLSServer()
+	defer tearDownTLSServer()
+
+	// get http client from tls server
+	cl := upstreamHostTLS.Client()
+
+	// add certs from httptest tls server to reverse proxy
+	var transport *http.Transport
+	if tr, ok := cl.Transport.(*http.Transport); ok {
+		transport = tr
+	} else {
+		t.Error("could not parse transport from upstreamHostTLS")
+	}
+
+	pool := transport.TLSClientConfig.RootCAs
+
+	u := staticUpstream{}
+	u.CaCertPool = pool
+
+	upstreamURL, err := url.Parse(upstreamHostTLS.URL)
+	if err != nil {
+		t.Errorf("Failed to parse test server URL [%s]. %s", upstreamHost.URL, err.Error())
+	}
+
+	// setup host for reverse proxy
+	ups, err := u.NewHost(upstreamURL.String())
+	if err != nil {
+		t.Errorf("Creating new host failed. %v", err)
+	}
+
+	// UseOwnCACertificates called in NewHost sets the RootCAs based if the cert pool is set
+	if transport, ok := ups.ReverseProxy.Transport.(*http.Transport); ok {
+		if transport.TLSClientConfig.RootCAs == nil {
+			t.Errorf("RootCAs not set on TLSClientConfig.")
+		}
+	} else if transport, ok := ups.ReverseProxy.Transport.(*h2quic.RoundTripper); ok {
+		if transport.TLSClientConfig.RootCAs == nil {
+			t.Errorf("RootCAs not set on TLSClientConfig.")
+		}
+	}
+
+	resp := httptest.NewRecorder()
+	req, err := http.NewRequest("GET", "https://test.host/test-path", nil)
+	if err != nil {
+		t.Errorf("Failed to create new request. %s", err.Error())
+	}
+
+	err = ups.ReverseProxy.ServeHTTP(resp, req, nil)
+	if err != nil {
+		t.Errorf("Failed to perform reverse proxy to upstream host. %s", err.Error())
+	}
+
+	rBody := resp.Body.String()
+	if rBody != expectedResponse {
+		t.Errorf("Unexpected proxy response received. Expected: '%s', Got: '%s'", expectedResponse, resp.Body.String())
+	}
+
+	if resp.Code != expectedStatus {
+		t.Errorf("Unexpected proxy status. Expected: '%d', Got: '%d'", expectedStatus, resp.Code)
+	}
+}
 func TestSingleSRVHostReverseProxy(t *testing.T) {
 	setupTest()
 	defer tearDownTest()

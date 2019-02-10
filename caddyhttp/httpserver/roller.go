@@ -20,11 +20,12 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"gopkg.in/natefinch/lumberjack.v2"
+	lumberjack "gopkg.in/natefinch/lumberjack.v2"
 )
 
 // LogRoller implements a type that provides a rolling logger.
 type LogRoller struct {
+	Disabled   bool
 	Filename   string
 	MaxSize    int
 	MaxAge     int
@@ -66,10 +67,11 @@ func IsLogRollerSubdirective(subdir string) bool {
 	return subdir == directiveRotateSize ||
 		subdir == directiveRotateAge ||
 		subdir == directiveRotateKeep ||
-		subdir == directiveRotateCompress
+		subdir == directiveRotateCompress ||
+		subdir == directiveRotateDisable
 }
 
-var invalidRollerParameterErr = errors.New("invalid roller parameter")
+var errInvalidRollParameter = errors.New("invalid roller parameter")
 
 // ParseRoller parses roller contents out of c.
 func ParseRoller(l *LogRoller, what string, where ...string) error {
@@ -79,16 +81,16 @@ func ParseRoller(l *LogRoller, what string, where ...string) error {
 
 	// rotate_compress doesn't accept any parameters.
 	// others only accept one parameter
-	if (what == directiveRotateCompress && len(where) != 0) ||
-		(what != directiveRotateCompress && len(where) != 1) {
-		return invalidRollerParameterErr
+	if ((what == directiveRotateCompress || what == directiveRotateDisable) && len(where) != 0) ||
+		((what != directiveRotateCompress && what != directiveRotateDisable) && len(where) != 1) {
+		return errInvalidRollParameter
 	}
 
 	var (
 		value int
 		err   error
 	)
-	if what != directiveRotateCompress {
+	if what != directiveRotateCompress && what != directiveRotateDisable {
 		value, err = strconv.Atoi(where[0])
 		if err != nil {
 			return err
@@ -96,6 +98,8 @@ func ParseRoller(l *LogRoller, what string, where ...string) error {
 	}
 
 	switch what {
+	case directiveRotateDisable:
+		l.Disabled = true
 	case directiveRotateSize:
 		l.MaxSize = value
 	case directiveRotateAge:
@@ -127,6 +131,7 @@ const (
 	// defaultRotateKeep is 10 files.
 	defaultRotateKeep = 10
 
+	directiveRotateDisable  = "rotate_disable"
 	directiveRotateSize     = "rotate_size"
 	directiveRotateAge      = "rotate_age"
 	directiveRotateKeep     = "rotate_keep"
@@ -135,4 +140,4 @@ const (
 
 // lumberjacks maps log filenames to the logger
 // that is being used to keep them rolled/maintained.
-var lumberjacks = make(map[string]*lumberjack.Logger)
+var lumberjacks = make(map[string]io.Writer)

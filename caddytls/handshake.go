@@ -17,9 +17,12 @@ package caddytls
 import (
 	"crypto/tls"
 	"fmt"
+	"log"
+	"net"
 	"strings"
 
 	"github.com/mholt/caddy/telemetry"
+	"github.com/mholt/certmagic"
 )
 
 // configGroup is a type that keys configs by their hostname
@@ -27,7 +30,7 @@ import (
 // method to get a config by matching its hostname).
 type configGroup map[string]*Config
 
-// getConfig gets the config by the first key match for name.
+// getConfig gets the config by the first key match for hello.
 // In other words, "sub.foo.bar" will get the config for "*.foo.bar"
 // if that is the closest match. If no match is found, the first
 // (random) config will be loaded, which will defer any TLS alerts
@@ -36,15 +39,32 @@ type configGroup map[string]*Config
 //
 // This function follows nearly the same logic to lookup
 // a hostname as the getCertificate function uses.
-func (cg configGroup) getConfig(name string) *Config {
-	name = strings.ToLower(name)
+func (cg configGroup) getConfig(hello *tls.ClientHelloInfo) *Config {
+	name := certmagic.NormalizedName(hello.ServerName)
+	if name == "" {
+		name = certmagic.NormalizedName(certmagic.DefaultServerName)
+	}
 
-	// exact match? great, let's use it
+	// if SNI is empty, prefer matching IP address (it is
+	// more specific than a "catch-all" configuration)
+	if name == "" && hello.Conn != nil {
+		addr := hello.Conn.LocalAddr().String()
+		ip, _, err := net.SplitHostPort(addr)
+		if err == nil {
+			addr = ip
+		}
+		if config, ok := cg[addr]; ok {
+			return config
+		}
+	}
+
+	// otherwise, try an exact match
 	if config, ok := cg[name]; ok {
 		return config
 	}
 
-	// try replacing labels in the name with wildcards until we get a match
+	// then try replacing labels in the name with
+	// wildcards until we get a match
 	labels := strings.Split(name, ".")
 	for i := range labels {
 		labels[i] = "*"
@@ -54,13 +74,24 @@ func (cg configGroup) getConfig(name string) *Config {
 		}
 	}
 
-	// try a config that serves all names (the above
-	// loop doesn't try empty string; for hosts defined
-	// with only a port, for instance, like ":443") -
-	// also known as the default config
+	// try a config that matches all names - this
+	// is needed to match configs defined without
+	// a specific host, like ":443", when SNI is
+	// a non-empty value
 	if config, ok := cg[""]; ok {
 		return config
 	}
+
+	// failover with a random config: this is necessary
+	// because we might be needing to solve a TLS-ALPN
+	// ACME challenge for a name that we don't have a
+	// TLS configuration for; any config will do for
+	// this purpose
+	for _, config := range cg {
+		return config
+	}
+
+	log.Printf("[ERROR] No TLS configuration available for ClientHello with ServerName: %s", hello.ServerName)
 
 	return nil
 }
@@ -72,7 +103,7 @@ func (cg configGroup) getConfig(name string) *Config {
 //
 // This method is safe for use as a tls.Config.GetConfigForClient callback.
 func (cg configGroup) GetConfigForClient(clientHello *tls.ClientHelloInfo) (*tls.Config, error) {
-	config := cg.getConfig(clientHello.ServerName)
+	config := cg.getConfig(clientHello)
 	if config != nil {
 		return config.tlsConfig, nil
 	}

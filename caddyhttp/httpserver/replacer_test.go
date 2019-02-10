@@ -76,7 +76,7 @@ func TestReplace(t *testing.T) {
 	request.Header.Set("CustomAdd", "caddy")
 	request.Header.Set("Cookie", "foo=bar; taste=delicious")
 
-	// add some respons headers
+	// add some response headers
 	recordRequest.Header().Set("Custom", "CustomResponseHeader")
 
 	hostname, err := os.Hostname()
@@ -86,6 +86,7 @@ func TestReplace(t *testing.T) {
 
 	old := now
 	now = func() time.Time {
+		// Note that the `-7` is seconds, not hours.
 		return time.Date(2006, 1, 2, 15, 4, 5, 99999999, time.FixedZone("hardcoded", -7))
 	}
 	defer func() {
@@ -101,6 +102,7 @@ func TestReplace(t *testing.T) {
 		{"The response status is {status}.", "The response status is 200."},
 		{"{when}", "02/Jan/2006:15:04:05 +0000"},
 		{"{when_iso}", "2006-01-02T15:04:12Z"},
+		{"{when_iso_local}", "2006-01-02T15:04:05"},
 		{"{when_unix}", "1136214252"},
 		{"{when_unix_ms}", "1136214252099"},
 		{"The Custom header is {>Custom}.", "The Custom header is foobarbaz."},
@@ -125,6 +127,7 @@ func TestReplace(t *testing.T) {
 		{"{label1} {label2} {label3} {label4}", "localhost local - -"},
 		{"Label with missing number is {label} or {labelQQ}", "Label with missing number is - or -"},
 		{"\\{ 'hostname': '{hostname}' \\}", "{ 'hostname': '" + hostname + "' }"},
+		{"{server_port}", "80"},
 	}
 
 	for _, c := range testCases {
@@ -154,6 +157,33 @@ func TestReplace(t *testing.T) {
 		if expected, actual := c.expect, repl.Replace(c.template); expected != actual {
 			t.Errorf("for template '%s', expected '%s', got '%s'", c.template, expected, actual)
 		}
+	}
+}
+
+func TestCustomServerPort(t *testing.T) {
+	w := httptest.NewRecorder()
+	recordRequest := NewResponseRecorder(w)
+	reader := strings.NewReader(`{"username": "dennis"}`)
+
+	request, err := http.NewRequest("POST", "http://localhost.local:8000/?foo=bar", reader)
+	if err != nil {
+		t.Fatalf("Failed to make request: %v", err)
+	}
+	ctx := context.WithValue(request.Context(), OriginalURLCtxKey, *request.URL)
+	request = request.WithContext(ctx)
+
+	repl := NewReplacer(request, recordRequest, "-")
+
+	testCase := struct {
+		template string
+		expect   string
+	}{
+		template: "{server_port}",
+		expect:   "8000",
+	}
+
+	if expected, actual := testCase.expect, repl.Replace(testCase.template); expected != actual {
+		t.Errorf("for template '%s', expected '%s', got '%s'", testCase.template, expected, actual)
 	}
 }
 
@@ -244,6 +274,7 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 		{"{tls_client_v_end}", cVEnd},
 		{"{tls_client_v_remain}", cVRemain},
 		{"{tls_client_v_start}", cVStart},
+		{"{server_port}", "443"},
 	}
 
 	for _, c := range testCases {
@@ -272,10 +303,11 @@ func BenchmarkReplace(b *testing.B) {
 	request.Header.Set("CustomAdd", "caddy")
 	request.Header.Set("Cookie", "foo=bar; taste=delicious")
 
-	// add some respons headers
+	// add some response headers
 	recordRequest.Header().Set("Custom", "CustomResponseHeader")
 
 	now = func() time.Time {
+		// Note that the `-7` is seconds, not hours.
 		return time.Date(2006, 1, 2, 15, 4, 5, 02, time.FixedZone("hardcoded", -7))
 	}
 
@@ -304,10 +336,11 @@ func BenchmarkReplaceEscaped(b *testing.B) {
 	request.Header.Set("CustomAdd", "caddy")
 	request.Header.Set("Cookie", "foo=bar; taste=delicious")
 
-	// add some respons headers
+	// add some response headers
 	recordRequest.Header().Set("Custom", "CustomResponseHeader")
 
 	now = func() time.Time {
+		// Note that the `-7` is seconds, not hours.
 		return time.Date(2006, 1, 2, 15, 4, 5, 02, time.FixedZone("hardcoded", -7))
 	}
 
@@ -334,6 +367,7 @@ func TestResponseRecorderNil(t *testing.T) {
 
 	old := now
 	now = func() time.Time {
+		// Note that the `-7` is seconds, not hours.
 		return time.Date(2006, 1, 2, 15, 4, 5, 02, time.FixedZone("hardcoded", -7))
 	}
 	defer func() {
@@ -439,7 +473,7 @@ func TestRound(t *testing.T) {
 	}
 }
 
-func TestMillisecondConverstion(t *testing.T) {
+func TestMillisecondConversion(t *testing.T) {
 	var testCases = map[time.Duration]int64{
 		2 * time.Second:           2000,
 		9039492 * time.Nanosecond: 9,
