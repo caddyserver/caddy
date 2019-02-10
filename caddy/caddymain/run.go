@@ -130,34 +130,9 @@ func Run() {
 		fmt.Println(caddy.DescribePlugins())
 		os.Exit(0)
 	}
-	if fromJSON {
-		jsonBytes, err1 := ioutil.ReadAll(os.Stdin)
-		if err1 != nil {
-			fmt.Fprintf(os.Stderr, "Read stdin failed: %v", err1)
-			os.Exit(1)
-		}
-		caddyfileBytes, err2 := caddyfile.FromJSON(jsonBytes)
-		if err2 != nil {
-			fmt.Fprintf(os.Stderr, "Convert from JSON failed: %v", err2)
-			os.Exit(2)
-		}
-		fmt.Println(string(caddyfileBytes))
-		os.Exit(0)
-	}
-	if toJSON {
-		caddyfileBytes, err1 := ioutil.ReadAll(os.Stdin)
-		if err1 != nil {
-			fmt.Fprintf(os.Stderr, "Read stdin failed: %v", err1)
-			os.Exit(1)
-		}
-		jsonBytes, err2 := caddyfile.ToJSON(caddyfileBytes)
-		if err2 != nil {
-			fmt.Fprintf(os.Stderr, "Convert to JSON failed: %v", err2)
-			os.Exit(2)
-		}
-		fmt.Println(string(jsonBytes))
-		os.Exit(0)
-	}
+
+	// Check if we just need to do a Caddyfile Convert and exit
+	checkJSONCaddyfile()
 
 	// Set CPU cap
 	err := setCPU(cpu)
@@ -294,6 +269,37 @@ func setVersion() {
 		} else if gitTag != "" {
 			appVersion = strings.TrimPrefix(gitTag, "v")
 		}
+	}
+}
+
+func checkJSONCaddyfile() {
+	if fromJSON {
+		jsonBytes, err := ioutil.ReadAll(os.Stdin)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Read stdin failed: %v", err)
+			os.Exit(1)
+		}
+		caddyfileBytes, err := caddyfile.FromJSON(jsonBytes)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Converting from JSON failed: %v", err)
+			os.Exit(2)
+		}
+		fmt.Println(string(caddyfileBytes))
+		os.Exit(0)
+	}
+	if toJSON {
+		caddyfileBytes, err := ioutil.ReadAll(os.Stdin)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Read stdin failed: %v", err)
+			os.Exit(1)
+		}
+		jsonBytes, err := caddyfile.ToJSON(caddyfileBytes)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Converting to JSON failed: %v", err)
+			os.Exit(2)
+		}
+		fmt.Println(string(jsonBytes))
+		os.Exit(0)
 	}
 }
 
