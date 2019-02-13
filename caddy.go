@@ -686,6 +686,11 @@ func executeDirectives(inst *Instance, filename string,
 func startServers(serverList []Server, inst *Instance, restartFds map[string]restartTriple) error {
 	errChan := make(chan error, len(serverList))
 
+	// used for signaling to error logging goroutine to terminate
+	stopChan := make(chan struct{})
+	// used to track termination of servers
+	stopWg := &sync.WaitGroup{}
+
 	for _, s := range serverList {
 		var (
 			ln  net.Listener
@@ -777,14 +782,23 @@ func startServers(serverList []Server, inst *Instance, restartFds map[string]res
 		}
 
 		inst.wg.Add(2)
-		go func(s Server, ln net.Listener, pc net.PacketConn, inst *Instance) {
-			defer inst.wg.Done()
+		stopWg.Add(2)
+		func(s Server, ln net.Listener, pc net.PacketConn, inst *Instance) {
+			go func() {
+				defer func() {
+					inst.wg.Done()
+					stopWg.Done()
+				}()
+				errChan <- s.Serve(ln)
+			}()
 
 			go func() {
-				errChan <- s.Serve(ln)
-				defer inst.wg.Done()
+				defer func() {
+					inst.wg.Done()
+					stopWg.Done()
+				}()
+				errChan <- s.ServePacket(pc)
 			}()
-			errChan <- s.ServePacket(pc)
 		}(s, ln, pc, inst)
 
 		inst.servers = append(inst.servers, ServerListener{server: s, listener: ln, packet: pc})
@@ -793,16 +807,24 @@ func startServers(serverList []Server, inst *Instance, restartFds map[string]res
 	// Log errors that may be returned from Serve() calls,
 	// these errors should only be occurring in the server loop.
 	go func() {
-		for err := range errChan {
-			if err == nil {
-				continue
+		for {
+			select {
+			case err := <-errChan:
+				if err != nil {
+					if !strings.Contains(err.Error(), "use of closed network connection") {
+						// this error is normal when closing the listener; see https://github.com/golang/go/issues/4373
+						log.Println(err)
+					}
+				}
+			case <-stopChan:
+				return
 			}
-			if strings.Contains(err.Error(), "use of closed network connection") {
-				// this error is normal when closing the listener; see https://github.com/golang/go/issues/4373
-				continue
-			}
-			log.Println(err)
 		}
+	}()
+
+	go func() {
+		stopWg.Wait()
+		stopChan <- struct{}{}
 	}()
 
 	return nil
