@@ -54,7 +54,7 @@ func init() {
 	flag.StringVar(&conf, "conf", "", "Caddyfile to load (default \""+caddy.DefaultConfigFile+"\")")
 	flag.StringVar(&cpu, "cpu", "100%", "CPU cap")
 	flag.StringVar(&envFile, "env", "", "Path to file with environment variables to load in KEY=VALUE format")
-	flag.BoolVar(&fromJSON, "from-json", false, "From JSON stdin to Caddyfile stdout")
+	flag.BoolVar(&fromJSON, "json-to-caddyfile", false, "From JSON stdin to Caddyfile stdout")
 	flag.BoolVar(&plugins, "plugins", false, "List installed plugins")
 	flag.StringVar(&certmagic.Email, "email", "", "Default ACME CA account email address")
 	flag.DurationVar(&certmagic.HTTPTimeout, "catimeout", certmagic.HTTPTimeout, "Default ACME CA HTTP timeout")
@@ -65,7 +65,7 @@ func init() {
 	flag.BoolVar(&caddy.Quiet, "quiet", false, "Quiet mode (no initialization output)")
 	flag.StringVar(&revoke, "revoke", "", "Hostname for which to revoke the certificate")
 	flag.StringVar(&serverType, "type", "http", "Type of server to run")
-	flag.BoolVar(&toJSON, "to-json", false, "From Caddyfile stdin to JSON stdout")
+	flag.BoolVar(&toJSON, "caddyfile-to-json", false, "From Caddyfile stdin to JSON stdout")
 	flag.BoolVar(&version, "version", false, "Show version")
 	flag.BoolVar(&validate, "validate", false, "Parse the Caddyfile but do not start the server")
 
