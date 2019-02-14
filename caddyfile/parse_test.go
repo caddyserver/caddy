@@ -447,6 +447,24 @@ func TestParseAll(t *testing.T) {
 			{"localhost:1234"},
 		}},
 
+		{`localhost {
+			tls self_signed {}
+			}`, false, [][]string{
+			{"localhost"},
+		}},
+
+		{`localhost {
+			tls self_signed {clients verify_if_given ca.crt}
+			}`, true, [][]string{}},
+
+		{`https://localhost:8888 {
+
+			header / X-Cert-ClientSubjectDn "{tls_client_s_dn}"
+	
+			tls self_signed {clients verify_if_given ca.crt}
+	
+			}`, true, [][]string{}},
+
 		{`localhost:1234 {
 		  }
 		  localhost:2015 {
@@ -594,6 +612,56 @@ func TestEnvironmentReplacement(t *testing.T) {
 	blocks, _ = p.parseAll()
 	if actual, expected := blocks[0].Tokens["answer"][1].Text, "{{ .Name }} foobar"; expected != actual {
 		t.Errorf("Expected argument to be '%s' but was '%s'", expected, actual)
+	}
+}
+
+func TestClosingCurlyBrace(t *testing.T) {
+	for i, test := range []struct {
+		input     string
+		shouldErr bool
+		keys      [][]string // keys per server block, in order
+	}{
+		{`localhost {
+			tls self_signed {}
+			}`, false, [][]string{
+			{"localhost"},
+		}},
+
+		{`localhost {
+			tls self_signed {clients verify_if_given ca.crt}
+			}`, true, [][]string{}},
+
+		{`https://localhost:8888 {
+
+			header / X-Cert-ClientSubjectDn "{tls_client_s_dn}"
+	
+			tls self_signed {clients verify_if_given ca.crt}
+	
+			}`, true, [][]string{}},
+
+		{`localhost:80 {
+			log / d:\caddy\logs\default.log   "--{user}-- {request_id}"
+			}`, false, [][]string{}},
+
+		{`localhost:80 {
+			log / d:\caddy\logs\default.log   "request_id}"
+			}`, false, [][]string{}},
+
+		{`localhost:80 {
+			log / d:\caddy\logs\1.log   "{user} {request_id}"
+			log / d:\caddy\logs\2.log   "{user} {request_id}--"
+			log / d:\caddy\logs\3.log   {common}
+		}`, false, [][]string{}},
+	} {
+		p := testParser(test.input)
+		blocks, err := p.parseAll()
+
+		if test.shouldErr && err == nil {
+			t.Errorf("Test %d: Expected an error, but didn't get one: %#v", i, blocks)
+		}
+		if !test.shouldErr && err != nil {
+			t.Errorf("Test %d: Expected no error, but got: %v", i, err)
+		}
 	}
 }
 

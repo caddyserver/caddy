@@ -29,7 +29,7 @@ func TestLexer(t *testing.T) {
 		{
 			input: `host:123`,
 			expected: []Token{
-				{Line: 1, Text: "host:123"},
+				{Line: 1, Quoted: false, Text: "host:123"},
 			},
 		},
 		{
@@ -37,8 +37,8 @@ func TestLexer(t *testing.T) {
 
 					directive`,
 			expected: []Token{
-				{Line: 1, Text: "host:123"},
-				{Line: 3, Text: "directive"},
+				{Line: 1, Quoted: false, Text: "host:123"},
+				{Line: 3, Quoted: false, Text: "directive"},
 			},
 		},
 		{
@@ -46,19 +46,19 @@ func TestLexer(t *testing.T) {
 						directive
 					}`,
 			expected: []Token{
-				{Line: 1, Text: "host:123"},
-				{Line: 1, Text: "{"},
-				{Line: 2, Text: "directive"},
-				{Line: 3, Text: "}"},
+				{Line: 1, Quoted: false, Text: "host:123"},
+				{Line: 1, Quoted: false, Text: "{"},
+				{Line: 2, Quoted: false, Text: "directive"},
+				{Line: 3, Quoted: false, Text: "}"},
 			},
 		},
 		{
 			input: `host:123 { directive }`,
 			expected: []Token{
-				{Line: 1, Text: "host:123"},
-				{Line: 1, Text: "{"},
-				{Line: 1, Text: "directive"},
-				{Line: 1, Text: "}"},
+				{Line: 1, Quoted: false, Text: "host:123"},
+				{Line: 1, Quoted: false, Text: "{"},
+				{Line: 1, Quoted: false, Text: "directive"},
+				{Line: 1, Quoted: false, Text: "}"},
 			},
 		},
 		{
@@ -69,41 +69,41 @@ func TestLexer(t *testing.T) {
 						foobar # another comment
 					}`,
 			expected: []Token{
-				{Line: 1, Text: "host:123"},
-				{Line: 1, Text: "{"},
-				{Line: 3, Text: "directive"},
-				{Line: 5, Text: "foobar"},
-				{Line: 6, Text: "}"},
+				{Line: 1, Quoted: false, Text: "host:123"},
+				{Line: 1, Quoted: false, Text: "{"},
+				{Line: 3, Quoted: false, Text: "directive"},
+				{Line: 5, Quoted: false, Text: "foobar"},
+				{Line: 6, Quoted: false, Text: "}"},
 			},
 		},
 		{
 			input: `a "quoted value" b
 					foobar`,
 			expected: []Token{
-				{Line: 1, Text: "a"},
-				{Line: 1, Text: "quoted value"},
-				{Line: 1, Text: "b"},
-				{Line: 2, Text: "foobar"},
+				{Line: 1, Quoted: false, Text: "a"},
+				{Line: 1, Quoted: true, Text: "quoted value"},
+				{Line: 1, Quoted: false, Text: "b"},
+				{Line: 2, Quoted: false, Text: "foobar"},
 			},
 		},
 		{
 			input: `A "quoted \"value\" inside" B`,
 			expected: []Token{
-				{Line: 1, Text: "A"},
-				{Line: 1, Text: `quoted "value" inside`},
-				{Line: 1, Text: "B"},
+				{Line: 1, Quoted: false, Text: "A"},
+				{Line: 1, Quoted: true, Text: `quoted "value" inside`},
+				{Line: 1, Quoted: false, Text: "B"},
 			},
 		},
 		{
 			input: `"don't\escape"`,
 			expected: []Token{
-				{Line: 1, Text: `don't\escape`},
+				{Line: 1, Quoted: true, Text: `don't\escape`},
 			},
 		},
 		{
 			input: `"don't\\escape"`,
 			expected: []Token{
-				{Line: 1, Text: `don't\\escape`},
+				{Line: 1, Quoted: true, Text: `don't\\escape`},
 			},
 		},
 		{
@@ -112,40 +112,40 @@ func TestLexer(t *testing.T) {
 						foobar
 					}`,
 			expected: []Token{
-				{Line: 1, Text: "A"},
-				{Line: 1, Text: "quoted value with line\n\t\t\t\t\tbreak inside"},
-				{Line: 2, Text: "{"},
-				{Line: 3, Text: "foobar"},
-				{Line: 4, Text: "}"},
+				{Line: 1, Quoted: false, Text: "A"},
+				{Line: 1, Quoted: true, Text: "quoted value with line\n\t\t\t\t\tbreak inside"},
+				{Line: 2, Quoted: false, Text: "{"},
+				{Line: 3, Quoted: false, Text: "foobar"},
+				{Line: 4, Quoted: false, Text: "}"},
 			},
 		},
 		{
 			input: `"C:\php\php-cgi.exe"`,
 			expected: []Token{
-				{Line: 1, Text: `C:\php\php-cgi.exe`},
+				{Line: 1, Quoted: true, Text: `C:\php\php-cgi.exe`},
 			},
 		},
 		{
 			input: `empty "" string`,
 			expected: []Token{
-				{Line: 1, Text: `empty`},
-				{Line: 1, Text: ``},
-				{Line: 1, Text: `string`},
+				{Line: 1, Quoted: false, Text: `empty`},
+				{Line: 1, Quoted: true, Text: ``},
+				{Line: 1, Quoted: false, Text: `string`},
 			},
 		},
 		{
 			input: "skip those\r\nCR characters",
 			expected: []Token{
-				{Line: 1, Text: "skip"},
-				{Line: 1, Text: "those"},
-				{Line: 2, Text: "CR"},
-				{Line: 2, Text: "characters"},
+				{Line: 1, Quoted: false, Text: "skip"},
+				{Line: 1, Quoted: false, Text: "those"},
+				{Line: 2, Quoted: false, Text: "CR"},
+				{Line: 2, Quoted: false, Text: "characters"},
 			},
 		},
 		{
 			input: "\xEF\xBB\xBF:8080", // test with leading byte order mark
 			expected: []Token{
-				{Line: 1, Text: ":8080"},
+				{Line: 1, Quoted: false, Text: ":8080"},
 			},
 		},
 	}
@@ -174,6 +174,11 @@ func lexerCompare(t *testing.T, n int, expected, actual []Token) {
 		if actual[i].Line != expected[i].Line {
 			t.Errorf("Test case %d token %d ('%s'): expected line %d but was line %d",
 				n, i, expected[i].Text, expected[i].Line, actual[i].Line)
+			break
+		}
+		if actual[i].Quoted != expected[i].Quoted {
+			t.Errorf("Test case %d token %d ('%s'): expected quoted %t but was quoted %t",
+				n, i, expected[i].Text, expected[i].Quoted, actual[i].Quoted)
 			break
 		}
 		if actual[i].Text != expected[i].Text {

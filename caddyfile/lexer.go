@@ -33,9 +33,10 @@ type (
 
 	// Token represents a single parsable unit.
 	Token struct {
-		File string
-		Line int
-		Text string
+		File   string
+		Line   int
+		Quoted bool
+		Text   string
 	}
 )
 
@@ -78,6 +79,10 @@ func (l *lexer) next() bool {
 		l.token.Text = string(val)
 		return true
 	}
+	makeQuotedToken := func() bool {
+		l.token.Quoted = true
+		return makeToken()
+	}
 
 	for {
 		ch, _, err := l.reader.ReadRune()
@@ -98,7 +103,7 @@ func (l *lexer) next() bool {
 					continue
 				} else if ch == '"' {
 					quoted = false
-					return makeToken()
+					return makeQuotedToken()
 				}
 			}
 			if ch == '\n' {

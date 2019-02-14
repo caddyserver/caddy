@@ -371,6 +371,10 @@ func (p *parser) directive() error {
 			}
 			p.cursor-- // cursor is advanced when we continue, so roll back one more
 			continue
+		} else if !p.isQuoted() &&
+			!strings.HasPrefix(p.Val(), "{") &&
+			strings.HasSuffix(p.Val(), "}") {
+			return p.Errf("'}' must be on its own line")
 		}
 		p.tokens[p.cursor].Text = replaceEnvVars(p.tokens[p.cursor].Text)
 		p.block.Tokens[dir] = append(p.block.Tokens[dir], p.tokens[p.cursor])

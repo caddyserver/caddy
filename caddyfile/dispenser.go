@@ -258,3 +258,11 @@ func (d *Dispenser) isNewLine() bool {
 	return d.tokens[d.cursor-1].File != d.tokens[d.cursor].File ||
 		d.tokens[d.cursor-1].Line+d.numLineBreaks(d.cursor-1) < d.tokens[d.cursor].Line
 }
+
+// isQuoted returns true if the current token is derived from a quoted string.
+func (d *Dispenser) isQuoted() bool {
+	if d.cursor < 0 || d.cursor >= len(d.tokens) {
+		return false
+	}
+	return d.tokens[d.cursor].Quoted
+}
