@@ -31,6 +31,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/klauspost/cpuid"
 	"github.com/mholt/caddy"
+	"github.com/mholt/caddy/caddyfile"
 	"github.com/mholt/caddy/caddytls"
 	"github.com/mholt/caddy/telemetry"
 	"github.com/mholt/certmagic"
@@ -53,6 +54,7 @@ func init() {
 	flag.StringVar(&conf, "conf", "", "Caddyfile to load (default \""+caddy.DefaultConfigFile+"\")")
 	flag.StringVar(&cpu, "cpu", "100%", "CPU cap")
 	flag.StringVar(&envFile, "env", "", "Path to file with environment variables to load in KEY=VALUE format")
+	flag.BoolVar(&fromJSON, "json-to-caddyfile", false, "From JSON stdin to Caddyfile stdout")
 	flag.BoolVar(&plugins, "plugins", false, "List installed plugins")
 	flag.StringVar(&certmagic.Email, "email", "", "Default ACME CA account email address")
 	flag.DurationVar(&certmagic.HTTPTimeout, "catimeout", certmagic.HTTPTimeout, "Default ACME CA HTTP timeout")
@@ -63,6 +65,7 @@ func init() {
 	flag.BoolVar(&caddy.Quiet, "quiet", false, "Quiet mode (no initialization output)")
 	flag.StringVar(&revoke, "revoke", "", "Hostname for which to revoke the certificate")
 	flag.StringVar(&serverType, "type", "http", "Type of server to run")
+	flag.BoolVar(&toJSON, "caddyfile-to-json", false, "From Caddyfile stdin to JSON stdout")
 	flag.BoolVar(&version, "version", false, "Show version")
 	flag.BoolVar(&validate, "validate", false, "Parse the Caddyfile but do not start the server")
 
@@ -144,6 +147,9 @@ func Run() {
 		fmt.Println(caddy.DescribePlugins())
 		os.Exit(0)
 	}
+
+	// Check if we just need to do a Caddyfile Convert and exit
+	checkJSONCaddyfile()
 
 	// Set CPU cap
 	err := setCPU(cpu)
@@ -277,6 +283,37 @@ func setVersion() {
 		} else if gitTag != "" {
 			appVersion = strings.TrimPrefix(gitTag, "v")
 		}
+	}
+}
+
+func checkJSONCaddyfile() {
+	if fromJSON {
+		jsonBytes, err := ioutil.ReadAll(os.Stdin)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Read stdin failed: %v", err)
+			os.Exit(1)
+		}
+		caddyfileBytes, err := caddyfile.FromJSON(jsonBytes)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Converting from JSON failed: %v", err)
+			os.Exit(2)
+		}
+		fmt.Println(string(caddyfileBytes))
+		os.Exit(0)
+	}
+	if toJSON {
+		caddyfileBytes, err := ioutil.ReadAll(os.Stdin)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Read stdin failed: %v", err)
+			os.Exit(1)
+		}
+		jsonBytes, err := caddyfile.ToJSON(caddyfileBytes)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Converting to JSON failed: %v", err)
+			os.Exit(2)
+		}
+		fmt.Println(string(jsonBytes))
+		os.Exit(0)
 	}
 }
 
@@ -535,10 +572,12 @@ var (
 	conf            string
 	cpu             string
 	envFile         string
+	fromJSON        bool
 	logfile         string
 	logRollMB       int
 	logRollCompress bool
 	revoke          string
+	toJSON          bool
 	version         bool
 	plugins         bool
 	validate        bool
