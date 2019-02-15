@@ -136,7 +136,7 @@ func TestRegisterPolicy(t *testing.T) {
 func TestAllowedPaths(t *testing.T) {
 	upstream := &staticUpstream{
 		from:            "/proxy",
-		IgnoredSubPaths: []string{"/download", "/static"},
+		IgnoredSubPaths: []string{"/download", "/static", "/trailingslash/"},
 	}
 	tests := []struct {
 		url      string
@@ -153,6 +153,8 @@ func TestAllowedPaths(t *testing.T) {
 		{"/proxy//static", false},
 		{"/proxy//static//download", false},
 		{"/proxy//download", false},
+		{"/proxy/trailingslash", true},
+		{"/proxy/trailingslash/", false},
 	}
 
 	for i, test := range tests {
