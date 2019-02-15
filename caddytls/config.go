@@ -19,6 +19,8 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io/ioutil"
+	"os"
+	"sync/atomic"
 
 	"github.com/xenolf/lego/challenge/tlsalpn01"
 
@@ -95,11 +97,31 @@ type Config struct {
 // NewConfig returns a new Config with a pointer to the instance's
 // certificate cache. You will usually need to set other fields on
 // the returned Config for successful practical use.
-func NewConfig(inst *caddy.Instance) *Config {
+func NewConfig(inst *caddy.Instance) (*Config, error) {
 	inst.StorageMu.RLock()
 	certCache, ok := inst.Storage[CertCacheInstStorageKey].(*certmagic.Cache)
 	inst.StorageMu.RUnlock()
 	if !ok || certCache == nil {
+		// set up the clustering plugin, if there is one (and there should always
+		// be one since this tls plugin requires it) -- this should be done exactly
+		// once, but we can't do it during init while plugins are still registering,
+		// so do it as soon as we run a setup)
+		if atomic.CompareAndSwapInt32(&clusterPluginSetup, 0, 1) {
+			clusterPluginName := os.Getenv("CADDY_CLUSTERING")
+			if clusterPluginName == "" {
+				clusterPluginName = "file" // name of default storage plugin
+			}
+			clusterFn, ok := clusterProviders[clusterPluginName]
+			if ok {
+				storage, err := clusterFn()
+				if err != nil {
+					return nil, fmt.Errorf("constructing cluster plugin %s: %v", clusterPluginName, err)
+				}
+				certmagic.DefaultStorage = storage
+			} else {
+				return nil, fmt.Errorf("unrecognized cluster plugin (was it included in the Caddy build?): %s", clusterPluginName)
+			}
+		}
 		certCache = certmagic.NewCache(certmagic.DefaultStorage)
 		inst.OnShutdown = append(inst.OnShutdown, func() error {
 			certCache.Stop()
@@ -111,7 +133,7 @@ func NewConfig(inst *caddy.Instance) *Config {
 	}
 	return &Config{
 		Manager: certmagic.NewWithCache(certCache, certmagic.Config{}),
-	}
+	}, nil
 }
 
 // buildStandardTLSConfig converts cfg (*caddytls.Config) to a *tls.Config
@@ -518,6 +540,8 @@ var defaultCurves = []tls.CurveID{
 	tls.X25519,
 	tls.CurveP256,
 }
+
+var clusterPluginSetup int32 // access atomically
 
 // CertCacheInstStorageKey is the name of the key for
 // accessing the certificate storage on the *caddy.Instance.

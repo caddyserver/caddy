@@ -190,7 +190,10 @@ func (h *httpContext) InspectServerBlocks(sourceFile string, serverBlocks []cadd
 			// Make our caddytls.Config, which has a pointer to the
 			// instance's certificate cache and enough information
 			// to use automatic HTTPS when the time comes
-			caddytlsConfig := caddytls.NewConfig(h.instance)
+			caddytlsConfig, err := caddytls.NewConfig(h.instance)
+			if err != nil {
+				return nil, fmt.Errorf("creating new caddytls configuration: %v", err)
+			}
 			caddytlsConfig.Hostname = addr.Host
 			caddytlsConfig.Manager.AltHTTPPort = altHTTPPort
 			caddytlsConfig.Manager.AltTLSALPNPort = altTLSALPNPort
