@@ -51,6 +51,9 @@ type BasicAuth struct {
 func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	var protected, isAuthenticated bool
 	var realm string
+	var username string
+	var password string
+	var ok bool
 
 	// do not check for basic auth on OPTIONS call
 	if r.Method == http.MethodOptions {
@@ -69,7 +72,7 @@ func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 			realm = rule.Realm
 
 			// parse auth header
-			username, password, ok := r.BasicAuth()
+			username, password, ok = r.BasicAuth()
 
 			// check credentials
 			if !ok ||
@@ -100,7 +103,14 @@ func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 			realm = "Restricted"
 		}
 		w.Header().Set("WWW-Authenticate", "Basic realm=\""+realm+"\"")
-		return http.StatusUnauthorized, nil
+
+		// Get a replacer so we can provide basic info for the authentication error.
+		repl := httpserver.NewReplacer(r, nil, "-")
+		errstr := repl.Replace("BasicAuth: user \"%s\" was not found or password was incorrect. {remote} {host} {uri} {proto}")
+
+		// Username will not exist in Replacer so provide here.
+		err := fmt.Errorf(errstr, username)
+		return http.StatusUnauthorized, err
 	}
 
 	// Pass-through when no paths match
