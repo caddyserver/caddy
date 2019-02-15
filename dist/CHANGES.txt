@@ -1,6 +1,14 @@
 CHANGES
 
 
+0.11.4 (February 15, 2019)
+- New -json-to-caddyfile and -caddyfile-to-json flags
+- Fix leaking logging goroutine on SIGUSR1
+- basicauth: Error is logged when authentication fails
+- proxy: Fix bug by re-adding pre-existing trailing slashes
+- tls: Fix bug related to certificate storage path
+
+
 0.11.3 (February 5, 2019)
 - New {server_port} placeholder
 - New third-party plugin: extauth
