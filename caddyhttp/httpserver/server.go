@@ -539,10 +539,10 @@ func (s *Server) OutputSiteInfo() {
 		fmt.Printf("Serving %s on "+key+" \n", scheme)
 
 		for _, site = range asiteType {
+			output := site.Addr.String()
 			if caddy.IsLoopback(s.Address()) && !caddy.IsLoopback(site.Addr.Host) {
 				output += " (only accessible on this machine)"
 			}
-			output := site.Addr.String()
 			fmt.Println(output)
 			log.Println(output)
 		}
