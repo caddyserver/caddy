@@ -523,7 +523,7 @@ func (s *Server) OutputSiteInfo() {
 		// Group Sites together by port before outputing
 		sitesArray := sitesByPort["port "+site.Port()]
 		sitesArray = append(sitesArray, *site)
-		sitesByPort["port:"+site.Port()] = sitesArray
+		sitesByPort["port "+site.Port()] = sitesArray
 	}
 
 	fmt.Println(" ")
