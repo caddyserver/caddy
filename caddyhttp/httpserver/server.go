@@ -521,7 +521,7 @@ func (s *Server) OutputSiteInfo() {
 	sitesByPort := make(map[string][]SiteConfig)
 	for _, site := range s.sites {
 		// Group Sites together by port before outputing
-		sitesArray := sitesByPort["port:"+site.Port()]
+		sitesArray := sitesByPort["port "+site.Port()]
 		sitesArray = append(sitesArray, *site)
 		sitesByPort["port:"+site.Port()] = sitesArray
 	}
