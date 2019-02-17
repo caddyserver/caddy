@@ -521,9 +521,6 @@ func (s *Server) OutputSiteInfo() {
 	sitesByPort := make(map[string][]SiteConfig)
 	for _, site := range s.sites {
 		output := site.Addr.String()
-		if caddy.IsLoopback(s.Address()) && !caddy.IsLoopback(site.Addr.Host) {
-			output += " (only accessible on this machine)"
-		}
 
 		sitesArray := sitesByPort["port:"+site.Port()]
 		sitesArray = append(sitesArray, *site)
@@ -542,6 +539,9 @@ func (s *Server) OutputSiteInfo() {
 		fmt.Printf("Serving %s on "+key+" \n", scheme)
 
 		for _, site = range asiteType {
+			if caddy.IsLoopback(s.Address()) && !caddy.IsLoopback(site.Addr.Host) {
+				output += " (only accessible on this machine)"
+			}
 			output := site.Addr.String()
 			fmt.Println(output)
 			log.Println(output)
