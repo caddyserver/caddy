@@ -22,6 +22,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mholt/caddy/caddyhttp/httpserver"
@@ -60,17 +61,18 @@ func TestBasicAuth(t *testing.T) {
 		result   int
 		user     string
 		password string
+		haserror bool
 	}
 
 	tests := []testType{
-		{"/testing", http.StatusOK, "okuser", "okpass"},
-		{"/testing", http.StatusUnauthorized, "baduser", "okpass"},
-		{"/testing", http.StatusUnauthorized, "okuser", "badpass"},
-		{"/testing", http.StatusUnauthorized, "OKuser", "okpass"},
-		{"/testing", http.StatusUnauthorized, "OKuser", "badPASS"},
-		{"/testing", http.StatusUnauthorized, "", "okpass"},
-		{"/testing", http.StatusUnauthorized, "okuser", ""},
-		{"/testing", http.StatusUnauthorized, "", ""},
+		{"/testing", http.StatusOK, "okuser", "okpass", false},
+		{"/testing", http.StatusUnauthorized, "baduser", "okpass", true},
+		{"/testing", http.StatusUnauthorized, "okuser", "badpass", true},
+		{"/testing", http.StatusUnauthorized, "OKuser", "okpass", true},
+		{"/testing", http.StatusUnauthorized, "OKuser", "badPASS", true},
+		{"/testing", http.StatusUnauthorized, "", "okpass", true},
+		{"/testing", http.StatusUnauthorized, "okuser", "", true},
+		{"/testing", http.StatusUnauthorized, "", "", true},
 	}
 
 	var test testType
@@ -89,7 +91,9 @@ func TestBasicAuth(t *testing.T) {
 			rec := httptest.NewRecorder()
 			result, err := rw.ServeHTTP(rec, req)
 			if err != nil {
-				t.Fatalf("Test %d: Could not ServeHTTP: %v", i, err)
+				if !test.haserror || !strings.HasPrefix(err.Error(), "BasicAuth: user") {
+					t.Fatalf("Test %d: Could not ServeHTTP: %v", i, err)
+				}
 			}
 			if result != test.result {
 				t.Errorf("Test %d: Expected status code %d but was %d",
@@ -124,16 +128,17 @@ func TestMultipleOverlappingRules(t *testing.T) {
 	}
 
 	tests := []struct {
-		from   string
-		result int
-		cred   string
+		from     string
+		result   int
+		cred     string
+		haserror bool
 	}{
-		{"/t", http.StatusOK, "t:p1"},
-		{"/t/t", http.StatusOK, "t:p1"},
-		{"/t/t", http.StatusOK, "t1:p2"},
-		{"/a", http.StatusOK, "t1:p2"},
-		{"/t/t", http.StatusUnauthorized, "t1:p3"},
-		{"/t", http.StatusUnauthorized, "t1:p2"},
+		{"/t", http.StatusOK, "t:p1", false},
+		{"/t/t", http.StatusOK, "t:p1", false},
+		{"/t/t", http.StatusOK, "t1:p2", false},
+		{"/a", http.StatusOK, "t1:p2", false},
+		{"/t/t", http.StatusUnauthorized, "t1:p3", true},
+		{"/t", http.StatusUnauthorized, "t1:p2", true},
 	}
 
 	for i, test := range tests {
@@ -148,7 +153,9 @@ func TestMultipleOverlappingRules(t *testing.T) {
 		rec := httptest.NewRecorder()
 		result, err := rw.ServeHTTP(rec, req)
 		if err != nil {
-			t.Fatalf("Test %d: Could not ServeHTTP %v", i, err)
+			if !test.haserror || !strings.HasPrefix(err.Error(), "BasicAuth: user") {
+				t.Fatalf("Test %d: Could not ServeHTTP %v", i, err)
+			}
 		}
 		if result != test.result {
 			t.Errorf("Test %d: Expected Header '%d' but was '%d'",
@@ -192,5 +199,32 @@ md5:$apr1$l42y8rex$pOA2VJ0x/0TwaFeAF9nX61`
 		if !rule.Password(htpasswdPasswd) || rule.Password(htpasswdPasswd+"!") {
 			t.Errorf("%d (%s) password does not match.", i, rule.Username)
 		}
+	}
+}
+
+func TestOptionsMethod(t *testing.T) {
+	rw := BasicAuth{
+		Next: httpserver.HandlerFunc(contentHandler),
+		Rules: []Rule{
+			{Username: "username", Password: PlainMatcher("password"), Resources: []string{"/testing"}},
+		},
+	}
+
+	req, err := http.NewRequest(http.MethodOptions, "/testing", nil)
+	if err != nil {
+		t.Fatalf("Could not create HTTP request: %v", err)
+	}
+
+	// add basic auth with invalid username
+	// and password to make sure basic auth is ignored
+	req.SetBasicAuth("invaliduser", "invalidpassword")
+
+	rec := httptest.NewRecorder()
+	result, err := rw.ServeHTTP(rec, req)
+	if err != nil {
+		t.Fatalf("Could not ServeHTTP: %v", err)
+	}
+	if result != http.StatusOK {
+		t.Errorf("Expected status code %d but was %d", http.StatusOK, result)
 	}
 }

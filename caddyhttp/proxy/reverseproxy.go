@@ -28,6 +28,7 @@ package proxy
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io"
 	"net"
@@ -48,6 +49,7 @@ var (
 	defaultDialer = &net.Dialer{
 		Timeout:   30 * time.Second,
 		KeepAlive: 30 * time.Second,
+		DualStack: true,
 	}
 
 	bufferPool = sync.Pool{New: createBuffer}
@@ -85,7 +87,6 @@ type ReverseProxy struct {
 	Director func(*http.Request)
 
 	// The transport used to perform proxy requests.
-	// If nil, http.DefaultTransport is used.
 	Transport http.RoundTripper
 
 	// FlushInterval specifies the flush interval
@@ -148,7 +149,7 @@ func singleJoiningSlash(a, b string) string {
 // the target request will be for /base/dir.
 // Without logic: target's path is "/", incoming is "/api/messages",
 // without is "/api", then the target request will be for /messages.
-func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int, timeout time.Duration) *ReverseProxy {
+func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int, timeout, fallbackDelay time.Duration) *ReverseProxy {
 	targetQuery := target.RawQuery
 	director := func(req *http.Request) {
 		if target.Scheme == "unix" {
@@ -234,6 +235,9 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int, t
 	if timeout != defaultDialer.Timeout {
 		dialer.Timeout = timeout
 	}
+	if fallbackDelay != defaultDialer.FallbackDelay {
+		dialer.FallbackDelay = fallbackDelay
+	}
 
 	rp := &ReverseProxy{
 		Director:      director,
@@ -274,6 +278,15 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int, t
 			http2.ConfigureTransport(transport)
 		}
 		rp.Transport = transport
+	} else {
+		transport := &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+			Dial:  rp.dialer.Dial,
+		}
+		if httpserver.HTTP2 {
+			http2.ConfigureTransport(transport)
+		}
+		rp.Transport = transport
 	}
 	return rp
 }
@@ -282,18 +295,7 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int, t
 // when it is OK for upstream to be using a bad certificate,
 // since this transport skips verification.
 func (rp *ReverseProxy) UseInsecureTransport() {
-	if rp.Transport == nil {
-		transport := &http.Transport{
-			Proxy:               http.ProxyFromEnvironment,
-			Dial:                rp.dialer.Dial,
-			TLSHandshakeTimeout: defaultCryptoHandshakeTimeout,
-			TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
-		}
-		if httpserver.HTTP2 {
-			http2.ConfigureTransport(transport)
-		}
-		rp.Transport = transport
-	} else if transport, ok := rp.Transport.(*http.Transport); ok {
+	if transport, ok := rp.Transport.(*http.Transport); ok {
 		if transport.TLSClientConfig == nil {
 			transport.TLSClientConfig = &tls.Config{}
 		}
@@ -309,16 +311,31 @@ func (rp *ReverseProxy) UseInsecureTransport() {
 	}
 }
 
+// UseOwnCertificate is used to facilitate HTTPS proxying
+// with locally provided certificate.
+func (rp *ReverseProxy) UseOwnCACertificates(CaCertPool *x509.CertPool) {
+	if transport, ok := rp.Transport.(*http.Transport); ok {
+		if transport.TLSClientConfig == nil {
+			transport.TLSClientConfig = &tls.Config{}
+		}
+		transport.TLSClientConfig.RootCAs = CaCertPool
+		// No http2.ConfigureTransport() here.
+		// For now this is only added in places where
+		// an http.Transport is actually created.
+	} else if transport, ok := rp.Transport.(*h2quic.RoundTripper); ok {
+		if transport.TLSClientConfig == nil {
+			transport.TLSClientConfig = &tls.Config{}
+		}
+		transport.TLSClientConfig.RootCAs = CaCertPool
+	}
+}
+
 // ServeHTTP serves the proxied request to the upstream by performing a roundtrip.
 // It is designed to handle websocket connection upgrades as well.
 func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, respUpdateFn respUpdateFn) error {
 	transport := rp.Transport
 	if requestIsWebsocket(outreq) {
 		transport = newConnHijackerTransport(transport)
-	} else if transport == nil {
-		transport = &http.Transport{
-			Dial: rp.dialer.Dial,
-		}
 	}
 
 	rp.Director(outreq)
@@ -332,7 +349,7 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, 
 		return err
 	}
 
-	isWebsocket := res.StatusCode == http.StatusSwitchingProtocols && strings.ToLower(res.Header.Get("Upgrade")) == "websocket"
+	isWebsocket := res.StatusCode == http.StatusSwitchingProtocols && strings.EqualFold(res.Header.Get("Upgrade"), "websocket")
 
 	// Remove hop-by-hop headers listed in the
 	// "Connection" header of the response.
@@ -459,7 +476,7 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, 
 		closeBody()
 
 		// Since Go does not remove keys from res.Trailer we
-		// can safely do a length comparison to check wether
+		// can safely do a length comparison to check whether
 		// we received further, unannounced trailers.
 		//
 		// Most of the time forceSetTrailers should be false.
@@ -705,7 +722,7 @@ func (tlsHandshakeTimeoutError) Temporary() bool { return true }
 func (tlsHandshakeTimeoutError) Error() string   { return "net/http: TLS handshake timeout" }
 
 func requestIsWebsocket(req *http.Request) bool {
-	return strings.ToLower(req.Header.Get("Upgrade")) == "websocket" && strings.Contains(strings.ToLower(req.Header.Get("Connection")), "upgrade")
+	return strings.EqualFold(req.Header.Get("Upgrade"), "websocket") && strings.Contains(strings.ToLower(req.Header.Get("Connection")), "upgrade")
 }
 
 type writeFlusher interface {

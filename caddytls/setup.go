@@ -26,19 +26,45 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/mholt/caddy"
+	"github.com/mholt/caddy/telemetry"
+	"github.com/mholt/certmagic"
 )
 
 func init() {
 	caddy.RegisterPlugin("tls", caddy.Plugin{Action: setupTLS})
+
+	// ensure the default Storage implementation is plugged in
+	RegisterClusterPlugin("file", constructDefaultClusterPlugin)
 }
 
 // setupTLS sets up the TLS configuration and installs certificates that
 // are specified by the user in the config file. All the automatic HTTPS
 // stuff comes later outside of this function.
 func setupTLS(c *caddy.Controller) error {
-	// obtain the configGetter, which loads the config we're, uh, configuring
+	// set up the clustering plugin, if there is one (and there should always
+	// be one since this tls plugin requires it) -- this should be done exactly
+	// once, but we can't do it during init while plugins are still registering,
+	// so do it as soon as we run a setup)
+	if atomic.CompareAndSwapInt32(&clusterPluginSetup, 0, 1) {
+		clusterPluginName := os.Getenv("CADDY_CLUSTERING")
+		if clusterPluginName == "" {
+			clusterPluginName = "file" // name of default storage plugin
+		}
+		clusterFn, ok := clusterProviders[clusterPluginName]
+		if ok {
+			storage, err := clusterFn()
+			if err != nil {
+				return fmt.Errorf("constructing cluster plugin %s: %v", clusterPluginName, err)
+			}
+			certmagic.DefaultStorage = storage
+		} else {
+			return fmt.Errorf("unrecognized cluster plugin (was it included in the Caddy build?): %s", clusterPluginName)
+		}
+	}
+
 	configGetter, ok := configGetters[c.ServerType()]
 	if !ok {
 		return fmt.Errorf("no caddytls.ConfigGetter for %s server type; must call RegisterConfigGetter", c.ServerType())
@@ -48,18 +74,56 @@ func setupTLS(c *caddy.Controller) error {
 		return fmt.Errorf("no caddytls.Config to set up for %s", c.Key)
 	}
 
-	// the certificate cache is tied to the current caddy.Instance; get a pointer to it
-	certCache, ok := c.Get(CertCacheInstStorageKey).(*certificateCache)
-	if !ok || certCache == nil {
-		certCache = &certificateCache{cache: make(map[string]Certificate)}
-		c.Set(CertCacheInstStorageKey, certCache)
-	}
-	config.certCache = certCache
-
 	config.Enabled = true
+
+	// we use certmagic events to collect metrics for telemetry
+	config.Manager.OnEvent = func(event string, data interface{}) {
+		switch event {
+		case "tls_handshake_started":
+			clientHello := data.(*tls.ClientHelloInfo)
+			if ClientHelloTelemetry && len(clientHello.SupportedVersions) > 0 {
+				// If no other plugin (such as the HTTP server type) is implementing ClientHello telemetry, we do it.
+				// NOTE: The values in the Go standard lib's ClientHelloInfo aren't guaranteed to be in order.
+				info := ClientHelloInfo{
+					Version:                   clientHello.SupportedVersions[0], // report the highest
+					CipherSuites:              clientHello.CipherSuites,
+					ExtensionsUnknown:         true, // no extension info... :(
+					CompressionMethodsUnknown: true, // no compression methods... :(
+					Curves:                    clientHello.SupportedCurves,
+					Points:                    clientHello.SupportedPoints,
+					// We also have, but do not yet use: SignatureSchemes, ServerName, and SupportedProtos (ALPN)
+					// because the standard lib parses some extensions, but our MITM detector generally doesn't.
+				}
+				go telemetry.SetNested("tls_client_hello", info.Key(), info)
+			}
+
+		case "tls_handshake_completed":
+			// TODO: This is a "best guess" for now - at this point, we only gave a
+			// certificate to the client; we need something listener-level to be sure
+			go telemetry.Increment("tls_handshake_count")
+
+		case "acme_cert_obtained":
+			go telemetry.Increment("tls_acme_certs_obtained")
+
+		case "acme_cert_renewed":
+			name := data.(string)
+			caddy.EmitEvent(caddy.CertRenewEvent, name)
+			go telemetry.Increment("tls_acme_certs_renewed")
+
+		case "acme_cert_revoked":
+			telemetry.Increment("acme_certs_revoked")
+
+		case "cached_managed_cert":
+			telemetry.Increment("tls_managed_cert_count")
+
+		case "cached_unmanaged_cert":
+			telemetry.Increment("tls_unmanaged_cert_count")
+		}
+	}
 
 	for c.Next() {
 		var certificateFile, keyFile, loadDir, maxCerts, askURL string
+		var onDemand bool
 
 		args := c.RemainingArgs()
 		switch len(args) {
@@ -69,15 +133,16 @@ func setupTLS(c *caddy.Controller) error {
 			// that value in the ACMEEmail field.
 			config.ACMEEmail = args[0]
 
+			switch args[0] {
 			// user can force-disable managed TLS this way
-			if args[0] == "off" {
+			case "off":
 				config.Enabled = false
 				return nil
-			}
-
 			// user might want a temporary, in-memory, self-signed cert
-			if args[0] == "self_signed" {
+			case "self_signed":
 				config.SelfSigned = true
+			default:
+				config.Manager.Email = args[0]
 			}
 		case 2:
 			certificateFile = args[0]
@@ -95,14 +160,14 @@ func setupTLS(c *caddy.Controller) error {
 				if len(arg) != 1 {
 					return c.ArgErr()
 				}
-				config.CAUrl = arg[0]
+				config.Manager.CA = arg[0]
 			case "key_type":
 				arg := c.RemainingArgs()
 				value, ok := supportedKeyTypes[strings.ToUpper(arg[0])]
 				if !ok {
 					return c.Errf("Wrong key type name or key type not supported: '%s'", c.Val())
 				}
-				config.KeyType = value
+				config.Manager.KeyType = value
 			case "protocols":
 				args := c.RemainingArgs()
 				if len(args) == 1 {
@@ -110,7 +175,6 @@ func setupTLS(c *caddy.Controller) error {
 					if !ok {
 						return c.Errf("Wrong protocol name or protocol not supported: '%s'", args[0])
 					}
-
 					config.ProtocolMinVersion, config.ProtocolMaxVersion = value, value
 				} else {
 					value, ok := SupportedProtocols[strings.ToLower(args[0])]
@@ -173,30 +237,32 @@ func setupTLS(c *caddy.Controller) error {
 				config.Manual = true
 			case "max_certs":
 				c.Args(&maxCerts)
-				config.OnDemand = true
+				onDemand = true
 			case "ask":
 				c.Args(&askURL)
-				config.OnDemand = true
+				onDemand = true
 			case "dns":
 				args := c.RemainingArgs()
 				if len(args) != 1 {
 					return c.ArgErr()
 				}
+				// TODO: we can get rid of DNS provider plugins with this one line
+				// of code; however, currently (Dec. 2018) this adds about 20 MB
+				// of bloat to the Caddy binary, doubling its size to ~40 MB...!
+				// dnsProv, err := dns.NewDNSChallengeProviderByName(args[0])
+				// if err != nil {
+				// 	return c.Errf("Configuring DNS provider '%s': %v", args[0], err)
+				// }
 				dnsProvName := args[0]
-				if _, ok := dnsProviders[dnsProvName]; !ok {
-					return c.Errf("Unsupported DNS provider '%s'", args[0])
+				dnsProvConstructor, ok := dnsProviders[dnsProvName]
+				if !ok {
+					return c.Errf("Unknown DNS provider by name '%s'", dnsProvName)
 				}
-				config.DNSProvider = args[0]
-			case "storage":
-				args := c.RemainingArgs()
-				if len(args) != 1 {
-					return c.ArgErr()
+				dnsProv, err := dnsProvConstructor()
+				if err != nil {
+					return c.Errf("Setting up DNS provider '%s': %v", dnsProvName, err)
 				}
-				storageProvName := args[0]
-				if _, ok := storageProviders[storageProvName]; !ok {
-					return c.Errf("Unsupported Storage provider '%s'", args[0])
-				}
-				config.StorageProvider = args[0]
+				config.Manager.DNSProvider = dnsProv
 			case "alpn":
 				args := c.RemainingArgs()
 				if len(args) == 0 {
@@ -206,9 +272,9 @@ func setupTLS(c *caddy.Controller) error {
 					config.ALPN = append(config.ALPN, arg)
 				}
 			case "must_staple":
-				config.MustStaple = true
+				config.Manager.MustStaple = true
 			case "wildcard":
-				if !HostQualifies(config.Hostname) {
+				if !certmagic.HostQualifies(config.Hostname) {
 					return c.Errf("Hostname '%s' does not qualify for managed TLS, so cannot manage wildcard certificate for it", config.Hostname)
 				}
 				if strings.Contains(config.Hostname, "*") {
@@ -230,26 +296,26 @@ func setupTLS(c *caddy.Controller) error {
 			return c.ArgErr()
 		}
 
-		// set certificate limit if on-demand TLS is enabled
-		if maxCerts != "" {
-			maxCertsNum, err := strconv.Atoi(maxCerts)
-			if err != nil || maxCertsNum < 1 {
-				return c.Err("max_certs must be a positive integer")
+		// configure on-demand TLS, if enabled
+		if onDemand {
+			config.Manager.OnDemand = new(certmagic.OnDemandConfig)
+			if maxCerts != "" {
+				maxCertsNum, err := strconv.Atoi(maxCerts)
+				if err != nil || maxCertsNum < 1 {
+					return c.Err("max_certs must be a positive integer")
+				}
+				config.Manager.OnDemand.MaxObtain = int32(maxCertsNum)
 			}
-			config.OnDemandState.MaxObtain = int32(maxCertsNum)
-		}
-
-		if askURL != "" {
-			parsedURL, err := url.Parse(askURL)
-			if err != nil {
-				return c.Err("ask must be a valid url")
+			if askURL != "" {
+				parsedURL, err := url.Parse(askURL)
+				if err != nil {
+					return c.Err("ask must be a valid url")
+				}
+				if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+					return c.Err("ask URL must use http or https")
+				}
+				config.Manager.OnDemand.AskURL = parsedURL
 			}
-
-			if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
-				return c.Err("ask URL must use http or https")
-			}
-
-			config.OnDemandState.AskURL = parsedURL
 		}
 
 		// don't try to load certificates unless we're supposed to
@@ -259,7 +325,7 @@ func setupTLS(c *caddy.Controller) error {
 
 		// load a single certificate and key, if specified
 		if certificateFile != "" && keyFile != "" {
-			err := config.cacheUnmanagedCertificatePEMFile(certificateFile, keyFile)
+			err := config.Manager.CacheUnmanagedCertificatePEMFile(certificateFile, keyFile)
 			if err != nil {
 				return c.Errf("Unable to load certificate and key files for '%s': %v", c.Key, err)
 			}
@@ -279,10 +345,18 @@ func setupTLS(c *caddy.Controller) error {
 
 	// generate self-signed cert if needed
 	if config.SelfSigned {
-		err := makeSelfSignedCert(config)
+		ssCert, err := newSelfSignedCertificate(selfSignedConfig{
+			SAN:     []string{config.Hostname},
+			KeyType: config.Manager.KeyType,
+		})
+		if err != nil {
+			return fmt.Errorf("self-signed certificate generation: %v", err)
+		}
+		err = config.Manager.CacheUnmanagedTLSCertificate(ssCert)
 		if err != nil {
 			return fmt.Errorf("self-signed: %v", err)
 		}
+		telemetry.Increment("tls_self_signed_count")
 	}
 
 	return nil
@@ -358,7 +432,7 @@ func loadCertsInDir(cfg *Config, c *caddy.Controller, dir string) error {
 				return c.Errf("%s: no private key block found", path)
 			}
 
-			err = cfg.cacheUnmanagedCertificatePEMBytes(certPEMBytes, keyPEMBytes)
+			err = cfg.Manager.CacheUnmanagedCertificatePEMBytes(certPEMBytes, keyPEMBytes)
 			if err != nil {
 				return c.Errf("%s: failed to load cert and key for '%s': %v", path, c.Key, err)
 			}
@@ -366,4 +440,8 @@ func loadCertsInDir(cfg *Config, c *caddy.Controller, dir string) error {
 		}
 		return nil
 	})
+}
+
+func constructDefaultClusterPlugin() (certmagic.Storage, error) {
+	return &certmagic.FileStorage{Path: caddy.AssetsPath()}, nil
 }

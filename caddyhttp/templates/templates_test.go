@@ -70,6 +70,7 @@ func TestTemplates(t *testing.T) {
 		req      string
 		respCode int
 		res      string
+		bypass   bool
 	}{
 		{
 			tpl:      tmpl,
@@ -113,6 +114,7 @@ func TestTemplates(t *testing.T) {
 			respCode: http.StatusOK,
 			res: `<!DOCTYPE html><html><head><title>as it is</title></head><body>{{.Include "header.html"}}</body></html>
 `,
+			bypass: true,
 		},
 	} {
 		c := c
@@ -134,6 +136,14 @@ func TestTemplates(t *testing.T) {
 			respBody := rec.Body.String()
 			if respBody != c.res {
 				t.Fatalf("Test: the expected body %v is different from the response one: %v", c.res, respBody)
+			}
+
+			if !c.bypass {
+				eTag := rec.Header().Get("ETag")
+				lastModified := rec.Header().Get("Last-Modified")
+				if eTag != "" || lastModified != "" {
+					t.Fatalf("Test: expect a response without ETag or Last-Modified, got %v %v", eTag, lastModified)
+				}
 			}
 		})
 	}

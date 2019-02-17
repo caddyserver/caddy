@@ -371,6 +371,68 @@ func TestRecursiveImport(t *testing.T) {
 	}
 }
 
+func TestDirectiveImport(t *testing.T) {
+	testParseOne := func(input string) (ServerBlock, error) {
+		p := testParser(input)
+		p.Next() // parseOne doesn't call Next() to start, so we must
+		err := p.parseOne()
+		return p.block, err
+	}
+
+	isExpected := func(got ServerBlock) bool {
+		if len(got.Keys) != 1 || got.Keys[0] != "localhost" {
+			t.Errorf("got keys unexpected: expect localhost, got %v", got.Keys)
+			return false
+		}
+		if len(got.Tokens) != 2 {
+			t.Errorf("got wrong number of tokens: expect 2, got %d", len(got.Tokens))
+			return false
+		}
+		if len(got.Tokens["dir1"]) != 1 || len(got.Tokens["proxy"]) != 8 {
+			t.Errorf("got unexpect tokens: %v", got.Tokens)
+			return false
+		}
+		return true
+	}
+
+	directiveFile, err := filepath.Abs("testdata/directive_import_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = ioutil.WriteFile(directiveFile, []byte(`prop1 1
+	prop2 2`), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(directiveFile)
+
+	// import from existing file
+	result, err := testParseOne(`localhost
+	dir1
+	proxy {
+		import testdata/directive_import_test
+		transparent
+	}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !isExpected(result) {
+		t.Error("directive import failed")
+	}
+
+	// import from nonexistent file
+	_, err = testParseOne(`localhost
+	dir1
+	proxy {
+		import testdata/nonexistent_file
+		transparent
+	}`)
+	if err == nil {
+		t.Fatal("expected error when importing a nonexistent file")
+	}
+}
+
 func TestParseAll(t *testing.T) {
 	for i, test := range []struct {
 		input     string
@@ -452,11 +514,19 @@ func TestEnvironmentReplacement(t *testing.T) {
 	os.Setenv("PORT", "8080")
 	os.Setenv("ADDRESS", "servername.com")
 	os.Setenv("FOOBAR", "foobar")
+	os.Setenv("PARTIAL_DIR", "r1")
 
 	// basic test; unix-style env vars
 	p := testParser(`{$ADDRESS}`)
 	blocks, _ := p.parseAll()
 	if actual, expected := blocks[0].Keys[0], "servername.com"; expected != actual {
+		t.Errorf("Expected key to be '%s' but was '%s'", expected, actual)
+	}
+
+	// basic test; unix-style env vars
+	p = testParser(`di{$PARTIAL_DIR}`)
+	blocks, _ = p.parseAll()
+	if actual, expected := blocks[0].Keys[0], "dir1"; expected != actual {
 		t.Errorf("Expected key to be '%s' but was '%s'", expected, actual)
 	}
 
@@ -518,6 +588,13 @@ func TestEnvironmentReplacement(t *testing.T) {
 	if actual, expected := blocks[0].Tokens["dir1"][1].Text, "Test foobar test"; expected != actual {
 		t.Errorf("Expected argument to be '%s' but was '%s'", expected, actual)
 	}
+
+	// after end token
+	p = testParser(":1234\nanswer \"{{ .Name }} {$FOOBAR}\"")
+	blocks, _ = p.parseAll()
+	if actual, expected := blocks[0].Tokens["answer"][1].Text, "{{ .Name }} foobar"; expected != actual {
+		t.Errorf("Expected argument to be '%s' but was '%s'", expected, actual)
+	}
 }
 
 func testParser(input string) parser {
@@ -527,15 +604,15 @@ func testParser(input string) parser {
 }
 
 func TestSnippets(t *testing.T) {
-	p := testParser(`(common) {
-					gzip foo
-					errors stderr
-					
-				}	
-				http://example.com {
-					import common
-				}
-			`)
+	p := testParser(`
+		(common) {
+			gzip foo
+			errors stderr
+		}
+		http://example.com {
+			import common
+		}
+	`)
 	blocks, err := p.parseAll()
 	if err != nil {
 		t.Fatal(err)
@@ -560,4 +637,84 @@ func TestSnippets(t *testing.T) {
 		t.Errorf("Expected argument to be '%s' but was '%s'", expected, actual)
 	}
 
+}
+
+func writeStringToTempFileOrDie(t *testing.T, str string) (pathToFile string) {
+	file, err := ioutil.TempFile("", t.Name())
+	if err != nil {
+		panic(err) // get a stack trace so we know where this was called from.
+	}
+	if _, err := file.WriteString(str); err != nil {
+		panic(err)
+	}
+	if err := file.Close(); err != nil {
+		panic(err)
+	}
+	return file.Name()
+}
+
+func TestImportedFilesIgnoreNonDirectiveImportTokens(t *testing.T) {
+	fileName := writeStringToTempFileOrDie(t, `
+		http://example.com {
+			# This isn't an import directive, it's just an arg with value 'import'
+			basicauth / import password
+		}
+	`)
+	// Parse the root file that imports the other one.
+	p := testParser(`import ` + fileName)
+	blocks, err := p.parseAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, b := range blocks {
+		t.Log(b.Keys)
+		t.Log(b.Tokens)
+	}
+	auth := blocks[0].Tokens["basicauth"]
+	line := auth[0].Text + " " + auth[1].Text + " " + auth[2].Text + " " + auth[3].Text
+	if line != "basicauth / import password" {
+		// Previously, it would be changed to:
+		//   basicauth / import /path/to/test/dir/password
+		// referencing a file that (probably) doesn't exist and changing the
+		// password!
+		t.Errorf("Expected basicauth tokens to be 'basicauth / import password' but got %#q", line)
+	}
+}
+
+func TestSnippetAcrossMultipleFiles(t *testing.T) {
+	// Make the derived Caddyfile that expects (common) to be defined.
+	fileName := writeStringToTempFileOrDie(t, `
+		http://example.com {
+			import common
+		}
+	`)
+
+	// Parse the root file that defines (common) and then imports the other one.
+	p := testParser(`
+		(common) {
+			gzip foo
+		}
+		import ` + fileName + `
+	`)
+
+	blocks, err := p.parseAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, b := range blocks {
+		t.Log(b.Keys)
+		t.Log(b.Tokens)
+	}
+	if len(blocks) != 1 {
+		t.Fatalf("Expect exactly one server block. Got %d.", len(blocks))
+	}
+	if actual, expected := blocks[0].Keys[0], "http://example.com"; expected != actual {
+		t.Errorf("Expected server name to be '%s' but was '%s'", expected, actual)
+	}
+	if len(blocks[0].Tokens) != 1 {
+		t.Fatalf("Server block should have tokens from import")
+	}
+	if actual, expected := blocks[0].Tokens["gzip"][0].Text, "gzip"; expected != actual {
+		t.Errorf("Expected argument to be '%s' but was '%s'", expected, actual)
+	}
 }

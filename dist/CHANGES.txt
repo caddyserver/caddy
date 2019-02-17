@@ -1,5 +1,61 @@
 CHANGES
 
+
+0.11.4 (February 15, 2019)
+- New -json-to-caddyfile and -caddyfile-to-json flags
+- Fix leaking logging goroutine on SIGUSR1
+- basicauth: Error is logged when authentication fails
+- proxy: Fix bug by re-adding pre-existing trailing slashes
+- tls: Fix bug related to certificate storage path
+
+
+0.11.3 (February 5, 2019)
+- New {server_port} placeholder
+- New third-party plugin: extauth
+- New flags -log-roll-mb and -log-roll-compress
+- basicauth: Bypass for OPTIONS method
+- errors/log: Ability to disable log rolling
+- proxy: New subdirective 'ca_certificates'
+- staticfiles: Require GET method to serve static files
+- tls: Fixes to self-signed certs, IP certs, email prompts, & more
+- SOLVED REGRESSIONS: #2356, #2414
+- A number of other important fixes and improvements
+
+
+0.11.2 (January 16, 2019)
+- Extracted automagic TLS code into CertMagic library
+- Add support for new clustering plugins
+- New placeholder: '{when_iso_local}'
+- New third-party plugins: s3browser, filebrowser
+- Removed third-party plugins: jekyll, hugo
+- bind: Support multiple interface values
+- import: Can now be used within directive blocks
+- proxy: Status 499 when clients close connection early
+- templates: No longer emit ETag and Last-Modified headers
+- tls: Support for the ACME TLS-ALPN-01 challenge
+- KNOWN/UNRESOLVED REGRESSIONS: #2356, #2414
+- Several bug fixes and minor improvements
+
+
+0.11.1 (November 12, 2018)
+- New -env-file flag to load environment from file
+- New event type 'instancerestart'
+- fastcgi: Strip PATH_INFO from SCRIPT_FILENAME
+- fastcgi: Add REQUEST_SCHEME to environment
+- gzip: Compress .m3u and .m3u8 files by default
+- telemetry: Honor CADDY_UUID_FILE env variable
+- templates: New .TLSVersion action
+- tls: Remove remaining RSA_CBC cipher suites from defaults
+- tls: Raise alert if no certificate matches exactly
+- Numerous other bug fixes and improvements
+
+
+0.11 (May 10, 2018)
+- Built with Go 1.10.2
+- Integrated optional telemetry client
+- proxy: Fixed file descriptor leak
+
+
 0.10.14 (April 19, 2018)
 - tls: Fix error handling bug when obtaining certificates
 

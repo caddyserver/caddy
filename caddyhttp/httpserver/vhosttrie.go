@@ -32,7 +32,12 @@ type vhostTrie struct {
 
 // newVHostTrie returns a new vhostTrie.
 func newVHostTrie() *vhostTrie {
-	return &vhostTrie{edges: make(map[string]*vhostTrie), fallbackHosts: []string{"0.0.0.0", ""}}
+	// TODO: fallbackHosts doesn't discriminate between network interfaces;
+	// i.e. if there is a host "0.0.0.0", it could match a request coming
+	// in to "[::1]" (and vice-versa) even though the IP versions differ.
+	// This might be OK, or maybe it's not desirable. The 'bind' directive
+	// can be used to restrict what interface a listener binds to.
+	return &vhostTrie{edges: make(map[string]*vhostTrie), fallbackHosts: []string{"0.0.0.0", "[::]", ""}}
 }
 
 // Insert adds stack to t keyed by key. The key should be

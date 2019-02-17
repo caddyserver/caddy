@@ -23,7 +23,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/hashicorp/go-syslog"
+	gsyslog "github.com/hashicorp/go-syslog"
 	"github.com/mholt/caddy"
 )
 
@@ -162,7 +162,7 @@ selectwriter:
 			return err
 		}
 
-		if l.Roller != nil {
+		if l.Roller != nil && !l.Roller.Disabled {
 			file.Close()
 			l.Roller.Filename = l.Output
 			l.writer = l.Roller.GetLogWriter()

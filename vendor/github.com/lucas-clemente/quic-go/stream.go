@@ -18,8 +18,8 @@ const (
 // The streamSender is notified by the stream about various events.
 type streamSender interface {
 	queueControlFrame(wire.Frame)
-	onHasWindowUpdate(protocol.StreamID)
 	onHasStreamData(protocol.StreamID)
+	// must be called without holding the mutex that is acquired by closeForShutdown
 	onStreamCompleted(protocol.StreamID)
 }
 
@@ -32,10 +32,6 @@ type uniStreamSender struct {
 
 func (s *uniStreamSender) queueControlFrame(f wire.Frame) {
 	s.streamSender.queueControlFrame(f)
-}
-
-func (s *uniStreamSender) onHasWindowUpdate(id protocol.StreamID) {
-	s.streamSender.onHasWindowUpdate(id)
 }
 
 func (s *uniStreamSender) onHasStreamData(id protocol.StreamID) {
@@ -56,6 +52,7 @@ type streamI interface {
 	handleRstStreamFrame(*wire.RstStreamFrame) error
 	getWindowUpdate() protocol.ByteCount
 	// for sending
+	hasData() bool
 	handleStopSendingFrame(*wire.StopSendingFrame)
 	popStreamFrame(maxBytes protocol.ByteCount) (*wire.StreamFrame, bool)
 	handleMaxStreamDataFrame(*wire.MaxStreamDataFrame)
@@ -105,7 +102,7 @@ func newStream(streamID protocol.StreamID,
 	flowController flowcontrol.StreamFlowController,
 	version protocol.VersionNumber,
 ) *stream {
-	s := &stream{sender: sender}
+	s := &stream{sender: sender, version: version}
 	senderForSendStream := &uniStreamSender{
 		streamSender: sender,
 		onStreamCompletedImpl: func() {

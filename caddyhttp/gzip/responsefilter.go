@@ -82,7 +82,7 @@ func (r *ResponseFilterWriter) WriteHeader(code int) {
 
 	if r.shouldCompress {
 		// replace discard writer with ResponseWriter
-		if gzWriter, ok := r.gzipResponseWriter.Writer.(*gzip.Writer); ok {
+		if gzWriter, ok := r.gzipResponseWriter.Writer().(*gzip.Writer); ok {
 			gzWriter.Reset(r.ResponseWriter)
 		}
 		// use gzip WriteHeader to include and delete

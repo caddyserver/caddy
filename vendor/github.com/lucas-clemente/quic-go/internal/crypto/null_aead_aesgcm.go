@@ -2,9 +2,7 @@ package crypto
 
 import (
 	"crypto"
-	"encoding/binary"
 
-	"github.com/bifurcation/mint"
 	"github.com/lucas-clemente/quic-go/internal/protocol"
 )
 
@@ -28,10 +26,8 @@ func newNullAEADAESGCM(connectionID protocol.ConnectionID, pers protocol.Perspec
 	return NewAEADAESGCM(otherKey, myKey, otherIV, myIV)
 }
 
-func computeSecrets(connectionID protocol.ConnectionID) (clientSecret, serverSecret []byte) {
-	connID := make([]byte, 8)
-	binary.BigEndian.PutUint64(connID, uint64(connectionID))
-	handshakeSecret := mint.HkdfExtract(crypto.SHA256, quicVersion1Salt, connID)
+func computeSecrets(connID protocol.ConnectionID) (clientSecret, serverSecret []byte) {
+	handshakeSecret := hkdfExtract(crypto.SHA256, connID, quicVersion1Salt)
 	clientSecret = qhkdfExpand(handshakeSecret, "client hs", crypto.SHA256.Size())
 	serverSecret = qhkdfExpand(handshakeSecret, "server hs", crypto.SHA256.Size())
 	return

@@ -1,9 +1,6 @@
 package crypto
 
 import (
-	"crypto"
-	"encoding/binary"
-
 	"github.com/bifurcation/mint"
 	"github.com/lucas-clemente/quic-go/internal/protocol"
 )
@@ -15,16 +12,8 @@ const (
 
 // A TLSExporter gets the negotiated ciphersuite and computes exporter
 type TLSExporter interface {
-	GetCipherSuite() mint.CipherSuiteParams
+	ConnectionState() mint.ConnectionState
 	ComputeExporter(label string, context []byte, keyLength int) ([]byte, error)
-}
-
-func qhkdfExpand(secret []byte, label string, length int) []byte {
-	qlabel := make([]byte, 2+1+5+len(label))
-	binary.BigEndian.PutUint16(qlabel[0:2], uint16(length))
-	qlabel[2] = uint8(5 + len(label))
-	copy(qlabel[3:], []byte("QUIC "+label))
-	return mint.HkdfExpand(crypto.SHA256, secret, qlabel, length)
 }
 
 // DeriveAESKeys derives the AES keys and creates a matching AES-GCM AEAD instance
@@ -49,7 +38,7 @@ func DeriveAESKeys(tls TLSExporter, pers protocol.Perspective) (AEAD, error) {
 }
 
 func computeKeyAndIV(tls TLSExporter, label string) (key, iv []byte, err error) {
-	cs := tls.GetCipherSuite()
+	cs := tls.ConnectionState().CipherSuite
 	secret, err := tls.ComputeExporter(label, nil, cs.Hash.Size())
 	if err != nil {
 		return nil, nil, err
