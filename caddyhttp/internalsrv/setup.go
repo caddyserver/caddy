@@ -33,7 +33,8 @@ func setup(c *caddy.Controller) error {
 		return err
 	}
 
-	//Append Internal paths to Caddy config HiddenFiles
+	// Append Internal paths to Caddy config HiddenFiles to ensure
+	// files do not appear in Browse
 	config := httpserver.GetConfig(c)
 	config.HiddenFiles = append(config.HiddenFiles, paths...)
 
