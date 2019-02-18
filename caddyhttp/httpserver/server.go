@@ -507,44 +507,27 @@ func (s *Server) Stop() error {
 // OnStartupComplete lists the sites served by this server
 // and any relevant information, assuming caddy.Quiet == false.
 func (s *Server) OnStartupComplete() {
-
 	if caddy.Quiet {
 		return
 	}
-
 	s.OutputSiteInfo()
-
 }
 
 func (s *Server) OutputSiteInfo() {
-
-	sitesByPort := make(map[string][]SiteConfig)
-	for _, site := range s.sites {
-		// Group Sites together by port before outputing
-		sitesArray := sitesByPort["port "+site.Port()]
-		sitesArray = append(sitesArray, *site)
-		sitesByPort["port "+site.Port()] = sitesArray
+	firstSite := s.sites[0]
+	scheme := "HTTP"
+	if firstSite.TLS.Enabled {
+		scheme = "HTTPS"
 	}
-
-	fmt.Println(" ")
-	for key, asiteType := range sitesByPort {
-		site := asiteType[0]
-		scheme := "HTTP"
-		if site.TLS.Enabled {
-			scheme = "HTTPS"
+	fmt.Println("")
+	fmt.Printf("Serving %s on port "+firstSite.Port()+" \n", scheme)
+	for _, site := range s.sites {
+		output := site.Addr.String()
+		if caddy.IsLoopback(s.Address()) && !caddy.IsLoopback(site.Addr.Host) {
+			output += " (only accessible on this machine)"
 		}
-
-		fmt.Printf("Serving %s on "+key+" \n", scheme)
-
-		for _, site = range asiteType {
-			output := site.Addr.String()
-			if caddy.IsLoopback(s.Address()) && !caddy.IsLoopback(site.Addr.Host) {
-				output += " (only accessible on this machine)"
-			}
-			fmt.Println(output)
-			log.Println(output)
-		}
-		fmt.Println(" ")
+		fmt.Println(output)
+		log.Println(output)
 	}
 }
 
