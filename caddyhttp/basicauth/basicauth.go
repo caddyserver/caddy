@@ -24,7 +24,6 @@ import (
 	"context"
 	"crypto/sha1"
 	"crypto/subtle"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -109,8 +108,7 @@ func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 		repl := httpserver.NewReplacer(r, nil, "-")
 		repl.Set("user", username)
 		errstr := repl.Replace("BasicAuth: user \"{user}\" was not found or password was incorrect. {remote} {host} {uri} {proto}")
-
-		err := errors.New(errstr)
+		err := fmt.Errorf(errstr)
 		return http.StatusUnauthorized, err
 	}
 
