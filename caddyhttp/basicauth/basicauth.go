@@ -108,7 +108,7 @@ func (a BasicAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error
 		repl := httpserver.NewReplacer(r, nil, "-")
 		repl.Set("user", username)
 		errstr := repl.Replace("BasicAuth: user \"{user}\" was not found or password was incorrect. {remote} {host} {uri} {proto}")
-		err := fmt.Errorf(errstr)
+		err := fmt.Errorf("%s", errstr)
 		return http.StatusUnauthorized, err
 	}
 
