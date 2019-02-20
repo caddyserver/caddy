@@ -507,27 +507,35 @@ func (s *Server) Stop() error {
 // OnStartupComplete lists the sites served by this server
 // and any relevant information, assuming caddy.Quiet == false.
 func (s *Server) OnStartupComplete() {
-	if caddy.Quiet {
-		return
+	if !caddy.Quiet {
+
+		firstSite := s.sites[0]
+		scheme := "HTTP"
+		if firstSite.TLS.Enabled {
+			scheme = "HTTPS"
+		}
+		fmt.Println("")
+		fmt.Printf("Serving %s on port "+firstSite.Port()+" \n", scheme)
+
+		s.OutputSiteInfo("fmt")
+		fmt.Println("")
 	}
-	s.OutputSiteInfo()
+
+	s.OutputSiteInfo("log")
 }
 
-func (s *Server) OutputSiteInfo() {
-	firstSite := s.sites[0]
-	scheme := "HTTP"
-	if firstSite.TLS.Enabled {
-		scheme = "HTTPS"
-	}
-	fmt.Println("")
-	fmt.Printf("Serving %s on port "+firstSite.Port()+" \n", scheme)
+func (s *Server) OutputSiteInfo(LogType string) {
 	for _, site := range s.sites {
 		output := site.Addr.String()
 		if caddy.IsLoopback(s.Address()) && !caddy.IsLoopback(site.Addr.Host) {
 			output += " (only accessible on this machine)"
 		}
-		fmt.Println(output)
-		log.Println(output)
+		if LogType == "fmt" {
+			fmt.Println(output)
+		} else {
+			log.Println(output)
+
+		}
 	}
 }
 
