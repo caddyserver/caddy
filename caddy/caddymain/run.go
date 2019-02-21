@@ -82,6 +82,7 @@ func Run() {
 	certmagic.UserAgent = appName + "/" + appVersion
 
 	// Set up process log before anything bad happens
+	caddy.LogDestination = logfile
 	switch logfile {
 	case "stdout":
 		log.SetOutput(os.Stdout)

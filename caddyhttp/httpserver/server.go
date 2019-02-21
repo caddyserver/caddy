@@ -521,7 +521,11 @@ func (s *Server) OnStartupComplete() {
 		fmt.Println("")
 	}
 
-	s.OutputSiteInfo("log")
+	// if caddy system log is going to stdout, printing to log
+	// here would duplicate to stdout so dont.
+	if caddy.LogDestination != "stdout" {
+		s.OutputSiteInfo("log")
+	}
 }
 
 func (s *Server) OutputSiteInfo(LogType string) {
@@ -533,7 +537,7 @@ func (s *Server) OutputSiteInfo(LogType string) {
 		if LogType == "fmt" {
 			fmt.Println(output)
 		} else {
-			log.Println(output)
+			log.Printf("[INFO] Serving %s \n", output)
 
 		}
 	}
