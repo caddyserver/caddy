@@ -516,7 +516,6 @@ func (s *Server) OnStartupComplete() {
 		fmt.Println("")
 		fmt.Printf("Serving %s on port "+firstSite.Port()+" \n", scheme)
 		s.OutputSiteInfo("fmt")
-		fmt.Println("")
 	}
 	// if caddy process log is going to stdout, printing to log
 	// here would duplicate to stdout so dont.
