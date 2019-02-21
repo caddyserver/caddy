@@ -534,7 +534,6 @@ func (s *Server) OutputSiteInfo(LogType string) {
 			fmt.Println(output)
 		} else {
 			log.Printf("[INFO] Serving %s \n", output)
-
 		}
 	}
 }
