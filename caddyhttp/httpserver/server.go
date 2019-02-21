@@ -521,7 +521,7 @@ func (s *Server) OnStartupComplete() {
 		fmt.Println("")
 	}
 
-	// if caddy system log is going to stdout, printing to log
+	// if caddy process log is going to stdout, printing to log
 	// here would duplicate to stdout so dont.
 	if caddy.LogDestination != "stdout" {
 		s.OutputSiteInfo("log")
