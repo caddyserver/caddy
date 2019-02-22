@@ -31,7 +31,7 @@ type SiteConfig struct {
 
 	// The hostname to bind listener to;
 	// defaults to Addr.Host
-	ListenHost string
+	ListenHosts []string
 
 	// TLS configuration
 	TLS *caddytls.Config
