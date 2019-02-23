@@ -518,8 +518,9 @@ func (s *Server) OnStartupComplete() {
 		s.OutputSiteInfo("fmt")
 	}
 	// if caddy process log is going to stdout, printing to log
-	// here would duplicate to stdout so dont.
-	if caddy.LogDestination != "stdout" {
+	// here would duplicate to stdout so dont.  If -quiet ensure
+	// that Log is still output even if process log startup isnt. #2469
+	if caddy.LogDestination != "stdout" || caddy.Quiet {
 		s.OutputSiteInfo("log")
 	}
 }
