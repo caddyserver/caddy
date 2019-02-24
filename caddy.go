@@ -74,9 +74,6 @@ var (
 	// false after that.
 	started bool
 
-	// record where the process log is being sent
-	LogDestination string
-
 	// mu protects the variables 'isUpgrade' and 'started'.
 	mu sync.Mutex
 )

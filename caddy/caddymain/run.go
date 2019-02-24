@@ -58,7 +58,7 @@ func init() {
 	flag.BoolVar(&plugins, "plugins", false, "List installed plugins")
 	flag.StringVar(&certmagic.Email, "email", "", "Default ACME CA account email address")
 	flag.DurationVar(&certmagic.HTTPTimeout, "catimeout", certmagic.HTTPTimeout, "Default ACME CA HTTP timeout")
-	flag.StringVar(&caddy.LogDestination, "log", "", "Process log file")
+	flag.StringVar(&logfile, "log", "", "Process log file")
 	flag.IntVar(&logRollMB, "log-roll-mb", 100, "Roll process log when it reaches this many megabytes (0 to disable rolling)")
 	flag.BoolVar(&logRollCompress, "log-roll-compress", true, "Gzip-compress rolled process log files")
 	flag.StringVar(&caddy.PidFile, "pidfile", "", "Path to write pid file")
@@ -82,7 +82,7 @@ func Run() {
 	certmagic.UserAgent = appName + "/" + appVersion
 
 	// Set up process log before anything bad happens
-	switch caddy.LogDestination {
+	switch logfile {
 	case "stdout":
 		log.SetOutput(os.Stdout)
 	case "stderr":
@@ -92,18 +92,18 @@ func Run() {
 	default:
 		if logRollMB > 0 {
 			log.SetOutput(&lumberjack.Logger{
-				Filename:   caddy.LogDestination,
+				Filename:   logfile,
 				MaxSize:    logRollMB,
 				MaxAge:     14,
 				MaxBackups: 10,
 				Compress:   logRollCompress,
 			})
 		} else {
-			err := os.MkdirAll(filepath.Dir(caddy.LogDestination), 0755)
+			err := os.MkdirAll(filepath.Dir(logfile), 0755)
 			if err != nil {
 				mustLogFatalf("%v", err)
 			}
-			f, err := os.OpenFile(caddy.LogDestination, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+			f, err := os.OpenFile(logfile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 			if err != nil {
 				mustLogFatalf("%v", err)
 			}
@@ -573,6 +573,7 @@ var (
 	cpu             string
 	envFile         string
 	fromJSON        bool
+	logfile         string
 	logRollMB       int
 	logRollCompress bool
 	revoke          string
