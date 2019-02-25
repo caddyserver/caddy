@@ -84,10 +84,11 @@ func (cfg *Config) getEmail(allowPrompts bool) error {
 		leEmail = Email
 	}
 	// Then try to get most recent user email from storage
+	var gotRecentEmail bool
 	if leEmail == "" {
-		leEmail = cfg.mostRecentUserEmail()
+		leEmail, gotRecentEmail = cfg.mostRecentUserEmail()
 	}
-	if leEmail == "" && allowPrompts {
+	if !gotRecentEmail && leEmail == "" && allowPrompts {
 		// Looks like there is no email address readily available,
 		// so we will have to ask the user if we can.
 		var err error
@@ -95,10 +96,14 @@ func (cfg *Config) getEmail(allowPrompts bool) error {
 		if err != nil {
 			return err
 		}
-		cfg.Agreed = true
 	}
-	// lower-casing the email is important for consistency
-	cfg.Email = strings.ToLower(leEmail)
+
+	// save the email for later and ensure it is consistent
+	// for repeated use; then update cfg with our new defaults
+	Email = strings.TrimSpace(strings.ToLower(leEmail))
+	cfg.Email = Email
+	cfg.Agreed = Agreed
+
 	return nil
 }
 
@@ -123,6 +128,11 @@ func (cfg *Config) getAgreementURL() (string, error) {
 	return dir.Meta.TermsOfService, nil
 }
 
+// promptUserForEmail prompts the user for an email address
+// and returns the email address they entered (which could
+// be the empty string). If no error is returned, then Agreed
+// will also be set to true, since continuing through the
+// prompt signifies agreement.
 func (cfg *Config) promptUserForEmail() (string, error) {
 	agreementURL, err := cfg.getAgreementURL()
 	if err != nil {
@@ -139,6 +149,7 @@ func (cfg *Config) promptUserForEmail() (string, error) {
 		return "", fmt.Errorf("reading email address: %v", err)
 	}
 	leEmail = strings.TrimSpace(leEmail)
+	Agreed = true
 	return leEmail, nil
 }
 
@@ -234,10 +245,10 @@ func (cfg *Config) askUserAgreement(agreementURL string) bool {
 // in s. Since this is part of a complex sequence to get a user
 // account, errors here are discarded to simplify code flow in
 // the caller, and errors are not important here anyway.
-func (cfg *Config) mostRecentUserEmail() string {
+func (cfg *Config) mostRecentUserEmail() (string, bool) {
 	userList, err := cfg.certCache.storage.List(StorageKeys.UsersPrefix(cfg.CA), false)
 	if err != nil || len(userList) == 0 {
-		return ""
+		return "", false
 	}
 	sort.Slice(userList, func(i, j int) bool {
 		iInfo, _ := cfg.certCache.storage.Stat(userList[i])
@@ -246,9 +257,9 @@ func (cfg *Config) mostRecentUserEmail() string {
 	})
 	user, err := cfg.getUser(path.Base(userList[0]))
 	if err != nil {
-		return ""
+		return "", false
 	}
-	return user.Email
+	return user.Email, true
 }
 
 // agreementTestURL is set during tests to skip requiring
