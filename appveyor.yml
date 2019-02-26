@@ -10,7 +10,7 @@ clone_folder: c:\gopath\src\github.com\mholt\caddy
 environment:
   GOPATH: c:\gopath
 
-stack: go 1.11
+stack: go 1.12
 
 install:
   - set PATH=%GOPATH%\bin;%PATH%
