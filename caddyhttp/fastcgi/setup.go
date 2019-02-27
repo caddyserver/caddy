@@ -49,8 +49,6 @@ func setup(c *caddy.Controller) error {
 		return Handler{
 			Next:            next,
 			Rules:           rules,
-			Root:            cfg.Root,
-			FileSys:         http.Dir(cfg.Root),
 			SoftwareName:    caddy.AppName,
 			SoftwareVersion: caddy.AppVersion,
 			ServerName:      cfg.Addr.Host,
@@ -106,7 +104,11 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 				if !c.NextArg() {
 					return rules, c.ArgErr()
 				}
-				rule.Root = c.Val()
+				ruleAbsRoot, err := filepath.Abs(c.Val())
+				if err != nil {
+					return rules, err
+				}
+				rule.Root = ruleAbsRoot
 
 			case "ext":
 				if !c.NextArg() {
@@ -149,6 +151,12 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 					return rules, c.ArgErr()
 				}
 				rule.IgnoredSubPaths = ignoredPaths
+			case "without":
+				args := c.RemainingArgs()
+				if len(args) != 1 {
+					return rules, c.ArgErr()
+				}
+				rule.WithoutPathPrefix = args[0]
 
 			case "connect_timeout":
 				if !c.NextArg() {
@@ -188,6 +196,8 @@ func fastcgiParse(c *caddy.Controller) ([]Rule, error) {
 		} else {
 			rule.balancer = &roundRobin{addresses: upstreams, index: -1}
 		}
+
+		rule.FileSys = http.Dir(rule.Root)
 
 		rules = append(rules, rule)
 	}
