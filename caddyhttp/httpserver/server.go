@@ -515,26 +515,26 @@ func (s *Server) OnStartupComplete() {
 		}
 		fmt.Println("")
 		fmt.Printf("Serving %s on port "+firstSite.Port()+" \n", scheme)
-		s.OutputSiteInfo("fmt")
+		s.outputSiteInfo(false)
 	}
 	// if caddy process log is going to stdout, printing to log
 	// here would duplicate to stdout so dont.  If -quiet ensure
 	// that Log is still output even if process log startup isnt. #2469
 	if caddy.LogDestination != "stdout" || caddy.Quiet {
-		s.OutputSiteInfo("log")
+		s.outputSiteInfo(true)
 	}
 }
 
-func (s *Server) OutputSiteInfo(LogType string) {
+func (s *Server) outputSiteInfo(isProcessLog bool) {
 	for _, site := range s.sites {
 		output := site.Addr.String()
 		if caddy.IsLoopback(s.Address()) && !caddy.IsLoopback(site.Addr.Host) {
 			output += " (only accessible on this machine)"
 		}
-		if LogType == "fmt" {
-			fmt.Println(output)
-		} else {
+		if isProcessLog {
 			log.Printf("[INFO] Serving %s \n", output)
+		} else {
+			fmt.Println(output)
 		}
 	}
 }
