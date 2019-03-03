@@ -520,7 +520,7 @@ func (s *Server) OnStartupComplete() {
 		fmt.Println("")
 	}
 
-	// Print out process log without grouping
+	// Print out process log without header comment
 	s.outputSiteInfo(true)
 }
 
