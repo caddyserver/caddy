@@ -72,7 +72,7 @@ import (
 	// _ "github.com/techknowlogick/caddy-s3browser"
 	// _ "blitznote.com/src/caddy.upload"
 	// _ "github.com/hacdias/caddy-webdav"
-	// _ "github.com/caddyserver/dnsproviders/cloudflare"
+	// _ "github.com/caddyserver/dnsproviders/dnsprovider" // replace dnsprovider with your dnsprovider: https://caddyserver.com/docs/automatic-https#dns-challenge
 	// _ "github.com/coredns/coredns/plugin"
 	// _ "github.com/pieterlouw/caddy-net/caddynet"
 	// _ "github.com/lucaslorentz/caddy-supervisor/httpplugin"
