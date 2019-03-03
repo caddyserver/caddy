@@ -513,9 +513,11 @@ func (s *Server) OnStartupComplete() {
 		if firstSite.TLS.Enabled {
 			scheme = "HTTPS"
 		}
+
 		fmt.Println("")
 		fmt.Printf("Serving %s on port "+firstSite.Port()+" \n", scheme)
 		s.outputSiteInfo(false)
+		fmt.Println("")
 	}
 
 	// Print out process log without grouping
