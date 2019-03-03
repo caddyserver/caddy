@@ -517,12 +517,9 @@ func (s *Server) OnStartupComplete() {
 		fmt.Printf("Serving %s on port "+firstSite.Port()+" \n", scheme)
 		s.outputSiteInfo(false)
 	}
-	// if caddy process log is going to stdout, printing to log
-	// here would duplicate to stdout so dont.  If -quiet ensure
-	// that Log is still output even if process log startup isnt. #2469
-	if caddy.LogDestination != "stdout" || caddy.Quiet {
-		s.outputSiteInfo(true)
-	}
+
+	// Print out process log without grouping
+	s.outputSiteInfo(true)
 }
 
 func (s *Server) outputSiteInfo(isProcessLog bool) {
