@@ -123,6 +123,10 @@ func errorsParse(c *caddy.Controller) (*ErrorHandler, error) {
 			}
 		}
 
+		if len(args) > 1 {
+			return handler, c.Errf("Only 1 Argument expected for errors directive")
+		}
+
 		// Configuration may be in a block
 		err := optionalBlock()
 		if err != nil {
