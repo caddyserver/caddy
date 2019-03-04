@@ -1,6 +1,7 @@
 package dns01
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -11,11 +12,30 @@ import (
 // PreCheckFunc checks DNS propagation before notifying ACME that the DNS challenge is ready.
 type PreCheckFunc func(fqdn, value string) (bool, error)
 
+// WrapPreCheckFunc wraps a PreCheckFunc in order to do extra operations before or after
+// the main check, put it in a loop, etc.
+type WrapPreCheckFunc func(domain, fqdn, value string, check PreCheckFunc) (bool, error)
+
+// WrapPreCheck Allow to define checks before notifying ACME that the DNS challenge is ready.
+func WrapPreCheck(wrap WrapPreCheckFunc) ChallengeOption {
+	return func(chlg *Challenge) error {
+		chlg.preCheck.checkFunc = wrap
+		return nil
+	}
+}
+
+// AddPreCheck Allow to define checks before notifying ACME that the DNS challenge is ready.
+// Deprecated: use WrapPreCheck instead.
 func AddPreCheck(preCheck PreCheckFunc) ChallengeOption {
 	// Prevent race condition
 	check := preCheck
 	return func(chlg *Challenge) error {
-		chlg.preCheck.checkFunc = check
+		chlg.preCheck.checkFunc = func(_, fqdn, value string, _ PreCheckFunc) (bool, error) {
+			if check == nil {
+				return false, errors.New("invalid preCheck: preCheck is nil")
+			}
+			return check(fqdn, value)
+		}
 		return nil
 	}
 }
@@ -29,7 +49,7 @@ func DisableCompletePropagationRequirement() ChallengeOption {
 
 type preCheck struct {
 	// checks DNS propagation before notifying ACME that the DNS challenge is ready.
-	checkFunc PreCheckFunc
+	checkFunc WrapPreCheckFunc
 	// require the TXT record to be propagated to all authoritative name servers
 	requireCompletePropagation bool
 }
@@ -40,11 +60,12 @@ func newPreCheck() preCheck {
 	}
 }
 
-func (p preCheck) call(fqdn, value string) (bool, error) {
+func (p preCheck) call(domain, fqdn, value string) (bool, error) {
 	if p.checkFunc == nil {
 		return p.checkDNSPropagation(fqdn, value)
 	}
-	return p.checkFunc(fqdn, value)
+
+	return p.checkFunc(domain, fqdn, value, p.checkDNSPropagation)
 }
 
 // checkDNSPropagation checks if the expected TXT record has been propagated to all authoritative nameservers.
@@ -60,15 +81,7 @@ func (p preCheck) checkDNSPropagation(fqdn, value string) (bool, error) {
 	}
 
 	if r.Rcode == dns.RcodeSuccess {
-		// If we see a CNAME here then use the alias
-		for _, rr := range r.Answer {
-			if cn, ok := rr.(*dns.CNAME); ok {
-				if cn.Hdr.Name == fqdn {
-					fqdn = cn.Target
-					break
-				}
-			}
-		}
+		fqdn = updateDomainWithCName(r, fqdn)
 	}
 
 	authoritativeNss, err := lookupNameservers(fqdn)

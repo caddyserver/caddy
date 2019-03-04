@@ -35,6 +35,14 @@
 			"notests": true
 		},
 		{
+			"importpath": "github.com/cenkalti/backoff",
+			"repository": "https://github.com/cenkalti/backoff",
+			"vcs": "git",
+			"revision": "1e4cf3da559842a91afcb6ea6141451e6c30c618",
+			"branch": "master",
+			"notests": true
+		},
+		{
 			"importpath": "github.com/codahale/aesnicheck",
 			"repository": "https://github.com/codahale/aesnicheck",
 			"vcs": "git",
@@ -178,7 +186,7 @@
 			"importpath": "github.com/xenolf/lego/acme",
 			"repository": "https://github.com/xenolf/lego",
 			"vcs": "git",
-			"revision": "a43ec709e8034f388aab28d14b97aeed0e7aa98c",
+			"revision": "67b329e3e370f481da545a4c95577f60c9be08b6",
 			"branch": "master",
 			"path": "acme",
 			"notests": true
@@ -187,7 +195,7 @@
 			"importpath": "github.com/xenolf/lego/certcrypto",
 			"repository": "https://github.com/xenolf/lego",
 			"vcs": "git",
-			"revision": "a43ec709e8034f388aab28d14b97aeed0e7aa98c",
+			"revision": "67b329e3e370f481da545a4c95577f60c9be08b6",
 			"branch": "master",
 			"path": "certcrypto",
 			"notests": true
@@ -196,7 +204,7 @@
 			"importpath": "github.com/xenolf/lego/certificate",
 			"repository": "https://github.com/xenolf/lego",
 			"vcs": "git",
-			"revision": "a43ec709e8034f388aab28d14b97aeed0e7aa98c",
+			"revision": "67b329e3e370f481da545a4c95577f60c9be08b6",
 			"branch": "master",
 			"path": "certificate",
 			"notests": true
@@ -205,7 +213,7 @@
 			"importpath": "github.com/xenolf/lego/challenge",
 			"repository": "https://github.com/xenolf/lego",
 			"vcs": "git",
-			"revision": "a43ec709e8034f388aab28d14b97aeed0e7aa98c",
+			"revision": "67b329e3e370f481da545a4c95577f60c9be08b6",
 			"branch": "master",
 			"path": "/challenge",
 			"notests": true
@@ -214,7 +222,7 @@
 			"importpath": "github.com/xenolf/lego/lego",
 			"repository": "https://github.com/xenolf/lego",
 			"vcs": "git",
-			"revision": "f05aa4c241fd8b43da9dc8cab8c8965e5b3c1b55",
+			"revision": "67b329e3e370f481da545a4c95577f60c9be08b6",
 			"branch": "master",
 			"path": "/lego",
 			"notests": true
@@ -241,7 +249,7 @@
 			"importpath": "github.com/xenolf/lego/registration",
 			"repository": "https://github.com/xenolf/lego",
 			"vcs": "git",
-			"revision": "a43ec709e8034f388aab28d14b97aeed0e7aa98c",
+			"revision": "67b329e3e370f481da545a4c95577f60c9be08b6",
 			"branch": "master",
 			"path": "registration",
 			"notests": true

@@ -1,6 +1,18 @@
 CHANGES
 
 
+0.11.5 (March 4, 2019)
+- TLS 1.3
+- Built with Go 1.12
+- More organized output at startup
+- internal: Paths are now hidden from other middlewares
+- staticfiles: Allow HEAD method
+- tls: TLS 1.3 default max version (1.2 still default min)
+- tls: Better handling of empty ACME email addresses
+- tls: Removed CBC ciphers from defaults
+- Other minor improvements and bug fixes
+
+
 0.11.4 (February 15, 2019)
 - New -json-to-caddyfile and -caddyfile-to-json flags
 - Fix leaking logging goroutine on SIGUSR1
