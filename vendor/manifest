@@ -138,7 +138,7 @@
 			"importpath": "github.com/mholt/certmagic",
 			"repository": "https://github.com/mholt/certmagic",
 			"vcs": "git",
-			"revision": "a7f18a937c080b88693cd4e14d48e42cc067b268",
+			"revision": "e3e89d1096d76d61680f8eeb8f67649baa6c54b8",
 			"branch": "master",
 			"notests": true
 		},
@@ -214,7 +214,7 @@
 			"importpath": "github.com/xenolf/lego/lego",
 			"repository": "https://github.com/xenolf/lego",
 			"vcs": "git",
-			"revision": "a43ec709e8034f388aab28d14b97aeed0e7aa98c",
+			"revision": "f05aa4c241fd8b43da9dc8cab8c8965e5b3c1b55",
 			"branch": "master",
 			"path": "/lego",
 			"notests": true

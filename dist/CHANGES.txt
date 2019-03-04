@@ -1,6 +1,27 @@
 CHANGES
 
 
+0.11.4 (February 15, 2019)
+- New -json-to-caddyfile and -caddyfile-to-json flags
+- Fix leaking logging goroutine on SIGUSR1
+- basicauth: Error is logged when authentication fails
+- proxy: Fix bug by re-adding pre-existing trailing slashes
+- tls: Fix bug related to certificate storage path
+
+
+0.11.3 (February 5, 2019)
+- New {server_port} placeholder
+- New third-party plugin: extauth
+- New flags -log-roll-mb and -log-roll-compress
+- basicauth: Bypass for OPTIONS method
+- errors/log: Ability to disable log rolling
+- proxy: New subdirective 'ca_certificates'
+- staticfiles: Require GET method to serve static files
+- tls: Fixes to self-signed certs, IP certs, email prompts, & more
+- SOLVED REGRESSIONS: #2356, #2414
+- A number of other important fixes and improvements
+
+
 0.11.2 (January 16, 2019)
 - Extracted automagic TLS code into CertMagic library
 - Add support for new clustering plugins

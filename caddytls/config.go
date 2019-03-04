@@ -19,6 +19,8 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io/ioutil"
+	"os"
+	"sync/atomic"
 
 	"github.com/xenolf/lego/challenge/tlsalpn01"
 
@@ -95,11 +97,31 @@ type Config struct {
 // NewConfig returns a new Config with a pointer to the instance's
 // certificate cache. You will usually need to set other fields on
 // the returned Config for successful practical use.
-func NewConfig(inst *caddy.Instance) *Config {
+func NewConfig(inst *caddy.Instance) (*Config, error) {
 	inst.StorageMu.RLock()
 	certCache, ok := inst.Storage[CertCacheInstStorageKey].(*certmagic.Cache)
 	inst.StorageMu.RUnlock()
 	if !ok || certCache == nil {
+		// set up the clustering plugin, if there is one (and there should always
+		// be one since this tls plugin requires it) -- this should be done exactly
+		// once, but we can't do it during init while plugins are still registering,
+		// so do it as soon as we run a setup)
+		if atomic.CompareAndSwapInt32(&clusterPluginSetup, 0, 1) {
+			clusterPluginName := os.Getenv("CADDY_CLUSTERING")
+			if clusterPluginName == "" {
+				clusterPluginName = "file" // name of default storage plugin
+			}
+			clusterFn, ok := clusterProviders[clusterPluginName]
+			if ok {
+				storage, err := clusterFn()
+				if err != nil {
+					return nil, fmt.Errorf("constructing cluster plugin %s: %v", clusterPluginName, err)
+				}
+				certmagic.DefaultStorage = storage
+			} else {
+				return nil, fmt.Errorf("unrecognized cluster plugin (was it included in the Caddy build?): %s", clusterPluginName)
+			}
+		}
 		certCache = certmagic.NewCache(certmagic.DefaultStorage)
 		inst.OnShutdown = append(inst.OnShutdown, func() error {
 			certCache.Stop()
@@ -111,7 +133,7 @@ func NewConfig(inst *caddy.Instance) *Config {
 	}
 	return &Config{
 		Manager: certmagic.NewWithCache(certCache, certmagic.Config{}),
-	}
+	}, nil
 }
 
 // buildStandardTLSConfig converts cfg (*caddytls.Config) to a *tls.Config
@@ -385,7 +407,7 @@ func SetDefaultTLSParams(config *Config) {
 		config.ProtocolMinVersion = tls.VersionTLS12
 	}
 	if config.ProtocolMaxVersion == 0 {
-		config.ProtocolMaxVersion = tls.VersionTLS12
+		config.ProtocolMaxVersion = tls.VersionTLS13
 	}
 
 	// Prefer server cipher suites
@@ -408,6 +430,7 @@ var SupportedProtocols = map[string]uint16{
 	"tls1.0": tls.VersionTLS10,
 	"tls1.1": tls.VersionTLS11,
 	"tls1.2": tls.VersionTLS12,
+	"tls1.3": tls.VersionTLS13,
 }
 
 // GetSupportedProtocolName returns the protocol name
@@ -467,10 +490,6 @@ var defaultCiphers = []uint16{
 	tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
 	tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
 	tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
-	tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
-	tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
-	tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
-	tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
 }
 
 // List of ciphers we should prefer if native AESNI support is missing
@@ -481,10 +500,6 @@ var defaultCiphersNonAESNI = []uint16{
 	tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
 	tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
 	tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-	tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
-	tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
-	tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
-	tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
 }
 
 // getPreferredDefaultCiphers returns an appropriate cipher suite to use, depending on
@@ -518,6 +533,8 @@ var defaultCurves = []tls.CurveID{
 	tls.X25519,
 	tls.CurveP256,
 }
+
+var clusterPluginSetup int32 // access atomically
 
 // CertCacheInstStorageKey is the name of the key for
 // accessing the certificate storage on the *caddy.Instance.

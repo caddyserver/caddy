@@ -41,12 +41,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/mholt/caddy/caddyfile"
 	"github.com/mholt/caddy/telemetry"
-	"github.com/mholt/certmagic"
 )
 
 // Configurable application parameters
@@ -472,26 +470,6 @@ func (i *Instance) Caddyfile() Input {
 //
 // This function blocks until all the servers are listening.
 func Start(cdyfile Input) (*Instance, error) {
-	// set up the clustering plugin, if there is one (and there should
-	// always be one) -- this should be done exactly once, but we can't
-	// do it during init while plugins are still registering, so do it
-	// when starting the first instance)
-	if atomic.CompareAndSwapInt32(&clusterPluginSetup, 0, 1) {
-		clusterPluginName := os.Getenv("CADDY_CLUSTERING")
-		if clusterPluginName == "" {
-			clusterPluginName = "file" // name of default storage plugin as registered in caddytls package
-		}
-		clusterFn, ok := clusterProviders[clusterPluginName]
-		if !ok {
-			return nil, fmt.Errorf("unrecognized cluster plugin (was it included in the Caddy build?): %s", clusterPluginName)
-		}
-		storage, err := clusterFn()
-		if err != nil {
-			return nil, fmt.Errorf("constructing cluster plugin %s: %v", clusterPluginName, err)
-		}
-		certmagic.DefaultStorage = storage
-	}
-
 	inst := &Instance{serverType: cdyfile.ServerType(), wg: new(sync.WaitGroup), Storage: make(map[interface{}]interface{})}
 	err := startWithListenerFds(cdyfile, inst, nil)
 	if err != nil {
@@ -708,6 +686,11 @@ func executeDirectives(inst *Instance, filename string,
 func startServers(serverList []Server, inst *Instance, restartFds map[string]restartTriple) error {
 	errChan := make(chan error, len(serverList))
 
+	// used for signaling to error logging goroutine to terminate
+	stopChan := make(chan struct{})
+	// used to track termination of servers
+	stopWg := &sync.WaitGroup{}
+
 	for _, s := range serverList {
 		var (
 			ln  net.Listener
@@ -799,14 +782,23 @@ func startServers(serverList []Server, inst *Instance, restartFds map[string]res
 		}
 
 		inst.wg.Add(2)
-		go func(s Server, ln net.Listener, pc net.PacketConn, inst *Instance) {
-			defer inst.wg.Done()
+		stopWg.Add(2)
+		func(s Server, ln net.Listener, pc net.PacketConn, inst *Instance) {
+			go func() {
+				defer func() {
+					inst.wg.Done()
+					stopWg.Done()
+				}()
+				errChan <- s.Serve(ln)
+			}()
 
 			go func() {
-				errChan <- s.Serve(ln)
-				defer inst.wg.Done()
+				defer func() {
+					inst.wg.Done()
+					stopWg.Done()
+				}()
+				errChan <- s.ServePacket(pc)
 			}()
-			errChan <- s.ServePacket(pc)
 		}(s, ln, pc, inst)
 
 		inst.servers = append(inst.servers, ServerListener{server: s, listener: ln, packet: pc})
@@ -815,16 +807,24 @@ func startServers(serverList []Server, inst *Instance, restartFds map[string]res
 	// Log errors that may be returned from Serve() calls,
 	// these errors should only be occurring in the server loop.
 	go func() {
-		for err := range errChan {
-			if err == nil {
-				continue
+		for {
+			select {
+			case err := <-errChan:
+				if err != nil {
+					if !strings.Contains(err.Error(), "use of closed network connection") {
+						// this error is normal when closing the listener; see https://github.com/golang/go/issues/4373
+						log.Println(err)
+					}
+				}
+			case <-stopChan:
+				return
 			}
-			if strings.Contains(err.Error(), "use of closed network connection") {
-				// this error is normal when closing the listener; see https://github.com/golang/go/issues/4373
-				continue
-			}
-			log.Println(err)
 		}
+	}()
+
+	go func() {
+		stopWg.Wait()
+		stopChan <- struct{}{}
 	}()
 
 	return nil
@@ -1023,8 +1023,6 @@ var (
 	// by default if no other file is specified.
 	DefaultConfigFile = "Caddyfile"
 )
-
-var clusterPluginSetup int32 // access atomically
 
 // CtxKey is a value type for use with context.WithValue.
 type CtxKey string
