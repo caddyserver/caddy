@@ -8,6 +8,9 @@ go:
   - 1.x
   - tip
 
+env:
+  - GO111MODULE=on
+
 matrix:
   allow_failures:
     - go: tip
@@ -22,15 +25,12 @@ before_install:
 
 install:
   - if [ "$TRAVIS_PULL_REQUEST" = "false" ]; then bash dist/gitcookie.sh; fi
-  - go get -t ./...
   - go get golang.org/x/lint/golint
-  - go get github.com/FiloSottile/vendorcheck
-  - go get github.com/alecthomas/gometalinter
+  - GO111MODULE=off go get github.com/alecthomas/gometalinter
 
 script:
   - gometalinter --install
-  - gometalinter --disable-all -E vet -E gofmt -E misspell -E ineffassign -E goimports -E deadcode --tests --vendor ./...
-  - vendorcheck ./...
+  - gometalinter --deadline 120s --disable-all -E vet -E gofmt -E misspell -E ineffassign -E goimports -E deadcode --tests --vendor ./...
   - go test -race ./...
 
 after_script:

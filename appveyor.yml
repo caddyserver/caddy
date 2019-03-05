@@ -9,6 +9,7 @@ clone_folder: c:\gopath\src\github.com\mholt\caddy
 
 environment:
   GOPATH: c:\gopath
+  GO111MODULE: on 
 
 stack: go 1.12
 
@@ -17,17 +18,16 @@ install:
   - set PATH=C:\msys64\mingw64\bin;%PATH%
   - go version
   - go env
-  - go get -t ./...
   - go get golang.org/x/lint/golint
-  - go get github.com/FiloSottile/vendorcheck
+  - set GO111MODULE=off
   - go get github.com/alecthomas/gometalinter
+  - set GO111MODULE=off
 
 build: off
 
 test_script:
   - gometalinter --install
-  - gometalinter --disable-all -E vet -E gofmt -E misspell -E ineffassign -E goimports -E deadcode --tests --vendor ./...
-  - vendorcheck ./...
+  - gometalinter --deadline 120s --disable-all -E vet -E gofmt -E misspell -E ineffassign -E goimports -E deadcode --tests --vendor ./...
   - go test -race ./...
 
 after_test:
