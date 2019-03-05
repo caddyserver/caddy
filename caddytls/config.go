@@ -444,7 +444,8 @@ func GetSupportedProtocolName(protocol uint16) (string, error) {
 	return "", fmt.Errorf("name: unsupported protocol")
 }
 
-// SupportedCiphersMap has supported ciphers, used only for parsing config.
+// SupportedCiphersMap has supported ciphers, used only for parsing config
+// and logging.
 //
 // Note that, at time of writing, HTTP/2 blacklists 276 cipher suites,
 // including all but four of the suites below (the four GCM suites).
@@ -455,6 +456,9 @@ func GetSupportedProtocolName(protocol uint16) (string, error) {
 //
 // This map, like any map, is NOT ORDERED. Do not range over this map.
 var SupportedCiphersMap = map[string]uint16{
+	"AES-128-GCM-SHA256":                 tls.TLS_AES_128_GCM_SHA256,
+	"AES-256-GCM-SHA384":                 tls.TLS_AES_256_GCM_SHA384,
+	"CHACHA20-POLY1305-SHA256":           tls.TLS_CHACHA20_POLY1305_SHA256,
 	"ECDHE-ECDSA-AES256-GCM-SHA384":      tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
 	"ECDHE-RSA-AES256-GCM-SHA384":        tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
 	"ECDHE-ECDSA-AES128-GCM-SHA256":      tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
@@ -469,6 +473,14 @@ var SupportedCiphersMap = map[string]uint16{
 	"RSA-AES128-CBC-SHA":                 tls.TLS_RSA_WITH_AES_128_CBC_SHA,
 	"ECDHE-RSA-3DES-EDE-CBC-SHA":         tls.TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA,
 	"RSA-3DES-EDE-CBC-SHA":               tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA,
+}
+
+// NonConfigurableCiphersMap is a list of ciphers that are understood but
+// cannot be configured such as the case of TLSv1.3.
+var NonConfigurableCiphersMap = map[string]struct{}{
+	"AES-128-GCM-SHA256":       struct{}{},
+	"AES-256-GCM-SHA384":       struct{}{},
+	"CHACHA20-POLY1305-SHA256": struct{}{},
 }
 
 // GetSupportedCipherName returns the cipher name

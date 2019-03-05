@@ -197,8 +197,10 @@ func setupTLS(c *caddy.Controller) error {
 				}
 			case "ciphers":
 				for c.NextArg() {
-					value, ok := SupportedCiphersMap[strings.ToUpper(c.Val())]
-					if !ok {
+					cipherName := strings.ToUpper(c.Val())
+					value, ok := SupportedCiphersMap[cipherName]
+					_, nonconfigurable := NonConfigurableCiphersMap[cipherName]
+					if !ok || nonconfigurable {
 						return c.Errf("Wrong cipher name or cipher not supported: '%s'", c.Val())
 					}
 					config.Ciphers = append(config.Ciphers, value)

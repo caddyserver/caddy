@@ -213,6 +213,18 @@ func TestSetupParseWithWrongOptionalParams(t *testing.T) {
 		t.Error("Expected errors, but no error returned")
 	}
 
+	// Test trying to configure TLSv1.3 ciphers
+	params = `tls ` + certFile + ` ` + keyFile + ` {
+			ciphers AES-128-GCM-SHA256
+		}`
+	cfg = &Config{Manager: &certmagic.Config{}}
+	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
+	c = caddy.NewTestController("", params)
+	err = setupTLS(c)
+	if err == nil {
+		t.Error("Expected errors, but no error returned")
+	}
+
 	// Test key_type wrong params
 	params = `tls {
 			key_type ab123
