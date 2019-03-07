@@ -273,6 +273,9 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int, t
 			transport.DisableKeepAlives = true
 		} else {
 			transport.MaxIdleConnsPerHost = keepalive
+			
+			//keep-alive connections set idle timeout
+			transport.IdleConnTimeout = 60 * time.Second
 		}
 		if httpserver.HTTP2 {
 			http2.ConfigureTransport(transport)

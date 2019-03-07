@@ -754,6 +754,14 @@ func (u *staticUpstream) GetHostCount() int {
 func (u *staticUpstream) Stop() error {
 	close(u.stop)
 	u.wg.Wait()
+
+	//close keep-alive connections
+	for _, host := range u.Hosts {
+		rp := host.ReverseProxy
+		if transport, ok := rp.Transport.(*http.Transport); ok {
+			transport.CloseIdleConnections()
+		}
+	}
 	return nil
 }
 
