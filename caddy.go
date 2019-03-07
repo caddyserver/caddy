@@ -781,6 +781,10 @@ func startServers(serverList []Server, inst *Instance, restartFds map[string]res
 			}
 		}
 
+		inst.servers = append(inst.servers, ServerListener{server: s, listener: ln, packet: pc})
+	}
+
+	for _, s := range inst.servers {
 		inst.wg.Add(2)
 		stopWg.Add(2)
 		func(s Server, ln net.Listener, pc net.PacketConn, inst *Instance) {
@@ -799,9 +803,7 @@ func startServers(serverList []Server, inst *Instance, restartFds map[string]res
 				}()
 				errChan <- s.ServePacket(pc)
 			}()
-		}(s, ln, pc, inst)
-
-		inst.servers = append(inst.servers, ServerListener{server: s, listener: ln, packet: pc})
+		}(s.server, s.listener, s.packet, inst)
 	}
 
 	// Log errors that may be returned from Serve() calls,
