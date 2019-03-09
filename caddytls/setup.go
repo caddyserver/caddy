@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -349,8 +350,18 @@ func setupTLS(c *caddy.Controller) error {
 
 	// generate self-signed cert if needed
 	if config.SelfSigned {
+		san := []string{config.Hostname}
+
+		// Special case handling for self-signed certs.
+		// Omitted hostname e.g. :2015 listens on all interfaces.
+		// Therefore, explicitly fetching all addresses is a requirement for certs
+		// to be valid for each address.
+		if config.Hostname == "" {
+			san = allLocalAddresses()
+		}
+
 		ssCert, err := newSelfSignedCertificate(selfSignedConfig{
-			SAN:     []string{config.Hostname},
+			SAN:     san,
 			KeyType: config.Manager.KeyType,
 		})
 		if err != nil {
@@ -448,4 +459,22 @@ func loadCertsInDir(cfg *Config, c *caddy.Controller, dir string) error {
 
 func constructDefaultClusterPlugin() (certmagic.Storage, error) {
 	return &certmagic.FileStorage{Path: caddy.AssetsPath()}, nil
+}
+
+var allLocalAddresses = func() []string {
+	var addresses = []string{"localhost"}
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return addresses
+	}
+
+	for _, addr := range addrs {
+		if ipnet, ok := addr.(*net.IPNet); ok {
+			if ipnet.IP.To4() != nil || ipnet.IP.To16() != nil {
+				addresses = append(addresses, ipnet.IP.String())
+			}
+		}
+	}
+
+	return addresses
 }
