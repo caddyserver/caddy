@@ -53,7 +53,8 @@ func init() {
 	flag.StringVar(&disabledMetrics, "disabled-metrics", "", "Comma-separated list of telemetry metrics to disable")
 	flag.StringVar(&conf, "conf", "", "Caddyfile to load (default \""+caddy.DefaultConfigFile+"\")")
 	flag.StringVar(&cpu, "cpu", "100%", "CPU cap")
-	flag.StringVar(&envFile, "env", "", "Path to file with environment variables to load in KEY=VALUE format")
+	flag.BoolVar(&printEnv, "env", false, "Enable to print environment variables")
+	flag.StringVar(&envFile, "envfile", "", "Path to file with environment variables to load in KEY=VALUE format")
 	flag.BoolVar(&fromJSON, "json-to-caddyfile", false, "From JSON stdin to Caddyfile stdout")
 	flag.BoolVar(&plugins, "plugins", false, "List installed plugins")
 	flag.StringVar(&certmagic.Email, "email", "", "Default ACME CA account email address")
@@ -115,6 +116,12 @@ func Run() {
 	// load all additional envs as soon as possible
 	if err := LoadEnvFromFile(envFile); err != nil {
 		mustLogFatalf("%v", err)
+	}
+
+	if printEnv {
+		for _, v := range os.Environ() {
+			fmt.Println(v)
+		}
 	}
 
 	// initialize telemetry client
@@ -580,6 +587,7 @@ var (
 	toJSON          bool
 	version         bool
 	plugins         bool
+	printEnv        bool
 	validate        bool
 	disabledMetrics string
 )
