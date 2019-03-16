@@ -833,22 +833,21 @@ func startServers(serverList []Server, inst *Instance, restartFds map[string]res
 }
 
 func getServerType(serverType string) (ServerType, error) {
-	stype, ok := serverTypes[serverType]
-	if ok {
-		return stype, nil
-	}
 	if len(serverTypes) == 0 {
 		return ServerType{}, fmt.Errorf("no server types plugged in")
 	}
 	if serverType == "" {
 		if len(serverTypes) == 1 {
-			for _, stype := range serverTypes {
-				return stype, nil
-			}
+			return serverTypes[serverType], nil
 		}
 		return ServerType{}, fmt.Errorf("multiple server types available; must choose one")
 	}
-	return ServerType{}, fmt.Errorf("unknown server type '%s'", serverType)
+	stype, ok := serverTypes[serverType]
+	if ok {
+		return stype, nil
+	} else {
+		return ServerType{}, fmt.Errorf("unknown server type '%s'", serverType)
+	}
 }
 
 func loadServerBlocks(serverType, filename string, input io.Reader) ([]caddyfile.ServerBlock, error) {
