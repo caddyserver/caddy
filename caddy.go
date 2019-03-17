@@ -193,9 +193,8 @@ func (i *Instance) Restart(newCaddyfile Input) (*Instance, error) {
 		r := recover()
 		if err != nil || r != nil {
 			for _, fn := range i.OnRestartFailed {
-				err2 := fn()
-				if err2 != nil {
-					log.Printf("[ERROR] Restart failed callback returned error: %v", err2)
+				if err := fn(); err != nil {
+					log.Printf("[ERROR] Restart failed callback returned error: %v", err)
 				}
 			}
 			if err != nil {
