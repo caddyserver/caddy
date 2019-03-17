@@ -79,6 +79,9 @@ type Config struct {
 	// that we generated in memory for convenience
 	SelfSigned bool
 
+	// Dump the self-signed certificate to a path
+	DumpSelfSignedCert string
+
 	// The email address to use when creating or
 	// using an ACME account (fun fact: if this
 	// is set to "off" then this config will not

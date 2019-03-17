@@ -290,6 +290,12 @@ func setupTLS(c *caddy.Controller) error {
 				}
 				parts[0] = "*"
 				config.Hostname = strings.Join(parts, ".")
+			case "dump_cert":
+				args := c.RemainingArgs()
+				if len(args) != 1 {
+					return c.ArgErr()
+				}
+				config.DumpSelfSignedCert = args[0]
 			default:
 				return c.Errf("Unknown subdirective '%s'", c.Val())
 			}
@@ -357,6 +363,21 @@ func setupTLS(c *caddy.Controller) error {
 			return fmt.Errorf("self-signed certificate generation: %v", err)
 		}
 		err = config.Manager.CacheUnmanagedTLSCertificate(ssCert)
+		if config.DumpSelfSignedCert != "" {
+			certFile, err := os.Create(config.DumpSelfSignedCert)
+			if err != nil {
+				return fmt.Errorf("self-signed: %v", err)
+			}
+			var certBlock = &pem.Block{
+				Type:  "CERTIFICATE",
+				Bytes: ssCert.Certificate[0],
+			}
+			err = pem.Encode(certFile, certBlock)
+			if err != nil {
+				return fmt.Errorf("self-signed: %v", err)
+			}
+			certFile.Close()
+		}
 		if err != nil {
 			return fmt.Errorf("self-signed: %v", err)
 		}
