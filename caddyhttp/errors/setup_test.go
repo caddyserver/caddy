@@ -179,6 +179,11 @@ func TestErrorsParse(t *testing.T) {
 			* generic_error.html
 			* generic_error.html
 		}`, true, ErrorHandler{ErrorPages: map[int]string{}, Log: &httpserver.Logger{}}},
+		{`errors /path error.txt {
+			404 
+		}`, true, ErrorHandler{ErrorPages: map[int]string{}, Log: &httpserver.Logger{}}},
+
+		{`errors /path error.txt`, true, ErrorHandler{ErrorPages: map[int]string{}, Log: &httpserver.Logger{}}},
 	}
 
 	for i, test := range tests {

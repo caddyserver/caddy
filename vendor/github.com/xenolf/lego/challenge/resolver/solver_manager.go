@@ -1,12 +1,14 @@
 package resolver
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sort"
 	"strconv"
 	"time"
 
+	"github.com/cenkalti/backoff"
 	"github.com/xenolf/lego/acme"
 	"github.com/xenolf/lego/acme/api"
 	"github.com/xenolf/lego/challenge"
@@ -90,16 +92,35 @@ func validate(core *api.Core, domain string, chlg acme.Challenge) error {
 		return nil
 	}
 
+	ra, err := strconv.Atoi(chlng.RetryAfter)
+	if err != nil {
+		// The ACME server MUST return a Retry-After.
+		// If it doesn't, we'll just poll hard.
+		// Boulder does not implement the ability to retry challenges or the Retry-After header.
+		// https://github.com/letsencrypt/boulder/blob/master/docs/acme-divergences.md#section-82
+		ra = 5
+	}
+	initialInterval := time.Duration(ra) * time.Second
+
+	bo := backoff.NewExponentialBackOff()
+	bo.InitialInterval = initialInterval
+	bo.MaxInterval = 10 * initialInterval
+	bo.MaxElapsedTime = 100 * initialInterval
+
+	ctx, cancel := context.WithCancel(context.Background())
+
 	// After the path is sent, the ACME server will access our server.
 	// Repeatedly check the server for an updated status on our request.
-	for {
+	operation := func() error {
 		authz, err := core.Authorizations.Get(chlng.AuthorizationURL)
 		if err != nil {
+			cancel()
 			return err
 		}
 
 		valid, err := checkAuthorizationStatus(authz)
 		if err != nil {
+			cancel()
 			return err
 		}
 
@@ -108,16 +129,10 @@ func validate(core *api.Core, domain string, chlg acme.Challenge) error {
 			return nil
 		}
 
-		ra, err := strconv.Atoi(chlng.RetryAfter)
-		if err != nil {
-			// The ACME server MUST return a Retry-After.
-			// If it doesn't, we'll just poll hard.
-			// Boulder does not implement the ability to retry challenges or the Retry-After header.
-			// https://github.com/letsencrypt/boulder/blob/master/docs/acme-divergences.md#section-82
-			ra = 5
-		}
-		time.Sleep(time.Duration(ra) * time.Second)
+		return errors.New("the server didn't respond to our request")
 	}
+
+	return backoff.Retry(operation, backoff.WithContext(bo, ctx))
 }
 
 func checkChallengeStatus(chlng acme.ExtendedChallenge) (bool, error) {

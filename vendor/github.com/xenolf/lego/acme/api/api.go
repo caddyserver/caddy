@@ -2,12 +2,15 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"crypto"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
+	"github.com/cenkalti/backoff"
 	"github.com/xenolf/lego/acme"
 	"github.com/xenolf/lego/acme/api/internal/nonces"
 	"github.com/xenolf/lego/acme/api/internal/secure"
@@ -64,34 +67,46 @@ func (a *Core) post(uri string, reqBody, response interface{}) (*http.Response, 
 		return nil, errors.New("failed to marshal message")
 	}
 
-	return a.retrievablePost(uri, content, response, 0)
+	return a.retrievablePost(uri, content, response)
 }
 
 // postAsGet performs an HTTP POST ("POST-as-GET") request.
 // https://tools.ietf.org/html/draft-ietf-acme-acme-16#section-6.3
 func (a *Core) postAsGet(uri string, response interface{}) (*http.Response, error) {
-	return a.retrievablePost(uri, []byte{}, response, 0)
+	return a.retrievablePost(uri, []byte{}, response)
 }
 
-func (a *Core) retrievablePost(uri string, content []byte, response interface{}, retry int) (*http.Response, error) {
-	resp, err := a.signedPost(uri, content, response)
-	if err != nil {
-		// during tests, 5 retries allow to support ~50% of bad nonce.
-		if retry >= 5 {
-			log.Infof("too many retry on a nonce error, retry count: %d", retry)
-			return resp, err
-		}
-		switch err.(type) {
-		// Retry once if the nonce was invalidated
-		case *acme.NonceError:
-			log.Infof("nonce error retry: %s", err)
-			resp, err = a.retrievablePost(uri, content, response, retry+1)
-			if err != nil {
-				return resp, err
+func (a *Core) retrievablePost(uri string, content []byte, response interface{}) (*http.Response, error) {
+	// during tests, allow to support ~90% of bad nonce with a minimum of attempts.
+	bo := backoff.NewExponentialBackOff()
+	bo.InitialInterval = 200 * time.Millisecond
+	bo.MaxInterval = 5 * time.Second
+	bo.MaxElapsedTime = 20 * time.Second
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	var resp *http.Response
+	operation := func() error {
+		var err error
+		resp, err = a.signedPost(uri, content, response)
+		if err != nil {
+			switch err.(type) {
+			// Retry if the nonce was invalidated
+			case *acme.NonceError:
+				log.Infof("nonce error retry: %s", err)
+				return err
+			default:
+				cancel()
+				return err
 			}
-		default:
-			return resp, err
 		}
+
+		return nil
+	}
+
+	err := backoff.Retry(operation, backoff.WithContext(bo, ctx))
+	if err != nil {
+		return nil, err
 	}
 
 	return resp, nil
