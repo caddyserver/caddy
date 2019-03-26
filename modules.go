@@ -1,7 +1,9 @@
 package caddy2
 
 import (
+	"encoding/json"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -102,6 +104,34 @@ func Modules() []string {
 	sort.Strings(names)
 
 	return names
+}
+
+// LoadModule decodes rawMsg into a new instance of mod and
+// returns the value. If mod.New() does not return a pointer
+// value, it is converted to one so that it is unmarshaled
+// into the underlying concrete type. If mod.New is nil, an
+// error is returned.
+func LoadModule(mod Module, rawMsg json.RawMessage) (interface{}, error) {
+	if mod.New == nil {
+		return nil, fmt.Errorf("no constructor")
+	}
+
+	val, err := mod.New()
+	if err != nil {
+		return nil, fmt.Errorf("initializing module '%s': %v", mod.Name, err)
+	}
+
+	// value must be a pointer for unmarshaling into concrete type
+	if rv := reflect.ValueOf(val); rv.Kind() != reflect.Ptr {
+		val = reflect.New(rv.Type()).Elem().Addr().Interface()
+	}
+
+	err = json.Unmarshal(rawMsg, &val)
+	if err != nil {
+		return nil, fmt.Errorf("decoding module config: %s: %v", mod.Name, err)
+	}
+
+	return val, nil
 }
 
 var (
