@@ -1,6 +1,7 @@
 package caddyhttp
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net"
@@ -24,13 +25,15 @@ func init() {
 
 type httpModuleConfig struct {
 	Servers map[string]httpServerConfig `json:"servers"`
+
+	servers []*http.Server
 }
 
 func (hc *httpModuleConfig) Run() error {
-	fmt.Printf("RUNNING: %#v\n", hc)
+	// fmt.Printf("RUNNING: %#v\n", hc)
 
 	for _, srv := range hc.Servers {
-		s := http.Server{
+		s := &http.Server{
 			ReadTimeout:       time.Duration(srv.ReadTimeout),
 			ReadHeaderTimeout: time.Duration(srv.ReadHeaderTimeout),
 		}
@@ -53,11 +56,21 @@ func (hc *httpModuleConfig) Run() error {
 	return nil
 }
 
+func (hc *httpModuleConfig) Cancel() error {
+	for _, s := range hc.servers {
+		err := s.Shutdown(context.Background()) // TODO
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func parseListenAddr(a string) (proto string, addrs []string, err error) {
 	proto = "tcp"
-	if idx := strings.Index(a, ":::"); idx >= 0 {
+	if idx := strings.Index(a, "/"); idx >= 0 {
 		proto = strings.ToLower(strings.TrimSpace(a[:idx]))
-		a = a[idx+3:]
+		a = a[idx+1:]
 	}
 	var host, port string
 	host, port, err = net.SplitHostPort(a)

@@ -1,6 +1,7 @@
 package caddy2
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -8,8 +9,10 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/http/pprof"
 	"strings"
 	"sync"
+	"time"
 )
 
 var (
@@ -30,6 +33,14 @@ func StartAdmin(addr string) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/load", handleLoadConfig)
 
+	///// BEGIN PPROF STUFF //////
+	mux.HandleFunc("/debug/pprof/", pprof.Index)
+	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	///// END PPROF STUFF //////
+
 	for _, m := range GetModules("admin") {
 		moduleValue, err := m.New()
 		if err != nil {
@@ -40,7 +51,11 @@ func StartAdmin(addr string) error {
 	}
 
 	cfgEndptSrv = &http.Server{
-		Handler: mux,
+		Handler:           mux,
+		ReadTimeout:       5 * time.Second,
+		ReadHeaderTimeout: 5 * time.Second,
+		IdleTimeout:       5 * time.Second,
+		MaxHeaderBytes:    1024 * 256,
 	}
 
 	go cfgEndptSrv.Serve(ln)
@@ -74,6 +89,7 @@ type AdminRoute struct {
 }
 
 func handleLoadConfig(w http.ResponseWriter, r *http.Request) {
+	r.Close = true
 	if r.Method != "POST" {
 		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 		return
@@ -94,14 +110,31 @@ func handleLoadConfig(w http.ResponseWriter, r *http.Request) {
 
 // Load loads and starts a configuration.
 func Load(r io.Reader) error {
+	buf := bufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer bufPool.Put(buf)
+
+	_, err := io.Copy(buf, io.LimitReader(r, 1024*1024))
+	if err != nil {
+		return err
+	}
+
 	var cfg Config
-	err := json.NewDecoder(r).Decode(&cfg)
+	err = json.Unmarshal(buf.Bytes(), &cfg)
 	if err != nil {
 		return fmt.Errorf("decoding config: %v", err)
 	}
+
 	err = Start(cfg)
 	if err != nil {
 		return fmt.Errorf("starting: %v", err)
 	}
+
 	return nil
+}
+
+var bufPool = sync.Pool{
+	New: func() interface{} {
+		return new(bytes.Buffer)
+	},
 }

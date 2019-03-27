@@ -28,22 +28,22 @@ func TestParseListenerAddr(t *testing.T) {
 			expectAddrs: []string{":1234"},
 		},
 		{
-			input:       "tcp::::1234",
+			input:       "tcp/:1234",
 			expectProto: "tcp",
 			expectAddrs: []string{":1234"},
 		},
 		{
-			input:       "tcp6::::1234",
+			input:       "tcp6/:1234",
 			expectProto: "tcp6",
 			expectAddrs: []string{":1234"},
 		},
 		{
-			input:       "tcp4:::localhost:1234",
+			input:       "tcp4/localhost:1234",
 			expectProto: "tcp4",
 			expectAddrs: []string{"localhost:1234"},
 		},
 		{
-			input:       "unix:::localhost:1234-1236",
+			input:       "unix/localhost:1234-1236",
 			expectProto: "unix",
 			expectAddrs: []string{"localhost:1234", "localhost:1235", "localhost:1236"},
 		},
