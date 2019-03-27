@@ -33,7 +33,7 @@ func StartAdmin(addr string) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/load", handleLoadConfig)
 
-	///// BEGIN PPROF STUFF //////
+	///// BEGIN PPROF STUFF (TODO: Temporary) /////
 	mux.HandleFunc("/debug/pprof/", pprof.Index)
 	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
 	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)

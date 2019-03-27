@@ -49,6 +49,7 @@ func (hc *httpModuleConfig) Run() error {
 					return fmt.Errorf("%s: listening on %s: %v", proto, addr, err)
 				}
 				go s.Serve(ln)
+				hc.servers = append(hc.servers, s)
 			}
 		}
 	}

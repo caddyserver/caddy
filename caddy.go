@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -48,9 +47,6 @@ func Start(cfg Config) error {
 	}
 	currentCfg = &cfg
 	currentCfgMu.Unlock()
-
-	// TODO: debugging memory leak...
-	debug.FreeOSMemory()
 
 	return nil
 }

@@ -1,1 +1,5 @@
 _gitignore/
+
+# artifacts from pprof tooling
+*.prof
+*.test
