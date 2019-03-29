@@ -63,6 +63,11 @@ steps:
   condition: eq( variables['Agent.OS'], 'Windows_NT' )
   displayName: Install Go on Windows
 
+- bash: |
+    curl -sfL https://install.goreleaser.com/github.com/golangci/golangci-lint.sh | sh -s -- -b $(go env GOPATH)/bin v1.15.0
+    golang-ci --version
+  displayName: Install golang-ci
+
 
 - bash: |
     env
@@ -71,6 +76,7 @@ steps:
   displayName: 'Print Go and environment'
 
 - script: |
+    golangci-lint run -E gofmt -E goimports -E misspell
     go get -v -t -d ./...
     go test -race ./...
   workingDirectory: '$(modulePath)'
