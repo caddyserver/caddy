@@ -26,10 +26,10 @@ variables:
 
 steps:
 - bash: |
-    rm -rf $GOROOT
+    sudo rm -rf $GOROOT
     goVersion=$(curl "https://golang.org/VERSION?m=text")
     wget "https://dl.google.com/go/${goVersion}.linux-amd64.tar.gz"
-    tar -C /usr/local -xzf "${goVersion}.linux-amd64.tar.gz"
+    sudo tar -C /usr/local -xzf "${goVersion}.linux-amd64.tar.gz"
     env
     go version
   displayName: 'Install the latest version of Go'
