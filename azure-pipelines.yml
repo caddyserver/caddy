@@ -33,27 +33,30 @@ steps:
 
 # Linux
 - bash: |
-    rm -f $(which go)
+    sudo rm -f $(which go)
     wget "https://dl.google.com/go/$(LATEST_GO).linux-amd64.tar.gz"
     sudo tar -C /usr/local -xzf "$(LATEST_GO).linux-amd64.tar.gz"
-    echo "##vso[task.setvariable variable=PATH]$PATH:/usr/local/go/bin"
+    echo '##vso[task.prependpath]$(GOBIN)'
+    echo '##vso[task.prependpath]$(GOROOT)/bin'
   condition: eq( variables['Agent.OS'], 'Linux' )
   displayName: Install Go on Linux
 # macOS
 - bash: |
-    rm -f $(which go)
+    sudo rm -f $(which go)
     wget "https://dl.google.com/go/$(LATEST_GO).darwin-amd64.tar.gz"
     sudo tar -C /usr/local -xzf "$(LATEST_GO).darwin-amd64.tar.gz"
-    echo "##vso[task.setvariable variable=PATH]$PATH:/usr/local/go/bin"
+    echo '##vso[task.prependpath]$(GOBIN)'
+    echo '##vso[task.prependpath]$(GOROOT)/bin'
   condition: eq( variables['Agent.OS'], 'Darwin' )
   displayName: Install Go on macOS
 # Windows
 - bash: |
-    rm -f $(which go)
+    sudo rm -f $(which go)
     wget "https://dl.google.com/go/$(LATEST_GO).windows-amd64.zip"
     unzip package.zip -d /opt
     sudo unzip "$(LATEST_GO).darwin-amd64.zip" -d /usr/local
-    echo "##vso[task.setvariable variable=PATH]$PATH:/usr/local/go/bin"
+    echo '##vso[task.prependpath]$(GOBIN)'
+    echo '##vso[task.prependpath]$(GOROOT)/bin'
   condition: eq( variables['Agent.OS'], 'Windows_NT' )
   displayName: Install Go on Windows
 
