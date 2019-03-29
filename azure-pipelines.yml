@@ -34,11 +34,13 @@ steps:
     echo "Latest Go version: $latestGo"
   displayName: "Get Go version"
 
-- bash: |
+- script: |
     sudo rm -f $(which go)
     echo '##vso[task.prependpath]$(GOBIN)'
     echo '##vso[task.prependpath]$(GOROOT)/bin'
     mkdir -p '$(modulePath)'
+    shopt -s extglob
+    shopt -s dotglob
     mv !(gopath) '$(modulePath)'
   displayName: Remove old Go and set GOBIN/GOROOT
 
