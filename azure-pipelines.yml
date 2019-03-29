@@ -15,6 +15,9 @@ strategy:
     windows:
       imageName: 'windows-2019'
 
+pool:
+  vmImage: $(imageName)
+
 variables:
   GOBIN:  '$(GOPATH)/bin' # Go binaries path
   GOROOT: '/usr/local/go' # Go installation path
