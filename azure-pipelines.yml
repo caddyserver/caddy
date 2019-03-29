@@ -1,0 +1,31 @@
+# Go
+# Build your Go project.
+# Add steps that test, save build artifacts, deploy, and more:
+# https://docs.microsoft.com/azure/devops/pipelines/languages/go
+
+trigger:
+- master
+
+pool:
+  vmImage: 'Ubuntu-16.04'
+
+variables:
+  GOBIN:  '$(GOPATH)/bin' # Go binaries path
+  GOROOT: '/usr/local/go' # Go installation path
+  GOPATH: '$(system.defaultWorkingDirectory)/gopath' # Go workspace path
+  modulePath: '$(GOPATH)/src/github.com/$(build.repository.name)' # Path to the module's code
+
+steps:
+- bash: |
+    rm -rf $GOROOT
+    goVersion=$(curl "https://golang.org/VERSION?m=text")
+    wget "https://dl.google.com/go/go${goVersion}.linux-amd64.tar.gz"
+    tar -C /usr/local -xzf "go${goVersion}.linux-amd64.tar.gz"
+    env
+    go version
+  displayName: 'Install the latest version of Go'
+
+- script: |
+    go get -v -t -d ./...
+    go test -race ./...
+  displayName: 'Run tests'
