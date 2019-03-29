@@ -27,26 +27,30 @@ variables:
 steps:
 - bash: |
     sudo rm -rf $GOROOT
-    export LATEST_GO=$(curl "https://golang.org/VERSION?m=text")
+    sudo rm $(which go)
+    latestGo=$(curl "https://golang.org/VERSION?m=text")
+    echo "Latest Go version: $latestGo"
+    echo "##vso[task.setvariable variable=LATEST_GO]$latestGo"
+  displayName: "Get Go version"
 
 # Linux
 - bash: |
-    wget "https://dl.google.com/go/${LATEST_GO}.linux-amd64.tar.gz"
-    sudo tar -C /usr/local -xzf "${LATEST_GO}.linux-amd64.tar.gz"
+    wget "https://dl.google.com/go/$(LATEST_GO).linux-amd64.tar.gz"
+    sudo tar -C /usr/local -xzf "$(LATEST_GO).linux-amd64.tar.gz"
     export PATH=$PATH:/usr/local/go/bin
   condition: eq( variables['Agent.OS'], 'Linux' )
   displayName: Install Go on Linux
 # macOS
 - bash: |
-    wget "https://dl.google.com/go/${LATEST_GO}.darwin-amd64.tar.gz"
-    sudo tar -C /usr/local -xzf "${LATEST_GO}.darwin-amd64.tar.gz"
+    wget "https://dl.google.com/go/$(LATEST_GO).darwin-amd64.tar.gz"
+    sudo tar -C /usr/local -xzf "$(LATEST_GO).darwin-amd64.tar.gz"
     export PATH=$PATH:/usr/local/go/bin
   condition: eq( variables['Agent.OS'], 'Darwin' )
   displayName: Install Go on macOS
 # Windows
 - powershell: |
-    (New-Object System.Net.WebClient).DownloadFile("https://dl.google.com/go/${LATEST_GO}.windows-amd64.zip", "${LATEST_GO}.windows-amd64.zip")
-    Expand-Archive "${LATEST_GO}.windows-amd64.zip" -DestinationPath $(system.defaultWorkingDirectory)\go -Force
+    (New-Object System.Net.WebClient).DownloadFile("https://dl.google.com/go/$(LATEST_GO).windows-amd64.zip", "$(LATEST_GO).windows-amd64.zip")
+    Expand-Archive "$(LATEST_GO).windows-amd64.zip" -DestinationPath $(system.defaultWorkingDirectory)\go -Force
     $env:Path += ";$(system.defaultWorkingDirectory)\go"
   condition: eq( variables['Agent.OS'], 'Windows_NT' )
   displayName: Install Go on Windows
