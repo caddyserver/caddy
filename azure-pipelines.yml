@@ -9,20 +9,22 @@ trigger:
 strategy:
   matrix:
     linux:
-      imageName: 'ubuntu-16.04'
+      imageName: ubuntu-16.04
+      gorootDir: /usr/local
     mac:
-      imageName: 'macos-10.13'
+      imageName: macos-10.13
+      gorootDir: /usr/local
     windows:
-      imageName: 'windows-2019'
+      imageName: windows-2019
+      gorootDir: C:\
 
 pool:
   vmImage: $(imageName)
 
 variables:
-  GOPATH: '$(system.defaultWorkingDirectory)/gopath' # Go workspace path
-  GOBIN:  '$(GOPATH)/bin' # Go binaries path
-  GOROOT: '/usr/local/go' # Go installation path
-  modulePath: '$(GOPATH)/src/github.com/$(build.repository.name)' # Path to the module's code
+  GOROOT: $(gorootDir)/go
+  GOPATH: $(system.defaultWorkingDirectory)/gopath
+  GOBIN:  $(GOPATH)/bin
 
 steps:
 - bash: |
@@ -31,32 +33,28 @@ steps:
     echo "Latest Go version: $latestGo"
   displayName: "Get Go version"
 
-# Linux
 - bash: |
     sudo rm -f $(which go)
-    wget "https://dl.google.com/go/$(LATEST_GO).linux-amd64.tar.gz"
-    sudo tar -C /usr/local -xzf "$(LATEST_GO).linux-amd64.tar.gz"
     echo '##vso[task.prependpath]$(GOBIN)'
     echo '##vso[task.prependpath]$(GOROOT)/bin'
+  displayName: Remove old Go and set GOBIN/GOROOT
+
+# Linux
+- bash: |
+    wget "https://dl.google.com/go/$(LATEST_GO).linux-amd64.tar.gz"
+    sudo tar -C $(gorootDir) -xzf "$(LATEST_GO).linux-amd64.tar.gz"
   condition: eq( variables['Agent.OS'], 'Linux' )
   displayName: Install Go on Linux
 # macOS
 - bash: |
-    sudo rm -f $(which go)
     wget "https://dl.google.com/go/$(LATEST_GO).darwin-amd64.tar.gz"
-    sudo tar -C /usr/local -xzf "$(LATEST_GO).darwin-amd64.tar.gz"
-    echo '##vso[task.prependpath]$(GOBIN)'
-    echo '##vso[task.prependpath]$(GOROOT)/bin'
+    sudo tar -C $(gorootDir) -xzf "$(LATEST_GO).darwin-amd64.tar.gz"
   condition: eq( variables['Agent.OS'], 'Darwin' )
   displayName: Install Go on macOS
 # Windows
 - bash: |
-    sudo rm -f $(which go)
     wget "https://dl.google.com/go/$(LATEST_GO).windows-amd64.zip"
-    unzip package.zip -d /opt
-    sudo unzip "$(LATEST_GO).darwin-amd64.zip" -d /usr/local
-    echo '##vso[task.prependpath]$(GOBIN)'
-    echo '##vso[task.prependpath]$(GOROOT)/bin'
+    sudo unzip "$(LATEST_GO).darwin-amd64.zip" -d $(gorootDir)
   condition: eq( variables['Agent.OS'], 'Windows_NT' )
   displayName: Install Go on Windows
 
