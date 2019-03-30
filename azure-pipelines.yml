@@ -72,18 +72,15 @@ steps:
 - bash: |
     printf "Using go at: $(which go)\n"
     printf "Go version: $(go version)\n"
-    echo "Go environment:"
+    printf "\nGo environment:\n"
     go env
-    echo "System environment:"
+    echo "\nSystem environment:\n"
     env
   displayName: Print Go version and environment
 
-- script: golangci-lint run -E gofmt -E goimports -E misspell
-  workingDirectory: '$(modulePath)'
-  displayName: Run static analysis checks
-
 - script: |
     go get -v -t -d ./...
+    golangci-lint run -E gofmt -E goimports -E misspell
     go test -race ./...
   workingDirectory: '$(modulePath)'
   displayName: Run tests
