@@ -685,6 +685,7 @@ var directives = []string{
 	"gopkg",     // github.com/zikes/gopkg
 	"restic",    // github.com/restic/caddy
 	"wkd",       // github.com/emersion/caddy-wkd
+	"dyndns",    // github.com/linkonoid/caddy-dyndns
 }
 
 const (

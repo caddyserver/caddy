@@ -92,8 +92,10 @@ type UpstreamHost struct {
 	// This is an int32 so that we can use atomic operations to do concurrent
 	// reads & writes to this value.  The default value of 0 indicates that it
 	// is healthy and any non-zero value indicates unhealthy.
-	Unhealthy         int32
-	HealthCheckResult atomic.Value
+	Unhealthy                    int32
+	HealthCheckResult            atomic.Value
+	UpstreamHeaderReplacements   headerReplacements
+	DownstreamHeaderReplacements headerReplacements
 }
 
 // Down checks whether the upstream host is down or not.
@@ -220,7 +222,7 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 		// set headers for request going upstream
 		if host.UpstreamHeaders != nil {
 			// modify headers for request that will be sent to the upstream host
-			mutateHeadersByRules(outreq.Header, host.UpstreamHeaders, replacer)
+			mutateHeadersByRules(outreq.Header, host.UpstreamHeaders, replacer, host.UpstreamHeaderReplacements)
 			if hostHeaders, ok := outreq.Header["Host"]; ok && len(hostHeaders) > 0 {
 				outreq.Host = hostHeaders[len(hostHeaders)-1]
 			}
@@ -230,7 +232,7 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 		// headers coming back downstream
 		var downHeaderUpdateFn respUpdateFn
 		if host.DownstreamHeaders != nil {
-			downHeaderUpdateFn = createRespHeaderUpdateFn(host.DownstreamHeaders, replacer)
+			downHeaderUpdateFn = createRespHeaderUpdateFn(host.DownstreamHeaders, replacer, host.DownstreamHeaderReplacements)
 		}
 
 		// Before we retry the request we have to make sure
@@ -376,13 +378,13 @@ func createUpstreamRequest(rw http.ResponseWriter, r *http.Request) (*http.Reque
 	return outreq, cancel
 }
 
-func createRespHeaderUpdateFn(rules http.Header, replacer httpserver.Replacer) respUpdateFn {
+func createRespHeaderUpdateFn(rules http.Header, replacer httpserver.Replacer, replacements headerReplacements) respUpdateFn {
 	return func(resp *http.Response) {
-		mutateHeadersByRules(resp.Header, rules, replacer)
+		mutateHeadersByRules(resp.Header, rules, replacer, replacements)
 	}
 }
 
-func mutateHeadersByRules(headers, rules http.Header, repl httpserver.Replacer) {
+func mutateHeadersByRules(headers, rules http.Header, repl httpserver.Replacer, replacements headerReplacements) {
 	for ruleField, ruleValues := range rules {
 		if strings.HasPrefix(ruleField, "+") {
 			for _, ruleValue := range ruleValues {
@@ -397,6 +399,19 @@ func mutateHeadersByRules(headers, rules http.Header, repl httpserver.Replacer) 
 			replacement := repl.Replace(ruleValues[len(ruleValues)-1])
 			if len(replacement) > 0 {
 				headers.Set(ruleField, replacement)
+			}
+		}
+	}
+
+	for ruleField, ruleValues := range replacements {
+		for _, ruleValue := range ruleValues {
+			// Replace variables in replacement string
+			replacement := repl.Replace(ruleValue.to)
+			original := headers.Get(ruleField)
+			if len(replacement) > 0 && len(original) > 0 {
+				// Replace matches in original string with replacement string
+				replaced := ruleValue.regexp.ReplaceAllString(original, replacement)
+				headers.Set(ruleField, replaced)
 			}
 		}
 	}
