@@ -59,7 +59,7 @@ steps:
 - powershell: |
     Write-Host "Downloading Go... (please be patient, I am very slow)"
     (New-Object System.Net.WebClient).DownloadFile("https://dl.google.com/go/$(LATEST_GO).windows-amd64.zip", "$(LATEST_GO).windows-amd64.zip")
-    Write-Host "Extracting Go..."
+    Write-Host "Extracting Go... (I'm slow too)"
     Expand-Archive "$(LATEST_GO).windows-amd64.zip" -DestinationPath "$(gorootDir)"
   condition: eq( variables['Agent.OS'], 'Windows_NT' )
   displayName: Install Go on Windows
@@ -70,12 +70,16 @@ steps:
   displayName: Install golangci-lint
 
 - bash: |
-    env
     printf "Using go at: $(which go)\n"
     printf "Go version: $(go version)\n"
-  displayName: Print environment and Go info
+    echo "Go environment:"
+    go env
+    echo "System environment:"
+    env
+  displayName: Print Go version and environment
 
 - script: golangci-lint run -E gofmt -E goimports -E misspell
+  workingDirectory: '$(modulePath)'
   displayName: Run static analysis checks
 
 - script: |
