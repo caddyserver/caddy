@@ -22,12 +22,12 @@ import (
 	"os"
 	"sync/atomic"
 
-	"github.com/xenolf/lego/challenge/tlsalpn01"
+	"github.com/go-acme/lego/challenge/tlsalpn01"
 
+	"github.com/go-acme/lego/certcrypto"
 	"github.com/klauspost/cpuid"
 	"github.com/mholt/caddy"
 	"github.com/mholt/certmagic"
-	"github.com/xenolf/lego/certcrypto"
 )
 
 // Config describes how TLS should be configured and used.

@@ -23,7 +23,7 @@ import (
 
 	"github.com/mholt/caddy"
 	"github.com/mholt/certmagic"
-	"github.com/xenolf/lego/certcrypto"
+	"github.com/go-acme/lego/certcrypto"
 )
 
 func TestMain(m *testing.M) {
