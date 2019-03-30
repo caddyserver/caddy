@@ -58,7 +58,7 @@ steps:
   displayName: Install Go on macOS
 # Windows
 - bash: |
-    curl "https://dl.google.com/go/$(LATEST_GO).windows-amd64.zip" --output "$(LATEST_GO).windows-amd64.zip"
+    curl -O "https://dl.google.com/go/$(LATEST_GO).windows-amd64.zip"
     unzip "$(LATEST_GO).windows-amd64.zip" -d "$(gorootDir)"
   condition: eq( variables['Agent.OS'], 'Windows_NT' )
   displayName: Install Go on Windows
