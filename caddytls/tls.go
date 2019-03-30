@@ -29,9 +29,9 @@
 package caddytls
 
 import (
+	"github.com/go-acme/lego/challenge"
 	"github.com/mholt/caddy"
 	"github.com/mholt/certmagic"
-	"github.com/xenolf/lego/challenge"
 )
 
 // ConfigHolder is any type that has a Config; it presumably is
@@ -93,7 +93,7 @@ var KnownACMECAs = []string{
 //
 // challenge.Provider is an interface that allows the implementation of custom
 // challenge providers. For more details, see:
-// https://godoc.org/github.com/xenolf/lego/acme#ChallengeProvider
+// https://godoc.org/github.com/go-acme/lego/acme#ChallengeProvider
 type ChallengeProvider challenge.Provider
 
 // DNSProviderConstructor is a function that takes credentials and
