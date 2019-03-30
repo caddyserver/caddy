@@ -72,9 +72,9 @@ steps:
 - bash: |
     printf "Using go at: $(which go)\n"
     printf "Go version: $(go version)\n"
-    printf "\nGo environment:\n"
+    printf "\n\nGo environment:\n\n"
     go env
-    echo "\nSystem environment:\n"
+    printf "\n\nSystem environment:\n\n"
     env
   displayName: Print Go version and environment
 
