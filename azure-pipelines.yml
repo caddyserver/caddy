@@ -57,9 +57,9 @@ steps:
   condition: eq( variables['Agent.OS'], 'Darwin' )
   displayName: Install Go on macOS
 # Windows
-- bash: |
-    curl -O "https://dl.google.com/go/$(LATEST_GO).windows-amd64.zip"
-    unzip "$(LATEST_GO).windows-amd64.zip" -d "$(gorootDir)"
+- powershell: |
+    (New-Object System.Net.WebClient).DownloadFile("https://dl.google.com/go/$(LATEST_GO).windows-amd64.zip", "$(LATEST_GO).windows-amd64.zip")
+    Expand-Archive "$(LATEST_GO).windows-amd64.zip" -DestinationPath "$(gorootDir)"
   condition: eq( variables['Agent.OS'], 'Windows_NT' )
   displayName: Install Go on Windows
 
