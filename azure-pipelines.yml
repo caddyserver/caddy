@@ -1,6 +1,4 @@
-# Go
-# Build your Go project.
-# Add steps that test, save build artifacts, deploy, and more:
+# Mutilated beyond recognition from the example at:
 # https://docs.microsoft.com/azure/devops/pipelines/languages/go
 
 trigger:
@@ -32,7 +30,7 @@ steps:
     latestGo=$(curl "https://golang.org/VERSION?m=text")
     echo "##vso[task.setvariable variable=LATEST_GO]$latestGo"
     echo "Latest Go version: $latestGo"
-  displayName: "Get Go version"
+  displayName: "Get latest Go version"
 
 - bash: |
     sudo rm -f $(which go)
@@ -42,41 +40,46 @@ steps:
     shopt -s extglob
     shopt -s dotglob
     mv !(gopath) '$(modulePath)'
-  displayName: Remove old Go and set GOBIN/GOROOT
+  displayName: Remove old Go, set GOBIN/GOROOT, and move project into GOPATH
 
-# Linux
+# Install Go (this varies by platform)
+
 - bash: |
     wget "https://dl.google.com/go/$(LATEST_GO).linux-amd64.tar.gz"
     sudo tar -C $(gorootDir) -xzf "$(LATEST_GO).linux-amd64.tar.gz"
   condition: eq( variables['Agent.OS'], 'Linux' )
   displayName: Install Go on Linux
-# macOS
+
 - bash: |
     wget "https://dl.google.com/go/$(LATEST_GO).darwin-amd64.tar.gz"
     sudo tar -C $(gorootDir) -xzf "$(LATEST_GO).darwin-amd64.tar.gz"
   condition: eq( variables['Agent.OS'], 'Darwin' )
   displayName: Install Go on macOS
-# Windows
+
 - powershell: |
+    Write-Host "Downloading Go... (please be patient, I am very slow)"
     (New-Object System.Net.WebClient).DownloadFile("https://dl.google.com/go/$(LATEST_GO).windows-amd64.zip", "$(LATEST_GO).windows-amd64.zip")
+    Write-Host "Extracting Go..."
     Expand-Archive "$(LATEST_GO).windows-amd64.zip" -DestinationPath "$(gorootDir)"
   condition: eq( variables['Agent.OS'], 'Windows_NT' )
   displayName: Install Go on Windows
 
-- script: |
-    go get github.com/golangci/golangci-lint/cmd/golangci-lint
+# TODO: When this issue is fixed, replace with installer script:
+# https://github.com/golangci/golangci-lint/issues/472
+- script: go get -v github.com/golangci/golangci-lint/cmd/golangci-lint
   displayName: Install golangci-lint
-
 
 - bash: |
     env
-    which go
-    go version
-  displayName: 'Print Go and environment'
+    printf "Using go at: $(which go)\n"
+    printf "Go version: $(go version)\n"
+  displayName: Print environment and Go info
+
+- script: golangci-lint run -E gofmt -E goimports -E misspell
+  displayName: Run static analysis checks
 
 - script: |
-    golangci-lint run -E gofmt -E goimports -E misspell
     go get -v -t -d ./...
     go test -race ./...
   workingDirectory: '$(modulePath)'
-  displayName: 'Run tests'
+  displayName: Run tests
