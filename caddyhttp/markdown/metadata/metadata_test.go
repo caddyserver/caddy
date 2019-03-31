@@ -21,12 +21,6 @@ import (
 	"testing"
 )
 
-func check(t *testing.T, err error) {
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
 var TOML = [5]string{`
 title = "A title"
 template = "default"
