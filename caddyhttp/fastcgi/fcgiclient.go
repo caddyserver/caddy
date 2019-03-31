@@ -175,15 +175,13 @@ func (rec *record) read(r io.Reader) (buf []byte, err error) {
 // FCGIClient implements a FastCGI client, which is a standard for
 // interfacing external applications with Web servers.
 type FCGIClient struct {
-	mutex       sync.Mutex
-	rwc         io.ReadWriteCloser
-	h           header
-	buf         bytes.Buffer
-	stderr      bytes.Buffer
-	keepAlive   bool
-	reqID       uint16
-	readTimeout time.Duration
-	sendTimeout time.Duration
+	mutex     sync.Mutex
+	rwc       io.ReadWriteCloser
+	h         header
+	buf       bytes.Buffer
+	stderr    bytes.Buffer
+	keepAlive bool
+	reqID     uint16
 }
 
 // DialWithDialerContext connects to the fcgi responder at the specified network address, using custom net.Dialer
@@ -242,13 +240,6 @@ func (c *FCGIClient) writeRecord(recType uint8, content []byte) (err error) {
 func (c *FCGIClient) writeBeginRequest(role uint16, flags uint8) error {
 	b := [8]byte{byte(role >> 8), byte(role), flags}
 	return c.writeRecord(BeginRequest, b[:])
-}
-
-func (c *FCGIClient) writeEndRequest(appStatus int, protocolStatus uint8) error {
-	b := make([]byte, 8)
-	binary.BigEndian.PutUint32(b, uint32(appStatus))
-	b[4] = protocolStatus
-	return c.writeRecord(EndRequest, b)
 }
 
 func (c *FCGIClient) writePairs(recType uint8, pairs map[string]string) error {

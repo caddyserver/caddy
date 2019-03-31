@@ -204,7 +204,7 @@ func generateRandFile(size int) (p string, m string) {
 	return
 }
 
-func DisabledTest(t *testing.T) {
+func TestDisabled(t *testing.T) {
 	// TODO: test chunked reader
 	globalt = t
 

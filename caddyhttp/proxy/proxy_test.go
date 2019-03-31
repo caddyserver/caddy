@@ -1502,11 +1502,10 @@ func newPrefixedWebSocketTestProxy(backendAddr string, prefix string) *Proxy {
 }
 
 type fakeWsUpstream struct {
-	name          string
-	without       string
-	insecure      bool
-	timeout       time.Duration
-	fallbackDelay time.Duration
+	name     string
+	without  string
+	insecure bool
+	timeout  time.Duration
 }
 
 func (u *fakeWsUpstream) From() string {
