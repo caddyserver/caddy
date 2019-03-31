@@ -38,9 +38,7 @@ func setupIndex(c *caddy.Controller) error {
 			return c.Errf("Expected at least one index")
 		}
 
-		for _, in := range args {
-			index = append(index, in)
-		}
+		index = append(index, args...)
 
 		cfg.IndexPages = index
 	}

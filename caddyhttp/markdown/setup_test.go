@@ -168,5 +168,5 @@ func equalTemplates(i, j *template.Template) (bool, string, string) {
 		return false, "", fmt.Sprintf("%v", err)
 	}
 
-	return bytes.Equal(bufi.Bytes(), bufj.Bytes()), string(bufi.Bytes()), string(bufj.Bytes())
+	return bytes.Equal(bufi.Bytes(), bufj.Bytes()), bufi.String(), bufj.String()
 }

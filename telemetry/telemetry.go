@@ -324,7 +324,7 @@ type Payload struct {
 // Int returns the value of the data keyed by key
 // if it is an integer; otherwise it returns 0.
 func (p Payload) Int(key string) int {
-	val, _ := p.Data[key]
+	val := p.Data[key]
 	switch p.Data[key].(type) {
 	case int:
 		return val.(int)

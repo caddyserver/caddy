@@ -1711,7 +1711,7 @@ func TestQuic(t *testing.T) {
 	if w.Code != 200 {
 		t.Errorf("Expected response code 200, got: %d", w.Code)
 	}
-	responseContent := string(w.Body.Bytes())
+	responseContent := w.Body.String()
 	if responseContent != content {
 		t.Errorf("Expected response body, got: %s", responseContent)
 	}

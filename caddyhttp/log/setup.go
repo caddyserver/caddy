@@ -52,8 +52,7 @@ func logParse(c *caddy.Controller) ([]*Rule, error) {
 		ip6Mask := net.IPMask(net.ParseIP(DefaultIP6Mask))
 		ipMaskExists := false
 
-		var logRoller *httpserver.LogRoller
-		logRoller = httpserver.DefaultLogRoller()
+		var logRoller = httpserver.DefaultLogRoller()
 
 		for c.NextBlock() {
 			what := c.Val()

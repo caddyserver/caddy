@@ -462,7 +462,7 @@ func trimPathPrefix(u *url.URL, prefix string) *url.URL {
 	}
 	// After trimming path reconstruct uri string with Query before parsing
 	trimmedURI := trimmedPath
-	if u.RawQuery != "" || u.ForceQuery == true {
+	if u.RawQuery != "" || u.ForceQuery {
 		trimmedURI = trimmedPath + "?" + u.RawQuery
 	}
 	if u.Fragment != "" {

@@ -61,8 +61,7 @@ func errorsParse(c *caddy.Controller) (*ErrorHandler, error) {
 			where := c.RemainingArgs()
 
 			if httpserver.IsLogRollerSubdirective(what) {
-				var err error
-				err = httpserver.ParseRoller(handler.Log.Roller, what, where...)
+				var err = httpserver.ParseRoller(handler.Log.Roller, what, where...)
 				if err != nil {
 					return err
 				}

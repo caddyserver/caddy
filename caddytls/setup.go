@@ -272,9 +272,7 @@ func setupTLS(c *caddy.Controller) error {
 				if len(args) == 0 {
 					return c.ArgErr()
 				}
-				for _, arg := range args {
-					config.ALPN = append(config.ALPN, arg)
-				}
+				config.ALPN = append(config.ALPN, args...)
 			case "must_staple":
 				config.Manager.MustStaple = true
 			case "wildcard":

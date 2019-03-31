@@ -126,9 +126,7 @@ func ListPlugins() map[string][]string {
 	}
 
 	sort.Strings(others)
-	for _, name := range others {
-		p["others"] = append(p["others"], name)
-	}
+	p["others"] = append(p["others"], others...)
 
 	return p
 }

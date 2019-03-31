@@ -509,11 +509,7 @@ func (info rawHelloInfo) looksLikeChrome() bool {
 		}
 	}
 
-	if !hasGreaseCiphers(info.CipherSuites) {
-		return false
-	}
-
-	return true
+	return hasGreaseCiphers(info.CipherSuites)
 }
 
 // looksLikeEdge returns true if info looks like a handshake
@@ -550,11 +546,7 @@ func (info rawHelloInfo) looksLikeEdge() bool {
 		}
 	}
 
-	if hasGreaseCiphers(info.CipherSuites) {
-		return false
-	}
-
-	return true
+	return !hasGreaseCiphers(info.CipherSuites)
 }
 
 // looksLikeSafari returns true if info looks like a handshake
