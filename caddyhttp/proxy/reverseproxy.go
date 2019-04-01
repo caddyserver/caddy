@@ -63,7 +63,7 @@ func createBuffer() interface{} {
 
 func pooledIoCopy(dst io.Writer, src io.Reader) {
 	buf := bufferPool.Get().([]byte)
-	defer bufferPool.Put(buf)
+	defer bufferPool.Put(&buf)
 
 	// CopyBuffer only uses buf up to its length and panics if it's 0.
 	// Due to that we extend buf's length to its capacity here and
@@ -388,7 +388,7 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, 
 			if _, err := conn.Write(hj.Replay); err != nil {
 				return err
 			}
-			bufferPool.Put(hj.Replay)
+			bufferPool.Put(&hj.Replay)
 		} else {
 			backendConn, err = net.DialTimeout("tcp", outreq.URL.Host, rp.dialer.Timeout)
 			if err != nil {
