@@ -21,7 +21,7 @@ import (
 )
 
 // ResponseWriterWrapper wrappers underlying ResponseWriter
-// and inherits its Hijacker/Pusher/CloseNotifier/Flusher as well.
+// and inherits its Hijacker/Pusher/Flusher as well.
 type ResponseWriterWrapper struct {
 	http.ResponseWriter
 }
@@ -45,16 +45,6 @@ func (rww *ResponseWriterWrapper) Flush() {
 	}
 }
 
-// CloseNotify implements http.CloseNotifier.
-// It just inherits the underlying ResponseWriter's CloseNotify method.
-// It panics if the underlying ResponseWriter is not a CloseNotifier.
-func (rww *ResponseWriterWrapper) CloseNotify() <-chan bool {
-	if cn, ok := rww.ResponseWriter.(http.CloseNotifier); ok {
-		return cn.CloseNotify()
-	}
-	panic(NonCloseNotifierError{Underlying: rww.ResponseWriter})
-}
-
 // Push implements http.Pusher.
 // It just inherits the underlying ResponseWriter's Push method.
 // It panics if the underlying ResponseWriter is not a Pusher.
@@ -71,7 +61,6 @@ type HTTPInterfaces interface {
 	http.ResponseWriter
 	http.Pusher
 	http.Flusher
-	http.CloseNotifier
 	http.Hijacker
 }
 

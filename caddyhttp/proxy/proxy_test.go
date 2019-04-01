@@ -1361,13 +1361,6 @@ func TestCancelRequest(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		close(reqInFlight) // cause the client to cancel its request
 
-		select {
-		case <-time.After(10 * time.Second):
-			t.Error("Handler never saw CloseNotify")
-			return
-		case <-w.(http.CloseNotifier).CloseNotify():
-		}
-
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("Hello, client"))
 	}))

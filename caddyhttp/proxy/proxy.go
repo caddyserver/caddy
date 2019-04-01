@@ -313,16 +313,6 @@ func createUpstreamRequest(rw http.ResponseWriter, r *http.Request) (*http.Reque
 	// Original incoming server request may be canceled by the
 	// user or by std lib(e.g. too many idle connections).
 	ctx, cancel := context.WithCancel(r.Context())
-	if cn, ok := rw.(http.CloseNotifier); ok {
-		notifyChan := cn.CloseNotify()
-		go func() {
-			select {
-			case <-notifyChan:
-				cancel()
-			case <-ctx.Done():
-			}
-		}()
-	}
 
 	outreq := r.WithContext(ctx) // includes shallow copies of maps, but okay
 
