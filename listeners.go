@@ -8,8 +8,8 @@ import (
 )
 
 // Listen returns a listener suitable for use in a Caddy module.
-func Listen(proto, addr string) (net.Listener, error) {
-	lnKey := proto + "/" + addr
+func Listen(network, addr string) (net.Listener, error) {
+	lnKey := network + "/" + addr
 
 	listenersMu.Lock()
 	defer listenersMu.Unlock()
@@ -20,7 +20,7 @@ func Listen(proto, addr string) (net.Listener, error) {
 	}
 
 	// or, create new one and save it
-	ln, err := net.Listen(proto, addr)
+	ln, err := net.Listen(network, addr)
 	if err != nil {
 		return nil, err
 	}

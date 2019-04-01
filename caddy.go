@@ -17,11 +17,7 @@ func Start(cfg Config) error {
 	cfg.runners = make(map[string]Runner)
 
 	for modName, rawMsg := range cfg.Modules {
-		mod, ok := modules[modName]
-		if !ok {
-			return fmt.Errorf("unrecognized module: %s", modName)
-		}
-		val, err := LoadModule(mod, rawMsg)
+		val, err := LoadModule(modName, rawMsg)
 		if err != nil {
 			return fmt.Errorf("loading module '%s': %v", modName, err)
 		}
@@ -68,14 +64,17 @@ type Config struct {
 type Duration time.Duration
 
 // UnmarshalJSON satisfies json.Unmarshaler.
-func (d *Duration) UnmarshalJSON(b []byte) (err error) {
+func (d *Duration) UnmarshalJSON(b []byte) error {
 	dd, err := time.ParseDuration(strings.Trim(string(b), `"`))
+	if err != nil {
+		return err
+	}
 	cd := Duration(dd)
 	d = &cd
-	return
+	return nil
 }
 
 // MarshalJSON satisfies json.Marshaler.
-func (d Duration) MarshalJSON() (b []byte, err error) {
+func (d Duration) MarshalJSON() ([]byte, error) {
 	return []byte(fmt.Sprintf(`"%s"`, time.Duration(d).String())), nil
 }

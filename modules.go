@@ -43,7 +43,7 @@ func GetModule(name string) (Module, error) {
 
 // GetModules returns all modules in the given scope/namespace.
 // For example, a scope of "foo" returns modules named "foo.bar",
-// "foo.lor", but not "bar", "foo.bar.lor", etc. An empty scope
+// "foo.lee", but not "bar", "foo.bar.lee", etc. An empty scope
 // returns top-level modules, for example "foo" or "bar". Partial
 // scopes are not matched (i.e. scope "foo.ba" does not match
 // name "foo.bar").
@@ -111,9 +111,16 @@ func Modules() []string {
 // value, it is converted to one so that it is unmarshaled
 // into the underlying concrete type. If mod.New is nil, an
 // error is returned.
-func LoadModule(mod Module, rawMsg json.RawMessage) (interface{}, error) {
+func LoadModule(name string, rawMsg json.RawMessage) (interface{}, error) {
+	modulesMu.Lock()
+	mod, ok := modules[name]
+	modulesMu.Unlock()
+	if !ok {
+		return nil, fmt.Errorf("unknown module: %s", name)
+	}
+
 	if mod.New == nil {
-		return nil, fmt.Errorf("no constructor")
+		return nil, fmt.Errorf("module '%s' has no constructor", mod.Name)
 	}
 
 	val, err := mod.New()
@@ -129,6 +136,35 @@ func LoadModule(mod Module, rawMsg json.RawMessage) (interface{}, error) {
 	err = json.Unmarshal(rawMsg, &val)
 	if err != nil {
 		return nil, fmt.Errorf("decoding module config: %s: %v", mod.Name, err)
+	}
+
+	return val, nil
+}
+
+// LoadModuleInlineName loads a module from a JSON raw message which
+// decodes to a map[string]interface{}, and where one of the keys is
+// "_module", which indicates the module name and which be found in
+// the given scope.
+//
+// This allows modules to be decoded into their concrete types and
+// used when their names cannot be the unique key in a map, such as
+// when there are multiple instances in the map or it appears in an
+// array (where there are no custom keys).
+func LoadModuleInlineName(moduleScope string, raw json.RawMessage) (interface{}, error) {
+	var tmp map[string]interface{}
+	err := json.Unmarshal(raw, &tmp)
+	if err != nil {
+		return nil, err
+	}
+
+	moduleName, ok := tmp["_module"].(string)
+	if !ok || moduleName == "" {
+		return nil, fmt.Errorf("module name not specified")
+	}
+
+	val, err := LoadModule(moduleScope+"."+moduleName, raw)
+	if err != nil {
+		return nil, fmt.Errorf("loading module '%s': %v", moduleName, err)
 	}
 
 	return val, nil
