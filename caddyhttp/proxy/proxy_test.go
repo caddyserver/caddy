@@ -1506,7 +1506,7 @@ type fakeWsUpstream struct {
 	without       string
 	insecure      bool
 	timeout       time.Duration
-	fallbackDelay time.Duration
+// 	fallbackDelay time.Duration
 }
 
 func (u *fakeWsUpstream) From() string {

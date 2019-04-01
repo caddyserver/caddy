@@ -182,8 +182,8 @@ type FCGIClient struct {
 	stderr      bytes.Buffer
 	keepAlive   bool
 	reqID       uint16
-	readTimeout time.Duration
-	sendTimeout time.Duration
+// 	readTimeout time.Duration
+//	sendTimeout time.Duration
 }
 
 // DialWithDialerContext connects to the fcgi responder at the specified network address, using custom net.Dialer
