@@ -16,6 +16,7 @@ package caddy
 
 import (
 	"fmt"
+	"log"
 	"reflect"
 	"sync"
 	"testing"
@@ -103,13 +104,20 @@ func TestCaddyRestartCallbacks(t *testing.T) {
 			return nil
 		})
 
-		c.instance.Restart(CaddyfileInput{Contents: []byte(""), ServerTypeName: serverName})
+		_, err := c.instance.Restart(CaddyfileInput{Contents: []byte(""), ServerTypeName: serverName})
+		if err != nil {
+			log.Printf("[ERROR] Restart failed: %v", err)
+		}
 
 		if !reflect.DeepEqual(calls, test.expectedCalls) {
 			t.Errorf("Test %d: Callbacks expected: %v, got: %v", i, test.expectedCalls, calls)
 		}
 
-		c.instance.Stop()
+		err = c.instance.Stop()
+		if err != nil {
+			log.Printf("[ERROR] Stop failed: %v", err)
+		}
+
 		c.instance.Wait()
 	}
 
