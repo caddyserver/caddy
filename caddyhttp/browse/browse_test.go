@@ -361,8 +361,8 @@ func TestBrowseJson(t *testing.T) {
 		if code != http.StatusOK {
 			t.Fatalf("In test %d: Wrong status, expected %d, got %d", i, http.StatusOK, code)
 		}
-		if rec.HeaderMap.Get("Content-Type") != "application/json; charset=utf-8" {
-			t.Fatalf("Expected Content type to be application/json; charset=utf-8, but got %s ", rec.HeaderMap.Get("Content-Type"))
+		if rec.Header().Get("Content-Type") != "application/json; charset=utf-8" {
+			t.Fatalf("Expected Content type to be application/json; charset=utf-8, but got %s ", rec.Header().Get("Content-Type"))
 		}
 
 		actualJSONResponse := rec.Body.String()

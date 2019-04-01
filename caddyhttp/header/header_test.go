@@ -100,7 +100,7 @@ func TestMultipleHeaders(t *testing.T) {
 	he.ServeHTTP(rec, req)
 
 	desiredHeaders := []string{"</css/main.css>; rel=preload", "</images/image.png>; rel=preload"}
-	actualHeaders := rec.HeaderMap[http.CanonicalHeaderKey("Link")]
+	actualHeaders := rec.Header()[http.CanonicalHeaderKey("Link")]
 	sort.Strings(actualHeaders)
 
 	if !reflect.DeepEqual(desiredHeaders, actualHeaders) {
