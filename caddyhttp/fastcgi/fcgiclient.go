@@ -175,15 +175,13 @@ func (rec *record) read(r io.Reader) (buf []byte, err error) {
 // FCGIClient implements a FastCGI client, which is a standard for
 // interfacing external applications with Web servers.
 type FCGIClient struct {
-	mutex       sync.Mutex
-	rwc         io.ReadWriteCloser
-	h           header
-	buf         bytes.Buffer
-	stderr      bytes.Buffer
-	keepAlive   bool
-	reqID       uint16
-// 	readTimeout time.Duration
-//	sendTimeout time.Duration
+	mutex     sync.Mutex
+	rwc       io.ReadWriteCloser
+	h         header
+	buf       bytes.Buffer
+	stderr    bytes.Buffer
+	keepAlive bool
+	reqID     uint16
 }
 
 // DialWithDialerContext connects to the fcgi responder at the specified network address, using custom net.Dialer
