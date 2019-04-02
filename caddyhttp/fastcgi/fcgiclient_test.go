@@ -202,7 +202,9 @@ func generateRandFile(size int) (p string, m string) {
 		if _, err := fo.Write(buf); err != nil {
 			log.Printf("[ERROR] failed to write buffer: %v\n", err)
 		}
-		h.Write(buf)
+		if _, err := h.Write(buf); err != nil {
+			log.Printf("[ERROR] failed to write buffer: %v\n", err)
+		}
 	}
 	m = fmt.Sprintf("%x", h.Sum(nil))
 	return
