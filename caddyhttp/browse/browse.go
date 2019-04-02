@@ -59,34 +59,34 @@ type Config struct {
 
 // A Listing is the context used to fill out a template.
 type Listing struct {
-	// The name of the directory (the last element of the path)
+	// The name of the directory (the last element of the path).
 	Name string
 
-	// The full path of the request
+	// The full path of the request.
 	Path string
 
-	// Whether the parent directory is browsable
+	// Whether the parent directory is browse-able.
 	CanGoUp bool
 
-	// The items (files and folders) in the path
+	// The items (files and folders) in the path.
 	Items []FileInfo
 
-	// The number of directories in the listing
+	// The number of directories in the listing.
 	NumDirs int
 
-	// The number of files (items that aren't directories) in the listing
+	// The number of files (items that aren't directories) in the listing.
 	NumFiles int
 
-	// Which sorting order is used
+	// Which sorting order is used.
 	Sort string
 
-	// And which order
+	// And which order.
 	Order string
 
-	// If ≠0 then Items have been limited to that many elements
+	// If ≠0 then Items have been limited to that many elements.
 	ItemsLimitedTo int
 
-	// Optional custom variables for use in browse templates
+	// Optional custom variables for use in browse templates.
 	User interface{}
 
 	httpserver.Context
@@ -272,14 +272,14 @@ func directoryListing(files []os.FileInfo, canGoUp bool, urlPath string, config 
 			continue
 		}
 
-		URL := url.URL{Path: "./" + name} // prepend with "./" to fix paths with ':' in the name
+		_url := url.URL{Path: "./" + name} // prepend with "./" to fix paths with ':' in the name
 
 		fileInfos = append(fileInfos, FileInfo{
 			IsDir:     isDir,
 			IsSymlink: isSymlink(f),
 			Name:      f.Name(),
 			Size:      f.Size(),
-			URL:       URL.String(),
+			URL:       _url.String(),
 			ModTime:   f.ModTime().UTC(),
 			Mode:      f.Mode(),
 		})

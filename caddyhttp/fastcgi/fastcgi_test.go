@@ -41,6 +41,7 @@ func TestServeHTTP(t *testing.T) {
 		t.Fatalf("Unable to create listener for test: %v", err)
 	}
 	defer listener.Close()
+
 	go func() {
 		err := fcgi.Serve(listener, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Length", bodyLenStr)
@@ -366,9 +367,14 @@ func TestSendTimeout(t *testing.T) {
 		}
 		w := httptest.NewRecorder()
 
-		go fcgi.Serve(listener, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusOK)
-		}))
+		go func() {
+			err := fcgi.Serve(listener, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			}))
+			if err != nil {
+				log.Printf("[ERROR] unable to start server: %v", err)
+			}
+		}()
 
 		got, err := handler.ServeHTTP(w, r)
 		if test.shouldErr {
