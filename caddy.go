@@ -6,6 +6,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -24,6 +25,7 @@ func Start(cfg Config) error {
 		cfg.runners[modName] = val.(Runner)
 	}
 
+	// start the new runners
 	for name, r := range cfg.runners {
 		err := r.Run()
 		if err != nil {
@@ -32,6 +34,7 @@ func Start(cfg Config) error {
 		}
 	}
 
+	// shut down down the old ones
 	currentCfgMu.Lock()
 	if currentCfg != nil {
 		for _, r := range currentCfg.runners {
@@ -43,6 +46,20 @@ func Start(cfg Config) error {
 	}
 	currentCfg = &cfg
 	currentCfgMu.Unlock()
+
+	// shut down listeners that are no longer being used
+	listenersMu.Lock()
+	for key, info := range listeners {
+		if atomic.LoadInt32(&info.usage) == 0 {
+			err := info.ln.Close()
+			if err != nil {
+				log.Printf("[ERROR] closing listener %s: %v", info.ln.Addr(), err)
+				continue
+			}
+			delete(listeners, key)
+		}
+	}
+	listenersMu.Unlock()
 
 	return nil
 }

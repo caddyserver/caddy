@@ -15,9 +15,10 @@ func Listen(network, addr string) (net.Listener, error) {
 	listenersMu.Lock()
 	defer listenersMu.Unlock()
 
-	// if listener already exists, return it
-	if ln, ok := listeners[lnKey]; ok {
-		return &fakeCloseListener{Listener: ln}, nil
+	// if listener already exists, increment usage counter, then return listener
+	if lnInfo, ok := listeners[lnKey]; ok {
+		atomic.AddInt32(&lnInfo.usage, 1)
+		return &fakeCloseListener{usage: &lnInfo.usage, Listener: lnInfo.ln}, nil
 	}
 
 	// or, create new one and save it
@@ -25,9 +26,12 @@ func Listen(network, addr string) (net.Listener, error) {
 	if err != nil {
 		return nil, err
 	}
-	listeners[lnKey] = ln
 
-	return &fakeCloseListener{Listener: ln}, nil
+	// make sure to start its usage counter at 1
+	lnInfo := &listenerUsage{usage: 1, ln: ln}
+	listeners[lnKey] = lnInfo
+
+	return &fakeCloseListener{usage: &lnInfo.usage, Listener: ln}, nil
 }
 
 // fakeCloseListener's Close() method is a no-op. This allows
@@ -36,7 +40,8 @@ func Listen(network, addr string) (net.Listener, error) {
 // listener remains running. Listeners should be re-wrapped in
 // a new fakeCloseListener each time the listener is reused.
 type fakeCloseListener struct {
-	closed int32
+	closed int32  // accessed atomically
+	usage  *int32 // accessed atomically
 	net.Listener
 }
 
@@ -92,14 +97,13 @@ func (fcl *fakeCloseListener) Close() error {
 		case *net.UnixListener:
 			ln.SetDeadline(time.Now().Add(-1 * time.Minute))
 		}
+
+		// since we're no longer using this listener,
+		// decrement the usage counter
+		atomic.AddInt32(fcl.usage, -1)
 	}
 
 	return nil
-}
-
-// CloseUnderlying actually closes the underlying listener.
-func (fcl *fakeCloseListener) CloseUnderlying() error {
-	return fcl.Listener.Close()
 }
 
 func (fcl *fakeCloseListener) fakeClosedErr() error {
@@ -118,7 +122,14 @@ func (fcl *fakeCloseListener) fakeClosedErr() error {
 // socket is actually left open.
 var ErrFakeClosed = fmt.Errorf("listener 'closed' 😉")
 
+// listenerUsage pairs a net.Listener with a
+// count of how many servers are using it.
+type listenerUsage struct {
+	usage int32 // accessed atomically
+	ln    net.Listener
+}
+
 var (
-	listeners   = make(map[string]net.Listener)
+	listeners   = make(map[string]*listenerUsage)
 	listenersMu sync.Mutex
 )
