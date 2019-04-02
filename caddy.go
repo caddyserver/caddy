@@ -34,7 +34,7 @@ func Start(cfg Config) error {
 
 	currentCfgMu.Lock()
 	if currentCfg != nil {
-		for _, r := range cfg.runners {
+		for _, r := range currentCfg.runners {
 			err := r.Cancel()
 			if err != nil {
 				log.Println(err)

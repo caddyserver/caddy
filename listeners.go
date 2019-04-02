@@ -5,6 +5,7 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // Listen returns a listener suitable for use in a Caddy module.
@@ -41,16 +42,58 @@ type fakeCloseListener struct {
 
 // Accept accepts connections until Close() is called.
 func (fcl *fakeCloseListener) Accept() (net.Conn, error) {
+	// if the listener is already "closed", return error
 	if atomic.LoadInt32(&fcl.closed) == 1 {
-		return nil, ErrSwappingServers
+		return nil, fcl.fakeClosedErr()
 	}
-	return fcl.Listener.Accept()
+
+	// wrap underlying accept
+	conn, err := fcl.Listener.Accept()
+	if err == nil {
+		return conn, nil
+	}
+
+	if atomic.LoadInt32(&fcl.closed) == 1 {
+		// clear the deadline
+		switch ln := fcl.Listener.(type) {
+		case *net.TCPListener:
+			ln.SetDeadline(time.Time{})
+		case *net.UnixListener:
+			ln.SetDeadline(time.Time{})
+		}
+
+		// if we cancelled the Accept() by setting a deadline
+		// on the listener, we need to make sure any callers of
+		// Accept() think the listener was actually closed;
+		// if we return the timeout error instead, callers might
+		// simply retry, leaking goroutines for longer
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			return nil, fcl.fakeClosedErr()
+		}
+	}
+
+	return nil, err
 }
 
 // Close stops accepting new connections, but does not
 // actually close the underlying listener.
 func (fcl *fakeCloseListener) Close() error {
-	atomic.StoreInt32(&fcl.closed, 1)
+	if atomic.CompareAndSwapInt32(&fcl.closed, 0, 1) {
+		// unfortunately, there is no way to cancel any
+		// currently-blocking calls to Accept() that are
+		// awaiting connections since we're not actually
+		// closing the listener; so we cheat by setting
+		// a deadline in the past, which forces it to
+		// time out; note that this only works for
+		// certain types of listeners...
+		switch ln := fcl.Listener.(type) {
+		case *net.TCPListener:
+			ln.SetDeadline(time.Now().Add(-1 * time.Minute))
+		case *net.UnixListener:
+			ln.SetDeadline(time.Now().Add(-1 * time.Minute))
+		}
+	}
+
 	return nil
 }
 
@@ -59,10 +102,21 @@ func (fcl *fakeCloseListener) CloseUnderlying() error {
 	return fcl.Listener.Close()
 }
 
-// ErrSwappingServers is returned by fakeCloseListener when
-// Close() is called, indicating that it is pretending to
-// be closed so that the server using it can terminate.
-var ErrSwappingServers = fmt.Errorf("listener 'closed' 😉")
+func (fcl *fakeCloseListener) fakeClosedErr() error {
+	return &net.OpError{
+		Op:   "accept",
+		Net:  fcl.Listener.Addr().Network(),
+		Addr: fcl.Listener.Addr(),
+		Err:  ErrFakeClosed,
+	}
+}
+
+// ErrFakeClosed is the underlying error value returned by
+// fakeCloseListener.Accept() after Close() has been called,
+// indicating that it is pretending to be closed so that the
+// server using it can terminate, while the underlying
+// socket is actually left open.
+var ErrFakeClosed = fmt.Errorf("listener 'closed' 😉")
 
 var (
 	listeners   = make(map[string]net.Listener)

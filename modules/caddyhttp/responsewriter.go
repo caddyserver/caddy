@@ -7,6 +7,9 @@ import (
 	"net/http"
 )
 
+// TODO: Is this type really required? Wouldn't embedding the
+// default ResponseWriter always work too, when wrapping it?
+
 // ResponseWriterWrapper wraps an underlying ResponseWriter and
 // promotes its Pusher/Flusher/CloseNotifier/Hijacker methods
 // as well. To use this type, embed a pointer to it within your
