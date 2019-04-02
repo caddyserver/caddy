@@ -16,6 +16,7 @@ package fastcgi
 
 import (
 	"context"
+	"log"
 	"net"
 	"net/http"
 	"net/http/fcgi"
@@ -40,10 +41,18 @@ func TestServeHTTP(t *testing.T) {
 		t.Fatalf("Unable to create listener for test: %v", err)
 	}
 	defer listener.Close()
-	go fcgi.Serve(listener, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Length", bodyLenStr)
-		w.Write([]byte(body))
-	}))
+	go func() {
+		err := fcgi.Serve(listener, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Length", bodyLenStr)
+			_, err := w.Write([]byte(body))
+			if err != nil {
+				log.Printf("[ERROR] unable to write header: %v", err)
+			}
+		}))
+		if err != nil {
+			log.Printf("[ERROR] unable to start server: %v", err)
+		}
+	}()
 
 	handler := Handler{
 		Next:  nil,
@@ -293,11 +302,16 @@ func TestReadTimeout(t *testing.T) {
 		w := httptest.NewRecorder()
 
 		wg.Add(1)
-		go fcgi.Serve(listener, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			time.Sleep(test.sleep)
-			w.WriteHeader(http.StatusOK)
-			wg.Done()
-		}))
+		go func() {
+			err := fcgi.Serve(listener, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				time.Sleep(test.sleep)
+				w.WriteHeader(http.StatusOK)
+				wg.Done()
+			}))
+			if err != nil {
+				log.Printf("[ERROR] unable to start server: %v", err)
+			}
+		}()
 
 		got, err := handler.ServeHTTP(w, r)
 		if test.shouldErr {

@@ -200,7 +200,9 @@ func PlainMatcher(passw string) PasswordMatcher {
 	passwSum := passwHash.Sum(nil)
 	return func(pw string) bool {
 		pwHash := sha1.New()
-		pwHash.Write([]byte(pw))
+		if _, err := pwHash.Write([]byte(pw)); err != nil {
+			log.Printf("[ERROR] unable to write password hash: %v", err)
+		}
 		pwSum := pwHash.Sum(nil)
 		return subtle.ConstantTimeCompare([]byte(pwSum), []byte(passwSum)) == 1
 	}

@@ -244,7 +244,7 @@ func (l Listing) applySort() {
 
 func directoryListing(files []os.FileInfo, canGoUp bool, urlPath string, config *Config) (Listing, bool) {
 	var (
-		fileinfos           []FileInfo
+		fileInfos           []FileInfo
 		dirCount, fileCount int
 		hasIndexFile        bool
 	)
@@ -272,14 +272,14 @@ func directoryListing(files []os.FileInfo, canGoUp bool, urlPath string, config 
 			continue
 		}
 
-		url := url.URL{Path: "./" + name} // prepend with "./" to fix paths with ':' in the name
+		URL := url.URL{Path: "./" + name} // prepend with "./" to fix paths with ':' in the name
 
-		fileinfos = append(fileinfos, FileInfo{
+		fileInfos = append(fileInfos, FileInfo{
 			IsDir:     isDir,
 			IsSymlink: isSymlink(f),
 			Name:      f.Name(),
 			Size:      f.Size(),
-			URL:       url.String(),
+			URL:       URL.String(),
 			ModTime:   f.ModTime().UTC(),
 			Mode:      f.Mode(),
 		})
@@ -289,7 +289,7 @@ func directoryListing(files []os.FileInfo, canGoUp bool, urlPath string, config 
 		Name:     path.Base(urlPath),
 		Path:     urlPath,
 		CanGoUp:  canGoUp,
-		Items:    fileinfos,
+		Items:    fileInfos,
 		NumDirs:  dirCount,
 		NumFiles: fileCount,
 	}, hasIndexFile
@@ -504,7 +504,9 @@ func (b Browse) ServeListing(w http.ResponseWriter, r *http.Request, requestedFi
 
 	}
 
-	buf.WriteTo(w)
+	if _, err = buf.WriteTo(w); err != nil {
+		return http.StatusInternalServerError, err
+	}
 
 	return http.StatusOK, nil
 }
