@@ -293,9 +293,9 @@ func DisabledTest(t *testing.T) {
 	sendFcgi(1, fcgiParams, nil, nil, f0)
 
 	if err := os.Remove(path0); err != nil {
-		log.Println("failed to remove path: ", err)
+		log.Println("[ERROR] failed to remove path: ", err)
 	}
 	if err := os.Remove(path1); err != nil {
-		log.Println("failed to remove path: ", err)
+		log.Println("[ERROR] failed to remove path: ", err)
 	}
 }
