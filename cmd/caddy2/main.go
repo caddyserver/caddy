@@ -3,11 +3,12 @@ package main
 import (
 	"log"
 
-	"bitbucket.org/lightcodelabs/caddy2"
-
 	_ "net/http/pprof"
 
+	"bitbucket.org/lightcodelabs/caddy2"
+
 	// this is where modules get plugged in
+
 	_ "bitbucket.org/lightcodelabs/caddy2/modules/caddyhttp"
 	_ "bitbucket.org/lightcodelabs/caddy2/modules/caddyhttp/caddylog"
 	_ "bitbucket.org/lightcodelabs/caddy2/modules/caddyhttp/staticfiles"

@@ -1,10 +1,24 @@
 package caddyhttp
 
 import (
+	"log"
 	"net/http"
 	"strings"
 
 	"bitbucket.org/lightcodelabs/caddy2"
+	"bitbucket.org/lightcodelabs/caddy2/internal/caddyscript"
+	"go.starlark.net/starlark"
+)
+
+// TODO: Matchers should probably support regex of some sort... performance trade-offs?
+type (
+	matchHost     []string
+	matchPath     []string
+	matchMethod   []string
+	matchQuery    map[string][]string
+	matchHeader   map[string][]string
+	matchProtocol string
+	matchScript   string
 )
 
 func init() {
@@ -28,17 +42,47 @@ func init() {
 		Name: "http.matchers.header",
 		New:  func() (interface{}, error) { return matchHeader{}, nil },
 	})
+	caddy2.RegisterModule(caddy2.Module{
+		Name: "http.matchers.protocol",
+		New:  func() (interface{}, error) { return new(matchProtocol), nil },
+	})
+	caddy2.RegisterModule(caddy2.Module{
+		Name: "http.matchers.caddyscript",
+		New:  func() (interface{}, error) { return new(matchScript), nil },
+	})
 }
 
-// TODO: Matchers should probably support regex of some sort... performance trade-offs?
+func (m matchScript) Match(r *http.Request) bool {
+	input := string(m)
+	thread := new(starlark.Thread)
+	env := caddyscript.MatcherEnv(r)
+	val, err := starlark.Eval(thread, "", input, env)
+	if err != nil {
+		log.Printf("caddyscript for matcher is invalid: attempting to evaluate expression `%v` error `%v`", input, err)
+		return false
+	}
 
-type (
-	matchHost   []string
-	matchPath   []string
-	matchMethod []string
-	matchQuery  map[string][]string
-	matchHeader map[string][]string
-)
+	return val.String() == "True"
+}
+
+func (m matchProtocol) Match(r *http.Request) bool {
+	switch string(m) {
+	case "grpc":
+		if r.Header.Get("content-type") == "application/grpc" {
+			return true
+		}
+	case "https":
+		if r.TLS != nil {
+			return true
+		}
+	case "http":
+		if r.TLS == nil {
+			return true
+		}
+	}
+
+	return false
+}
 
 func (m matchHost) Match(r *http.Request) bool {
 	for _, host := range m {
@@ -99,4 +143,6 @@ var (
 	_ RouteMatcher = matchMethod{}
 	_ RouteMatcher = matchQuery{}
 	_ RouteMatcher = matchHeader{}
+	_ RouteMatcher = new(matchProtocol)
+	_ RouteMatcher = new(matchScript)
 )

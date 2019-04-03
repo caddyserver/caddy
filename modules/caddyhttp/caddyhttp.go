@@ -32,9 +32,7 @@ type httpModuleConfig struct {
 
 func (hc *httpModuleConfig) Run() error {
 	// TODO: Either prevent overlapping listeners on different servers, or combine them into one
-
 	// TODO: A way to loop requests back through, so have them start the matching over again, but keeping any mutations
-
 	for _, srv := range hc.Servers {
 		// set up the routes
 		for i, route := range srv.Routes {

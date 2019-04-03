@@ -3,3 +3,6 @@ _gitignore/
 # artifacts from pprof tooling
 *.prof
 *.test
+
+# mac specific
+.DS_Store
