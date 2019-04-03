@@ -138,6 +138,13 @@ func LoadModule(name string, rawMsg json.RawMessage) (interface{}, error) {
 		return nil, fmt.Errorf("decoding module config: %s: %v", mod.Name, err)
 	}
 
+	if validator, ok := val.(Validator); ok {
+		err := validator.Validate()
+		if err != nil {
+			return nil, fmt.Errorf("%s: invalid configuration: %v", mod.Name, err)
+		}
+	}
+
 	return val, nil
 }
 
@@ -168,6 +175,15 @@ func LoadModuleInlineName(moduleScope string, raw json.RawMessage) (interface{},
 	}
 
 	return val, nil
+}
+
+// Validator is implemented by modules which can verify that their
+// configurations are valid. This method will be called after New()
+// instantiations of modules (if implemented). Validation should
+// always be fast (imperceptible running time) and an error should
+// be returned only if the value's configuration is invalid.
+type Validator interface {
+	Validate() error
 }
 
 var (
