@@ -40,7 +40,7 @@ func TestServeHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unable to create listener for test: %v", err)
 	}
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 
 	go func() {
 		err := fcgi.Serve(listener, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -157,7 +157,7 @@ func TestBuildEnv(t *testing.T) {
 		SplitPath:  ".php",
 		IndexFiles: []string{"index.php"},
 	}
-	url, err := url.Parse("http://localhost:2015/fgci_test.php?test=foobar")
+	_url, err := url.Parse("http://localhost:2015/fgci_test.php?test=foobar")
 	if err != nil {
 		t.Error("Unexpected error:", err.Error())
 	}
@@ -165,7 +165,7 @@ func TestBuildEnv(t *testing.T) {
 	var newReq = func() *http.Request {
 		r := http.Request{
 			Method:     "GET",
-			URL:        url,
+			URL:        _url,
 			Proto:      "HTTP/1.1",
 			ProtoMajor: 1,
 			ProtoMinor: 1,
@@ -284,7 +284,7 @@ func TestReadTimeout(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Test %d: Unable to create listener for test: %v", i, err)
 		}
-		defer listener.Close()
+		defer func() { _ = listener.Close() }()
 
 		handler := Handler{
 			Next: nil,
@@ -349,7 +349,7 @@ func TestSendTimeout(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Test %d: Unable to create listener for test: %v", i, err)
 		}
-		defer listener.Close()
+		defer func() { _ = listener.Close() }()
 
 		handler := Handler{
 			Next: nil,

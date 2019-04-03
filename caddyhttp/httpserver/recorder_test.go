@@ -44,7 +44,7 @@ func TestWrite(t *testing.T) {
 	responseTestString := "test"
 	recordRequest := NewResponseRecorder(w)
 	buf := []byte(responseTestString)
-	recordRequest.Write(buf)
+	_, _ = recordRequest.Write(buf)
 	if recordRequest.size != len(buf) {
 		t.Fatalf("Expected the bytes written counter to be %d, but instead found %d\n", len(buf), recordRequest.size)
 	}

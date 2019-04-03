@@ -102,7 +102,9 @@ func TestMultipleHeaders(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	he.ServeHTTP(rec, req)
+	if _, err := he.ServeHTTP(rec, req); err != nil {
+		log.Println("[ERROR] ServeHTTP failed: ", err)
+	}
 
 	desiredHeaders := []string{"</css/main.css>; rel=preload", "</images/image.png>; rel=preload"}
 	actualHeaders := rec.HeaderMap[http.CanonicalHeaderKey("Link")]
