@@ -16,6 +16,7 @@ package limits
 
 import (
 	"io/ioutil"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -39,7 +40,9 @@ func TestBodySizeLimit(t *testing.T) {
 	}
 
 	r := httptest.NewRequest("GET", "/", strings.NewReader(expectContent+expectContent))
-	l.ServeHTTP(httptest.NewRecorder(), r)
+	if _, err := l.ServeHTTP(httptest.NewRecorder(), r); err != nil {
+		log.Println("[ERROR] failed to serve HTTP: ", err)
+	}
 	if got := string(gotContent); got != expectContent {
 		t.Errorf("expected content[%s], got[%s]", expectContent, got)
 	}
