@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -47,12 +48,16 @@ func TestBodyRetry(t *testing.T) {
 	// simulate fail request
 	host := req.URL.Host
 	req.URL.Host = "example.com"
-	body.rewind()
+	if err := body.rewind(); err != nil {
+		log.Println("[ERROR] failed re-read bufferedBody: ", err)
+	}
 	_, _ = http.DefaultTransport.RoundTrip(req)
 
 	// retry request
 	req.URL.Host = host
-	body.rewind()
+	if err := body.rewind(); err != nil {
+		log.Println("[ERROR] failed re-read bufferedBody: ", err)
+	}
 	resp, err := http.DefaultTransport.RoundTrip(req)
 	if err != nil {
 		t.Fatal(err)
@@ -67,7 +72,9 @@ func TestBodyRetry(t *testing.T) {
 	}
 
 	// try one more time for body reuse
-	body.rewind()
+	if err := body.rewind(); err != nil {
+		log.Println("[ERROR] failed re-read bufferedBody: ", err)
+	}
 	resp, err = http.DefaultTransport.RoundTrip(req)
 	if err != nil {
 		t.Fatal(err)
