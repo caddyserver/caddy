@@ -27,7 +27,7 @@ import (
 	"sync"
 	"testing"
 
-	"gopkg.in/mcuadros/go-syslog.v2/format"
+	syslog "gopkg.in/mcuadros/go-syslog.v2"
 )
 
 func TestLoggingToStdout(t *testing.T) {
@@ -138,7 +138,7 @@ func TestLoggingToSyslog(t *testing.T) {
 	for i, testCase := range testCases {
 
 		ch := make(chan format.LogParts, 256)
-		server, err := bootServer(testCase.Output, ch);
+		server, err := bootServer(testCase.Output, ch)
 		defer server.Kill()
 
 		if err != nil {
