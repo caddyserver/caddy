@@ -15,6 +15,7 @@
 package requestid
 
 import (
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -39,7 +40,9 @@ func TestRequestIDHandler(t *testing.T) {
 	}
 	rec := httptest.NewRecorder()
 
-	handler.ServeHTTP(rec, req)
+	if _, err := handler.ServeHTTP(rec, req); err != nil {
+		log.Println("[ERROR] failed to serve HTTP: ", err)
+	}
 }
 
 func TestRequestIDFromHeader(t *testing.T) {
@@ -63,5 +66,7 @@ func TestRequestIDFromHeader(t *testing.T) {
 	req.Header.Set(headerName, headerValue)
 	rec := httptest.NewRecorder()
 
-	handler.ServeHTTP(rec, req)
+	if _, err := handler.ServeHTTP(rec, req); err != nil {
+		log.Println("[ERROR] failed to serve HTTP: ", err)
+	}
 }
