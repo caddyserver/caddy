@@ -141,7 +141,9 @@ func TestParametersRedirect(t *testing.T) {
 	ctx = context.WithValue(req.Context(), httpserver.OriginalURLCtxKey, *req.URL)
 	req = req.WithContext(ctx)
 
-	re.ServeHTTP(rec, req)
+	if _, err := re.ServeHTTP(rec, req); err != nil {
+		log.Println("[ERROR] failed to serve HTTP: ", err)
+	}
 
 	if got, want := rec.Header().Get("Location"), "http://example.com/a/d?b=c&e=f"; got != want {
 		t.Fatalf("Test 2: expected location header %s but was %s", want, got)
