@@ -139,9 +139,6 @@ func TestLoggingToSyslog(t *testing.T) {
 
 		ch := make(chan format.LogParts, 256)
 		server, err := bootServer(testCase.Output, ch);
-		if err != nil {
-			log.Println("[ERROR] bootServer failed: ", err)
-		}
 		defer server.Kill()
 
 		if err != nil {
