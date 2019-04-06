@@ -19,15 +19,14 @@ package httpserver
 import (
 	"bytes"
 	"fmt"
-	"log"
 	"io/ioutil"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 
-	"gopkg.in/mcuadros/go-syslog.v2"
 	"gopkg.in/mcuadros/go-syslog.v2/format"
 )
 
@@ -139,7 +138,8 @@ func TestLoggingToSyslog(t *testing.T) {
 	for i, testCase := range testCases {
 
 		ch := make(chan format.LogParts, 256)
-		if server, err := bootServer(testCase.Output, ch); err != nil {
+		server, err := bootServer(testCase.Output, ch);
+		if err != nil {
 			log.Println("[ERROR] bootServer failed: ", err)
 		}
 		defer server.Kill()
