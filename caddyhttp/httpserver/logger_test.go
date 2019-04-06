@@ -19,7 +19,7 @@ package httpserver
 import (
 	"bytes"
 	"fmt"
-	"github.com/go-acme/lego/log"
+	"log"
 	"io/ioutil"
 	"os"
 	"path/filepath"
