@@ -17,7 +17,7 @@
 package markdown
 
 import (
-	"github.com/go-acme/lego/log"
+	"log"
 	"net/http"
 	"os"
 	"path"

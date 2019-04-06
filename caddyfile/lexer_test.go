@@ -159,7 +159,7 @@ func TestLexer(t *testing.T) {
 
 func tokenize(input string) (tokens []Token) {
 	l := lexer{}
-	if err:= l.load(strings.NewReader(input)); err != nil {
+	if err := l.load(strings.NewReader(input)); err != nil {
 		log.Printf("[ERROR] load failed: %v", err)
 	}
 	for l.next() {
