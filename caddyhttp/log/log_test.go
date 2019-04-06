@@ -17,12 +17,11 @@ package log
 import (
 	"bytes"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"github.com/go-acme/lego/log"
 
 	"github.com/mholt/caddy/caddyhttp/httpserver"
 )
