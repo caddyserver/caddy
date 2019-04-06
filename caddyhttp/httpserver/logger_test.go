@@ -28,6 +28,7 @@ import (
 	"testing"
 
 	syslog "gopkg.in/mcuadros/go-syslog.v2"
+	"gopkg.in/mcuadros/go-syslog.v2/format"
 )
 
 func TestLoggingToStdout(t *testing.T) {
