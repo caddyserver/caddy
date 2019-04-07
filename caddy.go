@@ -41,7 +41,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/mholt/caddy/caddyfile"
 	"github.com/mholt/caddy/telemetry"
@@ -60,9 +59,6 @@ var (
 
 	// PidFile is the path to the pidfile to create.
 	PidFile string
-
-	// GracefulTimeout is the maximum duration of a graceful shutdown.
-	GracefulTimeout time.Duration
 
 	// isUpgrade will be set to true if this process
 	// was started as part of an upgrade, where a parent
