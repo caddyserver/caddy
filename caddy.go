@@ -10,13 +10,34 @@ import (
 	"time"
 )
 
-var currentCfg *Config
-var currentCfgMu sync.Mutex
-
 // Start runs Caddy with the given config.
 func Start(cfg Config) error {
-	cfg.runners = make(map[string]Runner)
+	// allow only one call to Start at a time,
+	// since various calls to LoadModule()
+	// access shared map moduleInstances
+	startMu.Lock()
+	defer startMu.Unlock()
 
+	// prepare the config for use
+	cfg.runners = make(map[string]Runner)
+	cfg.moduleStates = make(map[string]interface{})
+
+	// reset the shared moduleInstances map; but
+	// keep a temporary reference to the current
+	// one so we can transfer over any necessary
+	// state to the new modules; or in case this
+	// function returns an error, we need to put
+	// the "old" one back where we found it
+	var err error
+	oldModuleInstances := moduleInstances
+	defer func() {
+		if err != nil {
+			moduleInstances = oldModuleInstances
+		}
+	}()
+	moduleInstances = make(map[string][]interface{})
+
+	// load (decode) each runner module
 	for modName, rawMsg := range cfg.Modules {
 		val, err := LoadModule(modName, rawMsg)
 		if err != nil {
@@ -34,18 +55,59 @@ func Start(cfg Config) error {
 		}
 	}
 
-	// shut down down the old ones
+	// shut down down the old runners
 	currentCfgMu.Lock()
 	if currentCfg != nil {
-		for _, r := range currentCfg.runners {
+		for name, r := range currentCfg.runners {
 			err := r.Cancel()
 			if err != nil {
-				log.Println(err)
+				log.Printf("[ERROR] cancel %s: %v", name, err)
 			}
 		}
 	}
+	oldCfg := currentCfg
 	currentCfg = &cfg
 	currentCfgMu.Unlock()
+
+	// invoke unload callbacks on old configuration
+	for modName := range oldModuleInstances {
+		mod, err := GetModule(modName)
+		if err != nil {
+			return err
+		}
+		if mod.OnUnload != nil {
+			var unloadingState interface{}
+			if oldCfg != nil {
+				unloadingState = oldCfg.moduleStates[modName]
+			}
+			err := mod.OnUnload(unloadingState)
+			if err != nil {
+				log.Printf("[ERROR] module OnUnload: %s: %v", modName, err)
+				continue
+			}
+		}
+	}
+
+	// invoke load callbacks on new configuration
+	for modName, instances := range moduleInstances {
+		mod, err := GetModule(modName)
+		if err != nil {
+			return err
+		}
+		if mod.OnLoad != nil {
+			var priorState interface{}
+			if oldCfg != nil {
+				priorState = oldCfg.moduleStates[modName]
+			}
+			modState, err := mod.OnLoad(instances, priorState)
+			if err != nil {
+				return fmt.Errorf("module OnLoad: %s: %v", modName, err)
+			}
+			if modState != nil {
+				cfg.moduleStates[modName] = modState
+			}
+		}
+	}
 
 	// shut down listeners that are no longer being used
 	listenersMu.Lock()
@@ -74,7 +136,15 @@ type Runner interface {
 type Config struct {
 	TestVal string                     `json:"testval"`
 	Modules map[string]json.RawMessage `json:"modules"`
+
+	// runners stores the decoded Modules values,
+	// keyed by module name.
 	runners map[string]Runner
+
+	// moduleStates stores the optional "global" state
+	// values of every module used by this configuration,
+	// keyed by module name.
+	moduleStates map[string]interface{}
 }
 
 // Duration is a JSON-string-unmarshable duration type.
@@ -95,3 +165,23 @@ func (d *Duration) UnmarshalJSON(b []byte) error {
 func (d Duration) MarshalJSON() ([]byte, error) {
 	return []byte(fmt.Sprintf(`"%s"`, time.Duration(d).String())), nil
 }
+
+// currentCfg is the currently-loaded configuration.
+var (
+	currentCfg   *Config
+	currentCfgMu sync.Mutex
+)
+
+// moduleInstances stores the individual instantiated
+// values of modules, keyed by module name. The list
+// of instances of each module get passed into the
+// respective module's OnLoad callback, so they can
+// set up any global state and/or make sure their
+// configuration, when viewed as a whole, is valid.
+// Since this list is shared, only one Start() routine
+// must be allowed to happen at any given time.
+var moduleInstances = make(map[string][]interface{})
+
+// startMu ensures that only one Start() happens at a time.
+// This is important since
+var startMu sync.Mutex

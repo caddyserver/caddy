@@ -12,13 +12,31 @@ import (
 func init() {
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "http.middleware.log",
-		New:  func() (interface{}, error) { return &Log{}, nil },
+		New:  func() (interface{}, error) { return new(Log), nil },
+		OnLoad: func(instances []interface{}, priorState interface{}) (interface{}, error) {
+			var counter int
+			if priorState != nil {
+				counter = priorState.(int)
+			}
+			counter++
+			for _, inst := range instances {
+				logInst := inst.(*Log)
+				logInst.counter = counter
+			}
+			log.Println("State is now:", counter)
+			return counter, nil
+		},
+		OnUnload: func(state interface{}) error {
+			log.Println("Closing log files, state:", state)
+			return nil
+		},
 	})
 }
 
 // Log implements a simple logging middleware.
 type Log struct {
 	Filename string
+	counter  int
 }
 
 func (l *Log) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
@@ -28,7 +46,7 @@ func (l *Log) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.H
 		return err
 	}
 
-	log.Println("latency:", time.Now().Sub(start))
+	log.Println("latency:", time.Now().Sub(start), l.counter)
 
 	return nil
 }

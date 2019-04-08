@@ -11,8 +11,10 @@ import (
 
 // Module is a module.
 type Module struct {
-	Name string
-	New  func() (interface{}, error)
+	Name     string
+	New      func() (interface{}, error)
+	OnLoad   func(instances []interface{}, priorState interface{}) (newState interface{}, err error)
+	OnUnload func(state interface{}) error
 }
 
 func (m Module) String() string { return m.Name }
@@ -144,6 +146,8 @@ func LoadModule(name string, rawMsg json.RawMessage) (interface{}, error) {
 			return nil, fmt.Errorf("%s: invalid configuration: %v", mod.Name, err)
 		}
 	}
+
+	moduleInstances[mod.Name] = append(moduleInstances[mod.Name], val)
 
 	return val, nil
 }
