@@ -24,6 +24,8 @@ variables:
   GOPATH: $(system.defaultWorkingDirectory)/gopath
   GOBIN:  $(GOPATH)/bin
   modulePath: '$(GOPATH)/src/github.com/$(build.repository.name)'
+  # TODO: modules should be the default in Go 1.13, so this won't be needed
+  GO111MODULE: on
 
 steps:
 - bash: |
