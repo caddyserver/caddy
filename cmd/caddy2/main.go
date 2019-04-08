@@ -13,6 +13,7 @@ import (
 	_ "bitbucket.org/lightcodelabs/caddy2/modules/caddyhttp/caddylog"
 	_ "bitbucket.org/lightcodelabs/caddy2/modules/caddyhttp/staticfiles"
 	_ "bitbucket.org/lightcodelabs/dynamicconfig"
+	_ "bitbucket.org/lightcodelabs/proxy"
 )
 
 func main() {
