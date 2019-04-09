@@ -1,5 +1,13 @@
 CHANGES
 
+1.0.0beta1 (April 9, 2019)
+- Major internal changes (Go modules & remove vendor)
+- Rename -env flag to -envfile
+- New -env flag to print the environment
+- New 'dyndns' directive
+- proxy: Manipulate headers using regular expressions
+- A few bug fixes
+
 
 0.11.5 (March 4, 2019)
 - TLS 1.3
