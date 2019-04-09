@@ -272,14 +272,14 @@ func directoryListing(files []os.FileInfo, canGoUp bool, urlPath string, config 
 			continue
 		}
 
-		_url := url.URL{Path: "./" + name} // prepend with "./" to fix paths with ':' in the name
+		u := url.URL{Path: "./" + name} // prepend with "./" to fix paths with ':' in the name
 
 		fileInfos = append(fileInfos, FileInfo{
 			IsDir:     isDir,
 			IsSymlink: isSymlink(f),
 			Name:      f.Name(),
 			Size:      f.Size(),
-			URL:       _url.String(),
+			URL:       u.String(),
 			ModTime:   f.ModTime().UTC(),
 			Mode:      f.Mode(),
 		})
@@ -504,9 +504,7 @@ func (b Browse) ServeListing(w http.ResponseWriter, r *http.Request, requestedFi
 
 	}
 
-	if _, err = buf.WriteTo(w); err != nil {
-		return http.StatusInternalServerError, err
-	}
+	_, _ = buf.WriteTo(w)
 
 	return http.StatusOK, nil
 }

@@ -157,7 +157,7 @@ func TestBuildEnv(t *testing.T) {
 		SplitPath:  ".php",
 		IndexFiles: []string{"index.php"},
 	}
-	_url, err := url.Parse("http://localhost:2015/fgci_test.php?test=foobar")
+	u, err := url.Parse("http://localhost:2015/fgci_test.php?test=foobar")
 	if err != nil {
 		t.Error("Unexpected error:", err.Error())
 	}
@@ -165,7 +165,7 @@ func TestBuildEnv(t *testing.T) {
 	var newReq = func() *http.Request {
 		r := http.Request{
 			Method:     "GET",
-			URL:        _url,
+			URL:        u,
 			Proto:      "HTTP/1.1",
 			ProtoMajor: 1,
 			ProtoMinor: 1,

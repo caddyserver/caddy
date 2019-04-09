@@ -470,8 +470,8 @@ func TestWebSocketReverseProxyFromWSClient(t *testing.T) {
 	defer echoProxy.Close()
 
 	// Set up WebSocket client
-	_url := strings.Replace(echoProxy.URL, "http://", "ws://", 1)
-	ws, err := websocket.Dial(_url, "", echoProxy.URL)
+	u := strings.Replace(echoProxy.URL, "http://", "ws://", 1)
+	ws, err := websocket.Dial(u, "", echoProxy.URL)
 
 	if err != nil {
 		t.Fatal(err)
@@ -515,8 +515,8 @@ func TestWebSocketReverseProxyFromWSSClient(t *testing.T) {
 	defer echoProxy.Close()
 
 	// Set up WebSocket client
-	_url := strings.Replace(echoProxy.URL, "https://", "wss://", 1)
-	wsCfg, err := websocket.NewConfig(_url, echoProxy.URL)
+	u := strings.Replace(echoProxy.URL, "https://", "wss://", 1)
+	wsCfg, err := websocket.NewConfig(u, echoProxy.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
