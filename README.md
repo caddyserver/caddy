@@ -162,7 +162,7 @@ We use GitHub issues and pull requests only for discussing bug reports and the d
 
 If you want to contribute to the documentation, please [submit an issue](https://github.com/mholt/caddy/issues/new) describing the change that should be made.
 
-#Good First Issue
+### Good First Issue
 
 If you are looking for somewhere to start and would like to help out by working on an existing issue, take a look at our [`Good First Issue`](https://github.com/mholt/caddy/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) tag 
 
