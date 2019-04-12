@@ -2,9 +2,9 @@ package caddyhttp
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
+	mathrand "math/rand"
 	"net"
 	"net/http"
 	"strconv"
@@ -22,6 +22,8 @@ func init() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	mathrand.Seed(time.Now().UnixNano())
 }
 
 type httpModuleConfig struct {
@@ -32,36 +34,14 @@ type httpModuleConfig struct {
 
 func (hc *httpModuleConfig) Run() error {
 	// TODO: Either prevent overlapping listeners on different servers, or combine them into one
-	// TODO: A way to loop requests back through, so have them start the matching over again, but keeping any mutations
 	for _, srv := range hc.Servers {
-		// set up the routes
-		for i, route := range srv.Routes {
-			// matchers
-			for modName, rawMsg := range route.Matchers {
-				val, err := caddy2.LoadModule("http.matchers."+modName, rawMsg)
-				if err != nil {
-					return fmt.Errorf("loading matcher module '%s': %v", modName, err)
-				}
-				srv.Routes[i].matchers = append(srv.Routes[i].matchers, val.(RouteMatcher))
-			}
-
-			// middleware
-			for j, rawMsg := range route.Apply {
-				mid, err := caddy2.LoadModuleInlineName("http.middleware", rawMsg)
-				if err != nil {
-					return fmt.Errorf("loading middleware module in position %d: %v", j, err)
-				}
-				srv.Routes[i].middleware = append(srv.Routes[i].middleware, mid.(MiddlewareHandler))
-			}
-
-			// responder
-			if route.Respond != nil {
-				resp, err := caddy2.LoadModuleInlineName("http.responders", route.Respond)
-				if err != nil {
-					return fmt.Errorf("loading responder module: %v", err)
-				}
-				srv.Routes[i].responder = resp.(Handler)
-			}
+		err := srv.Routes.setup()
+		if err != nil {
+			return fmt.Errorf("setting up server routes: %v", err)
+		}
+		err = srv.Errors.Routes.setup()
+		if err != nil {
+			return fmt.Errorf("setting up server error handling routes: %v", err)
 		}
 
 		s := &http.Server{
@@ -104,65 +84,56 @@ type httpServerConfig struct {
 	ReadTimeout       caddy2.Duration `json:"read_timeout"`
 	ReadHeaderTimeout caddy2.Duration `json:"read_header_timeout"`
 	HiddenFiles       []string        `json:"hidden_files"` // TODO:... experimenting with shared/common state
-	Routes            []serverRoute   `json:"routes"`
+	Routes            routeList       `json:"routes"`
+	Errors            httpErrorConfig `json:"errors"`
 }
 
-func (s httpServerConfig) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	var mid []Middleware // TODO: see about using make() for performance reasons
-	var responder Handler
-	mrw := &middlewareResponseWriter{ResponseWriterWrapper: &ResponseWriterWrapper{w}}
+type httpErrorConfig struct {
+	Routes routeList `json:"routes"`
+	// TODO: some way to configure the logging of errors, probably? standardize the logging configuration first.
+}
 
-	for _, route := range s.Routes {
-		matched := len(route.matchers) == 0
-		for _, m := range route.matchers {
-			if m.Match(r) {
-				matched = true
-				break
+// ServeHTTP is the entry point for all HTTP requests.
+func (s httpServerConfig) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	stack := s.Routes.buildMiddlewareChain(w, r)
+	err := executeMiddlewareChain(w, r, stack)
+	if err != nil {
+		// add the error value to the request context so
+		// it can be accessed by error handlers
+		c := context.WithValue(r.Context(), ErrorCtxKey, err)
+		r = r.WithContext(c)
+
+		if len(s.Errors.Routes) == 0 {
+			// TODO: implement a default error handler?
+			log.Printf("[ERROR] %s", err)
+		} else {
+			errStack := s.Errors.Routes.buildMiddlewareChain(w, r)
+			err := executeMiddlewareChain(w, r, errStack)
+			if err != nil {
+				// TODO: what should we do if the error handler has an error?
+				log.Printf("[ERROR] handling error: %v", err)
 			}
 		}
-		if !matched {
-			continue
-		}
-		for _, m := range route.middleware {
-			mid = append(mid, func(next HandlerFunc) HandlerFunc {
-				return func(w http.ResponseWriter, r *http.Request) error {
-					return m.ServeHTTP(mrw, r, next)
-				}
-			})
-		}
-		if responder == nil {
-			responder = route.responder
-		}
-	}
-
-	// build the middleware stack, with the responder at the end
-	stack := HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
-		if responder == nil {
-			return nil
-		}
-		mrw.allowWrites = true
-		return responder.ServeHTTP(w, r)
-	})
-	for i := len(mid) - 1; i >= 0; i-- {
-		stack = mid[i](stack)
-	}
-
-	err := stack.ServeHTTP(w, r)
-	if err != nil {
-		// TODO: error handling
-		log.Printf("[ERROR] TODO: error handling: %v", err)
 	}
 }
 
-type serverRoute struct {
-	Matchers map[string]json.RawMessage `json:"match"`
-	Apply    []json.RawMessage          `json:"apply"`
-	Respond  json.RawMessage            `json:"respond"`
-
-	// decoded values
-	matchers   []RouteMatcher
-	middleware []MiddlewareHandler
-	responder  Handler
+// executeMiddlewareChain executes stack with w and r. This function handles
+// the special ErrRehandle error value, which reprocesses requests through
+// the stack again. Any error value returned from this function would be an
+// actual error that needs to be handled.
+func executeMiddlewareChain(w http.ResponseWriter, r *http.Request, stack Handler) error {
+	const maxRehandles = 3
+	var err error
+	for i := 0; i < maxRehandles; i++ {
+		err = stack.ServeHTTP(w, r)
+		if err != ErrRehandle {
+			break
+		}
+		if i == maxRehandles-1 {
+			return fmt.Errorf("too many rehandles")
+		}
+	}
+	return err
 }
 
 // RouteMatcher is a type that can match to a request.
@@ -205,6 +176,10 @@ type HandlerFunc func(http.ResponseWriter, *http.Request) error
 func (f HandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
 	return f(w, r)
 }
+
+// emptyHandler is used as a no-op handler, which is
+// sometimes better than a nil Handler pointer.
+var emptyHandler HandlerFunc = func(w http.ResponseWriter, r *http.Request) error { return nil }
 
 func parseListenAddr(a string) (network string, addrs []string, err error) {
 	network = "tcp"

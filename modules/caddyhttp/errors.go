@@ -1,0 +1,105 @@
+package caddyhttp
+
+import (
+	"fmt"
+	mathrand "math/rand"
+	"path"
+	"runtime"
+	"strings"
+
+	"bitbucket.org/lightcodelabs/caddy2"
+)
+
+// Error is a convenient way for a Handler to populate the
+// essential fields of a HandlerError. If err is itself a
+// HandlerError, then any essential fields that are not
+// set will be populated.
+func Error(statusCode int, err error) HandlerError {
+	const idLen = 9
+	if he, ok := err.(HandlerError); ok {
+		if he.ID == "" {
+			he.ID = randString(idLen, true)
+		}
+		if he.Trace == "" {
+			he.Trace = trace()
+		}
+		if he.StatusCode == 0 {
+			he.StatusCode = statusCode
+		}
+		return he
+	}
+	return HandlerError{
+		ID:         randString(idLen, true),
+		StatusCode: statusCode,
+		Err:        err,
+		Trace:      trace(),
+	}
+}
+
+// HandlerError is a serializable representation of
+// an error from within an HTTP handler.
+type HandlerError struct {
+	Err             error    // the original error value and message
+	StatusCode      int      // the HTTP status code to associate with this error
+	Message         string   // an optional message that can be shown to the user
+	Recommendations []string // an optional list of things to try to resolve the error
+
+	ID    string // generated; for identifying this error in logs
+	Trace string // produced from call stack
+}
+
+func (e HandlerError) Error() string {
+	var s string
+	if e.ID != "" {
+		s += fmt.Sprintf("{id=%s}", e.ID)
+	}
+	if e.Trace != "" {
+		s += " " + e.Trace
+	}
+	if e.StatusCode != 0 {
+		s += fmt.Sprintf(": HTTP %d", e.StatusCode)
+	}
+	if e.Err != nil {
+		s += ": " + e.Err.Error()
+	}
+	return strings.TrimSpace(s)
+}
+
+// randString returns a string of n random characters.
+// It is not even remotely secure OR a proper distribution.
+// But it's good enough for some things. It excludes certain
+// confusing characters like I, l, 1, 0, O, etc. If sameCase
+// is true, then uppercase letters are excluded.
+func randString(n int, sameCase bool) string {
+	if n <= 0 {
+		return ""
+	}
+	dict := []byte("abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRTUVWXY23456789")
+	if sameCase {
+		dict = []byte("abcdefghijkmnpqrstuvwxyz0123456789")
+	}
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = dict[mathrand.Int63()%int64(len(dict))]
+	}
+	return string(b)
+}
+
+func trace() string {
+	if pc, file, line, ok := runtime.Caller(2); ok {
+		filename := path.Base(file)
+		pkgAndFuncName := path.Base(runtime.FuncForPC(pc).Name())
+		return fmt.Sprintf("%s (%s:%d)", pkgAndFuncName, filename, line)
+	}
+	return ""
+}
+
+// ErrRehandle is a special error value that Handlers should return
+// from their ServeHTTP() method if the request is to be re-processed.
+// This error value is a sentinel value that should not be wrapped or
+// modified.
+var ErrRehandle = fmt.Errorf("rehandling request")
+
+// ErrorCtxKey is the context key to use when storing
+// an error (for use with context.Context).
+const ErrorCtxKey = caddy2.CtxKey("handler_chain_error")

@@ -137,6 +137,7 @@ func (m matchHeader) Match(r *http.Request) bool {
 	return false
 }
 
+// Interface guards
 var (
 	_ RouteMatcher = matchHost{}
 	_ RouteMatcher = matchPath{}

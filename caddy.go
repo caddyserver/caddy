@@ -161,10 +161,8 @@ func (d *Duration) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// MarshalJSON satisfies json.Marshaler.
-func (d Duration) MarshalJSON() ([]byte, error) {
-	return []byte(fmt.Sprintf(`"%s"`, time.Duration(d).String())), nil
-}
+// CtxKey is a value type for use with context.WithValue.
+type CtxKey string
 
 // currentCfg is the currently-loaded configuration.
 var (
