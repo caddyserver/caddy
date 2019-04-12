@@ -68,6 +68,9 @@ type Upstream interface {
 	// the request
 	GetTimeout() time.Duration
 
+	GetIdleConnTimeout() time.Duration
+	GetResponseHeaderTimeout() time.Duration
+
 	// Stops the upstream from proxying requests to shutdown goroutines cleanly.
 	Stop() error
 }
@@ -202,6 +205,8 @@ func (p Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 					http.DefaultMaxIdleConnsPerHost,
 					upstream.GetTimeout(),
 					upstream.GetFallbackDelay(),
+					upstream.GetIdleConnTimeout(),
+					upstream.GetResponseHeaderTimeout(),
 				)
 			}
 

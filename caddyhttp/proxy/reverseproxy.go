@@ -33,6 +33,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
 	"strings"
 	"sync"
@@ -149,7 +150,7 @@ func singleJoiningSlash(a, b string) string {
 // the target request will be for /base/dir.
 // Without logic: target's path is "/", incoming is "/api/messages",
 // without is "/api", then the target request will be for /messages.
-func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int, timeout, fallbackDelay time.Duration) *ReverseProxy {
+func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int, timeout, fallbackDelay, idleConnTimeout, responseHeaderTimeout time.Duration) *ReverseProxy {
 	targetQuery := target.RawQuery
 	director := func(req *http.Request) {
 		if target.Scheme == "unix" {
@@ -259,13 +260,16 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int, t
 		}
 	} else if keepalive != http.DefaultMaxIdleConnsPerHost || strings.HasPrefix(target.Scheme, "srv") {
 		dialFunc := rp.dialer.Dial
+		dialContextFunc := rp.dialer.DialContext
 		if strings.HasPrefix(target.Scheme, "srv") {
 			dialFunc = rp.srvDialerFunc(target.String(), timeout)
+			dialContextFunc = nil
 		}
 
 		transport := &http.Transport{
 			Proxy:                 http.ProxyFromEnvironment,
 			Dial:                  dialFunc,
+			DialContext:           dialContextFunc,
 			TLSHandshakeTimeout:   defaultCryptoHandshakeTimeout,
 			ExpectContinueTimeout: 1 * time.Second,
 		}
@@ -277,14 +281,27 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int, t
 		if httpserver.HTTP2 {
 			http2.ConfigureTransport(transport)
 		}
+		if int64(idleConnTimeout) != 0 {
+			transport.IdleConnTimeout = idleConnTimeout
+		}
+		if int64(responseHeaderTimeout) != 0 {
+			transport.ResponseHeaderTimeout = responseHeaderTimeout
+		}
 		rp.Transport = transport
 	} else {
 		transport := &http.Transport{
-			Proxy: http.ProxyFromEnvironment,
-			Dial:  rp.dialer.Dial,
+			Proxy:       http.ProxyFromEnvironment,
+			Dial:        rp.dialer.Dial,
+			DialContext: rp.dialer.DialContext,
 		}
 		if httpserver.HTTP2 {
 			http2.ConfigureTransport(transport)
+		}
+		if int64(idleConnTimeout) != 0 {
+			transport.IdleConnTimeout = idleConnTimeout
+		}
+		if int64(responseHeaderTimeout) != 0 {
+			transport.ResponseHeaderTimeout = responseHeaderTimeout
 		}
 		rp.Transport = transport
 	}
@@ -344,9 +361,29 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, 
 		outreq.URL.Scheme = "https" // Change scheme back to https for QUIC RoundTripper
 	}
 
+	// trace
+	var t1 time.Time
+	var t2 time.Time
+	trace := &httptrace.ClientTrace{
+		ConnectStart: func(network, addr string) {
+			t1 = time.Now()
+		},
+		ConnectDone: func(network, addr string, err error) {
+			if err == nil {
+				t2 = time.Now()
+			}
+		},
+	}
+	outreq = outreq.WithContext(httptrace.WithClientTrace(outreq.Context(), trace))
 	res, err := transport.RoundTrip(outreq)
 	if err != nil {
 		return err
+	}
+
+	if rr, ok := rw.(*httpserver.ResponseRecorder); ok && rr.Replacer != nil {
+		if !t1.IsZero() && !t2.IsZero() {
+			rr.Replacer.Set("upstream_conn_ms", fmt.Sprintf("%d", int64(t2.Sub(t1))/1000/1000))
+		}
 	}
 
 	isWebsocket := res.StatusCode == http.StatusSwitchingProtocols && strings.EqualFold(res.Header.Get("Upgrade"), "websocket")

@@ -42,21 +42,23 @@ var (
 )
 
 type staticUpstream struct {
-	from              string
-	upstreamHeaders   http.Header
-	downstreamHeaders http.Header
-	stop              chan struct{}  // Signals running goroutines to stop.
-	wg                sync.WaitGroup // Used to wait for running goroutines to stop.
-	Hosts             HostPool
-	Policy            Policy
-	KeepAlive         int
-	FallbackDelay     time.Duration
-	Timeout           time.Duration
-	FailTimeout       time.Duration
-	TryDuration       time.Duration
-	TryInterval       time.Duration
-	MaxConns          int64
-	HealthCheck       struct {
+	from                  string
+	upstreamHeaders       http.Header
+	downstreamHeaders     http.Header
+	stop                  chan struct{}  // Signals running goroutines to stop.
+	wg                    sync.WaitGroup // Used to wait for running goroutines to stop.
+	Hosts                 HostPool
+	Policy                Policy
+	KeepAlive             int
+	FallbackDelay         time.Duration
+	Timeout               time.Duration
+	IdleConnTimeout       time.Duration
+	ResponseHeaderTimeout time.Duration
+	FailTimeout           time.Duration
+	TryDuration           time.Duration
+	TryInterval           time.Duration
+	MaxConns              int64
+	HealthCheck           struct {
 		Client        http.Client
 		Path          string
 		Interval      time.Duration
@@ -230,7 +232,7 @@ func (u *staticUpstream) NewHost(host string) (*UpstreamHost, error) {
 		return nil, err
 	}
 
-	uh.ReverseProxy = NewSingleHostReverseProxy(baseURL, uh.WithoutPathPrefix, u.KeepAlive, u.Timeout, u.FallbackDelay)
+	uh.ReverseProxy = NewSingleHostReverseProxy(baseURL, uh.WithoutPathPrefix, u.KeepAlive, u.Timeout, u.FallbackDelay, u.IdleConnTimeout, u.ResponseHeaderTimeout)
 	if u.insecureSkipVerify {
 		uh.ReverseProxy.UseInsecureTransport()
 	}
@@ -520,6 +522,24 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream, hasSrv bool) error {
 			return c.Errf("unable to parse timeout duration '%s'", c.Val())
 		}
 		u.Timeout = dur
+	case "idle_conn_timeout":
+		if !c.NextArg() {
+			return c.ArgErr()
+		}
+		dur, err := time.ParseDuration(c.Val())
+		if err != nil {
+			return c.Errf("unable to parse idle_conn_timeout duration '%s'", c.Val())
+		}
+		u.IdleConnTimeout = dur
+	case "response_header_timeout":
+		if !c.NextArg() {
+			return c.ArgErr()
+		}
+		dur, err := time.ParseDuration(c.Val())
+		if err != nil {
+			return c.Errf("unable to parse response_header_timeout duration '%s'", c.Val())
+		}
+		u.ResponseHeaderTimeout = dur
 	default:
 		return c.Errf("unknown property '%s'", c.Val())
 	}
@@ -690,6 +710,14 @@ func (u *staticUpstream) GetTryInterval() time.Duration {
 // GetTimeout returns u.Timeout.
 func (u *staticUpstream) GetTimeout() time.Duration {
 	return u.Timeout
+}
+
+func (u *staticUpstream) GetIdleConnTimeout() time.Duration {
+	return u.IdleConnTimeout
+}
+
+func (u *staticUpstream) GetResponseHeaderTimeout() time.Duration {
+	return u.ResponseHeaderTimeout
 }
 
 func (u *staticUpstream) GetHostCount() int {
