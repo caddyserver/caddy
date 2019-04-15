@@ -29,7 +29,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/lucas-clemente/quic-go/h2quic"
@@ -43,8 +42,6 @@ import (
 type Server struct {
 	Server      *http.Server
 	quicServer  *h2quic.Server
-	listener    net.Listener
-	listenerMu  sync.Mutex
 	sites       []*SiteConfig
 	connTimeout time.Duration // max time to wait for a connection before force stop
 	tlsGovChan  chan struct{} // close to stop the TLS maintenance goroutine
@@ -310,10 +307,6 @@ func (s *Server) ListenPacket() (net.PacketConn, error) {
 
 // Serve serves requests on ln. It blocks until ln is closed.
 func (s *Server) Serve(ln net.Listener) error {
-	s.listenerMu.Lock()
-	s.listener = ln
-	s.listenerMu.Unlock()
-
 	if s.Server.TLSConfig != nil {
 		// Create TLS listener - note that we do not replace s.listener
 		// with this TLS listener; tls.listener is unexported and does
@@ -329,14 +322,17 @@ func (s *Server) Serve(ln net.Listener) error {
 		s.tlsGovChan = caddytls.RotateSessionTicketKeys(s.Server.TLSConfig)
 	}
 
+	defer func() {
+		if s.quicServer != nil {
+			s.quicServer.Close()
+		}
+	}()
+
 	err := s.Server.Serve(ln)
-	if err == http.ErrServerClosed {
-		err = nil // not an error worth reporting since closing a server is intentional
+	if err != nil && err != http.ErrServerClosed {
+		return err
 	}
-	if s.quicServer != nil {
-		s.quicServer.Close()
-	}
-	return err
+	return nil
 }
 
 // ServePacket serves QUIC requests on pc until it is closed.

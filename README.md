@@ -4,8 +4,7 @@
 <h3 align="center">Every Site on HTTPS <!-- Serve Confidently --></h3>
 <p align="center">Caddy is a general-purpose HTTP/2 web server that serves HTTPS by default.</p>
 <p align="center">
-	<a href="https://travis-ci.org/mholt/caddy"><img src="https://img.shields.io/travis/mholt/caddy.svg?label=linux+build"></a>
-	<a href="https://ci.appveyor.com/project/mholt/caddy"><img src="https://img.shields.io/appveyor/ci/mholt/caddy.svg?label=windows+build"></a>
+	<a href="https://dev.azure.com/mholt-dev/Caddy/_build?definitionId=1"><img src="https://img.shields.io/azure-devops/build/mholt-dev/afec6074-9842-457f-98cf-69df6adbbf2e/1/master.svg?label=cross-platform%20tests"></a>
 	<a href="https://godoc.org/github.com/mholt/caddy"><img src="https://img.shields.io/badge/godoc-reference-blue.svg"></a>
 	<a href="https://goreportcard.com/report/mholt/caddy"><img src="https://goreportcard.com/badge/github.com/mholt/caddy"></a>
 	<br>
@@ -78,6 +77,7 @@ Caddy binaries have no dependencies and are available for every platform. Get Ca
 
 To build from source you need **[Git](https://git-scm.com/downloads)** and **[Go](https://golang.org/doc/install)** (1.12 or newer). Follow these instruction for fast building:
 
+- Set the transitional environment variable `GO111MODULE` to `on`
 - Get the source with `go get github.com/mholt/caddy/caddy` and then run `go get github.com/caddyserver/builds`
 - Now `cd $GOPATH/src/github.com/mholt/caddy/caddy` and run `go run build.go`
 
@@ -161,6 +161,10 @@ Please see our [contributing guidelines](https://github.com/mholt/caddy/blob/mas
 We use GitHub issues and pull requests only for discussing bug reports and the development of specific changes. We welcome all other topics on the [forum](https://caddy.community)!
 
 If you want to contribute to the documentation, please [submit an issue](https://github.com/mholt/caddy/issues/new) describing the change that should be made.
+
+### Good First Issue
+
+If you are looking for somewhere to start and would like to help out by working on an existing issue, take a look at our [`Good First Issue`](https://github.com/mholt/caddy/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) tag 
 
 Thanks for making Caddy -- and the Web -- better!
 

@@ -1,4 +1,4 @@
-CADDY 0.11.5
+CADDY 1.0.0beta1
 
 Website
 	https://caddyserver.com
@@ -30,10 +30,6 @@ Extend Caddy by developing a plugin for it! Instructions on
 the project wiki: https://github.com/mholt/caddy/wiki
 
 And thanks - you're awesome!
-
-If you think Caddy is awesome too, consider sponsoring it:
-https://caddyserver.com/sponsor - and help keep Caddy free
-for personal use.
 
 
 ---
