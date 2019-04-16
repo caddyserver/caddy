@@ -14,7 +14,7 @@ require (
 	github.com/jimstudt/http-authentication v0.0.0-20140401203705-3eca13d6893a
 	github.com/klauspost/cpuid v1.2.0
 	github.com/kylelemons/godebug v0.0.0-20170820004349-d65d576e9348 // indirect
-	github.com/lucas-clemente/quic-go v0.7.1-0.20190305092557-966b00dd3dc9
+	github.com/lucas-clemente/quic-go v0.10.2
 	github.com/mholt/certmagic v0.0.0-20190319183800-ee1543e2f234
 	github.com/naoina/go-stringutil v0.1.0 // indirect
 	github.com/naoina/toml v0.1.1
