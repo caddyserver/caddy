@@ -53,8 +53,8 @@ func TestSetupParseBasic(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpdir)
 
-	certCache := certmagic.NewCache(&certmagic.FileStorage{Path: tmpdir})
-	cfg := &Config{Manager: certmagic.NewWithCache(certCache, certmagic.Config{})}
+	certmagic.Default.Storage = &certmagic.FileStorage{Path: tmpdir}
+	cfg := &Config{Manager: certmagic.NewDefault()}
 	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
 	c := caddy.NewTestController("", `tls `+certFile+` `+keyFile+``)
 
@@ -139,8 +139,8 @@ func TestSetupParseWithOptionalParams(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpdir)
 
-	certCache := certmagic.NewCache(&certmagic.FileStorage{Path: tmpdir})
-	cfg := &Config{Manager: certmagic.NewWithCache(certCache, certmagic.Config{})}
+	certmagic.Default.Storage = &certmagic.FileStorage{Path: tmpdir}
+	cfg := &Config{Manager: certmagic.NewDefault()}
 	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
 	c := caddy.NewTestController("", params)
 
@@ -276,8 +276,7 @@ func TestSetupParseWithClientAuth(t *testing.T) {
 			clients verify_if_given
 		}`, tls.VerifyClientCertIfGiven, true, noCAs},
 	} {
-		certCache := certmagic.NewCache(certmagic.DefaultStorage)
-		cfg := &Config{Manager: certmagic.NewWithCache(certCache, certmagic.Config{})}
+		cfg := &Config{Manager: certmagic.NewDefault()}
 		RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
 		c := caddy.NewTestController("", caseData.params)
 

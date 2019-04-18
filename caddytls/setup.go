@@ -63,7 +63,7 @@ func setupTLS(c *caddy.Controller) error {
 			if err != nil {
 				return fmt.Errorf("constructing cluster plugin %s: %v", clusterPluginName, err)
 			}
-			certmagic.DefaultStorage = storage
+			certmagic.Default.Storage = storage
 		} else {
 			return fmt.Errorf("unrecognized cluster plugin (was it included in the Caddy build?): %s", clusterPluginName)
 		}
@@ -363,6 +363,14 @@ func setupTLS(c *caddy.Controller) error {
 		telemetry.Increment("tls_self_signed_count")
 	}
 
+	// store this as a custom config
+	cfgMap, ok := c.Get(configMapKey).(map[string]*Config)
+	if !ok || cfgMap == nil {
+		cfgMap = make(map[string]*Config)
+	}
+	cfgMap[config.Hostname] = config
+	c.Set(configMapKey, cfgMap)
+
 	return nil
 }
 
@@ -449,3 +457,5 @@ func loadCertsInDir(cfg *Config, c *caddy.Controller, dir string) error {
 func constructDefaultClusterPlugin() (certmagic.Storage, error) {
 	return &certmagic.FileStorage{Path: caddy.AssetsPath()}, nil
 }
+
+const configMapKey = "tls_custom_configs"
