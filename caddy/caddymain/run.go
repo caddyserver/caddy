@@ -25,6 +25,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 
@@ -43,7 +44,6 @@ import (
 
 func init() {
 	caddy.TrapSignals()
-	setVersion()
 
 	flag.BoolVar(&certmagic.Agreed, "agree", false, "Agree to the CA's Subscriber Agreement")
 	flag.StringVar(&certmagic.CA, "ca", certmagic.CA, "URL to certificate authority's ACME server directory")
@@ -78,9 +78,12 @@ func init() {
 func Run() {
 	flag.Parse()
 
+	module := getBuildModule()
+	cleanModVersion := strings.TrimPrefix(module.Version, "v")
+
 	caddy.AppName = appName
-	caddy.AppVersion = appVersion
-	certmagic.UserAgent = appName + "/" + appVersion
+	caddy.AppVersion = module.Version
+	certmagic.UserAgent = appName + "/" + cleanModVersion
 
 	// Set up process log before anything bad happens
 	switch logfile {
@@ -144,9 +147,11 @@ func Run() {
 		os.Exit(0)
 	}
 	if version {
-		fmt.Printf("%s %s (unofficial)\n", appName, appVersion)
-		if devBuild && gitShortStat != "" {
-			fmt.Printf("%s\n%s\n", gitShortStat, gitFilesModified)
+		if module.Sum != "" {
+			// a build with a known version will also have a checksum
+			fmt.Printf("Caddy %s (%s)\n", module.Version, module.Sum)
+		} else {
+			fmt.Println(module.Version)
 		}
 		os.Exit(0)
 	}
@@ -191,7 +196,7 @@ func Run() {
 	}
 
 	// Begin telemetry (these are no-ops if telemetry disabled)
-	telemetry.Set("caddy_version", appVersion)
+	telemetry.Set("caddy_version", module.Version)
 	telemetry.Set("num_listeners", len(instance.Servers()))
 	telemetry.Set("server_type", serverType)
 	telemetry.Set("os", runtime.GOOS)
@@ -272,25 +277,25 @@ func defaultLoader(serverType string) (caddy.Input, error) {
 	}, nil
 }
 
-// setVersion figures out the version information
-// based on variables set by -ldflags.
-func setVersion() {
-	// A development build is one that's not at a tag or has uncommitted changes
-	devBuild = gitTag == "" || gitShortStat != ""
-
-	if buildDate != "" {
-		buildDate = " " + buildDate
-	}
-
-	// Only set the appVersion if -ldflags was used
-	if gitNearestTag != "" || gitTag != "" {
-		if devBuild && gitNearestTag != "" {
-			appVersion = fmt.Sprintf("%s (+%s%s)",
-				strings.TrimPrefix(gitNearestTag, "v"), gitCommit, buildDate)
-		} else if gitTag != "" {
-			appVersion = strings.TrimPrefix(gitTag, "v")
+// getBuildModule returns the build info of Caddy
+// from debug.BuildInfo (requires Go modules). If
+// no version information is available, a non-nil
+// value will still be returned, but with an
+// unknown version.
+func getBuildModule() *debug.Module {
+	bi, ok := debug.ReadBuildInfo()
+	if ok {
+		// The recommended way to build Caddy involves
+		// creating a separate main module, which
+		// preserves caddy a read-only dependency
+		// TODO: track related Go issue: https://github.com/golang/go/issues/29228
+		for _, mod := range bi.Deps {
+			if mod.Path == "github.com/mholt/caddy" {
+				return mod
+			}
 		}
 	}
+	return &debug.Module{Version: "unknown"}
 }
 
 func checkJSONCaddyfile() {
@@ -590,19 +595,6 @@ var (
 	printEnv        bool
 	validate        bool
 	disabledMetrics string
-)
-
-// Build information obtained with the help of -ldflags
-var (
-	appVersion = "(untracked dev build)" // inferred at startup
-	devBuild   = true                    // inferred at startup
-
-	buildDate        string // date -u
-	gitTag           string // git describe --exact-match HEAD 2> /dev/null
-	gitNearestTag    string // git describe --abbrev=0 --tags HEAD
-	gitCommit        string // git rev-parse HEAD
-	gitShortStat     string // git diff-index --shortstat
-	gitFilesModified string // git diff-index --name-only HEAD
 )
 
 // EnableTelemetry defines whether telemetry is enabled in Run.
