@@ -4,7 +4,6 @@ go 1.12
 
 require (
 	github.com/BurntSushi/toml v0.3.1 // indirect
-	github.com/caddyserver/builds v0.0.0-20170910200810-c62e2219460a
 	github.com/dustin/go-humanize v1.0.0
 	github.com/flynn/go-shlex v0.0.0-20150515145356-3f9db97f8568
 	github.com/go-acme/lego v2.5.0+incompatible
