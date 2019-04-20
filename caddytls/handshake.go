@@ -42,7 +42,7 @@ type configGroup map[string]*Config
 func (cg configGroup) getConfig(hello *tls.ClientHelloInfo) *Config {
 	name := certmagic.NormalizedName(hello.ServerName)
 	if name == "" {
-		name = certmagic.NormalizedName(certmagic.DefaultServerName)
+		name = certmagic.NormalizedName(certmagic.Default.DefaultServerName)
 	}
 
 	// if SNI is empty, prefer matching IP address (it is
