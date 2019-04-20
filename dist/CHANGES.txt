@@ -1,5 +1,11 @@
 CHANGES
 
+1.0.0beta2 (April 20, 2019)
+- Continue migration to Go modules
+- Eliminate need for special build script
+- Internal changes for better compatibility
+
+
 1.0.0beta1 (April 9, 2019)
 - Major internal changes (Go modules & remove vendor)
 - Rename -env flag to -envfile
