@@ -7,7 +7,7 @@ require (
 	github.com/caddyserver/builds v0.0.0-20170910200810-c62e2219460a
 	github.com/dustin/go-humanize v1.0.0
 	github.com/flynn/go-shlex v0.0.0-20150515145356-3f9db97f8568
-	github.com/go-acme/lego v2.4.0+incompatible
+	github.com/go-acme/lego v2.5.0+incompatible
 	github.com/google/uuid v1.1.1
 	github.com/gorilla/websocket v1.4.0
 	github.com/hashicorp/go-syslog v1.0.0
@@ -15,7 +15,7 @@ require (
 	github.com/klauspost/cpuid v1.2.0
 	github.com/kylelemons/godebug v0.0.0-20170820004349-d65d576e9348 // indirect
 	github.com/lucas-clemente/quic-go v0.10.2
-	github.com/mholt/certmagic v0.0.0-20190319183800-ee1543e2f234
+	github.com/mholt/certmagic v0.5.0
 	github.com/naoina/go-stringutil v0.1.0 // indirect
 	github.com/naoina/toml v0.1.1
 	github.com/russross/blackfriday v0.0.0-20170610170232-067529f716f4
