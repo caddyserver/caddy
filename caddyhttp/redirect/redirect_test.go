@@ -19,6 +19,7 @@ import (
 	"context"
 	"crypto/tls"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -84,7 +85,9 @@ func TestRedirect(t *testing.T) {
 		}
 
 		rec := httptest.NewRecorder()
-		re.ServeHTTP(rec, req)
+		if _, err := re.ServeHTTP(rec, req); err != nil {
+			log.Println("[ERROR] failed to serve HTTP: ", err)
+		}
 
 		if rec.Header().Get("Location") != test.expectedLocation {
 			t.Errorf("Test %d: Expected Location header to be %q but was %q",
@@ -117,7 +120,9 @@ func TestParametersRedirect(t *testing.T) {
 	req = req.WithContext(ctx)
 
 	rec := httptest.NewRecorder()
-	re.ServeHTTP(rec, req)
+	if _, err := re.ServeHTTP(rec, req); err != nil {
+		log.Println("[ERROR] failed to serve HTTP: ", err)
+	}
 
 	if got, want := rec.Header().Get("Location"), "http://example.com/a?b=c"; got != want {
 		t.Fatalf("Test 1: expected location header %s but was %s", want, got)
@@ -136,7 +141,9 @@ func TestParametersRedirect(t *testing.T) {
 	ctx = context.WithValue(req.Context(), httpserver.OriginalURLCtxKey, *req.URL)
 	req = req.WithContext(ctx)
 
-	re.ServeHTTP(rec, req)
+	if _, err := re.ServeHTTP(rec, req); err != nil {
+		log.Println("[ERROR] failed to serve HTTP: ", err)
+	}
 
 	if got, want := rec.Header().Get("Location"), "http://example.com/a/d?b=c&e=f"; got != want {
 		t.Fatalf("Test 2: expected location header %s but was %s", want, got)
@@ -158,7 +165,9 @@ func TestMetaRedirect(t *testing.T) {
 		}
 
 		rec := httptest.NewRecorder()
-		re.ServeHTTP(rec, req)
+		if _, err := re.ServeHTTP(rec, req); err != nil {
+			log.Println("[ERROR] failed to serve HTTP: ", err)
+		}
 
 		body, err := ioutil.ReadAll(rec.Body)
 		if err != nil {

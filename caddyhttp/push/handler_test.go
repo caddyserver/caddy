@@ -17,6 +17,7 @@ package push
 import (
 	"errors"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -67,7 +68,9 @@ func TestMiddlewareWillPushResources(t *testing.T) {
 	pushingWriter := &MockedPusher{ResponseWriter: writer}
 
 	// when
-	middleware.ServeHTTP(pushingWriter, request)
+	if _, err := middleware.ServeHTTP(pushingWriter, request); err != nil {
+		log.Println("[ERROR] failed to serve HTTP: ", err)
+	}
 
 	// then
 	expectedPushedResources := map[string]*http.PushOptions{
@@ -111,7 +114,9 @@ func TestMiddlewareWillPushResourcesWithMergedHeaders(t *testing.T) {
 	pushingWriter := &MockedPusher{ResponseWriter: writer}
 
 	// when
-	middleware.ServeHTTP(pushingWriter, request)
+	if _, err := middleware.ServeHTTP(pushingWriter, request); err != nil {
+		log.Println("[ERROR] failed to serve HTTP: ", err)
+	}
 
 	// then
 	expectedPushedResources := map[string]*http.PushOptions{
@@ -156,7 +161,9 @@ func TestMiddlewareShouldntDoRecursivePush(t *testing.T) {
 	pushingWriter := &MockedPusher{ResponseWriter: writer}
 
 	// when
-	middleware.ServeHTTP(pushingWriter, request)
+	if _, err := middleware.ServeHTTP(pushingWriter, request); err != nil {
+		log.Println("[ERROR] failed to serve HTTP: ", err)
+	}
 
 	// then
 	if len(pushingWriter.pushed) > 0 {
@@ -190,7 +197,9 @@ func TestMiddlewareShouldStopPushingOnError(t *testing.T) {
 	pushingWriter := &MockedPusher{ResponseWriter: writer, returnedError: errors.New("Cannot push right now")}
 
 	// when
-	middleware.ServeHTTP(pushingWriter, request)
+	if _, err := middleware.ServeHTTP(pushingWriter, request); err != nil {
+		log.Println("[ERROR] failed to serve HTTP: ", err)
+	}
 
 	// then
 	expectedPushedResources := map[string]*http.PushOptions{
@@ -406,7 +415,7 @@ func TestMiddlewareShouldPushIndexFile(t *testing.T) {
 
 	pushingWriter := &MockedPusher{
 		ResponseWriter: httptest.NewRecorder(),
-		returnedError:  errors.New("Cannot push right now"),
+		returnedError:  errors.New("cannot push right now"),
 	}
 
 	// when
@@ -461,7 +470,7 @@ func TestMiddlewareShouldNotPushIndexFileWhenNotARule(t *testing.T) {
 
 	pushingWriter := &MockedPusher{
 		ResponseWriter: httptest.NewRecorder(),
-		returnedError:  errors.New("Cannot push right now"),
+		returnedError:  errors.New("cannot push right now"),
 	}
 
 	// when

@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -249,7 +250,9 @@ func TestParseBlockHealthCheck(t *testing.T) {
 		u := staticUpstream{}
 		c := caddyfile.NewDispenser("Testfile", strings.NewReader(test.config))
 		for c.Next() {
-			parseBlock(&c, &u, false)
+			if err := parseBlock(&c, &u, false); err != nil {
+				log.Println("[ERROR] failed to parse block: ", err)
+			}
 		}
 		if u.HealthCheck.Interval.String() != test.interval {
 			t.Errorf(
@@ -300,7 +303,7 @@ func TestStop(t *testing.T) {
 			// Set up proxy.
 			var counter int64
 			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				r.Body.Close()
+				_ = r.Body.Close()
 				atomic.AddInt64(&counter, 1)
 			}))
 
@@ -522,7 +525,7 @@ func TestHealthCheckPort(t *testing.T) {
 	var counter int64
 
 	healthCounter := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.Body.Close()
+		_ = r.Body.Close()
 		atomic.AddInt64(&counter, 1)
 	}))
 
@@ -592,8 +595,8 @@ func TestHealthCheckPort(t *testing.T) {
 
 func TestHealthCheckContentString(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, "blablabla good blablabla")
-		r.Body.Close()
+		_, _ = fmt.Fprintf(w, "blablabla good blablabla")
+		_ = r.Body.Close()
 	}))
 	_, port, err := net.SplitHostPort(server.Listener.Addr().String())
 	if err != nil {
@@ -638,7 +641,9 @@ func TestHealthCheckContentString(t *testing.T) {
 				}
 				t.Errorf("Health check bad response")
 			}
-			upstream.Stop()
+			if err := upstream.Stop(); err != nil {
+				log.Println("[ERROR] failed to stop upstream: ", err)
+			}
 		}
 	}
 }

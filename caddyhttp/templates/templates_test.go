@@ -17,6 +17,7 @@ package templates
 import (
 	"bytes"
 	"context"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -127,7 +128,9 @@ func TestTemplates(t *testing.T) {
 
 			rec := httptest.NewRecorder()
 
-			c.tpl.ServeHTTP(rec, req)
+			if _, err := c.tpl.ServeHTTP(rec, req); err != nil {
+				log.Println("[ERROR] failed to serve HTTP: ", err)
+			}
 
 			if rec.Code != c.respCode {
 				t.Fatalf("Test: Wrong response code: %d, should be %d", rec.Code, c.respCode)

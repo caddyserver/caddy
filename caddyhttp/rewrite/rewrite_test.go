@@ -17,6 +17,7 @@ package rewrite
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -123,7 +124,9 @@ func TestRewrite(t *testing.T) {
 		req = req.WithContext(ctx)
 
 		rec := httptest.NewRecorder()
-		rw.ServeHTTP(rec, req)
+		if _, err := rw.ServeHTTP(rec, req); err != nil {
+			log.Println("[ERROR] failed to serve HTTP: ", err)
+		}
 
 		if got, want := rec.Body.String(), test.expectedTo; got != want {
 			t.Errorf("Test %d: Expected URL to be '%s' but was '%s'", i, want, got)
@@ -162,7 +165,9 @@ func TestWordpress(t *testing.T) {
 		req = req.WithContext(ctx)
 
 		rec := httptest.NewRecorder()
-		rw.ServeHTTP(rec, req)
+		if _, err := rw.ServeHTTP(rec, req); err != nil {
+			log.Println("[ERROR] failed to serve HTTP: ", err)
+		}
 
 		if got, want := rec.Body.String(), test.expectedTo; got != want {
 			t.Errorf("Test %d: Expected URL to be '%s' but was '%s'", i, want, got)
@@ -171,6 +176,6 @@ func TestWordpress(t *testing.T) {
 }
 
 func urlPrinter(w http.ResponseWriter, r *http.Request) (int, error) {
-	fmt.Fprint(w, r.URL.String())
+	_, _ = fmt.Fprint(w, r.URL.String())
 	return 0, nil
 }

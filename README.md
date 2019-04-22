@@ -75,16 +75,54 @@ Caddy binaries have no dependencies and are available for every platform. Get Ca
 
 ## Build
 
-To build from source you need **[Git](https://git-scm.com/downloads)** and **[Go](https://golang.org/doc/install)** (1.12 or newer). Follow these instruction for fast building:
+To build from source you need **[Git](https://git-scm.com/downloads)** and **[Go](https://golang.org/doc/install)** (1.12 or newer).
 
-- Get the source with `go get github.com/mholt/caddy/caddy` and then run `go get github.com/caddyserver/builds`
-- Now `cd $GOPATH/src/github.com/mholt/caddy/caddy` and run `go run build.go`
+**To build Caddy without plugins:**
 
-Then make sure the `caddy` binary is in your PATH.
+<!-- TODO: This env variable will not be required starting with Go 1.13 -->
+1. Set the transitional environment variable for Go modules: `export GO111MODULE=on`
+<!-- TODO: The specific version will not be required after the stable 1.0.0 release -->
+2. Run `go get github.com/mholt/caddy/caddy@v1.0.0-beta2`
 
-To build for other platforms, use build.go with the `--goos` and `--goarch` flags.
+Caddy will be installed to your `$GOPATH/bin` folder.
 
-When building from source, telemetry is enabled by default. You can disable it by changing `enableTelemetry` in run.go before compiling, or use the `-disabled-metrics` flag at runtime to disable only certain metrics.
+With these instructions, the binary will not have embedded version information (see [golang/go#29228](https://github.com/golang/go/issues/29228)), but it is fine for a quick start.
+
+**To build Caddy with plugins (and with version information):**
+
+There is no need to modify the Caddy code to build it with plugins. We will create a simple Go module with our own `main()` that you can use to make custom Caddy builds.
+
+<!-- TODO: This env variable will not be required starting with Go 1.13 -->
+1. Set the transitional environment variable for Go modules: `export GO111MODULE=on`
+2. Create a new folder anywhere, and put this Go file into it, then import the plugins you want to include:
+```go
+package main
+
+import (
+	"github.com/mholt/caddy/caddy/caddymain"
+	
+	// plug in plugins here, for example:
+	// _ "import/path/here"
+)
+
+func main() {
+	// optional: disable telemetry
+	// caddymain.EnableTelemetry = false
+	caddymain.Run()
+}
+```
+3. `go mod init mycaddy` (the name doesn't really matter).
+4. `go install` will then create your binary at `$GOPATH/bin`, or `go build` will put it in the current directory.
+
+**To install Caddy's source code for development:**
+
+<!-- TODO: This env variable will not be required starting with Go 1.13 -->
+1. Set the transitional environment variable for Go modules: `export GO111MODULE=on`
+2. Run `git clone https://github.com/mholt/caddy.git` in any folder (doesn't have to be in GOPATH).
+
+You can make changes to the source code in this repo, since it is a Go module.
+
+When building from source, telemetry is enabled by default. You can disable it by changing `caddymain.EnableTelemetry = false` in run.go, or use the `-disabled-metrics` flag at runtime to disable only certain metrics.
 
 
 ## Quick Start
@@ -160,6 +198,10 @@ Please see our [contributing guidelines](https://github.com/mholt/caddy/blob/mas
 We use GitHub issues and pull requests only for discussing bug reports and the development of specific changes. We welcome all other topics on the [forum](https://caddy.community)!
 
 If you want to contribute to the documentation, please [submit an issue](https://github.com/mholt/caddy/issues/new) describing the change that should be made.
+
+### Good First Issue
+
+If you are looking for somewhere to start and would like to help out by working on an existing issue, take a look at our [`Good First Issue`](https://github.com/mholt/caddy/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) tag 
 
 Thanks for making Caddy -- and the Web -- better!
 

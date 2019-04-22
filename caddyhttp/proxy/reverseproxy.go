@@ -31,6 +31,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -69,7 +70,9 @@ func pooledIoCopy(dst io.Writer, src io.Reader) {
 	// Due to that we extend buf's length to its capacity here and
 	// ensure it's always non-zero.
 	bufCap := cap(buf)
-	io.CopyBuffer(dst, src, buf[0:bufCap:bufCap])
+	if _, err := io.CopyBuffer(dst, src, buf[0:bufCap:bufCap]); err != nil {
+		log.Println("[ERROR] failed to copy buffer: ", err)
+	}
 }
 
 // onExitFlushLoop is a callback set by tests to detect the state of the
@@ -132,12 +135,12 @@ func (rp *ReverseProxy) srvDialerFunc(locator string, timeout time.Duration) fun
 }
 
 func singleJoiningSlash(a, b string) string {
-	aslash := strings.HasSuffix(a, "/")
-	bslash := strings.HasPrefix(b, "/")
+	aSlash := strings.HasSuffix(a, "/")
+	bSlash := strings.HasPrefix(b, "/")
 	switch {
-	case aslash && bslash:
+	case aSlash && bSlash:
 		return a + b[1:]
-	case !aslash && !bslash && b != "":
+	case !aSlash && !bSlash && b != "":
 		return a + "/" + b
 	}
 	return a + b
@@ -275,7 +278,9 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int, t
 			transport.MaxIdleConnsPerHost = keepalive
 		}
 		if httpserver.HTTP2 {
-			http2.ConfigureTransport(transport)
+			if err := http2.ConfigureTransport(transport); err != nil {
+				log.Println("[ERROR] failed to configure transport to use HTTP/2: ", err)
+			}
 		}
 		rp.Transport = transport
 	} else {
@@ -284,7 +289,9 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int, t
 			Dial:  rp.dialer.Dial,
 		}
 		if httpserver.HTTP2 {
-			http2.ConfigureTransport(transport)
+			if err := http2.ConfigureTransport(transport); err != nil {
+				log.Println("[ERROR] failed to configure transport to use HTTP/2: ", err)
+			}
 		}
 		rp.Transport = transport
 	}
@@ -394,7 +401,9 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, 
 			if err != nil {
 				return err
 			}
-			outreq.Write(backendConn)
+			if err := outreq.Write(backendConn); err != nil {
+				log.Println("[ERROR] failed to write: ", err)
+			}
 		}
 		defer backendConn.Close()
 
@@ -416,7 +425,9 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, 
 				if err != nil {
 					return err
 				}
-				backendConn.Write(rbuf)
+				if _, err := backendConn.Write(rbuf); err != nil {
+					log.Println("[ERROR] failed to write data to connection: ", err)
+				}
 			}
 		}
 		go func() {
@@ -434,7 +445,7 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, 
 		bodyOpen := true
 		closeBody := func() {
 			if bodyOpen {
-				res.Body.Close()
+				_ = res.Body.Close()
 				bodyOpen = false
 			}
 		}
@@ -681,7 +692,7 @@ func getTransportDialTLS(t *http.Transport) func(network, addr string) (net.Conn
 			errc <- err
 		}()
 		if err := <-errc; err != nil {
-			plainConn.Close()
+			_ = plainConn.Close()
 			return nil, err
 		}
 		if !tlsClientConfig.InsecureSkipVerify {
@@ -690,7 +701,7 @@ func getTransportDialTLS(t *http.Transport) func(network, addr string) (net.Conn
 				hostname = stripPort(addr)
 			}
 			if err := tlsConn.VerifyHostname(hostname); err != nil {
-				plainConn.Close()
+				_ = plainConn.Close()
 				return nil, err
 			}
 		}

@@ -19,6 +19,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"io/ioutil"
+	"log"
 	mathrand "math/rand"
 	"net"
 	"net/http"
@@ -420,7 +421,9 @@ func (c Context) RandomString(minLen, maxLen int) string {
 	// secureRandomBytes returns a number of bytes using crypto/rand.
 	secureRandomBytes := func(numBytes int) []byte {
 		randomBytes := make([]byte, numBytes)
-		rand.Read(randomBytes)
+		if _, err := rand.Read(randomBytes); err != nil {
+			log.Println("[ERROR] failed to read bytes: ", err)
+		}
 		return randomBytes
 	}
 

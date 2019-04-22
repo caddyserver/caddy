@@ -283,7 +283,10 @@ func atomicAdd(key string, amount int) {
 // Do not use this for cryptographic purposes.
 func FastHash(input []byte) string {
 	h := fnv.New32a()
-	h.Write(input)
+	if _, err := h.Write(input); err != nil {
+		log.Println("[ERROR] failed to write bytes: ", err)
+	}
+
 	return fmt.Sprintf("%x", h.Sum32())
 }
 

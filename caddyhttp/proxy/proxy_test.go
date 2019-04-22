@@ -97,7 +97,9 @@ func TestReverseProxy(t *testing.T) {
 	requestReceived := false
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// read the body (even if it's empty) to make Go parse trailers
-		io.Copy(ioutil.Discard, r.Body)
+		if _, err := io.Copy(ioutil.Discard, r.Body); err != nil {
+			log.Println("[ERROR] failed to copy bytes: ", err)
+		}
 
 		verifyHeadersTrailers(r.Header, r.Trailer)
 		requestReceived = true
@@ -113,7 +115,9 @@ func TestReverseProxy(t *testing.T) {
 		}
 
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("Hello, client"))
+		if _, err := w.Write([]byte("Hello, client")); err != nil {
+			log.Println("[ERROR] failed to write response: ", err)
+		}
 
 		// Set trailers.
 		shallowCopyTrailers(w.Header(), testTrailers, true)
@@ -149,7 +153,9 @@ func TestReverseProxy(t *testing.T) {
 	}
 
 	w := httptest.NewRecorder()
-	p.ServeHTTP(w, r)
+	if _, err := p.ServeHTTP(w, r); err != nil {
+		log.Println("[ERROR] failed to serve HTTP: ", err)
+	}
 	res := w.Result()
 
 	if !requestReceived {
@@ -165,7 +171,9 @@ func TestReverseProxy(t *testing.T) {
 	})
 	rr.Replacer = httpserver.NewReplacer(r, rr, "-")
 
-	p.ServeHTTP(rr, r)
+	if _, err := p.ServeHTTP(rr, r); err != nil {
+		log.Println("[ERROR] failed to serve HTTP: ", err)
+	}
 
 	if got, want := rr.Replacer.Replace("{upstream}"), backend.URL; got != want {
 		t.Errorf("Expected custom placeholder {upstream} to be set (%s), but it wasn't; got: %s", want, got)
@@ -196,7 +204,9 @@ func TestReverseProxyInsecureSkipVerify(t *testing.T) {
 	backend := newTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestReceived = true
 		requestWasHTTP2 = r.ProtoAtLeast(2, 0)
-		w.Write([]byte("Hello, client"))
+		if _, err := w.Write([]byte("Hello, client")); err != nil {
+			log.Println("[ERROR] failed to write response: ", err)
+		}
 	}))
 	defer backend.Close()
 
@@ -210,7 +220,9 @@ func TestReverseProxyInsecureSkipVerify(t *testing.T) {
 	r := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
 
-	p.ServeHTTP(w, r)
+	if _, err := p.ServeHTTP(w, r); err != nil {
+		log.Println("[ERROR] failed to serve HTTP: ", err)
+	}
 
 	if !requestReceived {
 		t.Error("Even with insecure HTTPS, expected backend to receive request, but it didn't")
@@ -306,7 +318,9 @@ func TestReverseProxyTimeout(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	start := time.Now()
-	p.ServeHTTP(w, r)
+	if _, err := p.ServeHTTP(w, r); err != nil {
+		log.Println("[ERROR] failed to serve HTTP: ", err)
+	}
 	took := time.Since(start)
 
 	if took > timeout+errorMargin {
@@ -342,7 +356,9 @@ func TestWebSocketReverseProxyNonHijackerPanic(t *testing.T) {
 	}
 
 	nonHijacker := httptest.NewRecorder()
-	p.ServeHTTP(nonHijacker, r)
+	if _, err := p.ServeHTTP(nonHijacker, r); err != nil {
+		log.Println("[ERROR] failed to serve HTTP: ", err)
+	}
 }
 
 func TestWebSocketReverseProxyBackendShutDown(t *testing.T) {
@@ -360,7 +376,9 @@ func TestWebSocketReverseProxyBackendShutDown(t *testing.T) {
 	// Get proxy to use for the test
 	p := newWebSocketTestProxy(backend.URL, false, 30*time.Second)
 	backendProxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		p.ServeHTTP(w, r)
+		if _, err := p.ServeHTTP(w, r); err != nil {
+			log.Println("[ERROR] failed to serve HTTP: ", err)
+		}
 	}))
 	defer backendProxy.Close()
 
@@ -404,7 +422,9 @@ func TestWebSocketReverseProxyServeHTTPHandler(t *testing.T) {
 	w := &recorderHijacker{httptest.NewRecorder(), new(fakeConn)}
 
 	// Booya! Do the test.
-	p.ServeHTTP(w, r)
+	if _, err := p.ServeHTTP(w, r); err != nil {
+		log.Println("[ERROR] failed to serve HTTP: ", err)
+	}
 
 	// Make sure the backend accepted the WS connection.
 	// Mostly interested in the Upgrade and Connection response headers
@@ -429,7 +449,9 @@ func TestWebSocketReverseProxyFromWSClient(t *testing.T) {
 	// Echo server allows us to test that socket bytes are properly
 	// being proxied.
 	wsEcho := httptest.NewServer(websocket.Handler(func(ws *websocket.Conn) {
-		io.Copy(ws, ws)
+		if _, err := io.Copy(ws, ws); err != nil {
+			log.Println("[ERROR] failed to copy: ", err)
+		}
 	}))
 	defer wsEcho.Close()
 
@@ -441,13 +463,15 @@ func TestWebSocketReverseProxyFromWSClient(t *testing.T) {
 	// WS client will connect to this test server, not
 	// the echo client directly.
 	echoProxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		p.ServeHTTP(w, r)
+		if _, err := p.ServeHTTP(w, r); err != nil {
+			log.Println("[ERROR] failed to serve HTTP: ", err)
+		}
 	}))
 	defer echoProxy.Close()
 
 	// Set up WebSocket client
-	url := strings.Replace(echoProxy.URL, "http://", "ws://", 1)
-	ws, err := websocket.Dial(url, "", echoProxy.URL)
+	u := strings.Replace(echoProxy.URL, "http://", "ws://", 1)
+	ws, err := websocket.Dial(u, "", echoProxy.URL)
 
 	if err != nil {
 		t.Fatal(err)
@@ -475,20 +499,24 @@ func TestWebSocketReverseProxyFromWSClient(t *testing.T) {
 
 func TestWebSocketReverseProxyFromWSSClient(t *testing.T) {
 	wsEcho := newTLSServer(websocket.Handler(func(ws *websocket.Conn) {
-		io.Copy(ws, ws)
+		if _, err := io.Copy(ws, ws); err != nil {
+			log.Println("[ERROR] failed to copy: ", err)
+		}
 	}))
 	defer wsEcho.Close()
 
 	p := newWebSocketTestProxy(wsEcho.URL, true, 30*time.Second)
 
 	echoProxy := newTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		p.ServeHTTP(w, r)
+		if _, err := p.ServeHTTP(w, r); err != nil {
+			log.Println("[ERROR] failed to serve HTTP: ", err)
+		}
 	}))
 	defer echoProxy.Close()
 
 	// Set up WebSocket client
-	url := strings.Replace(echoProxy.URL, "https://", "wss://", 1)
-	wsCfg, err := websocket.NewConfig(url, echoProxy.URL)
+	u := strings.Replace(echoProxy.URL, "https://", "wss://", 1)
+	wsCfg, err := websocket.NewConfig(u, echoProxy.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -558,7 +586,9 @@ func TestUnixSocketProxy(t *testing.T) {
 	p := newWebSocketTestProxy(url, false, 30*time.Second)
 
 	echoProxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		p.ServeHTTP(w, r)
+		if _, err := p.ServeHTTP(w, r); err != nil {
+			log.Println("[ERROR] failed to serve HTTP: ", err)
+		}
 	}))
 	defer echoProxy.Close()
 
@@ -599,14 +629,14 @@ func GetSocketProxy(messageFormat string, prefix string) (*Proxy, *httptest.Serv
 
 	dir, err := ioutil.TempDir("", "caddy_proxytest")
 	if err != nil {
-		return nil, nil, dir, fmt.Errorf("Failed to make temp dir to contain unix socket. %v", err)
+		return nil, nil, dir, fmt.Errorf("failed to make temp dir to contain unix socket. %v", err)
 	}
 	socketPath := filepath.Join(dir, "test_socket")
 
 	ln, err := net.Listen("unix", socketPath)
 	if err != nil {
 		os.RemoveAll(dir)
-		return nil, nil, dir, fmt.Errorf("Unable to listen: %v", err)
+		return nil, nil, dir, fmt.Errorf("unable to listen: %v", err)
 	}
 	ts.Listener = ln
 
@@ -619,7 +649,9 @@ func GetSocketProxy(messageFormat string, prefix string) (*Proxy, *httptest.Serv
 
 func GetTestServerMessage(p *Proxy, ts *httptest.Server, path string) (string, error) {
 	echoProxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		p.ServeHTTP(w, r)
+		if _, err := p.ServeHTTP(w, r); err != nil {
+			log.Println("[ERROR] failed to serve HTTP: ", err)
+		}
 	}))
 
 	// *httptest.Server is passed so it can be `defer`red properly
@@ -628,13 +660,13 @@ func GetTestServerMessage(p *Proxy, ts *httptest.Server, path string) (string, e
 
 	res, err := http.Get(echoProxy.URL + path)
 	if err != nil {
-		return "", fmt.Errorf("Unable to GET: %v", err)
+		return "", fmt.Errorf("unable to GET: %v", err)
 	}
 
 	greeting, err := ioutil.ReadAll(res.Body)
 	res.Body.Close()
 	if err != nil {
-		return "", fmt.Errorf("Unable to read body: %v", err)
+		return "", fmt.Errorf("unable to read body: %v", err)
 	}
 
 	return fmt.Sprintf("%s", greeting), nil
@@ -707,7 +739,9 @@ func TestUpstreamHeadersUpdate(t *testing.T) {
 	var actualHeaders http.Header
 	var actualHost string
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("Hello, client"))
+		if _, err := w.Write([]byte("Hello, client")); err != nil {
+			log.Println("[ERROR] failed to write response: ", err)
+		}
 		actualHeaders = r.Header
 		actualHost = r.Host
 	}))
@@ -752,7 +786,9 @@ func TestUpstreamHeadersUpdate(t *testing.T) {
 	r.Header.Add("Regex-Me", "I was originally this")
 	r.Header.Add("Regexreplace-Me", "The host is bad")
 
-	p.ServeHTTP(w, r)
+	if _, err := p.ServeHTTP(w, r); err != nil {
+		log.Println("[ERROR] failed to serve HTTP: ", err)
+	}
 
 	replacer := httpserver.NewReplacer(r, nil, "")
 
@@ -790,7 +826,9 @@ func TestDownstreamHeadersUpdate(t *testing.T) {
 		w.Header().Add("Overwrite-Me", "Overwrite-Value")
 		w.Header().Add("Regex-Me", "I was originally this")
 		w.Header().Add("Regexreplace-Me", "The host is bad")
-		w.Write([]byte("Hello, client"))
+		if _, err := w.Write([]byte("Hello, client")); err != nil {
+			log.Println("[ERROR] failed to write response: ", err)
+		}
 	}))
 	defer backend.Close()
 
@@ -822,7 +860,9 @@ func TestDownstreamHeadersUpdate(t *testing.T) {
 	// set a predefined overwritten header
 	w.Header().Set("Overwrite-Me", "Initial")
 
-	p.ServeHTTP(w, r)
+	if _, err := p.ServeHTTP(w, r); err != nil {
+		log.Println("[ERROR] failed to serve HTTP: ", err)
+	}
 
 	replacer := httpserver.NewReplacer(r, nil, "")
 	actualHeaders := w.Header()
@@ -880,7 +920,9 @@ func TestMultiReverseProxyFromClient(t *testing.T) {
 
 	// This is a full end-end test, so the proxy handler.
 	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		p.ServeHTTP(w, r)
+		if _, err := p.ServeHTTP(w, r); err != nil {
+			log.Println("[ERROR] failed to serve HTTP: ", err)
+		}
 	}))
 	defer proxy.Close()
 
@@ -936,7 +978,9 @@ func TestHostSimpleProxyNoHeaderForward(t *testing.T) {
 	var requestHost string
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestHost = r.Host
-		w.Write([]byte("Hello, client"))
+		if _, err := w.Write([]byte("Hello, client")); err != nil {
+			log.Println("[ERROR] failed to write response: ", err)
+		}
 	}))
 	defer backend.Close()
 
@@ -951,7 +995,9 @@ func TestHostSimpleProxyNoHeaderForward(t *testing.T) {
 
 	w := httptest.NewRecorder()
 
-	p.ServeHTTP(w, r)
+	if _, err := p.ServeHTTP(w, r); err != nil {
+		log.Println("[ERROR] failed to serve HTTP: ", err)
+	}
 
 	if !strings.Contains(backend.URL, "//") {
 		t.Fatalf("The URL of the backend server doesn't contains //: %s", backend.URL)
@@ -1015,7 +1061,9 @@ func testReverseProxyTransparentHeaders(t *testing.T, remoteAddr, forwardedForHe
 	w := httptest.NewRecorder()
 
 	// Act
-	p.ServeHTTP(w, r)
+	if _, err := p.ServeHTTP(w, r); err != nil {
+		log.Println("[ERROR] failed to serve HTTP: ", err)
+	}
 
 	// Assert
 	if got := actualHeaders["X-Forwarded-For"]; !reflect.DeepEqual(got, expected) {
@@ -1028,7 +1076,9 @@ func TestHostHeaderReplacedUsingForward(t *testing.T) {
 	var requestHost string
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestHost = r.Host
-		w.Write([]byte("Hello, client"))
+		if _, err := w.Write([]byte("Hello, client")); err != nil {
+			log.Println("[ERROR] failed to write response: ", err)
+		}
 	}))
 	defer backend.Close()
 
@@ -1046,7 +1096,9 @@ func TestHostHeaderReplacedUsingForward(t *testing.T) {
 
 	w := httptest.NewRecorder()
 
-	p.ServeHTTP(w, r)
+	if _, err := p.ServeHTTP(w, r); err != nil {
+		log.Println("[ERROR] failed to serve HTTP: ", err)
+	}
 
 	if proxyHostHeader != requestHost {
 		t.Fatalf("Expected %s as a Host header got %s\n", proxyHostHeader, requestHost)
@@ -1077,11 +1129,17 @@ func basicAuthTestcase(t *testing.T, upstreamUser, clientUser *url.Userinfo) {
 		u, p, ok := r.BasicAuth()
 
 		if ok {
-			w.Write([]byte(u))
+			if _, err := w.Write([]byte(u)); err != nil {
+				log.Println("[ERROR] failed to write bytes: ", err)
+			}
 		}
 		if ok && p != "" {
-			w.Write([]byte(":"))
-			w.Write([]byte(p))
+			if _, err := w.Write([]byte(":")); err != nil {
+				log.Println("[ERROR] failed to write bytes: ", err)
+			}
+			if _, err := w.Write([]byte(p)); err != nil {
+				log.Println("[ERROR] failed to write bytes: ", err)
+			}
 		}
 	}))
 	defer backend.Close()
@@ -1107,7 +1165,9 @@ func basicAuthTestcase(t *testing.T, upstreamUser, clientUser *url.Userinfo) {
 	}
 	w := httptest.NewRecorder()
 
-	p.ServeHTTP(w, r)
+	if _, err := p.ServeHTTP(w, r); err != nil {
+		log.Println("[ERROR] failed to serve HTTP: ", err)
+	}
 
 	if w.Code != 200 {
 		t.Fatalf("Invalid response code: %d", w.Code)
@@ -1243,7 +1303,9 @@ func TestReverseProxyRetry(t *testing.T) {
 
 	// set up proxy
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		io.Copy(w, r.Body)
+		if _, err := io.Copy(w, r.Body); err != nil {
+			log.Println("[ERROR] failed to copy: ", err)
+		}
 		r.Body.Close()
 	}))
 	defer backend.Close()
@@ -1275,8 +1337,8 @@ func TestReverseProxyRetry(t *testing.T) {
 	}))
 	defer middle.Close()
 
-	testcase := "test content"
-	r, err := http.NewRequest("POST", middle.URL, bytes.NewBufferString(testcase))
+	testCase := "test content"
+	r, err := http.NewRequest("POST", middle.URL, bytes.NewBufferString(testCase))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1289,8 +1351,8 @@ func TestReverseProxyRetry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(b) != testcase {
-		t.Fatalf("string(b) = %s, want %s", string(b), testcase)
+	if string(b) != testCase {
+		t.Fatalf("string(b) = %s, want %s", string(b), testCase)
 	}
 }
 
@@ -1300,7 +1362,10 @@ func TestReverseProxyLargeBody(t *testing.T) {
 
 	// set up proxy
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		io.Copy(ioutil.Discard, r.Body)
+		if _, err := io.Copy(ioutil.Discard, r.Body); err != nil {
+			log.Println("[ERROR] failed to copy: ", err)
+		}
+
 		r.Body.Close()
 	}))
 	defer backend.Close()
@@ -1329,8 +1394,8 @@ func TestReverseProxyLargeBody(t *testing.T) {
 
 	// We want to see how much memory the proxy module requires for this request.
 	// So lets record the mem stats before we start it.
-	begMemstats := &runtime.MemStats{}
-	runtime.ReadMemStats(begMemstats)
+	begMemStats := &runtime.MemStats{}
+	runtime.ReadMemStats(begMemStats)
 
 	r, err := http.NewRequest("POST", middle.URL, &noopReader{len: bodySize})
 	if err != nil {
@@ -1347,7 +1412,7 @@ func TestReverseProxyLargeBody(t *testing.T) {
 	runtime.ReadMemStats(endMemstats)
 
 	// ...to calculate the total amount of allocated memory during the request.
-	totalAlloc := endMemstats.TotalAlloc - begMemstats.TotalAlloc
+	totalAlloc := endMemstats.TotalAlloc - begMemStats.TotalAlloc
 
 	// If that's as much as the size of the body itself it's a serious sign that the
 	// request was not "streamed" to the upstream without buffering it first.
@@ -1362,7 +1427,9 @@ func TestCancelRequest(t *testing.T) {
 		close(reqInFlight) // cause the client to cancel its request
 
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("Hello, client"))
+		if _, err := w.Write([]byte("Hello, client")); err != nil {
+			log.Println("[ERROR] failed to write response: ", err)
+		}
 	}))
 	defer backend.Close()
 
@@ -1566,7 +1633,9 @@ var _ httpserver.HTTPInterfaces = testResponseRecorder{}
 
 func BenchmarkProxy(b *testing.B) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("Hello, client"))
+		if _, err := w.Write([]byte("Hello, client")); err != nil {
+			log.Println("[ERROR] failed to write response: ", err)
+		}
 	}))
 	defer backend.Close()
 
@@ -1594,7 +1663,9 @@ func BenchmarkProxy(b *testing.B) {
 			b.Fatalf("Failed to create request: %v", err)
 		}
 		b.StartTimer()
-		p.ServeHTTP(w, r)
+		if _, err := p.ServeHTTP(w, r); err != nil {
+			log.Println("[ERROR] failed to serve HTTP: ", err)
+		}
 	}
 }
 
@@ -1676,7 +1747,9 @@ func TestQuic(t *testing.T) {
 			return
 		}
 		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Write([]byte(content))
+			if _, err := w.Write([]byte(content)); err != nil {
+				log.Println("[ERROR] failed to write bytes: ", err)
+			}
 			w.WriteHeader(200)
 		})
 		err = h2quic.ListenAndServeQUIC(

@@ -16,6 +16,7 @@ package internalsrv
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -126,7 +127,9 @@ func internalTestHandlerFunc(w http.ResponseWriter, r *http.Request) (int, error
 		w.WriteHeader(http.StatusOK)
 		w.Header().Set("Content-Type", contentTypeOctetStream)
 		w.Header().Set("Content-Length", strconv.Itoa(len(internalProtectedData)))
-		w.Write([]byte(internalProtectedData))
+		if _, err := w.Write([]byte(internalProtectedData)); err != nil {
+			log.Println("[ERROR] failed to write bytes: ", err)
+		}
 		return 0, nil
 	}
 

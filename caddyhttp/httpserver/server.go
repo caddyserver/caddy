@@ -234,7 +234,9 @@ func makeHTTPServerWithTimeouts(addr string, group []*SiteConfig) *http.Server {
 
 func (s *Server) wrapWithSvcHeaders(previousHandler http.Handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		s.quicServer.SetQuicHeaders(w.Header())
+		if err := s.quicServer.SetQuicHeaders(w.Header()); err != nil {
+			log.Println("[Error] failed to set proper headers for QUIC: ", err)
+		}
 		previousHandler.ServeHTTP(w, r)
 	}
 }
@@ -243,7 +245,7 @@ func (s *Server) wrapWithSvcHeaders(previousHandler http.Handler) http.HandlerFu
 // used to serve requests.
 func (s *Server) Listen() (net.Listener, error) {
 	if s.Server == nil {
-		return nil, fmt.Errorf("Server field is nil")
+		return nil, fmt.Errorf("server field is nil")
 	}
 
 	ln, err := net.Listen("tcp", s.Server.Addr)
@@ -324,7 +326,9 @@ func (s *Server) Serve(ln net.Listener) error {
 
 	defer func() {
 		if s.quicServer != nil {
-			s.quicServer.Close()
+			if err := s.quicServer.Close(); err != nil {
+				log.Println("[ERROR] failed to close QUIC server: ", err)
+			}
 		}
 	}()
 
@@ -555,8 +559,12 @@ func (ln tcpKeepAliveListener) Accept() (c net.Conn, err error) {
 	if err != nil {
 		return
 	}
-	tc.SetKeepAlive(true)
-	tc.SetKeepAlivePeriod(3 * time.Minute)
+	if err = tc.SetKeepAlive(true); err != nil {
+		return
+	}
+	if err = tc.SetKeepAlivePeriod(3 * time.Minute); err != nil {
+		return
+	}
 	return tc, nil
 }
 
@@ -594,7 +602,9 @@ func WriteTextResponse(w http.ResponseWriter, status int, body string) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(status)
-	w.Write([]byte(body))
+	if _, err := w.Write([]byte(body)); err != nil {
+		log.Println("[Error] failed to write body: ", err)
+	}
 }
 
 // SafePath joins siteRoot and reqPath and converts it to a path that can

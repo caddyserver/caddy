@@ -388,7 +388,7 @@ func (c *FCGIClient) Do(p map[string]string, req io.Reader) (r io.Reader, err er
 
 	body := newWriter(c, Stdin)
 	if req != nil {
-		io.Copy(body, req)
+		_, _ = io.Copy(body, req)
 	}
 	body.Close()
 

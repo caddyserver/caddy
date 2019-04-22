@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -35,7 +36,7 @@ func TestServeHTTP(t *testing.T) {
 	tmpWebRootDir := beforeServeHTTPTest(t)
 	defer afterServeHTTPTest(t, tmpWebRootDir)
 
-	fileserver := FileServer{
+	fileServer := FileServer{
 		Root:       http.Dir(filepath.Join(tmpWebRootDir, webrootName)),
 		Hide:       []string{"dir/hidden.html"},
 		IndexPages: DefaultIndexPages,
@@ -288,7 +289,7 @@ func TestServeHTTP(t *testing.T) {
 		}
 
 		// perform the test
-		status, err := fileserver.ServeHTTP(responseRecorder, request)
+		status, err := fileServer.ServeHTTP(responseRecorder, request)
 		etag := responseRecorder.Header().Get("Etag")
 		body := responseRecorder.Body.String()
 		vary := responseRecorder.Header().Get("Vary")
@@ -357,7 +358,9 @@ func beforeServeHTTPTest(t *testing.T) string {
 		parentDir := filepath.Dir(absFile)
 		_, err = os.Stat(parentDir)
 		if err != nil {
-			os.MkdirAll(parentDir, os.ModePerm)
+			if err := os.MkdirAll(parentDir, os.ModePerm); err != nil {
+				log.Println("[ERROR] MkdirAll failed: ", err)
+			}
 		}
 
 		// now create the test files
@@ -371,7 +374,7 @@ func beforeServeHTTPTest(t *testing.T) string {
 		if err != nil {
 			t.Fatalf("Failed to write to %s. Error was: %v", absFile, err)
 		}
-		f.Close()
+		_ = f.Close()
 
 		// and set the last modified time
 		err = os.Chtimes(absFile, fixedTime, fixedTime)
@@ -511,7 +514,7 @@ func TestServeHTTPFailingStat(t *testing.T) {
 
 	for i, test := range tests {
 		// initialize a file server. The FileSystem will not fail, but calls to the Stat method of the returned File object will
-		fileserver := FileServer{Root: failingFS{err: nil, fileImpl: failingFile{err: test.statErr}}}
+		fileServer := FileServer{Root: failingFS{err: nil, fileImpl: failingFile{err: test.statErr}}}
 
 		// prepare the request and response
 		request, err := http.NewRequest("GET", "https://foo/", nil)
@@ -520,7 +523,7 @@ func TestServeHTTPFailingStat(t *testing.T) {
 		}
 		responseRecorder := httptest.NewRecorder()
 
-		status, actualErr := fileserver.ServeHTTP(responseRecorder, request)
+		status, actualErr := fileServer.ServeHTTP(responseRecorder, request)
 
 		// check the status
 		if status != test.expectedStatus {

@@ -26,6 +26,7 @@ import (
 	"crypto/subtle"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -193,11 +194,15 @@ func PlainMatcher(passw string) PasswordMatcher {
 	// compare hashes of equal length instead of actual password
 	// to avoid leaking password length
 	passwHash := sha1.New()
-	passwHash.Write([]byte(passw))
+	if _, err := passwHash.Write([]byte(passw)); err != nil {
+		log.Printf("[ERROR] unable to write password hash: %v", err)
+	}
 	passwSum := passwHash.Sum(nil)
 	return func(pw string) bool {
 		pwHash := sha1.New()
-		pwHash.Write([]byte(pw))
+		if _, err := pwHash.Write([]byte(pw)); err != nil {
+			log.Printf("[ERROR] unable to write password hash: %v", err)
+		}
 		pwSum := pwHash.Sum(nil)
 		return subtle.ConstantTimeCompare([]byte(pwSum), []byte(passwSum)) == 1
 	}
