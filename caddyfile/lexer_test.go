@@ -15,6 +15,7 @@
 package caddyfile
 
 import (
+	"log"
 	"strings"
 	"testing"
 )
@@ -158,7 +159,9 @@ func TestLexer(t *testing.T) {
 
 func tokenize(input string) (tokens []Token) {
 	l := lexer{}
-	l.load(strings.NewReader(input))
+	if err := l.load(strings.NewReader(input)); err != nil {
+		log.Printf("[ERROR] load failed: %v", err)
+	}
 	for l.next() {
 		tokens = append(tokens, l.token)
 	}

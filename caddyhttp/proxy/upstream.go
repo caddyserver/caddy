@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"net"
 	"net/http"
 	"net/textproto"
@@ -632,8 +633,10 @@ func (u *staticUpstream) healthCheck() {
 					return true
 				}
 				defer func() {
-					io.Copy(ioutil.Discard, r.Body)
-					r.Body.Close()
+					if _, err := io.Copy(ioutil.Discard, r.Body); err != nil {
+						log.Println("[ERROR] failed to copy: ", err)
+					}
+					_ = r.Body.Close()
 				}()
 				if r.StatusCode < 200 || r.StatusCode >= 400 {
 					return true

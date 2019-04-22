@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -179,9 +180,13 @@ func bootServer(location string, ch chan format.LogParts) (*syslog.Server, error
 
 	switch address.network {
 	case "tcp":
-		server.ListenTCP(address.address)
+		if err := server.ListenTCP(address.address); err != nil {
+			log.Println("[ERROR] server failed to listen on TCP address: ", err)
+		}
 	case "udp":
-		server.ListenUDP(address.address)
+		if err := server.ListenUDP(address.address); err != nil {
+			log.Println("[ERROR] server failed to listen on UDP address: ", err)
+		}
 	}
 
 	server.SetHandler(syslog.NewChannelHandler(ch))

@@ -59,7 +59,9 @@ type FastCGIServer struct{}
 
 func (s FastCGIServer) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 
-	req.ParseMultipartForm(100000000)
+	if err := req.ParseMultipartForm(100000000); err != nil {
+		log.Printf("[ERROR] failed to parse: %v", err)
+	}
 
 	stat := "PASSED"
 	fmt.Fprintln(resp, "-")
@@ -68,15 +70,15 @@ func (s FastCGIServer) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 		length := 0
 		for k0, v0 := range req.Form {
 			h := md5.New()
-			io.WriteString(h, v0[0])
-			md5 := fmt.Sprintf("%x", h.Sum(nil))
+			_, _ = io.WriteString(h, v0[0])
+			_md5 := fmt.Sprintf("%x", h.Sum(nil))
 
 			length += len(k0)
 			length += len(v0[0])
 
-			// echo error when key != md5(val)
-			if md5 != k0 {
-				fmt.Fprintln(resp, "server:err ", md5, k0)
+			// echo error when key != _md5(val)
+			if _md5 != k0 {
+				fmt.Fprintln(resp, "server:err ", _md5, k0)
 				stat = "FAILED"
 			}
 		}
@@ -197,8 +199,12 @@ func generateRandFile(size int) (p string, m string) {
 	for i := 0; i < size/16; i++ {
 		buf := make([]byte, 16)
 		binary.PutVarint(buf, rand.Int63())
-		fo.Write(buf)
-		h.Write(buf)
+		if _, err := fo.Write(buf); err != nil {
+			log.Printf("[ERROR] failed to write buffer: %v\n", err)
+		}
+		if _, err := h.Write(buf); err != nil {
+			log.Printf("[ERROR] failed to write buffer: %v\n", err)
+		}
 	}
 	m = fmt.Sprintf("%x", h.Sum(nil))
 	return
@@ -214,12 +220,13 @@ func DisabledTest(t *testing.T) {
 	go func() {
 		listener, err := net.Listen("tcp", ipPort)
 		if err != nil {
-			// handle error
 			log.Println("listener creation failed: ", err)
 		}
 
 		srv := new(FastCGIServer)
-		fcgi.Serve(listener, srv)
+		if err := fcgi.Serve(listener, srv); err != nil {
+			log.Print("[ERROR] failed to start server: ", err)
+		}
 	}()
 
 	time.Sleep(1 * time.Second)
@@ -244,7 +251,7 @@ func DisabledTest(t *testing.T) {
 	for i := 0x00; i < 0xff; i++ {
 		v0 := strings.Repeat(string(i), 256)
 		h := md5.New()
-		io.WriteString(h, v0)
+		_, _ = io.WriteString(h, v0)
 		k0 := fmt.Sprintf("%x", h.Sum(nil))
 		data += k0 + "=" + url.QueryEscape(v0) + "&"
 	}
@@ -261,7 +268,7 @@ func DisabledTest(t *testing.T) {
 	for i := 0x00; i < 0xff; i++ {
 		v0 := strings.Repeat(string(i), 4096)
 		h := md5.New()
-		io.WriteString(h, v0)
+		_, _ = io.WriteString(h, v0)
 		k0 := fmt.Sprintf("%x", h.Sum(nil))
 		p1[k0] = v0
 	}
@@ -285,6 +292,10 @@ func DisabledTest(t *testing.T) {
 	delete(f0, "m0")
 	sendFcgi(1, fcgiParams, nil, nil, f0)
 
-	os.Remove(path0)
-	os.Remove(path1)
+	if err := os.Remove(path0); err != nil {
+		log.Println("[ERROR] failed to remove path: ", err)
+	}
+	if err := os.Remove(path1); err != nil {
+		log.Println("[ERROR] failed to remove path: ", err)
+	}
 }
