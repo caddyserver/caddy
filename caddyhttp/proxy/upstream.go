@@ -26,6 +26,7 @@ import (
 	"net/textproto"
 	"net/url"
 	"path"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -271,7 +272,12 @@ func (u *staticUpstream) NewHost(host string) (*UpstreamHost, error) {
 
 func parseUpstream(u string) ([]string, error) {
 	if strings.HasPrefix(u, "unix:") {
-		return []string{u}, nil
+		relativePath := u[len("unix:"):]
+		absolutePath, err := filepath.Abs(relativePath)
+		if err != nil {
+			return nil, err
+		}
+		return []string{"unix:" + absolutePath}, nil
 	}
 
 	isSrv := strings.HasPrefix(u, "srv://") || strings.HasPrefix(u, "srv+https://")
