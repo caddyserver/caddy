@@ -21,9 +21,9 @@ import (
 	"os"
 	"testing"
 
+	"github.com/go-acme/lego/certcrypto"
 	"github.com/mholt/caddy"
 	"github.com/mholt/certmagic"
-	"github.com/xenolf/lego/certcrypto"
 )
 
 func TestMain(m *testing.M) {
@@ -53,8 +53,8 @@ func TestSetupParseBasic(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpdir)
 
-	certCache := certmagic.NewCache(&certmagic.FileStorage{Path: tmpdir})
-	cfg := &Config{Manager: certmagic.NewWithCache(certCache, certmagic.Config{})}
+	certmagic.Default.Storage = &certmagic.FileStorage{Path: tmpdir}
+	cfg := &Config{Manager: certmagic.NewDefault()}
 	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
 	c := caddy.NewTestController("", `tls `+certFile+` `+keyFile+``)
 
@@ -75,8 +75,8 @@ func TestSetupParseBasic(t *testing.T) {
 	if cfg.ProtocolMinVersion != tls.VersionTLS12 {
 		t.Errorf("Expected 'tls1.2 (0x0303)' as ProtocolMinVersion, got %#v", cfg.ProtocolMinVersion)
 	}
-	if cfg.ProtocolMaxVersion != tls.VersionTLS12 {
-		t.Errorf("Expected 'tls1.2 (0x0303)' as ProtocolMaxVersion, got %v", cfg.ProtocolMaxVersion)
+	if cfg.ProtocolMaxVersion != tls.VersionTLS13 {
+		t.Errorf("Expected 'tls1.3 (0x0304)' as ProtocolMaxVersion, got %#v", cfg.ProtocolMaxVersion)
 	}
 
 	// Cipher checks
@@ -139,8 +139,8 @@ func TestSetupParseWithOptionalParams(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpdir)
 
-	certCache := certmagic.NewCache(&certmagic.FileStorage{Path: tmpdir})
-	cfg := &Config{Manager: certmagic.NewWithCache(certCache, certmagic.Config{})}
+	certmagic.Default.Storage = &certmagic.FileStorage{Path: tmpdir}
+	cfg := &Config{Manager: certmagic.NewDefault()}
 	RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
 	c := caddy.NewTestController("", params)
 
@@ -276,8 +276,7 @@ func TestSetupParseWithClientAuth(t *testing.T) {
 			clients verify_if_given
 		}`, tls.VerifyClientCertIfGiven, true, noCAs},
 	} {
-		certCache := certmagic.NewCache(certmagic.DefaultStorage)
-		cfg := &Config{Manager: certmagic.NewWithCache(certCache, certmagic.Config{})}
+		cfg := &Config{Manager: certmagic.NewDefault()}
 		RegisterConfigGetter("", func(c *caddy.Controller) *Config { return cfg })
 		c := caddy.NewTestController("", caseData.params)
 

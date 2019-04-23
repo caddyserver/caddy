@@ -21,13 +21,14 @@ import (
 	"io/ioutil"
 	"os"
 	"sync/atomic"
+	"time"
 
-	"github.com/xenolf/lego/challenge/tlsalpn01"
+	"github.com/go-acme/lego/challenge/tlsalpn01"
 
+	"github.com/go-acme/lego/certcrypto"
 	"github.com/klauspost/cpuid"
 	"github.com/mholt/caddy"
 	"github.com/mholt/certmagic"
-	"github.com/xenolf/lego/certcrypto"
 )
 
 // Config describes how TLS should be configured and used.
@@ -117,22 +118,48 @@ func NewConfig(inst *caddy.Instance) (*Config, error) {
 				if err != nil {
 					return nil, fmt.Errorf("constructing cluster plugin %s: %v", clusterPluginName, err)
 				}
-				certmagic.DefaultStorage = storage
+				certmagic.Default.Storage = storage
 			} else {
 				return nil, fmt.Errorf("unrecognized cluster plugin (was it included in the Caddy build?): %s", clusterPluginName)
 			}
 		}
-		certCache = certmagic.NewCache(certmagic.DefaultStorage)
+		certCache = certmagic.NewCache(certmagic.CacheOptions{
+			GetConfigForCert: func(cert certmagic.Certificate) (certmagic.Config, error) {
+				inst.StorageMu.Lock()
+				cfgMap, ok := inst.Storage[configMapKey].(map[string]*Config)
+				inst.StorageMu.Unlock()
+				if ok {
+					for hostname, cfg := range cfgMap {
+						if cfg.Manager != nil && hostname == cert.Names[0] {
+							return *cfg.Manager, nil
+						}
+					}
+				}
+				// returning Default not strictly necessary, since Default is used as template
+				// anyway; but this makes it clear that that's what we fall back to
+				return certmagic.Default, nil
+			},
+		})
+		storageCleaningTicker := time.NewTicker(12 * time.Hour)
+		go func() {
+			for range storageCleaningTicker.C {
+				certmagic.CleanStorage(certmagic.Default.Storage, certmagic.CleanStorageOptions{
+					OCSPStaples: true,
+				})
+			}
+		}()
 		inst.OnShutdown = append(inst.OnShutdown, func() error {
 			certCache.Stop()
+			storageCleaningTicker.Stop()
 			return nil
 		})
+
 		inst.StorageMu.Lock()
 		inst.Storage[CertCacheInstStorageKey] = certCache
 		inst.StorageMu.Unlock()
 	}
 	return &Config{
-		Manager: certmagic.NewWithCache(certCache, certmagic.Config{}),
+		Manager: certmagic.New(certCache, certmagic.Config{}),
 	}, nil
 }
 
@@ -407,7 +434,7 @@ func SetDefaultTLSParams(config *Config) {
 		config.ProtocolMinVersion = tls.VersionTLS12
 	}
 	if config.ProtocolMaxVersion == 0 {
-		config.ProtocolMaxVersion = tls.VersionTLS12
+		config.ProtocolMaxVersion = tls.VersionTLS13
 	}
 
 	// Prefer server cipher suites
@@ -418,7 +445,6 @@ func SetDefaultTLSParams(config *Config) {
 var supportedKeyTypes = map[string]certcrypto.KeyType{
 	"P384":    certcrypto.EC384,
 	"P256":    certcrypto.EC256,
-	"RSA8192": certcrypto.RSA8192,
 	"RSA4096": certcrypto.RSA4096,
 	"RSA2048": certcrypto.RSA2048,
 }
@@ -430,6 +456,7 @@ var SupportedProtocols = map[string]uint16{
 	"tls1.0": tls.VersionTLS10,
 	"tls1.1": tls.VersionTLS11,
 	"tls1.2": tls.VersionTLS12,
+	"tls1.3": tls.VersionTLS13,
 }
 
 // GetSupportedProtocolName returns the protocol name
@@ -489,10 +516,6 @@ var defaultCiphers = []uint16{
 	tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
 	tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
 	tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
-	tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
-	tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
-	tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
-	tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
 }
 
 // List of ciphers we should prefer if native AESNI support is missing
@@ -503,10 +526,6 @@ var defaultCiphersNonAESNI = []uint16{
 	tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
 	tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
 	tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-	tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
-	tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
-	tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
-	tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
 }
 
 // getPreferredDefaultCiphers returns an appropriate cipher suite to use, depending on

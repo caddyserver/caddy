@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -136,7 +137,7 @@ func TestRegisterPolicy(t *testing.T) {
 func TestAllowedPaths(t *testing.T) {
 	upstream := &staticUpstream{
 		from:            "/proxy",
-		IgnoredSubPaths: []string{"/download", "/static"},
+		IgnoredSubPaths: []string{"/download", "/static", "/trailingslash/"},
 	}
 	tests := []struct {
 		url      string
@@ -153,6 +154,8 @@ func TestAllowedPaths(t *testing.T) {
 		{"/proxy//static", false},
 		{"/proxy//static//download", false},
 		{"/proxy//download", false},
+		{"/proxy/trailingslash", true},
+		{"/proxy/trailingslash/", false},
 	}
 
 	for i, test := range tests {
@@ -247,7 +250,9 @@ func TestParseBlockHealthCheck(t *testing.T) {
 		u := staticUpstream{}
 		c := caddyfile.NewDispenser("Testfile", strings.NewReader(test.config))
 		for c.Next() {
-			parseBlock(&c, &u, false)
+			if err := parseBlock(&c, &u, false); err != nil {
+				log.Println("[ERROR] failed to parse block: ", err)
+			}
 		}
 		if u.HealthCheck.Interval.String() != test.interval {
 			t.Errorf(
@@ -298,7 +303,7 @@ func TestStop(t *testing.T) {
 			// Set up proxy.
 			var counter int64
 			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				r.Body.Close()
+				_ = r.Body.Close()
 				atomic.AddInt64(&counter, 1)
 			}))
 
@@ -379,6 +384,61 @@ func TestParseBlockTransparent(t *testing.T) {
 
 			if _, ok := headers["X-Forwarded-Port"]; !ok {
 				t.Errorf("Test %d: Could not find the X-Forwarded-Port header", i+1)
+			}
+		}
+	}
+}
+
+func TestParseBlockRegex(t *testing.T) {
+	// tests for regex replacement of headers
+	r, _ := http.NewRequest("GET", "/", nil)
+	tests := []struct {
+		config string
+	}{
+		// Test #1: transparent preset with replacement of Host
+		{"proxy / localhost:8080 {\n transparent \nheader_upstream Host (.*) NewHost \n}"},
+
+		// Test #2: transparent preset with replacement of another param
+		{"proxy / localhost:8080 {\n transparent \nheader_upstream X-Test Tester \nheader_upstream X-Test Test Host \n}"},
+
+		// Test #3: transparent preset with multiple params
+		{"proxy / localhost:8080 {\n transparent \nheader_upstream X-Test Tester \nheader_upstream X-Test Test Host \nheader_upstream X-Test er ing \n}"},
+	}
+
+	for i, test := range tests {
+		upstreams, err := NewStaticUpstreams(caddyfile.NewDispenser("Testfile", strings.NewReader(test.config)), "")
+		if err != nil {
+			t.Errorf("Expected no error. Got: %s", err.Error())
+		}
+		for _, upstream := range upstreams {
+			headers := upstream.Select(r).UpstreamHeaderReplacements
+
+			switch i {
+			case 0:
+				if host, ok := headers["Host"]; !ok || host[0].to != "NewHost" {
+					t.Errorf("Test %d: Incorrect Host replacement: %v", i+1, host[0])
+				}
+			case 1:
+				if v, ok := headers["X-Test"]; !ok {
+					t.Errorf("Test %d: Incorrect X-Test replacement", i+1)
+				} else {
+					if v[0].to != "Host" {
+						t.Errorf("Test %d: Incorrect X-Test replacement: %v", i+1, v[0])
+					}
+				}
+			case 2:
+				if v, ok := headers["X-Test"]; !ok {
+					t.Errorf("Test %d: Incorrect X-Test replacement", i+1)
+				} else {
+					if v[0].to != "Host" {
+						t.Errorf("Test %d: Incorrect X-Test replacement: %v", i+1, v[0])
+					}
+					if v[1].to != "ing" {
+						t.Errorf("Test %d: Incorrect X-Test replacement: %v", i+1, v[1])
+					}
+				}
+			default:
+				t.Error("Testing error")
 			}
 		}
 	}
@@ -465,7 +525,7 @@ func TestHealthCheckPort(t *testing.T) {
 	var counter int64
 
 	healthCounter := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.Body.Close()
+		_ = r.Body.Close()
 		atomic.AddInt64(&counter, 1)
 	}))
 
@@ -535,8 +595,8 @@ func TestHealthCheckPort(t *testing.T) {
 
 func TestHealthCheckContentString(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, "blablabla good blablabla")
-		r.Body.Close()
+		_, _ = fmt.Fprintf(w, "blablabla good blablabla")
+		_ = r.Body.Close()
 	}))
 	_, port, err := net.SplitHostPort(server.Listener.Addr().String())
 	if err != nil {
@@ -581,7 +641,9 @@ func TestHealthCheckContentString(t *testing.T) {
 				}
 				t.Errorf("Health check bad response")
 			}
-			upstream.Stop()
+			if err := upstream.Stop(); err != nil {
+				log.Println("[ERROR] failed to stop upstream: ", err)
+			}
 		}
 	}
 }

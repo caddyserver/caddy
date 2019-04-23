@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/xenolf/lego/certcrypto"
+	"github.com/go-acme/lego/certcrypto"
 )
 
 // newSelfSignedCertificate returns a new self-signed certificate.
@@ -62,13 +62,10 @@ func newSelfSignedCertificate(ssconfig selfSignedConfig) (tls.Certificate, error
 	if len(ssconfig.SAN) == 0 {
 		ssconfig.SAN = []string{""}
 	}
-	var names []string
 	for _, san := range ssconfig.SAN {
 		if ip := net.ParseIP(san); ip != nil {
-			names = append(names, strings.ToLower(ip.String()))
 			cert.IPAddresses = append(cert.IPAddresses, ip)
 		} else {
-			names = append(names, strings.ToLower(san))
 			cert.DNSNames = append(cert.DNSNames, strings.ToLower(san))
 		}
 	}

@@ -1,0 +1,88 @@
+# Mutilated beyond recognition from the example at:
+# https://docs.microsoft.com/azure/devops/pipelines/languages/go
+
+trigger:
+- master
+
+strategy:
+  matrix:
+    linux:
+      imageName: ubuntu-16.04
+      gorootDir: /usr/local
+    mac:
+      imageName: macos-10.13
+      gorootDir: /usr/local
+    windows:
+      imageName: windows-2019
+      gorootDir: C:\
+
+pool:
+  vmImage: $(imageName)
+
+variables:
+  GOROOT: $(gorootDir)/go
+  GOPATH: $(system.defaultWorkingDirectory)/gopath
+  GOBIN:  $(GOPATH)/bin
+  modulePath: '$(GOPATH)/src/github.com/$(build.repository.name)'
+  # TODO: modules should be the default in Go 1.13, so this won't be needed
+  GO111MODULE: on
+
+steps:
+- bash: |
+    latestGo=$(curl "https://golang.org/VERSION?m=text")
+    echo "##vso[task.setvariable variable=LATEST_GO]$latestGo"
+    echo "Latest Go version: $latestGo"
+  displayName: "Get latest Go version"
+
+- bash: |
+    sudo rm -f $(which go)
+    echo '##vso[task.prependpath]$(GOBIN)'
+    echo '##vso[task.prependpath]$(GOROOT)/bin'
+    mkdir -p '$(modulePath)'
+    shopt -s extglob
+    shopt -s dotglob
+    mv !(gopath) '$(modulePath)'
+  displayName: Remove old Go, set GOBIN/GOROOT, and move project into GOPATH
+
+# Install Go (this varies by platform)
+
+- bash: |
+    wget "https://dl.google.com/go/$(LATEST_GO).linux-amd64.tar.gz"
+    sudo tar -C $(gorootDir) -xzf "$(LATEST_GO).linux-amd64.tar.gz"
+  condition: eq( variables['Agent.OS'], 'Linux' )
+  displayName: Install Go on Linux
+
+- bash: |
+    wget "https://dl.google.com/go/$(LATEST_GO).darwin-amd64.tar.gz"
+    sudo tar -C $(gorootDir) -xzf "$(LATEST_GO).darwin-amd64.tar.gz"
+  condition: eq( variables['Agent.OS'], 'Darwin' )
+  displayName: Install Go on macOS
+
+- powershell: |
+    Write-Host "Downloading Go... (please be patient, I am very slow)"
+    (New-Object System.Net.WebClient).DownloadFile("https://dl.google.com/go/$(LATEST_GO).windows-amd64.zip", "$(LATEST_GO).windows-amd64.zip")
+    Write-Host "Extracting Go... (I'm slow too)"
+    Expand-Archive "$(LATEST_GO).windows-amd64.zip" -DestinationPath "$(gorootDir)"
+  condition: eq( variables['Agent.OS'], 'Windows_NT' )
+  displayName: Install Go on Windows
+
+# TODO: When this issue is fixed, replace with installer script:
+# https://github.com/golangci/golangci-lint/issues/472
+- script: go get -v github.com/golangci/golangci-lint/cmd/golangci-lint
+  displayName: Install golangci-lint
+
+- bash: |
+    printf "Using go at: $(which go)\n"
+    printf "Go version: $(go version)\n"
+    printf "\n\nGo environment:\n\n"
+    go env
+    printf "\n\nSystem environment:\n\n"
+    env
+  displayName: Print Go version and environment
+
+- script: |
+    go get -v -t -d ./...
+    golangci-lint run -E gofmt -E goimports -E misspell
+    go test -race ./...
+  workingDirectory: '$(modulePath)'
+  displayName: Run tests

@@ -234,7 +234,7 @@ func (h *httpContext) MakeServers() ([]caddy.Server, error) {
 	// trusted CA (obviously not a perfect heuristic)
 	var looksLikeProductionCA bool
 	for _, publicCAEndpoint := range caddytls.KnownACMECAs {
-		if strings.Contains(certmagic.CA, publicCAEndpoint) {
+		if strings.Contains(certmagic.Default.CA, publicCAEndpoint) {
 			looksLikeProductionCA = true
 			break
 		}
@@ -685,6 +685,7 @@ var directives = []string{
 	"gopkg",     // github.com/zikes/gopkg
 	"restic",    // github.com/restic/caddy
 	"wkd",       // github.com/emersion/caddy-wkd
+	"dyndns",    // github.com/linkonoid/caddy-dyndns
 }
 
 const (
