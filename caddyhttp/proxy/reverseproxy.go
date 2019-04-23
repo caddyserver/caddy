@@ -39,11 +39,10 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/net/http2"
-
 	"github.com/lucas-clemente/quic-go"
 	"github.com/lucas-clemente/quic-go/h2quic"
 	"github.com/mholt/caddy/caddyhttp/httpserver"
+	"golang.org/x/net/http2"
 )
 
 var (
@@ -59,18 +58,20 @@ var (
 )
 
 func createBuffer() interface{} {
-	return make([]byte, 0, 32*1024)
+	b := make([]uint8, 0, 32*1024)
+	return &b
 }
 
 func pooledIoCopy(dst io.Writer, src io.Reader) {
-	buf := bufferPool.Get().([]byte)
-	defer bufferPool.Put(&buf)
+	buf := bufferPool.Get().(*[]uint8)
+	defer bufferPool.Put(buf)
 
 	// CopyBuffer only uses buf up to its length and panics if it's 0.
 	// Due to that we extend buf's length to its capacity here and
 	// ensure it's always non-zero.
-	bufCap := cap(buf)
-	if _, err := io.CopyBuffer(dst, src, buf[0:bufCap:bufCap]); err != nil {
+	bufCap := cap(*buf)
+	b := *buf
+	if _, err := io.CopyBuffer(dst, src, b[0:bufCap:bufCap]); err != nil {
 		log.Println("[ERROR] failed to copy buffer: ", err)
 	}
 }
@@ -621,7 +622,9 @@ func newConnHijackerTransport(base http.RoundTripper) *connHijackerTransport {
 		t.Proxy = http.ProxyFromEnvironment
 		t.TLSHandshakeTimeout = 10 * time.Second
 	}
-	hj := &connHijackerTransport{t, nil, bufferPool.Get().([]byte)[:0]}
+	buf := bufferPool.Get().(*[]uint8)
+	b := *buf
+	hj := &connHijackerTransport{t, nil, b[:0]}
 
 	dial := getTransportDial(t)
 	dialTLS := getTransportDialTLS(t)
