@@ -119,15 +119,15 @@ func Load(r io.Reader) error {
 		return err
 	}
 
-	var cfg Config
+	var cfg *Config
 	err = json.Unmarshal(buf.Bytes(), &cfg)
 	if err != nil {
 		return fmt.Errorf("decoding config: %v", err)
 	}
 
-	err = Start(cfg)
+	err = Run(cfg)
 	if err != nil {
-		return fmt.Errorf("starting: %v", err)
+		return fmt.Errorf("running: %v", err)
 	}
 
 	return nil

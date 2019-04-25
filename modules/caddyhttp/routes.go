@@ -32,16 +32,12 @@ func (routes routeList) buildMiddlewareChain(w http.ResponseWriter, r *http.Requ
 	var responder Handler
 	mrw := &middlewareResponseWriter{ResponseWriterWrapper: &ResponseWriterWrapper{w}}
 
+routeLoop:
 	for _, route := range routes {
-		matched := len(route.matchers) == 0
 		for _, m := range route.matchers {
-			if m.Match(r) {
-				matched = true
-				break
+			if !m.Match(r) {
+				continue routeLoop
 			}
-		}
-		if !matched {
-			continue
 		}
 		for _, m := range route.middleware {
 			mid = append(mid, func(next HandlerFunc) HandlerFunc {
@@ -53,6 +49,8 @@ func (routes routeList) buildMiddlewareChain(w http.ResponseWriter, r *http.Requ
 		if responder == nil {
 			responder = route.responder
 		}
+		// TODO: Should exclusive apply to only middlewares, or responder too?
+		// i.e. what if they haven't set a responder yet, but the first middleware chain is exclusive...
 		if route.Exclusive {
 			break
 		}
@@ -83,24 +81,27 @@ func (routes routeList) setup() error {
 			}
 			routes[i].matchers = append(routes[i].matchers, val.(RouteMatcher))
 		}
+		routes[i].Matchers = nil // allow GC to deallocate - TODO: Does this help?
 
 		// middleware
 		for j, rawMsg := range route.Apply {
-			mid, err := caddy2.LoadModuleInlineName("http.middleware", rawMsg)
+			mid, err := caddy2.LoadModuleInline("middleware", "http.middleware", rawMsg)
 			if err != nil {
 				return fmt.Errorf("loading middleware module in position %d: %v", j, err)
 			}
 			routes[i].middleware = append(routes[i].middleware, mid.(MiddlewareHandler))
 		}
+		routes[i].Apply = nil // allow GC to deallocate - TODO: Does this help?
 
 		// responder
 		if route.Respond != nil {
-			resp, err := caddy2.LoadModuleInlineName("http.responders", route.Respond)
+			resp, err := caddy2.LoadModuleInline("responder", "http.responders", route.Respond)
 			if err != nil {
 				return fmt.Errorf("loading responder module: %v", err)
 			}
 			routes[i].responder = resp.(Handler)
 		}
+		routes[i].Respond = nil // allow GC to deallocate - TODO: Does this help?
 	}
 	return nil
 }

@@ -2,6 +2,7 @@ package caddyhttp
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"log"
 	mathrand "math/rand"
@@ -12,9 +13,13 @@ import (
 	"time"
 
 	"bitbucket.org/lightcodelabs/caddy2"
+	"bitbucket.org/lightcodelabs/caddy2/modules/caddytls"
+	"github.com/mholt/certmagic"
 )
 
 func init() {
+	mathrand.Seed(time.Now().UnixNano())
+
 	err := caddy2.RegisterModule(caddy2.Module{
 		Name: "http",
 		New:  func() (interface{}, error) { return new(httpModuleConfig), nil },
@@ -22,17 +27,15 @@ func init() {
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	mathrand.Seed(time.Now().UnixNano())
 }
 
 type httpModuleConfig struct {
-	Servers map[string]httpServerConfig `json:"servers"`
+	Servers map[string]*httpServerConfig `json:"servers"`
 
 	servers []*http.Server
 }
 
-func (hc *httpModuleConfig) Run() error {
+func (hc *httpModuleConfig) Provision() error {
 	// TODO: Either prevent overlapping listeners on different servers, or combine them into one
 	for _, srv := range hc.Servers {
 		err := srv.Routes.setup()
@@ -43,7 +46,18 @@ func (hc *httpModuleConfig) Run() error {
 		if err != nil {
 			return fmt.Errorf("setting up server error handling routes: %v", err)
 		}
+	}
 
+	return nil
+}
+
+func (hc *httpModuleConfig) Start(handle caddy2.Handle) error {
+	err := hc.automaticHTTPS(handle)
+	if err != nil {
+		return fmt.Errorf("enabling automatic HTTPS: %v", err)
+	}
+
+	for srvName, srv := range hc.Servers {
 		s := &http.Server{
 			ReadTimeout:       time.Duration(srv.ReadTimeout),
 			ReadHeaderTimeout: time.Duration(srv.ReadHeaderTimeout),
@@ -53,13 +67,30 @@ func (hc *httpModuleConfig) Run() error {
 		for _, lnAddr := range srv.Listen {
 			network, addrs, err := parseListenAddr(lnAddr)
 			if err != nil {
-				return fmt.Errorf("parsing listen address '%s': %v", lnAddr, err)
+				return fmt.Errorf("%s: parsing listen address '%s': %v", srvName, lnAddr, err)
 			}
 			for _, addr := range addrs {
 				ln, err := caddy2.Listen(network, addr)
 				if err != nil {
 					return fmt.Errorf("%s: listening on %s: %v", network, addr, err)
 				}
+
+				// enable HTTP/2 by default
+				for _, pol := range srv.TLSConnPolicies {
+					if len(pol.ALPN) == 0 {
+						pol.ALPN = append(pol.ALPN, defaultALPN...)
+					}
+				}
+
+				// enable TLS
+				if len(srv.TLSConnPolicies) > 0 {
+					tlsCfg, err := srv.TLSConnPolicies.TLSConfig(handle)
+					if err != nil {
+						return fmt.Errorf("%s/%s: making TLS configuration: %v", network, addr, err)
+					}
+					ln = tls.NewListener(ln, tlsCfg)
+				}
+
 				go s.Serve(ln)
 				hc.servers = append(hc.servers, s)
 			}
@@ -69,7 +100,7 @@ func (hc *httpModuleConfig) Run() error {
 	return nil
 }
 
-func (hc *httpModuleConfig) Cancel() error {
+func (hc *httpModuleConfig) Stop() error {
 	for _, s := range hc.servers {
 		err := s.Shutdown(context.Background()) // TODO
 		if err != nil {
@@ -79,13 +110,63 @@ func (hc *httpModuleConfig) Cancel() error {
 	return nil
 }
 
+func (hc *httpModuleConfig) automaticHTTPS(handle caddy2.Handle) error {
+	tlsApp := handle.App("tls").(*caddytls.TLS)
+
+	for srvName, srv := range hc.Servers {
+		srv.tlsApp = tlsApp
+
+		if srv.DisableAutoHTTPS {
+			continue
+		}
+
+		domainSet := make(map[string]struct{})
+		for _, route := range srv.Routes {
+			for _, m := range route.matchers {
+				if hm, ok := m.(*matchHost); ok {
+					for _, d := range *hm {
+						if !certmagic.HostQualifies(d) {
+							continue
+						}
+						domainSet[d] = struct{}{}
+					}
+				}
+			}
+		}
+		var domains []string
+		for d := range domainSet {
+			domains = append(domains, d)
+		}
+		if len(domains) > 0 {
+			err := tlsApp.Manage(domains)
+			if err != nil {
+				return fmt.Errorf("%s: managing certificate for %s: %s", srvName, domains, err)
+			}
+			// TODO: Connection policies... redirects... man...
+			srv.TLSConnPolicies = caddytls.ConnectionPolicies{
+				{
+					ALPN: defaultALPN,
+				},
+			}
+		}
+	}
+
+	return nil
+}
+
+var defaultALPN = []string{"h2", "http/1.1"}
+
 type httpServerConfig struct {
-	Listen            []string        `json:"listen"`
-	ReadTimeout       caddy2.Duration `json:"read_timeout"`
-	ReadHeaderTimeout caddy2.Duration `json:"read_header_timeout"`
-	HiddenFiles       []string        `json:"hidden_files"` // TODO:... experimenting with shared/common state
-	Routes            routeList       `json:"routes"`
-	Errors            httpErrorConfig `json:"errors"`
+	Listen            []string                    `json:"listen"`
+	ReadTimeout       caddy2.Duration             `json:"read_timeout"`
+	ReadHeaderTimeout caddy2.Duration             `json:"read_header_timeout"`
+	HiddenFiles       []string                    `json:"hidden_files"` // TODO:... experimenting with shared/common state
+	Routes            routeList                   `json:"routes"`
+	Errors            httpErrorConfig             `json:"errors"`
+	TLSConnPolicies   caddytls.ConnectionPolicies `json:"tls_connection_policies"`
+	DisableAutoHTTPS  bool                        `json:"disable_auto_https"`
+
+	tlsApp *caddytls.TLS
 }
 
 type httpErrorConfig struct {
@@ -95,6 +176,10 @@ type httpErrorConfig struct {
 
 // ServeHTTP is the entry point for all HTTP requests.
 func (s httpServerConfig) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if s.tlsApp.HandleHTTPChallenge(w, r) {
+		return
+	}
+
 	stack := s.Routes.buildMiddlewareChain(w, r)
 	err := executeMiddlewareChain(w, r, stack)
 	if err != nil {

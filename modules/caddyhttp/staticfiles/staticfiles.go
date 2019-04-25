@@ -10,7 +10,7 @@ import (
 func init() {
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "http.responders.static_files",
-		New:  func() (interface{}, error) { return &StaticFiles{}, nil },
+		New:  func() (interface{}, error) { return new(StaticFiles), nil },
 	})
 }
 
@@ -25,4 +25,4 @@ func (sf StaticFiles) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
 }
 
 // Interface guard
-var _ caddyhttp.Handler = StaticFiles{}
+var _ caddyhttp.Handler = (*StaticFiles)(nil)

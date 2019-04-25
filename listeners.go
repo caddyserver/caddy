@@ -111,7 +111,7 @@ func (fcl *fakeCloseListener) fakeClosedErr() error {
 		Op:   "accept",
 		Net:  fcl.Listener.Addr().Network(),
 		Addr: fcl.Listener.Addr(),
-		Err:  ErrFakeClosed,
+		Err:  errFakeClosed,
 	}
 }
 
@@ -120,7 +120,7 @@ func (fcl *fakeCloseListener) fakeClosedErr() error {
 // indicating that it is pretending to be closed so that the
 // server using it can terminate, while the underlying
 // socket is actually left open.
-var ErrFakeClosed = fmt.Errorf("listener 'closed' 😉")
+var errFakeClosed = fmt.Errorf("listener 'closed' 😉")
 
 // listenerUsage pairs a net.Listener with a
 // count of how many servers are using it.

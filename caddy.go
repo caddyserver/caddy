@@ -8,27 +8,36 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/mholt/certmagic"
 )
 
-// Start runs Caddy with the given config.
-func Start(cfg Config) error {
+// Run runs Caddy with the given config.
+func Run(cfg *Config) error {
 	// allow only one call to Start at a time,
 	// since various calls to LoadModule()
 	// access shared map moduleInstances
 	startMu.Lock()
 	defer startMu.Unlock()
 
-	// prepare the config for use
-	cfg.runners = make(map[string]Runner)
+	// because we will need to roll back any state
+	// modifications if this function errors, we
+	// keep a single error value and scope all
+	// sub-operations to their own functions to
+	// ensure this error value does not get
+	// overridden or missed when it should have
+	// been set by a short assignment
+	var err error
+
+	// prepare the new config for use
+	cfg.apps = make(map[string]App)
 	cfg.moduleStates = make(map[string]interface{})
 
 	// reset the shared moduleInstances map; but
 	// keep a temporary reference to the current
 	// one so we can transfer over any necessary
-	// state to the new modules; or in case this
-	// function returns an error, we need to put
-	// the "old" one back where we found it
-	var err error
+	// state to the new modules or to roll back
+	// if necessary
 	oldModuleInstances := moduleInstances
 	defer func() {
 		if err != nil {
@@ -37,114 +46,216 @@ func Start(cfg Config) error {
 	}()
 	moduleInstances = make(map[string][]interface{})
 
-	// load (decode) each runner module
-	for modName, rawMsg := range cfg.Modules {
-		val, err := LoadModule(modName, rawMsg)
-		if err != nil {
-			return fmt.Errorf("loading module '%s': %v", modName, err)
+	// set up storage and make it CertMagic's default storage, too
+	err = func() error {
+		if cfg.StorageRaw != nil {
+			val, err := LoadModuleInline("system", "caddy.storage", cfg.StorageRaw)
+			if err != nil {
+				return fmt.Errorf("loading storage module: %v", err)
+			}
+			stor, err := val.(StorageConverter).CertMagicStorage()
+			if err != nil {
+				return fmt.Errorf("creating storage value: %v", err)
+			}
+			cfg.storage = stor
+			cfg.StorageRaw = nil // allow GC to deallocate - TODO: Does this help?
 		}
-		cfg.runners[modName] = val.(Runner)
+		if cfg.storage == nil {
+			cfg.storage = &certmagic.FileStorage{Path: dataDir()}
+		}
+		certmagic.Default.Storage = cfg.storage
+
+		return nil
+	}()
+	if err != nil {
+		return err
 	}
 
-	// start the new runners
-	for name, r := range cfg.runners {
-		err := r.Run()
-		if err != nil {
-			// TODO: If any one has an error, stop the others
-			return fmt.Errorf("%s module: %v", name, err)
+	// Load, Provision, Validate
+	err = func() error {
+		for modName, rawMsg := range cfg.AppsRaw {
+			val, err := LoadModule(modName, rawMsg)
+			if err != nil {
+				return fmt.Errorf("loading app module '%s': %v", modName, err)
+			}
+			cfg.apps[modName] = val.(App)
 		}
+		return nil
+	}()
+	if err != nil {
+		return err
 	}
 
-	// shut down down the old runners
+	// swap old config with the new one, and
+	// roll back this change if anything fails
 	currentCfgMu.Lock()
-	if currentCfg != nil {
-		for name, r := range currentCfg.runners {
-			err := r.Cancel()
-			if err != nil {
-				log.Printf("[ERROR] cancel %s: %v", name, err)
-			}
-		}
-	}
 	oldCfg := currentCfg
-	currentCfg = &cfg
+	currentCfg = cfg
 	currentCfgMu.Unlock()
-
-	// invoke unload callbacks on old configuration
-	for modName := range oldModuleInstances {
-		mod, err := GetModule(modName)
+	defer func() {
 		if err != nil {
-			return err
+			currentCfgMu.Lock()
+			currentCfg = oldCfg
+			currentCfgMu.Unlock()
 		}
-		if mod.OnUnload != nil {
-			var unloadingState interface{}
-			if oldCfg != nil {
-				unloadingState = oldCfg.moduleStates[modName]
-			}
-			err := mod.OnUnload(unloadingState)
+	}()
+
+	// OnLoad
+	err = func() error {
+		for modName, instances := range moduleInstances {
+			mod, err := GetModule(modName)
 			if err != nil {
-				log.Printf("[ERROR] module OnUnload: %s: %v", modName, err)
-				continue
+				return err
+			}
+			if mod.OnLoad != nil {
+				var priorState interface{}
+				if oldCfg != nil {
+					priorState = oldCfg.moduleStates[modName]
+				}
+				modState, err := mod.OnLoad(instances, priorState)
+				if err != nil {
+					return fmt.Errorf("module OnLoad: %s: %v", modName, err)
+				}
+				if modState != nil {
+					cfg.moduleStates[modName] = modState
+				}
+			}
+		}
+		return nil
+	}()
+	if err != nil {
+		return err
+	}
+
+	// Start
+	err = func() error {
+		h := Handle{cfg}
+		for name, a := range cfg.apps {
+			err := a.Start(h)
+			if err != nil {
+				for otherAppName, otherApp := range cfg.apps {
+					err := otherApp.Stop()
+					if err != nil {
+						log.Printf("aborting app %s: %v", otherAppName, err)
+					}
+				}
+				return fmt.Errorf("%s app module: start: %v", name, err)
+			}
+		}
+		return nil
+	}()
+	if err != nil {
+		return err
+	}
+
+	// Stop
+	if oldCfg != nil {
+		for name, a := range oldCfg.apps {
+			err := a.Stop()
+			if err != nil {
+				log.Printf("[ERROR] stop %s: %v", name, err)
 			}
 		}
 	}
 
-	// invoke load callbacks on new configuration
-	for modName, instances := range moduleInstances {
-		mod, err := GetModule(modName)
-		if err != nil {
-			return err
-		}
-		if mod.OnLoad != nil {
-			var priorState interface{}
-			if oldCfg != nil {
-				priorState = oldCfg.moduleStates[modName]
-			}
-			modState, err := mod.OnLoad(instances, priorState)
+	// OnUnload
+	err = func() error {
+		for modName := range oldModuleInstances {
+			mod, err := GetModule(modName)
 			if err != nil {
-				return fmt.Errorf("module OnLoad: %s: %v", modName, err)
+				return err
 			}
-			if modState != nil {
-				cfg.moduleStates[modName] = modState
+			if mod.OnUnload != nil {
+				var unloadingState interface{}
+				if oldCfg != nil {
+					unloadingState = oldCfg.moduleStates[modName]
+				}
+				err := mod.OnUnload(unloadingState)
+				if err != nil {
+					log.Printf("[ERROR] module OnUnload: %s: %v", modName, err)
+					continue
+				}
 			}
 		}
+		return nil
+	}()
+	if err != nil {
+		return err
 	}
 
 	// shut down listeners that are no longer being used
-	listenersMu.Lock()
-	for key, info := range listeners {
-		if atomic.LoadInt32(&info.usage) == 0 {
-			err := info.ln.Close()
-			if err != nil {
-				log.Printf("[ERROR] closing listener %s: %v", info.ln.Addr(), err)
-				continue
+	err = func() error {
+		listenersMu.Lock()
+		for key, info := range listeners {
+			if atomic.LoadInt32(&info.usage) == 0 {
+				err := info.ln.Close()
+				if err != nil {
+					log.Printf("[ERROR] closing listener %s: %v", info.ln.Addr(), err)
+					continue
+				}
+				delete(listeners, key)
 			}
-			delete(listeners, key)
 		}
+		listenersMu.Unlock()
+		return nil
+	}()
+	if err != nil {
+		return err
 	}
-	listenersMu.Unlock()
 
 	return nil
 }
 
-// Runner is a thing that Caddy runs.
-type Runner interface {
-	Run() error
-	Cancel() error
+// App is a thing that Caddy runs.
+type App interface {
+	Start(Handle) error
+	Stop() error
 }
 
 // Config represents a Caddy configuration.
 type Config struct {
-	TestVal string                     `json:"testval"`
-	Modules map[string]json.RawMessage `json:"modules"`
+	StorageRaw json.RawMessage `json:"storage"`
+	storage    certmagic.Storage
 
-	// runners stores the decoded Modules values,
+	TestVal string                     `json:"testval"`
+	AppsRaw map[string]json.RawMessage `json:"apps"`
+
+	// apps stores the decoded Apps values,
 	// keyed by module name.
-	runners map[string]Runner
+	apps map[string]App
 
 	// moduleStates stores the optional "global" state
 	// values of every module used by this configuration,
 	// keyed by module name.
 	moduleStates map[string]interface{}
+}
+
+// Handle allows app modules to access
+// the top-level Config in a controlled
+// manner without needing to rely on
+// global state.
+type Handle struct {
+	current *Config
+}
+
+// App returns the configured app named name.
+// A nil value is returned if no app with that
+// name is currently configured.
+func (h Handle) App(name string) interface{} {
+	return h.current.apps[name]
+}
+
+// GetStorage returns the configured Caddy storage implementation.
+// If no storage implementation is explicitly configured, the
+// default one is returned instead, as long as there is a current
+// configuration loaded.
+func GetStorage() certmagic.Storage {
+	currentCfgMu.RLock()
+	defer currentCfgMu.RUnlock()
+	if currentCfg == nil {
+		return nil
+	}
+	return currentCfg.storage
 }
 
 // Duration is a JSON-string-unmarshable duration type.
@@ -167,7 +278,7 @@ type CtxKey string
 // currentCfg is the currently-loaded configuration.
 var (
 	currentCfg   *Config
-	currentCfgMu sync.Mutex
+	currentCfgMu sync.RWMutex
 )
 
 // moduleInstances stores the individual instantiated
@@ -181,5 +292,5 @@ var (
 var moduleInstances = make(map[string][]interface{})
 
 // startMu ensures that only one Start() happens at a time.
-// This is important since
+// This is important since moduleInstances is shared state.
 var startMu sync.Mutex

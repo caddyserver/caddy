@@ -64,4 +64,4 @@ func (l *Log) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.H
 }
 
 // Interface guard
-var _ caddyhttp.MiddlewareHandler = &Log{}
+var _ caddyhttp.MiddlewareHandler = (*Log)(nil)

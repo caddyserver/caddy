@@ -9,7 +9,7 @@ import (
 	"sync"
 )
 
-// Module is a module.
+// Module represents a Caddy module.
 type Module struct {
 	Name     string
 	New      func() (interface{}, error)
@@ -21,6 +21,10 @@ func (m Module) String() string { return m.Name }
 
 // RegisterModule registers a module.
 func RegisterModule(mod Module) error {
+	if mod.Name == "caddy" {
+		return fmt.Errorf("modules cannot be named 'caddy'")
+	}
+
 	modulesMu.Lock()
 	defer modulesMu.Unlock()
 
@@ -45,7 +49,7 @@ func GetModule(name string) (Module, error) {
 
 // GetModules returns all modules in the given scope/namespace.
 // For example, a scope of "foo" returns modules named "foo.bar",
-// "foo.lee", but not "bar", "foo.bar.lee", etc. An empty scope
+// "foo.loo", but not "bar", "foo.bar.loo", etc. An empty scope
 // returns top-level modules, for example "foo" or "bar". Partial
 // scopes are not matched (i.e. scope "foo.ba" does not match
 // name "foo.bar").
@@ -112,7 +116,10 @@ func Modules() []string {
 // returns the value. If mod.New() does not return a pointer
 // value, it is converted to one so that it is unmarshaled
 // into the underlying concrete type. If mod.New is nil, an
-// error is returned.
+// error is returned. If the module implements Validator or
+// Provisioner interfaces, those methods are invoked to
+// ensure the module is fully configured and valid before
+// being used.
 func LoadModule(name string, rawMsg json.RawMessage) (interface{}, error) {
 	modulesMu.Lock()
 	mod, ok := modules[name]
@@ -140,6 +147,13 @@ func LoadModule(name string, rawMsg json.RawMessage) (interface{}, error) {
 		return nil, fmt.Errorf("decoding module config: %s: %v", mod.Name, err)
 	}
 
+	if prov, ok := val.(Provisioner); ok {
+		err := prov.Provision()
+		if err != nil {
+			return nil, fmt.Errorf("provision %s: %v", mod.Name, err)
+		}
+	}
+
 	if validator, ok := val.(Validator); ok {
 		err := validator.Validate()
 		if err != nil {
@@ -152,25 +166,21 @@ func LoadModule(name string, rawMsg json.RawMessage) (interface{}, error) {
 	return val, nil
 }
 
-// LoadModuleInlineName loads a module from a JSON raw message which
-// decodes to a map[string]interface{}, and where one of the keys is
-// "_module", which indicates the module name and which be found in
-// the given scope.
+// LoadModuleInline loads a module from a JSON raw message which decodes
+// to a map[string]interface{}, where one of the keys is moduleNameKey
+// and the corresponding value is the module name as a string, which
+// can be found in the given scope.
 //
 // This allows modules to be decoded into their concrete types and
 // used when their names cannot be the unique key in a map, such as
 // when there are multiple instances in the map or it appears in an
-// array (where there are no custom keys).
-func LoadModuleInlineName(moduleScope string, raw json.RawMessage) (interface{}, error) {
-	var tmp map[string]interface{}
-	err := json.Unmarshal(raw, &tmp)
+// array (where there are no custom keys). In other words, the key
+// containing the module name is treated special/separate from all
+// the other keys.
+func LoadModuleInline(moduleNameKey, moduleScope string, raw json.RawMessage) (interface{}, error) {
+	moduleName, err := getModuleNameInline(moduleNameKey, raw)
 	if err != nil {
 		return nil, err
-	}
-
-	moduleName, ok := tmp["_module"].(string)
-	if !ok || moduleName == "" {
-		return nil, fmt.Errorf("module name not specified")
 	}
 
 	val, err := LoadModule(moduleScope+"."+moduleName, raw)
@@ -181,6 +191,23 @@ func LoadModuleInlineName(moduleScope string, raw json.RawMessage) (interface{},
 	return val, nil
 }
 
+// getModuleNameInline loads the string value from raw of moduleNameKey,
+// where raw must be a JSON encoding of a map.
+func getModuleNameInline(moduleNameKey string, raw json.RawMessage) (string, error) {
+	var tmp map[string]interface{}
+	err := json.Unmarshal(raw, &tmp)
+	if err != nil {
+		return "", err
+	}
+
+	moduleName, ok := tmp[moduleNameKey].(string)
+	if !ok || moduleName == "" {
+		return "", fmt.Errorf("module name not specified with key '%s' in %+v", moduleNameKey, tmp)
+	}
+
+	return moduleName, nil
+}
+
 // Validator is implemented by modules which can verify that their
 // configurations are valid. This method will be called after New()
 // instantiations of modules (if implemented). Validation should
@@ -188,6 +215,13 @@ func LoadModuleInlineName(moduleScope string, raw json.RawMessage) (interface{},
 // be returned only if the value's configuration is invalid.
 type Validator interface {
 	Validate() error
+}
+
+// Provisioner is implemented by modules which may need to perform
+// some additional "setup" steps immediately after being loaded.
+// This method will be called after Validate() (if implemented).
+type Provisioner interface {
+	Provision() error
 }
 
 var (
