@@ -671,6 +671,7 @@ var directives = []string{
 	"prometheus", // github.com/miekg/caddy-prometheus
 	"templates",
 	"proxy",
+	"pubsub", // github.com/jung-kurt/caddy-pubsub
 	"fastcgi",
 	"cgi", // github.com/jung-kurt/caddy-cgi
 	"websocket",
