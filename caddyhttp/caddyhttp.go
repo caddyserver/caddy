@@ -21,6 +21,7 @@ import (
 	// plug in the standard directives
 	_ "github.com/mholt/caddy/caddyhttp/basicauth"
 	_ "github.com/mholt/caddy/caddyhttp/bind"
+	_ "github.com/mholt/caddy/caddyhttp/brotli"
 	_ "github.com/mholt/caddy/caddyhttp/browse"
 	_ "github.com/mholt/caddy/caddyhttp/errors"
 	_ "github.com/mholt/caddy/caddyhttp/expvar"

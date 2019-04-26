@@ -640,6 +640,7 @@ var directives = []string{
 	"ext",
 	"minify", // github.com/hacdias/caddy-minify
 	"gzip",
+	"brotli",
 	"header",
 	"geoip", // github.com/kodnaplakal/caddy-geoip
 	"errors",
