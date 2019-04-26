@@ -5,10 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"time"
 
 	"bitbucket.org/lightcodelabs/caddy2"
-	"github.com/go-acme/lego/certcrypto"
 	"github.com/go-acme/lego/challenge"
 	"github.com/klauspost/cpuid"
 	"github.com/mholt/certmagic"
@@ -30,8 +28,7 @@ type TLS struct {
 	certCache          *certmagic.Cache
 }
 
-// TODO: Finish stubbing out this two-phase setup process: prepare, then start...
-
+// Provision sets up the configuration for the TLS app.
 func (t *TLS) Provision() error {
 	// set up the certificate cache
 	// TODO: this makes a new cache every time; better to only make a new
@@ -97,15 +94,6 @@ func (t *TLS) Start(handle caddy2.Handle) error {
 		if err != nil {
 			return fmt.Errorf("automate: managing %v: %v", names, err)
 		}
-		// for _, name := range names {
-		// 	t.Manage([]string{name)
-		// 	ap := t.getAutomationPolicyForName(name)
-		// 	magic := certmagic.New(t.certCache, ap.makeCertMagicConfig())
-		// 	err := magic.Manage([]string{name})
-		// 	if err != nil {
-		// 		return fmt.Errorf("automate: manage %s: %v", name, err)
-		// 	}
-		// }
 	}
 	t.Certificates = nil // allow GC to deallocate - TODO: Does this help?
 
@@ -191,38 +179,11 @@ type AutomationPolicy struct {
 }
 
 func (ap AutomationPolicy) makeCertMagicConfig() certmagic.Config {
+	// default manager (ACME) is a special case because of how CertMagic is designed
+	// TODO: refactor certmagic so that ACME manager is not a special case by extracting
+	// its config fields out of the certmagic.Config struct, or something...
 	if acmeMgmt, ok := ap.management.(*acmeManagerMaker); ok {
-		// default, which is management via ACME
-
-		storage := acmeMgmt.storage
-		if storage == nil {
-			storage = caddy2.GetStorage()
-		}
-
-		var ond *certmagic.OnDemandConfig
-		if acmeMgmt.OnDemand != nil {
-			ond = &certmagic.OnDemandConfig{
-				// TODO: fill this out
-			}
-		}
-
-		return certmagic.Config{
-			CA:                      certmagic.LetsEncryptStagingCA, //ap.CA, // TODO: Restore true value
-			Email:                   acmeMgmt.Email,
-			Agreed:                  true,
-			DisableHTTPChallenge:    acmeMgmt.Challenges.HTTP.Disabled,
-			DisableTLSALPNChallenge: acmeMgmt.Challenges.TLSALPN.Disabled,
-			RenewDurationBefore:     time.Duration(acmeMgmt.RenewAhead),
-			AltHTTPPort:             acmeMgmt.Challenges.HTTP.AlternatePort,
-			AltTLSALPNPort:          acmeMgmt.Challenges.TLSALPN.AlternatePort,
-			DNSProvider:             acmeMgmt.Challenges.dns,
-			KeyType:                 supportedCertKeyTypes[acmeMgmt.KeyType],
-			CertObtainTimeout:       time.Duration(acmeMgmt.ACMETimeout),
-			OnDemand:                ond,
-			MustStaple:              acmeMgmt.MustStaple,
-			Storage:                 storage,
-			// TODO: listenHost
-		}
+		return acmeMgmt.makeCertMagicConfig()
 	}
 
 	return certmagic.Config{
@@ -260,13 +221,9 @@ type OnDemandConfig struct {
 	AskStarlark string `json:"ask_starlark,omitempty"`
 }
 
-// supportedCertKeyTypes is all the key types that are supported
-// for certificates that are obtained through ACME.
-var supportedCertKeyTypes = map[string]certcrypto.KeyType{
-	"RSA2048": certcrypto.RSA2048,
-	"RSA4096": certcrypto.RSA4096,
-	"P256":    certcrypto.EC256,
-	"P384":    certcrypto.EC384,
+// ManagerMaker makes a certificate manager.
+type ManagerMaker interface {
+	newManager(interactive bool) (certmagic.Manager, error)
 }
 
 // supportedCipherSuites is the unordered map of cipher suite

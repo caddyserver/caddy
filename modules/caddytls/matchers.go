@@ -7,13 +7,22 @@ import (
 )
 
 type (
+	// MatchServerName matches based on SNI.
 	MatchServerName []string
 
 	// TODO: these others should be enterprise-only, probably
-	MatchProtocol   []string // TODO: version or protocol?
+
+	// MatchProtocol matches based on protocol.
+	MatchProtocol []string // TODO: Protocol or version?
+
+	// MatchClientCert matches based on client certificate / client auth?
 	MatchClientCert struct{} // TODO: client certificate options
-	MatchRemote     []string
-	MatchStarlark   string
+
+	// MatchRemote matches based on the remote address of the connection.
+	MatchRemote []string
+
+	// MatchStarlark matches based on a Starlark script.
+	MatchStarlark string
 )
 
 func init() {
@@ -39,6 +48,7 @@ func init() {
 	})
 }
 
+// Match matches hello based on SNI.
 func (m MatchServerName) Match(hello *tls.ClientHelloInfo) bool {
 	for _, name := range m {
 		// TODO: support wildcards (and regex?)
@@ -49,21 +59,25 @@ func (m MatchServerName) Match(hello *tls.ClientHelloInfo) bool {
 	return false
 }
 
+// Match matches hello based on protocol version.
 func (m MatchProtocol) Match(hello *tls.ClientHelloInfo) bool {
 	// TODO: not implemented
 	return false
 }
 
+// Match matches hello based on client certificate.
 func (m MatchClientCert) Match(hello *tls.ClientHelloInfo) bool {
 	// TODO: not implemented
 	return false
 }
 
+// Match matches hello based on remote address.
 func (m MatchRemote) Match(hello *tls.ClientHelloInfo) bool {
 	// TODO: not implemented
 	return false
 }
 
+// Match matches hello based on a Starlark script.
 func (m MatchStarlark) Match(hello *tls.ClientHelloInfo) bool {
 	// TODO: not implemented
 	return false

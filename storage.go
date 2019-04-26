@@ -16,21 +16,13 @@ func init() {
 }
 
 // StorageConverter is a type that can convert itself
-// to a valid, usable certmagic.Storage value. The
-// value might be short-lived.
+// to a valid, usable certmagic.Storage value. (The
+// value might be short-lived.) This interface allows
+// us to adapt any CertMagic storage implementation
+// into a consistent API for Caddy configuration.
 type StorageConverter interface {
 	CertMagicStorage() (certmagic.Storage, error)
 }
-
-// TODO: Wrappers other than file_system should be enterprise-only.
-
-// It may seem trivial to wrap these, but the benefits are:
-// 1. We don't need to change the actual CertMagic storage implementions
-// to a structure that is operable with Caddy's config (including JSON
-// tags), and
-// 2. We don't need to rely on rely on maintainers of third-party
-// certmagic.Storage implementations. We can make any certmagic.Storage
-// work with Caddy this way.
 
 // fileStorage is a certmagic.Storage wrapper for certmagic.FileStorage.
 type fileStorage struct {

@@ -3,6 +3,7 @@ package caddytls
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/go-acme/lego/certcrypto"
 
@@ -16,11 +17,6 @@ func init() {
 		Name: "tls.management.acme",
 		New:  func() (interface{}, error) { return new(acmeManagerMaker), nil },
 	})
-}
-
-// ManagerMaker TODO: WIP...
-type ManagerMaker interface {
-	newManager(interactive bool) (certmagic.Manager, error)
 }
 
 // acmeManagerMaker makes an ACME manager
@@ -40,9 +36,11 @@ type acmeManagerMaker struct {
 	keyType certcrypto.KeyType
 }
 
-func (m *acmeManagerMaker) Provision() error {
-	m.setDefaults()
+func (m *acmeManagerMaker) newManager(interactive bool) (certmagic.Manager, error) {
+	return nil, nil
+}
 
+func (m *acmeManagerMaker) Provision() error {
 	// DNS providers
 	if m.Challenges.DNS != nil {
 		val, err := caddy2.LoadModuleInline("provider", "tls.dns", m.Challenges.DNS)
@@ -67,18 +65,71 @@ func (m *acmeManagerMaker) Provision() error {
 		m.Storage = nil // allow GC to deallocate - TODO: Does this help?
 	}
 
+	m.setDefaults()
+
 	return nil
 }
 
-// setDefaults indiscriminately sets all the default values in m.
+// setDefaults sets necessary values that are
+// currently empty to their default values.
 func (m *acmeManagerMaker) setDefaults() {
-	m.CA = certmagic.LetsEncryptStagingCA // certmagic.Default.CA // TODO: When not testing, switch to production CA
-	m.Email = certmagic.Default.Email
-	m.RenewAhead = caddy2.Duration(certmagic.Default.RenewDurationBefore)
-	m.keyType = certmagic.Default.KeyType
-	m.storage = certmagic.Default.Storage
+	if m.CA == "" {
+		m.CA = certmagic.LetsEncryptStagingCA // certmagic.Default.CA // TODO: When not testing, switch to production CA
+	}
+	if m.Email == "" {
+		m.Email = certmagic.Default.Email
+	}
+	if m.RenewAhead == 0 {
+		m.RenewAhead = caddy2.Duration(certmagic.Default.RenewDurationBefore)
+	}
+	if m.keyType == "" {
+		m.keyType = certmagic.Default.KeyType
+	}
+	if m.storage == nil {
+		m.storage = certmagic.Default.Storage
+	}
 }
 
-func (m *acmeManagerMaker) newManager(interactive bool) (certmagic.Manager, error) {
-	return nil, nil
+// makeCertMagicConfig converts m into a certmagic.Config, because
+// this is a special case where the default manager is the certmagic
+// Config and not a separate manager.
+func (m *acmeManagerMaker) makeCertMagicConfig() certmagic.Config {
+	storage := m.storage
+	if storage == nil {
+		storage = caddy2.GetStorage()
+	}
+
+	var ond *certmagic.OnDemandConfig
+	if m.OnDemand != nil {
+		ond = &certmagic.OnDemandConfig{
+			// TODO: fill this out
+		}
+	}
+
+	return certmagic.Config{
+		CA:                      certmagic.LetsEncryptStagingCA, //ap.CA, // TODO: Restore true value
+		Email:                   m.Email,
+		Agreed:                  true,
+		DisableHTTPChallenge:    m.Challenges.HTTP.Disabled,
+		DisableTLSALPNChallenge: m.Challenges.TLSALPN.Disabled,
+		RenewDurationBefore:     time.Duration(m.RenewAhead),
+		AltHTTPPort:             m.Challenges.HTTP.AlternatePort,
+		AltTLSALPNPort:          m.Challenges.TLSALPN.AlternatePort,
+		DNSProvider:             m.Challenges.dns,
+		KeyType:                 supportedCertKeyTypes[m.KeyType],
+		CertObtainTimeout:       time.Duration(m.ACMETimeout),
+		OnDemand:                ond,
+		MustStaple:              m.MustStaple,
+		Storage:                 storage,
+		// TODO: listenHost
+	}
+}
+
+// supportedCertKeyTypes is all the key types that are supported
+// for certificates that are obtained through ACME.
+var supportedCertKeyTypes = map[string]certcrypto.KeyType{
+	"RSA2048": certcrypto.RSA2048,
+	"RSA4096": certcrypto.RSA4096,
+	"P256":    certcrypto.EC256,
+	"P384":    certcrypto.EC384,
 }

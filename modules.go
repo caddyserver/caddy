@@ -11,15 +11,44 @@ import (
 
 // Module represents a Caddy module.
 type Module struct {
-	Name     string
-	New      func() (interface{}, error)
-	OnLoad   func(instances []interface{}, priorState interface{}) (newState interface{}, err error)
+	// Name is the full name of the module. It
+	// must be unique and properly namespaced.
+	Name string
+
+	// New returns a new, empty instance of
+	// the module's type. The host module
+	// which loads this module will likely
+	// invoke methods on the returned value.
+	// It must return a pointer; if not, it
+	// is converted into one.
+	New func() (interface{}, error)
+
+	// OnLoad is invoked after all module
+	// instances ave been loaded. It receives
+	// pointers to each instance of this
+	// module, and any state from a previous
+	// running configuration, which may be
+	// nil.
+	//
+	// If this module is to carry "global"
+	// state between all instances through
+	// reloads, you might find it helpful
+	// to return it.
+	// TODO: Is this really better/safer than a global variable?
+	OnLoad func(instances []interface{}, priorState interface{}) (newState interface{}, err error)
+
+	// OnUnload is called after all module
+	// instances have been stopped, possibly
+	// in favor of a new configuration. It
+	// receives the state given by OnLoad (if
+	// any).
 	OnUnload func(state interface{}) error
 }
 
 func (m Module) String() string { return m.Name }
 
-// RegisterModule registers a module.
+// RegisterModule registers a module. Modules must call
+// this function in the init phase of runtime.
 func RegisterModule(mod Module) error {
 	if mod.Name == "caddy" {
 		return fmt.Errorf("modules cannot be named 'caddy'")
@@ -35,7 +64,7 @@ func RegisterModule(mod Module) error {
 	return nil
 }
 
-// GetModule returns a module by name.
+// GetModule returns a module by its full name.
 func GetModule(name string) (Module, error) {
 	modulesMu.Lock()
 	defer modulesMu.Unlock()
