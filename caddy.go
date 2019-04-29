@@ -238,11 +238,19 @@ type Handle struct {
 	current *Config
 }
 
-// App returns the configured app named name.
-// A nil value is returned if no app with that
-// name is currently configured.
-func (h Handle) App(name string) interface{} {
-	return h.current.apps[name]
+// App returns the configured app named name. If no app with
+// that name is currently configured, a new empty one will be
+// instantiated. (The app module must still be plugged in.)
+func (h Handle) App(name string) (interface{}, error) {
+	if app, ok := h.current.apps[name]; ok {
+		return app, nil
+	}
+	modVal, err := LoadModule(name, nil)
+	if err != nil {
+		return nil, fmt.Errorf("instantiating new module %s: %v", name, err)
+	}
+	h.current.apps[name] = modVal.(App)
+	return modVal, nil
 }
 
 // GetStorage returns the configured Caddy storage implementation.

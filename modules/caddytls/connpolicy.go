@@ -75,7 +75,11 @@ type ConnectionPolicy struct {
 }
 
 func (cp *ConnectionPolicy) buildStandardTLSConfig(handle caddy2.Handle) error {
-	tlsApp := handle.App("tls").(*TLS)
+	tlsAppIface, err := handle.App("tls")
+	if err != nil {
+		return fmt.Errorf("getting tls app: %v", err)
+	}
+	tlsApp := tlsAppIface.(*TLS)
 
 	cfg := &tls.Config{
 		NextProtos:               cp.ALPN,

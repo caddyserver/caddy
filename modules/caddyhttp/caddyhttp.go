@@ -111,7 +111,11 @@ func (hc *httpModuleConfig) Stop() error {
 }
 
 func (hc *httpModuleConfig) automaticHTTPS(handle caddy2.Handle) error {
-	tlsApp := handle.App("tls").(*caddytls.TLS)
+	tlsAppIface, err := handle.App("tls")
+	if err != nil {
+		return fmt.Errorf("getting tls app: %v", err)
+	}
+	tlsApp := tlsAppIface.(*caddytls.TLS)
 
 	for srvName, srv := range hc.Servers {
 		srv.tlsApp = tlsApp
@@ -120,6 +124,7 @@ func (hc *httpModuleConfig) automaticHTTPS(handle caddy2.Handle) error {
 			continue
 		}
 
+		// find all qualifying domain names, de-duplicated
 		domainSet := make(map[string]struct{})
 		for _, route := range srv.Routes {
 			for _, m := range route.matchers {
@@ -133,21 +138,26 @@ func (hc *httpModuleConfig) automaticHTTPS(handle caddy2.Handle) error {
 				}
 			}
 		}
-		var domains []string
-		for d := range domainSet {
-			domains = append(domains, d)
-		}
-		if len(domains) > 0 {
+
+		if len(domainSet) > 0 {
+			// marshal the domains into a slice
+			var domains []string
+			for d := range domainSet {
+				domains = append(domains, d)
+			}
+
+			// manage their certificates
 			err := tlsApp.Manage(domains)
 			if err != nil {
 				return fmt.Errorf("%s: managing certificate for %s: %s", srvName, domains, err)
 			}
-			// TODO: Connection policies... redirects... man...
+
+			// tell the server to use TLS
 			srv.TLSConnPolicies = caddytls.ConnectionPolicies{
-				{
-					ALPN: defaultALPN,
-				},
+				{ALPN: defaultALPN},
 			}
+
+			// TODO: create HTTP->HTTPS redirects
 		}
 	}
 

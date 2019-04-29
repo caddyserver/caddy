@@ -171,9 +171,12 @@ func LoadModule(name string, rawMsg json.RawMessage) (interface{}, error) {
 		val = reflect.New(rv.Type()).Elem().Addr().Interface()
 	}
 
-	err = json.Unmarshal(rawMsg, &val)
-	if err != nil {
-		return nil, fmt.Errorf("decoding module config: %s: %v", mod.Name, err)
+	// fill in its config only if there is a config to fill in
+	if len(rawMsg) > 0 {
+		err = json.Unmarshal(rawMsg, &val)
+		if err != nil {
+			return nil, fmt.Errorf("decoding module config: %s: %v", mod.Name, err)
+		}
 	}
 
 	if prov, ok := val.(Provisioner); ok {
