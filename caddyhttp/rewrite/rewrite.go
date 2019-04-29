@@ -95,9 +95,15 @@ func (s *SimpleRule) Match(r *http.Request) bool {
 
 // Rewrite rewrites the internal location of the current request.
 func (s *SimpleRule) Rewrite(fs http.FileSystem, r *http.Request) Result {
+	matches := regexpMatches(s.Regexp, "/", r.URL.Path)
+
+	replacer := newReplacer(r)
+	for i := 1; i < len(matches); i++ {
+		replacer.Set(fmt.Sprint(i), matches[i])
+	}
 
 	// attempt rewrite
-	return To(fs, r, s.To, newReplacer(r))
+	return To(fs, r, s.To, replacer)
 }
 
 // ComplexRule is a rewrite rule based on a regular expression

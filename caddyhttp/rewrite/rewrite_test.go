@@ -33,6 +33,7 @@ func TestRewrite(t *testing.T) {
 			newSimpleRule(t, "^/from$", "/to"),
 			newSimpleRule(t, "^/a$", "/b"),
 			newSimpleRule(t, "^/b$", "/b{uri}"),
+			newSimpleRule(t, "^/simplereggrp/([0-9]+)([a-z]*)$", "/{1}/{2}/{query}"),
 		},
 		FileSys: http.Dir("."),
 	}
@@ -113,6 +114,7 @@ func TestRewrite(t *testing.T) {
 		{"/hashtest/a%20%23%20test", "/a%20%23%20test"},
 		{"/hashtest/a%20%3F%20test", "/a%20%3F%20test"},
 		{"/hashtest/a%20%3F%23test", "/a%20%3F%23test"},
+		{"/simplereggrp/123abc?q", "/123/abc/q?q"},
 	}
 
 	for i, test := range tests {
