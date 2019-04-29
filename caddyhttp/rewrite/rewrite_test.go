@@ -129,7 +129,7 @@ func TestRewrite(t *testing.T) {
 		}
 
 		if got, want := rec.Body.String(), test.expectedTo; got != want {
-			t.Errorf("Test %d: Expected URL to be '%s' but was '%s'", i, want, got)
+			t.Errorf("Test %d: Expected URL '%s' to be rewritten to '%s' but was rewritten to '%s'", i, test.from, want, got)
 		}
 	}
 }
