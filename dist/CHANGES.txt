@@ -1,12 +1,18 @@
 CHANGES
 
-1.0.0beta2 (April 20, 2019)
+1.0.0 (April 24, 2019)
+- Minor internal/linting improvements
+- EULA no longer applies
+- Backwards compatibility goal (see project repo)
+
+
+1.0.0-beta2 (April 20, 2019)
 - Continue migration to Go modules
 - Eliminate need for special build script
 - Internal changes for better compatibility
 
 
-1.0.0beta1 (April 9, 2019)
+1.0.0-beta1 (April 9, 2019)
 - Major internal changes (Go modules & remove vendor)
 - Rename -env flag to -envfile
 - New -env flag to print the environment
