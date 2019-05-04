@@ -139,11 +139,11 @@ func (m matchHeader) Match(r *http.Request) bool {
 
 // Interface guards
 var (
-	_ RouteMatcher = matchHost{}
-	_ RouteMatcher = matchPath{}
-	_ RouteMatcher = matchMethod{}
-	_ RouteMatcher = matchQuery{}
-	_ RouteMatcher = matchHeader{}
-	_ RouteMatcher = new(matchProtocol)
-	_ RouteMatcher = new(matchScript)
+	_ RouteMatcher = (*matchHost)(nil)
+	_ RouteMatcher = (*matchPath)(nil)
+	_ RouteMatcher = (*matchMethod)(nil)
+	_ RouteMatcher = (*matchQuery)(nil)
+	_ RouteMatcher = (*matchHeader)(nil)
+	_ RouteMatcher = (*matchProtocol)(nil)
+	_ RouteMatcher = (*matchScript)(nil)
 )

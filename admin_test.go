@@ -9,7 +9,7 @@ func BenchmarkLoad(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		r := strings.NewReader(`{
 			"testval": "Yippee!",
-			"modules": {
+			"apps": {
 				"http": {
 					"servers": {
 						"myserver": {

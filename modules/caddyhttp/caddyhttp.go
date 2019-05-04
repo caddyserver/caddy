@@ -167,14 +167,15 @@ func (hc *httpModuleConfig) automaticHTTPS(handle caddy2.Handle) error {
 var defaultALPN = []string{"h2", "http/1.1"}
 
 type httpServerConfig struct {
-	Listen            []string                    `json:"listen"`
-	ReadTimeout       caddy2.Duration             `json:"read_timeout"`
-	ReadHeaderTimeout caddy2.Duration             `json:"read_header_timeout"`
-	HiddenFiles       []string                    `json:"hidden_files"` // TODO:... experimenting with shared/common state
-	Routes            routeList                   `json:"routes"`
-	Errors            httpErrorConfig             `json:"errors"`
-	TLSConnPolicies   caddytls.ConnectionPolicies `json:"tls_connection_policies"`
-	DisableAutoHTTPS  bool                        `json:"disable_auto_https"`
+	Listen                []string                    `json:"listen"`
+	ReadTimeout           caddy2.Duration             `json:"read_timeout"`
+	ReadHeaderTimeout     caddy2.Duration             `json:"read_header_timeout"`
+	HiddenFiles           []string                    `json:"hidden_files"` // TODO:... experimenting with shared/common state
+	Routes                routeList                   `json:"routes"`
+	Errors                httpErrorConfig             `json:"errors"`
+	TLSConnPolicies       caddytls.ConnectionPolicies `json:"tls_connection_policies"`
+	DisableAutoHTTPS      bool                        `json:"disable_auto_https"`
+	DisableAutoHTTPSRedir bool                        `json:"disable_auto_https_redir"`
 
 	tlsApp *caddytls.TLS
 }
@@ -190,6 +191,12 @@ func (s httpServerConfig) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// set up the replacer
+	repl := &Replacer{req: r, resp: w, custom: make(map[string]string)}
+	ctx := context.WithValue(r.Context(), ReplacerCtxKey, repl)
+	r = r.WithContext(ctx)
+
+	// build and execute the main middleware chain
 	stack := s.Routes.buildMiddlewareChain(w, r)
 	err := executeMiddlewareChain(w, r, stack)
 	if err != nil {
@@ -328,6 +335,8 @@ func (mrw middlewareResponseWriter) Write(b []byte) (int, error) {
 	}
 	return mrw.ResponseWriterWrapper.Write(b)
 }
+
+const ReplacerCtxKey caddy2.CtxKey = "replacer"
 
 // Interface guards
 var _ HTTPInterfaces = middlewareResponseWriter{}
