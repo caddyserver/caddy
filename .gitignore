@@ -6,3 +6,6 @@ _gitignore/
 
 # mac specific
 .DS_Store
+
+# go modules
+vendor
