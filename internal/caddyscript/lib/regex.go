@@ -45,6 +45,6 @@ func (r Regexp) MatchString(thread *starlark.Thread, fn *starlark.Builtin, args 
 
 func (r Regexp) Freeze()               {}
 func (r Regexp) Hash() (uint32, error) { return 0, fmt.Errorf("unhashable: Regexp") }
-func (r Regexp) String() string        { return fmt.Sprint(r) }
+func (r Regexp) String() string        { return "Regexp" }
 func (r Regexp) Type() string          { return "Regexp" }
 func (r Regexp) Truth() starlark.Bool  { return true }
