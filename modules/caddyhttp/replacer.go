@@ -1,10 +1,14 @@
 package caddyhttp
 
 import (
+	"net"
 	"net/http"
+	"os"
 	"strings"
 )
 
+// Replacer can replace values in strings based
+// on a request and/or response writer.
 type Replacer struct {
 	req    *http.Request
 	resp   http.ResponseWriter
@@ -42,15 +46,33 @@ func (r *Replacer) replaceAll(input, empty string, mapping map[string]string) st
 
 func (r *Replacer) defaults() map[string]string {
 	m := map[string]string{
-		"host":   r.req.Host,
-		"method": r.req.Method,
-		"scheme": func() string {
+		"request.host": func() string {
+			host, _, err := net.SplitHostPort(r.req.Host)
+			if err != nil {
+				return r.req.Host // OK; there probably was no port
+			}
+			return host
+		}(),
+		"request.hostport": r.req.Host, // may include both host and port
+		"request.method":   r.req.Method,
+		"request.port": func() string {
+			// if there is no port, there will be an error; in
+			// that case, port is the empty string anyway
+			_, port, _ := net.SplitHostPort(r.req.Host)
+			return port
+		}(),
+		"request.scheme": func() string {
 			if r.req.TLS != nil {
 				return "https"
 			}
 			return "http"
 		}(),
-		"uri": r.req.URL.RequestURI(),
+		"request.uri": r.req.URL.RequestURI(),
+		"system.hostname": func() string {
+			// OK if there is an error; just return empty string
+			name, _ := os.Hostname()
+			return name
+		}(),
 	}
 
 	for field, vals := range r.req.Header {

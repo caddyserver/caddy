@@ -1,11 +1,10 @@
-package staticresp
+package caddyhttp
 
 import (
 	"fmt"
 	"net/http"
 
 	"bitbucket.org/lightcodelabs/caddy2"
-	"bitbucket.org/lightcodelabs/caddy2/modules/caddyhttp"
 )
 
 func init() {
@@ -16,15 +15,16 @@ func init() {
 }
 
 // Static implements a simple responder for static responses.
+// It is Caddy's default responder. TODO: Or is it?
 type Static struct {
-	StatusCode int                 `json:"status_code"`
-	Headers    map[string][]string `json:"headers"`
-	Body       string              `json:"body"`
-	Close      bool                `json:"close"`
+	StatusCode int         `json:"status_code"`
+	Headers    http.Header `json:"headers"`
+	Body       string      `json:"body"`
+	Close      bool        `json:"close"`
 }
 
 func (s Static) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
-	repl := r.Context().Value(caddyhttp.ReplacerCtxKey).(*caddyhttp.Replacer)
+	repl := r.Context().Value(ReplacerCtxKey).(*Replacer)
 
 	// close the connection
 	r.Close = s.Close
@@ -54,4 +54,4 @@ func (s Static) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
 }
 
 // Interface guard
-var _ caddyhttp.Handler = (*Static)(nil)
+var _ Handler = (*Static)(nil)

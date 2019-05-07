@@ -68,17 +68,11 @@ func (m matchScript) Match(r *http.Request) bool {
 func (m matchProtocol) Match(r *http.Request) bool {
 	switch string(m) {
 	case "grpc":
-		if r.Header.Get("content-type") == "application/grpc" {
-			return true
-		}
+		return r.Header.Get("content-type") == "application/grpc"
 	case "https":
-		if r.TLS != nil {
-			return true
-		}
+		return r.TLS != nil
 	case "http":
-		if r.TLS == nil {
-			return true
-		}
+		return r.TLS == nil
 	}
 
 	return false
