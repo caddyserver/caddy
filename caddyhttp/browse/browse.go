@@ -59,34 +59,34 @@ type Config struct {
 
 // A Listing is the context used to fill out a template.
 type Listing struct {
-	// The name of the directory (the last element of the path)
+	// The name of the directory (the last element of the path).
 	Name string
 
-	// The full path of the request
+	// The full path of the request.
 	Path string
 
-	// Whether the parent directory is browsable
+	// Whether the parent directory is browse-able.
 	CanGoUp bool
 
-	// The items (files and folders) in the path
+	// The items (files and folders) in the path.
 	Items []FileInfo
 
-	// The number of directories in the listing
+	// The number of directories in the listing.
 	NumDirs int
 
-	// The number of files (items that aren't directories) in the listing
+	// The number of files (items that aren't directories) in the listing.
 	NumFiles int
 
-	// Which sorting order is used
+	// Which sorting order is used.
 	Sort string
 
-	// And which order
+	// And which order.
 	Order string
 
-	// If ≠0 then Items have been limited to that many elements
+	// If ≠0 then Items have been limited to that many elements.
 	ItemsLimitedTo int
 
-	// Optional custom variables for use in browse templates
+	// Optional custom variables for use in browse templates.
 	User interface{}
 
 	httpserver.Context
@@ -244,7 +244,7 @@ func (l Listing) applySort() {
 
 func directoryListing(files []os.FileInfo, canGoUp bool, urlPath string, config *Config) (Listing, bool) {
 	var (
-		fileinfos           []FileInfo
+		fileInfos           []FileInfo
 		dirCount, fileCount int
 		hasIndexFile        bool
 	)
@@ -272,14 +272,14 @@ func directoryListing(files []os.FileInfo, canGoUp bool, urlPath string, config 
 			continue
 		}
 
-		url := url.URL{Path: "./" + name} // prepend with "./" to fix paths with ':' in the name
+		u := url.URL{Path: "./" + name} // prepend with "./" to fix paths with ':' in the name
 
-		fileinfos = append(fileinfos, FileInfo{
+		fileInfos = append(fileInfos, FileInfo{
 			IsDir:     isDir,
 			IsSymlink: isSymlink(f),
 			Name:      f.Name(),
 			Size:      f.Size(),
-			URL:       url.String(),
+			URL:       u.String(),
 			ModTime:   f.ModTime().UTC(),
 			Mode:      f.Mode(),
 		})
@@ -289,7 +289,7 @@ func directoryListing(files []os.FileInfo, canGoUp bool, urlPath string, config 
 		Name:     path.Base(urlPath),
 		Path:     urlPath,
 		CanGoUp:  canGoUp,
-		Items:    fileinfos,
+		Items:    fileInfos,
 		NumDirs:  dirCount,
 		NumFiles: fileCount,
 	}, hasIndexFile
@@ -504,7 +504,7 @@ func (b Browse) ServeListing(w http.ResponseWriter, r *http.Request, requestedFi
 
 	}
 
-	buf.WriteTo(w)
+	_, _ = buf.WriteTo(w)
 
 	return http.StatusOK, nil
 }

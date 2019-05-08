@@ -15,6 +15,7 @@
 package httpserver
 
 import (
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -103,7 +104,9 @@ func populateTestTrie(trie *vhostTrie, keys []string) {
 		func(key string) {
 			site := &SiteConfig{
 				middlewareChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
-					w.Write([]byte(key))
+					if _, err := w.Write([]byte(key)); err != nil {
+						log.Println("[ERROR] failed to write bytes: ", err)
+					}
 					return 0, nil
 				}),
 			}
@@ -139,7 +142,9 @@ func assertTestTrie(t *testing.T, trie *vhostTrie, tests []vhostTrieTest, hasWil
 
 		// And it must be the correct value
 		resp := httptest.NewRecorder()
-		site.middlewareChain.ServeHTTP(resp, nil)
+		if _, err := site.middlewareChain.ServeHTTP(resp, nil); err != nil {
+			log.Println("[ERROR] failed to serve HTTP: ", err)
+		}
 		actualHandlerKey := resp.Body.String()
 		if actualHandlerKey != test.expectedKey {
 			t.Errorf("Test %d: Expected match '%s' but matched '%s'",
