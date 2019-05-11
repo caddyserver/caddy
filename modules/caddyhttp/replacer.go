@@ -8,7 +8,9 @@ import (
 )
 
 // Replacer can replace values in strings based
-// on a request and/or response writer.
+// on a request and/or response writer. The zero
+// Replacer is not valid; it must be initialized
+// within this package.
 type Replacer struct {
 	req    *http.Request
 	resp   http.ResponseWriter
@@ -75,18 +77,17 @@ func (r *Replacer) defaults() map[string]string {
 		}(),
 	}
 
+	// TODO: why should header fields, cookies, and query params get special treatment like this?
+	// maybe they should be scoped by words like "request.header." just like everything else.
 	for field, vals := range r.req.Header {
 		m[">"+strings.ToLower(field)] = strings.Join(vals, ",")
 	}
-
 	for field, vals := range r.resp.Header() {
 		m["<"+strings.ToLower(field)] = strings.Join(vals, ",")
 	}
-
 	for _, cookie := range r.req.Cookies() {
 		m["~"+cookie.Name] = cookie.Value
 	}
-
 	for param, vals := range r.req.URL.Query() {
 		m["?"+param] = strings.Join(vals, ",")
 	}

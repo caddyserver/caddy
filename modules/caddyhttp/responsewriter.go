@@ -7,16 +7,13 @@ import (
 	"net/http"
 )
 
-// TODO: Is this type really required? Wouldn't embedding the
-// default ResponseWriter always work too, when wrapping it?
-
 // ResponseWriterWrapper wraps an underlying ResponseWriter and
-// promotes its Pusher/Flusher/CloseNotifier/Hijacker methods
-// as well. To use this type, embed a pointer to it within your
-// own struct type that implements the http.ResponseWriter
-// interface, then call methods on the embedded value. You can
-// make sure your type wraps correctly by asserting that it
-// implements the HTTPInterfaces interface.
+// promotes its Pusher/Flusher/Hijacker methods as well. To use
+// this type, embed a pointer to it within your own struct type
+// that implements the http.ResponseWriter interface, then call
+// methods on the embedded value. You can make sure your type
+// wraps correctly by asserting that it implements the
+// HTTPInterfaces interface.
 type ResponseWriterWrapper struct {
 	http.ResponseWriter
 }
@@ -40,15 +37,6 @@ func (rww *ResponseWriterWrapper) Flush() {
 	}
 }
 
-// CloseNotify implements http.CloseNotifier. It simply calls the underlying
-// ResponseWriter's CloseNotify method if there is one, or panics.
-func (rww *ResponseWriterWrapper) CloseNotify() <-chan bool {
-	if cn, ok := rww.ResponseWriter.(http.CloseNotifier); ok {
-		return cn.CloseNotify()
-	}
-	panic("not a close notifier")
-}
-
 // Push implements http.Pusher. It simply calls the underlying
 // ResponseWriter's Push method if there is one, or returns an error.
 func (rww *ResponseWriterWrapper) Push(target string, opts *http.PushOptions) error {
@@ -63,7 +51,6 @@ type HTTPInterfaces interface {
 	http.ResponseWriter
 	http.Pusher
 	http.Flusher
-	http.CloseNotifier
 	http.Hijacker
 }
 

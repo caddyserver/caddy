@@ -13,7 +13,7 @@ type serverRoute struct {
 	Apply    []json.RawMessage          `json:"apply"`
 	Respond  json.RawMessage            `json:"respond"`
 
-	Exclusive bool `json:"exclusive"`
+	Terminal bool `json:"terminal"`
 
 	// decoded values
 	matchers   []RouteMatcher
@@ -49,9 +49,7 @@ routeLoop:
 		if responder == nil {
 			responder = route.responder
 		}
-		// TODO: Should exclusive apply to only middlewares, or responder too?
-		// i.e. what if they haven't set a responder yet, but the first middleware chain is exclusive...
-		if route.Exclusive {
+		if route.Terminal {
 			break
 		}
 	}
