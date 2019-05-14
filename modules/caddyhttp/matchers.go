@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"bitbucket.org/lightcodelabs/caddy2"
-	"bitbucket.org/lightcodelabs/caddy2/internal/caddyscript"
+	"bitbucket.org/lightcodelabs/caddy2/pkg/caddyscript"
 	"go.starlark.net/starlark"
 )
 

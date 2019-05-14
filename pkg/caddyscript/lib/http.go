@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/starlight-go/starlight/convert"
 	"go.starlark.net/starlark"
 )
 
@@ -12,7 +13,7 @@ type HTTPRequest struct{ Req *http.Request }
 
 // AttrNames defines what properties and methods are available on the HTTPRequest type.
 func (r HTTPRequest) AttrNames() []string {
-	return []string{"header", "query", "url", "method", "host", "tls"}
+	return []string{"header", "query", "url", "method", "host", "tls", "redirect"}
 }
 
 func (r HTTPRequest) Freeze()               {}
@@ -32,9 +33,33 @@ func (r HTTPRequest) Header(thread *starlark.Thread, fn *starlark.Builtin, args 
 	return starlark.String(r.Req.Header.Get(key)), nil
 }
 
+// Redirect handles an http redirect from starlark code.
+func (r HTTPRequest) Redirect(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	var w starlark.Value
+	var req HTTPRequest
+	var newURL string
+	err := starlark.UnpackPositionalArgs(fn.Name(), args, kwargs, 3, &w, &req, &newURL)
+	if err != nil {
+		return starlark.None, fmt.Errorf("unpacking arguments: %v", err.Error())
+	}
+
+	writer := convert.FromValue(w)
+	if w, ok := writer.(http.ResponseWriter); ok {
+		http.Redirect(w, req.Req, newURL, http.StatusSeeOther)
+		return starlark.None, nil
+	}
+
+	return starlark.None, fmt.Errorf("first provided argument is not http.ResponseWriter")
+}
+
 // Attr defines what happens when props or methods are called on the HTTPRequest type.
 func (r HTTPRequest) Attr(name string) (starlark.Value, error) {
 	switch name {
+	case "redirect":
+		b := starlark.NewBuiltin("Redirect", r.Redirect)
+		b = b.BindReceiver(r)
+
+		return b, nil
 	case "tls":
 		tls := new(starlark.Dict)
 		tls.SetKey(starlark.String("cipher_suite"), starlark.MakeUint(uint(r.Req.TLS.CipherSuite)))

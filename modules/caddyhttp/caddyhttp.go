@@ -24,6 +24,7 @@ func init() {
 		Name: "http",
 		New:  func() (interface{}, error) { return new(App), nil },
 	})
+
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -94,11 +95,21 @@ func (app *App) Validate() error {
 	return nil
 }
 
+// AutomaticHTTPSError represents an error received when attempting to enable automatic https.
+type AutomaticHTTPSError struct {
+	internal error
+}
+
+// Error returns the error string for automaticHTTPSError.
+func (a AutomaticHTTPSError) Error() string {
+	return fmt.Sprintf("enabling automatic HTTPS: %v", a.internal.Error())
+}
+
 // Start runs the app. It sets up automatic HTTPS if enabled.
 func (app *App) Start() error {
 	err := app.automaticHTTPS()
 	if err != nil {
-		return fmt.Errorf("enabling automatic HTTPS: %v", err)
+		return &AutomaticHTTPSError{internal: err}
 	}
 
 	for srvName, srv := range app.Servers {

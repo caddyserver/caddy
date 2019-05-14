@@ -39,6 +39,7 @@ func NewContext(ctx Context) (Context, context.CancelFunc) {
 	c, cancel := context.WithCancel(ctx.Context)
 	wrappedCancel := func() {
 		cancel()
+
 		for modName, modInstances := range newCtx.moduleInstances {
 			for _, inst := range modInstances {
 				if cu, ok := inst.(CleanerUpper); ok {

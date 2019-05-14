@@ -17,12 +17,6 @@ import (
 	"bitbucket.org/lightcodelabs/caddy2"
 )
 
-// State represents the global state of a loadbalancer. It is used to store
-// references to health checkers.
-type State struct {
-	HealthCheckers []*HealthChecker
-}
-
 // CircuitBreaker defines the functionality of a circuit breaker module.
 type CircuitBreaker interface {
 	Ok() bool
@@ -76,7 +70,7 @@ var (
 )
 
 // NewLoadBalancedReverseProxy returns a collection of Upstreams that are to be loadbalanced.
-func NewLoadBalancedReverseProxy(lb *LoadBalanced, state *State, ctx caddy2.Context) error {
+func NewLoadBalancedReverseProxy(lb *LoadBalanced, ctx caddy2.Context) error {
 	// set defaults
 	if lb.NoHealthyUpstreamsMessage == "" {
 		lb.NoHealthyUpstreamsMessage = msgNoHealthyUpstreams
@@ -145,7 +139,7 @@ func NewLoadBalancedReverseProxy(lb *LoadBalanced, state *State, ctx caddy2.Cont
 		// nu.Target.Path = uc.HealthCheckPath
 
 		go nu.healthChecker.ScheduleChecks(nu.Target.String())
-		state.HealthCheckers = append(state.HealthCheckers, nu.healthChecker)
+		lb.HealthCheckers = append(lb.HealthCheckers, nu.healthChecker)
 
 		us = append(us, nu)
 	}
@@ -178,6 +172,25 @@ type LoadBalanced struct {
 
 	// NoHealthyUpstreamsMessage is returned as a response when there are no healthy upstreams to loadbalance to.
 	NoHealthyUpstreamsMessage string `json:"no_healthy_upstreams_message"`
+
+	// TODO :- store healthcheckers as package level state where each upstream gets a single healthchecker
+	// currently a healthchecker is created for each upstream defined, even if a healthchecker was previously created
+	// for that upstream
+	HealthCheckers []*HealthChecker
+}
+
+// Cleanup stops all health checkers on a loadbalanced reverse proxy.
+func (lb *LoadBalanced) Cleanup() error {
+	for _, hc := range lb.HealthCheckers {
+		hc.Stop()
+	}
+
+	return nil
+}
+
+// Provision sets up a new loadbalanced reverse proxy.
+func (lb *LoadBalanced) Provision(ctx caddy2.Context) error {
+	return NewLoadBalancedReverseProxy(lb, ctx)
 }
 
 // ServeHTTP implements the http.Handler interface to dispatch an http request to the proper
