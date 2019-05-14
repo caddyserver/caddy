@@ -85,6 +85,9 @@ func (cp *ConnectionPolicy) buildStandardTLSConfig(handle caddy2.Handle) error {
 		NextProtos:               cp.ALPN,
 		PreferServerCipherSuites: true,
 		GetCertificate: func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+			// TODO: Must fix https://github.com/mholt/caddy/issues/2588
+			// (allow customizing the selection of a very specific certificate
+			// based on the ClientHelloInfo)
 			cfgTpl, err := tlsApp.getConfigForName(hello.ServerName)
 			if err != nil {
 				return nil, fmt.Errorf("getting config for name %s: %v", hello.ServerName, err)

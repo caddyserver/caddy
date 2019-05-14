@@ -15,7 +15,6 @@ func init() {
 }
 
 // Static implements a simple responder for static responses.
-// It is Caddy's default responder. TODO: Or is it?
 type Static struct {
 	StatusCode int         `json:"status_code"`
 	Headers    http.Header `json:"headers"`

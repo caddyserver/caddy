@@ -205,7 +205,7 @@ func TestPathREMatcher(t *testing.T) {
 
 		// set up the fake request and its Replacer
 		req := &http.Request{URL: &url.URL{Path: tc.input}}
-		repl := &Replacer{req: req, resp: httptest.NewRecorder(), custom: make(map[string]string)}
+		repl := NewReplacer(req, httptest.NewRecorder())
 		ctx := context.WithValue(req.Context(), ReplacerCtxKey, repl)
 		req = req.WithContext(ctx)
 
@@ -322,7 +322,7 @@ func TestHeaderREMatcher(t *testing.T) {
 
 		// set up the fake request and its Replacer
 		req := &http.Request{Header: tc.input, URL: new(url.URL)}
-		repl := &Replacer{req: req, resp: httptest.NewRecorder(), custom: make(map[string]string)}
+		repl := NewReplacer(req, httptest.NewRecorder())
 		ctx := context.WithValue(req.Context(), ReplacerCtxKey, repl)
 		req = req.WithContext(ctx)
 

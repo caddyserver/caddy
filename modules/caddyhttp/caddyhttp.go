@@ -22,29 +22,31 @@ func init() {
 
 	err := caddy2.RegisterModule(caddy2.Module{
 		Name: "http",
-		New:  func() (interface{}, error) { return new(httpModuleConfig), nil },
+		New:  func() (interface{}, error) { return new(App), nil },
 	})
 	if err != nil {
 		log.Fatal(err)
 	}
 }
 
-type httpModuleConfig struct {
-	HTTPPort    int                          `json:"http_port"`
-	HTTPSPort   int                          `json:"https_port"`
-	GracePeriod caddy2.Duration              `json:"grace_period"`
-	Servers     map[string]*httpServerConfig `json:"servers"`
+// App is the HTTP app for Caddy.
+type App struct {
+	HTTPPort    int                `json:"http_port"`
+	HTTPSPort   int                `json:"https_port"`
+	GracePeriod caddy2.Duration    `json:"grace_period"`
+	Servers     map[string]*Server `json:"servers"`
 
 	servers []*http.Server
 }
 
-func (hc *httpModuleConfig) Provision() error {
+// Provision sets up the app.
+func (hc *App) Provision() error {
 	for _, srv := range hc.Servers {
-		err := srv.Routes.setup()
+		err := srv.Routes.Provision()
 		if err != nil {
 			return fmt.Errorf("setting up server routes: %v", err)
 		}
-		err = srv.Errors.Routes.setup()
+		err = srv.Errors.Routes.Provision()
 		if err != nil {
 			return fmt.Errorf("setting up server error handling routes: %v", err)
 		}
@@ -53,7 +55,8 @@ func (hc *httpModuleConfig) Provision() error {
 	return nil
 }
 
-func (hc *httpModuleConfig) Validate() error {
+// Validate ensures the app's configuration is valid.
+func (hc *App) Validate() error {
 	// each server must use distinct listener addresses
 	lnAddrs := make(map[string]string)
 	for srvName, srv := range hc.Servers {
@@ -74,7 +77,8 @@ func (hc *httpModuleConfig) Validate() error {
 	return nil
 }
 
-func (hc *httpModuleConfig) Start(handle caddy2.Handle) error {
+// Start runs the app. It sets up automatic HTTPS if enabled.
+func (hc *App) Start(handle caddy2.Handle) error {
 	err := hc.automaticHTTPS(handle)
 	if err != nil {
 		return fmt.Errorf("enabling automatic HTTPS: %v", err)
@@ -129,7 +133,7 @@ func (hc *httpModuleConfig) Start(handle caddy2.Handle) error {
 }
 
 // Stop gracefully shuts down the HTTP server.
-func (hc *httpModuleConfig) Stop() error {
+func (hc *App) Stop() error {
 	ctx := context.Background()
 	if hc.GracePeriod > 0 {
 		var cancel context.CancelFunc
@@ -145,7 +149,7 @@ func (hc *httpModuleConfig) Stop() error {
 	return nil
 }
 
-func (hc *httpModuleConfig) automaticHTTPS(handle caddy2.Handle) error {
+func (hc *App) automaticHTTPS(handle caddy2.Handle) error {
 	tlsAppIface, err := handle.App("tls")
 	if err != nil {
 		return fmt.Errorf("getting tls app: %v", err)
@@ -153,7 +157,7 @@ func (hc *httpModuleConfig) automaticHTTPS(handle caddy2.Handle) error {
 	tlsApp := tlsAppIface.(*caddytls.TLS)
 
 	lnAddrMap := make(map[string]struct{})
-	var redirRoutes routeList
+	var redirRoutes RouteList
 
 	for srvName, srv := range hc.Servers {
 		srv.tlsApp = tlsApp
@@ -222,7 +226,7 @@ func (hc *httpModuleConfig) automaticHTTPS(handle caddy2.Handle) error {
 				}
 				redirTo += "{request.uri}"
 
-				redirRoutes = append(redirRoutes, serverRoute{
+				redirRoutes = append(redirRoutes, ServerRoute{
 					matchers: []RouteMatcher{
 						matchProtocol("http"),
 						matchHost(domains),
@@ -255,7 +259,7 @@ func (hc *httpModuleConfig) automaticHTTPS(handle caddy2.Handle) error {
 			}
 			lnAddrs = append(lnAddrs, addr)
 		}
-		hc.Servers["auto_https_redirects"] = &httpServerConfig{
+		hc.Servers["auto_https_redirects"] = &Server{
 			Listen:           lnAddrs,
 			Routes:           redirRoutes,
 			DisableAutoHTTPS: true,
@@ -265,7 +269,7 @@ func (hc *httpModuleConfig) automaticHTTPS(handle caddy2.Handle) error {
 	return nil
 }
 
-func (hc *httpModuleConfig) listenerTaken(network, address string) bool {
+func (hc *App) listenerTaken(network, address string) bool {
 	for _, srv := range hc.Servers {
 		for _, addr := range srv.Listen {
 			netw, addrs, err := parseListenAddr(addr)
@@ -284,12 +288,13 @@ func (hc *httpModuleConfig) listenerTaken(network, address string) bool {
 
 var defaultALPN = []string{"h2", "http/1.1"}
 
-type httpServerConfig struct {
+// Server is an HTTP server.
+type Server struct {
 	Listen                []string                    `json:"listen"`
 	ReadTimeout           caddy2.Duration             `json:"read_timeout"`
 	ReadHeaderTimeout     caddy2.Duration             `json:"read_header_timeout"`
 	HiddenFiles           []string                    `json:"hidden_files"` // TODO:... experimenting with shared/common state
-	Routes                routeList                   `json:"routes"`
+	Routes                RouteList                   `json:"routes"`
 	Errors                httpErrorConfig             `json:"errors"`
 	TLSConnPolicies       caddytls.ConnectionPolicies `json:"tls_connection_policies"`
 	DisableAutoHTTPS      bool                        `json:"disable_auto_https"`
@@ -299,23 +304,24 @@ type httpServerConfig struct {
 }
 
 type httpErrorConfig struct {
-	Routes routeList `json:"routes"`
-	// TODO: some way to configure the logging of errors, probably? standardize the logging configuration first.
+	Routes RouteList `json:"routes"`
+	// TODO: some way to configure the logging of errors, probably? standardize
+	// the logging configuration first.
 }
 
 // ServeHTTP is the entry point for all HTTP requests.
-func (s httpServerConfig) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (s Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if s.tlsApp.HandleHTTPChallenge(w, r) {
 		return
 	}
 
 	// set up the replacer
-	repl := &Replacer{req: r, resp: w, custom: make(map[string]string)}
+	repl := NewReplacer(r, w)
 	ctx := context.WithValue(r.Context(), ReplacerCtxKey, repl)
 	r = r.WithContext(ctx)
 
 	// build and execute the main middleware chain
-	stack := s.Routes.buildMiddlewareChain(w, r)
+	stack := s.Routes.BuildHandlerChain(w, r)
 	err := executeMiddlewareChain(w, r, stack)
 	if err != nil {
 		// add the error value to the request context so
@@ -328,7 +334,7 @@ func (s httpServerConfig) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			// TODO: implement a default error handler?
 			log.Printf("[ERROR] %s", err)
 		} else {
-			errStack := s.Errors.Routes.buildMiddlewareChain(w, r)
+			errStack := s.Errors.Routes.BuildHandlerChain(w, r)
 			err := executeMiddlewareChain(w, r, errStack)
 			if err != nil {
 				// TODO: what should we do if the error handler has an error?
@@ -411,6 +417,7 @@ func parseListenAddr(a string) (network string, addrs []string, err error) {
 	if err != nil {
 		return
 	}
+	host = NewReplacer(nil, nil).Replace(host, "")
 	ports := strings.SplitN(port, "-", 2)
 	if len(ports) == 1 {
 		ports = append(ports, ports[0])
@@ -473,9 +480,6 @@ func (mrw middlewareResponseWriter) Write(b []byte) (int, error) {
 	}
 	return mrw.ResponseWriterWrapper.Write(b)
 }
-
-// ReplacerCtxKey is the context key for the request's replacer.
-const ReplacerCtxKey caddy2.CtxKey = "replacer"
 
 const (
 	// DefaultHTTPPort is the default port for HTTP.
