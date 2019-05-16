@@ -40,10 +40,10 @@ func (m *acmeManagerMaker) newManager(interactive bool) (certmagic.Manager, erro
 	return nil, nil
 }
 
-func (m *acmeManagerMaker) Provision() error {
+func (m *acmeManagerMaker) Provision(ctx caddy2.Context) error {
 	// DNS providers
 	if m.Challenges.DNS != nil {
-		val, err := caddy2.LoadModuleInline("provider", "tls.dns", m.Challenges.DNS)
+		val, err := ctx.LoadModuleInline("provider", "tls.dns", m.Challenges.DNS)
 		if err != nil {
 			return fmt.Errorf("loading TLS storage module: %s", err)
 		}
@@ -53,7 +53,7 @@ func (m *acmeManagerMaker) Provision() error {
 
 	// policy-specific storage implementation
 	if m.Storage != nil {
-		val, err := caddy2.LoadModuleInline("system", "caddy.storage", m.Storage)
+		val, err := ctx.LoadModuleInline("system", "caddy.storage", m.Storage)
 		if err != nil {
 			return fmt.Errorf("loading TLS storage module: %s", err)
 		}
@@ -93,10 +93,10 @@ func (m *acmeManagerMaker) setDefaults() {
 // makeCertMagicConfig converts m into a certmagic.Config, because
 // this is a special case where the default manager is the certmagic
 // Config and not a separate manager.
-func (m *acmeManagerMaker) makeCertMagicConfig() certmagic.Config {
+func (m *acmeManagerMaker) makeCertMagicConfig(ctx caddy2.Context) certmagic.Config {
 	storage := m.storage
 	if storage == nil {
-		storage = caddy2.GetStorage()
+		storage = ctx.Storage()
 	}
 
 	var ond *certmagic.OnDemandConfig

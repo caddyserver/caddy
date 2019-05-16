@@ -29,11 +29,11 @@ type ServerRoute struct {
 type RouteList []ServerRoute
 
 // Provision sets up all the routes by loading the modules.
-func (routes RouteList) Provision() error {
+func (routes RouteList) Provision(ctx caddy2.Context) error {
 	for i, route := range routes {
 		// matchers
 		for modName, rawMsg := range route.Matchers {
-			val, err := caddy2.LoadModule("http.matchers."+modName, rawMsg)
+			val, err := ctx.LoadModule("http.matchers."+modName, rawMsg)
 			if err != nil {
 				return fmt.Errorf("loading matcher module '%s': %v", modName, err)
 			}
@@ -43,7 +43,7 @@ func (routes RouteList) Provision() error {
 
 		// middleware
 		for j, rawMsg := range route.Apply {
-			mid, err := caddy2.LoadModuleInline("middleware", "http.middleware", rawMsg)
+			mid, err := ctx.LoadModuleInline("middleware", "http.middleware", rawMsg)
 			if err != nil {
 				return fmt.Errorf("loading middleware module in position %d: %v", j, err)
 			}
@@ -53,7 +53,7 @@ func (routes RouteList) Provision() error {
 
 		// responder
 		if route.Respond != nil {
-			resp, err := caddy2.LoadModuleInline("responder", "http.responders", route.Respond)
+			resp, err := ctx.LoadModuleInline("responder", "http.responders", route.Respond)
 			if err != nil {
 				return fmt.Errorf("loading responder module: %v", err)
 			}

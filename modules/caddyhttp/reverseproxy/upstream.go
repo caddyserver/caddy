@@ -76,7 +76,7 @@ var (
 )
 
 // NewLoadBalancedReverseProxy returns a collection of Upstreams that are to be loadbalanced.
-func NewLoadBalancedReverseProxy(lb *LoadBalanced, state *State) error {
+func NewLoadBalancedReverseProxy(lb *LoadBalanced, state *State, ctx caddy2.Context) error {
 	// set defaults
 	if lb.NoHealthyUpstreamsMessage == "" {
 		lb.NoHealthyUpstreamsMessage = msgNoHealthyUpstreams
@@ -115,7 +115,7 @@ func NewLoadBalancedReverseProxy(lb *LoadBalanced, state *State) error {
 
 		if uc.CircuitBreaker != nil {
 			if _, err := caddy2.GetModule(cbModule); err == nil {
-				val, err := caddy2.LoadModule(cbModule, uc.CircuitBreaker)
+				val, err := ctx.LoadModule(cbModule, uc.CircuitBreaker)
 				if err == nil {
 					cbv, ok := val.(CircuitBreaker)
 					if ok {

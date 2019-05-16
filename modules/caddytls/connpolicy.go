@@ -18,11 +18,11 @@ type ConnectionPolicies []*ConnectionPolicy
 // TLSConfig converts the group of policies to a standard-lib-compatible
 // TLS configuration which selects the first matching policy based on
 // the ClientHello.
-func (cp ConnectionPolicies) TLSConfig(handle caddy2.Handle) (*tls.Config, error) {
+func (cp ConnectionPolicies) TLSConfig(ctx caddy2.Context) (*tls.Config, error) {
 	// connection policy matchers
 	for i, pol := range cp {
 		for modName, rawMsg := range pol.MatchersRaw {
-			val, err := caddy2.LoadModule("tls.handshake_match."+modName, rawMsg)
+			val, err := ctx.LoadModule("tls.handshake_match."+modName, rawMsg)
 			if err != nil {
 				return nil, fmt.Errorf("loading handshake matcher module '%s': %s", modName, err)
 			}
@@ -33,7 +33,7 @@ func (cp ConnectionPolicies) TLSConfig(handle caddy2.Handle) (*tls.Config, error
 
 	// pre-build standard TLS configs so we don't have to at handshake-time
 	for i := range cp {
-		err := cp[i].buildStandardTLSConfig(handle)
+		err := cp[i].buildStandardTLSConfig(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("connection policy %d: building standard TLS config: %s", i, err)
 		}
@@ -74,8 +74,8 @@ type ConnectionPolicy struct {
 	stdTLSConfig *tls.Config
 }
 
-func (cp *ConnectionPolicy) buildStandardTLSConfig(handle caddy2.Handle) error {
-	tlsAppIface, err := handle.App("tls")
+func (cp *ConnectionPolicy) buildStandardTLSConfig(ctx caddy2.Context) error {
+	tlsAppIface, err := ctx.App("tls")
 	if err != nil {
 		return fmt.Errorf("getting tls app: %v", err)
 	}

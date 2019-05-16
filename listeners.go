@@ -9,6 +9,7 @@ import (
 )
 
 // Listen returns a listener suitable for use in a Caddy module.
+// Always be sure to close listeners when you are done with them.
 func Listen(network, addr string) (net.Listener, error) {
 	lnKey := network + "/" + addr
 
@@ -16,9 +17,9 @@ func Listen(network, addr string) (net.Listener, error) {
 	defer listenersMu.Unlock()
 
 	// if listener already exists, increment usage counter, then return listener
-	if lnInfo, ok := listeners[lnKey]; ok {
-		atomic.AddInt32(&lnInfo.usage, 1)
-		return &fakeCloseListener{usage: &lnInfo.usage, Listener: lnInfo.ln}, nil
+	if lnUsage, ok := listeners[lnKey]; ok {
+		atomic.AddInt32(&lnUsage.usage, 1)
+		return &fakeCloseListener{usage: &lnUsage.usage, key: lnKey, Listener: lnUsage.ln}, nil
 	}
 
 	// or, create new one and save it
@@ -28,10 +29,10 @@ func Listen(network, addr string) (net.Listener, error) {
 	}
 
 	// make sure to start its usage counter at 1
-	lnInfo := &listenerUsage{usage: 1, ln: ln}
-	listeners[lnKey] = lnInfo
+	lnUsage := &listenerUsage{usage: 1, ln: ln}
+	listeners[lnKey] = lnUsage
 
-	return &fakeCloseListener{usage: &lnInfo.usage, Listener: ln}, nil
+	return &fakeCloseListener{usage: &lnUsage.usage, key: lnKey, Listener: ln}, nil
 }
 
 // fakeCloseListener's Close() method is a no-op. This allows
@@ -42,6 +43,7 @@ func Listen(network, addr string) (net.Listener, error) {
 type fakeCloseListener struct {
 	closed int32  // accessed atomically
 	usage  *int32 // accessed atomically
+	key    string
 	net.Listener
 }
 
@@ -80,8 +82,9 @@ func (fcl *fakeCloseListener) Accept() (net.Conn, error) {
 	return nil, err
 }
 
-// Close stops accepting new connections, but does not
-// actually close the underlying listener.
+// Close stops accepting new connections without
+// closing the underlying listener, unless no one
+// else is using it.
 func (fcl *fakeCloseListener) Close() error {
 	if atomic.CompareAndSwapInt32(&fcl.closed, 0, 1) {
 		// unfortunately, there is no way to cancel any
@@ -99,8 +102,18 @@ func (fcl *fakeCloseListener) Close() error {
 		}
 
 		// since we're no longer using this listener,
-		// decrement the usage counter
-		atomic.AddInt32(fcl.usage, -1)
+		// decrement the usage counter and, if no one
+		// else is using it, close underlying listener
+		if atomic.AddInt32(fcl.usage, -1) == 0 {
+			listenersMu.Lock()
+			delete(listeners, fcl.key)
+			listenersMu.Unlock()
+			err := fcl.Listener.Close()
+			if err != nil {
+				return err
+			}
+		}
+
 	}
 
 	return nil

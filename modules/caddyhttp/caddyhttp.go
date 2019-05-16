@@ -37,16 +37,20 @@ type App struct {
 	Servers     map[string]*Server `json:"servers"`
 
 	servers []*http.Server
+
+	ctx caddy2.Context
 }
 
 // Provision sets up the app.
-func (hc *App) Provision() error {
-	for _, srv := range hc.Servers {
-		err := srv.Routes.Provision()
+func (app *App) Provision(ctx caddy2.Context) error {
+	app.ctx = ctx
+
+	for _, srv := range app.Servers {
+		err := srv.Routes.Provision(ctx)
 		if err != nil {
 			return fmt.Errorf("setting up server routes: %v", err)
 		}
-		err = srv.Errors.Routes.Provision()
+		err = srv.Errors.Routes.Provision(ctx)
 		if err != nil {
 			return fmt.Errorf("setting up server error handling routes: %v", err)
 		}
@@ -56,10 +60,10 @@ func (hc *App) Provision() error {
 }
 
 // Validate ensures the app's configuration is valid.
-func (hc *App) Validate() error {
+func (app *App) Validate() error {
 	// each server must use distinct listener addresses
 	lnAddrs := make(map[string]string)
-	for srvName, srv := range hc.Servers {
+	for srvName, srv := range app.Servers {
 		for _, addr := range srv.Listen {
 			netw, expanded, err := parseListenAddr(addr)
 			if err != nil {
@@ -78,13 +82,13 @@ func (hc *App) Validate() error {
 }
 
 // Start runs the app. It sets up automatic HTTPS if enabled.
-func (hc *App) Start(handle caddy2.Handle) error {
-	err := hc.automaticHTTPS(handle)
+func (app *App) Start() error {
+	err := app.automaticHTTPS()
 	if err != nil {
 		return fmt.Errorf("enabling automatic HTTPS: %v", err)
 	}
 
-	for srvName, srv := range hc.Servers {
+	for srvName, srv := range app.Servers {
 		s := &http.Server{
 			ReadTimeout:       time.Duration(srv.ReadTimeout),
 			ReadHeaderTimeout: time.Duration(srv.ReadHeaderTimeout),
@@ -110,13 +114,13 @@ func (hc *App) Start(handle caddy2.Handle) error {
 				}
 
 				// enable TLS
-				httpPort := hc.HTTPPort
+				httpPort := app.HTTPPort
 				if httpPort == 0 {
 					httpPort = DefaultHTTPPort
 				}
 				_, port, _ := net.SplitHostPort(addr)
 				if len(srv.TLSConnPolicies) > 0 && port != strconv.Itoa(httpPort) {
-					tlsCfg, err := srv.TLSConnPolicies.TLSConfig(handle)
+					tlsCfg, err := srv.TLSConnPolicies.TLSConfig(app.ctx)
 					if err != nil {
 						return fmt.Errorf("%s/%s: making TLS configuration: %v", network, addr, err)
 					}
@@ -124,7 +128,7 @@ func (hc *App) Start(handle caddy2.Handle) error {
 				}
 
 				go s.Serve(ln)
-				hc.servers = append(hc.servers, s)
+				app.servers = append(app.servers, s)
 			}
 		}
 	}
@@ -133,14 +137,14 @@ func (hc *App) Start(handle caddy2.Handle) error {
 }
 
 // Stop gracefully shuts down the HTTP server.
-func (hc *App) Stop() error {
+func (app *App) Stop() error {
 	ctx := context.Background()
-	if hc.GracePeriod > 0 {
+	if app.GracePeriod > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, time.Duration(hc.GracePeriod))
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(app.GracePeriod))
 		defer cancel()
 	}
-	for _, s := range hc.servers {
+	for _, s := range app.servers {
 		err := s.Shutdown(ctx)
 		if err != nil {
 			return err
@@ -149,8 +153,8 @@ func (hc *App) Stop() error {
 	return nil
 }
 
-func (hc *App) automaticHTTPS(handle caddy2.Handle) error {
-	tlsAppIface, err := handle.App("tls")
+func (app *App) automaticHTTPS() error {
+	tlsAppIface, err := app.ctx.App("tls")
 	if err != nil {
 		return fmt.Errorf("getting tls app: %v", err)
 	}
@@ -159,7 +163,7 @@ func (hc *App) automaticHTTPS(handle caddy2.Handle) error {
 	lnAddrMap := make(map[string]struct{})
 	var redirRoutes RouteList
 
-	for srvName, srv := range hc.Servers {
+	for srvName, srv := range app.Servers {
 		srv.tlsApp = tlsApp
 
 		if srv.DisableAutoHTTPS {
@@ -209,7 +213,7 @@ func (hc *App) automaticHTTPS(handle caddy2.Handle) error {
 				if err != nil {
 					return fmt.Errorf("%s: invalid listener address: %v", srvName, addr)
 				}
-				httpRedirLnAddr := joinListenAddr(netw, host, strconv.Itoa(hc.HTTPPort))
+				httpRedirLnAddr := joinListenAddr(netw, host, strconv.Itoa(app.HTTPPort))
 				lnAddrMap[httpRedirLnAddr] = struct{}{}
 
 				if parts := strings.SplitN(port, "-", 2); len(parts) == 2 {
@@ -217,7 +221,7 @@ func (hc *App) automaticHTTPS(handle caddy2.Handle) error {
 				}
 				redirTo := "https://{request.host}"
 
-				httpsPort := hc.HTTPSPort
+				httpsPort := app.HTTPSPort
 				if httpsPort == 0 {
 					httpsPort = DefaultHTTPSPort
 				}
@@ -253,13 +257,13 @@ func (hc *App) automaticHTTPS(handle caddy2.Handle) error {
 				continue
 			}
 			for _, a := range addrs {
-				if hc.listenerTaken(netw, a) {
+				if app.listenerTaken(netw, a) {
 					continue mapLoop
 				}
 			}
 			lnAddrs = append(lnAddrs, addr)
 		}
-		hc.Servers["auto_https_redirects"] = &Server{
+		app.Servers["auto_https_redirects"] = &Server{
 			Listen:           lnAddrs,
 			Routes:           redirRoutes,
 			DisableAutoHTTPS: true,
@@ -269,8 +273,8 @@ func (hc *App) automaticHTTPS(handle caddy2.Handle) error {
 	return nil
 }
 
-func (hc *App) listenerTaken(network, address string) bool {
-	for _, srv := range hc.Servers {
+func (app *App) listenerTaken(network, address string) bool {
+	for _, srv := range app.Servers {
 		for _, addr := range srv.Listen {
 			netw, addrs, err := parseListenAddr(addr)
 			if err != nil || netw != network {
@@ -491,3 +495,4 @@ const (
 
 // Interface guards
 var _ HTTPInterfaces = middlewareResponseWriter{}
+var _ caddy2.App = (*App)(nil)

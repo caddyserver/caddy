@@ -26,10 +26,13 @@ type TLS struct {
 
 	certificateLoaders []CertificateLoader
 	certCache          *certmagic.Cache
+	ctx                caddy2.Context
 }
 
 // Provision sets up the configuration for the TLS app.
-func (t *TLS) Provision() error {
+func (t *TLS) Provision(ctx caddy2.Context) error {
+	t.ctx = ctx
+
 	// set up the certificate cache
 	// TODO: this makes a new cache every time; better to only make a new
 	// cache (or even better, add/remove only what is necessary) if the
@@ -41,7 +44,7 @@ func (t *TLS) Provision() error {
 	})
 
 	for i, ap := range t.Automation.Policies {
-		val, err := caddy2.LoadModuleInline("module", "tls.management", ap.Management)
+		val, err := ctx.LoadModuleInline("module", "tls.management", ap.Management)
 		if err != nil {
 			return fmt.Errorf("loading TLS automation management module: %s", err)
 		}
@@ -54,7 +57,7 @@ func (t *TLS) Provision() error {
 		if modName == automateKey {
 			continue // special case; these will be loaded in later
 		}
-		val, err := caddy2.LoadModule("tls.certificates."+modName, rawMsg)
+		val, err := ctx.LoadModule("tls.certificates."+modName, rawMsg)
 		if err != nil {
 			return fmt.Errorf("loading certificate module '%s': %s", modName, err)
 		}
@@ -65,7 +68,7 @@ func (t *TLS) Provision() error {
 }
 
 // Start activates the TLS module.
-func (t *TLS) Start(handle caddy2.Handle) error {
+func (t *TLS) Start() error {
 	// load manual/static (unmanaged) certificates
 	for _, loader := range t.certificateLoaders {
 		certs, err := loader.LoadCertificates()
@@ -73,7 +76,7 @@ func (t *TLS) Start(handle caddy2.Handle) error {
 			return fmt.Errorf("loading certificates: %v", err)
 		}
 		magic := certmagic.New(t.certCache, certmagic.Config{
-			Storage: caddy2.GetStorage(),
+			Storage: t.ctx.Storage(),
 		})
 		for _, cert := range certs {
 			err := magic.CacheUnmanagedTLSCertificate(cert)
@@ -114,7 +117,7 @@ func (t *TLS) Stop() error {
 func (t *TLS) Manage(names []string) error {
 	for _, name := range names {
 		ap := t.getAutomationPolicyForName(name)
-		magic := certmagic.New(t.certCache, ap.makeCertMagicConfig())
+		magic := certmagic.New(t.certCache, ap.makeCertMagicConfig(t.ctx))
 		err := magic.Manage([]string{name})
 		if err != nil {
 			return fmt.Errorf("automate: manage %s: %v", name, err)
@@ -130,13 +133,13 @@ func (t *TLS) HandleHTTPChallenge(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 	ap := t.getAutomationPolicyForName(r.Host)
-	magic := certmagic.New(t.certCache, ap.makeCertMagicConfig())
+	magic := certmagic.New(t.certCache, ap.makeCertMagicConfig(t.ctx))
 	return magic.HandleHTTPChallenge(w, r)
 }
 
 func (t *TLS) getConfigForName(name string) (certmagic.Config, error) {
 	ap := t.getAutomationPolicyForName(name)
-	return ap.makeCertMagicConfig(), nil
+	return ap.makeCertMagicConfig(t.ctx), nil
 }
 
 func (t *TLS) getAutomationPolicyForName(name string) AutomationPolicy {
@@ -178,12 +181,12 @@ type AutomationPolicy struct {
 	management ManagerMaker
 }
 
-func (ap AutomationPolicy) makeCertMagicConfig() certmagic.Config {
+func (ap AutomationPolicy) makeCertMagicConfig(ctx caddy2.Context) certmagic.Config {
 	// default manager (ACME) is a special case because of how CertMagic is designed
 	// TODO: refactor certmagic so that ACME manager is not a special case by extracting
 	// its config fields out of the certmagic.Config struct, or something...
 	if acmeMgmt, ok := ap.management.(*acmeManagerMaker); ok {
-		return acmeMgmt.makeCertMagicConfig()
+		return acmeMgmt.makeCertMagicConfig(ctx)
 	}
 
 	return certmagic.Config{
