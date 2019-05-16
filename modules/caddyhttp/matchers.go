@@ -233,14 +233,14 @@ func (mre *matchRegexp) match(input string, repl *Replacer, scope string) bool {
 
 	// save all capture groups, first by index
 	for i, match := range matches {
-		key := fmt.Sprintf("http.matchers.%s.%s.%d", scope, mre.Name, i)
+		key := fmt.Sprintf("matchers.%s.%s.%d", scope, mre.Name, i)
 		repl.Map(key, match)
 	}
 
 	// then by name
 	for i, name := range mre.compiled.SubexpNames() {
 		if i != 0 && name != "" {
-			key := fmt.Sprintf("http.matchers.%s.%s.%s", scope, mre.Name, name)
+			key := fmt.Sprintf("matchers.%s.%s.%s", scope, mre.Name, name)
 			repl.Map(key, matches[i])
 		}
 	}

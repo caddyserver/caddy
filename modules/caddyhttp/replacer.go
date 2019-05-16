@@ -93,19 +93,20 @@ func (r *Replacer) defaults() map[string]string {
 		m["request.uri"] = r.req.URL.RequestURI()
 		m["request.uri.path"] = r.req.URL.Path
 
-		// TODO: why should header fields, cookies, and query params get special treatment like this?
-		// maybe they should be scoped by words like "request.header." just like everything else.
 		for field, vals := range r.req.Header {
-			m[">"+strings.ToLower(field)] = strings.Join(vals, ",")
-		}
-		for field, vals := range r.resp.Header() {
-			m["<"+strings.ToLower(field)] = strings.Join(vals, ",")
+			m["request.header."+strings.ToLower(field)] = strings.Join(vals, ",")
 		}
 		for _, cookie := range r.req.Cookies() {
-			m["~"+cookie.Name] = cookie.Value
+			m["request.cookie."+cookie.Name] = cookie.Value
 		}
 		for param, vals := range r.req.URL.Query() {
-			m["?"+param] = strings.Join(vals, ",")
+			m["request.uri.query."+param] = strings.Join(vals, ",")
+		}
+	}
+
+	if r.resp != nil {
+		for field, vals := range r.resp.Header() {
+			m["response.header."+strings.ToLower(field)] = strings.Join(vals, ",")
 		}
 	}
 

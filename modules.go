@@ -22,27 +22,6 @@ type Module struct {
 	// It must return a pointer; if not, it
 	// is converted into one.
 	New func() (interface{}, error)
-
-	// OnLoad is invoked after all module
-	// instances ave been loaded. It receives
-	// pointers to each instance of this
-	// module, and any state from a previous
-	// running configuration, which may be
-	// nil.
-	//
-	// If this module is to carry "global"
-	// state between all instances through
-	// reloads, you might find it helpful
-	// to return it.
-	// TODO: Is this really better/safer than a global variable?
-	OnLoad func(instances []interface{}, priorState interface{}) (newState interface{}, err error)
-
-	// OnUnload is called after all module
-	// instances have been stopped, possibly
-	// in favor of a new configuration. It
-	// receives the state given by OnLoad (if
-	// any).
-	OnUnload func(state interface{}) error
 }
 
 func (m Module) String() string { return m.Name }
@@ -52,6 +31,9 @@ func (m Module) String() string { return m.Name }
 func RegisterModule(mod Module) error {
 	if mod.Name == "caddy" {
 		return fmt.Errorf("modules cannot be named 'caddy'")
+	}
+	if strings.HasPrefix(mod.Name, "caddy.") {
+		return fmt.Errorf("modules cannot be namespaced in 'caddy'")
 	}
 
 	modulesMu.Lock()

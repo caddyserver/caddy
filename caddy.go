@@ -100,33 +100,6 @@ func Run(cfg *Config) error {
 		}
 	}()
 
-	// OnLoad
-	err = func() error {
-		for modName, instances := range moduleInstances {
-			mod, err := GetModule(modName)
-			if err != nil {
-				return err
-			}
-			if mod.OnLoad != nil {
-				var priorState interface{}
-				if oldCfg != nil {
-					priorState = oldCfg.moduleStates[modName]
-				}
-				modState, err := mod.OnLoad(instances, priorState)
-				if err != nil {
-					return fmt.Errorf("module OnLoad: %s: %v", modName, err)
-				}
-				if modState != nil {
-					cfg.moduleStates[modName] = modState
-				}
-			}
-		}
-		return nil
-	}()
-	if err != nil {
-		return err
-	}
-
 	// Start
 	err = func() error {
 		h := Handle{cfg}
@@ -156,31 +129,6 @@ func Run(cfg *Config) error {
 				log.Printf("[ERROR] stop %s: %v", name, err)
 			}
 		}
-	}
-
-	// OnUnload
-	err = func() error {
-		for modName := range oldModuleInstances {
-			mod, err := GetModule(modName)
-			if err != nil {
-				return err
-			}
-			if mod.OnUnload != nil {
-				var unloadingState interface{}
-				if oldCfg != nil {
-					unloadingState = oldCfg.moduleStates[modName]
-				}
-				err := mod.OnUnload(unloadingState)
-				if err != nil {
-					log.Printf("[ERROR] module OnUnload: %s: %v", modName, err)
-					continue
-				}
-			}
-		}
-		return nil
-	}()
-	if err != nil {
-		return err
 	}
 
 	// shut down listeners that are no longer being used
@@ -240,7 +188,7 @@ type Handle struct {
 
 // App returns the configured app named name. If no app with
 // that name is currently configured, a new empty one will be
-// instantiated. (The app module must still be plugged in.)
+// instantiated. (The app module must still be registered.)
 func (h Handle) App(name string) (interface{}, error) {
 	if app, ok := h.current.apps[name]; ok {
 		return app, nil

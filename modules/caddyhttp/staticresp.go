@@ -25,7 +25,7 @@ type Static struct {
 func (s Static) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
 	repl := r.Context().Value(ReplacerCtxKey).(*Replacer)
 
-	// close the connection
+	// close the connection after responding
 	r.Close = s.Close
 
 	// set all headers, with replacements

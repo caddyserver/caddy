@@ -13,24 +13,6 @@ func init() {
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "http.middleware.log",
 		New:  func() (interface{}, error) { return new(Log), nil },
-		// TODO: Examples of OnLoad and OnUnload.
-		OnLoad: func(instances []interface{}, priorState interface{}) (interface{}, error) {
-			var counter int
-			if priorState != nil {
-				counter = priorState.(int)
-			}
-			counter++
-			for _, inst := range instances {
-				logInst := inst.(*Log)
-				logInst.counter = counter
-			}
-			log.Println("State is now:", counter)
-			return counter, nil
-		},
-		OnUnload: func(state interface{}) error {
-			log.Println("Closing log files, state:", state)
-			return nil
-		},
 	})
 }
 
