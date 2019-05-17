@@ -136,23 +136,32 @@ func getModuleNameInline(moduleNameKey string, raw json.RawMessage) (string, err
 	return moduleName, nil
 }
 
-// Validator is implemented by modules which can verify that their
-// configurations are valid. This method will be called after New()
-// instantiations of modules (if implemented). Validation should
-// always be fast (imperceptible running time) and an error should
-// be returned only if the value's configuration is invalid.
-type Validator interface {
-	Validate(Context) error
-}
-
 // Provisioner is implemented by modules which may need to perform
 // some additional "setup" steps immediately after being loaded.
-// This method will be called after Validate() (if implemented).
+// Provisioning should be fast (imperceptible running time). If
+// any side-effects result in the execution of this function (e.g.
+// creating global state, any other allocations which require
+// garbage collection, opening files, starting goroutines etc.),
+// be sure to clean up properly by implementing the CleanerUpper
+// interface to avoid leaking resources.
 type Provisioner interface {
 	Provision(Context) error
 }
 
-// TODO: different name...
+// Validator is implemented by modules which can verify that their
+// configurations are valid. This method will be called after
+// Provision() (if implemented). Validation should always be fast
+// (imperceptible running time) and an error should be returned only
+// if the value's configuration is invalid.
+type Validator interface {
+	Validate() error
+}
+
+// CleanerUpper is implemented by modules which may have side-effects
+// such as opened files, spawned goroutines, or allocated some sort
+// of non-local state when they were provisioned. This method should
+// deallocate/cleanup those resources to prevent memory leaks. Cleanup
+// should be fast and efficient.
 type CleanerUpper interface {
 	Cleanup() error
 }
