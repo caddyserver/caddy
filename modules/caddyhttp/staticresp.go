@@ -23,16 +23,16 @@ type Static struct {
 }
 
 func (s Static) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
-	repl := r.Context().Value(ReplacerCtxKey).(*Replacer)
+	repl := r.Context().Value(caddy2.ReplacerCtxKey).(caddy2.Replacer)
 
 	// close the connection after responding
 	r.Close = s.Close
 
 	// set all headers, with replacements
 	for field, vals := range s.Headers {
-		field = repl.Replace(field, "")
+		field = repl.ReplaceAll(field, "")
 		for i := range vals {
-			vals[i] = repl.Replace(vals[i], "")
+			vals[i] = repl.ReplaceAll(vals[i], "")
 		}
 		w.Header()[field] = vals
 	}
@@ -46,7 +46,7 @@ func (s Static) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
 
 	// write the response body, with replacements
 	if s.Body != "" {
-		fmt.Fprint(w, repl.Replace(s.Body, ""))
+		fmt.Fprint(w, repl.ReplaceAll(s.Body, ""))
 	}
 
 	return nil

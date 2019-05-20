@@ -1,7 +1,6 @@
 package caddyhttp
 
 import (
-	"os"
 	"reflect"
 	"testing"
 )
@@ -115,11 +114,6 @@ func TestJoinListenerAddr(t *testing.T) {
 }
 
 func TestParseListenerAddr(t *testing.T) {
-	hostname, err := os.Hostname()
-	if err != nil {
-		t.Fatalf("Cannot ascertain system hostname: %v", err)
-	}
-
 	for i, tc := range []struct {
 		input         string
 		expectNetwork string
@@ -175,11 +169,6 @@ func TestParseListenerAddr(t *testing.T) {
 			input:         "localhost:0",
 			expectNetwork: "tcp",
 			expectAddrs:   []string{"localhost:0"},
-		},
-		{
-			input:         "{system.hostname}:0",
-			expectNetwork: "tcp",
-			expectAddrs:   []string{hostname + ":0"},
 		},
 	} {
 		actualNetwork, actualAddrs, err := parseListenAddr(tc.input)

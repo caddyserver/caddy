@@ -45,7 +45,13 @@ type App struct {
 func (app *App) Provision(ctx caddy2.Context) error {
 	app.ctx = ctx
 
+	repl := caddy2.NewReplacer()
+
 	for _, srv := range app.Servers {
+		// TODO: Test this function to ensure these replacements are performed
+		for i := range srv.Listen {
+			srv.Listen[i] = repl.ReplaceAll(srv.Listen[i], "")
+		}
 		err := srv.Routes.Provision(ctx)
 		if err != nil {
 			return fmt.Errorf("setting up server routes: %v", err)
@@ -75,6 +81,13 @@ func (app *App) Validate() error {
 				}
 				lnAddrs[netw+a] = srvName
 			}
+		}
+	}
+
+	// each server's max rehandle value must be valid
+	for srvName, srv := range app.Servers {
+		if srv.MaxRehandles < 0 {
+			return fmt.Errorf("%s: invalid max_rehandles value: %d", srvName, srv.MaxRehandles)
 		}
 	}
 
@@ -231,7 +244,7 @@ func (app *App) automaticHTTPS() error {
 				redirTo += "{request.uri}"
 
 				redirRoutes = append(redirRoutes, ServerRoute{
-					matchers: []RouteMatcher{
+					matchers: []RequestMatcher{
 						matchProtocol("http"),
 						matchHost(domains),
 					},
@@ -292,84 +305,9 @@ func (app *App) listenerTaken(network, address string) bool {
 
 var defaultALPN = []string{"h2", "http/1.1"}
 
-// Server is an HTTP server.
-type Server struct {
-	Listen                []string                    `json:"listen"`
-	ReadTimeout           caddy2.Duration             `json:"read_timeout"`
-	ReadHeaderTimeout     caddy2.Duration             `json:"read_header_timeout"`
-	HiddenFiles           []string                    `json:"hidden_files"` // TODO:... experimenting with shared/common state
-	Routes                RouteList                   `json:"routes"`
-	Errors                httpErrorConfig             `json:"errors"`
-	TLSConnPolicies       caddytls.ConnectionPolicies `json:"tls_connection_policies"`
-	DisableAutoHTTPS      bool                        `json:"disable_auto_https"`
-	DisableAutoHTTPSRedir bool                        `json:"disable_auto_https_redir"`
-
-	tlsApp *caddytls.TLS
-}
-
-type httpErrorConfig struct {
-	Routes RouteList `json:"routes"`
-	// TODO: some way to configure the logging of errors, probably? standardize
-	// the logging configuration first.
-}
-
-// ServeHTTP is the entry point for all HTTP requests.
-func (s Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if s.tlsApp.HandleHTTPChallenge(w, r) {
-		return
-	}
-
-	// set up the replacer
-	repl := NewReplacer(r, w)
-	ctx := context.WithValue(r.Context(), ReplacerCtxKey, repl)
-	r = r.WithContext(ctx)
-
-	// build and execute the main middleware chain
-	stack := s.Routes.BuildHandlerChain(w, r)
-	err := executeMiddlewareChain(w, r, stack)
-	if err != nil {
-		// add the error value to the request context so
-		// it can be accessed by error handlers
-		c := context.WithValue(r.Context(), ErrorCtxKey, err)
-		r = r.WithContext(c)
-		// TODO: add error values to Replacer
-
-		if len(s.Errors.Routes) == 0 {
-			// TODO: implement a default error handler?
-			log.Printf("[ERROR] %s", err)
-		} else {
-			errStack := s.Errors.Routes.BuildHandlerChain(w, r)
-			err := executeMiddlewareChain(w, r, errStack)
-			if err != nil {
-				// TODO: what should we do if the error handler has an error?
-				log.Printf("[ERROR] handling error: %v", err)
-			}
-		}
-	}
-}
-
-// executeMiddlewareChain executes stack with w and r. This function handles
-// the special ErrRehandle error value, which reprocesses requests through
-// the stack again. Any error value returned from this function would be an
-// actual error that needs to be handled.
-func executeMiddlewareChain(w http.ResponseWriter, r *http.Request, stack Handler) error {
-	const maxRehandles = 3
-	var err error
-	for i := 0; i < maxRehandles; i++ {
-		err = stack.ServeHTTP(w, r)
-		if err != ErrRehandle {
-			break
-		}
-		if i == maxRehandles-1 {
-			return fmt.Errorf("too many rehandles")
-		}
-	}
-	return err
-}
-
-// RouteMatcher is a type that can match to a request.
+// RequestMatcher is a type that can match to a request.
 // A route matcher MUST NOT modify the request.
-type RouteMatcher interface {
+type RequestMatcher interface {
 	Match(*http.Request) bool
 }
 
@@ -421,7 +359,6 @@ func parseListenAddr(a string) (network string, addrs []string, err error) {
 	if err != nil {
 		return
 	}
-	host = NewReplacer(nil, nil).Replace(host, "")
 	ports := strings.SplitN(port, "-", 2)
 	if len(ports) == 1 {
 		ports = append(ports, ports[0])
@@ -466,25 +403,6 @@ func joinListenAddr(network, host, port string) string {
 	return a
 }
 
-type middlewareResponseWriter struct {
-	*ResponseWriterWrapper
-	allowWrites bool
-}
-
-func (mrw middlewareResponseWriter) WriteHeader(statusCode int) {
-	if !mrw.allowWrites {
-		panic("WriteHeader: middleware cannot write to the response")
-	}
-	mrw.ResponseWriterWrapper.WriteHeader(statusCode)
-}
-
-func (mrw middlewareResponseWriter) Write(b []byte) (int, error) {
-	if !mrw.allowWrites {
-		panic("Write: middleware cannot write to the response")
-	}
-	return mrw.ResponseWriterWrapper.Write(b)
-}
-
 const (
 	// DefaultHTTPPort is the default port for HTTP.
 	DefaultHTTPPort = 80
@@ -493,6 +411,5 @@ const (
 	DefaultHTTPSPort = 443
 )
 
-// Interface guards
-var _ HTTPInterfaces = middlewareResponseWriter{}
+// Interface guard
 var _ caddy2.App = (*App)(nil)

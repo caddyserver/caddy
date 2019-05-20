@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/textproto"
 	"net/url"
+	"path"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -15,15 +17,16 @@ import (
 )
 
 type (
-	matchHost     []string
-	matchPath     []string
-	matchPathRE   struct{ matchRegexp }
-	matchMethod   []string
-	matchQuery    url.Values
-	matchHeader   http.Header
-	matchHeaderRE map[string]*matchRegexp
-	matchProtocol string
-	matchStarlark string
+	matchHost         []string
+	matchPath         []string
+	matchPathRE       struct{ matchRegexp }
+	matchMethod       []string
+	matchQuery        url.Values
+	matchHeader       http.Header
+	matchHeaderRE     map[string]*matchRegexp
+	matchProtocol     string
+	matchStarlarkExpr string
+	matchTable        string
 )
 
 func init() {
@@ -60,8 +63,8 @@ func init() {
 		New:  func() (interface{}, error) { return new(matchProtocol), nil },
 	})
 	caddy2.RegisterModule(caddy2.Module{
-		Name: "http.matchers.caddyscript",
-		New:  func() (interface{}, error) { return new(matchStarlark), nil },
+		Name: "http.matchers.starlark_expr",
+		New:  func() (interface{}, error) { return new(matchStarlarkExpr), nil },
 	})
 }
 
@@ -91,8 +94,17 @@ outer:
 }
 
 func (m matchPath) Match(r *http.Request) bool {
-	for _, path := range m {
-		if strings.HasPrefix(r.URL.Path, path) {
+	for _, matchPath := range m {
+		compare := r.URL.Path
+		if strings.HasPrefix(matchPath, "*") {
+			compare = path.Base(compare)
+		}
+		// can ignore error here because we can't handle it anyway
+		matches, _ := filepath.Match(matchPath, compare)
+		if matches {
+			return true
+		}
+		if strings.HasPrefix(r.URL.Path, matchPath) {
 			return true
 		}
 	}
@@ -100,7 +112,7 @@ func (m matchPath) Match(r *http.Request) bool {
 }
 
 func (m matchPathRE) Match(r *http.Request) bool {
-	repl := r.Context().Value(ReplacerCtxKey).(*Replacer)
+	repl := r.Context().Value(caddy2.ReplacerCtxKey).(caddy2.Replacer)
 	return m.match(r.URL.Path, repl, "path_regexp")
 }
 
@@ -147,7 +159,7 @@ func (m matchHeader) Match(r *http.Request) bool {
 
 func (m matchHeaderRE) Match(r *http.Request) bool {
 	for field, rm := range m {
-		repl := r.Context().Value(ReplacerCtxKey).(*Replacer)
+		repl := r.Context().Value(caddy2.ReplacerCtxKey).(caddy2.Replacer)
 		match := rm.match(r.Header.Get(field), repl, "header_regexp")
 		if !match {
 			return false
@@ -188,7 +200,7 @@ func (m matchProtocol) Match(r *http.Request) bool {
 	return false
 }
 
-func (m matchStarlark) Match(r *http.Request) bool {
+func (m matchStarlarkExpr) Match(r *http.Request) bool {
 	input := string(m)
 	thread := new(starlark.Thread)
 	env := caddyscript.MatcherEnv(r)
@@ -225,7 +237,7 @@ func (mre *matchRegexp) Validate() error {
 	return nil
 }
 
-func (mre *matchRegexp) match(input string, repl *Replacer, scope string) bool {
+func (mre *matchRegexp) match(input string, repl caddy2.Replacer, scope string) bool {
 	matches := mre.compiled.FindStringSubmatch(input)
 	if matches == nil {
 		return false
@@ -234,14 +246,14 @@ func (mre *matchRegexp) match(input string, repl *Replacer, scope string) bool {
 	// save all capture groups, first by index
 	for i, match := range matches {
 		key := fmt.Sprintf("matchers.%s.%s.%d", scope, mre.Name, i)
-		repl.Map(key, match)
+		repl.Set(key, match)
 	}
 
 	// then by name
 	for i, name := range mre.compiled.SubexpNames() {
 		if i != 0 && name != "" {
 			key := fmt.Sprintf("matchers.%s.%s.%s", scope, mre.Name, name)
-			repl.Map(key, matches[i])
+			repl.Set(key, matches[i])
 		}
 	}
 
@@ -252,13 +264,13 @@ var wordRE = regexp.MustCompile(`\w+`)
 
 // Interface guards
 var (
-	_ RouteMatcher = (*matchHost)(nil)
-	_ RouteMatcher = (*matchPath)(nil)
-	_ RouteMatcher = (*matchPathRE)(nil)
-	_ RouteMatcher = (*matchMethod)(nil)
-	_ RouteMatcher = (*matchQuery)(nil)
-	_ RouteMatcher = (*matchHeader)(nil)
-	_ RouteMatcher = (*matchHeaderRE)(nil)
-	_ RouteMatcher = (*matchProtocol)(nil)
-	_ RouteMatcher = (*matchStarlark)(nil)
+	_ RequestMatcher = (*matchHost)(nil)
+	_ RequestMatcher = (*matchPath)(nil)
+	_ RequestMatcher = (*matchPathRE)(nil)
+	_ RequestMatcher = (*matchMethod)(nil)
+	_ RequestMatcher = (*matchQuery)(nil)
+	_ RequestMatcher = (*matchHeader)(nil)
+	_ RequestMatcher = (*matchHeaderRE)(nil)
+	_ RequestMatcher = (*matchProtocol)(nil)
+	_ RequestMatcher = (*matchStarlarkExpr)(nil)
 )

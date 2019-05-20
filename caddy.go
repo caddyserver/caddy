@@ -34,7 +34,7 @@ func Run(newCfg *Config) error {
 		// modules - essentially our new config's
 		// execution environment; be sure that
 		// cleanup occurs when we return if there
-		// was an error; otherwise, it will get
+		// was an error; if no error, it will get
 		// cleaned up on next config cycle
 		ctx, cancel := NewContext(Context{Context: context.Background(), cfg: newCfg})
 		defer func() {
@@ -139,7 +139,6 @@ type Config struct {
 	StorageRaw json.RawMessage `json:"storage"`
 	storage    certmagic.Storage
 
-	TestVal string                     `json:"testval"`
 	AppsRaw map[string]json.RawMessage `json:"apps"`
 
 	// apps stores the decoded Apps values,

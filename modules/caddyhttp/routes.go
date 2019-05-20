@@ -12,6 +12,7 @@ import (
 // middlewares, and a responder for handling HTTP
 // requests.
 type ServerRoute struct {
+	Group    string                     `json:"group"`
 	Matchers map[string]json.RawMessage `json:"match"`
 	Apply    []json.RawMessage          `json:"apply"`
 	Respond  json.RawMessage            `json:"respond"`
@@ -19,7 +20,7 @@ type ServerRoute struct {
 	Terminal bool `json:"terminal"`
 
 	// decoded values
-	matchers   []RouteMatcher
+	matchers   []RequestMatcher
 	middleware []MiddlewareHandler
 	responder  Handler
 }
@@ -37,7 +38,7 @@ func (routes RouteList) Provision(ctx caddy2.Context) error {
 			if err != nil {
 				return fmt.Errorf("loading matcher module '%s': %v", modName, err)
 			}
-			routes[i].matchers = append(routes[i].matchers, val.(RouteMatcher))
+			routes[i].matchers = append(routes[i].matchers, val.(RequestMatcher))
 		}
 		routes[i].Matchers = nil // allow GC to deallocate - TODO: Does this help?
 
@@ -64,9 +65,9 @@ func (routes RouteList) Provision(ctx caddy2.Context) error {
 	return nil
 }
 
-// BuildHandlerChain creates a chain of handlers by
+// BuildCompositeRoute creates a chain of handlers by
 // applying all the matching routes.
-func (routes RouteList) BuildHandlerChain(w http.ResponseWriter, r *http.Request) Handler {
+func (routes RouteList) BuildCompositeRoute(w http.ResponseWriter, r *http.Request) Handler {
 	if len(routes) == 0 {
 		return emptyHandler
 	}
@@ -74,17 +75,39 @@ func (routes RouteList) BuildHandlerChain(w http.ResponseWriter, r *http.Request
 	var mid []Middleware
 	var responder Handler
 	mrw := &middlewareResponseWriter{ResponseWriterWrapper: &ResponseWriterWrapper{w}}
+	groups := make(map[string]struct{})
 
 routeLoop:
 	for _, route := range routes {
+		// see if route matches
 		for _, m := range route.matchers {
 			if !m.Match(r) {
 				continue routeLoop
 			}
 		}
+
+		// if route is part of a group, ensure only
+		// the first matching route in the group is
+		// applied
+		if route.Group != "" {
+			_, ok := groups[route.Group]
+			if ok {
+				// this group has already been satisfied
+				// by a matching route
+				continue
+			}
+			// this matching route satisfies the group
+			groups[route.Group] = struct{}{}
+		}
+
+		// apply the rest of the route
 		for _, m := range route.middleware {
 			mid = append(mid, func(next HandlerFunc) HandlerFunc {
 				return func(w http.ResponseWriter, r *http.Request) error {
+					// TODO: This is where request tracing could be implemented; also
+					// see below to trace the responder as well
+					// TODO: Trace a diff of the request, would be cool too! see what changed since the last middleware (host, headers, URI...)
+					// TODO: see what the std lib gives us in terms of stack trracing too
 					return m.ServeHTTP(mrw, r, next)
 				}
 			})
@@ -111,3 +134,25 @@ routeLoop:
 
 	return stack
 }
+
+type middlewareResponseWriter struct {
+	*ResponseWriterWrapper
+	allowWrites bool
+}
+
+func (mrw middlewareResponseWriter) WriteHeader(statusCode int) {
+	if !mrw.allowWrites {
+		panic("WriteHeader: middleware cannot write to the response")
+	}
+	mrw.ResponseWriterWrapper.WriteHeader(statusCode)
+}
+
+func (mrw middlewareResponseWriter) Write(b []byte) (int, error) {
+	if !mrw.allowWrites {
+		panic("Write: middleware cannot write to the response")
+	}
+	return mrw.ResponseWriterWrapper.Write(b)
+}
+
+// Interface guard
+var _ HTTPInterfaces = middlewareResponseWriter{}

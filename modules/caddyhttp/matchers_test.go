@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"testing"
+
+	"bitbucket.org/lightcodelabs/caddy2"
 )
 
 func TestHostMatcher(t *testing.T) {
@@ -131,6 +133,26 @@ func TestPathMatcher(t *testing.T) {
 			input:  "/other/",
 			expect: true,
 		},
+		{
+			match:  matchPath{"*.ext"},
+			input:  "foo.ext",
+			expect: true,
+		},
+		{
+			match:  matchPath{"*.ext"},
+			input:  "/foo/bar.ext",
+			expect: true,
+		},
+		{
+			match:  matchPath{"/foo/*/baz"},
+			input:  "/foo/bar/baz",
+			expect: true,
+		},
+		{
+			match:  matchPath{"/foo/*/baz/bam"},
+			input:  "/foo/bar/bam",
+			expect: false,
+		},
 	} {
 		req := &http.Request{URL: &url.URL{Path: tc.input}}
 		actual := tc.match.Match(req)
@@ -205,8 +227,8 @@ func TestPathREMatcher(t *testing.T) {
 
 		// set up the fake request and its Replacer
 		req := &http.Request{URL: &url.URL{Path: tc.input}}
-		repl := NewReplacer(req, httptest.NewRecorder())
-		ctx := context.WithValue(req.Context(), ReplacerCtxKey, repl)
+		repl := newReplacer(req, httptest.NewRecorder())
+		ctx := context.WithValue(req.Context(), caddy2.ReplacerCtxKey, repl)
 		req = req.WithContext(ctx)
 
 		actual := tc.match.Match(req)
@@ -218,7 +240,7 @@ func TestPathREMatcher(t *testing.T) {
 
 		for key, expectVal := range tc.expectRepl {
 			placeholder := fmt.Sprintf("{matchers.path_regexp.%s}", key)
-			actualVal := repl.Replace(placeholder, "<empty>")
+			actualVal := repl.ReplaceAll(placeholder, "<empty>")
 			if actualVal != expectVal {
 				t.Errorf("Test %d [%v]: Expected placeholder {matchers.path_regexp.%s} to be '%s' but got '%s'",
 					i, tc.match.Pattern, key, expectVal, actualVal)
@@ -322,8 +344,8 @@ func TestHeaderREMatcher(t *testing.T) {
 
 		// set up the fake request and its Replacer
 		req := &http.Request{Header: tc.input, URL: new(url.URL)}
-		repl := NewReplacer(req, httptest.NewRecorder())
-		ctx := context.WithValue(req.Context(), ReplacerCtxKey, repl)
+		repl := newReplacer(req, httptest.NewRecorder())
+		ctx := context.WithValue(req.Context(), caddy2.ReplacerCtxKey, repl)
 		req = req.WithContext(ctx)
 
 		actual := tc.match.Match(req)
@@ -335,7 +357,7 @@ func TestHeaderREMatcher(t *testing.T) {
 
 		for key, expectVal := range tc.expectRepl {
 			placeholder := fmt.Sprintf("{matchers.header_regexp.%s}", key)
-			actualVal := repl.Replace(placeholder, "<empty>")
+			actualVal := repl.ReplaceAll(placeholder, "<empty>")
 			if actualVal != expectVal {
 				t.Errorf("Test %d [%v]: Expected placeholder {matchers.header_regexp.%s} to be '%s' but got '%s'",
 					i, tc.match, key, expectVal, actualVal)
