@@ -95,21 +95,11 @@ func (app *App) Validate() error {
 	return nil
 }
 
-// AutomaticHTTPSError represents an error received when attempting to enable automatic https.
-type AutomaticHTTPSError struct {
-	internal error
-}
-
-// Error returns the error string for automaticHTTPSError.
-func (a AutomaticHTTPSError) Error() string {
-	return fmt.Sprintf("enabling automatic HTTPS: %v", a.internal.Error())
-}
-
 // Start runs the app. It sets up automatic HTTPS if enabled.
 func (app *App) Start() error {
 	err := app.automaticHTTPS()
 	if err != nil {
-		return &AutomaticHTTPSError{internal: err}
+		return fmt.Errorf("enabling automatic HTTPS: %v", err)
 	}
 
 	for srvName, srv := range app.Servers {
@@ -243,7 +233,7 @@ func (app *App) automaticHTTPS() error {
 				if parts := strings.SplitN(port, "-", 2); len(parts) == 2 {
 					port = parts[0]
 				}
-				redirTo := "https://{request.host}"
+				redirTo := "https://{http.request.host}"
 
 				httpsPort := app.HTTPSPort
 				if httpsPort == 0 {
@@ -252,7 +242,7 @@ func (app *App) automaticHTTPS() error {
 				if port != strconv.Itoa(httpsPort) {
 					redirTo += ":" + port
 				}
-				redirTo += "{request.uri}"
+				redirTo += "{http.request.uri}"
 
 				redirRoutes = append(redirRoutes, ServerRoute{
 					matchers: []RequestMatcher{
