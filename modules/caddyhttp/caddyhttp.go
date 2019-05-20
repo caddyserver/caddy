@@ -5,7 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"log"
-	mathrand "math/rand"
+	weakrand "math/rand"
 	"net"
 	"net/http"
 	"strconv"
@@ -18,7 +18,7 @@ import (
 )
 
 func init() {
-	mathrand.Seed(time.Now().UnixNano())
+	weakrand.Seed(time.Now().UnixNano())
 
 	err := caddy2.RegisterModule(caddy2.Module{
 		Name: "http",
