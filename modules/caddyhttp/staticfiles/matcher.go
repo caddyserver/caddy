@@ -16,6 +16,8 @@ func init() {
 	})
 }
 
+// FileMatcher is a matcher that can match requests
+// based on the local file system.
 // TODO: Not sure how to do this well; we'd need the ability to
 // hide files, etc...
 // TODO: Also consider a feature to match directory that
@@ -29,6 +31,7 @@ type FileMatcher struct {
 	Flags []string `json:"flags"`
 }
 
+// Match matches the request r against m.
 func (m FileMatcher) Match(r *http.Request) bool {
 	// TODO: sanitize path
 	fullPath := filepath.Join(m.Root, m.Path)
