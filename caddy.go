@@ -882,6 +882,10 @@ func Stop() error {
 		}
 		inst := instances[0]
 		instancesMu.Unlock()
+		// Increase the instance waitgroup so that the last wait() call in
+		// caddymain/run.go blocks until this server instance has shut down
+		inst.wg.Add(1)
+		defer inst.wg.Done()
 		if err := inst.Stop(); err != nil {
 			log.Printf("[ERROR] Stopping %s: %v", inst.serverType, err)
 		}
