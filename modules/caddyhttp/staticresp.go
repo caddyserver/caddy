@@ -17,7 +17,7 @@ func init() {
 
 // Static implements a simple responder for static responses.
 type Static struct {
-	StatusCode    int         `json:"status_code"`
+	StatusCode    int         `json:"status_code"` // TODO: should we turn this into a string so that only one field is needed? (string allows replacements)
 	StatusCodeStr string      `json:"status_code_str"`
 	Headers       http.Header `json:"headers"`
 	Body          string      `json:"body"`
@@ -30,7 +30,7 @@ func (s Static) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
 	// close the connection after responding
 	r.Close = s.Close
 
-	// set all headers, with replacements
+	// set all headers
 	for field, vals := range s.Headers {
 		field = repl.ReplaceAll(field, "")
 		for i := range vals {
@@ -39,7 +39,7 @@ func (s Static) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
 		w.Header()[field] = vals
 	}
 
-	// write the headers with a status code
+	// get the status code
 	statusCode := s.StatusCode
 	if statusCode == 0 && s.StatusCodeStr != "" {
 		intVal, err := strconv.Atoi(repl.ReplaceAll(s.StatusCodeStr, ""))
@@ -50,9 +50,11 @@ func (s Static) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
 	if statusCode == 0 {
 		statusCode = http.StatusOK
 	}
+
+	// write headers
 	w.WriteHeader(statusCode)
 
-	// write the response body, with replacements
+	// write response body
 	if s.Body != "" {
 		fmt.Fprint(w, repl.ReplaceAll(s.Body, ""))
 	}

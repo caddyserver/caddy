@@ -17,16 +17,16 @@ func init() {
 
 // Headers is a middleware which can mutate HTTP headers.
 type Headers struct {
-	Request  HeaderOps
-	Response RespHeaderOps
+	Request  HeaderOps     `json:"request"`
+	Response RespHeaderOps `json:"response"`
 }
 
 // HeaderOps defines some operations to
 // perform on HTTP headers.
 type HeaderOps struct {
-	Add    http.Header
-	Set    http.Header
-	Delete []string
+	Add    http.Header `json:"add"`
+	Set    http.Header `json:"set"`
+	Delete []string    `json:"delete"`
 }
 
 // RespHeaderOps is like HeaderOps, but
@@ -67,10 +67,22 @@ func apply(ops HeaderOps, hdr http.Header) {
 // operations until WriteHeader is called.
 type responseWriterWrapper struct {
 	*caddyhttp.ResponseWriterWrapper
-	headerOps HeaderOps
+	headerOps   HeaderOps
+	wroteHeader bool
+}
+
+func (rww *responseWriterWrapper) Write(d []byte) (int, error) {
+	if !rww.wroteHeader {
+		rww.WriteHeader(http.StatusOK)
+	}
+	return rww.ResponseWriterWrapper.Write(d)
 }
 
 func (rww *responseWriterWrapper) WriteHeader(status int) {
+	if rww.wroteHeader {
+		return
+	}
+	rww.wroteHeader = true
 	apply(rww.headerOps, rww.ResponseWriterWrapper.Header())
 	rww.ResponseWriterWrapper.WriteHeader(status)
 }
