@@ -32,39 +32,39 @@ type (
 func init() {
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "http.matchers.host",
-		New:  func() (interface{}, error) { return matchHost{}, nil },
+		New:  func() interface{} { return matchHost{} },
 	})
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "http.matchers.path",
-		New:  func() (interface{}, error) { return matchPath{}, nil },
+		New:  func() interface{} { return matchPath{} },
 	})
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "http.matchers.path_regexp",
-		New:  func() (interface{}, error) { return new(matchPathRE), nil },
+		New:  func() interface{} { return new(matchPathRE) },
 	})
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "http.matchers.method",
-		New:  func() (interface{}, error) { return matchMethod{}, nil },
+		New:  func() interface{} { return matchMethod{} },
 	})
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "http.matchers.query",
-		New:  func() (interface{}, error) { return matchQuery{}, nil },
+		New:  func() interface{} { return matchQuery{} },
 	})
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "http.matchers.header",
-		New:  func() (interface{}, error) { return matchHeader{}, nil },
+		New:  func() interface{} { return matchHeader{} },
 	})
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "http.matchers.header_regexp",
-		New:  func() (interface{}, error) { return matchHeaderRE{}, nil },
+		New:  func() interface{} { return matchHeaderRE{} },
 	})
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "http.matchers.protocol",
-		New:  func() (interface{}, error) { return new(matchProtocol), nil },
+		New:  func() interface{} { return new(matchProtocol) },
 	})
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "http.matchers.starlark_expr",
-		New:  func() (interface{}, error) { return new(matchStarlarkExpr), nil },
+		New:  func() interface{} { return new(matchStarlarkExpr) },
 	})
 }
 

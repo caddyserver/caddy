@@ -8,6 +8,6 @@ import (
 func init() {
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "http.responders.reverse_proxy",
-		New:  func() (interface{}, error) { return new(LoadBalanced), nil },
+		New:  func() interface{} { return new(LoadBalanced) },
 	})
 }

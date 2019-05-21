@@ -11,7 +11,7 @@ import (
 func init() {
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "http.responders.static",
-		New:  func() (interface{}, error) { return new(Static), nil },
+		New:  func() interface{} { return new(Static) },
 	})
 }
 

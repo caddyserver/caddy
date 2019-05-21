@@ -12,7 +12,7 @@ import (
 func init() {
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "http.middleware.rewrite",
-		New:  func() (interface{}, error) { return new(Rewrite), nil },
+		New:  func() interface{} { return new(Rewrite) },
 	})
 }
 

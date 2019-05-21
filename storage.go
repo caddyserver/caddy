@@ -11,7 +11,7 @@ import (
 func init() {
 	RegisterModule(Module{
 		Name: "caddy.storage.file_system",
-		New:  func() (interface{}, error) { return new(fileStorage), nil },
+		New:  func() interface{} { return new(fileStorage) },
 	})
 }
 

@@ -22,7 +22,7 @@ func init() {
 
 	err := caddy2.RegisterModule(caddy2.Module{
 		Name: "http",
-		New:  func() (interface{}, error) { return new(App), nil },
+		New:  func() interface{} { return new(App) },
 	})
 
 	if err != nil {

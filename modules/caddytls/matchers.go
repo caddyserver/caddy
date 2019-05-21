@@ -12,7 +12,7 @@ type MatchServerName []string
 func init() {
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "tls.handshake_match.host",
-		New:  func() (interface{}, error) { return MatchServerName{}, nil },
+		New:  func() interface{} { return MatchServerName{} },
 	})
 }
 

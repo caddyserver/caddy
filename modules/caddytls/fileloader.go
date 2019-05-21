@@ -11,7 +11,7 @@ import (
 func init() {
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "tls.certificates.load_files",
-		New:  func() (interface{}, error) { return fileLoader{}, nil },
+		New:  func() interface{} { return fileLoader{} },
 	})
 }
 

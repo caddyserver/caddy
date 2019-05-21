@@ -15,7 +15,7 @@ import (
 func init() {
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "tls",
-		New:  func() (interface{}, error) { return new(TLS), nil },
+		New:  func() interface{} { return new(TLS) },
 	})
 }
 

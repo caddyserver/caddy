@@ -9,12 +9,12 @@ import (
 func init() {
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "http.middleware.table",
-		New:  func() (interface{}, error) { return new(tableMiddleware), nil },
+		New:  func() interface{} { return new(tableMiddleware) },
 	})
 
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "http.matchers.table",
-		New:  func() (interface{}, error) { return new(tableMatcher), nil },
+		New:  func() interface{} { return new(tableMatcher) },
 	})
 }
 

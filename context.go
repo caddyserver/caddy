@@ -75,10 +75,7 @@ func (ctx Context) LoadModule(name string, rawMsg json.RawMessage) (interface{},
 		return nil, fmt.Errorf("module '%s' has no constructor", mod.Name)
 	}
 
-	val, err := mod.New()
-	if err != nil {
-		return nil, fmt.Errorf("initializing module '%s': %v", mod.Name, err)
-	}
+	val := mod.New()
 
 	// value must be a pointer for unmarshaling into concrete type
 	if rv := reflect.ValueOf(val); rv.Kind() != reflect.Ptr {
@@ -87,7 +84,7 @@ func (ctx Context) LoadModule(name string, rawMsg json.RawMessage) (interface{},
 
 	// fill in its config only if there is a config to fill in
 	if len(rawMsg) > 0 {
-		err = json.Unmarshal(rawMsg, &val)
+		err := json.Unmarshal(rawMsg, &val)
 		if err != nil {
 			return nil, fmt.Errorf("decoding module config: %s: %v", mod.Name, err)
 		}

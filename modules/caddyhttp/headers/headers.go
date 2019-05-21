@@ -11,7 +11,7 @@ import (
 func init() {
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "http.middleware.headers",
-		New:  func() (interface{}, error) { return new(Headers), nil },
+		New:  func() interface{} { return new(Headers) },
 	})
 }
 

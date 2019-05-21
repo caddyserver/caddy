@@ -20,7 +20,7 @@ type Module struct {
 	// invoke methods on the returned value.
 	// It must return a pointer; if not, it
 	// is converted into one.
-	New func() (interface{}, error)
+	New func() interface{}
 }
 
 func (m Module) String() string { return m.Name }

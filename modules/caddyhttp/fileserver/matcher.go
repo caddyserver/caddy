@@ -11,7 +11,7 @@ import (
 func init() {
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "http.matchers.file",
-		New:  func() (interface{}, error) { return new(FileMatcher), nil },
+		New:  func() interface{} { return new(FileMatcher) },
 	})
 }
 

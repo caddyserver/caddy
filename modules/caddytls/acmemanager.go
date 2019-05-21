@@ -15,7 +15,7 @@ import (
 func init() {
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "tls.management.acme",
-		New:  func() (interface{}, error) { return new(acmeManagerMaker), nil },
+		New:  func() interface{} { return new(acmeManagerMaker) },
 	})
 }
 

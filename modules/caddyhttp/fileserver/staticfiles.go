@@ -21,7 +21,7 @@ func init() {
 
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "http.responders.file_server",
-		New:  func() (interface{}, error) { return new(FileServer), nil },
+		New:  func() interface{} { return new(FileServer) },
 	})
 }
 

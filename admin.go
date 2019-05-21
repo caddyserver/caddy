@@ -42,11 +42,7 @@ func StartAdmin(addr string) error {
 	///// END PPROF STUFF //////
 
 	for _, m := range GetModules("admin") {
-		moduleValue, err := m.New()
-		if err != nil {
-			return fmt.Errorf("initializing module '%s': %v", m.Name, err)
-		}
-		route := moduleValue.(AdminRoute)
+		route := m.New().(AdminRoute)
 		mux.Handle(route.Pattern, route)
 	}
 
