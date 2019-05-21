@@ -1,4 +1,4 @@
-package staticfiles
+package fileserver
 
 import (
 	"net/http"

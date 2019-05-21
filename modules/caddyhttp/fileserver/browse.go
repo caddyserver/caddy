@@ -1,4 +1,4 @@
-package staticfiles
+package fileserver
 
 import (
 	"bytes"
@@ -20,8 +20,8 @@ type Browse struct {
 	template *template.Template
 }
 
-func (sf *StaticFiles) serveBrowse(dirPath string, w http.ResponseWriter, r *http.Request) error {
-	dir, err := sf.openFile(dirPath, w)
+func (fsrv *FileServer) serveBrowse(dirPath string, w http.ResponseWriter, r *http.Request) error {
+	dir, err := fsrv.openFile(dirPath, w)
 	if err != nil {
 		return err
 	}
@@ -29,7 +29,7 @@ func (sf *StaticFiles) serveBrowse(dirPath string, w http.ResponseWriter, r *htt
 
 	repl := r.Context().Value(caddy2.ReplacerCtxKey).(caddy2.Replacer)
 
-	listing, err := sf.loadDirectoryContents(dir, r.URL.Path, repl)
+	listing, err := fsrv.loadDirectoryContents(dir, r.URL.Path, repl)
 	switch {
 	case os.IsPermission(err):
 		return caddyhttp.Error(http.StatusForbidden, err)
@@ -39,18 +39,18 @@ func (sf *StaticFiles) serveBrowse(dirPath string, w http.ResponseWriter, r *htt
 		return caddyhttp.Error(http.StatusInternalServerError, err)
 	}
 
-	sf.browseApplyQueryParams(w, r, &listing)
+	fsrv.browseApplyQueryParams(w, r, &listing)
 
 	// write response as either JSON or HTML
 	var buf *bytes.Buffer
 	acceptHeader := strings.ToLower(strings.Join(r.Header["Accept"], ","))
 	if strings.Contains(acceptHeader, "application/json") {
-		if buf, err = sf.browseWriteJSON(listing); err != nil {
+		if buf, err = fsrv.browseWriteJSON(listing); err != nil {
 			return caddyhttp.Error(http.StatusInternalServerError, err)
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	} else {
-		if buf, err = sf.browseWriteHTML(listing); err != nil {
+		if buf, err = fsrv.browseWriteHTML(listing); err != nil {
 			return caddyhttp.Error(http.StatusInternalServerError, err)
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -75,7 +75,7 @@ func (sf *StaticFiles) serveBrowse(dirPath string, w http.ResponseWriter, r *htt
 	// return b.ServeListing(w, r, requestedFilepath, bc)
 }
 
-func (sf *StaticFiles) loadDirectoryContents(dir *os.File, urlPath string, repl caddy2.Replacer) (browseListing, error) {
+func (fsrv *FileServer) loadDirectoryContents(dir *os.File, urlPath string, repl caddy2.Replacer) (browseListing, error) {
 	files, err := dir.Readdir(-1)
 	if err != nil {
 		return browseListing{}, err
@@ -83,14 +83,14 @@ func (sf *StaticFiles) loadDirectoryContents(dir *os.File, urlPath string, repl 
 
 	// determine if user can browse up another folder
 	curPathDir := path.Dir(strings.TrimSuffix(urlPath, "/"))
-	canGoUp := strings.HasPrefix(curPathDir, sf.Root)
+	canGoUp := strings.HasPrefix(curPathDir, fsrv.Root)
 
-	return sf.directoryListing(files, canGoUp, urlPath, repl), nil
+	return fsrv.directoryListing(files, canGoUp, urlPath, repl), nil
 }
 
 // browseApplyQueryParams applies query parameters to the listing.
 // It mutates the listing and may set cookies.
-func (sf *StaticFiles) browseApplyQueryParams(w http.ResponseWriter, r *http.Request, listing *browseListing) {
+func (fsrv *FileServer) browseApplyQueryParams(w http.ResponseWriter, r *http.Request, listing *browseListing) {
 	sortParam := r.URL.Query().Get("sort")
 	orderParam := r.URL.Query().Get("order")
 	limitParam := r.URL.Query().Get("limit")
@@ -121,15 +121,15 @@ func (sf *StaticFiles) browseApplyQueryParams(w http.ResponseWriter, r *http.Req
 	listing.applySortAndLimit(sortParam, orderParam, limitParam)
 }
 
-func (sf *StaticFiles) browseWriteJSON(listing browseListing) (*bytes.Buffer, error) {
+func (fsrv *FileServer) browseWriteJSON(listing browseListing) (*bytes.Buffer, error) {
 	buf := new(bytes.Buffer)
 	err := json.NewEncoder(buf).Encode(listing.Items)
 	return buf, err
 }
 
-func (sf *StaticFiles) browseWriteHTML(listing browseListing) (*bytes.Buffer, error) {
+func (fsrv *FileServer) browseWriteHTML(listing browseListing) (*bytes.Buffer, error) {
 	buf := new(bytes.Buffer)
-	err := sf.Browse.template.Execute(buf, listing)
+	err := fsrv.Browse.template.Execute(buf, listing)
 	return buf, err
 }
 

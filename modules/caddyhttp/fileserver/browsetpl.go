@@ -1,4 +1,4 @@
-package staticfiles
+package fileserver
 
 const defaultBrowseTemplate = `<!DOCTYPE html>
 <html>

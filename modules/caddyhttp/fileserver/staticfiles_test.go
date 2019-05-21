@@ -1,4 +1,4 @@
-package staticfiles
+package fileserver
 
 import (
 	"net/url"
@@ -60,6 +60,7 @@ func TestSanitizedPathJoin(t *testing.T) {
 			inputPath: "/%2e%2e%2f%2e%2e%2f",
 			expect:    "/a/b",
 		},
+		// TODO: test windows paths... on windows... sigh.
 	} {
 		// we don't *need* to use an actual parsed URL, but it
 		// adds some authenticity to the tests since real-world
@@ -76,3 +77,5 @@ func TestSanitizedPathJoin(t *testing.T) {
 		}
 	}
 }
+
+// TODO: test fileHidden

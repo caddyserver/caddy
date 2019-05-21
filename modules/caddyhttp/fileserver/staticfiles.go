@@ -1,4 +1,4 @@
-package staticfiles
+package fileserver
 
 import (
 	"fmt"
@@ -20,13 +20,13 @@ func init() {
 	weakrand.Seed(time.Now().UnixNano())
 
 	caddy2.RegisterModule(caddy2.Module{
-		Name: "http.responders.static_files",
-		New:  func() (interface{}, error) { return new(StaticFiles), nil },
+		Name: "http.responders.file_server",
+		New:  func() (interface{}, error) { return new(FileServer), nil },
 	})
 }
 
-// StaticFiles implements a static file server responder for Caddy.
-type StaticFiles struct {
+// FileServer implements a static file server responder for Caddy.
+type FileServer struct {
 	Root            string              `json:"root"` // default is current directory
 	Hide            []string            `json:"hide"`
 	IndexNames      []string            `json:"index_names"`
@@ -40,23 +40,23 @@ type StaticFiles struct {
 }
 
 // Provision sets up the static files responder.
-func (sf *StaticFiles) Provision(ctx caddy2.Context) error {
-	if sf.Fallback != nil {
-		err := sf.Fallback.Provision(ctx)
+func (fsrv *FileServer) Provision(ctx caddy2.Context) error {
+	if fsrv.Fallback != nil {
+		err := fsrv.Fallback.Provision(ctx)
 		if err != nil {
 			return fmt.Errorf("setting up fallback routes: %v", err)
 		}
 	}
 
-	if sf.IndexNames == nil {
-		sf.IndexNames = defaultIndexNames
+	if fsrv.IndexNames == nil {
+		fsrv.IndexNames = defaultIndexNames
 	}
 
-	if sf.Browse != nil {
+	if fsrv.Browse != nil {
 		var tpl *template.Template
 		var err error
-		if sf.Browse.TemplateFile != "" {
-			tpl, err = template.ParseFiles(sf.Browse.TemplateFile)
+		if fsrv.Browse.TemplateFile != "" {
+			tpl, err = template.ParseFiles(fsrv.Browse.TemplateFile)
 			if err != nil {
 				return fmt.Errorf("parsing browse template file: %v", err)
 			}
@@ -66,7 +66,7 @@ func (sf *StaticFiles) Provision(ctx caddy2.Context) error {
 				return fmt.Errorf("parsing default browse template: %v", err)
 			}
 		}
-		sf.Browse.template = tpl
+		fsrv.Browse.template = tpl
 	}
 
 	return nil
@@ -80,29 +80,31 @@ const (
 )
 
 // Validate ensures that sf has a valid configuration.
-func (sf *StaticFiles) Validate() error {
-	switch sf.SelectionPolicy {
+func (fsrv *FileServer) Validate() error {
+	switch fsrv.SelectionPolicy {
 	case "",
 		selectionPolicyFirstExisting,
 		selectionPolicyLargestSize,
 		selectionPolicySmallestSize,
 		selectionPolicyRecentlyMod:
 	default:
-		return fmt.Errorf("unknown selection policy %s", sf.SelectionPolicy)
+		return fmt.Errorf("unknown selection policy %s", fsrv.SelectionPolicy)
 	}
 	return nil
 }
 
-func (sf *StaticFiles) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
+func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
 	repl := r.Context().Value(caddy2.ReplacerCtxKey).(caddy2.Replacer)
+
+	filesToHide := fsrv.transformHidePaths(repl)
 
 	// map the request to a filename
 	pathBefore := r.URL.Path
-	filename := sf.selectFile(r, repl)
+	filename := fsrv.selectFile(r, repl, filesToHide)
 	if filename == "" {
 		// no files worked, so resort to fallback
-		if sf.Fallback != nil {
-			fallback := sf.Fallback.BuildCompositeRoute(w, r)
+		if fsrv.Fallback != nil {
+			fallback := fsrv.Fallback.BuildCompositeRoute(w, r)
 			return fallback.ServeHTTP(w, r)
 		}
 		return caddyhttp.Error(http.StatusNotFound, nil)
@@ -111,7 +113,7 @@ func (sf *StaticFiles) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
 	// if the ultimate destination has changed, submit
 	// this request for a rehandling (internal redirect)
 	// if configured to do so
-	if r.URL.Path != pathBefore && sf.Rehandle {
+	if r.URL.Path != pathBefore && fsrv.Rehandle {
 		return caddyhttp.ErrRehandle
 	}
 
@@ -130,10 +132,8 @@ func (sf *StaticFiles) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
 
 	// if the request mapped to a directory, see if
 	// there is an index file we can serve
-	if info.IsDir() && len(sf.IndexNames) > 0 {
-		filesToHide := sf.transformHidePaths(repl)
-
-		for _, indexPage := range sf.IndexNames {
+	if info.IsDir() && len(fsrv.IndexNames) > 0 {
+		for _, indexPage := range fsrv.IndexNames {
 			indexPath := sanitizedPathJoin(filename, indexPage)
 			if fileHidden(indexPath, filesToHide) {
 				// pretend this file doesn't exist
@@ -149,7 +149,7 @@ func (sf *StaticFiles) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
 			// so rewrite the request path and, if
 			// configured, do an internal redirect
 			r.URL.Path = path.Join(r.URL.Path, indexPage)
-			if sf.Rehandle {
+			if fsrv.Rehandle {
 				return caddyhttp.ErrRehandle
 			}
 
@@ -162,22 +162,30 @@ func (sf *StaticFiles) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
 	// if still referencing a directory, delegate
 	// to browse or return an error
 	if info.IsDir() {
-		if sf.Browse != nil {
-			return sf.serveBrowse(filename, w, r)
+		if fsrv.Browse != nil && !fileHidden(filename, filesToHide) {
+			return fsrv.serveBrowse(filename, w, r)
 		}
 		return caddyhttp.Error(http.StatusNotFound, nil)
 	}
 
 	// TODO: content negotiation (brotli sidecar files, etc...)
 
+	// one last check to ensure the file isn't hidden (we might
+	// have changed the filename from when we last checked)
+	if fileHidden(filename, filesToHide) {
+		return caddyhttp.Error(http.StatusNotFound, nil)
+	}
+
 	// open the file
-	file, err := sf.openFile(filename, w)
+	file, err := fsrv.openFile(filename, w)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
 
 	// TODO: Etag
+
+	// TODO: Disable content-type sniffing by setting a content-type...
 
 	// let the standard library do what it does best; note, however,
 	// that errors generated by ServeContent are written immediately
@@ -192,7 +200,7 @@ func (sf *StaticFiles) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
 // the response is configured to inform the client how to best handle it
 // and a well-described handler error is returned (do not wrap the
 // returned error value).
-func (sf *StaticFiles) openFile(filename string, w http.ResponseWriter) (*os.File, error) {
+func (fsrv *FileServer) openFile(filename string, w http.ResponseWriter) (*os.File, error) {
 	file, err := os.Open(filename)
 	if err != nil {
 		err = mapDirOpenError(err, filename)
@@ -239,11 +247,11 @@ func mapDirOpenError(originalErr error, name string) error {
 }
 
 // transformHidePaths performs replacements for all the elements of
-// sf.Hide and returns a new list of the transformed values.
-func (sf *StaticFiles) transformHidePaths(repl caddy2.Replacer) []string {
-	hide := make([]string, len(sf.Hide))
-	for i := range sf.Hide {
-		hide[i] = repl.ReplaceAll(sf.Hide[i], "")
+// fsrv.Hide and returns a new list of the transformed values.
+func (fsrv *FileServer) transformHidePaths(repl caddy2.Replacer) []string {
+	hide := make([]string, len(fsrv.Hide))
+	for i := range fsrv.Hide {
+		hide[i] = repl.ReplaceAll(fsrv.Hide[i], "")
 	}
 	return hide
 }
@@ -251,7 +259,8 @@ func (sf *StaticFiles) transformHidePaths(repl caddy2.Replacer) []string {
 // sanitizedPathJoin performs filepath.Join(root, reqPath) that
 // is safe against directory traversal attacks. It uses logic
 // similar to that in the Go standard library, specifically
-// in the implementation of http.Dir.
+// in the implementation of http.Dir. The root is assumed to
+// be a trusted path, but reqPath is not.
 func sanitizedPathJoin(root, reqPath string) string {
 	// TODO: Caddy 1 uses this:
 	// prevent absolute path access on Windows, e.g. http://localhost:5000/C:\Windows\notepad.exe
@@ -276,17 +285,17 @@ func sanitizedPathJoin(root, reqPath string) string {
 // by default) to map the request r to a filename. The full path to
 // the file is returned if one is found; otherwise, an empty string
 // is returned.
-func (sf *StaticFiles) selectFile(r *http.Request, repl caddy2.Replacer) string {
-	root := repl.ReplaceAll(sf.Root, "")
+func (fsrv *FileServer) selectFile(r *http.Request, repl caddy2.Replacer, filesToHide []string) string {
+	root := repl.ReplaceAll(fsrv.Root, "")
 
-	if sf.Files == nil {
+	if fsrv.Files == nil {
 		return sanitizedPathJoin(root, r.URL.Path)
 	}
 
-	switch sf.SelectionPolicy {
+	switch fsrv.SelectionPolicy {
 	case "", selectionPolicyFirstExisting:
-		filesToHide := sf.transformHidePaths(repl)
-		for _, f := range sf.Files {
+		filesToHide := fsrv.transformHidePaths(repl)
+		for _, f := range fsrv.Files {
 			suffix := repl.ReplaceAll(f, "")
 			fullpath := sanitizedPathJoin(root, suffix)
 			if !fileHidden(fullpath, filesToHide) && fileExists(fullpath) {
@@ -299,9 +308,12 @@ func (sf *StaticFiles) selectFile(r *http.Request, repl caddy2.Replacer) string 
 		var largestSize int64
 		var largestFilename string
 		var largestSuffix string
-		for _, f := range sf.Files {
+		for _, f := range fsrv.Files {
 			suffix := repl.ReplaceAll(f, "")
 			fullpath := sanitizedPathJoin(root, suffix)
+			if fileHidden(fullpath, filesToHide) {
+				continue
+			}
 			info, err := os.Stat(fullpath)
 			if err == nil && info.Size() > largestSize {
 				largestSize = info.Size()
@@ -316,9 +328,12 @@ func (sf *StaticFiles) selectFile(r *http.Request, repl caddy2.Replacer) string 
 		var smallestSize int64
 		var smallestFilename string
 		var smallestSuffix string
-		for _, f := range sf.Files {
+		for _, f := range fsrv.Files {
 			suffix := repl.ReplaceAll(f, "")
 			fullpath := sanitizedPathJoin(root, suffix)
+			if fileHidden(fullpath, filesToHide) {
+				continue
+			}
 			info, err := os.Stat(fullpath)
 			if err == nil && (smallestSize == 0 || info.Size() < smallestSize) {
 				smallestSize = info.Size()
@@ -333,9 +348,12 @@ func (sf *StaticFiles) selectFile(r *http.Request, repl caddy2.Replacer) string 
 		var recentDate time.Time
 		var recentFilename string
 		var recentSuffix string
-		for _, f := range sf.Files {
+		for _, f := range fsrv.Files {
 			suffix := repl.ReplaceAll(f, "")
 			fullpath := sanitizedPathJoin(root, suffix)
+			if fileHidden(fullpath, filesToHide) {
+				continue
+			}
 			info, err := os.Stat(fullpath)
 			if err == nil &&
 				(recentDate.IsZero() || info.ModTime().After(recentDate)) {
@@ -395,4 +413,4 @@ var defaultIndexNames = []string{"index.html"}
 const minBackoff, maxBackoff = 2, 5
 
 // Interface guard
-var _ caddyhttp.Handler = (*StaticFiles)(nil)
+var _ caddyhttp.Handler = (*FileServer)(nil)

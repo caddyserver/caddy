@@ -3,6 +3,7 @@ package caddyhttp
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"bitbucket.org/lightcodelabs/caddy2"
 )
@@ -16,10 +17,11 @@ func init() {
 
 // Static implements a simple responder for static responses.
 type Static struct {
-	StatusCode int         `json:"status_code"`
-	Headers    http.Header `json:"headers"`
-	Body       string      `json:"body"`
-	Close      bool        `json:"close"`
+	StatusCode    int         `json:"status_code"`
+	StatusCodeStr string      `json:"status_code_str"`
+	Headers       http.Header `json:"headers"`
+	Body          string      `json:"body"`
+	Close         bool        `json:"close"`
 }
 
 func (s Static) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
@@ -39,6 +41,12 @@ func (s Static) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
 
 	// write the headers with a status code
 	statusCode := s.StatusCode
+	if statusCode == 0 && s.StatusCodeStr != "" {
+		intVal, err := strconv.Atoi(repl.ReplaceAll(s.StatusCodeStr, ""))
+		if err == nil {
+			statusCode = intVal
+		}
+	}
 	if statusCode == 0 {
 		statusCode = http.StatusOK
 	}

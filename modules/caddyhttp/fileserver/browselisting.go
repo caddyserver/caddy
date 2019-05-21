@@ -1,4 +1,4 @@
-package staticfiles
+package fileserver
 
 import (
 	"net/url"
@@ -13,8 +13,8 @@ import (
 	"github.com/dustin/go-humanize"
 )
 
-func (sf *StaticFiles) directoryListing(files []os.FileInfo, canGoUp bool, urlPath string, repl caddy2.Replacer) browseListing {
-	filesToHide := sf.transformHidePaths(repl)
+func (fsrv *FileServer) directoryListing(files []os.FileInfo, canGoUp bool, urlPath string, repl caddy2.Replacer) browseListing {
+	filesToHide := fsrv.transformHidePaths(repl)
 
 	var (
 		fileInfos           []fileInfo

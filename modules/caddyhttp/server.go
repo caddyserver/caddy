@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 
 	"bitbucket.org/lightcodelabs/caddy2"
 	"bitbucket.org/lightcodelabs/caddy2/modules/caddytls"
@@ -41,15 +42,27 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	stack := s.Routes.BuildCompositeRoute(w, r)
 	err := s.executeCompositeRoute(w, r, stack)
 	if err != nil {
-		// add the error value to the request context so
-		// it can be accessed by error handlers
+		// add the raw error value to the request context
+		// so it can be accessed by error handlers
 		c := context.WithValue(r.Context(), ErrorCtxKey, err)
 		r = r.WithContext(c)
-		// TODO: add error values to Replacer
+
+		// add error values to the replacer
+		repl.Set("http.error", err.Error())
+		if handlerErr, ok := err.(HandlerError); ok {
+			repl.Set("http.error.status_code", strconv.Itoa(handlerErr.StatusCode))
+			repl.Set("http.error.status_text", http.StatusText(handlerErr.StatusCode))
+			repl.Set("http.error.message", handlerErr.Message)
+			repl.Set("http.error.trace", handlerErr.Trace)
+			repl.Set("http.error.id", handlerErr.ID)
+		}
 
 		if len(s.Errors.Routes) == 0 {
-			// TODO: implement a default error handler?
-			log.Printf("[ERROR] %s", err)
+			// TODO: polish the default error handling
+			log.Printf("[ERROR] Handler: %s", err)
+			if handlerErr, ok := err.(HandlerError); ok {
+				w.WriteHeader(handlerErr.StatusCode)
+			}
 		} else {
 			errStack := s.Errors.Routes.BuildCompositeRoute(w, r)
 			err := s.executeCompositeRoute(w, r, errStack)
