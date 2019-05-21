@@ -36,17 +36,15 @@ func (rewr Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 	}
 
 	if rewr.URI != "" {
-		// TODO: clean this all up, I don't think it's right
-
 		oldURI := r.RequestURI
 		newURI := repl.ReplaceAll(rewr.URI, "")
+
 		u, err := url.Parse(newURI)
 		if err != nil {
 			return caddyhttp.Error(http.StatusInternalServerError, err)
 		}
 
 		r.RequestURI = newURI
-
 		r.URL.Path = u.Path
 		if u.RawQuery != "" {
 			r.URL.RawQuery = u.RawQuery

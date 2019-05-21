@@ -48,15 +48,16 @@ func addHTTPVarsToReplacer(repl caddy2.Replacer, req *http.Request, w http.Respo
 				dir, _ := path.Split(req.URL.Path)
 				return dir
 			}()
+			m["http.request.uri.query"] = req.URL.RawQuery
 
+			for param, vals := range req.URL.Query() {
+				m["http.request.uri.query."+param] = strings.Join(vals, ",")
+			}
 			for field, vals := range req.Header {
 				m["http.request.header."+strings.ToLower(field)] = strings.Join(vals, ",")
 			}
 			for _, cookie := range req.Cookies() {
 				m["http.request.cookie."+cookie.Name] = cookie.Value
-			}
-			for param, vals := range req.URL.Query() {
-				m["http.request.uri.query."+param] = strings.Join(vals, ",")
 			}
 
 			hostLabels := strings.Split(req.Host, ".")
