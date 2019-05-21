@@ -26,7 +26,7 @@ type (
 	matchHeaderRE     map[string]*matchRegexp
 	matchProtocol     string
 	matchStarlarkExpr string
-	matchTable        string
+	matchTable        string // TODO: finish implementing
 )
 
 func init() {
@@ -245,14 +245,14 @@ func (mre *matchRegexp) match(input string, repl caddy2.Replacer, scope string) 
 
 	// save all capture groups, first by index
 	for i, match := range matches {
-		key := fmt.Sprintf("matchers.%s.%s.%d", scope, mre.Name, i)
+		key := fmt.Sprintf("http.matchers.%s.%s.%d", scope, mre.Name, i)
 		repl.Set(key, match)
 	}
 
 	// then by name
 	for i, name := range mre.compiled.SubexpNames() {
 		if i != 0 && name != "" {
-			key := fmt.Sprintf("matchers.%s.%s.%s", scope, mre.Name, name)
+			key := fmt.Sprintf("http.matchers.%s.%s.%s", scope, mre.Name, name)
 			repl.Set(key, matches[i])
 		}
 	}

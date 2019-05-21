@@ -3,7 +3,6 @@ package fileserver
 import (
 	"net/http"
 	"os"
-	"path/filepath"
 
 	"bitbucket.org/lightcodelabs/caddy2"
 	"bitbucket.org/lightcodelabs/caddy2/modules/caddyhttp"
@@ -33,8 +32,7 @@ type FileMatcher struct {
 
 // Match matches the request r against m.
 func (m FileMatcher) Match(r *http.Request) bool {
-	// TODO: sanitize path
-	fullPath := filepath.Join(m.Root, m.Path)
+	fullPath := sanitizedPathJoin(m.Root, m.Path)
 	var match bool
 	if len(m.Flags) > 0 {
 		match = true

@@ -28,7 +28,7 @@ func (fsrv *FileServer) directoryListing(files []os.FileInfo, canGoUp bool, urlP
 			continue
 		}
 
-		isDir := f.IsDir() || isSymlinkTargetDir(f, urlPath)
+		isDir := f.IsDir() || isSymlinkTargetDir(f, fsrv.Root, urlPath)
 
 		if isDir {
 			name += "/"

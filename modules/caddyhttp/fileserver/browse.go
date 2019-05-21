@@ -21,6 +21,16 @@ type Browse struct {
 }
 
 func (fsrv *FileServer) serveBrowse(dirPath string, w http.ResponseWriter, r *http.Request) error {
+	// navigation on the client-side gets messed up if the
+	// URL doesn't end in a trailing slash because hrefs like
+	// "/b/c" on a path like "/a" end up going to "/b/c" instead
+	// of "/a/b/c" - so we have to redirect in this case
+	if !strings.HasSuffix(r.URL.Path, "/") {
+		r.URL.Path += "/"
+		http.Redirect(w, r, r.URL.String(), http.StatusMovedPermanently)
+		return nil
+	}
+
 	dir, err := fsrv.openFile(dirPath, w)
 	if err != nil {
 		return err
@@ -29,7 +39,8 @@ func (fsrv *FileServer) serveBrowse(dirPath string, w http.ResponseWriter, r *ht
 
 	repl := r.Context().Value(caddy2.ReplacerCtxKey).(caddy2.Replacer)
 
-	listing, err := fsrv.loadDirectoryContents(dir, r.URL.Path, repl)
+	// calling path.Clean here prevents weird breadcrumbs when URL paths are sketchy like /%2e%2e%2f
+	listing, err := fsrv.loadDirectoryContents(dir, path.Clean(r.URL.Path), repl)
 	switch {
 	case os.IsPermission(err):
 		return caddyhttp.Error(http.StatusForbidden, err)
@@ -58,21 +69,6 @@ func (fsrv *FileServer) serveBrowse(dirPath string, w http.ResponseWriter, r *ht
 	buf.WriteTo(w)
 
 	return nil
-
-	// TODO: Sigh... do we have to put this here?
-	// // Browsing navigation gets messed up if browsing a directory
-	// // that doesn't end in "/" (which it should, anyway)
-	// u := *r.URL
-	// if u.Path == "" {
-	// 	u.Path = "/"
-	// }
-	// if u.Path[len(u.Path)-1] != '/' {
-	// 	u.Path += "/"
-	// 	http.Redirect(w, r, u.String(), http.StatusMovedPermanently)
-	// 	return http.StatusMovedPermanently, nil
-	// }
-
-	// return b.ServeListing(w, r, requestedFilepath, bc)
 }
 
 func (fsrv *FileServer) loadDirectoryContents(dir *os.File, urlPath string, repl caddy2.Replacer) (browseListing, error) {
@@ -138,20 +134,16 @@ func isSymlink(f os.FileInfo) bool {
 	return f.Mode()&os.ModeSymlink != 0
 }
 
-// isSymlinkTargetDir return true if f's symbolic link target
-// is a directory. Return false if not a symbolic link.
-// TODO: Re-implement
-func isSymlinkTargetDir(f os.FileInfo, urlPath string) bool {
-	// if !isSymlink(f) {
-	// 	return false
-	// }
-
-	// // TODO: Ensure path is sanitized
-	// target:= path.Join(root, urlPath, f.Name()))
-	// targetInfo, err := os.Stat(target)
-	// if err != nil {
-	// 	return false
-	// }
-	// return targetInfo.IsDir()
-	return false
+// isSymlinkTargetDir returns true if f's symbolic link target
+// is a directory.
+func isSymlinkTargetDir(f os.FileInfo, root, urlPath string) bool {
+	if !isSymlink(f) {
+		return false
+	}
+	target := sanitizedPathJoin(root, path.Join(urlPath, f.Name()))
+	targetInfo, err := os.Stat(target)
+	if err != nil {
+		return false
+	}
+	return targetInfo.IsDir()
 }
