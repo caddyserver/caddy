@@ -107,7 +107,7 @@ func (m *acmeManagerMaker) makeCertMagicConfig(ctx caddy2.Context) certmagic.Con
 	}
 
 	return certmagic.Config{
-		CA:                      certmagic.LetsEncryptStagingCA, //ap.CA, // TODO: Restore true value
+		CA:                      m.CA,
 		Email:                   m.Email,
 		Agreed:                  true,
 		DisableHTTPChallenge:    m.Challenges.HTTP.Disabled,
