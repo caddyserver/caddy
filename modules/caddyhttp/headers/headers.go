@@ -37,29 +37,36 @@ type RespHeaderOps struct {
 }
 
 func (h Headers) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	apply(h.Request, r.Header)
+	repl := r.Context().Value(caddy2.ReplacerCtxKey).(caddy2.Replacer)
+	apply(h.Request, r.Header, repl)
 	if h.Response.Deferred {
 		w = &responseWriterWrapper{
 			ResponseWriterWrapper: &caddyhttp.ResponseWriterWrapper{ResponseWriter: w},
+			replacer:              repl,
 			headerOps:             h.Response.HeaderOps,
 		}
 	} else {
-		apply(h.Response.HeaderOps, w.Header())
+		apply(h.Response.HeaderOps, w.Header(), repl)
 	}
 	return next.ServeHTTP(w, r)
 }
 
-func apply(ops HeaderOps, hdr http.Header) {
+func apply(ops HeaderOps, hdr http.Header, repl caddy2.Replacer) {
 	for fieldName, vals := range ops.Add {
+		fieldName = repl.ReplaceAll(fieldName, "")
 		for _, v := range vals {
-			hdr.Add(fieldName, v)
+			hdr.Add(fieldName, repl.ReplaceAll(v, ""))
 		}
 	}
 	for fieldName, vals := range ops.Set {
+		fieldName = repl.ReplaceAll(fieldName, "")
+		for i := range vals {
+			vals[i] = repl.ReplaceAll(vals[i], "")
+		}
 		hdr.Set(fieldName, strings.Join(vals, ","))
 	}
 	for _, fieldName := range ops.Delete {
-		hdr.Del(fieldName)
+		hdr.Del(repl.ReplaceAll(fieldName, ""))
 	}
 }
 
@@ -67,6 +74,7 @@ func apply(ops HeaderOps, hdr http.Header) {
 // operations until WriteHeader is called.
 type responseWriterWrapper struct {
 	*caddyhttp.ResponseWriterWrapper
+	replacer    caddy2.Replacer
 	headerOps   HeaderOps
 	wroteHeader bool
 }
@@ -83,7 +91,7 @@ func (rww *responseWriterWrapper) WriteHeader(status int) {
 		return
 	}
 	rww.wroteHeader = true
-	apply(rww.headerOps, rww.ResponseWriterWrapper.Header())
+	apply(rww.headerOps, rww.ResponseWriterWrapper.Header(), rww.replacer)
 	rww.ResponseWriterWrapper.WriteHeader(status)
 }
 

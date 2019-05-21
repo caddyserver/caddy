@@ -13,9 +13,7 @@ import (
 // TODO: A simple way to format or escape or encode each value would be nice
 // ... TODO: Should we just use templates? :-/ yeesh...
 
-func newReplacer(req *http.Request, w http.ResponseWriter) caddy2.Replacer {
-	repl := caddy2.NewReplacer()
-
+func addHTTPVarsToReplacer(repl caddy2.Replacer, req *http.Request, w http.ResponseWriter) {
 	httpVars := func() map[string]string {
 		m := make(map[string]string)
 		if req != nil {
@@ -78,6 +76,4 @@ func newReplacer(req *http.Request, w http.ResponseWriter) caddy2.Replacer {
 	}
 
 	repl.Map(httpVars)
-
-	return repl
 }

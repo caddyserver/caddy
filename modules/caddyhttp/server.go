@@ -32,14 +32,18 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// set up the replacer
-	repl := newReplacer(r, w)
+	// set up the context for the request
+	repl := caddy2.NewReplacer()
 	ctx := context.WithValue(r.Context(), caddy2.ReplacerCtxKey, repl)
 	ctx = context.WithValue(ctx, TableCtxKey, make(map[string]interface{})) // TODO: Implement this
 	r = r.WithContext(ctx)
 
+	// once the pointer to the request won't change
+	// anymore, finish setting up the replacer
+	addHTTPVarsToReplacer(repl, r, w)
+
 	// build and execute the main handler chain
-	stack := s.Routes.BuildCompositeRoute(w, r)
+	stack, w := s.Routes.BuildCompositeRoute(w, r)
 	err := s.executeCompositeRoute(w, r, stack)
 	if err != nil {
 		// add the raw error value to the request context
@@ -64,7 +68,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(handlerErr.StatusCode)
 			}
 		} else {
-			errStack := s.Errors.Routes.BuildCompositeRoute(w, r)
+			errStack, w := s.Errors.Routes.BuildCompositeRoute(w, r)
 			err := s.executeCompositeRoute(w, r, errStack)
 			if err != nil {
 				// TODO: what should we do if the error handler has an error?

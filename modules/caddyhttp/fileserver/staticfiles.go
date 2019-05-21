@@ -104,7 +104,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request) error 
 	if filename == "" {
 		// no files worked, so resort to fallback
 		if fsrv.Fallback != nil {
-			fallback := fsrv.Fallback.BuildCompositeRoute(w, r)
+			fallback, w := fsrv.Fallback.BuildCompositeRoute(w, r)
 			return fallback.ServeHTTP(w, r)
 		}
 		return caddyhttp.Error(http.StatusNotFound, nil)

@@ -9,6 +9,7 @@ import (
 	_ "bitbucket.org/lightcodelabs/caddy2/modules/caddyhttp/fileserver"
 	_ "bitbucket.org/lightcodelabs/caddy2/modules/caddyhttp/headers"
 	_ "bitbucket.org/lightcodelabs/caddy2/modules/caddyhttp/reverseproxy"
+	_ "bitbucket.org/lightcodelabs/caddy2/modules/caddyhttp/rewrite"
 	_ "bitbucket.org/lightcodelabs/caddy2/modules/caddytls"
 )
 

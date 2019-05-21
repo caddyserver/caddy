@@ -227,9 +227,10 @@ func TestPathREMatcher(t *testing.T) {
 
 		// set up the fake request and its Replacer
 		req := &http.Request{URL: &url.URL{Path: tc.input}}
-		repl := newReplacer(req, httptest.NewRecorder())
+		repl := caddy2.NewReplacer()
 		ctx := context.WithValue(req.Context(), caddy2.ReplacerCtxKey, repl)
 		req = req.WithContext(ctx)
+		addHTTPVarsToReplacer(repl, req, httptest.NewRecorder())
 
 		actual := tc.match.Match(req)
 		if actual != tc.expect {
@@ -344,9 +345,10 @@ func TestHeaderREMatcher(t *testing.T) {
 
 		// set up the fake request and its Replacer
 		req := &http.Request{Header: tc.input, URL: new(url.URL)}
-		repl := newReplacer(req, httptest.NewRecorder())
+		repl := caddy2.NewReplacer()
 		ctx := context.WithValue(req.Context(), caddy2.ReplacerCtxKey, repl)
 		req = req.WithContext(ctx)
+		addHTTPVarsToReplacer(repl, req, httptest.NewRecorder())
 
 		actual := tc.match.Match(req)
 		if actual != tc.expect {
