@@ -136,10 +136,10 @@ type App interface {
 
 // Config represents a Caddy configuration.
 type Config struct {
-	StorageRaw json.RawMessage `json:"storage"`
+	StorageRaw json.RawMessage `json:"storage,omitempty"`
 	storage    certmagic.Storage
 
-	AppsRaw map[string]json.RawMessage `json:"apps"`
+	AppsRaw map[string]json.RawMessage `json:"apps,omitempty"`
 
 	// apps stores the decoded Apps values,
 	// keyed by module name.

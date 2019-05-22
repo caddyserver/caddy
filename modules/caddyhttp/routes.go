@@ -12,12 +12,12 @@ import (
 // middlewares, and a responder for handling HTTP
 // requests.
 type ServerRoute struct {
-	Group    string                     `json:"group"`
-	Matchers map[string]json.RawMessage `json:"match"`
-	Apply    []json.RawMessage          `json:"apply"`
-	Respond  json.RawMessage            `json:"respond"`
+	Group    string                     `json:"group,omitempty"`
+	Matchers map[string]json.RawMessage `json:"match,omitempty"`
+	Apply    []json.RawMessage          `json:"apply,omitempty"`
+	Respond  json.RawMessage            `json:"respond,omitempty"`
 
-	Terminal bool `json:"terminal"`
+	Terminal bool `json:"terminal,omitempty"`
 
 	// decoded values
 	matchers   []RequestMatcher

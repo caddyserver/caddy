@@ -32,10 +32,10 @@ func init() {
 
 // App is the HTTP app for Caddy.
 type App struct {
-	HTTPPort    int                `json:"http_port"`
-	HTTPSPort   int                `json:"https_port"`
-	GracePeriod caddy2.Duration    `json:"grace_period"`
-	Servers     map[string]*Server `json:"servers"`
+	HTTPPort    int                `json:"http_port,omitempty"`
+	HTTPSPort   int                `json:"https_port,omitempty"`
+	GracePeriod caddy2.Duration    `json:"grace_period,omitempty"`
+	Servers     map[string]*Server `json:"servers,omitempty"`
 
 	servers []*http.Server
 
@@ -188,7 +188,7 @@ func (app *App) automaticHTTPS() error {
 		domainSet := make(map[string]struct{})
 		for _, route := range srv.Routes {
 			for _, m := range route.matchers {
-				if hm, ok := m.(*matchHost); ok {
+				if hm, ok := m.(*MatchHost); ok {
 					for _, d := range *hm {
 						if !certmagic.HostQualifies(d) {
 							continue
@@ -246,8 +246,8 @@ func (app *App) automaticHTTPS() error {
 
 				redirRoutes = append(redirRoutes, ServerRoute{
 					matchers: []RequestMatcher{
-						matchProtocol("http"),
-						matchHost(domains),
+						MatchProtocol("http"),
+						MatchHost(domains),
 					},
 					responder: Static{
 						StatusCode: http.StatusTemporaryRedirect, // TODO: use permanent redirect instead

@@ -13,15 +13,15 @@ import (
 
 // Server is an HTTP server.
 type Server struct {
-	Listen                []string                    `json:"listen"`
-	ReadTimeout           caddy2.Duration             `json:"read_timeout"`
-	ReadHeaderTimeout     caddy2.Duration             `json:"read_header_timeout"`
-	Routes                RouteList                   `json:"routes"`
-	Errors                httpErrorConfig             `json:"errors"`
-	TLSConnPolicies       caddytls.ConnectionPolicies `json:"tls_connection_policies"`
-	DisableAutoHTTPS      bool                        `json:"disable_auto_https"`
-	DisableAutoHTTPSRedir bool                        `json:"disable_auto_https_redir"`
-	MaxRehandles          int                         `json:"max_rehandles"`
+	Listen                []string                    `json:"listen,omitempty"`
+	ReadTimeout           caddy2.Duration             `json:"read_timeout,omitempty"`
+	ReadHeaderTimeout     caddy2.Duration             `json:"read_header_timeout,omitempty"`
+	Routes                RouteList                   `json:"routes,omitempty"`
+	Errors                *httpErrorConfig            `json:"errors,omitempty"`
+	TLSConnPolicies       caddytls.ConnectionPolicies `json:"tls_connection_policies,omitempty"`
+	DisableAutoHTTPS      bool                        `json:"disable_auto_https,omitempty"`
+	DisableAutoHTTPSRedir bool                        `json:"disable_auto_https_redir,omitempty"`
+	MaxRehandles          int                         `json:"max_rehandles,omitempty"`
 
 	tlsApp *caddytls.TLS
 }
@@ -99,7 +99,7 @@ func (s *Server) executeCompositeRoute(w http.ResponseWriter, r *http.Request, s
 }
 
 type httpErrorConfig struct {
-	Routes RouteList `json:"routes"`
+	Routes RouteList `json:"routes,omitempty"`
 	// TODO: some way to configure the logging of errors, probably? standardize
 	// the logging configuration first.
 }

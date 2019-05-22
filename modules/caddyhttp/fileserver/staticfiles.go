@@ -27,14 +27,14 @@ func init() {
 
 // FileServer implements a static file server responder for Caddy.
 type FileServer struct {
-	Root            string              `json:"root"` // default is current directory
-	Hide            []string            `json:"hide"`
-	IndexNames      []string            `json:"index_names"`
-	Files           []string            `json:"files"` // all relative to the root; default is request URI path
-	SelectionPolicy string              `json:"selection_policy"`
-	Rehandle        bool                `json:"rehandle"` // issue a rehandle (internal redirect) if request is rewritten
-	Fallback        caddyhttp.RouteList `json:"fallback"`
-	Browse          *Browse             `json:"browse"`
+	Root            string              `json:"root,omitempty"` // default is current directory
+	Hide            []string            `json:"hide,omitempty"`
+	IndexNames      []string            `json:"index_names,omitempty"`
+	Files           []string            `json:"files,omitempty"` // all relative to the root; default is request URI path
+	SelectionPolicy string              `json:"selection_policy,omitempty"`
+	Rehandle        bool                `json:"rehandle,omitempty"` // issue a rehandle (internal redirect) if request is rewritten
+	Fallback        caddyhttp.RouteList `json:"fallback,omitempty"`
+	Browse          *Browse             `json:"browse,omitempty"`
 	// TODO: Etag
 	// TODO: Content negotiation
 }

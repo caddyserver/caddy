@@ -15,7 +15,7 @@ import (
 
 // Browse configures directory browsing.
 type Browse struct {
-	TemplateFile string `json:"template_file"`
+	TemplateFile string `json:"template_file,omitempty"`
 
 	template *template.Template
 }

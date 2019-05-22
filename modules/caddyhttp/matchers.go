@@ -17,58 +17,58 @@ import (
 )
 
 type (
-	matchHost         []string
-	matchPath         []string
-	matchPathRE       struct{ matchRegexp }
-	matchMethod       []string
-	matchQuery        url.Values
-	matchHeader       http.Header
-	matchHeaderRE     map[string]*matchRegexp
-	matchProtocol     string
-	matchStarlarkExpr string
-	matchTable        string // TODO: finish implementing
+	MatchHost         []string
+	MatchPath         []string
+	MatchPathRE       struct{ matchRegexp }
+	MatchMethod       []string
+	MatchQuery        url.Values
+	MatchHeader       http.Header
+	MatchHeaderRE     map[string]*matchRegexp
+	MatchProtocol     string
+	MatchStarlarkExpr string
+	MatchTable        string // TODO: finish implementing
 )
 
 func init() {
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "http.matchers.host",
-		New:  func() interface{} { return matchHost{} },
+		New:  func() interface{} { return MatchHost{} },
 	})
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "http.matchers.path",
-		New:  func() interface{} { return matchPath{} },
+		New:  func() interface{} { return MatchPath{} },
 	})
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "http.matchers.path_regexp",
-		New:  func() interface{} { return new(matchPathRE) },
+		New:  func() interface{} { return new(MatchPathRE) },
 	})
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "http.matchers.method",
-		New:  func() interface{} { return matchMethod{} },
+		New:  func() interface{} { return MatchMethod{} },
 	})
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "http.matchers.query",
-		New:  func() interface{} { return matchQuery{} },
+		New:  func() interface{} { return MatchQuery{} },
 	})
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "http.matchers.header",
-		New:  func() interface{} { return matchHeader{} },
+		New:  func() interface{} { return MatchHeader{} },
 	})
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "http.matchers.header_regexp",
-		New:  func() interface{} { return matchHeaderRE{} },
+		New:  func() interface{} { return MatchHeaderRE{} },
 	})
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "http.matchers.protocol",
-		New:  func() interface{} { return new(matchProtocol) },
+		New:  func() interface{} { return new(MatchProtocol) },
 	})
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "http.matchers.starlark_expr",
-		New:  func() interface{} { return new(matchStarlarkExpr) },
+		New:  func() interface{} { return new(MatchStarlarkExpr) },
 	})
 }
 
-func (m matchHost) Match(r *http.Request) bool {
+func (m MatchHost) Match(r *http.Request) bool {
 outer:
 	for _, host := range m {
 		if strings.Contains(host, "*") {
@@ -93,7 +93,7 @@ outer:
 	return false
 }
 
-func (m matchPath) Match(r *http.Request) bool {
+func (m MatchPath) Match(r *http.Request) bool {
 	for _, matchPath := range m {
 		compare := r.URL.Path
 		if strings.HasPrefix(matchPath, "*") {
@@ -111,12 +111,12 @@ func (m matchPath) Match(r *http.Request) bool {
 	return false
 }
 
-func (m matchPathRE) Match(r *http.Request) bool {
+func (m MatchPathRE) Match(r *http.Request) bool {
 	repl := r.Context().Value(caddy2.ReplacerCtxKey).(caddy2.Replacer)
 	return m.match(r.URL.Path, repl, "path_regexp")
 }
 
-func (m matchMethod) Match(r *http.Request) bool {
+func (m MatchMethod) Match(r *http.Request) bool {
 	for _, method := range m {
 		if r.Method == method {
 			return true
@@ -125,7 +125,7 @@ func (m matchMethod) Match(r *http.Request) bool {
 	return false
 }
 
-func (m matchQuery) Match(r *http.Request) bool {
+func (m MatchQuery) Match(r *http.Request) bool {
 	for param, vals := range m {
 		paramVal := r.URL.Query().Get(param)
 		for _, v := range vals {
@@ -137,7 +137,7 @@ func (m matchQuery) Match(r *http.Request) bool {
 	return false
 }
 
-func (m matchHeader) Match(r *http.Request) bool {
+func (m MatchHeader) Match(r *http.Request) bool {
 	for field, allowedFieldVals := range m {
 		var match bool
 		actualFieldVals := r.Header[textproto.CanonicalMIMEHeaderKey(field)]
@@ -157,7 +157,7 @@ func (m matchHeader) Match(r *http.Request) bool {
 	return true
 }
 
-func (m matchHeaderRE) Match(r *http.Request) bool {
+func (m MatchHeaderRE) Match(r *http.Request) bool {
 	for field, rm := range m {
 		repl := r.Context().Value(caddy2.ReplacerCtxKey).(caddy2.Replacer)
 		match := rm.match(r.Header.Get(field), repl, "header_regexp")
@@ -168,7 +168,7 @@ func (m matchHeaderRE) Match(r *http.Request) bool {
 	return true
 }
 
-func (m matchHeaderRE) Provision() error {
+func (m MatchHeaderRE) Provision() error {
 	for _, rm := range m {
 		err := rm.Provision()
 		if err != nil {
@@ -178,7 +178,7 @@ func (m matchHeaderRE) Provision() error {
 	return nil
 }
 
-func (m matchHeaderRE) Validate() error {
+func (m MatchHeaderRE) Validate() error {
 	for _, rm := range m {
 		err := rm.Validate()
 		if err != nil {
@@ -188,7 +188,7 @@ func (m matchHeaderRE) Validate() error {
 	return nil
 }
 
-func (m matchProtocol) Match(r *http.Request) bool {
+func (m MatchProtocol) Match(r *http.Request) bool {
 	switch string(m) {
 	case "grpc":
 		return r.Header.Get("content-type") == "application/grpc"
@@ -200,7 +200,7 @@ func (m matchProtocol) Match(r *http.Request) bool {
 	return false
 }
 
-func (m matchStarlarkExpr) Match(r *http.Request) bool {
+func (m MatchStarlarkExpr) Match(r *http.Request) bool {
 	input := string(m)
 	thread := new(starlark.Thread)
 	env := caddyscript.MatcherEnv(r)
@@ -264,13 +264,13 @@ var wordRE = regexp.MustCompile(`\w+`)
 
 // Interface guards
 var (
-	_ RequestMatcher = (*matchHost)(nil)
-	_ RequestMatcher = (*matchPath)(nil)
-	_ RequestMatcher = (*matchPathRE)(nil)
-	_ RequestMatcher = (*matchMethod)(nil)
-	_ RequestMatcher = (*matchQuery)(nil)
-	_ RequestMatcher = (*matchHeader)(nil)
-	_ RequestMatcher = (*matchHeaderRE)(nil)
-	_ RequestMatcher = (*matchProtocol)(nil)
-	_ RequestMatcher = (*matchStarlarkExpr)(nil)
+	_ RequestMatcher = (*MatchHost)(nil)
+	_ RequestMatcher = (*MatchPath)(nil)
+	_ RequestMatcher = (*MatchPathRE)(nil)
+	_ RequestMatcher = (*MatchMethod)(nil)
+	_ RequestMatcher = (*MatchQuery)(nil)
+	_ RequestMatcher = (*MatchHeader)(nil)
+	_ RequestMatcher = (*MatchHeaderRE)(nil)
+	_ RequestMatcher = (*MatchProtocol)(nil)
+	_ RequestMatcher = (*MatchStarlarkExpr)(nil)
 )

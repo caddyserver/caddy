@@ -17,22 +17,22 @@ func init() {
 
 // Headers is a middleware which can mutate HTTP headers.
 type Headers struct {
-	Request  HeaderOps     `json:"request"`
-	Response RespHeaderOps `json:"response"`
+	Request  *HeaderOps     `json:"request,omitempty"`
+	Response *RespHeaderOps `json:"response,omitempty"`
 }
 
 // HeaderOps defines some operations to
 // perform on HTTP headers.
 type HeaderOps struct {
-	Add    http.Header `json:"add"`
-	Set    http.Header `json:"set"`
-	Delete []string    `json:"delete"`
+	Add    http.Header `json:"add,omitempty"`
+	Set    http.Header `json:"set,omitempty"`
+	Delete []string    `json:"delete,omitempty"`
 }
 
 // RespHeaderOps is like HeaderOps, but
 // optionally deferred until response time.
 type RespHeaderOps struct {
-	HeaderOps
+	*HeaderOps
 	Deferred bool `json:"deferred"`
 }
 
@@ -51,7 +51,7 @@ func (h Headers) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 	return next.ServeHTTP(w, r)
 }
 
-func apply(ops HeaderOps, hdr http.Header, repl caddy2.Replacer) {
+func apply(ops *HeaderOps, hdr http.Header, repl caddy2.Replacer) {
 	for fieldName, vals := range ops.Add {
 		fieldName = repl.ReplaceAll(fieldName, "")
 		for _, v := range vals {
@@ -75,7 +75,7 @@ func apply(ops HeaderOps, hdr http.Header, repl caddy2.Replacer) {
 type responseWriterWrapper struct {
 	*caddyhttp.ResponseWriterWrapper
 	replacer    caddy2.Replacer
-	headerOps   HeaderOps
+	headerOps   *HeaderOps
 	wroteHeader bool
 }
 

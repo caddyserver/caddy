@@ -18,9 +18,9 @@ func init() {
 
 // Rewrite is a middleware which can rewrite HTTP requests.
 type Rewrite struct {
-	Method   string `json:"method"`
-	URI      string `json:"uri"`
-	Rehandle bool   `json:"rehandle"`
+	Method   string `json:"method,omitempty"`
+	URI      string `json:"uri,omitempty"`
+	Rehandle bool   `json:"rehandle,omitempty"`
 }
 
 func (rewr Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {

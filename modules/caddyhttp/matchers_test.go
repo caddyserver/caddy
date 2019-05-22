@@ -13,77 +13,77 @@ import (
 
 func TestHostMatcher(t *testing.T) {
 	for i, tc := range []struct {
-		match  matchHost
+		match  MatchHost
 		input  string
 		expect bool
 	}{
 		{
-			match:  matchHost{},
+			match:  MatchHost{},
 			input:  "example.com",
 			expect: false,
 		},
 		{
-			match:  matchHost{"example.com"},
+			match:  MatchHost{"example.com"},
 			input:  "example.com",
 			expect: true,
 		},
 		{
-			match:  matchHost{"example.com"},
+			match:  MatchHost{"example.com"},
 			input:  "foo.example.com",
 			expect: false,
 		},
 		{
-			match:  matchHost{"example.com"},
+			match:  MatchHost{"example.com"},
 			input:  "EXAMPLE.COM",
 			expect: true,
 		},
 		{
-			match:  matchHost{"foo.example.com"},
+			match:  MatchHost{"foo.example.com"},
 			input:  "foo.example.com",
 			expect: true,
 		},
 		{
-			match:  matchHost{"foo.example.com"},
+			match:  MatchHost{"foo.example.com"},
 			input:  "bar.example.com",
 			expect: false,
 		},
 		{
-			match:  matchHost{"*.example.com"},
+			match:  MatchHost{"*.example.com"},
 			input:  "example.com",
 			expect: false,
 		},
 		{
-			match:  matchHost{"*.example.com"},
+			match:  MatchHost{"*.example.com"},
 			input:  "foo.example.com",
 			expect: true,
 		},
 		{
-			match:  matchHost{"*.example.com"},
+			match:  MatchHost{"*.example.com"},
 			input:  "foo.bar.example.com",
 			expect: false,
 		},
 		{
-			match:  matchHost{"*.example.com", "example.net"},
+			match:  MatchHost{"*.example.com", "example.net"},
 			input:  "example.net",
 			expect: true,
 		},
 		{
-			match:  matchHost{"example.net", "*.example.com"},
+			match:  MatchHost{"example.net", "*.example.com"},
 			input:  "foo.example.com",
 			expect: true,
 		},
 		{
-			match:  matchHost{"*.example.net", "*.*.example.com"},
+			match:  MatchHost{"*.example.net", "*.*.example.com"},
 			input:  "foo.bar.example.com",
 			expect: true,
 		},
 		{
-			match:  matchHost{"*.example.net", "sub.*.example.com"},
+			match:  MatchHost{"*.example.net", "sub.*.example.com"},
 			input:  "sub.foo.example.com",
 			expect: true,
 		},
 		{
-			match:  matchHost{"*.example.net", "sub.*.example.com"},
+			match:  MatchHost{"*.example.net", "sub.*.example.com"},
 			input:  "sub.foo.example.net",
 			expect: false,
 		},
@@ -99,57 +99,57 @@ func TestHostMatcher(t *testing.T) {
 
 func TestPathMatcher(t *testing.T) {
 	for i, tc := range []struct {
-		match  matchPath
+		match  MatchPath
 		input  string
 		expect bool
 	}{
 		{
-			match:  matchPath{},
+			match:  MatchPath{},
 			input:  "/",
 			expect: false,
 		},
 		{
-			match:  matchPath{"/"},
+			match:  MatchPath{"/"},
 			input:  "/",
 			expect: true,
 		},
 		{
-			match:  matchPath{"/foo/bar"},
+			match:  MatchPath{"/foo/bar"},
 			input:  "/",
 			expect: false,
 		},
 		{
-			match:  matchPath{"/foo/bar"},
+			match:  MatchPath{"/foo/bar"},
 			input:  "/foo/bar",
 			expect: true,
 		},
 		{
-			match:  matchPath{"/foo/bar/"},
+			match:  MatchPath{"/foo/bar/"},
 			input:  "/foo/bar",
 			expect: false,
 		},
 		{
-			match:  matchPath{"/foo/bar/", "/other"},
+			match:  MatchPath{"/foo/bar/", "/other"},
 			input:  "/other/",
 			expect: true,
 		},
 		{
-			match:  matchPath{"*.ext"},
+			match:  MatchPath{"*.ext"},
 			input:  "foo.ext",
 			expect: true,
 		},
 		{
-			match:  matchPath{"*.ext"},
+			match:  MatchPath{"*.ext"},
 			input:  "/foo/bar.ext",
 			expect: true,
 		},
 		{
-			match:  matchPath{"/foo/*/baz"},
+			match:  MatchPath{"/foo/*/baz"},
 			input:  "/foo/bar/baz",
 			expect: true,
 		},
 		{
-			match:  matchPath{"/foo/*/baz/bam"},
+			match:  MatchPath{"/foo/*/baz/bam"},
 			input:  "/foo/bar/bam",
 			expect: false,
 		},
@@ -165,49 +165,49 @@ func TestPathMatcher(t *testing.T) {
 
 func TestPathREMatcher(t *testing.T) {
 	for i, tc := range []struct {
-		match      matchPathRE
+		match      MatchPathRE
 		input      string
 		expect     bool
 		expectRepl map[string]string
 	}{
 		{
-			match:  matchPathRE{},
+			match:  MatchPathRE{},
 			input:  "/",
 			expect: true,
 		},
 		{
-			match:  matchPathRE{matchRegexp{Pattern: "/"}},
+			match:  MatchPathRE{matchRegexp{Pattern: "/"}},
 			input:  "/",
 			expect: true,
 		},
 		{
-			match:  matchPathRE{matchRegexp{Pattern: "/foo"}},
+			match:  MatchPathRE{matchRegexp{Pattern: "/foo"}},
 			input:  "/foo",
 			expect: true,
 		},
 		{
-			match:  matchPathRE{matchRegexp{Pattern: "/foo"}},
+			match:  MatchPathRE{matchRegexp{Pattern: "/foo"}},
 			input:  "/foo/",
 			expect: true,
 		},
 		{
-			match:  matchPathRE{matchRegexp{Pattern: "/bar"}},
+			match:  MatchPathRE{matchRegexp{Pattern: "/bar"}},
 			input:  "/foo/",
 			expect: false,
 		},
 		{
-			match:  matchPathRE{matchRegexp{Pattern: "^/bar"}},
+			match:  MatchPathRE{matchRegexp{Pattern: "^/bar"}},
 			input:  "/foo/bar",
 			expect: false,
 		},
 		{
-			match:      matchPathRE{matchRegexp{Pattern: "^/foo/(.*)/baz$", Name: "name"}},
+			match:      MatchPathRE{matchRegexp{Pattern: "^/foo/(.*)/baz$", Name: "name"}},
 			input:      "/foo/bar/baz",
 			expect:     true,
 			expectRepl: map[string]string{"name.1": "bar"},
 		},
 		{
-			match:      matchPathRE{matchRegexp{Pattern: "^/foo/(?P<myparam>.*)/baz$", Name: "name"}},
+			match:      MatchPathRE{matchRegexp{Pattern: "^/foo/(?P<myparam>.*)/baz$", Name: "name"}},
 			input:      "/foo/bar/baz",
 			expect:     true,
 			expectRepl: map[string]string{"name.myparam": "bar"},
@@ -253,47 +253,47 @@ func TestPathREMatcher(t *testing.T) {
 
 func TestHeaderMatcher(t *testing.T) {
 	for i, tc := range []struct {
-		match  matchHeader
+		match  MatchHeader
 		input  http.Header // make sure these are canonical cased (std lib will do that in a real request)
 		expect bool
 	}{
 		{
-			match:  matchHeader{"Field": []string{"foo"}},
+			match:  MatchHeader{"Field": []string{"foo"}},
 			input:  http.Header{"Field": []string{"foo"}},
 			expect: true,
 		},
 		{
-			match:  matchHeader{"Field": []string{"foo", "bar"}},
+			match:  MatchHeader{"Field": []string{"foo", "bar"}},
 			input:  http.Header{"Field": []string{"bar"}},
 			expect: true,
 		},
 		{
-			match:  matchHeader{"Field": []string{"foo", "bar"}},
+			match:  MatchHeader{"Field": []string{"foo", "bar"}},
 			input:  http.Header{"Alakazam": []string{"kapow"}},
 			expect: false,
 		},
 		{
-			match:  matchHeader{"Field": []string{"foo", "bar"}},
+			match:  MatchHeader{"Field": []string{"foo", "bar"}},
 			input:  http.Header{"Field": []string{"kapow"}},
 			expect: false,
 		},
 		{
-			match:  matchHeader{"Field": []string{"foo", "bar"}},
+			match:  MatchHeader{"Field": []string{"foo", "bar"}},
 			input:  http.Header{"Field": []string{"kapow", "foo"}},
 			expect: true,
 		},
 		{
-			match:  matchHeader{"Field1": []string{"foo"}, "Field2": []string{"bar"}},
+			match:  MatchHeader{"Field1": []string{"foo"}, "Field2": []string{"bar"}},
 			input:  http.Header{"Field1": []string{"foo"}, "Field2": []string{"bar"}},
 			expect: true,
 		},
 		{
-			match:  matchHeader{"field1": []string{"foo"}, "field2": []string{"bar"}},
+			match:  MatchHeader{"field1": []string{"foo"}, "field2": []string{"bar"}},
 			input:  http.Header{"Field1": []string{"foo"}, "Field2": []string{"bar"}},
 			expect: true,
 		},
 		{
-			match:  matchHeader{"field1": []string{"foo"}, "field2": []string{"bar"}},
+			match:  MatchHeader{"field1": []string{"foo"}, "field2": []string{"bar"}},
 			input:  http.Header{"Field1": []string{"foo"}, "Field2": []string{"kapow"}},
 			expect: false,
 		},
@@ -309,23 +309,23 @@ func TestHeaderMatcher(t *testing.T) {
 
 func TestHeaderREMatcher(t *testing.T) {
 	for i, tc := range []struct {
-		match      matchHeaderRE
+		match      MatchHeaderRE
 		input      http.Header // make sure these are canonical cased (std lib will do that in a real request)
 		expect     bool
 		expectRepl map[string]string
 	}{
 		{
-			match:  matchHeaderRE{"Field": &matchRegexp{Pattern: "foo"}},
+			match:  MatchHeaderRE{"Field": &matchRegexp{Pattern: "foo"}},
 			input:  http.Header{"Field": []string{"foo"}},
 			expect: true,
 		},
 		{
-			match:  matchHeaderRE{"Field": &matchRegexp{Pattern: "$foo^"}},
+			match:  MatchHeaderRE{"Field": &matchRegexp{Pattern: "$foo^"}},
 			input:  http.Header{"Field": []string{"foobar"}},
 			expect: false,
 		},
 		{
-			match:      matchHeaderRE{"Field": &matchRegexp{Pattern: "^foo(.*)$", Name: "name"}},
+			match:      MatchHeaderRE{"Field": &matchRegexp{Pattern: "^foo(.*)$", Name: "name"}},
 			input:      http.Header{"Field": []string{"foobar"}},
 			expect:     true,
 			expectRepl: map[string]string{"name.1": "bar"},

@@ -37,6 +37,8 @@ const (
 	// TypeBalanceRandom represents the value to use for configuring a load balanced reverse proxy to use random load balancing.
 	TypeBalanceRandom
 
+	// TODO: add random with two choices
+
 	// msgNoHealthyUpstreams is returned if there are no upstreams that are healthy to proxy a request to
 	msgNoHealthyUpstreams = "No healthy upstreams."
 
