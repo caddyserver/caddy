@@ -1,6 +1,7 @@
 package caddy2
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -120,20 +121,31 @@ func Modules() []string {
 }
 
 // getModuleNameInline loads the string value from raw of moduleNameKey,
-// where raw must be a JSON encoding of a map.
-func getModuleNameInline(moduleNameKey string, raw json.RawMessage) (string, error) {
+// where raw must be a JSON encoding of a map. It returns that value,
+// along with the result of removing that key from raw.
+func getModuleNameInline(moduleNameKey string, raw json.RawMessage) (string, json.RawMessage, error) {
 	var tmp map[string]interface{}
 	err := json.Unmarshal(raw, &tmp)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 
 	moduleName, ok := tmp[moduleNameKey].(string)
 	if !ok || moduleName == "" {
-		return "", fmt.Errorf("module name not specified with key '%s' in %+v", moduleNameKey, tmp)
+		return "", nil, fmt.Errorf("module name not specified with key '%s' in %+v", moduleNameKey, tmp)
 	}
 
-	return moduleName, nil
+	// remove key from the object, otherwise decoding it later
+	// will yield an error because the struct won't recognize it
+	// (this is only needed because we strictly enforce that
+	// all keys are recognized when loading modules)
+	delete(tmp, moduleNameKey)
+	result, err := json.Marshal(tmp)
+	if err != nil {
+		return "", nil, fmt.Errorf("re-encoding module configuration: %v", err)
+	}
+
+	return moduleName, result, nil
 }
 
 // Provisioner is implemented by modules which may need to perform
@@ -164,6 +176,16 @@ type Validator interface {
 // should be fast and efficient.
 type CleanerUpper interface {
 	Cleanup() error
+}
+
+// strictUnmarshalJSON is like json.Unmarshal but returns an error
+// if any of the fields are unrecognized. Useful when decoding
+// module configurations, where you want to be more sure they're
+// correct.
+func strictUnmarshalJSON(data []byte, v interface{}) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	return dec.Decode(v)
 }
 
 var (

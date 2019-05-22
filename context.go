@@ -84,7 +84,7 @@ func (ctx Context) LoadModule(name string, rawMsg json.RawMessage) (interface{},
 
 	// fill in its config only if there is a config to fill in
 	if len(rawMsg) > 0 {
-		err := json.Unmarshal(rawMsg, &val)
+		err := strictUnmarshalJSON(rawMsg, &val)
 		if err != nil {
 			return nil, fmt.Errorf("decoding module config: %s: %v", mod.Name, err)
 		}
@@ -127,7 +127,7 @@ func (ctx Context) LoadModule(name string, rawMsg json.RawMessage) (interface{},
 // containing the module name is treated special/separate from all
 // the other keys.
 func (ctx Context) LoadModuleInline(moduleNameKey, moduleScope string, raw json.RawMessage) (interface{}, error) {
-	moduleName, err := getModuleNameInline(moduleNameKey, raw)
+	moduleName, raw, err := getModuleNameInline(moduleNameKey, raw)
 	if err != nil {
 		return nil, err
 	}
