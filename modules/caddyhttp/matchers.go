@@ -17,16 +17,35 @@ import (
 )
 
 type (
-	MatchHost         []string
-	MatchPath         []string
-	MatchPathRE       struct{ matchRegexp }
-	MatchMethod       []string
-	MatchQuery        url.Values
-	MatchHeader       http.Header
-	MatchHeaderRE     map[string]*matchRegexp
-	MatchProtocol     string
+	// MatchHost matches requests by the Host value.
+	MatchHost []string
+
+	// MatchPath matches requests by the URI's path.
+	MatchPath []string
+
+	// MatchPathRE matches requests by a regular expression on the URI's path.
+	MatchPathRE struct{ MatchRegexp }
+
+	// MatchMethod matches requests by the method.
+	MatchMethod []string
+
+	// MatchQuery matches requests by URI's query string.
+	MatchQuery url.Values
+
+	// MatchHeader matches requests by header fields.
+	MatchHeader http.Header
+
+	// MatchHeaderRE matches requests by a regular expression on header fields.
+	MatchHeaderRE map[string]*MatchRegexp
+
+	// MatchProtocol matches requests by protocol.
+	MatchProtocol string
+
+	// MatchStarlarkExpr matches requests by evaluating a Starlark expression.
 	MatchStarlarkExpr string
-	MatchTable        string // TODO: finish implementing
+
+	// MatchTable matches requests by values in the table.
+	MatchTable string // TODO: finish implementing
 )
 
 func init() {
@@ -68,6 +87,7 @@ func init() {
 	})
 }
 
+// Match returns true if r matches m.
 func (m MatchHost) Match(r *http.Request) bool {
 outer:
 	for _, host := range m {
@@ -93,6 +113,7 @@ outer:
 	return false
 }
 
+// Match returns true if r matches m.
 func (m MatchPath) Match(r *http.Request) bool {
 	for _, matchPath := range m {
 		compare := r.URL.Path
@@ -111,11 +132,13 @@ func (m MatchPath) Match(r *http.Request) bool {
 	return false
 }
 
+// Match returns true if r matches m.
 func (m MatchPathRE) Match(r *http.Request) bool {
 	repl := r.Context().Value(caddy2.ReplacerCtxKey).(caddy2.Replacer)
-	return m.match(r.URL.Path, repl, "path_regexp")
+	return m.MatchRegexp.Match(r.URL.Path, repl, "path_regexp")
 }
 
+// Match returns true if r matches m.
 func (m MatchMethod) Match(r *http.Request) bool {
 	for _, method := range m {
 		if r.Method == method {
@@ -125,6 +148,7 @@ func (m MatchMethod) Match(r *http.Request) bool {
 	return false
 }
 
+// Match returns true if r matches m.
 func (m MatchQuery) Match(r *http.Request) bool {
 	for param, vals := range m {
 		paramVal := r.URL.Query().Get(param)
@@ -137,6 +161,7 @@ func (m MatchQuery) Match(r *http.Request) bool {
 	return false
 }
 
+// Match returns true if r matches m.
 func (m MatchHeader) Match(r *http.Request) bool {
 	for field, allowedFieldVals := range m {
 		var match bool
@@ -157,10 +182,11 @@ func (m MatchHeader) Match(r *http.Request) bool {
 	return true
 }
 
+// Match returns true if r matches m.
 func (m MatchHeaderRE) Match(r *http.Request) bool {
 	for field, rm := range m {
 		repl := r.Context().Value(caddy2.ReplacerCtxKey).(caddy2.Replacer)
-		match := rm.match(r.Header.Get(field), repl, "header_regexp")
+		match := rm.Match(r.Header.Get(field), repl, "header_regexp")
 		if !match {
 			return false
 		}
@@ -168,6 +194,7 @@ func (m MatchHeaderRE) Match(r *http.Request) bool {
 	return true
 }
 
+// Provision compiles m's regular expressions.
 func (m MatchHeaderRE) Provision() error {
 	for _, rm := range m {
 		err := rm.Provision()
@@ -178,6 +205,7 @@ func (m MatchHeaderRE) Provision() error {
 	return nil
 }
 
+// Validate validates m's regular expressions.
 func (m MatchHeaderRE) Validate() error {
 	for _, rm := range m {
 		err := rm.Validate()
@@ -188,6 +216,7 @@ func (m MatchHeaderRE) Validate() error {
 	return nil
 }
 
+// Match returns true if r matches m.
 func (m MatchProtocol) Match(r *http.Request) bool {
 	switch string(m) {
 	case "grpc":
@@ -200,6 +229,7 @@ func (m MatchProtocol) Match(r *http.Request) bool {
 	return false
 }
 
+// Match returns true if r matches m.
 func (m MatchStarlarkExpr) Match(r *http.Request) bool {
 	input := string(m)
 	thread := new(starlark.Thread)
@@ -213,15 +243,16 @@ func (m MatchStarlarkExpr) Match(r *http.Request) bool {
 	return val.String() == "True"
 }
 
-// matchRegexp is just the fields common among
-// matchers that can use regular expressions.
-type matchRegexp struct {
+// MatchRegexp is an embeddable type for matching
+// using regular expressions.
+type MatchRegexp struct {
 	Name     string `json:"name"`
 	Pattern  string `json:"pattern"`
 	compiled *regexp.Regexp
 }
 
-func (mre *matchRegexp) Provision() error {
+// Provision compiles the regular expression.
+func (mre *MatchRegexp) Provision() error {
 	re, err := regexp.Compile(mre.Pattern)
 	if err != nil {
 		return fmt.Errorf("compiling matcher regexp %s: %v", mre.Pattern, err)
@@ -230,14 +261,21 @@ func (mre *matchRegexp) Provision() error {
 	return nil
 }
 
-func (mre *matchRegexp) Validate() error {
+// Validate ensures mre is set up correctly.
+func (mre *MatchRegexp) Validate() error {
 	if mre.Name != "" && !wordRE.MatchString(mre.Name) {
 		return fmt.Errorf("invalid regexp name (must contain only word characters): %s", mre.Name)
 	}
 	return nil
 }
 
-func (mre *matchRegexp) match(input string, repl caddy2.Replacer, scope string) bool {
+// Match returns true if input matches the compiled regular
+// expression in mre. It sets values on the replacer repl
+// associated with capture groups, using the given scope
+// (namespace). Capture groups stored to repl will take on
+// the name "http.matchers.<scope>.<mre.Name>.<N>" where
+// <N> is the name or number of the capture group.
+func (mre *MatchRegexp) Match(input string, repl caddy2.Replacer, scope string) bool {
 	matches := mre.compiled.FindStringSubmatch(input)
 	if matches == nil {
 		return false

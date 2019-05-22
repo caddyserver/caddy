@@ -12,17 +12,42 @@ import (
 // middlewares, and a responder for handling HTTP
 // requests.
 type ServerRoute struct {
-	Group    string                     `json:"group,omitempty"`
-	Matchers map[string]json.RawMessage `json:"match,omitempty"`
-	Apply    []json.RawMessage          `json:"apply,omitempty"`
-	Respond  json.RawMessage            `json:"respond,omitempty"`
+	Group       string                       `json:"group,omitempty"`
+	MatcherSets []map[string]json.RawMessage `json:"match,omitempty"`
+	Apply       []json.RawMessage            `json:"apply,omitempty"`
+	Respond     json.RawMessage              `json:"respond,omitempty"`
 
 	Terminal bool `json:"terminal,omitempty"`
 
 	// decoded values
-	matchers   []RequestMatcher
-	middleware []MiddlewareHandler
-	responder  Handler
+	matcherSets []MatcherSet
+	middleware  []MiddlewareHandler
+	responder   Handler
+}
+
+func (sr ServerRoute) anyMatcherSetMatches(r *http.Request) bool {
+	for _, ms := range sr.matcherSets {
+		if ms.Match(r) {
+			return true
+		}
+	}
+	return false
+}
+
+// MatcherSet is a set of matchers which
+// must all match in order for the request
+// to be matched successfully.
+type MatcherSet []RequestMatcher
+
+// Match returns true if the request matches all
+// matchers in mset.
+func (mset MatcherSet) Match(r *http.Request) bool {
+	for _, m := range mset {
+		if !m.Match(r) {
+			return false
+		}
+	}
+	return true
 }
 
 // RouteList is a list of server routes that can
@@ -33,14 +58,18 @@ type RouteList []ServerRoute
 func (routes RouteList) Provision(ctx caddy2.Context) error {
 	for i, route := range routes {
 		// matchers
-		for modName, rawMsg := range route.Matchers {
-			val, err := ctx.LoadModule("http.matchers."+modName, rawMsg)
-			if err != nil {
-				return fmt.Errorf("loading matcher module '%s': %v", modName, err)
+		for _, matcherSet := range route.MatcherSets {
+			var matchers MatcherSet
+			for modName, rawMsg := range matcherSet {
+				val, err := ctx.LoadModule("http.matchers."+modName, rawMsg)
+				if err != nil {
+					return fmt.Errorf("loading matcher module '%s': %v", modName, err)
+				}
+				matchers = append(matchers, val.(RequestMatcher))
 			}
-			routes[i].matchers = append(routes[i].matchers, val.(RequestMatcher))
+			routes[i].matcherSets = append(routes[i].matcherSets, matchers)
 		}
-		routes[i].Matchers = nil // allow GC to deallocate - TODO: Does this help?
+		routes[i].MatcherSets = nil // allow GC to deallocate - TODO: Does this help?
 
 		// middleware
 		for j, rawMsg := range route.Apply {
@@ -78,13 +107,10 @@ func (routes RouteList) BuildCompositeRoute(rw http.ResponseWriter, req *http.Re
 	var responder Handler
 	groups := make(map[string]struct{})
 
-routeLoop:
 	for _, route := range routes {
-		// see if route matches
-		for _, m := range route.matchers {
-			if !m.Match(req) {
-				continue routeLoop
-			}
+		// route must match at least one of the matcher sets
+		if !route.anyMatcherSetMatches(req) {
+			continue
 		}
 
 		// if route is part of a group, ensure only

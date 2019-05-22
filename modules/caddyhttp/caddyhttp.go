@@ -53,13 +53,17 @@ func (app *App) Provision(ctx caddy2.Context) error {
 		for i := range srv.Listen {
 			srv.Listen[i] = repl.ReplaceAll(srv.Listen[i], "")
 		}
-		err := srv.Routes.Provision(ctx)
-		if err != nil {
-			return fmt.Errorf("setting up server routes: %v", err)
+		if srv.Routes != nil {
+			err := srv.Routes.Provision(ctx)
+			if err != nil {
+				return fmt.Errorf("setting up server routes: %v", err)
+			}
 		}
-		err = srv.Errors.Routes.Provision(ctx)
-		if err != nil {
-			return fmt.Errorf("setting up server error handling routes: %v", err)
+		if srv.Errors != nil {
+			err := srv.Errors.Routes.Provision(ctx)
+			if err != nil {
+				return fmt.Errorf("setting up server error handling routes: %v", err)
+			}
 		}
 	}
 
@@ -187,13 +191,15 @@ func (app *App) automaticHTTPS() error {
 		// find all qualifying domain names, de-duplicated
 		domainSet := make(map[string]struct{})
 		for _, route := range srv.Routes {
-			for _, m := range route.matchers {
-				if hm, ok := m.(*MatchHost); ok {
-					for _, d := range *hm {
-						if !certmagic.HostQualifies(d) {
-							continue
+			for _, matcherSet := range route.matcherSets {
+				for _, m := range matcherSet {
+					if hm, ok := m.(*MatchHost); ok {
+						for _, d := range *hm {
+							if !certmagic.HostQualifies(d) {
+								continue
+							}
+							domainSet[d] = struct{}{}
 						}
-						domainSet[d] = struct{}{}
 					}
 				}
 			}
@@ -245,9 +251,11 @@ func (app *App) automaticHTTPS() error {
 				redirTo += "{http.request.uri}"
 
 				redirRoutes = append(redirRoutes, ServerRoute{
-					matchers: []RequestMatcher{
-						MatchProtocol("http"),
-						MatchHost(domains),
+					matcherSets: []MatcherSet{
+						{
+							MatchProtocol("http"),
+							MatchHost(domains),
+						},
 					},
 					responder: Static{
 						StatusCode: http.StatusTemporaryRedirect, // TODO: use permanent redirect instead

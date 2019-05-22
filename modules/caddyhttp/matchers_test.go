@@ -176,38 +176,38 @@ func TestPathREMatcher(t *testing.T) {
 			expect: true,
 		},
 		{
-			match:  MatchPathRE{matchRegexp{Pattern: "/"}},
+			match:  MatchPathRE{MatchRegexp{Pattern: "/"}},
 			input:  "/",
 			expect: true,
 		},
 		{
-			match:  MatchPathRE{matchRegexp{Pattern: "/foo"}},
+			match:  MatchPathRE{MatchRegexp{Pattern: "/foo"}},
 			input:  "/foo",
 			expect: true,
 		},
 		{
-			match:  MatchPathRE{matchRegexp{Pattern: "/foo"}},
+			match:  MatchPathRE{MatchRegexp{Pattern: "/foo"}},
 			input:  "/foo/",
 			expect: true,
 		},
 		{
-			match:  MatchPathRE{matchRegexp{Pattern: "/bar"}},
+			match:  MatchPathRE{MatchRegexp{Pattern: "/bar"}},
 			input:  "/foo/",
 			expect: false,
 		},
 		{
-			match:  MatchPathRE{matchRegexp{Pattern: "^/bar"}},
+			match:  MatchPathRE{MatchRegexp{Pattern: "^/bar"}},
 			input:  "/foo/bar",
 			expect: false,
 		},
 		{
-			match:      MatchPathRE{matchRegexp{Pattern: "^/foo/(.*)/baz$", Name: "name"}},
+			match:      MatchPathRE{MatchRegexp{Pattern: "^/foo/(.*)/baz$", Name: "name"}},
 			input:      "/foo/bar/baz",
 			expect:     true,
 			expectRepl: map[string]string{"name.1": "bar"},
 		},
 		{
-			match:      MatchPathRE{matchRegexp{Pattern: "^/foo/(?P<myparam>.*)/baz$", Name: "name"}},
+			match:      MatchPathRE{MatchRegexp{Pattern: "^/foo/(?P<myparam>.*)/baz$", Name: "name"}},
 			input:      "/foo/bar/baz",
 			expect:     true,
 			expectRepl: map[string]string{"name.myparam": "bar"},
@@ -315,17 +315,17 @@ func TestHeaderREMatcher(t *testing.T) {
 		expectRepl map[string]string
 	}{
 		{
-			match:  MatchHeaderRE{"Field": &matchRegexp{Pattern: "foo"}},
+			match:  MatchHeaderRE{"Field": &MatchRegexp{Pattern: "foo"}},
 			input:  http.Header{"Field": []string{"foo"}},
 			expect: true,
 		},
 		{
-			match:  MatchHeaderRE{"Field": &matchRegexp{Pattern: "$foo^"}},
+			match:  MatchHeaderRE{"Field": &MatchRegexp{Pattern: "$foo^"}},
 			input:  http.Header{"Field": []string{"foobar"}},
 			expect: false,
 		},
 		{
-			match:      MatchHeaderRE{"Field": &matchRegexp{Pattern: "^foo(.*)$", Name: "name"}},
+			match:      MatchHeaderRE{"Field": &MatchRegexp{Pattern: "^foo(.*)$", Name: "name"}},
 			input:      http.Header{"Field": []string{"foobar"}},
 			expect:     true,
 			expectRepl: map[string]string{"name.1": "bar"},
