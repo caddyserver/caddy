@@ -188,6 +188,11 @@ func (app *App) automaticHTTPS() error {
 			continue
 		}
 
+		// skip if all listeners use the HTTP port
+		if !srv.listenersUseAnyPortOtherThan(app.HTTPPort) {
+			continue
+		}
+
 		// find all qualifying domain names, de-duplicated
 		domainSet := make(map[string]struct{})
 		for _, route := range srv.Routes {

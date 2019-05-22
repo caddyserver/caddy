@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"strconv"
 
@@ -96,6 +97,21 @@ func (s *Server) executeCompositeRoute(w http.ResponseWriter, r *http.Request, s
 		}
 	}
 	return err
+}
+
+func (s *Server) listenersUseAnyPortOtherThan(otherPort int) bool {
+	for _, lnAddr := range s.Listen {
+		_, addrs, err := parseListenAddr(lnAddr)
+		if err == nil {
+			for _, a := range addrs {
+				_, port, err := net.SplitHostPort(a)
+				if err == nil && port != strconv.Itoa(otherPort) {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 type httpErrorConfig struct {
