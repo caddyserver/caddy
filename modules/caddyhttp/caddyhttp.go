@@ -110,6 +110,9 @@ func (app *App) Start() error {
 		s := &http.Server{
 			ReadTimeout:       time.Duration(srv.ReadTimeout),
 			ReadHeaderTimeout: time.Duration(srv.ReadHeaderTimeout),
+			WriteTimeout:      time.Duration(srv.WriteTimeout),
+			IdleTimeout:       time.Duration(srv.IdleTimeout),
+			MaxHeaderBytes:    srv.MaxHeaderBytes,
 			Handler:           srv,
 		}
 

@@ -1,4 +1,4 @@
-package headers
+package rewrite
 
 import (
 	"net/http"
