@@ -8,11 +8,14 @@ import (
 
 // Main executes the main function of the caddy command.
 func Main() {
-	err := caddy2.StartAdmin("127.0.0.1:1234")
+	addr := ":1234" // TODO: for dev only
+	err := caddy2.StartAdmin(addr)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer caddy2.StopAdmin()
+
+	log.Println("Caddy 2 admin endpoint listening on", addr)
 
 	select {}
 }
