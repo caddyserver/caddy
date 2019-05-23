@@ -31,7 +31,8 @@ func (sr ServerRoute) anyMatcherSetMatches(r *http.Request) bool {
 			return true
 		}
 	}
-	return false
+	// if no matchers, always match
+	return len(sr.matcherSets) == 0
 }
 
 // MatcherSet is a set of matchers which

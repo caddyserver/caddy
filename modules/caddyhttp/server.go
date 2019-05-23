@@ -65,18 +65,18 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			repl.Set("http.error.id", handlerErr.ID)
 		}
 
-		if len(s.Errors.Routes) == 0 {
-			// TODO: polish the default error handling
-			log.Printf("[ERROR] Handler: %s", err)
-			if handlerErr, ok := err.(HandlerError); ok {
-				w.WriteHeader(handlerErr.StatusCode)
-			}
-		} else {
+		if s.Errors != nil && len(s.Errors.Routes) > 0 {
 			errStack, w := s.Errors.Routes.BuildCompositeRoute(w, r)
 			err := s.executeCompositeRoute(w, r, errStack)
 			if err != nil {
 				// TODO: what should we do if the error handler has an error?
 				log.Printf("[ERROR] handling error: %v", err)
+			}
+		} else {
+			// TODO: polish the default error handling
+			log.Printf("[ERROR] Handler: %s", err)
+			if handlerErr, ok := err.(HandlerError); ok {
+				w.WriteHeader(handlerErr.StatusCode)
 			}
 		}
 	}
