@@ -285,10 +285,12 @@ var DefaultIndexPages = []string{
 var staticEncoding = map[string]string{
 	"gzip": ".gz",
 	"br":   ".br",
+	"zstd": ".zst",
 }
 
 // staticEncodingPriority is a list of preferred static encodings (most efficient compression to least one).
 var staticEncodingPriority = []string{
+	"zstd",
 	"br",
 	"gzip",
 }

@@ -264,6 +264,17 @@ func TestServeHTTP(t *testing.T) {
 			expectedLocation:    "https://foo/example.com/../",
 			expectedBodyContent: movedPermanently,
 		},
+		// Test 30 - try to get pre- file.
+		{
+			url:                   "https://foo/sub/gzipped.html",
+			acceptEncoding:        "zstd",
+			expectedStatus:        http.StatusOK,
+			expectedBodyContent:   testFiles[webrootSubGzippedHTMLZst],
+			expectedEtag:          `"2n9ci"`,
+			expectedVary:          "Accept-Encoding",
+			expectedEncoding:      "zstd",
+			expectedContentLength: strconv.Itoa(len(testFiles[webrootSubGzippedHTMLZst])),
+		},
 	}
 
 	for i, test := range tests {
@@ -547,6 +558,7 @@ var (
 	webrootSubGzippedHTML              = filepath.Join(webrootName, "sub", "gzipped.html")
 	webrootSubGzippedHTMLGz            = filepath.Join(webrootName, "sub", "gzipped.html.gz")
 	webrootSubGzippedHTMLBr            = filepath.Join(webrootName, "sub", "gzipped.html.br")
+	webrootSubGzippedHTMLZst           = filepath.Join(webrootName, "sub", "gzipped.html.zst")
 	webrootSubBrotliHTML               = filepath.Join(webrootName, "sub", "brotli.html")
 	webrootSubBrotliHTMLGz             = filepath.Join(webrootName, "sub", "brotli.html.gz")
 	webrootSubBrotliHTMLBr             = filepath.Join(webrootName, "sub", "brotli.html.br")
@@ -574,9 +586,10 @@ var testFiles = map[string]string{
 	webrootSubGzippedHTML:              "<h1>gzipped.html</h1>",
 	webrootSubGzippedHTMLGz:            "1.gzipped.html.gz",
 	webrootSubGzippedHTMLBr:            "2.gzipped.html.br",
-	webrootSubBrotliHTML:               "3.brotli.html",
-	webrootSubBrotliHTMLGz:             "4.brotli.html.gz",
-	webrootSubBrotliHTMLBr:             "5.brotli.html.br",
+	webrootSubGzippedHTMLZst:           "3.gzipped.html.zst",
+	webrootSubBrotliHTML:               "4.brotli.html",
+	webrootSubBrotliHTMLGz:             "5.brotli.html.gz",
+	webrootSubBrotliHTMLBr:             "6.brotli.html.br",
 	webrootSubBarDirWithIndexIndexHTML: "<h1>bar/dirwithindex/index.html</h1>",
 }
 
