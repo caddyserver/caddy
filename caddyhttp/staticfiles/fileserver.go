@@ -184,8 +184,7 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request) (int, err
 		return http.StatusNotFound, nil
 	}
 
-	etag := calculateEtag(d)
-
+	etagInfo := d
 	// look for compressed versions of the file on disk, if the client supports that encoding
 	for _, encoding := range staticEncodingPriority {
 		// see if the client accepts a compressed encoding we offer
@@ -222,12 +221,14 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request) (int, err
 
 		// the encoded file is now what we're serving
 		f = encodedFile
-		etag = calculateEtag(encodedFileInfo)
+		etagInfo = encodedFileInfo
 		w.Header().Add("Vary", "Accept-Encoding")
 		w.Header().Set("Content-Encoding", encoding.name)
 		w.Header().Set("Content-Length", strconv.FormatInt(encodedFileInfo.Size(), 10))
 		break
 	}
+
+	etag := calculateEtag(etagInfo)
 
 	// Set the ETag returned to the user-agent. Note that a conditional If-None-Match
 	// request is handled in http.ServeContent below, which checks against this ETag value.
