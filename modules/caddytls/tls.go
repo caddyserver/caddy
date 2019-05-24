@@ -2,6 +2,7 @@ package caddytls
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -314,6 +315,13 @@ var supportedProtocols = map[string]uint16{
 	"tls1.1": tls.VersionTLS11,
 	"tls1.2": tls.VersionTLS12,
 	"tls1.3": tls.VersionTLS13,
+}
+
+// publicKeyAlgorithms is the map of supported public key algorithms.
+var publicKeyAlgorithms = map[string]pkAlgorithm{
+	"rsa":   pkAlgorithm(x509.RSA),
+	"dsa":   pkAlgorithm(x509.DSA),
+	"ecdsa": pkAlgorithm(x509.ECDSA),
 }
 
 const automateKey = "automate"
