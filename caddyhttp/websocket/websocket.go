@@ -21,6 +21,7 @@ import (
 	"bufio"
 	"bytes"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -80,9 +81,9 @@ type (
 
 // ServeHTTP converts the HTTP request to a WebSocket connection and serves it up.
 func (ws WebSocket) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
-	for _, sockconfig := range ws.Sockets {
-		if httpserver.Path(r.URL.Path).Matches(sockconfig.Path) {
-			return serveWS(w, r, &sockconfig)
+	for _, sockConfig := range ws.Sockets {
+		if httpserver.Path(r.URL.Path).Matches(sockConfig.Path) {
+			return serveWS(w, r, &sockConfig)
 		}
 	}
 
@@ -135,7 +136,7 @@ func serveWS(w http.ResponseWriter, r *http.Request, config *Config) (int, error
 	go pumpStdout(conn, stdout, done)
 	pumpStdin(conn, stdin)
 
-	stdin.Close() // close stdin to end the process
+	_ = stdin.Close() // close stdin to end the process
 
 	if err := cmd.Process.Signal(os.Interrupt); err != nil { // signal an interrupt to kill the process
 		return http.StatusInternalServerError, err
@@ -155,7 +156,9 @@ func serveWS(w http.ResponseWriter, r *http.Request, config *Config) (int, error
 	// status for an "exited" process is greater
 	// than 0, but isn't really an error per se.
 	// just going to ignore it for now.
-	cmd.Wait()
+	if err := cmd.Wait(); err != nil {
+		log.Println("[ERROR] failed to release resources: ", err)
+	}
 
 	return 0, nil
 }
@@ -221,8 +224,15 @@ func pumpStdin(conn *websocket.Conn, stdin io.WriteCloser) {
 	// Setup our connection's websocket ping/pong handlers from our const values.
 	defer conn.Close()
 	conn.SetReadLimit(maxMessageSize)
-	conn.SetReadDeadline(time.Now().Add(pongWait))
-	conn.SetPongHandler(func(string) error { conn.SetReadDeadline(time.Now().Add(pongWait)); return nil })
+	if err := conn.SetReadDeadline(time.Now().Add(pongWait)); err != nil {
+		log.Println("[ERROR] failed to set read deadline: ", err)
+	}
+	conn.SetPongHandler(func(string) error {
+		if err := conn.SetReadDeadline(time.Now().Add(pongWait)); err != nil {
+			log.Println("[ERROR] failed to set read deadline: ", err)
+		}
+		return nil
+	})
 	for {
 		_, message, err := conn.ReadMessage()
 		if err != nil {
@@ -240,19 +250,24 @@ func pumpStdin(conn *websocket.Conn, stdin io.WriteCloser) {
 func pumpStdout(conn *websocket.Conn, stdout io.Reader, done chan struct{}) {
 	go pinger(conn, done)
 	defer func() {
-		conn.Close()
+		_ = conn.Close()
 		close(done) // make sure to close the pinger when we are done.
 	}()
 
 	s := bufio.NewScanner(stdout)
 	for s.Scan() {
-		conn.SetWriteDeadline(time.Now().Add(writeWait))
+		if err := conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
+			log.Println("[ERROR] failed to set write deadline: ", err)
+		}
 		if err := conn.WriteMessage(websocket.TextMessage, bytes.TrimSpace(s.Bytes())); err != nil {
 			break
 		}
 	}
 	if s.Err() != nil {
-		conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseGoingAway, s.Err().Error()), time.Time{})
+		err := conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseGoingAway, s.Err().Error()), time.Time{})
+		if err != nil {
+			log.Println("[ERROR] WriteControl failed: ", err)
+		}
 	}
 }
 
@@ -265,7 +280,10 @@ func pinger(conn *websocket.Conn, done chan struct{}) {
 		select {
 		case <-ticker.C:
 			if err := conn.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(writeWait)); err != nil {
-				conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseGoingAway, err.Error()), time.Time{})
+				err := conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseGoingAway, err.Error()), time.Time{})
+				if err != nil {
+					log.Println("[ERROR] WriteControl failed: ", err)
+				}
 				return
 			}
 		case <-done:

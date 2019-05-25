@@ -16,6 +16,7 @@ package httpserver
 
 import (
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -180,7 +181,9 @@ func TestEnableAutoHTTPS(t *testing.T) {
 		{}, // not managed - no changes!
 	}
 
-	enableAutoHTTPS(configs, false)
+	if err := enableAutoHTTPS(configs, false); err != nil {
+		log.Println("[ERROR]  enableAutoHTTPS failed: ", err)
+	}
 
 	if !configs[0].TLS.Enabled {
 		t.Errorf("Expected config 0 to have TLS.Enabled == true, but it was false")

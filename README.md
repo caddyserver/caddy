@@ -81,8 +81,7 @@ To build from source you need **[Git](https://git-scm.com/downloads)** and **[Go
 
 <!-- TODO: This env variable will not be required starting with Go 1.13 -->
 1. Set the transitional environment variable for Go modules: `export GO111MODULE=on`
-<!-- TODO: The specific version will not be required after the stable 1.0.0 release -->
-2. Run `go get github.com/mholt/caddy/caddy@v1.0.0-beta2`
+2. Run `go get github.com/mholt/caddy/caddy`
 
 Caddy will be installed to your `$GOPATH/bin` folder.
 
@@ -94,7 +93,7 @@ There is no need to modify the Caddy code to build it with plugins. We will crea
 
 <!-- TODO: This env variable will not be required starting with Go 1.13 -->
 1. Set the transitional environment variable for Go modules: `export GO111MODULE=on`
-2. Create a new folder anywhere, and put this Go file into it, then import the plugins you want to include:
+2. Create a new folder anywhere and within create a Go file  (extension `.go`) with the contents below, adjusting to import the plugins you want to include:
 ```go
 package main
 
@@ -111,8 +110,9 @@ func main() {
 	caddymain.Run()
 }
 ```
-3. `go mod init mycaddy` (the name doesn't really matter).
-4. `go install` will then create your binary at `$GOPATH/bin`, or `go build` will put it in the current directory.
+3. `go mod init caddy`
+4. Run `go get github.com/mholt/caddy`
+5. `go install` will then create your binary at `$GOPATH/bin`, or `go build` will put it in the current directory.
 
 **To install Caddy's source code for development:**
 
@@ -120,7 +120,7 @@ func main() {
 1. Set the transitional environment variable for Go modules: `export GO111MODULE=on`
 2. Run `git clone https://github.com/mholt/caddy.git` in any folder (doesn't have to be in GOPATH).
 
-You can make changes to the source code in this repo, since it is a Go module.
+You can make changes to the source code from that clone and checkout any commit or tag you wish to develop on.
 
 When building from source, telemetry is enabled by default. You can disable it by changing `caddymain.EnableTelemetry = false` in run.go, or use the `-disabled-metrics` flag at runtime to disable only certain metrics.
 

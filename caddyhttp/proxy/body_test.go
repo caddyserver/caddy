@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -25,13 +26,15 @@ import (
 
 func TestBodyRetry(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		io.Copy(w, r.Body)
-		r.Body.Close()
+		if _, err := io.Copy(w, r.Body); err != nil {
+			log.Println("[ERROR] failed to copy response body: ", err)
+		}
+		_ = r.Body.Close()
 	}))
 	defer ts.Close()
 
-	testcase := "test content"
-	req, err := http.NewRequest(http.MethodPost, ts.URL, bytes.NewBufferString(testcase))
+	testCase := "test content"
+	req, err := http.NewRequest(http.MethodPost, ts.URL, bytes.NewBufferString(testCase))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,12 +50,16 @@ func TestBodyRetry(t *testing.T) {
 	// simulate fail request
 	host := req.URL.Host
 	req.URL.Host = "example.com"
-	body.rewind()
+	if err := body.rewind(); err != nil {
+		log.Println("[ERROR] failed re-read bufferedBody: ", err)
+	}
 	_, _ = http.DefaultTransport.RoundTrip(req)
 
 	// retry request
 	req.URL.Host = host
-	body.rewind()
+	if err := body.rewind(); err != nil {
+		log.Println("[ERROR] failed re-read bufferedBody: ", err)
+	}
 	resp, err := http.DefaultTransport.RoundTrip(req)
 	if err != nil {
 		t.Fatal(err)
@@ -61,13 +68,15 @@ func TestBodyRetry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp.Body.Close()
-	if string(result) != testcase {
-		t.Fatalf("result = %s, want %s", result, testcase)
+	_ = resp.Body.Close()
+	if string(result) != testCase {
+		t.Fatalf("result = %s, want %s", result, testCase)
 	}
 
 	// try one more time for body reuse
-	body.rewind()
+	if err := body.rewind(); err != nil {
+		log.Println("[ERROR] failed re-read bufferedBody: ", err)
+	}
 	resp, err = http.DefaultTransport.RoundTrip(req)
 	if err != nil {
 		t.Fatal(err)
@@ -76,8 +85,8 @@ func TestBodyRetry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp.Body.Close()
-	if string(result) != testcase {
-		t.Fatalf("result = %s, want %s", result, testcase)
+	_ = resp.Body.Close()
+	if string(result) != testCase {
+		t.Fatalf("result = %s, want %s", result, testCase)
 	}
 }

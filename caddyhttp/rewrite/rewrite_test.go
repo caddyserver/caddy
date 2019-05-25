@@ -17,6 +17,7 @@ package rewrite
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -32,6 +33,7 @@ func TestRewrite(t *testing.T) {
 			newSimpleRule(t, "^/from$", "/to"),
 			newSimpleRule(t, "^/a$", "/b"),
 			newSimpleRule(t, "^/b$", "/b{uri}"),
+			newSimpleRule(t, "^/simplereggrp/([0-9]+)([a-z]*)$", "/{1}/{2}/{query}"),
 		},
 		FileSys: http.Dir("."),
 	}
@@ -112,6 +114,7 @@ func TestRewrite(t *testing.T) {
 		{"/hashtest/a%20%23%20test", "/a%20%23%20test"},
 		{"/hashtest/a%20%3F%20test", "/a%20%3F%20test"},
 		{"/hashtest/a%20%3F%23test", "/a%20%3F%23test"},
+		{"/simplereggrp/123abc?q", "/123/abc/q?q"},
 	}
 
 	for i, test := range tests {
@@ -123,10 +126,12 @@ func TestRewrite(t *testing.T) {
 		req = req.WithContext(ctx)
 
 		rec := httptest.NewRecorder()
-		rw.ServeHTTP(rec, req)
+		if _, err := rw.ServeHTTP(rec, req); err != nil {
+			log.Println("[ERROR] failed to serve HTTP: ", err)
+		}
 
 		if got, want := rec.Body.String(), test.expectedTo; got != want {
-			t.Errorf("Test %d: Expected URL to be '%s' but was '%s'", i, want, got)
+			t.Errorf("Test %d: Expected URL '%s' to be rewritten to '%s' but was rewritten to '%s'", i, test.from, want, got)
 		}
 	}
 }
@@ -162,7 +167,9 @@ func TestWordpress(t *testing.T) {
 		req = req.WithContext(ctx)
 
 		rec := httptest.NewRecorder()
-		rw.ServeHTTP(rec, req)
+		if _, err := rw.ServeHTTP(rec, req); err != nil {
+			log.Println("[ERROR] failed to serve HTTP: ", err)
+		}
 
 		if got, want := rec.Body.String(), test.expectedTo; got != want {
 			t.Errorf("Test %d: Expected URL to be '%s' but was '%s'", i, want, got)
@@ -171,6 +178,6 @@ func TestWordpress(t *testing.T) {
 }
 
 func urlPrinter(w http.ResponseWriter, r *http.Request) (int, error) {
-	fmt.Fprint(w, r.URL.String())
+	_, _ = fmt.Fprint(w, r.URL.String())
 	return 0, nil
 }

@@ -16,6 +16,7 @@ package header
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -69,7 +70,9 @@ func TestHeader(t *testing.T) {
 		// preset header
 		rec.Header().Set("Server", "Caddy")
 
-		he.ServeHTTP(rec, req)
+		if _, err := he.ServeHTTP(rec, req); err != nil {
+			log.Println("[ERROR] ServeHTTP failed: ", err)
+		}
 
 		if got := rec.Header().Get(test.name); got != test.value {
 			t.Errorf("Test %d: Expected %s header to be %q but was %q",
@@ -81,7 +84,9 @@ func TestHeader(t *testing.T) {
 func TestMultipleHeaders(t *testing.T) {
 	he := Headers{
 		Next: httpserver.HandlerFunc(func(w http.ResponseWriter, r *http.Request) (int, error) {
-			fmt.Fprint(w, "This is a test")
+			if _, err := fmt.Fprint(w, "This is a test"); err != nil {
+				log.Println("[ERROR] Fprint failed: ", err)
+			}
 			return 0, nil
 		}),
 		Rules: []Rule{
@@ -97,7 +102,9 @@ func TestMultipleHeaders(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	he.ServeHTTP(rec, req)
+	if _, err := he.ServeHTTP(rec, req); err != nil {
+		log.Println("[ERROR] ServeHTTP failed: ", err)
+	}
 
 	desiredHeaders := []string{"</css/main.css>; rel=preload", "</images/image.png>; rel=preload"}
 	actualHeaders := rec.HeaderMap[http.CanonicalHeaderKey("Link")]

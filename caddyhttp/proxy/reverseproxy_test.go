@@ -15,6 +15,7 @@
 package proxy
 
 import (
+	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -39,10 +40,14 @@ func setupTLSServer() {
 		func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path == "/test-path" {
 				w.WriteHeader(expectedStatus)
-				w.Write([]byte(expectedResponse))
+				if _, err := w.Write([]byte(expectedResponse)); err != nil {
+					log.Println("[ERROR] failed to write bytes: ", err)
+				}
 			} else {
 				w.WriteHeader(404)
-				w.Write([]byte("Not found"))
+				if _, err := w.Write([]byte("Not found")); err != nil {
+					log.Println("[ERROR] failed to write bytes: ", err)
+				}
 			}
 		}))
 }
@@ -52,10 +57,14 @@ func setupTest() {
 		func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path == "/test-path" {
 				w.WriteHeader(expectedStatus)
-				w.Write([]byte(expectedResponse))
+				if _, err := w.Write([]byte(expectedResponse)); err != nil {
+					log.Println("[ERROR] failed to write bytes: ", err)
+				}
 			} else {
 				w.WriteHeader(404)
-				w.Write([]byte("Not found"))
+				if _, err := w.Write([]byte("Not found")); err != nil {
+					log.Println("[ERROR] failed to write bytes: ", err)
+				}
 			}
 		}))
 }
