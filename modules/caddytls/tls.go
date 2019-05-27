@@ -318,10 +318,10 @@ var supportedProtocols = map[string]uint16{
 }
 
 // publicKeyAlgorithms is the map of supported public key algorithms.
-var publicKeyAlgorithms = map[string]pkAlgorithm{
-	"rsa":   pkAlgorithm(x509.RSA),
-	"dsa":   pkAlgorithm(x509.DSA),
-	"ecdsa": pkAlgorithm(x509.ECDSA),
+var publicKeyAlgorithms = map[string]x509.PublicKeyAlgorithm{
+	"rsa":   x509.RSA,
+	"dsa":   x509.DSA,
+	"ecdsa": x509.ECDSA,
 }
 
 const automateKey = "automate"

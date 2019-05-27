@@ -5,7 +5,6 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
-	"math/big"
 	"strings"
 
 	"bitbucket.org/lightcodelabs/caddy2"
@@ -22,16 +21,27 @@ type ConnectionPolicies []*ConnectionPolicy
 // TLS configuration which selects the first matching policy based on
 // the ClientHello.
 func (cp ConnectionPolicies) TLSConfig(ctx caddy2.Context) (*tls.Config, error) {
-	// connection policy matchers
+	// set up each of the connection policies
 	for i, pol := range cp {
-		for modName, rawMsg := range pol.MatchersRaw {
+		// matchers
+		for modName, rawMsg := range pol.Matchers {
 			val, err := ctx.LoadModule("tls.handshake_match."+modName, rawMsg)
 			if err != nil {
 				return nil, fmt.Errorf("loading handshake matcher module '%s': %s", modName, err)
 			}
 			cp[i].matchers = append(cp[i].matchers, val.(ConnectionMatcher))
 		}
-		cp[i].MatchersRaw = nil // allow GC to deallocate - TODO: Does this help?
+		cp[i].Matchers = nil // allow GC to deallocate - TODO: Does this help?
+
+		// certificate selector
+		if pol.CertSelection != nil {
+			val, err := ctx.LoadModuleInline("policy", "tls.certificate_selection", pol.CertSelection)
+			if err != nil {
+				return nil, fmt.Errorf("loading certificate selection module: %s", err)
+			}
+			cp[i].certSelector = val.(certmagic.CertificateSelector)
+			cp[i].CertSelection = nil // allow GC to deallocate - TODO: Does this help?
+		}
 	}
 
 	// pre-build standard TLS configs so we don't have to at handshake-time
@@ -83,7 +93,8 @@ func (cp ConnectionPolicies) TLSConfig(ctx caddy2.Context) (*tls.Config, error) 
 
 // ConnectionPolicy specifies the logic for handling a TLS handshake.
 type ConnectionPolicy struct {
-	MatchersRaw map[string]json.RawMessage `json:"match,omitempty"`
+	Matchers      map[string]json.RawMessage `json:"match,omitempty"`
+	CertSelection json.RawMessage            `json:"certificate_selection,omitempty"`
 
 	CipherSuites []string `json:"cipher_suites,omitempty"`
 	Curves       []string `json:"curves,omitempty"`
@@ -91,14 +102,14 @@ type ConnectionPolicy struct {
 	ProtocolMin  string   `json:"protocol_min,omitempty"`
 	ProtocolMax  string   `json:"protocol_max,omitempty"`
 
-	CertSelection *CertSelectionPolicy `json:"certificate_selection,omitempty"`
-
 	// TODO: Client auth
 
 	// TODO: see if starlark could be useful here - enterprise only
 	StarlarkHandshake string `json:"starlark_handshake,omitempty"`
 
 	matchers     []ConnectionMatcher
+	certSelector certmagic.CertificateSelector
+
 	stdTLSConfig *tls.Config
 }
 
@@ -118,8 +129,8 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy2.Context) error {
 				return nil, fmt.Errorf("getting config for name %s: %v", hello.ServerName, err)
 			}
 			newCfg := certmagic.New(tlsApp.certCache, cfgTpl)
-			if p.CertSelection != nil {
-				newCfg.CertSelector = makeCertSelector(p)
+			if p.certSelector != nil {
+				newCfg.CertSelection = p.certSelector
 			}
 			return newCfg.GetCertificate(hello)
 		},
@@ -178,56 +189,18 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy2.Context) error {
 	return nil
 }
 
-// CertSelectionPolicy represents a policy for selecting the certificate
-// used to complete a handshake when there may be multiple options. All
-// fields specified must match the candidate certificate for it to be chosen.
-// This was needed to solve https://github.com/mholt/caddy/issues/2588.
-type CertSelectionPolicy struct {
-	SerialNumber        *big.Int    `json:"serial_number,omitempty"`
-	SubjectOrganization string      `json:"subject.organization,omitempty"`
-	PublicKeyAlgorithm  pkAlgorithm `json:"public_key_algorithm,omitempty"`
-}
-
-func makeCertSelector(p *ConnectionPolicy) func(*tls.ClientHelloInfo, []certmagic.Certificate) (certmagic.Certificate, error) {
-	return func(hello *tls.ClientHelloInfo, choices []certmagic.Certificate) (certmagic.Certificate, error) {
-		for _, cert := range choices {
-			var matchOrg bool
-			if p.CertSelection.SubjectOrganization != "" {
-				for _, org := range cert.Subject.Organization {
-					if p.CertSelection.SubjectOrganization == org {
-						matchOrg = true
-						break
-					}
-				}
-			}
-			if !matchOrg {
-				continue
-			}
-			if p.CertSelection.PublicKeyAlgorithm != pkAlgorithm(x509.UnknownPublicKeyAlgorithm) &&
-				pkAlgorithm(cert.PublicKeyAlgorithm) != p.CertSelection.PublicKeyAlgorithm {
-				continue
-			}
-			if p.CertSelection.SerialNumber != nil &&
-				cert.SerialNumber.Cmp(p.CertSelection.SerialNumber) != 0 {
-				continue
-			}
-			return cert, nil
-		}
-		return certmagic.Certificate{}, fmt.Errorf("no certificates matched custom selection policy")
-	}
-}
-
-type pkAlgorithm x509.PublicKeyAlgorithm
+// PublicKeyAlgorithm is a JSON-unmarshalable wrapper type.
+type PublicKeyAlgorithm x509.PublicKeyAlgorithm
 
 // UnmarshalJSON satisfies json.Unmarshaler.
-func (a *pkAlgorithm) UnmarshalJSON(b []byte) error {
+func (a *PublicKeyAlgorithm) UnmarshalJSON(b []byte) error {
 	algoStr := strings.ToLower(strings.Trim(string(b), `"`))
 	algo, ok := publicKeyAlgorithms[algoStr]
 	if !ok {
 		return fmt.Errorf("unrecognized public key algorithm: %s (expected one of %v)",
 			algoStr, publicKeyAlgorithms)
 	}
-	a = &algo
+	*a = PublicKeyAlgorithm(algo)
 	return nil
 }
 
