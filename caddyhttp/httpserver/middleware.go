@@ -117,6 +117,10 @@ func (c ConfigSelector) Select(r *http.Request) (config HandlerConfig) {
 // path separator, just like URLs.  IndexFle handles path manipulation
 // internally for systems that use different path separators.
 func IndexFile(root http.FileSystem, fpath string, indexFiles []string) (string, bool) {
+	if len(fpath) == 0 {
+		// https://caddy.community/t/panic-runtime-error-index-out-of-range/5781
+		fpath = "/"
+	}
 	if fpath[len(fpath)-1] != '/' || root == nil {
 		return "", false
 	}
