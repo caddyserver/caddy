@@ -264,6 +264,28 @@ func TestServeHTTP(t *testing.T) {
 			expectedLocation:    "https://foo/example.com/../",
 			expectedBodyContent: movedPermanently,
 		},
+		// Test 30 - Accept-Encoding does not fail when a qvalue is present
+		{
+			url:                   "https://foo/sub/gzipped.html",
+			acceptEncoding:        "gzip;q=0.9,bz",
+			expectedStatus:        http.StatusOK,
+			expectedBodyContent:   testFiles[webrootSubGzippedHTMLGz],
+			expectedEtag:          `"2n9ch"`,
+			expectedVary:          "Accept-Encoding",
+			expectedEncoding:      "gzip",
+			expectedContentLength: strconv.Itoa(len(testFiles[webrootSubGzippedHTMLGz])),
+		},
+		// Test 31 - Accept-Encoding ignore qvalue of zero
+		{
+			url:                   "https://foo/sub/gzipped.html",
+			acceptEncoding:        "bz;q=0,gzip;q=0.9",
+			expectedStatus:        http.StatusOK,
+			expectedBodyContent:   testFiles[webrootSubGzippedHTMLGz],
+			expectedEtag:          `"2n9ch"`,
+			expectedVary:          "Accept-Encoding",
+			expectedEncoding:      "gzip",
+			expectedContentLength: strconv.Itoa(len(testFiles[webrootSubGzippedHTMLGz])),
+		},
 	}
 
 	for i, test := range tests {

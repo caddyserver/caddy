@@ -191,7 +191,12 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request) (int, err
 		// see if the client accepts a compressed encoding we offer
 		acceptEncoding := strings.Split(r.Header.Get("Accept-Encoding"), ",")
 		accepted := false
-		for _, acc := range acceptEncoding {
+		for _, acc_q := range acceptEncoding {
+			acc, qval := parseQvalue(acc_q)
+			if qval == 0.0 {
+				continue
+			}
+
 			if strings.TrimSpace(acc) == encoding {
 				accepted = true
 				break
@@ -240,6 +245,28 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request) (int, err
 	http.ServeContent(w, r, d.Name(), d.ModTime(), f)
 
 	return http.StatusOK, nil
+}
+
+// parseQvalue Parse a string with a possible qvalue
+// if the qvalue is not present or invalid default to 1.0
+func parseQvalue(val string) (string, float64) {
+	qvalue := 1.0
+	a := strings.Split(val, ";")
+	if len(a) < 2 {
+		return val, qvalue
+	}
+
+	val, q := a[0], a[1]
+	a = strings.Split(q, "=")
+	if len(a) < 2 {
+		return val, qvalue
+	}
+
+	if t, err := strconv.ParseFloat(a[1], 64); err == nil {
+		qvalue = t
+	}
+
+	return val, qvalue
 }
 
 // IsHidden checks if file with FileInfo d is on hide list.
