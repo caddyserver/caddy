@@ -33,16 +33,18 @@ type HeaderOps struct {
 // optionally deferred until response time.
 type RespHeaderOps struct {
 	*HeaderOps
-	Deferred bool `json:"deferred"`
+	Require  *caddyhttp.ResponseMatcher `json:"require,omitempty"`
+	Deferred bool                       `json:"deferred,omitempty"`
 }
 
 func (h Headers) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	repl := r.Context().Value(caddy2.ReplacerCtxKey).(caddy2.Replacer)
 	apply(h.Request, r.Header, repl)
-	if h.Response.Deferred {
+	if h.Response.Deferred || h.Response.Require != nil {
 		w = &responseWriterWrapper{
 			ResponseWriterWrapper: &caddyhttp.ResponseWriterWrapper{ResponseWriter: w},
 			replacer:              repl,
+			require:               h.Response.Require,
 			headerOps:             h.Response.HeaderOps,
 		}
 	} else {
@@ -75,6 +77,7 @@ func apply(ops *HeaderOps, hdr http.Header, repl caddy2.Replacer) {
 type responseWriterWrapper struct {
 	*caddyhttp.ResponseWriterWrapper
 	replacer    caddy2.Replacer
+	require     *caddyhttp.ResponseMatcher
 	headerOps   *HeaderOps
 	wroteHeader bool
 }
@@ -91,7 +94,9 @@ func (rww *responseWriterWrapper) WriteHeader(status int) {
 		return
 	}
 	rww.wroteHeader = true
-	apply(rww.headerOps, rww.ResponseWriterWrapper.Header(), rww.replacer)
+	if rww.require == nil || rww.require.Match(status, rww.ResponseWriterWrapper.Header()) {
+		apply(rww.headerOps, rww.ResponseWriterWrapper.Header(), rww.replacer)
+	}
 	rww.ResponseWriterWrapper.WriteHeader(status)
 }
 

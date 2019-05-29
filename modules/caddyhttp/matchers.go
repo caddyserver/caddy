@@ -298,6 +298,61 @@ func (mre *MatchRegexp) Match(input string, repl caddy2.Replacer, scope string) 
 	return true
 }
 
+// ResponseMatcher is a type which can determine if a given response
+// status code and its headers match some criteria.
+type ResponseMatcher struct {
+	// If set, one of these status codes would be required.
+	// A one-digit status can be used to represent all codes
+	// in that class (e.g. 3 for all 3xx codes).
+	StatusCode []int `json:"status_code,omitempty"`
+
+	// If set, each header specified must be one of the specified values.
+	Headers http.Header `json:"headers,omitempty"`
+}
+
+// Match returns true if the given statusCode and hdr match rm.
+func (rm ResponseMatcher) Match(statusCode int, hdr http.Header) bool {
+	if !rm.matchStatusCode(statusCode) {
+		return false
+	}
+	return rm.matchHeaders(hdr)
+}
+
+func (rm ResponseMatcher) matchStatusCode(statusCode int) bool {
+	if rm.StatusCode == nil {
+		return true
+	}
+	for _, code := range rm.StatusCode {
+		if statusCode == code {
+			return true
+		}
+		if code < 100 && statusCode >= code*100 && statusCode < (code+1)*100 {
+			return true
+		}
+	}
+	return false
+}
+
+func (rm ResponseMatcher) matchHeaders(hdr http.Header) bool {
+	for field, allowedFieldVals := range rm.Headers {
+		var match bool
+		actualFieldVals := hdr[textproto.CanonicalMIMEHeaderKey(field)]
+	fieldVals:
+		for _, actualFieldVal := range actualFieldVals {
+			for _, allowedFieldVal := range allowedFieldVals {
+				if actualFieldVal == allowedFieldVal {
+					match = true
+					break fieldVals
+				}
+			}
+		}
+		if !match {
+			return false
+		}
+	}
+	return true
+}
+
 var wordRE = regexp.MustCompile(`\w+`)
 
 // Interface guards
