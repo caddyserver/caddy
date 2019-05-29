@@ -104,9 +104,6 @@ type ConnectionPolicy struct {
 
 	// TODO: Client auth
 
-	// TODO: see if starlark could be useful here - enterprise only
-	StarlarkHandshake string `json:"starlark_handshake,omitempty"`
-
 	matchers     []ConnectionMatcher
 	certSelector certmagic.CertificateSelector
 

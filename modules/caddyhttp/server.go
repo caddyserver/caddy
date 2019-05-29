@@ -77,6 +77,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			log.Printf("[ERROR] Handler: %s", err)
 			if handlerErr, ok := err.(HandlerError); ok {
 				w.WriteHeader(handlerErr.StatusCode)
+			} else {
+				w.WriteHeader(http.StatusInternalServerError)
 			}
 		}
 	}

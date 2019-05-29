@@ -24,7 +24,6 @@ func init() {
 		Name: "http",
 		New:  func() interface{} { return new(App) },
 	})
-
 	if err != nil {
 		log.Fatal(err)
 	}
