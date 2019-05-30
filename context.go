@@ -24,6 +24,7 @@ type Context struct {
 	context.Context
 	moduleInstances map[string][]interface{}
 	cfg             *Config
+	cleanupFuncs    []func()
 }
 
 // NewContext provides a new context derived from the given
@@ -40,6 +41,10 @@ func NewContext(ctx Context) (Context, context.CancelFunc) {
 	wrappedCancel := func() {
 		cancel()
 
+		for _, f := range ctx.cleanupFuncs {
+			f()
+		}
+
 		for modName, modInstances := range newCtx.moduleInstances {
 			for _, inst := range modInstances {
 				if cu, ok := inst.(CleanerUpper); ok {
@@ -53,6 +58,11 @@ func NewContext(ctx Context) (Context, context.CancelFunc) {
 	}
 	newCtx.Context = c
 	return newCtx, wrappedCancel
+}
+
+// OnCancel executes f when ctx is cancelled.
+func (ctx *Context) OnCancel(f func()) {
+	ctx.cleanupFuncs = append(ctx.cleanupFuncs, f)
 }
 
 // LoadModule decodes rawMsg into a new instance of mod and
