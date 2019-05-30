@@ -13,6 +13,7 @@ import (
 	_ "bitbucket.org/lightcodelabs/caddy2/modules/caddyhttp/reverseproxy"
 	_ "bitbucket.org/lightcodelabs/caddy2/modules/caddyhttp/rewrite"
 	_ "bitbucket.org/lightcodelabs/caddy2/modules/caddytls"
+	_ "bitbucket.org/lightcodelabs/caddy2/modules/caddytls/standardstek"
 )
 
 func main() {

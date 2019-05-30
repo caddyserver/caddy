@@ -133,8 +133,20 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy2.Context) error {
 		},
 		MinVersion: tls.VersionTLS12,
 		MaxVersion: tls.VersionTLS13,
-		// TODO: Session ticket key rotation (use Storage)
 	}
+
+	// session tickets support
+	cfg.SessionTicketsDisabled = tlsApp.SessionTickets.Disabled
+
+	// session ticket key rotation
+	tlsApp.SessionTickets.register(cfg)
+	ctx.OnCancel(func() {
+		// do cleanup when the context is cancelled because,
+		// though unlikely, it is possible that a context
+		// needing a TLS server config could exist for less
+		// than the lifetime of the whole app
+		tlsApp.SessionTickets.unregister(cfg)
+	})
 
 	// add all the cipher suites in order, without duplicates
 	cipherSuitesAdded := make(map[uint16]struct{})
