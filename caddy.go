@@ -157,8 +157,7 @@ func (d *Duration) UnmarshalJSON(b []byte) error {
 	if err != nil {
 		return err
 	}
-	cd := Duration(dd)
-	d = &cd
+	*d = Duration(dd)
 	return nil
 }
 
