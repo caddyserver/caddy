@@ -67,6 +67,9 @@ func (c *Config) Markdown(title string, r io.Reader, dirents []os.FileInfo, ctx 
 	markdown := parser.Markdown()
 	mdata := parser.Metadata()
 
+	// set it as the raw markdown text data for template
+	mdata.Variables["raw"] = string(markdown)
+
 	// process markdown
 	extns := 0
 	extns |= blackfriday.EXTENSION_TABLES
