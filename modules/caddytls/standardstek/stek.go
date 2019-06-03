@@ -23,7 +23,7 @@ type standardSTEKProvider struct {
 
 // Initialize sets the configuration for s and returns the starting keys.
 func (s *standardSTEKProvider) Initialize(config *caddytls.SessionTicketService) ([][32]byte, error) {
-	// keep a reference to the config, we'll need when rotating keys
+	// keep a reference to the config; we'll need it when rotating keys
 	s.stekConfig = config
 
 	itvl := time.Duration(s.stekConfig.RotationInterval)
