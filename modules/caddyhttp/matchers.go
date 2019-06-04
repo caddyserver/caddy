@@ -1,8 +1,10 @@
 package caddyhttp
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"net/textproto"
 	"net/url"
@@ -41,6 +43,20 @@ type (
 	// MatchProtocol matches requests by protocol.
 	MatchProtocol string
 
+	// MatchRemoteIP matches requests by client IP (or CIDR range).
+	MatchRemoteIP struct {
+		Ranges []string `json:"ranges,omitempty"`
+
+		cidrs []*net.IPNet
+	}
+
+	// MatchNegate matches requests by negating its matchers' results.
+	MatchNegate struct {
+		matchersRaw map[string]json.RawMessage
+
+		matchers MatcherSet
+	}
+
 	// MatchStarlarkExpr matches requests by evaluating a Starlark expression.
 	MatchStarlarkExpr string
 
@@ -51,11 +67,11 @@ type (
 func init() {
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "http.matchers.host",
-		New:  func() interface{} { return MatchHost{} },
+		New:  func() interface{} { return new(MatchHost) },
 	})
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "http.matchers.path",
-		New:  func() interface{} { return MatchPath{} },
+		New:  func() interface{} { return new(MatchPath) },
 	})
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "http.matchers.path_regexp",
@@ -63,23 +79,31 @@ func init() {
 	})
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "http.matchers.method",
-		New:  func() interface{} { return MatchMethod{} },
+		New:  func() interface{} { return new(MatchMethod) },
 	})
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "http.matchers.query",
-		New:  func() interface{} { return MatchQuery{} },
+		New:  func() interface{} { return new(MatchQuery) },
 	})
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "http.matchers.header",
-		New:  func() interface{} { return MatchHeader{} },
+		New:  func() interface{} { return new(MatchHeader) },
 	})
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "http.matchers.header_regexp",
-		New:  func() interface{} { return MatchHeaderRE{} },
+		New:  func() interface{} { return new(MatchHeaderRE) },
 	})
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "http.matchers.protocol",
 		New:  func() interface{} { return new(MatchProtocol) },
+	})
+	caddy2.RegisterModule(caddy2.Module{
+		Name: "http.matchers.remote_ip",
+		New:  func() interface{} { return new(MatchRemoteIP) },
+	})
+	caddy2.RegisterModule(caddy2.Module{
+		Name: "http.matchers.not",
+		New:  func() interface{} { return new(MatchNegate) },
 	})
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "http.matchers.starlark_expr",
@@ -229,6 +253,94 @@ func (m MatchProtocol) Match(r *http.Request) bool {
 	return false
 }
 
+// UnmarshalJSON unmarshals data into m's unexported map field.
+// This is done because we cannot embed the map directly into
+// the struct, but we need a struct because we need another
+// field just for the provisioned modules.
+func (m *MatchNegate) UnmarshalJSON(data []byte) error {
+	return json.Unmarshal(data, &m.matchersRaw)
+}
+
+// Provision loads the matcher modules to be negated.
+func (m *MatchNegate) Provision(ctx caddy2.Context) error {
+	for modName, rawMsg := range m.matchersRaw {
+		val, err := ctx.LoadModule("http.matchers."+modName, rawMsg)
+		if err != nil {
+			return fmt.Errorf("loading matcher module '%s': %v", modName, err)
+		}
+		m.matchers = append(m.matchers, val.(RequestMatcher))
+	}
+	m.matchersRaw = nil // allow GC to deallocate - TODO: Does this help?
+	return nil
+}
+
+// Match returns true if r matches m. Since this matcher negates the
+// embedded matchers, false is returned if any of its matchers match.
+func (m MatchNegate) Match(r *http.Request) bool {
+	return !m.matchers.Match(r)
+}
+
+// Provision parses m's IP ranges, either from IP or CIDR expressions.
+func (m *MatchRemoteIP) Provision(ctx caddy2.Context) error {
+	for _, str := range m.Ranges {
+		if strings.Contains(str, "/") {
+			_, ipNet, err := net.ParseCIDR(str)
+			if err != nil {
+				return fmt.Errorf("parsing CIDR expression: %v", err)
+			}
+			m.cidrs = append(m.cidrs, ipNet)
+		} else {
+			ip := net.ParseIP(str)
+			if ip == nil {
+				return fmt.Errorf("invalid IP address: %s", str)
+			}
+			mask := len(ip) * 8
+			m.cidrs = append(m.cidrs, &net.IPNet{
+				IP:   ip,
+				Mask: net.CIDRMask(mask, mask),
+			})
+		}
+	}
+	return nil
+}
+
+func (m MatchRemoteIP) getClientIP(r *http.Request) (net.IP, error) {
+	var remote string
+	if fwdFor := r.Header.Get("X-Forwarded-For"); fwdFor != "" {
+		remote = strings.TrimSpace(strings.Split(fwdFor, ",")[0])
+	}
+	if remote == "" {
+		remote = r.RemoteAddr
+	}
+
+	ipStr, _, err := net.SplitHostPort(remote)
+	if err != nil {
+		ipStr = remote // OK; probably didn't have a port
+	}
+
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return nil, fmt.Errorf("invalid client IP address: %s", ipStr)
+	}
+
+	return ip, nil
+}
+
+// Match returns true if r matches m.
+func (m MatchRemoteIP) Match(r *http.Request) bool {
+	clientIP, err := m.getClientIP(r)
+	if err != nil {
+		log.Printf("[ERROR] remote_ip matcher: %v", err)
+		return false
+	}
+	for _, ipRange := range m.cidrs {
+		if ipRange.Contains(clientIP) {
+			return true
+		}
+	}
+	return false
+}
+
 // Match returns true if r matches m.
 func (m MatchStarlarkExpr) Match(r *http.Request) bool {
 	input := string(m)
@@ -357,13 +469,17 @@ var wordRE = regexp.MustCompile(`\w+`)
 
 // Interface guards
 var (
-	_ RequestMatcher = (*MatchHost)(nil)
-	_ RequestMatcher = (*MatchPath)(nil)
-	_ RequestMatcher = (*MatchPathRE)(nil)
-	_ RequestMatcher = (*MatchMethod)(nil)
-	_ RequestMatcher = (*MatchQuery)(nil)
-	_ RequestMatcher = (*MatchHeader)(nil)
-	_ RequestMatcher = (*MatchHeaderRE)(nil)
-	_ RequestMatcher = (*MatchProtocol)(nil)
-	_ RequestMatcher = (*MatchStarlarkExpr)(nil)
+	_ RequestMatcher     = (*MatchHost)(nil)
+	_ RequestMatcher     = (*MatchPath)(nil)
+	_ RequestMatcher     = (*MatchPathRE)(nil)
+	_ RequestMatcher     = (*MatchMethod)(nil)
+	_ RequestMatcher     = (*MatchQuery)(nil)
+	_ RequestMatcher     = (*MatchHeader)(nil)
+	_ RequestMatcher     = (*MatchHeaderRE)(nil)
+	_ RequestMatcher     = (*MatchProtocol)(nil)
+	_ RequestMatcher     = (*MatchRemoteIP)(nil)
+	_ caddy2.Provisioner = (*MatchRemoteIP)(nil)
+	_ RequestMatcher     = (*MatchNegate)(nil)
+	_ caddy2.Provisioner = (*MatchNegate)(nil)
+	_ RequestMatcher     = (*MatchStarlarkExpr)(nil)
 )
