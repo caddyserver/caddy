@@ -9,8 +9,8 @@ import (
 	"path"
 	"strings"
 
-	"bitbucket.org/lightcodelabs/caddy2"
-	"bitbucket.org/lightcodelabs/caddy2/modules/caddyhttp"
+	"github.com/caddyserver/caddy2"
+	"github.com/caddyserver/caddy2/modules/caddyhttp"
 )
 
 // Browse configures directory browsing.

@@ -1,4 +1,4 @@
-module bitbucket.org/lightcodelabs/caddy2
+module github.com/caddyserver/caddy2
 
 go 1.12
 

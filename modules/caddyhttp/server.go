@@ -8,20 +8,21 @@ import (
 	"net/http"
 	"strconv"
 
-	"bitbucket.org/lightcodelabs/caddy2"
-	"bitbucket.org/lightcodelabs/caddy2/modules/caddytls"
+	"github.com/caddyserver/caddy2"
+	"github.com/caddyserver/caddy2/modules/caddytls"
 )
 
 // Server is an HTTP server.
 type Server struct {
-	Listen                []string                    `json:"listen,omitempty"`
-	ReadTimeout           caddy2.Duration             `json:"read_timeout,omitempty"`
-	ReadHeaderTimeout     caddy2.Duration             `json:"read_header_timeout,omitempty"`
-	WriteTimeout          caddy2.Duration             `json:"write_timeout,omitempty"`
-	IdleTimeout           caddy2.Duration             `json:"idle_timeout,omitempty"`
-	MaxHeaderBytes        int                         `json:"max_header_bytes,omitempty"`
-	Routes                RouteList                   `json:"routes,omitempty"`
-	Errors                *httpErrorConfig            `json:"errors,omitempty"`
+	Listen            []string         `json:"listen,omitempty"`
+	ReadTimeout       caddy2.Duration  `json:"read_timeout,omitempty"`
+	ReadHeaderTimeout caddy2.Duration  `json:"read_header_timeout,omitempty"`
+	WriteTimeout      caddy2.Duration  `json:"write_timeout,omitempty"`
+	IdleTimeout       caddy2.Duration  `json:"idle_timeout,omitempty"`
+	MaxHeaderBytes    int              `json:"max_header_bytes,omitempty"`
+	Routes            RouteList        `json:"routes,omitempty"`
+	Errors            *httpErrorConfig `json:"errors,omitempty"`
+	// TODO: Having a separate connection policy to act as a default or template would be handy... then override using first matching conn policy...
 	TLSConnPolicies       caddytls.ConnectionPolicies `json:"tls_connection_policies,omitempty"`
 	DisableAutoHTTPS      bool                        `json:"disable_auto_https,omitempty"`
 	DisableAutoHTTPSRedir bool                        `json:"disable_auto_https_redir,omitempty"`

@@ -1,7 +1,7 @@
 package reverseproxy
 
 import (
-	"bitbucket.org/lightcodelabs/caddy2"
+	"github.com/caddyserver/caddy2"
 )
 
 // Register caddy module.

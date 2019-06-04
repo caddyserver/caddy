@@ -7,7 +7,7 @@ import (
 	"runtime"
 	"strings"
 
-	"bitbucket.org/lightcodelabs/caddy2"
+	"github.com/caddyserver/caddy2"
 )
 
 // Error is a convenient way for a Handler to populate the

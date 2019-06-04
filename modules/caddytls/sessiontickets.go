@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"bitbucket.org/lightcodelabs/caddy2"
+	"github.com/caddyserver/caddy2"
 )
 
 // SessionTicketService configures and manages TLS session tickets.

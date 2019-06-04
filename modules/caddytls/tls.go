@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"bitbucket.org/lightcodelabs/caddy2"
+	"github.com/caddyserver/caddy2"
 	"github.com/go-acme/lego/challenge"
 	"github.com/mholt/certmagic"
 )

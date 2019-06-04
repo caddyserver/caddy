@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"time"
 
-	"bitbucket.org/lightcodelabs/caddy2"
-	"bitbucket.org/lightcodelabs/caddy2/modules/caddyhttp"
+	"github.com/caddyserver/caddy2"
+	"github.com/caddyserver/caddy2/modules/caddyhttp"
 )
 
 func init() {

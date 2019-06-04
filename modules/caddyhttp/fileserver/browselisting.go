@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"bitbucket.org/lightcodelabs/caddy2"
+	"github.com/caddyserver/caddy2"
 	"github.com/dustin/go-humanize"
 )
 

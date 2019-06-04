@@ -13,8 +13,8 @@ import (
 	"regexp"
 	"strings"
 
-	"bitbucket.org/lightcodelabs/caddy2"
-	"bitbucket.org/lightcodelabs/caddy2/pkg/caddyscript"
+	"github.com/caddyserver/caddy2"
+	"github.com/caddyserver/caddy2/pkg/caddyscript"
 	"go.starlark.net/starlark"
 )
 

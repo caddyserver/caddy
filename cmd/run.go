@@ -4,7 +4,7 @@ import (
 	"flag"
 	"log"
 
-	"bitbucket.org/lightcodelabs/caddy2"
+	"github.com/caddyserver/caddy2"
 )
 
 // Main executes the main function of the caddy command.

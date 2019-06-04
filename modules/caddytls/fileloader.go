@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 
-	"bitbucket.org/lightcodelabs/caddy2"
+	"github.com/caddyserver/caddy2"
 )
 
 func init() {

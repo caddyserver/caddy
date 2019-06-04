@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"bitbucket.org/lightcodelabs/caddy2"
+	"github.com/caddyserver/caddy2"
 )
 
 func init() {

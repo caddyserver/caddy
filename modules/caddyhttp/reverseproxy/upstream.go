@@ -14,7 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"bitbucket.org/lightcodelabs/caddy2"
+	"github.com/caddyserver/caddy2"
 )
 
 // CircuitBreaker defines the functionality of a circuit breaker module.

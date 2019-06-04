@@ -7,7 +7,7 @@ import (
 	"path"
 	"strings"
 
-	"bitbucket.org/lightcodelabs/caddy2"
+	"github.com/caddyserver/caddy2"
 )
 
 // TODO: A simple way to format or escape or encode each value would be nice

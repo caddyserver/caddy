@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"bitbucket.org/lightcodelabs/caddy2"
+	"github.com/caddyserver/caddy2"
 	"github.com/go-acme/lego/challenge/tlsalpn01"
 	"github.com/mholt/certmagic"
 )

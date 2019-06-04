@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"testing"
 
-	"bitbucket.org/lightcodelabs/caddy2"
+	"github.com/caddyserver/caddy2"
 )
 
 func TestHostMatcher(t *testing.T) {
