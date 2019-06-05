@@ -15,13 +15,19 @@ import (
 func init() {
 	caddy2.RegisterModule(caddy2.Module{
 		Name: "tls.management.acme",
-		New:  func() interface{} { return new(acmeManagerMaker) },
+		New:  func() interface{} { return new(ACMEManagerMaker) },
 	})
 }
 
-// acmeManagerMaker makes an ACME manager
-// for managinig certificates using ACME.
-type acmeManagerMaker struct {
+// ACMEManagerMaker makes an ACME manager
+// for managing certificates using ACME.
+// If crafting one manually rather than
+// through the config-unmarshal process
+// (provisioning), be sure to call
+// SetDefaults to ensure sane defaults
+// after you have configured this struct
+// to your liking.
+type ACMEManagerMaker struct {
 	CA          string           `json:"ca,omitempty"`
 	Email       string           `json:"email,omitempty"`
 	RenewAhead  caddy2.Duration  `json:"renew_ahead,omitempty"`
@@ -36,19 +42,22 @@ type acmeManagerMaker struct {
 	keyType certcrypto.KeyType
 }
 
-func (m *acmeManagerMaker) newManager(interactive bool) (certmagic.Manager, error) {
+// newManager is a no-op to satisfy the ManagerMaker interface,
+// because this manager type is a special case.
+func (m *ACMEManagerMaker) newManager(interactive bool) (certmagic.Manager, error) {
 	return nil, nil
 }
 
-func (m *acmeManagerMaker) Provision(ctx caddy2.Context) error {
+// Provision sets up m.
+func (m *ACMEManagerMaker) Provision(ctx caddy2.Context) error {
 	// DNS providers
 	if m.Challenges.DNS != nil {
-		val, err := ctx.LoadModuleInline("provider", "tls.dns", m.Challenges.DNS)
+		val, err := ctx.LoadModuleInline("provider", "tls.dns", m.Challenges.DNSRaw)
 		if err != nil {
 			return fmt.Errorf("loading TLS storage module: %s", err)
 		}
-		m.Challenges.dns = val.(challenge.Provider)
-		m.Challenges.DNS = nil // allow GC to deallocate - TODO: Does this help?
+		m.Challenges.DNS = val.(challenge.Provider)
+		m.Challenges.DNSRaw = nil // allow GC to deallocate - TODO: Does this help?
 	}
 
 	// policy-specific storage implementation
@@ -65,14 +74,14 @@ func (m *acmeManagerMaker) Provision(ctx caddy2.Context) error {
 		m.Storage = nil // allow GC to deallocate - TODO: Does this help?
 	}
 
-	m.setDefaults()
+	m.SetDefaults()
 
 	return nil
 }
 
-// setDefaults sets necessary values that are
+// SetDefaults sets necessary values that are
 // currently empty to their default values.
-func (m *acmeManagerMaker) setDefaults() {
+func (m *ACMEManagerMaker) SetDefaults() {
 	if m.CA == "" {
 		m.CA = certmagic.LetsEncryptStagingCA // certmagic.Default.CA // TODO: When not testing, switch to production CA
 	}
@@ -93,7 +102,7 @@ func (m *acmeManagerMaker) setDefaults() {
 // makeCertMagicConfig converts m into a certmagic.Config, because
 // this is a special case where the default manager is the certmagic
 // Config and not a separate manager.
-func (m *acmeManagerMaker) makeCertMagicConfig(ctx caddy2.Context) certmagic.Config {
+func (m *ACMEManagerMaker) makeCertMagicConfig(ctx caddy2.Context) certmagic.Config {
 	storage := m.storage
 	if storage == nil {
 		storage = ctx.Storage()
@@ -115,7 +124,7 @@ func (m *acmeManagerMaker) makeCertMagicConfig(ctx caddy2.Context) certmagic.Con
 		RenewDurationBefore:     time.Duration(m.RenewAhead),
 		AltHTTPPort:             m.Challenges.HTTP.AlternatePort,
 		AltTLSALPNPort:          m.Challenges.TLSALPN.AlternatePort,
-		DNSProvider:             m.Challenges.dns,
+		DNSProvider:             m.Challenges.DNS,
 		KeyType:                 supportedCertKeyTypes[m.KeyType],
 		CertObtainTimeout:       time.Duration(m.ACMETimeout),
 		OnDemand:                ond,
@@ -133,3 +142,6 @@ var supportedCertKeyTypes = map[string]certcrypto.KeyType{
 	"P256":    certcrypto.EC256,
 	"P384":    certcrypto.EC384,
 }
+
+// Interface guard
+var _ managerMaker = (*ACMEManagerMaker)(nil)

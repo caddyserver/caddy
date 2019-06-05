@@ -45,12 +45,12 @@ func (t *TLS) Provision(ctx caddy2.Context) error {
 
 	// automation/management policies
 	for i, ap := range t.Automation.Policies {
-		val, err := ctx.LoadModuleInline("module", "tls.management", ap.Management)
+		val, err := ctx.LoadModuleInline("module", "tls.management", ap.ManagementRaw)
 		if err != nil {
 			return fmt.Errorf("loading TLS automation management module: %s", err)
 		}
-		t.Automation.Policies[i].management = val.(ManagerMaker)
-		t.Automation.Policies[i].Management = nil // allow GC to deallocate - TODO: Does this help?
+		t.Automation.Policies[i].Management = val.(managerMaker)
+		t.Automation.Policies[i].ManagementRaw = nil // allow GC to deallocate - TODO: Does this help?
 	}
 
 	// certificate loaders
@@ -164,9 +164,9 @@ func (t *TLS) getAutomationPolicyForName(name string) AutomationPolicy {
 	}
 
 	// default automation policy
-	mgmt := new(acmeManagerMaker)
-	mgmt.setDefaults()
-	return AutomationPolicy{management: mgmt}
+	mgmt := new(ACMEManagerMaker)
+	mgmt.SetDefaults()
+	return AutomationPolicy{Management: mgmt}
 }
 
 // CertificateLoader is a type that can load certificates.
@@ -183,22 +183,22 @@ type AutomationConfig struct {
 // AutomationPolicy designates the policy for automating the
 // management of managed TLS certificates.
 type AutomationPolicy struct {
-	Hosts      []string        `json:"hosts,omitempty"`
-	Management json.RawMessage `json:"management"`
+	Hosts         []string        `json:"hosts,omitempty"`
+	ManagementRaw json.RawMessage `json:"management"`
 
-	management ManagerMaker
+	Management managerMaker `json:"-"`
 }
 
 func (ap AutomationPolicy) makeCertMagicConfig(ctx caddy2.Context) certmagic.Config {
 	// default manager (ACME) is a special case because of how CertMagic is designed
 	// TODO: refactor certmagic so that ACME manager is not a special case by extracting
 	// its config fields out of the certmagic.Config struct, or something...
-	if acmeMgmt, ok := ap.management.(*acmeManagerMaker); ok {
+	if acmeMgmt, ok := ap.Management.(*ACMEManagerMaker); ok {
 		return acmeMgmt.makeCertMagicConfig(ctx)
 	}
 
 	return certmagic.Config{
-		NewManager: ap.management.newManager,
+		NewManager: ap.Management.newManager,
 	}
 }
 
@@ -206,9 +206,9 @@ func (ap AutomationPolicy) makeCertMagicConfig(ctx caddy2.Context) certmagic.Con
 type ChallengesConfig struct {
 	HTTP    HTTPChallengeConfig    `json:"http"`
 	TLSALPN TLSALPNChallengeConfig `json:"tls-alpn"`
-	DNS     json.RawMessage        `json:"dns,omitempty"`
+	DNSRaw  json.RawMessage        `json:"dns,omitempty"`
 
-	dns challenge.Provider
+	DNS challenge.Provider `json:"-"`
 }
 
 // HTTPChallengeConfig configures the ACME HTTP challenge.
@@ -232,8 +232,8 @@ type OnDemandConfig struct {
 	AskStarlark string `json:"ask_starlark,omitempty"`
 }
 
-// ManagerMaker makes a certificate manager.
-type ManagerMaker interface {
+// managerMaker makes a certificate manager.
+type managerMaker interface {
 	newManager(interactive bool) (certmagic.Manager, error)
 }
 

@@ -126,7 +126,8 @@ func (app *App) Start() error {
 					return fmt.Errorf("%s: listening on %s: %v", network, addr, err)
 				}
 
-				// enable HTTP/2 by default
+				// enable HTTP/2 (and support for solving the
+				// TLS-ALPN ACME challenge) by default
 				for _, pol := range srv.TLSConnPolicies {
 					if len(pol.ALPN) == 0 {
 						pol.ALPN = append(pol.ALPN, defaultALPN...)
@@ -219,13 +220,38 @@ func (app *App) automaticHTTPS() error {
 				domains = append(domains, d)
 			}
 
+			// ensure that these certificates are managed properly;
+			// for example, it's implied that the HTTPPort should also
+			// be the port the HTTP challenge is solved on, and so
+			// for HTTPS port and TLS-ALPN challenge also - we need
+			// to tell the TLS app to manage these certs by honoring
+			// those port configurations
+			acmeManager := &caddytls.ACMEManagerMaker{
+				Challenges: caddytls.ChallengesConfig{
+					HTTP: caddytls.HTTPChallengeConfig{
+						AlternatePort: app.HTTPPort,
+					},
+					TLSALPN: caddytls.TLSALPNChallengeConfig{
+						AlternatePort: app.HTTPSPort,
+					},
+				},
+			}
+			acmeManager.SetDefaults()
+			tlsApp.Automation.Policies = append(tlsApp.Automation.Policies,
+				caddytls.AutomationPolicy{
+					Hosts:      domains,
+					Management: acmeManager,
+				})
+
 			// manage their certificates
 			err := tlsApp.Manage(domains)
 			if err != nil {
 				return fmt.Errorf("%s: managing certificate for %s: %s", srvName, domains, err)
 			}
 
-			// tell the server to use TLS
+			// tell the server to use TLS by specifying a TLS
+			// connection policy (which supports HTTP/2 and the
+			// TLS-ALPN ACME challenge as well)
 			srv.TLSConnPolicies = caddytls.ConnectionPolicies{
 				{ALPN: defaultALPN},
 			}
@@ -296,6 +322,7 @@ func (app *App) automaticHTTPS() error {
 			Listen:           lnAddrs,
 			Routes:           redirRoutes,
 			DisableAutoHTTPS: true,
+			tlsApp:           tlsApp, // required to solve HTTP challenge
 		}
 	}
 
