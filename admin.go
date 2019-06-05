@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/rs/cors"
 )
 
 var (
@@ -46,8 +48,10 @@ func StartAdmin(addr string) error {
 		mux.Handle(route.Pattern, route)
 	}
 
+	handler := cors.Default().Handler(mux)
+
 	cfgEndptSrv = &http.Server{
-		Handler:           mux,
+		Handler:           handler,
 		ReadTimeout:       5 * time.Second,
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       5 * time.Second,
