@@ -140,7 +140,7 @@ func NewLoadBalancedReverseProxy(lb *LoadBalanced, ctx caddy2.Context) error {
 		// TODO :- if path is empty why does this empty the entire Target?
 		// nu.Target.Path = uc.HealthCheckPath
 
-		go nu.healthChecker.ScheduleChecks(nu.Target.String())
+		nu.healthChecker.ScheduleChecks(nu.Target.String())
 		lb.HealthCheckers = append(lb.HealthCheckers, nu.healthChecker)
 
 		us = append(us, nu)

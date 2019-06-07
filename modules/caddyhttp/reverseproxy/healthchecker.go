@@ -15,24 +15,32 @@ type HealthChecker struct {
 	upstream   Upstream
 	Ticker     *time.Ticker
 	HTTPClient *http.Client
+	StopChan   chan bool
 }
 
 // ScheduleChecks periodically runs health checks against an upstream host.
 func (h *HealthChecker) ScheduleChecks(url string) {
 	// check if a host is healthy on start vs waiting for timer
 	h.upstream.SetHealthiness(h.IsHealthy(url))
+	stop := make(chan bool)
+	h.StopChan = stop
 
-	for {
-		select {
-		case <-h.Ticker.C:
-			h.upstream.SetHealthiness(h.IsHealthy(url))
+	go func() {
+		for {
+			select {
+			case <-h.Ticker.C:
+				h.upstream.SetHealthiness(h.IsHealthy(url))
+			case <-stop:
+				return
+			}
 		}
-	}
+	}()
 }
 
 // Stop stops the healthchecker from makeing further requests.
 func (h *HealthChecker) Stop() {
 	h.Ticker.Stop()
+	close(h.StopChan)
 }
 
 // IsHealthy attempts to check if a upstream host is healthy.
