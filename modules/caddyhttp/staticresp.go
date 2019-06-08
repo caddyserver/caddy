@@ -39,6 +39,11 @@ func (s Static) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
 		w.Header()[field] = vals
 	}
 
+	// do not allow Go to sniff the content-type
+	if w.Header().Get("Content-Type") == "" {
+		w.Header()["Content-Type"] = nil
+	}
+
 	// get the status code
 	statusCode := s.StatusCode
 	if statusCode == 0 && s.StatusCodeStr != "" {
