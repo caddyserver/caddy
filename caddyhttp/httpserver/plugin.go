@@ -656,13 +656,14 @@ var directives = []string{
 	"s3browser", // github.com/techknowlogick/caddy-s3browser
 	"nobots",    // github.com/Xumeiquer/nobots
 	"mime",
-	"login",     // github.com/tarent/loginsrv/caddy
-	"reauth",    // github.com/freman/caddy-reauth
-	"extauth",   // github.com/BTBurke/caddy-extauth
-	"jwt",       // github.com/BTBurke/caddy-jwt
-	"jsonp",     // github.com/pschlump/caddy-jsonp
-	"upload",    // blitznote.com/src/caddy.upload
-	"multipass", // github.com/namsral/multipass/caddy
+        "login",      // github.com/tarent/loginsrv/caddy
+        "reauth",     // github.com/freman/caddy-reauth
+        "extauth",    // github.com/BTBurke/caddy-extauth
+        "jwt",        // github.com/BTBurke/caddy-jwt
+        "permission", // github.com/dhaavi/caddy-permission 
+        "jsonp",      // github.com/pschlump/caddy-jsonp
+        "upload",     // blitznote.com/src/caddy.upload
+        "multipass",  // github.com/namsral/multipass/caddy
 	"internal",
 	"pprof",
 	"expvar",
