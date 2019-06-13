@@ -1,4 +1,4 @@
-package caddystd
+package caddyzstd
 
 import (
 	"github.com/caddyserver/caddy2"
@@ -21,3 +21,6 @@ func (z Zstd) NewEncoder() encode.Encoder {
 	writer, _ := zstd.NewWriter(nil)
 	return writer
 }
+
+// Interface guard
+var _ encode.Encoding = (*Zstd)(nil)

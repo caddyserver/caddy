@@ -4,6 +4,7 @@ go 1.12
 
 require (
 	github.com/DataDog/zstd v1.4.0 // indirect
+	github.com/andybalholm/brotli v0.0.0-20190430215306-5c318f9037cb // indirect
 	github.com/dustin/go-humanize v1.0.0
 	github.com/go-acme/lego v2.6.0+incompatible
 	github.com/google/go-cmp v0.3.0 // indirect
