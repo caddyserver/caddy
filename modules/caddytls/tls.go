@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/caddyserver/caddy2"
+	"github.com/caddyserver/caddy"
 	"github.com/go-acme/lego/challenge"
 	"github.com/mholt/certmagic"
 )
 
 func init() {
-	caddy2.RegisterModule(caddy2.Module{
+	caddy.RegisterModule(caddy.Module{
 		Name: "tls",
 		New:  func() interface{} { return new(TLS) },
 	})
@@ -26,11 +26,11 @@ type TLS struct {
 
 	certificateLoaders []CertificateLoader
 	certCache          *certmagic.Cache
-	ctx                caddy2.Context
+	ctx                caddy.Context
 }
 
 // Provision sets up the configuration for the TLS app.
-func (t *TLS) Provision(ctx caddy2.Context) error {
+func (t *TLS) Provision(ctx caddy.Context) error {
 	t.ctx = ctx
 
 	// set up the certificate cache
@@ -189,7 +189,7 @@ type AutomationPolicy struct {
 	Management managerMaker `json:"-"`
 }
 
-func (ap AutomationPolicy) makeCertMagicConfig(ctx caddy2.Context) certmagic.Config {
+func (ap AutomationPolicy) makeCertMagicConfig(ctx caddy.Context) certmagic.Config {
 	// default manager (ACME) is a special case because of how CertMagic is designed
 	// TODO: refactor certmagic so that ACME manager is not a special case by extracting
 	// its config fields out of the certmagic.Config struct, or something...

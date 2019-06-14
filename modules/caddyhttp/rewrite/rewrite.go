@@ -5,12 +5,12 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/caddyserver/caddy2"
-	"github.com/caddyserver/caddy2/modules/caddyhttp"
+	"github.com/caddyserver/caddy"
+	"github.com/caddyserver/caddy/modules/caddyhttp"
 )
 
 func init() {
-	caddy2.RegisterModule(caddy2.Module{
+	caddy.RegisterModule(caddy.Module{
 		Name: "http.middleware.rewrite",
 		New:  func() interface{} { return new(Rewrite) },
 	})
@@ -24,7 +24,7 @@ type Rewrite struct {
 }
 
 func (rewr Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	repl := r.Context().Value(caddy2.ReplacerCtxKey).(caddy2.Replacer)
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
 	var rehandleNeeded bool
 
 	if rewr.Method != "" {

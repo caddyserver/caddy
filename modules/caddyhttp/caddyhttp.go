@@ -12,15 +12,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/caddyserver/caddy2"
-	"github.com/caddyserver/caddy2/modules/caddytls"
+	"github.com/caddyserver/caddy"
+	"github.com/caddyserver/caddy/modules/caddytls"
 	"github.com/mholt/certmagic"
 )
 
 func init() {
 	weakrand.Seed(time.Now().UnixNano())
 
-	err := caddy2.RegisterModule(caddy2.Module{
+	err := caddy.RegisterModule(caddy.Module{
 		Name: "http",
 		New:  func() interface{} { return new(App) },
 	})
@@ -33,19 +33,19 @@ func init() {
 type App struct {
 	HTTPPort    int                `json:"http_port,omitempty"`
 	HTTPSPort   int                `json:"https_port,omitempty"`
-	GracePeriod caddy2.Duration    `json:"grace_period,omitempty"`
+	GracePeriod caddy.Duration    `json:"grace_period,omitempty"`
 	Servers     map[string]*Server `json:"servers,omitempty"`
 
 	servers []*http.Server
 
-	ctx caddy2.Context
+	ctx caddy.Context
 }
 
 // Provision sets up the app.
-func (app *App) Provision(ctx caddy2.Context) error {
+func (app *App) Provision(ctx caddy.Context) error {
 	app.ctx = ctx
 
-	repl := caddy2.NewReplacer()
+	repl := caddy.NewReplacer()
 
 	for _, srv := range app.Servers {
 		// TODO: Test this function to ensure these replacements are performed
@@ -121,7 +121,7 @@ func (app *App) Start() error {
 				return fmt.Errorf("%s: parsing listen address '%s': %v", srvName, lnAddr, err)
 			}
 			for _, addr := range addrs {
-				ln, err := caddy2.Listen(network, addr)
+				ln, err := caddy.Listen(network, addr)
 				if err != nil {
 					return fmt.Errorf("%s: listening on %s: %v", network, addr, err)
 				}
@@ -376,7 +376,7 @@ type MiddlewareHandler interface {
 //
 // If any handler encounters an error, it should be returned for proper
 // handling. Return values should be propagated down the middleware chain
-// by returning it unchanged.
+// by returning it unchanged. Returned errors should not be re-wrapped.
 type Handler interface {
 	ServeHTTP(http.ResponseWriter, *http.Request) error
 }
@@ -455,4 +455,4 @@ const (
 )
 
 // Interface guard
-var _ caddy2.App = (*App)(nil)
+var _ caddy.App = (*App)(nil)

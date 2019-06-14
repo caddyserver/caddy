@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"io/ioutil"
 
-	"github.com/caddyserver/caddy2"
+	"github.com/caddyserver/caddy"
 )
 
 func init() {
-	caddy2.RegisterModule(caddy2.Module{
+	caddy.RegisterModule(caddy.Module{
 		Name: "tls.certificates.load_files",
 		New:  func() interface{} { return fileLoader{} },
 	})

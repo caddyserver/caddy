@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/caddyserver/caddy2"
+	"github.com/caddyserver/caddy"
 )
 
 // ServerRoute represents a set of matching rules,
@@ -56,7 +56,7 @@ func (mset MatcherSet) Match(r *http.Request) bool {
 type RouteList []ServerRoute
 
 // Provision sets up all the routes by loading the modules.
-func (routes RouteList) Provision(ctx caddy2.Context) error {
+func (routes RouteList) Provision(ctx caddy.Context) error {
 	for i, route := range routes {
 		// matchers
 		for _, matcherSet := range route.MatcherSets {

@@ -5,12 +5,12 @@ import (
 	"compress/gzip" // TODO: consider using https://github.com/klauspost/compress/gzip
 	"fmt"
 
-	"github.com/caddyserver/caddy2"
-	"github.com/caddyserver/caddy2/modules/caddyhttp/encode"
+	"github.com/caddyserver/caddy"
+	"github.com/caddyserver/caddy/modules/caddyhttp/encode"
 )
 
 func init() {
-	caddy2.RegisterModule(caddy2.Module{
+	caddy.RegisterModule(caddy.Module{
 		Name: "http.encoders.gzip",
 		New:  func() interface{} { return new(Gzip) },
 	})
@@ -22,7 +22,7 @@ type Gzip struct {
 }
 
 // Provision provisions g's configuration.
-func (g *Gzip) Provision(ctx caddy2.Context) error {
+func (g *Gzip) Provision(ctx caddy.Context) error {
 	if g.Level == 0 {
 		g.Level = defaultGzipLevel
 	}
@@ -52,6 +52,6 @@ var defaultGzipLevel = 5
 // Interface guards
 var (
 	_ encode.Encoding    = (*Gzip)(nil)
-	_ caddy2.Provisioner = (*Gzip)(nil)
-	_ caddy2.Validator   = (*Gzip)(nil)
+	_ caddy.Provisioner = (*Gzip)(nil)
+	_ caddy.Validator   = (*Gzip)(nil)
 )

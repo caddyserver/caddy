@@ -12,14 +12,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/caddyserver/caddy2"
-	"github.com/caddyserver/caddy2/modules/caddyhttp"
+	"github.com/caddyserver/caddy"
+	"github.com/caddyserver/caddy/modules/caddyhttp"
 )
 
 func init() {
 	weakrand.Seed(time.Now().UnixNano())
 
-	caddy2.RegisterModule(caddy2.Module{
+	caddy.RegisterModule(caddy.Module{
 		Name: "http.responders.file_server",
 		New:  func() interface{} { return new(FileServer) },
 	})
@@ -40,7 +40,7 @@ type FileServer struct {
 }
 
 // Provision sets up the static files responder.
-func (fsrv *FileServer) Provision(ctx caddy2.Context) error {
+func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 	if fsrv.Fallback != nil {
 		err := fsrv.Fallback.Provision(ctx)
 		if err != nil {
@@ -94,7 +94,7 @@ func (fsrv *FileServer) Validate() error {
 }
 
 func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
-	repl := r.Context().Value(caddy2.ReplacerCtxKey).(caddy2.Replacer)
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
 
 	filesToHide := fsrv.transformHidePaths(repl)
 
@@ -251,7 +251,7 @@ func mapDirOpenError(originalErr error, name string) error {
 
 // transformHidePaths performs replacements for all the elements of
 // fsrv.Hide and returns a new list of the transformed values.
-func (fsrv *FileServer) transformHidePaths(repl caddy2.Replacer) []string {
+func (fsrv *FileServer) transformHidePaths(repl caddy.Replacer) []string {
 	hide := make([]string, len(fsrv.Hide))
 	for i := range fsrv.Hide {
 		hide[i] = repl.ReplaceAll(fsrv.Hide[i], "")
@@ -288,7 +288,7 @@ func sanitizedPathJoin(root, reqPath string) string {
 // by default) to map the request r to a filename. The full path to
 // the file is returned if one is found; otherwise, an empty string
 // is returned.
-func (fsrv *FileServer) selectFile(r *http.Request, repl caddy2.Replacer, filesToHide []string) string {
+func (fsrv *FileServer) selectFile(r *http.Request, repl caddy.Replacer, filesToHide []string) string {
 	root := repl.ReplaceAll(fsrv.Root, "")
 
 	if fsrv.Files == nil {

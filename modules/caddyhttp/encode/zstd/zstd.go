@@ -1,13 +1,13 @@
 package caddyzstd
 
 import (
-	"github.com/caddyserver/caddy2"
-	"github.com/caddyserver/caddy2/modules/caddyhttp/encode"
+	"github.com/caddyserver/caddy"
+	"github.com/caddyserver/caddy/modules/caddyhttp/encode"
 	"github.com/klauspost/compress/zstd"
 )
 
 func init() {
-	caddy2.RegisterModule(caddy2.Module{
+	caddy.RegisterModule(caddy.Module{
 		Name: "http.encoders.zstd",
 		New:  func() interface{} { return new(Zstd) },
 	})

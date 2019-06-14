@@ -8,17 +8,17 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/caddyserver/caddy2"
-	"github.com/caddyserver/caddy2/modules/caddytls"
+	"github.com/caddyserver/caddy"
+	"github.com/caddyserver/caddy/modules/caddytls"
 )
 
 // Server is an HTTP server.
 type Server struct {
 	Listen            []string         `json:"listen,omitempty"`
-	ReadTimeout       caddy2.Duration  `json:"read_timeout,omitempty"`
-	ReadHeaderTimeout caddy2.Duration  `json:"read_header_timeout,omitempty"`
-	WriteTimeout      caddy2.Duration  `json:"write_timeout,omitempty"`
-	IdleTimeout       caddy2.Duration  `json:"idle_timeout,omitempty"`
+	ReadTimeout       caddy.Duration  `json:"read_timeout,omitempty"`
+	ReadHeaderTimeout caddy.Duration  `json:"read_header_timeout,omitempty"`
+	WriteTimeout      caddy.Duration  `json:"write_timeout,omitempty"`
+	IdleTimeout       caddy.Duration  `json:"idle_timeout,omitempty"`
 	MaxHeaderBytes    int              `json:"max_header_bytes,omitempty"`
 	Routes            RouteList        `json:"routes,omitempty"`
 	Errors            *httpErrorConfig `json:"errors,omitempty"`
@@ -38,8 +38,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// set up the context for the request
-	repl := caddy2.NewReplacer()
-	ctx := context.WithValue(r.Context(), caddy2.ReplacerCtxKey, repl)
+	repl := caddy.NewReplacer()
+	ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, repl)
 	ctx = context.WithValue(ctx, TableCtxKey, make(map[string]interface{})) // TODO: Implement this
 	r = r.WithContext(ctx)
 
@@ -127,4 +127,4 @@ type httpErrorConfig struct {
 }
 
 // TableCtxKey is the context key for the request's variable table.
-const TableCtxKey caddy2.CtxKey = "table"
+const TableCtxKey caddy.CtxKey = "table"

@@ -5,11 +5,11 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/caddyserver/caddy2"
+	"github.com/caddyserver/caddy"
 )
 
 func init() {
-	caddy2.RegisterModule(caddy2.Module{
+	caddy.RegisterModule(caddy.Module{
 		Name: "http.responders.static",
 		New:  func() interface{} { return new(Static) },
 	})
@@ -25,7 +25,7 @@ type Static struct {
 }
 
 func (s Static) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
-	repl := r.Context().Value(caddy2.ReplacerCtxKey).(caddy2.Replacer)
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
 
 	// close the connection after responding
 	r.Close = s.Close

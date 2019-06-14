@@ -16,12 +16,12 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/caddyserver/caddy2"
-	"github.com/caddyserver/caddy2/modules/caddyhttp"
+	"github.com/caddyserver/caddy"
+	"github.com/caddyserver/caddy/modules/caddyhttp"
 )
 
 func init() {
-	caddy2.RegisterModule(caddy2.Module{
+	caddy.RegisterModule(caddy.Module{
 		Name: "http.middleware.encode",
 		New:  func() interface{} { return new(Encode) },
 	})
@@ -39,7 +39,7 @@ type Encode struct {
 }
 
 // Provision provisions enc.
-func (enc *Encode) Provision(ctx caddy2.Context) error {
+func (enc *Encode) Provision(ctx caddy.Context) error {
 	enc.Encodings = make(map[string]Encoding)
 	enc.writerPools = make(map[string]*sync.Pool)
 
@@ -280,7 +280,7 @@ const defaultMinLength = 512
 
 // Interface guards
 var (
-	_ caddy2.Provisioner          = (*Encode)(nil)
+	_ caddy.Provisioner          = (*Encode)(nil)
 	_ caddyhttp.MiddlewareHandler = (*Encode)(nil)
 	_ caddyhttp.HTTPInterfaces    = (*responseWriter)(nil)
 )

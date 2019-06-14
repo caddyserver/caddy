@@ -4,12 +4,12 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/caddyserver/caddy2"
-	"github.com/caddyserver/caddy2/modules/caddyhttp"
+	"github.com/caddyserver/caddy"
+	"github.com/caddyserver/caddy/modules/caddyhttp"
 )
 
 func init() {
-	caddy2.RegisterModule(caddy2.Module{
+	caddy.RegisterModule(caddy.Module{
 		Name: "http.middleware.headers",
 		New:  func() interface{} { return new(Headers) },
 	})
@@ -38,7 +38,7 @@ type RespHeaderOps struct {
 }
 
 func (h Headers) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	repl := r.Context().Value(caddy2.ReplacerCtxKey).(caddy2.Replacer)
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
 	apply(h.Request, r.Header, repl)
 	if h.Response.Deferred || h.Response.Require != nil {
 		w = &responseWriterWrapper{
@@ -53,7 +53,7 @@ func (h Headers) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 	return next.ServeHTTP(w, r)
 }
 
-func apply(ops *HeaderOps, hdr http.Header, repl caddy2.Replacer) {
+func apply(ops *HeaderOps, hdr http.Header, repl caddy.Replacer) {
 	for fieldName, vals := range ops.Add {
 		fieldName = repl.ReplaceAll(fieldName, "")
 		for _, v := range vals {
@@ -76,17 +76,10 @@ func apply(ops *HeaderOps, hdr http.Header, repl caddy2.Replacer) {
 // operations until WriteHeader is called.
 type responseWriterWrapper struct {
 	*caddyhttp.ResponseWriterWrapper
-	replacer    caddy2.Replacer
+	replacer    caddy.Replacer
 	require     *caddyhttp.ResponseMatcher
 	headerOps   *HeaderOps
 	wroteHeader bool
-}
-
-func (rww *responseWriterWrapper) Write(d []byte) (int, error) {
-	if !rww.wroteHeader {
-		rww.WriteHeader(http.StatusOK)
-	}
-	return rww.ResponseWriterWrapper.Write(d)
 }
 
 func (rww *responseWriterWrapper) WriteHeader(status int) {
@@ -98,6 +91,13 @@ func (rww *responseWriterWrapper) WriteHeader(status int) {
 		apply(rww.headerOps, rww.ResponseWriterWrapper.Header(), rww.replacer)
 	}
 	rww.ResponseWriterWrapper.WriteHeader(status)
+}
+
+func (rww *responseWriterWrapper) Write(d []byte) (int, error) {
+	if !rww.wroteHeader {
+		rww.WriteHeader(http.StatusOK)
+	}
+	return rww.ResponseWriterWrapper.Write(d)
 }
 
 // Interface guards

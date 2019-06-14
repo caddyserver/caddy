@@ -7,13 +7,13 @@ import (
 	"path"
 	"strings"
 
-	"github.com/caddyserver/caddy2"
+	"github.com/caddyserver/caddy"
 )
 
 // TODO: A simple way to format or escape or encode each value would be nice
 // ... TODO: Should we just use templates? :-/ yeesh...
 
-func addHTTPVarsToReplacer(repl caddy2.Replacer, req *http.Request, w http.ResponseWriter) {
+func addHTTPVarsToReplacer(repl caddy.Replacer, req *http.Request, w http.ResponseWriter) {
 	httpVars := func() map[string]string {
 		m := make(map[string]string)
 		if req != nil {

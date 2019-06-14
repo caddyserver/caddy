@@ -5,12 +5,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/caddyserver/caddy2"
-	"github.com/caddyserver/caddy2/modules/caddytls"
+	"github.com/caddyserver/caddy"
+	"github.com/caddyserver/caddy/modules/caddytls"
 )
 
 func init() {
-	caddy2.RegisterModule(caddy2.Module{
+	caddy.RegisterModule(caddy.Module{
 		Name: "tls.stek.standard",
 		New:  func() interface{} { return new(standardSTEKProvider) },
 	})

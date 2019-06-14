@@ -22,6 +22,8 @@ github.com/klauspost/cpuid v1.2.1 h1:vJi+O/nMdFt0vqm8NZBI6wzALWdA2X+egi0ogNyrC/w
 github.com/klauspost/cpuid v1.2.1/go.mod h1:Pj4uuM528wm8OyEC2QMXAi2YiTZ96dNQPGgoMS4s3ek=
 github.com/mholt/certmagic v0.5.2-0.20190605043235-e49d0d405641 h1:wNqOQ0DFxcZDNpPChhHfL8KscFMnxARN6Q2FiX4/VKI=
 github.com/mholt/certmagic v0.5.2-0.20190605043235-e49d0d405641/go.mod h1:g4cOPxcjV0oFq3qwpjSA30LReKD8AoIfwAY9VvG35NY=
+github.com/mholt/certmagic v0.6.0 h1:gZwuBuONw2v8/fZh2nd39kvjFNjnSF2uIR4GzKaaryw=
+github.com/mholt/certmagic v0.6.0/go.mod h1:g4cOPxcjV0oFq3qwpjSA30LReKD8AoIfwAY9VvG35NY=
 github.com/miekg/dns v1.1.3 h1:1g0r1IvskvgL8rR+AcHzUA+oFmGcQlaIm4IqakufeMM=
 github.com/miekg/dns v1.1.3/go.mod h1:W1PPwlIAgtquWBMBEV9nkV9Cazfe8ScdGz/Lj7v3Nrg=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=

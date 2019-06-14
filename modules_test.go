@@ -1,4 +1,4 @@
-package caddy2
+package caddy
 
 import (
 	"reflect"

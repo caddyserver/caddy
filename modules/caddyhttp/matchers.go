@@ -13,8 +13,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/caddyserver/caddy2"
-	"github.com/caddyserver/caddy2/pkg/caddyscript"
+	"github.com/caddyserver/caddy"
+	"github.com/caddyserver/caddy/pkg/caddyscript"
 	"go.starlark.net/starlark"
 )
 
@@ -65,47 +65,47 @@ type (
 )
 
 func init() {
-	caddy2.RegisterModule(caddy2.Module{
+	caddy.RegisterModule(caddy.Module{
 		Name: "http.matchers.host",
 		New:  func() interface{} { return new(MatchHost) },
 	})
-	caddy2.RegisterModule(caddy2.Module{
+	caddy.RegisterModule(caddy.Module{
 		Name: "http.matchers.path",
 		New:  func() interface{} { return new(MatchPath) },
 	})
-	caddy2.RegisterModule(caddy2.Module{
+	caddy.RegisterModule(caddy.Module{
 		Name: "http.matchers.path_regexp",
 		New:  func() interface{} { return new(MatchPathRE) },
 	})
-	caddy2.RegisterModule(caddy2.Module{
+	caddy.RegisterModule(caddy.Module{
 		Name: "http.matchers.method",
 		New:  func() interface{} { return new(MatchMethod) },
 	})
-	caddy2.RegisterModule(caddy2.Module{
+	caddy.RegisterModule(caddy.Module{
 		Name: "http.matchers.query",
 		New:  func() interface{} { return new(MatchQuery) },
 	})
-	caddy2.RegisterModule(caddy2.Module{
+	caddy.RegisterModule(caddy.Module{
 		Name: "http.matchers.header",
 		New:  func() interface{} { return new(MatchHeader) },
 	})
-	caddy2.RegisterModule(caddy2.Module{
+	caddy.RegisterModule(caddy.Module{
 		Name: "http.matchers.header_regexp",
 		New:  func() interface{} { return new(MatchHeaderRE) },
 	})
-	caddy2.RegisterModule(caddy2.Module{
+	caddy.RegisterModule(caddy.Module{
 		Name: "http.matchers.protocol",
 		New:  func() interface{} { return new(MatchProtocol) },
 	})
-	caddy2.RegisterModule(caddy2.Module{
+	caddy.RegisterModule(caddy.Module{
 		Name: "http.matchers.remote_ip",
 		New:  func() interface{} { return new(MatchRemoteIP) },
 	})
-	caddy2.RegisterModule(caddy2.Module{
+	caddy.RegisterModule(caddy.Module{
 		Name: "http.matchers.not",
 		New:  func() interface{} { return new(MatchNegate) },
 	})
-	caddy2.RegisterModule(caddy2.Module{
+	caddy.RegisterModule(caddy.Module{
 		Name: "http.matchers.starlark_expr",
 		New:  func() interface{} { return new(MatchStarlarkExpr) },
 	})
@@ -158,7 +158,7 @@ func (m MatchPath) Match(r *http.Request) bool {
 
 // Match returns true if r matches m.
 func (m MatchPathRE) Match(r *http.Request) bool {
-	repl := r.Context().Value(caddy2.ReplacerCtxKey).(caddy2.Replacer)
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
 	return m.MatchRegexp.Match(r.URL.Path, repl, "path_regexp")
 }
 
@@ -209,7 +209,7 @@ func (m MatchHeader) Match(r *http.Request) bool {
 // Match returns true if r matches m.
 func (m MatchHeaderRE) Match(r *http.Request) bool {
 	for field, rm := range m {
-		repl := r.Context().Value(caddy2.ReplacerCtxKey).(caddy2.Replacer)
+		repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
 		match := rm.Match(r.Header.Get(field), repl, "header_regexp")
 		if !match {
 			return false
@@ -262,7 +262,7 @@ func (m *MatchNegate) UnmarshalJSON(data []byte) error {
 }
 
 // Provision loads the matcher modules to be negated.
-func (m *MatchNegate) Provision(ctx caddy2.Context) error {
+func (m *MatchNegate) Provision(ctx caddy.Context) error {
 	for modName, rawMsg := range m.matchersRaw {
 		val, err := ctx.LoadModule("http.matchers."+modName, rawMsg)
 		if err != nil {
@@ -281,7 +281,7 @@ func (m MatchNegate) Match(r *http.Request) bool {
 }
 
 // Provision parses m's IP ranges, either from IP or CIDR expressions.
-func (m *MatchRemoteIP) Provision(ctx caddy2.Context) error {
+func (m *MatchRemoteIP) Provision(ctx caddy.Context) error {
 	for _, str := range m.Ranges {
 		if strings.Contains(str, "/") {
 			_, ipNet, err := net.ParseCIDR(str)
@@ -387,7 +387,7 @@ func (mre *MatchRegexp) Validate() error {
 // (namespace). Capture groups stored to repl will take on
 // the name "http.matchers.<scope>.<mre.Name>.<N>" where
 // <N> is the name or number of the capture group.
-func (mre *MatchRegexp) Match(input string, repl caddy2.Replacer, scope string) bool {
+func (mre *MatchRegexp) Match(input string, repl caddy.Replacer, scope string) bool {
 	matches := mre.compiled.FindStringSubmatch(input)
 	if matches == nil {
 		return false
@@ -478,8 +478,8 @@ var (
 	_ RequestMatcher     = (*MatchHeaderRE)(nil)
 	_ RequestMatcher     = (*MatchProtocol)(nil)
 	_ RequestMatcher     = (*MatchRemoteIP)(nil)
-	_ caddy2.Provisioner = (*MatchRemoteIP)(nil)
+	_ caddy.Provisioner = (*MatchRemoteIP)(nil)
 	_ RequestMatcher     = (*MatchNegate)(nil)
-	_ caddy2.Provisioner = (*MatchNegate)(nil)
+	_ caddy.Provisioner = (*MatchNegate)(nil)
 	_ RequestMatcher     = (*MatchStarlarkExpr)(nil)
 )

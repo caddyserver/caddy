@@ -3,16 +3,16 @@ package caddyhttp
 import (
 	"net/http"
 
-	"github.com/caddyserver/caddy2"
+	"github.com/caddyserver/caddy"
 )
 
 func init() {
-	caddy2.RegisterModule(caddy2.Module{
+	caddy.RegisterModule(caddy.Module{
 		Name: "http.middleware.table",
 		New:  func() interface{} { return new(tableMiddleware) },
 	})
 
-	caddy2.RegisterModule(caddy2.Module{
+	caddy.RegisterModule(caddy.Module{
 		Name: "http.matchers.table",
 		New:  func() interface{} { return new(tableMatcher) },
 	})

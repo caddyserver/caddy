@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/caddyserver/caddy2"
+	"github.com/caddyserver/caddy"
 	"github.com/dustin/go-humanize"
 )
 
-func (fsrv *FileServer) directoryListing(files []os.FileInfo, canGoUp bool, urlPath string, repl caddy2.Replacer) browseListing {
+func (fsrv *FileServer) directoryListing(files []os.FileInfo, canGoUp bool, urlPath string, repl caddy.Replacer) browseListing {
 	filesToHide := fsrv.transformHidePaths(repl)
 
 	var (

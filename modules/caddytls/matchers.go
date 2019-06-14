@@ -3,14 +3,14 @@ package caddytls
 import (
 	"crypto/tls"
 
-	"github.com/caddyserver/caddy2"
+	"github.com/caddyserver/caddy"
 )
 
 // MatchServerName matches based on SNI.
 type MatchServerName []string
 
 func init() {
-	caddy2.RegisterModule(caddy2.Module{
+	caddy.RegisterModule(caddy.Module{
 		Name: "tls.handshake_match.sni",
 		New:  func() interface{} { return MatchServerName{} },
 	})
