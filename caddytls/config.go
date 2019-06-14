@@ -397,7 +397,7 @@ func assertConfigsCompatible(cfg1, cfg2 *Config) error {
 	if c1.ClientAuth != c2.ClientAuth {
 		return fmt.Errorf("client authentication policy mismatch")
 	}
-	if c1.ClientAuth != tls.NoClientCert && c2.ClientAuth != tls.NoClientCert && c1.ClientCAs != c2.ClientCAs {
+	if c1.ClientAuth != tls.NoClientCert && c2.ClientAuth != tls.NoClientCert && !StringSliceEqual(cfg1.ClientCerts, cfg2.ClientCerts) {
 		// Two hosts defined on the same listener are not compatible if they
 		// have ClientAuth enabled, because there's no guarantee beyond the
 		// hostname which config will be used (because SNI only has server name).
@@ -550,6 +550,18 @@ func getPreferredDefaultCiphers() []uint16 {
 	return defaultCiphersNonAESNI
 }
 
+func StringSliceEqual(a, b []string) bool {
+  if len(a) != len(b) {
+    return false
+  }
+  for i, v := range a {
+    if v != b[i] {
+      return false
+    }
+  }
+  return true
+}
+
 // Map of supported curves
 // https://golang.org/pkg/crypto/tls/#CurveID
 var supportedCurvesMap = map[string]tls.CurveID{
@@ -574,3 +586,4 @@ var clusterPluginSetup int32 // access atomically
 // CertCacheInstStorageKey is the name of the key for
 // accessing the certificate storage on the *caddy.Instance.
 const CertCacheInstStorageKey = "tls_cert_cache"
+
