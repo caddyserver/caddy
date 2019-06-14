@@ -4,12 +4,12 @@ import (
 	"fmt"
 
 	"github.com/andybalholm/brotli"
-	"github.com/caddyserver/caddy2"
-	"github.com/caddyserver/caddy2/modules/caddyhttp/encode"
+	"github.com/caddyserver/caddy"
+	"github.com/caddyserver/caddy/modules/caddyhttp/encode"
 )
 
 func init() {
-	caddy2.RegisterModule(caddy2.Module{
+	caddy.RegisterModule(caddy.Module{
 		Name: "http.encoders.brotli",
 		New:  func() interface{} { return new(Brotli) },
 	})
@@ -47,5 +47,5 @@ func (b Brotli) NewEncoder() encode.Encoder {
 // Interface guards
 var (
 	_ encode.Encoding  = (*Brotli)(nil)
-	_ caddy2.Validator = (*Brotli)(nil)
+	_ caddy.Validator = (*Brotli)(nil)
 )

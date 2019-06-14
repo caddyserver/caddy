@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/caddyserver/caddy2"
+	"github.com/caddyserver/caddy"
 )
 
 func TestStaticResponseHandler(t *testing.T) {
@@ -44,8 +44,8 @@ func TestStaticResponseHandler(t *testing.T) {
 
 func fakeRequest() *http.Request {
 	r, _ := http.NewRequest("GET", "/", nil)
-	repl := caddy2.NewReplacer()
-	ctx := context.WithValue(r.Context(), caddy2.ReplacerCtxKey, repl)
+	repl := caddy.NewReplacer()
+	ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, repl)
 	r = r.WithContext(ctx)
 	return r
 }

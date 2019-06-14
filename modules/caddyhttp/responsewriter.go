@@ -19,31 +19,31 @@ type ResponseWriterWrapper struct {
 }
 
 // Hijack implements http.Hijacker. It simply calls the underlying
-// ResponseWriter's Hijack method if there is one, or returns an error.
+// ResponseWriter's Hijack method if there is one, or returns
+// ErrNotImplemented otherwise.
 func (rww *ResponseWriterWrapper) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	if hj, ok := rww.ResponseWriter.(http.Hijacker); ok {
 		return hj.Hijack()
 	}
-	return nil, nil, fmt.Errorf("not a hijacker")
+	return nil, nil, ErrNotImplemented
 }
 
 // Flush implements http.Flusher. It simply calls the underlying
-// ResponseWriter's Flush method if there is one, or panics.
+// ResponseWriter's Flush method if there is one.
 func (rww *ResponseWriterWrapper) Flush() {
 	if f, ok := rww.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
-	} else {
-		panic("not a flusher")
 	}
 }
 
 // Push implements http.Pusher. It simply calls the underlying
-// ResponseWriter's Push method if there is one, or returns an error.
+// ResponseWriter's Push method if there is one, or returns
+// ErrNotImplemented otherwise.
 func (rww *ResponseWriterWrapper) Push(target string, opts *http.PushOptions) error {
-	if pusher, hasPusher := rww.ResponseWriter.(http.Pusher); hasPusher {
+	if pusher, ok := rww.ResponseWriter.(http.Pusher); ok {
 		return pusher.Push(target, opts)
 	}
-	return fmt.Errorf("not a pusher")
+	return ErrNotImplemented
 }
 
 // HTTPInterfaces mix all the interfaces that middleware ResponseWriters need to support.
@@ -53,6 +53,10 @@ type HTTPInterfaces interface {
 	http.Flusher
 	http.Hijacker
 }
+
+// ErrNotImplemented is returned when an underlying
+// ResponseWriter does not implement the required method.
+var ErrNotImplemented = fmt.Errorf("method not implemented")
 
 // Interface guards
 var _ HTTPInterfaces = (*ResponseWriterWrapper)(nil)

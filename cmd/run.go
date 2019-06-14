@@ -4,18 +4,18 @@ import (
 	"flag"
 	"log"
 
-	"github.com/caddyserver/caddy2"
+	"github.com/caddyserver/caddy"
 )
 
 // Main executes the main function of the caddy command.
 func Main() {
 	flag.Parse()
 
-	err := caddy2.StartAdmin(*listenAddr)
+	err := caddy.StartAdmin(*listenAddr)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer caddy2.StopAdmin()
+	defer caddy.StopAdmin()
 
 	log.Println("Caddy 2 admin endpoint listening on", *listenAddr)
 

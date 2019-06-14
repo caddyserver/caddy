@@ -7,13 +7,13 @@ import (
 
 	"github.com/go-acme/lego/certcrypto"
 
-	"github.com/caddyserver/caddy2"
+	"github.com/caddyserver/caddy"
 	"github.com/go-acme/lego/challenge"
 	"github.com/mholt/certmagic"
 )
 
 func init() {
-	caddy2.RegisterModule(caddy2.Module{
+	caddy.RegisterModule(caddy.Module{
 		Name: "tls.management.acme",
 		New:  func() interface{} { return new(ACMEManagerMaker) },
 	})
@@ -30,9 +30,9 @@ func init() {
 type ACMEManagerMaker struct {
 	CA          string           `json:"ca,omitempty"`
 	Email       string           `json:"email,omitempty"`
-	RenewAhead  caddy2.Duration  `json:"renew_ahead,omitempty"`
+	RenewAhead  caddy.Duration  `json:"renew_ahead,omitempty"`
 	KeyType     string           `json:"key_type,omitempty"`
-	ACMETimeout caddy2.Duration  `json:"acme_timeout,omitempty"`
+	ACMETimeout caddy.Duration  `json:"acme_timeout,omitempty"`
 	MustStaple  bool             `json:"must_staple,omitempty"`
 	Challenges  ChallengesConfig `json:"challenges"`
 	OnDemand    *OnDemandConfig  `json:"on_demand,omitempty"`
@@ -49,7 +49,7 @@ func (m *ACMEManagerMaker) newManager(interactive bool) (certmagic.Manager, erro
 }
 
 // Provision sets up m.
-func (m *ACMEManagerMaker) Provision(ctx caddy2.Context) error {
+func (m *ACMEManagerMaker) Provision(ctx caddy.Context) error {
 	// DNS providers
 	if m.Challenges.DNS != nil {
 		val, err := ctx.LoadModuleInline("provider", "tls.dns", m.Challenges.DNSRaw)
@@ -66,7 +66,7 @@ func (m *ACMEManagerMaker) Provision(ctx caddy2.Context) error {
 		if err != nil {
 			return fmt.Errorf("loading TLS storage module: %s", err)
 		}
-		cmStorage, err := val.(caddy2.StorageConverter).CertMagicStorage()
+		cmStorage, err := val.(caddy.StorageConverter).CertMagicStorage()
 		if err != nil {
 			return fmt.Errorf("creating TLS storage configuration: %v", err)
 		}
@@ -89,7 +89,7 @@ func (m *ACMEManagerMaker) SetDefaults() {
 		m.Email = certmagic.Default.Email
 	}
 	if m.RenewAhead == 0 {
-		m.RenewAhead = caddy2.Duration(certmagic.Default.RenewDurationBefore)
+		m.RenewAhead = caddy.Duration(certmagic.Default.RenewDurationBefore)
 	}
 	if m.keyType == "" {
 		m.keyType = certmagic.Default.KeyType
@@ -102,7 +102,7 @@ func (m *ACMEManagerMaker) SetDefaults() {
 // makeCertMagicConfig converts m into a certmagic.Config, because
 // this is a special case where the default manager is the certmagic
 // Config and not a separate manager.
-func (m *ACMEManagerMaker) makeCertMagicConfig(ctx caddy2.Context) certmagic.Config {
+func (m *ACMEManagerMaker) makeCertMagicConfig(ctx caddy.Context) certmagic.Config {
 	storage := m.storage
 	if storage == nil {
 		storage = ctx.Storage()

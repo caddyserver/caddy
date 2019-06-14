@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/caddyserver/caddy2"
+	"github.com/caddyserver/caddy"
 )
 
 func TestHostMatcher(t *testing.T) {
@@ -227,8 +227,8 @@ func TestPathREMatcher(t *testing.T) {
 
 		// set up the fake request and its Replacer
 		req := &http.Request{URL: &url.URL{Path: tc.input}}
-		repl := caddy2.NewReplacer()
-		ctx := context.WithValue(req.Context(), caddy2.ReplacerCtxKey, repl)
+		repl := caddy.NewReplacer()
+		ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
 		req = req.WithContext(ctx)
 		addHTTPVarsToReplacer(repl, req, httptest.NewRecorder())
 
@@ -345,8 +345,8 @@ func TestHeaderREMatcher(t *testing.T) {
 
 		// set up the fake request and its Replacer
 		req := &http.Request{Header: tc.input, URL: new(url.URL)}
-		repl := caddy2.NewReplacer()
-		ctx := context.WithValue(req.Context(), caddy2.ReplacerCtxKey, repl)
+		repl := caddy.NewReplacer()
+		ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
 		req = req.WithContext(ctx)
 		addHTTPVarsToReplacer(repl, req, httptest.NewRecorder())
 

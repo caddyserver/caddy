@@ -1,12 +1,12 @@
 package reverseproxy
 
 import (
-	"github.com/caddyserver/caddy2"
+	"github.com/caddyserver/caddy"
 )
 
 // Register caddy module.
 func init() {
-	caddy2.RegisterModule(caddy2.Module{
+	caddy.RegisterModule(caddy.Module{
 		Name: "http.responders.reverse_proxy",
 		New:  func() interface{} { return new(LoadBalanced) },
 	})

@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/caddyserver/caddy2"
+	"github.com/caddyserver/caddy"
 	"github.com/go-acme/lego/challenge/tlsalpn01"
 	"github.com/mholt/certmagic"
 )
@@ -20,7 +20,7 @@ type ConnectionPolicies []*ConnectionPolicy
 // TLSConfig converts the group of policies to a standard-lib-compatible
 // TLS configuration which selects the first matching policy based on
 // the ClientHello.
-func (cp ConnectionPolicies) TLSConfig(ctx caddy2.Context) (*tls.Config, error) {
+func (cp ConnectionPolicies) TLSConfig(ctx caddy.Context) (*tls.Config, error) {
 	// set up each of the connection policies
 	for i, pol := range cp {
 		// matchers
@@ -110,7 +110,7 @@ type ConnectionPolicy struct {
 	stdTLSConfig *tls.Config
 }
 
-func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy2.Context) error {
+func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 	tlsAppIface, err := ctx.App("tls")
 	if err != nil {
 		return fmt.Errorf("getting tls app: %v", err)

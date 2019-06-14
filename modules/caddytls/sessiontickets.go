@@ -9,13 +9,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/caddyserver/caddy2"
+	"github.com/caddyserver/caddy"
 )
 
 // SessionTicketService configures and manages TLS session tickets.
 type SessionTicketService struct {
 	KeySource        json.RawMessage `json:"key_source,omitempty"`
-	RotationInterval caddy2.Duration `json:"rotation_interval,omitempty"`
+	RotationInterval caddy.Duration `json:"rotation_interval,omitempty"`
 	MaxKeys          int             `json:"max_keys,omitempty"`
 	DisableRotation  bool            `json:"disable_rotation,omitempty"`
 	Disabled         bool            `json:"disabled,omitempty"`
@@ -27,13 +27,13 @@ type SessionTicketService struct {
 	mu          *sync.Mutex
 }
 
-func (s *SessionTicketService) provision(ctx caddy2.Context) error {
+func (s *SessionTicketService) provision(ctx caddy.Context) error {
 	s.configs = make(map[*tls.Config]struct{})
 	s.mu = new(sync.Mutex)
 
 	// establish sane defaults
 	if s.RotationInterval == 0 {
-		s.RotationInterval = caddy2.Duration(defaultSTEKRotationInterval)
+		s.RotationInterval = caddy.Duration(defaultSTEKRotationInterval)
 	}
 	if s.MaxKeys <= 0 {
 		s.MaxKeys = defaultMaxSTEKs

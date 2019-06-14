@@ -7,7 +7,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/caddyserver/caddy2"
+	"github.com/caddyserver/caddy"
 )
 
 // Error is a convenient way for a Handler to populate the
@@ -102,4 +102,4 @@ var ErrRehandle = fmt.Errorf("rehandling request")
 
 // ErrorCtxKey is the context key to use when storing
 // an error (for use with context.Context).
-const ErrorCtxKey = caddy2.CtxKey("handler_chain_error")
+const ErrorCtxKey = caddy.CtxKey("handler_chain_error")

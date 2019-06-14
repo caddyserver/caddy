@@ -14,7 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/caddyserver/caddy2"
+	"github.com/caddyserver/caddy"
 )
 
 // CircuitBreaker defines the functionality of a circuit breaker module.
@@ -72,7 +72,7 @@ var (
 )
 
 // NewLoadBalancedReverseProxy returns a collection of Upstreams that are to be loadbalanced.
-func NewLoadBalancedReverseProxy(lb *LoadBalanced, ctx caddy2.Context) error {
+func NewLoadBalancedReverseProxy(lb *LoadBalanced, ctx caddy.Context) error {
 	// set defaults
 	if lb.NoHealthyUpstreamsMessage == "" {
 		lb.NoHealthyUpstreamsMessage = msgNoHealthyUpstreams
@@ -110,7 +110,7 @@ func NewLoadBalancedReverseProxy(lb *LoadBalanced, ctx caddy2.Context) error {
 		var cb CircuitBreaker
 
 		if uc.CircuitBreaker != nil {
-			if _, err := caddy2.GetModule(cbModule); err == nil {
+			if _, err := caddy.GetModule(cbModule); err == nil {
 				val, err := ctx.LoadModule(cbModule, uc.CircuitBreaker)
 				if err == nil {
 					cbv, ok := val.(CircuitBreaker)
@@ -191,7 +191,7 @@ func (lb *LoadBalanced) Cleanup() error {
 }
 
 // Provision sets up a new loadbalanced reverse proxy.
-func (lb *LoadBalanced) Provision(ctx caddy2.Context) error {
+func (lb *LoadBalanced) Provision(ctx caddy.Context) error {
 	return NewLoadBalancedReverseProxy(lb, ctx)
 }
 
