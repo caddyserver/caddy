@@ -394,17 +394,10 @@ func assertConfigsCompatible(cfg1, cfg2 *Config) error {
 	if c1.MaxVersion != c2.MaxVersion {
 		return fmt.Errorf("maximum TLS version mismatch")
 	}
-	if c1.ClientAuth != c2.ClientAuth {
-		return fmt.Errorf("client authentication policy mismatch")
-	}
-	if c1.ClientAuth != tls.NoClientCert && c2.ClientAuth != tls.NoClientCert && !StringSliceEqual(cfg1.ClientCerts, cfg2.ClientCerts) {
-		// Two hosts defined on the same listener are not compatible if they
-		// have ClientAuth enabled, because there's no guarantee beyond the
-		// hostname which config will be used (because SNI only has server name).
-		// To prevent clients from bypassing authentication, require that
-		// ClientAuth be configured in an unambiguous manner.
-		return fmt.Errorf("multiple hosts requiring client authentication ambiguously configured")
-	}
+
+  if err := ClientCertsCompatible(cfg1, cfg2); err != nil {
+    return err
+  }
 
 	return nil
 }
@@ -550,16 +543,29 @@ func getPreferredDefaultCiphers() []uint16 {
 	return defaultCiphersNonAESNI
 }
 
-func StringSliceEqual(a, b []string) bool {
-  if len(a) != len(b) {
-    return false
+func ClientCertsCompatible(cfg1, cfg2 *Config) error {
+	c1, c2 := cfg1.tlsConfig, cfg2.tlsConfig
+	if c1.ClientAuth != c2.ClientAuth {
+		return fmt.Errorf("client authentication policy mismatch")
+	}
+
+  if c1.ClientAuth == tls.NoClientCert || c2.ClientAuth == tls.NoClientCert {
+    return nil
   }
-  for i, v := range a {
-    if v != b[i] {
-      return false
+
+  ccerts1, ccerts2 = cfg1.ClientCerts, cfg2.ClientCerts
+
+  if len(ccerts1) != len(ccerts2) {
+    return fmt.Errorf("number of client certs differs")
+  }
+
+  for i, v := range ccerts1 {
+    if v != ccerts2[i] {
+      return fmt.Errorf("multiple hosts requiring client authentication ambiguously configured")
     }
   }
-  return true
+
+  return nil
 }
 
 // Map of supported curves
