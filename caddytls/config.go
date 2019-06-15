@@ -395,7 +395,7 @@ func assertConfigsCompatible(cfg1, cfg2 *Config) error {
 		return fmt.Errorf("maximum TLS version mismatch")
 	}
 
-  if err := clientCertsCompatible(cfg1, cfg2); err != nil {
+  if err := assertClientCertsCompatible(cfg1, cfg2); err != nil {
     return err
   }
 
@@ -543,7 +543,7 @@ func getPreferredDefaultCiphers() []uint16 {
 	return defaultCiphersNonAESNI
 }
 
-func clientCertsCompatible(cfg1, cfg2 *Config) error {
+func assertClientCertsCompatible(cfg1, cfg2 *Config) error {
 	c1, c2 := cfg1.tlsConfig, cfg2.tlsConfig
 	if c1.ClientAuth != c2.ClientAuth {
 		return fmt.Errorf("client authentication policy mismatch")
@@ -553,12 +553,13 @@ func clientCertsCompatible(cfg1, cfg2 *Config) error {
     return nil
   }
 
-  ccerts1, ccerts2 = cfg1.ClientCerts, cfg2.ClientCerts
+  ccerts1, ccerts2 := cfg1.ClientCerts, cfg2.ClientCerts
 
   if len(ccerts1) != len(ccerts2) {
     return fmt.Errorf("number of client certs differs")
   }
 
+  // The order of client CAs matters
   for i, v := range ccerts1 {
     if v != ccerts2[i] {
       return fmt.Errorf("multiple hosts requiring client authentication ambiguously configured")
