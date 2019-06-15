@@ -395,9 +395,9 @@ func assertConfigsCompatible(cfg1, cfg2 *Config) error {
 		return fmt.Errorf("maximum TLS version mismatch")
 	}
 
-  if err := assertClientCertsCompatible(cfg1, cfg2); err != nil {
-    return err
-  }
+	if err := assertClientCertsCompatible(cfg1, cfg2); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -549,24 +549,24 @@ func assertClientCertsCompatible(cfg1, cfg2 *Config) error {
 		return fmt.Errorf("client authentication policy mismatch")
 	}
 
-  if c1.ClientAuth == tls.NoClientCert || c2.ClientAuth == tls.NoClientCert {
-    return nil
-  }
+	if c1.ClientAuth == tls.NoClientCert || c2.ClientAuth == tls.NoClientCert {
+		return nil
+	}
 
-  ccerts1, ccerts2 := cfg1.ClientCerts, cfg2.ClientCerts
+	ccerts1, ccerts2 := cfg1.ClientCerts, cfg2.ClientCerts
 
-  if len(ccerts1) != len(ccerts2) {
-    return fmt.Errorf("number of client certs differs")
-  }
+	if len(ccerts1) != len(ccerts2) {
+		return fmt.Errorf("number of client certs differs")
+	}
 
-  // The order of client CAs matters
-  for i, v := range ccerts1 {
-    if v != ccerts2[i] {
-      return fmt.Errorf("multiple hosts requiring client authentication ambiguously configured")
-    }
-  }
+	// The order of client CAs matters
+	for i, v := range ccerts1 {
+		if v != ccerts2[i] {
+			return fmt.Errorf("multiple hosts requiring client authentication ambiguously configured")
+		}
+	}
 
-  return nil
+	return nil
 }
 
 // Map of supported curves
@@ -593,4 +593,3 @@ var clusterPluginSetup int32 // access atomically
 // CertCacheInstStorageKey is the name of the key for
 // accessing the certificate storage on the *caddy.Instance.
 const CertCacheInstStorageKey = "tls_cert_cache"
-
