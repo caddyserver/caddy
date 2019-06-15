@@ -395,7 +395,7 @@ func assertConfigsCompatible(cfg1, cfg2 *Config) error {
 		return fmt.Errorf("maximum TLS version mismatch")
 	}
 
-  if err := ClientCertsCompatible(cfg1, cfg2); err != nil {
+  if err := clientCertsCompatible(cfg1, cfg2); err != nil {
     return err
   }
 
@@ -543,7 +543,7 @@ func getPreferredDefaultCiphers() []uint16 {
 	return defaultCiphersNonAESNI
 }
 
-func ClientCertsCompatible(cfg1, cfg2 *Config) error {
+func clientCertsCompatible(cfg1, cfg2 *Config) error {
 	c1, c2 := cfg1.tlsConfig, cfg2.tlsConfig
 	if c1.ClientAuth != c2.ClientAuth {
 		return fmt.Errorf("client authentication policy mismatch")
