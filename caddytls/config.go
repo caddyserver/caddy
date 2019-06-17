@@ -140,17 +140,26 @@ func NewConfig(inst *caddy.Instance) (*Config, error) {
 				return certmagic.Default, nil
 			},
 		})
+
 		storageCleaningTicker := time.NewTicker(12 * time.Hour)
+		done := make(chan bool)
 		go func() {
-			for range storageCleaningTicker.C {
-				certmagic.CleanStorage(certmagic.Default.Storage, certmagic.CleanStorageOptions{
-					OCSPStaples: true,
-				})
+			for {
+				select {
+				case <-done:
+					storageCleaningTicker.Stop()
+					return
+				case <-storageCleaningTicker.C:
+					certmagic.CleanStorage(certmagic.Default.Storage, certmagic.CleanStorageOptions{
+						OCSPStaples: true,
+					})
+				}
 			}
 		}()
 		inst.OnShutdown = append(inst.OnShutdown, func() error {
 			certCache.Stop()
-			storageCleaningTicker.Stop()
+			done <- true
+			close(done)
 			return nil
 		})
 
