@@ -33,7 +33,7 @@ func init() {
 type App struct {
 	HTTPPort    int                `json:"http_port,omitempty"`
 	HTTPSPort   int                `json:"https_port,omitempty"`
-	GracePeriod caddy.Duration    `json:"grace_period,omitempty"`
+	GracePeriod caddy.Duration     `json:"grace_period,omitempty"`
 	Servers     map[string]*Server `json:"servers,omitempty"`
 
 	servers []*http.Server

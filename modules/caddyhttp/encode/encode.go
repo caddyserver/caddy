@@ -148,7 +148,7 @@ func (rw *responseWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-// init should be called once we know we are writing an encoded response.
+// init should be called before we write a response, if rw.buf is not nil.
 func (rw *responseWriter) init() {
 	if rw.Header().Get("Content-Encoding") == "" && rw.buf.Len() >= rw.config.MinLength {
 		rw.w = rw.config.writerPools[rw.encodingName].Get().(Encoder)
@@ -164,7 +164,13 @@ func (rw *responseWriter) init() {
 // deallocates any active resources.
 func (rw *responseWriter) Close() error {
 	var err error
-	if rw.buf != nil {
+	// only attempt to write the remaining buffered response
+	// if there are any bytes left to write; otherwise, if
+	// the handler above us returned an error without writing
+	// anything, we'd write to the response when we instead
+	// should simply let the error propagate back down; this
+	// is why the check for rw.buf.Len() > 0 is crucial
+	if rw.buf != nil && rw.buf.Len() > 0 {
 		rw.init()
 		p := rw.buf.Bytes()
 		defer func() {
@@ -280,7 +286,7 @@ const defaultMinLength = 512
 
 // Interface guards
 var (
-	_ caddy.Provisioner          = (*Encode)(nil)
+	_ caddy.Provisioner           = (*Encode)(nil)
 	_ caddyhttp.MiddlewareHandler = (*Encode)(nil)
 	_ caddyhttp.HTTPInterfaces    = (*responseWriter)(nil)
 )

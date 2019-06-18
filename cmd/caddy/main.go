@@ -16,6 +16,7 @@ import (
 	_ "github.com/caddyserver/caddy/modules/caddyhttp/requestbody"
 	_ "github.com/caddyserver/caddy/modules/caddyhttp/reverseproxy"
 	_ "github.com/caddyserver/caddy/modules/caddyhttp/rewrite"
+	_ "github.com/caddyserver/caddy/modules/caddyhttp/templates"
 	_ "github.com/caddyserver/caddy/modules/caddytls"
 	_ "github.com/caddyserver/caddy/modules/caddytls/standardstek"
 )

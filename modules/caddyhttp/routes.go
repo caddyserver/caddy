@@ -186,17 +186,21 @@ type middlewareResponseWriter struct {
 
 func (mrw middlewareResponseWriter) WriteHeader(statusCode int) {
 	if !mrw.allowWrites {
-		panic("WriteHeader: middleware cannot write to the response")
+		// technically, this is not true: middleware can write headers,
+		// but only after the responder handler has returned; either the
+		// responder did nothing with the response (sad face), or the
+		// middleware wrapped the response and deferred the write
+		panic("WriteHeader: middleware cannot write response headers")
 	}
 	mrw.ResponseWriterWrapper.WriteHeader(statusCode)
 }
 
 func (mrw middlewareResponseWriter) Write(b []byte) (int, error) {
 	if !mrw.allowWrites {
-		panic("Write: middleware cannot write to the response")
+		panic("Write: middleware cannot write to the response before responder")
 	}
 	return mrw.ResponseWriterWrapper.Write(b)
 }
 
 // Interface guard
-var _ HTTPInterfaces = middlewareResponseWriter{}
+var _ HTTPInterfaces = (*middlewareResponseWriter)(nil)

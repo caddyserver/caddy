@@ -28,4 +28,4 @@ func (m MatchServerName) Match(hello *tls.ClientHelloInfo) bool {
 }
 
 // Interface guard
-var _ ConnectionMatcher = MatchServerName{}
+var _ ConnectionMatcher = (*MatchServerName)(nil)

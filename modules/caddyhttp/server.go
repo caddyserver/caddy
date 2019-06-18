@@ -15,10 +15,10 @@ import (
 // Server is an HTTP server.
 type Server struct {
 	Listen            []string         `json:"listen,omitempty"`
-	ReadTimeout       caddy.Duration  `json:"read_timeout,omitempty"`
-	ReadHeaderTimeout caddy.Duration  `json:"read_header_timeout,omitempty"`
-	WriteTimeout      caddy.Duration  `json:"write_timeout,omitempty"`
-	IdleTimeout       caddy.Duration  `json:"idle_timeout,omitempty"`
+	ReadTimeout       caddy.Duration   `json:"read_timeout,omitempty"`
+	ReadHeaderTimeout caddy.Duration   `json:"read_header_timeout,omitempty"`
+	WriteTimeout      caddy.Duration   `json:"write_timeout,omitempty"`
+	IdleTimeout       caddy.Duration   `json:"idle_timeout,omitempty"`
 	MaxHeaderBytes    int              `json:"max_header_bytes,omitempty"`
 	Routes            RouteList        `json:"routes,omitempty"`
 	Errors            *httpErrorConfig `json:"errors,omitempty"`
@@ -40,6 +40,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// set up the context for the request
 	repl := caddy.NewReplacer()
 	ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, repl)
+	ctx = context.WithValue(ctx, ServerCtxKey, s)
 	ctx = context.WithValue(ctx, TableCtxKey, make(map[string]interface{})) // TODO: Implement this
 	r = r.WithContext(ctx)
 
@@ -126,5 +127,7 @@ type httpErrorConfig struct {
 	// the logging configuration first.
 }
 
-// TableCtxKey is the context key for the request's variable table.
+const ServerCtxKey caddy.CtxKey = "server"
+
+// TableCtxKey is the context key for the request's variable table. TODO: implement this
 const TableCtxKey caddy.CtxKey = "table"
