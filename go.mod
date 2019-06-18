@@ -4,10 +4,16 @@ go 1.12
 
 require (
 	github.com/DataDog/zstd v1.4.0 // indirect
+	github.com/Masterminds/goutils v1.1.0 // indirect
+	github.com/Masterminds/semver v1.4.2 // indirect
+	github.com/Masterminds/sprig v2.20.0+incompatible // indirect
 	github.com/andybalholm/brotli v0.0.0-20190430215306-5c318f9037cb
 	github.com/dustin/go-humanize v1.0.0
 	github.com/go-acme/lego v2.6.0+incompatible
 	github.com/google/go-cmp v0.3.0 // indirect
+	github.com/google/uuid v1.1.1 // indirect
+	github.com/huandu/xstrings v1.2.0 // indirect
+	github.com/imdario/mergo v0.3.7 // indirect
 	github.com/klauspost/compress v1.7.1-0.20190613161414-0b31f265a57b
 	github.com/klauspost/cpuid v1.2.1
 	github.com/mholt/certmagic v0.6.0

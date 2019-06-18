@@ -17,6 +17,7 @@ import (
 
 	"os"
 
+	"github.com/Masterminds/sprig"
 	"github.com/caddyserver/caddy/modules/caddyhttp"
 	"gopkg.in/russross/blackfriday.v2"
 )
@@ -27,7 +28,8 @@ type templateContext struct {
 	Req        *http.Request
 	Args       []interface{} // defined by arguments to .Include
 	RespHeader tplWrappedHeader
-	server     http.Handler
+
+	config *Templates
 }
 
 // Include returns the contents of filename relative to the site root.
@@ -53,7 +55,12 @@ func (c templateContext) Include(filename string, args ...interface{}) (string, 
 
 	c.Args = args
 
-	return c.executeTemplate(filename, bodyBuf.Bytes())
+	err = c.executeTemplateInBuffer(filename, bodyBuf)
+	if err != nil {
+		return "", err
+	}
+
+	return bodyBuf.String(), nil
 }
 
 // HTTPInclude returns the body of a virtual (lightweight) request
@@ -81,25 +88,28 @@ func (c templateContext) HTTPInclude(uri string) (string, error) {
 		return "", fmt.Errorf("http %d", vrw.status)
 	}
 
-	return c.executeTemplate(uri, buf.Bytes())
-}
-
-func (c templateContext) executeTemplate(tplName string, body []byte) (string, error) {
-	tpl, err := template.New(tplName).Parse(string(body))
-	if err != nil {
-		return "", err
-	}
-
-	buf := bufPool.Get().(*bytes.Buffer)
-	buf.Reset()
-	defer bufPool.Put(buf)
-
-	err = tpl.Execute(buf, c)
+	err = c.executeTemplateInBuffer(uri, buf)
 	if err != nil {
 		return "", err
 	}
 
 	return buf.String(), nil
+}
+
+func (c templateContext) executeTemplateInBuffer(tplName string, buf *bytes.Buffer) error {
+	tpl := template.New(tplName).Funcs(sprig.TxtFuncMap())
+	if len(c.config.Delimiters) == 2 {
+		tpl.Delims(c.config.Delimiters[0], c.config.Delimiters[1])
+	}
+
+	parsedTpl, err := tpl.Parse(buf.String())
+	if err != nil {
+		return err
+	}
+
+	buf.Reset() // reuse buffer for output
+
+	return parsedTpl.Execute(buf, c)
 }
 
 // Now returns the current timestamp.
