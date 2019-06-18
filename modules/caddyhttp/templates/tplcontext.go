@@ -2,20 +2,14 @@ package templates
 
 import (
 	"bytes"
-	"crypto/rand"
 	"fmt"
 	"io"
-	"log"
-	weakrand "math/rand"
 	"net"
 	"net/http"
 	"path"
 	"strings"
 	"sync"
 	"text/template"
-	"time"
-
-	"os"
 
 	"github.com/Masterminds/sprig"
 	"github.com/caddyserver/caddy/modules/caddyhttp"
@@ -112,11 +106,6 @@ func (c templateContext) executeTemplateInBuffer(tplName string, buf *bytes.Buff
 	return parsedTpl.Execute(buf, c)
 }
 
-// Now returns the current timestamp.
-func (c templateContext) Now() time.Time {
-	return time.Now()
-}
-
 // Cookie gets the value of a cookie with name name.
 func (c templateContext) Cookie(name string) string {
 	cookies := c.Req.Cookies()
@@ -145,19 +134,6 @@ func (c templateContext) Hostname() string {
 	return hostnameList[0]
 }
 
-// Env gets a map of the environment variables.
-func (c templateContext) Env() map[string]string {
-	osEnv := os.Environ()
-	envVars := make(map[string]string, len(osEnv))
-	for _, env := range osEnv {
-		data := strings.SplitN(env, "=", 2)
-		if len(data) == 2 && len(data[0]) > 0 {
-			envVars[data[0]] = data[1]
-		}
-	}
-	return envVars
-}
-
 // IP gets the (remote) IP address of the client making the request.
 func (c templateContext) IP() string {
 	ip, _, err := net.SplitHostPort(c.Req.RemoteAddr)
@@ -179,21 +155,6 @@ func (c templateContext) Host() (string, error) {
 		return "", err
 	}
 	return host, nil
-}
-
-// Truncate truncates the input string to the given length.
-// If length is negative, it returns that many characters
-// starting from the end of the string. If the absolute value
-// of length is greater than len(input), the whole input is
-// returned.
-func (c templateContext) Truncate(input string, length int) string {
-	if length < 0 && len(input)+length > 0 {
-		return input[len(input)+length:]
-	}
-	if length >= 0 && len(input) > length {
-		return input[:length]
-	}
-	return input
 }
 
 // StripHTML returns s without HTML tags. It is fairly naive
@@ -234,83 +195,6 @@ func (c templateContext) Markdown(body string) string {
 	return string(blackfriday.Run([]byte(body)))
 }
 
-// Ext returns the suffix beginning at the final dot in the final
-// slash-separated element of the pathStr (or in other words, the
-// file extension).
-func (c templateContext) Ext(pathStr string) string {
-	return path.Ext(pathStr)
-}
-
-// StripExt returns the input string without the extension,
-// which is the suffix starting with the final '.' character
-// but not before the final path separator ('/') character.
-// If there is no extension, the whole input is returned.
-func (c templateContext) StripExt(path string) string {
-	for i := len(path) - 1; i >= 0 && path[i] != '/'; i-- {
-		if path[i] == '.' {
-			return path[:i]
-		}
-	}
-	return path
-}
-
-// Replace replaces instances of find in input with replacement.
-func (c templateContext) Replace(input, find, replacement string) string {
-	return strings.Replace(input, find, replacement, -1)
-}
-
-// HasPrefix returns true if s starts with prefix.
-func (c templateContext) HasPrefix(s, prefix string) bool {
-	return strings.HasPrefix(s, prefix)
-}
-
-// ToLower will convert the given string to lower case.
-func (c templateContext) ToLower(s string) string {
-	return strings.ToLower(s)
-}
-
-// ToUpper will convert the given string to upper case.
-func (c templateContext) ToUpper(s string) string {
-	return strings.ToUpper(s)
-}
-
-// Split is a pass-through to strings.Split. It will split
-// the first argument at each instance of the separator and
-// return a slice of strings.
-func (c templateContext) Split(s string, sep string) []string {
-	return strings.Split(s, sep)
-}
-
-// Join is a pass-through to strings.Join. It will join the
-// first argument slice with the separator in the second
-// argument and return the result.
-func (c templateContext) Join(a []string, sep string) string {
-	return strings.Join(a, sep)
-}
-
-// Slice will convert the given arguments into a slice.
-func (c templateContext) Slice(elems ...interface{}) []interface{} {
-	return elems
-}
-
-// Dict will convert the arguments into a dictionary (map). It expects
-// alternating keys and values of string types. This is useful since you
-// cannot express map literals directly in Go templates.
-func (c templateContext) Dict(values ...interface{}) (map[string]interface{}, error) {
-	if len(values)%2 != 0 {
-		return nil, fmt.Errorf("expected even number of arguments")
-	}
-	dict := make(map[string]interface{}, len(values)/2)
-	for i := 0; i < len(values); i += 2 {
-		key, ok := values[i].(string)
-		if !ok {
-			return nil, fmt.Errorf("argument %d: map keys must be strings", i)
-		}
-		dict[key] = values[i+1]
-	}
-	return dict, nil
-}
-
 // ListFiles reads and returns a slice of names from the given
 // directory relative to the root of c.
 func (c templateContext) ListFiles(name string) ([]string, error) {
@@ -343,48 +227,6 @@ func (c templateContext) ListFiles(name string) ([]string, error) {
 	}
 
 	return names, nil
-}
-
-// RandomString generates a random string of random length given
-// length bounds. Thanks to http://stackoverflow.com/a/35615565/1048862
-// for the clever technique that is fairly fast, secure, and maintains
-// proper distributions over the dictionary.
-func (c templateContext) RandomString(minLen, maxLen int) string {
-	const (
-		letterBytes   = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-		letterIdxBits = 6                    // 6 bits to represent 64 possibilities (indexes)
-		letterIdxMask = 1<<letterIdxBits - 1 // all 1-bits, as many as letterIdxBits
-	)
-
-	if minLen < 0 || maxLen < 0 || maxLen < minLen {
-		return ""
-	}
-
-	n := weakrand.Intn(maxLen-minLen+1) + minLen // choose actual length
-
-	// secureRandomBytes returns a number of bytes using crypto/rand.
-	secureRandomBytes := func(numBytes int) []byte {
-		randomBytes := make([]byte, numBytes)
-		if _, err := rand.Read(randomBytes); err != nil {
-			// TODO: what to do with the logs (throughout whole file) (could return as error? might get rendered though...)
-			log.Println("[ERROR] failed to read bytes: ", err)
-		}
-		return randomBytes
-	}
-
-	result := make([]byte, n)
-	bufferSize := int(float64(n) * 1.3)
-	for i, j, randomBytes := 0, 0, []byte{}; i < n; j++ {
-		if j%bufferSize == 0 {
-			randomBytes = secureRandomBytes(bufferSize)
-		}
-		if idx := int(randomBytes[j%n] & letterIdxMask); idx < len(letterBytes) {
-			result[i] = letterBytes[idx]
-			i++
-		}
-	}
-
-	return string(result)
 }
 
 // tplWrappedHeader wraps niladic functions so that they
