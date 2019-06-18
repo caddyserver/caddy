@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"strconv"
-	"text/template"
 
 	"github.com/caddyserver/caddy"
 	"github.com/caddyserver/caddy/modules/caddyhttp"
@@ -67,29 +66,19 @@ func (t *Templates) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 // executeTemplate executes the template contianed
 // in wb.buf and replaces it with the results.
 func (t *Templates) executeTemplate(wb *responseBuffer, r *http.Request) error {
-	tpl := template.New(r.URL.Path)
-
-	if len(t.Delimiters) == 2 {
-		tpl.Delims(t.Delimiters[0], t.Delimiters[1])
-	}
-
-	parsedTpl, err := tpl.Parse(wb.buf.String())
-	if err != nil {
-		return caddyhttp.Error(http.StatusInternalServerError, err)
-	}
-
 	var fs http.FileSystem
 	if t.FileRoot != "" {
 		fs = http.Dir(t.FileRoot)
 	}
+
 	ctx := &templateContext{
 		Root:       fs,
 		Req:        r,
 		RespHeader: tplWrappedHeader{wb.Header()},
+		config:     t,
 	}
 
-	wb.buf.Reset() // reuse buffer for output
-	err = parsedTpl.Execute(wb.buf, ctx)
+	err := ctx.executeTemplateInBuffer(r.URL.Path, wb.buf)
 	if err != nil {
 		return caddyhttp.Error(http.StatusInternalServerError, err)
 	}
