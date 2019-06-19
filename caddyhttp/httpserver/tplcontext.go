@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"strconv"
 	"strings"
 	"sync"
 	"text/template"
@@ -33,6 +34,7 @@ import (
 	"os"
 
 	"github.com/mholt/caddy/caddytls"
+	"github.com/mholt/certmagic"
 	"github.com/russross/blackfriday"
 )
 
@@ -178,7 +180,7 @@ func (c Context) Port() (string, error) {
 	if err != nil {
 		if !strings.Contains(c.Req.Host, ":") {
 			// common with sites served on the default port 80
-			return HTTPPort, nil
+			return strconv.Itoa(certmagic.HTTPPort), nil
 		}
 		return "", err
 	}
