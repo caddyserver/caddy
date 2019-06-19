@@ -88,6 +88,30 @@ func (cg configGroup) getConfig(hello *tls.ClientHelloInfo) *Config {
 	// TLS configuration for; any config will do for
 	// this purpose
 	for _, config := range cg {
+		// important! disable on-demand TLS so we don't
+		// try to get certificates for unrecognized names;
+		// this requires a careful pointer dance... first
+		// make shallow copies of the structs
+		if config.Manager != nil && config.Manager.OnDemand != nil {
+			cfgCopy := *config
+			mgrCopy := *config.Manager
+			tlsCfgCopy := config.tlsConfig.Clone()
+
+			// then turn off on-demand TLS
+			mgrCopy.OnDemand = nil
+
+			// then change the copies; make sure the
+			// GetCertificate callback is updated so
+			// it points to our modified config
+			cfgCopy.Manager = &mgrCopy
+			tlsCfgCopy.GetCertificate = mgrCopy.GetCertificate
+			cfgCopy.tlsConfig = tlsCfgCopy
+
+			// finally, return the reconstructed config
+			return &cfgCopy
+		}
+		// if on-demand TLS was not enabled, we should
+		// be able to use this config directly
 		return config
 	}
 
