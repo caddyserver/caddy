@@ -108,3 +108,25 @@ func TestGetPreferredDefaultCiphers(t *testing.T) {
 		}
 	}
 }
+
+func TestAssertTLSConfigCompatibleClientCert(t *testing.T) {
+	configs := []*Config{
+		{Enabled: true, ClientAuth: tls.RequestClientCert, ClientCerts: []string{}},
+		{Enabled: true, ClientAuth: tls.RequestClientCert, ClientCerts: []string{"ca_cert.crt"}},
+	}
+
+	_, err := MakeTLSConfig(configs)
+	if err == nil {
+		t.Fatalf("Expected an error, but got %v", err)
+	}
+
+	configs = []*Config{
+		{Enabled: true, ClientAuth: tls.RequestClientCert, ClientCerts: []string{"ca_cert.crt"}},
+		{Enabled: true, ClientAuth: tls.RequestClientCert, ClientCerts: []string{"ca_cert.crt"}},
+	}
+
+	_, err = MakeTLSConfig(configs)
+	if err != nil {
+		t.Fatalf("Expected no error, but got %v", err)
+	}
+}

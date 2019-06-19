@@ -394,16 +394,9 @@ func assertConfigsCompatible(cfg1, cfg2 *Config) error {
 	if c1.MaxVersion != c2.MaxVersion {
 		return fmt.Errorf("maximum TLS version mismatch")
 	}
-	if c1.ClientAuth != c2.ClientAuth {
-		return fmt.Errorf("client authentication policy mismatch")
-	}
-	if c1.ClientAuth != tls.NoClientCert && c2.ClientAuth != tls.NoClientCert && c1.ClientCAs != c2.ClientCAs {
-		// Two hosts defined on the same listener are not compatible if they
-		// have ClientAuth enabled, because there's no guarantee beyond the
-		// hostname which config will be used (because SNI only has server name).
-		// To prevent clients from bypassing authentication, require that
-		// ClientAuth be configured in an unambiguous manner.
-		return fmt.Errorf("multiple hosts requiring client authentication ambiguously configured")
+
+	if err := assertClientCertsCompatible(cfg1, cfg2); err != nil {
+		return err
 	}
 
 	return nil
@@ -548,6 +541,37 @@ func getPreferredDefaultCiphers() []uint16 {
 
 	// Return a cipher suite that prefers ChaCha20
 	return defaultCiphersNonAESNI
+}
+
+func assertClientCertsCompatible(cfg1, cfg2 *Config) error {
+	c1, c2 := cfg1.tlsConfig, cfg2.tlsConfig
+	if c1.ClientAuth != c2.ClientAuth {
+		return fmt.Errorf("client authentication policy mismatch")
+	}
+
+	if c1.ClientAuth == tls.NoClientCert || c2.ClientAuth == tls.NoClientCert {
+		return nil
+	}
+
+	ccerts1, ccerts2 := cfg1.ClientCerts, cfg2.ClientCerts
+
+	if len(ccerts1) != len(ccerts2) {
+		return fmt.Errorf("number of client certs differs")
+	}
+
+	// The order of client CAs matters
+	for i, v := range ccerts1 {
+		if v != ccerts2[i] {
+			// Two hosts defined on the same listener are not compatible if they
+			// have ClientAuth enabled, because there's no guarantee beyond the
+			// hostname which config will be used (because SNI only has server name).
+			// To prevent clients from bypassing authentication, require that
+			// ClientAuth be configured in an unambiguous manner.
+			return fmt.Errorf("multiple hosts requiring client authentication ambiguously configured")
+		}
+	}
+
+	return nil
 }
 
 // Map of supported curves
