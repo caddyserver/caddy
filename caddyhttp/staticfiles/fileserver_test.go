@@ -432,7 +432,7 @@ func TestServeHTTPFailingFS(t *testing.T) {
 		fsErr           error
 		expectedStatus  int
 		expectedErr     error
-		expectedHeaders map[string]string
+		expectedHeaders map[string]struct{}
 	}{
 		{
 			fsErr:          os.ErrNotExist,
@@ -448,7 +448,7 @@ func TestServeHTTPFailingFS(t *testing.T) {
 			fsErr:           errCustom,
 			expectedStatus:  http.StatusServiceUnavailable,
 			expectedErr:     errCustom,
-			expectedHeaders: map[string]string{"Retry-After": "5"},
+			expectedHeaders: map[string]struct{}{"Retry-After": {}},
 		},
 	}
 
@@ -477,10 +477,9 @@ func TestServeHTTPFailingFS(t *testing.T) {
 
 		// check the headers - a special case for server under load
 		if test.expectedHeaders != nil && len(test.expectedHeaders) > 0 {
-			for expectedKey, expectedVal := range test.expectedHeaders {
-				actualVal := responseRecorder.Header().Get(expectedKey)
-				if expectedVal != actualVal {
-					t.Errorf("Test %d: Expected header %s: %s, found %s", i, expectedKey, expectedVal, actualVal)
+			for expectedKey := range test.expectedHeaders {
+				if _, ok := responseRecorder.Header()[expectedKey]; !ok {
+					t.Errorf("Test %d: Expected header %s, but was missing", i, expectedKey)
 				}
 			}
 		}
