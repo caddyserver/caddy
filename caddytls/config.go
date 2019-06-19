@@ -562,6 +562,11 @@ func assertClientCertsCompatible(cfg1, cfg2 *Config) error {
 	// The order of client CAs matters
 	for i, v := range ccerts1 {
 		if v != ccerts2[i] {
+			// Two hosts defined on the same listener are not compatible if they
+			// have ClientAuth enabled, because there's no guarantee beyond the
+			// hostname which config will be used (because SNI only has server name).
+			// To prevent clients from bypassing authentication, require that
+			// ClientAuth be configured in an unambiguous manner.
 			return fmt.Errorf("multiple hosts requiring client authentication ambiguously configured")
 		}
 	}
