@@ -29,8 +29,13 @@
 # caddy_group (str):  	      Set to "wheel" by default.
 #                             Defines the group that caddy files will be attached to
 #
-# caddy_logfile (str)	      Set to "/var/log/caddy.log" by default.
-#			      Defines where the process log file is written, this is not a web access log
+# caddy_syslog_facility (str) Set to "local7" by default.
+#                             Defines the syslog facility used to log output from the caddy process.
+#                             This is NOT the web access log.
+#
+# caddy_syslog_level (str)    Set to "notice" by default.
+#                             Defines the syslog level used to log output from the caddy process.
+#                             This is NOT the web access log.
 #
 # caddy_env (str)	      Set to "" by default.
 #			      This allows environment variable to be set that may be required, for example when using "DNS Challenge" account credentials are required.
@@ -49,7 +54,8 @@ load_rc_config ${name}
 : ${caddy_bin_path="/usr/local/bin/caddy"}
 : ${caddy_cpu="99%"} # was a bug for me that caused a crash within jails
 : ${caddy_config_path="/usr/local/www/Caddyfile"}
-: ${caddy_logfile="/var/log/caddy.log"}
+: ${caddy_syslog_facility="local7"}
+: ${caddy_syslog_level="notice"}
 : ${caddy_user="root"}
 : ${caddy_group="wheel"}
 
@@ -62,7 +68,7 @@ fi
 pidfile="/var/run/${name}.pid"
 procname="${caddy_bin_path}" #enabled builtin pid checking for start / stop
 command="/usr/sbin/daemon"
-command_args="-p ${pidfile} /usr/bin/env ${caddy_env} ${procname} -cpu ${caddy_cpu} -log stdout -conf ${caddy_config_path} -agree -email ${caddy_cert_email} < /dev/null >> ${caddy_logfile} 2>&1"
+command_args="-p ${pidfile} -T ${name} -l ${caddy_syslog_facility} -s ${caddy_syslog_level} /usr/bin/env ${caddy_env} ${procname} -cpu ${caddy_cpu} -log stdout -conf ${caddy_config_path} -agree -email ${caddy_cert_email} < /dev/null"
 
 start_precmd="caddy_startprecmd"
 
@@ -70,10 +76,6 @@ caddy_startprecmd()
 {
 	if [ ! -e "${pidfile}" ]; then
 		install -o "${caddy_user}" -g "${caddy_group}" "/dev/null" "${pidfile}"
-	fi
-
-	if [ ! -e "${caddy_logfile}" ]; then
-		install -o "${caddy_user}" -g "${caddy_group}" "/dev/null" "${caddy_logfile}"
 	fi
 }
 
