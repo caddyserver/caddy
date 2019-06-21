@@ -66,6 +66,7 @@ func (fsrv *FileServer) serveBrowse(dirPath string, w http.ResponseWriter, r *ht
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	}
+
 	buf.WriteTo(w)
 
 	return nil

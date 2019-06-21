@@ -61,9 +61,11 @@ var ErrNotImplemented = fmt.Errorf("method not implemented")
 
 type responseRecorder struct {
 	*ResponseWriterWrapper
-	wroteHeader bool
-	statusCode  int
-	buf         *bytes.Buffer
+	wroteHeader  bool
+	statusCode   int
+	buf          *bytes.Buffer
+	shouldBuffer func(status int) bool
+	stream       bool
 }
 
 // NewResponseRecorder returns a new ResponseRecorder that can be
@@ -76,6 +78,16 @@ type responseRecorder struct {
 // responses by wrapping Write and WriteHeader methods instead of
 // buffering whole response bodies.
 //
+// Recorders optionally buffer the response. When the headers are
+// to be written, shouldBuffer will be called with the status
+// code that is being written. The rest of the headers can be read
+// from w.Header(). If shouldBuffer returns true, the response
+// will be buffered. You can know the response was buffered if
+// the Buffered() method returns true. If the response was not
+// buffered, Buffered() will return false and that means the
+// response bypassed the recorder and was written directly to the
+// underlying writer.
+//
 // Before calling this function in a middleware handler, make a
 // new buffer or obtain one from a pool (use the sync.Pool) type.
 // Using a pool is generally recommended for performance gains;
@@ -85,12 +97,13 @@ type responseRecorder struct {
 // The returned recorder can be used in place of w when calling
 // the next handler in the chain. When that handler returns, you
 // can read the status code from the recorder's Status() method.
-// The response body fills buf, and the headers are available in
-// w.Header().
-func NewResponseRecorder(w http.ResponseWriter, buf *bytes.Buffer) ResponseRecorder {
+// The response body fills buf if it was buffered, and the headers
+// are available via w.Header().
+func NewResponseRecorder(w http.ResponseWriter, buf *bytes.Buffer, shouldBuffer func(status int) bool) ResponseRecorder {
 	return &responseRecorder{
 		ResponseWriterWrapper: &ResponseWriterWrapper{ResponseWriter: w},
 		buf:                   buf,
+		shouldBuffer:          shouldBuffer,
 	}
 }
 
@@ -100,10 +113,22 @@ func (rr *responseRecorder) WriteHeader(statusCode int) {
 	}
 	rr.statusCode = statusCode
 	rr.wroteHeader = true
+
+	// decide whether we should buffer the response
+	if rr.shouldBuffer == nil {
+		return
+	}
+	rr.stream = !rr.shouldBuffer(rr.statusCode)
+	if rr.stream {
+		rr.ResponseWriterWrapper.WriteHeader(rr.statusCode)
+	}
 }
 
 func (rr *responseRecorder) Write(data []byte) (int, error) {
 	rr.WriteHeader(http.StatusOK)
+	if rr.stream {
+		return rr.ResponseWriterWrapper.Write(data)
+	}
 	return rr.buf.Write(data)
 }
 
@@ -118,12 +143,18 @@ func (rr *responseRecorder) Buffer() *bytes.Buffer {
 	return rr.buf
 }
 
+// Buffered returns whether rr has decided to buffer the response.
+func (rr *responseRecorder) Buffered() bool {
+	return !rr.stream
+}
+
 // ResponseRecorder is a http.ResponseWriter that records
 // responses instead of writing them to the client.
 type ResponseRecorder interface {
 	HTTPInterfaces
 	Status() int
 	Buffer() *bytes.Buffer
+	Buffered() bool
 }
 
 // Interface guards

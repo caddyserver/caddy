@@ -33,10 +33,11 @@ func (s Static) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
 	// set all headers
 	for field, vals := range s.Headers {
 		field = repl.ReplaceAll(field, "")
+		newVals := make([]string, len(vals))
 		for i := range vals {
-			vals[i] = repl.ReplaceAll(vals[i], "")
+			newVals[i] = repl.ReplaceAll(vals[i], "")
 		}
-		w.Header()[field] = vals
+		w.Header()[field] = newVals
 	}
 
 	// do not allow Go to sniff the content-type

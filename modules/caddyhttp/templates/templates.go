@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/caddyserver/caddy"
 	"github.com/caddyserver/caddy/modules/caddyhttp"
@@ -37,14 +38,21 @@ func (t *Templates) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 	buf.Reset()
 	defer bufPool.Put(buf)
 
-	rr := caddyhttp.NewResponseRecorder(w, buf)
+	shouldBuf := func(status int) bool {
+		return strings.HasPrefix(w.Header().Get("Content-Type"), "text/")
+	}
 
-	err := next.ServeHTTP(rr, r)
+	rec := caddyhttp.NewResponseRecorder(w, buf, shouldBuf)
+
+	err := next.ServeHTTP(rec, r)
 	if err != nil {
 		return err
 	}
+	if !rec.Buffered() {
+		return nil
+	}
 
-	err = t.executeTemplate(rr, r)
+	err = t.executeTemplate(rec, r)
 	if err != nil {
 		return err
 	}
@@ -54,7 +62,7 @@ func (t *Templates) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 	w.Header().Del("Etag")          // don't know a way to quickly generate etag for dynamic content
 	w.Header().Del("Last-Modified") // useless for dynamic content since it's always changing
 
-	w.WriteHeader(rr.Status())
+	w.WriteHeader(rec.Status())
 	io.Copy(w, buf)
 
 	return nil

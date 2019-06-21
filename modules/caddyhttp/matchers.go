@@ -226,9 +226,9 @@ func (m MatchHeaderRE) Match(r *http.Request) bool {
 }
 
 // Provision compiles m's regular expressions.
-func (m MatchHeaderRE) Provision() error {
+func (m MatchHeaderRE) Provision(ctx caddy.Context) error {
 	for _, rm := range m {
-		err := rm.Provision()
+		err := rm.Provision(ctx)
 		if err != nil {
 			return err
 		}
@@ -371,7 +371,7 @@ type MatchRegexp struct {
 }
 
 // Provision compiles the regular expression.
-func (mre *MatchRegexp) Provision() error {
+func (mre *MatchRegexp) Provision(caddy.Context) error {
 	re, err := regexp.Compile(mre.Pattern)
 	if err != nil {
 		return fmt.Errorf("compiling matcher regexp %s: %v", mre.Pattern, err)
@@ -479,14 +479,17 @@ var (
 	_ RequestMatcher    = (*MatchHost)(nil)
 	_ RequestMatcher    = (*MatchPath)(nil)
 	_ RequestMatcher    = (*MatchPathRE)(nil)
+	_ caddy.Provisioner = (*MatchPathRE)(nil)
 	_ RequestMatcher    = (*MatchMethod)(nil)
 	_ RequestMatcher    = (*MatchQuery)(nil)
 	_ RequestMatcher    = (*MatchHeader)(nil)
 	_ RequestMatcher    = (*MatchHeaderRE)(nil)
+	_ caddy.Provisioner = (*MatchHeaderRE)(nil)
 	_ RequestMatcher    = (*MatchProtocol)(nil)
 	_ RequestMatcher    = (*MatchRemoteIP)(nil)
 	_ caddy.Provisioner = (*MatchRemoteIP)(nil)
 	_ RequestMatcher    = (*MatchNegate)(nil)
 	_ caddy.Provisioner = (*MatchNegate)(nil)
 	_ RequestMatcher    = (*MatchStarlarkExpr)(nil)
+	_ caddy.Provisioner = (*MatchRegexp)(nil)
 )

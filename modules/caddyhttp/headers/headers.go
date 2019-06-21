@@ -40,20 +40,25 @@ type RespHeaderOps struct {
 func (h Headers) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
 	apply(h.Request, r.Header, repl)
-	if h.Response.Deferred || h.Response.Require != nil {
-		w = &responseWriterWrapper{
-			ResponseWriterWrapper: &caddyhttp.ResponseWriterWrapper{ResponseWriter: w},
-			replacer:              repl,
-			require:               h.Response.Require,
-			headerOps:             h.Response.HeaderOps,
+	if h.Response != nil {
+		if h.Response.Deferred || h.Response.Require != nil {
+			w = &responseWriterWrapper{
+				ResponseWriterWrapper: &caddyhttp.ResponseWriterWrapper{ResponseWriter: w},
+				replacer:              repl,
+				require:               h.Response.Require,
+				headerOps:             h.Response.HeaderOps,
+			}
+		} else {
+			apply(h.Response.HeaderOps, w.Header(), repl)
 		}
-	} else {
-		apply(h.Response.HeaderOps, w.Header(), repl)
 	}
 	return next.ServeHTTP(w, r)
 }
 
 func apply(ops *HeaderOps, hdr http.Header, repl caddy.Replacer) {
+	if ops == nil {
+		return
+	}
 	for fieldName, vals := range ops.Add {
 		fieldName = repl.ReplaceAll(fieldName, "")
 		for _, v := range vals {
