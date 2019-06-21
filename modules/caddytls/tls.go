@@ -197,7 +197,7 @@ type AutomationConfig struct {
 // management of managed TLS certificates.
 type AutomationPolicy struct {
 	Hosts         []string        `json:"hosts,omitempty"`
-	ManagementRaw json.RawMessage `json:"management"`
+	ManagementRaw json.RawMessage `json:"management,omitempty"`
 
 	Management managerMaker `json:"-"`
 }
