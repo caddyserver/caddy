@@ -117,12 +117,8 @@ func (c templateContext) Cookie(name string) string {
 	return ""
 }
 
-// ReqHeader gets the value of a request header with field name.
-func (c templateContext) ReqHeader(name string) string {
-	return c.Req.Header.Get(name)
-}
-
 // Hostname gets the (remote) hostname of the client making the request.
+// Performance warning: This involves a DNS lookup.
 func (c templateContext) Hostname() string {
 	ip := c.IP()
 
@@ -134,8 +130,8 @@ func (c templateContext) Hostname() string {
 	return hostnameList[0]
 }
 
-// IP gets the (remote) IP address of the client making the request.
-func (c templateContext) IP() string {
+// RemoteIP gets the IP address of the client making the request.
+func (c templateContext) RemoteIP() string {
 	ip, _, err := net.SplitHostPort(c.Req.RemoteAddr)
 	if err != nil {
 		return c.Req.RemoteAddr
