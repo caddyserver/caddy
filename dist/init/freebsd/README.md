@@ -11,14 +11,14 @@ process's output to `/var/log/messages`.
 
 The simplest way to send `caddy` output to a separate file is:
 
-- to log the messages at a lower level so that they slip past that
-  early rule, e.g. add an `/etc/rc.conf` entry like
+- Arrange to log the messages at a lower level so that they slip past
+  that early rule, e.g. add an `/etc/rc.conf` entry like
 
   ``` shell
   caddy_syslog_level="info"
   ```
 
-- and then add a rule that catches them, e.g. by creating a
+- Add a rule that catches them, e.g. by creating a
   `/usr/local/etc/syslog.d/caddy.conf` file that contains:
 
   ```
@@ -30,5 +30,15 @@ The simplest way to send `caddy` output to a separate file is:
   Heads up, if you specify a file that does not already exist, you'll
   need to create it.
 
-There are many other ways to do it, read the `syslogd.conf` man page
-for additional information.
+-  Rotate `/var/log/caddy.log` with `newsyslog` by creating a
+  `/usr/local/etc/newsyslog.conf/caddy.conf` file that contains:
+
+  ```
+  # See newsyslog.conf(5) for details.  Logs written by syslog,
+  # no need for a pidfile or signal, the defaults workg.
+  # logfilename         [owner:group]  mode count size when  flags [/pid_file] [sig_num]
+  /var/log/caddy.log        www:www       664  7     *    @T00  J
+  ```
+
+There are many other ways to do it, read the `syslogd.conf` and
+`newsyslog.conf` man pages for additional information.
