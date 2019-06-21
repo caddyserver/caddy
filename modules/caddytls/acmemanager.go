@@ -3,6 +3,7 @@ package caddytls
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"time"
 
 	"github.com/go-acme/lego/certcrypto"
@@ -30,12 +31,12 @@ func init() {
 type ACMEManagerMaker struct {
 	CA          string           `json:"ca,omitempty"`
 	Email       string           `json:"email,omitempty"`
-	RenewAhead  caddy.Duration  `json:"renew_ahead,omitempty"`
+	RenewAhead  caddy.Duration   `json:"renew_ahead,omitempty"`
 	KeyType     string           `json:"key_type,omitempty"`
-	ACMETimeout caddy.Duration  `json:"acme_timeout,omitempty"`
+	ACMETimeout caddy.Duration   `json:"acme_timeout,omitempty"`
 	MustStaple  bool             `json:"must_staple,omitempty"`
-	Challenges  ChallengesConfig `json:"challenges"`
-	OnDemand    *OnDemandConfig  `json:"on_demand,omitempty"`
+	Challenges  ChallengesConfig `json:"challenges,omitempty"`
+	OnDemand    bool             `json:"on_demand,omitempty"`
 	Storage     json.RawMessage  `json:"storage,omitempty"`
 
 	storage certmagic.Storage
@@ -109,9 +110,34 @@ func (m *ACMEManagerMaker) makeCertMagicConfig(ctx caddy.Context) certmagic.Conf
 	}
 
 	var ond *certmagic.OnDemandConfig
-	if m.OnDemand != nil {
+	if m.OnDemand {
+		var onDemand *OnDemandConfig
+		appVal, err := ctx.App("tls")
+		if err == nil {
+			onDemand = appVal.(*TLS).Automation.OnDemand
+		}
+
 		ond = &certmagic.OnDemandConfig{
-			// TODO: fill this out
+			DecisionFunc: func(name string) error {
+				if onDemand != nil {
+					if onDemand.Ask != "" {
+						err := onDemandAskRequest(onDemand.Ask, name)
+						if err != nil {
+							return err
+						}
+					}
+					// check the rate limiter last, since
+					// even checking consumes a token; so
+					// don't even bother checking if the
+					// other regulations fail anyway
+					if onDemand.RateLimit != nil {
+						if !onDemandRateLimiter.Allow() {
+							return fmt.Errorf("on-demand rate limit exceeded")
+						}
+					}
+				}
+				return nil
+			},
 		}
 	}
 
@@ -132,6 +158,34 @@ func (m *ACMEManagerMaker) makeCertMagicConfig(ctx caddy.Context) certmagic.Conf
 		Storage:                 storage,
 		// TODO: listenHost
 	}
+}
+
+// onDemandAskRequest makes a request to the ask URL
+// to see if a certificate can be obtained for name.
+// The certificate request should be denied if this
+// returns an error.
+func onDemandAskRequest(ask string, name string) error {
+	askURL, err := url.Parse(ask)
+	if err != nil {
+		return fmt.Errorf("parsing ask URL: %v", err)
+	}
+	qs := askURL.Query()
+	qs.Set("domain", name)
+	askURL.RawQuery = qs.Encode()
+
+	resp, err := onDemandAskClient.Get(askURL.String())
+	if err != nil {
+		return fmt.Errorf("error checking %v to deterine if certificate for hostname '%s' should be allowed: %v",
+			ask, name, err)
+	}
+	resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return fmt.Errorf("certificate for hostname '%s' not allowed; non-2xx status code %d returned from %v",
+			name, resp.StatusCode, ask)
+	}
+
+	return nil
 }
 
 // supportedCertKeyTypes is all the key types that are supported

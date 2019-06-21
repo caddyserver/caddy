@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/caddyserver/caddy"
 	"github.com/go-acme/lego/challenge"
 	"github.com/mholt/certmagic"
+	"golang.org/x/time/rate"
 )
 
 func init() {
@@ -69,6 +71,16 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 	err := t.SessionTickets.provision(ctx)
 	if err != nil {
 		return fmt.Errorf("provisioning session tickets configuration: %v", err)
+	}
+
+	// on-demand rate limiting
+	if t.Automation.OnDemand != nil && t.Automation.OnDemand.RateLimit != nil {
+		limit := rate.Every(time.Duration(t.Automation.OnDemand.RateLimit.Interval))
+		// TODO: Burst size is not updated, see https://github.com/golang/go/issues/23575
+		onDemandRateLimiter.SetLimit(limit)
+	} else {
+		// if no rate limit is specified, be sure to remove any existing limit
+		onDemandRateLimiter.SetLimit(0)
 	}
 
 	return nil
@@ -178,6 +190,7 @@ type CertificateLoader interface {
 // construction and use of ACME clients.
 type AutomationConfig struct {
 	Policies []AutomationPolicy `json:"policies,omitempty"`
+	OnDemand *OnDemandConfig    `json:"on_demand,omitempty"`
 }
 
 // AutomationPolicy designates the policy for automating the
@@ -189,6 +202,9 @@ type AutomationPolicy struct {
 	Management managerMaker `json:"-"`
 }
 
+// makeCertMagicConfig converts ap into a CertMagic config. Passing onDemand
+// is necessary because the automation policy does not have convenient access
+// to the TLS app's global on-demand policies;
 func (ap AutomationPolicy) makeCertMagicConfig(ctx caddy.Context) certmagic.Config {
 	// default manager (ACME) is a special case because of how CertMagic is designed
 	// TODO: refactor certmagic so that ACME manager is not a special case by extracting
@@ -226,15 +242,30 @@ type TLSALPNChallengeConfig struct {
 // OnDemandConfig configures on-demand TLS, for obtaining
 // needed certificates at handshake-time.
 type OnDemandConfig struct {
-	// TODO: MaxCertificates state might not endure reloads...
-	// MaxCertificates int    `json:"max_certificates,omitempty"`
-	AskURL      string `json:"ask_url,omitempty"`
-	AskStarlark string `json:"ask_starlark,omitempty"`
+	RateLimit *RateLimit `json:"rate_limit,omitempty"`
+	Ask       string     `json:"ask,omitempty"`
+}
+
+// RateLimit specifies an interval with optional burst size.
+type RateLimit struct {
+	Interval caddy.Duration `json:"interval,omitempty"`
+	Burst    int            `json:"burst,omitempty"`
 }
 
 // managerMaker makes a certificate manager.
 type managerMaker interface {
 	newManager(interactive bool) (certmagic.Manager, error)
 }
+
+// These perpetual values are used for on-demand TLS.
+var (
+	onDemandRateLimiter = rate.NewLimiter(0, 1)
+	onDemandAskClient   = &http.Client{
+		Timeout: 10 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return fmt.Errorf("following http redirects is not allowed")
+		},
+	}
+)
 
 const automateKey = "automate"

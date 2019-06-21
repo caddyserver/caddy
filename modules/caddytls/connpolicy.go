@@ -86,6 +86,7 @@ func (cp ConnectionPolicies) TLSConfig(ctx caddy.Context) (*tls.Config, error) {
 				}
 				return pol.stdTLSConfig, nil
 			}
+
 			return nil, fmt.Errorf("no server TLS configuration available for ClientHello: %+v", hello)
 		},
 	}, nil
@@ -147,6 +148,8 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 		// than the lifetime of the whole app
 		tlsApp.SessionTickets.unregister(cfg)
 	})
+
+	// TODO: Clean up active locks if app (or process) is being closed!
 
 	// add all the cipher suites in order, without duplicates
 	cipherSuitesAdded := make(map[uint16]struct{})
