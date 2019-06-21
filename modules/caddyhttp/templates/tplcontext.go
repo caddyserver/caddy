@@ -120,7 +120,7 @@ func (c templateContext) Cookie(name string) string {
 // Hostname gets the (remote) hostname of the client making the request.
 // Performance warning: This involves a DNS lookup.
 func (c templateContext) Hostname() string {
-	ip := c.IP()
+	ip := c.RemoteIP()
 
 	hostnameList, err := net.LookupAddr(ip)
 	if err != nil || len(hostnameList) == 0 {

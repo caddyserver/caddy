@@ -122,7 +122,7 @@ func TestIP(t *testing.T) {
 		{`[fe80:1::3%eth0]:44`, `fe80:1::3%eth0`},
 	} {
 		context.Req.RemoteAddr = test.inputRemoteAddr
-		if actual := context.IP(); actual != test.expect {
+		if actual := context.RemoteIP(); actual != test.expect {
 			t.Errorf("Test %d: Expected %s but got %s", i, test.expect, actual)
 		}
 	}
