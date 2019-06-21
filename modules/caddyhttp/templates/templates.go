@@ -37,35 +37,31 @@ func (t *Templates) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 	buf.Reset()
 	defer bufPool.Put(buf)
 
-	wb := &responseBuffer{
-		ResponseWriterWrapper: &caddyhttp.ResponseWriterWrapper{ResponseWriter: w},
-		buf:                   buf,
-	}
+	rr := caddyhttp.NewResponseRecorder(w, buf)
 
-	err := next.ServeHTTP(wb, r)
+	err := next.ServeHTTP(rr, r)
 	if err != nil {
 		return err
 	}
 
-	err = t.executeTemplate(wb, r)
+	err = t.executeTemplate(rr, r)
 	if err != nil {
 		return err
 	}
 
-	w.Header().Set("Content-Length", strconv.Itoa(wb.buf.Len()))
+	w.Header().Set("Content-Length", strconv.Itoa(buf.Len()))
 	w.Header().Del("Accept-Ranges") // we don't know ranges for dynamically-created content
 	w.Header().Del("Etag")          // don't know a way to quickly generate etag for dynamic content
 	w.Header().Del("Last-Modified") // useless for dynamic content since it's always changing
 
-	w.WriteHeader(wb.statusCode)
-	io.Copy(w, wb.buf)
+	w.WriteHeader(rr.Status())
+	io.Copy(w, buf)
 
 	return nil
 }
 
-// executeTemplate executes the template contianed
-// in wb.buf and replaces it with the results.
-func (t *Templates) executeTemplate(wb *responseBuffer, r *http.Request) error {
+// executeTemplate executes the template contained in wb.buf and replaces it with the results.
+func (t *Templates) executeTemplate(rr caddyhttp.ResponseRecorder, r *http.Request) error {
 	var fs http.FileSystem
 	if t.FileRoot != "" {
 		fs = http.Dir(t.FileRoot)
@@ -74,11 +70,11 @@ func (t *Templates) executeTemplate(wb *responseBuffer, r *http.Request) error {
 	ctx := &templateContext{
 		Root:       fs,
 		Req:        r,
-		RespHeader: tplWrappedHeader{wb.Header()},
+		RespHeader: tplWrappedHeader{rr.Header()},
 		config:     t,
 	}
 
-	err := ctx.executeTemplateInBuffer(r.URL.Path, wb.buf)
+	err := ctx.executeTemplateInBuffer(r.URL.Path, rr.Buffer())
 	if err != nil {
 		return caddyhttp.Error(http.StatusInternalServerError, err)
 	}
@@ -86,29 +82,8 @@ func (t *Templates) executeTemplate(wb *responseBuffer, r *http.Request) error {
 	return nil
 }
 
-// responseBuffer buffers the response so that it can be
-// executed as a template.
-type responseBuffer struct {
-	*caddyhttp.ResponseWriterWrapper
-	wroteHeader bool
-	statusCode  int
-	buf         *bytes.Buffer
-}
-
-func (rb *responseBuffer) WriteHeader(statusCode int) {
-	if rb.wroteHeader {
-		return
-	}
-	rb.statusCode = statusCode
-	rb.wroteHeader = true
-}
-
-func (rb *responseBuffer) Write(data []byte) (int, error) {
-	rb.WriteHeader(http.StatusOK)
-	return rb.buf.Write(data)
-}
-
-// virtualResponseWriter is used in virtualized HTTP requests.
+// virtualResponseWriter is used in virtualized HTTP requests
+// that templates may execute.
 type virtualResponseWriter struct {
 	status int
 	header http.Header
@@ -131,5 +106,4 @@ func (vrw *virtualResponseWriter) Write(data []byte) (int, error) {
 var (
 	_ caddy.Validator             = (*Templates)(nil)
 	_ caddyhttp.MiddlewareHandler = (*Templates)(nil)
-	_ caddyhttp.HTTPInterfaces    = (*responseBuffer)(nil)
 )

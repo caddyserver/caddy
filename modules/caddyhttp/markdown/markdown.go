@@ -1,8 +1,10 @@
 package markdown
 
 import (
+	"bytes"
 	"net/http"
 	"strconv"
+	"sync"
 
 	"gopkg.in/russross/blackfriday.v2"
 
@@ -22,31 +24,35 @@ type Markdown struct {
 }
 
 func (m Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	mrw := &markdownResponseWriter{
-		ResponseWriterWrapper: &caddyhttp.ResponseWriterWrapper{ResponseWriter: w},
+	buf := bufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer bufPool.Put(buf)
+
+	rr := caddyhttp.NewResponseRecorder(w, buf)
+
+	err := next.ServeHTTP(rr, r)
+	if err != nil {
+		return err
 	}
-	return next.ServeHTTP(mrw, r)
+
+	output := blackfriday.Run(buf.Bytes())
+
+	w.Header().Set("Content-Length", strconv.Itoa(len(output)))
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Del("Accept-Ranges") // we don't know ranges for dynamically-created content
+	w.Header().Del("Etag")          // don't know a way to quickly generate etag for dynamic content
+	w.Header().Del("Last-Modified") // useless for dynamic content since it's always changing
+
+	w.WriteHeader(rr.Status())
+	w.Write(output)
+
+	return nil
 }
 
-type markdownResponseWriter struct {
-	*caddyhttp.ResponseWriterWrapper
-	statusCode  int
-	wroteHeader bool
-}
-
-func (mrw *markdownResponseWriter) WriteHeader(code int) {
-	mrw.statusCode = code
-}
-
-func (mrw *markdownResponseWriter) Write(d []byte) (int, error) {
-	output := blackfriday.Run(d)
-	if !mrw.wroteHeader {
-		mrw.Header().Set("Content-Length", strconv.Itoa(len(output)))
-		mrw.Header().Set("Content-Type", "text/html; charset=utf-8")
-		mrw.WriteHeader(mrw.statusCode)
-		mrw.wroteHeader = true
-	}
-	return mrw.ResponseWriter.Write(output)
+var bufPool = sync.Pool{
+	New: func() interface{} {
+		return new(bytes.Buffer)
+	},
 }
 
 // Interface guard

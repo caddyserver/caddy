@@ -2,6 +2,7 @@ package caddyhttp
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"net"
 	"net/http"
@@ -58,5 +59,75 @@ type HTTPInterfaces interface {
 // ResponseWriter does not implement the required method.
 var ErrNotImplemented = fmt.Errorf("method not implemented")
 
+type responseRecorder struct {
+	*ResponseWriterWrapper
+	wroteHeader bool
+	statusCode  int
+	buf         *bytes.Buffer
+}
+
+// NewResponseRecorder returns a new ResponseRecorder that can be
+// used instead of a real http.ResponseWriter. The recorder is useful
+// for middlewares which need to buffer a responder's response and
+// process it in its entirety before actually allowing the response to
+// be written. Of course, this has a performance overhead, but
+// sometimes there is no way to avoid buffering the whole response.
+// Still, if at all practical, middlewares should strive to stream
+// responses by wrapping Write and WriteHeader methods instead of
+// buffering whole response bodies.
+//
+// Before calling this function in a middleware handler, make a
+// new buffer or obtain one from a pool (use the sync.Pool) type.
+// Using a pool is generally recommended for performance gains;
+// do profiling to ensure this is the case. If using a pool, be
+// sure to reset the buffer before using it.
+//
+// The returned recorder can be used in place of w when calling
+// the next handler in the chain. When that handler returns, you
+// can read the status code from the recorder's Status() method.
+// The response body fills buf, and the headers are available in
+// w.Header().
+func NewResponseRecorder(w http.ResponseWriter, buf *bytes.Buffer) ResponseRecorder {
+	return &responseRecorder{
+		ResponseWriterWrapper: &ResponseWriterWrapper{ResponseWriter: w},
+		buf:                   buf,
+	}
+}
+
+func (rr *responseRecorder) WriteHeader(statusCode int) {
+	if rr.wroteHeader {
+		return
+	}
+	rr.statusCode = statusCode
+	rr.wroteHeader = true
+}
+
+func (rr *responseRecorder) Write(data []byte) (int, error) {
+	rr.WriteHeader(http.StatusOK)
+	return rr.buf.Write(data)
+}
+
+// Status returns the status code that was written, if any.
+func (rr *responseRecorder) Status() int {
+	return rr.statusCode
+}
+
+// Buffer returns the body buffer that rr was created with.
+// You should still have your original pointer, though.
+func (rr *responseRecorder) Buffer() *bytes.Buffer {
+	return rr.buf
+}
+
+// ResponseRecorder is a http.ResponseWriter that records
+// responses instead of writing them to the client.
+type ResponseRecorder interface {
+	HTTPInterfaces
+	Status() int
+	Buffer() *bytes.Buffer
+}
+
 // Interface guards
-var _ HTTPInterfaces = (*ResponseWriterWrapper)(nil)
+var (
+	_ HTTPInterfaces   = (*ResponseWriterWrapper)(nil)
+	_ ResponseRecorder = (*responseRecorder)(nil)
+)
