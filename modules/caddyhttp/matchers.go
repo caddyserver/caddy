@@ -113,11 +113,17 @@ func init() {
 
 // Match returns true if r matches m.
 func (m MatchHost) Match(r *http.Request) bool {
+	reqHost, _, err := net.SplitHostPort(r.Host)
+	if err != nil {
+		// OK; probably didn't have a port
+		reqHost = r.Host
+	}
+
 outer:
 	for _, host := range m {
 		if strings.Contains(host, "*") {
 			patternParts := strings.Split(host, ".")
-			incomingParts := strings.Split(r.Host, ".")
+			incomingParts := strings.Split(reqHost, ".")
 			if len(patternParts) != len(incomingParts) {
 				continue
 			}
@@ -130,10 +136,11 @@ outer:
 				}
 			}
 			return true
-		} else if strings.EqualFold(r.Host, host) {
+		} else if strings.EqualFold(reqHost, host) {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -469,17 +476,17 @@ var wordRE = regexp.MustCompile(`\w+`)
 
 // Interface guards
 var (
-	_ RequestMatcher     = (*MatchHost)(nil)
-	_ RequestMatcher     = (*MatchPath)(nil)
-	_ RequestMatcher     = (*MatchPathRE)(nil)
-	_ RequestMatcher     = (*MatchMethod)(nil)
-	_ RequestMatcher     = (*MatchQuery)(nil)
-	_ RequestMatcher     = (*MatchHeader)(nil)
-	_ RequestMatcher     = (*MatchHeaderRE)(nil)
-	_ RequestMatcher     = (*MatchProtocol)(nil)
-	_ RequestMatcher     = (*MatchRemoteIP)(nil)
+	_ RequestMatcher    = (*MatchHost)(nil)
+	_ RequestMatcher    = (*MatchPath)(nil)
+	_ RequestMatcher    = (*MatchPathRE)(nil)
+	_ RequestMatcher    = (*MatchMethod)(nil)
+	_ RequestMatcher    = (*MatchQuery)(nil)
+	_ RequestMatcher    = (*MatchHeader)(nil)
+	_ RequestMatcher    = (*MatchHeaderRE)(nil)
+	_ RequestMatcher    = (*MatchProtocol)(nil)
+	_ RequestMatcher    = (*MatchRemoteIP)(nil)
 	_ caddy.Provisioner = (*MatchRemoteIP)(nil)
-	_ RequestMatcher     = (*MatchNegate)(nil)
+	_ RequestMatcher    = (*MatchNegate)(nil)
 	_ caddy.Provisioner = (*MatchNegate)(nil)
-	_ RequestMatcher     = (*MatchStarlarkExpr)(nil)
+	_ RequestMatcher    = (*MatchStarlarkExpr)(nil)
 )
