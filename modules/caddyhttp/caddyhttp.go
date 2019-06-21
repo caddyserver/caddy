@@ -203,10 +203,9 @@ func (app *App) automaticHTTPS() error {
 				for _, m := range matcherSet {
 					if hm, ok := m.(*MatchHost); ok {
 						for _, d := range *hm {
-							if !certmagic.HostQualifies(d) {
-								continue
+							if certmagic.HostQualifies(d) {
+								domainSet[d] = struct{}{}
 							}
-							domainSet[d] = struct{}{}
 						}
 					}
 				}
