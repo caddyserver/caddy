@@ -265,7 +265,12 @@ func (app *App) automaticHTTPS() error {
 				if err != nil {
 					return fmt.Errorf("%s: invalid listener address: %v", srvName, addr)
 				}
-				httpRedirLnAddr := joinListenAddr(netw, host, strconv.Itoa(app.HTTPPort))
+
+				httpPort := app.HTTPPort
+				if httpPort == 0 {
+					httpPort = DefaultHTTPPort
+				}
+				httpRedirLnAddr := joinListenAddr(netw, host, strconv.Itoa(httpPort))
 				lnAddrMap[httpRedirLnAddr] = struct{}{}
 
 				if parts := strings.SplitN(port, "-", 2); len(parts) == 2 {

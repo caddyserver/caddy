@@ -157,7 +157,11 @@ func (rw *responseWriter) init() {
 		rw.Header().Set("Content-Encoding", rw.encodingName)
 	}
 	rw.Header().Del("Accept-Ranges") // we don't know ranges for dynamically-encoded content
-	rw.ResponseWriter.WriteHeader(rw.statusCode)
+	status := rw.statusCode
+	if status == 0 {
+		status = http.StatusOK
+	}
+	rw.ResponseWriter.WriteHeader(status)
 }
 
 // Close writes any remaining buffered response and

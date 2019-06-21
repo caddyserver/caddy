@@ -219,7 +219,7 @@ func TestPathREMatcher(t *testing.T) {
 		},
 	} {
 		// compile the regexp and validate its name
-		err := tc.match.Provision()
+		err := tc.match.Provision(caddy.Context{})
 		if err != nil {
 			t.Errorf("Test %d %v: Provisioning: %v", i, tc.match, err)
 			continue
@@ -337,7 +337,7 @@ func TestHeaderREMatcher(t *testing.T) {
 		},
 	} {
 		// compile the regexp and validate its name
-		err := tc.match.Provision()
+		err := tc.match.Provision(caddy.Context{})
 		if err != nil {
 			t.Errorf("Test %d %v: Provisioning: %v", i, tc.match, err)
 			continue
