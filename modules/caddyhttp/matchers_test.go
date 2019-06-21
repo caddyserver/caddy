@@ -87,6 +87,11 @@ func TestHostMatcher(t *testing.T) {
 			input:  "sub.foo.example.net",
 			expect: false,
 		},
+		{
+			match:  MatchHost{"example.com"},
+			input:  "example.com:5555",
+			expect: true,
+		},
 	} {
 		req := &http.Request{Host: tc.input}
 		actual := tc.match.Match(req)
