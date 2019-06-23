@@ -23,6 +23,7 @@ import (
 	"syscall"
 
 	"github.com/mholt/caddy/telemetry"
+	"github.com/mholt/certmagic"
 )
 
 // trapSignalsPosix captures POSIX-only signals.
@@ -38,6 +39,7 @@ func trapSignalsPosix() {
 				for _, f := range OnProcessExit {
 					f() // only perform important cleanup actions
 				}
+				certmagic.CleanUpOwnLocks()
 				os.Exit(0)
 
 			case syscall.SIGTERM:
@@ -55,6 +57,7 @@ func trapSignalsPosix() {
 				telemetry.AppendUnique("sigtrap", "SIGTERM")
 				go telemetry.StopEmitting() // won't finish in time, but that's OK - just don't block
 
+				certmagic.CleanUpOwnLocks()
 				os.Exit(exitCode)
 
 			case syscall.SIGUSR1:

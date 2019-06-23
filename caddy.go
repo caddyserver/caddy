@@ -600,6 +600,12 @@ func ValidateAndExecuteDirectives(cdyfile Input, inst *Instance, justValidate bo
 		return err
 	}
 
+	for _, sb := range sblocks {
+		for dir := range sb.Tokens {
+			telemetry.AppendUnique("directives", dir)
+		}
+	}
+
 	inst.context = stype.NewContext(inst)
 	if inst.context == nil {
 		return fmt.Errorf("server type %s produced a nil Context", stypeName)

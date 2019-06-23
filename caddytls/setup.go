@@ -50,25 +50,8 @@ func init() {
 // are specified by the user in the config file. All the automatic HTTPS
 // stuff comes later outside of this function.
 func setupTLS(c *caddy.Controller) error {
-	// set up the clustering plugin, if there is one (and there should always
-	// be one since this tls plugin requires it) -- this should be done exactly
-	// once, but we can't do it during init while plugins are still registering,
-	// so do it as soon as we run a setup)
-	if atomic.CompareAndSwapInt32(&clusterPluginSetup, 0, 1) {
-		clusterPluginName := os.Getenv("CADDY_CLUSTERING")
-		if clusterPluginName == "" {
-			clusterPluginName = "file" // name of default storage plugin
-		}
-		clusterFn, ok := clusterProviders[clusterPluginName]
-		if ok {
-			storage, err := clusterFn()
-			if err != nil {
-				return fmt.Errorf("constructing cluster plugin %s: %v", clusterPluginName, err)
-			}
-			certmagic.Default.Storage = storage
-		} else {
-			return fmt.Errorf("unrecognized cluster plugin (was it included in the Caddy build?): %s", clusterPluginName)
-		}
+	if err := makeClusteringPlugin(); err != nil {
+		return err
 	}
 
 	configGetter, ok := configGetters[c.ServerType()]
@@ -462,6 +445,30 @@ func loadCertsInDir(cfg *Config, c *caddy.Controller, dir string) error {
 		}
 		return nil
 	})
+}
+
+func makeClusteringPlugin() error {
+	// set up the clustering plugin, if there is one (and there should always
+	// be one since this tls plugin requires it) -- this should be done exactly
+	// once, but we can't do it during init while plugins are still registering,
+	// so do it as soon as we run a setup)
+	if atomic.CompareAndSwapInt32(&clusterPluginSetup, 0, 1) {
+		clusterPluginName := os.Getenv("CADDY_CLUSTERING")
+		if clusterPluginName == "" {
+			clusterPluginName = "file" // name of default storage plugin
+		}
+		clusterFn, ok := clusterProviders[clusterPluginName]
+		if ok {
+			storage, err := clusterFn()
+			if err != nil {
+				return fmt.Errorf("constructing cluster plugin %s: %v", clusterPluginName, err)
+			}
+			certmagic.Default.Storage = storage
+		} else {
+			return fmt.Errorf("unrecognized cluster plugin (was it included in the Caddy build?): %s", clusterPluginName)
+		}
+	}
+	return nil
 }
 
 func constructDefaultClusterPlugin() (certmagic.Storage, error) {
