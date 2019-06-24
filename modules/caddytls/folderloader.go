@@ -29,8 +29,8 @@ type folderLoader []string
 // listed in fl from all files ending with .pem. This method of loading
 // certificates expects the certificate and key to be bundled into the
 // same file.
-func (fl folderLoader) LoadCertificates() ([]tls.Certificate, error) {
-	var certs []tls.Certificate
+func (fl folderLoader) LoadCertificates() ([]Certificate, error) {
+	var certs []Certificate
 	for _, dir := range fl {
 		err := filepath.Walk(dir, func(fpath string, info os.FileInfo, err error) error {
 			if err != nil {
@@ -48,7 +48,7 @@ func (fl folderLoader) LoadCertificates() ([]tls.Certificate, error) {
 				return err
 			}
 
-			certs = append(certs, cert)
+			certs = append(certs, Certificate{Certificate: cert})
 
 			return nil
 		})
@@ -120,3 +120,5 @@ func x509CertFromCertAndKeyPEMFile(fpath string) (tls.Certificate, error) {
 
 	return cert, nil
 }
+
+var _ CertificateLoader = (folderLoader)(nil)
