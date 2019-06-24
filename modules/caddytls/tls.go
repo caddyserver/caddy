@@ -98,7 +98,7 @@ func (t *TLS) Start() error {
 			Storage: t.ctx.Storage(),
 		})
 		for _, cert := range certs {
-			err := magic.CacheUnmanagedTLSCertificate(cert)
+			err := magic.CacheUnmanagedTLSCertificate(cert.Certificate, cert.Tags)
 			if err != nil {
 				return fmt.Errorf("caching unmanaged certificate: %v", err)
 			}
@@ -182,8 +182,16 @@ func (t *TLS) getAutomationPolicyForName(name string) AutomationPolicy {
 }
 
 // CertificateLoader is a type that can load certificates.
+// Certificates can optionally be associated with tags.
 type CertificateLoader interface {
-	LoadCertificates() ([]tls.Certificate, error)
+	LoadCertificates() ([]Certificate, error)
+}
+
+// Certificate is a TLS certificate, optionally
+// associated with arbitrary tags.
+type Certificate struct {
+	tls.Certificate
+	Tags []string
 }
 
 // AutomationConfig designates configuration for the

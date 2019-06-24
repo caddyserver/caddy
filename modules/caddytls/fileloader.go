@@ -21,14 +21,15 @@ type fileLoader []CertKeyFilePair
 // CertKeyFilePair pairs certificate and key file names along with their
 // encoding format so that they can be loaded from disk.
 type CertKeyFilePair struct {
-	Certificate string `json:"certificate"`
-	Key         string `json:"key"`
-	Format      string `json:"format,omitempty"` // "pem" is default
+	Certificate string   `json:"certificate"`
+	Key         string   `json:"key"`
+	Format      string   `json:"format,omitempty"` // "pem" is default
+	Tags        []string `json:"tags,omitempty"`
 }
 
 // LoadCertificates returns the certificates to be loaded by fl.
-func (fl fileLoader) LoadCertificates() ([]tls.Certificate, error) {
-	var certs []tls.Certificate
+func (fl fileLoader) LoadCertificates() ([]Certificate, error) {
+	var certs []Certificate
 	for _, pair := range fl {
 		certData, err := ioutil.ReadFile(pair.Certificate)
 		if err != nil {
@@ -52,7 +53,7 @@ func (fl fileLoader) LoadCertificates() ([]tls.Certificate, error) {
 			return nil, err
 		}
 
-		certs = append(certs, cert)
+		certs = append(certs, Certificate{Certificate: cert, Tags: pair.Tags})
 	}
 	return certs, nil
 }
