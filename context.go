@@ -100,6 +100,15 @@ func (ctx Context) LoadModule(name string, rawMsg json.RawMessage) (interface{},
 		}
 	}
 
+	if val == nil {
+		// returned module values are almost always type-asserted
+		// before being used, so a nil value would panic; and there
+		// is no good reason to explicitly declare null modules in
+		// a config; it might be because the user is trying to
+		// achieve a result they aren't expecting, which is a smell
+		return nil, fmt.Errorf("module value cannot be null")
+	}
+
 	if prov, ok := val.(Provisioner); ok {
 		err := prov.Provision(ctx)
 		if err != nil {
