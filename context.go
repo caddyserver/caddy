@@ -13,8 +13,8 @@ import (
 // Context is a type which defines the lifetime of modules that
 // are loaded and provides access to the parent configuration
 // that spawned the modules which are loaded. It should be used
-// with care and only wrapped with derivation functions from
-// the standard context package if you don't need the Caddy
+// with care and wrapped with derivation functions from the
+// standard context package only if you don't need the Caddy
 // specific features. These contexts are cancelled when the
 // lifetime of the modules loaded from it are over.
 //

@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/caddyserver/caddy"
 	"github.com/caddyserver/caddy/modules/caddytls"
@@ -25,6 +26,7 @@ type Server struct {
 	TLSConnPolicies   caddytls.ConnectionPolicies `json:"tls_connection_policies,omitempty"`
 	AutoHTTPS         *AutoHTTPSConfig            `json:"automatic_https,omitempty"`
 	MaxRehandles      int                         `json:"max_rehandles,omitempty"`
+	StrictSNIHost     bool                        `json:"strict_sni_host,omitempty"` // TODO: see if we can turn this on by default when clientauth is configured
 
 	tlsApp *caddytls.TLS
 }
@@ -47,8 +49,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	addHTTPVarsToReplacer(repl, r, w)
 
 	// build and execute the main handler chain
-	stack, w := s.Routes.BuildCompositeRoute(w, r)
-	err := s.executeCompositeRoute(w, r, stack)
+	stack, wrappedWriter := s.Routes.BuildCompositeRoute(w, r)
+	stack = s.wrapPrimaryRoute(stack)
+	err := s.executeCompositeRoute(wrappedWriter, r, stack)
 	if err != nil {
 		// add the raw error value to the request context
 		// so it can be accessed by error handlers
@@ -66,8 +69,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if s.Errors != nil && len(s.Errors.Routes) > 0 {
-			errStack, w := s.Errors.Routes.BuildCompositeRoute(w, r)
-			err := s.executeCompositeRoute(w, r, errStack)
+			errStack, wrappedWriter := s.Errors.Routes.BuildCompositeRoute(w, r)
+			err := s.executeCompositeRoute(wrappedWriter, r, errStack)
 			if err != nil {
 				// TODO: what should we do if the error handler has an error?
 				log.Printf("[ERROR] [%s %s] handling error: %v", r.Method, r.RequestURI, err)
@@ -102,6 +105,37 @@ func (s *Server) executeCompositeRoute(w http.ResponseWriter, r *http.Request, s
 		}
 	}
 	return err
+}
+
+// wrapPrimaryRoute wraps stack (a compiled middleware handler chain)
+// in s.enforcementHandler which performs crucial security checks, etc.
+func (s *Server) wrapPrimaryRoute(stack Handler) Handler {
+	return HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+		return s.enforcementHandler(w, r, stack)
+	})
+}
+
+// enforcementHandler is an implicit middleware which performs
+// standard checks before executing the HTTP middleware chain.
+func (s *Server) enforcementHandler(w http.ResponseWriter, r *http.Request, next Handler) error {
+	// enforce strict host matching, which ensures that the SNI
+	// value (if any), matches the Host header; essential for
+	// servers that rely on TLS ClientAuth sharing a listener
+	// with servers that do not; if not enforced, client could
+	// bypass by sending benign SNI then restricted Host header
+	if s.StrictSNIHost && r.TLS != nil {
+		hostname, _, err := net.SplitHostPort(r.Host)
+		if err != nil {
+			hostname = r.Host // OK; probably lacked port
+		}
+		if strings.ToLower(r.TLS.ServerName) != strings.ToLower(hostname) {
+			err := fmt.Errorf("strict host matching: TLS ServerName (%s) and HTTP Host (%s) values differ",
+				r.TLS.ServerName, hostname)
+			r.Close = true
+			return Error(http.StatusForbidden, err)
+		}
+	}
+	return next.ServeHTTP(w, r)
 }
 
 func (s *Server) listenersUseAnyPortOtherThan(otherPort int) bool {

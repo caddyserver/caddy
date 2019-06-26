@@ -162,11 +162,11 @@ func (routes RouteList) BuildCompositeRoute(rw http.ResponseWriter, req *http.Re
 }
 
 // wrapMiddleware wraps m such that it can be correctly
-// appended to a list of middleware. This is necessary
-// so that only the last middleware in a loop does not
-// become the only middleware of the stack, repeatedly
-// executed (i.e. it is necessary to keep a reference
-// to this m outside of the scope of a loop)!
+// appended to a list of middleware. This separate closure
+// is necessary so that only the last middleware in a loop
+// does not become the only middleware of the stack,
+// repeatedly executed (i.e. it is necessary to keep a
+// reference to this m outside of the scope of a loop)!
 func wrapMiddleware(m MiddlewareHandler) Middleware {
 	return func(next HandlerFunc) HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) error {
