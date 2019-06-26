@@ -88,15 +88,16 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 
 // Start activates the TLS module.
 func (t *TLS) Start() error {
+	magic := certmagic.New(t.certCache, certmagic.Config{
+		Storage: t.ctx.Storage(),
+	})
+
 	// load manual/static (unmanaged) certificates
 	for _, loader := range t.certificateLoaders {
 		certs, err := loader.LoadCertificates()
 		if err != nil {
 			return fmt.Errorf("loading certificates: %v", err)
 		}
-		magic := certmagic.New(t.certCache, certmagic.Config{
-			Storage: t.ctx.Storage(),
-		})
 		for _, cert := range certs {
 			err := magic.CacheUnmanagedTLSCertificate(cert.Certificate, cert.Tags)
 			if err != nil {
