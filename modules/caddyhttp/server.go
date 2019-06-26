@@ -133,12 +133,18 @@ type AutoHTTPSConfig struct {
 	// in automatic HTTPS (they will not have certificates
 	// loaded nor redirects applied).
 	Skip []string `json:"skip,omitempty"`
+
+	// Hosts/domain names listed here will still be enabled
+	// for automatic HTTPS (unless in the Skip list), except
+	// that certificates will not be provisioned and managed
+	// for these names.
+	SkipCerts []string `json:"skip_certificates,omitempty"`
 }
 
-// HostSkipped returns true if name is supposed to be skipped
-// when setting up automatic HTTPS.
-func (ahc AutoHTTPSConfig) HostSkipped(name string) bool {
-	for _, n := range ahc.Skip {
+// Skipped returns true if name is in skipSlice, which
+// should be one of the Skip* fields on ahc.
+func (ahc AutoHTTPSConfig) Skipped(name string, skipSlice []string) bool {
+	for _, n := range skipSlice {
 		if name == n {
 			return true
 		}
