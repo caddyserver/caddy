@@ -14,19 +14,17 @@ import (
 
 // Server is an HTTP server.
 type Server struct {
-	Listen            []string         `json:"listen,omitempty"`
-	ReadTimeout       caddy.Duration   `json:"read_timeout,omitempty"`
-	ReadHeaderTimeout caddy.Duration   `json:"read_header_timeout,omitempty"`
-	WriteTimeout      caddy.Duration   `json:"write_timeout,omitempty"`
-	IdleTimeout       caddy.Duration   `json:"idle_timeout,omitempty"`
-	MaxHeaderBytes    int              `json:"max_header_bytes,omitempty"`
-	Routes            RouteList        `json:"routes,omitempty"`
-	Errors            *httpErrorConfig `json:"errors,omitempty"`
-	// TODO: Having a separate connection policy to act as a default or template would be handy... then override using first matching conn policy...
-	TLSConnPolicies       caddytls.ConnectionPolicies `json:"tls_connection_policies,omitempty"`
-	DisableAutoHTTPS      bool                        `json:"disable_auto_https,omitempty"`
-	DisableAutoHTTPSRedir bool                        `json:"disable_auto_https_redir,omitempty"`
-	MaxRehandles          int                         `json:"max_rehandles,omitempty"`
+	Listen            []string                    `json:"listen,omitempty"`
+	ReadTimeout       caddy.Duration              `json:"read_timeout,omitempty"`
+	ReadHeaderTimeout caddy.Duration              `json:"read_header_timeout,omitempty"`
+	WriteTimeout      caddy.Duration              `json:"write_timeout,omitempty"`
+	IdleTimeout       caddy.Duration              `json:"idle_timeout,omitempty"`
+	MaxHeaderBytes    int                         `json:"max_header_bytes,omitempty"`
+	Routes            RouteList                   `json:"routes,omitempty"`
+	Errors            *HTTPErrorConfig            `json:"errors,omitempty"`
+	TLSConnPolicies   caddytls.ConnectionPolicies `json:"tls_connection_policies,omitempty"`
+	AutoHTTPS         *AutoHTTPSConfig            `json:"automatic_https,omitempty"`
+	MaxRehandles      int                         `json:"max_rehandles,omitempty"`
 
 	tlsApp *caddytls.TLS
 }
@@ -121,13 +119,44 @@ func (s *Server) listenersUseAnyPortOtherThan(otherPort int) bool {
 	return false
 }
 
-type httpErrorConfig struct {
-	Routes RouteList `json:"routes,omitempty"`
-	// TODO: some way to configure the logging of errors, probably? standardize
-	// the logging configuration first.
+// AutoHTTPSConfig is used to disable automatic HTTPS
+// or certain aspects of it for a specific server.
+type AutoHTTPSConfig struct {
+	// If true, automatic HTTPS will be entirely disabled.
+	Disabled bool `json:"disable,omitempty"`
+
+	// If true, only automatic HTTP->HTTPS redirects will
+	// be disabled.
+	DisableRedir bool `json:"disable_redirects,omitempty"`
+
+	// Hosts/domain names listed here will not be included
+	// in automatic HTTPS (they will not have certificates
+	// loaded nor redirects applied).
+	Skip []string `json:"skip,omitempty"`
 }
 
-const ServerCtxKey caddy.CtxKey = "server"
+// HostSkipped returns true if name is supposed to be skipped
+// when setting up automatic HTTPS.
+func (ahc AutoHTTPSConfig) HostSkipped(name string) bool {
+	for _, n := range ahc.Skip {
+		if name == n {
+			return true
+		}
+	}
+	return false
+}
 
-// TableCtxKey is the context key for the request's variable table. TODO: implement this
-const TableCtxKey caddy.CtxKey = "table"
+// HTTPErrorConfig determines how to handle errors
+// from the HTTP handlers.
+type HTTPErrorConfig struct {
+	Routes RouteList `json:"routes,omitempty"`
+}
+
+// Context keys for HTTP request context values.
+const (
+	// For referencing the server instance
+	ServerCtxKey caddy.CtxKey = "server"
+
+	// For the request's variable table (TODO: implement this)
+	TableCtxKey caddy.CtxKey = "table"
+)

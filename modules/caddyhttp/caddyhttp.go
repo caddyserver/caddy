@@ -48,16 +48,23 @@ func (app *App) Provision(ctx caddy.Context) error {
 	repl := caddy.NewReplacer()
 
 	for _, srv := range app.Servers {
+		if srv.AutoHTTPS == nil {
+			// avoid nil pointer dereferences
+			srv.AutoHTTPS = new(AutoHTTPSConfig)
+		}
+
 		// TODO: Test this function to ensure these replacements are performed
 		for i := range srv.Listen {
 			srv.Listen[i] = repl.ReplaceAll(srv.Listen[i], "")
 		}
+
 		if srv.Routes != nil {
 			err := srv.Routes.Provision(ctx)
 			if err != nil {
 				return fmt.Errorf("setting up server routes: %v", err)
 			}
 		}
+
 		if srv.Errors != nil {
 			err := srv.Errors.Routes.Provision(ctx)
 			if err != nil {
@@ -187,7 +194,7 @@ func (app *App) automaticHTTPS() error {
 	for srvName, srv := range app.Servers {
 		srv.tlsApp = tlsApp
 
-		if srv.DisableAutoHTTPS {
+		if srv.AutoHTTPS.Disabled {
 			continue
 		}
 
@@ -203,7 +210,7 @@ func (app *App) automaticHTTPS() error {
 				for _, m := range matcherSet {
 					if hm, ok := m.(*MatchHost); ok {
 						for _, d := range *hm {
-							if certmagic.HostQualifies(d) {
+							if certmagic.HostQualifies(d) && !srv.AutoHTTPS.HostSkipped(d) {
 								domainSet[d] = struct{}{}
 							}
 						}
@@ -256,7 +263,7 @@ func (app *App) automaticHTTPS() error {
 				{ALPN: defaultALPN},
 			}
 
-			if srv.DisableAutoHTTPSRedir {
+			if srv.AutoHTTPS.DisableRedir {
 				continue
 			}
 
@@ -324,10 +331,10 @@ func (app *App) automaticHTTPS() error {
 			lnAddrs = append(lnAddrs, addr)
 		}
 		app.Servers["auto_https_redirects"] = &Server{
-			Listen:           lnAddrs,
-			Routes:           redirRoutes,
-			DisableAutoHTTPS: true,
-			tlsApp:           tlsApp, // required to solve HTTP challenge
+			Listen:    lnAddrs,
+			Routes:    redirRoutes,
+			AutoHTTPS: &AutoHTTPSConfig{Disabled: true},
+			tlsApp:    tlsApp, // required to solve HTTP challenge
 		}
 	}
 
