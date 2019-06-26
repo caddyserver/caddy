@@ -210,7 +210,8 @@ func (app *App) automaticHTTPS() error {
 				for _, m := range matcherSet {
 					if hm, ok := m.(*MatchHost); ok {
 						for _, d := range *hm {
-							if certmagic.HostQualifies(d) && !srv.AutoHTTPS.HostSkipped(d) {
+							if certmagic.HostQualifies(d) &&
+								!srv.AutoHTTPS.Skipped(d, srv.AutoHTTPS.Skip) {
 								domainSet[d] = struct{}{}
 							}
 						}
@@ -221,9 +222,12 @@ func (app *App) automaticHTTPS() error {
 
 		if len(domainSet) > 0 {
 			// marshal the domains into a slice
-			var domains []string
+			var domains, domainsForCerts []string
 			for d := range domainSet {
 				domains = append(domains, d)
+				if !srv.AutoHTTPS.Skipped(d, srv.AutoHTTPS.SkipCerts) {
+					domainsForCerts = append(domainsForCerts, d)
+				}
 			}
 
 			// ensure that these certificates are managed properly;
@@ -245,13 +249,13 @@ func (app *App) automaticHTTPS() error {
 			acmeManager.SetDefaults()
 			tlsApp.Automation.Policies = append(tlsApp.Automation.Policies,
 				caddytls.AutomationPolicy{
-					Hosts:      domains,
+					Hosts:      domainsForCerts,
 					Management: acmeManager,
 				})
 
 			// manage their certificates
-			log.Printf("[INFO] Enabling automatic HTTPS for %v", domains)
-			err := tlsApp.Manage(domains)
+			log.Printf("[INFO] Enabling automatic HTTPS certificates for %v", domainsForCerts)
+			err := tlsApp.Manage(domainsForCerts)
 			if err != nil {
 				return fmt.Errorf("%s: managing certificate for %s: %s", srvName, domains, err)
 			}
@@ -266,6 +270,8 @@ func (app *App) automaticHTTPS() error {
 			if srv.AutoHTTPS.DisableRedir {
 				continue
 			}
+
+			log.Printf("[INFO] Enabling automatic HTTP->HTTPS redirects for %v", domains)
 
 			// create HTTP->HTTPS redirects
 			for _, addr := range srv.Listen {
