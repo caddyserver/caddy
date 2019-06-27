@@ -40,7 +40,7 @@ func TestMarkdown(t *testing.T) {
 			expect: "<ul>\n<li>str1</li>\n<li>str2</li>\n</ul>\n",
 		},
 	} {
-		result := context.Markdown(test.body)
+		result := string(context.Markdown(test.body))
 		if result != test.expect {
 			t.Errorf("Test %d: expected '%s' but got '%s'", i, test.expect, result)
 		}
