@@ -184,7 +184,9 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request) error 
 	}
 	defer file.Close()
 
-	// TODO: Etag
+	// set the ETag - note that a conditional If-None-Match request is handled
+	// by http.ServeContent below, which checks against this ETag value
+	w.Header().Set("ETag", calculateEtag(info))
 
 	if w.Header().Get("Content-Type") == "" {
 		mtyp := mime.TypeByExtension(filepath.Ext(filename))
@@ -417,6 +419,17 @@ func fileHidden(filename string, hide []string) bool {
 	}
 
 	return false
+}
+
+// calculateEtag produces a strong etag by default, although, for
+// efficiency reasons, it does not actually consume the contents
+// of the file to make a hash of all the bytes. ¯\_(ツ)_/¯
+// Prefix the etag with "W/" to convert it into a weak etag.
+// See: https://tools.ietf.org/html/rfc7232#section-2.3
+func calculateEtag(d os.FileInfo) string {
+	t := strconv.FormatInt(d.ModTime().Unix(), 36)
+	s := strconv.FormatInt(d.Size(), 36)
+	return `"` + t + s + `"`
 }
 
 var defaultIndexNames = []string{"index.html"}
