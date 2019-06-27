@@ -135,6 +135,17 @@ func (rw *responseWriter) Write(p []byte) (int, error) {
 		}()
 	}
 
+	// before we write to the response, we need to make
+	// sure the header is written exactly once; we do
+	// that by checking if a status code has been set,
+	// and if so, that means we haven't written the
+	// header OR the default status code will be written
+	// by the standard library
+	if rw.statusCode > 0 {
+		rw.ResponseWriter.WriteHeader(rw.statusCode)
+		rw.statusCode = 0
+	}
+
 	switch {
 	case rw.w != nil:
 		n, err = rw.w.Write(p)
@@ -148,7 +159,7 @@ func (rw *responseWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-// init should be called before we write a response, if rw.buf is not nil.
+// init should be called before we write a response, if rw.buf has contents.
 func (rw *responseWriter) init() {
 	if rw.Header().Get("Content-Encoding") == "" && rw.buf.Len() >= rw.config.MinLength {
 		rw.w = rw.config.writerPools[rw.encodingName].Get().(Encoder)
@@ -157,11 +168,6 @@ func (rw *responseWriter) init() {
 		rw.Header().Set("Content-Encoding", rw.encodingName)
 	}
 	rw.Header().Del("Accept-Ranges") // we don't know ranges for dynamically-encoded content
-	status := rw.statusCode
-	if status == 0 {
-		status = http.StatusOK
-	}
-	rw.ResponseWriter.WriteHeader(status)
 }
 
 // Close writes any remaining buffered response and
@@ -187,6 +193,14 @@ func (rw *responseWriter) Close() error {
 		default:
 			_, err = rw.ResponseWriter.Write(p)
 		}
+	} else if rw.statusCode != 0 {
+		// it is possible that a body was not written, and
+		// a header was not even written yet, even though
+		// we are closing; ensure the proper status code is
+		// written exactly once, or we risk breaking requests
+		// that rely on If-None-Match, for example
+		rw.ResponseWriter.WriteHeader(rw.statusCode)
+		rw.statusCode = 0
 	}
 	if rw.w != nil {
 		err2 := rw.w.Close()

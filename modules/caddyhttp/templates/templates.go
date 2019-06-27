@@ -22,7 +22,16 @@ func init() {
 // Templates is a middleware which execute response bodies as templates.
 type Templates struct {
 	FileRoot   string   `json:"file_root,omitempty"`
+	MIMETypes  []string `json:"mime_types,omitempty"`
 	Delimiters []string `json:"delimiters,omitempty"`
+}
+
+// Provision provisions t.
+func (t *Templates) Provision(ctx caddy.Context) error {
+	if t.MIMETypes == nil {
+		t.MIMETypes = defaultMIMETypes
+	}
+	return nil
 }
 
 // Validate ensures t has a valid configuration.
@@ -38,8 +47,16 @@ func (t *Templates) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 	buf.Reset()
 	defer bufPool.Put(buf)
 
+	// shouldBuf determines whether to execute templates on this response,
+	// since generally we will not want to execute for images or CSS, etc.
 	shouldBuf := func(status int) bool {
-		return strings.HasPrefix(w.Header().Get("Content-Type"), "text/")
+		ct := w.Header().Get("Content-Type")
+		for _, mt := range t.MIMETypes {
+			if strings.Contains(ct, mt) {
+				return true
+			}
+		}
+		return false
 	}
 
 	rec := caddyhttp.NewResponseRecorder(w, buf, shouldBuf)
@@ -59,8 +76,13 @@ func (t *Templates) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 
 	w.Header().Set("Content-Length", strconv.Itoa(buf.Len()))
 	w.Header().Del("Accept-Ranges") // we don't know ranges for dynamically-created content
-	w.Header().Del("Etag")          // don't know a way to quickly generate etag for dynamic content
 	w.Header().Del("Last-Modified") // useless for dynamic content since it's always changing
+
+	// we don't know a way to guickly generate etag for dynamic content,
+	// but we can convert this to a weak etag to kind of indicate that
+	if etag := w.Header().Get("ETag"); etag != "" {
+		w.Header().Set("ETag", "W/"+etag)
+	}
 
 	w.WriteHeader(rec.Status())
 	io.Copy(w, buf)
@@ -110,8 +132,15 @@ func (vrw *virtualResponseWriter) Write(data []byte) (int, error) {
 	return vrw.body.Write(data)
 }
 
+var defaultMIMETypes = []string{
+	"text/html",
+	"text/plain",
+	"text/markdown",
+}
+
 // Interface guards
 var (
+	_ caddy.Provisioner           = (*Templates)(nil)
 	_ caddy.Validator             = (*Templates)(nil)
 	_ caddyhttp.MiddlewareHandler = (*Templates)(nil)
 )
