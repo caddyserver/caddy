@@ -3,13 +3,13 @@ package templates
 import (
 	"bytes"
 	"fmt"
+	"html/template"
 	"io"
 	"net"
 	"net/http"
 	"path"
 	"strings"
 	"sync"
-	"text/template"
 
 	"github.com/Masterminds/sprig"
 	"github.com/caddyserver/caddy/modules/caddyhttp"
@@ -27,7 +27,10 @@ type templateContext struct {
 }
 
 // Include returns the contents of filename relative to the site root.
-func (c templateContext) Include(filename string, args ...interface{}) (string, error) {
+// Note that included files are NOT escaped, so you should only include
+// trusted files. If it is not trusted, be sure to use escaping functions
+// in your template.
+func (c templateContext) Include(filename string, args ...interface{}) (template.HTML, error) {
 	if c.Root == nil {
 		return "", fmt.Errorf("root file system not specified")
 	}
@@ -54,12 +57,14 @@ func (c templateContext) Include(filename string, args ...interface{}) (string, 
 		return "", err
 	}
 
-	return bodyBuf.String(), nil
+	return template.HTML(bodyBuf.String()), nil
 }
 
 // HTTPInclude returns the body of a virtual (lightweight) request
-// to the given URI on the same server.
-func (c templateContext) HTTPInclude(uri string) (string, error) {
+// to the given URI on the same server. Note that included bodies
+// are NOT escaped, so you should only include trusted resources.
+// If it is not trusted, be sure to use escaping functions yourself.
+func (c templateContext) HTTPInclude(uri string) (template.HTML, error) {
 	if c.Req.Header.Get(recursionPreventionHeader) == "1" {
 		return "", fmt.Errorf("virtual include cycle")
 	}
@@ -87,11 +92,11 @@ func (c templateContext) HTTPInclude(uri string) (string, error) {
 		return "", err
 	}
 
-	return buf.String(), nil
+	return template.HTML(buf.String()), nil
 }
 
 func (c templateContext) executeTemplateInBuffer(tplName string, buf *bytes.Buffer) error {
-	tpl := template.New(tplName).Funcs(sprig.TxtFuncMap())
+	tpl := template.New(tplName).Funcs(sprig.FuncMap())
 	if len(c.config.Delimiters) == 2 {
 		tpl.Delims(c.config.Delimiters[0], c.config.Delimiters[1])
 	}
@@ -186,9 +191,10 @@ func (c templateContext) StripHTML(s string) string {
 	return buf.String()
 }
 
-// Markdown renders the markdown body as HTML.
-func (c templateContext) Markdown(body string) string {
-	return string(blackfriday.Run([]byte(body)))
+// Markdown renders the markdown body as HTML. The resulting
+// HTML is NOT escaped so that it can be rendered as HTML.
+func (c templateContext) Markdown(body string) template.HTML {
+	return template.HTML(blackfriday.Run([]byte(body)))
 }
 
 // ListFiles reads and returns a slice of names from the given
