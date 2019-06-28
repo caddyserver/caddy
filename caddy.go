@@ -136,6 +136,8 @@ type App interface {
 
 // Config represents a Caddy configuration.
 type Config struct {
+	Admin *AdminConfig `json:"admin,omitempty"`
+
 	StorageRaw json.RawMessage `json:"storage,omitempty"`
 	storage    certmagic.Storage
 

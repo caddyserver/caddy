@@ -5,7 +5,6 @@ import (
 
 	// this is where modules get plugged in
 	_ "github.com/caddyserver/caddy/modules/caddyhttp"
-	_ "github.com/caddyserver/caddy/modules/caddyhttp/caddylog"
 	_ "github.com/caddyserver/caddy/modules/caddyhttp/encode"
 	_ "github.com/caddyserver/caddy/modules/caddyhttp/encode/brotli"
 	_ "github.com/caddyserver/caddy/modules/caddyhttp/encode/gzip"
