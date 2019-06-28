@@ -22,12 +22,47 @@ var (
 	cfgEndptSrvMu sync.Mutex
 )
 
-// StartAdmin starts Caddy's administration endpoint.
-func StartAdmin(addr string) error {
+// AdminConfig configures the admin endpoint.
+type AdminConfig struct {
+	Listen string `json:"listen,omitempty"`
+}
+
+// DefaultAdminConfig is the default configuration
+// for the administration endpoint.
+var DefaultAdminConfig = &AdminConfig{
+	Listen: "localhost:2019",
+}
+
+// StartAdmin starts Caddy's administration endpoint,
+// bootstrapping it with an optional configuration
+// in the format of JSON bytes. It opens a listener
+// resource. When no longer needed, StopAdmin should
+// be called.
+func StartAdmin(initialConfigJSON []byte) error {
 	cfgEndptSrvMu.Lock()
 	defer cfgEndptSrvMu.Unlock()
 
-	ln, err := net.Listen("tcp", addr)
+	adminConfig := DefaultAdminConfig
+	if len(initialConfigJSON) > 0 {
+		var config *Config
+		err := json.Unmarshal(initialConfigJSON, &config)
+		if err != nil {
+			return fmt.Errorf("unmarshaling bootstrap config: %v", err)
+		}
+		if config != nil && config.Admin != nil {
+			adminConfig = config.Admin
+		}
+		if cfgEndptSrv != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			err := cfgEndptSrv.Shutdown(ctx)
+			if err != nil {
+				return fmt.Errorf("shutting down old admin endpoint: %v", err)
+			}
+		}
+	}
+
+	ln, err := net.Listen("tcp", adminConfig.Listen)
 	if err != nil {
 		return err
 	}
@@ -59,6 +94,16 @@ func StartAdmin(addr string) error {
 	}
 
 	go cfgEndptSrv.Serve(ln)
+
+	log.Println("Caddy 2 admin endpoint listening on", adminConfig.Listen)
+
+	if len(initialConfigJSON) > 0 {
+		err := Load(bytes.NewReader(initialConfigJSON))
+		if err != nil {
+			return fmt.Errorf("loading initial config: %v", err)
+		}
+		log.Println("Caddy 2 serving initial configuration")
+	}
 
 	return nil
 }
