@@ -33,6 +33,8 @@ type Server struct {
 
 // ServeHTTP is the entry point for all HTTP requests.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Server", "Caddy")
+
 	if s.tlsApp.HandleHTTPChallenge(w, r) {
 		return
 	}
