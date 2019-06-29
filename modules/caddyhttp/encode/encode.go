@@ -1,8 +1,8 @@
 // Package encode implements an encoder middleware for Caddy. The initial
 // enhancements related to Accept-Encoding, minimum content length, and
 // buffer/writer pools were adapted from https://github.com/xi2/httpgzip
-// then modified heavily to accommodate modular encoders. Code borrowed
-// from that repository is Copyright (c) 2015 The Httpgzip Authors.
+// then modified heavily to accommodate modular encoders and fix bugs.
+// Code borrowed from that repository is Copyright (c) 2015 The Httpgzip Authors.
 package encode
 
 import (
@@ -33,14 +33,11 @@ type Encode struct {
 	Prefer       []string                   `json:"prefer,omitempty"`
 	MinLength    int                        `json:"minimum_length,omitempty"`
 
-	Encodings map[string]Encoding `json:"-"`
-
 	writerPools map[string]*sync.Pool // TODO: these pools do not get reused through config reloads...
 }
 
 // Provision provisions enc.
 func (enc *Encode) Provision(ctx caddy.Context) error {
-	enc.Encodings = make(map[string]Encoding)
 	enc.writerPools = make(map[string]*sync.Pool)
 
 	for modName, rawMsg := range enc.EncodingsRaw {
@@ -49,9 +46,8 @@ func (enc *Encode) Provision(ctx caddy.Context) error {
 			return fmt.Errorf("loading encoder module '%s': %v", modName, err)
 		}
 		encoder := val.(Encoding)
-		enc.Encodings[modName] = encoder
 
-		enc.writerPools[modName] = &sync.Pool{
+		enc.writerPools[encoder.AcceptEncoding()] = &sync.Pool{
 			New: func() interface{} {
 				return encoder.NewEncoder()
 			},
@@ -159,17 +155,6 @@ func (rw *responseWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-// init should be called before we write a response, if rw.buf has contents.
-func (rw *responseWriter) init() {
-	if rw.Header().Get("Content-Encoding") == "" && rw.buf.Len() >= rw.config.MinLength {
-		rw.w = rw.config.writerPools[rw.encodingName].Get().(Encoder)
-		rw.w.Reset(rw.ResponseWriter)
-		rw.Header().Del("Content-Length") // https://github.com/golang/go/issues/14975
-		rw.Header().Set("Content-Encoding", rw.encodingName)
-	}
-	rw.Header().Del("Accept-Ranges") // we don't know ranges for dynamically-encoded content
-}
-
 // Close writes any remaining buffered response and
 // deallocates any active resources.
 func (rw *responseWriter) Close() error {
@@ -211,6 +196,17 @@ func (rw *responseWriter) Close() error {
 		rw.w = nil
 	}
 	return err
+}
+
+// init should be called before we write a response, if rw.buf has contents.
+func (rw *responseWriter) init() {
+	if rw.Header().Get("Content-Encoding") == "" && rw.buf.Len() >= rw.config.MinLength {
+		rw.w = rw.config.writerPools[rw.encodingName].Get().(Encoder)
+		rw.w.Reset(rw.ResponseWriter)
+		rw.Header().Del("Content-Length") // https://github.com/golang/go/issues/14975
+		rw.Header().Set("Content-Encoding", rw.encodingName)
+	}
+	rw.Header().Del("Accept-Ranges") // we don't know ranges for dynamically-encoded content
 }
 
 // acceptedEncodings returns the list of encodings that the
@@ -288,8 +284,10 @@ type Encoder interface {
 	Reset(io.Writer)
 }
 
-// Encoding is a type which can create encoders of its kind.
+// Encoding is a type which can create encoders of its kind
+// and return the name used in the Accept-Encoding header.
 type Encoding interface {
+	AcceptEncoding() string
 	NewEncoder() Encoder
 }
 

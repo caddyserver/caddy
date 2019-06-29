@@ -16,6 +16,10 @@ func init() {
 // Zstd can create zstd encoders.
 type Zstd struct{}
 
+// AcceptEncoding returns the name of the encoding as
+// used in the Accept-Encoding request headers.
+func (Zstd) AcceptEncoding() string { return "zstd" }
+
 // NewEncoder returns a new gzip writer.
 func (z Zstd) NewEncoder() encode.Encoder {
 	writer, _ := zstd.NewWriter(nil)

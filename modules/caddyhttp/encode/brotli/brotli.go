@@ -35,6 +35,10 @@ func (b Brotli) Validate() error {
 	return nil
 }
 
+// AcceptEncoding returns the name of the encoding as
+// used in the Accept-Encoding request headers.
+func (Brotli) AcceptEncoding() string { return "br" }
+
 // NewEncoder returns a new brotli writer.
 func (b Brotli) NewEncoder() encode.Encoder {
 	quality := brotli.DefaultCompression
@@ -46,6 +50,6 @@ func (b Brotli) NewEncoder() encode.Encoder {
 
 // Interface guards
 var (
-	_ encode.Encoding  = (*Brotli)(nil)
+	_ encode.Encoding = (*Brotli)(nil)
 	_ caddy.Validator = (*Brotli)(nil)
 )
