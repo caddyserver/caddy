@@ -9,7 +9,6 @@ import (
 	"log"
 	"net"
 	"os"
-	"runtime/debug"
 )
 
 // Main executes the main function of the caddy command.
@@ -65,24 +64,4 @@ func handlePingbackConn(conn net.Conn, expect []byte) error {
 		return fmt.Errorf("wrong confirmation: %x", confirmationBytes)
 	}
 	return nil
-}
-
-// getGoBuildModule returns the build info of Caddy
-// from debug.BuildInfo (requires Go modules). If
-// no version information is available, a non-nil
-// value will still be returned, but with an
-// unknown version.
-func getGoBuildModule() *debug.Module {
-	bi, ok := debug.ReadBuildInfo()
-	if ok {
-		// The recommended way to build Caddy involves
-		// creating a separate main module, which
-		// TODO: track related Go issue: https://github.com/golang/go/issues/29228
-		for _, mod := range bi.Deps {
-			if mod.Path == "github.com/mholt/caddy" {
-				return mod
-			}
-		}
-	}
-	return &debug.Module{Version: "unknown"}
 }

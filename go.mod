@@ -17,6 +17,7 @@ require (
 	github.com/klauspost/compress v1.7.1-0.20190613161414-0b31f265a57b
 	github.com/klauspost/cpuid v1.2.1
 	github.com/mholt/certmagic v0.6.2-0.20190624175158-6a42ef9fe8c2
+	github.com/mitchellh/go-ps v0.0.0-20170309133038-4fdf99ab2936
 	github.com/rs/cors v1.6.0
 	github.com/shurcooL/sanitized_anchor_name v1.0.0 // indirect
 	github.com/starlight-go/starlight v0.0.0-20181207205707-b06f321544f3

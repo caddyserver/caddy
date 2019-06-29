@@ -5,12 +5,35 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/mholt/certmagic"
 )
+
+// Config represents a Caddy configuration.
+type Config struct {
+	Admin *AdminConfig `json:"admin,omitempty"`
+
+	StorageRaw json.RawMessage `json:"storage,omitempty"`
+	storage    certmagic.Storage
+
+	AppsRaw map[string]json.RawMessage `json:"apps,omitempty"`
+
+	// apps stores the decoded Apps values,
+	// keyed by module name.
+	apps map[string]App
+
+	cancelFunc context.CancelFunc
+}
+
+// App is a thing that Caddy runs.
+type App interface {
+	Start() error
+	Stop() error
+}
 
 // Run runs Caddy with the given config.
 func Run(newCfg *Config) error {
@@ -69,7 +92,7 @@ func Run(newCfg *Config) error {
 			return err
 		}
 
-		// Load, Provision, Validate
+		// Load, Provision, Validate each app and their submodules
 		err = func() error {
 			for modName, rawMsg := range newCfg.AppsRaw {
 				val, err := ctx.LoadModule(modName, rawMsg)
@@ -112,7 +135,7 @@ func Run(newCfg *Config) error {
 	oldCfg := currentCfg
 	currentCfg = newCfg
 
-	// Stop, Cleanup
+	// Stop, Cleanup each old app
 	if oldCfg != nil {
 		for name, a := range oldCfg.apps {
 			err := a.Stop()
@@ -121,33 +144,11 @@ func Run(newCfg *Config) error {
 			}
 		}
 
-		// clean up old modules
+		// clean up all old modules
 		oldCfg.cancelFunc()
 	}
 
 	return nil
-}
-
-// App is a thing that Caddy runs.
-type App interface {
-	Start() error
-	Stop() error
-}
-
-// Config represents a Caddy configuration.
-type Config struct {
-	Admin *AdminConfig `json:"admin,omitempty"`
-
-	StorageRaw json.RawMessage `json:"storage,omitempty"`
-	storage    certmagic.Storage
-
-	AppsRaw map[string]json.RawMessage `json:"apps,omitempty"`
-
-	// apps stores the decoded Apps values,
-	// keyed by module name.
-	apps map[string]App
-
-	cancelFunc context.CancelFunc
 }
 
 // Duration is a JSON-string-unmarshable duration type.
@@ -162,6 +163,29 @@ func (d *Duration) UnmarshalJSON(b []byte) error {
 	*d = Duration(dd)
 	return nil
 }
+
+// GoModule returns the build info of this Caddy
+// build from debug.BuildInfo (requires Go modules).
+// If no version information is available, a non-nil
+// value will still be returned, but with an
+// unknown version.
+func GoModule() *debug.Module {
+	bi, ok := debug.ReadBuildInfo()
+	if ok {
+		// The recommended way to build Caddy involves
+		// creating a separate main module, which
+		// TODO: track related Go issue: https://github.com/golang/go/issues/29228
+		for _, mod := range bi.Deps {
+			if mod.Path == goModule {
+				return mod
+			}
+		}
+	}
+	return &debug.Module{Version: "unknown"}
+}
+
+// goModule is the name of this Go module.
+const goModule = "github.com/mholt/caddy"
 
 // CtxKey is a value type for use with context.WithValue.
 type CtxKey string
