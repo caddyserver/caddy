@@ -10,8 +10,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/caddyserver/caddy"
+	"github.com/mholt/certmagic"
 	"github.com/mitchellh/go-ps"
 )
 
@@ -126,6 +128,11 @@ func cmdRun() (int, error) {
 		}
 	}
 
+	// set a fitting User-Agent for ACME requests
+	goModule := caddy.GoModule()
+	cleanModVersion := strings.TrimPrefix(goModule.Version, "v")
+	certmagic.UserAgent = "Caddy/" + cleanModVersion
+
 	// start the admin endpoint along with any initial config
 	err := caddy.StartAdmin(config)
 	if err != nil {
@@ -180,10 +187,10 @@ func cmdStop() (int, error) {
 }
 
 func cmdVersion() (int, error) {
-	goModule := getGoBuildModule()
+	goModule := caddy.GoModule()
 	if goModule.Sum != "" {
 		// a build with a known version will also have a checksum
-		fmt.Printf("%s (%s)\n", goModule.Version, goModule.Sum)
+		fmt.Printf("%s %s\n", goModule.Version, goModule.Sum)
 	} else {
 		fmt.Println(goModule.Version)
 	}
