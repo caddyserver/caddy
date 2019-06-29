@@ -40,6 +40,10 @@ func (g Gzip) Validate() error {
 	return nil
 }
 
+// AcceptEncoding returns the name of the encoding as
+// used in the Accept-Encoding request headers.
+func (Gzip) AcceptEncoding() string { return "gzip" }
+
 // NewEncoder returns a new gzip writer.
 func (g Gzip) NewEncoder() encode.Encoder {
 	writer, _ := gzip.NewWriterLevel(nil, g.Level)
@@ -51,7 +55,7 @@ var defaultGzipLevel = 5
 
 // Interface guards
 var (
-	_ encode.Encoding    = (*Gzip)(nil)
+	_ encode.Encoding   = (*Gzip)(nil)
 	_ caddy.Provisioner = (*Gzip)(nil)
 	_ caddy.Validator   = (*Gzip)(nil)
 )
