@@ -21,12 +21,13 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/mholt/caddy"
 	"github.com/mholt/caddy/telemetry"
@@ -289,11 +290,8 @@ func setupTLS(c *caddy.Controller) error {
 		if onDemand {
 			config.Manager.OnDemand = new(certmagic.OnDemandConfig)
 			if maxCerts != "" {
-				maxCertsNum, err := strconv.Atoi(maxCerts)
-				if err != nil || maxCertsNum < 1 {
-					return c.Err("max_certs must be a positive integer")
-				}
-				config.Manager.OnDemand.MaxObtain = int32(maxCertsNum)
+				log.Println("[WARNING] The max_certs subdirective is now deprecated and offers no protection; please use ask instead.")
+				fmt.Printf("WARNING: The max_certs subdirective is now deprecated and offers no protection; please use ask instead.")
 			}
 			if askURL != "" {
 				parsedURL, err := url.Parse(askURL)
@@ -303,7 +301,29 @@ func setupTLS(c *caddy.Controller) error {
 				if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
 					return c.Err("ask URL must use http or https")
 				}
-				config.Manager.OnDemand.AskURL = parsedURL
+				config.Manager.OnDemand.DecisionFunc = func(name string) error {
+					askURLParsed, err := url.Parse(askURL)
+					if err != nil {
+						return fmt.Errorf("parsing ask URL: %v", err)
+					}
+					qs := askURLParsed.Query()
+					qs.Set("domain", name)
+					askURLParsed.RawQuery = qs.Encode()
+
+					resp, err := onDemandAskClient.Get(askURLParsed.String())
+					if err != nil {
+						return fmt.Errorf("error checking %v to deterine if certificate for hostname '%s' should be allowed: %v",
+							askURL, name, err)
+					}
+					resp.Body.Close()
+
+					if resp.StatusCode < 200 || resp.StatusCode > 299 {
+						return fmt.Errorf("certificate for hostname '%s' not allowed; non-2xx status code %d returned from %v",
+							name, resp.StatusCode, askURL)
+					}
+
+					return nil
+				}
 			}
 		}
 
@@ -314,7 +334,7 @@ func setupTLS(c *caddy.Controller) error {
 
 		// load a single certificate and key, if specified
 		if certificateFile != "" && keyFile != "" {
-			err := config.Manager.CacheUnmanagedCertificatePEMFile(certificateFile, keyFile)
+			err := config.Manager.CacheUnmanagedCertificatePEMFile(certificateFile, keyFile, nil)
 			if err != nil {
 				return c.Errf("Unable to load certificate and key files for '%s': %v", c.Key, err)
 			}
@@ -341,7 +361,7 @@ func setupTLS(c *caddy.Controller) error {
 		if err != nil {
 			return fmt.Errorf("self-signed certificate generation: %v", err)
 		}
-		err = config.Manager.CacheUnmanagedTLSCertificate(ssCert)
+		err = config.Manager.CacheUnmanagedTLSCertificate(ssCert, nil)
 		if err != nil {
 			return fmt.Errorf("self-signed: %v", err)
 		}
@@ -437,7 +457,7 @@ func loadCertsInDir(cfg *Config, c *caddy.Controller, dir string) error {
 				return c.Errf("%s: no private key block found", path)
 			}
 
-			err = cfg.Manager.CacheUnmanagedCertificatePEMBytes(certPEMBytes, keyPEMBytes)
+			err = cfg.Manager.CacheUnmanagedCertificatePEMBytes(certPEMBytes, keyPEMBytes, nil)
 			if err != nil {
 				return c.Errf("%s: failed to load cert and key for '%s': %v", path, c.Key, err)
 			}
@@ -473,6 +493,13 @@ func makeClusteringPlugin() error {
 
 func constructDefaultClusterPlugin() (certmagic.Storage, error) {
 	return &certmagic.FileStorage{Path: caddy.AssetsPath()}, nil
+}
+
+var onDemandAskClient = &http.Client{
+	Timeout: 10 * time.Second,
+	CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		return fmt.Errorf("following http redirects is not allowed")
+	},
 }
 
 const configMapKey = "tls_custom_configs"
