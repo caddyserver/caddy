@@ -132,6 +132,10 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 	}
 	tlsApp := tlsAppIface.(*TLS)
 
+	// fill in some "easy" default values, but for other values
+	// (such as slices), we should ensure that they start empty
+	// so the user-provided config can fill them in; then we will
+	// fill in a default config at the end if they are still unset
 	cfg := &tls.Config{
 		NextProtos:               p.ALPN,
 		PreferServerCipherSuites: true,
@@ -210,9 +214,37 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 
 	// TODO: client auth, and other fields
 
+	setDefaultTLSParams(cfg)
+
 	p.stdTLSConfig = cfg
 
 	return nil
+}
+
+// setDefaultTLSParams sets the default TLS cipher suites, protocol versions,
+// and server preferences of cfg if they are not already set; it does not
+// overwrite values, only fills in missing values.
+func setDefaultTLSParams(cfg *tls.Config) {
+	if len(cfg.CipherSuites) == 0 {
+		cfg.CipherSuites = getOptimalDefaultCipherSuites()
+	}
+
+	// Not a cipher suite, but still important for mitigating protocol downgrade attacks
+	// (prepend since having it at end breaks http2 due to non-h2-approved suites before it)
+	cfg.CipherSuites = append([]uint16{tls.TLS_FALLBACK_SCSV}, cfg.CipherSuites...)
+
+	if len(cfg.CurvePreferences) == 0 {
+		cfg.CurvePreferences = defaultCurves
+	}
+
+	if cfg.MinVersion == 0 {
+		cfg.MinVersion = tls.VersionTLS12
+	}
+	if cfg.MaxVersion == 0 {
+		cfg.MaxVersion = tls.VersionTLS13
+	}
+
+	cfg.PreferServerCipherSuites = true
 }
 
 // PublicKeyAlgorithm is a JSON-unmarshalable wrapper type.
