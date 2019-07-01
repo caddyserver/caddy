@@ -219,6 +219,7 @@ func (rw *responseWriter) init() {
 		rw.w.Reset(rw.ResponseWriter)
 		rw.Header().Del("Content-Length") // https://github.com/golang/go/issues/14975
 		rw.Header().Set("Content-Encoding", rw.encodingName)
+		rw.Header().Add("Vary", "Accept-Encoding")
 	}
 	rw.Header().Del("Accept-Ranges") // we don't know ranges for dynamically-encoded content
 }
