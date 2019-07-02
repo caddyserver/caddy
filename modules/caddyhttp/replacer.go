@@ -21,7 +21,7 @@ import (
 	"path"
 	"strings"
 
-	"github.com/caddyserver/caddy"
+	"github.com/caddyserver/caddy/v2"
 )
 
 // TODO: A simple way to format or escape or encode each value would be nice

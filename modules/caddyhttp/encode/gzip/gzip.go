@@ -19,8 +19,8 @@ import (
 	"compress/gzip" // TODO: consider using https://github.com/klauspost/compress/gzip
 	"fmt"
 
-	"github.com/caddyserver/caddy"
-	"github.com/caddyserver/caddy/modules/caddyhttp/encode"
+	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp/encode"
 )
 
 func init() {

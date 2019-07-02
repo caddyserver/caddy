@@ -15,7 +15,7 @@
 package reverseproxy
 
 import (
-	"github.com/caddyserver/caddy"
+	"github.com/caddyserver/caddy/v2"
 )
 
 // Register caddy module.

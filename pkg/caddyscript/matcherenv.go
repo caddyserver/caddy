@@ -17,7 +17,7 @@ package caddyscript
 import (
 	"net/http"
 
-	caddyscript "github.com/caddyserver/caddy/pkg/caddyscript/lib"
+	caddyscript "github.com/caddyserver/caddy/v2/pkg/caddyscript/lib"
 	"go.starlark.net/starlark"
 )
 

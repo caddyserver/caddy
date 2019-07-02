@@ -17,7 +17,7 @@ package caddyhttp
 import (
 	"net/http"
 
-	"github.com/caddyserver/caddy"
+	"github.com/caddyserver/caddy/v2"
 )
 
 func init() {

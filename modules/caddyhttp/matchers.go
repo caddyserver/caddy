@@ -27,8 +27,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/caddyserver/caddy"
-	"github.com/caddyserver/caddy/pkg/caddyscript"
+	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/pkg/caddyscript"
 	"go.starlark.net/starlark"
 )
 

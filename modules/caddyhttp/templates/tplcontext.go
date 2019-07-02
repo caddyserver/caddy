@@ -26,7 +26,7 @@ import (
 	"sync"
 
 	"github.com/Masterminds/sprig"
-	"github.com/caddyserver/caddy/modules/caddyhttp"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"gopkg.in/russross/blackfriday.v2"
 )
 

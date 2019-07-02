@@ -21,7 +21,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/caddyserver/caddy"
+	"github.com/caddyserver/caddy/v2"
 )
 
 // Error is a convenient way for a Handler to populate the

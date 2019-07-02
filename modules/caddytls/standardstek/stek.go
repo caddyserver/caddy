@@ -19,8 +19,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/caddyserver/caddy"
-	"github.com/caddyserver/caddy/modules/caddytls"
+	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/modules/caddytls"
 )
 
 func init() {
