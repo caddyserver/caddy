@@ -18,7 +18,7 @@ import (
 	"net/http"
 	pp "net/http/pprof"
 
-	"github.com/mholt/caddy/caddyhttp/httpserver"
+	"github.com/caddyserver/caddy/caddyhttp/httpserver"
 )
 
 // BasePath is the base path to match for all pprof requests.

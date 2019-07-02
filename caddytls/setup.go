@@ -29,8 +29,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/mholt/caddy"
-	"github.com/mholt/caddy/telemetry"
+	"github.com/caddyserver/caddy"
+	"github.com/caddyserver/caddy/telemetry"
 	"github.com/mholt/certmagic"
 )
 

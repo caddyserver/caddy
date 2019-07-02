@@ -24,7 +24,7 @@ import (
 	"sync"
 
 	gsyslog "github.com/hashicorp/go-syslog"
-	"github.com/mholt/caddy"
+	"github.com/caddyserver/caddy"
 )
 
 var remoteSyslogPrefixes = map[string]string{

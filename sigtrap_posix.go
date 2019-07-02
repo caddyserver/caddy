@@ -22,7 +22,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/mholt/caddy/telemetry"
+	"github.com/caddyserver/caddy/telemetry"
 	"github.com/mholt/certmagic"
 )
 

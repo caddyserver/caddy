@@ -25,7 +25,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mholt/caddy/caddyhttp/httpserver"
+	"github.com/caddyserver/caddy/caddyhttp/httpserver"
 )
 
 func TestBasicAuth(t *testing.T) {
@@ -110,7 +110,7 @@ func TestBasicAuth(t *testing.T) {
 				}
 			} else {
 				if req.Header.Get("Authorization") == "" {
-					// see issue #1508: https://github.com/mholt/caddy/issues/1508
+					// see issue #1508: https://github.com/caddyserver/caddy/issues/1508
 					t.Errorf("Test %d: Expected Authorization header to be retained after successful auth, but was empty", i)
 				}
 			}

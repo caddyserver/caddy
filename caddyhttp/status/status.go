@@ -18,7 +18,7 @@ package status
 import (
 	"net/http"
 
-	"github.com/mholt/caddy/caddyhttp/httpserver"
+	"github.com/caddyserver/caddy/caddyhttp/httpserver"
 )
 
 // Rule describes status rewriting rule

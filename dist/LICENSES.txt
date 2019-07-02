@@ -5,7 +5,7 @@ as to be in full compliance with the licenses of all bundled property.
 
 
 ###
-### github.com/mholt/caddy
+### github.com/caddyserver/caddy
 ###
 
                                  Apache License

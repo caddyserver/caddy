@@ -10,7 +10,7 @@ Twitter
 	@caddyserver
 
 Source Code
-	https://github.com/mholt/caddy
+	https://github.com/caddyserver/caddy
 	https://github.com/caddyserver
 
 
@@ -27,7 +27,7 @@ and we'll review it! Your contributions will reach millions
 of people who connect to sites served by Caddy.
 
 Extend Caddy by developing a plugin for it! Instructions on
-the project wiki: https://github.com/mholt/caddy/wiki
+the project wiki: https://github.com/caddyserver/caddy/wiki
 
 And thanks - you're awesome!
 

@@ -30,7 +30,7 @@ package caddytls
 
 import (
 	"github.com/go-acme/lego/challenge"
-	"github.com/mholt/caddy"
+	"github.com/caddyserver/caddy"
 	"github.com/mholt/certmagic"
 )
 

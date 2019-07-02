@@ -17,7 +17,7 @@ package caddy
 import (
 	"strings"
 
-	"github.com/mholt/caddy/caddyfile"
+	"github.com/caddyserver/caddy/caddyfile"
 )
 
 // Controller is given to the setup function of directives which

@@ -23,7 +23,7 @@ Other menu items:
 
 ### Contributing code
 
-You can have a direct impact on the project by helping with its code. To contribute code to Caddy, open a [pull request](https://github.com/mholt/caddy/pulls) (PR). If you're new to our community, that's okay: **we gladly welcome pull requests from anyone, regardless of your native language or coding experience.** You can get familiar with Caddy's code base by using [code search at Sourcegraph](https://sourcegraph.com/github.com/mholt/caddy/-/search).
+You can have a direct impact on the project by helping with its code. To contribute code to Caddy, open a [pull request](https://github.com/caddyserver/caddy/pulls) (PR). If you're new to our community, that's okay: **we gladly welcome pull requests from anyone, regardless of your native language or coding experience.** You can get familiar with Caddy's code base by using [code search at Sourcegraph](https://sourcegraph.com/github.com/caddyserver/caddy/-/search).
 
 We hold contributions to a high standard for quality :bowtie:, so don't be surprised if we ask for revisions&mdash;even if it seems small or insignificant. Please don't take it personally. :wink: If your change is on the right track, we can guide you to make it mergable.
 
@@ -52,9 +52,9 @@ We often grant [collaborator status](#collaborator-instructions) to contributors
 
 Contributing to Go projects on GitHub is fun and easy. We recommend the following workflow:
 
-1. [Fork this repo](https://github.com/mholt/caddy). This makes a copy of the code you can write to.
+1. [Fork this repo](https://github.com/caddyserver/caddy). This makes a copy of the code you can write to.
 
-2. If you don't already have this repo (mholt/caddy.git) repo on your computer, get it with `go get github.com/mholt/caddy/caddy`.
+2. If you don't already have this repo (mholt/caddy.git) repo on your computer, get it with `go get github.com/caddyserver/caddy/caddy`.
 
 3. Tell git that it can push the mholt/caddy.git repo to your fork by adding a remote: `git remote add myfork https://github.com/you/caddy.git`
 
@@ -62,7 +62,7 @@ Contributing to Go projects on GitHub is fun and easy. We recommend the followin
 
 5. Push your changes to your fork: `git push myfork`
 
-6. [Create a pull request](https://github.com/mholt/caddy/pull/new/master) to merge your changes into mholt/caddy @ master. (Click "compare across forks" and change the head fork.)
+6. [Create a pull request](https://github.com/caddyserver/caddy/pull/new/master) to merge your changes into mholt/caddy @ master. (Click "compare across forks" and change the head fork.)
 
 This workflow is nice because you don't have to change import paths. You can get fancier by using different branches if you want.
 
@@ -71,7 +71,7 @@ This workflow is nice because you don't have to change import paths. You can get
 
 Caddy can do more with plugins! Anyone can write a plugin. Plugins are Go libraries that get compiled into Caddy, extending its feature set. They can add directives to the Caddyfile, change how the Caddyfile is loaded, and even implement new server types (e.g. HTTP, DNS). When it's ready, you can submit your plugin to the Caddy website so others can download it.
 
-[Learn how to write and submit a plugin](https://github.com/mholt/caddy/wiki) on the wiki. You should also share and discuss your plugin idea [on the forums](https://caddy.community) to have people test it out. We don't use the Caddy issue tracker for plugins.
+[Learn how to write and submit a plugin](https://github.com/caddyserver/caddy/wiki) on the wiki. You should also share and discuss your plugin idea [on the forums](https://caddy.community) to have people test it out. We don't use the Caddy issue tracker for plugins.
 
 
 ### Getting help using Caddy
@@ -83,7 +83,7 @@ Many people on the forums could benefit from your experience and expertise, too.
 
 ### Reporting bugs
 
-Like every software, Caddy has its flaws. If you find one, [search the issues](https://github.com/mholt/caddy/issues) to see if it has already been reported. If not, [open a new issue](https://github.com/mholt/caddy/issues/new) and describe the bug, and somebody will look into it! (This repository is only for Caddy, not plugins.)
+Like every software, Caddy has its flaws. If you find one, [search the issues](https://github.com/caddyserver/caddy/issues) to see if it has already been reported. If not, [open a new issue](https://github.com/caddyserver/caddy/issues/new) and describe the bug, and somebody will look into it! (This repository is only for Caddy, not plugins.)
 
 **You can help stop bugs in their tracks!** Speed up the patch by identifying the bug in the code. This can sometimes be done by adding `fmt.Println()` statements (or similar) in relevant code paths to narrow down where the problem may be. It's a good way to [introduce yourself to the Go language](https://tour.golang.org), too.
 
@@ -96,9 +96,9 @@ Please be kind. :smile: Remember that Caddy comes at no cost to you, and you're 
 
 ### Suggesting features
 
-First, [search to see if your feature has already been requested](https://github.com/mholt/caddy/issues). If it has, you can add a :+1: reaction to vote for it. If your feature idea is new, open an issue to request the feature. You don't have to follow the bug template for feature requests. Please describe your idea thoroughly so that we know how to implement it! Really vague requests may not be helpful or actionable and without clarification will have to be closed.
+First, [search to see if your feature has already been requested](https://github.com/caddyserver/caddy/issues). If it has, you can add a :+1: reaction to vote for it. If your feature idea is new, open an issue to request the feature. You don't have to follow the bug template for feature requests. Please describe your idea thoroughly so that we know how to implement it! Really vague requests may not be helpful or actionable and without clarification will have to be closed.
 
-While we really do value your requests and implement many of them, not all features are a good fit for Caddy. Most of those [make good plugins](https://github.com/mholt/caddy/wiki), though, which can be made by anyone! But if a feature is not in the best interest of the Caddy project or its users in general, we may politely decline to implement it into Caddy core.
+While we really do value your requests and implement many of them, not all features are a good fit for Caddy. Most of those [make good plugins](https://github.com/caddyserver/caddy/wiki), though, which can be made by anyone! But if a feature is not in the best interest of the Caddy project or its users in general, we may politely decline to implement it into Caddy core.
 
 
 ### Improving documentation

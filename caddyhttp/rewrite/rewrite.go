@@ -25,7 +25,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/mholt/caddy/caddyhttp/httpserver"
+	"github.com/caddyserver/caddy/caddyhttp/httpserver"
 )
 
 // Result is the result of a rewrite

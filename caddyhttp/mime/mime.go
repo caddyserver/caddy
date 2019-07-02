@@ -18,7 +18,7 @@ import (
 	"net/http"
 	"path"
 
-	"github.com/mholt/caddy/caddyhttp/httpserver"
+	"github.com/caddyserver/caddy/caddyhttp/httpserver"
 )
 
 // Config represent a mime config. Map from extension to mime-type.
