@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/caddyserver/caddy"
+	"github.com/caddyserver/caddy/v2"
 	"github.com/go-acme/lego/challenge/tlsalpn01"
 	"github.com/mholt/certmagic"
 )

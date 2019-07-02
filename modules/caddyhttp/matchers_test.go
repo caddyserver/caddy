@@ -22,7 +22,7 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/caddyserver/caddy"
+	"github.com/caddyserver/caddy/v2"
 )
 
 func TestHostMatcher(t *testing.T) {

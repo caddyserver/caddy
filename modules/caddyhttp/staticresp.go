@@ -19,7 +19,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/caddyserver/caddy"
+	"github.com/caddyserver/caddy/v2"
 )
 
 func init() {

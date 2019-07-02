@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"io/ioutil"
 
-	"github.com/caddyserver/caddy"
+	"github.com/caddyserver/caddy/v2"
 )
 
 func init() {

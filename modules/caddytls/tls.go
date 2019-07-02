@@ -23,7 +23,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/caddyserver/caddy"
+	"github.com/caddyserver/caddy/v2"
 	"github.com/go-acme/lego/challenge"
 	"github.com/mholt/certmagic"
 	"golang.org/x/time/rate"

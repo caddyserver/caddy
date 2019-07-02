@@ -199,7 +199,7 @@ func GoModule() *debug.Module {
 }
 
 // goModule is the name of this Go module.
-const goModule = "github.com/mholt/caddy"
+const goModule = "github.com/caddyserver/caddy/v2"
 
 // CtxKey is a value type for use with context.WithValue.
 type CtxKey string

@@ -17,7 +17,7 @@ package caddytls
 import (
 	"crypto/tls"
 
-	"github.com/caddyserver/caddy"
+	"github.com/caddyserver/caddy/v2"
 )
 
 // MatchServerName matches based on SNI.

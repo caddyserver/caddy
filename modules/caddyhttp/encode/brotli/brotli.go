@@ -18,8 +18,8 @@ import (
 	"fmt"
 
 	"github.com/andybalholm/brotli"
-	"github.com/caddyserver/caddy"
-	"github.com/caddyserver/caddy/modules/caddyhttp/encode"
+	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp/encode"
 )
 
 func init() {
