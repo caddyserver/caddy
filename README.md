@@ -11,7 +11,7 @@ We are looking for maintainers to represent the community! Please become involve
 **Menu**
 
 - [Install](#install)
-- [Quick Star](#quick-start)
+- [Quick Start](#quick-start)
 - [Configuration](#configuration)
 - [List of Improvements](#list-of-improvements)
 - [FAQ](#faq)
