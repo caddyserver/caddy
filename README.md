@@ -148,7 +148,7 @@ Nearly all of Caddy 2's configuration is contained in a single config document, 
 
 `"apps"` is where the magic happens. Currently, Caddy 2 has two apps: `http` and `tls`.
 
-To learn how to use them, see their respective [wiki pages](TODO).
+To learn how to use them, see their respective [wiki pages](https://github.com/caddyserver/caddy/wiki/v2:-Documentation).
 
 
 ## List of Improvements
@@ -216,7 +216,7 @@ And a few major features still being worked on:
 
 ### How do I configure Caddy 2?
 
-First you need to build a configuration document, which is in JSON. You may wish to write in YAML or TOML and then convert to JSON, that is fine too. The structure is described [in the wiki](TODO).
+First you need to build a configuration document, which is in JSON. You may wish to write in YAML or TOML and then convert to JSON, that is fine too. The structure is described [in the wiki](https://github.com/caddyserver/caddy/wiki/v2:-Documentation).
 
 Once you have your configuration document ready, you need to give it to Caddy. This can be done at startup or while it's running. See the instructions above for how to do this.
 
