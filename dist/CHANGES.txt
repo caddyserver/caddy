@@ -1,5 +1,15 @@
 CHANGES
 
+1.0.1 (July 2, 2019)
+- Move repo and module paths to github.com/caddyserver/caddy
+- New third-party plugin: pubsub
+- gzip: Automatically compress .wasm files
+- tls: Clean up locks from ACME operations on soft exit
+- tls: Deprecate 'max_certs' (use 'ask' instead)
+- tls: Improvements to on-demand TLS
+- Several other bug fixes
+
+
 1.0.0 (April 24, 2019)
 - Minor internal/linting improvements
 - EULA no longer applies
