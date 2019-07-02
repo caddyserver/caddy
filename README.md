@@ -5,6 +5,16 @@ This is the development branch for Caddy 2. This code (version 2) is not yet pro
 
 Please file issues to propose new features and report bugs, and after the bug or feature has been discussed, submit a pull request! We need your help to build this web server into what you want it to be. (Caddy 2 issues and pull requests will usually receive priority over Caddy 1 issues and pull requests.)
 
+We are looking for maintainers to represent the community! Please become involved (issues, PRs, [our forum](https://caddy.community) etc.) and express interest if you are committed to being a collaborator on the Caddy project.
+
+
+**Menu**
+
+- [Install](#install)
+- [Quick Star](#quick-start)
+- [Configuration](#configuration)
+- [List of Improvements](#list-of-improvements)
+- [FAQ](#faq)
 
 
 ## Install
@@ -105,7 +115,7 @@ $ ./caddy list-modules  # print the installed modules (plugins)
 $ ./caddy environ       # print the environment as seen by caddy
 ```
 
-## Configuration Structure
+## Configuration
 
 Caddy 2 exposes an unprecedented level of control compared to any web server in existence. In Caddy 2, you are usually setting the actual values of the initialized types in memory that power everything from your HTTP handlers and TLS handshakes to your storage medium. Caddy 2 is also ridiculously extensible, with a module system that makes vast improvements over Caddy 1's plugin system.
 
@@ -141,7 +151,68 @@ Nearly all of Caddy 2's configuration is contained in a single config document, 
 To learn how to use them, see their respective [wiki pages](TODO).
 
 
-## FAQs
+## List of Improvements
+
+The following is a manually-curated list of significant improvements over Caddy 1. This list may not be comprehensive, and not everything in this list might be finished yet, but will be or is possible with Caddy 2 or Caddy Enterprise:
+
+- Centralized configuration. No more disparate use of environment variables, config files (potentially multiple!), CLI flags, etc.
+- REST API. Control Caddy with HTTP requests to an administration endpoint. Changes are applied immediately and efficiently.
+- Dynamic configuration. Any and all specific config values can be modified directly through the admin API with a REST endpoint.
+    - Enterprise: Change only specific configuration settings instead of needing to specify the whole config each time. This makes it safe and easy to change Caddy's config with manually-crafted curl commands, for example.
+- No configuration files. Except optionally to bootstrap its configuration at startup. You can still use config files if you wish, and we expect that most people will.
+- Enterprise: Export the current Caddy configuration with an API GET request.
+- Silky-smooth graceful reloads. Update the configuration up to dozens of times per second with no dropped requests and very little memory cost. Our unique graceful reload technology is lighter and faster **and works on all platforms, including Windows**.
+- Native Starlark integration. Do things you never thought possible with higher performance than Lua, JavaScript, and other VMs. Starlark is expressive, familiar (dialect of Python), _almost_ Turing-complete, and highly efficient. (We're still improving performance here.)
+- Using [XDG standards](https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html#variables) instead of dumping all assets in `$HOME/.caddy`.
+- Caddy plugins are now called "Caddy modules" (although the terms "plugin" and "module" may be used interchangably). Caddy modules are a concept unrelated [Go modules](https://github.com/golang/go/wiki/Modules), except that Caddy modules may be implemented by Go modules. Caddy modules are centrally-registered, properly namespaced, and generically loaded & configured, as opposed to how scattered and unorganized Caddy 1-era plugins are.
+- Modules are easier to write, since they do not have to both deserialize their own configuration from a configuration DSL and provision themselves like plugins did. Modules are initialized pre-configured and have the ability to validate the configuration and perform provisioning steps if necessary.
+- Can specify different storage mechanisms in different parts of the configuration, if more than one is needed.
+- "Top-level" Caddy modules are simply called "apps" because literally any long-lived application can be served by Caddy 2.
+- Even more of Caddy is made of modules, allowing for unparalleled extensibility, flexibility, and control. Caddy 2 is arguably the most flexible, extensible, programmable web server ever made.
+- TLS improvements!
+	- TLS configuration is now centralized and decoupled from specific sites
+	- A single certificate cache is used process-wide, reducing duplication and improving memory use
+	- Customize how to manage each certificate ("automation policies") based on the hostname
+	- Automation policy doesn't have to be limited to just ACME - could be any way to manage certificates
+	- Fine-grained control over TLS handshakes
+	- If an ACME challenge fails, other enabled challenges will be tried (no other web server does this)
+    - Enterprise: TLS Session Ticket Ephemeral Keys (STEKs) can be rotated in a cluster for increased performance (no other web server does this either!)
+    - Enterprise: Ability to select a specific certificate per ClientHello given multiple qualifying certificates
+    - Enterprise: Provide TLS certificates without persisting them to disk; keep private keys entirely in memory
+- All-new HTTP server core
+	- Listeners can be configured for any network type, address, and port range
+	- Customizable TLS connection policies
+	- HTTP handlers are configured by "routes" which consist of "match", "apply", and "respond" components. Match matches an HTTP request. Apply applies the specified middleware. Respond is the sole handler which responds to the request.
+	- Some matchers are regular expressions, which expose capture groups to placeholders.
+	- New matchers include negation and matching based on remote IP address / CIDR ranges.
+    - Placeholders are vastly improved generally
+	- Placeholders (variables) are more properly namespaced.
+	- Multiple routes may match an HTTP request, creating a "composite route" quickly on the fly.
+	- The actual handler for any given request is its composite route.
+	- Only one handler can write to the response, avoiding potential "multiple calls to WriteHeader()" bugs that were too easy in Caddy 1.
+	- User defines the order of middlewares (careful! easy to break things).
+	- Adding middlewares no longer requires changes to Caddy's code base (there is no authoritative list).
+	- Routes may be marked as terminal, meaning no more routes will be matched.
+	- Routes may be grouped so that only the first matching route in a group is applied.
+	- Requests may be "re-handled" if they are modified and need to be sent through the chain again.
+	- Vastly more powerful static file server, with native content-negotiation abilities
+    - Done away with URL-rewriting hacks often needed in Caddy 1
+	- Highly descriptive/traceable errors
+	- Very flexible error handling, with the ability to specify a whole list of routes just for error cases
+	- More control over automatic HTTPS: disable entirely, disable only HTTP->HTTPS redirects, disable only cert management, and for certain names, etc.
+    - Enterprise: Use Starlark to build custom, dynamic HTTP handlers at request-time
+        - We are finding that -- on average -- Caddy 2's Starlark handlers are ~1.25-2x faster than NGINX+Lua.
+
+And a few major features still being worked on:
+
+- Logging
+- More powerful, dynamic reverse proxy
+- Kubernetes ingress controller (mostly done, just polishing it -- and it's amazing)
+- Config adapters. Caddy's native JSON config structure is powerful and complex. Config adapters upsample various formats to Caddy's native config. Planned adapters include Caddyfile, NGINX config, YAML, and TOML. The community might be interested in building Traefik and Apache config adapters!
+
+
+
+## FAQ
 
 ### How do I configure Caddy 2?
 
@@ -257,5 +328,4 @@ Caddy 2 and Caddy Enterprise offer equal levels of security.
 
 ### Does Caddy 2 have telemetry?
 
-No. There was not enough academic interest to continue supporting it. If telemetry does get added later, it will not be on by default or will be vastly reduced in its scope.
-
+No. There was not enough academic interest to continue supporting it. If telemetry does get added later, it will not be on by default or will be vastly reduced in its scope so that it simply helps the community gain an understanding of how widely Caddy is deployed (i.e. counts of servers running, number of requests/connections handled, etc, but no actual content; just counts).
