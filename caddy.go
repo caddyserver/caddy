@@ -84,7 +84,7 @@ func Run(newCfg *Config) error {
 		// set up storage and make it CertMagic's default storage, too
 		err = func() error {
 			if newCfg.StorageRaw != nil {
-				val, err := ctx.LoadModuleInline("system", "caddy.storage", newCfg.StorageRaw)
+				val, err := ctx.LoadModuleInline("module", "caddy.storage", newCfg.StorageRaw)
 				if err != nil {
 					return fmt.Errorf("loading storage module: %v", err)
 				}
