@@ -1,14 +1,14 @@
 Caddy 2 Development Branch
 ===========================
 
-This is the development branch for Caddy 2. This code (version 2) is not yet production-ready, but is already being used in production, and we encourage you to deploy it today on sites that are not very visible or important so that it can obtain crucial experience in the field.
+This is the development branch for Caddy 2. This code (version 2) is not yet feature-complete or production-ready, but is already being used in production, and we encourage you to deploy it today on sites that are not very visible or important so that it can obtain crucial experience in the field.
 
 Please file issues to propose new features and report bugs, and after the bug or feature has been discussed, submit a pull request! We need your help to build this web server into what you want it to be. (Caddy 2 issues and pull requests will usually receive priority over Caddy 1 issues and pull requests.)
 
-We are looking for maintainers to represent the community! Please become involved (issues, PRs, [our forum](https://caddy.community) etc.) and express interest if you are committed to being a collaborator on the Caddy project.
+**We want Caddy 2 to be the web server of the Go community!** We are looking for maintainers to represent the community. Please become involved (issues, PRs, [our forum](https://caddy.community) etc.) and express interest if you are committed to being a collaborator on the Caddy project.
 
 
-**Menu**
+### Menu
 
 - [Install](#install)
 - [Quick Start](#quick-start)
@@ -33,7 +33,7 @@ $ git clone -b v2 "https://github.com/caddyserver/caddy.git"
 Build:
 
 ```bash
-$ cd caddy/cmd/caddy
+$ cd caddy/cmd/caddy/
 $ go build
 ```
 
@@ -84,7 +84,7 @@ Now visit http://localhost:2080 in your browser and you will see the contents of
 
 To change Caddy's configuration, simply POST a new payload to that endpoint. Config changes are extremely lightweight and efficient, and should be graceful on all platforms -- _even Windows_.
 
-Updating configuration using heredoc can be tedious, so you can still use a config file if you prefer. Put your configuration in any file (`caddy.json` for example) and then POST it instead:
+Updating configuration using heredoc can be tedious, so you can still use a config file if you prefer. Put your configuration in any file (`caddy.json` for example) and then POST that instead:
 
 ```bash
 $ curl -X POST "http://localhost:2019/load" \
@@ -153,7 +153,7 @@ To learn how to use them, see their respective [wiki pages](https://github.com/c
 
 ## List of Improvements
 
-The following is a manually-curated list of significant improvements over Caddy 1. This list may not be comprehensive, and not everything in this list might be finished yet, but will be or is possible with Caddy 2 or Caddy Enterprise:
+The following is a non-comprehensive list of significant improvements over Caddy 1. Not everything in this list is finished yet, but they will be finished or at least will be possible with Caddy 2 or Caddy Enterprise:
 
 - Centralized configuration. No more disparate use of environment variables, config files (potentially multiple!), CLI flags, etc.
 - REST API. Control Caddy with HTTP requests to an administration endpoint. Changes are applied immediately and efficiently.
@@ -162,7 +162,7 @@ The following is a manually-curated list of significant improvements over Caddy 
 - No configuration files. Except optionally to bootstrap its configuration at startup. You can still use config files if you wish, and we expect that most people will.
 - Enterprise: Export the current Caddy configuration with an API GET request.
 - Silky-smooth graceful reloads. Update the configuration up to dozens of times per second with no dropped requests and very little memory cost. Our unique graceful reload technology is lighter and faster **and works on all platforms, including Windows**.
-- Native Starlark integration. Do things you never thought possible with higher performance than Lua, JavaScript, and other VMs. Starlark is expressive, familiar (dialect of Python), _almost_ Turing-complete, and highly efficient. (We're still improving performance here.)
+- An embedded scripting language! Caddy2 has native Starlark integration. Do things you never thought possible with higher performance than Lua, JavaScript, and other VMs. Starlark is expressive, familiar (dialect of Python), _almost_ Turing-complete, and highly efficient. (We're still improving performance here.)
 - Using [XDG standards](https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html#variables) instead of dumping all assets in `$HOME/.caddy`.
 - Caddy plugins are now called "Caddy modules" (although the terms "plugin" and "module" may be used interchangably). Caddy modules are a concept unrelated [Go modules](https://github.com/golang/go/wiki/Modules), except that Caddy modules may be implemented by Go modules. Caddy modules are centrally-registered, properly namespaced, and generically loaded & configured, as opposed to how scattered and unorganized Caddy 1-era plugins are.
 - Modules are easier to write, since they do not have to both deserialize their own configuration from a configuration DSL and provision themselves like plugins did. Modules are initialized pre-configured and have the ability to validate the configuration and perform provisioning steps if necessary.
@@ -329,3 +329,31 @@ Caddy 2 and Caddy Enterprise offer equal levels of security.
 ### Does Caddy 2 have telemetry?
 
 No. There was not enough academic interest to continue supporting it. If telemetry does get added later, it will not be on by default or will be vastly reduced in its scope so that it simply helps the community gain an understanding of how widely Caddy is deployed (i.e. counts of servers running, number of requests/connections handled, etc, but no actual content; just counts).
+
+## Does Caddy 2 use HTTPS by default?
+
+Yes. HTTPS is automatic and enabled by default when possible, just like in Caddy 1. Basically, if your HTTP routes specify a `host` matcher with qualifying domain names, those names will be enabled for automatic HTTPS.
+
+## I'm getting HTTPS errors with Caddy 2. The certificates aren't valid?
+
+During development, Caddy 2 uses Let's Encrypt's staging endpoint to avoid rate limit issues, so the certificates are not trusted. You can force the production endpoint if you are confident that your setup is correct and will last a while. You can add a catch-all automation policy to your `tls` app that specifies the production CA endpoint:
+
+```json
+"tls": {
+	"automation": {
+		"policies": [
+			{
+				"management": {
+					"module": "acme",
+					"ca": "https://acme-v02.api.letsencrypt.org/directory"
+				}
+			}
+		]
+	}
+}
+```
+
+## Can we get some access controls on the admin endpoint?
+
+Yeah, that's coming.
+
