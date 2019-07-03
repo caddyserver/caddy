@@ -13,6 +13,7 @@ Please file issues to propose new features and report bugs, and after the bug or
 - [Install](#install)
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
+- [Full Documentation](#full-documentation)
 - [List of Improvements](#list-of-improvements)
 - [FAQ](#faq)
 
@@ -106,49 +107,25 @@ $ ./caddy stop
 
 Note that this will stop any process named the same as `os.Args[0]`.
 
-Other commands:
+For other commands, please see [the Caddy 2 documentation](https://github.com/caddyserver/caddy/wiki/v2:-Documentation).
 
-```bash
-$ ./caddy run           # same as start, but blocks forever
-$ ./caddy version       # print the version
-$ ./caddy list-modules  # print the installed modules (plugins)
-$ ./caddy environ       # print the environment as seen by caddy
-```
 
 ## Configuration
 
 Caddy 2 exposes an unprecedented level of control compared to any web server in existence. In Caddy 2, you are usually setting the actual values of the initialized types in memory that power everything from your HTTP handlers and TLS handshakes to your storage medium. Caddy 2 is also ridiculously extensible, with a module system that makes vast improvements over Caddy 1's plugin system.
 
-Nearly all of Caddy 2's configuration is contained in a single config document, rather than being spread across CLI flags and env variables and a configuration file as with other web servers (and Caddy 1). To wield the power of this design, you need to know how the config document is structured:
+Nearly all of Caddy 2's configuration is contained in a single config document, rather than being spread across CLI flags and env variables and a configuration file as with other web servers (and Caddy 1).
 
-```json
-{
-	"admin": {},
-	"storage": {},
-	"apps": {}
-}
-```
+To wield the power of this design, you need to know how the config document is structured. Please see the [the Caddy 2 documentation in our wiki](https://github.com/caddyserver/caddy/wiki/v2:-Documentation) for details about Caddy's config structure.
 
-`"admin"` configures the endpoint which configures Caddy, like so:
+Configuration is normally given to Caddy through an API endpoint, which is likewise documented in the wiki pages.
 
-```json
-{
-	"listen": "localhost:2019"
-}
-```
 
-`"storage"` configures Caddy's default storage mechanism. If unspecfied, the local file system is used in the `$HOME/.local/share` folder if `$XDG_DATA_HOME` is not set. A `caddy` subfolder will be created within the base folder. Example:
+## Full Documentation
 
-```json
-{
-	"system": "file_system",
-	"root": "/var/caddy_storage"
-}
-```
+Caddy 2 is very much in development, so the documentation is an ongoing WIP, but the latest will be in our wiki for now:
 
-`"apps"` is where the magic happens. Currently, Caddy 2 has two apps: `http` and `tls`.
-
-To learn how to use them, see their respective [wiki pages](https://github.com/caddyserver/caddy/wiki/v2:-Documentation).
+**https://github.com/caddyserver/caddy/wiki/v2:-Documentation**
 
 
 ## List of Improvements
