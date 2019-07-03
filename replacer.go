@@ -106,7 +106,7 @@ var defaultReplacements = func() map[string]string {
 		if len(parts) != 2 {
 			continue
 		}
-		m["env."+strings.ToUpper(parts[0])] = parts[1]
+		m["env."+strings.ToLower(parts[0])] = parts[1]
 	}
 
 	return m
