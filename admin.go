@@ -44,7 +44,7 @@ type AdminConfig struct {
 // DefaultAdminConfig is the default configuration
 // for the administration endpoint.
 var DefaultAdminConfig = &AdminConfig{
-	Listen: "localhost:2019",
+	Listen: DefaultAdminListen,
 }
 
 // StartAdmin starts Caddy's administration endpoint,
@@ -191,6 +191,10 @@ func Load(r io.Reader) error {
 
 	return nil
 }
+
+// DefaultAdminListen is the address for the admin
+// listener, if none is specified at startup.
+var DefaultAdminListen = "localhost:2019"
 
 var bufPool = sync.Pool{
 	New: func() interface{} {

@@ -51,8 +51,9 @@ type commandFunc func() (int, error)
 
 var commands = map[string]commandFunc{
 	"start":        cmdStart,
-	"stop":         cmdStop,
 	"run":          cmdRun,
+	"stop":         cmdStop,
+	"reload":       cmdReload,
 	"version":      cmdVersion,
 	"list-modules": cmdListModules,
 	"environ":      cmdEnviron,

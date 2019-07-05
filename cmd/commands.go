@@ -15,12 +15,16 @@
 package caddycmd
 
 import (
+	"bytes"
 	"crypto/rand"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -197,6 +201,59 @@ func cmdStop() (int, error) {
 		return 1, fmt.Errorf("Caddy is not running")
 	}
 	fmt.Println(" success")
+	return 0, nil
+}
+
+func cmdReload() (int, error) {
+	reloadCmd := flag.NewFlagSet("load", flag.ExitOnError)
+	reloadCmdConfigFlag := reloadCmd.String("config", "", "Configuration file")
+	reloadCmdAddrFlag := reloadCmd.String("address", "", "Address of the administration listener, if different from config")
+	reloadCmd.Parse(os.Args[2:])
+
+	// a configuration is required
+	if *reloadCmdConfigFlag == "" {
+		return 1, fmt.Errorf("no configuration to load (use --config)")
+	}
+
+	// load the configuration file
+	config, err := ioutil.ReadFile(*reloadCmdConfigFlag)
+	if err != nil {
+		return 1, fmt.Errorf("reading config file: %v", err)
+	}
+
+	// get the address of the admin listener and craft endpoint URL
+	adminAddr := *reloadCmdAddrFlag
+	if adminAddr == "" {
+		var tmpStruct struct {
+			Admin caddy.AdminConfig `json:"admin"`
+		}
+		err = json.Unmarshal(config, &tmpStruct)
+		if err != nil {
+			return 1, fmt.Errorf("unmarshaling admin listener address from config: %v", err)
+		}
+		adminAddr = tmpStruct.Admin.Listen
+	}
+	if adminAddr == "" {
+		adminAddr = caddy.DefaultAdminListen
+	}
+	adminEndpoint := fmt.Sprintf("http://%s/load", adminAddr)
+
+	// send the configuration to the instance
+	resp, err := http.Post(adminEndpoint, "application/json", bytes.NewReader(config))
+	if err != nil {
+		return 1, fmt.Errorf("sending configuration to instance: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// if it didn't work, let the user know
+	if resp.StatusCode >= 400 {
+		respBody, err := ioutil.ReadAll(io.LimitReader(resp.Body, 1024*10))
+		if err != nil {
+			return 1, fmt.Errorf("HTTP %d: reading error message: %v", resp.StatusCode, err)
+		}
+		return 1, fmt.Errorf("caddy responded with error: HTTP %d: %s", resp.StatusCode, respBody)
+	}
+
 	return 0, nil
 }
 
