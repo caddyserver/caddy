@@ -77,7 +77,7 @@ func (m *ACMEManagerMaker) Provision(ctx caddy.Context) error {
 
 	// policy-specific storage implementation
 	if m.Storage != nil {
-		val, err := ctx.LoadModuleInline("system", "caddy.storage", m.Storage)
+		val, err := ctx.LoadModuleInline("module", "caddy.storage", m.Storage)
 		if err != nil {
 			return fmt.Errorf("loading TLS storage module: %s", err)
 		}
