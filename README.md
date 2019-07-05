@@ -238,6 +238,8 @@ Ultimately, we think all these properties are appropriate -- if not ideal -- for
 
 If you're still not happy with the choice of JSON, feel free to contribute a config adapter of your own choice!
 
+Or just use YAML or TOML, which seamlessly translate to JSON.
+
 ### JSON is declarative; what if I need more programmability (i.e. imperative syntax)?
 
 We have good news.
