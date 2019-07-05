@@ -39,6 +39,18 @@ type ServerRoute struct {
 	responder   Handler
 }
 
+// Empty returns true if the route has all zero/default values.
+func (sr ServerRoute) Empty() bool {
+	return len(sr.MatcherSets) == 0 &&
+		len(sr.Apply) == 0 &&
+		len(sr.Respond) == 0 &&
+		len(sr.matcherSets) == 0 &&
+		len(sr.middleware) == 0 &&
+		sr.responder == nil &&
+		!sr.Terminal &&
+		sr.Group == ""
+}
+
 func (sr ServerRoute) anyMatcherSetMatches(r *http.Request) bool {
 	for _, ms := range sr.matcherSets {
 		if ms.Match(r) {
