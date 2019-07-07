@@ -450,5 +450,9 @@ var defaultIndexNames = []string{"index.html"}
 
 const minBackoff, maxBackoff = 2, 5
 
-// Interface guard
-var _ caddyhttp.Handler = (*FileServer)(nil)
+// Interface guards
+var (
+	_ caddy.Provisioner = (*FileServer)(nil)
+	_ caddy.Validator   = (*FileServer)(nil)
+	_ caddyhttp.Handler = (*FileServer)(nil)
+)

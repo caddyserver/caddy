@@ -102,7 +102,7 @@ func (app *App) Validate() error {
 			}
 			for _, a := range expanded {
 				if sn, ok := lnAddrs[netw+a]; ok {
-					return fmt.Errorf("listener address repeated: %s (already claimed by server '%s')", a, sn)
+					return fmt.Errorf("server %s: listener address repeated: %s (already claimed by server '%s')", srvName, a, sn)
 				}
 				lnAddrs[netw+a] = srvName
 			}
@@ -486,5 +486,9 @@ const (
 	DefaultHTTPSPort = 443
 )
 
-// Interface guard
-var _ caddy.App = (*App)(nil)
+// Interface guards
+var (
+	_ caddy.App         = (*App)(nil)
+	_ caddy.Provisioner = (*App)(nil)
+	_ caddy.Validator   = (*App)(nil)
+)
