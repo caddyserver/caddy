@@ -138,8 +138,8 @@ func (ctx Context) LoadModule(name string, rawMsg json.RawMessage) (interface{},
 				if err2 != nil {
 					err = fmt.Errorf("%v; additionally, cleanup: %v", err, err2)
 				}
-				return nil, fmt.Errorf("%s: invalid configuration: %v", mod.Name, err)
 			}
+			return nil, fmt.Errorf("%s: invalid configuration: %v", mod.Name, err)
 		}
 	}
 
