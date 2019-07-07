@@ -100,7 +100,9 @@ func cmdStart() (int, error) {
 		for {
 			conn, err := ln.Accept()
 			if err != nil {
-				log.Println(err)
+				if !strings.Contains(err.Error(), "use of closed network connection") {
+					log.Println(err)
+				}
 				break
 			}
 			err = handlePingbackConn(conn, expect)
@@ -114,8 +116,8 @@ func cmdStart() (int, error) {
 
 	// in another goroutine, we await the failure of the child process
 	go func() {
-		err = cmd.Wait() // don't send on this line! Wait blocks, but send starts before it unblocks
-		exit <- err      // sending on separate line ensures select won't trigger until after Wait unblocks
+		err := cmd.Wait() // don't send on this line! Wait blocks, but send starts before it unblocks
+		exit <- err       // sending on separate line ensures select won't trigger until after Wait unblocks
 	}()
 
 	// when one of the goroutines unblocks, we're done and can exit
@@ -154,7 +156,7 @@ func cmdRun() (int, error) {
 	// start the admin endpoint along with any initial config
 	err := caddy.StartAdmin(config)
 	if err != nil {
-		return 0, fmt.Errorf("starting caddy administration endpoint: %v", err)
+		return 1, fmt.Errorf("starting caddy administration endpoint: %v", err)
 	}
 	defer caddy.StopAdmin()
 
