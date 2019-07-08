@@ -17,6 +17,8 @@ package caddy
 import (
 	"fmt"
 	"net"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -160,3 +162,73 @@ var (
 	listeners   = make(map[string]*listenerUsage)
 	listenersMu sync.Mutex
 )
+
+// ParseListenAddr parses addr, a string of the form "network/host:port"
+// (with any part optional) into its component parts. Because a port can
+// also be a port range, there may be multiple addresses returned.
+func ParseListenAddr(addr string) (network string, addrs []string, err error) {
+	var host, port string
+	network, host, port, err = SplitListenAddr(addr)
+	if network == "" {
+		network = "tcp"
+	}
+	if err != nil {
+		return
+	}
+	if network == "unix" {
+		addrs = []string{host}
+		return
+	}
+	ports := strings.SplitN(port, "-", 2)
+	if len(ports) == 1 {
+		ports = append(ports, ports[0])
+	}
+	var start, end int
+	start, err = strconv.Atoi(ports[0])
+	if err != nil {
+		return
+	}
+	end, err = strconv.Atoi(ports[1])
+	if err != nil {
+		return
+	}
+	if end < start {
+		err = fmt.Errorf("end port must be greater than start port")
+		return
+	}
+	for p := start; p <= end; p++ {
+		addrs = append(addrs, net.JoinHostPort(host, fmt.Sprintf("%d", p)))
+	}
+	return
+}
+
+// SplitListenAddr splits a into its network, host, and port components.
+// Note that port may be a port range, or omitted for unix sockets.
+func SplitListenAddr(a string) (network, host, port string, err error) {
+	if idx := strings.Index(a, "/"); idx >= 0 {
+		network = strings.ToLower(strings.TrimSpace(a[:idx]))
+		a = a[idx+1:]
+	}
+	if network == "unix" {
+		host = a
+		return
+	}
+	host, port, err = net.SplitHostPort(a)
+	return
+}
+
+// JoinListenAddr combines network, host, and port into a single
+// address string of the form "network/host:port". Port may be a
+// port range. For unix sockets, the network should be "unix" and
+// the path to the socket should be given in the host argument.
+func JoinListenAddr(network, host, port string) string {
+	var a string
+	if network != "" {
+		a = network + "/"
+	}
+	a += host
+	if port != "" {
+		a += ":" + port
+	}
+	return a
+}

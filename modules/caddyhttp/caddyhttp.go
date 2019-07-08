@@ -96,7 +96,7 @@ func (app *App) Validate() error {
 	lnAddrs := make(map[string]string)
 	for srvName, srv := range app.Servers {
 		for _, addr := range srv.Listen {
-			netw, expanded, err := parseListenAddr(addr)
+			netw, expanded, err := caddy.ParseListenAddr(addr)
 			if err != nil {
 				return fmt.Errorf("invalid listener address '%s': %v", addr, err)
 			}
@@ -137,7 +137,7 @@ func (app *App) Start() error {
 		}
 
 		for _, lnAddr := range srv.Listen {
-			network, addrs, err := parseListenAddr(lnAddr)
+			network, addrs, err := caddy.ParseListenAddr(lnAddr)
 			if err != nil {
 				return fmt.Errorf("%s: parsing listen address '%s': %v", srvName, lnAddr, err)
 			}
@@ -289,7 +289,7 @@ func (app *App) automaticHTTPS() error {
 
 			// create HTTP->HTTPS redirects
 			for _, addr := range srv.Listen {
-				netw, host, port, err := splitListenAddr(addr)
+				netw, host, port, err := caddy.SplitListenAddr(addr)
 				if err != nil {
 					return fmt.Errorf("%s: invalid listener address: %v", srvName, addr)
 				}
@@ -298,7 +298,7 @@ func (app *App) automaticHTTPS() error {
 				if httpPort == 0 {
 					httpPort = DefaultHTTPPort
 				}
-				httpRedirLnAddr := joinListenAddr(netw, host, strconv.Itoa(httpPort))
+				httpRedirLnAddr := caddy.JoinListenAddr(netw, host, strconv.Itoa(httpPort))
 				lnAddrMap[httpRedirLnAddr] = struct{}{}
 
 				if parts := strings.SplitN(port, "-", 2); len(parts) == 2 {
@@ -339,7 +339,7 @@ func (app *App) automaticHTTPS() error {
 		var lnAddrs []string
 	mapLoop:
 		for addr := range lnAddrMap {
-			netw, addrs, err := parseListenAddr(addr)
+			netw, addrs, err := caddy.ParseListenAddr(addr)
 			if err != nil {
 				continue
 			}
@@ -364,7 +364,7 @@ func (app *App) automaticHTTPS() error {
 func (app *App) listenerTaken(network, address string) bool {
 	for _, srv := range app.Servers {
 		for _, addr := range srv.Listen {
-			netw, addrs, err := parseListenAddr(addr)
+			netw, addrs, err := caddy.ParseListenAddr(addr)
 			if err != nil || netw != network {
 				continue
 			}
@@ -424,59 +424,6 @@ func (f HandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
 // emptyHandler is used as a no-op handler, which is
 // sometimes better than a nil Handler pointer.
 var emptyHandler HandlerFunc = func(w http.ResponseWriter, r *http.Request) error { return nil }
-
-func parseListenAddr(a string) (network string, addrs []string, err error) {
-	var host, port string
-	network, host, port, err = splitListenAddr(a)
-	if network == "" {
-		network = "tcp"
-	}
-	if err != nil {
-		return
-	}
-	ports := strings.SplitN(port, "-", 2)
-	if len(ports) == 1 {
-		ports = append(ports, ports[0])
-	}
-	var start, end int
-	start, err = strconv.Atoi(ports[0])
-	if err != nil {
-		return
-	}
-	end, err = strconv.Atoi(ports[1])
-	if err != nil {
-		return
-	}
-	if end < start {
-		err = fmt.Errorf("end port must be greater than start port")
-		return
-	}
-	for p := start; p <= end; p++ {
-		addrs = append(addrs, net.JoinHostPort(host, fmt.Sprintf("%d", p)))
-	}
-	return
-}
-
-func splitListenAddr(a string) (network, host, port string, err error) {
-	if idx := strings.Index(a, "/"); idx >= 0 {
-		network = strings.ToLower(strings.TrimSpace(a[:idx]))
-		a = a[idx+1:]
-	}
-	host, port, err = net.SplitHostPort(a)
-	return
-}
-
-func joinListenAddr(network, host, port string) string {
-	var a string
-	if network != "" {
-		a = network + "/"
-	}
-	a += host
-	if port != "" {
-		a += ":" + port
-	}
-	return a
-}
 
 const (
 	// DefaultHTTPPort is the default port for HTTP.

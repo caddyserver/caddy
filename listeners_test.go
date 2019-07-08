@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package caddyhttp
+package caddy
 
 import (
 	"reflect"
@@ -62,8 +62,13 @@ func TestSplitListenerAddr(t *testing.T) {
 			expectNetwork: "udp",
 			expectErr:     true,
 		},
+		{
+			input:         "unix//foo/bar",
+			expectNetwork: "unix",
+			expectHost:    "/foo/bar",
+		},
 	} {
-		actualNetwork, actualHost, actualPort, err := splitListenAddr(tc.input)
+		actualNetwork, actualHost, actualPort, err := SplitListenAddr(tc.input)
 		if tc.expectErr && err == nil {
 			t.Errorf("Test %d: Expected error but got: %v", i, err)
 		}
@@ -119,8 +124,12 @@ func TestJoinListenerAddr(t *testing.T) {
 			network: "udp", host: "", port: "1234",
 			expect: "udp/:1234",
 		},
+		{
+			network: "unix", host: "/foo/bar", port: "",
+			expect: "unix//foo/bar",
+		},
 	} {
-		actual := joinListenAddr(tc.network, tc.host, tc.port)
+		actual := JoinListenAddr(tc.network, tc.host, tc.port)
 		if actual != tc.expect {
 			t.Errorf("Test %d: Expected '%s' but got '%s'", i, tc.expect, actual)
 		}
@@ -165,9 +174,9 @@ func TestParseListenerAddr(t *testing.T) {
 			expectAddrs:   []string{"localhost:1234"},
 		},
 		{
-			input:         "unix/localhost:1234-1236",
+			input:         "unix//foo/bar",
 			expectNetwork: "unix",
-			expectAddrs:   []string{"localhost:1234", "localhost:1235", "localhost:1236"},
+			expectAddrs:   []string{"/foo/bar"},
 		},
 		{
 			input:         "localhost:1234-1234",
@@ -185,7 +194,7 @@ func TestParseListenerAddr(t *testing.T) {
 			expectAddrs:   []string{"localhost:0"},
 		},
 	} {
-		actualNetwork, actualAddrs, err := parseListenAddr(tc.input)
+		actualNetwork, actualAddrs, err := ParseListenAddr(tc.input)
 		if tc.expectErr && err == nil {
 			t.Errorf("Test %d: Expected error but got: %v", i, err)
 		}
