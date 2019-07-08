@@ -79,6 +79,12 @@ func addHTTPVarsToReplacer(repl caddy.Replacer, req *http.Request, w http.Respon
 				key := fmt.Sprintf("http.request.host.labels.%d", len(hostLabels)-i-1)
 				m[key] = label
 			}
+
+			pathParts := strings.Split(req.URL.Path, "/")
+			for i, label := range pathParts {
+				key := fmt.Sprintf("http.request.uri.path.%d", i)
+				m[key] = label
+			}
 		}
 
 		if w != nil {
