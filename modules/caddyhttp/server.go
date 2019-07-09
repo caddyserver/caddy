@@ -65,9 +65,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	addHTTPVarsToReplacer(repl, r, w)
 
 	// build and execute the main handler chain
-	stack, wrappedWriter := s.Routes.BuildCompositeRoute(w, r)
+	stack := s.Routes.BuildCompositeRoute(w, r)
 	stack = s.wrapPrimaryRoute(stack)
-	err := s.executeCompositeRoute(wrappedWriter, r, stack)
+	err := s.executeCompositeRoute(w, r, stack)
 	if err != nil {
 		// add the raw error value to the request context
 		// so it can be accessed by error handlers
@@ -85,8 +85,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if s.Errors != nil && len(s.Errors.Routes) > 0 {
-			errStack, wrappedWriter := s.Errors.Routes.BuildCompositeRoute(w, r)
-			err := s.executeCompositeRoute(wrappedWriter, r, errStack)
+			errStack := s.Errors.Routes.BuildCompositeRoute(w, r)
+			err := s.executeCompositeRoute(w, r, errStack)
 			if err != nil {
 				// TODO: what should we do if the error handler has an error?
 				log.Printf("[ERROR] [%s %s] handling error: %v", r.Method, r.RequestURI, err)
@@ -154,6 +154,8 @@ func (s *Server) enforcementHandler(w http.ResponseWriter, r *http.Request, next
 	return next.ServeHTTP(w, r)
 }
 
+// listenersUseAnyPortOtherThan returns true if there are any
+// listeners in s that use a port which is not otherPort.
 func (s *Server) listenersUseAnyPortOtherThan(otherPort int) bool {
 	for _, lnAddr := range s.Listen {
 		_, addrs, err := caddy.ParseListenAddr(lnAddr)
