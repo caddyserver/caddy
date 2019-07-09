@@ -24,21 +24,20 @@ import (
 
 func init() {
 	caddy.RegisterModule(caddy.Module{
-		Name: "http.responders.static",
+		Name: "http.handlers.static",
 		New:  func() interface{} { return new(Static) },
 	})
 }
 
 // Static implements a simple responder for static responses.
 type Static struct {
-	StatusCode    int         `json:"status_code"` // TODO: should we turn this into a string so that only one field is needed? (string allows replacements)
-	StatusCodeStr string      `json:"status_code_str"`
-	Headers       http.Header `json:"headers"`
-	Body          string      `json:"body"`
-	Close         bool        `json:"close"`
+	StatusCode string      `json:"status_code"`
+	Headers    http.Header `json:"headers"`
+	Body       string      `json:"body"`
+	Close      bool        `json:"close"`
 }
 
-func (s Static) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
+func (s Static) ServeHTTP(w http.ResponseWriter, r *http.Request, _ Handler) error {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
 
 	// close the connection after responding
@@ -60,15 +59,12 @@ func (s Static) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	// get the status code
-	statusCode := s.StatusCode
-	if statusCode == 0 && s.StatusCodeStr != "" {
-		intVal, err := strconv.Atoi(repl.ReplaceAll(s.StatusCodeStr, ""))
+	statusCode := http.StatusOK
+	if s.StatusCode != "" {
+		intVal, err := strconv.Atoi(repl.ReplaceAll(s.StatusCode, ""))
 		if err == nil {
 			statusCode = intVal
 		}
-	}
-	if statusCode == 0 {
-		statusCode = http.StatusOK
 	}
 
 	// write headers
@@ -83,4 +79,4 @@ func (s Static) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
 }
 
 // Interface guard
-var _ Handler = (*Static)(nil)
+var _ MiddlewareHandler = (*Static)(nil)
