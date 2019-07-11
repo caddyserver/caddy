@@ -322,13 +322,15 @@ func (app *App) automaticHTTPS() error {
 							MatchHost(domains),
 						},
 					},
-					responder: Static{
-						StatusCode: http.StatusTemporaryRedirect, // TODO: use permanent redirect instead
-						Headers: http.Header{
-							"Location":   []string{redirTo},
-							"Connection": []string{"close"},
+					handlers: []MiddlewareHandler{
+						Static{
+							StatusCode: strconv.Itoa(http.StatusTemporaryRedirect), // TODO: use permanent redirect instead
+							Headers: http.Header{
+								"Location":   []string{redirTo},
+								"Connection": []string{"close"},
+							},
+							Close: true,
 						},
-						Close: true,
 					},
 				})
 			}
@@ -381,34 +383,18 @@ func (app *App) listenerTaken(network, address string) bool {
 var defaultALPN = []string{"h2", "http/1.1"}
 
 // RequestMatcher is a type that can match to a request.
-// A route matcher MUST NOT modify the request.
+// A route matcher MUST NOT modify the request, with the
+// only exception being its context.
 type RequestMatcher interface {
 	Match(*http.Request) bool
 }
 
-// Middleware chains one Handler to the next by being passed
-// the next Handler in the chain.
-type Middleware func(HandlerFunc) HandlerFunc
-
-// MiddlewareHandler is a Handler that includes a reference
-// to the next middleware handler in the chain. Middleware
-// handlers MUST NOT call Write() or WriteHeader() on the
-// response writer; doing so will panic. See Handler godoc
-// for more information.
-type MiddlewareHandler interface {
-	ServeHTTP(http.ResponseWriter, *http.Request, Handler) error
-}
-
 // Handler is like http.Handler except ServeHTTP may return an error.
-//
-// Middleware and responder handlers both implement this method.
-// Middleware must not call Write or WriteHeader on the ResponseWriter;
-// doing so will cause a panic. Responders should write to the response
-// if there was not an error.
 //
 // If any handler encounters an error, it should be returned for proper
 // handling. Return values should be propagated down the middleware chain
-// by returning it unchanged. Returned errors should not be re-wrapped.
+// by returning it unchanged. Returned errors should not be re-wrapped
+// if they are already HandlerError values.
 type Handler interface {
 	ServeHTTP(http.ResponseWriter, *http.Request) error
 }
@@ -421,9 +407,25 @@ func (f HandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
 	return f(w, r)
 }
 
-// emptyHandler is used as a no-op handler, which is
-// sometimes better than a nil Handler pointer.
-var emptyHandler HandlerFunc = func(w http.ResponseWriter, r *http.Request) error { return nil }
+// Middleware chains one Handler to the next by being passed
+// the next Handler in the chain.
+type Middleware func(HandlerFunc) HandlerFunc
+
+// MiddlewareHandler is like Handler except it takes as a third
+// argument the next handler in the chain. The next handler will
+// never be nil, but may be a no-op handler if this is the last
+// handler in the chain. Handlers which act as middleware should
+// call the next handler's ServeHTTP method so as to propagate
+// the request down the chain properly. Handlers which act as
+// responders (content origins) need not invoke the next handler,
+// since the last handler in the chain should be the first to
+// write the response.
+type MiddlewareHandler interface {
+	ServeHTTP(http.ResponseWriter, *http.Request, Handler) error
+}
+
+// emptyHandler is used as a no-op handler.
+var emptyHandler HandlerFunc = func(http.ResponseWriter, *http.Request) error { return nil }
 
 const (
 	// DefaultHTTPPort is the default port for HTTP.

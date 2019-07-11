@@ -35,7 +35,7 @@ func init() {
 	weakrand.Seed(time.Now().UnixNano())
 
 	caddy.RegisterModule(caddy.Module{
-		Name: "http.responders.file_server",
+		Name: "http.handlers.file_server",
 		New:  func() interface{} { return new(FileServer) },
 	})
 }
@@ -108,7 +108,7 @@ func (fsrv *FileServer) Validate() error {
 	return nil
 }
 
-func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
+func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, _ caddyhttp.Handler) error {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
 
 	filesToHide := fsrv.transformHidePaths(repl)
@@ -119,7 +119,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request) error 
 	if filename == "" {
 		// no files worked, so resort to fallback
 		if fsrv.Fallback != nil {
-			fallback, w := fsrv.Fallback.BuildCompositeRoute(w, r)
+			fallback := fsrv.Fallback.BuildCompositeRoute(w, r)
 			return fallback.ServeHTTP(w, r)
 		}
 		return caddyhttp.Error(http.StatusNotFound, nil)
@@ -452,7 +452,7 @@ const minBackoff, maxBackoff = 2, 5
 
 // Interface guards
 var (
-	_ caddy.Provisioner = (*FileServer)(nil)
-	_ caddy.Validator   = (*FileServer)(nil)
-	_ caddyhttp.Handler = (*FileServer)(nil)
+	_ caddy.Provisioner           = (*FileServer)(nil)
+	_ caddy.Validator             = (*FileServer)(nil)
+	_ caddyhttp.MiddlewareHandler = (*FileServer)(nil)
 )
