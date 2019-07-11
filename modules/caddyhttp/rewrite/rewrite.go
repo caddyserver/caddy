@@ -25,7 +25,7 @@ import (
 
 func init() {
 	caddy.RegisterModule(caddy.Module{
-		Name: "http.middleware.rewrite",
+		Name: "http.handlers.rewrite",
 		New:  func() interface{} { return new(Rewrite) },
 	})
 }

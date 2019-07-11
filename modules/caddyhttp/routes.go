@@ -28,25 +28,19 @@ import (
 type ServerRoute struct {
 	Group       string                       `json:"group,omitempty"`
 	MatcherSets []map[string]json.RawMessage `json:"match,omitempty"`
-	Apply       []json.RawMessage            `json:"apply,omitempty"`
-	Respond     json.RawMessage              `json:"respond,omitempty"`
-
-	Terminal bool `json:"terminal,omitempty"`
+	Handle      []json.RawMessage            `json:"handle,omitempty"`
+	Terminal    bool                         `json:"terminal,omitempty"`
 
 	// decoded values
 	matcherSets []MatcherSet
-	middleware  []MiddlewareHandler
-	responder   Handler
+	handlers    []MiddlewareHandler
 }
 
 // Empty returns true if the route has all zero/default values.
 func (sr ServerRoute) Empty() bool {
 	return len(sr.MatcherSets) == 0 &&
-		len(sr.Apply) == 0 &&
-		len(sr.Respond) == 0 &&
-		len(sr.matcherSets) == 0 &&
-		len(sr.middleware) == 0 &&
-		sr.responder == nil &&
+		len(sr.Handle) == 0 &&
+		len(sr.handlers) == 0 &&
 		!sr.Terminal &&
 		sr.Group == ""
 }
@@ -98,40 +92,27 @@ func (routes RouteList) Provision(ctx caddy.Context) error {
 		}
 		routes[i].MatcherSets = nil // allow GC to deallocate - TODO: Does this help?
 
-		// middleware
-		for j, rawMsg := range route.Apply {
-			mid, err := ctx.LoadModuleInline("middleware", "http.middleware", rawMsg)
+		// handlers
+		for j, rawMsg := range route.Handle {
+			mh, err := ctx.LoadModuleInline("handler", "http.handlers", rawMsg)
 			if err != nil {
-				return fmt.Errorf("loading middleware module in position %d: %v", j, err)
+				return fmt.Errorf("loading handler module in position %d: %v", j, err)
 			}
-			routes[i].middleware = append(routes[i].middleware, mid.(MiddlewareHandler))
+			routes[i].handlers = append(routes[i].handlers, mh.(MiddlewareHandler))
 		}
-		routes[i].Apply = nil // allow GC to deallocate - TODO: Does this help?
-
-		// responder
-		if route.Respond != nil {
-			resp, err := ctx.LoadModuleInline("responder", "http.responders", route.Respond)
-			if err != nil {
-				return fmt.Errorf("loading responder module: %v", err)
-			}
-			routes[i].responder = resp.(Handler)
-		}
-		routes[i].Respond = nil // allow GC to deallocate - TODO: Does this help?
+		routes[i].Handle = nil // allow GC to deallocate - TODO: Does this help?
 	}
 	return nil
 }
 
-// BuildCompositeRoute creates a chain of handlers by applying all the matching
-// routes. The returned ResponseWriter should be used instead of rw.
-func (routes RouteList) BuildCompositeRoute(rw http.ResponseWriter, req *http.Request) (Handler, http.ResponseWriter) {
-	mrw := &middlewareResponseWriter{ResponseWriterWrapper: &ResponseWriterWrapper{rw}}
-
+// BuildCompositeRoute creates a chain of handlers by
+// applying all of the matching routes.
+func (routes RouteList) BuildCompositeRoute(rw http.ResponseWriter, req *http.Request) Handler {
 	if len(routes) == 0 {
-		return emptyHandler, mrw
+		return emptyHandler
 	}
 
 	var mid []Middleware
-	var responder Handler
 	groups := make(map[string]struct{})
 
 	for _, route := range routes {
@@ -140,9 +121,8 @@ func (routes RouteList) BuildCompositeRoute(rw http.ResponseWriter, req *http.Re
 			continue
 		}
 
-		// if route is part of a group, ensure only
-		// the first matching route in the group is
-		// applied
+		// if route is part of a group, ensure only the
+		// first matching route in the group is applied
 		if route.Group != "" {
 			_, ok := groups[route.Group]
 			if ok {
@@ -155,78 +135,48 @@ func (routes RouteList) BuildCompositeRoute(rw http.ResponseWriter, req *http.Re
 		}
 
 		// apply the rest of the route
-		for _, m := range route.middleware {
-			// we have to be sure to wrap m outside
-			// of our current scope so that the
-			// reference to this m isn't overwritten
-			// on the next iteration, leaving only
-			// the last middleware in the chain as
-			// the ONLY middleware in the chain!
-			mid = append(mid, wrapMiddleware(m))
+		for _, mh := range route.handlers {
+			// we have to be sure to wrap mh outside
+			// of our current stack frame so that the
+			// reference to this mh isn't overwritten
+			// on the next iteration, leaving the last
+			// middleware in the chain as the ONLY
+			// middleware in the chain!
+			mid = append(mid, wrapMiddleware(mh))
 		}
-		if responder == nil {
-			responder = route.responder
-		}
+
+		// if this route is supposed to be last, don't
+		// compile any more into the chain
 		if route.Terminal {
 			break
 		}
 	}
 
-	// build the middleware stack, with the responder at the end
-	stack := HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
-		if responder == nil {
-			return nil
-		}
-		mrw.allowWrites = true
-		return responder.ServeHTTP(w, r)
-	})
+	// build the middleware chain, with the responder at the end
+	stack := emptyHandler
 	for i := len(mid) - 1; i >= 0; i-- {
 		stack = mid[i](stack)
 	}
 
-	return stack, mrw
+	return stack
 }
 
 // wrapMiddleware wraps m such that it can be correctly
-// appended to a list of middleware. This separate closure
-// is necessary so that only the last middleware in a loop
-// does not become the only middleware of the stack,
-// repeatedly executed (i.e. it is necessary to keep a
-// reference to this m outside of the scope of a loop)!
-func wrapMiddleware(m MiddlewareHandler) Middleware {
+// appended to a list of middleware. We can't do this
+// directly in a loop because it relies on a reference
+// to mh not changing until the execution of its handler,
+// which is deferred by multiple func closures. In other
+// words, we need to pull this particular MiddlewareHandler
+// pointer into its own stack frame to preserve it so it
+// won't be overwritten in future loop iterations.
+func wrapMiddleware(mh MiddlewareHandler) Middleware {
 	return func(next HandlerFunc) HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) error {
 			// TODO: This is where request tracing could be implemented; also
 			// see below to trace the responder as well
 			// TODO: Trace a diff of the request, would be cool too! see what changed since the last middleware (host, headers, URI...)
 			// TODO: see what the std lib gives us in terms of stack tracing too
-			return m.ServeHTTP(w, r, next)
+			return mh.ServeHTTP(w, r, next)
 		}
 	}
 }
-
-type middlewareResponseWriter struct {
-	*ResponseWriterWrapper
-	allowWrites bool
-}
-
-func (mrw middlewareResponseWriter) WriteHeader(statusCode int) {
-	if !mrw.allowWrites {
-		// technically, this is not true: middleware can write headers,
-		// but only after the responder handler has returned; either the
-		// responder did nothing with the response (sad face), or the
-		// middleware wrapped the response and deferred the write
-		panic("WriteHeader: middleware cannot write response headers")
-	}
-	mrw.ResponseWriterWrapper.WriteHeader(statusCode)
-}
-
-func (mrw middlewareResponseWriter) Write(b []byte) (int, error) {
-	if !mrw.allowWrites {
-		panic("Write: middleware cannot write to the response before responder")
-	}
-	return mrw.ResponseWriterWrapper.Write(b)
-}
-
-// Interface guard
-var _ HTTPInterfaces = (*middlewareResponseWriter)(nil)

@@ -36,7 +36,7 @@ import (
 
 func init() {
 	caddy.RegisterModule(caddy.Module{
-		Name: "http.middleware.encode",
+		Name: "http.handlers.encode",
 		New:  func() interface{} { return new(Encode) },
 	})
 }
