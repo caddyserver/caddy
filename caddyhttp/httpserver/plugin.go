@@ -655,6 +655,7 @@ var directives = []string{
 	"filter",       // github.com/echocat/caddy-filter
 	"ipfilter",     // github.com/pyed/ipfilter
 	"ratelimit",    // github.com/xuqingfeng/caddy-rate-limit
+	"recaptcha",    // github.com/defund/caddy-recaptcha
 	"expires",      // github.com/epicagency/caddy-expires
 	"forwardproxy", // github.com/caddyserver/forwardproxy
 	"basicauth",
@@ -664,14 +665,14 @@ var directives = []string{
 	"s3browser", // github.com/techknowlogick/caddy-s3browser
 	"nobots",    // github.com/Xumeiquer/nobots
 	"mime",
-        "login",      // github.com/tarent/loginsrv/caddy
-        "reauth",     // github.com/freman/caddy-reauth
-        "extauth",    // github.com/BTBurke/caddy-extauth
-        "jwt",        // github.com/BTBurke/caddy-jwt
-        "permission", // github.com/dhaavi/caddy-permission 
-        "jsonp",      // github.com/pschlump/caddy-jsonp
-        "upload",     // blitznote.com/src/caddy.upload
-        "multipass",  // github.com/namsral/multipass/caddy
+	"login",      // github.com/tarent/loginsrv/caddy
+	"reauth",     // github.com/freman/caddy-reauth
+	"extauth",    // github.com/BTBurke/caddy-extauth
+	"jwt",        // github.com/BTBurke/caddy-jwt
+	"permission", // github.com/dhaavi/caddy-permission
+	"jsonp",      // github.com/pschlump/caddy-jsonp
+	"upload",     // blitznote.com/src/caddy.upload
+	"multipass",  // github.com/namsral/multipass/caddy
 	"internal",
 	"pprof",
 	"expvar",
