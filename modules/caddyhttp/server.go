@@ -65,7 +65,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	addHTTPVarsToReplacer(repl, r, w)
 
 	// build and execute the main handler chain
-	stack := s.Routes.BuildCompositeRoute(w, r)
+	stack := s.Routes.BuildCompositeRoute(r)
 	stack = s.wrapPrimaryRoute(stack)
 	err := s.executeCompositeRoute(w, r, stack)
 	if err != nil {
@@ -85,7 +85,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if s.Errors != nil && len(s.Errors.Routes) > 0 {
-			errStack := s.Errors.Routes.BuildCompositeRoute(w, r)
+			errStack := s.Errors.Routes.BuildCompositeRoute(r)
 			err := s.executeCompositeRoute(w, r, errStack)
 			if err != nil {
 				// TODO: what should we do if the error handler has an error?
