@@ -107,7 +107,7 @@ func (routes RouteList) Provision(ctx caddy.Context) error {
 
 // BuildCompositeRoute creates a chain of handlers by
 // applying all of the matching routes.
-func (routes RouteList) BuildCompositeRoute(rw http.ResponseWriter, req *http.Request) Handler {
+func (routes RouteList) BuildCompositeRoute(req *http.Request) Handler {
 	if len(routes) == 0 {
 		return emptyHandler
 	}

@@ -323,8 +323,8 @@ func (app *App) automaticHTTPS() error {
 						},
 					},
 					handlers: []MiddlewareHandler{
-						Static{
-							StatusCode: strconv.Itoa(http.StatusTemporaryRedirect), // TODO: use permanent redirect instead
+						StaticResponse{
+							StatusCode: weakString(strconv.Itoa(http.StatusTemporaryRedirect)), // TODO: use permanent redirect instead
 							Headers: http.Header{
 								"Location":   []string{redirTo},
 								"Connection": []string{"close"},

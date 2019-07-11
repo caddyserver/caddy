@@ -35,9 +35,9 @@ func init() {
 
 // Templates is a middleware which execute response bodies as templates.
 type Templates struct {
-	FileRoot   string   `json:"file_root,omitempty"`
-	MIMETypes  []string `json:"mime_types,omitempty"`
-	Delimiters []string `json:"delimiters,omitempty"`
+	IncludeRoot string   `json:"include_root,omitempty"`
+	MIMETypes   []string `json:"mime_types,omitempty"`
+	Delimiters  []string `json:"delimiters,omitempty"`
 }
 
 // Provision provisions t.
@@ -107,8 +107,8 @@ func (t *Templates) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 // executeTemplate executes the template contained in wb.buf and replaces it with the results.
 func (t *Templates) executeTemplate(rr caddyhttp.ResponseRecorder, r *http.Request) error {
 	var fs http.FileSystem
-	if t.FileRoot != "" {
-		fs = http.Dir(t.FileRoot)
+	if t.IncludeRoot != "" {
+		fs = http.Dir(t.IncludeRoot)
 	}
 
 	ctx := &templateContext{
