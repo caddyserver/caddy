@@ -15,55 +15,166 @@
 package fileserver
 
 import (
+	"fmt"
 	"net/http"
 	"os"
+	"time"
 
+	"github.com/caddyserver/caddy/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2"
-	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
 func init() {
 	caddy.RegisterModule(caddy.Module{
 		Name: "http.matchers.file",
-		New:  func() interface{} { return new(FileMatcher) },
+		New:  func() interface{} { return new(MatchFile) },
 	})
 }
 
-// FileMatcher is a matcher that can match requests
-// based on the local file system.
-// TODO: Not sure how to do this well; we'd need the ability to
-// hide files, etc...
-// TODO: Also consider a feature to match directory that
-// contains a certain filename (use filepath.Glob), useful
-// if wanting to map directory-URI requests where the dir
-// has index.php to PHP backends, for example (although this
-// can effectively be done with rehandling already)
-type FileMatcher struct {
-	Root  string   `json:"root"`
-	Path  string   `json:"path"`
-	Flags []string `json:"flags"`
+// MatchFile is an HTTP request matcher that can match
+// requests based upon file existence.
+type MatchFile struct {
+	// The root directory, used for creating absolute
+	// file paths, and required when working with
+	// relative paths; if not specified, the current
+	// directory is assumed. Accepts placeholders.
+	Root string `json:"root,omitempty"`
+
+	// The list of files to try. Each path here is
+	// considered relatice to Root. If nil, the
+	// request URL's path will be assumed. Accepts
+	// placeholders.
+	TryFiles []string `json:"try_files,omitempty"`
+
+	// How to choose a file in TryFiles.
+	// Default is first_exist.
+	TryPolicy string `json:"try_policy,omitempty"`
 }
 
-// Match matches the request r against m.
-func (m FileMatcher) Match(r *http.Request) bool {
-	fullPath := sanitizedPathJoin(m.Root, m.Path)
-	var match bool
-	if len(m.Flags) > 0 {
-		match = true
-		fi, err := os.Stat(fullPath)
-		for _, f := range m.Flags {
-			switch f {
-			case "EXIST":
-				match = match && os.IsNotExist(err)
-			case "DIR":
-				match = match && err == nil && fi.IsDir()
-			default:
-				match = false
+// Validate ensures m has a valid configuration.
+func (m MatchFile) Validate() error {
+	switch m.TryPolicy {
+	case "",
+		tryPolicyFirstExist,
+		tryPolicyLargestSize,
+		tryPolicySmallestSize,
+		tryPolicyMostRecentMod:
+	default:
+		return fmt.Errorf("unknown try policy %s", m.TryPolicy)
+	}
+	return nil
+}
+
+// Match returns true if r matches m. Returns true
+// if a file was matched. If so, two placeholders
+// will be available:
+//    - http.matchers.file.relative
+//    - http.matchers.file.absolute
+func (m MatchFile) Match(r *http.Request) bool {
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
+	rel, abs, matched := m.selectFile(r)
+	if matched {
+		repl.Set("http.matchers.file.relative", rel)
+		repl.Set("http.matchers.file.absolute", abs)
+		return true
+	}
+	return false
+}
+
+// selectFile chooses a file according to m.TryPolicy by appending
+// the paths in m.TryFiles to m.Root, with placeholder replacements.
+// It returns the root-relative path to the matched file, the full
+// or absolute path, and whether a match was made.
+func (m MatchFile) selectFile(r *http.Request) (rel, abs string, matched bool) {
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
+
+	root := repl.ReplaceAll(m.Root, "")
+
+	// if list of files to try was omitted entirely,
+	// assume URL path
+	if m.TryFiles == nil {
+		// m is not a pointer, so this is safe
+		m.TryFiles = []string{r.URL.Path}
+	}
+
+	switch m.TryPolicy {
+	case "", tryPolicyFirstExist:
+		for _, f := range m.TryFiles {
+			suffix := repl.ReplaceAll(f, "")
+			fullpath := sanitizedPathJoin(root, suffix)
+			if fileExists(fullpath) {
+				return suffix, fullpath, true
 			}
 		}
+
+	case tryPolicyLargestSize:
+		var largestSize int64
+		var largestFilename string
+		var largestSuffix string
+		for _, f := range m.TryFiles {
+			suffix := repl.ReplaceAll(f, "")
+			fullpath := sanitizedPathJoin(root, suffix)
+			info, err := os.Stat(fullpath)
+			if err == nil && info.Size() > largestSize {
+				largestSize = info.Size()
+				largestFilename = fullpath
+				largestSuffix = suffix
+			}
+		}
+		return largestSuffix, largestFilename, true
+
+	case tryPolicySmallestSize:
+		var smallestSize int64
+		var smallestFilename string
+		var smallestSuffix string
+		for _, f := range m.TryFiles {
+			suffix := repl.ReplaceAll(f, "")
+			fullpath := sanitizedPathJoin(root, suffix)
+			info, err := os.Stat(fullpath)
+			if err == nil && (smallestSize == 0 || info.Size() < smallestSize) {
+				smallestSize = info.Size()
+				smallestFilename = fullpath
+				smallestSuffix = suffix
+			}
+		}
+		return smallestSuffix, smallestFilename, true
+
+	case tryPolicyMostRecentMod:
+		var recentDate time.Time
+		var recentFilename string
+		var recentSuffix string
+		for _, f := range m.TryFiles {
+			suffix := repl.ReplaceAll(f, "")
+			fullpath := sanitizedPathJoin(root, suffix)
+			info, err := os.Stat(fullpath)
+			if err == nil &&
+				(recentDate.IsZero() || info.ModTime().After(recentDate)) {
+				recentDate = info.ModTime()
+				recentFilename = fullpath
+				recentSuffix = suffix
+			}
+		}
+		return recentSuffix, recentFilename, true
 	}
-	return match
+
+	return
 }
 
-// Interface guard
-var _ caddyhttp.RequestMatcher = (*FileMatcher)(nil)
+// fileExists returns true if file exists.
+func fileExists(file string) bool {
+	_, err := os.Stat(file)
+	return !os.IsNotExist(err)
+}
+
+const (
+	tryPolicyFirstExist    = "first_exist"
+	tryPolicyLargestSize   = "largest_size"
+	tryPolicySmallestSize  = "smallest_size"
+	tryPolicyMostRecentMod = "most_recent_modified"
+)
+
+// Interface guards
+var (
+	_ caddy.Validator          = (*MatchFile)(nil)
+	_ caddyhttp.RequestMatcher = (*MatchFile)(nil)
+)

@@ -24,20 +24,20 @@ import (
 
 func init() {
 	caddy.RegisterModule(caddy.Module{
-		Name: "http.handlers.static",
-		New:  func() interface{} { return new(Static) },
+		Name: "http.handlers.static_response",
+		New:  func() interface{} { return new(StaticResponse) },
 	})
 }
 
-// Static implements a simple responder for static responses.
-type Static struct {
-	StatusCode string      `json:"status_code"`
+// StaticResponse implements a simple responder for static responses.
+type StaticResponse struct {
+	StatusCode weakString  `json:"status_code"`
 	Headers    http.Header `json:"headers"`
 	Body       string      `json:"body"`
 	Close      bool        `json:"close"`
 }
 
-func (s Static) ServeHTTP(w http.ResponseWriter, r *http.Request, _ Handler) error {
+func (s StaticResponse) ServeHTTP(w http.ResponseWriter, r *http.Request, _ Handler) error {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
 
 	// close the connection after responding
@@ -60,11 +60,12 @@ func (s Static) ServeHTTP(w http.ResponseWriter, r *http.Request, _ Handler) err
 
 	// get the status code
 	statusCode := http.StatusOK
-	if s.StatusCode != "" {
-		intVal, err := strconv.Atoi(repl.ReplaceAll(s.StatusCode, ""))
-		if err == nil {
-			statusCode = intVal
+	if codeStr := s.StatusCode.String(); codeStr != "" {
+		intVal, err := strconv.Atoi(repl.ReplaceAll(codeStr, ""))
+		if err != nil {
+			return Error(http.StatusInternalServerError, err)
 		}
+		statusCode = intVal
 	}
 
 	// write headers
@@ -79,4 +80,4 @@ func (s Static) ServeHTTP(w http.ResponseWriter, r *http.Request, _ Handler) err
 }
 
 // Interface guard
-var _ MiddlewareHandler = (*Static)(nil)
+var _ MiddlewareHandler = (*StaticResponse)(nil)

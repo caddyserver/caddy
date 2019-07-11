@@ -42,27 +42,15 @@ func init() {
 
 // FileServer implements a static file server responder for Caddy.
 type FileServer struct {
-	Root            string              `json:"root,omitempty"` // default is current directory
-	Hide            []string            `json:"hide,omitempty"`
-	IndexNames      []string            `json:"index_names,omitempty"`
-	Files           []string            `json:"files,omitempty"` // all relative to the root; default is request URI path
-	SelectionPolicy string              `json:"selection_policy,omitempty"`
-	Rehandle        bool                `json:"rehandle,omitempty"` // issue a rehandle (internal redirect) if request is rewritten
-	Fallback        caddyhttp.RouteList `json:"fallback,omitempty"`
-	Browse          *Browse             `json:"browse,omitempty"`
-	// TODO: Etag
+	Root       string   `json:"root,omitempty"` // default is current directory
+	Hide       []string `json:"hide,omitempty"`
+	IndexNames []string `json:"index_names,omitempty"`
+	Browse     *Browse  `json:"browse,omitempty"`
 	// TODO: Content negotiation
 }
 
 // Provision sets up the static files responder.
 func (fsrv *FileServer) Provision(ctx caddy.Context) error {
-	if fsrv.Fallback != nil {
-		err := fsrv.Fallback.Provision(ctx)
-		if err != nil {
-			return fmt.Errorf("setting up fallback routes: %v", err)
-		}
-	}
-
 	if fsrv.IndexNames == nil {
 		fsrv.IndexNames = defaultIndexNames
 	}
@@ -87,50 +75,14 @@ func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-const (
-	selectionPolicyFirstExisting = "first_existing"
-	selectionPolicyLargestSize   = "largest_size"
-	selectionPolicySmallestSize  = "smallest_size"
-	selectionPolicyRecentlyMod   = "most_recently_modified"
-)
-
-// Validate ensures that sf has a valid configuration.
-func (fsrv *FileServer) Validate() error {
-	switch fsrv.SelectionPolicy {
-	case "",
-		selectionPolicyFirstExisting,
-		selectionPolicyLargestSize,
-		selectionPolicySmallestSize,
-		selectionPolicyRecentlyMod:
-	default:
-		return fmt.Errorf("unknown selection policy %s", fsrv.SelectionPolicy)
-	}
-	return nil
-}
-
 func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, _ caddyhttp.Handler) error {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
 
 	filesToHide := fsrv.transformHidePaths(repl)
 
-	// map the request to a filename
-	pathBefore := r.URL.Path
-	filename := fsrv.selectFile(r, repl, filesToHide)
-	if filename == "" {
-		// no files worked, so resort to fallback
-		if fsrv.Fallback != nil {
-			fallback := fsrv.Fallback.BuildCompositeRoute(w, r)
-			return fallback.ServeHTTP(w, r)
-		}
-		return caddyhttp.Error(http.StatusNotFound, nil)
-	}
-
-	// if the ultimate destination has changed, submit
-	// this request for a rehandling (internal redirect)
-	// if configured to do so
-	if r.URL.Path != pathBefore && fsrv.Rehandle {
-		return caddyhttp.ErrRehandle
-	}
+	root := repl.ReplaceAll(fsrv.Root, "")
+	suffix := repl.ReplaceAll(r.URL.Path, "")
+	filename := sanitizedPathJoin(root, suffix)
 
 	// get information about the file
 	info, err := os.Stat(filename)
@@ -161,12 +113,8 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, _ cadd
 			}
 
 			// we found an index file that might work,
-			// so rewrite the request path and, if
-			// configured, do an internal redirect
+			// so rewrite the request path
 			r.URL.Path = path.Join(r.URL.Path, indexPage)
-			if fsrv.Rehandle {
-				return caddyhttp.ErrRehandle
-			}
 
 			info = indexInfo
 			filename = indexPath
@@ -308,107 +256,12 @@ func sanitizedPathJoin(root, reqPath string) string {
 	return filepath.Join(root, filepath.FromSlash(path.Clean("/"+reqPath)))
 }
 
-// selectFile uses the specified selection policy (or first_existing
-// by default) to map the request r to a filename. The full path to
-// the file is returned if one is found; otherwise, an empty string
-// is returned.
-func (fsrv *FileServer) selectFile(r *http.Request, repl caddy.Replacer, filesToHide []string) string {
-	root := repl.ReplaceAll(fsrv.Root, "")
-
-	if fsrv.Files == nil {
-		return sanitizedPathJoin(root, r.URL.Path)
-	}
-
-	switch fsrv.SelectionPolicy {
-	case "", selectionPolicyFirstExisting:
-		filesToHide := fsrv.transformHidePaths(repl)
-		for _, f := range fsrv.Files {
-			suffix := repl.ReplaceAll(f, "")
-			fullpath := sanitizedPathJoin(root, suffix)
-			if !fileHidden(fullpath, filesToHide) && fileExists(fullpath) {
-				r.URL.Path = suffix
-				return fullpath
-			}
-		}
-
-	case selectionPolicyLargestSize:
-		var largestSize int64
-		var largestFilename string
-		var largestSuffix string
-		for _, f := range fsrv.Files {
-			suffix := repl.ReplaceAll(f, "")
-			fullpath := sanitizedPathJoin(root, suffix)
-			if fileHidden(fullpath, filesToHide) {
-				continue
-			}
-			info, err := os.Stat(fullpath)
-			if err == nil && info.Size() > largestSize {
-				largestSize = info.Size()
-				largestFilename = fullpath
-				largestSuffix = suffix
-			}
-		}
-		r.URL.Path = largestSuffix
-		return largestFilename
-
-	case selectionPolicySmallestSize:
-		var smallestSize int64
-		var smallestFilename string
-		var smallestSuffix string
-		for _, f := range fsrv.Files {
-			suffix := repl.ReplaceAll(f, "")
-			fullpath := sanitizedPathJoin(root, suffix)
-			if fileHidden(fullpath, filesToHide) {
-				continue
-			}
-			info, err := os.Stat(fullpath)
-			if err == nil && (smallestSize == 0 || info.Size() < smallestSize) {
-				smallestSize = info.Size()
-				smallestFilename = fullpath
-				smallestSuffix = suffix
-			}
-		}
-		r.URL.Path = smallestSuffix
-		return smallestFilename
-
-	case selectionPolicyRecentlyMod:
-		var recentDate time.Time
-		var recentFilename string
-		var recentSuffix string
-		for _, f := range fsrv.Files {
-			suffix := repl.ReplaceAll(f, "")
-			fullpath := sanitizedPathJoin(root, suffix)
-			if fileHidden(fullpath, filesToHide) {
-				continue
-			}
-			info, err := os.Stat(fullpath)
-			if err == nil &&
-				(recentDate.IsZero() || info.ModTime().After(recentDate)) {
-				recentDate = info.ModTime()
-				recentFilename = fullpath
-				recentSuffix = suffix
-			}
-		}
-		r.URL.Path = recentSuffix
-		return recentFilename
-	}
-
-	return ""
-}
-
-// fileExists returns true if file exists.
-func fileExists(file string) bool {
-	_, err := os.Stat(file)
-	return !os.IsNotExist(err)
-}
-
 // fileHidden returns true if filename is hidden
 // according to the hide list.
 func fileHidden(filename string, hide []string) bool {
 	nameOnly := filepath.Base(filename)
 	sep := string(filepath.Separator)
 
-	// see if file is hidden
 	for _, h := range hide {
 		// assuming h is a glob/shell-like pattern,
 		// use it to compare the whole file path;
@@ -453,6 +306,5 @@ const minBackoff, maxBackoff = 2, 5
 // Interface guards
 var (
 	_ caddy.Provisioner           = (*FileServer)(nil)
-	_ caddy.Validator             = (*FileServer)(nil)
 	_ caddyhttp.MiddlewareHandler = (*FileServer)(nil)
 )
