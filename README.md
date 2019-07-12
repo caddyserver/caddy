@@ -67,10 +67,10 @@ $ curl -X POST "http://localhost:2019/load" \
                         "listen": ["127.0.0.1:2080"],
                         "routes": [
                             {
-                                "respond": {
-                                    "responder": "file_server",
+                                "handle": [{
+                                    "handler": "file_server",
                                     "browse": {}
-                                }
+                                }]
                             }
                         ]
                     }
@@ -159,19 +159,18 @@ The following is a non-comprehensive list of significant improvements over Caddy
 - All-new HTTP server core
 	- Listeners can be configured for any network type, address, and port range
 	- Customizable TLS connection policies
-	- HTTP handlers are configured by "routes" which consist of "match", "apply", and "respond" components. Match matches an HTTP request. Apply applies the specified middleware. Respond is the sole handler which responds to the request.
+	- HTTP handlers are configured by "routes" which consist of matcher and handler components. Match matches an HTTP request, and handle defines the list of handlers to invoke as a result of the match.
 	- Some matchers are regular expressions, which expose capture groups to placeholders.
 	- New matchers include negation and matching based on remote IP address / CIDR ranges.
     - Placeholders are vastly improved generally
 	- Placeholders (variables) are more properly namespaced.
 	- Multiple routes may match an HTTP request, creating a "composite route" quickly on the fly.
 	- The actual handler for any given request is its composite route.
-	- Only one handler can write to the response, avoiding potential "multiple calls to WriteHeader()" bugs that were too easy in Caddy 1.
 	- User defines the order of middlewares (careful! easy to break things).
 	- Adding middlewares no longer requires changes to Caddy's code base (there is no authoritative list).
 	- Routes may be marked as terminal, meaning no more routes will be matched.
 	- Routes may be grouped so that only the first matching route in a group is applied.
-	- Requests may be "re-handled" if they are modified and need to be sent through the chain again.
+	- Requests may be "re-handled" if they are modified and need to be sent through the chain again (internal redirect).
 	- Vastly more powerful static file server, with native content-negotiation abilities
     - Done away with URL-rewriting hacks often needed in Caddy 1
 	- Highly descriptive/traceable errors
