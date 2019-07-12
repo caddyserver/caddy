@@ -29,7 +29,7 @@ import (
 
 func init() {
 	caddy.RegisterModule(caddy.Module{
-		Name: "http.middleware.markdown",
+		Name: "http.handlers.markdown",
 		New:  func() interface{} { return new(Markdown) },
 	})
 }

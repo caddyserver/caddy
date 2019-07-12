@@ -24,7 +24,7 @@ import (
 
 func init() {
 	caddy.RegisterModule(caddy.Module{
-		Name: "http.middleware.headers",
+		Name: "http.handlers.headers",
 		New:  func() interface{} { return new(Headers) },
 	})
 }

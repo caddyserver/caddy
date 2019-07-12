@@ -22,7 +22,7 @@ import (
 
 func init() {
 	caddy.RegisterModule(caddy.Module{
-		Name: "http.middleware.table",
+		Name: "http.handlers.table",
 		New:  func() interface{} { return new(tableMiddleware) },
 	})
 
