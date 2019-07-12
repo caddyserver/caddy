@@ -23,10 +23,15 @@ import (
 	"log"
 	"net"
 	"os"
+
+	"github.com/caddyserver/caddy/v2"
 )
 
-// Main executes the main function of the caddy command.
+// Main implements the main function of the caddy command.
+// Call this if Caddy is to be the main() if your program.
 func Main() {
+	caddy.TrapSignals()
+
 	if len(os.Args) <= 1 {
 		fmt.Println(usageString())
 		return
@@ -35,7 +40,7 @@ func Main() {
 	subcommand, ok := commands[os.Args[1]]
 	if !ok {
 		fmt.Printf("%q is not a valid command\n", os.Args[1])
-		os.Exit(2)
+		os.Exit(caddy.ExitCodeFailedStartup)
 	}
 
 	if exitCode, err := subcommand(); err != nil {

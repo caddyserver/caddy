@@ -150,19 +150,44 @@ func Run(newCfg *Config) error {
 	currentCfg = newCfg
 
 	// Stop, Cleanup each old app
-	if oldCfg != nil {
-		for name, a := range oldCfg.apps {
-			err := a.Stop()
-			if err != nil {
-				log.Printf("[ERROR] stop %s: %v", name, err)
-			}
-		}
-
-		// clean up all old modules
-		oldCfg.cancelFunc()
-	}
+	unsyncedStop(oldCfg)
 
 	return nil
+}
+
+// Stop stops running the current configuration.
+// It is the antithesis of Run(). This function
+// will log any errors that occur during the
+// stopping of individual apps and continue to
+// stop the others.
+func Stop() error {
+	currentCfgMu.Lock()
+	defer currentCfgMu.Unlock()
+	unsyncedStop(currentCfg)
+	currentCfg = nil
+	return nil
+}
+
+// unsyncedStop stops oldCfg from running, but if
+// applicable, you need to acquire locks yourself.
+// It is a no-op if oldCfg is nil. If any app
+// returns an error when stopping, it is logged
+// and the function continues with the next app.
+func unsyncedStop(oldCfg *Config) {
+	if oldCfg == nil {
+		return
+	}
+
+	// stop each app
+	for name, a := range oldCfg.apps {
+		err := a.Stop()
+		if err != nil {
+			log.Printf("[ERROR] stop %s: %v", name, err)
+		}
+	}
+
+	// clean up all old modules
+	oldCfg.cancelFunc()
 }
 
 // Duration is a JSON-string-unmarshable duration type.
@@ -199,6 +224,7 @@ func GoModule() *debug.Module {
 }
 
 // goModule is the name of this Go module.
+// TODO: we should be able to find this at runtime, see https://github.com/golang/go/issues/29228
 const goModule = "github.com/caddyserver/caddy/v2"
 
 // CtxKey is a value type for use with context.WithValue.
