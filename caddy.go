@@ -209,23 +209,22 @@ func (d *Duration) UnmarshalJSON(b []byte) error {
 // value will still be returned, but with an
 // unknown version.
 func GoModule() *debug.Module {
+	mod := &debug.Module{Version: "unknown"}
 	bi, ok := debug.ReadBuildInfo()
 	if ok {
+		mod.Path = bi.Main.Path
 		// The recommended way to build Caddy involves
 		// creating a separate main module, which
 		// TODO: track related Go issue: https://github.com/golang/go/issues/29228
-		for _, mod := range bi.Deps {
-			if mod.Path == goModule {
-				return mod
+		// once that issue is fixed, we should just be able to use bi.Main... hopefully.
+		for _, dep := range bi.Deps {
+			if dep.Path == mod.Path {
+				return dep
 			}
 		}
 	}
-	return &debug.Module{Version: "unknown"}
+	return mod
 }
-
-// goModule is the name of this Go module.
-// TODO: we should be able to find this at runtime, see https://github.com/golang/go/issues/29228
-const goModule = "github.com/caddyserver/caddy/v2"
 
 // CtxKey is a value type for use with context.WithValue.
 type CtxKey string

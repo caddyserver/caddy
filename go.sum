@@ -6,8 +6,6 @@ github.com/Masterminds/semver v1.4.2 h1:WBLTQ37jOCzSLtXNdoo8bNM8876KhNqOKvrlGITg
 github.com/Masterminds/semver v1.4.2/go.mod h1:MB6lktGJrhw8PrUyiEoblNEGEQ+RzHPF078ddwwvV3Y=
 github.com/Masterminds/sprig v2.20.0+incompatible h1:dJTKKuUkYW3RMFdQFXPU/s6hg10RgctmTjRcbZ98Ap8=
 github.com/Masterminds/sprig v2.20.0+incompatible/go.mod h1:y6hNFY5UBTIWBxnzTeuNhlNS5hqE0NB0E6fgfo2Br3o=
-github.com/andybalholm/brotli v0.0.0-20190430215306-5c318f9037cb h1:Qs8/an94NFS1x2nn7rSI+skKFuw/EGfEYAGS3w/p+jc=
-github.com/andybalholm/brotli v0.0.0-20190430215306-5c318f9037cb/go.mod h1:+lx6/Aqd1kLJ1GQfkvOnaZ1WGmLpMpbprPuIOOZX30U=
 github.com/andybalholm/brotli v0.0.0-20190704151324-71eb68cc467c h1:pBKtfXLqKZ+GPHGjlBheGaXK2lddydUG3XhWGrYjxOA=
 github.com/andybalholm/brotli v0.0.0-20190704151324-71eb68cc467c/go.mod h1:+lx6/Aqd1kLJ1GQfkvOnaZ1WGmLpMpbprPuIOOZX30U=
 github.com/cenkalti/backoff v2.1.1+incompatible h1:tKJnvO2kl0zmb/jA5UKAt4VoEVw1qxKWjE/Bpp46npY=
