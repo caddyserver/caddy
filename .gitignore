@@ -1,4 +1,6 @@
 _gitignore/
+*.log
+Caddyfile
 
 # artifacts from pprof tooling
 *.prof

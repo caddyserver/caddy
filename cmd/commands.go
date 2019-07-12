@@ -44,7 +44,8 @@ func cmdStart() (int, error) {
 	// it is ready to confirm that it has successfully started
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		return 1, fmt.Errorf("opening listener for success confirmation: %v", err)
+		return caddy.ExitCodeFailedStartup,
+			fmt.Errorf("opening listener for success confirmation: %v", err)
 	}
 	defer ln.Close()
 
@@ -63,7 +64,8 @@ func cmdStart() (int, error) {
 	}
 	stdinpipe, err := cmd.StdinPipe()
 	if err != nil {
-		return 1, fmt.Errorf("creating stdin pipe: %v", err)
+		return caddy.ExitCodeFailedStartup,
+			fmt.Errorf("creating stdin pipe: %v", err)
 	}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -72,7 +74,7 @@ func cmdStart() (int, error) {
 	expect := make([]byte, 32)
 	_, err = rand.Read(expect)
 	if err != nil {
-		return 1, fmt.Errorf("generating random confirmation bytes: %v", err)
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("generating random confirmation bytes: %v", err)
 	}
 
 	// begin writing the confirmation bytes to the child's
@@ -87,7 +89,7 @@ func cmdStart() (int, error) {
 	// start the process
 	err = cmd.Start()
 	if err != nil {
-		return 1, fmt.Errorf("starting caddy process: %v", err)
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("starting caddy process: %v", err)
 	}
 
 	// there are two ways we know we're done: either
@@ -125,10 +127,11 @@ func cmdStart() (int, error) {
 	case <-success:
 		fmt.Println("Successfully started Caddy")
 	case err := <-exit:
-		return 1, fmt.Errorf("caddy process exited with error: %v", err)
+		return caddy.ExitCodeFailedStartup,
+			fmt.Errorf("caddy process exited with error: %v", err)
 	}
 
-	return 0, nil
+	return caddy.ExitCodeSuccess, nil
 }
 
 func cmdRun() (int, error) {
@@ -144,7 +147,8 @@ func cmdRun() (int, error) {
 		var err error
 		config, err = ioutil.ReadFile(*runCmdConfigFlag)
 		if err != nil {
-			return 1, fmt.Errorf("reading config file: %v", err)
+			return caddy.ExitCodeFailedStartup,
+				fmt.Errorf("reading config file: %v", err)
 		}
 	}
 
@@ -156,7 +160,8 @@ func cmdRun() (int, error) {
 	// start the admin endpoint along with any initial config
 	err := caddy.StartAdmin(config)
 	if err != nil {
-		return 1, fmt.Errorf("starting caddy administration endpoint: %v", err)
+		return caddy.ExitCodeFailedStartup,
+			fmt.Errorf("starting caddy administration endpoint: %v", err)
 	}
 	defer caddy.StopAdmin()
 
@@ -165,16 +170,19 @@ func cmdRun() (int, error) {
 	if *runCmdPingbackFlag != "" {
 		confirmationBytes, err := ioutil.ReadAll(os.Stdin)
 		if err != nil {
-			return 1, fmt.Errorf("reading confirmation bytes from stdin: %v", err)
+			return caddy.ExitCodeFailedStartup,
+				fmt.Errorf("reading confirmation bytes from stdin: %v", err)
 		}
 		conn, err := net.Dial("tcp", *runCmdPingbackFlag)
 		if err != nil {
-			return 1, fmt.Errorf("dialing confirmation address: %v", err)
+			return caddy.ExitCodeFailedStartup,
+				fmt.Errorf("dialing confirmation address: %v", err)
 		}
 		defer conn.Close()
 		_, err = conn.Write(confirmationBytes)
 		if err != nil {
-			return 1, fmt.Errorf("writing confirmation bytes to %s: %v", *runCmdPingbackFlag, err)
+			return caddy.ExitCodeFailedStartup,
+				fmt.Errorf("writing confirmation bytes to %s: %v", *runCmdPingbackFlag, err)
 		}
 	}
 
@@ -184,7 +192,7 @@ func cmdRun() (int, error) {
 func cmdStop() (int, error) {
 	processList, err := ps.Processes()
 	if err != nil {
-		return 1, fmt.Errorf("listing processes: %v", err)
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("listing processes: %v", err)
 	}
 	thisProcName := filepath.Base(os.Args[0])
 	var found bool
@@ -195,15 +203,15 @@ func cmdStop() (int, error) {
 			fmt.Printf("pid=%d\n", p.Pid())
 			fmt.Printf("Graceful stop...")
 			if err := gracefullyStopProcess(p.Pid()); err != nil {
-				return 1, err
+				return caddy.ExitCodeFailedStartup, err
 			}
 		}
 	}
 	if !found {
-		return 1, fmt.Errorf("Caddy is not running")
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("Caddy is not running")
 	}
 	fmt.Println(" success")
-	return 0, nil
+	return caddy.ExitCodeSuccess, nil
 }
 
 func cmdReload() (int, error) {
@@ -214,13 +222,15 @@ func cmdReload() (int, error) {
 
 	// a configuration is required
 	if *reloadCmdConfigFlag == "" {
-		return 1, fmt.Errorf("no configuration to load (use --config)")
+		return caddy.ExitCodeFailedStartup,
+			fmt.Errorf("no configuration to load (use --config)")
 	}
 
 	// load the configuration file
 	config, err := ioutil.ReadFile(*reloadCmdConfigFlag)
 	if err != nil {
-		return 1, fmt.Errorf("reading config file: %v", err)
+		return caddy.ExitCodeFailedStartup,
+			fmt.Errorf("reading config file: %v", err)
 	}
 
 	// get the address of the admin listener and craft endpoint URL
@@ -231,7 +241,8 @@ func cmdReload() (int, error) {
 		}
 		err = json.Unmarshal(config, &tmpStruct)
 		if err != nil {
-			return 1, fmt.Errorf("unmarshaling admin listener address from config: %v", err)
+			return caddy.ExitCodeFailedStartup,
+				fmt.Errorf("unmarshaling admin listener address from config: %v", err)
 		}
 		adminAddr = tmpStruct.Admin.Listen
 	}
@@ -243,7 +254,8 @@ func cmdReload() (int, error) {
 	// send the configuration to the instance
 	resp, err := http.Post(adminEndpoint, "application/json", bytes.NewReader(config))
 	if err != nil {
-		return 1, fmt.Errorf("sending configuration to instance: %v", err)
+		return caddy.ExitCodeFailedStartup,
+			fmt.Errorf("sending configuration to instance: %v", err)
 	}
 	defer resp.Body.Close()
 
@@ -251,12 +263,14 @@ func cmdReload() (int, error) {
 	if resp.StatusCode >= 400 {
 		respBody, err := ioutil.ReadAll(io.LimitReader(resp.Body, 1024*10))
 		if err != nil {
-			return 1, fmt.Errorf("HTTP %d: reading error message: %v", resp.StatusCode, err)
+			return caddy.ExitCodeFailedStartup,
+				fmt.Errorf("HTTP %d: reading error message: %v", resp.StatusCode, err)
 		}
-		return 1, fmt.Errorf("caddy responded with error: HTTP %d: %s", resp.StatusCode, respBody)
+		return caddy.ExitCodeFailedStartup,
+			fmt.Errorf("caddy responded with error: HTTP %d: %s", resp.StatusCode, respBody)
 	}
 
-	return 0, nil
+	return caddy.ExitCodeSuccess, nil
 }
 
 func cmdVersion() (int, error) {
@@ -267,19 +281,19 @@ func cmdVersion() (int, error) {
 	} else {
 		fmt.Println(goModule.Version)
 	}
-	return 0, nil
+	return caddy.ExitCodeSuccess, nil
 }
 
 func cmdListModules() (int, error) {
 	for _, m := range caddy.Modules() {
 		fmt.Println(m)
 	}
-	return 0, nil
+	return caddy.ExitCodeSuccess, nil
 }
 
 func cmdEnviron() (int, error) {
 	for _, v := range os.Environ() {
 		fmt.Println(v)
 	}
-	return 0, nil
+	return caddy.ExitCodeSuccess, nil
 }
