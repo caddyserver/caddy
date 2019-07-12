@@ -85,6 +85,10 @@ func (app *App) Provision(ctx caddy.Context) error {
 				return fmt.Errorf("setting up server error handling routes: %v", err)
 			}
 		}
+
+		if srv.MaxRehandles == nil {
+			srv.MaxRehandles = &DefaultMaxRehandles
+		}
 	}
 
 	return nil
@@ -111,8 +115,8 @@ func (app *App) Validate() error {
 
 	// each server's max rehandle value must be valid
 	for srvName, srv := range app.Servers {
-		if srv.MaxRehandles < 0 {
-			return fmt.Errorf("%s: invalid max_rehandles value: %d", srvName, srv.MaxRehandles)
+		if srv.MaxRehandles != nil && *srv.MaxRehandles < 0 {
+			return fmt.Errorf("%s: invalid max_rehandles value: %d", srvName, *srv.MaxRehandles)
 		}
 	}
 
@@ -434,6 +438,10 @@ const (
 	// DefaultHTTPSPort is the default port for HTTPS.
 	DefaultHTTPSPort = 443
 )
+
+// DefaultMaxRehandles is the maximum number of rehandles to
+// allow, if not specified explicitly.
+var DefaultMaxRehandles = 3
 
 // Interface guards
 var (
