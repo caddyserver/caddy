@@ -23,7 +23,7 @@ import (
 
 func init() {
 	caddy.RegisterModule(caddy.Module{
-		Name: "http.middleware.request_body",
+		Name: "http.handlers.request_body",
 		New:  func() interface{} { return new(RequestBody) },
 	})
 }

@@ -28,6 +28,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/caddyserver/caddy/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2"
 )
 
@@ -120,7 +121,7 @@ func NewLoadBalancedReverseProxy(lb *LoadBalanced, ctx caddy.Context) error {
 		}
 
 		// setup any configured circuit breakers
-		var cbModule = "http.responders.reverse_proxy.circuit_breaker"
+		var cbModule = "http.handlers.reverse_proxy.circuit_breaker"
 		var cb CircuitBreaker
 
 		if uc.CircuitBreaker != nil {
@@ -209,9 +210,9 @@ func (lb *LoadBalanced) Provision(ctx caddy.Context) error {
 	return NewLoadBalancedReverseProxy(lb, ctx)
 }
 
-// ServeHTTP implements the http.Handler interface to dispatch an http request to the proper
-// server.
-func (lb *LoadBalanced) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
+// ServeHTTP implements the caddyhttp.MiddlewareHandler interface to
+// dispatch an HTTP request to the proper server.
+func (lb *LoadBalanced) ServeHTTP(w http.ResponseWriter, r *http.Request, _ caddyhttp.Handler) error {
 	// ensure requests don't hang if an upstream does not respond or is not eventually healthy
 	var u *upstream
 	var done bool
@@ -440,3 +441,10 @@ func newReverseProxy(target *url.URL, setHealthiness func(bool)) *ReverseProxy {
 	rp.Transport = defaultTransport // use default transport that times out in 5 seconds
 	return rp
 }
+
+// Interface guards
+var (
+	_ caddyhttp.MiddlewareHandler = (*LoadBalanced)(nil)
+	_ caddy.Provisioner           = (*LoadBalanced)(nil)
+	_ caddy.CleanerUpper          = (*LoadBalanced)(nil)
+)
