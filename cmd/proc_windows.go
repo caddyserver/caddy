@@ -15,15 +15,24 @@
 package caddycmd
 
 import (
-	"fmt"
-	"os/exec"
-	"strconv"
+    "fmt"
+    "os/exec"
+    "strconv"
 )
 
 func gracefullyStopProcess(pid int) error {
-	cmd := exec.Command("taskkill", "/pid", strconv.Itoa(pid))
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("taskkill: %v", err)
-	}
-	return nil
+    fmt.Printf("Stop...")
+    // process on windows will not stop unless forced with /f
+    cmd := exec.Command("taskkill", "/pid", strconv.Itoa(pid),"/f")
+    if err := cmd.Run(); err != nil {
+        return fmt.Errorf("taskkill: %v", err)
+    }
+    return nil
+}
+
+func matchProcess(appname string, processname string ) bool {
+
+    // on Windows the process name will include the extension
+    return  appname == processname + ".exe"
+
 }

@@ -17,14 +17,19 @@
 package caddycmd
 
 import (
-	"fmt"
-	"syscall"
+    "fmt"
+    "syscall"
 )
 
 func gracefullyStopProcess(pid int) error {
-	err := syscall.Kill(pid, syscall.SIGINT)
-	if err != nil {
-		return fmt.Errorf("kill: %v", err)
-	}
-	return nil
+    fmt.Printf("Graceful stop...")
+    err := syscall.Kill(pid, syscall.SIGINT)
+    if err != nil {
+        return fmt.Errorf("kill: %v", err)
+    }
+    return nil
+}
+
+func matchProcess(appname string, processname string ) bool {    
+    return  appname == processname 
 }
