@@ -22,6 +22,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"os"
 	"net/http"
 	"net/http/pprof"
 	"strings"
@@ -83,6 +84,8 @@ func StartAdmin(initialConfigJSON []byte) error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/load", handleLoadConfig)
+	mux.HandleFunc("/stop", handleStop)
+
 
 	///// BEGIN PPROF STUFF (TODO: Temporary) /////
 	mux.HandleFunc("/debug/pprof/", pprof.Index)
@@ -149,7 +152,7 @@ type AdminRoute struct {
 
 func handleLoadConfig(w http.ResponseWriter, r *http.Request) {
 	r.Close = true
-	if r.Method != "POST" {
+	if r.Method != http.MethodPost {
 		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 		return
 	}
@@ -165,6 +168,16 @@ func handleLoadConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+}
+
+func handleStop(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost {
+		log.Println("Shutting down...")
+		Stop()		
+		log.Println("Shut down.")
+		os.Exit(0)
+	}
+	return
 }
 
 // Load loads and starts a configuration.
