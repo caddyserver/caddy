@@ -81,7 +81,7 @@ To build from source you need **[Git](https://git-scm.com/downloads)** and **[Go
 
 <!-- TODO: This env variable will not be required starting with Go 1.13 -->
 1. Set the transitional environment variable for Go modules: `export GO111MODULE=on`
-2. Run `go get github.com/caddyserver/caddy/caddy`
+2. Run `go get github.com/caddyserver/caddy`
 
 Caddy will be installed to your `$GOPATH/bin` folder.
 
