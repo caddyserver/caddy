@@ -98,7 +98,7 @@ There is no need to modify the Caddy code to build it with plugins. We will crea
 package main
 
 import (
-	"github.com/caddyserver/caddy/caddy/caddymain"
+	"github.com/caddyserver/caddy/caddymain"
 	
 	// plug in plugins here, for example:
 	// _ "import/path/here"
