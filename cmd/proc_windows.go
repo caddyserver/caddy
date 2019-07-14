@@ -31,8 +31,6 @@ func gracefullyStopProcess(pid int) error {
 }
 
 func matchProcess(appname string, processname string ) bool {
-
     // on Windows the process name will include the extension
     return  appname == processname + ".exe"
-
 }
