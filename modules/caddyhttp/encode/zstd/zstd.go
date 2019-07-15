@@ -27,7 +27,7 @@ func init() {
 	})
 }
 
-// Zstd can create zstd encoders.
+// Zstd can create Zstandard encoders.
 type Zstd struct{}
 
 // AcceptEncoding returns the name of the encoding as

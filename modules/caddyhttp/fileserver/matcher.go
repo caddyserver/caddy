@@ -76,9 +76,8 @@ func (m MatchFile) Match(r *http.Request) bool {
 	if matched {
 		repl.Set("http.matchers.file.relative", rel)
 		repl.Set("http.matchers.file.absolute", abs)
-		return true
 	}
-	return false
+	return matched
 }
 
 // selectFile chooses a file according to m.TryPolicy by appending
