@@ -208,8 +208,8 @@ func (d *Duration) UnmarshalJSON(b []byte) error {
 // If no version information is available, a non-nil
 // value will still be returned, but with an
 // unknown version.
-func GoModule() *debug.Module {
-	mod := &debug.Module{Version: "unknown"}
+func GoModule() debug.Module {
+	mod := debug.Module{Version: "unknown"}
 	bi, ok := debug.ReadBuildInfo()
 	if ok {
 		mod.Path = bi.Main.Path
@@ -219,9 +219,10 @@ func GoModule() *debug.Module {
 		// once that issue is fixed, we should just be able to use bi.Main... hopefully.
 		for _, dep := range bi.Deps {
 			if dep.Path == mod.Path {
-				return dep
+				return *dep
 			}
 		}
+		return bi.Main
 	}
 	return mod
 }
