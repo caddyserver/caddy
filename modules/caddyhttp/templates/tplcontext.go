@@ -27,7 +27,7 @@ import (
 
 	"github.com/Masterminds/sprig"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
-	"gopkg.in/russross/blackfriday.v2"
+	"github.com/russross/blackfriday/v2"
 )
 
 // templateContext is the templateContext with which HTTP templates are executed.
