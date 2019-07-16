@@ -22,13 +22,14 @@ import (
 	"io"
 	"log"
 	"net"
-	"os"
 	"net/http"
 	"net/http/pprof"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/mholt/certmagic"
 	"github.com/rs/cors"
 )
 
@@ -85,7 +86,6 @@ func StartAdmin(initialConfigJSON []byte) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/load", handleLoadConfig)
 	mux.HandleFunc("/stop", handleStop)
-
 
 	///// BEGIN PPROF STUFF (TODO: Temporary) /////
 	mux.HandleFunc("/debug/pprof/", pprof.Index)
@@ -171,13 +171,24 @@ func handleLoadConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleStop(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodPost {
-		log.Println("Shutting down...")
-		Stop()		
-		log.Println("Shut down.")
-		os.Exit(0)
+	if r.Method != http.MethodPost {
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
 	}
-	return
+	log.Println("[ADMIN] Initiating shutdown")
+	if err := stopandCleanup(); err != nil {
+		log.Printf("[ADMIN][ERROR] stopping: %v \n", err)
+	}
+	log.Println("[ADMIN] Exiting")
+	os.Exit(0)
+}
+
+func stopandCleanup() error {
+	if err := Stop(); err != nil {
+		return err
+	}
+	certmagic.CleanUpOwnLocks()
+	return nil
 }
 
 // Load loads and starts a configuration.
