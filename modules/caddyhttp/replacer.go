@@ -15,86 +15,143 @@
 package caddyhttp
 
 import (
-	"fmt"
 	"net"
 	"net/http"
+	"net/textproto"
 	"path"
+	"strconv"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
 )
 
-// TODO: A simple way to format or escape or encode each value would be nice
-// ... TODO: Should we just use templates? :-/ yeesh...
-
 func addHTTPVarsToReplacer(repl caddy.Replacer, req *http.Request, w http.ResponseWriter) {
-	httpVars := func() map[string]string {
-		m := make(map[string]string)
+	httpVars := func(key string) (string, bool) {
 		if req != nil {
-			m["http.request.host"] = func() string {
+			if strings.HasPrefix(key, queryReplPrefix) {
+				vals := req.URL.Query()[key[len(queryReplPrefix):]]
+				// always return true, since the query param might
+				// be present only in some requests
+				return strings.Join(vals, ","), true
+			}
+
+			if strings.HasPrefix(key, reqHeaderReplPrefix) {
+				field := key[len(reqHeaderReplPrefix):]
+				vals := req.Header[textproto.CanonicalMIMEHeaderKey(field)]
+				// always return true, since the header field might
+				// be present only in some requests
+				return strings.Join(vals, ","), true
+			}
+
+			if strings.HasPrefix(key, cookieReplPrefix) {
+				name := key[len(cookieReplPrefix):]
+				for _, cookie := range req.Cookies() {
+					if strings.EqualFold(name, cookie.Name) {
+						// always return true, since the cookie might
+						// be present only in some requests
+						return cookie.Value, true
+					}
+				}
+			}
+
+			switch key {
+			case "http.request.host":
 				host, _, err := net.SplitHostPort(req.Host)
 				if err != nil {
-					return req.Host // OK; there probably was no port
+					return req.Host, true // OK; there probably was no port
 				}
-				return host
-			}()
-			m["http.request.hostport"] = req.Host // may include both host and port
-			m["http.request.method"] = req.Method
-			m["http.request.port"] = func() string {
-				// if there is no port, there will be an error; in
-				// that case, port is the empty string anyway
+				return host, true
+			case "http.request.hostport":
+				return req.Host, true
+			case "http.request.method":
+				return req.Method, true
+			case "http.request.port":
 				_, port, _ := net.SplitHostPort(req.Host)
-				return port
-			}()
-			m["http.request.scheme"] = func() string {
+				return port, true
+			case "http.request.scheme":
 				if req.TLS != nil {
-					return "https"
+					return "https", true
 				}
-				return "http"
-			}()
-			m["http.request.uri"] = req.URL.RequestURI()
-			m["http.request.uri.path"] = req.URL.Path
-			m["http.request.uri.path.file"] = func() string {
+				return "http", true
+			case "http.request.uri":
+				return req.URL.RequestURI(), true
+			case "http.request.uri.path":
+				return req.URL.Path, true
+			case "http.request.uri.path.file":
 				_, file := path.Split(req.URL.Path)
-				return file
-			}()
-			m["http.request.uri.path.dir"] = func() string {
+				return file, true
+			case "http.request.uri.path.dir":
 				dir, _ := path.Split(req.URL.Path)
-				return dir
-			}()
-			m["http.request.uri.query"] = req.URL.RawQuery
-
-			for param, vals := range req.URL.Query() {
-				m["http.request.uri.query."+param] = strings.Join(vals, ",")
-			}
-			for field, vals := range req.Header {
-				m["http.request.header."+strings.ToLower(field)] = strings.Join(vals, ",")
-			}
-			for _, cookie := range req.Cookies() {
-				m["http.request.cookie."+cookie.Name] = cookie.Value
+				return dir, true
+			case "http.request.uri.query":
+				return req.URL.RawQuery, true
 			}
 
-			hostLabels := strings.Split(req.Host, ".")
-			for i, label := range hostLabels {
-				key := fmt.Sprintf("http.request.host.labels.%d", len(hostLabels)-i-1)
-				m[key] = label
+			if strings.HasPrefix(key, respHeaderReplPrefix) {
+				field := key[len(respHeaderReplPrefix):]
+				vals := w.Header()[textproto.CanonicalMIMEHeaderKey(field)]
+				// always return true, since the header field might
+				// be present only in some requests
+				return strings.Join(vals, ","), true
 			}
 
-			pathParts := strings.Split(req.URL.Path, "/")
-			for i, label := range pathParts {
-				key := fmt.Sprintf("http.request.uri.path.%d", i)
-				m[key] = label
+			if strings.HasPrefix(key, hostLabelReplPrefix) {
+				idxStr := key[len(hostLabelReplPrefix):]
+				idx, err := strconv.Atoi(idxStr)
+				if err != nil {
+					return "", false
+				}
+				hostLabels := strings.Split(req.Host, ".")
+				if idx < 0 {
+					return "", false
+				}
+				if idx >= len(hostLabels) {
+					return "", true
+				}
+				return hostLabels[idx], true
+			}
+
+			if strings.HasPrefix(key, pathPartsReplPrefix) {
+				idxStr := key[len(pathPartsReplPrefix):]
+				idx, err := strconv.Atoi(idxStr)
+				if err != nil {
+					return "", false
+				}
+				pathParts := strings.Split(req.URL.Path, "/")
+				if len(pathParts) > 0 && pathParts[0] == "" {
+					pathParts = pathParts[1:]
+				}
+				if idx < 0 {
+					return "", false
+				}
+				if idx >= len(pathParts) {
+					return "", true
+				}
+				return pathParts[idx], true
 			}
 		}
 
 		if w != nil {
-			for field, vals := range w.Header() {
-				m["http.response.header."+strings.ToLower(field)] = strings.Join(vals, ",")
+			if strings.HasPrefix(key, respHeaderReplPrefix) {
+				field := key[len(respHeaderReplPrefix):]
+				vals := w.Header()[textproto.CanonicalMIMEHeaderKey(field)]
+				// always return true, since the header field might
+				// be present only in some responses
+				return strings.Join(vals, ","), true
 			}
 		}
 
-		return m
+		return "", false
 	}
 
 	repl.Map(httpVars)
 }
+
+const (
+	queryReplPrefix      = "http.request.uri.query."
+	reqHeaderReplPrefix  = "http.request.header."
+	cookieReplPrefix     = "http.request.cookie."
+	hostLabelReplPrefix  = "http.request.host.labels."
+	pathPartsReplPrefix  = "http.request.uri.path."
+	respHeaderReplPrefix = "http.response.header."
+)
