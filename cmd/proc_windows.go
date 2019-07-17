@@ -16,7 +16,9 @@ package caddycmd
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 )
 
@@ -30,7 +32,13 @@ func gracefullyStopProcess(pid int) error {
 	return nil
 }
 
-func matchProcess(appname string, processname string) bool {
-	// on Windows the process name will include the extension
-	return appname == processname+".exe"
+// On Windows the app name passed in os.Args[0] will match how
+// caddy was started eg will match caddy or caddy.exe.
+// So return appname with .exe for consistency
+func getAppName() string {
+	base := filepath.Base(os.Args[0])
+	if filepath.Ext(base) == "" {
+		return base + ".exe"
+	}
+	return base
 }

@@ -27,7 +27,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
+
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
@@ -194,11 +194,11 @@ func cmdStop() (int, error) {
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("listing processes: %v", err)
 	}
-	thisProcName := filepath.Base(os.Args[0])
+	thisProcName := getAppName()
 	var found bool
 	for _, p := range processList {
 		// the process we're looking for should have the same name but different PID
-		if matchProcess(p.Executable(), thisProcName) && p.Pid() != os.Getpid() {
+		if p.Executable() == thisProcName && p.Pid() != os.Getpid() {
 			found = true
 			fmt.Printf("pid=%d\n", p.Pid())
 
