@@ -119,8 +119,8 @@ func (r *replacer) ReplaceAll(input, empty string) string {
 		}
 
 		// advance cursor to end of placeholder
-		i = end + 1
-		lastWriteCursor = i
+		i = end
+		lastWriteCursor = i + 1
 	}
 
 	// flush any unwritten remainder
