@@ -82,6 +82,57 @@ func TestReplacerSet(t *testing.T) {
 	}
 }
 
+// Tests the Set method by setting some variables and replacing them afterwards.
+// This test adds spaces between the placeholder
+func TestReplacerSetWithSpaces(t *testing.T) {
+	replacer := NewReplacer()
+	testInput := ""
+	expected := ""
+
+	// first add the variables
+	for _, tc := range []struct {
+		variable string
+		value    string
+	}{
+		{
+			variable: "test1",
+			value:    "val1",
+		},
+		{
+			variable: "asdf",
+			value:    "123",
+		},
+		{
+			variable: "äöü",
+			value:    "098765",
+		},
+		{
+			variable: "23456789",
+			value:    "öö_äü",
+		},
+	} {
+		replacer.Set(tc.variable, tc.value)
+		testInput += " " + string(phOpen) + tc.variable + string(phClose) + " "
+		expected += " "
+		if tc.value == "" {
+			expected += "EMPTY"
+		} else {
+			expected += tc.value
+		}
+		expected += " "
+	}
+
+	testInput += " " + string(phOpen) + "MyNotSetVariable" + string(phClose) + " "
+	expected += " " + string(phOpen) + "MyNotSetVariable" + string(phClose) + " "
+
+	// then check if they are really replaced
+	actual := replacer.ReplaceAll(testInput, "EMPTY")
+
+	if actual != expected {
+		t.Errorf("Expectd '%s', got '%s' for input '%s'", expected, actual, testInput)
+	}
+}
+
 // Tests the Delete method by setting some variables, deleting some of them and replacing them afterwards.
 // The deleted ones should not be replaced.
 func TestReplacerDelete(t *testing.T) {
