@@ -63,7 +63,7 @@ func TestReplacerSet(t *testing.T) {
 		},
 	} {
 		replacer.Set(tc.variable, tc.value)
-		testInput += phOpen + tc.variable + phClose
+		testInput += string(phOpen) + tc.variable + string(phClose)
 		if tc.value == "" {
 			expected += "EMPTY"
 		} else {
@@ -71,8 +71,8 @@ func TestReplacerSet(t *testing.T) {
 		}
 	}
 
-	testInput += phOpen + "MyNotSetVariable" + phClose
-	expected += phOpen + "MyNotSetVariable" + phClose
+	testInput += string(phOpen) + "MyNotSetVariable" + string(phClose)
+	expected += string(phOpen) + "MyNotSetVariable" + string(phClose)
 
 	// then check if they are really replaced
 	actual := replacer.ReplaceAll(testInput, "EMPTY")
@@ -143,12 +143,12 @@ func TestReplacerDelete(t *testing.T) {
 		},
 	} {
 		replacer.Set(tc.variable, tc.value)
-		testInput += phOpen + tc.variable + phClose
+		testInput += string(phOpen) + tc.variable + string(phClose)
 		if tc.delete {
-			expected += phOpen + tc.variable + phClose
+			expected += string(phOpen) + tc.variable + string(phClose)
 			replacer.Delete(tc.variable)
 		} else if tc.variable == toDeleteAfter {
-			expected += phOpen + tc.variable + phClose
+			expected += string(phOpen) + tc.variable + string(phClose)
 		} else if tc.value == "" {
 			expected += "EMPTY"
 		} else {
