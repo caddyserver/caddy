@@ -217,3 +217,75 @@ func TestReplacerDelete(t *testing.T) {
 		t.Errorf("Expectd '%s', got '%s' for input '%s'", expected, actual, testInput)
 	}
 }
+
+// Tests the Map method. Tests if the callback is actually called
+func TestReplacerMapCalled(t *testing.T) {
+	replacer := NewReplacer()
+
+	// test if func is actually called for each occurence of key
+	called := 0
+	expect := 3
+	input := "{test1} {test2}{test3}"
+
+	replacer.Map(func(key string) (string, bool) {
+		called++
+		return "", false
+	})
+	replacer.ReplaceAll(input, "EMPTY")
+
+	if called != expect {
+		t.Errorf("Expected running replacer '%v' got '%v' runs for input '%s'", expect, called, input)
+	}
+}
+
+// Tests the Map method.
+// Tests if the placeholder is replaced.
+// Tests if it replaces only if true is returned.
+func TestReplacerMapReplace(t *testing.T) {
+	replacer := NewReplacer()
+
+	// test if it matches only if bool is false
+	input := "{1} {0}{1}{2}-{3} {empty} "
+	expect := "YAY {0}YAYHUHU-{3} EMPTY "
+
+	replacer.Map(func(key string) (string, bool) {
+		switch key {
+		case "0":
+			return "NOO", false
+		case "1":
+			return "YAY", true
+		case "2":
+			return "HUHU", true
+		case "empty":
+			return "", true
+		default:
+			return "_", false
+		}
+	})
+	actual := replacer.ReplaceAll(input, "EMPTY")
+
+	if actual != expect {
+		t.Errorf("Expected '%s' got '%s' for input '%s'", expect, actual, input)
+	}
+
+	// test if an additional Replacer also works
+	input = "{T2_1}{1} {0}{1}{T2_2} {2}-{3} {empty} "
+	expect = "test21YAY {0}YAYtest22 HUHU-{3} EMPTY "
+
+	replacer.Map(func(key string) (string, bool) {
+		switch key {
+		case "T2_1":
+			return "test21", true
+		case "T2_2":
+			return "test22", true
+		default:
+			return "_", false
+		}
+	})
+
+	actual = replacer.ReplaceAll(input, "EMPTY")
+
+	if actual != expect {
+		t.Errorf("Expected '%s' got '%s' for input '%s'", expect, actual, input)
+	}
+}
