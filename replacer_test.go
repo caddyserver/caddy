@@ -71,8 +71,13 @@ func TestReplacerSet(t *testing.T) {
 		}
 	}
 
+	// test not set variable
 	testInput += string(phOpen) + "MyNotSetVariable" + string(phClose)
 	expected += string(phOpen) + "MyNotSetVariable" + string(phClose)
+
+	// test two phOpen (-> ignore first)
+	testInput += string(phOpen) + "l" + string(phOpen) + "test1" + string(phClose)
+	expected += string(phOpen) + "l" + "val1"
 
 	// then check if they are really replaced
 	actual := replacer.ReplaceAll(testInput, "EMPTY")
