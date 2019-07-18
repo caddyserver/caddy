@@ -86,7 +86,7 @@ func GetModules(scope string) []Module {
 
 	// handle the special case of an empty scope, which
 	// should match only the top-level modules
-	if len(scopeParts) == 1 && scopeParts[0] == "" {
+	if scope == "" {
 		scopeParts = []string{}
 	}
 
