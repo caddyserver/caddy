@@ -18,13 +18,51 @@ import (
 	"testing"
 )
 
-// Tests the Set method by setting some variables and replacing them afterwards.
-func TestReplacerSet(t *testing.T) {
-	replacer := NewReplacer()
-	testInput := ""
-	expected := ""
+func fakeReplacer() replacer {
+	return replacer{
+		providers: make([]ReplacementFunc, 0),
+		static:    make(map[string]string),
+	}
+}
 
-	// first add the variables
+func fakeReplacerFilled() replacer {
+	return replacer{
+		providers: []ReplacementFunc{
+			// split our possible vars to two functions (to test if both functions are called)
+			func(key string) (val string, ok bool) {
+				switch key {
+				case "test1":
+					return "val1", true
+				case "asdf":
+					return "123", true
+				case "äöü":
+					return "öö_äü", true
+				case "with space":
+					return "space value", true
+				default:
+					return "NOOO", false
+				}
+			},
+			func(key string) (val string, ok bool) {
+				switch key {
+				case "1":
+					return "test-123", true
+				case "mySuper_IP":
+					return "1.2.3.4", true
+				case "testEmpty":
+					return "", true
+				default:
+					return "NOOO", false
+				}
+			},
+		},
+	}
+}
+
+// Tests the Set method by setting some variables and check if they are added to static
+func TestReplacerSet(t *testing.T) {
+	rep := fakeReplacer()
+
 	for _, tc := range []struct {
 		variable string
 		value    string
@@ -39,10 +77,6 @@ func TestReplacerSet(t *testing.T) {
 		},
 		{
 			variable: "äöü",
-			value:    "098765",
-		},
-		{
-			variable: "23456789",
 			value:    "öö_äü",
 		},
 		{
@@ -62,81 +96,69 @@ func TestReplacerSet(t *testing.T) {
 			value:    "",
 		},
 	} {
-		replacer.Set(tc.variable, tc.value)
-		testInput += string(phOpen) + tc.variable + string(phClose)
-		if tc.value == "" {
-			expected += "EMPTY"
+		rep.Set(tc.variable, tc.value)
+
+		// test if key is added
+		if val, ok := rep.static[tc.variable]; ok {
+			if val != tc.value {
+				t.Errorf("Expectd value '%s' for key '%s' got '%s'", tc.value, tc.variable, val)
+			}
 		} else {
-			expected += tc.value
+			t.Errorf("Expectd existing key '%s' found nothing", tc.variable)
 		}
 	}
 
-	// test not set variable
-	testInput += string(phOpen) + "MyNotSetVariable" + string(phClose)
-	expected += string(phOpen) + "MyNotSetVariable" + string(phClose)
-
-	// test two phOpen (-> ignore first)
-	testInput += string(phOpen) + "l" + string(phOpen) + "test1" + string(phClose)
-	expected += string(phOpen) + "l" + "val1"
-
-	// then check if they are really replaced
-	actual := replacer.ReplaceAll(testInput, "EMPTY")
-
-	if actual != expected {
-		t.Errorf("Expectd '%s', got '%s' for input '%s'", expected, actual, testInput)
+	// test if all keys are still there (by length)
+	length := len(rep.static)
+	if len(rep.static) != 7 {
+		t.Errorf("Expectd length '%v' got '%v'", 7, length)
 	}
 }
 
-// Tests the Set method by setting some variables and replacing them afterwards.
-// This test adds spaces between the placeholder
-func TestReplacerSetWithSpaces(t *testing.T) {
-	replacer := NewReplacer()
-	testInput := ""
-	expected := ""
+func TestReplacerReplaceAll(t *testing.T) {
+	rep := fakeReplacerFilled()
 
-	// first add the variables
 	for _, tc := range []struct {
-		variable string
-		value    string
+		rep       replacer
+		testInput string
+		expected  string
 	}{
 		{
-			variable: "test1",
-			value:    "val1",
+			// test vars without space
+			testInput: "{test1}{asdf}{1}",
+			expected:  "val1123test-123",
 		},
 		{
-			variable: "asdf",
-			value:    "123",
+			// test vars with space
+			testInput: "{test1} {asdf} {1} ",
+			expected:  "val1 123 test-123 ",
 		},
 		{
-			variable: "äöü",
-			value:    "098765",
+			// test with empty val
+			testInput: "{test1} {testEmpty} {asdf} {1} ",
+			expected:  "val1 EMPTY 123 test-123 ",
 		},
 		{
-			variable: "23456789",
-			value:    "öö_äü",
+			// test vars with not finished placeholders
+			testInput: "{te{test1}{as{{df{1}",
+			expected:  "{teval1{as{{dftest-123",
+		},
+		{
+			// test with non existing vars
+			testInput: "{test1} {nope} {1} ",
+			expected:  "val1 {nope} test-123 ",
 		},
 	} {
-		replacer.Set(tc.variable, tc.value)
-		testInput += " " + string(phOpen) + tc.variable + string(phClose) + " "
-		expected += " "
-		if tc.value == "" {
-			expected += "EMPTY"
-		} else {
-			expected += tc.value
+		actual := rep.ReplaceAll(tc.testInput, "EMPTY")
+
+		// test if all are replaced as expected
+		if actual != tc.expected {
+			t.Errorf("Expectd '%s' got '%s'", tc.expected, actual)
 		}
-		expected += " "
-	}
-
-	testInput += " " + string(phOpen) + "MyNotSetVariable" + string(phClose) + " "
-	expected += " " + string(phOpen) + "MyNotSetVariable" + string(phClose) + " "
-
-	// then check if they are really replaced
-	actual := replacer.ReplaceAll(testInput, "EMPTY")
-
-	if actual != expected {
-		t.Errorf("Expectd '%s', got '%s' for input '%s'", expected, actual, testInput)
 	}
 }
+
+//---- WIP ----
 
 // Tests the Delete method by setting some variables, deleting some of them and replacing them afterwards.
 // The deleted ones should not be replaced.
