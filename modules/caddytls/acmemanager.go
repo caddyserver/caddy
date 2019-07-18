@@ -66,10 +66,10 @@ func (m *ACMEManagerMaker) newManager(interactive bool) (certmagic.Manager, erro
 // Provision sets up m.
 func (m *ACMEManagerMaker) Provision(ctx caddy.Context) error {
 	// DNS providers
-	if m.Challenges.DNS != nil {
+	if m.Challenges.DNSRaw != nil {
 		val, err := ctx.LoadModuleInline("provider", "tls.dns", m.Challenges.DNSRaw)
 		if err != nil {
-			return fmt.Errorf("loading TLS storage module: %s", err)
+			return fmt.Errorf("loading DNS provider module: %s", err)
 		}
 		m.Challenges.DNS = val.(challenge.Provider)
 		m.Challenges.DNSRaw = nil // allow GC to deallocate - TODO: Does this help?
