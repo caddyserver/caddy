@@ -202,14 +202,5 @@ func onDemandAskRequest(ask string, name string) error {
 	return nil
 }
 
-// supportedCertKeyTypes is all the key types that are supported
-// for certificates that are obtained through ACME.
-var supportedCertKeyTypes = map[string]certcrypto.KeyType{
-	"RSA2048": certcrypto.RSA2048,
-	"RSA4096": certcrypto.RSA4096,
-	"P256":    certcrypto.EC256,
-	"P384":    certcrypto.EC384,
-}
-
 // Interface guard
 var _ managerMaker = (*ACMEManagerMaker)(nil)
