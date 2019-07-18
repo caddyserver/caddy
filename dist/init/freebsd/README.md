@@ -1,3 +1,55 @@
+# Running caddy without root privileges
+
+FreeBSD systems can use the mac_portacl module to allow access to
+ports below 1024 by specific users (by default, non-root users are not
+able to open ports below 1024).
+
+On a stock FreeBSD system, you need to:
+
+1. Add the following line to `/boot/loader.conf`, which tells the boot
+   loader to load the `mac_portacl` kernel module:
+
+    ``` shell
+    mac_portacl_load="YES"
+    ```
+
+2. Add the following lines to `/etc/sysctl.conf`
+
+    ``` shell
+    net.inet.ip.portrange.reservedlow=0
+    net.inet.ip.portrange.reservedhigh=0
+    security.mac.portacl.port_high=1023
+    security.mac.portacl.suser_exempt=1
+    security.mac.portacl.rules=uid:80:tcp:80,uid:80:tcp:443
+    ```
+
+    The first two lines disable the default restrictions on ports <
+    1023, the third makes the `mac_portacl` system responsible for ports
+    from 0 (the default) up to 1023, and the fourth ensures that the
+    superuser can open *any* port.
+
+    The final/fifth line specifies two rules, separated by a `,`:
+
+      - the first gives the `www` user (uid = 80) access to the `http`
+        port (80); and
+      - the second gives the `www` user (uid = 80) access to the `https`
+        port (443).
+
+    Other/additional rules are possible, e.g. access can be constrained
+    by membership in the `www` *group* using the `gid` specifier:
+
+    ```
+    security.mac.portacl.rules=gid:80:tcp:80,gid:80:tcp:443
+    ```
+
+## See also
+
+- The *MAC Port Access Control List Policy* section of the [Available
+  MAC
+  Policies](https://www.freebsd.org/doc/en_US.ISO8859-1/books/handbook/mac-policies.html)
+  page.
+- [Caddy issue #1923](https://github.com/mholt/caddy/issues/1923).
+
 # Logging the caddy process's output:
 
 Caddy's FreeBSD `rc.d` script uses `daemon` to run `caddy`; by default
