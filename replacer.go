@@ -115,10 +115,8 @@ func (r *replacer) ReplaceAll(input, empty string) string {
 			}
 		}
 		if !found {
-			// just write key (not replacing it)
-			sb.WriteString(string(phOpen))
-			sb.WriteString(string(key))
-			sb.WriteString(string(phClose))
+			lastWriteCursor = i
+			continue
 		}
 
 		// advance cursor to end of placeholder
