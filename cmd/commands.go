@@ -137,8 +137,17 @@ func cmdStart() (int, error) {
 func cmdRun() (int, error) {
 	runCmd := flag.NewFlagSet("run", flag.ExitOnError)
 	runCmdConfigFlag := runCmd.String("config", "", "Configuration file")
+	runCmdPrintEnvFlag := runCmd.Bool("print-env", false, "Print environment (useful for debugging)")
 	runCmdPingbackFlag := runCmd.String("pingback", "", "Echo confirmation bytes to this address on success")
 	runCmd.Parse(os.Args[2:])
+
+	// if we are supposed to print the environment, do that first
+	if *runCmdPrintEnvFlag {
+		exitCode, err := cmdEnviron()
+		if err != nil {
+			return exitCode, err
+		}
+	}
 
 	// if a config file was specified for bootstrapping
 	// the server instance, load it now

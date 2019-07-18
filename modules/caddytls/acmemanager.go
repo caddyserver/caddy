@@ -66,10 +66,10 @@ func (m *ACMEManagerMaker) newManager(interactive bool) (certmagic.Manager, erro
 // Provision sets up m.
 func (m *ACMEManagerMaker) Provision(ctx caddy.Context) error {
 	// DNS providers
-	if m.Challenges.DNS != nil {
+	if m.Challenges.DNSRaw != nil {
 		val, err := ctx.LoadModuleInline("provider", "tls.dns", m.Challenges.DNSRaw)
 		if err != nil {
-			return fmt.Errorf("loading TLS storage module: %s", err)
+			return fmt.Errorf("loading DNS provider module: %s", err)
 		}
 		m.Challenges.DNS = val.(challenge.Provider)
 		m.Challenges.DNSRaw = nil // allow GC to deallocate - TODO: Does this help?
@@ -200,15 +200,6 @@ func onDemandAskRequest(ask string, name string) error {
 	}
 
 	return nil
-}
-
-// supportedCertKeyTypes is all the key types that are supported
-// for certificates that are obtained through ACME.
-var supportedCertKeyTypes = map[string]certcrypto.KeyType{
-	"RSA2048": certcrypto.RSA2048,
-	"RSA4096": certcrypto.RSA4096,
-	"P256":    certcrypto.EC256,
-	"P384":    certcrypto.EC384,
 }
 
 // Interface guard

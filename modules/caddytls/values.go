@@ -18,28 +18,35 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 
+	"github.com/go-acme/lego/certcrypto"
 	"github.com/klauspost/cpuid"
 )
 
 // supportedCipherSuites is the unordered map of cipher suite
-// string names to their definition in crypto/tls.
-// TODO: might not be needed much longer, see:
-// https://github.com/golang/go/issues/30325
+// string names to their definition in crypto/tls. All values
+// should be IANA-reserved names. See
+// https://www.iana.org/assignments/tls-parameters/tls-parameters.xhtml
+// TODO: might not be needed much longer: https://github.com/golang/go/issues/30325
 var supportedCipherSuites = map[string]uint16{
-	"ECDHE_ECDSA_AES256_GCM_SHA384":      tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
-	"ECDHE_RSA_AES256_GCM_SHA384":        tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-	"ECDHE_ECDSA_AES128_GCM_SHA256":      tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
-	"ECDHE_RSA_AES128_GCM_SHA256":        tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-	"ECDHE_ECDSA_WITH_CHACHA20_POLY1305": tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
-	"ECDHE_RSA_WITH_CHACHA20_POLY1305":   tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
-	"ECDHE_RSA_AES256_CBC_SHA":           tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
-	"ECDHE_RSA_AES128_CBC_SHA":           tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
-	"ECDHE_ECDSA_AES256_CBC_SHA":         tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
-	"ECDHE_ECDSA_AES128_CBC_SHA":         tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
-	"RSA_AES256_CBC_SHA":                 tls.TLS_RSA_WITH_AES_256_CBC_SHA,
-	"RSA_AES128_CBC_SHA":                 tls.TLS_RSA_WITH_AES_128_CBC_SHA,
-	"ECDHE_RSA_3DES_EDE_CBC_SHA":         tls.TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA,
-	"RSA_3DES_EDE_CBC_SHA":               tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA,
+	"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384":       tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+	"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384":         tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+	"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256":       tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+	"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256":         tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+	"TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256": tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
+	"TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256":   tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
+	"TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA":            tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+	"TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256":         tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256,
+	"TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA":            tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
+	"TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA":          tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
+	"TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256":       tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256,
+	"TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA":          tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
+	"TLS_RSA_WITH_AES_128_GCM_SHA256":               tls.TLS_RSA_WITH_AES_128_GCM_SHA256,
+	"TLS_RSA_WITH_AES_256_GCM_SHA384":               tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
+	"TLS_RSA_WITH_AES_256_CBC_SHA":                  tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+	"TLS_RSA_WITH_AES_128_CBC_SHA256":               tls.TLS_RSA_WITH_AES_128_CBC_SHA256,
+	"TLS_RSA_WITH_AES_128_CBC_SHA":                  tls.TLS_RSA_WITH_AES_128_CBC_SHA,
+	"TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA":           tls.TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA,
+	"TLS_RSA_WITH_3DES_EDE_CBC_SHA":                 tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA,
 }
 
 // defaultCipherSuites is the ordered list of all the cipher
@@ -84,6 +91,15 @@ var supportedCurves = map[string]tls.CurveID{
 	"P256":   tls.CurveP256,
 	"P384":   tls.CurveP384,
 	"P521":   tls.CurveP521,
+}
+
+// supportedCertKeyTypes is all the key types that are supported
+// for certificates that are obtained through ACME.
+var supportedCertKeyTypes = map[string]certcrypto.KeyType{
+	"RSA2048": certcrypto.RSA2048,
+	"RSA4096": certcrypto.RSA4096,
+	"P256":    certcrypto.EC256,
+	"P384":    certcrypto.EC384,
 }
 
 // defaultCurves is the list of only the curves we want to use
