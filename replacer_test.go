@@ -59,6 +59,17 @@ func fakeReplacerFilled() replacer {
 	}
 }
 
+func fakeReplacerFilledStatic() replacer {
+	return replacer{
+		static: map[string]string{
+			"key1": "val1",
+			"key2": "val2",
+			"key3": "val3",
+			"key4": "val4",
+		},
+	}
+}
+
 // Tests the Set method by setting some variables and check if they are added to static
 func TestReplacerSet(t *testing.T) {
 	rep := fakeReplacer()
@@ -119,7 +130,6 @@ func TestReplacerReplaceAll(t *testing.T) {
 	rep := fakeReplacerFilled()
 
 	for _, tc := range []struct {
-		rep       replacer
 		testInput string
 		expected  string
 	}{
@@ -158,92 +168,30 @@ func TestReplacerReplaceAll(t *testing.T) {
 	}
 }
 
-//---- WIP ----
-
-// Tests the Delete method by setting some variables, deleting some of them and replacing them afterwards.
-// The deleted ones should not be replaced.
 func TestReplacerDelete(t *testing.T) {
-	replacer := NewReplacer()
-	testInput := ""
-	expected := ""
-	toDeleteAfter := "toDeleteAfter"
+	rep := fakeReplacerFilledStatic()
+	toDel := []string{
+		"key2", "key4",
+	}
 
-	// first add the variables
-	for _, tc := range []struct {
-		variable string
-		value    string
-		delete   bool
-	}{
-		{
-			variable: "test1",
-			value:    "val1",
-		},
-		{
-			variable: "asdf",
-			value:    "123",
-			delete:   true,
-		},
-		{
-			variable: "äöü",
-			value:    "098765",
-		},
-		{
-			variable: "23456789",
-			value:    "öö_äü",
-			delete:   true,
-		},
-		{
-			variable: "with space",
-			value:    "space value",
-			delete:   true,
-		},
-		{
-			variable: "1",
-			value:    "test-123",
-		},
-		{ // this one will be deleted after all were added and not instantly after adding
-			variable: toDeleteAfter,
-			value:    "test-123",
-		},
-		{
-			variable: "mySuper_IP",
-			value:    "1.2.3.4",
-		},
-		{
-			variable: "testEmpty",
-			value:    "",
-			delete:   true,
-		},
-		{
-			variable: "test2Empty",
-			value:    "",
-			delete:   true,
-		},
-	} {
-		replacer.Set(tc.variable, tc.value)
-		testInput += string(phOpen) + tc.variable + string(phClose)
-		if tc.delete {
-			expected += string(phOpen) + tc.variable + string(phClose)
-			replacer.Delete(tc.variable)
-		} else if tc.variable == toDeleteAfter {
-			expected += string(phOpen) + tc.variable + string(phClose)
-		} else if tc.value == "" {
-			expected += "EMPTY"
-		} else {
-			expected += tc.value
+	for _, key := range toDel {
+		rep.Delete(key)
+
+		// test if key is removed from static map
+		if _, ok := rep.static[key]; ok {
+			t.Errorf("Expectd '%s' to be removed. It is still in static map.", key)
 		}
 	}
 
-	// Delete one key after all other ones to test if deleting it not directly after adding also workS
-	replacer.Delete(toDeleteAfter)
-
-	// then check if they are really replaced (except deleted ones)
-	actual := replacer.ReplaceAll(testInput, "EMPTY")
-
-	if actual != expected {
-		t.Errorf("Expectd '%s', got '%s' for input '%s'", expected, actual, testInput)
+	// check if static slice is smaller
+	expected := len(fakeReplacerFilledStatic().static) - len(toDel)
+	actual := len(rep.static)
+	if len(rep.static) != expected {
+		t.Errorf("Expectd length '%v' got lenth '%v'", expected, actual)
 	}
 }
+
+//---- WIP ----
 
 // Tests the Map method. Tests if the callback is actually called
 func TestReplacerMapCalled(t *testing.T) {
