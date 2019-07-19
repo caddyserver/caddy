@@ -23,9 +23,9 @@ import (
 
 	"github.com/go-acme/lego/challenge/tlsalpn01"
 
+	"github.com/caddyserver/caddy"
 	"github.com/go-acme/lego/certcrypto"
 	"github.com/klauspost/cpuid"
-	"github.com/caddyserver/caddy"
 	"github.com/mholt/certmagic"
 )
 

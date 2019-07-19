@@ -33,8 +33,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/jimstudt/http-authentication/basic"
 	"github.com/caddyserver/caddy/caddyhttp/httpserver"
+	"github.com/jimstudt/http-authentication/basic"
 )
 
 // BasicAuth is middleware to protect resources with a username and password.

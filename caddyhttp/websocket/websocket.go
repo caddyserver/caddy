@@ -29,8 +29,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/caddyserver/caddy/caddyhttp/httpserver"
+	"github.com/gorilla/websocket"
 )
 
 const (

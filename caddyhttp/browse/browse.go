@@ -29,9 +29,9 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/dustin/go-humanize"
 	"github.com/caddyserver/caddy/caddyhttp/httpserver"
 	"github.com/caddyserver/caddy/caddyhttp/staticfiles"
+	"github.com/dustin/go-humanize"
 )
 
 const (
