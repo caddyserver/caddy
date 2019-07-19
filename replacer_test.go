@@ -15,6 +15,9 @@
 package caddy
 
 import (
+	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -68,6 +71,16 @@ func fakeReplacerFilledStatic() replacer {
 			"key4": "val4",
 		},
 	}
+}
+
+func getHostnameForTest() string {
+	name, _ := os.Hostname()
+	return name
+}
+
+func getEnvForTest(name string) (string, bool) {
+	val := os.Getenv(name)
+	return val, val != ""
 }
 
 // Tests the Set method by setting some variables and check if they are added to static
@@ -163,8 +176,29 @@ func TestReplacerReplaceAll(t *testing.T) {
 
 		// test if all are replaced as expected
 		if actual != tc.expected {
-			t.Errorf("Expectd '%s' got '%s'", tc.expected, actual)
+			t.Errorf("Expectd '%s' got '%s' for '%s'", tc.expected, actual, tc.testInput)
 		}
+	}
+}
+
+func TestReplacerReplaceAllDefaults(t *testing.T) {
+	rep := NewReplacer()
+	testInput := "{system.hostname} {system.slash} {system.os} {system.arch}"
+	expected := getHostnameForTest() + " " + string(filepath.Separator) + " " + runtime.GOOS + " " + runtime.GOARCH
+
+	// test env.
+	testInput += " {env.GOPATH}"
+	if env, ok := getEnvForTest("GOPATH"); ok {
+		expected += " " + env
+	} else {
+		expected += " "
+	}
+
+	actual := rep.ReplaceAll(testInput, "EMPTY")
+
+	// test if all are replaced as expected
+	if actual != expected {
+		t.Errorf("Expectd '%s' got '%s' for '%s'", expected, actual, testInput)
 	}
 }
 
