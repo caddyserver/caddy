@@ -1,0 +1,45 @@
+:2015 {
+	websocket /cat-lines/ cat {
+		type lines
+	}
+
+	websocket /cat-lines-32/ cat {
+		type lines
+		bufsize 32
+	}
+
+	websocket /cat-text/ cat {
+		type text
+	}
+
+	websocket /cat-text-32/ cat {
+		type text
+		bufsize 32
+	}
+
+	websocket /cat-binary/ cat {
+		type binary
+	}
+
+	websocket /cat-binary-32/ cat {
+		type binary
+		bufsize 32
+	}
+
+	websocket /curl-lines/ "sh -c 'read s; read url; if [ \"$s\" = \"true\" ]; then out=\"\"; else out=\"-o /dev/null\"; fi; curl -L $out \"$url\" 2>&1'" {
+		type lines
+	}
+
+	websocket /curl-text/ "sh -c 'read s; read url; if [ \"$s\" = \"true\" ]; then out=\"\"; else out=\"-o /dev/null\"; fi; curl -L $out \"$url\" 2>&1'" {
+		type text
+	}
+
+	websocket /curl-binary/ "sh -c 'read s; read url; if [ \"$s\" = \"true\" ]; then out=\"\"; else out=\"-o /dev/null\"; fi; curl -L $out \"$url\"'" {
+		type binary
+	}
+
+	websocket /curl-binary-32/ "sh -c 'read s; read url; if [ \"$s\" = \"true\" ]; then out=\"\"; else out=\"-o /dev/null\"; fi; curl -L $out \"$url\"'" {
+		type binary
+		bufsize 32
+	}
+}

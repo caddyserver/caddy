@@ -28,6 +28,7 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/caddyserver/caddy/caddyhttp/httpserver"
 	"github.com/gorilla/websocket"
@@ -76,6 +77,27 @@ type (
 		Command   string
 		Arguments []string
 		Respawn   bool // TODO: Not used, but parser supports it until we decide on it
+		Type      string
+		BufSize   int
+	}
+
+	wsGetUpgrader interface {
+		GetUpgrader() wsUpgrader
+	}
+
+	wsUpgrader interface {
+		Upgrade(w http.ResponseWriter, r *http.Request, responseHeader http.Header) (wsConn, error)
+	}
+
+	wsConn interface {
+		Close() error
+		ReadMessage() (messageType int, p []byte, err error)
+		SetPongHandler(h func(appData string) error)
+		SetReadDeadline(t time.Time) error
+		SetReadLimit(limit int64)
+		SetWriteDeadline(t time.Time) error
+		WriteControl(messageType int, data []byte, deadline time.Time) error
+		WriteMessage(messageType int, data []byte) error
 	}
 )
 
@@ -94,12 +116,19 @@ func (ws WebSocket) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, erro
 // serveWS is used for setting and upgrading the HTTP connection to a websocket connection.
 // It also spawns the child process that is associated with matched HTTP path/url.
 func serveWS(w http.ResponseWriter, r *http.Request, config *Config) (int, error) {
-	upgrader := websocket.Upgrader{
-		ReadBufferSize:  1024,
-		WriteBufferSize: 1024,
-		CheckOrigin:     func(r *http.Request) bool { return true },
+	gu, castok := w.(wsGetUpgrader)
+	var u wsUpgrader
+	if gu != nil && castok {
+		u = gu.GetUpgrader()
+	} else {
+		u = &realWsUpgrader{o: &websocket.Upgrader{
+			ReadBufferSize:  1024,
+			WriteBufferSize: 1024,
+			CheckOrigin:     func(r *http.Request) bool { return true },
+		}}
 	}
-	conn, err := upgrader.Upgrade(w, r, nil)
+
+	conn, err := u.Upgrade(w, r, nil)
 	if err != nil {
 		// the connection has been "handled" -- WriteHeader was called with Upgrade,
 		// so don't return an error status code; just return an error
@@ -133,8 +162,8 @@ func serveWS(w http.ResponseWriter, r *http.Request, config *Config) (int, error
 	}
 
 	done := make(chan struct{})
-	go pumpStdout(conn, stdout, done)
-	pumpStdin(conn, stdin)
+	go pumpStdout(conn, stdout, done, config)
+	pumpStdin(conn, stdin, config)
 
 	_ = stdin.Close() // close stdin to end the process
 
@@ -220,7 +249,7 @@ func buildEnv(cmdPath string, r *http.Request) (metavars []string, err error) {
 
 // pumpStdin handles reading data from the websocket connection and writing
 // it to stdin of the process.
-func pumpStdin(conn *websocket.Conn, stdin io.WriteCloser) {
+func pumpStdin(conn wsConn, stdin io.WriteCloser, config *Config) {
 	// Setup our connection's websocket ping/pong handlers from our const values.
 	defer conn.Close()
 	conn.SetReadLimit(maxMessageSize)
@@ -238,7 +267,10 @@ func pumpStdin(conn *websocket.Conn, stdin io.WriteCloser) {
 		if err != nil {
 			break
 		}
-		message = append(message, '\n')
+		if config.Type == "lines" {
+			// no '\n' from client, so append '\n' to spawned process
+			message = append(message, '\n')
+		}
 		if _, err := stdin.Write(message); err != nil {
 			break
 		}
@@ -247,32 +279,102 @@ func pumpStdin(conn *websocket.Conn, stdin io.WriteCloser) {
 
 // pumpStdout handles reading data from stdout of the process and writing
 // it to websocket connection.
-func pumpStdout(conn *websocket.Conn, stdout io.Reader, done chan struct{}) {
+func pumpStdout(conn wsConn, stdout io.Reader, done chan struct{}, config *Config) {
 	go pinger(conn, done)
 	defer func() {
 		_ = conn.Close()
 		close(done) // make sure to close the pinger when we are done.
 	}()
 
-	s := bufio.NewScanner(stdout)
-	for s.Scan() {
-		if err := conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
-			log.Println("[ERROR] failed to set write deadline: ", err)
+	if config.Type == "lines" {
+		// message must end with '\n'
+		s := bufio.NewScanner(stdout)
+		if config.BufSize > 0 {
+			s.Buffer(make([]byte, config.BufSize), config.BufSize)
 		}
-		if err := conn.WriteMessage(websocket.TextMessage, bytes.TrimSpace(s.Bytes())); err != nil {
-			break
+		for s.Scan() {
+			if err := conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
+				log.Println("[ERROR] failed to set write deadline: ", err)
+			}
+			if err := conn.WriteMessage(websocket.TextMessage, bytes.TrimSpace(s.Bytes())); err != nil {
+				break
+			}
 		}
-	}
-	if s.Err() != nil {
-		err := conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseGoingAway, s.Err().Error()), time.Time{})
-		if err != nil {
-			log.Println("[ERROR] WriteControl failed: ", err)
+		if s.Err() != nil {
+			err := conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseGoingAway, s.Err().Error()), time.Time{})
+			if err != nil {
+				log.Println("[ERROR] WriteControl failed: ", err)
+			}
+		}
+	} else if config.Type == "text" {
+		// handle UTF-8 text message, newline is not required
+		r := bufio.NewReader(stdout)
+		var err1 error
+		var len int
+		remainBuf := make([]byte, utf8.UTFMax)
+		remainLen := 0
+		bufSize := config.BufSize
+		if bufSize <= 0 {
+			bufSize = 2048
+		}
+		for {
+			out := make([]byte, bufSize)
+			copy(out[:remainLen], remainBuf[:remainLen])
+			len, err1 = r.Read(out[remainLen:])
+			if err1 != nil {
+				break
+			}
+			len += remainLen
+			remainLen = findIncompleteRuneLength(out, len)
+			if remainLen > 0 {
+				remainBuf = out[len-remainLen : len]
+			}
+			if err := conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
+				log.Println("[ERROR] failed to set write deadline: ", err)
+			}
+			if err := conn.WriteMessage(websocket.TextMessage, out[0:len-remainLen]); err != nil {
+				break
+			}
+		}
+		if err1 != nil {
+			err := conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseGoingAway, err1.Error()), time.Time{})
+			if err != nil {
+				log.Println("[ERROR] WriteControl failed: ", err)
+			}
+		}
+	} else if config.Type == "binary" {
+		// treat message as binary data
+		r := bufio.NewReader(stdout)
+		var err1 error
+		var len int
+		bufSize := config.BufSize
+		if bufSize <= 0 {
+			bufSize = 2048
+		}
+		for {
+			out := make([]byte, bufSize)
+			len, err1 = r.Read(out)
+			if err1 != nil {
+				break
+			}
+			if err := conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
+				log.Println("[ERROR] failed to set write deadline: ", err)
+			}
+			if err := conn.WriteMessage(websocket.BinaryMessage, out[0:len]); err != nil {
+				break
+			}
+		}
+		if err1 != nil {
+			err := conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseGoingAway, err1.Error()), time.Time{})
+			if err != nil {
+				log.Println("[ERROR] WriteControl failed: ", err)
+			}
 		}
 	}
 }
 
 // pinger simulates the websocket to keep it alive with ping messages.
-func pinger(conn *websocket.Conn, done chan struct{}) {
+func pinger(conn wsConn, done chan struct{}) {
 	ticker := time.NewTicker(pingPeriod)
 	defer ticker.Stop()
 
@@ -290,4 +392,91 @@ func pinger(conn *websocket.Conn, done chan struct{}) {
 			return // clean up this routine.
 		}
 	}
+}
+
+type realWsUpgrader struct {
+	o *websocket.Upgrader
+}
+
+type realWsConn struct {
+	o *websocket.Conn
+}
+
+func (u *realWsUpgrader) Upgrade(w http.ResponseWriter, r *http.Request, responseHeader http.Header) (wsConn, error) {
+	a, b := u.o.Upgrade(w, r, responseHeader)
+	return &realWsConn{o: a}, b
+}
+
+func (c *realWsConn) Close() error {
+	return c.o.Close()
+}
+func (c *realWsConn) ReadMessage() (messageType int, p []byte, err error) {
+	return c.o.ReadMessage()
+}
+func (c *realWsConn) SetPongHandler(h func(appData string) error) {
+	c.o.SetPongHandler(h)
+}
+func (c *realWsConn) SetReadDeadline(t time.Time) error {
+	return c.o.SetReadDeadline(t)
+}
+func (c *realWsConn) SetReadLimit(limit int64) {
+	c.o.SetReadLimit(limit)
+}
+func (c *realWsConn) SetWriteDeadline(t time.Time) error {
+	return c.o.SetWriteDeadline(t)
+}
+func (c *realWsConn) WriteControl(messageType int, data []byte, deadline time.Time) error {
+	return c.o.WriteControl(messageType, data, deadline)
+}
+func (c *realWsConn) WriteMessage(messageType int, data []byte) error {
+	return c.o.WriteMessage(messageType, data)
+}
+
+func findIncompleteRuneLength(p []byte, length int) int {
+	if length == 0 {
+		return 0
+	}
+	if rune(p[length-1]) < utf8.RuneSelf {
+		// ASCII 7-bit always complete
+		return 0
+	}
+
+	lowest := length - utf8.UTFMax
+	if lowest < 0 {
+		lowest = 0
+	}
+	for start := length - 1; start >= lowest; start-- {
+		if (p[start] >> 5) == 0x06 {
+			// 2-byte utf-8 start byte
+			if length-start >= 2 {
+				// enough bytes
+				return 0
+			}
+			// 1 byte outstanding
+			return 1
+		}
+
+		if (p[start] >> 4) == 0x0E {
+			// 3-byte utf-8 start byte
+			if length-start >= 3 {
+				// enough bytes
+				return 0
+			}
+			// some bytes outstanding
+			return length - start
+		}
+
+		if (p[start] >> 3) == 0x1E {
+			// 4-byte utf-8 start byte
+			if length-start >= 4 {
+				// enough bytes
+				return 0
+			}
+			// some bytes outstanding
+			return length - start
+		}
+	}
+
+	// No utf-8 start byte
+	return 0
 }
