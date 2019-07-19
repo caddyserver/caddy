@@ -21,8 +21,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/go-acme/lego/certcrypto"
 	"github.com/caddyserver/caddy"
+	"github.com/go-acme/lego/certcrypto"
 	"github.com/mholt/certmagic"
 )
 

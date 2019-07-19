@@ -31,11 +31,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lucas-clemente/quic-go/h2quic"
 	"github.com/caddyserver/caddy"
 	"github.com/caddyserver/caddy/caddyhttp/staticfiles"
 	"github.com/caddyserver/caddy/caddytls"
 	"github.com/caddyserver/caddy/telemetry"
+	"github.com/lucas-clemente/quic-go/h2quic"
 )
 
 // Server is the HTTP server implementation.

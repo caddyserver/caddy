@@ -29,12 +29,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/google/uuid"
-	"github.com/klauspost/cpuid"
 	"github.com/caddyserver/caddy"
 	"github.com/caddyserver/caddy/caddyfile"
 	"github.com/caddyserver/caddy/caddytls"
 	"github.com/caddyserver/caddy/telemetry"
+	"github.com/google/uuid"
+	"github.com/klauspost/cpuid"
 	"github.com/mholt/certmagic"
 	lumberjack "gopkg.in/natefinch/lumberjack.v2"
 
