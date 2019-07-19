@@ -191,76 +191,38 @@ func TestReplacerDelete(t *testing.T) {
 	}
 }
 
-//---- WIP ----
+func TestReplacerMap(t *testing.T) {
+	rep := fakeReplacer()
 
-// Tests the Map method. Tests if the callback is actually called
-func TestReplacerMapCalled(t *testing.T) {
-	replacer := NewReplacer()
+	for i, tc := range []struct {
+		key   string
+		value string
+	}{
+		{
+			key:   "f1",
+			value: "v1",
+		},
+		{
+			key:   "f2",
+			value: "v2",
+		},
+	} {
+		rep.Map(func(key string) (val string, ok bool) {
+			if key == tc.key {
+				return tc.value, true
+			}
+			return "NO", false
+		})
 
-	// test if func is actually called for each occurence of key
-	called := 0
-	expect := 3
-	input := "{test1} {test2}{test3}"
-
-	replacer.Map(func(key string) (string, bool) {
-		called++
-		return "", false
-	})
-	replacer.ReplaceAll(input, "EMPTY")
-
-	if called != expect {
-		t.Errorf("Expected running replacer '%v' got '%v' runs for input '%s'", expect, called, input)
-	}
-}
-
-// Tests the Map method.
-// Tests if the placeholder is replaced.
-// Tests if it replaces only if true is returned.
-func TestReplacerMapReplace(t *testing.T) {
-	replacer := NewReplacer()
-
-	// test if it matches only if bool is false
-	input := "{1} {0}{1}{2}-{3} {empty} "
-	expect := "YAY {0}YAYHUHU-{3} EMPTY "
-
-	replacer.Map(func(key string) (string, bool) {
-		switch key {
-		case "0":
-			return "NOO", false
-		case "1":
-			return "YAY", true
-		case "2":
-			return "HUHU", true
-		case "empty":
-			return "", true
-		default:
-			return "_", false
+		// test if function (which listens on specific key) is added bychecking length
+		if len(rep.providers) == i+1 {
+			val, _ := rep.providers[i](tc.key) // never fails, as we just checked the length
+			// check if the last function is the one we just added
+			if val != tc.value {
+				t.Errorf("Expected value '%s' for key '%s' got '%s'", tc.value, tc.key, val)
+			}
+		} else {
+			t.Errorf("Expectd providers length '%v' got length '%v'", i+1, len(rep.providers))
 		}
-	})
-	actual := replacer.ReplaceAll(input, "EMPTY")
-
-	if actual != expect {
-		t.Errorf("Expected '%s' got '%s' for input '%s'", expect, actual, input)
-	}
-
-	// test if an additional Replacer also works
-	input = "{T2_1}{1} {0}{1}{T2_2} {2}-{3} {empty} "
-	expect = "test21YAY {0}YAYtest22 HUHU-{3} EMPTY "
-
-	replacer.Map(func(key string) (string, bool) {
-		switch key {
-		case "T2_1":
-			return "test21", true
-		case "T2_2":
-			return "test22", true
-		default:
-			return "_", false
-		}
-	})
-
-	actual = replacer.ReplaceAll(input, "EMPTY")
-
-	if actual != expect {
-		t.Errorf("Expected '%s' got '%s' for input '%s'", expect, actual, input)
 	}
 }
