@@ -222,7 +222,20 @@ func TestReplacerMap(t *testing.T) {
 				t.Errorf("Expected value '%s' for key '%s' got '%s'", tc.value, tc.key, val)
 			}
 		} else {
-			t.Errorf("Expectd providers length '%v' got length '%v'", i+1, len(rep.providers))
+			t.Errorf("Expected providers length '%v' got length '%v'", i+1, len(rep.providers))
 		}
+	}
+}
+
+func TestReplacerNew(t *testing.T) {
+	var tc = NewReplacer()
+
+	rep, ok := tc.(*replacer)
+	if ok {
+		if len(rep.providers) != 2 {
+			t.Errorf("Expected providers length '%v' got length '%v'", 2, len(rep.providers))
+		}
+	} else {
+		t.Errorf("Expected type of replacer %T got %T ", &replacer{}, tc)
 	}
 }
