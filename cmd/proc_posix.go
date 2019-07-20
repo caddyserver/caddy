@@ -22,9 +22,14 @@ import (
 )
 
 func gracefullyStopProcess(pid int) error {
+	fmt.Printf("Graceful stop...")
 	err := syscall.Kill(pid, syscall.SIGINT)
 	if err != nil {
 		return fmt.Errorf("kill: %v", err)
 	}
 	return nil
+}
+
+func getProcessName() string {
+	return filepath.Base(os.Args[0])
 }

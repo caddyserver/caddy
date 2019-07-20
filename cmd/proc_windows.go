@@ -16,14 +16,29 @@ package caddycmd
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 )
 
 func gracefullyStopProcess(pid int) error {
-	cmd := exec.Command("taskkill", "/pid", strconv.Itoa(pid))
+	fmt.Printf("Forceful Stop...")
+	// process on windows will not stop unless forced with /f
+	cmd := exec.Command("taskkill", "/pid", strconv.Itoa(pid), "/f")
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("taskkill: %v", err)
 	}
 	return nil
+}
+
+// On Windows the app name passed in os.Args[0] will match how
+// caddy was started eg will match caddy or caddy.exe.
+// So return appname with .exe for consistency
+func getProcessName() string {
+	base := filepath.Base(os.Args[0])
+	if filepath.Ext(base) == "" {
+		return base + ".exe"
+	}
+	return base
 }
