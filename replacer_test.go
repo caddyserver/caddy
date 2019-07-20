@@ -15,6 +15,7 @@
 package caddy
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -26,61 +27,6 @@ func fakeReplacer() replacer {
 		providers: make([]ReplacementFunc, 0),
 		static:    make(map[string]string),
 	}
-}
-
-func fakeReplacerFilled() replacer {
-	return replacer{
-		providers: []ReplacementFunc{
-			// split our possible vars to two functions (to test if both functions are called)
-			func(key string) (val string, ok bool) {
-				switch key {
-				case "test1":
-					return "val1", true
-				case "asdf":
-					return "123", true
-				case "äöü":
-					return "öö_äü", true
-				case "with space":
-					return "space value", true
-				default:
-					return "NOOO", false
-				}
-			},
-			func(key string) (val string, ok bool) {
-				switch key {
-				case "1":
-					return "test-123", true
-				case "mySuper_IP":
-					return "1.2.3.4", true
-				case "testEmpty":
-					return "", true
-				default:
-					return "NOOO", false
-				}
-			},
-		},
-	}
-}
-
-func fakeReplacerFilledStatic() replacer {
-	return replacer{
-		static: map[string]string{
-			"key1": "val1",
-			"key2": "val2",
-			"key3": "val3",
-			"key4": "val4",
-		},
-	}
-}
-
-func getHostnameForTest() string {
-	name, _ := os.Hostname()
-	return name
-}
-
-func getEnvForTest(name string) (string, bool) {
-	val := os.Getenv(name)
-	return val, val != ""
 }
 
 // Tests the Set method by setting some variables and check if they are added to static
@@ -125,22 +71,52 @@ func TestReplacerSet(t *testing.T) {
 		// test if key is added
 		if val, ok := rep.static[tc.variable]; ok {
 			if val != tc.value {
-				t.Errorf("Expectd value '%s' for key '%s' got '%s'", tc.value, tc.variable, val)
+				t.Errorf("Expected value '%s' for key '%s' got '%s'", tc.value, tc.variable, val)
 			}
 		} else {
-			t.Errorf("Expectd existing key '%s' found nothing", tc.variable)
+			t.Errorf("Expected existing key '%s' found nothing", tc.variable)
 		}
 	}
 
 	// test if all keys are still there (by length)
 	length := len(rep.static)
 	if len(rep.static) != 7 {
-		t.Errorf("Expectd length '%v' got '%v'", 7, length)
+		t.Errorf("Expected length '%v' got '%v'", 7, length)
 	}
 }
 
 func TestReplacerReplaceAll(t *testing.T) {
-	rep := fakeReplacerFilled()
+	rep := replacer{
+		providers: []ReplacementFunc{
+			// split our possible vars to two functions (to test if both functions are called)
+			func(key string) (val string, ok bool) {
+				switch key {
+				case "test1":
+					return "val1", true
+				case "asdf":
+					return "123", true
+				case "äöü":
+					return "öö_äü", true
+				case "with space":
+					return "space value", true
+				default:
+					return "NOOO", false
+				}
+			},
+			func(key string) (val string, ok bool) {
+				switch key {
+				case "1":
+					return "test-123", true
+				case "mySuper_IP":
+					return "1.2.3.4", true
+				case "testEmpty":
+					return "", true
+				default:
+					return "NOOO", false
+				}
+			},
+		},
+	}
 
 	for _, tc := range []struct {
 		testInput string
@@ -148,13 +124,13 @@ func TestReplacerReplaceAll(t *testing.T) {
 	}{
 		{
 			// test vars without space
-			testInput: "{test1}{asdf}{1}",
-			expected:  "val1123test-123",
+			testInput: "{test1}{asdf}{äöü}{1}{with space}{mySuper_IP}",
+			expected:  "val1123öö_äütest-123space value1.2.3.4",
 		},
 		{
 			// test vars with space
-			testInput: "{test1} {asdf} {1} ",
-			expected:  "val1 123 test-123 ",
+			testInput: "{test1} {asdf} {äöü} {1} {with space} {mySuper_IP} ",
+			expected:  "val1 123 öö_äü test-123 space value 1.2.3.4 ",
 		},
 		{
 			// test with empty val
@@ -176,34 +152,43 @@ func TestReplacerReplaceAll(t *testing.T) {
 
 		// test if all are replaced as expected
 		if actual != tc.expected {
-			t.Errorf("Expectd '%s' got '%s' for '%s'", tc.expected, actual, tc.testInput)
+			t.Errorf("Expected '%s' got '%s' for '%s'", tc.expected, actual, tc.testInput)
 		}
 	}
 }
 
 func TestReplacerReplaceAllDefaults(t *testing.T) {
+	hostname, _ := os.Hostname()
+
 	rep := NewReplacer()
 	testInput := "{system.hostname} {system.slash} {system.os} {system.arch}"
-	expected := getHostnameForTest() + " " + string(filepath.Separator) + " " + runtime.GOOS + " " + runtime.GOARCH
+	expected := hostname + " " + string(filepath.Separator) + " " + runtime.GOOS + " " + runtime.GOARCH
 
 	// test env.
-	testInput += " {env.GOPATH}"
-	if env, ok := getEnvForTest("GOPATH"); ok {
-		expected += " " + env
-	} else {
-		expected += " "
-	}
+	os.Setenv("CADDY_REPLACER_TEST", "envtest")
+	testInput += " {env.CADDY_REPLACER_TEST}"
+	expected += " " + "envtest"
 
 	actual := rep.ReplaceAll(testInput, "EMPTY")
 
 	// test if all are replaced as expected
 	if actual != expected {
-		t.Errorf("Expectd '%s' got '%s' for '%s'", expected, actual, testInput)
+		t.Errorf("Expected '%s' got '%s' for '%s'", expected, actual, testInput)
 	}
 }
 
 func TestReplacerDelete(t *testing.T) {
-	rep := fakeReplacerFilledStatic()
+	rep := replacer{
+		static: map[string]string{
+			"key1": "val1",
+			"key2": "val2",
+			"key3": "val3",
+			"key4": "val4",
+		},
+	}
+
+	startLen := len(rep.static)
+
 	toDel := []string{
 		"key2", "key4",
 	}
@@ -213,47 +198,38 @@ func TestReplacerDelete(t *testing.T) {
 
 		// test if key is removed from static map
 		if _, ok := rep.static[key]; ok {
-			t.Errorf("Expectd '%s' to be removed. It is still in static map.", key)
+			t.Errorf("Expected '%s' to be removed. It is still in static map.", key)
 		}
 	}
 
 	// check if static slice is smaller
-	expected := len(fakeReplacerFilledStatic().static) - len(toDel)
+	expected := startLen - len(toDel)
 	actual := len(rep.static)
 	if len(rep.static) != expected {
-		t.Errorf("Expectd length '%v' got lenth '%v'", expected, actual)
+		t.Errorf("Expected length '%v' got length '%v'", expected, actual)
 	}
 }
 
 func TestReplacerMap(t *testing.T) {
 	rep := fakeReplacer()
 
-	for i, tc := range []struct {
-		key   string
-		value string
-	}{
-		{
-			key:   "f1",
-			value: "v1",
+	for i, tc := range []ReplacementFunc{
+		func(key string) (val string, ok bool) {
+			return "", false
 		},
-		{
-			key:   "f2",
-			value: "v2",
+		func(key string) (val string, ok bool) {
+			return "", false
 		},
 	} {
-		rep.Map(func(key string) (val string, ok bool) {
-			if key == tc.key {
-				return tc.value, true
-			}
-			return "NO", false
-		})
+		rep.Map(tc)
 
-		// test if function (which listens on specific key) is added bychecking length
+		// test if function (which listens on specific key) is added by checking length
 		if len(rep.providers) == i+1 {
-			val, _ := rep.providers[i](tc.key) // never fails, as we just checked the length
 			// check if the last function is the one we just added
-			if val != tc.value {
-				t.Errorf("Expected value '%s' for key '%s' got '%s'", tc.value, tc.key, val)
+			pTc := fmt.Sprintf("%p", tc)
+			pRep := fmt.Sprintf("%p", rep.providers[i])
+			if pRep != pTc {
+				t.Errorf("Expected func pointer '%s' got '%s'", pTc, pRep)
 			}
 		} else {
 			t.Errorf("Expected providers length '%v' got length '%v'", i+1, len(rep.providers))
