@@ -194,7 +194,7 @@ func cmdStop() (int, error) {
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("listing processes: %v", err)
 	}
-	thisProcName := getAppName()
+	thisProcName := getProcessName()
 	var found bool
 	for _, p := range processList {
 		// the process we're looking for should have the same name but different PID

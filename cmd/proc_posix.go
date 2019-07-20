@@ -30,6 +30,6 @@ func gracefullyStopProcess(pid int) error {
 	return nil
 }
 
-func getAppName() string {
+func getProcessName() string {
 	return filepath.Base(os.Args[0])
 }
