@@ -176,14 +176,14 @@ func handleStop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Println("[ADMIN] Initiating shutdown")
-	if err := stopandCleanup(); err != nil {
+	if err := stopAndCleanup(); err != nil {
 		log.Printf("[ADMIN][ERROR] stopping: %v \n", err)
 	}
 	log.Println("[ADMIN] Exiting")
 	os.Exit(0)
 }
 
-func stopandCleanup() error {
+func stopAndCleanup() error {
 	if err := Stop(); err != nil {
 		return err
 	}

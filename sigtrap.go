@@ -18,8 +18,6 @@ import (
 	"log"
 	"os"
 	"os/signal"
-
-	"github.com/mholt/certmagic"
 )
 
 // TrapSignals create signal/interrupt handlers as best it can for the
@@ -57,15 +55,11 @@ func trapSignalsCrossPlatform() {
 func gracefulStop(sigName string) {
 	exitCode := ExitCodeSuccess
 
-	// first stop all the apps
-	err := Stop()
+	err := stopAndCleanup()
 	if err != nil {
 		log.Printf("[ERROR] %s stop: %v", sigName, err)
 		exitCode = ExitCodeFailedQuit
 	}
-
-	// always, always, always try to clean up locks
-	certmagic.CleanUpOwnLocks()
 
 	log.Printf("[INFO] %s: Shutdown done", sigName)
 	os.Exit(exitCode)
