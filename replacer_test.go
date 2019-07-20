@@ -157,26 +157,6 @@ func TestReplacerReplaceAll(t *testing.T) {
 	}
 }
 
-func TestReplacerReplaceAllDefaults(t *testing.T) {
-	hostname, _ := os.Hostname()
-
-	rep := NewReplacer()
-	testInput := "{system.hostname} {system.slash} {system.os} {system.arch}"
-	expected := hostname + " " + string(filepath.Separator) + " " + runtime.GOOS + " " + runtime.GOARCH
-
-	// test env.
-	os.Setenv("CADDY_REPLACER_TEST", "envtest")
-	testInput += " {env.CADDY_REPLACER_TEST}"
-	expected += " " + "envtest"
-
-	actual := rep.ReplaceAll(testInput, "EMPTY")
-
-	// test if all are replaced as expected
-	if actual != expected {
-		t.Errorf("Expected '%s' got '%s' for '%s'", expected, actual, testInput)
-	}
-}
-
 func TestReplacerDelete(t *testing.T) {
 	rep := replacer{
 		static: map[string]string{
@@ -244,6 +224,44 @@ func TestReplacerNew(t *testing.T) {
 	if ok {
 		if len(rep.providers) != 2 {
 			t.Errorf("Expected providers length '%v' got length '%v'", 2, len(rep.providers))
+		} else {
+			// test if default global replacements are added  as the first provider
+			hostname, _ := os.Hostname()
+			os.Setenv("CADDY_REPLACER_TEST", "envtest")
+
+			for _, tc := range []struct {
+				variable string
+				value    string
+			}{
+				{
+					variable: "system.hostname",
+					value:    hostname,
+				},
+				{
+					variable: "system.slash",
+					value:    string(filepath.Separator),
+				},
+				{
+					variable: "system.os",
+					value:    runtime.GOOS,
+				},
+				{
+					variable: "system.arch",
+					value:    runtime.GOARCH,
+				},
+				{
+					variable: "env.CADDY_REPLACER_TEST",
+					value:    "envtest",
+				},
+			} {
+				if val, ok := rep.providers[0](tc.variable); ok {
+					if val != tc.value {
+						t.Errorf("Expected value '%s' for key '%s' got '%s'", tc.value, tc.variable, val)
+					}
+				} else {
+					t.Errorf("Expected key '%s' to be recognized by first provider", tc.variable)
+				}
+			}
 		}
 	} else {
 		t.Errorf("Expected type of replacer %T got %T ", &replacer{}, tc)
