@@ -103,6 +103,7 @@ func (enc *Encode) initResponseWriter(rw *responseWriter, encodingName string, w
 	buf := bufPool.Get().(*bytes.Buffer)
 	buf.Reset()
 
+	// The allocation of ResponseWriterWrapper might be optimized as well.
 	rw.ResponseWriterWrapper = &caddyhttp.ResponseWriterWrapper{ResponseWriter: wrappedRW}
 	rw.encodingName = encodingName
 	rw.buf = buf
