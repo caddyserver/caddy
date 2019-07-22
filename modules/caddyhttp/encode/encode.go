@@ -93,14 +93,22 @@ func (enc *Encode) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyh
 // encode the response with encodingName. The returned response writer MUST
 // be closed after the handler completes.
 func (enc *Encode) openResponseWriter(encodingName string, w http.ResponseWriter) *responseWriter {
+	var rw responseWriter
+	return enc.initResponseWriter(&rw, encodingName, w)
+}
+
+// initResponseWriter initializes the responseWriter instance
+// allocated in openResponseWriter, enabling mid-stack inlining.
+func (enc *Encode) initResponseWriter(rw *responseWriter, encodingName string, wrappedRW http.ResponseWriter) *responseWriter {
 	buf := bufPool.Get().(*bytes.Buffer)
 	buf.Reset()
-	return &responseWriter{
-		ResponseWriterWrapper: &caddyhttp.ResponseWriterWrapper{ResponseWriter: w},
-		encodingName:          encodingName,
-		buf:                   buf,
-		config:                enc,
-	}
+
+	rw.ResponseWriterWrapper = &caddyhttp.ResponseWriterWrapper{ResponseWriter: wrappedRW}
+	rw.encodingName = encodingName
+	rw.buf = buf
+	rw.config = enc
+
+	return rw
 }
 
 // responseWriter writes to an underlying response writer
