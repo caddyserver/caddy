@@ -59,10 +59,21 @@ func BenchmarkOldBrowseWriteHTML(b *testing.B) {
 		TemplateFile: "",
 		template:     template.New("test"),
 	}
+	listing := browseListing{
+		Name:           "test",
+		Path:           "test",
+		CanGoUp:        false,
+		Items:          make([]fileInfo, 100),
+		NumDirs:        42,
+		NumFiles:       420,
+		Sort:           "",
+		Order:          "",
+		ItemsLimitedTo: 42,
+	}
 	b.ResetTimer()
 
 	for n := 0; n < b.N; n++ {
-		ofsrv.browseWriteHTML(browseListing{})
+		ofsrv.browseWriteHTML(listing)
 	}
 }
 
@@ -73,10 +84,21 @@ func BenchmarkNewBrowseWriteHTML(b *testing.B) {
 		TemplateFile: "",
 		template:     template.New("test"),
 	}
+	listing := browseListing{
+		Name:           "test",
+		Path:           "test",
+		CanGoUp:        false,
+		Items:          make([]fileInfo, 100),
+		NumDirs:        42,
+		NumFiles:       420,
+		Sort:           "",
+		Order:          "",
+		ItemsLimitedTo: 42,
+	}
 	b.ResetTimer()
 
 	for n := 0; n < b.N; n++ {
-		fsrv.browseWriteHTML(browseListing{})
+		fsrv.browseWriteHTML(listing)
 	}
 }
 
