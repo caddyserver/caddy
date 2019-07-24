@@ -15,6 +15,7 @@
 package fileserver
 
 import (
+	"bytes"
 	"fmt"
 	"html/template"
 	weakrand "math/rand"
@@ -25,6 +26,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
@@ -46,6 +48,8 @@ type FileServer struct {
 	Hide       []string `json:"hide,omitempty"`
 	IndexNames []string `json:"index_names,omitempty"`
 	Browse     *Browse  `json:"browse,omitempty"`
+
+	bufPools map[string]*sync.Pool
 	// TODO: Content negotiation
 }
 
@@ -53,6 +57,19 @@ type FileServer struct {
 func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 	if fsrv.IndexNames == nil {
 		fsrv.IndexNames = defaultIndexNames
+	}
+
+	fsrv.bufPools = map[string]*sync.Pool{
+		"json": &sync.Pool{
+			New: func() interface{} {
+				return new(bytes.Buffer)
+			},
+		},
+		"html": &sync.Pool{
+			New: func() interface{} {
+				return new(bytes.Buffer)
+			},
+		},
 	}
 
 	if fsrv.Browse != nil {

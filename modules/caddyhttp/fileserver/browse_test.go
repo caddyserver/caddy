@@ -3,10 +3,13 @@ package fileserver
 import (
 	"html/template"
 	"testing"
+
+	"github.com/caddyserver/caddy/v2"
 )
 
 func BenchmarkBrowseWriteJSON(b *testing.B) {
 	fsrv := new(FileServer)
+	fsrv.Provision(caddy.Context{})
 	listing := browseListing{
 		Name:           "test",
 		Path:           "test",
@@ -27,6 +30,7 @@ func BenchmarkBrowseWriteJSON(b *testing.B) {
 
 func BenchmarkBrowseWriteHTML(b *testing.B) {
 	fsrv := new(FileServer)
+	fsrv.Provision(caddy.Context{})
 	fsrv.Browse = &Browse{
 		TemplateFile: "",
 		template:     template.New("test"),
