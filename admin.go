@@ -24,10 +24,12 @@ import (
 	"net"
 	"net/http"
 	"net/http/pprof"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/mholt/certmagic"
 	"github.com/rs/cors"
 )
 
@@ -83,6 +85,7 @@ func StartAdmin(initialConfigJSON []byte) error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/load", handleLoadConfig)
+	mux.HandleFunc("/stop", handleStop)
 
 	///// BEGIN PPROF STUFF (TODO: Temporary) /////
 	mux.HandleFunc("/debug/pprof/", pprof.Index)
@@ -149,7 +152,7 @@ type AdminRoute struct {
 
 func handleLoadConfig(w http.ResponseWriter, r *http.Request) {
 	r.Close = true
-	if r.Method != "POST" {
+	if r.Method != http.MethodPost {
 		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 		return
 	}
@@ -165,6 +168,27 @@ func handleLoadConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+}
+
+func handleStop(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
+	}
+	log.Println("[ADMIN] Initiating shutdown")
+	if err := stopAndCleanup(); err != nil {
+		log.Printf("[ADMIN][ERROR] stopping: %v \n", err)
+	}
+	log.Println("[ADMIN] Exiting")
+	os.Exit(0)
+}
+
+func stopAndCleanup() error {
+	if err := Stop(); err != nil {
+		return err
+	}
+	certmagic.CleanUpOwnLocks()
+	return nil
 }
 
 // Load loads and starts a configuration.

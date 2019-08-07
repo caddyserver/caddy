@@ -27,7 +27,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
+
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
@@ -137,8 +137,17 @@ func cmdStart() (int, error) {
 func cmdRun() (int, error) {
 	runCmd := flag.NewFlagSet("run", flag.ExitOnError)
 	runCmdConfigFlag := runCmd.String("config", "", "Configuration file")
+	runCmdPrintEnvFlag := runCmd.Bool("print-env", false, "Print environment (useful for debugging)")
 	runCmdPingbackFlag := runCmd.String("pingback", "", "Echo confirmation bytes to this address on success")
 	runCmd.Parse(os.Args[2:])
+
+	// if we are supposed to print the environment, do that first
+	if *runCmdPrintEnvFlag {
+		exitCode, err := cmdEnviron()
+		if err != nil {
+			return exitCode, err
+		}
+	}
 
 	// if a config file was specified for bootstrapping
 	// the server instance, load it now
@@ -194,14 +203,14 @@ func cmdStop() (int, error) {
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("listing processes: %v", err)
 	}
-	thisProcName := filepath.Base(os.Args[0])
+	thisProcName := getProcessName()
 	var found bool
 	for _, p := range processList {
 		// the process we're looking for should have the same name but different PID
 		if p.Executable() == thisProcName && p.Pid() != os.Getpid() {
 			found = true
 			fmt.Printf("pid=%d\n", p.Pid())
-			fmt.Printf("Graceful stop...")
+
 			if err := gracefullyStopProcess(p.Pid()); err != nil {
 				return caddy.ExitCodeFailedStartup, err
 			}

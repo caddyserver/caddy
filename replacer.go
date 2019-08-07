@@ -25,7 +25,7 @@ import (
 type Replacer interface {
 	Set(variable, value string)
 	Delete(variable string)
-	Map(func() map[string]string)
+	Map(ReplacementFunc)
 	ReplaceAll(input, empty string) string
 }
 
@@ -34,23 +34,22 @@ func NewReplacer() Replacer {
 	rep := &replacer{
 		static: make(map[string]string),
 	}
-	rep.providers = []ReplacementsFunc{
-		defaultReplacements,
-		func() map[string]string { return rep.static },
+	rep.providers = []ReplacementFunc{
+		globalDefaultReplacements,
+		rep.fromStatic,
 	}
 	return rep
 }
 
 type replacer struct {
-	providers []ReplacementsFunc
+	providers []ReplacementFunc
 	static    map[string]string
 }
 
-// Map augments the map of replacements with those returned
-// by the given replacements function. The function is only
-// executed at replace-time.
-func (r *replacer) Map(replacements func() map[string]string) {
-	r.providers = append(r.providers, replacements)
+// Map adds mapFunc to the list of value providers.
+// mapFunc will be executed only at replace-time.
+func (r *replacer) Map(mapFunc ReplacementFunc) {
+	r.providers = append(r.providers, mapFunc)
 }
 
 // Set sets a custom variable to a static value.
@@ -64,55 +63,105 @@ func (r *replacer) Delete(variable string) {
 	delete(r.static, variable)
 }
 
-// ReplaceAll replaces placeholders in input with their values.
-// Values that are empty string will be substituted with the
-// empty parameter.
-func (r *replacer) ReplaceAll(input, empty string) string {
-	if !strings.Contains(input, phOpen) {
-		return input
-	}
-	for _, replacements := range r.providers {
-		for key, val := range replacements() {
-			if val == "" {
-				val = empty
-			}
-			input = strings.ReplaceAll(input, phOpen+key+phClose, val)
-		}
-	}
-	return input
+// fromStatic provides values from r.static.
+func (r *replacer) fromStatic(key string) (val string, ok bool) {
+	val, ok = r.static[key]
+	return
 }
 
-// ReplacementsFunc is a function that returns replacements,
-// which is variable names mapped to their values. The
-// function will be evaluated only at replace-time to ensure
-// the most current values are mapped.
-type ReplacementsFunc func() map[string]string
-
-var defaultReplacements = func() map[string]string {
-	m := map[string]string{
-		"system.hostname": func() string {
-			// OK if there is an error; just return empty string
-			name, _ := os.Hostname()
-			return name
-		}(),
-		"system.slash": string(filepath.Separator),
-		"system.os":    runtime.GOOS,
-		"system.arch":  runtime.GOARCH,
+// ReplaceAll efficiently replaces placeholders in input with
+// their values. Unrecognized placeholders will not be replaced.
+// Values that are empty string will be substituted with empty.
+func (r *replacer) ReplaceAll(input, empty string) string {
+	if !strings.Contains(input, string(phOpen)) {
+		return input
 	}
 
-	// add environment variables
-	for _, keyval := range os.Environ() {
-		parts := strings.SplitN(keyval, "=", 2)
-		if len(parts) != 2 {
+	var sb strings.Builder
+
+	// it is reasonable to assume that the output
+	// will be approximately as long as the input
+	sb.Grow(len(input))
+
+	// iterate the input to find each placeholder
+	var lastWriteCursor int
+	for i := 0; i < len(input); i++ {
+		if input[i] != phOpen {
 			continue
 		}
-		m["env."+strings.ToLower(parts[0])] = parts[1]
+
+		// write the substring from the last cursor to this point
+		sb.WriteString(input[lastWriteCursor:i])
+
+		// find the end of the placeholder
+		end := strings.Index(input[i:], string(phClose)) + i
+
+		// trim opening bracket
+		key := input[i+1 : end]
+
+		// try to get a value for this key; if
+		// the key is not recognized, do not
+		// perform any replacement
+		var found bool
+		for _, mapFunc := range r.providers {
+			if val, ok := mapFunc(key); ok {
+				found = true
+				if val != "" {
+					sb.WriteString(val)
+				} else if empty != "" {
+					sb.WriteString(empty)
+				}
+				break
+			}
+		}
+		if !found {
+			lastWriteCursor = i
+			continue
+		}
+
+		// advance cursor to end of placeholder
+		i = end
+		lastWriteCursor = i + 1
 	}
 
-	return m
+	// flush any unwritten remainder
+	sb.WriteString(input[lastWriteCursor:])
+
+	return sb.String()
+}
+
+// ReplacementFunc is a function that returns a replacement
+// for the given key along with true if the function is able
+// to service that key (even if the value is blank). If the
+// function does not recognize the key, false should be
+// returned.
+type ReplacementFunc func(key string) (val string, ok bool)
+
+func globalDefaultReplacements(key string) (string, bool) {
+	// check environment variable
+	const envPrefix = "env."
+	if strings.HasPrefix(key, envPrefix) {
+		val := os.Getenv(key[len(envPrefix):])
+		return val, val != ""
+	}
+
+	switch key {
+	case "system.hostname":
+		// OK if there is an error; just return empty string
+		name, _ := os.Hostname()
+		return name, true
+	case "system.slash":
+		return string(filepath.Separator), true
+	case "system.os":
+		return runtime.GOOS, true
+	case "system.arch":
+		return runtime.GOARCH, true
+	}
+
+	return "", false
 }
 
 // ReplacerCtxKey is the context key for a replacer.
 const ReplacerCtxKey CtxKey = "replacer"
 
-const phOpen, phClose = "{", "}"
+const phOpen, phClose = '{', '}'
