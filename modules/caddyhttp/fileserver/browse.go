@@ -133,14 +133,16 @@ func (fsrv *FileServer) browseApplyQueryParams(w http.ResponseWriter, r *http.Re
 }
 
 func (fsrv *FileServer) browseWriteJSON(listing browseListing) (*bytes.Buffer, error) {
-	buf := new(bytes.Buffer)
+	buf := bufPool.Get().(*bytes.Buffer)
 	err := json.NewEncoder(buf).Encode(listing.Items)
+	bufPool.Put(buf)
 	return buf, err
 }
 
 func (fsrv *FileServer) browseWriteHTML(listing browseListing) (*bytes.Buffer, error) {
-	buf := new(bytes.Buffer)
+	buf := bufPool.Get().(*bytes.Buffer)
 	err := fsrv.Browse.template.Execute(buf, listing)
+	bufPool.Put(buf)
 	return buf, err
 }
 

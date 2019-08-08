@@ -208,8 +208,16 @@ func (d *Duration) UnmarshalJSON(b []byte) error {
 // If no version information is available, a non-nil
 // value will still be returned, but with an
 // unknown version.
-func GoModule() debug.Module {
-	mod := debug.Module{Version: "unknown"}
+func GoModule() *debug.Module {
+	var mod debug.Module
+	return goModule(&mod)
+}
+
+// goModule holds the actual implementation of GoModule.
+// Allocating debug.Module in GoModule() and passing a
+// reference to goModule enables mid-stack inlining.
+func goModule(mod *debug.Module) *debug.Module {
+	mod.Version = "unknown"
 	bi, ok := debug.ReadBuildInfo()
 	if ok {
 		mod.Path = bi.Main.Path

@@ -15,6 +15,7 @@
 package fileserver
 
 import (
+	"bytes"
 	"fmt"
 	"html/template"
 	weakrand "math/rand"
@@ -25,6 +26,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
@@ -46,6 +48,7 @@ type FileServer struct {
 	Hide       []string `json:"hide,omitempty"`
 	IndexNames []string `json:"index_names,omitempty"`
 	Browse     *Browse  `json:"browse,omitempty"`
+
 	// TODO: Content negotiation
 }
 
@@ -300,6 +303,12 @@ func calculateEtag(d os.FileInfo) string {
 }
 
 var defaultIndexNames = []string{"index.html"}
+
+var bufPool = sync.Pool{
+	New: func() interface{} {
+		return new(bytes.Buffer)
+	},
+}
 
 const minBackoff, maxBackoff = 2, 5
 
