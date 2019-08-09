@@ -22,12 +22,16 @@ import (
 	"github.com/klauspost/cpuid"
 )
 
-// supportedCipherSuites is the unordered map of cipher suite
+// SupportedCipherSuites is the unordered map of cipher suite
 // string names to their definition in crypto/tls. All values
 // should be IANA-reserved names. See
 // https://www.iana.org/assignments/tls-parameters/tls-parameters.xhtml
+// Two of the cipher suite constants in the standard lib do not use the
+// full IANA name, but we do; see:
+// https://github.com/golang/go/issues/32061 and
+// https://github.com/golang/go/issues/30325#issuecomment-512862374.
 // TODO: might not be needed much longer: https://github.com/golang/go/issues/30325
-var supportedCipherSuites = map[string]uint16{
+var SupportedCipherSuites = map[string]uint16{
 	"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384":       tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
 	"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384":         tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
 	"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256":       tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
@@ -84,22 +88,24 @@ func getOptimalDefaultCipherSuites() []uint16 {
 	return defaultCipherSuitesWithoutAESNI
 }
 
-// supportedCurves is the unordered map of supported curves.
+// SupportedCurves is the unordered map of supported curves.
 // https://golang.org/pkg/crypto/tls/#CurveID
-var supportedCurves = map[string]tls.CurveID{
-	"X25519": tls.X25519,
-	"P256":   tls.CurveP256,
-	"P384":   tls.CurveP384,
-	"P521":   tls.CurveP521,
+var SupportedCurves = map[string]tls.CurveID{
+	// TODO: Use IANA names, probably? see https://www.iana.org/assignments/tls-parameters/tls-parameters.xhtml#tls-parameters-8
+	// All named crypto/elliptic curves have secpXXXr1 IANA names.
+	"x25519": tls.X25519,    // x25519, 29
+	"p256":   tls.CurveP256, // secp256r1, 23
+	"p384":   tls.CurveP384, // secp384r1, 24
+	"p521":   tls.CurveP521, // secp521r1, 25
 }
 
 // supportedCertKeyTypes is all the key types that are supported
 // for certificates that are obtained through ACME.
 var supportedCertKeyTypes = map[string]certcrypto.KeyType{
-	"RSA2048": certcrypto.RSA2048,
-	"RSA4096": certcrypto.RSA4096,
-	"P256":    certcrypto.EC256,
-	"P384":    certcrypto.EC384,
+	"rsa_2048": certcrypto.RSA2048,
+	"rsa_4096": certcrypto.RSA4096,
+	"ec_p256":  certcrypto.EC256,
+	"ec_p384":  certcrypto.EC384,
 }
 
 // defaultCurves is the list of only the curves we want to use
@@ -115,9 +121,9 @@ var defaultCurves = []tls.CurveID{
 	tls.CurveP256,
 }
 
-// supportedProtocols is a map of supported protocols.
-// HTTP/2 only supports TLS 1.2 and higher.
-var supportedProtocols = map[string]uint16{
+// SupportedProtocols is a map of supported protocols.
+// Note that HTTP/2 only supports TLS 1.2 and higher.
+var SupportedProtocols = map[string]uint16{
 	"tls1.0": tls.VersionTLS10,
 	"tls1.1": tls.VersionTLS11,
 	"tls1.2": tls.VersionTLS12,

@@ -12,42 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package reverseproxy
+package rewrite
 
 import (
 	"github.com/caddyserver/caddy/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/caddyconfig/httpcaddyfile"
-	"github.com/caddyserver/caddy/v2"
 )
-
-// Register caddy module.
-func init() {
-	caddy.RegisterModule(caddy.Module{
-		Name: "http.handlers.reverse_proxy",
-		New:  func() interface{} { return new(LoadBalanced) },
-	})
-}
 
 // UnmarshalCaddyfile sets up the handler from Caddyfile tokens. Syntax:
 //
-//     proxy [<matcher>] <to>
+//     rewrite [<matcher>] <to>
 //
-// TODO: This needs to be finished. It definitely needs to be able to open a block...
-func (lb *LoadBalanced) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+// The <to> parameter becomes the new URI.
+func (rewr *Rewrite) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
-		allTo := d.RemainingArgs()
-		if len(allTo) == 0 {
-			return d.ArgErr()
-		}
-		for _, to := range allTo {
-			lb.Upstreams = append(lb.Upstreams, &UpstreamConfig{Host: to})
-		}
+		rewr.URI = d.Val()
 	}
 	return nil
 }
 
 // Bucket returns the HTTP Caddyfile handler bucket number.
-func (*LoadBalanced) Bucket() int { return 7 }
+func (rewr Rewrite) Bucket() int { return 1 }
 
 // Interface guard
-var _ httpcaddyfile.HandlerDirective = (*LoadBalanced)(nil)
+var _ httpcaddyfile.HandlerDirective = (*Rewrite)(nil)

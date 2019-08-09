@@ -30,7 +30,7 @@ func TestStaticResponseHandler(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	s := StaticResponse{
-		StatusCode: weakString(strconv.Itoa(http.StatusNotFound)),
+		StatusCode: WeakString(strconv.Itoa(http.StatusNotFound)),
 		Headers: http.Header{
 			"X-Test": []string{"Testing"},
 		},

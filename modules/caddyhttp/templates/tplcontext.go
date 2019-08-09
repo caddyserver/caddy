@@ -136,19 +136,6 @@ func (c templateContext) Cookie(name string) string {
 	return ""
 }
 
-// Hostname gets the (remote) hostname of the client making the request.
-// Performance warning: This involves a DNS lookup.
-func (c templateContext) Hostname() string {
-	ip := c.RemoteIP()
-
-	hostnameList, err := net.LookupAddr(ip)
-	if err != nil || len(hostnameList) == 0 {
-		return c.Req.RemoteAddr
-	}
-
-	return hostnameList[0]
-}
-
 // RemoteIP gets the IP address of the client making the request.
 func (c templateContext) RemoteIP() string {
 	ip, _, err := net.SplitHostPort(c.Req.RemoteAddr)

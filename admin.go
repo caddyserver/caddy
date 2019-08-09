@@ -96,8 +96,10 @@ func StartAdmin(initialConfigJSON []byte) error {
 	///// END PPROF STUFF //////
 
 	for _, m := range GetModules("admin") {
-		route := m.New().(AdminRoute)
-		mux.Handle(route.Pattern, route)
+		routes := m.New().([]AdminRoute)
+		for _, route := range routes {
+			mux.Handle(route.Pattern, route)
+		}
 	}
 
 	handler := cors.Default().Handler(mux)

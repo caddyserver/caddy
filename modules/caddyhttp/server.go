@@ -57,7 +57,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	repl := caddy.NewReplacer()
 	ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, repl)
 	ctx = context.WithValue(ctx, ServerCtxKey, s)
-	ctx = context.WithValue(ctx, TableCtxKey, make(map[string]interface{})) // TODO: Implement this
+	ctx = context.WithValue(ctx, VarCtxKey, make(map[string]interface{}))
 	r = r.WithContext(ctx)
 
 	// once the pointer to the request won't change
@@ -201,6 +201,14 @@ type AutoHTTPSConfig struct {
 	// that certificates will not be provisioned and managed
 	// for these names.
 	SkipCerts []string `json:"skip_certificates,omitempty"`
+
+	// By default, automatic HTTPS will obtain and renew
+	// certificates for qualifying hostnames. However, if
+	// a certificate with a matching SAN is already loaded
+	// into the cache, certificate management will not be
+	// enabled. To force automated certificate management
+	// regardless of loaded certificates, set this to true.
+	IgnoreLoadedCerts bool `json:"ignore_loaded_certificates,omitempty"`
 }
 
 // Skipped returns true if name is in skipSlice, which
@@ -225,6 +233,6 @@ const (
 	// For referencing the server instance
 	ServerCtxKey caddy.CtxKey = "server"
 
-	// For the request's variable table (TODO: implement this)
-	TableCtxKey caddy.CtxKey = "table"
+	// For the request's variable table
+	VarCtxKey caddy.CtxKey = "vars"
 )

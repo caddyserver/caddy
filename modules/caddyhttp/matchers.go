@@ -28,6 +28,7 @@ import (
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/pkg/caddyscript"
 	"go.starlark.net/starlark"
 )
@@ -125,6 +126,12 @@ func init() {
 	})
 }
 
+// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+func (m *MatchHost) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	*m = d.RemainingArgs()
+	return nil
+}
+
 // Match returns true if r matches m.
 func (m MatchHost) Match(r *http.Request) bool {
 	reqHost, _, err := net.SplitHostPort(r.Host)
@@ -177,10 +184,22 @@ func (m MatchPath) Match(r *http.Request) bool {
 	return false
 }
 
+// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+func (m *MatchPath) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	*m = d.RemainingArgs()
+	return nil
+}
+
 // Match returns true if r matches m.
 func (m MatchPathRE) Match(r *http.Request) bool {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
 	return m.MatchRegexp.Match(r.URL.Path, repl, "path_regexp")
+}
+
+// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+func (m *MatchMethod) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	*m = d.RemainingArgs()
+	return nil
 }
 
 // Match returns true if r matches m.
@@ -191,6 +210,18 @@ func (m MatchMethod) Match(r *http.Request) bool {
 		}
 	}
 	return false
+}
+
+// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+func (m *MatchQuery) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		parts := strings.SplitN(d.Val(), "=", 2)
+		if len(parts) != 2 {
+			return d.Errf("malformed query matcher token: %s; must be in param=val format", d.Val())
+		}
+		url.Values(*m).Set(parts[0], parts[1])
+	}
+	return nil
 }
 
 // Match returns true if r matches m.
@@ -204,6 +235,18 @@ func (m MatchQuery) Match(r *http.Request) bool {
 		}
 	}
 	return false
+}
+
+// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+func (m *MatchHeader) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		var field, val string
+		if !d.Args(&field, &val) {
+			return d.Errf("expected both field and value")
+		}
+		http.Header(*m).Set(field, val)
+	}
+	return nil
 }
 
 // Match returns true if r matches m.
@@ -225,6 +268,21 @@ func (m MatchHeader) Match(r *http.Request) bool {
 		}
 	}
 	return true
+}
+
+// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+func (m *MatchHeaderRE) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	if *m == nil {
+		*m = make(map[string]*MatchRegexp)
+	}
+	for d.Next() {
+		var field, val string
+		if !d.Args(&field, &val) {
+			return d.ArgErr()
+		}
+		(*m)[field] = &MatchRegexp{Pattern: val}
+	}
+	return nil
 }
 
 // Match returns true if r matches m.
@@ -274,12 +332,28 @@ func (m MatchProtocol) Match(r *http.Request) bool {
 	return false
 }
 
+// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+func (m *MatchProtocol) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	var proto string
+	if !d.Args(&proto) {
+		return d.Err("expected exactly one protocol")
+	}
+	*m = MatchProtocol(proto)
+	return nil
+}
+
 // UnmarshalJSON unmarshals data into m's unexported map field.
 // This is done because we cannot embed the map directly into
 // the struct, but we need a struct because we need another
 // field just for the provisioned modules.
 func (m *MatchNegate) UnmarshalJSON(data []byte) error {
 	return json.Unmarshal(data, &m.matchersRaw)
+}
+
+// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+func (m *MatchNegate) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	// TODO: figure out how this will work
+	return nil
 }
 
 // Provision loads the matcher modules to be negated.
@@ -299,6 +373,12 @@ func (m *MatchNegate) Provision(ctx caddy.Context) error {
 // embedded matchers, false is returned if any of its matchers match.
 func (m MatchNegate) Match(r *http.Request) bool {
 	return !m.matchers.Match(r)
+}
+
+// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+func (m *MatchRemoteIP) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	m.Ranges = d.RemainingArgs()
+	return nil
 }
 
 // Provision parses m's IP ranges, either from IP or CIDR expressions.
@@ -379,7 +459,7 @@ func (m MatchStarlarkExpr) Match(r *http.Request) bool {
 // MatchRegexp is an embeddable type for matching
 // using regular expressions.
 type MatchRegexp struct {
-	Name     string `json:"name"`
+	Name     string `json:"name,omitempty"`
 	Pattern  string `json:"pattern"`
 	compiled *regexp.Regexp
 }
@@ -429,6 +509,14 @@ func (mre *MatchRegexp) Match(input string, repl caddy.Replacer, scope string) b
 	}
 
 	return true
+}
+
+// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+func (mre *MatchRegexp) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	if !d.Args(&mre.Name, &mre.Pattern) {
+		return fmt.Errorf("missing arguments")
+	}
+	return nil
 }
 
 // ResponseMatcher is a type which can determine if a given response
@@ -506,4 +594,14 @@ var (
 	_ caddy.Provisioner = (*MatchNegate)(nil)
 	_ RequestMatcher    = (*MatchStarlarkExpr)(nil)
 	_ caddy.Provisioner = (*MatchRegexp)(nil)
+
+	_ caddyfile.Unmarshaler = (*MatchHost)(nil)
+	_ caddyfile.Unmarshaler = (*MatchPath)(nil)
+	_ caddyfile.Unmarshaler = (*MatchPathRE)(nil)
+	_ caddyfile.Unmarshaler = (*MatchMethod)(nil)
+	_ caddyfile.Unmarshaler = (*MatchQuery)(nil)
+	_ caddyfile.Unmarshaler = (*MatchHeader)(nil)
+	_ caddyfile.Unmarshaler = (*MatchHeaderRE)(nil)
+	_ caddyfile.Unmarshaler = (*MatchProtocol)(nil)
+	_ caddyfile.Unmarshaler = (*MatchRemoteIP)(nil)
 )

@@ -15,9 +15,12 @@
 package caddyhttp
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	weakrand "math/rand"
 	"net"
@@ -244,6 +247,14 @@ func (app *App) automaticHTTPS() error {
 			for d := range domainSet {
 				domains = append(domains, d)
 				if !srv.AutoHTTPS.Skipped(d, srv.AutoHTTPS.SkipCerts) {
+					// if a certificate for this name is already loaded,
+					// don't obtain another one for it, unless we are
+					// supposed to ignore loaded certificates
+					if !srv.AutoHTTPS.IgnoreLoadedCerts &&
+						len(tlsApp.CertificatesWithSAN(d)) > 0 {
+						log.Printf("[INFO][%s] Skipping automatic certificate management because a certificate with that SAN is already loaded", d)
+						continue
+					}
 					domainsForCerts = append(domainsForCerts, d)
 				}
 			}
@@ -319,7 +330,7 @@ func (app *App) automaticHTTPS() error {
 				}
 				redirTo += "{http.request.uri}"
 
-				redirRoutes = append(redirRoutes, ServerRoute{
+				redirRoutes = append(redirRoutes, Route{
 					matcherSets: []MatcherSet{
 						{
 							MatchProtocol("http"),
@@ -328,7 +339,7 @@ func (app *App) automaticHTTPS() error {
 					},
 					handlers: []MiddlewareHandler{
 						StaticResponse{
-							StatusCode: weakString(strconv.Itoa(http.StatusTemporaryRedirect)), // TODO: use permanent redirect instead
+							StatusCode: WeakString(strconv.Itoa(http.StatusTemporaryRedirect)), // TODO: use permanent redirect instead
 							Headers: http.Header{
 								"Location":   []string{redirTo},
 								"Connection": []string{"close"},
@@ -430,6 +441,77 @@ type MiddlewareHandler interface {
 
 // emptyHandler is used as a no-op handler.
 var emptyHandler HandlerFunc = func(http.ResponseWriter, *http.Request) error { return nil }
+
+// WeakString is a type that unmarshals any JSON value
+// as a string literal, with the following exceptions:
+// 1) actual string values are decoded as strings, and
+// 2) null is decoded as empty string
+// and provides methods for getting the value as various
+// primitive types. However, using this type removes any
+// type safety as far as deserializing JSON is concerned.
+type WeakString string
+
+// UnmarshalJSON satisfies json.Unmarshaler according to
+// this type's documentation.
+func (ws *WeakString) UnmarshalJSON(b []byte) error {
+	if len(b) == 0 {
+		return io.EOF
+	}
+	if b[0] == byte('"') && b[len(b)-1] == byte('"') {
+		var s string
+		err := json.Unmarshal(b, &s)
+		if err != nil {
+			return err
+		}
+		*ws = WeakString(s)
+		return nil
+	}
+	if bytes.Equal(b, []byte("null")) {
+		return nil
+	}
+	*ws = WeakString(b)
+	return nil
+}
+
+// MarshalJSON marshals was a boolean if true or false,
+// a number if an integer, or a string otherwise.
+func (ws WeakString) MarshalJSON() ([]byte, error) {
+	if ws == "true" {
+		return []byte("true"), nil
+	}
+	if ws == "false" {
+		return []byte("false"), nil
+	}
+	if num, err := strconv.Atoi(string(ws)); err == nil {
+		return json.Marshal(num)
+	}
+	return json.Marshal(string(ws))
+}
+
+// Int returns ws as an integer. If ws is not an
+// integer, 0 is returned.
+func (ws WeakString) Int() int {
+	num, _ := strconv.Atoi(string(ws))
+	return num
+}
+
+// Float64 returns ws as a float64. If ws is not a
+// float value, the zero value is returned.
+func (ws WeakString) Float64() float64 {
+	num, _ := strconv.ParseFloat(string(ws), 64)
+	return num
+}
+
+// Bool returns ws as a boolean. If ws is not a
+// boolean, false is returned.
+func (ws WeakString) Bool() bool {
+	return string(ws) == "true"
+}
+
+// String returns ws as a string.
+func (ws WeakString) String() string {
+	return string(ws)
+}
 
 const (
 	// DefaultHTTPPort is the default port for HTTP.

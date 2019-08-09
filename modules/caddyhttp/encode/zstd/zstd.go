@@ -15,6 +15,7 @@
 package caddyzstd
 
 import (
+	"github.com/caddyserver/caddy/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/encode"
 	"github.com/klauspost/compress/zstd"
@@ -30,6 +31,11 @@ func init() {
 // Zstd can create Zstandard encoders.
 type Zstd struct{}
 
+// UnmarshalCaddyfile sets up the handler from Caddyfile tokens.
+func (z *Zstd) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	return nil
+}
+
 // AcceptEncoding returns the name of the encoding as
 // used in the Accept-Encoding request headers.
 func (Zstd) AcceptEncoding() string { return "zstd" }
@@ -40,5 +46,8 @@ func (z Zstd) NewEncoder() encode.Encoder {
 	return writer
 }
 
-// Interface guard
-var _ encode.Encoding = (*Zstd)(nil)
+// Interface guards
+var (
+	_ encode.Encoding       = (*Zstd)(nil)
+	_ caddyfile.Unmarshaler = (*Zstd)(nil)
+)

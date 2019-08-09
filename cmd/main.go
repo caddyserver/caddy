@@ -25,6 +25,7 @@ import (
 	"os"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig"
 )
 
 // Main implements the main function of the caddy command.
@@ -62,6 +63,7 @@ var commands = map[string]commandFunc{
 	"version":      cmdVersion,
 	"list-modules": cmdListModules,
 	"environ":      cmdEnviron,
+	"adapt-config": cmdAdaptConfig,
 }
 
 func usageString() string {
@@ -84,4 +86,67 @@ func handlePingbackConn(conn net.Conn, expect []byte) error {
 		return fmt.Errorf("wrong confirmation: %x", confirmationBytes)
 	}
 	return nil
+}
+
+// loadConfig loads the config from configFile and adapts it
+// using adapterName. If adapterName is specified, configFile
+// must be also. It prints any warnings to stderr, and returns
+// the resulting JSON config bytes.
+func loadConfig(configFile, adapterName string) ([]byte, error) {
+	// specifying an adapter without a config file is ambiguous
+	if configFile == "" && adapterName != "" {
+		return nil, fmt.Errorf("cannot adapt config without config file (use --config)")
+	}
+
+	// load initial config and adapter
+	var config []byte
+	var cfgAdapter caddyconfig.Adapter
+	var err error
+	if configFile != "" {
+		config, err = ioutil.ReadFile(configFile)
+		if err != nil {
+			return nil, fmt.Errorf("reading config file: %v", err)
+		}
+	} else if adapterName == "" {
+		// as a special case when no config file or adapter
+		// is specified, see if the Caddyfile adapter is
+		// plugged in, and if so, try using a default Caddyfile
+		cfgAdapter = caddyconfig.GetAdapter("caddyfile")
+		if cfgAdapter != nil {
+			config, err = ioutil.ReadFile("Caddyfile")
+			if err != nil && !os.IsNotExist(err) {
+				return nil, fmt.Errorf("reading default Caddyfile: %v", err)
+			}
+			configFile = "Caddyfile"
+		}
+	}
+
+	// load config adapter
+	if adapterName != "" {
+		cfgAdapter = caddyconfig.GetAdapter(adapterName)
+		if cfgAdapter == nil {
+			return nil, fmt.Errorf("unrecognized config adapter: %s", adapterName)
+		}
+	}
+
+	// adapt config
+	if cfgAdapter != nil {
+		adaptedConfig, warnings, err := cfgAdapter.Adapt(config, map[string]string{
+			"filename": configFile,
+			// TODO: all other options... (http-port, etc...)
+		})
+		if err != nil {
+			return nil, fmt.Errorf("adapting config using %s: %v", adapterName, err)
+		}
+		for _, warn := range warnings {
+			msg := warn.Message
+			if warn.Directive != "" {
+				msg = fmt.Sprintf("%s: %s", warn.Directive, warn.Message)
+			}
+			fmt.Printf("[WARNING][%s] %s:%d: %s", adapterName, warn.File, warn.Line, msg)
+		}
+		config = adaptedConfig
+	}
+
+	return config, nil
 }

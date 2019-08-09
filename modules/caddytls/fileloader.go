@@ -25,12 +25,12 @@ import (
 func init() {
 	caddy.RegisterModule(caddy.Module{
 		Name: "tls.certificates.load_files",
-		New:  func() interface{} { return fileLoader{} },
+		New:  func() interface{} { return FileLoader{} },
 	})
 }
 
-// fileLoader loads certificates and their associated keys from disk.
-type fileLoader []CertKeyFilePair
+// FileLoader loads certificates and their associated keys from disk.
+type FileLoader []CertKeyFilePair
 
 // CertKeyFilePair pairs certificate and key file names along with their
 // encoding format so that they can be loaded from disk.
@@ -42,7 +42,7 @@ type CertKeyFilePair struct {
 }
 
 // LoadCertificates returns the certificates to be loaded by fl.
-func (fl fileLoader) LoadCertificates() ([]Certificate, error) {
+func (fl FileLoader) LoadCertificates() ([]Certificate, error) {
 	var certs []Certificate
 	for _, pair := range fl {
 		certData, err := ioutil.ReadFile(pair.Certificate)
@@ -73,4 +73,4 @@ func (fl fileLoader) LoadCertificates() ([]Certificate, error) {
 }
 
 // Interface guard
-var _ CertificateLoader = (fileLoader)(nil)
+var _ CertificateLoader = (FileLoader)(nil)

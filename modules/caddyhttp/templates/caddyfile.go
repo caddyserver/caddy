@@ -12,42 +12,52 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package reverseproxy
+package templates
 
 import (
 	"github.com/caddyserver/caddy/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/caddyconfig/httpcaddyfile"
-	"github.com/caddyserver/caddy/v2"
 )
-
-// Register caddy module.
-func init() {
-	caddy.RegisterModule(caddy.Module{
-		Name: "http.handlers.reverse_proxy",
-		New:  func() interface{} { return new(LoadBalanced) },
-	})
-}
 
 // UnmarshalCaddyfile sets up the handler from Caddyfile tokens. Syntax:
 //
-//     proxy [<matcher>] <to>
+//     templates [<matcher>] {
+//         mime <types...>
+//         between <open_delim> <close_delim>
+//         root <path>
+//     }
 //
-// TODO: This needs to be finished. It definitely needs to be able to open a block...
-func (lb *LoadBalanced) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+func (t *Templates) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
-		allTo := d.RemainingArgs()
-		if len(allTo) == 0 {
-			return d.ArgErr()
-		}
-		for _, to := range allTo {
-			lb.Upstreams = append(lb.Upstreams, &UpstreamConfig{Host: to})
+		for d.NextBlock() {
+			switch d.Val() {
+			case "mime":
+				t.MIMETypes = d.RemainingArgs()
+				if len(t.MIMETypes) == 0 {
+					return d.ArgErr()
+				}
+			case "between":
+				t.Delimiters = d.RemainingArgs()
+				if len(t.Delimiters) != 2 {
+					return d.ArgErr()
+				}
+			case "root":
+				if !d.Args(&t.IncludeRoot) {
+					return d.ArgErr()
+				}
+			}
 		}
 	}
+
+	if t.IncludeRoot == "" {
+		t.IncludeRoot = "{http.var.root}"
+	}
+
 	return nil
 }
 
 // Bucket returns the HTTP Caddyfile handler bucket number.
-func (*LoadBalanced) Bucket() int { return 7 }
+func (t Templates) Bucket() int { return 5 }
 
 // Interface guard
-var _ httpcaddyfile.HandlerDirective = (*LoadBalanced)(nil)
+var _ httpcaddyfile.HandlerDirective = (*Templates)(nil)
