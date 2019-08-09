@@ -38,6 +38,26 @@ type Module struct {
 	New func() interface{}
 }
 
+// ID returns a module's ID, which is the
+// last element of its name.
+func (m Module) ID() string {
+	if m.Name == "" {
+		return ""
+	}
+	parts := strings.Split(m.Name, ".")
+	return parts[len(parts)-1]
+}
+
+// Namespace returns the module's namespace (scope)
+// which is all but the last element of its name.
+func (m Module) Namespace() string {
+	lastDot := strings.LastIndex(m.Name, ".")
+	if lastDot < 0 {
+		return ""
+	}
+	return m.Name[:lastDot]
+}
+
 func (m Module) String() string { return m.Name }
 
 // RegisterModule registers a module. Modules must call

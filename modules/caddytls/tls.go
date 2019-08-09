@@ -45,8 +45,8 @@ func init() {
 // TLS represents a process-wide TLS configuration.
 type TLS struct {
 	Certificates   map[string]json.RawMessage `json:"certificates,omitempty"`
-	Automation     AutomationConfig           `json:"automation,omitempty"`
-	SessionTickets SessionTicketService       `json:"session_tickets,omitempty"`
+	Automation     AutomationConfig           `json:"automation"`
+	SessionTickets SessionTicketService       `json:"session_tickets"`
 
 	certificateLoaders []CertificateLoader
 	certCache          *certmagic.Cache
@@ -105,16 +105,12 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 		onDemandRateLimiter.SetLimit(0)
 	}
 
-	return nil
-}
-
-// Start activates the TLS module.
-func (t *TLS) Start() error {
+	// load manual/static (unmanaged) certificates - we do this in
+	// provision so that other apps (such as http) can know which
+	// certificates have been manually loaded
 	magic := certmagic.New(t.certCache, certmagic.Config{
-		Storage: t.ctx.Storage(),
+		Storage: ctx.Storage(),
 	})
-
-	// load manual/static (unmanaged) certificates
 	for _, loader := range t.certificateLoaders {
 		certs, err := loader.LoadCertificates()
 		if err != nil {
@@ -128,6 +124,11 @@ func (t *TLS) Start() error {
 		}
 	}
 
+	return nil
+}
+
+// Start activates the TLS module.
+func (t *TLS) Start() error {
 	// load automated (managed) certificates
 	if automatedRawMsg, ok := t.Certificates[automateKey]; ok {
 		var names []string
@@ -202,6 +203,12 @@ func (t *TLS) getAutomationPolicyForName(name string) AutomationPolicy {
 	mgmt := new(ACMEManagerMaker)
 	mgmt.SetDefaults()
 	return AutomationPolicy{Management: mgmt}
+}
+
+// CertificatesWithSAN returns the list of all certificates
+// in the cache the match the given SAN value.
+func (t *TLS) CertificatesWithSAN(san string) []certmagic.Certificate {
+	return t.certCache.CertificatesWithSAN(san)
 }
 
 // CertificateLoader is a type that can load certificates.

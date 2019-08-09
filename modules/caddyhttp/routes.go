@@ -22,10 +22,10 @@ import (
 	"github.com/caddyserver/caddy/v2"
 )
 
-// ServerRoute represents a set of matching rules,
+// Route represents a set of matching rules,
 // middlewares, and a responder for handling HTTP
 // requests.
-type ServerRoute struct {
+type Route struct {
 	Group       string                       `json:"group,omitempty"`
 	MatcherSets []map[string]json.RawMessage `json:"match,omitempty"`
 	Handle      []json.RawMessage            `json:"handle,omitempty"`
@@ -37,22 +37,22 @@ type ServerRoute struct {
 }
 
 // Empty returns true if the route has all zero/default values.
-func (sr ServerRoute) Empty() bool {
-	return len(sr.MatcherSets) == 0 &&
-		len(sr.Handle) == 0 &&
-		len(sr.handlers) == 0 &&
-		!sr.Terminal &&
-		sr.Group == ""
+func (r Route) Empty() bool {
+	return len(r.MatcherSets) == 0 &&
+		len(r.Handle) == 0 &&
+		len(r.handlers) == 0 &&
+		!r.Terminal &&
+		r.Group == ""
 }
 
-func (sr ServerRoute) anyMatcherSetMatches(r *http.Request) bool {
-	for _, ms := range sr.matcherSets {
-		if ms.Match(r) {
+func (r Route) anyMatcherSetMatches(req *http.Request) bool {
+	for _, ms := range r.matcherSets {
+		if ms.Match(req) {
 			return true
 		}
 	}
 	// if no matchers, always match
-	return len(sr.matcherSets) == 0
+	return len(r.matcherSets) == 0
 }
 
 // MatcherSet is a set of matchers which
@@ -73,7 +73,7 @@ func (mset MatcherSet) Match(r *http.Request) bool {
 
 // RouteList is a list of server routes that can
 // create a middleware chain.
-type RouteList []ServerRoute
+type RouteList []Route
 
 // Provision sets up all the routes by loading the modules.
 func (routes RouteList) Provision(ctx caddy.Context) error {
