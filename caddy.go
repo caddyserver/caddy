@@ -227,10 +227,10 @@ func goModule(mod *debug.Module) *debug.Module {
 		// once that issue is fixed, we should just be able to use bi.Main... hopefully.
 		for _, dep := range bi.Deps {
 			if dep.Path == mod.Path {
-				return *dep
+				return dep
 			}
 		}
-		return bi.Main
+		return &bi.Main
 	}
 	return mod
 }

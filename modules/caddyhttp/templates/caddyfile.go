@@ -15,8 +15,8 @@
 package templates
 
 import (
-	"github.com/caddyserver/caddy/caddyconfig/caddyfile"
-	"github.com/caddyserver/caddy/caddyconfig/httpcaddyfile"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 )
 
 // UnmarshalCaddyfile sets up the handler from Caddyfile tokens. Syntax:
