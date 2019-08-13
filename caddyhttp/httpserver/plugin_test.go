@@ -45,10 +45,10 @@ func TestStandardizeAddress(t *testing.T) {
 		{`localhost:https`, "https", "localhost", "443", "", false},
 		{`:http`, "http", "", "80", "", false},
 		{`:https`, "https", "", "443", "", false},
-		{`http://localhost:https`, "", "", "", "", true}, // conflict
-		{`http://localhost:http`, "", "", "", "", true},  // repeated scheme
-		{`http://localhost:443`, "", "", "", "", true},   // not conventional
-		{`https://localhost:80`, "", "", "", "", true},   // not conventional
+		{`http://localhost:https`, "", "", "", "", true},                // conflict
+		{`http://localhost:http`, "http", "localhost", "80", "", false}, // repeated scheme -- test adjusted for Go 1.12.8 (expect no error)
+		{`http://localhost:443`, "", "", "", "", true},                  // not conventional
+		{`https://localhost:80`, "", "", "", "", true},                  // not conventional
 		{`http://localhost`, "http", "localhost", "80", "", false},
 		{`https://localhost`, "https", "localhost", "443", "", false},
 		{`http://127.0.0.1`, "http", "127.0.0.1", "80", "", false},
@@ -58,8 +58,8 @@ func TestStandardizeAddress(t *testing.T) {
 		{`https://127.0.0.1:1234`, "https", "127.0.0.1", "1234", "", false},
 		{`http://[::1]:1234`, "http", "::1", "1234", "", false},
 		{``, "", "", "", "", false},
-		{`::1`, "", "::1", "", "", true},
-		{`localhost::`, "", "localhost::", "", "", true},
+		{`::1`, "", "::1", "", "", false},                 // test adjusted for Go 1.12.8 (expect no error)
+		{`localhost::`, "", "localhost::", "", "", false}, // test adjusted for Go 1.12.8 (expect no error)
 		{`#$%@`, "", "", "", "", true},
 		{`host/path`, "", "host", "", "/path", false},
 		{`http://host/`, "http", "host", "80", "/", false},
@@ -67,7 +67,7 @@ func TestStandardizeAddress(t *testing.T) {
 		{`:1234/asdf`, "", "", "1234", "/asdf", false},
 		{`http://host/path`, "http", "host", "80", "/path", false},
 		{`https://host:443/path/foo`, "https", "host", "443", "/path/foo", false},
-		{`host:80/path`, "", "host", "80", "/path", false},
+		{`host:80/path`, "http", "host", "80", "/path", false}, // test adjusted for Go 1.12.8 (expect "http" scheme)
 		{`host:https/path`, "https", "host", "443", "/path", false},
 		{`/path`, "", "", "", "/path", false},
 	} {

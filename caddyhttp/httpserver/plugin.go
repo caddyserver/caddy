@@ -510,6 +510,15 @@ func standardizeAddress(str string) (Address, error) {
 	httpPort := strconv.Itoa(certmagic.HTTPPort)
 	httpsPort := strconv.Itoa(certmagic.HTTPSPort)
 
+	// As of Go 1.12.8 (Aug 2019), ports that are service names such
+	// as ":http" and ":https" are no longer parsed as they were
+	// before, which is a breaking change for us. Attempt to smooth
+	// this over for now by replacing those strings with their port
+	// equivalents. See
+	// https://github.com/golang/go/commit/3226f2d492963d361af9dfc6714ef141ba606713
+	str = strings.Replace(str, ":https", ":"+httpsPort, 1)
+	str = strings.Replace(str, ":http", ":"+httpPort, 1)
+
 	// Split input into components (prepend with // to assert host by default)
 	if !strings.Contains(str, "//") && !strings.HasPrefix(str, "/") {
 		str = "//" + str
@@ -537,26 +546,20 @@ func standardizeAddress(str string) (Address, error) {
 		}
 	}
 
-	// repeated or conflicting scheme is confusing, so error
-	if u.Scheme != "" && (port == "http" || port == "https") {
-		return Address{}, fmt.Errorf("[%s] scheme specified twice in address", input)
-	}
-
 	// error if scheme and port combination violate convention
 	if (u.Scheme == "http" && port == httpsPort) || (u.Scheme == "https" && port == httpPort) {
 		return Address{}, fmt.Errorf("[%s] scheme and port violate convention", input)
 	}
 
 	// standardize http and https ports to their respective port numbers
-	if port == "http" {
+	// (this behavior changed in Go 1.12.8)
+	if port == httpPort {
 		u.Scheme = "http"
-		port = httpPort
-	} else if port == "https" {
+	} else if port == httpsPort {
 		u.Scheme = "https"
-		port = httpsPort
 	}
 
-	return Address{Original: input, Scheme: u.Scheme, Host: host, Port: port, Path: u.Path}, err
+	return Address{Original: input, Scheme: u.Scheme, Host: host, Port: port, Path: u.Path}, nil
 }
 
 // RegisterDevDirective splices name into the list of directives
