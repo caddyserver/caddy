@@ -1,5 +1,9 @@
 CHANGES
 
+1.0.3 (August 14, 2019)
+- Hotfix for address parsing regression
+
+
 1.0.2 (August 13, 2019)
 - Built with Go 1.12.8 to patch HTTP/2 vulnerabilities
 - Static file server now serves pre-compressed Zstd files
