@@ -490,11 +490,10 @@ func (a Address) Key() string {
 	if a.Host != "" {
 		res += a.Host
 	}
-	if a.Port != "" {
-		if strings.HasPrefix(a.Original[len(res):], ":"+a.Port) {
-			// insert port only if the original has its own explicit port
-			res += ":" + a.Port
-		}
+	// insert port only if the original has its own explicit port
+	if a.Port != "" && len(a.Original) >= len(res) &&
+		strings.HasPrefix(a.Original[len(res):], ":"+a.Port) {
+		res += ":" + a.Port
 	}
 	if a.Path != "" {
 		res += a.Path
@@ -553,10 +552,12 @@ func standardizeAddress(str string) (Address, error) {
 
 	// standardize http and https ports to their respective port numbers
 	// (this behavior changed in Go 1.12.8)
-	if port == httpPort {
-		u.Scheme = "http"
-	} else if port == httpsPort {
-		u.Scheme = "https"
+	if u.Scheme == "" {
+		if port == httpPort {
+			u.Scheme = "http"
+		} else if port == httpsPort {
+			u.Scheme = "https"
+		}
 	}
 
 	return Address{Original: input, Scheme: u.Scheme, Host: host, Port: port, Path: u.Path}, nil

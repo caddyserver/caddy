@@ -43,8 +43,8 @@ func TestStandardizeAddress(t *testing.T) {
 		{`:`, "", "", "", "", false},
 		{`localhost:http`, "http", "localhost", "80", "", false},
 		{`localhost:https`, "https", "localhost", "443", "", false},
-		{`:http`, "http", "", "80", "", false},
-		{`:https`, "https", "", "443", "", false},
+		{`:http`, "http", "", "80", "", false},                          // as of Go 1.12.8, service name in port is no longer supported
+		{`:https`, "https", "", "443", "", false},                       // as of Go 1.12.8, service name in port is no longer supported
 		{`http://localhost:https`, "", "", "", "", true},                // conflict
 		{`http://localhost:http`, "http", "localhost", "80", "", false}, // repeated scheme -- test adjusted for Go 1.12.8 (expect no error)
 		{`http://localhost:443`, "", "", "", "", true},                  // not conventional
@@ -213,6 +213,10 @@ func TestKeyNormalization(t *testing.T) {
 		res  string
 	}{
 		{
+			orig: "http://host:1234/path",
+			res:  "http://host:1234/path",
+		},
+		{
 			orig: "HTTP://A/ABCDEF",
 			res:  "http://a/ABCDEF",
 		},
@@ -221,8 +225,20 @@ func TestKeyNormalization(t *testing.T) {
 			res:  "a/ABCDEF",
 		},
 		{
-			orig: "A:2015/Port",
-			res:  "a:2015/Port",
+			orig: "A:2015/Path",
+			res:  "a:2015/Path",
+		},
+		{
+			orig: ":80",
+			res:  "http://",
+		},
+		{
+			orig: ":443",
+			res:  "https://",
+		},
+		{
+			orig: ":1234",
+			res:  ":1234",
 		},
 	}
 	for _, item := range caseSensitiveData {
