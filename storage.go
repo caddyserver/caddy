@@ -23,10 +23,7 @@ import (
 )
 
 func init() {
-	RegisterModule(Module{
-		Name: "caddy.storage.file_system",
-		New:  func() interface{} { return new(fileStorage) },
-	})
+	RegisterModule(fileStorage{})
 }
 
 // StorageConverter is a type that can convert itself
@@ -41,6 +38,14 @@ type StorageConverter interface {
 // fileStorage is a certmagic.Storage wrapper for certmagic.FileStorage.
 type fileStorage struct {
 	Root string `json:"root"`
+}
+
+// CaddyModule returns the Caddy module information.
+func (fileStorage) CaddyModule() ModuleInfo {
+	return ModuleInfo{
+		Name: "caddy.storage.file_system",
+		New:  func() Module { return new(fileStorage) },
+	}
 }
 
 func (s fileStorage) CertMagicStorage() (certmagic.Storage, error) {

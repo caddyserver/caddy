@@ -20,14 +20,19 @@ import (
 	"github.com/caddyserver/caddy/v2"
 )
 
+func init() {
+	caddy.RegisterModule(MatchServerName{})
+}
+
 // MatchServerName matches based on SNI.
 type MatchServerName []string
 
-func init() {
-	caddy.RegisterModule(caddy.Module{
+// CaddyModule returns the Caddy module information.
+func (MatchServerName) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
 		Name: "tls.handshake_match.sni",
-		New:  func() interface{} { return MatchServerName{} },
-	})
+		New:  func() caddy.Module { return new(MatchServerName) },
+	}
 }
 
 // Match matches hello based on SNI.

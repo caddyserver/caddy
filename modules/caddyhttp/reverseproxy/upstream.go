@@ -179,21 +179,21 @@ type LoadBalanced struct {
 
 	// The following struct fields are set by caddy configuration.
 	// TryInterval is the max duration for which request retrys will be performed for a request.
-	TryInterval string `json:"try_interval"`
+	TryInterval string `json:"try_interval,omitempty"`
 
 	// Upstreams are the configs for upstream hosts
-	Upstreams []*UpstreamConfig `json:"upstreams"`
+	Upstreams []*UpstreamConfig `json:"upstreams,omitempty"`
 
 	// LoadBalanceType is the string representation of what loadbalancing algorithm to use. i.e. "random" or "round_robin".
-	LoadBalanceType string `json:"load_balance_type"`
+	LoadBalanceType string `json:"load_balance_type,omitempty"`
 
 	// NoHealthyUpstreamsMessage is returned as a response when there are no healthy upstreams to loadbalance to.
-	NoHealthyUpstreamsMessage string `json:"no_healthy_upstreams_message"`
+	NoHealthyUpstreamsMessage string `json:"no_healthy_upstreams_message,omitempty"`
 
 	// TODO :- store healthcheckers as package level state where each upstream gets a single healthchecker
 	// currently a healthchecker is created for each upstream defined, even if a healthchecker was previously created
 	// for that upstream
-	HealthCheckers []*HealthChecker
+	HealthCheckers []*HealthChecker `json:"health_checkers,omitempty"`
 }
 
 // Cleanup stops all health checkers on a loadbalanced reverse proxy.
@@ -320,22 +320,22 @@ func (lb *LoadBalanced) random() *upstream {
 // UpstreamConfig represents the config of an upstream.
 type UpstreamConfig struct {
 	// Host is the host name of the upstream server.
-	Host string `json:"host"`
+	Host string `json:"host,omitempty"`
 
 	// FastHealthCheckDuration is the duration for which a health check is performed when a node is considered unhealthy.
-	FastHealthCheckDuration string `json:"fast_health_check_duration"`
+	FastHealthCheckDuration string `json:"fast_health_check_duration,omitempty"`
 
-	CircuitBreaker json.RawMessage `json:"circuit_breaker"`
+	CircuitBreaker json.RawMessage `json:"circuit_breaker,omitempty"`
 
 	// // CircuitBreakerConfig is the config passed to setup a circuit breaker.
-	// CircuitBreakerConfig *circuitbreaker.Config `json:"circuit_breaker"`
+	// CircuitBreakerConfig *circuitbreaker.Config `json:"circuit_breaker,omitempty"`
 	circuitbreaker CircuitBreaker
 
 	// HealthCheckDuration is the default duration for which a health check is performed.
-	HealthCheckDuration string `json:"health_check_duration"`
+	HealthCheckDuration string `json:"health_check_duration,omitempty"`
 
 	// HealthCheckPath is the path at the upstream host to use for healthchecks.
-	HealthCheckPath string `json:"health_check_path"`
+	HealthCheckPath string `json:"health_check_path,omitempty"`
 }
 
 // upstream represents an upstream host.

@@ -31,6 +31,7 @@ import (
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/mholt/certmagic"
 	"github.com/mitchellh/go-ps"
 )
@@ -38,6 +39,7 @@ import (
 func cmdStart() (int, error) {
 	startCmd := flag.NewFlagSet("start", flag.ExitOnError)
 	startCmdConfigFlag := startCmd.String("config", "", "Configuration file")
+	startCmdConfigAdapterFlag := startCmd.String("config-adapter", "", "Name of config adapter to apply")
 	startCmd.Parse(os.Args[2:])
 
 	// open a listener to which the child process will connect when
@@ -61,6 +63,9 @@ func cmdStart() (int, error) {
 	cmd := exec.Command(os.Args[0], "run", "--pingback", ln.Addr().String())
 	if *startCmdConfigFlag != "" {
 		cmd.Args = append(cmd.Args, "--config", *startCmdConfigFlag)
+	}
+	if *startCmdConfigAdapterFlag != "" {
+		cmd.Args = append(cmd.Args, "--config-adapter", *startCmdConfigAdapterFlag)
 	}
 	stdinpipe, err := cmd.StdinPipe()
 	if err != nil {
@@ -137,7 +142,8 @@ func cmdStart() (int, error) {
 func cmdRun() (int, error) {
 	runCmd := flag.NewFlagSet("run", flag.ExitOnError)
 	runCmdConfigFlag := runCmd.String("config", "", "Configuration file")
-	runCmdPrintEnvFlag := runCmd.Bool("print-env", false, "Print environment (useful for debugging)")
+	runCmdConfigAdapterFlag := runCmd.String("config-adapter", "", "Name of config adapter to apply")
+	runCmdPrintEnvFlag := runCmd.Bool("print-env", false, "Print environment")
 	runCmdPingbackFlag := runCmd.String("pingback", "", "Echo confirmation bytes to this address on success")
 	runCmd.Parse(os.Args[2:])
 
@@ -149,16 +155,10 @@ func cmdRun() (int, error) {
 		}
 	}
 
-	// if a config file was specified for bootstrapping
-	// the server instance, load it now
-	var config []byte
-	if *runCmdConfigFlag != "" {
-		var err error
-		config, err = ioutil.ReadFile(*runCmdConfigFlag)
-		if err != nil {
-			return caddy.ExitCodeFailedStartup,
-				fmt.Errorf("reading config file: %v", err)
-		}
+	// get the config in caddy's native format
+	config, err := loadConfig(*runCmdConfigFlag, *runCmdConfigAdapterFlag)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, err
 	}
 
 	// set a fitting User-Agent for ACME requests
@@ -167,7 +167,7 @@ func cmdRun() (int, error) {
 	certmagic.UserAgent = "Caddy/" + cleanModVersion
 
 	// start the admin endpoint along with any initial config
-	err := caddy.StartAdmin(config)
+	err = caddy.StartAdmin(config)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup,
 			fmt.Errorf("starting caddy administration endpoint: %v", err)
@@ -226,6 +226,7 @@ func cmdStop() (int, error) {
 func cmdReload() (int, error) {
 	reloadCmd := flag.NewFlagSet("load", flag.ExitOnError)
 	reloadCmdConfigFlag := reloadCmd.String("config", "", "Configuration file")
+	reloadCmdConfigAdapterFlag := reloadCmd.String("config-adapter", "", "Name of config adapter to apply")
 	reloadCmdAddrFlag := reloadCmd.String("address", "", "Address of the administration listener, if different from config")
 	reloadCmd.Parse(os.Args[2:])
 
@@ -235,11 +236,10 @@ func cmdReload() (int, error) {
 			fmt.Errorf("no configuration to load (use --config)")
 	}
 
-	// load the configuration file
-	config, err := ioutil.ReadFile(*reloadCmdConfigFlag)
+	// get the config in caddy's native format
+	config, err := loadConfig(*reloadCmdConfigFlag, *reloadCmdConfigAdapterFlag)
 	if err != nil {
-		return caddy.ExitCodeFailedStartup,
-			fmt.Errorf("reading config file: %v", err)
+		return caddy.ExitCodeFailedStartup, err
 	}
 
 	// get the address of the admin listener and craft endpoint URL
@@ -304,5 +304,54 @@ func cmdEnviron() (int, error) {
 	for _, v := range os.Environ() {
 		fmt.Println(v)
 	}
+	return caddy.ExitCodeSuccess, nil
+}
+
+func cmdAdaptConfig() (int, error) {
+	adaptCmd := flag.NewFlagSet("adapt", flag.ExitOnError)
+	adaptCmdAdapterFlag := adaptCmd.String("adapter", "", "Name of config adapter")
+	adaptCmdInputFlag := adaptCmd.String("input", "", "Configuration file to adapt")
+	adaptCmdPrettyFlag := adaptCmd.Bool("pretty", false, "Format the output for human readability")
+	adaptCmd.Parse(os.Args[2:])
+
+	if *adaptCmdAdapterFlag == "" || *adaptCmdInputFlag == "" {
+		return caddy.ExitCodeFailedStartup,
+			fmt.Errorf("usage: caddy adapt-config --adapter <name> --input <file>")
+	}
+
+	cfgAdapter := caddyconfig.GetAdapter(*adaptCmdAdapterFlag)
+	if cfgAdapter == nil {
+		return caddy.ExitCodeFailedStartup,
+			fmt.Errorf("unrecognized config adapter: %s", *adaptCmdAdapterFlag)
+	}
+
+	input, err := ioutil.ReadFile(*adaptCmdInputFlag)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup,
+			fmt.Errorf("reading input file: %v", err)
+	}
+
+	opts := make(map[string]string)
+	if *adaptCmdPrettyFlag {
+		opts["pretty"] = "true"
+	}
+
+	adaptedConfig, warnings, err := cfgAdapter.Adapt(input, opts)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, err
+	}
+
+	// print warnings to stderr
+	for _, warn := range warnings {
+		msg := warn.Message
+		if warn.Directive != "" {
+			msg = fmt.Sprintf("%s: %s", warn.Directive, warn.Message)
+		}
+		log.Printf("[WARNING][%s] %s:%d: %s", *adaptCmdAdapterFlag, warn.File, warn.Line, msg)
+	}
+
+	// print result to stdout
+	fmt.Println(string(adaptedConfig))
+
 	return caddy.ExitCodeSuccess, nil
 }

@@ -30,10 +30,7 @@ import (
 )
 
 func init() {
-	caddy.RegisterModule(caddy.Module{
-		Name: "tls",
-		New:  func() interface{} { return new(TLS) },
-	})
+	caddy.RegisterModule(TLS{})
 
 	// opt-in TLS 1.3 for Go1.12
 	// TODO: remove this line when Go1.13 is released.
@@ -45,12 +42,20 @@ func init() {
 // TLS represents a process-wide TLS configuration.
 type TLS struct {
 	Certificates   map[string]json.RawMessage `json:"certificates,omitempty"`
-	Automation     AutomationConfig           `json:"automation,omitempty"`
-	SessionTickets SessionTicketService       `json:"session_tickets,omitempty"`
+	Automation     AutomationConfig           `json:"automation"`
+	SessionTickets SessionTicketService       `json:"session_tickets"`
 
 	certificateLoaders []CertificateLoader
 	certCache          *certmagic.Cache
 	ctx                caddy.Context
+}
+
+// CaddyModule returns the Caddy module information.
+func (TLS) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		Name: "tls",
+		New:  func() caddy.Module { return new(TLS) },
+	}
 }
 
 // Provision sets up the configuration for the TLS app.
@@ -73,7 +78,7 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 		if err != nil {
 			return fmt.Errorf("loading TLS automation management module: %s", err)
 		}
-		t.Automation.Policies[i].Management = val.(managerMaker)
+		t.Automation.Policies[i].Management = val.(ManagerMaker)
 		t.Automation.Policies[i].ManagementRaw = nil // allow GC to deallocate - TODO: Does this help?
 	}
 
@@ -105,16 +110,12 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 		onDemandRateLimiter.SetLimit(0)
 	}
 
-	return nil
-}
-
-// Start activates the TLS module.
-func (t *TLS) Start() error {
+	// load manual/static (unmanaged) certificates - we do this in
+	// provision so that other apps (such as http) can know which
+	// certificates have been manually loaded
 	magic := certmagic.New(t.certCache, certmagic.Config{
-		Storage: t.ctx.Storage(),
+		Storage: ctx.Storage(),
 	})
-
-	// load manual/static (unmanaged) certificates
 	for _, loader := range t.certificateLoaders {
 		certs, err := loader.LoadCertificates()
 		if err != nil {
@@ -128,6 +129,11 @@ func (t *TLS) Start() error {
 		}
 	}
 
+	return nil
+}
+
+// Start activates the TLS module.
+func (t *TLS) Start() error {
 	// load automated (managed) certificates
 	if automatedRawMsg, ok := t.Certificates[automateKey]; ok {
 		var names []string
@@ -204,6 +210,12 @@ func (t *TLS) getAutomationPolicyForName(name string) AutomationPolicy {
 	return AutomationPolicy{Management: mgmt}
 }
 
+// CertificatesWithSAN returns the list of all certificates
+// in the cache the match the given SAN value.
+func (t *TLS) CertificatesWithSAN(san string) []certmagic.Certificate {
+	return t.certCache.CertificatesWithSAN(san)
+}
+
 // CertificateLoader is a type that can load certificates.
 // Certificates can optionally be associated with tags.
 type CertificateLoader interface {
@@ -230,7 +242,7 @@ type AutomationPolicy struct {
 	Hosts         []string        `json:"hosts,omitempty"`
 	ManagementRaw json.RawMessage `json:"management,omitempty"`
 
-	Management managerMaker `json:"-"`
+	Management ManagerMaker `json:"-"`
 }
 
 // makeCertMagicConfig converts ap into a CertMagic config. Passing onDemand
@@ -245,7 +257,7 @@ func (ap AutomationPolicy) makeCertMagicConfig(ctx caddy.Context) certmagic.Conf
 	}
 
 	return certmagic.Config{
-		NewManager: ap.Management.newManager,
+		NewManager: ap.Management.NewManager,
 	}
 }
 
@@ -283,9 +295,9 @@ type RateLimit struct {
 	Burst    int            `json:"burst,omitempty"`
 }
 
-// managerMaker makes a certificate manager.
-type managerMaker interface {
-	newManager(interactive bool) (certmagic.Manager, error)
+// ManagerMaker makes a certificate manager.
+type ManagerMaker interface {
+	NewManager(interactive bool) (certmagic.Manager, error)
 }
 
 // These perpetual values are used for on-demand TLS.

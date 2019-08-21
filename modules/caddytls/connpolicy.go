@@ -172,7 +172,7 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 	// add all the cipher suites in order, without duplicates
 	cipherSuitesAdded := make(map[uint16]struct{})
 	for _, csName := range p.CipherSuites {
-		csID := supportedCipherSuites[csName]
+		csID := SupportedCipherSuites[csName]
 		if _, ok := cipherSuitesAdded[csID]; !ok {
 			cipherSuitesAdded[csID] = struct{}{}
 			cfg.CipherSuites = append(cfg.CipherSuites, csID)
@@ -182,7 +182,7 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 	// add all the curve preferences in order, without duplicates
 	curvesAdded := make(map[tls.CurveID]struct{})
 	for _, curveName := range p.Curves {
-		curveID := supportedCurves[curveName]
+		curveID := SupportedCurves[curveName]
 		if _, ok := curvesAdded[curveID]; !ok {
 			curvesAdded[curveID] = struct{}{}
 			cfg.CurvePreferences = append(cfg.CurvePreferences, curveID)
@@ -203,10 +203,10 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 
 	// min and max protocol versions
 	if p.ProtocolMin != "" {
-		cfg.MinVersion = supportedProtocols[p.ProtocolMin]
+		cfg.MinVersion = SupportedProtocols[p.ProtocolMin]
 	}
 	if p.ProtocolMax != "" {
-		cfg.MaxVersion = supportedProtocols[p.ProtocolMax]
+		cfg.MaxVersion = SupportedProtocols[p.ProtocolMax]
 	}
 	if p.ProtocolMin > p.ProtocolMax {
 		return fmt.Errorf("protocol min (%x) cannot be greater than protocol max (%x)", p.ProtocolMin, p.ProtocolMax)

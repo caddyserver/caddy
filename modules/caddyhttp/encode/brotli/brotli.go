@@ -16,23 +16,46 @@ package caddybrotli
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/andybalholm/brotli"
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/encode"
 )
 
 func init() {
-	caddy.RegisterModule(caddy.Module{
-		Name: "http.encoders.brotli",
-		New:  func() interface{} { return new(Brotli) },
-	})
+	caddy.RegisterModule(Brotli{})
 }
 
 // Brotli can create brotli encoders. Note that brotli
 // is not known for great encoding performance.
 type Brotli struct {
 	Quality *int `json:"quality,omitempty"`
+}
+
+// CaddyModule returns the Caddy module information.
+func (Brotli) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		Name: "http.encoders.brotli",
+		New:  func() caddy.Module { return new(Brotli) },
+	}
+}
+
+// UnmarshalCaddyfile sets up the handler from Caddyfile tokens.
+func (b *Brotli) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		if !d.NextArg() {
+			continue
+		}
+		qualityStr := d.Val()
+		quality, err := strconv.Atoi(qualityStr)
+		if err != nil {
+			return err
+		}
+		b.Quality = &quality
+	}
+	return nil
 }
 
 // Validate validates b's configuration.
@@ -64,6 +87,7 @@ func (b Brotli) NewEncoder() encode.Encoder {
 
 // Interface guards
 var (
-	_ encode.Encoding = (*Brotli)(nil)
-	_ caddy.Validator = (*Brotli)(nil)
+	_ encode.Encoding       = (*Brotli)(nil)
+	_ caddy.Validator       = (*Brotli)(nil)
+	_ caddyfile.Unmarshaler = (*Brotli)(nil)
 )
