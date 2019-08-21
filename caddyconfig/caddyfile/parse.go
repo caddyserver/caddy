@@ -28,12 +28,12 @@ import (
 // Directives that do not appear in validDirectives will cause
 // an error. If you do not want to check for valid directives,
 // pass in nil instead.
-func Parse(filename string, input io.Reader, validDirectives []string) ([]ServerBlock, error) {
+func Parse(filename string, input io.Reader) ([]ServerBlock, error) {
 	tokens, err := allTokens(input)
 	if err != nil {
 		return nil, err
 	}
-	p := parser{Dispenser: NewDispenser(filename, tokens), validDirectives: validDirectives}
+	p := parser{Dispenser: NewDispenser(filename, tokens)}
 	return p.parseAll()
 }
 
@@ -56,9 +56,9 @@ func allTokens(input io.Reader) ([]Token, error) {
 type parser struct {
 	*Dispenser
 	block           ServerBlock // current server block being parsed
-	validDirectives []string    // a directive must be valid or it's an error
 	eof             bool        // if we encounter a valid EOF in a hard place
 	definedSnippets map[string][]Token
+	nesting         int
 }
 
 func (p *parser) parseAll() ([]ServerBlock, error) {
@@ -72,14 +72,16 @@ func (p *parser) parseAll() ([]ServerBlock, error) {
 		if len(p.block.Keys) > 0 {
 			blocks = append(blocks, p.block)
 		}
+		if p.nesting > 0 {
+			return blocks, p.EOFErr()
+		}
 	}
 
 	return blocks, nil
 }
 
 func (p *parser) parseOne() error {
-	p.block = ServerBlock{Tokens: make(map[string][]Token)}
-
+	p.block = ServerBlock{}
 	return p.begin()
 }
 
@@ -186,7 +188,7 @@ func (p *parser) blockContents() error {
 		return err
 	}
 
-	// Only look for close curly brace if there was an opening
+	// only look for close curly brace if there was an opening
 	if errOpenCurlyBrace == nil {
 		err = p.closeCurlyBrace()
 		if err != nil {
@@ -205,6 +207,7 @@ func (p *parser) directives() error {
 	for p.Next() {
 		// end of server block
 		if p.Val() == "}" {
+			// p.nesting has already been decremented
 			break
 		}
 
@@ -218,11 +221,15 @@ func (p *parser) directives() error {
 			continue
 		}
 
-		// normal case: parse a directive on this line
+		// normal case: parse a directive as a new segment
+		// (a "segment" is a line which starts with a directive
+		// and which ends at the end of the line or at the end of
+		// the block that is opened at the end of the line)
 		if err := p.directive(); err != nil {
 			return err
 		}
 	}
+
 	return nil
 }
 
@@ -345,25 +352,24 @@ func (p *parser) doSingleImport(importFile string) ([]Token, error) {
 // are loaded into the current server block for later use
 // by directive setup functions.
 func (p *parser) directive() error {
-	dir := replaceEnvVars(p.Val())
-	nesting := 0
+	// evaluate any env vars in directive token
+	p.tokens[p.cursor].Text = replaceEnvVars(p.tokens[p.cursor].Text)
 
-	if !p.validDirective(dir) {
-		return p.Errf("Unknown directive '%s'", dir)
-	}
+	// a segment is a list of tokens associated with this directive
+	var segment Segment
 
-	// The directive itself is appended as a relevant token
-	p.block.Tokens[dir] = append(p.block.Tokens[dir], p.tokens[p.cursor])
+	// the directive itself is appended as a relevant token
+	segment = append(segment, p.Token())
 
 	for p.Next() {
 		if p.Val() == "{" {
-			nesting++
-		} else if p.isNewLine() && nesting == 0 {
+			p.nesting++
+		} else if p.isNewLine() && p.nesting == 0 {
 			p.cursor-- // read too far
 			break
-		} else if p.Val() == "}" && nesting > 0 {
-			nesting--
-		} else if p.Val() == "}" && nesting == 0 {
+		} else if p.Val() == "}" && p.nesting > 0 {
+			p.nesting--
+		} else if p.Val() == "}" && p.nesting == 0 {
 			return p.Err("Unexpected '}' because no matching opening brace")
 		} else if p.Val() == "import" && p.isNewLine() {
 			if err := p.doImport(); err != nil {
@@ -373,12 +379,15 @@ func (p *parser) directive() error {
 			continue
 		}
 		p.tokens[p.cursor].Text = replaceEnvVars(p.tokens[p.cursor].Text)
-		p.block.Tokens[dir] = append(p.block.Tokens[dir], p.tokens[p.cursor])
+		segment = append(segment, p.Token())
 	}
 
-	if nesting > 0 {
+	p.block.Segments = append(p.block.Segments, segment)
+
+	if p.nesting > 0 {
 		return p.EOFErr()
 	}
+
 	return nil
 }
 
@@ -402,19 +411,6 @@ func (p *parser) closeCurlyBrace() error {
 		return p.SyntaxErr("}")
 	}
 	return nil
-}
-
-// validDirective returns true if dir is in p.validDirectives.
-func (p *parser) validDirective(dir string) bool {
-	if p.validDirectives == nil {
-		return true
-	}
-	for _, d := range p.validDirectives {
-		if d == dir {
-			return true
-		}
-	}
-	return false
 }
 
 // replaceEnvVars replaces environment variables that appear in the token
@@ -447,13 +443,6 @@ func replaceEnvReferences(s, refStart, refEnd string) string {
 	return s
 }
 
-// ServerBlock associates any number of keys (usually addresses
-// of some sort) with tokens (grouped by directive name).
-type ServerBlock struct {
-	Keys   []string
-	Tokens map[string][]Token
-}
-
 func (p *parser) isSnippet() (bool, string) {
 	keys := p.block.Keys
 	// A snippet block is a single key with parens. Nothing else qualifies.
@@ -480,6 +469,7 @@ func (p *parser) snippetTokens() ([]Token, error) {
 			}
 		}
 		if p.Val() == "{" {
+			p.nesting++
 			count++
 		}
 		tokens = append(tokens, p.tokens[p.cursor])
@@ -489,4 +479,44 @@ func (p *parser) snippetTokens() ([]Token, error) {
 		return nil, p.SyntaxErr("}")
 	}
 	return tokens, nil
+}
+
+// ServerBlock associates any number of keys from the
+// head of the server block with tokens, which are
+// grouped by segments.
+type ServerBlock struct {
+	Keys     []string
+	Segments []Segment
+}
+
+// DispenseDirective returns a dispenser that contains
+// all the tokens in the server block.
+func (sb ServerBlock) DispenseDirective(dir string) *Dispenser {
+	var tokens []Token
+	for _, seg := range sb.Segments {
+		if len(seg) > 0 && seg[0].Text == dir {
+			tokens = append(tokens, seg...)
+		}
+	}
+	return NewDispenser("", tokens)
+}
+
+// Segment is a list of tokens which begins with a directive
+// and ends at the end of the directive (either at the end of
+// the line, or at the end of a block it opens).
+type Segment []Token
+
+// Directive returns the directive name for the segment.
+// The directive name is the text of the first token.
+func (s Segment) Directive() string {
+	if len(s) > 0 {
+		return s[0].Text
+	}
+	return ""
+}
+
+// NewDispenser returns a dispenser for this
+// segment's tokens.
+func (s Segment) NewDispenser() *Dispenser {
+	return NewDispenser("", s)
 }

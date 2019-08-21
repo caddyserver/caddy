@@ -23,14 +23,19 @@ import (
 )
 
 func init() {
-	caddy.RegisterModule(caddy.Module{
-		Name: "tls.certificates.load_files",
-		New:  func() interface{} { return FileLoader{} },
-	})
+	caddy.RegisterModule(FileLoader{})
 }
 
 // FileLoader loads certificates and their associated keys from disk.
 type FileLoader []CertKeyFilePair
+
+// CaddyModule returns the Caddy module information.
+func (FileLoader) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		Name: "tls.certificates.load_files",
+		New:  func() caddy.Module { return new(FileLoader) },
+	}
+}
 
 // CertKeyFilePair pairs certificate and key file names along with their
 // encoding format so that they can be loaded from disk.

@@ -27,10 +27,7 @@ import (
 )
 
 func init() {
-	caddy.RegisterModule(caddy.Module{
-		Name: "http.handlers.templates",
-		New:  func() interface{} { return new(Templates) },
-	})
+	caddy.RegisterModule(Templates{})
 }
 
 // Templates is a middleware which execute response bodies as templates.
@@ -38,6 +35,14 @@ type Templates struct {
 	IncludeRoot string   `json:"include_root,omitempty"`
 	MIMETypes   []string `json:"mime_types,omitempty"`
 	Delimiters  []string `json:"delimiters,omitempty"`
+}
+
+// CaddyModule returns the Caddy module information.
+func (Templates) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		Name: "http.handlers.templates",
+		New:  func() caddy.Module { return new(Templates) },
+	}
 }
 
 // Provision provisions t.

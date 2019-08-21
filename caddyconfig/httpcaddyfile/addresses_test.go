@@ -1,22 +1,11 @@
-// Copyright 2015 Matthew Holt and The Caddy Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 package httpcaddyfile
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
-func TestStandardizeAddress(t *testing.T) {
+func TestParseAddress(t *testing.T) {
 	for i, test := range []struct {
 		input                    string
 		scheme, host, port, path string
@@ -31,14 +20,15 @@ func TestStandardizeAddress(t *testing.T) {
 		{`[::1]`, "", "::1", "", "", false},
 		{`[::1]:1234`, "", "::1", "1234", "", false},
 		{`:`, "", "", "", "", false},
-		{`localhost:http`, "http", "localhost", "80", "", false},
-		{`localhost:https`, "https", "localhost", "443", "", false},
-		{`:http`, "http", "", "80", "", false},
-		{`:https`, "https", "", "443", "", false},
+		{`:http`, "", "", "", "", true},
+		{`:https`, "", "", "", "", true},
+		{`localhost:http`, "", "", "", "", true}, // using service name in port is verboten, as of Go 1.12.8
+		{`localhost:https`, "", "", "", "", true},
 		{`http://localhost:https`, "", "", "", "", true}, // conflict
 		{`http://localhost:http`, "", "", "", "", true},  // repeated scheme
-		{`http://localhost:443`, "", "", "", "", true},   // not conventional
-		{`https://localhost:80`, "", "", "", "", true},   // not conventional
+		{`host:https/path`, "", "", "", "", true},
+		{`http://localhost:443`, "", "", "", "", true}, // not conventional
+		{`https://localhost:80`, "", "", "", "", true}, // not conventional
 		{`http://localhost`, "http", "localhost", "80", "", false},
 		{`https://localhost`, "https", "localhost", "443", "", false},
 		{`http://127.0.0.1`, "http", "127.0.0.1", "80", "", false},
@@ -58,10 +48,9 @@ func TestStandardizeAddress(t *testing.T) {
 		{`http://host/path`, "http", "host", "80", "/path", false},
 		{`https://host:443/path/foo`, "https", "host", "443", "/path/foo", false},
 		{`host:80/path`, "", "host", "80", "/path", false},
-		{`host:https/path`, "https", "host", "443", "/path", false},
 		{`/path`, "", "", "", "/path", false},
 	} {
-		actual, err := standardizeAddress(test.input)
+		actual, err := ParseAddress(test.input)
 
 		if err != nil && !test.shouldErr {
 			t.Errorf("Test %d (%s): Expected no error, but had error: %v", i, test.input, err)
@@ -88,24 +77,6 @@ func TestStandardizeAddress(t *testing.T) {
 	}
 }
 
-func TestAddressVHost(t *testing.T) {
-	for i, test := range []struct {
-		addr     Address
-		expected string
-	}{
-		{Address{Original: "host:1234"}, "host:1234"},
-		{Address{Original: "host:1234/foo"}, "host:1234/foo"},
-		{Address{Original: "host/foo"}, "host/foo"},
-		{Address{Original: "http://host/foo"}, "host/foo"},
-		{Address{Original: "https://host/foo"}, "host/foo"},
-	} {
-		actual := test.addr.VHost()
-		if actual != test.expected {
-			t.Errorf("Test %d: expected '%s' but got '%s'", i, test.expected, actual)
-		}
-	}
-}
-
 func TestAddressString(t *testing.T) {
 	for i, test := range []struct {
 		addr     Address
@@ -125,5 +96,71 @@ func TestAddressString(t *testing.T) {
 		if actual != test.expected {
 			t.Errorf("Test %d: expected '%s' but got '%s'", i, test.expected, actual)
 		}
+	}
+}
+
+func TestKeyNormalization(t *testing.T) {
+	testCases := []struct {
+		input  string
+		expect string
+	}{
+		{
+			input:  "http://host:1234/path",
+			expect: "http://host:1234/path",
+		},
+		{
+			input:  "HTTP://A/ABCDEF",
+			expect: "http://a/ABCDEF",
+		},
+		{
+			input:  "A/ABCDEF",
+			expect: "a/ABCDEF",
+		},
+		{
+			input:  "A:2015/Path",
+			expect: "a:2015/Path",
+		},
+		{
+			input:  ":80",
+			expect: ":80",
+		},
+		{
+			input:  ":443",
+			expect: ":443",
+		},
+		{
+			input:  ":1234",
+			expect: ":1234",
+		},
+		{
+			input:  "",
+			expect: "",
+		},
+		{
+			input:  ":",
+			expect: "",
+		},
+		{
+			input:  "[::]",
+			expect: "::",
+		},
+	}
+	for i, tc := range testCases {
+		addr, err := ParseAddress(tc.input)
+		if err != nil {
+			t.Errorf("Test %d: Parsing address '%s': %v", i, tc.input, err)
+			continue
+		}
+		expect := tc.expect
+		if !caseSensitivePath {
+			// every other part of the address should be lowercased when normalized,
+			// so simply lower-case the whole thing to do case-insensitive comparison
+			// of the path as well
+			expect = strings.ToLower(expect)
+		}
+		if actual := addr.Normalize().Key(); actual != expect {
+			t.Errorf("Test %d: Normalized key for address '%s' was '%s' but expected '%s'", i, tc.input, actual, expect)
+		}
+
 	}
 }

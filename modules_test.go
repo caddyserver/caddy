@@ -21,7 +21,7 @@ import (
 
 func TestGetModules(t *testing.T) {
 	modulesMu.Lock()
-	modules = map[string]Module{
+	modules = map[string]ModuleInfo{
 		"a":      {Name: "a"},
 		"a.b":    {Name: "a.b"},
 		"a.b.c":  {Name: "a.b.c"},
@@ -38,11 +38,11 @@ func TestGetModules(t *testing.T) {
 
 	for i, tc := range []struct {
 		input  string
-		expect []Module
+		expect []ModuleInfo
 	}{
 		{
 			input: "",
-			expect: []Module{
+			expect: []ModuleInfo{
 				{Name: "a"},
 				{Name: "b"},
 				{Name: "c"},
@@ -50,7 +50,7 @@ func TestGetModules(t *testing.T) {
 		},
 		{
 			input: "a",
-			expect: []Module{
+			expect: []ModuleInfo{
 				{Name: "a.b"},
 				{Name: "a.c"},
 				{Name: "a.d"},
@@ -58,7 +58,7 @@ func TestGetModules(t *testing.T) {
 		},
 		{
 			input: "a.b",
-			expect: []Module{
+			expect: []ModuleInfo{
 				{Name: "a.b.c"},
 				{Name: "a.b.cd"},
 			},
@@ -68,7 +68,7 @@ func TestGetModules(t *testing.T) {
 		},
 		{
 			input: "b",
-			expect: []Module{
+			expect: []ModuleInfo{
 				{Name: "b.a"},
 				{Name: "b.b"},
 			},

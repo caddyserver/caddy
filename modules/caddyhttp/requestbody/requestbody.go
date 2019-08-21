@@ -22,15 +22,20 @@ import (
 )
 
 func init() {
-	caddy.RegisterModule(caddy.Module{
-		Name: "http.handlers.request_body",
-		New:  func() interface{} { return new(RequestBody) },
-	})
+	caddy.RegisterModule(RequestBody{})
 }
 
 // RequestBody is a middleware for manipulating the request body.
 type RequestBody struct {
 	MaxSize int64 `json:"max_size,omitempty"`
+}
+
+// CaddyModule returns the Caddy module information.
+func (RequestBody) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		Name: "http.handlers.request_body", // TODO: better name for this?
+		New:  func() caddy.Module { return new(RequestBody) },
+	}
 }
 
 func (rb RequestBody) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {

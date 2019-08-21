@@ -22,7 +22,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/mholt/certmagic"
 )
@@ -73,8 +73,8 @@ import (
 // repetition may be undesirable, so call consolidateAddrMappings() to map
 // multiple addresses to the same lists of server blocks (a many:many mapping).
 // (Doing this is essentially a map-reduce technique.)
-func (st *ServerType) mapAddressToServerBlocks(originalServerBlocks []caddyfile.ServerBlock) (map[string][]caddyfile.ServerBlock, error) {
-	sbmap := make(map[string][]caddyfile.ServerBlock)
+func (st *ServerType) mapAddressToServerBlocks(originalServerBlocks []serverBlock) (map[string][]serverBlock, error) {
+	sbmap := make(map[string][]serverBlock)
 
 	for i, sblock := range originalServerBlocks {
 		// within a server block, we need to map all the listener addresses
@@ -83,7 +83,7 @@ func (st *ServerType) mapAddressToServerBlocks(originalServerBlocks []caddyfile.
 		// key of a server block as its own, but without having to repeat its
 		// contents in cases where multiple keys really can be served together
 		addrToKeys := make(map[string][]string)
-		for j, key := range sblock.Keys {
+		for j, key := range sblock.block.Keys {
 			// a key can have multiple listener addresses if there are multiple
 			// arguments to the 'bind' directive (although they will all have
 			// the same port, since the port is defined by the key or is implicit
@@ -105,9 +105,12 @@ func (st *ServerType) mapAddressToServerBlocks(originalServerBlocks []caddyfile.
 		// server block are only the ones which use the address; but
 		// the contents (tokens) are of course the same
 		for addr, keys := range addrToKeys {
-			sbmap[addr] = append(sbmap[addr], caddyfile.ServerBlock{
-				Keys:   keys,
-				Tokens: sblock.Tokens,
+			sbmap[addr] = append(sbmap[addr], serverBlock{
+				block: caddyfile.ServerBlock{
+					Keys:     keys,
+					Segments: sblock.block.Segments,
+				},
+				pile: sblock.pile,
 			})
 		}
 	}
@@ -123,7 +126,7 @@ func (st *ServerType) mapAddressToServerBlocks(originalServerBlocks []caddyfile.
 // entries are deleted from the addrToServerBlocks map. Essentially, each pairing (each
 // association from multiple addresses to multiple server blocks; i.e. each element of
 // the returned slice) becomes a server definition in the output JSON.
-func (st *ServerType) consolidateAddrMappings(addrToServerBlocks map[string][]caddyfile.ServerBlock) []sbAddrAssociation {
+func (st *ServerType) consolidateAddrMappings(addrToServerBlocks map[string][]serverBlock) []sbAddrAssociation {
 	var sbaddrs []sbAddrAssociation
 	for addr, sblocks := range addrToServerBlocks {
 		// we start with knowing that at least this address
@@ -151,11 +154,12 @@ func (st *ServerType) consolidateAddrMappings(addrToServerBlocks map[string][]ca
 	return sbaddrs
 }
 
-func (st *ServerType) listenerAddrsForServerBlockKey(sblock caddyfile.ServerBlock, key string) ([]string, error) {
-	addr, err := standardizeAddress(key)
+func (st *ServerType) listenerAddrsForServerBlockKey(sblock serverBlock, key string) ([]string, error) {
+	addr, err := ParseAddress(key)
 	if err != nil {
 		return nil, fmt.Errorf("parsing key: %v", err)
 	}
+	addr = addr.Normalize()
 
 	lnPort := defaultPort
 	if addr.Port != "" {
@@ -168,11 +172,8 @@ func (st *ServerType) listenerAddrsForServerBlockKey(sblock caddyfile.ServerBloc
 
 	// the bind directive specifies hosts, but is optional
 	var lnHosts []string
-	for i, token := range sblock.Tokens["bind"] {
-		if i == 0 {
-			continue
-		}
-		lnHosts = append(lnHosts, token.Text)
+	for _, cfgVal := range sblock.pile["bind"] {
+		lnHosts = append(lnHosts, cfgVal.Value.([]string)...)
 	}
 	if len(lnHosts) == 0 {
 		lnHosts = []string{""}
@@ -205,7 +206,53 @@ type Address struct {
 	Original, Scheme, Host, Port, Path string
 }
 
-// String returns a human-friendly print of the address.
+// ParseAddress parses an address string into a structured format with separate
+// scheme, host, port, and path portions, as well as the original input string.
+func ParseAddress(str string) (Address, error) {
+	httpPort, httpsPort := strconv.Itoa(certmagic.HTTPPort), strconv.Itoa(certmagic.HTTPSPort)
+
+	input := str
+
+	// Split input into components (prepend with // to force host portion by default)
+	if !strings.Contains(str, "//") && !strings.HasPrefix(str, "/") {
+		str = "//" + str
+	}
+
+	u, err := url.Parse(str)
+	if err != nil {
+		return Address{}, err
+	}
+
+	// separate host and port
+	host, port, err := net.SplitHostPort(u.Host)
+	if err != nil {
+		host, port, err = net.SplitHostPort(u.Host + ":")
+		if err != nil {
+			host = u.Host
+		}
+	}
+
+	// see if we can set port based off scheme
+	if port == "" {
+		if u.Scheme == "http" {
+			port = httpPort
+		} else if u.Scheme == "https" {
+			port = httpsPort
+		}
+	}
+
+	// error if scheme and port combination violate convention
+	if (u.Scheme == "http" && port == httpsPort) || (u.Scheme == "https" && port == httpPort) {
+		return Address{}, fmt.Errorf("[%s] scheme and port violate convention", input)
+	}
+
+	return Address{Original: input, Scheme: u.Scheme, Host: host, Port: port, Path: u.Path}, err
+}
+
+// TODO: which of the methods on Address are even used?
+
+// String returns a human-readable form of a. It will
+// be a cleaned-up and filled-out URL string.
 func (a Address) String() string {
 	if a.Host == "" && a.Port == "" {
 		return ""
@@ -235,16 +282,7 @@ func (a Address) String() string {
 	return s
 }
 
-// VHost returns a sensible concatenation of Host:Port/Path from a.
-// It's basically the a.Original but without the scheme.
-func (a Address) VHost() string {
-	if idx := strings.Index(a.Original, "://"); idx > -1 {
-		return a.Original[idx+3:]
-	}
-	return a.Original
-}
-
-// Normalize normalizes URL: turn scheme and host names into lower case
+// Normalize returns a normalized version of a.
 func (a Address) Normalize() Address {
 	path := a.Path
 	if !caseSensitivePath {
@@ -266,8 +304,8 @@ func (a Address) Normalize() Address {
 	}
 }
 
-// Key is similar to String, just replaces scheme and host values with modified values.
-// Unlike String it doesn't add anything default (scheme, port, etc)
+// Key returns a string form of a, much like String() does, but this
+// method doesn't add anything default that wasn't in the original.
 func (a Address) Key() string {
 	res := ""
 	if a.Scheme != "" {
@@ -276,11 +314,11 @@ func (a Address) Key() string {
 	if a.Host != "" {
 		res += a.Host
 	}
-	if a.Port != "" {
-		if strings.HasPrefix(a.Original[len(res):], ":"+a.Port) {
-			// insert port only if the original has its own explicit port
-			res += ":" + a.Port
-		}
+	// insert port only if the original has its own explicit port
+	if a.Port != "" &&
+		len(a.Original) >= len(res) &&
+		strings.HasPrefix(a.Original[len(res):], ":"+a.Port) {
+		res += ":" + a.Port
 	}
 	if a.Path != "" {
 		res += a.Path
@@ -288,63 +326,7 @@ func (a Address) Key() string {
 	return res
 }
 
-// standardizeAddress parses an address string into a structured format with separate
-// scheme, host, port, and path portions, as well as the original input string.
-func standardizeAddress(str string) (Address, error) {
-	httpPort, httpsPort := strconv.Itoa(certmagic.HTTPPort), strconv.Itoa(certmagic.HTTPSPort)
-
-	input := str
-
-	// Split input into components (prepend with // to assert host by default)
-	if !strings.Contains(str, "//") && !strings.HasPrefix(str, "/") {
-		str = "//" + str
-	}
-	u, err := url.Parse(str)
-	if err != nil {
-		return Address{}, err
-	}
-
-	// separate host and port
-	host, port, err := net.SplitHostPort(u.Host)
-	if err != nil {
-		host, port, err = net.SplitHostPort(u.Host + ":")
-		if err != nil {
-			host = u.Host
-		}
-	}
-
-	// see if we can set port based off scheme
-	if port == "" {
-		if u.Scheme == "http" {
-			port = httpPort
-		} else if u.Scheme == "https" {
-			port = httpsPort
-		}
-	}
-
-	// repeated or conflicting scheme is confusing, so error
-	if u.Scheme != "" && (port == "http" || port == "https") {
-		return Address{}, fmt.Errorf("[%s] scheme specified twice in address", input)
-	}
-
-	// error if scheme and port combination violate convention
-	if (u.Scheme == "http" && port == httpsPort) || (u.Scheme == "https" && port == httpPort) {
-		return Address{}, fmt.Errorf("[%s] scheme and port violate convention", input)
-	}
-
-	// standardize http and https ports to their respective port numbers
-	if port == "http" {
-		u.Scheme = "http"
-		port = httpPort
-	} else if port == "https" {
-		u.Scheme = "https"
-		port = httpsPort
-	}
-
-	return Address{Original: input, Scheme: u.Scheme, Host: host, Port: port, Path: u.Path}, err
-}
-
 const (
 	defaultPort       = "2015"
-	caseSensitivePath = false
+	caseSensitivePath = false // TODO: Used?
 )

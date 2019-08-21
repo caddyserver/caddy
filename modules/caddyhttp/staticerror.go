@@ -23,16 +23,21 @@ import (
 )
 
 func init() {
-	caddy.RegisterModule(caddy.Module{
-		Name: "http.handlers.error",
-		New:  func() interface{} { return new(StaticError) },
-	})
+	caddy.RegisterModule(StaticError{})
 }
 
 // StaticError implements a simple handler that returns an error.
 type StaticError struct {
 	Error      string     `json:"error,omitempty"`
 	StatusCode WeakString `json:"status_code,omitempty"`
+}
+
+// CaddyModule returns the Caddy module information.
+func (StaticError) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		Name: "http.handlers.error",
+		New:  func() caddy.Module { return new(StaticError) },
+	}
 }
 
 func (e StaticError) ServeHTTP(w http.ResponseWriter, r *http.Request, _ Handler) error {

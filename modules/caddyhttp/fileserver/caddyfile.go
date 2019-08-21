@@ -15,59 +15,58 @@
 package fileserver
 
 import (
-	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"encoding/json"
+
+	"github.com/caddyserver/caddy/modules/caddyhttp/rewrite"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
-// UnmarshalCaddyfile sets up the handler from Caddyfile tokens. Syntax:
-//
-//     file_server [<matcher>] [browse] {
-//         hide <files...>
-//         index <files...>
-//         browse [<template_file>]
-//         root <path>
-//     }
-//
-// If browse is given on the first line, it can't be used in the block also.
-// The default root is the one given by the root directive.
-func (fsrv *FileServer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.Next() {
-		args := d.RemainingArgs()
+func init() {
+	httpcaddyfile.RegisterHandlerDirective("file_server", parseCaddyfile)
+	httpcaddyfile.RegisterDirective("try_files", parseTryFiles)
+}
+
+func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
+	var fsrv FileServer
+
+	for h.Next() {
+		args := h.RemainingArgs()
 		switch len(args) {
 		case 0:
 		case 1:
 			if args[0] != "browse" {
-				return d.ArgErr()
+				return nil, h.ArgErr()
 			}
 			fsrv.Browse = new(Browse)
 		default:
-			return d.ArgErr()
+			return nil, h.ArgErr()
 		}
 
-		for d.NextBlock() {
-			switch d.Val() {
+		for h.NextBlock() {
+			switch h.Val() {
 			case "hide":
-				fsrv.Hide = d.RemainingArgs()
+				fsrv.Hide = h.RemainingArgs()
 				if len(fsrv.Hide) == 0 {
-					return d.ArgErr()
+					return nil, h.ArgErr()
 				}
 			case "index":
-				fsrv.IndexNames = d.RemainingArgs()
+				fsrv.IndexNames = h.RemainingArgs()
 				if len(fsrv.Hide) == 0 {
-					return d.ArgErr()
+					return nil, h.ArgErr()
 				}
 			case "root":
-				if !d.Args(&fsrv.Root) {
-					return d.ArgErr()
+				if !h.Args(&fsrv.Root) {
+					return nil, h.ArgErr()
 				}
 			case "browse":
 				if fsrv.Browse != nil {
-					return d.Err("browsing is already configured")
+					return nil, h.Err("browsing is already configured")
 				}
 				fsrv.Browse = new(Browse)
-				d.Args(&fsrv.Browse.TemplateFile)
+				h.Args(&fsrv.Browse.TemplateFile)
 			default:
-				return d.Errf("unknown subdirective '%s'", d.Val())
+				return nil, h.Errf("unknown subdirective '%s'", h.Val())
 			}
 		}
 	}
@@ -77,11 +76,29 @@ func (fsrv *FileServer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		fsrv.Root = "{http.var.root}"
 	}
 
-	return nil
+	return &fsrv, nil
 }
 
-// Bucket returns the HTTP Caddyfile handler bucket number.
-func (fsrv FileServer) Bucket() int { return 7 }
+func parseTryFiles(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) {
+	if !h.Next() {
+		return nil, h.ArgErr()
+	}
 
-// Interface guard
-var _ httpcaddyfile.HandlerDirective = (*FileServer)(nil)
+	try := h.RemainingArgs()
+	if len(try) == 0 {
+		return nil, h.ArgErr()
+	}
+
+	handler := rewrite.Rewrite{
+		URI: "{http.matchers.file.relative}{http.request.uri.query}",
+	}
+
+	matcherSet := map[string]json.RawMessage{
+		"file": h.JSON(MatchFile{
+			Root:     "{http.var.root}",
+			TryFiles: try,
+		}, nil),
+	}
+
+	return h.NewRoute(matcherSet, handler), nil
+}

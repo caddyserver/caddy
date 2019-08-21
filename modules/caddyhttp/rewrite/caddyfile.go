@@ -15,24 +15,23 @@
 package rewrite
 
 import (
-	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
-// UnmarshalCaddyfile sets up the handler from Caddyfile tokens. Syntax:
+func init() {
+	httpcaddyfile.RegisterHandlerDirective("rewrite", parseCaddyfile)
+}
+
+// parseCaddyfile sets up the handler from Caddyfile tokens. Syntax:
 //
 //     rewrite [<matcher>] <to>
 //
 // The <to> parameter becomes the new URI.
-func (rewr *Rewrite) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.Next() {
-		rewr.URI = d.Val()
+func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
+	var rewr Rewrite
+	for h.Next() {
+		rewr.URI = h.Val()
 	}
-	return nil
+	return rewr, nil
 }
-
-// Bucket returns the HTTP Caddyfile handler bucket number.
-func (rewr Rewrite) Bucket() int { return 1 }
-
-// Interface guard
-var _ httpcaddyfile.HandlerDirective = (*Rewrite)(nil)

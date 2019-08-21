@@ -23,48 +23,76 @@ import (
 	"sync"
 )
 
-// Module represents a Caddy module.
-type Module struct {
+// Module is a type that is used as a Caddy module.
+type Module interface {
+	// This method indicates the type is a Caddy
+	// module. The returned ModuleInfo must have
+	// both a name and a constructor function.
+	// This method must not have any side-effects.
+	CaddyModule() ModuleInfo
+}
+
+// ModuleInfo represents a registered Caddy module.
+type ModuleInfo struct {
 	// Name is the full name of the module. It
 	// must be unique and properly namespaced.
 	Name string
 
-	// New returns a new, empty instance of
-	// the module's type. The host module
-	// which loads this module will likely
-	// invoke methods on the returned value.
-	// It must return a pointer; if not, it
-	// is converted into one.
-	New func() interface{}
-}
-
-// ID returns a module's ID, which is the
-// last element of its name.
-func (m Module) ID() string {
-	if m.Name == "" {
-		return ""
-	}
-	parts := strings.Split(m.Name, ".")
-	return parts[len(parts)-1]
+	// New returns a pointer to a new, empty
+	// instance of the module's type. The host
+	// module which instantiates this module will
+	// likely type-assert and invoke methods on
+	// the returned value. This function must not
+	// have any side-effects.
+	New func() Module
 }
 
 // Namespace returns the module's namespace (scope)
 // which is all but the last element of its name.
-func (m Module) Namespace() string {
-	lastDot := strings.LastIndex(m.Name, ".")
+// If there is no explicit namespace in the name,
+// the whole name is considered the namespace.
+func (mi ModuleInfo) Namespace() string {
+	lastDot := strings.LastIndex(mi.Name, ".")
 	if lastDot < 0 {
-		return ""
+		return mi.Name
 	}
-	return m.Name[:lastDot]
+	return mi.Name[:lastDot]
 }
 
-func (m Module) String() string { return m.Name }
+// ID returns a module's ID, which is the
+// last element of its name.
+func (mi ModuleInfo) ID() string {
+	if mi.Name == "" {
+		return ""
+	}
+	parts := strings.Split(mi.Name, ".")
+	return parts[len(parts)-1]
+}
 
-// RegisterModule registers a module. Modules must call
-// this function in the init phase of runtime.
-func RegisterModule(mod Module) error {
-	if mod.Name == "caddy" {
-		return fmt.Errorf("modules cannot be named 'caddy'")
+func (mi ModuleInfo) String() string { return mi.Name }
+
+// RegisterModule registers a module by receiving a
+// plain/empty value of the module. For registration to
+// be properly recorded, this should be called in the
+// init phase of runtime. Typically, the module package
+// will do this as a side-effect of being imported.
+// This function returns an error if the module's info
+// is incomplete or invalid, or if the module is
+// already registered.
+func RegisterModule(instance Module) error {
+	mod := instance.CaddyModule()
+
+	if mod.Name == "" {
+		return fmt.Errorf("missing ModuleInfo.Name")
+	}
+	if mod.Name == "caddy" || mod.Name == "admin" {
+		return fmt.Errorf("module name '%s' is reserved", mod.Name)
+	}
+	if mod.New == nil {
+		return fmt.Errorf("missing ModuleInfo.New")
+	}
+	if val := mod.New(); val == nil {
+		return fmt.Errorf("ModuleInfo.New must return a non-nil module instance")
 	}
 
 	modulesMu.Lock()
@@ -77,16 +105,25 @@ func RegisterModule(mod Module) error {
 	return nil
 }
 
-// GetModule returns a module by its full name.
-func GetModule(name string) (Module, error) {
+// GetModule returns module information from its full name.
+func GetModule(name string) (ModuleInfo, error) {
 	modulesMu.Lock()
 	defer modulesMu.Unlock()
-
 	m, ok := modules[name]
 	if !ok {
-		return Module{}, fmt.Errorf("module not registered: %s", name)
+		return ModuleInfo{}, fmt.Errorf("module not registered: %s", name)
 	}
 	return m, nil
+}
+
+// GetModuleName returns a module's name from an instance of its value.
+// If the value is not a module, an empty name will be returned.
+func GetModuleName(instance interface{}) string {
+	var name string
+	if mod, ok := instance.(Module); ok {
+		name = mod.CaddyModule().Name
+	}
+	return name
 }
 
 // GetModules returns all modules in the given scope/namespace.
@@ -98,7 +135,7 @@ func GetModule(name string) (Module, error) {
 //
 // Because modules are registered to a map, the returned slice
 // will be sorted to keep it deterministic.
-func GetModules(scope string) []Module {
+func GetModules(scope string) []ModuleInfo {
 	modulesMu.Lock()
 	defer modulesMu.Unlock()
 
@@ -110,7 +147,7 @@ func GetModules(scope string) []Module {
 		scopeParts = []string{}
 	}
 
-	var mods []Module
+	var mods []ModuleInfo
 iterateModules:
 	for name, m := range modules {
 		modParts := strings.Split(name, ".")
@@ -223,6 +260,6 @@ func strictUnmarshalJSON(data []byte, v interface{}) error {
 }
 
 var (
-	modules   = make(map[string]Module)
+	modules   = make(map[string]ModuleInfo)
 	modulesMu sync.Mutex
 )

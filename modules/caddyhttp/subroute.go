@@ -22,10 +22,7 @@ import (
 )
 
 func init() {
-	caddy.RegisterModule(caddy.Module{
-		Name: "http.handlers.subroute",
-		New:  func() interface{} { return new(Subroute) },
-	})
+	caddy.RegisterModule(Subroute{})
 }
 
 // Subroute implements a handler that compiles and executes routes.
@@ -35,6 +32,14 @@ func init() {
 // matchers that need to be evaluated first).
 type Subroute struct {
 	Routes RouteList `json:"routes,omitempty"`
+}
+
+// CaddyModule returns the Caddy module information.
+func (Subroute) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		Name: "http.handlers.subroute",
+		New:  func() caddy.Module { return new(Subroute) },
+	}
 }
 
 // Provision sets up subrouting.

@@ -35,10 +35,7 @@ import (
 )
 
 func init() {
-	caddy.RegisterModule(caddy.Module{
-		Name: "http.handlers.encode",
-		New:  func() interface{} { return new(Encode) },
-	})
+	caddy.RegisterModule(Encode{})
 }
 
 // Encode is a middleware which can encode responses.
@@ -48,6 +45,14 @@ type Encode struct {
 	MinLength    int                        `json:"minimum_length,omitempty"`
 
 	writerPools map[string]*sync.Pool // TODO: these pools do not get reused through config reloads...
+}
+
+// CaddyModule returns the Caddy module information.
+func (Encode) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		Name: "http.handlers.encode",
+		New:  func() caddy.Module { return new(Encode) },
+	}
 }
 
 // Provision provisions enc.

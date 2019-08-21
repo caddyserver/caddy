@@ -31,6 +31,7 @@ type Dispenser struct {
 }
 
 // NewDispenser returns a Dispenser filled with the given tokens.
+// TODO: Get rid of the filename argument; it seems pointless here
 func NewDispenser(filename string, tokens []Token) *Dispenser {
 	return &Dispenser{
 		filename: filename,
@@ -51,15 +52,15 @@ func (d *Dispenser) Next() bool {
 }
 
 // Prev moves to the previous token. It does the inverse
-// of Next(). Generally, this should only be used in
-// special cases such as deleting a token from the slice
-// that d is iterating. In that case, without using Prev(),
-// the dispenser would be pointing at the wrong token since
-// deleting a token implicitly advances the cursor.
+// of Next(), except this function may decrement the cursor
+// to -1 so that the next call to Next() points to the
+// first token; this allows dispensing to "start over". This
+// method returns true if the cursor ends up pointing to a
+// valid token.
 func (d *Dispenser) Prev() bool {
-	if d.cursor > 0 {
+	if d.cursor > -1 {
 		d.cursor--
-		return true
+		return d.cursor > -1
 	}
 	return false
 }
@@ -223,8 +224,7 @@ func (d *Dispenser) RemainingArgs() []string {
 // "directive" whether that be to the end of the line or
 // the end of a block that starts at the end of the line.
 func (d *Dispenser) NewFromNextTokens() *Dispenser {
-	var tkns []Token
-	tkns = append(tkns, d.Token())
+	tkns := []Token{d.Token()}
 	for d.NextArg() {
 		tkns = append(tkns, d.Token())
 	}
@@ -245,15 +245,23 @@ func (d *Dispenser) NewFromNextTokens() *Dispenser {
 
 // Token returns the current token.
 func (d *Dispenser) Token() Token {
-	if d.cursor < 0 || d.cursor >= len(d.tokens) {
+	return d.TokenAt(d.cursor)
+}
+
+func (d *Dispenser) TokenAt(cursor int) Token {
+	if cursor < 0 || cursor >= len(d.tokens) {
 		return Token{}
 	}
-	return d.tokens[d.cursor]
+	return d.tokens[cursor]
 }
 
 // Cursor returns the current cursor (token index).
 func (d *Dispenser) Cursor() int {
 	return d.cursor
+}
+
+func (d *Dispenser) Reset() {
+	d.cursor = -1
 }
 
 // ArgErr returns an argument error, meaning that another

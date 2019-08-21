@@ -20,21 +20,26 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/encode"
 )
 
 func init() {
-	caddy.RegisterModule(caddy.Module{
-		Name: "http.encoders.gzip",
-		New:  func() interface{} { return new(Gzip) },
-	})
+	caddy.RegisterModule(Gzip{})
 }
 
 // Gzip can create gzip encoders.
 type Gzip struct {
 	Level int `json:"level,omitempty"`
+}
+
+// CaddyModule returns the Caddy module information.
+func (Gzip) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		Name: "http.encoders.gzip",
+		New:  func() caddy.Module { return new(Gzip) },
+	}
 }
 
 // UnmarshalCaddyfile sets up the handler from Caddyfile tokens.

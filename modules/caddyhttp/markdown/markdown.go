@@ -28,14 +28,19 @@ import (
 )
 
 func init() {
-	caddy.RegisterModule(caddy.Module{
-		Name: "http.handlers.markdown",
-		New:  func() interface{} { return new(Markdown) },
-	})
+	caddy.RegisterModule(Markdown{})
 }
 
 // Markdown is a middleware for rendering a Markdown response body.
 type Markdown struct {
+}
+
+// CaddyModule returns the Caddy module information.
+func (Markdown) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		Name: "http.handlers.markdown",
+		New:  func() caddy.Module { return new(Markdown) },
+	}
 }
 
 func (m Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {

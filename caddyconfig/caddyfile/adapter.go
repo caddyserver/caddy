@@ -37,14 +37,12 @@ func (a Adapter) Adapt(body []byte, options map[string]string) ([]byte, []caddyc
 		options = make(map[string]string)
 	}
 
-	directives := a.ServerType.ValidDirectives()
-
 	filename := options["filename"]
 	if filename == "" {
 		filename = "Caddyfile"
 	}
 
-	serverBlocks, err := Parse(filename, bytes.NewReader(body), directives)
+	serverBlocks, err := Parse(filename, bytes.NewReader(body))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -77,10 +75,6 @@ type Unmarshaler interface {
 
 // ServerType is a type that can evaluate a Caddyfile and set up a caddy config.
 type ServerType interface {
-	// ValidDirectives returns a list of the
-	// server type's recognized directives.
-	ValidDirectives() []string
-
 	// Setup takes the server blocks which
 	// contain tokens, as well as options
 	// (e.g. CLI flags) and creates a Caddy
