@@ -189,6 +189,9 @@ func Run() {
 		os.Exit(0)
 	}
 
+	// Log Caddy version before start
+	log.Printf("[INFO] Caddy version: %s", module.Version)
+
 	// Start your engines
 	instance, err := caddy.Start(caddyfileinput)
 	if err != nil {
