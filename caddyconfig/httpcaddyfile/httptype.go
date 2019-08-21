@@ -17,7 +17,6 @@ package httpcaddyfile
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"reflect"
 	"sort"
 	"strconv"
@@ -39,8 +38,6 @@ func init() {
 type ServerType struct {
 }
 
-// TODO: error on unrecognized directives
-
 // Setup makes a config from the tokens.
 func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 	options map[string]string) (*caddy.Config, []caddyconfig.Warning, error) {
@@ -55,6 +52,27 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 	}
 
 	for _, sb := range serverBlocks {
+		// replace shorthand placeholders (which are
+		// convenient when writing a Caddyfile) with
+		// their actual placeholder identifiers or
+		// variable names
+		replacer := strings.NewReplacer(
+			"{uri}", "{http.request.uri}",
+			"{path}", "{http.request.uri.path}",
+			"{host}", "{http.request.host}",
+			"{hostport}", "{http.request.hostport}",
+			"{method}", "{http.request.method}",
+			"{scheme}", "{http.request.scheme}",
+			"{file}", "{http.request.uri.path.file}",
+			"{dir}", "{http.request.uri.path.dir}",
+			"{query}", "{http.request.uri.query}",
+		)
+		for _, segment := range sb.block.Segments {
+			for i := 0; i < len(segment); i++ {
+				segment[i].Text = replacer.Replace(segment[i].Text)
+			}
+		}
+
 		// extract matcher definitions
 		d := sb.block.DispenseDirective("matcher")
 		matcherDefs, err := st.parseMatcherDefinitions(d)
@@ -82,8 +100,8 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 					sb.pile[result.Class] = append(sb.pile[result.Class], result)
 				}
 			} else {
-				// TODO: this should be an error
-				log.Printf("%s not registered", dir)
+				tkn := segment[0]
+				return nil, warnings, fmt.Errorf("%s:%d: unrecognized directive: %s", tkn.File, tkn.Line, dir)
 			}
 		}
 	}
@@ -96,22 +114,6 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 
 	// reduce
 	pairings := st.consolidateAddrMappings(sbmap)
-
-	// TODO: shorthand placeholders
-	// for _, p := range pairings {
-	// 	for _, sblock := range p.serverBlocks {
-	// 		for _, tokens := range sblock.Tokens {
-	// 			for i := 0; i < len(tokens); i++ {
-	// 				switch tokens[i].Text {
-	// 				case "{uri}":
-	// 					tokens[i].Text = "{http.request.uri}"
-	// 				case "{path}":
-	// 					tokens[i].Text = "{http.request.uri.path}"
-	// 				}
-	// 			}
-	// 		}
-	// 	}
-	// }
 
 	// each pairing of listener addresses to list of server
 	// blocks is basically a server definition
