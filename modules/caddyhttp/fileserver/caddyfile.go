@@ -76,6 +76,15 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 		fsrv.Root = "{http.var.root}"
 	}
 
+	// hide the Caddyfile (and any imported Caddyfiles)
+	if configFiles := h.Caddyfiles(); len(configFiles) > 0 {
+		for _, file := range configFiles {
+			if !fileHidden(file, fsrv.Hide) {
+				fsrv.Hide = append(fsrv.Hide, file)
+			}
+		}
+	}
+
 	return &fsrv, nil
 }
 

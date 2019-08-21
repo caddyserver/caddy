@@ -95,6 +95,7 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 					Dispenser:   caddyfile.NewDispenser(segment),
 					warnings:    &warnings,
 					matcherDefs: matcherDefs,
+					parentBlock: sb.block,
 				})
 				if err != nil {
 					return nil, warnings, fmt.Errorf("parsing caddyfile tokens for '%s': %v", dir, err)
