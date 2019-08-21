@@ -28,22 +28,27 @@ import (
 )
 
 func init() {
-	caddy.RegisterModule(caddy.Module{
-		Name: "tls.certificates.load_folders",
-		New:  func() interface{} { return folderLoader{} },
-	})
+	caddy.RegisterModule(FolderLoader{})
 }
 
-// folderLoader loads certificates and their associated keys from disk
+// FolderLoader loads certificates and their associated keys from disk
 // by recursively walking the specified directories, looking for PEM
 // files which contain both a certificate and a key.
-type folderLoader []string
+type FolderLoader []string
+
+// CaddyModule returns the Caddy module information.
+func (FolderLoader) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		Name: "tls.certificates.load_folders",
+		New:  func() caddy.Module { return new(FolderLoader) },
+	}
+}
 
 // LoadCertificates loads all the certificates+keys in the directories
 // listed in fl from all files ending with .pem. This method of loading
 // certificates expects the certificate and key to be bundled into the
 // same file.
-func (fl folderLoader) LoadCertificates() ([]Certificate, error) {
+func (fl FolderLoader) LoadCertificates() ([]Certificate, error) {
 	var certs []Certificate
 	for _, dir := range fl {
 		err := filepath.Walk(dir, func(fpath string, info os.FileInfo, err error) error {
@@ -135,4 +140,4 @@ func x509CertFromCertAndKeyPEMFile(fpath string) (tls.Certificate, error) {
 	return cert, nil
 }
 
-var _ CertificateLoader = (folderLoader)(nil)
+var _ CertificateLoader = (FolderLoader)(nil)

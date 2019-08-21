@@ -20,21 +20,61 @@ import (
 	"strconv"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 )
 
 func init() {
-	caddy.RegisterModule(caddy.Module{
-		Name: "http.handlers.static_response",
-		New:  func() interface{} { return new(StaticResponse) },
-	})
+	caddy.RegisterModule(StaticResponse{})
+	// TODO: Caddyfile directive
 }
 
 // StaticResponse implements a simple responder for static responses.
 type StaticResponse struct {
-	StatusCode weakString  `json:"status_code"`
-	Headers    http.Header `json:"headers"`
-	Body       string      `json:"body"`
-	Close      bool        `json:"close"`
+	StatusCode WeakString  `json:"status_code,omitempty"`
+	Headers    http.Header `json:"headers,omitempty"`
+	Body       string      `json:"body,omitempty"`
+	Close      bool        `json:"close,omitempty"`
+}
+
+// CaddyModule returns the Caddy module information.
+func (StaticResponse) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		Name: "http.handlers.static_response",
+		New:  func() caddy.Module { return new(StaticResponse) },
+	}
+}
+
+// UnmarshalCaddyfile sets up the handler from Caddyfile tokens. Syntax:
+//
+//     static_response [<matcher>] <status> {
+//         body <text>
+//         close
+//     }
+//
+func (s *StaticResponse) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		var statusCodeStr string
+		if d.Args(&statusCodeStr) {
+			s.StatusCode = WeakString(statusCodeStr)
+		}
+		for d.NextBlock() {
+			switch d.Val() {
+			case "body":
+				if s.Body != "" {
+					return d.Err("body already specified")
+				}
+				if !d.Args(&s.Body) {
+					return d.ArgErr()
+				}
+			case "close":
+				if s.Close {
+					return d.Err("close already specified")
+				}
+				s.Close = true
+			}
+		}
+	}
+	return nil
 }
 
 func (s StaticResponse) ServeHTTP(w http.ResponseWriter, r *http.Request, _ Handler) error {

@@ -28,10 +28,7 @@ import (
 )
 
 func init() {
-	caddy.RegisterModule(caddy.Module{
-		Name: "tls.management.acme",
-		New:  func() interface{} { return new(ACMEManagerMaker) },
-	})
+	caddy.RegisterModule(ACMEManagerMaker{})
 }
 
 // ACMEManagerMaker makes an ACME manager
@@ -57,9 +54,17 @@ type ACMEManagerMaker struct {
 	keyType certcrypto.KeyType
 }
 
-// newManager is a no-op to satisfy the ManagerMaker interface,
+// CaddyModule returns the Caddy module information.
+func (ACMEManagerMaker) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		Name: "tls.management.acme",
+		New:  func() caddy.Module { return new(ACMEManagerMaker) },
+	}
+}
+
+// NewManager is a no-op to satisfy the ManagerMaker interface,
 // because this manager type is a special case.
-func (m *ACMEManagerMaker) newManager(interactive bool) (certmagic.Manager, error) {
+func (m ACMEManagerMaker) NewManager(interactive bool) (certmagic.Manager, error) {
 	return nil, nil
 }
 
@@ -203,4 +208,4 @@ func onDemandAskRequest(ask string, name string) error {
 }
 
 // Interface guard
-var _ managerMaker = (*ACMEManagerMaker)(nil)
+var _ ManagerMaker = (*ACMEManagerMaker)(nil)

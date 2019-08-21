@@ -18,21 +18,44 @@ import (
 	"compress/flate"
 	"compress/gzip" // TODO: consider using https://github.com/klauspost/compress/gzip
 	"fmt"
+	"strconv"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/encode"
 )
 
 func init() {
-	caddy.RegisterModule(caddy.Module{
-		Name: "http.encoders.gzip",
-		New:  func() interface{} { return new(Gzip) },
-	})
+	caddy.RegisterModule(Gzip{})
 }
 
 // Gzip can create gzip encoders.
 type Gzip struct {
 	Level int `json:"level,omitempty"`
+}
+
+// CaddyModule returns the Caddy module information.
+func (Gzip) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		Name: "http.encoders.gzip",
+		New:  func() caddy.Module { return new(Gzip) },
+	}
+}
+
+// UnmarshalCaddyfile sets up the handler from Caddyfile tokens.
+func (g *Gzip) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		if !d.NextArg() {
+			continue
+		}
+		levelStr := d.Val()
+		level, err := strconv.Atoi(levelStr)
+		if err != nil {
+			return err
+		}
+		g.Level = level
+	}
+	return nil
 }
 
 // Provision provisions g's configuration.
@@ -69,7 +92,8 @@ var defaultGzipLevel = 5
 
 // Interface guards
 var (
-	_ encode.Encoding   = (*Gzip)(nil)
-	_ caddy.Provisioner = (*Gzip)(nil)
-	_ caddy.Validator   = (*Gzip)(nil)
+	_ encode.Encoding       = (*Gzip)(nil)
+	_ caddy.Provisioner     = (*Gzip)(nil)
+	_ caddy.Validator       = (*Gzip)(nil)
+	_ caddyfile.Unmarshaler = (*Gzip)(nil)
 )

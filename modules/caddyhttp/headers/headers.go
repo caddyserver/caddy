@@ -23,16 +23,21 @@ import (
 )
 
 func init() {
-	caddy.RegisterModule(caddy.Module{
-		Name: "http.handlers.headers",
-		New:  func() interface{} { return new(Headers) },
-	})
+	caddy.RegisterModule(Headers{})
 }
 
 // Headers is a middleware which can mutate HTTP headers.
 type Headers struct {
 	Request  *HeaderOps     `json:"request,omitempty"`
 	Response *RespHeaderOps `json:"response,omitempty"`
+}
+
+// CaddyModule returns the Caddy module information.
+func (Headers) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		Name: "http.handlers.headers",
+		New:  func() caddy.Module { return new(Headers) },
+	}
 }
 
 // HeaderOps defines some operations to

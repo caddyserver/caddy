@@ -15,6 +15,7 @@
 package caddyhttp
 
 import (
+	"fmt"
 	"net"
 	"net/http"
 	"net/textproto"
@@ -28,6 +29,7 @@ import (
 func addHTTPVarsToReplacer(repl caddy.Replacer, req *http.Request, w http.ResponseWriter) {
 	httpVars := func(key string) (string, bool) {
 		if req != nil {
+			// query string parameters
 			if strings.HasPrefix(key, queryReplPrefix) {
 				vals := req.URL.Query()[key[len(queryReplPrefix):]]
 				// always return true, since the query param might
@@ -35,6 +37,7 @@ func addHTTPVarsToReplacer(repl caddy.Replacer, req *http.Request, w http.Respon
 				return strings.Join(vals, ","), true
 			}
 
+			// request header fields
 			if strings.HasPrefix(key, reqHeaderReplPrefix) {
 				field := key[len(reqHeaderReplPrefix):]
 				vals := req.Header[textproto.CanonicalMIMEHeaderKey(field)]
@@ -43,6 +46,7 @@ func addHTTPVarsToReplacer(repl caddy.Replacer, req *http.Request, w http.Respon
 				return strings.Join(vals, ","), true
 			}
 
+			// cookies
 			if strings.HasPrefix(key, cookieReplPrefix) {
 				name := key[len(cookieReplPrefix):]
 				for _, cookie := range req.Cookies() {
@@ -87,14 +91,7 @@ func addHTTPVarsToReplacer(repl caddy.Replacer, req *http.Request, w http.Respon
 				return req.URL.RawQuery, true
 			}
 
-			if strings.HasPrefix(key, respHeaderReplPrefix) {
-				field := key[len(respHeaderReplPrefix):]
-				vals := w.Header()[textproto.CanonicalMIMEHeaderKey(field)]
-				// always return true, since the header field might
-				// be present only in some requests
-				return strings.Join(vals, ","), true
-			}
-
+			// hostname labels
 			if strings.HasPrefix(key, hostLabelReplPrefix) {
 				idxStr := key[len(hostLabelReplPrefix):]
 				idx, err := strconv.Atoi(idxStr)
@@ -111,6 +108,7 @@ func addHTTPVarsToReplacer(repl caddy.Replacer, req *http.Request, w http.Respon
 				return hostLabels[idx], true
 			}
 
+			// path parts
 			if strings.HasPrefix(key, pathPartsReplPrefix) {
 				idxStr := key[len(pathPartsReplPrefix):]
 				idx, err := strconv.Atoi(idxStr)
@@ -129,9 +127,31 @@ func addHTTPVarsToReplacer(repl caddy.Replacer, req *http.Request, w http.Respon
 				}
 				return pathParts[idx], true
 			}
+
+			// middleware variables
+			if strings.HasPrefix(key, varsReplPrefix) {
+				varName := key[len(varsReplPrefix):]
+				tbl := req.Context().Value(VarCtxKey).(map[string]interface{})
+				raw, ok := tbl[varName]
+				if !ok {
+					// variables can be dynamic, so always return true
+					// even when it may not be set; treat as empty
+					return "", true
+				}
+				// do our best to convert it to a string efficiently
+				switch val := raw.(type) {
+				case string:
+					return val, true
+				case fmt.Stringer:
+					return val.String(), true
+				default:
+					return fmt.Sprintf("%s", val), true
+				}
+			}
 		}
 
 		if w != nil {
+			// response header fields
 			if strings.HasPrefix(key, respHeaderReplPrefix) {
 				field := key[len(respHeaderReplPrefix):]
 				vals := w.Header()[textproto.CanonicalMIMEHeaderKey(field)]
@@ -153,5 +173,6 @@ const (
 	cookieReplPrefix     = "http.request.cookie."
 	hostLabelReplPrefix  = "http.request.host.labels."
 	pathPartsReplPrefix  = "http.request.uri.path."
+	varsReplPrefix       = "http.var."
 	respHeaderReplPrefix = "http.response.header."
 )

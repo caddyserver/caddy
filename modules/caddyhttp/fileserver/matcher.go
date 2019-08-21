@@ -21,14 +21,12 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
 func init() {
-	caddy.RegisterModule(caddy.Module{
-		Name: "http.matchers.file",
-		New:  func() interface{} { return new(MatchFile) },
-	})
+	caddy.RegisterModule(MatchFile{})
 }
 
 // MatchFile is an HTTP request matcher that can match
@@ -49,6 +47,50 @@ type MatchFile struct {
 	// How to choose a file in TryFiles.
 	// Default is first_exist.
 	TryPolicy string `json:"try_policy,omitempty"`
+}
+
+// CaddyModule returns the Caddy module information.
+func (MatchFile) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		Name: "http.matchers.file",
+		New:  func() caddy.Module { return new(MatchFile) },
+	}
+}
+
+// UnmarshalCaddyfile sets up the matcher from Caddyfile tokens. Syntax:
+//
+//     file {
+//         root <path>
+//         try_files <files...>
+//         try_policy first_exist|smallest_size|largest_size|most_recent_modified
+//     }
+//
+func (m *MatchFile) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		for d.NextBlock() {
+			switch d.Val() {
+			case "root":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				m.Root = d.Val()
+			case "try_files":
+				m.TryFiles = d.RemainingArgs()
+				if len(m.TryFiles) == 0 {
+					return d.ArgErr()
+				}
+			case "try_policy":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				m.TryPolicy = d.Val()
+			}
+		}
+	}
+	if m.Root == "" {
+		m.Root = "{http.var.root}"
+	}
+	return nil
 }
 
 // Validate ensures m has a valid configuration.
@@ -87,7 +129,7 @@ func (m MatchFile) Match(r *http.Request) bool {
 func (m MatchFile) selectFile(r *http.Request) (rel, abs string, matched bool) {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
 
-	root := repl.ReplaceAll(m.Root, "")
+	root := repl.ReplaceAll(m.Root, ".")
 
 	// if list of files to try was omitted entirely,
 	// assume URL path

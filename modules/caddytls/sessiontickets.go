@@ -29,7 +29,7 @@ import (
 // SessionTicketService configures and manages TLS session tickets.
 type SessionTicketService struct {
 	KeySource        json.RawMessage `json:"key_source,omitempty"`
-	RotationInterval caddy.Duration `json:"rotation_interval,omitempty"`
+	RotationInterval caddy.Duration  `json:"rotation_interval,omitempty"`
 	MaxKeys          int             `json:"max_keys,omitempty"`
 	DisableRotation  bool            `json:"disable_rotation,omitempty"`
 	Disabled         bool            `json:"disabled,omitempty"`

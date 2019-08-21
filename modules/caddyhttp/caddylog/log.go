@@ -24,16 +24,21 @@ import (
 )
 
 func init() {
-	caddy.RegisterModule(caddy.Module{
-		Name: "http.handlers.log",
-		New:  func() interface{} { return new(Log) },
-	})
+	caddy.RegisterModule(Log{})
 }
 
 // Log implements a simple logging middleware.
 type Log struct {
 	Filename string
 	counter  int
+}
+
+// CaddyModule returns the Caddy module information.
+func (Log) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		Name: "http.handlers.log",
+		New:  func() caddy.Module { return new(Log) },
+	}
 }
 
 func (l *Log) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {

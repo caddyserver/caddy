@@ -36,10 +36,7 @@ import (
 func init() {
 	weakrand.Seed(time.Now().UnixNano())
 
-	caddy.RegisterModule(caddy.Module{
-		Name: "http.handlers.file_server",
-		New:  func() interface{} { return new(FileServer) },
-	})
+	caddy.RegisterModule(FileServer{})
 }
 
 // FileServer implements a static file server responder for Caddy.
@@ -48,8 +45,14 @@ type FileServer struct {
 	Hide       []string `json:"hide,omitempty"`
 	IndexNames []string `json:"index_names,omitempty"`
 	Browse     *Browse  `json:"browse,omitempty"`
+}
 
-	// TODO: Content negotiation
+// CaddyModule returns the Caddy module information.
+func (FileServer) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		Name: "http.handlers.file_server",
+		New:  func() caddy.Module { return new(FileServer) },
+	}
 }
 
 // Provision sets up the static files responder.
@@ -83,7 +86,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, _ cadd
 
 	filesToHide := fsrv.transformHidePaths(repl)
 
-	root := repl.ReplaceAll(fsrv.Root, "")
+	root := repl.ReplaceAll(fsrv.Root, ".")
 	suffix := repl.ReplaceAll(r.URL.Path, "")
 	filename := sanitizedPathJoin(root, suffix)
 
@@ -302,7 +305,7 @@ func calculateEtag(d os.FileInfo) string {
 	return `"` + t + s + `"`
 }
 
-var defaultIndexNames = []string{"index.html"}
+var defaultIndexNames = []string{"index.html", "index.txt"}
 
 var bufPool = sync.Pool{
 	New: func() interface{} {

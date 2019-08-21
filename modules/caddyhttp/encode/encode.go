@@ -35,10 +35,7 @@ import (
 )
 
 func init() {
-	caddy.RegisterModule(caddy.Module{
-		Name: "http.handlers.encode",
-		New:  func() interface{} { return new(Encode) },
-	})
+	caddy.RegisterModule(Encode{})
 }
 
 // Encode is a middleware which can encode responses.
@@ -50,21 +47,25 @@ type Encode struct {
 	writerPools map[string]*sync.Pool // TODO: these pools do not get reused through config reloads...
 }
 
+// CaddyModule returns the Caddy module information.
+func (Encode) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		Name: "http.handlers.encode",
+		New:  func() caddy.Module { return new(Encode) },
+	}
+}
+
 // Provision provisions enc.
 func (enc *Encode) Provision(ctx caddy.Context) error {
-	enc.writerPools = make(map[string]*sync.Pool)
-
 	for modName, rawMsg := range enc.EncodingsRaw {
 		val, err := ctx.LoadModule("http.encoders."+modName, rawMsg)
 		if err != nil {
 			return fmt.Errorf("loading encoder module '%s': %v", modName, err)
 		}
-		encoder := val.(Encoding)
-
-		enc.writerPools[encoder.AcceptEncoding()] = &sync.Pool{
-			New: func() interface{} {
-				return encoder.NewEncoder()
-			},
+		encoding := val.(Encoding)
+		err = enc.addEncoding(encoding)
+		if err != nil {
+			return err
 		}
 	}
 	enc.EncodingsRaw = nil // allow GC to deallocate - TODO: Does this help?
@@ -85,8 +86,26 @@ func (enc *Encode) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyh
 		defer w.(*responseWriter).Close()
 		break
 	}
-
 	return next.ServeHTTP(w, r)
+}
+
+func (enc *Encode) addEncoding(e Encoding) error {
+	ae := e.AcceptEncoding()
+	if ae == "" {
+		return fmt.Errorf("encoder does not specify an Accept-Encoding value")
+	}
+	if _, ok := enc.writerPools[ae]; ok {
+		return fmt.Errorf("encoder already added: %s", ae)
+	}
+	if enc.writerPools == nil {
+		enc.writerPools = make(map[string]*sync.Pool)
+	}
+	enc.writerPools[ae] = &sync.Pool{
+		New: func() interface{} {
+			return e.NewEncoder()
+		},
+	}
+	return nil
 }
 
 // openResponseWriter creates a new response writer that may (or may not)

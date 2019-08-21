@@ -24,10 +24,7 @@ import (
 )
 
 func init() {
-	caddy.RegisterModule(caddy.Module{
-		Name: "http.handlers.rewrite",
-		New:  func() interface{} { return new(Rewrite) },
-	})
+	caddy.RegisterModule(Rewrite{})
 }
 
 // Rewrite is a middleware which can rewrite HTTP requests.
@@ -35,6 +32,14 @@ type Rewrite struct {
 	Method   string `json:"method,omitempty"`
 	URI      string `json:"uri,omitempty"`
 	Rehandle bool   `json:"rehandle,omitempty"`
+}
+
+// CaddyModule returns the Caddy module information.
+func (Rewrite) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		Name: "http.handlers.rewrite",
+		New:  func() caddy.Module { return new(Rewrite) },
+	}
 }
 
 func (rewr Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {

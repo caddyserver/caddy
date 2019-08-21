@@ -1,0 +1,4 @@
+glob1.host0 {
+	dir1
+	dir2 arg1
+}

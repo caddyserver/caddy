@@ -22,37 +22,38 @@ import (
 	"github.com/caddyserver/caddy/v2"
 )
 
-// ServerRoute represents a set of matching rules,
+// Route represents a set of matching rules,
 // middlewares, and a responder for handling HTTP
 // requests.
-type ServerRoute struct {
-	Group       string                       `json:"group,omitempty"`
-	MatcherSets []map[string]json.RawMessage `json:"match,omitempty"`
-	Handle      []json.RawMessage            `json:"handle,omitempty"`
-	Terminal    bool                         `json:"terminal,omitempty"`
+type Route struct {
+	Group          string                       `json:"group,omitempty"`
+	MatcherSetsRaw []map[string]json.RawMessage `json:"match,omitempty"`
+	HandlersRaw    []json.RawMessage            `json:"handle,omitempty"`
+	Terminal       bool                         `json:"terminal,omitempty"`
 
 	// decoded values
-	matcherSets []MatcherSet
-	handlers    []MiddlewareHandler
+	MatcherSets []MatcherSet        `json:"-"`
+	Handlers    []MiddlewareHandler `json:"-"`
 }
 
 // Empty returns true if the route has all zero/default values.
-func (sr ServerRoute) Empty() bool {
-	return len(sr.MatcherSets) == 0 &&
-		len(sr.Handle) == 0 &&
-		len(sr.handlers) == 0 &&
-		!sr.Terminal &&
-		sr.Group == ""
+func (r Route) Empty() bool {
+	return len(r.MatcherSetsRaw) == 0 &&
+		len(r.MatcherSets) == 0 &&
+		len(r.HandlersRaw) == 0 &&
+		len(r.Handlers) == 0 &&
+		!r.Terminal &&
+		r.Group == ""
 }
 
-func (sr ServerRoute) anyMatcherSetMatches(r *http.Request) bool {
-	for _, ms := range sr.matcherSets {
-		if ms.Match(r) {
+func (r Route) anyMatcherSetMatches(req *http.Request) bool {
+	for _, ms := range r.MatcherSets {
+		if ms.Match(req) {
 			return true
 		}
 	}
 	// if no matchers, always match
-	return len(sr.matcherSets) == 0
+	return len(r.MatcherSets) == 0
 }
 
 // MatcherSet is a set of matchers which
@@ -73,13 +74,13 @@ func (mset MatcherSet) Match(r *http.Request) bool {
 
 // RouteList is a list of server routes that can
 // create a middleware chain.
-type RouteList []ServerRoute
+type RouteList []Route
 
 // Provision sets up all the routes by loading the modules.
 func (routes RouteList) Provision(ctx caddy.Context) error {
 	for i, route := range routes {
 		// matchers
-		for _, matcherSet := range route.MatcherSets {
+		for _, matcherSet := range route.MatcherSetsRaw {
 			var matchers MatcherSet
 			for modName, rawMsg := range matcherSet {
 				val, err := ctx.LoadModule("http.matchers."+modName, rawMsg)
@@ -88,19 +89,19 @@ func (routes RouteList) Provision(ctx caddy.Context) error {
 				}
 				matchers = append(matchers, val.(RequestMatcher))
 			}
-			routes[i].matcherSets = append(routes[i].matcherSets, matchers)
+			routes[i].MatcherSets = append(routes[i].MatcherSets, matchers)
 		}
-		routes[i].MatcherSets = nil // allow GC to deallocate - TODO: Does this help?
+		routes[i].MatcherSetsRaw = nil // allow GC to deallocate - TODO: Does this help?
 
 		// handlers
-		for j, rawMsg := range route.Handle {
+		for j, rawMsg := range route.HandlersRaw {
 			mh, err := ctx.LoadModuleInline("handler", "http.handlers", rawMsg)
 			if err != nil {
 				return fmt.Errorf("loading handler module in position %d: %v", j, err)
 			}
-			routes[i].handlers = append(routes[i].handlers, mh.(MiddlewareHandler))
+			routes[i].Handlers = append(routes[i].Handlers, mh.(MiddlewareHandler))
 		}
-		routes[i].Handle = nil // allow GC to deallocate - TODO: Does this help?
+		routes[i].HandlersRaw = nil // allow GC to deallocate - TODO: Does this help?
 	}
 	return nil
 }
@@ -135,7 +136,7 @@ func (routes RouteList) BuildCompositeRoute(req *http.Request) Handler {
 		}
 
 		// apply the rest of the route
-		for _, mh := range route.handlers {
+		for _, mh := range route.Handlers {
 			// we have to be sure to wrap mh outside
 			// of our current stack frame so that the
 			// reference to this mh isn't overwritten

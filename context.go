@@ -99,11 +99,16 @@ func (ctx Context) LoadModule(name string, rawMsg json.RawMessage) (interface{},
 		return nil, fmt.Errorf("module '%s' has no constructor", mod.Name)
 	}
 
-	val := mod.New()
+	val := mod.New().(interface{})
 
-	// value must be a pointer for unmarshaling into concrete type
+	// value must be a pointer for unmarshaling into concrete type, even if
+	// the module's concrete type is a slice or map; New() *should* return
+	// a pointer, otherwise unmarshaling errors or panics will occur
 	if rv := reflect.ValueOf(val); rv.Kind() != reflect.Ptr {
-		val = reflect.New(rv.Type()).Elem().Addr().Interface()
+		log.Printf("[WARNING] ModuleInfo.New() for module '%s' did not return a pointer,"+
+			" so we are using reflection to make a pointer instead; please fix this by"+
+			" using new(Type) or &Type notation in your module's New() function.", name)
+		val = reflect.New(rv.Type()).Elem().Addr().Interface().(Module)
 	}
 
 	// fill in its config only if there is a config to fill in

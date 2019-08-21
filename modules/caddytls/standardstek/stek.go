@@ -24,15 +24,20 @@ import (
 )
 
 func init() {
-	caddy.RegisterModule(caddy.Module{
-		Name: "tls.stek.standard",
-		New:  func() interface{} { return new(standardSTEKProvider) },
-	})
+	caddy.RegisterModule(standardSTEKProvider{})
 }
 
 type standardSTEKProvider struct {
 	stekConfig *caddytls.SessionTicketService
 	timer      *time.Timer
+}
+
+// CaddyModule returns the Caddy module information.
+func (standardSTEKProvider) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		Name: "tls.stek.standard",
+		New:  func() caddy.Module { return new(standardSTEKProvider) },
+	}
 }
 
 // Initialize sets the configuration for s and returns the starting keys.
