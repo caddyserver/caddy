@@ -459,23 +459,22 @@ func (p *parser) snippetTokens() ([]Token, error) {
 	if err != nil {
 		return nil, err
 	}
-	count := 1
+	nesting := 1 // count our own nesting in snippets
 	tokens := []Token{}
 	for p.Next() {
 		if p.Val() == "}" {
-			count--
-			if count == 0 {
+			nesting--
+			if nesting == 0 {
 				break
 			}
 		}
 		if p.Val() == "{" {
-			p.nesting++
-			count++
+			nesting++
 		}
 		tokens = append(tokens, p.tokens[p.cursor])
 	}
 	// make sure we're matched up
-	if count != 0 {
+	if nesting != 0 {
 		return nil, p.SyntaxErr("}")
 	}
 	return tokens, nil
