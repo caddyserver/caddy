@@ -24,10 +24,8 @@ import (
 )
 
 func init() {
-	caddy.RegisterModule(caddy.Module{
-		Name: "http.handlers.static_response",
-		New:  func() interface{} { return new(StaticResponse) },
-	})
+	caddy.RegisterModule(StaticResponse{})
+	// TODO: Caddyfile directive
 }
 
 // StaticResponse implements a simple responder for static responses.
@@ -36,6 +34,14 @@ type StaticResponse struct {
 	Headers    http.Header `json:"headers,omitempty"`
 	Body       string      `json:"body,omitempty"`
 	Close      bool        `json:"close,omitempty"`
+}
+
+// CaddyModule returns the Caddy module information.
+func (StaticResponse) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		Name: "http.handlers.static_response",
+		New:  func() caddy.Module { return new(StaticResponse) },
+	}
 }
 
 // UnmarshalCaddyfile sets up the handler from Caddyfile tokens. Syntax:
@@ -70,9 +76,6 @@ func (s *StaticResponse) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	}
 	return nil
 }
-
-// Bucket returns the HTTP Caddyfile handler bucket number.
-func (StaticResponse) Bucket() int { return 7 }
 
 func (s StaticResponse) ServeHTTP(w http.ResponseWriter, r *http.Request, _ Handler) error {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)

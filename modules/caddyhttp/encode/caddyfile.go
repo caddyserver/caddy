@@ -22,7 +22,24 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
+
+func init() {
+	httpcaddyfile.RegisterHandlerDirective("encode", parseCaddyfile)
+}
+
+// TODO: This is a good example of why UnmarshalCaddyfile is still a good idea... hmm.
+func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
+	enc := new(Encode)
+	err := enc.UnmarshalCaddyfile(h.Dispenser)
+	if err != nil {
+		return nil, err
+	}
+	return enc, nil
+}
+
+// TODO: Keep UnmarshalCaddyfile pattern?
 
 // UnmarshalCaddyfile sets up the handler from Caddyfile tokens. Syntax:
 //
@@ -78,8 +95,5 @@ func (enc *Encode) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
-// Bucket returns the HTTP Caddyfile handler bucket number.
-func (enc Encode) Bucket() int { return 3 }
-
 // Interface guard
-var _ httpcaddyfile.HandlerDirective = (*Encode)(nil)
+var _ caddyfile.Unmarshaler = (*Encode)(nil)

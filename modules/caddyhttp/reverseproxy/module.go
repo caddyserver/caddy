@@ -15,39 +15,39 @@
 package reverseproxy
 
 import (
-	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
-	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
-// Register caddy module.
 func init() {
-	caddy.RegisterModule(caddy.Module{
-		Name: "http.handlers.reverse_proxy",
-		New:  func() interface{} { return new(LoadBalanced) },
-	})
+	caddy.RegisterModule(new(LoadBalanced))
+	httpcaddyfile.RegisterHandlerDirective("reverse_proxy", parseCaddyfile) // TODO: "proxy"?
 }
 
-// UnmarshalCaddyfile sets up the handler from Caddyfile tokens. Syntax:
+// CaddyModule returns the Caddy module information.
+func (*LoadBalanced) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		Name: "http.handlers.reverse_proxy",
+		New:  func() caddy.Module { return new(LoadBalanced) },
+	}
+}
+
+// parseCaddyfile sets up the handler from Caddyfile tokens. Syntax:
 //
 //     proxy [<matcher>] <to>
 //
 // TODO: This needs to be finished. It definitely needs to be able to open a block...
-func (lb *LoadBalanced) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.Next() {
-		allTo := d.RemainingArgs()
+func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
+	lb := new(LoadBalanced)
+	for h.Next() {
+		allTo := h.RemainingArgs()
 		if len(allTo) == 0 {
-			return d.ArgErr()
+			return nil, h.ArgErr()
 		}
 		for _, to := range allTo {
 			lb.Upstreams = append(lb.Upstreams, &UpstreamConfig{Host: to})
 		}
 	}
-	return nil
+	return lb, nil
 }
-
-// Bucket returns the HTTP Caddyfile handler bucket number.
-func (*LoadBalanced) Bucket() int { return 7 }
-
-// Interface guard
-var _ httpcaddyfile.HandlerDirective = (*LoadBalanced)(nil)

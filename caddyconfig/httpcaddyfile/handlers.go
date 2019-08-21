@@ -17,7 +17,6 @@ package httpcaddyfile
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -54,39 +53,4 @@ func (st *ServerType) parseMatcherDefinitions(d *caddyfile.Dispenser) (map[strin
 		}
 	}
 	return matchers, nil
-}
-
-// directiveBuckets returns a list of middleware/handler directives.
-// Buckets are ordered, and directives should be evaluated in their
-// bucket order. Within a bucket, directives are not ordered. Hence,
-// the return value has a slice of buckets, where each bucket is a
-// map, which is a strongly-typed reminder that directives within a
-// bucket are not ordered.
-func directiveBuckets() []map[string]struct{} {
-	directiveBuckets := []map[string]struct{}{
-		// prefer odd-numbered buckets; evens are there for contingencies
-		{}, // 0
-		{}, // 1 - keep empty unless necessary
-		{}, // 2
-		{}, // 3 - first handlers, last responders
-		{}, // 4
-		{}, // 5 - middle of chain
-		{}, // 6
-		{}, // 7 - last handlers, first responders
-		{}, // 8
-		{}, // 9 - keep empty unless necessary
-		{}, // 10
-	}
-	for _, mod := range caddy.GetModules("http.handlers") {
-		if hd, ok := mod.New().(HandlerDirective); ok {
-			bucket := hd.Bucket()
-			if bucket < 0 || bucket >= len(directiveBuckets) {
-				log.Printf("[ERROR] directive %s: bucket out of range [0-%d): %d; skipping",
-					mod.Name, len(directiveBuckets), bucket)
-				continue
-			}
-			directiveBuckets[bucket][mod.ID()] = struct{}{}
-		}
-	}
-	return directiveBuckets
 }

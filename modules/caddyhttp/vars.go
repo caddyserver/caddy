@@ -21,19 +21,21 @@ import (
 )
 
 func init() {
-	caddy.RegisterModule(caddy.Module{
-		Name: "http.handlers.vars",
-		New:  func() interface{} { return new(VarsMiddleware) },
-	})
-	caddy.RegisterModule(caddy.Module{
-		Name: "http.matchers.vars",
-		New:  func() interface{} { return new(VarsMiddleware) },
-	})
+	caddy.RegisterModule(VarsMiddleware{})
+	caddy.RegisterModule(VarsMatcher{})
 }
 
 // VarsMiddleware is an HTTP middleware which sets variables
 // in the context, mainly for use by placeholders.
 type VarsMiddleware map[string]string
+
+// CaddyModule returns the Caddy module information.
+func (VarsMiddleware) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		Name: "http.handlers.vars",
+		New:  func() caddy.Module { return new(VarsMiddleware) },
+	}
+}
 
 func (t VarsMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next Handler) error {
 	vars := r.Context().Value(VarCtxKey).(map[string]interface{})
@@ -49,6 +51,14 @@ func (t VarsMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next H
 // VarsMatcher is an HTTP request matcher which can match
 // requests based on variables in the context.
 type VarsMatcher map[string]string
+
+// CaddyModule returns the Caddy module information.
+func (VarsMatcher) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		Name: "http.matchers.vars",
+		New:  func() caddy.Module { return new(VarsMatcher) },
+	}
+}
 
 // Match matches a request based on variables in the context.
 func (m VarsMatcher) Match(r *http.Request) bool {

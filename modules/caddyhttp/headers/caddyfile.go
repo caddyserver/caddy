@@ -18,11 +18,15 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
-// UnmarshalCaddyfile sets up the handler from Caddyfile tokens. Syntax:
+func init() {
+	httpcaddyfile.RegisterHandlerDirective("headers", parseCaddyfile)
+}
+
+// parseCaddyfile sets up the handler from Caddyfile tokens. Syntax:
 //
 //     headers [<matcher>] [[+|-]<field> <value>] {
 //         [+][<field>] [<value>]
@@ -31,62 +35,57 @@ import (
 //
 // Either a block can be opened or a single header field can be configured
 // in the first line, but not both in the same directive.
-func (h *Headers) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.Next() {
+func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
+	hdr := new(Headers)
+	for h.Next() {
 		// first see if headers are in the initial line
 		var hasArgs bool
-		if d.NextArg() {
+		if h.NextArg() {
 			hasArgs = true
-			field := d.Val()
-			d.NextArg()
-			value := d.Val()
-			h.processCaddyfileLine(field, value)
+			field := h.Val()
+			h.NextArg()
+			value := h.Val()
+			processCaddyfileLine(hdr, field, value)
 		}
 
 		// if not, they should be in a block
-		for d.NextBlock() {
+		for h.NextBlock() {
 			if hasArgs {
-				return d.Err("cannot specify headers in both arguments and block")
+				return nil, h.Err("cannot specify headers in both arguments and block")
 			}
-			field := d.Val()
+			field := h.Val()
 			var value string
-			if d.NextArg() {
-				value = d.Val()
+			if h.NextArg() {
+				value = h.Val()
 			}
-			h.processCaddyfileLine(field, value)
+			processCaddyfileLine(hdr, field, value)
 		}
 	}
-	return nil
+	return hdr, nil
 }
 
-func (h *Headers) processCaddyfileLine(field, value string) {
+func processCaddyfileLine(hdr *Headers, field, value string) {
 	if strings.HasPrefix(field, "+") {
-		if h.Response == nil {
-			h.Response = &RespHeaderOps{HeaderOps: new(HeaderOps)}
+		if hdr.Response == nil {
+			hdr.Response = &RespHeaderOps{HeaderOps: new(HeaderOps)}
 		}
-		if h.Response.Add == nil {
-			h.Response.Add = make(http.Header)
+		if hdr.Response.Add == nil {
+			hdr.Response.Add = make(http.Header)
 		}
-		h.Response.Add.Set(field[1:], value)
+		hdr.Response.Add.Set(field[1:], value)
 	} else if strings.HasPrefix(field, "-") {
-		if h.Response == nil {
-			h.Response = &RespHeaderOps{HeaderOps: new(HeaderOps)}
+		if hdr.Response == nil {
+			hdr.Response = &RespHeaderOps{HeaderOps: new(HeaderOps)}
 		}
-		h.Response.Delete = append(h.Response.Delete, field[1:])
-		h.Response.Deferred = true
+		hdr.Response.Delete = append(hdr.Response.Delete, field[1:])
+		hdr.Response.Deferred = true
 	} else {
-		if h.Response == nil {
-			h.Response = &RespHeaderOps{HeaderOps: new(HeaderOps)}
+		if hdr.Response == nil {
+			hdr.Response = &RespHeaderOps{HeaderOps: new(HeaderOps)}
 		}
-		if h.Response.Set == nil {
-			h.Response.Set = make(http.Header)
+		if hdr.Response.Set == nil {
+			hdr.Response.Set = make(http.Header)
 		}
-		h.Response.Set.Set(field, value)
+		hdr.Response.Set.Set(field, value)
 	}
 }
-
-// Bucket returns the HTTP Caddyfile handler bucket number.
-func (h Headers) Bucket() int { return 3 }
-
-// Interface guard
-var _ httpcaddyfile.HandlerDirective = (*Headers)(nil)

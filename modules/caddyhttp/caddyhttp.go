@@ -37,10 +37,7 @@ import (
 func init() {
 	weakrand.Seed(time.Now().UnixNano())
 
-	err := caddy.RegisterModule(caddy.Module{
-		Name: "http",
-		New:  func() interface{} { return new(App) },
-	})
+	err := caddy.RegisterModule(App{})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -56,6 +53,14 @@ type App struct {
 	servers []*http.Server
 
 	ctx caddy.Context
+}
+
+// CaddyModule returns the Caddy module information.
+func (App) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		Name: "http",
+		New:  func() caddy.Module { return new(App) },
+	}
 }
 
 // Provision sets up the app.
@@ -227,7 +232,7 @@ func (app *App) automaticHTTPS() error {
 		// find all qualifying domain names, de-duplicated
 		domainSet := make(map[string]struct{})
 		for _, route := range srv.Routes {
-			for _, matcherSet := range route.matcherSets {
+			for _, matcherSet := range route.MatcherSets {
 				for _, m := range matcherSet {
 					if hm, ok := m.(*MatchHost); ok {
 						for _, d := range *hm {
@@ -331,13 +336,13 @@ func (app *App) automaticHTTPS() error {
 				redirTo += "{http.request.uri}"
 
 				redirRoutes = append(redirRoutes, Route{
-					matcherSets: []MatcherSet{
+					MatcherSets: []MatcherSet{
 						{
 							MatchProtocol("http"),
 							MatchHost(domains),
 						},
 					},
-					handlers: []MiddlewareHandler{
+					Handlers: []MiddlewareHandler{
 						StaticResponse{
 							StatusCode: WeakString(strconv.Itoa(http.StatusTemporaryRedirect)), // TODO: use permanent redirect instead
 							Headers: http.Header{

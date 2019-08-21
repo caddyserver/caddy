@@ -15,11 +15,15 @@
 package templates
 
 import (
-	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
-// UnmarshalCaddyfile sets up the handler from Caddyfile tokens. Syntax:
+func init() {
+	httpcaddyfile.RegisterHandlerDirective("templates", parseCaddyfile)
+}
+
+// parseCaddyfile sets up the handler from Caddyfile tokens. Syntax:
 //
 //     templates [<matcher>] {
 //         mime <types...>
@@ -27,23 +31,24 @@ import (
 //         root <path>
 //     }
 //
-func (t *Templates) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.Next() {
-		for d.NextBlock() {
-			switch d.Val() {
+func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
+	t := new(Templates)
+	for h.Next() {
+		for h.NextBlock() {
+			switch h.Val() {
 			case "mime":
-				t.MIMETypes = d.RemainingArgs()
+				t.MIMETypes = h.RemainingArgs()
 				if len(t.MIMETypes) == 0 {
-					return d.ArgErr()
+					return nil, h.ArgErr()
 				}
 			case "between":
-				t.Delimiters = d.RemainingArgs()
+				t.Delimiters = h.RemainingArgs()
 				if len(t.Delimiters) != 2 {
-					return d.ArgErr()
+					return nil, h.ArgErr()
 				}
 			case "root":
-				if !d.Args(&t.IncludeRoot) {
-					return d.ArgErr()
+				if !h.Args(&t.IncludeRoot) {
+					return nil, h.ArgErr()
 				}
 			}
 		}
@@ -53,11 +58,5 @@ func (t *Templates) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		t.IncludeRoot = "{http.var.root}"
 	}
 
-	return nil
+	return t, nil
 }
-
-// Bucket returns the HTTP Caddyfile handler bucket number.
-func (t Templates) Bucket() int { return 5 }
-
-// Interface guard
-var _ httpcaddyfile.HandlerDirective = (*Templates)(nil)

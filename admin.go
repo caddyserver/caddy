@@ -95,9 +95,9 @@ func StartAdmin(initialConfigJSON []byte) error {
 	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
 	///// END PPROF STUFF //////
 
-	for _, m := range GetModules("admin") {
-		routes := m.New().([]AdminRoute)
-		for _, route := range routes {
+	for _, m := range GetModules("admin.routers") {
+		adminrtr := m.New().(AdminRouter)
+		for _, route := range adminrtr.Routes() {
 			mux.Handle(route.Pattern, route)
 		}
 	}
@@ -144,6 +144,11 @@ func StopAdmin() error {
 	cfgEndptSrv = nil
 
 	return nil
+}
+
+// AdminRouter is a type which can return routes for the admin API.
+type AdminRouter interface {
+	Routes() []AdminRoute
 }
 
 // AdminRoute represents a route for the admin endpoint.

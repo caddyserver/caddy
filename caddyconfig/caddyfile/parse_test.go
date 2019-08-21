@@ -22,6 +22,8 @@ import (
 	"testing"
 )
 
+// TODO: re-enable all tests
+
 func TestAllTokens(t *testing.T) {
 	input := strings.NewReader("a b c\nd e")
 	expected := []string{"a", "b", "c", "d", "e"}
@@ -53,84 +55,67 @@ func TestParseOneAndImport(t *testing.T) {
 		input     string
 		shouldErr bool
 		keys      []string
-		tokens    map[string]int // map of directive name to number of tokens expected
+		numTokens []int // number of tokens to expect in each segment
 	}{
 		{`localhost`, false, []string{
 			"localhost",
-		}, map[string]int{}},
+		}, []int{}},
 
 		{`localhost
 		  dir1`, false, []string{
 			"localhost",
-		}, map[string]int{
-			"dir1": 1,
-		}},
+		}, []int{1}},
 
 		{`localhost:1234
 		  dir1 foo bar`, false, []string{
 			"localhost:1234",
-		}, map[string]int{
-			"dir1": 3,
-		}},
+		}, []int{3},
+		},
 
 		{`localhost {
 		    dir1
 		  }`, false, []string{
 			"localhost",
-		}, map[string]int{
-			"dir1": 1,
-		}},
+		}, []int{1}},
 
 		{`localhost:1234 {
 		    dir1 foo bar
 		    dir2
 		  }`, false, []string{
 			"localhost:1234",
-		}, map[string]int{
-			"dir1": 3,
-			"dir2": 1,
-		}},
+		}, []int{3, 1}},
 
 		{`http://localhost https://localhost
 		  dir1 foo bar`, false, []string{
 			"http://localhost",
 			"https://localhost",
-		}, map[string]int{
-			"dir1": 3,
-		}},
+		}, []int{3}},
 
 		{`http://localhost https://localhost {
 		    dir1 foo bar
 		  }`, false, []string{
 			"http://localhost",
 			"https://localhost",
-		}, map[string]int{
-			"dir1": 3,
-		}},
+		}, []int{3}},
 
 		{`http://localhost, https://localhost {
 		    dir1 foo bar
 		  }`, false, []string{
 			"http://localhost",
 			"https://localhost",
-		}, map[string]int{
-			"dir1": 3,
-		}},
+		}, []int{3}},
 
 		{`http://localhost, {
 		  }`, true, []string{
 			"http://localhost",
-		}, map[string]int{}},
+		}, []int{}},
 
 		{`host1:80, http://host2.com
 		  dir1 foo bar
 		  dir2 baz`, false, []string{
 			"host1:80",
 			"http://host2.com",
-		}, map[string]int{
-			"dir1": 3,
-			"dir2": 2,
-		}},
+		}, []int{3, 2}},
 
 		{`http://host1.com,
 		  http://host2.com,
@@ -138,7 +123,7 @@ func TestParseOneAndImport(t *testing.T) {
 			"http://host1.com",
 			"http://host2.com",
 			"https://host3.com",
-		}, map[string]int{}},
+		}, []int{}},
 
 		{`http://host1.com:1234, https://host2.com
 		  dir1 foo {
@@ -147,10 +132,7 @@ func TestParseOneAndImport(t *testing.T) {
 		  dir2`, false, []string{
 			"http://host1.com:1234",
 			"https://host2.com",
-		}, map[string]int{
-			"dir1": 6,
-			"dir2": 1,
-		}},
+		}, []int{6, 1}},
 
 		{`127.0.0.1
 		  dir1 {
@@ -160,34 +142,25 @@ func TestParseOneAndImport(t *testing.T) {
 		    foo bar
 		  }`, false, []string{
 			"127.0.0.1",
-		}, map[string]int{
-			"dir1": 5,
-			"dir2": 5,
-		}},
+		}, []int{5, 5}},
 
 		{`localhost
 		  dir1 {
 		    foo`, true, []string{
 			"localhost",
-		}, map[string]int{
-			"dir1": 3,
-		}},
+		}, []int{3}},
 
 		{`localhost
 		  dir1 {
 		  }`, false, []string{
 			"localhost",
-		}, map[string]int{
-			"dir1": 3,
-		}},
+		}, []int{3}},
 
 		{`localhost
 		  dir1 {
 		  } }`, true, []string{
 			"localhost",
-		}, map[string]int{
-			"dir1": 3,
-		}},
+		}, []int{}},
 
 		{`localhost
 		  dir1 {
@@ -197,48 +170,38 @@ func TestParseOneAndImport(t *testing.T) {
 		  }
 		  dir2 foo bar`, false, []string{
 			"localhost",
-		}, map[string]int{
-			"dir1": 7,
-			"dir2": 3,
-		}},
+		}, []int{7, 3}},
 
-		{``, false, []string{}, map[string]int{}},
+		{``, false, []string{}, []int{}},
 
 		{`localhost
 		  dir1 arg1
 		  import testdata/import_test1.txt`, false, []string{
 			"localhost",
-		}, map[string]int{
-			"dir1": 2,
-			"dir2": 3,
-			"dir3": 1,
-		}},
+		}, []int{2, 3, 1}},
 
 		{`import testdata/import_test2.txt`, false, []string{
 			"host1",
-		}, map[string]int{
-			"dir1": 1,
-			"dir2": 2,
-		}},
+		}, []int{1, 2}},
 
-		{`import testdata/import_test1.txt testdata/import_test2.txt`, true, []string{}, map[string]int{}},
+		{`import testdata/import_test1.txt testdata/import_test2.txt`, true, []string{}, []int{}},
 
-		{`import testdata/not_found.txt`, true, []string{}, map[string]int{}},
+		{`import testdata/not_found.txt`, true, []string{}, []int{}},
 
-		{`""`, false, []string{}, map[string]int{}},
+		{`""`, false, []string{}, []int{}},
 
-		{``, false, []string{}, map[string]int{}},
+		{``, false, []string{}, []int{}},
 
 		// test cases found by fuzzing!
-		{`import }{$"`, true, []string{}, map[string]int{}},
-		{`import /*/*.txt`, true, []string{}, map[string]int{}},
-		{`import /???/?*?o`, true, []string{}, map[string]int{}},
-		{`import /??`, true, []string{}, map[string]int{}},
-		{`import /[a-z]`, true, []string{}, map[string]int{}},
-		{`import {$}`, true, []string{}, map[string]int{}},
-		{`import {%}`, true, []string{}, map[string]int{}},
-		{`import {$$}`, true, []string{}, map[string]int{}},
-		{`import {%%}`, true, []string{}, map[string]int{}},
+		{`import }{$"`, true, []string{}, []int{}},
+		{`import /*/*.txt`, true, []string{}, []int{}},
+		{`import /???/?*?o`, true, []string{}, []int{}},
+		{`import /??`, true, []string{}, []int{}},
+		{`import /[a-z]`, true, []string{}, []int{}},
+		{`import {$}`, true, []string{}, []int{}},
+		{`import {%}`, true, []string{}, []int{}},
+		{`import {$$}`, true, []string{}, []int{}},
+		{`import {%%}`, true, []string{}, []int{}},
 	} {
 		result, err := testParseOne(test.input)
 
@@ -261,15 +224,16 @@ func TestParseOneAndImport(t *testing.T) {
 			}
 		}
 
-		if len(result.Tokens) != len(test.tokens) {
-			t.Errorf("Test %d: Expected %d directives, had %d",
-				i, len(test.tokens), len(result.Tokens))
+		if len(result.Segments) != len(test.numTokens) {
+			t.Errorf("Test %d: Expected %d segments, had %d",
+				i, len(test.numTokens), len(result.Segments))
 			continue
 		}
-		for directive, tokens := range result.Tokens {
-			if len(tokens) != test.tokens[directive] {
-				t.Errorf("Test %d, directive '%s': Expected %d tokens, counted %d",
-					i, directive, test.tokens[directive], len(tokens))
+
+		for j, seg := range result.Segments {
+			if len(seg) != test.numTokens[j] {
+				t.Errorf("Test %d, segment %d: Expected %d tokens, counted %d",
+					i, j, test.numTokens[j], len(seg))
 				continue
 			}
 		}
@@ -289,12 +253,12 @@ func TestRecursiveImport(t *testing.T) {
 			t.Errorf("got keys unexpected: expect localhost, got %v", got.Keys)
 			return false
 		}
-		if len(got.Tokens) != 2 {
-			t.Errorf("got wrong number of tokens: expect 2, got %d", len(got.Tokens))
+		if len(got.Segments) != 2 {
+			t.Errorf("got wrong number of segments: expect 2, got %d", len(got.Segments))
 			return false
 		}
-		if len(got.Tokens["dir1"]) != 1 || len(got.Tokens["dir2"]) != 2 {
-			t.Errorf("got unexpect tokens: %v", got.Tokens)
+		if len(got.Segments[0]) != 1 || len(got.Segments[1]) != 2 {
+			t.Errorf("got unexpect tokens: %v", got.Segments)
 			return false
 		}
 		return true
@@ -384,12 +348,12 @@ func TestDirectiveImport(t *testing.T) {
 			t.Errorf("got keys unexpected: expect localhost, got %v", got.Keys)
 			return false
 		}
-		if len(got.Tokens) != 2 {
-			t.Errorf("got wrong number of tokens: expect 2, got %d", len(got.Tokens))
+		if len(got.Segments) != 2 {
+			t.Errorf("got wrong number of segments: expect 2, got %d", len(got.Segments))
 			return false
 		}
-		if len(got.Tokens["dir1"]) != 1 || len(got.Tokens["proxy"]) != 8 {
-			t.Errorf("got unexpect tokens: %v", got.Tokens)
+		if len(got.Segments[0]) != 1 || len(got.Segments[1]) != 8 {
+			t.Errorf("got unexpect tokens: %v", got.Segments)
 			return false
 		}
 		return true
@@ -557,21 +521,21 @@ func TestEnvironmentReplacement(t *testing.T) {
 	if actual, expected := blocks[0].Keys[0], ":8080"; expected != actual {
 		t.Errorf("Expected key to be '%s' but was '%s'", expected, actual)
 	}
-	if actual, expected := blocks[0].Tokens["dir1"][1].Text, "foobar"; expected != actual {
+	if actual, expected := blocks[0].Segments[0][1].Text, "foobar"; expected != actual {
 		t.Errorf("Expected argument to be '%s' but was '%s'", expected, actual)
 	}
 
 	// combined windows env vars in argument
 	p = testParser(":{%PORT%}\ndir1 {%ADDRESS%}/{%FOOBAR%}")
 	blocks, _ = p.parseAll()
-	if actual, expected := blocks[0].Tokens["dir1"][1].Text, "servername.com/foobar"; expected != actual {
+	if actual, expected := blocks[0].Segments[0][1].Text, "servername.com/foobar"; expected != actual {
 		t.Errorf("Expected argument to be '%s' but was '%s'", expected, actual)
 	}
 
 	// malformed env var (windows)
 	p = testParser(":1234\ndir1 {%ADDRESS}")
 	blocks, _ = p.parseAll()
-	if actual, expected := blocks[0].Tokens["dir1"][1].Text, "{%ADDRESS}"; expected != actual {
+	if actual, expected := blocks[0].Segments[0][1].Text, "{%ADDRESS}"; expected != actual {
 		t.Errorf("Expected host to be '%s' but was '%s'", expected, actual)
 	}
 
@@ -585,20 +549,16 @@ func TestEnvironmentReplacement(t *testing.T) {
 	// in quoted field
 	p = testParser(":1234\ndir1 \"Test {$FOOBAR} test\"")
 	blocks, _ = p.parseAll()
-	if actual, expected := blocks[0].Tokens["dir1"][1].Text, "Test foobar test"; expected != actual {
+	if actual, expected := blocks[0].Segments[0][1].Text, "Test foobar test"; expected != actual {
 		t.Errorf("Expected argument to be '%s' but was '%s'", expected, actual)
 	}
 
 	// after end token
 	p = testParser(":1234\nanswer \"{{ .Name }} {$FOOBAR}\"")
 	blocks, _ = p.parseAll()
-	if actual, expected := blocks[0].Tokens["answer"][1].Text, "{{ .Name }} foobar"; expected != actual {
+	if actual, expected := blocks[0].Segments[0][1].Text, "{{ .Name }} foobar"; expected != actual {
 		t.Errorf("Expected argument to be '%s' but was '%s'", expected, actual)
 	}
-}
-
-func testParser(input string) parser {
-	return parser{Dispenser: newTestDispenser(input)}
 }
 
 func TestSnippets(t *testing.T) {
@@ -617,7 +577,7 @@ func TestSnippets(t *testing.T) {
 	}
 	for _, b := range blocks {
 		t.Log(b.Keys)
-		t.Log(b.Tokens)
+		t.Log(b.Segments)
 	}
 	if len(blocks) != 1 {
 		t.Fatalf("Expect exactly one server block. Got %d.", len(blocks))
@@ -625,16 +585,15 @@ func TestSnippets(t *testing.T) {
 	if actual, expected := blocks[0].Keys[0], "http://example.com"; expected != actual {
 		t.Errorf("Expected server name to be '%s' but was '%s'", expected, actual)
 	}
-	if len(blocks[0].Tokens) != 2 {
-		t.Fatalf("Server block should have tokens from import")
+	if len(blocks[0].Segments) != 2 {
+		t.Fatalf("Server block should have tokens from import, got: %+v", blocks[0])
 	}
-	if actual, expected := blocks[0].Tokens["gzip"][0].Text, "gzip"; expected != actual {
+	if actual, expected := blocks[0].Segments[0][0].Text, "gzip"; expected != actual {
 		t.Errorf("Expected argument to be '%s' but was '%s'", expected, actual)
 	}
-	if actual, expected := blocks[0].Tokens["errors"][1].Text, "stderr"; expected != actual {
+	if actual, expected := blocks[0].Segments[1][1].Text, "stderr"; expected != actual {
 		t.Errorf("Expected argument to be '%s' but was '%s'", expected, actual)
 	}
-
 }
 
 func writeStringToTempFileOrDie(t *testing.T, str string) (pathToFile string) {
@@ -666,9 +625,9 @@ func TestImportedFilesIgnoreNonDirectiveImportTokens(t *testing.T) {
 	}
 	for _, b := range blocks {
 		t.Log(b.Keys)
-		t.Log(b.Tokens)
+		t.Log(b.Segments)
 	}
-	auth := blocks[0].Tokens["basicauth"]
+	auth := blocks[0].Segments[0]
 	line := auth[0].Text + " " + auth[1].Text + " " + auth[2].Text + " " + auth[3].Text
 	if line != "basicauth / import password" {
 		// Previously, it would be changed to:
@@ -701,7 +660,7 @@ func TestSnippetAcrossMultipleFiles(t *testing.T) {
 	}
 	for _, b := range blocks {
 		t.Log(b.Keys)
-		t.Log(b.Tokens)
+		t.Log(b.Segments)
 	}
 	if len(blocks) != 1 {
 		t.Fatalf("Expect exactly one server block. Got %d.", len(blocks))
@@ -709,10 +668,14 @@ func TestSnippetAcrossMultipleFiles(t *testing.T) {
 	if actual, expected := blocks[0].Keys[0], "http://example.com"; expected != actual {
 		t.Errorf("Expected server name to be '%s' but was '%s'", expected, actual)
 	}
-	if len(blocks[0].Tokens) != 1 {
+	if len(blocks[0].Segments) != 1 {
 		t.Fatalf("Server block should have tokens from import")
 	}
-	if actual, expected := blocks[0].Tokens["gzip"][0].Text, "gzip"; expected != actual {
+	if actual, expected := blocks[0].Segments[0][0].Text, "gzip"; expected != actual {
 		t.Errorf("Expected argument to be '%s' but was '%s'", expected, actual)
 	}
+}
+
+func testParser(input string) parser {
+	return parser{Dispenser: newTestDispenser(input)}
 }
