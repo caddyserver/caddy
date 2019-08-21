@@ -109,6 +109,43 @@ Note that this will stop any process named the same as `os.Args[0]`.
 
 For other commands, please see [the Caddy 2 documentation](https://github.com/caddyserver/caddy/wiki/v2:-Documentation).
 
+### Caddyfile
+
+Caddy 2 can be configured with a Caddyfile, much like in v1, for example:
+
+```plain
+example.com
+
+templates
+encode gzip zstd
+try_files {path}.html {path}
+proxy /api http://localhost:9005
+file_server
+```
+
+Instead of being its core method of configuration, an internal _config adapter_ adapts the Caddyfile to Caddy's native JSON structure. You can see it in action with the [`adapt-config` command](https://github.com/caddyserver/caddy/wiki/v2:-Documentation#adapt-config):
+
+```bash
+$ ./caddy adapt-config --input path/to/Caddyfile --adapter caddyfile --pretty
+```
+
+But if you just want to run Caddy with your Caddyfile directly, the CLI wraps this up for you nicely. Either of the following commands:
+
+```bash
+$ ./caddy start
+$ ./caddy run
+```
+
+will apply your Caddyfile if it is called `Caddyfile` in the current directory.
+
+If your Caddyfile is somewhere else, you can still use it:
+
+```bash
+$ ./caddy start|run --config path/to/Caddyfile --config-adapter caddyfile
+```
+
+[Learn more about the Caddyfile in v2.](https://github.com/caddyserver/caddy/wiki/v2:-Documentation#caddyfile-adapter)
+
 
 ## Configuration
 
@@ -118,7 +155,7 @@ Nearly all of Caddy 2's configuration is contained in a single config document, 
 
 To wield the power of this design, you need to know how the config document is structured. Please see the [the Caddy 2 documentation in our wiki](https://github.com/caddyserver/caddy/wiki/v2:-Documentation) for details about Caddy's config structure.
 
-Configuration is normally given to Caddy through an API endpoint, which is likewise documented in the wiki pages.
+Configuration is normally given to Caddy through an API endpoint, which is likewise documented in the wiki pages. However, you can also use config files of various formats with [config adapters](https://github.com/caddyserver/caddy/wiki/v2:-Documentation#config-adapters).
 
 
 ## Full Documentation
@@ -192,9 +229,11 @@ And a few major features still being worked on:
 
 ### How do I configure Caddy 2?
 
-First you need to build a configuration document, which is in JSON. You may wish to write in YAML or TOML and then convert to JSON, that is fine too. The structure is described [in the wiki](https://github.com/caddyserver/caddy/wiki/v2:-Documentation).
+Caddy's primary mode of configuration is a REST API, which accepts a JSON document. The JSON structure is described [in the wiki](https://github.com/caddyserver/caddy/wiki/v2:-Documentation). The advantages of exposing this low-level structure are 1) it has near-parity with actual memory initialization, 2) it allows us to offer wrappers over this configuration to any degree of convenience that is needed, and 3) it performs very well under rapid config changes.
 
-Once you have your configuration document ready, you need to give it to Caddy. This can be done at startup or while it's running. See the instructions above for how to do this.
+Basically, you will [start Caddy](https://github.com/caddyserver/caddy/wiki/v2:-Documentation#start), then [POST a JSON config to its API endpoint](https://github.com/caddyserver/caddy/wiki/v2:-Documentation#post-load).
+
+Although this makes Caddy 2 highly programmable, not everyone will want to configure Caddy via JSON with an API. Sometimes we just want to give Caddy a simple, static config file and have it do its thing. That's what **[config adapters](https://github.com/caddyserver/caddy/wiki/v2:-Documentation#config-adapters)** are for! You can configure Caddy more ways than one, depending on your needs and preferences. See the next questions that explain this more.
 
 ### Caddy 2 feels harder to use. How is this an improvement over Caddy 1?
 
@@ -202,7 +241,11 @@ Caddy's ease of use is one of the main reasons it is special. We are not taking 
 
 ### What about the Caddyfile; are there easier ways to configure Caddy 2?
 
-Yes; or there will be, soon. Caddy's native configuration language is JSON (see next question), but the advantage of exposing this low-level structure that has near-parity with actual memory initialization allows us to offer wrappers over this configuration to any degree of flexibility that is needed without suffering a significant performance hit during reloads.
+Yes! Caddy's native JSON configuration via API is nice when you are automating config changes at scale, but if you just have a simple, static configuration in a file, you can do that too with the [Caddyfile](https://github.com/caddyserver/caddy/wiki/v2:-Documentation#caddyfile-adapter).
+
+The v2 Caddyfile is very similar to the v1 Caddyfile, but they are not compatible. Several improvements have been made to request matching and directives in v2, giving you more power with less complexity and fewer inconsistencies.
+
+Caddy's default _config adapter_ is the Caddyfile adapter. This takes a Caddyfile as input and [outputs the JSON config](https://github.com/caddyserver/caddy/wiki/v2:-Documentation#adapt-config). You can even run Caddy directly without having to see or think about the underlying JSON config.
 
 The following _config adapters_ are already being built or plan to be built:
 
@@ -212,13 +255,11 @@ The following _config adapters_ are already being built or plan to be built:
 - TOML
 - any others that the community would like to contribute
 
-When finished, config adapters will allow you to configure Caddy not just one way but _any_ of these ways. For example, you'll be able to bring your existing NGINX config to Caddy and it will spit out the Caddy config JSON you need (to the best of its ability). How cool is that! You can then easily tweak the resulting config by hand, if necessary.
+Config adapters allow you to configure Caddy not just one way but _any_ of these ways. For example, you'll be able to bring your existing NGINX config to Caddy and it will spit out the Caddy config JSON you need (to the best of its ability). How cool is that! You can then easily tweak the resulting config by hand, if necessary.
 
 All config adapters vary in their theoretical expressiveness; that is, if you need more advanced configuration you'll have to drop down to the JSON config, because the Caddyfile or an nginx config may not be expressive enough.
 
 However, we expect that most users will be able to use the Caddyfile (or another easy config adapter) exclusively for their sites.
-
-(The Caddyfile will be upgraded from version 1 to support common use cases that are a bit painful with the current v1 Caddyfile.)
 
 ### Why JSON for configuration? Why not _&lt;any other serialization format&gt;_?
 
@@ -241,7 +282,9 @@ Or just use YAML or TOML, which seamlessly translate to JSON.
 
 ### JSON is declarative; what if I need more programmability (i.e. imperative syntax)?
 
-We have good news.
+NGINX also realized the need for imperative logic in declarative configs, so they tried "if" statements, [but it was a bad idea](https://www.nginx.com/resources/wiki/start/topics/depth/ifisevil/).
+
+We have good news. Caddy 2 can give you the power of imperative logic without the perils of mixing declarative and imperative config such as befell NGINX. We do this by allowing embedded imperative syntax awithin the Caddy's declarative config.
 
 Caddy 2's configuration is declarative because configuration is very much declarative in nature. Configuration is a tricky medium, as it is read and written by both computers and humans. Computers use it, but humans constantly refer to it and update it. Declarative syntaxes are fairly straightforward to make sense of, whereas it is difficult to reason about imperative logic.
 
@@ -292,7 +335,9 @@ Caddy 2 is licensed under the Apache 2.0 open source license. There are no offic
 
 ### What is Caddy Enterprise?
 
-Caddy Enterprise is our web server for businesses that need more advanced features for higher scalability and easier management of clusters. It is built on the same core as Caddy 2, but licensed exclusively to enterprise customers who need it. It includes:
+Caddy Enterprise is a collection of plugins for Caddy 2 which provide features and performance that are crucial in business settings. Caddy Enterprise is not a separate web server and does not even use a separate code base from Caddy 2; it is not even a separate branch that merges the open source core in every once in a while. In other words, open source users aren't missing out on a "better" web server, but Enterprise provides features that are used by businesses.
+
+Caddy Enterprise is for businesses that need more advanced features for higher scalability and easier management of clusters. It includes:
 
 - a web UI
 - performance improvements within a cluster
@@ -302,11 +347,13 @@ Caddy Enterprise is our web server for businesses that need more advanced featur
 - advanced HTTP handlers for authentication, metrics, debugging, and more
 - dynamic HTTP handlers and TLS handshakes with Starlark
 
-Caddy 2 and Caddy Enterprise offer equal levels of security.
+Caddy Enterprise can be customized for each customer according to their needs.
+
+Caddy 2 and Caddy Enterprise offer equal levels of security and, as mentioned, share the same open source code base.
 
 ### Does Caddy 2 have telemetry?
 
-No. There was not enough academic interest to continue supporting it. If telemetry does get added later, it will not be on by default or will be vastly reduced in its scope so that it simply helps the community gain an understanding of how widely Caddy is deployed (i.e. counts of servers running, number of requests/connections handled, etc, but no actual content; just counts).
+No. There was not enough academic interest to continue supporting it. If telemetry does get added later, it will not be on by default or will be vastly reduced in its scope so that it simply helps the community gain an understanding of how widely Caddy is deployed (i.e. counts of servers running, number of requests/connections handled, etc).
 
 ## Does Caddy 2 use HTTPS by default?
 
