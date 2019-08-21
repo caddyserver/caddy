@@ -38,6 +38,10 @@ func init() {
 type ServerType struct {
 }
 
+// TODO: customize directive ordering
+
+// TODO: hide caddyfile when serving static files
+
 // Setup makes a config from the tokens.
 func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 	options map[string]string) (*caddy.Config, []caddyconfig.Warning, error) {
@@ -88,7 +92,7 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 			}
 			if dirFunc, ok := registeredDirectives[dir]; ok {
 				results, err := dirFunc(Helper{
-					Dispenser:   segment.NewDispenser(),
+					Dispenser:   caddyfile.NewDispenser(segment),
 					warnings:    &warnings,
 					matcherDefs: matcherDefs,
 				})

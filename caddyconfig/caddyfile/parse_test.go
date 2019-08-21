@@ -27,7 +27,7 @@ import (
 func TestAllTokens(t *testing.T) {
 	input := strings.NewReader("a b c\nd e")
 	expected := []string{"a", "b", "c", "d", "e"}
-	tokens, err := allTokens(input)
+	tokens, err := allTokens("TestAllTokens", input)
 
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)

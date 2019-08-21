@@ -24,19 +24,16 @@ import (
 // except that it can do so with some notion of structure. An empty
 // Dispenser is invalid; call NewDispenser to make a proper instance.
 type Dispenser struct {
-	filename string
-	tokens   []Token
-	cursor   int
-	nesting  int
+	tokens  []Token
+	cursor  int
+	nesting int
 }
 
 // NewDispenser returns a Dispenser filled with the given tokens.
-// TODO: Get rid of the filename argument; it seems pointless here
-func NewDispenser(filename string, tokens []Token) *Dispenser {
+func NewDispenser(tokens []Token) *Dispenser {
 	return &Dispenser{
-		filename: filename,
-		tokens:   tokens,
-		cursor:   -1,
+		tokens: tokens,
+		cursor: -1,
 	}
 }
 
@@ -170,8 +167,8 @@ func (d *Dispenser) Val() string {
 	return d.tokens[d.cursor].Text
 }
 
-// Line gets the line number of the current token. If there is no token
-// loaded, it returns 0.
+// Line gets the line number of the current token.
+// If there is no token loaded, it returns 0.
 func (d *Dispenser) Line() int {
 	if d.cursor < 0 || d.cursor >= len(d.tokens) {
 		return 0
@@ -179,16 +176,12 @@ func (d *Dispenser) Line() int {
 	return d.tokens[d.cursor].Line
 }
 
-// File gets the filename of the current token. If there is no token loaded,
-// it returns the filename originally given when parsing started.
+// File gets the filename where the current token originated.
 func (d *Dispenser) File() string {
 	if d.cursor < 0 || d.cursor >= len(d.tokens) {
-		return d.filename
+		return ""
 	}
-	if tokenFilename := d.tokens[d.cursor].File; tokenFilename != "" {
-		return tokenFilename
-	}
-	return d.filename
+	return d.tokens[d.cursor].File
 }
 
 // Args is a convenience function that loads the next arguments
@@ -240,28 +233,22 @@ func (d *Dispenser) NewFromNextTokens() *Dispenser {
 	} else {
 		d.cursor--
 	}
-	return NewDispenser(d.filename, tkns)
+	return NewDispenser(tkns)
 }
 
 // Token returns the current token.
 func (d *Dispenser) Token() Token {
-	return d.TokenAt(d.cursor)
-}
-
-func (d *Dispenser) TokenAt(cursor int) Token {
-	if cursor < 0 || cursor >= len(d.tokens) {
+	if d.cursor < 0 || d.cursor >= len(d.tokens) {
 		return Token{}
 	}
-	return d.tokens[cursor]
+	return d.tokens[d.cursor]
 }
 
-// Cursor returns the current cursor (token index).
-func (d *Dispenser) Cursor() int {
-	return d.cursor
-}
-
+// Reset sets d's cursor to the beginning, as
+// if this was a new and unused dispenser.
 func (d *Dispenser) Reset() {
 	d.cursor = -1
+	d.nesting = 0
 }
 
 // ArgErr returns an argument error, meaning that another
