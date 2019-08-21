@@ -29,18 +29,18 @@ import (
 // an error. If you do not want to check for valid directives,
 // pass in nil instead.
 func Parse(filename string, input io.Reader) ([]ServerBlock, error) {
-	tokens, err := allTokens(input)
+	tokens, err := allTokens(filename, input)
 	if err != nil {
 		return nil, err
 	}
-	p := parser{Dispenser: NewDispenser(filename, tokens)}
+	p := parser{Dispenser: NewDispenser(tokens)}
 	return p.parseAll()
 }
 
 // allTokens lexes the entire input, but does not parse it.
 // It returns all the tokens from the input, unstructured
 // and in order.
-func allTokens(input io.Reader) ([]Token, error) {
+func allTokens(filename string, input io.Reader) ([]Token, error) {
 	l := new(lexer)
 	err := l.load(input)
 	if err != nil {
@@ -48,6 +48,7 @@ func allTokens(input io.Reader) ([]Token, error) {
 	}
 	var tokens []Token
 	for l.next() {
+		l.token.File = filename
 		tokens = append(tokens, l.token)
 	}
 	return tokens, nil
@@ -265,7 +266,7 @@ func (p *parser) doImport() error {
 		// list of matching filenames
 		absFile, err := filepath.Abs(p.Dispenser.File())
 		if err != nil {
-			return p.Errf("Failed to get absolute path of file: %s: %v", p.Dispenser.filename, err)
+			return p.Errf("Failed to get absolute path of file: %s: %v", p.Dispenser.File(), err)
 		}
 
 		var matches []string
@@ -327,7 +328,7 @@ func (p *parser) doSingleImport(importFile string) ([]Token, error) {
 		return nil, p.Errf("Could not import %s: is a directory", importFile)
 	}
 
-	importedTokens, err := allTokens(file)
+	importedTokens, err := allTokens(importFile, file)
 	if err != nil {
 		return nil, p.Errf("Could not read tokens while importing %s: %v", importFile, err)
 	}
@@ -336,7 +337,7 @@ func (p *parser) doSingleImport(importFile string) ([]Token, error) {
 	// (we use full, absolute path to avoid bugs: issue #1892)
 	filename, err := filepath.Abs(importFile)
 	if err != nil {
-		return nil, p.Errf("Failed to get absolute path of file: %s: %v", p.Dispenser.filename, err)
+		return nil, p.Errf("Failed to get absolute path of file: %s: %v", importFile, err)
 	}
 	for i := 0; i < len(importedTokens); i++ {
 		importedTokens[i].File = filename
@@ -497,7 +498,7 @@ func (sb ServerBlock) DispenseDirective(dir string) *Dispenser {
 			tokens = append(tokens, seg...)
 		}
 	}
-	return NewDispenser("", tokens)
+	return NewDispenser(tokens)
 }
 
 // Segment is a list of tokens which begins with a directive
@@ -512,10 +513,4 @@ func (s Segment) Directive() string {
 		return s[0].Text
 	}
 	return ""
-}
-
-// NewDispenser returns a dispenser for this
-// segment's tokens.
-func (s Segment) NewDispenser() *Dispenser {
-	return NewDispenser("", s)
 }
