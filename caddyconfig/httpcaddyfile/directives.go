@@ -81,6 +81,26 @@ type Helper struct {
 	*caddyfile.Dispenser
 	warnings    *[]caddyconfig.Warning
 	matcherDefs map[string]map[string]json.RawMessage
+	parentBlock caddyfile.ServerBlock
+}
+
+// Caddyfiles returns the list of config files from
+// which tokens in the current server block were loaded.
+func (h Helper) Caddyfiles() []string {
+	// first obtain set of names of files involved
+	// in this server block, without duplicates
+	files := make(map[string]struct{})
+	for _, segment := range h.parentBlock.Segments {
+		for _, token := range segment {
+			files[token.File] = struct{}{}
+		}
+	}
+	// then convert the set into a slice
+	filesSlice := make([]string, 0, len(files))
+	for file := range files {
+		filesSlice = append(filesSlice, file)
+	}
+	return filesSlice
 }
 
 // JSON converts val into JSON. Any errors are added to warnings.
