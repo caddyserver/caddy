@@ -17,7 +17,7 @@ package fileserver
 import (
 	"encoding/json"
 
-	"github.com/caddyserver/caddy/modules/caddyhttp/rewrite"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp/rewrite"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
