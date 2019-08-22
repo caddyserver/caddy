@@ -66,6 +66,8 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 				val, err = parseHTTPPort(caddyfile.NewDispenser(segment))
 			case "https_port":
 				val, err = parseHTTPSPort(caddyfile.NewDispenser(segment))
+			case "handler_order":
+				val, err = parseHandlerOrder(caddyfile.NewDispenser(segment))
 			default:
 				return nil, warnings, fmt.Errorf("unrecognized parameter name: %s", dir)
 			}
@@ -148,7 +150,7 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 
 	// each pairing of listener addresses to list of server
 	// blocks is basically a server definition
-	servers, err := st.serversFromPairings(pairings, &warnings)
+	servers, err := st.serversFromPairings(pairings, options, &warnings)
 	if err != nil {
 		return nil, warnings, err
 	}
@@ -230,7 +232,11 @@ func (st *ServerType) hostsFromServerBlockKeys(sb caddyfile.ServerBlock) ([]stri
 
 // serversFromPairings creates the servers for each pairing of addresses
 // to server blocks. Each pairing is essentially a server definition.
-func (st *ServerType) serversFromPairings(pairings []sbAddrAssociation, warnings *[]caddyconfig.Warning) (map[string]*caddyhttp.Server, error) {
+func (st *ServerType) serversFromPairings(
+	pairings []sbAddrAssociation,
+	options map[string]interface{},
+	warnings *[]caddyconfig.Warning,
+) (map[string]*caddyhttp.Server, error) {
 	servers := make(map[string]*caddyhttp.Server)
 
 	for i, p := range pairings {
@@ -289,16 +295,19 @@ func (st *ServerType) serversFromPairings(pairings []sbAddrAssociation, warnings
 				siteVarSubroute.Routes = append(siteVarSubroute.Routes, cfgVal.Value.(caddyhttp.Route))
 			}
 
-			// set up each handler directive
+			// set up each handler directive - the order of the handlers
+			// as they are added to the routes depends on user preference
 			dirRoutes := sblock.pile["route"]
-			// TODO: The ordering here depends on... if there is a list of
-			// directives to use, then sort by that, otherwise just use in
-			// the order they appear in the slice (which is the order they
-			// appeared in the Caddyfile)
-			sortByList := true
-			if sortByList {
+			handlerOrder, ok := options["handler_order"].([]string)
+			if !ok {
+				handlerOrder = defaultDirectiveOrder
+			}
+			if len(handlerOrder) == 1 && handlerOrder[0] == "appearance" {
+				handlerOrder = nil
+			}
+			if handlerOrder != nil {
 				dirPositions := make(map[string]int)
-				for i, dir := range defaultDirectiveOrder {
+				for i, dir := range handlerOrder {
 					dirPositions[dir] = i
 				}
 				sort.SliceStable(dirRoutes, func(i, j int) bool {
