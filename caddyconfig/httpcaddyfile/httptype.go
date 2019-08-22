@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
@@ -44,7 +43,7 @@ type ServerType struct {
 
 // Setup makes a config from the tokens.
 func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
-	options map[string]string) (*caddy.Config, []caddyconfig.Warning, error) {
+	options map[string]interface{}) (*caddy.Config, []caddyconfig.Warning, error) {
 	var warnings []caddyconfig.Warning
 
 	var serverBlocks []serverBlock
@@ -53,6 +52,29 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 			block: sblock,
 			pile:  make(map[string][]ConfigValue),
 		})
+	}
+
+	// global configuration
+	if len(serverBlocks) > 0 && len(serverBlocks[0].block.Keys) == 0 {
+		sb := serverBlocks[0]
+		for _, segment := range sb.block.Segments {
+			dir := segment.Directive()
+			var val interface{}
+			var err error
+			switch dir {
+			case "http_port":
+				val, err = parseHTTPPort(caddyfile.NewDispenser(segment))
+			case "https_port":
+				val, err = parseHTTPSPort(caddyfile.NewDispenser(segment))
+			default:
+				return nil, warnings, fmt.Errorf("unrecognized parameter name: %s", dir)
+			}
+			if err != nil {
+				return nil, warnings, fmt.Errorf("%s: %v", dir, err)
+			}
+			options[dir] = val
+		}
+		serverBlocks = serverBlocks[1:]
 	}
 
 	for _, sb := range serverBlocks {
@@ -77,11 +99,15 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 			}
 		}
 
+		if len(sb.block.Keys) == 0 {
+			return nil, warnings, fmt.Errorf("server block without any key is global configuration, and if used, it must be first")
+		}
+
 		// extract matcher definitions
 		d := sb.block.DispenseDirective("matcher")
 		matcherDefs, err := st.parseMatcherDefinitions(d)
 		if err != nil {
-			return nil, nil, err
+			return nil, warnings, err
 		}
 
 		for _, segment := range sb.block.Segments {
@@ -129,8 +155,8 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 
 	// now that each server is configured, make the HTTP app
 	httpApp := caddyhttp.App{
-		HTTPPort:  tryInt(options["http-port"], &warnings),
-		HTTPSPort: tryInt(options["https-port"], &warnings),
+		HTTPPort:  tryInt(options["http_port"], &warnings),
+		HTTPSPort: tryInt(options["https_port"], &warnings),
 		Servers:   servers,
 	}
 
@@ -494,17 +520,14 @@ func encodeMatcherSet(matchers map[string]caddyhttp.RequestMatcher) (map[string]
 	return msEncoded, nil
 }
 
-// tryInt tries to convert str to an integer. If it fails, it downgrades
-// the error to a warning and returns 0.
-func tryInt(str string, warnings *[]caddyconfig.Warning) int {
-	if str == "" {
-		return 0
+// tryInt tries to convert val to an integer. If it fails,
+// it downgrades the error to a warning and returns 0.
+func tryInt(val interface{}, warnings *[]caddyconfig.Warning) int {
+	intVal, ok := val.(int)
+	if val != nil && !ok && warnings != nil {
+		*warnings = append(*warnings, caddyconfig.Warning{Message: "not an integer type"})
 	}
-	val, err := strconv.Atoi(str)
-	if err != nil && warnings != nil {
-		*warnings = append(*warnings, caddyconfig.Warning{Message: err.Error()})
-	}
-	return val
+	return intVal
 }
 
 type matcherSetAndTokens struct {

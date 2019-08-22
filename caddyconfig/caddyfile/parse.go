@@ -70,7 +70,7 @@ func (p *parser) parseAll() ([]ServerBlock, error) {
 		if err != nil {
 			return blocks, err
 		}
-		if len(p.block.Keys) > 0 {
+		if len(p.block.Keys) > 0 || len(p.block.Segments) > 0 {
 			blocks = append(blocks, p.block)
 		}
 		if p.nesting > 0 {

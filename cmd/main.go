@@ -131,9 +131,8 @@ func loadConfig(configFile, adapterName string) ([]byte, error) {
 
 	// adapt config
 	if cfgAdapter != nil {
-		adaptedConfig, warnings, err := cfgAdapter.Adapt(config, map[string]string{
+		adaptedConfig, warnings, err := cfgAdapter.Adapt(config, map[string]interface{}{
 			"filename": configFile,
-			// TODO: all other options... (http-port, etc...)
 		})
 		if err != nil {
 			return nil, fmt.Errorf("adapting config using %s: %v", adapterName, err)
