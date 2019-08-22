@@ -186,16 +186,31 @@ func (d *Dispenser) File() string {
 
 // Args is a convenience function that loads the next arguments
 // (tokens on the same line) into an arbitrary number of strings
-// pointed to in targets. If there are fewer tokens available
-// than string pointers, the remaining strings will not be changed
-// and false will be returned. If there were enough tokens available
-// to fill the arguments, then true will be returned.
+// pointed to in targets. If there are not enough argument tokens
+// available to fill targets, false is returned and the remaining
+// targets are left unchanged. If all the targets are filled,
+// then true is returned.
 func (d *Dispenser) Args(targets ...*string) bool {
 	for i := 0; i < len(targets); i++ {
 		if !d.NextArg() {
 			return false
 		}
 		*targets[i] = d.Val()
+	}
+	return true
+}
+
+// AllArgs is like Args, but if there are more argument tokens
+// available than there are targets, false is returned. The
+// number of available argument tokens must match the number of
+// targets exactly to return true.
+func (d *Dispenser) AllArgs(targets ...*string) bool {
+	if !d.Args(targets...) {
+		return false
+	}
+	if d.NextArg() {
+		d.Prev()
+		return false
 	}
 	return true
 }

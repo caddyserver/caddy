@@ -29,15 +29,15 @@ type Adapter struct {
 }
 
 // Adapt converts the Caddyfile config in body to Caddy JSON.
-func (a Adapter) Adapt(body []byte, options map[string]string) ([]byte, []caddyconfig.Warning, error) {
+func (a Adapter) Adapt(body []byte, options map[string]interface{}) ([]byte, []caddyconfig.Warning, error) {
 	if a.ServerType == nil {
 		return nil, nil, fmt.Errorf("no server type")
 	}
 	if options == nil {
-		options = make(map[string]string)
+		options = make(map[string]interface{})
 	}
 
-	filename := options["filename"]
+	filename, _ := options["filename"].(string)
 	if filename == "" {
 		filename = "Caddyfile"
 	}
@@ -80,7 +80,7 @@ type ServerType interface {
 	// (e.g. CLI flags) and creates a Caddy
 	// config, along with any warnings or
 	// an error.
-	Setup([]ServerBlock, map[string]string) (*caddy.Config, []caddyconfig.Warning, error)
+	Setup([]ServerBlock, map[string]interface{}) (*caddy.Config, []caddyconfig.Warning, error)
 }
 
 // Interface guard

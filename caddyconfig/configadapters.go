@@ -22,7 +22,7 @@ import (
 // Adapter is a type which can adapt a configuration to Caddy JSON.
 // It returns the results and any warnings, or an error.
 type Adapter interface {
-	Adapt(body []byte, options map[string]string) ([]byte, []Warning, error)
+	Adapt(body []byte, options map[string]interface{}) ([]byte, []Warning, error)
 }
 
 // Warning represents a warning or notice related to conversion.

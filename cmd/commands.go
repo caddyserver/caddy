@@ -331,7 +331,7 @@ func cmdAdaptConfig() (int, error) {
 			fmt.Errorf("reading input file: %v", err)
 	}
 
-	opts := make(map[string]string)
+	opts := make(map[string]interface{})
 	if *adaptCmdPrettyFlag {
 		opts["pretty"] = "true"
 	}
