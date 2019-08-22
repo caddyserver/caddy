@@ -214,6 +214,36 @@ func TestParseOneAndImport(t *testing.T) {
 			"dir3": 1,
 		}},
 
+		{`localhost:1234{
+		    dir1 foo bar
+		    dir2
+		  }`, false, []string{
+			"localhost:1234",
+		}, map[string]int{
+			"dir1": 3,
+			"dir2": 1,
+		}},
+
+		{`"localhost:1234"{
+		    dir1 foo bar
+		    dir2
+		  }`, false, []string{
+			"localhost:1234",
+		}, map[string]int{
+			"dir1": 3,
+			"dir2": 1,
+		}},
+
+		{`"localhost:1234{"
+		    dir1 foo bar
+		    dir2
+		  `, false, []string{
+			"localhost:1234{",
+		}, map[string]int{
+			"dir1": 3,
+			"dir2": 1,
+		}},
+
 		{`import testdata/import_test2.txt`, false, []string{
 			"host1",
 		}, map[string]int{
