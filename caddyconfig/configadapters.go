@@ -98,6 +98,8 @@ func JSONIndent(val interface{}) ([]byte, error) {
 	return json.MarshalIndent(val, "", "\t")
 }
 
+// RegisterAdapter registers a config adapter with the given name.
+// This should usually be done at init-time.
 func RegisterAdapter(name string, adapter Adapter) error {
 	if _, ok := configAdapters[name]; ok {
 		return fmt.Errorf("%s: already registered", name)
@@ -106,6 +108,8 @@ func RegisterAdapter(name string, adapter Adapter) error {
 	return nil
 }
 
+// GetAdapter returns the adapter with the given name,
+// or nil if one with that name is not registered.
 func GetAdapter(name string) Adapter {
 	return configAdapters[name]
 }
