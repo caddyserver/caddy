@@ -51,3 +51,26 @@ func parseHTTPSPort(d *caddyfile.Dispenser) (int, error) {
 	}
 	return httpsPort, nil
 }
+
+func parseHandlerOrder(d *caddyfile.Dispenser) ([]string, error) {
+	if !d.Next() {
+		return nil, d.ArgErr()
+	}
+	order := d.RemainingArgs()
+	if len(order) == 1 && order[0] == "appearance" {
+		return []string{"appearance"}, nil
+	}
+	if len(order) > 0 && d.NextBlock() {
+		return nil, d.Err("cannot open block if there are arguments")
+	}
+	for d.NextBlock() {
+		order = append(order, d.Val())
+		if d.NextArg() {
+			return nil, d.ArgErr()
+		}
+	}
+	if len(order) == 0 {
+		return nil, d.ArgErr()
+	}
+	return order, nil
+}
