@@ -124,9 +124,6 @@ func (l *lexer) next() bool {
 				comment = false
 			}
 			if len(val) > 0 {
-				if len(val) > 1 && val[len(val)-1] == '{' {
-					val = val[:len(val)-1]
-				}
 				return makeToken()
 			}
 			continue

@@ -177,7 +177,7 @@ func (p *parser) blockContents() error {
 		p.cursor--
 	}
 
-	err := p.directives()
+	err := p.directives(errOpenCurlyBrace == nil)
 	if err != nil {
 		return err
 	}
@@ -197,11 +197,15 @@ func (p *parser) blockContents() error {
 // and it expects the next token to be the first
 // directive. It goes until EOF or closing curly brace
 // which ends the server block.
-func (p *parser) directives() error {
+func (p *parser) directives(serverIsBlock bool) error {
 	for p.Next() {
 		// end of server block
 		if p.Val() == "}" {
-			break
+			if serverIsBlock {
+				break
+			} else {
+				return p.Errf("'}' closing curly brace without '{' open curly brace")
+			}
 		}
 
 		// special case: import directive replaces tokens during parse-time

@@ -217,8 +217,8 @@ func TestParseOneAndImport(t *testing.T) {
 		{`localhost:1234{
 		    dir1 foo bar
 		    dir2
-		  }`, false, []string{
-			"localhost:1234",
+		  }`, true, []string{
+			"localhost:1234{",
 		}, map[string]int{
 			"dir1": 3,
 			"dir2": 1,
