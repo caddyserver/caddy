@@ -30,7 +30,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/caddyserver/caddy/caddyconfig"
+	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/mholt/certmagic"
 	"github.com/rs/cors"
 )
