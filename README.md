@@ -93,7 +93,7 @@ There is no need to modify the Caddy code to build it with plugins. We will crea
 
 <!-- TODO: This env variable will not be required starting with Go 1.13 -->
 1. Set the transitional environment variable for Go modules: `export GO111MODULE=on`
-2. Create a new folder anywhere and within create a Go file  (extension `.go`) with the contents below, adjusting to import the plugins you want to include:
+2. Create a new folder anywhere and within create a Go file (with an extension of `.go`, such as `main.go`) with the contents below, adjusting to import the plugins you want to include:
 ```go
 package main
 
