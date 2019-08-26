@@ -31,6 +31,7 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
+	"github.com/lucas-clemente/quic-go/http3"
 	"github.com/mholt/certmagic"
 )
 
@@ -179,6 +180,31 @@ func (app *App) Start() error {
 						return fmt.Errorf("%s/%s: making TLS configuration: %v", network, addr, err)
 					}
 					ln = tls.NewListener(ln, tlsCfg)
+
+					//////////////////////
+					// TODO: Finish proper HTTP/3 support
+					ln2, err := caddy.ListenPacket("udp", addr)
+					if err != nil {
+						return fmt.Errorf("making UDP listener: %v", err)
+					}
+					s := http3.Server{
+						Server: &http.Server{
+							Addr: addr,
+							Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+								w.Write([]byte("Hello, HTTP/3. Caddy at your service."))
+							}),
+							TLSConfig: tlsCfg,
+						},
+					}
+					go func(s http3.Server, ln2 net.PacketConn) {
+						err := s.Serve(ln2)
+						if err != nil {
+							log.Fatalf("serving h3: %v", err)
+						}
+					}(s, ln2)
+					log.Printf("[DEBUG] Started HTTP/3 listener on %s", addr)
+					//////////////////////
+
 				}
 
 				go s.Serve(ln)

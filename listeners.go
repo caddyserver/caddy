@@ -51,13 +51,43 @@ func Listen(network, addr string) (net.Listener, error) {
 	return &fakeCloseListener{usage: &lnUsage.usage, key: lnKey, Listener: ln}, nil
 }
 
+// TODO:
+func ListenPacket(network, addr string) (net.PacketConn, error) {
+	// lnKey := network + "/" + addr
+
+	listenersMu.Lock()
+	defer listenersMu.Unlock()
+
+	// TODO:
+	// // if listener already exists, increment usage counter, then return listener
+	// if lnUsage, ok := listeners[lnKey]; ok {
+	// 	atomic.AddInt32(&lnUsage.usage, 1)
+	// 	return &fakeCloseListener{usage: &lnUsage.usage, key: lnKey, Listener: lnUsage.ln}, nil
+	// }
+
+	// or, create new one and save it
+	ln, err := net.ListenPacket(network, addr)
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO:
+	// // make sure to start its usage counter at 1
+	// lnUsage := &listenerUsage{usage: 1, ln: ln}
+	// listeners[lnKey] = lnUsage
+
+	// return &fakeCloseListener{usage: &lnUsage.usage, key: lnKey, Listener: ln}, nil
+
+	return ln, nil
+}
+
 // fakeCloseListener's Close() method is a no-op. This allows
 // stopping servers that are using the listener without giving
 // up the socket; thus, servers become hot-swappable while the
 // listener remains running. Listeners should be re-wrapped in
 // a new fakeCloseListener each time the listener is reused.
 type fakeCloseListener struct {
-	closed int32  // accessed atomically
+	closed int32  // accessed atomically - TODO: this needs to be shared across the whole app instance, not to cross instance boundaries... hmmm... see #2658 (still relevant?)
 	usage  *int32 // accessed atomically
 	key    string
 	net.Listener
