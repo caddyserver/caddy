@@ -89,6 +89,12 @@ func addHTTPVarsToReplacer(repl caddy.Replacer, req *http.Request, w http.Respon
 				return dir, true
 			case "http.request.uri.query":
 				return req.URL.RawQuery, true
+			case "http.request.uri.query_string":
+				qs := req.URL.Query().Encode()
+				if qs != "" {
+					qs = "?" + qs
+				}
+				return qs, true
 			}
 
 			// hostname labels
