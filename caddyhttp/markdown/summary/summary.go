@@ -17,7 +17,7 @@ package summary
 import (
 	"bytes"
 
-	"github.com/russross/blackfriday"
+	"gopkg.in/russross/blackfriday.v1"
 )
 
 // Markdown formats input using a plain-text renderer, and

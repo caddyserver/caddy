@@ -35,7 +35,7 @@ import (
 
 	"github.com/caddyserver/caddy/caddytls"
 	"github.com/mholt/certmagic"
-	"github.com/russross/blackfriday"
+	"gopkg.in/russross/blackfriday.v1"
 )
 
 // This file contains the context and functions available for

@@ -25,7 +25,7 @@ import (
 
 	"github.com/caddyserver/caddy"
 	"github.com/caddyserver/caddy/caddyhttp/httpserver"
-	"github.com/russross/blackfriday"
+	"gopkg.in/russross/blackfriday.v1"
 )
 
 func TestMarkdown(t *testing.T) {

@@ -22,7 +22,7 @@ import (
 	"github.com/caddyserver/caddy/caddyhttp/httpserver"
 	"github.com/caddyserver/caddy/caddyhttp/markdown/metadata"
 	"github.com/caddyserver/caddy/caddyhttp/markdown/summary"
-	"github.com/russross/blackfriday"
+	"gopkg.in/russross/blackfriday.v1"
 )
 
 // FileInfo represents a file in a particular server context. It wraps the os.FileInfo struct.
