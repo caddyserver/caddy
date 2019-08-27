@@ -17,9 +17,9 @@ package fileserver
 import (
 	"encoding/json"
 
-	"github.com/caddyserver/caddy/v2/modules/caddyhttp/rewrite"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp/rewrite"
 )
 
 func init() {
@@ -99,7 +99,7 @@ func parseTryFiles(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) 
 	}
 
 	handler := rewrite.Rewrite{
-		URI: "{http.matchers.file.relative}{http.request.uri.query}",
+		URI: "{http.matchers.file.relative}{http.request.uri.query_string}",
 	}
 
 	matcherSet := map[string]json.RawMessage{
