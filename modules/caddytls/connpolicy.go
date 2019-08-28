@@ -17,6 +17,7 @@ package caddytls
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -117,7 +118,7 @@ type ConnectionPolicy struct {
 	ProtocolMin  string   `json:"protocol_min,omitempty"`
 	ProtocolMax  string   `json:"protocol_max,omitempty"`
 
-	// TODO: Client auth
+	ClientCAs []string `json:"client_cas,omitempty"`
 
 	matchers     []ConnectionMatcher
 	certSelector certmagic.CertificateSelector
@@ -156,6 +157,38 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 
 	// session tickets support
 	cfg.SessionTicketsDisabled = tlsApp.SessionTickets.Disabled
+
+	// test client authentication is required
+	if len(p.ClientCAs) != 0 {
+		// build client cert pool, use it and set client certificates as
+		// "RequireAndVerify"
+		cliCertPool := x509.NewCertPool()
+		cfg.ClientCAs = cliCertPool
+		cfg.ClientAuth = tls.RequireAndVerifyClientCert
+
+		// parse and add certificate to client cert pool
+		for _, clientCAString := range p.ClientCAs {
+			// decode base64
+			derBytes, err := base64.StdEncoding.DecodeString(clientCAString)
+			if err != nil {
+				continue
+			}
+			if len(derBytes) == 0 {
+				continue
+			}
+
+			// parse the DER encoded certificate
+			var clientCA *x509.Certificate
+			clientCA, err = x509.ParseCertificate(derBytes)
+			if err != nil {
+				continue
+			}
+
+			// add the certificate to cliCertPool
+			cliCertPool.AddCert(clientCA)
+		}
+
+	}
 
 	// session ticket key rotation
 	tlsApp.SessionTickets.register(cfg)

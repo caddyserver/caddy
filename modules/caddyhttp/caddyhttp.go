@@ -297,8 +297,16 @@ func (app *App) automaticHTTPS() error {
 			// tell the server to use TLS by specifying a TLS
 			// connection policy (which supports HTTP/2 and the
 			// TLS-ALPN ACME challenge as well)
-			srv.TLSConnPolicies = caddytls.ConnectionPolicies{
-				{ALPN: defaultALPN},
+			if srv.TLSConnPolicies == nil {
+				// build a new TLSConnPolicies if it does not exist
+				srv.TLSConnPolicies = caddytls.ConnectionPolicies{
+					&caddytls.ConnectionPolicy{ALPN: defaultALPN},
+				}
+			} else {
+				// append the default policy at the end of the existing policies
+				srv.TLSConnPolicies = append(srv.TLSConnPolicies,
+					&caddytls.ConnectionPolicy{ALPN: defaultALPN},
+				)
 			}
 
 			if srv.AutoHTTPS.DisableRedir {
