@@ -49,6 +49,10 @@ type Server struct {
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Server", "Caddy")
 
+	if len(s.TLSConnPolicies) != 0 {
+		s.StrictSNIHost = true
+	}
+
 	if s.tlsApp.HandleHTTPChallenge(w, r) {
 		return
 	}
