@@ -112,12 +112,11 @@ type ConnectionPolicy struct {
 	Matchers      map[string]json.RawMessage `json:"match,omitempty"`
 	CertSelection json.RawMessage            `json:"certificate_selection,omitempty"`
 
-	CipherSuites []string `json:"cipher_suites,omitempty"`
-	Curves       []string `json:"curves,omitempty"`
-	ALPN         []string `json:"alpn,omitempty"`
-	ProtocolMin  string   `json:"protocol_min,omitempty"`
-	ProtocolMax  string   `json:"protocol_max,omitempty"`
-
+	CipherSuites         []string              `json:"cipher_suites,omitempty"`
+	Curves               []string              `json:"curves,omitempty"`
+	ALPN                 []string              `json:"alpn,omitempty"`
+	ProtocolMin          string                `json:"protocol_min,omitempty"`
+	ProtocolMax          string                `json:"protocol_max,omitempty"`
 	ClientAuthentication *ClientAuthentication `json:"client_authentication,omitempty"`
 
 	matchers     []ConnectionMatcher
@@ -213,8 +212,9 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 		return fmt.Errorf("protocol min (%x) cannot be greater than protocol max (%x)", p.ProtocolMin, p.ProtocolMax)
 	}
 
-	// test client authentication is required
 	if p.ClientAuthentication != nil {
+		cfg.ClientAuth = tls.RequireAnyClientCert
+
 		parseCertFromBase64Func := func(certStr string) (*x509.Certificate, error) {
 			// decode base64
 			derBytes, err := base64.StdEncoding.DecodeString(certStr)
@@ -231,7 +231,6 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 			// build client cert pool, use it and set client certificates as
 			// "RequireAndVerify"
 			cfg.ClientCAs = cliCertPool
-			cfg.ClientAuth = tls.RequireAndVerifyClientCert
 
 			// parse and add certificate to client cert pool
 			for _, clientCAString := range p.ClientAuthentication.TrustedCACerts {
@@ -244,14 +243,45 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 				// add the certificate to cliCertPool
 				cliCertPool.AddCert(clientCA)
 			}
+
+			verifyPeerCertificateFunc := func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
+				if rawCerts == nil {
+					return fmt.Errorf("no certificate provided")
+				}
+
+				interPool := x509.NewCertPool()
+				var cert *x509.Certificate
+
+				for i, rawCert := range rawCerts {
+					remoteCert, err := x509.ParseCertificate(rawCert)
+					if err != nil {
+						return fmt.Errorf("can't parse the given certificate: %s", err.Error())
+					}
+
+					// don't add the leaf certificate to the pool but save it for verification
+					if i < len(rawCerts)-1 {
+						interPool.AddCert(remoteCert)
+					} else {
+						cert = remoteCert
+					}
+				}
+
+				_, err := cert.Verify(x509.VerifyOptions{
+					Roots:         cliCertPool,
+					Intermediates: interPool,
+					KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+				})
+				if err == nil {
+					return nil
+				}
+
+				return fmt.Errorf("can't validate remote certificate with trusted_ca_certs")
+			}
+			cfg.VerifyPeerCertificate = verifyPeerCertificateFunc
 		}
 
 		if len(p.ClientAuthentication.TrustedLeafCerts) != 0 {
 			trustedLeafCerts := []*x509.Certificate{}
-			// ask for client certificate
-			if cfg.ClientAuth < tls.RequireAnyClientCert {
-				cfg.ClientAuth = tls.RequireAnyClientCert
-			}
 
 			// parse given leafs to check
 			for _, clientCertString := range p.ClientAuthentication.TrustedLeafCerts {
@@ -265,7 +295,15 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 			}
 
 			// defines the function to check the client certificate with leaf certificates
+			existingVerifyPeerCertificateFunc := cfg.VerifyPeerCertificate
 			verifyPeerCertificateFunc := func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
+				if existingVerifyPeerCertificateFunc != nil {
+					err := existingVerifyPeerCertificateFunc(rawCerts, verifiedChains)
+					if err == nil {
+						return nil
+					}
+				}
+
 				if rawCerts == nil {
 					return fmt.Errorf("no certificate provided")
 				}
@@ -284,7 +322,6 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 
 				return fmt.Errorf("can't validate remote certificate with trusted_leaf_certs")
 			}
-
 			cfg.VerifyPeerCertificate = verifyPeerCertificateFunc
 		}
 	}
