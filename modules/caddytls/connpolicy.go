@@ -118,7 +118,7 @@ type ConnectionPolicy struct {
 	ProtocolMin  string   `json:"protocol_min,omitempty"`
 	ProtocolMax  string   `json:"protocol_max,omitempty"`
 
-	ClientCAs []string `json:"client_cas,omitempty"`
+	ClientAuthentication *ClientAuthentication `json:"client_authentication,omitempty"`
 
 	matchers     []ConnectionMatcher
 	certSelector certmagic.CertificateSelector
@@ -157,38 +157,6 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 
 	// session tickets support
 	cfg.SessionTicketsDisabled = tlsApp.SessionTickets.Disabled
-
-	// test client authentication is required
-	if len(p.ClientCAs) != 0 {
-		// build client cert pool, use it and set client certificates as
-		// "RequireAndVerify"
-		cliCertPool := x509.NewCertPool()
-		cfg.ClientCAs = cliCertPool
-		cfg.ClientAuth = tls.RequireAndVerifyClientCert
-
-		// parse and add certificate to client cert pool
-		for _, clientCAString := range p.ClientCAs {
-			// decode base64
-			derBytes, err := base64.StdEncoding.DecodeString(clientCAString)
-			if err != nil {
-				continue
-			}
-			if len(derBytes) == 0 {
-				continue
-			}
-
-			// parse the DER encoded certificate
-			var clientCA *x509.Certificate
-			clientCA, err = x509.ParseCertificate(derBytes)
-			if err != nil {
-				continue
-			}
-
-			// add the certificate to cliCertPool
-			cliCertPool.AddCert(clientCA)
-		}
-
-	}
 
 	// session ticket key rotation
 	tlsApp.SessionTickets.register(cfg)
@@ -245,13 +213,53 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 		return fmt.Errorf("protocol min (%x) cannot be greater than protocol max (%x)", p.ProtocolMin, p.ProtocolMax)
 	}
 
-	// TODO: client auth, and other fields
+	// test client authentication is required
+	if p.ClientAuthentication != nil {
+		if len(p.ClientAuthentication.TrustedCACerts) != 0 {
+			// build client cert pool, use it and set client certificates as
+			// "RequireAndVerify"
+			cliCertPool := x509.NewCertPool()
+			cfg.ClientCAs = cliCertPool
+			cfg.ClientAuth = tls.RequireAndVerifyClientCert
+
+			// parse and add certificate to client cert pool
+			for _, clientCAString := range p.ClientAuthentication.TrustedCACerts {
+				// decode base64
+				derBytes, err := base64.StdEncoding.DecodeString(clientCAString)
+				if err != nil {
+					continue
+				}
+				if len(derBytes) == 0 {
+					continue
+				}
+
+				// parse the DER encoded certificate
+				var clientCA *x509.Certificate
+				clientCA, err = x509.ParseCertificate(derBytes)
+				if err != nil {
+					continue
+				}
+
+				// add the certificate to cliCertPool
+				cliCertPool.AddCert(clientCA)
+			}
+		}
+	}
+
+	// TODO: other fields
 
 	setDefaultTLSParams(cfg)
 
 	p.stdTLSConfig = cfg
 
 	return nil
+}
+
+// ClientAuthentication defines client authentication solutions
+type ClientAuthentication struct {
+	TrustedCACerts   []string `json:"trusted_ca_certs,omitempty"`
+	TrustedLeafCerts []string `json:"trusted_leaf_certs,omitempty"`
+	AskURL           string   `json:"ask_url,omitempty"`
 }
 
 // setDefaultTLSParams sets the default TLS cipher suites, protocol versions,
