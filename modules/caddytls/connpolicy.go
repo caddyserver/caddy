@@ -215,34 +215,77 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 
 	// test client authentication is required
 	if p.ClientAuthentication != nil {
+		parseCertFromBase64Func := func(certStr string) (*x509.Certificate, error) {
+			// decode base64
+			derBytes, err := base64.StdEncoding.DecodeString(certStr)
+			if err != nil {
+				return nil, err
+			}
+
+			// parse the DER encoded certificate
+			return x509.ParseCertificate(derBytes)
+		}
+
 		if len(p.ClientAuthentication.TrustedCACerts) != 0 {
+			cliCertPool := x509.NewCertPool()
 			// build client cert pool, use it and set client certificates as
 			// "RequireAndVerify"
-			cliCertPool := x509.NewCertPool()
 			cfg.ClientCAs = cliCertPool
 			cfg.ClientAuth = tls.RequireAndVerifyClientCert
 
 			// parse and add certificate to client cert pool
 			for _, clientCAString := range p.ClientAuthentication.TrustedCACerts {
-				// decode base64
-				derBytes, err := base64.StdEncoding.DecodeString(clientCAString)
+				clientCA, err := parseCertFromBase64Func(clientCAString)
 				if err != nil {
-					continue
-				}
-				if len(derBytes) == 0 {
-					continue
-				}
-
-				// parse the DER encoded certificate
-				var clientCA *x509.Certificate
-				clientCA, err = x509.ParseCertificate(derBytes)
-				if err != nil {
+					// TODO log error
 					continue
 				}
 
 				// add the certificate to cliCertPool
 				cliCertPool.AddCert(clientCA)
 			}
+		}
+
+		if len(p.ClientAuthentication.TrustedLeafCerts) != 0 {
+			trustedLeafCerts := []*x509.Certificate{}
+			// ask for client certificate
+			if cfg.ClientAuth < tls.RequireAnyClientCert {
+				cfg.ClientAuth = tls.RequireAnyClientCert
+			}
+
+			// parse given leafs to check
+			for _, clientCertString := range p.ClientAuthentication.TrustedLeafCerts {
+				clientCert, err := parseCertFromBase64Func(clientCertString)
+				if err != nil {
+					// TODO log error
+					continue
+				}
+
+				trustedLeafCerts = append(trustedLeafCerts, clientCert)
+			}
+
+			// defines the function to check the client certificate with leaf certificates
+			verifyPeerCertificateFunc := func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
+				if rawCerts == nil {
+					return fmt.Errorf("no certificate provided")
+				}
+
+				// parse the DER encoded certificate
+				remoteLeafCert, err := x509.ParseCertificate(rawCerts[len(rawCerts)-1])
+				if err != nil {
+					return fmt.Errorf("can't parse the given certificate: %s", err.Error())
+				}
+
+				for _, trustedLeafCert := range trustedLeafCerts {
+					if remoteLeafCert.Equal(trustedLeafCert) {
+						return nil
+					}
+				}
+
+				return fmt.Errorf("can't validate remote certificate with trusted_leaf_certs")
+			}
+
+			cfg.VerifyPeerCertificate = verifyPeerCertificateFunc
 		}
 	}
 
