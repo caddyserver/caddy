@@ -75,6 +75,10 @@ func (app *App) Provision(ctx caddy.Context) error {
 			srv.AutoHTTPS = new(AutoHTTPSConfig)
 		}
 
+		if len(srv.TLSConnPolicies) != 0 {
+			srv.StrictSNIHost = true
+		}
+
 		// TODO: Test this function to ensure these replacements are performed
 		for i := range srv.Listen {
 			srv.Listen[i] = repl.ReplaceAll(srv.Listen[i], "")

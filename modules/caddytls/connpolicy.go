@@ -236,8 +236,7 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 			for _, clientCAString := range p.ClientAuthentication.TrustedCACerts {
 				clientCA, err := parseCertFromBase64Func(clientCAString)
 				if err != nil {
-					// TODO log error
-					continue
+					return fmt.Errorf("parsing certificate: %v", err)
 				}
 
 				// add the certificate to cliCertPool
@@ -245,7 +244,7 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 			}
 
 			verifyPeerCertificateFunc := func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
-				if rawCerts == nil {
+				if len(rawCerts) == 0 {
 					return fmt.Errorf("no certificate provided")
 				}
 
@@ -287,8 +286,7 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 			for _, clientCertString := range p.ClientAuthentication.TrustedLeafCerts {
 				clientCert, err := parseCertFromBase64Func(clientCertString)
 				if err != nil {
-					// TODO log error
-					continue
+					return fmt.Errorf("parsing certificate: %v", err)
 				}
 
 				trustedLeafCerts = append(trustedLeafCerts, clientCert)
@@ -304,7 +302,7 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 					}
 				}
 
-				if rawCerts == nil {
+				if len(rawCerts) == 0 {
 					return fmt.Errorf("no certificate provided")
 				}
 
@@ -337,9 +335,14 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 
 // ClientAuthentication defines client authentication solutions
 type ClientAuthentication struct {
+	// TrustedCACerts contains a list of CA to verify the peer certificates.
+	// TrustedLeafCerts contains a list of accepted certificates.
+	// For both certificates are base64 DER encoded.
 	TrustedCACerts   []string `json:"trusted_ca_certs,omitempty"`
 	TrustedLeafCerts []string `json:"trusted_leaf_certs,omitempty"`
-	AskURL           string   `json:"ask_url,omitempty"`
+
+	// TODO
+	AskURL string `json:"ask_url,omitempty"`
 }
 
 // setDefaultTLSParams sets the default TLS cipher suites, protocol versions,
