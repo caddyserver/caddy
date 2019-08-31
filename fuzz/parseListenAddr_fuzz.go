@@ -25,8 +25,10 @@ import (
 	_ "github.com/dvyukov/go-fuzz/go-fuzz-dep"
 )
 
-func FuzzReplacer(data []byte) (score int) {
-	caddy.NewReplacer().ReplaceAll(string(data), "")
-	caddy.NewReplacer().ReplaceAll(string(data[:len(data)/2]), string(data[len(data)/2:]))
-	return 0
+func FuzzParseListenAddr(data []byte) int {
+	_, _, err := caddy.ParseListenAddr(string(data))
+	if err != nil {
+		return 0
+	}
+	return 1
 }

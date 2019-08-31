@@ -18,48 +18,37 @@
 package fuzz
 
 import (
-	"bufio"
 	"bytes"
-	"net/http"
 
-	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
-	"github.com/caddyserver/caddy/v2/modules/caddyhttp/templates"
+	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
+
 	// This package is required for go-fuzz-build, so pin it here for
 	// 'go mod vendor' to include it.
 	_ "github.com/dvyukov/go-fuzz/go-fuzz-dep"
 )
 
-func FuzzTemplates(data []byte) int {
-	req, err := http.ReadRequest(bufio.NewReader(bytes.NewReader(data)))
+func FuzzCaddyfileAdapter(data []byte) int {
+	adapter := caddyfile.Adapter{
+		ServerType: httpcaddyfile.ServerType{},
+	}
+	b, warns, err := adapter.Adapt(data, nil)
+	// Adapt func calls the Setup() func of the ServerType,
+	// thus it's going across multiple layers, each can
+	// return warnings or errors. Marking the presence of
+	// errors or warnings as interesting in this case
+	// could push the fuzzer towards a path where we only
+	// catch errors. Let's push the fuzzer to where it passes
+	// but breaks.
+	if (err != nil) || (warns != nil && len(warns) > 0) {
+		return 0
+	}
+
+	// adapted Caddyfile should be parseable by the configuration loader in admin.go
+	err = caddy.Load(bytes.NewReader(b))
 	if err != nil {
 		return 0
 	}
-	t := &templates.Templates{}
-	if err := t.ServeHTTP(
-		&dummyWriter{header: make(http.Header)},
-		req,
-		caddyhttp.HandlerFunc(func(http.ResponseWriter, *http.Request) error {
-			return nil
-		}),
-	); err != nil {
-		return 0
-	}
 	return 1
-}
-
-type dummyWriter struct {
-	header http.Header
-	code   int
-}
-
-func (w *dummyWriter) Header() http.Header {
-	return w.header
-}
-
-func (w *dummyWriter) Write(data []byte) (int, error) {
-	return len(data), nil
-}
-
-func (w *dummyWriter) WriteHeader(code int) {
-	w.code = code
 }

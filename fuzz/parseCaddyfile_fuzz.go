@@ -27,7 +27,7 @@ import (
 	_ "github.com/dvyukov/go-fuzz/go-fuzz-dep"
 )
 
-func FuzzParse(data []byte) (score int) {
+func FuzzParseCaddyfile(data []byte) (score int) {
 	sb, err := caddyfile.Parse("Caddyfile", bytes.NewReader(data))
 	if err != nil {
 		// if both an error is received and some ServerBlocks,
