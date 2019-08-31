@@ -18,7 +18,7 @@ require (
 	github.com/klauspost/compress v1.7.1-0.20190613161414-0b31f265a57b
 	github.com/klauspost/cpuid v1.2.1
 	github.com/kr/pretty v0.1.0 // indirect
-	github.com/lucas-clemente/quic-go v0.7.1-0.20190824082337-328dd2c8485f
+	github.com/lucas-clemente/quic-go v0.7.1-0.20190831105919-bcac55557407
 	github.com/mholt/certmagic v0.6.2
 	github.com/mitchellh/go-ps v0.0.0-20170309133038-4fdf99ab2936
 	github.com/rs/cors v1.6.0

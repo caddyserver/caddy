@@ -51,7 +51,8 @@ type App struct {
 	GracePeriod caddy.Duration     `json:"grace_period,omitempty"`
 	Servers     map[string]*Server `json:"servers,omitempty"`
 
-	servers []*http.Server
+	servers   []*http.Server
+	h3servers []*http3.Server
 
 	ctx caddy.Context
 }
@@ -181,29 +182,23 @@ func (app *App) Start() error {
 					}
 					ln = tls.NewListener(ln, tlsCfg)
 
-					//////////////////////
+					////////////////////////////////////////////
 					// TODO: Finish proper HTTP/3 support
-					ln2, err := caddy.ListenPacket("udp", addr)
+					h3ln, err := caddy.ListenPacket("udp", addr)
 					if err != nil {
 						return fmt.Errorf("making UDP listener: %v", err)
 					}
-					s := http3.Server{
+					h3srv := &http3.Server{
 						Server: &http.Server{
-							Addr: addr,
-							Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-								w.Write([]byte("Hello, HTTP/3. Caddy at your service."))
-							}),
+							Addr:      addr,
+							Handler:   srv,
 							TLSConfig: tlsCfg,
 						},
 					}
-					go func(s http3.Server, ln2 net.PacketConn) {
-						err := s.Serve(ln2)
-						if err != nil {
-							log.Fatalf("serving h3: %v", err)
-						}
-					}(s, ln2)
-					log.Printf("[DEBUG] Started HTTP/3 listener on %s", addr)
-					//////////////////////
+					log.Printf("[DEBUG] Started HTTP/3 listener on %s", addr) // TODO: remove
+					go h3srv.Serve(h3ln)
+					app.h3servers = append(app.h3servers, h3srv)
+					////////////////////////////////////////////
 
 				}
 
@@ -226,6 +221,14 @@ func (app *App) Stop() error {
 	}
 	for _, s := range app.servers {
 		err := s.Shutdown(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	for _, s := range app.h3servers {
+		// TODO: CloseGracefully, once implemented upstream
+		// (see https://github.com/lucas-clemente/quic-go/issues/2103)
+		err := s.Close()
 		if err != nil {
 			return err
 		}
