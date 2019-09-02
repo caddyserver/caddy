@@ -22,6 +22,7 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"mime"
 	"net"
 	"net/http"
 	"net/http/pprof"
@@ -170,38 +171,44 @@ func handleLoadConfig(w http.ResponseWriter, r *http.Request) {
 
 	// if the config is formatted other than Caddy's native
 	// JSON, we need to adapt it before loading it
-	ct := r.Header.Get("Content-Type")
-	if !strings.Contains(ct, "/json") {
-		slashIdx := strings.Index(ct, "/")
-		if slashIdx < 0 {
-			http.Error(w, "Malformed Content-Type", http.StatusBadRequest)
-			return
-		}
-		adapterName := ct[slashIdx+1:]
-		cfgAdapter := caddyconfig.GetAdapter(adapterName)
-		if cfgAdapter == nil {
-			http.Error(w, "Unrecognized config adapter: "+adapterName, http.StatusBadRequest)
-			return
-		}
-		body, err := ioutil.ReadAll(http.MaxBytesReader(w, r.Body, 1024*1024))
+	if ctHeader := r.Header.Get("Content-Type"); ctHeader != "" {
+		ct, _, err := mime.ParseMediaType(ctHeader)
 		if err != nil {
-			http.Error(w, "Error reading request body: "+err.Error(), http.StatusBadRequest)
+			http.Error(w, "Invalid Content-Type: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		result, warnings, err := cfgAdapter.Adapt(body, nil)
-		if err != nil {
-			log.Printf("[ADMIN][ERROR] adapting config from %s: %v", adapterName, err)
-			http.Error(w, fmt.Sprintf("Adapting config from %s: %v", adapterName, err), http.StatusBadRequest)
-			return
-		}
-		if len(warnings) > 0 {
-			respBody, err := json.Marshal(warnings)
-			if err != nil {
-				log.Printf("[ADMIN][ERROR] marshaling warnings: %v", err)
+		if !strings.HasSuffix(ct, "/json") {
+			slashIdx := strings.Index(ct, "/")
+			if slashIdx < 0 {
+				http.Error(w, "Malformed Content-Type", http.StatusBadRequest)
+				return
 			}
-			w.Write(respBody)
+			adapterName := ct[slashIdx+1:]
+			cfgAdapter := caddyconfig.GetAdapter(adapterName)
+			if cfgAdapter == nil {
+				http.Error(w, "Unrecognized config adapter: "+adapterName, http.StatusBadRequest)
+				return
+			}
+			body, err := ioutil.ReadAll(http.MaxBytesReader(w, r.Body, 1024*1024))
+			if err != nil {
+				http.Error(w, "Error reading request body: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+			result, warnings, err := cfgAdapter.Adapt(body, nil)
+			if err != nil {
+				log.Printf("[ADMIN][ERROR] adapting config from %s: %v", adapterName, err)
+				http.Error(w, fmt.Sprintf("Adapting config from %s: %v", adapterName, err), http.StatusBadRequest)
+				return
+			}
+			if len(warnings) > 0 {
+				respBody, err := json.Marshal(warnings)
+				if err != nil {
+					log.Printf("[ADMIN][ERROR] marshaling warnings: %v", err)
+				}
+				w.Write(respBody)
+			}
+			payload = bytes.NewReader(result)
 		}
-		payload = bytes.NewReader(result)
 	}
 
 	err := Load(payload)
