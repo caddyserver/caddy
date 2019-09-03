@@ -340,9 +340,6 @@ type ClientAuthentication struct {
 	// For both certificates are base64 DER encoded.
 	TrustedCACerts   []string `json:"trusted_ca_certs,omitempty"`
 	TrustedLeafCerts []string `json:"trusted_leaf_certs,omitempty"`
-
-	// TODO
-	AskURL string `json:"ask_url,omitempty"`
 }
 
 // setDefaultTLSParams sets the default TLS cipher suites, protocol versions,
