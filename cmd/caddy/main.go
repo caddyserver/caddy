@@ -29,6 +29,7 @@ import (
 	_ "github.com/caddyserver/caddy/v2/modules/caddyhttp/markdown"
 	_ "github.com/caddyserver/caddy/v2/modules/caddyhttp/requestbody"
 	_ "github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
+	_ "github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy/fastcgi"
 	_ "github.com/caddyserver/caddy/v2/modules/caddyhttp/rewrite"
 	_ "github.com/caddyserver/caddy/v2/modules/caddyhttp/templates"
 	_ "github.com/caddyserver/caddy/v2/modules/caddytls"

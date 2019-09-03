@@ -616,10 +616,7 @@ func (rm ResponseMatcher) matchStatusCode(statusCode int) bool {
 		return true
 	}
 	for _, code := range rm.StatusCode {
-		if statusCode == code {
-			return true
-		}
-		if code < 100 && statusCode >= code*100 && statusCode < (code+1)*100 {
+		if StatusCodeMatches(statusCode, code) {
 			return true
 		}
 	}
