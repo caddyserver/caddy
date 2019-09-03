@@ -24,6 +24,8 @@ import (
 	"time"
 )
 
+// TODO: Can we use the new UsagePool type?
+
 // Listen returns a listener suitable for use in a Caddy module.
 // Always be sure to close listeners when you are done with them.
 func Listen(network, addr string) (net.Listener, error) {

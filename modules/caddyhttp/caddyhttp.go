@@ -518,6 +518,20 @@ func (ws WeakString) String() string {
 	return string(ws)
 }
 
+// StatusCodeMatches returns true if a real HTTP status code matches
+// the configured status code, which may be either a real HTTP status
+// code or an integer representing a class of codes (e.g. 4 for all
+// 4xx statuses).
+func StatusCodeMatches(actual, configured int) bool {
+	if actual == configured {
+		return true
+	}
+	if configured < 100 && actual >= configured*100 && actual < (configured+1)*100 {
+		return true
+	}
+	return false
+}
+
 const (
 	// DefaultHTTPPort is the default port for HTTP.
 	DefaultHTTPPort = 80
