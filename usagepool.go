@@ -80,6 +80,14 @@ func (up *UsagePool) LoadOrStore(key, val interface{}) (actual interface{}, load
 	return
 }
 
+// Range iterates the pool the same way sync.Map.Range does.
+// This does not affect usage counts.
+func (up *UsagePool) Range(f func(key, value interface{}) bool) {
+	up.pool.Range(func(key, value interface{}) bool {
+		return f(key, value.(*usagePoolVal).value)
+	})
+}
+
 type usagePoolVal struct {
 	usage int32 // accessed atomically; must be 64-bit aligned for 32-bit systems
 	value interface{}
