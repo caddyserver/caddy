@@ -30,11 +30,15 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
+// HealthChecks holds configuration related to health checking.
 type HealthChecks struct {
 	Active  *ActiveHealthChecks  `json:"active,omitempty"`
 	Passive *PassiveHealthChecks `json:"passive,omitempty"`
 }
 
+// ActiveHealthChecks holds configuration related to active
+// health checks (that is, health checks which occur in a
+// background goroutine independently).
 type ActiveHealthChecks struct {
 	Path         string         `json:"path,omitempty"`
 	Port         int            `json:"port,omitempty"`
@@ -49,6 +53,9 @@ type ActiveHealthChecks struct {
 	bodyRegexp *regexp.Regexp
 }
 
+// PassiveHealthChecks holds configuration related to passive
+// health checks (that is, health checks which occur during
+// the normal flow of request proxying).
 type PassiveHealthChecks struct {
 	MaxFails              int            `json:"max_fails,omitempty"`
 	FailDuration          caddy.Duration `json:"fail_duration,omitempty"`
@@ -57,6 +64,9 @@ type PassiveHealthChecks struct {
 	UnhealthyLatency      caddy.Duration `json:"unhealthy_latency,omitempty"`
 }
 
+// activeHealthChecker runs active health checks on a
+// regular basis and blocks until
+// h.HealthChecks.Active.stopChan is closed.
 func (h *Handler) activeHealthChecker() {
 	ticker := time.NewTicker(time.Duration(h.HealthChecks.Active.Interval))
 	h.doActiveHealthChecksForAllHosts()
@@ -71,6 +81,8 @@ func (h *Handler) activeHealthChecker() {
 	}
 }
 
+// doActiveHealthChecksForAllHosts immediately performs a
+// health checks for all hosts in the global repository.
 func (h *Handler) doActiveHealthChecksForAllHosts() {
 	hosts.Range(func(key, value interface{}) bool {
 		addr := key.(string)
