@@ -15,8 +15,13 @@
 package reverseproxy
 
 import (
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/base64"
+	"fmt"
 	"net"
 	"net/http"
+	"reflect"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
@@ -76,7 +81,12 @@ func (h *HTTPTransport) Provision(ctx caddy.Context) error {
 
 	if h.TLS != nil {
 		rt.TLSHandshakeTimeout = time.Duration(h.TLS.HandshakeTimeout)
-		// TODO: rest of TLS config
+
+		var err error
+		rt.TLSClientConfig, err = h.TLS.MakeTLSClientConfig()
+		if err != nil {
+			return fmt.Errorf("making TLS client config: %v", err)
+		}
 	}
 
 	if h.KeepAlive != nil {
@@ -103,11 +113,77 @@ func (h HTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return h.RoundTripper.RoundTrip(req)
 }
 
+func defaultTLSConfig() *tls.Config {
+	return &tls.Config{
+		NextProtos: []string{"h2", "http/1.1"}, // TODO: ensure this makes HTTP/2 work
+	}
+}
+
 type TLSConfig struct {
-	CAPool             []string       `json:"ca_pool,omitempty"`
-	ClientCertificate  string         `json:"client_certificate,omitempty"`
-	InsecureSkipVerify bool           `json:"insecure_skip_verify,omitempty"`
-	HandshakeTimeout   caddy.Duration `json:"handshake_timeout,omitempty"`
+	RootCAPool []string `json:"root_ca_pool,omitempty"`
+	// TODO: Should the client cert+key config use caddytls.CertificateLoader modules?
+	ClientCertificateFile    string         `json:"client_certificate_file,omitempty"`
+	ClientCertificateKeyFile string         `json:"client_certificate_key_file,omitempty"`
+	InsecureSkipVerify       bool           `json:"insecure_skip_verify,omitempty"`
+	HandshakeTimeout         caddy.Duration `json:"handshake_timeout,omitempty"`
+}
+
+// MakeTLSClientConfig returns a tls.Config usable by a client to a backend.
+// If there is no custom TLS configuration, a nil config may be returned.
+func (t TLSConfig) MakeTLSClientConfig() (*tls.Config, error) {
+	cfg := new(tls.Config)
+
+	// client auth
+	if t.ClientCertificateFile != "" && t.ClientCertificateKeyFile == "" {
+		return nil, fmt.Errorf("client_certificate_file specified without client_certificate_key_file")
+	}
+	if t.ClientCertificateFile == "" && t.ClientCertificateKeyFile != "" {
+		return nil, fmt.Errorf("client_certificate_key_file specified without client_certificate_file")
+	}
+	if t.ClientCertificateFile != "" && t.ClientCertificateKeyFile != "" {
+		cert, err := tls.LoadX509KeyPair(t.ClientCertificateFile, t.ClientCertificateKeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("loading client certificate key pair: %v", err)
+		}
+		cfg.Certificates = []tls.Certificate{cert}
+	}
+
+	// trusted root CAs
+	if len(t.RootCAPool) > 0 {
+		rootPool := x509.NewCertPool()
+		for _, encodedCACert := range t.RootCAPool {
+			caCert, err := decodeBase64DERCert(encodedCACert)
+			if err != nil {
+				return nil, fmt.Errorf("parsing CA certificate: %v", err)
+			}
+			rootPool.AddCert(caCert)
+		}
+		cfg.RootCAs = rootPool
+	}
+
+	// throw all security out the window
+	cfg.InsecureSkipVerify = t.InsecureSkipVerify
+
+	// only return a config if it's not empty
+	if reflect.DeepEqual(cfg, new(tls.Config)) {
+		return nil, nil
+	}
+
+	cfg.NextProtos = []string{"h2", "http/1.1"} // TODO: ensure that this actually enables HTTP/2
+
+	return cfg, nil
+}
+
+// decodeBase64DERCert base64-decodes, then DER-decodes, certStr.
+func decodeBase64DERCert(certStr string) (*x509.Certificate, error) {
+	// decode base64
+	derBytes, err := base64.StdEncoding.DecodeString(certStr)
+	if err != nil {
+		return nil, err
+	}
+
+	// parse the DER-encoded certificate
+	return x509.ParseCertificate(derBytes)
 }
 
 type KeepAlive struct {
