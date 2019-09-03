@@ -40,7 +40,7 @@ type Server struct {
 	TLSConnPolicies   caddytls.ConnectionPolicies `json:"tls_connection_policies,omitempty"`
 	AutoHTTPS         *AutoHTTPSConfig            `json:"automatic_https,omitempty"`
 	MaxRehandles      *int                        `json:"max_rehandles,omitempty"`
-	StrictSNIHost     bool                        `json:"strict_sni_host,omitempty"` // TODO: see if we can turn this on by default when clientauth is configured
+	StrictSNIHost     bool                        `json:"strict_sni_host,omitempty"`
 
 	tlsApp *caddytls.TLS
 }
@@ -176,6 +176,15 @@ func (s *Server) listenersUseAnyPortOtherThan(otherPort int) bool {
 					return true
 				}
 			}
+		}
+	}
+	return false
+}
+
+func (s *Server) hasTLSClientAuth() bool {
+	for _, cp := range s.TLSConnPolicies {
+		if cp.Active() {
+			return true
 		}
 	}
 	return false
