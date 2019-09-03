@@ -52,7 +52,7 @@ func (RandomSelection) CaddyModule() caddy.ModuleInfo {
 }
 
 // Select returns an available host, if any.
-func (r RandomSelection) Select(pool HostPool, request *http.Request) *Upstream {
+func (r RandomSelection) Select(pool UpstreamPool, request *http.Request) *Upstream {
 	// use reservoir sampling because the number of available
 	// hosts isn't known: https://en.wikipedia.org/wiki/Reservoir_sampling
 	var randomHost *Upstream
@@ -87,6 +87,7 @@ func (RandomChoiceSelection) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
+// Provision sets up r.
 func (r *RandomChoiceSelection) Provision(ctx caddy.Context) error {
 	if r.Choose == 0 {
 		r.Choose = 2
@@ -94,6 +95,7 @@ func (r *RandomChoiceSelection) Provision(ctx caddy.Context) error {
 	return nil
 }
 
+// Validate ensures that r's configuration is valid.
 func (r RandomChoiceSelection) Validate() error {
 	if r.Choose < 2 {
 		return fmt.Errorf("choose must be at least 2")
@@ -102,7 +104,7 @@ func (r RandomChoiceSelection) Validate() error {
 }
 
 // Select returns an available host, if any.
-func (r RandomChoiceSelection) Select(pool HostPool, _ *http.Request) *Upstream {
+func (r RandomChoiceSelection) Select(pool UpstreamPool, _ *http.Request) *Upstream {
 	k := r.Choose
 	if k > len(pool) {
 		k = len(pool)
@@ -142,7 +144,7 @@ func (LeastConnSelection) CaddyModule() caddy.ModuleInfo {
 // Select selects the up host with the least number of connections in the
 // pool. If more than one host has the same least number of connections,
 // one of the hosts is chosen at random.
-func (LeastConnSelection) Select(pool HostPool, _ *http.Request) *Upstream {
+func (LeastConnSelection) Select(pool UpstreamPool, _ *http.Request) *Upstream {
 	var bestHost *Upstream
 	var count int
 	var leastReqs int
@@ -185,7 +187,7 @@ func (RoundRobinSelection) CaddyModule() caddy.ModuleInfo {
 }
 
 // Select returns an available host, if any.
-func (r *RoundRobinSelection) Select(pool HostPool, _ *http.Request) *Upstream {
+func (r *RoundRobinSelection) Select(pool UpstreamPool, _ *http.Request) *Upstream {
 	n := uint32(len(pool))
 	if n == 0 {
 		return nil
@@ -213,7 +215,7 @@ func (FirstSelection) CaddyModule() caddy.ModuleInfo {
 }
 
 // Select returns an available host, if any.
-func (FirstSelection) Select(pool HostPool, _ *http.Request) *Upstream {
+func (FirstSelection) Select(pool UpstreamPool, _ *http.Request) *Upstream {
 	for _, host := range pool {
 		if host.Available() {
 			return host
@@ -235,7 +237,7 @@ func (IPHashSelection) CaddyModule() caddy.ModuleInfo {
 }
 
 // Select returns an available host, if any.
-func (IPHashSelection) Select(pool HostPool, req *http.Request) *Upstream {
+func (IPHashSelection) Select(pool UpstreamPool, req *http.Request) *Upstream {
 	clientIP, _, err := net.SplitHostPort(req.RemoteAddr)
 	if err != nil {
 		clientIP = req.RemoteAddr
@@ -256,7 +258,7 @@ func (URIHashSelection) CaddyModule() caddy.ModuleInfo {
 }
 
 // Select returns an available host, if any.
-func (URIHashSelection) Select(pool HostPool, req *http.Request) *Upstream {
+func (URIHashSelection) Select(pool UpstreamPool, req *http.Request) *Upstream {
 	return hostByHashing(pool, req.RequestURI)
 }
 
@@ -275,7 +277,7 @@ func (HeaderHashSelection) CaddyModule() caddy.ModuleInfo {
 }
 
 // Select returns an available host, if any.
-func (s HeaderHashSelection) Select(pool HostPool, req *http.Request) *Upstream {
+func (s HeaderHashSelection) Select(pool UpstreamPool, req *http.Request) *Upstream {
 	if s.Field == "" {
 		return nil
 	}

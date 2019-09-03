@@ -31,14 +31,13 @@ func init() {
 	caddy.RegisterModule(HTTPTransport{})
 }
 
-// TODO: This is the default transport, basically just http.Transport, but we define JSON struct tags...
+// HTTPTransport is essentially a configuration wrapper for http.Transport.
+// It defines a JSON structure useful when configuring the HTTP transport
+// for Caddy's reverse proxy.
 type HTTPTransport struct {
-	// TODO: Actually this is where the TLS config should go, technically...
-	// as well as keepalives and dial timeouts...
 	// TODO: It's possible that other transports (like fastcgi) might be
 	// able to borrow/use at least some of these config fields; if so,
 	// move them into a type called CommonTransport and embed it
-
 	TLS                   *TLSConfig     `json:"tls,omitempty"`
 	KeepAlive             *KeepAlive     `json:"keep_alive,omitempty"`
 	Compression           *bool          `json:"compression,omitempty"`
@@ -50,7 +49,6 @@ type HTTPTransport struct {
 	MaxResponseHeaderSize int64          `json:"max_response_header_size,omitempty"`
 	WriteBufferSize       int            `json:"write_buffer_size,omitempty"`
 	ReadBufferSize        int            `json:"read_buffer_size,omitempty"`
-	// TODO: ProxyConnectHeader?
 
 	RoundTripper http.RoundTripper `json:"-"`
 }
@@ -63,6 +61,8 @@ func (HTTPTransport) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
+// Provision sets up h.RoundTripper with a http.Transport
+// that is ready to use.
 func (h *HTTPTransport) Provision(ctx caddy.Context) error {
 	dialer := &net.Dialer{
 		Timeout:       time.Duration(h.DialTimeout),
@@ -109,16 +109,13 @@ func (h *HTTPTransport) Provision(ctx caddy.Context) error {
 	return nil
 }
 
+// RoundTrip implements http.RoundTripper with h.RoundTripper.
 func (h HTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return h.RoundTripper.RoundTrip(req)
 }
 
-func defaultTLSConfig() *tls.Config {
-	return &tls.Config{
-		NextProtos: []string{"h2", "http/1.1"}, // TODO: ensure this makes HTTP/2 work
-	}
-}
-
+// TLSConfig holds configuration related to the
+// TLS configuration for the transport/client.
 type TLSConfig struct {
 	RootCAPool []string `json:"root_ca_pool,omitempty"`
 	// TODO: Should the client cert+key config use caddytls.CertificateLoader modules?
@@ -186,6 +183,7 @@ func decodeBase64DERCert(certStr string) (*x509.Certificate, error) {
 	return x509.ParseCertificate(derBytes)
 }
 
+// KeepAlive holds configuration pertaining to HTTP Keep-Alive.
 type KeepAlive struct {
 	Enabled             *bool          `json:"enabled,omitempty"`
 	ProbeInterval       caddy.Duration `json:"probe_interval,omitempty"`
@@ -200,7 +198,6 @@ var (
 		KeepAlive: 30 * time.Second,
 	}
 
-	// TODO: does this need to be configured to enable HTTP/2?
 	defaultTransport = &http.Transport{
 		DialContext:         defaultDialer.DialContext,
 		TLSHandshakeTimeout: 5 * time.Second,

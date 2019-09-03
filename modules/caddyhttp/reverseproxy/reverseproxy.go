@@ -18,14 +18,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
@@ -37,14 +34,14 @@ func init() {
 	caddy.RegisterModule(Handler{})
 }
 
+// Handler implements a highly configurable and production-ready reverse proxy.
 type Handler struct {
 	TransportRaw  json.RawMessage `json:"transport,omitempty"`
 	LoadBalancing *LoadBalancing  `json:"load_balancing,omitempty"`
 	HealthChecks  *HealthChecks   `json:"health_checks,omitempty"`
-	// UpstreamStorageRaw json.RawMessage `json:"upstream_storage,omitempty"` // TODO:
-	Upstreams HostPool `json:"upstreams,omitempty"`
+	Upstreams     UpstreamPool    `json:"upstreams,omitempty"`
+	FlushInterval caddy.Duration  `json:"flush_interval,omitempty"`
 
-	// UpstreamProvider UpstreamProvider  `json:"-"` // TODO:
 	Transport http.RoundTripper `json:"-"`
 }
 
@@ -56,6 +53,7 @@ func (Handler) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
+// Provision ensures that h is set up properly before use.
 func (h *Handler) Provision(ctx caddy.Context) error {
 	if h.TransportRaw != nil {
 		val, err := ctx.LoadModuleInline("protocol", "http.handlers.reverse_proxy.transport", h.TransportRaw)
@@ -236,33 +234,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 // This assumes that no mutations of the request are performed
 // by h during or after proxying.
 func (h Handler) prepareRequest(req *http.Request) error {
-	// ctx := req.Context()
-	// TODO: do we need to support CloseNotifier? It was deprecated years ago.
-	// All this does is wrap CloseNotify with context cancel, for those responsewriters
-	// which didn't support context, but all the ones we'd use should nowadays, right?
-	// if cn, ok := rw.(http.CloseNotifier); ok {
-	// 	var cancel context.CancelFunc
-	// 	ctx, cancel = context.WithCancel(ctx)
-	// 	defer cancel()
-	// 	notifyChan := cn.CloseNotify()
-	// 	go func() {
-	// 		select {
-	// 		case <-notifyChan:
-	// 			cancel()
-	// 		case <-ctx.Done():
-	// 		}
-	// 	}()
-	// }
-
-	// TODO: do we need to call WithContext, since we won't be changing req.Context() above if we remove the CloseNotifier stuff?
-	// TODO: (This is where references to req were originally "outreq", a shallow clone, which I think is unnecessary in our case)
-	// req = req.WithContext(ctx) // includes shallow copies of maps, but okay
 	if req.ContentLength == 0 {
 		req.Body = nil // Issue golang/go#16036: nil Body for http.Transport retries
 	}
-
-	// TODO: is this needed?
-	// req.Header = cloneHeader(req.Header)
 
 	req.Close = false
 
@@ -315,10 +289,12 @@ func (h Handler) prepareRequest(req *http.Request) error {
 	return nil
 }
 
-// TODO:
-// this code is the entry point to what was borrowed from the net/http/httputil package in the standard library.
+// reverseProxy performs a round-trip to the given backend and processes the response with the client.
+// (This method is mostly the beginning of what was borrowed from the net/http/httputil package in the
+// Go standard library which was used as the foundation.)
 func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, upstream *Upstream) error {
-	// TODO: count this active request
+	upstream.Host.CountRequest(1)
+	defer upstream.Host.CountRequest(-1)
 
 	// point the request to this upstream
 	h.directRequest(req, upstream)
@@ -448,202 +424,6 @@ func (h Handler) directRequest(req *http.Request, upstream *Upstream) {
 	}
 }
 
-func (h Handler) handleUpgradeResponse(rw http.ResponseWriter, req *http.Request, res *http.Response) {
-	reqUpType := upgradeType(req.Header)
-	resUpType := upgradeType(res.Header)
-	if reqUpType != resUpType {
-		// p.getErrorHandler()(rw, req, fmt.Errorf("backend tried to switch protocol %q when %q was requested", resUpType, reqUpType))
-		return
-	}
-
-	copyHeader(res.Header, rw.Header())
-
-	hj, ok := rw.(http.Hijacker)
-	if !ok {
-		// p.getErrorHandler()(rw, req, fmt.Errorf("can't switch protocols using non-Hijacker ResponseWriter type %T", rw))
-		return
-	}
-	backConn, ok := res.Body.(io.ReadWriteCloser)
-	if !ok {
-		// p.getErrorHandler()(rw, req, fmt.Errorf("internal error: 101 switching protocols response with non-writable body"))
-		return
-	}
-	defer backConn.Close()
-	conn, brw, err := hj.Hijack()
-	if err != nil {
-		// p.getErrorHandler()(rw, req, fmt.Errorf("Hijack failed on protocol switch: %v", err))
-		return
-	}
-	defer conn.Close()
-	res.Body = nil // so res.Write only writes the headers; we have res.Body in backConn above
-	if err := res.Write(brw); err != nil {
-		// p.getErrorHandler()(rw, req, fmt.Errorf("response write: %v", err))
-		return
-	}
-	if err := brw.Flush(); err != nil {
-		// p.getErrorHandler()(rw, req, fmt.Errorf("response flush: %v", err))
-		return
-	}
-	errc := make(chan error, 1)
-	spc := switchProtocolCopier{user: conn, backend: backConn}
-	go spc.copyToBackend(errc)
-	go spc.copyFromBackend(errc)
-	<-errc
-	return
-}
-
-// flushInterval returns the p.FlushInterval value, conditionally
-// overriding its value for a specific request/response.
-func (h Handler) flushInterval(req *http.Request, res *http.Response) time.Duration {
-	resCT := res.Header.Get("Content-Type")
-
-	// For Server-Sent Events responses, flush immediately.
-	// The MIME type is defined in https://www.w3.org/TR/eventsource/#text-event-stream
-	if resCT == "text/event-stream" {
-		return -1 // negative means immediately
-	}
-
-	// TODO: more specific cases? e.g. res.ContentLength == -1?
-	// return h.FlushInterval
-	return 0
-}
-
-func (h Handler) copyResponse(dst io.Writer, src io.Reader, flushInterval time.Duration) error {
-	if flushInterval != 0 {
-		if wf, ok := dst.(writeFlusher); ok {
-			mlw := &maxLatencyWriter{
-				dst:     wf,
-				latency: flushInterval,
-			}
-			defer mlw.stop()
-			dst = mlw
-		}
-	}
-
-	// TODO: Figure out how we want to do this... using custom buffer pool type seems unnecessary
-	// or maybe it is, depending on how we want to handle errors,
-	// see: https://github.com/golang/go/issues/21814
-	// buf := bufPool.Get().(*bytes.Buffer)
-	// buf.Reset()
-	// defer bufPool.Put(buf)
-	// _, err := io.CopyBuffer(dst, src, )
-	var buf []byte
-	// if h.BufferPool != nil {
-	// 	buf = h.BufferPool.Get()
-	// 	defer h.BufferPool.Put(buf)
-	// }
-	_, err := h.copyBuffer(dst, src, buf)
-	return err
-}
-
-// copyBuffer returns any write errors or non-EOF read errors, and the amount
-// of bytes written.
-func (h Handler) copyBuffer(dst io.Writer, src io.Reader, buf []byte) (int64, error) {
-	if len(buf) == 0 {
-		buf = make([]byte, 32*1024)
-	}
-	var written int64
-	for {
-		nr, rerr := src.Read(buf)
-		if rerr != nil && rerr != io.EOF && rerr != context.Canceled {
-			// TODO: this could be useful to know (indeed, it revealed an error in our
-			// fastcgi PoC earlier; but it's this single error report here that necessitates
-			// a function separate from io.CopyBuffer, since io.CopyBuffer does not distinguish
-			// between read or write errors; in a reverse proxy situation, write errors are not
-			// something we need to report to the client, but read errors are a problem on our
-			// end for sure. so we need to decide what we want.)
-			// p.logf("copyBuffer: ReverseProxy read error during body copy: %v", rerr)
-		}
-		if nr > 0 {
-			nw, werr := dst.Write(buf[:nr])
-			if nw > 0 {
-				written += int64(nw)
-			}
-			if werr != nil {
-				return written, werr
-			}
-			if nr != nw {
-				return written, io.ErrShortWrite
-			}
-		}
-		if rerr != nil {
-			if rerr == io.EOF {
-				rerr = nil
-			}
-			return written, rerr
-		}
-	}
-}
-
-type writeFlusher interface {
-	io.Writer
-	http.Flusher
-}
-
-type maxLatencyWriter struct {
-	dst     writeFlusher
-	latency time.Duration // non-zero; negative means to flush immediately
-
-	mu           sync.Mutex // protects t, flushPending, and dst.Flush
-	t            *time.Timer
-	flushPending bool
-}
-
-func (m *maxLatencyWriter) Write(p []byte) (n int, err error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	n, err = m.dst.Write(p)
-	if m.latency < 0 {
-		m.dst.Flush()
-		return
-	}
-	if m.flushPending {
-		return
-	}
-	if m.t == nil {
-		m.t = time.AfterFunc(m.latency, m.delayedFlush)
-	} else {
-		m.t.Reset(m.latency)
-	}
-	m.flushPending = true
-	return
-}
-
-func (m *maxLatencyWriter) delayedFlush() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if !m.flushPending { // if stop was called but AfterFunc already started this goroutine
-		return
-	}
-	m.dst.Flush()
-	m.flushPending = false
-}
-
-func (m *maxLatencyWriter) stop() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.flushPending = false
-	if m.t != nil {
-		m.t.Stop()
-	}
-}
-
-// switchProtocolCopier exists so goroutines proxying data back and
-// forth have nice names in stacks.
-type switchProtocolCopier struct {
-	user, backend io.ReadWriter
-}
-
-func (c switchProtocolCopier) copyFromBackend(errc chan<- error) {
-	_, err := io.Copy(c.user, c.backend)
-	errc <- err
-}
-
-func (c switchProtocolCopier) copyToBackend(errc chan<- error) {
-	_, err := io.Copy(c.backend, c.user)
-	errc <- err
-}
-
 // shouldPanicOnCopyError reports whether the reverse proxy should
 // panic with http.ErrAbortHandler. This is the right thing to do by
 // default, but Go 1.10 and earlier did not, so existing unit tests
@@ -714,6 +494,7 @@ func removeConnectionHeaders(h http.Header) {
 	}
 }
 
+// LoadBalancing has parameters related to load balancing.
 type LoadBalancing struct {
 	SelectionPolicyRaw json.RawMessage `json:"selection_policy,omitempty"`
 	TryDuration        caddy.Duration  `json:"try_duration,omitempty"`
@@ -722,8 +503,9 @@ type LoadBalancing struct {
 	SelectionPolicy Selector `json:"-"`
 }
 
+// Selector selects an available upstream from the pool.
 type Selector interface {
-	Select(HostPool, *http.Request) *Upstream
+	Select(UpstreamPool, *http.Request) *Upstream
 }
 
 // Hop-by-hop headers. These are removed when sent to the backend.
@@ -743,117 +525,6 @@ var hopHeaders = []string{
 	"Upgrade",
 }
 
-// Host represents a remote host which can be proxied to.
-// Its methods must be safe for concurrent use.
-type Host interface {
-	// NumRequests returns the numnber of requests
-	// currently in process with the host.
-	NumRequests() int
-
-	// Fails returns the count of recent failures.
-	Fails() int
-
-	// Unhealthy returns true if the backend is unhealthy.
-	Unhealthy() bool
-
-	// CountRequest counts the given number of requests
-	// as currently in process with the host. The count
-	// should not go below 0.
-	CountRequest(int) error
-
-	// CountFail counts the given number of failures
-	// with the host. The count should not go below 0.
-	CountFail(int) error
-
-	// SetHealthy marks the host as either healthy (true)
-	// or unhealthy (false). If the given status is the
-	// same, this should be a no-op. It returns true if
-	// the given status was different, false otherwise.
-	SetHealthy(bool) (bool, error)
-}
-
-type HostPool []*Upstream
-
-type upstreamHost struct {
-	numRequests int64 // must be first field to be 64-bit aligned on 32-bit systems (see https://golang.org/pkg/sync/atomic/#pkg-note-BUG)
-	fails       int64
-	unhealthy   int32
-}
-
-func (uh *upstreamHost) NumRequests() int {
-	return int(atomic.LoadInt64(&uh.numRequests))
-}
-func (uh *upstreamHost) Fails() int {
-	return int(atomic.LoadInt64(&uh.fails))
-}
-func (uh *upstreamHost) Unhealthy() bool {
-	return atomic.LoadInt32(&uh.unhealthy) == 1
-}
-func (uh *upstreamHost) CountRequest(delta int) error {
-	result := atomic.AddInt64(&uh.numRequests, int64(delta))
-	if result < 0 {
-		return fmt.Errorf("count below 0: %d", result)
-	}
-	return nil
-}
-func (uh *upstreamHost) CountFail(delta int) error {
-	result := atomic.AddInt64(&uh.fails, int64(delta))
-	if result < 0 {
-		return fmt.Errorf("count below 0: %d", result)
-	}
-	return nil
-}
-func (uh *upstreamHost) SetHealthy(healthy bool) (bool, error) {
-	var unhealthy, compare int32 = 1, 0
-	if healthy {
-		unhealthy, compare = 0, 1
-	}
-	swapped := atomic.CompareAndSwapInt32(&uh.unhealthy, compare, unhealthy)
-	return swapped, nil
-}
-
-type Upstream struct {
-	Host `json:"-"`
-
-	Address     string `json:"address,omitempty"`
-	MaxRequests int    `json:"max_requests,omitempty"`
-
-	// TODO: This could be really cool, to say that requests with
-	// certain headers or from certain IPs always go to this upstream
-	// HeaderAffinity string
-	// IPAffinity     string
-
-	healthCheckPolicy *PassiveHealthChecks
-
-	hostURL *url.URL
-}
-
-func (u Upstream) Available() bool {
-	return u.Healthy() && !u.Full()
-}
-
-func (u Upstream) Healthy() bool {
-	healthy := !u.Host.Unhealthy()
-	if healthy && u.healthCheckPolicy != nil {
-		healthy = u.Host.Fails() < u.healthCheckPolicy.MaxFails
-	}
-	return healthy
-}
-
-func (u Upstream) Full() bool {
-	return u.MaxRequests > 0 && u.Host.NumRequests() >= u.MaxRequests
-}
-
-func (u Upstream) URL() *url.URL {
-	return u.hostURL
-}
-
-var hosts = caddy.NewUsagePool()
-
-// TODO: ...
-type UpstreamProvider interface {
-}
-
 // TODO: see if we can use this
 // var bufPool = sync.Pool{
 // 	New: func() interface{} {
@@ -863,7 +534,7 @@ type UpstreamProvider interface {
 
 // Interface guards
 var (
-	_ caddyhttp.MiddlewareHandler = (*Handler)(nil)
 	_ caddy.Provisioner           = (*Handler)(nil)
 	_ caddy.CleanerUpper          = (*Handler)(nil)
+	_ caddyhttp.MiddlewareHandler = (*Handler)(nil)
 )
