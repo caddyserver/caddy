@@ -75,7 +75,12 @@ func (app *App) Provision(ctx caddy.Context) error {
 			srv.AutoHTTPS = new(AutoHTTPSConfig)
 		}
 
-		if len(srv.TLSConnPolicies) != 0 {
+		// disallow TLS client auth bypass which could
+		// otherwise be exploited by sending an unprotected
+		// SNI value during TLS handshake, then a protected
+		// Host header during HTTP request later on that
+		// connection
+		if srv.hasTLSClientAuth() {
 			srv.StrictSNIHost = true
 		}
 
@@ -163,8 +168,7 @@ func (app *App) Start() error {
 					return fmt.Errorf("%s: listening on %s: %v", network, addr, err)
 				}
 
-				// enable HTTP/2 (and support for solving the
-				// TLS-ALPN ACME challenge) by default
+				// enable HTTP/2 by default
 				for _, pol := range srv.TLSConnPolicies {
 					if len(pol.ALPN) == 0 {
 						pol.ALPN = append(pol.ALPN, defaultALPN...)
@@ -298,19 +302,11 @@ func (app *App) automaticHTTPS() error {
 				return fmt.Errorf("%s: managing certificate for %s: %s", srvName, domains, err)
 			}
 
-			// tell the server to use TLS by specifying a TLS
-			// connection policy (which supports HTTP/2 and the
-			// TLS-ALPN ACME challenge as well)
+			// tell the server to use TLS if it is not already doing so
 			if srv.TLSConnPolicies == nil {
-				// build a new TLSConnPolicies if it does not exist
 				srv.TLSConnPolicies = caddytls.ConnectionPolicies{
 					&caddytls.ConnectionPolicy{ALPN: defaultALPN},
 				}
-			} else {
-				// append the default policy at the end of the existing policies
-				srv.TLSConnPolicies = append(srv.TLSConnPolicies,
-					&caddytls.ConnectionPolicy{ALPN: defaultALPN},
-				)
 			}
 
 			if srv.AutoHTTPS.DisableRedir {
