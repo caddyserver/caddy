@@ -224,7 +224,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 
 		// proxy the request to that upstream
 		proxyErr = h.reverseProxy(w, r, upstream)
-		if proxyErr == nil {
+		if proxyErr == nil || proxyErr == context.Canceled {
+			// context.Canceled happens when the downstream client
+			// cancels the request; we don't have to worry about that
 			return nil
 		}
 
