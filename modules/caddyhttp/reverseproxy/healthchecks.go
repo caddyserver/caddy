@@ -64,6 +64,14 @@ type PassiveHealthChecks struct {
 	UnhealthyLatency      caddy.Duration `json:"unhealthy_latency,omitempty"`
 }
 
+// CircuitBreaker is a type that can act as an early-warning
+// system for the health checker when backends are getting
+// overloaded.
+type CircuitBreaker interface {
+	OK() bool
+	RecordMetric(statusCode int, latency time.Duration)
+}
+
 // activeHealthChecker runs active health checks on a
 // regular basis and blocks until
 // h.HealthChecks.Active.stopChan is closed.
@@ -202,7 +210,7 @@ func (h *Handler) doActiveHealthCheck(hostAddr string, host Host) error {
 // remembers 1 failure for upstream for the configured
 // duration. If passive health checks are disabled or
 // failure expiry is 0, this is a no-op.
-func (h Handler) countFailure(upstream *Upstream) {
+func (h *Handler) countFailure(upstream *Upstream) {
 	// only count failures if passive health checking is enabled
 	// and if failures are configured have a non-zero expiry
 	if h.HealthChecks == nil || h.HealthChecks.Passive == nil {

@@ -69,20 +69,28 @@ type Upstream struct {
 
 	healthCheckPolicy *PassiveHealthChecks
 	hostURL           *url.URL
+	cb                CircuitBreaker
 }
 
 // Available returns true if the remote host
-// is available to receive requests.
+// is available to receive requests. This is
+// the method that should be used by selection
+// policies, etc. to determine if a backend
+// should be able to be sent a request.
 func (u *Upstream) Available() bool {
 	return u.Healthy() && !u.Full()
 }
 
 // Healthy returns true if the remote host
 // is currently known to be healthy or "up".
+// It consults the circuit breaker, if any.
 func (u *Upstream) Healthy() bool {
 	healthy := !u.Host.Unhealthy()
 	if healthy && u.healthCheckPolicy != nil {
 		healthy = u.Host.Fails() < u.healthCheckPolicy.MaxFails
+	}
+	if healthy && u.cb != nil {
+		healthy = u.cb.OK()
 	}
 	return healthy
 }

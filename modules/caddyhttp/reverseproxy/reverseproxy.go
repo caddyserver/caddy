@@ -37,12 +37,14 @@ func init() {
 // Handler implements a highly configurable and production-ready reverse proxy.
 type Handler struct {
 	TransportRaw  json.RawMessage `json:"transport,omitempty"`
+	CBRaw         json.RawMessage `json:"circuit_breaker,omitempty"`
 	LoadBalancing *LoadBalancing  `json:"load_balancing,omitempty"`
 	HealthChecks  *HealthChecks   `json:"health_checks,omitempty"`
 	Upstreams     UpstreamPool    `json:"upstreams,omitempty"`
 	FlushInterval caddy.Duration  `json:"flush_interval,omitempty"`
 
 	Transport http.RoundTripper `json:"-"`
+	CB        CircuitBreaker    `json:"-"`
 }
 
 // CaddyModule returns the Caddy module information.
@@ -55,6 +57,7 @@ func (Handler) CaddyModule() caddy.ModuleInfo {
 
 // Provision ensures that h is set up properly before use.
 func (h *Handler) Provision(ctx caddy.Context) error {
+	// start by loading modules
 	if h.TransportRaw != nil {
 		val, err := ctx.LoadModuleInline("protocol", "http.handlers.reverse_proxy.transport", h.TransportRaw)
 		if err != nil {
@@ -72,6 +75,14 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 		}
 		h.LoadBalancing.SelectionPolicy = val.(Selector)
 		h.LoadBalancing.SelectionPolicyRaw = nil // allow GC to deallocate - TODO: Does this help?
+	}
+	if h.CBRaw != nil {
+		val, err := ctx.LoadModuleInline("type", "http.handlers.reverse_proxy.circuit_breakers", h.CBRaw)
+		if err != nil {
+			return fmt.Errorf("loading circuit breaker module: %s", err)
+		}
+		h.CB = val.(CircuitBreaker)
+		h.CBRaw = nil // allow GC to deallocate - TODO: Does this help?
 	}
 
 	if h.Transport == nil {
@@ -123,6 +134,8 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 	}
 
 	for _, upstream := range h.Upstreams {
+		upstream.cb = h.CB
+
 		// url parser requires a scheme
 		if !strings.Contains(upstream.Address, "://") {
 			upstream.Address = "http://" + upstream.Address
@@ -305,6 +318,11 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, upstre
 	latency := time.Since(start)
 	if err != nil {
 		return err
+	}
+
+	// update circuit breaker on current conditions
+	if upstream.cb != nil {
+		upstream.cb.RecordMetric(res.StatusCode, latency)
 	}
 
 	// perform passive health checks (if enabled)
