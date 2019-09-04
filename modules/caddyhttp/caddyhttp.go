@@ -51,8 +51,9 @@ type App struct {
 	GracePeriod caddy.Duration     `json:"grace_period,omitempty"`
 	Servers     map[string]*Server `json:"servers,omitempty"`
 
-	servers   []*http.Server
-	h3servers []*http3.Server
+	servers     []*http.Server
+	h3servers   []*http3.Server
+	h3listeners []net.PacketConn
 
 	ctx caddy.Context
 }
@@ -198,6 +199,7 @@ func (app *App) Start() error {
 					log.Printf("[DEBUG] Started HTTP/3 listener on %s", addr) // TODO: remove
 					go h3srv.Serve(h3ln)
 					app.h3servers = append(app.h3servers, h3srv)
+					app.h3listeners = append(app.h3listeners, h3ln)
 					////////////////////////////////////////////
 
 				}
@@ -229,6 +231,12 @@ func (app *App) Stop() error {
 		// TODO: CloseGracefully, once implemented upstream
 		// (see https://github.com/lucas-clemente/quic-go/issues/2103)
 		err := s.Close()
+		if err != nil {
+			return err
+		}
+	}
+	for _, pc := range app.h3listeners {
+		err := pc.Close()
 		if err != nil {
 			return err
 		}
