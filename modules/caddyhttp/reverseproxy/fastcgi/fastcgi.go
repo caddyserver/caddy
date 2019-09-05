@@ -76,6 +76,14 @@ func (Transport) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
+// Provision sets up t.
+func (t *Transport) Provision(_ caddy.Context) error {
+	if t.Root == "" {
+		t.Root = "{http.var.root}"
+	}
+	return nil
+}
+
 // RoundTrip implements http.RoundTripper.
 func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 	env, err := t.buildEnv(r)
@@ -136,6 +144,8 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 
 // buildEnv returns a set of CGI environment variables for the request.
 func (t Transport) buildEnv(r *http.Request) (map[string]string, error) {
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
+
 	var env map[string]string
 
 	// Separate remote IP and port; more lenient than net.SplitHostPort
@@ -151,6 +161,7 @@ func (t Transport) buildEnv(r *http.Request) (map[string]string, error) {
 	ip = strings.Replace(ip, "[", "", 1)
 	ip = strings.Replace(ip, "]", "", 1)
 
+	root := repl.ReplaceAll(t.Root, ".")
 	fpath := r.URL.Path
 
 	// Split path in preparation for env variables.
@@ -167,7 +178,7 @@ func (t Transport) buildEnv(r *http.Request) (map[string]string, error) {
 	scriptName = strings.TrimSuffix(scriptName, pathInfo)
 
 	// SCRIPT_FILENAME is the absolute path of SCRIPT_NAME
-	scriptFilename := filepath.Join(t.Root, scriptName)
+	scriptFilename := filepath.Join(root, scriptName)
 
 	// Add vhost path prefix to scriptName. Otherwise, some PHP software will
 	// have difficulty discovering its URL.
@@ -208,13 +219,13 @@ func (t Transport) buildEnv(r *http.Request) (map[string]string, error) {
 		"REMOTE_USER":       "", // TODO: once there are authentication handlers, populate this
 		"REQUEST_METHOD":    r.Method,
 		"REQUEST_SCHEME":    requestScheme,
-		"SERVER_NAME":       t.ServerName,
-		"SERVER_PORT":       t.ServerPort,
+		"SERVER_NAME":       t.serverName,
+		"SERVER_PORT":       t.serverPort,
 		"SERVER_PROTOCOL":   r.Proto,
-		"SERVER_SOFTWARE":   t.SoftwareName + "/" + t.SoftwareVersion,
+		"SERVER_SOFTWARE":   t.softwareName + "/" + t.softwareVersion,
 
 		// Other variables
-		"DOCUMENT_ROOT":   t.Root,
+		"DOCUMENT_ROOT":   root,
 		"DOCUMENT_URI":    docURI,
 		"HTTP_HOST":       r.Host, // added here, since not always part of headers
 		"REQUEST_URI":     reqURL.RequestURI(),
@@ -226,7 +237,7 @@ func (t Transport) buildEnv(r *http.Request) (map[string]string, error) {
 	// PATH_TRANSLATED should only exist if PATH_INFO is defined.
 	// Info: https://www.ietf.org/rfc/rfc3875 Page 14
 	if env["PATH_INFO"] != "" {
-		env["PATH_TRANSLATED"] = filepath.Join(t.Root, pathInfo) // Info: http://www.oreilly.com/openbook/cgi/ch02_04.html
+		env["PATH_TRANSLATED"] = filepath.Join(root, pathInfo) // Info: http://www.oreilly.com/openbook/cgi/ch02_04.html
 	}
 
 	// Some web apps rely on knowing HTTPS or not
@@ -248,7 +259,6 @@ func (t Transport) buildEnv(r *http.Request) (map[string]string, error) {
 	}
 
 	// Add env variables from config (with support for placeholders in values)
-	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
 	for _, envVar := range t.EnvVars {
 		env[envVar[0]] = repl.ReplaceAll(envVar[1], "")
 	}
@@ -283,3 +293,9 @@ var tlsProtocolStrings = map[uint16]string{
 }
 
 var headerNameReplacer = strings.NewReplacer(" ", "_", "-", "_")
+
+// Interface guards
+var (
+	_ caddy.Provisioner = (*Transport)(nil)
+	_ http.RoundTripper = (*Transport)(nil)
+)
