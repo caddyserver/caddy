@@ -15,6 +15,7 @@
 package reverseproxy
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -93,15 +94,31 @@ func (h *Handler) activeHealthChecker() {
 // health checks for all hosts in the global repository.
 func (h *Handler) doActiveHealthChecksForAllHosts() {
 	hosts.Range(func(key, value interface{}) bool {
-		addr := key.(string)
+		networkAddr := key.(string)
 		host := value.(Host)
 
-		go func(addr string, host Host) {
-			err := h.doActiveHealthCheck(addr, host)
+		go func(networkAddr string, host Host) {
+			network, addrs, err := caddy.ParseNetworkAddress(networkAddr)
 			if err != nil {
-				log.Printf("[ERROR] reverse_proxy: active health check for host %s: %v", addr, err)
+				log.Printf("[ERROR] reverse_proxy: active health check for host %s: bad network address: %v", networkAddr, err)
+				return
 			}
-		}(addr, host)
+			if len(addrs) != 1 {
+				log.Printf("[ERROR] reverse_proxy: active health check for host %s: multiple addresses (upstream must map to only one address)", networkAddr)
+				return
+			}
+			hostAddr := addrs[0]
+			if network == "unix" || network == "unixgram" || network == "unixpacket" {
+				// this will be used as the Host portion of a http.Request URL, and
+				// paths to socket files would produce an error when creating URL,
+				// so use a fake Host value instead
+				hostAddr = network
+			}
+			err = h.doActiveHealthCheck(DialInfo{network, addrs[0]}, hostAddr, host)
+			if err != nil {
+				log.Printf("[ERROR] reverse_proxy: active health check for host %s: %v", networkAddr, err)
+			}
+		}(networkAddr, host)
 
 		// continue to iterate all hosts
 		return true
@@ -115,26 +132,39 @@ func (h *Handler) doActiveHealthChecksForAllHosts() {
 // according to whether it passes the health check. An error is
 // returned only if the health check fails to occur or if marking
 // the host's health status fails.
-func (h *Handler) doActiveHealthCheck(hostAddr string, host Host) error {
-	// create the URL for the health check
-	u, err := url.Parse(hostAddr)
-	if err != nil {
-		return err
+func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, host Host) error {
+	// create the URL for the request that acts as a health check
+	scheme := "http"
+	if ht, ok := h.Transport.(*http.Transport); ok && ht.TLSClientConfig != nil {
+		// this is kind of a hacky way to know if we should use HTTPS, but whatever
+		scheme = "https"
 	}
-	if h.HealthChecks.Active.Path != "" {
-		u.Path = h.HealthChecks.Active.Path
+	u := &url.URL{
+		Scheme: scheme,
+		Host:   hostAddr,
+		Path:   h.HealthChecks.Active.Path,
 	}
+
+	// adjust the port, if configured to be different
 	if h.HealthChecks.Active.Port != 0 {
 		portStr := strconv.Itoa(h.HealthChecks.Active.Port)
-		u.Host = net.JoinHostPort(u.Hostname(), portStr)
+		host, _, err := net.SplitHostPort(hostAddr)
+		if err != nil {
+			host = hostAddr
+		}
+		u.Host = net.JoinHostPort(host, portStr)
 	}
 
-	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	// attach dialing information to this request
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, caddy.ReplacerCtxKey, caddy.NewReplacer())
+	ctx = context.WithValue(ctx, DialInfoCtxKey, dialInfo)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("making request: %v", err)
 	}
 
-	// do the request, careful to tame the response body
+	// do the request, being careful to tame the response body
 	resp, err := h.HealthChecks.Active.httpClient.Do(req)
 	if err != nil {
 		log.Printf("[INFO] reverse_proxy: active health check: %s is down (HTTP request failed: %v)", hostAddr, err)
@@ -149,7 +179,7 @@ func (h *Handler) doActiveHealthCheck(hostAddr string, host Host) error {
 		body = io.LimitReader(body, h.HealthChecks.Active.MaxSize)
 	}
 	defer func() {
-		// drain any remaining body so connection can be re-used
+		// drain any remaining body so connection could be re-used
 		io.Copy(ioutil.Discard, body)
 		resp.Body.Close()
 	}()
@@ -225,7 +255,7 @@ func (h *Handler) countFailure(upstream *Upstream) {
 	err := upstream.Host.CountFail(1)
 	if err != nil {
 		log.Printf("[ERROR] proxy: upstream %s: counting failure: %v",
-			upstream.hostURL, err)
+			upstream.dialInfo, err)
 	}
 
 	// forget it later
@@ -234,7 +264,7 @@ func (h *Handler) countFailure(upstream *Upstream) {
 		err := host.CountFail(-1)
 		if err != nil {
 			log.Printf("[ERROR] proxy: upstream %s: expiring failure: %v",
-				upstream.hostURL, err)
+				upstream.dialInfo, err)
 		}
 	}(upstream.Host, failDuration)
 }
