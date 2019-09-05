@@ -200,3 +200,9 @@ type KeepAlive struct {
 	MaxIdleConnsPerHost int            `json:"max_idle_conns_per_host,omitempty"`
 	IdleConnTimeout     caddy.Duration `json:"idle_timeout,omitempty"` // how long should connections be kept alive when idle
 }
+
+// Interface guards
+var (
+	_ caddy.Provisioner = (*HTTPTransport)(nil)
+	_ http.RoundTripper = (*HTTPTransport)(nil)
+)
