@@ -17,6 +17,7 @@ package caddytls
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -111,13 +112,12 @@ type ConnectionPolicy struct {
 	Matchers      map[string]json.RawMessage `json:"match,omitempty"`
 	CertSelection json.RawMessage            `json:"certificate_selection,omitempty"`
 
-	CipherSuites []string `json:"cipher_suites,omitempty"`
-	Curves       []string `json:"curves,omitempty"`
-	ALPN         []string `json:"alpn,omitempty"`
-	ProtocolMin  string   `json:"protocol_min,omitempty"`
-	ProtocolMax  string   `json:"protocol_max,omitempty"`
-
-	// TODO: Client auth
+	CipherSuites         []string              `json:"cipher_suites,omitempty"`
+	Curves               []string              `json:"curves,omitempty"`
+	ALPN                 []string              `json:"alpn,omitempty"`
+	ProtocolMin          string                `json:"protocol_min,omitempty"`
+	ProtocolMax          string                `json:"protocol_max,omitempty"`
+	ClientAuthentication *ClientAuthentication `json:"client_authentication,omitempty"`
 
 	matchers     []ConnectionMatcher
 	certSelector certmagic.CertificateSelector
@@ -167,7 +167,7 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 		tlsApp.SessionTickets.unregister(cfg)
 	})
 
-	// TODO: Clean up active locks if app (or process) is being closed!
+	// TODO: Clean up session ticket active locks in storage if app (or process) is being closed!
 
 	// add all the cipher suites in order, without duplicates
 	cipherSuitesAdded := make(map[uint16]struct{})
@@ -212,13 +212,134 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 		return fmt.Errorf("protocol min (%x) cannot be greater than protocol max (%x)", p.ProtocolMin, p.ProtocolMax)
 	}
 
-	// TODO: client auth, and other fields
+	// client authentication
+	if p.ClientAuthentication != nil {
+		err := p.ClientAuthentication.ConfigureTLSConfig(cfg)
+		if err != nil {
+			return fmt.Errorf("configuring TLS client authentication: %v", err)
+		}
+	}
+
+	// TODO: other fields
 
 	setDefaultTLSParams(cfg)
 
 	p.stdTLSConfig = cfg
 
 	return nil
+}
+
+// ClientAuthentication configures TLS client auth.
+type ClientAuthentication struct {
+	// A list of base64 DER-encoded CA certificates
+	// against which to validate client certificates.
+	// Client certs which are not signed by any of
+	// these CAs will be rejected.
+	TrustedCACerts []string `json:"trusted_ca_certs,omitempty"`
+
+	// A list of base64 DER-encoded client leaf certs
+	// to accept. If this list is not empty, client certs
+	// which are not in this list will be rejected.
+	TrustedLeafCerts []string `json:"trusted_leaf_certs,omitempty"`
+
+	// state established with the last call to ConfigureTLSConfig
+	trustedLeafCerts       []*x509.Certificate
+	existingVerifyPeerCert func([][]byte, [][]*x509.Certificate) error
+}
+
+// Active returns true if clientauth has an actionable configuration.
+func (clientauth ClientAuthentication) Active() bool {
+	return len(clientauth.TrustedCACerts) > 0 || len(clientauth.TrustedLeafCerts) > 0
+}
+
+// ConfigureTLSConfig sets up cfg to enforce clientauth's configuration.
+func (clientauth *ClientAuthentication) ConfigureTLSConfig(cfg *tls.Config) error {
+	// if there's no actionable client auth, simply disable it
+	if !clientauth.Active() {
+		cfg.ClientAuth = tls.NoClientCert
+		return nil
+	}
+
+	// otherwise, at least require any client certificate
+	cfg.ClientAuth = tls.RequireAnyClientCert
+
+	// enforce CA verification by adding CA certs to the ClientCAs pool
+	if len(clientauth.TrustedCACerts) > 0 {
+		caPool := x509.NewCertPool()
+		for _, clientCAString := range clientauth.TrustedCACerts {
+			clientCA, err := decodeBase64DERCert(clientCAString)
+			if err != nil {
+				return fmt.Errorf("parsing certificate: %v", err)
+			}
+			caPool.AddCert(clientCA)
+		}
+		cfg.ClientCAs = caPool
+
+		// now ensure the standard lib will verify client certificates
+		cfg.ClientAuth = tls.RequireAndVerifyClientCert
+	}
+
+	// enforce leaf verification by writing our own verify function
+	if len(clientauth.TrustedLeafCerts) > 0 {
+		clientauth.trustedLeafCerts = []*x509.Certificate{}
+
+		for _, clientCertString := range clientauth.TrustedLeafCerts {
+			clientCert, err := decodeBase64DERCert(clientCertString)
+			if err != nil {
+				return fmt.Errorf("parsing certificate: %v", err)
+			}
+			clientauth.trustedLeafCerts = append(clientauth.trustedLeafCerts, clientCert)
+		}
+
+		// if a custom verification function already exists, wrap it
+		clientauth.existingVerifyPeerCert = cfg.VerifyPeerCertificate
+
+		cfg.VerifyPeerCertificate = clientauth.verifyPeerCertificate
+	}
+
+	return nil
+}
+
+// verifyPeerCertificate is for use as a tls.Config.VerifyPeerCertificate
+// callback to do custom client certificate verification. It is intended
+// for installation only by clientauth.ConfigureTLSConfig().
+func (clientauth ClientAuthentication) verifyPeerCertificate(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
+	// first use any pre-existing custom verification function
+	if clientauth.existingVerifyPeerCert != nil {
+		err := clientauth.existingVerifyPeerCert(rawCerts, verifiedChains)
+		if err != nil {
+			return err
+		}
+	}
+
+	if len(rawCerts) == 0 {
+		return fmt.Errorf("no client certificate provided")
+	}
+
+	remoteLeafCert, err := x509.ParseCertificate(rawCerts[len(rawCerts)-1])
+	if err != nil {
+		return fmt.Errorf("can't parse the given certificate: %s", err.Error())
+	}
+
+	for _, trustedLeafCert := range clientauth.trustedLeafCerts {
+		if remoteLeafCert.Equal(trustedLeafCert) {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("client leaf certificate failed validation")
+}
+
+// decodeBase64DERCert base64-decodes, then DER-decodes, certStr.
+func decodeBase64DERCert(certStr string) (*x509.Certificate, error) {
+	// decode base64
+	derBytes, err := base64.StdEncoding.DecodeString(certStr)
+	if err != nil {
+		return nil, err
+	}
+
+	// parse the DER-encoded certificate
+	return x509.ParseCertificate(derBytes)
 }
 
 // setDefaultTLSParams sets the default TLS cipher suites, protocol versions,

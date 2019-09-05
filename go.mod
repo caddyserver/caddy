@@ -14,6 +14,7 @@ require (
 	github.com/google/go-cmp v0.3.1 // indirect
 	github.com/google/uuid v1.1.1 // indirect
 	github.com/huandu/xstrings v1.2.0 // indirect
+	github.com/ilibs/json5 v1.0.1
 	github.com/imdario/mergo v0.3.7 // indirect
 	github.com/klauspost/compress v1.7.1-0.20190613161414-0b31f265a57b
 	github.com/klauspost/cpuid v1.2.1
@@ -21,6 +22,7 @@ require (
 	github.com/lucas-clemente/quic-go v0.7.1-0.20190905080214-9d92550e4e4b
 	github.com/mholt/certmagic v0.6.2
 	github.com/mitchellh/go-ps v0.0.0-20170309133038-4fdf99ab2936
+	github.com/muhammadmuzzammil1998/jsonc v0.0.0-20190902132743-e4903c4dea48
 	github.com/rs/cors v1.6.0
 	github.com/russross/blackfriday/v2 v2.0.1
 	github.com/shurcooL/sanitized_anchor_name v1.0.0 // indirect
