@@ -19,12 +19,14 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
+	"net/url"
 	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
 
@@ -37,25 +39,11 @@ func init() {
 
 // Transport facilitates FastCGI communication.
 type Transport struct {
-	//////////////////////////////
-	// TODO: taken from v1 Handler type
-
-	SoftwareName    string
-	SoftwareVersion string
-	ServerName      string
-	ServerPort      string
-
-	//////////////////////////
-	// TODO: taken from v1 Rule type
-
-	// The base path to match. Required.
-	// Path string
-
-	// upstream load balancer
-	// balancer
-
-	// Always process files with this extension with fastcgi.
-	// Ext string
+	// TODO: Populate these
+	softwareName    string
+	softwareVersion string
+	serverName      string
+	serverPort      string
 
 	// Use this directory as the fastcgi root directory. Defaults to the root
 	// directory of the parent virtual host.
@@ -67,15 +55,8 @@ type Transport struct {
 	// PATH_INFO for the CGI script to use.
 	SplitPath string `json:"split_path,omitempty"`
 
-	// If the URL ends with '/' (which indicates a directory), these index
-	// files will be tried instead.
-	// IndexFiles []string
-
 	// Environment Variables
 	EnvVars [][2]string `json:"env,omitempty"`
-
-	// Ignored paths
-	// IgnoredSubPaths []string
 
 	// The duration used to set a deadline when connecting to an upstream.
 	DialTimeout caddy.Duration `json:"dial_timeout,omitempty"`
@@ -170,7 +151,6 @@ func (t Transport) buildEnv(r *http.Request) (map[string]string, error) {
 	ip = strings.Replace(ip, "[", "", 1)
 	ip = strings.Replace(ip, "]", "", 1)
 
-	// TODO: respect index files? or leave that to matcher/rewrite (I prefer that)?
 	fpath := r.URL.Path
 
 	// Split path in preparation for env variables.
@@ -194,16 +174,17 @@ func (t Transport) buildEnv(r *http.Request) (map[string]string, error) {
 	pathPrefix, _ := r.Context().Value(caddy.CtxKey("path_prefix")).(string)
 	scriptName = path.Join(pathPrefix, scriptName)
 
-	// TODO: Disabled for now
-	// // Get the request URI from context. The context stores the original URI in case
-	// // it was changed by a middleware such as rewrite. By default, we pass the
-	// // original URI in as the value of REQUEST_URI (the user can overwrite this
-	// // if desired). Most PHP apps seem to want the original URI. Besides, this is
-	// // how nginx defaults: http://stackoverflow.com/a/12485156/1048862
-	// reqURL, _ := r.Context().Value(httpserver.OriginalURLCtxKey).(url.URL)
-
-	// // Retrieve name of remote user that was set by some downstream middleware such as basicauth.
-	// remoteUser, _ := r.Context().Value(httpserver.RemoteUserCtxKey).(string)
+	// Get the request URL from context. The context stores the original URL in case
+	// it was changed by a middleware such as rewrite. By default, we pass the
+	// original URI in as the value of REQUEST_URI (the user can overwrite this
+	// if desired). Most PHP apps seem to want the original URI. Besides, this is
+	// how nginx defaults: http://stackoverflow.com/a/12485156/1048862
+	reqURL, ok := r.Context().Value(caddyhttp.OriginalURLCtxKey).(url.URL)
+	if !ok {
+		// some requests, like active health checks, don't add this to
+		// the request context, so we can just use the current URL
+		reqURL = *r.URL
+	}
 
 	requestScheme := "http"
 	if r.TLS != nil {
@@ -224,19 +205,19 @@ func (t Transport) buildEnv(r *http.Request) (map[string]string, error) {
 		"REMOTE_HOST":       ip, // For speed, remote host lookups disabled
 		"REMOTE_PORT":       port,
 		"REMOTE_IDENT":      "", // Not used
-		// "REMOTE_USER":       remoteUser, // TODO:
-		"REQUEST_METHOD":  r.Method,
-		"REQUEST_SCHEME":  requestScheme,
-		"SERVER_NAME":     t.ServerName,
-		"SERVER_PORT":     t.ServerPort,
-		"SERVER_PROTOCOL": r.Proto,
-		"SERVER_SOFTWARE": t.SoftwareName + "/" + t.SoftwareVersion,
+		"REMOTE_USER":       "", // TODO: once there are authentication handlers, populate this
+		"REQUEST_METHOD":    r.Method,
+		"REQUEST_SCHEME":    requestScheme,
+		"SERVER_NAME":       t.ServerName,
+		"SERVER_PORT":       t.ServerPort,
+		"SERVER_PROTOCOL":   r.Proto,
+		"SERVER_SOFTWARE":   t.SoftwareName + "/" + t.SoftwareVersion,
 
 		// Other variables
-		// "DOCUMENT_ROOT":   rule.Root,
-		"DOCUMENT_URI": docURI,
-		"HTTP_HOST":    r.Host, // added here, since not always part of headers
-		// "REQUEST_URI":     reqURL.RequestURI(), // TODO:
+		"DOCUMENT_ROOT":   t.Root,
+		"DOCUMENT_URI":    docURI,
+		"HTTP_HOST":       r.Host, // added here, since not always part of headers
+		"REQUEST_URI":     reqURL.RequestURI(),
 		"SCRIPT_FILENAME": scriptFilename,
 		"SCRIPT_NAME":     scriptName,
 	}

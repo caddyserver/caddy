@@ -20,6 +20,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -58,6 +59,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, repl)
 	ctx = context.WithValue(ctx, ServerCtxKey, s)
 	ctx = context.WithValue(ctx, VarCtxKey, make(map[string]interface{}))
+	ctx = context.WithValue(ctx, OriginalURLCtxKey, cloneURL(r.URL))
 	r = r.WithContext(ctx)
 
 	// once the pointer to the request won't change
@@ -228,6 +230,18 @@ type HTTPErrorConfig struct {
 	Routes RouteList `json:"routes,omitempty"`
 }
 
+// cloneURL makes a copy of r.URL and returns a
+// new value that doesn't reference the original.
+func cloneURL(u *url.URL) url.URL {
+	urlCopy := *u
+	if u.User != nil {
+		userInfo := new(url.Userinfo)
+		*userInfo = *u.User
+		urlCopy.User = userInfo
+	}
+	return urlCopy
+}
+
 // Context keys for HTTP request context values.
 const (
 	// For referencing the server instance
@@ -235,4 +249,7 @@ const (
 
 	// For the request's variable table
 	VarCtxKey caddy.CtxKey = "vars"
+
+	// For the unmodified URL that originally came in with a request
+	OriginalURLCtxKey caddy.CtxKey = "original_url"
 )
