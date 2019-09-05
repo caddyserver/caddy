@@ -183,11 +183,11 @@ func (app *App) Start() error {
 					}
 					ln = tls.NewListener(ln, tlsCfg)
 
-					////////////////////////////////////////////
-					// TODO: Finish proper HTTP/3 support
+					/////////
+					// TODO: HTTP/3 support is experimental for now
 					h3ln, err := caddy.ListenPacket("udp", addr)
 					if err != nil {
-						return fmt.Errorf("making UDP listener: %v", err)
+						return fmt.Errorf("getting HTTP/3 UDP listener: %v", err)
 					}
 					h3srv := &http3.Server{
 						Server: &http.Server{
@@ -196,12 +196,10 @@ func (app *App) Start() error {
 							TLSConfig: tlsCfg,
 						},
 					}
-					log.Printf("[DEBUG] Started HTTP/3 listener on %s", addr) // TODO: remove
 					go h3srv.Serve(h3ln)
 					app.h3servers = append(app.h3servers, h3srv)
 					app.h3listeners = append(app.h3listeners, h3ln)
-					////////////////////////////////////////////
-
+					/////////
 				}
 
 				go s.Serve(ln)
@@ -227,14 +225,22 @@ func (app *App) Stop() error {
 			return err
 		}
 	}
-	for _, s := range app.h3servers {
-		// TODO: CloseGracefully, once implemented upstream
-		// (see https://github.com/lucas-clemente/quic-go/issues/2103)
-		err := s.Close()
-		if err != nil {
-			return err
-		}
-	}
+	// TODO: Closing the http3.Server is the right thing to do,
+	// however, doing so sometimes causes connections from clients
+	// to fail after config reloads due to a bug that is yet
+	// unsolved: https://github.com/caddyserver/caddy/pull/2727
+	// for _, s := range app.h3servers {
+	// 	// TODO: CloseGracefully, once implemented upstream
+	// 	// (see https://github.com/lucas-clemente/quic-go/issues/2103)
+	// 	err := s.Close()
+	// 	if err != nil {
+	// 		return err
+	// 	}
+	// }
+	// as of September 2019, closing the http3.Server
+	// instances doesn't close their underlying listeners
+	// so we have todo that ourselves
+	// (see https://github.com/lucas-clemente/quic-go/issues/2103)
 	for _, pc := range app.h3listeners {
 		err := pc.Close()
 		if err != nil {

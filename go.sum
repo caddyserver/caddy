@@ -50,10 +50,6 @@ github.com/kr/pretty v0.1.0/go.mod h1:dAy3ld7l9f0ibDNOQOHHMYYIIbhfbHSm3C4ZsoJORN
 github.com/kr/pty v1.1.1/go.mod h1:pFQYn66WHrOpPYNljwOMqo10TkYh1fy3cYio2l3bCsQ=
 github.com/kr/text v0.1.0 h1:45sCR5RtlFHMR4UwH9sdQ5TC8v0qDQCHnXt+kaKSTVE=
 github.com/kr/text v0.1.0/go.mod h1:4Jbv+DJW3UT/LiOwJeYQe1efqtUx/iVham/4vfdArNI=
-github.com/lucas-clemente/quic-go v0.7.1-0.20190824082337-328dd2c8485f h1:JXEyNQ/UCFAVebhmNtYGTReszHxeFNlIUrsCZl9iMCY=
-github.com/lucas-clemente/quic-go v0.7.1-0.20190824082337-328dd2c8485f/go.mod h1:UXJJPE4RfFef/xPO5wQm0tITK8gNfqwTxjbE7s3Vb8s=
-github.com/lucas-clemente/quic-go v0.7.1-0.20190831105919-bcac55557407 h1:gsFX/kjlPWJoyC+HwWNtxlPCsAH6sFrwAldEWGktnLQ=
-github.com/lucas-clemente/quic-go v0.7.1-0.20190831105919-bcac55557407/go.mod h1:UXJJPE4RfFef/xPO5wQm0tITK8gNfqwTxjbE7s3Vb8s=
 github.com/marten-seemann/qpack v0.1.0 h1:/0M7lkda/6mus9B8u34Asqm8ZhHAAt9Ho0vniNuVSVg=
 github.com/marten-seemann/qpack v0.1.0/go.mod h1:LFt1NU/Ptjip0C2CPkhimBz5CGE3WGDAUWqna+CNTrI=
 github.com/marten-seemann/qtls v0.3.2 h1:O7awy4bHEzSX/K3h+fZig3/Vo03s/RxlxgsAk9sYamI=
