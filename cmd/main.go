@@ -114,10 +114,17 @@ func loadConfig(configFile, adapterName string) ([]byte, error) {
 		cfgAdapter = caddyconfig.GetAdapter("caddyfile")
 		if cfgAdapter != nil {
 			config, err = ioutil.ReadFile("Caddyfile")
-			if err != nil && !os.IsNotExist(err) {
+			if os.IsNotExist(err) {
+				// okay, no default Caddyfile; pretend like this never happened
+				cfgAdapter = nil
+				err = nil
+			} else if err != nil {
+				// default Caddyfile exists, but error reading it
 				return nil, fmt.Errorf("reading default Caddyfile: %v", err)
+			} else {
+				// success reading default Caddyfile
+				configFile = "Caddyfile"
 			}
-			configFile = "Caddyfile"
 		}
 	}
 
