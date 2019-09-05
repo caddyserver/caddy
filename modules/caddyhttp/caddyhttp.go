@@ -108,7 +108,7 @@ func (app *App) Validate() error {
 	lnAddrs := make(map[string]string)
 	for srvName, srv := range app.Servers {
 		for _, addr := range srv.Listen {
-			netw, expanded, err := caddy.ParseListenAddr(addr)
+			netw, expanded, err := caddy.ParseNetworkAddress(addr)
 			if err != nil {
 				return fmt.Errorf("invalid listener address '%s': %v", addr, err)
 			}
@@ -149,7 +149,7 @@ func (app *App) Start() error {
 		}
 
 		for _, lnAddr := range srv.Listen {
-			network, addrs, err := caddy.ParseListenAddr(lnAddr)
+			network, addrs, err := caddy.ParseNetworkAddress(lnAddr)
 			if err != nil {
 				return fmt.Errorf("%s: parsing listen address '%s': %v", srvName, lnAddr, err)
 			}
@@ -309,7 +309,7 @@ func (app *App) automaticHTTPS() error {
 
 			// create HTTP->HTTPS redirects
 			for _, addr := range srv.Listen {
-				netw, host, port, err := caddy.SplitListenAddr(addr)
+				netw, host, port, err := caddy.SplitNetworkAddress(addr)
 				if err != nil {
 					return fmt.Errorf("%s: invalid listener address: %v", srvName, addr)
 				}
@@ -318,7 +318,7 @@ func (app *App) automaticHTTPS() error {
 				if httpPort == 0 {
 					httpPort = DefaultHTTPPort
 				}
-				httpRedirLnAddr := caddy.JoinListenAddr(netw, host, strconv.Itoa(httpPort))
+				httpRedirLnAddr := caddy.JoinNetworkAddress(netw, host, strconv.Itoa(httpPort))
 				lnAddrMap[httpRedirLnAddr] = struct{}{}
 
 				if parts := strings.SplitN(port, "-", 2); len(parts) == 2 {
@@ -361,7 +361,7 @@ func (app *App) automaticHTTPS() error {
 		var lnAddrs []string
 	mapLoop:
 		for addr := range lnAddrMap {
-			netw, addrs, err := caddy.ParseListenAddr(addr)
+			netw, addrs, err := caddy.ParseNetworkAddress(addr)
 			if err != nil {
 				continue
 			}
@@ -386,7 +386,7 @@ func (app *App) automaticHTTPS() error {
 func (app *App) listenerTaken(network, address string) bool {
 	for _, srv := range app.Servers {
 		for _, addr := range srv.Listen {
-			netw, addrs, err := caddy.ParseListenAddr(addr)
+			netw, addrs, err := caddy.ParseNetworkAddress(addr)
 			if err != nil || netw != network {
 				continue
 			}

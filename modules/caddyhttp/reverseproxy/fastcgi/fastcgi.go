@@ -25,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
 
 	"github.com/caddyserver/caddy/v2"
@@ -34,6 +35,7 @@ func init() {
 	caddy.RegisterModule(Transport{})
 }
 
+// Transport facilitates FastCGI communication.
 type Transport struct {
 	//////////////////////////////
 	// TODO: taken from v1 Handler type
@@ -57,32 +59,32 @@ type Transport struct {
 
 	// Use this directory as the fastcgi root directory. Defaults to the root
 	// directory of the parent virtual host.
-	Root string
+	Root string `json:"root,omitempty"`
 
 	// The path in the URL will be split into two, with the first piece ending
 	// with the value of SplitPath. The first piece will be assumed as the
 	// actual resource (CGI script) name, and the second piece will be set to
 	// PATH_INFO for the CGI script to use.
-	SplitPath string
+	SplitPath string `json:"split_path,omitempty"`
 
 	// If the URL ends with '/' (which indicates a directory), these index
 	// files will be tried instead.
-	IndexFiles []string
+	// IndexFiles []string
 
 	// Environment Variables
-	EnvVars [][2]string
+	EnvVars [][2]string `json:"env,omitempty"`
 
 	// Ignored paths
-	IgnoredSubPaths []string
+	// IgnoredSubPaths []string
 
 	// The duration used to set a deadline when connecting to an upstream.
-	DialTimeout time.Duration
+	DialTimeout caddy.Duration `json:"dial_timeout,omitempty"`
 
 	// The duration used to set a deadline when reading from the FastCGI server.
-	ReadTimeout time.Duration
+	ReadTimeout caddy.Duration `json:"read_timeout,omitempty"`
 
 	// The duration used to set a deadline when sending to the FastCGI server.
-	WriteTimeout time.Duration
+	WriteTimeout caddy.Duration `json:"write_timeout,omitempty"`
 }
 
 // CaddyModule returns the Caddy module information.
@@ -93,102 +95,62 @@ func (Transport) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
+// RoundTrip implements http.RoundTripper.
 func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
-	// Create environment for CGI script
 	env, err := t.buildEnv(r)
 	if err != nil {
 		return nil, fmt.Errorf("building environment: %v", err)
 	}
 
-	// TODO:
-	// Connect to FastCGI gateway
-	// address, err := f.Address()
-	// if err != nil {
-	// 	return http.StatusBadGateway, err
-	// }
-	// network, address := parseAddress(address)
-	network, address := "tcp", r.URL.Host // TODO:
-
+	// TODO: doesn't dialer have a Timeout field?
 	ctx := context.Background()
 	if t.DialTimeout > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, t.DialTimeout)
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(t.DialTimeout))
 		defer cancel()
+	}
+
+	// extract dial information from request (this
+	// should embedded by the reverse proxy)
+	network, address := "tcp", r.URL.Host
+	if dialInfoVal := ctx.Value(reverseproxy.DialInfoCtxKey); dialInfoVal != nil {
+		dialInfo := dialInfoVal.(reverseproxy.DialInfo)
+		network = dialInfo.Network
+		address = dialInfo.Address
 	}
 
 	fcgiBackend, err := DialContext(ctx, network, address)
 	if err != nil {
 		return nil, fmt.Errorf("dialing backend: %v", err)
 	}
-	// fcgiBackend is closed when response body is closed (see clientCloser)
+	// fcgiBackend gets closed when response body is closed (see clientCloser)
 
 	// read/write timeouts
-	if err := fcgiBackend.SetReadTimeout(t.ReadTimeout); err != nil {
+	if err := fcgiBackend.SetReadTimeout(time.Duration(t.ReadTimeout)); err != nil {
 		return nil, fmt.Errorf("setting read timeout: %v", err)
 	}
-	if err := fcgiBackend.SetWriteTimeout(t.WriteTimeout); err != nil {
+	if err := fcgiBackend.SetWriteTimeout(time.Duration(t.WriteTimeout)); err != nil {
 		return nil, fmt.Errorf("setting write timeout: %v", err)
 	}
 
-	var resp *http.Response
-
-	var contentLength int64
-	// if ContentLength is already set
-	if r.ContentLength > 0 {
-		contentLength = r.ContentLength
-	} else {
+	contentLength := r.ContentLength
+	if contentLength == 0 {
 		contentLength, _ = strconv.ParseInt(r.Header.Get("Content-Length"), 10, 64)
 	}
+
+	var resp *http.Response
 	switch r.Method {
-	case "HEAD":
+	case http.MethodHead:
 		resp, err = fcgiBackend.Head(env)
-	case "GET":
+	case http.MethodGet:
 		resp, err = fcgiBackend.Get(env, r.Body, contentLength)
-	case "OPTIONS":
+	case http.MethodOptions:
 		resp, err = fcgiBackend.Options(env)
 	default:
 		resp, err = fcgiBackend.Post(env, r.Method, r.Header.Get("Content-Type"), r.Body, contentLength)
 	}
 
-	// TODO:
 	return resp, err
-
-	// Stuff brought over from v1 that might not be necessary here:
-
-	// if resp != nil && resp.Body != nil {
-	// 	defer resp.Body.Close()
-	// }
-
-	// if err != nil {
-	// 	if err, ok := err.(net.Error); ok && err.Timeout() {
-	// 		return http.StatusGatewayTimeout, err
-	// 	} else if err != io.EOF {
-	// 		return http.StatusBadGateway, err
-	// 	}
-	// }
-
-	// // Write response header
-	// writeHeader(w, resp)
-
-	// // Write the response body
-	// _, err = io.Copy(w, resp.Body)
-	// if err != nil {
-	// 	return http.StatusBadGateway, err
-	// }
-
-	// // Log any stderr output from upstream
-	// if fcgiBackend.stderr.Len() != 0 {
-	// 	// Remove trailing newline, error logger already does this.
-	// 	err = LogError(strings.TrimSuffix(fcgiBackend.stderr.String(), "\n"))
-	// }
-
-	// // Normally we would return the status code if it is an error status (>= 400),
-	// // however, upstream FastCGI apps don't know about our contract and have
-	// // probably already written an error page. So we just return 0, indicating
-	// // that the response body is already written. However, we do return any
-	// // error value so it can be logged.
-	// // Note that the proxy middleware works the same way, returning status=0.
-	// return 0, err
 }
 
 // buildEnv returns a set of CGI environment variables for the request.

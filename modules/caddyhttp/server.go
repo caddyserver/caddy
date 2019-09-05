@@ -168,7 +168,7 @@ func (s *Server) enforcementHandler(w http.ResponseWriter, r *http.Request, next
 // listeners in s that use a port which is not otherPort.
 func (s *Server) listenersUseAnyPortOtherThan(otherPort int) bool {
 	for _, lnAddr := range s.Listen {
-		_, addrs, err := caddy.ParseListenAddr(lnAddr)
+		_, addrs, err := caddy.ParseNetworkAddress(lnAddr)
 		if err == nil {
 			for _, a := range addrs {
 				_, port, err := net.SplitHostPort(a)

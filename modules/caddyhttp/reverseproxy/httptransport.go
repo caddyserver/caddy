@@ -15,6 +15,7 @@
 package reverseproxy
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
@@ -63,14 +64,23 @@ func (HTTPTransport) CaddyModule() caddy.ModuleInfo {
 
 // Provision sets up h.RoundTripper with a http.Transport
 // that is ready to use.
-func (h *HTTPTransport) Provision(ctx caddy.Context) error {
+func (h *HTTPTransport) Provision(_ caddy.Context) error {
 	dialer := &net.Dialer{
 		Timeout:       time.Duration(h.DialTimeout),
 		FallbackDelay: time.Duration(h.FallbackDelay),
 		// TODO: Resolver
 	}
+
 	rt := &http.Transport{
-		DialContext:            dialer.DialContext,
+		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+			// the proper dialing information should be embedded into the request's context
+			if dialInfoVal := ctx.Value(DialInfoCtxKey); dialInfoVal != nil {
+				dialInfo := dialInfoVal.(DialInfo)
+				network = dialInfo.Network
+				address = dialInfo.Address
+			}
+			return dialer.DialContext(ctx, network, address)
+		},
 		MaxConnsPerHost:        h.MaxConnsPerHost,
 		ResponseHeaderTimeout:  time.Duration(h.ResponseHeaderTimeout),
 		ExpectContinueTimeout:  time.Duration(h.ExpectContinueTimeout),
@@ -91,7 +101,6 @@ func (h *HTTPTransport) Provision(ctx caddy.Context) error {
 
 	if h.KeepAlive != nil {
 		dialer.KeepAlive = time.Duration(h.KeepAlive.ProbeInterval)
-
 		if enabled := h.KeepAlive.Enabled; enabled != nil {
 			rt.DisableKeepAlives = !*enabled
 		}
@@ -191,16 +200,3 @@ type KeepAlive struct {
 	MaxIdleConnsPerHost int            `json:"max_idle_conns_per_host,omitempty"`
 	IdleConnTimeout     caddy.Duration `json:"idle_timeout,omitempty"` // how long should connections be kept alive when idle
 }
-
-var (
-	defaultDialer = net.Dialer{
-		Timeout:   10 * time.Second,
-		KeepAlive: 30 * time.Second,
-	}
-
-	defaultTransport = &http.Transport{
-		DialContext:         defaultDialer.DialContext,
-		TLSHandshakeTimeout: 5 * time.Second,
-		IdleConnTimeout:     2 * time.Minute,
-	}
-)

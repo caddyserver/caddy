@@ -16,7 +16,6 @@ package reverseproxy
 
 import (
 	"fmt"
-	"net/url"
 	"sync/atomic"
 
 	"github.com/caddyserver/caddy/v2"
@@ -59,7 +58,7 @@ type UpstreamPool []*Upstream
 type Upstream struct {
 	Host `json:"-"`
 
-	Address     string `json:"address,omitempty"`
+	Dial        string `json:"dial,omitempty"`
 	MaxRequests int    `json:"max_requests,omitempty"`
 
 	// TODO: This could be really useful, to bind requests
@@ -68,8 +67,8 @@ type Upstream struct {
 	// IPAffinity     string
 
 	healthCheckPolicy *PassiveHealthChecks
-	hostURL           *url.URL
 	cb                CircuitBreaker
+	dialInfo          DialInfo
 }
 
 // Available returns true if the remote host
@@ -99,11 +98,6 @@ func (u *Upstream) Healthy() bool {
 // cannot receive more requests at this time.
 func (u *Upstream) Full() bool {
 	return u.MaxRequests > 0 && u.Host.NumRequests() >= u.MaxRequests
-}
-
-// URL returns the upstream host's endpoint URL.
-func (u *Upstream) URL() *url.URL {
-	return u.hostURL
 }
 
 // upstreamHost is the basic, in-memory representation
@@ -161,6 +155,34 @@ func (uh *upstreamHost) SetHealthy(healthy bool) (bool, error) {
 	swapped := atomic.CompareAndSwapInt32(&uh.unhealthy, compare, unhealthy)
 	return swapped, nil
 }
+
+// DialInfo contains information needed to dial a
+// connection to an upstream host. This information
+// may be different than that which is represented
+// in a URL (for example, unix sockets don't have
+// a host that can be represented in a URL, but
+// they certainly have a network name and address).
+type DialInfo struct {
+	// The network to use. This should be one of the
+	// values that is accepted by net.Dial:
+	// https://golang.org/pkg/net/#Dial
+	Network string
+
+	// The address to dial. Follows the same
+	// semantics and rules as net.Dial.
+	Address string
+}
+
+// String returns the Caddy network address form
+// by joining the network and address with a
+// forward slash.
+func (di DialInfo) String() string {
+	return di.Network + "/" + di.Address
+}
+
+// DialInfoCtxKey is used to store a DialInfo
+// in a context.Context.
+const DialInfoCtxKey = caddy.CtxKey("dial_info")
 
 // hosts is the global repository for hosts that are
 // currently in use by active configuration(s). This
