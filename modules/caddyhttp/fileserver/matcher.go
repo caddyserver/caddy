@@ -207,10 +207,22 @@ func (m MatchFile) selectFile(r *http.Request) (rel, abs string, matched bool) {
 	return
 }
 
-// fileExists returns true if file exists.
+// fileExists returns true if file exists,
+// false if it doesn't, or false if there
+// was any other error.
 func fileExists(file string) bool {
 	_, err := os.Stat(file)
-	return !os.IsNotExist(err)
+	if err == nil {
+		return true
+	} else if os.IsNotExist(err) {
+		return false
+	} else {
+		// we don't know if it exists,
+		// so assume it doesn't, since
+		// there must have been some
+		// other error anyway
+		return false
+	}
 }
 
 const (
