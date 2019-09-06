@@ -183,7 +183,7 @@ func (s *Server) listenersUseAnyPortOtherThan(otherPort int) bool {
 
 func (s *Server) hasTLSClientAuth() bool {
 	for _, cp := range s.TLSConnPolicies {
-		if cp.Active() {
+		if cp.ClientAuthentication != nil && cp.ClientAuthentication.Active() {
 			return true
 		}
 	}
