@@ -271,8 +271,13 @@ func (m *MatchHeader) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // Match returns true if r matches m.
 func (m MatchHeader) Match(r *http.Request) bool {
 	for field, allowedFieldVals := range m {
+		actualFieldVals, fieldExists := r.Header[textproto.CanonicalMIMEHeaderKey(field)]
+		if allowedFieldVals != nil && len(allowedFieldVals) == 0 && fieldExists {
+			// a non-nil but empty list of allowed values means
+			// match if the header field exists at all
+			continue
+		}
 		var match bool
-		actualFieldVals := r.Header[textproto.CanonicalMIMEHeaderKey(field)]
 	fieldVals:
 		for _, actualFieldVal := range actualFieldVals {
 			for _, allowedFieldVal := range allowedFieldVals {
@@ -625,8 +630,13 @@ func (rm ResponseMatcher) matchStatusCode(statusCode int) bool {
 
 func (rm ResponseMatcher) matchHeaders(hdr http.Header) bool {
 	for field, allowedFieldVals := range rm.Headers {
+		actualFieldVals, fieldExists := hdr[textproto.CanonicalMIMEHeaderKey(field)]
+		if allowedFieldVals != nil && len(allowedFieldVals) == 0 && fieldExists {
+			// a non-nil but empty list of allowed values means
+			// match if the header field exists at all
+			continue
+		}
 		var match bool
-		actualFieldVals := hdr[textproto.CanonicalMIMEHeaderKey(field)]
 	fieldVals:
 		for _, actualFieldVal := range actualFieldVals {
 			for _, allowedFieldVal := range allowedFieldVals {
