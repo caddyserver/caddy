@@ -57,6 +57,10 @@ func (FileServer) CaddyModule() caddy.ModuleInfo {
 
 // Provision sets up the static files responder.
 func (fsrv *FileServer) Provision(ctx caddy.Context) error {
+	if fsrv.Root == "" {
+		fsrv.Root = "{http.vars.root}"
+	}
+
 	if fsrv.IndexNames == nil {
 		fsrv.IndexNames = defaultIndexNames
 	}

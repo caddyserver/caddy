@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
@@ -87,8 +88,13 @@ func (m *MatchFile) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			}
 		}
 	}
+	return nil
+}
+
+// Provision sets up m's defaults.
+func (m *MatchFile) Provision(_ caddy.Context) error {
 	if m.Root == "" {
-		m.Root = "{http.var.root}"
+		m.Root = "{http.vars.root}"
 	}
 	return nil
 }
@@ -141,7 +147,7 @@ func (m MatchFile) selectFile(r *http.Request) (rel, abs string, matched bool) {
 	switch m.TryPolicy {
 	case "", tryPolicyFirstExist:
 		for _, f := range m.TryFiles {
-			suffix := repl.ReplaceAll(f, "")
+			suffix := path.Clean(repl.ReplaceAll(f, ""))
 			fullpath := sanitizedPathJoin(root, suffix)
 			if fileExists(fullpath) {
 				return suffix, fullpath, true
@@ -153,7 +159,7 @@ func (m MatchFile) selectFile(r *http.Request) (rel, abs string, matched bool) {
 		var largestFilename string
 		var largestSuffix string
 		for _, f := range m.TryFiles {
-			suffix := repl.ReplaceAll(f, "")
+			suffix := path.Clean(repl.ReplaceAll(f, ""))
 			fullpath := sanitizedPathJoin(root, suffix)
 			info, err := os.Stat(fullpath)
 			if err == nil && info.Size() > largestSize {
@@ -169,7 +175,7 @@ func (m MatchFile) selectFile(r *http.Request) (rel, abs string, matched bool) {
 		var smallestFilename string
 		var smallestSuffix string
 		for _, f := range m.TryFiles {
-			suffix := repl.ReplaceAll(f, "")
+			suffix := path.Clean(repl.ReplaceAll(f, ""))
 			fullpath := sanitizedPathJoin(root, suffix)
 			info, err := os.Stat(fullpath)
 			if err == nil && (smallestSize == 0 || info.Size() < smallestSize) {
@@ -185,7 +191,7 @@ func (m MatchFile) selectFile(r *http.Request) (rel, abs string, matched bool) {
 		var recentFilename string
 		var recentSuffix string
 		for _, f := range m.TryFiles {
-			suffix := repl.ReplaceAll(f, "")
+			suffix := path.Clean(repl.ReplaceAll(f, ""))
 			fullpath := sanitizedPathJoin(root, suffix)
 			info, err := os.Stat(fullpath)
 			if err == nil &&

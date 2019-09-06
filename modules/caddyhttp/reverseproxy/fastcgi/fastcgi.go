@@ -79,7 +79,7 @@ func (Transport) CaddyModule() caddy.ModuleInfo {
 // Provision sets up t.
 func (t *Transport) Provision(_ caddy.Context) error {
 	if t.Root == "" {
-		t.Root = "{http.var.root}"
+		t.Root = "{http.vars.root}"
 	}
 	return nil
 }

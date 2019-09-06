@@ -22,7 +22,6 @@ import (
 	"net/http"
 	"net/textproto"
 	"net/url"
-	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -151,12 +150,13 @@ func (MatchPath) CaddyModule() caddy.ModuleInfo {
 // Match returns true if r matches m.
 func (m MatchPath) Match(r *http.Request) bool {
 	for _, matchPath := range m {
-		compare := r.URL.Path
+		// as a special case, if the first character is a
+		// wildcard, treat it as a quick suffix match
 		if strings.HasPrefix(matchPath, "*") {
-			compare = path.Base(compare)
+			return strings.HasSuffix(r.URL.Path, matchPath[1:])
 		}
 		// can ignore error here because we can't handle it anyway
-		matches, _ := filepath.Match(matchPath, compare)
+		matches, _ := filepath.Match(matchPath, r.URL.Path)
 		if matches {
 			return true
 		}
