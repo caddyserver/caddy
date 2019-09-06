@@ -92,7 +92,7 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 	}
 
 	// TODO: doesn't dialer have a Timeout field?
-	ctx := context.Background()
+	ctx := r.Context()
 	if t.DialTimeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(t.DialTimeout))
