@@ -234,6 +234,8 @@ func (app *App) automaticHTTPS() error {
 
 		// skip if all listeners use the HTTP port
 		if !srv.listenersUseAnyPortOtherThan(app.HTTPPort) {
+			log.Printf("[INFO] Server %v is only listening on the HTTP port %d, so no automatic HTTPS will be applied to this server",
+				srv.Listen, app.HTTPPort)
 			continue
 		}
 
@@ -314,6 +316,12 @@ func (app *App) automaticHTTPS() error {
 			}
 
 			log.Printf("[INFO] Enabling automatic HTTP->HTTPS redirects for %v", domains)
+
+			// notify user if their config might override the HTTP->HTTPS redirects
+			if srv.listenersIncludePort(app.HTTPPort) {
+				log.Printf("[WARNING] Server %v is listening on HTTP port %d, so automatic HTTP->HTTPS redirects may be overridden by your own configuration",
+					srv.Listen, app.HTTPPort)
+			}
 
 			// create HTTP->HTTPS redirects
 			for _, addr := range srv.Listen {

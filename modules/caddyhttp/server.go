@@ -181,6 +181,23 @@ func (s *Server) listenersUseAnyPortOtherThan(otherPort int) bool {
 	return false
 }
 
+// listenersIncludePort returns true if there are any
+// listeners in s that use otherPort.
+func (s *Server) listenersIncludePort(otherPort int) bool {
+	for _, lnAddr := range s.Listen {
+		_, addrs, err := caddy.ParseListenAddr(lnAddr)
+		if err == nil {
+			for _, a := range addrs {
+				_, port, err := net.SplitHostPort(a)
+				if err == nil && port == strconv.Itoa(otherPort) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 func (s *Server) hasTLSClientAuth() bool {
 	for _, cp := range s.TLSConnPolicies {
 		if cp.ClientAuthentication != nil && cp.ClientAuthentication.Active() {
