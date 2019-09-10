@@ -44,7 +44,10 @@ func (t *Transport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if len(args) != 2 {
 				return d.ArgErr()
 			}
-			t.EnvVars = append(t.EnvVars, [2]string{args[0], args[1]})
+			if t.EnvVars == nil {
+				t.EnvVars = make(map[string]string)
+			}
+			t.EnvVars[args[0]] = args[1]
 
 		default:
 			return d.Errf("unrecognized subdirective %s", d.Val())
