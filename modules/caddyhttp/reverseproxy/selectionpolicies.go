@@ -82,7 +82,7 @@ type RandomChoiceSelection struct {
 // CaddyModule returns the Caddy module information.
 func (RandomChoiceSelection) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "http.handlers.reverse_proxy.selection_policies.random_choice",
+		Name: "http.handlers.reverse_proxy.selection_policies.random_choose",
 		New:  func() caddy.Module { return new(RandomChoiceSelection) },
 	}
 }
@@ -147,14 +147,14 @@ func (LeastConnSelection) CaddyModule() caddy.ModuleInfo {
 func (LeastConnSelection) Select(pool UpstreamPool, _ *http.Request) *Upstream {
 	var bestHost *Upstream
 	var count int
-	var leastReqs int
+	leastReqs := -1
 
 	for _, host := range pool {
 		if !host.Available() {
 			continue
 		}
 		numReqs := host.NumRequests()
-		if numReqs < leastReqs {
+		if leastReqs == -1 || numReqs < leastReqs {
 			leastReqs = numReqs
 			count = 0
 		}

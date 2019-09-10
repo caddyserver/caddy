@@ -55,7 +55,7 @@ type Transport struct {
 	// PATH_INFO for the CGI script to use.
 	SplitPath string `json:"split_path,omitempty"`
 
-	// Environment Variables
+	// Environment variables (TODO: make a map of string to value...?)
 	EnvVars [][2]string `json:"env,omitempty"`
 
 	// The duration used to set a deadline when connecting to an upstream.
