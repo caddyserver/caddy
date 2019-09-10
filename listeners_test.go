@@ -19,7 +19,7 @@ import (
 	"testing"
 )
 
-func TestSplitListenerAddr(t *testing.T) {
+func TestSplitNetworkAddress(t *testing.T) {
 	for i, tc := range []struct {
 		input         string
 		expectNetwork string
@@ -67,8 +67,18 @@ func TestSplitListenerAddr(t *testing.T) {
 			expectNetwork: "unix",
 			expectHost:    "/foo/bar",
 		},
+		{
+			input:         "unixgram//foo/bar",
+			expectNetwork: "unixgram",
+			expectHost:    "/foo/bar",
+		},
+		{
+			input:         "unixpacket//foo/bar",
+			expectNetwork: "unixpacket",
+			expectHost:    "/foo/bar",
+		},
 	} {
-		actualNetwork, actualHost, actualPort, err := SplitListenAddr(tc.input)
+		actualNetwork, actualHost, actualPort, err := SplitNetworkAddress(tc.input)
 		if tc.expectErr && err == nil {
 			t.Errorf("Test %d: Expected error but got: %v", i, err)
 		}
@@ -87,7 +97,7 @@ func TestSplitListenerAddr(t *testing.T) {
 	}
 }
 
-func TestJoinListenerAddr(t *testing.T) {
+func TestJoinNetworkAddress(t *testing.T) {
 	for i, tc := range []struct {
 		network, host, port string
 		expect              string
@@ -129,14 +139,14 @@ func TestJoinListenerAddr(t *testing.T) {
 			expect: "unix//foo/bar",
 		},
 	} {
-		actual := JoinListenAddr(tc.network, tc.host, tc.port)
+		actual := JoinNetworkAddress(tc.network, tc.host, tc.port)
 		if actual != tc.expect {
 			t.Errorf("Test %d: Expected '%s' but got '%s'", i, tc.expect, actual)
 		}
 	}
 }
 
-func TestParseListenerAddr(t *testing.T) {
+func TestParseNetworkAddress(t *testing.T) {
 	for i, tc := range []struct {
 		input         string
 		expectNetwork string
@@ -194,7 +204,7 @@ func TestParseListenerAddr(t *testing.T) {
 			expectAddrs:   []string{"localhost:0"},
 		},
 	} {
-		actualNetwork, actualAddrs, err := ParseListenAddr(tc.input)
+		actualNetwork, actualAddrs, err := ParseNetworkAddress(tc.input)
 		if tc.expectErr && err == nil {
 			t.Errorf("Test %d: Expected error but got: %v", i, err)
 		}

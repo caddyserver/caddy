@@ -53,10 +53,5 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 			}
 		}
 	}
-
-	if t.IncludeRoot == "" {
-		t.IncludeRoot = "{http.var.root}"
-	}
-
 	return t, nil
 }

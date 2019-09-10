@@ -50,6 +50,9 @@ func (t *Templates) Provision(ctx caddy.Context) error {
 	if t.MIMETypes == nil {
 		t.MIMETypes = defaultMIMETypes
 	}
+	if t.IncludeRoot == "" {
+		t.IncludeRoot = "{http.vars.root}"
+	}
 	return nil
 }
 

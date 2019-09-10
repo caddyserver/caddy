@@ -71,11 +71,6 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 		}
 	}
 
-	// if no root was configured explicitly, use site root
-	if fsrv.Root == "" {
-		fsrv.Root = "{http.var.root}"
-	}
-
 	// hide the Caddyfile (and any imported Caddyfiles)
 	if configFiles := h.Caddyfiles(); len(configFiles) > 0 {
 		for _, file := range configFiles {
@@ -104,7 +99,6 @@ func parseTryFiles(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) 
 
 	matcherSet := map[string]json.RawMessage{
 		"file": h.JSON(MatchFile{
-			Root:     "{http.var.root}",
 			TryFiles: try,
 		}, nil),
 	}

@@ -179,6 +179,6 @@ const (
 	cookieReplPrefix     = "http.request.cookie."
 	hostLabelReplPrefix  = "http.request.host.labels."
 	pathPartsReplPrefix  = "http.request.uri.path."
-	varsReplPrefix       = "http.var."
+	varsReplPrefix       = "http.vars."
 	respHeaderReplPrefix = "http.response.header."
 )
