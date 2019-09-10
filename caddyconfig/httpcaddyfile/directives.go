@@ -34,6 +34,7 @@ var defaultDirectiveOrder = []string{
 	"templates",
 	"redir",
 	"static_response", // TODO: "reply" or "respond"?
+	"php_fastcgi",
 	"reverse_proxy",
 	"file_server",
 }
