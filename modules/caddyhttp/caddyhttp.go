@@ -193,20 +193,23 @@ func (app *App) Start() error {
 
 					/////////
 					// TODO: HTTP/3 support is experimental for now
-					h3ln, err := caddy.ListenPacket("udp", addr)
-					if err != nil {
-						return fmt.Errorf("getting HTTP/3 UDP listener: %v", err)
+					if srv.ExperimentalHTTP3 {
+						log.Printf("[INFO] Enabling experimental HTTP/3 listener on %s", addr)
+						h3ln, err := caddy.ListenPacket("udp", addr)
+						if err != nil {
+							return fmt.Errorf("getting HTTP/3 UDP listener: %v", err)
+						}
+						h3srv := &http3.Server{
+							Server: &http.Server{
+								Addr:      addr,
+								Handler:   srv,
+								TLSConfig: tlsCfg,
+							},
+						}
+						go h3srv.Serve(h3ln)
+						app.h3servers = append(app.h3servers, h3srv)
+						app.h3listeners = append(app.h3listeners, h3ln)
 					}
-					h3srv := &http3.Server{
-						Server: &http.Server{
-							Addr:      addr,
-							Handler:   srv,
-							TLSConfig: tlsCfg,
-						},
-					}
-					go h3srv.Serve(h3ln)
-					app.h3servers = append(app.h3servers, h3srv)
-					app.h3listeners = append(app.h3listeners, h3ln)
 					/////////
 				}
 
