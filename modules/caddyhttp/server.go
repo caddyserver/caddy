@@ -43,6 +43,9 @@ type Server struct {
 	MaxRehandles      *int                        `json:"max_rehandles,omitempty"`
 	StrictSNIHost     bool                        `json:"strict_sni_host,omitempty"`
 
+	// This field is not subject to compatibility promises
+	ExperimentalHTTP3 bool `json:"experimental_http3,omitempty"`
+
 	tlsApp *caddytls.TLS
 }
 

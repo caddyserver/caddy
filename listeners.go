@@ -16,6 +16,7 @@ package caddy
 
 import (
 	"fmt"
+	"log"
 	"net"
 	"strconv"
 	"strings"
@@ -53,13 +54,41 @@ func Listen(network, addr string) (net.Listener, error) {
 	return &fakeCloseListener{usage: &lnUsage.usage, key: lnKey, Listener: ln}, nil
 }
 
+// ListenPacket returns a net.PacketConn suitable for use in a Caddy module.
+// Always be sure to close the PacketConn when you are done.
+func ListenPacket(network, addr string) (net.PacketConn, error) {
+	lnKey := network + "/" + addr
+
+	listenersMu.Lock()
+	defer listenersMu.Unlock()
+
+	// if listener already exists, increment usage counter, then return listener
+	if lnUsage, ok := listeners[lnKey]; ok {
+		atomic.AddInt32(&lnUsage.usage, 1)
+		log.Printf("[DEBUG] %s: Usage counter should not go above 2 or maybe 3, is now: %d", lnKey, atomic.LoadInt32(&lnUsage.usage)) // TODO: remove
+		return &fakeClosePacketConn{usage: &lnUsage.usage, key: lnKey, PacketConn: lnUsage.pc}, nil
+	}
+
+	// or, create new one and save it
+	pc, err := net.ListenPacket(network, addr)
+	if err != nil {
+		return nil, err
+	}
+
+	// make sure to start its usage counter at 1
+	lnUsage := &listenerUsage{usage: 1, pc: pc}
+	listeners[lnKey] = lnUsage
+
+	return &fakeClosePacketConn{usage: &lnUsage.usage, key: lnKey, PacketConn: pc}, nil
+}
+
 // fakeCloseListener's Close() method is a no-op. This allows
 // stopping servers that are using the listener without giving
 // up the socket; thus, servers become hot-swappable while the
 // listener remains running. Listeners should be re-wrapped in
 // a new fakeCloseListener each time the listener is reused.
 type fakeCloseListener struct {
-	closed int32  // accessed atomically
+	closed int32  // accessed atomically - TODO: this needs to be shared across the whole app instance, not to cross instance boundaries... hmmm... see #2658 (still relevant?)
 	usage  *int32 // accessed atomically
 	key    string
 	net.Listener
@@ -146,6 +175,34 @@ func (fcl *fakeCloseListener) fakeClosedErr() error {
 	}
 }
 
+type fakeClosePacketConn struct {
+	closed int32  // accessed atomically - TODO: this needs to be shared across the whole app instance, not to cross instance boundaries... hmmm... see #2658 (still relevant?)
+	usage  *int32 // accessed atomically
+	key    string
+	net.PacketConn
+}
+
+func (fcpc *fakeClosePacketConn) Close() error {
+	log.Println("[DEBUG] Fake-closing underlying packet conn") // TODO: remove this
+
+	if atomic.CompareAndSwapInt32(&fcpc.closed, 0, 1) {
+		// since we're no longer using this listener,
+		// decrement the usage counter and, if no one
+		// else is using it, close underlying listener
+		if atomic.AddInt32(fcpc.usage, -1) == 0 {
+			listenersMu.Lock()
+			delete(listeners, fcpc.key)
+			listenersMu.Unlock()
+			err := fcpc.PacketConn.Close()
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
 // ErrFakeClosed is the underlying error value returned by
 // fakeCloseListener.Accept() after Close() has been called,
 // indicating that it is pretending to be closed so that the
@@ -158,6 +215,7 @@ var errFakeClosed = fmt.Errorf("listener 'closed' 😉")
 type listenerUsage struct {
 	usage int32 // accessed atomically
 	ln    net.Listener
+	pc    net.PacketConn
 }
 
 var (
