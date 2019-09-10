@@ -22,8 +22,8 @@ Please file issues to propose new features and report bugs, and after the bug or
 
 Requirements:
 
-- [Go 1.12 or newer](https://golang.org/dl/)
-- [Go modules](https://github.com/golang/go/wiki/Modules) enabled: `export GO111MODULE=on`
+- [Go 1.13 or newer](https://golang.org/dl/)
+- Make sure you do not disable [Go modules](https://github.com/golang/go/wiki/Modules) (`export GO111MODULE=auto`)
 
 Download source code:
 
@@ -40,10 +40,12 @@ $ go build
 
 That will put a `caddy(.exe)` binary into the current directory. You can move it into your PATH or use `go install` to do that automatically (assuming `$GOPATH/bin` is already in your PATH). You can also use `go run main.go` for quick, temporary builds while developing.
 
-The initial build may be slow as dependencies are downloaded. Subsequent builds should be very fast. If you encounter any Go-module-related errors, try clearing your Go module cache (`$GOPATH/pkg/mod`) and read [the Go wiki page about modules for help](https://github.com/golang/go/wiki/Modules).
+The initial build may be slow as dependencies are downloaded. Subsequent builds should be very fast. If you encounter any Go-module-related errors, try clearing your Go module cache (`$GOPATH/pkg/mod`) and read [the Go wiki page about modules for help](https://github.com/golang/go/wiki/Modules). If you have issues with Go modules, please consult the Go community for help. But if there is an actual error in Caddy, please report it to us.
 
 
 ## Quick Start
+
+(Until the stable 2.0 release, there may be breaking changes in v2, please be aware!)
 
 These instructions assume an executable build of Caddy 2 is named `caddy` in the current folder. If it's in your PATH, you may omit the path to the binary (`./`).
 
@@ -119,11 +121,11 @@ example.com
 templates
 encode gzip zstd
 try_files {path}.html {path}
-proxy /api http://localhost:9005
+reverse_proxy /api localhost:9005
 file_server
 ```
 
-Instead of being its core method of configuration, an internal _config adapter_ adapts the Caddyfile to Caddy's native JSON structure. You can see it in action with the [`adapt-config` command](https://github.com/caddyserver/caddy/wiki/v2:-Documentation#adapt-config):
+Instead of being its primary mode of configuration, an internal _config adapter_ adapts the Caddyfile to Caddy's native JSON structure. You can see it in action with the [`adapt-config` command](https://github.com/caddyserver/caddy/wiki/v2:-Documentation#adapt-config):
 
 ```bash
 $ ./caddy adapt-config --input path/to/Caddyfile --adapter caddyfile --pretty
@@ -163,6 +165,8 @@ Configuration is normally given to Caddy through an API endpoint, which is likew
 Caddy 2 is very much in development, so the documentation is an ongoing WIP, but the latest will be in our wiki for now:
 
 **https://github.com/caddyserver/caddy/wiki/v2:-Documentation**
+
+Note that breaking changes are expected until the stable 2.0 release.
 
 
 ## List of Improvements
@@ -219,9 +223,8 @@ The following is a non-comprehensive list of significant improvements over Caddy
 And a few major features still being worked on:
 
 - Logging
-- More powerful, dynamic reverse proxy
 - Kubernetes ingress controller (mostly done, just polishing it -- and it's amazing)
-- Config adapters. Caddy's native JSON config structure is powerful and complex. Config adapters upsample various formats to Caddy's native config. Planned adapters include Caddyfile, NGINX config, YAML, and TOML. The community might be interested in building Traefik and Apache config adapters!
+- More config adapters. Caddy's native JSON config structure is powerful and complex. Config adapters upsample various formats to Caddy's native config. There are already adapters for Caddyfile, JSON 5, and JSON-C. Planned are NGINX config, YAML, and TOML. The community might be interested in building Traefik and Apache config adapters!
 
 
 
@@ -250,6 +253,8 @@ Caddy's default _config adapter_ is the Caddyfile adapter. This takes a Caddyfil
 The following _config adapters_ are already being built or plan to be built:
 
 - Caddyfile
+- JSON 5
+- JSON-C
 - nginx
 - YAML
 - TOML
