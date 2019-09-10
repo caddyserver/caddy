@@ -187,7 +187,7 @@ func (s *Server) listenersUseAnyPortOtherThan(otherPort int) bool {
 // listeners in s that use otherPort.
 func (s *Server) listenersIncludePort(otherPort int) bool {
 	for _, lnAddr := range s.Listen {
-		_, addrs, err := caddy.ParseListenAddr(lnAddr)
+		_, addrs, err := caddy.ParseNetworkAddress(lnAddr)
 		if err == nil {
 			for _, a := range addrs {
 				_, port, err := net.SplitHostPort(a)
