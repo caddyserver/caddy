@@ -18,6 +18,8 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path"
+	"strings"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
@@ -87,8 +89,13 @@ func (m *MatchFile) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			}
 		}
 	}
+	return nil
+}
+
+// Provision sets up m's defaults.
+func (m *MatchFile) Provision(_ caddy.Context) error {
 	if m.Root == "" {
-		m.Root = "{http.var.root}"
+		m.Root = "{http.vars.root}"
 	}
 	return nil
 }
@@ -141,9 +148,9 @@ func (m MatchFile) selectFile(r *http.Request) (rel, abs string, matched bool) {
 	switch m.TryPolicy {
 	case "", tryPolicyFirstExist:
 		for _, f := range m.TryFiles {
-			suffix := repl.ReplaceAll(f, "")
+			suffix := path.Clean(repl.ReplaceAll(f, ""))
 			fullpath := sanitizedPathJoin(root, suffix)
-			if fileExists(fullpath) {
+			if strictFileExists(fullpath) {
 				return suffix, fullpath, true
 			}
 		}
@@ -153,7 +160,7 @@ func (m MatchFile) selectFile(r *http.Request) (rel, abs string, matched bool) {
 		var largestFilename string
 		var largestSuffix string
 		for _, f := range m.TryFiles {
-			suffix := repl.ReplaceAll(f, "")
+			suffix := path.Clean(repl.ReplaceAll(f, ""))
 			fullpath := sanitizedPathJoin(root, suffix)
 			info, err := os.Stat(fullpath)
 			if err == nil && info.Size() > largestSize {
@@ -169,7 +176,7 @@ func (m MatchFile) selectFile(r *http.Request) (rel, abs string, matched bool) {
 		var smallestFilename string
 		var smallestSuffix string
 		for _, f := range m.TryFiles {
-			suffix := repl.ReplaceAll(f, "")
+			suffix := path.Clean(repl.ReplaceAll(f, ""))
 			fullpath := sanitizedPathJoin(root, suffix)
 			info, err := os.Stat(fullpath)
 			if err == nil && (smallestSize == 0 || info.Size() < smallestSize) {
@@ -185,7 +192,7 @@ func (m MatchFile) selectFile(r *http.Request) (rel, abs string, matched bool) {
 		var recentFilename string
 		var recentSuffix string
 		for _, f := range m.TryFiles {
-			suffix := repl.ReplaceAll(f, "")
+			suffix := path.Clean(repl.ReplaceAll(f, ""))
 			fullpath := sanitizedPathJoin(root, suffix)
 			info, err := os.Stat(fullpath)
 			if err == nil &&
@@ -201,10 +208,33 @@ func (m MatchFile) selectFile(r *http.Request) (rel, abs string, matched bool) {
 	return
 }
 
-// fileExists returns true if file exists.
-func fileExists(file string) bool {
-	_, err := os.Stat(file)
-	return !os.IsNotExist(err)
+// strictFileExists returns true if file exists
+// and matches the convention of the given file
+// path. If the path ends in a forward slash,
+// the file must also be a directory; if it does
+// NOT end in a forward slash, the file must NOT
+// be a directory.
+func strictFileExists(file string) bool {
+	stat, err := os.Stat(file)
+	if err != nil {
+		// in reality, this can be any error
+		// such as permission or even obscure
+		// ones like "is not a directory" (when
+		// trying to stat a file within a file);
+		// in those cases we can't be sure if
+		// the file exists, so we just treat any
+		// error as if it does not exist; see
+		// https://stackoverflow.com/a/12518877/1048862
+		return false
+	}
+	if strings.HasSuffix(file, "/") {
+		// by convention, file paths ending
+		// in a slash must be a directory
+		return stat.IsDir()
+	}
+	// by convention, file paths NOT ending
+	// in a slash must NOT be a directory
+	return !stat.IsDir()
 }
 
 const (
