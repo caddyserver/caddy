@@ -55,8 +55,8 @@ type Transport struct {
 	// PATH_INFO for the CGI script to use.
 	SplitPath string `json:"split_path,omitempty"`
 
-	// Environment variables (TODO: make a map of string to value...?)
-	EnvVars [][2]string `json:"env,omitempty"`
+	// Extra environment variables
+	EnvVars map[string]string `json:"env,omitempty"`
 
 	// The duration used to set a deadline when connecting to an upstream.
 	DialTimeout caddy.Duration `json:"dial_timeout,omitempty"`
@@ -259,8 +259,8 @@ func (t Transport) buildEnv(r *http.Request) (map[string]string, error) {
 	}
 
 	// Add env variables from config (with support for placeholders in values)
-	for _, envVar := range t.EnvVars {
-		env[envVar[0]] = repl.ReplaceAll(envVar[1], "")
+	for key, value := range t.EnvVars {
+		env[key] = repl.ReplaceAll(value, "")
 	}
 
 	// Add all HTTP headers to env variables
