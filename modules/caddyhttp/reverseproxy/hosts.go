@@ -34,19 +34,21 @@ type Host interface {
 	// Unhealthy returns true if the backend is unhealthy.
 	Unhealthy() bool
 
-	// CountRequest counts the given number of requests
-	// as currently in process with the host. The count
-	// should not go below 0.
+	// CountRequest atomically counts the given number of
+	// requests as currently in process with the host. The
+	// count should not go below 0.
 	CountRequest(int) error
 
-	// CountFail counts the given number of failures
-	// with the host. The count should not go below 0.
+	// CountFail atomically counts the given number of
+	// failures with the host. The count should not go
+	// below 0.
 	CountFail(int) error
 
-	// SetHealthy marks the host as either healthy (true)
-	// or unhealthy (false). If the given status is the
-	// same, this should be a no-op. It returns true if
-	// the given status was different, false otherwise.
+	// SetHealthy atomically marks the host as either
+	// healthy (true) or unhealthy (false). If the given
+	// status is the same, this should be a no-op and
+	// return false. It returns true if the status was
+	// changed; i.e. if it is now different from before.
 	SetHealthy(bool) (bool, error)
 }
 
