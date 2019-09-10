@@ -33,7 +33,7 @@ import (
 func Main() {
 	caddy.TrapSignals()
 
-	if len(os.Args) <= 1 {
+	if len(os.Args) < 2 {
 		fmt.Println(usageString())
 		return
 	}

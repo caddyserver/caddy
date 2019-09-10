@@ -17,6 +17,7 @@ require (
 	github.com/imdario/mergo v0.3.7 // indirect
 	github.com/klauspost/compress v1.7.1-0.20190613161414-0b31f265a57b
 	github.com/klauspost/cpuid v1.2.1
+	github.com/lucas-clemente/quic-go v0.7.1-0.20190908032346-fc962d18373a
 	github.com/mholt/certmagic v0.6.2
 	github.com/mitchellh/go-ps v0.0.0-20170309133038-4fdf99ab2936
 	github.com/muhammadmuzzammil1998/jsonc v0.0.0-20190902132743-e4903c4dea48
@@ -26,7 +27,6 @@ require (
 	github.com/starlight-go/starlight v0.0.0-20181207205707-b06f321544f3
 	go.starlark.net v0.0.0-20190604130855-6ddc71c0ba77
 	golang.org/x/net v0.0.0-20190603091049-60506f45cf65
-	golang.org/x/sys v0.0.0-20190228124157-a34e9553db1e // indirect
 	golang.org/x/time v0.0.0-20190308202827-9d24e82272b4
 	gopkg.in/yaml.v2 v2.2.2 // indirect
 )

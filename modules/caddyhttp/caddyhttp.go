@@ -31,6 +31,7 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
+	"github.com/lucas-clemente/quic-go/http3"
 	"github.com/mholt/certmagic"
 )
 
@@ -50,7 +51,9 @@ type App struct {
 	GracePeriod caddy.Duration     `json:"grace_period,omitempty"`
 	Servers     map[string]*Server `json:"servers,omitempty"`
 
-	servers []*http.Server
+	servers     []*http.Server
+	h3servers   []*http3.Server
+	h3listeners []net.PacketConn
 
 	ctx caddy.Context
 }
@@ -187,6 +190,27 @@ func (app *App) Start() error {
 						return fmt.Errorf("%s/%s: making TLS configuration: %v", network, addr, err)
 					}
 					ln = tls.NewListener(ln, tlsCfg)
+
+					/////////
+					// TODO: HTTP/3 support is experimental for now
+					if srv.ExperimentalHTTP3 {
+						log.Printf("[INFO] Enabling experimental HTTP/3 listener on %s", addr)
+						h3ln, err := caddy.ListenPacket("udp", addr)
+						if err != nil {
+							return fmt.Errorf("getting HTTP/3 UDP listener: %v", err)
+						}
+						h3srv := &http3.Server{
+							Server: &http.Server{
+								Addr:      addr,
+								Handler:   srv,
+								TLSConfig: tlsCfg,
+							},
+						}
+						go h3srv.Serve(h3ln)
+						app.h3servers = append(app.h3servers, h3srv)
+						app.h3listeners = append(app.h3listeners, h3ln)
+					}
+					/////////
 				}
 
 				go s.Serve(ln)
@@ -208,6 +232,28 @@ func (app *App) Stop() error {
 	}
 	for _, s := range app.servers {
 		err := s.Shutdown(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	// TODO: Closing the http3.Server is the right thing to do,
+	// however, doing so sometimes causes connections from clients
+	// to fail after config reloads due to a bug that is yet
+	// unsolved: https://github.com/caddyserver/caddy/pull/2727
+	// for _, s := range app.h3servers {
+	// 	// TODO: CloseGracefully, once implemented upstream
+	// 	// (see https://github.com/lucas-clemente/quic-go/issues/2103)
+	// 	err := s.Close()
+	// 	if err != nil {
+	// 		return err
+	// 	}
+	// }
+	// as of September 2019, closing the http3.Server
+	// instances doesn't close their underlying listeners
+	// so we have todo that ourselves
+	// (see https://github.com/lucas-clemente/quic-go/issues/2103)
+	for _, pc := range app.h3listeners {
+		err := pc.Close()
 		if err != nil {
 			return err
 		}
