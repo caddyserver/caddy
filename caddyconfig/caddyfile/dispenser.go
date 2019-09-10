@@ -236,18 +236,13 @@ func (d *Dispenser) NewFromNextTokens() *Dispenser {
 	for d.NextArg() {
 		tkns = append(tkns, d.Token())
 	}
-	if d.Next() && d.Val() == "{" {
-		tkns = append(tkns, d.Token())
-		for d.NextBlock() {
-			for d.Nested() {
-				tkns = append(tkns, d.Token())
-				d.NextBlock()
-			}
+	for d.NextBlock() {
+		for d.Nested() {
+			tkns = append(tkns, d.Token())
+			d.NextBlock()
 		}
-		tkns = append(tkns, d.Token())
-	} else {
-		d.cursor--
 	}
+	tkns = append(tkns, d.Token())
 	return NewDispenser(tkns)
 }
 

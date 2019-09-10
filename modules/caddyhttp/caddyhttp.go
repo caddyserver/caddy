@@ -120,7 +120,7 @@ func (app *App) Validate() error {
 	lnAddrs := make(map[string]string)
 	for srvName, srv := range app.Servers {
 		for _, addr := range srv.Listen {
-			netw, expanded, err := caddy.ParseListenAddr(addr)
+			netw, expanded, err := caddy.ParseNetworkAddress(addr)
 			if err != nil {
 				return fmt.Errorf("invalid listener address '%s': %v", addr, err)
 			}
@@ -161,7 +161,7 @@ func (app *App) Start() error {
 		}
 
 		for _, lnAddr := range srv.Listen {
-			network, addrs, err := caddy.ParseListenAddr(lnAddr)
+			network, addrs, err := caddy.ParseNetworkAddress(lnAddr)
 			if err != nil {
 				return fmt.Errorf("%s: parsing listen address '%s': %v", srvName, lnAddr, err)
 			}
@@ -277,6 +277,8 @@ func (app *App) automaticHTTPS() error {
 
 		// skip if all listeners use the HTTP port
 		if !srv.listenersUseAnyPortOtherThan(app.HTTPPort) {
+			log.Printf("[INFO] Server %v is only listening on the HTTP port %d, so no automatic HTTPS will be applied to this server",
+				srv.Listen, app.HTTPPort)
 			continue
 		}
 
@@ -358,9 +360,15 @@ func (app *App) automaticHTTPS() error {
 
 			log.Printf("[INFO] Enabling automatic HTTP->HTTPS redirects for %v", domains)
 
+			// notify user if their config might override the HTTP->HTTPS redirects
+			if srv.listenersIncludePort(app.HTTPPort) {
+				log.Printf("[WARNING] Server %v is listening on HTTP port %d, so automatic HTTP->HTTPS redirects may be overridden by your own configuration",
+					srv.Listen, app.HTTPPort)
+			}
+
 			// create HTTP->HTTPS redirects
 			for _, addr := range srv.Listen {
-				netw, host, port, err := caddy.SplitListenAddr(addr)
+				netw, host, port, err := caddy.SplitNetworkAddress(addr)
 				if err != nil {
 					return fmt.Errorf("%s: invalid listener address: %v", srvName, addr)
 				}
@@ -369,7 +377,7 @@ func (app *App) automaticHTTPS() error {
 				if httpPort == 0 {
 					httpPort = DefaultHTTPPort
 				}
-				httpRedirLnAddr := caddy.JoinListenAddr(netw, host, strconv.Itoa(httpPort))
+				httpRedirLnAddr := caddy.JoinNetworkAddress(netw, host, strconv.Itoa(httpPort))
 				lnAddrMap[httpRedirLnAddr] = struct{}{}
 
 				if parts := strings.SplitN(port, "-", 2); len(parts) == 2 {
@@ -412,7 +420,7 @@ func (app *App) automaticHTTPS() error {
 		var lnAddrs []string
 	mapLoop:
 		for addr := range lnAddrMap {
-			netw, addrs, err := caddy.ParseListenAddr(addr)
+			netw, addrs, err := caddy.ParseNetworkAddress(addr)
 			if err != nil {
 				continue
 			}
@@ -437,7 +445,7 @@ func (app *App) automaticHTTPS() error {
 func (app *App) listenerTaken(network, address string) bool {
 	for _, srv := range app.Servers {
 		for _, addr := range srv.Listen {
-			netw, addrs, err := caddy.ParseListenAddr(addr)
+			netw, addrs, err := caddy.ParseNetworkAddress(addr)
 			if err != nil || netw != network {
 				continue
 			}
@@ -567,6 +575,20 @@ func (ws WeakString) Bool() bool {
 // String returns ws as a string.
 func (ws WeakString) String() string {
 	return string(ws)
+}
+
+// StatusCodeMatches returns true if a real HTTP status code matches
+// the configured status code, which may be either a real HTTP status
+// code or an integer representing a class of codes (e.g. 4 for all
+// 4xx statuses).
+func StatusCodeMatches(actual, configured int) bool {
+	if actual == configured {
+		return true
+	}
+	if configured < 100 && actual >= configured*100 && actual < (configured+1)*100 {
+		return true
+	}
+	return false
 }
 
 const (

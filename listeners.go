@@ -25,6 +25,8 @@ import (
 	"time"
 )
 
+// TODO: Can we use the new UsagePool type?
+
 // Listen returns a listener suitable for use in a Caddy module.
 // Always be sure to close listeners when you are done with them.
 func Listen(network, addr string) (net.Listener, error) {
@@ -221,19 +223,19 @@ var (
 	listenersMu sync.Mutex
 )
 
-// ParseListenAddr parses addr, a string of the form "network/host:port"
+// ParseNetworkAddress parses addr, a string of the form "network/host:port"
 // (with any part optional) into its component parts. Because a port can
 // also be a port range, there may be multiple addresses returned.
-func ParseListenAddr(addr string) (network string, addrs []string, err error) {
+func ParseNetworkAddress(addr string) (network string, addrs []string, err error) {
 	var host, port string
-	network, host, port, err = SplitListenAddr(addr)
+	network, host, port, err = SplitNetworkAddress(addr)
 	if network == "" {
 		network = "tcp"
 	}
 	if err != nil {
 		return
 	}
-	if network == "unix" {
+	if network == "unix" || network == "unixgram" || network == "unixpacket" {
 		addrs = []string{host}
 		return
 	}
@@ -260,14 +262,14 @@ func ParseListenAddr(addr string) (network string, addrs []string, err error) {
 	return
 }
 
-// SplitListenAddr splits a into its network, host, and port components.
+// SplitNetworkAddress splits a into its network, host, and port components.
 // Note that port may be a port range, or omitted for unix sockets.
-func SplitListenAddr(a string) (network, host, port string, err error) {
+func SplitNetworkAddress(a string) (network, host, port string, err error) {
 	if idx := strings.Index(a, "/"); idx >= 0 {
 		network = strings.ToLower(strings.TrimSpace(a[:idx]))
 		a = a[idx+1:]
 	}
-	if network == "unix" {
+	if network == "unix" || network == "unixgram" || network == "unixpacket" {
 		host = a
 		return
 	}
@@ -275,11 +277,11 @@ func SplitListenAddr(a string) (network, host, port string, err error) {
 	return
 }
 
-// JoinListenAddr combines network, host, and port into a single
+// JoinNetworkAddress combines network, host, and port into a single
 // address string of the form "network/host:port". Port may be a
 // port range. For unix sockets, the network should be "unix" and
 // the path to the socket should be given in the host argument.
-func JoinListenAddr(network, host, port string) string {
+func JoinNetworkAddress(network, host, port string) string {
 	var a string
 	if network != "" {
 		a = network + "/"

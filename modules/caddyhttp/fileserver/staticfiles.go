@@ -41,10 +41,11 @@ func init() {
 
 // FileServer implements a static file server responder for Caddy.
 type FileServer struct {
-	Root       string   `json:"root,omitempty"` // default is current directory
-	Hide       []string `json:"hide,omitempty"`
-	IndexNames []string `json:"index_names,omitempty"`
-	Browse     *Browse  `json:"browse,omitempty"`
+	Root          string   `json:"root,omitempty"` // default is current directory
+	Hide          []string `json:"hide,omitempty"`
+	IndexNames    []string `json:"index_names,omitempty"`
+	Browse        *Browse  `json:"browse,omitempty"`
+	CanonicalURIs *bool    `json:"canonical_uris,omitempty"`
 }
 
 // CaddyModule returns the Caddy module information.
@@ -57,6 +58,10 @@ func (FileServer) CaddyModule() caddy.ModuleInfo {
 
 // Provision sets up the static files responder.
 func (fsrv *FileServer) Provision(ctx caddy.Context) error {
+	if fsrv.Root == "" {
+		fsrv.Root = "{http.vars.root}"
+	}
+
 	if fsrv.IndexNames == nil {
 		fsrv.IndexNames = defaultIndexNames
 	}
@@ -105,6 +110,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, _ cadd
 
 	// if the request mapped to a directory, see if
 	// there is an index file we can serve
+	var implicitIndexFile bool
 	if info.IsDir() && len(fsrv.IndexNames) > 0 {
 		for _, indexPage := range fsrv.IndexNames {
 			indexPath := sanitizedPathJoin(filename, indexPage)
@@ -118,12 +124,17 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, _ cadd
 				continue
 			}
 
-			// we found an index file that might work,
-			// so rewrite the request path
-			r.URL.Path = path.Join(r.URL.Path, indexPage)
+			// don't rewrite the request path to append
+			// the index file, because we might need to
+			// do a canonical-URL redirect below based
+			// on the URL as-is
 
+			// we've chosen to use this index file,
+			// so replace the last file info and path
+			// with that of the index file
 			info = indexInfo
 			filename = indexPath
+			implicitIndexFile = true
 			break
 		}
 	}
@@ -145,10 +156,22 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, _ cadd
 		return caddyhttp.Error(http.StatusNotFound, nil)
 	}
 
+	// if URL canonicalization is enabled, we need to enforce trailing
+	// slash convention: if a directory, trailing slash; if a file, no
+	// trailing slash - not enforcing this can break relative hrefs
+	// in HTML (see https://github.com/caddyserver/caddy/issues/2741)
+	if fsrv.CanonicalURIs == nil || *fsrv.CanonicalURIs {
+		if implicitIndexFile && !strings.HasSuffix(r.URL.Path, "/") {
+			return redirect(w, r, r.URL.Path+"/")
+		} else if !implicitIndexFile && strings.HasSuffix(r.URL.Path, "/") {
+			return redirect(w, r, r.URL.Path[:len(r.URL.Path)-1])
+		}
+	}
+
 	// open the file
 	file, err := fsrv.openFile(filename, w)
 	if err != nil {
-		return err
+		return err // error is already structured
 	}
 	defer file.Close()
 
@@ -303,6 +326,15 @@ func calculateEtag(d os.FileInfo) string {
 	t := strconv.FormatInt(d.ModTime().Unix(), 36)
 	s := strconv.FormatInt(d.Size(), 36)
 	return `"` + t + s + `"`
+}
+
+func redirect(w http.ResponseWriter, r *http.Request, to string) error {
+	for strings.HasPrefix(to, "//") {
+		// prevent path-based open redirects
+		to = strings.TrimPrefix(to, "/")
+	}
+	http.Redirect(w, r, to, http.StatusPermanentRedirect)
+	return nil
 }
 
 var defaultIndexNames = []string{"index.html", "index.txt"}

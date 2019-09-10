@@ -22,7 +22,6 @@ import (
 	"net/http"
 	"net/textproto"
 	"net/url"
-	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -151,12 +150,13 @@ func (MatchPath) CaddyModule() caddy.ModuleInfo {
 // Match returns true if r matches m.
 func (m MatchPath) Match(r *http.Request) bool {
 	for _, matchPath := range m {
-		compare := r.URL.Path
+		// as a special case, if the first character is a
+		// wildcard, treat it as a quick suffix match
 		if strings.HasPrefix(matchPath, "*") {
-			compare = path.Base(compare)
+			return strings.HasSuffix(r.URL.Path, matchPath[1:])
 		}
 		// can ignore error here because we can't handle it anyway
-		matches, _ := filepath.Match(matchPath, compare)
+		matches, _ := filepath.Match(matchPath, r.URL.Path)
 		if matches {
 			return true
 		}
@@ -271,8 +271,13 @@ func (m *MatchHeader) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // Match returns true if r matches m.
 func (m MatchHeader) Match(r *http.Request) bool {
 	for field, allowedFieldVals := range m {
+		actualFieldVals, fieldExists := r.Header[textproto.CanonicalMIMEHeaderKey(field)]
+		if allowedFieldVals != nil && len(allowedFieldVals) == 0 && fieldExists {
+			// a non-nil but empty list of allowed values means
+			// match if the header field exists at all
+			continue
+		}
 		var match bool
-		actualFieldVals := r.Header[textproto.CanonicalMIMEHeaderKey(field)]
 	fieldVals:
 		for _, actualFieldVal := range actualFieldVals {
 			for _, allowedFieldVal := range allowedFieldVals {
@@ -616,10 +621,7 @@ func (rm ResponseMatcher) matchStatusCode(statusCode int) bool {
 		return true
 	}
 	for _, code := range rm.StatusCode {
-		if statusCode == code {
-			return true
-		}
-		if code < 100 && statusCode >= code*100 && statusCode < (code+1)*100 {
+		if StatusCodeMatches(statusCode, code) {
 			return true
 		}
 	}
@@ -628,8 +630,13 @@ func (rm ResponseMatcher) matchStatusCode(statusCode int) bool {
 
 func (rm ResponseMatcher) matchHeaders(hdr http.Header) bool {
 	for field, allowedFieldVals := range rm.Headers {
+		actualFieldVals, fieldExists := hdr[textproto.CanonicalMIMEHeaderKey(field)]
+		if allowedFieldVals != nil && len(allowedFieldVals) == 0 && fieldExists {
+			// a non-nil but empty list of allowed values means
+			// match if the header field exists at all
+			continue
+		}
 		var match bool
-		actualFieldVals := hdr[textproto.CanonicalMIMEHeaderKey(field)]
 	fieldVals:
 		for _, actualFieldVal := range actualFieldVals {
 			for _, allowedFieldVal := range allowedFieldVals {
