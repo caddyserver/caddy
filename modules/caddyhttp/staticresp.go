@@ -57,7 +57,7 @@ func (s *StaticResponse) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		if d.Args(&statusCodeStr) {
 			s.StatusCode = WeakString(statusCodeStr)
 		}
-		for d.NextBlock() {
+		for d.NextBlock(0) {
 			switch d.Val() {
 			case "body":
 				if s.Body != "" {

@@ -123,18 +123,39 @@ func (d *Dispenser) NextLine() bool {
 
 // NextBlock can be used as the condition of a for loop
 // to load the next token as long as it opens a block or
-// is already in a block. It returns true if a token was
-// loaded, or false when the block's closing curly brace
-// was loaded and thus the block ended. Nested blocks are
-// not supported.
-func (d *Dispenser) NextBlock() bool {
-	if d.nesting > 0 {
-		d.Next()
+// is already in a block nested more than initialNestingLevel.
+// In other words, a loop over NextBlock() will iterate
+// all tokens in the block assuming the next token is an
+// open curly brace, until the matching closing brace.
+// The open and closing brace tokens for the outer-most
+// block will be consumed internally and omitted from
+// the iteration.
+//
+// Proper use of this method looks like this:
+//
+//     for nesting := d.Nesting(); d.NextBlock(nesting); {
+//     }
+//
+// However, in simple cases where it is known that the
+// Dispenser is new and has not already traversed state
+// by a loop over NextBlock(), this will do:
+//
+//     for d.NextBlock(0) {
+//     }
+//
+// As with other token parsing logic, a loop over
+// NextBlock() should be contained within a loop over
+// Next(), as it is usually prudent to skip the initial
+// token.
+func (d *Dispenser) NextBlock(initialNestingLevel int) bool {
+	if d.nesting > initialNestingLevel {
+		if !d.Next() {
+			return false // should be EOF error
+		}
 		if d.Val() == "}" {
 			d.nesting--
-			return false
 		}
-		return true
+		return d.nesting > initialNestingLevel
 	}
 	if !d.nextOnSameLine() { // block must open on same line
 		return false
@@ -143,19 +164,18 @@ func (d *Dispenser) NextBlock() bool {
 		d.cursor-- // roll back if not opening brace
 		return false
 	}
-	d.Next()
+	d.Next() // consume open curly brace
 	if d.Val() == "}" {
-		// open and then closed right away
-		return false
+		return false // open and then closed right away
 	}
 	d.nesting++
 	return true
 }
 
-// Nested returns true if the token is currently nested
-// inside a block (i.e. an open curly brace was consumed).
-func (d *Dispenser) Nested() bool {
-	return d.nesting > 0
+// Nesting returns the current nesting level. Necessary
+// if using NextBlock()
+func (d *Dispenser) Nesting() int {
+	return d.nesting
 }
 
 // Val gets the text of the current token. If there is no token
@@ -230,19 +250,32 @@ func (d *Dispenser) RemainingArgs() []string {
 // NewFromNextTokens returns a new dispenser with a copy of
 // the tokens from the current token until the end of the
 // "directive" whether that be to the end of the line or
-// the end of a block that starts at the end of the line.
+// the end of a block that starts at the end of the line;
+// in other words, until the end of the segment.
 func (d *Dispenser) NewFromNextTokens() *Dispenser {
 	tkns := []Token{d.Token()}
 	for d.NextArg() {
 		tkns = append(tkns, d.Token())
 	}
-	for d.NextBlock() {
-		for d.Nested() {
+	var openedBlock bool
+	for nesting := d.Nesting(); d.NextBlock(nesting); {
+		if !openedBlock {
+			// because NextBlock() consumes the initial open
+			// curly brace, we rewind here to append it, since
+			// our case is special in that we want to include
+			// all the tokens including surrounding curly braces
+			// for a new dispenser to have
+			d.Prev()
 			tkns = append(tkns, d.Token())
-			d.NextBlock()
+			d.Next()
+			openedBlock = true
 		}
+		tkns = append(tkns, d.Token())
 	}
-	tkns = append(tkns, d.Token())
+	if openedBlock {
+		// include closing brace accordingly
+		tkns = append(tkns, d.Token())
+	}
 	return NewDispenser(tkns)
 }
 

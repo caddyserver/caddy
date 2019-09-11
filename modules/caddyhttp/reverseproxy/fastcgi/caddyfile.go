@@ -39,32 +39,34 @@ func init() {
 //     }
 //
 func (t *Transport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.NextBlock() {
-		switch d.Val() {
-		case "root":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-			t.Root = d.Val()
+	for d.Next() {
+		for d.NextBlock(0) {
+			switch d.Val() {
+			case "root":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				t.Root = d.Val()
 
-		case "split":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-			t.SplitPath = d.Val()
+			case "split":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				t.SplitPath = d.Val()
 
-		case "env":
-			args := d.RemainingArgs()
-			if len(args) != 2 {
-				return d.ArgErr()
-			}
-			if t.EnvVars == nil {
-				t.EnvVars = make(map[string]string)
-			}
-			t.EnvVars[args[0]] = args[1]
+			case "env":
+				args := d.RemainingArgs()
+				if len(args) != 2 {
+					return d.ArgErr()
+				}
+				if t.EnvVars == nil {
+					t.EnvVars = make(map[string]string)
+				}
+				t.EnvVars[args[0]] = args[1]
 
-		default:
-			return d.Errf("unrecognized subdirective %s", d.Val())
+			default:
+				return d.Errf("unrecognized subdirective %s", d.Val())
+			}
 		}
 	}
 	return nil

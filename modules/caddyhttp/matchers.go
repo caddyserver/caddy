@@ -258,6 +258,9 @@ func (MatchHeader) CaddyModule() caddy.ModuleInfo {
 
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
 func (m *MatchHeader) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	if *m == nil {
+		*m = make(map[string][]string)
+	}
 	for d.Next() {
 		var field, val string
 		if !d.Args(&field, &val) {

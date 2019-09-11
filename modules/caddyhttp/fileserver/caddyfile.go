@@ -43,7 +43,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 			return nil, h.ArgErr()
 		}
 
-		for h.NextBlock() {
+		for h.NextBlock(0) {
 			switch h.Val() {
 			case "hide":
 				fsrv.Hide = h.RemainingArgs()

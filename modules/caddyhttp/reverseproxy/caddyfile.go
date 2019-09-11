@@ -81,7 +81,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			})
 		}
 
-		for d.NextBlock() {
+		for d.NextBlock(0) {
 			switch d.Val() {
 			case "to":
 				args := d.RemainingArgs()
@@ -343,7 +343,6 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if !ok {
 					return d.Errf("transport module '%s' is not a Caddyfile unmarshaler", mod.Name)
 				}
-				d.Next() // consume the module name token
 				err = unm.UnmarshalCaddyfile(d.NewFromNextTokens())
 				if err != nil {
 					return err
@@ -377,7 +376,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 //     }
 //
 func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.NextBlock() {
+	for d.NextBlock(0) {
 		switch d.Val() {
 		case "read_buffer":
 			if !d.NextArg() {

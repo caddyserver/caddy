@@ -69,7 +69,7 @@ func (MatchFile) CaddyModule() caddy.ModuleInfo {
 //
 func (m *MatchFile) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
-		for d.NextBlock() {
+		for d.NextBlock(0) {
 			switch d.Val() {
 			case "root":
 				if !d.NextArg() {

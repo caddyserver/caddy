@@ -60,10 +60,10 @@ func parseHandlerOrder(d *caddyfile.Dispenser) ([]string, error) {
 	if len(order) == 1 && order[0] == "appearance" {
 		return []string{"appearance"}, nil
 	}
-	if len(order) > 0 && d.NextBlock() {
+	if len(order) > 0 && d.NextBlock(0) {
 		return nil, d.Err("cannot open block if there are arguments")
 	}
-	for d.NextBlock() {
+	for d.NextBlock(0) {
 		order = append(order, d.Val())
 		if d.NextArg() {
 			return nil, d.ArgErr()

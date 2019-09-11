@@ -49,7 +49,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 		}
 
 		// if not, they should be in a block
-		for h.NextBlock() {
+		for h.NextBlock(0) {
 			if hasArgs {
 				return nil, h.Err("cannot specify headers in both arguments and block")
 			}

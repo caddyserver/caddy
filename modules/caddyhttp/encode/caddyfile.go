@@ -67,7 +67,7 @@ func (enc *Encode) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			enc.EncodingsRaw[arg] = caddyconfig.JSON(encoding, nil)
 		}
 
-		for d.NextBlock() {
+		for d.NextBlock(0) {
 			name := d.Val()
 			mod, err := caddy.GetModule("http.encoders." + name)
 			if err != nil {
