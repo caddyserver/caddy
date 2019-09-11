@@ -64,6 +64,8 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 				val, err = parseHTTPSPort(caddyfile.NewDispenser(segment))
 			case "handler_order":
 				val, err = parseHandlerOrder(caddyfile.NewDispenser(segment))
+			case "experimental_http3":
+				val, err = parseExperimentalHTTP3(caddyfile.NewDispenser(segment))
 			default:
 				return nil, warnings, fmt.Errorf("unrecognized parameter name: %s", dir)
 			}
@@ -189,6 +191,13 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 	}
 	// consolidate automation policies that are the exact same
 	tlsApp.Automation.Policies = consolidateAutomationPolicies(tlsApp.Automation.Policies)
+
+	// if experimental HTTP/3 is enabled, enable it on each server
+	if enableH3, ok := options["experimental_http3"].(bool); ok && enableH3 {
+		for _, srv := range httpApp.Servers {
+			srv.ExperimentalHTTP3 = true
+		}
+	}
 
 	// annnd the top-level config, then we're done!
 	cfg := &caddy.Config{AppsRaw: make(map[string]json.RawMessage)}

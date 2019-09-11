@@ -52,6 +52,10 @@ func parseHTTPSPort(d *caddyfile.Dispenser) (int, error) {
 	return httpsPort, nil
 }
 
+func parseExperimentalHTTP3(d *caddyfile.Dispenser) (bool, error) {
+	return true, nil
+}
+
 func parseHandlerOrder(d *caddyfile.Dispenser) ([]string, error) {
 	if !d.Next() {
 		return nil, d.ArgErr()
