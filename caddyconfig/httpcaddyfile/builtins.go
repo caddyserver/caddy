@@ -107,7 +107,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 		}
 
 		var hasBlock bool
-		for h.NextBlock() {
+		for h.NextBlock(0) {
 			hasBlock = true
 
 			switch h.Val() {

@@ -34,7 +34,7 @@ func init() {
 func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
 	t := new(Templates)
 	for h.Next() {
-		for h.NextBlock() {
+		for h.NextBlock(0) {
 			switch h.Val() {
 			case "mime":
 				t.MIMETypes = h.RemainingArgs()

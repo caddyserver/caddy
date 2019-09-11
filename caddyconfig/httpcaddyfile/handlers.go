@@ -28,7 +28,7 @@ func (st *ServerType) parseMatcherDefinitions(d *caddyfile.Dispenser) (map[strin
 	matchers := make(map[string]map[string]json.RawMessage)
 	for d.Next() {
 		definitionName := d.Val()
-		for d.NextBlock() {
+		for nesting := d.Nesting(); d.NextBlock(nesting); {
 			matcherName := d.Val()
 			mod, err := caddy.GetModule("http.matchers." + matcherName)
 			if err != nil {
