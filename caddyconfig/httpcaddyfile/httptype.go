@@ -37,10 +37,6 @@ func init() {
 type ServerType struct {
 }
 
-// TODO: customize directive ordering
-
-// TODO: hide caddyfile when serving static files
-
 // Setup makes a config from the tokens.
 func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 	options map[string]interface{}) (*caddy.Config, []caddyconfig.Warning, error) {
