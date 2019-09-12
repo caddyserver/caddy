@@ -102,8 +102,10 @@ func (m *ACMEManagerMaker) Provision(ctx caddy.Context) error {
 // SetDefaults sets necessary values that are
 // currently empty to their default values.
 func (m *ACMEManagerMaker) SetDefaults() {
+	// TODO: Setting all these defaults might not be necessary
+	// since CertMagic should fill them in for us...
 	if m.CA == "" {
-		m.CA = certmagic.LetsEncryptStagingCA // certmagic.Default.CA // TODO: When not testing, switch to production CA
+		m.CA = certmagic.Default.CA
 	}
 	if m.Email == "" {
 		m.Email = certmagic.Default.Email
