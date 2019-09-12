@@ -337,7 +337,6 @@ func (app *App) automaticHTTPS() error {
 					},
 				},
 			}
-			acmeManager.SetDefaults()
 			tlsApp.Automation.Policies = append(tlsApp.Automation.Policies,
 				caddytls.AutomationPolicy{
 					Hosts:      domainsForCerts,
