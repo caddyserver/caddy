@@ -419,6 +419,11 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			h.TLS.ClientCertificateFile = args[0]
 			h.TLS.ClientCertificateKeyFile = args[1]
 
+		case "tls":
+			if h.TLS == nil {
+				h.TLS = new(TLSConfig)
+			}
+
 		case "tls_insecure_skip_verify":
 			if d.NextArg() {
 				return d.ArgErr()
