@@ -209,6 +209,7 @@ func (app *App) Start() error {
 						go h3srv.Serve(h3ln)
 						app.h3servers = append(app.h3servers, h3srv)
 						app.h3listeners = append(app.h3listeners, h3ln)
+						srv.h3server = h3srv
 					}
 					/////////
 				}
