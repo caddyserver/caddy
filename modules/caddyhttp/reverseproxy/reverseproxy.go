@@ -145,6 +145,26 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 
 	var allUpstreams []*Upstream
 	for _, upstream := range h.Upstreams {
+		// if a port was not specified (and the network type uses
+		// ports), then maybe we can figure out the default port
+		netw, host, port, err := caddy.SplitNetworkAddress(upstream.Dial)
+		if err != nil && port == "" && !strings.Contains(netw, "unix") {
+			if host == "" {
+				// assume all that was given was the host, no port
+				host = upstream.Dial
+			}
+			// a port was not specified, but we may be able to
+			// infer it if we know the standard ports on which
+			// the transport protocol operates
+			if ht, ok := h.Transport.(*HTTPTransport); ok {
+				defaultPort := "80"
+				if ht.TLS != nil {
+					defaultPort = "443"
+				}
+				upstream.Dial = caddy.JoinNetworkAddress(netw, host, defaultPort)
+			}
+		}
+
 		// upstreams are allowed to map to only a single host,
 		// but an upstream's address may semantically represent
 		// multiple addresses, so make sure to handle each
@@ -474,7 +494,19 @@ func (h Handler) tryAgain(start time.Time, proxyErr error) bool {
 // given upstream host. It must modify ONLY the request URL.
 func (h Handler) directRequest(req *http.Request, upstream *Upstream) {
 	if req.URL.Host == "" {
-		req.URL.Host = upstream.dialInfo.Address
+		// we need a host, so set the upstream's host address
+		fullHost := upstream.dialInfo.Address
+
+		// but if the port matches the scheme, strip the port because
+		// it's weird to make a request like http://example.com:80/.
+		host, port, err := net.SplitHostPort(fullHost)
+		if err == nil &&
+			(req.URL.Scheme == "http" && port == "80") ||
+			(req.URL.Scheme == "https" && port == "443") {
+			fullHost = host
+		}
+
+		req.URL.Host = fullHost
 	}
 }
 

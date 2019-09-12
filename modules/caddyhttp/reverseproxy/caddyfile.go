@@ -376,108 +376,110 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 //     }
 //
 func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.NextBlock(0) {
-		switch d.Val() {
-		case "read_buffer":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-			size, err := humanize.ParseBytes(d.Val())
-			if err != nil {
-				return d.Errf("invalid read buffer size '%s': %v", d.Val(), err)
-			}
-			h.ReadBufferSize = int(size)
+	for d.Next() {
+		for d.NextBlock(0) {
+			switch d.Val() {
+			case "read_buffer":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				size, err := humanize.ParseBytes(d.Val())
+				if err != nil {
+					return d.Errf("invalid read buffer size '%s': %v", d.Val(), err)
+				}
+				h.ReadBufferSize = int(size)
 
-		case "write_buffer":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-			size, err := humanize.ParseBytes(d.Val())
-			if err != nil {
-				return d.Errf("invalid write buffer size '%s': %v", d.Val(), err)
-			}
-			h.WriteBufferSize = int(size)
+			case "write_buffer":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				size, err := humanize.ParseBytes(d.Val())
+				if err != nil {
+					return d.Errf("invalid write buffer size '%s': %v", d.Val(), err)
+				}
+				h.WriteBufferSize = int(size)
 
-		case "dial_timeout":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-			dur, err := time.ParseDuration(d.Val())
-			if err != nil {
-				return d.Errf("bad timeout value '%s': %v", d.Val(), err)
-			}
-			h.DialTimeout = caddy.Duration(dur)
+			case "dial_timeout":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				dur, err := time.ParseDuration(d.Val())
+				if err != nil {
+					return d.Errf("bad timeout value '%s': %v", d.Val(), err)
+				}
+				h.DialTimeout = caddy.Duration(dur)
 
-		case "tls_client_auth":
-			args := d.RemainingArgs()
-			if len(args) != 2 {
-				return d.ArgErr()
-			}
-			if h.TLS == nil {
-				h.TLS = new(TLSConfig)
-			}
-			h.TLS.ClientCertificateFile = args[0]
-			h.TLS.ClientCertificateKeyFile = args[1]
+			case "tls_client_auth":
+				args := d.RemainingArgs()
+				if len(args) != 2 {
+					return d.ArgErr()
+				}
+				if h.TLS == nil {
+					h.TLS = new(TLSConfig)
+				}
+				h.TLS.ClientCertificateFile = args[0]
+				h.TLS.ClientCertificateKeyFile = args[1]
 
-		case "tls":
-			if h.TLS == nil {
-				h.TLS = new(TLSConfig)
-			}
+			case "tls":
+				if h.TLS == nil {
+					h.TLS = new(TLSConfig)
+				}
 
-		case "tls_insecure_skip_verify":
-			if d.NextArg() {
-				return d.ArgErr()
-			}
-			if h.TLS == nil {
-				h.TLS = new(TLSConfig)
-			}
-			h.TLS.InsecureSkipVerify = true
+			case "tls_insecure_skip_verify":
+				if d.NextArg() {
+					return d.ArgErr()
+				}
+				if h.TLS == nil {
+					h.TLS = new(TLSConfig)
+				}
+				h.TLS.InsecureSkipVerify = true
 
-		case "tls_timeout":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-			dur, err := time.ParseDuration(d.Val())
-			if err != nil {
-				return d.Errf("bad timeout value '%s': %v", d.Val(), err)
-			}
-			if h.TLS == nil {
-				h.TLS = new(TLSConfig)
-			}
-			h.TLS.HandshakeTimeout = caddy.Duration(dur)
+			case "tls_timeout":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				dur, err := time.ParseDuration(d.Val())
+				if err != nil {
+					return d.Errf("bad timeout value '%s': %v", d.Val(), err)
+				}
+				if h.TLS == nil {
+					h.TLS = new(TLSConfig)
+				}
+				h.TLS.HandshakeTimeout = caddy.Duration(dur)
 
-		case "keepalive":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-			if h.KeepAlive == nil {
-				h.KeepAlive = new(KeepAlive)
-			}
-			if d.Val() == "off" {
-				var disable bool
-				h.KeepAlive.Enabled = &disable
-			}
-			dur, err := time.ParseDuration(d.Val())
-			if err != nil {
-				return d.Errf("bad duration value '%s': %v", d.Val(), err)
-			}
-			h.KeepAlive.IdleConnTimeout = caddy.Duration(dur)
+			case "keepalive":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				if h.KeepAlive == nil {
+					h.KeepAlive = new(KeepAlive)
+				}
+				if d.Val() == "off" {
+					var disable bool
+					h.KeepAlive.Enabled = &disable
+				}
+				dur, err := time.ParseDuration(d.Val())
+				if err != nil {
+					return d.Errf("bad duration value '%s': %v", d.Val(), err)
+				}
+				h.KeepAlive.IdleConnTimeout = caddy.Duration(dur)
 
-		case "keepalive_idle_conns":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-			num, err := strconv.Atoi(d.Val())
-			if err != nil {
-				return d.Errf("bad integer value '%s': %v", d.Val(), err)
-			}
-			if h.KeepAlive == nil {
-				h.KeepAlive = new(KeepAlive)
-			}
-			h.KeepAlive.MaxIdleConns = num
+			case "keepalive_idle_conns":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				num, err := strconv.Atoi(d.Val())
+				if err != nil {
+					return d.Errf("bad integer value '%s': %v", d.Val(), err)
+				}
+				if h.KeepAlive == nil {
+					h.KeepAlive = new(KeepAlive)
+				}
+				h.KeepAlive.MaxIdleConns = num
 
-		default:
-			return d.Errf("unrecognized subdirective %s", d.Val())
+			default:
+				return d.Errf("unrecognized subdirective %s", d.Val())
+			}
 		}
 	}
 	return nil
