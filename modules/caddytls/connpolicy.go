@@ -23,7 +23,7 @@ import (
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
-	"github.com/go-acme/lego/challenge/tlsalpn01"
+	"github.com/go-acme/lego/v3/challenge/tlsalpn01"
 	"github.com/mholt/certmagic"
 )
 
