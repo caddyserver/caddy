@@ -197,9 +197,7 @@ func (t *TLS) getAutomationPolicyForName(name string) AutomationPolicy {
 	}
 
 	// default automation policy
-	mgmt := new(ACMEManagerMaker)
-	mgmt.SetDefaults()
-	return AutomationPolicy{Management: mgmt}
+	return AutomationPolicy{Management: new(ACMEManagerMaker)}
 }
 
 // CertificatesWithSAN returns the list of all certificates

@@ -91,31 +91,7 @@ func (m *ACMEManagerMaker) Provision(ctx caddy.Context) error {
 		m.Storage = nil // allow GC to deallocate - TODO: Does this help?
 	}
 
-	m.SetDefaults()
-
 	return nil
-}
-
-// SetDefaults sets necessary values that are
-// currently empty to their default values.
-func (m *ACMEManagerMaker) SetDefaults() {
-	// TODO: Setting all these defaults might not be necessary
-	// since CertMagic should fill them in for us...
-	if m.CA == "" {
-		m.CA = certmagic.Default.CA
-	}
-	if m.Email == "" {
-		m.Email = certmagic.Default.Email
-	}
-	if m.RenewAhead == 0 {
-		m.RenewAhead = caddy.Duration(certmagic.Default.RenewDurationBefore)
-	}
-	if m.keyType == "" {
-		m.keyType = certmagic.Default.KeyType
-	}
-	if m.storage == nil {
-		m.storage = certmagic.Default.Storage
-	}
 }
 
 // makeCertMagicConfig converts m into a certmagic.Config, because
