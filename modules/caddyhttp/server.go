@@ -26,6 +26,7 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
+	"github.com/lucas-clemente/quic-go/http3"
 )
 
 // Server is an HTTP server.
@@ -47,11 +48,20 @@ type Server struct {
 	ExperimentalHTTP3 bool `json:"experimental_http3,omitempty"`
 
 	tlsApp *caddytls.TLS
+
+	h3server *http3.Server
 }
 
 // ServeHTTP is the entry point for all HTTP requests.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Server", "Caddy")
+
+	if s.h3server != nil {
+		err := s.h3server.SetQuicHeaders(w.Header())
+		if err != nil {
+			log.Printf("[ERROR] Setting HTTP/3 Alt-Svc header: %v", err)
+		}
+	}
 
 	if s.tlsApp.HandleHTTPChallenge(w, r) {
 		return
