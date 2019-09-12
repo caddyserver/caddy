@@ -20,10 +20,8 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/go-acme/lego/certcrypto"
-
 	"github.com/caddyserver/caddy/v2"
-	"github.com/go-acme/lego/challenge"
+	"github.com/go-acme/lego/v3/challenge"
 	"github.com/mholt/certmagic"
 )
 
@@ -51,7 +49,6 @@ type ACMEManagerMaker struct {
 	Storage     json.RawMessage  `json:"storage,omitempty"`
 
 	storage certmagic.Storage
-	keyType certcrypto.KeyType
 }
 
 // CaddyModule returns the Caddy module information.

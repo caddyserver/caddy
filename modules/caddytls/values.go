@@ -18,7 +18,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 
-	"github.com/go-acme/lego/certcrypto"
+	"github.com/go-acme/lego/v3/certcrypto"
 	"github.com/klauspost/cpuid"
 )
 
