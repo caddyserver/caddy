@@ -58,7 +58,18 @@ type RespHeaderOps struct {
 
 func (h Headers) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
+
 	apply(h.Request, r.Header, repl)
+
+	// request header's Host is handled specially by the
+	// Go standard library, so if that header was changed,
+	// change it in the Host field since the Header won't
+	// be used
+	if intendedHost := r.Header.Get("Host"); intendedHost != "" {
+		r.Host = intendedHost
+		r.Header.Del("Host")
+	}
+
 	if h.Response != nil {
 		if h.Response.Deferred || h.Response.Require != nil {
 			w = &responseWriterWrapper{

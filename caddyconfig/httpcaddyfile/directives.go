@@ -30,6 +30,7 @@ var defaultDirectiveOrder = []string{
 	"rewrite",
 	"try_files",
 	"headers",
+	"request_header",
 	"encode",
 	"templates",
 	"redir",

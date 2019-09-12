@@ -24,9 +24,11 @@ import (
 
 func init() {
 	httpcaddyfile.RegisterHandlerDirective("headers", parseCaddyfile)
+	httpcaddyfile.RegisterHandlerDirective("request_header", parseReqHdrCaddyfile)
 }
 
-// parseCaddyfile sets up the handler from Caddyfile tokens. Syntax:
+// parseCaddyfile sets up the handler for response headers from
+// Caddyfile tokens. Syntax:
 //
 //     headers [<matcher>] [[+|-]<field> <value>] {
 //         [+][<field>] [<value>]
@@ -43,9 +45,11 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 		if h.NextArg() {
 			hasArgs = true
 			field := h.Val()
-			h.NextArg()
-			value := h.Val()
-			processCaddyfileLine(hdr, field, value)
+			var value string
+			if h.NextArg() {
+				value = h.Val()
+			}
+			processCaddyfileLineRespHdr(hdr, field, value)
 		}
 
 		// if not, they should be in a block
@@ -58,31 +62,68 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 			if h.NextArg() {
 				value = h.Val()
 			}
-			processCaddyfileLine(hdr, field, value)
+			processCaddyfileLineRespHdr(hdr, field, value)
 		}
 	}
 	return hdr, nil
 }
 
-func processCaddyfileLine(hdr *Headers, field, value string) {
-	if strings.HasPrefix(field, "+") {
-		if hdr.Response == nil {
-			hdr.Response = &RespHeaderOps{HeaderOps: new(HeaderOps)}
+// parseReqHdrCaddyfile sets up the handler for request headers
+// from Caddyfile tokens. Syntax:
+//
+//     request_header [<matcher>] [[+|-]<field> <value>]
+//
+func parseReqHdrCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
+	hdr := new(Headers)
+	for h.Next() {
+		if !h.NextArg() {
+			return nil, h.ArgErr()
 		}
+		field := h.Val()
+		var value string
+		if h.NextArg() {
+			value = h.Val()
+		}
+
+		if hdr.Request == nil {
+			hdr.Request = new(HeaderOps)
+		}
+		if strings.HasPrefix(field, "+") {
+			if hdr.Request.Add == nil {
+				hdr.Request.Add = make(http.Header)
+			}
+			hdr.Request.Add.Set(field[1:], value)
+		} else if strings.HasPrefix(field, "-") {
+			hdr.Request.Delete = append(hdr.Request.Delete, field[1:])
+		} else {
+			if hdr.Request.Set == nil {
+				hdr.Request.Set = make(http.Header)
+			}
+			hdr.Request.Set.Set(field, value)
+		}
+
+		if h.NextArg() {
+			return nil, h.ArgErr()
+		}
+	}
+	return hdr, nil
+}
+
+func processCaddyfileLineRespHdr(hdr *Headers, field, value string) {
+	if hdr.Response == nil {
+		hdr.Response = &RespHeaderOps{
+			HeaderOps: new(HeaderOps),
+			Deferred:  true,
+		}
+	}
+	if strings.HasPrefix(field, "+") {
 		if hdr.Response.Add == nil {
 			hdr.Response.Add = make(http.Header)
 		}
 		hdr.Response.Add.Set(field[1:], value)
 	} else if strings.HasPrefix(field, "-") {
-		if hdr.Response == nil {
-			hdr.Response = &RespHeaderOps{HeaderOps: new(HeaderOps)}
-		}
 		hdr.Response.Delete = append(hdr.Response.Delete, field[1:])
-		hdr.Response.Deferred = true
 	} else {
-		if hdr.Response == nil {
-			hdr.Response = &RespHeaderOps{HeaderOps: new(HeaderOps)}
-		}
 		if hdr.Response.Set == nil {
 			hdr.Response.Set = make(http.Header)
 		}
