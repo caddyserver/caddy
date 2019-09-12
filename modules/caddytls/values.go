@@ -122,10 +122,7 @@ var defaultCurves = []tls.CurveID{
 }
 
 // SupportedProtocols is a map of supported protocols.
-// Note that HTTP/2 only supports TLS 1.2 and higher.
 var SupportedProtocols = map[string]uint16{
-	"tls1.0": tls.VersionTLS10,
-	"tls1.1": tls.VersionTLS11,
 	"tls1.2": tls.VersionTLS12,
 	"tls1.3": tls.VersionTLS13,
 }
