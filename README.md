@@ -10,7 +10,7 @@ Please file issues to propose new features and report bugs, and after the bug or
 
 ### Menu
 
-- [Install](#install)
+- [Build from source](#build-from-source)
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
 - [Full Documentation](#full-documentation)
@@ -18,14 +18,14 @@ Please file issues to propose new features and report bugs, and after the bug or
 - [FAQ](#faq)
 
 
-## Install
+## Build from source
 
 Requirements:
 
 - [Go 1.13 or newer](https://golang.org/dl/)
 - Make sure you do not disable [Go modules](https://github.com/golang/go/wiki/Modules) (`export GO111MODULE=auto`)
 
-Download source code:
+Download the `v2` source code:
 
 ```bash
 $ git clone -b v2 "https://github.com/caddyserver/caddy.git"
@@ -358,15 +358,15 @@ Caddy 2 and Caddy Enterprise offer equal levels of security and, as mentioned, s
 
 ### Does Caddy 2 have telemetry?
 
-No. There was not enough academic interest to continue supporting it. If telemetry does get added later, it will not be on by default or will be vastly reduced in its scope so that it simply helps the community gain an understanding of how widely Caddy is deployed (i.e. counts of servers running, number of requests/connections handled, etc).
+No. There was not enough academic interest to continue supporting it. If telemetry does get added later, it will not be on by default or will be vastly reduced in its scope.
 
 ## Does Caddy 2 use HTTPS by default?
 
-Yes. HTTPS is automatic and enabled by default when possible, just like in Caddy 1. Basically, if your HTTP routes specify a `host` matcher with qualifying domain names, those names will be enabled for automatic HTTPS.
+Yes. HTTPS is automatic and enabled by default when possible, just like in Caddy 1. Basically, if your HTTP routes specify a `host` matcher with qualifying domain names, those names will be enabled for automatic HTTPS. Automatic HTTPS is disabled for domains which match certificates that are manually loaded by your config.
 
-## I'm getting HTTPS errors with Caddy 2. The certificates aren't valid?
+## How do I avoid Let's Encrypt rate limits with Caddy 2?
 
-During development, Caddy 2 uses Let's Encrypt's staging endpoint to avoid rate limit issues, so the certificates are not trusted. You can force the production endpoint if you are confident that your setup is correct and will last a while. You can add a catch-all automation policy to your `tls` app that specifies the production CA endpoint:
+As you are testing and developing with Caddy 2, you may wish to use test ("staging") certificates from Let's Encrypt to avoid rate limits. By default, Caddy 2 uses Let's Encrypt's production endpoint to get real certificates for your domains, but their [rate limits](https://letsencrypt.org/docs/rate-limits/) forbid testing and development use of this endpoint for good reasons. You can switch to their [staging endpoint](https://letsencrypt.org/docs/staging-environment/) by adding the staging CA to your automation policy in the `tls` app:
 
 ```json
 "tls": {
@@ -375,7 +375,7 @@ During development, Caddy 2 uses Let's Encrypt's staging endpoint to avoid rate 
 			{
 				"management": {
 					"module": "acme",
-					"ca": "https://acme-v02.api.letsencrypt.org/directory"
+					"ca": "https://acme-staging-v02.api.letsencrypt.org/directory"
 				}
 			}
 		]
@@ -383,7 +383,14 @@ During development, Caddy 2 uses Let's Encrypt's staging endpoint to avoid rate 
 }
 ```
 
+Or with the Caddyfile:
+
+```
+tls {
+	ca https://acme-staging-v02.api.letsencrypt.org/directory
+}
+```
+
 ## Can we get some access controls on the admin endpoint?
 
-Yeah, that's coming.
-
+Yeah, that's coming. For now, you can use a unix socket that is properly permissioned for some basic security.
