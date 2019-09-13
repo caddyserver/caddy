@@ -226,7 +226,7 @@ func goModule(mod *debug.Module) *debug.Module {
 		// TODO: track related Go issue: https://github.com/golang/go/issues/29228
 		// once that issue is fixed, we should just be able to use bi.Main... hopefully.
 		for _, dep := range bi.Deps {
-			if dep.Path == mod.Path {
+			if dep.Path == "github.com/caddyserver/caddy/v2" {
 				return dep
 			}
 		}
