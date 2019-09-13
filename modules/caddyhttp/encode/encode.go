@@ -162,9 +162,6 @@ func (rw *responseWriter) Write(p []byte) (int, error) {
 		if err != nil {
 			return 0, err
 		}
-		if rw.buf.Len() < rw.config.MinLength {
-			return len(p), nil
-		}
 		rw.init()
 		p = rw.buf.Bytes()
 		defer func() {
