@@ -200,10 +200,10 @@ func (t *TLS) getAutomationPolicyForName(name string) AutomationPolicy {
 	return AutomationPolicy{Management: new(ACMEManagerMaker)}
 }
 
-// CertificatesWithSAN returns the list of all certificates
-// in the cache the match the given SAN value.
-func (t *TLS) CertificatesWithSAN(san string) []certmagic.Certificate {
-	return t.certCache.CertificatesWithSAN(san)
+// CertificatesForSAN returns the list of all certificates in
+// the cache which could be used to satisfy the given SAN.
+func (t *TLS) AllMatchingCertificates(san string) []certmagic.Certificate {
+	return t.certCache.AllMatchingCertificates(san)
 }
 
 // CertificateLoader is a type that can load certificates.

@@ -313,8 +313,8 @@ func (app *App) automaticHTTPS() error {
 					// don't obtain another one for it, unless we are
 					// supposed to ignore loaded certificates
 					if !srv.AutoHTTPS.IgnoreLoadedCerts &&
-						len(tlsApp.CertificatesWithSAN(d)) > 0 {
-						log.Printf("[INFO][%s] Skipping automatic certificate management because a certificate with that SAN is already loaded", d)
+						len(tlsApp.AllMatchingCertificates(d)) > 0 {
+						log.Printf("[INFO][%s] Skipping automatic certificate management because one or more matching certificates are already loaded", d)
 						continue
 					}
 					domainsForCerts = append(domainsForCerts, d)
