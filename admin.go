@@ -81,7 +81,15 @@ func StartAdmin(initialConfigJSON []byte) error {
 		}
 	}
 
-	ln, err := net.Listen("tcp", adminConfig.Listen)
+	// extract a singular listener address
+	netw, listenAddrs, err := ParseNetworkAddress(adminConfig.Listen)
+	if err != nil {
+		return fmt.Errorf("parsing admin listener address: %v", err)
+	}
+	if len(listenAddrs) != 1 {
+		return fmt.Errorf("admin endpoint must have exactly one listener; cannot listen on %v", listenAddrs)
+	}
+	ln, err := net.Listen(netw, listenAddrs[0])
 	if err != nil {
 		return err
 	}
