@@ -126,6 +126,17 @@ func GetModuleName(instance interface{}) string {
 	return name
 }
 
+// GetModuleID returns a module's ID (the last element of its name)
+// from an instance of its value. If the value is not a module,
+// an empty string will be returned.
+func GetModuleID(instance interface{}) string {
+	var name string
+	if mod, ok := instance.(Module); ok {
+		name = mod.CaddyModule().ID()
+	}
+	return name
+}
+
 // GetModules returns all modules in the given scope/namespace.
 // For example, a scope of "foo" returns modules named "foo.bar",
 // "foo.loo", but not "bar", "foo.bar.loo", etc. An empty scope
