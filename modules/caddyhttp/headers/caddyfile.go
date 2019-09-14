@@ -38,7 +38,7 @@ func init() {
 // Either a block can be opened or a single header field can be configured
 // in the first line, but not both in the same directive.
 func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
-	hdr := new(Headers)
+	hdr := new(Handler)
 	for h.Next() {
 		// first see if headers are in the initial line
 		var hasArgs bool
@@ -74,7 +74,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //     request_header [<matcher>] [[+|-]<field> <value>]
 //
 func parseReqHdrCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
-	hdr := new(Headers)
+	hdr := new(Handler)
 	for h.Next() {
 		if !h.NextArg() {
 			return nil, h.ArgErr()
@@ -109,7 +109,7 @@ func parseReqHdrCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, 
 	return hdr, nil
 }
 
-func processCaddyfileLineRespHdr(hdr *Headers, field, value string) {
+func processCaddyfileLineRespHdr(hdr *Handler, field, value string) {
 	if hdr.Response == nil {
 		hdr.Response = &RespHeaderOps{
 			HeaderOps: new(HeaderOps),
