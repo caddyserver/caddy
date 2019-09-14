@@ -16,6 +16,8 @@ package reverseproxy
 
 import (
 	"fmt"
+	"net"
+	"strings"
 	"sync/atomic"
 
 	"github.com/caddyserver/caddy/v2"
@@ -173,6 +175,27 @@ type DialInfo struct {
 	// The address to dial. Follows the same
 	// semantics and rules as net.Dial.
 	Address string
+
+	// Host and Port are components of Address,
+	// pre-split for convenience.
+	Host, Port string
+}
+
+// NewDialInfo creates and populates a DialInfo
+// for the given network and address. It splits
+// the address into host and port values if the
+// network type supports them, or uses the whole
+// address as the port if splitting fails.
+func NewDialInfo(network, address string) DialInfo {
+	var addrHost, addrPort string
+	if !strings.Contains(network, "unix") {
+		var err error
+		addrHost, addrPort, err = net.SplitHostPort(address)
+		if err != nil {
+			addrHost = address // assume there was no port
+		}
+	}
+	return DialInfo{network, address, addrHost, addrPort}
 }
 
 // String returns the Caddy network address form

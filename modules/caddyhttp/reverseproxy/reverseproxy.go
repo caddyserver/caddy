@@ -21,11 +21,13 @@ import (
 	"net"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp/headers"
 	"golang.org/x/net/http/httpguts"
 )
 
@@ -35,12 +37,13 @@ func init() {
 
 // Handler implements a highly configurable and production-ready reverse proxy.
 type Handler struct {
-	TransportRaw  json.RawMessage `json:"transport,omitempty"`
-	CBRaw         json.RawMessage `json:"circuit_breaker,omitempty"`
-	LoadBalancing *LoadBalancing  `json:"load_balancing,omitempty"`
-	HealthChecks  *HealthChecks   `json:"health_checks,omitempty"`
-	Upstreams     UpstreamPool    `json:"upstreams,omitempty"`
-	FlushInterval caddy.Duration  `json:"flush_interval,omitempty"`
+	TransportRaw  json.RawMessage  `json:"transport,omitempty"`
+	CBRaw         json.RawMessage  `json:"circuit_breaker,omitempty"`
+	LoadBalancing *LoadBalancing   `json:"load_balancing,omitempty"`
+	HealthChecks  *HealthChecks    `json:"health_checks,omitempty"`
+	Upstreams     UpstreamPool     `json:"upstreams,omitempty"`
+	FlushInterval caddy.Duration   `json:"flush_interval,omitempty"`
+	Headers       *headers.Handler `json:"headers,omitempty"`
 
 	Transport http.RoundTripper `json:"-"`
 	CB        CircuitBreaker    `json:"-"`
@@ -178,7 +181,7 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 			// make a new upstream based on the original
 			// that has a singular dial address
 			upstreamCopy := *upstream
-			upstreamCopy.dialInfo = DialInfo{network, addr}
+			upstreamCopy.dialInfo = NewDialInfo(network, addr)
 			upstreamCopy.Dial = upstreamCopy.dialInfo.String()
 			upstreamCopy.cb = h.CB
 
@@ -187,7 +190,7 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 			// TODO: make hosts modular, so that their state can be distributed in enterprise for example
 			// TODO: If distributed, the pool should be stored in storage...
 			var host Host = new(upstreamHost)
-			activeHost, loaded := hosts.LoadOrStore(upstreamCopy.Dial, host)
+			activeHost, loaded := hosts.LoadOrStore(upstreamCopy.dialInfo.String(), host)
 			if loaded {
 				host = activeHost.(Host)
 			}
@@ -243,12 +246,19 @@ func (h *Handler) Cleanup() error {
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
+
 	// prepare the request for proxying; this is needed only once
 	err := h.prepareRequest(r)
 	if err != nil {
 		return caddyhttp.Error(http.StatusInternalServerError,
 			fmt.Errorf("preparing request for upstream round-trip: %v", err))
 	}
+
+	// we will need the original headers and Host
+	// value if header operations are configured
+	reqHeader := r.Header
+	reqHost := r.Host
 
 	start := time.Now()
 
@@ -258,7 +268,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		upstream := h.LoadBalancing.SelectionPolicy.Select(h.Upstreams, r)
 		if upstream == nil {
 			if proxyErr == nil {
-				proxyErr = fmt.Errorf("no available upstreams")
+				proxyErr = fmt.Errorf("no upstreams available")
 			}
 			if !h.tryAgain(start, proxyErr) {
 				break
@@ -271,6 +281,26 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		// or satisfactorily represented in a URL
 		ctx := context.WithValue(r.Context(), DialInfoCtxKey, upstream.dialInfo)
 		r = r.WithContext(ctx)
+
+		// set placeholders with information about this upstream
+		repl.Set("http.handlers.reverse_proxy.upstream.address", upstream.dialInfo.String())
+		repl.Set("http.handlers.reverse_proxy.upstream.hostport", upstream.dialInfo.Address)
+		repl.Set("http.handlers.reverse_proxy.upstream.host", upstream.dialInfo.Host)
+		repl.Set("http.handlers.reverse_proxy.upstream.port", upstream.dialInfo.Port)
+		repl.Set("http.handlers.reverse_proxy.upstream.requests", strconv.Itoa(upstream.Host.NumRequests()))
+		repl.Set("http.handlers.reverse_proxy.upstream.max_requests", strconv.Itoa(upstream.MaxRequests))
+		repl.Set("http.handlers.reverse_proxy.upstream.fails", strconv.Itoa(upstream.Host.Fails()))
+
+		// mutate request headers according to this upstream;
+		// because we're in a retry loop, we have to copy
+		// headers (and the r.Host value) from the original
+		// so that each retry is identical to the first
+		if h.Headers != nil && h.Headers.Request != nil {
+			r.Header = make(http.Header)
+			copyHeader(r.Header, reqHeader)
+			r.Host = reqHost
+			h.Headers.Request.ApplyToRequest(r)
+		}
 
 		// proxy the request to that upstream
 		proxyErr = h.reverseProxy(w, r, upstream)
@@ -426,6 +456,15 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, upstre
 			trailerKeys = append(trailerKeys, k)
 		}
 		rw.Header().Add("Trailer", strings.Join(trailerKeys, ", "))
+	}
+
+	// apply any response header operations
+	if h.Headers != nil && h.Headers.Response != nil {
+		if h.Headers.Response.Require == nil ||
+			h.Headers.Response.Require.Match(res.StatusCode, rw.Header()) {
+			repl := req.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
+			h.Headers.Response.ApplyTo(rw.Header(), repl)
+		}
 	}
 
 	rw.WriteHeader(res.StatusCode)
