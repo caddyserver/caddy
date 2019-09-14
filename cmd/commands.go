@@ -32,8 +32,8 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
+	"github.com/keybase/go-ps"
 	"github.com/mholt/certmagic"
-	"github.com/mitchellh/go-ps"
 )
 
 func cmdStart() (int, error) {
