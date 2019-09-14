@@ -111,10 +111,10 @@ func (h *Handler) doActiveHealthChecksForAllHosts() {
 			if network == "unix" || network == "unixgram" || network == "unixpacket" {
 				// this will be used as the Host portion of a http.Request URL, and
 				// paths to socket files would produce an error when creating URL,
-				// so use a fake Host value instead
-				hostAddr = network
+				// so use a fake Host value instead; unix sockets are usually local
+				hostAddr = "localhost"
 			}
-			err = h.doActiveHealthCheck(DialInfo{network, addrs[0]}, hostAddr, host)
+			err = h.doActiveHealthCheck(NewDialInfo(network, addrs[0]), hostAddr, host)
 			if err != nil {
 				log.Printf("[ERROR] reverse_proxy: active health check for host %s: %v", networkAddr, err)
 			}
