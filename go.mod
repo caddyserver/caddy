@@ -14,11 +14,11 @@ require (
 	github.com/huandu/xstrings v1.2.0 // indirect
 	github.com/ilibs/json5 v1.0.1
 	github.com/imdario/mergo v0.3.7 // indirect
+	github.com/keybase/go-ps v0.0.0-20190827175125-91aafc93ba19
 	github.com/klauspost/compress v1.7.1-0.20190613161414-0b31f265a57b
 	github.com/klauspost/cpuid v1.2.1
 	github.com/lucas-clemente/quic-go v0.7.1-0.20190908032346-fc962d18373a
 	github.com/mholt/certmagic v0.7.1
-	github.com/mitchellh/go-ps v0.0.0-20170309133038-4fdf99ab2936
 	github.com/muhammadmuzzammil1998/jsonc v0.0.0-20190902132743-e4903c4dea48
 	github.com/rs/cors v1.6.0
 	github.com/russross/blackfriday/v2 v2.0.1
