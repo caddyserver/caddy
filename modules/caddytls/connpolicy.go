@@ -46,7 +46,7 @@ func (cp ConnectionPolicies) TLSConfig(ctx caddy.Context) (*tls.Config, error) {
 			}
 			cp[i].matchers = append(cp[i].matchers, val.(ConnectionMatcher))
 		}
-		cp[i].Matchers = nil // allow GC to deallocate - TODO: Does this help?
+		cp[i].Matchers = nil // allow GC to deallocate
 
 		// certificate selector
 		if pol.CertSelection != nil {
@@ -55,7 +55,7 @@ func (cp ConnectionPolicies) TLSConfig(ctx caddy.Context) (*tls.Config, error) {
 				return nil, fmt.Errorf("loading certificate selection module: %s", err)
 			}
 			cp[i].certSelector = val.(certmagic.CertificateSelector)
-			cp[i].CertSelection = nil // allow GC to deallocate - TODO: Does this help?
+			cp[i].CertSelection = nil // allow GC to deallocate
 		}
 	}
 

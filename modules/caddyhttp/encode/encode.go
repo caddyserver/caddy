@@ -68,7 +68,7 @@ func (enc *Encode) Provision(ctx caddy.Context) error {
 			return err
 		}
 	}
-	enc.EncodingsRaw = nil // allow GC to deallocate - TODO: Does this help?
+	enc.EncodingsRaw = nil // allow GC to deallocate
 
 	if enc.MinLength == 0 {
 		enc.MinLength = defaultMinLength

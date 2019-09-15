@@ -71,7 +71,7 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 			return fmt.Errorf("loading TLS automation management module: %s", err)
 		}
 		t.Automation.Policies[i].Management = val.(ManagerMaker)
-		t.Automation.Policies[i].ManagementRaw = nil // allow GC to deallocate - TODO: Does this help?
+		t.Automation.Policies[i].ManagementRaw = nil // allow GC to deallocate
 	}
 
 	// certificate loaders
@@ -138,7 +138,7 @@ func (t *TLS) Start() error {
 			return fmt.Errorf("automate: managing %v: %v", names, err)
 		}
 	}
-	t.Certificates = nil // allow GC to deallocate - TODO: Does this help?
+	t.Certificates = nil // allow GC to deallocate
 
 	return nil
 }

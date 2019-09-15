@@ -74,7 +74,7 @@ func (m *ACMEManagerMaker) Provision(ctx caddy.Context) error {
 			return fmt.Errorf("loading DNS provider module: %s", err)
 		}
 		m.Challenges.DNS = val.(challenge.Provider)
-		m.Challenges.DNSRaw = nil // allow GC to deallocate - TODO: Does this help?
+		m.Challenges.DNSRaw = nil // allow GC to deallocate
 	}
 
 	// policy-specific storage implementation
@@ -88,7 +88,7 @@ func (m *ACMEManagerMaker) Provision(ctx caddy.Context) error {
 			return fmt.Errorf("creating TLS storage configuration: %v", err)
 		}
 		m.storage = cmStorage
-		m.Storage = nil // allow GC to deallocate - TODO: Does this help?
+		m.Storage = nil // allow GC to deallocate
 	}
 
 	return nil

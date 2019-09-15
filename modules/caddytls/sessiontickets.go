@@ -62,7 +62,7 @@ func (s *SessionTicketService) provision(ctx caddy.Context) error {
 		return fmt.Errorf("loading TLS session ticket ephemeral keys provider module: %s", err)
 	}
 	s.keySource = val.(STEKProvider)
-	s.KeySource = nil // allow GC to deallocate - TODO: Does this help?
+	s.KeySource = nil // allow GC to deallocate
 
 	// if session tickets or just rotation are
 	// disabled, no need to start service
