@@ -418,7 +418,7 @@ func (m *MatchNegate) Provision(ctx caddy.Context) error {
 		}
 		m.matchers = append(m.matchers, val.(RequestMatcher))
 	}
-	m.matchersRaw = nil // allow GC to deallocate - TODO: Does this help?
+	m.matchersRaw = nil // allow GC to deallocate
 	return nil
 }
 

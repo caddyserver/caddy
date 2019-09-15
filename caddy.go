@@ -93,7 +93,7 @@ func Run(newCfg *Config) error {
 					return fmt.Errorf("creating storage value: %v", err)
 				}
 				newCfg.storage = stor
-				newCfg.StorageRaw = nil // allow GC to deallocate - TODO: Does this help?
+				newCfg.StorageRaw = nil // allow GC to deallocate
 			}
 			if newCfg.storage == nil {
 				newCfg.storage = &certmagic.FileStorage{Path: dataDir()}

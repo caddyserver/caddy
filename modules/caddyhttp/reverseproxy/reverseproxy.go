@@ -66,7 +66,7 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 			return fmt.Errorf("loading transport module: %s", err)
 		}
 		h.Transport = val.(http.RoundTripper)
-		h.TransportRaw = nil // allow GC to deallocate - TODO: Does this help?
+		h.TransportRaw = nil // allow GC to deallocate
 	}
 	if h.LoadBalancing != nil && h.LoadBalancing.SelectionPolicyRaw != nil {
 		val, err := ctx.LoadModuleInline("policy",
@@ -76,7 +76,7 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 			return fmt.Errorf("loading load balancing selection module: %s", err)
 		}
 		h.LoadBalancing.SelectionPolicy = val.(Selector)
-		h.LoadBalancing.SelectionPolicyRaw = nil // allow GC to deallocate - TODO: Does this help?
+		h.LoadBalancing.SelectionPolicyRaw = nil // allow GC to deallocate
 	}
 	if h.CBRaw != nil {
 		val, err := ctx.LoadModuleInline("type", "http.handlers.reverse_proxy.circuit_breakers", h.CBRaw)
@@ -84,7 +84,7 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 			return fmt.Errorf("loading circuit breaker module: %s", err)
 		}
 		h.CB = val.(CircuitBreaker)
-		h.CBRaw = nil // allow GC to deallocate - TODO: Does this help?
+		h.CBRaw = nil // allow GC to deallocate
 	}
 
 	if h.Transport == nil {

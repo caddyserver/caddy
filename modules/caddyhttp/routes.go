@@ -91,7 +91,7 @@ func (routes RouteList) Provision(ctx caddy.Context) error {
 			}
 			routes[i].MatcherSets = append(routes[i].MatcherSets, matchers)
 		}
-		routes[i].MatcherSetsRaw = nil // allow GC to deallocate - TODO: Does this help?
+		routes[i].MatcherSetsRaw = nil // allow GC to deallocate
 
 		// handlers
 		for j, rawMsg := range route.HandlersRaw {
@@ -101,7 +101,7 @@ func (routes RouteList) Provision(ctx caddy.Context) error {
 			}
 			routes[i].Handlers = append(routes[i].Handlers, mh.(MiddlewareHandler))
 		}
-		routes[i].HandlersRaw = nil // allow GC to deallocate - TODO: Does this help?
+		routes[i].HandlersRaw = nil // allow GC to deallocate
 	}
 	return nil
 }
