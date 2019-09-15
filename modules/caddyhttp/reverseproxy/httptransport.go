@@ -123,6 +123,14 @@ func (h HTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return h.RoundTripper.RoundTrip(req)
 }
 
+// Cleanup implements caddy.CleanerUpper and closes any idle connections.
+func (h HTTPTransport) Cleanup() error {
+	if ht, ok := h.RoundTripper.(*http.Transport); ok {
+		ht.CloseIdleConnections()
+	}
+	return nil
+}
+
 // TLSConfig holds configuration related to the
 // TLS configuration for the transport/client.
 type TLSConfig struct {
@@ -203,6 +211,7 @@ type KeepAlive struct {
 
 // Interface guards
 var (
-	_ caddy.Provisioner = (*HTTPTransport)(nil)
-	_ http.RoundTripper = (*HTTPTransport)(nil)
+	_ caddy.Provisioner  = (*HTTPTransport)(nil)
+	_ http.RoundTripper  = (*HTTPTransport)(nil)
+	_ caddy.CleanerUpper = (*HTTPTransport)(nil)
 )
