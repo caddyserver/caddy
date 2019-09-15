@@ -54,15 +54,15 @@ Contributing to Go projects on GitHub is fun and easy. We recommend the followin
 
 1. [Fork this repo](https://github.com/caddyserver/caddy). This makes a copy of the code you can write to.
 
-2. If you don't already have this repo (mholt/caddy.git) repo on your computer, get it with `go get github.com/caddyserver/caddy/caddy`.
+2. If you don't already have this repo (caddyserver/caddy.git) repo on your computer, get it with `go get github.com/caddyserver/caddy/caddy`.
 
-3. Tell git that it can push the mholt/caddy.git repo to your fork by adding a remote: `git remote add myfork https://github.com/you/caddy.git`
+3. Tell git that it can push the caddyserver/caddy.git repo to your fork by adding a remote: `git remote add myfork https://github.com/you/caddy.git`
 
-4. Make your changes in the mholt/caddy.git repo on your computer.
+4. Make your changes in the caddyserver/caddy.git repo on your computer.
 
 5. Push your changes to your fork: `git push myfork`
 
-6. [Create a pull request](https://github.com/caddyserver/caddy/pull/new/master) to merge your changes into mholt/caddy @ master. (Click "compare across forks" and change the head fork.)
+6. [Create a pull request](https://github.com/caddyserver/caddy/pull/new/master) to merge your changes into caddyserver/caddy @ master. (Click "compare across forks" and change the head fork.)
 
 This workflow is nice because you don't have to change import paths. You can get fancier by using different branches if you want.
 
