@@ -25,7 +25,6 @@ import (
 
 func init() {
 	caddy.RegisterModule(StaticResponse{})
-	// TODO: Caddyfile directive
 }
 
 // StaticResponse implements a simple responder for static responses.
@@ -46,7 +45,7 @@ func (StaticResponse) CaddyModule() caddy.ModuleInfo {
 
 // UnmarshalCaddyfile sets up the handler from Caddyfile tokens. Syntax:
 //
-//     static_response [<matcher>] <status> {
+//     respond [<matcher>] <status> {
 //         body <text>
 //         close
 //     }
@@ -119,5 +118,8 @@ func (s StaticResponse) ServeHTTP(w http.ResponseWriter, r *http.Request, _ Hand
 	return nil
 }
 
-// Interface guard
-var _ MiddlewareHandler = (*StaticResponse)(nil)
+// Interface guards
+var (
+	_ MiddlewareHandler     = (*StaticResponse)(nil)
+	_ caddyfile.Unmarshaler = (*StaticResponse)(nil)
+)

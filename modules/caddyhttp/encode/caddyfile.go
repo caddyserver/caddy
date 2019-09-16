@@ -29,7 +29,6 @@ func init() {
 	httpcaddyfile.RegisterHandlerDirective("encode", parseCaddyfile)
 }
 
-// TODO: This is a good example of why UnmarshalCaddyfile is still a good idea... hmm.
 func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
 	enc := new(Encode)
 	err := enc.UnmarshalCaddyfile(h.Dispenser)
@@ -38,8 +37,6 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 	}
 	return enc, nil
 }
-
-// TODO: Keep UnmarshalCaddyfile pattern?
 
 // UnmarshalCaddyfile sets up the handler from Caddyfile tokens. Syntax:
 //

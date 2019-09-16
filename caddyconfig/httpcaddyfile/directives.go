@@ -25,7 +25,6 @@ import (
 
 // defaultDirectiveOrder specifies the order
 // to apply directives in HTTP routes.
-// TODO: finish the ability to customize this
 var defaultDirectiveOrder = []string{
 	"rewrite",
 	"try_files",
@@ -34,7 +33,7 @@ var defaultDirectiveOrder = []string{
 	"encode",
 	"templates",
 	"redir",
-	"static_response", // TODO: "reply" or "respond"?
+	"respond",
 	"reverse_proxy",
 	"php_fastcgi",
 	"file_server",
