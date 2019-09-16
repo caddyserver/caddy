@@ -31,6 +31,7 @@ func init() {
 	RegisterDirective("root", parseRoot)
 	RegisterDirective("tls", parseTLS)
 	RegisterHandlerDirective("redir", parseRedir)
+	RegisterHandlerDirective("respond", parseRespond)
 }
 
 func parseBind(h Helper) ([]ConfigValue, error) {
@@ -252,4 +253,13 @@ func parseRedir(h Helper) (caddyhttp.MiddlewareHandler, error) {
 		Headers:    http.Header{"Location": []string{to}},
 		Body:       body,
 	}, nil
+}
+
+func parseRespond(h Helper) (caddyhttp.MiddlewareHandler, error) {
+	sr := new(caddyhttp.StaticResponse)
+	err := sr.UnmarshalCaddyfile(h.Dispenser)
+	if err != nil {
+		return nil, err
+	}
+	return sr, nil
 }

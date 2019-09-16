@@ -22,8 +22,6 @@ import (
 	"testing"
 )
 
-// TODO: re-enable all tests
-
 func TestAllTokens(t *testing.T) {
 	input := strings.NewReader("a b c\nd e")
 	expected := []string{"a", "b", "c", "d", "e"}
