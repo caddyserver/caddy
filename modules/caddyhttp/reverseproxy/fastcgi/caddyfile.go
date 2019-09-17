@@ -138,7 +138,7 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 	// route to rewrite to PHP index file
 	rewriteMatcherSet := map[string]json.RawMessage{
 		"file": h.JSON(fileserver.MatchFile{
-			TryFiles: []string{"{http.request.uri.path}", "index.php"},
+			TryFiles: []string{"{http.request.uri.path}", "{http.request.uri.path}/index.php", "index.php"},
 		}, nil),
 	}
 	rewriteHandler := rewrite.Rewrite{
