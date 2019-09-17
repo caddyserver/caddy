@@ -66,9 +66,9 @@ type (
 
 	// MatchNegate matches requests by negating its matchers' results.
 	MatchNegate struct {
-		matchersRaw map[string]json.RawMessage
+		MatchersRaw map[string]json.RawMessage `json:"-"`
 
-		matchers MatcherSet
+		Matchers MatcherSet `json:"-"`
 	}
 
 	// MatchStarlarkExpr matches requests by evaluating a Starlark expression.
@@ -400,7 +400,7 @@ func (MatchNegate) CaddyModule() caddy.ModuleInfo {
 // the struct, but we need a struct because we need another
 // field just for the provisioned modules.
 func (m *MatchNegate) UnmarshalJSON(data []byte) error {
-	return json.Unmarshal(data, &m.matchersRaw)
+	return json.Unmarshal(data, &m.MatchersRaw)
 }
 
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
@@ -411,21 +411,21 @@ func (m *MatchNegate) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 // Provision loads the matcher modules to be negated.
 func (m *MatchNegate) Provision(ctx caddy.Context) error {
-	for modName, rawMsg := range m.matchersRaw {
+	for modName, rawMsg := range m.MatchersRaw {
 		val, err := ctx.LoadModule("http.matchers."+modName, rawMsg)
 		if err != nil {
 			return fmt.Errorf("loading matcher module '%s': %v", modName, err)
 		}
-		m.matchers = append(m.matchers, val.(RequestMatcher))
+		m.Matchers = append(m.Matchers, val.(RequestMatcher))
 	}
-	m.matchersRaw = nil // allow GC to deallocate
+	m.MatchersRaw = nil // allow GC to deallocate
 	return nil
 }
 
 // Match returns true if r matches m. Since this matcher negates the
 // embedded matchers, false is returned if any of its matchers match.
 func (m MatchNegate) Match(r *http.Request) bool {
-	return !m.matchers.Match(r)
+	return !m.Matchers.Match(r)
 }
 
 // CaddyModule returns the Caddy module information.
