@@ -50,6 +50,11 @@ func init() {
 	caddy.RegisterServerType(serverType, caddy.ServerType{
 		Directives: func() []string { return directives },
 		DefaultInput: func() caddy.Input {
+			if Port == DefaultHTTPSPort && serverType == "http" {
+				fmt.Println("Port 443 can only be used for https sites.")
+				os.Exit(1)
+			}
+
 			if Port == DefaultPort && Host != "" {
 				// by leaving the port blank in this case we give auto HTTPS
 				// a chance to set the port to 443 for us
@@ -58,6 +63,7 @@ func init() {
 					ServerTypeName: serverType,
 				}
 			}
+
 			return caddy.CaddyfileInput{
 				Contents:       []byte(fmt.Sprintf("%s:%s\nroot %s", Host, Port, Root)),
 				ServerTypeName: serverType,
