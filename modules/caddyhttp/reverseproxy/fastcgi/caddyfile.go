@@ -127,7 +127,7 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 		}, nil),
 	}
 	redirHandler := caddyhttp.StaticResponse{
-		StatusCode: caddyhttp.WeakString("307"),
+		StatusCode: caddyhttp.WeakString("308"),
 		Headers:    http.Header{"Location": []string{"{http.request.uri.path}/"}},
 	}
 	redirRoute := caddyhttp.Route{
