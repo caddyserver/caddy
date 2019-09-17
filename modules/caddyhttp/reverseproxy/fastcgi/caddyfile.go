@@ -16,6 +16,7 @@ package fastcgi
 
 import (
 	"encoding/json"
+	"net/http"
 
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -114,10 +115,30 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 		return nil, h.ArgErr()
 	}
 
+	// route to redirect to canonical path if index PHP file
+	redirMatcherSet := map[string]json.RawMessage{
+		"file": h.JSON(fileserver.MatchFile{
+			TryFiles: []string{"{http.request.uri.path}/index.php"},
+		}, nil),
+		"not": h.JSON(caddyhttp.MatchNegate{
+			MatchersRaw: map[string]json.RawMessage{
+				"path": h.JSON(caddyhttp.MatchPath{"*/"}, nil),
+			},
+		}, nil),
+	}
+	redirHandler := caddyhttp.StaticResponse{
+		StatusCode: caddyhttp.WeakString("308"),
+		Headers:    http.Header{"Location": []string{"{http.request.uri.path}/"}},
+	}
+	redirRoute := caddyhttp.Route{
+		MatcherSetsRaw: []map[string]json.RawMessage{redirMatcherSet},
+		HandlersRaw:    []json.RawMessage{caddyconfig.JSONModuleObject(redirHandler, "handler", "static_response", nil)},
+	}
+
 	// route to rewrite to PHP index file
 	rewriteMatcherSet := map[string]json.RawMessage{
 		"file": h.JSON(fileserver.MatchFile{
-			TryFiles: []string{"{http.request.uri.path}", "index.php"},
+			TryFiles: []string{"{http.request.uri.path}", "{http.request.uri.path}/index.php", "index.php"},
 		}, nil),
 	}
 	rewriteHandler := rewrite.Rewrite{
@@ -175,7 +196,7 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 	// wrap ours in a subroute and return that
 	if hasUserMatcher {
 		subroute := caddyhttp.Subroute{
-			Routes: caddyhttp.RouteList{rewriteRoute, rpRoute},
+			Routes: caddyhttp.RouteList{redirRoute, rewriteRoute, rpRoute},
 		}
 		return []httpcaddyfile.ConfigValue{
 			{
@@ -191,6 +212,10 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 	// if the user did not specify a matcher, then
 	// we can just use our own matchers
 	return []httpcaddyfile.ConfigValue{
+		{
+			Class: "route",
+			Value: redirRoute,
+		},
 		{
 			Class: "route",
 			Value: rewriteRoute,
