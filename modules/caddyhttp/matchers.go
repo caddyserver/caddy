@@ -403,6 +403,11 @@ func (m *MatchNegate) UnmarshalJSON(data []byte) error {
 	return json.Unmarshal(data, &m.MatchersRaw)
 }
 
+// MarshalJSON marshals m's matchers.
+func (m MatchNegate) MarshalJSON() ([]byte, error) {
+	return json.Marshal(m.MatchersRaw)
+}
+
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
 func (m *MatchNegate) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	// TODO: figure out how this will work
@@ -686,4 +691,7 @@ var (
 	_ caddyfile.Unmarshaler = (*MatchHeaderRE)(nil)
 	_ caddyfile.Unmarshaler = (*MatchProtocol)(nil)
 	_ caddyfile.Unmarshaler = (*MatchRemoteIP)(nil)
+
+	_ json.Marshaler   = (*MatchNegate)(nil)
+	_ json.Unmarshaler = (*MatchNegate)(nil)
 )
