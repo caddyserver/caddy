@@ -18,7 +18,7 @@ require (
 	github.com/klauspost/compress v1.7.1-0.20190613161414-0b31f265a57b
 	github.com/klauspost/cpuid v1.2.1
 	github.com/lucas-clemente/quic-go v0.7.1-0.20190908032346-fc962d18373a
-	github.com/mholt/certmagic v0.7.2
+	github.com/mholt/certmagic v0.7.3-0.20190917224939-65d418add14f
 	github.com/muhammadmuzzammil1998/jsonc v0.0.0-20190902132743-e4903c4dea48
 	github.com/rs/cors v1.6.0
 	github.com/russross/blackfriday/v2 v2.0.1

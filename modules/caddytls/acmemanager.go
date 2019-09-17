@@ -15,8 +15,10 @@
 package caddytls
 
 import (
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net/url"
 	"time"
 
@@ -38,17 +40,19 @@ func init() {
 // after you have configured this struct
 // to your liking.
 type ACMEManagerMaker struct {
-	CA          string           `json:"ca,omitempty"`
-	Email       string           `json:"email,omitempty"`
-	RenewAhead  caddy.Duration   `json:"renew_ahead,omitempty"`
-	KeyType     string           `json:"key_type,omitempty"`
-	ACMETimeout caddy.Duration   `json:"acme_timeout,omitempty"`
-	MustStaple  bool             `json:"must_staple,omitempty"`
-	Challenges  ChallengesConfig `json:"challenges,omitempty"`
-	OnDemand    bool             `json:"on_demand,omitempty"`
-	Storage     json.RawMessage  `json:"storage,omitempty"`
+	CA                   string           `json:"ca,omitempty"`
+	Email                string           `json:"email,omitempty"`
+	RenewAhead           caddy.Duration   `json:"renew_ahead,omitempty"`
+	KeyType              string           `json:"key_type,omitempty"`
+	ACMETimeout          caddy.Duration   `json:"acme_timeout,omitempty"`
+	MustStaple           bool             `json:"must_staple,omitempty"`
+	Challenges           ChallengesConfig `json:"challenges,omitempty"`
+	OnDemand             bool             `json:"on_demand,omitempty"`
+	Storage              json.RawMessage  `json:"storage,omitempty"`
+	TrustedRootsPEMFiles []string         `json:"trusted_roots_pem_files,omitempty"`
 
-	storage certmagic.Storage
+	storage  certmagic.Storage
+	rootPool *x509.CertPool
 }
 
 // CaddyModule returns the Caddy module information.
@@ -89,6 +93,20 @@ func (m *ACMEManagerMaker) Provision(ctx caddy.Context) error {
 		}
 		m.storage = cmStorage
 		m.Storage = nil // allow GC to deallocate
+	}
+
+	// add any custom CAs to trust store
+	if len(m.TrustedRootsPEMFiles) > 0 {
+		m.rootPool = x509.NewCertPool()
+		for _, pemFile := range m.TrustedRootsPEMFiles {
+			pemData, err := ioutil.ReadFile(pemFile)
+			if err != nil {
+				return fmt.Errorf("loading trusted root CA's PEM file: %s: %v", pemFile, err)
+			}
+			if !m.rootPool.AppendCertsFromPEM(pemData) {
+				return fmt.Errorf("unable to add %s to trust pool: %v", pemFile, err)
+			}
+		}
 	}
 
 	return nil
@@ -150,6 +168,7 @@ func (m *ACMEManagerMaker) makeCertMagicConfig(ctx caddy.Context) certmagic.Conf
 		OnDemand:                ond,
 		MustStaple:              m.MustStaple,
 		Storage:                 storage,
+		TrustedRoots:            m.rootPool,
 		// TODO: listenHost
 	}
 }
