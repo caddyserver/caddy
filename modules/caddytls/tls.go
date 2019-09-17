@@ -18,7 +18,9 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
@@ -40,6 +42,8 @@ type TLS struct {
 	certificateLoaders []CertificateLoader
 	certCache          *certmagic.Cache
 	ctx                caddy.Context
+	storageCleanTicker *time.Ticker
+	storageCleanStop   chan struct{}
 }
 
 // CaddyModule returns the Caddy module information.
@@ -121,6 +125,9 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 		}
 	}
 
+	t.storageCleanTicker = time.NewTicker(storageCleanInterval)
+	t.storageCleanStop = make(chan struct{})
+
 	return nil
 }
 
@@ -140,16 +147,25 @@ func (t *TLS) Start() error {
 	}
 	t.Certificates = nil // allow GC to deallocate
 
+	t.keepStorageClean()
+
 	return nil
 }
 
 // Stop stops the TLS module and cleans up any allocations.
 func (t *TLS) Stop() error {
+	// stop the certificate cache
 	if t.certCache != nil {
-		// TODO: ensure locks are cleaned up too... maybe in certmagic though
 		t.certCache.Stop()
 	}
+
+	// stop the session ticket rotation goroutine
 	t.SessionTickets.stop()
+
+	// stop the storage cleaner goroutine and ticker
+	close(t.storageCleanStop)
+	t.storageCleanTicker.Stop()
+
 	return nil
 }
 
@@ -200,10 +216,58 @@ func (t *TLS) getAutomationPolicyForName(name string) AutomationPolicy {
 	return AutomationPolicy{Management: new(ACMEManagerMaker)}
 }
 
-// CertificatesForSAN returns the list of all certificates in
+// AllMatchingCertificates returns the list of all certificates in
 // the cache which could be used to satisfy the given SAN.
 func (t *TLS) AllMatchingCertificates(san string) []certmagic.Certificate {
 	return t.certCache.AllMatchingCertificates(san)
+}
+
+// keepStorageClean immediately cleans up all known storage units
+// if it was not recently done, and starts a goroutine that runs
+// the operation at every tick from t.storageCleanTicker.
+func (t *TLS) keepStorageClean() {
+	go func() {
+		for {
+			select {
+			case <-t.storageCleanStop:
+				return
+			case <-t.storageCleanTicker.C:
+				t.cleanStorageUnits()
+			}
+		}
+	}()
+	t.cleanStorageUnits()
+}
+
+func (t *TLS) cleanStorageUnits() {
+	storageCleanMu.Lock()
+	defer storageCleanMu.Unlock()
+
+	if !storageClean.IsZero() && time.Since(storageClean) < storageCleanInterval {
+		return
+	}
+
+	options := certmagic.CleanStorageOptions{
+		OCSPStaples:            true,
+		ExpiredCerts:           true,
+		ExpiredCertGracePeriod: 24 * time.Hour * 14,
+	}
+
+	// start with the default storage
+	certmagic.CleanStorage(t.ctx.Storage(), options)
+
+	// then clean each storage defined in ACME automation policies
+	for _, ap := range t.Automation.Policies {
+		if acmeMgmt, ok := ap.Management.(ACMEManagerMaker); ok {
+			if acmeMgmt.storage != nil {
+				certmagic.CleanStorage(acmeMgmt.storage, options)
+			}
+		}
+	}
+
+	storageClean = time.Now()
+
+	log.Println("[INFO] tls: Cleaned up storage unit(s)")
 }
 
 // CertificateLoader is a type that can load certificates.
@@ -299,6 +363,14 @@ var (
 			return fmt.Errorf("following http redirects is not allowed")
 		},
 	}
+)
+
+// Variables related to storage cleaning.
+var (
+	storageCleanInterval = 12 * time.Hour
+
+	storageClean   time.Time
+	storageCleanMu sync.Mutex
 )
 
 const automateKey = "automate"
