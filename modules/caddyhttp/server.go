@@ -42,7 +42,7 @@ type Server struct {
 	TLSConnPolicies   caddytls.ConnectionPolicies `json:"tls_connection_policies,omitempty"`
 	AutoHTTPS         *AutoHTTPSConfig            `json:"automatic_https,omitempty"`
 	MaxRehandles      *int                        `json:"max_rehandles,omitempty"`
-	StrictSNIHost     bool                        `json:"strict_sni_host,omitempty"`
+	StrictSNIHost     *bool                       `json:"strict_sni_host,omitempty"`
 
 	// This field is not subject to compatibility promises
 	ExperimentalHTTP3 bool `json:"experimental_http3,omitempty"`
@@ -164,7 +164,7 @@ func (s *Server) enforcementHandler(w http.ResponseWriter, r *http.Request, next
 	// servers that rely on TLS ClientAuth sharing a listener
 	// with servers that do not; if not enforced, client could
 	// bypass by sending benign SNI then restricted Host header
-	if s.StrictSNIHost && r.TLS != nil {
+	if s.StrictSNIHost != nil && *s.StrictSNIHost && r.TLS != nil {
 		hostname, _, err := net.SplitHostPort(r.Host)
 		if err != nil {
 			hostname = r.Host // OK; probably lacked port

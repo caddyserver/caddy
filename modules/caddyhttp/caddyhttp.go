@@ -78,16 +78,20 @@ func (app *App) Provision(ctx caddy.Context) error {
 			srv.AutoHTTPS = new(AutoHTTPSConfig)
 		}
 
-		// disallow TLS client auth bypass which could
-		// otherwise be exploited by sending an unprotected
-		// SNI value during TLS handshake, then a protected
-		// Host header during HTTP request later on that
-		// connection
-		if srv.hasTLSClientAuth() {
-			srv.StrictSNIHost = true
+		// if not explicitly configured by the user, disallow TLS
+		// client auth bypass (domain fronting) which could
+		// otherwise be exploited by sending an unprotected SNI
+		// value during a TLS handshake, then putting a protected
+		// domain in the Host header after establishing connection;
+		// this is a safe default, but we allow users to override
+		// it for example in the case of running a proxy where
+		// domain fronting is desired and access is not restricted
+		// based on hostname
+		if srv.StrictSNIHost == nil && srv.hasTLSClientAuth() {
+			trueBool := true
+			srv.StrictSNIHost = &trueBool
 		}
 
-		// TODO: Test this function to ensure these replacements are performed
 		for i := range srv.Listen {
 			srv.Listen[i] = repl.ReplaceAll(srv.Listen[i], "")
 		}
