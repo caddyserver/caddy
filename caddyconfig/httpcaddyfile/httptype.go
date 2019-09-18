@@ -268,7 +268,7 @@ func (st *ServerType) serversFromPairings(
 			}
 			if _, ok := sblock.pile["tls.off"]; ok {
 				// tls off: disable TLS (and automatic HTTPS) for server block's names
-				if srv.AutoHTTPS == nil {
+				if srv.AutoHTTPS == nil && len(autoHTTPSQualifiedHosts) > 0 {
 					srv.AutoHTTPS = new(caddyhttp.AutoHTTPSConfig)
 				}
 				srv.AutoHTTPS.Skip = append(srv.AutoHTTPS.Skip, autoHTTPSQualifiedHosts...)

@@ -112,6 +112,10 @@ func (m MatchHost) Match(r *http.Request) bool {
 	if err != nil {
 		// OK; probably didn't have a port
 		reqHost = r.Host
+
+		// make sure we strip the brackets from IPv6 addresses
+		reqHost = strings.TrimPrefix(reqHost, "[")
+		reqHost = strings.TrimSuffix(reqHost, "]")
 	}
 
 outer:
