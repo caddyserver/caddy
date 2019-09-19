@@ -196,17 +196,26 @@ func (s *Server) listenersUseAnyPortOtherThan(otherPort int) bool {
 	return false
 }
 
-// listenersIncludePort returns true if there are any
-// listeners in s that use otherPort.
-func (s *Server) listenersIncludePort(otherPort int) bool {
+func (s *Server) hasListenerAddress(fullAddr string) bool {
+	netw, addrs, err := caddy.ParseNetworkAddress(fullAddr)
+	if err != nil {
+		return false
+	}
+	if len(addrs) != 1 {
+		return false
+	}
+	addr := addrs[0]
 	for _, lnAddr := range s.Listen {
-		_, addrs, err := caddy.ParseNetworkAddress(lnAddr)
-		if err == nil {
-			for _, a := range addrs {
-				_, port, err := net.SplitHostPort(a)
-				if err == nil && port == strconv.Itoa(otherPort) {
-					return true
-				}
+		thisNetw, thisAddrs, err := caddy.ParseNetworkAddress(lnAddr)
+		if err != nil {
+			continue
+		}
+		if thisNetw != netw {
+			continue
+		}
+		for _, a := range thisAddrs {
+			if a == addr {
+				return true
 			}
 		}
 	}
