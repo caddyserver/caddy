@@ -15,12 +15,14 @@
 package httpcaddyfile
 
 import (
+	"fmt"
 	"strconv"
 
+	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 )
 
-func parseHTTPPort(d *caddyfile.Dispenser) (int, error) {
+func parseOptHTTPPort(d *caddyfile.Dispenser) (int, error) {
 	var httpPort int
 	for d.Next() {
 		var httpPortStr string
@@ -36,7 +38,7 @@ func parseHTTPPort(d *caddyfile.Dispenser) (int, error) {
 	return httpPort, nil
 }
 
-func parseHTTPSPort(d *caddyfile.Dispenser) (int, error) {
+func parseOptHTTPSPort(d *caddyfile.Dispenser) (int, error) {
 	var httpsPort int
 	for d.Next() {
 		var httpsPortStr string
@@ -52,11 +54,11 @@ func parseHTTPSPort(d *caddyfile.Dispenser) (int, error) {
 	return httpsPort, nil
 }
 
-func parseExperimentalHTTP3(d *caddyfile.Dispenser) (bool, error) {
+func parseOptExperimentalHTTP3(d *caddyfile.Dispenser) (bool, error) {
 	return true, nil
 }
 
-func parseHandlerOrder(d *caddyfile.Dispenser) ([]string, error) {
+func parseOptHandlerOrder(d *caddyfile.Dispenser) ([]string, error) {
 	if !d.Next() {
 		return nil, d.ArgErr()
 	}
@@ -77,4 +79,32 @@ func parseHandlerOrder(d *caddyfile.Dispenser) ([]string, error) {
 		return nil, d.ArgErr()
 	}
 	return order, nil
+}
+
+func parseOptStorage(d *caddyfile.Dispenser) (caddy.StorageConverter, error) {
+	if !d.Next() {
+		return nil, d.ArgErr()
+	}
+	args := d.RemainingArgs()
+	if len(args) != 1 {
+		return nil, d.ArgErr()
+	}
+	modName := args[0]
+	mod, err := caddy.GetModule("caddy.storage." + modName)
+	if err != nil {
+		return nil, fmt.Errorf("getting storage module '%s': %v", modName, err)
+	}
+	unm, ok := mod.New().(caddyfile.Unmarshaler)
+	if !ok {
+		return nil, fmt.Errorf("storage module '%s' is not a Caddyfile unmarshaler", mod.Name)
+	}
+	err = unm.UnmarshalCaddyfile(d.NewFromNextTokens())
+	if err != nil {
+		return nil, err
+	}
+	storage, ok := unm.(caddy.StorageConverter)
+	if !ok {
+		return nil, fmt.Errorf("module %s is not a StorageConverter", mod.Name)
+	}
+	return storage, nil
 }
