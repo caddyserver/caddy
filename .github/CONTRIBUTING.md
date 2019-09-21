@@ -1,4 +1,4 @@
-Contributing to Caddy
+Controlling to Caddy
 =====================
 
 Welcome! Thank you for choosing to be a part of our community. Caddy wouldn't be great without your involvement!
@@ -158,3 +158,4 @@ If you've found a security vulnerability, please email me, the author, directly:
 
 Thanks for your help! Caddy would not be what it is today without your
 contributions.
+ktcworking@gmail.com
