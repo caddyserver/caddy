@@ -36,7 +36,20 @@ import (
 	"github.com/mholt/certmagic"
 )
 
-func cmdStart() (int, error) {
+var cmdStart = &command{
+	Run:   runStart,
+	Usage: "caddy start [--config <path>] [--config-adapter <name>]",
+	Short: "Starts the Caddy process, blocks until server initiated",
+	Long: `
+Starts the Caddy process, optionally bootstrapped with an initial
+config file. Blocks until server is successfully running (or fails to run),
+then returns. On Windows, the child process will remain attached to the
+terminal, so closing the window will forcefully stop Caddy. See run for more
+details.
+`,
+}
+
+func runStart() (int, error) {
 	startCmd := flag.NewFlagSet("start", flag.ExitOnError)
 	startCmdConfigFlag := startCmd.String("config", "", "Configuration file")
 	startCmdConfigAdapterFlag := startCmd.String("config-adapter", "", "Name of config adapter to apply")
@@ -139,7 +152,36 @@ func cmdStart() (int, error) {
 	return caddy.ExitCodeSuccess, nil
 }
 
-func cmdRun() (int, error) {
+var cmdRun = &command{
+	Run:   runRun,
+	Usage: "caddy run [--config <path>] [--config-adapter <name>] [--print-env]",
+	Short: `Starts the Caddy process, blocks indefinitely`,
+	Long: `
+Same as start, but blocks indefinitely; i.e. runs Caddy in "daemon" mode. On
+Windows, this is recommended over caddy start when running Caddy manually since
+it will be more obvious that Caddy is still running and bound to the terminal
+window.
+
+If a config file is specified, it will be applied immediately after the process
+is running. If the config file is not in Caddy's native JSON format, you can
+specify an adapter with --config-adapter to adapt the given config file to
+Caddy's native format. The config adapter must be a registered module. Any
+warnings will be printed to the log, but beware that any adaptation without
+errors will immediately be used. If you want to review the results of the
+adaptation first, use adapt-config.
+
+As a special case, if the current working directory has a file called
+"Caddyfile" and the caddyfile config adapter is plugged in (default), then that
+file will be loaded and used to configure Caddy, even without any command line
+flags.
+
+If --print-env is specified, the environment as seen by the Caddy process will
+be printed before starting. This is the same as the environ command but does
+not quit after printing.
+`,
+}
+
+func runRun() (int, error) {
 	runCmd := flag.NewFlagSet("run", flag.ExitOnError)
 	runCmdConfigFlag := runCmd.String("config", "", "Configuration file")
 	runCmdConfigAdapterFlag := runCmd.String("config-adapter", "", "Name of config adapter to apply")
@@ -149,7 +191,7 @@ func cmdRun() (int, error) {
 
 	// if we are supposed to print the environment, do that first
 	if *runCmdPrintEnvFlag {
-		exitCode, err := cmdEnviron()
+		exitCode, err := runEnviron()
 		if err != nil {
 			return exitCode, err
 		}
@@ -198,7 +240,20 @@ func cmdRun() (int, error) {
 	select {}
 }
 
-func cmdStop() (int, error) {
+var cmdStop = &command{
+	Run:   runStop,
+	Usage: "caddy stop",
+	Short: "Gracefully stops the running Caddy process",
+
+	Long: `
+Gracefully stops the running Caddy process. (Note: this will stop any process
+named the same as the executable.) On Windows, this stop is forceful and Caddy
+will not have an opportunity to clean up any active locks; for a graceful
+shutdown on Windows, use Ctrl+C or the /stop endpoint.
+`,
+}
+
+func runStop() (int, error) {
 	processList, err := ps.Processes()
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("listing processes: %v", err)
@@ -223,7 +278,21 @@ func cmdStop() (int, error) {
 	return caddy.ExitCodeSuccess, nil
 }
 
-func cmdReload() (int, error) {
+var cmdReload = &command{
+	Run:   runReload,
+	Usage: "caddy reload --config <path> [--config-adapter <name>] [--address <interface>]",
+	Short: "Gives the running Caddy instance a new configuration",
+	Long: `
+Gives the running Caddy instance a new configuration. This has the same effect
+as POSTing a document to the /load endpoint, but is convenient for simple
+workflows revolving around config files. Since the admin endpoint is
+configurable, the endpoint configuration is loaded from the --address flag if
+specified; otherwise it is loaded from the given config file; otherwise the
+default is assumed.
+`,
+}
+
+func runReload() (int, error) {
 	reloadCmd := flag.NewFlagSet("load", flag.ExitOnError)
 	reloadCmdConfigFlag := reloadCmd.String("config", "", "Configuration file")
 	reloadCmdConfigAdapterFlag := reloadCmd.String("config-adapter", "", "Name of config adapter to apply")
@@ -282,7 +351,16 @@ func cmdReload() (int, error) {
 	return caddy.ExitCodeSuccess, nil
 }
 
-func cmdVersion() (int, error) {
+var cmdVersion = &command{
+	Run:   runVersion,
+	Usage: "caddy version",
+	Short: "Prints the version",
+	Long: `
+Prints the version.
+`,
+}
+
+func runVersion() (int, error) {
 	goModule := caddy.GoModule()
 	if goModule.Sum != "" {
 		// a build with a known version will also have a checksum
@@ -293,21 +371,51 @@ func cmdVersion() (int, error) {
 	return caddy.ExitCodeSuccess, nil
 }
 
-func cmdListModules() (int, error) {
+var cmdListModules = &command{
+	Run:   runListModules,
+	Usage: "caddy list-modules",
+	Short: "Prints the modules that are installed",
+	Long: `
+Prints the modules that are installed.
+`,
+}
+
+func runListModules() (int, error) {
 	for _, m := range caddy.Modules() {
 		fmt.Println(m)
 	}
 	return caddy.ExitCodeSuccess, nil
 }
 
-func cmdEnviron() (int, error) {
+var cmdEnviron = &command{
+	Run:   runEnviron,
+	Usage: "caddy environ",
+	Short: "Prints the environment as seen by caddy",
+	Long: `
+Prints the environment as seen by caddy. Can be useful when debugging init
+systems or process manager units like systemd.
+`,
+}
+
+func runEnviron() (int, error) {
 	for _, v := range os.Environ() {
 		fmt.Println(v)
 	}
 	return caddy.ExitCodeSuccess, nil
 }
 
-func cmdAdaptConfig() (int, error) {
+var cmdAdaptConfig = &command{
+	Run:   runAdaptConfig,
+	Usage: "caddy adapt-config --input <path> --adapter <name> [--pretty]",
+	Short: "Adapts a configuration to Caddy's native JSON config structure",
+	Long: `
+Adapts a configuration to Caddy's native JSON config structure and writes the
+output to stdout, along with any warnings to stderr. If --pretty is specified,
+the output will be formatted with indentation for human readability.
+`,
+}
+
+func runAdaptConfig() (int, error) {
 	adaptCmd := flag.NewFlagSet("adapt", flag.ExitOnError)
 	adaptCmdAdapterFlag := adaptCmd.String("adapter", "", "Name of config adapter")
 	adaptCmdInputFlag := adaptCmd.String("input", "", "Configuration file to adapt")
