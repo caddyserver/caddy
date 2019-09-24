@@ -156,8 +156,8 @@ github.com/mattn/go-runewidth v0.0.2/go.mod h1:LwmH8dsx7+W8Uxz3IHJYH5QSwggIsqBzp
 github.com/mattn/go-runewidth v0.0.4/go.mod h1:LwmH8dsx7+W8Uxz3IHJYH5QSwggIsqBzpuz5H//U1FU=
 github.com/mattn/go-tty v0.0.0-20180219170247-931426f7535a/go.mod h1:XPvLUNfbS4fJH25nqRHfWLMa1ONC8Amw+mIA639KxkE=
 github.com/matttproud/golang_protobuf_extensions v1.0.1/go.mod h1:D8He9yQNgCq6Z5Ld7szi9bcBfOoFv/3dc6xSMkL2PC0=
-github.com/mholt/certmagic v0.7.3 h1:1QOfAmk5uyWcfXJFQqFZZiEsJbPMBQ1vw/ttpVOUXQU=
-github.com/mholt/certmagic v0.7.3/go.mod h1:hqHzDsY32TwZpj/KswVylheSISjquF/eOVOaJTYV15w=
+github.com/mholt/certmagic v0.7.3-0.20190917224939-65d418add14f h1:IocLraK7JNMvVbuZShaLJMsWMPgdElPNwmPPWPb0XMI=
+github.com/mholt/certmagic v0.7.3-0.20190917224939-65d418add14f/go.mod h1:hqHzDsY32TwZpj/KswVylheSISjquF/eOVOaJTYV15w=
 github.com/miekg/dns v1.1.15 h1:CSSIDtllwGLMoA6zjdKnaE6Tx6eVUxQ29LUgGetiDCI=
 github.com/miekg/dns v1.1.15/go.mod h1:W1PPwlIAgtquWBMBEV9nkV9Cazfe8ScdGz/Lj7v3Nrg=
 github.com/mitchellh/go-homedir v1.1.0/go.mod h1:SfyaCUpYCn1Vlf4IUYiD9fPX4A5wJrkLzIz1N1q0pr0=
