@@ -78,16 +78,20 @@ func (app *App) Provision(ctx caddy.Context) error {
 			srv.AutoHTTPS = new(AutoHTTPSConfig)
 		}
 
-		// disallow TLS client auth bypass which could
-		// otherwise be exploited by sending an unprotected
-		// SNI value during TLS handshake, then a protected
-		// Host header during HTTP request later on that
-		// connection
-		if srv.hasTLSClientAuth() {
-			srv.StrictSNIHost = true
+		// if not explicitly configured by the user, disallow TLS
+		// client auth bypass (domain fronting) which could
+		// otherwise be exploited by sending an unprotected SNI
+		// value during a TLS handshake, then putting a protected
+		// domain in the Host header after establishing connection;
+		// this is a safe default, but we allow users to override
+		// it for example in the case of running a proxy where
+		// domain fronting is desired and access is not restricted
+		// based on hostname
+		if srv.StrictSNIHost == nil && srv.hasTLSClientAuth() {
+			trueBool := true
+			srv.StrictSNIHost = &trueBool
 		}
 
-		// TODO: Test this function to ensure these replacements are performed
 		for i := range srv.Listen {
 			srv.Listen[i] = repl.ReplaceAll(srv.Listen[i], "")
 		}
@@ -179,12 +183,8 @@ func (app *App) Start() error {
 				}
 
 				// enable TLS
-				httpPort := app.HTTPPort
-				if httpPort == 0 {
-					httpPort = DefaultHTTPPort
-				}
 				_, port, _ := net.SplitHostPort(addr)
-				if len(srv.TLSConnPolicies) > 0 && port != strconv.Itoa(httpPort) {
+				if len(srv.TLSConnPolicies) > 0 && port != strconv.Itoa(app.httpPort()) {
 					tlsCfg, err := srv.TLSConnPolicies.TLSConfig(app.ctx)
 					if err != nil {
 						return fmt.Errorf("%s/%s: making TLS configuration: %v", network, addr, err)
@@ -269,8 +269,9 @@ func (app *App) automaticHTTPS() error {
 	}
 	tlsApp := tlsAppIface.(*caddytls.TLS)
 
-	lnAddrMap := make(map[string]struct{})
-	var redirRoutes RouteList
+	// this map will store associations of HTTP listener
+	// addresses to the routes that do HTTP->HTTPS redirects
+	lnAddrRedirRoutes := make(map[string]Route)
 
 	for srvName, srv := range app.Servers {
 		srv.tlsApp = tlsApp
@@ -280,9 +281,9 @@ func (app *App) automaticHTTPS() error {
 		}
 
 		// skip if all listeners use the HTTP port
-		if !srv.listenersUseAnyPortOtherThan(app.HTTPPort) {
-			log.Printf("[INFO] Server %v is only listening on the HTTP port %d, so no automatic HTTPS will be applied to this server",
-				srv.Listen, app.HTTPPort)
+		if !srv.listenersUseAnyPortOtherThan(app.httpPort()) {
+			log.Printf("[INFO] Server %s is only listening on the HTTP port %d, so no automatic HTTPS will be applied to this server",
+				srvName, app.httpPort())
 			continue
 		}
 
@@ -330,10 +331,10 @@ func (app *App) automaticHTTPS() error {
 			acmeManager := &caddytls.ACMEManagerMaker{
 				Challenges: caddytls.ChallengesConfig{
 					HTTP: caddytls.HTTPChallengeConfig{
-						AlternatePort: app.HTTPPort,
+						AlternatePort: app.HTTPPort, // we specifically want the user-configured port, if any
 					},
 					TLSALPN: caddytls.TLSALPNChallengeConfig{
-						AlternatePort: app.HTTPSPort,
+						AlternatePort: app.HTTPSPort, // we specifically want the user-configured port, if any
 					},
 				},
 			}
@@ -363,12 +364,6 @@ func (app *App) automaticHTTPS() error {
 
 			log.Printf("[INFO] Enabling automatic HTTP->HTTPS redirects for %v", domains)
 
-			// notify user if their config might override the HTTP->HTTPS redirects
-			if srv.listenersIncludePort(app.HTTPPort) {
-				log.Printf("[WARNING] Server %v is listening on HTTP port %d, so automatic HTTP->HTTPS redirects may be overridden by your own configuration",
-					srv.Listen, app.HTTPPort)
-			}
-
 			// create HTTP->HTTPS redirects
 			for _, addr := range srv.Listen {
 				netw, host, port, err := caddy.SplitNetworkAddress(addr)
@@ -376,28 +371,22 @@ func (app *App) automaticHTTPS() error {
 					return fmt.Errorf("%s: invalid listener address: %v", srvName, addr)
 				}
 
-				httpPort := app.HTTPPort
-				if httpPort == 0 {
-					httpPort = DefaultHTTPPort
-				}
-				httpRedirLnAddr := caddy.JoinNetworkAddress(netw, host, strconv.Itoa(httpPort))
-				lnAddrMap[httpRedirLnAddr] = struct{}{}
-
 				if parts := strings.SplitN(port, "-", 2); len(parts) == 2 {
 					port = parts[0]
 				}
 				redirTo := "https://{http.request.host}"
 
-				httpsPort := app.HTTPSPort
-				if httpsPort == 0 {
-					httpsPort = DefaultHTTPSPort
-				}
-				if port != strconv.Itoa(httpsPort) {
+				if port != strconv.Itoa(app.httpsPort()) {
 					redirTo += ":" + port
 				}
 				redirTo += "{http.request.uri}"
 
-				redirRoutes = append(redirRoutes, Route{
+				// build the plaintext HTTP variant of this address
+				httpRedirLnAddr := caddy.JoinNetworkAddress(netw, host, strconv.Itoa(app.httpPort()))
+
+				// create the route that does the redirect and associate
+				// it with the listener address it will be served from
+				lnAddrRedirRoutes[httpRedirLnAddr] = Route{
 					MatcherSets: []MatcherSet{
 						{
 							MatchProtocol("http"),
@@ -414,52 +403,70 @@ func (app *App) automaticHTTPS() error {
 							Close: true,
 						},
 					},
-				})
+				}
+
 			}
 		}
 	}
 
-	if len(lnAddrMap) > 0 {
-		var lnAddrs []string
-	mapLoop:
-		for addr := range lnAddrMap {
-			netw, addrs, err := caddy.ParseNetworkAddress(addr)
-			if err != nil {
-				continue
-			}
-			for _, a := range addrs {
-				if app.listenerTaken(netw, a) {
-					continue mapLoop
+	// if there are HTTP->HTTPS redirects to add, do so now
+	if len(lnAddrRedirRoutes) > 0 {
+		var redirServerAddrs []string
+		var redirRoutes []Route
+
+		// for each redirect listener, see if there's already a
+		// server configured to listen on that exact address; if
+		// so, simply the redirect route to the end of its route
+		// list; otherwise, we'll create a new server for all the
+		// listener addresses that are unused and serve the
+		// remaining redirects from it
+	redirRoutesLoop:
+		for addr, redirRoute := range lnAddrRedirRoutes {
+			for srvName, srv := range app.Servers {
+				if srv.hasListenerAddress(addr) {
+					// user has configured a server for the same address
+					// that the redirect runs from; simply append our
+					// redirect route to the existing routes, with a
+					// caveat that their config might override ours
+					log.Printf("[WARNING] Server %s is listening on %s, so automatic HTTP->HTTPS redirects might be overridden by your own configuration",
+						srvName, addr)
+					srv.Routes = append(srv.Routes, redirRoute)
+					continue redirRoutesLoop
 				}
 			}
-			lnAddrs = append(lnAddrs, addr)
+			// no server with this listener address exists;
+			// save this address and route for custom server
+			redirServerAddrs = append(redirServerAddrs, addr)
+			redirRoutes = append(redirRoutes, redirRoute)
 		}
-		app.Servers["auto_https_redirects"] = &Server{
-			Listen:    lnAddrs,
-			Routes:    redirRoutes,
-			AutoHTTPS: &AutoHTTPSConfig{Disabled: true},
-			tlsApp:    tlsApp, // required to solve HTTP challenge
+
+		// if there are routes remaining which do not belong
+		// in any existing server, make our own to serve the
+		// rest of the redirects
+		if len(redirServerAddrs) > 0 {
+			app.Servers["remaining_auto_https_redirects"] = &Server{
+				Listen: redirServerAddrs,
+				Routes: redirRoutes,
+				tlsApp: tlsApp, // required to solve HTTP challenge
+			}
 		}
 	}
 
 	return nil
 }
 
-func (app *App) listenerTaken(network, address string) bool {
-	for _, srv := range app.Servers {
-		for _, addr := range srv.Listen {
-			netw, addrs, err := caddy.ParseNetworkAddress(addr)
-			if err != nil || netw != network {
-				continue
-			}
-			for _, a := range addrs {
-				if a == address {
-					return true
-				}
-			}
-		}
+func (app *App) httpPort() int {
+	if app.HTTPPort == 0 {
+		return DefaultHTTPPort
 	}
-	return false
+	return app.HTTPPort
+}
+
+func (app *App) httpsPort() int {
+	if app.HTTPSPort == 0 {
+		return DefaultHTTPSPort
+	}
+	return app.HTTPSPort
 }
 
 var defaultALPN = []string{"h2", "http/1.1"}

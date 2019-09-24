@@ -7,7 +7,7 @@ require (
 	github.com/Masterminds/goutils v1.1.0 // indirect
 	github.com/Masterminds/semver v1.4.2 // indirect
 	github.com/Masterminds/sprig v2.20.0+incompatible
-	github.com/andybalholm/brotli v0.0.0-20190704151324-71eb68cc467c
+	github.com/andybalholm/brotli v0.0.0-20190821151343-b60f0d972eeb
 	github.com/dustin/go-humanize v1.0.0
 	github.com/go-acme/lego/v3 v3.0.2
 	github.com/google/go-cmp v0.3.1 // indirect

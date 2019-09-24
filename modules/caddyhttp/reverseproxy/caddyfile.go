@@ -25,6 +25,7 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp/headers"
 	"github.com/dustin/go-humanize"
 )
 
@@ -66,6 +67,10 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //         max_conns <num>
 //         unhealthy_status <status>
 //         unhealthy_latency <duration>
+//
+//         # header manipulation
+//         header_up   [+|-]<field> [<value|regexp> [<replacement>]]
+//         header_down [+|-]<field> [<value|regexp> [<replacement>]]
 //
 //         # round trip
 //         transport <name> {
@@ -326,6 +331,46 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.Errf("bad duration value '%s': %v", d.Val(), err)
 				}
 				h.HealthChecks.Passive.UnhealthyLatency = caddy.Duration(dur)
+
+			case "header_up":
+				if h.Headers == nil {
+					h.Headers = new(headers.Handler)
+				}
+				if h.Headers.Request == nil {
+					h.Headers.Request = new(headers.HeaderOps)
+				}
+				args := d.RemainingArgs()
+				switch len(args) {
+				case 1:
+					headers.CaddyfileHeaderOp(h.Headers.Request, args[0], "", "")
+				case 2:
+					headers.CaddyfileHeaderOp(h.Headers.Request, args[0], args[1], "")
+				case 3:
+					headers.CaddyfileHeaderOp(h.Headers.Request, args[0], args[1], args[2])
+				default:
+					return d.ArgErr()
+				}
+
+			case "header_down":
+				if h.Headers == nil {
+					h.Headers = new(headers.Handler)
+				}
+				if h.Headers.Response == nil {
+					h.Headers.Response = &headers.RespHeaderOps{
+						HeaderOps: new(headers.HeaderOps),
+					}
+				}
+				args := d.RemainingArgs()
+				switch len(args) {
+				case 1:
+					headers.CaddyfileHeaderOp(h.Headers.Response.HeaderOps, args[0], "", "")
+				case 2:
+					headers.CaddyfileHeaderOp(h.Headers.Response.HeaderOps, args[0], args[1], "")
+				case 3:
+					headers.CaddyfileHeaderOp(h.Headers.Response.HeaderOps, args[0], args[1], args[2])
+				default:
+					return d.ArgErr()
+				}
 
 			case "transport":
 				if !d.NextArg() {

@@ -22,10 +22,6 @@ import (
 	"github.com/mholt/certmagic"
 )
 
-func init() {
-	RegisterModule(fileStorage{})
-}
-
 // StorageConverter is a type that can convert itself
 // to a valid, usable certmagic.Storage value. (The
 // value might be short-lived.) This interface allows
@@ -33,23 +29,6 @@ func init() {
 // into a consistent API for Caddy configuration.
 type StorageConverter interface {
 	CertMagicStorage() (certmagic.Storage, error)
-}
-
-// fileStorage is a certmagic.Storage wrapper for certmagic.FileStorage.
-type fileStorage struct {
-	Root string `json:"root"`
-}
-
-// CaddyModule returns the Caddy module information.
-func (fileStorage) CaddyModule() ModuleInfo {
-	return ModuleInfo{
-		Name: "caddy.storage.file_system",
-		New:  func() Module { return new(fileStorage) },
-	}
-}
-
-func (s fileStorage) CertMagicStorage() (certmagic.Storage, error) {
-	return &certmagic.FileStorage{Path: s.Root}, nil
 }
 
 // homeDir returns the best guess of the current user's home
@@ -80,6 +59,3 @@ func dataDir() string {
 	}
 	return filepath.Join(baseDir, "caddy")
 }
-
-// Interface guard
-var _ StorageConverter = fileStorage{}

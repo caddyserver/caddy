@@ -42,7 +42,7 @@ type Server struct {
 	TLSConnPolicies   caddytls.ConnectionPolicies `json:"tls_connection_policies,omitempty"`
 	AutoHTTPS         *AutoHTTPSConfig            `json:"automatic_https,omitempty"`
 	MaxRehandles      *int                        `json:"max_rehandles,omitempty"`
-	StrictSNIHost     bool                        `json:"strict_sni_host,omitempty"`
+	StrictSNIHost     *bool                       `json:"strict_sni_host,omitempty"`
 
 	// This field is not subject to compatibility promises
 	ExperimentalHTTP3 bool `json:"experimental_http3,omitempty"`
@@ -164,7 +164,7 @@ func (s *Server) enforcementHandler(w http.ResponseWriter, r *http.Request, next
 	// servers that rely on TLS ClientAuth sharing a listener
 	// with servers that do not; if not enforced, client could
 	// bypass by sending benign SNI then restricted Host header
-	if s.StrictSNIHost && r.TLS != nil {
+	if s.StrictSNIHost != nil && *s.StrictSNIHost && r.TLS != nil {
 		hostname, _, err := net.SplitHostPort(r.Host)
 		if err != nil {
 			hostname = r.Host // OK; probably lacked port
@@ -196,17 +196,26 @@ func (s *Server) listenersUseAnyPortOtherThan(otherPort int) bool {
 	return false
 }
 
-// listenersIncludePort returns true if there are any
-// listeners in s that use otherPort.
-func (s *Server) listenersIncludePort(otherPort int) bool {
+func (s *Server) hasListenerAddress(fullAddr string) bool {
+	netw, addrs, err := caddy.ParseNetworkAddress(fullAddr)
+	if err != nil {
+		return false
+	}
+	if len(addrs) != 1 {
+		return false
+	}
+	addr := addrs[0]
 	for _, lnAddr := range s.Listen {
-		_, addrs, err := caddy.ParseNetworkAddress(lnAddr)
-		if err == nil {
-			for _, a := range addrs {
-				_, port, err := net.SplitHostPort(a)
-				if err == nil && port == strconv.Itoa(otherPort) {
-					return true
-				}
+		thisNetw, thisAddrs, err := caddy.ParseNetworkAddress(lnAddr)
+		if err != nil {
+			continue
+		}
+		if thisNetw != netw {
+			continue
+		}
+		for _, a := range thisAddrs {
+			if a == addr {
+				return true
 			}
 		}
 	}

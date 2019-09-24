@@ -68,7 +68,7 @@ func (enc *Encode) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			name := d.Val()
 			mod, err := caddy.GetModule("http.encoders." + name)
 			if err != nil {
-				return fmt.Errorf("getting encoder module '%s': %v", mod.Name, err)
+				return fmt.Errorf("getting encoder module '%s': %v", name, err)
 			}
 			unm, ok := mod.New().(caddyfile.Unmarshaler)
 			if !ok {

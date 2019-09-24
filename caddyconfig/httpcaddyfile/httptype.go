@@ -57,15 +57,18 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 			dir := segment.Directive()
 			var val interface{}
 			var err error
+			disp := caddyfile.NewDispenser(segment)
 			switch dir {
 			case "http_port":
-				val, err = parseHTTPPort(caddyfile.NewDispenser(segment))
+				val, err = parseOptHTTPPort(disp)
 			case "https_port":
-				val, err = parseHTTPSPort(caddyfile.NewDispenser(segment))
+				val, err = parseOptHTTPSPort(disp)
 			case "handler_order":
-				val, err = parseHandlerOrder(caddyfile.NewDispenser(segment))
+				val, err = parseOptHandlerOrder(disp)
 			case "experimental_http3":
-				val, err = parseExperimentalHTTP3(caddyfile.NewDispenser(segment))
+				val, err = parseOptExperimentalHTTP3(disp)
+			case "storage":
+				val, err = parseOptStorage(disp)
 			default:
 				return nil, warnings, fmt.Errorf("unrecognized parameter name: %s", dir)
 			}
@@ -207,6 +210,9 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 	if !reflect.DeepEqual(tlsApp, caddytls.TLS{}) {
 		cfg.AppsRaw["tls"] = caddyconfig.JSON(tlsApp, &warnings)
 	}
+	if storageCvtr, ok := options["storage"].(caddy.StorageConverter); ok {
+		cfg.StorageRaw = caddyconfig.JSON(storageCvtr, &warnings)
+	}
 
 	return cfg, warnings, nil
 }
@@ -266,7 +272,7 @@ func (st *ServerType) serversFromPairings(
 			if err != nil {
 				return nil, err
 			}
-			if _, ok := sblock.pile["tls.off"]; ok {
+			if _, ok := sblock.pile["tls.off"]; ok && len(autoHTTPSQualifiedHosts) > 0 {
 				// tls off: disable TLS (and automatic HTTPS) for server block's names
 				if srv.AutoHTTPS == nil {
 					srv.AutoHTTPS = new(caddyhttp.AutoHTTPSConfig)
