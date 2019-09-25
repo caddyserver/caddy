@@ -66,6 +66,8 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 		GetConfigForCert: func(cert certmagic.Certificate) (certmagic.Config, error) {
 			return t.getConfigForName(cert.Names[0])
 		},
+		OCSPCheckInterval:  time.Duration(t.Automation.OCSPCheckInterval),
+		RenewCheckInterval: time.Duration(t.Automation.RenewCheckInterval),
 	})
 
 	// automation/management policies
@@ -286,8 +288,10 @@ type Certificate struct {
 // AutomationConfig designates configuration for the
 // construction and use of ACME clients.
 type AutomationConfig struct {
-	Policies []AutomationPolicy `json:"policies,omitempty"`
-	OnDemand *OnDemandConfig    `json:"on_demand,omitempty"`
+	Policies           []AutomationPolicy `json:"policies,omitempty"`
+	OnDemand           *OnDemandConfig    `json:"on_demand,omitempty"`
+	OCSPCheckInterval  caddy.Duration     `json:"ocsp_interval,omitempty"`
+	RenewCheckInterval caddy.Duration     `json:"renew_interval,omitempty"`
 }
 
 // AutomationPolicy designates the policy for automating the
