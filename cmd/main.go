@@ -16,6 +16,7 @@ package caddycmd
 
 import (
 	"bytes"
+	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -31,32 +32,51 @@ import (
 // Main implements the main function of the caddy command.
 // Call this if Caddy is to be the main() if your program.
 func Main() {
+	commandMap["start"] = newCmdStart()
+	commandMap["run"] = newCmdRun()
+	commandMap["stop"] = newCmdStop()
+	commandMap["reload"] = newCmdReload()
+	commandMap["version"] = newCmdVersion()
+	commandMap["list-modules"] = newCmdListModules()
+	commandMap["environ"] = newCmdEnviron()
+	commandMap["adapt-config"] = newCmdAdaptConfig()
+	commandMap["help"] = newCmdHelp()
+
 	caddy.TrapSignals()
 
-	// run help command and exit when "caddy" or "caddy help".
-	if len(os.Args) < 2 || os.Args[1] == "help" {
-		exitCode := help()
-		os.Exit(exitCode)
+	if len(os.Args) < 2 {
+		msg, err := usageString()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(caddy.ExitCodeFailedStartup)
+		}
+		fmt.Print(msg)
 		return
 	}
 
 	subcommand, ok := commandMap[os.Args[1]]
 	if !ok {
-		fmt.Fprintf(os.Stderr, "unknown command %q. ", os.Args[1])
+		fmt.Fprintf(os.Stderr, "Unknown command '%s'. ", os.Args[1])
 		fmt.Fprintf(os.Stderr, "Run 'caddy help' for valid command.\n")
 		os.Exit(caddy.ExitCodeFailedStartup)
 	}
 
-	if exitCode, err := subcommand.Run(); err != nil {
+	fs := subcommand.Flag
+	fs.Parse(os.Args[2:])
+	if exitCode, err := subcommand.Run(fs.Args()); err != nil {
 		log.Println(err)
 		os.Exit(exitCode)
 	}
 }
 
+var commandMap = map[string]*command{}
+
 type command struct {
 	// Run is a function that executes a subcommand.
 	// It returns an exit code and any associated error.
-	Run func() (int, error)
+	// Takes non-flag commandline arguments as args.
+	// Flag must be parsed before Run is executed.
+	Run func(args []string) (int, error)
 
 	// Usage is the one-line message explaining args, flags.
 	Usage string
@@ -67,20 +87,21 @@ type command struct {
 	// Long is the message for 'caddy help <command>'
 	Long string
 
-	// TODO: command can include flagset, and used to print
-	// auto-generated flag help message.
-	// Flag  flag.FlagSet
+	// Flag is flagset for command.
+	Flag *flag.FlagSet
 }
 
-var commandMap = map[string]*command{
-	"start":        cmdStart,
-	"run":          cmdRun,
-	"stop":         cmdStop,
-	"reload":       cmdReload,
-	"version":      cmdVersion,
-	"list-modules": cmdListModules,
-	"environ":      cmdEnviron,
-	"adapt-config": cmdAdaptConfig,
+// FlagHelp is wrapper arround flag.PrintDefaults
+// to generate string output
+func (c *command) FlagHelp() string {
+	// temporially redirect output
+	out := c.Flag.Output()
+	defer c.Flag.SetOutput(out)
+
+	buf := new(bytes.Buffer)
+	c.Flag.SetOutput(buf)
+	c.Flag.PrintDefaults()
+	return buf.String()
 }
 
 var usageTemplate = `Caddy, The HTTP/2 Web Server with Automatic HTTPS.
@@ -93,10 +114,9 @@ Available commands:
 {{ range $name, $cmd := . }}{{ if ne $name "help" }}
     {{$name | printf "%-13s"}} {{$cmd.Short}}{{ end }}{{ end }}
 
-Use "caddy help [command]" for more information about a command.
-`
+Use "caddy help <command>" for more information about a command.`
 
-func usageString(commandMap map[string]*command) (string, error) {
+func usageString() (string, error) {
 	buf := new(bytes.Buffer)
 	usage := template.Must(template.New("usage").Parse(usageTemplate))
 	if err := usage.Execute(buf, commandMap); err != nil {
@@ -104,46 +124,6 @@ func usageString(commandMap map[string]*command) (string, error) {
 	}
 
 	return buf.String(), nil
-}
-
-var helpTemplate = `usage: {{ .Usage }}
-{{ .Long }}
-Full documentation available on 
-https://github.com/caddyserver/caddy/wiki/v2:-Documentation
-`
-
-// help is for subcommand "help".
-// It describes commands formatted with template.
-func help() int {
-	if len(os.Args) == 1 || len(os.Args) == 2 {
-		usage, err := usageString(commandMap)
-		if err != nil {
-			log.Println(err)
-			return caddy.ExitCodeFailedStartup
-		}
-		fmt.Println(usage)
-		return caddy.ExitCodeSuccess
-	}
-
-	if len(os.Args) > 3 {
-		fmt.Fprintf(os.Stderr, "usage: caddy help [command]\n"+
-			"Too many arguments given.\n")
-		return caddy.ExitCodeFailedStartup
-	}
-
-	subcommand, ok := commandMap[os.Args[2]]
-	if !ok {
-		fmt.Fprintf(os.Stderr, "unknown command %q. ", os.Args[2])
-		fmt.Fprintf(os.Stderr, "Run 'caddy help' for usage.\n")
-		return caddy.ExitCodeFailedStartup
-	}
-
-	cmdhelp := template.Must(template.New("cmdhelp").Parse(helpTemplate))
-	if err := cmdhelp.Execute(os.Stdout, *subcommand); err != nil {
-		log.Println(err)
-		return caddy.ExitCodeFailedStartup
-	}
-	return caddy.ExitCodeSuccess
 }
 
 // handlePingbackConn reads from conn and ensures it matches

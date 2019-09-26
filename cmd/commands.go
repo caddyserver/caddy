@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -27,6 +28,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"text/template"
 
 	"strings"
 
@@ -36,25 +38,32 @@ import (
 	"github.com/mholt/certmagic"
 )
 
-var cmdStart = &command{
-	Run:   runStart,
-	Usage: "caddy start [--config <path>] [--config-adapter <name>]",
-	Short: "Starts the Caddy process, blocks until server initiated",
-	Long: `
-Starts the Caddy process, optionally bootstrapped with an initial
+type cmdStart struct {
+	config        string
+	configAdapter string
+}
+
+func newCmdStart() *command {
+	start := cmdStart{}
+	cmd := &command{
+		Run: start.run,
+		Usage: "caddy start [--config <path>] [--config-adapter <name>]",
+		Short: "Starts the Caddy process, blocks until server initiated",
+		Long: `Starts the Caddy process, optionally bootstrapped with an initial
 config file. Blocks until server is successfully running (or fails to run),
 then returns. On Windows, the child process will remain attached to the
 terminal, so closing the window will forcefully stop Caddy. See run for more
-details.
-`,
+details.`,
+	}
+
+	fs := flag.NewFlagSet("start", flag.ExitOnError)
+	fs.StringVar(&start.config, "config", "", "Configuration file")
+	fs.StringVar(&start.configAdapter, "config-adapter", "", "Name of config adapter to apply")
+	cmd.Flag = fs
+	return cmd
 }
 
-func runStart() (int, error) {
-	startCmd := flag.NewFlagSet("start", flag.ExitOnError)
-	startCmdConfigFlag := startCmd.String("config", "", "Configuration file")
-	startCmdConfigAdapterFlag := startCmd.String("config-adapter", "", "Name of config adapter to apply")
-	startCmd.Parse(os.Args[2:])
-
+func (c *cmdStart) run([]string) (int, error) {
 	// open a listener to which the child process will connect when
 	// it is ready to confirm that it has successfully started
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -74,11 +83,11 @@ func runStart() (int, error) {
 	// sure by giving it some random bytes and having it echo
 	// them back to us)
 	cmd := exec.Command(os.Args[0], "run", "--pingback", ln.Addr().String())
-	if *startCmdConfigFlag != "" {
-		cmd.Args = append(cmd.Args, "--config", *startCmdConfigFlag)
+	if c.config != "" {
+		cmd.Args = append(cmd.Args, "--config", c.config)
 	}
-	if *startCmdConfigAdapterFlag != "" {
-		cmd.Args = append(cmd.Args, "--config-adapter", *startCmdConfigAdapterFlag)
+	if c.configAdapter != "" {
+		cmd.Args = append(cmd.Args, "--config-adapter", c.configAdapter)
 	}
 	stdinpipe, err := cmd.StdinPipe()
 	if err != nil {
@@ -152,12 +161,20 @@ func runStart() (int, error) {
 	return caddy.ExitCodeSuccess, nil
 }
 
-var cmdRun = &command{
-	Run:   runRun,
-	Usage: "caddy run [--config <path>] [--config-adapter <name>] [--print-env]",
-	Short: `Starts the Caddy process, blocks indefinitely`,
-	Long: `
-Same as start, but blocks indefinitely; i.e. runs Caddy in "daemon" mode. On
+type cmdRun struct {
+	config        string
+	configAdapter string
+	printEnv      bool
+	pingback      string
+}
+
+func newCmdRun() *command {
+	run := cmdRun{}
+	cmd := &command{
+		Run:   run.run,
+		Usage: "caddy run [--config <path>] [--config-adapter <name>] [--print-env]",
+		Short: `Starts the Caddy process, blocks indefinitely`,
+		Long: `Same as start, but blocks indefinitely; i.e. runs Caddy in "daemon" mode. On
 Windows, this is recommended over caddy start when running Caddy manually since
 it will be more obvious that Caddy is still running and bound to the terminal
 window.
@@ -177,28 +194,31 @@ flags.
 
 If --print-env is specified, the environment as seen by the Caddy process will
 be printed before starting. This is the same as the environ command but does
-not quit after printing.
-`,
+not quit after printing.`,
+	}
+
+	fs := flag.NewFlagSet("start", flag.ExitOnError)
+	fs.StringVar(&run.config, "config", "", "Configuration file")
+	fs.StringVar(&run.configAdapter, "config-adapter", "", "Name of config adapter to apply")
+	fs.BoolVar(&run.printEnv, "print-env", false, "Print environment")
+	fs.StringVar(&run.pingback, "pingback", "", "Echo confirmation bytes to this address on success")
+
+	cmd.Flag = fs
+	return cmd
 }
 
-func runRun() (int, error) {
-	runCmd := flag.NewFlagSet("run", flag.ExitOnError)
-	runCmdConfigFlag := runCmd.String("config", "", "Configuration file")
-	runCmdConfigAdapterFlag := runCmd.String("config-adapter", "", "Name of config adapter to apply")
-	runCmdPrintEnvFlag := runCmd.Bool("print-env", false, "Print environment")
-	runCmdPingbackFlag := runCmd.String("pingback", "", "Echo confirmation bytes to this address on success")
-	runCmd.Parse(os.Args[2:])
-
+func (c *cmdRun) run(args []string) (int, error) {
 	// if we are supposed to print the environment, do that first
-	if *runCmdPrintEnvFlag {
-		exitCode, err := runEnviron()
+	if c.printEnv {
+		cmd := newCmdEnviron()
+		exitCode, err := cmd.Run(nil)
 		if err != nil {
 			return exitCode, err
 		}
 	}
 
 	// get the config in caddy's native format
-	config, err := loadConfig(*runCmdConfigFlag, *runCmdConfigAdapterFlag)
+	config, err := loadConfig(c.config, c.configAdapter)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, err
 	}
@@ -218,13 +238,13 @@ func runRun() (int, error) {
 
 	// if we are to report to another process the successful start
 	// of the server, do so now by echoing back contents of stdin
-	if *runCmdPingbackFlag != "" {
+	if c.pingback != "" {
 		confirmationBytes, err := ioutil.ReadAll(os.Stdin)
 		if err != nil {
 			return caddy.ExitCodeFailedStartup,
 				fmt.Errorf("reading confirmation bytes from stdin: %v", err)
 		}
-		conn, err := net.Dial("tcp", *runCmdPingbackFlag)
+		conn, err := net.Dial("tcp", c.pingback)
 		if err != nil {
 			return caddy.ExitCodeFailedStartup,
 				fmt.Errorf("dialing confirmation address: %v", err)
@@ -233,27 +253,33 @@ func runRun() (int, error) {
 		_, err = conn.Write(confirmationBytes)
 		if err != nil {
 			return caddy.ExitCodeFailedStartup,
-				fmt.Errorf("writing confirmation bytes to %s: %v", *runCmdPingbackFlag, err)
+				fmt.Errorf("writing confirmation bytes to %s: %v", c.pingback, err)
 		}
 	}
 
 	select {}
 }
 
-var cmdStop = &command{
-	Run:   runStop,
-	Usage: "caddy stop",
-	Short: "Gracefully stops the running Caddy process",
+type cmdStop struct{}
 
-	Long: `
-Gracefully stops the running Caddy process. (Note: this will stop any process
+func newCmdStop() *command {
+	stop := cmdStop{}
+	cmd := &command{
+		Run:   stop.run,
+		Usage: "caddy stop",
+		Short: "Gracefully stops the running Caddy process",
+		Long: `Gracefully stops the running Caddy process. (Note: this will stop any process
 named the same as the executable.) On Windows, this stop is forceful and Caddy
 will not have an opportunity to clean up any active locks; for a graceful
-shutdown on Windows, use Ctrl+C or the /stop endpoint.
-`,
+shutdown on Windows, use Ctrl+C or the /stop endpoint.`,
+	}
+
+	fs := flag.NewFlagSet("stop", flag.ExitOnError)
+	cmd.Flag = fs
+	return cmd
 }
 
-func runStop() (int, error) {
+func (c *cmdStop) run(args []string) (int, error) {
 	processList, err := ps.Processes()
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("listing processes: %v", err)
@@ -278,41 +304,50 @@ func runStop() (int, error) {
 	return caddy.ExitCodeSuccess, nil
 }
 
-var cmdReload = &command{
-	Run:   runReload,
-	Usage: "caddy reload --config <path> [--config-adapter <name>] [--address <interface>]",
-	Short: "Gives the running Caddy instance a new configuration",
-	Long: `
-Gives the running Caddy instance a new configuration. This has the same effect
+type cmdReload struct {
+	config        string
+	configAdapter string
+	address       string
+}
+
+func newCmdReload() *command {
+	reload := cmdReload{}
+	cmd := &command{
+		Run:   reload.run,
+		Usage: "caddy reload --config <path> [--config-adapter <name>] [--address <interface>]",
+		Short: "Gives the running Caddy instance a new configuration",
+		Long: `Gives the running Caddy instance a new configuration. This has the same effect
 as POSTing a document to the /load endpoint, but is convenient for simple
 workflows revolving around config files. Since the admin endpoint is
 configurable, the endpoint configuration is loaded from the --address flag if
 specified; otherwise it is loaded from the given config file; otherwise the
-default is assumed.
-`,
+default is assumed.`,
+	}
+
+	fs := flag.NewFlagSet("reload", flag.ExitOnError)
+	fs.StringVar(&reload.config, "config", "", "Configuration file")
+	fs.StringVar(&reload.configAdapter, "config-adapter", "", "Name of config adapter to apply")
+	fs.StringVar(&reload.address, "address", "", "Address of the administration listener, if different from config")
+	cmd.Flag = fs
+
+	return cmd
 }
 
-func runReload() (int, error) {
-	reloadCmd := flag.NewFlagSet("load", flag.ExitOnError)
-	reloadCmdConfigFlag := reloadCmd.String("config", "", "Configuration file")
-	reloadCmdConfigAdapterFlag := reloadCmd.String("config-adapter", "", "Name of config adapter to apply")
-	reloadCmdAddrFlag := reloadCmd.String("address", "", "Address of the administration listener, if different from config")
-	reloadCmd.Parse(os.Args[2:])
-
+func (c *cmdReload) run(args []string) (int, error) {
 	// a configuration is required
-	if *reloadCmdConfigFlag == "" {
+	if c.config == "" {
 		return caddy.ExitCodeFailedStartup,
 			fmt.Errorf("no configuration to load (use --config)")
 	}
 
 	// get the config in caddy's native format
-	config, err := loadConfig(*reloadCmdConfigFlag, *reloadCmdConfigAdapterFlag)
+	config, err := loadConfig(c.config, c.configAdapter)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, err
 	}
 
 	// get the address of the admin listener and craft endpoint URL
-	adminAddr := *reloadCmdAddrFlag
+	adminAddr := c.address
 	if adminAddr == "" {
 		var tmpStruct struct {
 			Admin caddy.AdminConfig `json:"admin"`
@@ -351,16 +386,23 @@ func runReload() (int, error) {
 	return caddy.ExitCodeSuccess, nil
 }
 
-var cmdVersion = &command{
-	Run:   runVersion,
-	Usage: "caddy version",
-	Short: "Prints the version",
-	Long: `
-Prints the version.
-`,
+type cmdVersion struct{}
+
+func newCmdVersion() *command {
+	version := cmdVersion{}
+	cmd := &command{
+		Run:   version.run,
+		Usage: "caddy version",
+		Short: "Prints the version",
+		Long:  `Prints the version.`,
+	}
+
+	fs := flag.NewFlagSet("version", flag.ExitOnError)
+	cmd.Flag = fs
+	return cmd
 }
 
-func runVersion() (int, error) {
+func (c *cmdVersion) run(args []string) (int, error) {
 	goModule := caddy.GoModule()
 	if goModule.Sum != "" {
 		// a build with a known version will also have a checksum
@@ -371,76 +413,100 @@ func runVersion() (int, error) {
 	return caddy.ExitCodeSuccess, nil
 }
 
-var cmdListModules = &command{
-	Run:   runListModules,
-	Usage: "caddy list-modules",
-	Short: "Prints the modules that are installed",
-	Long: `
-Prints the modules that are installed.
-`,
+type cmdListModules struct {
 }
 
-func runListModules() (int, error) {
+func newCmdListModules() *command {
+	listModules := cmdListModules{}
+	cmd := &command{
+		Run:   listModules.run,
+		Usage: "caddy list-modules",
+		Short: "Prints the modules installed",
+		Long:  `Prints the modules installed.`,
+	}
+
+	fs := flag.NewFlagSet("listModules", flag.ExitOnError)
+	cmd.Flag = fs
+	return cmd
+}
+
+func (c *cmdListModules) run(args []string) (int, error) {
 	for _, m := range caddy.Modules() {
 		fmt.Println(m)
 	}
 	return caddy.ExitCodeSuccess, nil
 }
 
-var cmdEnviron = &command{
-	Run:   runEnviron,
-	Usage: "caddy environ",
-	Short: "Prints the environment as seen by caddy",
-	Long: `
-Prints the environment as seen by caddy. Can be useful when debugging init
-systems or process manager units like systemd.
-`,
+type cmdEnviron struct {
 }
 
-func runEnviron() (int, error) {
+func newCmdEnviron() *command {
+	environ := &cmdEnviron{}
+	cmd := &command{
+		Run:   environ.run,
+		Usage: "caddy environ",
+		Short: "Prints the environment as seen by caddy",
+		Long: `Prints the environment as seen by caddy. Can be useful when debugging init
+systems or process manager units like systemd.`,
+	}
+
+	fs := flag.NewFlagSet("environ", flag.ExitOnError)
+	cmd.Flag = fs
+	return cmd
+}
+
+func (c *cmdEnviron) run(args []string) (int, error) {
 	for _, v := range os.Environ() {
 		fmt.Println(v)
 	}
 	return caddy.ExitCodeSuccess, nil
 }
 
-var cmdAdaptConfig = &command{
-	Run:   runAdaptConfig,
-	Usage: "caddy adapt-config --input <path> --adapter <name> [--pretty]",
-	Short: "Adapts a configuration to Caddy's native JSON config structure",
-	Long: `
-Adapts a configuration to Caddy's native JSON config structure and writes the
-output to stdout, along with any warnings to stderr. If --pretty is specified,
-the output will be formatted with indentation for human readability.
-`,
+type cmdAdaptConfig struct {
+	adapter string
+	input   string
+	pretty  bool
 }
 
-func runAdaptConfig() (int, error) {
-	adaptCmd := flag.NewFlagSet("adapt", flag.ExitOnError)
-	adaptCmdAdapterFlag := adaptCmd.String("adapter", "", "Name of config adapter")
-	adaptCmdInputFlag := adaptCmd.String("input", "", "Configuration file to adapt")
-	adaptCmdPrettyFlag := adaptCmd.Bool("pretty", false, "Format the output for human readability")
-	adaptCmd.Parse(os.Args[2:])
+func newCmdAdaptConfig() *command {
+	adaptConfig := &cmdAdaptConfig{}
+	cmd := &command{
+		Run:   adaptConfig.run,
+		Usage: "caddy adapt-config --input <path> --adapter <name> [--pretty]",
+		Short: "Adapts a configuration to Caddy's native JSON config structure",
+		Long: `Adapts a configuration to Caddy's native JSON config structure and writes the
+output to stdout, along with any warnings to stderr. If --pretty is specified,
+the output will be formatted with indentation for human readability.`,
+	}
 
-	if *adaptCmdAdapterFlag == "" || *adaptCmdInputFlag == "" {
+	fs := flag.NewFlagSet("adaptConfig", flag.ExitOnError)
+	fs.StringVar(&adaptConfig.adapter, "adapter", "", "Name of config adapter")
+	fs.StringVar(&adaptConfig.input, "input", "", "Configuration file to adapt")
+	fs.BoolVar(&adaptConfig.pretty, "pretty", false, "Format the output for human readability")
+	cmd.Flag = fs
+	return cmd
+}
+
+func (c *cmdAdaptConfig) run(args []string) (int, error) {
+	if c.adapter == "" || c.input == "" {
 		return caddy.ExitCodeFailedStartup,
 			fmt.Errorf("usage: caddy adapt-config --adapter <name> --input <file>")
 	}
 
-	cfgAdapter := caddyconfig.GetAdapter(*adaptCmdAdapterFlag)
+	cfgAdapter := caddyconfig.GetAdapter(c.adapter)
 	if cfgAdapter == nil {
 		return caddy.ExitCodeFailedStartup,
-			fmt.Errorf("unrecognized config adapter: %s", *adaptCmdAdapterFlag)
+			fmt.Errorf("unrecognized config adapter: %s", c.adapter)
 	}
 
-	input, err := ioutil.ReadFile(*adaptCmdInputFlag)
+	input, err := ioutil.ReadFile(c.input)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup,
 			fmt.Errorf("reading input file: %v", err)
 	}
 
 	opts := make(map[string]interface{})
-	if *adaptCmdPrettyFlag {
+	if c.pretty {
 		opts["pretty"] = "true"
 	}
 
@@ -455,11 +521,65 @@ func runAdaptConfig() (int, error) {
 		if warn.Directive != "" {
 			msg = fmt.Sprintf("%s: %s", warn.Directive, warn.Message)
 		}
-		log.Printf("[WARNING][%s] %s:%d: %s", *adaptCmdAdapterFlag, warn.File, warn.Line, msg)
+		log.Printf("[WARNING][%s] %s:%d: %s", c.adapter, warn.File, warn.Line, msg)
 	}
 
 	// print result to stdout
 	fmt.Println(string(adaptedConfig))
 
+	return caddy.ExitCodeSuccess, nil
+}
+
+type cmdHelp struct{}
+
+func newCmdHelp() *command {
+	help := cmdHelp{}
+	cmd := &command{
+		Run:   help.run,
+		Usage: "caddy help [command]",
+		Short: "Help for each command",
+		Long:  `Prints help for each command.`,
+	}
+
+	fs := flag.NewFlagSet("help", flag.ExitOnError)
+	cmd.Flag = fs
+	return cmd
+}
+
+var helpTemplate = `{{ .Long }}
+
+Full documentation available on 
+https://github.com/caddyserver/caddy/wiki/v2:-Documentation
+
+usage:
+  {{ .Usage }}
+{{ if ne .FlagHelp "" }}
+flags:
+{{ .FlagHelp }}{{ end }}`
+
+func (c *cmdHelp) run(args []string) (int, error) {
+	if len(args) == 0 {
+		msg, err := usageString()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(caddy.ExitCodeFailedStartup)
+		}
+		fmt.Print(msg)
+		return caddy.ExitCodeSuccess, nil
+	} else if len(args) > 1 {
+		return caddy.ExitCodeFailedStartup, errors.New(
+			"usage: caddy help [command]\n" + "Too many arguments given.\n")
+	}
+
+	subcommand, ok := commandMap[args[0]]
+	if !ok {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("unknown command '%s'. Run 'caddy help' for usage.", args[0])
+	}
+
+	cmdhelp := template.Must(template.New("cmdhelp").Parse(helpTemplate))
+	if err := cmdhelp.Execute(os.Stdout, subcommand); err != nil {
+		log.Println(err)
+		return caddy.ExitCodeFailedStartup, err
+	}
 	return caddy.ExitCodeSuccess, nil
 }
