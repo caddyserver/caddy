@@ -3,22 +3,7 @@
 
 trigger:
 - v2
-
-strategy:
-  matrix:
-    linux:
-      imageName: ubuntu-16.04
-      gorootDir: /usr/local
-    mac:
-      imageName: macos-10.13
-      gorootDir: /usr/local
-    windows:
-      imageName: windows-2019
-      gorootDir: C:\
-
-pool:
-  vmImage: $(imageName)
-
+  
 variables:
   GOROOT: $(gorootDir)/go
   GOPATH: $(system.defaultWorkingDirectory)/gopath
@@ -27,109 +12,158 @@ variables:
   # TODO: Remove once it's enabled by default
   GO111MODULE: on
 
-steps:
-- bash: |
-    latestGo=$(curl "https://golang.org/VERSION?m=text")
-    echo "##vso[task.setvariable variable=LATEST_GO]$latestGo"
-    echo "Latest Go version: $latestGo"
-  displayName: "Get latest Go version"
+jobs:
+  - job: setup_environment
+    displayName: Set up environment
+    strategy:
+      matrix:
+        linux:
+          imageName: ubuntu-16.04
+          gorootDir: /usr/local
+        mac:
+          imageName: macos-10.13
+          gorootDir: /usr/local
+        windows:
+          imageName: windows-2019
+          gorootDir: C:\
+    pool:
+      vmImage: $(imageName)
+    steps:
+    - bash: |
+        latestGo=$(curl "https://golang.org/VERSION?m=text")
+        echo "##vso[task.setvariable variable=LATEST_GO]$latestGo"
+        echo "Latest Go version: $latestGo"
+      displayName: "Get latest Go version"
 
-- bash: |
-    sudo rm -f $(which go)
-    echo '##vso[task.prependpath]$(GOBIN)'
-    echo '##vso[task.prependpath]$(GOROOT)/bin'
-    mkdir -p '$(modulePath)'
-    shopt -s extglob
-    shopt -s dotglob
-    mv !(gopath) '$(modulePath)'
-  displayName: Remove old Go, set GOBIN/GOROOT, and move project into GOPATH
+    - bash: |
+        sudo rm -f $(which go)
+        echo '##vso[task.prependpath]$(GOBIN)'
+        echo '##vso[task.prependpath]$(GOROOT)/bin'
+        mkdir -p '$(modulePath)'
+        shopt -s extglob
+        shopt -s dotglob
+        mv !(gopath) '$(modulePath)'
+      displayName: Remove old Go, set GOBIN/GOROOT, and move project into GOPATH
 
-# Install Go (this varies by platform)
+    # Install Go (this varies by platform)
+    - bash: |
+        wget "https://dl.google.com/go/$(LATEST_GO).linux-amd64.tar.gz"
+        sudo tar -C $(gorootDir) -xzf "$(LATEST_GO).linux-amd64.tar.gz"
+      condition: eq( variables['Agent.OS'], 'Linux' )
+      displayName: Install Go on Linux
 
-- bash: |
-    wget "https://dl.google.com/go/$(LATEST_GO).linux-amd64.tar.gz"
-    sudo tar -C $(gorootDir) -xzf "$(LATEST_GO).linux-amd64.tar.gz"
-  condition: eq( variables['Agent.OS'], 'Linux' )
-  displayName: Install Go on Linux
+    - bash: |
+        wget "https://dl.google.com/go/$(LATEST_GO).darwin-amd64.tar.gz"
+        sudo tar -C $(gorootDir) -xzf "$(LATEST_GO).darwin-amd64.tar.gz"
+      condition: eq( variables['Agent.OS'], 'Darwin' )
+      displayName: Install Go on macOS
 
-- bash: |
-    wget "https://dl.google.com/go/$(LATEST_GO).darwin-amd64.tar.gz"
-    sudo tar -C $(gorootDir) -xzf "$(LATEST_GO).darwin-amd64.tar.gz"
-  condition: eq( variables['Agent.OS'], 'Darwin' )
-  displayName: Install Go on macOS
+    - powershell: |
+        Write-Host "Downloading Go... (please be patient, I am very slow)"
+        (New-Object System.Net.WebClient).DownloadFile("https://dl.google.com/go/$(LATEST_GO).windows-amd64.zip", "$(LATEST_GO).windows-amd64.zip")
+        Write-Host "Extracting Go... (I'm slow too)"
+        Expand-Archive "$(LATEST_GO).windows-amd64.zip" -DestinationPath "$(gorootDir)"
+      condition: eq( variables['Agent.OS'], 'Windows_NT' )
+      displayName: Install Go on Windows
 
-- powershell: |
-    Write-Host "Downloading Go... (please be patient, I am very slow)"
-    (New-Object System.Net.WebClient).DownloadFile("https://dl.google.com/go/$(LATEST_GO).windows-amd64.zip", "$(LATEST_GO).windows-amd64.zip")
-    Write-Host "Extracting Go... (I'm slow too)"
-    Expand-Archive "$(LATEST_GO).windows-amd64.zip" -DestinationPath "$(gorootDir)"
-  condition: eq( variables['Agent.OS'], 'Windows_NT' )
-  displayName: Install Go on Windows
+    - bash: curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.19.1
+      displayName: Install golangci-lint
 
-- bash: curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.19.1
-  displayName: Install golangci-lint
+    - script: |
+        go get github.com/axw/gocov/gocov
+        go get github.com/AlekSi/gocov-xml
+        go get -u github.com/jstemmer/go-junit-report
+      displayName: Install test and coverage analysis tools
 
-- script: |
-    go get github.com/axw/gocov/gocov
-    go get github.com/AlekSi/gocov-xml
-    go get -u github.com/jstemmer/go-junit-report
-  displayName: Install test and coverage analysis tools
+    - bash: |
+        printf "Using go at: $(which go)\n"
+        printf "Go version: $(go version)\n"
+        printf "\n\nGo environment:\n\n"
+        go env
+        printf "\n\nSystem environment:\n\n"
+        env
+      displayName: Print Go version and environment
 
-- bash: |
-    printf "Using go at: $(which go)\n"
-    printf "Go version: $(go version)\n"
-    printf "\n\nGo environment:\n\n"
-    go env
-    printf "\n\nSystem environment:\n\n"
-    env
-  displayName: Print Go version and environment
+    - script: |
+        go get -v -t -d ./...
+        mkdir test-results
+      workingDirectory: '$(modulePath)'
+      displayName: Get dependencies
 
-- script: |
-    go get -v -t -d ./...
-  workingDirectory: '$(modulePath)'
-  displayName: Get dependencies
+  - job: QA
+    dependsOn: setup_environment
+    displayName: QA
+    strategy:
+      matrix:
+        linux:
+          imageName: ubuntu-16.04
+          gorootDir: /usr/local
+        mac:
+          imageName: macos-10.13
+          gorootDir: /usr/local
+        windows:
+          imageName: windows-2019
+          gorootDir: C:\
+    pool:
+      vmImage: $(imageName)
+    steps:
+    - script: |
+        (golangci-lint run --out-format junit-xml -E gofmt -E goimports -E misspell) > test-results/lint-result.xml
+      workingDirectory: '$(modulePath)'
+      displayName: Run lint check
+    - script: |
+        (go test -v -coverprofile=cover-profile.out -race ./... 2>&1) > test-results/test-result.out
+      workingDirectory: '$(modulePath)'
+      displayName: Run tests
+      condition: always()
 
-- script: |
-    mkdir test-results
-    (golangci-lint run --out-format junit-xml -E gofmt -E goimports -E misspell) > test-results/lint-result.xml
-  workingDirectory: '$(modulePath)'
-  displayName: Run lint check
+  - job: Reporting
+    condition: always()
+    displayName: Publish test resports
+    strategy:
+      matrix:
+        linux:
+          imageName: ubuntu-16.04
+          gorootDir: /usr/local
+        mac:
+          imageName: macos-10.13
+          gorootDir: /usr/local
+        windows:
+          imageName: windows-2019
+          gorootDir: C:\
+    pool:
+      vmImage: $(imageName)
+    steps:
+    - script: |
+        mkdir coverage
+        gocov convert cover-profile.out > coverage/coverage.json
+        # Because Windows doesn't work with input redirection like *nix, but output redirection works.
+        (cat ./coverage/coverage.json | gocov-xml) > coverage/coverage.xml 
+      workingDirectory: '$(modulePath)'
+      displayName: Prepare coverage reports
 
-- script: |
-    (go test -v -coverprofile=cover-profile.out -race ./... 2>&1) > test-results/test-result.out
-  workingDirectory: '$(modulePath)'
-  displayName: Run tests
+    - script: |
+        (cat ./test-results/test-result.out | go-junit-report) > test-results/test-result.xml
+      workingDirectory: '$(modulePath)'
+      displayName: Prepare test report
 
-- script: |
-    mkdir coverage
-    gocov convert cover-profile.out > coverage/coverage.json
-    # Because Windows doesn't work with input redirection like *nix, but output redirection works.
-    (cat ./coverage/coverage.json | gocov-xml) > coverage/coverage.xml 
-  workingDirectory: '$(modulePath)'
-  displayName: Prepare coverage reports
+    - task: PublishCodeCoverageResults@1
+      inputs:
+        codeCoverageTool: Cobertura 
+        summaryFileLocation: $(modulePath)/coverage/coverage.xml
 
-- script: |
-    (cat ./test-results/test-result.out | go-junit-report) > test-results/test-result.xml
-  workingDirectory: '$(modulePath)'
-  displayName: Prepare test report
+    - task: PublishTestResults@2
+      displayName: Publish unit test results
+      inputs:
+        testResultsFormat: 'JUnit'
+        testResultsFiles: $(modulePath)/test-results/test-result.xml
+        testRunTitle: $(agent.OS) Unit Test
+        mergeTestResults: false
 
-- task: PublishCodeCoverageResults@1
-  inputs:
-    codeCoverageTool: Cobertura 
-    summaryFileLocation: $(modulePath)/coverage/coverage.xml
-
-- task: PublishTestResults@2
-  displayName: Publish unit test results
-  inputs:
-    testResultsFormat: 'JUnit'
-    testResultsFiles: $(modulePath)/test-results/test-result.xml
-    testRunTitle: $(agent.OS) Unit Test
-    mergeTestResults: false
-
-- task: PublishTestResults@2
-  displayName: Publish lint results
-  inputs:
-    testResultsFormat: 'JUnit'
-    testResultsFiles: $(modulePath)/test-results/lint-result.xml
-    testRunTitle: $(agent.OS) Lint
-    mergeTestResults: false
+    - task: PublishTestResults@2
+      displayName: Publish lint results
+      inputs:
+        testResultsFormat: 'JUnit'
+        testResultsFiles: $(modulePath)/test-results/lint-result.xml
+        testRunTitle: $(agent.OS) Lint
+        mergeTestResults: false
