@@ -211,7 +211,10 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 		cfg.AppsRaw["tls"] = caddyconfig.JSON(tlsApp, &warnings)
 	}
 	if storageCvtr, ok := options["storage"].(caddy.StorageConverter); ok {
-		cfg.StorageRaw = caddyconfig.JSON(storageCvtr, &warnings)
+		cfg.StorageRaw = caddyconfig.JSONModuleObject(storageCvtr,
+			"module",
+			storageCvtr.(caddy.Module).CaddyModule().ID(),
+			&warnings)
 	}
 
 	return cfg, warnings, nil
