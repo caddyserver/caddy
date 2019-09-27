@@ -86,8 +86,16 @@ steps:
 
 - script: |
     go get -v -t -d ./...
+  workingDirectory: '$(modulePath)'
+  displayName: Get dependencies
+
+- script: |
     mkdir test-results
-    golangci-lint run --out-format junit-xml -E gofmt -E goimports -E misspell > test-results/lint-result.xml
+    (golangci-lint run --out-format junit-xml -E gofmt -E goimports -E misspell) > test-results/lint-result.xml
+  workingDirectory: '$(modulePath)'
+  displayName: Run lint check
+
+- script: |
     (go test -v -coverprofile=cover-profile.out -race ./... 2>&1) > test-results/test-result.out
   workingDirectory: '$(modulePath)'
   displayName: Run tests
