@@ -90,6 +90,7 @@ steps:
 
 - script: |
     (golangci-lint run --out-format junit-xml -E gofmt -E goimports -E misspell) > test-results/lint-result.xml
+    exit 0
   workingDirectory: '$(modulePath)'
   continueOnError: true
   displayName: Run lint check
