@@ -101,7 +101,6 @@ steps:
   displayName: Prepare coverage reports
 
 - script: |
-    gocov convert cover-profile.out > coverage/coverage.json
     (cat ./test-results/test-result.out | go-junit-report) > test-results/test-result.xml
   workingDirectory: '$(modulePath)'
   displayName: Prepare test report
@@ -112,7 +111,17 @@ steps:
     summaryFileLocation: $(modulePath)/coverage/coverage.xml
 
 - task: PublishTestResults@2
+  displayName: Publish unit test results
   inputs:
     testResultsFormat: 'JUnit'
-    testResultsFiles: $(modulePath)/test-results/*-result.xml
-    mergeTestResults: true
+    testResultsFiles: $(modulePath)/test-results/test-result.xml
+    testRunTitle: variables['Agent.OS'] Unit Test
+    mergeTestResults: false
+
+- task: PublishTestResults@2
+  displayName: Publish lint results
+  inputs:
+    testResultsFormat: 'JUnit'
+    testResultsFiles: $(modulePath)/test-results/lint-result.xml
+    testRunTitle: variables['Agent.OS'] Lint
+    mergeTestResults: false
