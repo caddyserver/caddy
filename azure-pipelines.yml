@@ -115,7 +115,7 @@ steps:
   inputs:
     testResultsFormat: 'JUnit'
     testResultsFiles: $(modulePath)/test-results/test-result.xml
-    testRunTitle: variables['Agent.OS'] Unit Test
+    testRunTitle: $(agent.OS) Unit Test
     mergeTestResults: false
 
 - task: PublishTestResults@2
@@ -123,5 +123,5 @@ steps:
   inputs:
     testResultsFormat: 'JUnit'
     testResultsFiles: $(modulePath)/test-results/lint-result.xml
-    testRunTitle: variables['Agent.OS'] Lint
+    testRunTitle: $(agent.OS) Lint
     mergeTestResults: false
