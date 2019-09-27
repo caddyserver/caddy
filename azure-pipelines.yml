@@ -88,7 +88,7 @@ steps:
     go get -v -t -d ./...
     mkdir test-results
     golangci-lint run --out-format junit-xml -E gofmt -E goimports -E misspell > test-results/lint-result.xml
-    (go test -coverprofile=cover-profile.out -race ./... 2>&1 | go-junit-report) > test-results/test-result.xml
+    (go test -v -coverprofile=cover-profile.out -race ./... 2>&1) > test-results/test-result.out
   workingDirectory: '$(modulePath)'
   displayName: Run tests
 
@@ -99,6 +99,12 @@ steps:
     (cat ./coverage/coverage.json | gocov-xml) > coverage/coverage.xml 
   workingDirectory: '$(modulePath)'
   displayName: Prepare coverage reports
+
+- script: |
+    gocov convert cover-profile.out > coverage/coverage.json
+    (cat ./test-results/test-result.out | go-junit-report) > test-results/test-result.xml
+  workingDirectory: '$(modulePath)'
+  displayName: Prepare test report
 
 - task: PublishCodeCoverageResults@1
   inputs:
