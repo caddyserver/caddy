@@ -134,3 +134,8 @@ steps:
     testResultsFiles: $(modulePath)/test-results/lint-result.xml
     testRunTitle: $(agent.OS) Lint
     mergeTestResults: false
+
+- bash: |
+    exit 1
+  condition: eq(variables['Agent.JobStatus'], 'SucceededWithIssues')
+  displayName: Coerce correct build result
