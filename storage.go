@@ -17,7 +17,6 @@ package caddy
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 
 	"github.com/mholt/certmagic"
 )
@@ -35,17 +34,9 @@ type StorageConverter interface {
 // directory from environment variables. If unknown, "." (the
 // current directory) is returned instead.
 func homeDir() string {
-	home := os.Getenv("HOME")
-	if home == "" && runtime.GOOS == "windows" {
-		drive := os.Getenv("HOMEDRIVE")
-		path := os.Getenv("HOMEPATH")
-		home = drive + path
-		if drive == "" || path == "" {
-			home = os.Getenv("USERPROFILE")
-		}
-	}
-	if home == "" {
-		home = "."
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "."
 	}
 	return home
 }
