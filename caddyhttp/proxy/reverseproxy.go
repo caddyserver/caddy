@@ -339,7 +339,7 @@ func (rp *ReverseProxy) UseOwnCACertificates(CaCertPool *x509.CertPool) {
 
 // UseClientCertificates is used to facilitate HTTPS proxying
 // with locally provided certificate.
-func (rp *ReverseProxy) UseClientCertificates(keyPair *tls.Certificate) {
+func (rp *ReverseProxy) UseClientCertificates(keyPair tls.Certificate) {
         if transport, ok := rp.Transport.(*http.Transport); ok {
                 if transport.TLSClientConfig == nil {
                         transport.TLSClientConfig = &tls.Config{}
