@@ -26,9 +26,10 @@ type (
 	// are separated by whitespace. A word can be enclosed
 	// in quotes if it contains whitespace.
 	lexer struct {
-		reader *bufio.Reader
-		token  Token
-		line   int
+		reader       *bufio.Reader
+		token        Token
+		line         int
+		skippedLines int
 	}
 
 	// Token represents a single parsable unit.
@@ -91,27 +92,30 @@ func (l *lexer) next() bool {
 			panic(err)
 		}
 
+		if !escaped && ch == '\\' {
+			escaped = true
+			continue
+		}
+
 		if quoted {
-			if !escaped {
-				if ch == '\\' {
-					escaped = true
-					continue
-				} else if ch == '"' {
+			if escaped {
+				// all is literal in quoted area,
+				// so only escape quotes
+				if ch != '"' {
+					val = append(val, '\\')
+				}
+				escaped = false
+			} else {
+				if ch == '"' {
 					quoted = false
 					return makeToken()
 				}
 			}
 			if ch == '\n' {
-				l.line++
-			}
-			if escaped {
-				// only escape quotes and newlines
-				if ch != '"' && ch != '\n' {
-					val = append(val, '\\')
-				}
+				l.line += 1 + l.skippedLines
+				l.skippedLines = 0
 			}
 			val = append(val, ch)
-			escaped = false
 			continue
 		}
 
@@ -120,7 +124,13 @@ func (l *lexer) next() bool {
 				continue
 			}
 			if ch == '\n' {
-				l.line++
+				if escaped {
+					l.skippedLines++
+					escaped = false
+				} else {
+					l.line += 1 + l.skippedLines
+					l.skippedLines = 0
+				}
 				comment = false
 			}
 			if len(val) > 0 {
@@ -132,7 +142,6 @@ func (l *lexer) next() bool {
 		if ch == '#' {
 			comment = true
 		}
-
 		if comment {
 			continue
 		}
