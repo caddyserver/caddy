@@ -268,6 +268,7 @@ func (u *staticUpstream) NewHost(host string) (*UpstreamHost, error) {
 	}
 
 
+	fmt.Println("************************")
 	keyPair, err := tls.LoadX509KeyPair("/test/cert.cer", "/test/cert.pem")
         if (err != nil) {
                 panic(err)
