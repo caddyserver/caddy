@@ -96,11 +96,47 @@ func TestLexer(t *testing.T) {
 			},
 		},
 		{
-			input: "A \"newline \\\ninside\" quotes",
+			input: "An escaped \"newline\\\ninside\" quotes",
 			expected: []Token{
-				{Line: 1, Text: "A"},
-				{Line: 1, Text: "newline \ninside"},
+				{Line: 1, Text: "An"},
+				{Line: 1, Text: "escaped"},
+				{Line: 1, Text: "newline\\\ninside"},
 				{Line: 2, Text: "quotes"},
+			},
+		},
+		{
+			input: "An escaped newline\\\noutside quotes",
+			expected: []Token{
+				{Line: 1, Text: "An"},
+				{Line: 1, Text: "escaped"},
+				{Line: 1, Text: "newline"},
+				{Line: 1, Text: "outside"},
+				{Line: 1, Text: "quotes"},
+			},
+		},
+		{
+			input: "line1\\\nescaped\nline2\nline3",
+			expected: []Token{
+				{Line: 1, Text: "line1"},
+				{Line: 1, Text: "escaped"},
+				{Line: 3, Text: "line2"},
+				{Line: 4, Text: "line3"},
+			},
+		},
+		{
+			input: "line1\\\nescaped1\\\nescaped2\nline4\nline5",
+			expected: []Token{
+				{Line: 1, Text: "line1"},
+				{Line: 1, Text: "escaped1"},
+				{Line: 1, Text: "escaped2"},
+				{Line: 4, Text: "line4"},
+				{Line: 5, Text: "line5"},
+			},
+		},
+		{
+			input: `"unescapable\ in quotes"`,
+			expected: []Token{
+				{Line: 1, Text: `unescapable\ in quotes`},
 			},
 		},
 		{
