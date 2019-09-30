@@ -65,9 +65,9 @@ func gracefulStop(sigName string) {
 	os.Exit(exitCode)
 }
 
-// Exit codes. Generally, you will want to avoid
-// automatically restarting the process if the
-// exit code is 1.
+// Exit codes. Generally, you should NOT
+// automatically restart the process if the
+// exit code is ExitCodeFailedStartup (1).
 const (
 	ExitCodeSuccess = iota
 	ExitCodeFailedStartup

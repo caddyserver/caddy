@@ -131,6 +131,14 @@ func (ctx Context) LoadModule(name string, rawMsg json.RawMessage) (interface{},
 	if prov, ok := val.(Provisioner); ok {
 		err := prov.Provision(ctx)
 		if err != nil {
+			// incomplete provisioning could have left state
+			// dangling, so make sure it gets cleaned up
+			if cleanerUpper, ok := val.(CleanerUpper); ok {
+				err2 := cleanerUpper.Cleanup()
+				if err2 != nil {
+					err = fmt.Errorf("%v; additionally, cleanup: %v", err, err2)
+				}
+			}
 			return nil, fmt.Errorf("provision %s: %v", mod.Name, err)
 		}
 	}
@@ -138,6 +146,7 @@ func (ctx Context) LoadModule(name string, rawMsg json.RawMessage) (interface{},
 	if validator, ok := val.(Validator); ok {
 		err := validator.Validate()
 		if err != nil {
+			// since the module was already provisioned, make sure we clean up
 			if cleanerUpper, ok := val.(CleanerUpper); ok {
 				err2 := cleanerUpper.Cleanup()
 				if err2 != nil {
