@@ -360,6 +360,8 @@ func (rp *ReverseProxy) UseClientCertificates(keyPair tls.Certificate) {
 // ServeHTTP serves the proxied request to the upstream by performing a roundtrip.
 // It is designed to handle websocket connection upgrades as well.
 func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, respUpdateFn respUpdateFn) error {
+
+	fmt.Println("ReverseProxy.ServeHTTP")
 	transport := rp.Transport
 	if requestIsWebsocket(outreq) {
 		transport = newConnHijackerTransport(transport)
