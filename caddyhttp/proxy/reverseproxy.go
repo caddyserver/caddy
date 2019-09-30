@@ -339,12 +339,12 @@ func (rp *ReverseProxy) UseOwnCACertificates(CaCertPool *x509.CertPool) {
 
 // UseClientCertificates is used to facilitate HTTPS proxying
 // with locally provided certificate.
-func (rp *ReverseProxy) UseClientCertificates(keyPair tls.Certificate) {
+func (rp *ReverseProxy) UseClientCertificates(keyPair *tls.Certificate) {
         if transport, ok := rp.Transport.(*http.Transport); ok {
                 if transport.TLSClientConfig == nil {
                         transport.TLSClientConfig = &tls.Config{}
                 }
-                transport.TLSClientConfig.Certificates = []tls.Certificate{ keyPair }
+                transport.TLSClientConfig.Certificates = []tls.Certificate{ *keyPair }
                 // No http2.ConfigureTransport() here.
                 // For now this is only added in places where
                 // an http.Transport is actually created.
@@ -361,7 +361,6 @@ func (rp *ReverseProxy) UseClientCertificates(keyPair tls.Certificate) {
 // It is designed to handle websocket connection upgrades as well.
 func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, respUpdateFn respUpdateFn) error {
 
-	fmt.Println("ReverseProxy.ServeHTTP")
 	transport := rp.Transport
 	if requestIsWebsocket(outreq) {
 		transport = newConnHijackerTransport(transport)
@@ -373,11 +372,6 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, 
 		outreq.URL.Scheme = "https" // Change scheme back to https for QUIC RoundTripper
 	}
 
-	if t, ok := rp.Transport.(*http.Transport); ok {
-		fmt.Println(fmt.Sprintf("***** Just before roundtrip: number of certs %d", len(t.TLSClientConfig.Certificates)))
-	} else {
-		fmt.Println("*****oops")
-	}
 	res, err := transport.RoundTrip(outreq)
 	if err != nil {
 		return err
