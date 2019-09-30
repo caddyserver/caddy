@@ -371,6 +371,7 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, 
 		outreq.URL.Scheme = "https" // Change scheme back to https for QUIC RoundTripper
 	}
 
+	fmt.Println(fmt.Sprintf("***** Just before roundtrip: number of certs %d", len(transport.TLSClientConfig.Certificates)))
 	res, err := transport.RoundTrip(outreq)
 	if err != nil {
 		return err
