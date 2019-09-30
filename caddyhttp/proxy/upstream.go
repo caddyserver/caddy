@@ -580,7 +580,7 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream, hasSrv bool) error {
                 clientKeyFile := c.Val()
 		clientKeyPair, err := tls.LoadX509KeyPair(clientCertFile, clientKeyFile)
         	if (err != nil) {
-                	return c.Errf("unable to load keypair from certfile:%s keyfile:%", clientCertFile, clientKeyFile)
+                	return c.Errf("unable to load keypair from certfile:%s keyfile:%s", clientCertFile, clientKeyFile)
         	}
 		u.ClientKeyPair = &clientKeyPair
 

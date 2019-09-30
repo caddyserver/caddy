@@ -340,7 +340,6 @@ func (rp *ReverseProxy) UseOwnCACertificates(CaCertPool *x509.CertPool) {
 // UseClientCertificates is used to facilitate HTTPS proxying
 // with locally provided certificate.
 func (rp *ReverseProxy) UseClientCertificates(keyPair *tls.Certificate) {
-	fmt.Println("Jeg er her")
         if transport, ok := rp.Transport.(*http.Transport); ok {
                 if transport.TLSClientConfig == nil {
                         transport.TLSClientConfig = &tls.Config{}
@@ -361,7 +360,6 @@ func (rp *ReverseProxy) UseClientCertificates(keyPair *tls.Certificate) {
 // ServeHTTP serves the proxied request to the upstream by performing a roundtrip.
 // It is designed to handle websocket connection upgrades as well.
 func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, outreq *http.Request, respUpdateFn respUpdateFn) error {
-
 	transport := rp.Transport
 	if requestIsWebsocket(outreq) {
 		transport = newConnHijackerTransport(transport)
