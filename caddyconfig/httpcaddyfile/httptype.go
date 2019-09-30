@@ -182,6 +182,9 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 						return nil, warnings, err
 					}
 					if len(sblockHosts) > 0 {
+						if tlsApp.Automation == nil {
+							tlsApp.Automation = new(caddytls.AutomationConfig)
+						}
 						tlsApp.Automation.Policies = append(tlsApp.Automation.Policies, caddytls.AutomationPolicy{
 							Hosts:         sblockHosts,
 							ManagementRaw: caddyconfig.JSONModuleObject(mm, "module", mm.(caddy.Module).CaddyModule().ID(), &warnings),
