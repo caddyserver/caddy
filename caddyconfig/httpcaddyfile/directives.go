@@ -80,9 +80,15 @@ func RegisterHandlerDirective(dir string, setupFunc UnmarshalHandlerFunc) {
 // Caddyfile tokens.
 type Helper struct {
 	*caddyfile.Dispenser
+	options     map[string]interface{}
 	warnings    *[]caddyconfig.Warning
 	matcherDefs map[string]map[string]json.RawMessage
 	parentBlock caddyfile.ServerBlock
+}
+
+// Option gets the option keyed by name.
+func (h Helper) Option(name string) interface{} {
+	return h.options[name]
 }
 
 // Caddyfiles returns the list of config files from

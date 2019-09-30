@@ -58,6 +58,7 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 			var val interface{}
 			var err error
 			disp := caddyfile.NewDispenser(segment)
+			// TODO: make this switch into a map
 			switch dir {
 			case "http_port":
 				val, err = parseOptHTTPPort(disp)
@@ -69,6 +70,10 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 				val, err = parseOptExperimentalHTTP3(disp)
 			case "storage":
 				val, err = parseOptStorage(disp)
+			case "acme_ca":
+				val, err = parseOptACMECA(disp)
+			case "email":
+				val, err = parseOptEmail(disp)
 			default:
 				return nil, warnings, fmt.Errorf("unrecognized parameter name: %s", dir)
 			}
@@ -108,7 +113,7 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 
 		// extract matcher definitions
 		d := sb.block.DispenseDirective("matcher")
-		matcherDefs, err := st.parseMatcherDefinitions(d)
+		matcherDefs, err := parseMatcherDefinitions(d)
 		if err != nil {
 			return nil, warnings, err
 		}
@@ -122,6 +127,7 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 			if dirFunc, ok := registeredDirectives[dir]; ok {
 				results, err := dirFunc(Helper{
 					Dispenser:   caddyfile.NewDispenser(segment),
+					options:     options,
 					warnings:    &warnings,
 					matcherDefs: matcherDefs,
 					parentBlock: sb.block,
@@ -166,7 +172,7 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 	// now for the TLS app! (TODO: refactor into own func)
 	tlsApp := caddytls.TLS{Certificates: make(map[string]json.RawMessage)}
 	for _, p := range pairings {
-		for _, sblock := range p.serverBlocks {
+		for i, sblock := range p.serverBlocks {
 			// tls automation policies
 			if mmVals, ok := sblock.pile["tls.automation_manager"]; ok {
 				for _, mmVal := range mmVals {
@@ -175,10 +181,16 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 					if err != nil {
 						return nil, warnings, err
 					}
-					tlsApp.Automation.Policies = append(tlsApp.Automation.Policies, caddytls.AutomationPolicy{
-						Hosts:         sblockHosts,
-						ManagementRaw: caddyconfig.JSONModuleObject(mm, "module", mm.(caddy.Module).CaddyModule().ID(), &warnings),
-					})
+					if len(sblockHosts) > 0 {
+						tlsApp.Automation.Policies = append(tlsApp.Automation.Policies, caddytls.AutomationPolicy{
+							Hosts:         sblockHosts,
+							ManagementRaw: caddyconfig.JSONModuleObject(mm, "module", mm.(caddy.Module).CaddyModule().ID(), &warnings),
+						})
+					} else {
+						warnings = append(warnings, caddyconfig.Warning{
+							Message: fmt.Sprintf("Server block %d %v has no names that qualify for automatic HTTPS, so no TLS automation policy will be added.", i, sblock.block.Keys),
+						})
+					}
 				}
 			}
 
@@ -192,8 +204,25 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 			}
 		}
 	}
-	// consolidate automation policies that are the exact same
-	tlsApp.Automation.Policies = consolidateAutomationPolicies(tlsApp.Automation.Policies)
+	// if global ACME CA or email were set, append a catch-all automation
+	// policy that ensures they will be used if no tls directive was used
+	acmeCA, hasACMECA := options["acme_ca"]
+	email, hasEmail := options["email"]
+	if hasACMECA || hasEmail {
+		if tlsApp.Automation == nil {
+			tlsApp.Automation = new(caddytls.AutomationConfig)
+		}
+		tlsApp.Automation.Policies = append(tlsApp.Automation.Policies, caddytls.AutomationPolicy{
+			ManagementRaw: caddyconfig.JSONModuleObject(caddytls.ACMEManagerMaker{
+				CA:    acmeCA.(string),
+				Email: email.(string),
+			}, "module", "acme", &warnings),
+		})
+	}
+	if tlsApp.Automation != nil {
+		// consolidate automation policies that are the exact same
+		tlsApp.Automation.Policies = consolidateAutomationPolicies(tlsApp.Automation.Policies)
+	}
 
 	// if experimental HTTP/3 is enabled, enable it on each server
 	if enableH3, ok := options["experimental_http3"].(bool); ok && enableH3 {
@@ -207,7 +236,7 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 	if !reflect.DeepEqual(httpApp, caddyhttp.App{}) {
 		cfg.AppsRaw["http"] = caddyconfig.JSON(httpApp, &warnings)
 	}
-	if !reflect.DeepEqual(tlsApp, caddytls.TLS{}) {
+	if !reflect.DeepEqual(tlsApp, caddytls.TLS{Certificates: make(map[string]json.RawMessage)}) {
 		cfg.AppsRaw["tls"] = caddyconfig.JSON(tlsApp, &warnings)
 	}
 	if storageCvtr, ok := options["storage"].(caddy.StorageConverter); ok {
@@ -415,10 +444,10 @@ func consolidateAutomationPolicies(aps []caddytls.AutomationPolicy) []caddytls.A
 			}
 			if reflect.DeepEqual(aps[i].ManagementRaw, aps[j].ManagementRaw) {
 				aps[i].Hosts = append(aps[i].Hosts, aps[j].Hosts...)
+				aps = append(aps[:j], aps[j+1:]...)
+				i--
+				break
 			}
-			aps = append(aps[:j], aps[j+1:]...)
-			i--
-			break
 		}
 	}
 	return aps
@@ -529,6 +558,37 @@ func (st *ServerType) compileEncodedMatcherSets(sblock caddyfile.ServerBlock) ([
 	}
 
 	return matcherSetsEnc, nil
+}
+
+func parseMatcherDefinitions(d *caddyfile.Dispenser) (map[string]map[string]json.RawMessage, error) {
+	matchers := make(map[string]map[string]json.RawMessage)
+	for d.Next() {
+		definitionName := d.Val()
+		for nesting := d.Nesting(); d.NextBlock(nesting); {
+			matcherName := d.Val()
+			mod, err := caddy.GetModule("http.matchers." + matcherName)
+			if err != nil {
+				return nil, fmt.Errorf("getting matcher module '%s': %v", matcherName, err)
+			}
+			unm, ok := mod.New().(caddyfile.Unmarshaler)
+			if !ok {
+				return nil, fmt.Errorf("matcher module '%s' is not a Caddyfile unmarshaler", matcherName)
+			}
+			err = unm.UnmarshalCaddyfile(d.NewFromNextTokens())
+			if err != nil {
+				return nil, err
+			}
+			rm, ok := unm.(caddyhttp.RequestMatcher)
+			if !ok {
+				return nil, fmt.Errorf("matcher module '%s' is not a request matcher", matcherName)
+			}
+			if _, ok := matchers[definitionName]; !ok {
+				matchers[definitionName] = make(map[string]json.RawMessage)
+			}
+			matchers[definitionName][matcherName] = caddyconfig.JSON(rm, nil)
+		}
+	}
+	return matchers, nil
 }
 
 func encodeMatcherSet(matchers map[string]caddyhttp.RequestMatcher) (map[string]json.RawMessage, error) {
