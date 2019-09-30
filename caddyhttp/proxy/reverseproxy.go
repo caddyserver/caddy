@@ -352,7 +352,7 @@ func (rp *ReverseProxy) UseClientCertificates(keyPair *tls.Certificate) {
                 if transport.TLSClientConfig == nil {
                         transport.TLSClientConfig = &tls.Config{}
                 }
-                transport.TLSClientConfig.Certificates = []tls.Certificate{ keyPair }
+                transport.TLSClientConfig.Certificates = []tls.Certificate{ *keyPair }
         }
 }
 
