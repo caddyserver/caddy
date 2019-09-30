@@ -86,6 +86,14 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	var mgr caddytls.ACMEManagerMaker
 	var off bool
 
+	// fill in global defaults, if configured
+	if email := h.Option("email"); email != nil {
+		mgr.Email = email.(string)
+	}
+	if acmeCA := h.Option("acme_ca"); acmeCA != nil {
+		mgr.CA = acmeCA.(string)
+	}
+
 	for h.Next() {
 		// file certificate loader
 		firstLine := h.RemainingArgs()
@@ -112,7 +120,6 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 			hasBlock = true
 
 			switch h.Val() {
-
 			// connection policy
 			case "protocols":
 				args := h.RemainingArgs()
@@ -164,7 +171,8 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 				}
 				mgr.CA = arg[0]
 
-				// TODO: other properties for automation manager
+			default:
+				return nil, h.Errf("unknown subdirective: %s", h.Val())
 			}
 		}
 
