@@ -329,14 +329,17 @@ func (app *App) automaticHTTPS() error {
 			// to tell the TLS app to manage these certs by honoring
 			// those port configurations
 			acmeManager := &caddytls.ACMEManagerMaker{
-				Challenges: caddytls.ChallengesConfig{
-					HTTP: caddytls.HTTPChallengeConfig{
+				Challenges: &caddytls.ChallengesConfig{
+					HTTP: &caddytls.HTTPChallengeConfig{
 						AlternatePort: app.HTTPPort, // we specifically want the user-configured port, if any
 					},
-					TLSALPN: caddytls.TLSALPNChallengeConfig{
+					TLSALPN: &caddytls.TLSALPNChallengeConfig{
 						AlternatePort: app.HTTPSPort, // we specifically want the user-configured port, if any
 					},
 				},
+			}
+			if tlsApp.Automation == nil {
+				tlsApp.Automation = new(caddytls.AutomationConfig)
 			}
 			tlsApp.Automation.Policies = append(tlsApp.Automation.Policies,
 				caddytls.AutomationPolicy{

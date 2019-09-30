@@ -26,5 +26,5 @@ require (
 	github.com/starlight-go/starlight v0.0.0-20181207205707-b06f321544f3
 	go.starlark.net v0.0.0-20190604130855-6ddc71c0ba77
 	golang.org/x/net v0.0.0-20190603091049-60506f45cf65
-	golang.org/x/time v0.0.0-20190308202827-9d24e82272b4
+	golang.org/x/time v0.0.0-20190921001708-c4c64cad1fd0
 )
