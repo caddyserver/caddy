@@ -253,9 +253,10 @@ type Validator interface {
 
 // CleanerUpper is implemented by modules which may have side-effects
 // such as opened files, spawned goroutines, or allocated some sort
-// of non-local state when they were provisioned. This method should
+// of non-stack state when they were provisioned. This method should
 // deallocate/cleanup those resources to prevent memory leaks. Cleanup
-// should be fast and efficient.
+// should be fast and efficient. Cleanup should work even if Provision
+// returns an error, to allow cleaning up from partial provisionings.
 type CleanerUpper interface {
 	Cleanup() error
 }

@@ -54,95 +54,10 @@ func Run(newCfg *Config) error {
 	currentCfgMu.Lock()
 	defer currentCfgMu.Unlock()
 
-	if newCfg != nil {
-		// because we will need to roll back any state
-		// modifications if this function errors, we
-		// keep a single error value and scope all
-		// sub-operations to their own functions to
-		// ensure this error value does not get
-		// overridden or missed when it should have
-		// been set by a short assignment
-		var err error
-
-		// prepare the new config for use
-		newCfg.apps = make(map[string]App)
-
-		// create a context within which to load
-		// modules - essentially our new config's
-		// execution environment; be sure that
-		// cleanup occurs when we return if there
-		// was an error; if no error, it will get
-		// cleaned up on next config cycle
-		ctx, cancel := NewContext(Context{Context: context.Background(), cfg: newCfg})
-		defer func() {
-			if err != nil {
-				cancel() // clean up now
-			}
-		}()
-		newCfg.cancelFunc = cancel // clean up later
-
-		// set up storage and make it CertMagic's default storage, too
-		err = func() error {
-			if newCfg.StorageRaw != nil {
-				val, err := ctx.LoadModuleInline("module", "caddy.storage", newCfg.StorageRaw)
-				if err != nil {
-					return fmt.Errorf("loading storage module: %v", err)
-				}
-				stor, err := val.(StorageConverter).CertMagicStorage()
-				if err != nil {
-					return fmt.Errorf("creating storage value: %v", err)
-				}
-				newCfg.storage = stor
-				newCfg.StorageRaw = nil // allow GC to deallocate
-			}
-			if newCfg.storage == nil {
-				newCfg.storage = &certmagic.FileStorage{Path: dataDir()}
-			}
-			certmagic.Default.Storage = newCfg.storage
-
-			return nil
-		}()
-		if err != nil {
-			return err
-		}
-
-		// Load, Provision, Validate each app and their submodules
-		err = func() error {
-			for modName, rawMsg := range newCfg.AppsRaw {
-				val, err := ctx.LoadModule(modName, rawMsg)
-				if err != nil {
-					return fmt.Errorf("loading app module '%s': %v", modName, err)
-				}
-				newCfg.apps[modName] = val.(App)
-			}
-			return nil
-		}()
-		if err != nil {
-			return err
-		}
-
-		// Start
-		err = func() error {
-			var started []string
-			for name, a := range newCfg.apps {
-				err := a.Start()
-				if err != nil {
-					for _, otherAppName := range started {
-						err2 := newCfg.apps[otherAppName].Stop()
-						if err2 != nil {
-							err = fmt.Errorf("%v; additionally, aborting app %s: %v",
-								err, otherAppName, err2)
-						}
-					}
-					return fmt.Errorf("%s app module: start: %v", name, err)
-				}
-				started = append(started, name)
-			}
-			return nil
-		}()
-		if err != nil {
-			return err
-		}
+	// run the new config and start all its apps
+	err := run(newCfg, true)
+	if err != nil {
+		return err
 	}
 
 	// swap old config with the new one
@@ -153,6 +68,110 @@ func Run(newCfg *Config) error {
 	unsyncedStop(oldCfg)
 
 	return nil
+}
+
+// run runs newCfg and starts all its apps if
+// start is true. If any errors happen, cleanup
+// is performed if any modules were provisioned;
+// apps that were started already will be stopped,
+// so this function should not leak resources if
+// an error is returned.
+func run(newCfg *Config, start bool) error {
+	if newCfg == nil {
+		return nil
+	}
+
+	// because we will need to roll back any state
+	// modifications if this function errors, we
+	// keep a single error value and scope all
+	// sub-operations to their own functions to
+	// ensure this error value does not get
+	// overridden or missed when it should have
+	// been set by a short assignment
+	var err error
+
+	// prepare the new config for use
+	newCfg.apps = make(map[string]App)
+
+	// create a context within which to load
+	// modules - essentially our new config's
+	// execution environment; be sure that
+	// cleanup occurs when we return if there
+	// was an error; if no error, it will get
+	// cleaned up on next config cycle
+	ctx, cancel := NewContext(Context{Context: context.Background(), cfg: newCfg})
+	defer func() {
+		if err != nil {
+			cancel() // clean up now
+		}
+	}()
+	newCfg.cancelFunc = cancel // clean up later
+
+	// set up storage and make it CertMagic's default storage, too
+	err = func() error {
+		if newCfg.StorageRaw != nil {
+			val, err := ctx.LoadModuleInline("module", "caddy.storage", newCfg.StorageRaw)
+			if err != nil {
+				return fmt.Errorf("loading storage module: %v", err)
+			}
+			stor, err := val.(StorageConverter).CertMagicStorage()
+			if err != nil {
+				return fmt.Errorf("creating storage value: %v", err)
+			}
+			newCfg.storage = stor
+			newCfg.StorageRaw = nil // allow GC to deallocate
+		}
+		if newCfg.storage == nil {
+			newCfg.storage = &certmagic.FileStorage{Path: dataDir()}
+		}
+		certmagic.Default.Storage = newCfg.storage
+
+		return nil
+	}()
+	if err != nil {
+		return err
+	}
+
+	// Load, Provision, Validate each app and their submodules
+	err = func() error {
+		for modName, rawMsg := range newCfg.AppsRaw {
+			val, err := ctx.LoadModule(modName, rawMsg)
+			if err != nil {
+				return fmt.Errorf("loading app module '%s': %v", modName, err)
+			}
+			newCfg.apps[modName] = val.(App)
+		}
+		return nil
+	}()
+	if err != nil {
+		return err
+	}
+
+	if !start {
+		return nil
+	}
+
+	// Start
+	return func() error {
+		var started []string
+		for name, a := range newCfg.apps {
+			err := a.Start()
+			if err != nil {
+				// an app failed to start, so we need to stop
+				// all other apps that were already started
+				for _, otherAppName := range started {
+					err2 := newCfg.apps[otherAppName].Stop()
+					if err2 != nil {
+						err = fmt.Errorf("%v; additionally, aborting app %s: %v",
+							err, otherAppName, err2)
+					}
+				}
+				return fmt.Errorf("%s app module: start: %v", name, err)
+			}
+			started = append(started, name)
+		}
+		return nil
+	}()
 }
 
 // Stop stops running the current configuration.
@@ -168,26 +187,34 @@ func Stop() error {
 	return nil
 }
 
-// unsyncedStop stops oldCfg from running, but if
+// unsyncedStop stops cfg from running, but if
 // applicable, you need to acquire locks yourself.
-// It is a no-op if oldCfg is nil. If any app
+// It is a no-op if cfg is nil. If any app
 // returns an error when stopping, it is logged
 // and the function continues with the next app.
-func unsyncedStop(oldCfg *Config) {
-	if oldCfg == nil {
+// This function assumes all apps in cfg were
+// successfully started.
+func unsyncedStop(cfg *Config) {
+	if cfg == nil {
 		return
 	}
 
 	// stop each app
-	for name, a := range oldCfg.apps {
+	for name, a := range cfg.apps {
 		err := a.Stop()
 		if err != nil {
 			log.Printf("[ERROR] stop %s: %v", name, err)
 		}
 	}
 
-	// clean up all old modules
-	oldCfg.cancelFunc()
+	// clean up all modules
+	cfg.cancelFunc()
+}
+
+// Validate loads, provisions, and validates
+// cfg, but does not start running it.
+func Validate(cfg *Config) error {
+	return run(cfg, false)
 }
 
 // Duration is a JSON-string-unmarshable duration type.
