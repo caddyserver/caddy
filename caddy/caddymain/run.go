@@ -60,6 +60,7 @@ func init() {
 	flag.StringVar(&certmagic.Default.Email, "email", "", "Default ACME CA account email address")
 	flag.DurationVar(&certmagic.HTTPTimeout, "catimeout", certmagic.HTTPTimeout, "Default ACME CA HTTP timeout")
 	flag.StringVar(&logfile, "log", "", "Process log file")
+	flag.BoolVar(&logTimestamps, "log-timestamps", true, "Enable timestamps for the process log")
 	flag.IntVar(&logRollMB, "log-roll-mb", 100, "Roll process log when it reaches this many megabytes (0 to disable rolling)")
 	flag.BoolVar(&logRollCompress, "log-roll-compress", true, "Gzip-compress rolled process log files")
 	flag.StringVar(&caddy.PidFile, "pidfile", "", "Path to write pid file")
@@ -85,6 +86,11 @@ func Run() {
 	caddy.AppVersion = module.Version
 	caddy.OnProcessExit = append(caddy.OnProcessExit, certmagic.CleanUpOwnLocks)
 	certmagic.UserAgent = appName + "/" + cleanModVersion
+
+	if !logTimestamps {
+		// Disable timestamps for logging
+		log.SetFlags(0)
+	}
 
 	// Set up process log before anything bad happens
 	switch logfile {
@@ -590,6 +596,7 @@ var (
 	envFile         string
 	fromJSON        bool
 	logfile         string
+	logTimestamps   bool
 	logRollMB       int
 	logRollCompress bool
 	revoke          string
