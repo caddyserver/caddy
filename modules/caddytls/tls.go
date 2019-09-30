@@ -36,8 +36,8 @@ func init() {
 // TLS represents a process-wide TLS configuration.
 type TLS struct {
 	Certificates   map[string]json.RawMessage `json:"certificates,omitempty"`
-	Automation     AutomationConfig           `json:"automation"`
-	SessionTickets SessionTicketService       `json:"session_tickets"`
+	Automation     *AutomationConfig          `json:"automation,omitempty"`
+	SessionTickets *SessionTicketService      `json:"session_tickets,omitempty"`
 
 	certificateLoaders []CertificateLoader
 	certCache          *certmagic.Cache
@@ -58,26 +58,28 @@ func (TLS) CaddyModule() caddy.ModuleInfo {
 func (t *TLS) Provision(ctx caddy.Context) error {
 	t.ctx = ctx
 
-	// set up the certificate cache
-	// TODO: this makes a new cache every time; better to only make a new
-	// cache (or even better, add/remove only what is necessary) if the
-	// certificates config has been updated
-	t.certCache = certmagic.NewCache(certmagic.CacheOptions{
+	// set up a new certificate cache; this (re)loads all certificates
+	cacheOpts := certmagic.CacheOptions{
 		GetConfigForCert: func(cert certmagic.Certificate) (certmagic.Config, error) {
 			return t.getConfigForName(cert.Names[0])
 		},
-		OCSPCheckInterval:  time.Duration(t.Automation.OCSPCheckInterval),
-		RenewCheckInterval: time.Duration(t.Automation.RenewCheckInterval),
-	})
+	}
+	if t.Automation != nil {
+		cacheOpts.OCSPCheckInterval = time.Duration(t.Automation.OCSPCheckInterval)
+		cacheOpts.RenewCheckInterval = time.Duration(t.Automation.RenewCheckInterval)
+	}
+	t.certCache = certmagic.NewCache(cacheOpts)
 
 	// automation/management policies
-	for i, ap := range t.Automation.Policies {
-		val, err := ctx.LoadModuleInline("module", "tls.management", ap.ManagementRaw)
-		if err != nil {
-			return fmt.Errorf("loading TLS automation management module: %s", err)
+	if t.Automation != nil {
+		for i, ap := range t.Automation.Policies {
+			val, err := ctx.LoadModuleInline("module", "tls.management", ap.ManagementRaw)
+			if err != nil {
+				return fmt.Errorf("loading TLS automation management module: %s", err)
+			}
+			t.Automation.Policies[i].Management = val.(ManagerMaker)
+			t.Automation.Policies[i].ManagementRaw = nil // allow GC to deallocate
 		}
-		t.Automation.Policies[i].Management = val.(ManagerMaker)
-		t.Automation.Policies[i].ManagementRaw = nil // allow GC to deallocate
 	}
 
 	// certificate loaders
@@ -93,19 +95,22 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 	}
 
 	// session ticket ephemeral keys (STEK) service and provider
-	err := t.SessionTickets.provision(ctx)
-	if err != nil {
-		return fmt.Errorf("provisioning session tickets configuration: %v", err)
+	if t.SessionTickets != nil {
+		err := t.SessionTickets.provision(ctx)
+		if err != nil {
+			return fmt.Errorf("provisioning session tickets configuration: %v", err)
+		}
 	}
 
 	// on-demand rate limiting
-	if t.Automation.OnDemand != nil && t.Automation.OnDemand.RateLimit != nil {
+	if t.Automation != nil && t.Automation.OnDemand != nil && t.Automation.OnDemand.RateLimit != nil {
 		limit := rate.Every(time.Duration(t.Automation.OnDemand.RateLimit.Interval))
-		// TODO: Burst size is not updated, see https://github.com/golang/go/issues/23575
 		onDemandRateLimiter.SetLimit(limit)
+		onDemandRateLimiter.SetBurst(t.Automation.OnDemand.RateLimit.Burst)
 	} else {
 		// if no rate limit is specified, be sure to remove any existing limit
 		onDemandRateLimiter.SetLimit(0)
+		onDemandRateLimiter.SetBurst(0)
 	}
 
 	// load manual/static (unmanaged) certificates - we do this in
@@ -126,9 +131,6 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 			}
 		}
 	}
-
-	t.storageCleanTicker = time.NewTicker(storageCleanInterval)
-	t.storageCleanStop = make(chan struct{})
 
 	return nil
 }
@@ -156,17 +158,23 @@ func (t *TLS) Start() error {
 
 // Stop stops the TLS module and cleans up any allocations.
 func (t *TLS) Stop() error {
+	// stop the storage cleaner goroutine and ticker
+	close(t.storageCleanStop)
+	t.storageCleanTicker.Stop()
+	return nil
+}
+
+// Cleanup frees up resources allocated during Provision.
+func (t *TLS) Cleanup() error {
 	// stop the certificate cache
 	if t.certCache != nil {
 		t.certCache.Stop()
 	}
 
 	// stop the session ticket rotation goroutine
-	t.SessionTickets.stop()
-
-	// stop the storage cleaner goroutine and ticker
-	close(t.storageCleanStop)
-	t.storageCleanTicker.Stop()
+	if t.SessionTickets != nil {
+		t.SessionTickets.stop()
+	}
 
 	return nil
 }
@@ -202,14 +210,16 @@ func (t *TLS) getConfigForName(name string) (certmagic.Config, error) {
 }
 
 func (t *TLS) getAutomationPolicyForName(name string) AutomationPolicy {
-	for _, ap := range t.Automation.Policies {
-		if len(ap.Hosts) == 0 {
-			// no host filter is an automatic match
-			return ap
-		}
-		for _, h := range ap.Hosts {
-			if h == name {
+	if t.Automation != nil {
+		for _, ap := range t.Automation.Policies {
+			if len(ap.Hosts) == 0 {
+				// no host filter is an automatic match
 				return ap
+			}
+			for _, h := range ap.Hosts {
+				if h == name {
+					return ap
+				}
 			}
 		}
 	}
@@ -228,6 +238,8 @@ func (t *TLS) AllMatchingCertificates(san string) []certmagic.Certificate {
 // if it was not recently done, and starts a goroutine that runs
 // the operation at every tick from t.storageCleanTicker.
 func (t *TLS) keepStorageClean() {
+	t.storageCleanTicker = time.NewTicker(storageCleanInterval)
+	t.storageCleanStop = make(chan struct{})
 	go func() {
 		for {
 			select {
@@ -259,10 +271,12 @@ func (t *TLS) cleanStorageUnits() {
 	certmagic.CleanStorage(t.ctx.Storage(), options)
 
 	// then clean each storage defined in ACME automation policies
-	for _, ap := range t.Automation.Policies {
-		if acmeMgmt, ok := ap.Management.(ACMEManagerMaker); ok {
-			if acmeMgmt.storage != nil {
-				certmagic.CleanStorage(acmeMgmt.storage, options)
+	if t.Automation != nil {
+		for _, ap := range t.Automation.Policies {
+			if acmeMgmt, ok := ap.Management.(ACMEManagerMaker); ok {
+				if acmeMgmt.storage != nil {
+					certmagic.CleanStorage(acmeMgmt.storage, options)
+				}
 			}
 		}
 	}
@@ -321,9 +335,9 @@ func (ap AutomationPolicy) makeCertMagicConfig(ctx caddy.Context) certmagic.Conf
 
 // ChallengesConfig configures the ACME challenges.
 type ChallengesConfig struct {
-	HTTP    HTTPChallengeConfig    `json:"http"`
-	TLSALPN TLSALPNChallengeConfig `json:"tls-alpn"`
-	DNSRaw  json.RawMessage        `json:"dns,omitempty"`
+	HTTP    *HTTPChallengeConfig    `json:"http,omitempty"`
+	TLSALPN *TLSALPNChallengeConfig `json:"tls-alpn,omitempty"`
+	DNSRaw  json.RawMessage         `json:"dns,omitempty"`
 
 	DNS challenge.Provider `json:"-"`
 }
@@ -375,6 +389,13 @@ var (
 
 	storageClean   time.Time
 	storageCleanMu sync.Mutex
+)
+
+// Interface guards
+var (
+	_ caddy.App          = (*TLS)(nil)
+	_ caddy.Provisioner  = (*TLS)(nil)
+	_ caddy.CleanerUpper = (*TLS)(nil)
 )
 
 const automateKey = "automate"

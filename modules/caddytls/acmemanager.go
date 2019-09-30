@@ -40,16 +40,16 @@ func init() {
 // after you have configured this struct
 // to your liking.
 type ACMEManagerMaker struct {
-	CA                   string           `json:"ca,omitempty"`
-	Email                string           `json:"email,omitempty"`
-	RenewAhead           caddy.Duration   `json:"renew_ahead,omitempty"`
-	KeyType              string           `json:"key_type,omitempty"`
-	ACMETimeout          caddy.Duration   `json:"acme_timeout,omitempty"`
-	MustStaple           bool             `json:"must_staple,omitempty"`
-	Challenges           ChallengesConfig `json:"challenges,omitempty"`
-	OnDemand             bool             `json:"on_demand,omitempty"`
-	Storage              json.RawMessage  `json:"storage,omitempty"`
-	TrustedRootsPEMFiles []string         `json:"trusted_roots_pem_files,omitempty"`
+	CA                   string            `json:"ca,omitempty"`
+	Email                string            `json:"email,omitempty"`
+	RenewAhead           caddy.Duration    `json:"renew_ahead,omitempty"`
+	KeyType              string            `json:"key_type,omitempty"`
+	ACMETimeout          caddy.Duration    `json:"acme_timeout,omitempty"`
+	MustStaple           bool              `json:"must_staple,omitempty"`
+	Challenges           *ChallengesConfig `json:"challenges,omitempty"`
+	OnDemand             bool              `json:"on_demand,omitempty"`
+	Storage              json.RawMessage   `json:"storage,omitempty"`
+	TrustedRootsPEMFiles []string          `json:"trusted_roots_pem_files,omitempty"`
 
 	storage  certmagic.Storage
 	rootPool *x509.CertPool
@@ -72,7 +72,7 @@ func (m ACMEManagerMaker) NewManager(interactive bool) (certmagic.Manager, error
 // Provision sets up m.
 func (m *ACMEManagerMaker) Provision(ctx caddy.Context) error {
 	// DNS providers
-	if m.Challenges.DNSRaw != nil {
+	if m.Challenges != nil && m.Challenges.DNSRaw != nil {
 		val, err := ctx.LoadModuleInline("provider", "tls.dns", m.Challenges.DNSRaw)
 		if err != nil {
 			return fmt.Errorf("loading DNS provider module: %s", err)
@@ -125,7 +125,7 @@ func (m *ACMEManagerMaker) makeCertMagicConfig(ctx caddy.Context) certmagic.Conf
 	if m.OnDemand {
 		var onDemand *OnDemandConfig
 		appVal, err := ctx.App("tls")
-		if err == nil {
+		if err == nil && appVal.(*TLS).Automation != nil {
 			onDemand = appVal.(*TLS).Automation.OnDemand
 		}
 
@@ -153,24 +153,33 @@ func (m *ACMEManagerMaker) makeCertMagicConfig(ctx caddy.Context) certmagic.Conf
 		}
 	}
 
-	return certmagic.Config{
-		CA:                      m.CA,
-		Email:                   m.Email,
-		Agreed:                  true,
-		DisableHTTPChallenge:    m.Challenges.HTTP.Disabled,
-		DisableTLSALPNChallenge: m.Challenges.TLSALPN.Disabled,
-		RenewDurationBefore:     time.Duration(m.RenewAhead),
-		AltHTTPPort:             m.Challenges.HTTP.AlternatePort,
-		AltTLSALPNPort:          m.Challenges.TLSALPN.AlternatePort,
-		DNSProvider:             m.Challenges.DNS,
-		KeyType:                 supportedCertKeyTypes[m.KeyType],
-		CertObtainTimeout:       time.Duration(m.ACMETimeout),
-		OnDemand:                ond,
-		MustStaple:              m.MustStaple,
-		Storage:                 storage,
-		TrustedRoots:            m.rootPool,
+	cfg := certmagic.Config{
+		CA:                  m.CA,
+		Email:               m.Email,
+		Agreed:              true,
+		RenewDurationBefore: time.Duration(m.RenewAhead),
+		KeyType:             supportedCertKeyTypes[m.KeyType],
+		CertObtainTimeout:   time.Duration(m.ACMETimeout),
+		OnDemand:            ond,
+		MustStaple:          m.MustStaple,
+		Storage:             storage,
+		TrustedRoots:        m.rootPool,
 		// TODO: listenHost
 	}
+
+	if m.Challenges != nil {
+		if m.Challenges.HTTP != nil {
+			cfg.DisableHTTPChallenge = m.Challenges.HTTP.Disabled
+			cfg.AltHTTPPort = m.Challenges.HTTP.AlternatePort
+		}
+		if m.Challenges.TLSALPN != nil {
+			cfg.DisableTLSALPNChallenge = m.Challenges.TLSALPN.Disabled
+			cfg.AltTLSALPNPort = m.Challenges.TLSALPN.AlternatePort
+		}
+		cfg.DNSProvider = m.Challenges.DNS
+	}
+
+	return cfg
 }
 
 // onDemandAskRequest makes a request to the ask URL
