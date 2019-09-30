@@ -414,7 +414,42 @@ func (m MatchNegate) MarshalJSON() ([]byte, error) {
 
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
 func (m *MatchNegate) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	// TODO: figure out how this will work
+	// first, unmarshal each matcher in the set from its tokens
+
+	matcherMap := make(map[string]RequestMatcher)
+	for d.Next() {
+		for d.NextBlock(0) {
+			matcherName := d.Val()
+			mod, err := caddy.GetModule("http.matchers." + matcherName)
+			if err != nil {
+				return d.Errf("getting matcher module '%s': %v", matcherName, err)
+			}
+			unm, ok := mod.New().(caddyfile.Unmarshaler)
+			if !ok {
+				return d.Errf("matcher module '%s' is not a Caddyfile unmarshaler", matcherName)
+			}
+			err = unm.UnmarshalCaddyfile(d.NewFromNextTokens())
+			if err != nil {
+				return err
+			}
+			rm := unm.(RequestMatcher)
+			m.Matchers = append(m.Matchers, rm)
+			matcherMap[matcherName] = rm
+		}
+	}
+
+	// we should now be functional, but we also need
+	// to be able to marshal as JSON, otherwise config
+	// adaptation won't work properly
+	m.MatchersRaw = make(map[string]json.RawMessage)
+	for name, matchers := range matcherMap {
+		jsonBytes, err := json.Marshal(matchers)
+		if err != nil {
+			return fmt.Errorf("marshaling matcher %s: %v", name, err)
+		}
+		m.MatchersRaw[name] = jsonBytes
+	}
+
 	return nil
 }
 
