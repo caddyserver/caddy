@@ -301,6 +301,9 @@ func TestServeHTTP(t *testing.T) {
 
 		// perform the test
 		status, err := fileServer.ServeHTTP(responseRecorder, request)
+		if status == 0 {
+			status = responseRecorder.Code
+		}
 		etag := responseRecorder.Header().Get("Etag")
 		body := responseRecorder.Body.String()
 		vary := responseRecorder.Header().Get("Vary")
