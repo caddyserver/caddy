@@ -1,6 +1,8 @@
 Caddy 2 Development Branch
 ===========================
 
+[![Build Status](https://dev.azure.com/mholt-dev/Caddy/_apis/build/status/Multiplatform%20Tests?branchName=v2)](https://dev.azure.com/mholt-dev/Caddy/_build/latest?definitionId=5&branchName=v2)
+
 This is the development branch for Caddy 2. This code (version 2) is not yet feature-complete or production-ready, but is already being used in production, and we encourage you to deploy it today on sites that are not very visible or important so that it can obtain crucial experience in the field.
 
 Please file issues to propose new features and report bugs, and after the bug or feature has been discussed, submit a pull request! We need your help to build this web server into what you want it to be. (Caddy 2 issues and pull requests will usually receive priority over Caddy 1 issues and pull requests.)
