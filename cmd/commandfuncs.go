@@ -26,6 +26,8 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"reflect"
+	"runtime/debug"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
@@ -36,7 +38,7 @@ import (
 
 func cmdStart(fl Flags) (int, error) {
 	startCmdConfigFlag := fl.String("config")
-	startCmdConfigAdapterFlag := fl.String("config-adapter")
+	startCmdConfigAdapterFlag := fl.String("adapter")
 
 	// open a listener to which the child process will connect when
 	// it is ready to confirm that it has successfully started
@@ -61,7 +63,7 @@ func cmdStart(fl Flags) (int, error) {
 		cmd.Args = append(cmd.Args, "--config", startCmdConfigFlag)
 	}
 	if startCmdConfigAdapterFlag != "" {
-		cmd.Args = append(cmd.Args, "--config-adapter", startCmdConfigAdapterFlag)
+		cmd.Args = append(cmd.Args, "--adapter", startCmdConfigAdapterFlag)
 	}
 	stdinpipe, err := cmd.StdinPipe()
 	if err != nil {
@@ -137,8 +139,8 @@ func cmdStart(fl Flags) (int, error) {
 
 func cmdRun(fl Flags) (int, error) {
 	runCmdConfigFlag := fl.String("config")
-	runCmdConfigAdapterFlag := fl.String("config-adapter")
-	runCmdPrintEnvFlag := fl.Bool("print-env")
+	runCmdConfigAdapterFlag := fl.String("adapter")
+	runCmdPrintEnvFlag := fl.Bool("environ")
 	runCmdPingbackFlag := fl.String("pingback")
 
 	// if we are supposed to print the environment, do that first
@@ -216,7 +218,7 @@ func cmdStop(_ Flags) (int, error) {
 
 func cmdReload(fl Flags) (int, error) {
 	reloadCmdConfigFlag := fl.String("config")
-	reloadCmdConfigAdapterFlag := fl.String("config-adapter")
+	reloadCmdConfigAdapterFlag := fl.String("adapter")
 	reloadCmdAddrFlag := fl.String("address")
 
 	// a configuration is required
@@ -282,10 +284,61 @@ func cmdVersion(_ Flags) (int, error) {
 	return caddy.ExitCodeSuccess, nil
 }
 
-func cmdListModules(_ Flags) (int, error) {
-	for _, m := range caddy.Modules() {
-		fmt.Println(m)
+func cmdListModules(fl Flags) (int, error) {
+	versions := fl.Bool("versions")
+
+	bi, ok := debug.ReadBuildInfo()
+	if !ok || !versions {
+		// if there's no build information,
+		// just print out the modules
+		for _, m := range caddy.Modules() {
+			fmt.Println(m)
+		}
+		return caddy.ExitCodeSuccess, nil
 	}
+
+	for _, modName := range caddy.Modules() {
+		modInfo, err := caddy.GetModule(modName)
+		if err != nil {
+			// that's weird
+			fmt.Println(modName)
+			continue
+		}
+
+		// to get the Caddy plugin's version info, we need to know
+		// the package that the Caddy module's value comes from; we
+		// can use reflection but we need a non-pointer value (I'm
+		// not sure why), and since New() should return a pointer
+		// value, we need to dereference it first
+		iface := interface{}(modInfo.New())
+		if rv := reflect.ValueOf(iface); rv.Kind() == reflect.Ptr {
+			iface = reflect.New(reflect.TypeOf(iface).Elem()).Elem().Interface()
+		}
+		modPkgPath := reflect.TypeOf(iface).PkgPath()
+
+		// now we find the Go module that the Caddy module's package
+		// belongs to; we assume the Caddy module package path will
+		// be prefixed by its Go module path, and we will choose the
+		// longest matching prefix in case there are nested modules
+		var matched *debug.Module
+		for _, dep := range bi.Deps {
+			if strings.HasPrefix(modPkgPath, dep.Path) {
+				if matched == nil || len(dep.Path) > len(matched.Path) {
+					matched = dep
+				}
+			}
+		}
+
+		// if we could find no matching module, just print out
+		// the module name instead
+		if matched == nil {
+			fmt.Println(modName)
+			continue
+		}
+
+		fmt.Printf("%s %s\n", modName, matched.Version)
+	}
+
 	return caddy.ExitCodeSuccess, nil
 }
 
@@ -295,13 +348,13 @@ func cmdEnviron(_ Flags) (int, error) {
 }
 
 func cmdAdaptConfig(fl Flags) (int, error) {
+	adaptCmdInputFlag := fl.String("config")
 	adaptCmdAdapterFlag := fl.String("adapter")
-	adaptCmdInputFlag := fl.String("input")
 	adaptCmdPrettyFlag := fl.Bool("pretty")
 
 	if adaptCmdAdapterFlag == "" || adaptCmdInputFlag == "" {
 		return caddy.ExitCodeFailedStartup,
-			fmt.Errorf("usage: caddy adapt-config --adapter <name> --input <file>")
+			fmt.Errorf("usage: caddy adapt --adapter <name> --input <file>")
 	}
 
 	cfgAdapter := caddyconfig.GetAdapter(adaptCmdAdapterFlag)
@@ -337,6 +390,55 @@ func cmdAdaptConfig(fl Flags) (int, error) {
 
 	// print result to stdout
 	fmt.Println(string(adaptedConfig))
+
+	return caddy.ExitCodeSuccess, nil
+}
+
+func cmdValidateConfig(fl Flags) (int, error) {
+	validateCmdConfigFlag := fl.String("config")
+	validateCmdAdapterFlag := fl.String("adapter")
+
+	input, err := ioutil.ReadFile(validateCmdConfigFlag)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup,
+			fmt.Errorf("reading input file: %v", err)
+	}
+
+	if validateCmdAdapterFlag != "" {
+		cfgAdapter := caddyconfig.GetAdapter(validateCmdAdapterFlag)
+		if cfgAdapter == nil {
+			return caddy.ExitCodeFailedStartup,
+				fmt.Errorf("unrecognized config adapter: %s", validateCmdAdapterFlag)
+		}
+
+		adaptedConfig, warnings, err := cfgAdapter.Adapt(input, nil)
+		if err != nil {
+			return caddy.ExitCodeFailedStartup, err
+		}
+		// print warnings to stderr
+		for _, warn := range warnings {
+			msg := warn.Message
+			if warn.Directive != "" {
+				msg = fmt.Sprintf("%s: %s", warn.Directive, warn.Message)
+			}
+			log.Printf("[WARNING][%s] %s:%d: %s", validateCmdAdapterFlag, warn.File, warn.Line, msg)
+		}
+
+		input = adaptedConfig
+	}
+
+	var cfg *caddy.Config
+	err = json.Unmarshal(input, &cfg)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("decoding config: %v", err)
+	}
+
+	err = caddy.Validate(cfg)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, err
+	}
+
+	fmt.Println("Valid configuration")
 
 	return caddy.ExitCodeSuccess, nil
 }

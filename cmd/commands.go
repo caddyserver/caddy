@@ -54,7 +54,7 @@ var commands = map[string]Command{
 	"start": {
 		Name:  "start",
 		Func:  cmdStart,
-		Usage: "[--config <path>] [--config-adapter <name>]",
+		Usage: "[--config <path>] [--adapter <name>]",
 		Short: "Starts the Caddy process and returns after server has started.",
 		Long: `
 Starts the Caddy process, optionally bootstrapped with an initial
@@ -65,7 +65,7 @@ details.`,
 		Flags: func() *flag.FlagSet {
 			fs := flag.NewFlagSet("start", flag.ExitOnError)
 			fs.String("config", "", "Configuration file")
-			fs.String("config-adapter", "", "Name of config adapter to apply")
+			fs.String("adapter", "", "Name of config adapter to apply")
 			return fs
 		}(),
 	},
@@ -73,7 +73,7 @@ details.`,
 	"run": {
 		Name:  "run",
 		Func:  cmdRun,
-		Usage: "[--config <path>] [--config-adapter <name>] [--print-env]",
+		Usage: "[--config <path>] [--adapter <name>] [--print-env]",
 		Short: `Starts the Caddy process and blocks indefinitely.`,
 		Long: `
 Same as start, but blocks indefinitely; i.e. runs Caddy in "daemon" mode. On
@@ -83,25 +83,25 @@ window.
 
 If a config file is specified, it will be applied immediately after the process
 is running. If the config file is not in Caddy's native JSON format, you can
-specify an adapter with --config-adapter to adapt the given config file to
+specify an adapter with --adapter to adapt the given config file to
 Caddy's native format. The config adapter must be a registered module. Any
 warnings will be printed to the log, but beware that any adaptation without
 errors will immediately be used. If you want to review the results of the
-adaptation first, use adapt-config.
+adaptation first, use the 'adapt' subcommand.
 
 As a special case, if the current working directory has a file called
 "Caddyfile" and the caddyfile config adapter is plugged in (default), then that
 file will be loaded and used to configure Caddy, even without any command line
 flags.
 
-If --print-env is specified, the environment as seen by the Caddy process will
+If --environ is specified, the environment as seen by the Caddy process will
 be printed before starting. This is the same as the environ command but does
 not quit after printing.`,
 		Flags: func() *flag.FlagSet {
 			fs := flag.NewFlagSet("run", flag.ExitOnError)
 			fs.String("config", "", "Configuration file")
-			fs.String("config-adapter", "", "Name of config adapter to apply")
-			fs.Bool("print-env", false, "Print environment")
+			fs.String("adapter", "", "Name of config adapter to apply")
+			fs.Bool("environ", false, "Print environment")
 			fs.String("pingback", "", "Echo confirmation bytes to this address on success")
 			return fs
 		}(),
@@ -120,7 +120,7 @@ shutdown on Windows, use Ctrl+C or the /stop endpoint.`,
 	"reload": {
 		Name:  "reload",
 		Func:  cmdReload,
-		Usage: "--config <path> [--config-adapter <name>] [--address <interface>]",
+		Usage: "--config <path> [--adapter <name>] [--address <interface>]",
 		Short: "Gives the running Caddy instance a new configuration",
 		Long: `Gives the running Caddy instance a new configuration. This has the same effect
 as POSTing a document to the /load endpoint, but is convenient for simple
@@ -129,9 +129,9 @@ configurable, the endpoint configuration is loaded from the --address flag if
 specified; otherwise it is loaded from the given config file; otherwise the
 default is assumed.`,
 		Flags: func() *flag.FlagSet {
-			fs := flag.NewFlagSet("load", flag.ExitOnError)
+			fs := flag.NewFlagSet("reload", flag.ExitOnError)
 			fs.String("config", "", "Configuration file")
-			fs.String("config-adapter", "", "Name of config adapter to apply")
+			fs.String("adapter", "", "Name of config adapter to apply")
 			fs.String("address", "", "Address of the administration listener, if different from config")
 			return fs
 		}(),
@@ -149,6 +149,11 @@ default is assumed.`,
 		Func:  cmdListModules,
 		Short: "List installed Caddy modules.",
 		Long:  `List installed Caddy modules.`,
+		Flags: func() *flag.FlagSet {
+			fs := flag.NewFlagSet("list-modules", flag.ExitOnError)
+			fs.Bool("versions", false, "Print version information")
+			return fs
+		}(),
 	},
 
 	"environ": {
@@ -158,15 +163,38 @@ default is assumed.`,
 		Long:  `Prints the environment as seen by Caddy.`,
 	},
 
-	"adapt-config": {
-		Name:  "adapt-config",
+	"adapt": {
+		Name:  "adapt",
 		Func:  cmdAdaptConfig,
-		Usage: "--input <path> --adapter <name> [--pretty]",
+		Usage: "--config <path> --adapter <name> [--pretty]",
 		Short: "Adapts a configuration to Caddy's native JSON config structure",
 		Long: `
 Adapts a configuration to Caddy's native JSON config structure and writes the
 output to stdout, along with any warnings to stderr. If --pretty is specified,
 the output will be formatted with indentation for human readability.`,
+		Flags: func() *flag.FlagSet {
+			fs := flag.NewFlagSet("adapt", flag.ExitOnError)
+			fs.String("config", "", "Configuration file to adapt")
+			fs.String("adapter", "", "Name of config adapter")
+			fs.Bool("pretty", false, "Format the output for human readability")
+			return fs
+		}(),
+	},
+
+	"validate": {
+		Name:  "validate",
+		Func:  cmdValidateConfig,
+		Usage: "--config <path> [--adapter <name>]",
+		Short: "Tests whether a configuration file is valid.",
+		Long: `
+Loads and provisions the provided config, but does not start
+running it.`,
+		Flags: func() *flag.FlagSet {
+			fs := flag.NewFlagSet("load", flag.ExitOnError)
+			fs.String("config", "", "Input configuration file")
+			fs.String("adapter", "", "Name of config adapter")
+			return fs
+		}(),
 	},
 }
 
