@@ -23,6 +23,9 @@ import (
 	"log"
 	"net"
 	"os"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -33,45 +36,43 @@ import (
 func Main() {
 	caddy.TrapSignals()
 
-	if len(os.Args) < 2 {
-		fmt.Println(usageString())
-		return
+	switch len(os.Args) {
+	case 0:
+		log.Printf("[FATAL] no arguments provided by OS; args[0] must be command")
+		os.Exit(caddy.ExitCodeFailedStartup)
+	case 1:
+		os.Args = append(os.Args, "help")
 	}
 
-	subcommand, ok := commands[os.Args[1]]
+	subcommandName := os.Args[1]
+	subcommand, ok := commands[subcommandName]
 	if !ok {
-		fmt.Printf("%q is not a valid command\n", os.Args[1])
+		if strings.HasPrefix(os.Args[1], "-") {
+			// user probably forgot to type the subcommand
+			log.Println("[ERROR] first argument must be a subcommand; see 'caddy help'")
+		} else {
+			log.Printf("[ERROR] '%s' is not a recognized subcommand; see 'caddy help'", os.Args[1])
+		}
 		os.Exit(caddy.ExitCodeFailedStartup)
 	}
 
-	if exitCode, err := subcommand(); err != nil {
-		log.Println(err)
-		os.Exit(exitCode)
+	fs := subcommand.Flags
+	if fs == nil {
+		fs = flag.NewFlagSet(subcommand.Name, flag.ExitOnError)
 	}
-}
 
-// commandFunc is a function that executes
-// a subcommand. It returns an exit code and
-// any associated error.
-type commandFunc func() (int, error)
+	err := fs.Parse(os.Args[2:])
+	if err != nil {
+		log.Println(err)
+		os.Exit(caddy.ExitCodeFailedStartup)
+	}
 
-var commands = map[string]commandFunc{
-	"start":        cmdStart,
-	"run":          cmdRun,
-	"stop":         cmdStop,
-	"reload":       cmdReload,
-	"version":      cmdVersion,
-	"list-modules": cmdListModules,
-	"environ":      cmdEnviron,
-	"adapt-config": cmdAdaptConfig,
-}
+	exitCode, err := subcommand.Func(Flags{fs})
+	if err != nil {
+		log.Printf("%s: %v", subcommand.Name, err)
+	}
 
-func usageString() string {
-	buf := new(bytes.Buffer)
-	buf.WriteString("usage: caddy <command> [<args>]")
-	flag.CommandLine.SetOutput(buf)
-	flag.CommandLine.PrintDefaults()
-	return buf.String()
+	os.Exit(exitCode)
 }
 
 // handlePingbackConn reads from conn and ensures it matches
@@ -155,4 +156,75 @@ func loadConfig(configFile, adapterName string) ([]byte, error) {
 	}
 
 	return config, nil
+}
+
+// Flags wraps a FlagSet so that typed values
+// from flags can be easily retrieved.
+type Flags struct {
+	*flag.FlagSet
+}
+
+// String returns the string representation of the
+// flag given by name. It panics if the flag is not
+// in the flag set.
+func (f Flags) String(name string) string {
+	return f.FlagSet.Lookup(name).Value.String()
+}
+
+// Bool returns the boolean representation of the
+// flag given by name. It returns false if the flag
+// is not a boolean type. It panics if the flag is
+// not in the flag set.
+func (f Flags) Bool(name string) bool {
+	val, _ := strconv.ParseBool(f.String(name))
+	return val
+}
+
+// Int returns the integer representation of the
+// flag given by name. It returns 0 if the flag
+// is not an integer type. It panics if the flag is
+// not in the flag set.
+func (f Flags) Int(name string) int {
+	val, _ := strconv.ParseInt(f.String(name), 0, strconv.IntSize)
+	return int(val)
+}
+
+// Float64 returns the float64 representation of the
+// flag given by name. It returns false if the flag
+// is not a float63 type. It panics if the flag is
+// not in the flag set.
+func (f Flags) Float64(name string) float64 {
+	val, _ := strconv.ParseFloat(f.String(name), 64)
+	return val
+}
+
+// Duration returns the duration representation of the
+// flag given by name. It returns false if the flag
+// is not a duration type. It panics if the flag is
+// not in the flag set.
+func (f Flags) Duration(name string) time.Duration {
+	val, _ := time.ParseDuration(f.String(name))
+	return val
+}
+
+// flagHelp returns the help text for fs.
+func flagHelp(fs *flag.FlagSet) string {
+	if fs == nil {
+		return ""
+	}
+
+	// temporarily redirect output
+	out := fs.Output()
+	defer fs.SetOutput(out)
+
+	buf := new(bytes.Buffer)
+	fs.SetOutput(buf)
+	fs.PrintDefaults()
+	return buf.String()
+}
+
+func printEnvironment() {
+	for _, v := range os.Environ() {
+		fmt.Println(v)
+	}
 }
