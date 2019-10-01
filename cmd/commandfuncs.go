@@ -1,0 +1,391 @@
+// Copyright 2015 Matthew Holt and The Caddy Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package caddycmd
+
+import (
+	"bytes"
+	"crypto/rand"
+	"encoding/json"
+	"fmt"
+	"io"
+	"io/ioutil"
+	"log"
+	"net"
+	"net/http"
+	"os"
+	"os/exec"
+	"strings"
+
+	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig"
+	"github.com/keybase/go-ps"
+	"github.com/mholt/certmagic"
+)
+
+func cmdStart(fl Flags) (int, error) {
+	startCmdConfigFlag := fl.String("config")
+	startCmdConfigAdapterFlag := fl.String("config-adapter")
+
+	// open a listener to which the child process will connect when
+	// it is ready to confirm that it has successfully started
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return caddy.ExitCodeFailedStartup,
+			fmt.Errorf("opening listener for success confirmation: %v", err)
+	}
+	defer ln.Close()
+
+	// craft the command with a pingback address and with a
+	// pipe for its stdin, so we can tell it our confirmation
+	// code that we expect so that some random port scan at
+	// the most unfortunate time won't fool us into thinking
+	// the child succeeded (i.e. the alternative is to just
+	// wait for any connection on our listener, but better to
+	// ensure it's the process we're expecting - we can be
+	// sure by giving it some random bytes and having it echo
+	// them back to us)
+	cmd := exec.Command(os.Args[0], "run", "--pingback", ln.Addr().String())
+	if startCmdConfigFlag != "" {
+		cmd.Args = append(cmd.Args, "--config", startCmdConfigFlag)
+	}
+	if startCmdConfigAdapterFlag != "" {
+		cmd.Args = append(cmd.Args, "--config-adapter", startCmdConfigAdapterFlag)
+	}
+	stdinpipe, err := cmd.StdinPipe()
+	if err != nil {
+		return caddy.ExitCodeFailedStartup,
+			fmt.Errorf("creating stdin pipe: %v", err)
+	}
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	// generate the random bytes we'll send to the child process
+	expect := make([]byte, 32)
+	_, err = rand.Read(expect)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("generating random confirmation bytes: %v", err)
+	}
+
+	// begin writing the confirmation bytes to the child's
+	// stdin; use a goroutine since the child hasn't been
+	// started yet, and writing sychronously would result
+	// in a deadlock
+	go func() {
+		stdinpipe.Write(expect)
+		stdinpipe.Close()
+	}()
+
+	// start the process
+	err = cmd.Start()
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("starting caddy process: %v", err)
+	}
+
+	// there are two ways we know we're done: either
+	// the process will connect to our listener, or
+	// it will exit with an error
+	success, exit := make(chan struct{}), make(chan error)
+
+	// in one goroutine, we await the success of the child process
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				if !strings.Contains(err.Error(), "use of closed network connection") {
+					log.Println(err)
+				}
+				break
+			}
+			err = handlePingbackConn(conn, expect)
+			if err == nil {
+				close(success)
+				break
+			}
+			log.Println(err)
+		}
+	}()
+
+	// in another goroutine, we await the failure of the child process
+	go func() {
+		err := cmd.Wait() // don't send on this line! Wait blocks, but send starts before it unblocks
+		exit <- err       // sending on separate line ensures select won't trigger until after Wait unblocks
+	}()
+
+	// when one of the goroutines unblocks, we're done and can exit
+	select {
+	case <-success:
+		fmt.Printf("Successfully started Caddy (pid=%d)\n", cmd.Process.Pid)
+	case err := <-exit:
+		return caddy.ExitCodeFailedStartup,
+			fmt.Errorf("caddy process exited with error: %v", err)
+	}
+
+	return caddy.ExitCodeSuccess, nil
+}
+
+func cmdRun(fl Flags) (int, error) {
+	runCmdConfigFlag := fl.String("config")
+	runCmdConfigAdapterFlag := fl.String("config-adapter")
+	runCmdPrintEnvFlag := fl.Bool("print-env")
+	runCmdPingbackFlag := fl.String("pingback")
+
+	// if we are supposed to print the environment, do that first
+	if runCmdPrintEnvFlag {
+		printEnvironment()
+	}
+
+	// get the config in caddy's native format
+	config, err := loadConfig(runCmdConfigFlag, runCmdConfigAdapterFlag)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, err
+	}
+
+	// set a fitting User-Agent for ACME requests
+	goModule := caddy.GoModule()
+	cleanModVersion := strings.TrimPrefix(goModule.Version, "v")
+	certmagic.UserAgent = "Caddy/" + cleanModVersion
+
+	// start the admin endpoint along with any initial config
+	err = caddy.StartAdmin(config)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup,
+			fmt.Errorf("starting caddy administration endpoint: %v", err)
+	}
+	defer caddy.StopAdmin()
+
+	// if we are to report to another process the successful start
+	// of the server, do so now by echoing back contents of stdin
+	if runCmdPingbackFlag != "" {
+		confirmationBytes, err := ioutil.ReadAll(os.Stdin)
+		if err != nil {
+			return caddy.ExitCodeFailedStartup,
+				fmt.Errorf("reading confirmation bytes from stdin: %v", err)
+		}
+		conn, err := net.Dial("tcp", runCmdPingbackFlag)
+		if err != nil {
+			return caddy.ExitCodeFailedStartup,
+				fmt.Errorf("dialing confirmation address: %v", err)
+		}
+		defer conn.Close()
+		_, err = conn.Write(confirmationBytes)
+		if err != nil {
+			return caddy.ExitCodeFailedStartup,
+				fmt.Errorf("writing confirmation bytes to %s: %v", runCmdPingbackFlag, err)
+		}
+	}
+
+	select {}
+}
+
+func cmdStop(_ Flags) (int, error) {
+	processList, err := ps.Processes()
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("listing processes: %v", err)
+	}
+	thisProcName := getProcessName()
+	var found bool
+	for _, p := range processList {
+		// the process we're looking for should have the same name but different PID
+		if p.Executable() == thisProcName && p.Pid() != os.Getpid() {
+			found = true
+			fmt.Printf("pid=%d\n", p.Pid())
+
+			if err := gracefullyStopProcess(p.Pid()); err != nil {
+				return caddy.ExitCodeFailedStartup, err
+			}
+		}
+	}
+	if !found {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("Caddy is not running")
+	}
+	fmt.Println(" success")
+	return caddy.ExitCodeSuccess, nil
+}
+
+func cmdReload(fl Flags) (int, error) {
+	reloadCmdConfigFlag := fl.String("config")
+	reloadCmdConfigAdapterFlag := fl.String("config-adapter")
+	reloadCmdAddrFlag := fl.String("address")
+
+	// a configuration is required
+	if reloadCmdConfigFlag == "" {
+		return caddy.ExitCodeFailedStartup,
+			fmt.Errorf("no configuration to load (use --config)")
+	}
+
+	// get the config in caddy's native format
+	config, err := loadConfig(reloadCmdConfigFlag, reloadCmdConfigAdapterFlag)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, err
+	}
+
+	// get the address of the admin listener and craft endpoint URL
+	adminAddr := reloadCmdAddrFlag
+	if adminAddr == "" {
+		var tmpStruct struct {
+			Admin caddy.AdminConfig `json:"admin"`
+		}
+		err = json.Unmarshal(config, &tmpStruct)
+		if err != nil {
+			return caddy.ExitCodeFailedStartup,
+				fmt.Errorf("unmarshaling admin listener address from config: %v", err)
+		}
+		adminAddr = tmpStruct.Admin.Listen
+	}
+	if adminAddr == "" {
+		adminAddr = caddy.DefaultAdminListen
+	}
+	adminEndpoint := fmt.Sprintf("http://%s/load", adminAddr)
+
+	// send the configuration to the instance
+	resp, err := http.Post(adminEndpoint, "application/json", bytes.NewReader(config))
+	if err != nil {
+		return caddy.ExitCodeFailedStartup,
+			fmt.Errorf("sending configuration to instance: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// if it didn't work, let the user know
+	if resp.StatusCode >= 400 {
+		respBody, err := ioutil.ReadAll(io.LimitReader(resp.Body, 1024*10))
+		if err != nil {
+			return caddy.ExitCodeFailedStartup,
+				fmt.Errorf("HTTP %d: reading error message: %v", resp.StatusCode, err)
+		}
+		return caddy.ExitCodeFailedStartup,
+			fmt.Errorf("caddy responded with error: HTTP %d: %s", resp.StatusCode, respBody)
+	}
+
+	return caddy.ExitCodeSuccess, nil
+}
+
+func cmdVersion(_ Flags) (int, error) {
+	goModule := caddy.GoModule()
+	if goModule.Sum != "" {
+		// a build with a known version will also have a checksum
+		fmt.Printf("%s %s\n", goModule.Version, goModule.Sum)
+	} else {
+		fmt.Println(goModule.Version)
+	}
+	return caddy.ExitCodeSuccess, nil
+}
+
+func cmdListModules(_ Flags) (int, error) {
+	for _, m := range caddy.Modules() {
+		fmt.Println(m)
+	}
+	return caddy.ExitCodeSuccess, nil
+}
+
+func cmdEnviron(_ Flags) (int, error) {
+	printEnvironment()
+	return caddy.ExitCodeSuccess, nil
+}
+
+func cmdAdaptConfig(fl Flags) (int, error) {
+	adaptCmdAdapterFlag := fl.String("adapter")
+	adaptCmdInputFlag := fl.String("input")
+	adaptCmdPrettyFlag := fl.Bool("pretty")
+
+	if adaptCmdAdapterFlag == "" || adaptCmdInputFlag == "" {
+		return caddy.ExitCodeFailedStartup,
+			fmt.Errorf("usage: caddy adapt-config --adapter <name> --input <file>")
+	}
+
+	cfgAdapter := caddyconfig.GetAdapter(adaptCmdAdapterFlag)
+	if cfgAdapter == nil {
+		return caddy.ExitCodeFailedStartup,
+			fmt.Errorf("unrecognized config adapter: %s", adaptCmdAdapterFlag)
+	}
+
+	input, err := ioutil.ReadFile(adaptCmdInputFlag)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup,
+			fmt.Errorf("reading input file: %v", err)
+	}
+
+	opts := make(map[string]interface{})
+	if adaptCmdPrettyFlag {
+		opts["pretty"] = "true"
+	}
+
+	adaptedConfig, warnings, err := cfgAdapter.Adapt(input, opts)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, err
+	}
+
+	// print warnings to stderr
+	for _, warn := range warnings {
+		msg := warn.Message
+		if warn.Directive != "" {
+			msg = fmt.Sprintf("%s: %s", warn.Directive, warn.Message)
+		}
+		log.Printf("[WARNING][%s] %s:%d: %s", adaptCmdAdapterFlag, warn.File, warn.Line, msg)
+	}
+
+	// print result to stdout
+	fmt.Println(string(adaptedConfig))
+
+	return caddy.ExitCodeSuccess, nil
+}
+
+func cmdHelp(fl Flags) (int, error) {
+	const fullDocs = `Full documentation is available at:
+https://github.com/caddyserver/caddy/wiki/v2:-Documentation`
+
+	args := fl.Args()
+	if len(args) == 0 {
+		s := `Caddy is an extensible server platform.
+
+usage:
+  caddy <command> [<args...>]
+
+commands:
+`
+		for _, cmd := range commands {
+			s += fmt.Sprintf("  %-15s %s\n", cmd.Name, cmd.Short)
+		}
+
+		s += "\nUse 'caddy help <command>' for more information about a command.\n"
+		s += "\n" + fullDocs + "\n"
+
+		fmt.Print(s)
+
+		return caddy.ExitCodeSuccess, nil
+	} else if len(args) > 1 {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("can only give help with one command")
+	}
+
+	subcommand, ok := commands[args[0]]
+	if !ok {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("unknown command: %s", args[0])
+	}
+
+	result := fmt.Sprintf("%s\n\nusage:\n  caddy %s %s\n",
+		strings.TrimSpace(subcommand.Long),
+		subcommand.Name,
+		strings.TrimSpace(subcommand.Usage),
+	)
+
+	if help := flagHelp(subcommand.Flags); help != "" {
+		result += fmt.Sprintf("\nflags:\n%s", help)
+	}
+
+	result += "\n" + fullDocs + "\n"
+
+	fmt.Print(result)
+
+	return caddy.ExitCodeSuccess, nil
+}

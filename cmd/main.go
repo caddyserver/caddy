@@ -23,7 +23,9 @@ import (
 	"log"
 	"net"
 	"os"
-	"text/template"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -32,98 +34,45 @@ import (
 // Main implements the main function of the caddy command.
 // Call this if Caddy is to be the main() if your program.
 func Main() {
-	commandMap["start"] = newCmdStart()
-	commandMap["run"] = newCmdRun()
-	commandMap["stop"] = newCmdStop()
-	commandMap["reload"] = newCmdReload()
-	commandMap["version"] = newCmdVersion()
-	commandMap["list-modules"] = newCmdListModules()
-	commandMap["environ"] = newCmdEnviron()
-	commandMap["adapt-config"] = newCmdAdaptConfig()
-	commandMap["help"] = newCmdHelp()
-
 	caddy.TrapSignals()
 
-	if len(os.Args) < 2 {
-		msg, err := usageString()
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(caddy.ExitCodeFailedStartup)
-		}
-		fmt.Print(msg)
-		return
+	switch len(os.Args) {
+	case 0:
+		log.Printf("[FATAL] no arguments provided by OS; args[0] must be command")
+		os.Exit(caddy.ExitCodeFailedStartup)
+	case 1:
+		os.Args = append(os.Args, "help")
 	}
 
-	subcommand, ok := commandMap[os.Args[1]]
+	subcommandName := os.Args[1]
+	subcommand, ok := commands[subcommandName]
 	if !ok {
-		fmt.Fprintf(os.Stderr, "Unknown command '%s'. ", os.Args[1])
-		fmt.Fprintf(os.Stderr, "Run 'caddy help' for valid command.\n")
+		if strings.HasPrefix(os.Args[1], "-") {
+			// user probably forgot to type the subcommand
+			log.Println("[ERROR] first argument must be a subcommand; see 'caddy help'")
+		} else {
+			log.Printf("[ERROR] '%s' is not a recognized subcommand; see 'caddy help'", os.Args[1])
+		}
 		os.Exit(caddy.ExitCodeFailedStartup)
 	}
 
-	fs := subcommand.Flag
-	fs.Parse(os.Args[2:])
-	if exitCode, err := subcommand.Run(fs.Args()); err != nil {
+	fs := subcommand.Flags
+	if fs == nil {
+		fs = flag.NewFlagSet(subcommand.Name, flag.ExitOnError)
+	}
+
+	err := fs.Parse(os.Args[2:])
+	if err != nil {
 		log.Println(err)
-		os.Exit(exitCode)
-	}
-}
-
-var commandMap = map[string]*command{}
-
-type command struct {
-	// Run is a function that executes a subcommand.
-	// It returns an exit code and any associated error.
-	// Takes non-flag commandline arguments as args.
-	// Flag must be parsed before Run is executed.
-	Run func(args []string) (int, error)
-
-	// Usage is the one-line message explaining args, flags.
-	Usage string
-
-	// Short is the short description for command.
-	Short string
-
-	// Long is the message for 'caddy help <command>'
-	Long string
-
-	// Flag is flagset for command.
-	Flag *flag.FlagSet
-}
-
-// FlagHelp is wrapper arround flag.PrintDefaults
-// to generate string output
-func (c *command) FlagHelp() string {
-	// temporially redirect output
-	out := c.Flag.Output()
-	defer c.Flag.SetOutput(out)
-
-	buf := new(bytes.Buffer)
-	c.Flag.SetOutput(buf)
-	c.Flag.PrintDefaults()
-	return buf.String()
-}
-
-var usageTemplate = `Caddy, The HTTP/2 Web Server with Automatic HTTPS.
-
-Usage: 
-
-    caddy <command> [<args>]
-
-Available commands:
-{{ range $name, $cmd := . }}{{ if ne $name "help" }}
-    {{$name | printf "%-13s"}} {{$cmd.Short}}{{ end }}{{ end }}
-
-Use "caddy help <command>" for more information about a command.`
-
-func usageString() (string, error) {
-	buf := new(bytes.Buffer)
-	usage := template.Must(template.New("usage").Parse(usageTemplate))
-	if err := usage.Execute(buf, commandMap); err != nil {
-		return "", err
+		os.Exit(caddy.ExitCodeFailedStartup)
 	}
 
-	return buf.String(), nil
+	exitCode, err := subcommand.Func(Flags{fs})
+	if err != nil {
+		log.Printf("%s: %v", subcommand.Name, err)
+	}
+
+	os.Exit(exitCode)
 }
 
 // handlePingbackConn reads from conn and ensures it matches
@@ -207,4 +156,75 @@ func loadConfig(configFile, adapterName string) ([]byte, error) {
 	}
 
 	return config, nil
+}
+
+// Flags wraps a FlagSet so that typed values
+// from flags can be easily retrieved.
+type Flags struct {
+	*flag.FlagSet
+}
+
+// String returns the string representation of the
+// flag given by name. It panics if the flag is not
+// in the flag set.
+func (f Flags) String(name string) string {
+	return f.FlagSet.Lookup(name).Value.String()
+}
+
+// Bool returns the boolean representation of the
+// flag given by name. It returns false if the flag
+// is not a boolean type. It panics if the flag is
+// not in the flag set.
+func (f Flags) Bool(name string) bool {
+	val, _ := strconv.ParseBool(f.String(name))
+	return val
+}
+
+// Int returns the integer representation of the
+// flag given by name. It returns 0 if the flag
+// is not an integer type. It panics if the flag is
+// not in the flag set.
+func (f Flags) Int(name string) int {
+	val, _ := strconv.ParseInt(f.String(name), 0, strconv.IntSize)
+	return int(val)
+}
+
+// Float64 returns the float64 representation of the
+// flag given by name. It returns false if the flag
+// is not a float63 type. It panics if the flag is
+// not in the flag set.
+func (f Flags) Float64(name string) float64 {
+	val, _ := strconv.ParseFloat(f.String(name), 64)
+	return val
+}
+
+// Duration returns the duration representation of the
+// flag given by name. It returns false if the flag
+// is not a duration type. It panics if the flag is
+// not in the flag set.
+func (f Flags) Duration(name string) time.Duration {
+	val, _ := time.ParseDuration(f.String(name))
+	return val
+}
+
+// flagHelp returns the help text for fs.
+func flagHelp(fs *flag.FlagSet) string {
+	if fs == nil {
+		return ""
+	}
+
+	// temporarily redirect output
+	out := fs.Output()
+	defer fs.SetOutput(out)
+
+	buf := new(bytes.Buffer)
+	fs.SetOutput(buf)
+	fs.PrintDefaults()
+	return buf.String()
+}
+
+func printEnvironment() {
+	for _, v := range os.Environ() {
+		fmt.Println(v)
+	}
 }
