@@ -22,7 +22,6 @@ import (
 	"os"
 	"runtime"
 	"strings"
-	"time"
 
 	"github.com/caddyserver/caddy"
 	"github.com/caddyserver/caddy/caddyhttp/httpserver"
@@ -50,7 +49,7 @@ func (h ErrorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, er
 	status, err := h.Next.ServeHTTP(w, r)
 
 	if err != nil {
-		errMsg := fmt.Sprintf("%s [ERROR %d %s] %v", time.Now().Format(timeFormat), status, r.URL.Path, err)
+		errMsg := fmt.Sprintf("[ERROR %d %s] %v", status, r.URL.Path, err)
 		if h.Debug {
 			// Write error to response instead of to log
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -79,8 +78,7 @@ func (h ErrorHandler) errorPage(w http.ResponseWriter, r *http.Request, code int
 		errorPage, err := os.Open(pagePath)
 		if err != nil {
 			// An additional error handling an error... <insert grumpy cat here>
-			h.Log.Printf("%s [NOTICE %d %s] could not load error page: %v",
-				time.Now().Format(timeFormat), code, r.URL.String(), err)
+			h.Log.Printf("[NOTICE %d %s] could not load error page: %v", code, r.URL.String(), err)
 			httpserver.DefaultErrorFunc(w, r, code)
 			return
 		}
@@ -93,8 +91,7 @@ func (h ErrorHandler) errorPage(w http.ResponseWriter, r *http.Request, code int
 
 		if err != nil {
 			// Epic fail... sigh.
-			h.Log.Printf("%s [NOTICE %d %s] could not respond with %s: %v",
-				time.Now().Format(timeFormat), code, r.URL.String(), pagePath, err)
+			h.Log.Printf("[NOTICE %d %s] could not respond with %s: %v", code, r.URL.String(), pagePath, err)
 			httpserver.DefaultErrorFunc(w, r, code)
 		}
 
@@ -148,7 +145,7 @@ func (h ErrorHandler) recovery(w http.ResponseWriter, r *http.Request) {
 		file = file[pkgPathPos+len(delim):]
 	}
 
-	panicMsg := fmt.Sprintf("%s [PANIC %s] %s:%d - %v", time.Now().Format(timeFormat), r.URL.String(), file, line, rec)
+	panicMsg := fmt.Sprintf("[PANIC %s] %s:%d - %v", r.URL.String(), file, line, rec)
 	if h.Debug {
 		// Write error and stack trace to the response rather than to a log
 		var stackBuf [4096]byte
@@ -160,5 +157,3 @@ func (h ErrorHandler) recovery(w http.ResponseWriter, r *http.Request) {
 		h.errorPage(w, r, http.StatusInternalServerError)
 	}
 }
-
-const timeFormat = "02/Jan/2006:15:04:05 -0700"
