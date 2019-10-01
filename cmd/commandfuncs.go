@@ -351,10 +351,11 @@ func cmdAdaptConfig(fl Flags) (int, error) {
 	adaptCmdInputFlag := fl.String("config")
 	adaptCmdAdapterFlag := fl.String("adapter")
 	adaptCmdPrettyFlag := fl.Bool("pretty")
+	adaptCmdValidateFlag := fl.Bool("validate")
 
 	if adaptCmdAdapterFlag == "" || adaptCmdInputFlag == "" {
 		return caddy.ExitCodeFailedStartup,
-			fmt.Errorf("usage: caddy adapt --adapter <name> --input <file>")
+			fmt.Errorf("--adapter and --config flags are required")
 	}
 
 	cfgAdapter := caddyconfig.GetAdapter(adaptCmdAdapterFlag)
@@ -390,6 +391,19 @@ func cmdAdaptConfig(fl Flags) (int, error) {
 
 	// print result to stdout
 	fmt.Println(string(adaptedConfig))
+
+	// validate output if requested
+	if adaptCmdValidateFlag {
+		var cfg *caddy.Config
+		err = json.Unmarshal(adaptedConfig, &cfg)
+		if err != nil {
+			return caddy.ExitCodeFailedStartup, fmt.Errorf("decoding config: %v", err)
+		}
+		err = caddy.Validate(cfg)
+		if err != nil {
+			return caddy.ExitCodeFailedStartup, fmt.Errorf("validation: %v", err)
+		}
+	}
 
 	return caddy.ExitCodeSuccess, nil
 }
@@ -457,7 +471,8 @@ usage:
 commands:
 `
 		for _, cmd := range commands {
-			s += fmt.Sprintf("  %-15s %s\n", cmd.Name, cmd.Short)
+			short := strings.TrimSuffix(cmd.Short, ".")
+			s += fmt.Sprintf("  %-15s %s\n", cmd.Name, short)
 		}
 
 		s += "\nUse 'caddy help <command>' for more information about a command.\n"
@@ -475,8 +490,16 @@ commands:
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("unknown command: %s", args[0])
 	}
 
+	helpText := strings.TrimSpace(subcommand.Long)
+	if helpText == "" {
+		helpText = subcommand.Short
+		if !strings.HasSuffix(helpText, ".") {
+			helpText += "."
+		}
+	}
+
 	result := fmt.Sprintf("%s\n\nusage:\n  caddy %s %s\n",
-		strings.TrimSpace(subcommand.Long),
+		helpText,
 		subcommand.Name,
 		strings.TrimSpace(subcommand.Usage),
 	)
