@@ -42,7 +42,7 @@ $ go build
 
 That will put a `caddy(.exe)` binary into the current directory. You can move it into your PATH or use `go install` to do that automatically (assuming `$GOPATH/bin` is already in your PATH). You can also use `go run main.go` for quick, temporary builds while developing.
 
-The initial build may be slow as dependencies are downloaded. Subsequent builds should be very fast. If you encounter any Go-module-related errors, try clearing your Go module cache (`$GOPATH/pkg/mod`) and read [the Go wiki page about modules for help](https://github.com/golang/go/wiki/Modules). If you have issues with Go modules, please consult the Go community for help. But if there is an actual error in Caddy, please report it to us.
+The initial build may be slow as dependencies are downloaded. Subsequent builds should be very fast. If you encounter any Go-module-related errors, try clearing your Go module cache (`$GOPATH/pkg/mod`) and Go package cache (`$GOPATH/pkg`) and read [the Go wiki page about modules for help](https://github.com/golang/go/wiki/Modules). If you have issues with Go modules, please consult the Go community for help. But if there is an actual error in Caddy, please report it to us.
 
 
 ## Quick Start
@@ -127,25 +127,25 @@ reverse_proxy /api localhost:9005
 file_server
 ```
 
-Instead of being its primary mode of configuration, an internal _config adapter_ adapts the Caddyfile to Caddy's native JSON structure. You can see it in action with the [`adapt-config` command](https://github.com/caddyserver/caddy/wiki/v2:-Documentation#adapt-config):
+Instead of being its primary mode of configuration, an internal _config adapter_ adapts the Caddyfile to Caddy's native JSON structure. You can see it in action with the [`adapt` command](https://github.com/caddyserver/caddy/wiki/v2:-Documentation#adapt):
 
 ```bash
-$ ./caddy adapt-config --input path/to/Caddyfile --adapter caddyfile --pretty
+$ ./caddy adapt --config path/to/Caddyfile --adapter caddyfile --pretty
 ```
 
-But if you just want to run Caddy with your Caddyfile directly, the CLI wraps this up for you nicely. Either of the following commands:
+If you just want to run Caddy with your Caddyfile directly, the CLI wraps this up for you nicely. Either of the following commands:
 
 ```bash
 $ ./caddy start
 $ ./caddy run
 ```
 
-will apply your Caddyfile if it is called `Caddyfile` in the current directory.
+will use your Caddyfile if it is called `Caddyfile` in the current directory.
 
 If your Caddyfile is somewhere else, you can still use it:
 
 ```bash
-$ ./caddy start|run --config path/to/Caddyfile --config-adapter caddyfile
+$ ./caddy start|run --config path/to/Caddyfile --adapter caddyfile
 ```
 
 [Learn more about the Caddyfile in v2.](https://github.com/caddyserver/caddy/wiki/v2:-Documentation#caddyfile-adapter)
@@ -250,7 +250,7 @@ Yes! Caddy's native JSON configuration via API is nice when you are automating c
 
 The v2 Caddyfile is very similar to the v1 Caddyfile, but they are not compatible. Several improvements have been made to request matching and directives in v2, giving you more power with less complexity and fewer inconsistencies.
 
-Caddy's default _config adapter_ is the Caddyfile adapter. This takes a Caddyfile as input and [outputs the JSON config](https://github.com/caddyserver/caddy/wiki/v2:-Documentation#adapt-config). You can even run Caddy directly without having to see or think about the underlying JSON config.
+Caddy's default _config adapter_ is the Caddyfile adapter. This takes a Caddyfile as input and [outputs the JSON config](https://github.com/caddyserver/caddy/wiki/v2:-Documentation#adapt). You can even run Caddy directly without having to see or think about the underlying JSON config.
 
 The following _config adapters_ are already being built or plan to be built:
 
