@@ -58,6 +58,8 @@ load_rc_config ${name}
 : ${caddy_syslog_level="notice"}
 : ${caddy_user="root"}
 : ${caddy_group="wheel"}
+: ${caddy_flags=""}
+: ${caddy_options="-cpu ${caddy_cpu} -log stdout -conf ${caddy_config_path} -agree -email ${caddy_cert_email} ${caddy_flags}"}
 
 if [ "$caddy_cert_email" = "" ]
 then
@@ -68,12 +70,15 @@ fi
 pidfile="/var/run/${name}.pid"
 procname="${caddy_bin_path}" #enabled builtin pid checking for start / stop
 command="/usr/sbin/daemon"
-command_args="-p ${pidfile} -T ${name} -l ${caddy_syslog_facility} -s ${caddy_syslog_level} /usr/bin/env ${caddy_env} ${procname} -cpu ${caddy_cpu} -log stdout -conf ${caddy_config_path} -agree -email ${caddy_cert_email} < /dev/null"
+command_args="-p ${pidfile} -T ${name} -l ${caddy_syslog_facility} -s ${caddy_syslog_level} /usr/bin/env ${caddy_env} ${procname} ${caddy_options} < /dev/null"
 
 start_precmd="caddy_startprecmd"
 
 caddy_startprecmd()
 {
+	# Clear flags provided by caddy_flags to prevent them being passed to daemon(8)
+	rc_flags=""
+
 	if [ ! -e "${pidfile}" ]; then
 		install -o "${caddy_user}" -g "${caddy_group}" "/dev/null" "${pidfile}"
 	fi
