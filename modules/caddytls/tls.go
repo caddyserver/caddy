@@ -159,8 +159,12 @@ func (t *TLS) Start() error {
 // Stop stops the TLS module and cleans up any allocations.
 func (t *TLS) Stop() error {
 	// stop the storage cleaner goroutine and ticker
-	close(t.storageCleanStop)
-	t.storageCleanTicker.Stop()
+	if t.storageCleanStop != nil {
+		close(t.storageCleanStop)
+	}
+	if t.storageCleanTicker != nil {
+		t.storageCleanTicker.Stop()
+	}
 	return nil
 }
 
