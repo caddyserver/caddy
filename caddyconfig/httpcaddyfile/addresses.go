@@ -161,7 +161,7 @@ func (st *ServerType) listenerAddrsForServerBlockKey(sblock serverBlock, key str
 	}
 	addr = addr.Normalize()
 
-	lnPort := defaultPort
+	lnPort := DefaultPort
 	if addr.Port != "" {
 		// port explicitly defined
 		lnPort = addr.Port
@@ -327,6 +327,8 @@ func (a Address) Key() string {
 }
 
 const (
-	defaultPort       = "2015"
+	// DefaultPort is the default port to use.
+	DefaultPort = "2015"
+
 	caseSensitivePath = false // TODO: Used?
 )
