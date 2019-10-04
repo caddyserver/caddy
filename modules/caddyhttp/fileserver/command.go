@@ -21,6 +21,7 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
+	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	caddycmd "github.com/caddyserver/caddy/v2/cmd"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
@@ -81,9 +82,10 @@ func cmdFileServer(fs caddycmd.Flags) (int, error) {
 	server := &caddyhttp.Server{
 		Routes: caddyhttp.RouteList{route},
 	}
-	if listen != "" {
-		server.Listen = []string{listen}
+	if listen == "" {
+		listen = ":" + httpcaddyfile.DefaultPort
 	}
+	server.Listen = []string{listen}
 
 	httpApp := caddyhttp.App{
 		Servers: map[string]*caddyhttp.Server{"static": server},
@@ -100,7 +102,7 @@ func cmdFileServer(fs caddycmd.Flags) (int, error) {
 		return caddy.ExitCodeFailedStartup, err
 	}
 
-	log.Println("Caddy 2 serving static files")
+	log.Printf("Caddy 2 serving static files on %s", listen)
 
 	select {}
 }
