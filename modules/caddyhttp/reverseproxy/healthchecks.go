@@ -43,6 +43,7 @@ type HealthChecks struct {
 type ActiveHealthChecks struct {
 	Path         string         `json:"path,omitempty"`
 	Port         int            `json:"port,omitempty"`
+	Headers      http.Header    `json:"headers,omitempty"`
 	Interval     caddy.Duration `json:"interval,omitempty"`
 	Timeout      caddy.Duration `json:"timeout,omitempty"`
 	MaxSize      int64          `json:"max_size,omitempty"`
@@ -162,6 +163,9 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, host H
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return fmt.Errorf("making request: %v", err)
+	}
+	for key, hdrs := range h.HealthChecks.Active.Headers {
+		req.Header[key] = hdrs
 	}
 
 	// do the request, being careful to tame the response body
