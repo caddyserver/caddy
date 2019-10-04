@@ -562,8 +562,11 @@ func (ln tcpKeepAliveListener) Accept() (c net.Conn, err error) {
 	if err = tc.SetKeepAlive(true); err != nil {
 		return
 	}
-	if err = tc.SetKeepAlivePeriod(3 * time.Minute); err != nil {
-		return
+	// OpenBSD has no user-settable per-socket TCP keepalive
+	if runtime.GOOS != "openbsd" {
+		if err = tc.SetKeepAlivePeriod(3 * time.Minute); err != nil {
+			return
+		}
 	}
 	return tc, nil
 }
