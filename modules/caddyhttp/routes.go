@@ -26,13 +26,13 @@ import (
 // middlewares, and a responder for handling HTTP
 // requests.
 type Route struct {
-	Group          string                       `json:"group,omitempty"`
-	MatcherSetsRaw []map[string]json.RawMessage `json:"match,omitempty"`
-	HandlersRaw    []json.RawMessage            `json:"handle,omitempty"`
-	Terminal       bool                         `json:"terminal,omitempty"`
+	Group          string            `json:"group,omitempty"`
+	MatcherSetsRaw RawMatcherSets    `json:"match,omitempty"`
+	HandlersRaw    []json.RawMessage `json:"handle,omitempty"`
+	Terminal       bool              `json:"terminal,omitempty"`
 
 	// decoded values
-	MatcherSets []MatcherSet        `json:"-"`
+	MatcherSets MatcherSets         `json:"-"`
 	Handlers    []MiddlewareHandler `json:"-"`
 }
 
@@ -46,32 +46,6 @@ func (r Route) Empty() bool {
 		r.Group == ""
 }
 
-func (r Route) anyMatcherSetMatches(req *http.Request) bool {
-	for _, ms := range r.MatcherSets {
-		if ms.Match(req) {
-			return true
-		}
-	}
-	// if no matchers, always match
-	return len(r.MatcherSets) == 0
-}
-
-// MatcherSet is a set of matchers which
-// must all match in order for the request
-// to be matched successfully.
-type MatcherSet []RequestMatcher
-
-// Match returns true if the request matches all
-// matchers in mset.
-func (mset MatcherSet) Match(r *http.Request) bool {
-	for _, m := range mset {
-		if !m.Match(r) {
-			return false
-		}
-	}
-	return true
-}
-
 // RouteList is a list of server routes that can
 // create a middleware chain.
 type RouteList []Route
@@ -80,17 +54,11 @@ type RouteList []Route
 func (routes RouteList) Provision(ctx caddy.Context) error {
 	for i, route := range routes {
 		// matchers
-		for _, matcherSet := range route.MatcherSetsRaw {
-			var matchers MatcherSet
-			for modName, rawMsg := range matcherSet {
-				val, err := ctx.LoadModule("http.matchers."+modName, rawMsg)
-				if err != nil {
-					return fmt.Errorf("loading matcher module '%s': %v", modName, err)
-				}
-				matchers = append(matchers, val.(RequestMatcher))
-			}
-			routes[i].MatcherSets = append(routes[i].MatcherSets, matchers)
+		matcherSets, err := route.MatcherSetsRaw.Setup(ctx)
+		if err != nil {
+			return err
 		}
+		routes[i].MatcherSets = matcherSets
 		routes[i].MatcherSetsRaw = nil // allow GC to deallocate
 
 		// handlers
@@ -118,7 +86,7 @@ func (routes RouteList) BuildCompositeRoute(req *http.Request) Handler {
 
 	for _, route := range routes {
 		// route must match at least one of the matcher sets
-		if !route.anyMatcherSetMatches(req) {
+		if !route.MatcherSets.AnyMatch(req) {
 			continue
 		}
 
@@ -180,4 +148,62 @@ func wrapMiddleware(mh MiddlewareHandler) Middleware {
 			return mh.ServeHTTP(w, r, next)
 		}
 	}
+}
+
+// MatcherSet is a set of matchers which
+// must all match in order for the request
+// to be matched successfully.
+type MatcherSet []RequestMatcher
+
+// Match returns true if the request matches all
+// matchers in mset.
+func (mset MatcherSet) Match(r *http.Request) bool {
+	for _, m := range mset {
+		if !m.Match(r) {
+			return false
+		}
+	}
+	return true
+}
+
+// RawMatcherSets is a group of matcher sets
+// in their raw, JSON form.
+type RawMatcherSets []map[string]json.RawMessage
+
+// Setup sets up all matcher sets by loading each matcher module
+// and returning the group of provisioned matcher sets.
+func (rm RawMatcherSets) Setup(ctx caddy.Context) (MatcherSets, error) {
+	if rm == nil {
+		return nil, nil
+	}
+	var ms MatcherSets
+	for _, matcherSet := range rm {
+		var matchers MatcherSet
+		for modName, rawMsg := range matcherSet {
+			val, err := ctx.LoadModule("http.matchers."+modName, rawMsg)
+			if err != nil {
+				return nil, fmt.Errorf("loading matcher module '%s': %v", modName, err)
+			}
+			matchers = append(matchers, val.(RequestMatcher))
+		}
+		ms = append(ms, matchers)
+	}
+	return ms, nil
+}
+
+// MatcherSets is a group of matcher sets capable
+// of checking whether a request matches any of
+// the sets.
+type MatcherSets []MatcherSet
+
+// AnyMatch returns true if req matches any of the
+// matcher sets in mss or if there are no matchers,
+// in which case the request always matches.
+func (mss MatcherSets) AnyMatch(req *http.Request) bool {
+	for _, ms := range mss {
+		if ms.Match(req) {
+			return true
+		}
+	}
+	return len(mss) == 0
 }
