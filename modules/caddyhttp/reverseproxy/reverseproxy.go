@@ -115,6 +115,12 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 		// defaulting to a sane wait period between attempts
 		h.LoadBalancing.TryInterval = caddy.Duration(250 * time.Millisecond)
 	}
+	lbMatcherSets, err := h.LoadBalancing.RetryMatchRaw.Setup(ctx)
+	if err != nil {
+		return err
+	}
+	h.LoadBalancing.RetryMatch = lbMatcherSets
+	h.LoadBalancing.RetryMatchRaw = nil // allow GC to deallocate
 
 	// if active health checks are enabled, configure them and start a worker
 	if h.HealthChecks != nil &&
@@ -270,7 +276,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 			if proxyErr == nil {
 				proxyErr = fmt.Errorf("no upstreams available")
 			}
-			if !h.tryAgain(start, proxyErr) {
+			if !h.LoadBalancing.tryAgain(start, proxyErr, r) {
 				break
 			}
 			continue
@@ -306,7 +312,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		proxyErr = h.reverseProxy(w, r, upstream)
 		if proxyErr == nil || proxyErr == context.Canceled {
 			// context.Canceled happens when the downstream client
-			// cancels the request; we don't have to worry about that
+			// cancels the request, which is not our failure
 			return nil
 		}
 
@@ -314,7 +320,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		h.countFailure(upstream)
 
 		// if we've tried long enough, break
-		if !h.tryAgain(start, proxyErr) {
+		if !h.LoadBalancing.tryAgain(start, proxyErr, r) {
 			break
 		}
 	}
@@ -510,22 +516,39 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, upstre
 }
 
 // tryAgain takes the time that the handler was initially invoked
-// as well as any error currently obtained and returns true if
-// another attempt should be made at proxying the request. If
-// true is returned, it has already blocked long enough before
-// the next retry (i.e. no more sleeping is needed). If false is
-// returned, the handler should stop trying to proxy the request.
-func (h Handler) tryAgain(start time.Time, proxyErr error) bool {
-	// if downstream has canceled the request, break
-	if proxyErr == context.Canceled {
-		return false
-	}
+// as well as any error currently obtained, and the request being
+// tried, and returns true if another attempt should be made at
+// proxying the request. If true is returned, it has already blocked
+// long enough before the next retry (i.e. no more sleeping is
+// needed). If false is returned, the handler should stop trying to
+// proxy the request.
+func (lb LoadBalancing) tryAgain(start time.Time, proxyErr error, req *http.Request) bool {
 	// if we've tried long enough, break
-	if time.Since(start) >= time.Duration(h.LoadBalancing.TryDuration) {
+	if time.Since(start) >= time.Duration(lb.TryDuration) {
 		return false
 	}
+
+	// if the error occurred while dialing (i.e. a connection
+	// could not even be established to the upstream), then it
+	// should be safe to retry, since without a connection, no
+	// HTTP request can be transmitted; but if the error is not
+	// specifically a dialer error, we need to be careful
+	if _, ok := proxyErr.(DialError); proxyErr != nil && !ok {
+		// if the error occurred after a connection was established,
+		// we have to assume the upstream received the request, and
+		// retries need to be carefully decided, because some requests
+		// are not idempotent
+		if lb.RetryMatch == nil && req.Method != "GET" {
+			// by default, don't retry requests if they aren't GET
+			return false
+		}
+		if !lb.RetryMatch.AnyMatch(req) {
+			return false
+		}
+	}
+
 	// otherwise, wait and try the next available host
-	time.Sleep(time.Duration(h.LoadBalancing.TryInterval))
+	time.Sleep(time.Duration(lb.TryInterval))
 	return true
 }
 
@@ -621,11 +644,13 @@ func removeConnectionHeaders(h http.Header) {
 
 // LoadBalancing has parameters related to load balancing.
 type LoadBalancing struct {
-	SelectionPolicyRaw json.RawMessage `json:"selection_policy,omitempty"`
-	TryDuration        caddy.Duration  `json:"try_duration,omitempty"`
-	TryInterval        caddy.Duration  `json:"try_interval,omitempty"`
+	SelectionPolicyRaw json.RawMessage          `json:"selection_policy,omitempty"`
+	TryDuration        caddy.Duration           `json:"try_duration,omitempty"`
+	TryInterval        caddy.Duration           `json:"try_interval,omitempty"`
+	RetryMatchRaw      caddyhttp.RawMatcherSets `json:"retry_match,omitempty"`
 
-	SelectionPolicy Selector `json:"-"`
+	SelectionPolicy Selector              `json:"-"`
+	RetryMatch      caddyhttp.MatcherSets `json:"-"`
 }
 
 // Selector selects an available upstream from the pool.
@@ -648,6 +673,12 @@ var hopHeaders = []string{
 	"Trailer", // not Trailers per URL above; https://www.rfc-editor.org/errata_search.php?eid=4522
 	"Transfer-Encoding",
 	"Upgrade",
+}
+
+// DialError is an error that specifically occurs
+// in a call to Dial or DialContext.
+type DialError struct {
+	error
 }
 
 // TODO: see if we can use this

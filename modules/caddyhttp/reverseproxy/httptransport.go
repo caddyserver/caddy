@@ -79,7 +79,14 @@ func (h *HTTPTransport) Provision(_ caddy.Context) error {
 				network = dialInfo.Network
 				address = dialInfo.Address
 			}
-			return dialer.DialContext(ctx, network, address)
+			conn, err := dialer.DialContext(ctx, network, address)
+			if err != nil {
+				// identify this error as one that occurred during
+				// dialing, which can be important when trying to
+				// decide whether to retry a request
+				return nil, DialError{err}
+			}
+			return conn, nil
 		},
 		MaxConnsPerHost:        h.MaxConnsPerHost,
 		ResponseHeaderTimeout:  time.Duration(h.ResponseHeaderTimeout),
