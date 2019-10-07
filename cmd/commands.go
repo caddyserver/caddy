@@ -181,7 +181,7 @@ config file; otherwise the default is assumed.`,
 	"adapt": {
 		Name:  "adapt",
 		Func:  cmdAdaptConfig,
-		Usage: "--config <path> --adapter <name> [--pretty] [--validate]",
+		Usage: "--config <path> [--adapter <name>] [--pretty] [--validate]",
 		Short: "Adapts a configuration to Caddy's native JSON",
 		Long: `
 Adapts a configuration to Caddy's native JSON format and writes the
@@ -196,7 +196,7 @@ zero exit status will be returned.`,
 		Flags: func() *flag.FlagSet {
 			fs := flag.NewFlagSet("adapt", flag.ExitOnError)
 			fs.String("config", "", "Configuration file to adapt (required)")
-			fs.String("adapter", "", "Name of config adapter (required)")
+			fs.String("adapter", "caddyfile", "Name of config adapter")
 			fs.Bool("pretty", false, "Format the output for human readability")
 			fs.Bool("validate", false, "Validate the output")
 			return fs
