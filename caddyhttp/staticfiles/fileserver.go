@@ -116,7 +116,7 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request) (int, err
 			}
 			urlCopy.Path += "/"
 			http.Redirect(w, r, urlCopy.String(), http.StatusMovedPermanently)
-			return http.StatusMovedPermanently, nil
+			return 0, nil
 		}
 	} else {
 		// ensure no trailing slash
@@ -143,7 +143,7 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request) (int, err
 				urlCopy.Path = strings.TrimPrefix(urlCopy.Path, "/")
 			}
 			http.Redirect(w, r, urlCopy.String(), http.StatusMovedPermanently)
-			return http.StatusMovedPermanently, nil
+			return 0, nil
 		}
 	}
 
