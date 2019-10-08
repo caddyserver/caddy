@@ -28,6 +28,7 @@ import (
 	"os/exec"
 	"reflect"
 	"runtime/debug"
+	"sort"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
@@ -470,7 +471,13 @@ usage:
 
 commands:
 `
-		for _, cmd := range commands {
+		keys := make([]string, 0, len(commands))
+		for k := range commands {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			cmd := commands[k]
 			short := strings.TrimSuffix(cmd.Short, ".")
 			s += fmt.Sprintf("  %-15s %s\n", cmd.Name, short)
 		}
