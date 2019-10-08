@@ -554,18 +554,19 @@ type tcpKeepAliveListener struct {
 }
 
 // Accept accepts the connection with a keep-alive enabled.
-func (ln tcpKeepAliveListener) Accept() (c net.Conn, err error) {
+func (ln tcpKeepAliveListener) Accept() (net.Conn, error) {
 	tc, err := ln.AcceptTCP()
 	if err != nil {
-		return
+		return nil, err
 	}
 	if err = tc.SetKeepAlive(true); err != nil {
-		return
+		return nil, err
 	}
 	// OpenBSD has no user-settable per-socket TCP keepalive
+	// https://github.com/caddyserver/caddy/pull/2787
 	if runtime.GOOS != "openbsd" {
 		if err = tc.SetKeepAlivePeriod(3 * time.Minute); err != nil {
-			return
+			return nil, err
 		}
 	}
 	return tc, nil
