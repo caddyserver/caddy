@@ -61,8 +61,17 @@ type Command struct {
 // any error that occurred.
 type CommandFunc func(Flags) (int, error)
 
-var commands = map[string]Command{
-	"start": {
+var commands = make(map[string]Command)
+
+func init() {
+	RegisterCommand(Command{
+		Name:  "help",
+		Func:  cmdHelp,
+		Usage: "<command>",
+		Short: "Shows help for a Caddy subcommand",
+	})
+
+	RegisterCommand(Command{
 		Name:  "start",
 		Func:  cmdStart,
 		Usage: "[--config <path> [[--adapter <name>]]",
@@ -80,9 +89,9 @@ using 'caddy run' instead to keep it in the foreground.`,
 			fs.String("adapter", "", "Name of config adapter to apply")
 			return fs
 		}(),
-	},
+	})
 
-	"run": {
+	RegisterCommand(Command{
 		Name:  "run",
 		Func:  cmdRun,
 		Usage: "[--config <path> [--adapter <name>]] [--environ]",
@@ -116,9 +125,9 @@ not quit after printing, and can be useful for troubleshooting.`,
 			fs.String("pingback", "", "Echo confirmation bytes to this address on success")
 			return fs
 		}(),
-	},
+	})
 
-	"stop": {
+	RegisterCommand(Command{
 		Name:  "stop",
 		Func:  cmdStop,
 		Short: "Gracefully stops the running Caddy process",
@@ -130,9 +139,9 @@ clean up any active locks; for a graceful shutdown on Windows, use Ctrl+C
 or the /stop API endpoint.
 
 Note: this will stop any process named the same as the executable (os.Args[0]).`,
-	},
+	})
 
-	"reload": {
+	RegisterCommand(Command{
 		Name:  "reload",
 		Func:  cmdReload,
 		Usage: "--config <path> [--adapter <name>] [--address <interface>]",
@@ -152,15 +161,15 @@ config file; otherwise the default is assumed.`,
 			fs.String("address", "", "Address of the administration listener, if different from config")
 			return fs
 		}(),
-	},
+	})
 
-	"version": {
+	RegisterCommand(Command{
 		Name:  "version",
 		Func:  cmdVersion,
 		Short: "Prints the version",
-	},
+	})
 
-	"list-modules": {
+	RegisterCommand(Command{
 		Name:  "list-modules",
 		Func:  cmdListModules,
 		Usage: "[--versions]",
@@ -170,15 +179,15 @@ config file; otherwise the default is assumed.`,
 			fs.Bool("versions", false, "Print version information")
 			return fs
 		}(),
-	},
+	})
 
-	"environ": {
+	RegisterCommand(Command{
 		Name:  "environ",
 		Func:  cmdEnviron,
 		Short: "Prints the environment",
-	},
+	})
 
-	"adapt": {
+	RegisterCommand(Command{
 		Name:  "adapt",
 		Func:  cmdAdaptConfig,
 		Usage: "--config <path> [--adapter <name>] [--pretty] [--validate]",
@@ -201,9 +210,9 @@ zero exit status will be returned.`,
 			fs.Bool("validate", false, "Validate the output")
 			return fs
 		}(),
-	},
+	})
 
-	"validate": {
+	RegisterCommand(Command{
 		Name:  "validate",
 		Func:  cmdValidateConfig,
 		Usage: "--config <path> [--adapter <name>]",
@@ -218,21 +227,8 @@ provisioning stages.`,
 			fs.String("adapter", "", "Name of config adapter")
 			return fs
 		}(),
-	},
-}
+	})
 
-func init() {
-	// the help command is special in that its func
-	// refers to the commands map; thus, defining it
-	// inline with the commands map's initialization
-	// yields a compile-time error, so we have to
-	// define this command separately
-	commands["help"] = Command{
-		Name:  "help",
-		Func:  cmdHelp,
-		Usage: "<command>",
-		Short: "Shows help for a Caddy subcommand",
-	}
 }
 
 // RegisterCommand registers the command cmd.
