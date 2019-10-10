@@ -6,6 +6,10 @@ Caddyfile
 *.prof
 *.test
 
+# build artifacts
+cmd/caddy/caddy
+cmd/caddy/caddy.exe
+
 # mac specific
 .DS_Store
 
