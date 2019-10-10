@@ -44,6 +44,7 @@ ProtectSystem=full
 ; … except /etc/ssl/caddy, because we want Letsencrypt-certificates there.
 ;   This merely retains r/w access rights, it does not add any new. Must still be writable on the host!
 ReadWritePaths=/etc/ssl/caddy
+ReadWriteDirectories=/etc/ssl/caddy
 
 ; The following additional security directives only work with systemd v229 or later.
 ; They further restrict privileges that can be gained by caddy. Uncomment if you like.
