@@ -27,10 +27,10 @@ type Adapter interface {
 
 // Warning represents a warning or notice related to conversion.
 type Warning struct {
-	File      string
-	Line      int
-	Directive string
-	Message   string
+	File      string `json:"file,omitempty"`
+	Line      int    `json:"line,omitempty"`
+	Directive string `json:"directive,omitempty"`
+	Message   string `json:"message,omitempty"`
 }
 
 // JSON encodes val as JSON, returning it as a json.RawMessage. Any
