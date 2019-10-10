@@ -348,7 +348,7 @@ func (app *App) automaticHTTPS() error {
 				})
 
 			// manage their certificates
-			log.Printf("[INFO] Enabling automatic HTTPS certificates for %v", domainsForCerts)
+			log.Printf("[INFO] Enabling automatic TLS certificate management for %v", domainsForCerts)
 			err := tlsApp.Manage(domainsForCerts)
 			if err != nil {
 				return fmt.Errorf("%s: managing certificate for %s: %s", srvName, domains, err)

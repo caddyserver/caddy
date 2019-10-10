@@ -30,7 +30,7 @@ import (
 // with care and wrapped with derivation functions from the
 // standard context package only if you don't need the Caddy
 // specific features. These contexts are cancelled when the
-// lifetime of the modules loaded from it are over.
+// lifetime of the modules loaded from it is over.
 //
 // Use NewContext() to get a valid value (but most modules will
 // not actually need to do this).

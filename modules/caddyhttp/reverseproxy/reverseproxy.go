@@ -243,6 +243,8 @@ func (h *Handler) Cleanup() error {
 		close(h.HealthChecks.Active.stopChan)
 	}
 
+	// TODO: Close keepalive connections on reload? https://github.com/caddyserver/caddy/pull/2507/files#diff-70219fd88fe3f36834f474ce6537ed26R762
+
 	// remove hosts from our config from the pool
 	for _, upstream := range h.Upstreams {
 		hosts.Delete(upstream.dialInfo.String())

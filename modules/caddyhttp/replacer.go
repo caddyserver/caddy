@@ -19,6 +19,7 @@ import (
 	"net"
 	"net/http"
 	"net/textproto"
+	"net/url"
 	"path"
 	"strconv"
 	"strings"
@@ -59,6 +60,15 @@ func addHTTPVarsToReplacer(repl caddy.Replacer, req *http.Request, w http.Respon
 			}
 
 			switch key {
+			case "http.request.method":
+				return req.Method, true
+			case "http.request.scheme":
+				if req.TLS != nil {
+					return "https", true
+				}
+				return "http", true
+			case "http.request.proto":
+				return req.Proto, true
 			case "http.request.host":
 				host, _, err := net.SplitHostPort(req.Host)
 				if err != nil {
@@ -81,13 +91,8 @@ func addHTTPVarsToReplacer(repl caddy.Replacer, req *http.Request, w http.Respon
 			case "http.request.remote.port":
 				_, port, _ := net.SplitHostPort(req.RemoteAddr)
 				return port, true
-			case "http.request.method":
-				return req.Method, true
-			case "http.request.scheme":
-				if req.TLS != nil {
-					return "https", true
-				}
-				return "http", true
+
+			// current URI, including any internal rewrites
 			case "http.request.uri":
 				return req.URL.RequestURI(), true
 			case "http.request.uri.path":
@@ -102,6 +107,32 @@ func addHTTPVarsToReplacer(repl caddy.Replacer, req *http.Request, w http.Respon
 				return req.URL.RawQuery, true
 			case "http.request.uri.query_string":
 				qs := req.URL.Query().Encode()
+				if qs != "" {
+					qs = "?" + qs
+				}
+				return qs, true
+
+			// original URI, before any internal changes
+			case "http.request.orig_uri":
+				u, _ := req.Context().Value(OriginalURLCtxKey).(url.URL)
+				return u.RequestURI(), true
+			case "http.request.orig_uri.path":
+				u, _ := req.Context().Value(OriginalURLCtxKey).(url.URL)
+				return u.Path, true
+			case "http.request.orig_uri.path.file":
+				u, _ := req.Context().Value(OriginalURLCtxKey).(url.URL)
+				_, file := path.Split(u.Path)
+				return file, true
+			case "http.request.orig_uri.path.dir":
+				u, _ := req.Context().Value(OriginalURLCtxKey).(url.URL)
+				dir, _ := path.Split(u.Path)
+				return dir, true
+			case "http.request.orig_uri.query":
+				u, _ := req.Context().Value(OriginalURLCtxKey).(url.URL)
+				return u.RawQuery, true
+			case "http.request.orig_uri.query_string":
+				u, _ := req.Context().Value(OriginalURLCtxKey).(url.URL)
+				qs := u.Query().Encode()
 				if qs != "" {
 					qs = "?" + qs
 				}

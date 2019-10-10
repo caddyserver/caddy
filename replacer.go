@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 // Replacer can replace values in strings.
@@ -156,10 +157,16 @@ func globalDefaultReplacements(key string) (string, bool) {
 		return runtime.GOOS, true
 	case "system.arch":
 		return runtime.GOARCH, true
+	case "time.now.common_log":
+		return nowFunc().Format("02/Jan/2006:15:04:05 -0700"), true
 	}
 
 	return "", false
 }
+
+// nowFunc is a variable so tests can change it
+// in order to obtain a deterministic time.
+var nowFunc = time.Now
 
 // ReplacerCtxKey is the context key for a replacer.
 const ReplacerCtxKey CtxKey = "replacer"
