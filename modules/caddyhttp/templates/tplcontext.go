@@ -25,7 +25,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/Masterminds/sprig"
+	"github.com/Masterminds/sprig/v3"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/russross/blackfriday/v2"
 )
