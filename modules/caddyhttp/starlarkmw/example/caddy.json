@@ -1,0 +1,19 @@
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"MY_SERVER": {
+					"listen": [":3001"],
+					"routes": [
+						{
+							"handle": {
+								"handler": "starlark",
+								"script": "def setup(r):\n\t# create some middlewares specific to this request\n\ttemplates = loadModule('http.handlers.templates', {'include_root': './includes'})\n\tmidChain = execute([templates])\n\ndef serveHTTP (rw, r):\n\trw.Write('Hello world, from Starlark!')\n"
+							}
+						}
+					]
+				}
+			}
+		}
+	}
+}
