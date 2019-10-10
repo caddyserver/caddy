@@ -87,7 +87,7 @@ func StartAdmin(initialConfigJSON []byte) error {
 		return fmt.Errorf("parsing admin listener address: %v", err)
 	}
 	if len(listenAddrs) != 1 {
-		return fmt.Errorf("admin endpoint must have exactly one listener; cannot listen on %v", listenAddrs)
+		return fmt.Errorf("admin endpoint must have exactly one address; cannot listen on %v", listenAddrs)
 	}
 	ln, err := net.Listen(netw, listenAddrs[0])
 	if err != nil {
@@ -120,7 +120,7 @@ func StartAdmin(initialConfigJSON []byte) error {
 		ReadTimeout:       5 * time.Second,
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       5 * time.Second,
-		MaxHeaderBytes:    1024 * 256,
+		MaxHeaderBytes:    1024 * 64,
 	}
 
 	go cfgEndptSrv.Serve(ln)
@@ -169,13 +169,10 @@ type AdminRoute struct {
 }
 
 func handleLoadConfig(w http.ResponseWriter, r *http.Request) {
-	r.Close = true
 	if r.Method != http.MethodPost {
 		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 		return
 	}
-
-	var payload io.Reader = r.Body
 
 	// if the config is formatted other than Caddy's native
 	// JSON, we need to adapt it before loading it
@@ -215,16 +212,15 @@ func handleLoadConfig(w http.ResponseWriter, r *http.Request) {
 				}
 				w.Write(respBody)
 			}
-			payload = bytes.NewReader(result)
+			// replace original request body with adapted JSON
+			r.Body.Close()
+			r.Body = ioutil.NopCloser(bytes.NewReader(result))
 		}
 	}
 
-	err := Load(payload)
-	if err != nil {
-		log.Printf("[ADMIN][ERROR] loading config: %v", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
+	// pass this off to the /config/ endpoint
+	r.URL.Path = "/" + rawConfigKey + "/"
+	handleConfig(w, r)
 }
 
 func handleStop(w http.ResponseWriter, r *http.Request) {
