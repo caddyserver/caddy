@@ -59,3 +59,6 @@ func dataDir() string {
 	}
 	return filepath.Join(baseDir, "caddy")
 }
+
+// TODO: Consider using Go 1.13's os.UserConfigDir() (https://golang.org/pkg/os/#UserConfigDir)
+// if we are going to store the last-loaded config anywhere

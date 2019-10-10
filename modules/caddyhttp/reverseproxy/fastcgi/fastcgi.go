@@ -110,6 +110,7 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 
 	fcgiBackend, err := DialContext(ctx, network, address)
 	if err != nil {
+		// TODO: wrap in a special error type if the dial failed, so retries can happen if enabled
 		return nil, fmt.Errorf("dialing backend: %v", err)
 	}
 	// fcgiBackend gets closed when response body is closed (see clientCloser)

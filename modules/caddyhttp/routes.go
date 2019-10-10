@@ -141,6 +141,9 @@ func (routes RouteList) BuildCompositeRoute(req *http.Request) Handler {
 func wrapMiddleware(mh MiddlewareHandler) Middleware {
 	return func(next HandlerFunc) HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) error {
+			// TODO: We could wait to evaluate matchers here, just eval
+			// the next matcher and choose the next route...
+
 			// TODO: This is where request tracing could be implemented; also
 			// see below to trace the responder as well
 			// TODO: Trace a diff of the request, would be cool too! see what changed since the last middleware (host, headers, URI...)
