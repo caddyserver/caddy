@@ -147,6 +147,7 @@ type TLSConfig struct {
 	ClientCertificateKeyFile string         `json:"client_certificate_key_file,omitempty"`
 	InsecureSkipVerify       bool           `json:"insecure_skip_verify,omitempty"`
 	HandshakeTimeout         caddy.Duration `json:"handshake_timeout,omitempty"`
+	ServerName               string         `json:"server_name,omitempty"`
 }
 
 // MakeTLSClientConfig returns a tls.Config usable by a client to a backend.
@@ -181,6 +182,9 @@ func (t TLSConfig) MakeTLSClientConfig() (*tls.Config, error) {
 		}
 		cfg.RootCAs = rootPool
 	}
+
+	// custom SNI
+	cfg.ServerName = t.ServerName
 
 	// throw all security out the window
 	cfg.InsecureSkipVerify = t.InsecureSkipVerify
