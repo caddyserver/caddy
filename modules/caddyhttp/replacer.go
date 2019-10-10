@@ -65,13 +65,24 @@ func addHTTPVarsToReplacer(repl caddy.Replacer, req *http.Request, w http.Respon
 					return req.Host, true // OK; there probably was no port
 				}
 				return host, true
-			case "http.request.hostport":
-				return req.Host, true
-			case "http.request.method":
-				return req.Method, true
 			case "http.request.port":
 				_, port, _ := net.SplitHostPort(req.Host)
 				return port, true
+			case "http.request.hostport":
+				return req.Host, true
+			case "http.request.remote":
+				return req.RemoteAddr, true
+			case "http.request.remote.host":
+				host, _, err := net.SplitHostPort(req.RemoteAddr)
+				if err != nil {
+					return req.RemoteAddr, true
+				}
+				return host, true
+			case "http.request.remote.port":
+				_, port, _ := net.SplitHostPort(req.RemoteAddr)
+				return port, true
+			case "http.request.method":
+				return req.Method, true
 			case "http.request.scheme":
 				if req.TLS != nil {
 					return "https", true
