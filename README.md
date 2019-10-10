@@ -5,9 +5,9 @@ Caddy 2 Development Branch
 
 This is the development branch for Caddy 2. This code (version 2) is not yet feature-complete or production-ready, but is already being used in production, and we encourage you to deploy it today on sites that are not very visible or important so that it can obtain crucial experience in the field.
 
-Please file issues to propose new features and report bugs, and after the bug or feature has been discussed, submit a pull request! We need your help to build this web server into what you want it to be. (Caddy 2 issues and pull requests will usually receive priority over Caddy 1 issues and pull requests.)
+Please file issues to propose new features and report bugs, and after the bug or feature has been discussed, submit a pull request! We need your help to build this web server into what you want it to be. (Caddy 2 issues and pull requests receive priority over Caddy 1 issues and pull requests.)
 
-**We want Caddy 2 to be the web server of the Go community!** We are looking for maintainers to represent the community. Please become involved (issues, PRs, [our forum](https://caddy.community) etc.) and express interest if you are committed to being a collaborator on the Caddy project.
+**Caddy 2 is the web server of the Go community.** We are looking for maintainers to represent the community! Please become involved (issues, PRs, [our forum](https://caddy.community) etc.) and express interest if you are committed to being a collaborator on the Caddy project.
 
 
 ### Menu
@@ -121,7 +121,7 @@ Caddy 2 can be configured with a Caddyfile, much like in v1, for example:
 example.com
 
 templates
-encode gzip zstd
+encode    gzip zstd
 try_files {path}.html {path}
 reverse_proxy /api localhost:9005
 file_server
@@ -173,14 +173,14 @@ Note that breaking changes are expected until the stable 2.0 release.
 
 ## List of Improvements
 
-The following is a non-comprehensive list of significant improvements over Caddy 1. Not everything in this list is finished yet, but they will be finished or at least will be possible with Caddy 2 or Caddy Enterprise:
+The following is a non-comprehensive list of significant improvements over Caddy 1. Not everything in this list is finished yet, but they will be finished or at least will be possible with Caddy 2:
 
 - Centralized configuration. No more disparate use of environment variables, config files (potentially multiple!), CLI flags, etc.
 - REST API. Control Caddy with HTTP requests to an administration endpoint. Changes are applied immediately and efficiently.
 - Dynamic configuration. Any and all specific config values can be modified directly through the admin API with a REST endpoint.
-    - Enterprise: Change only specific configuration settings instead of needing to specify the whole config each time. This makes it safe and easy to change Caddy's config with manually-crafted curl commands, for example.
+    - Change only specific configuration settings instead of needing to specify the whole config each time. This makes it safe and easy to change Caddy's config with manually-crafted curl commands, for example.
 - No configuration files. Except optionally to bootstrap its configuration at startup. You can still use config files if you wish, and we expect that most people will.
-- Enterprise: Export the current Caddy configuration with an API GET request.
+- Export the current Caddy configuration with an API GET request.
 - Silky-smooth graceful reloads. Update the configuration up to dozens of times per second with no dropped requests and very little memory cost. Our unique graceful reload technology is lighter and faster **and works on all platforms, including Windows**.
 - An embedded scripting language! Caddy2 has native Starlark integration. Do things you never thought possible with higher performance than Lua, JavaScript, and other VMs. Starlark is expressive, familiar (dialect of Python), _almost_ Turing-complete, and highly efficient. (We're still improving performance here.)
 - Using [XDG standards](https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html#variables) instead of dumping all assets in `$HOME/.caddy`.
@@ -196,9 +196,9 @@ The following is a non-comprehensive list of significant improvements over Caddy
 	- Automation policy doesn't have to be limited to just ACME - could be any way to manage certificates
 	- Fine-grained control over TLS handshakes
 	- If an ACME challenge fails, other enabled challenges will be tried (no other web server does this)
-    - Enterprise: TLS Session Ticket Ephemeral Keys (STEKs) can be rotated in a cluster for increased performance (no other web server does this either!)
-    - Enterprise: Ability to select a specific certificate per ClientHello given multiple qualifying certificates
-    - Enterprise: Provide TLS certificates without persisting them to disk; keep private keys entirely in memory
+    - TLS Session Ticket Ephemeral Keys (STEKs) can be rotated in a cluster for increased performance (no other web server does this either!)
+    - Ability to select a specific certificate per ClientHello given multiple qualifying certificates
+    - Provide TLS certificates without persisting them to disk; keep private keys entirely in memory
 - All-new HTTP server core
 	- Listeners can be configured for any network type, address, and port range
 	- Customizable TLS connection policies
@@ -219,7 +219,7 @@ The following is a non-comprehensive list of significant improvements over Caddy
 	- Highly descriptive/traceable errors
 	- Very flexible error handling, with the ability to specify a whole list of routes just for error cases
 	- More control over automatic HTTPS: disable entirely, disable only HTTP->HTTPS redirects, disable only cert management, and for certain names, etc.
-    - Enterprise: Use Starlark to build custom, dynamic HTTP handlers at request-time
+    - Use Starlark to build custom, dynamic HTTP handlers at request-time
         - We are finding that -- on average -- Caddy 2's Starlark handlers are ~1.25-2x faster than NGINX+Lua.
 
 And a few major features still being worked on:
@@ -336,27 +336,9 @@ Starlark performs at least as well as NGINX+Lua (more performance tests ongoing,
 
 In summary: Caddy 2 config is declarative, but can be imperative where that is useful.
 
-### What will Caddy 2 be licensed as?
+### What is Caddy 2 licensed as?
 
 Caddy 2 is licensed under the Apache 2.0 open source license. There are no official Caddy 2 distributions that are proprietary.
-
-### What is Caddy Enterprise?
-
-Caddy Enterprise is a collection of plugins for Caddy 2 which provide features and performance that are crucial in business settings. Caddy Enterprise is not a separate web server and does not even use a separate code base from Caddy 2; it is not even a separate branch that merges the open source core in every once in a while. In other words, open source users aren't missing out on a "better" web server, but Enterprise provides features that are used by businesses.
-
-Caddy Enterprise is for businesses that need more advanced features for higher scalability and easier management of clusters. It includes:
-
-- a web UI
-- performance improvements within a cluster
-- advanced TLS controls
-- fine-grained config changes (i.e. ability to change only certain parts of the configuration)
-- training and support
-- advanced HTTP handlers for authentication, metrics, debugging, and more
-- dynamic HTTP handlers and TLS handshakes with Starlark
-
-Caddy Enterprise can be customized for each customer according to their needs.
-
-Caddy 2 and Caddy Enterprise offer equal levels of security and, as mentioned, share the same open source code base.
 
 ### Does Caddy 2 have telemetry?
 
@@ -368,7 +350,7 @@ Yes. HTTPS is automatic and enabled by default when possible, just like in Caddy
 
 ## How do I avoid Let's Encrypt rate limits with Caddy 2?
 
-As you are testing and developing with Caddy 2, you may wish to use test ("staging") certificates from Let's Encrypt to avoid rate limits. By default, Caddy 2 uses Let's Encrypt's production endpoint to get real certificates for your domains, but their [rate limits](https://letsencrypt.org/docs/rate-limits/) forbid testing and development use of this endpoint for good reasons. You can switch to their [staging endpoint](https://letsencrypt.org/docs/staging-environment/) by adding the staging CA to your automation policy in the `tls` app:
+As you are testing and developing with Caddy 2, you should use test ("staging") certificates from Let's Encrypt to avoid rate limits. By default, Caddy 2 uses Let's Encrypt's production endpoint to get real certificates for your domains, but their [rate limits](https://letsencrypt.org/docs/rate-limits/) forbid testing and development use of this endpoint for good reasons. You can switch to their [staging endpoint](https://letsencrypt.org/docs/staging-environment/) by adding the staging CA to your automation policy in the `tls` app:
 
 ```json
 "tls": {
@@ -385,14 +367,14 @@ As you are testing and developing with Caddy 2, you may wish to use test ("stagi
 }
 ```
 
-Or with the Caddyfile:
+Or with the Caddyfile, using a global options block at the top:
 
 ```
-tls {
-	ca https://acme-staging-v02.api.letsencrypt.org/directory
+{
+	acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
 }
 ```
 
 ## Can we get some access controls on the admin endpoint?
 
-Yeah, that's coming. For now, you can use a unix socket that is properly permissioned for some basic security.
+Yeah, that's coming. For now, you can use a permissioned unix socket for some basic security.
