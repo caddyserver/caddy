@@ -28,6 +28,7 @@ import (
 var defaultDirectiveOrder = []string{
 	"rewrite",
 	"try_files",
+	"basicauth",
 	"headers",
 	"request_header",
 	"encode",
