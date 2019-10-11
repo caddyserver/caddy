@@ -83,6 +83,7 @@ func Run() {
 
 	caddy.AppName = appName
 	caddy.AppVersion = module.Version
+	caddy.OnProcessExit = append(caddy.OnProcessExit, certmagic.CleanUpOwnLocks)
 	certmagic.UserAgent = appName + "/" + cleanModVersion
 
 	// Set up process log before anything bad happens
