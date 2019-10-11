@@ -286,9 +286,10 @@ func JoinNetworkAddress(network, host, port string) string {
 	if network != "" {
 		a = network + "/"
 	}
-	a += host
-	if port != "" {
-		a += ":" + port
+	if host != "" && port == "" {
+		a += host
+	} else if port != "" {
+		a += net.JoinHostPort(host, port)
 	}
 	return a
 }

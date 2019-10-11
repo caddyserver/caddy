@@ -115,7 +115,7 @@ func (h *Handler) doActiveHealthChecksForAllHosts() {
 				// so use a fake Host value instead; unix sockets are usually local
 				hostAddr = "localhost"
 			}
-			err = h.doActiveHealthCheck(NewDialInfo(network, addrs[0]), hostAddr, host)
+			err = h.doActiveHealthCheck(DialInfo{Network: network, Address: addrs[0]}, hostAddr, host)
 			if err != nil {
 				log.Printf("[ERROR] reverse_proxy: active health check for host %s: %v", networkAddr, err)
 			}
@@ -259,7 +259,7 @@ func (h *Handler) countFailure(upstream *Upstream) {
 	err := upstream.Host.CountFail(1)
 	if err != nil {
 		log.Printf("[ERROR] proxy: upstream %s: counting failure: %v",
-			upstream.dialInfo, err)
+			upstream.Dial, err)
 	}
 
 	// forget it later
@@ -268,7 +268,7 @@ func (h *Handler) countFailure(upstream *Upstream) {
 		err := host.CountFail(-1)
 		if err != nil {
 			log.Printf("[ERROR] proxy: upstream %s: expiring failure: %v",
-				upstream.dialInfo, err)
+				upstream.Dial, err)
 		}
 	}(upstream.Host, failDuration)
 }

@@ -72,7 +72,6 @@ type Upstream struct {
 
 	healthCheckPolicy *PassiveHealthChecks
 	cb                CircuitBreaker
-	dialInfo          DialInfo
 }
 
 // Available returns true if the remote host
@@ -149,8 +148,7 @@ func (uh *upstreamHost) CountFail(delta int) error {
 }
 
 // SetHealthy sets the upstream has healthy or unhealthy
-// and returns true if the value was different from before,
-// or an error if the adjustment failed.
+// and returns true if the new value is different.
 func (uh *upstreamHost) SetHealthy(healthy bool) (bool, error) {
 	var unhealthy, compare int32 = 1, 0
 	if healthy {
@@ -167,8 +165,12 @@ func (uh *upstreamHost) SetHealthy(healthy bool) (bool, error) {
 // a host that can be represented in a URL, but
 // they certainly have a network name and address).
 type DialInfo struct {
-	// The network to use. This should be one of the
-	// values that is accepted by net.Dial:
+	// Upstream is the Upstream associated with
+	// this DialInfo. It may be nil.
+	Upstream *Upstream
+
+	// The network to use. This should be one of
+	// the values that is accepted by net.Dial:
 	// https://golang.org/pkg/net/#Dial
 	Network string
 
@@ -176,33 +178,43 @@ type DialInfo struct {
 	// semantics and rules as net.Dial.
 	Address string
 
-	// Host and Port are components of Address,
-	// pre-split for convenience.
+	// Host and Port are components of Address.
 	Host, Port string
-}
-
-// NewDialInfo creates and populates a DialInfo
-// for the given network and address. It splits
-// the address into host and port values if the
-// network type supports them, or uses the whole
-// address as the port if splitting fails.
-func NewDialInfo(network, address string) DialInfo {
-	var addrHost, addrPort string
-	if !strings.Contains(network, "unix") {
-		var err error
-		addrHost, addrPort, err = net.SplitHostPort(address)
-		if err != nil {
-			addrHost = address // assume there was no port
-		}
-	}
-	return DialInfo{network, address, addrHost, addrPort}
 }
 
 // String returns the Caddy network address form
 // by joining the network and address with a
 // forward slash.
 func (di DialInfo) String() string {
-	return di.Network + "/" + di.Address
+	return caddy.JoinNetworkAddress(di.Network, di.Host, di.Port)
+}
+
+// fillDialInfo returns a filled DialInfo for the given upstream, using
+// the given Replacer. Note that the returned value is not a pointer.
+func fillDialInfo(upstream *Upstream, repl caddy.Replacer) (DialInfo, error) {
+	dial := repl.ReplaceAll(upstream.Dial, "")
+	netw, addrs, err := caddy.ParseNetworkAddress(dial)
+	if err != nil {
+		return DialInfo{}, fmt.Errorf("upstream %s: invalid dial address %s: %v", upstream.Dial, dial, err)
+	}
+	if len(addrs) != 1 {
+		return DialInfo{}, fmt.Errorf("upstream %s: dial address must represent precisely one socket: %s represents %d",
+			upstream.Dial, dial, len(addrs))
+	}
+	var dialHost, dialPort string
+	if !strings.Contains(netw, "unix") {
+		dialHost, dialPort, err = net.SplitHostPort(addrs[0])
+		if err != nil {
+			dialHost = addrs[0] // assume there was no port
+		}
+	}
+	return DialInfo{
+		Upstream: upstream,
+		Network:  netw,
+		Address:  addrs[0],
+		Host:     dialHost,
+		Port:     dialPort,
+	}, nil
 }
 
 // DialInfoCtxKey is used to store a DialInfo

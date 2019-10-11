@@ -87,6 +87,7 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 		h.CBRaw = nil // allow GC to deallocate
 	}
 
+	// set up transport
 	if h.Transport == nil {
 		t := &HTTPTransport{
 			KeepAlive: &KeepAlive{
@@ -102,6 +103,7 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 		h.Transport = t
 	}
 
+	// set up load balancing
 	if h.LoadBalancing == nil {
 		h.LoadBalancing = new(LoadBalancing)
 	}
@@ -152,84 +154,39 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 		go h.activeHealthChecker()
 	}
 
-	var allUpstreams []*Upstream
+	// set up upstreams
 	for _, upstream := range h.Upstreams {
-		// if a port was not specified (and the network type uses
-		// ports), then maybe we can figure out the default port
-		netw, host, port, err := caddy.SplitNetworkAddress(upstream.Dial)
-		if err != nil && port == "" && !strings.Contains(netw, "unix") {
-			if host == "" {
-				// assume all that was given was the host, no port
-				host = upstream.Dial
-			}
-			// a port was not specified, but we may be able to
-			// infer it if we know the standard ports on which
-			// the transport protocol operates
-			if ht, ok := h.Transport.(*HTTPTransport); ok {
-				defaultPort := "80"
-				if ht.TLS != nil {
-					defaultPort = "443"
-				}
-				upstream.Dial = caddy.JoinNetworkAddress(netw, host, defaultPort)
-			}
+		// create or get the host representation for this upstream
+		var host Host = new(upstreamHost)
+		existingHost, loaded := hosts.LoadOrStore(upstream.Dial, host)
+		if loaded {
+			host = existingHost.(Host)
+		}
+		upstream.Host = host
+
+		// give it the circuit breaker, if any
+		upstream.cb = h.CB
+
+		// if the passive health checker has a non-zero UnhealthyRequestCount
+		// but the upstream has no MaxRequests set (they are the same thing,
+		// but the passive health checker is a default value for for upstreams
+		// without MaxRequests), copy the value into this upstream, since the
+		// value in the upstream (MaxRequests) is what is used during
+		// availability checks
+		if h.HealthChecks != nil &&
+			h.HealthChecks.Passive != nil &&
+			h.HealthChecks.Passive.UnhealthyRequestCount > 0 &&
+			upstream.MaxRequests == 0 {
+			upstream.MaxRequests = h.HealthChecks.Passive.UnhealthyRequestCount
 		}
 
-		// upstreams are allowed to map to only a single host,
-		// but an upstream's address may semantically represent
-		// multiple addresses, so make sure to handle each
-		// one in turn based on this one upstream config
-		network, addresses, err := caddy.ParseNetworkAddress(upstream.Dial)
-		if err != nil {
-			return fmt.Errorf("parsing dial address: %v", err)
-		}
-
-		for _, addr := range addresses {
-			// make a new upstream based on the original
-			// that has a singular dial address
-			upstreamCopy := *upstream
-			upstreamCopy.dialInfo = NewDialInfo(network, addr)
-			upstreamCopy.Dial = upstreamCopy.dialInfo.String()
-			upstreamCopy.cb = h.CB
-
-			// if host already exists from a current config,
-			// use that instead; otherwise, add it
-			// TODO: make hosts modular, so that their state can be distributed in enterprise for example
-			// TODO: If distributed, the pool should be stored in storage...
-			var host Host = new(upstreamHost)
-			activeHost, loaded := hosts.LoadOrStore(upstreamCopy.dialInfo.String(), host)
-			if loaded {
-				host = activeHost.(Host)
-			}
-			upstreamCopy.Host = host
-
-			// if the passive health checker has a non-zero "unhealthy
-			// request count" but the upstream has no MaxRequests set
-			// (they are the same thing, but one is a default value for
-			// for upstreams with a zero MaxRequests), copy the default
-			// value into this upstream, since the value in the upstream
-			// (MaxRequests) is what is used during availability checks
-			if h.HealthChecks != nil &&
-				h.HealthChecks.Passive != nil &&
-				h.HealthChecks.Passive.UnhealthyRequestCount > 0 &&
-				upstreamCopy.MaxRequests == 0 {
-				upstreamCopy.MaxRequests = h.HealthChecks.Passive.UnhealthyRequestCount
-			}
-
-			// upstreams need independent access to the passive
-			// health check policy because they run outside of the
-			// scope of a request handler
-			if h.HealthChecks != nil {
-				upstreamCopy.healthCheckPolicy = h.HealthChecks.Passive
-			}
-
-			allUpstreams = append(allUpstreams, &upstreamCopy)
+		// upstreams need independent access to the passive
+		// health check policy because passive health checks
+		// run without access to h.
+		if h.HealthChecks != nil {
+			upstream.healthCheckPolicy = h.HealthChecks.Passive
 		}
 	}
-
-	// replace the unmarshaled upstreams (possible 1:many
-	// address mapping) with our list, which is mapped 1:1,
-	// thus may have expanded the original list
-	h.Upstreams = allUpstreams
 
 	return nil
 }
@@ -247,7 +204,7 @@ func (h *Handler) Cleanup() error {
 
 	// remove hosts from our config from the pool
 	for _, upstream := range h.Upstreams {
-		hosts.Delete(upstream.dialInfo.String())
+		hosts.Delete(upstream.Dial)
 	}
 
 	return nil
@@ -284,17 +241,25 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 			continue
 		}
 
+		// the dial address may vary per-request if placeholders are
+		// used, so perform those replacements here; the resulting
+		// DialInfo struct should have valid network address syntax
+		dialInfo, err := fillDialInfo(upstream, repl)
+		if err != nil {
+			return fmt.Errorf("making dial info: %v", err)
+		}
+
 		// attach to the request information about how to dial the upstream;
 		// this is necessary because the information cannot be sufficiently
 		// or satisfactorily represented in a URL
-		ctx := context.WithValue(r.Context(), DialInfoCtxKey, upstream.dialInfo)
+		ctx := context.WithValue(r.Context(), DialInfoCtxKey, dialInfo)
 		r = r.WithContext(ctx)
 
 		// set placeholders with information about this upstream
-		repl.Set("http.handlers.reverse_proxy.upstream.address", upstream.dialInfo.String())
-		repl.Set("http.handlers.reverse_proxy.upstream.hostport", upstream.dialInfo.Address)
-		repl.Set("http.handlers.reverse_proxy.upstream.host", upstream.dialInfo.Host)
-		repl.Set("http.handlers.reverse_proxy.upstream.port", upstream.dialInfo.Port)
+		repl.Set("http.handlers.reverse_proxy.upstream.address", dialInfo.String())
+		repl.Set("http.handlers.reverse_proxy.upstream.hostport", dialInfo.Address)
+		repl.Set("http.handlers.reverse_proxy.upstream.host", dialInfo.Host)
+		repl.Set("http.handlers.reverse_proxy.upstream.port", dialInfo.Port)
 		repl.Set("http.handlers.reverse_proxy.upstream.requests", strconv.Itoa(upstream.Host.NumRequests()))
 		repl.Set("http.handlers.reverse_proxy.upstream.max_requests", strconv.Itoa(upstream.MaxRequests))
 		repl.Set("http.handlers.reverse_proxy.upstream.fails", strconv.Itoa(upstream.Host.Fails()))
@@ -311,7 +276,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		}
 
 		// proxy the request to that upstream
-		proxyErr = h.reverseProxy(w, r, upstream)
+		proxyErr = h.reverseProxy(w, r, dialInfo)
 		if proxyErr == nil || proxyErr == context.Canceled {
 			// context.Canceled happens when the downstream client
 			// cancels the request, which is not our failure
@@ -405,12 +370,12 @@ func (h Handler) prepareRequest(req *http.Request) error {
 // reverseProxy performs a round-trip to the given backend and processes the response with the client.
 // (This method is mostly the beginning of what was borrowed from the net/http/httputil package in the
 // Go standard library which was used as the foundation.)
-func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, upstream *Upstream) error {
-	upstream.Host.CountRequest(1)
-	defer upstream.Host.CountRequest(-1)
+func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, di DialInfo) error {
+	di.Upstream.Host.CountRequest(1)
+	defer di.Upstream.Host.CountRequest(-1)
 
 	// point the request to this upstream
-	h.directRequest(req, upstream)
+	h.directRequest(req, di)
 
 	// do the round-trip
 	start := time.Now()
@@ -421,8 +386,8 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, upstre
 	}
 
 	// update circuit breaker on current conditions
-	if upstream.cb != nil {
-		upstream.cb.RecordMetric(res.StatusCode, latency)
+	if di.Upstream.cb != nil {
+		di.Upstream.cb.RecordMetric(res.StatusCode, latency)
 	}
 
 	// perform passive health checks (if enabled)
@@ -430,14 +395,14 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, upstre
 		// strike if the status code matches one that is "bad"
 		for _, badStatus := range h.HealthChecks.Passive.UnhealthyStatus {
 			if caddyhttp.StatusCodeMatches(res.StatusCode, badStatus) {
-				h.countFailure(upstream)
+				h.countFailure(di.Upstream)
 			}
 		}
 
 		// strike if the roundtrip took too long
 		if h.HealthChecks.Passive.UnhealthyLatency > 0 &&
 			latency >= time.Duration(h.HealthChecks.Passive.UnhealthyLatency) {
-			h.countFailure(upstream)
+			h.countFailure(di.Upstream)
 		}
 	}
 
@@ -554,23 +519,21 @@ func (lb LoadBalancing) tryAgain(start time.Time, proxyErr error, req *http.Requ
 	return true
 }
 
-// directRequest modifies only req.URL so that it points to the
-// given upstream host. It must modify ONLY the request URL.
-func (h Handler) directRequest(req *http.Request, upstream *Upstream) {
+// directRequest modifies only req.URL so that it points to the upstream
+// in the given DialInfo. It must modify ONLY the request URL.
+func (h Handler) directRequest(req *http.Request, di DialInfo) {
 	if req.URL.Host == "" {
 		// we need a host, so set the upstream's host address
-		fullHost := upstream.dialInfo.Address
+		reqHost := di.Address
 
-		// but if the port matches the scheme, strip the port because
+		// if the port equates to the scheme, strip the port because
 		// it's weird to make a request like http://example.com:80/.
-		host, port, err := net.SplitHostPort(fullHost)
-		if err == nil &&
-			(req.URL.Scheme == "http" && port == "80") ||
-			(req.URL.Scheme == "https" && port == "443") {
-			fullHost = host
+		if (req.URL.Scheme == "http" && di.Port == "80") ||
+			(req.URL.Scheme == "https" && di.Port == "443") {
+			reqHost = di.Host
 		}
 
-		req.URL.Host = fullHost
+		req.URL.Host = reqHost
 	}
 }
 

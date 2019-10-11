@@ -138,6 +138,10 @@ func TestJoinNetworkAddress(t *testing.T) {
 			network: "unix", host: "/foo/bar", port: "",
 			expect: "unix//foo/bar",
 		},
+		{
+			network: "", host: "::1", port: "1234",
+			expect: "[::1]:1234",
+		},
 	} {
 		actual := JoinNetworkAddress(tc.network, tc.host, tc.port)
 		if actual != tc.expect {

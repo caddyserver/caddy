@@ -81,9 +81,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		for _, up := range d.RemainingArgs() {
-			h.Upstreams = append(h.Upstreams, &Upstream{
-				Dial: up,
-			})
+			h.Upstreams = append(h.Upstreams, &Upstream{Dial: up})
 		}
 
 		for d.NextBlock(0) {
@@ -94,9 +92,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.ArgErr()
 				}
 				for _, up := range args {
-					h.Upstreams = append(h.Upstreams, &Upstream{
-						Dial: up,
-					})
+					h.Upstreams = append(h.Upstreams, &Upstream{Dial: up})
 				}
 
 			case "lb_policy":
@@ -502,6 +498,7 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if d.Val() == "off" {
 					var disable bool
 					h.KeepAlive.Enabled = &disable
+					break
 				}
 				dur, err := time.ParseDuration(d.Val())
 				if err != nil {
@@ -521,6 +518,7 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					h.KeepAlive = new(KeepAlive)
 				}
 				h.KeepAlive.MaxIdleConns = num
+				h.KeepAlive.MaxIdleConnsPerHost = num
 
 			default:
 				return d.Errf("unrecognized subdirective %s", d.Val())
