@@ -605,6 +605,7 @@ func writeStringToTempFileOrDie(t *testing.T, str string) (pathToFile string) {
 	if err := file.Close(); err != nil {
 		panic(err)
 	}
+	t.Logf("file path is %q", file.Name())
 	return file.Name()
 }
 
