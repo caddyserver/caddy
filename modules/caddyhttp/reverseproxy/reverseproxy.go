@@ -91,8 +91,9 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 	if h.Transport == nil {
 		t := &HTTPTransport{
 			KeepAlive: &KeepAlive{
-				ProbeInterval:   caddy.Duration(30 * time.Second),
-				IdleConnTimeout: caddy.Duration(2 * time.Minute),
+				ProbeInterval:       caddy.Duration(30 * time.Second),
+				IdleConnTimeout:     caddy.Duration(2 * time.Minute),
+				MaxIdleConnsPerHost: 32,
 			},
 			DialTimeout: caddy.Duration(10 * time.Second),
 		}
