@@ -273,6 +273,8 @@ func (app *App) automaticHTTPS() error {
 	// addresses to the routes that do HTTP->HTTPS redirects
 	lnAddrRedirRoutes := make(map[string]Route)
 
+	repl := caddy.NewReplacer()
+
 	for srvName, srv := range app.Servers {
 		srv.tlsApp = tlsApp
 
@@ -294,6 +296,7 @@ func (app *App) automaticHTTPS() error {
 				for _, m := range matcherSet {
 					if hm, ok := m.(*MatchHost); ok {
 						for _, d := range *hm {
+							d = repl.ReplaceAll(d, "")
 							if certmagic.HostQualifies(d) &&
 								!srv.AutoHTTPS.Skipped(d, srv.AutoHTTPS.Skip) {
 								domainSet[d] = struct{}{}
