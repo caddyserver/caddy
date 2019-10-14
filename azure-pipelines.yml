@@ -89,7 +89,8 @@ steps:
   displayName: Get dependencies
 
 - script: |
-    (golangci-lint run --out-format junit-xml -E gofmt -E goimports -E misspell) > test-results/lint-result.xml
+    # its behavior is governed by .golangci.yml
+    (golangci-lint run) > test-results/lint-result.xml
     exit 0
   workingDirectory: '$(modulePath)'
   continueOnError: true
