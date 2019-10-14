@@ -21,7 +21,6 @@ import (
 	"sync"
 
 	"github.com/caddyserver/caddy/telemetry"
-	"github.com/mholt/certmagic"
 )
 
 // TrapSignals create signal handlers for all applicable signals for this
@@ -50,7 +49,6 @@ func trapSignalsCrossPlatform() {
 				for _, f := range OnProcessExit {
 					f() // important cleanup actions only
 				}
-				certmagic.CleanUpOwnLocks()
 				os.Exit(2)
 			}
 
@@ -65,7 +63,6 @@ func trapSignalsCrossPlatform() {
 			}
 
 			go func() {
-				certmagic.CleanUpOwnLocks()
 				os.Exit(executeShutdownCallbacks("SIGINT"))
 			}()
 		}
