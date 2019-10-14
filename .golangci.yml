@@ -27,7 +27,7 @@ run:
 # output configuration options
 output:
   # for local hacking, comment the following line or change value to 'colored-line-number'
-  #format: colored-line-number # junit-xml
+  format: junit-xml
   print-issued-lines: true
   print-linter-name: true
 
