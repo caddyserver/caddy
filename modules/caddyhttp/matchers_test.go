@@ -539,22 +539,32 @@ func TestResponseMatcher(t *testing.T) {
 	}
 }
 
-func BenchmarkHostMatcherWithoutPlaceholders(b *testing.B) {
+func BenchmarkHostMatcherWithoutPlaceholder(b *testing.B) {
 	req := &http.Request{Host: "localhost"}
+	repl := caddy.NewReplacer()
+	ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
+	req = req.WithContext(ctx)
+
 	match := MatchHost{"localhost"}
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		match.Match(req)
 	}
 }
 
-func BenchmarkHostMatcherWithPlaceholders(b *testing.B) {
+func BenchmarkHostMatcherWithPlaceholder(b *testing.B) {
 	err := os.Setenv("GO_BENCHMARK_DOMAIN", "localhost")
 	if err != nil {
 		b.Errorf("error while setting up environment: %v", err)
 	}
+
 	req := &http.Request{Host: "localhost"}
+	repl := caddy.NewReplacer()
+	ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
+	req = req.WithContext(ctx)
 	match := MatchHost{"{env.GO_BENCHMARK_DOMAIN}"}
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		match.Match(req)
