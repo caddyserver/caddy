@@ -90,7 +90,7 @@ steps:
 
 - script: |
     # its behavior is governed by .golangci.yml
-    (golangci-lint run) > test-results/lint-result.xml
+    (golangci-lint run --out-format junit-xml) > test-results/lint-result.xml
     exit 0
   workingDirectory: '$(modulePath)'
   continueOnError: true
