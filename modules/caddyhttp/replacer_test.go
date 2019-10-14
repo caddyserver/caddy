@@ -34,8 +34,8 @@ func TestHTTPVarReplacement(t *testing.T) {
 	addHTTPVarsToReplacer(repl, req, res)
 
 	for i, tc := range []struct {
-		input      string
-		expect     string
+		input  string
+		expect string
 	}{
 		{
 			input:  "{http.request.scheme}",
@@ -60,6 +60,14 @@ func TestHTTPVarReplacement(t *testing.T) {
 		{
 			input:  "{http.request.remote.port}",
 			expect: "1234",
+		},
+		{
+			input:  "{http.request.host.labels.0}",
+			expect: "com",
+		},
+		{
+			input:  "{http.request.host.labels.1}",
+			expect: "example",
 		},
 	} {
 		actual := repl.ReplaceAll(tc.input, "<empty>")

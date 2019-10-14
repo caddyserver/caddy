@@ -146,14 +146,18 @@ func addHTTPVarsToReplacer(repl caddy.Replacer, req *http.Request, w http.Respon
 				if err != nil {
 					return "", false
 				}
-				hostLabels := strings.Split(req.Host, ".")
+				reqHost, _, err := net.SplitHostPort(req.Host)
+				if err != nil {
+					reqHost = req.Host // OK; assume there was no port
+				}
+				hostLabels := strings.Split(reqHost, ".")
 				if idx < 0 {
 					return "", false
 				}
-				if idx >= len(hostLabels) {
+				if idx > len(hostLabels) {
 					return "", true
 				}
-				return hostLabels[idx], true
+				return hostLabels[len(hostLabels)-idx-1], true
 			}
 
 			// path parts
