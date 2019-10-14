@@ -118,8 +118,11 @@ func (m MatchHost) Match(r *http.Request) bool {
 		reqHost = strings.TrimSuffix(reqHost, "]")
 	}
 
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
+
 outer:
 	for _, host := range m {
+		host = repl.ReplaceAll(host, "")
 		if strings.Contains(host, "*") {
 			patternParts := strings.Split(host, ".")
 			incomingParts := strings.Split(reqHost, ".")

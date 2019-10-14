@@ -20,12 +20,18 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2"
 )
 
 func TestHostMatcher(t *testing.T) {
+	err := os.Setenv("GO_BENCHMARK_DOMAIN", "localhost")
+	if err != nil {
+		t.Errorf("error while setting up environment: %v", err)
+	}
+
 	for i, tc := range []struct {
 		match  MatchHost
 		input  string
@@ -106,8 +112,22 @@ func TestHostMatcher(t *testing.T) {
 			input:  "example.com:5555",
 			expect: true,
 		},
+		{
+			match:  MatchHost{"{env.GO_BENCHMARK_DOMAIN}"},
+			input:  "localhost",
+			expect: true,
+		},
+		{
+			match:  MatchHost{"{env.GO_NONEXISTENT}"},
+			input:  "localhost",
+			expect: false,
+		},
 	} {
 		req := &http.Request{Host: tc.input}
+		repl := caddy.NewReplacer()
+		ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
+		req = req.WithContext(ctx)
+
 		actual := tc.match.Match(req)
 		if actual != tc.expect {
 			t.Errorf("Test %d %v: Expected %t, got %t for '%s'", i, tc.match, tc.expect, actual, tc.input)
@@ -516,5 +536,37 @@ func TestResponseMatcher(t *testing.T) {
 			t.Errorf("Test %d %v: Expected %t, got %t for HTTP %d %v", i, tc.require, tc.expect, actual, tc.status, tc.hdr)
 			continue
 		}
+	}
+}
+
+func BenchmarkHostMatcherWithoutPlaceholder(b *testing.B) {
+	req := &http.Request{Host: "localhost"}
+	repl := caddy.NewReplacer()
+	ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
+	req = req.WithContext(ctx)
+
+	match := MatchHost{"localhost"}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		match.Match(req)
+	}
+}
+
+func BenchmarkHostMatcherWithPlaceholder(b *testing.B) {
+	err := os.Setenv("GO_BENCHMARK_DOMAIN", "localhost")
+	if err != nil {
+		b.Errorf("error while setting up environment: %v", err)
+	}
+
+	req := &http.Request{Host: "localhost"}
+	repl := caddy.NewReplacer()
+	ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
+	req = req.WithContext(ctx)
+	match := MatchHost{"{env.GO_BENCHMARK_DOMAIN}"}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		match.Match(req)
 	}
 }
