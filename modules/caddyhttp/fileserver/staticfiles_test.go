@@ -16,14 +16,15 @@ package fileserver
 
 import (
 	"net/url"
+	"path/filepath"
 	"testing"
 )
 
 func TestSanitizedPathJoin(t *testing.T) {
 	// For easy reference:
-	// %2E = .
-	// %2F = /
-	// %5C = \
+	// %2e = .
+	// %2f = /
+	// %5c = \
 	for i, tc := range []struct {
 		inputRoot string
 		inputPath string
@@ -43,12 +44,12 @@ func TestSanitizedPathJoin(t *testing.T) {
 		},
 		{
 			inputPath: "/foo/bar",
-			expect:    "foo/bar",
+			expect:    filepath.Join("foo", "bar"),
 		},
 		{
 			inputRoot: "/a",
 			inputPath: "/foo/bar",
-			expect:    "/a/foo/bar",
+			expect:    filepath.Join("/", "a", "foo", "bar"),
 		},
 		{
 			inputPath: "/foo/../bar",
@@ -57,24 +58,29 @@ func TestSanitizedPathJoin(t *testing.T) {
 		{
 			inputRoot: "/a/b",
 			inputPath: "/foo/../bar",
-			expect:    "/a/b/bar",
+			expect:    filepath.Join("/", "a", "b", "bar"),
 		},
 		{
 			inputRoot: "/a/b",
 			inputPath: "/..%2fbar",
-			expect:    "/a/b/bar",
+			expect:    filepath.Join("/", "a", "b", "bar"),
 		},
 		{
 			inputRoot: "/a/b",
 			inputPath: "/%2e%2e%2fbar",
-			expect:    "/a/b/bar",
+			expect:    filepath.Join("/", "a", "b", "bar"),
 		},
 		{
 			inputRoot: "/a/b",
 			inputPath: "/%2e%2e%2f%2e%2e%2f",
-			expect:    "/a/b",
+			expect:    filepath.Join("/", "a", "b"),
 		},
-		// TODO: test windows paths... on windows... sigh.
+		{
+			inputRoot: "C:\\www",
+			inputPath: "/foo/bar",
+			expect:    filepath.Join("C:\\www", "foo", "bar"),
+		},
+		// TODO: test more windows paths... on windows... sigh.
 	} {
 		// we don't *need* to use an actual parsed URL, but it
 		// adds some authenticity to the tests since real-world
