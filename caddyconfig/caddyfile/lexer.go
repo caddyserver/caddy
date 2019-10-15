@@ -153,6 +153,11 @@ func (l *lexer) next() bool {
 			}
 		}
 
+		if escaped {
+			val = append(val, '\\')
+			escaped = false
+		}
+
 		val = append(val, ch)
 	}
 }

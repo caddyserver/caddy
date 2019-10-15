@@ -152,6 +152,12 @@ func TestLexer(t *testing.T) {
 			},
 		},
 		{
+			input: `un\escapable`,
+			expected: []Token{
+				{Line: 1, Text: `un\escapable`},
+			},
+		},
+		{
 			input: `A "quoted value with line
 					break inside" {
 						foobar
