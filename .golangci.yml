@@ -4,8 +4,6 @@ linters-settings:
     ignoretests: true
   misspell:
     locale: US
-  goimports:
-    local-prefixes: github.com/golangci/golangci-lint
 
 linters:
   enable:
