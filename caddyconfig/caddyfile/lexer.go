@@ -107,7 +107,6 @@ func (l *lexer) next() bool {
 				escaped = false
 			} else {
 				if ch == '"' {
-					quoted = false
 					return makeToken()
 				}
 			}

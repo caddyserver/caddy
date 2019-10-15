@@ -169,7 +169,7 @@ func (s *Server) enforcementHandler(w http.ResponseWriter, r *http.Request, next
 		if err != nil {
 			hostname = r.Host // OK; probably lacked port
 		}
-		if strings.ToLower(r.TLS.ServerName) != strings.ToLower(hostname) {
+		if !strings.EqualFold(r.TLS.ServerName, hostname) {
 			err := fmt.Errorf("strict host matching: TLS ServerName (%s) and HTTP Host (%s) values differ",
 				r.TLS.ServerName, hostname)
 			r.Close = true

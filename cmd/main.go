@@ -118,7 +118,6 @@ func loadConfig(configFile, adapterName string) ([]byte, error) {
 			if os.IsNotExist(err) {
 				// okay, no default Caddyfile; pretend like this never happened
 				cfgAdapter = nil
-				err = nil
 			} else if err != nil {
 				// default Caddyfile exists, but error reading it
 				return nil, fmt.Errorf("reading default Caddyfile: %v", err)

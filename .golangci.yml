@@ -1,0 +1,49 @@
+linters-settings:
+  errcheck:
+    ignore: fmt:.*,io/ioutil:^Read.*,github.com/caddyserver/caddy/v2/caddyconfig:RegisterAdapter,github.com/caddyserver/caddy/v2:RegisterModule
+    ignoretests: true
+  misspell:
+    locale: US
+
+linters:
+  enable:
+    - bodyclose
+    - errcheck
+    - gofmt
+    - goimports
+    - gosec
+    - ineffassign
+    - misspell
+
+run:
+  # default concurrency is a available CPU number.
+  # concurrency: 4 # explicitly omit this value to fully utilize available resources.
+  deadline: 5m
+  issues-exit-code: 1
+  tests: false
+
+# output configuration options
+output:
+  format: 'colored-line-number'
+  print-issued-lines: true
+  print-linter-name: true
+
+issues:
+  exclude-rules:
+    # we aren't calling unknown URL
+    - text: "G107" # G107: Url provided to HTTP request as taint input
+      linters:
+        - gosec
+    # as a web server that's expected to handle any template, this is totally in the hands of the user.
+    - text: "G203" # G203: Use of unescaped data in HTML templates
+      linters:
+        - gosec
+    # we're shelling out to known commands, not relying on user-defined input.
+    - text: "G204" # G204: Audit use of command execution
+      linters:
+        - gosec
+    # the choice of weakrand is deliberate, hence the named import "weakrand"
+    - path: modules/caddyhttp/reverseproxy/selectionpolicies.go
+      text: "G404" # G404: Insecure random number source (rand)
+      linters:
+        - gosec
