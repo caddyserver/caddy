@@ -48,8 +48,8 @@ func (m Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	buf.Reset()
 	defer bufPool.Put(buf)
 
-	shouldBuf := func(status int) bool {
-		return strings.HasPrefix(w.Header().Get("Content-Type"), "text/")
+	shouldBuf := func(status int, header http.Header) bool {
+		return strings.HasPrefix(header.Get("Content-Type"), "text/")
 	}
 
 	rec := caddyhttp.NewResponseRecorder(w, buf, shouldBuf)
@@ -61,6 +61,8 @@ func (m Markdown) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	if !rec.Buffered() {
 		return nil
 	}
+
+	caddyhttp.CopyHeader(w.Header(), rec.Header())
 
 	output := blackfriday.Run(buf.Bytes())
 

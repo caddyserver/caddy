@@ -80,7 +80,7 @@ func (c templateContext) Include(filename string, args ...interface{}) (template
 // If it is not trusted, be sure to use escaping functions yourself.
 func (c templateContext) HTTPInclude(uri string) (template.HTML, error) {
 	if c.Req.Header.Get(recursionPreventionHeader) == "1" {
-		return "", fmt.Errorf("virtual include cycle")
+		return "", fmt.Errorf("virtual request cycle")
 	}
 
 	buf := bufPool.Get().(*bytes.Buffer)

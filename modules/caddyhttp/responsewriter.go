@@ -18,6 +18,7 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 )
@@ -78,50 +79,87 @@ type responseRecorder struct {
 	wroteHeader  bool
 	statusCode   int
 	buf          *bytes.Buffer
-	shouldBuffer func(status int) bool
+	shouldBuffer ShouldBufferFunc
 	stream       bool
 	size         int
+	header       http.Header
 }
 
 // NewResponseRecorder returns a new ResponseRecorder that can be
-// used instead of a real http.ResponseWriter. The recorder is useful
-// for middlewares which need to buffer a responder's response and
-// process it in its entirety before actually allowing the response to
-// be written. Of course, this has a performance overhead, but
-// sometimes there is no way to avoid buffering the whole response.
-// Still, if at all practical, middlewares should strive to stream
+// used instead of a standard http.ResponseWriter. The recorder is
+// useful for middlewares which need to buffer a response and
+// potentially process its entire body before actually writing the
+// response to the underlying writer. Of course, buffering the entire
+// body has a memory overhead, but sometimes there is no way to avoid
+// buffering the whole response, hence the existence of this type.
+// Still, if at all practical, handlers should strive to stream
 // responses by wrapping Write and WriteHeader methods instead of
 // buffering whole response bodies.
 //
-// Recorders optionally buffer the response. When the headers are
-// to be written, shouldBuffer will be called with the status
-// code that is being written. The rest of the headers can be read
-// from w.Header(). If shouldBuffer returns true, the response
-// will be buffered. You can know the response was buffered if
-// the Buffered() method returns true. If the response was not
-// buffered, Buffered() will return false and that means the
-// response bypassed the recorder and was written directly to the
-// underlying writer. If shouldBuffer is nil, the response will
-// never be buffered (it will always be streamed directly), and
-// buf can also safely be nil.
+// Buffering is actually optional. The shouldBuffer function will
+// be called just before the headers are written. If it returns
+// true, the headers and body will be buffered by this recorder
+// and not written to the underlying writer; if false, the headers
+// will be written immediately and the body will be streamed out
+// directly to the underlying writer. If shouldBuffer is nil,
+// the response will never be buffered and will always be streamed
+// directly to the writer.
 //
-// Before calling this function in a middleware handler, make a
-// new buffer or obtain one from a pool (use the sync.Pool) type.
-// Using a pool is generally recommended for performance gains;
-// do profiling to ensure this is the case. If using a pool, be
-// sure to reset the buffer before using it.
+// You can know if shouldBuffer returned true by calling Buffered().
 //
-// The returned recorder can be used in place of w when calling
-// the next handler in the chain. When that handler returns, you
-// can read the status code from the recorder's Status() method.
-// The response body fills buf if it was buffered, and the headers
-// are available via w.Header().
-func NewResponseRecorder(w http.ResponseWriter, buf *bytes.Buffer, shouldBuffer func(status int) bool) ResponseRecorder {
+// The provided buffer buf should be obtained from a pool for best
+// performance (see the sync.Pool type).
+//
+// Proper usage of a recorder looks like this:
+//
+//     rec := caddyhttp.NewResponseRecorder(w, buf, shouldBuffer)
+//     err := next.ServeHTTP(rec, req)
+//     if err != nil {
+//         return err
+//     }
+//     if !rec.Buffered() {
+//         return nil
+//     }
+//     // process the buffered response here
+//
+// After a response has been buffered, remember that any upstream header
+// manipulations are only manifest in the recorder's Header(), not the
+// Header() of the underlying ResponseWriter. Thus if you wish to inspect
+// or change response headers, you either need to use rec.Header(), or
+// copy rec.Header() into w.Header() first (see caddyhttp.CopyHeader).
+//
+// Once you are ready to write the response, there are two ways you can do
+// it. The easier way is to have the recorder do it:
+//
+//     rec.WriteResponse()
+//
+// This writes the recorded response headers as well as the buffered body.
+// Or, you may wish to do it yourself, especially if you manipulated the
+// buffered body. First you will need to copy the recorded headers, then
+// write the headers with the recorded status code, then write the body
+// (this example writes the recorder's body buffer, but you might have
+// your own body to write instead):
+//
+//     caddyhttp.CopyHeader(w.Header(), rec.Header())
+//     w.WriteHeader(rec.Status())
+//     io.Copy(w, rec.Buffer())
+//
+func NewResponseRecorder(w http.ResponseWriter, buf *bytes.Buffer, shouldBuffer ShouldBufferFunc) ResponseRecorder {
+	// copy the current response header into this buffer so
+	// that any header manipulations on the buffered header
+	// are consistent with what would be written out
+	hdr := make(http.Header)
+	CopyHeader(hdr, w.Header())
 	return &responseRecorder{
 		ResponseWriterWrapper: &ResponseWriterWrapper{ResponseWriter: w},
 		buf:                   buf,
 		shouldBuffer:          shouldBuffer,
+		header:                hdr,
 	}
+}
+
+func (rr *responseRecorder) Header() http.Header {
+	return rr.header
 }
 
 func (rr *responseRecorder) WriteHeader(statusCode int) {
@@ -135,9 +173,12 @@ func (rr *responseRecorder) WriteHeader(statusCode int) {
 	if rr.shouldBuffer == nil {
 		rr.stream = true
 	} else {
-		rr.stream = !rr.shouldBuffer(rr.statusCode)
+		rr.stream = !rr.shouldBuffer(rr.statusCode, rr.header)
 	}
+
+	// if not buffered, immediately write header
 	if rr.stream {
+		CopyHeader(rr.ResponseWriterWrapper.Header(), rr.header)
 		rr.ResponseWriterWrapper.WriteHeader(rr.statusCode)
 	}
 }
@@ -179,15 +220,31 @@ func (rr *responseRecorder) Buffered() bool {
 	return !rr.stream
 }
 
+func (rr *responseRecorder) WriteResponse() error {
+	if rr.stream {
+		return nil
+	}
+	CopyHeader(rr.ResponseWriterWrapper.Header(), rr.header)
+	rr.ResponseWriterWrapper.WriteHeader(rr.statusCode)
+	_, err := io.Copy(rr.ResponseWriterWrapper, rr.buf)
+	return err
+}
 // ResponseRecorder is a http.ResponseWriter that records
-// responses instead of writing them to the client.
+// responses instead of writing them to the client. See
+// docs for NewResponseRecorder for proper usage.
 type ResponseRecorder interface {
 	HTTPInterfaces
 	Status() int
 	Buffer() *bytes.Buffer
 	Buffered() bool
 	Size() int
+	WriteResponse() error
 }
+
+// ShouldBufferFunc is a function that returns true if the
+// response should be buffered, given the pending HTTP status
+// code and response headers.
+type ShouldBufferFunc func(status int, header http.Header) bool
 
 // Interface guards
 var (
