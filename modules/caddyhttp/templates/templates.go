@@ -17,7 +17,6 @@ package templates
 import (
 	"bytes"
 	"fmt"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -71,8 +70,8 @@ func (t *Templates) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 
 	// shouldBuf determines whether to execute templates on this response,
 	// since generally we will not want to execute for images or CSS, etc.
-	shouldBuf := func(status int) bool {
-		ct := w.Header().Get("Content-Type")
+	shouldBuf := func(status int, header http.Header) bool {
+		ct := header.Get("Content-Type")
 		for _, mt := range t.MIMETypes {
 			if strings.Contains(ct, mt) {
 				return true
@@ -96,18 +95,17 @@ func (t *Templates) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 		return err
 	}
 
-	w.Header().Set("Content-Length", strconv.Itoa(buf.Len()))
-	w.Header().Del("Accept-Ranges") // we don't know ranges for dynamically-created content
-	w.Header().Del("Last-Modified") // useless for dynamic content since it's always changing
+	rec.Header().Set("Content-Length", strconv.Itoa(buf.Len()))
+	rec.Header().Del("Accept-Ranges") // we don't know ranges for dynamically-created content
+	rec.Header().Del("Last-Modified") // useless for dynamic content since it's always changing
 
 	// we don't know a way to guickly generate etag for dynamic content,
 	// but we can convert this to a weak etag to kind of indicate that
-	if etag := w.Header().Get("ETag"); etag != "" {
-		w.Header().Set("ETag", "W/"+etag)
+	if etag := rec.Header().Get("Etag"); etag != "" {
+		rec.Header().Set("Etag", "W/"+etag)
 	}
 
-	w.WriteHeader(rec.Status())
-	io.Copy(w, buf)
+	rec.WriteResponse()
 
 	return nil
 }

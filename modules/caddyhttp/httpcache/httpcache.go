@@ -130,8 +130,7 @@ func (c *Cache) getter(ctx groupcache.Context, key string, dest groupcache.Sink)
 
 	// we need to record the response if we are to cache it; only cache if
 	// request is successful (TODO: there's probably much more nuance needed here)
-	var rr caddyhttp.ResponseRecorder
-	rr = caddyhttp.NewResponseRecorder(combo.rw, buf, func(status int) bool {
+	rr := caddyhttp.NewResponseRecorder(combo.rw, buf, func(status int, header http.Header) bool {
 		shouldBuf := status < 300
 
 		if shouldBuf {
@@ -141,7 +140,7 @@ func (c *Cache) getter(ctx groupcache.Context, key string, dest groupcache.Sink)
 			// the rest will be the body, which will be written
 			// implicitly for us by the recorder
 			err := gob.NewEncoder(buf).Encode(headerAndStatus{
-				Header: rr.Header(),
+				Header: header,
 				Status: status,
 			})
 			if err != nil {

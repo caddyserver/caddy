@@ -593,6 +593,19 @@ func (ws WeakString) String() string {
 	return string(ws)
 }
 
+// CopyHeader copies HTTP headers by completely
+// replacing dest with src. (This allows deletions
+// to be propagated, assuming src started as a
+// consistent copy of dest.)
+func CopyHeader(dest, src http.Header) {
+	for field := range dest {
+		delete(dest, field)
+	}
+	for field, val := range src {
+		dest[field] = val
+	}
+}
+
 // StatusCodeMatches returns true if a real HTTP status code matches
 // the configured status code, which may be either a real HTTP status
 // code or an integer representing a class of codes (e.g. 4 for all
