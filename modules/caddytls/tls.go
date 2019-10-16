@@ -189,7 +189,12 @@ func (t *TLS) Manage(names []string) error {
 	for _, name := range names {
 		ap := t.getAutomationPolicyForName(name)
 		magic := certmagic.New(t.certCache, ap.makeCertMagicConfig(t.ctx))
-		err := magic.Manage([]string{name})
+		var err error
+		if ap.ManageSync {
+			err = magic.ManageSync([]string{name})
+		} else {
+			err = magic.ManageAsync(t.ctx.Context, []string{name})
+		}
 		if err != nil {
 			return fmt.Errorf("automate: manage %s: %v", name, err)
 		}
@@ -317,6 +322,7 @@ type AutomationConfig struct {
 type AutomationPolicy struct {
 	Hosts         []string        `json:"hosts,omitempty"`
 	ManagementRaw json.RawMessage `json:"management,omitempty"`
+	ManageSync    bool            `json:"manage_sync,omitempty"`
 
 	Management ManagerMaker `json:"-"`
 }
