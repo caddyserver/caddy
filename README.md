@@ -25,7 +25,7 @@ Please file issues to propose new features and report bugs, and after the bug or
 Requirements:
 
 - [Go 1.13 or newer](https://golang.org/dl/)
-- Make sure you do not disable [Go modules](https://github.com/golang/go/wiki/Modules) (`export GO111MODULE=auto`)
+- Do NOT disable [Go modules](https://github.com/golang/go/wiki/Modules) (`export GO111MODULE=auto`)
 
 Download the `v2` source code:
 
@@ -120,10 +120,10 @@ Caddy 2 can be configured with a Caddyfile, much like in v1, for example:
 ```plain
 example.com
 
-templates
-encode    gzip zstd
 try_files {path}.html {path}
-reverse_proxy /api localhost:9005
+encode gzip zstd
+reverse_proxy /api  localhost:9005
+php_fastcgi   /blog unix//path/to/socket
 file_server
 ```
 
@@ -199,6 +199,7 @@ The following is a non-comprehensive list of significant improvements over Caddy
     - TLS Session Ticket Ephemeral Keys (STEKs) can be rotated in a cluster for increased performance (no other web server does this either!)
     - Ability to select a specific certificate per ClientHello given multiple qualifying certificates
     - Provide TLS certificates without persisting them to disk; keep private keys entirely in memory
+	- Certificate management at startup is now asynchronous and much easier to use through machine reboots and in unsupervised settings
 - All-new HTTP server core
 	- Listeners can be configured for any network type, address, and port range
 	- Customizable TLS connection policies
@@ -218,6 +219,8 @@ The following is a non-comprehensive list of significant improvements over Caddy
     - Done away with URL-rewriting hacks often needed in Caddy 1
 	- Highly descriptive/traceable errors
 	- Very flexible error handling, with the ability to specify a whole list of routes just for error cases
+	- The proxy has numerous improvements, including dynamic backends and more configurable health checks
+	- FastCGI support integrated with the reverse proxy
 	- More control over automatic HTTPS: disable entirely, disable only HTTP->HTTPS redirects, disable only cert management, and for certain names, etc.
     - Use Starlark to build custom, dynamic HTTP handlers at request-time
         - We are finding that -- on average -- Caddy 2's Starlark handlers are ~1.25-2x faster than NGINX+Lua.
