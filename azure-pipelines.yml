@@ -63,7 +63,7 @@ steps:
     Write-Host "Downloading Go..."
     (New-Object System.Net.WebClient).DownloadFile("https://dl.google.com/go/$(LATEST_GO).windows-amd64.zip", "$(LATEST_GO).windows-amd64.zip")
     Write-Host "Extracting Go... (I'm slow too)"
-    Expand-Archive "$(LATEST_GO).windows-amd64.zip" -DestinationPath "$(gorootDir)"
+    7z x "$(LATEST_GO).windows-amd64.zip" -o"$(gorootDir)"
   condition: eq( variables['Agent.OS'], 'Windows_NT' )
   displayName: Install Go on Windows
 
