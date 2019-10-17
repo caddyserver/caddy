@@ -56,7 +56,10 @@ steps:
   condition: eq( variables['Agent.OS'], 'Darwin' )
   displayName: Install Go on macOS
 
+# The low performance is partly due to PowerShell's attempt to update the progress bar. Disabling it speeds up the process.
+# Reference: https://github.com/PowerShell/PowerShell/issues/2138
 - powershell: |
+    $ProgressPreference = 'SilentlyContinue'
     Write-Host "Downloading Go... (please be patient, I am very slow)"
     (New-Object System.Net.WebClient).DownloadFile("https://dl.google.com/go/$(LATEST_GO).windows-amd64.zip", "$(LATEST_GO).windows-amd64.zip")
     Write-Host "Extracting Go... (I'm slow too)"
@@ -88,8 +91,8 @@ steps:
   workingDirectory: '$(modulePath)'
   displayName: Get dependencies
 
+# its behavior is governed by .golangci.yml
 - script: |
-    # its behavior is governed by .golangci.yml
     (golangci-lint run --out-format junit-xml) > test-results/lint-result.xml
     exit 0
   workingDirectory: '$(modulePath)'
