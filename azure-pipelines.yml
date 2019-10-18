@@ -62,7 +62,7 @@ steps:
     $ProgressPreference = 'SilentlyContinue'
     Write-Host "Downloading Go..."
     (New-Object System.Net.WebClient).DownloadFile("https://dl.google.com/go/$(LATEST_GO).windows-amd64.zip", "$(LATEST_GO).windows-amd64.zip")
-    Write-Host "Extracting Go... (I'm slow too)"
+    Write-Host "Extracting Go... (I'm slow)"
     7z x "$(LATEST_GO).windows-amd64.zip" -o"$(gorootDir)"
   condition: eq( variables['Agent.OS'], 'Windows_NT' )
   displayName: Install Go on Windows
@@ -79,11 +79,21 @@ steps:
 - bash: |
     printf "Using go at: $(which go)\n"
     printf "Go version: $(go version)\n"
+    echo "##vso[task.setvariable variable=GO_CACHE]$(go env GOCACHE)"
     printf "\n\nGo environment:\n\n"
     go env
     printf "\n\nSystem environment:\n\n"
     env
   displayName: Print Go version and environment
+
+# https://docs.microsoft.com/en-us/azure/devops/pipelines/caching/?view=azure-devops
+- task: CacheBeta@0
+  inputs:
+    # Non-absolute paths are resolved against $(System.DefaultWorkingDirectory), which is the root of the project.
+    # TODO: include go.sum as part of the key.
+    key: '"gocache" | "$(Agent.OS)"'
+    path: $(GO_CACHE)
+  displayName: Cache Go packages
 
 - script: |
     go get -v -t -d ./...
