@@ -67,6 +67,15 @@ steps:
   condition: eq( variables['Agent.OS'], 'Windows_NT' )
   displayName: Install Go on Windows
 
+# https://docs.microsoft.com/en-us/azure/devops/pipelines/caching/?view=azure-devops
+- task: CacheBeta@0
+  inputs:
+    # Non-absolute paths are resolved against $(System.DefaultWorkingDirectory), which is the root of the project.
+    # TODO: include go.sum as part of the key.
+    key: '"gocache" | "$(Agent.OS)"'
+    path: $(GO_CACHE)
+  displayName: Cache Go packages
+
 - bash: curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.19.1
   displayName: Install golangci-lint
 
@@ -85,15 +94,6 @@ steps:
     printf "\n\nSystem environment:\n\n"
     env
   displayName: Print Go version and environment
-
-# https://docs.microsoft.com/en-us/azure/devops/pipelines/caching/?view=azure-devops
-- task: CacheBeta@0
-  inputs:
-    # Non-absolute paths are resolved against $(System.DefaultWorkingDirectory), which is the root of the project.
-    # TODO: include go.sum as part of the key.
-    key: '"gocache" | "$(Agent.OS)"'
-    path: $(GO_CACHE)
-  displayName: Cache Go packages
 
 - script: |
     go get -v -t -d ./...
