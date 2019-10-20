@@ -15,8 +15,10 @@
 package rewrite
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
@@ -29,9 +31,14 @@ func init() {
 
 // Rewrite is a middleware which can rewrite HTTP requests.
 type Rewrite struct {
-	Method   string `json:"method,omitempty"`
-	URI      string `json:"uri,omitempty"`
-	Rehandle bool   `json:"rehandle,omitempty"`
+	Method string `json:"method,omitempty"`
+	URI    string `json:"uri,omitempty"`
+
+	StripPathPrefix string `json:"strip_path_prefix,omitempty"`
+	StripPathSuffix string `json:"strip_path_suffix,omitempty"`
+
+	HTTPRedirect caddyhttp.WeakString `json:"http_redirect,omitempty"`
+	Rehandle     bool                 `json:"rehandle,omitempty"`
 }
 
 // CaddyModule returns the Caddy module information.
@@ -42,18 +49,28 @@ func (Rewrite) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
+// Validate ensures rewr's configuration is valid.
+func (rewr Rewrite) Validate() error {
+	if rewr.HTTPRedirect != "" && rewr.Rehandle {
+		return fmt.Errorf("cannot be configured to both write a redirect response and rehandle internally")
+	}
+	return nil
+}
+
 func (rewr Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
-	var rehandleNeeded bool
+	var changed bool
 
+	// rewrite the method
 	if rewr.Method != "" {
 		method := r.Method
 		r.Method = strings.ToUpper(repl.ReplaceAll(rewr.Method, ""))
 		if r.Method != method {
-			rehandleNeeded = true
+			changed = true
 		}
 	}
 
+	// rewrite the URI
 	if rewr.URI != "" {
 		oldURI := r.RequestURI
 		newURI := repl.ReplaceAll(rewr.URI, "")
@@ -73,12 +90,42 @@ func (rewr Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 		}
 
 		if newURI != oldURI {
-			rehandleNeeded = true
+			changed = true
 		}
 	}
 
-	if rehandleNeeded && rewr.Rehandle {
+	// strip path prefix or suffix
+	if rewr.StripPathPrefix != "" {
+		prefix := repl.ReplaceAll(rewr.StripPathPrefix, "")
+		r.URL.Path = strings.TrimPrefix(r.URL.Path, prefix)
+		newURI := r.URL.String()
+		if newURI != r.RequestURI {
+			changed = true
+		}
+		r.RequestURI = newURI
+	}
+	if rewr.StripPathSuffix != "" {
+		suffix := repl.ReplaceAll(rewr.StripPathSuffix, "")
+		r.URL.Path = strings.TrimSuffix(r.URL.Path, suffix)
+		newURI := r.URL.String()
+		if newURI != r.RequestURI {
+			changed = true
+		}
+		r.RequestURI = newURI
+	}
+
+	if changed && rewr.Rehandle {
 		return caddyhttp.ErrRehandle
+	}
+
+	if changed && rewr.HTTPRedirect != "" {
+		statusCode, err := strconv.Atoi(repl.ReplaceAll(rewr.HTTPRedirect.String(), ""))
+		if err != nil {
+			return caddyhttp.Error(http.StatusInternalServerError, err)
+		}
+		w.Header().Set("Location", r.RequestURI)
+		w.WriteHeader(statusCode)
+		return nil
 	}
 
 	return next.ServeHTTP(w, r)
