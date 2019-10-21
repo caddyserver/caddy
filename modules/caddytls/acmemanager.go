@@ -138,14 +138,10 @@ func (m *ACMEManagerMaker) makeCertMagicConfig(ctx caddy.Context) certmagic.Conf
 							return err
 						}
 					}
-					// check the rate limiter last, since
-					// even checking consumes a token; so
-					// don't even bother checking if the
-					// other regulations fail anyway
-					if onDemand.RateLimit != nil {
-						if !onDemandRateLimiter.Allow() {
-							return fmt.Errorf("on-demand rate limit exceeded")
-						}
+					// check the rate limiter last because
+					// doing so makes a reservation
+					if !onDemandRateLimiter.Allow() {
+						return fmt.Errorf("on-demand rate limit exceeded")
 					}
 				}
 				return nil
