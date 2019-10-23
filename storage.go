@@ -17,7 +17,6 @@ package caddy
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 
 	"github.com/mholt/certmagic"
 )
@@ -31,34 +30,15 @@ type StorageConverter interface {
 	CertMagicStorage() (certmagic.Storage, error)
 }
 
-// homeDir returns the best guess of the current user's home
-// directory from environment variables. If unknown, "." (the
-// current directory) is returned instead.
-func homeDir() string {
-	home := os.Getenv("HOME")
-	if home == "" && runtime.GOOS == "windows" {
-		drive := os.Getenv("HOMEDRIVE")
-		path := os.Getenv("HOMEPATH")
-		home = drive + path
-		if drive == "" || path == "" {
-			home = os.Getenv("USERPROFILE")
-		}
-	}
-	if home == "" {
-		home = "."
-	}
-	return home
-}
-
 // dataDir returns a directory path that is suitable for storage.
-// https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html#variables
+// If the location cannot be determined, use current directory.
 func dataDir() string {
-	baseDir := filepath.Join(homeDir(), ".local", "share")
-	if xdgData := os.Getenv("XDG_DATA_HOME"); xdgData != "" {
-		baseDir = xdgData
+	baseDir, err := os.UserConfigDir()
+	if err != nil {
+		baseDir, err = os.Getwd()
+		if err != nil {
+			panic("failed to locate current directory")
+		}
 	}
 	return filepath.Join(baseDir, "caddy")
 }
-
-// TODO: Consider using Go 1.13's os.UserConfigDir() (https://golang.org/pkg/os/#UserConfigDir)
-// if we are going to store the last-loaded config anywhere
