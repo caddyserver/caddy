@@ -19,6 +19,7 @@ require (
 	github.com/naoina/toml v0.1.1
 	github.com/russross/blackfriday v0.0.0-20170610170232-067529f716f4
 	golang.org/x/net v0.0.0-20190328230028-74de082e2cca
+	golang.org/x/sys v0.0.0-20191023151326-f89234f9a2c2 // indirect
 	gopkg.in/mcuadros/go-syslog.v2 v2.2.1
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 	gopkg.in/yaml.v2 v2.2.2
