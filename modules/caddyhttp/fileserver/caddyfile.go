@@ -76,6 +76,15 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 				}
 				fsrv.Browse = new(Browse)
 				h.Args(&fsrv.Browse.TemplateFile)
+			case "dir_archives":
+				if fsrv.Browse == nil {
+					fsrv.Browse = new(Browse)
+				}
+				selectedArchives := h.RemainingArgs()
+				if err := validateArchiveSelection(selectedArchives); err != nil {
+					return nil, err
+				}
+				fsrv.Browse.DirArchives = selectedArchives
 			default:
 				return nil, h.Errf("unknown subdirective '%s'", h.Val())
 			}

@@ -14,6 +14,7 @@ require (
 	github.com/klauspost/cpuid v1.2.3
 	github.com/lucas-clemente/quic-go v0.15.2
 	github.com/manifoldco/promptui v0.7.0 // indirect
+	github.com/mholt/archiver/v3 v3.3.0
 	github.com/miekg/dns v1.1.29 // indirect
 	github.com/naoina/go-stringutil v0.1.0 // indirect
 	github.com/naoina/toml v0.1.1

@@ -17,23 +17,41 @@ package fileserver
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"html/template"
+	"io"
 	"net/http"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/mholt/archiver/v3"
 )
 
 // Browse configures directory browsing.
 type Browse struct {
 	// Use this template file instead of the default browse template.
-	TemplateFile string `json:"template_file,omitempty"`
+	TemplateFile string   `json:"template_file,omitempty"`
+	DirArchives  []string `json:"dir_archives,omitempty"`
 
 	template *template.Template
 }
+
+const (
+	zipContentType     = "application/zip"
+	zipExtension       = "zip"
+	tarContentType     = "application/tar"
+	tarExtension       = "tar"
+	tarGzipContentType = "application/tar+gzip"
+	tarGzipExtension   = "tar.gz"
+)
+
+var (
+	extensionToContentType = map[string]string{zipExtension: zipContentType, tarExtension: tarContentType, tarGzipExtension: tarGzipContentType}
+)
 
 func (fsrv *FileServer) serveBrowse(dirPath string, w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	// navigation on the client-side gets messed up if the
@@ -46,13 +64,19 @@ func (fsrv *FileServer) serveBrowse(dirPath string, w http.ResponseWriter, r *ht
 		return nil
 	}
 
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	suffix := repl.ReplaceAll(r.URL.Path, "")
+	contentType := r.URL.Query().Get("archive")
+
+	if contentType != "" {
+		return fsrv.streamFolderAsArchive(suffix, dirPath, contentType, w, r, next)
+	}
+
 	dir, err := fsrv.openFile(dirPath, w)
 	if err != nil {
 		return err
 	}
 	defer dir.Close()
-
-	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	// calling path.Clean here prevents weird breadcrumbs when URL paths are sketchy like /%2e%2e%2f
 	listing, err := fsrv.loadDirectoryContents(dir, path.Clean(r.URL.Path), repl)
@@ -147,6 +171,98 @@ func (fsrv *FileServer) browseWriteHTML(listing browseListing) (*bytes.Buffer, e
 	return buf, err
 }
 
+func (fsrv *FileServer) streamFolderAsArchive(baseFolderName, downloadFolderName, extension string, w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
+	baseFolderName = baseFolderName[1:] // Remove initial slash
+	if err := validateExtension(extension); err != nil {
+		return writeUnsupportedMediaType(w, err)
+	}
+	contentType := extensionToContentType[extension]
+
+	writer, err := fsrv.getArchiveWriter(contentType)
+	if err != nil {
+		return writeUnsupportedMediaType(w, err)
+	}
+	defer writer.Close()
+
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s.%s\"", path.Base(baseFolderName), extension))
+	err = writer.Create(w)
+	if err != nil {
+		return err
+	}
+
+	downloadFolderInfo, err := os.Stat(downloadFolderName)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fsrv.notFound(w, r, next)
+		}
+		return err
+	}
+
+	err = filepath.Walk(downloadFolderName, func(fpath string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info == nil {
+			return fmt.Errorf("nil file info")
+		}
+
+		// open the file, if it has any content
+		var file io.ReadCloser
+		if info.Mode().IsRegular() {
+			file, err = os.Open(fpath)
+			if err != nil {
+				return fmt.Errorf("%s: opening: %v", fpath, err)
+			}
+			defer file.Close()
+		}
+
+		// make its archive-internal name
+		internalName, err := archiver.NameInArchive(downloadFolderInfo, downloadFolderName, fpath)
+		if err != nil {
+			return fmt.Errorf("making internal archive name for %s: %v", fpath, err)
+		}
+
+		// write the file to the archive
+		err = writer.Write(archiver.File{
+			FileInfo: archiver.FileInfo{
+				FileInfo:   info,
+				CustomName: internalName,
+			},
+			ReadCloser: file,
+		})
+		if err != nil {
+			return fmt.Errorf("writing file to archive: %v", err)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return fmt.Errorf("walking %s: %v", downloadFolderName, err)
+	}
+
+	return nil
+}
+
+func (fsrv *FileServer) getArchiveWriter(contentType string) (archiver.Writer, error) {
+	switch contentType {
+	default:
+		return nil, fmt.Errorf("A file format with content type %v is not supported", contentType)
+	case zipContentType:
+		return &archiver.Zip{
+			CompressionLevel:       0,
+			MkdirAll:               true,
+			SelectiveCompression:   true,
+			ImplicitTopLevelFolder: true,
+		}, nil
+	case tarContentType:
+		return &archiver.Tar{MkdirAll: true, ImplicitTopLevelFolder: true}, nil
+	case tarGzipContentType:
+		return &archiver.TarGz{Tar: &archiver.Tar{MkdirAll: true, ImplicitTopLevelFolder: true}}, nil
+	}
+}
+
 // isSymlink return true if f is a symbolic link
 func isSymlink(f os.FileInfo) bool {
 	return f.Mode()&os.ModeSymlink != 0
@@ -164,4 +280,33 @@ func isSymlinkTargetDir(f os.FileInfo, root, urlPath string) bool {
 		return false
 	}
 	return targetInfo.IsDir()
+}
+
+func validateArchiveSelection(extensions []string) error {
+	var invalidExtensions []string
+
+	for _, extension := range extensions {
+		if _, keyFound := extensionToContentType[extension]; !keyFound {
+			invalidExtensions = append(invalidExtensions, extension)
+		}
+	}
+
+	if len(invalidExtensions) == 0 {
+		return nil
+	}
+
+	return fmt.Errorf("these extensions are not valid choices %v", invalidExtensions)
+}
+
+func validateExtension(extension string) error {
+	if _, ok := extensionToContentType[extension]; !ok {
+		return fmt.Errorf("A file format with extension %v is not supported", extension)
+	}
+	return nil
+}
+
+func writeUnsupportedMediaType(w http.ResponseWriter, err error) error {
+	w.WriteHeader(415)
+	_, err = w.Write([]byte(fmt.Sprint(err)))
+	return err
 }

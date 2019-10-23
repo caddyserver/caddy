@@ -148,7 +148,9 @@ td:nth-child(2) {
 }
 
 td:nth-child(3),
-th:nth-child(3) {
+th:nth-child(3),
+td:nth-child(5),
+th:nth-child(5) {
 	padding: 0 20px 0 20px;
 }
 
@@ -329,6 +331,12 @@ footer {
 							<a href="?sort=time&order=asc{{if ne 0 .ItemsLimitedTo}}&limit={{.ItemsLimitedTo}}{{end}}">Modified</a>
 							{{- end}}
 						</th>
+						{{- $dirArchives := .DirArchives}} 
+						{{- if $dirArchives}}
+						<th>
+							Download
+						</th>
+						{{- end}}
 						<th class="hideable"></th>
 					</tr>
 					</thead>
@@ -365,6 +373,16 @@ footer {
 						<td data-order="{{.Size}}">{{.HumanSize}}</td>
 						{{- end}}
 						<td class="hideable"><time datetime="{{.HumanModTime "2006-01-02T15:04:05Z"}}">{{.HumanModTime "01/02/2006 03:04:05 PM -07:00"}}</time></td>
+						{{- if $dirArchives}}
+						<td>
+							{{- if .IsDir}}
+								{{- $url := html .URL}}
+								{{- range $dirArchives}}
+								<a href="{{$url}}?archive={{.}}">{{.}}</a>
+								{{- end}}
+							{{- end}}
+						</td>
+						{{- end}}
 						<td class="hideable"></td>
 					</tr>
 					{{- end}}

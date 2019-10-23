@@ -65,6 +65,9 @@ type FileServer struct {
 	// it will invoke the next handler in the chain instead of returning
 	// a 404 error. By default, this is false (disabled).
 	PassThru bool `json:"pass_thru,omitempty"`
+
+	// A list of extensions allowed to download folders
+	DirArchives []string `json:"dir_archives,omitempty"`
 }
 
 // CaddyModule returns the Caddy module information.
@@ -111,8 +114,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	filesToHide := fsrv.transformHidePaths(repl)
 
 	root := repl.ReplaceAll(fsrv.Root, ".")
-	suffix := repl.ReplaceAll(r.URL.Path, "")
-	filename := sanitizedPathJoin(root, suffix)
+	filename := sanitizedPathJoin(root, r.URL.Path)
 
 	// get information about the file
 	info, err := os.Stat(filename)

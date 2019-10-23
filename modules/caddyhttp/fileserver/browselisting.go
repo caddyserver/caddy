@@ -65,12 +65,13 @@ func (fsrv *FileServer) directoryListing(files []os.FileInfo, canGoUp bool, urlP
 	}
 
 	return browseListing{
-		Name:     path.Base(urlPath),
-		Path:     urlPath,
-		CanGoUp:  canGoUp,
-		Items:    fileInfos,
-		NumDirs:  dirCount,
-		NumFiles: fileCount,
+		Name:        path.Base(urlPath),
+		Path:        urlPath,
+		CanGoUp:     canGoUp,
+		Items:       fileInfos,
+		NumDirs:     dirCount,
+		NumFiles:    fileCount,
+		DirArchives: fsrv.Browse.DirArchives,
 	}
 }
 
@@ -101,6 +102,9 @@ type browseListing struct {
 
 	// If ≠0 then Items have been limited to that many elements.
 	ItemsLimitedTo int
+
+	// Available dir archives
+	DirArchives []string
 }
 
 // Breadcrumbs returns l.Path where every element maps

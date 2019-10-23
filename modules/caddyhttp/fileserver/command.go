@@ -17,8 +17,11 @@ package fileserver
 import (
 	"encoding/json"
 	"flag"
+	"fmt"
 	"log"
+	"reflect"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
@@ -55,6 +58,7 @@ respond with a file listing.`,
 			fs.String("listen", "", "The address to which to bind the listener")
 			fs.Bool("browse", false, "Enable directory browsing")
 			fs.Bool("templates", false, "Enable template rendering")
+			fs.String("dir-archives", "", fmt.Sprintf("Formats to download directories separated by comma. Possible values: %v", reflect.ValueOf(extensionToContentType).MapKeys()))
 			return fs
 		}(),
 	})
@@ -65,6 +69,7 @@ func cmdFileServer(fs caddycmd.Flags) (int, error) {
 	root := fs.String("root")
 	listen := fs.String("listen")
 	browse := fs.Bool("browse")
+	dirArchives := fs.String("dir-archives")
 	templates := fs.Bool("templates")
 
 	var handlers []json.RawMessage
@@ -77,6 +82,22 @@ func cmdFileServer(fs caddycmd.Flags) (int, error) {
 	handler := FileServer{Root: root}
 	if browse {
 		handler.Browse = new(Browse)
+	}
+
+	var parsedDirArchives = make([]string, 0)
+	if dirArchives := strings.Trim(dirArchives, " "); dirArchives != "" {
+		parsedDirArchives = strings.Split(dirArchives, ",")
+		for i, archive := range parsedDirArchives {
+			parsedDirArchives[i] = strings.Trim(archive, " ")
+		}
+	}
+	if err := validateArchiveSelection(parsedDirArchives); err != nil {
+		return 1, err
+	} else {
+		if !browse {
+			return caddy.ExitCodeFailedStartup, fmt.Errorf("dir-archives directive requires browse")
+		}
+		handler.Browse.DirArchives = parsedDirArchives
 	}
 
 	handlers = append(handlers, caddyconfig.JSONModuleObject(handler, "handler", "file_server", nil))
