@@ -524,8 +524,8 @@ var emptyHandler HandlerFunc = func(http.ResponseWriter, *http.Request) error { 
 
 // WeakString is a type that unmarshals any JSON value
 // as a string literal, with the following exceptions:
-// 1) actual string values are decoded as strings, and
-// 2) null is decoded as empty string
+// 1) actual string values are decoded as strings; and
+// 2) null is decoded as empty string;
 // and provides methods for getting the value as various
 // primitive types. However, using this type removes any
 // type safety as far as deserializing JSON is concerned.
