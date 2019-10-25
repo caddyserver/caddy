@@ -146,14 +146,15 @@ func (se StringEncoder) EncodeEntry(ent zapcore.Entry, fields []zapcore.Field) (
 
 // LogEncoderConfig holds configuration common to most encoders.
 type LogEncoderConfig struct {
-	MessageKey    *string `json:"message_key,omitempty"`
-	LevelKey      *string `json:"level_key,omitempty"`
-	TimeKey       *string `json:"time_key,omitempty"`
-	NameKey       *string `json:"name_key,omitempty"`
-	CallerKey     *string `json:"caller_key,omitempty"`
-	StacktraceKey *string `json:"stacktrace_key,omitempty"`
-	LineEnding    *string `json:"line_ending,omitempty"`
-	TimeFormat    string  `json:"time_format,omitempty"`
+	MessageKey     *string `json:"message_key,omitempty"`
+	LevelKey       *string `json:"level_key,omitempty"`
+	TimeKey        *string `json:"time_key,omitempty"`
+	NameKey        *string `json:"name_key,omitempty"`
+	CallerKey      *string `json:"caller_key,omitempty"`
+	StacktraceKey  *string `json:"stacktrace_key,omitempty"`
+	LineEnding     *string `json:"line_ending,omitempty"`
+	TimeFormat     string  `json:"time_format,omitempty"`
+	DurationFormat string  `json:"duration_format,omitempty"`
 }
 
 // ZapcoreEncoderConfig returns the equivalent zapcore.EncoderConfig.
@@ -182,14 +183,47 @@ func (lec *LogEncoderConfig) ZapcoreEncoderConfig() zapcore.EncoderConfig {
 		cfg.LineEnding = *lec.LineEnding
 	}
 	if lec.TimeFormat != "" {
-		timeFormat := lec.TimeFormat
+		var timeFormatter zapcore.TimeEncoder
 		switch lec.TimeFormat {
-		case "rfc3339":
-			timeFormat = time.RFC3339
+		case "", "unix_seconds_float":
+			timeFormatter = zapcore.EpochTimeEncoder
+		case "unix_milli_float":
+			timeFormatter = zapcore.EpochMillisTimeEncoder
+		case "unix_nano":
+			timeFormatter = zapcore.EpochNanosTimeEncoder
+		case "iso8601":
+			timeFormatter = zapcore.ISO8601TimeEncoder
+		default:
+			timeFormat := lec.TimeFormat
+			switch lec.TimeFormat {
+			case "rfc3339":
+				timeFormat = time.RFC3339
+			case "rfc3339_nano":
+				timeFormat = time.RFC3339Nano
+			case "wall":
+				timeFormat = "2006/01/02 15:04:05"
+			case "wall_milli":
+				timeFormat = "2006/01/02 15:04:05.000"
+			case "wall_nano":
+				timeFormat = "2006/01/02 15:04:05.000000000"
+			}
+			timeFormatter = func(ts time.Time, encoder zapcore.PrimitiveArrayEncoder) {
+				encoder.AppendString(ts.UTC().Format(timeFormat))
+			}
 		}
-		cfg.EncodeTime = func(ts time.Time, encoder zapcore.PrimitiveArrayEncoder) {
-			encoder.AppendString(ts.UTC().Format(timeFormat))
+		cfg.EncodeTime = timeFormatter
+	}
+	if lec.DurationFormat != "" {
+		var durFormatter zapcore.DurationEncoder
+		switch lec.DurationFormat {
+		case "", "seconds":
+			durFormatter = zapcore.SecondsDurationEncoder
+		case "nano":
+			durFormatter = zapcore.NanosDurationEncoder
+		case "string":
+			durFormatter = zapcore.StringDurationEncoder
 		}
+		cfg.EncodeDuration = durFormatter
 	}
 	return cfg
 }

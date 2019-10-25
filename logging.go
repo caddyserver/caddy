@@ -65,48 +65,9 @@ func (logging *Logging) openLogs(ctx Context) error {
 		}
 	}
 
-	// as a special case, set up the default structured Caddy log first
-	if logging.Logs != nil {
-		newDefault := new(defaultCustomLog)
-		var ok bool
-		newDefault.CustomLog, ok = logging.Logs["default"]
-		if ok {
-			err := newDefault.CustomLog.provision(ctx, logging)
-			if err != nil {
-				return fmt.Errorf("setting up default log: %v", err)
-			}
-			newDefault.logger = zap.New(newDefault.CustomLog.core)
-		} else {
-			var err error
-			newDefault, err = newDefaultProductionLog()
-			if err != nil {
-				return fmt.Errorf("setting up default production log: %v", err)
-			}
-		}
-
-		// redirect the default caddy logs
-		defaultLoggerMu.Lock()
-		oldDefault := defaultLogger
-		defaultLogger = newDefault
-		defaultLoggerMu.Unlock()
-
-		// if the new writer is different, indicate it in the logs for convenience
-		var newDefaultLogWriterKey, currentDefaultLogWriterKey string
-		var newDefaultLogWriterStr, currentDefaultLogWriterStr string
-		if newDefault.writerOpener != nil {
-			newDefaultLogWriterKey = newDefault.writerOpener.WriterKey()
-			newDefaultLogWriterStr = newDefault.writerOpener.String()
-		}
-		if oldDefault.writerOpener != nil {
-			currentDefaultLogWriterKey = oldDefault.writerOpener.WriterKey()
-			currentDefaultLogWriterStr = oldDefault.writerOpener.String()
-		}
-		if newDefaultLogWriterKey != currentDefaultLogWriterKey {
-			oldDefault.logger.Info("redirected default logger",
-				zap.String("from", currentDefaultLogWriterStr),
-				zap.String("to", newDefaultLogWriterStr),
-			)
-		}
+	// as a special case, set up the default structured Caddy log next
+	if err := logging.setupNewDefault(ctx); err != nil {
+		return err
 	}
 
 	// then set up any other custom logs
@@ -118,6 +79,59 @@ func (logging *Logging) openLogs(ctx Context) error {
 		if err != nil {
 			return fmt.Errorf("setting up custom log '%s': %v", name, err)
 		}
+	}
+
+	return nil
+}
+
+func (logging *Logging) setupNewDefault(ctx Context) error {
+	if logging.Logs == nil {
+		logging.Logs = make(map[string]*CustomLog)
+	}
+
+	// extract the user-defined default log, if any
+	var newDefault *defaultCustomLog
+	if userDefault, ok := logging.Logs["default"]; ok {
+		newDefault.CustomLog = userDefault
+	} else {
+		// if none, make one with our own default settings
+		var err error
+		newDefault, err = newDefaultProductionLog()
+		if err != nil {
+			return fmt.Errorf("setting up default Caddy log: %v", err)
+		}
+		logging.Logs["default"] = newDefault.CustomLog
+	}
+
+	// set up this new log
+	err := newDefault.CustomLog.provision(ctx, logging)
+	if err != nil {
+		return fmt.Errorf("setting up default log: %v", err)
+	}
+	newDefault.logger = zap.New(newDefault.CustomLog.core)
+
+	// redirect the default caddy logs
+	defaultLoggerMu.Lock()
+	oldDefault := defaultLogger
+	defaultLogger = newDefault
+	defaultLoggerMu.Unlock()
+
+	// if the new writer is different, indicate it in the logs for convenience
+	var newDefaultLogWriterKey, currentDefaultLogWriterKey string
+	var newDefaultLogWriterStr, currentDefaultLogWriterStr string
+	if newDefault.writerOpener != nil {
+		newDefaultLogWriterKey = newDefault.writerOpener.WriterKey()
+		newDefaultLogWriterStr = newDefault.writerOpener.String()
+	}
+	if oldDefault.writerOpener != nil {
+		currentDefaultLogWriterKey = oldDefault.writerOpener.WriterKey()
+		currentDefaultLogWriterStr = oldDefault.writerOpener.String()
+	}
+	if newDefaultLogWriterKey != currentDefaultLogWriterKey {
+		oldDefault.logger.Info("redirected default logger",
+			zap.String("from", currentDefaultLogWriterStr),
+			zap.String("to", newDefaultLogWriterStr),
+		)
 	}
 
 	return nil
@@ -228,12 +242,12 @@ func (sll *StandardLibLog) provision(ctx Context, logging *Logging) error {
 
 // CustomLog represents a custom logger configuration.
 type CustomLog struct {
-	WriterRaw    json.RawMessage `json:"writer,omitempty"`
-	EncoderRaw   json.RawMessage `json:"encoder,omitempty"`
-	Level        string          `json:"level,omitempty"`
-	Sampling     *LogSampling    `json:"sampling,omitempty"`
-	AllowModules []string        `json:"allow_modules,omitempty"`
-	DenyModules  []string        `json:"deny_modules,omitempty"`
+	WriterRaw  json.RawMessage `json:"writer,omitempty"`
+	EncoderRaw json.RawMessage `json:"encoder,omitempty"`
+	Level      string          `json:"level,omitempty"`
+	Sampling   *LogSampling    `json:"sampling,omitempty"`
+	Include    []string        `json:"include,omitempty"`
+	Exclude    []string        `json:"exclude,omitempty"`
 
 	writerOpener WriterOpener
 	writer       io.WriteCloser
@@ -261,33 +275,33 @@ func (cl *CustomLog) provision(ctx Context, logging *Logging) error {
 		return fmt.Errorf("unrecognized log level: %s", cl.Level)
 	}
 
-	// If both Allow and Deny lists are populated, then each item must
+	// If both Include and Exclude lists are populated, then each item must
 	// be a superspace or subspace of an item in the other list, because
 	// populating both lists means that any given item is either a rule
 	// or an exception to another rule. But if the item is not a super-
 	// or sub-space of any item in the other list, it is neither a rule
 	// nor an exception, and is a contradiction. Ensure, too, that the
 	// sets do not intersect, which is also a contradiction.
-	if len(cl.AllowModules) > 0 && len(cl.DenyModules) > 0 {
+	if len(cl.Include) > 0 && len(cl.Exclude) > 0 {
 		// prevent intersections
-		for _, allow := range cl.AllowModules {
-			for _, deny := range cl.DenyModules {
+		for _, allow := range cl.Include {
+			for _, deny := range cl.Exclude {
 				if allow == deny {
-					return fmt.Errorf("allow_modules and deny_modules must not intersect, but found %s in both lists", allow)
+					return fmt.Errorf("include and exclude must not intersect, but found %s in both lists", allow)
 				}
 			}
 		}
 
 		// ensure namespaces are nested
 	outer:
-		for _, allow := range cl.AllowModules {
-			for _, deny := range cl.DenyModules {
+		for _, allow := range cl.Include {
+			for _, deny := range cl.Exclude {
 				if strings.HasPrefix(allow+".", deny+".") ||
 					strings.HasPrefix(deny+".", allow+".") {
 					continue outer
 				}
 			}
-			return fmt.Errorf("when both allow_modules and deny_modules are populated, each element must be a superspace or subspace of one in the other list; check '%s' in allow_modules", allow)
+			return fmt.Errorf("when both include and exclude are populated, each element must be a superspace or subspace of one in the other list; check '%s' in include", allow)
 		}
 	}
 
@@ -348,8 +362,8 @@ func (cl *CustomLog) buildCore() {
 }
 
 func (cl *CustomLog) matchesModule(moduleName string) bool {
-	// accept all modules by default
-	if len(cl.AllowModules) == 0 && len(cl.DenyModules) == 0 {
+	// accept all loggers by default
+	if len(cl.Include) == 0 && len(cl.Exclude) == 0 {
 		return true
 	}
 
@@ -361,14 +375,14 @@ func (cl *CustomLog) matchesModule(moduleName string) bool {
 
 	var longestAccept, longestReject int
 
-	if len(cl.AllowModules) > 0 {
-		for _, namespace := range cl.AllowModules {
+	if len(cl.Include) > 0 {
+		for _, namespace := range cl.Include {
 			if strings.HasPrefix(moduleName, namespace+".") &&
 				len(namespace) > longestAccept {
 				longestAccept = len(namespace)
 			}
 		}
-		// the accept list was populated, meaning that
+		// the include list was populated, meaning that
 		// a match in this list is absolutely required
 		// if we are to accept the entry
 		if longestAccept == 0 {
@@ -376,8 +390,8 @@ func (cl *CustomLog) matchesModule(moduleName string) bool {
 		}
 	}
 
-	if len(cl.DenyModules) > 0 {
-		for _, namespace := range cl.DenyModules {
+	if len(cl.Exclude) > 0 {
+		for _, namespace := range cl.Exclude {
 			if strings.HasPrefix(moduleName, namespace+".") &&
 				len(namespace) > longestReject {
 				longestReject = len(namespace)
@@ -412,7 +426,7 @@ type (
 // CaddyModule returns the Caddy module information.
 func (StdoutWriter) CaddyModule() ModuleInfo {
 	return ModuleInfo{
-		Name: "log.writers.stdout",
+		Name: "caddy.logging.writers.stdout",
 		New:  func() Module { return new(StdoutWriter) },
 	}
 }
@@ -420,24 +434,19 @@ func (StdoutWriter) CaddyModule() ModuleInfo {
 // CaddyModule returns the Caddy module information.
 func (StderrWriter) CaddyModule() ModuleInfo {
 	return ModuleInfo{
-		Name: "log.writers.stderr",
+		Name: "caddy.logging.writers.stderr",
 		New:  func() Module { return new(StderrWriter) },
 	}
 }
 
 func (sw StdoutWriter) String() string { return "stdout" }
-
 func (sw StderrWriter) String() string { return "stderr" }
 
 // WriterKey returns a unique key representing sw.
-func (sw StdoutWriter) WriterKey() string {
-	return "std:out"
-}
+func (sw StdoutWriter) WriterKey() string { return "std:out" }
 
 // WriterKey returns a unique key representing sw.
-func (sw StderrWriter) WriterKey() string {
-	return "std:err"
-}
+func (sw StderrWriter) WriterKey() string { return "std:err" }
 
 // OpenWriter returns os.Stdout that can't be closed.
 func (sw StdoutWriter) OpenWriter() (io.WriteCloser, error) {
@@ -454,11 +463,9 @@ type notClosable struct{ io.Writer }
 
 func (fc notClosable) Close() error { return nil }
 
-// Log returns the current default logger.
-func Log() *zap.Logger {
-	defaultLoggerMu.RLock()
-	defer defaultLoggerMu.RUnlock()
-	return defaultLogger.logger
+type defaultCustomLog struct {
+	*CustomLog
+	logger *zap.Logger
 }
 
 // newDefaultProductionLog configures a custom log that is
@@ -473,7 +480,8 @@ func newDefaultProductionLog() (*defaultCustomLog, error) {
 	if err != nil {
 		return nil, err
 	}
-	encCfg := zap.NewDevelopmentEncoderConfig()
+	encCfg := zap.NewProductionEncoderConfig()
+	encCfg.EncodeLevel = zapcore.CapitalColorLevelEncoder
 	cl.encoder = zapcore.NewConsoleEncoder(encCfg)
 	cl.levelEnabler = zapcore.InfoLevel
 
@@ -485,9 +493,11 @@ func newDefaultProductionLog() (*defaultCustomLog, error) {
 	}, nil
 }
 
-type defaultCustomLog struct {
-	*CustomLog
-	logger *zap.Logger
+// Log returns the current default logger.
+func Log() *zap.Logger {
+	defaultLoggerMu.RLock()
+	defer defaultLoggerMu.RUnlock()
+	return defaultLogger.logger
 }
 
 var (
@@ -496,3 +506,10 @@ var (
 )
 
 var writers = NewUsagePool()
+
+// Interface guards
+var (
+	_ io.WriteCloser = (*notClosable)(nil)
+	_ WriterOpener   = (*StdoutWriter)(nil)
+	_ WriterOpener   = (*StderrWriter)(nil)
+)
