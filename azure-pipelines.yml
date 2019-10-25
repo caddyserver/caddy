@@ -6,7 +6,7 @@ trigger:
 
 schedules:
 - cron: "0 0 * * *"
-  displayName: Daily midnight tests & fuzzing
+  displayName: Daily midnight fuzzing
   branches:
     include:
     - v2
@@ -185,7 +185,6 @@ jobs:
       mv !(gopath) '$(modulePath)'
     displayName: Remove old Go, set GOBIN/GOROOT, and move project into GOPATH
 
-  # Install Go (this varies by platform)
   - bash: |
       wget "https://dl.google.com/go/$(LATEST_GO).linux-amd64.tar.gz"
       sudo tar -C $(gorootDir) -xzf "$(LATEST_GO).linux-amd64.tar.gz"
@@ -199,7 +198,7 @@ jobs:
       sudo apt update && sudo apt install -y clang lldb lld
 
       go get -v github.com/dvyukov/go-fuzz/go-fuzz github.com/dvyukov/go-fuzz/go-fuzz-build
-      wget -q -O fuzzit https://github.com/fuzzitdev/fuzzit/releases/download/v2.4.24/fuzzit_Linux_x86_64
+      wget -q -O fuzzit https://github.com/fuzzitdev/fuzzit/releases/download/v2.4.74/fuzzit_Linux_x86_64
       chmod a+x fuzzit
       mv fuzzit $(GOBIN)
     displayName: Download go-fuzz tools and the Fuzzit CLI, and move Fuzzit CLI to GOBIN
@@ -237,9 +236,8 @@ jobs:
         go-fuzz-build -func "${fuzzers_funcs[$f]}" -libfuzzer -o "$FUZZER_DIRECTORY/${fuzzers_targets[$f]}.a" $FUZZER_DIRECTORY
         echo "Generating fuzzer binary of func ${fuzzers_funcs[$f]} which resides in $f"
         clang -fsanitize=fuzzer "$FUZZER_DIRECTORY/${fuzzers_targets[$f]}.a" -o "$FUZZER_DIRECTORY/${fuzzers_targets[$f]}.fuzzer"
-        #fuzzit create job --type "${fuzz_type}" --branch "${SYSTEM_PULLREQUEST_SOURCEBRANCH}" --revision "${BUILD_SOURCEVERSION}" caddyserver/${fuzzers_targets[$FUZZ_FILENAME]} $FUZZER_DIRECTORY/${fuzzers_targets[$FUZZ_FILENAME]}.fuzzer
+        fuzzit create job --type "${fuzz_type}" --branch "${SYSTEM_PULLREQUEST_SOURCEBRANCH}" --revision "${BUILD_SOURCEVERSION}" caddyserver/${fuzzers_targets[$f]} $FUZZER_DIRECTORY/${fuzzers_targets[$f]}.fuzzer
         echo "Completed $f"
       done
     workingDirectory: '$(modulePath)'
-    condition: and(eq(variables['System.PullRequest.IsFork'], 'False') , eq( variables['Agent.OS'], 'Linux' ))
     displayName: Generate fuzzers & submit them to Fuzzit
