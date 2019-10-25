@@ -15,27 +15,34 @@
 // +build gofuzz
 // +build gofuzz_libfuzzer
 
-package fuzz
+package httpcaddyfile
 
 import (
 	"bytes"
 
+	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
-
-	// This package is required for go-fuzz-build, so pin it here for
-	// 'go mod vendor' to include it.
-	_ "github.com/dvyukov/go-fuzz/go-fuzz-dep"
 )
 
-func FuzzParseCaddyfile(data []byte) (score int) {
-	sb, err := caddyfile.Parse("Caddyfile", bytes.NewReader(data))
+func FuzzHTTPCaddyfileAdapter(data []byte) int {
+	adapter := caddyfile.Adapter{
+		ServerType: ServerType{},
+	}
+	b, warns, err := adapter.Adapt(data, nil)
+	// Adapt func calls the Setup() func of the ServerType,
+	// thus it's going across multiple layers, each can
+	// return warnings or errors. Marking the presence of
+	// errors or warnings as interesting in this case
+	// could push the fuzzer towards a path where we only
+	// catch errors. Let's push the fuzzer to where it passes
+	// but breaks.
+	if (err != nil) || (warns != nil && len(warns) > 0) {
+		return 0
+	}
+
+	// adapted Caddyfile should be parseable by the configuration loader in admin.go
+	err = caddy.Load(bytes.NewReader(b))
 	if err != nil {
-		// if both an error is received and some ServerBlocks,
-		// then the parse was able to parse partially. Mark this
-		// result as interesting to push the fuzzer further through the parser.
-		if sb != nil && len(sb) > 0 {
-			return 1
-		}
 		return 0
 	}
 	return 1

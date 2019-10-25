@@ -15,23 +15,12 @@
 // +build gofuzz
 // +build gofuzz_libfuzzer
 
-package fuzz
+package caddy
 
-import (
-	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
-
-	// This package is required for go-fuzz-build, so pin it here for
-	// 'go mod vendor' to include it.
-	_ "github.com/dvyukov/go-fuzz/go-fuzz-dep"
-)
-
-func FuzzParseAddress(data []byte) int {
-	addr, err := httpcaddyfile.ParseAddress(string(data))
-	if err != nil {
-		if addr == (httpcaddyfile.Address{}) {
-			return 1
-		}
-		return 0
-	}
-	return 1
+func FuzzReplacer(data []byte) (score int) {
+	NewReplacer().ReplaceAll(string(data), "")
+	NewReplacer().ReplaceAll(NewReplacer().ReplaceAll(string(data), ""), "")
+	NewReplacer().ReplaceAll(NewReplacer().ReplaceAll(string(data), ""), NewReplacer().ReplaceAll(string(data), ""))
+	NewReplacer().ReplaceAll(string(data[:len(data)/2]), string(data[len(data)/2:]))
+	return 0
 }
