@@ -90,7 +90,7 @@ func (logging *Logging) setupNewDefault(ctx Context) error {
 	}
 
 	// extract the user-defined default log, if any
-	var newDefault *defaultCustomLog
+	newDefault := new(defaultCustomLog)
 	if userDefault, ok := logging.Logs["default"]; ok {
 		newDefault.CustomLog = userDefault
 	} else {
@@ -481,8 +481,7 @@ func newDefaultProductionLog() (*defaultCustomLog, error) {
 		return nil, err
 	}
 	encCfg := zap.NewProductionEncoderConfig()
-	encCfg.EncodeLevel = zapcore.CapitalColorLevelEncoder
-	cl.encoder = zapcore.NewConsoleEncoder(encCfg)
+	cl.encoder = zapcore.NewJSONEncoder(encCfg)
 	cl.levelEnabler = zapcore.InfoLevel
 
 	cl.buildCore()

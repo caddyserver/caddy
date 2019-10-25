@@ -85,14 +85,6 @@ func (fe *FilterEncoder) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-// EncodeEntry partially implements the zapcore.Encoder interface.
-func (fe FilterEncoder) EncodeEntry(ent zapcore.Entry, fields []zapcore.Field) (*buffer.Buffer, error) {
-	for _, field := range fields {
-		field.AddTo(fe)
-	}
-	return fe.wrapped.EncodeEntry(ent, nil)
-}
-
 // AddArray is part of the zapcore.ObjectEncoder interface.
 // Array elements do not get filtered.
 func (fe FilterEncoder) AddArray(key string, marshaler zapcore.ArrayMarshaler) error {
@@ -273,9 +265,27 @@ func (fe FilterEncoder) OpenNamespace(key string) {
 }
 
 // Clone is part of the zapcore.ObjectEncoder interface.
-// This implementation just returns a shallow copy of fe.
+// We don't use it as of Oct 2019 (v2 beta 7), I'm not
+// really sure what it'd be useful for in our case.
 func (fe FilterEncoder) Clone() zapcore.Encoder {
-	return fe
+	return FilterEncoder{
+		Fields:    fe.Fields,
+		wrapped:   fe.wrapped.Clone(),
+		keyPrefix: fe.keyPrefix,
+	}
+}
+
+// EncodeEntry partially implements the zapcore.Encoder interface.
+func (fe FilterEncoder) EncodeEntry(ent zapcore.Entry, fields []zapcore.Field) (*buffer.Buffer, error) {
+	// without this clone and storing it to fe.wrapped, fields
+	// from subsequent log entries get appended to previous
+	// ones, and I'm not 100% sure why; see end of
+	// https://github.com/uber-go/zap/issues/750
+	fe.wrapped = fe.wrapped.Clone()
+	for _, field := range fields {
+		field.AddTo(fe)
+	}
+	return fe.wrapped.EncodeEntry(ent, nil)
 }
 
 // filtered returns true if the field was filtered.
@@ -300,7 +310,7 @@ type logObjectMarshalerWrapper struct {
 }
 
 // MarshalLogObject implements the zapcore.ObjectMarshaler interface.
-func (mom logObjectMarshalerWrapper) MarshalLogObject(enc zapcore.ObjectEncoder) error {
+func (mom logObjectMarshalerWrapper) MarshalLogObject(_ zapcore.ObjectEncoder) error {
 	return mom.marsh.MarshalLogObject(mom.enc)
 }
 
