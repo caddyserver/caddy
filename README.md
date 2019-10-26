@@ -2,6 +2,7 @@ Caddy 2 Development Branch
 ===========================
 
 [![Build Status](https://dev.azure.com/mholt-dev/Caddy/_apis/build/status/Multiplatform%20Tests?branchName=v2)](https://dev.azure.com/mholt-dev/Caddy/_build/latest?definitionId=5&branchName=v2)
+[![fuzzit](https://app.fuzzit.dev/badge?org_id=caddyserver)](https://app.fuzzit.dev/orgs/caddyserver/dashboard)
 
 This is the development branch for Caddy 2. This code (version 2) is not yet feature-complete or production-ready, but is already being used in production, and we encourage you to deploy it today on sites that are not very visible or important so that it can obtain crucial experience in the field.
 

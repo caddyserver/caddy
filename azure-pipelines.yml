@@ -2,21 +2,15 @@
 # https://docs.microsoft.com/azure/devops/pipelines/languages/go
 
 trigger:
-- v2
+  - v2
 
-strategy:
-  matrix:
-    linux:
-      imageName: ubuntu-16.04
-      gorootDir: /usr/local
-    mac:
-      imageName: macos-10.13
-      gorootDir: /usr/local
-    windows:
-      imageName: windows-2019
-      gorootDir: C:\
-pool:
-  vmImage: $(imageName)
+schedules:
+- cron: "0 0 * * *"
+  displayName: Daily midnight fuzzing
+  branches:
+    include:
+    - v2
+  always: true
 
 variables:
   GOROOT: $(gorootDir)/go
@@ -26,121 +20,224 @@ variables:
   # TODO: Remove once it's enabled by default
   GO111MODULE: on
 
-steps:
-- bash: |
-    latestGo=$(curl "https://golang.org/VERSION?m=text")
-    echo "##vso[task.setvariable variable=LATEST_GO]$latestGo"
-    echo "Latest Go version: $latestGo"
-  displayName: "Get latest Go version"
+jobs:
+- job: crossPlatformTest
+  displayName: "Cross-Platform Tests"
+  strategy:
+    matrix:
+      linux:
+        imageName: ubuntu-16.04
+        gorootDir: /usr/local
+      mac:
+        imageName: macos-10.13
+        gorootDir: /usr/local
+      windows:
+        imageName: windows-2019
+        gorootDir: C:\
+  pool:
+    vmImage: $(imageName)
+  
+  steps:
+  - bash: |
+      latestGo=$(curl "https://golang.org/VERSION?m=text")
+      echo "##vso[task.setvariable variable=LATEST_GO]$latestGo"
+      echo "Latest Go version: $latestGo"
+    displayName: "Get latest Go version"
 
-- bash: |
-    sudo rm -f $(which go)
-    echo '##vso[task.prependpath]$(GOBIN)'
-    echo '##vso[task.prependpath]$(GOROOT)/bin'
-    mkdir -p '$(modulePath)'
-    shopt -s extglob
-    shopt -s dotglob
-    mv !(gopath) '$(modulePath)'
-  displayName: Remove old Go, set GOBIN/GOROOT, and move project into GOPATH
+  - bash: |
+      sudo rm -f $(which go)
+      echo '##vso[task.prependpath]$(GOBIN)'
+      echo '##vso[task.prependpath]$(GOROOT)/bin'
+      mkdir -p '$(modulePath)'
+      shopt -s extglob
+      shopt -s dotglob
+      mv !(gopath) '$(modulePath)'
+    displayName: Remove old Go, set GOBIN/GOROOT, and move project into GOPATH
 
-# Install Go (this varies by platform)
-- bash: |
-    wget "https://dl.google.com/go/$(LATEST_GO).linux-amd64.tar.gz"
-    sudo tar -C $(gorootDir) -xzf "$(LATEST_GO).linux-amd64.tar.gz"
-  condition: eq( variables['Agent.OS'], 'Linux' )
-  displayName: Install Go on Linux
+  # Install Go (this varies by platform)
+  - bash: |
+      wget "https://dl.google.com/go/$(LATEST_GO).linux-amd64.tar.gz"
+      sudo tar -C $(gorootDir) -xzf "$(LATEST_GO).linux-amd64.tar.gz"
+    condition: eq( variables['Agent.OS'], 'Linux' )
+    displayName: Install Go on Linux
 
-- bash: |
-    wget "https://dl.google.com/go/$(LATEST_GO).darwin-amd64.tar.gz"
-    sudo tar -C $(gorootDir) -xzf "$(LATEST_GO).darwin-amd64.tar.gz"
-  condition: eq( variables['Agent.OS'], 'Darwin' )
-  displayName: Install Go on macOS
+  - bash: |
+      wget "https://dl.google.com/go/$(LATEST_GO).darwin-amd64.tar.gz"
+      sudo tar -C $(gorootDir) -xzf "$(LATEST_GO).darwin-amd64.tar.gz"
+    condition: eq( variables['Agent.OS'], 'Darwin' )
+    displayName: Install Go on macOS
 
-# The low performance is partly due to PowerShell's attempt to update the progress bar. Disabling it speeds up the process.
-# Reference: https://github.com/PowerShell/PowerShell/issues/2138
-- powershell: |
-    $ProgressPreference = 'SilentlyContinue'
-    Write-Host "Downloading Go..."
-    (New-Object System.Net.WebClient).DownloadFile("https://dl.google.com/go/$(LATEST_GO).windows-amd64.zip", "$(LATEST_GO).windows-amd64.zip")
-    Write-Host "Extracting Go... (I'm slow too)"
-    7z x "$(LATEST_GO).windows-amd64.zip" -o"$(gorootDir)"
-  condition: eq( variables['Agent.OS'], 'Windows_NT' )
-  displayName: Install Go on Windows
+  # The low performance is partly due to PowerShell's attempt to update the progress bar. Disabling it speeds up the process.
+  # Reference: https://github.com/PowerShell/PowerShell/issues/2138
+  - powershell: |
+      $ProgressPreference = 'SilentlyContinue'
+      Write-Host "Downloading Go..."
+      (New-Object System.Net.WebClient).DownloadFile("https://dl.google.com/go/$(LATEST_GO).windows-amd64.zip", "$(LATEST_GO).windows-amd64.zip")
+      Write-Host "Extracting Go... (I'm slow too)"
+      7z x "$(LATEST_GO).windows-amd64.zip" -o"$(gorootDir)"
+    condition: eq( variables['Agent.OS'], 'Windows_NT' )
+    displayName: Install Go on Windows
 
-- bash: curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.19.1
-  displayName: Install golangci-lint
+  - bash: curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.19.1
+    displayName: Install golangci-lint
 
-- script: |
-    go get github.com/axw/gocov/gocov
-    go get github.com/AlekSi/gocov-xml
-    go get -u github.com/jstemmer/go-junit-report
-  displayName: Install test and coverage analysis tools
+  - script: |
+      go get github.com/axw/gocov/gocov
+      go get github.com/AlekSi/gocov-xml
+      go get -u github.com/jstemmer/go-junit-report
+    displayName: Install test and coverage analysis tools
 
-- bash: |
-    printf "Using go at: $(which go)\n"
-    printf "Go version: $(go version)\n"
-    printf "\n\nGo environment:\n\n"
-    go env
-    printf "\n\nSystem environment:\n\n"
-    env
-  displayName: Print Go version and environment
+  - bash: |
+      printf "Using go at: $(which go)\n"
+      printf "Go version: $(go version)\n"
+      printf "\n\nGo environment:\n\n"
+      go env
+      printf "\n\nSystem environment:\n\n"
+      env
+    displayName: Print Go version and environment
 
-- script: |
-    go get -v -t -d ./...
-    mkdir test-results
-  workingDirectory: '$(modulePath)'
-  displayName: Get dependencies
+  - script: |
+      go get -v -t -d ./...
+      mkdir test-results
+    workingDirectory: '$(modulePath)'
+    displayName: Get dependencies
 
-# its behavior is governed by .golangci.yml
-- script: |
-    (golangci-lint run --out-format junit-xml) > test-results/lint-result.xml
-    exit 0
-  workingDirectory: '$(modulePath)'
-  continueOnError: true
-  displayName: Run lint check
+  # its behavior is governed by .golangci.yml
+  - script: |
+      (golangci-lint run --out-format junit-xml) > test-results/lint-result.xml
+      exit 0
+    workingDirectory: '$(modulePath)'
+    continueOnError: true
+    displayName: Run lint check
 
-- script: |
-    (go test -v -coverprofile=cover-profile.out -race ./... 2>&1) > test-results/test-result.out
-  workingDirectory: '$(modulePath)'
-  continueOnError: true
-  displayName: Run tests
+  - script: |
+      (go test -v -coverprofile=cover-profile.out -race ./... 2>&1) > test-results/test-result.out
+    workingDirectory: '$(modulePath)'
+    continueOnError: true
+    displayName: Run tests
 
-- script: |
-    mkdir coverage
-    gocov convert cover-profile.out > coverage/coverage.json
-    # Because Windows doesn't work with input redirection like *nix, but output redirection works.
-    (cat ./coverage/coverage.json | gocov-xml) > coverage/coverage.xml 
-  workingDirectory: '$(modulePath)'
-  displayName: Prepare coverage reports
+  - script: |
+      mkdir coverage
+      gocov convert cover-profile.out > coverage/coverage.json
+      # Because Windows doesn't work with input redirection like *nix, but output redirection works.
+      (cat ./coverage/coverage.json | gocov-xml) > coverage/coverage.xml 
+    workingDirectory: '$(modulePath)'
+    displayName: Prepare coverage reports
 
-- script: |
-    (cat ./test-results/test-result.out | go-junit-report) > test-results/test-result.xml
-  workingDirectory: '$(modulePath)'
-  displayName: Prepare test report
+  - script: |
+      (cat ./test-results/test-result.out | go-junit-report) > test-results/test-result.xml
+    workingDirectory: '$(modulePath)'
+    displayName: Prepare test report
 
-- task: PublishCodeCoverageResults@1
-  displayName: Publish test coverage report
-  inputs:
-    codeCoverageTool: Cobertura 
-    summaryFileLocation: $(modulePath)/coverage/coverage.xml
+  - task: PublishCodeCoverageResults@1
+    displayName: Publish test coverage report
+    inputs:
+      codeCoverageTool: Cobertura 
+      summaryFileLocation: $(modulePath)/coverage/coverage.xml
 
-- task: PublishTestResults@2
-  displayName: Publish unit test
-  inputs:
-    testResultsFormat: 'JUnit'
-    testResultsFiles: $(modulePath)/test-results/test-result.xml
-    testRunTitle: $(agent.OS) Unit Test
-    mergeTestResults: false
+  - task: PublishTestResults@2
+    displayName: Publish unit test
+    inputs:
+      testResultsFormat: 'JUnit'
+      testResultsFiles: $(modulePath)/test-results/test-result.xml
+      testRunTitle: $(agent.OS) Unit Test
+      mergeTestResults: false
 
-- task: PublishTestResults@2
-  displayName: Publish lint results
-  inputs:
-    testResultsFormat: 'JUnit'
-    testResultsFiles: $(modulePath)/test-results/lint-result.xml
-    testRunTitle: $(agent.OS) Lint
-    mergeTestResults: false
+  - task: PublishTestResults@2
+    displayName: Publish lint results
+    inputs:
+      testResultsFormat: 'JUnit'
+      testResultsFiles: $(modulePath)/test-results/lint-result.xml
+      testRunTitle: $(agent.OS) Lint
+      mergeTestResults: false
 
-- bash: |
-    exit 1
-  condition: eq(variables['Agent.JobStatus'], 'SucceededWithIssues')
-  displayName: Coerce correct build result
+  - bash: |
+      exit 1
+    condition: eq(variables['Agent.JobStatus'], 'SucceededWithIssues')
+    displayName: Coerce correct build result
+
+- job: fuzzing
+  displayName: 'Scheduled Fuzzing'
+  # Only run this job on schedules, not PRs.
+  condition: eq(variables['Build.Reason'], 'Schedule')
+  strategy:
+    matrix:
+      linux:
+        imageName: ubuntu-16.04
+        gorootDir: /usr/local
+  pool:
+    vmImage: $(imageName)
+
+  steps:
+  - bash: |
+      latestGo=$(curl "https://golang.org/VERSION?m=text")
+      echo "##vso[task.setvariable variable=LATEST_GO]$latestGo"
+      echo "Latest Go version: $latestGo"
+    displayName: "Get latest Go version"
+
+  - bash: |
+      sudo rm -f $(which go)
+      echo '##vso[task.prependpath]$(GOBIN)'
+      echo '##vso[task.prependpath]$(GOROOT)/bin'
+      mkdir -p '$(modulePath)'
+      shopt -s extglob
+      shopt -s dotglob
+      mv !(gopath) '$(modulePath)'
+    displayName: Remove old Go, set GOBIN/GOROOT, and move project into GOPATH
+
+  - bash: |
+      wget "https://dl.google.com/go/$(LATEST_GO).linux-amd64.tar.gz"
+      sudo tar -C $(gorootDir) -xzf "$(LATEST_GO).linux-amd64.tar.gz"
+    condition: eq( variables['Agent.OS'], 'Linux' )
+    displayName: Install Go on Linux
+
+  - bash: |
+      # Install Clang
+      sudo add-apt-repository "deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial main"
+      wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+      sudo apt update && sudo apt install -y clang lldb lld
+
+      go get -v github.com/dvyukov/go-fuzz/go-fuzz github.com/dvyukov/go-fuzz/go-fuzz-build
+      wget -q -O fuzzit https://github.com/fuzzitdev/fuzzit/releases/download/v2.4.74/fuzzit_Linux_x86_64
+      chmod a+x fuzzit
+      mv fuzzit $(GOBIN)
+    displayName: Download go-fuzz tools and the Fuzzit CLI, and move Fuzzit CLI to GOBIN
+    condition: and(eq(variables['System.PullRequest.IsFork'], 'False') , eq( variables['Agent.OS'], 'Linux' ))
+
+  - script: fuzzit auth ${FUZZIT_API_KEY}
+    condition: and(eq(variables['System.PullRequest.IsFork'], 'False') , eq( variables['Agent.OS'], 'Linux' ))
+    displayName: Authenticate with Fuzzit
+    env:
+      FUZZIT_API_KEY: $(FUZZIT_API_KEY)
+
+  - bash: |
+      declare -A fuzzers_funcs=(\
+        ["./admin_fuzz.go"]="FuzzAdmin" \
+        ["./caddyconfig/httpcaddyfile/adapter_fuzz.go"]="FuzzHTTPCaddyfileAdapter" \
+        ["./caddyconfig/httpcaddyfile/addresses_fuzz.go"]="FuzzParseAddress" \
+        ["./caddyconfig/caddyfile/parse_fuzz.go"]="FuzzParseCaddyfile" \
+        ["./listeners_fuzz.go"]="FuzzParseNetworkAddress" \
+        ["./replacer_fuzz.go"]="FuzzReplacer" \
+      )
+
+      declare -A fuzzers_targets=(\
+        ["./admin_fuzz.go"]="admin" \
+        ["./caddyconfig/httpcaddyfile/adapter_fuzz.go"]="caddyfile-adapter" \
+        ["./caddyconfig/httpcaddyfile/addresses_fuzz.go"]="parse-address" \
+        ["./caddyconfig/caddyfile/parse_fuzz.go"]="parse-caddyfile" \
+        ["./listeners_fuzz.go"]="parse-listen-addr" \
+        ["./replacer_fuzz.go"]="replacer" \
+      )
+      fuzz_type="fuzzing"
+
+      for f in $(find . -name \*_fuzz.go); do
+        FUZZER_DIRECTORY=$(dirname $f)
+        echo "go-fuzz-build func ${fuzzers_funcs[$f]} residing in $f"
+        go-fuzz-build -func "${fuzzers_funcs[$f]}" -libfuzzer -o "$FUZZER_DIRECTORY/${fuzzers_targets[$f]}.a" $FUZZER_DIRECTORY
+        echo "Generating fuzzer binary of func ${fuzzers_funcs[$f]} which resides in $f"
+        clang -fsanitize=fuzzer "$FUZZER_DIRECTORY/${fuzzers_targets[$f]}.a" -o "$FUZZER_DIRECTORY/${fuzzers_targets[$f]}.fuzzer"
+        fuzzit create job --type "${fuzz_type}" --branch "${SYSTEM_PULLREQUEST_SOURCEBRANCH}" --revision "${BUILD_SOURCEVERSION}" caddyserver/${fuzzers_targets[$f]} $FUZZER_DIRECTORY/${fuzzers_targets[$f]}.fuzzer
+        echo "Completed $f"
+      done
+    workingDirectory: '$(modulePath)'
+    displayName: Generate fuzzers & submit them to Fuzzit
