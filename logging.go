@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"os"
 	"strings"
@@ -31,6 +32,7 @@ import (
 func init() {
 	RegisterModule(StdoutWriter{})
 	RegisterModule(StderrWriter{})
+	RegisterModule(DiscardWriter{})
 }
 
 // Logging facilitates logging within Caddy.
@@ -72,12 +74,27 @@ func (logging *Logging) openLogs(ctx Context) error {
 
 	// then set up any other custom logs
 	for name, l := range logging.Logs {
+		// the default log is already set up
 		if name == "default" {
 			continue
 		}
+
 		err := l.provision(ctx, logging)
 		if err != nil {
 			return fmt.Errorf("setting up custom log '%s': %v", name, err)
+		}
+
+		// Any other logs that use the discard writer can be deleted
+		// entirely. This avoids encoding and processing of each
+		// log entry that would just be thrown away anyway. Notably,
+		// we do not reach this point for the default log, which MUST
+		// exist, otherwise core log emissions would panic because
+		// they use the Log() function directly which expects a non-nil
+		// logger. Even if we keep logs with a discard writer, they
+		// have a nop core, and keeping them at all seems unnecessary.
+		if _, ok := l.writerOpener.(*DiscardWriter); ok {
+			delete(logging.Logs, name)
+			continue
 		}
 	}
 
@@ -340,6 +357,13 @@ func (cl *CustomLog) provision(ctx Context, logging *Logging) error {
 }
 
 func (cl *CustomLog) buildCore() {
+	// logs which only discard their output don't need
+	// to perform encoding or any other processing steps
+	// at all, so just shorcut to a nop core instead
+	if _, ok := cl.writerOpener.(*DiscardWriter); ok {
+		cl.core = zapcore.NewNopCore()
+		return
+	}
 	c := zapcore.NewCore(
 		cl.encoder,
 		zapcore.AddSync(cl.writer),
@@ -421,6 +445,9 @@ type (
 
 	// StderrWriter can write logs to stdout.
 	StderrWriter struct{}
+
+	// DiscardWriter discards all writes.
+	DiscardWriter struct{}
 )
 
 // CaddyModule returns the Caddy module information.
@@ -439,23 +466,40 @@ func (StderrWriter) CaddyModule() ModuleInfo {
 	}
 }
 
-func (sw StdoutWriter) String() string { return "stdout" }
-func (sw StderrWriter) String() string { return "stderr" }
+// CaddyModule returns the Caddy module information.
+func (DiscardWriter) CaddyModule() ModuleInfo {
+	return ModuleInfo{
+		Name: "caddy.logging.writers.discard",
+		New:  func() Module { return new(DiscardWriter) },
+	}
+}
 
-// WriterKey returns a unique key representing sw.
-func (sw StdoutWriter) WriterKey() string { return "std:out" }
+func (StdoutWriter) String() string  { return "stdout" }
+func (StderrWriter) String() string  { return "stderr" }
+func (DiscardWriter) String() string { return "discard" }
 
-// WriterKey returns a unique key representing sw.
-func (sw StderrWriter) WriterKey() string { return "std:err" }
+// WriterKey returns a unique key representing stdout.
+func (StdoutWriter) WriterKey() string { return "std:out" }
+
+// WriterKey returns a unique key representing stderr.
+func (StderrWriter) WriterKey() string { return "std:err" }
+
+// WriterKey returns a unique key representing discard.
+func (DiscardWriter) WriterKey() string { return "discard" }
 
 // OpenWriter returns os.Stdout that can't be closed.
-func (sw StdoutWriter) OpenWriter() (io.WriteCloser, error) {
+func (StdoutWriter) OpenWriter() (io.WriteCloser, error) {
 	return notClosable{os.Stdout}, nil
 }
 
 // OpenWriter returns os.Stderr that can't be closed.
-func (sw StderrWriter) OpenWriter() (io.WriteCloser, error) {
+func (StderrWriter) OpenWriter() (io.WriteCloser, error) {
 	return notClosable{os.Stderr}, nil
+}
+
+// OpenWriter returns ioutil.Discard that can't be closed.
+func (DiscardWriter) OpenWriter() (io.WriteCloser, error) {
+	return notClosable{ioutil.Discard}, nil
 }
 
 // notClosable is an io.WriteCloser that can't be closed.
