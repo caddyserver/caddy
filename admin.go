@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -42,6 +43,8 @@ var (
 	cfgEndptSrvMu sync.Mutex
 )
 
+var ErrAdminInterfaceNotConfigured = errors.New("no admin configuration has been set")
+
 // AdminConfig configures the admin endpoint.
 type AdminConfig struct {
 	Listen string `json:"listen,omitempty"`
@@ -60,6 +63,11 @@ var DefaultAdminConfig = &AdminConfig{
 // in the format of JSON bytes. It opens a listener
 // resource. When no longer needed, StopAdmin should
 // be called.
+// If no configuration is given, a default listener is
+// started. If a configuration is given that does NOT
+// specifically configure the admin interface,
+// `ErrAdminInterfaceNotConfigured` is returned and no
+// listener is initialized.
 func StartAdmin(initialConfigJSON []byte) error {
 	cfgEndptSrvMu.Lock()
 	defer cfgEndptSrvMu.Unlock()
@@ -80,7 +88,10 @@ func StartAdmin(initialConfigJSON []byte) error {
 		if err != nil {
 			return fmt.Errorf("unmarshaling bootstrap config: %v", err)
 		}
-		if config != nil && config.Admin != nil {
+		if config != nil {
+			if config.Admin == nil {
+				return ErrAdminInterfaceNotConfigured
+			}
 			adminConfig = config.Admin
 		}
 	}
