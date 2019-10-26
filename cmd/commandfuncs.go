@@ -162,13 +162,22 @@ func cmdRun(fl Flags) (int, error) {
 
 	// start the admin endpoint along with any initial config
 	// a configuration without admin config is considered fine
-	// but does not enable the admin endpoint at all.
+	// but does not enable the admin endpoint at all
 	err = caddy.StartAdmin(config)
 	if err == nil {
 		defer caddy.StopAdmin()
 	} else if err != caddy.ErrAdminInterfaceNotConfigured {
 		return caddy.ExitCodeFailedStartup,
 			fmt.Errorf("starting caddy administration endpoint: %v", err)
+	}
+
+	// if a config has been supplied, load it as initial config
+	if len(config) > 0 {
+		err := caddy.Load(bytes.NewReader(config))
+		if err != nil {
+			return caddy.ExitCodeFailedStartup, fmt.Errorf("loading initial config: %v", err)
+		}
+		caddy.Log().Named("admin").Info("Caddy 2 serving initial configuration")
 	}
 
 	// if we are to report to another process the successful start

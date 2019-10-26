@@ -150,14 +150,6 @@ func StartAdmin(initialConfigJSON []byte) error {
 
 	fmt.Println("Caddy 2 admin endpoint listening on", adminConfig.Listen)
 
-	if len(initialConfigJSON) > 0 {
-		err := Load(bytes.NewReader(initialConfigJSON))
-		if err != nil {
-			return fmt.Errorf("loading initial config: %v", err)
-		}
-		fmt.Println("Caddy 2 serving initial configuration")
-	}
-
 	return nil
 }
 
