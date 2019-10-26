@@ -74,6 +74,8 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 				val, err = parseOptACMECA(disp)
 			case "email":
 				val, err = parseOptEmail(disp)
+			case "admin":
+				val, err = parseOptAdmin(disp)
 			default:
 				return nil, warnings, fmt.Errorf("unrecognized parameter name: %s", dir)
 			}
@@ -253,6 +255,9 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 			"module",
 			storageCvtr.(caddy.Module).CaddyModule().ID(),
 			&warnings)
+	}
+	if adminConfig, ok := options["admin"].(string); ok && adminConfig != "" {
+		cfg.Admin = &caddy.AdminConfig{Listen: adminConfig}
 	}
 
 	return cfg, warnings, nil

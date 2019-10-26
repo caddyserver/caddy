@@ -132,3 +132,17 @@ func parseOptEmail(d *caddyfile.Dispenser) (string, error) {
 	}
 	return val, nil
 }
+
+func parseOptAdmin(d *caddyfile.Dispenser) (string, error) {
+	if d.Next() {
+		var listenAddress string
+		d.AllArgs(&listenAddress)
+
+		if listenAddress == "" {
+			listenAddress = caddy.DefaultAdminListen
+		}
+
+		return listenAddress, nil
+	}
+	return "", nil
+}
