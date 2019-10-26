@@ -161,12 +161,15 @@ func cmdRun(fl Flags) (int, error) {
 	certmagic.UserAgent = "Caddy/" + cleanModVersion
 
 	// start the admin endpoint along with any initial config
+	// a configuration without admin config is considered fine
+	// but does not enable the admin endpoint at all.
 	err = caddy.StartAdmin(config)
-	if err != nil {
+	if err == nil {
+		defer caddy.StopAdmin()
+	} else if err != caddy.ErrAdminInterfaceNotConfigured {
 		return caddy.ExitCodeFailedStartup,
 			fmt.Errorf("starting caddy administration endpoint: %v", err)
 	}
-	defer caddy.StopAdmin()
 
 	// if we are to report to another process the successful start
 	// of the server, do so now by echoing back contents of stdin
