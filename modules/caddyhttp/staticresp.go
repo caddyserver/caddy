@@ -112,7 +112,7 @@ func (s StaticResponse) ServeHTTP(w http.ResponseWriter, r *http.Request, _ Hand
 
 	// write response body
 	if s.Body != "" {
-		fmt.Fprint(w, repl.ReplaceAll(s.Body, ""))
+		fmt.Fprint(w, repl.ReplaceKnown(s.Body, ""))
 	}
 
 	return nil

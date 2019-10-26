@@ -22,6 +22,7 @@ import (
 	"reflect"
 
 	"github.com/mholt/certmagic"
+	"go.uber.org/zap"
 )
 
 // Context is a type which defines the lifetime of modules that
@@ -205,4 +206,9 @@ func (ctx Context) App(name string) (interface{}, error) {
 // Storage returns the configured Caddy storage implementation.
 func (ctx Context) Storage() certmagic.Storage {
 	return ctx.cfg.storage
+}
+
+// Logger returns a logger that can be used by mod.
+func (ctx Context) Logger(mod Module) *zap.Logger {
+	return ctx.cfg.Logging.Logger(mod)
 }

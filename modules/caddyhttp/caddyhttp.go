@@ -72,7 +72,7 @@ func (app *App) Provision(ctx caddy.Context) error {
 
 	repl := caddy.NewReplacer()
 
-	for _, srv := range app.Servers {
+	for srvName, srv := range app.Servers {
 		if srv.AutoHTTPS == nil {
 			// avoid nil pointer dereferences
 			srv.AutoHTTPS = new(AutoHTTPSConfig)
@@ -93,20 +93,25 @@ func (app *App) Provision(ctx caddy.Context) error {
 		}
 
 		for i := range srv.Listen {
-			srv.Listen[i] = repl.ReplaceAll(srv.Listen[i], "")
+			lnOut, err := repl.ReplaceOrErr(srv.Listen[i], true, true)
+			if err != nil {
+				return fmt.Errorf("server %s, listener %d: %v",
+					srvName, i, err)
+			}
+			srv.Listen[i] = lnOut
 		}
 
 		if srv.Routes != nil {
 			err := srv.Routes.Provision(ctx)
 			if err != nil {
-				return fmt.Errorf("setting up server routes: %v", err)
+				return fmt.Errorf("server %s: setting up server routes: %v", srvName, err)
 			}
 		}
 
 		if srv.Errors != nil {
 			err := srv.Errors.Routes.Provision(ctx)
 			if err != nil {
-				return fmt.Errorf("setting up server error handling routes: %v", err)
+				return fmt.Errorf("server %s: setting up server error handling routes: %v", srvName, err)
 			}
 		}
 
@@ -291,12 +296,16 @@ func (app *App) automaticHTTPS() error {
 
 		// find all qualifying domain names, de-duplicated
 		domainSet := make(map[string]struct{})
-		for _, route := range srv.Routes {
-			for _, matcherSet := range route.MatcherSets {
-				for _, m := range matcherSet {
+		for routeIdx, route := range srv.Routes {
+			for matcherSetIdx, matcherSet := range route.MatcherSets {
+				for matcherIdx, m := range matcherSet {
 					if hm, ok := m.(*MatchHost); ok {
-						for _, d := range *hm {
-							d = repl.ReplaceAll(d, "")
+						for hostMatcherIdx, d := range *hm {
+							d, err = repl.ReplaceOrErr(d, true, false)
+							if err != nil {
+								return fmt.Errorf("%s: route %d, matcher set %d, matcher %d, host matcher %d: %v",
+									srvName, routeIdx, matcherSetIdx, matcherIdx, hostMatcherIdx, err)
+							}
 							if certmagic.HostQualifies(d) &&
 								!srv.AutoHTTPS.Skipped(d, srv.AutoHTTPS.Skip) {
 								domainSet[d] = struct{}{}
