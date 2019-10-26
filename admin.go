@@ -64,6 +64,15 @@ func StartAdmin(initialConfigJSON []byte) error {
 	cfgEndptSrvMu.Lock()
 	defer cfgEndptSrvMu.Unlock()
 
+	if cfgEndptSrv != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		err := cfgEndptSrv.Shutdown(ctx)
+		if err != nil {
+			return fmt.Errorf("shutting down old admin endpoint: %v", err)
+		}
+	}
+
 	adminConfig := DefaultAdminConfig
 	if len(initialConfigJSON) > 0 {
 		var config *Config
@@ -73,14 +82,6 @@ func StartAdmin(initialConfigJSON []byte) error {
 		}
 		if config != nil && config.Admin != nil {
 			adminConfig = config.Admin
-		}
-		if cfgEndptSrv != nil {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			err := cfgEndptSrv.Shutdown(ctx)
-			if err != nil {
-				return fmt.Errorf("shutting down old admin endpoint: %v", err)
-			}
 		}
 	}
 
