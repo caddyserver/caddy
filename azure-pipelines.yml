@@ -159,7 +159,7 @@ jobs:
 - job: fuzzing
   displayName: 'Scheduled Fuzzing'
   # Only run this job on schedules, not PRs.
-  condition: eq(variables['Build.Reason'], 'Schedule')
+  # condition: eq(variables['Build.Reason'], 'Schedule')
   strategy:
     matrix:
       linux:
@@ -204,12 +204,6 @@ jobs:
     displayName: Download go-fuzz tools and the Fuzzit CLI, and move Fuzzit CLI to GOBIN
     condition: and(eq(variables['System.PullRequest.IsFork'], 'False') , eq( variables['Agent.OS'], 'Linux' ))
 
-  - script: fuzzit auth ${FUZZIT_API_KEY}
-    condition: and(eq(variables['System.PullRequest.IsFork'], 'False') , eq( variables['Agent.OS'], 'Linux' ))
-    displayName: Authenticate with Fuzzit
-    env:
-      FUZZIT_API_KEY: $(FUZZIT_API_KEY)
-
   - bash: |
       declare -A fuzzers_funcs=(\
         ["./admin_fuzz.go"]="FuzzAdmin" \
@@ -235,9 +229,11 @@ jobs:
         echo "go-fuzz-build func ${fuzzers_funcs[$f]} residing in $f"
         go-fuzz-build -func "${fuzzers_funcs[$f]}" -libfuzzer -o "$FUZZER_DIRECTORY/${fuzzers_targets[$f]}.a" $FUZZER_DIRECTORY
         echo "Generating fuzzer binary of func ${fuzzers_funcs[$f]} which resides in $f"
-        clang -fsanitize=fuzzer "$FUZZER_DIRECTORY/${fuzzers_targets[$f]}.a" -o "$FUZZER_DIRECTORY/${fuzzers_targets[$f]}.fuzzer"
-        fuzzit create job --type "${fuzz_type}" --branch "${SYSTEM_PULLREQUEST_SOURCEBRANCH}" --revision "${BUILD_SOURCEVERSION}" caddyserver/${fuzzers_targets[$f]} $FUZZER_DIRECTORY/${fuzzers_targets[$f]}.fuzzer
+        clang -fsanitize=fuzzer "$FUZZER_DIRECTORY/${fuzzers_targets[$f]}.a" -o "$FUZZER_DIRECTORY/${fuzzers_targets[$f]}"
+        fuzzit create job caddyserver/${fuzzers_targets[$f]} $FUZZER_DIRECTORY/${fuzzers_targets[$f]} --api-key ${FUZZIT_API_KEY} --type "${fuzz_type}" --branch "${SYSTEM_PULLREQUEST_SOURCEBRANCH}" --revision "${BUILD_SOURCEVERSION}"
         echo "Completed $f"
       done
+    env:
+      FUZZIT_API_KEY: $(FUZZIT_API_KEY)
     workingDirectory: '$(modulePath)'
     displayName: Generate fuzzers & submit them to Fuzzit
