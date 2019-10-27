@@ -157,9 +157,9 @@ jobs:
     displayName: Coerce correct build result
 
 - job: fuzzing
-  displayName: 'Scheduled Fuzzing'
-  # Only run this job on schedules, not PRs.
-  # condition: eq(variables['Build.Reason'], 'Schedule')
+  displayName: 'Fuzzing'
+  # Only run this job on schedules or PRs for non-forks.
+  condition: or(eq(variables['System.PullRequest.IsFork'], 'False'), eq(variables['Build.Reason'], 'Schedule') )
   strategy:
     matrix:
       linux:
@@ -192,10 +192,10 @@ jobs:
     displayName: Install Go on Linux
 
   - bash: |
-      # Install Clang
-      sudo add-apt-repository "deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial main"
+      # Install Clang-7.0 because other versions seem to be missing the file libclang_rt.fuzzer-x86_64.a
+      sudo add-apt-repository "deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-7 main"
       wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-      sudo apt update && sudo apt install -y clang lldb lld
+      sudo apt update && sudo apt install -y clang-7 lldb-7 lld-7
 
       go get -v github.com/dvyukov/go-fuzz/go-fuzz github.com/dvyukov/go-fuzz/go-fuzz-build
       wget -q -O fuzzit https://github.com/fuzzitdev/fuzzit/releases/download/v2.4.74/fuzzit_Linux_x86_64
@@ -222,14 +222,18 @@ jobs:
         ["./listeners_fuzz.go"]="parse-listen-addr" \
         ["./replacer_fuzz.go"]="replacer" \
       )
-      fuzz_type="fuzzing"
+
+      fuzz_type="regression"
+      if [[ $(Build.Reason) == "Schedule" ]]; then
+        fuzz_type="fuzzing"
+      fi
 
       for f in $(find . -name \*_fuzz.go); do
         FUZZER_DIRECTORY=$(dirname $f)
         echo "go-fuzz-build func ${fuzzers_funcs[$f]} residing in $f"
         go-fuzz-build -func "${fuzzers_funcs[$f]}" -libfuzzer -o "$FUZZER_DIRECTORY/${fuzzers_targets[$f]}.a" $FUZZER_DIRECTORY
         echo "Generating fuzzer binary of func ${fuzzers_funcs[$f]} which resides in $f"
-        clang -fsanitize=fuzzer "$FUZZER_DIRECTORY/${fuzzers_targets[$f]}.a" -o "$FUZZER_DIRECTORY/${fuzzers_targets[$f]}"
+        clang-7 -fsanitize=fuzzer "$FUZZER_DIRECTORY/${fuzzers_targets[$f]}.a" -o "$FUZZER_DIRECTORY/${fuzzers_targets[$f]}"
         fuzzit create job caddyserver/${fuzzers_targets[$f]} $FUZZER_DIRECTORY/${fuzzers_targets[$f]} --api-key ${FUZZIT_API_KEY} --type "${fuzz_type}" --branch "${SYSTEM_PULLREQUEST_SOURCEBRANCH}" --revision "${BUILD_SOURCEVERSION}"
         echo "Completed $f"
       done
