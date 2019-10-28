@@ -40,7 +40,7 @@ type Rewrite struct {
 
 	HTTPRedirect caddyhttp.WeakString `json:"http_redirect,omitempty"`
 	Rehandle     bool                 `json:"rehandle,omitempty"`
-  
+
 	logger *zap.Logger
 }
 
@@ -126,8 +126,8 @@ func (rewr Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 		}
 		r.RequestURI = newURI
 	}
-  
-  if changed {
+
+	if changed {
 		logger.Debug("rewrote request",
 			zap.String("method", r.Method),
 			zap.String("uri", r.RequestURI),

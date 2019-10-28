@@ -26,7 +26,6 @@ import (
 	"github.com/go-acme/lego/v3/challenge"
 	"github.com/mholt/certmagic"
 	"go.uber.org/zap"
-	"golang.org/x/time/rate"
 )
 
 func init() {
