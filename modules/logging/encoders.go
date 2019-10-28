@@ -123,7 +123,22 @@ func (se *StringEncoder) Provision(ctx caddy.Context) error {
 		se.FallbackRaw = nil // allow GC to deallocate
 		se.Encoder = val.(zapcore.Encoder)
 	}
+	if se.Encoder == nil {
+		se.Encoder = nopEncoder{}
+	}
 	return nil
+}
+
+// Clone wraps the underlying encoder's Clone. This is
+// necessary because we implement our own EncodeEntry,
+// and if we simply let the embedded encoder's Clone
+// be promoted, it would return a clone of that, and
+// we'd lose our StringEncoder's EncodeEntry.
+func (se StringEncoder) Clone() zapcore.Encoder {
+	return StringEncoder{
+		Encoder:   se.Encoder.Clone(),
+		FieldName: se.FieldName,
+	}
 }
 
 // EncodeEntry partially implements the zapcore.Encoder interface.
@@ -243,3 +258,11 @@ func (lec *LogEncoderConfig) ZapcoreEncoderConfig() zapcore.EncoderConfig {
 }
 
 var bufferpool = buffer.NewPool()
+
+// Interface guards
+var (
+	_ zapcore.Encoder = (*ConsoleEncoder)(nil)
+	_ zapcore.Encoder = (*JSONEncoder)(nil)
+	_ zapcore.Encoder = (*LogfmtEncoder)(nil)
+	_ zapcore.Encoder = (*StringEncoder)(nil)
+)

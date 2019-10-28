@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"fmt"
 	"html/template"
+	"io"
 	weakrand "math/rand"
 	"mime"
 	"net/http"
@@ -189,6 +190,24 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, _ cadd
 		} else {
 			w.Header().Set("Content-Type", mtyp)
 		}
+	}
+
+	// if this handler exists in an error context (i.e. is
+	// part of a handler chain that is supposed to handle
+	// a previous error), we have to serve the content
+	// manually in order to write the correct status code
+	if reqErr, ok := r.Context().Value(caddyhttp.ErrorCtxKey).(error); ok {
+		statusCode := http.StatusInternalServerError
+		if handlerErr, ok := reqErr.(caddyhttp.HandlerError); ok {
+			if handlerErr.StatusCode > 0 {
+				statusCode = handlerErr.StatusCode
+			}
+		}
+		w.WriteHeader(statusCode)
+		if r.Method != "HEAD" {
+			io.Copy(w, file)
+		}
+		return nil
 	}
 
 	// let the standard library do what it does best; note, however,

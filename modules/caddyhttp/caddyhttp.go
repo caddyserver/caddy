@@ -33,6 +33,7 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
 	"github.com/lucas-clemente/quic-go/http3"
 	"github.com/mholt/certmagic"
+	"go.uber.org/zap"
 )
 
 func init() {
@@ -55,7 +56,8 @@ type App struct {
 	h3servers   []*http3.Server
 	h3listeners []net.PacketConn
 
-	ctx caddy.Context
+	ctx    caddy.Context
+	logger *zap.Logger
 }
 
 // CaddyModule returns the Caddy module information.
@@ -69,10 +71,14 @@ func (App) CaddyModule() caddy.ModuleInfo {
 // Provision sets up the app.
 func (app *App) Provision(ctx caddy.Context) error {
 	app.ctx = ctx
+	app.logger = ctx.Logger(app)
 
 	repl := caddy.NewReplacer()
 
 	for srvName, srv := range app.Servers {
+		srv.accessLogger = app.logger.Named("log.access")
+		srv.errorLogger = app.logger.Named("log.error")
+
 		if srv.AutoHTTPS == nil {
 			// avoid nil pointer dereferences
 			srv.AutoHTTPS = new(AutoHTTPSConfig)

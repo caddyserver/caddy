@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package httplog
+package caddyhttp
 
 import (
 	"crypto/tls"
@@ -22,7 +22,7 @@ import (
 )
 
 // LoggableHTTPRequest makes an HTTP request loggable with zap.Object().
-type LoggableHTTPRequest http.Request
+type LoggableHTTPRequest struct{ *http.Request }
 
 // MarshalLogObject satisfies the zapcore.ObjectMarshaler interface.
 func (r LoggableHTTPRequest) MarshalLogObject(enc zapcore.ObjectEncoder) error {

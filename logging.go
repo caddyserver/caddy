@@ -174,7 +174,11 @@ func (logging *Logging) Logger(mod Module) *zap.Logger {
 
 	for _, l := range logging.Logs {
 		if l.matchesModule(modName) {
-			cores = append(cores, l.core)
+			if len(l.Include) == 0 && len(l.Exclude) == 0 {
+				cores = append(cores, l.core)
+				continue
+			}
+			cores = append(cores, &filteringCore{Core: l.core, cl: l})
 		}
 	}
 
@@ -369,7 +373,7 @@ func (cl *CustomLog) buildCore() {
 		zapcore.AddSync(cl.writer),
 		cl.levelEnabler,
 	)
-	if cl.Sampling != nil && cl.Sampling.Interval > 0 {
+	if cl.Sampling != nil {
 		if cl.Sampling.Interval == 0 {
 			cl.Sampling.Interval = 1 * time.Second
 		}
@@ -386,23 +390,38 @@ func (cl *CustomLog) buildCore() {
 }
 
 func (cl *CustomLog) matchesModule(moduleName string) bool {
+	return cl.loggerAllowed(moduleName, true)
+}
+
+// loggerAllowed returns true if name is allowed to emit
+// to cl. isModule should be true if name is the name of
+// a module and you want to see if ANY of that module's
+// logs would be permitted.
+func (cl *CustomLog) loggerAllowed(name string, isModule bool) bool {
 	// accept all loggers by default
 	if len(cl.Include) == 0 && len(cl.Exclude) == 0 {
 		return true
 	}
 
-	// append a dot so that partial namespaces don't match
+	// append a dot so that partial names don't match
 	// (i.e. we don't want "foo.b" to match "foo.bar"); we
 	// will also have to append a dot when we do HasPrefix
 	// below to compensate for when when namespaces are equal
-	moduleName += "."
+	if name != "" && name != "*" && name != "." {
+		name += "."
+	}
 
 	var longestAccept, longestReject int
 
 	if len(cl.Include) > 0 {
 		for _, namespace := range cl.Include {
-			if strings.HasPrefix(moduleName, namespace+".") &&
-				len(namespace) > longestAccept {
+			var hasPrefix bool
+			if isModule {
+				hasPrefix = strings.HasPrefix(namespace+".", name)
+			} else {
+				hasPrefix = strings.HasPrefix(name, namespace+".")
+			}
+			if hasPrefix && len(namespace) > longestAccept {
 				longestAccept = len(namespace)
 			}
 		}
@@ -416,7 +435,13 @@ func (cl *CustomLog) matchesModule(moduleName string) bool {
 
 	if len(cl.Exclude) > 0 {
 		for _, namespace := range cl.Exclude {
-			if strings.HasPrefix(moduleName, namespace+".") &&
+			// * == all logs emitted by modules
+			// . == all logs emitted by core
+			if (namespace == "*" && name != ".") ||
+				(namespace == "." && name == ".") {
+				return false
+			}
+			if strings.HasPrefix(name, namespace+".") &&
 				len(namespace) > longestReject {
 				longestReject = len(namespace)
 			}
@@ -429,7 +454,32 @@ func (cl *CustomLog) matchesModule(moduleName string) bool {
 		}
 	}
 
-	return longestAccept > longestReject
+	return (longestAccept > longestReject) ||
+		(len(cl.Include) == 0 && longestReject == 0)
+}
+
+// filteringCore filters log entries based on logger name,
+// according to the rules of a CustomLog.
+type filteringCore struct {
+	zapcore.Core
+	cl *CustomLog
+}
+
+// With properly wraps With.
+func (fc *filteringCore) With(fields []zapcore.Field) zapcore.Core {
+	return &filteringCore{
+		Core: fc.Core.With(fields),
+		cl:   fc.cl,
+	}
+}
+
+// Check only allows the log entry if its logger name
+// is allowed from the include/exclude rules of fc.cl.
+func (fc *filteringCore) Check(e zapcore.Entry, ce *zapcore.CheckedEntry) *zapcore.CheckedEntry {
+	if fc.cl.loggerAllowed(e.LoggerName, false) {
+		return fc.Core.Check(e, ce)
+	}
+	return ce
 }
 
 // LogSampling configures log entry sampling.
@@ -525,7 +575,7 @@ func newDefaultProductionLog() (*defaultCustomLog, error) {
 		return nil, err
 	}
 	encCfg := zap.NewProductionEncoderConfig()
-	cl.encoder = zapcore.NewJSONEncoder(encCfg)
+	cl.encoder = zapcore.NewConsoleEncoder(encCfg)
 	cl.levelEnabler = zapcore.InfoLevel
 
 	cl.buildCore()
