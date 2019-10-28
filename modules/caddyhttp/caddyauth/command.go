@@ -56,6 +56,10 @@ func cmdHashPassword(fs caddycmd.Flags) (int, error) {
 	plaintext := []byte(fs.String("plaintext"))
 	salt := []byte(fs.String("salt"))
 
+	if len(plaintext) == 0 {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("password is required")
+	}
+
 	var hash []byte
 	var err error
 	switch algorithm {

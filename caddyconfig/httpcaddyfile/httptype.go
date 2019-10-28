@@ -215,6 +215,12 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 		if tlsApp.Automation == nil {
 			tlsApp.Automation = new(caddytls.AutomationConfig)
 		}
+		if !hasACMECA {
+			acmeCA = ""
+		}
+		if !hasEmail {
+			email = ""
+		}
 		tlsApp.Automation.Policies = append(tlsApp.Automation.Policies, caddytls.AutomationPolicy{
 			ManagementRaw: caddyconfig.JSONModuleObject(caddytls.ACMEManagerMaker{
 				CA:    acmeCA.(string),
