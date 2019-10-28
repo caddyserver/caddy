@@ -30,8 +30,15 @@ func init() {
 // matchers, or for routes with matchers that must be have deferred
 // evaluation (e.g. if they depend on placeholders created by other
 // matchers that need to be evaluated first).
+//
+// You can also use subroutes to handle errors from specific handlers.
+// First the primary Routes will be executed, and if they return an
+// error, the Errors routes will be executed; in that case, an error
+// is only returned to the entry point at the server if there is an
+// additional error returned from the errors routes.
 type Subroute struct {
-	Routes RouteList `json:"routes,omitempty"`
+	Routes RouteList        `json:"routes,omitempty"`
+	Errors *HTTPErrorConfig `json:"errors,omitempty"`
 }
 
 // CaddyModule returns the Caddy module information.
@@ -47,7 +54,13 @@ func (sr *Subroute) Provision(ctx caddy.Context) error {
 	if sr.Routes != nil {
 		err := sr.Routes.Provision(ctx)
 		if err != nil {
-			return fmt.Errorf("setting up routes: %v", err)
+			return fmt.Errorf("setting up subroutes: %v", err)
+		}
+		if sr.Errors != nil {
+			err := sr.Errors.Routes.Provision(ctx)
+			if err != nil {
+				return fmt.Errorf("setting up error subroutes: %v", err)
+			}
 		}
 	}
 	return nil
@@ -55,7 +68,13 @@ func (sr *Subroute) Provision(ctx caddy.Context) error {
 
 func (sr *Subroute) ServeHTTP(w http.ResponseWriter, r *http.Request, _ Handler) error {
 	subroute := sr.Routes.BuildCompositeRoute(r)
-	return subroute.ServeHTTP(w, r)
+	err := subroute.ServeHTTP(w, r)
+	if err != nil && sr.Errors != nil {
+		r = sr.Errors.WithError(r, err)
+		errRoute := sr.Errors.Routes.BuildCompositeRoute(r)
+		return errRoute.ServeHTTP(w, r)
+	}
+	return err
 }
 
 // Interface guards

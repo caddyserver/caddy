@@ -29,16 +29,13 @@ import (
 
 // Config represents a Caddy configuration.
 type Config struct {
-	Admin *AdminConfig `json:"admin,omitempty"`
+	Admin      *AdminConfig               `json:"admin,omitempty"`
+	Logging    *Logging                   `json:"logging,omitempty"`
+	StorageRaw json.RawMessage            `json:"storage,omitempty"`
+	AppsRaw    map[string]json.RawMessage `json:"apps,omitempty"`
 
-	StorageRaw json.RawMessage `json:"storage,omitempty"`
-	storage    certmagic.Storage
-
-	AppsRaw map[string]json.RawMessage `json:"apps,omitempty"`
-
-	// apps stores the decoded Apps values,
-	// keyed by module name.
-	apps map[string]App
+	apps    map[string]App
+	storage certmagic.Storage
 
 	cancelFunc context.CancelFunc
 }
@@ -75,7 +72,11 @@ func Run(newCfg *Config) error {
 // is performed if any modules were provisioned;
 // apps that were started already will be stopped,
 // so this function should not leak resources if
-// an error is returned.
+// an error is returned. However, if no error is
+// returned and start == false, you should cancel
+// the config if you are not going to start it,
+// so that each provisioned module will be
+// cleaned up.
 func run(newCfg *Config, start bool) error {
 	if newCfg == nil {
 		return nil
@@ -102,12 +103,30 @@ func run(newCfg *Config, start bool) error {
 	ctx, cancel := NewContext(Context{Context: context.Background(), cfg: newCfg})
 	defer func() {
 		if err != nil {
-			cancel() // clean up now
+			// if there were any errors during startup,
+			// we should cancel the new context we created
+			// since the associated config won't be used;
+			// this will cause all modules that were newly
+			// provisioned to clean themselves up
+			cancel()
+
+			// also undo any other state changes we made
+			if currentCfg != nil {
+				certmagic.Default.Storage = currentCfg.storage
+			}
 		}
 	}()
 	newCfg.cancelFunc = cancel // clean up later
 
-	// set up storage and make it CertMagic's default storage, too
+	// set up logging before anything bad happens
+	if newCfg.Logging != nil {
+		err := newCfg.Logging.openLogs(ctx)
+		if err != nil {
+			return err
+		}
+	}
+
+	// set up global storage and make it CertMagic's default storage, too
 	err = func() error {
 		if newCfg.StorageRaw != nil {
 			val, err := ctx.LoadModuleInline("module", "caddy.storage", newCfg.StorageRaw)
@@ -214,7 +233,11 @@ func unsyncedStop(cfg *Config) {
 // Validate loads, provisions, and validates
 // cfg, but does not start running it.
 func Validate(cfg *Config) error {
-	return run(cfg, false)
+	err := run(cfg, false)
+	if err == nil {
+		cfg.cancelFunc() // call Cleanup on all modules
+	}
+	return err
 }
 
 // Duration is a JSON-string-unmarshable duration type.

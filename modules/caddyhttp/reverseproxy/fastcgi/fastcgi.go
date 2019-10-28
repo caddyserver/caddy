@@ -19,7 +19,6 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
-	"net/url"
 	"path"
 	"path/filepath"
 	"strconv"
@@ -53,6 +52,9 @@ type Transport struct {
 	// with the value of SplitPath. The first piece will be assumed as the
 	// actual resource (CGI script) name, and the second piece will be set to
 	// PATH_INFO for the CGI script to use.
+	// Future enhancements should be careful to avoid CVE-2019-11043,
+	// which can be mitigated with use of a try_files-like behavior
+	// that 404's if the fastcgi path info is not found.
 	SplitPath string `json:"split_path,omitempty"`
 
 	// Extra environment variables
@@ -191,12 +193,13 @@ func (t Transport) buildEnv(r *http.Request) (map[string]string, error) {
 	// original URI in as the value of REQUEST_URI (the user can overwrite this
 	// if desired). Most PHP apps seem to want the original URI. Besides, this is
 	// how nginx defaults: http://stackoverflow.com/a/12485156/1048862
-	reqURL, ok := r.Context().Value(caddyhttp.OriginalURLCtxKey).(url.URL)
+	origReq, ok := r.Context().Value(caddyhttp.OriginalRequestCtxKey).(http.Request)
 	if !ok {
 		// some requests, like active health checks, don't add this to
 		// the request context, so we can just use the current URL
-		reqURL = *r.URL
+		origReq = *r
 	}
+	reqURL := origReq.URL
 
 	requestScheme := "http"
 	if r.TLS != nil {

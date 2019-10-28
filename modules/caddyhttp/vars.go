@@ -38,7 +38,7 @@ func (VarsMiddleware) CaddyModule() caddy.ModuleInfo {
 }
 
 func (t VarsMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next Handler) error {
-	vars := r.Context().Value(VarCtxKey).(map[string]interface{})
+	vars := r.Context().Value(VarsCtxKey).(map[string]interface{})
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
 	for k, v := range t {
 		keyExpanded := repl.ReplaceAll(k, "")
@@ -62,7 +62,7 @@ func (VarsMatcher) CaddyModule() caddy.ModuleInfo {
 
 // Match matches a request based on variables in the context.
 func (m VarsMatcher) Match(r *http.Request) bool {
-	vars := r.Context().Value(VarCtxKey).(map[string]string)
+	vars := r.Context().Value(VarsCtxKey).(map[string]string)
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
 	for k, v := range m {
 		keyExpanded := repl.ReplaceAll(k, "")

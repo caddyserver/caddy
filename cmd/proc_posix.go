@@ -24,7 +24,7 @@ import (
 )
 
 func gracefullyStopProcess(pid int) error {
-	fmt.Printf("Graceful stop...")
+	fmt.Printf("Graceful stop...\n")
 	err := syscall.Kill(pid, syscall.SIGINT)
 	if err != nil {
 		return fmt.Errorf("kill: %v", err)

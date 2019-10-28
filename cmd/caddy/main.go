@@ -40,6 +40,7 @@ import (
 	_ "github.com/caddyserver/caddy/v2/modules/caddytls"
 	_ "github.com/caddyserver/caddy/v2/modules/caddytls/standardstek"
 	_ "github.com/caddyserver/caddy/v2/modules/filestorage"
+	_ "github.com/caddyserver/caddy/v2/modules/logging"
 )
 
 func main() {

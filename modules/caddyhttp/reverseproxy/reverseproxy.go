@@ -441,6 +441,15 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, di Dia
 		}
 	}
 
+	// TODO: there should be an option to return an error if the response
+	// matches some criteria; would solve https://github.com/caddyserver/caddy/issues/1447
+	// by allowing the backend to determine whether this server should treat
+	// a 400+ status code as an error -- but we might need to be careful that
+	// we do not affect the health status of the backend... still looking into
+	// that; if we need to avoid that, we should return a particular error type
+	// that the caller of this function checks for and only applies health
+	// status changes if the error is not this special type
+
 	rw.WriteHeader(res.StatusCode)
 
 	err = h.copyResponse(rw, res.Body, h.flushInterval(req, res))

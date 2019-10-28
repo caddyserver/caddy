@@ -19,7 +19,6 @@ import (
 	"net"
 	"net/http"
 	"net/textproto"
-	"net/url"
 	"path"
 	"strconv"
 	"strings"
@@ -112,27 +111,30 @@ func addHTTPVarsToReplacer(repl caddy.Replacer, req *http.Request, w http.Respon
 				}
 				return qs, true
 
-			// original URI, before any internal changes
+				// original request, before any internal changes
+			case "http.request.orig_method":
+				or, _ := req.Context().Value(OriginalRequestCtxKey).(http.Request)
+				return or.Method, true
 			case "http.request.orig_uri":
-				u, _ := req.Context().Value(OriginalURLCtxKey).(url.URL)
-				return u.RequestURI(), true
+				or, _ := req.Context().Value(OriginalRequestCtxKey).(http.Request)
+				return or.RequestURI, true
 			case "http.request.orig_uri.path":
-				u, _ := req.Context().Value(OriginalURLCtxKey).(url.URL)
-				return u.Path, true
+				or, _ := req.Context().Value(OriginalRequestCtxKey).(http.Request)
+				return or.URL.Path, true
 			case "http.request.orig_uri.path.file":
-				u, _ := req.Context().Value(OriginalURLCtxKey).(url.URL)
-				_, file := path.Split(u.Path)
+				or, _ := req.Context().Value(OriginalRequestCtxKey).(http.Request)
+				_, file := path.Split(or.URL.Path)
 				return file, true
 			case "http.request.orig_uri.path.dir":
-				u, _ := req.Context().Value(OriginalURLCtxKey).(url.URL)
-				dir, _ := path.Split(u.Path)
+				or, _ := req.Context().Value(OriginalRequestCtxKey).(http.Request)
+				dir, _ := path.Split(or.URL.Path)
 				return dir, true
 			case "http.request.orig_uri.query":
-				u, _ := req.Context().Value(OriginalURLCtxKey).(url.URL)
-				return u.RawQuery, true
+				or, _ := req.Context().Value(OriginalRequestCtxKey).(http.Request)
+				return or.URL.RawQuery, true
 			case "http.request.orig_uri.query_string":
-				u, _ := req.Context().Value(OriginalURLCtxKey).(url.URL)
-				qs := u.Query().Encode()
+				or, _ := req.Context().Value(OriginalRequestCtxKey).(http.Request)
+				qs := or.URL.Query().Encode()
 				if qs != "" {
 					qs = "?" + qs
 				}
@@ -183,7 +185,7 @@ func addHTTPVarsToReplacer(repl caddy.Replacer, req *http.Request, w http.Respon
 			// middleware variables
 			if strings.HasPrefix(key, varsReplPrefix) {
 				varName := key[len(varsReplPrefix):]
-				tbl := req.Context().Value(VarCtxKey).(map[string]interface{})
+				tbl := req.Context().Value(VarsCtxKey).(map[string]interface{})
 				raw, ok := tbl[varName]
 				if !ok {
 					// variables can be dynamic, so always return true

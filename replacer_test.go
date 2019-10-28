@@ -85,7 +85,7 @@ func TestReplacerSet(t *testing.T) {
 	}
 }
 
-func TestReplacerReplaceAll(t *testing.T) {
+func TestReplacerReplaceKnown(t *testing.T) {
 	rep := replacer{
 		providers: []ReplacementFunc{
 			// split our possible vars to two functions (to test if both functions are called)
@@ -148,7 +148,7 @@ func TestReplacerReplaceAll(t *testing.T) {
 			expected:  "val1 {nope} test-123 ",
 		},
 	} {
-		actual := rep.ReplaceAll(tc.testInput, "EMPTY")
+		actual := rep.ReplaceKnown(tc.testInput, "EMPTY")
 
 		// test if all are replaced as expected
 		if actual != tc.expected {

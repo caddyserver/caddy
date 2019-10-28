@@ -387,7 +387,7 @@ func cmdAdaptConfig(fl Flags) (int, error) {
 		if warn.Directive != "" {
 			msg = fmt.Sprintf("%s: %s", warn.Directive, warn.Message)
 		}
-		log.Printf("[WARNING][%s] %s:%d: %s", adaptCmdAdapterFlag, warn.File, warn.Line, msg)
+		fmt.Fprintf(os.Stderr, "[WARNING][%s] %s:%d: %s\n", adaptCmdAdapterFlag, warn.File, warn.Line, msg)
 	}
 
 	// print result to stdout
@@ -436,7 +436,7 @@ func cmdValidateConfig(fl Flags) (int, error) {
 			if warn.Directive != "" {
 				msg = fmt.Sprintf("%s: %s", warn.Directive, warn.Message)
 			}
-			log.Printf("[WARNING][%s] %s:%d: %s", validateCmdAdapterFlag, warn.File, warn.Line, msg)
+			fmt.Fprintf(os.Stderr, "[WARNING][%s] %s:%d: %s\n", validateCmdAdapterFlag, warn.File, warn.Line, msg)
 		}
 
 		input = adaptedConfig

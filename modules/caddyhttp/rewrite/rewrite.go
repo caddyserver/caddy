@@ -23,6 +23,7 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"go.uber.org/zap"
 )
 
 func init() {
@@ -39,6 +40,8 @@ type Rewrite struct {
 
 	HTTPRedirect caddyhttp.WeakString `json:"http_redirect,omitempty"`
 	Rehandle     bool                 `json:"rehandle,omitempty"`
+
+	logger *zap.Logger
 }
 
 // CaddyModule returns the Caddy module information.
@@ -47,6 +50,12 @@ func (Rewrite) CaddyModule() caddy.ModuleInfo {
 		Name: "http.handlers.rewrite",
 		New:  func() caddy.Module { return new(Rewrite) },
 	}
+}
+
+// Provision sets up rewr.
+func (rewr *Rewrite) Provision(ctx caddy.Context) error {
+	rewr.logger = ctx.Logger(rewr)
+	return nil
 }
 
 // Validate ensures rewr's configuration is valid.
@@ -60,6 +69,10 @@ func (rewr Rewrite) Validate() error {
 func (rewr Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
 	var changed bool
+
+	logger := rewr.logger.With(
+		zap.Object("request", caddyhttp.LoggableHTTPRequest{Request: r}),
+	)
 
 	// rewrite the method
 	if rewr.Method != "" {
@@ -114,18 +127,23 @@ func (rewr Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 		r.RequestURI = newURI
 	}
 
-	if changed && rewr.Rehandle {
-		return caddyhttp.ErrRehandle
-	}
-
-	if changed && rewr.HTTPRedirect != "" {
-		statusCode, err := strconv.Atoi(repl.ReplaceAll(rewr.HTTPRedirect.String(), ""))
-		if err != nil {
-			return caddyhttp.Error(http.StatusInternalServerError, err)
+	if changed {
+		logger.Debug("rewrote request",
+			zap.String("method", r.Method),
+			zap.String("uri", r.RequestURI),
+		)
+		if rewr.Rehandle {
+			return caddyhttp.ErrRehandle
 		}
-		w.Header().Set("Location", r.RequestURI)
-		w.WriteHeader(statusCode)
-		return nil
+		if rewr.HTTPRedirect != "" {
+			statusCode, err := strconv.Atoi(repl.ReplaceAll(rewr.HTTPRedirect.String(), ""))
+			if err != nil {
+				return caddyhttp.Error(http.StatusInternalServerError, err)
+			}
+			w.Header().Set("Location", r.RequestURI)
+			w.WriteHeader(statusCode)
+			return nil
+		}
 	}
 
 	return next.ServeHTTP(w, r)
