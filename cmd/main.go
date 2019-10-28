@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net"
 	"os"
 	"strconv"
@@ -38,7 +37,7 @@ func Main() {
 
 	switch len(os.Args) {
 	case 0:
-		log.Printf("[FATAL] no arguments provided by OS; args[0] must be command")
+		fmt.Printf("[FATAL] no arguments provided by OS; args[0] must be command\n")
 		os.Exit(caddy.ExitCodeFailedStartup)
 	case 1:
 		os.Args = append(os.Args, "help")
@@ -49,9 +48,9 @@ func Main() {
 	if !ok {
 		if strings.HasPrefix(os.Args[1], "-") {
 			// user probably forgot to type the subcommand
-			log.Println("[ERROR] first argument must be a subcommand; see 'caddy help'")
+			fmt.Println("[ERROR] first argument must be a subcommand; see 'caddy help'")
 		} else {
-			log.Printf("[ERROR] '%s' is not a recognized subcommand; see 'caddy help'", os.Args[1])
+			fmt.Printf("[ERROR] '%s' is not a recognized subcommand; see 'caddy help'\n", os.Args[1])
 		}
 		os.Exit(caddy.ExitCodeFailedStartup)
 	}
@@ -63,13 +62,13 @@ func Main() {
 
 	err := fs.Parse(os.Args[2:])
 	if err != nil {
-		log.Println(err)
+		fmt.Println(err)
 		os.Exit(caddy.ExitCodeFailedStartup)
 	}
 
 	exitCode, err := subcommand.Func(Flags{fs})
 	if err != nil {
-		log.Printf("%s: %v", subcommand.Name, err)
+		fmt.Printf("%s: %v\n", subcommand.Name, err)
 	}
 
 	os.Exit(exitCode)
@@ -149,7 +148,7 @@ func loadConfig(configFile, adapterName string) ([]byte, error) {
 			if warn.Directive != "" {
 				msg = fmt.Sprintf("%s: %s", warn.Directive, warn.Message)
 			}
-			fmt.Printf("[WARNING][%s] %s:%d: %s", adapterName, warn.File, warn.Line, msg)
+			fmt.Printf("[WARNING][%s] %s:%d: %s\n", adapterName, warn.File, warn.Line, msg)
 		}
 		config = adaptedConfig
 	}

@@ -15,6 +15,7 @@
 package caddy
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -28,6 +29,8 @@ type Replacer interface {
 	Delete(variable string)
 	Map(ReplacementFunc)
 	ReplaceAll(input, empty string) string
+	ReplaceKnown(input, empty string) string
+	ReplaceOrErr(input string, errOnEmpty, errOnUnknown bool) (string, error)
 }
 
 // NewReplacer returns a new Replacer.
@@ -70,12 +73,34 @@ func (r *replacer) fromStatic(key string) (val string, ok bool) {
 	return
 }
 
+// ReplaceOrErr is like ReplaceAll, but any placeholders
+// that are empty or not recognized will cause an error to
+// be returned.
+func (r *replacer) ReplaceOrErr(input string, errOnEmpty, errOnUnknown bool) (string, error) {
+	return r.replace(input, "", false, errOnEmpty, errOnUnknown)
+}
+
+// ReplaceKnown is like ReplaceAll but only replaces
+// placeholders that are known (recognized). Unrecognized
+// placeholders will remain in the output.
+func (r *replacer) ReplaceKnown(input, empty string) string {
+	out, _ := r.replace(input, empty, false, false, false)
+	return out
+}
+
 // ReplaceAll efficiently replaces placeholders in input with
-// their values. Unrecognized placeholders will not be replaced.
-// Values that are empty string will be substituted with empty.
+// their values. All placeholders are replaced in the output
+// whether they are recognized or not. Values that are empty
+// string will be substituted with empty.
 func (r *replacer) ReplaceAll(input, empty string) string {
+	out, _ := r.replace(input, empty, true, false, false)
+	return out
+}
+
+func (r *replacer) replace(input, empty string,
+	treatUnknownAsEmpty, errOnEmpty, errOnUnknown bool) (string, error) {
 	if !strings.Contains(input, string(phOpen)) {
-		return input
+		return input, nil
 	}
 
 	var sb strings.Builder
@@ -100,24 +125,39 @@ func (r *replacer) ReplaceAll(input, empty string) string {
 		// trim opening bracket
 		key := input[i+1 : end]
 
-		// try to get a value for this key; if
-		// the key is not recognized, do not
-		// perform any replacement
+		// try to get a value for this key,
+		// handle empty values accordingly
 		var found bool
 		for _, mapFunc := range r.providers {
 			if val, ok := mapFunc(key); ok {
 				found = true
-				if val != "" {
+				if val == "" {
+					if errOnEmpty {
+						return "", fmt.Errorf("evaluated placeholder %s%s%s is empty",
+							string(phOpen), key, string(phClose))
+					} else if empty != "" {
+						sb.WriteString(empty)
+					}
+				} else {
 					sb.WriteString(val)
-				} else if empty != "" {
-					sb.WriteString(empty)
 				}
 				break
 			}
 		}
 		if !found {
-			lastWriteCursor = i
-			continue
+			// placeholder is unknown (unrecognized), handle accordingly
+			switch {
+			case errOnUnknown:
+				return "", fmt.Errorf("unrecognized placeholder %s%s%s",
+					string(phOpen), key, string(phClose))
+			case treatUnknownAsEmpty:
+				if empty != "" {
+					sb.WriteString(empty)
+				}
+			default:
+				lastWriteCursor = i
+				continue
+			}
 		}
 
 		// advance cursor to end of placeholder
@@ -128,7 +168,7 @@ func (r *replacer) ReplaceAll(input, empty string) string {
 	// flush any unwritten remainder
 	sb.WriteString(input[lastWriteCursor:])
 
-	return sb.String()
+	return sb.String(), nil
 }
 
 // ReplacementFunc is a function that returns a replacement
@@ -142,8 +182,7 @@ func globalDefaultReplacements(key string) (string, bool) {
 	// check environment variable
 	const envPrefix = "env."
 	if strings.HasPrefix(key, envPrefix) {
-		val := os.Getenv(key[len(envPrefix):])
-		return val, val != ""
+		return os.Getenv(key[len(envPrefix):]), true
 	}
 
 	switch key {
