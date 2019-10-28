@@ -82,12 +82,17 @@ func (t *Transport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 //
 // is equivalent to:
 //
-//     matcher indexFiles {
+//     matcher canonicalPath {
 //         file {
-//             try_files {path} index.php
+//             try_files {path}/index.php
+//         }
+//         not {
+//             path */
 //         }
 //     }
-//     rewrite match:indexFiles {http.matchers.file.relative}
+//     redir match:canonicalPath {path}/ 308
+//
+//     try_files {path} {path}/index.php index.php
 //
 //     matcher phpFiles {
 //         path *.php
@@ -101,8 +106,8 @@ func (t *Transport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // Thus, this directive produces multiple routes, each with a different
 // matcher because multiple consecutive routes are necessary to support
 // the common PHP use case. If this "common" config is not compatible
-// with a user's PHP requirements, they can use the manual approach as
-// above to configure it precisely as they need.
+// with a user's PHP requirements, they can use a manual approach based
+// on the example above to configure it precisely as they need.
 //
 // If a matcher is specified by the user, for example:
 //
