@@ -34,7 +34,10 @@ func init() {
 
 // Cache implements a simple distributed cache.
 type Cache struct {
-	group *groupcache.Group
+	Self    string   `json:"self,omitempty"`
+	Peers   []string `json:"peers,omitempty"`
+	MaxSize int64    `json:"max_size,omitempty"`
+	group   *groupcache.Group
 }
 
 // CaddyModule returns the Caddy module information.
@@ -47,18 +50,20 @@ func (Cache) CaddyModule() caddy.ModuleInfo {
 
 // Provision provisions c.
 func (c *Cache) Provision(ctx caddy.Context) error {
-	// TODO: proper pool configuration
-	me := "http://localhost:5555"
-	// TODO: Make max size configurable
-	maxSize := int64(512 << 20)
+	// TODO: use UsagePool so that cache survives config reloads - TODO: a single cache for whole process?
+	maxSize := c.MaxSize
+	if maxSize == 0 {
+		const maxMB = 512
+		maxSize = int64(maxMB << 20)
+	}
 	poolMu.Lock()
 	if pool == nil {
-		pool = groupcache.NewHTTPPool(me)
+		pool = groupcache.NewHTTPPool(c.Self)
 		c.group = groupcache.NewGroup(groupName, maxSize, groupcache.GetterFunc(c.getter))
 	} else {
 		c.group = groupcache.GetGroup(groupName)
 	}
-	pool.Set(me)
+	pool.Set(append(c.Peers, c.Self)...)
 	poolMu.Unlock()
 
 	return nil
@@ -66,13 +71,18 @@ func (c *Cache) Provision(ctx caddy.Context) error {
 
 // Validate validates c.
 func (c *Cache) Validate() error {
-	// TODO: implement
+	if c.Self == "" {
+		return fmt.Errorf("address of this instance (self) is required")
+	}
+	if c.MaxSize < 0 {
+		return fmt.Errorf("size must be greater than 0")
+	}
 	return nil
 }
 
 func (c *Cache) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	// TODO: proper RFC implementation of cache control headers...
-	if r.Header.Get("Cache-Control") == "no-cache" || r.Method != "GET" {
+	if r.Header.Get("Cache-Control") == "no-cache" || (r.Method != "GET" && r.Method != "HEAD") {
 		return next.ServeHTTP(w, r)
 	}
 
