@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	weakrand "math/rand"
 	"net"
 	"net/http"
@@ -41,7 +40,7 @@ func init() {
 
 	err := caddy.RegisterModule(App{})
 	if err != nil {
-		log.Fatal(err)
+		caddy.Log().Fatal(err.Error())
 	}
 }
 
@@ -76,6 +75,7 @@ func (app *App) Provision(ctx caddy.Context) error {
 	repl := caddy.NewReplacer()
 
 	for srvName, srv := range app.Servers {
+		srv.logger = app.logger.Named("log")
 		srv.accessLogger = app.logger.Named("log.access")
 		srv.errorLogger = app.logger.Named("log.error")
 
@@ -205,7 +205,9 @@ func (app *App) Start() error {
 					/////////
 					// TODO: HTTP/3 support is experimental for now
 					if srv.ExperimentalHTTP3 {
-						log.Printf("[INFO] Enabling experimental HTTP/3 listener on %s", addr)
+						app.logger.Info("enabling experimental HTTP/3 listener",
+							zap.String("addr", addr),
+						)
 						h3ln, err := caddy.ListenPacket("udp", addr)
 						if err != nil {
 							return fmt.Errorf("getting HTTP/3 UDP listener: %v", err)
@@ -295,8 +297,10 @@ func (app *App) automaticHTTPS() error {
 
 		// skip if all listeners use the HTTP port
 		if !srv.listenersUseAnyPortOtherThan(app.httpPort()) {
-			log.Printf("[INFO] Server %s is only listening on the HTTP port %d, so no automatic HTTPS will be applied to this server",
-				srvName, app.httpPort())
+			app.logger.Info("server is only listening on the HTTP port, so no automatic HTTPS will be applied to this server",
+				zap.String("server_name", srvName),
+				zap.Int("http_port", app.httpPort()),
+			)
 			continue
 		}
 
@@ -333,7 +337,10 @@ func (app *App) automaticHTTPS() error {
 					// supposed to ignore loaded certificates
 					if !srv.AutoHTTPS.IgnoreLoadedCerts &&
 						len(tlsApp.AllMatchingCertificates(d)) > 0 {
-						log.Printf("[INFO][%s] Skipping automatic certificate management because one or more matching certificates are already loaded", d)
+						app.logger.Info("skipping automatic certificate management because one or more matching certificates are already loaded",
+							zap.String("domain", d),
+							zap.String("server_name", srvName),
+						)
 						continue
 					}
 					domainsForCerts = append(domainsForCerts, d)
@@ -366,7 +373,9 @@ func (app *App) automaticHTTPS() error {
 				})
 
 			// manage their certificates
-			log.Printf("[INFO] Enabling automatic TLS certificate management for %v", domainsForCerts)
+			app.logger.Info("enabling automatic TLS certificate management",
+				zap.Strings("domains", domainsForCerts),
+			)
 			err := tlsApp.Manage(domainsForCerts)
 			if err != nil {
 				return fmt.Errorf("%s: managing certificate for %s: %s", srvName, domains, err)
@@ -383,7 +392,9 @@ func (app *App) automaticHTTPS() error {
 				continue
 			}
 
-			log.Printf("[INFO] Enabling automatic HTTP->HTTPS redirects for %v", domains)
+			app.logger.Info("enabling automatic HTTP->HTTPS redirects",
+				zap.Strings("domains", domains),
+			)
 
 			// create HTTP->HTTPS redirects
 			for _, addr := range srv.Listen {
@@ -449,8 +460,10 @@ func (app *App) automaticHTTPS() error {
 					// that the redirect runs from; simply append our
 					// redirect route to the existing routes, with a
 					// caveat that their config might override ours
-					log.Printf("[WARNING] Server %s is listening on %s, so automatic HTTP->HTTPS redirects might be overridden by your own configuration",
-						srvName, addr)
+					app.logger.Warn("server is listening on same interface as redirects, so automatic HTTP->HTTPS redirects might be overridden by your own configuration",
+						zap.String("server_name", srvName),
+						zap.String("interface", addr),
+					)
 					srv.Routes = append(srv.Routes, redirRoute)
 					continue redirRoutesLoop
 				}

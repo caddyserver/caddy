@@ -17,7 +17,6 @@ package caddyhttp
 import (
 	"context"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -52,6 +51,7 @@ type Server struct {
 	ExperimentalHTTP3 bool `json:"experimental_http3,omitempty"`
 
 	tlsApp       *caddytls.TLS
+	logger       *zap.Logger
 	accessLogger *zap.Logger
 	errorLogger  *zap.Logger
 
@@ -65,7 +65,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if s.h3server != nil {
 		err := s.h3server.SetQuicHeaders(w.Header())
 		if err != nil {
-			log.Printf("[ERROR] Setting HTTP/3 Alt-Svc header: %v", err)
+			s.logger.Error("setting HTTP/3 Alt-Svc header", zap.Error(err))
 		}
 	}
 

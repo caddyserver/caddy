@@ -15,9 +15,10 @@
 package caddy
 
 import (
-	"log"
 	"os"
 	"os/signal"
+
+	"go.uber.org/zap"
 )
 
 // TrapSignals create signal/interrupt handlers as best it can for the
@@ -41,11 +42,11 @@ func trapSignalsCrossPlatform() {
 			<-shutdown
 
 			if i > 0 {
-				log.Println("[INFO] SIGINT: Force quit")
+				Log().Warn("force quit", zap.String("signal", "SIGINT"))
 				os.Exit(ExitCodeForceQuit)
 			}
 
-			log.Println("[INFO] SIGINT: Shutting down")
+			Log().Info("shutting down", zap.String("signal", "SIGINT"))
 			go gracefulStop("SIGINT")
 		}
 	}()
@@ -57,11 +58,14 @@ func gracefulStop(sigName string) {
 
 	err := stopAndCleanup()
 	if err != nil {
-		log.Printf("[ERROR] %s stop: %v", sigName, err)
+		Log().Error("stopping",
+			zap.String("signal", sigName),
+			zap.Error(err),
+		)
 		exitCode = ExitCodeFailedQuit
 	}
 
-	log.Printf("[INFO] %s: Shutdown done", sigName)
+	Log().Info("shutdown done", zap.String("signal", sigName))
 	os.Exit(exitCode)
 }
 

@@ -130,9 +130,9 @@ not quit after printing, and can be useful for troubleshooting.`,
 	RegisterCommand(Command{
 		Name:  "stop",
 		Func:  cmdStop,
-		Short: "Gracefully stops the running Caddy process",
+		Short: "Gracefully stops a started Caddy process",
 		Long: `
-Stops the running Caddy process as gracefully as possible.
+Stops the background Caddy process as gracefully as possible.
 
 On Windows, this stop is forceful and Caddy will not have an opportunity to
 clean up any active locks; for a graceful shutdown on Windows, use Ctrl+C

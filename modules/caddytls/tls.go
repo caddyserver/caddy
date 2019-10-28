@@ -18,7 +18,6 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"sync"
 	"time"
@@ -26,6 +25,7 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/go-acme/lego/v3/challenge"
 	"github.com/mholt/certmagic"
+	"go.uber.org/zap"
 	"golang.org/x/time/rate"
 )
 
@@ -44,6 +44,7 @@ type TLS struct {
 	ctx                caddy.Context
 	storageCleanTicker *time.Ticker
 	storageCleanStop   chan struct{}
+	logger             *zap.Logger
 }
 
 // CaddyModule returns the Caddy module information.
@@ -57,6 +58,7 @@ func (TLS) CaddyModule() caddy.ModuleInfo {
 // Provision sets up the configuration for the TLS app.
 func (t *TLS) Provision(ctx caddy.Context) error {
 	t.ctx = ctx
+	t.logger = ctx.Logger(t)
 
 	// set up a new certificate cache; this (re)loads all certificates
 	cacheOpts := certmagic.CacheOptions{
@@ -292,7 +294,7 @@ func (t *TLS) cleanStorageUnits() {
 
 	storageClean = time.Now()
 
-	log.Println("[INFO] tls: Cleaned up storage unit(s)")
+	t.logger.Info("cleaned up storage units")
 }
 
 // CertificateLoader is a type that can load certificates.

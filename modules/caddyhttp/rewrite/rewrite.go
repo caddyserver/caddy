@@ -21,6 +21,7 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"go.uber.org/zap"
 )
 
 func init() {
@@ -32,6 +33,8 @@ type Rewrite struct {
 	Method   string `json:"method,omitempty"`
 	URI      string `json:"uri,omitempty"`
 	Rehandle bool   `json:"rehandle,omitempty"`
+
+	logger *zap.Logger
 }
 
 // CaddyModule returns the Caddy module information.
@@ -42,15 +45,25 @@ func (Rewrite) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
+// Provision sets up rewr.
+func (rewr *Rewrite) Provision(ctx caddy.Context) error {
+	rewr.logger = ctx.Logger(rewr)
+	return nil
+}
+
 func (rewr Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
-	var rehandleNeeded bool
+	var changed bool
+
+	logger := rewr.logger.With(
+		zap.Object("request", caddyhttp.LoggableHTTPRequest{Request: r}),
+	)
 
 	if rewr.Method != "" {
 		method := r.Method
 		r.Method = strings.ToUpper(repl.ReplaceAll(rewr.Method, ""))
 		if r.Method != method {
-			rehandleNeeded = true
+			changed = true
 		}
 	}
 
@@ -73,12 +86,18 @@ func (rewr Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 		}
 
 		if newURI != oldURI {
-			rehandleNeeded = true
+			changed = true
 		}
 	}
 
-	if rehandleNeeded && rewr.Rehandle {
-		return caddyhttp.ErrRehandle
+	if changed {
+		logger.Debug("rewrote request",
+			zap.String("method", r.Method),
+			zap.String("uri", r.RequestURI),
+		)
+		if rewr.Rehandle {
+			return caddyhttp.ErrRehandle
+		}
 	}
 
 	return next.ServeHTTP(w, r)

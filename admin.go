@@ -34,6 +34,7 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/mholt/certmagic"
 	"github.com/rs/cors"
+	"go.uber.org/zap"
 )
 
 var (
@@ -51,6 +52,8 @@ type AdminConfig struct {
 var DefaultAdminConfig = &AdminConfig{
 	Listen: DefaultAdminListen,
 }
+
+// TODO: holy smokes, the admin endpoint might not have to live in caddy's core.
 
 // StartAdmin starts Caddy's administration endpoint,
 // bootstrapping it with an optional configuration
@@ -113,7 +116,15 @@ func StartAdmin(initialConfigJSON []byte) error {
 		}
 	}
 
-	handler := cors.Default().Handler(mux)
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// TODO: improve/organize this logging
+		Log().Named("admin.request").Info("",
+			zap.String("method", r.Method),
+			zap.String("uri", r.RequestURI),
+			zap.String("remote", r.RemoteAddr),
+		)
+		cors.Default().Handler(mux).ServeHTTP(w, r)
+	})
 
 	cfgEndptSrv = &http.Server{
 		Handler:           handler,
@@ -125,14 +136,14 @@ func StartAdmin(initialConfigJSON []byte) error {
 
 	go cfgEndptSrv.Serve(ln)
 
-	log.Println("Caddy 2 admin endpoint listening on", adminConfig.Listen)
+	fmt.Println("Caddy 2 admin endpoint listening on", adminConfig.Listen)
 
 	if len(initialConfigJSON) > 0 {
 		err := Load(bytes.NewReader(initialConfigJSON))
 		if err != nil {
 			return fmt.Errorf("loading initial config: %v", err)
 		}
-		log.Println("Caddy 2 serving initial configuration")
+		fmt.Println("Caddy 2 serving initial configuration")
 	}
 
 	return nil

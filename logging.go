@@ -172,13 +172,15 @@ func (logging *Logging) Logger(mod Module) *zap.Logger {
 	modName := mod.CaddyModule().Name
 	var cores []zapcore.Core
 
-	for _, l := range logging.Logs {
-		if l.matchesModule(modName) {
-			if len(l.Include) == 0 && len(l.Exclude) == 0 {
-				cores = append(cores, l.core)
-				continue
+	if logging != nil {
+		for _, l := range logging.Logs {
+			if l.matchesModule(modName) {
+				if len(l.Include) == 0 && len(l.Exclude) == 0 {
+					cores = append(cores, l.core)
+					continue
+				}
+				cores = append(cores, &filteringCore{Core: l.core, cl: l})
 			}
-			cores = append(cores, &filteringCore{Core: l.core, cl: l})
 		}
 	}
 

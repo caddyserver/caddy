@@ -17,12 +17,12 @@
 package caddy
 
 import (
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/mholt/certmagic"
+	"go.uber.org/zap"
 )
 
 // trapSignalsPosix captures POSIX-only signals.
@@ -34,23 +34,23 @@ func trapSignalsPosix() {
 		for sig := range sigchan {
 			switch sig {
 			case syscall.SIGQUIT:
-				log.Println("[INFO] SIGQUIT: Quitting process immediately")
+				Log().Info("quitting process immediately", zap.String("signal", "SIGQUIT"))
 				certmagic.CleanUpOwnLocks() // try to clean up locks anyway, it's important
 				os.Exit(ExitCodeForceQuit)
 
 			case syscall.SIGTERM:
-				log.Println("[INFO] SIGTERM: Shutting down apps then terminating")
+				Log().Info("shutting down apps then terminating", zap.String("signal", "SIGTERM"))
 				gracefulStop("SIGTERM")
 
 			case syscall.SIGUSR1:
-				log.Println("[INFO] SIGUSR1: Not implemented")
+				Log().Info("not implemented", zap.String("signal", "SIGUSR1"))
 
 			case syscall.SIGUSR2:
-				log.Println("[INFO] SIGUSR2: Not implemented")
+				Log().Info("not implemented", zap.String("signal", "SIGUSR2"))
 
 			case syscall.SIGHUP:
 				// ignore; this signal is sometimes sent outside of the user's control
-				log.Println("[INFO] SIGHUP: Not implemented")
+				Log().Info("not implemented", zap.String("signal", "SIGHUP"))
 			}
 		}
 	}()
