@@ -6,6 +6,7 @@ require (
 	github.com/Masterminds/sprig/v3 v3.0.0
 	github.com/andybalholm/brotli v0.0.0-20190821151343-b60f0d972eeb
 	github.com/dustin/go-humanize v1.0.0
+	github.com/dvyukov/go-fuzz v0.0.0-20191022152526-8cb203812681 // indirect
 	github.com/go-acme/lego/v3 v3.1.0
 	github.com/golang/groupcache v0.0.0-20191002201903-404acd9df4cc
 	github.com/ilibs/json5 v1.0.1
@@ -15,7 +16,7 @@ require (
 	github.com/klauspost/compress v1.8.6
 	github.com/klauspost/cpuid v1.2.1
 	github.com/lucas-clemente/quic-go v0.12.1
-	github.com/mholt/certmagic v0.8.0
+	github.com/mholt/certmagic v0.8.3
 	github.com/muhammadmuzzammil1998/jsonc v0.0.0-20190906142622-1265e9b150c6
 	github.com/onsi/ginkgo v1.8.0 // indirect
 	github.com/onsi/gomega v1.5.0 // indirect

@@ -106,13 +106,12 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 
 	// on-demand rate limiting
 	if t.Automation != nil && t.Automation.OnDemand != nil && t.Automation.OnDemand.RateLimit != nil {
-		limit := rate.Every(time.Duration(t.Automation.OnDemand.RateLimit.Interval))
-		onDemandRateLimiter.SetLimit(limit)
-		onDemandRateLimiter.SetBurst(t.Automation.OnDemand.RateLimit.Burst)
+		onDemandRateLimiter.SetMaxEvents(t.Automation.OnDemand.RateLimit.Burst)
+		onDemandRateLimiter.SetWindow(time.Duration(t.Automation.OnDemand.RateLimit.Interval))
 	} else {
-		// if no rate limit is specified, be sure to remove any existing limit
-		onDemandRateLimiter.SetLimit(0)
-		onDemandRateLimiter.SetBurst(0)
+		// remove any existing rate limiter
+		onDemandRateLimiter.SetMaxEvents(0)
+		onDemandRateLimiter.SetWindow(0)
 	}
 
 	// load manual/static (unmanaged) certificates - we do this in
@@ -386,7 +385,7 @@ type ManagerMaker interface {
 
 // These perpetual values are used for on-demand TLS.
 var (
-	onDemandRateLimiter = rate.NewLimiter(0, 1)
+	onDemandRateLimiter = certmagic.NewRateLimiter(0, 0)
 	onDemandAskClient   = &http.Client{
 		Timeout: 10 * time.Second,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
