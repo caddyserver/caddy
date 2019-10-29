@@ -219,7 +219,7 @@ jobs:
         ["./caddyconfig/httpcaddyfile/adapter_fuzz.go"]="caddyfile-adapter" \
         ["./caddyconfig/httpcaddyfile/addresses_fuzz.go"]="parse-address" \
         ["./caddyconfig/caddyfile/parse_fuzz.go"]="parse-caddyfile" \
-        ["./listeners_fuzz.go"]="parse-listen-addr" \
+        ["./listeners_fuzz.go"]="parse-network-address" \
         ["./replacer_fuzz.go"]="replacer" \
       )
 
