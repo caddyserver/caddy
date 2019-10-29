@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"golang.org/x/net/http2"
 )
 
 func init() {
