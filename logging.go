@@ -577,6 +577,7 @@ func newDefaultProductionLog() (*defaultCustomLog, error) {
 		return nil, err
 	}
 	encCfg := zap.NewProductionEncoderConfig()
+	encCfg.EncodeLevel = zapcore.CapitalColorLevelEncoder
 	cl.encoder = zapcore.NewConsoleEncoder(encCfg)
 	cl.levelEnabler = zapcore.InfoLevel
 
