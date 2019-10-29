@@ -53,10 +53,8 @@ func Error(statusCode int, err error) HandlerError {
 // HandlerError is a serializable representation of
 // an error from within an HTTP handler.
 type HandlerError struct {
-	Err             error    // the original error value and message
-	StatusCode      int      // the HTTP status code to associate with this error
-	Message         string   // an optional message that can be shown to the user
-	Recommendations []string // an optional list of things to try to resolve the error
+	Err        error // the original error value and message
+	StatusCode int   // the HTTP status code to associate with this error
 
 	ID    string // generated; for identifying this error in logs
 	Trace string // produced from call stack
