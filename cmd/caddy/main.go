@@ -38,6 +38,7 @@ import (
 	_ "github.com/caddyserver/caddy/v2/modules/caddyhttp/starlarkmw"
 	_ "github.com/caddyserver/caddy/v2/modules/caddyhttp/templates"
 	_ "github.com/caddyserver/caddy/v2/modules/caddytls"
+	_ "github.com/caddyserver/caddy/v2/modules/caddytls/distributedstek"
 	_ "github.com/caddyserver/caddy/v2/modules/caddytls/standardstek"
 	_ "github.com/caddyserver/caddy/v2/modules/filestorage"
 	_ "github.com/caddyserver/caddy/v2/modules/logging"
