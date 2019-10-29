@@ -136,7 +136,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// prepare the error log
 		logger := errLog
-		if s.Logs.LoggerNames != nil {
+		if s.Logs != nil && s.Logs.LoggerNames != nil {
 			logger = logger.Named(s.Logs.LoggerNames[r.Host])
 		}
 
