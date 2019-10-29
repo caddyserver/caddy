@@ -119,11 +119,12 @@ func run(newCfg *Config, start bool) error {
 	newCfg.cancelFunc = cancel // clean up later
 
 	// set up logging before anything bad happens
-	if newCfg.Logging != nil {
-		err := newCfg.Logging.openLogs(ctx)
-		if err != nil {
-			return err
-		}
+	if newCfg.Logging == nil {
+		newCfg.Logging = new(Logging)
+	}
+	err = newCfg.Logging.openLogs(ctx)
+	if err != nil {
+		return err
 	}
 
 	// set up global storage and make it CertMagic's default storage, too
