@@ -28,6 +28,7 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/headers"
+	"go.uber.org/zap"
 	"golang.org/x/net/http/httpguts"
 )
 
@@ -47,6 +48,8 @@ type Handler struct {
 
 	Transport http.RoundTripper `json:"-"`
 	CB        CircuitBreaker    `json:"-"`
+
+	logger *zap.Logger
 }
 
 // CaddyModule returns the Caddy module information.
@@ -59,6 +62,8 @@ func (Handler) CaddyModule() caddy.ModuleInfo {
 
 // Provision ensures that h is set up properly before use.
 func (h *Handler) Provision(ctx caddy.Context) error {
+	h.logger = ctx.Logger(h)
+
 	// start by loading modules
 	if h.TransportRaw != nil {
 		val, err := ctx.LoadModuleInline("protocol", "http.handlers.reverse_proxy.transport", h.TransportRaw)
@@ -129,6 +134,8 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 	if h.HealthChecks != nil &&
 		h.HealthChecks.Active != nil &&
 		(h.HealthChecks.Active.Path != "" || h.HealthChecks.Active.Port != 0) {
+		h.HealthChecks.Active.logger = h.logger.Named("health_checker.active")
+
 		timeout := time.Duration(h.HealthChecks.Active.Timeout)
 		if timeout == 0 {
 			timeout = 10 * time.Second
@@ -174,11 +181,12 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 		// without MaxRequests), copy the value into this upstream, since the
 		// value in the upstream (MaxRequests) is what is used during
 		// availability checks
-		if h.HealthChecks != nil &&
-			h.HealthChecks.Passive != nil &&
-			h.HealthChecks.Passive.UnhealthyRequestCount > 0 &&
-			upstream.MaxRequests == 0 {
-			upstream.MaxRequests = h.HealthChecks.Passive.UnhealthyRequestCount
+		if h.HealthChecks != nil && h.HealthChecks.Passive != nil {
+			h.HealthChecks.Passive.logger = h.logger.Named("health_checker.passive")
+			if h.HealthChecks.Passive.UnhealthyRequestCount > 0 &&
+				upstream.MaxRequests == 0 {
+				upstream.MaxRequests = h.HealthChecks.Passive.UnhealthyRequestCount
+			}
 		}
 
 		// upstreams need independent access to the passive

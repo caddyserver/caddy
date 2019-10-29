@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -29,6 +28,7 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"go.uber.org/zap"
 )
 
 // HealthChecks holds configuration related to health checking.
@@ -53,6 +53,7 @@ type ActiveHealthChecks struct {
 	stopChan   chan struct{}
 	httpClient *http.Client
 	bodyRegexp *regexp.Regexp
+	logger     *zap.Logger
 }
 
 // PassiveHealthChecks holds configuration related to passive
@@ -64,6 +65,8 @@ type PassiveHealthChecks struct {
 	UnhealthyRequestCount int            `json:"unhealthy_request_count,omitempty"`
 	UnhealthyStatus       []int          `json:"unhealthy_status,omitempty"`
 	UnhealthyLatency      caddy.Duration `json:"unhealthy_latency,omitempty"`
+
+	logger *zap.Logger
 }
 
 // CircuitBreaker is a type that can act as an early-warning
@@ -101,11 +104,16 @@ func (h *Handler) doActiveHealthChecksForAllHosts() {
 		go func(networkAddr string, host Host) {
 			network, addrs, err := caddy.ParseNetworkAddress(networkAddr)
 			if err != nil {
-				log.Printf("[ERROR] reverse_proxy: active health check for host %s: bad network address: %v", networkAddr, err)
+				h.HealthChecks.Active.logger.Error("bad network address",
+					zap.String("address", networkAddr),
+					zap.Error(err),
+				)
 				return
 			}
 			if len(addrs) != 1 {
-				log.Printf("[ERROR] reverse_proxy: active health check for host %s: multiple addresses (upstream must map to only one address)", networkAddr)
+				h.HealthChecks.Active.logger.Error("multiple addresses (upstream must map to only one address)",
+					zap.String("address", networkAddr),
+				)
 				return
 			}
 			hostAddr := addrs[0]
@@ -117,7 +125,10 @@ func (h *Handler) doActiveHealthChecksForAllHosts() {
 			}
 			err = h.doActiveHealthCheck(DialInfo{Network: network, Address: addrs[0]}, hostAddr, host)
 			if err != nil {
-				log.Printf("[ERROR] reverse_proxy: active health check for host %s: %v", networkAddr, err)
+				h.HealthChecks.Active.logger.Error("active health check failed",
+					zap.String("address", networkAddr),
+					zap.Error(err),
+				)
 			}
 		}(networkAddr, host)
 
@@ -171,7 +182,10 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, host H
 	// do the request, being careful to tame the response body
 	resp, err := h.HealthChecks.Active.httpClient.Do(req)
 	if err != nil {
-		log.Printf("[INFO] reverse_proxy: active health check: %s is down (HTTP request failed: %v)", hostAddr, err)
+		h.HealthChecks.Active.logger.Info("HTTP request failed",
+			zap.String("host", hostAddr),
+			zap.Error(err),
+		)
 		_, err2 := host.SetHealthy(false)
 		if err2 != nil {
 			return fmt.Errorf("marking unhealthy: %v", err2)
@@ -191,7 +205,10 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, host H
 	// if status code is outside criteria, mark down
 	if h.HealthChecks.Active.ExpectStatus > 0 {
 		if !caddyhttp.StatusCodeMatches(resp.StatusCode, h.HealthChecks.Active.ExpectStatus) {
-			log.Printf("[INFO] reverse_proxy: active health check: %s is down (status code %d unexpected)", hostAddr, resp.StatusCode)
+			h.HealthChecks.Active.logger.Info("unexpected status code",
+				zap.Int("status_code", resp.StatusCode),
+				zap.String("host", hostAddr),
+			)
 			_, err := host.SetHealthy(false)
 			if err != nil {
 				return fmt.Errorf("marking unhealthy: %v", err)
@@ -199,7 +216,10 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, host H
 			return nil
 		}
 	} else if resp.StatusCode < 200 || resp.StatusCode >= 400 {
-		log.Printf("[INFO] reverse_proxy: active health check: %s is down (status code %d out of tolerances)", hostAddr, resp.StatusCode)
+		h.HealthChecks.Active.logger.Info("status code out of tolerances",
+			zap.Int("status_code", resp.StatusCode),
+			zap.String("host", hostAddr),
+		)
 		_, err := host.SetHealthy(false)
 		if err != nil {
 			return fmt.Errorf("marking unhealthy: %v", err)
@@ -211,7 +231,10 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, host H
 	if h.HealthChecks.Active.bodyRegexp != nil {
 		bodyBytes, err := ioutil.ReadAll(body)
 		if err != nil {
-			log.Printf("[INFO] reverse_proxy: active health check: %s is down (failed to read response body)", hostAddr)
+			h.HealthChecks.Active.logger.Info("failed to read response body",
+				zap.String("host", hostAddr),
+				zap.Error(err),
+			)
 			_, err := host.SetHealthy(false)
 			if err != nil {
 				return fmt.Errorf("marking unhealthy: %v", err)
@@ -219,7 +242,9 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, host H
 			return nil
 		}
 		if !h.HealthChecks.Active.bodyRegexp.Match(bodyBytes) {
-			log.Printf("[INFO] reverse_proxy: active health check: %s is down (response body failed expectations)", hostAddr)
+			h.HealthChecks.Active.logger.Info("response body failed expectations",
+				zap.String("host", hostAddr),
+			)
 			_, err := host.SetHealthy(false)
 			if err != nil {
 				return fmt.Errorf("marking unhealthy: %v", err)
@@ -231,7 +256,9 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, host H
 	// passed health check parameters, so mark as healthy
 	swapped, err := host.SetHealthy(true)
 	if swapped {
-		log.Printf("[INFO] reverse_proxy: active health check: %s is back up", hostAddr)
+		h.HealthChecks.Active.logger.Info("host is up",
+			zap.String("host", hostAddr),
+		)
 	}
 	if err != nil {
 		return fmt.Errorf("marking healthy: %v", err)
@@ -258,8 +285,10 @@ func (h *Handler) countFailure(upstream *Upstream) {
 	// count failure immediately
 	err := upstream.Host.CountFail(1)
 	if err != nil {
-		log.Printf("[ERROR] proxy: upstream %s: counting failure: %v",
-			upstream.Dial, err)
+		h.HealthChecks.Passive.logger.Error("could not count failure",
+			zap.String("host", upstream.Dial),
+			zap.Error(err),
+		)
 	}
 
 	// forget it later
@@ -267,8 +296,10 @@ func (h *Handler) countFailure(upstream *Upstream) {
 		time.Sleep(failDuration)
 		err := host.CountFail(-1)
 		if err != nil {
-			log.Printf("[ERROR] proxy: upstream %s: expiring failure: %v",
-				upstream.Dial, err)
+			h.HealthChecks.Passive.logger.Error("could not forget failure",
+				zap.String("host", upstream.Dial),
+				zap.Error(err),
+			)
 		}
 	}(upstream.Host, failDuration)
 }
