@@ -120,6 +120,10 @@ func (h *HTTPTransport) Provision(_ caddy.Context) error {
 		rt.DisableCompression = !*h.Compression
 	}
 
+	if err := http2.ConfigureTransport(rt); err != nil {
+		return err
+	}
+
 	h.RoundTripper = rt
 
 	return nil
