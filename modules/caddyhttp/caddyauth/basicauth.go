@@ -15,8 +15,6 @@
 package caddyauth
 
 import (
-	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -124,30 +122,6 @@ type Comparer interface {
 	// false otherwise. An error is returned only if
 	// there is a technical/configuration error.
 	Compare(hashedPassword, plaintextPassword, salt []byte) (bool, error)
-}
-
-type quickComparer struct{}
-
-func (quickComparer) Compare(theirHash, plaintext, _ []byte) (bool, error) {
-	ourHash := quickHash(plaintext)
-	return hashesMatch(ourHash, theirHash), nil
-}
-
-func hashesMatch(pwdHash1, pwdHash2 []byte) bool {
-	return subtle.ConstantTimeCompare(pwdHash1, pwdHash2) == 1
-}
-
-// quickHash returns the SHA-256 of v. It
-// is not secure for password storage, but
-// it is useful for efficiently normalizing
-// the length of plaintext passwords for
-// constant-time comparisons.
-//
-// Errors are discarded.
-func quickHash(v []byte) []byte {
-	h := sha256.New()
-	h.Write([]byte(v))
-	return h.Sum(nil)
 }
 
 // Account contains a username, password, and salt (if applicable).
