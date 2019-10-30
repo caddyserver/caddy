@@ -18,9 +18,6 @@
 package httpcaddyfile
 
 import (
-	"bytes"
-
-	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 )
 
@@ -28,7 +25,9 @@ func FuzzHTTPCaddyfileAdapter(data []byte) int {
 	adapter := caddyfile.Adapter{
 		ServerType: ServerType{},
 	}
-	b, warns, err := adapter.Adapt(data, nil)
+
+	_, warns, err := adapter.Adapt(data, nil)
+
 	// Adapt func calls the Setup() func of the ServerType,
 	// thus it's going across multiple layers, each can
 	// return warnings or errors. Marking the presence of
@@ -36,14 +35,9 @@ func FuzzHTTPCaddyfileAdapter(data []byte) int {
 	// could push the fuzzer towards a path where we only
 	// catch errors. Let's push the fuzzer to where it passes
 	// but breaks.
-	if (err != nil) || (warns != nil && len(warns) > 0) {
+	if err != nil || (warns != nil && len(warns) > 0) {
 		return 0
 	}
 
-	// adapted Caddyfile should be parseable by the configuration loader in admin.go
-	err = caddy.Load(bytes.NewReader(b))
-	if err != nil {
-		return 0
-	}
 	return 1
 }
