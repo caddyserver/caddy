@@ -148,7 +148,7 @@ func StartAdmin(initialConfigJSON []byte) error {
 
 	go cfgEndptSrv.Serve(ln)
 
-	fmt.Println("Caddy 2 admin endpoint listening on", adminConfig.Listen)
+	Log().Named("admin").Info("Caddy 2 admin endpoint started.", zap.String("listenAddress", adminConfig.Listen))
 
 	return nil
 }
