@@ -227,6 +227,7 @@ jobs:
       if [[ $(Build.Reason) == "Schedule" ]]; then
         fuzz_type="fuzzing"
       fi
+      echo "Fuzzing type: $fuzz_type"
 
       for f in $(find . -name \*_fuzz.go); do
         FUZZER_DIRECTORY=$(dirname $f)
