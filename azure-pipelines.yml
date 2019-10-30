@@ -206,7 +206,6 @@ jobs:
 
   - bash: |
       declare -A fuzzers_funcs=(\
-        ["./admin_fuzz.go"]="FuzzAdmin" \
         ["./caddyconfig/httpcaddyfile/adapter_fuzz.go"]="FuzzHTTPCaddyfileAdapter" \
         ["./caddyconfig/httpcaddyfile/addresses_fuzz.go"]="FuzzParseAddress" \
         ["./caddyconfig/caddyfile/parse_fuzz.go"]="FuzzParseCaddyfile" \
