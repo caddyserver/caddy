@@ -215,7 +215,6 @@ jobs:
       )
 
       declare -A fuzzers_targets=(\
-        ["./admin_fuzz.go"]="admin" \
         ["./caddyconfig/httpcaddyfile/adapter_fuzz.go"]="caddyfile-adapter" \
         ["./caddyconfig/httpcaddyfile/addresses_fuzz.go"]="parse-address" \
         ["./caddyconfig/caddyfile/parse_fuzz.go"]="parse-caddyfile" \
