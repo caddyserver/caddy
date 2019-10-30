@@ -223,7 +223,7 @@ jobs:
         ["./replacer_fuzz.go"]="replacer" \
       )
 
-      fuzz_type="regression"
+      fuzz_type="local-regression"
       if [[ $(Build.Reason) == "Schedule" ]]; then
         fuzz_type="fuzzing"
       fi
