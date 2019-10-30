@@ -15,6 +15,8 @@
 package caddyauth
 
 import (
+	"crypto/subtle"
+
 	"github.com/caddyserver/caddy/v2"
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/crypto/scrypt"
@@ -101,6 +103,10 @@ func (s ScryptHash) Compare(hashed, plaintext, salt []byte) (bool, error) {
 		return true, nil
 	}
 	return false, nil
+}
+
+func hashesMatch(pwdHash1, pwdHash2 []byte) bool {
+	return subtle.ConstantTimeCompare(pwdHash1, pwdHash2) == 1
 }
 
 // Interface guards
