@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -42,6 +43,8 @@ var (
 	cfgEndptSrvMu sync.Mutex
 )
 
+var ErrAdminInterfaceNotConfigured = errors.New("no admin configuration has been set")
+
 // AdminConfig configures the admin endpoint.
 type AdminConfig struct {
 	Listen string `json:"listen,omitempty"`
@@ -60,9 +63,23 @@ var DefaultAdminConfig = &AdminConfig{
 // in the format of JSON bytes. It opens a listener
 // resource. When no longer needed, StopAdmin should
 // be called.
+// If no configuration is given, a default listener is
+// started. If a configuration is given that does NOT
+// specifically configure the admin interface,
+// `ErrAdminInterfaceNotConfigured` is returned and no
+// listener is initialized.
 func StartAdmin(initialConfigJSON []byte) error {
 	cfgEndptSrvMu.Lock()
 	defer cfgEndptSrvMu.Unlock()
+
+	if cfgEndptSrv != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		err := cfgEndptSrv.Shutdown(ctx)
+		if err != nil {
+			return fmt.Errorf("shutting down old admin endpoint: %v", err)
+		}
+	}
 
 	adminConfig := DefaultAdminConfig
 	if len(initialConfigJSON) > 0 {
@@ -71,16 +88,11 @@ func StartAdmin(initialConfigJSON []byte) error {
 		if err != nil {
 			return fmt.Errorf("unmarshaling bootstrap config: %v", err)
 		}
-		if config != nil && config.Admin != nil {
-			adminConfig = config.Admin
-		}
-		if cfgEndptSrv != nil {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			err := cfgEndptSrv.Shutdown(ctx)
-			if err != nil {
-				return fmt.Errorf("shutting down old admin endpoint: %v", err)
+		if config != nil {
+			if config.Admin == nil {
+				return ErrAdminInterfaceNotConfigured
 			}
+			adminConfig = config.Admin
 		}
 	}
 
@@ -136,15 +148,7 @@ func StartAdmin(initialConfigJSON []byte) error {
 
 	go cfgEndptSrv.Serve(ln)
 
-	fmt.Println("Caddy 2 admin endpoint listening on", adminConfig.Listen)
-
-	if len(initialConfigJSON) > 0 {
-		err := Load(bytes.NewReader(initialConfigJSON))
-		if err != nil {
-			return fmt.Errorf("loading initial config: %v", err)
-		}
-		fmt.Println("Caddy 2 serving initial configuration")
-	}
+	Log().Named("admin").Info("Caddy 2 admin endpoint started.", zap.String("listenAddress", adminConfig.Listen))
 
 	return nil
 }
