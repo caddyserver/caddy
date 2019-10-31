@@ -368,7 +368,11 @@ type ServerLogConfig struct {
 func errLogValues(err error) (status int, msg string, fields []zapcore.Field) {
 	if handlerErr, ok := err.(HandlerError); ok {
 		status = handlerErr.StatusCode
-		msg = handlerErr.Err.Error()
+		if handlerErr.Err == nil {
+			msg = err.Error()
+		} else {
+			msg = handlerErr.Err.Error()
+		}
 		fields = []zapcore.Field{
 			zap.Int("status", handlerErr.StatusCode),
 			zap.String("err_id", handlerErr.ID),
