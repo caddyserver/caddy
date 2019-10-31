@@ -69,12 +69,12 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 
 	fromURL, err := url.Parse(from)
 	if err != nil {
-		fromURL.Host = from
+		return 0, err
 	}
 
 	toURL, err := url.Parse(to)
 	if err != nil {
-		toURL.Host = to
+		return 0, err
 	}
 
 	ht := HTTPTransport{}
