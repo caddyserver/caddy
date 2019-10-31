@@ -17,7 +17,7 @@ package reverseproxy
 import (
 	"encoding/json"
 	"flag"
-	"log"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -63,18 +63,21 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 		from = "localhost:" + httpcaddyfile.DefaultPort
 	}
 
+	// URLs need a scheme in order to parse successfully
 	if !strings.Contains(from, "://") {
 		from = "http://" + from
+	}
+	if !strings.Contains(to, "://") {
+		to = "http://" + to
 	}
 
 	fromURL, err := url.Parse(from)
 	if err != nil {
-		fromURL.Host = from
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("parsing 'from' URL: %v", err)
 	}
-
 	toURL, err := url.Parse(to)
 	if err != nil {
-		toURL.Host = to
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("parsing 'to' URL: %v", err)
 	}
 
 	ht := HTTPTransport{}
@@ -99,16 +102,19 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 			caddyconfig.JSONModuleObject(handler, "handler", "reverse_proxy", nil),
 		},
 	}
-	if fromURL.Hostname() != "" {
+	urlHost := fromURL.Hostname()
+	if urlHost != "" {
 		route.MatcherSetsRaw = []map[string]json.RawMessage{
 			map[string]json.RawMessage{
-				"host": caddyconfig.JSON(caddyhttp.MatchHost{fromURL.Hostname()}, nil),
+				"host": caddyconfig.JSON(caddyhttp.MatchHost{urlHost}, nil),
 			},
 		}
 	}
 
-	listen := ":" + httpcaddyfile.DefaultPort
-	if certmagic.HostQualifies(fromURL.Hostname()) {
+	listen := ":80"
+	if urlPort := fromURL.Port(); urlPort != "" {
+		listen = ":" + urlPort
+	} else if certmagic.HostQualifies(urlHost) {
 		listen = ":443"
 	}
 
@@ -132,7 +138,7 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 		return caddy.ExitCodeFailedStartup, err
 	}
 
-	log.Printf("Caddy 2 proxying from %s to %s", from, to)
+	fmt.Printf("Caddy 2 proxying from %s to %s\n", fromURL, toURL)
 
 	select {}
 }
