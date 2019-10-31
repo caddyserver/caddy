@@ -479,9 +479,11 @@ func (app *App) automaticHTTPS() error {
 		// rest of the redirects
 		if len(redirServerAddrs) > 0 {
 			app.Servers["remaining_auto_https_redirects"] = &Server{
-				Listen: redirServerAddrs,
-				Routes: redirRoutes,
-				tlsApp: tlsApp, // required to solve HTTP challenge
+				Listen:      redirServerAddrs,
+				Routes:      redirRoutes,
+				tlsApp:      tlsApp, // required to solve HTTP challenge
+				logger:      app.logger.Named("log"),
+				errorLogger: app.logger.Named("log.error"),
 			}
 		}
 	}

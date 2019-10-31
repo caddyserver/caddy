@@ -91,7 +91,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		zap.Object("request", loggableReq),
 	)
 
-	if s.Logs != nil {
+	if s.accessLogger != nil {
 		wrec := NewResponseRecorder(w, nil, nil)
 		w = wrec
 		accLog := s.accessLogger.With(
@@ -107,7 +107,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			repl.Set("http.response.latency", latency.String())
 
 			logger := accLog
-			if s.Logs.LoggerNames != nil {
+			if s.Logs != nil && s.Logs.LoggerNames != nil {
 				logger = logger.Named(s.Logs.LoggerNames[r.Host])
 			}
 
