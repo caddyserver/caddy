@@ -25,8 +25,6 @@ import (
 	"time"
 )
 
-// TODO: Can we use the new UsagePool type?
-
 // Listen returns a listener suitable for use in a Caddy module.
 // Always be sure to close listeners when you are done with them.
 func Listen(network, addr string) (net.Listener, error) {
@@ -36,9 +34,15 @@ func Listen(network, addr string) (net.Listener, error) {
 	defer listenersMu.Unlock()
 
 	// if listener already exists, increment usage counter, then return listener
-	if lnUsage, ok := listeners[lnKey]; ok {
-		atomic.AddInt32(&lnUsage.usage, 1)
-		return &fakeCloseListener{usage: &lnUsage.usage, key: lnKey, Listener: lnUsage.ln}, nil
+	if lnGlobal, ok := listeners[lnKey]; ok {
+		atomic.AddInt32(&lnGlobal.usage, 1)
+		return &fakeCloseListener{
+			usage:      &lnGlobal.usage,
+			deadline:   &lnGlobal.deadline,
+			deadlineMu: &lnGlobal.deadlineMu,
+			key:        lnKey,
+			Listener:   lnGlobal.ln,
+		}, nil
 	}
 
 	// or, create new one and save it
@@ -48,10 +52,19 @@ func Listen(network, addr string) (net.Listener, error) {
 	}
 
 	// make sure to start its usage counter at 1
-	lnUsage := &listenerUsage{usage: 1, ln: ln}
-	listeners[lnKey] = lnUsage
+	lnGlobal := &globalListener{
+		usage: 1,
+		ln:    ln,
+	}
+	listeners[lnKey] = lnGlobal
 
-	return &fakeCloseListener{usage: &lnUsage.usage, key: lnKey, Listener: ln}, nil
+	return &fakeCloseListener{
+		usage:      &lnGlobal.usage,
+		deadline:   &lnGlobal.deadline,
+		deadlineMu: &lnGlobal.deadlineMu,
+		key:        lnKey,
+		Listener:   ln,
+	}, nil
 }
 
 // ListenPacket returns a net.PacketConn suitable for use in a Caddy module.
@@ -63,10 +76,10 @@ func ListenPacket(network, addr string) (net.PacketConn, error) {
 	defer listenersMu.Unlock()
 
 	// if listener already exists, increment usage counter, then return listener
-	if lnUsage, ok := listeners[lnKey]; ok {
-		atomic.AddInt32(&lnUsage.usage, 1)
-		log.Printf("[DEBUG] %s: Usage counter should not go above 2 or maybe 3, is now: %d", lnKey, atomic.LoadInt32(&lnUsage.usage)) // TODO: remove
-		return &fakeClosePacketConn{usage: &lnUsage.usage, key: lnKey, PacketConn: lnUsage.pc}, nil
+	if lnGlobal, ok := listeners[lnKey]; ok {
+		atomic.AddInt32(&lnGlobal.usage, 1)
+		log.Printf("[DEBUG] %s: Usage counter should not go above 2 or maybe 3, is now: %d", lnKey, atomic.LoadInt32(&lnGlobal.usage)) // TODO: remove
+		return &fakeClosePacketConn{usage: &lnGlobal.usage, key: lnKey, PacketConn: lnGlobal.pc}, nil
 	}
 
 	// or, create new one and save it
@@ -76,10 +89,10 @@ func ListenPacket(network, addr string) (net.PacketConn, error) {
 	}
 
 	// make sure to start its usage counter at 1
-	lnUsage := &listenerUsage{usage: 1, pc: pc}
-	listeners[lnKey] = lnUsage
+	lnGlobal := &globalListener{usage: 1, pc: pc}
+	listeners[lnKey] = lnGlobal
 
-	return &fakeClosePacketConn{usage: &lnUsage.usage, key: lnKey, PacketConn: pc}, nil
+	return &fakeClosePacketConn{usage: &lnGlobal.usage, key: lnKey, PacketConn: pc}, nil
 }
 
 // fakeCloseListener's Close() method is a no-op. This allows
@@ -87,11 +100,17 @@ func ListenPacket(network, addr string) (net.PacketConn, error) {
 // up the socket; thus, servers become hot-swappable while the
 // listener remains running. Listeners should be re-wrapped in
 // a new fakeCloseListener each time the listener is reused.
+// Other than the 'closed' field (which pertains to this value
+// only), the other fields in this struct should be pointers to
+// the associated globalListener's struct fields (except 'key'
+// which is there for read-only purposes, so it can be a copy).
 type fakeCloseListener struct {
-	closed int32  // accessed atomically - TODO: this needs to be shared across the whole app instance, not to cross instance boundaries... hmmm... see #2658 (still relevant?)
-	usage  *int32 // accessed atomically
-	key    string
-	net.Listener
+	closed       int32       // accessed atomically; belongs to this struct only
+	usage        *int32      // accessed atomically; global
+	deadline     *bool       // protected by deadlineMu; global
+	deadlineMu   *sync.Mutex // global
+	key          string      // global, but read-only, so can be copy
+	net.Listener             // global
 }
 
 // Accept accepts connections until Close() is called.
@@ -107,15 +126,21 @@ func (fcl *fakeCloseListener) Accept() (net.Conn, error) {
 		return conn, nil
 	}
 
-	if atomic.LoadInt32(&fcl.closed) == 1 {
-		// clear the deadline
+	// accept returned with error
+	// TODO: This may be better as a condition variable so the deadline is cleared only once?
+	fcl.deadlineMu.Lock()
+	if *fcl.deadline {
 		switch ln := fcl.Listener.(type) {
 		case *net.TCPListener:
 			ln.SetDeadline(time.Time{})
 		case *net.UnixListener:
 			ln.SetDeadline(time.Time{})
 		}
+		*fcl.deadline = false
+	}
+	fcl.deadlineMu.Unlock()
 
+	if atomic.LoadInt32(&fcl.closed) == 1 {
 		// if we cancelled the Accept() by setting a deadline
 		// on the listener, we need to make sure any callers of
 		// Accept() think the listener was actually closed;
@@ -141,12 +166,17 @@ func (fcl *fakeCloseListener) Close() error {
 		// a deadline in the past, which forces it to
 		// time out; note that this only works for
 		// certain types of listeners...
-		switch ln := fcl.Listener.(type) {
-		case *net.TCPListener:
-			ln.SetDeadline(time.Now().Add(-1 * time.Minute))
-		case *net.UnixListener:
-			ln.SetDeadline(time.Now().Add(-1 * time.Minute))
+		fcl.deadlineMu.Lock()
+		if !*fcl.deadline {
+			switch ln := fcl.Listener.(type) {
+			case *net.TCPListener:
+				ln.SetDeadline(time.Now().Add(-1 * time.Minute))
+			case *net.UnixListener:
+				ln.SetDeadline(time.Now().Add(-1 * time.Minute))
+			}
+			*fcl.deadline = true
 		}
+		fcl.deadlineMu.Unlock()
 
 		// since we're no longer using this listener,
 		// decrement the usage counter and, if no one
@@ -176,7 +206,7 @@ func (fcl *fakeCloseListener) fakeClosedErr() error {
 }
 
 type fakeClosePacketConn struct {
-	closed int32  // accessed atomically - TODO: this needs to be shared across the whole app instance, not to cross instance boundaries... hmmm... see #2658 (still relevant?)
+	closed int32  // accessed atomically
 	usage  *int32 // accessed atomically
 	key    string
 	net.PacketConn
@@ -210,16 +240,25 @@ func (fcpc *fakeClosePacketConn) Close() error {
 // socket is actually left open.
 var errFakeClosed = fmt.Errorf("listener 'closed' 😉")
 
-// listenerUsage pairs a net.Listener with a
-// count of how many servers are using it.
-type listenerUsage struct {
-	usage int32 // accessed atomically
-	ln    net.Listener
-	pc    net.PacketConn
+// globalListener keeps global state for a listener
+// that may be shared by multiple servers. In other
+// words, values in this struct exist only once and
+// all other uses of these values point to the ones
+// in this struct. In particular, the usage count
+// (how many callers are using the listener), the
+// actual listener, and synchronization of the
+// listener's deadline changes are singular, global
+// values that must not be copied.
+type globalListener struct {
+	usage      int32 // accessed atomically
+	deadline   bool
+	deadlineMu sync.Mutex
+	ln         net.Listener
+	pc         net.PacketConn
 }
 
 var (
-	listeners   = make(map[string]*listenerUsage)
+	listeners   = make(map[string]*globalListener)
 	listenersMu sync.Mutex
 )
 
