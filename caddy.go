@@ -15,11 +15,16 @@
 package caddy
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
+	"path"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -27,7 +32,18 @@ import (
 	"github.com/mholt/certmagic"
 )
 
-// Config represents a Caddy configuration.
+// Config represents a Caddy configuration. It is the
+// top of the module structure: all Caddy modules will
+// be loaded, starting with this struct. In order to
+// be loaded and run successfully, a Config and all its
+// modules must be JSON-encodable; i.e. when filling a
+// Config struct manually, its JSON-encodable fields
+// (the ones with JSON struct tags, usually ending with
+// "Raw" if they decode into a separate field) must be
+// set so that they can be unmarshaled and provisioned.
+// Setting the fields for the decoded values instead
+// will result in those values being overwritten at
+// unmarshaling/provisioning.
 type Config struct {
 	Admin      *AdminConfig               `json:"admin,omitempty"`
 	Logging    *Logging                   `json:"logging,omitempty"`
@@ -46,13 +62,164 @@ type App interface {
 	Stop() error
 }
 
-// Run runs Caddy with the given config.
-func Run(newCfg *Config) error {
+// Run runs the given config, replacing any existing config.
+func Run(cfg *Config) error {
+	cfgJSON, err := json.Marshal(cfg)
+	if err != nil {
+		return err
+	}
+	return Load(cfgJSON, true)
+}
+
+// Load loads the given config JSON and runs it only
+// if it is different from the current config or
+// forceReload is true.
+func Load(cfgJSON []byte, forceReload bool) error {
+	return changeConfig(http.MethodPost, "/"+rawConfigKey, cfgJSON, forceReload)
+}
+
+// changeConfig changes the current config (rawCfg) according to the
+// method, traversed via the given path, and uses the given input as
+// the new value (if applicable; i.e. "DELETE" doesn't have an input).
+// If the resulting config is the same as the previous, no reload will
+// occur unless forceReload is true. This function is safe for
+// concurrent use.
+func changeConfig(method, path string, input []byte, forceReload bool) error {
+	switch method {
+	case http.MethodGet,
+		http.MethodHead,
+		http.MethodOptions,
+		http.MethodConnect,
+		http.MethodTrace:
+		return fmt.Errorf("method not allowed")
+	}
+
 	currentCfgMu.Lock()
 	defer currentCfgMu.Unlock()
 
+	err := unsyncedConfigAccess(method, path, input, nil)
+	if err != nil {
+		return err
+	}
+
+	// find any IDs in this config and index them
+	idx := make(map[string]string)
+	err = indexConfigObjects(rawCfg[rawConfigKey], "/"+rawConfigKey, idx)
+	if err != nil {
+		return APIError{
+			Code: http.StatusInternalServerError,
+			Err:  fmt.Errorf("indexing config: %v", err),
+		}
+	}
+
+	// the mutation is complete, so encode the entire config as JSON
+	newCfg, err := json.Marshal(rawCfg[rawConfigKey])
+	if err != nil {
+		return APIError{
+			Code: http.StatusBadRequest,
+			Err:  fmt.Errorf("encoding new config: %v", err),
+		}
+	}
+
+	// if nothing changed, no need to do a whole reload unless the client forces it
+	if !forceReload && bytes.Equal(rawCfgJSON, newCfg) {
+		Log().Named("admin.api.change_config").Info("config is unchanged")
+		return nil
+	}
+
+	// load this new config; if it fails, we need to revert to
+	// our old representation of caddy's actual config
+	err = unsyncedDecodeAndRun(newCfg)
+	if err != nil {
+		if len(rawCfgJSON) > 0 {
+			// restore old config state to keep it consistent
+			// with what caddy is still running; we need to
+			// unmarshal it again because it's likely that
+			// pointers deep in our rawCfg map were modified
+			var oldCfg interface{}
+			err2 := json.Unmarshal(rawCfgJSON, &oldCfg)
+			if err2 != nil {
+				err = fmt.Errorf("%v; additionally, restoring old config: %v", err, err2)
+			}
+			rawCfg[rawConfigKey] = oldCfg
+		}
+
+		return fmt.Errorf("loading new config: %v", err)
+	}
+
+	// success, so update our stored copy of the encoded
+	// config to keep it consistent with what caddy is now
+	// running (storing an encoded copy is not strictly
+	// necessary, but avoids an extra json.Marshal for
+	// each config change)
+	rawCfgJSON = newCfg
+	rawCfgIndex = idx
+
+	return nil
+}
+
+// readConfig traverses the current config to path
+// and writes its JSON encoding to out.
+func readConfig(path string, out io.Writer) error {
+	currentCfgMu.RLock()
+	defer currentCfgMu.RUnlock()
+	return unsyncedConfigAccess(http.MethodGet, path, nil, out)
+}
+
+// indexConfigObjects recurisvely searches ptr for object fields named
+// "@id" and maps that ID value to the full configPath in the index.
+// This function is NOT safe for concurrent access; obtain a write lock
+// on currentCfgMu.
+func indexConfigObjects(ptr interface{}, configPath string, index map[string]string) error {
+	switch val := ptr.(type) {
+	case map[string]interface{}:
+		for k, v := range val {
+			if k == idKey {
+				switch idVal := v.(type) {
+				case string:
+					index[idVal] = configPath
+				case float64: // all JSON numbers decode as float64
+					index[fmt.Sprintf("%v", idVal)] = configPath
+				default:
+					return fmt.Errorf("%s: %s field must be a string or number", configPath, idKey)
+				}
+				delete(val, idKey) // field is no longer needed, and will break config if not removed
+				continue
+			}
+			// traverse this object property recursively
+			err := indexConfigObjects(val[k], path.Join(configPath, k), index)
+			if err != nil {
+				return err
+			}
+		}
+	case []interface{}:
+		// traverse each element of the array recursively
+		for i := range val {
+			err := indexConfigObjects(val[i], path.Join(configPath, strconv.Itoa(i)), index)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+// unsyncedDecodeAndRun decodes cfgJSON and runs
+// it as the new config, replacing any other
+// current config. It does not update the raw
+// config state, as this is a lower-level function;
+// most callers will want to use Load instead.
+// A write lock on currentCfgMu is required!
+func unsyncedDecodeAndRun(cfgJSON []byte) error {
+	var newCfg *Config
+	err := strictUnmarshalJSON(cfgJSON, &newCfg)
+	if err != nil {
+		return err
+	}
+
 	// run the new config and start all its apps
-	err := run(newCfg, true)
+	err = run(newCfg, true)
 	if err != nil {
 		return err
 	}
@@ -77,11 +244,11 @@ func Run(newCfg *Config) error {
 // the config if you are not going to start it,
 // so that each provisioned module will be
 // cleaned up.
+//
+// This is a low-level function; most callers
+// will want to use Run instead, which also
+// updates the config's raw state.
 func run(newCfg *Config, start bool) error {
-	if newCfg == nil {
-		return nil
-	}
-
 	// because we will need to roll back any state
 	// modifications if this function errors, we
 	// keep a single error value and scope all
@@ -90,6 +257,16 @@ func run(newCfg *Config, start bool) error {
 	// overridden or missed when it should have
 	// been set by a short assignment
 	var err error
+
+	// start the admin endpoint (and stop any prior one)
+	err = replaceAdmin(newCfg)
+	if err != nil {
+		return fmt.Errorf("starting caddy administration endpoint: %v", err)
+	}
+
+	if newCfg == nil {
+		return nil
+	}
 
 	// prepare the new config for use
 	newCfg.apps = make(map[string]App)
@@ -198,22 +375,25 @@ func run(newCfg *Config, start bool) error {
 // It is the antithesis of Run(). This function
 // will log any errors that occur during the
 // stopping of individual apps and continue to
-// stop the others.
+// stop the others. Stop should only be called
+// if not replacing with a new config.
 func Stop() error {
 	currentCfgMu.Lock()
 	defer currentCfgMu.Unlock()
 	unsyncedStop(currentCfg)
 	currentCfg = nil
+	rawCfgJSON = nil
+	rawCfgIndex = nil
+	rawCfg[rawConfigKey] = nil
 	return nil
 }
 
-// unsyncedStop stops cfg from running, but if
-// applicable, you need to acquire locks yourself.
-// It is a no-op if cfg is nil. If any app
-// returns an error when stopping, it is logged
-// and the function continues with the next app.
-// This function assumes all apps in cfg were
-// successfully started.
+// unsyncedStop stops cfg from running, but has
+// no locking around cfg. It is a no-op if cfg is
+// nil. If any app returns an error when stopping,
+// it is logged and the function continues stopping
+// the next app. This function assumes all apps in
+// cfg were successfully started first.
 func unsyncedStop(cfg *Config) {
 	if cfg == nil {
 		return
@@ -229,6 +409,17 @@ func unsyncedStop(cfg *Config) {
 
 	// clean up all modules
 	cfg.cancelFunc()
+}
+
+// stopAndCleanup calls stop and cleans up anything
+// else that is expedient. This should only be used
+// when stopping and not replacing with a new config.
+func stopAndCleanup() error {
+	if err := Stop(); err != nil {
+		return err
+	}
+	certmagic.CleanUpOwnLocks()
+	return nil
 }
 
 // Validate loads, provisions, and validates
@@ -289,8 +480,28 @@ func goModule(mod *debug.Module) *debug.Module {
 // CtxKey is a value type for use with context.WithValue.
 type CtxKey string
 
-// currentCfg is the currently-loaded configuration.
+// This group of variables pertains to the current configuration.
 var (
-	currentCfg   *Config
+	// currentCfgMu protects everything in this var block.
 	currentCfgMu sync.RWMutex
+
+	// currentCfg is the currently-running configuration.
+	currentCfg *Config
+
+	// rawCfg is the current, generic-decoded configuration;
+	// we initialize it as a map with one field ("config")
+	// to maintain parity with the API endpoint and to avoid
+	// the special case of having to access/mutate the variable
+	// directly without traversing into it.
+	rawCfg = map[string]interface{}{
+		rawConfigKey: nil,
+	}
+
+	// rawCfgJSON is the JSON-encoded form of rawCfg. Keeping
+	// this around avoids an extra Marshal call during changes.
+	rawCfgJSON []byte
+
+	// rawCfgIndex is the map of user-assigned ID to expanded
+	// path, for converting /id/ paths to /config/ paths.
+	rawCfgIndex map[string]string
 )
