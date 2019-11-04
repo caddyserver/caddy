@@ -17,7 +17,6 @@ package reverseproxy
 import (
 	"fmt"
 	"net"
-	"strings"
 	"sync/atomic"
 
 	"github.com/caddyserver/caddy/v2"
@@ -193,27 +192,20 @@ func (di DialInfo) String() string {
 // the given Replacer. Note that the returned value is not a pointer.
 func fillDialInfo(upstream *Upstream, repl caddy.Replacer) (DialInfo, error) {
 	dial := repl.ReplaceAll(upstream.Dial, "")
-	netw, addrs, err := caddy.ParseNetworkAddress(dial)
+	addr, err := caddy.ParseNetworkAddress(dial)
 	if err != nil {
 		return DialInfo{}, fmt.Errorf("upstream %s: invalid dial address %s: %v", upstream.Dial, dial, err)
 	}
-	if len(addrs) != 1 {
+	if addr.PortSpanSize() != 1 {
 		return DialInfo{}, fmt.Errorf("upstream %s: dial address must represent precisely one socket: %s represents %d",
-			upstream.Dial, dial, len(addrs))
-	}
-	var dialHost, dialPort string
-	if !strings.Contains(netw, "unix") {
-		dialHost, dialPort, err = net.SplitHostPort(addrs[0])
-		if err != nil {
-			dialHost = addrs[0] // assume there was no port
-		}
+			upstream.Dial, dial, addr.PortSpanSize())
 	}
 	return DialInfo{
 		Upstream: upstream,
-		Network:  netw,
-		Address:  addrs[0],
-		Host:     dialHost,
-		Port:     dialPort,
+		Network:  addr.Network,
+		Address:  net.JoinHostPort(addr.Host, fmt.Sprintf("%d", addr.FromPort)),
+		Host:     addr.Host,
+		Port:     fmt.Sprintf("%d", addr.FromPort),
 	}, nil
 }
 

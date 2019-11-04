@@ -17,10 +17,15 @@
 
 package caddy
 
+import "fmt"
+
 func FuzzParseNetworkAddress(data []byte) int {
-	_, _, err := ParseNetworkAddress(string(data))
+	l, err := ParseNetworkAddress(string(data))
 	if err != nil {
 		return 0
+	}
+	if l == nil {
+		panic(fmt.Sprintf("received nil listener with nil err: %s", string(data)))
 	}
 	return 1
 }

@@ -102,7 +102,7 @@ func (h *Handler) doActiveHealthChecksForAllHosts() {
 		host := value.(Host)
 
 		go func(networkAddr string, host Host) {
-			network, addrs, err := caddy.ParseNetworkAddress(networkAddr)
+			addr, err := caddy.ParseNetworkAddress(networkAddr)
 			if err != nil {
 				h.HealthChecks.Active.logger.Error("bad network address",
 					zap.String("address", networkAddr),
@@ -110,20 +110,20 @@ func (h *Handler) doActiveHealthChecksForAllHosts() {
 				)
 				return
 			}
-			if len(addrs) != 1 {
+			if addr.PortSpanSize() != 1 {
 				h.HealthChecks.Active.logger.Error("multiple addresses (upstream must map to only one address)",
 					zap.String("address", networkAddr),
 				)
 				return
 			}
-			hostAddr := addrs[0]
-			if network == "unix" || network == "unixgram" || network == "unixpacket" {
+			hostAddr := net.JoinHostPort(addr.Host, fmt.Sprintf("%d", addr.FromPort))
+			if addr.Network == "unix" || addr.Network == "unixgram" || addr.Network == "unixpacket" {
 				// this will be used as the Host portion of a http.Request URL, and
 				// paths to socket files would produce an error when creating URL,
 				// so use a fake Host value instead; unix sockets are usually local
 				hostAddr = "localhost"
 			}
-			err = h.doActiveHealthCheck(DialInfo{Network: network, Address: addrs[0]}, hostAddr, host)
+			err = h.doActiveHealthCheck(DialInfo{Network: addr.Network, Address: hostAddr}, hostAddr, host)
 			if err != nil {
 				h.HealthChecks.Active.logger.Error("active health check failed",
 					zap.String("address", networkAddr),

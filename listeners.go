@@ -262,43 +262,73 @@ var (
 	listenersMu sync.Mutex
 )
 
+const maxPortSpan = 65535
+
+type Listener struct {
+	Network  string
+	Host     string
+	FromPort uint
+	ToPort   uint
+}
+
+// PortSpanSize returns how many ports are available in the defined listener port range
+func (l Listener) PortSpanSize() uint {
+	return (l.ToPort - l.FromPort) + 1
+}
+
+// NetworkAddress returns the reconstructed network address string of the form "network/host:port"
+func (l Listener) NetworkAddress() string {
+	port := strconv.FormatUint(uint64(l.FromPort), 10)
+	if l.FromPort != l.ToPort {
+		port += "-" + strconv.FormatUint(uint64(l.ToPort), 10)
+	}
+	return JoinNetworkAddress(l.Network, l.Host, port)
+}
+
 // ParseNetworkAddress parses addr, a string of the form "network/host:port"
-// (with any part optional) into its component parts. Because a port can
-// also be a port range, there may be multiple addresses returned.
-func ParseNetworkAddress(addr string) (network string, addrs []string, err error) {
+// (with any part optional) into Listener struct type.
+func ParseNetworkAddress(addr string) (*Listener, error) {
 	var host, port string
-	network, host, port, err = SplitNetworkAddress(addr)
+	network, host, port, err := SplitNetworkAddress(addr)
 	if network == "" {
 		network = "tcp"
 	}
 	if err != nil {
-		return
+		return nil, err
 	}
 	if network == "unix" || network == "unixgram" || network == "unixpacket" {
-		addrs = []string{host}
-		return
+		return &Listener{
+			Network: network,
+			Host:    host,
+		}, nil
 	}
 	ports := strings.SplitN(port, "-", 2)
 	if len(ports) == 1 {
 		ports = append(ports, ports[0])
 	}
-	var start, end int
-	start, err = strconv.Atoi(ports[0])
+	var start, end uint64
+	start, err = strconv.ParseUint(ports[0], 10, 16)
 	if err != nil {
-		return
+		return nil, err
 	}
-	end, err = strconv.Atoi(ports[1])
+	end, err = strconv.ParseUint(ports[1], 10, 16)
 	if err != nil {
-		return
+		return nil, err
 	}
 	if end < start {
 		err = fmt.Errorf("end port must be greater than start port")
-		return
+		return nil, err
 	}
-	for p := start; p <= end; p++ {
-		addrs = append(addrs, net.JoinHostPort(host, fmt.Sprintf("%d", p)))
+	if (end - start) > maxPortSpan {
+		err = fmt.Errorf("port range size is exceeds the maximum allowed range of %d", maxPortSpan)
+		return nil, err
 	}
-	return
+	return &Listener{
+		Network:  network,
+		Host:     host,
+		FromPort: uint(start),
+		ToPort:   uint(end),
+	}, nil
 }
 
 // SplitNetworkAddress splits a into its network, host, and port components.

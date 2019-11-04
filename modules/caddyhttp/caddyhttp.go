@@ -135,15 +135,16 @@ func (app *App) Validate() error {
 	lnAddrs := make(map[string]string)
 	for srvName, srv := range app.Servers {
 		for _, addr := range srv.Listen {
-			netw, expanded, err := caddy.ParseNetworkAddress(addr)
+			listenAddr, err := caddy.ParseNetworkAddress(addr)
 			if err != nil {
 				return fmt.Errorf("invalid listener address '%s': %v", addr, err)
 			}
-			for _, a := range expanded {
-				if sn, ok := lnAddrs[netw+a]; ok {
-					return fmt.Errorf("server %s: listener address repeated: %s (already claimed by server '%s')", srvName, a, sn)
+			for i := listenAddr.FromPort; i <= listenAddr.ToPort; i++ {
+				addr := net.JoinHostPort(fmt.Sprintf("%s://%s", listenAddr.Network, listenAddr.Host), fmt.Sprintf("%d", i))
+				if sn, ok := lnAddrs[addr]; ok {
+					return fmt.Errorf("server %s: listener address repeated: %s (already claimed by server '%s')", srvName, addr, sn)
 				}
-				lnAddrs[netw+a] = srvName
+				lnAddrs[addr] = srvName
 			}
 		}
 	}
@@ -176,14 +177,15 @@ func (app *App) Start() error {
 		}
 
 		for _, lnAddr := range srv.Listen {
-			network, addrs, err := caddy.ParseNetworkAddress(lnAddr)
+			listenAddr, err := caddy.ParseNetworkAddress(lnAddr)
 			if err != nil {
 				return fmt.Errorf("%s: parsing listen address '%s': %v", srvName, lnAddr, err)
 			}
-			for _, addr := range addrs {
-				ln, err := caddy.Listen(network, addr)
+			for i := listenAddr.FromPort; i <= listenAddr.ToPort; i++ {
+				hostport := net.JoinHostPort(listenAddr.Host, fmt.Sprintf("%d", i))
+				ln, err := caddy.Listen(listenAddr.Network, hostport)
 				if err != nil {
-					return fmt.Errorf("%s: listening on %s: %v", network, addr, err)
+					return fmt.Errorf("%s: listening on %s: %v", listenAddr.Network, hostport, err)
 				}
 
 				// enable HTTP/2 by default
@@ -194,11 +196,10 @@ func (app *App) Start() error {
 				}
 
 				// enable TLS
-				_, port, _ := net.SplitHostPort(addr)
-				if len(srv.TLSConnPolicies) > 0 && port != strconv.Itoa(app.httpPort()) {
+				if len(srv.TLSConnPolicies) > 0 && i != uint(app.httpPort()) {
 					tlsCfg, err := srv.TLSConnPolicies.TLSConfig(app.ctx)
 					if err != nil {
-						return fmt.Errorf("%s/%s: making TLS configuration: %v", network, addr, err)
+						return fmt.Errorf("%s/%s: making TLS configuration: %v", listenAddr.Network, hostport, err)
 					}
 					ln = tls.NewListener(ln, tlsCfg)
 
@@ -206,15 +207,15 @@ func (app *App) Start() error {
 					// TODO: HTTP/3 support is experimental for now
 					if srv.ExperimentalHTTP3 {
 						app.logger.Info("enabling experimental HTTP/3 listener",
-							zap.String("addr", addr),
+							zap.String("addr", hostport),
 						)
-						h3ln, err := caddy.ListenPacket("udp", addr)
+						h3ln, err := caddy.ListenPacket("udp", hostport)
 						if err != nil {
 							return fmt.Errorf("getting HTTP/3 UDP listener: %v", err)
 						}
 						h3srv := &http3.Server{
 							Server: &http.Server{
-								Addr:      addr,
+								Addr:      hostport,
 								Handler:   srv,
 								TLSConfig: tlsCfg,
 							},

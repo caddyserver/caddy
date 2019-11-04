@@ -152,74 +152,103 @@ func TestJoinNetworkAddress(t *testing.T) {
 
 func TestParseNetworkAddress(t *testing.T) {
 	for i, tc := range []struct {
-		input         string
-		expectNetwork string
-		expectAddrs   []string
-		expectErr     bool
+		input          string
+		expectListener *Listener
+		expectErr      bool
 	}{
 		{
-			input:         "",
-			expectNetwork: "tcp",
-			expectErr:     true,
+			input:     "",
+			expectErr: true,
 		},
 		{
-			input:         ":",
-			expectNetwork: "tcp",
-			expectErr:     true,
+			input:     ":",
+			expectErr: true,
 		},
 		{
-			input:         ":1234",
-			expectNetwork: "tcp",
-			expectAddrs:   []string{":1234"},
+			input: ":1234",
+			expectListener: &Listener{
+				Network:  "tcp",
+				Host:     "",
+				FromPort: 1234,
+				ToPort:   1234,
+			},
 		},
 		{
-			input:         "tcp/:1234",
-			expectNetwork: "tcp",
-			expectAddrs:   []string{":1234"},
+			input: "tcp/:1234",
+			expectListener: &Listener{
+				Network:  "tcp",
+				Host:     "",
+				FromPort: 1234,
+				ToPort:   1234,
+			},
 		},
 		{
-			input:         "tcp6/:1234",
-			expectNetwork: "tcp6",
-			expectAddrs:   []string{":1234"},
+			input: "tcp6/:1234",
+			expectListener: &Listener{
+				Network:  "tcp6",
+				Host:     "",
+				FromPort: 1234,
+				ToPort:   1234,
+			},
 		},
 		{
-			input:         "tcp4/localhost:1234",
-			expectNetwork: "tcp4",
-			expectAddrs:   []string{"localhost:1234"},
+			input: "tcp4/localhost:1234",
+			expectListener: &Listener{
+				Network:  "tcp4",
+				Host:     "localhost",
+				FromPort: 1234,
+				ToPort:   1234,
+			},
 		},
 		{
-			input:         "unix//foo/bar",
-			expectNetwork: "unix",
-			expectAddrs:   []string{"/foo/bar"},
+			input: "unix//foo/bar",
+			expectListener: &Listener{
+				Network: "unix",
+				Host:    "/foo/bar",
+			},
 		},
 		{
-			input:         "localhost:1234-1234",
-			expectNetwork: "tcp",
-			expectAddrs:   []string{"localhost:1234"},
+			input: "localhost:1234-1234",
+			expectListener: &Listener{
+				Network:  "tcp",
+				Host:     "localhost",
+				FromPort: 1234,
+				ToPort:   1234,
+			},
 		},
 		{
-			input:         "localhost:2-1",
-			expectNetwork: "tcp",
-			expectErr:     true,
+			input:     "localhost:2-1",
+			expectErr: true,
 		},
 		{
-			input:         "localhost:0",
-			expectNetwork: "tcp",
-			expectAddrs:   []string{"localhost:0"},
+			input: "localhost:0",
+			expectListener: &Listener{
+				Network:  "tcp",
+				Host:     "localhost",
+				FromPort: 0,
+				ToPort:   0,
+			},
 		},
 	} {
-		actualNetwork, actualAddrs, err := ParseNetworkAddress(tc.input)
+		actualAddr, err := ParseNetworkAddress(tc.input)
 		if tc.expectErr && err == nil {
 			t.Errorf("Test %d: Expected error but got: %v", i, err)
 		}
 		if !tc.expectErr && err != nil {
 			t.Errorf("Test %d: Expected no error but got: %v", i, err)
 		}
-		if actualNetwork != tc.expectNetwork {
-			t.Errorf("Test %d: Expected network '%s' but got '%s'", i, tc.expectNetwork, actualNetwork)
+		if (tc.expectListener == nil && actualAddr != nil) || (tc.expectListener != nil && actualAddr == nil) {
+			t.Errorf("Test %d: Listener expectation not matching actual. Expected: %v  but got %v", i, tc.expectListener, actualAddr)
 		}
-		if !reflect.DeepEqual(tc.expectAddrs, actualAddrs) {
-			t.Errorf("Test %d: Expected addresses %v but got %v", i, tc.expectAddrs, actualAddrs)
+		// expectation of nil listener are cleared, proceed to next if the expected listener is nil.
+		if tc.expectListener == nil {
+			continue
+		}
+		if actualAddr.Network != tc.expectListener.Network {
+			t.Errorf("Test %d: Expected network '%v' but got '%v'", i, tc.expectListener, actualAddr)
+		}
+		if !reflect.DeepEqual(tc.expectListener, actualAddr) {
+			t.Errorf("Test %d: Expected addresses %v but got %v", i, tc.expectListener, actualAddr)
 		}
 	}
 }
