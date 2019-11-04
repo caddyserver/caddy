@@ -437,12 +437,18 @@ type Duration time.Duration
 
 // UnmarshalJSON satisfies json.Unmarshaler.
 func (d *Duration) UnmarshalJSON(b []byte) error {
-	dd, err := time.ParseDuration(strings.Trim(string(b), `"`))
-	if err != nil {
-		return err
+	if len(b) == 0 {
+		return io.EOF
 	}
-	*d = Duration(dd)
-	return nil
+	var dur time.Duration
+	var err error
+	if b[0] == byte('"') && b[len(b)-1] == byte('"') {
+		dur, err = time.ParseDuration(strings.Trim(string(b), `"`))
+	} else {
+		err = json.Unmarshal(b, &dur)
+	}
+	*d = Duration(dur)
+	return err
 }
 
 // GoModule returns the build info of this Caddy
