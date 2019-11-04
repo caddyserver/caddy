@@ -20,10 +20,12 @@ import (
 	weakrand "math/rand"
 	"net"
 	"net/http"
+	"strconv"
 	"sync/atomic"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 )
 
 func init() {
@@ -85,6 +87,22 @@ func (RandomChoiceSelection) CaddyModule() caddy.ModuleInfo {
 		Name: "http.handlers.reverse_proxy.selection_policies.random_choose",
 		New:  func() caddy.Module { return new(RandomChoiceSelection) },
 	}
+}
+
+// UnmarshalCaddyfile sets up the module from Caddyfile tokens.
+func (r *RandomChoiceSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		if !d.NextArg() {
+			return d.ArgErr()
+		}
+		chooseStr := d.Val()
+		choose, err := strconv.Atoi(chooseStr)
+		if err != nil {
+			return d.Errf("invalid choice value '%s': %v", chooseStr, err)
+		}
+		r.Choose = choose
+	}
+	return nil
 }
 
 // Provision sets up r.
@@ -350,4 +368,6 @@ var (
 
 	_ caddy.Validator   = (*RandomChoiceSelection)(nil)
 	_ caddy.Provisioner = (*RandomChoiceSelection)(nil)
+
+	_ caddyfile.Unmarshaler = (*RandomChoiceSelection)(nil)
 )
