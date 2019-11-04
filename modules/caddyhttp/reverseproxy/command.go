@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -78,6 +79,14 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 	toURL, err := url.Parse(to)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("parsing 'to' URL: %v", err)
+	}
+
+	if toURL.Port() == "" {
+		toPort := "80"
+		if toURL.Scheme == "https" {
+			toPort = "443"
+		}
+		toURL.Host = net.JoinHostPort(toURL.Host, toPort)
 	}
 
 	ht := HTTPTransport{}
