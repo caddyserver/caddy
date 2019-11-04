@@ -18,157 +18,202 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
+	"expvar"
 	"fmt"
 	"io"
-	"io/ioutil"
-	"log"
 	"mime"
-	"net"
 	"net/http"
 	"net/http/pprof"
+	"net/url"
 	"os"
+	"path"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/caddyserver/caddy/v2/caddyconfig"
-	"github.com/mholt/certmagic"
-	"github.com/rs/cors"
 	"go.uber.org/zap"
 )
 
-var (
-	cfgEndptSrv   *http.Server
-	cfgEndptSrvMu sync.Mutex
-)
-
-var ErrAdminInterfaceNotConfigured = errors.New("no admin configuration has been set")
+// TODO: is there a way to make the admin endpoint so that it can be plugged into the HTTP app? see issue #2833
 
 // AdminConfig configures the admin endpoint.
 type AdminConfig struct {
-	Listen string `json:"listen,omitempty"`
+	Disabled      bool     `json:"disabled,omitempty"`
+	Listen        string   `json:"listen,omitempty"`
+	EnforceOrigin bool     `json:"enforce_origin,omitempty"`
+	Origins       []string `json:"origins,omitempty"`
 }
 
-// DefaultAdminConfig is the default configuration
-// for the administration endpoint.
-var DefaultAdminConfig = &AdminConfig{
-	Listen: DefaultAdminListen,
+// listenAddr extracts a singular listen address from ac.Listen,
+// returning the network and the address of the listener.
+func (admin AdminConfig) listenAddr() (netw string, addr string, err error) {
+	var listenAddrs []string
+	input := admin.Listen
+	if input == "" {
+		input = DefaultAdminListen
+	}
+	netw, listenAddrs, err = ParseNetworkAddress(input)
+	if err != nil {
+		err = fmt.Errorf("parsing admin listener address: %v", err)
+		return
+	}
+	if len(listenAddrs) != 1 {
+		err = fmt.Errorf("admin endpoint must have exactly one address; cannot listen on %v", listenAddrs)
+		return
+	}
+	addr = listenAddrs[0]
+	return
 }
 
-// TODO: holy smokes, the admin endpoint might not have to live in caddy's core.
+// newAdminHandler reads admin's config and returns an http.Handler suitable
+// for use in an admin endpoint server, which will be listening on listenAddr.
+func (admin AdminConfig) newAdminHandler(listenAddr string) adminHandler {
+	muxWrap := adminHandler{
+		enforceOrigin:  admin.EnforceOrigin,
+		allowedOrigins: admin.allowedOrigins(listenAddr),
+		mux:            http.NewServeMux(),
+	}
 
-// StartAdmin starts Caddy's administration endpoint,
-// bootstrapping it with an optional configuration
-// in the format of JSON bytes. It opens a listener
-// resource. When no longer needed, StopAdmin should
-// be called.
-// If no configuration is given, a default listener is
-// started. If a configuration is given that does NOT
-// specifically configure the admin interface,
-// `ErrAdminInterfaceNotConfigured` is returned and no
-// listener is initialized.
-func StartAdmin(initialConfigJSON []byte) error {
-	cfgEndptSrvMu.Lock()
-	defer cfgEndptSrvMu.Unlock()
+	// addRoute just calls muxWrap.mux.Handle after
+	// wrapping the handler with error handling
+	addRoute := func(pattern string, h AdminHandler) {
+		wrapper := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			err := h.ServeHTTP(w, r)
+			muxWrap.handleError(w, r, err)
+		})
+		muxWrap.mux.Handle(pattern, wrapper)
+	}
 
-	if cfgEndptSrv != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		err := cfgEndptSrv.Shutdown(ctx)
-		if err != nil {
-			return fmt.Errorf("shutting down old admin endpoint: %v", err)
+	// register standard config control endpoints
+	addRoute("/load", AdminHandlerFunc(handleLoad))
+	addRoute("/"+rawConfigKey+"/", AdminHandlerFunc(handleConfig))
+	addRoute("/id/", AdminHandlerFunc(handleConfigID))
+	addRoute("/unload", AdminHandlerFunc(handleUnload))
+	addRoute("/stop", AdminHandlerFunc(handleStop))
+
+	// register debugging endpoints
+	muxWrap.mux.HandleFunc("/debug/pprof/", pprof.Index)
+	muxWrap.mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	muxWrap.mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	muxWrap.mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	muxWrap.mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	muxWrap.mux.Handle("/debug/vars", expvar.Handler())
+
+	// register third-party module endpoints
+	for _, m := range GetModules("admin.api") {
+		router := m.New().(AdminRouter)
+		for _, route := range router.Routes() {
+			addRoute(route.Pattern, route.Handler)
 		}
 	}
 
+	return muxWrap
+}
+
+// allowedOrigins returns a list of origins that are allowed.
+// If admin.Origins is nil (null), the provided listen address
+// will be used as the default origin. If admin.Origins is
+// empty, no origins will be allowed, effectively bricking the
+// endpoint, but whatever.
+func (admin AdminConfig) allowedOrigins(listen string) []string {
+	uniqueOrigins := make(map[string]struct{})
+	for _, o := range admin.Origins {
+		uniqueOrigins[o] = struct{}{}
+	}
+	if admin.Origins == nil {
+		uniqueOrigins[listen] = struct{}{}
+	}
+	var allowed []string
+	for origin := range uniqueOrigins {
+		allowed = append(allowed, origin)
+	}
+	return allowed
+}
+
+// replaceAdmin replaces the running admin server according
+// to the relevant configuration in cfg. If no configuration
+// for the admin endpoint exists in cfg, a default one is
+// used, so that there is always an admin server (unless it
+// is explicitly configured to be disabled).
+func replaceAdmin(cfg *Config) error {
+	// always be sure to close down the old admin endpoint
+	// as gracefully as possible, even if the new one is
+	// disabled -- careful to use reference to the current
+	// (old) admin endpoint since it will be different
+	// when the function returns
+	oldAdminServer := adminServer
+	defer func() {
+		// do the shutdown asynchronously so that any
+		// current API request gets a response; this
+		// goroutine may last a few seconds
+		if oldAdminServer != nil {
+			go func(oldAdminServer *http.Server) {
+				err := stopAdminServer(oldAdminServer)
+				if err != nil {
+					Log().Named("admin").Error("stopping current admin endpoint", zap.Error(err))
+				}
+			}(oldAdminServer)
+		}
+	}()
+
+	// always get a valid admin config
 	adminConfig := DefaultAdminConfig
-	if len(initialConfigJSON) > 0 {
-		var config *Config
-		err := json.Unmarshal(initialConfigJSON, &config)
-		if err != nil {
-			return fmt.Errorf("unmarshaling bootstrap config: %v", err)
-		}
-		if config != nil {
-			if config.Admin == nil {
-				return ErrAdminInterfaceNotConfigured
-			}
-			adminConfig = config.Admin
-		}
+	if cfg != nil && cfg.Admin != nil {
+		adminConfig = cfg.Admin
+	}
+
+	// if new admin endpoint is to be disabled, we're done
+	if adminConfig.Disabled {
+		Log().Named("admin").Warn("admin endpoint disabled")
+		return nil
 	}
 
 	// extract a singular listener address
-	netw, listenAddrs, err := ParseNetworkAddress(adminConfig.Listen)
-	if err != nil {
-		return fmt.Errorf("parsing admin listener address: %v", err)
-	}
-	if len(listenAddrs) != 1 {
-		return fmt.Errorf("admin endpoint must have exactly one address; cannot listen on %v", listenAddrs)
-	}
-	ln, err := net.Listen(netw, listenAddrs[0])
+	netw, addr, err := adminConfig.listenAddr()
 	if err != nil {
 		return err
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/load", handleLoadConfig)
-	mux.HandleFunc("/stop", handleStop)
+	handler := adminConfig.newAdminHandler(addr)
 
-	///// BEGIN PPROF STUFF (TODO: Temporary) /////
-	mux.HandleFunc("/debug/pprof/", pprof.Index)
-	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
-	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
-	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
-	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
-	///// END PPROF STUFF //////
-
-	for _, m := range GetModules("admin.routers") {
-		adminrtr := m.New().(AdminRouter)
-		for _, route := range adminrtr.Routes() {
-			mux.Handle(route.Pattern, route)
-		}
+	ln, err := Listen(netw, addr)
+	if err != nil {
+		return err
 	}
 
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// TODO: improve/organize this logging
-		Log().Named("admin.request").Info("",
-			zap.String("method", r.Method),
-			zap.String("uri", r.RequestURI),
-			zap.String("remote", r.RemoteAddr),
-		)
-		cors.Default().Handler(mux).ServeHTTP(w, r)
-	})
-
-	cfgEndptSrv = &http.Server{
+	adminServer = &http.Server{
 		Handler:           handler,
-		ReadTimeout:       5 * time.Second,
+		ReadTimeout:       10 * time.Second,
 		ReadHeaderTimeout: 5 * time.Second,
-		IdleTimeout:       5 * time.Second,
+		IdleTimeout:       60 * time.Second,
 		MaxHeaderBytes:    1024 * 64,
 	}
 
-	go cfgEndptSrv.Serve(ln)
+	go adminServer.Serve(ln)
 
-	Log().Named("admin").Info("Caddy 2 admin endpoint started.", zap.String("listenAddress", adminConfig.Listen))
+	Log().Named("admin").Info(
+		"admin endpoint started",
+		zap.String("address", addr),
+		zap.Bool("enforce_origin", adminConfig.EnforceOrigin),
+		zap.Strings("origins", handler.allowedOrigins),
+	)
 
 	return nil
 }
 
-// StopAdmin stops the API endpoint.
-func StopAdmin() error {
-	cfgEndptSrvMu.Lock()
-	defer cfgEndptSrvMu.Unlock()
-
-	if cfgEndptSrv == nil {
-		return fmt.Errorf("no server")
+func stopAdminServer(srv *http.Server) error {
+	if srv == nil {
+		return fmt.Errorf("no admin server")
 	}
-
-	err := cfgEndptSrv.Shutdown(context.Background()) // TODO
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	err := srv.Shutdown(ctx)
 	if err != nil {
-		return fmt.Errorf("shutting down server: %v", err)
+		return fmt.Errorf("shutting down admin server: %v", err)
 	}
-
-	cfgEndptSrv = nil
-
+	Log().Named("admin").Info("stopped previous server")
 	return nil
 }
 
@@ -179,117 +224,557 @@ type AdminRouter interface {
 
 // AdminRoute represents a route for the admin endpoint.
 type AdminRoute struct {
-	http.Handler
 	Pattern string
+	Handler AdminHandler
 }
 
-func handleLoadConfig(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+type adminHandler struct {
+	enforceOrigin  bool
+	allowedOrigins []string
+	mux            *http.ServeMux
+}
+
+// ServeHTTP is the external entry point for API requests.
+// It will only be called once per request.
+func (h adminHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	Log().Named("admin.api").Info("received request",
+		zap.String("method", r.Method),
+		zap.String("uri", r.RequestURI),
+		zap.String("remote_addr", r.RemoteAddr),
+		zap.Reflect("headers", r.Header),
+	)
+	h.serveHTTP(w, r)
+}
+
+// serveHTTP is the internal entry point for API requests. It may
+// be called more than once per request, for example if a request
+// is rewritten (i.e. internal redirect).
+func (h adminHandler) serveHTTP(w http.ResponseWriter, r *http.Request) {
+	if h.enforceOrigin {
+		// DNS rebinding mitigation
+		err := h.checkHost(r)
+		if err != nil {
+			h.handleError(w, r, err)
+			return
+		}
+
+		// cross-site mitigation
+		origin, err := h.checkOrigin(r)
+		if err != nil {
+			h.handleError(w, r, err)
+			return
+		}
+
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Access-Control-Allow-Methods", "OPTIONS, GET, POST, PUT, PATCH, DELETE")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Cache-Control")
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
+	}
+
+	// TODO: authentication & authorization, if configured
+
+	h.mux.ServeHTTP(w, r)
+}
+
+func (h adminHandler) handleError(w http.ResponseWriter, r *http.Request, err error) {
+	if err == nil {
 		return
 	}
+	if err == ErrInternalRedir {
+		h.serveHTTP(w, r)
+		return
+	}
+
+	apiErr, ok := err.(APIError)
+	if !ok {
+		apiErr = APIError{
+			Code: http.StatusInternalServerError,
+			Err:  err,
+		}
+	}
+	if apiErr.Code == 0 {
+		apiErr.Code = http.StatusInternalServerError
+	}
+	if apiErr.Message == "" && apiErr.Err != nil {
+		apiErr.Message = apiErr.Err.Error()
+	}
+
+	Log().Named("admin.api").Error("request error",
+		zap.Error(err),
+		zap.Int("status_code", apiErr.Code),
+	)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(apiErr.Code)
+	json.NewEncoder(w).Encode(apiErr)
+}
+
+// checkHost returns a handler that wraps next such that
+// it will only be called if the request's Host header matches
+// a trustworthy/expected value. This helps to mitigate DNS
+// rebinding attacks.
+func (h adminHandler) checkHost(r *http.Request) error {
+	var allowed bool
+	for _, allowedHost := range h.allowedOrigins {
+		if r.Host == allowedHost {
+			allowed = true
+			break
+		}
+	}
+	if !allowed {
+		return APIError{
+			Code: http.StatusForbidden,
+			Err:  fmt.Errorf("host not allowed: %s", r.Host),
+		}
+	}
+	return nil
+}
+
+// checkOrigin ensures that the Origin header, if
+// set, matches the intended target; prevents arbitrary
+// sites from issuing requests to our listener. It
+// returns the origin that was obtained from r.
+func (h adminHandler) checkOrigin(r *http.Request) (string, error) {
+	origin := h.getOriginHost(r)
+	if origin == "" {
+		return origin, APIError{
+			Code: http.StatusForbidden,
+			Err:  fmt.Errorf("missing required Origin header"),
+		}
+	}
+	if !h.originAllowed(origin) {
+		return origin, APIError{
+			Code: http.StatusForbidden,
+			Err:  fmt.Errorf("client is not allowed to access from origin %s", origin),
+		}
+	}
+	return origin, nil
+}
+
+func (h adminHandler) getOriginHost(r *http.Request) string {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		origin = r.Header.Get("Referer")
+	}
+	originURL, err := url.Parse(origin)
+	if err == nil && originURL.Host != "" {
+		origin = originURL.Host
+	}
+	return origin
+}
+
+func (h adminHandler) originAllowed(origin string) bool {
+	for _, allowedOrigin := range h.allowedOrigins {
+		originCopy := origin
+		if !strings.Contains(allowedOrigin, "://") {
+			// no scheme specified, so allow both
+			originCopy = strings.TrimPrefix(originCopy, "http://")
+			originCopy = strings.TrimPrefix(originCopy, "https://")
+		}
+		if originCopy == allowedOrigin {
+			return true
+		}
+	}
+	return false
+}
+
+func handleLoad(w http.ResponseWriter, r *http.Request) error {
+	if r.Method != http.MethodPost {
+		return APIError{
+			Code: http.StatusMethodNotAllowed,
+			Err:  fmt.Errorf("method not allowed"),
+		}
+	}
+
+	buf := bufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer bufPool.Put(buf)
+
+	_, err := io.Copy(buf, r.Body)
+	if err != nil {
+		return APIError{
+			Code: http.StatusBadRequest,
+			Err:  fmt.Errorf("reading request body: %v", err),
+		}
+	}
+	body := buf.Bytes()
 
 	// if the config is formatted other than Caddy's native
 	// JSON, we need to adapt it before loading it
 	if ctHeader := r.Header.Get("Content-Type"); ctHeader != "" {
 		ct, _, err := mime.ParseMediaType(ctHeader)
 		if err != nil {
-			http.Error(w, "Invalid Content-Type: "+err.Error(), http.StatusBadRequest)
-			return
+			return APIError{
+				Code: http.StatusBadRequest,
+				Err:  fmt.Errorf("invalid Content-Type: %v", err),
+			}
 		}
 		if !strings.HasSuffix(ct, "/json") {
 			slashIdx := strings.Index(ct, "/")
 			if slashIdx < 0 {
-				http.Error(w, "Malformed Content-Type", http.StatusBadRequest)
-				return
+				return APIError{
+					Code: http.StatusBadRequest,
+					Err:  fmt.Errorf("malformed Content-Type"),
+				}
 			}
 			adapterName := ct[slashIdx+1:]
 			cfgAdapter := caddyconfig.GetAdapter(adapterName)
 			if cfgAdapter == nil {
-				http.Error(w, "Unrecognized config adapter: "+adapterName, http.StatusBadRequest)
-				return
-			}
-			body, err := ioutil.ReadAll(http.MaxBytesReader(w, r.Body, 1024*1024))
-			if err != nil {
-				http.Error(w, "Error reading request body: "+err.Error(), http.StatusBadRequest)
-				return
+				return APIError{
+					Code: http.StatusBadRequest,
+					Err:  fmt.Errorf("unrecognized config adapter '%s'", adapterName),
+				}
 			}
 			result, warnings, err := cfgAdapter.Adapt(body, nil)
 			if err != nil {
-				log.Printf("[ADMIN][ERROR] adapting config from %s: %v", adapterName, err)
-				http.Error(w, fmt.Sprintf("Adapting config from %s: %v", adapterName, err), http.StatusBadRequest)
-				return
+				return APIError{
+					Code: http.StatusBadRequest,
+					Err:  fmt.Errorf("adapting config using %s adapter: %v", adapterName, err),
+				}
 			}
 			if len(warnings) > 0 {
 				respBody, err := json.Marshal(warnings)
 				if err != nil {
-					log.Printf("[ADMIN][ERROR] marshaling warnings: %v", err)
+					Log().Named("admin.api.load").Error(err.Error())
 				}
 				w.Write(respBody)
 			}
-			// replace original request body with adapted JSON
-			r.Body.Close()
-			r.Body = ioutil.NopCloser(bytes.NewReader(result))
+			body = result
 		}
 	}
 
-	// pass this off to the /config/ endpoint
-	r.URL.Path = "/" + rawConfigKey + "/"
-	handleConfig(w, r)
+	forceReload := r.Header.Get("Cache-Control") == "must-revalidate"
+
+	err = Load(body, forceReload)
+	if err != nil {
+		return APIError{
+			Code: http.StatusBadRequest,
+			Err:  fmt.Errorf("loading config: %v", err),
+		}
+	}
+
+	Log().Named("admin.api").Info("load complete")
+
+	return nil
 }
 
-func handleStop(w http.ResponseWriter, r *http.Request) {
+func handleConfig(w http.ResponseWriter, r *http.Request) error {
+	switch r.Method {
+	case http.MethodGet:
+		w.Header().Set("Content-Type", "application/json")
+
+		err := readConfig(r.URL.Path, w)
+		if err != nil {
+			return APIError{Code: http.StatusBadRequest, Err: err}
+		}
+
+		return nil
+
+	case http.MethodPost,
+		http.MethodPut,
+		http.MethodPatch,
+		http.MethodDelete:
+
+		// DELETE does not use a body, but the others do
+		var body []byte
+		if r.Method != http.MethodDelete {
+			if ct := r.Header.Get("Content-Type"); !strings.Contains(ct, "/json") {
+				return APIError{
+					Code: http.StatusBadRequest,
+					Err:  fmt.Errorf("unacceptable content-type: %v; 'application/json' required", ct),
+				}
+			}
+
+			buf := bufPool.Get().(*bytes.Buffer)
+			buf.Reset()
+			defer bufPool.Put(buf)
+
+			_, err := io.Copy(buf, r.Body)
+			if err != nil {
+				return APIError{
+					Code: http.StatusBadRequest,
+					Err:  fmt.Errorf("reading request body: %v", err),
+				}
+			}
+			body = buf.Bytes()
+		}
+
+		forceReload := r.Header.Get("Cache-Control") == "must-revalidate"
+
+		err := changeConfig(r.Method, r.URL.Path, body, forceReload)
+		if err != nil {
+			return err
+		}
+
+	default:
+		return APIError{
+			Code: http.StatusMethodNotAllowed,
+			Err:  fmt.Errorf("method %s not allowed", r.Method),
+		}
+	}
+
+	return nil
+}
+
+func handleConfigID(w http.ResponseWriter, r *http.Request) error {
+	idPath := r.URL.Path
+
+	parts := strings.Split(idPath, "/")
+	if len(parts) < 3 || parts[2] == "" {
+		return fmt.Errorf("request path is missing object ID")
+	}
+	if parts[0] != "" || parts[1] != "id" {
+		return fmt.Errorf("malformed object path")
+	}
+	id := parts[2]
+
+	// map the ID to the expanded path
+	currentCfgMu.RLock()
+	expanded, ok := rawCfgIndex[id]
+	defer currentCfgMu.RUnlock()
+	if !ok {
+		return fmt.Errorf("unknown object ID '%s'", id)
+	}
+
+	// piece the full URL path back together
+	parts = append([]string{expanded}, parts[3:]...)
+	r.URL.Path = path.Join(parts...)
+
+	return ErrInternalRedir
+}
+
+func handleUnload(w http.ResponseWriter, r *http.Request) error {
 	if r.Method != http.MethodPost {
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		return
+		return APIError{
+			Code: http.StatusMethodNotAllowed,
+			Err:  fmt.Errorf("method not allowed"),
+		}
 	}
-	log.Println("[ADMIN] Initiating shutdown")
+	currentCfgMu.RLock()
+	hasCfg := currentCfg != nil
+	currentCfgMu.RUnlock()
+	if !hasCfg {
+		Log().Named("admin.api").Info("nothing to unload")
+		return nil
+	}
+	Log().Named("admin.api").Info("unloading")
 	if err := stopAndCleanup(); err != nil {
-		log.Printf("[ADMIN][ERROR] stopping: %v \n", err)
+		Log().Named("admin.api").Error("error unloading", zap.Error(err))
+	} else {
+		Log().Named("admin.api").Info("unloading completed")
 	}
-	log.Println("[ADMIN] Exiting")
-	os.Exit(0)
-}
-
-func stopAndCleanup() error {
-	if err := Stop(); err != nil {
-		return err
-	}
-	certmagic.CleanUpOwnLocks()
 	return nil
 }
 
-// Load loads and starts a configuration.
-func Load(r io.Reader) error {
-	buf := bufPool.Get().(*bytes.Buffer)
-	buf.Reset()
-	defer bufPool.Put(buf)
-
-	_, err := io.Copy(buf, io.LimitReader(r, 1024*1024))
+func handleStop(w http.ResponseWriter, r *http.Request) error {
+	defer func() {
+		Log().Named("admin.api").Info("stopping now, bye!! 👋")
+		os.Exit(0)
+	}()
+	err := handleUnload(w, r)
 	if err != nil {
-		return err
+		Log().Named("admin.api").Error("unload error", zap.Error(err))
+	}
+	return nil
+}
+
+// unsyncedConfigAccess traverses into the current config and performs
+// the operation at path according to method, using body and out as
+// needed. This is a low-level, unsynchronized function; most callers
+// will want to use changeConfig or readConfig instead. This requires a
+// read or write lock on currentCfgMu, depending on method (GET needs
+// only a read lock; all others need a write lock).
+func unsyncedConfigAccess(method, path string, body []byte, out io.Writer) error {
+	var err error
+	var val interface{}
+
+	// if there is a request body, decode it into the
+	// variable that will be set in the config according
+	// to method and path
+	if len(body) > 0 {
+		err = json.Unmarshal(body, &val)
+		if err != nil {
+			return fmt.Errorf("decoding request body: %v", err)
+		}
 	}
 
-	var cfg *Config
-	err = json.Unmarshal(buf.Bytes(), &cfg)
-	if err != nil {
-		return fmt.Errorf("decoding config: %v", err)
+	enc := json.NewEncoder(out)
+
+	cleanPath := strings.Trim(path, "/")
+	if cleanPath == "" {
+		return fmt.Errorf("no traversable path")
 	}
 
-	err = Run(cfg)
-	if err != nil {
-		return fmt.Errorf("running: %v", err)
+	parts := strings.Split(cleanPath, "/")
+	if len(parts) == 0 {
+		return fmt.Errorf("path missing")
+	}
+
+	var ptr interface{} = rawCfg
+
+traverseLoop:
+	for i, part := range parts {
+		switch v := ptr.(type) {
+		case map[string]interface{}:
+			// if the next part enters a slice, and the slice is our destination,
+			// handle it specially (because appending to the slice copies the slice
+			// header, which does not replace the original one like we want)
+			if arr, ok := v[part].([]interface{}); ok && i == len(parts)-2 {
+				var idx int
+				if method != http.MethodPost {
+					idxStr := parts[len(parts)-1]
+					idx, err = strconv.Atoi(idxStr)
+					if err != nil {
+						return fmt.Errorf("[%s] invalid array index '%s': %v",
+							path, idxStr, err)
+					}
+					if idx < 0 || idx >= len(arr) {
+						return fmt.Errorf("[%s] array index out of bounds: %s", path, idxStr)
+					}
+				}
+
+				switch method {
+				case http.MethodGet:
+					err = enc.Encode(arr[idx])
+					if err != nil {
+						return fmt.Errorf("encoding config: %v", err)
+					}
+				case http.MethodPost:
+					v[part] = append(arr, val)
+				case http.MethodPut:
+					// avoid creation of new slice and a second copy (see
+					// https://github.com/golang/go/wiki/SliceTricks#insert)
+					arr = append(arr, nil)
+					copy(arr[idx+1:], arr[idx:])
+					arr[idx] = val
+					v[part] = arr
+				case http.MethodPatch:
+					arr[idx] = val
+				case http.MethodDelete:
+					v[part] = append(arr[:idx], arr[idx+1:]...)
+				default:
+					return fmt.Errorf("unrecognized method %s", method)
+				}
+				break traverseLoop
+			}
+
+			if i == len(parts)-1 {
+				switch method {
+				case http.MethodGet:
+					err = enc.Encode(v[part])
+					if err != nil {
+						return fmt.Errorf("encoding config: %v", err)
+					}
+				case http.MethodPost:
+					if arr, ok := v[part].([]interface{}); ok {
+						// if the part is an existing list, POST appends to it
+						// TODO: Do we ever reach this point, since we handle arrays
+						// separately above?
+						v[part] = append(arr, val)
+					} else {
+						// otherwise, it simply sets the value
+						v[part] = val
+					}
+				case http.MethodPut:
+					if _, ok := v[part]; ok {
+						return fmt.Errorf("[%s] key already exists: %s", path, part)
+					}
+					v[part] = val
+				case http.MethodPatch:
+					if _, ok := v[part]; !ok {
+						return fmt.Errorf("[%s] key does not exist: %s", path, part)
+					}
+					v[part] = val
+				case http.MethodDelete:
+					delete(v, part)
+				default:
+					return fmt.Errorf("unrecognized method %s", method)
+				}
+			} else {
+				ptr = v[part]
+			}
+
+		case []interface{}:
+			partInt, err := strconv.Atoi(part)
+			if err != nil {
+				return fmt.Errorf("[/%s] invalid array index '%s': %v",
+					strings.Join(parts[:i+1], "/"), part, err)
+			}
+			if partInt < 0 || partInt >= len(v) {
+				return fmt.Errorf("[/%s] array index out of bounds: %s",
+					strings.Join(parts[:i+1], "/"), part)
+			}
+			ptr = v[partInt]
+
+		default:
+			return fmt.Errorf("invalid path: %s", parts[:i+1])
+		}
 	}
 
 	return nil
 }
 
-// DefaultAdminListen is the address for the admin
-// listener, if none is specified at startup.
-var DefaultAdminListen = "localhost:2019"
+// AdminHandler is like http.Handler except ServeHTTP may return an error.
+//
+// If any handler encounters an error, it should be returned for proper
+// handling.
+type AdminHandler interface {
+	ServeHTTP(http.ResponseWriter, *http.Request) error
+}
+
+// AdminHandlerFunc is a convenience type like http.HandlerFunc.
+type AdminHandlerFunc func(http.ResponseWriter, *http.Request) error
+
+// ServeHTTP implements the Handler interface.
+func (f AdminHandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
+	return f(w, r)
+}
+
+// APIError is a structured error that every API
+// handler should return for consistency in logging
+// and client responses. If Message is unset, then
+// Err.Error() will be serialized in its place.
+type APIError struct {
+	Code    int    `json:"-"`
+	Err     error  `json:"-"`
+	Message string `json:"error"`
+}
+
+func (e APIError) Error() string {
+	if e.Err != nil {
+		return e.Err.Error()
+	}
+	return e.Message
+}
+
+var (
+	// DefaultAdminListen is the address for the admin
+	// listener, if none is specified at startup.
+	DefaultAdminListen = "localhost:2019"
+
+	// ErrInternalRedir indicates an internal redirect
+	// and is useful when admin API handlers rewrite
+	// the request; in that case, authentication and
+	// authorization needs to happen again for the
+	// rewritten request.
+	ErrInternalRedir = fmt.Errorf("internal redirect; re-authorization required")
+
+	// DefaultAdminConfig is the default configuration
+	// for the administration endpoint.
+	DefaultAdminConfig = &AdminConfig{
+		Listen: DefaultAdminListen,
+	}
+)
+
+const (
+	rawConfigKey = "config"
+	idKey        = "@id"
+)
 
 var bufPool = sync.Pool{
 	New: func() interface{} {
 		return new(bytes.Buffer)
 	},
 }
+
+var adminServer *http.Server
