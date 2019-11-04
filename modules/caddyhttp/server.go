@@ -116,7 +116,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				log = logger.Error
 			}
 
-			log("request",
+			log("received request",
 				zap.String("common_log", repl.ReplaceAll(CommonLogFormat, "-")),
 				zap.Duration("latency", latency),
 				zap.Int("size", wrec.Size()),
