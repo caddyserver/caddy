@@ -64,7 +64,8 @@ func RegisterHandlerDirective(dir string, setupFunc UnmarshalHandlerFunc) {
 			return nil, err
 		}
 		if ok {
-			h.Dispenser.Delete() // strip matcher token
+			tokens := h.Dispenser.Delete() // strip matcher token
+			h.Dispenser = caddyfile.NewDispenser(tokens)
 		}
 
 		h.Dispenser.Reset() // pretend this lookahead never happened

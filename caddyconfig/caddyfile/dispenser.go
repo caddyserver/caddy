@@ -339,7 +339,7 @@ func (d *Dispenser) Errf(format string, args ...interface{}) error {
 // array will become apparent (or worse, hide from you like they
 // did me for 3 and a half freaking hours late one night).
 func (d *Dispenser) Delete() []Token {
-	if d.cursor >= 0 && d.cursor < len(d.tokens)-1 {
+	if d.cursor >= 0 && d.cursor <= len(d.tokens)-1 {
 		d.tokens = append(d.tokens[:d.cursor], d.tokens[d.cursor+1:]...)
 		d.cursor--
 	}
