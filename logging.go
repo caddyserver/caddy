@@ -337,7 +337,7 @@ func (cl *CustomLog) provision(ctx Context, logging *Logging) error {
 		cl.encoder = val.(zapcore.Encoder)
 	}
 	if cl.encoder == nil {
-		cl.encoder = zapcore.NewConsoleEncoder(zap.NewProductionEncoderConfig())
+		cl.encoder = newDefaultProductionLogEncoder()
 	}
 
 	if cl.WriterRaw != nil {
@@ -576,9 +576,7 @@ func newDefaultProductionLog() (*defaultCustomLog, error) {
 	if err != nil {
 		return nil, err
 	}
-	encCfg := zap.NewProductionEncoderConfig()
-	encCfg.EncodeLevel = zapcore.CapitalColorLevelEncoder
-	cl.encoder = zapcore.NewConsoleEncoder(encCfg)
+	cl.encoder = newDefaultProductionLogEncoder()
 	cl.levelEnabler = zapcore.InfoLevel
 
 	cl.buildCore()
@@ -587,6 +585,15 @@ func newDefaultProductionLog() (*defaultCustomLog, error) {
 		CustomLog: cl,
 		logger:    zap.New(cl.core),
 	}, nil
+}
+
+func newDefaultProductionLogEncoder() zapcore.Encoder {
+	encCfg := zap.NewProductionEncoderConfig()
+	encCfg.EncodeLevel = zapcore.CapitalColorLevelEncoder
+	encCfg.EncodeTime = func(ts time.Time, encoder zapcore.PrimitiveArrayEncoder) {
+		encoder.AppendString(ts.UTC().Format("2006/01/02 15:04:05.000"))
+	}
+	return zapcore.NewConsoleEncoder(encCfg)
 }
 
 // Log returns the current default logger.
