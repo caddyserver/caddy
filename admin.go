@@ -90,7 +90,6 @@ func (admin AdminConfig) newAdminHandler(listenAddr string) adminHandler {
 	addRoute("/load", AdminHandlerFunc(handleLoad))
 	addRoute("/"+rawConfigKey+"/", AdminHandlerFunc(handleConfig))
 	addRoute("/id/", AdminHandlerFunc(handleConfigID))
-	addRoute("/unload", AdminHandlerFunc(handleUnload))
 	addRoute("/stop", AdminHandlerFunc(handleStop))
 
 	// register debugging endpoints
@@ -543,6 +542,21 @@ func handleConfigID(w http.ResponseWriter, r *http.Request) error {
 	return ErrInternalRedir
 }
 
+func handleStop(w http.ResponseWriter, r *http.Request) error {
+	defer func() {
+		Log().Named("admin.api").Info("stopping now, bye!! 👋")
+		os.Exit(0)
+	}()
+	err := handleUnload(w, r)
+	if err != nil {
+		Log().Named("admin.api").Error("unload error", zap.Error(err))
+	}
+	return nil
+}
+
+// handleUnload stops the current configuration that is running.
+// Note that doing this can also be accomplished with DELETE /config/
+// but we leave this function because handleStop uses it.
 func handleUnload(w http.ResponseWriter, r *http.Request) error {
 	if r.Method != http.MethodPost {
 		return APIError{
@@ -562,18 +576,6 @@ func handleUnload(w http.ResponseWriter, r *http.Request) error {
 		Log().Named("admin.api").Error("error unloading", zap.Error(err))
 	} else {
 		Log().Named("admin.api").Info("unloading completed")
-	}
-	return nil
-}
-
-func handleStop(w http.ResponseWriter, r *http.Request) error {
-	defer func() {
-		Log().Named("admin.api").Info("stopping now, bye!! 👋")
-		os.Exit(0)
-	}()
-	err := handleUnload(w, r)
-	if err != nil {
-		Log().Named("admin.api").Error("unload error", zap.Error(err))
 	}
 	return nil
 }
