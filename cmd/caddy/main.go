@@ -12,36 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package main is the entry point of the Caddy application.
+// Most of Caddy's functionality is provided through modules,
+// which can be plugged in by adding their import below.
+//
+// There is no need to modify the Caddy source code to customize your
+// builds. You can easily build a custom Caddy with these simple steps:
+//
+//   1. Copy this file (main.go) into a new folder
+//   2. Edit the imports below to include the modules you want plugged in
+//   3. Run `go mod init caddy`
+//   4. Run `go install` or `go build` - you now have a custom binary!
+//
 package main
 
 import (
 	caddycmd "github.com/caddyserver/caddy/v2/cmd"
 
-	// this is where modules get plugged in
-	_ "github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
-	_ "github.com/caddyserver/caddy/v2/caddyconfig/json5"
-	_ "github.com/caddyserver/caddy/v2/caddyconfig/jsonc"
-	_ "github.com/caddyserver/caddy/v2/modules/caddyhttp"
-	_ "github.com/caddyserver/caddy/v2/modules/caddyhttp/caddyauth"
-	_ "github.com/caddyserver/caddy/v2/modules/caddyhttp/encode"
-	_ "github.com/caddyserver/caddy/v2/modules/caddyhttp/encode/brotli"
-	_ "github.com/caddyserver/caddy/v2/modules/caddyhttp/encode/gzip"
-	_ "github.com/caddyserver/caddy/v2/modules/caddyhttp/encode/zstd"
-	_ "github.com/caddyserver/caddy/v2/modules/caddyhttp/fileserver"
-	_ "github.com/caddyserver/caddy/v2/modules/caddyhttp/headers"
-	_ "github.com/caddyserver/caddy/v2/modules/caddyhttp/httpcache"
-	_ "github.com/caddyserver/caddy/v2/modules/caddyhttp/markdown"
-	_ "github.com/caddyserver/caddy/v2/modules/caddyhttp/requestbody"
-	_ "github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
-	_ "github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy/fastcgi"
-	_ "github.com/caddyserver/caddy/v2/modules/caddyhttp/rewrite"
-	_ "github.com/caddyserver/caddy/v2/modules/caddyhttp/starlarkmw"
-	_ "github.com/caddyserver/caddy/v2/modules/caddyhttp/templates"
-	_ "github.com/caddyserver/caddy/v2/modules/caddytls"
-	_ "github.com/caddyserver/caddy/v2/modules/caddytls/distributedstek"
-	_ "github.com/caddyserver/caddy/v2/modules/caddytls/standardstek"
-	_ "github.com/caddyserver/caddy/v2/modules/filestorage"
-	_ "github.com/caddyserver/caddy/v2/modules/logging"
+	// plug in Caddy modules here
+	_ "github.com/caddyserver/caddy/v2/modules/standard"
 )
 
 func main() {
