@@ -51,6 +51,7 @@ type HTTPTransport struct {
 	MaxResponseHeaderSize int64          `json:"max_response_header_size,omitempty"`
 	WriteBufferSize       int            `json:"write_buffer_size,omitempty"`
 	ReadBufferSize        int            `json:"read_buffer_size,omitempty"`
+	Versions              []string       `json:"versions,omitempty"`
 
 	RoundTripper http.RoundTripper `json:"-"`
 }
@@ -66,6 +67,9 @@ func (HTTPTransport) CaddyModule() caddy.ModuleInfo {
 // Provision sets up h.RoundTripper with a http.Transport
 // that is ready to use.
 func (h *HTTPTransport) Provision(_ caddy.Context) error {
+	if len(h.Versions) == 0 {
+		h.Versions = []string{"1.1", "2"}
+	}
 	dialer := &net.Dialer{
 		Timeout:       time.Duration(h.DialTimeout),
 		FallbackDelay: time.Duration(h.FallbackDelay),
@@ -121,8 +125,10 @@ func (h *HTTPTransport) Provision(_ caddy.Context) error {
 		rt.DisableCompression = !*h.Compression
 	}
 
-	if err := http2.ConfigureTransport(rt); err != nil {
-		return err
+	if sliceContains(h.Versions, "2") {
+		if err := http2.ConfigureTransport(rt); err != nil {
+			return nil, err
+		}
 	}
 
 	h.RoundTripper = rt
@@ -199,9 +205,16 @@ func (t TLSConfig) MakeTLSClientConfig() (*tls.Config, error) {
 		return nil, nil
 	}
 
-	cfg.NextProtos = []string{"h2", "http/1.1"} // TODO: ensure that this actually enables HTTP/2
-
 	return cfg, nil
+}
+
+// KeepAlive holds configuration pertaining to HTTP Keep-Alive.
+type KeepAlive struct {
+	Enabled             *bool          `json:"enabled,omitempty"`
+	ProbeInterval       caddy.Duration `json:"probe_interval,omitempty"`
+	MaxIdleConns        int            `json:"max_idle_conns,omitempty"`
+	MaxIdleConnsPerHost int            `json:"max_idle_conns_per_host,omitempty"`
+	IdleConnTimeout     caddy.Duration `json:"idle_timeout,omitempty"` // how long should connections be kept alive when idle
 }
 
 // decodeBase64DERCert base64-decodes, then DER-decodes, certStr.
@@ -216,13 +229,14 @@ func decodeBase64DERCert(certStr string) (*x509.Certificate, error) {
 	return x509.ParseCertificate(derBytes)
 }
 
-// KeepAlive holds configuration pertaining to HTTP Keep-Alive.
-type KeepAlive struct {
-	Enabled             *bool          `json:"enabled,omitempty"`
-	ProbeInterval       caddy.Duration `json:"probe_interval,omitempty"`
-	MaxIdleConns        int            `json:"max_idle_conns,omitempty"`
-	MaxIdleConnsPerHost int            `json:"max_idle_conns_per_host,omitempty"`
-	IdleConnTimeout     caddy.Duration `json:"idle_timeout,omitempty"` // how long should connections be kept alive when idle
+// sliceContains returns true if needle is in haystack.
+func sliceContains(haystack []string, needle string) bool {
+	for _, s := range haystack {
+		if s == needle {
+			return true
+		}
+	}
+	return false
 }
 
 // Interface guards
