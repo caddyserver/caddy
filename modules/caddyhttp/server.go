@@ -116,7 +116,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				log = logger.Error
 			}
 
-			log("received request",
+			log("handled request",
 				zap.String("common_log", repl.ReplaceAll(CommonLogFormat, "-")),
 				zap.Duration("latency", latency),
 				zap.Int("size", wrec.Size()),
@@ -392,14 +392,15 @@ func errLogValues(err error) (status int, msg string, fields []zapcore.Field) {
 // originalRequest returns a partial, shallow copy of
 // req, including: req.Method, deep copy of req.URL
 // (into the urlCopy parameter, which should be on the
-// stack), and req.RequestURI. Notably, headers are not
-// copied. This function is designed to be very fast
-// and efficient, and useful primarly for read-only
-// logging purposes.
+// stack), req.RequestURI, and req.RemoteAddr. Notably,
+// headers are not copied. This function is designed to
+// be very fast and efficient, and useful primarly for
+// read-only/logging purposes.
 func originalRequest(req *http.Request, urlCopy *url.URL) http.Request {
-	urlCopy = cloneURL(req.URL)
+	cloneURL(req.URL, urlCopy)
 	return http.Request{
 		Method:     req.Method,
+		RemoteAddr: req.RemoteAddr,
 		RequestURI: req.RequestURI,
 		URL:        urlCopy,
 	}
@@ -407,14 +408,13 @@ func originalRequest(req *http.Request, urlCopy *url.URL) http.Request {
 
 // cloneURL makes a copy of r.URL and returns a
 // new value that doesn't reference the original.
-func cloneURL(u *url.URL) *url.URL {
-	urlCopy := *u
-	if u.User != nil {
+func cloneURL(from, to *url.URL) {
+	*to = *from
+	if from.User != nil {
 		userInfo := new(url.Userinfo)
-		*userInfo = *u.User
-		urlCopy.User = userInfo
+		*userInfo = *from.User
+		to.User = userInfo
 	}
-	return &urlCopy
 }
 
 const (
