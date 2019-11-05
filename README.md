@@ -75,7 +75,7 @@ Caddy binaries have no dependencies and are available for every platform. Get Ca
 
 ## Build
 
-To build from source you need **[Git](https://git-scm.com/downloads)** and **[Go](https://golang.org/doc/install)** (1.12 or newer).
+To build from source you need **[Git](https://git-scm.com/downloads)** and **[Go](https://golang.org/doc/install)** (1.13 or newer).
 
 **To build Caddy without plugins:**
 
