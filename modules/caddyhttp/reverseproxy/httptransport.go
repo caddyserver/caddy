@@ -35,15 +35,15 @@ func init() {
 
 // HTTPTransport is essentially a configuration wrapper for http.Transport.
 // It defines a JSON structure useful when configuring the HTTP transport
-// for Caddy's reverse proxy.
+// for Caddy's reverse proxy. It builds its http.Transport at Provision.
 type HTTPTransport struct {
 	// TODO: It's possible that other transports (like fastcgi) might be
 	// able to borrow/use at least some of these config fields; if so,
-	// move them into a type called CommonTransport and embed it
+	// maybe move them into a type called CommonTransport and embed it?
 	TLS                   *TLSConfig     `json:"tls,omitempty"`
 	KeepAlive             *KeepAlive     `json:"keep_alive,omitempty"`
 	Compression           *bool          `json:"compression,omitempty"`
-	MaxConnsPerHost       int            `json:"max_conns_per_host,omitempty"` // TODO: NOTE: we use our health check stuff to enforce max REQUESTS per host, but this is connections
+	MaxConnsPerHost       int            `json:"max_conns_per_host,omitempty"`
 	DialTimeout           caddy.Duration `json:"dial_timeout,omitempty"`
 	FallbackDelay         caddy.Duration `json:"dial_fallback_delay,omitempty"`
 	ResponseHeaderTimeout caddy.Duration `json:"response_header_timeout,omitempty"`
@@ -53,7 +53,7 @@ type HTTPTransport struct {
 	ReadBufferSize        int            `json:"read_buffer_size,omitempty"`
 	Versions              []string       `json:"versions,omitempty"`
 
-	RoundTripper http.RoundTripper `json:"-"`
+	Transport *http.Transport `json:"-"`
 }
 
 // CaddyModule returns the Caddy module information.
@@ -64,12 +64,23 @@ func (HTTPTransport) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
-// Provision sets up h.RoundTripper with a http.Transport
+// Provision sets up h.Transport with a *http.Transport
 // that is ready to use.
 func (h *HTTPTransport) Provision(_ caddy.Context) error {
 	if len(h.Versions) == 0 {
 		h.Versions = []string{"1.1", "2"}
 	}
+
+	rt, err := h.newTransport()
+	if err != nil {
+		return err
+	}
+	h.Transport = rt
+
+	return nil
+}
+
+func (h *HTTPTransport) newTransport() (*http.Transport, error) {
 	dialer := &net.Dialer{
 		Timeout:       time.Duration(h.DialTimeout),
 		FallbackDelay: time.Duration(h.FallbackDelay),
@@ -107,14 +118,14 @@ func (h *HTTPTransport) Provision(_ caddy.Context) error {
 		var err error
 		rt.TLSClientConfig, err = h.TLS.MakeTLSClientConfig()
 		if err != nil {
-			return fmt.Errorf("making TLS client config: %v", err)
+			return nil, fmt.Errorf("making TLS client config: %v", err)
 		}
 	}
 
 	if h.KeepAlive != nil {
 		dialer.KeepAlive = time.Duration(h.KeepAlive.ProbeInterval)
-		if enabled := h.KeepAlive.Enabled; enabled != nil {
-			rt.DisableKeepAlives = !*enabled
+		if h.KeepAlive.Enabled != nil {
+			rt.DisableKeepAlives = !*h.KeepAlive.Enabled
 		}
 		rt.MaxIdleConns = h.KeepAlive.MaxIdleConns
 		rt.MaxIdleConnsPerHost = h.KeepAlive.MaxIdleConnsPerHost
@@ -131,21 +142,30 @@ func (h *HTTPTransport) Provision(_ caddy.Context) error {
 		}
 	}
 
-	h.RoundTripper = rt
-
-	return nil
+	return rt, nil
 }
 
-// RoundTrip implements http.RoundTripper with h.RoundTripper.
-func (h HTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	return h.RoundTripper.RoundTrip(req)
+// RoundTrip implements http.RoundTripper.
+func (h *HTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	h.setScheme(req)
+	return h.Transport.RoundTrip(req)
+}
+
+// setScheme ensures that the outbound request req
+// has the scheme set in its URL; the underlying
+// http.Transport requires a scheme to be set.
+func (h *HTTPTransport) setScheme(req *http.Request) {
+	if req.URL.Scheme == "" {
+		req.URL.Scheme = "http"
+		if h.TLS != nil {
+			req.URL.Scheme = "https"
+		}
+	}
 }
 
 // Cleanup implements caddy.CleanerUpper and closes any idle connections.
 func (h HTTPTransport) Cleanup() error {
-	if ht, ok := h.RoundTripper.(*http.Transport); ok {
-		ht.CloseIdleConnections()
-	}
+	h.Transport.CloseIdleConnections()
 	return nil
 }
 

@@ -311,15 +311,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 // This assumes that no mutations of the request are performed
 // by h during or after proxying.
 func (h Handler) prepareRequest(req *http.Request) error {
-	// as a special (but very common) case, if the transport
-	// is HTTP, then ensure the request has the proper scheme
-	// because incoming requests by default are lacking it
-	if req.URL.Scheme == "" {
-		req.URL.Scheme = "http"
-		if ht, ok := h.Transport.(*HTTPTransport); ok && ht.TLS != nil {
-			req.URL.Scheme = "https"
-		}
-	}
+	// most of this is borrowed from the Go std lib reverse proxy
 
 	if req.ContentLength == 0 {
 		req.Body = nil // Issue golang/go#16036: nil Body for http.Transport retries
