@@ -30,8 +30,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lucas-clemente/quic-go/h2quic"
 	"github.com/caddyserver/caddy/caddyfile"
+	"github.com/lucas-clemente/quic-go/http3"
 )
 
 func TestNewHost(t *testing.T) {
@@ -673,7 +673,7 @@ func TestQuicHost(t *testing.T) {
 				continue
 			}
 			for _, host := range staticUpstream.Hosts {
-				_, ok := host.ReverseProxy.Transport.(*h2quic.RoundTripper)
+				_, ok := host.ReverseProxy.Transport.(*http3.RoundTripper)
 				if !ok {
 					t.Errorf("Type mismatch: %#v", host.ReverseProxy.Transport)
 					continue

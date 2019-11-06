@@ -43,7 +43,7 @@ import (
 
 	"github.com/caddyserver/caddy/caddyhttp/httpserver"
 	"github.com/lucas-clemente/quic-go"
-	"github.com/lucas-clemente/quic-go/h2quic"
+	"github.com/lucas-clemente/quic-go/http3"
 )
 
 var (
@@ -254,7 +254,7 @@ func NewSingleHostReverseProxy(target *url.URL, without string, keepalive int, t
 			Dial: socketDial(target.String(), timeout),
 		}
 	} else if target.Scheme == "quic" {
-		rp.Transport = &h2quic.RoundTripper{
+		rp.Transport = &http3.RoundTripper{
 			QuicConfig: &quic.Config{
 				HandshakeTimeout: defaultCryptoHandshakeTimeout,
 				KeepAlive:        true,
@@ -310,7 +310,7 @@ func (rp *ReverseProxy) UseInsecureTransport() {
 		// No http2.ConfigureTransport() here.
 		// For now this is only added in places where
 		// an http.Transport is actually created.
-	} else if transport, ok := rp.Transport.(*h2quic.RoundTripper); ok {
+	} else if transport, ok := rp.Transport.(*http3.RoundTripper); ok {
 		if transport.TLSClientConfig == nil {
 			transport.TLSClientConfig = &tls.Config{}
 		}
@@ -329,7 +329,7 @@ func (rp *ReverseProxy) UseOwnCACertificates(CaCertPool *x509.CertPool) {
 		// No http2.ConfigureTransport() here.
 		// For now this is only added in places where
 		// an http.Transport is actually created.
-	} else if transport, ok := rp.Transport.(*h2quic.RoundTripper); ok {
+	} else if transport, ok := rp.Transport.(*http3.RoundTripper); ok {
 		if transport.TLSClientConfig == nil {
 			transport.TLSClientConfig = &tls.Config{}
 		}
