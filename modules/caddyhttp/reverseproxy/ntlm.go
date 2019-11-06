@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/caddyserver/caddy/v2"
@@ -205,7 +206,8 @@ func (n *NTLMTransport) deleteTransportsForClient(clientAddr string) {
 // header with values "NTLM" or "Negotiate".
 func requestHasAuth(req *http.Request) bool {
 	for _, val := range req.Header["Authorization"] {
-		if val == "NTLM" || val == "Negotiate" {
+		if strings.HasPrefix(val, "NTLM") ||
+			strings.HasPrefix(val, "Negotiate") {
 			return true
 		}
 	}
