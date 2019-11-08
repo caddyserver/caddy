@@ -68,7 +68,7 @@ func Main() {
 
 	exitCode, err := subcommand.Func(Flags{fs})
 	if err != nil {
-		fmt.Printf("%s: %v\n", subcommand.Name, err)
+		fmt.Fprintf(os.Stderr, "%s: %v\n", subcommand.Name, err)
 	}
 
 	os.Exit(exitCode)
