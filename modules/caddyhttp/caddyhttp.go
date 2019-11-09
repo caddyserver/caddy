@@ -139,8 +139,10 @@ func (app *App) Validate() error {
 			if err != nil {
 				return fmt.Errorf("invalid listener address '%s': %v", addr, err)
 			}
-			for i := listenAddr.FromPort; i <= listenAddr.ToPort; i++ {
-				addr := net.JoinHostPort(fmt.Sprintf("%s://%s", listenAddr.Network, listenAddr.Host), fmt.Sprintf("%d", i))
+			// Inclusivity is accounted for because indexing starts from 0
+			// and PortSpanSize returns (Start-End)+1.
+			for i := 0; uint(i) < listenAddr.PortSpanSize(); i++ {
+				addr := caddy.JoinNetworkAddress(listenAddr.Network, listenAddr.Host, strconv.Itoa(int(listenAddr.StartPort)+i))
 				if sn, ok := lnAddrs[addr]; ok {
 					return fmt.Errorf("server %s: listener address repeated: %s (already claimed by server '%s')", srvName, addr, sn)
 				}
@@ -181,8 +183,8 @@ func (app *App) Start() error {
 			if err != nil {
 				return fmt.Errorf("%s: parsing listen address '%s': %v", srvName, lnAddr, err)
 			}
-			for i := listenAddr.FromPort; i <= listenAddr.ToPort; i++ {
-				hostport := net.JoinHostPort(listenAddr.Host, fmt.Sprintf("%d", i))
+			for i := 0; uint(i) <= listenAddr.PortSpanSize(); i++ {
+				hostport := listenAddr.HostPort(uint(i))
 				ln, err := caddy.Listen(listenAddr.Network, hostport)
 				if err != nil {
 					return fmt.Errorf("%s: listening on %s: %v", listenAddr.Network, hostport, err)
@@ -196,7 +198,7 @@ func (app *App) Start() error {
 				}
 
 				// enable TLS
-				if len(srv.TLSConnPolicies) > 0 && i != uint(app.httpPort()) {
+				if len(srv.TLSConnPolicies) > 0 && i != app.httpPort() {
 					tlsCfg, err := srv.TLSConnPolicies.TLSConfig(app.ctx)
 					if err != nil {
 						return fmt.Errorf("%s/%s: making TLS configuration: %v", listenAddr.Network, hostport, err)

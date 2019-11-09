@@ -116,7 +116,7 @@ func (h *Handler) doActiveHealthChecksForAllHosts() {
 				)
 				return
 			}
-			hostAddr := net.JoinHostPort(addr.Host, fmt.Sprintf("%d", addr.FromPort))
+			hostAddr := addr.HostPort(0)
 			if addr.Network == "unix" || addr.Network == "unixgram" || addr.Network == "unixpacket" {
 				// this will be used as the Host portion of a http.Request URL, and
 				// paths to socket files would produce an error when creating URL,

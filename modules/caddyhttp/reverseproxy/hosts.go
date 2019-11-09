@@ -16,7 +16,7 @@ package reverseproxy
 
 import (
 	"fmt"
-	"net"
+	"strconv"
 	"sync/atomic"
 
 	"github.com/caddyserver/caddy/v2"
@@ -203,9 +203,9 @@ func fillDialInfo(upstream *Upstream, repl caddy.Replacer) (DialInfo, error) {
 	return DialInfo{
 		Upstream: upstream,
 		Network:  addr.Network,
-		Address:  net.JoinHostPort(addr.Host, fmt.Sprintf("%d", addr.FromPort)),
+		Address:  addr.HostPort(0),
 		Host:     addr.Host,
-		Port:     fmt.Sprintf("%d", addr.FromPort),
+		Port:     strconv.Itoa(int(addr.StartPort)),
 	}, nil
 }
 
