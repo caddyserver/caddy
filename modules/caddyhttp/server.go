@@ -245,7 +245,7 @@ func (s *Server) listenersUseAnyPortOtherThan(otherPort int) bool {
 		if err != nil {
 			continue
 		}
-		if uint(otherPort) > laddrs.ToPort || uint(otherPort) < laddrs.FromPort {
+		if uint(otherPort) > laddrs.EndPort || uint(otherPort) < laddrs.StartPort {
 			return true
 		}
 	}
@@ -270,8 +270,11 @@ func (s *Server) hasListenerAddress(fullAddr string) bool {
 			continue
 		}
 
-		// If we have the same host on both sides, and the port of fullAddr falls within the port range of thisAddrs
-		if (thisAddrs.Host == laddrs.Host) && (laddrs.FromPort <= thisAddrs.ToPort && laddrs.FromPort >= thisAddrs.FromPort) {
+		// If we have the same host on both sides,
+		// and the port of fullAddr falls within the port range of thisAddrs
+		if (thisAddrs.Host == laddrs.Host) &&
+			(laddrs.StartPort <= thisAddrs.EndPort) &&
+			(laddrs.StartPort >= thisAddrs.StartPort) {
 			return true
 		}
 	}

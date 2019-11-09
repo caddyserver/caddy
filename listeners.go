@@ -264,40 +264,45 @@ var (
 
 const maxPortSpan = 65535
 
-type Listener struct {
-	Network  string
-	Host     string
-	FromPort uint
-	ToPort   uint
+type ParsedAddress struct {
+	Network   string
+	Host      string
+	StartPort uint
+	EndPort   uint
+}
+
+// HostPort returns the "host:port" where the port is StartPort + offset
+func (l ParsedAddress) HostPort(offset uint) string {
+	return net.JoinHostPort(l.Host, strconv.Itoa(int(l.StartPort+offset)))
 }
 
 // PortSpanSize returns how many ports are available in the defined listener port range
-func (l Listener) PortSpanSize() uint {
-	return (l.ToPort - l.FromPort) + 1
+func (l ParsedAddress) PortSpanSize() uint {
+	return (l.EndPort - l.StartPort) + 1
 }
 
-// NetworkAddress returns the reconstructed network address string of the form "network/host:port"
-func (l Listener) NetworkAddress() string {
-	port := strconv.FormatUint(uint64(l.FromPort), 10)
-	if l.FromPort != l.ToPort {
-		port += "-" + strconv.FormatUint(uint64(l.ToPort), 10)
+// String returns the reconstructed network address string of the form "network/host:port"
+func (l ParsedAddress) String() string {
+	port := strconv.FormatUint(uint64(l.StartPort), 10)
+	if l.StartPort != l.EndPort {
+		port += "-" + strconv.FormatUint(uint64(l.EndPort), 10)
 	}
 	return JoinNetworkAddress(l.Network, l.Host, port)
 }
 
 // ParseNetworkAddress parses addr, a string of the form "network/host:port"
 // (with any part optional) into Listener struct type.
-func ParseNetworkAddress(addr string) (*Listener, error) {
+func ParseNetworkAddress(addr string) (ParsedAddress, error) {
 	var host, port string
 	network, host, port, err := SplitNetworkAddress(addr)
 	if network == "" {
 		network = "tcp"
 	}
 	if err != nil {
-		return nil, err
+		return ParsedAddress{}, err
 	}
 	if network == "unix" || network == "unixgram" || network == "unixpacket" {
-		return &Listener{
+		return ParsedAddress{
 			Network: network,
 			Host:    host,
 		}, nil
@@ -309,25 +314,25 @@ func ParseNetworkAddress(addr string) (*Listener, error) {
 	var start, end uint64
 	start, err = strconv.ParseUint(ports[0], 10, 16)
 	if err != nil {
-		return nil, err
+		return ParsedAddress{}, err
 	}
 	end, err = strconv.ParseUint(ports[1], 10, 16)
 	if err != nil {
-		return nil, err
+		return ParsedAddress{}, err
 	}
 	if end < start {
 		err = fmt.Errorf("end port must be greater than start port")
-		return nil, err
+		return ParsedAddress{}, err
 	}
 	if (end - start) > maxPortSpan {
 		err = fmt.Errorf("port range size is exceeds the maximum allowed range of %d", maxPortSpan)
-		return nil, err
+		return ParsedAddress{}, err
 	}
-	return &Listener{
-		Network:  network,
-		Host:     host,
-		FromPort: uint(start),
-		ToPort:   uint(end),
+	return ParsedAddress{
+		Network:   network,
+		Host:      host,
+		StartPort: uint(start),
+		EndPort:   uint(end),
 	}, nil
 }
 
