@@ -153,10 +153,6 @@ func loadConfig(configFile, adapterName string) ([]byte, error) {
 		config = adaptedConfig
 	}
 
-	// Replace placeholders
-	repl := caddy.NewReplacer()
-	config = []byte(repl.ReplaceKnown(string(config), ""))
-
 	return config, nil
 }
 
