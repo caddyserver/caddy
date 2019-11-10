@@ -47,12 +47,21 @@ func (FileWriter) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
-func (fw FileWriter) String() string {
+// Provision sets up the module
+func (fw *FileWriter) Provision(ctx caddy.Context) error {
 	// Replace placeholder in filename
 	repl := caddy.NewReplacer()
-	filename := repl.ReplaceKnown(fw.Filename, "")
+	filename, err := repl.ReplaceOrErr(fw.Filename, true, true)
+	if err != nil {
+		return fmt.Errorf("invalid filename for log file: %v", err)
+	}
 
-	fpath, err := filepath.Abs(filename)
+	fw.Filename = filename
+	return nil
+}
+
+func (fw FileWriter) String() string {
+	fpath, err := filepath.Abs(fw.Filename)
 	if err == nil {
 		return fpath
 	}
@@ -61,11 +70,7 @@ func (fw FileWriter) String() string {
 
 // WriterKey returns a unique key representing this fw.
 func (fw FileWriter) WriterKey() string {
-	// Replace placeholder in filename
-	repl := caddy.NewReplacer()
-	filename := repl.ReplaceKnown(fw.Filename, "")
-
-	return "file:" + filename
+	return "file:" + fw.Filename
 }
 
 // OpenWriter opens a new file writer.
@@ -86,15 +91,6 @@ func (fw FileWriter) OpenWriter() (io.WriteCloser, error) {
 			fw.RollKeepDays = 90
 		}
 
-		// Replace placeholder in filename
-		repl := caddy.NewReplacer()
-		filename, err := repl.ReplaceOrErr(fw.Filename, true, true)
-		if err != nil {
-			return nil, fmt.Errorf("invalid filename for log file: %v", err)
-		}
-
-		fw.Filename = filename
-
 		return &lumberjack.Logger{
 			Filename:   fw.Filename,
 			MaxSize:    fw.RollSizeMB,
@@ -108,3 +104,8 @@ func (fw FileWriter) OpenWriter() (io.WriteCloser, error) {
 	// otherwise just open a regular file
 	return os.OpenFile(fw.Filename, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0666)
 }
+
+// Interface guards
+var (
+	_ caddy.Provisioner = (*FileWriter)(nil)
+)
