@@ -121,6 +121,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				zap.Duration("latency", latency),
 				zap.Int("size", wrec.Size()),
 				zap.Int("status", wrec.Status()),
+				zap.Object("resp_headers", LoggableHTTPHeader(wrec.Header())),
 			)
 		}()
 	}
