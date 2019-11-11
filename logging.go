@@ -280,8 +280,15 @@ type CustomLog struct {
 }
 
 func (cl *CustomLog) provision(ctx Context, logging *Logging) error {
+	// Replace placeholder for log level
+	repl := NewReplacer()
+	level, err := repl.ReplaceOrErr(cl.Level, true, true)
+	if err != nil {
+		return fmt.Errorf("invalid log level: %v", err)
+	}
+
 	// set up the log level
-	switch cl.Level {
+	switch level {
 	case "debug":
 		cl.levelEnabler = zapcore.DebugLevel
 	case "", "info":
@@ -351,7 +358,7 @@ func (cl *CustomLog) provision(ctx Context, logging *Logging) error {
 	if cl.writerOpener == nil {
 		cl.writerOpener = StderrWriter{}
 	}
-	var err error
+
 	cl.writer, _, err = logging.openWriter(cl.writerOpener)
 	if err != nil {
 		return fmt.Errorf("opening log writer using %#v: %v", cl.writerOpener, err)
