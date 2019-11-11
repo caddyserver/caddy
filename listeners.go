@@ -257,13 +257,11 @@ type globalListener struct {
 	pc         net.PacketConn
 }
 
-var (
-	listeners   = make(map[string]*globalListener)
-	listenersMu sync.Mutex
-)
-
-const maxPortSpan = 65535
-
+// ParsedAddress contains the individual components
+// for a parsed network address of the form accepted
+// by ParseNetworkAddress(). Network should be a
+// network value accepted by Go's net package. Port
+// ranges are given by [StartPort, EndPort].
 type ParsedAddress struct {
 	Network   string
 	Host      string
@@ -271,27 +269,38 @@ type ParsedAddress struct {
 	EndPort   uint
 }
 
-// HostPort returns the "host:port" where the port is StartPort + offset
-func (l ParsedAddress) HostPort(offset uint) string {
+// JoinHostPort is like net.JoinHostPort, but where the port
+// is StartPort + offset.
+func (l ParsedAddress) JoinHostPort(offset uint) string {
 	return net.JoinHostPort(l.Host, strconv.Itoa(int(l.StartPort+offset)))
 }
 
-// PortSpanSize returns how many ports are available in the defined listener port range
-func (l ParsedAddress) PortSpanSize() uint {
-	return (l.EndPort - l.StartPort) + 1
+// PortRangeSize returns how many ports are in
+// pa's port range. Port ranges are inclusive,
+// so the size is the difference of start and
+// end ports plus one.
+func (pa ParsedAddress) PortRangeSize() uint {
+	return (pa.EndPort - pa.StartPort) + 1
 }
 
-// String returns the reconstructed network address string of the form "network/host:port"
-func (l ParsedAddress) String() string {
-	port := strconv.FormatUint(uint64(l.StartPort), 10)
-	if l.StartPort != l.EndPort {
-		port += "-" + strconv.FormatUint(uint64(l.EndPort), 10)
+// String reconstructs the address string to the form expected
+// by ParseNetworkAddress().
+func (pa ParsedAddress) String() string {
+	port := strconv.FormatUint(uint64(pa.StartPort), 10)
+	if pa.StartPort != pa.EndPort {
+		port += "-" + strconv.FormatUint(uint64(pa.EndPort), 10)
 	}
-	return JoinNetworkAddress(l.Network, l.Host, port)
+	return JoinNetworkAddress(pa.Network, pa.Host, port)
 }
 
-// ParseNetworkAddress parses addr, a string of the form "network/host:port"
-// (with any part optional) into Listener struct type.
+// ParseNetworkAddress parses addr into its individual
+// components. The input string is expected to be of
+// the form "network/host:port-range" where any part is
+// optional. The default network, if unspecified, is tcp.
+// Port ranges are inclusive.
+//
+// Network addresses are distinct from URLs and do not
+// use URL syntax.
 func ParseNetworkAddress(addr string) (ParsedAddress, error) {
 	var host, port string
 	network, host, port, err := SplitNetworkAddress(addr)
@@ -314,19 +323,17 @@ func ParseNetworkAddress(addr string) (ParsedAddress, error) {
 	var start, end uint64
 	start, err = strconv.ParseUint(ports[0], 10, 16)
 	if err != nil {
-		return ParsedAddress{}, err
+		return ParsedAddress{}, fmt.Errorf("invalid start port: %v", err)
 	}
 	end, err = strconv.ParseUint(ports[1], 10, 16)
 	if err != nil {
-		return ParsedAddress{}, err
+		return ParsedAddress{}, fmt.Errorf("invalid end port: %v", err)
 	}
 	if end < start {
-		err = fmt.Errorf("end port must be greater than start port")
-		return ParsedAddress{}, err
+		return ParsedAddress{}, fmt.Errorf("end port must not be less than start port")
 	}
 	if (end - start) > maxPortSpan {
-		err = fmt.Errorf("port range size is exceeds the maximum allowed range of %d", maxPortSpan)
-		return ParsedAddress{}, err
+		return ParsedAddress{}, fmt.Errorf("port range exceeds %d ports", maxPortSpan)
 	}
 	return ParsedAddress{
 		Network:   network,
@@ -337,7 +344,7 @@ func ParseNetworkAddress(addr string) (ParsedAddress, error) {
 }
 
 // SplitNetworkAddress splits a into its network, host, and port components.
-// Note that port may be a port range, or omitted for unix sockets.
+// Note that port may be a port range (:X-Y), or omitted for unix sockets.
 func SplitNetworkAddress(a string) (network, host, port string, err error) {
 	if idx := strings.Index(a, "/"); idx >= 0 {
 		network = strings.ToLower(strings.TrimSpace(a[:idx]))
@@ -352,9 +359,9 @@ func SplitNetworkAddress(a string) (network, host, port string, err error) {
 }
 
 // JoinNetworkAddress combines network, host, and port into a single
-// address string of the form "network/host:port". Port may be a
-// port range. For unix sockets, the network should be "unix" and
-// the path to the socket should be given in the host argument.
+// address string of the form accepted by ParseNetworkAddress(). For unix sockets, the network
+// should be "unix" and the path to the socket should be given as the
+// host parameter.
 func JoinNetworkAddress(network, host, port string) string {
 	var a string
 	if network != "" {
@@ -367,3 +374,10 @@ func JoinNetworkAddress(network, host, port string) string {
 	}
 	return a
 }
+
+var (
+	listeners   = make(map[string]*globalListener)
+	listenersMu sync.Mutex
+)
+
+const maxPortSpan = 65535

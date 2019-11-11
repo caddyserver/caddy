@@ -229,6 +229,10 @@ func TestParseNetworkAddress(t *testing.T) {
 				EndPort:   0,
 			},
 		},
+		{
+			input:     "localhost:1-999999999999",
+			expectErr: true,
+		},
 	} {
 		actualAddr, err := ParseNetworkAddress(tc.input)
 		if tc.expectErr && err == nil {

@@ -55,14 +55,12 @@ func (admin AdminConfig) listenAddr() (string, string, error) {
 	}
 	listenAddr, err := ParseNetworkAddress(input)
 	if err != nil {
-		err = fmt.Errorf("parsing admin listener address: %v", err)
-		return "", "", err
+		return "", "", fmt.Errorf("parsing admin listener address: %v", err)
 	}
-	if listenAddr.PortSpanSize() != 1 {
-		err = fmt.Errorf("admin endpoint must have exactly one address; cannot listen on %v", listenAddr)
-		return "", "", err
+	if listenAddr.PortRangeSize() != 1 {
+		return "", "", fmt.Errorf("admin endpoint must have exactly one address; cannot listen on %v", listenAddr)
 	}
-	return listenAddr.Network, listenAddr.HostPort(0), nil
+	return listenAddr.Network, listenAddr.JoinHostPort(0), nil
 }
 
 // newAdminHandler reads admin's config and returns an http.Handler suitable

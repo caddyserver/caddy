@@ -110,13 +110,13 @@ func (h *Handler) doActiveHealthChecksForAllHosts() {
 				)
 				return
 			}
-			if addr.PortSpanSize() != 1 {
+			if addr.PortRangeSize() != 1 {
 				h.HealthChecks.Active.logger.Error("multiple addresses (upstream must map to only one address)",
 					zap.String("address", networkAddr),
 				)
 				return
 			}
-			hostAddr := addr.HostPort(0)
+			hostAddr := addr.JoinHostPort(0)
 			if addr.Network == "unix" || addr.Network == "unixgram" || addr.Network == "unixpacket" {
 				// this will be used as the Host portion of a http.Request URL, and
 				// paths to socket files would produce an error when creating URL,

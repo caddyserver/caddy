@@ -252,13 +252,17 @@ func (s *Server) listenersUseAnyPortOtherThan(otherPort int) bool {
 	return false
 }
 
+// hasListenerAddress returns true if s has a listener
+// at the given address fullAddr. Currently, fullAddr
+// must represent exactly one socket address (port
+// ranges are not supported)
 func (s *Server) hasListenerAddress(fullAddr string) bool {
 	laddrs, err := caddy.ParseNetworkAddress(fullAddr)
 	if err != nil {
 		return false
 	}
-	if laddrs.PortSpanSize() != 1 {
-		return false
+	if laddrs.PortRangeSize() != 1 {
+		return false // TODO: support port ranges
 	}
 
 	for _, lnAddr := range s.Listen {
@@ -270,8 +274,7 @@ func (s *Server) hasListenerAddress(fullAddr string) bool {
 			continue
 		}
 
-		// If we have the same host on both sides,
-		// and the port of fullAddr falls within the port range of thisAddrs
+		// host must be the same and port must fall within port range
 		if (thisAddrs.Host == laddrs.Host) &&
 			(laddrs.StartPort <= thisAddrs.EndPort) &&
 			(laddrs.StartPort >= thisAddrs.StartPort) {

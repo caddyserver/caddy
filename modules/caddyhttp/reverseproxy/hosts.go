@@ -196,14 +196,14 @@ func fillDialInfo(upstream *Upstream, repl caddy.Replacer) (DialInfo, error) {
 	if err != nil {
 		return DialInfo{}, fmt.Errorf("upstream %s: invalid dial address %s: %v", upstream.Dial, dial, err)
 	}
-	if addr.PortSpanSize() != 1 {
+	if numPorts := addr.PortRangeSize(); numPorts != 1 {
 		return DialInfo{}, fmt.Errorf("upstream %s: dial address must represent precisely one socket: %s represents %d",
-			upstream.Dial, dial, addr.PortSpanSize())
+			upstream.Dial, dial, numPorts)
 	}
 	return DialInfo{
 		Upstream: upstream,
 		Network:  addr.Network,
-		Address:  addr.HostPort(0),
+		Address:  addr.JoinHostPort(0),
 		Host:     addr.Host,
 		Port:     strconv.Itoa(int(addr.StartPort)),
 	}, nil
