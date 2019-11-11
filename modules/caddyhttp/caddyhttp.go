@@ -427,7 +427,7 @@ func (app *App) automaticHTTPS() error {
 					},
 					Handlers: []MiddlewareHandler{
 						StaticResponse{
-							StatusCode: WeakString(strconv.Itoa(http.StatusTemporaryRedirect)), // TODO: use permanent redirect instead
+							StatusCode: WeakString(strconv.Itoa(http.StatusPermanentRedirect)),
 							Headers: http.Header{
 								"Location":   []string{redirTo},
 								"Connection": []string{"close"},
@@ -447,8 +447,8 @@ func (app *App) automaticHTTPS() error {
 		var redirRoutes []Route
 
 		// for each redirect listener, see if there's already a
-		// server configured to listen on that exact address; if
-		// so, simply the redirect route to the end of its route
+		// server configured to listen on that exact address; if so,
+		// simply add the redirect route to the end of its route
 		// list; otherwise, we'll create a new server for all the
 		// listener addresses that are unused and serve the
 		// remaining redirects from it
