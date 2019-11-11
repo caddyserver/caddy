@@ -242,40 +242,44 @@ func (s *Server) enforcementHandler(w http.ResponseWriter, r *http.Request, next
 // listeners in s that use a port which is not otherPort.
 func (s *Server) listenersUseAnyPortOtherThan(otherPort int) bool {
 	for _, lnAddr := range s.Listen {
-		_, addrs, err := caddy.ParseNetworkAddress(lnAddr)
-		if err == nil {
-			for _, a := range addrs {
-				_, port, err := net.SplitHostPort(a)
-				if err == nil && port != strconv.Itoa(otherPort) {
-					return true
-				}
-			}
+		laddrs, err := caddy.ParseNetworkAddress(lnAddr)
+		if err != nil {
+			continue
+		}
+		if uint(otherPort) > laddrs.EndPort || uint(otherPort) < laddrs.StartPort {
+			return true
 		}
 	}
 	return false
 }
 
+// hasListenerAddress returns true if s has a listener
+// at the given address fullAddr. Currently, fullAddr
+// must represent exactly one socket address (port
+// ranges are not supported)
 func (s *Server) hasListenerAddress(fullAddr string) bool {
-	netw, addrs, err := caddy.ParseNetworkAddress(fullAddr)
+	laddrs, err := caddy.ParseNetworkAddress(fullAddr)
 	if err != nil {
 		return false
 	}
-	if len(addrs) != 1 {
-		return false
+	if laddrs.PortRangeSize() != 1 {
+		return false // TODO: support port ranges
 	}
-	addr := addrs[0]
+
 	for _, lnAddr := range s.Listen {
-		thisNetw, thisAddrs, err := caddy.ParseNetworkAddress(lnAddr)
+		thisAddrs, err := caddy.ParseNetworkAddress(lnAddr)
 		if err != nil {
 			continue
 		}
-		if thisNetw != netw {
+		if thisAddrs.Network != laddrs.Network {
 			continue
 		}
-		for _, a := range thisAddrs {
-			if a == addr {
-				return true
-			}
+
+		// host must be the same and port must fall within port range
+		if (thisAddrs.Host == laddrs.Host) &&
+			(laddrs.StartPort <= thisAddrs.EndPort) &&
+			(laddrs.StartPort >= thisAddrs.StartPort) {
+			return true
 		}
 	}
 	return false

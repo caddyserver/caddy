@@ -48,23 +48,19 @@ type AdminConfig struct {
 
 // listenAddr extracts a singular listen address from ac.Listen,
 // returning the network and the address of the listener.
-func (admin AdminConfig) listenAddr() (netw string, addr string, err error) {
-	var listenAddrs []string
+func (admin AdminConfig) listenAddr() (string, string, error) {
 	input := admin.Listen
 	if input == "" {
 		input = DefaultAdminListen
 	}
-	netw, listenAddrs, err = ParseNetworkAddress(input)
+	listenAddr, err := ParseNetworkAddress(input)
 	if err != nil {
-		err = fmt.Errorf("parsing admin listener address: %v", err)
-		return
+		return "", "", fmt.Errorf("parsing admin listener address: %v", err)
 	}
-	if len(listenAddrs) != 1 {
-		err = fmt.Errorf("admin endpoint must have exactly one address; cannot listen on %v", listenAddrs)
-		return
+	if listenAddr.PortRangeSize() != 1 {
+		return "", "", fmt.Errorf("admin endpoint must have exactly one address; cannot listen on %v", listenAddr)
 	}
-	addr = listenAddrs[0]
-	return
+	return listenAddr.Network, listenAddr.JoinHostPort(0), nil
 }
 
 // newAdminHandler reads admin's config and returns an http.Handler suitable
