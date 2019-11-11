@@ -15,6 +15,7 @@
 package logging
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -44,6 +45,19 @@ func (FileWriter) CaddyModule() caddy.ModuleInfo {
 		Name: "caddy.logging.writers.file",
 		New:  func() caddy.Module { return new(FileWriter) },
 	}
+}
+
+// Provision sets up the module
+func (fw *FileWriter) Provision(ctx caddy.Context) error {
+	// Replace placeholder in filename
+	repl := caddy.NewReplacer()
+	filename, err := repl.ReplaceOrErr(fw.Filename, true, true)
+	if err != nil {
+		return fmt.Errorf("invalid filename for log file: %v", err)
+	}
+
+	fw.Filename = filename
+	return nil
 }
 
 func (fw FileWriter) String() string {
@@ -76,6 +90,7 @@ func (fw FileWriter) OpenWriter() (io.WriteCloser, error) {
 		if fw.RollKeepDays == 0 {
 			fw.RollKeepDays = 90
 		}
+
 		return &lumberjack.Logger{
 			Filename:   fw.Filename,
 			MaxSize:    fw.RollSizeMB,
@@ -89,3 +104,8 @@ func (fw FileWriter) OpenWriter() (io.WriteCloser, error) {
 	// otherwise just open a regular file
 	return os.OpenFile(fw.Filename, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0666)
 }
+
+// Interface guards
+var (
+	_ caddy.Provisioner = (*FileWriter)(nil)
+)
