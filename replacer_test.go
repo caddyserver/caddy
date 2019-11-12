@@ -22,16 +22,62 @@ import (
 	"testing"
 )
 
-func fakeReplacer() replacer {
-	return replacer{
-		providers: make([]ReplacementFunc, 0),
-		static:    make(map[string]string),
+func TestReplacer(t *testing.T) {
+	type testCase struct {
+		input, expect, empty string
+	}
+
+	rep := testReplacer()
+
+	// ReplaceAll
+	for i, tc := range []testCase{
+		{
+			input:  "{",
+			expect: "{",
+		},
+		{
+			input:  "foo{",
+			expect: "foo{",
+		},
+		{
+			input:  "foo{bar",
+			expect: "foo{bar",
+		},
+		{
+			input:  "foo{bar}",
+			expect: "foo",
+		},
+		{
+			input:  "}",
+			expect: "}",
+		},
+		{
+			input:  "{}",
+			expect: "",
+		},
+		{
+			input:  `{"json": "object"}`,
+			expect: "",
+		},
+		{
+			input:  `{{`,
+			expect: "{{",
+		},
+		{
+			input:  `{{}`,
+			expect: "",
+		},
+	} {
+		actual := rep.ReplaceAll(tc.input, tc.empty)
+		if actual != tc.expect {
+			t.Errorf("Test %d: '%s': expected '%s' but got '%s'",
+				i, tc.input, tc.expect, actual)
+		}
 	}
 }
 
-// Tests the Set method by setting some variables and check if they are added to static
 func TestReplacerSet(t *testing.T) {
-	rep := fakeReplacer()
+	rep := testReplacer()
 
 	for _, tc := range []struct {
 		variable string
@@ -191,7 +237,7 @@ func TestReplacerDelete(t *testing.T) {
 }
 
 func TestReplacerMap(t *testing.T) {
-	rep := fakeReplacer()
+	rep := testReplacer()
 
 	for i, tc := range []ReplacementFunc{
 		func(key string) (val string, ok bool) {
@@ -228,6 +274,7 @@ func TestReplacerNew(t *testing.T) {
 			// test if default global replacements are added  as the first provider
 			hostname, _ := os.Hostname()
 			os.Setenv("CADDY_REPLACER_TEST", "envtest")
+			defer os.Setenv("CADDY_REPLACER_TEST", "")
 
 			for _, tc := range []struct {
 				variable string
@@ -265,5 +312,12 @@ func TestReplacerNew(t *testing.T) {
 		}
 	} else {
 		t.Errorf("Expected type of replacer %T got %T ", &replacer{}, tc)
+	}
+}
+
+func testReplacer() replacer {
+	return replacer{
+		providers: make([]ReplacementFunc, 0),
+		static:    make(map[string]string),
 	}
 }
