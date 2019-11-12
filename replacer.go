@@ -116,11 +116,14 @@ func (r *replacer) replace(input, empty string,
 			continue
 		}
 
-		// write the substring from the last cursor to this point
-		sb.WriteString(input[lastWriteCursor:i])
-
 		// find the end of the placeholder
 		end := strings.Index(input[i:], string(phClose)) + i
+		if end < i {
+			continue
+		}
+
+		// write the substring from the last cursor to this point
+		sb.WriteString(input[lastWriteCursor:i])
 
 		// trim opening bracket
 		key := input[i+1 : end]
