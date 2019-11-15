@@ -52,10 +52,7 @@ func Listen(network, addr string) (net.Listener, error) {
 	}
 
 	// make sure to start its usage counter at 1
-	lnGlobal := &globalListener{
-		usage: 1,
-		ln:    ln,
-	}
+	lnGlobal := &globalListener{usage: 1, ln: ln}
 	listeners[lnKey] = lnGlobal
 
 	return &fakeCloseListener{
@@ -271,8 +268,8 @@ type ParsedAddress struct {
 
 // JoinHostPort is like net.JoinHostPort, but where the port
 // is StartPort + offset.
-func (l ParsedAddress) JoinHostPort(offset uint) string {
-	return net.JoinHostPort(l.Host, strconv.Itoa(int(l.StartPort+offset)))
+func (pa ParsedAddress) JoinHostPort(offset uint) string {
+	return net.JoinHostPort(pa.Host, strconv.Itoa(int(pa.StartPort+offset)))
 }
 
 // PortRangeSize returns how many ports are in

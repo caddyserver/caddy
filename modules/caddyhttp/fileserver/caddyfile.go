@@ -83,6 +83,21 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 	return &fsrv, nil
 }
 
+// parseTryFiles parses the try_files directive. It combines a file matcher
+// with a rewrite directive, so this is not a standard handler directive.
+// A try_files directive has this syntax (notice no matcher tokens accepted):
+//
+//    try_files <files...>
+//
+// and is shorthand for:
+//
+//    matcher:try_files {
+//        file {
+//            try_files <files...>
+//        }
+//    }
+//    rewrite match:try_files {http.matchers.file.relative}{http.request.uri.query_string}
+//
 func parseTryFiles(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) {
 	if !h.Next() {
 		return nil, h.ArgErr()
