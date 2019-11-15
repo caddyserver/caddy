@@ -48,6 +48,16 @@ func TestHostMatcher(t *testing.T) {
 			expect: true,
 		},
 		{
+			match:  MatchHost{"EXAMPLE.COM"},
+			input:  "example.com",
+			expect: true,
+		},
+		{
+			match:  MatchHost{"example.com"},
+			input:  "EXAMPLE.COM",
+			expect: true,
+		},
+		{
 			match:  MatchHost{"example.com"},
 			input:  "foo.example.com",
 			expect: false,
@@ -71,6 +81,11 @@ func TestHostMatcher(t *testing.T) {
 			match:  MatchHost{"*.example.com"},
 			input:  "example.com",
 			expect: false,
+		},
+		{
+			match:  MatchHost{"*.example.com"},
+			input:  "SUB.EXAMPLE.COM",
+			expect: true,
 		},
 		{
 			match:  MatchHost{"*.example.com"},
@@ -174,7 +189,12 @@ func TestPathMatcher(t *testing.T) {
 		},
 		{
 			match:  MatchPath{"*.ext"},
-			input:  "foo.ext",
+			input:  "/foo.ext",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"*.php"},
+			input:  "/index.PHP",
 			expect: true,
 		},
 		{
@@ -191,6 +211,16 @@ func TestPathMatcher(t *testing.T) {
 			match:  MatchPath{"/foo/*/baz/bam"},
 			input:  "/foo/bar/bam",
 			expect: false,
+		},
+		{
+			match:  MatchPath{"/foo"},
+			input:  "/FOO",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/foo/bar.txt"},
+			input:  "/foo/BAR.txt",
+			expect: true,
 		},
 	} {
 		req := &http.Request{URL: &url.URL{Path: tc.input}}
