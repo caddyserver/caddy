@@ -1,5 +1,12 @@
 CHANGES
 
+1.0.4 (November 15, 2019)
+- New -log-timestamps flag to disable timestamps in log entries
+- fastcgi: Path-insensitive extension check (important on Windows)
+- Updated dependencies: lego, certmagic, and quic-go
+- Several other minor improvements and fixes
+
+
 1.0.3 (August 14, 2019)
 - Hotfix for address parsing regression
 
