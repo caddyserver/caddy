@@ -102,7 +102,8 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 		}
 
 		// These criteria work well in this order for PHP sites
-		if !h.exists(fpath) || fpath[len(fpath)-1] == '/' || strings.HasSuffix(fpath, rule.Ext) {
+		// We lower path and Ext as on Windows, the system is case insensitive, so .PHP is served as .php
+		if !h.exists(fpath) || fpath[len(fpath)-1] == '/' || strings.HasSuffix(strings.ToLower(fpath), strings.ToLower(rule.Ext)) {
 
 			// Create environment for CGI script
 			env, err := h.buildEnv(r, rule, fpath)
