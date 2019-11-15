@@ -92,6 +92,7 @@ func cmdFileServer(fs caddycmd.Flags) (int, error) {
 	}
 
 	cfg := &caddy.Config{
+		Admin: &caddy.AdminConfig{Disabled: true},
 		AppsRaw: map[string]json.RawMessage{
 			"http": caddyconfig.JSON(httpApp, nil),
 		},
