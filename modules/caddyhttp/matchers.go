@@ -33,10 +33,10 @@ import (
 )
 
 type (
-	// MatchHost matches requests by the Host value.
+	// MatchHost matches requests by the Host value (case-insensitive).
 	MatchHost []string
 
-	// MatchPath matches requests by the URI's path.
+	// MatchPath matches requests by the URI's path (case-insensitive).
 	MatchPath []string
 
 	// MatchPathRE matches requests by a regular expression on the URI's path.
@@ -154,20 +154,29 @@ func (MatchPath) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
+// Provision lower-cases the paths in m to ensure case-insensitive matching.
+func (m MatchPath) Provision(_ caddy.Context) error {
+	for i := range m {
+		m[i] = strings.ToLower(m[i])
+	}
+	return nil
+}
+
 // Match returns true if r matches m.
 func (m MatchPath) Match(r *http.Request) bool {
+	lowerPath := strings.ToLower(r.URL.Path)
 	for _, matchPath := range m {
 		// as a special case, if the first character is a
 		// wildcard, treat it as a quick suffix match
 		if strings.HasPrefix(matchPath, "*") {
-			return strings.HasSuffix(r.URL.Path, matchPath[1:])
+			return strings.HasSuffix(lowerPath, matchPath[1:])
 		}
 		// can ignore error here because we can't handle it anyway
-		matches, _ := filepath.Match(matchPath, r.URL.Path)
+		matches, _ := filepath.Match(matchPath, lowerPath)
 		if matches {
 			return true
 		}
-		if strings.HasPrefix(r.URL.Path, matchPath) {
+		if strings.HasPrefix(lowerPath, matchPath) {
 			return true
 		}
 	}
