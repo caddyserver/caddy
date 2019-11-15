@@ -21,10 +21,9 @@ import (
 	"io/ioutil"
 	"time"
 
-	"github.com/go-acme/lego/challenge/tlsalpn01"
-
 	"github.com/caddyserver/caddy"
-	"github.com/go-acme/lego/certcrypto"
+	"github.com/go-acme/lego/v3/certcrypto"
+	"github.com/go-acme/lego/v3/challenge/tlsalpn01"
 	"github.com/klauspost/cpuid"
 	"github.com/mholt/certmagic"
 )

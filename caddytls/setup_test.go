@@ -22,7 +22,7 @@ import (
 	"testing"
 
 	"github.com/caddyserver/caddy"
-	"github.com/go-acme/lego/certcrypto"
+	"github.com/go-acme/lego/v3/certcrypto"
 	"github.com/mholt/certmagic"
 )
 
