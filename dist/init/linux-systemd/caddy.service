@@ -4,13 +4,13 @@ Documentation=https://caddyserver.com/docs
 After=network-online.target
 Wants=network-online.target systemd-networkd-wait-online.service
 
-[Service]
-Restart=on-abnormal
-
 ; Do not allow the process to be restarted in a tight loop. If the
 ; process fails to start, something critical needs to be fixed.
 StartLimitIntervalSec=14400
 StartLimitBurst=10
+
+[Service]
+Restart=on-abnormal
 
 ; User and group the process will run as.
 User=www-data
