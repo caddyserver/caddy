@@ -35,6 +35,7 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/keybase/go-ps"
 	"github.com/mholt/certmagic"
+	"go.uber.org/zap"
 )
 
 func cmdStart(fl Flags) (int, error) {
@@ -193,28 +194,55 @@ func cmdRun(fl Flags) (int, error) {
 	select {}
 }
 
-func cmdStop(_ Flags) (int, error) {
-	processList, err := ps.Processes()
-	if err != nil {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("listing processes: %v", err)
-	}
-	thisProcName := getProcessName()
-	var found bool
-	for _, p := range processList {
-		// the process we're looking for should have the same name but different PID
-		if p.Executable() == thisProcName && p.Pid() != os.Getpid() {
-			found = true
-			fmt.Printf("pid=%d\n", p.Pid())
+func cmdStop(fl Flags) (int, error) {
+	stopCmdAddrFlag := fl.String("address")
 
-			if err := gracefullyStopProcess(p.Pid()); err != nil {
-				return caddy.ExitCodeFailedStartup, err
+	adminAddr := caddy.DefaultAdminListen
+	if stopCmdAddrFlag != "" {
+		adminAddr = stopCmdAddrFlag
+	}
+	stopEndpoint := fmt.Sprintf("http://%s/stop", adminAddr)
+
+	req, err := http.NewRequest(http.MethodPost, stopEndpoint, nil)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("making request: %v", err)
+	}
+	req.Header.Set("Origin", adminAddr)
+
+	err = apiRequest(req)
+	if err != nil {
+		// if the caddy instance doesn't have an API listener set up,
+		// or we are unable to reach it for some reason, try signaling it
+
+		caddy.Log().Warn("unable to use API to stop instance; will try to signal the process",
+			zap.String("endpoint", stopEndpoint),
+			zap.Error(err),
+		)
+
+		processList, err := ps.Processes()
+		if err != nil {
+			return caddy.ExitCodeFailedStartup, fmt.Errorf("listing processes: %v", err)
+		}
+		thisProcName := getProcessName()
+
+		var found bool
+		for _, p := range processList {
+			// the process we're looking for should have the same name as us but different PID
+			if p.Executable() == thisProcName && p.Pid() != os.Getpid() {
+				found = true
+				fmt.Printf("pid=%d\n", p.Pid())
+				if err := gracefullyStopProcess(p.Pid()); err != nil {
+					return caddy.ExitCodeFailedStartup, err
+				}
 			}
 		}
+		if !found {
+			return caddy.ExitCodeFailedStartup, fmt.Errorf("Caddy is not running")
+		}
+
+		fmt.Println(" success")
 	}
-	if !found {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("Caddy is not running")
-	}
-	fmt.Println(" success")
+
 	return caddy.ExitCodeSuccess, nil
 }
 
@@ -251,25 +279,19 @@ func cmdReload(fl Flags) (int, error) {
 	if adminAddr == "" {
 		adminAddr = caddy.DefaultAdminListen
 	}
-	adminEndpoint := fmt.Sprintf("http://%s/load", adminAddr)
+	loadEndpoint := fmt.Sprintf("http://%s/load", adminAddr)
 
-	// send the configuration to the instance
-	resp, err := http.Post(adminEndpoint, "application/json", bytes.NewReader(config))
+	// prepare the request to update the configuration
+	req, err := http.NewRequest(http.MethodPost, loadEndpoint, bytes.NewReader(config))
 	if err != nil {
-		return caddy.ExitCodeFailedStartup,
-			fmt.Errorf("sending configuration to instance: %v", err)
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("making request: %v", err)
 	}
-	defer resp.Body.Close()
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", adminAddr)
 
-	// if it didn't work, let the user know
-	if resp.StatusCode >= 400 {
-		respBody, err := ioutil.ReadAll(io.LimitReader(resp.Body, 1024*10))
-		if err != nil {
-			return caddy.ExitCodeFailedStartup,
-				fmt.Errorf("HTTP %d: reading error message: %v", resp.StatusCode, err)
-		}
-		return caddy.ExitCodeFailedStartup,
-			fmt.Errorf("caddy responded with error: HTTP %d: %s", resp.StatusCode, respBody)
+	err = apiRequest(req)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("sending configuration to instance: %v", err)
 	}
 
 	return caddy.ExitCodeSuccess, nil
@@ -521,4 +543,23 @@ commands:
 	fmt.Print(result)
 
 	return caddy.ExitCodeSuccess, nil
+}
+
+func apiRequest(req *http.Request) error {
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("performing request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// if it didn't work, let the user know
+	if resp.StatusCode >= 400 {
+		respBody, err := ioutil.ReadAll(io.LimitReader(resp.Body, 1024*10))
+		if err != nil {
+			return fmt.Errorf("HTTP %d: reading error message: %v", resp.StatusCode, err)
+		}
+		return fmt.Errorf("caddy responded with error: HTTP %d: %s", resp.StatusCode, respBody)
+	}
+
+	return nil
 }

@@ -23,7 +23,7 @@ import (
 )
 
 func gracefullyStopProcess(pid int) error {
-	fmt.Printf("Forceful Stop...\n")
+	fmt.Print("Forceful stop... ")
 	// process on windows will not stop unless forced with /f
 	cmd := exec.Command("taskkill", "/pid", strconv.Itoa(pid), "/f")
 	if err := cmd.Run(); err != nil {
