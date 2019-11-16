@@ -229,6 +229,7 @@ func (rr *responseRecorder) WriteResponse() error {
 	_, err := io.Copy(rr.ResponseWriterWrapper, rr.buf)
 	return err
 }
+
 // ResponseRecorder is a http.ResponseWriter that records
 // responses instead of writing them to the client. See
 // docs for NewResponseRecorder for proper usage.
