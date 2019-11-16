@@ -15,14 +15,18 @@
 package reverseproxy
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
@@ -38,13 +42,14 @@ func init() {
 
 // Handler implements a highly configurable and production-ready reverse proxy.
 type Handler struct {
-	TransportRaw  json.RawMessage  `json:"transport,omitempty"`
-	CBRaw         json.RawMessage  `json:"circuit_breaker,omitempty"`
-	LoadBalancing *LoadBalancing   `json:"load_balancing,omitempty"`
-	HealthChecks  *HealthChecks    `json:"health_checks,omitempty"`
-	Upstreams     UpstreamPool     `json:"upstreams,omitempty"`
-	FlushInterval caddy.Duration   `json:"flush_interval,omitempty"`
-	Headers       *headers.Handler `json:"headers,omitempty"`
+	TransportRaw   json.RawMessage  `json:"transport,omitempty"`
+	CBRaw          json.RawMessage  `json:"circuit_breaker,omitempty"`
+	LoadBalancing  *LoadBalancing   `json:"load_balancing,omitempty"`
+	HealthChecks   *HealthChecks    `json:"health_checks,omitempty"`
+	Upstreams      UpstreamPool     `json:"upstreams,omitempty"`
+	FlushInterval  caddy.Duration   `json:"flush_interval,omitempty"`
+	Headers        *headers.Handler `json:"headers,omitempty"`
+	BufferRequests bool             `json:"buffer_requests,omitempty"`
 
 	Transport http.RoundTripper `json:"-"`
 	CB        CircuitBreaker    `json:"-"`
@@ -221,6 +226,27 @@ func (h *Handler) Cleanup() error {
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
+
+	// if enabled, buffer client request;
+	// this should only be enabled if the
+	// upstream requires it and does not
+	// work with "slow clients" (gunicorn,
+	// etc.) - this obviously has a perf
+	// overhead and makes the proxy at
+	// risk of exhausting memory and more
+	// suseptible to slowloris attacks,
+	// so it is strongly recommended to
+	// only use this feature if absolutely
+	// required, if read timeouts are set,
+	// and if body size is limited
+	if h.BufferRequests {
+		buf := bufPool.Get().(*bytes.Buffer)
+		buf.Reset()
+		defer bufPool.Put(buf)
+		io.Copy(buf, r.Body)
+		r.Body.Close()
+		r.Body = ioutil.NopCloser(buf)
+	}
 
 	// prepare the request for proxying; this is needed only once
 	err := h.prepareRequest(r)
@@ -662,12 +688,11 @@ type DialError struct {
 	error
 }
 
-// TODO: see if we can use this
-// var bufPool = sync.Pool{
-// 	New: func() interface{} {
-// 		return new(bytes.Buffer)
-// 	},
-// }
+var bufPool = sync.Pool{
+	New: func() interface{} {
+		return new(bytes.Buffer)
+	},
+}
 
 // Interface guards
 var (

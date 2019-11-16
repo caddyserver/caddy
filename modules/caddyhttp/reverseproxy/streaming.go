@@ -110,6 +110,7 @@ func (h Handler) copyResponse(dst io.Writer, src io.Reader, flushInterval time.D
 	// 	buf = h.BufferPool.Get()
 	// 	defer h.BufferPool.Put(buf)
 	// }
+	// // we could also see about a pool that returns values like this: make([]byte, 32*1024)
 	_, err := h.copyBuffer(dst, src, buf)
 	return err
 }
