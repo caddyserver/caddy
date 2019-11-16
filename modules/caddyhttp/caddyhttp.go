@@ -76,8 +76,12 @@ func (app *App) Provision(ctx caddy.Context) error {
 
 	for srvName, srv := range app.Servers {
 		srv.logger = app.logger.Named("log")
-		srv.accessLogger = app.logger.Named("log.access")
 		srv.errorLogger = app.logger.Named("log.error")
+
+		// only enable access logs if configured
+		if srv.Logs != nil {
+			srv.accessLogger = app.logger.Named("log.access")
+		}
 
 		if srv.AutoHTTPS == nil {
 			// avoid nil pointer dereferences
