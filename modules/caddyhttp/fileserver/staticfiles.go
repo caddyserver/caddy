@@ -150,9 +150,6 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		return fsrv.notFound(w, r, next)
 	}
 
-	// TODO: maybe there should be a way to serve the next handler
-	// instead of returning 404 if a file is not found?
-
 	// TODO: content negotiation (brotli sidecar files, etc...)
 
 	// one last check to ensure the file isn't hidden (we might
@@ -193,7 +190,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		if mtyp == "" {
 			// do not allow Go to sniff the content-type; see
 			// https://www.youtube.com/watch?v=8t8JYpt0egE
-			// TODO: Consider writing a default mime type of application/octet-stream - this is secure but violates spec
+			// TODO: If we want a Content-Type, consider writing a default of application/octet-stream - this is secure but violates spec
 			w.Header()["Content-Type"] = nil
 		} else {
 			w.Header().Set("Content-Type", mtyp)
