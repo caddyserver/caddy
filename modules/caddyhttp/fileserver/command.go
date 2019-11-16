@@ -18,12 +18,14 @@ import (
 	"encoding/json"
 	"flag"
 	"log"
+	"strconv"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	caddycmd "github.com/caddyserver/caddy/v2/cmd"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/mholt/certmagic"
 )
 
 func init() {
@@ -36,11 +38,12 @@ func init() {
 A simple but production-ready file server. Useful for quick deployments,
 demos, and development.
 
-If a qualifying hostname is specified with --domain, the server will use
-HTTPS if domain validation succeeds. Ensure A/AAAA records are properly
-configured before using this option.
-
 The listener's socket address can be customized with the --listen flag.
+
+If a qualifying hostname is specified with --domain, the default listener
+address will be changed to the HTTPS port and the server will use HTTPS
+if domain validation succeeds. Ensure A/AAAA records are properly
+configured before using this option.
 
 If --browse is enabled, requests for folders without an index file will
 respond with a file listing.`,
@@ -83,7 +86,11 @@ func cmdFileServer(fs caddycmd.Flags) (int, error) {
 		Routes: caddyhttp.RouteList{route},
 	}
 	if listen == "" {
-		listen = ":" + httpcaddyfile.DefaultPort
+		if certmagic.HostQualifies(domain) {
+			listen = ":" + strconv.Itoa(certmagic.HTTPSPort)
+		} else {
+			listen = ":" + httpcaddyfile.DefaultPort
+		}
 	}
 	server.Listen = []string{listen}
 
