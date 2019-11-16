@@ -47,6 +47,7 @@ type FileServer struct {
 	IndexNames    []string `json:"index_names,omitempty"`
 	Browse        *Browse  `json:"browse,omitempty"`
 	CanonicalURIs *bool    `json:"canonical_uris,omitempty"`
+	PassThru      bool     `json:"pass_thru,omitempty"` // if 404, call next handler instead
 }
 
 // CaddyModule returns the Caddy module information.
@@ -87,7 +88,7 @@ func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, _ caddyhttp.Handler) error {
+func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
 
 	filesToHide := fsrv.transformHidePaths(repl)
@@ -101,7 +102,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, _ cadd
 	if err != nil {
 		err = mapDirOpenError(err, filename)
 		if os.IsNotExist(err) {
-			return caddyhttp.Error(http.StatusNotFound, err)
+			return fsrv.notFound(w, r, next)
 		} else if os.IsPermission(err) {
 			return caddyhttp.Error(http.StatusForbidden, err)
 		}
@@ -144,17 +145,20 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, _ cadd
 	// to browse or return an error
 	if info.IsDir() {
 		if fsrv.Browse != nil && !fileHidden(filename, filesToHide) {
-			return fsrv.serveBrowse(filename, w, r)
+			return fsrv.serveBrowse(filename, w, r, next)
 		}
-		return caddyhttp.Error(http.StatusNotFound, nil)
+		return fsrv.notFound(w, r, next)
 	}
+
+	// TODO: maybe there should be a way to serve the next handler
+	// instead of returning 404 if a file is not found?
 
 	// TODO: content negotiation (brotli sidecar files, etc...)
 
 	// one last check to ensure the file isn't hidden (we might
 	// have changed the filename from when we last checked)
 	if fileHidden(filename, filesToHide) {
-		return caddyhttp.Error(http.StatusNotFound, nil)
+		return fsrv.notFound(w, r, next)
 	}
 
 	// if URL canonicalization is enabled, we need to enforce trailing
@@ -172,6 +176,10 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, _ cadd
 	// open the file
 	file, err := fsrv.openFile(filename, w)
 	if err != nil {
+		if herr, ok := err.(caddyhttp.HandlerError); ok &&
+			herr.StatusCode == http.StatusNotFound {
+			return fsrv.notFound(w, r, next)
+		}
 		return err // error is already structured
 	}
 	defer file.Close()
@@ -334,6 +342,15 @@ func fileHidden(filename string, hide []string) bool {
 	}
 
 	return false
+}
+
+// notFound returns a 404 error or, if pass-thru is enabled,
+// it calls the next handler in the chain.
+func (fsrv *FileServer) notFound(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
+	if fsrv.PassThru {
+		return next.ServeHTTP(w, r)
+	}
+	return caddyhttp.Error(http.StatusNotFound, nil)
 }
 
 // calculateEtag produces a strong etag by default, although, for

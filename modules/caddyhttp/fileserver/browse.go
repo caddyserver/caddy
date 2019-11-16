@@ -34,7 +34,7 @@ type Browse struct {
 	template *template.Template
 }
 
-func (fsrv *FileServer) serveBrowse(dirPath string, w http.ResponseWriter, r *http.Request) error {
+func (fsrv *FileServer) serveBrowse(dirPath string, w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	// navigation on the client-side gets messed up if the
 	// URL doesn't end in a trailing slash because hrefs like
 	// "/b/c" on a path like "/a" end up going to "/b/c" instead
@@ -59,7 +59,7 @@ func (fsrv *FileServer) serveBrowse(dirPath string, w http.ResponseWriter, r *ht
 	case os.IsPermission(err):
 		return caddyhttp.Error(http.StatusForbidden, err)
 	case os.IsNotExist(err):
-		return caddyhttp.Error(http.StatusNotFound, err)
+		return fsrv.notFound(w, r, next)
 	case err != nil:
 		return caddyhttp.Error(http.StatusInternalServerError, err)
 	}
