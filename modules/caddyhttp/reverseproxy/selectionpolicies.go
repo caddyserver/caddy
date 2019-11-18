@@ -132,7 +132,7 @@ func (r RandomChoiceSelection) Select(pool UpstreamPool, _ *http.Request) *Upstr
 		if !upstream.Available() {
 			continue
 		}
-		j := weakrand.Intn(i)
+		j := weakrand.Intn(i + 1)
 		if j < k {
 			choices[j] = upstream
 		}
