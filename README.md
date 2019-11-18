@@ -79,9 +79,7 @@ To build from source you need **[Git](https://git-scm.com/downloads)** and **[Go
 
 **To build Caddy without plugins:**
 
-<!-- TODO: This env variable will not be required starting with Go 1.13 -->
-1. Set the transitional environment variable for Go modules: `export GO111MODULE=on`
-2. Run `go get github.com/caddyserver/caddy/caddy`
+- Run `go get github.com/caddyserver/caddy/caddy`
 
 Caddy will be installed to your `$GOPATH/bin` folder.
 
@@ -90,10 +88,7 @@ With these instructions, the binary will not have embedded version information (
 **To build Caddy with plugins (and with version information):**
 
 There is no need to modify the Caddy code to build it with plugins. We will create a simple Go module with our own `main()` that you can use to make custom Caddy builds.
-
-<!-- TODO: This env variable will not be required starting with Go 1.13 -->
-1. Set the transitional environment variable for Go modules: `export GO111MODULE=on`
-2. Create a new folder anywhere and within create a Go file (with an extension of `.go`, such as `main.go`) with the contents below, adjusting to import the plugins you want to include:
+- Create a new folder anywhere and within create a Go file (with an extension of `.go`, such as `main.go`) with the contents below, adjusting to import the plugins you want to include:
 ```go
 package main
 
@@ -116,9 +111,7 @@ func main() {
 
 **To install Caddy's source code for development:**
 
-<!-- TODO: This env variable will not be required starting with Go 1.13 -->
-1. Set the transitional environment variable for Go modules: `export GO111MODULE=on`
-2. Run `git clone https://github.com/caddyserver/caddy.git` in any folder (doesn't have to be in GOPATH).
+- Run `git clone https://github.com/caddyserver/caddy.git` in any folder (doesn't have to be in GOPATH).
 
 You can make changes to the source code from that clone and checkout any commit or tag you wish to develop on.
 
