@@ -2,16 +2,92 @@ package tcp
 
 import (
 	"bufio"
+	"fmt"
+	"io"
 	"net"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/modules/caddyproxy"
+)
+
+func (Proxy) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		Name: "proxy.target.tcp",
+		New:  func() caddy.Module { return new(Proxy) },
+	}
+}
+
+var (
+	_ caddy.Module       = (*Proxy)(nil)
+	_ caddyproxy.Proxier = (*Proxy)(nil)
 )
 
 type Proxy struct {
-	src net.Conn
-	dst net.Conn
+	Addr string `json:"addr,omitempty"`
+
+	ProxyProtocolVersion int `json:"proxy_protocol_version,omitempty"`
 }
 
-func (p *Proxy) Proxy(ctx caddy.Context, conn net.Conn, buf *bufio.Reader) {
-	panic("not implement")
+func goCloseConn(conn net.Conn) { go conn.Close() }
+
+func (p *Proxy) Proxy(ctx caddy.Context, src net.Conn, buf *bufio.Reader) error {
+	dst, err := p.dial()
+	if err != nil {
+		return err
+	}
+	defer goCloseConn(dst)
+
+	if err = p.sendProxyHeader(dst, src); err != nil {
+		return err
+	}
+	defer goCloseConn(src)
+	if n := buf.Buffered(); n > 0 {
+		if _, err := buf.WriteTo(dst); err != nil {
+			return err
+		}
+	}
+	errors := make(chan error, 1)
+	go exchange(dst, src, errors)
+	go exchange(src, dst, errors)
+
+	return <-errors
+}
+
+func exchange(dst net.Conn, src net.Conn, errors chan error) {
+	_, err := io.Copy(dst, src)
+	errors <- err
+}
+
+func (p *Proxy) sendProxyHeader(w io.Writer, src net.Conn) error {
+	switch p.ProxyProtocolVersion {
+	case 0:
+		return nil
+	case 1:
+		var srcAddr, dstAddr *net.TCPAddr
+		if a, ok := src.RemoteAddr().(*net.TCPAddr); ok {
+			srcAddr = a
+		}
+		if a, ok := src.LocalAddr().(*net.TCPAddr); ok {
+			dstAddr = a
+		}
+
+		if srcAddr == nil || dstAddr == nil {
+			_, err := io.WriteString(w, "PROXY UNKNOWN\r\n")
+			return err
+		}
+
+		family := "TCP4"
+		if srcAddr.IP.To4() == nil {
+			family = "TCP6"
+		}
+		_, err := fmt.Fprintf(w, "PROXY %s %s %d %s %d\r\n", family, srcAddr.IP, srcAddr.Port, dstAddr.IP, dstAddr.Port)
+		return err
+	default:
+		return fmt.Errorf("PROXY protocol version %d not supported", p.ProxyProtocolVersion)
+	}
+}
+
+func (p *Proxy) dial() (net.Conn, error) {
+	conn, err := net.Dial("tcp", p.Addr)
+	return conn, err
 }

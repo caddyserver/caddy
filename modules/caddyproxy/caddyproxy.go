@@ -9,8 +9,6 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
-	"github.com/caddyserver/caddy/v2/modules/caddyproxy/tcp"
-	"github.com/caddyserver/caddy/v2/modules/caddyproxy/udp"
 )
 
 func init() {
@@ -95,23 +93,24 @@ func (app *App) serveConn(conn net.Conn, p *proxy) {
 	}
 
 	// proxy to dest
-	p.proxier.Proxy(app.ctx, conn, bufio.NewReader(data))
+	p.Proxy(app.ctx, conn, bufio.NewReader(data))
 }
 
-type proxier interface {
-	Proxy(ctx caddy.Context, conn net.Conn, buf *bufio.Reader)
+type Proxier interface {
+	Proxy(ctx caddy.Context, src net.Conn, buf *bufio.Reader) error
 }
+
 type proxy struct {
 	// handleChain is the chain to custom proxy
 	// if not provided, data will be proxy to dest automatically
 	// listened port -> Handler -> Handler -> destination
 	handleChain []Handler
 
-	// proxier is the Handler to do the real proxy to dest
-	proxier proxier
+	// to is the Handler to do the real proxy to dest
+	to Proxier
 
-	network  string
-	from, to string
+	network string
+	from    string
 
 	ctx caddy.Context
 }
@@ -120,7 +119,11 @@ func (p *proxy) Network() string {
 	return p.network
 }
 
-func (app *App) TCP(from, to string, h ...HandleFunc) {
+func (p *proxy) Proxy(ctx caddy.Context, conn net.Conn, buf *bufio.Reader) {
+	p.to.Proxy(ctx, conn, buf)
+}
+
+func (app *App) TCP(from string, to Proxier, h ...HandleFunc) {
 	handlers := make([]Handler, 0, len(h))
 	for _, handle := range h {
 		handlers = append(handlers, handle)
@@ -128,7 +131,7 @@ func (app *App) TCP(from, to string, h ...HandleFunc) {
 	app.addProxyHandler("tcp", from, to, handlers...)
 }
 
-func (app *App) UDP(from, to string, h ...HandleFunc) {
+func (app *App) UDP(from string, to Proxier, h ...HandleFunc) {
 	handlers := make([]Handler, 0, len(h))
 	for _, handle := range h {
 		handlers = append(handlers, handle)
@@ -136,25 +139,17 @@ func (app *App) UDP(from, to string, h ...HandleFunc) {
 	app.addProxyHandler("udp", from, to, handlers...)
 }
 
-func (app *App) AddProxy(net, from, to string) {
+func (app *App) AddProxy(net, from string, to Proxier) {
 	app.addProxyHandler(net, from, to)
 }
 
-func (app *App) addProxyHandler(net, from, to string, h ...Handler) {
+func (app *App) addProxyHandler(net, from string, to Proxier, h ...Handler) {
 	if r, ok := app.router[from]; ok {
 		r.handleChain = append(r.handleChain, h...)
 		return
 	}
-	var proxier proxier
-	switch net {
-	case "tcp":
-		proxier = new(tcp.Proxy)
-	case "udp":
-		proxier = new(udp.Proxy)
-	}
 	app.router[from] = &proxy{
 		handleChain: h,
-		proxier:     proxier,
 		network:     net,
 		from:        from,
 		to:          to,
