@@ -1,7 +1,7 @@
 package tcp
 
 import (
-	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -26,25 +26,13 @@ type Proxy struct {
 	Addr string `json:"addr,omitempty"`
 
 	ProxyProtocolVersion int `json:"proxy_protocol_version,omitempty"`
+
+	DialContext func(ctx context.Context, network, addr string) (net.Conn, error)
 }
 
-func goCloseConn(conn net.Conn) { go conn.Close() }
-
-func (p *Proxy) Proxy(ctx caddy.Context, src net.Conn, buf *bufio.Reader) error {
-	dst, err := p.dial()
-	if err != nil {
+func (p *Proxy) Proxy(ctx caddy.Context, dst net.Conn, src net.Conn) error {
+	if err := p.sendProxyHeader(dst, src); err != nil {
 		return err
-	}
-	defer goCloseConn(dst)
-
-	if err = p.sendProxyHeader(dst, src); err != nil {
-		return err
-	}
-	defer goCloseConn(src)
-	if n := buf.Buffered(); n > 0 {
-		if _, err := buf.WriteTo(dst); err != nil {
-			return err
-		}
 	}
 	errors := make(chan error, 1)
 	go exchange(dst, src, errors)
@@ -90,4 +78,11 @@ func (p *Proxy) sendProxyHeader(w io.Writer, src net.Conn) error {
 func (p *Proxy) dial() (net.Conn, error) {
 	conn, err := net.Dial("tcp", p.Addr)
 	return conn, err
+}
+
+func (p *Proxy) Dial(ctx caddy.Context) (net.Conn, error) {
+	if p.DialContext != nil {
+		return p.DialContext(ctx, "tcp", p.Addr)
+	}
+	return p.dial()
 }

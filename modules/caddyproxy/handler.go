@@ -1,7 +1,6 @@
 package caddyproxy
 
 import (
-	"bufio"
 	"net"
 
 	"github.com/caddyserver/caddy/v2"
@@ -11,13 +10,13 @@ import (
 // After reading from connection, handler should write any thing that want to be proxied
 // into the buffer otherwise it can't be proxied correctly
 type Handler interface {
-	Handle(ctx caddy.Context, conn net.Conn, buf *bufio.Writer) error
+	Handle(ctx caddy.Context, dst net.Conn, src net.Conn) error
 }
 
 // HandleFunc is the function to handle data before it sending to dest
-type HandleFunc func(ctx caddy.Context, conn net.Conn, buf *bufio.Writer) error
+type HandleFunc func(caddy.Context, net.Conn, net.Conn) error
 
 // Handle implements the Handler interface
-func (f HandleFunc) Handle(ctx caddy.Context, conn net.Conn, buf *bufio.Writer) error {
-	return f(ctx, conn, buf)
+func (f HandleFunc) Handle(ctx caddy.Context, dst net.Conn, src net.Conn) error {
+	return f(ctx, dst, src)
 }

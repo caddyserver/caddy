@@ -1,8 +1,6 @@
 package caddyproxy
 
 import (
-	"bufio"
-	"bytes"
 	"net"
 
 	"go.uber.org/zap"
@@ -79,13 +77,22 @@ func (app *App) serveListener(ln net.Listener, p *proxy) {
 	}
 }
 
-func (app *App) serveConn(conn net.Conn, p *proxy) {
+func goCloseConn(conn net.Conn) {
+	go conn.Close()
+}
 
-	defer conn.Close()
-	data := bytes.NewBuffer(make([]byte, app.BufferSize))
-	w := bufio.NewWriter(data)
+func (app *App) serveConn(src net.Conn, p *proxy) {
+
+	defer goCloseConn(src)
+	dst, err := p.to.Dial(app.ctx)
+	if err != nil {
+		app.logger.Error("proxy dial dest error: " + err.Error())
+		return
+	}
+	defer goCloseConn(dst)
 	for _, h := range p.handleChain {
-		err := h.Handle(app.ctx, conn, w)
+		// TODO: add option to buffer the conn
+		err := h.Handle(app.ctx, dst, src)
 		if err != nil {
 			app.logger.Error("proxy: " + err.Error())
 			return
@@ -93,11 +100,12 @@ func (app *App) serveConn(conn net.Conn, p *proxy) {
 	}
 
 	// proxy to dest
-	p.Proxy(app.ctx, conn, bufio.NewReader(data))
+	p.to.Proxy(app.ctx, dst, src)
 }
 
 type Proxier interface {
-	Proxy(ctx caddy.Context, src net.Conn, buf *bufio.Reader) error
+	Proxy(ctx caddy.Context, dst net.Conn, src net.Conn) error
+	Dial(ctx caddy.Context) (net.Conn, error)
 }
 
 type proxy struct {
@@ -117,10 +125,6 @@ type proxy struct {
 
 func (p *proxy) Network() string {
 	return p.network
-}
-
-func (p *proxy) Proxy(ctx caddy.Context, conn net.Conn, buf *bufio.Reader) {
-	p.to.Proxy(ctx, conn, buf)
 }
 
 func (app *App) TCP(from string, to Proxier, h ...HandleFunc) {

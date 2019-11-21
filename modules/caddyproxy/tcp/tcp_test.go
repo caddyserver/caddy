@@ -1,7 +1,7 @@
 package tcp
 
 import (
-	"bufio"
+	"io"
 	"net"
 	"testing"
 
@@ -20,7 +20,7 @@ func TestProxy_Proxy(t *testing.T) {
 	ch := make(chan net.Conn)
 	go simpleListener(":3001", ch) // upstream
 
-	p := Proxy{Addr: ":3001"}
+	p := Proxy{Addr: ":3001", ProxyProtocolVersion: 1}
 
 	port := ":3000"
 	ch2 := make(chan net.Conn)
@@ -30,22 +30,39 @@ func TestProxy_Proxy(t *testing.T) {
 		client, _ := net.Dial("tcp", "localhost"+port)
 		src := <-ch2
 
-		go p.Proxy(caddy.Context{}, src, bufio.NewReader(nil))
+		dst, _ := p.Dial(caddy.Context{})
+
+		go p.Proxy(caddy.Context{}, dst, src)
+		upstream := <-ch
+
+		proxyHeader := []byte("PROXY TCP4 127.0.0.1 52734 127.0.0.1 3000\r\n")
+		read := readFrom(upstream)
+
+		if len(proxyHeader) != len(read) || string(read[:5]) != "PROXY" {
+			t.Logf("read: %s, len: %d", string(read), len(read))
+			t.Error("read proxy header error")
+		}
 
 		data := []byte("hello, world")
 		nWrite, _ := client.Write(data)
-		upstream := <-ch
-		read := make([]byte, len(data))
-		nRead, _ := upstream.Read(read)
-		if nWrite != nRead || string(data) != string(read) {
+		read = readFrom(upstream)
+
+		if nWrite != len(read) || string(data) != string(read) {
+			t.Logf("read: %s, write: %s", string(read), string(data))
 			t.Error("read not match send")
 		}
 		data = []byte("caddy proxy")
 		nWrite, _ = upstream.Write(data)
 
-		nRead, _ = client.Read(read)
-		if nWrite != nRead {
+		read = readFrom(client)
+		if nWrite != len(read) {
+			t.Logf("read: %s, write: %s", string(read), string(data))
 			t.Error("read not match send")
 		}
 	})
+}
+func readFrom(r io.Reader) []byte {
+	buf := make([]byte, 100000)
+	n, _ := r.Read(buf)
+	return buf[:n]
 }
