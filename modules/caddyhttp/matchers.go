@@ -300,8 +300,17 @@ func (m MatchHeader) Match(r *http.Request) bool {
 	fieldVals:
 		for _, actualFieldVal := range actualFieldVals {
 			for _, allowedFieldVal := range allowedFieldVals {
-				if actualFieldVal == allowedFieldVal {
-					match = true
+				switch {
+				case strings.HasPrefix(allowedFieldVal, "*") && strings.HasSuffix(allowedFieldVal, "*"):
+					match = strings.Contains(actualFieldVal, allowedFieldVal[1:len(allowedFieldVal)-1])
+				case strings.HasPrefix(allowedFieldVal, "*"):
+					match = strings.HasSuffix(actualFieldVal, allowedFieldVal[1:])
+				case strings.HasSuffix(allowedFieldVal, "*"):
+					match = strings.HasPrefix(actualFieldVal, allowedFieldVal[:len(allowedFieldVal)-1])
+				default:
+					match = actualFieldVal == allowedFieldVal
+				}
+				if match {
 					break fieldVals
 				}
 			}
