@@ -27,6 +27,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -763,6 +764,12 @@ var (
 		Listen: DefaultAdminListen,
 	}
 )
+
+// idRegexp is used to match ID fields and their associated values
+// in the config. It also matches adjacent commas so that syntax
+// can be preserved no matter where in the object the field appears.
+// It supports string and most numeric values.
+var idRegexp = regexp.MustCompile(`(?m),?\s*"` + idKey + `":\s?(-?[0-9]+(\.[0-9]+)?|(?U)".*")\s*,?`)
 
 const (
 	rawConfigKey = "config"
