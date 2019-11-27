@@ -27,6 +27,16 @@ func init() {
 	httpcaddyfile.RegisterDirective("try_files", parseTryFiles)
 }
 
+// parseCaddyfile parses the file_server directive. It enables the static file
+// server and configures it with this syntax:
+//
+//    file_server [<matcher>] [browse] {
+//        root   <path>
+//	      hide   <files...>
+//	      index  <files...>
+//	      browse [<template_file>]
+//    }
+//
 func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
 	var fsrv FileServer
 
