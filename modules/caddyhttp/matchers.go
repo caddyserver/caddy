@@ -166,16 +166,30 @@ func (m MatchPath) Provision(_ caddy.Context) error {
 func (m MatchPath) Match(r *http.Request) bool {
 	lowerPath := strings.ToLower(r.URL.Path)
 	for _, matchPath := range m {
-		// as a special case, if the first character is a
-		// wildcard, treat it as a quick suffix match
-		if strings.HasPrefix(matchPath, "*") {
-			return strings.HasSuffix(lowerPath, matchPath[1:])
+		// special case: first character is equals sign,
+		// treat it as an exact match
+		if strings.HasPrefix(matchPath, "=") {
+			if lowerPath == matchPath[1:] {
+				return true
+			}
+			continue
 		}
+
+		// special case: first character is a wildcard,
+		// treat it as a fast suffix match
+		if strings.HasPrefix(matchPath, "*") {
+			if strings.HasSuffix(lowerPath, matchPath[1:]) {
+				return true
+			}
+			continue
+		}
+
 		// can ignore error here because we can't handle it anyway
 		matches, _ := filepath.Match(matchPath, lowerPath)
 		if matches {
 			return true
 		}
+
 		if strings.HasPrefix(lowerPath, matchPath) {
 			return true
 		}
