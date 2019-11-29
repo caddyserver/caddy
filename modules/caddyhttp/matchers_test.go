@@ -213,6 +213,21 @@ func TestPathMatcher(t *testing.T) {
 			expect: false,
 		},
 		{
+			match:  MatchPath{"=/foo"},
+			input:  "/foo",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"=/foo"},
+			input:  "/foo/bar",
+			expect: false,
+		},
+		{
+			match:  MatchPath{"=/foo"},
+			input:  "/FOO",
+			expect: true,
+		},
+		{
 			match:  MatchPath{"/foo"},
 			input:  "/FOO",
 			expect: true,
