@@ -477,7 +477,7 @@ func matcherSetFromMatcherToken(
 	if tkn.Text == "*" {
 		// match all requests == no matchers, so nothing to do
 		return nil, true, nil
-	} else if strings.HasPrefix(tkn.Text, "/") {
+	} else if strings.HasPrefix(tkn.Text, "/") || strings.HasPrefix(tkn.Text, "=/") {
 		// convenient way to specify a single path match
 		return map[string]json.RawMessage{
 			"path": caddyconfig.JSON(caddyhttp.MatchPath{tkn.Text}, warnings),

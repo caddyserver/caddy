@@ -216,7 +216,7 @@ func (MatchPathRE) CaddyModule() caddy.ModuleInfo {
 // Match returns true if r matches m.
 func (m MatchPathRE) Match(r *http.Request) bool {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
-	return m.MatchRegexp.Match(r.URL.Path, repl, "path_regexp")
+	return m.MatchRegexp.Match(r.URL.Path, repl)
 }
 
 // CaddyModule returns the Caddy module information.
@@ -363,7 +363,7 @@ func (m *MatchHeaderRE) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 func (m MatchHeaderRE) Match(r *http.Request) bool {
 	for field, rm := range m {
 		repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
-		match := rm.Match(r.Header.Get(field), repl, "header_regexp")
+		match := rm.Match(r.Header.Get(field), repl)
 		if !match {
 			return false
 		}
@@ -638,7 +638,7 @@ func (mre *MatchRegexp) Validate() error {
 // (namespace). Capture groups stored to repl will take on
 // the name "http.matchers.<scope>.<mre.Name>.<N>" where
 // <N> is the name or number of the capture group.
-func (mre *MatchRegexp) Match(input string, repl caddy.Replacer, scope string) bool {
+func (mre *MatchRegexp) Match(input string, repl caddy.Replacer) bool {
 	matches := mre.compiled.FindStringSubmatch(input)
 	if matches == nil {
 		return false
@@ -646,14 +646,14 @@ func (mre *MatchRegexp) Match(input string, repl caddy.Replacer, scope string) b
 
 	// save all capture groups, first by index
 	for i, match := range matches {
-		key := fmt.Sprintf("http.matchers.%s.%s.%d", scope, mre.Name, i)
+		key := fmt.Sprintf("http.regexp.%s.%d", mre.Name, i)
 		repl.Set(key, match)
 	}
 
 	// then by name
 	for i, name := range mre.compiled.SubexpNames() {
 		if i != 0 && name != "" {
-			key := fmt.Sprintf("http.matchers.%s.%s.%s", scope, mre.Name, name)
+			key := fmt.Sprintf("http.regexp.%s.%s", mre.Name, name)
 			repl.Set(key, matches[i])
 		}
 	}

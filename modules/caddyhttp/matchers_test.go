@@ -324,10 +324,10 @@ func TestPathREMatcher(t *testing.T) {
 		}
 
 		for key, expectVal := range tc.expectRepl {
-			placeholder := fmt.Sprintf("{http.matchers.path_regexp.%s}", key)
+			placeholder := fmt.Sprintf("{http.regexp.%s}", key)
 			actualVal := repl.ReplaceAll(placeholder, "<empty>")
 			if actualVal != expectVal {
-				t.Errorf("Test %d [%v]: Expected placeholder {http.matchers.path_regexp.%s} to be '%s' but got '%s'",
+				t.Errorf("Test %d [%v]: Expected placeholder {http.regexp.%s} to be '%s' but got '%s'",
 					i, tc.match.Pattern, key, expectVal, actualVal)
 				continue
 			}
@@ -442,10 +442,10 @@ func TestHeaderREMatcher(t *testing.T) {
 		}
 
 		for key, expectVal := range tc.expectRepl {
-			placeholder := fmt.Sprintf("{http.matchers.header_regexp.%s}", key)
+			placeholder := fmt.Sprintf("{http.regexp.%s}", key)
 			actualVal := repl.ReplaceAll(placeholder, "<empty>")
 			if actualVal != expectVal {
-				t.Errorf("Test %d [%v]: Expected placeholder {http.matchers.header_regexp.%s} to be '%s' but got '%s'",
+				t.Errorf("Test %d [%v]: Expected placeholder {http.regexp.%s} to be '%s' but got '%s'",
 					i, tc.match, key, expectVal, actualVal)
 				continue
 			}
