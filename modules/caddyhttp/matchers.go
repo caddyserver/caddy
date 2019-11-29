@@ -248,7 +248,7 @@ func (m *MatchQuery) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		var query string
 		if !d.Args(&query) {
-			return d.Errf("malformed query matcher token: %s; must be in param=val format", d.Val())
+			return d.ArgErr()
 		}
 		parts := strings.SplitN(query, "=", 2)
 		if len(parts) != 2 {
