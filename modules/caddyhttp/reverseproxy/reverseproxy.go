@@ -234,7 +234,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	// etc.) - this obviously has a perf
 	// overhead and makes the proxy at
 	// risk of exhausting memory and more
-	// suseptible to slowloris attacks,
+	// susceptible to slowloris attacks,
 	// so it is strongly recommended to
 	// only use this feature if absolutely
 	// required, if read timeouts are set,
