@@ -187,7 +187,7 @@ func (app *App) Start() error {
 			if err != nil {
 				return fmt.Errorf("%s: parsing listen address '%s': %v", srvName, lnAddr, err)
 			}
-			for i := uint(0); i <= listenAddr.PortRangeSize(); i++ {
+			for i := uint(0); i < listenAddr.PortRangeSize(); i++ {
 				hostport := listenAddr.JoinHostPort(i)
 				ln, err := caddy.Listen(listenAddr.Network, hostport)
 				if err != nil {
