@@ -391,6 +391,62 @@ func TestHeaderMatcher(t *testing.T) {
 	}
 }
 
+func TestQueryMatcher(t *testing.T) {
+	for i, tc := range []struct {
+		scenario string
+		match    MatchQuery
+		input    string
+		expect   bool
+	}{
+		{
+			scenario: "non match against a specific value",
+			match:    MatchQuery{"debug": []string{"1"}},
+			input:    "/",
+			expect:   false,
+		},
+		{
+			scenario: "match against a specific value",
+			match:    MatchQuery{"debug": []string{"1"}},
+			input:    "/?debug=1",
+			expect:   true,
+		},
+		{
+			scenario: "match against a wildcard",
+			match:    MatchQuery{"debug": []string{"*"}},
+			input:    "/?debug=something",
+			expect:   true,
+		},
+		{
+			scenario: "non match against a wildcarded",
+			match:    MatchQuery{"debug": []string{"*"}},
+			input:    "/?other=something",
+			expect:   false,
+		},
+		{
+			scenario: "match against an empty value",
+			match:    MatchQuery{"debug": []string{""}},
+			input:    "/?debug",
+			expect:   true,
+		},
+		{
+			scenario: "non match against an empty value",
+			match:    MatchQuery{"debug": []string{""}},
+			input:    "/?someparam",
+			expect:   false,
+		},
+	} {
+
+		u, _ := url.Parse(tc.input)
+
+		req := &http.Request{URL: u}
+		actual := tc.match.Match(req)
+		if actual != tc.expect {
+			t.Errorf("Test %d %v: Expected %t, got %t for '%s'", i, tc.match, tc.expect, actual, tc.input)
+			continue
+		}
+	}
+}
+
 func TestHeaderREMatcher(t *testing.T) {
 	for i, tc := range []struct {
 		match      MatchHeaderRE
