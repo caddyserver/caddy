@@ -15,8 +15,6 @@
 package rewrite
 
 import (
-	"strconv"
-
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
@@ -27,8 +25,8 @@ func init() {
 
 // parseCaddyfile sets up the handler from Caddyfile tokens. Syntax:
 //
-//     rewrite [<matcher>] [<to>] {
-//         to                <string>
+//     rewrite [<matcher>] [<uri>] {
+//         uri                <string>
 //         method            <string>
 //         strip_path_prefix <string>
 //         strip_path_suffix <string>
@@ -40,7 +38,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 	var (
 		rewr Rewrite
 
-		toIsSet        bool
+		uriIsSet       bool
 		nextBlockIsSet bool
 		rehandleIsSet  bool
 		redirectIsSet  bool
@@ -51,7 +49,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 		switch len(args) {
 		case 0:
 		case 1:
-			toIsSet = true
+			uriIsSet = true
 			rewr.URI = h.Val()
 		default:
 			return nil, h.ArgErr()
@@ -60,9 +58,9 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 		for h.NextBlock(0) {
 			nextBlockIsSet = true
 			switch h.Val() {
-			case "to":
-				if toIsSet {
-					return nil, h.Err("to is already set")
+			case "uri":
+				if uriIsSet {
+					return nil, h.Err("uri is already set")
 				}
 				if !h.Args(&rewr.URI) {
 					return nil, h.ArgErr()
@@ -71,17 +69,11 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 				if !h.Args(&rewr.Method) {
 					return nil, h.ArgErr()
 				}
-				switch rewr.Method {
-				case "GET", "HEAD", "POST", "PUT", "DELETE",
-					"CONNECT", "OPTIONS", "TRACE", "PATCH":
-				default:
-					return nil, h.Errf("unknown method '%s'", rewr.Method)
-				}
-			case "strip_path_prefix":
+			case "strip_prefix":
 				if !h.Args(&rewr.StripPathPrefix) {
 					return nil, h.ArgErr()
 				}
-			case "strip_path_suffix":
+			case "strip_suffix":
 				if !h.Args(&rewr.StripPathSuffix) {
 					return nil, h.ArgErr()
 				}
@@ -114,25 +106,14 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 					return nil, h.ArgErr()
 				}
 
-				if len(status) != 3 {
-					return nil, h.Errf("bad status value '%s'", status)
-				}
-
-				statusNum, err := strconv.Atoi(status)
-				if err != nil {
-					return nil, h.Errf("bad status value '%s': %v", status, err)
-				}
-
-				if statusNum < 300 || statusNum > 399 {
-					return nil, h.Errf("bad status value '%s', must be in 3xx range", status)
-				}
+				rewr.HTTPRedirect = caddyhttp.WeakString(status)
 			default:
 				return nil, h.Errf("unknown subdirective '%s'", h.Val())
 			}
 		}
 
-		if !toIsSet && !nextBlockIsSet {
-			return nil, h.Err("must provide 'to' or subdirectives")
+		if !uriIsSet && !nextBlockIsSet {
+			return nil, h.Err("must provide 'uri' or subdirectives")
 		}
 	}
 	if !rehandleIsSet && !redirectIsSet {
