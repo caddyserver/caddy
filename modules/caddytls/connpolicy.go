@@ -244,6 +244,10 @@ type ClientAuthentication struct {
 	// which are not in this list will be rejected.
 	TrustedLeafCerts []string `json:"trusted_leaf_certs,omitempty"`
 
+	// requires a client certificate, but will not verify it
+	ClientRequire bool `json:"require,omitempty"`
+
+
 	// state established with the last call to ConfigureTLSConfig
 	trustedLeafCerts       []*x509.Certificate
 	existingVerifyPeerCert func([][]byte, [][]*x509.Certificate) error
@@ -251,7 +255,7 @@ type ClientAuthentication struct {
 
 // Active returns true if clientauth has an actionable configuration.
 func (clientauth ClientAuthentication) Active() bool {
-	return len(clientauth.TrustedCACerts) > 0 || len(clientauth.TrustedLeafCerts) > 0
+	return len(clientauth.TrustedCACerts) > 0 || len(clientauth.TrustedLeafCerts) > 0 || clientauth.ClientRequire
 }
 
 // ConfigureTLSConfig sets up cfg to enforce clientauth's configuration.
