@@ -348,7 +348,7 @@ func (rp *ReverseProxy) UseClientCertificates(keyPair *tls.Certificate) {
                 // No http2.ConfigureTransport() here.
                 // For now this is only added in places where
                 // an http.Transport is actually created.
-        } else if transport, ok := rp.Transport.(*h2quic.RoundTripper); ok {
+        } else if transport, ok := rp.Transport.(*http3.RoundTripper); ok {
                 if transport.TLSClientConfig == nil {
                         transport.TLSClientConfig = &tls.Config{}
                 }
