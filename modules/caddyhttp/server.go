@@ -399,7 +399,7 @@ func errLogValues(err error) (status int, msg string, fields []zapcore.Field) {
 // (into the urlCopy parameter, which should be on the
 // stack), req.RequestURI, and req.RemoteAddr. Notably,
 // headers are not copied. This function is designed to
-// be very fast and efficient, and useful primarly for
+// be very fast and efficient, and useful primarily for
 // read-only/logging purposes.
 func originalRequest(req *http.Request, urlCopy *url.URL) http.Request {
 	cloneURL(req.URL, urlCopy)
