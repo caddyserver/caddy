@@ -23,15 +23,15 @@ Other menu items:
 
 ### Contributing code
 
-You can have a direct impact on the project by helping with its code. To contribute code to Caddy, open a [pull request](https://github.com/caddyserver/caddy/pulls) (PR). If you're new to our community, that's okay: **we gladly welcome pull requests from anyone, regardless of your native language or coding experience.** You can get familiar with Caddy's code base by using [code search at Sourcegraph](https://sourcegraph.com/github.com/caddyserver/caddy/-/search).
+You can have a huge impact on the project by helping with its code. To contribute code to Caddy, open a [pull request](https://github.com/caddyserver/caddy/pulls) (PR). If you're new to our community, that's okay: **we gladly welcome pull requests from anyone, regardless of your native language or coding experience.** You can get familiar with Caddy's code base by using [code search at Sourcegraph](https://sourcegraph.com/github.com/caddyserver/caddy/-/search).
 
-We hold contributions to a high standard for quality :bowtie:, so don't be surprised if we ask for revisions&mdash;even if it seems small or insignificant. Please don't take it personally. :wink: If your change is on the right track, we can guide you to make it mergable.
+We hold contributions to a high standard for quality :bowtie:, so don't be surprised if we ask for revisions&mdash;even if it seems small or insignificant. Please don't take it personally. :blue_heart: If your change is on the right track, we can guide you to make it mergable.
 
 Here are some of the expectations we have of contributors:
 
-- If your change is more than just a minor alteration, **open an issue to propose your change first.** This way we can avoid confusion, coordinate what everyone is working on, and ensure that changes are in-line with the project's goals and the best interests of its users. If there's already an issue about it, comment on the existing issue to claim it.
+- **Open an issue to propose your change first.** This way we can avoid confusion, coordinate what everyone is working on, and ensure that any changes are in-line with the project's goals and the best interests of its users. We can also discuss the best possible implementation. If there's already an issue about it, comment on the existing issue to claim it.
 
-- **Keep pull requests small.** Smaller PRs are more likely to be merged because they are easier to review! We might ask you to break up large PRs into smaller ones. [An example of what we DON'T do.](https://twitter.com/iamdevloper/status/397664295875805184)
+- **Keep pull requests small.** Smaller PRs are more likely to be merged because they are easier to review! We might ask you to break up large PRs into smaller ones. [An example of what we want to avoid.](https://twitter.com/iamdevloper/status/397664295875805184)
 
 - **Keep related commits together in a PR.** We do want pull requests to be small, but you should also keep multiple related commits in the same PR if they rely on each other.
 
@@ -83,7 +83,7 @@ Many people on the forums could benefit from your experience and expertise, too.
 
 ### Reporting bugs
 
-Like every software, Caddy has its flaws. If you find one, [search the issues](https://github.com/caddyserver/caddy/issues) to see if it has already been reported. If not, [open a new issue](https://github.com/caddyserver/caddy/issues/new) and describe the bug, and somebody will look into it! (This repository is only for Caddy, not plugins.)
+Like every software, Caddy has its flaws. If you find one, [search the issues](https://github.com/caddyserver/caddy/issues) to see if it has already been reported. If not, [open a new issue](https://github.com/caddyserver/caddy/issues/new) and describe the bug, and somebody will look into it! (This repository is only for Caddy and its standard modules.)
 
 **You can help stop bugs in their tracks!** Speed up the patch by identifying the bug in the code. This can sometimes be done by adding `fmt.Println()` statements (or similar) in relevant code paths to narrow down where the problem may be. It's a good way to [introduce yourself to the Go language](https://tour.golang.org), too.
 
@@ -93,17 +93,42 @@ We suggest reading [How to Report Bugs Effectively](http://www.chiark.greenend.o
 
 Please be kind. :smile: Remember that Caddy comes at no cost to you, and you're getting free support when we fix your issues. If we helped you, please consider helping someone else!
 
+#### Bug reporting requirements
+
+Maintainers---or more generally, developers---need three things to act on bugs:
+
+1. To agree or be convinced that it's a bug (reporter's responsibility).
+	- A bug is undesired or surprising behavior which violates documentation or the spec.
+
+2. To be able to understand what is happening (mostly reporter's responsibility).
+	- If the reporter can provide satisfactory instructions such that a developer can reproduce the bug, the developer will likely be able to understand the bug, write a test case, and implement a fix.
+	- Otherwise, the burden is on the reporter to test possible solutions. This is discouraged because it loosens the feedback loop, slows down debugging efforts, obscures the true nature of the problem from the developers, and is unlikely to result in new test cases.
+
+3. A solution, or ideas toward a solution (mostly maintainer's responsibility).
+	- Sometimes the best solution is a documentation change.
+	- Usually the developers have the best domain knowledge for inventing a solution, but reporters may have ideas or preferences for how they would like the software to work.
+	- Security, correctness, and project goals/vision all take priority over a user's preferences.
+	- It's simply good business to yield a solution that satisfies the users, and it's even better business to leave them impressed.
+
+Thus, at the very least, the reporter is expected to:
+
+1. Convince the reader that it's a bug (if it's not obvious).
+2. Reduce the problem down to the minimum specific steps required to reproduce it.
+
+The maintainer is usually able to do the rest; but of course the reporter may invest additional effort to speed up the process.
+
+
 
 ### Suggesting features
 
-First, [search to see if your feature has already been requested](https://github.com/caddyserver/caddy/issues). If it has, you can add a :+1: reaction to vote for it. If your feature idea is new, open an issue to request the feature. You don't have to follow the bug template for feature requests. Please describe your idea thoroughly so that we know how to implement it! Really vague requests may not be helpful or actionable and without clarification will have to be closed.
+First, [search to see if your feature has already been requested](https://github.com/caddyserver/caddy/issues). If it has, you can add a :+1: reaction to vote for it. If your feature idea is new, open an issue to request the feature. Please describe your idea thoroughly so that we know how to implement it! Really vague requests may not be helpful or actionable and, without clarification, will have to be closed.
 
-While we really do value your requests and implement many of them, not all features are a good fit for Caddy. Most of those [make good plugins](https://github.com/caddyserver/caddy/wiki), though, which can be made by anyone! But if a feature is not in the best interest of the Caddy project or its users in general, we may politely decline to implement it into Caddy core.
+While we really do value your requests and implement many of them, not all features are a good fit for Caddy. Most of those [make good plugins](https://github.com/caddyserver/caddy/wiki), which can be made by anyone! But if a feature is not in the best interest of the Caddy project or its users in general, we may politely decline to implement it into Caddy core.
 
 
 ### Improving documentation
 
-Caddy's documentation is available at [https://caddyserver.com/docs](https://caddyserver.com/docs). If you would like to make a fix to the docs, please submit an issue here describing the change to make.
+Caddy's documentation is available at [https://caddyserver.com/v1/docs](https://caddyserver.com/v1/docs). If you would like to make a fix to the docs, please submit an issue here describing the change to make.
 
 Note that plugin documentation is not hosted by the Caddy website, other than basic usage examples. They are managed by the individual plugin authors, and you will have to contact them to change their documentation.
 
