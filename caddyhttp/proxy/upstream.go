@@ -76,6 +76,7 @@ type staticUpstream struct {
 	CaCertPool                   *x509.CertPool
 	upstreamHeaderReplacements   headerReplacements
 	downstreamHeaderReplacements headerReplacements
+	ClientKeyPair                *tls.Certificate
 }
 
 type srvResolver interface {
@@ -265,6 +266,10 @@ func (u *staticUpstream) NewHost(host string) (*UpstreamHost, error) {
 
 	if u.CaCertPool != nil {
 		uh.ReverseProxy.UseOwnCACertificates(u.CaCertPool)
+	}
+
+	if u.ClientKeyPair != nil {
+		uh.ReverseProxy.UseClientCertificates(u.ClientKeyPair)
 	}
 
 	return uh, nil
@@ -564,6 +569,20 @@ func parseBlock(c *caddyfile.Dispenser, u *staticUpstream, hasSrv bool) error {
 			return c.Errf("unable to parse timeout duration '%s'", c.Val())
 		}
 		u.Timeout = dur
+	case "tls_client":
+		if !c.NextArg() {
+                        return c.ArgErr()
+                }
+                clientCertFile := c.Val()
+		if !c.NextArg() {
+                        return c.ArgErr()
+                }
+                clientKeyFile := c.Val()
+		clientKeyPair, err := tls.LoadX509KeyPair(clientCertFile, clientKeyFile)
+        	if (err != nil) {
+                	return c.Errf("unable to load keypair from certfile:%s keyfile:%s", clientCertFile, clientKeyFile)
+        	}
+		u.ClientKeyPair = &clientKeyPair
 	default:
 		return c.Errf("unknown property '%s'", c.Val())
 	}
