@@ -36,10 +36,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 	)
 
 	for h.Next() {
-		args := h.RemainingArgs()
-		if len(args) == 1 {
-			rewr.URI = h.Val()
-		} else {
+		if !h.Args(&rewr.URI) {
 			return nil, h.ArgErr()
 		}
 
