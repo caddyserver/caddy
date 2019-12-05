@@ -25,99 +25,37 @@ func init() {
 
 // parseCaddyfile sets up the handler from Caddyfile tokens. Syntax:
 //
-//     rewrite [<matcher>] [<uri>] {
-//         uri                <string>
-//         method            <string>
-//         strip_path_prefix <string>
-//         strip_path_suffix <string>
-//         rehandle          <bool>
-//         http_redirect     <status_code>
+//     rewrite [<matcher>] <uri> {
+//         method    <string>
+//         rehandle
 //     }
 //
 func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
 	var (
 		rewr Rewrite
-
-		uriIsSet       bool
-		nextBlockIsSet bool
-		rehandleIsSet  bool
-		redirectIsSet  bool
 	)
 
 	for h.Next() {
 		args := h.RemainingArgs()
-		switch len(args) {
-		case 0:
-		case 1:
-			uriIsSet = true
+		if len(args) == 1 {
 			rewr.URI = h.Val()
-		default:
+		} else {
 			return nil, h.ArgErr()
 		}
 
 		for h.NextBlock(0) {
-			nextBlockIsSet = true
 			switch h.Val() {
-			case "uri":
-				if uriIsSet {
-					return nil, h.Err("uri is already set")
-				}
-				if !h.Args(&rewr.URI) {
-					return nil, h.ArgErr()
-				}
 			case "method":
 				if !h.Args(&rewr.Method) {
 					return nil, h.ArgErr()
 				}
-			case "strip_prefix":
-				if !h.Args(&rewr.StripPathPrefix) {
-					return nil, h.ArgErr()
-				}
-			case "strip_suffix":
-				if !h.Args(&rewr.StripPathSuffix) {
-					return nil, h.ArgErr()
-				}
 			case "rehandle":
-				rehandleIsSet = true
-				if redirectIsSet {
-					return nil, h.Err("http_redirect is already set")
-				}
-
-				var rehandle string
-				if !h.Args(&rehandle) {
-					return nil, h.ArgErr()
-				}
-
-				switch rehandle {
-				case "true":
-					rewr.Rehandle = true
-				case "false":
-				default:
-					return nil, h.Errf("invalid rehandle argument '%s', expected bool", rehandle)
-				}
-			case "http_redirect":
-				redirectIsSet = true
-				if rehandleIsSet {
-					return nil, h.Err("rehandle is already set")
-				}
-
-				var status string
-				if !h.Args(&status) {
-					return nil, h.ArgErr()
-				}
-
-				rewr.HTTPRedirect = caddyhttp.WeakString(status)
+				rewr.Rehandle = true
 			default:
 				return nil, h.Errf("unknown subdirective '%s'", h.Val())
 			}
 		}
+	}
 
-		if !uriIsSet && !nextBlockIsSet {
-			return nil, h.Err("must provide 'uri' or subdirectives")
-		}
-	}
-	if !rehandleIsSet && !redirectIsSet {
-		rewr.Rehandle = true
-	}
 	return rewr, nil
 }
