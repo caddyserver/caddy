@@ -360,7 +360,7 @@ func SplitNetworkAddress(a string) (network, host, port string, err error) {
 		network = strings.ToLower(strings.TrimSpace(a[:idx]))
 		a = a[idx+1:]
 	}
-	if network == "unix" || network == "unixgram" || network == "unixpacket" {
+	if isUnixNetwork(network) {
 		host = a
 		return
 	}
@@ -369,8 +369,9 @@ func SplitNetworkAddress(a string) (network, host, port string, err error) {
 }
 
 // JoinNetworkAddress combines network, host, and port into a single
-// address string of the form accepted by ParseNetworkAddress(). For unix sockets, the network
-// should be "unix" and the path to the socket should be given as the
+// address string of the form accepted by ParseNetworkAddress(). For
+// unix sockets, the network should be "unix" (or "unixgram" or
+// "unixpacket") and the path to the socket should be given as the
 // host parameter.
 func JoinNetworkAddress(network, host, port string) string {
 	var a string
