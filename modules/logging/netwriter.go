@@ -23,53 +23,51 @@ import (
 )
 
 func init() {
-	caddy.RegisterModule(UDPWriter{})
+	caddy.RegisterModule(NetWriter{})
 }
 
-type UDPWriter struct {
-	IPV4 string `json:"ipv4,omitempty"`
+type NetWriter struct {
+	IP string `json:"ip,omitempty"`
+	Protocol string `json:"protocol,omitempty"`
 }
 
 // CaddyModule returns the Caddy module information
-func (UDPWriter) CaddyModule() caddy.ModuleInfo {
+func (NetWriter) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "caddy.logging.writers.udp",
-		New:  func() caddy.Module { return new(UDPWriter) },
+		Name: "caddy.logging.writers.net",
+		New:  func() caddy.Module { return new(NetWriter) },
 	}
 }
 
 // Provision sets up the module
-func (udpw *UDPWriter) Provision(ctx caddy.Context) error {
+func (netw *NetWriter) Provision(ctx caddy.Context) error {
 	// Replace placeholder in filename
 	repl := caddy.NewReplacer()
-	ipv4, err := repl.ReplaceOrErr(udpw.IPV4, true, true)
+	ip, err := repl.ReplaceOrErr(netw.IP, true, true)
 	if err != nil {
-		return fmt.Errorf("invalid ipv4 for udp host: %v", err)
+		return fmt.Errorf("invalid ip for host: %v", err)
 	}
-	udpw.IPV4 = ipv4
-	_, err = net.ResolveUDPAddr("udp4", udpw.IPV4)
+	netw.IP = ip
+	proto, err := repl.ReplaceOrErr(netw.Protocol, true, true)
 	if err != nil {
-		return fmt.Errorf("invalid ipv4 for udp host: %v", err)
+		return fmt.Errorf("invalid protocol for host: %v", err)
 	}
+	netw.Protocol = proto
 	return nil
 }
 
-func (udpw UDPWriter) String() string {
-	return "udp://" + udpw.IPV4
+func (netw NetWriter) String() string {
+	return netw.Protocol + "://" + netw.IP
 }
 
-// WriterKey returns a unique key representing this udpw.
-func (udpw UDPWriter) WriterKey() string {
-	return "udp:" + udpw.IPV4
+// WriterKey returns a unique key representing this netw.
+func (netw NetWriter) WriterKey() string {
+	return netw.Protocol + ":" + netw.IP
 }
 
 // OpenWriter opens a new udp connection.
-func (udpw UDPWriter) OpenWriter() (io.WriteCloser, error) {
-	s, err := net.ResolveUDPAddr("udp4", udpw.IPV4)
-	if err != nil {
-		return nil, err
-	}
-	c, err := net.DialUDP("udp4", nil, s)
+func (netw NetWriter) OpenWriter() (io.WriteCloser, error) {
+	c, err := net.Dial(netw.Protocol, netw.IP)
 	if err != nil {
 		return nil, err
 	}
@@ -78,5 +76,5 @@ func (udpw UDPWriter) OpenWriter() (io.WriteCloser, error) {
 
 // Interface guards
 var (
-	_ caddy.Provisioner = (*UDPWriter)(nil)
+	_ caddy.Provisioner = (*NetWriter)(nil)
 )
