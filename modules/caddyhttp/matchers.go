@@ -166,16 +166,30 @@ func (m MatchPath) Provision(_ caddy.Context) error {
 func (m MatchPath) Match(r *http.Request) bool {
 	lowerPath := strings.ToLower(r.URL.Path)
 	for _, matchPath := range m {
-		// as a special case, if the first character is a
-		// wildcard, treat it as a quick suffix match
-		if strings.HasPrefix(matchPath, "*") {
-			return strings.HasSuffix(lowerPath, matchPath[1:])
+		// special case: first character is equals sign,
+		// treat it as an exact match
+		if strings.HasPrefix(matchPath, "=") {
+			if lowerPath == matchPath[1:] {
+				return true
+			}
+			continue
 		}
+
+		// special case: first character is a wildcard,
+		// treat it as a fast suffix match
+		if strings.HasPrefix(matchPath, "*") {
+			if strings.HasSuffix(lowerPath, matchPath[1:]) {
+				return true
+			}
+			continue
+		}
+
 		// can ignore error here because we can't handle it anyway
 		matches, _ := filepath.Match(matchPath, lowerPath)
 		if matches {
 			return true
 		}
+
 		if strings.HasPrefix(lowerPath, matchPath) {
 			return true
 		}
@@ -202,7 +216,7 @@ func (MatchPathRE) CaddyModule() caddy.ModuleInfo {
 // Match returns true if r matches m.
 func (m MatchPathRE) Match(r *http.Request) bool {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
-	return m.MatchRegexp.Match(r.URL.Path, repl, "path_regexp")
+	return m.MatchRegexp.Match(r.URL.Path, repl)
 }
 
 // CaddyModule returns the Caddy module information.
@@ -241,8 +255,16 @@ func (MatchQuery) CaddyModule() caddy.ModuleInfo {
 
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
 func (m *MatchQuery) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	if *m == nil {
+		*m = make(map[string][]string)
+	}
+
 	for d.Next() {
-		parts := strings.SplitN(d.Val(), "=", 2)
+		var query string
+		if !d.Args(&query) {
+			return d.ArgErr()
+		}
+		parts := strings.SplitN(query, "=", 2)
 		if len(parts) != 2 {
 			return d.Errf("malformed query matcher token: %s; must be in param=val format", d.Val())
 		}
@@ -254,10 +276,12 @@ func (m *MatchQuery) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // Match returns true if r matches m.
 func (m MatchQuery) Match(r *http.Request) bool {
 	for param, vals := range m {
-		paramVal := r.URL.Query().Get(param)
-		for _, v := range vals {
-			if paramVal == v {
-				return true
+		paramVal, found := r.URL.Query()[param]
+		if found {
+			for _, v := range vals {
+				if paramVal[0] == v || v == "*" {
+					return true
+				}
 			}
 		}
 	}
@@ -300,8 +324,17 @@ func (m MatchHeader) Match(r *http.Request) bool {
 	fieldVals:
 		for _, actualFieldVal := range actualFieldVals {
 			for _, allowedFieldVal := range allowedFieldVals {
-				if actualFieldVal == allowedFieldVal {
-					match = true
+				switch {
+				case strings.HasPrefix(allowedFieldVal, "*") && strings.HasSuffix(allowedFieldVal, "*"):
+					match = strings.Contains(actualFieldVal, allowedFieldVal[1:len(allowedFieldVal)-1])
+				case strings.HasPrefix(allowedFieldVal, "*"):
+					match = strings.HasSuffix(actualFieldVal, allowedFieldVal[1:])
+				case strings.HasSuffix(allowedFieldVal, "*"):
+					match = strings.HasPrefix(actualFieldVal, allowedFieldVal[:len(allowedFieldVal)-1])
+				default:
+					match = actualFieldVal == allowedFieldVal
+				}
+				if match {
 					break fieldVals
 				}
 			}
@@ -340,7 +373,7 @@ func (m *MatchHeaderRE) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 func (m MatchHeaderRE) Match(r *http.Request) bool {
 	for field, rm := range m {
 		repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
-		match := rm.Match(r.Header.Get(field), repl, "header_regexp")
+		match := rm.Match(r.Header.Get(field), repl)
 		if !match {
 			return false
 		}
@@ -615,7 +648,7 @@ func (mre *MatchRegexp) Validate() error {
 // (namespace). Capture groups stored to repl will take on
 // the name "http.matchers.<scope>.<mre.Name>.<N>" where
 // <N> is the name or number of the capture group.
-func (mre *MatchRegexp) Match(input string, repl caddy.Replacer, scope string) bool {
+func (mre *MatchRegexp) Match(input string, repl caddy.Replacer) bool {
 	matches := mre.compiled.FindStringSubmatch(input)
 	if matches == nil {
 		return false
@@ -623,14 +656,14 @@ func (mre *MatchRegexp) Match(input string, repl caddy.Replacer, scope string) b
 
 	// save all capture groups, first by index
 	for i, match := range matches {
-		key := fmt.Sprintf("http.matchers.%s.%s.%d", scope, mre.Name, i)
+		key := fmt.Sprintf("http.regexp.%s.%d", mre.Name, i)
 		repl.Set(key, match)
 	}
 
 	// then by name
 	for i, name := range mre.compiled.SubexpNames() {
 		if i != 0 && name != "" {
-			key := fmt.Sprintf("http.matchers.%s.%s.%s", scope, mre.Name, name)
+			key := fmt.Sprintf("http.regexp.%s.%s", mre.Name, name)
 			repl.Set(key, matches[i])
 		}
 	}

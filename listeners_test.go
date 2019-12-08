@@ -250,3 +250,52 @@ func TestParseNetworkAddress(t *testing.T) {
 		}
 	}
 }
+
+func TestJoinHostPort(t *testing.T) {
+	for i, tc := range []struct {
+		pa     ParsedAddress
+		offset uint
+		expect string
+	}{
+		{
+			pa: ParsedAddress{
+				Network:   "tcp",
+				Host:      "localhost",
+				StartPort: 1234,
+				EndPort:   1234,
+			},
+			expect: "localhost:1234",
+		},
+		{
+			pa: ParsedAddress{
+				Network:   "tcp",
+				Host:      "localhost",
+				StartPort: 1234,
+				EndPort:   1235,
+			},
+			expect: "localhost:1234",
+		},
+		{
+			pa: ParsedAddress{
+				Network:   "tcp",
+				Host:      "localhost",
+				StartPort: 1234,
+				EndPort:   1235,
+			},
+			offset: 1,
+			expect: "localhost:1235",
+		},
+		{
+			pa: ParsedAddress{
+				Network: "unix",
+				Host:    "/run/php/php7.3-fpm.sock",
+			},
+			expect: "/run/php/php7.3-fpm.sock",
+		},
+	} {
+		actual := tc.pa.JoinHostPort(tc.offset)
+		if actual != tc.expect {
+			t.Errorf("Test %d: Expected '%s' but got '%s'", i, tc.expect, actual)
+		}
+	}
+}

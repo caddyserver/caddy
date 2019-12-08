@@ -266,9 +266,18 @@ type ParsedAddress struct {
 	EndPort   uint
 }
 
+// IsUnixNetwork returns true if pa.Network is
+// unix, unixgram, or unixpacket.
+func (pa ParsedAddress) IsUnixNetwork() bool {
+	return isUnixNetwork(pa.Network)
+}
+
 // JoinHostPort is like net.JoinHostPort, but where the port
 // is StartPort + offset.
 func (pa ParsedAddress) JoinHostPort(offset uint) string {
+	if pa.IsUnixNetwork() {
+		return pa.Host
+	}
 	return net.JoinHostPort(pa.Host, strconv.Itoa(int(pa.StartPort+offset)))
 }
 
@@ -290,6 +299,10 @@ func (pa ParsedAddress) String() string {
 	return JoinNetworkAddress(pa.Network, pa.Host, port)
 }
 
+func isUnixNetwork(netw string) bool {
+	return netw == "unix" || netw == "unixgram" || netw == "unixpacket"
+}
+
 // ParseNetworkAddress parses addr into its individual
 // components. The input string is expected to be of
 // the form "network/host:port-range" where any part is
@@ -307,7 +320,7 @@ func ParseNetworkAddress(addr string) (ParsedAddress, error) {
 	if err != nil {
 		return ParsedAddress{}, err
 	}
-	if network == "unix" || network == "unixgram" || network == "unixpacket" {
+	if isUnixNetwork(network) {
 		return ParsedAddress{
 			Network: network,
 			Host:    host,
@@ -347,7 +360,7 @@ func SplitNetworkAddress(a string) (network, host, port string, err error) {
 		network = strings.ToLower(strings.TrimSpace(a[:idx]))
 		a = a[idx+1:]
 	}
-	if network == "unix" || network == "unixgram" || network == "unixpacket" {
+	if isUnixNetwork(network) {
 		host = a
 		return
 	}
@@ -356,8 +369,9 @@ func SplitNetworkAddress(a string) (network, host, port string, err error) {
 }
 
 // JoinNetworkAddress combines network, host, and port into a single
-// address string of the form accepted by ParseNetworkAddress(). For unix sockets, the network
-// should be "unix" and the path to the socket should be given as the
+// address string of the form accepted by ParseNetworkAddress(). For
+// unix sockets, the network should be "unix" (or "unixgram" or
+// "unixpacket") and the path to the socket should be given as the
 // host parameter.
 func JoinNetworkAddress(network, host, port string) string {
 	var a string

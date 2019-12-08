@@ -117,7 +117,7 @@ func (h *Handler) doActiveHealthChecksForAllHosts() {
 				return
 			}
 			hostAddr := addr.JoinHostPort(0)
-			if addr.Network == "unix" || addr.Network == "unixgram" || addr.Network == "unixpacket" {
+			if addr.IsUnixNetwork() {
 				// this will be used as the Host portion of a http.Request URL, and
 				// paths to socket files would produce an error when creating URL,
 				// so use a fake Host value instead; unix sockets are usually local

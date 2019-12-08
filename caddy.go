@@ -102,16 +102,6 @@ func changeConfig(method, path string, input []byte, forceReload bool) error {
 		return err
 	}
 
-	// find any IDs in this config and index them
-	idx := make(map[string]string)
-	err = indexConfigObjects(rawCfg[rawConfigKey], "/"+rawConfigKey, idx)
-	if err != nil {
-		return APIError{
-			Code: http.StatusInternalServerError,
-			Err:  fmt.Errorf("indexing config: %v", err),
-		}
-	}
-
 	// the mutation is complete, so encode the entire config as JSON
 	newCfg, err := json.Marshal(rawCfg[rawConfigKey])
 	if err != nil {
@@ -126,6 +116,32 @@ func changeConfig(method, path string, input []byte, forceReload bool) error {
 		Log().Named("admin.api.change_config").Info("config is unchanged")
 		return nil
 	}
+
+	// find any IDs in this config and index them
+	idx := make(map[string]string)
+	err = indexConfigObjects(rawCfg[rawConfigKey], "/"+rawConfigKey, idx)
+	if err != nil {
+		return APIError{
+			Code: http.StatusInternalServerError,
+			Err:  fmt.Errorf("indexing config: %v", err),
+		}
+	}
+
+	// remove any @id fields from the JSON, which would cause
+	// loading to break since the field wouldn't be recognized
+	// (an alternate way to do this would be to delete them from
+	// rawCfg as they are indexed, then iterate the index we made
+	// and add them back after encoding as JSON)
+	newCfg = idRegexp.ReplaceAllFunc(newCfg, func(in []byte) []byte {
+		// matches with a comma on both sides (when "@id" property is
+		// not the first or last in the object) need to keep exactly
+		// one comma for correct JSON syntax
+		comma := []byte{','}
+		if bytes.HasPrefix(in, comma) && bytes.HasSuffix(in, comma) {
+			return comma
+		}
+		return []byte{}
+	})
 
 	// load this new config; if it fails, we need to revert to
 	// our old representation of caddy's actual config
@@ -183,7 +199,6 @@ func indexConfigObjects(ptr interface{}, configPath string, index map[string]str
 				default:
 					return fmt.Errorf("%s: %s field must be a string or number", configPath, idKey)
 				}
-				delete(val, idKey) // field is no longer needed, and will break config if not removed
 				continue
 			}
 			// traverse this object property recursively

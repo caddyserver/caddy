@@ -14,7 +14,7 @@ require (
 	github.com/keybase/go-ps v0.0.0-20190827175125-91aafc93ba19
 	github.com/klauspost/compress v1.8.6
 	github.com/klauspost/cpuid v1.2.1
-	github.com/lucas-clemente/quic-go v0.13.1
+	github.com/lucas-clemente/quic-go v0.14.1
 	github.com/mholt/certmagic v0.8.3
 	github.com/muhammadmuzzammil1998/jsonc v0.0.0-20190906142622-1265e9b150c6
 	github.com/onsi/ginkgo v1.8.0 // indirect

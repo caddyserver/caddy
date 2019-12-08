@@ -68,6 +68,9 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //         unhealthy_status <status>
 //         unhealthy_latency <duration>
 //
+//         # streaming
+//         flush_interval <duration>
+//
 //         # header manipulation
 //         header_up   [+|-]<field> [<value|regexp> [<replacement>]]
 //         header_down [+|-]<field> [<value|regexp> [<replacement>]]
@@ -327,6 +330,16 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.Errf("bad duration value '%s': %v", d.Val(), err)
 				}
 				h.HealthChecks.Passive.UnhealthyLatency = caddy.Duration(dur)
+
+			case "flush_interval":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				dur, err := time.ParseDuration(d.Val())
+				if err != nil {
+					return d.Errf("bad duration value '%s': %v", d.Val(), err)
+				}
+				h.FlushInterval = caddy.Duration(dur)
 
 			case "header_up":
 				if h.Headers == nil {

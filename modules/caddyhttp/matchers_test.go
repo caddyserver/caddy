@@ -213,6 +213,21 @@ func TestPathMatcher(t *testing.T) {
 			expect: false,
 		},
 		{
+			match:  MatchPath{"=/foo"},
+			input:  "/foo",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"=/foo"},
+			input:  "/foo/bar",
+			expect: false,
+		},
+		{
+			match:  MatchPath{"=/foo"},
+			input:  "/FOO",
+			expect: true,
+		},
+		{
 			match:  MatchPath{"/foo"},
 			input:  "/FOO",
 			expect: true,
@@ -309,10 +324,10 @@ func TestPathREMatcher(t *testing.T) {
 		}
 
 		for key, expectVal := range tc.expectRepl {
-			placeholder := fmt.Sprintf("{http.matchers.path_regexp.%s}", key)
+			placeholder := fmt.Sprintf("{http.regexp.%s}", key)
 			actualVal := repl.ReplaceAll(placeholder, "<empty>")
 			if actualVal != expectVal {
-				t.Errorf("Test %d [%v]: Expected placeholder {http.matchers.path_regexp.%s} to be '%s' but got '%s'",
+				t.Errorf("Test %d [%v]: Expected placeholder {http.regexp.%s} to be '%s' but got '%s'",
 					i, tc.match.Pattern, key, expectVal, actualVal)
 				continue
 			}
@@ -376,6 +391,62 @@ func TestHeaderMatcher(t *testing.T) {
 	}
 }
 
+func TestQueryMatcher(t *testing.T) {
+	for i, tc := range []struct {
+		scenario string
+		match    MatchQuery
+		input    string
+		expect   bool
+	}{
+		{
+			scenario: "non match against a specific value",
+			match:    MatchQuery{"debug": []string{"1"}},
+			input:    "/",
+			expect:   false,
+		},
+		{
+			scenario: "match against a specific value",
+			match:    MatchQuery{"debug": []string{"1"}},
+			input:    "/?debug=1",
+			expect:   true,
+		},
+		{
+			scenario: "match against a wildcard",
+			match:    MatchQuery{"debug": []string{"*"}},
+			input:    "/?debug=something",
+			expect:   true,
+		},
+		{
+			scenario: "non match against a wildcarded",
+			match:    MatchQuery{"debug": []string{"*"}},
+			input:    "/?other=something",
+			expect:   false,
+		},
+		{
+			scenario: "match against an empty value",
+			match:    MatchQuery{"debug": []string{""}},
+			input:    "/?debug",
+			expect:   true,
+		},
+		{
+			scenario: "non match against an empty value",
+			match:    MatchQuery{"debug": []string{""}},
+			input:    "/?someparam",
+			expect:   false,
+		},
+	} {
+
+		u, _ := url.Parse(tc.input)
+
+		req := &http.Request{URL: u}
+		actual := tc.match.Match(req)
+		if actual != tc.expect {
+			t.Errorf("Test %d %v: Expected %t, got %t for '%s'", i, tc.match, tc.expect, actual, tc.input)
+			continue
+		}
+	}
+}
+
 func TestHeaderREMatcher(t *testing.T) {
 	for i, tc := range []struct {
 		match      MatchHeaderRE
@@ -427,10 +498,10 @@ func TestHeaderREMatcher(t *testing.T) {
 		}
 
 		for key, expectVal := range tc.expectRepl {
-			placeholder := fmt.Sprintf("{http.matchers.header_regexp.%s}", key)
+			placeholder := fmt.Sprintf("{http.regexp.%s}", key)
 			actualVal := repl.ReplaceAll(placeholder, "<empty>")
 			if actualVal != expectVal {
-				t.Errorf("Test %d [%v]: Expected placeholder {http.matchers.header_regexp.%s} to be '%s' but got '%s'",
+				t.Errorf("Test %d [%v]: Expected placeholder {http.regexp.%s} to be '%s' but got '%s'",
 					i, tc.match, key, expectVal, actualVal)
 				continue
 			}
