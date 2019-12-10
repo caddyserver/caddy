@@ -22,7 +22,6 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
-	"log"
 	"path"
 	"path/filepath"
 	"runtime"
