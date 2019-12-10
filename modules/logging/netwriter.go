@@ -26,55 +26,57 @@ func init() {
 	caddy.RegisterModule(NetWriter{})
 }
 
+// NetWriter implements a log writer that outputs to a network socket.
 type NetWriter struct {
-	IP string `json:"ip,omitempty"`
-	Protocol string `json:"protocol,omitempty"`
+	Address string `json:"address,omitempty"`
+
+	addr caddy.ParsedAddress
 }
 
-// CaddyModule returns the Caddy module information
+// CaddyModule returns the Caddy module information.
 func (NetWriter) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "caddy.logging.writers.net",
-		New:  func() caddy.Module { return new(NetWriter) },
+		ID:  "caddy.logging.writers.net",
+		New: func() caddy.Module { return new(NetWriter) },
 	}
 }
 
-// Provision sets up the module
-func (netw *NetWriter) Provision(ctx caddy.Context) error {
-	// Replace placeholder in filename
+// Provision sets up the module.
+func (nw *NetWriter) Provision(ctx caddy.Context) error {
 	repl := caddy.NewReplacer()
-	ip, err := repl.ReplaceOrErr(netw.IP, true, true)
+	address, err := repl.ReplaceOrErr(nw.Address, true, true)
 	if err != nil {
-		return fmt.Errorf("invalid ip for host: %v", err)
+		return fmt.Errorf("invalid host in address: %v", err)
 	}
-	netw.IP = ip
-	proto, err := repl.ReplaceOrErr(netw.Protocol, true, true)
+
+	nw.addr, err = caddy.ParseNetworkAddress(address)
 	if err != nil {
-		return fmt.Errorf("invalid protocol for host: %v", err)
+		return fmt.Errorf("parsing network address '%s': %v", address, err)
 	}
-	netw.Protocol = proto
+
+	if nw.addr.PortRangeSize() != 1 {
+		return fmt.Errorf("multiple ports not supported")
+	}
+
 	return nil
 }
 
-func (netw NetWriter) String() string {
-	return netw.Protocol + "://" + netw.IP
+func (nw NetWriter) String() string {
+	return nw.addr.String()
 }
 
-// WriterKey returns a unique key representing this netw.
-func (netw NetWriter) WriterKey() string {
-	return netw.Protocol + ":" + netw.IP
+// WriterKey returns a unique key representing this nw.
+func (nw NetWriter) WriterKey() string {
+	return nw.addr.String()
 }
 
-// OpenWriter opens a new udp connection.
-func (netw NetWriter) OpenWriter() (io.WriteCloser, error) {
-	c, err := net.Dial(netw.Protocol, netw.IP)
-	if err != nil {
-		return nil, err
-	}
-	return c, nil
+// OpenWriter opens a new network connection.
+func (nw NetWriter) OpenWriter() (io.WriteCloser, error) {
+	return net.Dial(nw.addr.Network, nw.addr.JoinHostPort(0))
 }
 
 // Interface guards
 var (
-	_ caddy.Provisioner = (*NetWriter)(nil)
+	_ caddy.Provisioner  = (*NetWriter)(nil)
+	_ caddy.WriterOpener = (*NetWriter)(nil)
 )
