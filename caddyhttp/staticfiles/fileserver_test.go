@@ -246,9 +246,7 @@ func TestServeHTTP(t *testing.T) {
 		{
 			// Test 28 - Prevent path-based open redirects (directory)
 			url:                 "https://foo//example.com%2f..",
-			expectedStatus:      http.StatusMovedPermanently,
-			expectedLocation:    "https://foo/example.com/../",
-			expectedBodyContent: movedPermanently,
+			expectedStatus:      http.StatusNotFound,
 		},
 		{
 			// Test 29 - Prevent path-based open redirects (file)
@@ -258,13 +256,11 @@ func TestServeHTTP(t *testing.T) {
 			expectedBodyContent: movedPermanently,
 		},
 		{
-			// Test 29 - Prevent path-based open redirects (extra leading slashes)
+			// Test 30 - Prevent path-based open redirects (extra leading slashes)
 			url:                 "https://foo///example.com%2f..",
-			expectedStatus:      http.StatusMovedPermanently,
-			expectedLocation:    "https://foo/example.com/../",
-			expectedBodyContent: movedPermanently,
+			expectedStatus:      http.StatusNotFound,
 		},
-		// Test 30 - try to get pre- file.
+		// Test 31 - try to get pre- file.
 		{
 			url:                   "https://foo/sub/gzipped.html",
 			acceptEncoding:        "zstd",
