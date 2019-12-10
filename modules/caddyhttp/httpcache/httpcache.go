@@ -43,8 +43,8 @@ type Cache struct {
 // CaddyModule returns the Caddy module information.
 func (Cache) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "http.handlers.cache",
-		New:  func() caddy.Module { return new(Cache) },
+		ID:  "http.handlers.cache",
+		New: func() caddy.Module { return new(Cache) },
 	}
 }
 

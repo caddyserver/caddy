@@ -30,15 +30,30 @@ import (
 
 func init() {
 	caddy.RegisterModule(TLS{})
+	caddy.RegisterModule(AutomateLoader{})
 }
 
-// TLS represents a process-wide TLS configuration.
+// TLS provides TLS facilities including certificate
+// loading and management, client auth, and more.
 type TLS struct {
-	Certificates   map[string]json.RawMessage `json:"certificates,omitempty"`
-	Automation     *AutomationConfig          `json:"automation,omitempty"`
-	SessionTickets *SessionTicketService      `json:"session_tickets,omitempty"`
+	// Caches certificates in memory for quick use during
+	// TLS handshakes. Each key is the name of a certificate
+	// loader module. All loaded certificates get pooled
+	// into the same cache and may be used to complete TLS
+	// handshakes for the relevant server names (SNI).
+	// Certificates loaded manually (anything other than
+	// "automate") are not automatically managed and will
+	// have to be refreshed manually before they expire.
+	CertificatesRaw caddy.ModuleMap `json:"certificates,omitempty" caddy:"namespace=tls.certificates"`
+
+	// Configures the automation of certificate management.
+	Automation *AutomationConfig `json:"automation,omitempty"`
+
+	// Configures session ticket ephemeral keys (STEKs).
+	SessionTickets *SessionTicketService `json:"session_tickets,omitempty"`
 
 	certificateLoaders []CertificateLoader
+	automateNames      []string
 	certCache          *certmagic.Cache
 	ctx                caddy.Context
 	storageCleanTicker *time.Ticker
@@ -49,8 +64,8 @@ type TLS struct {
 // CaddyModule returns the Caddy module information.
 func (TLS) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "tls",
-		New:  func() caddy.Module { return new(TLS) },
+		ID:  "tls",
+		New: func() caddy.Module { return new(TLS) },
 	}
 }
 
@@ -74,25 +89,32 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 	// automation/management policies
 	if t.Automation != nil {
 		for i, ap := range t.Automation.Policies {
-			val, err := ctx.LoadModuleInline("module", "tls.management", ap.ManagementRaw)
+			val, err := ctx.LoadModule(&ap, "ManagementRaw")
 			if err != nil {
 				return fmt.Errorf("loading TLS automation management module: %s", err)
 			}
 			t.Automation.Policies[i].Management = val.(ManagerMaker)
-			t.Automation.Policies[i].ManagementRaw = nil // allow GC to deallocate
 		}
 	}
 
 	// certificate loaders
-	for modName, rawMsg := range t.Certificates {
-		if modName == automateKey {
-			continue // special case; these will be loaded in later
+	val, err := ctx.LoadModule(t, "CertificatesRaw")
+	if err != nil {
+		return fmt.Errorf("loading TLS automation management module: %s", err)
+	}
+	for modName, modIface := range val.(map[string]interface{}) {
+		if modName == "automate" {
+			// special case; these will be loaded in later
+			// using our automation facilities, which we
+			// want to avoid during provisioning
+			var ok bool
+			t.automateNames, ok = modIface.([]string)
+			if !ok {
+				return fmt.Errorf("loading certificates with 'automate' requires []string, got: %#v", modIface)
+			}
+			continue
 		}
-		val, err := ctx.LoadModule("tls.certificates."+modName, rawMsg)
-		if err != nil {
-			return fmt.Errorf("loading certificate module '%s': %s", modName, err)
-		}
-		t.certificateLoaders = append(t.certificateLoaders, val.(CertificateLoader))
+		t.certificateLoaders = append(t.certificateLoaders, modIface.(CertificateLoader))
 	}
 
 	// session ticket ephemeral keys (STEK) service and provider
@@ -115,7 +137,8 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 
 	// load manual/static (unmanaged) certificates - we do this in
 	// provision so that other apps (such as http) can know which
-	// certificates have been manually loaded
+	// certificates have been manually loaded, and also so that
+	// commands like validate can be a better test
 	magic := certmagic.New(t.certCache, certmagic.Config{
 		Storage: ctx.Storage(),
 	})
@@ -137,19 +160,12 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 
 // Start activates the TLS module.
 func (t *TLS) Start() error {
-	// load automated (managed) certificates
-	if automatedRawMsg, ok := t.Certificates[automateKey]; ok {
-		var names []string
-		err := json.Unmarshal(automatedRawMsg, &names)
-		if err != nil {
-			return fmt.Errorf("automate: decoding names: %v", err)
-		}
-		err = t.Manage(names)
-		if err != nil {
-			return fmt.Errorf("automate: managing %v: %v", names, err)
-		}
+	// now that we are running, and all manual certificates have
+	// been loaded, time to load the automated/managed certificates
+	err := t.Manage(t.automateNames)
+	if err != nil {
+		return fmt.Errorf("automate: managing %v: %v", t.automateNames, err)
 	}
-	t.Certificates = nil // allow GC to deallocate
 
 	t.keepStorageClean()
 
@@ -311,18 +327,48 @@ type Certificate struct {
 // AutomationConfig designates configuration for the
 // construction and use of ACME clients.
 type AutomationConfig struct {
-	Policies           []AutomationPolicy `json:"policies,omitempty"`
-	OnDemand           *OnDemandConfig    `json:"on_demand,omitempty"`
-	OCSPCheckInterval  caddy.Duration     `json:"ocsp_interval,omitempty"`
-	RenewCheckInterval caddy.Duration     `json:"renew_interval,omitempty"`
+	// The list of automation policies. The first matching
+	// policy will be applied for a given certificate/name.
+	Policies []AutomationPolicy `json:"policies,omitempty"`
+
+	// On-Demand TLS defers certificate operations to the
+	// moment they are needed, e.g. during a TLS handshake.
+	// Useful when you don't know all the hostnames up front.
+	// Caddy was the first web server to deploy this technology.
+	OnDemand *OnDemandConfig `json:"on_demand,omitempty"`
+
+	// Caddy staples OCSP (and caches the response) for all
+	// qualifying certificates by default. This setting
+	// changes how often it scans responses for freshness,
+	// and updates them if they are getting stale.
+	OCSPCheckInterval caddy.Duration `json:"ocsp_interval,omitempty"`
+
+	// Every so often, Caddy will scan all loaded, managed
+	// certificates for expiration. Certificates which are
+	// about 2/3 into their valid lifetime are due for
+	// renewal. This setting changes how frequently the scan
+	// is performed. If your certificate lifetimes are very
+	// short (less than ~1 week), you should customize this.
+	RenewCheckInterval caddy.Duration `json:"renew_interval,omitempty"`
 }
 
 // AutomationPolicy designates the policy for automating the
-// management of managed TLS certificates.
+// management (obtaining, renewal, and revocation) of managed
+// TLS certificates.
 type AutomationPolicy struct {
-	Hosts         []string        `json:"hosts,omitempty"`
-	ManagementRaw json.RawMessage `json:"management,omitempty"`
-	ManageSync    bool            `json:"manage_sync,omitempty"`
+	// Which hostnames this policy applies to.
+	Hosts []string `json:"hosts,omitempty"`
+
+	// How to manage certificates.
+	ManagementRaw json.RawMessage `json:"management,omitempty" caddy:"namespace=tls.management inline_key=module"`
+
+	// If true, certificate management will be conducted
+	// in the foreground; this will block config reloads
+	// and return errors if there were problems with
+	// obtaining or renewing certificates. This is often
+	// not desirable, especially when serving sites out
+	// of your control. Default: false
+	ManageSync bool `json:"manage_sync,omitempty"`
 
 	Management ManagerMaker `json:"-"`
 }
@@ -345,41 +391,104 @@ func (ap AutomationPolicy) makeCertMagicConfig(ctx caddy.Context) certmagic.Conf
 
 // ChallengesConfig configures the ACME challenges.
 type ChallengesConfig struct {
-	HTTP    *HTTPChallengeConfig    `json:"http,omitempty"`
+	// HTTP configures the ACME HTTP challenge. This
+	// challenge is enabled and used automatically
+	// and by default.
+	HTTP *HTTPChallengeConfig `json:"http,omitempty"`
+
+	// TLSALPN configures the ACME TLS-ALPN challenge.
+	// This challenge is enabled and used automatically
+	// and by default.
 	TLSALPN *TLSALPNChallengeConfig `json:"tls-alpn,omitempty"`
-	DNSRaw  json.RawMessage         `json:"dns,omitempty"`
+
+	// Configures the ACME DNS challenge. Because this
+	// challenge typically requires credentials for
+	// interfacing with a DNS provider, this challenge is
+	// not enabled by default. This is the only challenge
+	// type which does not require a direct connection
+	// to Caddy from an external server.
+	DNSRaw json.RawMessage `json:"dns,omitempty" caddy:"namespace=tls.dns inline_key=provider"`
 
 	DNS challenge.Provider `json:"-"`
 }
 
 // HTTPChallengeConfig configures the ACME HTTP challenge.
 type HTTPChallengeConfig struct {
-	Disabled      bool `json:"disabled,omitempty"`
-	AlternatePort int  `json:"alternate_port,omitempty"`
+	// If true, the HTTP challenge will be disabled.
+	Disabled bool `json:"disabled,omitempty"`
+
+	// An alternate port on which to service this
+	// challenge. Note that the HTTP challenge port is
+	// hard-coded into the spec and cannot be changed,
+	// so you would have to forward packets from the
+	// standard HTTP challenge port to this one.
+	AlternatePort int `json:"alternate_port,omitempty"`
 }
 
 // TLSALPNChallengeConfig configures the ACME TLS-ALPN challenge.
 type TLSALPNChallengeConfig struct {
-	Disabled      bool `json:"disabled,omitempty"`
-	AlternatePort int  `json:"alternate_port,omitempty"`
+	// If true, the TLS-ALPN challenge will be disabled.
+	Disabled bool `json:"disabled,omitempty"`
+
+	// An alternate port on which to service this
+	// challenge. Note that the TLS-ALPN challenge port
+	// is hard-coded into the spec and cannot be changed,
+	// so you would have to forward packets from the
+	// standard TLS-ALPN challenge port to this one.
+	AlternatePort int `json:"alternate_port,omitempty"`
 }
 
 // OnDemandConfig configures on-demand TLS, for obtaining
-// needed certificates at handshake-time.
+// needed certificates at handshake-time. Because this
+// feature can easily be abused, you should set up rate
+// limits and/or an internal endpoint that Caddy can
+// "ask" if it should be allowed to manage certificates
+// for a given hostname.
 type OnDemandConfig struct {
+	// An optional rate limit to throttle the
+	// issuance of certificates from handshakes.
 	RateLimit *RateLimit `json:"rate_limit,omitempty"`
-	Ask       string     `json:"ask,omitempty"`
+
+	// If Caddy needs to obtain or renew a certificate
+	// during a TLS handshake, it will perform a quick
+	// HTTP request to this URL to check if it should be
+	// allowed to try to get a certificate for the name
+	// in the "domain" query string parameter, like so:
+	// `?domain=example.com`. The endpoint must return a
+	// 200 OK status if a certificate is allowed;
+	// anything else will cause it to be denied.
+	// Redirects are not followed.
+	Ask string `json:"ask,omitempty"`
 }
 
 // RateLimit specifies an interval with optional burst size.
 type RateLimit struct {
+	// A duration value. A certificate may be obtained 'burst'
+	// times during this interval.
 	Interval caddy.Duration `json:"interval,omitempty"`
-	Burst    int            `json:"burst,omitempty"`
+
+	// How many times during an interval a certificate can be obtained.
+	Burst int `json:"burst,omitempty"`
 }
 
 // ManagerMaker makes a certificate manager.
 type ManagerMaker interface {
 	NewManager(interactive bool) (certmagic.Manager, error)
+}
+
+// AutomateLoader is a no-op certificate loader module
+// that is treated as a special case: it uses this app's
+// automation features to load certificates for the
+// list of hostnames, rather than loading certificates
+// manually.
+type AutomateLoader []string
+
+// CaddyModule returns the Caddy module information.
+func (AutomateLoader) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "tls.certificates.automate",
+		New: func() caddy.Module { return new(AutomateLoader) },
+	}
 }
 
 // These perpetual values are used for on-demand TLS.

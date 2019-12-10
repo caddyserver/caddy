@@ -44,12 +44,27 @@ func init() {
 	}
 }
 
-// App is the HTTP app for Caddy.
+// App is a robust, flexible HTTP server for Caddy.
 type App struct {
-	HTTPPort    int                `json:"http_port,omitempty"`
-	HTTPSPort   int                `json:"https_port,omitempty"`
-	GracePeriod caddy.Duration     `json:"grace_period,omitempty"`
-	Servers     map[string]*Server `json:"servers,omitempty"`
+	// HTTPPort specifies the port to use for HTTP (as opposed to HTTPS),
+	// which is used when setting up HTTP->HTTPS redirects or ACME HTTP
+	// challenge solvers. Default: 80.
+	HTTPPort int `json:"http_port,omitempty"`
+
+	// HTTPSPort specifies the port to use for HTTPS, which is used when
+	// solving the ACME TLS-ALPN challenges, or whenever HTTPS is needed
+	// but no specific port number is given. Default: 443.
+	HTTPSPort int `json:"https_port,omitempty"`
+
+	// GracePeriod is how long to wait for active connections when shutting
+	// down the server. Once the grace period is over, connections will
+	// be forcefully closed.
+	GracePeriod caddy.Duration `json:"grace_period,omitempty"`
+
+	// Servers is the list of servers, keyed by arbitrary names chosen
+	// at your discretion for your own convenience; the keys do not
+	// affect functionality.
+	Servers map[string]*Server `json:"servers,omitempty"`
 
 	servers     []*http.Server
 	h3servers   []*http3.Server
@@ -62,8 +77,8 @@ type App struct {
 // CaddyModule returns the Caddy module information.
 func (App) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "http",
-		New:  func() caddy.Module { return new(App) },
+		ID:  "http",
+		New: func() caddy.Module { return new(App) },
 	}
 }
 
@@ -561,8 +576,10 @@ var emptyHandler HandlerFunc = func(http.ResponseWriter, *http.Request) error { 
 
 // WeakString is a type that unmarshals any JSON value
 // as a string literal, with the following exceptions:
-// 1) actual string values are decoded as strings; and
-// 2) null is decoded as empty string;
+//
+// 1. actual string values are decoded as strings; and
+// 2. null is decoded as empty string;
+//
 // and provides methods for getting the value as various
 // primitive types. However, using this type removes any
 // type safety as far as deserializing JSON is concerned.

@@ -40,6 +40,7 @@ type HTTPTransport struct {
 	// TODO: It's possible that other transports (like fastcgi) might be
 	// able to borrow/use at least some of these config fields; if so,
 	// maybe move them into a type called CommonTransport and embed it?
+
 	TLS                   *TLSConfig     `json:"tls,omitempty"`
 	KeepAlive             *KeepAlive     `json:"keep_alive,omitempty"`
 	Compression           *bool          `json:"compression,omitempty"`
@@ -59,8 +60,8 @@ type HTTPTransport struct {
 // CaddyModule returns the Caddy module information.
 func (HTTPTransport) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "http.handlers.reverse_proxy.transport.http",
-		New:  func() caddy.Module { return new(HTTPTransport) },
+		ID:  "http.reverse_proxy.transport.http",
+		New: func() caddy.Module { return new(HTTPTransport) },
 	}
 }
 

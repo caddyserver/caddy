@@ -30,12 +30,12 @@ func init() {
 	caddy.RegisterModule(NTLMTransport{})
 }
 
-// NTLMTransport proxies HTTP+NTLM authentication is being used.
+// NTLMTransport proxies HTTP with NTLM authentication.
 // It basically wraps HTTPTransport so that it is compatible with
 // NTLM's HTTP-hostile requirements. Specifically, it will use
 // HTTPTransport's single, default *http.Transport for all requests
 // (unless the client's connection is already mapped to a different
-// transport) until a request comes in with Authorization header
+// transport) until a request comes in with an Authorization header
 // that has "NTLM" or "Negotiate"; when that happens, NTLMTransport
 // maps the client's connection (by its address, req.RemoteAddr)
 // to a new transport that is used only by that downstream conn.
@@ -56,8 +56,8 @@ type NTLMTransport struct {
 // CaddyModule returns the Caddy module information.
 func (NTLMTransport) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "http.handlers.reverse_proxy.transport.http_ntlm",
-		New:  func() caddy.Module { return new(NTLMTransport) },
+		ID:  "http.reverse_proxy.transport.http_ntlm",
+		New: func() caddy.Module { return new(NTLMTransport) },
 	}
 }
 

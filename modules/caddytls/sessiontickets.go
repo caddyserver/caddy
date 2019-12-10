@@ -28,11 +28,22 @@ import (
 
 // SessionTicketService configures and manages TLS session tickets.
 type SessionTicketService struct {
-	KeySource        json.RawMessage `json:"key_source,omitempty"`
-	RotationInterval caddy.Duration  `json:"rotation_interval,omitempty"`
-	MaxKeys          int             `json:"max_keys,omitempty"`
-	DisableRotation  bool            `json:"disable_rotation,omitempty"`
-	Disabled         bool            `json:"disabled,omitempty"`
+	// KeySource is the method by which Caddy produces or obtains
+	// TLS session ticket keys (STEKs). By default, Caddy generates
+	// them internally using a secure pseudorandom source.
+	KeySource json.RawMessage `json:"key_source,omitempty" caddy:"namespace=tls.stek inline_key=provider"`
+
+	// How often Caddy rotates STEKs. Default: 12h.
+	RotationInterval caddy.Duration `json:"rotation_interval,omitempty"`
+
+	// The maximum number of keys to keep in rotation. Default: 4.
+	MaxKeys int `json:"max_keys,omitempty"`
+
+	// Disables STEK rotation.
+	DisableRotation bool `json:"disable_rotation,omitempty"`
+
+	// Disables TLS session resumption by tickets.
+	Disabled bool `json:"disabled,omitempty"`
 
 	keySource   STEKProvider
 	configs     map[*tls.Config]struct{}
@@ -57,12 +68,11 @@ func (s *SessionTicketService) provision(ctx caddy.Context) error {
 	}
 
 	// load the STEK module, which will provide keys
-	val, err := ctx.LoadModuleInline("provider", "tls.stek", s.KeySource)
+	val, err := ctx.LoadModule(s, "KeySource")
 	if err != nil {
 		return fmt.Errorf("loading TLS session ticket ephemeral keys provider module: %s", err)
 	}
 	s.keySource = val.(STEKProvider)
-	s.KeySource = nil // allow GC to deallocate
 
 	// if session tickets or just rotation are
 	// disabled, no need to start service

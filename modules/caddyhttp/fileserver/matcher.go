@@ -54,8 +54,8 @@ type MatchFile struct {
 // CaddyModule returns the Caddy module information.
 func (MatchFile) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "http.matchers.file",
-		New:  func() caddy.Module { return new(MatchFile) },
+		ID:  "http.matchers.file",
+		New: func() caddy.Module { return new(MatchFile) },
 	}
 }
 

@@ -28,7 +28,7 @@ func init() {
 
 // HTTPBasicAuth facilitates HTTP basic authentication.
 type HTTPBasicAuth struct {
-	HashRaw     json.RawMessage `json:"hash,omitempty"`
+	HashRaw     json.RawMessage `json:"hash,omitempty" caddy:"namespace=http.authentication.hashes inline_key=algorithm"`
 	AccountList []Account       `json:"accounts,omitempty"`
 	Realm       string          `json:"realm,omitempty"`
 
@@ -39,8 +39,8 @@ type HTTPBasicAuth struct {
 // CaddyModule returns the Caddy module information.
 func (HTTPBasicAuth) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "http.handlers.authentication.providers.http_basic",
-		New:  func() caddy.Module { return new(HTTPBasicAuth) },
+		ID:  "http.authentication.providers.http_basic",
+		New: func() caddy.Module { return new(HTTPBasicAuth) },
 	}
 }
 
@@ -51,12 +51,11 @@ func (hba *HTTPBasicAuth) Provision(ctx caddy.Context) error {
 	}
 
 	// load password hasher
-	hashIface, err := ctx.LoadModuleInline("algorithm", "http.handlers.authentication.hashes", hba.HashRaw)
+	hasherIface, err := ctx.LoadModule(hba, "HashRaw")
 	if err != nil {
 		return fmt.Errorf("loading password hasher module: %v", err)
 	}
-	hba.Hash = hashIface.(Comparer)
-	hba.HashRaw = nil // allow GC to deallocate
+	hba.Hash = hasherIface.(Comparer)
 
 	if hba.Hash == nil {
 		return fmt.Errorf("hash is required")

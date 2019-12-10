@@ -42,8 +42,8 @@ func init() {
 
 // Handler implements a highly configurable and production-ready reverse proxy.
 type Handler struct {
-	TransportRaw   json.RawMessage  `json:"transport,omitempty"`
-	CBRaw          json.RawMessage  `json:"circuit_breaker,omitempty"`
+	TransportRaw   json.RawMessage  `json:"transport,omitempty" caddy:"namespace=http.reverse_proxy.transport inline_key=protocol"`
+	CBRaw          json.RawMessage  `json:"circuit_breaker,omitempty" caddy:"namespace=http.reverse_proxy.circuit_breakers inline_key=type"`
 	LoadBalancing  *LoadBalancing   `json:"load_balancing,omitempty"`
 	HealthChecks   *HealthChecks    `json:"health_checks,omitempty"`
 	Upstreams      UpstreamPool     `json:"upstreams,omitempty"`
@@ -60,8 +60,8 @@ type Handler struct {
 // CaddyModule returns the Caddy module information.
 func (Handler) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "http.handlers.reverse_proxy",
-		New:  func() caddy.Module { return new(Handler) },
+		ID:  "http.handlers.reverse_proxy",
+		New: func() caddy.Module { return new(Handler) },
 	}
 }
 
@@ -71,30 +71,25 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 
 	// start by loading modules
 	if h.TransportRaw != nil {
-		val, err := ctx.LoadModuleInline("protocol", "http.handlers.reverse_proxy.transport", h.TransportRaw)
+		mod, err := ctx.LoadModule(h, "TransportRaw")
 		if err != nil {
-			return fmt.Errorf("loading transport module: %s", err)
+			return fmt.Errorf("loading transport: %v", err)
 		}
-		h.Transport = val.(http.RoundTripper)
-		h.TransportRaw = nil // allow GC to deallocate
+		h.Transport = mod.(http.RoundTripper)
 	}
 	if h.LoadBalancing != nil && h.LoadBalancing.SelectionPolicyRaw != nil {
-		val, err := ctx.LoadModuleInline("policy",
-			"http.handlers.reverse_proxy.selection_policies",
-			h.LoadBalancing.SelectionPolicyRaw)
+		mod, err := ctx.LoadModule(h.LoadBalancing, "SelectionPolicyRaw")
 		if err != nil {
-			return fmt.Errorf("loading load balancing selection module: %s", err)
+			return fmt.Errorf("loading load balancing selection policy: %s", err)
 		}
-		h.LoadBalancing.SelectionPolicy = val.(Selector)
-		h.LoadBalancing.SelectionPolicyRaw = nil // allow GC to deallocate
+		h.LoadBalancing.SelectionPolicy = mod.(Selector)
 	}
 	if h.CBRaw != nil {
-		val, err := ctx.LoadModuleInline("type", "http.handlers.reverse_proxy.circuit_breakers", h.CBRaw)
+		mod, err := ctx.LoadModule(h, "CBRaw")
 		if err != nil {
-			return fmt.Errorf("loading circuit breaker module: %s", err)
+			return fmt.Errorf("loading circuit breaker: %s", err)
 		}
-		h.CB = val.(CircuitBreaker)
-		h.CBRaw = nil // allow GC to deallocate
+		h.CB = mod.(CircuitBreaker)
 	}
 
 	// set up transport
@@ -128,12 +123,14 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 		// defaulting to a sane wait period between attempts
 		h.LoadBalancing.TryInterval = caddy.Duration(250 * time.Millisecond)
 	}
-	lbMatcherSets, err := h.LoadBalancing.RetryMatchRaw.Setup(ctx)
+	lbMatcherSets, err := ctx.LoadModule(h.LoadBalancing, "RetryMatchRaw")
 	if err != nil {
 		return err
 	}
-	h.LoadBalancing.RetryMatch = lbMatcherSets
-	h.LoadBalancing.RetryMatchRaw = nil // allow GC to deallocate
+	err = h.LoadBalancing.RetryMatch.FromInterface(lbMatcherSets)
+	if err != nil {
+		return err
+	}
 
 	// if active health checks are enabled, configure them and start a worker
 	if h.HealthChecks != nil &&
@@ -407,7 +404,7 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, di Dia
 	// do the round-trip
 	start := time.Now()
 	res, err := h.Transport.RoundTrip(req)
-	latency := time.Since(start)
+	duration := time.Since(start)
 	if err != nil {
 		return err
 	}
@@ -415,12 +412,13 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, di Dia
 	h.logger.Debug("upstream roundtrip",
 		zap.Object("request", caddyhttp.LoggableHTTPRequest{Request: req}),
 		zap.Object("headers", caddyhttp.LoggableHTTPHeader(res.Header)),
+		zap.Duration("duration", duration),
 		zap.Int("status", res.StatusCode),
 	)
 
 	// update circuit breaker on current conditions
 	if di.Upstream.cb != nil {
-		di.Upstream.cb.RecordMetric(res.StatusCode, latency)
+		di.Upstream.cb.RecordMetric(res.StatusCode, duration)
 	}
 
 	// perform passive health checks (if enabled)
@@ -434,7 +432,7 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, di Dia
 
 		// strike if the roundtrip took too long
 		if h.HealthChecks.Passive.UnhealthyLatency > 0 &&
-			latency >= time.Duration(h.HealthChecks.Passive.UnhealthyLatency) {
+			duration >= time.Duration(h.HealthChecks.Passive.UnhealthyLatency) {
 			h.countFailure(di.Upstream)
 		}
 	}
@@ -651,10 +649,10 @@ func removeConnectionHeaders(h http.Header) {
 
 // LoadBalancing has parameters related to load balancing.
 type LoadBalancing struct {
-	SelectionPolicyRaw json.RawMessage          `json:"selection_policy,omitempty"`
+	SelectionPolicyRaw json.RawMessage          `json:"selection_policy,omitempty" caddy:"namespace=http.reverse_proxy.selection_policies inline_key=policy"`
 	TryDuration        caddy.Duration           `json:"try_duration,omitempty"`
 	TryInterval        caddy.Duration           `json:"try_interval,omitempty"`
-	RetryMatchRaw      caddyhttp.RawMatcherSets `json:"retry_match,omitempty"`
+	RetryMatchRaw      caddyhttp.RawMatcherSets `json:"retry_match,omitempty" caddy:"namespace=http.matchers"`
 
 	SelectionPolicy Selector              `json:"-"`
 	RetryMatch      caddyhttp.MatcherSets `json:"-"`

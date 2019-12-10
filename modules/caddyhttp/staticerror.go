@@ -35,8 +35,8 @@ type StaticError struct {
 // CaddyModule returns the Caddy module information.
 func (StaticError) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "http.handlers.error",
-		New:  func() caddy.Module { return new(StaticError) },
+		ID:  "http.handlers.error",
+		New: func() caddy.Module { return new(StaticError) },
 	}
 }
 
