@@ -73,8 +73,8 @@ type Transport struct {
 // CaddyModule returns the Caddy module information.
 func (Transport) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "http.handlers.reverse_proxy.transport.fastcgi",
-		New:  func() caddy.Module { return new(Transport) },
+		ID:  "http.reverse_proxy.transport.fastcgi",
+		New: func() caddy.Module { return new(Transport) },
 	}
 }
 

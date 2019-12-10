@@ -21,7 +21,6 @@ package encode
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -40,9 +39,9 @@ func init() {
 
 // Encode is a middleware which can encode responses.
 type Encode struct {
-	EncodingsRaw map[string]json.RawMessage `json:"encodings,omitempty"`
-	Prefer       []string                   `json:"prefer,omitempty"`
-	MinLength    int                        `json:"minimum_length,omitempty"`
+	EncodingsRaw caddy.ModuleMap `json:"encodings,omitempty" caddy:"namespace=http.encoders"`
+	Prefer       []string        `json:"prefer,omitempty"`
+	MinLength    int             `json:"minimum_length,omitempty"`
 
 	writerPools map[string]*sync.Pool // TODO: these pools do not get reused through config reloads...
 }
@@ -50,25 +49,23 @@ type Encode struct {
 // CaddyModule returns the Caddy module information.
 func (Encode) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "http.handlers.encode",
-		New:  func() caddy.Module { return new(Encode) },
+		ID:  "http.handlers.encode",
+		New: func() caddy.Module { return new(Encode) },
 	}
 }
 
 // Provision provisions enc.
 func (enc *Encode) Provision(ctx caddy.Context) error {
-	for modName, rawMsg := range enc.EncodingsRaw {
-		val, err := ctx.LoadModule("http.encoders."+modName, rawMsg)
+	mods, err := ctx.LoadModule(enc, "EncodingsRaw")
+	if err != nil {
+		return fmt.Errorf("loading encoder modules: %v", err)
+	}
+	for modName, modIface := range mods.(map[string]interface{}) {
+		err = enc.addEncoding(modIface.(Encoding))
 		if err != nil {
-			return fmt.Errorf("loading encoder module '%s': %v", modName, err)
-		}
-		encoding := val.(Encoding)
-		err = enc.addEncoding(encoding)
-		if err != nil {
-			return err
+			return fmt.Errorf("adding encoding %s: %v", modName, err)
 		}
 	}
-	enc.EncodingsRaw = nil // allow GC to deallocate
 
 	if enc.MinLength == 0 {
 		enc.MinLength = defaultMinLength

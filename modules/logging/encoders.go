@@ -43,8 +43,8 @@ type ConsoleEncoder struct {
 // CaddyModule returns the Caddy module information.
 func (ConsoleEncoder) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "caddy.logging.encoders.console",
-		New:  func() caddy.Module { return new(ConsoleEncoder) },
+		ID:  "caddy.logging.encoders.console",
+		New: func() caddy.Module { return new(ConsoleEncoder) },
 	}
 }
 
@@ -63,8 +63,8 @@ type JSONEncoder struct {
 // CaddyModule returns the Caddy module information.
 func (JSONEncoder) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "caddy.logging.encoders.json",
-		New:  func() caddy.Module { return new(JSONEncoder) },
+		ID:  "caddy.logging.encoders.json",
+		New: func() caddy.Module { return new(JSONEncoder) },
 	}
 }
 
@@ -84,8 +84,8 @@ type LogfmtEncoder struct {
 // CaddyModule returns the Caddy module information.
 func (LogfmtEncoder) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "caddy.logging.encoders.logfmt",
-		New:  func() caddy.Module { return new(LogfmtEncoder) },
+		ID:  "caddy.logging.encoders.logfmt",
+		New: func() caddy.Module { return new(LogfmtEncoder) },
 	}
 }
 
@@ -102,25 +102,24 @@ func (lfe *LogfmtEncoder) Provision(_ caddy.Context) error {
 type StringEncoder struct {
 	zapcore.Encoder
 	FieldName   string          `json:"field,omitempty"`
-	FallbackRaw json.RawMessage `json:"fallback,omitempty"`
+	FallbackRaw json.RawMessage `json:"fallback,omitempty" caddy:"namespace=caddy.logging.encoders inline_key=format"`
 }
 
 // CaddyModule returns the Caddy module information.
 func (StringEncoder) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "caddy.logging.encoders.string",
-		New:  func() caddy.Module { return new(StringEncoder) },
+		ID:  "caddy.logging.encoders.string",
+		New: func() caddy.Module { return new(StringEncoder) },
 	}
 }
 
 // Provision sets up the encoder.
 func (se *StringEncoder) Provision(ctx caddy.Context) error {
 	if se.FallbackRaw != nil {
-		val, err := ctx.LoadModuleInline("format", "caddy.logging.encoders", se.FallbackRaw)
+		val, err := ctx.LoadModule(se, "FallbackRaw")
 		if err != nil {
 			return fmt.Errorf("loading fallback encoder module: %v", err)
 		}
-		se.FallbackRaw = nil // allow GC to deallocate
 		se.Encoder = val.(zapcore.Encoder)
 	}
 	if se.Encoder == nil {

@@ -37,8 +37,8 @@ type Brotli struct {
 // CaddyModule returns the Caddy module information.
 func (Brotli) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "http.encoders.brotli",
-		New:  func() caddy.Module { return new(Brotli) },
+		ID:  "http.encoders.brotli",
+		New: func() caddy.Module { return new(Brotli) },
 	}
 }
 

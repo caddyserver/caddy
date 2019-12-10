@@ -36,8 +36,36 @@ func init() {
 }
 
 // Logging facilitates logging within Caddy.
+//
+// By default, all logs at INFO level and higher are written to
+// standard error ("stderr" writer) in a human-readable format
+// ("console" encoder). The default log is called "default" and
+// you can customize it. You can also define additional logs.
+//
+// All defined logs accept all log entries by default, but you
+// can filter by level and module/logger names. A logger's name
+// is the same as the module's name, but a module may append to
+// logger names for more specificity. For example, you can
+// filter logs emitted only by HTTP handlers using the name
+// "http.handlers", because all HTTP handler module names have
+// that prefix.
+//
+// Caddy logs (except the sink) are mostly zero-allocation, so
+// they are very high-performing in terms of memory and CPU time.
+// Enabling sampling can further increase throughput on extremely
+// high-load servers.
 type Logging struct {
-	Sink *StandardLibLog       `json:"sink,omitempty"`
+	// Sink is the destination for all unstructured logs emitted
+	// from Go's standard library logger. These logs are common
+	// in dependencies that are not designed specifically for use
+	// in Caddy. Because it is global and unstructured, the sink
+	// lacks most advanced features and customizations.
+	Sink *StandardLibLog `json:"sink,omitempty"`
+
+	// Logs are your logs, keyed by an arbitrary name of your
+	// choosing. The default log can be customized by defining
+	// a log called "default". You can further define other logs
+	// and filter what kinds of entries they accept.
 	Logs map[string]*CustomLog `json:"logs,omitempty"`
 
 	// a list of all keys for open writers; all writers
@@ -169,12 +197,12 @@ func (logging *Logging) closeLogs() error {
 
 // Logger returns a logger that is ready for the module to use.
 func (logging *Logging) Logger(mod Module) *zap.Logger {
-	modName := mod.CaddyModule().Name
+	modID := string(mod.CaddyModule().ID)
 	var cores []zapcore.Core
 
 	if logging != nil {
 		for _, l := range logging.Logs {
-			if l.matchesModule(modName) {
+			if l.matchesModule(modID) {
 				if len(l.Include) == 0 && len(l.Exclude) == 0 {
 					cores = append(cores, l.core)
 					continue
@@ -186,7 +214,7 @@ func (logging *Logging) Logger(mod Module) *zap.Logger {
 
 	multiCore := zapcore.NewTee(cores...)
 
-	return zap.New(multiCore).Named(modName)
+	return zap.New(multiCore).Named(string(modID))
 }
 
 // openWriter opens a writer using opener, and returns true if
@@ -231,26 +259,27 @@ func (wdest writerDestructor) Destruct() error {
 // StandardLibLog configures the default Go standard library
 // global logger in the log package. This is necessary because
 // module dependencies which are not built specifically for
-// Caddy will use the standard logger.
+// Caddy will use the standard logger. This is also known as
+// the "sink" logger.
 type StandardLibLog struct {
-	WriterRaw json.RawMessage `json:"writer,omitempty"`
+	// The module that writes out log entries for the sink.
+	WriterRaw json.RawMessage `json:"writer,omitempty" caddy:"namespace=caddy.logging.writers inline_key=output"`
 
 	writer io.WriteCloser
 }
 
 func (sll *StandardLibLog) provision(ctx Context, logging *Logging) error {
 	if sll.WriterRaw != nil {
-		val, err := ctx.LoadModuleInline("output", "caddy.logging.writers", sll.WriterRaw)
+		mod, err := ctx.LoadModule(sll, "WriterRaw")
 		if err != nil {
 			return fmt.Errorf("loading sink log writer module: %v", err)
 		}
-		wo := val.(WriterOpener)
-		sll.WriterRaw = nil // allow GC to deallocate
+		wo := mod.(WriterOpener)
 
 		var isNew bool
 		sll.writer, isNew, err = logging.openWriter(wo)
 		if err != nil {
-			return fmt.Errorf("opening sink log writer %#v: %v", val, err)
+			return fmt.Errorf("opening sink log writer %#v: %v", mod, err)
 		}
 
 		if isNew {
@@ -264,13 +293,40 @@ func (sll *StandardLibLog) provision(ctx Context, logging *Logging) error {
 }
 
 // CustomLog represents a custom logger configuration.
+//
+// By default, a log will emit all log entries. Some entries
+// will be skipped if sampling is enabled. Further, the Include
+// and Exclude parameters define which loggers (by name) are
+// allowed or rejected from emitting in this log. If both Include
+// and Exclude are populated, their values must be mutually
+// exclusive, and longer namespaces have priority. If neither
+// are populated, all logs are emitted.
 type CustomLog struct {
-	WriterRaw  json.RawMessage `json:"writer,omitempty"`
-	EncoderRaw json.RawMessage `json:"encoder,omitempty"`
-	Level      string          `json:"level,omitempty"`
-	Sampling   *LogSampling    `json:"sampling,omitempty"`
-	Include    []string        `json:"include,omitempty"`
-	Exclude    []string        `json:"exclude,omitempty"`
+	// The writer defines where log entries are emitted.
+	WriterRaw json.RawMessage `json:"writer,omitempty" caddy:"namespace=caddy.logging.writers inline_key=output"`
+
+	// The encoder is how the log entries are formatted or encoded.
+	EncoderRaw json.RawMessage `json:"encoder,omitempty" caddy:"namespace=caddy.logging.encoders inline_key=format"`
+
+	// Level is the minimum level to emit, and is inclusive.
+	// Possible levels: DEBUG, INFO, WARN, ERROR, PANIC, and FATAL
+	Level string `json:"level,omitempty"`
+
+	// Sampling configures log entry sampling. If enabled,
+	// only some log entries will be emitted. This is useful
+	// for improving performance on extremely high-pressure
+	// servers.
+	Sampling *LogSampling `json:"sampling,omitempty"`
+
+	// Include defines the names of loggers to emit in this
+	// log. For example, to include only logs emitted by the
+	// admin API, you would include "admin.api".
+	Include []string `json:"include,omitempty"`
+
+	// Exclude defines the names of loggers that should be
+	// skipped by this log. For example, to exclude only
+	// HTTP access logs, you would exclude "http.log.access".
+	Exclude []string `json:"exclude,omitempty"`
 
 	writerOpener WriterOpener
 	writer       io.WriteCloser
@@ -336,24 +392,22 @@ func (cl *CustomLog) provision(ctx Context, logging *Logging) error {
 	}
 
 	if cl.EncoderRaw != nil {
-		val, err := ctx.LoadModuleInline("format", "caddy.logging.encoders", cl.EncoderRaw)
+		mod, err := ctx.LoadModule(cl, "EncoderRaw")
 		if err != nil {
 			return fmt.Errorf("loading log encoder module: %v", err)
 		}
-		cl.EncoderRaw = nil // allow GC to deallocate
-		cl.encoder = val.(zapcore.Encoder)
+		cl.encoder = mod.(zapcore.Encoder)
 	}
 	if cl.encoder == nil {
 		cl.encoder = newDefaultProductionLogEncoder()
 	}
 
 	if cl.WriterRaw != nil {
-		val, err := ctx.LoadModuleInline("output", "caddy.logging.writers", cl.WriterRaw)
+		mod, err := ctx.LoadModule(cl, "WriterRaw")
 		if err != nil {
 			return fmt.Errorf("loading log writer module: %v", err)
 		}
-		cl.WriterRaw = nil // allow GC to deallocate
-		cl.writerOpener = val.(WriterOpener)
+		cl.writerOpener = mod.(WriterOpener)
 	}
 	if cl.writerOpener == nil {
 		cl.writerOpener = StderrWriter{}
@@ -398,8 +452,8 @@ func (cl *CustomLog) buildCore() {
 	cl.core = c
 }
 
-func (cl *CustomLog) matchesModule(moduleName string) bool {
-	return cl.loggerAllowed(moduleName, true)
+func (cl *CustomLog) matchesModule(moduleID string) bool {
+	return cl.loggerAllowed(string(moduleID), true)
 }
 
 // loggerAllowed returns true if name is allowed to emit
@@ -493,9 +547,17 @@ func (fc *filteringCore) Check(e zapcore.Entry, ce *zapcore.CheckedEntry) *zapco
 
 // LogSampling configures log entry sampling.
 type LogSampling struct {
-	Interval   time.Duration `json:"interval,omitempty"`
-	First      int           `json:"first,omitempty"`
-	Thereafter int           `json:"thereafter,omitempty"`
+	// The window over which to conduct sampling.
+	Interval time.Duration `json:"interval,omitempty"`
+
+	// Log this many entries within a given level and
+	// message for each interval.
+	First int `json:"first,omitempty"`
+
+	// If more entries with the same level and message
+	// are seen during the same interval, keep one in
+	// this many entries until the end of the interval.
+	Thereafter int `json:"thereafter,omitempty"`
 }
 
 type (
@@ -512,24 +574,24 @@ type (
 // CaddyModule returns the Caddy module information.
 func (StdoutWriter) CaddyModule() ModuleInfo {
 	return ModuleInfo{
-		Name: "caddy.logging.writers.stdout",
-		New:  func() Module { return new(StdoutWriter) },
+		ID:  "caddy.logging.writers.stdout",
+		New: func() Module { return new(StdoutWriter) },
 	}
 }
 
 // CaddyModule returns the Caddy module information.
 func (StderrWriter) CaddyModule() ModuleInfo {
 	return ModuleInfo{
-		Name: "caddy.logging.writers.stderr",
-		New:  func() Module { return new(StderrWriter) },
+		ID:  "caddy.logging.writers.stderr",
+		New: func() Module { return new(StderrWriter) },
 	}
 }
 
 // CaddyModule returns the Caddy module information.
 func (DiscardWriter) CaddyModule() ModuleInfo {
 	return ModuleInfo{
-		Name: "caddy.logging.writers.discard",
-		New:  func() Module { return new(DiscardWriter) },
+		ID:  "caddy.logging.writers.discard",
+		New: func() Module { return new(DiscardWriter) },
 	}
 }
 

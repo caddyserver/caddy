@@ -37,8 +37,8 @@ type Handler struct {
 // CaddyModule returns the Caddy module information.
 func (Handler) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "http.handlers.headers",
-		New:  func() caddy.Module { return new(Handler) },
+		ID:  "http.handlers.headers",
+		New: func() caddy.Module { return new(Handler) },
 	}
 }
 

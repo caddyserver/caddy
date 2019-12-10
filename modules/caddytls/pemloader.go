@@ -33,16 +33,23 @@ type PEMLoader []CertKeyPEMPair
 // CaddyModule returns the Caddy module information.
 func (PEMLoader) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "tls.certificates.load_pem",
-		New:  func() caddy.Module { return PEMLoader{} },
+		ID:  "tls.certificates.load_pem",
+		New: func() caddy.Module { return PEMLoader{} },
 	}
 }
 
 // CertKeyPEMPair pairs certificate and key PEM blocks.
 type CertKeyPEMPair struct {
-	CertificatePEM string   `json:"certificate"`
-	KeyPEM         string   `json:"key"`
-	Tags           []string `json:"tags,omitempty"`
+	// The certificate (public key) in PEM format.
+	CertificatePEM string `json:"certificate"`
+
+	// The private key in PEM format.
+	KeyPEM string `json:"key"`
+
+	// Arbitrary values to associate with this certificate.
+	// Can be useful when you want to select a particular
+	// certificate when there may be multiple valid candidates.
+	Tags []string `json:"tags,omitempty"`
 }
 
 // LoadCertificates returns the certificates contained in pl.

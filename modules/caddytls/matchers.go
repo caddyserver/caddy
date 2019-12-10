@@ -30,8 +30,8 @@ type MatchServerName []string
 // CaddyModule returns the Caddy module information.
 func (MatchServerName) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "tls.handshake_match.sni",
-		New:  func() caddy.Module { return new(MatchServerName) },
+		ID:  "tls.handshake_match.sni",
+		New: func() caddy.Module { return new(MatchServerName) },
 	}
 }
 

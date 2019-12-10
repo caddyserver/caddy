@@ -64,7 +64,7 @@ func (r *LoadMiddleware) Run(thread *starlark.Thread, fn *starlark.Builtin, args
 		name = fmt.Sprintf("http.handlers.%s", name)
 	}
 
-	inst, err := r.Ctx.LoadModule(name, js)
+	inst, err := r.Ctx.LoadModuleByID(name, js)
 	if err != nil {
 		return starlark.None, err
 	}
@@ -112,7 +112,7 @@ func (r *LoadResponder) Run(thread *starlark.Thread, fn *starlark.Builtin, args 
 		name = fmt.Sprintf("http.handlers.%s", name)
 	}
 
-	inst, err := r.Ctx.LoadModule(name, js)
+	inst, err := r.Ctx.LoadModuleByID(name, js)
 	if err != nil {
 		return starlark.None, err
 	}

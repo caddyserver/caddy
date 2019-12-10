@@ -28,22 +28,42 @@ func init() {
 	caddy.RegisterModule(FileWriter{})
 }
 
-// FileWriter can write logs to files.
+// FileWriter can write logs to files. By default, log files
+// are rotated ("rolled") when they get large, and old log
+// files get deleted, to ensure that the process does not
+// exhaust disk space.
 type FileWriter struct {
-	Filename      string `json:"filename,omitempty"`
-	Roll          *bool  `json:"roll,omitempty"`
-	RollSizeMB    int    `json:"roll_size_mb,omitempty"`
-	RollCompress  *bool  `json:"roll_gzip,omitempty"`
-	RollLocalTime bool   `json:"roll_local_time,omitempty"`
-	RollKeep      int    `json:"roll_keep,omitempty"`
-	RollKeepDays  int    `json:"roll_keep_days,omitempty"`
+	// Filename is the name of the file to write.
+	Filename string `json:"filename,omitempty"`
+
+	// Roll toggles log rolling or rotation, which is
+	// enabled by default.
+	Roll *bool `json:"roll,omitempty"`
+
+	// When a log file reaches approximately this size,
+	// it will be rotated.
+	RollSizeMB int `json:"roll_size_mb,omitempty"`
+
+	// Whether to compress rolled files. Default: true
+	RollCompress *bool `json:"roll_gzip,omitempty"`
+
+	// Whether to use local timestamps in rolled filenames.
+	// Default: false
+	RollLocalTime bool `json:"roll_local_time,omitempty"`
+
+	// The maximum number of rolled log files to keep.
+	// Default: 10
+	RollKeep int `json:"roll_keep,omitempty"`
+
+	// How many days to keep rolled log files. Default: 90
+	RollKeepDays int `json:"roll_keep_days,omitempty"`
 }
 
 // CaddyModule returns the Caddy module information.
 func (FileWriter) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "caddy.logging.writers.file",
-		New:  func() caddy.Module { return new(FileWriter) },
+		ID:  "caddy.logging.writers.file",
+		New: func() caddy.Module { return new(FileWriter) },
 	}
 }
 

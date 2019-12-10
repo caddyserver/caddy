@@ -31,23 +31,101 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-// Server is an HTTP server.
+// Server describes an HTTP server.
 type Server struct {
-	Listen            []string                    `json:"listen,omitempty"`
-	ReadTimeout       caddy.Duration              `json:"read_timeout,omitempty"`
-	ReadHeaderTimeout caddy.Duration              `json:"read_header_timeout,omitempty"`
-	WriteTimeout      caddy.Duration              `json:"write_timeout,omitempty"`
-	IdleTimeout       caddy.Duration              `json:"idle_timeout,omitempty"`
-	MaxHeaderBytes    int                         `json:"max_header_bytes,omitempty"`
-	Routes            RouteList                   `json:"routes,omitempty"`
-	Errors            *HTTPErrorConfig            `json:"errors,omitempty"`
-	TLSConnPolicies   caddytls.ConnectionPolicies `json:"tls_connection_policies,omitempty"`
-	AutoHTTPS         *AutoHTTPSConfig            `json:"automatic_https,omitempty"`
-	MaxRehandles      *int                        `json:"max_rehandles,omitempty"`
-	StrictSNIHost     *bool                       `json:"strict_sni_host,omitempty"`
-	Logs              *ServerLogConfig            `json:"logs,omitempty"`
+	// Socket interfaces to which to bind listeners. Caddy network
+	// addresses have the following form:
+	//
+	//     network/address
+	//
+	// The network part is anything that [Go's `net` package](https://golang.org/pkg/net/)
+	// recognizes, and is optional. The default network is `tcp`. If
+	// a network is specified, a single forward slash `/` is used to
+	// separate the network and address portions.
+	//
+	// The address part may be any of these forms:
+	//
+	//    - `host`
+	//    - `host:port`
+	//    - `:port`
+	//    - `/path/to/unix/socket`
+	//
+	// The host may be any hostname, resolvable domain name, or IP address.
+	// The port may be a single value (`:8080`) or a range (`:8080-8085`).
+	// A port range will be multiplied into singular addresses. Not all
+	// config parameters accept port ranges, but Listen does.
+	//
+	// Valid examples:
+	//
+	//     :8080
+	//     127.0.0.1:8080
+	//     localhost:8080
+	//     localhost:8080-8085
+	//     tcp/localhost:8080
+	//     tcp/localhost:8080-8085
+	//     udp/localhost:9005
+	//     unix//path/to/socket
+	//
+	Listen []string `json:"listen,omitempty"`
 
-	// This field is not subject to compatibility promises
+	// How long to allow a read from a client's upload. Setting this
+	// to a short, non-zero value can mitigate slowloris attacks, but
+	// may also affect legitimately slow clients.
+	ReadTimeout caddy.Duration `json:"read_timeout,omitempty"`
+
+	// ReadHeaderTimeout is like ReadTimeout but for request headers.
+	ReadHeaderTimeout caddy.Duration `json:"read_header_timeout,omitempty"`
+
+	// WriteTimeout is how long to allow a write to a client. Note
+	// that setting this to a small value when serving large files
+	// may negatively affect legitimately slow clients.
+	WriteTimeout caddy.Duration `json:"write_timeout,omitempty"`
+
+	// IdleTimeout is the maximum time to wait for the next request
+	// when keep-alives are enabled. If zero, ReadTimeout is used.
+	// If both are zero, there is no timeout.
+	IdleTimeout caddy.Duration `json:"idle_timeout,omitempty"`
+
+	// MaxHeaderBytes is the maximum size to parse from a client's
+	// HTTP request headers.
+	MaxHeaderBytes int `json:"max_header_bytes,omitempty"`
+
+	// Routes describes how this server will handle requests.
+	// When a request comes in, each route's matchers will
+	// be evaluated against the request, and matching routes
+	// will be compiled into a middleware chain in the order
+	// in which they appear in the list.
+	Routes RouteList `json:"routes,omitempty"`
+
+	// Errors is how this server will handle errors returned from
+	// any of the handlers in the primary routes.
+	Errors *HTTPErrorConfig `json:"errors,omitempty"`
+
+	// How to handle TLS connections.
+	TLSConnPolicies caddytls.ConnectionPolicies `json:"tls_connection_policies,omitempty"`
+
+	// AutoHTTPS configures or disables automatic HTTPS within this server.
+	// HTTPS is enabled automatically and by default when qualifying names
+	// are present in a Host matcher.
+	AutoHTTPS *AutoHTTPSConfig `json:"automatic_https,omitempty"`
+
+	// MaxRehandles is the maximum number of times to allow a
+	// request to be rehandled, to prevent accidental infinite
+	// loops. Default: 1.
+	MaxRehandles *int `json:"max_rehandles,omitempty"`
+
+	// If true, will require that a request's Host header match
+	// the value of the ServerName sent by the client's TLS
+	// ClientHello; often a necessary safeguard when using TLS
+	// client authentication.
+	StrictSNIHost *bool `json:"strict_sni_host,omitempty"`
+
+	// Logs customizes how access logs are handled in this server.
+	Logs *ServerLogConfig `json:"logs,omitempty"`
+
+	// Enable experimental HTTP/3 support. Note that HTTP/3 is not a
+	// finished standard and has extremely limited client support.
+	// This field is not subject to compatibility promises.
 	ExperimentalHTTP3 bool `json:"experimental_http3,omitempty"`
 
 	tlsApp       *caddytls.TLS
@@ -296,6 +374,8 @@ func (s *Server) hasTLSClientAuth() bool {
 
 // AutoHTTPSConfig is used to disable automatic HTTPS
 // or certain aspects of it for a specific server.
+// HTTPS is enabled automatically and by default when
+// qualifying hostnames are available from the config.
 type AutoHTTPSConfig struct {
 	// If true, automatic HTTPS will be entirely disabled.
 	Disabled bool `json:"disable,omitempty"`

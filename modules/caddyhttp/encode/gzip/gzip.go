@@ -37,8 +37,8 @@ type Gzip struct {
 // CaddyModule returns the Caddy module information.
 func (Gzip) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "http.encoders.gzip",
-		New:  func() caddy.Module { return new(Gzip) },
+		ID:  "http.encoders.gzip",
+		New: func() caddy.Module { return new(Gzip) },
 	}
 }
 

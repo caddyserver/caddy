@@ -321,11 +321,11 @@ func cmdListModules(fl Flags) (int, error) {
 		return caddy.ExitCodeSuccess, nil
 	}
 
-	for _, modName := range caddy.Modules() {
-		modInfo, err := caddy.GetModule(modName)
+	for _, modID := range caddy.Modules() {
+		modInfo, err := caddy.GetModule(modID)
 		if err != nil {
 			// that's weird
-			fmt.Println(modName)
+			fmt.Println(modID)
 			continue
 		}
 
@@ -354,13 +354,13 @@ func cmdListModules(fl Flags) (int, error) {
 		}
 
 		// if we could find no matching module, just print out
-		// the module name instead
+		// the module ID instead
 		if matched == nil {
-			fmt.Println(modName)
+			fmt.Println(modID)
 			continue
 		}
 
-		fmt.Printf("%s %s\n", modName, matched.Version)
+		fmt.Printf("%s %s\n", modID, matched.Version)
 	}
 
 	return caddy.ExitCodeSuccess, nil

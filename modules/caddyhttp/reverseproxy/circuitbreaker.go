@@ -41,8 +41,8 @@ type localCircuitBreaker struct {
 // CaddyModule returns the Caddy module information.
 func (localCircuitBreaker) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "http.handlers.reverse_proxy.circuit_breakers.local",
-		New:  func() caddy.Module { return new(localCircuitBreaker) },
+		ID:  "http.reverse_proxy.circuit_breakers.local",
+		New: func() caddy.Module { return new(localCircuitBreaker) },
 	}
 }
 

@@ -38,8 +38,8 @@ type Markdown struct {
 // CaddyModule returns the Caddy module information.
 func (Markdown) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "http.handlers.markdown",
-		New:  func() caddy.Module { return new(Markdown) },
+		ID:  "http.handlers.markdown",
+		New: func() caddy.Module { return new(Markdown) },
 	}
 }
 

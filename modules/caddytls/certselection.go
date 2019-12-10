@@ -28,8 +28,8 @@ type Policy struct {
 // CaddyModule returns the Caddy module information.
 func (Policy) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "tls.certificate_selection.custom",
-		New:  func() caddy.Module { return new(Policy) },
+		ID:  "tls.certificate_selection.custom",
+		New: func() caddy.Module { return new(Policy) },
 	}
 }
 

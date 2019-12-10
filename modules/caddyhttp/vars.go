@@ -32,8 +32,8 @@ type VarsMiddleware map[string]string
 // CaddyModule returns the Caddy module information.
 func (VarsMiddleware) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "http.handlers.vars",
-		New:  func() caddy.Module { return new(VarsMiddleware) },
+		ID:  "http.handlers.vars",
+		New: func() caddy.Module { return new(VarsMiddleware) },
 	}
 }
 
@@ -55,8 +55,8 @@ type VarsMatcher map[string]string
 // CaddyModule returns the Caddy module information.
 func (VarsMatcher) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "http.matchers.vars",
-		New:  func() caddy.Module { return new(VarsMatcher) },
+		ID:  "http.matchers.vars",
+		New: func() caddy.Module { return new(VarsMatcher) },
 	}
 }
 
