@@ -39,8 +39,8 @@ type Templates struct {
 // CaddyModule returns the Caddy module information.
 func (Templates) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "http.handlers.templates",
-		New:  func() caddy.Module { return new(Templates) },
+		ID:  "http.handlers.templates",
+		New: func() caddy.Module { return new(Templates) },
 	}
 }
 

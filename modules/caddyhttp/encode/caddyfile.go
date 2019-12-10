@@ -15,7 +15,6 @@
 package encode
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/caddyserver/caddy/v2"
@@ -52,14 +51,14 @@ func (enc *Encode) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		for _, arg := range d.RemainingArgs() {
 			mod, err := caddy.GetModule("http.encoders." + arg)
 			if err != nil {
-				return fmt.Errorf("finding encoder module '%s': %v", mod.Name, err)
+				return fmt.Errorf("finding encoder module '%s': %v", mod, err)
 			}
 			encoding, ok := mod.New().(Encoding)
 			if !ok {
-				return fmt.Errorf("module %s is not an HTTP encoding", mod.Name)
+				return fmt.Errorf("module %s is not an HTTP encoding", mod)
 			}
 			if enc.EncodingsRaw == nil {
-				enc.EncodingsRaw = make(map[string]json.RawMessage)
+				enc.EncodingsRaw = make(caddy.ModuleMap)
 			}
 			enc.EncodingsRaw[arg] = caddyconfig.JSON(encoding, nil)
 		}
@@ -72,7 +71,7 @@ func (enc *Encode) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			}
 			unm, ok := mod.New().(caddyfile.Unmarshaler)
 			if !ok {
-				return fmt.Errorf("encoder module '%s' is not a Caddyfile unmarshaler", mod.Name)
+				return fmt.Errorf("encoder module '%s' is not a Caddyfile unmarshaler", mod)
 			}
 			err = unm.UnmarshalCaddyfile(d.NewFromNextTokens())
 			if err != nil {
@@ -80,10 +79,10 @@ func (enc *Encode) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			}
 			encoding, ok := unm.(Encoding)
 			if !ok {
-				return fmt.Errorf("module %s is not an HTTP encoding", mod.Name)
+				return fmt.Errorf("module %s is not an HTTP encoding", mod)
 			}
 			if enc.EncodingsRaw == nil {
-				enc.EncodingsRaw = make(map[string]json.RawMessage)
+				enc.EncodingsRaw = make(caddy.ModuleMap)
 			}
 			enc.EncodingsRaw[name] = caddyconfig.JSON(encoding, nil)
 		}

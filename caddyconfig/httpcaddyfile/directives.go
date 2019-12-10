@@ -88,7 +88,7 @@ type Helper struct {
 	*caddyfile.Dispenser
 	options     map[string]interface{}
 	warnings    *[]caddyconfig.Warning
-	matcherDefs map[string]map[string]json.RawMessage
+	matcherDefs map[string]caddy.ModuleMap
 	parentBlock caddyfile.ServerBlock
 }
 
@@ -125,7 +125,7 @@ func (h Helper) JSON(val interface{}, warnings *[]caddyconfig.Warning) json.RawM
 // if so, returns the matcher set along with a true value. If the current
 // token is not a matcher, nil and false is returned. Note that a true
 // value may be returned with a nil matcher set if it is a catch-all.
-func (h Helper) MatcherToken() (map[string]json.RawMessage, bool, error) {
+func (h Helper) MatcherToken() (caddy.ModuleMap, bool, error) {
 	if !h.NextArg() {
 		return nil, false, nil
 	}
@@ -133,13 +133,13 @@ func (h Helper) MatcherToken() (map[string]json.RawMessage, bool, error) {
 }
 
 // NewRoute returns config values relevant to creating a new HTTP route.
-func (h Helper) NewRoute(matcherSet map[string]json.RawMessage,
+func (h Helper) NewRoute(matcherSet caddy.ModuleMap,
 	handler caddyhttp.MiddlewareHandler) []ConfigValue {
 	mod, err := caddy.GetModule(caddy.GetModuleName(handler))
 	if err != nil {
 		// TODO: append to warnings
 	}
-	var matcherSetsRaw []map[string]json.RawMessage
+	var matcherSetsRaw []caddy.ModuleMap
 	if matcherSet != nil {
 		matcherSetsRaw = append(matcherSetsRaw, matcherSet)
 	}
@@ -148,7 +148,7 @@ func (h Helper) NewRoute(matcherSet map[string]json.RawMessage,
 			Class: "route",
 			Value: caddyhttp.Route{
 				MatcherSetsRaw: matcherSetsRaw,
-				HandlersRaw:    []json.RawMessage{caddyconfig.JSONModuleObject(handler, "handler", mod.ID(), h.warnings)},
+				HandlersRaw:    []json.RawMessage{caddyconfig.JSONModuleObject(handler, "handler", mod.ID.Name(), h.warnings)},
 			},
 		},
 	}

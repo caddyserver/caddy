@@ -33,8 +33,8 @@ type BcryptHash struct{}
 // CaddyModule returns the Caddy module information.
 func (BcryptHash) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "http.handlers.authentication.hashes.bcrypt",
-		New:  func() caddy.Module { return new(BcryptHash) },
+		ID:  "http.authentication.hashes.bcrypt",
+		New: func() caddy.Module { return new(BcryptHash) },
 	}
 }
 
@@ -61,8 +61,8 @@ type ScryptHash struct {
 // CaddyModule returns the Caddy module information.
 func (ScryptHash) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "http.handlers.authentication.hashes.scrypt",
-		New:  func() caddy.Module { return new(ScryptHash) },
+		ID:  "http.authentication.hashes.scrypt",
+		New: func() caddy.Module { return new(ScryptHash) },
 	}
 }
 

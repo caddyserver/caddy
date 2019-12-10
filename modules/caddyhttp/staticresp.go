@@ -38,8 +38,8 @@ type StaticResponse struct {
 // CaddyModule returns the Caddy module information.
 func (StaticResponse) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "http.handlers.static_response",
-		New:  func() caddy.Module { return new(StaticResponse) },
+		ID:  "http.handlers.static_response",
+		New: func() caddy.Module { return new(StaticResponse) },
 	}
 }
 

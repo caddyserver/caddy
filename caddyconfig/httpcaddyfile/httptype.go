@@ -172,7 +172,7 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 	}
 
 	// now for the TLS app! (TODO: refactor into own func)
-	tlsApp := caddytls.TLS{Certificates: make(map[string]json.RawMessage)}
+	tlsApp := caddytls.TLS{CertificatesRaw: make(caddy.ModuleMap)}
 	for _, p := range pairings {
 		for i, sblock := range p.serverBlocks {
 			// tls automation policies
@@ -189,7 +189,7 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 						}
 						tlsApp.Automation.Policies = append(tlsApp.Automation.Policies, caddytls.AutomationPolicy{
 							Hosts:         sblockHosts,
-							ManagementRaw: caddyconfig.JSONModuleObject(mm, "module", mm.(caddy.Module).CaddyModule().ID(), &warnings),
+							ManagementRaw: caddyconfig.JSONModuleObject(mm, "module", mm.(caddy.Module).CaddyModule().ID.Name(), &warnings),
 						})
 					} else {
 						warnings = append(warnings, caddyconfig.Warning{
@@ -204,7 +204,7 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 				for _, clVal := range clVals {
 					loader := clVal.Value.(caddytls.CertificateLoader)
 					loaderName := caddy.GetModuleID(loader)
-					tlsApp.Certificates[loaderName] = caddyconfig.JSON(loader, &warnings)
+					tlsApp.CertificatesRaw[loaderName] = caddyconfig.JSON(loader, &warnings)
 				}
 			}
 		}
@@ -243,17 +243,17 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 	}
 
 	// annnd the top-level config, then we're done!
-	cfg := &caddy.Config{AppsRaw: make(map[string]json.RawMessage)}
+	cfg := &caddy.Config{AppsRaw: make(caddy.ModuleMap)}
 	if !reflect.DeepEqual(httpApp, caddyhttp.App{}) {
 		cfg.AppsRaw["http"] = caddyconfig.JSON(httpApp, &warnings)
 	}
-	if !reflect.DeepEqual(tlsApp, caddytls.TLS{Certificates: make(map[string]json.RawMessage)}) {
+	if !reflect.DeepEqual(tlsApp, caddytls.TLS{CertificatesRaw: make(caddy.ModuleMap)}) {
 		cfg.AppsRaw["tls"] = caddyconfig.JSON(tlsApp, &warnings)
 	}
 	if storageCvtr, ok := options["storage"].(caddy.StorageConverter); ok {
 		cfg.StorageRaw = caddyconfig.JSONModuleObject(storageCvtr,
 			"module",
-			storageCvtr.(caddy.Module).CaddyModule().ID(),
+			storageCvtr.(caddy.Module).CaddyModule().ID.Name(),
 			&warnings)
 	}
 	if adminConfig, ok := options["admin"].(string); ok && adminConfig != "" {
@@ -337,7 +337,7 @@ func (st *ServerType) serversFromPairings(
 						}
 
 						// TODO: are matchers needed if every hostname of the config is matched?
-						cp.Matchers = map[string]json.RawMessage{
+						cp.MatchersRaw = caddy.ModuleMap{
 							"sni": caddyconfig.JSON(hosts, warnings), // make sure to match all hosts, not just auto-HTTPS-qualified ones
 						}
 						srv.TLSConnPolicies = append(srv.TLSConnPolicies, cp)
@@ -469,9 +469,9 @@ func consolidateAutomationPolicies(aps []caddytls.AutomationPolicy) []caddytls.A
 
 func matcherSetFromMatcherToken(
 	tkn caddyfile.Token,
-	matcherDefs map[string]map[string]json.RawMessage,
+	matcherDefs map[string]caddy.ModuleMap,
 	warnings *[]caddyconfig.Warning,
-) (map[string]json.RawMessage, bool, error) {
+) (caddy.ModuleMap, bool, error) {
 	// matcher tokens can be wildcards, simple path matchers,
 	// or refer to a pre-defined matcher by some name
 	if tkn.Text == "*" {
@@ -479,7 +479,7 @@ func matcherSetFromMatcherToken(
 		return nil, true, nil
 	} else if strings.HasPrefix(tkn.Text, "/") || strings.HasPrefix(tkn.Text, "=/") {
 		// convenient way to specify a single path match
-		return map[string]json.RawMessage{
+		return caddy.ModuleMap{
 			"path": caddyconfig.JSON(caddyhttp.MatchPath{tkn.Text}, warnings),
 		}, true, nil
 	} else if strings.HasPrefix(tkn.Text, "match:") {
@@ -495,7 +495,7 @@ func matcherSetFromMatcherToken(
 	return nil, false, nil
 }
 
-func (st *ServerType) compileEncodedMatcherSets(sblock caddyfile.ServerBlock) ([]map[string]json.RawMessage, error) {
+func (st *ServerType) compileEncodedMatcherSets(sblock caddyfile.ServerBlock) ([]caddy.ModuleMap, error) {
 	type hostPathPair struct {
 		hostm caddyhttp.MatchHost
 		pathm caddyhttp.MatchPath
@@ -562,7 +562,7 @@ func (st *ServerType) compileEncodedMatcherSets(sblock caddyfile.ServerBlock) ([
 	}
 
 	// finally, encode each of the matcher sets
-	var matcherSetsEnc []map[string]json.RawMessage
+	var matcherSetsEnc []caddy.ModuleMap
 	for _, ms := range matcherSets {
 		msEncoded, err := encodeMatcherSet(ms)
 		if err != nil {
@@ -574,8 +574,8 @@ func (st *ServerType) compileEncodedMatcherSets(sblock caddyfile.ServerBlock) ([
 	return matcherSetsEnc, nil
 }
 
-func parseMatcherDefinitions(d *caddyfile.Dispenser) (map[string]map[string]json.RawMessage, error) {
-	matchers := make(map[string]map[string]json.RawMessage)
+func parseMatcherDefinitions(d *caddyfile.Dispenser) (map[string]caddy.ModuleMap, error) {
+	matchers := make(map[string]caddy.ModuleMap)
 	for d.Next() {
 		definitionName := d.Val()
 		for nesting := d.Nesting(); d.NextBlock(nesting); {
@@ -597,7 +597,7 @@ func parseMatcherDefinitions(d *caddyfile.Dispenser) (map[string]map[string]json
 				return nil, fmt.Errorf("matcher module '%s' is not a request matcher", matcherName)
 			}
 			if _, ok := matchers[definitionName]; !ok {
-				matchers[definitionName] = make(map[string]json.RawMessage)
+				matchers[definitionName] = make(caddy.ModuleMap)
 			}
 			matchers[definitionName][matcherName] = caddyconfig.JSON(rm, nil)
 		}
@@ -605,8 +605,8 @@ func parseMatcherDefinitions(d *caddyfile.Dispenser) (map[string]map[string]json
 	return matchers, nil
 }
 
-func encodeMatcherSet(matchers map[string]caddyhttp.RequestMatcher) (map[string]json.RawMessage, error) {
-	msEncoded := make(map[string]json.RawMessage)
+func encodeMatcherSet(matchers map[string]caddyhttp.RequestMatcher) (caddy.ModuleMap, error) {
+	msEncoded := make(caddy.ModuleMap)
 	for matcherName, val := range matchers {
 		jsonBytes, err := json.Marshal(val)
 		if err != nil {
@@ -628,7 +628,7 @@ func tryInt(val interface{}, warnings *[]caddyconfig.Warning) int {
 }
 
 type matcherSetAndTokens struct {
-	matcherSet map[string]json.RawMessage
+	matcherSet caddy.ModuleMap
 	tokens     []caddyfile.Token
 }
 

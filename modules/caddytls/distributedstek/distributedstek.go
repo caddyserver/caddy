@@ -39,9 +39,15 @@ func init() {
 	caddy.RegisterModule(Provider{})
 }
 
-// Provider implements a distributed STEK provider.
+// Provider implements a distributed STEK provider. This
+// module will obtain STEKs from a storage module instead
+// of generating STEKs internally. This allows STEKs to be
+// coordinated, improving TLS session resumption in a cluster.
 type Provider struct {
-	Storage json.RawMessage `json:"storage,omitempty"`
+	// The storage module wherein to store and obtain session
+	// ticket keys. If unset, Caddy's default/global-configured
+	// storage module will be used.
+	Storage json.RawMessage `json:"storage,omitempty" caddy:"namespace=caddy.storage inline_key=module"`
 
 	storage    certmagic.Storage
 	stekConfig *caddytls.SessionTicketService
@@ -51,8 +57,8 @@ type Provider struct {
 // CaddyModule returns the Caddy module information.
 func (Provider) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "tls.stek.distributed",
-		New:  func() caddy.Module { return new(Provider) },
+		ID:  "tls.stek.distributed",
+		New: func() caddy.Module { return new(Provider) },
 	}
 }
 
@@ -60,7 +66,7 @@ func (Provider) CaddyModule() caddy.ModuleInfo {
 func (s *Provider) Provision(ctx caddy.Context) error {
 	// unpack the storage module to use, if different from the default
 	if s.Storage != nil {
-		val, err := ctx.LoadModuleInline("module", "caddy.storage", s.Storage)
+		val, err := ctx.LoadModule(s, "Storage")
 		if err != nil {
 			return fmt.Errorf("loading TLS storage module: %s", err)
 		}
@@ -69,7 +75,6 @@ func (s *Provider) Provision(ctx caddy.Context) error {
 			return fmt.Errorf("creating TLS storage configuration: %v", err)
 		}
 		s.storage = cmStorage
-		s.Storage = nil // allow GC to deallocate
 	}
 
 	// otherwise, use default storage

@@ -47,8 +47,8 @@ type Rewrite struct {
 // CaddyModule returns the Caddy module information.
 func (Rewrite) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "http.handlers.rewrite",
-		New:  func() caddy.Module { return new(Rewrite) },
+		ID:  "http.handlers.rewrite",
+		New: func() caddy.Module { return new(Rewrite) },
 	}
 }
 

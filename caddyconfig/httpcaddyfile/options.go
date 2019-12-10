@@ -96,7 +96,7 @@ func parseOptStorage(d *caddyfile.Dispenser) (caddy.StorageConverter, error) {
 	}
 	unm, ok := mod.New().(caddyfile.Unmarshaler)
 	if !ok {
-		return nil, fmt.Errorf("storage module '%s' is not a Caddyfile unmarshaler", mod.Name)
+		return nil, fmt.Errorf("storage module '%s' is not a Caddyfile unmarshaler", mod.ID)
 	}
 	err = unm.UnmarshalCaddyfile(d.NewFromNextTokens())
 	if err != nil {
@@ -104,7 +104,7 @@ func parseOptStorage(d *caddyfile.Dispenser) (caddy.StorageConverter, error) {
 	}
 	storage, ok := unm.(caddy.StorageConverter)
 	if !ok {
-		return nil, fmt.Errorf("module %s is not a StorageConverter", mod.Name)
+		return nil, fmt.Errorf("module %s is not a StorageConverter", mod.ID)
 	}
 	return storage, nil
 }

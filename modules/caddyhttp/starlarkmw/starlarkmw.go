@@ -7,8 +7,8 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
-	caddyscript "github.com/caddyserver/caddy/v2/pkg/caddyscript/lib"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/starlarkmw/internal/lib"
+	caddyscript "github.com/caddyserver/caddy/v2/pkg/caddyscript/lib"
 	"github.com/starlight-go/starlight/convert"
 	"go.starlark.net/starlark"
 )
@@ -34,8 +34,8 @@ type StarlarkMW struct {
 // CaddyModule returns the Caddy module information.
 func (StarlarkMW) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "http.handlers.starlark",
-		New:  func() caddy.Module { return new(StarlarkMW) },
+		ID:  "http.handlers.starlark",
+		New: func() caddy.Module { return new(StarlarkMW) },
 	}
 }
 

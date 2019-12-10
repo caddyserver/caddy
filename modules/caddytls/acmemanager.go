@@ -40,16 +40,50 @@ func init() {
 // after you have configured this struct
 // to your liking.
 type ACMEManagerMaker struct {
-	CA                   string            `json:"ca,omitempty"`
-	Email                string            `json:"email,omitempty"`
-	RenewAhead           caddy.Duration    `json:"renew_ahead,omitempty"`
-	KeyType              string            `json:"key_type,omitempty"`
-	ACMETimeout          caddy.Duration    `json:"acme_timeout,omitempty"`
-	MustStaple           bool              `json:"must_staple,omitempty"`
-	Challenges           *ChallengesConfig `json:"challenges,omitempty"`
-	OnDemand             bool              `json:"on_demand,omitempty"`
-	Storage              json.RawMessage   `json:"storage,omitempty"`
-	TrustedRootsPEMFiles []string          `json:"trusted_roots_pem_files,omitempty"`
+	// The URL to the CA's ACME directory endpoint.
+	CA string `json:"ca,omitempty"`
+
+	// Your email address, so the CA can contact you if necessary.
+	// Not required, but strongly recommended to provide one so
+	// you can be reached if there is a problem. Your email is
+	// not sent to any Caddy mothership or used for any purpose
+	// other than ACME transactions.
+	Email string `json:"email,omitempty"`
+
+	// How long before a certificate's expiration to try renewing it.
+	// Should usually be about 1/3 of certificate lifetime, but long
+	// enough to give yourself time to troubleshoot problems before
+	// expiration. Default: 30d
+	RenewAhead caddy.Duration `json:"renew_ahead,omitempty"`
+
+	// The type of key to generate for the certificate.
+	// Supported values: `rsa2048`, `rsa4096`, `p256`, `p384`.
+	KeyType string `json:"key_type,omitempty"`
+
+	// Time to wait before timing out an ACME operation.
+	ACMETimeout caddy.Duration `json:"acme_timeout,omitempty"`
+
+	// If true, certificates will be requested with MustStaple. Not all
+	// CAs support this, and there are potentially serious consequences
+	// of enabling this feature without proper threat modeling.
+	MustStaple bool `json:"must_staple,omitempty"`
+
+	// Configures the various ACME challenge types.
+	Challenges *ChallengesConfig `json:"challenges,omitempty"`
+
+	// If true, certificates will be managed "on demand", that is, during
+	// TLS handshakes or when needed, as opposed to at startup or config
+	// load.
+	OnDemand bool `json:"on_demand,omitempty"`
+
+	// Optionally configure a separate storage module associated with this
+	// manager, instead of using Caddy's global/default-configured storage.
+	Storage json.RawMessage `json:"storage,omitempty"`
+
+	// An array of files of CA certificates to accept when connecting to the
+	// ACME CA. Generally, you should only use this if the ACME CA endpoint
+	// is internal or for development/testing purposes.
+	TrustedRootsPEMFiles []string `json:"trusted_roots_pem_files,omitempty"`
 
 	storage  certmagic.Storage
 	rootPool *x509.CertPool
@@ -58,8 +92,8 @@ type ACMEManagerMaker struct {
 // CaddyModule returns the Caddy module information.
 func (ACMEManagerMaker) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "tls.management.acme",
-		New:  func() caddy.Module { return new(ACMEManagerMaker) },
+		ID:  "tls.management.acme",
+		New: func() caddy.Module { return new(ACMEManagerMaker) },
 	}
 }
 
@@ -73,26 +107,24 @@ func (m ACMEManagerMaker) NewManager(interactive bool) (certmagic.Manager, error
 func (m *ACMEManagerMaker) Provision(ctx caddy.Context) error {
 	// DNS providers
 	if m.Challenges != nil && m.Challenges.DNSRaw != nil {
-		val, err := ctx.LoadModuleInline("provider", "tls.dns", m.Challenges.DNSRaw)
+		val, err := ctx.LoadModule(m.Challenges, "DNSRaw")
 		if err != nil {
-			return fmt.Errorf("loading DNS provider module: %s", err)
+			return fmt.Errorf("loading DNS provider module: %v", err)
 		}
 		m.Challenges.DNS = val.(challenge.Provider)
-		m.Challenges.DNSRaw = nil // allow GC to deallocate
 	}
 
 	// policy-specific storage implementation
 	if m.Storage != nil {
-		val, err := ctx.LoadModuleInline("module", "caddy.storage", m.Storage)
+		val, err := ctx.LoadModule(m, "Storage")
 		if err != nil {
-			return fmt.Errorf("loading TLS storage module: %s", err)
+			return fmt.Errorf("loading TLS storage module: %v", err)
 		}
 		cmStorage, err := val.(caddy.StorageConverter).CertMagicStorage()
 		if err != nil {
 			return fmt.Errorf("creating TLS storage configuration: %v", err)
 		}
 		m.storage = cmStorage
-		m.Storage = nil // allow GC to deallocate
 	}
 
 	// add any custom CAs to trust store

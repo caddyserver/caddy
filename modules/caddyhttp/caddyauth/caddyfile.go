@@ -16,8 +16,8 @@ package caddyauth
 
 import (
 	"encoding/base64"
-	"encoding/json"
 
+	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -97,7 +97,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 	}
 
 	return Authentication{
-		ProvidersRaw: map[string]json.RawMessage{
+		ProvidersRaw: caddy.ModuleMap{
 			"http_basic": caddyconfig.JSON(ba, nil),
 		},
 	}, nil

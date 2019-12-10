@@ -31,8 +31,8 @@ type Zstd struct{}
 // CaddyModule returns the Caddy module information.
 func (Zstd) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "http.encoders.zstd",
-		New:  func() caddy.Module { return new(Zstd) },
+		ID:  "http.encoders.zstd",
+		New: func() caddy.Module { return new(Zstd) },
 	}
 }
 
