@@ -79,13 +79,15 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request) (int, err
 
 	// Prevent absolute path access on Windows.
 	// TODO remove when stdlib http.Dir fixes this.
-	if runtime.GOOS == "windows" && len(reqPath) > 0 && filepath.IsAbs(reqPath[1:]) {
-		return http.StatusNotFound, nil
-	}
+	if runtime.GOOS == "windows" {
+		if len(reqPath) > 0 && filepath.IsAbs(reqPath[1:]) {
+			return http.StatusNotFound, nil
+		}
 
-	// Github 2917 Replace Trailing . and [ ] since windows wont match propertly.
-	// Otherwise index.php. matches index.php and returns.  Should be 404
-	reqPath = fs.replaceTrailingDotSpace(reqPath)
+		// Github 2917 Replace Trailing . and [ ] since windows wont match propertly.
+		// Otherwise index.php. matches index.php and returns.  Should be 404
+		reqPath = fs.replaceTrailingDotSpace(reqPath)
+	}
 
 	// open the requested file
 	f, err := fs.Root.Open(reqPath)
