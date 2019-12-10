@@ -59,6 +59,14 @@ func (fs FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, err
 	return fs.serveFile(w, r)
 }
 
+func (fs FileServer) filenameExists(filename string) bool {
+    info, err := os.Stat(filename)
+    if os.IsNotExist(err) {
+        return false
+    }
+    return !info.IsDir()
+}
+
 // serveFile writes the specified file to the HTTP response.
 // name is '/'-separated, not filepath.Separator.
 func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request) (int, error) {
@@ -67,6 +75,11 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request) (int, err
 	// Prevent absolute path access on Windows.
 	// TODO remove when stdlib http.Dir fixes this.
 	if runtime.GOOS == "windows" && len(reqPath) > 0 && filepath.IsAbs(reqPath[1:]) {
+		return http.StatusNotFound, nil
+	}
+
+	// Check that the filename exists on disk #2917
+	if !fs.filenameExists(reqPath){
 		return http.StatusNotFound, nil
 	}
 
