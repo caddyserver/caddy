@@ -124,7 +124,9 @@ func (ctx *Context) OnCancel(f func()) {
 // and store them on the same struct. Storing them on the same struct makes for
 // easy garbage collection when your host module is no longer needed.
 //
-// Loaded modules have already been provisioned and validated.
+// Loaded modules have already been provisioned and validated. Upon returning
+// successfully, this method clears the json.RawMessage(s) in the field since
+// the raw JSON is no longer needed, and this allows the GC to free up memory.
 func (ctx Context) LoadModule(structPointer interface{}, fieldName string) (interface{}, error) {
 	val := reflect.ValueOf(structPointer).Elem().FieldByName(fieldName)
 	typ := val.Type()
