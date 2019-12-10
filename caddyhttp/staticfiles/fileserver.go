@@ -22,6 +22,7 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"log"
 	"path"
 	"path/filepath"
 	"runtime"
@@ -59,12 +60,28 @@ func (fs FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, err
 	return fs.serveFile(w, r)
 }
 
-func (fs FileServer) filenameExists(filename string) bool {
-    info, err := os.Stat(filename)
-    if os.IsNotExist(err) {
-        return false
-    }
-    return !info.IsDir()
+//func (fs FileServer) filenameExists(filename string) bool {
+//    info, err := os.Stat(filename)
+//    if os.IsNotExist(err) {
+//        return false
+//    }
+//    return !info.IsDir()
+//}
+
+func (fs FileServer) replaceTrailingDotSpace(filename string) string {
+	out := []rune(filename)
+	log.Println(string(out))
+	for i := len(filename) -1; i > 0; i-- {
+		log.Println("check")
+		if string(out[i]) == " " || string(out[i]) == "." {
+			out[i] = 'x'
+		} else {
+			break;
+		}
+
+	}
+	log.Println(string(out))
+	return string(out)
 }
 
 // serveFile writes the specified file to the HTTP response.
@@ -78,10 +95,13 @@ func (fs FileServer) serveFile(w http.ResponseWriter, r *http.Request) (int, err
 		return http.StatusNotFound, nil
 	}
 
+	log.Println(reqPath)
+	reqPath = fs.replaceTrailingDotSpace(reqPath)
+	log.Printf("after:%v" ,reqPath)
 	// Check that the filename exists on disk #2917
-	if !fs.filenameExists(reqPath){
-		return http.StatusNotFound, nil
-	}
+	//if !fs.filenameExists(reqPath){
+	//	return http.StatusNotFound, nil
+	//}
 
 	// open the requested file
 	f, err := fs.Root.Open(reqPath)
