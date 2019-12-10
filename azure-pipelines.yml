@@ -206,7 +206,6 @@ jobs:
 
   - bash: |
       declare -A fuzzers_funcs=(\
-        ["./caddyconfig/httpcaddyfile/adapter_fuzz.go"]="FuzzHTTPCaddyfileAdapter" \
         ["./caddyconfig/httpcaddyfile/addresses_fuzz.go"]="FuzzParseAddress" \
         ["./caddyconfig/caddyfile/parse_fuzz.go"]="FuzzParseCaddyfile" \
         ["./listeners_fuzz.go"]="FuzzParseNetworkAddress" \
@@ -214,7 +213,6 @@ jobs:
       )
 
       declare -A fuzzers_targets=(\
-        ["./caddyconfig/httpcaddyfile/adapter_fuzz.go"]="caddyfile-adapter" \
         ["./caddyconfig/httpcaddyfile/addresses_fuzz.go"]="parse-address" \
         ["./caddyconfig/caddyfile/parse_fuzz.go"]="parse-caddyfile" \
         ["./listeners_fuzz.go"]="parse-network-address" \
