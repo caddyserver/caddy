@@ -48,8 +48,8 @@ type RandomSelection struct{}
 // CaddyModule returns the Caddy module information.
 func (RandomSelection) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "http.handlers.reverse_proxy.selection_policies.random",
-		New:  func() caddy.Module { return new(RandomSelection) },
+		ID:  "http.reverse_proxy.selection_policies.random",
+		New: func() caddy.Module { return new(RandomSelection) },
 	}
 }
 
@@ -84,8 +84,8 @@ type RandomChoiceSelection struct {
 // CaddyModule returns the Caddy module information.
 func (RandomChoiceSelection) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "http.handlers.reverse_proxy.selection_policies.random_choose",
-		New:  func() caddy.Module { return new(RandomChoiceSelection) },
+		ID:  "http.reverse_proxy.selection_policies.random_choose",
+		New: func() caddy.Module { return new(RandomChoiceSelection) },
 	}
 }
 
@@ -154,8 +154,8 @@ type LeastConnSelection struct{}
 // CaddyModule returns the Caddy module information.
 func (LeastConnSelection) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "http.handlers.reverse_proxy.selection_policies.least_conn",
-		New:  func() caddy.Module { return new(LeastConnSelection) },
+		ID:  "http.reverse_proxy.selection_policies.least_conn",
+		New: func() caddy.Module { return new(LeastConnSelection) },
 	}
 }
 
@@ -199,8 +199,8 @@ type RoundRobinSelection struct {
 // CaddyModule returns the Caddy module information.
 func (RoundRobinSelection) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "http.handlers.reverse_proxy.selection_policies.round_robin",
-		New:  func() caddy.Module { return new(RoundRobinSelection) },
+		ID:  "http.reverse_proxy.selection_policies.round_robin",
+		New: func() caddy.Module { return new(RoundRobinSelection) },
 	}
 }
 
@@ -227,8 +227,8 @@ type FirstSelection struct{}
 // CaddyModule returns the Caddy module information.
 func (FirstSelection) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "http.handlers.reverse_proxy.selection_policies.first",
-		New:  func() caddy.Module { return new(FirstSelection) },
+		ID:  "http.reverse_proxy.selection_policies.first",
+		New: func() caddy.Module { return new(FirstSelection) },
 	}
 }
 
@@ -249,8 +249,8 @@ type IPHashSelection struct{}
 // CaddyModule returns the Caddy module information.
 func (IPHashSelection) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "http.handlers.reverse_proxy.selection_policies.ip_hash",
-		New:  func() caddy.Module { return new(IPHashSelection) },
+		ID:  "http.reverse_proxy.selection_policies.ip_hash",
+		New: func() caddy.Module { return new(IPHashSelection) },
 	}
 }
 
@@ -270,8 +270,8 @@ type URIHashSelection struct{}
 // CaddyModule returns the Caddy module information.
 func (URIHashSelection) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "http.handlers.reverse_proxy.selection_policies.uri_hash",
-		New:  func() caddy.Module { return new(URIHashSelection) },
+		ID:  "http.reverse_proxy.selection_policies.uri_hash",
+		New: func() caddy.Module { return new(URIHashSelection) },
 	}
 }
 
@@ -289,8 +289,8 @@ type HeaderHashSelection struct {
 // CaddyModule returns the Caddy module information.
 func (HeaderHashSelection) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "http.handlers.reverse_proxy.selection_policies.header",
-		New:  func() caddy.Module { return new(HeaderHashSelection) },
+		ID:  "http.reverse_proxy.selection_policies.header",
+		New: func() caddy.Module { return new(HeaderHashSelection) },
 	}
 }
 

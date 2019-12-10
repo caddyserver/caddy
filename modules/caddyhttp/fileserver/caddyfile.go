@@ -15,8 +15,7 @@
 package fileserver
 
 import (
-	"encoding/json"
-
+	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/rewrite"
@@ -122,7 +121,7 @@ func parseTryFiles(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) 
 		URI: "{http.matchers.file.relative}{http.request.uri.query_string}",
 	}
 
-	matcherSet := map[string]json.RawMessage{
+	matcherSet := caddy.ModuleMap{
 		"file": h.JSON(MatchFile{
 			TryFiles: try,
 		}, nil),

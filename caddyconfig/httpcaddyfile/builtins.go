@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"reflect"
 
+	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
@@ -71,7 +72,7 @@ func parseRoot(h Helper) ([]ConfigValue, error) {
 		},
 	}
 	if matcherSet != nil {
-		route.MatcherSetsRaw = []map[string]json.RawMessage{matcherSet}
+		route.MatcherSetsRaw = []caddy.ModuleMap{matcherSet}
 	}
 
 	return h.NewVarsRoute(route), nil

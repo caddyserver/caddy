@@ -41,8 +41,8 @@ type DeleteFilter struct{}
 // CaddyModule returns the Caddy module information.
 func (DeleteFilter) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "caddy.logging.encoders.filter.delete",
-		New:  func() caddy.Module { return new(DeleteFilter) },
+		ID:  "caddy.logging.encoders.filter.delete",
+		New: func() caddy.Module { return new(DeleteFilter) },
 	}
 }
 
@@ -55,15 +55,18 @@ func (DeleteFilter) Filter(in zapcore.Field) zapcore.Field {
 // IPMaskFilter is a Caddy log field filter that
 // masks IP addresses.
 type IPMaskFilter struct {
+	// The IPv4 range in CIDR notation.
 	IPv4CIDR int `json:"ipv4_cidr,omitempty"`
+
+	// The IPv6 range in CIDR notation.
 	IPv6CIDR int `json:"ipv6_cidr,omitempty"`
 }
 
 // CaddyModule returns the Caddy module information.
 func (IPMaskFilter) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "caddy.logging.encoders.filter.ip_mask",
-		New:  func() caddy.Module { return new(IPMaskFilter) },
+		ID:  "caddy.logging.encoders.filter.ip_mask",
+		New: func() caddy.Module { return new(IPMaskFilter) },
 	}
 }
 

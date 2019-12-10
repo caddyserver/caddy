@@ -113,8 +113,8 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 	}
 	urlHost := fromURL.Hostname()
 	if urlHost != "" {
-		route.MatcherSetsRaw = []map[string]json.RawMessage{
-			map[string]json.RawMessage{
+		route.MatcherSetsRaw = []caddy.ModuleMap{
+			caddy.ModuleMap{
 				"host": caddyconfig.JSON(caddyhttp.MatchHost{urlHost}, nil),
 			},
 		}
@@ -138,7 +138,7 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 
 	cfg := &caddy.Config{
 		Admin: &caddy.AdminConfig{Disabled: true},
-		AppsRaw: map[string]json.RawMessage{
+		AppsRaw: caddy.ModuleMap{
 			"http": caddyconfig.JSON(httpApp, nil),
 		},
 	}

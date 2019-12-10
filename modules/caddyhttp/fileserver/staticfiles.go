@@ -53,8 +53,8 @@ type FileServer struct {
 // CaddyModule returns the Caddy module information.
 func (FileServer) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "http.handlers.file_server",
-		New:  func() caddy.Module { return new(FileServer) },
+		ID:  "http.handlers.file_server",
+		New: func() caddy.Module { return new(FileServer) },
 	}
 }
 

@@ -32,8 +32,8 @@ type FileStorage struct {
 // CaddyModule returns the Caddy module information.
 func (FileStorage) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "caddy.storage.file_system",
-		New:  func() caddy.Module { return new(FileStorage) },
+		ID:  "caddy.storage.file_system",
+		New: func() caddy.Module { return new(FileStorage) },
 	}
 }
 

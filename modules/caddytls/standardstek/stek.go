@@ -35,8 +35,8 @@ type standardSTEKProvider struct {
 // CaddyModule returns the Caddy module information.
 func (standardSTEKProvider) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "tls.stek.standard",
-		New:  func() caddy.Module { return new(standardSTEKProvider) },
+		ID:  "tls.stek.standard",
+		New: func() caddy.Module { return new(standardSTEKProvider) },
 	}
 }
 

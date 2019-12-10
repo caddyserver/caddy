@@ -18,58 +18,107 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
 )
 
-// Module is a type that is used as a Caddy module.
+// Module is a type that is used as a Caddy module. In
+// addition to this interface, most modules will implement
+// some interface expected by their host module in order
+// to be useful. To learn which interface(s) to implement,
+// see the documentation for the host module. At a bare
+// minimum, this interface, when implemented, only provides
+// the module's ID and constructor function.
+//
+// Modules will often implement additional interfaces
+// including Provisioner, Validator, and CleanerUpper.
+// If a module implements these interfaces, their
+// methods are called during the module's lifespan.
+//
+// When a module is loaded by a host module, the following
+// happens: 1) ModuleInfo.New() is called to get a new
+// instance of the module. 2) The module's configuration is
+// unmarshaled into that instance. 3) If the module is a
+// Provisioner, the Provision() method is called. 4) If the
+// module is a Validator, the Validate() method is called.
+// 5) The module will probably be type-asserted from
+// interface{} to some other, more useful interface expected
+// by the host module. For example, HTTP handler modules are
+// type-asserted as caddyhttp.MiddlewareHandler values.
+// 6) When a module's containing Context is canceled, if it is
+// a CleanerUpper, its Cleanup() method is called.
 type Module interface {
-	// This method indicates the type is a Caddy
-	// module. The returned ModuleInfo must have
-	// both a name and a constructor function.
-	// This method must not have any side-effects.
+	// This method indicates that the type is a Caddy
+	// module. The returned ModuleInfo must have both
+	// a name and a constructor function. This method
+	// must not have any side-effects.
 	CaddyModule() ModuleInfo
 }
 
 // ModuleInfo represents a registered Caddy module.
 type ModuleInfo struct {
-	// Name is the full name of the module. It
+	// ID is the "full name" of the module. It
 	// must be unique and properly namespaced.
-	Name string
+	ID ModuleID
 
 	// New returns a pointer to a new, empty
-	// instance of the module's type. The host
-	// module which instantiates this module will
-	// likely type-assert and invoke methods on
-	// the returned value. This function must not
-	// have any side-effects.
+	// instance of the module's type. This
+	// function must not have any side-effects.
 	New func() Module
 }
 
-// Namespace returns the module's namespace (scope)
-// which is all but the last element of its name.
-// If there is no explicit namespace in the name,
-// the whole name is considered the namespace.
-func (mi ModuleInfo) Namespace() string {
-	lastDot := strings.LastIndex(mi.Name, ".")
+// ModuleID is a string that uniquely identifies a Caddy module. A
+// module ID is lightly structured. It consists of dot-separated
+// labels which form a simple hierarchy from left to right. The last
+// label is the module name, and the labels before that constitute
+// the namespace (or scope).
+//
+// Thus, a module ID has the form: <namespace>.<id>
+//
+// An ID with no dot has the empty namespace, which is appropriate
+// for app modules (these are "top-level" modules that Caddy core
+// loads and runs).
+//
+// Module IDs should be lowercase and use underscore (_) instead of
+// spaces.
+//
+// Example valid names:
+// - http
+// - http.handlers.file_server
+// - caddy.logging.encoders.json
+type ModuleID string
+
+// Namespace returns the namespace (or scope) portion of a module ID,
+// which is all but the last label of the ID. If the ID has only one
+// label, then
+func (id ModuleID) Namespace() string {
+	lastDot := strings.LastIndex(string(id), ".")
 	if lastDot < 0 {
-		return mi.Name
+		return string(id)
 	}
-	return mi.Name[:lastDot]
+	return string(id)[:lastDot]
 }
 
-// ID returns a module's ID, which is the
-// last element of its name.
-func (mi ModuleInfo) ID() string {
-	if mi.Name == "" {
+// Name returns the Name (last element) of a module name.
+func (id ModuleID) Name() string {
+	if id == "" {
 		return ""
 	}
-	parts := strings.Split(mi.Name, ".")
+	parts := strings.Split(string(id), ".")
 	return parts[len(parts)-1]
 }
 
-func (mi ModuleInfo) String() string { return mi.Name }
+func (mi ModuleInfo) String() string { return string(mi.ID) }
+
+// ModuleMap is a map that can contain multiple modules,
+// where the map key is the module's name. (The namespace
+// is usually read from an associated field's struct tag.)
+// Because the module's name is given as the key in a
+// module map, the name does not have to be given in the
+// json.RawMessage.
+type ModuleMap map[string]json.RawMessage
 
 // RegisterModule registers a module by receiving a
 // plain/empty value of the module. For registration to
@@ -82,11 +131,11 @@ func (mi ModuleInfo) String() string { return mi.Name }
 func RegisterModule(instance Module) error {
 	mod := instance.CaddyModule()
 
-	if mod.Name == "" {
-		return fmt.Errorf("missing ModuleInfo.Name")
+	if mod.ID == "" {
+		return fmt.Errorf("module ID missing")
 	}
-	if mod.Name == "caddy" || mod.Name == "admin" {
-		return fmt.Errorf("module name '%s' is reserved", mod.Name)
+	if mod.ID == "caddy" || mod.ID == "admin" {
+		return fmt.Errorf("module ID '%s' is reserved", mod.ID)
 	}
 	if mod.New == nil {
 		return fmt.Errorf("missing ModuleInfo.New")
@@ -98,17 +147,17 @@ func RegisterModule(instance Module) error {
 	modulesMu.Lock()
 	defer modulesMu.Unlock()
 
-	if _, ok := modules[mod.Name]; ok {
-		return fmt.Errorf("module already registered: %s", mod.Name)
+	if _, ok := modules[string(mod.ID)]; ok {
+		return fmt.Errorf("module already registered: %s", mod.ID)
 	}
-	modules[mod.Name] = mod
+	modules[string(mod.ID)] = mod
 	return nil
 }
 
-// GetModule returns module information from its full name.
+// GetModule returns module information from its ID (full name).
 func GetModule(name string) (ModuleInfo, error) {
-	modulesMu.Lock()
-	defer modulesMu.Unlock()
+	modulesMu.RLock()
+	defer modulesMu.RUnlock()
 	m, ok := modules[name]
 	if !ok {
 		return ModuleInfo{}, fmt.Errorf("module not registered: %s", name)
@@ -116,25 +165,25 @@ func GetModule(name string) (ModuleInfo, error) {
 	return m, nil
 }
 
-// GetModuleName returns a module's name from an instance of its value.
-// If the value is not a module, an empty name will be returned.
+// GetModuleName returns a module's name (the last label of its ID)
+// from an instance of its value. If the value is not a module, an
+// empty string will be returned.
 func GetModuleName(instance interface{}) string {
 	var name string
 	if mod, ok := instance.(Module); ok {
-		name = mod.CaddyModule().Name
+		name = mod.CaddyModule().ID.Name()
 	}
 	return name
 }
 
-// GetModuleID returns a module's ID (the last element of its name)
-// from an instance of its value. If the value is not a module,
-// an empty string will be returned.
+// GetModuleID returns a module's ID from an instance of its value.
+// If the value is not a module, an empty string will be returned.
 func GetModuleID(instance interface{}) string {
-	var name string
+	var id string
 	if mod, ok := instance.(Module); ok {
-		name = mod.CaddyModule().ID()
+		id = string(mod.CaddyModule().ID)
 	}
-	return name
+	return id
 }
 
 // GetModules returns all modules in the given scope/namespace.
@@ -144,11 +193,11 @@ func GetModuleID(instance interface{}) string {
 // scopes are not matched (i.e. scope "foo.ba" does not match
 // name "foo.bar").
 //
-// Because modules are registered to a map, the returned slice
-// will be sorted to keep it deterministic.
+// Because modules are registered to a map under the hood, the
+// returned slice will be sorted to keep it deterministic.
 func GetModules(scope string) []ModuleInfo {
-	modulesMu.Lock()
-	defer modulesMu.Unlock()
+	modulesMu.RLock()
+	defer modulesMu.RUnlock()
 
 	scopeParts := strings.Split(scope, ".")
 
@@ -160,8 +209,8 @@ func GetModules(scope string) []ModuleInfo {
 
 	var mods []ModuleInfo
 iterateModules:
-	for name, m := range modules {
-		modParts := strings.Split(name, ".")
+	for id, m := range modules {
+		modParts := strings.Split(string(id), ".")
 
 		// match only the next level of nesting
 		if len(modParts) != len(scopeParts)+1 {
@@ -180,7 +229,7 @@ iterateModules:
 
 	// make return value deterministic
 	sort.Slice(mods, func(i, j int) bool {
-		return mods[i].Name < mods[j].Name
+		return mods[i].ID < mods[j].ID
 	})
 
 	return mods
@@ -189,12 +238,12 @@ iterateModules:
 // Modules returns the names of all registered modules
 // in ascending lexicographical order.
 func Modules() []string {
-	modulesMu.Lock()
-	defer modulesMu.Unlock()
+	modulesMu.RLock()
+	defer modulesMu.RUnlock()
 
 	var names []string
 	for name := range modules {
-		names = append(names, name)
+		names = append(names, string(name))
 	}
 
 	sort.Strings(names)
@@ -261,6 +310,25 @@ type CleanerUpper interface {
 	Cleanup() error
 }
 
+// ParseStructTag parses a caddy struct tag into its keys and values.
+// It is very simple. The expected syntax is:
+// `caddy:"key1=val1 key2=val2 ..."`
+func ParseStructTag(tag string) (map[string]string, error) {
+	results := make(map[string]string)
+	pairs := strings.Split(tag, " ")
+	for i, pair := range pairs {
+		if pair == "" {
+			continue
+		}
+		parts := strings.SplitN(pair, "=", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("missing key in '%s' (pair %d)", pair, i)
+		}
+		results[parts[0]] = parts[1]
+	}
+	return results, nil
+}
+
 // strictUnmarshalJSON is like json.Unmarshal but returns an error
 // if any of the fields are unrecognized. Useful when decoding
 // module configurations, where you want to be more sure they're
@@ -271,7 +339,24 @@ func strictUnmarshalJSON(data []byte, v interface{}) error {
 	return dec.Decode(v)
 }
 
+// isJSONRawMessage returns true if the type is encoding/json.RawMessage.
+func isJSONRawMessage(typ reflect.Type) bool {
+	return typ.PkgPath() == "encoding/json" && typ.Name() == "RawMessage"
+}
+
+// isModuleMapType returns true if the type is map[string]json.RawMessage.
+// It assumes that the string key is the module name, but this is not
+// always the case. To know for sure, this function must return true, but
+// also the struct tag where this type appears must NOT define an inline_key
+// attribute, which would mean that the module names appear inline with the
+// values, not in the key.
+func isModuleMapType(typ reflect.Type) bool {
+	return typ.Kind() == reflect.Map &&
+		typ.Key().Kind() == reflect.String &&
+		isJSONRawMessage(typ.Elem())
+}
+
 var (
 	modules   = make(map[string]ModuleInfo)
-	modulesMu sync.Mutex
+	modulesMu sync.RWMutex
 )

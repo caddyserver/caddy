@@ -44,8 +44,8 @@ type Subroute struct {
 // CaddyModule returns the Caddy module information.
 func (Subroute) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "http.handlers.subroute",
-		New:  func() caddy.Module { return new(Subroute) },
+		ID:  "http.handlers.subroute",
+		New: func() caddy.Module { return new(Subroute) },
 	}
 }
 

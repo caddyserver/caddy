@@ -39,8 +39,8 @@ type FolderLoader []string
 // CaddyModule returns the Caddy module information.
 func (FolderLoader) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		Name: "tls.certificates.load_folders",
-		New:  func() caddy.Module { return new(FolderLoader) },
+		ID:  "tls.certificates.load_folders",
+		New: func() caddy.Module { return new(FolderLoader) },
 	}
 }
 

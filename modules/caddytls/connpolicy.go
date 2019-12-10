@@ -39,23 +39,21 @@ func (cp ConnectionPolicies) TLSConfig(ctx caddy.Context) (*tls.Config, error) {
 	// set up each of the connection policies
 	for i, pol := range cp {
 		// matchers
-		for modName, rawMsg := range pol.Matchers {
-			val, err := ctx.LoadModule("tls.handshake_match."+modName, rawMsg)
-			if err != nil {
-				return nil, fmt.Errorf("loading handshake matcher module '%s': %s", modName, err)
-			}
-			cp[i].matchers = append(cp[i].matchers, val.(ConnectionMatcher))
+		mods, err := ctx.LoadModule(pol, "MatchersRaw")
+		if err != nil {
+			return nil, fmt.Errorf("loading handshake matchers: %v", err)
 		}
-		cp[i].Matchers = nil // allow GC to deallocate
+		for _, modIface := range mods.(map[string]interface{}) {
+			cp[i].matchers = append(cp[i].matchers, modIface.(ConnectionMatcher))
+		}
 
 		// certificate selector
 		if pol.CertSelection != nil {
-			val, err := ctx.LoadModuleInline("policy", "tls.certificate_selection", pol.CertSelection)
+			val, err := ctx.LoadModule(pol, "CertSelection")
 			if err != nil {
 				return nil, fmt.Errorf("loading certificate selection module: %s", err)
 			}
 			cp[i].certSelector = val.(certmagic.CertificateSelector)
-			cp[i].CertSelection = nil // allow GC to deallocate
 		}
 	}
 
@@ -109,14 +107,33 @@ func (cp ConnectionPolicies) TLSConfig(ctx caddy.Context) (*tls.Config, error) {
 
 // ConnectionPolicy specifies the logic for handling a TLS handshake.
 type ConnectionPolicy struct {
-	Matchers      map[string]json.RawMessage `json:"match,omitempty"`
-	CertSelection json.RawMessage            `json:"certificate_selection,omitempty"`
+	// How to match this policy with a TLS ClientHello. If
+	// this policy is the first to match, it will be used.
+	MatchersRaw caddy.ModuleMap `json:"match,omitempty" caddy:"namespace=tls.handshake_match"`
 
-	CipherSuites         []string              `json:"cipher_suites,omitempty"`
-	Curves               []string              `json:"curves,omitempty"`
-	ALPN                 []string              `json:"alpn,omitempty"`
-	ProtocolMin          string                `json:"protocol_min,omitempty"`
-	ProtocolMax          string                `json:"protocol_max,omitempty"`
+	// How to choose a certificate if more than one matched
+	// the given ServerName (SNI) value.
+	CertSelection json.RawMessage `json:"certificate_selection,omitempty" caddy:"namespace=tls.certificate_selection inline_key=policy"`
+
+	// The list of cipher suites to support. Caddy's
+	// defaults are modern and secure.
+	CipherSuites []string `json:"cipher_suites,omitempty"`
+
+	// The list of elliptic curves to support. Caddy's
+	// defaults are modern and secure.
+	Curves []string `json:"curves,omitempty"`
+
+	// Protocols to use for Application-Layer Protocol
+	// Negotiation (ALPN) during the handshake.
+	ALPN []string `json:"alpn,omitempty"`
+
+	// Minimum TLS protocol version to allow. Default: `tls1.2`
+	ProtocolMin string `json:"protocol_min,omitempty"`
+
+	// Maximum TLS protocol version to allow. Default: `tls1.3`
+	ProtocolMax string `json:"protocol_max,omitempty"`
+
+	// Enables and configures TLS client authentication.
 	ClientAuthentication *ClientAuthentication `json:"client_authentication,omitempty"`
 
 	matchers     []ConnectionMatcher

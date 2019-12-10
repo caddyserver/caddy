@@ -39,12 +39,33 @@ import (
 
 // TODO: is there a way to make the admin endpoint so that it can be plugged into the HTTP app? see issue #2833
 
-// AdminConfig configures the admin endpoint.
+// AdminConfig configures Caddy's API endpoint, which is used
+// to manage Caddy while it is running.
 type AdminConfig struct {
-	Disabled      bool     `json:"disabled,omitempty"`
-	Listen        string   `json:"listen,omitempty"`
-	EnforceOrigin bool     `json:"enforce_origin,omitempty"`
-	Origins       []string `json:"origins,omitempty"`
+	// If true, the admin endpoint will be completely disabled.
+	// Note that this makes any runtime changes to the config
+	// impossible, since the interface to do so is through the
+	// admin endpoint.
+	Disabled bool `json:"disabled,omitempty"`
+
+	// The address to which the admin endpoint's listener should
+	// bind itself. Can be any single network address that can be
+	// parsed by Caddy.
+	Listen string `json:"listen,omitempty"`
+
+	// If true, CORS headers will be emitted, and requests to the
+	// API will be rejected if their `Host` and `Origin` headers
+	// do not match the expected value(s). Use `origins` to
+	// customize which origins/hosts are allowed.If `origins` is
+	// not set, the listen address is the only value allowed by
+	// default.
+	EnforceOrigin bool `json:"enforce_origin,omitempty"`
+
+	// The list of allowed origins for API requests. Only used if
+	// `enforce_origin` is true. If not set, the listener address
+	// will be the default value. If set but empty, no origins will
+	// be allowed.
+	Origins []string `json:"origins,omitempty"`
 }
 
 // listenAddr extracts a singular listen address from ac.Listen,
@@ -706,7 +727,7 @@ traverseLoop:
 			ptr = v[partInt]
 
 		default:
-			return fmt.Errorf("invalid path: %s", parts[:i+1])
+			return fmt.Errorf("invalid traversal path at: %s", strings.Join(parts[:i+1], "/"))
 		}
 	}
 
