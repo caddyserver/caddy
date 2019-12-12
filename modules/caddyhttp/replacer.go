@@ -105,11 +105,7 @@ func addHTTPVarsToReplacer(repl caddy.Replacer, req *http.Request, w http.Respon
 			case "http.request.uri.query":
 				return req.URL.RawQuery, true
 			case "http.request.uri.query_string":
-				qs := req.URL.Query().Encode()
-				if qs != "" {
-					qs = "?" + qs
-				}
-				return qs, true
+				return "?" + req.URL.Query().Encode(), true
 
 				// original request, before any internal changes
 			case "http.request.orig_method":

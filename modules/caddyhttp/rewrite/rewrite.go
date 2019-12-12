@@ -35,8 +35,9 @@ type Rewrite struct {
 	Method string `json:"method,omitempty"`
 	URI    string `json:"uri,omitempty"`
 
-	StripPathPrefix string `json:"strip_path_prefix,omitempty"`
-	StripPathSuffix string `json:"strip_path_suffix,omitempty"`
+	StripPathPrefix string     `json:"strip_path_prefix,omitempty"`
+	StripPathSuffix string     `json:"strip_path_suffix,omitempty"`
+	URISubstring    []replacer `json:"uri_substring,omitempty"`
 
 	HTTPRedirect caddyhttp.WeakString `json:"http_redirect,omitempty"`
 	Rehandle     bool                 `json:"rehandle,omitempty"`
@@ -61,71 +62,19 @@ func (rewr *Rewrite) Provision(ctx caddy.Context) error {
 // Validate ensures rewr's configuration is valid.
 func (rewr Rewrite) Validate() error {
 	if rewr.HTTPRedirect != "" && rewr.Rehandle {
-		return fmt.Errorf("cannot be configured to both write a redirect response and rehandle internally")
+		return fmt.Errorf("cannot be configured to both redirect externally and rehandle internally")
 	}
 	return nil
 }
 
 func (rewr Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
-	var changed bool
 
 	logger := rewr.logger.With(
 		zap.Object("request", caddyhttp.LoggableHTTPRequest{Request: r}),
 	)
 
-	// rewrite the method
-	if rewr.Method != "" {
-		method := r.Method
-		r.Method = strings.ToUpper(repl.ReplaceAll(rewr.Method, ""))
-		if r.Method != method {
-			changed = true
-		}
-	}
-
-	// rewrite the URI
-	if rewr.URI != "" {
-		oldURI := r.RequestURI
-		newURI := repl.ReplaceAll(rewr.URI, "")
-
-		u, err := url.Parse(newURI)
-		if err != nil {
-			return caddyhttp.Error(http.StatusInternalServerError, err)
-		}
-
-		r.RequestURI = newURI
-		r.URL.Path = u.Path
-		if u.RawQuery != "" {
-			r.URL.RawQuery = u.RawQuery
-		}
-		if u.Fragment != "" {
-			r.URL.Fragment = u.Fragment
-		}
-
-		if newURI != oldURI {
-			changed = true
-		}
-	}
-
-	// strip path prefix or suffix
-	if rewr.StripPathPrefix != "" {
-		prefix := repl.ReplaceAll(rewr.StripPathPrefix, "")
-		r.URL.Path = strings.TrimPrefix(r.URL.Path, prefix)
-		newURI := r.URL.String()
-		if newURI != r.RequestURI {
-			changed = true
-		}
-		r.RequestURI = newURI
-	}
-	if rewr.StripPathSuffix != "" {
-		suffix := repl.ReplaceAll(rewr.StripPathSuffix, "")
-		r.URL.Path = strings.TrimSuffix(r.URL.Path, suffix)
-		newURI := r.URL.String()
-		if newURI != r.RequestURI {
-			changed = true
-		}
-		r.RequestURI = newURI
-	}
+	changed := rewr.rewrite(r, repl, logger)
 
 	if changed {
 		logger.Debug("rewrote request",
@@ -147,6 +96,106 @@ func (rewr Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 	}
 
 	return next.ServeHTTP(w, r)
+}
+
+// rewrite performs the rewrites on r using repl, which
+// should have been obtained from r, but is passed in for
+// efficiency. It returns true if any changes were made to r.
+func (rewr Rewrite) rewrite(r *http.Request, repl caddy.Replacer, logger *zap.Logger) bool {
+	oldMethod := r.Method
+	oldURI := r.RequestURI
+
+	// method
+	if rewr.Method != "" {
+		r.Method = strings.ToUpper(repl.ReplaceAll(rewr.Method, ""))
+	}
+
+	// uri (which consists of path, query string, and maybe fragment?)
+	if rewr.URI != "" {
+		newURI := repl.ReplaceAll(rewr.URI, "")
+
+		newU, err := url.Parse(newURI)
+		if err != nil {
+			logger.Error("parsing new URI",
+				zap.String("raw_input", rewr.URI),
+				zap.String("input", newURI),
+				zap.Error(err),
+			)
+		}
+
+		if newU.Path != "" {
+			r.URL.Path = newU.Path
+		}
+		if newU.RawQuery != "" {
+			newU.RawQuery = strings.TrimPrefix(newU.RawQuery, "&")
+			r.URL.RawQuery = newU.RawQuery
+		}
+		if newU.Fragment != "" {
+			r.URL.Fragment = newU.Fragment
+		}
+	}
+
+	// strip path prefix or suffix
+	if rewr.StripPathPrefix != "" {
+		prefix := repl.ReplaceAll(rewr.StripPathPrefix, "")
+		r.URL.Path = strings.TrimPrefix(r.URL.Path, prefix)
+	}
+	if rewr.StripPathSuffix != "" {
+		suffix := repl.ReplaceAll(rewr.StripPathSuffix, "")
+		r.URL.Path = strings.TrimSuffix(r.URL.Path, suffix)
+	}
+
+	// substring replacements in URI
+	for _, rep := range rewr.URISubstring {
+		rep.do(r, repl)
+	}
+
+	// update the encoded copy of the URI
+	r.RequestURI = r.URL.RequestURI()
+
+	// return true if anything changed
+	return r.Method != oldMethod || r.RequestURI != oldURI
+}
+
+// replacer describes a simple and fast substring replacement.
+type replacer struct {
+	// The substring to find. Supports placeholders.
+	Find string `json:"find,omitempty"`
+
+	// The substring to replace. Supports placeholders.
+	Replace string `json:"replace,omitempty"`
+
+	// Maximum number of replacements per string.
+	// Set to <= 0 for no limit (default).
+	Limit int `json:"limit,omitempty"`
+}
+
+// do performs the replacement on r and returns true if any changes were made.
+func (rep replacer) do(r *http.Request, repl caddy.Replacer) bool {
+	if rep.Find == "" || rep.Replace == "" {
+		return false
+	}
+
+	lim := rep.Limit
+	if lim == 0 {
+		lim = -1
+	}
+
+	find := repl.ReplaceAll(rep.Find, "")
+	replace := repl.ReplaceAll(rep.Replace, "")
+
+	oldPath := r.URL.Path
+	oldQuery := r.URL.RawQuery
+
+	r.URL.Path = strings.Replace(oldPath, find, replace, lim)
+	r.URL.RawQuery = strings.Replace(oldQuery, find, replace, lim)
+
+	// changed := r.URL.Path != oldPath && r.URL.RawQuery != oldQuery
+	// if changed {
+	// 	r.RequestURI = r.URL.RequestURI()
+	// }
+
+	return r.URL.Path != oldPath && r.URL.RawQuery != oldQuery
 }
 
 // Interface guard
