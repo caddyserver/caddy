@@ -27,6 +27,9 @@ import (
 // to apply directives in HTTP routes.
 var defaultDirectiveOrder = []string{
 	"rewrite",
+	"strip_prefix",
+	"strip_suffix",
+	"uri_replace",
 	"try_files",
 	"basicauth",
 	"headers",
