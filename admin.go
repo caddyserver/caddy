@@ -734,6 +734,20 @@ traverseLoop:
 	return nil
 }
 
+// RemoveMetaFields removes meta fields like "@id" from a JSON message.
+func RemoveMetaFields(rawJSON []byte) []byte {
+	return idRegexp.ReplaceAllFunc(rawJSON, func(in []byte) []byte {
+		// matches with a comma on both sides (when "@id" property is
+		// not the first or last in the object) need to keep exactly
+		// one comma for correct JSON syntax
+		comma := []byte{','}
+		if bytes.HasPrefix(in, comma) && bytes.HasSuffix(in, comma) {
+			return comma
+		}
+		return []byte{}
+	})
+}
+
 // AdminHandler is like http.Handler except ServeHTTP may return an error.
 //
 // If any handler encounters an error, it should be returned for proper
