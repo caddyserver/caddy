@@ -153,16 +153,7 @@ func changeConfig(method, path string, input []byte, forceReload bool) error {
 	// (an alternate way to do this would be to delete them from
 	// rawCfg as they are indexed, then iterate the index we made
 	// and add them back after encoding as JSON)
-	newCfg = idRegexp.ReplaceAllFunc(newCfg, func(in []byte) []byte {
-		// matches with a comma on both sides (when "@id" property is
-		// not the first or last in the object) need to keep exactly
-		// one comma for correct JSON syntax
-		comma := []byte{','}
-		if bytes.HasPrefix(in, comma) && bytes.HasSuffix(in, comma) {
-			return comma
-		}
-		return []byte{}
-	})
+	newCfg = RemoveMetaFields(newCfg)
 
 	// load this new config; if it fails, we need to revert to
 	// our old representation of caddy's actual config
@@ -295,9 +286,11 @@ func run(newCfg *Config, start bool) error {
 	var err error
 
 	// start the admin endpoint (and stop any prior one)
-	err = replaceAdmin(newCfg)
-	if err != nil {
-		return fmt.Errorf("starting caddy administration endpoint: %v", err)
+	if start {
+		err = replaceAdmin(newCfg)
+		if err != nil {
+			return fmt.Errorf("starting caddy administration endpoint: %v", err)
+		}
 	}
 
 	if newCfg == nil {

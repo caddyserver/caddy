@@ -465,6 +465,8 @@ func cmdValidateConfig(fl Flags) (int, error) {
 		input = adaptedConfig
 	}
 
+	input = caddy.RemoveMetaFields(input)
+
 	var cfg *caddy.Config
 	err = json.Unmarshal(input, &cfg)
 	if err != nil {
