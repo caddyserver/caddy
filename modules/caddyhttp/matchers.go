@@ -596,7 +596,7 @@ func (m MatchRemoteIP) Match(r *http.Request) bool {
 // CaddyModule returns the Caddy module information.
 func (MatchStarlarkExpr) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		ID:  "http.matchers.starlark_expr", // TODO: Rename to 'starlark'?
+		ID:  "http.matchers.starlark",
 		New: func() caddy.Module { return new(MatchStarlarkExpr) },
 	}
 }

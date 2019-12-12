@@ -74,7 +74,7 @@ func (a Authentication) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	}
 
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
-	repl.Set("http.handlers.authentication.user.id", user.ID)
+	repl.Set("http.authentication.user.id", user.ID)
 
 	return next.ServeHTTP(w, r)
 }
