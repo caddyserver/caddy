@@ -15,6 +15,8 @@
 package fileserver
 
 import (
+	"strings"
+
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -98,7 +100,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //
 //    try_files <files...>
 //
-// and is shorthand for:
+// and is basically shorthand for:
 //
 //    matcher:try_files {
 //        file {
@@ -107,25 +109,55 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //    }
 //    rewrite match:try_files {http.matchers.file.relative}{http.request.uri.query_string}
 //
+// If any of the files in the list have a query string, the query string will
+// be ignored when checking for file existence, but will be augmented into
+// the request's URI when rewriting the request.
 func parseTryFiles(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) {
 	if !h.Next() {
 		return nil, h.ArgErr()
 	}
 
-	try := h.RemainingArgs()
-	if len(try) == 0 {
+	tryFiles := h.RemainingArgs()
+	if len(tryFiles) == 0 {
 		return nil, h.ArgErr()
 	}
 
-	handler := rewrite.Rewrite{
-		URI: "{http.matchers.file.relative}{http.request.uri.query_string}",
+	// makeRoute returns a route that tries the files listed in try
+	// and then rewrites to the matched file, and appends writeURIAppend
+	// to the end of the query string.
+	makeRoute := func(try []string, writeURIAppend string) []httpcaddyfile.ConfigValue {
+		handler := rewrite.Rewrite{
+			URI: "{http.matchers.file.relative}{http.request.uri.query_string}" + writeURIAppend,
+		}
+		matcherSet := caddy.ModuleMap{
+			"file": h.JSON(MatchFile{
+				TryFiles: try,
+			}),
+		}
+		return h.NewRoute(matcherSet, handler)
 	}
 
-	matcherSet := caddy.ModuleMap{
-		"file": h.JSON(MatchFile{
-			TryFiles: try,
-		}, nil),
+	var result []httpcaddyfile.ConfigValue
+
+	// if there are query strings in the list, we have to split into
+	// a separate route for each item with a query string, because
+	// the rewrite is different for that item
+	var try []string
+	for _, item := range tryFiles {
+		if idx := strings.Index(item, "?"); idx >= 0 {
+			if len(try) > 0 {
+				result = append(result, makeRoute(try, "")...)
+				try = []string{}
+			}
+			result = append(result, makeRoute([]string{item[:idx]}, "&"+item[idx+1:])...)
+			continue
+		}
+		// accumulate consecutive non-query-string parameters
+		try = append(try, item)
+	}
+	if len(try) > 0 {
+		result = append(result, makeRoute(try, "")...)
 	}
 
-	return h.NewRoute(matcherSet, handler), nil
+	return result, nil
 }

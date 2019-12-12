@@ -53,6 +53,8 @@ func RegisterDirective(dir string, setupFunc UnmarshalFunc) {
 
 // RegisterHandlerDirective is like RegisterDirective, but for
 // directives which specifically output only an HTTP handler.
+// Directives registered with this function will always have
+// an optional matcher token as the first argument.
 func RegisterHandlerDirective(dir string, setupFunc UnmarshalHandlerFunc) {
 	RegisterDirective(dir, func(h Helper) ([]ConfigValue, error) {
 		if !h.Next() {
@@ -117,7 +119,7 @@ func (h Helper) Caddyfiles() []string {
 }
 
 // JSON converts val into JSON. Any errors are added to warnings.
-func (h Helper) JSON(val interface{}, warnings *[]caddyconfig.Warning) json.RawMessage {
+func (h Helper) JSON(val interface{}) json.RawMessage {
 	return caddyconfig.JSON(val, h.warnings)
 }
 
@@ -135,9 +137,14 @@ func (h Helper) MatcherToken() (caddy.ModuleMap, bool, error) {
 // NewRoute returns config values relevant to creating a new HTTP route.
 func (h Helper) NewRoute(matcherSet caddy.ModuleMap,
 	handler caddyhttp.MiddlewareHandler) []ConfigValue {
-	mod, err := caddy.GetModule(caddy.GetModuleName(handler))
+	mod, err := caddy.GetModule(caddy.GetModuleID(handler))
 	if err != nil {
-		// TODO: append to warnings
+		*h.warnings = append(*h.warnings, caddyconfig.Warning{
+			File:    h.File(),
+			Line:    h.Line(),
+			Message: err.Error(),
+		})
+		return nil
 	}
 	var matcherSetsRaw []caddy.ModuleMap
 	if matcherSet != nil {

@@ -190,11 +190,6 @@ func (rep replacer) do(r *http.Request, repl caddy.Replacer) bool {
 	r.URL.Path = strings.Replace(oldPath, find, replace, lim)
 	r.URL.RawQuery = strings.Replace(oldQuery, find, replace, lim)
 
-	// changed := r.URL.Path != oldPath && r.URL.RawQuery != oldQuery
-	// if changed {
-	// 	r.RequestURI = r.URL.RequestURI()
-	// }
-
 	return r.URL.Path != oldPath && r.URL.RawQuery != oldQuery
 }
 

@@ -125,12 +125,12 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 	redirMatcherSet := caddy.ModuleMap{
 		"file": h.JSON(fileserver.MatchFile{
 			TryFiles: []string{"{http.request.uri.path}/index.php"},
-		}, nil),
+		}),
 		"not": h.JSON(caddyhttp.MatchNegate{
 			MatchersRaw: caddy.ModuleMap{
-				"path": h.JSON(caddyhttp.MatchPath{"*/"}, nil),
+				"path": h.JSON(caddyhttp.MatchPath{"*/"}),
 			},
-		}, nil),
+		}),
 	}
 	redirHandler := caddyhttp.StaticResponse{
 		StatusCode: caddyhttp.WeakString("308"),
@@ -145,7 +145,7 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 	rewriteMatcherSet := caddy.ModuleMap{
 		"file": h.JSON(fileserver.MatchFile{
 			TryFiles: []string{"{http.request.uri.path}", "{http.request.uri.path}/index.php", "index.php"},
-		}, nil),
+		}),
 	}
 	rewriteHandler := rewrite.Rewrite{
 		URI:      "{http.matchers.file.relative}{http.request.uri.query_string}",
@@ -159,7 +159,7 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 	// route to actually reverse proxy requests to PHP files;
 	// match only requests that are for PHP files
 	rpMatcherSet := caddy.ModuleMap{
-		"path": h.JSON([]string{"*.php"}, nil),
+		"path": h.JSON([]string{"*.php"}),
 	}
 
 	// if the user specified a matcher token, use that
