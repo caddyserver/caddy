@@ -106,7 +106,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.Err("load balancing selection policy already specified")
 				}
 				name := d.Val()
-				mod, err := caddy.GetModule("http.handlers.reverse_proxy.selection_policies." + name)
+				mod, err := caddy.GetModule("http.reverse_proxy.selection_policies." + name)
 				if err != nil {
 					return d.Errf("getting load balancing policy module '%s': %v", mod, err)
 				}
@@ -389,7 +389,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.Err("transport already specified")
 				}
 				name := d.Val()
-				mod, err := caddy.GetModule("http.handlers.reverse_proxy.transport." + name)
+				mod, err := caddy.GetModule("http.reverse_proxy.transport." + name)
 				if err != nil {
 					return d.Errf("getting transport module '%s': %v", mod, err)
 				}

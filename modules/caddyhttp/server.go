@@ -447,6 +447,10 @@ func (*HTTPErrorConfig) WithError(r *http.Request, err error) *http.Request {
 
 // ServerLogConfig describes a server's logging configuration.
 type ServerLogConfig struct {
+	// LoggerNames maps request hostnames to a custom logger name.
+	// For example, a mapping of "example.com" to "example" would
+	// cause access logs from requests with a Host of example.com
+	// to be emitted by a logger named "http.log.access.example".
 	LoggerNames map[string]string `json:"logger_names,omitempty"`
 }
 
@@ -504,7 +508,7 @@ func cloneURL(from, to *url.URL) {
 
 const (
 	// CommonLogFormat is the common log format. https://en.wikipedia.org/wiki/Common_Log_Format
-	CommonLogFormat = `{http.request.remote.host} ` + CommonLogEmptyValue + ` {http.handlers.authentication.user.id} [{time.now.common_log}] "{http.request.orig_method} {http.request.orig_uri} {http.request.proto}" {http.response.status} {http.response.size}`
+	CommonLogFormat = `{http.request.remote.host} ` + CommonLogEmptyValue + ` {http.authentication.user.id} [{time.now.common_log}] "{http.request.orig_method} {http.request.orig_uri} {http.request.proto}" {http.response.status} {http.response.size}`
 
 	// CommonLogEmptyValue is the common empty log value.
 	CommonLogEmptyValue = "-"

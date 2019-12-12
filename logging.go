@@ -561,10 +561,10 @@ type LogSampling struct {
 }
 
 type (
-	// StdoutWriter can write logs to stdout.
+	// StdoutWriter writes logs to standard out.
 	StdoutWriter struct{}
 
-	// StderrWriter can write logs to stdout.
+	// StderrWriter writes logs to standard error.
 	StderrWriter struct{}
 
 	// DiscardWriter discards all writes.

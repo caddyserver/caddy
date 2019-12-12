@@ -288,13 +288,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		r = r.WithContext(ctx)
 
 		// set placeholders with information about this upstream
-		repl.Set("http.handlers.reverse_proxy.upstream.address", dialInfo.String())
-		repl.Set("http.handlers.reverse_proxy.upstream.hostport", dialInfo.Address)
-		repl.Set("http.handlers.reverse_proxy.upstream.host", dialInfo.Host)
-		repl.Set("http.handlers.reverse_proxy.upstream.port", dialInfo.Port)
-		repl.Set("http.handlers.reverse_proxy.upstream.requests", strconv.Itoa(upstream.Host.NumRequests()))
-		repl.Set("http.handlers.reverse_proxy.upstream.max_requests", strconv.Itoa(upstream.MaxRequests))
-		repl.Set("http.handlers.reverse_proxy.upstream.fails", strconv.Itoa(upstream.Host.Fails()))
+		repl.Set("http.reverse_proxy.upstream.address", dialInfo.String())
+		repl.Set("http.reverse_proxy.upstream.hostport", dialInfo.Address)
+		repl.Set("http.reverse_proxy.upstream.host", dialInfo.Host)
+		repl.Set("http.reverse_proxy.upstream.port", dialInfo.Port)
+		repl.Set("http.reverse_proxy.upstream.requests", strconv.Itoa(upstream.Host.NumRequests()))
+		repl.Set("http.reverse_proxy.upstream.max_requests", strconv.Itoa(upstream.MaxRequests))
+		repl.Set("http.reverse_proxy.upstream.fails", strconv.Itoa(upstream.Host.Fails()))
 
 		// mutate request headers according to this upstream;
 		// because we're in a retry loop, we have to copy

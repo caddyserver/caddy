@@ -100,7 +100,7 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 		Headers: &headers.Handler{
 			Request: &headers.HeaderOps{
 				Set: http.Header{
-					"Host": []string{"{http.handlers.reverse_proxy.upstream.host}"},
+					"Host": []string{"{http.reverse_proxy.upstream.host}"},
 				},
 			},
 		},
