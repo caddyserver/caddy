@@ -134,7 +134,7 @@ func changeConfig(method, path string, input []byte, forceReload bool) error {
 
 	// if nothing changed, no need to do a whole reload unless the client forces it
 	if !forceReload && bytes.Equal(rawCfgJSON, newCfg) {
-		Log().Named("admin.api.change_config").Info("config is unchanged")
+		Log().Named("admin.api").Info("config is unchanged")
 		return nil
 	}
 
