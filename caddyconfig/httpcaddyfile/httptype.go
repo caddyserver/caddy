@@ -203,7 +203,7 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 			if clVals, ok := sblock.pile["tls.certificate_loader"]; ok {
 				for _, clVal := range clVals {
 					loader := clVal.Value.(caddytls.CertificateLoader)
-					loaderName := caddy.GetModuleID(loader)
+					loaderName := caddy.GetModuleName(loader)
 					tlsApp.CertificatesRaw[loaderName] = caddyconfig.JSON(loader, &warnings)
 				}
 			}
