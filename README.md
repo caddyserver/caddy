@@ -205,7 +205,7 @@ Thanks for making Caddy -- and the Web -- better!
 - [DNSimple](https://dnsimple.link/resolving-caddy) provides DNS services for Caddy's sites.
 - [DNS Spy](https://dnsspy.io) keeps an eye on Caddy's DNS properties.
 
-We thank them for their services. **If you want to help keep Caddy free, please [become a sponsor](https://caddyserver.com/pricing)!**
+We thank them for their services. **If you want to help keep Caddy free, please [become a sponsor](https://github.com/sponsors/mholt)!**
 
 
 ## About the Project
