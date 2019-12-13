@@ -275,6 +275,9 @@ func (st *ServerType) hostsFromServerBlockKeys(sb caddyfile.ServerBlock) ([]stri
 			return nil, fmt.Errorf("parsing server block key: %v", err)
 		}
 		addr = addr.Normalize()
+		if addr.Host == "" {
+			continue
+		}
 		hostMap[addr.Host] = struct{}{}
 	}
 
@@ -328,20 +331,20 @@ func (st *ServerType) serversFromPairings(
 				// tls connection policies
 				for _, cpVal := range cpVals {
 					cp := cpVal.Value.(*caddytls.ConnectionPolicy)
-					// only create if there is a non-empty policy
-					if !reflect.DeepEqual(cp, new(caddytls.ConnectionPolicy)) {
-						// make sure the policy covers all hostnames from the block
-						hosts, err := st.hostsFromServerBlockKeys(sblock.block)
-						if err != nil {
-							return nil, err
-						}
 
-						// TODO: are matchers needed if every hostname of the config is matched?
+					// make sure the policy covers all hostnames from the block
+					hosts, err := st.hostsFromServerBlockKeys(sblock.block)
+					if err != nil {
+						return nil, err
+					}
+
+					// TODO: are matchers needed if every hostname of the config is matched?
+					if len(hosts) > 0 {
 						cp.MatchersRaw = caddy.ModuleMap{
 							"sni": caddyconfig.JSON(hosts, warnings), // make sure to match all hosts, not just auto-HTTPS-qualified ones
 						}
-						srv.TLSConnPolicies = append(srv.TLSConnPolicies, cp)
 					}
+					srv.TLSConnPolicies = append(srv.TLSConnPolicies, cp)
 				}
 				// TODO: consolidate equal conn policies
 			}
