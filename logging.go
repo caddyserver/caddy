@@ -342,6 +342,7 @@ func (cl *CustomLog) provision(ctx Context, logging *Logging) error {
 	if err != nil {
 		return fmt.Errorf("invalid log level: %v", err)
 	}
+	level = strings.ToLower(level)
 
 	// set up the log level
 	switch level {
