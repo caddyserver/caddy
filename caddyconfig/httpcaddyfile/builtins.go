@@ -81,7 +81,7 @@ func parseRoot(h Helper) ([]ConfigValue, error) {
 func parseTLS(h Helper) ([]ConfigValue, error) {
 	var configVals []ConfigValue
 
-	cp := new(caddytls.ConnectionPolicy)
+	var cp *caddytls.ConnectionPolicy
 	var fileLoader caddytls.FileLoader
 	var folderLoader caddytls.FolderLoader
 	var mgr caddytls.ACMEManagerMaker
@@ -131,11 +131,17 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 					if _, ok := caddytls.SupportedProtocols[args[0]]; !ok {
 						return nil, h.Errf("Wrong protocol name or protocol not supported: '%s'", args[0])
 					}
+					if cp == nil {
+						cp = new(caddytls.ConnectionPolicy)
+					}
 					cp.ProtocolMin = args[0]
 				}
 				if len(args) > 1 {
 					if _, ok := caddytls.SupportedProtocols[args[1]]; !ok {
 						return nil, h.Errf("Wrong protocol name or protocol not supported: '%s'", args[1])
+					}
+					if cp == nil {
+						cp = new(caddytls.ConnectionPolicy)
 					}
 					cp.ProtocolMax = args[1]
 				}
@@ -144,6 +150,9 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 					if _, ok := caddytls.SupportedCipherSuites[h.Val()]; !ok {
 						return nil, h.Errf("Wrong cipher suite name or cipher suite not supported: '%s'", h.Val())
 					}
+					if cp == nil {
+						cp = new(caddytls.ConnectionPolicy)
+					}
 					cp.CipherSuites = append(cp.CipherSuites, h.Val())
 				}
 			case "curves":
@@ -151,12 +160,18 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 					if _, ok := caddytls.SupportedCurves[h.Val()]; !ok {
 						return nil, h.Errf("Wrong curve name or curve not supported: '%s'", h.Val())
 					}
+					if cp == nil {
+						cp = new(caddytls.ConnectionPolicy)
+					}
 					cp.Curves = append(cp.Curves, h.Val())
 				}
 			case "alpn":
 				args := h.RemainingArgs()
 				if len(args) == 0 {
 					return nil, h.ArgErr()
+				}
+				if cp == nil {
+					cp = new(caddytls.ConnectionPolicy)
 				}
 				cp.ALPN = args
 
@@ -183,23 +198,33 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 		}
 	}
 
-	// connection policy
-	configVals = append(configVals, ConfigValue{
-		Class: "tls.connection_policy",
-		Value: cp,
-	})
-
 	// certificate loaders
 	if len(fileLoader) > 0 {
 		configVals = append(configVals, ConfigValue{
 			Class: "tls.certificate_loader",
 			Value: fileLoader,
 		})
+		// ensure server uses HTTPS by setting non-nil conn policy
+		if cp == nil {
+			cp = new(caddytls.ConnectionPolicy)
+		}
 	}
 	if len(folderLoader) > 0 {
 		configVals = append(configVals, ConfigValue{
 			Class: "tls.certificate_loader",
 			Value: folderLoader,
+		})
+		// ensure server uses HTTPS by setting non-nil conn policy
+		if cp == nil {
+			cp = new(caddytls.ConnectionPolicy)
+		}
+	}
+
+	// connection policy
+	if cp != nil {
+		configVals = append(configVals, ConfigValue{
+			Class: "tls.connection_policy",
+			Value: cp,
 		})
 	}
 
