@@ -85,6 +85,8 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 		// but we also want to be flexible for the script we proxy to.
 
 		fpath := r.URL.Path
+		// We trim those characters because they are served as plain text if appended after .php on Windows 
+		fpath = strings.TrimRight(fpath, " .")
 
 		if idx, ok := httpserver.IndexFile(h.FileSys, fpath, rule.IndexFiles); ok {
 			fpath = idx
