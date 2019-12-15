@@ -711,6 +711,12 @@ traverseLoop:
 					return fmt.Errorf("unrecognized method %s", method)
 				}
 			} else {
+				// if we are "PUTting" a new resource, the key(s) in its path
+				// might not exist yet; that's OK but we need to make them as
+				// we go, while we still have a pointer from the level above
+				if v[part] == nil && method == http.MethodPut {
+					v[part] = make(map[string]interface{})
+				}
 				ptr = v[part]
 			}
 

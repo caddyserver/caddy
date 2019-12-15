@@ -225,10 +225,11 @@ func (logging *Logging) openWriter(opener WriterOpener) (io.WriteCloser, bool, e
 		w, err := opener.OpenWriter()
 		return writerDestructor{w}, err
 	})
-	if err == nil {
-		logging.writerKeys = append(logging.writerKeys, key)
+	if err != nil {
+		return nil, false, err
 	}
-	return writer.(io.WriteCloser), !loaded, err
+	logging.writerKeys = append(logging.writerKeys, key)
+	return writer.(io.WriteCloser), !loaded, nil
 }
 
 // WriterOpener is a module that can open a log writer.
