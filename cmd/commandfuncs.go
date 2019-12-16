@@ -239,8 +239,6 @@ func cmdStop(fl Flags) (int, error) {
 		if !found {
 			return caddy.ExitCodeFailedStartup, fmt.Errorf("Caddy is not running")
 		}
-
-		fmt.Println(" success")
 	}
 
 	return caddy.ExitCodeSuccess, nil
