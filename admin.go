@@ -561,14 +561,20 @@ func handleConfigID(w http.ResponseWriter, r *http.Request) error {
 }
 
 func handleStop(w http.ResponseWriter, r *http.Request) error {
-	defer func() {
-		Log().Named("admin.api").Info("stopping now, bye!! 👋")
-		os.Exit(0)
-	}()
 	err := handleUnload(w, r)
 	if err != nil {
 		Log().Named("admin.api").Error("unload error", zap.Error(err))
 	}
+	go func() {
+		err := stopAdminServer(adminServer)
+		var exitCode int
+		if err != nil {
+			exitCode = ExitCodeFailedQuit
+			Log().Named("admin.api").Error("failed to stop admin server gracefully", zap.Error(err))
+		}
+		Log().Named("admin.api").Info("stopping now, bye!! 👋")
+		os.Exit(exitCode)
+	}()
 	return nil
 }
 
