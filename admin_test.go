@@ -77,6 +77,12 @@ func TestUnsyncedConfigAccess(t *testing.T) {
 			payload: `"d"`,
 			expect:  `{"foo": "jet", "bar": {"aa": "bb"}, "list": ["a", "b", "c", "d"]}`,
 		},
+		{
+			method:  "POST",
+			path:    "/list/...",
+			payload: `["e", "f", "g"]`,
+			expect:  `{"foo": "jet", "bar": {"aa": "bb"}, "list": ["a", "b", "c", "d", "e", "f", "g"]}`,
+		},
 	} {
 		err := unsyncedConfigAccess(tc.method, rawConfigKey+tc.path, []byte(tc.payload), nil)
 
