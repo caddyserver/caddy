@@ -126,9 +126,24 @@ func (rewr Rewrite) rewrite(r *http.Request, repl caddy.Replacer, logger *zap.Lo
 		if newU.Path != "" {
 			r.URL.Path = newU.Path
 		}
-		if newU.RawQuery != "" {
-			newU.RawQuery = strings.TrimPrefix(newU.RawQuery, "&")
-			r.URL.RawQuery = newU.RawQuery
+		if strings.Contains(newURI, "?") {
+			// you'll notice we check for existence of a question mark
+			// instead of RawQuery != "". We do this because if the user
+			// wants to remove an existing query string, they do that by
+			// appending "?" to the path: "/foo?" -- in this case, then,
+			// RawQuery is "" but we still want to set it to that; hence,
+			// we check for a "?", which always starts a query string
+			inputQuery := newU.Query()
+			outputQuery := make(url.Values)
+			for k := range inputQuery {
+				// overwrite existing values; we don't simply keep
+				// appending because it can cause rewrite rules like
+				// "{path}{query}&a=b" with rehandling enabled to go
+				// on forever: "/foo.html?a=b&a=b&a=b..."
+				outputQuery.Set(k, inputQuery.Get(k))
+			}
+			// this sorts the keys, oh well
+			r.URL.RawQuery = outputQuery.Encode()
 		}
 		if newU.Fragment != "" {
 			r.URL.Fragment = newU.Fragment
