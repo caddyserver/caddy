@@ -27,10 +27,11 @@ import (
 type Replacer interface {
 	Set(variable, value string)
 	Delete(variable string)
-	Map(ReplacementFunc)
+	Map(ReplacerFunc)
 	ReplaceAll(input, empty string) string
 	ReplaceKnown(input, empty string) string
 	ReplaceOrErr(input string, errOnEmpty, errOnUnknown bool) (string, error)
+	ReplaceFunc(input string, f ReplacementFunc) (string, error)
 }
 
 // NewReplacer returns a new Replacer.
@@ -38,7 +39,7 @@ func NewReplacer() Replacer {
 	rep := &replacer{
 		static: make(map[string]string),
 	}
-	rep.providers = []ReplacementFunc{
+	rep.providers = []ReplacerFunc{
 		globalDefaultReplacements,
 		rep.fromStatic,
 	}
@@ -46,13 +47,13 @@ func NewReplacer() Replacer {
 }
 
 type replacer struct {
-	providers []ReplacementFunc
+	providers []ReplacerFunc
 	static    map[string]string
 }
 
 // Map adds mapFunc to the list of value providers.
 // mapFunc will be executed only at replace-time.
-func (r *replacer) Map(mapFunc ReplacementFunc) {
+func (r *replacer) Map(mapFunc ReplacerFunc) {
 	r.providers = append(r.providers, mapFunc)
 }
 
@@ -77,14 +78,14 @@ func (r *replacer) fromStatic(key string) (val string, ok bool) {
 // that are empty or not recognized will cause an error to
 // be returned.
 func (r *replacer) ReplaceOrErr(input string, errOnEmpty, errOnUnknown bool) (string, error) {
-	return r.replace(input, "", false, errOnEmpty, errOnUnknown)
+	return r.replace(input, "", false, errOnEmpty, errOnUnknown, nil)
 }
 
 // ReplaceKnown is like ReplaceAll but only replaces
 // placeholders that are known (recognized). Unrecognized
 // placeholders will remain in the output.
 func (r *replacer) ReplaceKnown(input, empty string) string {
-	out, _ := r.replace(input, empty, false, false, false)
+	out, _ := r.replace(input, empty, false, false, false, nil)
 	return out
 }
 
@@ -93,12 +94,21 @@ func (r *replacer) ReplaceKnown(input, empty string) string {
 // whether they are recognized or not. Values that are empty
 // string will be substituted with empty.
 func (r *replacer) ReplaceAll(input, empty string) string {
-	out, _ := r.replace(input, empty, true, false, false)
+	out, _ := r.replace(input, empty, true, false, false, nil)
 	return out
 }
 
+// ReplaceFunc calls ReplaceAll  efficiently replaces placeholders in input with
+// their values. All placeholders are replaced in the output
+// whether they are recognized or not. Values that are empty
+// string will be substituted with empty.
+func (r *replacer) ReplaceFunc(input string, f ReplacementFunc) (string, error) {
+	return r.replace(input, "", true, false, false, f)
+}
+
 func (r *replacer) replace(input, empty string,
-	treatUnknownAsEmpty, errOnEmpty, errOnUnknown bool) (string, error) {
+	treatUnknownAsEmpty, errOnEmpty, errOnUnknown bool,
+	f ReplacementFunc) (string, error) {
 	if !strings.Contains(input, string(phOpen)) {
 		return input, nil
 	}
@@ -134,6 +144,13 @@ func (r *replacer) replace(input, empty string,
 		for _, mapFunc := range r.providers {
 			if val, ok := mapFunc(key); ok {
 				found = true
+				if f != nil {
+					var err error
+					val, err = f(key, val)
+					if err != nil {
+						return "", err
+					}
+				}
 				if val == "" {
 					if errOnEmpty {
 						return "", fmt.Errorf("evaluated placeholder %s%s%s is empty",
@@ -174,12 +191,12 @@ func (r *replacer) replace(input, empty string,
 	return sb.String(), nil
 }
 
-// ReplacementFunc is a function that returns a replacement
+// ReplacerFunc is a function that returns a replacement
 // for the given key along with true if the function is able
 // to service that key (even if the value is blank). If the
 // function does not recognize the key, false should be
 // returned.
-type ReplacementFunc func(key string) (val string, ok bool)
+type ReplacerFunc func(key string) (val string, ok bool)
 
 func globalDefaultReplacements(key string) (string, bool) {
 	// check environment variable
@@ -205,6 +222,14 @@ func globalDefaultReplacements(key string) (string, bool) {
 
 	return "", false
 }
+
+// ReplacementFunc is a function that is called when a
+// replacement is being performed. It receives the
+// variable (i.e. placeholder name) and the value that
+// will be the replacement, and returns the value that
+// will actually be the replacement, or an error. Note
+// that errors are sometimes ignored by replacers.
+type ReplacementFunc func(variable, val string) (string, error)
 
 // nowFunc is a variable so tests can change it
 // in order to obtain a deterministic time.

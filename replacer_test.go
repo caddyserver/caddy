@@ -133,7 +133,7 @@ func TestReplacerSet(t *testing.T) {
 
 func TestReplacerReplaceKnown(t *testing.T) {
 	rep := replacer{
-		providers: []ReplacementFunc{
+		providers: []ReplacerFunc{
 			// split our possible vars to two functions (to test if both functions are called)
 			func(key string) (val string, ok bool) {
 				switch key {
@@ -239,7 +239,7 @@ func TestReplacerDelete(t *testing.T) {
 func TestReplacerMap(t *testing.T) {
 	rep := testReplacer()
 
-	for i, tc := range []ReplacementFunc{
+	for i, tc := range []ReplacerFunc{
 		func(key string) (val string, ok bool) {
 			return "", false
 		},
@@ -317,7 +317,7 @@ func TestReplacerNew(t *testing.T) {
 
 func testReplacer() replacer {
 	return replacer{
-		providers: make([]ReplacementFunc, 0),
+		providers: make([]ReplacerFunc, 0),
 		static:    make(map[string]string),
 	}
 }
