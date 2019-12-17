@@ -165,6 +165,14 @@ func (m MatchPath) Provision(_ caddy.Context) error {
 // Match returns true if r matches m.
 func (m MatchPath) Match(r *http.Request) bool {
 	lowerPath := strings.ToLower(r.URL.Path)
+
+	// see #2917; Windows ignores trailing dots and spaces
+	// when accessing files (sigh), potentially causing a
+	// security risk (cry) if PHP files end up being served
+	// as static files, exposing the source code, instead of
+	// being matched by *.php to be treated as PHP scripts
+	lowerPath = strings.TrimRight(lowerPath, ". ")
+
 	for _, matchPath := range m {
 		// special case: first character is equals sign,
 		// treat it as an exact match

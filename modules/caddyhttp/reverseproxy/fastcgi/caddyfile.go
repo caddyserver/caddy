@@ -115,7 +115,8 @@ func (t *Transport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 //     php_fastcgi /subpath localhost:7777
 //
 // then the resulting routes are wrapped in a subroute that uses the
-// user's matcher as a prerequisite to enter the subroute.
+// user's matcher as a prerequisite to enter the subroute. In other
+// words, the directive's matcher is necessary, but not sufficient.
 func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) {
 	if !h.Next() {
 		return nil, h.ArgErr()
