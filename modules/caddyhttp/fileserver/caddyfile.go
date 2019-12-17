@@ -127,7 +127,8 @@ func parseTryFiles(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) 
 	// to the end of the query string.
 	makeRoute := func(try []string, writeURIAppend string) []httpcaddyfile.ConfigValue {
 		handler := rewrite.Rewrite{
-			URI: "{http.matchers.file.relative}{http.request.uri.query_string}" + writeURIAppend,
+			Rehandle: true,
+			URI:      "{http.matchers.file.relative}{http.request.uri.query_string}" + writeURIAppend,
 		}
 		matcherSet := caddy.ModuleMap{
 			"file": h.JSON(MatchFile{

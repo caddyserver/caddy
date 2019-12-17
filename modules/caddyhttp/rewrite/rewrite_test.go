@@ -126,12 +126,17 @@ func TestRewrite(t *testing.T) {
 		{
 			rule:   Rewrite{URI: "/index.php?c=d&{http.request.uri.query}"},
 			input:  newRequest(t, "GET", "/?a=b"),
-			expect: newRequest(t, "GET", "/index.php?c=d&a=b"),
+			expect: newRequest(t, "GET", "/index.php?a=b&c=d"),
 		},
 		{
 			rule:   Rewrite{URI: "/index.php?{http.request.uri.query}&p={http.request.uri.path}"},
 			input:  newRequest(t, "GET", "/foo/bar?a=b"),
-			expect: newRequest(t, "GET", "/index.php?a=b&p=/foo/bar"),
+			expect: newRequest(t, "GET", "/index.php?a=b&p=%2Ffoo%2Fbar"),
+		},
+		{
+			rule:   Rewrite{URI: "{http.request.uri.path}?"},
+			input:  newRequest(t, "GET", "/foo/bar?a=b&c=d"),
+			expect: newRequest(t, "GET", "/foo/bar"),
 		},
 
 		{
@@ -188,7 +193,7 @@ func TestRewrite(t *testing.T) {
 		// populate the replacer just enough for our tests
 		repl.Set("http.request.uri.path", tc.input.URL.Path)
 		repl.Set("http.request.uri.query", tc.input.URL.RawQuery)
-		repl.Set("http.request.uri.query_string", "?"+tc.input.URL.Query().Encode())
+		repl.Set("http.request.uri.query_string", "?"+tc.input.URL.RawQuery)
 
 		changed := tc.rule.rewrite(tc.input, repl, nil)
 
