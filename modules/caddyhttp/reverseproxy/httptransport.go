@@ -20,6 +20,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"fmt"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"reflect"
@@ -166,6 +167,9 @@ func (h *HTTPTransport) setScheme(req *http.Request) {
 
 // Cleanup implements caddy.CleanerUpper and closes any idle connections.
 func (h HTTPTransport) Cleanup() error {
+	if h.Transport == nil {
+		return nil
+	}
 	h.Transport.CloseIdleConnections()
 	return nil
 }
@@ -174,6 +178,8 @@ func (h HTTPTransport) Cleanup() error {
 // TLS configuration for the transport/client.
 type TLSConfig struct {
 	RootCAPool []string `json:"root_ca_pool,omitempty"`
+	// Added to the same pool as above, but brought in from files
+	RootCAPemFiles []string `json:"root_ca_pem_files,omitempty"`
 	// TODO: Should the client cert+key config use caddytls.CertificateLoader modules?
 	ClientCertificateFile    string         `json:"client_certificate_file,omitempty"`
 	ClientCertificateKeyFile string         `json:"client_certificate_key_file,omitempty"`
@@ -203,7 +209,7 @@ func (t TLSConfig) MakeTLSClientConfig() (*tls.Config, error) {
 	}
 
 	// trusted root CAs
-	if len(t.RootCAPool) > 0 {
+	if len(t.RootCAPool) > 0 || len(t.RootCAPemFiles) > 0 {
 		rootPool := x509.NewCertPool()
 		for _, encodedCACert := range t.RootCAPool {
 			caCert, err := decodeBase64DERCert(encodedCACert)
@@ -211,6 +217,14 @@ func (t TLSConfig) MakeTLSClientConfig() (*tls.Config, error) {
 				return nil, fmt.Errorf("parsing CA certificate: %v", err)
 			}
 			rootPool.AddCert(caCert)
+		}
+		for _, pemFile := range t.RootCAPemFiles {
+			pemData, err := ioutil.ReadFile(pemFile)
+			if err != nil {
+				return nil, fmt.Errorf("failed reading ca cert: %v", err)
+			}
+			rootPool.AppendCertsFromPEM(pemData)
+
 		}
 		cfg.RootCAs = rootPool
 	}
