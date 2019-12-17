@@ -636,6 +636,19 @@ func unsyncedConfigAccess(method, path string, body []byte, out io.Writer) error
 		return fmt.Errorf("path missing")
 	}
 
+	// A path that ends with "..." implies:
+	// 1) the part before it is an array
+	// 2) the payload is an array
+	// and means that the user wants to expand the elements
+	// in the payload array and append each one into the
+	// destination array, like so:
+	//     array = append(array, elems...)
+	// This special case is handled below.
+	ellipses := parts[len(parts)-1] == "..."
+	if ellipses {
+		parts = parts[:len(parts)-1]
+	}
+
 	var ptr interface{} = rawCfg
 
 traverseLoop:
@@ -666,7 +679,15 @@ traverseLoop:
 						return fmt.Errorf("encoding config: %v", err)
 					}
 				case http.MethodPost:
-					v[part] = append(arr, val)
+					if ellipses {
+						valArray, ok := val.([]interface{})
+						if !ok {
+							return fmt.Errorf("final element is not an array")
+						}
+						v[part] = append(arr, valArray...)
+					} else {
+						v[part] = append(arr, val)
+					}
 				case http.MethodPut:
 					// avoid creation of new slice and a second copy (see
 					// https://github.com/golang/go/wiki/SliceTricks#insert)
@@ -692,13 +713,19 @@ traverseLoop:
 						return fmt.Errorf("encoding config: %v", err)
 					}
 				case http.MethodPost:
+					// if the part is an existing list, POST appends to
+					// it, otherwise it just sets or creates the value
 					if arr, ok := v[part].([]interface{}); ok {
-						// if the part is an existing list, POST appends to it
-						// TODO: Do we ever reach this point, since we handle arrays
-						// separately above?
-						v[part] = append(arr, val)
+						if ellipses {
+							valArray, ok := val.([]interface{})
+							if !ok {
+								return fmt.Errorf("final element is not an array")
+							}
+							v[part] = append(arr, valArray...)
+						} else {
+							v[part] = append(arr, val)
+						}
 					} else {
-						// otherwise, it simply sets the value
 						v[part] = val
 					}
 				case http.MethodPut:
