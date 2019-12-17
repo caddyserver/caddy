@@ -72,6 +72,8 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 				val, err = parseOptStorage(disp)
 			case "acme_ca":
 				val, err = parseOptACMECA(disp)
+			case "acme_ca_root":
+				val, err = parseOptACMECARoot(disp)
 			case "email":
 				val, err = parseOptEmail(disp)
 			case "admin":

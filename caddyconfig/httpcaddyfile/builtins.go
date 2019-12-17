@@ -94,6 +94,9 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	if acmeCA := h.Option("acme_ca"); acmeCA != nil {
 		mgr.CA = acmeCA.(string)
 	}
+	if caPemFile := h.Option("acme_ca_root"); caPemFile != nil {
+		mgr.TrustedRootsPEMFiles = append(mgr.TrustedRootsPEMFiles, caPemFile.(string))
+	}
 
 	for h.Next() {
 		// file certificate loader
@@ -186,6 +189,13 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 					return nil, h.ArgErr()
 				}
 				mgr.CA = arg[0]
+
+			case "ca_root":
+				arg := h.RemainingArgs()
+				if len(arg) != 1 {
+					return nil, h.ArgErr()
+				}
+				mgr.TrustedRootsPEMFiles = append(mgr.TrustedRootsPEMFiles, arg[0])
 
 			default:
 				return nil, h.Errf("unknown subdirective: %s", h.Val())
