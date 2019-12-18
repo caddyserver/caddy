@@ -130,7 +130,19 @@ type gzipResponseWriter struct {
 func (w *gzipResponseWriter) WriteHeader(code int) {
 	w.Header().Del("Content-Length")
 	w.Header().Set("Content-Encoding", "gzip")
-	w.Header().Add("Vary", "Accept-Encoding")
+	varyList, exist := w.Header()["Vary"]
+	shouldAddVary := true
+	if exist {
+		for _, vary := range varyList {
+			if vary == "Accept-Encoding" {
+				shouldAddVary = false
+				break
+			}
+		}
+	}
+	if shouldAddVary {
+		w.Header().Add("Vary", "Accept-Encoding")
+	}
 	originalEtag := w.Header().Get("ETag")
 	if originalEtag != "" && !strings.HasPrefix(originalEtag, "W/") {
 		w.Header().Set("ETag", "W/"+originalEtag)
