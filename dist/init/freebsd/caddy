@@ -80,7 +80,7 @@ caddy_startprecmd()
 	rc_flags=""
 
 	if [ ! -e "${pidfile}" ]; then
-		install -o "${caddy_user}" -g "${caddy_group}" "/dev/null" "${pidfile}"
+		install -m 644 -o "${caddy_user}" -g "${caddy_group}" "/dev/null" "${pidfile}"
 	fi
 }
 
