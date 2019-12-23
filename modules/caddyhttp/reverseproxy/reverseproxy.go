@@ -41,15 +41,56 @@ func init() {
 }
 
 // Handler implements a highly configurable and production-ready reverse proxy.
+// Upon proxying, this module sets the following placeholders (which can be used
+// both within and after this handler):
+//
+//  {http.reverse_proxy.upstream.address}
+//		The full address to the upstream as given in the config
+//	{http.reverse_proxy.upstream.hostport}
+//		The host:port of the upstream
+//	{http.reverse_proxy.upstream.host}
+//		The host of the upstream
+//	{http.reverse_proxy.upstream.port}
+//		The port of the upstream
+//	{http.reverse_proxy.upstream.requests}
+//		The approximate current number of requests to the upstream
+//	{http.reverse_proxy.upstream.max_requests}
+//		The maximum approximate number of requests allowed to the upstream
+//	{http.reverse_proxy.upstream.fails}
+//		The number of recent failed requests to the upstream
+//
 type Handler struct {
-	TransportRaw   json.RawMessage  `json:"transport,omitempty" caddy:"namespace=http.reverse_proxy.transport inline_key=protocol"`
-	CBRaw          json.RawMessage  `json:"circuit_breaker,omitempty" caddy:"namespace=http.reverse_proxy.circuit_breakers inline_key=type"`
-	LoadBalancing  *LoadBalancing   `json:"load_balancing,omitempty"`
-	HealthChecks   *HealthChecks    `json:"health_checks,omitempty"`
-	Upstreams      UpstreamPool     `json:"upstreams,omitempty"`
-	FlushInterval  caddy.Duration   `json:"flush_interval,omitempty"`
-	Headers        *headers.Handler `json:"headers,omitempty"`
-	BufferRequests bool             `json:"buffer_requests,omitempty"`
+	// Configures the method of transport for the proxy. A transport
+	// is what performs the actual "round trip" to the backend.
+	// The default transport is plaintext HTTP.
+	TransportRaw json.RawMessage `json:"transport,omitempty" caddy:"namespace=http.reverse_proxy.transport inline_key=protocol"`
+
+	// A circuit breaker may be used to relieve pressure on a backend
+	// that is beginning to exhibit symptoms of stress or latency.
+	// By default, there is no circuit breaker.
+	CBRaw json.RawMessage `json:"circuit_breaker,omitempty" caddy:"namespace=http.reverse_proxy.circuit_breakers inline_key=type"`
+
+	// Load balancing distributes load/requests between backends.
+	LoadBalancing *LoadBalancing `json:"load_balancing,omitempty"`
+
+	// Health checks update the status of backends, whether they are
+	// up or down. Down backends will not be proxied to.
+	HealthChecks *HealthChecks `json:"health_checks,omitempty"`
+
+	// Upstreams is the list of backends to proxy to.
+	Upstreams UpstreamPool `json:"upstreams,omitempty"`
+
+	// TODO: figure out good defaults and write docs for this
+	// (see https://github.com/caddyserver/caddy/issues/1460)
+	FlushInterval caddy.Duration `json:"flush_interval,omitempty"`
+
+	// Headers manipulates headers between Caddy and the backend.
+	Headers *headers.Handler `json:"headers,omitempty"`
+
+	// If true, the entire request body will be read and buffered
+	// in memory before being proxied to the backend. This should
+	// be avoided if at all possible for performance reasons.
+	BufferRequests bool `json:"buffer_requests,omitempty"`
 
 	Transport http.RoundTripper `json:"-"`
 	CB        CircuitBreaker    `json:"-"`
@@ -140,7 +181,7 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 
 		timeout := time.Duration(h.HealthChecks.Active.Timeout)
 		if timeout == 0 {
-			timeout = 10 * time.Second
+			timeout = 5 * time.Second
 		}
 
 		h.HealthChecks.Active.stopChan = make(chan struct{})
@@ -649,10 +690,30 @@ func removeConnectionHeaders(h http.Header) {
 
 // LoadBalancing has parameters related to load balancing.
 type LoadBalancing struct {
-	SelectionPolicyRaw json.RawMessage          `json:"selection_policy,omitempty" caddy:"namespace=http.reverse_proxy.selection_policies inline_key=policy"`
-	TryDuration        caddy.Duration           `json:"try_duration,omitempty"`
-	TryInterval        caddy.Duration           `json:"try_interval,omitempty"`
-	RetryMatchRaw      caddyhttp.RawMatcherSets `json:"retry_match,omitempty" caddy:"namespace=http.matchers"`
+	// A selection policy is how to choose an available backend.
+	// The default policy is random selection.
+	SelectionPolicyRaw json.RawMessage `json:"selection_policy,omitempty" caddy:"namespace=http.reverse_proxy.selection_policies inline_key=policy"`
+
+	// How long to try selecting available backends for each request
+	// if the next available host is down. By default, this retry is
+	// disabled. Clients will wait for up to this long while the load
+	// balancer tries to find an available upstream host.
+	TryDuration caddy.Duration `json:"try_duration,omitempty"`
+
+	// How long to wait between selecting the next host from the pool. Default
+	// is 250ms. Only relevant when a request to an upstream host fails. Be
+	// aware that setting this to 0 with a non-zero try_duration can cause the
+	// CPU to spin if all backends are down and latency is very low.
+	TryInterval caddy.Duration `json:"try_interval,omitempty"`
+
+	// A list of matcher sets that restricts with which requests retries are
+	// allowed. A request must match any of the given matcher sets in order
+	// to be retried if the connection to the upstream succeeded but the
+	// subsequent round-trip failed. If the connection to the upstream failed,
+	// a retry is always allowed. If unspecified, only GET requests will be
+	// allowed to be retried. Note that a retry is done with the next available
+	// host according to the load balancing policy.
+	RetryMatchRaw caddyhttp.RawMatcherSets `json:"retry_match,omitempty" caddy:"namespace=http.matchers"`
 
 	SelectionPolicy Selector              `json:"-"`
 	RetryMatch      caddyhttp.MatcherSets `json:"-"`

@@ -97,8 +97,12 @@ type Server struct {
 	// in which they appear in the list.
 	Routes RouteList `json:"routes,omitempty"`
 
-	// Errors is how this server will handle errors returned from
-	// any of the handlers in the primary routes.
+	// Errors is how this server will handle errors returned from any
+	// of the handlers in the primary routes. If the primary handler
+	// chain returns an error, the error along with its recommended
+	// status code are bubbled back up to the HTTP server which
+	// executes a separate error route, specified using this property.
+	// The error routes work exactly like the normal routes.
 	Errors *HTTPErrorConfig `json:"errors,omitempty"`
 
 	// How to handle TLS connections.
@@ -418,6 +422,20 @@ func (ahc AutoHTTPSConfig) Skipped(name string, skipSlice []string) bool {
 // HTTPErrorConfig determines how to handle errors
 // from the HTTP handlers.
 type HTTPErrorConfig struct {
+	// The routes to evaluate after the primary handler
+	// chain returns an error. In an error route, extra
+	// placeholders are available:
+	//
+	// {http.error.status_code}
+	//     The recommended HTTP status code
+	// {http.error.status_text}
+	//     The status text associated with the recommended status code
+	// {http.error.message}
+	//     The error message
+	// {http.error.trace}
+	//     The origin of the error
+	// {http.error.id}
+	//     A short, human-conveyable ID for the error
 	Routes RouteList `json:"routes,omitempty"`
 }
 

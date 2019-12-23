@@ -46,7 +46,13 @@ type MatchFile struct {
 	// placeholders.
 	TryFiles []string `json:"try_files,omitempty"`
 
-	// How to choose a file in TryFiles.
+	// How to choose a file in TryFiles. Can be:
+	//
+	// - first_exist
+	// - smallest_size
+	// - largest_size
+	// - most_recently_modified
+	//
 	// Default is first_exist.
 	TryPolicy string `json:"try_policy,omitempty"`
 }
@@ -64,7 +70,7 @@ func (MatchFile) CaddyModule() caddy.ModuleInfo {
 //     file {
 //         root <path>
 //         try_files <files...>
-//         try_policy first_exist|smallest_size|largest_size|most_recent_modified
+//         try_policy first_exist|smallest_size|largest_size|most_recently_modified
 //     }
 //
 func (m *MatchFile) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
@@ -107,7 +113,7 @@ func (m MatchFile) Validate() error {
 		tryPolicyFirstExist,
 		tryPolicyLargestSize,
 		tryPolicySmallestSize,
-		tryPolicyMostRecentMod:
+		tryPolicyMostRecentlyMod:
 	default:
 		return fmt.Errorf("unknown try policy %s", m.TryPolicy)
 	}
@@ -187,7 +193,7 @@ func (m MatchFile) selectFile(r *http.Request) (rel, abs string, matched bool) {
 		}
 		return smallestSuffix, smallestFilename, true
 
-	case tryPolicyMostRecentMod:
+	case tryPolicyMostRecentlyMod:
 		var recentDate time.Time
 		var recentFilename string
 		var recentSuffix string
@@ -238,10 +244,10 @@ func strictFileExists(file string) bool {
 }
 
 const (
-	tryPolicyFirstExist    = "first_exist"
-	tryPolicyLargestSize   = "largest_size"
-	tryPolicySmallestSize  = "smallest_size"
-	tryPolicyMostRecentMod = "most_recent_modified"
+	tryPolicyFirstExist      = "first_exist"
+	tryPolicyLargestSize     = "largest_size"
+	tryPolicySmallestSize    = "smallest_size"
+	tryPolicyMostRecentlyMod = "most_recently_modified"
 )
 
 // Interface guards
