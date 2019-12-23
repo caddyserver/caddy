@@ -134,13 +134,9 @@ not quit after printing, and can be useful for troubleshooting.`,
 		Long: `
 Stops the background Caddy process as gracefully as possible.
 
-It will first try to use the admin API's /stop endpoint; the address of
-this request can be customized using the --address flag if it is not the
-default.
-
-If that fails for any reason, it will attempt to signal the first process
-it can find named the same as this one (os.Args[0]). On Windows, such
-a stop is forceful because Windows does not have signals.`,
+It requires that the admin API is enabled and accessible, since it will
+use the API's /stop endpoint. The address of this request can be
+customized using the --address flag if it is not the default.`,
 		Flags: func() *flag.FlagSet {
 			fs := flag.NewFlagSet("stop", flag.ExitOnError)
 			fs.String("address", "", "The address to use to reach the admin API endpoint, if not the default")
