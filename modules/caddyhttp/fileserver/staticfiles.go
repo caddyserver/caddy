@@ -42,12 +42,29 @@ func init() {
 
 // FileServer implements a static file server responder for Caddy.
 type FileServer struct {
-	Root          string   `json:"root,omitempty"` // default is current directory
-	Hide          []string `json:"hide,omitempty"`
-	IndexNames    []string `json:"index_names,omitempty"`
-	Browse        *Browse  `json:"browse,omitempty"`
-	CanonicalURIs *bool    `json:"canonical_uris,omitempty"`
-	PassThru      bool     `json:"pass_thru,omitempty"` // if 404, call next handler instead
+	// The path to the root of the site. Default is `{http.vars.root}` if set,
+	// or current working directory otherwise.
+	Root string `json:"root,omitempty"`
+
+	// A list of files or folders to hide; the file server will pretend as if
+	// they don't exist. Accepts globular patterns like "*.hidden" or "/foo/*/bar".
+	Hide []string `json:"hide,omitempty"`
+
+	// The names of files to try as index files if a folder is requested.
+	IndexNames []string `json:"index_names,omitempty"`
+
+	// Enables file listings if a directory was requested and no index
+	// file is present.
+	Browse *Browse `json:"browse,omitempty"`
+
+	// Use redirects to enforce trailing slashes for directories, or to
+	// remove trailing slash from URIs for files. Default is true.
+	CanonicalURIs *bool `json:"canonical_uris,omitempty"`
+
+	// If pass-thru mode is enabled and a requested file is not found,
+	// it will invoke the next handler in the chain instead of returning
+	// a 404 error. By default, this is false (disabled).
+	PassThru bool `json:"pass_thru,omitempty"`
 }
 
 // CaddyModule returns the Caddy module information.

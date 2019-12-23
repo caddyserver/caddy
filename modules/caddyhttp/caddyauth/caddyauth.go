@@ -28,7 +28,10 @@ func init() {
 }
 
 // Authentication is a middleware which provides user authentication.
+// Rejects requests with HTTP 401 if the request is not authenticated.
 type Authentication struct {
+	// A set of authentication providers. If none are specified,
+	// all requests will always be unauthenticated.
 	ProvidersRaw caddy.ModuleMap `json:"providers,omitempty" caddy:"namespace=http.authentication.providers"`
 
 	Providers map[string]Authenticator `json:"-"`

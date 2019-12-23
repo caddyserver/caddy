@@ -57,7 +57,7 @@ type Transport struct {
 	// that 404's if the fastcgi path info is not found.
 	SplitPath string `json:"split_path,omitempty"`
 
-	// Extra environment variables
+	// Extra environment variables.
 	EnvVars map[string]string `json:"env,omitempty"`
 
 	// The duration used to set a deadline when connecting to an upstream.

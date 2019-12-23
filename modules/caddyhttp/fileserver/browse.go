@@ -29,6 +29,7 @@ import (
 
 // Browse configures directory browsing.
 type Browse struct {
+	// Use this template file instead of the default browse template.
 	TemplateFile string `json:"template_file,omitempty"`
 
 	template *template.Template

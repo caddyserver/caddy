@@ -36,7 +36,7 @@ func init() {
 
 // ConsoleEncoder encodes log entries that are mostly human-readable.
 type ConsoleEncoder struct {
-	zapcore.Encoder
+	zapcore.Encoder `json:"-"`
 	LogEncoderConfig
 }
 
@@ -56,8 +56,8 @@ func (ce *ConsoleEncoder) Provision(_ caddy.Context) error {
 
 // JSONEncoder encodes entries as JSON.
 type JSONEncoder struct {
-	zapcore.Encoder
-	*LogEncoderConfig
+	zapcore.Encoder `json:"-"`
+	LogEncoderConfig
 }
 
 // CaddyModule returns the Caddy module information.
@@ -77,7 +77,7 @@ func (je *JSONEncoder) Provision(_ caddy.Context) error {
 // LogfmtEncoder encodes log entries as logfmt:
 // https://www.brandur.org/logfmt
 type LogfmtEncoder struct {
-	zapcore.Encoder
+	zapcore.Encoder `json:"-"`
 	LogEncoderConfig
 }
 
@@ -100,9 +100,9 @@ func (lfe *LogfmtEncoder) Provision(_ caddy.Context) error {
 // for custom, self-encoded log entries that consist of a
 // single field in the structured log entry.
 type StringEncoder struct {
-	zapcore.Encoder
-	FieldName   string          `json:"field,omitempty"`
-	FallbackRaw json.RawMessage `json:"fallback,omitempty" caddy:"namespace=caddy.logging.encoders inline_key=format"`
+	zapcore.Encoder `json:"-"`
+	FieldName       string          `json:"field,omitempty"`
+	FallbackRaw     json.RawMessage `json:"fallback,omitempty" caddy:"namespace=caddy.logging.encoders inline_key=format"`
 }
 
 // CaddyModule returns the Caddy module information.

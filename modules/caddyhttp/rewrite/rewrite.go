@@ -31,16 +31,39 @@ func init() {
 }
 
 // Rewrite is a middleware which can rewrite HTTP requests.
+//
+// The Rehandle and HTTPRedirect properties are mutually exclusive
+// (you cannot both rehandle and issue a redirect).
+//
+// These rewrite properties are applied to a request in this order:
+// Method, URI, StripPathPrefix, StripPathSuffix, URISubstring.
+//
+// TODO: This module is still a WIP and may experience breaking changes.
 type Rewrite struct {
+	// Changes the request's HTTP verb.
 	Method string `json:"method,omitempty"`
-	URI    string `json:"uri,omitempty"`
 
-	StripPathPrefix string     `json:"strip_path_prefix,omitempty"`
-	StripPathSuffix string     `json:"strip_path_suffix,omitempty"`
-	URISubstring    []replacer `json:"uri_substring,omitempty"`
+	// Changes the request's URI (path, query string, and fragment if present).
+	// Only components of the URI that are specified will be changed.
+	URI string `json:"uri,omitempty"`
 
+	// Strips the given prefix from the beginning of the URI path.
+	StripPathPrefix string `json:"strip_path_prefix,omitempty"`
+
+	// Strips the given suffix from the end of the URI path.
+	StripPathSuffix string `json:"strip_path_suffix,omitempty"`
+
+	// Performs substring replacements on the URI.
+	URISubstring []replacer `json:"uri_substring,omitempty"`
+
+	// If set to a 3xx HTTP status code and if the URI was rewritten (changed),
+	// the handler will issue a simple HTTP redirect to the new URI using the
+	// given status code.
 	HTTPRedirect caddyhttp.WeakString `json:"http_redirect,omitempty"`
-	Rehandle     bool                 `json:"rehandle,omitempty"`
+
+	// If true, the request will sent for rehandling after rewriting
+	// only if anything about the request was changed.
+	Rehandle bool `json:"rehandle,omitempty"`
 
 	logger *zap.Logger
 }

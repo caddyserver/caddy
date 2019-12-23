@@ -61,8 +61,22 @@ type UpstreamPool []*Upstream
 type Upstream struct {
 	Host `json:"-"`
 
-	Dial        string `json:"dial,omitempty"`
-	MaxRequests int    `json:"max_requests,omitempty"`
+	// The [network address](/docs/json/apps/http/#servers/listen)
+	// to dial to connect to the upstream. Must represent precisely
+	// one socket (i.e. no port ranges). A valid network address
+	// either has a host and port, or is a unix socket address.
+	//
+	// Placeholders may be used to make the upstream dynamic, but be
+	// aware of the health check implications of this: a single
+	// upstream that represents numerous (perhaps arbitrary) backends
+	// can be considered down if one or enough of the arbitrary
+	// backends is down. Also be aware of open proxy vulnerabilities.
+	Dial string `json:"dial,omitempty"`
+
+	// The maximum number of simultaneous requests to allow to
+	// this upstream. If set, overrides the global passive health
+	// check UnhealthyRequestCount value.
+	MaxRequests int `json:"max_requests,omitempty"`
 
 	// TODO: This could be really useful, to bind requests
 	// with certain properties to specific backends

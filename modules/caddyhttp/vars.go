@@ -26,7 +26,8 @@ func init() {
 }
 
 // VarsMiddleware is an HTTP middleware which sets variables
-// in the context, mainly for use by placeholders.
+// in the context, mainly for use by placeholders. The
+// placeholders have the form: `{http.vars.variable_name}`
 type VarsMiddleware map[string]string
 
 // CaddyModule returns the Caddy module information.

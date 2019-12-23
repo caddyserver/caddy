@@ -695,8 +695,8 @@ func (mre *MatchRegexp) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
-// ResponseMatcher is a type which can determine if a given response
-// status code and its headers match some criteria.
+// ResponseMatcher is a type which can determine if an
+// HTTP response matches some criteria.
 type ResponseMatcher struct {
 	// If set, one of these status codes would be required.
 	// A one-digit status can be used to represent all codes

@@ -52,9 +52,17 @@ func (BcryptHash) Compare(hashed, plaintext, _ []byte) (bool, error) {
 
 // ScryptHash implements the scrypt KDF as a hash.
 type ScryptHash struct {
-	N         int `json:"N,omitempty"`
-	R         int `json:"r,omitempty"`
-	P         int `json:"p,omitempty"`
+	// scrypt's N parameter. If unset or 0, a safe default is used.
+	N int `json:"N,omitempty"`
+
+	// scrypt's r parameter. If unset or 0, a safe default is used.
+	R int `json:"r,omitempty"`
+
+	// scrypt's p parameter. If unset or 0, a safe default is used.
+	P int `json:"p,omitempty"`
+
+	// scrypt's key length parameter (in bytes). If unset or 0, a
+	// safe default is used.
 	KeyLength int `json:"key_length,omitempty"`
 }
 

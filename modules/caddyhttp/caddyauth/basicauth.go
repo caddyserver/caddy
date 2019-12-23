@@ -28,9 +28,14 @@ func init() {
 
 // HTTPBasicAuth facilitates HTTP basic authentication.
 type HTTPBasicAuth struct {
-	HashRaw     json.RawMessage `json:"hash,omitempty" caddy:"namespace=http.authentication.hashes inline_key=algorithm"`
-	AccountList []Account       `json:"accounts,omitempty"`
-	Realm       string          `json:"realm,omitempty"`
+	// The algorithm with which the passwords are hashed. Default: bcrypt
+	HashRaw json.RawMessage `json:"hash,omitempty" caddy:"namespace=http.authentication.hashes inline_key=algorithm"`
+
+	// The list of accounts to authenticate.
+	AccountList []Account `json:"accounts,omitempty"`
+
+	// The name of the realm. Default: restricted
+	Realm string `json:"realm,omitempty"`
 
 	Accounts map[string]Account `json:"-"`
 	Hash     Comparer           `json:"-"`
@@ -125,9 +130,15 @@ type Comparer interface {
 
 // Account contains a username, password, and salt (if applicable).
 type Account struct {
+	// A user's username.
 	Username string `json:"username"`
+
+	// The user's hashed password, base64-encoded.
 	Password []byte `json:"password"`
-	Salt     []byte `json:"salt,omitempty"` // for algorithms where external salt is needed
+
+	// The user's password salt, base64-encoded; for
+	// algorithms where external salt is needed.
+	Salt []byte `json:"salt,omitempty"`
 }
 
 // Interface guards
