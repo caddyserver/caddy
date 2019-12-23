@@ -33,7 +33,6 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
-	"github.com/keybase/go-ps"
 	"github.com/mholt/certmagic"
 	"go.uber.org/zap"
 )
@@ -211,34 +210,11 @@ func cmdStop(fl Flags) (int, error) {
 
 	err = apiRequest(req)
 	if err != nil {
-		// if the caddy instance doesn't have an API listener set up,
-		// or we are unable to reach it for some reason, try signaling it
-
-		caddy.Log().Warn("unable to use API to stop instance; will try to signal the process",
+		caddy.Log().Warn("failed using API to stop instance",
 			zap.String("endpoint", stopEndpoint),
 			zap.Error(err),
 		)
-
-		processList, err := ps.Processes()
-		if err != nil {
-			return caddy.ExitCodeFailedStartup, fmt.Errorf("listing processes: %v", err)
-		}
-		thisProcName := getProcessName()
-
-		var found bool
-		for _, p := range processList {
-			// the process we're looking for should have the same name as us but different PID
-			if p.Executable() == thisProcName && p.Pid() != os.Getpid() {
-				found = true
-				fmt.Printf("pid=%d\n", p.Pid())
-				if err := gracefullyStopProcess(p.Pid()); err != nil {
-					return caddy.ExitCodeFailedStartup, err
-				}
-			}
-		}
-		if !found {
-			return caddy.ExitCodeFailedStartup, fmt.Errorf("Caddy is not running")
-		}
+		return caddy.ExitCodeFailedStartup, err
 	}
 
 	return caddy.ExitCodeSuccess, nil

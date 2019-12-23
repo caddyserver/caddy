@@ -12,7 +12,6 @@ require (
 	github.com/ilibs/json5 v1.0.1
 	github.com/imdario/mergo v0.3.8 // indirect
 	github.com/jsternberg/zap-logfmt v1.2.0
-	github.com/keybase/go-ps v0.0.0-20190827175125-91aafc93ba19
 	github.com/klauspost/compress v1.8.6
 	github.com/klauspost/cpuid v1.2.2
 	github.com/lucas-clemente/quic-go v0.14.1
