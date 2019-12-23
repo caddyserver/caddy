@@ -27,8 +27,13 @@ import (
 	"sync"
 
 	"github.com/Masterminds/sprig/v3"
+	"github.com/alecthomas/chroma/formatters/html"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
-	"github.com/russross/blackfriday/v2"
+	"github.com/yuin/goldmark"
+	highlighting "github.com/yuin/goldmark-highlighting"
+	"github.com/yuin/goldmark/extension"
+	"github.com/yuin/goldmark/parser"
+	gmhtml "github.com/yuin/goldmark/renderer/html"
 )
 
 // templateContext is the templateContext with which HTTP templates are executed.
@@ -41,11 +46,18 @@ type templateContext struct {
 	config *Templates
 }
 
-// Include returns the contents of filename relative to the site root.
+// OriginalReq returns the original, unmodified, un-rewritten request as
+// it originally came in over the wire.
+func (c templateContext) OriginalReq() http.Request {
+	or, _ := c.Req.Context().Value(caddyhttp.OriginalRequestCtxKey).(http.Request)
+	return or
+}
+
+// funcInclude returns the contents of filename relative to the site root.
 // Note that included files are NOT escaped, so you should only include
 // trusted files. If it is not trusted, be sure to use escaping functions
 // in your template.
-func (c templateContext) Include(filename string, args ...interface{}) (template.HTML, error) {
+func (c templateContext) funcInclude(filename string, args ...interface{}) (template.HTML, error) {
 	if c.Root == nil {
 		return "", fmt.Errorf("root file system not specified")
 	}
@@ -75,11 +87,11 @@ func (c templateContext) Include(filename string, args ...interface{}) (template
 	return template.HTML(bodyBuf.String()), nil
 }
 
-// HTTPInclude returns the body of a virtual (lightweight) request
+// funcHTTPInclude returns the body of a virtual (lightweight) request
 // to the given URI on the same server. Note that included bodies
 // are NOT escaped, so you should only include trusted resources.
 // If it is not trusted, be sure to use escaping functions yourself.
-func (c templateContext) HTTPInclude(uri string) (template.HTML, error) {
+func (c templateContext) funcHTTPInclude(uri string) (template.HTML, error) {
 	// prevent virtual request loops by counting how many levels
 	// deep we are; and if we get too deep, return an error
 	recursionCount := 1
@@ -124,10 +136,21 @@ func (c templateContext) HTTPInclude(uri string) (template.HTML, error) {
 }
 
 func (c templateContext) executeTemplateInBuffer(tplName string, buf *bytes.Buffer) error {
-	tpl := template.New(tplName).Funcs(sprig.FuncMap())
+	tpl := template.New(tplName)
 	if len(c.config.Delimiters) == 2 {
 		tpl.Delims(c.config.Delimiters[0], c.config.Delimiters[1])
 	}
+
+	tpl.Funcs(sprigFuncMap)
+
+	tpl.Funcs(template.FuncMap{
+		"include":          c.funcInclude,
+		"httpInclude":      c.funcHTTPInclude,
+		"stripHTML":        c.funcStripHTML,
+		"markdown":         c.funcMarkdown,
+		"splitFrontMatter": c.funcSplitFrontMatter,
+		"listFiles":        c.funcListFiles,
+	})
 
 	parsedTpl, err := tpl.Parse(buf.String())
 	if err != nil {
@@ -173,9 +196,9 @@ func (c templateContext) Host() (string, error) {
 	return host, nil
 }
 
-// StripHTML returns s without HTML tags. It is fairly naive
+// funcStripHTML returns s without HTML tags. It is fairly naive
 // but works with most valid HTML inputs.
-func (c templateContext) StripHTML(s string) string {
+func (c templateContext) funcStripHTML(s string) string {
 	var buf bytes.Buffer
 	var inTag, inQuotes bool
 	var tagStart int
@@ -206,15 +229,53 @@ func (c templateContext) StripHTML(s string) string {
 	return buf.String()
 }
 
-// Markdown renders the markdown body as HTML. The resulting
+// funcMarkdown renders the markdown body as HTML. The resulting
 // HTML is NOT escaped so that it can be rendered as HTML.
-func (c templateContext) Markdown(body string) template.HTML {
-	return template.HTML(blackfriday.Run([]byte(body)))
+func (c templateContext) funcMarkdown(input interface{}) (template.HTML, error) {
+	inputStr := toString(input)
+
+	md := goldmark.New(
+		goldmark.WithExtensions(
+			extension.GFM,
+			extension.Table,
+			highlighting.NewHighlighting(
+				highlighting.WithFormatOptions(
+					html.WithClasses(true),
+				),
+			),
+		),
+		goldmark.WithParserOptions(
+			parser.WithAutoHeadingID(),
+		),
+		goldmark.WithRendererOptions(
+			gmhtml.WithHardWraps(),
+			gmhtml.WithUnsafe(), // TODO: this is not awesome, maybe should be configurable?
+		),
+	)
+
+	buf := bufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer bufPool.Put(buf)
+
+	md.Convert([]byte(inputStr), buf)
+
+	return template.HTML(buf.String()), nil
 }
 
-// ListFiles reads and returns a slice of names from the given
+// splitFrontMatter parses front matter out from the beginning of input,
+// and returns the separated key-value pairs and the body/content. input
+// must be a "stringy" value.
+func (c templateContext) funcSplitFrontMatter(input interface{}) (parsedMarkdownDoc, error) {
+	meta, body, err := extractFrontMatter(toString(input))
+	if err != nil {
+		return parsedMarkdownDoc{}, err
+	}
+	return parsedMarkdownDoc{Meta: meta, Body: body}, nil
+}
+
+// funcListFiles reads and returns a slice of names from the given
 // directory relative to the root of c.
-func (c templateContext) ListFiles(name string) ([]string, error) {
+func (c templateContext) funcListFiles(name string) ([]string, error) {
 	if c.Root == nil {
 		return nil, fmt.Errorf("root file system not specified")
 	}
@@ -273,10 +334,29 @@ func (h tplWrappedHeader) Del(field string) string {
 	return ""
 }
 
+func toString(input interface{}) string {
+	switch v := input.(type) {
+	case string:
+		return v
+	case template.HTML:
+		return string(v)
+	case fmt.Stringer:
+		return v.String()
+	case error:
+		return v.Error()
+	default:
+		return fmt.Sprintf("%s", input)
+	}
+}
+
 var bufPool = sync.Pool{
 	New: func() interface{} {
 		return new(bytes.Buffer)
 	},
 }
+
+// at time of writing, sprig.FuncMap() makes a copy, thus
+// involves iterating the whole map, so do it just once
+var sprigFuncMap = sprig.FuncMap()
 
 const recursionPreventionHeader = "Caddy-Templates-Include"

@@ -31,9 +31,18 @@ func init() {
 
 // Templates is a middleware which execute response bodies as templates.
 type Templates struct {
-	IncludeRoot string   `json:"include_root,omitempty"`
-	MIMETypes   []string `json:"mime_types,omitempty"`
-	Delimiters  []string `json:"delimiters,omitempty"`
+	// The root path from which to load files. Required if template functions
+	// accessing the file system are used (such as include). Default is
+	// `{http.vars.root}` if set, or current working directory otherwise.
+	FileRoot string `json:"file_root,omitempty"`
+
+	// The MIME types for which to render templates. It is important to use
+	// this if the route matchers do not exclude images or other binary files.
+	// Default is text/plain, text/markdown, and text/html.
+	MIMETypes []string `json:"mime_types,omitempty"`
+
+	// The template action delimiters.
+	Delimiters []string `json:"delimiters,omitempty"`
 }
 
 // CaddyModule returns the Caddy module information.
@@ -49,8 +58,8 @@ func (t *Templates) Provision(ctx caddy.Context) error {
 	if t.MIMETypes == nil {
 		t.MIMETypes = defaultMIMETypes
 	}
-	if t.IncludeRoot == "" {
-		t.IncludeRoot = "{http.vars.root}"
+	if t.FileRoot == "" {
+		t.FileRoot = "{http.vars.root}"
 	}
 	return nil
 }
@@ -100,10 +109,9 @@ func (t *Templates) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 	rec.Header().Del("Last-Modified") // useless for dynamic content since it's always changing
 
 	// we don't know a way to guickly generate etag for dynamic content,
-	// but we can convert this to a weak etag to kind of indicate that
-	if etag := rec.Header().Get("Etag"); etag != "" {
-		rec.Header().Set("Etag", "W/"+etag)
-	}
+	// and weak etags still cause browsers to rely on it even after a
+	// refresh, so disable them until we find a better way to do this
+	rec.Header().Del("Etag")
 
 	rec.WriteResponse()
 
@@ -113,9 +121,9 @@ func (t *Templates) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 // executeTemplate executes the template contained in wb.buf and replaces it with the results.
 func (t *Templates) executeTemplate(rr caddyhttp.ResponseRecorder, r *http.Request) error {
 	var fs http.FileSystem
-	if t.IncludeRoot != "" {
+	if t.FileRoot != "" {
 		repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
-		fs = http.Dir(repl.ReplaceAll(t.IncludeRoot, "."))
+		fs = http.Dir(repl.ReplaceAll(t.FileRoot, "."))
 	}
 
 	ctx := &templateContext{
