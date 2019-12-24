@@ -29,6 +29,7 @@
 package caddytls
 
 import (
+	"context"
 	"github.com/caddyserver/caddy"
 	"github.com/go-acme/lego/v3/challenge"
 	"github.com/mholt/certmagic"
@@ -77,7 +78,8 @@ func QualifiesForManagedTLS(c ConfigHolder) bool {
 // Revoke revokes the certificate fro host via the ACME protocol.
 // It assumes the certificate was obtained from certmagic.CA.
 func Revoke(domainName string) error {
-	return certmagic.NewDefault().RevokeCert(domainName, true)
+	var ctx context.Context
+	return certmagic.NewDefault().RevokeCert(ctx, domainName, true)
 }
 
 // KnownACMECAs is a list of ACME directory endpoints of
