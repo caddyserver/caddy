@@ -20,12 +20,14 @@ import (
 	"net/http"
 	"strconv"
 
+	"context"
 	"github.com/caddyserver/caddy"
 	"github.com/caddyserver/caddy/caddytls"
 	"github.com/mholt/certmagic"
 )
 
 func activateHTTPS(cctx caddy.Context) error {
+	var newctx context.Context
 	operatorPresent := !caddy.Started()
 
 	if !caddy.Quiet && operatorPresent {
@@ -45,7 +47,7 @@ func activateHTTPS(cctx caddy.Context) error {
 		if c.TLS.Manager.OnDemand != nil {
 			continue // obtain these certificates on-demand instead
 		}
-		err := c.TLS.Manager.ObtainCert(c.TLS.Hostname, operatorPresent)
+		err := c.TLS.Manager.ObtainCert(newctx, c.TLS.Hostname, operatorPresent)
 		if err != nil {
 			return err
 		}
@@ -71,7 +73,7 @@ func activateHTTPS(cctx caddy.Context) error {
 		certCache, ok := ctx.instance.Storage[caddytls.CertCacheInstStorageKey].(*certmagic.Cache)
 		ctx.instance.StorageMu.RUnlock()
 		if ok && certCache != nil {
-			err = certCache.RenewManagedCertificates()
+			err = certCache.RenewManagedCertificates(newctx)
 			if err != nil {
 				return err
 			}
