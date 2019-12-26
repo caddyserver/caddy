@@ -153,6 +153,15 @@ func (m *ACMEManagerMaker) makeCertMagicConfig(ctx caddy.Context) certmagic.Conf
 		storage = ctx.Storage()
 	}
 
+	if m.CA == "ca.local" {
+		return certmagic.Config{
+			NewManager: func(interactive bool) (certmagic.Manager, error) {
+				m.storage = storage
+				return NewSmallStepManager(m)
+			},
+		}
+	}
+
 	var ond *certmagic.OnDemandConfig
 	if m.OnDemand {
 		var onDemand *OnDemandConfig
