@@ -18,6 +18,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"net"
 	"net/http"
 	"path"
 	"path/filepath"
@@ -38,12 +39,6 @@ func init() {
 
 // Transport facilitates FastCGI communication.
 type Transport struct {
-	// TODO: Populate these
-	softwareName    string
-	softwareVersion string
-	serverName      string
-	serverPort      string
-
 	// Use this directory as the fastcgi root directory. Defaults to the root
 	// directory of the parent virtual host.
 	Root string `json:"root,omitempty"`
@@ -68,6 +63,8 @@ type Transport struct {
 
 	// The duration used to set a deadline when sending to the FastCGI server.
 	WriteTimeout caddy.Duration `json:"write_timeout,omitempty"`
+
+	serverSoftware string
 }
 
 // CaddyModule returns the Caddy module information.
@@ -82,6 +79,10 @@ func (Transport) CaddyModule() caddy.ModuleInfo {
 func (t *Transport) Provision(_ caddy.Context) error {
 	if t.Root == "" {
 		t.Root = "{http.vars.root}"
+	}
+	t.serverSoftware = "Caddy"
+	if mod := caddy.GoModule(); mod.Version != "" {
+		t.serverSoftware += "/" + mod.Version
 	}
 	return nil
 }
@@ -206,6 +207,12 @@ func (t Transport) buildEnv(r *http.Request) (map[string]string, error) {
 		requestScheme = "https"
 	}
 
+	reqHost, reqPort, err := net.SplitHostPort(r.Host)
+	if err != nil {
+		// whatever, just assume there was no port
+		reqHost = r.Host
+	}
+
 	// Some variables are unused but cleared explicitly to prevent
 	// the parent environment from interfering.
 	env = map[string]string{
@@ -223,10 +230,10 @@ func (t Transport) buildEnv(r *http.Request) (map[string]string, error) {
 		"REMOTE_USER":       "", // TODO: once there are authentication handlers, populate this
 		"REQUEST_METHOD":    r.Method,
 		"REQUEST_SCHEME":    requestScheme,
-		"SERVER_NAME":       t.serverName,
-		"SERVER_PORT":       t.serverPort,
+		"SERVER_NAME":       reqHost,
+		"SERVER_PORT":       reqPort,
 		"SERVER_PROTOCOL":   r.Proto,
-		"SERVER_SOFTWARE":   t.softwareName + "/" + t.softwareVersion,
+		"SERVER_SOFTWARE":   t.serverSoftware,
 
 		// Other variables
 		"DOCUMENT_ROOT":   root,
