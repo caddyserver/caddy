@@ -122,7 +122,7 @@ func (t *Templates) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 func (t *Templates) executeTemplate(rr caddyhttp.ResponseRecorder, r *http.Request) error {
 	var fs http.FileSystem
 	if t.FileRoot != "" {
-		repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
+		repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 		fs = http.Dir(repl.ReplaceAll(t.FileRoot, "."))
 	}
 

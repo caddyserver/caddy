@@ -126,7 +126,7 @@ func (m MatchFile) Validate() error {
 //    - http.matchers.file.relative
 //    - http.matchers.file.absolute
 func (m MatchFile) Match(r *http.Request) bool {
-	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	rel, abs, matched := m.selectFile(r)
 	if matched {
 		repl.Set("http.matchers.file.relative", rel)
@@ -140,7 +140,7 @@ func (m MatchFile) Match(r *http.Request) bool {
 // It returns the root-relative path to the matched file, the full
 // or absolute path, and whether a match was made.
 func (m MatchFile) selectFile(r *http.Request) (rel, abs string, matched bool) {
-	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	root := repl.ReplaceAll(m.Root, ".")
 

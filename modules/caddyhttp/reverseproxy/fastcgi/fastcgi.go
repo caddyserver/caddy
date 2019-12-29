@@ -148,7 +148,7 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 
 // buildEnv returns a set of CGI environment variables for the request.
 func (t Transport) buildEnv(r *http.Request) (map[string]string, error) {
-	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	var env map[string]string
 

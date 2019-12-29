@@ -91,7 +91,7 @@ func (rewr Rewrite) Validate() error {
 }
 
 func (rewr Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	logger := rewr.logger.With(
 		zap.Object("request", caddyhttp.LoggableHTTPRequest{Request: r}),
@@ -124,7 +124,7 @@ func (rewr Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 // rewrite performs the rewrites on r using repl, which
 // should have been obtained from r, but is passed in for
 // efficiency. It returns true if any changes were made to r.
-func (rewr Rewrite) rewrite(r *http.Request, repl caddy.Replacer, logger *zap.Logger) bool {
+func (rewr Rewrite) rewrite(r *http.Request, repl *caddy.Replacer, logger *zap.Logger) bool {
 	oldMethod := r.Method
 	oldURI := r.RequestURI
 
@@ -209,7 +209,7 @@ type replacer struct {
 }
 
 // do performs the replacement on r and returns true if any changes were made.
-func (rep replacer) do(r *http.Request, repl caddy.Replacer) bool {
+func (rep replacer) do(r *http.Request, repl *caddy.Replacer) bool {
 	if rep.Find == "" || rep.Replace == "" {
 		return false
 	}

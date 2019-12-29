@@ -118,7 +118,7 @@ func (m MatchHost) Match(r *http.Request) bool {
 		reqHost = strings.TrimSuffix(reqHost, "]")
 	}
 
-	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 outer:
 	for _, host := range m {
@@ -223,7 +223,7 @@ func (MatchPathRE) CaddyModule() caddy.ModuleInfo {
 
 // Match returns true if r matches m.
 func (m MatchPathRE) Match(r *http.Request) bool {
-	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	return m.MatchRegexp.Match(r.URL.Path, repl)
 }
 
@@ -380,7 +380,7 @@ func (m *MatchHeaderRE) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // Match returns true if r matches m.
 func (m MatchHeaderRE) Match(r *http.Request) bool {
 	for field, rm := range m {
-		repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
+		repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 		match := rm.Match(r.Header.Get(field), repl)
 		if !match {
 			return false
@@ -652,10 +652,8 @@ func (mre *MatchRegexp) Validate() error {
 // Match returns true if input matches the compiled regular
 // expression in mre. It sets values on the replacer repl
 // associated with capture groups, using the given scope
-// (namespace). Capture groups stored to repl will take on
-// the name "http.matchers.<scope>.<mre.Name>.<N>" where
-// <N> is the name or number of the capture group.
-func (mre *MatchRegexp) Match(input string, repl caddy.Replacer) bool {
+// (namespace).
+func (mre *MatchRegexp) Match(input string, repl *caddy.Replacer) bool {
 	matches := mre.compiled.FindStringSubmatch(input)
 	if matches == nil {
 		return false

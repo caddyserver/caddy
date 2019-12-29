@@ -27,7 +27,7 @@ import (
 	"github.com/dustin/go-humanize"
 )
 
-func (fsrv *FileServer) directoryListing(files []os.FileInfo, canGoUp bool, urlPath string, repl caddy.Replacer) browseListing {
+func (fsrv *FileServer) directoryListing(files []os.FileInfo, canGoUp bool, urlPath string, repl *caddy.Replacer) browseListing {
 	filesToHide := fsrv.transformHidePaths(repl)
 
 	var (

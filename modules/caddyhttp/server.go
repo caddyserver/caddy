@@ -451,7 +451,7 @@ func (*HTTPErrorConfig) WithError(r *http.Request, err error) *http.Request {
 	r = r.WithContext(c)
 
 	// add error values to the replacer
-	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	repl.Set("http.error", err.Error())
 	if handlerErr, ok := err.(HandlerError); ok {
 		repl.Set("http.error.status_code", strconv.Itoa(handlerErr.StatusCode))

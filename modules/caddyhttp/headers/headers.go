@@ -88,7 +88,7 @@ func (h Handler) Validate() error {
 }
 
 func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	if h.Request != nil {
 		h.Request.ApplyToRequest(r)
@@ -182,7 +182,7 @@ type RespHeaderOps struct {
 }
 
 // ApplyTo applies ops to hdr using repl.
-func (ops HeaderOps) ApplyTo(hdr http.Header, repl caddy.Replacer) {
+func (ops HeaderOps) ApplyTo(hdr http.Header, repl *caddy.Replacer) {
 	// add
 	for fieldName, vals := range ops.Add {
 		fieldName = repl.ReplaceAll(fieldName, "")
@@ -249,7 +249,7 @@ func (ops HeaderOps) ApplyTo(hdr http.Header, repl caddy.Replacer) {
 // header which the standard library does not include with the
 // header map with all the others. This method mutates r.Host.
 func (ops HeaderOps) ApplyToRequest(r *http.Request) {
-	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	// capture the current Host header so we can
 	// reset to it when we're done
@@ -285,7 +285,7 @@ func (ops HeaderOps) ApplyToRequest(r *http.Request) {
 // operations until WriteHeader is called.
 type responseWriterWrapper struct {
 	*caddyhttp.ResponseWriterWrapper
-	replacer    caddy.Replacer
+	replacer    *caddy.Replacer
 	require     *caddyhttp.ResponseMatcher
 	headerOps   *HeaderOps
 	wroteHeader bool
