@@ -106,6 +106,7 @@ func (cp ConnectionPolicies) TLSConfig(ctx caddy.Context) (*tls.Config, error) {
 }
 
 // ConnectionPolicy specifies the logic for handling a TLS handshake.
+// An empty policy is valid; safe and sensible defaults will be used.
 type ConnectionPolicy struct {
 	// How to match this policy with a TLS ClientHello. If
 	// this policy is the first to match, it will be used.

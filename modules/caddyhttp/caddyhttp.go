@@ -326,6 +326,18 @@ func (app *App) automaticHTTPS() error {
 			continue
 		}
 
+		// if all listeners are on the HTTPS port, make sure
+		// there is at least one TLS connection policy; it
+		// should be obvious that they want to use TLS without
+		// needing to specify one empty policy to enable it
+		if !srv.listenersUseAnyPortOtherThan(app.httpsPort()) && len(srv.TLSConnPolicies) == 0 {
+			app.logger.Info("server is only listening on the HTTPS port but has no TLS connection policies; adding one to enable TLS",
+				zap.String("server_name", srvName),
+				zap.Int("https_port", app.httpsPort()),
+			)
+			srv.TLSConnPolicies = append(srv.TLSConnPolicies, new(caddytls.ConnectionPolicy))
+		}
+
 		// find all qualifying domain names, de-duplicated
 		domainSet := make(map[string]struct{})
 		for routeIdx, route := range srv.Routes {
