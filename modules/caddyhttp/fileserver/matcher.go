@@ -33,10 +33,20 @@ func init() {
 
 // MatchFile is an HTTP request matcher that can match
 // requests based upon file existence.
+//
+// Upon matching, two new placeholders will be made
+// available:
+//
+// - `{http.matchers.file.relative}` The root-relative
+// path of the file. This is often useful when rewriting
+// requests.
+// - `{http.matchers.file.absolute}` The absolute path
+// of the matched file.
 type MatchFile struct {
 	// The root directory, used for creating absolute
 	// file paths, and required when working with
-	// relative paths; if not specified, the current
+	// relative paths; if not specified, `{http.vars.root}`
+	// will be used, if set; otherwise, the current
 	// directory is assumed. Accepts placeholders.
 	Root string `json:"root,omitempty"`
 
