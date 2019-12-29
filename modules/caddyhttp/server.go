@@ -33,39 +33,9 @@ import (
 
 // Server describes an HTTP server.
 type Server struct {
-	// Socket interfaces to which to bind listeners. Caddy network
-	// addresses have the following form:
-	//
-	//     network/address
-	//
-	// The network part is anything that [Go's `net` package](https://golang.org/pkg/net/)
-	// recognizes, and is optional. The default network is `tcp`. If
-	// a network is specified, a single forward slash `/` is used to
-	// separate the network and address portions.
-	//
-	// The address part may be any of these forms:
-	//
-	//    - `host`
-	//    - `host:port`
-	//    - `:port`
-	//    - `/path/to/unix/socket`
-	//
-	// The host may be any hostname, resolvable domain name, or IP address.
-	// The port may be a single value (`:8080`) or a range (`:8080-8085`).
-	// A port range will be multiplied into singular addresses. Not all
-	// config parameters accept port ranges, but Listen does.
-	//
-	// Valid examples:
-	//
-	//     :8080
-	//     127.0.0.1:8080
-	//     localhost:8080
-	//     localhost:8080-8085
-	//     tcp/localhost:8080
-	//     tcp/localhost:8080-8085
-	//     udp/localhost:9005
-	//     unix//path/to/socket
-	//
+	// Socket addresses to which to bind listeners. Accepts
+	// [network addresses](/docs/conventions#network-addresses)
+	// that may include port ranges.
 	Listen []string `json:"listen,omitempty"`
 
 	// How long to allow a read from a client's upload. Setting this
@@ -105,12 +75,15 @@ type Server struct {
 	// The error routes work exactly like the normal routes.
 	Errors *HTTPErrorConfig `json:"errors,omitempty"`
 
-	// How to handle TLS connections.
+	// How to handle TLS connections. At least one policy is
+	// required to enable HTTPS on this server if automatic
+	// HTTPS is disabled or does not apply.
 	TLSConnPolicies caddytls.ConnectionPolicies `json:"tls_connection_policies,omitempty"`
 
 	// AutoHTTPS configures or disables automatic HTTPS within this server.
 	// HTTPS is enabled automatically and by default when qualifying names
-	// are present in a Host matcher.
+	// are present in a Host matcher and/or when the server is listening
+	// only on the HTTPS port.
 	AutoHTTPS *AutoHTTPSConfig `json:"automatic_https,omitempty"`
 
 	// MaxRehandles is the maximum number of times to allow a

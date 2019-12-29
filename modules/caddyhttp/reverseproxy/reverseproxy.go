@@ -41,24 +41,19 @@ func init() {
 }
 
 // Handler implements a highly configurable and production-ready reverse proxy.
+//
 // Upon proxying, this module sets the following placeholders (which can be used
 // both within and after this handler):
 //
-//  {http.reverse_proxy.upstream.address}
-//		The full address to the upstream as given in the config
-//	{http.reverse_proxy.upstream.hostport}
-//		The host:port of the upstream
-//	{http.reverse_proxy.upstream.host}
-//		The host of the upstream
-//	{http.reverse_proxy.upstream.port}
-//		The port of the upstream
-//	{http.reverse_proxy.upstream.requests}
-//		The approximate current number of requests to the upstream
-//	{http.reverse_proxy.upstream.max_requests}
-//		The maximum approximate number of requests allowed to the upstream
-//	{http.reverse_proxy.upstream.fails}
-//		The number of recent failed requests to the upstream
-//
+// Placeholder | Description
+// ------------|-------------
+// `{http.reverse_proxy.upstream.address}` | The full address to the upstream as given in the config
+// `{http.reverse_proxy.upstream.hostport}` | The host:port of the upstream
+// `{http.reverse_proxy.upstream.host}` | The host of the upstream
+// `{http.reverse_proxy.upstream.port}` | The port of the upstream
+// `{http.reverse_proxy.upstream.requests}` | The approximate current number of requests to the upstream
+// `{http.reverse_proxy.upstream.max_requests}` | The maximum approximate number of requests allowed to the upstream
+// `{http.reverse_proxy.upstream.fails}` | The number of recent failed requests to the upstream
 type Handler struct {
 	// Configures the method of transport for the proxy. A transport
 	// is what performs the actual "round trip" to the backend.

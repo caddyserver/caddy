@@ -29,7 +29,153 @@ func init() {
 	caddy.RegisterModule(Templates{})
 }
 
-// Templates is a middleware which execute response bodies as templates.
+// Templates is a middleware which executes response bodies as Go templates.
+// The syntax is documented in the Go standard library's
+// [text/template package](https://golang.org/pkg/text/template/).
+//
+// [All Sprig functions](https://masterminds.github.io/sprig/) are supported.
+//
+// In addition to the standard functions and Sprig functions, Caddy adds
+// extra functions and data that are available to a template:
+//
+// ##### **`.Args`**
+//
+// Access arguments passed to this page/context, for example as the result of a `include`.
+//
+// ```
+// {{.Args 0}} // first argument
+// ```
+//
+// ##### `.Cookie`
+//
+// Gets the value of a cookie by name.
+//
+// ```
+// {{.Cookie "cookiename"}}
+// ```
+//
+// ##### `.Host`
+//
+// Returns the hostname portion (no port) of the Host header of the HTTP request.
+//
+// ```
+// {{.Host}}
+// ```
+//
+// ##### `httpInclude`
+//
+// Includes the contents of another file by making a virtual HTTP request (also known as a sub-request). The URI path must exist on the same virtual server because the request does not use sockets; instead, the request is crafted in memory and the handler is invoked directly for increased efficiency.
+//
+// ```
+// {{httpInclude "/foo/bar?q=val"}}
+// ```
+//
+// ##### `include`
+//
+// Includes the contents of another file. Optionally can pass key-value pairs as arguments to be accessed by the included file.
+//
+// ```
+// {{include "path/to/file.html"}}  // no arguments
+// {{include "path/to/file.html" "arg1" 2 "value 3"}}  // with arguments
+// ```
+//
+// ##### `listFiles`
+//
+// Returns a list of the files in the given directory, which is relative to the template context's file root.
+//
+// ```
+// {{listFiles "/mydir"}}
+// ```
+//
+// ##### `markdown`
+//
+// Renders the given Markdown text as HTML.
+//
+// ```
+// {{markdown "My _markdown_ text"}}
+// ```
+//
+// ##### `.RemoteIP`
+//
+// Returns the client's IP address.
+//
+// ```
+// {{.RemoteIP}}
+// ```
+//
+// ##### `.RespHeader.Add`
+//
+// Adds a header field to the HTTP response.
+//
+// ```
+// {{.RespHeader.Add "Field-Name" "val"}}
+// ```
+//
+// ##### `.RespHeader.Del`
+//
+// Deletes a header field on the HTTP response.
+//
+// ```
+// {{.RespHeader.Del "Field-Name"}}
+// ```
+//
+// ##### `.RespHeader.Set`
+//
+// Sets a header field on the HTTP response, replacing any existing value.
+//
+// ```
+// {{.RespHeader.Set "Field-Name" "val"}}
+// ```
+//
+// ##### `splitFrontMatter`
+//
+// Splits front matter out from the body. Front matter is metadata that appears at the very beginning of a file or string. Front matter can be in YAML, TOML, or JSON formats:
+//
+// **TOML** front matter starts and ends with `+++`:
+//
+// ```
+// +++
+// template = "blog"
+// title = "Blog Homepage"
+// sitename = "A Caddy site"
+// +++
+// ```
+//
+// **YAML** is surrounded by `---`:
+//
+// ```
+// ---
+// template: blog
+// title: Blog Homepage
+// sitename: A Caddy site
+// ---
+// ```
+//
+//
+// **JSON** is simply `{` and `}`:
+//
+// ```
+// {
+// 	"template": "blog",
+// 	"title": "Blog Homepage",
+// 	"sitename": "A Caddy site"
+// }
+// ```
+//
+// The resulting front matter will be made available like so:
+//
+// - `.Meta` to access the metadata fields, for example: `{{$parsed.Meta.title}}`
+// - `.Body` to access the body after the front matter, for example: `{{markdown $parsed.Body}}`
+//
+//
+// ##### `stripHTML`
+//
+// Removes HTML from a string.
+//
+// ```
+// {{stripHTML "Shows <b>only</b> text content"}}
+// ```
+//
 type Templates struct {
 	// The root path from which to load files. Required if template functions
 	// accessing the file system are used (such as include). Default is
