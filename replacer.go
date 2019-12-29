@@ -23,20 +23,9 @@ import (
 	"time"
 )
 
-// Replacer can replace values in strings.
-type Replacer interface {
-	Set(variable, value string)
-	Delete(variable string)
-	Map(ReplacerFunc)
-	ReplaceAll(input, empty string) string
-	ReplaceKnown(input, empty string) string
-	ReplaceOrErr(input string, errOnEmpty, errOnUnknown bool) (string, error)
-	ReplaceFunc(input string, f ReplacementFunc) (string, error)
-}
-
 // NewReplacer returns a new Replacer.
-func NewReplacer() Replacer {
-	rep := &replacer{
+func NewReplacer() *Replacer {
+	rep := &Replacer{
 		static: make(map[string]string),
 	}
 	rep.providers = []ReplacerFunc{
@@ -46,30 +35,44 @@ func NewReplacer() Replacer {
 	return rep
 }
 
-type replacer struct {
+// Replacer can replace values in strings.
+// A default/empty Replacer is not valid;
+// use NewReplacer to make one.
+type Replacer struct {
 	providers []ReplacerFunc
 	static    map[string]string
 }
 
 // Map adds mapFunc to the list of value providers.
 // mapFunc will be executed only at replace-time.
-func (r *replacer) Map(mapFunc ReplacerFunc) {
+func (r *Replacer) Map(mapFunc ReplacerFunc) {
 	r.providers = append(r.providers, mapFunc)
 }
 
 // Set sets a custom variable to a static value.
-func (r *replacer) Set(variable, value string) {
+func (r *Replacer) Set(variable, value string) {
 	r.static[variable] = value
+}
+
+// Get gets a value from the replacer. It returns
+// the value and whether the variable was known.
+func (r *Replacer) Get(variable string) (string, bool) {
+	for _, mapFunc := range r.providers {
+		if val, ok := mapFunc(variable); ok {
+			return val, true
+		}
+	}
+	return "", false
 }
 
 // Delete removes a variable with a static value
 // that was created using Set.
-func (r *replacer) Delete(variable string) {
+func (r *Replacer) Delete(variable string) {
 	delete(r.static, variable)
 }
 
 // fromStatic provides values from r.static.
-func (r *replacer) fromStatic(key string) (val string, ok bool) {
+func (r *Replacer) fromStatic(key string) (val string, ok bool) {
 	val, ok = r.static[key]
 	return
 }
@@ -77,14 +80,14 @@ func (r *replacer) fromStatic(key string) (val string, ok bool) {
 // ReplaceOrErr is like ReplaceAll, but any placeholders
 // that are empty or not recognized will cause an error to
 // be returned.
-func (r *replacer) ReplaceOrErr(input string, errOnEmpty, errOnUnknown bool) (string, error) {
+func (r *Replacer) ReplaceOrErr(input string, errOnEmpty, errOnUnknown bool) (string, error) {
 	return r.replace(input, "", false, errOnEmpty, errOnUnknown, nil)
 }
 
 // ReplaceKnown is like ReplaceAll but only replaces
 // placeholders that are known (recognized). Unrecognized
 // placeholders will remain in the output.
-func (r *replacer) ReplaceKnown(input, empty string) string {
+func (r *Replacer) ReplaceKnown(input, empty string) string {
 	out, _ := r.replace(input, empty, false, false, false, nil)
 	return out
 }
@@ -93,7 +96,7 @@ func (r *replacer) ReplaceKnown(input, empty string) string {
 // their values. All placeholders are replaced in the output
 // whether they are recognized or not. Values that are empty
 // string will be substituted with empty.
-func (r *replacer) ReplaceAll(input, empty string) string {
+func (r *Replacer) ReplaceAll(input, empty string) string {
 	out, _ := r.replace(input, empty, true, false, false, nil)
 	return out
 }
@@ -102,11 +105,11 @@ func (r *replacer) ReplaceAll(input, empty string) string {
 // their values. All placeholders are replaced in the output
 // whether they are recognized or not. Values that are empty
 // string will be substituted with empty.
-func (r *replacer) ReplaceFunc(input string, f ReplacementFunc) (string, error) {
+func (r *Replacer) ReplaceFunc(input string, f ReplacementFunc) (string, error) {
 	return r.replace(input, "", true, false, false, f)
 }
 
-func (r *replacer) replace(input, empty string,
+func (r *Replacer) replace(input, empty string,
 	treatUnknownAsEmpty, errOnEmpty, errOnUnknown bool,
 	f ReplacementFunc) (string, error) {
 	if !strings.Contains(input, string(phOpen)) {
@@ -138,46 +141,43 @@ func (r *replacer) replace(input, empty string,
 		// trim opening bracket
 		key := input[i+1 : end]
 
-		// try to get a value for this key,
-		// handle empty values accordingly
-		var found bool
-		for _, mapFunc := range r.providers {
-			if val, ok := mapFunc(key); ok {
-				found = true
-				if f != nil {
-					var err error
-					val, err = f(key, val)
-					if err != nil {
-						return "", err
-					}
-				}
-				if val == "" {
-					if errOnEmpty {
-						return "", fmt.Errorf("evaluated placeholder %s%s%s is empty",
-							string(phOpen), key, string(phClose))
-					} else if empty != "" {
-						sb.WriteString(empty)
-					}
-				} else {
-					sb.WriteString(val)
-				}
-				break
-			}
-		}
+		// try to get a value for this key, handle empty values accordingly
+		val, found := r.Get(key)
 		if !found {
-			// placeholder is unknown (unrecognized), handle accordingly
-			switch {
-			case errOnUnknown:
+			// placeholder is unknown (unrecognized); handle accordingly
+			if errOnUnknown {
 				return "", fmt.Errorf("unrecognized placeholder %s%s%s",
 					string(phOpen), key, string(phClose))
-			case treatUnknownAsEmpty:
+			} else if treatUnknownAsEmpty {
 				if empty != "" {
 					sb.WriteString(empty)
 				}
-			default:
+			} else {
 				lastWriteCursor = i
 				continue
 			}
+		}
+
+		// apply any transformations
+		if f != nil {
+			var err error
+			val, err = f(key, val)
+			if err != nil {
+				return "", err
+			}
+		}
+
+		// write the value; if it's empty, either return
+		// an error or write a default value
+		if val == "" {
+			if errOnEmpty {
+				return "", fmt.Errorf("evaluated placeholder %s%s%s is empty",
+					string(phOpen), key, string(phClose))
+			} else if empty != "" {
+				sb.WriteString(empty)
+			}
+		} else {
+			sb.WriteString(val)
 		}
 
 		// advance cursor to end of placeholder

@@ -26,7 +26,7 @@ import (
 	"github.com/caddyserver/caddy/v2"
 )
 
-func addHTTPVarsToReplacer(repl caddy.Replacer, req *http.Request, w http.ResponseWriter) {
+func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.ResponseWriter) {
 	httpVars := func(key string) (string, bool) {
 		if req != nil {
 			// query string parameters

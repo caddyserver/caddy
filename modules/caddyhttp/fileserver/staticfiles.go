@@ -106,7 +106,7 @@ func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 }
 
 func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	filesToHide := fsrv.transformHidePaths(repl)
 
@@ -293,7 +293,7 @@ func mapDirOpenError(originalErr error, name string) error {
 
 // transformHidePaths performs replacements for all the elements of
 // fsrv.Hide and returns a new list of the transformed values.
-func (fsrv *FileServer) transformHidePaths(repl caddy.Replacer) []string {
+func (fsrv *FileServer) transformHidePaths(repl *caddy.Replacer) []string {
 	hide := make([]string, len(fsrv.Hide))
 	for i := range fsrv.Hide {
 		hide[i] = repl.ReplaceAll(fsrv.Hide[i], "")

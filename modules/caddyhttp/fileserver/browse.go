@@ -52,7 +52,7 @@ func (fsrv *FileServer) serveBrowse(dirPath string, w http.ResponseWriter, r *ht
 	}
 	defer dir.Close()
 
-	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	// calling path.Clean here prevents weird breadcrumbs when URL paths are sketchy like /%2e%2e%2f
 	listing, err := fsrv.loadDirectoryContents(dir, path.Clean(r.URL.Path), repl)
@@ -87,7 +87,7 @@ func (fsrv *FileServer) serveBrowse(dirPath string, w http.ResponseWriter, r *ht
 	return nil
 }
 
-func (fsrv *FileServer) loadDirectoryContents(dir *os.File, urlPath string, repl caddy.Replacer) (browseListing, error) {
+func (fsrv *FileServer) loadDirectoryContents(dir *os.File, urlPath string, repl *caddy.Replacer) (browseListing, error) {
 	files, err := dir.Readdir(-1)
 	if err != nil {
 		return browseListing{}, err

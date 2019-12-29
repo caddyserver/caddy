@@ -204,7 +204,7 @@ func (di DialInfo) String() string {
 
 // fillDialInfo returns a filled DialInfo for the given upstream, using
 // the given Replacer. Note that the returned value is not a pointer.
-func fillDialInfo(upstream *Upstream, repl caddy.Replacer) (DialInfo, error) {
+func fillDialInfo(upstream *Upstream, repl *caddy.Replacer) (DialInfo, error) {
 	dial := repl.ReplaceAll(upstream.Dial, "")
 	addr, err := caddy.ParseNetworkAddress(dial)
 	if err != nil {

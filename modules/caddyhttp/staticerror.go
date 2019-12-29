@@ -51,7 +51,7 @@ func (StaticError) CaddyModule() caddy.ModuleInfo {
 }
 
 func (e StaticError) ServeHTTP(w http.ResponseWriter, r *http.Request, _ Handler) error {
-	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	statusCode := http.StatusInternalServerError
 	if codeStr := e.StatusCode.String(); codeStr != "" {
