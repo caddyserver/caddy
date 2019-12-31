@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"path"
@@ -30,6 +31,7 @@ import (
 	"time"
 
 	"github.com/mholt/certmagic"
+	"go.uber.org/zap"
 )
 
 // Config is the top (or beginning) of the Caddy configuration structure.
@@ -148,13 +150,6 @@ func changeConfig(method, path string, input []byte, forceReload bool) error {
 		}
 	}
 
-	// remove any @id fields from the JSON, which would cause
-	// loading to break since the field wouldn't be recognized
-	// (an alternate way to do this would be to delete them from
-	// rawCfg as they are indexed, then iterate the index we made
-	// and add them back after encoding as JSON)
-	newCfg = RemoveMetaFields(newCfg)
-
 	// load this new config; if it fails, we need to revert to
 	// our old representation of caddy's actual config
 	err = unsyncedDecodeAndRun(newCfg)
@@ -232,15 +227,19 @@ func indexConfigObjects(ptr interface{}, configPath string, index map[string]str
 	return nil
 }
 
-// unsyncedDecodeAndRun decodes cfgJSON and runs
-// it as the new config, replacing any other
-// current config. It does not update the raw
-// config state, as this is a lower-level function;
-// most callers will want to use Load instead.
-// A write lock on currentCfgMu is required!
+// unsyncedDecodeAndRun removes any meta fields (like @id tags)
+// from cfgJSON, decodes the result into a *Config, and runs
+// it as the new config, replacing any other current config.
+// It does NOT update the raw config state, as this is a
+// lower-level function; most callers will want to use Load
+// instead. A write lock on currentCfgMu is required!
 func unsyncedDecodeAndRun(cfgJSON []byte) error {
+	// remove any @id fields from the JSON, which would cause
+	// loading to break since the field wouldn't be recognized
+	strippedCfgJSON := RemoveMetaFields(cfgJSON)
+
 	var newCfg *Config
-	err := strictUnmarshalJSON(cfgJSON, &newCfg)
+	err := strictUnmarshalJSON(strippedCfgJSON, &newCfg)
 	if err != nil {
 		return err
 	}
@@ -257,6 +256,22 @@ func unsyncedDecodeAndRun(cfgJSON []byte) error {
 
 	// Stop, Cleanup each old app
 	unsyncedStop(oldCfg)
+
+	// autosave a non-nil config, if not disabled
+	if newCfg != nil &&
+		(newCfg.Admin == nil ||
+			newCfg.Admin.Config == nil ||
+			newCfg.Admin.Config.Persist == nil ||
+			*newCfg.Admin.Config.Persist) {
+		err := ioutil.WriteFile(ConfigAutosavePath, cfgJSON, 0600)
+		if err == nil {
+			Log().Info("autosaved config", zap.String("file", ConfigAutosavePath))
+		} else {
+			Log().Error("unable to autosave config",
+				zap.String("file", ConfigAutosavePath),
+				zap.Error(err))
+		}
+	}
 
 	return nil
 }

@@ -110,6 +110,9 @@ func loadConfig(configFile, adapterName string) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("reading config file: %v", err)
 		}
+		caddy.Log().Info("using provided configuration",
+			zap.String("config_file", configFile),
+			zap.String("config_adapter", adapterName))
 	} else if adapterName == "" {
 		// as a special case when no config file or adapter
 		// is specified, see if the Caddyfile adapter is
@@ -126,6 +129,7 @@ func loadConfig(configFile, adapterName string) ([]byte, error) {
 			} else {
 				// success reading default Caddyfile
 				configFile = "Caddyfile"
+				caddy.Log().Info("using adjacent Caddyfile")
 			}
 		}
 	}
@@ -225,6 +229,21 @@ func flagHelp(fs *flag.FlagSet) string {
 }
 
 func printEnvironment() {
+	fmt.Printf("caddy.HomeDir=%s\n", caddy.HomeDir())
+	fmt.Printf("caddy.AppDataDir=%s\n", caddy.AppDataDir())
+	fmt.Printf("caddy.AppConfigDir=%s\n", caddy.AppConfigDir())
+	fmt.Printf("caddy.ConfigAutosavePath=%s\n", caddy.ConfigAutosavePath)
+	fmt.Printf("runtime.GOOS=%s\n", runtime.GOOS)
+	fmt.Printf("runtime.GOARCH=%s\n", runtime.GOARCH)
+	fmt.Printf("runtime.Compiler=%s\n", runtime.Compiler)
+	fmt.Printf("runtime.NumCPU=%d\n", runtime.NumCPU())
+	fmt.Printf("runtime.GOMAXPROCS=%d\n", runtime.GOMAXPROCS(0))
+	fmt.Printf("runtime.Version=%s\n", runtime.Version())
+	cwd, err := os.Getwd()
+	if err != nil {
+		cwd = fmt.Sprintf("<error: %v>", err)
+	}
+	fmt.Printf("os.Getwd=%s\n\n", cwd)
 	for _, v := range os.Environ() {
 		fmt.Println(v)
 	}
