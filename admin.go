@@ -66,6 +66,16 @@ type AdminConfig struct {
 	// will be the default value. If set but empty, no origins will
 	// be allowed.
 	Origins []string `json:"origins,omitempty"`
+
+	// Options related to configuration management.
+	Config *ConfigSettings `json:"config,omitempty"`
+}
+
+// ConfigSettings configures the, uh, configuration... and
+// management thereof.
+type ConfigSettings struct {
+	// Whether to keep a copy of the active config on disk. Default is true.
+	Persist *bool `json:"persist,omitempty"`
 }
 
 // listenAddr extracts a singular listen address from ac.Listen,
@@ -775,7 +785,11 @@ traverseLoop:
 	return nil
 }
 
-// RemoveMetaFields removes meta fields like "@id" from a JSON message.
+// RemoveMetaFields removes meta fields like "@id" from a JSON message
+// by using a simple regular expression. (An alternate way to do this
+// would be to delete them from the raw, map[string]interface{}
+// representation as they are indexed, then iterate the index we made
+// and add them back after encoding as JSON, but this is simpler.)
 func RemoveMetaFields(rawJSON []byte) []byte {
 	return idRegexp.ReplaceAllFunc(rawJSON, func(in []byte) []byte {
 		// matches with a comma on both sides (when "@id" property is

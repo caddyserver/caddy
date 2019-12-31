@@ -27,6 +27,7 @@ import (
 	"os"
 	"os/exec"
 	"reflect"
+	"runtime"
 	"runtime/debug"
 	"sort"
 	"strings"
@@ -141,6 +142,7 @@ func cmdStart(fl Flags) (int, error) {
 func cmdRun(fl Flags) (int, error) {
 	runCmdConfigFlag := fl.String("config")
 	runCmdConfigAdapterFlag := fl.String("adapter")
+	runCmdResumeFlag := fl.Bool("resume")
 	runCmdPrintEnvFlag := fl.Bool("environ")
 	runCmdPingbackFlag := fl.String("pingback")
 
@@ -149,13 +151,31 @@ func cmdRun(fl Flags) (int, error) {
 		printEnvironment()
 	}
 
-	// get the config in caddy's native format
-	config, err := loadConfig(runCmdConfigFlag, runCmdConfigAdapterFlag)
-	if err != nil {
-		return caddy.ExitCodeFailedStartup, err
-	}
 	// TODO: This is TEMPORARY, until the RCs
 	moveStorage()
+
+	// load the config, depending on flags
+	var config []byte
+	var err error
+	if runCmdResumeFlag {
+		config, err = ioutil.ReadFile(caddy.ConfigAutosavePath)
+		if os.IsNotExist(err) {
+			// not a bad error; just can't resume if autosave file doesn't exist
+			caddy.Log().Info("no autosave file exists", zap.String("autosave_file", caddy.ConfigAutosavePath))
+			runCmdResumeFlag = false
+		} else if err != nil {
+			return caddy.ExitCodeFailedStartup, err
+		} else {
+			caddy.Log().Info("resuming from last configuration", zap.String("autosave_file", caddy.ConfigAutosavePath))
+		}
+	}
+	// we don't use 'else' here since this value might have been changed in 'if' block; i.e. not mutually exclusive
+	if !runCmdResumeFlag {
+		config, err = loadConfig(runCmdConfigFlag, runCmdConfigAdapterFlag)
+		if err != nil {
+			return caddy.ExitCodeFailedStartup, err
+		}
+	}
 
 	// set a fitting User-Agent for ACME requests
 	goModule := caddy.GoModule()
@@ -167,9 +187,7 @@ func cmdRun(fl Flags) (int, error) {
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("loading initial config: %v", err)
 	}
-	if len(config) > 0 {
-		caddy.Log().Named("admin").Info("Caddy 2 serving initial configuration")
-	}
+	caddy.Log().Info("serving initial configuration")
 
 	// if we are to report to another process the successful start
 	// of the server, do so now by echoing back contents of stdin
