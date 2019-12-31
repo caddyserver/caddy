@@ -34,6 +34,16 @@ import (
 
 type (
 	// MatchHost matches requests by the Host value (case-insensitive).
+	//
+	// When used in an HTTP route,
+	// [qualifying domain names](/docs/automatic-https#hostname-requirements)
+	// may trigger [automatic HTTPS](/docs/automatic-https), which automatically
+	// provisions and renews certificates for you. Before doing this, you
+	// should ensure that DNS records for these domains are properly configured,
+	// especially A/AAAA pointed at your server.
+	//
+	// Automatic HTTPS can be
+	// [customized or disabled](/docs/json/apps/http/servers/automatic_https/).
 	MatchHost []string
 
 	// MatchPath matches requests by the URI's path (case-insensitive).
