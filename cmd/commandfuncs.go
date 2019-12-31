@@ -154,6 +154,8 @@ func cmdRun(fl Flags) (int, error) {
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, err
 	}
+	// TODO: This is TEMPORARY, until the RCs
+	moveStorage()
 
 	// set a fitting User-Agent for ACME requests
 	goModule := caddy.GoModule()
@@ -187,6 +189,25 @@ func cmdRun(fl Flags) (int, error) {
 		if err != nil {
 			return caddy.ExitCodeFailedStartup,
 				fmt.Errorf("writing confirmation bytes to %s: %v", runCmdPingbackFlag, err)
+		}
+	}
+
+	// warn if the environment does not provide enough information about the disk
+	hasXDG := os.Getenv("XDG_DATA_HOME") != "" &&
+		os.Getenv("XDG_CONFIG_HOME") != "" &&
+		os.Getenv("XDG_CACHE_HOME") != ""
+	switch runtime.GOOS {
+	case "windows":
+		if os.Getenv("HOME") == "" && os.Getenv("USERPROFILE") == "" && !hasXDG {
+			caddy.Log().Warn("neither HOME nor USERPROFILE environment variables are set - please fix; some assets might be stored in ./caddy")
+		}
+	case "plan9":
+		if os.Getenv("home") == "" && !hasXDG {
+			caddy.Log().Warn("$home environment variable is empty - please fix; some assets might be stored in ./caddy")
+		}
+	default:
+		if os.Getenv("HOME") == "" && !hasXDG {
+			caddy.Log().Warn("$HOME environment variable is empty - please fix; some assets might be stored in ./caddy")
 		}
 	}
 
