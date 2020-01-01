@@ -44,6 +44,11 @@ type FilterEncoder struct {
 	// layer of nesting with `>`. In other words, for an
 	// object like `{"a":{"b":0}}`, the inner field can
 	// be referenced as `a>b`.
+	//
+	// The following fields are fundamental to the log and
+	// cannot be filtered because they are added by the
+	// underlying logging library as special cases: ts,
+	// level, logger, and msg.
 	FieldsRaw map[string]json.RawMessage `json:"fields,omitempty" caddy:"namespace=caddy.logging.encoders.filter inline_key=filter"`
 
 	wrapped zapcore.Encoder
