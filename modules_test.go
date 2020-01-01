@@ -83,3 +83,36 @@ func TestGetModules(t *testing.T) {
 		}
 	}
 }
+
+func TestModuleID(t *testing.T) {
+	for i, tc := range []struct {
+		input           ModuleID
+		expectNamespace string
+		expectName      string
+	}{
+		{
+			input:           "foo",
+			expectNamespace: "",
+			expectName:      "foo",
+		},
+		{
+			input:           "foo.bar",
+			expectNamespace: "foo",
+			expectName:      "bar",
+		},
+		{
+			input:           "a.b.c",
+			expectNamespace: "a.b",
+			expectName:      "c",
+		},
+	} {
+		actualNamespace := tc.input.Namespace()
+		if actualNamespace != tc.expectNamespace {
+			t.Errorf("Test %d: Expected namespace '%s' but got '%s'", i, tc.expectNamespace, actualNamespace)
+		}
+		actualName := tc.input.Name()
+		if actualName != tc.expectName {
+			t.Errorf("Test %d: Expected name '%s' but got '%s'", i, tc.expectName, actualName)
+		}
+	}
+}

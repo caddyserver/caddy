@@ -498,7 +498,7 @@ func cmdValidateConfig(fl Flags) (int, error) {
 
 func cmdHelp(fl Flags) (int, error) {
 	const fullDocs = `Full documentation is available at:
-https://github.com/caddyserver/caddy/wiki/v2:-Documentation`
+https://caddyserver.com/docs/command-line`
 
 	args := fl.Args()
 	if len(args) == 0 {
