@@ -23,7 +23,9 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
 	"path"
+	"path/filepath"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -262,13 +264,21 @@ func unsyncedDecodeAndRun(cfgJSON []byte) error {
 			newCfg.Admin.Config == nil ||
 			newCfg.Admin.Config.Persist == nil ||
 			*newCfg.Admin.Config.Persist) {
-		err := ioutil.WriteFile(ConfigAutosavePath, cfgJSON, 0600)
-		if err == nil {
-			Log().Info("autosaved config", zap.String("file", ConfigAutosavePath))
-		} else {
-			Log().Error("unable to autosave config",
-				zap.String("file", ConfigAutosavePath),
+		dir := filepath.Dir(ConfigAutosavePath)
+		err := os.MkdirAll(dir, 0700)
+		if err != nil {
+			Log().Error("unable to create folder for config autosave",
+				zap.String("dir", dir),
 				zap.Error(err))
+		} else {
+			err := ioutil.WriteFile(ConfigAutosavePath, cfgJSON, 0600)
+			if err == nil {
+				Log().Info("autosaved config", zap.String("file", ConfigAutosavePath))
+			} else {
+				Log().Error("unable to autosave config",
+					zap.String("file", ConfigAutosavePath),
+					zap.Error(err))
+			}
 		}
 	}
 

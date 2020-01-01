@@ -96,7 +96,7 @@ type ModuleID string
 func (id ModuleID) Namespace() string {
 	lastDot := strings.LastIndex(string(id), ".")
 	if lastDot < 0 {
-		return string(id)
+		return ""
 	}
 	return string(id)[:lastDot]
 }

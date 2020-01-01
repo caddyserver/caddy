@@ -112,7 +112,7 @@ $ ./caddy stop
 
 Note that this will stop any process named the same as `os.Args[0]`.
 
-For other commands, please see [the Caddy 2 documentation](https://github.com/caddyserver/caddy/wiki/v2:-Documentation).
+For other commands, please see [the Caddy 2 documentation](https://caddyserver.com/docs/command-line).
 
 ### Caddyfile
 
@@ -128,7 +128,7 @@ php_fastcgi   /blog unix//path/to/socket
 file_server
 ```
 
-Instead of being its primary mode of configuration, an internal _config adapter_ adapts the Caddyfile to Caddy's native JSON structure. You can see it in action with the [`adapt` command](https://github.com/caddyserver/caddy/wiki/v2:-Documentation#adapt):
+Instead of being its primary mode of configuration, an internal _config adapter_ adapts the Caddyfile to Caddy's native JSON structure. You can see it in action with the [`adapt` command](https://caddyserver.com/docs/command-line#caddy-adapt):
 
 ```bash
 $ ./caddy adapt --config path/to/Caddyfile --adapter caddyfile --pretty
@@ -158,18 +158,18 @@ Caddy 2 exposes an unprecedented level of control compared to any web server in 
 
 Nearly all of Caddy 2's configuration is contained in a single config document, rather than being spread across CLI flags and env variables and a configuration file as with other web servers (and Caddy 1).
 
-To wield the power of this design, you need to know how the config document is structured. Please see the [the Caddy 2 documentation in our wiki](https://github.com/caddyserver/caddy/wiki/v2:-Documentation) for details about Caddy's config structure.
+To wield the power of this design, you need to know how the config document is structured. Please see the [the Caddy 2 documentation in our wiki](https://caddyserver.com/docs/json/) for details about Caddy's config structure.
 
-Configuration is normally given to Caddy through an API endpoint, which is likewise documented in the wiki pages. However, you can also use config files of various formats with [config adapters](https://github.com/caddyserver/caddy/wiki/v2:-Documentation#config-adapters).
+Configuration is normally given to Caddy through an API endpoint, which is likewise documented in the wiki pages. However, you can also use config files of various formats with [config adapters](https://caddyserver.com/docs/config-adapters).
 
 
 ## Full Documentation
 
-Caddy 2 is very much in development, so the documentation is an ongoing WIP, but the latest will be in our wiki for now:
+Caddy 2 is very much in development, and so is its documentation. You can find it here:
 
-**https://github.com/caddyserver/caddy/wiki/v2:-Documentation**
+**https://caddyserver.com/docs/**
 
-Note that breaking changes are expected until the stable 2.0 release.
+Note that breaking changes are expected until the stable 2.0 release. The v2 Caddyfile will probably be the last thing documented, as it is rapidly changing.
 
 
 ## List of Improvements
@@ -238,11 +238,11 @@ And a few major features still being worked on:
 
 ### How do I configure Caddy 2?
 
-Caddy's primary mode of configuration is a REST API, which accepts a JSON document. The JSON structure is described [in the wiki](https://github.com/caddyserver/caddy/wiki/v2:-Documentation). The advantages of exposing this low-level structure are 1) it has near-parity with actual memory initialization, 2) it allows us to offer wrappers over this configuration to any degree of convenience that is needed, and 3) it performs very well under rapid config changes.
+Caddy's primary mode of configuration is a REST API, which accepts a JSON document. The JSON structure is described [interactively in the docs](https://caddyserver.com/docs/json/). The advantages of exposing this low-level structure are 1) it has near-parity with actual memory initialization, 2) it allows us to offer wrappers over this configuration to any degree of convenience that is needed, and 3) it performs very well under rapid config changes.
 
-Basically, you will [start Caddy](https://github.com/caddyserver/caddy/wiki/v2:-Documentation#start), then [POST a JSON config to its API endpoint](https://github.com/caddyserver/caddy/wiki/v2:-Documentation#post-load).
+Basically, you will [start Caddy](https://caddyserver.com/docs/command-line#caddy-run), then [POST a JSON config to its API endpoint](https://caddyserver.com/docs/api#post-load).
 
-Although this makes Caddy 2 highly programmable, not everyone will want to configure Caddy via JSON with an API. Sometimes we just want to give Caddy a simple, static config file and have it do its thing. That's what **[config adapters](https://github.com/caddyserver/caddy/wiki/v2:-Documentation#config-adapters)** are for! You can configure Caddy more ways than one, depending on your needs and preferences. See the next questions that explain this more.
+Although this makes Caddy 2 highly programmable, not everyone will want to configure Caddy via JSON with an API. Sometimes we just want to give Caddy a simple, static config file and have it do its thing. That's what **[config adapters](https://caddyserver.com/docs/config-adapters)** are for! You can configure Caddy more ways than one, depending on your needs and preferences. See the next questions that explain this more.
 
 ### Caddy 2 feels harder to use. How is this an improvement over Caddy 1?
 
@@ -254,7 +254,7 @@ Yes! Caddy's native JSON configuration via API is nice when you are automating c
 
 The v2 Caddyfile is very similar to the v1 Caddyfile, but they are not compatible. Several improvements have been made to request matching and directives in v2, giving you more power with less complexity and fewer inconsistencies.
 
-Caddy's default _config adapter_ is the Caddyfile adapter. This takes a Caddyfile as input and [outputs the JSON config](https://github.com/caddyserver/caddy/wiki/v2:-Documentation#adapt). You can even run Caddy directly without having to see or think about the underlying JSON config.
+Caddy's default _config adapter_ is the Caddyfile adapter. This takes a Caddyfile as input and [outputs the JSON config](https://caddyserver.com/docs/command-line#caddy-adapt). You can even run Caddy directly without having to see or think about the underlying JSON config.
 
 The following _config adapters_ are already being built or plan to be built:
 
