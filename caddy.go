@@ -61,11 +61,10 @@ type Config struct {
 	Logging *Logging     `json:"logging,omitempty"`
 
 	// StorageRaw is a storage module that defines how/where Caddy
-	// stores assets (such as TLS certificates). By default, this is
-	// the local file system (`caddy.storage.file_system` module).
-	// If the `XDG_DATA_HOME` environment variable is set, then
-	// `$XDG_DATA_HOME/caddy` is the default folder. Otherwise,
-	// `$HOME/.local/share/caddy` is the default folder.
+	// stores assets (such as TLS certificates). The default storage
+	// module is `caddy.storage.file_system` (the local file system),
+	// and the default path
+	// [depends on the OS and environment](/docs/conventions#data-directory).
 	StorageRaw json.RawMessage `json:"storage,omitempty" caddy:"namespace=caddy.storage inline_key=module"`
 
 	// AppsRaw are the apps that Caddy will load and run. The

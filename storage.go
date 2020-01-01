@@ -84,14 +84,13 @@ func homeDirUnsafe() string {
 //
 // Ref: https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html
 func AppConfigDir() string {
-	basedir := os.Getenv("XDG_CONFIG_HOME")
-	if basedir == "" {
-		var err error
-		basedir, err = os.UserConfigDir()
-		if err != nil {
-			Log().Warn("unable to determine directory for user configuration; falling back to current directory", zap.Error(err))
-			return "./caddy"
-		}
+	if basedir := os.Getenv("XDG_CONFIG_HOME"); basedir != "" {
+		return filepath.Join(basedir, "caddy")
+	}
+	basedir, err := os.UserConfigDir()
+	if err != nil {
+		Log().Warn("unable to determine directory for user configuration; falling back to current directory", zap.Error(err))
+		return "./caddy"
 	}
 	subdir := "caddy"
 	switch runtime.GOOS {
