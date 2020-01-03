@@ -76,7 +76,7 @@ type Logging struct {
 }
 
 // openLogs sets up the config and opens all the configured writers.
-// It closes its logs when ctx is cancelled, so it should clean up
+// It closes its logs when ctx is canceled, so it should clean up
 // after itself.
 func (logging *Logging) openLogs(ctx Context) error {
 	// make sure to deallocate resources when context is done
@@ -184,7 +184,7 @@ func (logging *Logging) setupNewDefault(ctx Context) error {
 
 // closeLogs cleans up resources allocated during openLogs.
 // A successful call to openLogs calls this automatically
-// when the context is cancelled.
+// when the context is canceled.
 func (logging *Logging) closeLogs() error {
 	for _, key := range logging.writerKeys {
 		_, err := writers.Delete(key)

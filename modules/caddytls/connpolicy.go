@@ -179,7 +179,7 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 		// session ticket key rotation
 		tlsApp.SessionTickets.register(cfg)
 		ctx.OnCancel(func() {
-			// do cleanup when the context is cancelled because,
+			// do cleanup when the context is canceled because,
 			// though unlikely, it is possible that a context
 			// needing a TLS server config could exist for less
 			// than the lifetime of the whole app
