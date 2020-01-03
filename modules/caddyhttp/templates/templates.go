@@ -259,9 +259,7 @@ func (t *Templates) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 	// refresh, so disable them until we find a better way to do this
 	rec.Header().Del("Etag")
 
-	rec.WriteResponse()
-
-	return nil
+	return rec.WriteResponse()
 }
 
 // executeTemplate executes the template contained in wb.buf and replaces it with the results.
