@@ -96,7 +96,7 @@ func (fw FileWriter) WriterKey() string {
 // OpenWriter opens a new file writer.
 func (fw FileWriter) OpenWriter() (io.WriteCloser, error) {
 	// roll log files by default
-	if fw.Roll == nil || *fw.Roll == true {
+	if fw.Roll == nil || *fw.Roll {
 		if fw.RollSizeMB == 0 {
 			fw.RollSizeMB = 100
 		}

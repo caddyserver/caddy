@@ -138,7 +138,7 @@ func (fcl *fakeCloseListener) Accept() (net.Conn, error) {
 	fcl.deadlineMu.Unlock()
 
 	if atomic.LoadInt32(&fcl.closed) == 1 {
-		// if we cancelled the Accept() by setting a deadline
+		// if we canceled the Accept() by setting a deadline
 		// on the listener, we need to make sure any callers of
 		// Accept() think the listener was actually closed;
 		// if we return the timeout error instead, callers might

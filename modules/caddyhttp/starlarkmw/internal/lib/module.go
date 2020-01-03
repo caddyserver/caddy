@@ -60,7 +60,7 @@ func (r *LoadMiddleware) Run(thread *starlark.Thread, fn *starlark.Builtin, args
 
 	js := json.RawMessage(cfg.String())
 
-	if strings.Index(name, "http.handlers.") == -1 {
+	if !strings.Contains(name, "http.handlers.") {
 		name = fmt.Sprintf("http.handlers.%s", name)
 	}
 
@@ -108,7 +108,7 @@ func (r *LoadResponder) Run(thread *starlark.Thread, fn *starlark.Builtin, args 
 
 	js := json.RawMessage(cfg.String())
 
-	if strings.Index(name, "http.handlers.") == -1 {
+	if !strings.Contains(name, "http.handlers.") {
 		name = fmt.Sprintf("http.handlers.%s", name)
 	}
 
