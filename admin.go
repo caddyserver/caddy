@@ -50,7 +50,7 @@ type AdminConfig struct {
 
 	// The address to which the admin endpoint's listener should
 	// bind itself. Can be any single network address that can be
-	// parsed by Caddy.
+	// parsed by Caddy. Default: localhost:2019
 	Listen string `json:"listen,omitempty"`
 
 	// If true, CORS headers will be emitted, and requests to the
@@ -66,6 +66,16 @@ type AdminConfig struct {
 	// will be the default value. If set but empty, no origins will
 	// be allowed.
 	Origins []string `json:"origins,omitempty"`
+
+	// Options related to configuration management.
+	Config *ConfigSettings `json:"config,omitempty"`
+}
+
+// ConfigSettings configures the, uh, configuration... and
+// management thereof.
+type ConfigSettings struct {
+	// Whether to keep a copy of the active config on disk. Default is true.
+	Persist *bool `json:"persist,omitempty"`
 }
 
 // listenAddr extracts a singular listen address from ac.Listen,
@@ -282,10 +292,12 @@ func (h adminHandler) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		if r.Method == http.MethodOptions {
+			w.Header().Set("Access-Control-Allow-Methods", "OPTIONS, GET, POST, PUT, PATCH, DELETE")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Cache-Control")
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+		}
 		w.Header().Set("Access-Control-Allow-Origin", origin)
-		w.Header().Set("Access-Control-Allow-Methods", "OPTIONS, GET, POST, PUT, PATCH, DELETE")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Cache-Control")
-		w.Header().Set("Access-Control-Allow-Credentials", "true")
 	}
 
 	// TODO: authentication & authorization, if configured
@@ -636,6 +648,19 @@ func unsyncedConfigAccess(method, path string, body []byte, out io.Writer) error
 		return fmt.Errorf("path missing")
 	}
 
+	// A path that ends with "..." implies:
+	// 1) the part before it is an array
+	// 2) the payload is an array
+	// and means that the user wants to expand the elements
+	// in the payload array and append each one into the
+	// destination array, like so:
+	//     array = append(array, elems...)
+	// This special case is handled below.
+	ellipses := parts[len(parts)-1] == "..."
+	if ellipses {
+		parts = parts[:len(parts)-1]
+	}
+
 	var ptr interface{} = rawCfg
 
 traverseLoop:
@@ -666,7 +691,15 @@ traverseLoop:
 						return fmt.Errorf("encoding config: %v", err)
 					}
 				case http.MethodPost:
-					v[part] = append(arr, val)
+					if ellipses {
+						valArray, ok := val.([]interface{})
+						if !ok {
+							return fmt.Errorf("final element is not an array")
+						}
+						v[part] = append(arr, valArray...)
+					} else {
+						v[part] = append(arr, val)
+					}
 				case http.MethodPut:
 					// avoid creation of new slice and a second copy (see
 					// https://github.com/golang/go/wiki/SliceTricks#insert)
@@ -692,13 +725,19 @@ traverseLoop:
 						return fmt.Errorf("encoding config: %v", err)
 					}
 				case http.MethodPost:
+					// if the part is an existing list, POST appends to
+					// it, otherwise it just sets or creates the value
 					if arr, ok := v[part].([]interface{}); ok {
-						// if the part is an existing list, POST appends to it
-						// TODO: Do we ever reach this point, since we handle arrays
-						// separately above?
-						v[part] = append(arr, val)
+						if ellipses {
+							valArray, ok := val.([]interface{})
+							if !ok {
+								return fmt.Errorf("final element is not an array")
+							}
+							v[part] = append(arr, valArray...)
+						} else {
+							v[part] = append(arr, val)
+						}
 					} else {
-						// otherwise, it simply sets the value
 						v[part] = val
 					}
 				case http.MethodPut:
@@ -746,7 +785,11 @@ traverseLoop:
 	return nil
 }
 
-// RemoveMetaFields removes meta fields like "@id" from a JSON message.
+// RemoveMetaFields removes meta fields like "@id" from a JSON message
+// by using a simple regular expression. (An alternate way to do this
+// would be to delete them from the raw, map[string]interface{}
+// representation as they are indexed, then iterate the index we made
+// and add them back after encoding as JSON, but this is simpler.)
 func RemoveMetaFields(rawJSON []byte) []byte {
 	return idRegexp.ReplaceAllFunc(rawJSON, func(in []byte) []byte {
 		// matches with a comma on both sides (when "@id" property is

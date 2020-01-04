@@ -30,7 +30,7 @@ import (
 // that spawned the modules which are loaded. It should be used
 // with care and wrapped with derivation functions from the
 // standard context package only if you don't need the Caddy
-// specific features. These contexts are cancelled when the
+// specific features. These contexts are canceled when the
 // lifetime of the modules loaded from it is over.
 //
 // Use NewContext() to get a valid value (but most modules will
@@ -75,7 +75,7 @@ func NewContext(ctx Context) (Context, context.CancelFunc) {
 	return newCtx, wrappedCancel
 }
 
-// OnCancel executes f when ctx is cancelled.
+// OnCancel executes f when ctx is canceled.
 func (ctx *Context) OnCancel(f func()) {
 	ctx.cleanupFuncs = append(ctx.cleanupFuncs, f)
 }

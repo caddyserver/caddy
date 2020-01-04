@@ -47,7 +47,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 					return nil, h.ArgErr()
 				}
 			case "root":
-				if !h.Args(&t.IncludeRoot) {
+				if !h.Args(&t.FileRoot) {
 					return nil, h.ArgErr()
 				}
 			}

@@ -37,7 +37,11 @@ func init() {
 // is only returned to the entry point at the server if there is an
 // additional error returned from the errors routes.
 type Subroute struct {
-	Routes RouteList        `json:"routes,omitempty"`
+	// The primary list of routes to compile and execute.
+	Routes RouteList `json:"routes,omitempty"`
+
+	// If the primary routes return an error, error handling
+	// can be promoted to this configuration instead.
 	Errors *HTTPErrorConfig `json:"errors,omitempty"`
 }
 

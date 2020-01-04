@@ -39,6 +39,16 @@ type FilterEncoder struct {
 
 	// A map of field names to their filters. Note that this
 	// is not a module map; the keys are field names.
+	//
+	// Nested fields can be referenced by representing a
+	// layer of nesting with `>`. In other words, for an
+	// object like `{"a":{"b":0}}`, the inner field can
+	// be referenced as `a>b`.
+	//
+	// The following fields are fundamental to the log and
+	// cannot be filtered because they are added by the
+	// underlying logging library as special cases: ts,
+	// level, logger, and msg.
 	FieldsRaw map[string]json.RawMessage `json:"fields,omitempty" caddy:"namespace=caddy.logging.encoders.filter inline_key=filter"`
 
 	wrapped zapcore.Encoder
@@ -96,6 +106,9 @@ func (fe FilterEncoder) AddArray(key string, marshaler zapcore.ArrayMarshaler) e
 
 // AddObject is part of the zapcore.ObjectEncoder interface.
 func (fe FilterEncoder) AddObject(key string, marshaler zapcore.ObjectMarshaler) error {
+	if fe.filtered(key, marshaler) {
+		return nil
+	}
 	fe.keyPrefix += key + ">"
 	return fe.wrapped.AddObject(key, logObjectMarshalerWrapper{
 		enc:   fe,

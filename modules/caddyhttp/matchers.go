@@ -34,12 +34,28 @@ import (
 
 type (
 	// MatchHost matches requests by the Host value (case-insensitive).
+	//
+	// When used in an HTTP route,
+	// [qualifying domain names](/docs/automatic-https#hostname-requirements)
+	// may trigger [automatic HTTPS](/docs/automatic-https), which automatically
+	// provisions and renews certificates for you. Before doing this, you
+	// should ensure that DNS records for these domains are properly configured,
+	// especially A/AAAA pointed at your server.
+	//
+	// Automatic HTTPS can be
+	// [customized or disabled](/docs/json/apps/http/servers/automatic_https/).
 	MatchHost []string
 
 	// MatchPath matches requests by the URI's path (case-insensitive).
 	MatchPath []string
 
 	// MatchPathRE matches requests by a regular expression on the URI's path.
+	//
+	// Upon a match, it adds placeholders to the request: `{http.regexp.name.capture_group}`
+	// where `name` is the regular expression's name, and `capture_group` is either
+	// the named or positional capture group from the expression itself. If no name
+	// is given, then the placeholder omits the name: `{http.regexp.capture_group}`
+	// (potentially leading to collisions).
 	MatchPathRE struct{ MatchRegexp }
 
 	// MatchMethod matches requests by the method.
@@ -52,6 +68,12 @@ type (
 	MatchHeader http.Header
 
 	// MatchHeaderRE matches requests by a regular expression on header fields.
+	//
+	// Upon a match, it adds placeholders to the request: `{http.regexp.name.capture_group}`
+	// where `name` is the regular expression's name, and `capture_group` is either
+	// the named or positional capture group from the expression itself. If no name
+	// is given, then the placeholder omits the name: `{http.regexp.capture_group}`
+	// (potentially leading to collisions).
 	MatchHeaderRE map[string]*MatchRegexp
 
 	// MatchProtocol matches requests by protocol.
@@ -65,6 +87,8 @@ type (
 	}
 
 	// MatchNegate matches requests by negating its matchers' results.
+	// To use, simply specify a set of matchers like you normally would;
+	// the only difference is that their result will be negated.
 	MatchNegate struct {
 		MatchersRaw caddy.ModuleMap `json:"-" caddy:"namespace=http.matchers"`
 
@@ -118,7 +142,7 @@ func (m MatchHost) Match(r *http.Request) bool {
 		reqHost = strings.TrimSuffix(reqHost, "]")
 	}
 
-	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 outer:
 	for _, host := range m {
@@ -165,6 +189,14 @@ func (m MatchPath) Provision(_ caddy.Context) error {
 // Match returns true if r matches m.
 func (m MatchPath) Match(r *http.Request) bool {
 	lowerPath := strings.ToLower(r.URL.Path)
+
+	// see #2917; Windows ignores trailing dots and spaces
+	// when accessing files (sigh), potentially causing a
+	// security risk (cry) if PHP files end up being served
+	// as static files, exposing the source code, instead of
+	// being matched by *.php to be treated as PHP scripts
+	lowerPath = strings.TrimRight(lowerPath, ". ")
+
 	for _, matchPath := range m {
 		// special case: first character is equals sign,
 		// treat it as an exact match
@@ -215,7 +247,7 @@ func (MatchPathRE) CaddyModule() caddy.ModuleInfo {
 
 // Match returns true if r matches m.
 func (m MatchPathRE) Match(r *http.Request) bool {
-	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	return m.MatchRegexp.Match(r.URL.Path, repl)
 }
 
@@ -372,7 +404,7 @@ func (m *MatchHeaderRE) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // Match returns true if r matches m.
 func (m MatchHeaderRE) Match(r *http.Request) bool {
 	for field, rm := range m {
-		repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
+		repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 		match := rm.Match(r.Header.Get(field), repl)
 		if !match {
 			return false
@@ -616,11 +648,26 @@ func (m MatchStarlarkExpr) Match(r *http.Request) bool {
 }
 
 // MatchRegexp is an embeddable type for matching
-// using regular expressions.
+// using regular expressions. It adds placeholders
+// to the request's replacer.
 type MatchRegexp struct {
-	Name     string `json:"name,omitempty"`
-	Pattern  string `json:"pattern"`
+	// A unique name for this regular expression. Optional,
+	// but useful to prevent overwriting captures from other
+	// regexp matchers.
+	Name string `json:"name,omitempty"`
+
+	// The regular expression to evaluate, in RE2 syntax,
+	// which is the same general syntax used by Go, Perl,
+	// and Python. For details, see
+	// [Go's regexp package](https://golang.org/pkg/regexp/).
+	// Captures are accessible via placeholders. Unnamed
+	// capture groups are exposed as their numeric, 1-based
+	// index, while named capture groups are available by
+	// the capture group name.
+	Pattern string `json:"pattern"`
+
 	compiled *regexp.Regexp
+	phPrefix string
 }
 
 // Provision compiles the regular expression.
@@ -630,6 +677,10 @@ func (mre *MatchRegexp) Provision(caddy.Context) error {
 		return fmt.Errorf("compiling matcher regexp %s: %v", mre.Pattern, err)
 	}
 	mre.compiled = re
+	mre.phPrefix = regexpPlaceholderPrefix
+	if mre.Name != "" {
+		mre.phPrefix += "." + mre.Name
+	}
 	return nil
 }
 
@@ -644,10 +695,8 @@ func (mre *MatchRegexp) Validate() error {
 // Match returns true if input matches the compiled regular
 // expression in mre. It sets values on the replacer repl
 // associated with capture groups, using the given scope
-// (namespace). Capture groups stored to repl will take on
-// the name "http.matchers.<scope>.<mre.Name>.<N>" where
-// <N> is the name or number of the capture group.
-func (mre *MatchRegexp) Match(input string, repl caddy.Replacer) bool {
+// (namespace).
+func (mre *MatchRegexp) Match(input string, repl *caddy.Replacer) bool {
 	matches := mre.compiled.FindStringSubmatch(input)
 	if matches == nil {
 		return false
@@ -655,14 +704,14 @@ func (mre *MatchRegexp) Match(input string, repl caddy.Replacer) bool {
 
 	// save all capture groups, first by index
 	for i, match := range matches {
-		key := fmt.Sprintf("http.regexp.%s.%d", mre.Name, i)
+		key := fmt.Sprintf("%s.%d", mre.phPrefix, i)
 		repl.Set(key, match)
 	}
 
 	// then by name
 	for i, name := range mre.compiled.SubexpNames() {
 		if i != 0 && name != "" {
-			key := fmt.Sprintf("http.regexp.%s.%s", mre.Name, name)
+			key := fmt.Sprintf("%s.%s", mre.phPrefix, name)
 			repl.Set(key, matches[i])
 		}
 	}
@@ -687,8 +736,8 @@ func (mre *MatchRegexp) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
-// ResponseMatcher is a type which can determine if a given response
-// status code and its headers match some criteria.
+// ResponseMatcher is a type which can determine if an
+// HTTP response matches some criteria.
 type ResponseMatcher struct {
 	// If set, one of these status codes would be required.
 	// A one-digit status can be used to represent all codes
@@ -745,6 +794,8 @@ func (rm ResponseMatcher) matchHeaders(hdr http.Header) bool {
 }
 
 var wordRE = regexp.MustCompile(`\w+`)
+
+const regexpPlaceholderPrefix = "http.regexp"
 
 // Interface guards
 var (

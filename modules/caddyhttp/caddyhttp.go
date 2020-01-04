@@ -44,7 +44,47 @@ func init() {
 	}
 }
 
-// App is a robust, flexible HTTP server for Caddy.
+// App is a robust, production-ready HTTP server.
+//
+// HTTPS is enabled by default if host matchers with qualifying names are used
+// in any of routes; certificates are automatically provisioned and renewed.
+// Additionally, automatic HTTPS will also enable HTTPS for servers that listen
+// only on the HTTPS port but which do not have any TLS connection policies
+// defined by adding a good, default TLS connection policy.
+//
+// In HTTP routes, additional placeholders are available:
+//
+// Placeholder | Description
+// ------------|---------------
+// `{http.request.cookie.*}` | HTTP request cookie
+// `{http.request.header.*}` | Specific request header field
+// `{http.request.host.labels.*}` | Request host labels (0-based from right); e.g. for foo.example.com: 0=com, 1=example, 2=foo
+// `{http.request.host}` | The host part of the request's Host header
+// `{http.request.hostport}` | The host and port from the request's Host header
+// `{http.request.method}` | The request method
+// `{http.request.orig.method}` | The request's original method
+// `{http.request.orig.path.dir}` | The request's original directory
+// `{http.request.orig.path.file}` | The request's original filename
+// `{http.request.orig.uri.path}` | The request's original path
+// `{http.request.orig.uri.query_string}` | The request's original full query string (with `?`)
+// `{http.request.orig.uri.query}` | The request's original query string (without `?`)
+// `{http.request.orig.uri}` | The request's original URI
+// `{http.request.port}` | The port part of the request's Host header
+// `{http.request.proto}` | The protocol of the request
+// `{http.request.remote.host}` | The host part of the remote client's address
+// `{http.request.remote.port}` | The port part of the remote client's address
+// `{http.request.remote}` | The address of the remote client
+// `{http.request.scheme}` | The request scheme
+// `{http.request.uri.path.*}` | Parts of the path, split by `/` (0-based from left)
+// `{http.request.uri.path.dir}` | The directory, excluding leaf filename
+// `{http.request.uri.path.file}` | The filename of the path, excluding directory
+// `{http.request.uri.path}` | The path component of the request URI
+// `{http.request.uri.query_string}` | The full query string (with `?`)
+// `{http.request.uri.query.*}` | Individual query string value
+// `{http.request.uri.query}` | The query string (without `?`)
+// `{http.request.uri}` | The full request URI
+// `{http.response.header.*}` | Specific response header field
+// `{http.vars.*}` | Custom variables in the HTTP handler chain
 type App struct {
 	// HTTPPort specifies the port to use for HTTP (as opposed to HTTPS),
 	// which is used when setting up HTTP->HTTPS redirects or ACME HTTP
@@ -324,6 +364,18 @@ func (app *App) automaticHTTPS() error {
 				zap.Int("http_port", app.httpPort()),
 			)
 			continue
+		}
+
+		// if all listeners are on the HTTPS port, make sure
+		// there is at least one TLS connection policy; it
+		// should be obvious that they want to use TLS without
+		// needing to specify one empty policy to enable it
+		if !srv.listenersUseAnyPortOtherThan(app.httpsPort()) && len(srv.TLSConnPolicies) == 0 {
+			app.logger.Info("server is only listening on the HTTPS port but has no TLS connection policies; adding one to enable TLS",
+				zap.String("server_name", srvName),
+				zap.Int("https_port", app.httpsPort()),
+			)
+			srv.TLSConnPolicies = append(srv.TLSConnPolicies, new(caddytls.ConnectionPolicy))
 		}
 
 		// find all qualifying domain names, de-duplicated

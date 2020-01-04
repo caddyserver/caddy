@@ -19,6 +19,7 @@ import (
 	"flag"
 	"log"
 	"strconv"
+	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -32,7 +33,7 @@ func init() {
 	caddycmd.RegisterCommand(caddycmd.Command{
 		Name:  "file-server",
 		Func:  cmdFileServer,
-		Usage: "[--domain <example.com>] [--path <path>] [--listen <addr>] [--browse]",
+		Usage: "[--domain <example.com>] [--root <path>] [--listen <addr>] [--browse]",
 		Short: "Spins up a production-ready file server",
 		Long: `
 A simple but production-ready file server. Useful for quick deployments,
@@ -83,7 +84,10 @@ func cmdFileServer(fs caddycmd.Flags) (int, error) {
 	}
 
 	server := &caddyhttp.Server{
-		Routes: caddyhttp.RouteList{route},
+		ReadHeaderTimeout: caddy.Duration(10 * time.Second),
+		IdleTimeout:       caddy.Duration(30 * time.Second),
+		MaxHeaderBytes:    1024 * 10,
+		Routes:            caddyhttp.RouteList{route},
 	}
 	if listen == "" {
 		if certmagic.HostQualifies(domain) {

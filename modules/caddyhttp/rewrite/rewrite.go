@@ -31,16 +31,39 @@ func init() {
 }
 
 // Rewrite is a middleware which can rewrite HTTP requests.
+//
+// The Rehandle and HTTPRedirect properties are mutually exclusive
+// (you cannot both rehandle and issue a redirect).
+//
+// These rewrite properties are applied to a request in this order:
+// Method, URI, StripPathPrefix, StripPathSuffix, URISubstring.
+//
+// TODO: This module is still a WIP and may experience breaking changes.
 type Rewrite struct {
+	// Changes the request's HTTP verb.
 	Method string `json:"method,omitempty"`
-	URI    string `json:"uri,omitempty"`
 
-	StripPathPrefix string     `json:"strip_path_prefix,omitempty"`
-	StripPathSuffix string     `json:"strip_path_suffix,omitempty"`
-	URISubstring    []replacer `json:"uri_substring,omitempty"`
+	// Changes the request's URI (path, query string, and fragment if present).
+	// Only components of the URI that are specified will be changed.
+	URI string `json:"uri,omitempty"`
 
+	// Strips the given prefix from the beginning of the URI path.
+	StripPathPrefix string `json:"strip_path_prefix,omitempty"`
+
+	// Strips the given suffix from the end of the URI path.
+	StripPathSuffix string `json:"strip_path_suffix,omitempty"`
+
+	// Performs substring replacements on the URI.
+	URISubstring []replacer `json:"uri_substring,omitempty"`
+
+	// If set to a 3xx HTTP status code and if the URI was rewritten (changed),
+	// the handler will issue a simple HTTP redirect to the new URI using the
+	// given status code.
 	HTTPRedirect caddyhttp.WeakString `json:"http_redirect,omitempty"`
-	Rehandle     bool                 `json:"rehandle,omitempty"`
+
+	// If true, the request will sent for rehandling after rewriting
+	// only if anything about the request was changed.
+	Rehandle bool `json:"rehandle,omitempty"`
 
 	logger *zap.Logger
 }
@@ -68,7 +91,7 @@ func (rewr Rewrite) Validate() error {
 }
 
 func (rewr Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	logger := rewr.logger.With(
 		zap.Object("request", caddyhttp.LoggableHTTPRequest{Request: r}),
@@ -101,7 +124,7 @@ func (rewr Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 // rewrite performs the rewrites on r using repl, which
 // should have been obtained from r, but is passed in for
 // efficiency. It returns true if any changes were made to r.
-func (rewr Rewrite) rewrite(r *http.Request, repl caddy.Replacer, logger *zap.Logger) bool {
+func (rewr Rewrite) rewrite(r *http.Request, repl *caddy.Replacer, logger *zap.Logger) bool {
 	oldMethod := r.Method
 	oldURI := r.RequestURI
 
@@ -126,9 +149,24 @@ func (rewr Rewrite) rewrite(r *http.Request, repl caddy.Replacer, logger *zap.Lo
 		if newU.Path != "" {
 			r.URL.Path = newU.Path
 		}
-		if newU.RawQuery != "" {
-			newU.RawQuery = strings.TrimPrefix(newU.RawQuery, "&")
-			r.URL.RawQuery = newU.RawQuery
+		if strings.Contains(newURI, "?") {
+			// you'll notice we check for existence of a question mark
+			// instead of RawQuery != "". We do this because if the user
+			// wants to remove an existing query string, they do that by
+			// appending "?" to the path: "/foo?" -- in this case, then,
+			// RawQuery is "" but we still want to set it to that; hence,
+			// we check for a "?", which always starts a query string
+			inputQuery := newU.Query()
+			outputQuery := make(url.Values)
+			for k := range inputQuery {
+				// overwrite existing values; we don't simply keep
+				// appending because it can cause rewrite rules like
+				// "{path}{query}&a=b" with rehandling enabled to go
+				// on forever: "/foo.html?a=b&a=b&a=b..."
+				outputQuery.Set(k, inputQuery.Get(k))
+			}
+			// this sorts the keys, oh well
+			r.URL.RawQuery = outputQuery.Encode()
 		}
 		if newU.Fragment != "" {
 			r.URL.Fragment = newU.Fragment
@@ -171,7 +209,7 @@ type replacer struct {
 }
 
 // do performs the replacement on r and returns true if any changes were made.
-func (rep replacer) do(r *http.Request, repl caddy.Replacer) bool {
+func (rep replacer) do(r *http.Request, repl *caddy.Replacer) bool {
 	if rep.Find == "" || rep.Replace == "" {
 		return false
 	}

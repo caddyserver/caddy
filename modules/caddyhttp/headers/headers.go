@@ -28,7 +28,18 @@ func init() {
 	caddy.RegisterModule(Handler{})
 }
 
-// Handler is a middleware which can mutate HTTP headers.
+// Handler is a middleware which modifies request and response headers.
+//
+// Changes to headers are applied immediately, except for the response
+// headers when Deferred is true or when Required is set. In those cases,
+// the changes are applied when the headers are written to the response.
+// Note that deferred changes do not take effect if an error occurs later
+// in the middleware chain.
+//
+// Properties in this module accept placeholders.
+//
+// Response header operations can be conditioned upon response status code
+// and/or other header values.
 type Handler struct {
 	Request  *HeaderOps     `json:"request,omitempty"`
 	Response *RespHeaderOps `json:"response,omitempty"`
@@ -77,7 +88,7 @@ func (h Handler) Validate() error {
 }
 
 func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	if h.Request != nil {
 		h.Request.ApplyToRequest(r)
@@ -99,12 +110,18 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 	return next.ServeHTTP(w, r)
 }
 
-// HeaderOps defines some operations to
-// perform on HTTP headers.
+// HeaderOps defines manipulations for HTTP headers.
 type HeaderOps struct {
-	Add     http.Header              `json:"add,omitempty"`
-	Set     http.Header              `json:"set,omitempty"`
-	Delete  []string                 `json:"delete,omitempty"`
+	// Adds HTTP headers; does not replace any existing header fields.
+	Add http.Header `json:"add,omitempty"`
+
+	// Sets HTTP headers; replaces existing header fields.
+	Set http.Header `json:"set,omitempty"`
+
+	// Names of HTTP header fields to delete.
+	Delete []string `json:"delete,omitempty"`
+
+	// Performs substring replacements of HTTP headers in-situ.
 	Replace map[string][]Replacement `json:"replace,omitempty"`
 }
 
@@ -135,26 +152,37 @@ func (ops HeaderOps) validate() error {
 }
 
 // Replacement describes a string replacement,
-// either a simple and fast sugbstring search
+// either a simple and fast substring search
 // or a slower but more powerful regex search.
 type Replacement struct {
-	Search       string `json:"search,omitempty"`
+	// The substring to search for.
+	Search string `json:"search,omitempty"`
+
+	// The regular expression to search with.
 	SearchRegexp string `json:"search_regexp,omitempty"`
-	Replace      string `json:"replace,omitempty"`
+
+	// The string with which to replace matches.
+	Replace string `json:"replace,omitempty"`
 
 	re *regexp.Regexp
 }
 
-// RespHeaderOps is like HeaderOps, but
-// optionally deferred until response time.
+// RespHeaderOps defines manipulations for response headers.
 type RespHeaderOps struct {
 	*HeaderOps
-	Require  *caddyhttp.ResponseMatcher `json:"require,omitempty"`
-	Deferred bool                       `json:"deferred,omitempty"`
+
+	// If set, header operations will be deferred until
+	// they are written out and only performed if the
+	// response matches these criteria.
+	Require *caddyhttp.ResponseMatcher `json:"require,omitempty"`
+
+	// If true, header operations will be deferred until
+	// they are written out. Superceded if Require is set.
+	Deferred bool `json:"deferred,omitempty"`
 }
 
 // ApplyTo applies ops to hdr using repl.
-func (ops HeaderOps) ApplyTo(hdr http.Header, repl caddy.Replacer) {
+func (ops HeaderOps) ApplyTo(hdr http.Header, repl *caddy.Replacer) {
 	// add
 	for fieldName, vals := range ops.Add {
 		fieldName = repl.ReplaceAll(fieldName, "")
@@ -221,7 +249,7 @@ func (ops HeaderOps) ApplyTo(hdr http.Header, repl caddy.Replacer) {
 // header which the standard library does not include with the
 // header map with all the others. This method mutates r.Host.
 func (ops HeaderOps) ApplyToRequest(r *http.Request) {
-	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	// capture the current Host header so we can
 	// reset to it when we're done
@@ -257,7 +285,7 @@ func (ops HeaderOps) ApplyToRequest(r *http.Request) {
 // operations until WriteHeader is called.
 type responseWriterWrapper struct {
 	*caddyhttp.ResponseWriterWrapper
-	replacer    caddy.Replacer
+	replacer    *caddy.Replacer
 	require     *caddyhttp.ResponseMatcher
 	headerOps   *HeaderOps
 	wroteHeader bool

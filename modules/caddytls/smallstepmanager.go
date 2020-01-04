@@ -15,6 +15,7 @@
 package caddytls
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -45,6 +46,7 @@ type SmallStepManagerMaker struct {
 	AcmeManager *ACMEManagerMaker
 	DB          db.AuthDB
 	Authority   *authority.Authority
+	tlsApp      *TLS
 }
 
 type inMemoryDB struct {
@@ -74,12 +76,18 @@ func (db *inMemoryDB) Shutdown() error {
 }
 
 // NewSmallStepManager creates a new small step manager
-func NewSmallStepManager(acme *ACMEManagerMaker) (*SmallStepManagerMaker, error) {
+func NewSmallStepManager(ctx caddy.Context, acme *ACMEManagerMaker) (*SmallStepManagerMaker, error) {
 	caddy.Log().Info("SmallStep.Provision")
+
+	appVal, err := ctx.App("tls")
+	if err != nil {
+		return nil, err
+	}
 
 	m := &SmallStepManagerMaker{
 		AcmeManager: acme,
 		DB:          &inMemoryDB{},
+		tlsApp:      appVal.(*TLS),
 	}
 
 	var config *authority.Config
@@ -191,7 +199,7 @@ func getPrivateKey() (*rsa.PrivateKey, []byte, error) {
 }
 
 // Obtain a certificate
-func (m SmallStepManagerMaker) Obtain(name string) error {
+func (m SmallStepManagerMaker) Obtain(ctx context.Context, name string) error {
 	caddy.Log().Info("SmallStep.Obtain", zap.String("name", name))
 
 	key, pemKey, err := getPrivateKey()
@@ -239,7 +247,8 @@ func (m SmallStepManagerMaker) Obtain(name string) error {
 	certChain := append(c1PEM[:], c2PEM[:]...)
 
 	//TODO: not sure why this needs to be defaulted
-	prefix := "https://acme-v02.api.letsencrypt.org/directory"
+	//TODO: attempted to pull from the tlsApp.getConfigForName(name) but it was empty
+	prefix := certmagic.Default.CA //"https://acme-v02.api.letsencrypt.org/directory"
 
 	cert := certificate.Resource{
 		Domain: name,
@@ -269,13 +278,13 @@ func (m SmallStepManagerMaker) Obtain(name string) error {
 }
 
 // Renew a certificate for a domain
-func (m SmallStepManagerMaker) Renew(name string) error {
+func (m SmallStepManagerMaker) Renew(ctx context.Context, name string) error {
 	caddy.Log().Info("SmallStep.Renew", zap.String("name", name))
-	return m.Obtain(name)
+	return m.Obtain(ctx, name)
 }
 
 // Revoke a certificate for a domain
-func (m SmallStepManagerMaker) Revoke(name string) error {
+func (m SmallStepManagerMaker) Revoke(ctx context.Context, name string) error {
 	caddy.Log().Info("SmallStep.Revoke", zap.String("name", name))
 	return nil
 }

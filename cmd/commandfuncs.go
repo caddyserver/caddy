@@ -27,13 +27,13 @@ import (
 	"os"
 	"os/exec"
 	"reflect"
+	"runtime"
 	"runtime/debug"
 	"sort"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
-	"github.com/keybase/go-ps"
 	"github.com/mholt/certmagic"
 	"go.uber.org/zap"
 )
@@ -142,6 +142,7 @@ func cmdStart(fl Flags) (int, error) {
 func cmdRun(fl Flags) (int, error) {
 	runCmdConfigFlag := fl.String("config")
 	runCmdConfigAdapterFlag := fl.String("adapter")
+	runCmdResumeFlag := fl.Bool("resume")
 	runCmdPrintEnvFlag := fl.Bool("environ")
 	runCmdPingbackFlag := fl.String("pingback")
 
@@ -150,10 +151,30 @@ func cmdRun(fl Flags) (int, error) {
 		printEnvironment()
 	}
 
-	// get the config in caddy's native format
-	config, err := loadConfig(runCmdConfigFlag, runCmdConfigAdapterFlag)
-	if err != nil {
-		return caddy.ExitCodeFailedStartup, err
+	// TODO: This is TEMPORARY, until the RCs
+	moveStorage()
+
+	// load the config, depending on flags
+	var config []byte
+	var err error
+	if runCmdResumeFlag {
+		config, err = ioutil.ReadFile(caddy.ConfigAutosavePath)
+		if os.IsNotExist(err) {
+			// not a bad error; just can't resume if autosave file doesn't exist
+			caddy.Log().Info("no autosave file exists", zap.String("autosave_file", caddy.ConfigAutosavePath))
+			runCmdResumeFlag = false
+		} else if err != nil {
+			return caddy.ExitCodeFailedStartup, err
+		} else {
+			caddy.Log().Info("resuming from last configuration", zap.String("autosave_file", caddy.ConfigAutosavePath))
+		}
+	}
+	// we don't use 'else' here since this value might have been changed in 'if' block; i.e. not mutually exclusive
+	if !runCmdResumeFlag {
+		config, err = loadConfig(runCmdConfigFlag, runCmdConfigAdapterFlag)
+		if err != nil {
+			return caddy.ExitCodeFailedStartup, err
+		}
 	}
 
 	// set a fitting User-Agent for ACME requests
@@ -166,9 +187,7 @@ func cmdRun(fl Flags) (int, error) {
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("loading initial config: %v", err)
 	}
-	if len(config) > 0 {
-		caddy.Log().Named("admin").Info("Caddy 2 serving initial configuration")
-	}
+	caddy.Log().Info("serving initial configuration")
 
 	// if we are to report to another process the successful start
 	// of the server, do so now by echoing back contents of stdin
@@ -188,6 +207,25 @@ func cmdRun(fl Flags) (int, error) {
 		if err != nil {
 			return caddy.ExitCodeFailedStartup,
 				fmt.Errorf("writing confirmation bytes to %s: %v", runCmdPingbackFlag, err)
+		}
+	}
+
+	// warn if the environment does not provide enough information about the disk
+	hasXDG := os.Getenv("XDG_DATA_HOME") != "" &&
+		os.Getenv("XDG_CONFIG_HOME") != "" &&
+		os.Getenv("XDG_CACHE_HOME") != ""
+	switch runtime.GOOS {
+	case "windows":
+		if os.Getenv("HOME") == "" && os.Getenv("USERPROFILE") == "" && !hasXDG {
+			caddy.Log().Warn("neither HOME nor USERPROFILE environment variables are set - please fix; some assets might be stored in ./caddy")
+		}
+	case "plan9":
+		if os.Getenv("home") == "" && !hasXDG {
+			caddy.Log().Warn("$home environment variable is empty - please fix; some assets might be stored in ./caddy")
+		}
+	default:
+		if os.Getenv("HOME") == "" && !hasXDG {
+			caddy.Log().Warn("$HOME environment variable is empty - please fix; some assets might be stored in ./caddy")
 		}
 	}
 
@@ -211,34 +249,11 @@ func cmdStop(fl Flags) (int, error) {
 
 	err = apiRequest(req)
 	if err != nil {
-		// if the caddy instance doesn't have an API listener set up,
-		// or we are unable to reach it for some reason, try signaling it
-
-		caddy.Log().Warn("unable to use API to stop instance; will try to signal the process",
+		caddy.Log().Warn("failed using API to stop instance",
 			zap.String("endpoint", stopEndpoint),
 			zap.Error(err),
 		)
-
-		processList, err := ps.Processes()
-		if err != nil {
-			return caddy.ExitCodeFailedStartup, fmt.Errorf("listing processes: %v", err)
-		}
-		thisProcName := getProcessName()
-
-		var found bool
-		for _, p := range processList {
-			// the process we're looking for should have the same name as us but different PID
-			if p.Executable() == thisProcName && p.Pid() != os.Getpid() {
-				found = true
-				fmt.Printf("pid=%d\n", p.Pid())
-				if err := gracefullyStopProcess(p.Pid()); err != nil {
-					return caddy.ExitCodeFailedStartup, err
-				}
-			}
-		}
-		if !found {
-			return caddy.ExitCodeFailedStartup, fmt.Errorf("Caddy is not running")
-		}
+		return caddy.ExitCodeFailedStartup, err
 	}
 
 	return caddy.ExitCodeSuccess, nil
@@ -483,7 +498,7 @@ func cmdValidateConfig(fl Flags) (int, error) {
 
 func cmdHelp(fl Flags) (int, error) {
 	const fullDocs = `Full documentation is available at:
-https://github.com/caddyserver/caddy/wiki/v2:-Documentation`
+https://caddyserver.com/docs/command-line`
 
 	args := fl.Args()
 	if len(args) == 0 {

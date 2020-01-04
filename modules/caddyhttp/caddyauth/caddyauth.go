@@ -28,7 +28,10 @@ func init() {
 }
 
 // Authentication is a middleware which provides user authentication.
+// Rejects requests with HTTP 401 if the request is not authenticated.
 type Authentication struct {
+	// A set of authentication providers. If none are specified,
+	// all requests will always be unauthenticated.
 	ProvidersRaw caddy.ModuleMap `json:"providers,omitempty" caddy:"namespace=http.authentication.providers"`
 
 	Providers map[string]Authenticator `json:"-"`
@@ -73,7 +76,7 @@ func (a Authentication) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		return caddyhttp.Error(http.StatusUnauthorized, fmt.Errorf("not authenticated"))
 	}
 
-	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	repl.Set("http.authentication.user.id", user.ID)
 
 	return next.ServeHTTP(w, r)

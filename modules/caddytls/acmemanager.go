@@ -157,7 +157,7 @@ func (m *ACMEManagerMaker) makeCertMagicConfig(ctx caddy.Context) certmagic.Conf
 		return certmagic.Config{
 			NewManager: func(interactive bool) (certmagic.Manager, error) {
 				m.storage = storage
-				return NewSmallStepManager(m)
+				return NewSmallStepManager(ctx, m)
 			},
 		}
 	}

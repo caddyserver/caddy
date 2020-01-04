@@ -29,7 +29,9 @@ func init() {
 }
 
 // Brotli can create brotli encoders. Note that brotli
-// is not known for great encoding performance.
+// is not known for great encoding performance, and
+// its use during requests is discouraged; instead,
+// pre-compress the content instead.
 type Brotli struct {
 	Quality *int `json:"quality,omitempty"`
 }

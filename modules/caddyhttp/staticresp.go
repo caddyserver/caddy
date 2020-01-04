@@ -29,10 +29,19 @@ func init() {
 
 // StaticResponse implements a simple responder for static responses.
 type StaticResponse struct {
-	StatusCode WeakString  `json:"status_code,omitempty"`
-	Headers    http.Header `json:"headers,omitempty"`
-	Body       string      `json:"body,omitempty"`
-	Close      bool        `json:"close,omitempty"`
+	// The HTTP status code to respond with. Can be an integer or,
+	// if needing to use a placeholder, a string.
+	StatusCode WeakString `json:"status_code,omitempty"`
+
+	// Header fields to set on the response.
+	Headers http.Header `json:"headers,omitempty"`
+
+	// The response body.
+	Body string `json:"body,omitempty"`
+
+	// If true, the server will close the client's connection
+	// after writing the response.
+	Close bool `json:"close,omitempty"`
 }
 
 // CaddyModule returns the Caddy module information.
@@ -77,7 +86,7 @@ func (s *StaticResponse) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 }
 
 func (s StaticResponse) ServeHTTP(w http.ResponseWriter, r *http.Request, _ Handler) error {
-	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	// close the connection after responding
 	r.Close = s.Close

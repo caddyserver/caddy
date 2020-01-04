@@ -115,7 +115,7 @@ func (routes RouteList) Provision(ctx caddy.Context) error {
 		// matchers
 		matchersIface, err := ctx.LoadModule(&route, "MatcherSetsRaw")
 		if err != nil {
-			return fmt.Errorf("loadng matchers in route %d: %v", i, err)
+			return fmt.Errorf("loading matchers in route %d: %v", i, err)
 		}
 		err = routes[i].MatcherSets.FromInterface(matchersIface)
 		if err != nil {

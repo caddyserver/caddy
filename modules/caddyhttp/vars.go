@@ -26,7 +26,8 @@ func init() {
 }
 
 // VarsMiddleware is an HTTP middleware which sets variables
-// in the context, mainly for use by placeholders.
+// in the context, mainly for use by placeholders. The
+// placeholders have the form: `{http.vars.variable_name}`
 type VarsMiddleware map[string]string
 
 // CaddyModule returns the Caddy module information.
@@ -39,7 +40,7 @@ func (VarsMiddleware) CaddyModule() caddy.ModuleInfo {
 
 func (t VarsMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next Handler) error {
 	vars := r.Context().Value(VarsCtxKey).(map[string]interface{})
-	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	for k, v := range t {
 		keyExpanded := repl.ReplaceAll(k, "")
 		valExpanded := repl.ReplaceAll(v, "")
@@ -63,7 +64,7 @@ func (VarsMatcher) CaddyModule() caddy.ModuleInfo {
 // Match matches a request based on variables in the context.
 func (m VarsMatcher) Match(r *http.Request) bool {
 	vars := r.Context().Value(VarsCtxKey).(map[string]string)
-	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	for k, v := range m {
 		keyExpanded := repl.ReplaceAll(k, "")
 		valExpanded := repl.ReplaceAll(v, "")

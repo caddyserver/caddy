@@ -33,10 +33,20 @@ func init() {
 
 // MatchFile is an HTTP request matcher that can match
 // requests based upon file existence.
+//
+// Upon matching, two new placeholders will be made
+// available:
+//
+// - `{http.matchers.file.relative}` The root-relative
+// path of the file. This is often useful when rewriting
+// requests.
+// - `{http.matchers.file.absolute}` The absolute path
+// of the matched file.
 type MatchFile struct {
 	// The root directory, used for creating absolute
 	// file paths, and required when working with
-	// relative paths; if not specified, the current
+	// relative paths; if not specified, `{http.vars.root}`
+	// will be used, if set; otherwise, the current
 	// directory is assumed. Accepts placeholders.
 	Root string `json:"root,omitempty"`
 
@@ -46,7 +56,13 @@ type MatchFile struct {
 	// placeholders.
 	TryFiles []string `json:"try_files,omitempty"`
 
-	// How to choose a file in TryFiles.
+	// How to choose a file in TryFiles. Can be:
+	//
+	// - first_exist
+	// - smallest_size
+	// - largest_size
+	// - most_recently_modified
+	//
 	// Default is first_exist.
 	TryPolicy string `json:"try_policy,omitempty"`
 }
@@ -64,7 +80,7 @@ func (MatchFile) CaddyModule() caddy.ModuleInfo {
 //     file {
 //         root <path>
 //         try_files <files...>
-//         try_policy first_exist|smallest_size|largest_size|most_recent_modified
+//         try_policy first_exist|smallest_size|largest_size|most_recently_modified
 //     }
 //
 func (m *MatchFile) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
@@ -107,7 +123,7 @@ func (m MatchFile) Validate() error {
 		tryPolicyFirstExist,
 		tryPolicyLargestSize,
 		tryPolicySmallestSize,
-		tryPolicyMostRecentMod:
+		tryPolicyMostRecentlyMod:
 	default:
 		return fmt.Errorf("unknown try policy %s", m.TryPolicy)
 	}
@@ -120,7 +136,7 @@ func (m MatchFile) Validate() error {
 //    - http.matchers.file.relative
 //    - http.matchers.file.absolute
 func (m MatchFile) Match(r *http.Request) bool {
-	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	rel, abs, matched := m.selectFile(r)
 	if matched {
 		repl.Set("http.matchers.file.relative", rel)
@@ -134,7 +150,7 @@ func (m MatchFile) Match(r *http.Request) bool {
 // It returns the root-relative path to the matched file, the full
 // or absolute path, and whether a match was made.
 func (m MatchFile) selectFile(r *http.Request) (rel, abs string, matched bool) {
-	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	root := repl.ReplaceAll(m.Root, ".")
 
@@ -187,7 +203,7 @@ func (m MatchFile) selectFile(r *http.Request) (rel, abs string, matched bool) {
 		}
 		return smallestSuffix, smallestFilename, true
 
-	case tryPolicyMostRecentMod:
+	case tryPolicyMostRecentlyMod:
 		var recentDate time.Time
 		var recentFilename string
 		var recentSuffix string
@@ -238,10 +254,10 @@ func strictFileExists(file string) bool {
 }
 
 const (
-	tryPolicyFirstExist    = "first_exist"
-	tryPolicyLargestSize   = "largest_size"
-	tryPolicySmallestSize  = "smallest_size"
-	tryPolicyMostRecentMod = "most_recent_modified"
+	tryPolicyFirstExist      = "first_exist"
+	tryPolicyLargestSize     = "largest_size"
+	tryPolicySmallestSize    = "smallest_size"
+	tryPolicyMostRecentlyMod = "most_recently_modified"
 )
 
 // Interface guards
