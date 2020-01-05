@@ -379,6 +379,43 @@ Or with the Caddyfile, using a global options block at the top:
 }
 ```
 
+## How to add support for self signed certificates?
+
+Caddy now ships with the [SmallStep](https://smallstep.com/) ca server internally. If you use Small Step currently on your local machine, it will
+reuse that installation, otherwise it will self configure Small Step whenever you use the `local` certificate authority.
+
+An example Caddyfile showing the configuration
+```
+test1.com:443 {
+  tls {
+    ca ca.local
+  }
+}
+```
+
+Assuming that test1.com resolves to the `localhost`
+
+```bash
+# test accessing the site via TLS without validating the certificate
+curl -i https://test1.com -k
+```
+
+To trust the generated SmallStep root certificate (unique per installation) you will need explictly instruct your machine to trust the generated Small Step root certificate.
+
+```bash
+# fedora, using the default small step installation location
+sudo ln -s ~/.step/certs/root_ca.crt /etc/pki/ca-trust/source/anchors/root_ca.crt
+sudo update-ca-trust
+
+# test accessing the set via TLS with validation
+curl -i https://test1.com
+```
+
+Firefox users will need to import the Root CA into the browser directly (https://wiki.mozilla.org/CA/AddRootToFirefox)[https://wiki.mozilla.org/CA/AddRootToFirefox]
+
+
+
+
 ## Can we get some access controls on the admin endpoint?
 
 Yeah, that's coming. For now, you can use a permissioned unix socket for some basic security.
