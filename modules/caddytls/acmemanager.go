@@ -78,7 +78,7 @@ type ACMEManagerMaker struct {
 
 	// Optionally configure a separate storage module associated with this
 	// manager, instead of using Caddy's global/default-configured storage.
-	Storage json.RawMessage `json:"storage,omitempty"`
+	Storage json.RawMessage `json:"storage,omitempty" caddy:"namespace=caddy.storage inline_key=module"`
 
 	// An array of files of CA certificates to accept when connecting to the
 	// ACME CA. Generally, you should only use this if the ACME CA endpoint
