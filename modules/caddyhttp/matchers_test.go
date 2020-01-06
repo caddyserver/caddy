@@ -270,8 +270,13 @@ func TestPathMatcherWindows(t *testing.T) {
 	// only Windows has this bug where it will ignore
 	// trailing dots and spaces in a filename, but we
 	// test for it on all platforms to be more consistent
-	match := MatchPath{"*.php"}
+
 	req := &http.Request{URL: &url.URL{Path: "/index.php . . .."}}
+	repl := caddy.NewReplacer()
+	ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
+	req = req.WithContext(ctx)
+
+	match := MatchPath{"*.php"}
 	matched := match.Match(req)
 	if !matched {
 		t.Errorf("Expected to match; should ignore trailing dots and spaces")

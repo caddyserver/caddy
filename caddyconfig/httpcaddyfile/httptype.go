@@ -114,16 +114,21 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 		}
 
 		// extract matcher definitions
-		d := sb.block.DispenseDirective("matcher")
-		matcherDefs, err := parseMatcherDefinitions(d)
-		if err != nil {
-			return nil, warnings, err
+		matcherDefs := make(map[string]caddy.ModuleMap)
+		for _, segment := range sb.block.Segments {
+			if dir := segment.Directive(); strings.HasPrefix(dir, matcherPrefix) {
+				d := sb.block.DispenseDirective(dir)
+				err := parseMatcherDefinitions(d, matcherDefs)
+				if err != nil {
+					return nil, warnings, err
+				}
+			}
 		}
 
 		for _, segment := range sb.block.Segments {
 			dir := segment.Directive()
-			if dir == "matcher" {
-				// TODO: This is a special case because we pre-processed it; handle this better
+			if strings.HasPrefix(dir, matcherPrefix) {
+				// matcher definitions were pre-processed
 				continue
 			}
 			if dirFunc, ok := registeredDirectives[dir]; ok {
@@ -485,12 +490,11 @@ func matcherSetFromMatcherToken(
 		return caddy.ModuleMap{
 			"path": caddyconfig.JSON(caddyhttp.MatchPath{tkn.Text}, warnings),
 		}, true, nil
-	} else if strings.HasPrefix(tkn.Text, "match:") {
+	} else if strings.HasPrefix(tkn.Text, matcherPrefix) {
 		// pre-defined matcher
-		matcherName := strings.TrimPrefix(tkn.Text, "match:")
-		m, ok := matcherDefs[matcherName]
+		m, ok := matcherDefs[tkn.Text]
 		if !ok {
-			return nil, false, fmt.Errorf("unrecognized matcher name: %+v", matcherName)
+			return nil, false, fmt.Errorf("unrecognized matcher name: %+v", tkn.Text)
 		}
 		return m, true, nil
 	}
@@ -577,35 +581,36 @@ func (st *ServerType) compileEncodedMatcherSets(sblock caddyfile.ServerBlock) ([
 	return matcherSetsEnc, nil
 }
 
-func parseMatcherDefinitions(d *caddyfile.Dispenser) (map[string]caddy.ModuleMap, error) {
-	matchers := make(map[string]caddy.ModuleMap)
+func parseMatcherDefinitions(d *caddyfile.Dispenser, matchers map[string]caddy.ModuleMap) error {
 	for d.Next() {
 		definitionName := d.Val()
 		for nesting := d.Nesting(); d.NextBlock(nesting); {
 			matcherName := d.Val()
 			mod, err := caddy.GetModule("http.matchers." + matcherName)
 			if err != nil {
-				return nil, fmt.Errorf("getting matcher module '%s': %v", matcherName, err)
+				return fmt.Errorf("getting matcher module '%s': %v", matcherName, err)
 			}
 			unm, ok := mod.New().(caddyfile.Unmarshaler)
 			if !ok {
-				return nil, fmt.Errorf("matcher module '%s' is not a Caddyfile unmarshaler", matcherName)
+				return fmt.Errorf("matcher module '%s' is not a Caddyfile unmarshaler", matcherName)
 			}
 			err = unm.UnmarshalCaddyfile(d.NewFromNextTokens())
 			if err != nil {
-				return nil, err
+				return err
 			}
 			rm, ok := unm.(caddyhttp.RequestMatcher)
 			if !ok {
-				return nil, fmt.Errorf("matcher module '%s' is not a request matcher", matcherName)
+				return fmt.Errorf("matcher module '%s' is not a request matcher", matcherName)
 			}
-			if _, ok := matchers[definitionName]; !ok {
+			if _, ok := matchers[definitionName]; ok {
+				return fmt.Errorf("matcher is defined more than once: %s", definitionName)
+			} else {
 				matchers[definitionName] = make(caddy.ModuleMap)
 			}
 			matchers[definitionName][matcherName] = caddyconfig.JSON(rm, nil)
 		}
 	}
-	return matchers, nil
+	return nil
 }
 
 func encodeMatcherSet(matchers map[string]caddyhttp.RequestMatcher) (caddy.ModuleMap, error) {
@@ -642,6 +647,8 @@ type sbAddrAssociation struct {
 	addresses    []string
 	serverBlocks []serverBlock
 }
+
+const matcherPrefix = "@"
 
 // Interface guard
 var _ caddyfile.ServerType = (*ServerType)(nil)
