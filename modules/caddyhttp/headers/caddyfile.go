@@ -105,6 +105,9 @@ func parseReqHdrCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, 
 		}
 		if h.NextArg() {
 			replacement = h.Val()
+			if h.NextArg() {
+				return nil, h.ArgErr()
+			}
 		}
 
 		if hdr.Request == nil {
