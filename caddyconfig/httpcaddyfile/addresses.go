@@ -155,7 +155,8 @@ func (st *ServerType) consolidateAddrMappings(addrToServerBlocks map[string][]se
 }
 
 func (st *ServerType) listenerAddrsForServerBlockKey(sblock serverBlock, key string) ([]string, error) {
-	addr, err := ParseAddress(key)
+
+	addr, err := ParseAddressWithVariables(key)
 	if err != nil {
 		return nil, fmt.Errorf("parsing key: %v", err)
 	}
@@ -204,6 +205,29 @@ func (st *ServerType) listenerAddrsForServerBlockKey(sblock serverBlock, key str
 // The Host field must be in a normalized form.
 type Address struct {
 	Original, Scheme, Host, Port, Path string
+}
+
+// ParseAddressWithVariables parses a looser version of the address, it will accept {env.VAR} type variables
+func ParseAddressWithVariables(str string) (Address, error) {
+
+	if !strings.Contains(str, "{") {
+		return ParseAddress(str)
+	}
+
+	parts := strings.Split(str, ":")
+
+	switch len(parts) {
+	case 1:
+		return Address{
+			Host: parts[0],
+		}, nil
+	case 2:
+		return Address{
+			Host: parts[0],
+			Port: parts[1],
+		}, nil
+	}
+	return Address{}, fmt.Errorf("parsing key: host format not valid")
 }
 
 // ParseAddress parses an address string into a structured format with separate
@@ -284,9 +308,16 @@ func (a Address) String() string {
 
 // Normalize returns a normalized version of a.
 func (a Address) Normalize() Address {
+
 	path := a.Path
 	if !caseSensitivePath {
 		path = strings.ToLower(path)
+	}
+
+	// check if this address contains a variable then leave the casing
+	scheme := a.Scheme
+	if !strings.Contains(a.Scheme, "{") {
+		scheme = strings.ToLower(scheme)
 	}
 
 	// ensure host is normalized if it's an IP address
@@ -295,10 +326,15 @@ func (a Address) Normalize() Address {
 		host = ip.String()
 	}
 
+	// check if this address contains a variable then leave the casing
+	if !strings.Contains(a.Host, "{") {
+		host = strings.ToLower(host)
+	}
+
 	return Address{
 		Original: a.Original,
-		Scheme:   strings.ToLower(a.Scheme),
-		Host:     strings.ToLower(host),
+		Scheme:   scheme,
+		Host:     host,
 		Port:     a.Port,
 		Path:     path,
 	}

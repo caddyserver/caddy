@@ -481,52 +481,52 @@ func TestEnvironmentReplacement(t *testing.T) {
 	// basic test; unix-style env vars
 	p := testParser(`{$ADDRESS}`)
 	blocks, _ := p.parseAll()
-	if actual, expected := blocks[0].Keys[0], "servername.com"; expected != actual {
+	if actual, expected := blocks[0].Keys[0], "{env.ADDRESS}"; expected != actual {
 		t.Errorf("Expected key to be '%s' but was '%s'", expected, actual)
 	}
 
 	// basic test; unix-style env vars
 	p = testParser(`di{$PARTIAL_DIR}`)
 	blocks, _ = p.parseAll()
-	if actual, expected := blocks[0].Keys[0], "dir1"; expected != actual {
+	if actual, expected := blocks[0].Keys[0], "di{env.PARTIAL_DIR}"; expected != actual {
 		t.Errorf("Expected key to be '%s' but was '%s'", expected, actual)
 	}
 
 	// multiple vars per token
 	p = testParser(`{$ADDRESS}:{$PORT}`)
 	blocks, _ = p.parseAll()
-	if actual, expected := blocks[0].Keys[0], "servername.com:8080"; expected != actual {
+	if actual, expected := blocks[0].Keys[0], "{env.ADDRESS}:{env.PORT}"; expected != actual {
 		t.Errorf("Expected key to be '%s' but was '%s'", expected, actual)
 	}
 
 	// windows-style var and unix style in same token
 	p = testParser(`{%ADDRESS%}:{$PORT}`)
 	blocks, _ = p.parseAll()
-	if actual, expected := blocks[0].Keys[0], "servername.com:8080"; expected != actual {
+	if actual, expected := blocks[0].Keys[0], "{env.ADDRESS}:{env.PORT}"; expected != actual {
 		t.Errorf("Expected key to be '%s' but was '%s'", expected, actual)
 	}
 
 	// reverse order
 	p = testParser(`{$ADDRESS}:{%PORT%}`)
 	blocks, _ = p.parseAll()
-	if actual, expected := blocks[0].Keys[0], "servername.com:8080"; expected != actual {
+	if actual, expected := blocks[0].Keys[0], "{env.ADDRESS}:{env.PORT}"; expected != actual {
 		t.Errorf("Expected key to be '%s' but was '%s'", expected, actual)
 	}
 
 	// env var in server block body as argument
 	p = testParser(":{%PORT%}\ndir1 {$FOOBAR}")
 	blocks, _ = p.parseAll()
-	if actual, expected := blocks[0].Keys[0], ":8080"; expected != actual {
+	if actual, expected := blocks[0].Keys[0], ":{env.PORT}"; expected != actual {
 		t.Errorf("Expected key to be '%s' but was '%s'", expected, actual)
 	}
-	if actual, expected := blocks[0].Segments[0][1].Text, "foobar"; expected != actual {
+	if actual, expected := blocks[0].Segments[0][1].Text, "{env.FOOBAR}"; expected != actual {
 		t.Errorf("Expected argument to be '%s' but was '%s'", expected, actual)
 	}
 
 	// combined windows env vars in argument
 	p = testParser(":{%PORT%}\ndir1 {%ADDRESS%}/{%FOOBAR%}")
 	blocks, _ = p.parseAll()
-	if actual, expected := blocks[0].Segments[0][1].Text, "servername.com/foobar"; expected != actual {
+	if actual, expected := blocks[0].Segments[0][1].Text, "{env.ADDRESS}/{env.FOOBAR}"; expected != actual {
 		t.Errorf("Expected argument to be '%s' but was '%s'", expected, actual)
 	}
 
@@ -540,21 +540,21 @@ func TestEnvironmentReplacement(t *testing.T) {
 	// malformed (non-existent) env var (unix)
 	p = testParser(`:{$PORT$}`)
 	blocks, _ = p.parseAll()
-	if actual, expected := blocks[0].Keys[0], ":"; expected != actual {
+	if actual, expected := blocks[0].Keys[0], ":{env.PORT$}"; expected != actual {
 		t.Errorf("Expected key to be '%s' but was '%s'", expected, actual)
 	}
 
 	// in quoted field
 	p = testParser(":1234\ndir1 \"Test {$FOOBAR} test\"")
 	blocks, _ = p.parseAll()
-	if actual, expected := blocks[0].Segments[0][1].Text, "Test foobar test"; expected != actual {
+	if actual, expected := blocks[0].Segments[0][1].Text, "Test {env.FOOBAR} test"; expected != actual {
 		t.Errorf("Expected argument to be '%s' but was '%s'", expected, actual)
 	}
 
 	// after end token
 	p = testParser(":1234\nanswer \"{{ .Name }} {$FOOBAR}\"")
 	blocks, _ = p.parseAll()
-	if actual, expected := blocks[0].Segments[0][1].Text, "{{ .Name }} foobar"; expected != actual {
+	if actual, expected := blocks[0].Segments[0][1].Text, "{{ .Name }} {env.FOOBAR}"; expected != actual {
 		t.Errorf("Expected argument to be '%s' but was '%s'", expected, actual)
 	}
 }
