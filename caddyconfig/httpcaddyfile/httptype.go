@@ -377,6 +377,42 @@ func (st *ServerType) serversFromPairings(
 				}
 				sort.SliceStable(dirRoutes, func(i, j int) bool {
 					iDir, jDir := dirRoutes[i].directive, dirRoutes[j].directive
+					if iDir == jDir {
+						// TODO: we really need to refactor this into a separate function or method...
+						// sub-sort by path matcher length, if there's only one
+						iRoute := dirRoutes[i].Value.(caddyhttp.Route)
+						jRoute := dirRoutes[j].Value.(caddyhttp.Route)
+						if len(iRoute.MatcherSetsRaw) == 1 && len(jRoute.MatcherSetsRaw) == 1 {
+							// for slightly better efficiency, only decode the path matchers once,
+							// then just store them arbitrarily in the decoded MatcherSets field,
+							// ours should be the only thing in there
+							var iPM, jPM caddyhttp.MatchPath
+							if len(iRoute.MatcherSets) == 1 {
+								iPM = iRoute.MatcherSets[0][0].(caddyhttp.MatchPath)
+							}
+							if len(jRoute.MatcherSets) == 1 {
+								jPM = jRoute.MatcherSets[0][0].(caddyhttp.MatchPath)
+							}
+							// if it's our first time seeing this route's path matcher, decode it
+							if iPM == nil {
+								var pathMatcher caddyhttp.MatchPath
+								_ = json.Unmarshal(iRoute.MatcherSetsRaw[0]["path"], &pathMatcher)
+								iRoute.MatcherSets = caddyhttp.MatcherSets{{pathMatcher}}
+								iPM = pathMatcher
+							}
+							if jPM == nil {
+								var pathMatcher caddyhttp.MatchPath
+								_ = json.Unmarshal(jRoute.MatcherSetsRaw[0]["path"], &pathMatcher)
+								jRoute.MatcherSets = caddyhttp.MatcherSets{{pathMatcher}}
+								jPM = pathMatcher
+							}
+							// finally, if there is only one path in the
+							// matcher, sort by longer path first
+							if len(iPM) == 1 && len(jPM) == 1 {
+								return len(iPM[0]) > len(jPM[0])
+							}
+						}
+					}
 					return dirPositions[iDir] < dirPositions[jDir]
 				})
 			}
@@ -584,6 +620,12 @@ func (st *ServerType) compileEncodedMatcherSets(sblock caddyfile.ServerBlock) ([
 func parseMatcherDefinitions(d *caddyfile.Dispenser, matchers map[string]caddy.ModuleMap) error {
 	for d.Next() {
 		definitionName := d.Val()
+
+		if _, ok := matchers[definitionName]; ok {
+			return fmt.Errorf("matcher is defined more than once: %s", definitionName)
+		}
+		matchers[definitionName] = make(caddy.ModuleMap)
+
 		for nesting := d.Nesting(); d.NextBlock(nesting); {
 			matcherName := d.Val()
 			mod, err := caddy.GetModule("http.matchers." + matcherName)
@@ -601,11 +643,6 @@ func parseMatcherDefinitions(d *caddyfile.Dispenser, matchers map[string]caddy.M
 			rm, ok := unm.(caddyhttp.RequestMatcher)
 			if !ok {
 				return fmt.Errorf("matcher module '%s' is not a request matcher", matcherName)
-			}
-			if _, ok := matchers[definitionName]; ok {
-				return fmt.Errorf("matcher is defined more than once: %s", definitionName)
-			} else {
-				matchers[definitionName] = make(caddy.ModuleMap)
 			}
 			matchers[definitionName][matcherName] = caddyconfig.JSON(rm, nil)
 		}
