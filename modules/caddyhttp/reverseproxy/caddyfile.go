@@ -425,6 +425,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 //         tls_client_auth <cert_file> <key_file>
 //         tls_insecure_skip_verify
 //         tls_timeout <duration>
+//         tls_trusted_ca_certs <cert_files...>
 //         keepalive [off|<duration>]
 //         keepalive_idle_conns <max_count>
 //     }
@@ -500,6 +501,17 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					h.TLS = new(TLSConfig)
 				}
 				h.TLS.HandshakeTimeout = caddy.Duration(dur)
+
+			case "tls_trusted_ca_certs":
+				args := d.RemainingArgs()
+				if len(args) == 0 {
+					return d.ArgErr()
+				}
+				if h.TLS == nil {
+					h.TLS = new(TLSConfig)
+				}
+
+				h.TLS.RootCAPemFiles = args
 
 			case "keepalive":
 				if !d.NextArg() {
