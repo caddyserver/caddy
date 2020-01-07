@@ -127,28 +127,31 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 
 		for _, segment := range sb.block.Segments {
 			dir := segment.Directive()
+
 			if strings.HasPrefix(dir, matcherPrefix) {
 				// matcher definitions were pre-processed
 				continue
 			}
-			if dirFunc, ok := registeredDirectives[dir]; ok {
-				results, err := dirFunc(Helper{
-					Dispenser:   caddyfile.NewDispenser(segment),
-					options:     options,
-					warnings:    &warnings,
-					matcherDefs: matcherDefs,
-					parentBlock: sb.block,
-				})
-				if err != nil {
-					return nil, warnings, fmt.Errorf("parsing caddyfile tokens for '%s': %v", dir, err)
-				}
-				for _, result := range results {
-					result.directive = dir
-					sb.pile[result.Class] = append(sb.pile[result.Class], result)
-				}
-			} else {
+
+			dirFunc, ok := registeredDirectives[dir]
+			if !ok {
 				tkn := segment[0]
 				return nil, warnings, fmt.Errorf("%s:%d: unrecognized directive: %s", tkn.File, tkn.Line, dir)
+			}
+
+			results, err := dirFunc(Helper{
+				Dispenser:   caddyfile.NewDispenser(segment),
+				options:     options,
+				warnings:    &warnings,
+				matcherDefs: matcherDefs,
+				parentBlock: sb.block,
+			})
+			if err != nil {
+				return nil, warnings, fmt.Errorf("parsing caddyfile tokens for '%s': %v", dir, err)
+			}
+			for _, result := range results {
+				result.directive = dir
+				sb.pile[result.Class] = append(sb.pile[result.Class], result)
 			}
 		}
 	}
