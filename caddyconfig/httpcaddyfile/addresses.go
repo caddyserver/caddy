@@ -215,16 +215,17 @@ func ParseAddressWithVariables(str string) (Address, error) {
 	}
 
 	parts := strings.Split(str, ":")
-
 	switch len(parts) {
 	case 1:
 		return Address{
-			Host: parts[0],
+			Original: str,
+			Host:     parts[0],
 		}, nil
 	case 2:
 		return Address{
-			Host: parts[0],
-			Port: parts[1],
+			Original: str,
+			Host:     parts[0],
+			Port:     parts[1],
 		}, nil
 	}
 	return Address{}, fmt.Errorf("parsing key: host format not valid")

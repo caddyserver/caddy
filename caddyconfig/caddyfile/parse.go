@@ -417,7 +417,6 @@ func (p *parser) closeCurlyBrace() error {
 // replaceEnvVars replaces environment variables that appear in the token
 // and understands both the $UNIX and %WINDOWS% syntaxes.
 func replaceEnvVars(s string) string {
-	s = replaceEnvReferences(s, "{%", "%}")
 	s = replaceEnvReferences(s, "{$", "}")
 	return s
 }
@@ -435,7 +434,7 @@ func replaceEnvReferences(s, refStart, refEnd string) string {
 		endIndex += index
 		if endIndex > index+len(refStart) {
 			ref := s[index : endIndex+len(refEnd)]
-			s = strings.Replace(s, ref, "{env."+ref[len(refStart):len(ref)-len(refEnd)]+"}", -1)
+			s = strings.Replace(s, ref, os.Getenv(ref[len(refStart):len(ref)-len(refEnd)]), -1)
 		} else {
 			return s
 		}
