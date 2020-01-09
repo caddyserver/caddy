@@ -318,10 +318,7 @@ func (st *ServerType) serversFromPairings(
 				return nil, fmt.Errorf("server block %v: compiling matcher sets: %v", sblock.block.Keys, err)
 			}
 
-			// if there are user-defined variables, then siteVarSubroute will
-			// wrap the handlerSubroute; otherwise handlerSubroute will be the
-			// site's primary subroute.
-			siteVarSubroute, handlerSubroute := new(caddyhttp.Subroute), new(caddyhttp.Subroute)
+			siteSubroute := new(caddyhttp.Subroute)
 
 			// tls: connection policies and toggle auto HTTPS
 
@@ -357,10 +354,10 @@ func (st *ServerType) serversFromPairings(
 				// TODO: consolidate equal conn policies
 			}
 
-			// vars: special routes that will have to wrap the normal handlers
-			// so that these variables can be used across their matchers too
+			// vars: make sure these are linked in first so future
+			// routes can use the variables they define
 			for _, cfgVal := range sblock.pile["var"] {
-				siteVarSubroute.Routes = append(siteVarSubroute.Routes, cfgVal.Value.(caddyhttp.Route))
+				siteSubroute.Routes = append(siteSubroute.Routes, cfgVal.Value.(caddyhttp.Route))
 			}
 
 			// set up each handler directive - the order of the handlers
@@ -437,28 +434,7 @@ func (st *ServerType) serversFromPairings(
 					r.Value = route
 				}
 
-				handlerSubroute.Routes = append(handlerSubroute.Routes, r.Value.(caddyhttp.Route))
-			}
-
-			// the route that contains the site's handlers will
-			// be assumed to be the sub-route for this site...
-			siteSubroute := handlerSubroute
-
-			// ... unless, of course, there are variables that might
-			// be used by the site's matchers or handlers, in which
-			// case we need to nest the handlers in a sub-sub-route,
-			// and the variables go in the sub-route so the variables
-			// get evaluated first
-			if len(siteVarSubroute.Routes) > 0 {
-				subSubRoute := caddyhttp.Subroute{Routes: siteSubroute.Routes}
-				siteSubroute.Routes = append(
-					siteVarSubroute.Routes,
-					caddyhttp.Route{
-						HandlersRaw: []json.RawMessage{
-							caddyconfig.JSONModuleObject(subSubRoute, "handler", "subroute", warnings),
-						},
-					},
-				)
+				siteSubroute.Routes = append(siteSubroute.Routes, r.Value.(caddyhttp.Route))
 			}
 
 			siteSubroute.Routes = consolidateRoutes(siteSubroute.Routes)
