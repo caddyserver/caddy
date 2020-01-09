@@ -8,7 +8,7 @@ require (
 	github.com/andybalholm/brotli v0.0.0-20190821151343-b60f0d972eeb
 	github.com/cenkalti/backoff/v3 v3.1.1 // indirect
 	github.com/dustin/go-humanize v1.0.0
-	github.com/go-acme/lego/v3 v3.2.0
+	github.com/go-acme/lego/v3 v3.3.0
 	github.com/golang/groupcache v0.0.0-20191002201903-404acd9df4cc
 	github.com/ilibs/json5 v1.0.1
 	github.com/imdario/mergo v0.3.8 // indirect
