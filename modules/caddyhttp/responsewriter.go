@@ -225,6 +225,11 @@ func (rr *responseRecorder) WriteResponse() error {
 		return nil
 	}
 	CopyHeader(rr.ResponseWriterWrapper.Header(), rr.header)
+	if rr.statusCode == 0 {
+		// could happen if no handlers actually wrote anything,
+		// and this prevents a panic; status must be > 0
+		rr.statusCode = http.StatusOK
+	}
 	rr.ResponseWriterWrapper.WriteHeader(rr.statusCode)
 	_, err := io.Copy(rr.ResponseWriterWrapper, rr.buf)
 	return err
