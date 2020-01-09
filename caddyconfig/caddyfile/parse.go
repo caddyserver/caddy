@@ -17,6 +17,7 @@ package caddyfile
 import (
 	"bytes"
 	"io"
+	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -368,7 +369,14 @@ func (p *parser) doSingleImport(importFile string) ([]Token, error) {
 		return nil, p.Errf("Could not import %s: is a directory", importFile)
 	}
 
-	importedTokens, err := allTokens(importFile, file)
+	input, err := ioutil.ReadAll(file)
+	if err != nil {
+		return nil, p.Errf("Could not read imported file %s: %v", importFile, err)
+	}
+
+	input = replaceEnvVars(input)
+
+	importedTokens, err := allTokens(importFile, bytes.NewReader(input))
 	if err != nil {
 		return nil, p.Errf("Could not read tokens while importing %s: %v", importFile, err)
 	}
