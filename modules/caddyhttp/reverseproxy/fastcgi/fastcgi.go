@@ -102,11 +102,9 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 		defer cancel()
 	}
 
-	// extract dial information from request (this
-	// should embedded by the reverse proxy)
+	// extract dial information from request (should have been embedded by the reverse proxy)
 	network, address := "tcp", r.URL.Host
-	if dialInfoVal := ctx.Value(reverseproxy.DialInfoCtxKey); dialInfoVal != nil {
-		dialInfo := dialInfoVal.(reverseproxy.DialInfo)
+	if dialInfo, ok := reverseproxy.GetDialInfo(ctx); ok {
 		network = dialInfo.Network
 		address = dialInfo.Address
 	}

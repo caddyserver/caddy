@@ -106,12 +106,6 @@ func trace() string {
 	return ""
 }
 
-// ErrRehandle is a special error value that Handlers should return
-// from their ServeHTTP() method if the request is to be re-processed.
-// This error value is a sentinel value that should not be wrapped or
-// modified.
-var ErrRehandle = fmt.Errorf("rehandling request")
-
 // ErrorCtxKey is the context key to use when storing
 // an error (for use with context.Context).
 const ErrorCtxKey = caddy.CtxKey("handler_chain_error")

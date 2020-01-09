@@ -59,7 +59,7 @@ func (s *StarlarkMW) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	// dynamically build middleware chain for each request
-	stack := caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+	var stack caddyhttp.Handler = caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
 		wr, err := convert.ToValue(w)
 		if err != nil {
 			return fmt.Errorf("cannot convert response writer to starlark value")
@@ -83,10 +83,10 @@ func (s *StarlarkMW) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
 	// TODO :- make middlewareResponseWriter exported and wrap w with that
 	var mid []caddyhttp.Middleware
 	for _, m := range s.execute.Modules {
-		mid = append(mid, func(next caddyhttp.HandlerFunc) caddyhttp.HandlerFunc {
-			return func(w http.ResponseWriter, r *http.Request) error {
+		mid = append(mid, func(next caddyhttp.Handler) caddyhttp.Handler {
+			return caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
 				return m.Instance.ServeHTTP(w, r, next)
-			}
+			})
 		})
 	}
 
@@ -96,7 +96,7 @@ func (s *StarlarkMW) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
 
 	s.execute.Modules = nil
 
-	return stack(w, r)
+	return stack.ServeHTTP(w, r)
 }
 
 // Cleanup cleans up any modules loaded during the creation of a starlark route.

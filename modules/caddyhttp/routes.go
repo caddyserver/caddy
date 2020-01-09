@@ -28,13 +28,15 @@ import (
 // in a highly flexible and performant manner.
 type Route struct {
 	// Group is an optional name for a group to which this
-	// route belongs. If a route belongs to a group, only
-	// the first matching route in the group will be used.
+	// route belongs. Grouping a route makes it mutually
+	// exclusive with others in its group; if a route belongs
+	// to a group, only the first matching route in that group
+	// will be executed.
 	Group string `json:"group,omitempty"`
 
 	// The matcher sets which will be used to qualify this
-	// route for a request. Essentially the "if" statement
-	// of this route. Each matcher set is OR'ed, but matchers
+	// route for a request (essentially the "if" statement
+	// of this route). Each matcher set is OR'ed, but matchers
 	// within a set are AND'ed together.
 	MatcherSetsRaw RawMatcherSets `json:"match,omitempty" caddy:"namespace=http.matchers"`
 
@@ -87,12 +89,14 @@ type Route struct {
 	// If you think of routes in this way, it will be easy and even fun to solve the puzzle of writing correct routes.
 	HandlersRaw []json.RawMessage `json:"handle,omitempty" caddy:"namespace=http.handlers inline_key=handler"`
 
-	// If true, no more routes will be executed after this one, even if they matched.
+	// If true, no more routes will be executed after this one.
 	Terminal bool `json:"terminal,omitempty"`
 
 	// decoded values
 	MatcherSets MatcherSets         `json:"-"`
 	Handlers    []MiddlewareHandler `json:"-"`
+
+	middleware []Middleware
 }
 
 // Empty returns true if the route has all zero/default values.
@@ -111,9 +115,9 @@ type RouteList []Route
 
 // Provision sets up all the routes by loading the modules.
 func (routes RouteList) Provision(ctx caddy.Context) error {
-	for i, route := range routes {
+	for i := range routes {
 		// matchers
-		matchersIface, err := ctx.LoadModule(&route, "MatcherSetsRaw")
+		matchersIface, err := ctx.LoadModule(&routes[i], "MatcherSetsRaw")
 		if err != nil {
 			return fmt.Errorf("loading matchers in route %d: %v", i, err)
 		}
@@ -123,93 +127,115 @@ func (routes RouteList) Provision(ctx caddy.Context) error {
 		}
 
 		// handlers
-		handlersIface, err := ctx.LoadModule(&route, "HandlersRaw")
+		handlersIface, err := ctx.LoadModule(&routes[i], "HandlersRaw")
 		if err != nil {
 			return fmt.Errorf("loading handler modules in route %d: %v", i, err)
 		}
 		for _, handler := range handlersIface.([]interface{}) {
 			routes[i].Handlers = append(routes[i].Handlers, handler.(MiddlewareHandler))
 		}
+
+		// pre-compile the middleware handler chain
+		for _, midhandler := range routes[i].Handlers {
+			routes[i].middleware = append(routes[i].middleware, wrapMiddleware(midhandler))
+		}
 	}
+
 	return nil
 }
 
-// BuildCompositeRoute creates a chain of handlers by
-// applying all of the matching routes.
-func (routes RouteList) BuildCompositeRoute(req *http.Request) Handler {
-	if len(routes) == 0 {
-		return emptyHandler
-	}
-
+// Compile prepares a middleware chain from the route list.
+// This should only be done once: after all the routes have
+// been provisioned, and before serving requests.
+func (routes RouteList) Compile() Handler {
 	var mid []Middleware
-	groups := make(map[string]struct{})
-
 	for _, route := range routes {
-		// route must match at least one of the matcher sets
-		if !route.MatcherSets.AnyMatch(req) {
-			continue
-		}
-
-		// if route is part of a group, ensure only the
-		// first matching route in the group is applied
-		if route.Group != "" {
-			_, ok := groups[route.Group]
-			if ok {
-				// this group has already been satisfied
-				// by a matching route
-				continue
-			}
-			// this matching route satisfies the group
-			groups[route.Group] = struct{}{}
-		}
-
-		// apply the rest of the route
-		for _, mh := range route.Handlers {
-			// we have to be sure to wrap mh outside
-			// of our current stack frame so that the
-			// reference to this mh isn't overwritten
-			// on the next iteration, leaving the last
-			// middleware in the chain as the ONLY
-			// middleware in the chain!
-			mid = append(mid, wrapMiddleware(mh))
-		}
-
-		// if this route is supposed to be last, don't
-		// compile any more into the chain
-		if route.Terminal {
-			break
-		}
+		mid = append(mid, wrapRoute(route))
 	}
-
-	// build the middleware chain, with the responder at the end
 	stack := emptyHandler
 	for i := len(mid) - 1; i >= 0; i-- {
 		stack = mid[i](stack)
 	}
-
 	return stack
 }
 
-// wrapMiddleware wraps m such that it can be correctly
-// appended to a list of middleware. We can't do this
-// directly in a loop because it relies on a reference
-// to mh not changing until the execution of its handler,
-// which is deferred by multiple func closures. In other
-// words, we need to pull this particular MiddlewareHandler
+// wrapRoute wraps route with a middleware and handler so that it can
+// be chained in and defer evaluation of its matchers to request-time.
+// Like wrapMiddleware, it is vital that this wrapping takes place in
+// its own stack frame so as to not overwrite the reference to the
+// intended route by looping and changing the reference each time.
+func wrapRoute(route Route) Middleware {
+	return func(next Handler) Handler {
+		return HandlerFunc(func(rw http.ResponseWriter, req *http.Request) error {
+			// copy the next handler (it's an interface, so it's just
+			// a very lightweight copy of a pointer); this is important
+			// because this is a closure to the func below, which
+			// re-assigns the value as it compiles the middleware stack;
+			// if we don't make this copy, we'd affect the underlying
+			// pointer for all future request (yikes); we could
+			// alternatively solve this by moving the func below out of
+			// this closure and into a standalone package-level func,
+			// but I just thought this made more sense
+			nextCopy := next
+
+			// route must match at least one of the matcher sets
+			if !route.MatcherSets.AnyMatch(req) {
+				return nextCopy.ServeHTTP(rw, req)
+			}
+
+			// if route is part of a group, ensure only the
+			// first matching route in the group is applied
+			if route.Group != "" {
+				groups := req.Context().Value(routeGroupCtxKey).(map[string]struct{})
+
+				if _, ok := groups[route.Group]; ok {
+					// this group has already been
+					// satisfied by a matching route
+					return nextCopy.ServeHTTP(rw, req)
+				}
+
+				// this matching route satisfies the group
+				groups[route.Group] = struct{}{}
+			}
+
+			// make terminal routes terminate
+			if route.Terminal {
+				nextCopy = emptyHandler
+			}
+
+			// compile this route's handler stack
+			for i := len(route.middleware) - 1; i >= 0; i-- {
+				nextCopy = route.middleware[i](nextCopy)
+			}
+
+			return nextCopy.ServeHTTP(rw, req)
+		})
+	}
+}
+
+// wrapMiddleware wraps mh such that it can be correctly
+// appended to a list of middleware in preparation for
+// compiling into a handler chain. We can't do this inline
+// inside a loop, because it relies on a reference to mh
+// not changing until the execution of its handler (which
+// is deferred by multiple func closures). In other words,
+// we need to pull this particular MiddlewareHandler
 // pointer into its own stack frame to preserve it so it
 // won't be overwritten in future loop iterations.
 func wrapMiddleware(mh MiddlewareHandler) Middleware {
-	return func(next HandlerFunc) HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) error {
-			// TODO: We could wait to evaluate matchers here, just eval
-			// the next matcher and choose the next route...
+	return func(next Handler) Handler {
+		// copy the next handler (it's an interface, so it's
+		// just a very lightweight copy of a pointer); this
+		// is a safeguard against the handler changing the
+		// value, which could affect future requests (yikes)
+		nextCopy := next
 
-			// TODO: This is where request tracing could be implemented; also
-			// see below to trace the responder as well
-			// TODO: Trace a diff of the request, would be cool too! see what changed since the last middleware (host, headers, URI...)
+		return HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			// TODO: This is where request tracing could be implemented
+			// TODO: Trace a diff of the request, would be cool too... see what changed since the last middleware (host, headers, URI...)
 			// TODO: see what the std lib gives us in terms of stack tracing too
-			return mh.ServeHTTP(w, r, next)
-		}
+			return mh.ServeHTTP(w, r, nextCopy)
+		})
 	}
 }
 
@@ -219,7 +245,7 @@ func wrapMiddleware(mh MiddlewareHandler) Middleware {
 type MatcherSet []RequestMatcher
 
 // Match returns true if the request matches all
-// matchers in mset.
+// matchers in mset or if there are no matchers.
 func (mset MatcherSet) Match(r *http.Request) bool {
 	for _, m := range mset {
 		if !m.Match(r) {
@@ -265,3 +291,5 @@ func (ms *MatcherSets) FromInterface(matcherSets interface{}) error {
 	}
 	return nil
 }
+
+var routeGroupCtxKey = caddy.CtxKey("route_group")
