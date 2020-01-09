@@ -15,11 +15,13 @@
 package reverseproxy
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"sync/atomic"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
 // Host represents a remote host which can be proxied to.
@@ -223,12 +225,19 @@ func fillDialInfo(upstream *Upstream, repl *caddy.Replacer) (DialInfo, error) {
 	}, nil
 }
 
-// DialInfoCtxKey is used to store a DialInfo
-// in a context.Context.
-const DialInfoCtxKey = caddy.CtxKey("dial_info")
+// GetDialInfo gets the upstream dialing info out of the context,
+// and returns true if there was a valid value; false otherwise.
+func GetDialInfo(ctx context.Context) (DialInfo, bool) {
+	dialInfo, ok := caddyhttp.GetVar(ctx, dialInfoVarKey).(DialInfo)
+	return dialInfo, ok
+}
 
 // hosts is the global repository for hosts that are
 // currently in use by active configuration(s). This
 // allows the state of remote hosts to be preserved
 // through config reloads.
 var hosts = caddy.NewUsagePool()
+
+// dialInfoVarKey is the key used for the variable that holds
+// the dial info for the upstream connection.
+const dialInfoVarKey = "reverse_proxy.dial_info"

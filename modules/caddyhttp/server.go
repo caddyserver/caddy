@@ -61,10 +61,12 @@ type Server struct {
 	MaxHeaderBytes int `json:"max_header_bytes,omitempty"`
 
 	// Routes describes how this server will handle requests.
-	// When a request comes in, each route's matchers will
-	// be evaluated against the request, and matching routes
-	// will be compiled into a middleware chain in the order
-	// in which they appear in the list.
+	// Routes are executed sequentially. First a route's matchers
+	// are evaluated, then its grouping. If it matches and has
+	// not been mutually-excluded by its grouping, then its
+	// handlers are executed sequentially. The sequence of invoked
+	// handlers comprises a compiled middleware chain that flows
+	// from each matching route and its handlers to the next.
 	Routes RouteList `json:"routes,omitempty"`
 
 	// Errors is how this server will handle errors returned from any
@@ -86,11 +88,6 @@ type Server struct {
 	// only on the HTTPS port.
 	AutoHTTPS *AutoHTTPSConfig `json:"automatic_https,omitempty"`
 
-	// MaxRehandles is the maximum number of times to allow a
-	// request to be rehandled, to prevent accidental infinite
-	// loops. Default: 1.
-	MaxRehandles *int `json:"max_rehandles,omitempty"`
-
 	// If true, will require that a request's Host header match
 	// the value of the ServerName sent by the client's TLS
 	// ClientHello; often a necessary safeguard when using TLS
@@ -104,6 +101,9 @@ type Server struct {
 	// finished standard and has extremely limited client support.
 	// This field is not subject to compatibility promises.
 	ExperimentalHTTP3 bool `json:"experimental_http3,omitempty"`
+
+	primaryHandlerChain Handler
+	errorHandlerChain   Handler
 
 	tlsApp       *caddytls.TLS
 	logger       *zap.Logger
@@ -129,6 +129,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, repl)
 	ctx = context.WithValue(ctx, ServerCtxKey, s)
 	ctx = context.WithValue(ctx, VarsCtxKey, make(map[string]interface{}))
+	ctx = context.WithValue(ctx, routeGroupCtxKey, make(map[string]struct{}))
 	var url2 url.URL // avoid letting this escape to the heap
 	ctx = context.WithValue(ctx, OriginalRequestCtxKey, originalRequest(r, &url2))
 	r = r.WithContext(ctx)
@@ -137,22 +138,22 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// anymore, finish setting up the replacer
 	addHTTPVarsToReplacer(repl, r, w)
 
-	loggableReq := LoggableHTTPRequest{r}
+	// encode the request for logging purposes before
+	// it enters any handler chain; this is necessary
+	// to capture the original request in case it gets
+	// modified during handling
+	loggableReq := zap.Object("request", LoggableHTTPRequest{r})
 	errLog := s.errorLogger.With(
-		// encode the request for logging purposes before
-		// it enters any handler chain; this is necessary
-		// to capture the original request in case it gets
-		// modified during handling
-		zap.Object("request", loggableReq),
+		loggableReq,
 	)
 
 	if s.accessLogger != nil {
 		wrec := NewResponseRecorder(w, nil, nil)
 		w = wrec
-		accLog := s.accessLogger.With(
-			// capture the original version of the request
-			zap.Object("request", loggableReq),
-		)
+
+		// capture the original version of the request
+		accLog := s.accessLogger.With(loggableReq)
+
 		start := time.Now()
 		defer func() {
 			latency := time.Since(start)
@@ -187,8 +188,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// build and execute the primary handler chain
-	err := s.executeCompositeRoute(w, r, s.Routes)
+	// execute the primary handler chain
+	err := s.primaryHandlerChain.ServeHTTP(w, r)
 	if err != nil {
 		// prepare the error log
 		logger := errLog
@@ -204,7 +205,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		if s.Errors != nil && len(s.Errors.Routes) > 0 {
 			// execute user-defined error handling route
-			err2 := s.executeCompositeRoute(w, r, s.Errors.Routes)
+			err2 := s.errorHandlerChain.ServeHTTP(w, r)
 			if err2 == nil {
 				// user's error route handled the error response
 				// successfully, so now just log the error
@@ -227,39 +228,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(errStatus)
 		}
 	}
-}
-
-// executeCompositeRoute compiles a composite route from routeList and executes
-// it using w and r. This function handles the sentinel ErrRehandle error value,
-// which reprocesses requests through the stack again. Any error value returned
-// from this function would be an actual error that needs to be handled.
-func (s *Server) executeCompositeRoute(w http.ResponseWriter, r *http.Request, routeList RouteList) error {
-	maxRehandles := 0
-	if s.MaxRehandles != nil {
-		maxRehandles = *s.MaxRehandles
-	}
-	var err error
-	for i := -1; i <= maxRehandles; i++ {
-		// we started the counter at -1 because we
-		// always want to run this at least once
-
-		// the purpose of rehandling is often to give
-		// matchers a chance to re-evaluate on the
-		// changed version of the request, so compile
-		// the handler stack anew in each iteration
-		stack := routeList.BuildCompositeRoute(r)
-		stack = s.wrapPrimaryRoute(stack)
-
-		// only loop if rehandling is required
-		err = stack.ServeHTTP(w, r)
-		if err != ErrRehandle {
-			break
-		}
-		if i >= maxRehandles-1 {
-			return fmt.Errorf("too many rehandles")
-		}
-	}
-	return err
 }
 
 // wrapPrimaryRoute wraps stack (a compiled middleware handler chain)

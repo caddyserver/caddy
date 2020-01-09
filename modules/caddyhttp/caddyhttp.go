@@ -171,6 +171,9 @@ func (app *App) Provision(ctx caddy.Context) error {
 			if err != nil {
 				return fmt.Errorf("server %s: setting up server routes: %v", srvName, err)
 			}
+			// pre-compile the handler chain, and be sure to wrap it in our
+			// route handler so that important security checks are done, etc.
+			srv.primaryHandlerChain = srv.wrapPrimaryRoute(srv.Routes.Compile())
 		}
 
 		if srv.Errors != nil {
@@ -178,10 +181,7 @@ func (app *App) Provision(ctx caddy.Context) error {
 			if err != nil {
 				return fmt.Errorf("server %s: setting up server error handling routes: %v", srvName, err)
 			}
-		}
-
-		if srv.MaxRehandles == nil {
-			srv.MaxRehandles = &DefaultMaxRehandles
+			srv.errorHandlerChain = srv.Errors.Routes.Compile()
 		}
 	}
 
@@ -207,13 +207,6 @@ func (app *App) Validate() error {
 				}
 				lnAddrs[addr] = srvName
 			}
-		}
-	}
-
-	// each server's max rehandle value must be valid
-	for srvName, srv := range app.Servers {
-		if srv.MaxRehandles != nil && *srv.MaxRehandles < 0 {
-			return fmt.Errorf("%s: invalid max_rehandles value: %d", srvName, *srv.MaxRehandles)
 		}
 	}
 
@@ -608,7 +601,7 @@ func (f HandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
 
 // Middleware chains one Handler to the next by being passed
 // the next Handler in the chain.
-type Middleware func(HandlerFunc) HandlerFunc
+type Middleware func(Handler) Handler
 
 // MiddlewareHandler is like Handler except it takes as a third
 // argument the next handler in the chain. The next handler will
@@ -624,7 +617,7 @@ type MiddlewareHandler interface {
 }
 
 // emptyHandler is used as a no-op handler.
-var emptyHandler HandlerFunc = func(http.ResponseWriter, *http.Request) error { return nil }
+var emptyHandler Handler = HandlerFunc(func(http.ResponseWriter, *http.Request) error { return nil })
 
 // WeakString is a type that unmarshals any JSON value
 // as a string literal, with the following exceptions:
@@ -733,10 +726,6 @@ const (
 	// DefaultHTTPSPort is the default port for HTTPS.
 	DefaultHTTPSPort = 443
 )
-
-// DefaultMaxRehandles is the maximum number of rehandles to
-// allow, if not specified explicitly.
-var DefaultMaxRehandles = 3
 
 // Interface guards
 var (
