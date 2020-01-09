@@ -15,7 +15,6 @@
 package caddyfile
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 
@@ -42,7 +41,7 @@ func (a Adapter) Adapt(body []byte, options map[string]interface{}) ([]byte, []c
 		filename = "Caddyfile"
 	}
 
-	serverBlocks, err := Parse(filename, bytes.NewReader(body))
+	serverBlocks, err := Parse(filename, body)
 	if err != nil {
 		return nil, nil, err
 	}
