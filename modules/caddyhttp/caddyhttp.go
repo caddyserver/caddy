@@ -486,12 +486,7 @@ func (app *App) automaticHTTPS() error {
 				// create the route that does the redirect and associate
 				// it with the listener address it will be served from
 				lnAddrRedirRoutes[httpRedirLnAddr] = Route{
-					MatcherSets: []MatcherSet{
-						{
-							MatchProtocol("http"),
-							MatchHost(domains),
-						},
-					},
+					MatcherSets: []MatcherSet{{MatchProtocol("http")}},
 					Handlers: []MiddlewareHandler{
 						StaticResponse{
 							StatusCode: WeakString(strconv.Itoa(http.StatusPermanentRedirect)),
