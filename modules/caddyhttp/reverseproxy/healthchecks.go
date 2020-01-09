@@ -212,7 +212,9 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, host H
 	// attach dialing information to this request
 	ctx := context.Background()
 	ctx = context.WithValue(ctx, caddy.ReplacerCtxKey, caddy.NewReplacer())
-	ctx = context.WithValue(ctx, DialInfoCtxKey, dialInfo)
+	ctx = context.WithValue(ctx, caddyhttp.VarsCtxKey, map[string]interface{}{
+		dialInfoVarKey: dialInfo,
+	})
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return fmt.Errorf("making request: %v", err)

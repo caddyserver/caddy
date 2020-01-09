@@ -92,8 +92,7 @@ func (h *HTTPTransport) newTransport() (*http.Transport, error) {
 	rt := &http.Transport{
 		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
 			// the proper dialing information should be embedded into the request's context
-			if dialInfoVal := ctx.Value(DialInfoCtxKey); dialInfoVal != nil {
-				dialInfo := dialInfoVal.(DialInfo)
+			if dialInfo, ok := GetDialInfo(ctx); ok {
 				network = dialInfo.Network
 				address = dialInfo.Address
 			}

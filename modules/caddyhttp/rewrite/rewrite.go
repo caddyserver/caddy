@@ -15,7 +15,6 @@
 package rewrite
 
 import (
-	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -31,9 +30,6 @@ func init() {
 }
 
 // Rewrite is a middleware which can rewrite HTTP requests.
-//
-// The Rehandle and HTTPRedirect properties are mutually exclusive
-// (you cannot both rehandle and issue a redirect).
 //
 // These rewrite properties are applied to a request in this order:
 // Method, URI, StripPathPrefix, StripPathSuffix, URISubstring.
@@ -61,10 +57,6 @@ type Rewrite struct {
 	// given status code.
 	HTTPRedirect caddyhttp.WeakString `json:"http_redirect,omitempty"`
 
-	// If true, the request will sent for rehandling after rewriting
-	// only if anything about the request was changed.
-	Rehandle bool `json:"rehandle,omitempty"`
-
 	logger *zap.Logger
 }
 
@@ -82,14 +74,6 @@ func (rewr *Rewrite) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-// Validate ensures rewr's configuration is valid.
-func (rewr Rewrite) Validate() error {
-	if rewr.HTTPRedirect != "" && rewr.Rehandle {
-		return fmt.Errorf("cannot be configured to both redirect externally and rehandle internally")
-	}
-	return nil
-}
-
 func (rewr Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
@@ -104,9 +88,6 @@ func (rewr Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 			zap.String("method", r.Method),
 			zap.String("uri", r.RequestURI),
 		)
-		if rewr.Rehandle {
-			return caddyhttp.ErrRehandle
-		}
 		if rewr.HTTPRedirect != "" {
 			statusCode, err := strconv.Atoi(repl.ReplaceAll(rewr.HTTPRedirect.String(), ""))
 			if err != nil {
