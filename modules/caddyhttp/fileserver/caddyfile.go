@@ -102,12 +102,12 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //
 // and is basically shorthand for:
 //
-//    matcher:try_files {
+//    @try_files {
 //        file {
 //            try_files <files...>
 //        }
 //    }
-//    rewrite match:try_files {http.matchers.file.relative}{http.request.uri.query_string}
+//    rewrite @try_files {http.matchers.file.relative}{http.request.uri.query_string}
 //
 // If any of the files in the list have a query string, the query string will
 // be ignored when checking for file existence, but will be augmented into
