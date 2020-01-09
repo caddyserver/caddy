@@ -33,6 +33,7 @@ func init() {
 	RegisterDirective("tls", parseTLS)
 	RegisterHandlerDirective("redir", parseRedir)
 	RegisterHandlerDirective("respond", parseRespond)
+	RegisterHandlerDirective("route", parseRoute)
 }
 
 func parseBind(h Helper) ([]ConfigValue, error) {
@@ -295,5 +296,37 @@ func parseRespond(h Helper) (caddyhttp.MiddlewareHandler, error) {
 	if err != nil {
 		return nil, err
 	}
+	return sr, nil
+}
+
+func parseRoute(h Helper) (caddyhttp.MiddlewareHandler, error) {
+	sr := new(caddyhttp.Subroute)
+
+	for h.Next() {
+		for nesting := h.Nesting(); h.NextBlock(nesting); {
+			dir := h.Val()
+
+			dirFunc, ok := registeredDirectives[dir]
+			if !ok {
+				return nil, h.Errf("unrecognized directive: %s", dir)
+			}
+
+			subHelper := h
+			subHelper.Dispenser = h.NewFromNextTokens()
+
+			results, err := dirFunc(subHelper)
+			if err != nil {
+				return nil, h.Errf("parsing caddyfile tokens for '%s': %v", dir, err)
+			}
+			for _, result := range results {
+				handler, ok := result.Value.(caddyhttp.Route)
+				if !ok {
+					return nil, h.Errf("%s directive returned something other than an HTTP route: %#v (only handler directives can be used in routes)", dir, result.Value)
+				}
+				sr.Routes = append(sr.Routes, handler)
+			}
+		}
+	}
+
 	return sr, nil
 }

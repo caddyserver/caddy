@@ -46,7 +46,17 @@ type (
 	// [customized or disabled](/docs/json/apps/http/servers/automatic_https/).
 	MatchHost []string
 
-	// MatchPath matches requests by the URI's path (case-insensitive).
+	// MatchPath matches requests by the URI's path (case-insensitive). Path
+	// matches are exact, but wildcards may be used:
+	//
+	// - At the end, for a prefix match (`/prefix/*`)
+	// - At the beginning, for a suffix match (`*.suffix`)
+	// - On both sides, for a substring match (`*/contains/*`)
+	// - In the middle, for a globular match (`/accounts/*/info`)
+	//
+	// This matcher is fast, so it does not support regular expressions or
+	// capture groups. For slower but more capable matching, use the path_regexp
+	// matcher.
 	MatchPath []string
 
 	// MatchPathRE matches requests by a regular expression on the URI's path.
@@ -197,11 +207,15 @@ func (m MatchPath) Match(r *http.Request) bool {
 	// being matched by *.php to be treated as PHP scripts
 	lowerPath = strings.TrimRight(lowerPath, ". ")
 
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+
 	for _, matchPath := range m {
-		// special case: first character is equals sign,
-		// treat it as an exact match
-		if strings.HasPrefix(matchPath, "=") {
-			if lowerPath == matchPath[1:] {
+		matchPath = repl.ReplaceAll(matchPath, "")
+
+		// special case: first and last characters are wildcard,
+		// treat it as a fast substring match
+		if strings.HasPrefix(matchPath, "*") && strings.HasSuffix(matchPath, "*") {
+			if strings.Contains(lowerPath, matchPath[1:len(matchPath)-1]) {
 				return true
 			}
 			continue
@@ -216,13 +230,20 @@ func (m MatchPath) Match(r *http.Request) bool {
 			continue
 		}
 
+		// special case: last character is a wildcard,
+		// treat it as a fast prefix match
+		if strings.HasSuffix(matchPath, "*") {
+			if strings.HasPrefix(lowerPath, matchPath[:len(matchPath)-1]) {
+				return true
+			}
+			continue
+		}
+
+		// for everything else, try globular matching, which also
+		// is exact matching if there are no glob/wildcard chars;
 		// can ignore error here because we can't handle it anyway
 		matches, _ := filepath.Match(matchPath, lowerPath)
 		if matches {
-			return true
-		}
-
-		if strings.HasPrefix(lowerPath, matchPath) {
 			return true
 		}
 	}

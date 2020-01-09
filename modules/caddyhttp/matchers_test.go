@@ -183,8 +183,18 @@ func TestPathMatcher(t *testing.T) {
 			expect: false,
 		},
 		{
+			match:  MatchPath{"/foo/bar/"},
+			input:  "/foo/bar/",
+			expect: true,
+		},
+		{
 			match:  MatchPath{"/foo/bar/", "/other"},
 			input:  "/other/",
+			expect: false,
+		},
+		{
+			match:  MatchPath{"/foo/bar/", "/other"},
+			input:  "/other",
 			expect: true,
 		},
 		{
@@ -213,23 +223,28 @@ func TestPathMatcher(t *testing.T) {
 			expect: false,
 		},
 		{
-			match:  MatchPath{"=/foo"},
-			input:  "/foo",
-			expect: true,
-		},
-		{
-			match:  MatchPath{"=/foo"},
-			input:  "/foo/bar",
-			expect: false,
-		},
-		{
-			match:  MatchPath{"=/foo"},
-			input:  "/FOO",
+			match:  MatchPath{"*substring*"},
+			input:  "/foo/substring/bar.txt",
 			expect: true,
 		},
 		{
 			match:  MatchPath{"/foo"},
+			input:  "/foo/bar",
+			expect: false,
+		},
+		{
+			match:  MatchPath{"/foo"},
+			input:  "/foo/bar",
+			expect: false,
+		},
+		{
+			match:  MatchPath{"/foo"},
 			input:  "/FOO",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/foo*"},
+			input:  "/FOOOO",
 			expect: true,
 		},
 		{
@@ -239,6 +254,10 @@ func TestPathMatcher(t *testing.T) {
 		},
 	} {
 		req := &http.Request{URL: &url.URL{Path: tc.input}}
+		repl := caddy.NewReplacer()
+		ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
+		req = req.WithContext(ctx)
+
 		actual := tc.match.Match(req)
 		if actual != tc.expect {
 			t.Errorf("Test %d %v: Expected %t, got %t for '%s'", i, tc.match, tc.expect, actual, tc.input)
@@ -251,8 +270,13 @@ func TestPathMatcherWindows(t *testing.T) {
 	// only Windows has this bug where it will ignore
 	// trailing dots and spaces in a filename, but we
 	// test for it on all platforms to be more consistent
-	match := MatchPath{"*.php"}
+
 	req := &http.Request{URL: &url.URL{Path: "/index.php . . .."}}
+	repl := caddy.NewReplacer()
+	ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
+	req = req.WithContext(ctx)
+
+	match := MatchPath{"*.php"}
 	matched := match.Match(req)
 	if !matched {
 		t.Errorf("Expected to match; should ignore trailing dots and spaces")
