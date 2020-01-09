@@ -419,7 +419,24 @@ func (st *ServerType) serversFromPairings(
 					return dirPositions[iDir] < dirPositions[jDir]
 				})
 			}
+
+			// add all the routes piled in from directives
 			for _, r := range dirRoutes {
+				// as a special case, group rewrite directives so that they are mutually exclusive;
+				// this means that only the first matching rewrite will be evaluated, and that's
+				// probably a good thing, since there should never be a need to do more than one
+				// rewrite (I think?), and cascading rewrites smell bad... imagine these rewrites:
+				//     rewrite /docs/json/* /docs/json/index.html
+				//     rewrite /docs/*      /docs/index.html
+				// (We use this on the Caddy website, or at least we did once.) The first rewrite's
+				// result is also matched by the second rewrite, making the first rewrite pointless.
+				// See issue #2959.
+				if r.directive == "rewrite" {
+					route := r.Value.(caddyhttp.Route)
+					route.Group = "rewriting"
+					r.Value = route
+				}
+
 				handlerSubroute.Routes = append(handlerSubroute.Routes, r.Value.(caddyhttp.Route))
 			}
 
