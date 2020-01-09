@@ -15,6 +15,7 @@
 package caddyfile
 
 import (
+	"bytes"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -473,75 +474,81 @@ func TestParseAll(t *testing.T) {
 }
 
 func TestEnvironmentReplacement(t *testing.T) {
-	os.Setenv("PORT", "8080")
-	os.Setenv("ADDRESS", "servername.com")
 	os.Setenv("FOOBAR", "foobar")
-	os.Setenv("PARTIAL_DIR", "r1")
 
-	// basic test; unix-style env vars
-	p := testParser(`{$ADDRESS}`)
-	blocks, _ := p.parseAll()
-	if actual, expected := blocks[0].Keys[0], "servername.com"; expected != actual {
-		t.Errorf("Expected key to be '%s' but was '%s'", expected, actual)
-	}
-
-	// basic test; unix-style env vars
-	p = testParser(`di{$PARTIAL_DIR}`)
-	blocks, _ = p.parseAll()
-	if actual, expected := blocks[0].Keys[0], "dir1"; expected != actual {
-		t.Errorf("Expected key to be '%s' but was '%s'", expected, actual)
-	}
-
-	// multiple vars per token
-	p = testParser(`{$ADDRESS}:{$PORT}`)
-	blocks, _ = p.parseAll()
-	if actual, expected := blocks[0].Keys[0], "servername.com:8080"; expected != actual {
-		t.Errorf("Expected key to be '%s' but was '%s'", expected, actual)
-	}
-
-	// env var in server block body as argument
-	p = testParser(":{$PORT}\ndir1 {$FOOBAR}")
-	blocks, _ = p.parseAll()
-	if actual, expected := blocks[0].Keys[0], ":8080"; expected != actual {
-		t.Errorf("Expected key to be '%s' but was '%s'", expected, actual)
-	}
-	if actual, expected := blocks[0].Segments[0][1].Text, "foobar"; expected != actual {
-		t.Errorf("Expected argument to be '%s' but was '%s'", expected, actual)
-	}
-
-	// combined windows env vars in argument
-	p = testParser(":{$PORT}\ndir1 {$ADDRESS}/{$FOOBAR}")
-	blocks, _ = p.parseAll()
-	if actual, expected := blocks[0].Segments[0][1].Text, "servername.com/foobar"; expected != actual {
-		t.Errorf("Expected argument to be '%s' but was '%s'", expected, actual)
-	}
-
-	// malformed env var (windows)
-	p = testParser(":1234\ndir1 {$ADDRESS}")
-	blocks, _ = p.parseAll()
-	if actual, expected := blocks[0].Segments[0][1].Text, "servername.com"; expected != actual {
-		t.Errorf("Expected host to be '%s' but was '%s'", expected, actual)
-	}
-
-	// malformed (non-existent) env var (unix)
-	p = testParser(`:{$PORT$}`)
-	blocks, _ = p.parseAll()
-	if actual, expected := blocks[0].Keys[0], ":"; expected != actual {
-		t.Errorf("Expected key to be '%s' but was '%s'", expected, actual)
-	}
-
-	// in quoted field
-	p = testParser(":1234\ndir1 \"Test {$FOOBAR} test\"")
-	blocks, _ = p.parseAll()
-	if actual, expected := blocks[0].Segments[0][1].Text, "Test foobar test"; expected != actual {
-		t.Errorf("Expected argument to be '%s' but was '%s'", expected, actual)
-	}
-
-	// after end token
-	p = testParser(":1234\nanswer \"{{ .Name }} {$FOOBAR}\"")
-	blocks, _ = p.parseAll()
-	if actual, expected := blocks[0].Segments[0][1].Text, "{{ .Name }} foobar"; expected != actual {
-		t.Errorf("Expected argument to be '%s' but was '%s'", expected, actual)
+	for i, test := range []struct {
+		input  string
+		expect string
+	}{
+		{
+			input:  "",
+			expect: "",
+		},
+		{
+			input:  "foo",
+			expect: "foo",
+		},
+		{
+			input:  "{$NOT_SET}",
+			expect: "",
+		},
+		{
+			input:  "foo{$NOT_SET}bar",
+			expect: "foobar",
+		},
+		{
+			input:  "{$FOOBAR}",
+			expect: "foobar",
+		},
+		{
+			input:  "foo {$FOOBAR} bar",
+			expect: "foo foobar bar",
+		},
+		{
+			input:  "foo{$FOOBAR}bar",
+			expect: "foofoobarbar",
+		},
+		{
+			input:  "foo\n{$FOOBAR}\nbar",
+			expect: "foo\nfoobar\nbar",
+		},
+		{
+			input:  "{$FOOBAR} {$FOOBAR}",
+			expect: "foobar foobar",
+		},
+		{
+			input:  "{$FOOBAR}{$FOOBAR}",
+			expect: "foobarfoobar",
+		},
+		{
+			input:  "{$FOOBAR",
+			expect: "{$FOOBAR",
+		},
+		{
+			input:  "{$LONGER_NAME $FOOBAR}",
+			expect: "",
+		},
+		{
+			input:  "{$}",
+			expect: "{$}",
+		},
+		{
+			input:  "{$$}",
+			expect: "",
+		},
+		{
+			input:  "{$",
+			expect: "{$",
+		},
+		{
+			input:  "}{$",
+			expect: "}{$",
+		},
+	} {
+		actual := replaceEnvVars([]byte(test.input))
+		if !bytes.Equal(actual, []byte(test.expect)) {
+			t.Errorf("Test %d: Expected: '%s' but got '%s'", i, test.expect, actual)
+		}
 	}
 }
 

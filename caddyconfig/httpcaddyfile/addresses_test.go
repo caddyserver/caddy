@@ -20,9 +20,6 @@ func TestParseAddress(t *testing.T) {
 		{`[::1]`, "", "::1", "", "", false},
 		{`[::1]:1234`, "", "::1", "1234", "", false},
 		{`:`, "", "", "", "", false},
-		{`{env.HOST}:1234`, "", "{env.HOST}", "1234", "", false},
-		{`{env.HOST}:{env.PORT}`, "", "{env.HOST}", "{env.PORT}", "", false},
-		// currently not supported {`[::1]:{env.PORT}`, "", "[::1]", "{env.PORT}", "", false},
 		{`:http`, "", "", "", "", true},
 		{`:https`, "", "", "", "", true},
 		{`localhost:http`, "", "", "", "", true}, // using service name in port is verboten, as of Go 1.12.8
@@ -53,7 +50,7 @@ func TestParseAddress(t *testing.T) {
 		{`host:80/path`, "", "host", "80", "/path", false},
 		{`/path`, "", "", "", "/path", false},
 	} {
-		actual, err := ParseAddressWithVariables(test.input)
+		actual, err := ParseAddress(test.input)
 
 		if err != nil && !test.shouldErr {
 			t.Errorf("Test %d (%s): Expected no error, but had error: %v", i, test.input, err)
@@ -61,6 +58,7 @@ func TestParseAddress(t *testing.T) {
 		if err == nil && test.shouldErr {
 			t.Errorf("Test %d (%s): Expected error, but had none", i, test.input)
 		}
+
 		if !test.shouldErr && actual.Original != test.input {
 			t.Errorf("Test %d (%s): Expected original '%s', got '%s'", i, test.input, test.input, actual.Original)
 		}

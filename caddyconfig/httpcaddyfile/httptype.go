@@ -270,7 +270,7 @@ func (st *ServerType) hostsFromServerBlockKeys(sb caddyfile.ServerBlock) ([]stri
 	// first get each unique hostname
 	hostMap := make(map[string]struct{})
 	for _, sblockKey := range sb.Keys {
-		addr, err := ParseAddressWithVariables(sblockKey)
+		addr, err := ParseAddress(sblockKey)
 		if err != nil {
 			return nil, fmt.Errorf("parsing server block key: %v", err)
 		}
@@ -508,7 +508,7 @@ func (st *ServerType) compileEncodedMatcherSets(sblock caddyfile.ServerBlock) ([
 	var matcherPairs []*hostPathPair
 
 	for _, key := range sblock.Keys {
-		addr, err := ParseAddressWithVariables(key)
+		addr, err := ParseAddress(key)
 		if err != nil {
 			return nil, fmt.Errorf("server block %v: parsing and standardizing address '%s': %v", sblock.Keys, key, err)
 		}
