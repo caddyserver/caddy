@@ -275,6 +275,10 @@ func (d *Dispenser) NewFromNextTokens() *Dispenser {
 	if openedBlock {
 		// include closing brace accordingly
 		tkns = append(tkns, d.Token())
+		// since NewFromNextTokens is intended to consume the entire
+		// directive, we must call Next() here and consume the closing
+		// curly brace
+		d.Next()
 	}
 	return NewDispenser(tkns)
 }
