@@ -308,7 +308,7 @@ func TestDispenser_ArgErr_Err(t *testing.T) {
 }
 
 func newTestDispenser(input string) *Dispenser {
-	tokens, err := allTokens("Testfile", strings.NewReader(input))
+	tokens, err := allTokens("Testfile", []byte(input))
 	if err != nil && err != io.EOF {
 		log.Fatalf("getting all tokens from input: %v", err)
 	}
