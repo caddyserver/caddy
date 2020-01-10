@@ -34,7 +34,6 @@ import (
 // Environment variables in {$ENVIRONMENT_VARIABLE} notation
 // will be replaced before parsing begins.
 func Parse(filename string, input []byte) ([]ServerBlock, error) {
-	input = replaceEnvVars(input)
 	tokens, err := allTokens(filename, bytes.NewReader(input))
 	if err != nil {
 		return nil, err
@@ -44,7 +43,13 @@ func Parse(filename string, input []byte) ([]ServerBlock, error) {
 }
 
 // replaceEnvVars replaces all occurrences of environment variables.
-func replaceEnvVars(input []byte) []byte {
+func replaceEnvVars(i io.Reader) (io.Reader, error) {
+
+	input, err := ioutil.ReadAll(i)
+	if err != nil {
+		return nil, err
+	}
+
 	var offset int
 	for {
 		begin := bytes.Index(input[offset:], spanOpen)
@@ -75,15 +80,21 @@ func replaceEnvVars(input []byte) []byte {
 		// continue at the end of the replacement
 		offset = begin + len(envVarValue)
 	}
-	return input
+	return bytes.NewReader(input), nil
 }
 
 // allTokens lexes the entire input, but does not parse it.
 // It returns all the tokens from the input, unstructured
 // and in order.
 func allTokens(filename string, input io.Reader) ([]Token, error) {
+
+	input, err := replaceEnvVars(input)
+	if err != nil{
+		return nil, err
+	}
+
 	l := new(lexer)
-	err := l.load(input)
+	err = l.load(input)
 	if err != nil {
 		return nil, err
 	}
@@ -373,8 +384,6 @@ func (p *parser) doSingleImport(importFile string) ([]Token, error) {
 	if err != nil {
 		return nil, p.Errf("Could not read imported file %s: %v", importFile, err)
 	}
-
-	input = replaceEnvVars(input)
 
 	importedTokens, err := allTokens(importFile, bytes.NewReader(input))
 	if err != nil {
