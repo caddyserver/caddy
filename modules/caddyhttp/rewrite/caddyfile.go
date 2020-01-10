@@ -58,7 +58,7 @@ func parseCaddyfileStripPrefix(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHand
 		if !h.NextArg() {
 			return nil, h.ArgErr()
 		}
-		rewr.StripPathPrefix = h.Val()
+		rewr.StripPrefix = h.Val()
 		if h.NextArg() {
 			return nil, h.ArgErr()
 		}
@@ -77,7 +77,7 @@ func parseCaddyfileStripSuffix(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHand
 		if !h.NextArg() {
 			return nil, h.ArgErr()
 		}
-		rewr.StripPathSuffix = h.Val()
+		rewr.StripSuffix = h.Val()
 		if h.NextArg() {
 			return nil, h.ArgErr()
 		}
