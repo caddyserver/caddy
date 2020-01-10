@@ -104,7 +104,7 @@ func TestRewrite(t *testing.T) {
 			expect: newRequest(t, "GET", "/foo?c=d"),
 		},
 		{
-			rule:   Rewrite{URI: "{http.request.uri.path}{http.request.uri.query_string}&c=d"},
+			rule:   Rewrite{URI: "{http.request.uri.path}?{http.request.uri.query}&c=d"},
 			input:  newRequest(t, "GET", "/foo"),
 			expect: newRequest(t, "GET", "/foo?c=d"),
 		},
@@ -126,7 +126,7 @@ func TestRewrite(t *testing.T) {
 		{
 			rule:   Rewrite{URI: "/index.php?c=d&{http.request.uri.query}"},
 			input:  newRequest(t, "GET", "/?a=b"),
-			expect: newRequest(t, "GET", "/index.php?a=b&c=d"),
+			expect: newRequest(t, "GET", "/index.php?c=d&a=b"),
 		},
 		{
 			rule:   Rewrite{URI: "/index.php?{http.request.uri.query}&p={http.request.uri.path}"},
@@ -138,35 +138,40 @@ func TestRewrite(t *testing.T) {
 			input:  newRequest(t, "GET", "/foo/bar?a=b&c=d"),
 			expect: newRequest(t, "GET", "/foo/bar"),
 		},
+		{
+			rule:   Rewrite{URI: "/foo?{http.request.uri.query}#frag"},
+			input:  newRequest(t, "GET", "/foo/bar?a=b"),
+			expect: newRequest(t, "GET", "/foo?a=b#frag"),
+		},
 
 		{
-			rule:   Rewrite{StripPathPrefix: "/prefix"},
+			rule:   Rewrite{StripPrefix: "/prefix"},
 			input:  newRequest(t, "GET", "/foo/bar"),
 			expect: newRequest(t, "GET", "/foo/bar"),
 		},
 		{
-			rule:   Rewrite{StripPathPrefix: "/prefix"},
+			rule:   Rewrite{StripPrefix: "/prefix"},
 			input:  newRequest(t, "GET", "/prefix/foo/bar"),
 			expect: newRequest(t, "GET", "/foo/bar"),
 		},
 		{
-			rule:   Rewrite{StripPathPrefix: "/prefix"},
+			rule:   Rewrite{StripPrefix: "/prefix"},
 			input:  newRequest(t, "GET", "/foo/prefix/bar"),
 			expect: newRequest(t, "GET", "/foo/prefix/bar"),
 		},
 
 		{
-			rule:   Rewrite{StripPathSuffix: "/suffix"},
+			rule:   Rewrite{StripSuffix: "/suffix"},
 			input:  newRequest(t, "GET", "/foo/bar"),
 			expect: newRequest(t, "GET", "/foo/bar"),
 		},
 		{
-			rule:   Rewrite{StripPathSuffix: "suffix"},
+			rule:   Rewrite{StripSuffix: "suffix"},
 			input:  newRequest(t, "GET", "/foo/bar/suffix"),
 			expect: newRequest(t, "GET", "/foo/bar/"),
 		},
 		{
-			rule:   Rewrite{StripPathSuffix: "/suffix"},
+			rule:   Rewrite{StripSuffix: "/suffix"},
 			input:  newRequest(t, "GET", "/foo/suffix/bar"),
 			expect: newRequest(t, "GET", "/foo/suffix/bar"),
 		},
@@ -193,7 +198,6 @@ func TestRewrite(t *testing.T) {
 		// populate the replacer just enough for our tests
 		repl.Set("http.request.uri.path", tc.input.URL.Path)
 		repl.Set("http.request.uri.query", tc.input.URL.RawQuery)
-		repl.Set("http.request.uri.query_string", "?"+tc.input.URL.RawQuery)
 
 		changed := tc.rule.rewrite(tc.input, repl, nil)
 
