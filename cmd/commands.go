@@ -189,6 +189,12 @@ config file; otherwise the default is assumed.`,
 	})
 
 	RegisterCommand(Command{
+		Name:  "build-info",
+		Func:  cmdBuildInfo,
+		Short: "Prints information about this build",
+	})
+
+	RegisterCommand(Command{
 		Name:  "environ",
 		Func:  cmdEnviron,
 		Short: "Prints the environment",
