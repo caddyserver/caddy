@@ -16,7 +16,6 @@ package caddyfile
 
 import (
 	"bytes"
-	"io"
 	"io/ioutil"
 	"log"
 	"os"
@@ -34,7 +33,7 @@ import (
 // Environment variables in {$ENVIRONMENT_VARIABLE} notation
 // will be replaced before parsing begins.
 func Parse(filename string, input []byte) ([]ServerBlock, error) {
-	tokens, err := allTokens(filename, bytes.NewReader(input))
+	tokens, err := allTokens(filename, input)
 	if err != nil {
 		return nil, err
 	}
@@ -43,13 +42,7 @@ func Parse(filename string, input []byte) ([]ServerBlock, error) {
 }
 
 // replaceEnvVars replaces all occurrences of environment variables.
-func replaceEnvVars(i io.Reader) (io.Reader, error) {
-
-	input, err := ioutil.ReadAll(i)
-	if err != nil {
-		return nil, err
-	}
-
+func replaceEnvVars(input []byte) ([]byte, error) {
 	var offset int
 	for {
 		begin := bytes.Index(input[offset:], spanOpen)
@@ -80,21 +73,19 @@ func replaceEnvVars(i io.Reader) (io.Reader, error) {
 		// continue at the end of the replacement
 		offset = begin + len(envVarValue)
 	}
-	return bytes.NewReader(input), nil
+	return input, nil
 }
 
 // allTokens lexes the entire input, but does not parse it.
 // It returns all the tokens from the input, unstructured
 // and in order.
-func allTokens(filename string, input io.Reader) ([]Token, error) {
-
+func allTokens(filename string, input []byte) ([]Token, error) {
 	input, err := replaceEnvVars(input)
-	if err != nil{
+	if err != nil {
 		return nil, err
 	}
-
 	l := new(lexer)
-	err = l.load(input)
+	err = l.load(bytes.NewReader(input))
 	if err != nil {
 		return nil, err
 	}
@@ -385,7 +376,7 @@ func (p *parser) doSingleImport(importFile string) ([]Token, error) {
 		return nil, p.Errf("Could not read imported file %s: %v", importFile, err)
 	}
 
-	importedTokens, err := allTokens(importFile, bytes.NewReader(input))
+	importedTokens, err := allTokens(importFile, input)
 	if err != nil {
 		return nil, p.Errf("Could not read tokens while importing %s: %v", importFile, err)
 	}

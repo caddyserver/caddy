@@ -19,12 +19,11 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
 func TestAllTokens(t *testing.T) {
-	input := strings.NewReader("a b c\nd e")
+	input := []byte("a b c\nd e")
 	expected := []string{"a", "b", "c", "d", "e"}
 	tokens, err := allTokens("TestAllTokens", input)
 
@@ -545,11 +544,7 @@ func TestEnvironmentReplacement(t *testing.T) {
 			expect: "}{$",
 		},
 	} {
-		result, err := replaceEnvVars(bytes.NewReader([]byte(test.input)))
-		if err != nil {
-			t.Fatal(err)
-		}
-		actual, err := ioutil.ReadAll(result)
+		actual, err := replaceEnvVars([]byte(test.input))
 		if err != nil {
 			t.Fatal(err)
 		}
