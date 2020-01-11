@@ -66,7 +66,6 @@ func init() {
 // `{http.request.orig.path.dir}` | The request's original directory
 // `{http.request.orig.path.file}` | The request's original filename
 // `{http.request.orig.uri.path}` | The request's original path
-// `{http.request.orig.uri.query_string}` | The request's original full query string (with `?`)
 // `{http.request.orig.uri.query}` | The request's original query string (without `?`)
 // `{http.request.orig.uri}` | The request's original URI
 // `{http.request.port}` | The port part of the request's Host header
@@ -79,7 +78,6 @@ func init() {
 // `{http.request.uri.path.dir}` | The directory, excluding leaf filename
 // `{http.request.uri.path.file}` | The filename of the path, excluding directory
 // `{http.request.uri.path}` | The path component of the request URI
-// `{http.request.uri.query_string}` | The full query string (with `?`)
 // `{http.request.uri.query.*}` | Individual query string value
 // `{http.request.uri.query}` | The query string (without `?`)
 // `{http.request.uri}` | The full request URI

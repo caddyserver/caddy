@@ -101,7 +101,7 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 			"{scheme}", "{http.request.scheme}",
 			"{file}", "{http.request.uri.path.file}",
 			"{dir}", "{http.request.uri.path.dir}",
-			"{query}", "{http.request.uri.query_string}",
+			"{query}", "{http.request.uri.query}",
 		)
 		for _, segment := range sb.block.Segments {
 			for i := 0; i < len(segment); i++ {
