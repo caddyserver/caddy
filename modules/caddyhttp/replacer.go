@@ -104,8 +104,6 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 				return dir, true
 			case "http.request.uri.query":
 				return req.URL.RawQuery, true
-			case "http.request.uri.query_string":
-				return "?" + req.URL.RawQuery, true
 
 				// original request, before any internal changes
 			case "http.request.orig_method":
@@ -128,9 +126,6 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 			case "http.request.orig_uri.query":
 				or, _ := req.Context().Value(OriginalRequestCtxKey).(http.Request)
 				return or.URL.RawQuery, true
-			case "http.request.orig_uri.query_string":
-				or, _ := req.Context().Value(OriginalRequestCtxKey).(http.Request)
-				return "?" + or.URL.RawQuery, true
 			}
 
 			// hostname labels
