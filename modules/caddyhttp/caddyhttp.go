@@ -66,7 +66,6 @@ func init() {
 // `{http.request.orig.path.dir}` | The request's original directory
 // `{http.request.orig.path.file}` | The request's original filename
 // `{http.request.orig.uri.path}` | The request's original path
-// `{http.request.orig.uri.query_string}` | The request's original full query string (with `?`)
 // `{http.request.orig.uri.query}` | The request's original query string (without `?`)
 // `{http.request.orig.uri}` | The request's original URI
 // `{http.request.port}` | The port part of the request's Host header
@@ -79,7 +78,6 @@ func init() {
 // `{http.request.uri.path.dir}` | The directory, excluding leaf filename
 // `{http.request.uri.path.file}` | The filename of the path, excluding directory
 // `{http.request.uri.path}` | The path component of the request URI
-// `{http.request.uri.query_string}` | The full query string (with `?`)
 // `{http.request.uri.query.*}` | Individual query string value
 // `{http.request.uri.query}` | The query string (without `?`)
 // `{http.request.uri}` | The full request URI
@@ -166,6 +164,7 @@ func (app *App) Provision(ctx caddy.Context) error {
 			srv.Listen[i] = lnOut
 		}
 
+		primaryRoute := emptyHandler
 		if srv.Routes != nil {
 			err := srv.Routes.Provision(ctx)
 			if err != nil {
@@ -173,8 +172,9 @@ func (app *App) Provision(ctx caddy.Context) error {
 			}
 			// pre-compile the handler chain, and be sure to wrap it in our
 			// route handler so that important security checks are done, etc.
-			srv.primaryHandlerChain = srv.wrapPrimaryRoute(srv.Routes.Compile())
+			srv.primaryHandlerChain = srv.Routes.Compile()
 		}
+		srv.primaryHandlerChain = srv.wrapPrimaryRoute(primaryRoute)
 
 		if srv.Errors != nil {
 			err := srv.Errors.Routes.Provision(ctx)
@@ -506,7 +506,7 @@ func (app *App) automaticHTTPS() error {
 	// if there are HTTP->HTTPS redirects to add, do so now
 	if len(lnAddrRedirRoutes) > 0 {
 		var redirServerAddrs []string
-		var redirRoutes []Route
+		var redirRoutes RouteList
 
 		// for each redirect listener, see if there's already a
 		// server configured to listen on that exact address; if so,
@@ -541,11 +541,12 @@ func (app *App) automaticHTTPS() error {
 		// rest of the redirects
 		if len(redirServerAddrs) > 0 {
 			app.Servers["remaining_auto_https_redirects"] = &Server{
-				Listen:      redirServerAddrs,
-				Routes:      redirRoutes,
-				tlsApp:      tlsApp, // required to solve HTTP challenge
-				logger:      app.logger.Named("log"),
-				errorLogger: app.logger.Named("log.error"),
+				Listen:              redirServerAddrs,
+				Routes:              redirRoutes,
+				tlsApp:              tlsApp, // required to solve HTTP challenge
+				logger:              app.logger.Named("log"),
+				errorLogger:         app.logger.Named("log.error"),
+				primaryHandlerChain: redirRoutes.Compile(),
 			}
 		}
 	}

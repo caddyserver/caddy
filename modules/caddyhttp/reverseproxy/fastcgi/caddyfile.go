@@ -149,7 +149,7 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 		}),
 	}
 	rewriteHandler := rewrite.Rewrite{
-		URI: "{http.matchers.file.relative}{http.request.uri.query_string}",
+		URI: "{http.matchers.file.relative}?{http.request.uri.query}",
 	}
 	rewriteRoute := caddyhttp.Route{
 		MatcherSetsRaw: []caddy.ModuleMap{rewriteMatcherSet},

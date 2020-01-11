@@ -32,7 +32,7 @@ func init() {
 // Rewrite is a middleware which can rewrite HTTP requests.
 //
 // These rewrite properties are applied to a request in this order:
-// Method, URI, StripPathPrefix, StripPathSuffix, URISubstring.
+// Method, URI, StripPrefix, StripSuffix, URISubstring.
 //
 // TODO: This module is still a WIP and may experience breaking changes.
 type Rewrite struct {
@@ -44,10 +44,10 @@ type Rewrite struct {
 	URI string `json:"uri,omitempty"`
 
 	// Strips the given prefix from the beginning of the URI path.
-	StripPathPrefix string `json:"strip_path_prefix,omitempty"`
+	StripPrefix string `json:"strip_prefix,omitempty"`
 
 	// Strips the given suffix from the end of the URI path.
-	StripPathSuffix string `json:"strip_path_suffix,omitempty"`
+	StripSuffix string `json:"strip_suffix,omitempty"`
 
 	// Performs substring replacements on the URI.
 	URISubstring []replacer `json:"uri_substring,omitempty"`
@@ -102,9 +102,9 @@ func (rewr Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 	return next.ServeHTTP(w, r)
 }
 
-// rewrite performs the rewrites on r using repl, which
-// should have been obtained from r, but is passed in for
-// efficiency. It returns true if any changes were made to r.
+// rewrite performs the rewrites on r using repl, which should
+// have been obtained from r, but is passed in for efficiency.
+// It returns true if any changes were made to r.
 func (rewr Rewrite) rewrite(r *http.Request, repl *caddy.Replacer, logger *zap.Logger) bool {
 	oldMethod := r.Method
 	oldURI := r.RequestURI
@@ -114,53 +114,46 @@ func (rewr Rewrite) rewrite(r *http.Request, repl *caddy.Replacer, logger *zap.L
 		r.Method = strings.ToUpper(repl.ReplaceAll(rewr.Method, ""))
 	}
 
-	// uri (which consists of path, query string, and maybe fragment?)
-	if rewr.URI != "" {
-		newURI := repl.ReplaceAll(rewr.URI, "")
-
-		newU, err := url.Parse(newURI)
-		if err != nil {
-			logger.Error("parsing new URI",
-				zap.String("raw_input", rewr.URI),
-				zap.String("input", newURI),
-				zap.Error(err),
-			)
-		}
-
-		if newU.Path != "" {
-			r.URL.Path = newU.Path
-		}
-		if strings.Contains(newURI, "?") {
-			// you'll notice we check for existence of a question mark
-			// instead of RawQuery != "". We do this because if the user
-			// wants to remove an existing query string, they do that by
-			// appending "?" to the path: "/foo?" -- in this case, then,
-			// RawQuery is "" but we still want to set it to that; hence,
-			// we check for a "?", which always starts a query string
-			inputQuery := newU.Query()
-			outputQuery := make(url.Values)
-			for k := range inputQuery {
-				// overwrite existing values; we don't simply keep
-				// appending because it can cause rewrite rules like
-				// "{path}{query}&a=b" with rehandling enabled to go
-				// on forever: "/foo.html?a=b&a=b&a=b..."
-				outputQuery.Set(k, inputQuery.Get(k))
+	// uri (path, query string, and fragment just because)
+	if uri := rewr.URI; uri != "" {
+		// find the bounds of each part of the URI that exist
+		pathStart, qsStart, fragStart := -1, -1, -1
+		pathEnd, qsEnd := -1, -1
+		for i, ch := range uri {
+			switch {
+			case ch == '?' && qsStart < 0:
+				pathEnd, qsStart = i, i+1
+			case ch == '#' && fragStart < 0:
+				qsEnd, fragStart = i, i+1
+			case pathStart < 0 && qsStart < 0 && fragStart < 0:
+				pathStart = i
 			}
-			// this sorts the keys, oh well
-			r.URL.RawQuery = outputQuery.Encode()
 		}
-		if newU.Fragment != "" {
-			r.URL.Fragment = newU.Fragment
+		if pathStart >= 0 && pathEnd < 0 {
+			pathEnd = len(uri)
+		}
+		if qsStart >= 0 && qsEnd < 0 {
+			qsEnd = len(uri)
+		}
+
+		if pathStart >= 0 {
+			r.URL.Path = repl.ReplaceAll(uri[pathStart:pathEnd], "")
+		}
+		if qsStart >= 0 {
+			r.URL.RawQuery = buildQueryString(uri[qsStart:qsEnd], repl)
+		}
+		if fragStart >= 0 {
+			r.URL.Fragment = repl.ReplaceAll(uri[fragStart:], "")
 		}
 	}
 
 	// strip path prefix or suffix
-	if rewr.StripPathPrefix != "" {
-		prefix := repl.ReplaceAll(rewr.StripPathPrefix, "")
+	if rewr.StripPrefix != "" {
+		prefix := repl.ReplaceAll(rewr.StripPrefix, "")
 		r.URL.Path = strings.TrimPrefix(r.URL.Path, prefix)
 	}
-	if rewr.StripPathSuffix != "" {
-		suffix := repl.ReplaceAll(rewr.StripPathSuffix, "")
+	if rewr.StripSuffix != "" {
+		suffix := repl.ReplaceAll(rewr.StripSuffix, "")
 		r.URL.Path = strings.TrimSuffix(r.URL.Path, suffix)
 	}
 
@@ -174,6 +167,57 @@ func (rewr Rewrite) rewrite(r *http.Request, repl *caddy.Replacer, logger *zap.L
 
 	// return true if anything changed
 	return r.Method != oldMethod || r.RequestURI != oldURI
+}
+
+// buildQueryString takes an input query string and
+// performs replacements on each component, returning
+// the resulting query string.
+func buildQueryString(qs string, repl *caddy.Replacer) string {
+	var sb strings.Builder
+	var wroteKey bool
+
+	for len(qs) > 0 {
+		// determine the end of this component
+		nextEq, nextAmp := strings.Index(qs, "="), strings.Index(qs, "&")
+		end := min(nextEq, nextAmp)
+		if end == -1 {
+			end = len(qs) // if there is nothing left, go to end of string
+		}
+
+		// consume the component and write the result
+		comp := qs[:end]
+		comp, _ = repl.ReplaceFunc(comp, func(name, val string) (string, error) {
+			if name == "http.request.uri.query" {
+				return val, nil // already escaped
+			}
+			return url.QueryEscape(val), nil
+		})
+		if end < len(qs) {
+			end++ // consume delimiter
+		}
+		qs = qs[end:]
+
+		if wroteKey {
+			sb.WriteRune('=')
+		} else if sb.Len() > 0 {
+			sb.WriteRune('&')
+		}
+
+		// remember that we just wrote a key, which is if the next
+		// delimiter is an equals sign or if there is no ampersand
+		wroteKey = nextEq < nextAmp || nextAmp < 0
+
+		sb.WriteString(comp)
+	}
+
+	return sb.String()
+}
+
+func min(a, b int) int {
+	if b < a {
+		return b
+	}
+	return a
 }
 
 // replacer describes a simple and fast substring replacement.

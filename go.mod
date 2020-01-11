@@ -7,6 +7,7 @@ require (
 	github.com/alecthomas/chroma v0.7.0
 	github.com/andybalholm/brotli v0.0.0-20190821151343-b60f0d972eeb
 	github.com/cenkalti/backoff/v3 v3.1.1 // indirect
+	github.com/decker502/dnspod-go v0.2.0 // indirect
 	github.com/dustin/go-humanize v1.0.0
 	github.com/go-acme/lego/v3 v3.3.0
 	github.com/golang/groupcache v0.0.0-20191002201903-404acd9df4cc
@@ -17,7 +18,7 @@ require (
 	github.com/klauspost/cpuid v1.2.2
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/lucas-clemente/quic-go v0.14.1
-	github.com/mholt/certmagic v0.9.0
+	github.com/mholt/certmagic v0.9.1
 	github.com/miekg/dns v1.1.25 // indirect
 	github.com/muhammadmuzzammil1998/jsonc v0.0.0-20190906142622-1265e9b150c6
 	github.com/naoina/go-stringutil v0.1.0 // indirect
