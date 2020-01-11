@@ -17,7 +17,6 @@ package rewrite
 import (
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
@@ -31,31 +30,39 @@ func init() {
 
 // Rewrite is a middleware which can rewrite HTTP requests.
 //
-// These rewrite properties are applied to a request in this order:
-// Method, URI, StripPrefix, StripSuffix, URISubstring.
-//
-// TODO: This module is still a WIP and may experience breaking changes.
+// The Method and URI properties are "setters": the request URI
+// will be set to the given values. Other properties are "modifiers":
+// they modify existing files but do not explicitly specify what the
+// result will be. It is atypical to combine the use of setters and
+// modifiers in a single rewrite.
 type Rewrite struct {
 	// Changes the request's HTTP verb.
 	Method string `json:"method,omitempty"`
 
-	// Changes the request's URI (path, query string, and fragment if present).
+	// Changes the request's URI, which consists of path and query string.
 	// Only components of the URI that are specified will be changed.
+	// For example, a value of "/foo.html" or "foo.html" will only change
+	// the path and will preserve any existing query string. Similarly, a
+	// value of "?a=b" will only change the query string and will not affect
+	// the path. Both can also be changed: "/foo?a=b" - this sets both the
+	// path and query string at the same time.
+	//
+	// You can also use placeholders. For example, to preserve the existing
+	// query string, you might use: "?{http.request.uri.query}&a=b". Any
+	// key-value pairs you add to the query string will not overwrite
+	// existing values.
+	//
+	// To clear the query string, explicitly set an empty one: "?"
 	URI string `json:"uri,omitempty"`
 
 	// Strips the given prefix from the beginning of the URI path.
-	StripPrefix string `json:"strip_prefix,omitempty"`
+	StripPathPrefix string `json:"strip_path_prefix,omitempty"`
 
 	// Strips the given suffix from the end of the URI path.
-	StripSuffix string `json:"strip_suffix,omitempty"`
+	StripPathSuffix string `json:"strip_path_suffix,omitempty"`
 
 	// Performs substring replacements on the URI.
 	URISubstring []replacer `json:"uri_substring,omitempty"`
-
-	// If set to a 3xx HTTP status code and if the URI was rewritten (changed),
-	// the handler will issue a simple HTTP redirect to the new URI using the
-	// given status code.
-	HTTPRedirect caddyhttp.WeakString `json:"http_redirect,omitempty"`
 
 	logger *zap.Logger
 }
@@ -88,15 +95,6 @@ func (rewr Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 			zap.String("method", r.Method),
 			zap.String("uri", r.RequestURI),
 		)
-		if rewr.HTTPRedirect != "" {
-			statusCode, err := strconv.Atoi(repl.ReplaceAll(rewr.HTTPRedirect.String(), ""))
-			if err != nil {
-				return caddyhttp.Error(http.StatusInternalServerError, err)
-			}
-			w.Header().Set("Location", r.RequestURI)
-			w.WriteHeader(statusCode)
-			return nil
-		}
 	}
 
 	return next.ServeHTTP(w, r)
@@ -148,12 +146,12 @@ func (rewr Rewrite) rewrite(r *http.Request, repl *caddy.Replacer, logger *zap.L
 	}
 
 	// strip path prefix or suffix
-	if rewr.StripPrefix != "" {
-		prefix := repl.ReplaceAll(rewr.StripPrefix, "")
+	if rewr.StripPathPrefix != "" {
+		prefix := repl.ReplaceAll(rewr.StripPathPrefix, "")
 		r.URL.Path = strings.TrimPrefix(r.URL.Path, prefix)
 	}
-	if rewr.StripSuffix != "" {
-		suffix := repl.ReplaceAll(rewr.StripSuffix, "")
+	if rewr.StripPathSuffix != "" {
+		suffix := repl.ReplaceAll(rewr.StripPathSuffix, "")
 		r.URL.Path = strings.TrimSuffix(r.URL.Path, suffix)
 	}
 
