@@ -32,7 +32,8 @@ func init() {
 //
 //     rewrite [<matcher>] <to>
 //
-// The <to> parameter becomes the new URI.
+// Only URI components which are given in <to> will be set in the resulting URI.
+// See the docs for the rewrite handler for more information.
 func parseCaddyfileRewrite(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
 	var rewr Rewrite
 	for h.Next() {
@@ -58,7 +59,7 @@ func parseCaddyfileStripPrefix(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHand
 		if !h.NextArg() {
 			return nil, h.ArgErr()
 		}
-		rewr.StripPrefix = h.Val()
+		rewr.StripPathPrefix = h.Val()
 		if h.NextArg() {
 			return nil, h.ArgErr()
 		}
@@ -77,7 +78,7 @@ func parseCaddyfileStripSuffix(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHand
 		if !h.NextArg() {
 			return nil, h.ArgErr()
 		}
-		rewr.StripSuffix = h.Val()
+		rewr.StripPathSuffix = h.Val()
 		if h.NextArg() {
 			return nil, h.ArgErr()
 		}
