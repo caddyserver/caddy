@@ -172,7 +172,7 @@ func (app *App) Provision(ctx caddy.Context) error {
 			}
 			// pre-compile the handler chain, and be sure to wrap it in our
 			// route handler so that important security checks are done, etc.
-			srv.primaryHandlerChain = srv.Routes.Compile()
+			primaryRoute = srv.Routes.Compile()
 		}
 		srv.primaryHandlerChain = srv.wrapPrimaryRoute(primaryRoute)
 
