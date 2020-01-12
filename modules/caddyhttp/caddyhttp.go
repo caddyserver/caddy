@@ -172,7 +172,7 @@ func (app *App) Provision(ctx caddy.Context) error {
 			}
 			// pre-compile the handler chain, and be sure to wrap it in our
 			// route handler so that important security checks are done, etc.
-			primaryRoute = srv.Routes.Compile()
+			primaryRoute = srv.Routes.Compile(emptyHandler)
 		}
 		srv.primaryHandlerChain = srv.wrapPrimaryRoute(primaryRoute)
 
@@ -181,7 +181,7 @@ func (app *App) Provision(ctx caddy.Context) error {
 			if err != nil {
 				return fmt.Errorf("server %s: setting up server error handling routes: %v", srvName, err)
 			}
-			srv.errorHandlerChain = srv.Errors.Routes.Compile()
+			srv.errorHandlerChain = srv.Errors.Routes.Compile(emptyHandler)
 		}
 	}
 
@@ -546,7 +546,7 @@ func (app *App) automaticHTTPS() error {
 				tlsApp:              tlsApp, // required to solve HTTP challenge
 				logger:              app.logger.Named("log"),
 				errorLogger:         app.logger.Named("log.error"),
-				primaryHandlerChain: redirRoutes.Compile(),
+				primaryHandlerChain: redirRoutes.Compile(emptyHandler),
 			}
 		}
 	}
