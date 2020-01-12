@@ -147,12 +147,12 @@ func (routes RouteList) Provision(ctx caddy.Context) error {
 // Compile prepares a middleware chain from the route list.
 // This should only be done once: after all the routes have
 // been provisioned, and before serving requests.
-func (routes RouteList) Compile() Handler {
+func (routes RouteList) Compile(next Handler) Handler {
 	var mid []Middleware
 	for _, route := range routes {
 		mid = append(mid, wrapRoute(route))
 	}
-	stack := emptyHandler
+	stack := next
 	for i := len(mid) - 1; i >= 0; i-- {
 		stack = mid[i](stack)
 	}
@@ -167,6 +167,7 @@ func (routes RouteList) Compile() Handler {
 func wrapRoute(route Route) Middleware {
 	return func(next Handler) Handler {
 		return HandlerFunc(func(rw http.ResponseWriter, req *http.Request) error {
+			// TODO: Update this comment, it seems we've moved the copy into the handler?
 			// copy the next handler (it's an interface, so it's just
 			// a very lightweight copy of a pointer); this is important
 			// because this is a closure to the func below, which

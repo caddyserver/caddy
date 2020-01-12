@@ -69,12 +69,12 @@ func (sr *Subroute) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-func (sr *Subroute) ServeHTTP(w http.ResponseWriter, r *http.Request, _ Handler) error {
-	subroute := sr.Routes.Compile()
+func (sr *Subroute) ServeHTTP(w http.ResponseWriter, r *http.Request, next Handler) error {
+	subroute := sr.Routes.Compile(next)
 	err := subroute.ServeHTTP(w, r)
 	if err != nil && sr.Errors != nil {
 		r = sr.Errors.WithError(r, err)
-		errRoute := sr.Errors.Routes.Compile()
+		errRoute := sr.Errors.Routes.Compile(next)
 		return errRoute.ServeHTTP(w, r)
 	}
 	return err
