@@ -173,7 +173,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 
 			log("handled request",
-				zap.String("common_log", repl.ReplaceAll(CommonLogFormat, "-")),
+				zap.String("common_log", repl.ReplaceAll(commonLogFormat, "-")),
 				zap.Duration("latency", latency),
 				zap.Int("size", wrec.Size()),
 				zap.Int("status", wrec.Status()),
@@ -317,49 +317,6 @@ func (s *Server) hasTLSClientAuth() bool {
 	return false
 }
 
-// AutoHTTPSConfig is used to disable automatic HTTPS
-// or certain aspects of it for a specific server.
-// HTTPS is enabled automatically and by default when
-// qualifying hostnames are available from the config.
-type AutoHTTPSConfig struct {
-	// If true, automatic HTTPS will be entirely disabled.
-	Disabled bool `json:"disable,omitempty"`
-
-	// If true, only automatic HTTP->HTTPS redirects will
-	// be disabled.
-	DisableRedir bool `json:"disable_redirects,omitempty"`
-
-	// Hosts/domain names listed here will not be included
-	// in automatic HTTPS (they will not have certificates
-	// loaded nor redirects applied).
-	Skip []string `json:"skip,omitempty"`
-
-	// Hosts/domain names listed here will still be enabled
-	// for automatic HTTPS (unless in the Skip list), except
-	// that certificates will not be provisioned and managed
-	// for these names.
-	SkipCerts []string `json:"skip_certificates,omitempty"`
-
-	// By default, automatic HTTPS will obtain and renew
-	// certificates for qualifying hostnames. However, if
-	// a certificate with a matching SAN is already loaded
-	// into the cache, certificate management will not be
-	// enabled. To force automated certificate management
-	// regardless of loaded certificates, set this to true.
-	IgnoreLoadedCerts bool `json:"ignore_loaded_certificates,omitempty"`
-}
-
-// Skipped returns true if name is in skipSlice, which
-// should be one of the Skip* fields on ahc.
-func (ahc AutoHTTPSConfig) Skipped(name string, skipSlice []string) bool {
-	for _, n := range skipSlice {
-		if name == n {
-			return true
-		}
-	}
-	return false
-}
-
 // HTTPErrorConfig determines how to handle errors
 // from the HTTP handlers.
 type HTTPErrorConfig struct {
@@ -466,11 +423,11 @@ func cloneURL(from, to *url.URL) {
 }
 
 const (
-	// CommonLogFormat is the common log format. https://en.wikipedia.org/wiki/Common_Log_Format
-	CommonLogFormat = `{http.request.remote.host} ` + CommonLogEmptyValue + ` {http.authentication.user.id} [{time.now.common_log}] "{http.request.orig_method} {http.request.orig_uri} {http.request.proto}" {http.response.status} {http.response.size}`
+	// commonLogFormat is the common log format. https://en.wikipedia.org/wiki/Common_Log_Format
+	commonLogFormat = `{http.request.remote.host} ` + commonLogEmptyValue + ` {http.authentication.user.id} [{time.now.common_log}] "{http.request.orig_method} {http.request.orig_uri} {http.request.proto}" {http.response.status} {http.response.size}`
 
-	// CommonLogEmptyValue is the common empty log value.
-	CommonLogEmptyValue = "-"
+	// commonLogEmptyValue is the common empty log value.
+	commonLogEmptyValue = "-"
 )
 
 // Context keys for HTTP request context values.
