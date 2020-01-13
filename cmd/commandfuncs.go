@@ -431,6 +431,7 @@ func cmdAdaptConfig(fl Flags) (int, error) {
 	if adaptCmdPrettyFlag {
 		opts["pretty"] = "true"
 	}
+	opts["filename"] = adaptCmdInputFlag
 
 	adaptedConfig, warnings, err := cfgAdapter.Adapt(input, opts)
 	if err != nil {
