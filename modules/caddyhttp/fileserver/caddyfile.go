@@ -102,16 +102,22 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //
 // and is basically shorthand for:
 //
-//    matcher:try_files {
+//    @try_files {
 //        file {
 //            try_files <files...>
 //        }
 //    }
-//    rewrite match:try_files {http.matchers.file.relative}{http.request.uri.query_string}
+//    rewrite @try_files {http.matchers.file.relative}
 //
-// If any of the files in the list have a query string, the query string will
-// be ignored when checking for file existence, but will be augmented into
-// the request's URI when rewriting the request.
+// This directive rewrites request paths only, preserving any other part
+// of the URI, unless the part is explicitly given in the file list. For
+// example, if any of the files in the list have a query string:
+//
+//    try_files {path} index.php?{query}&p={path}
+//
+// then the query string will not be treated as part of the file name; and
+// if that file matches, the given query string will replace any query string
+// that already exists on the request URI.
 func parseTryFiles(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) {
 	if !h.Next() {
 		return nil, h.ArgErr()
@@ -123,17 +129,14 @@ func parseTryFiles(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) 
 	}
 
 	// makeRoute returns a route that tries the files listed in try
-	// and then rewrites to the matched file, and appends writeURIAppend
-	// to the end of the query string.
-	makeRoute := func(try []string, writeURIAppend string) []httpcaddyfile.ConfigValue {
+	// and then rewrites to the matched file; userQueryString is
+	// appended to the rewrite rule.
+	makeRoute := func(try []string, userQueryString string) []httpcaddyfile.ConfigValue {
 		handler := rewrite.Rewrite{
-			Rehandle: true,
-			URI:      "{http.matchers.file.relative}{http.request.uri.query_string}" + writeURIAppend,
+			URI: "{http.matchers.file.relative}" + userQueryString,
 		}
 		matcherSet := caddy.ModuleMap{
-			"file": h.JSON(MatchFile{
-				TryFiles: try,
-			}),
+			"file": h.JSON(MatchFile{TryFiles: try}),
 		}
 		return h.NewRoute(matcherSet, handler)
 	}
@@ -150,7 +153,7 @@ func parseTryFiles(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) 
 				result = append(result, makeRoute(try, "")...)
 				try = []string{}
 			}
-			result = append(result, makeRoute([]string{item[:idx]}, "&"+item[idx+1:])...)
+			result = append(result, makeRoute([]string{item[:idx]}, item[idx:])...)
 			continue
 		}
 		// accumulate consecutive non-query-string parameters

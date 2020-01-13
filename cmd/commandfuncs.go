@@ -321,6 +321,26 @@ func cmdVersion(_ Flags) (int, error) {
 	return caddy.ExitCodeSuccess, nil
 }
 
+func cmdBuildInfo(fl Flags) (int, error) {
+	bi, ok := debug.ReadBuildInfo()
+	if !ok {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("no build information")
+	}
+
+	fmt.Printf("path: %s\n", bi.Path)
+	fmt.Printf("main: %s %s %s\n", bi.Main.Path, bi.Main.Version, bi.Main.Sum)
+	fmt.Println("dependencies:")
+
+	for _, goMod := range bi.Deps {
+		fmt.Printf("%s %s %s", goMod.Path, goMod.Version, goMod.Sum)
+		if goMod.Replace != nil {
+			fmt.Printf(" => %s %s %s", goMod.Replace.Path, goMod.Replace.Version, goMod.Replace.Sum)
+		}
+		fmt.Println()
+	}
+	return caddy.ExitCodeSuccess, nil
+}
+
 func cmdListModules(fl Flags) (int, error) {
 	versions := fl.Bool("versions")
 
@@ -411,6 +431,7 @@ func cmdAdaptConfig(fl Flags) (int, error) {
 	if adaptCmdPrettyFlag {
 		opts["pretty"] = "true"
 	}
+	opts["filename"] = adaptCmdInputFlag
 
 	adaptedConfig, warnings, err := cfgAdapter.Adapt(input, opts)
 	if err != nil {

@@ -134,6 +134,15 @@ func loadConfig(configFile, adapterName string) ([]byte, error) {
 		}
 	}
 
+	// as a special case, if a config file called "Caddyfile" was
+	// specified, and no adapter is specified, assume caddyfile adapter
+	// for convenience
+	if strings.HasPrefix(filepath.Base(configFile), "Caddyfile") &&
+		filepath.Ext(configFile) != ".json" &&
+		adapterName == "" {
+		adapterName = "caddyfile"
+	}
+
 	// load config adapter
 	if adapterName != "" {
 		cfgAdapter = caddyconfig.GetAdapter(adapterName)

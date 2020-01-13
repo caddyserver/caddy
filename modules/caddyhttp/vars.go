@@ -15,6 +15,7 @@
 package caddyhttp
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/caddyserver/caddy/v2"
@@ -73,6 +74,27 @@ func (m VarsMatcher) Match(r *http.Request) bool {
 		}
 	}
 	return true
+}
+
+// GetVar gets a value out of the context's variable table by key.
+// If the key does not exist, the return value will be nil.
+func GetVar(ctx context.Context, key string) interface{} {
+	varMap, ok := ctx.Value(VarsCtxKey).(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	return varMap[key]
+}
+
+// SetVar sets a value in the context's variable table with
+// the given key. It overwrites any previous value with the
+// same key.
+func SetVar(ctx context.Context, key string, value interface{}) {
+	varMap, ok := ctx.Value(VarsCtxKey).(map[string]interface{})
+	if !ok {
+		return
+	}
+	varMap[key] = value
 }
 
 // Interface guards

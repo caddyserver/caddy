@@ -107,10 +107,10 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 			// special case; these will be loaded in later
 			// using our automation facilities, which we
 			// want to avoid during provisioning
-			var ok bool
-			t.automateNames, ok = modIface.([]string)
-			if !ok {
-				return fmt.Errorf("loading certificates with 'automate' requires []string, got: %#v", modIface)
+			if automateNames, ok := modIface.(*AutomateLoader); ok && automateNames != nil {
+				t.automateNames = []string(*automateNames)
+			} else {
+				return fmt.Errorf("loading certificates with 'automate' requires array of strings, got: %T", modIface)
 			}
 			continue
 		}

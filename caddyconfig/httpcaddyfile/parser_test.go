@@ -29,7 +29,7 @@ func TestParse(t *testing.T) {
 	}{
 		{
 			input: `http://localhost
-			matcher debug {
+			@debug {
 			  query showdebug=1
 			}
 			`,
@@ -38,7 +38,7 @@ func TestParse(t *testing.T) {
 		},
 		{
 			input: `http://localhost
-			matcher debug {
+			@debug {
 			  query bad format
 			}
 			`,

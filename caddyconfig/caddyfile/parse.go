@@ -15,7 +15,8 @@
 package caddyfile
 
 import (
-	"io"
+	"bytes"
+	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -28,7 +29,10 @@ import (
 // Directives that do not appear in validDirectives will cause
 // an error. If you do not want to check for valid directives,
 // pass in nil instead.
-func Parse(filename string, input io.Reader) ([]ServerBlock, error) {
+//
+// Environment variables in {$ENVIRONMENT_VARIABLE} notation
+// will be replaced before parsing begins.
+func Parse(filename string, input []byte) ([]ServerBlock, error) {
 	tokens, err := allTokens(filename, input)
 	if err != nil {
 		return nil, err
@@ -37,12 +41,51 @@ func Parse(filename string, input io.Reader) ([]ServerBlock, error) {
 	return p.parseAll()
 }
 
+// replaceEnvVars replaces all occurrences of environment variables.
+func replaceEnvVars(input []byte) ([]byte, error) {
+	var offset int
+	for {
+		begin := bytes.Index(input[offset:], spanOpen)
+		if begin < 0 {
+			break
+		}
+		begin += offset // make beginning relative to input, not offset
+		end := bytes.Index(input[begin+len(spanOpen):], spanClose)
+		if end < 0 {
+			break
+		}
+		end += begin + len(spanOpen) // make end relative to input, not begin
+
+		// get the name; if there is no name, skip it
+		envVarName := input[begin+len(spanOpen) : end]
+		if len(envVarName) == 0 {
+			offset = end + len(spanClose)
+			continue
+		}
+
+		// get the value of the environment variable
+		envVarValue := []byte(os.Getenv(string(envVarName)))
+
+		// splice in the value
+		input = append(input[:begin],
+			append(envVarValue, input[end+len(spanClose):]...)...)
+
+		// continue at the end of the replacement
+		offset = begin + len(envVarValue)
+	}
+	return input, nil
+}
+
 // allTokens lexes the entire input, but does not parse it.
 // It returns all the tokens from the input, unstructured
 // and in order.
-func allTokens(filename string, input io.Reader) ([]Token, error) {
+func allTokens(filename string, input []byte) ([]Token, error) {
+	input, err := replaceEnvVars(input)
+	if err != nil {
+		return nil, err
+	}
 	l := new(lexer)
-	err := l.load(input)
+	err = l.load(bytes.NewReader(input))
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +171,7 @@ func (p *parser) addresses() error {
 	var expectingAnother bool
 
 	for {
-		tkn := replaceEnvVars(p.Val())
+		tkn := p.Val()
 
 		// special case: import directive replaces tokens during parse-time
 		if tkn == "import" && p.isNewLine() {
@@ -245,7 +288,7 @@ func (p *parser) doImport() error {
 	if !p.NextArg() {
 		return p.ArgErr()
 	}
-	importPattern := replaceEnvVars(p.Val())
+	importPattern := p.Val()
 	if importPattern == "" {
 		return p.Err("Import requires a non-empty filepath")
 	}
@@ -328,7 +371,12 @@ func (p *parser) doSingleImport(importFile string) ([]Token, error) {
 		return nil, p.Errf("Could not import %s: is a directory", importFile)
 	}
 
-	importedTokens, err := allTokens(importFile, file)
+	input, err := ioutil.ReadAll(file)
+	if err != nil {
+		return nil, p.Errf("Could not read imported file %s: %v", importFile, err)
+	}
+
+	importedTokens, err := allTokens(importFile, input)
 	if err != nil {
 		return nil, p.Errf("Could not read tokens while importing %s: %v", importFile, err)
 	}
@@ -353,8 +401,6 @@ func (p *parser) doSingleImport(importFile string) ([]Token, error) {
 // are loaded into the current server block for later use
 // by directive setup functions.
 func (p *parser) directive() error {
-	// evaluate any env vars in directive token
-	p.tokens[p.cursor].Text = replaceEnvVars(p.tokens[p.cursor].Text)
 
 	// a segment is a list of tokens associated with this directive
 	var segment Segment
@@ -379,7 +425,7 @@ func (p *parser) directive() error {
 			p.cursor-- // cursor is advanced when we continue, so roll back one more
 			continue
 		}
-		p.tokens[p.cursor].Text = replaceEnvVars(p.tokens[p.cursor].Text)
+
 		segment = append(segment, p.Token())
 	}
 
@@ -412,36 +458,6 @@ func (p *parser) closeCurlyBrace() error {
 		return p.SyntaxErr("}")
 	}
 	return nil
-}
-
-// replaceEnvVars replaces environment variables that appear in the token
-// and understands both the $UNIX and %WINDOWS% syntaxes.
-func replaceEnvVars(s string) string {
-	s = replaceEnvReferences(s, "{%", "%}")
-	s = replaceEnvReferences(s, "{$", "}")
-	return s
-}
-
-// replaceEnvReferences performs the actual replacement of env variables
-// in s, given the placeholder start and placeholder end strings.
-func replaceEnvReferences(s, refStart, refEnd string) string {
-	index := strings.Index(s, refStart)
-	for index != -1 {
-		endIndex := strings.Index(s[index:], refEnd)
-		if endIndex == -1 {
-			break
-		}
-
-		endIndex += index
-		if endIndex > index+len(refStart) {
-			ref := s[index : endIndex+len(refEnd)]
-			s = strings.Replace(s, ref, os.Getenv(ref[len(refStart):len(ref)-len(refEnd)]), -1)
-		} else {
-			return s
-		}
-		index = strings.Index(s, refStart)
-	}
-	return s
 }
 
 func (p *parser) isSnippet() (bool, string) {
@@ -514,3 +530,7 @@ func (s Segment) Directive() string {
 	}
 	return ""
 }
+
+// spanOpen and spanClose are used to bound spans that
+// contain the name of an environment variable.
+var spanOpen, spanClose = []byte{'{', '$'}, []byte{'}'}

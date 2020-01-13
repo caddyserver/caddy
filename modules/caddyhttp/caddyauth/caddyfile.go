@@ -15,8 +15,6 @@
 package caddyauth
 
 import (
-	"encoding/base64"
-
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
@@ -76,22 +74,10 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 				return nil, h.Err("username and password cannot be empty or missing")
 			}
 
-			pwd, err := base64.StdEncoding.DecodeString(b64Pwd)
-			if err != nil {
-				return nil, h.Errf("decoding password: %v", err)
-			}
-			var salt []byte
-			if b64Salt != "" {
-				salt, err = base64.StdEncoding.DecodeString(b64Salt)
-				if err != nil {
-					return nil, h.Errf("decoding salt: %v", err)
-				}
-			}
-
 			ba.AccountList = append(ba.AccountList, Account{
 				Username: username,
-				Password: pwd,
-				Salt:     salt,
+				Password: b64Pwd,
+				Salt:     b64Salt,
 			})
 		}
 	}

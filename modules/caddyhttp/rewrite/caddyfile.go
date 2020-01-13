@@ -32,7 +32,8 @@ func init() {
 //
 //     rewrite [<matcher>] <to>
 //
-// The <to> parameter becomes the new URI.
+// Only URI components which are given in <to> will be set in the resulting URI.
+// See the docs for the rewrite handler for more information.
 func parseCaddyfileRewrite(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
 	var rewr Rewrite
 	for h.Next() {
@@ -44,7 +45,6 @@ func parseCaddyfileRewrite(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler,
 			return nil, h.ArgErr()
 		}
 	}
-	rewr.Rehandle = true
 	return rewr, nil
 }
 
@@ -52,7 +52,7 @@ func parseCaddyfileRewrite(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler,
 //
 //     strip_prefix [<matcher>] <prefix>
 //
-// The request path will be stripped its prefix if it matches <prefix>.
+// The request path will be stripped the given prefix.
 func parseCaddyfileStripPrefix(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
 	var rewr Rewrite
 	for h.Next() {
@@ -71,7 +71,7 @@ func parseCaddyfileStripPrefix(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHand
 //
 //     strip_suffix [<matcher>] <suffix>
 //
-// The request path will be stripped its suffix if it matches <suffix>.
+// The request path will be stripped the given suffix.
 func parseCaddyfileStripSuffix(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
 	var rewr Rewrite
 	for h.Next() {

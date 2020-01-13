@@ -320,8 +320,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		// attach to the request information about how to dial the upstream;
 		// this is necessary because the information cannot be sufficiently
 		// or satisfactorily represented in a URL
-		ctx := context.WithValue(r.Context(), DialInfoCtxKey, dialInfo)
-		r = r.WithContext(ctx)
+		caddyhttp.SetVar(r.Context(), dialInfoVarKey, dialInfo)
 
 		// set placeholders with information about this upstream
 		repl.Set("http.reverse_proxy.upstream.address", dialInfo.String())

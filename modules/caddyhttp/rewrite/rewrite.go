@@ -15,10 +15,8 @@
 package rewrite
 
 import (
-	"fmt"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
@@ -32,19 +30,29 @@ func init() {
 
 // Rewrite is a middleware which can rewrite HTTP requests.
 //
-// The Rehandle and HTTPRedirect properties are mutually exclusive
-// (you cannot both rehandle and issue a redirect).
-//
-// These rewrite properties are applied to a request in this order:
-// Method, URI, StripPathPrefix, StripPathSuffix, URISubstring.
-//
-// TODO: This module is still a WIP and may experience breaking changes.
+// The Method and URI properties are "setters": the request URI
+// will be set to the given values. Other properties are "modifiers":
+// they modify existing files but do not explicitly specify what the
+// result will be. It is atypical to combine the use of setters and
+// modifiers in a single rewrite.
 type Rewrite struct {
 	// Changes the request's HTTP verb.
 	Method string `json:"method,omitempty"`
 
-	// Changes the request's URI (path, query string, and fragment if present).
+	// Changes the request's URI, which consists of path and query string.
 	// Only components of the URI that are specified will be changed.
+	// For example, a value of "/foo.html" or "foo.html" will only change
+	// the path and will preserve any existing query string. Similarly, a
+	// value of "?a=b" will only change the query string and will not affect
+	// the path. Both can also be changed: "/foo?a=b" - this sets both the
+	// path and query string at the same time.
+	//
+	// You can also use placeholders. For example, to preserve the existing
+	// query string, you might use: "?{http.request.uri.query}&a=b". Any
+	// key-value pairs you add to the query string will not overwrite
+	// existing values.
+	//
+	// To clear the query string, explicitly set an empty one: "?"
 	URI string `json:"uri,omitempty"`
 
 	// Strips the given prefix from the beginning of the URI path.
@@ -55,15 +63,6 @@ type Rewrite struct {
 
 	// Performs substring replacements on the URI.
 	URISubstring []replacer `json:"uri_substring,omitempty"`
-
-	// If set to a 3xx HTTP status code and if the URI was rewritten (changed),
-	// the handler will issue a simple HTTP redirect to the new URI using the
-	// given status code.
-	HTTPRedirect caddyhttp.WeakString `json:"http_redirect,omitempty"`
-
-	// If true, the request will sent for rehandling after rewriting
-	// only if anything about the request was changed.
-	Rehandle bool `json:"rehandle,omitempty"`
 
 	logger *zap.Logger
 }
@@ -82,14 +81,6 @@ func (rewr *Rewrite) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-// Validate ensures rewr's configuration is valid.
-func (rewr Rewrite) Validate() error {
-	if rewr.HTTPRedirect != "" && rewr.Rehandle {
-		return fmt.Errorf("cannot be configured to both redirect externally and rehandle internally")
-	}
-	return nil
-}
-
 func (rewr Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
@@ -104,26 +95,14 @@ func (rewr Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 			zap.String("method", r.Method),
 			zap.String("uri", r.RequestURI),
 		)
-		if rewr.Rehandle {
-			return caddyhttp.ErrRehandle
-		}
-		if rewr.HTTPRedirect != "" {
-			statusCode, err := strconv.Atoi(repl.ReplaceAll(rewr.HTTPRedirect.String(), ""))
-			if err != nil {
-				return caddyhttp.Error(http.StatusInternalServerError, err)
-			}
-			w.Header().Set("Location", r.RequestURI)
-			w.WriteHeader(statusCode)
-			return nil
-		}
 	}
 
 	return next.ServeHTTP(w, r)
 }
 
-// rewrite performs the rewrites on r using repl, which
-// should have been obtained from r, but is passed in for
-// efficiency. It returns true if any changes were made to r.
+// rewrite performs the rewrites on r using repl, which should
+// have been obtained from r, but is passed in for efficiency.
+// It returns true if any changes were made to r.
 func (rewr Rewrite) rewrite(r *http.Request, repl *caddy.Replacer, logger *zap.Logger) bool {
 	oldMethod := r.Method
 	oldURI := r.RequestURI
@@ -133,43 +112,36 @@ func (rewr Rewrite) rewrite(r *http.Request, repl *caddy.Replacer, logger *zap.L
 		r.Method = strings.ToUpper(repl.ReplaceAll(rewr.Method, ""))
 	}
 
-	// uri (which consists of path, query string, and maybe fragment?)
-	if rewr.URI != "" {
-		newURI := repl.ReplaceAll(rewr.URI, "")
-
-		newU, err := url.Parse(newURI)
-		if err != nil {
-			logger.Error("parsing new URI",
-				zap.String("raw_input", rewr.URI),
-				zap.String("input", newURI),
-				zap.Error(err),
-			)
-		}
-
-		if newU.Path != "" {
-			r.URL.Path = newU.Path
-		}
-		if strings.Contains(newURI, "?") {
-			// you'll notice we check for existence of a question mark
-			// instead of RawQuery != "". We do this because if the user
-			// wants to remove an existing query string, they do that by
-			// appending "?" to the path: "/foo?" -- in this case, then,
-			// RawQuery is "" but we still want to set it to that; hence,
-			// we check for a "?", which always starts a query string
-			inputQuery := newU.Query()
-			outputQuery := make(url.Values)
-			for k := range inputQuery {
-				// overwrite existing values; we don't simply keep
-				// appending because it can cause rewrite rules like
-				// "{path}{query}&a=b" with rehandling enabled to go
-				// on forever: "/foo.html?a=b&a=b&a=b..."
-				outputQuery.Set(k, inputQuery.Get(k))
+	// uri (path, query string, and fragment just because)
+	if uri := rewr.URI; uri != "" {
+		// find the bounds of each part of the URI that exist
+		pathStart, qsStart, fragStart := -1, -1, -1
+		pathEnd, qsEnd := -1, -1
+		for i, ch := range uri {
+			switch {
+			case ch == '?' && qsStart < 0:
+				pathEnd, qsStart = i, i+1
+			case ch == '#' && fragStart < 0:
+				qsEnd, fragStart = i, i+1
+			case pathStart < 0 && qsStart < 0 && fragStart < 0:
+				pathStart = i
 			}
-			// this sorts the keys, oh well
-			r.URL.RawQuery = outputQuery.Encode()
 		}
-		if newU.Fragment != "" {
-			r.URL.Fragment = newU.Fragment
+		if pathStart >= 0 && pathEnd < 0 {
+			pathEnd = len(uri)
+		}
+		if qsStart >= 0 && qsEnd < 0 {
+			qsEnd = len(uri)
+		}
+
+		if pathStart >= 0 {
+			r.URL.Path = repl.ReplaceAll(uri[pathStart:pathEnd], "")
+		}
+		if qsStart >= 0 {
+			r.URL.RawQuery = buildQueryString(uri[qsStart:qsEnd], repl)
+		}
+		if fragStart >= 0 {
+			r.URL.Fragment = repl.ReplaceAll(uri[fragStart:], "")
 		}
 	}
 
@@ -193,6 +165,61 @@ func (rewr Rewrite) rewrite(r *http.Request, repl *caddy.Replacer, logger *zap.L
 
 	// return true if anything changed
 	return r.Method != oldMethod || r.RequestURI != oldURI
+}
+
+// buildQueryString takes an input query string and
+// performs replacements on each component, returning
+// the resulting query string. This function appends
+// duplicate keys rather than replaces.
+func buildQueryString(qs string, repl *caddy.Replacer) string {
+	var sb strings.Builder
+
+	// first component must be key, which is the same
+	// as if we just wrote a value in previous iteration
+	wroteVal := true
+
+	for len(qs) > 0 {
+		// determine the end of this component, which will be at
+		// the next equal sign or ampersand, whichever comes first
+		nextEq, nextAmp := strings.Index(qs, "="), strings.Index(qs, "&")
+		ampIsNext := nextAmp >= 0 && (nextAmp < nextEq || nextEq < 0)
+		end := len(qs) // assume no delimiter remains...
+		if ampIsNext {
+			end = nextAmp // ...unless ampersand is first...
+		} else if nextEq >= 0 && (nextEq < nextAmp || nextAmp < 0) {
+			end = nextEq // ...or unless equal is first.
+		}
+
+		// consume the component and write the result
+		comp := qs[:end]
+		comp, _ = repl.ReplaceFunc(comp, func(name, val string) (string, error) {
+			if name == "http.request.uri.query" && wroteVal {
+				return val, nil // already escaped
+			}
+			return url.QueryEscape(val), nil
+		})
+		if end < len(qs) {
+			end++ // consume delimiter
+		}
+		qs = qs[end:]
+
+		// if previous iteration wrote a value,
+		// that means we are writing a key
+		if wroteVal {
+			if sb.Len() > 0 {
+				sb.WriteRune('&')
+			}
+		} else {
+			sb.WriteRune('=')
+		}
+		sb.WriteString(comp)
+
+		// remember for the next iteration that we just wrote a value,
+		// which means the next iteration MUST write a key
+		wroteVal = ampIsNext
+	}
+
+	return sb.String()
 }
 
 // replacer describes a simple and fast substring replacement.

@@ -66,7 +66,6 @@ func init() {
 // `{http.request.orig.path.dir}` | The request's original directory
 // `{http.request.orig.path.file}` | The request's original filename
 // `{http.request.orig.uri.path}` | The request's original path
-// `{http.request.orig.uri.query_string}` | The request's original full query string (with `?`)
 // `{http.request.orig.uri.query}` | The request's original query string (without `?`)
 // `{http.request.orig.uri}` | The request's original URI
 // `{http.request.port}` | The port part of the request's Host header
@@ -79,7 +78,6 @@ func init() {
 // `{http.request.uri.path.dir}` | The directory, excluding leaf filename
 // `{http.request.uri.path.file}` | The filename of the path, excluding directory
 // `{http.request.uri.path}` | The path component of the request URI
-// `{http.request.uri.query_string}` | The full query string (with `?`)
 // `{http.request.uri.query.*}` | Individual query string value
 // `{http.request.uri.query}` | The query string (without `?`)
 // `{http.request.uri}` | The full request URI
@@ -166,22 +164,24 @@ func (app *App) Provision(ctx caddy.Context) error {
 			srv.Listen[i] = lnOut
 		}
 
+		primaryRoute := emptyHandler
 		if srv.Routes != nil {
 			err := srv.Routes.Provision(ctx)
 			if err != nil {
 				return fmt.Errorf("server %s: setting up server routes: %v", srvName, err)
 			}
+			// pre-compile the handler chain, and be sure to wrap it in our
+			// route handler so that important security checks are done, etc.
+			primaryRoute = srv.Routes.Compile(emptyHandler)
 		}
+		srv.primaryHandlerChain = srv.wrapPrimaryRoute(primaryRoute)
 
 		if srv.Errors != nil {
 			err := srv.Errors.Routes.Provision(ctx)
 			if err != nil {
 				return fmt.Errorf("server %s: setting up server error handling routes: %v", srvName, err)
 			}
-		}
-
-		if srv.MaxRehandles == nil {
-			srv.MaxRehandles = &DefaultMaxRehandles
+			srv.errorHandlerChain = srv.Errors.Routes.Compile(emptyHandler)
 		}
 	}
 
@@ -207,13 +207,6 @@ func (app *App) Validate() error {
 				}
 				lnAddrs[addr] = srvName
 			}
-		}
-	}
-
-	// each server's max rehandle value must be valid
-	for srvName, srv := range app.Servers {
-		if srv.MaxRehandles != nil && *srv.MaxRehandles < 0 {
-			return fmt.Errorf("%s: invalid max_rehandles value: %d", srvName, *srv.MaxRehandles)
 		}
 	}
 
@@ -493,12 +486,7 @@ func (app *App) automaticHTTPS() error {
 				// create the route that does the redirect and associate
 				// it with the listener address it will be served from
 				lnAddrRedirRoutes[httpRedirLnAddr] = Route{
-					MatcherSets: []MatcherSet{
-						{
-							MatchProtocol("http"),
-							MatchHost(domains),
-						},
-					},
+					MatcherSets: []MatcherSet{{MatchProtocol("http")}},
 					Handlers: []MiddlewareHandler{
 						StaticResponse{
 							StatusCode: WeakString(strconv.Itoa(http.StatusPermanentRedirect)),
@@ -518,7 +506,7 @@ func (app *App) automaticHTTPS() error {
 	// if there are HTTP->HTTPS redirects to add, do so now
 	if len(lnAddrRedirRoutes) > 0 {
 		var redirServerAddrs []string
-		var redirRoutes []Route
+		var redirRoutes RouteList
 
 		// for each redirect listener, see if there's already a
 		// server configured to listen on that exact address; if so,
@@ -553,11 +541,12 @@ func (app *App) automaticHTTPS() error {
 		// rest of the redirects
 		if len(redirServerAddrs) > 0 {
 			app.Servers["remaining_auto_https_redirects"] = &Server{
-				Listen:      redirServerAddrs,
-				Routes:      redirRoutes,
-				tlsApp:      tlsApp, // required to solve HTTP challenge
-				logger:      app.logger.Named("log"),
-				errorLogger: app.logger.Named("log.error"),
+				Listen:              redirServerAddrs,
+				Routes:              redirRoutes,
+				tlsApp:              tlsApp, // required to solve HTTP challenge
+				logger:              app.logger.Named("log"),
+				errorLogger:         app.logger.Named("log.error"),
+				primaryHandlerChain: redirRoutes.Compile(emptyHandler),
 			}
 		}
 	}
@@ -608,7 +597,7 @@ func (f HandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
 
 // Middleware chains one Handler to the next by being passed
 // the next Handler in the chain.
-type Middleware func(HandlerFunc) HandlerFunc
+type Middleware func(Handler) Handler
 
 // MiddlewareHandler is like Handler except it takes as a third
 // argument the next handler in the chain. The next handler will
@@ -624,7 +613,7 @@ type MiddlewareHandler interface {
 }
 
 // emptyHandler is used as a no-op handler.
-var emptyHandler HandlerFunc = func(http.ResponseWriter, *http.Request) error { return nil }
+var emptyHandler Handler = HandlerFunc(func(http.ResponseWriter, *http.Request) error { return nil })
 
 // WeakString is a type that unmarshals any JSON value
 // as a string literal, with the following exceptions:
@@ -733,10 +722,6 @@ const (
 	// DefaultHTTPSPort is the default port for HTTPS.
 	DefaultHTTPSPort = 443
 )
-
-// DefaultMaxRehandles is the maximum number of rehandles to
-// allow, if not specified explicitly.
-var DefaultMaxRehandles = 3
 
 // Interface guards
 var (

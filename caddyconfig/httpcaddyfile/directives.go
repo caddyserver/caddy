@@ -36,6 +36,7 @@ var defaultDirectiveOrder = []string{
 	"request_header",
 	"encode",
 	"templates",
+	"route",
 	"redir",
 	"respond",
 	"reverse_proxy",

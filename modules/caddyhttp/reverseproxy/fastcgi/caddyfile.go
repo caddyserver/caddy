@@ -83,7 +83,7 @@ func (t *Transport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 //
 // is equivalent to:
 //
-//     matcher canonicalPath {
+//     @canonicalPath {
 //         file {
 //             try_files {path}/index.php
 //         }
@@ -91,14 +91,14 @@ func (t *Transport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 //             path */
 //         }
 //     }
-//     redir match:canonicalPath {path}/ 308
+//     redir @canonicalPath {path}/ 308
 //
 //     try_files {path} {path}/index.php index.php
 //
-//     matcher phpFiles {
+//     @phpFiles {
 //         path *.php
 //     }
-//     reverse_proxy match:phpFiles localhost:7777 {
+//     reverse_proxy @phpFiles localhost:7777 {
 //         transport fastcgi {
 //             split .php
 //         }
@@ -149,8 +149,7 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 		}),
 	}
 	rewriteHandler := rewrite.Rewrite{
-		URI:      "{http.matchers.file.relative}{http.request.uri.query_string}",
-		Rehandle: true,
+		URI: "{http.matchers.file.relative}",
 	}
 	rewriteRoute := caddyhttp.Route{
 		MatcherSetsRaw: []caddy.ModuleMap{rewriteMatcherSet},
