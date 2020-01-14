@@ -139,39 +139,44 @@ func TestRewrite(t *testing.T) {
 			expect: newRequest(t, "GET", "/foo/bar"),
 		},
 		{
+			rule:   Rewrite{URI: "?qs={http.request.uri.query}"},
+			input:  newRequest(t, "GET", "/foo?a=b&c=d"),
+			expect: newRequest(t, "GET", "/foo?qs=a%3Db%26c%3Dd"),
+		},
+		{
 			rule:   Rewrite{URI: "/foo?{http.request.uri.query}#frag"},
 			input:  newRequest(t, "GET", "/foo/bar?a=b"),
 			expect: newRequest(t, "GET", "/foo?a=b#frag"),
 		},
 
 		{
-			rule:   Rewrite{StripPrefix: "/prefix"},
+			rule:   Rewrite{StripPathPrefix: "/prefix"},
 			input:  newRequest(t, "GET", "/foo/bar"),
 			expect: newRequest(t, "GET", "/foo/bar"),
 		},
 		{
-			rule:   Rewrite{StripPrefix: "/prefix"},
+			rule:   Rewrite{StripPathPrefix: "/prefix"},
 			input:  newRequest(t, "GET", "/prefix/foo/bar"),
 			expect: newRequest(t, "GET", "/foo/bar"),
 		},
 		{
-			rule:   Rewrite{StripPrefix: "/prefix"},
+			rule:   Rewrite{StripPathPrefix: "/prefix"},
 			input:  newRequest(t, "GET", "/foo/prefix/bar"),
 			expect: newRequest(t, "GET", "/foo/prefix/bar"),
 		},
 
 		{
-			rule:   Rewrite{StripSuffix: "/suffix"},
+			rule:   Rewrite{StripPathSuffix: "/suffix"},
 			input:  newRequest(t, "GET", "/foo/bar"),
 			expect: newRequest(t, "GET", "/foo/bar"),
 		},
 		{
-			rule:   Rewrite{StripSuffix: "suffix"},
+			rule:   Rewrite{StripPathSuffix: "suffix"},
 			input:  newRequest(t, "GET", "/foo/bar/suffix"),
 			expect: newRequest(t, "GET", "/foo/bar/"),
 		},
 		{
-			rule:   Rewrite{StripSuffix: "/suffix"},
+			rule:   Rewrite{StripPathSuffix: "/suffix"},
 			input:  newRequest(t, "GET", "/foo/suffix/bar"),
 			expect: newRequest(t, "GET", "/foo/suffix/bar"),
 		},
@@ -215,6 +220,9 @@ func TestRewrite(t *testing.T) {
 		}
 		if expected, actual := tc.expect.URL.RequestURI(), tc.input.URL.RequestURI(); expected != actual {
 			t.Errorf("Test %d: Expected URL.RequestURI()='%s' but got '%s'", i, expected, actual)
+		}
+		if expected, actual := tc.expect.URL.Fragment, tc.input.URL.Fragment; expected != actual {
+			t.Errorf("Test %d: Expected URL.Fragment='%s' but got '%s'", i, expected, actual)
 		}
 	}
 }

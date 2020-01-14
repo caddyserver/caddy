@@ -113,23 +113,43 @@ func (r Route) Empty() bool {
 // create a middleware chain.
 type RouteList []Route
 
-// Provision sets up all the routes by loading the modules.
+// Provision sets up both the matchers and handlers in the route.
 func (routes RouteList) Provision(ctx caddy.Context) error {
+	err := routes.ProvisionMatchers(ctx)
+	if err != nil {
+		return err
+	}
+	return routes.ProvisionHandlers(ctx)
+}
+
+// ProvisionMatchers sets up all the matchers by loading the
+// matcher modules. Only call this method directly if you need
+// to set up matchers and handlers separately without having
+// to provision a second time; otherwise use Provision instead.
+func (routes RouteList) ProvisionMatchers(ctx caddy.Context) error {
 	for i := range routes {
 		// matchers
 		matchersIface, err := ctx.LoadModule(&routes[i], "MatcherSetsRaw")
 		if err != nil {
-			return fmt.Errorf("loading matchers in route %d: %v", i, err)
+			return fmt.Errorf("route %d: loading matcher modules: %v", i, err)
 		}
 		err = routes[i].MatcherSets.FromInterface(matchersIface)
 		if err != nil {
 			return fmt.Errorf("route %d: %v", i, err)
 		}
+	}
+	return nil
+}
 
-		// handlers
+// ProvisionHandlers sets up all the handlers by loading the
+// handler modules. Only call this method directly if you need
+// to set up matchers and handlers separately without having
+// to provision a second time; otherwise use Provision instead.
+func (routes RouteList) ProvisionHandlers(ctx caddy.Context) error {
+	for i := range routes {
 		handlersIface, err := ctx.LoadModule(&routes[i], "HandlersRaw")
 		if err != nil {
-			return fmt.Errorf("loading handler modules in route %d: %v", i, err)
+			return fmt.Errorf("route %d: loading handler modules: %v", i, err)
 		}
 		for _, handler := range handlersIface.([]interface{}) {
 			routes[i].Handlers = append(routes[i].Handlers, handler.(MiddlewareHandler))
@@ -140,19 +160,18 @@ func (routes RouteList) Provision(ctx caddy.Context) error {
 			routes[i].middleware = append(routes[i].middleware, wrapMiddleware(midhandler))
 		}
 	}
-
 	return nil
 }
 
 // Compile prepares a middleware chain from the route list.
 // This should only be done once: after all the routes have
 // been provisioned, and before serving requests.
-func (routes RouteList) Compile() Handler {
+func (routes RouteList) Compile(next Handler) Handler {
 	var mid []Middleware
 	for _, route := range routes {
 		mid = append(mid, wrapRoute(route))
 	}
-	stack := emptyHandler
+	stack := next
 	for i := len(mid) - 1; i >= 0; i-- {
 		stack = mid[i](stack)
 	}
@@ -167,6 +186,7 @@ func (routes RouteList) Compile() Handler {
 func wrapRoute(route Route) Middleware {
 	return func(next Handler) Handler {
 		return HandlerFunc(func(rw http.ResponseWriter, req *http.Request) error {
+			// TODO: Update this comment, it seems we've moved the copy into the handler?
 			// copy the next handler (it's an interface, so it's just
 			// a very lightweight copy of a pointer); this is important
 			// because this is a closure to the func below, which
