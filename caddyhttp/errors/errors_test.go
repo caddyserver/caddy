@@ -153,7 +153,7 @@ func TestVisibleErrorWithPanic(t *testing.T) {
 
 	body := rec.Body.String()
 
-	if !strings.Contains(body, "[PANIC /] caddyhttp/errors/errors_test.go") {
+	if !strings.Contains(body, "[PANIC /]") {
 		t.Errorf("Expected response body to contain error log line, but it didn't:\n%s", body)
 	}
 	if !strings.Contains(body, panicMsg) {
