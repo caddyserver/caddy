@@ -112,7 +112,7 @@ func (rewr Rewrite) rewrite(r *http.Request, repl *caddy.Replacer, logger *zap.L
 		r.Method = strings.ToUpper(repl.ReplaceAll(rewr.Method, ""))
 	}
 
-	// uri (path, query string, and fragment just because)
+	// uri (path, query string, and fragment... because why not)
 	if uri := rewr.URI; uri != "" {
 		// find the bounds of each part of the URI that exist
 		pathStart, qsStart, fragStart := -1, -1, -1
@@ -134,14 +134,30 @@ func (rewr Rewrite) rewrite(r *http.Request, repl *caddy.Replacer, logger *zap.L
 			qsEnd = len(uri)
 		}
 
+		// build components which are specified, and store them
+		// in a temporary variable so that they all read the
+		// same version of the URI
+		var newPath, newQuery, newFrag string
 		if pathStart >= 0 {
-			r.URL.Path = repl.ReplaceAll(uri[pathStart:pathEnd], "")
+			newPath = repl.ReplaceAll(uri[pathStart:pathEnd], "")
 		}
 		if qsStart >= 0 {
-			r.URL.RawQuery = buildQueryString(uri[qsStart:qsEnd], repl)
+			newQuery = buildQueryString(uri[qsStart:qsEnd], repl)
 		}
 		if fragStart >= 0 {
-			r.URL.Fragment = repl.ReplaceAll(uri[fragStart:], "")
+			newFrag = repl.ReplaceAll(uri[fragStart:], "")
+		}
+
+		// update the URI with the new components
+		// only after building them
+		if pathStart >= 0 {
+			r.URL.Path = newPath
+		}
+		if qsStart >= 0 {
+			r.URL.RawQuery = newQuery
+		}
+		if fragStart >= 0 {
+			r.URL.Fragment = newFrag
 		}
 	}
 
@@ -206,7 +222,7 @@ func buildQueryString(qs string, repl *caddy.Replacer) string {
 		// if previous iteration wrote a value,
 		// that means we are writing a key
 		if wroteVal {
-			if sb.Len() > 0 {
+			if sb.Len() > 0 && len(comp) > 0 {
 				sb.WriteRune('&')
 			}
 		} else {
