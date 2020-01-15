@@ -64,6 +64,16 @@ func TestRewrite(t *testing.T) {
 			expect: newRequest(t, "GET", "/foo/bar"),
 		},
 		{
+			rule:   Rewrite{URI: "/index.php?p={http.request.uri.path}"},
+			input:  newRequest(t, "GET", "/foo/bar"),
+			expect: newRequest(t, "GET", "/index.php?p=%2Ffoo%2Fbar"),
+		},
+		{
+			rule:   Rewrite{URI: "?a=b&{http.request.uri.query}"},
+			input:  newRequest(t, "GET", "/"),
+			expect: newRequest(t, "GET", "/?a=b"),
+		},
+		{
 			rule:   Rewrite{URI: "/?c=d"},
 			input:  newRequest(t, "GET", "/"),
 			expect: newRequest(t, "GET", "/?c=d"),
