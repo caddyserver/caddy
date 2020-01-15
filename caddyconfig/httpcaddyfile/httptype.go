@@ -312,6 +312,41 @@ func (st *ServerType) serversFromPairings(
 			Listen: p.addresses,
 		}
 
+		// sort server blocks by their keys; this is important because
+		// only the first matching site should be evaluated, and we should
+		// attempt to match most specific site first (host and path), in
+		// case their matchers overlap; we do this somewhat naively by
+		// descending sort by length of host then path
+		sort.SliceStable(p.serverBlocks, func(i, j int) bool {
+			// TODO: we could pre-process the lengths for efficiency,
+			// but I don't expect many blocks will have SO many keys...
+			var iLongestPath, jLongestPath string
+			var iLongestHost, jLongestHost string
+			for _, key := range p.serverBlocks[i].block.Keys {
+				addr, _ := ParseAddress(key)
+				if length(addr.Host) > length(iLongestHost) {
+					iLongestHost = addr.Host
+				}
+				if len(addr.Path) > len(iLongestPath) {
+					iLongestPath = addr.Path
+				}
+			}
+			for _, key := range p.serverBlocks[j].block.Keys {
+				addr, _ := ParseAddress(key)
+				if length(addr.Host) > length(jLongestHost) {
+					jLongestHost = addr.Host
+				}
+				if len(addr.Path) > len(jLongestPath) {
+					jLongestPath = addr.Path
+				}
+			}
+			if length(iLongestHost) == length(jLongestHost) {
+				return len(iLongestPath) > len(jLongestPath)
+			}
+			return length(iLongestHost) > length(jLongestHost)
+		})
+
+		// create a subroute for each site in the server block
 		for _, sblock := range p.serverBlocks {
 			matcherSetsEnc, err := st.compileEncodedMatcherSets(sblock.block)
 			if err != nil {
@@ -375,46 +410,7 @@ func (st *ServerType) serversFromPairings(
 				for i, dir := range handlerOrder {
 					dirPositions[dir] = i
 				}
-				sort.SliceStable(dirRoutes, func(i, j int) bool {
-					iDir, jDir := dirRoutes[i].directive, dirRoutes[j].directive
-					if iDir == jDir {
-						// TODO: we really need to refactor this into a separate function or method...
-						// sub-sort by path matcher length, if there's only one
-						iRoute := dirRoutes[i].Value.(caddyhttp.Route)
-						jRoute := dirRoutes[j].Value.(caddyhttp.Route)
-						if len(iRoute.MatcherSetsRaw) == 1 && len(jRoute.MatcherSetsRaw) == 1 {
-							// for slightly better efficiency, only decode the path matchers once,
-							// then just store them arbitrarily in the decoded MatcherSets field,
-							// ours should be the only thing in there
-							var iPM, jPM caddyhttp.MatchPath
-							if len(iRoute.MatcherSets) == 1 {
-								iPM = iRoute.MatcherSets[0][0].(caddyhttp.MatchPath)
-							}
-							if len(jRoute.MatcherSets) == 1 {
-								jPM = jRoute.MatcherSets[0][0].(caddyhttp.MatchPath)
-							}
-							// if it's our first time seeing this route's path matcher, decode it
-							if iPM == nil {
-								var pathMatcher caddyhttp.MatchPath
-								_ = json.Unmarshal(iRoute.MatcherSetsRaw[0]["path"], &pathMatcher)
-								iRoute.MatcherSets = caddyhttp.MatcherSets{{pathMatcher}}
-								iPM = pathMatcher
-							}
-							if jPM == nil {
-								var pathMatcher caddyhttp.MatchPath
-								_ = json.Unmarshal(jRoute.MatcherSetsRaw[0]["path"], &pathMatcher)
-								jRoute.MatcherSets = caddyhttp.MatcherSets{{pathMatcher}}
-								jPM = pathMatcher
-							}
-							// finally, if there is only one path in the
-							// matcher, sort by longer path first
-							if len(iPM) == 1 && len(jPM) == 1 {
-								return len(iPM[0]) > len(jPM[0])
-							}
-						}
-					}
-					return dirPositions[iDir] < dirPositions[jDir]
-				})
+				sortRoutes(dirRoutes, dirPositions)
 			}
 
 			// add all the routes piled in from directives
@@ -439,12 +435,19 @@ func (st *ServerType) serversFromPairings(
 
 			siteSubroute.Routes = consolidateRoutes(siteSubroute.Routes)
 
-			srv.Routes = append(srv.Routes, caddyhttp.Route{
-				MatcherSetsRaw: matcherSetsEnc,
-				HandlersRaw: []json.RawMessage{
-					caddyconfig.JSONModuleObject(siteSubroute, "handler", "subroute", warnings),
-				},
-			})
+			if len(matcherSetsEnc) == 0 && len(p.serverBlocks) == 1 {
+				// no need to wrap the handlers in a subroute if this is
+				// the only server block and there is no matcher for it
+				srv.Routes = append(srv.Routes, siteSubroute.Routes...)
+			} else {
+				srv.Routes = append(srv.Routes, caddyhttp.Route{
+					MatcherSetsRaw: matcherSetsEnc,
+					HandlersRaw: []json.RawMessage{
+						caddyconfig.JSONModuleObject(siteSubroute, "handler", "subroute", warnings),
+					},
+					Terminal: true, // only first matching site block should be evaluated
+				})
+			}
 		}
 
 		srv.Routes = consolidateRoutes(srv.Routes)
@@ -666,6 +669,16 @@ func tryInt(val interface{}, warnings *[]caddyconfig.Warning) int {
 		*warnings = append(*warnings, caddyconfig.Warning{Message: "not an integer type"})
 	}
 	return intVal
+}
+
+// length returns len(s) minus any wildcards (*). Basically,
+// it's a length count that penalizes the use of wildcards.
+// This is useful for comparing hostnames, but probably not
+// paths so much (for example, '*.example.com' is clearly
+// less specific than 'a.example.com', but is '/a' more or
+// less specific than '/a*'?).
+func length(s string) int {
+	return len(s) - strings.Count(s, "*")
 }
 
 type matcherSetAndTokens struct {

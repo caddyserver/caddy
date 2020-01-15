@@ -16,6 +16,7 @@ package httpcaddyfile
 
 import (
 	"encoding/json"
+	"sort"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -195,6 +196,48 @@ type ConfigValue struct {
 	Value interface{}
 
 	directive string
+}
+
+func sortRoutes(handlers []ConfigValue, dirPositions map[string]int) {
+	// while we are sorting, we will need to decode a route's path matcher
+	// in order to sub-sort by path length; we can amortize this operation
+	// for efficiency by storing the decoded matchers in a slice
+	decodedMatchers := make([]caddyhttp.MatchPath, len(handlers))
+
+	sort.SliceStable(handlers, func(i, j int) bool {
+		iDir, jDir := handlers[i].directive, handlers[j].directive
+		if iDir == jDir {
+			// directives are the same; sub-sort by path matcher length
+			// if there's only one matcher set and one path (common case)
+			iRoute := handlers[i].Value.(caddyhttp.Route)
+			jRoute := handlers[j].Value.(caddyhttp.Route)
+
+			if len(iRoute.MatcherSetsRaw) == 1 && len(jRoute.MatcherSetsRaw) == 1 {
+				// use already-decoded matcher, or decode if it's the first time seeing it
+				iPM, jPM := decodedMatchers[i], decodedMatchers[j]
+				if iPM == nil {
+					var pathMatcher caddyhttp.MatchPath
+					_ = json.Unmarshal(iRoute.MatcherSetsRaw[0]["path"], &pathMatcher)
+					decodedMatchers[i] = pathMatcher
+					iPM = pathMatcher
+				}
+				if jPM == nil {
+					var pathMatcher caddyhttp.MatchPath
+					_ = json.Unmarshal(jRoute.MatcherSetsRaw[0]["path"], &pathMatcher)
+					decodedMatchers[j] = pathMatcher
+					jPM = pathMatcher
+				}
+
+				// if there is only one path in the matcher, sort by
+				// longer path (more specific) first
+				if len(iPM) == 1 && len(jPM) == 1 {
+					return len(iPM[0]) > len(jPM[0])
+				}
+			}
+		}
+
+		return dirPositions[iDir] < dirPositions[jDir]
+	})
 }
 
 // serverBlock pairs a Caddyfile server block
