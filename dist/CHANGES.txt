@@ -1,5 +1,12 @@
 CHANGES
 
+1.0.5 (January 15, 2020)
+- fastcgi: Ignore trailing spaces/dots in filename (important on Windows)
+- gzip: Prevent duplicated Vary header
+- log: Fix extra timestamp appearing at beginning
+- proxy: New tls_client property to specify CA client certs
+
+
 1.0.4 (November 15, 2019)
 - New -log-timestamps flag to disable timestamps in log entries
 - fastcgi: Path-insensitive extension check (important on Windows)
