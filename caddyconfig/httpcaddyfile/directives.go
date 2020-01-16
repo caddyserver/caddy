@@ -16,6 +16,7 @@ package httpcaddyfile
 
 import (
 	"encoding/json"
+	"fmt"
 	"sort"
 
 	"github.com/caddyserver/caddy/v2"
@@ -93,10 +94,11 @@ func RegisterHandlerDirective(dir string, setupFunc UnmarshalHandlerFunc) {
 // Caddyfile tokens.
 type Helper struct {
 	*caddyfile.Dispenser
-	options     map[string]interface{}
-	warnings    *[]caddyconfig.Warning
-	matcherDefs map[string]caddy.ModuleMap
-	parentBlock caddyfile.ServerBlock
+	options      map[string]interface{}
+	warnings     *[]caddyconfig.Warning
+	matcherDefs  map[string]caddy.ModuleMap
+	parentBlock  caddyfile.ServerBlock
+	groupCounter *int
 }
 
 // Option gets the option keyed by name.
@@ -164,6 +166,32 @@ func (h Helper) NewRoute(matcherSet caddy.ModuleMap,
 			},
 		},
 	}
+}
+
+func (h Helper) GroupRoutes(vals []ConfigValue) {
+	// ensure there's at least two routes; group of one is pointless
+	var count int
+	for _, v := range vals {
+		if _, ok := v.Value.(caddyhttp.Route); ok {
+			count++
+			if count > 1 {
+				break
+			}
+		}
+	}
+	if count < 2 {
+		return
+	}
+
+	// now that we know the group will have some effect, do it
+	groupNum := *h.groupCounter
+	for i := 0; i < len(vals); i++ {
+		if route, ok := vals[i].Value.(caddyhttp.Route); ok {
+			route.Group = fmt.Sprintf("group%d", groupNum)
+			vals[i].Value = route
+		}
+	}
+	*h.groupCounter++
 }
 
 // NewBindAddresses returns config values relevant to adding
