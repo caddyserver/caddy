@@ -163,5 +163,10 @@ func parseTryFiles(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) 
 		result = append(result, makeRoute(try, "")...)
 	}
 
+	// ensure that multiple routes (possible if rewrite targets
+	// have query strings, for example) are grouped together
+	// so only the first matching rewrite is performed (#2891)
+	h.GroupRoutes(result)
+
 	return result, nil
 }

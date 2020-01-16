@@ -41,6 +41,7 @@ type ServerType struct {
 func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 	options map[string]interface{}) (*caddy.Config, []caddyconfig.Warning, error) {
 	var warnings []caddyconfig.Warning
+	groupCounter := new(int)
 
 	var serverBlocks []serverBlock
 	for _, sblock := range originalServerBlocks {
@@ -140,11 +141,12 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 			}
 
 			results, err := dirFunc(Helper{
-				Dispenser:   caddyfile.NewDispenser(segment),
-				options:     options,
-				warnings:    &warnings,
-				matcherDefs: matcherDefs,
-				parentBlock: sb.block,
+				Dispenser:    caddyfile.NewDispenser(segment),
+				options:      options,
+				warnings:     &warnings,
+				matcherDefs:  matcherDefs,
+				parentBlock:  sb.block,
+				groupCounter: groupCounter,
 			})
 			if err != nil {
 				return nil, warnings, fmt.Errorf("parsing caddyfile tokens for '%s': %v", dir, err)
