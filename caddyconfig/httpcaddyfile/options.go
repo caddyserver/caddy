@@ -58,27 +58,80 @@ func parseOptExperimentalHTTP3(d *caddyfile.Dispenser) (bool, error) {
 	return true, nil
 }
 
-func parseOptHandlerOrder(d *caddyfile.Dispenser) ([]string, error) {
-	if !d.Next() {
-		return nil, d.ArgErr()
-	}
-	order := d.RemainingArgs()
-	if len(order) == 1 && order[0] == "appearance" {
-		return []string{"appearance"}, nil
-	}
-	if len(order) > 0 && d.NextBlock(0) {
-		return nil, d.Err("cannot open block if there are arguments")
-	}
-	for d.NextBlock(0) {
-		order = append(order, d.Val())
+func parseOptOrder(d *caddyfile.Dispenser) ([]string, error) {
+	newOrder := directiveOrder
+
+	for d.Next() {
+		// get directive name
+		if !d.Next() {
+			return nil, d.ArgErr()
+		}
+		dirName := d.Val()
+		if _, ok := registeredDirectives[dirName]; !ok {
+			return nil, fmt.Errorf("%s is not a registered directive", dirName)
+		}
+
+		// get positional token
+		if !d.Next() {
+			return nil, d.ArgErr()
+		}
+		pos := d.Val()
+
+		// if directive exists, first remove it
+		for i, d := range newOrder {
+			if d == dirName {
+				newOrder = append(newOrder[:i], newOrder[i+1:]...)
+				break
+			}
+		}
+
+		// act on the positional
+		switch pos {
+		case "first":
+			newOrder = append([]string{dirName}, newOrder...)
+			if d.NextArg() {
+				return nil, d.ArgErr()
+			}
+			directiveOrder = newOrder
+			return newOrder, nil
+		case "last":
+			newOrder = append(newOrder, dirName)
+			if d.NextArg() {
+				return nil, d.ArgErr()
+			}
+			directiveOrder = newOrder
+			return newOrder, nil
+		case "before":
+		case "after":
+		default:
+			return nil, fmt.Errorf("unknown positional '%s'", pos)
+		}
+
+		// get name of other directive
+		if !d.NextArg() {
+			return nil, d.ArgErr()
+		}
+		otherDir := d.Val()
 		if d.NextArg() {
 			return nil, d.ArgErr()
 		}
+
+		// insert directive into proper position
+		for i, d := range newOrder {
+			if d == otherDir {
+				if pos == "before" {
+					newOrder = append(newOrder[:i], append([]string{dirName}, newOrder[i:]...)...)
+				} else if pos == "after" {
+					newOrder = append(newOrder[:i+1], append([]string{dirName}, newOrder[i+1:]...)...)
+				}
+				break
+			}
+		}
 	}
-	if len(order) == 0 {
-		return nil, d.ArgErr()
-	}
-	return order, nil
+
+	directiveOrder = newOrder
+
+	return newOrder, nil
 }
 
 func parseOptStorage(d *caddyfile.Dispenser) (caddy.StorageConverter, error) {

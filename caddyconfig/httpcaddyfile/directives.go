@@ -25,9 +25,9 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
-// defaultDirectiveOrder specifies the order
+// directiveOrder specifies the order
 // to apply directives in HTTP routes.
-var defaultDirectiveOrder = []string{
+var directiveOrder = []string{
 	"rewrite",
 	"strip_prefix",
 	"strip_suffix",
@@ -168,6 +168,8 @@ func (h Helper) NewRoute(matcherSet caddy.ModuleMap,
 	}
 }
 
+// GroupRoutes adds the routes (caddyhttp.Route type) in vals to the
+// same group, if there is more than one route in vals.
 func (h Helper) GroupRoutes(vals []ConfigValue) {
 	// ensure there's at least two routes; group of one is pointless
 	var count int
@@ -185,7 +187,7 @@ func (h Helper) GroupRoutes(vals []ConfigValue) {
 
 	// now that we know the group will have some effect, do it
 	groupNum := *h.groupCounter
-	for i := 0; i < len(vals); i++ {
+	for i := range vals {
 		if route, ok := vals[i].Value.(caddyhttp.Route); ok {
 			route.Group = fmt.Sprintf("group%d", groupNum)
 			vals[i].Value = route
@@ -226,7 +228,12 @@ type ConfigValue struct {
 	directive string
 }
 
-func sortRoutes(handlers []ConfigValue, dirPositions map[string]int) {
+func sortRoutes(handlers []ConfigValue) {
+	dirPositions := make(map[string]int)
+	for i, dir := range directiveOrder {
+		dirPositions[dir] = i
+	}
+
 	// while we are sorting, we will need to decode a route's path matcher
 	// in order to sub-sort by path length; we can amortize this operation
 	// for efficiency by storing the decoded matchers in a slice
