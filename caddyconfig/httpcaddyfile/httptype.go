@@ -65,8 +65,8 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 				val, err = parseOptHTTPPort(disp)
 			case "https_port":
 				val, err = parseOptHTTPSPort(disp)
-			case "handler_order":
-				val, err = parseOptHandlerOrder(disp)
+			case "order":
+				val, err = parseOptOrder(disp)
 			case "experimental_http3":
 				val, err = parseOptExperimentalHTTP3(disp)
 			case "storage":
@@ -397,23 +397,9 @@ func (st *ServerType) serversFromPairings(
 				siteSubroute.Routes = append(siteSubroute.Routes, cfgVal.Value.(caddyhttp.Route))
 			}
 
-			// set up each handler directive - the order of the handlers
-			// as they are added to the routes depends on user preference
+			// set up each handler directive, making sure to honor directive order
 			dirRoutes := sblock.pile["route"]
-			handlerOrder, ok := options["handler_order"].([]string)
-			if !ok {
-				handlerOrder = defaultDirectiveOrder
-			}
-			if len(handlerOrder) == 1 && handlerOrder[0] == "appearance" {
-				handlerOrder = nil
-			}
-			if handlerOrder != nil {
-				dirPositions := make(map[string]int)
-				for i, dir := range handlerOrder {
-					dirPositions[dir] = i
-				}
-				sortRoutes(dirRoutes, dirPositions)
-			}
+			sortRoutes(dirRoutes)
 
 			// add all the routes piled in from directives
 			for _, r := range dirRoutes {
