@@ -34,6 +34,7 @@ func init() {
 	RegisterHandlerDirective("redir", parseRedir)
 	RegisterHandlerDirective("respond", parseRespond)
 	RegisterHandlerDirective("route", parseRoute)
+	RegisterHandlerDirective("handle", parseHandle)
 }
 
 func parseBind(h Helper) ([]ConfigValue, error) {
@@ -76,7 +77,7 @@ func parseRoot(h Helper) ([]ConfigValue, error) {
 		route.MatcherSetsRaw = []caddy.ModuleMap{matcherSet}
 	}
 
-	return h.NewVarsRoute(route), nil
+	return []ConfigValue{{Class: "route", Value: route}}, nil
 }
 
 func parseTLS(h Helper) ([]ConfigValue, error) {
@@ -329,4 +330,35 @@ func parseRoute(h Helper) (caddyhttp.MiddlewareHandler, error) {
 	}
 
 	return sr, nil
+}
+
+func parseHandle(h Helper) (caddyhttp.MiddlewareHandler, error) {
+	var allResults []ConfigValue
+
+	for h.Next() {
+		for nesting := h.Nesting(); h.NextBlock(nesting); {
+			dir := h.Val()
+
+			dirFunc, ok := registeredDirectives[dir]
+			if !ok {
+				return nil, h.Errf("unrecognized directive: %s", dir)
+			}
+
+			subHelper := h
+			subHelper.Dispenser = h.NewFromNextTokens()
+
+			results, err := dirFunc(subHelper)
+			if err != nil {
+				return nil, h.Errf("parsing caddyfile tokens for '%s': %v", dir, err)
+			}
+			for _, result := range results {
+				result.directive = dir
+				allResults = append(allResults, result)
+			}
+		}
+
+		return buildSubroute(allResults, h.groupCounter)
+	}
+
+	return nil, nil
 }

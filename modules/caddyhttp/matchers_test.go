@@ -199,7 +199,7 @@ func TestPathMatcher(t *testing.T) {
 		},
 		{
 			match:  MatchPath{"*.ext"},
-			input:  "/foo.ext",
+			input:  "/foo/bar.ext",
 			expect: true,
 		},
 		{
