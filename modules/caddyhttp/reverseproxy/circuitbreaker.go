@@ -130,9 +130,14 @@ func (c *localCircuitBreaker) checkAndSet() {
 
 // Config represents the configuration of a circuit breaker.
 type Config struct {
+	// The threshold over sliding window that would trip the circuit breaker
 	Threshold float64 `json:"threshold"`
-	Type      string  `json:"type"`
-	TripTime  string  `json:"trip_time"`
+	// Possible values: latency, error_ratio, and status_ratio. It
+	// defaults to latency.
+	Type string `json:"type"`
+	// How long to wait after the circuit is tripped before allowing operations to resume.
+	// The default is 5s.
+	TripTime string `json:"trip_time"`
 }
 
 const (
