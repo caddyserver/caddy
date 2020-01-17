@@ -71,6 +71,17 @@ func init() {
 // `{http.request.remote.port}` | The port part of the remote client's address
 // `{http.request.remote}` | The address of the remote client
 // `{http.request.scheme}` | The request scheme
+// `{http.request.tls.version}` | The TLS version name
+// `{http.request.tls.cipher_suite}` | The TLS cipher suite
+// `{http.request.tls.resumed}` | The TLS connection resumed a previous connection
+// `{http.request.tls.proto}` | The negotiated next protocol
+// `{http.request.tls.proto_mutual}` | The negotiated next protocol was advertised by the server
+// `{http.request.tls.server_name}` | The server name requested by the client, if any
+// `{http.request.tls.client.cert}` | The client certificate in PEM format
+// `{http.request.tls.client.fingerprint}` | The SHA256 checksum of the client certificate
+// `{http.request.tls.client.issuer}` | The issuer DN of the client certificate
+// `{http.request.tls.client.serial}` | The serial number of the client certificate
+// `{http.request.tls.client.subject}` | The subject DN of the client certificate
 // `{http.request.uri.path.*}` | Parts of the path, split by `/` (0-based from left)
 // `{http.request.uri.path.dir}` | The directory, excluding leaf filename
 // `{http.request.uri.path.file}` | The filename of the path, excluding directory
