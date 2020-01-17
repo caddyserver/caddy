@@ -338,6 +338,9 @@ func (app *App) automaticHTTPSPhase2() error {
 		if err != nil {
 			return fmt.Errorf("%s: managing certificate for %s: %s", srvName, domains, err)
 		}
+
+		// no longer needed; allow GC to deallocate
+		srv.AutoHTTPS.domainSet = nil
 	}
 
 	return nil

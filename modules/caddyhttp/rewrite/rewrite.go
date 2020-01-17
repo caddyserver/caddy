@@ -50,7 +50,7 @@ type Rewrite struct {
 	// You can also use placeholders. For example, to preserve the existing
 	// query string, you might use: "?{http.request.uri.query}&a=b". Any
 	// key-value pairs you add to the query string will not overwrite
-	// existing values.
+	// existing values (individual pairs are append-only).
 	//
 	// To clear the query string, explicitly set an empty one: "?"
 	URI string `json:"uri,omitempty"`

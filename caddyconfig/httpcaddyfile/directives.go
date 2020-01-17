@@ -16,7 +16,6 @@ package httpcaddyfile
 
 import (
 	"encoding/json"
-	"fmt"
 	"sort"
 
 	"github.com/caddyserver/caddy/v2"
@@ -28,7 +27,10 @@ import (
 // directiveOrder specifies the order
 // to apply directives in HTTP routes.
 var directiveOrder = []string{
+	"root",
+
 	"rewrite",
+
 	"strip_prefix",
 	"strip_suffix",
 	"uri_replace",
@@ -38,12 +40,26 @@ var directiveOrder = []string{
 	"request_header",
 	"encode",
 	"templates",
+
+	"handle",
 	"route",
+
 	"redir",
 	"respond",
 	"reverse_proxy",
 	"php_fastcgi",
 	"file_server",
+}
+
+// directiveIsOrdered returns true if dir is
+// a known, ordered (sorted) directive.
+func directiveIsOrdered(dir string) bool {
+	for _, d := range directiveOrder {
+		if d == dir {
+			return true
+		}
+	}
+	return false
 }
 
 // RegisterDirective registers a unique directive dir with an
@@ -98,7 +114,7 @@ type Helper struct {
 	warnings     *[]caddyconfig.Warning
 	matcherDefs  map[string]caddy.ModuleMap
 	parentBlock  caddyfile.ServerBlock
-	groupCounter *int
+	groupCounter counter
 }
 
 // Option gets the option keyed by name.
@@ -130,8 +146,8 @@ func (h Helper) JSON(val interface{}) json.RawMessage {
 	return caddyconfig.JSON(val, h.warnings)
 }
 
-// MatcherToken assumes the current token is (possibly) a matcher, and
-// if so, returns the matcher set along with a true value. If the current
+// MatcherToken assumes the next argument token is (possibly) a matcher,
+// and if so, returns the matcher set along with a true value. If the next
 // token is not a matcher, nil and false is returned. Note that a true
 // value may be returned with a nil matcher set if it is a catch-all.
 func (h Helper) MatcherToken() (caddy.ModuleMap, bool, error) {
@@ -186,26 +202,19 @@ func (h Helper) GroupRoutes(vals []ConfigValue) {
 	}
 
 	// now that we know the group will have some effect, do it
-	groupNum := *h.groupCounter
+	groupName := h.groupCounter.nextGroup()
 	for i := range vals {
 		if route, ok := vals[i].Value.(caddyhttp.Route); ok {
-			route.Group = fmt.Sprintf("group%d", groupNum)
+			route.Group = groupName
 			vals[i].Value = route
 		}
 	}
-	*h.groupCounter++
 }
 
 // NewBindAddresses returns config values relevant to adding
 // listener bind addresses to the config.
 func (h Helper) NewBindAddresses(addrs []string) []ConfigValue {
 	return []ConfigValue{{Class: "bind", Value: addrs}}
-}
-
-// NewVarsRoute returns config values relevant to adding a
-// "vars" wrapper route to the config.
-func (h Helper) NewVarsRoute(route caddyhttp.Route) []ConfigValue {
-	return []ConfigValue{{Class: "var", Value: route}}
 }
 
 // ConfigValue represents a value to be added to the final
@@ -228,7 +237,7 @@ type ConfigValue struct {
 	directive string
 }
 
-func sortRoutes(handlers []ConfigValue) {
+func sortRoutes(routes []ConfigValue) {
 	dirPositions := make(map[string]int)
 	for i, dir := range directiveOrder {
 		dirPositions[dir] = i
@@ -237,15 +246,21 @@ func sortRoutes(handlers []ConfigValue) {
 	// while we are sorting, we will need to decode a route's path matcher
 	// in order to sub-sort by path length; we can amortize this operation
 	// for efficiency by storing the decoded matchers in a slice
-	decodedMatchers := make([]caddyhttp.MatchPath, len(handlers))
+	decodedMatchers := make([]caddyhttp.MatchPath, len(routes))
 
-	sort.SliceStable(handlers, func(i, j int) bool {
-		iDir, jDir := handlers[i].directive, handlers[j].directive
+	sort.SliceStable(routes, func(i, j int) bool {
+		iDir, jDir := routes[i].directive, routes[j].directive
 		if iDir == jDir {
 			// directives are the same; sub-sort by path matcher length
 			// if there's only one matcher set and one path (common case)
-			iRoute := handlers[i].Value.(caddyhttp.Route)
-			jRoute := handlers[j].Value.(caddyhttp.Route)
+			iRoute, ok := routes[i].Value.(caddyhttp.Route)
+			if !ok {
+				return false
+			}
+			jRoute, ok := routes[j].Value.(caddyhttp.Route)
+			if !ok {
+				return false
+			}
 
 			if len(iRoute.MatcherSetsRaw) == 1 && len(jRoute.MatcherSetsRaw) == 1 {
 				// use already-decoded matcher, or decode if it's the first time seeing it
