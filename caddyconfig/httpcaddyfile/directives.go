@@ -29,12 +29,14 @@ import (
 var directiveOrder = []string{
 	"root",
 
+	"redir",
 	"rewrite",
 
 	"strip_prefix",
 	"strip_suffix",
 	"uri_replace",
 	"try_files",
+
 	"basicauth",
 	"headers",
 	"request_header",
@@ -44,7 +46,6 @@ var directiveOrder = []string{
 	"handle",
 	"route",
 
-	"redir",
 	"respond",
 	"reverse_proxy",
 	"php_fastcgi",
