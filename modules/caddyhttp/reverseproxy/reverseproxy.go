@@ -63,7 +63,7 @@ type Handler struct {
 	// A circuit breaker may be used to relieve pressure on a backend
 	// that is beginning to exhibit symptoms of stress or latency.
 	// By default, there is no circuit breaker.
-	CBRaw json.RawMessage `json:"circuit_breaker,omitempty" caddy:"namespace=http.reverse_proxy.circuit_breakers inline_key=type"`
+	CBRaw json.RawMessage `json:"circuit_breaker,omitempty" caddy:"namespace=http.reverse_proxy.circuit_breakers inline_key=breaker"`
 
 	// Load balancing distributes load/requests between backends.
 	LoadBalancing *LoadBalancing `json:"load_balancing,omitempty"`
