@@ -93,7 +93,7 @@ func (t *Transport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 //     }
 //     redir @canonicalPath {path}/ 308
 //
-//     try_files {path} {path}/index.php index.php
+//     try_files {path} {path}/index.php
 //
 //     @phpFiles {
 //         path *.php
@@ -145,7 +145,7 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 	// route to rewrite to PHP index file
 	rewriteMatcherSet := caddy.ModuleMap{
 		"file": h.JSON(fileserver.MatchFile{
-			TryFiles: []string{"{http.request.uri.path}", "{http.request.uri.path}/index.php", "index.php"},
+			TryFiles: []string{"{http.request.uri.path}", "{http.request.uri.path}/index.php"},
 		}),
 	}
 	rewriteHandler := rewrite.Rewrite{
