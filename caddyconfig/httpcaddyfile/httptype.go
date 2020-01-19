@@ -159,7 +159,7 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 	}
 
 	// map
-	sbmap, err := st.mapAddressToServerBlocks(serverBlocks)
+	sbmap, err := st.mapAddressToServerBlocks(serverBlocks, options)
 	if err != nil {
 		return nil, warnings, err
 	}

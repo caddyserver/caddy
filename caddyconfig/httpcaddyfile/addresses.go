@@ -72,7 +72,8 @@ import (
 // repetition may be undesirable, so call consolidateAddrMappings() to map
 // multiple addresses to the same lists of server blocks (a many:many mapping).
 // (Doing this is essentially a map-reduce technique.)
-func (st *ServerType) mapAddressToServerBlocks(originalServerBlocks []serverBlock) (map[string][]serverBlock, error) {
+func (st *ServerType) mapAddressToServerBlocks(originalServerBlocks []serverBlock,
+	options map[string]interface{}) (map[string][]serverBlock, error) {
 	sbmap := make(map[string][]serverBlock)
 
 	for i, sblock := range originalServerBlocks {
@@ -87,7 +88,7 @@ func (st *ServerType) mapAddressToServerBlocks(originalServerBlocks []serverBloc
 			// arguments to the 'bind' directive (although they will all have
 			// the same port, since the port is defined by the key or is implicit
 			// through automatic HTTPS)
-			addrs, err := st.listenerAddrsForServerBlockKey(sblock, key)
+			addrs, err := st.listenerAddrsForServerBlockKey(sblock, key, options)
 			if err != nil {
 				return nil, fmt.Errorf("server block %d, key %d (%s): determining listener address: %v", i, j, key, err)
 			}
@@ -153,20 +154,43 @@ func (st *ServerType) consolidateAddrMappings(addrToServerBlocks map[string][]se
 	return sbaddrs
 }
 
-func (st *ServerType) listenerAddrsForServerBlockKey(sblock serverBlock, key string) ([]string, error) {
+func (st *ServerType) listenerAddrsForServerBlockKey(sblock serverBlock, key string,
+	options map[string]interface{}) ([]string, error) {
 	addr, err := ParseAddress(key)
 	if err != nil {
 		return nil, fmt.Errorf("parsing key: %v", err)
 	}
 	addr = addr.Normalize()
 
+	// figure out the HTTP and HTTPS ports; either
+	// use defaults, or override with user config
+	httpPort, httpsPort := strconv.Itoa(certmagic.HTTPPort), strconv.Itoa(certmagic.HTTPSPort)
+	if hport, ok := options["http_port"]; ok {
+		httpPort = strconv.Itoa(hport.(int))
+	}
+	if hsport, ok := options["https_port"]; ok {
+		httpsPort = strconv.Itoa(hsport.(int))
+	}
+
 	lnPort := DefaultPort
 	if addr.Port != "" {
 		// port explicitly defined
 		lnPort = addr.Port
+	} else if addr.Scheme != "" {
+		// port inferred from scheme
+		if addr.Scheme == "http" {
+			lnPort = httpPort
+		} else if addr.Scheme == "https" {
+			lnPort = httpsPort
+		}
 	} else if certmagic.HostQualifies(addr.Host) {
 		// automatic HTTPS
-		lnPort = strconv.Itoa(certmagic.HTTPSPort)
+		lnPort = httpsPort
+	}
+
+	// error if scheme and port combination violate convention
+	if (addr.Scheme == "http" && lnPort == httpsPort) || (addr.Scheme == "https" && lnPort == httpPort) {
+		return nil, fmt.Errorf("[%s] scheme and port violate convention", key)
 	}
 
 	// the bind directive specifies hosts, but is optional
@@ -245,17 +269,6 @@ func ParseAddress(str string) (Address, error) {
 		a.Path = "/" + hostSplit[1]
 	}
 
-	httpPort, httpsPort := strconv.Itoa(certmagic.HTTPPort), strconv.Itoa(certmagic.HTTPSPort)
-
-	// see if we can set port based off scheme
-	if a.Port == "" {
-		if a.Scheme == "http" {
-			a.Port = httpPort
-		} else if a.Scheme == "https" {
-			a.Port = httpsPort
-		}
-	}
-
 	// make sure port is valid
 	if a.Port != "" {
 		if portNum, err := strconv.Atoi(a.Port); err != nil {
@@ -263,11 +276,6 @@ func ParseAddress(str string) (Address, error) {
 		} else if portNum < 0 || portNum > 65535 {
 			return Address{}, fmt.Errorf("port %d is out of range", portNum)
 		}
-	}
-
-	// error if scheme and port combination violate convention
-	if (a.Scheme == "http" && a.Port == httpsPort) || (a.Scheme == "https" && a.Port == httpPort) {
-		return Address{}, fmt.Errorf("[%s] scheme and port violate convention", str)
 	}
 
 	return a, nil
