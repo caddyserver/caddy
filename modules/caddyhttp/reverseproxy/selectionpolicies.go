@@ -78,6 +78,8 @@ func (r RandomSelection) Select(pool UpstreamPool, request *http.Request) *Upstr
 // two or more available hosts at random, then
 // chooses the one with the least load.
 type RandomChoiceSelection struct {
+	// The size of the sub-pool created from the larger upstream pool. The default value
+	// is 2 and the maximum at selection time is the size of the upstream pool.
 	Choose int `json:"choose,omitempty"`
 }
 
@@ -283,6 +285,7 @@ func (URIHashSelection) Select(pool UpstreamPool, req *http.Request) *Upstream {
 // HeaderHashSelection is a policy that selects
 // a host based on a given request header.
 type HeaderHashSelection struct {
+	// The HTTP header field whose value is to be hashed and used for upstream selection.
 	Field string `json:"field,omitempty"`
 }
 

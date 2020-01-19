@@ -31,7 +31,7 @@ func init() {
 // for requests within this process over a sliding time window.
 type localCircuitBreaker struct {
 	tripped   int32
-	cbType    int32
+	cbFactor  int32
 	threshold float64
 	metrics   *memmetrics.RTMetrics
 	tripTime  time.Duration
@@ -48,7 +48,7 @@ func (localCircuitBreaker) CaddyModule() caddy.ModuleInfo {
 
 // Provision sets up a configured circuit breaker.
 func (c *localCircuitBreaker) Provision(ctx caddy.Context) error {
-	t, ok := typeCB[c.Type]
+	f, ok := typeCB[c.Factor]
 	if !ok {
 		return fmt.Errorf("type is not defined")
 	}
@@ -67,7 +67,7 @@ func (c *localCircuitBreaker) Provision(ctx caddy.Context) error {
 		return fmt.Errorf("cannot create new metrics: %v", err.Error())
 	}
 
-	c.cbType = t
+	c.cbFactor = f
 	c.tripTime = tw
 	c.threshold = c.Threshold
 	c.metrics = mt
@@ -92,13 +92,13 @@ func (c *localCircuitBreaker) RecordMetric(statusCode int, latency time.Duration
 func (c *localCircuitBreaker) checkAndSet() {
 	var isTripped bool
 
-	switch c.cbType {
-	case typeErrorRatio:
+	switch c.cbFactor {
+	case factorErrorRatio:
 		// check if amount of network errors exceed threshold over sliding window, threshold for comparison should be < 1.0 i.e. .5 = 50th percentile
 		if c.metrics.NetworkErrorRatio() > c.threshold {
 			isTripped = true
 		}
-	case typeLatency:
+	case factorLatency:
 		// check if threshold in milliseconds is reached and trip
 		hist, err := c.metrics.LatencyHistogram()
 		if err != nil {
@@ -109,7 +109,7 @@ func (c *localCircuitBreaker) checkAndSet() {
 		if l.Nanoseconds()/int64(time.Millisecond) > int64(c.threshold) {
 			isTripped = true
 		}
-	case typeStatusCodeRatio:
+	case factorStatusCodeRatio:
 		// check ratio of error status codes of sliding window, threshold for comparison should be < 1.0 i.e. .5 = 50th percentile
 		if c.metrics.ResponseCodeRatio(500, 600, 0, 600) > c.threshold {
 			isTripped = true
@@ -130,23 +130,28 @@ func (c *localCircuitBreaker) checkAndSet() {
 
 // Config represents the configuration of a circuit breaker.
 type Config struct {
+	// The threshold over sliding window that would trip the circuit breaker
 	Threshold float64 `json:"threshold"`
-	Type      string  `json:"type"`
-	TripTime  string  `json:"trip_time"`
+	// Possible values: latency, error_ratio, and status_ratio. It
+	// defaults to latency.
+	Factor string `json:"factor"`
+	// How long to wait after the circuit is tripped before allowing operations to resume.
+	// The default is 5s.
+	TripTime string `json:"trip_time"`
 }
 
 const (
-	typeLatency = iota + 1
-	typeErrorRatio
-	typeStatusCodeRatio
+	factorLatency = iota + 1
+	factorErrorRatio
+	factorStatusCodeRatio
 	defaultTripTime = "5s"
 )
 
 var (
-	// typeCB handles converting a Config Type value to the internal circuit breaker types.
+	// typeCB handles converting a Config Factor value to the internal circuit breaker types.
 	typeCB = map[string]int32{
-		"latency":      typeLatency,
-		"error_ratio":  typeErrorRatio,
-		"status_ratio": typeStatusCodeRatio,
+		"latency":      factorLatency,
+		"error_ratio":  factorErrorRatio,
+		"status_ratio": factorStatusCodeRatio,
 	}
 )
