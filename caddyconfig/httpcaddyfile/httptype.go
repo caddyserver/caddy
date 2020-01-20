@@ -41,6 +41,7 @@ type ServerType struct {
 func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 	options map[string]interface{}) (*caddy.Config, []caddyconfig.Warning, error) {
 	var warnings []caddyconfig.Warning
+	gc := counter{new(int)}
 
 	var serverBlocks []serverBlock
 	for _, sblock := range originalServerBlocks {
@@ -64,8 +65,8 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 				val, err = parseOptHTTPPort(disp)
 			case "https_port":
 				val, err = parseOptHTTPSPort(disp)
-			case "handler_order":
-				val, err = parseOptHandlerOrder(disp)
+			case "order":
+				val, err = parseOptOrder(disp)
 			case "experimental_http3":
 				val, err = parseOptExperimentalHTTP3(disp)
 			case "storage":
@@ -140,11 +141,12 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 			}
 
 			results, err := dirFunc(Helper{
-				Dispenser:   caddyfile.NewDispenser(segment),
-				options:     options,
-				warnings:    &warnings,
-				matcherDefs: matcherDefs,
-				parentBlock: sb.block,
+				Dispenser:    caddyfile.NewDispenser(segment),
+				options:      options,
+				warnings:     &warnings,
+				matcherDefs:  matcherDefs,
+				parentBlock:  sb.block,
+				groupCounter: gc,
 			})
 			if err != nil {
 				return nil, warnings, fmt.Errorf("parsing caddyfile tokens for '%s': %v", dir, err)
@@ -157,7 +159,7 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 	}
 
 	// map
-	sbmap, err := st.mapAddressToServerBlocks(serverBlocks)
+	sbmap, err := st.mapAddressToServerBlocks(serverBlocks, options)
 	if err != nil {
 		return nil, warnings, err
 	}
@@ -167,7 +169,7 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 
 	// each pairing of listener addresses to list of server
 	// blocks is basically a server definition
-	servers, err := st.serversFromPairings(pairings, options, &warnings)
+	servers, err := st.serversFromPairings(pairings, options, &warnings, gc)
 	if err != nil {
 		return nil, warnings, err
 	}
@@ -304,6 +306,7 @@ func (st *ServerType) serversFromPairings(
 	pairings []sbAddrAssociation,
 	options map[string]interface{},
 	warnings *[]caddyconfig.Warning,
+	groupCounter counter,
 ) (map[string]*caddyhttp.Server, error) {
 	servers := make(map[string]*caddyhttp.Server)
 
@@ -312,16 +315,48 @@ func (st *ServerType) serversFromPairings(
 			Listen: p.addresses,
 		}
 
+		// sort server blocks by their keys; this is important because
+		// only the first matching site should be evaluated, and we should
+		// attempt to match most specific site first (host and path), in
+		// case their matchers overlap; we do this somewhat naively by
+		// descending sort by length of host then path
+		sort.SliceStable(p.serverBlocks, func(i, j int) bool {
+			// TODO: we could pre-process the specificities for efficiency,
+			// but I don't expect many blocks will have SO many keys...
+			var iLongestPath, jLongestPath string
+			var iLongestHost, jLongestHost string
+			for _, key := range p.serverBlocks[i].block.Keys {
+				addr, _ := ParseAddress(key)
+				if specificity(addr.Host) > specificity(iLongestHost) {
+					iLongestHost = addr.Host
+				}
+				if specificity(addr.Path) > specificity(iLongestPath) {
+					iLongestPath = addr.Path
+				}
+			}
+			for _, key := range p.serverBlocks[j].block.Keys {
+				addr, _ := ParseAddress(key)
+				if specificity(addr.Host) > specificity(jLongestHost) {
+					jLongestHost = addr.Host
+				}
+				if specificity(addr.Path) > specificity(jLongestPath) {
+					jLongestPath = addr.Path
+				}
+			}
+			if specificity(iLongestHost) == specificity(jLongestHost) {
+				return len(iLongestPath) > len(jLongestPath)
+			}
+			return specificity(iLongestHost) > specificity(jLongestHost)
+		})
+
+		// create a subroute for each site in the server block
 		for _, sblock := range p.serverBlocks {
 			matcherSetsEnc, err := st.compileEncodedMatcherSets(sblock.block)
 			if err != nil {
 				return nil, fmt.Errorf("server block %v: compiling matcher sets: %v", sblock.block.Keys, err)
 			}
 
-			siteSubroute := new(caddyhttp.Subroute)
-
 			// tls: connection policies and toggle auto HTTPS
-
 			autoHTTPSQualifiedHosts, err := st.autoHTTPSHosts(sblock)
 			if err != nil {
 				return nil, err
@@ -354,97 +389,26 @@ func (st *ServerType) serversFromPairings(
 				// TODO: consolidate equal conn policies
 			}
 
-			// vars: make sure these are linked in first so future
-			// routes can use the variables they define
-			for _, cfgVal := range sblock.pile["var"] {
-				siteSubroute.Routes = append(siteSubroute.Routes, cfgVal.Value.(caddyhttp.Route))
+			// set up each handler directive, making sure to honor directive order
+			dirRoutes := sblock.pile["route"]
+			siteSubroute, err := buildSubroute(dirRoutes, groupCounter)
+			if err != nil {
+				return nil, err
 			}
 
-			// set up each handler directive - the order of the handlers
-			// as they are added to the routes depends on user preference
-			dirRoutes := sblock.pile["route"]
-			handlerOrder, ok := options["handler_order"].([]string)
-			if !ok {
-				handlerOrder = defaultDirectiveOrder
-			}
-			if len(handlerOrder) == 1 && handlerOrder[0] == "appearance" {
-				handlerOrder = nil
-			}
-			if handlerOrder != nil {
-				dirPositions := make(map[string]int)
-				for i, dir := range handlerOrder {
-					dirPositions[dir] = i
-				}
-				sort.SliceStable(dirRoutes, func(i, j int) bool {
-					iDir, jDir := dirRoutes[i].directive, dirRoutes[j].directive
-					if iDir == jDir {
-						// TODO: we really need to refactor this into a separate function or method...
-						// sub-sort by path matcher length, if there's only one
-						iRoute := dirRoutes[i].Value.(caddyhttp.Route)
-						jRoute := dirRoutes[j].Value.(caddyhttp.Route)
-						if len(iRoute.MatcherSetsRaw) == 1 && len(jRoute.MatcherSetsRaw) == 1 {
-							// for slightly better efficiency, only decode the path matchers once,
-							// then just store them arbitrarily in the decoded MatcherSets field,
-							// ours should be the only thing in there
-							var iPM, jPM caddyhttp.MatchPath
-							if len(iRoute.MatcherSets) == 1 {
-								iPM = iRoute.MatcherSets[0][0].(caddyhttp.MatchPath)
-							}
-							if len(jRoute.MatcherSets) == 1 {
-								jPM = jRoute.MatcherSets[0][0].(caddyhttp.MatchPath)
-							}
-							// if it's our first time seeing this route's path matcher, decode it
-							if iPM == nil {
-								var pathMatcher caddyhttp.MatchPath
-								_ = json.Unmarshal(iRoute.MatcherSetsRaw[0]["path"], &pathMatcher)
-								iRoute.MatcherSets = caddyhttp.MatcherSets{{pathMatcher}}
-								iPM = pathMatcher
-							}
-							if jPM == nil {
-								var pathMatcher caddyhttp.MatchPath
-								_ = json.Unmarshal(jRoute.MatcherSetsRaw[0]["path"], &pathMatcher)
-								jRoute.MatcherSets = caddyhttp.MatcherSets{{pathMatcher}}
-								jPM = pathMatcher
-							}
-							// finally, if there is only one path in the
-							// matcher, sort by longer path first
-							if len(iPM) == 1 && len(jPM) == 1 {
-								return len(iPM[0]) > len(jPM[0])
-							}
-						}
-					}
-					return dirPositions[iDir] < dirPositions[jDir]
+			if len(matcherSetsEnc) == 0 && len(p.serverBlocks) == 1 {
+				// no need to wrap the handlers in a subroute if this is
+				// the only server block and there is no matcher for it
+				srv.Routes = append(srv.Routes, siteSubroute.Routes...)
+			} else {
+				srv.Routes = append(srv.Routes, caddyhttp.Route{
+					MatcherSetsRaw: matcherSetsEnc,
+					HandlersRaw: []json.RawMessage{
+						caddyconfig.JSONModuleObject(siteSubroute, "handler", "subroute", warnings),
+					},
+					Terminal: true, // only first matching site block should be evaluated
 				})
 			}
-
-			// add all the routes piled in from directives
-			for _, r := range dirRoutes {
-				// as a special case, group rewrite directives so that they are mutually exclusive;
-				// this means that only the first matching rewrite will be evaluated, and that's
-				// probably a good thing, since there should never be a need to do more than one
-				// rewrite (I think?), and cascading rewrites smell bad... imagine these rewrites:
-				//     rewrite /docs/json/* /docs/json/index.html
-				//     rewrite /docs/*      /docs/index.html
-				// (We use this on the Caddy website, or at least we did once.) The first rewrite's
-				// result is also matched by the second rewrite, making the first rewrite pointless.
-				// See issue #2959.
-				if r.directive == "rewrite" {
-					route := r.Value.(caddyhttp.Route)
-					route.Group = "rewriting"
-					r.Value = route
-				}
-
-				siteSubroute.Routes = append(siteSubroute.Routes, r.Value.(caddyhttp.Route))
-			}
-
-			siteSubroute.Routes = consolidateRoutes(siteSubroute.Routes)
-
-			srv.Routes = append(srv.Routes, caddyhttp.Route{
-				MatcherSetsRaw: matcherSetsEnc,
-				HandlersRaw: []json.RawMessage{
-					caddyconfig.JSONModuleObject(siteSubroute, "handler", "subroute", warnings),
-				},
-			})
 		}
 
 		srv.Routes = consolidateRoutes(srv.Routes)
@@ -453,6 +417,98 @@ func (st *ServerType) serversFromPairings(
 	}
 
 	return servers, nil
+}
+
+func buildSubroute(routes []ConfigValue, groupCounter counter) (*caddyhttp.Subroute, error) {
+	for _, val := range routes {
+		if !directiveIsOrdered(val.directive) {
+			return nil, fmt.Errorf("directive '%s' is not ordered, so it cannot be used here", val.directive)
+		}
+	}
+
+	sortRoutes(routes)
+
+	subroute := new(caddyhttp.Subroute)
+
+	// get a group name for rewrite directives, if needed
+	var rewriteGroupName string
+	var rewriteCount int
+	for _, r := range routes {
+		if r.directive == "rewrite" {
+			rewriteCount++
+			if rewriteCount > 1 {
+				break
+			}
+		}
+	}
+	if rewriteCount > 1 {
+		rewriteGroupName = groupCounter.nextGroup()
+	}
+
+	// get a group name for handle blocks, if needed
+	var handleGroupName string
+	var handleCount int
+	for _, r := range routes {
+		if r.directive == "handle" {
+			handleCount++
+			if handleCount > 1 {
+				break
+			}
+		}
+	}
+	if handleCount > 1 {
+		handleGroupName = groupCounter.nextGroup()
+	}
+
+	// add all the routes piled in from directives
+	for _, r := range routes {
+		// as a special case, group rewrite directives so that they are mutually exclusive;
+		// this means that only the first matching rewrite will be evaluated, and that's
+		// probably a good thing, since there should never be a need to do more than one
+		// rewrite (I think?), and cascading rewrites smell bad... imagine these rewrites:
+		//     rewrite /docs/json/* /docs/json/index.html
+		//     rewrite /docs/*      /docs/index.html
+		// (We use this on the Caddy website, or at least we did once.) The first rewrite's
+		// result is also matched by the second rewrite, making the first rewrite pointless.
+		// See issue #2959.
+		if r.directive == "rewrite" {
+			route := r.Value.(caddyhttp.Route)
+			route.Group = rewriteGroupName
+			r.Value = route
+		}
+
+		// handle blocks are also mutually exclusive by definition
+		if r.directive == "handle" {
+			route := r.Value.(caddyhttp.Route)
+			route.Group = handleGroupName
+			r.Value = route
+		}
+
+		switch route := r.Value.(type) {
+		case caddyhttp.Subroute:
+			// if a route-class config value is actually a Subroute handler
+			// with nothing but a list of routes, then it is the intention
+			// of the directive to keep these handlers together and in this
+			// same order, but not necessarily in a subroute (if it wanted
+			// to keep them in a subroute, the directive would have returned
+			// a route with a Subroute as its handler); this is useful to
+			// keep multiple handlers/routes together and in the same order
+			// so that the sorting procedure we did above doesn't reorder them
+			if route.Errors != nil {
+				// if error handlers are also set, this is confusing; it's
+				// probably supposed to be wrapped in a Route and encoded
+				// as a regular handler route... programmer error.
+				panic("found subroute with more than just routes; perhaps it should have been wrapped in a route?")
+			}
+			subroute.Routes = append(subroute.Routes, route.Routes...)
+		case caddyhttp.Route:
+			subroute.Routes = append(subroute.Routes, route)
+		}
+	}
+
+	subroute.Routes = consolidateRoutes(subroute.Routes)
+
+	return subroute, nil
 }
 
 func (st ServerType) autoHTTPSHosts(sb serverBlock) ([]string, error) {
@@ -530,7 +586,6 @@ func matcherSetFromMatcherToken(
 		}
 		return m, true, nil
 	}
-
 	return nil, false, nil
 }
 
@@ -666,6 +721,42 @@ func tryInt(val interface{}, warnings *[]caddyconfig.Warning) int {
 		*warnings = append(*warnings, caddyconfig.Warning{Message: "not an integer type"})
 	}
 	return intVal
+}
+
+// specifity returns len(s) minus any wildcards (*) and
+// placeholders ({...}). Basically, it's a length count
+// that penalizes the use of wildcards and placeholders.
+// This is useful for comparing hostnames and paths.
+// However, wildcards in paths are not a sure answer to
+// the question of specificity. For exmaple,
+// '*.example.com' is clearly less specific than
+// 'a.example.com', but is '/a' more or less specific
+// than '/a*'?
+func specificity(s string) int {
+	l := len(s) - strings.Count(s, "*")
+	for len(s) > 0 {
+		start := strings.Index(s, "{")
+		if start < 0 {
+			return l
+		}
+		end := strings.Index(s[start:], "}") + start + 1
+		if end <= start {
+			return l
+		}
+		l -= end - start
+		s = s[end:]
+	}
+	return l
+}
+
+type counter struct {
+	n *int
+}
+
+func (c counter) nextGroup() string {
+	name := fmt.Sprintf("group%d", *c.n)
+	*c.n++
+	return name
 }
 
 type matcherSetAndTokens struct {

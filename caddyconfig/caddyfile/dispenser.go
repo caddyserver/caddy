@@ -152,8 +152,10 @@ func (d *Dispenser) NextBlock(initialNestingLevel int) bool {
 		if !d.Next() {
 			return false // should be EOF error
 		}
-		if d.Val() == "}" {
+		if d.Val() == "}" && !d.nextOnSameLine() {
 			d.nesting--
+		} else if d.Val() == "{" && !d.nextOnSameLine() {
+			d.nesting++
 		}
 		return d.nesting > initialNestingLevel
 	}
@@ -262,9 +264,9 @@ func (d *Dispenser) NewFromNextTokens() *Dispenser {
 		if !openedBlock {
 			// because NextBlock() consumes the initial open
 			// curly brace, we rewind here to append it, since
-			// our case is special in that we want to include
-			// all the tokens including surrounding curly braces
-			// for a new dispenser to have
+			// our case is special in that we want the new
+			// dispenser to have all the tokens including
+			// surrounding curly braces
 			d.Prev()
 			tkns = append(tkns, d.Token())
 			d.Next()
@@ -273,12 +275,12 @@ func (d *Dispenser) NewFromNextTokens() *Dispenser {
 		tkns = append(tkns, d.Token())
 	}
 	if openedBlock {
-		// include closing brace accordingly
+		// include closing brace
 		tkns = append(tkns, d.Token())
-		// since NewFromNextTokens is intended to consume the entire
-		// directive, we must call Next() here and consume the closing
-		// curly brace
-		d.Next()
+
+		// do not consume the closing curly brace; the
+		// next iteration of the enclosing loop will
+		// call Next() and consume it
 	}
 	return NewDispenser(tkns)
 }

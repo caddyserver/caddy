@@ -35,7 +35,7 @@ import (
 type (
 	// MatchHost matches requests by the Host value (case-insensitive).
 	//
-	// When used in an HTTP route,
+	// When used in a top-level HTTP route,
 	// [qualifying domain names](/docs/automatic-https#hostname-requirements)
 	// may trigger [automatic HTTPS](/docs/automatic-https), which automatically
 	// provisions and renews certificates for you. Before doing this, you
@@ -55,8 +55,8 @@ type (
 	// - In the middle, for a globular match (`/accounts/*/info`)
 	//
 	// This matcher is fast, so it does not support regular expressions or
-	// capture groups. For slower but more capable matching, use the path_regexp
-	// matcher.
+	// capture groups. For slower but more powerful matching, use the
+	// path_regexp matcher.
 	MatchPath []string
 
 	// MatchPathRE matches requests by a regular expression on the URI's path.

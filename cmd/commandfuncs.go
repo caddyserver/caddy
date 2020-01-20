@@ -312,12 +312,18 @@ func cmdReload(fl Flags) (int, error) {
 
 func cmdVersion(_ Flags) (int, error) {
 	goModule := caddy.GoModule()
+	fmt.Print(goModule.Version)
 	if goModule.Sum != "" {
 		// a build with a known version will also have a checksum
-		fmt.Printf("%s %s\n", goModule.Version, goModule.Sum)
-	} else {
-		fmt.Println(goModule.Version)
+		fmt.Printf(" %s", goModule.Sum)
 	}
+	if goModule.Replace != nil {
+		fmt.Printf(" => %s", goModule.Replace.Path)
+		if goModule.Replace.Version != "" {
+			fmt.Printf(" %s", goModule.Replace.Version)
+		}
+	}
+	fmt.Println()
 	return caddy.ExitCodeSuccess, nil
 }
 

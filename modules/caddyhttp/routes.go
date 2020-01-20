@@ -252,7 +252,6 @@ func wrapMiddleware(mh MiddlewareHandler) Middleware {
 
 		return HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
 			// TODO: This is where request tracing could be implemented
-			// TODO: Trace a diff of the request, would be cool too... see what changed since the last middleware (host, headers, URI...)
 			// TODO: see what the std lib gives us in terms of stack tracing too
 			return mh.ServeHTTP(w, r, nextCopy)
 		})
