@@ -16,6 +16,7 @@ package rewrite
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -60,6 +61,9 @@ func parseCaddyfileStripPrefix(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHand
 			return nil, h.ArgErr()
 		}
 		rewr.StripPathPrefix = h.Val()
+		if !strings.HasPrefix(rewr.StripPathPrefix, "/") {
+			rewr.StripPathPrefix = "/" + rewr.StripPathPrefix
+		}
 		if h.NextArg() {
 			return nil, h.ArgErr()
 		}
