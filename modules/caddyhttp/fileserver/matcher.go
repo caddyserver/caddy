@@ -51,9 +51,12 @@ type MatchFile struct {
 	Root string `json:"root,omitempty"`
 
 	// The list of files to try. Each path here is
-	// considered relatice to Root. If nil, the
-	// request URL's path will be assumed. Accepts
-	// placeholders.
+	// considered relatice to Root. If nil, the request
+	// URL's path will be assumed. Files and
+	// directories are treated distinctly, so to match
+	// a directory, the filepath MUST end in a forward
+	// slash `/`. To match a regular file, there must
+	// be no trailing slash. Accepts placeholders.
 	TryFiles []string `json:"try_files,omitempty"`
 
 	// How to choose a file in TryFiles. Can be:

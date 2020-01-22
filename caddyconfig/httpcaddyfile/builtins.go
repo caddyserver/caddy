@@ -30,7 +30,7 @@ import (
 
 func init() {
 	RegisterDirective("bind", parseBind)
-	RegisterDirective("root", parseRoot)
+	RegisterDirective("root", parseRoot) // TODO: isn't this a handler directive?
 	RegisterDirective("tls", parseTLS)
 	RegisterHandlerDirective("redir", parseRedir)
 	RegisterHandlerDirective("respond", parseRespond)
@@ -38,6 +38,10 @@ func init() {
 	RegisterHandlerDirective("handle", parseHandle)
 }
 
+// parseBind parses the bind directive. Syntax:
+//
+//     bind <addresses...>
+//
 func parseBind(h Helper) ([]ConfigValue, error) {
 	var lnHosts []string
 	for h.Next() {
@@ -46,6 +50,10 @@ func parseBind(h Helper) ([]ConfigValue, error) {
 	return h.NewBindAddresses(lnHosts), nil
 }
 
+// parseRoot parses the root directive. Syntax:
+//
+//     root [<matcher>] <path>
+//
 func parseRoot(h Helper) ([]ConfigValue, error) {
 	if !h.Next() {
 		return nil, h.ArgErr()
@@ -251,6 +259,10 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	return configVals, nil
 }
 
+// parseRedir parses the redir directive. Syntax:
+//
+//     redir [<matcher>] <to> [<code>]
+//
 func parseRedir(h Helper) (caddyhttp.MiddlewareHandler, error) {
 	if !h.Next() {
 		return nil, h.ArgErr()
@@ -269,10 +281,10 @@ func parseRedir(h Helper) (caddyhttp.MiddlewareHandler, error) {
 		code = "301"
 	}
 	if code == "temporary" || code == "" {
-		code = "307"
+		code = "302"
 	}
 	var body string
-	if code == "meta" {
+	if code == "html" {
 		// Script tag comes first since that will better imitate a redirect in the browser's
 		// history, but the meta tag is a fallback for most non-JS clients.
 		const metaRedir = `<!DOCTYPE html>
@@ -296,6 +308,7 @@ func parseRedir(h Helper) (caddyhttp.MiddlewareHandler, error) {
 	}, nil
 }
 
+// parseRespond parses the respond directive.
 func parseRespond(h Helper) (caddyhttp.MiddlewareHandler, error) {
 	sr := new(caddyhttp.StaticResponse)
 	err := sr.UnmarshalCaddyfile(h.Dispenser)
@@ -305,6 +318,7 @@ func parseRespond(h Helper) (caddyhttp.MiddlewareHandler, error) {
 	return sr, nil
 }
 
+// parseRoute parses the route directive.
 func parseRoute(h Helper) (caddyhttp.MiddlewareHandler, error) {
 	sr := new(caddyhttp.Subroute)
 
@@ -337,6 +351,7 @@ func parseRoute(h Helper) (caddyhttp.MiddlewareHandler, error) {
 	return sr, nil
 }
 
+// parseHandle parses the route directive.
 func parseHandle(h Helper) (caddyhttp.MiddlewareHandler, error) {
 	var allResults []ConfigValue
 
