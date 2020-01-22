@@ -545,6 +545,82 @@ func TestHeaderREMatcher(t *testing.T) {
 	}
 }
 
+func TestVarREMatcher(t *testing.T) {
+	for i, tc := range []struct {
+		match      MatchVarRE
+		input      VarsMiddleware
+		expect     bool
+		expectRepl map[string]string
+	}{
+		{
+			match:  MatchVarRE{"Var1": &MatchRegexp{Pattern: "foo"}},
+			input:  VarsMiddleware{"Var1": "foo"},
+			expect: true,
+		},
+		{
+			match:  MatchVarRE{"Var1": &MatchRegexp{Pattern: "$foo^"}},
+			input:  VarsMiddleware{"Var1": "foobar"},
+			expect: false,
+		},
+		{
+			match:      MatchVarRE{"Var1": &MatchRegexp{Pattern: "^foo(.*)$", Name: "name"}},
+			input:      VarsMiddleware{"Var1": "foobar"},
+			expect:     true,
+			expectRepl: map[string]string{"name.1": "bar"},
+		},
+		{
+			match:  MatchVarRE{"{http.request.method}": &MatchRegexp{Pattern: "^G.[tT]$"}},
+			input:  VarsMiddleware{},
+			expect: true,
+		},
+		{
+			match:  MatchVarRE{"{http.vars.Var1}": &MatchRegexp{Pattern: "[vV]ar[0-9]"}},
+			input:  VarsMiddleware{"Var1": "var1Value"},
+			expect: true,
+		},
+	} {
+		// compile the regexp and validate its name
+		err := tc.match.Provision(caddy.Context{})
+		if err != nil {
+			t.Errorf("Test %d %v: Provisioning: %v", i, tc.match, err)
+			continue
+		}
+		err = tc.match.Validate()
+		if err != nil {
+			t.Errorf("Test %d %v: Validating: %v", i, tc.match, err)
+			continue
+		}
+
+		// set up the fake request and its Replacer
+		req := &http.Request{URL: new(url.URL), Method: http.MethodGet}
+		repl := caddy.NewReplacer()
+		ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
+		ctx = context.WithValue(ctx, VarsCtxKey, make(map[string]interface{}))
+		req = req.WithContext(ctx)
+
+		addHTTPVarsToReplacer(repl, req, httptest.NewRecorder())
+
+		tc.input.ServeHTTP(httptest.NewRecorder(), req, emptyHandler)
+
+		actual := tc.match.Match(req)
+		if actual != tc.expect {
+			t.Errorf("Test %d [%v]: Expected %t, got %t for input '%s'",
+				i, tc.match, tc.expect, actual, tc.input)
+			continue
+		}
+
+		for key, expectVal := range tc.expectRepl {
+			placeholder := fmt.Sprintf("{http.regexp.%s}", key)
+			actualVal := repl.ReplaceAll(placeholder, "<empty>")
+			if actualVal != expectVal {
+				t.Errorf("Test %d [%v]: Expected placeholder {http.regexp.%s} to be '%s' but got '%s'",
+					i, tc.match, key, expectVal, actualVal)
+				continue
+			}
+		}
+	}
+}
+
 func TestResponseMatcher(t *testing.T) {
 	for i, tc := range []struct {
 		require ResponseMatcher
