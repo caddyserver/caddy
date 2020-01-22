@@ -23,14 +23,14 @@ import (
 )
 
 func init() {
-	httpcaddyfile.RegisterHandlerDirective("headers", parseCaddyfile)
+	httpcaddyfile.RegisterHandlerDirective("header", parseCaddyfile)
 	httpcaddyfile.RegisterHandlerDirective("request_header", parseReqHdrCaddyfile)
 }
 
 // parseCaddyfile sets up the handler for response headers from
 // Caddyfile tokens. Syntax:
 //
-//     headers [<matcher>] [[+|-]<field> [<value|regexp>] [<replacement>]] {
+//     header [<matcher>] [[+|-]<field> [<value|regexp>] [<replacement>]] {
 //         [+]<field> [<value|regexp> [<replacement>]]
 //         -<field>
 //     }

@@ -38,7 +38,7 @@ var directiveOrder = []string{
 	"try_files",
 
 	"basicauth",
-	"headers",
+	"header",
 	"request_header",
 	"encode",
 	"templates",
