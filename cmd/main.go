@@ -93,12 +93,16 @@ func handlePingbackConn(conn net.Conn, expect []byte) error {
 
 // loadConfig loads the config from configFile and adapts it
 // using adapterName. If adapterName is specified, configFile
-// must be also. It prints any warnings to stderr, and returns
-// the resulting JSON config bytes.
-func loadConfig(configFile, adapterName string) ([]byte, error) {
+// must be also. If no configFile is specified, it tries
+// loading a default config file. The lack of a config file is
+// not treated as an error, but false will be returned if
+// there is no config available. It prints any warnings to stderr,
+// and returns the resulting JSON config bytes along with
+// whether a config file was loaded or not.
+func loadConfig(configFile, adapterName string) ([]byte, bool, error) {
 	// specifying an adapter without a config file is ambiguous
 	if adapterName != "" && configFile == "" {
-		return nil, fmt.Errorf("cannot adapt config without config file (use --config)")
+		return nil, false, fmt.Errorf("cannot adapt config without config file (use --config)")
 	}
 
 	// load initial config and adapter
@@ -108,7 +112,7 @@ func loadConfig(configFile, adapterName string) ([]byte, error) {
 	if configFile != "" {
 		config, err = ioutil.ReadFile(configFile)
 		if err != nil {
-			return nil, fmt.Errorf("reading config file: %v", err)
+			return nil, false, fmt.Errorf("reading config file: %v", err)
 		}
 		caddy.Log().Info("using provided configuration",
 			zap.String("config_file", configFile),
@@ -125,7 +129,7 @@ func loadConfig(configFile, adapterName string) ([]byte, error) {
 				cfgAdapter = nil
 			} else if err != nil {
 				// default Caddyfile exists, but error reading it
-				return nil, fmt.Errorf("reading default Caddyfile: %v", err)
+				return nil, false, fmt.Errorf("reading default Caddyfile: %v", err)
 			} else {
 				// success reading default Caddyfile
 				configFile = "Caddyfile"
@@ -147,7 +151,7 @@ func loadConfig(configFile, adapterName string) ([]byte, error) {
 	if adapterName != "" {
 		cfgAdapter = caddyconfig.GetAdapter(adapterName)
 		if cfgAdapter == nil {
-			return nil, fmt.Errorf("unrecognized config adapter: %s", adapterName)
+			return nil, false, fmt.Errorf("unrecognized config adapter: %s", adapterName)
 		}
 	}
 
@@ -157,7 +161,7 @@ func loadConfig(configFile, adapterName string) ([]byte, error) {
 			"filename": configFile,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("adapting config using %s: %v", adapterName, err)
+			return nil, false, fmt.Errorf("adapting config using %s: %v", adapterName, err)
 		}
 		for _, warn := range warnings {
 			msg := warn.Message
@@ -169,7 +173,7 @@ func loadConfig(configFile, adapterName string) ([]byte, error) {
 		config = adaptedConfig
 	}
 
-	return config, nil
+	return config, configFile != "", nil
 }
 
 // Flags wraps a FlagSet so that typed values
