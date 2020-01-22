@@ -20,6 +20,7 @@ import (
 	"html"
 	"net/http"
 	"reflect"
+	"strings"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -80,6 +81,17 @@ func parseRoot(h Helper) ([]ConfigValue, error) {
 	return []ConfigValue{{Class: "route", Value: route}}, nil
 }
 
+// parseTLS parses the tls directive. Syntax:
+//
+//     tls [<email>]|[<cert_file> <key_file>] {
+//         protocols <min> [<max>]
+//         ciphers   <cipher_suites...>
+//         curves    <curves...>
+//         alpn      <values...>
+//         load      <paths...>
+//         ca        <acme_ca_endpoint>
+//     }
+//
 func parseTLS(h Helper) ([]ConfigValue, error) {
 	var configVals []ConfigValue
 
@@ -87,7 +99,6 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	var fileLoader caddytls.FileLoader
 	var folderLoader caddytls.FolderLoader
 	var mgr caddytls.ACMEManagerMaker
-	var off bool
 
 	// fill in global defaults, if configured
 	if email := h.Option("email"); email != nil {
@@ -103,16 +114,15 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 		switch len(firstLine) {
 		case 0:
 		case 1:
-			if firstLine[0] == "off" {
-				off = true
-			} else {
-				mgr.Email = firstLine[0]
+			if !strings.Contains(firstLine[0], "@") {
+				return nil, h.Err("single argument must be an email address")
 			}
+			mgr.Email = firstLine[0]
 		case 2:
 			fileLoader = append(fileLoader, caddytls.CertKeyFilePair{
 				Certificate: firstLine[0],
 				Key:         firstLine[1],
-				// TODO: add tags, for enterprise module's certificate selection
+				// TODO: add tags, to ensure this certificate is always used for this server name
 			})
 		default:
 			return nil, h.ArgErr()
@@ -231,12 +241,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	}
 
 	// automation policy
-	if off {
-		configVals = append(configVals, ConfigValue{
-			Class: "tls.off",
-			Value: true,
-		})
-	} else if !reflect.DeepEqual(mgr, caddytls.ACMEManagerMaker{}) {
+	if !reflect.DeepEqual(mgr, caddytls.ACMEManagerMaker{}) {
 		configVals = append(configVals, ConfigValue{
 			Class: "tls.automation_manager",
 			Value: mgr,
