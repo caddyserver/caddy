@@ -178,7 +178,7 @@ func (h HTTPTransport) Cleanup() error {
 type TLSConfig struct {
 	RootCAPool []string `json:"root_ca_pool,omitempty"`
 	// Added to the same pool as above, but brought in from files
-	RootCAPemFiles []string `json:"root_ca_pem_files,omitempty"`
+	RootCAPEMFiles []string `json:"root_ca_pem_files,omitempty"`
 	// TODO: Should the client cert+key config use caddytls.CertificateLoader modules?
 	ClientCertificateFile    string         `json:"client_certificate_file,omitempty"`
 	ClientCertificateKeyFile string         `json:"client_certificate_key_file,omitempty"`
@@ -208,7 +208,7 @@ func (t TLSConfig) MakeTLSClientConfig() (*tls.Config, error) {
 	}
 
 	// trusted root CAs
-	if len(t.RootCAPool) > 0 || len(t.RootCAPemFiles) > 0 {
+	if len(t.RootCAPool) > 0 || len(t.RootCAPEMFiles) > 0 {
 		rootPool := x509.NewCertPool()
 		for _, encodedCACert := range t.RootCAPool {
 			caCert, err := decodeBase64DERCert(encodedCACert)
@@ -217,7 +217,7 @@ func (t TLSConfig) MakeTLSClientConfig() (*tls.Config, error) {
 			}
 			rootPool.AddCert(caCert)
 		}
-		for _, pemFile := range t.RootCAPemFiles {
+		for _, pemFile := range t.RootCAPEMFiles {
 			pemData, err := ioutil.ReadFile(pemFile)
 			if err != nil {
 				return nil, fmt.Errorf("failed reading ca cert: %v", err)
