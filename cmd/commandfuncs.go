@@ -171,7 +171,7 @@ func cmdRun(fl Flags) (int, error) {
 	}
 	// we don't use 'else' here since this value might have been changed in 'if' block; i.e. not mutually exclusive
 	if !runCmdResumeFlag {
-		config, err = loadConfig(runCmdConfigFlag, runCmdConfigAdapterFlag)
+		config, _, err = loadConfig(runCmdConfigFlag, runCmdConfigAdapterFlag)
 		if err != nil {
 			return caddy.ExitCodeFailedStartup, err
 		}
@@ -265,9 +265,12 @@ func cmdReload(fl Flags) (int, error) {
 	reloadCmdAddrFlag := fl.String("address")
 
 	// get the config in caddy's native format
-	config, err := loadConfig(reloadCmdConfigFlag, reloadCmdConfigAdapterFlag)
+	config, hasConfig, err := loadConfig(reloadCmdConfigFlag, reloadCmdConfigAdapterFlag)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, err
+	}
+	if !hasConfig {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("no config file to load")
 	}
 
 	// get the address of the admin listener and craft endpoint URL
