@@ -264,12 +264,6 @@ func cmdReload(fl Flags) (int, error) {
 	reloadCmdConfigAdapterFlag := fl.String("adapter")
 	reloadCmdAddrFlag := fl.String("address")
 
-	// a configuration is required
-	if reloadCmdConfigFlag == "" {
-		return caddy.ExitCodeFailedStartup,
-			fmt.Errorf("no configuration to load (use --config)")
-	}
-
 	// get the config in caddy's native format
 	config, err := loadConfig(reloadCmdConfigFlag, reloadCmdConfigAdapterFlag)
 	if err != nil {
@@ -278,7 +272,7 @@ func cmdReload(fl Flags) (int, error) {
 
 	// get the address of the admin listener and craft endpoint URL
 	adminAddr := reloadCmdAddrFlag
-	if adminAddr == "" {
+	if adminAddr == "" && len(config) > 0 {
 		var tmpStruct struct {
 			Admin caddy.AdminConfig `json:"admin"`
 		}
