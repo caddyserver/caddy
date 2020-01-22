@@ -97,7 +97,7 @@ func handlePingbackConn(conn net.Conn, expect []byte) error {
 // the resulting JSON config bytes.
 func loadConfig(configFile, adapterName string) ([]byte, error) {
 	// specifying an adapter without a config file is ambiguous
-	if configFile == "" && adapterName != "" {
+	if adapterName != "" && configFile == "" {
 		return nil, fmt.Errorf("cannot adapt config without config file (use --config)")
 	}
 
