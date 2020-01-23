@@ -389,6 +389,24 @@ func (st *ServerType) serversFromPairings(
 				// TODO: consolidate equal conn policies
 			}
 
+			// exclude any hosts that were defined explicitly with
+			// "http://" in the key from automated cert management (issue #2998)
+			for _, key := range sblock.block.Keys {
+				addr, err := ParseAddress(key)
+				if err != nil {
+					return nil, err
+				}
+				addr = addr.Normalize()
+				if addr.Scheme == "http" {
+					if srv.AutoHTTPS == nil {
+						srv.AutoHTTPS = new(caddyhttp.AutoHTTPSConfig)
+					}
+					if !sliceContains(srv.AutoHTTPS.Skip, addr.Host) {
+						srv.AutoHTTPS.Skip = append(srv.AutoHTTPS.Skip, addr.Host)
+					}
+				}
+			}
+
 			// set up each handler directive, making sure to honor directive order
 			dirRoutes := sblock.pile["route"]
 			siteSubroute, err := buildSubroute(dirRoutes, groupCounter)
@@ -721,6 +739,16 @@ func tryInt(val interface{}, warnings *[]caddyconfig.Warning) int {
 		*warnings = append(*warnings, caddyconfig.Warning{Message: "not an integer type"})
 	}
 	return intVal
+}
+
+// sliceContains returns true if needle is in haystack.
+func sliceContains(haystack []string, needle string) bool {
+	for _, s := range haystack {
+		if s == needle {
+			return true
+		}
+	}
+	return false
 }
 
 // specifity returns len(s) minus any wildcards (*) and
