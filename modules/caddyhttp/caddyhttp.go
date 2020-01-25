@@ -59,12 +59,12 @@ func init() {
 // `{http.request.host}` | The host part of the request's Host header
 // `{http.request.hostport}` | The host and port from the request's Host header
 // `{http.request.method}` | The request method
-// `{http.request.orig.method}` | The request's original method
-// `{http.request.orig.path.dir}` | The request's original directory
-// `{http.request.orig.path.file}` | The request's original filename
-// `{http.request.orig.uri.path}` | The request's original path
-// `{http.request.orig.uri.query}` | The request's original query string (without `?`)
-// `{http.request.orig.uri}` | The request's original URI
+// `{http.request.orig_method}` | The request's original method
+// `{http.request.orig_uri.path.dir}` | The request's original directory
+// `{http.request.orig_uri.path.file}` | The request's original filename
+// `{http.request.orig_uri.path}` | The request's original path
+// `{http.request.orig_uri.query}` | The request's original query string (without `?`)
+// `{http.request.orig_uri}` | The request's original URI
 // `{http.request.port}` | The port part of the request's Host header
 // `{http.request.proto}` | The protocol of the request
 // `{http.request.remote.host}` | The host part of the remote client's address
