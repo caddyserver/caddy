@@ -178,6 +178,8 @@ type RespHeaderOps struct {
 
 	// If true, header operations will be deferred until
 	// they are written out. Superceded if Require is set.
+	// Usually you will need to set this to true if any
+	// fields are being deleted.
 	Deferred bool `json:"deferred,omitempty"`
 }
 
