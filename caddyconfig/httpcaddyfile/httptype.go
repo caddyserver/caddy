@@ -94,15 +94,18 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 		// their actual placeholder identifiers or
 		// variable names
 		replacer := strings.NewReplacer(
-			"{uri}", "{http.request.uri}",
-			"{path}", "{http.request.uri.path}",
+			"{dir}", "{http.request.uri.path.dir}",
+			"{file}", "{http.request.uri.path.file}",
 			"{host}", "{http.request.host}",
 			"{hostport}", "{http.request.hostport}",
 			"{method}", "{http.request.method}",
-			"{scheme}", "{http.request.scheme}",
-			"{file}", "{http.request.uri.path.file}",
-			"{dir}", "{http.request.uri.path.dir}",
+			"{path}", "{http.request.uri.path}",
 			"{query}", "{http.request.uri.query}",
+			"{remote_host}", "{http.request.remote.host}",
+			"{remote_port}", "{http.request.remote.port}",
+			"{remote}", "{http.request.remote}",
+			"{scheme}", "{http.request.scheme}",
+			"{uri}", "{http.request.uri}",
 		)
 		for _, segment := range sb.block.Segments {
 			for i := 0; i < len(segment); i++ {
