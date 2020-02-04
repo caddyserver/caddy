@@ -448,38 +448,13 @@ func buildSubroute(routes []ConfigValue, groupCounter counter) (*caddyhttp.Subro
 
 	subroute := new(caddyhttp.Subroute)
 
-	// get a group name for rewrite directives, if needed
-	var rewriteGroupName string
-	var rewriteCount int
-	for _, r := range routes {
-		if r.directive == "rewrite" {
-			rewriteCount++
-			if rewriteCount > 1 {
-				break
-			}
-		}
-	}
-	if rewriteCount > 1 {
-		rewriteGroupName = groupCounter.nextGroup()
-	}
-
-	// get a group name for handle blocks, if needed
-	var handleGroupName string
-	var handleCount int
-	for _, r := range routes {
-		if r.directive == "handle" {
-			handleCount++
-			if handleCount > 1 {
-				break
-			}
-		}
-	}
-	if handleCount > 1 {
-		handleGroupName = groupCounter.nextGroup()
-	}
-
-	// add all the routes piled in from directives
-	for _, r := range routes {
+	// some directives are mutually exclusive (only first matching
+	// instance should be evaluated); this is done by putting their
+	// routes in the same group
+	mutuallyExclusiveDirs := map[string]*struct {
+		count     int
+		groupName string
+	}{
 		// as a special case, group rewrite directives so that they are mutually exclusive;
 		// this means that only the first matching rewrite will be evaluated, and that's
 		// probably a good thing, since there should never be a need to do more than one
@@ -489,16 +464,37 @@ func buildSubroute(routes []ConfigValue, groupCounter counter) (*caddyhttp.Subro
 		// (We use this on the Caddy website, or at least we did once.) The first rewrite's
 		// result is also matched by the second rewrite, making the first rewrite pointless.
 		// See issue #2959.
-		if r.directive == "rewrite" {
-			route := r.Value.(caddyhttp.Route)
-			route.Group = rewriteGroupName
-			r.Value = route
-		}
+		"rewrite": {},
 
 		// handle blocks are also mutually exclusive by definition
-		if r.directive == "handle" {
+		"handle": {},
+
+		// root just sets a variable, so if it was not mutually exclusive, intersecting
+		// root directives would overwrite previously-matched ones; they should not cascade
+		"root": {},
+	}
+	for meDir, info := range mutuallyExclusiveDirs {
+		// see how many instances of the directive there are
+		for _, r := range routes {
+			if r.directive == meDir {
+				info.count++
+				if info.count > 1 {
+					break
+				}
+			}
+		}
+		// if there is more than one, put them in a group
+		if info.count > 1 {
+			info.groupName = groupCounter.nextGroup()
+		}
+	}
+
+	// add all the routes piled in from directives
+	for _, r := range routes {
+		// put this route into a group if it is mutually exclusive
+		if info, ok := mutuallyExclusiveDirs[r.directive]; ok {
 			route := r.Value.(caddyhttp.Route)
-			route.Group = handleGroupName
+			route.Group = info.groupName
 			r.Value = route
 		}
 
