@@ -413,9 +413,27 @@ func cmdAdaptConfig(fl Flags) (int, error) {
 	adaptCmdPrettyFlag := fl.Bool("pretty")
 	adaptCmdValidateFlag := fl.Bool("validate")
 
-	if adaptCmdAdapterFlag == "" || adaptCmdInputFlag == "" {
+	// if no input file was specified, try a default
+	// Caddyfile if the Caddyfile adapter is plugged in
+	if adaptCmdInputFlag == "" && caddyconfig.GetAdapter("caddyfile") != nil {
+		_, err := os.Stat("Caddyfile")
+		if err == nil {
+			// default Caddyfile exists
+			adaptCmdInputFlag = "Caddyfile"
+			caddy.Log().Info("using adjacent Caddyfile")
+		} else if !os.IsNotExist(err) {
+			// default Caddyfile exists, but error accessing it
+			return caddy.ExitCodeFailedStartup, fmt.Errorf("accessing default Caddyfile: %v", err)
+		}
+	}
+
+	if adaptCmdInputFlag == "" {
 		return caddy.ExitCodeFailedStartup,
-			fmt.Errorf("--adapter and --config flags are required")
+			fmt.Errorf("input file required when there is no Caddyfile in current directory (use --config flag)")
+	}
+	if adaptCmdAdapterFlag == "" {
+		return caddy.ExitCodeFailedStartup,
+			fmt.Errorf("adapter name is required (use --adapt flag or leave unspecified for default)")
 	}
 
 	cfgAdapter := caddyconfig.GetAdapter(adaptCmdAdapterFlag)
