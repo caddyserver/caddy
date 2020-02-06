@@ -220,11 +220,12 @@ func (app *App) Validate() error {
 // Start runs the app. It finishes automatic HTTPS if enabled,
 // including management of certificates.
 func (app *App) Start() error {
-	// finish setting up automatic HTTPS and manage certs;
-	// this must happen before each server is started
+	// give each server a pointer to the TLS app;
+	// this is required before they are started so
+	// they can solve ACME challenges
 	err := app.automaticHTTPSPhase2()
 	if err != nil {
-		return fmt.Errorf("enabling automatic HTTPS: %v", err)
+		return fmt.Errorf("enabling automatic HTTPS, phase 2: %v", err)
 	}
 
 	for srvName, srv := range app.Servers {
@@ -295,6 +296,13 @@ func (app *App) Start() error {
 				app.servers = append(app.servers, s)
 			}
 		}
+	}
+
+	// finish automatic HTTPS by finally beginning
+	// certificate management
+	err = app.automaticHTTPSPhase3()
+	if err != nil {
+		return fmt.Errorf("finalizing automatic HTTPS: %v", err)
 	}
 
 	return nil
