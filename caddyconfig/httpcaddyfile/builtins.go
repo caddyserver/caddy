@@ -127,11 +127,21 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 			}
 			mgr.Email = firstLine[0]
 		case 2:
+			tag := fmt.Sprintf("cert%d", tagCounter)
 			fileLoader = append(fileLoader, caddytls.CertKeyFilePair{
 				Certificate: firstLine[0],
 				Key:         firstLine[1],
-				// TODO: add tags, to ensure this certificate is always used for this server name
+				Tags:        []string{tag},
 			})
+			// tag this certificate so if multiple certs match, specifically
+			// this one that the user has provided will be used, see #2588:
+			// https://github.com/caddyserver/caddy/issues/2588
+			tagCounter++
+			certSelector := caddytls.CustomCertSelectionPolicy{Tag: tag}
+			if cp == nil {
+				cp = new(caddytls.ConnectionPolicy)
+			}
+			cp.CertSelection = caddyconfig.JSONModuleObject(certSelector, "policy", "custom", h.warnings)
 		default:
 			return nil, h.ArgErr()
 		}
@@ -382,3 +392,5 @@ func parseHandle(h Helper) (caddyhttp.MiddlewareHandler, error) {
 
 	return nil, nil
 }
+
+var tagCounter = 0
