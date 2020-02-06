@@ -62,7 +62,7 @@ func (ahc AutoHTTPSConfig) Skipped(name string, skipSlice []string) bool {
 // HTTPS, and sets up HTTP->HTTPS redirects. This phase must occur
 // at the beginning of provisioning, because it may add routes and
 // even servers to the app, which still need to be set up with the
-// rest of them.
+// rest of them during provisioning.
 func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) error {
 	// this map will store associations of HTTP listener
 	// addresses to the routes that do HTTP->HTTPS redirects
@@ -259,10 +259,9 @@ redirRoutesLoop:
 }
 
 // automaticHTTPSPhase2 attaches a TLS app pointer to each
-// server and begins certificate management for all names
-// in the qualifying domain set for each server. This phase
-// must occur after provisioning, and at the beginning of
-// the app start, before starting each of the servers.
+// server. This phase must occur after provisioning, and
+// at the beginning of the app start, before starting each
+// of the servers.
 func (app *App) automaticHTTPSPhase2() error {
 	tlsAppIface, err := app.ctx.App("tls")
 	if err != nil {
@@ -277,6 +276,20 @@ func (app *App) automaticHTTPSPhase2() error {
 		srv.tlsApp = tlsApp
 	}
 
+	return nil
+}
+
+// automaticHTTPSPhase3 begins certificate management for
+// all names in the qualifying domain set for each server.
+// This phase must occur after provisioning and at the end
+// of app start, after all the servers have been started.
+// Doing this last ensures that there won't be any race
+// for listeners on the HTTP or HTTPS ports when management
+// is async (if CertMagic's solvers bind to those ports
+// first, then our servers would fail to bind to them,
+// which would be bad, since CertMagic's bindings are
+// temporary and don't serve the user's sites!).
+func (app *App) automaticHTTPSPhase3() error {
 	// begin managing certificates for enabled servers
 	for srvName, srv := range app.Servers {
 		if srv.AutoHTTPS == nil ||
@@ -294,7 +307,7 @@ func (app *App) automaticHTTPSPhase2() error {
 				// don't obtain another one for it, unless we are
 				// supposed to ignore loaded certificates
 				if !srv.AutoHTTPS.IgnoreLoadedCerts &&
-					len(tlsApp.AllMatchingCertificates(d)) > 0 {
+					len(srv.tlsApp.AllMatchingCertificates(d)) > 0 {
 					app.logger.Info("skipping automatic certificate management because one or more matching certificates are already loaded",
 						zap.String("domain", d),
 						zap.String("server_name", srvName),
@@ -321,10 +334,10 @@ func (app *App) automaticHTTPSPhase2() error {
 				},
 			},
 		}
-		if tlsApp.Automation == nil {
-			tlsApp.Automation = new(caddytls.AutomationConfig)
+		if srv.tlsApp.Automation == nil {
+			srv.tlsApp.Automation = new(caddytls.AutomationConfig)
 		}
-		tlsApp.Automation.Policies = append(tlsApp.Automation.Policies,
+		srv.tlsApp.Automation.Policies = append(srv.tlsApp.Automation.Policies,
 			caddytls.AutomationPolicy{
 				Hosts:      domainsForCerts,
 				Management: acmeManager,
@@ -334,7 +347,7 @@ func (app *App) automaticHTTPSPhase2() error {
 		app.logger.Info("enabling automatic TLS certificate management",
 			zap.Strings("domains", domainsForCerts),
 		)
-		err := tlsApp.Manage(domainsForCerts)
+		err := srv.tlsApp.Manage(domainsForCerts)
 		if err != nil {
 			return fmt.Errorf("%s: managing certificate for %s: %s", srvName, domains, err)
 		}
