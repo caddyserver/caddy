@@ -372,6 +372,7 @@ func (st *ServerType) serversFromPairings(
 				srv.AutoHTTPS.Skip = append(srv.AutoHTTPS.Skip, autoHTTPSQualifiedHosts...)
 			} else if cpVals, ok := sblock.pile["tls.connection_policy"]; ok {
 				// tls connection policies
+				var hasCatchAll bool
 				for _, cpVal := range cpVals {
 					cp := cpVal.Value.(*caddytls.ConnectionPolicy)
 
@@ -381,14 +382,31 @@ func (st *ServerType) serversFromPairings(
 						return nil, err
 					}
 
-					// TODO: are matchers needed if every hostname of the config is matched?
+					// TODO: are matchers needed if every hostname of the resulting config is matched?
 					if len(hosts) > 0 {
 						cp.MatchersRaw = caddy.ModuleMap{
 							"sni": caddyconfig.JSON(hosts, warnings), // make sure to match all hosts, not just auto-HTTPS-qualified ones
 						}
+					} else {
+						hasCatchAll = true
 					}
+
 					srv.TLSConnPolicies = append(srv.TLSConnPolicies, cp)
 				}
+
+				// a catch-all is necessary to ensure TLS can be offered to
+				// all hostnames of the server; even though only one policy
+				// is needed to enable TLS for the server, that policy might
+				// apply to only certain TLS handshakes; but when using the
+				// Caddyfile, user would expect all handshakes to at least
+				// have a matching connection policy, so here we append a
+				// catch-all/default policy if there isn't one already (it's
+				// important that it goes at the end) - see issue #3004:
+				// https://github.com/caddyserver/caddy/issues/3004
+				if !hasCatchAll {
+					srv.TLSConnPolicies = append(srv.TLSConnPolicies, new(caddytls.ConnectionPolicy))
+				}
+
 				// TODO: consolidate equal conn policies
 			}
 
@@ -569,14 +587,41 @@ func consolidateAutomationPolicies(aps []caddytls.AutomationPolicy) []caddytls.A
 			if j == i {
 				continue
 			}
-			if reflect.DeepEqual(aps[i].ManagementRaw, aps[j].ManagementRaw) {
-				aps[i].Hosts = append(aps[i].Hosts, aps[j].Hosts...)
+
+			// if they're exactly equal in every way, just keep one of them
+			if reflect.DeepEqual(aps[i], aps[j]) {
 				aps = append(aps[:j], aps[j+1:]...)
+				i--
+				break
+			}
+
+			// if the policy is the same, we can keep just one, but we have
+			// to be careful which one we keep; if only one has any hostnames
+			// defined, then we need to keep the one without any hostnames,
+			// otherwise the one without any hosts (a catch-all) would be
+			// eaten up by the one with hosts; and if both have hosts, we
+			// need to combine their lists
+			if reflect.DeepEqual(aps[i].ManagementRaw, aps[j].ManagementRaw) &&
+				aps[i].ManageSync == aps[j].ManageSync {
+				if len(aps[i].Hosts) == 0 && len(aps[j].Hosts) > 0 {
+					aps = append(aps[:j], aps[j+1:]...)
+				} else if len(aps[i].Hosts) > 0 && len(aps[j].Hosts) == 0 {
+					aps = append(aps[:i], aps[i+1:]...)
+				} else {
+					aps[i].Hosts = append(aps[i].Hosts, aps[j].Hosts...)
+					aps = append(aps[:j], aps[j+1:]...)
+				}
 				i--
 				break
 			}
 		}
 	}
+
+	// ensure any catch-all policies go last
+	sort.SliceStable(aps, func(i, j int) bool {
+		return len(aps[i].Hosts) > len(aps[j].Hosts)
+	})
+
 	return aps
 }
 

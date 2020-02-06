@@ -17,7 +17,7 @@ require (
 	github.com/klauspost/cpuid v1.2.2
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/lucas-clemente/quic-go v0.14.1
-	github.com/mholt/certmagic v0.9.2
+	github.com/mholt/certmagic v0.9.3
 	github.com/miekg/dns v1.1.25 // indirect
 	github.com/muhammadmuzzammil1998/jsonc v0.0.0-20190906142622-1265e9b150c6
 	github.com/naoina/go-stringutil v0.1.0 // indirect
