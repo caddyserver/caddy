@@ -24,11 +24,9 @@ require (
 	github.com/naoina/toml v0.1.1
 	github.com/onsi/ginkgo v1.8.0 // indirect
 	github.com/onsi/gomega v1.5.0 // indirect
-	github.com/starlight-go/starlight v0.0.0-20181207205707-b06f321544f3
 	github.com/vulcand/oxy v1.0.0
 	github.com/yuin/goldmark v1.1.17
 	github.com/yuin/goldmark-highlighting v0.0.0-20191202084645-78f32c8dd6d5
-	go.starlark.net v0.0.0-20190919145610-979af19b165c
 	go.uber.org/multierr v1.2.0 // indirect
 	go.uber.org/zap v1.10.0
 	golang.org/x/crypto v0.0.0-20191206172530-e9b2fee46413
