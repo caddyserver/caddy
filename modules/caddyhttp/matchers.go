@@ -28,8 +28,6 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
-	"github.com/caddyserver/caddy/v2/pkg/caddyscript"
-	"go.starlark.net/starlark"
 )
 
 type (
@@ -105,9 +103,6 @@ type (
 		Matchers MatcherSet `json:"-"`
 	}
 
-	// MatchStarlarkExpr matches requests by evaluating a Starlark expression.
-	MatchStarlarkExpr string
-
 	// MatchTable matches requests by values in the table.
 	MatchTable string // TODO: finish implementing
 )
@@ -123,7 +118,6 @@ func init() {
 	caddy.RegisterModule(new(MatchProtocol))
 	caddy.RegisterModule(MatchRemoteIP{})
 	caddy.RegisterModule(MatchNegate{})
-	caddy.RegisterModule(new(MatchStarlarkExpr))
 }
 
 // CaddyModule returns the Caddy module information.
@@ -646,28 +640,6 @@ func (m MatchRemoteIP) Match(r *http.Request) bool {
 	return false
 }
 
-// CaddyModule returns the Caddy module information.
-func (MatchStarlarkExpr) CaddyModule() caddy.ModuleInfo {
-	return caddy.ModuleInfo{
-		ID:  "http.matchers.starlark",
-		New: func() caddy.Module { return new(MatchStarlarkExpr) },
-	}
-}
-
-// Match returns true if r matches m.
-func (m MatchStarlarkExpr) Match(r *http.Request) bool {
-	input := string(m)
-	thread := new(starlark.Thread)
-	env := caddyscript.MatcherEnv(r)
-	val, err := starlark.Eval(thread, "", input, env)
-	if err != nil {
-		// TODO: Can we detect this in Provision or Validate instead?
-		log.Printf("caddyscript for matcher is invalid: attempting to evaluate expression `%v` error `%v`", input, err)
-		return false
-	}
-	return val.String() == "True"
-}
-
 // MatchRegexp is an embeddable type for matching
 // using regular expressions. It adds placeholders
 // to the request's replacer.
@@ -834,7 +806,6 @@ var (
 	_ caddy.Provisioner = (*MatchRemoteIP)(nil)
 	_ RequestMatcher    = (*MatchNegate)(nil)
 	_ caddy.Provisioner = (*MatchNegate)(nil)
-	_ RequestMatcher    = (*MatchStarlarkExpr)(nil)
 	_ caddy.Provisioner = (*MatchRegexp)(nil)
 
 	_ caddyfile.Unmarshaler = (*MatchHost)(nil)
