@@ -107,6 +107,28 @@ func RegisterHandlerDirective(dir string, setupFunc UnmarshalHandlerFunc) {
 	})
 }
 
+// RegisterHandlerDirectiveWithOrder is like RegisterHandlerDirective, but
+// adding dir param to directive order list after the specified insertAfterDirective
+func RegisterHandlerDirectiveWithOrder(dir string, setupFunc UnmarshalHandlerFunc, insertAfterDirective string) {
+	RegisterHandlerDirective(dir, setupFunc)
+	if insertAfterDirective == "" {
+		directiveOrder = append(directiveOrder, dir)
+	} else {
+		var indexOfAfter = -1
+		for i, directive := range directiveOrder {
+			if directive == insertAfterDirective {
+				indexOfAfter = i
+				break
+			}
+		}
+		if indexOfAfter == -1 {
+			directiveOrder = append(directiveOrder, dir)
+		} else {
+			directiveOrder = append(directiveOrder[:indexOfAfter+1], append([]string{dir}, directiveOrder[indexOfAfter+1:]...)...)
+		}
+	}
+}
+
 // Helper is a type which helps setup a value from
 // Caddyfile tokens.
 type Helper struct {
