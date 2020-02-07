@@ -38,7 +38,7 @@ This is the development branch for Caddy 2.
 - [Getting started](#getting-started)
 - [Overview](#overview)
 - [Full documentation](#full-documentation)
-- [Getting helo](#getting-help)
+- [Getting help](#getting-help)
 - [About](#about)
 
 <p align="center">
