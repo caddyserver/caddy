@@ -81,6 +81,19 @@ func (cp ConnectionPolicies) TLSConfig(ctx caddy.Context) (*tls.Config, error) {
 		}
 	}
 
+	// check for a default server name, in the case that no SNI information is passed.
+	var defaultCP *ConnectionPolicy
+	for _, p := range cp {
+		if p.getDefaultServerName() != "" {
+			if defaultCP == nil {
+				caddy.Log().Info("setting default connection policy")
+			} else {
+				caddy.Log().Warn("multiple default connection policies, using last one")
+			}
+			defaultCP = p
+		}
+	}
+
 	return &tls.Config{
 		GetConfigForClient: func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
 			// filter policies by SNI first, if possible, to speed things up
@@ -98,6 +111,11 @@ func (cp ConnectionPolicies) TLSConfig(ctx caddy.Context) (*tls.Config, error) {
 					}
 				}
 				return pol.stdTLSConfig, nil
+			}
+
+			// attempt to use the default TLS
+			if defaultCP != nil {
+				return defaultCP.stdTLSConfig, nil
 			}
 
 			return nil, fmt.Errorf("no server TLS configuration available for ClientHello: %+v", hello)
@@ -143,6 +161,15 @@ type ConnectionPolicy struct {
 	stdTLSConfig *tls.Config
 }
 
+func (p *ConnectionPolicy) getDefaultServerName() string {
+	for _, m := range p.matchers {
+		if val, ok := m.(*MatchDefault); ok {
+			return string(*val)
+		}
+	}
+	return ""
+}
+
 func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 	tlsAppIface, err := ctx.App("tls")
 	if err != nil {
@@ -158,6 +185,12 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 		NextProtos:               p.ALPN,
 		PreferServerCipherSuites: true,
 		GetCertificate: func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+
+			// if there is no server name passed then update request to use the default one
+			if hello.ServerName == "" {
+				hello.ServerName = p.getDefaultServerName()
+			}
+
 			cfgTpl, err := tlsApp.getConfigForName(hello.ServerName)
 			if err != nil {
 				return nil, fmt.Errorf("getting config for name %s: %v", hello.ServerName, err)

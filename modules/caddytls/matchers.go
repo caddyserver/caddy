@@ -22,6 +22,7 @@ import (
 
 func init() {
 	caddy.RegisterModule(MatchServerName{})
+	caddy.RegisterModule(new(MatchDefault))
 }
 
 // MatchServerName matches based on SNI.
@@ -48,3 +49,22 @@ func (m MatchServerName) Match(hello *tls.ClientHelloInfo) bool {
 
 // Interface guard
 var _ ConnectionMatcher = (*MatchServerName)(nil)
+
+// MatchDefault will tag the connection policy as default
+type MatchDefault string
+
+// CaddyModule returns the Caddy module information.
+func (MatchDefault) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "tls.handshake_match.default",
+		New: func() caddy.Module { return new(MatchDefault) },
+	}
+}
+
+// Match matches hello based on SNI.
+func (m MatchDefault) Match(hello *tls.ClientHelloInfo) bool {
+	// return false as this is a special case where we match against this last
+	return false
+}
+
+var _ ConnectionMatcher = (*MatchDefault)(nil)
