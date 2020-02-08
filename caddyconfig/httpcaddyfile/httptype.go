@@ -71,8 +71,8 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 				val, err = parseOptExperimentalHTTP3(disp)
 			case "storage":
 				val, err = parseOptStorage(disp)
-			case "acme_ca":
-				val, err = parseOptACMECA(disp)
+			case "acme_ca", "acme_dns":
+				val, err = parseOptACME(disp)
 			case "email":
 				val, err = parseOptEmail(disp)
 			case "admin":
@@ -222,11 +222,12 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 			}
 		}
 	}
-	// if global ACME CA or email were set, append a catch-all automation
+	// if global ACME CA, DNS, or email were set, append a catch-all automation
 	// policy that ensures they will be used if no tls directive was used
 	acmeCA, hasACMECA := options["acme_ca"]
+	acmeDNS, hasACMEDNS := options["acme_dns"]
 	email, hasEmail := options["email"]
-	if hasACMECA || hasEmail {
+	if hasACMECA || hasACMEDNS || hasEmail {
 		if tlsApp.Automation == nil {
 			tlsApp.Automation = new(caddytls.AutomationConfig)
 		}
@@ -236,11 +237,22 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 		if !hasEmail {
 			email = ""
 		}
+		mgr := caddytls.ACMEManagerMaker{
+			CA:    acmeCA.(string),
+			Email: email.(string),
+		}
+		if hasACMEDNS {
+			provName := acmeDNS.(string)
+			dnsProvModule, err := caddy.GetModule("tls.dns." + provName)
+			if err != nil {
+				return nil, warnings, fmt.Errorf("getting DNS provider module named '%s': %v", provName, err)
+			}
+			mgr.Challenges = &caddytls.ChallengesConfig{
+				DNSRaw: caddyconfig.JSONModuleObject(dnsProvModule.New(), "provider", provName, &warnings),
+			}
+		}
 		tlsApp.Automation.Policies = append(tlsApp.Automation.Policies, caddytls.AutomationPolicy{
-			ManagementRaw: caddyconfig.JSONModuleObject(caddytls.ACMEManagerMaker{
-				CA:    acmeCA.(string),
-				Email: email.(string),
-			}, "module", "acme", &warnings),
+			ManagementRaw: caddyconfig.JSONModuleObject(mgr, "module", "acme", &warnings),
 		})
 	}
 	if tlsApp.Automation != nil {

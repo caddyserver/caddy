@@ -98,6 +98,7 @@ func parseRoot(h Helper) ([]ConfigValue, error) {
 //         alpn      <values...>
 //         load      <paths...>
 //         ca        <acme_ca_endpoint>
+//         dns       <provider_name>
 //     }
 //
 func parseTLS(h Helper) ([]ConfigValue, error) {
@@ -216,6 +217,21 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 					return nil, h.ArgErr()
 				}
 				mgr.CA = arg[0]
+
+			// DNS provider for ACME DNS challenge
+			case "dns":
+				if !h.Next() {
+					return nil, h.ArgErr()
+				}
+				provName := h.Val()
+				if mgr.Challenges == nil {
+					mgr.Challenges = new(caddytls.ChallengesConfig)
+				}
+				dnsProvModule, err := caddy.GetModule("tls.dns." + provName)
+				if err != nil {
+					return nil, h.Errf("getting DNS provider module named '%s': %v", provName, err)
+				}
+				mgr.Challenges.DNSRaw = caddyconfig.JSONModuleObject(dnsProvModule.New(), "provider", provName, h.warnings)
 
 			default:
 				return nil, h.Errf("unknown subdirective: %s", h.Val())
