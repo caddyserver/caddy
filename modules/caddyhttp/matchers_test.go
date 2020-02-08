@@ -548,39 +548,39 @@ func TestHeaderREMatcher(t *testing.T) {
 func TestVarREMatcher(t *testing.T) {
 	for i, tc := range []struct {
 		desc       string
-		match      MatchVarRE
+		match      MatchVarsRE
 		input      VarsMiddleware
 		expect     bool
 		expectRepl map[string]string
 	}{
 		{
 			desc:   "match static value within var set by the VarsMiddleware succeeds",
-			match:  MatchVarRE{"Var1": &MatchRegexp{Pattern: "foo"}},
+			match:  MatchVarsRE{"Var1": &MatchRegexp{Pattern: "foo"}},
 			input:  VarsMiddleware{"Var1": "here is foo val"},
 			expect: true,
 		},
 		{
 			desc:   "value set by VarsMiddleware not satisfying regexp matcher fails to match",
-			match:  MatchVarRE{"Var1": &MatchRegexp{Pattern: "$foo^"}},
+			match:  MatchVarsRE{"Var1": &MatchRegexp{Pattern: "$foo^"}},
 			input:  VarsMiddleware{"Var1": "foobar"},
 			expect: false,
 		},
 		{
 			desc:       "successfully matched value is captured and its placeholder is added to replacer",
-			match:      MatchVarRE{"Var1": &MatchRegexp{Pattern: "^foo(.*)$", Name: "name"}},
+			match:      MatchVarsRE{"Var1": &MatchRegexp{Pattern: "^foo(.*)$", Name: "name"}},
 			input:      VarsMiddleware{"Var1": "foobar"},
 			expect:     true,
 			expectRepl: map[string]string{"name.1": "bar"},
 		},
 		{
 			desc:   "matching against a value of standard variables succeeds",
-			match:  MatchVarRE{"{http.request.method}": &MatchRegexp{Pattern: "^G.[tT]$"}},
+			match:  MatchVarsRE{"{http.request.method}": &MatchRegexp{Pattern: "^G.[tT]$"}},
 			input:  VarsMiddleware{},
 			expect: true,
 		},
 		{
 			desc:   "matching agaist value of var set by the VarsMiddleware and referenced by its placeholder succeeds",
-			match:  MatchVarRE{"{http.vars.Var1}": &MatchRegexp{Pattern: "[vV]ar[0-9]"}},
+			match:  MatchVarsRE{"{http.vars.Var1}": &MatchRegexp{Pattern: "[vV]ar[0-9]"}},
 			input:  VarsMiddleware{"Var1": "var1Value"},
 			expect: true,
 		},

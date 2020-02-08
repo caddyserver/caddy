@@ -25,7 +25,7 @@ import (
 func init() {
 	caddy.RegisterModule(VarsMiddleware{})
 	caddy.RegisterModule(VarsMatcher{})
-	caddy.RegisterModule(MatchVarRE{})
+	caddy.RegisterModule(MatchVarsRE{})
 }
 
 // VarsMiddleware is an HTTP middleware which sets variables
@@ -89,25 +89,25 @@ func (m VarsMatcher) Match(r *http.Request) bool {
 	return true
 }
 
-// MatchVarRE matches the value of the context variables by a given regular expression.
+// MatchVarsRE matches the value of the context variables by a given regular expression.
 //
 // Upon a match, it adds placeholders to the request: `{http.regexp.name.capture_group}`
 // where `name` is the regular expression's name, and `capture_group` is either
 // the named or positional capture group from the expression itself. If no name
 // is given, then the placeholder omits the name: `{http.regexp.capture_group}`
 // (potentially leading to collisions).
-type MatchVarRE map[string]*MatchRegexp
+type MatchVarsRE map[string]*MatchRegexp
 
 // CaddyModule returns the Caddy module information.
-func (MatchVarRE) CaddyModule() caddy.ModuleInfo {
+func (MatchVarsRE) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		ID:  "http.matchers.var_regexp",
-		New: func() caddy.Module { return new(MatchVarRE) },
+		ID:  "http.matchers.vars_regexp",
+		New: func() caddy.Module { return new(MatchVarsRE) },
 	}
 }
 
 // Provision compiles m's regular expressions.
-func (m MatchVarRE) Provision(ctx caddy.Context) error {
+func (m MatchVarsRE) Provision(ctx caddy.Context) error {
 	for _, rm := range m {
 		err := rm.Provision(ctx)
 		if err != nil {
@@ -118,7 +118,7 @@ func (m MatchVarRE) Provision(ctx caddy.Context) error {
 }
 
 // Match returns true if r matches m.
-func (m MatchVarRE) Match(r *http.Request) bool {
+func (m MatchVarsRE) Match(r *http.Request) bool {
 	vars := r.Context().Value(VarsCtxKey).(map[string]interface{})
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	for k, rm := range m {
@@ -147,7 +147,7 @@ func (m MatchVarRE) Match(r *http.Request) bool {
 }
 
 // Validate validates m's regular expressions.
-func (m MatchVarRE) Validate() error {
+func (m MatchVarsRE) Validate() error {
 	for _, rm := range m {
 		err := rm.Validate()
 		if err != nil {
