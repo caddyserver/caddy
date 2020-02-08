@@ -54,7 +54,7 @@ func (StaticResponse) CaddyModule() caddy.ModuleInfo {
 
 // UnmarshalCaddyfile sets up the handler from Caddyfile tokens. Syntax:
 //
-//     respond [<matcher>] [<status>|[<body> [<status>]] {
+//     respond [<matcher>] <status>|<body> [<status>] {
 //         body <text>
 //         close
 //     }

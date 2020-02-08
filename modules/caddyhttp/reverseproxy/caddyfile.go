@@ -335,11 +335,15 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if !d.NextArg() {
 					return d.ArgErr()
 				}
-				dur, err := time.ParseDuration(d.Val())
-				if err != nil {
-					return d.Errf("bad duration value '%s': %v", d.Val(), err)
+				if fi, err := strconv.Atoi(d.Val()); err == nil {
+					h.FlushInterval = caddy.Duration(fi)
+				} else {
+					dur, err := time.ParseDuration(d.Val())
+					if err != nil {
+						return d.Errf("bad duration value '%s': %v", d.Val(), err)
+					}
+					h.FlushInterval = caddy.Duration(dur)
 				}
-				h.FlushInterval = caddy.Duration(dur)
 
 			case "header_up":
 				if h.Headers == nil {
@@ -511,7 +515,7 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					h.TLS = new(TLSConfig)
 				}
 
-				h.TLS.RootCAPemFiles = args
+				h.TLS.RootCAPEMFiles = args
 
 			case "keepalive":
 				if !d.NextArg() {

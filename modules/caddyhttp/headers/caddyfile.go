@@ -23,20 +23,23 @@ import (
 )
 
 func init() {
-	httpcaddyfile.RegisterHandlerDirective("headers", parseCaddyfile)
+	httpcaddyfile.RegisterHandlerDirective("header", parseCaddyfile)
 	httpcaddyfile.RegisterHandlerDirective("request_header", parseReqHdrCaddyfile)
 }
 
 // parseCaddyfile sets up the handler for response headers from
 // Caddyfile tokens. Syntax:
 //
-//     headers [<matcher>] [[+|-]<field> [<value|regexp>] [<replacement>]] {
+//     header [<matcher>] [[+|-]<field> [<value|regexp>] [<replacement>]] {
 //         [+]<field> [<value|regexp> [<replacement>]]
 //         -<field>
+//         [defer]
 //     }
 //
 // Either a block can be opened or a single header field can be configured
-// in the first line, but not both in the same directive.
+// in the first line, but not both in the same directive. Header operations
+// are deferred to write-time if any headers are being deleted or if the
+// 'defer' subdirective is used.
 func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
 	hdr := new(Handler)
 
@@ -44,7 +47,6 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 		if hdr.Response == nil {
 			hdr.Response = &RespHeaderOps{
 				HeaderOps: new(HeaderOps),
-				Deferred:  true,
 			}
 		}
 	}
@@ -64,14 +66,21 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 			}
 			makeResponseOps()
 			CaddyfileHeaderOp(hdr.Response.HeaderOps, field, value, replacement)
+			if len(hdr.Response.HeaderOps.Delete) > 0 {
+				hdr.Response.Deferred = true
+			}
 		}
 
 		// if not, they should be in a block
 		for h.NextBlock(0) {
+			field := h.Val()
+			if field == "defer" {
+				hdr.Response.Deferred = true
+				continue
+			}
 			if hasArgs {
 				return nil, h.Err("cannot specify headers in both arguments and block")
 			}
-			field := h.Val()
 			var value, replacement string
 			if h.NextArg() {
 				value = h.Val()
@@ -81,6 +90,9 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 			}
 			makeResponseOps()
 			CaddyfileHeaderOp(hdr.Response.HeaderOps, field, value, replacement)
+			if len(hdr.Response.HeaderOps.Delete) > 0 {
+				hdr.Response.Deferred = true
+			}
 		}
 	}
 

@@ -16,6 +16,7 @@ package caddyhttp
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/caddyserver/caddy/v2"
@@ -64,12 +65,23 @@ func (VarsMatcher) CaddyModule() caddy.ModuleInfo {
 
 // Match matches a request based on variables in the context.
 func (m VarsMatcher) Match(r *http.Request) bool {
-	vars := r.Context().Value(VarsCtxKey).(map[string]string)
+	vars := r.Context().Value(VarsCtxKey).(map[string]interface{})
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	for k, v := range m {
 		keyExpanded := repl.ReplaceAll(k, "")
 		valExpanded := repl.ReplaceAll(v, "")
-		if vars[keyExpanded] != valExpanded {
+		var varStr string
+		switch vv := vars[keyExpanded].(type) {
+		case string:
+			varStr = vv
+		case fmt.Stringer:
+			varStr = vv.String()
+		case error:
+			varStr = vv.Error()
+		default:
+			varStr = fmt.Sprintf("%v", vv)
+		}
+		if varStr != valExpanded {
 			return false
 		}
 	}

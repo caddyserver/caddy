@@ -27,10 +27,10 @@ import (
 // directiveOrder specifies the order
 // to apply directives in HTTP routes.
 var directiveOrder = []string{
-	"root",
-
 	"redir",
 	"rewrite",
+
+	"root",
 
 	"strip_prefix",
 	"strip_suffix",
@@ -38,7 +38,7 @@ var directiveOrder = []string{
 	"try_files",
 
 	"basicauth",
-	"headers",
+	"header",
 	"request_header",
 	"encode",
 	"templates",

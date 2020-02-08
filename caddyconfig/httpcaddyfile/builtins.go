@@ -20,6 +20,7 @@ import (
 	"html"
 	"net/http"
 	"reflect"
+	"strings"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -29,7 +30,7 @@ import (
 
 func init() {
 	RegisterDirective("bind", parseBind)
-	RegisterDirective("root", parseRoot)
+	RegisterDirective("root", parseRoot) // TODO: isn't this a handler directive?
 	RegisterDirective("tls", parseTLS)
 	RegisterHandlerDirective("redir", parseRedir)
 	RegisterHandlerDirective("respond", parseRespond)
@@ -37,6 +38,10 @@ func init() {
 	RegisterHandlerDirective("handle", parseHandle)
 }
 
+// parseBind parses the bind directive. Syntax:
+//
+//     bind <addresses...>
+//
 func parseBind(h Helper) ([]ConfigValue, error) {
 	var lnHosts []string
 	for h.Next() {
@@ -45,6 +50,10 @@ func parseBind(h Helper) ([]ConfigValue, error) {
 	return h.NewBindAddresses(lnHosts), nil
 }
 
+// parseRoot parses the root directive. Syntax:
+//
+//     root [<matcher>] <path>
+//
 func parseRoot(h Helper) ([]ConfigValue, error) {
 	if !h.Next() {
 		return nil, h.ArgErr()
@@ -80,6 +89,17 @@ func parseRoot(h Helper) ([]ConfigValue, error) {
 	return []ConfigValue{{Class: "route", Value: route}}, nil
 }
 
+// parseTLS parses the tls directive. Syntax:
+//
+//     tls [<email>]|[<cert_file> <key_file>] {
+//         protocols <min> [<max>]
+//         ciphers   <cipher_suites...>
+//         curves    <curves...>
+//         alpn      <values...>
+//         load      <paths...>
+//         ca        <acme_ca_endpoint>
+//     }
+//
 func parseTLS(h Helper) ([]ConfigValue, error) {
 	var configVals []ConfigValue
 
@@ -87,7 +107,6 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	var fileLoader caddytls.FileLoader
 	var folderLoader caddytls.FolderLoader
 	var mgr caddytls.ACMEManagerMaker
-	var off bool
 
 	// fill in global defaults, if configured
 	if email := h.Option("email"); email != nil {
@@ -103,17 +122,26 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 		switch len(firstLine) {
 		case 0:
 		case 1:
-			if firstLine[0] == "off" {
-				off = true
-			} else {
-				mgr.Email = firstLine[0]
+			if !strings.Contains(firstLine[0], "@") {
+				return nil, h.Err("single argument must be an email address")
 			}
+			mgr.Email = firstLine[0]
 		case 2:
+			tag := fmt.Sprintf("cert%d", tagCounter)
 			fileLoader = append(fileLoader, caddytls.CertKeyFilePair{
 				Certificate: firstLine[0],
 				Key:         firstLine[1],
-				// TODO: add tags, for enterprise module's certificate selection
+				Tags:        []string{tag},
 			})
+			// tag this certificate so if multiple certs match, specifically
+			// this one that the user has provided will be used, see #2588:
+			// https://github.com/caddyserver/caddy/issues/2588
+			tagCounter++
+			certSelector := caddytls.CustomCertSelectionPolicy{Tag: tag}
+			if cp == nil {
+				cp = new(caddytls.ConnectionPolicy)
+			}
+			cp.CertSelection = caddyconfig.JSONModuleObject(certSelector, "policy", "custom", h.warnings)
 		default:
 			return nil, h.ArgErr()
 		}
@@ -231,12 +259,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	}
 
 	// automation policy
-	if off {
-		configVals = append(configVals, ConfigValue{
-			Class: "tls.off",
-			Value: true,
-		})
-	} else if !reflect.DeepEqual(mgr, caddytls.ACMEManagerMaker{}) {
+	if !reflect.DeepEqual(mgr, caddytls.ACMEManagerMaker{}) {
 		configVals = append(configVals, ConfigValue{
 			Class: "tls.automation_manager",
 			Value: mgr,
@@ -246,6 +269,10 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	return configVals, nil
 }
 
+// parseRedir parses the redir directive. Syntax:
+//
+//     redir [<matcher>] <to> [<code>]
+//
 func parseRedir(h Helper) (caddyhttp.MiddlewareHandler, error) {
 	if !h.Next() {
 		return nil, h.ArgErr()
@@ -264,10 +291,10 @@ func parseRedir(h Helper) (caddyhttp.MiddlewareHandler, error) {
 		code = "301"
 	}
 	if code == "temporary" || code == "" {
-		code = "307"
+		code = "302"
 	}
 	var body string
-	if code == "meta" {
+	if code == "html" {
 		// Script tag comes first since that will better imitate a redirect in the browser's
 		// history, but the meta tag is a fallback for most non-JS clients.
 		const metaRedir = `<!DOCTYPE html>
@@ -291,6 +318,7 @@ func parseRedir(h Helper) (caddyhttp.MiddlewareHandler, error) {
 	}, nil
 }
 
+// parseRespond parses the respond directive.
 func parseRespond(h Helper) (caddyhttp.MiddlewareHandler, error) {
 	sr := new(caddyhttp.StaticResponse)
 	err := sr.UnmarshalCaddyfile(h.Dispenser)
@@ -300,6 +328,7 @@ func parseRespond(h Helper) (caddyhttp.MiddlewareHandler, error) {
 	return sr, nil
 }
 
+// parseRoute parses the route directive.
 func parseRoute(h Helper) (caddyhttp.MiddlewareHandler, error) {
 	sr := new(caddyhttp.Subroute)
 
@@ -332,6 +361,7 @@ func parseRoute(h Helper) (caddyhttp.MiddlewareHandler, error) {
 	return sr, nil
 }
 
+// parseHandle parses the route directive.
 func parseHandle(h Helper) (caddyhttp.MiddlewareHandler, error) {
 	var allResults []ConfigValue
 
@@ -362,3 +392,5 @@ func parseHandle(h Helper) (caddyhttp.MiddlewareHandler, error) {
 
 	return nil, nil
 }
+
+var tagCounter = 0

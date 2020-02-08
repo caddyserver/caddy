@@ -94,15 +94,18 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 		// their actual placeholder identifiers or
 		// variable names
 		replacer := strings.NewReplacer(
-			"{uri}", "{http.request.uri}",
-			"{path}", "{http.request.uri.path}",
+			"{dir}", "{http.request.uri.path.dir}",
+			"{file}", "{http.request.uri.path.file}",
 			"{host}", "{http.request.host}",
 			"{hostport}", "{http.request.hostport}",
 			"{method}", "{http.request.method}",
-			"{scheme}", "{http.request.scheme}",
-			"{file}", "{http.request.uri.path.file}",
-			"{dir}", "{http.request.uri.path.dir}",
+			"{path}", "{http.request.uri.path}",
 			"{query}", "{http.request.uri.query}",
+			"{remote_host}", "{http.request.remote.host}",
+			"{remote_port}", "{http.request.remote.port}",
+			"{remote}", "{http.request.remote}",
+			"{scheme}", "{http.request.scheme}",
+			"{uri}", "{http.request.uri}",
 		)
 		for _, segment := range sb.block.Segments {
 			for i := 0; i < len(segment); i++ {
@@ -369,6 +372,7 @@ func (st *ServerType) serversFromPairings(
 				srv.AutoHTTPS.Skip = append(srv.AutoHTTPS.Skip, autoHTTPSQualifiedHosts...)
 			} else if cpVals, ok := sblock.pile["tls.connection_policy"]; ok {
 				// tls connection policies
+				var hasCatchAll bool
 				for _, cpVal := range cpVals {
 					cp := cpVal.Value.(*caddytls.ConnectionPolicy)
 
@@ -378,15 +382,50 @@ func (st *ServerType) serversFromPairings(
 						return nil, err
 					}
 
-					// TODO: are matchers needed if every hostname of the config is matched?
+					// TODO: are matchers needed if every hostname of the resulting config is matched?
 					if len(hosts) > 0 {
 						cp.MatchersRaw = caddy.ModuleMap{
 							"sni": caddyconfig.JSON(hosts, warnings), // make sure to match all hosts, not just auto-HTTPS-qualified ones
 						}
+					} else {
+						hasCatchAll = true
 					}
+
 					srv.TLSConnPolicies = append(srv.TLSConnPolicies, cp)
 				}
+
+				// a catch-all is necessary to ensure TLS can be offered to
+				// all hostnames of the server; even though only one policy
+				// is needed to enable TLS for the server, that policy might
+				// apply to only certain TLS handshakes; but when using the
+				// Caddyfile, user would expect all handshakes to at least
+				// have a matching connection policy, so here we append a
+				// catch-all/default policy if there isn't one already (it's
+				// important that it goes at the end) - see issue #3004:
+				// https://github.com/caddyserver/caddy/issues/3004
+				if !hasCatchAll {
+					srv.TLSConnPolicies = append(srv.TLSConnPolicies, new(caddytls.ConnectionPolicy))
+				}
+
 				// TODO: consolidate equal conn policies
+			}
+
+			// exclude any hosts that were defined explicitly with
+			// "http://" in the key from automated cert management (issue #2998)
+			for _, key := range sblock.block.Keys {
+				addr, err := ParseAddress(key)
+				if err != nil {
+					return nil, err
+				}
+				addr = addr.Normalize()
+				if addr.Scheme == "http" {
+					if srv.AutoHTTPS == nil {
+						srv.AutoHTTPS = new(caddyhttp.AutoHTTPSConfig)
+					}
+					if !sliceContains(srv.AutoHTTPS.Skip, addr.Host) {
+						srv.AutoHTTPS.Skip = append(srv.AutoHTTPS.Skip, addr.Host)
+					}
+				}
 			}
 
 			// set up each handler directive, making sure to honor directive order
@@ -430,38 +469,13 @@ func buildSubroute(routes []ConfigValue, groupCounter counter) (*caddyhttp.Subro
 
 	subroute := new(caddyhttp.Subroute)
 
-	// get a group name for rewrite directives, if needed
-	var rewriteGroupName string
-	var rewriteCount int
-	for _, r := range routes {
-		if r.directive == "rewrite" {
-			rewriteCount++
-			if rewriteCount > 1 {
-				break
-			}
-		}
-	}
-	if rewriteCount > 1 {
-		rewriteGroupName = groupCounter.nextGroup()
-	}
-
-	// get a group name for handle blocks, if needed
-	var handleGroupName string
-	var handleCount int
-	for _, r := range routes {
-		if r.directive == "handle" {
-			handleCount++
-			if handleCount > 1 {
-				break
-			}
-		}
-	}
-	if handleCount > 1 {
-		handleGroupName = groupCounter.nextGroup()
-	}
-
-	// add all the routes piled in from directives
-	for _, r := range routes {
+	// some directives are mutually exclusive (only first matching
+	// instance should be evaluated); this is done by putting their
+	// routes in the same group
+	mutuallyExclusiveDirs := map[string]*struct {
+		count     int
+		groupName string
+	}{
 		// as a special case, group rewrite directives so that they are mutually exclusive;
 		// this means that only the first matching rewrite will be evaluated, and that's
 		// probably a good thing, since there should never be a need to do more than one
@@ -471,16 +485,37 @@ func buildSubroute(routes []ConfigValue, groupCounter counter) (*caddyhttp.Subro
 		// (We use this on the Caddy website, or at least we did once.) The first rewrite's
 		// result is also matched by the second rewrite, making the first rewrite pointless.
 		// See issue #2959.
-		if r.directive == "rewrite" {
-			route := r.Value.(caddyhttp.Route)
-			route.Group = rewriteGroupName
-			r.Value = route
-		}
+		"rewrite": {},
 
 		// handle blocks are also mutually exclusive by definition
-		if r.directive == "handle" {
+		"handle": {},
+
+		// root just sets a variable, so if it was not mutually exclusive, intersecting
+		// root directives would overwrite previously-matched ones; they should not cascade
+		"root": {},
+	}
+	for meDir, info := range mutuallyExclusiveDirs {
+		// see how many instances of the directive there are
+		for _, r := range routes {
+			if r.directive == meDir {
+				info.count++
+				if info.count > 1 {
+					break
+				}
+			}
+		}
+		// if there is more than one, put them in a group
+		if info.count > 1 {
+			info.groupName = groupCounter.nextGroup()
+		}
+	}
+
+	// add all the routes piled in from directives
+	for _, r := range routes {
+		// put this route into a group if it is mutually exclusive
+		if info, ok := mutuallyExclusiveDirs[r.directive]; ok {
 			route := r.Value.(caddyhttp.Route)
-			route.Group = handleGroupName
+			route.Group = info.groupName
 			r.Value = route
 		}
 
@@ -552,14 +587,41 @@ func consolidateAutomationPolicies(aps []caddytls.AutomationPolicy) []caddytls.A
 			if j == i {
 				continue
 			}
-			if reflect.DeepEqual(aps[i].ManagementRaw, aps[j].ManagementRaw) {
-				aps[i].Hosts = append(aps[i].Hosts, aps[j].Hosts...)
+
+			// if they're exactly equal in every way, just keep one of them
+			if reflect.DeepEqual(aps[i], aps[j]) {
 				aps = append(aps[:j], aps[j+1:]...)
+				i--
+				break
+			}
+
+			// if the policy is the same, we can keep just one, but we have
+			// to be careful which one we keep; if only one has any hostnames
+			// defined, then we need to keep the one without any hostnames,
+			// otherwise the one without any hosts (a catch-all) would be
+			// eaten up by the one with hosts; and if both have hosts, we
+			// need to combine their lists
+			if reflect.DeepEqual(aps[i].ManagementRaw, aps[j].ManagementRaw) &&
+				aps[i].ManageSync == aps[j].ManageSync {
+				if len(aps[i].Hosts) == 0 && len(aps[j].Hosts) > 0 {
+					aps = append(aps[:j], aps[j+1:]...)
+				} else if len(aps[i].Hosts) > 0 && len(aps[j].Hosts) == 0 {
+					aps = append(aps[:i], aps[i+1:]...)
+				} else {
+					aps[i].Hosts = append(aps[i].Hosts, aps[j].Hosts...)
+					aps = append(aps[:j], aps[j+1:]...)
+				}
 				i--
 				break
 			}
 		}
 	}
+
+	// ensure any catch-all policies go last
+	sort.SliceStable(aps, func(i, j int) bool {
+		return len(aps[i].Hosts) > len(aps[j].Hosts)
+	})
+
 	return aps
 }
 
@@ -721,6 +783,16 @@ func tryInt(val interface{}, warnings *[]caddyconfig.Warning) int {
 		*warnings = append(*warnings, caddyconfig.Warning{Message: "not an integer type"})
 	}
 	return intVal
+}
+
+// sliceContains returns true if needle is in haystack.
+func sliceContains(haystack []string, needle string) bool {
+	for _, s := range haystack {
+		if s == needle {
+			return true
+		}
+	}
+	return false
 }
 
 // specifity returns len(s) minus any wildcards (*) and

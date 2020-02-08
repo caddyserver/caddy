@@ -171,7 +171,7 @@ func cmdRun(fl Flags) (int, error) {
 	}
 	// we don't use 'else' here since this value might have been changed in 'if' block; i.e. not mutually exclusive
 	if !runCmdResumeFlag {
-		config, err = loadConfig(runCmdConfigFlag, runCmdConfigAdapterFlag)
+		config, _, err = loadConfig(runCmdConfigFlag, runCmdConfigAdapterFlag)
 		if err != nil {
 			return caddy.ExitCodeFailedStartup, err
 		}
@@ -264,21 +264,18 @@ func cmdReload(fl Flags) (int, error) {
 	reloadCmdConfigAdapterFlag := fl.String("adapter")
 	reloadCmdAddrFlag := fl.String("address")
 
-	// a configuration is required
-	if reloadCmdConfigFlag == "" {
-		return caddy.ExitCodeFailedStartup,
-			fmt.Errorf("no configuration to load (use --config)")
-	}
-
 	// get the config in caddy's native format
-	config, err := loadConfig(reloadCmdConfigFlag, reloadCmdConfigAdapterFlag)
+	config, hasConfig, err := loadConfig(reloadCmdConfigFlag, reloadCmdConfigAdapterFlag)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, err
+	}
+	if !hasConfig {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("no config file to load")
 	}
 
 	// get the address of the admin listener and craft endpoint URL
 	adminAddr := reloadCmdAddrFlag
-	if adminAddr == "" {
+	if adminAddr == "" && len(config) > 0 {
 		var tmpStruct struct {
 			Admin caddy.AdminConfig `json:"admin"`
 		}
@@ -416,9 +413,27 @@ func cmdAdaptConfig(fl Flags) (int, error) {
 	adaptCmdPrettyFlag := fl.Bool("pretty")
 	adaptCmdValidateFlag := fl.Bool("validate")
 
-	if adaptCmdAdapterFlag == "" || adaptCmdInputFlag == "" {
+	// if no input file was specified, try a default
+	// Caddyfile if the Caddyfile adapter is plugged in
+	if adaptCmdInputFlag == "" && caddyconfig.GetAdapter("caddyfile") != nil {
+		_, err := os.Stat("Caddyfile")
+		if err == nil {
+			// default Caddyfile exists
+			adaptCmdInputFlag = "Caddyfile"
+			caddy.Log().Info("using adjacent Caddyfile")
+		} else if !os.IsNotExist(err) {
+			// default Caddyfile exists, but error accessing it
+			return caddy.ExitCodeFailedStartup, fmt.Errorf("accessing default Caddyfile: %v", err)
+		}
+	}
+
+	if adaptCmdInputFlag == "" {
 		return caddy.ExitCodeFailedStartup,
-			fmt.Errorf("--adapter and --config flags are required")
+			fmt.Errorf("input file required when there is no Caddyfile in current directory (use --config flag)")
+	}
+	if adaptCmdAdapterFlag == "" {
+		return caddy.ExitCodeFailedStartup,
+			fmt.Errorf("adapter name is required (use --adapt flag or leave unspecified for default)")
 	}
 
 	cfgAdapter := caddyconfig.GetAdapter(adaptCmdAdapterFlag)
