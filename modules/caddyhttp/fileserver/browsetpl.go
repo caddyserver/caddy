@@ -228,7 +228,7 @@ footer {
 }
 </style>
 	</head>
-	<body onload='filter()'>
+	<body onload='initFilter()'>
 		<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" height="0" width="0" style="position: absolute;">
 			<defs>
 				<!-- Folder -->
@@ -378,6 +378,16 @@ footer {
 		<script>
 			var filterEl = document.getElementById('filter');
 			filterEl.focus();
+
+			function initFilter() {
+				if (!filterEl.value) {
+					var filterParam = new URL(window.location.href).searchParams.get('filter');
+					if (filterParam) {
+						filterEl.value = filterParam;
+					}
+				}
+				filter();
+			}
 
 			function filter() {
 				var q = filterEl.value.trim().toLowerCase();
