@@ -162,7 +162,7 @@ func parseOptStorage(d *caddyfile.Dispenser) (caddy.StorageConverter, error) {
 	return storage, nil
 }
 
-func parseOptACMECA(d *caddyfile.Dispenser) (string, error) {
+func parseOptACME(d *caddyfile.Dispenser) (string, error) {
 	d.Next() // consume parameter name
 	if !d.Next() {
 		return "", d.ArgErr()
