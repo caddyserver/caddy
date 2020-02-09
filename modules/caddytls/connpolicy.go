@@ -57,6 +57,19 @@ func (cp ConnectionPolicies) TLSConfig(ctx caddy.Context) (*tls.Config, error) {
 		}
 	}
 
+	// check for a default server name, in the case that no SNI information is passed.
+	var defaultCP *ConnectionPolicy
+	for _, p := range cp {
+		if p.DefaultServerName != "" {
+			if defaultCP == nil {
+				caddy.Log().Info("setting default connection policy")
+			} else {
+				caddy.Log().Warn("multiple default connection policies, using last one")
+			}
+			defaultCP = p
+		}
+	}
+
 	// pre-build standard TLS configs so we don't have to at handshake-time
 	for i := range cp {
 		err := cp[i].buildStandardTLSConfig(ctx)
@@ -100,6 +113,11 @@ func (cp ConnectionPolicies) TLSConfig(ctx caddy.Context) (*tls.Config, error) {
 				return pol.stdTLSConfig, nil
 			}
 
+			// attempt to use the default TLS
+			if defaultCP != nil {
+				return defaultCP.stdTLSConfig, nil
+			}
+
 			return nil, fmt.Errorf("no server TLS configuration available for ClientHello: %+v", hello)
 		},
 	}, nil
@@ -137,6 +155,9 @@ type ConnectionPolicy struct {
 	// Enables and configures TLS client authentication.
 	ClientAuthentication *ClientAuthentication `json:"client_authentication,omitempty"`
 
+	// Default Server Name is used if no SNI information is available
+	DefaultServerName string `json:"default_server_name,omitempty"`
+
 	matchers     []ConnectionMatcher
 	certSelector certmagic.CertificateSelector
 
@@ -159,6 +180,7 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 		PreferServerCipherSuites: true,
 		GetCertificate: func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 			cfgTpl, err := tlsApp.getConfigForName(hello.ServerName)
+			cfgTpl.DefaultServerName = p.DefaultServerName
 			if err != nil {
 				return nil, fmt.Errorf("getting config for name %s: %v", hello.ServerName, err)
 			}
