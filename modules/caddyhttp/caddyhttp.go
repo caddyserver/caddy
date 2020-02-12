@@ -51,6 +51,10 @@ type App struct {
 	GracePeriod caddy.Duration     `json:"grace_period,omitempty"`
 	Servers     map[string]*Server `json:"servers,omitempty"`
 
+	// DefaultSNI if set configures all certificate lookups to fallback to use
+	// this SNI name if a more specific certificate could not be found
+	DefaultSNI string `json:"default_sni,omitempty"`
+
 	servers     []*http.Server
 	h3servers   []*http3.Server
 	h3listeners []net.PacketConn
@@ -73,6 +77,16 @@ func (app *App) Provision(ctx caddy.Context) error {
 	app.logger = ctx.Logger(app)
 
 	repl := caddy.NewReplacer()
+
+	certmagic.Default.DefaultServerName = app.DefaultSNI
+
+	// this provisions the matchers for each route,
+	// and prepares auto HTTP->HTTP redirects, and
+	// is required before we provision each server
+	err := app.automaticHTTPSPhase1(ctx, repl)
+	if err != nil {
+		return err
+	}
 
 	for srvName, srv := range app.Servers {
 		srv.logger = app.logger.Named("log")

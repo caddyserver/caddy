@@ -66,6 +66,10 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 				val, err = parseOptHTTPSPort(disp)
 			case "handler_order":
 				val, err = parseOptHandlerOrder(disp)
+			case "default_sni":
+				val, err = parseDefaultSNI(disp)
+			case "order":
+				val, err = parseOptOrder(disp)
 			case "experimental_http3":
 				val, err = parseOptExperimentalHTTP3(disp)
 			case "storage":
@@ -166,9 +170,10 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 
 	// now that each server is configured, make the HTTP app
 	httpApp := caddyhttp.App{
-		HTTPPort:  tryInt(options["http_port"], &warnings),
-		HTTPSPort: tryInt(options["https_port"], &warnings),
-		Servers:   servers,
+		HTTPPort:   tryInt(options["http_port"], &warnings),
+		HTTPSPort:  tryInt(options["https_port"], &warnings),
+		DefaultSNI: tryString(options["default_sni"], &warnings),
+		Servers:    servers,
 	}
 
 	// now for the TLS app! (TODO: refactor into own func)
@@ -625,6 +630,60 @@ func tryInt(val interface{}, warnings *[]caddyconfig.Warning) int {
 		*warnings = append(*warnings, caddyconfig.Warning{Message: "not an integer type"})
 	}
 	return intVal
+}
+
+func tryString(val interface{}, warnings *[]caddyconfig.Warning) string {
+	stringVal, ok := val.(string)
+	if val != nil && !ok && warnings != nil {
+		*warnings = append(*warnings, caddyconfig.Warning{Message: "not an string type"})
+	}
+	return stringVal
+}
+
+// sliceContains returns true if needle is in haystack.
+func sliceContains(haystack []string, needle string) bool {
+	for _, s := range haystack {
+		if s == needle {
+			return true
+		}
+	}
+	return false
+}
+
+// specifity returns len(s) minus any wildcards (*) and
+// placeholders ({...}). Basically, it's a length count
+// that penalizes the use of wildcards and placeholders.
+// This is useful for comparing hostnames and paths.
+// However, wildcards in paths are not a sure answer to
+// the question of specificity. For exmaple,
+// '*.example.com' is clearly less specific than
+// 'a.example.com', but is '/a' more or less specific
+// than '/a*'?
+func specificity(s string) int {
+	l := len(s) - strings.Count(s, "*")
+	for len(s) > 0 {
+		start := strings.Index(s, "{")
+		if start < 0 {
+			return l
+		}
+		end := strings.Index(s[start:], "}") + start + 1
+		if end <= start {
+			return l
+		}
+		l -= end - start
+		s = s[end:]
+	}
+	return l
+}
+
+type counter struct {
+	n *int
+}
+
+func (c counter) nextGroup() string {
+	name := fmt.Sprintf("group%d", *c.n)
+	*c.n++
+	return name
 }
 
 type matcherSetAndTokens struct {

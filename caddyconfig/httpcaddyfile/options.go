@@ -54,6 +54,18 @@ func parseOptHTTPSPort(d *caddyfile.Dispenser) (int, error) {
 	return httpsPort, nil
 }
 
+func parseDefaultSNI(d *caddyfile.Dispenser) (string, error) {
+	d.Next() // consume parameter name
+	if !d.Next() {
+		return "", d.ArgErr()
+	}
+	val := d.Val()
+	if d.Next() {
+		return "", d.ArgErr()
+	}
+	return val, nil
+}
+
 func parseOptExperimentalHTTP3(d *caddyfile.Dispenser) (bool, error) {
 	return true, nil
 }
