@@ -132,8 +132,8 @@ func TestReplacerSet(t *testing.T) {
 }
 
 func TestReplacerReplaceKnown(t *testing.T) {
-	rep := replacer{
-		providers: []ReplacementFunc{
+	rep := Replacer{
+		providers: []ReplacerFunc{
 			// split our possible vars to two functions (to test if both functions are called)
 			func(key string) (val string, ok bool) {
 				switch key {
@@ -204,7 +204,7 @@ func TestReplacerReplaceKnown(t *testing.T) {
 }
 
 func TestReplacerDelete(t *testing.T) {
-	rep := replacer{
+	rep := Replacer{
 		static: map[string]string{
 			"key1": "val1",
 			"key2": "val2",
@@ -239,7 +239,7 @@ func TestReplacerDelete(t *testing.T) {
 func TestReplacerMap(t *testing.T) {
 	rep := testReplacer()
 
-	for i, tc := range []ReplacementFunc{
+	for i, tc := range []ReplacerFunc{
 		func(key string) (val string, ok bool) {
 			return "", false
 		},
@@ -264,60 +264,56 @@ func TestReplacerMap(t *testing.T) {
 }
 
 func TestReplacerNew(t *testing.T) {
-	var tc = NewReplacer()
+	rep := NewReplacer()
 
-	rep, ok := tc.(*replacer)
-	if ok {
-		if len(rep.providers) != 2 {
-			t.Errorf("Expected providers length '%v' got length '%v'", 2, len(rep.providers))
-		} else {
-			// test if default global replacements are added  as the first provider
-			hostname, _ := os.Hostname()
-			os.Setenv("CADDY_REPLACER_TEST", "envtest")
-			defer os.Setenv("CADDY_REPLACER_TEST", "")
+	if len(rep.providers) != 2 {
+		t.Errorf("Expected providers length '%v' got length '%v'", 2, len(rep.providers))
+	} else {
+		// test if default global replacements are added  as the first provider
+		hostname, _ := os.Hostname()
+		os.Setenv("CADDY_REPLACER_TEST", "envtest")
+		defer os.Setenv("CADDY_REPLACER_TEST", "")
 
-			for _, tc := range []struct {
-				variable string
-				value    string
-			}{
-				{
-					variable: "system.hostname",
-					value:    hostname,
-				},
-				{
-					variable: "system.slash",
-					value:    string(filepath.Separator),
-				},
-				{
-					variable: "system.os",
-					value:    runtime.GOOS,
-				},
-				{
-					variable: "system.arch",
-					value:    runtime.GOARCH,
-				},
-				{
-					variable: "env.CADDY_REPLACER_TEST",
-					value:    "envtest",
-				},
-			} {
-				if val, ok := rep.providers[0](tc.variable); ok {
-					if val != tc.value {
-						t.Errorf("Expected value '%s' for key '%s' got '%s'", tc.value, tc.variable, val)
-					}
-				} else {
-					t.Errorf("Expected key '%s' to be recognized by first provider", tc.variable)
+		for _, tc := range []struct {
+			variable string
+			value    string
+		}{
+			{
+				variable: "system.hostname",
+				value:    hostname,
+			},
+			{
+				variable: "system.slash",
+				value:    string(filepath.Separator),
+			},
+			{
+				variable: "system.os",
+				value:    runtime.GOOS,
+			},
+			{
+				variable: "system.arch",
+				value:    runtime.GOARCH,
+			},
+			{
+				variable: "env.CADDY_REPLACER_TEST",
+				value:    "envtest",
+			},
+		} {
+			if val, ok := rep.providers[0](tc.variable); ok {
+				if val != tc.value {
+					t.Errorf("Expected value '%s' for key '%s' got '%s'", tc.value, tc.variable, val)
 				}
+			} else {
+				t.Errorf("Expected key '%s' to be recognized by first provider", tc.variable)
 			}
 		}
-	} else {
-		t.Errorf("Expected type of replacer %T got %T ", &replacer{}, tc)
 	}
+
 }
 
-func testReplacer() replacer {
-	return replacer{
-		providers: make([]ReplacementFunc, 0),
+func testReplacer() Replacer {
+	return Replacer{
+		providers: make([]ReplacerFunc, 0),
 		static:    make(map[string]string),
 	}
 }

@@ -27,17 +27,20 @@ func init() {
 
 // Subroute implements a handler that compiles and executes routes.
 // This is useful for a batch of routes that all inherit the same
-// matchers, or for routes with matchers that must be have deferred
-// evaluation (e.g. if they depend on placeholders created by other
-// matchers that need to be evaluated first).
+// matchers, or for multiple routes that should be treated as a
+// single route.
 //
-// You can also use subroutes to handle errors from specific handlers.
-// First the primary Routes will be executed, and if they return an
-// error, the Errors routes will be executed; in that case, an error
+// You can also use subroutes to handle errors from its handlers.
+// First the primary routes will be executed, and if they return an
+// error, the errors routes will be executed; in that case, an error
 // is only returned to the entry point at the server if there is an
 // additional error returned from the errors routes.
 type Subroute struct {
-	Routes RouteList        `json:"routes,omitempty"`
+	// The primary list of routes to compile and execute.
+	Routes RouteList `json:"routes,omitempty"`
+
+	// If the primary routes return an error, error handling
+	// can be promoted to this configuration instead.
 	Errors *HTTPErrorConfig `json:"errors,omitempty"`
 }
 
@@ -66,12 +69,12 @@ func (sr *Subroute) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-func (sr *Subroute) ServeHTTP(w http.ResponseWriter, r *http.Request, _ Handler) error {
-	subroute := sr.Routes.BuildCompositeRoute(r)
+func (sr *Subroute) ServeHTTP(w http.ResponseWriter, r *http.Request, next Handler) error {
+	subroute := sr.Routes.Compile(next)
 	err := subroute.ServeHTTP(w, r)
 	if err != nil && sr.Errors != nil {
 		r = sr.Errors.WithError(r, err)
-		errRoute := sr.Errors.Routes.BuildCompositeRoute(r)
+		errRoute := sr.Errors.Routes.Compile(next)
 		return errRoute.ServeHTTP(w, r)
 	}
 	return err

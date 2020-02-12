@@ -22,12 +22,15 @@ import (
 	"io/ioutil"
 	"net"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
+	"go.uber.org/zap"
 )
 
 // Main implements the main function of the caddy command.
@@ -90,12 +93,16 @@ func handlePingbackConn(conn net.Conn, expect []byte) error {
 
 // loadConfig loads the config from configFile and adapts it
 // using adapterName. If adapterName is specified, configFile
-// must be also. It prints any warnings to stderr, and returns
-// the resulting JSON config bytes.
-func loadConfig(configFile, adapterName string) ([]byte, error) {
+// must be also. If no configFile is specified, it tries
+// loading a default config file. The lack of a config file is
+// not treated as an error, but false will be returned if
+// there is no config available. It prints any warnings to stderr,
+// and returns the resulting JSON config bytes along with
+// whether a config file was loaded or not.
+func loadConfig(configFile, adapterName string) ([]byte, bool, error) {
 	// specifying an adapter without a config file is ambiguous
-	if configFile == "" && adapterName != "" {
-		return nil, fmt.Errorf("cannot adapt config without config file (use --config)")
+	if adapterName != "" && configFile == "" {
+		return nil, false, fmt.Errorf("cannot adapt config without config file (use --config)")
 	}
 
 	// load initial config and adapter
@@ -105,8 +112,11 @@ func loadConfig(configFile, adapterName string) ([]byte, error) {
 	if configFile != "" {
 		config, err = ioutil.ReadFile(configFile)
 		if err != nil {
-			return nil, fmt.Errorf("reading config file: %v", err)
+			return nil, false, fmt.Errorf("reading config file: %v", err)
 		}
+		caddy.Log().Info("using provided configuration",
+			zap.String("config_file", configFile),
+			zap.String("config_adapter", adapterName))
 	} else if adapterName == "" {
 		// as a special case when no config file or adapter
 		// is specified, see if the Caddyfile adapter is
@@ -119,19 +129,29 @@ func loadConfig(configFile, adapterName string) ([]byte, error) {
 				cfgAdapter = nil
 			} else if err != nil {
 				// default Caddyfile exists, but error reading it
-				return nil, fmt.Errorf("reading default Caddyfile: %v", err)
+				return nil, false, fmt.Errorf("reading default Caddyfile: %v", err)
 			} else {
 				// success reading default Caddyfile
 				configFile = "Caddyfile"
+				caddy.Log().Info("using adjacent Caddyfile")
 			}
 		}
+	}
+
+	// as a special case, if a config file called "Caddyfile" was
+	// specified, and no adapter is specified, assume caddyfile adapter
+	// for convenience
+	if strings.HasPrefix(filepath.Base(configFile), "Caddyfile") &&
+		filepath.Ext(configFile) != ".json" &&
+		adapterName == "" {
+		adapterName = "caddyfile"
 	}
 
 	// load config adapter
 	if adapterName != "" {
 		cfgAdapter = caddyconfig.GetAdapter(adapterName)
 		if cfgAdapter == nil {
-			return nil, fmt.Errorf("unrecognized config adapter: %s", adapterName)
+			return nil, false, fmt.Errorf("unrecognized config adapter: %s", adapterName)
 		}
 	}
 
@@ -141,7 +161,7 @@ func loadConfig(configFile, adapterName string) ([]byte, error) {
 			"filename": configFile,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("adapting config using %s: %v", adapterName, err)
+			return nil, false, fmt.Errorf("adapting config using %s: %v", adapterName, err)
 		}
 		for _, warn := range warnings {
 			msg := warn.Message
@@ -153,7 +173,7 @@ func loadConfig(configFile, adapterName string) ([]byte, error) {
 		config = adaptedConfig
 	}
 
-	return config, nil
+	return config, configFile != "", nil
 }
 
 // Flags wraps a FlagSet so that typed values
@@ -222,7 +242,90 @@ func flagHelp(fs *flag.FlagSet) string {
 }
 
 func printEnvironment() {
+	fmt.Printf("caddy.HomeDir=%s\n", caddy.HomeDir())
+	fmt.Printf("caddy.AppDataDir=%s\n", caddy.AppDataDir())
+	fmt.Printf("caddy.AppConfigDir=%s\n", caddy.AppConfigDir())
+	fmt.Printf("caddy.ConfigAutosavePath=%s\n", caddy.ConfigAutosavePath)
+	fmt.Printf("runtime.GOOS=%s\n", runtime.GOOS)
+	fmt.Printf("runtime.GOARCH=%s\n", runtime.GOARCH)
+	fmt.Printf("runtime.Compiler=%s\n", runtime.Compiler)
+	fmt.Printf("runtime.NumCPU=%d\n", runtime.NumCPU())
+	fmt.Printf("runtime.GOMAXPROCS=%d\n", runtime.GOMAXPROCS(0))
+	fmt.Printf("runtime.Version=%s\n", runtime.Version())
+	cwd, err := os.Getwd()
+	if err != nil {
+		cwd = fmt.Sprintf("<error: %v>", err)
+	}
+	fmt.Printf("os.Getwd=%s\n\n", cwd)
 	for _, v := range os.Environ() {
 		fmt.Println(v)
 	}
+}
+
+// moveStorage moves the old default dataDir to the new default dataDir.
+// TODO: This is TEMPORARY until the release candidates.
+func moveStorage() {
+	// get the home directory (the old way)
+	oldHome := os.Getenv("HOME")
+	if oldHome == "" && runtime.GOOS == "windows" {
+		drive := os.Getenv("HOMEDRIVE")
+		path := os.Getenv("HOMEPATH")
+		oldHome = drive + path
+		if drive == "" || path == "" {
+			oldHome = os.Getenv("USERPROFILE")
+		}
+	}
+	if oldHome == "" {
+		oldHome = "."
+	}
+	oldDataDir := filepath.Join(oldHome, ".local", "share", "caddy")
+
+	// nothing to do if old data dir doesn't exist
+	_, err := os.Stat(oldDataDir)
+	if os.IsNotExist(err) {
+		return
+	}
+
+	// nothing to do if the new data dir is the same as the old one
+	newDataDir := caddy.AppDataDir()
+	if oldDataDir == newDataDir {
+		return
+	}
+
+	logger := caddy.Log().Named("automigrate").With(
+		zap.String("old_dir", oldDataDir),
+		zap.String("new_dir", newDataDir))
+
+	logger.Info("beginning one-time data directory migration",
+		zap.String("details", "https://github.com/caddyserver/caddy/issues/2955"))
+
+	// if new data directory exists, avoid auto-migration as a conservative safety measure
+	_, err = os.Stat(newDataDir)
+	if !os.IsNotExist(err) {
+		logger.Error("new data directory already exists; skipping auto-migration as conservative safety measure",
+			zap.Error(err),
+			zap.String("instructions", "https://github.com/caddyserver/caddy/issues/2955#issuecomment-570000333"))
+		return
+	}
+
+	// construct the new data directory's parent folder
+	err = os.MkdirAll(filepath.Dir(newDataDir), 0700)
+	if err != nil {
+		logger.Error("unable to make new datadirectory - follow link for instructions",
+			zap.String("instructions", "https://github.com/caddyserver/caddy/issues/2955#issuecomment-570000333"),
+			zap.Error(err))
+		return
+	}
+
+	// folder structure is same, so just try to rename (move) it;
+	// this fails if the new path is on a separate device
+	err = os.Rename(oldDataDir, newDataDir)
+	if err != nil {
+		logger.Error("new data directory already exists; skipping auto-migration as conservative safety measure - follow link for instructions",
+			zap.String("instructions", "https://github.com/caddyserver/caddy/issues/2955#issuecomment-570000333"),
+			zap.Error(err))
+	}
+
+	logger.Info("successfully completed one-time migration of data directory",
+		zap.String("details", "https://github.com/caddyserver/caddy/issues/2955"))
 }

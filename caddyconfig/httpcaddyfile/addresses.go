@@ -17,7 +17,6 @@ package httpcaddyfile
 import (
 	"fmt"
 	"net"
-	"net/url"
 	"reflect"
 	"strconv"
 	"strings"
@@ -73,7 +72,8 @@ import (
 // repetition may be undesirable, so call consolidateAddrMappings() to map
 // multiple addresses to the same lists of server blocks (a many:many mapping).
 // (Doing this is essentially a map-reduce technique.)
-func (st *ServerType) mapAddressToServerBlocks(originalServerBlocks []serverBlock) (map[string][]serverBlock, error) {
+func (st *ServerType) mapAddressToServerBlocks(originalServerBlocks []serverBlock,
+	options map[string]interface{}) (map[string][]serverBlock, error) {
 	sbmap := make(map[string][]serverBlock)
 
 	for i, sblock := range originalServerBlocks {
@@ -88,7 +88,7 @@ func (st *ServerType) mapAddressToServerBlocks(originalServerBlocks []serverBloc
 			// arguments to the 'bind' directive (although they will all have
 			// the same port, since the port is defined by the key or is implicit
 			// through automatic HTTPS)
-			addrs, err := st.listenerAddrsForServerBlockKey(sblock, key)
+			addrs, err := st.listenerAddrsForServerBlockKey(sblock, key, options)
 			if err != nil {
 				return nil, fmt.Errorf("server block %d, key %d (%s): determining listener address: %v", i, j, key, err)
 			}
@@ -154,20 +154,43 @@ func (st *ServerType) consolidateAddrMappings(addrToServerBlocks map[string][]se
 	return sbaddrs
 }
 
-func (st *ServerType) listenerAddrsForServerBlockKey(sblock serverBlock, key string) ([]string, error) {
+func (st *ServerType) listenerAddrsForServerBlockKey(sblock serverBlock, key string,
+	options map[string]interface{}) ([]string, error) {
 	addr, err := ParseAddress(key)
 	if err != nil {
 		return nil, fmt.Errorf("parsing key: %v", err)
 	}
 	addr = addr.Normalize()
 
+	// figure out the HTTP and HTTPS ports; either
+	// use defaults, or override with user config
+	httpPort, httpsPort := strconv.Itoa(certmagic.HTTPPort), strconv.Itoa(certmagic.HTTPSPort)
+	if hport, ok := options["http_port"]; ok {
+		httpPort = strconv.Itoa(hport.(int))
+	}
+	if hsport, ok := options["https_port"]; ok {
+		httpsPort = strconv.Itoa(hsport.(int))
+	}
+
 	lnPort := DefaultPort
 	if addr.Port != "" {
 		// port explicitly defined
 		lnPort = addr.Port
+	} else if addr.Scheme != "" {
+		// port inferred from scheme
+		if addr.Scheme == "http" {
+			lnPort = httpPort
+		} else if addr.Scheme == "https" {
+			lnPort = httpsPort
+		}
 	} else if certmagic.HostQualifies(addr.Host) {
 		// automatic HTTPS
-		lnPort = strconv.Itoa(certmagic.HTTPSPort)
+		lnPort = httpsPort
+	}
+
+	// error if scheme and port combination violate convention
+	if (addr.Scheme == "http" && lnPort == httpsPort) || (addr.Scheme == "https" && lnPort == httpPort) {
+		return nil, fmt.Errorf("[%s] scheme and port violate convention", key)
 	}
 
 	// the bind directive specifies hosts, but is optional
@@ -209,44 +232,53 @@ type Address struct {
 // ParseAddress parses an address string into a structured format with separate
 // scheme, host, port, and path portions, as well as the original input string.
 func ParseAddress(str string) (Address, error) {
-	httpPort, httpsPort := strconv.Itoa(certmagic.HTTPPort), strconv.Itoa(certmagic.HTTPSPort)
+	const maxLen = 4096
+	if len(str) > maxLen {
+		str = str[:maxLen]
+	}
+	remaining := strings.TrimSpace(str)
+	a := Address{Original: remaining}
 
-	input := str
-
-	// Split input into components (prepend with // to force host portion by default)
-	if !strings.Contains(str, "//") && !strings.HasPrefix(str, "/") {
-		str = "//" + str
+	// extract scheme
+	splitScheme := strings.SplitN(remaining, "://", 2)
+	switch len(splitScheme) {
+	case 0:
+		return a, nil
+	case 1:
+		remaining = splitScheme[0]
+	case 2:
+		a.Scheme = splitScheme[0]
+		remaining = splitScheme[1]
 	}
 
-	u, err := url.Parse(str)
-	if err != nil {
-		return Address{}, err
-	}
-
-	// separate host and port
-	host, port, err := net.SplitHostPort(u.Host)
-	if err != nil {
-		host, port, err = net.SplitHostPort(u.Host + ":")
+	// extract host and port
+	hostSplit := strings.SplitN(remaining, "/", 2)
+	if len(hostSplit) > 0 {
+		host, port, err := net.SplitHostPort(hostSplit[0])
 		if err != nil {
-			host = u.Host
+			host, port, err = net.SplitHostPort(hostSplit[0] + ":")
+			if err != nil {
+				host = hostSplit[0]
+			}
+		}
+		a.Host = host
+		a.Port = port
+	}
+	if len(hostSplit) == 2 {
+		// all that remains is the path
+		a.Path = "/" + hostSplit[1]
+	}
+
+	// make sure port is valid
+	if a.Port != "" {
+		if portNum, err := strconv.Atoi(a.Port); err != nil {
+			return Address{}, fmt.Errorf("invalid port '%s': %v", a.Port, err)
+		} else if portNum < 0 || portNum > 65535 {
+			return Address{}, fmt.Errorf("port %d is out of range", portNum)
 		}
 	}
 
-	// see if we can set port based off scheme
-	if port == "" {
-		if u.Scheme == "http" {
-			port = httpPort
-		} else if u.Scheme == "https" {
-			port = httpsPort
-		}
-	}
-
-	// error if scheme and port combination violate convention
-	if (u.Scheme == "http" && port == httpsPort) || (u.Scheme == "https" && port == httpPort) {
-		return Address{}, fmt.Errorf("[%s] scheme and port violate convention", input)
-	}
-
-	return Address{Original: input, Scheme: u.Scheme, Host: host, Port: port, Path: u.Path}, err
+	return a, nil
 }
 
 // TODO: which of the methods on Address are even used?

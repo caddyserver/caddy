@@ -15,6 +15,7 @@
 package caddyauth
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -28,9 +29,14 @@ func init() {
 
 // HTTPBasicAuth facilitates HTTP basic authentication.
 type HTTPBasicAuth struct {
-	HashRaw     json.RawMessage `json:"hash,omitempty" caddy:"namespace=http.authentication.hashes inline_key=algorithm"`
-	AccountList []Account       `json:"accounts,omitempty"`
-	Realm       string          `json:"realm,omitempty"`
+	// The algorithm with which the passwords are hashed. Default: bcrypt
+	HashRaw json.RawMessage `json:"hash,omitempty" caddy:"namespace=http.authentication.hashes inline_key=algorithm"`
+
+	// The list of accounts to authenticate.
+	AccountList []Account `json:"accounts,omitempty"`
+
+	// The name of the realm. Default: restricted
+	Realm string `json:"realm,omitempty"`
 
 	Accounts map[string]Account `json:"-"`
 	Hash     Comparer           `json:"-"`
@@ -61,12 +67,34 @@ func (hba *HTTPBasicAuth) Provision(ctx caddy.Context) error {
 		return fmt.Errorf("hash is required")
 	}
 
+	repl := caddy.NewReplacer()
+
 	// load account list
 	hba.Accounts = make(map[string]Account)
-	for _, acct := range hba.AccountList {
+	for i, acct := range hba.AccountList {
 		if _, ok := hba.Accounts[acct.Username]; ok {
-			return fmt.Errorf("username is not unique: %s", acct.Username)
+			return fmt.Errorf("account %d: username is not unique: %s", i, acct.Username)
 		}
+
+		acct.Username = repl.ReplaceAll(acct.Username, "")
+		acct.Password = repl.ReplaceAll(string(acct.Password), "")
+		acct.Salt = repl.ReplaceAll(string(acct.Salt), "")
+
+		if acct.Username == "" || acct.Password == "" {
+			return fmt.Errorf("account %d: username and password are required", i)
+		}
+
+		acct.password, err = base64.StdEncoding.DecodeString(acct.Password)
+		if err != nil {
+			return fmt.Errorf("base64-decoding password: %v", err)
+		}
+		if acct.Salt != "" {
+			acct.salt, err = base64.StdEncoding.DecodeString(acct.Salt)
+			if err != nil {
+				return fmt.Errorf("base64-decoding salt: %v", err)
+			}
+		}
+
 		hba.Accounts[acct.Username] = acct
 	}
 	hba.AccountList = nil // allow GC to deallocate
@@ -99,7 +127,7 @@ func (hba HTTPBasicAuth) Authenticate(w http.ResponseWriter, req *http.Request) 
 	// don't return early if account does not exist; we want
 	// to try to avoid side-channels that leak existence
 
-	same, err := hba.Hash.Compare(account.Password, plaintextPassword, account.Salt)
+	same, err := hba.Hash.Compare(account.password, plaintextPassword, account.salt)
 	if err != nil {
 		return User{}, false, err
 	}
@@ -125,9 +153,17 @@ type Comparer interface {
 
 // Account contains a username, password, and salt (if applicable).
 type Account struct {
+	// A user's username.
 	Username string `json:"username"`
-	Password []byte `json:"password"`
-	Salt     []byte `json:"salt,omitempty"` // for algorithms where external salt is needed
+
+	// The user's hashed password, base64-encoded.
+	Password string `json:"password"`
+
+	// The user's password salt, base64-encoded; for
+	// algorithms where external salt is needed.
+	Salt string `json:"salt,omitempty"`
+
+	password, salt []byte
 }
 
 // Interface guards

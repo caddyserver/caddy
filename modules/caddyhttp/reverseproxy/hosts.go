@@ -15,11 +15,13 @@
 package reverseproxy
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"sync/atomic"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
 // Host represents a remote host which can be proxied to.
@@ -61,8 +63,22 @@ type UpstreamPool []*Upstream
 type Upstream struct {
 	Host `json:"-"`
 
-	Dial        string `json:"dial,omitempty"`
-	MaxRequests int    `json:"max_requests,omitempty"`
+	// The [network address](/docs/json/apps/http/#servers/listen)
+	// to dial to connect to the upstream. Must represent precisely
+	// one socket (i.e. no port ranges). A valid network address
+	// either has a host and port, or is a unix socket address.
+	//
+	// Placeholders may be used to make the upstream dynamic, but be
+	// aware of the health check implications of this: a single
+	// upstream that represents numerous (perhaps arbitrary) backends
+	// can be considered down if one or enough of the arbitrary
+	// backends is down. Also be aware of open proxy vulnerabilities.
+	Dial string `json:"dial,omitempty"`
+
+	// The maximum number of simultaneous requests to allow to
+	// this upstream. If set, overrides the global passive health
+	// check UnhealthyRequestCount value.
+	MaxRequests int `json:"max_requests,omitempty"`
 
 	// TODO: This could be really useful, to bind requests
 	// with certain properties to specific backends
@@ -190,7 +206,7 @@ func (di DialInfo) String() string {
 
 // fillDialInfo returns a filled DialInfo for the given upstream, using
 // the given Replacer. Note that the returned value is not a pointer.
-func fillDialInfo(upstream *Upstream, repl caddy.Replacer) (DialInfo, error) {
+func fillDialInfo(upstream *Upstream, repl *caddy.Replacer) (DialInfo, error) {
 	dial := repl.ReplaceAll(upstream.Dial, "")
 	addr, err := caddy.ParseNetworkAddress(dial)
 	if err != nil {
@@ -209,12 +225,19 @@ func fillDialInfo(upstream *Upstream, repl caddy.Replacer) (DialInfo, error) {
 	}, nil
 }
 
-// DialInfoCtxKey is used to store a DialInfo
-// in a context.Context.
-const DialInfoCtxKey = caddy.CtxKey("dial_info")
+// GetDialInfo gets the upstream dialing info out of the context,
+// and returns true if there was a valid value; false otherwise.
+func GetDialInfo(ctx context.Context) (DialInfo, bool) {
+	dialInfo, ok := caddyhttp.GetVar(ctx, dialInfoVarKey).(DialInfo)
+	return dialInfo, ok
+}
 
 // hosts is the global repository for hosts that are
 // currently in use by active configuration(s). This
 // allows the state of remote hosts to be preserved
 // through config reloads.
 var hosts = caddy.NewUsagePool()
+
+// dialInfoVarKey is the key used for the variable that holds
+// the dial info for the upstream connection.
+const dialInfoVarKey = "reverse_proxy.dial_info"

@@ -39,9 +39,15 @@ func init() {
 
 // Encode is a middleware which can encode responses.
 type Encode struct {
+	// Selection of compression algorithms to choose from. The best one
+	// will be chosen based on the client's Accept-Encoding header.
 	EncodingsRaw caddy.ModuleMap `json:"encodings,omitempty" caddy:"namespace=http.encoders"`
-	Prefer       []string        `json:"prefer,omitempty"`
-	MinLength    int             `json:"minimum_length,omitempty"`
+
+	// If the client has no strong preference, choose this encoding. TODO: Not yet implemented
+	// Prefer    []string `json:"prefer,omitempty"`
+
+	// Only encode responses that are at least this many bytes long.
+	MinLength int `json:"minimum_length,omitempty"`
 
 	writerPools map[string]*sync.Pool // TODO: these pools do not get reused through config reloads...
 }
@@ -66,11 +72,9 @@ func (enc *Encode) Provision(ctx caddy.Context) error {
 			return fmt.Errorf("adding encoding %s: %v", modName, err)
 		}
 	}
-
 	if enc.MinLength == 0 {
 		enc.MinLength = defaultMinLength
 	}
-
 	return nil
 }
 

@@ -33,11 +33,33 @@ func init() {
 }
 
 // Cache implements a simple distributed cache.
+//
+// NOTE: This module is a work-in-progress. It is
+// not finished and is NOT ready for production use.
+// [We need your help to finish it! Please volunteer
+// in this issue.](https://github.com/caddyserver/caddy/issues/2820)
+// Until it is finished, this module is subject to
+// breaking changes.
+//
+// Caches only GET and HEAD requests. Honors the Cache-Control: no-cache header.
+//
+// Still TODO:
+//
+// - Eviction policies and API
+// - Use single cache per-process
+// - Preserve cache through config reloads
+// - More control over what gets cached
 type Cache struct {
-	Self    string   `json:"self,omitempty"`
-	Peers   []string `json:"peers,omitempty"`
-	MaxSize int64    `json:"max_size,omitempty"`
-	group   *groupcache.Group
+	// The network address of this cache instance; required.
+	Self string `json:"self,omitempty"`
+
+	// A list of network addresses of cache instances in the group.
+	Peers []string `json:"peers,omitempty"`
+
+	// Maximum size of the cache, in bytes. Default is 512 MB.
+	MaxSize int64 `json:"max_size,omitempty"`
+
+	group *groupcache.Group
 }
 
 // CaddyModule returns the Caddy module information.

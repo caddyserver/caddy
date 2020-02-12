@@ -11,6 +11,7 @@ func TestParseAddress(t *testing.T) {
 		scheme, host, port, path string
 		shouldErr                bool
 	}{
+		{``, "", "", "", "", false},
 		{`localhost`, "", "localhost", "", "", false},
 		{`localhost:1234`, "", "localhost", "1234", "", false},
 		{`localhost:`, "", "localhost", "", "", false},
@@ -27,25 +28,29 @@ func TestParseAddress(t *testing.T) {
 		{`http://localhost:https`, "", "", "", "", true}, // conflict
 		{`http://localhost:http`, "", "", "", "", true},  // repeated scheme
 		{`host:https/path`, "", "", "", "", true},
-		{`http://localhost:443`, "", "", "", "", true}, // not conventional
-		{`https://localhost:80`, "", "", "", "", true}, // not conventional
-		{`http://localhost`, "http", "localhost", "80", "", false},
-		{`https://localhost`, "https", "localhost", "443", "", false},
-		{`http://127.0.0.1`, "http", "127.0.0.1", "80", "", false},
-		{`https://127.0.0.1`, "https", "127.0.0.1", "443", "", false},
-		{`http://[::1]`, "http", "::1", "80", "", false},
+		{`http://localhost:443`, "http", "localhost", "443", "", false}, // NOTE: not conventional
+		{`https://localhost:80`, "https", "localhost", "80", "", false}, // NOTE: not conventional
+		{`http://localhost`, "http", "localhost", "", "", false},
+		{`https://localhost`, "https", "localhost", "", "", false},
+		{`http://{env.APP_DOMAIN}`, "http", "{env.APP_DOMAIN}", "", "", false},
+		{`{env.APP_DOMAIN}:80`, "", "{env.APP_DOMAIN}", "80", "", false},
+		{`{env.APP_DOMAIN}/path`, "", "{env.APP_DOMAIN}", "", "/path", false},
+		{`example.com/{env.APP_PATH}`, "", "example.com", "", "/{env.APP_PATH}", false},
+		{`http://127.0.0.1`, "http", "127.0.0.1", "", "", false},
+		{`https://127.0.0.1`, "https", "127.0.0.1", "", "", false},
+		{`http://[::1]`, "http", "::1", "", "", false},
 		{`http://localhost:1234`, "http", "localhost", "1234", "", false},
 		{`https://127.0.0.1:1234`, "https", "127.0.0.1", "1234", "", false},
 		{`http://[::1]:1234`, "http", "::1", "1234", "", false},
 		{``, "", "", "", "", false},
-		{`::1`, "", "::1", "", "", true},
-		{`localhost::`, "", "localhost::", "", "", true},
-		{`#$%@`, "", "", "", "", true},
+		{`::1`, "", "::1", "", "", false},
+		{`localhost::`, "", "localhost::", "", "", false},
+		{`#$%@`, "", "#$%@", "", "", false}, // don't want to presume what the hostname could be
 		{`host/path`, "", "host", "", "/path", false},
-		{`http://host/`, "http", "host", "80", "/", false},
-		{`//asdf`, "", "asdf", "", "", false},
+		{`http://host/`, "http", "host", "", "/", false},
+		{`//asdf`, "", "", "", "//asdf", false},
 		{`:1234/asdf`, "", "", "1234", "/asdf", false},
-		{`http://host/path`, "http", "host", "80", "/path", false},
+		{`http://host/path`, "http", "host", "", "/path", false},
 		{`https://host:443/path/foo`, "https", "host", "443", "/path/foo", false},
 		{`host:80/path`, "", "host", "80", "/path", false},
 		{`/path`, "", "", "", "/path", false},
@@ -56,7 +61,7 @@ func TestParseAddress(t *testing.T) {
 			t.Errorf("Test %d (%s): Expected no error, but had error: %v", i, test.input, err)
 		}
 		if err == nil && test.shouldErr {
-			t.Errorf("Test %d (%s): Expected error, but had none", i, test.input)
+			t.Errorf("Test %d (%s): Expected error, but had none (%#v)", i, test.input, actual)
 		}
 
 		if !test.shouldErr && actual.Original != test.input {

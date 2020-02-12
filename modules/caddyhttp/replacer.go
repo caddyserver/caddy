@@ -26,7 +26,7 @@ import (
 	"github.com/caddyserver/caddy/v2"
 )
 
-func addHTTPVarsToReplacer(repl caddy.Replacer, req *http.Request, w http.ResponseWriter) {
+func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.ResponseWriter) {
 	httpVars := func(key string) (string, bool) {
 		if req != nil {
 			// query string parameters
@@ -104,8 +104,6 @@ func addHTTPVarsToReplacer(repl caddy.Replacer, req *http.Request, w http.Respon
 				return dir, true
 			case "http.request.uri.query":
 				return req.URL.RawQuery, true
-			case "http.request.uri.query_string":
-				return "?" + req.URL.Query().Encode(), true
 
 				// original request, before any internal changes
 			case "http.request.orig_method":
@@ -128,13 +126,6 @@ func addHTTPVarsToReplacer(repl caddy.Replacer, req *http.Request, w http.Respon
 			case "http.request.orig_uri.query":
 				or, _ := req.Context().Value(OriginalRequestCtxKey).(http.Request)
 				return or.URL.RawQuery, true
-			case "http.request.orig_uri.query_string":
-				or, _ := req.Context().Value(OriginalRequestCtxKey).(http.Request)
-				qs := or.URL.Query().Encode()
-				if qs != "" {
-					qs = "?" + qs
-				}
-				return qs, true
 			}
 
 			// hostname labels

@@ -68,7 +68,6 @@ func (h Handler) handleUpgradeResponse(rw http.ResponseWriter, req *http.Request
 	go spc.copyToBackend(errc)
 	go spc.copyFromBackend(errc)
 	<-errc
-	return
 }
 
 // flushInterval returns the p.FlushInterval value, conditionally

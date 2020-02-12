@@ -78,7 +78,7 @@ type ACMEManagerMaker struct {
 
 	// Optionally configure a separate storage module associated with this
 	// manager, instead of using Caddy's global/default-configured storage.
-	Storage json.RawMessage `json:"storage,omitempty"`
+	Storage json.RawMessage `json:"storage,omitempty" caddy:"namespace=caddy.storage inline_key=module"`
 
 	// An array of files of CA certificates to accept when connecting to the
 	// ACME CA. Generally, you should only use this if the ACME CA endpoint
@@ -111,7 +111,11 @@ func (m *ACMEManagerMaker) Provision(ctx caddy.Context) error {
 		if err != nil {
 			return fmt.Errorf("loading DNS provider module: %v", err)
 		}
-		m.Challenges.DNS = val.(challenge.Provider)
+		prov, err := val.(DNSProviderMaker).NewDNSProvider()
+		if err != nil {
+			return fmt.Errorf("making DNS provider: %v", err)
+		}
+		m.Challenges.DNS = prov
 	}
 
 	// policy-specific storage implementation
@@ -236,6 +240,12 @@ func onDemandAskRequest(ask string, name string) error {
 	}
 
 	return nil
+}
+
+// DNSProviderMaker is a type that can create a new DNS provider.
+// Modules in the tls.dns namespace should implement this interface.
+type DNSProviderMaker interface {
+	NewDNSProvider() (challenge.Provider, error)
 }
 
 // Interface guard

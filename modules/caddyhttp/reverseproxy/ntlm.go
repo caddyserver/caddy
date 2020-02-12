@@ -46,6 +46,10 @@ func init() {
 //
 // This transport also forces HTTP/1.1 and Keep-Alives in order
 // for NTLM to succeed.
+//
+// It is basically the same thing as
+// [nginx's paid ntlm directive](https://nginx.org/en/docs/http/ngx_http_upstream_module.html#ntlm)
+// (but is free in Caddy!).
 type NTLMTransport struct {
 	*HTTPTransport
 

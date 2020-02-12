@@ -31,9 +31,16 @@ import (
 	"go.uber.org/zap"
 )
 
-// HealthChecks holds configuration related to health checking.
+// HealthChecks configures active and passive health checks.
 type HealthChecks struct {
-	Active  *ActiveHealthChecks  `json:"active,omitempty"`
+	// Active health checks run in the background on a timer. To
+	// minimally enable active health checks, set either path or
+	// port (or both).
+	Active *ActiveHealthChecks `json:"active,omitempty"`
+
+	// Passive health checks monitor proxied requests for errors or timeouts.
+	// To minimally enable passive health checks, specify at least an empty
+	// config object.
 	Passive *PassiveHealthChecks `json:"passive,omitempty"`
 }
 
@@ -41,14 +48,33 @@ type HealthChecks struct {
 // health checks (that is, health checks which occur in a
 // background goroutine independently).
 type ActiveHealthChecks struct {
-	Path         string         `json:"path,omitempty"`
-	Port         int            `json:"port,omitempty"`
-	Headers      http.Header    `json:"headers,omitempty"`
-	Interval     caddy.Duration `json:"interval,omitempty"`
-	Timeout      caddy.Duration `json:"timeout,omitempty"`
-	MaxSize      int64          `json:"max_size,omitempty"`
-	ExpectStatus int            `json:"expect_status,omitempty"`
-	ExpectBody   string         `json:"expect_body,omitempty"`
+	// The URI path to use for health checks.
+	Path string `json:"path,omitempty"`
+
+	// The port to use (if different from the upstream's dial
+	// address) for health checks.
+	Port int `json:"port,omitempty"`
+
+	// HTTP headers to set on health check requests.
+	Headers http.Header `json:"headers,omitempty"`
+
+	// How frequently to perform active health checks (default 30s).
+	Interval caddy.Duration `json:"interval,omitempty"`
+
+	// How long to wait for a response from a backend before
+	// considering it unhealthy (default 5s).
+	Timeout caddy.Duration `json:"timeout,omitempty"`
+
+	// The maximum response body to download from the backend
+	// during a health check.
+	MaxSize int64 `json:"max_size,omitempty"`
+
+	// The HTTP status code to expect from a healthy backend.
+	ExpectStatus int `json:"expect_status,omitempty"`
+
+	// A regular expression against which to match the response
+	// body of a healthy backend.
+	ExpectBody string `json:"expect_body,omitempty"`
 
 	stopChan   chan struct{}
 	httpClient *http.Client
@@ -60,11 +86,27 @@ type ActiveHealthChecks struct {
 // health checks (that is, health checks which occur during
 // the normal flow of request proxying).
 type PassiveHealthChecks struct {
-	MaxFails              int            `json:"max_fails,omitempty"`
-	FailDuration          caddy.Duration `json:"fail_duration,omitempty"`
-	UnhealthyRequestCount int            `json:"unhealthy_request_count,omitempty"`
-	UnhealthyStatus       []int          `json:"unhealthy_status,omitempty"`
-	UnhealthyLatency      caddy.Duration `json:"unhealthy_latency,omitempty"`
+	// How long to remember a failed request to a backend. A duration > 0
+	// enables passive health checking. Default is 0.
+	FailDuration caddy.Duration `json:"fail_duration,omitempty"`
+
+	// The number of failed requests within the FailDuration window to
+	// consider a backend as "down". Must be >= 1; default is 1. Requires
+	// that FailDuration be > 0.
+	MaxFails int `json:"max_fails,omitempty"`
+
+	// Limits the number of simultaneous requests to a backend by
+	// marking the backend as "down" if it has this many concurrent
+	// requests or more.
+	UnhealthyRequestCount int `json:"unhealthy_request_count,omitempty"`
+
+	// Count the request as failed if the response comes back with
+	// one of these status codes.
+	UnhealthyStatus []int `json:"unhealthy_status,omitempty"`
+
+	// Count the request as failed if the response takes at least this
+	// long to receive.
+	UnhealthyLatency caddy.Duration `json:"unhealthy_latency,omitempty"`
 
 	logger *zap.Logger
 }
@@ -170,7 +212,9 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, host H
 	// attach dialing information to this request
 	ctx := context.Background()
 	ctx = context.WithValue(ctx, caddy.ReplacerCtxKey, caddy.NewReplacer())
-	ctx = context.WithValue(ctx, DialInfoCtxKey, dialInfo)
+	ctx = context.WithValue(ctx, caddyhttp.VarsCtxKey, map[string]interface{}{
+		dialInfoVarKey: dialInfo,
+	})
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return fmt.Errorf("making request: %v", err)

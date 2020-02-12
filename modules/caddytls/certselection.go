@@ -11,14 +11,14 @@ import (
 )
 
 func init() {
-	caddy.RegisterModule(Policy{})
+	caddy.RegisterModule(CustomCertSelectionPolicy{})
 }
 
-// Policy represents a policy for selecting the certificate used to
-// complete a handshake when there may be multiple options. All fields
+// CertSelectionPolicy represents a policy for selecting the certificate used
+// to complete a handshake when there may be multiple options. All fields
 // specified must match the candidate certificate for it to be chosen.
 // This was needed to solve https://github.com/caddyserver/caddy/issues/2588.
-type Policy struct {
+type CustomCertSelectionPolicy struct {
 	SerialNumber        *big.Int           `json:"serial_number,omitempty"`
 	SubjectOrganization string             `json:"subject_organization,omitempty"`
 	PublicKeyAlgorithm  PublicKeyAlgorithm `json:"public_key_algorithm,omitempty"`
@@ -26,15 +26,15 @@ type Policy struct {
 }
 
 // CaddyModule returns the Caddy module information.
-func (Policy) CaddyModule() caddy.ModuleInfo {
+func (CustomCertSelectionPolicy) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
 		ID:  "tls.certificate_selection.custom",
-		New: func() caddy.Module { return new(Policy) },
+		New: func() caddy.Module { return new(CustomCertSelectionPolicy) },
 	}
 }
 
 // SelectCertificate implements certmagic.CertificateSelector.
-func (p Policy) SelectCertificate(_ *tls.ClientHelloInfo, choices []certmagic.Certificate) (certmagic.Certificate, error) {
+func (p CustomCertSelectionPolicy) SelectCertificate(_ *tls.ClientHelloInfo, choices []certmagic.Certificate) (certmagic.Certificate, error) {
 	for _, cert := range choices {
 		if p.SerialNumber != nil && cert.SerialNumber.Cmp(p.SerialNumber) != 0 {
 			continue
@@ -68,4 +68,4 @@ func (p Policy) SelectCertificate(_ *tls.ClientHelloInfo, choices []certmagic.Ce
 }
 
 // Interface guard
-var _ certmagic.CertificateSelector = (*Policy)(nil)
+var _ certmagic.CertificateSelector = (*CustomCertSelectionPolicy)(nil)

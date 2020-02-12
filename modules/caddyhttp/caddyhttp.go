@@ -25,13 +25,10 @@ import (
 	"net"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
-	"github.com/caddyserver/caddy/v2/modules/caddytls"
 	"github.com/lucas-clemente/quic-go/http3"
-	"github.com/mholt/certmagic"
 	"go.uber.org/zap"
 )
 
@@ -44,7 +41,45 @@ func init() {
 	}
 }
 
-// App is a robust, flexible HTTP server for Caddy.
+// App is a robust, production-ready HTTP server.
+//
+// HTTPS is enabled by default if host matchers with qualifying names are used
+// in any of routes; certificates are automatically provisioned and renewed.
+// Additionally, automatic HTTPS will also enable HTTPS for servers that listen
+// only on the HTTPS port but which do not have any TLS connection policies
+// defined by adding a good, default TLS connection policy.
+//
+// In HTTP routes, additional placeholders are available (replace any `*`):
+//
+// Placeholder | Description
+// ------------|---------------
+// `{http.request.cookie.*}` | HTTP request cookie
+// `{http.request.header.*}` | Specific request header field
+// `{http.request.host.labels.*}` | Request host labels (0-based from right); e.g. for foo.example.com: 0=com, 1=example, 2=foo
+// `{http.request.host}` | The host part of the request's Host header
+// `{http.request.hostport}` | The host and port from the request's Host header
+// `{http.request.method}` | The request method
+// `{http.request.orig_method}` | The request's original method
+// `{http.request.orig_uri.path.dir}` | The request's original directory
+// `{http.request.orig_uri.path.file}` | The request's original filename
+// `{http.request.orig_uri.path}` | The request's original path
+// `{http.request.orig_uri.query}` | The request's original query string (without `?`)
+// `{http.request.orig_uri}` | The request's original URI
+// `{http.request.port}` | The port part of the request's Host header
+// `{http.request.proto}` | The protocol of the request
+// `{http.request.remote.host}` | The host part of the remote client's address
+// `{http.request.remote.port}` | The port part of the remote client's address
+// `{http.request.remote}` | The address of the remote client
+// `{http.request.scheme}` | The request scheme
+// `{http.request.uri.path.*}` | Parts of the path, split by `/` (0-based from left)
+// `{http.request.uri.path.dir}` | The directory, excluding leaf filename
+// `{http.request.uri.path.file}` | The filename of the path, excluding directory
+// `{http.request.uri.path}` | The path component of the request URI
+// `{http.request.uri.query.*}` | Individual query string value
+// `{http.request.uri.query}` | The query string (without `?`)
+// `{http.request.uri}` | The full request URI
+// `{http.response.header.*}` | Specific response header field
+// `{http.vars.*}` | Custom variables in the HTTP handler chain
 type App struct {
 	// HTTPPort specifies the port to use for HTTP (as opposed to HTTPS),
 	// which is used when setting up HTTP->HTTPS redirects or ACME HTTP
@@ -89,6 +124,14 @@ func (app *App) Provision(ctx caddy.Context) error {
 
 	repl := caddy.NewReplacer()
 
+	// this provisions the matchers for each route,
+	// and prepares auto HTTP->HTTP redirects, and
+	// is required before we provision each server
+	err := app.automaticHTTPSPhase1(ctx, repl)
+	if err != nil {
+		return err
+	}
+
 	for srvName, srv := range app.Servers {
 		srv.logger = app.logger.Named("log")
 		srv.errorLogger = app.logger.Named("log.error")
@@ -96,11 +139,6 @@ func (app *App) Provision(ctx caddy.Context) error {
 		// only enable access logs if configured
 		if srv.Logs != nil {
 			srv.accessLogger = app.logger.Named("log.access")
-		}
-
-		if srv.AutoHTTPS == nil {
-			// avoid nil pointer dereferences
-			srv.AutoHTTPS = new(AutoHTTPSConfig)
 		}
 
 		// if not explicitly configured by the user, disallow TLS
@@ -113,6 +151,9 @@ func (app *App) Provision(ctx caddy.Context) error {
 		// domain fronting is desired and access is not restricted
 		// based on hostname
 		if srv.StrictSNIHost == nil && srv.hasTLSClientAuth() {
+			app.logger.Info("enabling strict SNI-Host matching because TLS client auth is configured",
+				zap.String("server_name", srvName),
+			)
 			trueBool := true
 			srv.StrictSNIHost = &trueBool
 		}
@@ -126,22 +167,25 @@ func (app *App) Provision(ctx caddy.Context) error {
 			srv.Listen[i] = lnOut
 		}
 
+		// pre-compile the primary handler chain, and be sure to wrap it in our
+		// route handler so that important security checks are done, etc.
+		primaryRoute := emptyHandler
 		if srv.Routes != nil {
-			err := srv.Routes.Provision(ctx)
+			err := srv.Routes.ProvisionHandlers(ctx)
 			if err != nil {
-				return fmt.Errorf("server %s: setting up server routes: %v", srvName, err)
+				return fmt.Errorf("server %s: setting up route handlers: %v", srvName, err)
 			}
+			primaryRoute = srv.Routes.Compile(emptyHandler)
 		}
+		srv.primaryHandlerChain = srv.wrapPrimaryRoute(primaryRoute)
 
+		// pre-compile the error handler chain
 		if srv.Errors != nil {
 			err := srv.Errors.Routes.Provision(ctx)
 			if err != nil {
 				return fmt.Errorf("server %s: setting up server error handling routes: %v", srvName, err)
 			}
-		}
-
-		if srv.MaxRehandles == nil {
-			srv.MaxRehandles = &DefaultMaxRehandles
+			srv.errorHandlerChain = srv.Errors.Routes.Compile(emptyHandler)
 		}
 	}
 
@@ -170,21 +214,18 @@ func (app *App) Validate() error {
 		}
 	}
 
-	// each server's max rehandle value must be valid
-	for srvName, srv := range app.Servers {
-		if srv.MaxRehandles != nil && *srv.MaxRehandles < 0 {
-			return fmt.Errorf("%s: invalid max_rehandles value: %d", srvName, *srv.MaxRehandles)
-		}
-	}
-
 	return nil
 }
 
-// Start runs the app. It sets up automatic HTTPS if enabled.
+// Start runs the app. It finishes automatic HTTPS if enabled,
+// including management of certificates.
 func (app *App) Start() error {
-	err := app.automaticHTTPS()
+	// give each server a pointer to the TLS app;
+	// this is required before they are started so
+	// they can solve ACME challenges
+	err := app.automaticHTTPSPhase2()
 	if err != nil {
-		return fmt.Errorf("enabling automatic HTTPS: %v", err)
+		return fmt.Errorf("enabling automatic HTTPS, phase 2: %v", err)
 	}
 
 	for srvName, srv := range app.Servers {
@@ -202,8 +243,8 @@ func (app *App) Start() error {
 			if err != nil {
 				return fmt.Errorf("%s: parsing listen address '%s': %v", srvName, lnAddr, err)
 			}
-			for i := uint(0); i < listenAddr.PortRangeSize(); i++ {
-				hostport := listenAddr.JoinHostPort(i)
+			for portOffset := uint(0); portOffset < listenAddr.PortRangeSize(); portOffset++ {
+				hostport := listenAddr.JoinHostPort(portOffset)
 				ln, err := caddy.Listen(listenAddr.Network, hostport)
 				if err != nil {
 					return fmt.Errorf("%s: listening on %s: %v", listenAddr.Network, hostport, err)
@@ -216,8 +257,10 @@ func (app *App) Start() error {
 					}
 				}
 
-				// enable TLS
-				if len(srv.TLSConnPolicies) > 0 && int(i) != app.httpPort() {
+				// enable TLS if there is a policy and if this is not the HTTP port
+				if len(srv.TLSConnPolicies) > 0 &&
+					int(listenAddr.StartPort+portOffset) != app.httpPort() {
+					// create TLS listener
 					tlsCfg, err := srv.TLSConnPolicies.TLSConfig(app.ctx)
 					if err != nil {
 						return fmt.Errorf("%s/%s: making TLS configuration: %v", listenAddr.Network, hostport, err)
@@ -253,6 +296,13 @@ func (app *App) Start() error {
 				app.servers = append(app.servers, s)
 			}
 		}
+	}
+
+	// finish automatic HTTPS by finally beginning
+	// certificate management
+	err = app.automaticHTTPSPhase3()
+	if err != nil {
+		return fmt.Errorf("finalizing automatic HTTPS: %v", err)
 	}
 
 	return nil
@@ -294,222 +344,6 @@ func (app *App) Stop() error {
 			return err
 		}
 	}
-	return nil
-}
-
-func (app *App) automaticHTTPS() error {
-	tlsAppIface, err := app.ctx.App("tls")
-	if err != nil {
-		return fmt.Errorf("getting tls app: %v", err)
-	}
-	tlsApp := tlsAppIface.(*caddytls.TLS)
-
-	// this map will store associations of HTTP listener
-	// addresses to the routes that do HTTP->HTTPS redirects
-	lnAddrRedirRoutes := make(map[string]Route)
-
-	repl := caddy.NewReplacer()
-
-	for srvName, srv := range app.Servers {
-		srv.tlsApp = tlsApp
-
-		if srv.AutoHTTPS.Disabled {
-			continue
-		}
-
-		// skip if all listeners use the HTTP port
-		if !srv.listenersUseAnyPortOtherThan(app.httpPort()) {
-			app.logger.Info("server is only listening on the HTTP port, so no automatic HTTPS will be applied to this server",
-				zap.String("server_name", srvName),
-				zap.Int("http_port", app.httpPort()),
-			)
-			continue
-		}
-
-		// find all qualifying domain names, de-duplicated
-		domainSet := make(map[string]struct{})
-		for routeIdx, route := range srv.Routes {
-			for matcherSetIdx, matcherSet := range route.MatcherSets {
-				for matcherIdx, m := range matcherSet {
-					if hm, ok := m.(*MatchHost); ok {
-						for hostMatcherIdx, d := range *hm {
-							d, err = repl.ReplaceOrErr(d, true, false)
-							if err != nil {
-								return fmt.Errorf("%s: route %d, matcher set %d, matcher %d, host matcher %d: %v",
-									srvName, routeIdx, matcherSetIdx, matcherIdx, hostMatcherIdx, err)
-							}
-							if certmagic.HostQualifies(d) &&
-								!srv.AutoHTTPS.Skipped(d, srv.AutoHTTPS.Skip) {
-								domainSet[d] = struct{}{}
-							}
-						}
-					}
-				}
-			}
-		}
-
-		if len(domainSet) > 0 {
-			// marshal the domains into a slice
-			var domains, domainsForCerts []string
-			for d := range domainSet {
-				domains = append(domains, d)
-				if !srv.AutoHTTPS.Skipped(d, srv.AutoHTTPS.SkipCerts) {
-					// if a certificate for this name is already loaded,
-					// don't obtain another one for it, unless we are
-					// supposed to ignore loaded certificates
-					if !srv.AutoHTTPS.IgnoreLoadedCerts &&
-						len(tlsApp.AllMatchingCertificates(d)) > 0 {
-						app.logger.Info("skipping automatic certificate management because one or more matching certificates are already loaded",
-							zap.String("domain", d),
-							zap.String("server_name", srvName),
-						)
-						continue
-					}
-					domainsForCerts = append(domainsForCerts, d)
-				}
-			}
-
-			// ensure that these certificates are managed properly;
-			// for example, it's implied that the HTTPPort should also
-			// be the port the HTTP challenge is solved on, and so
-			// for HTTPS port and TLS-ALPN challenge also - we need
-			// to tell the TLS app to manage these certs by honoring
-			// those port configurations
-			acmeManager := &caddytls.ACMEManagerMaker{
-				Challenges: &caddytls.ChallengesConfig{
-					HTTP: &caddytls.HTTPChallengeConfig{
-						AlternatePort: app.HTTPPort, // we specifically want the user-configured port, if any
-					},
-					TLSALPN: &caddytls.TLSALPNChallengeConfig{
-						AlternatePort: app.HTTPSPort, // we specifically want the user-configured port, if any
-					},
-				},
-			}
-			if tlsApp.Automation == nil {
-				tlsApp.Automation = new(caddytls.AutomationConfig)
-			}
-			tlsApp.Automation.Policies = append(tlsApp.Automation.Policies,
-				caddytls.AutomationPolicy{
-					Hosts:      domainsForCerts,
-					Management: acmeManager,
-				})
-
-			// manage their certificates
-			app.logger.Info("enabling automatic TLS certificate management",
-				zap.Strings("domains", domainsForCerts),
-			)
-			err := tlsApp.Manage(domainsForCerts)
-			if err != nil {
-				return fmt.Errorf("%s: managing certificate for %s: %s", srvName, domains, err)
-			}
-
-			// tell the server to use TLS if it is not already doing so
-			if srv.TLSConnPolicies == nil {
-				srv.TLSConnPolicies = caddytls.ConnectionPolicies{
-					&caddytls.ConnectionPolicy{ALPN: defaultALPN},
-				}
-			}
-
-			if srv.AutoHTTPS.DisableRedir {
-				continue
-			}
-
-			app.logger.Info("enabling automatic HTTP->HTTPS redirects",
-				zap.Strings("domains", domains),
-			)
-
-			// create HTTP->HTTPS redirects
-			for _, addr := range srv.Listen {
-				netw, host, port, err := caddy.SplitNetworkAddress(addr)
-				if err != nil {
-					return fmt.Errorf("%s: invalid listener address: %v", srvName, addr)
-				}
-
-				if parts := strings.SplitN(port, "-", 2); len(parts) == 2 {
-					port = parts[0]
-				}
-				redirTo := "https://{http.request.host}"
-
-				if port != strconv.Itoa(app.httpsPort()) {
-					redirTo += ":" + port
-				}
-				redirTo += "{http.request.uri}"
-
-				// build the plaintext HTTP variant of this address
-				httpRedirLnAddr := caddy.JoinNetworkAddress(netw, host, strconv.Itoa(app.httpPort()))
-
-				// create the route that does the redirect and associate
-				// it with the listener address it will be served from
-				lnAddrRedirRoutes[httpRedirLnAddr] = Route{
-					MatcherSets: []MatcherSet{
-						{
-							MatchProtocol("http"),
-							MatchHost(domains),
-						},
-					},
-					Handlers: []MiddlewareHandler{
-						StaticResponse{
-							StatusCode: WeakString(strconv.Itoa(http.StatusPermanentRedirect)),
-							Headers: http.Header{
-								"Location":   []string{redirTo},
-								"Connection": []string{"close"},
-							},
-							Close: true,
-						},
-					},
-				}
-
-			}
-		}
-	}
-
-	// if there are HTTP->HTTPS redirects to add, do so now
-	if len(lnAddrRedirRoutes) > 0 {
-		var redirServerAddrs []string
-		var redirRoutes []Route
-
-		// for each redirect listener, see if there's already a
-		// server configured to listen on that exact address; if so,
-		// simply add the redirect route to the end of its route
-		// list; otherwise, we'll create a new server for all the
-		// listener addresses that are unused and serve the
-		// remaining redirects from it
-	redirRoutesLoop:
-		for addr, redirRoute := range lnAddrRedirRoutes {
-			for srvName, srv := range app.Servers {
-				if srv.hasListenerAddress(addr) {
-					// user has configured a server for the same address
-					// that the redirect runs from; simply append our
-					// redirect route to the existing routes, with a
-					// caveat that their config might override ours
-					app.logger.Warn("server is listening on same interface as redirects, so automatic HTTP->HTTPS redirects might be overridden by your own configuration",
-						zap.String("server_name", srvName),
-						zap.String("interface", addr),
-					)
-					srv.Routes = append(srv.Routes, redirRoute)
-					continue redirRoutesLoop
-				}
-			}
-			// no server with this listener address exists;
-			// save this address and route for custom server
-			redirServerAddrs = append(redirServerAddrs, addr)
-			redirRoutes = append(redirRoutes, redirRoute)
-		}
-
-		// if there are routes remaining which do not belong
-		// in any existing server, make our own to serve the
-		// rest of the redirects
-		if len(redirServerAddrs) > 0 {
-			app.Servers["remaining_auto_https_redirects"] = &Server{
-				Listen:      redirServerAddrs,
-				Routes:      redirRoutes,
-				tlsApp:      tlsApp, // required to solve HTTP challenge
-				logger:      app.logger.Named("log"),
-				errorLogger: app.logger.Named("log.error"),
-			}
-		}
-	}
-
 	return nil
 }
 
@@ -556,7 +390,7 @@ func (f HandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
 
 // Middleware chains one Handler to the next by being passed
 // the next Handler in the chain.
-type Middleware func(HandlerFunc) HandlerFunc
+type Middleware func(Handler) Handler
 
 // MiddlewareHandler is like Handler except it takes as a third
 // argument the next handler in the chain. The next handler will
@@ -572,7 +406,7 @@ type MiddlewareHandler interface {
 }
 
 // emptyHandler is used as a no-op handler.
-var emptyHandler HandlerFunc = func(http.ResponseWriter, *http.Request) error { return nil }
+var emptyHandler Handler = HandlerFunc(func(http.ResponseWriter, *http.Request) error { return nil })
 
 // WeakString is a type that unmarshals any JSON value
 // as a string literal, with the following exceptions:
@@ -668,7 +502,9 @@ func StatusCodeMatches(actual, configured int) bool {
 	if actual == configured {
 		return true
 	}
-	if configured < 100 && actual >= configured*100 && actual < (configured+1)*100 {
+	if configured < 100 &&
+		actual >= configured*100 &&
+		actual < (configured+1)*100 {
 		return true
 	}
 	return false
@@ -681,10 +517,6 @@ const (
 	// DefaultHTTPSPort is the default port for HTTPS.
 	DefaultHTTPSPort = 443
 )
-
-// DefaultMaxRehandles is the maximum number of rehandles to
-// allow, if not specified explicitly.
-var DefaultMaxRehandles = 3
 
 // Interface guards
 var (

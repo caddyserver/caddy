@@ -15,10 +15,8 @@
 package rewrite
 
 import (
-	"fmt"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
@@ -31,16 +29,40 @@ func init() {
 }
 
 // Rewrite is a middleware which can rewrite HTTP requests.
+//
+// The Method and URI properties are "setters": the request URI
+// will be set to the given values. Other properties are "modifiers":
+// they modify existing files but do not explicitly specify what the
+// result will be. It is atypical to combine the use of setters and
+// modifiers in a single rewrite.
 type Rewrite struct {
+	// Changes the request's HTTP verb.
 	Method string `json:"method,omitempty"`
-	URI    string `json:"uri,omitempty"`
 
-	StripPathPrefix string     `json:"strip_path_prefix,omitempty"`
-	StripPathSuffix string     `json:"strip_path_suffix,omitempty"`
-	URISubstring    []replacer `json:"uri_substring,omitempty"`
+	// Changes the request's URI, which consists of path and query string.
+	// Only components of the URI that are specified will be changed.
+	// For example, a value of "/foo.html" or "foo.html" will only change
+	// the path and will preserve any existing query string. Similarly, a
+	// value of "?a=b" will only change the query string and will not affect
+	// the path. Both can also be changed: "/foo?a=b" - this sets both the
+	// path and query string at the same time.
+	//
+	// You can also use placeholders. For example, to preserve the existing
+	// query string, you might use: "?{http.request.uri.query}&a=b". Any
+	// key-value pairs you add to the query string will not overwrite
+	// existing values (individual pairs are append-only).
+	//
+	// To clear the query string, explicitly set an empty one: "?"
+	URI string `json:"uri,omitempty"`
 
-	HTTPRedirect caddyhttp.WeakString `json:"http_redirect,omitempty"`
-	Rehandle     bool                 `json:"rehandle,omitempty"`
+	// Strips the given prefix from the beginning of the URI path.
+	StripPathPrefix string `json:"strip_path_prefix,omitempty"`
+
+	// Strips the given suffix from the end of the URI path.
+	StripPathSuffix string `json:"strip_path_suffix,omitempty"`
+
+	// Performs substring replacements on the URI.
+	URISubstring []replacer `json:"uri_substring,omitempty"`
 
 	logger *zap.Logger
 }
@@ -59,16 +81,8 @@ func (rewr *Rewrite) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-// Validate ensures rewr's configuration is valid.
-func (rewr Rewrite) Validate() error {
-	if rewr.HTTPRedirect != "" && rewr.Rehandle {
-		return fmt.Errorf("cannot be configured to both redirect externally and rehandle internally")
-	}
-	return nil
-}
-
 func (rewr Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	logger := rewr.logger.With(
 		zap.Object("request", caddyhttp.LoggableHTTPRequest{Request: r}),
@@ -81,27 +95,15 @@ func (rewr Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 			zap.String("method", r.Method),
 			zap.String("uri", r.RequestURI),
 		)
-		if rewr.Rehandle {
-			return caddyhttp.ErrRehandle
-		}
-		if rewr.HTTPRedirect != "" {
-			statusCode, err := strconv.Atoi(repl.ReplaceAll(rewr.HTTPRedirect.String(), ""))
-			if err != nil {
-				return caddyhttp.Error(http.StatusInternalServerError, err)
-			}
-			w.Header().Set("Location", r.RequestURI)
-			w.WriteHeader(statusCode)
-			return nil
-		}
 	}
 
 	return next.ServeHTTP(w, r)
 }
 
-// rewrite performs the rewrites on r using repl, which
-// should have been obtained from r, but is passed in for
-// efficiency. It returns true if any changes were made to r.
-func (rewr Rewrite) rewrite(r *http.Request, repl caddy.Replacer, logger *zap.Logger) bool {
+// rewrite performs the rewrites on r using repl, which should
+// have been obtained from r, but is passed in for efficiency.
+// It returns true if any changes were made to r.
+func (rewr Rewrite) rewrite(r *http.Request, repl *caddy.Replacer, logger *zap.Logger) bool {
 	oldMethod := r.Method
 	oldURI := r.RequestURI
 
@@ -110,28 +112,52 @@ func (rewr Rewrite) rewrite(r *http.Request, repl caddy.Replacer, logger *zap.Lo
 		r.Method = strings.ToUpper(repl.ReplaceAll(rewr.Method, ""))
 	}
 
-	// uri (which consists of path, query string, and maybe fragment?)
-	if rewr.URI != "" {
-		newURI := repl.ReplaceAll(rewr.URI, "")
-
-		newU, err := url.Parse(newURI)
-		if err != nil {
-			logger.Error("parsing new URI",
-				zap.String("raw_input", rewr.URI),
-				zap.String("input", newURI),
-				zap.Error(err),
-			)
+	// uri (path, query string, and fragment... because why not)
+	if uri := rewr.URI; uri != "" {
+		// find the bounds of each part of the URI that exist
+		pathStart, qsStart, fragStart := -1, -1, -1
+		pathEnd, qsEnd := -1, -1
+		for i, ch := range uri {
+			switch {
+			case ch == '?' && qsStart < 0:
+				pathEnd, qsStart = i, i+1
+			case ch == '#' && fragStart < 0:
+				qsEnd, fragStart = i, i+1
+			case pathStart < 0 && qsStart < 0 && fragStart < 0:
+				pathStart = i
+			}
+		}
+		if pathStart >= 0 && pathEnd < 0 {
+			pathEnd = len(uri)
+		}
+		if qsStart >= 0 && qsEnd < 0 {
+			qsEnd = len(uri)
 		}
 
-		if newU.Path != "" {
-			r.URL.Path = newU.Path
+		// build components which are specified, and store them
+		// in a temporary variable so that they all read the
+		// same version of the URI
+		var newPath, newQuery, newFrag string
+		if pathStart >= 0 {
+			newPath = repl.ReplaceAll(uri[pathStart:pathEnd], "")
 		}
-		if newU.RawQuery != "" {
-			newU.RawQuery = strings.TrimPrefix(newU.RawQuery, "&")
-			r.URL.RawQuery = newU.RawQuery
+		if qsStart >= 0 {
+			newQuery = buildQueryString(uri[qsStart:qsEnd], repl)
 		}
-		if newU.Fragment != "" {
-			r.URL.Fragment = newU.Fragment
+		if fragStart >= 0 {
+			newFrag = repl.ReplaceAll(uri[fragStart:], "")
+		}
+
+		// update the URI with the new components
+		// only after building them
+		if pathStart >= 0 {
+			r.URL.Path = newPath
+		}
+		if qsStart >= 0 {
+			r.URL.RawQuery = newQuery
+		}
+		if fragStart >= 0 {
+			r.URL.Fragment = newFrag
 		}
 	}
 
@@ -157,6 +183,61 @@ func (rewr Rewrite) rewrite(r *http.Request, repl caddy.Replacer, logger *zap.Lo
 	return r.Method != oldMethod || r.RequestURI != oldURI
 }
 
+// buildQueryString takes an input query string and
+// performs replacements on each component, returning
+// the resulting query string. This function appends
+// duplicate keys rather than replaces.
+func buildQueryString(qs string, repl *caddy.Replacer) string {
+	var sb strings.Builder
+
+	// first component must be key, which is the same
+	// as if we just wrote a value in previous iteration
+	wroteVal := true
+
+	for len(qs) > 0 {
+		// determine the end of this component, which will be at
+		// the next equal sign or ampersand, whichever comes first
+		nextEq, nextAmp := strings.Index(qs, "="), strings.Index(qs, "&")
+		ampIsNext := nextAmp >= 0 && (nextAmp < nextEq || nextEq < 0)
+		end := len(qs) // assume no delimiter remains...
+		if ampIsNext {
+			end = nextAmp // ...unless ampersand is first...
+		} else if nextEq >= 0 && (nextEq < nextAmp || nextAmp < 0) {
+			end = nextEq // ...or unless equal is first.
+		}
+
+		// consume the component and write the result
+		comp := qs[:end]
+		comp, _ = repl.ReplaceFunc(comp, func(name, val string) (string, error) {
+			if name == "http.request.uri.query" && wroteVal {
+				return val, nil // already escaped
+			}
+			return url.QueryEscape(val), nil
+		})
+		if end < len(qs) {
+			end++ // consume delimiter
+		}
+		qs = qs[end:]
+
+		// if previous iteration wrote a value,
+		// that means we are writing a key
+		if wroteVal {
+			if sb.Len() > 0 && len(comp) > 0 {
+				sb.WriteRune('&')
+			}
+		} else {
+			sb.WriteRune('=')
+		}
+		sb.WriteString(comp)
+
+		// remember for the next iteration that we just wrote a value,
+		// which means the next iteration MUST write a key
+		wroteVal = ampIsNext
+	}
+
+	return sb.String()
+}
+
 // replacer describes a simple and fast substring replacement.
 type replacer struct {
 	// The substring to find. Supports placeholders.
@@ -171,7 +252,7 @@ type replacer struct {
 }
 
 // do performs the replacement on r and returns true if any changes were made.
-func (rep replacer) do(r *http.Request, repl caddy.Replacer) bool {
+func (rep replacer) do(r *http.Request, repl *caddy.Replacer) bool {
 	if rep.Find == "" || rep.Replace == "" {
 		return false
 	}

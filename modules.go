@@ -75,16 +75,16 @@ type ModuleInfo struct {
 // label is the module name, and the labels before that constitute
 // the namespace (or scope).
 //
-// Thus, a module ID has the form: <namespace>.<id>
+// Thus, a module ID has the form: <namespace>.<name>
 //
 // An ID with no dot has the empty namespace, which is appropriate
 // for app modules (these are "top-level" modules that Caddy core
 // loads and runs).
 //
-// Module IDs should be lowercase and use underscore (_) instead of
+// Module IDs should be lowercase and use underscores (_) instead of
 // spaces.
 //
-// Example valid names:
+// Examples of valid IDs:
 // - http
 // - http.handlers.file_server
 // - caddy.logging.encoders.json
@@ -92,11 +92,11 @@ type ModuleID string
 
 // Namespace returns the namespace (or scope) portion of a module ID,
 // which is all but the last label of the ID. If the ID has only one
-// label, then
+// label, then the namespace is empty.
 func (id ModuleID) Namespace() string {
 	lastDot := strings.LastIndex(string(id), ".")
 	if lastDot < 0 {
-		return string(id)
+		return ""
 	}
 	return string(id)[:lastDot]
 }

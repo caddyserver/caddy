@@ -106,6 +106,7 @@ func (cp ConnectionPolicies) TLSConfig(ctx caddy.Context) (*tls.Config, error) {
 }
 
 // ConnectionPolicy specifies the logic for handling a TLS handshake.
+// An empty policy is valid; safe and sensible defaults will be used.
 type ConnectionPolicy struct {
 	// How to match this policy with a TLS ClientHello. If
 	// this policy is the first to match, it will be used.
@@ -178,7 +179,7 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 		// session ticket key rotation
 		tlsApp.SessionTickets.register(cfg)
 		ctx.OnCancel(func() {
-			// do cleanup when the context is cancelled because,
+			// do cleanup when the context is canceled because,
 			// though unlikely, it is possible that a context
 			// needing a TLS server config could exist for less
 			// than the lifetime of the whole app
@@ -221,14 +222,14 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 	}
 
 	// min and max protocol versions
+	if (p.ProtocolMin != "" && p.ProtocolMax != "") && p.ProtocolMin > p.ProtocolMax {
+		return fmt.Errorf("protocol min (%x) cannot be greater than protocol max (%x)", p.ProtocolMin, p.ProtocolMax)
+	}
 	if p.ProtocolMin != "" {
 		cfg.MinVersion = SupportedProtocols[p.ProtocolMin]
 	}
 	if p.ProtocolMax != "" {
 		cfg.MaxVersion = SupportedProtocols[p.ProtocolMax]
-	}
-	if p.ProtocolMin > p.ProtocolMax {
-		return fmt.Errorf("protocol min (%x) cannot be greater than protocol max (%x)", p.ProtocolMin, p.ProtocolMax)
 	}
 
 	// client authentication

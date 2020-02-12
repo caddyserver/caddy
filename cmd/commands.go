@@ -116,11 +116,15 @@ line flags.
 
 If --environ is specified, the environment as seen by the Caddy process will
 be printed before starting. This is the same as the environ command but does
-not quit after printing, and can be useful for troubleshooting.`,
+not quit after printing, and can be useful for troubleshooting.
+
+The --resume flag will override the --config flag if there is a config auto-
+save file. It is not an error if --resume is used and no autosave file exists.`,
 		Flags: func() *flag.FlagSet {
 			fs := flag.NewFlagSet("run", flag.ExitOnError)
 			fs.String("config", "", "Configuration file")
 			fs.String("adapter", "", "Name of config adapter to apply")
+			fs.Bool("resume", false, "Use saved config, if any (and prefer over --config file)")
 			fs.Bool("environ", false, "Print environment")
 			fs.String("pingback", "", "Echo confirmation bytes to this address on success")
 			return fs
@@ -134,13 +138,9 @@ not quit after printing, and can be useful for troubleshooting.`,
 		Long: `
 Stops the background Caddy process as gracefully as possible.
 
-It will first try to use the admin API's /stop endpoint; the address of
-this request can be customized using the --address flag if it is not the
-default.
-
-If that fails for any reason, it will attempt to signal the first process
-it can find named the same as this one (os.Args[0]). On Windows, such
-a stop is forceful because Windows does not have signals.`,
+It requires that the admin API is enabled and accessible, since it will
+use the API's /stop endpoint. The address of this request can be
+customized using the --address flag if it is not the default.`,
 		Flags: func() *flag.FlagSet {
 			fs := flag.NewFlagSet("stop", flag.ExitOnError)
 			fs.String("address", "", "The address to use to reach the admin API endpoint, if not the default")
@@ -186,6 +186,12 @@ config file; otherwise the default is assumed.`,
 			fs.Bool("versions", false, "Print version information")
 			return fs
 		}(),
+	})
+
+	RegisterCommand(Command{
+		Name:  "build-info",
+		Func:  cmdBuildInfo,
+		Short: "Prints information about this build",
 	})
 
 	RegisterCommand(Command{

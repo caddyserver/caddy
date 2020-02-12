@@ -27,6 +27,7 @@ func init() {
 
 // RequestBody is a middleware for manipulating the request body.
 type RequestBody struct {
+	// The maximum number of bytes to allow reading from the body by a later handler.
 	MaxSize int64 `json:"max_size,omitempty"`
 }
 

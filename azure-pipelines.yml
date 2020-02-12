@@ -78,7 +78,7 @@ jobs:
     condition: eq( variables['Agent.OS'], 'Windows_NT' )
     displayName: Install Go on Windows
 
-  - bash: curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.19.1
+  - bash: curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.22.2
     displayName: Install golangci-lint
 
   - script: |
@@ -198,7 +198,7 @@ jobs:
       sudo apt update && sudo apt install -y clang-7 lldb-7 lld-7
 
       go get -v github.com/dvyukov/go-fuzz/go-fuzz github.com/dvyukov/go-fuzz/go-fuzz-build
-      wget -q -O fuzzit https://github.com/fuzzitdev/fuzzit/releases/download/v2.4.74/fuzzit_Linux_x86_64
+      wget -q -O fuzzit https://github.com/fuzzitdev/fuzzit/releases/download/v2.4.77/fuzzit_Linux_x86_64
       chmod a+x fuzzit
       mv fuzzit $(GOBIN)
     displayName: Download go-fuzz tools and the Fuzzit CLI, and move Fuzzit CLI to GOBIN

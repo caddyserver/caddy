@@ -335,11 +335,15 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if !d.NextArg() {
 					return d.ArgErr()
 				}
-				dur, err := time.ParseDuration(d.Val())
-				if err != nil {
-					return d.Errf("bad duration value '%s': %v", d.Val(), err)
+				if fi, err := strconv.Atoi(d.Val()); err == nil {
+					h.FlushInterval = caddy.Duration(fi)
+				} else {
+					dur, err := time.ParseDuration(d.Val())
+					if err != nil {
+						return d.Errf("bad duration value '%s': %v", d.Val(), err)
+					}
+					h.FlushInterval = caddy.Duration(dur)
 				}
-				h.FlushInterval = caddy.Duration(dur)
 
 			case "header_up":
 				if h.Headers == nil {
@@ -425,6 +429,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 //         tls_client_auth <cert_file> <key_file>
 //         tls_insecure_skip_verify
 //         tls_timeout <duration>
+//         tls_trusted_ca_certs <cert_files...>
 //         keepalive [off|<duration>]
 //         keepalive_idle_conns <max_count>
 //     }
@@ -500,6 +505,17 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					h.TLS = new(TLSConfig)
 				}
 				h.TLS.HandshakeTimeout = caddy.Duration(dur)
+
+			case "tls_trusted_ca_certs":
+				args := d.RemainingArgs()
+				if len(args) == 0 {
+					return d.ArgErr()
+				}
+				if h.TLS == nil {
+					h.TLS = new(TLSConfig)
+				}
+
+				h.TLS.RootCAPEMFiles = args
 
 			case "keepalive":
 				if !d.NextArg() {

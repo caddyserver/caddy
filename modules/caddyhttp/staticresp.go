@@ -29,10 +29,19 @@ func init() {
 
 // StaticResponse implements a simple responder for static responses.
 type StaticResponse struct {
-	StatusCode WeakString  `json:"status_code,omitempty"`
-	Headers    http.Header `json:"headers,omitempty"`
-	Body       string      `json:"body,omitempty"`
-	Close      bool        `json:"close,omitempty"`
+	// The HTTP status code to respond with. Can be an integer or,
+	// if needing to use a placeholder, a string.
+	StatusCode WeakString `json:"status_code,omitempty"`
+
+	// Header fields to set on the response.
+	Headers http.Header `json:"headers,omitempty"`
+
+	// The response body.
+	Body string `json:"body,omitempty"`
+
+	// If true, the server will close the client's connection
+	// after writing the response.
+	Close bool `json:"close,omitempty"`
 }
 
 // CaddyModule returns the Caddy module information.
@@ -45,24 +54,39 @@ func (StaticResponse) CaddyModule() caddy.ModuleInfo {
 
 // UnmarshalCaddyfile sets up the handler from Caddyfile tokens. Syntax:
 //
-//     respond [<matcher>] <status> {
+//     respond [<matcher>] <status>|<body> [<status>] {
 //         body <text>
 //         close
 //     }
 //
+// If there is just one argument (other than the matcher), it is considered
+// to be a status code if it's a valid positive integer of 3 digits.
 func (s *StaticResponse) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
-		var statusCodeStr string
-		if d.Args(&statusCodeStr) {
-			s.StatusCode = WeakString(statusCodeStr)
+		args := d.RemainingArgs()
+		switch len(args) {
+		case 1:
+			if len(args[0]) == 3 {
+				if num, err := strconv.Atoi(args[0]); err == nil && num > 0 {
+					s.StatusCode = WeakString(args[0])
+					break
+				}
+			}
+			s.Body = args[0]
+		case 2:
+			s.Body = args[0]
+			s.StatusCode = WeakString(args[1])
+		default:
+			return d.ArgErr()
 		}
+
 		for d.NextBlock(0) {
 			switch d.Val() {
 			case "body":
 				if s.Body != "" {
 					return d.Err("body already specified")
 				}
-				if !d.Args(&s.Body) {
+				if !d.AllArgs(&s.Body) {
 					return d.ArgErr()
 				}
 			case "close":
@@ -77,7 +101,7 @@ func (s *StaticResponse) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 }
 
 func (s StaticResponse) ServeHTTP(w http.ResponseWriter, r *http.Request, _ Handler) error {
-	repl := r.Context().Value(caddy.ReplacerCtxKey).(caddy.Replacer)
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	// close the connection after responding
 	r.Close = s.Close
