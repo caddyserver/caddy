@@ -45,6 +45,24 @@ func TestParse(t *testing.T) {
 			expectWarn:  false,
 			expectError: true,
 		},
+		{
+			input: `
+			{
+				email test@anon.com
+				acme_ca https://ca.custom
+				acme_ca_root /root/certs/ca.crt
+			}
+
+			https://caddy {
+				tls {
+					ca https://ca.custom
+					ca_root /root/certs/ca.crt
+				}
+			}
+			`,
+			expectWarn:  false,
+			expectError: false,
+		},
 	} {
 
 		adapter := caddyfile.Adapter{
