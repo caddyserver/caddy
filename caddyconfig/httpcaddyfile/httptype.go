@@ -71,7 +71,7 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 				val, err = parseOptExperimentalHTTP3(disp)
 			case "storage":
 				val, err = parseOptStorage(disp)
-			case "acme_ca", "acme_dns":
+			case "acme_ca", "acme_dns", "acme_ca_root":
 				val, err = parseOptACME(disp)
 			case "email":
 				val, err = parseOptEmail(disp)
