@@ -72,7 +72,12 @@ type (
 	// MatchQuery matches requests by URI's query string.
 	MatchQuery url.Values
 
-	// MatchHeader matches requests by header fields.
+	// MatchHeader matches requests by header fields. It performs fast,
+	// exact string comparisons of the field values. Fast prefix, suffix,
+	// and substring matches can also be done by suffixing, prefixing, or
+	// surrounding the value with the wildcard `*` character, respectively.
+	// If a list is null, the header must not exist. If the list is empty,
+	// the field must simply exist, regardless of its value.
 	MatchHeader http.Header
 
 	// MatchHeaderRE matches requests by a regular expression on header fields.

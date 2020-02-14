@@ -14,8 +14,8 @@ func init() {
 	caddy.RegisterModule(CustomCertSelectionPolicy{})
 }
 
-// CertSelectionPolicy represents a policy for selecting the certificate used
-// to complete a handshake when there may be multiple options. All fields
+// CustomCertSelectionPolicy represents a policy for selecting the certificate
+// used to complete a handshake when there may be multiple options. All fields
 // specified must match the candidate certificate for it to be chosen.
 // This was needed to solve https://github.com/caddyserver/caddy/issues/2588.
 type CustomCertSelectionPolicy struct {
