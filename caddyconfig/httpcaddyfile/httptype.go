@@ -200,7 +200,7 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 						if tlsApp.Automation == nil {
 							tlsApp.Automation = new(caddytls.AutomationConfig)
 						}
-						tlsApp.Automation.Policies = append(tlsApp.Automation.Policies, caddytls.AutomationPolicy{
+						tlsApp.Automation.Policies = append(tlsApp.Automation.Policies, &caddytls.AutomationPolicy{
 							Hosts:         sblockHosts,
 							ManagementRaw: caddyconfig.JSONModuleObject(mm, "module", mm.(caddy.Module).CaddyModule().ID.Name(), &warnings),
 						})
@@ -251,7 +251,7 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 				DNSRaw: caddyconfig.JSONModuleObject(dnsProvModule.New(), "provider", provName, &warnings),
 			}
 		}
-		tlsApp.Automation.Policies = append(tlsApp.Automation.Policies, caddytls.AutomationPolicy{
+		tlsApp.Automation.Policies = append(tlsApp.Automation.Policies, &caddytls.AutomationPolicy{
 			ManagementRaw: caddyconfig.JSONModuleObject(mgr, "module", "acme", &warnings),
 		})
 	}
@@ -593,7 +593,7 @@ func consolidateRoutes(routes caddyhttp.RouteList) caddyhttp.RouteList {
 
 // consolidateAutomationPolicies combines automation policies that are the same,
 // for a cleaner overall output.
-func consolidateAutomationPolicies(aps []caddytls.AutomationPolicy) []caddytls.AutomationPolicy {
+func consolidateAutomationPolicies(aps []*caddytls.AutomationPolicy) []*caddytls.AutomationPolicy {
 	for i := 0; i < len(aps); i++ {
 		for j := 0; j < len(aps); j++ {
 			if j == i {

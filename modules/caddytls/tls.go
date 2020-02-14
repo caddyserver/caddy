@@ -202,19 +202,32 @@ func (t *TLS) Cleanup() error {
 // Manage immediately begins managing names according to the
 // matching automation policy.
 func (t *TLS) Manage(names []string) error {
+	// for a large number of names, we can be more memory-efficient
+	// by making only one certmagic.Config for all the names that
+	// use that config, rather than calling ManageSync/ManageAsync
+	// once for every name; so first, bin names by AutomationPolicy
+	policyToNames := make(map[*AutomationPolicy][]string)
 	for _, name := range names {
 		ap := t.getAutomationPolicyForName(name)
+		policyToNames[ap] = append(policyToNames[ap], name)
+	}
+
+	// now that names are grouped by policy, we can simply make one
+	// certmagic.Config for each (potentially large) group of names
+	// and call ManageSync/ManageAsync just once for the whole batch
+	for ap, names := range policyToNames {
 		magic := certmagic.New(t.certCache, ap.makeCertMagicConfig(t.ctx))
 		var err error
 		if ap.ManageSync {
-			err = magic.ManageSync([]string{name})
+			err = magic.ManageSync(names)
 		} else {
-			err = magic.ManageAsync(t.ctx.Context, []string{name})
+			err = magic.ManageAsync(t.ctx.Context, names)
 		}
 		if err != nil {
-			return fmt.Errorf("automate: manage %s: %v", name, err)
+			return fmt.Errorf("automate: manage %v: %v", names, err)
 		}
 	}
+
 	return nil
 }
 
@@ -234,7 +247,7 @@ func (t *TLS) getConfigForName(name string) (certmagic.Config, error) {
 	return ap.makeCertMagicConfig(t.ctx), nil
 }
 
-func (t *TLS) getAutomationPolicyForName(name string) AutomationPolicy {
+func (t *TLS) getAutomationPolicyForName(name string) *AutomationPolicy {
 	if t.Automation != nil {
 		for _, ap := range t.Automation.Policies {
 			if len(ap.Hosts) == 0 {
@@ -248,9 +261,7 @@ func (t *TLS) getAutomationPolicyForName(name string) AutomationPolicy {
 			}
 		}
 	}
-
-	// default automation policy
-	return AutomationPolicy{Management: new(ACMEManagerMaker)}
+	return defaultAutomationPolicy
 }
 
 // AllMatchingCertificates returns the list of all certificates in
@@ -329,7 +340,7 @@ type Certificate struct {
 type AutomationConfig struct {
 	// The list of automation policies. The first matching
 	// policy will be applied for a given certificate/name.
-	Policies []AutomationPolicy `json:"policies,omitempty"`
+	Policies []*AutomationPolicy `json:"policies,omitempty"`
 
 	// On-Demand TLS defers certificate operations to the
 	// moment they are needed, e.g. during a TLS handshake.
@@ -509,6 +520,8 @@ var (
 	storageClean   time.Time
 	storageCleanMu sync.Mutex
 )
+
+var defaultAutomationPolicy = &AutomationPolicy{Management: new(ACMEManagerMaker)}
 
 // Interface guards
 var (

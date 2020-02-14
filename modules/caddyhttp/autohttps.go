@@ -338,7 +338,7 @@ func (app *App) automaticHTTPSPhase3() error {
 			srv.tlsApp.Automation = new(caddytls.AutomationConfig)
 		}
 		srv.tlsApp.Automation.Policies = append(srv.tlsApp.Automation.Policies,
-			caddytls.AutomationPolicy{
+			&caddytls.AutomationPolicy{
 				Hosts:      domainsForCerts,
 				Management: acmeManager,
 			})
