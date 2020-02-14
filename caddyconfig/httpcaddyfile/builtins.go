@@ -368,7 +368,7 @@ func parseRoute(h Helper) (caddyhttp.MiddlewareHandler, error) {
 			}
 
 			subHelper := h
-			subHelper.Dispenser = h.NewFromNextTokens()
+			subHelper.Dispenser = h.NewFromNextSegment()
 
 			results, err := dirFunc(subHelper)
 			if err != nil {
@@ -401,7 +401,7 @@ func parseHandle(h Helper) (caddyhttp.MiddlewareHandler, error) {
 			}
 
 			subHelper := h
-			subHelper.Dispenser = h.NewFromNextTokens()
+			subHelper.Dispenser = h.NewFromNextSegment()
 
 			results, err := dirFunc(subHelper)
 			if err != nil {
