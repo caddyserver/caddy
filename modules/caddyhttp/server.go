@@ -324,16 +324,13 @@ type HTTPErrorConfig struct {
 	// chain returns an error. In an error route, extra
 	// placeholders are available:
 	//
-	// {http.error.status_code}
-	//     The recommended HTTP status code
-	// {http.error.status_text}
-	//     The status text associated with the recommended status code
-	// {http.error.message}
-	//     The error message
-	// {http.error.trace}
-	//     The origin of the error
-	// {http.error.id}
-	//     A short, human-conveyable ID for the error
+	// Placeholder | Description
+	// ------------|---------------
+	// `{http.error.status_code}` | The recommended HTTP status code
+	// `{http.error.status_text}` | The status text associated with the recommended status code
+	// `{http.error.message}`     | The error message
+	// `{http.error.trace}`       | The origin of the error
+	// `{http.error.id}`          | An identifier for this occurrence of the error
 	Routes RouteList `json:"routes,omitempty"`
 }
 
