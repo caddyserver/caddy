@@ -520,7 +520,7 @@ func (m *MatchNegate) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if !ok {
 				return d.Errf("matcher module '%s' is not a Caddyfile unmarshaler", matcherName)
 			}
-			err = unm.UnmarshalCaddyfile(d.NewFromNextTokens())
+			err = unm.UnmarshalCaddyfile(d.NewFromNextSegment())
 			if err != nil {
 				return err
 			}

@@ -249,13 +249,20 @@ func (d *Dispenser) RemainingArgs() []string {
 	return args
 }
 
-// NewFromNextTokens returns a new dispenser with a copy of
+// NewFromNextSegment returns a new dispenser with a copy of
 // the tokens from the current token until the end of the
 // "directive" whether that be to the end of the line or
 // the end of a block that starts at the end of the line;
 // in other words, until the end of the segment.
-func (d *Dispenser) NewFromNextTokens() *Dispenser {
-	tkns := []Token{d.Token()}
+func (d *Dispenser) NewFromNextSegment() *Dispenser {
+	return NewDispenser(d.NextSegment())
+}
+
+// NextSegment returns a copy of the tokens from the current
+// token until the end of the line or block that starts at
+// the end of the line.
+func (d *Dispenser) NextSegment() Segment {
+	tkns := Segment{d.Token()}
 	for d.NextArg() {
 		tkns = append(tkns, d.Token())
 	}
@@ -282,7 +289,7 @@ func (d *Dispenser) NewFromNextTokens() *Dispenser {
 		// next iteration of the enclosing loop will
 		// call Next() and consume it
 	}
-	return NewDispenser(tkns)
+	return tkns
 }
 
 // Token returns the current token.

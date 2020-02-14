@@ -151,7 +151,7 @@ func parseOptStorage(d *caddyfile.Dispenser) (caddy.StorageConverter, error) {
 	if !ok {
 		return nil, fmt.Errorf("storage module '%s' is not a Caddyfile unmarshaler", mod.ID)
 	}
-	err = unm.UnmarshalCaddyfile(d.NewFromNextTokens())
+	err = unm.UnmarshalCaddyfile(d.NewFromNextSegment())
 	if err != nil {
 		return nil, err
 	}

@@ -114,7 +114,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if !ok {
 					return d.Errf("load balancing policy module '%s' is not a Caddyfile unmarshaler", mod)
 				}
-				err = unm.UnmarshalCaddyfile(d.NewFromNextTokens())
+				err = unm.UnmarshalCaddyfile(d.NewFromNextSegment())
 				if err != nil {
 					return err
 				}
@@ -401,7 +401,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if !ok {
 					return d.Errf("transport module '%s' is not a Caddyfile unmarshaler", mod)
 				}
-				err = unm.UnmarshalCaddyfile(d.NewFromNextTokens())
+				err = unm.UnmarshalCaddyfile(d.NewFromNextSegment())
 				if err != nil {
 					return err
 				}

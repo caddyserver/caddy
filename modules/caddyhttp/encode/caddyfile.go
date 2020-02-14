@@ -73,7 +73,7 @@ func (enc *Encode) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if !ok {
 				return fmt.Errorf("encoder module '%s' is not a Caddyfile unmarshaler", mod)
 			}
-			err = unm.UnmarshalCaddyfile(d.NewFromNextTokens())
+			err = unm.UnmarshalCaddyfile(d.NewFromNextSegment())
 			if err != nil {
 				return err
 			}
