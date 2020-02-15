@@ -2,8 +2,10 @@ package caddytest
 
 import (
 	"crypto/tls"
+	"errors"
 	"io/ioutil"
 	"net/http"
+	"os"
 	"path"
 	"runtime"
 	"strings"
@@ -62,29 +64,36 @@ func validateTestPrerequistes() error {
 	// 127.0.0.1 b.caddy.local
 	// 127.0.0.1 c.caddy.local
 
-	//TODO: certificate assumptions
-	// have a caddy.local.crt and caddy.local.key in this path - see generate_key.sh
+	// check certificates are found
+	if _, err := os.Stat(getIntegrationDir() + "/caddy.local.crt"); os.IsNotExist(err) {
+		return errors.New("caddy integration test certificates not found")
+	}
 
-	// return errors.New("no certs")
+	if _, err := os.Stat(getIntegrationDir() + "/caddy.local.key"); os.IsNotExist(err) {
+		return errors.New("caddy integration test certificates not found")
+	}
 
 	//TODO: assert that caddy is running
 
 	return nil
 }
 
-// use the convention to replace caddy.load.[crt|key] with the full path
-// this helps reduce the noise in test configurations and also allow this
-// to run in any path
-func prependCaddyFilePath(rawConfig string) string {
+func getIntegrationDir() string {
 
 	_, filename, _, ok := runtime.Caller(1)
 	if !ok {
 		panic("unable to determine the current file path")
 	}
 
-	dir := path.Dir(filename)
-	rawConfig = strings.Replace(rawConfig, "/caddy.local.crt", dir+"/caddy.local.crt", -1)
-	return strings.Replace(rawConfig, "/caddy.local.key", dir+"/caddy.local.key", -1)
+	return path.Dir(filename)
+}
+
+// use the convention to replace caddy.load.[crt|key] with the full path
+// this helps reduce the noise in test configurations and also allow this
+// to run in any path
+func prependCaddyFilePath(rawConfig string) string {
+	rawConfig = strings.Replace(rawConfig, "/caddy.local.crt", getIntegrationDir()+"/caddy.local.crt", -1)
+	return strings.Replace(rawConfig, "/caddy.local.key", getIntegrationDir()+"/caddy.local.key", -1)
 }
 
 // AssertGetResponse request a URI and assert the status code and the body contains a string
