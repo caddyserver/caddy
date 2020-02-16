@@ -65,6 +65,8 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 				val, err = parseOptHTTPPort(disp)
 			case "https_port":
 				val, err = parseOptHTTPSPort(disp)
+			case "default_sni":
+				val, err = parseDefaultSNI(disp)
 			case "order":
 				val, err = parseOptOrder(disp)
 			case "experimental_http3":
@@ -179,9 +181,10 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 
 	// now that each server is configured, make the HTTP app
 	httpApp := caddyhttp.App{
-		HTTPPort:  tryInt(options["http_port"], &warnings),
-		HTTPSPort: tryInt(options["https_port"], &warnings),
-		Servers:   servers,
+		HTTPPort:   tryInt(options["http_port"], &warnings),
+		HTTPSPort:  tryInt(options["https_port"], &warnings),
+		DefaultSNI: tryString(options["default_sni"], &warnings),
+		Servers:    servers,
 	}
 
 	// now for the TLS app! (TODO: refactor into own func)
@@ -803,6 +806,14 @@ func tryInt(val interface{}, warnings *[]caddyconfig.Warning) int {
 		*warnings = append(*warnings, caddyconfig.Warning{Message: "not an integer type"})
 	}
 	return intVal
+}
+
+func tryString(val interface{}, warnings *[]caddyconfig.Warning) string {
+	stringVal, ok := val.(string)
+	if val != nil && !ok && warnings != nil {
+		*warnings = append(*warnings, caddyconfig.Warning{Message: "not an string type"})
+	}
+	return stringVal
 }
 
 // sliceContains returns true if needle is in haystack.
