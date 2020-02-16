@@ -43,49 +43,31 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 	var warnings []caddyconfig.Warning
 	gc := counter{new(int)}
 
+	// load all the server blocks and associate them with a "pile"
+	// of config values; also prohibit duplicate keys because they
+	// can make a config confusing if more than one server block is
+	// chosen to handle a request - we actually will make each
+	// server block's route terminal so that only one will run
+	sbKeys := make(map[string]struct{})
 	var serverBlocks []serverBlock
-	for _, sblock := range originalServerBlocks {
+	for i, sblock := range originalServerBlocks {
+		for j, k := range sblock.Keys {
+			if _, ok := sbKeys[k]; ok {
+				return nil, warnings, fmt.Errorf("duplicate site address not allowed: '%s' in %v (site block %d, key %d)", k, sblock.Keys, i, j)
+			}
+			sbKeys[k] = struct{}{}
+		}
 		serverBlocks = append(serverBlocks, serverBlock{
 			block: sblock,
 			pile:  make(map[string][]ConfigValue),
 		})
 	}
 
-	// global configuration
-	if len(serverBlocks) > 0 && len(serverBlocks[0].block.Keys) == 0 {
-		sb := serverBlocks[0]
-		for _, segment := range sb.block.Segments {
-			dir := segment.Directive()
-			var val interface{}
-			var err error
-			disp := caddyfile.NewDispenser(segment)
-			// TODO: make this switch into a map
-			switch dir {
-			case "http_port":
-				val, err = parseOptHTTPPort(disp)
-			case "https_port":
-				val, err = parseOptHTTPSPort(disp)
-			case "order":
-				val, err = parseOptOrder(disp)
-			case "experimental_http3":
-				val, err = parseOptExperimentalHTTP3(disp)
-			case "storage":
-				val, err = parseOptStorage(disp)
-			case "acme_ca", "acme_dns", "acme_ca_root":
-				val, err = parseOptACME(disp)
-			case "email":
-				val, err = parseOptEmail(disp)
-			case "admin":
-				val, err = parseOptAdmin(disp)
-			default:
-				return nil, warnings, fmt.Errorf("unrecognized parameter name: %s", dir)
-			}
-			if err != nil {
-				return nil, warnings, fmt.Errorf("%s: %v", dir, err)
-			}
-			options[dir] = val
-		}
-		serverBlocks = serverBlocks[1:]
+	// apply any global options
+	var err error
+	serverBlocks, err = st.evaluateGlobalOptionsBlock(serverBlocks, options)
+	if err != nil {
+		return nil, warnings, err
 	}
 
 	for _, sb := range serverBlocks {
@@ -129,6 +111,7 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 			}
 		}
 
+		// evaluate each directive ("segment") in this block
 		for _, segment := range sb.block.Segments {
 			dir := segment.Directive()
 
@@ -286,6 +269,50 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 	}
 
 	return cfg, warnings, nil
+}
+
+// evaluateGlobalOptionsBlock evaluates the global options block,
+// which is expected to be the first server block if it has zero
+// keys. It returns the updated list of server blocks with the
+// global options block removed, and updates options accordingly.
+func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options map[string]interface{}) ([]serverBlock, error) {
+	if len(serverBlocks) == 0 || len(serverBlocks[0].block.Keys) > 0 {
+		return serverBlocks, nil
+	}
+
+	for _, segment := range serverBlocks[0].block.Segments {
+		dir := segment.Directive()
+		var val interface{}
+		var err error
+		disp := caddyfile.NewDispenser(segment)
+		// TODO: make this switch into a map
+		switch dir {
+		case "http_port":
+			val, err = parseOptHTTPPort(disp)
+		case "https_port":
+			val, err = parseOptHTTPSPort(disp)
+		case "order":
+			val, err = parseOptOrder(disp)
+		case "experimental_http3":
+			val, err = parseOptExperimentalHTTP3(disp)
+		case "storage":
+			val, err = parseOptStorage(disp)
+		case "acme_ca", "acme_dns", "acme_ca_root":
+			val, err = parseOptACME(disp)
+		case "email":
+			val, err = parseOptEmail(disp)
+		case "admin":
+			val, err = parseOptAdmin(disp)
+		default:
+			return nil, fmt.Errorf("unrecognized parameter name: %s", dir)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("%s: %v", dir, err)
+		}
+		options[dir] = val
+	}
+
+	return serverBlocks[1:], nil
 }
 
 // hostsFromServerBlockKeys returns a list of all the
