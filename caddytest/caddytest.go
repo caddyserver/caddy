@@ -46,9 +46,9 @@ func InitServer(t *testing.T, rawConfig string, configType string) TestContext {
 
 	tctx := TestContext{t: t}
 
-	err := validateTestPrerequistes()
+	err := validateTestPrerequisites()
 	if err != nil {
-		t.Skipf("skipping tests as failed integration prerequites. %s", err)
+		t.Skipf("skipping tests as failed integration prerequisites. %s", err)
 		return tctx
 	}
 
@@ -90,11 +90,11 @@ func InitServer(t *testing.T, rawConfig string, configType string) TestContext {
 var hasValidated bool
 var arePrerequisitesValid bool
 
-func validateTestPrerequistes() error {
+func validateTestPrerequisites() error {
 
 	if hasValidated {
 		if !arePrerequisitesValid {
-			return errors.New("caddy integration prerequistes failed. see first error")
+			return errors.New("caddy integration prerequisites failed. see first error")
 		}
 		return nil
 	}
@@ -105,7 +105,7 @@ func validateTestPrerequistes() error {
 	for _, host := range internalHostnames {
 		ips, err := net.LookupIP(host)
 		if err != nil {
-			return fmt.Errorf("caddy integration prerequistes failed. missing dns host:%s. %s", host, err)
+			return fmt.Errorf("caddy integration prerequisites failed. missing dns host:%s. %s", host, err)
 		}
 
 		if len(ips) == 1 && !ips[0].IsLoopback() {

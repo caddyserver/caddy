@@ -10,18 +10,18 @@ func TestRespond(t *testing.T) {
 
 	// arrange
 	tctx := caddytest.InitServer(t, ` 
-	{
-		http_port     9080
-		https_port    9443
-	}
-	
-	a.caddy.local:9443 {
-		tls /caddy.local.crt /caddy.local.key {
-		}
-		respond /version 200 {
-		  body "hello from a.caddy.local"
-		}	
-	  }
+  {
+    http_port     9080
+    https_port    9443
+  }
+  
+  a.caddy.local:9443 {
+    tls /caddy.local.crt /caddy.local.key {
+    }
+    respond /version 200 {
+      body "hello from a.caddy.local"
+    }	
+    }
   `, "caddyfile")
 	defer tctx.Complete()
 
@@ -33,22 +33,22 @@ func TestRedirect(t *testing.T) {
 
 	// arrange
 	caddytest.InitServer(t, `
-	{
-		http_port     9080
-		https_port    9443
-	}
-	
-	b.caddy.local:9443 {
-		tls /caddy.local.crt /caddy.local.key {
-		}
+  {
+    http_port     9080
+    https_port    9443
+  }
+  
+  b.caddy.local:9443 {
+    tls /caddy.local.crt /caddy.local.key {
+    }
 
-		redir / https://b.caddy.local:9443/hello 301
-		
-		respond /hello 200 {
-		  body "hello from b.caddy.local"
-		}	
-	  }
-	`, "caddyfile")
+    redir / https://b.caddy.local:9443/hello 301
+    
+    respond /hello 200 {
+      body "hello from b.caddy.local"
+    }	
+    }
+  `, "caddyfile")
 
 	// act and assert
 	caddytest.AssertRedirect(t, "https://b.caddy.local:9443/", "https://b.caddy.local:9443/hello", 301)
@@ -61,28 +61,28 @@ func Test2Hosts(t *testing.T) {
 
 	// arrange
 	tctx := caddytest.InitServer(t, `
-	{
-		http_port     9080
-		https_port    9443
-	}
-	
-	a.caddy.local:9443 {
+  {
+    http_port     9080
+    https_port    9443
+  }
+  
+  a.caddy.local:9443 {
     tls /caddy.local.crt /caddy.local.key {
     }
 
     respond /hello 200 {
       body "hello from a.caddy.local"
     }	
-	}
+  }
 
-	b.caddy.local:9443 {
-		tls /caddy.local.crt /caddy.local.key {
-		}
+  b.caddy.local:9443 {
+    tls /caddy.local.crt /caddy.local.key {
+    }
 
-		respond /hello 200 {
-		  body "hello from b.caddy.local"
-		}	
-	  }
+    respond /hello 200 {
+      body "hello from b.caddy.local"
+    }	
+    }
   `, "caddyfile")
 	defer tctx.Complete()
 
@@ -95,28 +95,28 @@ func Test2HostsAndOneStaticIP(t *testing.T) {
 
 	// arrange
 	tctx := caddytest.InitServer(t, `
-	{
-		http_port     9080
-		https_port    9443
-	}
-	
-	a.caddy.local:9443, 127.0.0.1:9080 {
+  {
+    http_port     9080
+    https_port    9443
+  }
+  
+  a.caddy.local:9443, 127.0.0.1:9080 {
     tls /caddy.local.crt /caddy.local.key {
     }
 
     respond /hello 200 {
       body "hello from a.caddy.local"
     }	
-	}
+  }
 
-	b.caddy.local:9443 {
-		tls /caddy.local.crt /caddy.local.key {
-		}
+  b.caddy.local:9443 {
+    tls /caddy.local.crt /caddy.local.key {
+    }
 
-		respond /hello 200 {
-		  body "hello from b.caddy.local"
-		}	
-	  }
+    respond /hello 200 {
+      body "hello from b.caddy.local"
+    }	
+    }
   `, "caddyfile")
 	defer tctx.Complete()
 
