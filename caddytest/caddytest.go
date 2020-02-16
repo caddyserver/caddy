@@ -109,7 +109,7 @@ func validateTestPrerequistes() error {
 		}
 
 		if len(ips) == 1 && !ips[0].IsLoopback() {
-			return fmt.Errorf("caddy integration prerequistes failed. dns host (%s) should resovle to 127.0.0.1 found %s", host, ips[0])
+			return fmt.Errorf("caddy integration prerequisites failed. dns host (%s) should resolve to 127.0.0.1 found %s", host, ips[0])
 		}
 	}
 
