@@ -121,7 +121,14 @@ func validateTestPrerequisites() error {
 		return errors.New("caddy integration test certificates not found")
 	}
 
-	//TODO: assert that caddy is running
+	// assert that caddy is running
+	client := &http.Client{
+		Timeout: time.Second * 2,
+	}
+	_, err := client.Get("http://localhost:2019/load")
+	if err != nil {
+		return errors.New("caddy integration test caddy server not running. Expected to be listening on localhost:2019")
+	}
 
 	arePrerequisitesValid = true
 	return nil
