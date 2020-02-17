@@ -35,7 +35,8 @@ func init() {
 	RegisterHandlerDirective("redir", parseRedir)
 	RegisterHandlerDirective("respond", parseRespond)
 	RegisterHandlerDirective("route", parseRoute)
-	RegisterHandlerDirective("handle", parseHandle)
+	RegisterHandlerDirective("handle", parseSegmentAsSubroute)
+	RegisterDirective("handle_errors", parseHandleErrors)
 }
 
 // parseBind parses the bind directive. Syntax:
@@ -235,7 +236,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 					return nil, h.Errf("getting DNS provider module named '%s': %v", provName, err)
 				}
 				mgr.Challenges.DNSRaw = caddyconfig.JSONModuleObject(dnsProvModule.New(), "provider", provName, h.warnings)
-			
+
 			case "ca_root":
 				arg := h.RemainingArgs()
 				if len(arg) != 1 {
@@ -387,36 +388,21 @@ func parseRoute(h Helper) (caddyhttp.MiddlewareHandler, error) {
 	return sr, nil
 }
 
-// parseHandle parses the route directive.
 func parseHandle(h Helper) (caddyhttp.MiddlewareHandler, error) {
-	var allResults []ConfigValue
+	return parseSegmentAsSubroute(h)
+}
 
-	for h.Next() {
-		for nesting := h.Nesting(); h.NextBlock(nesting); {
-			dir := h.Val()
-
-			dirFunc, ok := registeredDirectives[dir]
-			if !ok {
-				return nil, h.Errf("unrecognized directive: %s", dir)
-			}
-
-			subHelper := h
-			subHelper.Dispenser = h.NewFromNextSegment()
-
-			results, err := dirFunc(subHelper)
-			if err != nil {
-				return nil, h.Errf("parsing caddyfile tokens for '%s': %v", dir, err)
-			}
-			for _, result := range results {
-				result.directive = dir
-				allResults = append(allResults, result)
-			}
-		}
-
-		return buildSubroute(allResults, h.groupCounter)
+func parseHandleErrors(h Helper) ([]ConfigValue, error) {
+	subroute, err := parseSegmentAsSubroute(h)
+	if err != nil {
+		return nil, err
 	}
-
-	return nil, nil
+	return []ConfigValue{
+		{
+			Class: "error_route",
+			Value: subroute,
+		},
+	}, nil
 }
 
 var tagCounter = 0

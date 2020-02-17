@@ -37,6 +37,7 @@ var directiveOrder = []string{
 	"uri_replace",
 	"try_files",
 
+	// middleware handlers that typically wrap responses
 	"basicauth",
 	"header",
 	"request_header",
@@ -46,6 +47,7 @@ var directiveOrder = []string{
 	"handle",
 	"route",
 
+	// handlers that typically respond to requests
 	"respond",
 	"reverse_proxy",
 	"php_fastcgi",
@@ -289,6 +291,37 @@ func sortRoutes(routes []ConfigValue) {
 
 		return dirPositions[iDir] < dirPositions[jDir]
 	})
+}
+
+// parseSegmentAsSubroute parses the segment such that its subdirectives
+// are themselves treated as directives, from which a subroute is built
+// and returned.
+func parseSegmentAsSubroute(h Helper) (caddyhttp.MiddlewareHandler, error) {
+	var allResults []ConfigValue
+	for h.Next() {
+		for nesting := h.Nesting(); h.NextBlock(nesting); {
+			dir := h.Val()
+
+			dirFunc, ok := registeredDirectives[dir]
+			if !ok {
+				return nil, h.Errf("unrecognized directive: %s", dir)
+			}
+
+			subHelper := h
+			subHelper.Dispenser = h.NewFromNextSegment()
+
+			results, err := dirFunc(subHelper)
+			if err != nil {
+				return nil, h.Errf("parsing caddyfile tokens for '%s': %v", dir, err)
+			}
+			for _, result := range results {
+				result.directive = dir
+				allResults = append(allResults, result)
+			}
+		}
+		return buildSubroute(allResults, h.groupCounter) // TODO:  should we move this outside the loop?
+	}
+	return nil, nil
 }
 
 // serverBlock pairs a Caddyfile server block
