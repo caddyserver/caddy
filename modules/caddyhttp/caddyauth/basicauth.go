@@ -53,7 +53,7 @@ func (HTTPBasicAuth) CaddyModule() caddy.ModuleInfo {
 // Provision provisions the HTTP basic auth provider.
 func (hba *HTTPBasicAuth) Provision(ctx caddy.Context) error {
 	if hba.HashRaw == nil {
-		return fmt.Errorf("passwords must be hashed, so a hash must be defined")
+		hba.HashRaw = json.RawMessage(`{"algorithm": "bcrypt"}`)
 	}
 
 	// load password hasher
