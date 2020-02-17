@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
@@ -65,6 +66,24 @@ func (FileWriter) CaddyModule() caddy.ModuleInfo {
 		ID:  "caddy.logging.writers.file",
 		New: func() caddy.Module { return new(FileWriter) },
 	}
+}
+
+// UnmarshalCaddyfile sets up the handler from Caddyfile tokens. Syntax:
+//
+//     file <filename>
+//
+// TODO: the rest of the options (log rolling), in a block
+func (fw *FileWriter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		if !d.NextArg() {
+			return d.ArgErr()
+		}
+		fw.Filename = d.Val()
+		if d.NextArg() {
+			return d.ArgErr()
+		}
+	}
+	return nil
 }
 
 // Provision sets up the module
@@ -127,5 +146,7 @@ func (fw FileWriter) OpenWriter() (io.WriteCloser, error) {
 
 // Interface guards
 var (
-	_ caddy.Provisioner = (*FileWriter)(nil)
+	_ caddy.Provisioner     = (*FileWriter)(nil)
+	_ caddy.WriterOpener    = (*FileWriter)(nil)
+	_ caddyfile.Unmarshaler = (*FileWriter)(nil)
 )
