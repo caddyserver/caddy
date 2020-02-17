@@ -811,7 +811,7 @@ func tryInt(val interface{}, warnings *[]caddyconfig.Warning) int {
 func tryString(val interface{}, warnings *[]caddyconfig.Warning) string {
 	stringVal, ok := val.(string)
 	if val != nil && !ok && warnings != nil {
-		*warnings = append(*warnings, caddyconfig.Warning{Message: "not an string type"})
+		*warnings = append(*warnings, caddyconfig.Warning{Message: "not a string type"})
 	}
 	return stringVal
 }
