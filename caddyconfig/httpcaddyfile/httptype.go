@@ -474,18 +474,18 @@ func (st *ServerType) serversFromPairings(
 				return nil, err
 			}
 
-			if len(matcherSetsEnc) == 0 && len(p.serverBlocks) == 1 {
-				// no need to wrap the handlers in a subroute if this is
-				// the only server block and there is no matcher for it
-				srv.Routes = append(srv.Routes, siteSubroute.Routes...)
-			} else {
-				srv.Routes = append(srv.Routes, caddyhttp.Route{
-					MatcherSetsRaw: matcherSetsEnc,
-					HandlersRaw: []json.RawMessage{
-						caddyconfig.JSONModuleObject(siteSubroute, "handler", "subroute", warnings),
-					},
-					Terminal: true, // only first matching site block should be evaluated
-				})
+			// add the site block's route(s) to the server
+			srv.Routes = appendSubrouteToRouteList(srv.Routes, siteSubroute, matcherSetsEnc, p, warnings)
+
+			// if error routes are defined, add those too
+			if errorSubrouteVals, ok := sblock.pile["error_route"]; ok {
+				if srv.Errors == nil {
+					srv.Errors = new(caddyhttp.HTTPErrorConfig)
+				}
+				for _, val := range errorSubrouteVals {
+					sr := val.Value.(*caddyhttp.Subroute)
+					srv.Errors.Routes = appendSubrouteToRouteList(srv.Errors.Routes, sr, matcherSetsEnc, p, warnings)
+				}
 			}
 		}
 
@@ -497,6 +497,31 @@ func (st *ServerType) serversFromPairings(
 	return servers, nil
 }
 
+// appendSubrouteToRouteList appends the routes in subroute
+// to the routeList, optionally qualified by matchers.
+func appendSubrouteToRouteList(routeList caddyhttp.RouteList,
+	subroute *caddyhttp.Subroute,
+	matcherSetsEnc []caddy.ModuleMap,
+	p sbAddrAssociation,
+	warnings *[]caddyconfig.Warning) caddyhttp.RouteList {
+	if len(matcherSetsEnc) == 0 && len(p.serverBlocks) == 1 {
+		// no need to wrap the handlers in a subroute if this is
+		// the only server block and there is no matcher for it
+		routeList = append(routeList, subroute.Routes...)
+	} else {
+		routeList = append(routeList, caddyhttp.Route{
+			MatcherSetsRaw: matcherSetsEnc,
+			HandlersRaw: []json.RawMessage{
+				caddyconfig.JSONModuleObject(subroute, "handler", "subroute", warnings),
+			},
+			Terminal: true, // only first matching site block should be evaluated
+		})
+	}
+	return routeList
+}
+
+// buildSubroute turns the config values, which are expected to be routes
+// into a clean and orderly subroute that has all the routes within it.
 func buildSubroute(routes []ConfigValue, groupCounter counter) (*caddyhttp.Subroute, error) {
 	for _, val := range routes {
 		if !directiveIsOrdered(val.directive) {
