@@ -32,7 +32,7 @@ func TestRespond(t *testing.T) {
 func TestRedirect(t *testing.T) {
 
 	// arrange
-	caddytest.InitServer(t, `
+	tctx := caddytest.InitServer(t, `
   {
     http_port     9080
     https_port    9443
@@ -49,6 +49,7 @@ func TestRedirect(t *testing.T) {
     }	
     }
   `, "caddyfile")
+	defer tctx.Complete()
 
 	// act and assert
 	caddytest.AssertRedirect(t, "https://b.caddy.local:9443/", "https://b.caddy.local:9443/hello", 301)
