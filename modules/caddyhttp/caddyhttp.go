@@ -322,22 +322,27 @@ func (app *App) Stop() error {
 			return err
 		}
 	}
-	// TODO: Closing the http3.Server is the right thing to do,
-	// however, doing so sometimes causes connections from clients
-	// to fail after config reloads due to a bug that is yet
-	// unsolved: https://github.com/caddyserver/caddy/pull/2727
-	// for _, s := range app.h3servers {
-	// 	// TODO: CloseGracefully, once implemented upstream
-	// 	// (see https://github.com/lucas-clemente/quic-go/issues/2103)
-	// 	err := s.Close()
-	// 	if err != nil {
-	// 		return err
-	// 	}
-	// }
-	// as of September 2019, closing the http3.Server
-	// instances doesn't close their underlying listeners
-	// so we have todo that ourselves
-	// (see https://github.com/lucas-clemente/quic-go/issues/2103)
+
+	// close the http3 servers; it's unclear whether the bug reported in
+	// https://github.com/caddyserver/caddy/pull/2727#issuecomment-526856566
+	// was ever truly fixed, since it seemed racey/nondeterministic; but
+	// recent tests in 2020 were unable to replicate the issue again after
+	// repeated attempts (the bug manifested after a config reload; i.e.
+	// reusing a http3 server or listener was problematic), but it seems
+	// to be working fine now
+	for _, s := range app.h3servers {
+		// TODO: CloseGracefully, once implemented upstream
+		// (see https://github.com/lucas-clemente/quic-go/issues/2103)
+		err := s.Close()
+		if err != nil {
+			return err
+		}
+	}
+
+	// closing an http3.Server does not close their underlying listeners
+	// since apparently the listener can be used both by servers and
+	// clients at the same time; so we need to manually call Close()
+	// on the underlying h3 listeners (see lucas-clemente/quic-go#2103)
 	for _, pc := range app.h3listeners {
 		err := pc.Close()
 		if err != nil {
