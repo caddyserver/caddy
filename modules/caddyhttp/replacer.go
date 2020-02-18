@@ -64,7 +64,7 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 
 			// http.request.tls.
 			if strings.HasPrefix(key, reqTLSReplPrefix) {
-				return getReqTLSReplacement(req, &key)
+				return getReqTLSReplacement(req, key)
 			}
 
 			switch key {
@@ -217,16 +217,16 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 	repl.Map(httpVars)
 }
 
-func getReqTLSReplacement(req *http.Request, key *string) (string, bool) {
-	if req == nil || req.TLS == nil || key == nil {
+func getReqTLSReplacement(req *http.Request, key string) (string, bool) {
+	if req == nil || req.TLS == nil {
 		return "", false
 	}
 
-	if len(*key) < len(reqTLSReplPrefix) {
+	if len(key) < len(reqTLSReplPrefix) {
 		return "", false
 	}
 
-	field := strings.ToLower((*key)[len(reqTLSReplPrefix):])
+	field := strings.ToLower(key[len(reqTLSReplPrefix):])
 
 	if strings.HasPrefix(field, "client.") {
 		cert := getTLSPeerCert(req.TLS)
