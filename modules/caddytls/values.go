@@ -128,8 +128,9 @@ var SupportedProtocols = map[string]uint16{
 	"tls1.3": tls.VersionTLS13,
 }
 
-// UnsupportedProtocols is a map of unsupported protocols.
-var UnsupportedProtocols = map[string]uint16{
+// unsupportedProtocols is a map of unsupported protocols.
+// Used for logging only, not enforcement.
+var unsupportedProtocols = map[string]uint16{
 	"ssl3.0": tls.VersionSSL30,
 	"tls1.0": tls.VersionTLS10,
 	"tls1.1": tls.VersionTLS11,
@@ -152,7 +153,7 @@ func ProtocolName(id uint16) string {
 		}
 	}
 
-	for k, v := range UnsupportedProtocols {
+	for k, v := range unsupportedProtocols {
 		if v == id {
 			return k
 		}
