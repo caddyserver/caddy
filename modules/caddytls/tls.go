@@ -89,7 +89,7 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 	// automation/management policies
 	if t.Automation != nil {
 		for i, ap := range t.Automation.Policies {
-			val, err := ctx.LoadModule(&ap, "ManagementRaw")
+			val, err := ctx.LoadModule(ap, "ManagementRaw")
 			if err != nil {
 				return fmt.Errorf("loading TLS automation management module: %s", err)
 			}
