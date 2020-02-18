@@ -169,6 +169,7 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 
 	// now for the TLS app! (TODO: refactor into own func)
 	tlsApp := caddytls.TLS{CertificatesRaw: make(caddy.ModuleMap)}
+	var certLoaders []caddytls.CertificateLoader
 	for _, p := range pairings {
 		for i, sblock := range p.serverBlocks {
 			// tls automation policies
@@ -194,15 +195,23 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 					}
 				}
 			}
-
 			// tls certificate loaders
 			if clVals, ok := sblock.pile["tls.certificate_loader"]; ok {
 				for _, clVal := range clVals {
-					loader := clVal.Value.(caddytls.CertificateLoader)
-					loaderName := caddy.GetModuleName(loader)
-					tlsApp.CertificatesRaw[loaderName] = caddyconfig.JSON(loader, &warnings)
+					certLoaders = append(certLoaders, clVal.Value.(caddytls.CertificateLoader))
 				}
 			}
+		}
+	}
+	// group certificate loaders by module name, then add to config
+	if len(certLoaders) > 0 {
+		loadersByName := make(map[string][]caddytls.CertificateLoader)
+		for _, cl := range certLoaders {
+			name := caddy.GetModuleName(cl)
+			loadersByName[name] = append(loadersByName[name], cl)
+		}
+		for certLoaderName, loaders := range loadersByName {
+			tlsApp.CertificatesRaw[certLoaderName] = caddyconfig.JSON(loaders, &warnings)
 		}
 	}
 	// if global ACME CA, DNS, or email were set, append a catch-all automation
