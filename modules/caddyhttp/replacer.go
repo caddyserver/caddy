@@ -235,8 +235,6 @@ func getReqTLSReplacement(req *http.Request, key string) (string, bool) {
 		}
 
 		switch field {
-		case "client.cert":
-			return string(cert.Raw), true
 		case "client.fingerprint":
 			return fmt.Sprintf("%x", sha256.Sum256(cert.Raw)), true
 		case "client.issuer":

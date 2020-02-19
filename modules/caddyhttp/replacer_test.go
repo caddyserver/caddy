@@ -132,10 +132,6 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 			expect: "tls1.3",
 		},
 		{
-			input:  "{http.request.tls.client.cert}",
-			expect: string(cert.Raw),
-		},
-		{
 			input:  "{http.request.tls.client.fingerprint}",
 			expect: "9f57b7b497cceacc5459b76ac1c3afedbc12b300e728071f55f84168ff0f7702",
 		},

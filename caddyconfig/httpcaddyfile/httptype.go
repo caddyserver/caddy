@@ -91,7 +91,6 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 
 			"{tls_cipher}", "{http.request.tls.cipher_suite}",
 			"{tls_version}", "{http.request.tls.version}",
-			"{tls_client_cert}", "{http.request.tls.client.cert}",
 			"{tls_client_fingerprint}", "{http.request.tls.client.fingerprint}",
 			"{tls_client_issuer}", "{http.request.tls.client.issuer}",
 			"{tls_client_serial}", "{http.request.tls.client.serial}",

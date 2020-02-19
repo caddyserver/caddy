@@ -77,7 +77,6 @@ func init() {
 // `{http.request.tls.proto}` | The negotiated next protocol
 // `{http.request.tls.proto_mutual}` | The negotiated next protocol was advertised by the server
 // `{http.request.tls.server_name}` | The server name requested by the client, if any
-// `{http.request.tls.client.cert}` | The client certificate in PEM format
 // `{http.request.tls.client.fingerprint}` | The SHA256 checksum of the client certificate
 // `{http.request.tls.client.issuer}` | The issuer DN of the client certificate
 // `{http.request.tls.client.serial}` | The serial number of the client certificate
