@@ -417,6 +417,16 @@ func TestHeaderMatcher(t *testing.T) {
 			input:  http.Header{"Field1": []string{"foo"}, "Field2": []string{"kapow"}},
 			expect: false,
 		},
+		{
+			match:  MatchHeader{"field1": []string{"*"}},
+			input:  http.Header{"Field1": []string{"foo"}},
+			expect: true,
+		},
+		{
+			match:  MatchHeader{"field1": []string{"*"}},
+			input:  http.Header{"Field2": []string{"foo"}},
+			expect: false,
+		},
 	} {
 		req := &http.Request{Header: tc.input}
 		actual := tc.match.Match(req)
