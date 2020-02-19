@@ -427,11 +427,22 @@ func (m *MatchHeaderRE) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		*m = make(map[string]*MatchRegexp)
 	}
 	for d.Next() {
-		var field, val string
-		if !d.Args(&field, &val) {
+		var first, second, third string
+		if !d.Args(&first, &second) {
 			return d.ArgErr()
 		}
-		(*m)[field] = &MatchRegexp{Pattern: val}
+
+		var name, field, val string
+		if d.Args(&third) {
+			name = first
+			field = second
+			val = third
+		} else {
+			field = first
+			val = second
+		}
+
+		(*m)[field] = &MatchRegexp{Pattern: val, Name: name}
 	}
 	return nil
 }
