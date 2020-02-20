@@ -132,20 +132,41 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 			}
 			mgr.Email = firstLine[0]
 		case 2:
-			tag := fmt.Sprintf("cert%d", tagCounter)
-			fileLoader = append(fileLoader, caddytls.CertKeyFilePair{
-				Certificate: firstLine[0],
-				Key:         firstLine[1],
-				Tags:        []string{tag},
-			})
+			certFilename := firstLine[0]
+			keyFilename := firstLine[1]
+
 			// tag this certificate so if multiple certs match, specifically
 			// this one that the user has provided will be used, see #2588:
-			// https://github.com/caddyserver/caddy/issues/2588
-			tagCounter++
+			// https://github.com/caddyserver/caddy/issues/2588 ... but we
+			// must be careful about how we do this; being careless will
+			// lead to failed handshakes
+
+			// we need to remember which cert files we've seen, since we
+			// must load each cert only once; otherwise, they each get a
+			// different tag... since a cert loaded twice has the same
+			// bytes, it will overwrite the first one in the cache, and
+			// only the last cert (and its tag) will survive, so a any conn
+			// policy that is looking for any tag but the last one to be
+			// loaded won't find it, and TLS handshakes will fail (see end)
+			// of issue #3004)
+			tag, ok := tlsCertTags[certFilename]
+			if !ok {
+				// haven't seen this cert file yet, let's give it a tag
+				// and add a loader for it
+				tag = fmt.Sprintf("cert%d", len(tlsCertTags))
+				fileLoader = append(fileLoader, caddytls.CertKeyFilePair{
+					Certificate: certFilename,
+					Key:         keyFilename,
+					Tags:        []string{tag},
+				})
+				// remember this for next time we see this cert file
+				tlsCertTags[certFilename] = tag
+			}
 			certSelector := caddytls.CustomCertSelectionPolicy{Tag: tag}
 			if cp == nil {
 				cp = new(caddytls.ConnectionPolicy)
 			}
+
 			cp.CertSelection = caddyconfig.JSONModuleObject(certSelector, "policy", "custom", h.warnings)
 		default:
 			return nil, h.ArgErr()
@@ -405,4 +426,9 @@ func parseHandleErrors(h Helper) ([]ConfigValue, error) {
 	}, nil
 }
 
-var tagCounter = 0
+// tlsCertTags maps certificate filenames to their tag.
+// This is used to remember which tag is used for each
+// certificate files, since we need to avoid loading
+// the same certificate files more than once, overwriting
+// previous tags
+var tlsCertTags = make(map[string]string)
