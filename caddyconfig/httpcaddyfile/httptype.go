@@ -205,10 +205,26 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 	}
 	// group certificate loaders by module name, then add to config
 	if len(certLoaders) > 0 {
-		loadersByName := make(map[string][]caddytls.CertificateLoader)
+		loadersByName := make(map[string]caddytls.CertificateLoader)
 		for _, cl := range certLoaders {
 			name := caddy.GetModuleName(cl)
-			loadersByName[name] = append(loadersByName[name], cl)
+			// ugh... technically, we may have multiple FileLoader and FolderLoader
+			// modules (because the tls directive returns one per occurrence), but
+			// the config structure expects only one instance of each kind of loader
+			// module, so we have to combine them... instead of enumerating each
+			// possible cert loader module in a type switch, we can use reflection,
+			// which works on any cert loaders that are slice types
+			if reflect.TypeOf(cl).Kind() == reflect.Slice {
+				combined := reflect.ValueOf(loadersByName[name])
+				if !combined.IsValid() {
+					combined = reflect.New(reflect.TypeOf(cl)).Elem()
+				}
+				clVal := reflect.ValueOf(cl)
+				for i := 0; i < clVal.Len(); i++ {
+					combined = reflect.Append(reflect.Value(combined), clVal.Index(i))
+				}
+				loadersByName[name] = combined.Interface().(caddytls.CertificateLoader)
+			}
 		}
 		for certLoaderName, loaders := range loadersByName {
 			tlsApp.CertificatesRaw[certLoaderName] = caddyconfig.JSON(loaders, &warnings)
@@ -400,6 +416,8 @@ func (st *ServerType) serversFromPairings(
 			return specificity(iLongestHost) > specificity(jLongestHost)
 		})
 
+		var hasCatchAllTLSConnPolicy bool
+
 		// create a subroute for each site in the server block
 		for _, sblock := range p.serverBlocks {
 			matcherSetsEnc, err := st.compileEncodedMatcherSets(sblock.block)
@@ -420,7 +438,6 @@ func (st *ServerType) serversFromPairings(
 				srv.AutoHTTPS.Skip = append(srv.AutoHTTPS.Skip, autoHTTPSQualifiedHosts...)
 			} else if cpVals, ok := sblock.pile["tls.connection_policy"]; ok {
 				// tls connection policies
-				var hasCatchAll bool
 				for _, cpVal := range cpVals {
 					cp := cpVal.Value.(*caddytls.ConnectionPolicy)
 
@@ -436,25 +453,11 @@ func (st *ServerType) serversFromPairings(
 							"sni": caddyconfig.JSON(hosts, warnings), // make sure to match all hosts, not just auto-HTTPS-qualified ones
 						}
 					} else {
-						hasCatchAll = true
+						hasCatchAllTLSConnPolicy = true
 					}
 
 					srv.TLSConnPolicies = append(srv.TLSConnPolicies, cp)
 				}
-
-				// a catch-all is necessary to ensure TLS can be offered to
-				// all hostnames of the server; even though only one policy
-				// is needed to enable TLS for the server, that policy might
-				// apply to only certain TLS handshakes; but when using the
-				// Caddyfile, user would expect all handshakes to at least
-				// have a matching connection policy, so here we append a
-				// catch-all/default policy if there isn't one already (it's
-				// important that it goes at the end) - see issue #3004:
-				// https://github.com/caddyserver/caddy/issues/3004
-				if !hasCatchAll {
-					srv.TLSConnPolicies = append(srv.TLSConnPolicies, new(caddytls.ConnectionPolicy))
-				}
-
 				// TODO: consolidate equal conn policies
 			}
 
@@ -496,6 +499,19 @@ func (st *ServerType) serversFromPairings(
 					srv.Errors.Routes = appendSubrouteToRouteList(srv.Errors.Routes, sr, matcherSetsEnc, p, warnings)
 				}
 			}
+		}
+
+		// a catch-all TLS conn policy is necessary to ensure TLS can
+		// be offered to all hostnames of the server; even though only
+		// one policy is needed to enable TLS for the server, that
+		// policy might apply to only certain TLS handshakes; but when
+		// using the Caddyfile, user would expect all handshakes to at
+		// least have a matching connection policy, so here we append a
+		// catch-all/default policy if there isn't one already (it's
+		// important that it goes at the end) - see issue #3004:
+		// https://github.com/caddyserver/caddy/issues/3004
+		if len(srv.TLSConnPolicies) > 0 && !hasCatchAllTLSConnPolicy {
+			srv.TLSConnPolicies = append(srv.TLSConnPolicies, new(caddytls.ConnectionPolicy))
 		}
 
 		srv.Routes = consolidateRoutes(srv.Routes)
