@@ -419,11 +419,11 @@ var emptyHandler Handler = HandlerFunc(func(http.ResponseWriter, *http.Request) 
 // Error chain does not actually handle the error (for instance, it matches only
 // on some errors). See #3053
 var errorEmptyHandler Handler = HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
-	http_error := r.Context().Value(ErrorCtxKey)
-	if handler_err, ok := http_error.(HandlerError); ok {
-		w.WriteHeader(handler_err.StatusCode)
+	httpError := r.Context().Value(ErrorCtxKey)
+	if handlerError, ok := httpError.(HandlerError); ok {
+		w.WriteHeader(handlerError.StatusCode)
 	} else {
-		w.WriteHeader(500)
+		w.WriteHeader(http.StatusInternalServerError)
 	}
 	return nil
 })
