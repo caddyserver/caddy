@@ -185,7 +185,21 @@ func (app *App) Provision(ctx caddy.Context) error {
 			if err != nil {
 				return fmt.Errorf("server %s: setting up server error handling routes: %v", srvName, err)
 			}
-			srv.errorHandlerChain = srv.Errors.Routes.Compile(emptyHandler)
+
+			// Add an implicit suffix middleware that, if reached, sets the
+			// StatusCode to the error stored in the ErrorCtxKey. This is to
+			// prevent situations where the Error chain does not actually handle
+			// the error (for instance, it matches only on some errors). See
+			// #3053
+			srv.errorHandlerChain = srv.Errors.Routes.Compile(HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+				http_error := r.Context().Value(ErrorCtxKey)
+				if handler_err, ok := http_error.(HandlerError); ok {
+					w.WriteHeader(handler_err.StatusCode)
+				} else {
+					w.WriteHeader(500)
+				}
+				return nil
+			}))
 		}
 	}
 
