@@ -185,7 +185,8 @@ func (app *App) Provision(ctx caddy.Context) error {
 			if err != nil {
 				return fmt.Errorf("server %s: setting up server error handling routes: %v", srvName, err)
 			}
-			srv.errorHandlerChain = srv.Errors.Routes.Compile(emptyHandler)
+
+			srv.errorHandlerChain = srv.Errors.Routes.Compile(errorEmptyHandler)
 		}
 	}
 
@@ -412,6 +413,20 @@ type MiddlewareHandler interface {
 
 // emptyHandler is used as a no-op handler.
 var emptyHandler Handler = HandlerFunc(func(http.ResponseWriter, *http.Request) error { return nil })
+
+// An implicit suffix middleware that, if reached, sets the StatusCode to the
+// error stored in the ErrorCtxKey. This is to prevent situations where the
+// Error chain does not actually handle the error (for instance, it matches only
+// on some errors). See #3053
+var errorEmptyHandler Handler = HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+	httpError := r.Context().Value(ErrorCtxKey)
+	if handlerError, ok := httpError.(HandlerError); ok {
+		w.WriteHeader(handlerError.StatusCode)
+	} else {
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+	return nil
+})
 
 // WeakString is a type that unmarshals any JSON value
 // as a string literal, with the following exceptions:
