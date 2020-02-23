@@ -168,38 +168,6 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 		return err
 	}
 
-	// if active health checks are enabled, configure them and start a worker
-	if h.HealthChecks != nil &&
-		h.HealthChecks.Active != nil &&
-		(h.HealthChecks.Active.Path != "" || h.HealthChecks.Active.Port != 0) {
-		h.HealthChecks.Active.logger = h.logger.Named("health_checker.active")
-
-		timeout := time.Duration(h.HealthChecks.Active.Timeout)
-		if timeout == 0 {
-			timeout = 5 * time.Second
-		}
-
-		h.HealthChecks.Active.stopChan = make(chan struct{})
-		h.HealthChecks.Active.httpClient = &http.Client{
-			Timeout:   timeout,
-			Transport: h.Transport,
-		}
-
-		if h.HealthChecks.Active.Interval == 0 {
-			h.HealthChecks.Active.Interval = caddy.Duration(30 * time.Second)
-		}
-
-		if h.HealthChecks.Active.ExpectBody != "" {
-			var err error
-			h.HealthChecks.Active.bodyRegexp, err = regexp.Compile(h.HealthChecks.Active.ExpectBody)
-			if err != nil {
-				return fmt.Errorf("expect_body: compiling regular expression: %v", err)
-			}
-		}
-
-		go h.activeHealthChecker()
-	}
-
 	// set up upstreams
 	for _, upstream := range h.Upstreams {
 		// create or get the host representation for this upstream
@@ -235,6 +203,38 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 		}
 	}
 
+	// if active health checks are enabled, configure them and start a worker
+	if h.HealthChecks != nil &&
+		h.HealthChecks.Active != nil &&
+		(h.HealthChecks.Active.Path != "" || h.HealthChecks.Active.Port != 0) {
+		h.HealthChecks.Active.logger = h.logger.Named("health_checker.active")
+
+		timeout := time.Duration(h.HealthChecks.Active.Timeout)
+		if timeout == 0 {
+			timeout = 5 * time.Second
+		}
+
+		h.HealthChecks.Active.stopChan = make(chan struct{})
+		h.HealthChecks.Active.httpClient = &http.Client{
+			Timeout:   timeout,
+			Transport: h.Transport,
+		}
+
+		if h.HealthChecks.Active.Interval == 0 {
+			h.HealthChecks.Active.Interval = caddy.Duration(30 * time.Second)
+		}
+
+		if h.HealthChecks.Active.ExpectBody != "" {
+			var err error
+			h.HealthChecks.Active.bodyRegexp, err = regexp.Compile(h.HealthChecks.Active.ExpectBody)
+			if err != nil {
+				return fmt.Errorf("expect_body: compiling regular expression: %v", err)
+			}
+		}
+
+		go h.activeHealthChecker()
+	}
+
 	return nil
 }
 
@@ -244,6 +244,7 @@ func (h *Handler) Cleanup() error {
 	if h.HealthChecks != nil &&
 		h.HealthChecks.Active != nil &&
 		h.HealthChecks.Active.stopChan != nil {
+		// TODO: consider using context cancellation, could be much simpler
 		close(h.HealthChecks.Active.stopChan)
 	}
 
