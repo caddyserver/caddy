@@ -251,9 +251,9 @@ func (h *httpContext) MakeServers() ([]caddy.Server, error) {
 	// 2) if QUIC is enabled, TLS ClientAuth is not, because
 	//    currently, QUIC does not support ClientAuth (TODO:
 	//    revisit this when our QUIC implementation supports it)
-	// 3) if TLS ClientAuth is used, StrictHostMatching is on
+	// 3) if TLS ClientAuth is used and there is more than 1 server instance, StrictHostMatching is on
 	var atLeastOneSiteLooksLikeProduction bool
-	for _, cfg := range h.siteConfigs {
+	for cfgIndex, cfg := range h.siteConfigs {
 		// see if all the addresses (both sites and
 		// listeners) are loopback to help us determine
 		// if this is a "production" instance or not
@@ -292,12 +292,15 @@ func (h *httpContext) MakeServers() ([]caddy.Server, error) {
 			if QUIC {
 				return nil, fmt.Errorf("cannot enable TLS client authentication with QUIC, because QUIC does not yet support it")
 			}
-			// this must be enabled so that a client cannot connect
+			// this must be enabled for configs with more than 1 server instance
+			// so that a client cannot connect 
 			// using SNI for another site on this listener that
 			// does NOT require ClientAuth, and then send HTTP
 			// requests with the Host header of this site which DOES
 			// require client auth, thus bypassing it...
-			cfg.StrictHostMatching = true
+			if cfgIndex > 0 {				
+				cfg.StrictHostMatching = true
+			}
 		}
 	}
 
