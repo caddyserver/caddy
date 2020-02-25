@@ -442,6 +442,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 		r.URL = trimPathPrefix(r.URL, pathPrefix)
 	}
 
+	// if not disabled via `insecure_disable_sni_matching`
 	// enforce strict host matching, which ensures that the SNI
 	// value (if any), matches the Host header; essential for
 	// sites that rely on TLS ClientAuth sharing a port with

@@ -292,13 +292,6 @@ func (h *httpContext) MakeServers() ([]caddy.Server, error) {
 			if QUIC {
 				return nil, fmt.Errorf("cannot enable TLS client authentication with QUIC, because QUIC does not yet support it")
 			}
-			// this must be false so that a client cannot connect
-			// using SNI for another site on this listener that
-			// does NOT require ClientAuth, and then send HTTP
-			// requests with the Host header of this site which DOES
-			// require client auth, thus bypassing it.
-			// if set to true via `insecure_disable_sni_matching` directive, the behaviour above is allowed
-			cfg.TLS.InsecureDisableSNIMatching = false
 		}
 	}
 
