@@ -252,7 +252,7 @@ func getReqTLSReplacement(req *http.Request, key string) (string, bool) {
 	case "version":
 		return caddytls.ProtocolName(req.TLS.Version), true
 	case "cipher_suite":
-		return caddytls.CipherSuiteName(req.TLS.CipherSuite), true
+		return tls.CipherSuiteName(req.TLS.CipherSuite), true
 	case "resumed":
 		if req.TLS.DidResume {
 			return "true", true
