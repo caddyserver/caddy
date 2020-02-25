@@ -62,6 +62,18 @@ type Config struct {
 	// client authentication is enabled
 	ClientCerts []string
 
+	// Allow mismatched TLS SNI and Host header when using TLS client authentication
+	// If false (the default), the Host header in the HTTP request must
+	// match the SNI value in the TLS handshake (if any).
+	// This should be enabled whenever the TLS SNI and Host header
+	// in the HTTP request can be different, for example when doing mTLS with multiple servers
+	// and the upstream addresses do not match the HTTP request Host header.
+	// If a site relies on TLS client authentication or any time you want to enforce that THIS site's TLS config
+	// is used and not the TLS config of any other site
+	// on the same listener, set this to false.
+	// TODO: Check how relevant this is with TLS 1.3.
+	InsecureDisableSNIMatching bool
+
 	// Manual means user provides own certs and keys
 	Manual bool
 

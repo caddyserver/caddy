@@ -222,6 +222,8 @@ func setupTLS(c *caddy.Controller) error {
 				}
 
 				config.ClientCerts = clientCertList[listStart:]
+			case "insecure_disable_sni_matching":
+				config.InsecureDisableSNIMatching = true
 			case "load":
 				c.Args(&loadDir)
 				config.Manual = true

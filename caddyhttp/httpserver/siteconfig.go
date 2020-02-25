@@ -36,16 +36,6 @@ type SiteConfig struct {
 	// TLS configuration
 	TLS *caddytls.Config
 
-	// If true, the Host header in the HTTP request must
-	// match the SNI value in the TLS handshake (if any).
-	// This should be enabled whenever a site relies on
-	// TLS client authentication, for example; or any time
-	// you want to enforce that THIS site's TLS config
-	// is used and not the TLS config of any other site
-	// on the same listener. TODO: Check how relevant this
-	// is with TLS 1.3.
-	StrictHostMatching bool
-
 	// Uncompiled middleware stack
 	middleware []Middleware
 
