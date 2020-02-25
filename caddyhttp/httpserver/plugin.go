@@ -251,7 +251,6 @@ func (h *httpContext) MakeServers() ([]caddy.Server, error) {
 	// 2) if QUIC is enabled, TLS ClientAuth is not, because
 	//    currently, QUIC does not support ClientAuth (TODO:
 	//    revisit this when our QUIC implementation supports it)
-	// 3) if TLS ClientAuth is used and InsecureDisableSNIMatching is not set, Strict SNI and HTTP request Host header matching is enforced
 	var atLeastOneSiteLooksLikeProduction bool
 	for _, cfg := range h.siteConfigs {
 		// see if all the addresses (both sites and
