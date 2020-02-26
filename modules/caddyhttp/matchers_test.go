@@ -375,6 +375,7 @@ func TestHeaderMatcher(t *testing.T) {
 	for i, tc := range []struct {
 		match  MatchHeader
 		input  http.Header // make sure these are canonical cased (std lib will do that in a real request)
+		host   string
 		expect bool
 	}{
 		{
@@ -417,8 +418,30 @@ func TestHeaderMatcher(t *testing.T) {
 			input:  http.Header{"Field1": []string{"foo"}, "Field2": []string{"kapow"}},
 			expect: false,
 		},
+		{
+			match:  MatchHeader{"field1": []string{"*"}},
+			input:  http.Header{"Field1": []string{"foo"}},
+			expect: true,
+		},
+		{
+			match:  MatchHeader{"field1": []string{"*"}},
+			input:  http.Header{"Field2": []string{"foo"}},
+			expect: false,
+		},
+		{
+			match:  MatchHeader{"host": []string{"localhost"}},
+			input:  http.Header{},
+			host:   "localhost",
+			expect: true,
+		},
+		{
+			match:  MatchHeader{"host": []string{"localhost"}},
+			input:  http.Header{},
+			host:   "caddyserver.com",
+			expect: false,
+		},
 	} {
-		req := &http.Request{Header: tc.input}
+		req := &http.Request{Header: tc.input, Host: tc.host}
 		actual := tc.match.Match(req)
 		if actual != tc.expect {
 			t.Errorf("Test %d %v: Expected %t, got %t for '%s'", i, tc.match, tc.expect, actual, tc.input)
@@ -487,6 +510,7 @@ func TestHeaderREMatcher(t *testing.T) {
 	for i, tc := range []struct {
 		match      MatchHeaderRE
 		input      http.Header // make sure these are canonical cased (std lib will do that in a real request)
+		host       string
 		expect     bool
 		expectRepl map[string]string
 	}{
@@ -506,6 +530,23 @@ func TestHeaderREMatcher(t *testing.T) {
 			expect:     true,
 			expectRepl: map[string]string{"name.1": "bar"},
 		},
+		{
+			match:  MatchHeaderRE{"Field": &MatchRegexp{Pattern: "^foo.*$", Name: "name"}},
+			input:  http.Header{"Field": []string{"barfoo", "foobar"}},
+			expect: true,
+		},
+		{
+			match:  MatchHeaderRE{"host": &MatchRegexp{Pattern: "^localhost$", Name: "name"}},
+			input:  http.Header{},
+			host:   "localhost",
+			expect: true,
+		},
+		{
+			match:  MatchHeaderRE{"host": &MatchRegexp{Pattern: "^local$", Name: "name"}},
+			input:  http.Header{},
+			host:   "localhost",
+			expect: false,
+		},
 	} {
 		// compile the regexp and validate its name
 		err := tc.match.Provision(caddy.Context{})
@@ -520,7 +561,7 @@ func TestHeaderREMatcher(t *testing.T) {
 		}
 
 		// set up the fake request and its Replacer
-		req := &http.Request{Header: tc.input, URL: new(url.URL)}
+		req := &http.Request{Header: tc.input, URL: new(url.URL), Host: tc.host}
 		repl := caddy.NewReplacer()
 		ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
 		req = req.WithContext(ctx)
@@ -579,7 +620,7 @@ func TestVarREMatcher(t *testing.T) {
 			expect: true,
 		},
 		{
-			desc:   "matching agaist value of var set by the VarsMiddleware and referenced by its placeholder succeeds",
+			desc:   "matching against value of var set by the VarsMiddleware and referenced by its placeholder succeeds",
 			match:  MatchVarsRE{"{http.vars.Var1}": &MatchRegexp{Pattern: "[vV]ar[0-9]"}},
 			input:  VarsMiddleware{"Var1": "var1Value"},
 			expect: true,

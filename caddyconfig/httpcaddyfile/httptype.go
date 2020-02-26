@@ -43,51 +43,31 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 	var warnings []caddyconfig.Warning
 	gc := counter{new(int)}
 
+	// load all the server blocks and associate them with a "pile"
+	// of config values; also prohibit duplicate keys because they
+	// can make a config confusing if more than one server block is
+	// chosen to handle a request - we actually will make each
+	// server block's route terminal so that only one will run
+	sbKeys := make(map[string]struct{})
 	var serverBlocks []serverBlock
-	for _, sblock := range originalServerBlocks {
+	for i, sblock := range originalServerBlocks {
+		for j, k := range sblock.Keys {
+			if _, ok := sbKeys[k]; ok {
+				return nil, warnings, fmt.Errorf("duplicate site address not allowed: '%s' in %v (site block %d, key %d)", k, sblock.Keys, i, j)
+			}
+			sbKeys[k] = struct{}{}
+		}
 		serverBlocks = append(serverBlocks, serverBlock{
 			block: sblock,
 			pile:  make(map[string][]ConfigValue),
 		})
 	}
 
-	// global configuration
-	if len(serverBlocks) > 0 && len(serverBlocks[0].block.Keys) == 0 {
-		sb := serverBlocks[0]
-		for _, segment := range sb.block.Segments {
-			dir := segment.Directive()
-			var val interface{}
-			var err error
-			disp := caddyfile.NewDispenser(segment)
-			// TODO: make this switch into a map
-			switch dir {
-			case "http_port":
-				val, err = parseOptHTTPPort(disp)
-			case "https_port":
-				val, err = parseOptHTTPSPort(disp)
-			case "default_sni":
-				val, err = parseOptSingleString(disp)
-			case "order":
-				val, err = parseOptOrder(disp)
-			case "experimental_http3":
-				val, err = parseOptExperimentalHTTP3(disp)
-			case "storage":
-				val, err = parseOptStorage(disp)
-			case "acme_ca", "acme_dns", "acme_ca_root":
-				val, err = parseOptSingleString(disp)
-			case "email":
-				val, err = parseOptSingleString(disp)
-			case "admin":
-				val, err = parseOptAdmin(disp)
-			default:
-				return nil, warnings, fmt.Errorf("unrecognized parameter name: %s", dir)
-			}
-			if err != nil {
-				return nil, warnings, fmt.Errorf("%s: %v", dir, err)
-			}
-			options[dir] = val
-		}
-		serverBlocks = serverBlocks[1:]
+	// apply any global options
+	var err error
+	serverBlocks, err = st.evaluateGlobalOptionsBlock(serverBlocks, options)
+	if err != nil {
+		return nil, warnings, err
 	}
 
 	for _, sb := range serverBlocks {
@@ -108,6 +88,13 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 			"{remote}", "{http.request.remote}",
 			"{scheme}", "{http.request.scheme}",
 			"{uri}", "{http.request.uri}",
+
+			"{tls_cipher}", "{http.request.tls.cipher_suite}",
+			"{tls_version}", "{http.request.tls.version}",
+			"{tls_client_fingerprint}", "{http.request.tls.client.fingerprint}",
+			"{tls_client_issuer}", "{http.request.tls.client.issuer}",
+			"{tls_client_serial}", "{http.request.tls.client.serial}",
+			"{tls_client_subject}", "{http.request.tls.client.subject}",
 		)
 		for _, segment := range sb.block.Segments {
 			for i := 0; i < len(segment); i++ {
@@ -131,6 +118,7 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 			}
 		}
 
+		// evaluate each directive ("segment") in this block
 		for _, segment := range sb.block.Segments {
 			dir := segment.Directive()
 
@@ -189,6 +177,7 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 
 	// now for the TLS app! (TODO: refactor into own func)
 	tlsApp := caddytls.TLS{CertificatesRaw: make(caddy.ModuleMap)}
+	var certLoaders []caddytls.CertificateLoader
 	for _, p := range pairings {
 		for i, sblock := range p.serverBlocks {
 			// tls automation policies
@@ -214,15 +203,39 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 					}
 				}
 			}
-
 			// tls certificate loaders
 			if clVals, ok := sblock.pile["tls.certificate_loader"]; ok {
 				for _, clVal := range clVals {
-					loader := clVal.Value.(caddytls.CertificateLoader)
-					loaderName := caddy.GetModuleName(loader)
-					tlsApp.CertificatesRaw[loaderName] = caddyconfig.JSON(loader, &warnings)
+					certLoaders = append(certLoaders, clVal.Value.(caddytls.CertificateLoader))
 				}
 			}
+		}
+	}
+	// group certificate loaders by module name, then add to config
+	if len(certLoaders) > 0 {
+		loadersByName := make(map[string]caddytls.CertificateLoader)
+		for _, cl := range certLoaders {
+			name := caddy.GetModuleName(cl)
+			// ugh... technically, we may have multiple FileLoader and FolderLoader
+			// modules (because the tls directive returns one per occurrence), but
+			// the config structure expects only one instance of each kind of loader
+			// module, so we have to combine them... instead of enumerating each
+			// possible cert loader module in a type switch, we can use reflection,
+			// which works on any cert loaders that are slice types
+			if reflect.TypeOf(cl).Kind() == reflect.Slice {
+				combined := reflect.ValueOf(loadersByName[name])
+				if !combined.IsValid() {
+					combined = reflect.New(reflect.TypeOf(cl)).Elem()
+				}
+				clVal := reflect.ValueOf(cl)
+				for i := 0; i < clVal.Len(); i++ {
+					combined = reflect.Append(reflect.Value(combined), clVal.Index(i))
+				}
+				loadersByName[name] = combined.Interface().(caddytls.CertificateLoader)
+			}
+		}
+		for certLoaderName, loaders := range loadersByName {
+			tlsApp.CertificatesRaw[certLoaderName] = caddyconfig.JSON(loaders, &warnings)
 		}
 	}
 	// if global ACME CA, DNS, or email were set, append a catch-all automation
@@ -270,6 +283,35 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 		}
 	}
 
+	// extract any custom logs, and enforce configured levels
+	var customLogs []namedCustomLog
+	var hasDefaultLog bool
+	for _, sb := range serverBlocks {
+		for _, clVal := range sb.pile["custom_log"] {
+			ncl := clVal.Value.(namedCustomLog)
+			if ncl.name == "" {
+				continue
+			}
+			if ncl.name == "default" {
+				hasDefaultLog = true
+			}
+			if _, ok := options["debug"]; ok && ncl.log.Level == "" {
+				ncl.log.Level = "DEBUG"
+			}
+			customLogs = append(customLogs, ncl)
+		}
+	}
+	if !hasDefaultLog {
+		// if the default log was not customized, ensure we
+		// configure it with any applicable options
+		if _, ok := options["debug"]; ok {
+			customLogs = append(customLogs, namedCustomLog{
+				name: "default",
+				log:  &caddy.CustomLog{Level: "DEBUG"},
+			})
+		}
+	}
+
 	// annnd the top-level config, then we're done!
 	cfg := &caddy.Config{AppsRaw: make(caddy.ModuleMap)}
 	if !reflect.DeepEqual(httpApp, caddyhttp.App{}) {
@@ -287,8 +329,66 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 	if adminConfig, ok := options["admin"].(string); ok && adminConfig != "" {
 		cfg.Admin = &caddy.AdminConfig{Listen: adminConfig}
 	}
+	if len(customLogs) > 0 {
+		if cfg.Logging == nil {
+			cfg.Logging = &caddy.Logging{
+				Logs: make(map[string]*caddy.CustomLog),
+			}
+		}
+		for _, ncl := range customLogs {
+			if ncl.name != "" {
+				cfg.Logging.Logs[ncl.name] = ncl.log
+			}
+		}
+	}
 
 	return cfg, warnings, nil
+}
+
+// evaluateGlobalOptionsBlock evaluates the global options block,
+// which is expected to be the first server block if it has zero
+// keys. It returns the updated list of server blocks with the
+// global options block removed, and updates options accordingly.
+func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options map[string]interface{}) ([]serverBlock, error) {
+	if len(serverBlocks) == 0 || len(serverBlocks[0].block.Keys) > 0 {
+		return serverBlocks, nil
+	}
+
+	for _, segment := range serverBlocks[0].block.Segments {
+		dir := segment.Directive()
+		var val interface{}
+		var err error
+		disp := caddyfile.NewDispenser(segment)
+		// TODO: make this switch into a map
+		switch dir {
+		case "http_port":
+			val, err = parseOptHTTPPort(disp)
+		case "https_port":
+			val, err = parseOptHTTPSPort(disp)
+		case "order":
+			val, err = parseOptOrder(disp)
+		case "experimental_http3":
+			val, err = parseOptExperimentalHTTP3(disp)
+		case "storage":
+			val, err = parseOptStorage(disp)
+		case "acme_ca", "acme_dns", "acme_ca_root":
+			val, err = parseOptACME(disp)
+		case "email":
+			val, err = parseOptEmail(disp)
+		case "admin":
+			val, err = parseOptAdmin(disp)
+		case "debug":
+			options["debug"] = true
+		default:
+			return nil, fmt.Errorf("unrecognized parameter name: %s", dir)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("%s: %v", dir, err)
+		}
+		options[dir] = val
+	}
+
+	return serverBlocks[1:], nil
 }
 
 // hostsFromServerBlockKeys returns a list of all the
@@ -367,6 +467,8 @@ func (st *ServerType) serversFromPairings(
 			return specificity(iLongestHost) > specificity(jLongestHost)
 		})
 
+		var hasCatchAllTLSConnPolicy bool
+
 		// create a subroute for each site in the server block
 		for _, sblock := range p.serverBlocks {
 			matcherSetsEnc, err := st.compileEncodedMatcherSets(sblock.block)
@@ -387,7 +489,6 @@ func (st *ServerType) serversFromPairings(
 				srv.AutoHTTPS.Skip = append(srv.AutoHTTPS.Skip, autoHTTPSQualifiedHosts...)
 			} else if cpVals, ok := sblock.pile["tls.connection_policy"]; ok {
 				// tls connection policies
-				var hasCatchAll bool
 				for _, cpVal := range cpVals {
 					cp := cpVal.Value.(*caddytls.ConnectionPolicy)
 
@@ -403,25 +504,11 @@ func (st *ServerType) serversFromPairings(
 							"sni": caddyconfig.JSON(hosts, warnings), // make sure to match all hosts, not just auto-HTTPS-qualified ones
 						}
 					} else {
-						hasCatchAll = true
+						hasCatchAllTLSConnPolicy = true
 					}
 
 					srv.TLSConnPolicies = append(srv.TLSConnPolicies, cp)
 				}
-
-				// a catch-all is necessary to ensure TLS can be offered to
-				// all hostnames of the server; even though only one policy
-				// is needed to enable TLS for the server, that policy might
-				// apply to only certain TLS handshakes; but when using the
-				// Caddyfile, user would expect all handshakes to at least
-				// have a matching connection policy, so here we append a
-				// catch-all/default policy if there isn't one already (it's
-				// important that it goes at the end) - see issue #3004:
-				// https://github.com/caddyserver/caddy/issues/3004
-				if !hasCatchAll {
-					srv.TLSConnPolicies = append(srv.TLSConnPolicies, new(caddytls.ConnectionPolicy))
-				}
-
 				// TODO: consolidate equal conn policies
 			}
 
@@ -450,19 +537,51 @@ func (st *ServerType) serversFromPairings(
 				return nil, err
 			}
 
-			if len(matcherSetsEnc) == 0 && len(p.serverBlocks) == 1 {
-				// no need to wrap the handlers in a subroute if this is
-				// the only server block and there is no matcher for it
-				srv.Routes = append(srv.Routes, siteSubroute.Routes...)
-			} else {
-				srv.Routes = append(srv.Routes, caddyhttp.Route{
-					MatcherSetsRaw: matcherSetsEnc,
-					HandlersRaw: []json.RawMessage{
-						caddyconfig.JSONModuleObject(siteSubroute, "handler", "subroute", warnings),
-					},
-					Terminal: true, // only first matching site block should be evaluated
-				})
+			// add the site block's route(s) to the server
+			srv.Routes = appendSubrouteToRouteList(srv.Routes, siteSubroute, matcherSetsEnc, p, warnings)
+
+			// if error routes are defined, add those too
+			if errorSubrouteVals, ok := sblock.pile["error_route"]; ok {
+				if srv.Errors == nil {
+					srv.Errors = new(caddyhttp.HTTPErrorConfig)
+				}
+				for _, val := range errorSubrouteVals {
+					sr := val.Value.(*caddyhttp.Subroute)
+					srv.Errors.Routes = appendSubrouteToRouteList(srv.Errors.Routes, sr, matcherSetsEnc, p, warnings)
+				}
 			}
+
+			// add log associations
+			for _, cval := range sblock.pile["custom_log"] {
+				ncl := cval.Value.(namedCustomLog)
+				if srv.Logs == nil {
+					srv.Logs = &caddyhttp.ServerLogConfig{
+						LoggerNames: make(map[string]string),
+					}
+				}
+				hosts, err := st.hostsFromServerBlockKeys(sblock.block)
+				if err != nil {
+					return nil, err
+				}
+				for _, h := range hosts {
+					if ncl.name != "" {
+						srv.Logs.LoggerNames[h] = ncl.name
+					}
+				}
+			}
+		}
+
+		// a catch-all TLS conn policy is necessary to ensure TLS can
+		// be offered to all hostnames of the server; even though only
+		// one policy is needed to enable TLS for the server, that
+		// policy might apply to only certain TLS handshakes; but when
+		// using the Caddyfile, user would expect all handshakes to at
+		// least have a matching connection policy, so here we append a
+		// catch-all/default policy if there isn't one already (it's
+		// important that it goes at the end) - see issue #3004:
+		// https://github.com/caddyserver/caddy/issues/3004
+		if len(srv.TLSConnPolicies) > 0 && !hasCatchAllTLSConnPolicy {
+			srv.TLSConnPolicies = append(srv.TLSConnPolicies, new(caddytls.ConnectionPolicy))
 		}
 
 		srv.Routes = consolidateRoutes(srv.Routes)
@@ -473,6 +592,31 @@ func (st *ServerType) serversFromPairings(
 	return servers, nil
 }
 
+// appendSubrouteToRouteList appends the routes in subroute
+// to the routeList, optionally qualified by matchers.
+func appendSubrouteToRouteList(routeList caddyhttp.RouteList,
+	subroute *caddyhttp.Subroute,
+	matcherSetsEnc []caddy.ModuleMap,
+	p sbAddrAssociation,
+	warnings *[]caddyconfig.Warning) caddyhttp.RouteList {
+	if len(matcherSetsEnc) == 0 && len(p.serverBlocks) == 1 {
+		// no need to wrap the handlers in a subroute if this is
+		// the only server block and there is no matcher for it
+		routeList = append(routeList, subroute.Routes...)
+	} else {
+		routeList = append(routeList, caddyhttp.Route{
+			MatcherSetsRaw: matcherSetsEnc,
+			HandlersRaw: []json.RawMessage{
+				caddyconfig.JSONModuleObject(subroute, "handler", "subroute", warnings),
+			},
+			Terminal: true, // only first matching site block should be evaluated
+		})
+	}
+	return routeList
+}
+
+// buildSubroute turns the config values, which are expected to be routes
+// into a clean and orderly subroute that has all the routes within it.
 func buildSubroute(routes []ConfigValue, groupCounter counter) (*caddyhttp.Subroute, error) {
 	for _, val := range routes {
 		if !directiveIsOrdered(val.directive) {
@@ -865,6 +1009,11 @@ func (c counter) nextGroup() string {
 type matcherSetAndTokens struct {
 	matcherSet caddy.ModuleMap
 	tokens     []caddyfile.Token
+}
+
+type namedCustomLog struct {
+	name string
+	log  *caddy.CustomLog
 }
 
 // sbAddrAssocation is a mapping from a list of

@@ -17,6 +17,7 @@ package httpcaddyfile
 import (
 	"encoding/json"
 	"sort"
+	"strings"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -37,6 +38,7 @@ var directiveOrder = []string{
 	"uri_replace",
 	"try_files",
 
+	// middleware handlers that typically wrap responses
 	"basicauth",
 	"header",
 	"request_header",
@@ -46,6 +48,7 @@ var directiveOrder = []string{
 	"handle",
 	"route",
 
+	// handlers that typically respond to requests
 	"respond",
 	"reverse_proxy",
 	"php_fastcgi",
@@ -289,6 +292,63 @@ func sortRoutes(routes []ConfigValue) {
 
 		return dirPositions[iDir] < dirPositions[jDir]
 	})
+}
+
+// parseSegmentAsSubroute parses the segment such that its subdirectives
+// are themselves treated as directives, from which a subroute is built
+// and returned.
+func parseSegmentAsSubroute(h Helper) (caddyhttp.MiddlewareHandler, error) {
+	var allResults []ConfigValue
+
+	for h.Next() {
+		// slice the linear list of tokens into top-level segments
+		var segments []caddyfile.Segment
+		for nesting := h.Nesting(); h.NextBlock(nesting); {
+			segments = append(segments, h.NextSegment())
+		}
+
+		// copy existing matcher definitions so we can augment
+		// new ones that are defined only in this scope
+		matcherDefs := make(map[string]caddy.ModuleMap, len(h.matcherDefs))
+		for key, val := range h.matcherDefs {
+			matcherDefs[key] = val
+		}
+
+		// find and extract any embedded matcher definitions in this scope
+		for i, seg := range segments {
+			if strings.HasPrefix(seg.Directive(), matcherPrefix) {
+				err := parseMatcherDefinitions(caddyfile.NewDispenser(seg), matcherDefs)
+				if err != nil {
+					return nil, err
+				}
+				segments = append(segments[:i], segments[i+1:]...)
+			}
+		}
+
+		// with matchers ready to go, evaluate each directive's segment
+		for _, seg := range segments {
+			dir := seg.Directive()
+			dirFunc, ok := registeredDirectives[dir]
+			if !ok {
+				return nil, h.Errf("unrecognized directive: %s", dir)
+			}
+
+			subHelper := h
+			subHelper.Dispenser = caddyfile.NewDispenser(seg)
+			subHelper.matcherDefs = matcherDefs
+
+			results, err := dirFunc(subHelper)
+			if err != nil {
+				return nil, h.Errf("parsing caddyfile tokens for '%s': %v", dir, err)
+			}
+			for _, result := range results {
+				result.directive = dir
+				allResults = append(allResults, result)
+			}
+		}
+	}
+
+	return buildSubroute(allResults, h.groupCounter)
 }
 
 // serverBlock pairs a Caddyfile server block

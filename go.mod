@@ -1,13 +1,13 @@
 module github.com/caddyserver/caddy/v2
 
-go 1.13
+go 1.14
 
 require (
 	github.com/Masterminds/sprig/v3 v3.0.0
 	github.com/alecthomas/chroma v0.7.0
 	github.com/andybalholm/brotli v0.0.0-20190821151343-b60f0d972eeb
 	github.com/cenkalti/backoff/v3 v3.1.1 // indirect
-	github.com/dustin/go-humanize v1.0.0
+	github.com/dustin/go-humanize v1.0.1-0.20200219035652-afde56e7acac
 	github.com/go-acme/lego/v3 v3.3.0
 	github.com/golang/groupcache v0.0.0-20191002201903-404acd9df4cc
 	github.com/ilibs/json5 v1.0.1
@@ -16,7 +16,7 @@ require (
 	github.com/klauspost/compress v1.8.6
 	github.com/klauspost/cpuid v1.2.2
 	github.com/kylelemons/godebug v1.1.0 // indirect
-	github.com/lucas-clemente/quic-go v0.14.1
+	github.com/lucas-clemente/quic-go v0.14.4
 	github.com/mholt/certmagic v0.9.3
 	github.com/miekg/dns v1.1.25 // indirect
 	github.com/muhammadmuzzammil1998/jsonc v0.0.0-20190906142622-1265e9b150c6

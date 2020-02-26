@@ -24,8 +24,10 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
+	"go.uber.org/zap/zapcore"
 )
 
 func init() {
@@ -35,7 +37,9 @@ func init() {
 	RegisterHandlerDirective("redir", parseRedir)
 	RegisterHandlerDirective("respond", parseRespond)
 	RegisterHandlerDirective("route", parseRoute)
-	RegisterHandlerDirective("handle", parseHandle)
+	RegisterHandlerDirective("handle", parseSegmentAsSubroute)
+	RegisterDirective("handle_errors", parseHandleErrors)
+	RegisterDirective("log", parseLog)
 }
 
 // parseBind parses the bind directive. Syntax:
@@ -131,20 +135,41 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 			}
 			mgr.Email = firstLine[0]
 		case 2:
-			tag := fmt.Sprintf("cert%d", tagCounter)
-			fileLoader = append(fileLoader, caddytls.CertKeyFilePair{
-				Certificate: firstLine[0],
-				Key:         firstLine[1],
-				Tags:        []string{tag},
-			})
+			certFilename := firstLine[0]
+			keyFilename := firstLine[1]
+
 			// tag this certificate so if multiple certs match, specifically
 			// this one that the user has provided will be used, see #2588:
-			// https://github.com/caddyserver/caddy/issues/2588
-			tagCounter++
+			// https://github.com/caddyserver/caddy/issues/2588 ... but we
+			// must be careful about how we do this; being careless will
+			// lead to failed handshakes
+
+			// we need to remember which cert files we've seen, since we
+			// must load each cert only once; otherwise, they each get a
+			// different tag... since a cert loaded twice has the same
+			// bytes, it will overwrite the first one in the cache, and
+			// only the last cert (and its tag) will survive, so a any conn
+			// policy that is looking for any tag but the last one to be
+			// loaded won't find it, and TLS handshakes will fail (see end)
+			// of issue #3004)
+			tag, ok := tlsCertTags[certFilename]
+			if !ok {
+				// haven't seen this cert file yet, let's give it a tag
+				// and add a loader for it
+				tag = fmt.Sprintf("cert%d", len(tlsCertTags))
+				fileLoader = append(fileLoader, caddytls.CertKeyFilePair{
+					Certificate: certFilename,
+					Key:         keyFilename,
+					Tags:        []string{tag},
+				})
+				// remember this for next time we see this cert file
+				tlsCertTags[certFilename] = tag
+			}
 			certSelector := caddytls.CustomCertSelectionPolicy{Tag: tag}
 			if cp == nil {
 				cp = new(caddytls.ConnectionPolicy)
 			}
+
 			cp.CertSelection = caddyconfig.JSONModuleObject(certSelector, "policy", "custom", h.warnings)
 		default:
 			return nil, h.ArgErr()
@@ -235,7 +260,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 					return nil, h.Errf("getting DNS provider module named '%s': %v", provName, err)
 				}
 				mgr.Challenges.DNSRaw = caddyconfig.JSONModuleObject(dnsProvModule.New(), "provider", provName, h.warnings)
-			
+
 			case "ca_root":
 				arg := h.RemainingArgs()
 				if len(arg) != 1 {
@@ -387,36 +412,133 @@ func parseRoute(h Helper) (caddyhttp.MiddlewareHandler, error) {
 	return sr, nil
 }
 
-// parseHandle parses the route directive.
 func parseHandle(h Helper) (caddyhttp.MiddlewareHandler, error) {
-	var allResults []ConfigValue
+	return parseSegmentAsSubroute(h)
+}
 
+func parseHandleErrors(h Helper) ([]ConfigValue, error) {
+	subroute, err := parseSegmentAsSubroute(h)
+	if err != nil {
+		return nil, err
+	}
+	return []ConfigValue{
+		{
+			Class: "error_route",
+			Value: subroute,
+		},
+	}, nil
+}
+
+// parseLog parses the log directive. Syntax:
+//
+//     log {
+//         output <writer_module> ...
+//         format <encoder_module> ...
+//         level  <level>
+//     }
+//
+func parseLog(h Helper) ([]ConfigValue, error) {
+	var configValues []ConfigValue
 	for h.Next() {
-		for nesting := h.Nesting(); h.NextBlock(nesting); {
-			dir := h.Val()
+		cl := new(caddy.CustomLog)
 
-			dirFunc, ok := registeredDirectives[dir]
-			if !ok {
-				return nil, h.Errf("unrecognized directive: %s", dir)
-			}
+		for h.NextBlock(0) {
+			switch h.Val() {
+			case "output":
+				if !h.NextArg() {
+					return nil, h.ArgErr()
+				}
+				moduleName := h.Val()
 
-			subHelper := h
-			subHelper.Dispenser = h.NewFromNextSegment()
+				// can't use the usual caddyfile.Unmarshaler flow with the
+				// standard writers because they are in the caddy package
+				// (because they are the default) and implementing that
+				// interface there would unfortunately create circular import
+				var wo caddy.WriterOpener
+				switch moduleName {
+				case "stdout":
+					wo = caddy.StdoutWriter{}
+				case "stderr":
+					wo = caddy.StderrWriter{}
+				case "discard":
+					wo = caddy.DiscardWriter{}
+				default:
+					mod, err := caddy.GetModule("caddy.logging.writers." + moduleName)
+					if err != nil {
+						return nil, h.Errf("getting log writer module named '%s': %v", moduleName, err)
+					}
+					unm, ok := mod.New().(caddyfile.Unmarshaler)
+					if !ok {
+						return nil, h.Errf("log writer module '%s' is not a Caddyfile unmarshaler", mod)
+					}
+					err = unm.UnmarshalCaddyfile(h.NewFromNextSegment())
+					if err != nil {
+						return nil, err
+					}
+					wo, ok = unm.(caddy.WriterOpener)
+					if !ok {
+						return nil, h.Errf("module %s is not a WriterOpener", mod)
+					}
+				}
+				cl.WriterRaw = caddyconfig.JSONModuleObject(wo, "output", moduleName, h.warnings)
 
-			results, err := dirFunc(subHelper)
-			if err != nil {
-				return nil, h.Errf("parsing caddyfile tokens for '%s': %v", dir, err)
-			}
-			for _, result := range results {
-				result.directive = dir
-				allResults = append(allResults, result)
+			case "format":
+				if !h.NextArg() {
+					return nil, h.ArgErr()
+				}
+				moduleName := h.Val()
+				mod, err := caddy.GetModule("caddy.logging.encoders." + moduleName)
+				if err != nil {
+					return nil, h.Errf("getting log encoder module named '%s': %v", moduleName, err)
+				}
+				unm, ok := mod.New().(caddyfile.Unmarshaler)
+				if !ok {
+					return nil, h.Errf("log encoder module '%s' is not a Caddyfile unmarshaler", mod)
+				}
+				err = unm.UnmarshalCaddyfile(h.NewFromNextSegment())
+				if err != nil {
+					return nil, err
+				}
+				enc, ok := unm.(zapcore.Encoder)
+				if !ok {
+					return nil, h.Errf("module %s is not a zapcore.Encoder", mod)
+				}
+				cl.EncoderRaw = caddyconfig.JSONModuleObject(enc, "format", moduleName, h.warnings)
+
+			case "level":
+				if !h.NextArg() {
+					return nil, h.ArgErr()
+				}
+				cl.Level = h.Val()
+				if h.NextArg() {
+					return nil, h.ArgErr()
+				}
+
+			default:
+				return nil, h.Errf("unrecognized subdirective: %s", h.Val())
 			}
 		}
 
-		return buildSubroute(allResults, h.groupCounter)
+		var val namedCustomLog
+		if !reflect.DeepEqual(cl, new(caddy.CustomLog)) {
+			cl.Include = []string{"http.log.access"}
+			val.name = fmt.Sprintf("log%d", logCounter)
+			val.log = cl
+			logCounter++
+		}
+		configValues = append(configValues, ConfigValue{
+			Class: "custom_log",
+			Value: val,
+		})
 	}
-
-	return nil, nil
+	return configValues, nil
 }
 
-var tagCounter = 0
+// tlsCertTags maps certificate filenames to their tag.
+// This is used to remember which tag is used for each
+// certificate files, since we need to avoid loading
+// the same certificate files more than once, overwriting
+// previous tags
+var tlsCertTags = make(map[string]string)
+
+var logCounter int

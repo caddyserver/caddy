@@ -84,7 +84,7 @@ func cmdStart(fl Flags) (int, error) {
 
 	// begin writing the confirmation bytes to the child's
 	// stdin; use a goroutine since the child hasn't been
-	// started yet, and writing sychronously would result
+	// started yet, and writing synchronously would result
 	// in a deadlock
 	go func() {
 		stdinpipe.Write(expect)

@@ -72,6 +72,16 @@ func init() {
 // `{http.request.remote.port}` | The port part of the remote client's address
 // `{http.request.remote}` | The address of the remote client
 // `{http.request.scheme}` | The request scheme
+// `{http.request.tls.version}` | The TLS version name
+// `{http.request.tls.cipher_suite}` | The TLS cipher suite
+// `{http.request.tls.resumed}` | The TLS connection resumed a previous connection
+// `{http.request.tls.proto}` | The negotiated next protocol
+// `{http.request.tls.proto_mutual}` | The negotiated next protocol was advertised by the server
+// `{http.request.tls.server_name}` | The server name requested by the client, if any
+// `{http.request.tls.client.fingerprint}` | The SHA256 checksum of the client certificate
+// `{http.request.tls.client.issuer}` | The issuer DN of the client certificate
+// `{http.request.tls.client.serial}` | The serial number of the client certificate
+// `{http.request.tls.client.subject}` | The subject DN of the client certificate
 // `{http.request.uri.path.*}` | Parts of the path, split by `/` (0-based from left)
 // `{http.request.uri.path.dir}` | The directory, excluding leaf filename
 // `{http.request.uri.path.file}` | The filename of the path, excluding directory
@@ -192,7 +202,8 @@ func (app *App) Provision(ctx caddy.Context) error {
 			if err != nil {
 				return fmt.Errorf("server %s: setting up server error handling routes: %v", srvName, err)
 			}
-			srv.errorHandlerChain = srv.Errors.Routes.Compile(emptyHandler)
+
+			srv.errorHandlerChain = srv.Errors.Routes.Compile(errorEmptyHandler)
 		}
 	}
 
@@ -329,22 +340,27 @@ func (app *App) Stop() error {
 			return err
 		}
 	}
-	// TODO: Closing the http3.Server is the right thing to do,
-	// however, doing so sometimes causes connections from clients
-	// to fail after config reloads due to a bug that is yet
-	// unsolved: https://github.com/caddyserver/caddy/pull/2727
-	// for _, s := range app.h3servers {
-	// 	// TODO: CloseGracefully, once implemented upstream
-	// 	// (see https://github.com/lucas-clemente/quic-go/issues/2103)
-	// 	err := s.Close()
-	// 	if err != nil {
-	// 		return err
-	// 	}
-	// }
-	// as of September 2019, closing the http3.Server
-	// instances doesn't close their underlying listeners
-	// so we have todo that ourselves
-	// (see https://github.com/lucas-clemente/quic-go/issues/2103)
+
+	// close the http3 servers; it's unclear whether the bug reported in
+	// https://github.com/caddyserver/caddy/pull/2727#issuecomment-526856566
+	// was ever truly fixed, since it seemed racey/nondeterministic; but
+	// recent tests in 2020 were unable to replicate the issue again after
+	// repeated attempts (the bug manifested after a config reload; i.e.
+	// reusing a http3 server or listener was problematic), but it seems
+	// to be working fine now
+	for _, s := range app.h3servers {
+		// TODO: CloseGracefully, once implemented upstream
+		// (see https://github.com/lucas-clemente/quic-go/issues/2103)
+		err := s.Close()
+		if err != nil {
+			return err
+		}
+	}
+
+	// closing an http3.Server does not close their underlying listeners
+	// since apparently the listener can be used both by servers and
+	// clients at the same time; so we need to manually call Close()
+	// on the underlying h3 listeners (see lucas-clemente/quic-go#2103)
 	for _, pc := range app.h3listeners {
 		err := pc.Close()
 		if err != nil {
@@ -414,6 +430,20 @@ type MiddlewareHandler interface {
 
 // emptyHandler is used as a no-op handler.
 var emptyHandler Handler = HandlerFunc(func(http.ResponseWriter, *http.Request) error { return nil })
+
+// An implicit suffix middleware that, if reached, sets the StatusCode to the
+// error stored in the ErrorCtxKey. This is to prevent situations where the
+// Error chain does not actually handle the error (for instance, it matches only
+// on some errors). See #3053
+var errorEmptyHandler Handler = HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+	httpError := r.Context().Value(ErrorCtxKey)
+	if handlerError, ok := httpError.(HandlerError); ok {
+		w.WriteHeader(handlerError.StatusCode)
+	} else {
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+	return nil
+})
 
 // WeakString is a type that unmarshals any JSON value
 // as a string literal, with the following exceptions:
