@@ -64,7 +64,7 @@ func replaceEnvVars(input []byte) ([]byte, error) {
 		}
 
 		// get the value of the environment variable
-		envVarValue := []byte(os.Getenv(string(envVarName)))
+		envVarValue := []byte(os.ExpandEnv(os.Getenv(string(envVarName))))
 
 		// splice in the value
 		input = append(input[:begin],
