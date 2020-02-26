@@ -54,18 +54,6 @@ func parseOptHTTPSPort(d *caddyfile.Dispenser) (int, error) {
 	return httpsPort, nil
 }
 
-func parseDefaultSNI(d *caddyfile.Dispenser) (string, error) {
-	d.Next() // consume parameter name
-	if !d.Next() {
-		return "", d.ArgErr()
-	}
-	val := d.Val()
-	if d.Next() {
-		return "", d.ArgErr()
-	}
-	return val, nil
-}
-
 func parseOptExperimentalHTTP3(d *caddyfile.Dispenser) (bool, error) {
 	return true, nil
 }
@@ -174,19 +162,7 @@ func parseOptStorage(d *caddyfile.Dispenser) (caddy.StorageConverter, error) {
 	return storage, nil
 }
 
-func parseOptACME(d *caddyfile.Dispenser) (string, error) {
-	d.Next() // consume parameter name
-	if !d.Next() {
-		return "", d.ArgErr()
-	}
-	val := d.Val()
-	if d.Next() {
-		return "", d.ArgErr()
-	}
-	return val, nil
-}
-
-func parseOptEmail(d *caddyfile.Dispenser) (string, error) {
+func parseOptSingleString(d *caddyfile.Dispenser) (string, error) {
 	d.Next() // consume parameter name
 	if !d.Next() {
 		return "", d.ArgErr()
@@ -202,11 +178,9 @@ func parseOptAdmin(d *caddyfile.Dispenser) (string, error) {
 	if d.Next() {
 		var listenAddress string
 		d.AllArgs(&listenAddress)
-
 		if listenAddress == "" {
 			listenAddress = caddy.DefaultAdminListen
 		}
-
 		return listenAddress, nil
 	}
 	return "", nil
