@@ -17,6 +17,7 @@ package caddytls
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"fmt"
 
 	"github.com/go-acme/lego/v3/certcrypto"
 	"github.com/klauspost/cpuid"
@@ -127,9 +128,36 @@ var SupportedProtocols = map[string]uint16{
 	"tls1.3": tls.VersionTLS13,
 }
 
+// unsupportedProtocols is a map of unsupported protocols.
+// Used for logging only, not enforcement.
+var unsupportedProtocols = map[string]uint16{
+	"ssl3.0": tls.VersionSSL30,
+	"tls1.0": tls.VersionTLS10,
+	"tls1.1": tls.VersionTLS11,
+}
+
 // publicKeyAlgorithms is the map of supported public key algorithms.
 var publicKeyAlgorithms = map[string]x509.PublicKeyAlgorithm{
 	"rsa":   x509.RSA,
 	"dsa":   x509.DSA,
 	"ecdsa": x509.ECDSA,
+}
+
+// ProtocolName returns the standard name for the passed protocol version ID
+// (e.g.  "TLS1.3") or a fallback representation of the ID value if the version
+// is not supported.
+func ProtocolName(id uint16) string {
+	for k, v := range SupportedProtocols {
+		if v == id {
+			return k
+		}
+	}
+
+	for k, v := range unsupportedProtocols {
+		if v == id {
+			return k
+		}
+	}
+
+	return fmt.Sprintf("0x%04x", id)
 }
