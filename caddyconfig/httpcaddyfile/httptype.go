@@ -365,6 +365,8 @@ func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options
 			val, err = parseOptHTTPPort(disp)
 		case "https_port":
 			val, err = parseOptHTTPSPort(disp)
+		case "default_sni":
+			val, err = parseOptSingleString(disp)
 		case "order":
 			val, err = parseOptOrder(disp)
 		case "experimental_http3":
@@ -372,9 +374,9 @@ func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options
 		case "storage":
 			val, err = parseOptStorage(disp)
 		case "acme_ca", "acme_dns", "acme_ca_root":
-			val, err = parseOptACME(disp)
+			val, err = parseOptSingleString(disp)
 		case "email":
-			val, err = parseOptEmail(disp)
+			val, err = parseOptSingleString(disp)
 		case "admin":
 			val, err = parseOptAdmin(disp)
 		case "debug":
