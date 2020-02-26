@@ -17,8 +17,6 @@ variables:
   GOPATH: $(system.defaultWorkingDirectory)/gopath
   GOBIN:  $(GOPATH)/bin
   modulePath: '$(GOPATH)/src/github.com/$(build.repository.name)'
-  # TODO: Remove once it's enabled by default
-  GO111MODULE: on
 
 jobs:
 - job: crossPlatformTest
@@ -78,7 +76,7 @@ jobs:
     condition: eq( variables['Agent.OS'], 'Windows_NT' )
     displayName: Install Go on Windows
 
-  - bash: curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.22.2
+  - bash: curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.23.6
     displayName: Install golangci-lint
 
   - script: |
@@ -99,8 +97,12 @@ jobs:
   - script: |
       go get -v -t -d ./...
       mkdir test-results
-    workingDirectory: '$(modulePath)'
+    workingDirectory: '$(modulePath)/cmd/caddy'
     displayName: Get dependencies
+
+  - bash: go build -v
+    workingDirectory: '$(modulePath)'
+    displayName: Build Caddy packages
 
   # its behavior is governed by .golangci.yml
   - script: |
