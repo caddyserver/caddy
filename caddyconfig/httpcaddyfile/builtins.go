@@ -428,21 +428,36 @@ func parseLog(h Helper) ([]ConfigValue, error) {
 					return nil, h.ArgErr()
 				}
 				moduleName := h.Val()
-				mod, err := caddy.GetModule("caddy.logging.writers." + moduleName)
-				if err != nil {
-					return nil, h.Errf("getting log writer module named '%s': %v", moduleName, err)
-				}
-				unm, ok := mod.New().(caddyfile.Unmarshaler)
-				if !ok {
-					return nil, h.Errf("log writer module '%s' is not a Caddyfile unmarshaler", mod)
-				}
-				err = unm.UnmarshalCaddyfile(h.NewFromNextSegment())
-				if err != nil {
-					return nil, err
-				}
-				wo, ok := unm.(caddy.WriterOpener)
-				if !ok {
-					return nil, h.Errf("module %s is not a WriterOpener", mod)
+
+				// can't use the usual caddyfile.Unmarshaler flow with the
+				// standard writers because they are in the caddy package
+				// (because they are the default) and implementing that
+				// interface there would unfortunately create circular import
+				var wo caddy.WriterOpener
+				switch moduleName {
+				case "stdout":
+					wo = caddy.StdoutWriter{}
+				case "stderr":
+					wo = caddy.StderrWriter{}
+				case "discard":
+					wo = caddy.DiscardWriter{}
+				default:
+					mod, err := caddy.GetModule("caddy.logging.writers." + moduleName)
+					if err != nil {
+						return nil, h.Errf("getting log writer module named '%s': %v", moduleName, err)
+					}
+					unm, ok := mod.New().(caddyfile.Unmarshaler)
+					if !ok {
+						return nil, h.Errf("log writer module '%s' is not a Caddyfile unmarshaler", mod)
+					}
+					err = unm.UnmarshalCaddyfile(h.NewFromNextSegment())
+					if err != nil {
+						return nil, err
+					}
+					wo, ok = unm.(caddy.WriterOpener)
+					if !ok {
+						return nil, h.Errf("module %s is not a WriterOpener", mod)
+					}
 				}
 				cl.WriterRaw = caddyconfig.JSONModuleObject(wo, "output", moduleName, h.warnings)
 
