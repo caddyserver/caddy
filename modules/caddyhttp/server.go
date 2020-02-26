@@ -173,7 +173,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 
 			log("handled request",
-				zap.String("common_log", repl.ReplaceAll(commonLogFormat, "-")),
+				zap.String("common_log", repl.ReplaceAll(commonLogFormat, commonLogEmptyValue)),
 				zap.Duration("latency", latency),
 				zap.Int("size", wrec.Size()),
 				zap.Int("status", wrec.Status()),

@@ -363,11 +363,24 @@ func (m *MatchHeader) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
+// Like req.Header.Get(), but that works with Host header.
+// go's http module swallows "Host" header.
+func getHeader(r *http.Request, field string) []string {
+	field = textproto.CanonicalMIMEHeaderKey(field)
+
+	if field == "Host" {
+		return []string{r.Host}
+	}
+
+	return r.Header[field]
+}
+
 // Match returns true if r matches m.
 func (m MatchHeader) Match(r *http.Request) bool {
 	for field, allowedFieldVals := range m {
-		actualFieldVals, fieldExists := r.Header[textproto.CanonicalMIMEHeaderKey(field)]
-		if allowedFieldVals != nil && len(allowedFieldVals) == 0 && fieldExists {
+		actualFieldVals := getHeader(r, field)
+
+		if allowedFieldVals != nil && len(allowedFieldVals) == 0 && actualFieldVals != nil {
 			// a non-nil but empty list of allowed values means
 			// match if the header field exists at all
 			continue
@@ -377,6 +390,8 @@ func (m MatchHeader) Match(r *http.Request) bool {
 		for _, actualFieldVal := range actualFieldVals {
 			for _, allowedFieldVal := range allowedFieldVals {
 				switch {
+				case allowedFieldVal == "*":
+					match = true
 				case strings.HasPrefix(allowedFieldVal, "*") && strings.HasSuffix(allowedFieldVal, "*"):
 					match = strings.Contains(actualFieldVal, allowedFieldVal[1:len(allowedFieldVal)-1])
 				case strings.HasPrefix(allowedFieldVal, "*"):
@@ -412,11 +427,22 @@ func (m *MatchHeaderRE) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		*m = make(map[string]*MatchRegexp)
 	}
 	for d.Next() {
-		var field, val string
-		if !d.Args(&field, &val) {
+		var first, second, third string
+		if !d.Args(&first, &second) {
 			return d.ArgErr()
 		}
-		(*m)[field] = &MatchRegexp{Pattern: val}
+
+		var name, field, val string
+		if d.Args(&third) {
+			name = first
+			field = second
+			val = third
+		} else {
+			field = first
+			val = second
+		}
+
+		(*m)[field] = &MatchRegexp{Pattern: val, Name: name}
 	}
 	return nil
 }
@@ -424,8 +450,17 @@ func (m *MatchHeaderRE) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // Match returns true if r matches m.
 func (m MatchHeaderRE) Match(r *http.Request) bool {
 	for field, rm := range m {
-		repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-		match := rm.Match(r.Header.Get(field), repl)
+		actualFieldVals := getHeader(r, field)
+
+		match := false
+	fieldVal:
+		for _, actualFieldVal := range actualFieldVals {
+			repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+			if rm.Match(actualFieldVal, repl) {
+				match = true
+				break fieldVal
+			}
+		}
 		if !match {
 			return false
 		}

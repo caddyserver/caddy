@@ -124,26 +124,25 @@ type CircuitBreaker interface {
 // h.HealthChecks.Active.stopChan is closed.
 func (h *Handler) activeHealthChecker() {
 	ticker := time.NewTicker(time.Duration(h.HealthChecks.Active.Interval))
-	h.doActiveHealthChecksForAllHosts()
+	h.doActiveHealthCheckForAllHosts()
 	for {
 		select {
 		case <-ticker.C:
-			h.doActiveHealthChecksForAllHosts()
+			h.doActiveHealthCheckForAllHosts()
 		case <-h.HealthChecks.Active.stopChan:
+			// TODO: consider using a Context for cancellation instead
 			ticker.Stop()
 			return
 		}
 	}
 }
 
-// doActiveHealthChecksForAllHosts immediately performs a
-// health checks for all hosts in the global repository.
-func (h *Handler) doActiveHealthChecksForAllHosts() {
-	hosts.Range(func(key, value interface{}) bool {
-		networkAddr := key.(string)
-		host := value.(Host)
-
-		go func(networkAddr string, host Host) {
+// doActiveHealthCheckForAllHosts immediately performs a
+// health checks for all upstream hosts configured by h.
+func (h *Handler) doActiveHealthCheckForAllHosts() {
+	for _, upstream := range h.Upstreams {
+		go func(upstream *Upstream) {
+			networkAddr := upstream.Dial
 			addr, err := caddy.ParseNetworkAddress(networkAddr)
 			if err != nil {
 				h.HealthChecks.Active.logger.Error("bad network address",
@@ -165,18 +164,15 @@ func (h *Handler) doActiveHealthChecksForAllHosts() {
 				// so use a fake Host value instead; unix sockets are usually local
 				hostAddr = "localhost"
 			}
-			err = h.doActiveHealthCheck(DialInfo{Network: addr.Network, Address: hostAddr}, hostAddr, host)
+			err = h.doActiveHealthCheck(DialInfo{Network: addr.Network, Address: hostAddr}, hostAddr, upstream.Host)
 			if err != nil {
 				h.HealthChecks.Active.logger.Error("active health check failed",
 					zap.String("address", networkAddr),
 					zap.Error(err),
 				)
 			}
-		}(networkAddr, host)
-
-		// continue to iterate all hosts
-		return true
-	})
+		}(upstream)
+	}
 }
 
 // doActiveHealthCheck performs a health check to host which
@@ -209,7 +205,8 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, host H
 		u.Host = net.JoinHostPort(host, portStr)
 	}
 
-	// attach dialing information to this request
+	// attach dialing information to this request - TODO: use caddy.Context's context
+	// so it can be canceled on config reload
 	ctx := context.Background()
 	ctx = context.WithValue(ctx, caddy.ReplacerCtxKey, caddy.NewReplacer())
 	ctx = context.WithValue(ctx, caddyhttp.VarsCtxKey, map[string]interface{}{

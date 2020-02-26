@@ -1,6 +1,6 @@
 module github.com/caddyserver/caddy/v2
 
-go 1.13
+go 1.14
 
 require (
 	github.com/Masterminds/sprig/v3 v3.0.0
@@ -16,7 +16,7 @@ require (
 	github.com/klauspost/compress v1.8.6
 	github.com/klauspost/cpuid v1.2.2
 	github.com/kylelemons/godebug v1.1.0 // indirect
-	github.com/lucas-clemente/quic-go v0.14.1
+	github.com/lucas-clemente/quic-go v0.14.4
 	github.com/mholt/certmagic v0.9.3
 	github.com/miekg/dns v1.1.25 // indirect
 	github.com/muhammadmuzzammil1998/jsonc v0.0.0-20190906142622-1265e9b150c6
