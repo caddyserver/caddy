@@ -17,6 +17,7 @@ package httpcaddyfile
 import (
 	"encoding/json"
 	"sort"
+	"strings"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -298,17 +299,43 @@ func sortRoutes(routes []ConfigValue) {
 // and returned.
 func parseSegmentAsSubroute(h Helper) (caddyhttp.MiddlewareHandler, error) {
 	var allResults []ConfigValue
-	for h.Next() {
-		for nesting := h.Nesting(); h.NextBlock(nesting); {
-			dir := h.Val()
 
+	for h.Next() {
+		// slice the linear list of tokens into top-level segments
+		var segments []caddyfile.Segment
+		for nesting := h.Nesting(); h.NextBlock(nesting); {
+			segments = append(segments, h.NextSegment())
+		}
+
+		// copy existing matcher definitions so we can augment
+		// new ones that are defined only in this scope
+		matcherDefs := make(map[string]caddy.ModuleMap, len(h.matcherDefs))
+		for key, val := range h.matcherDefs {
+			matcherDefs[key] = val
+		}
+
+		// find and extract any embedded matcher definitions in this scope
+		for i, seg := range segments {
+			if strings.HasPrefix(seg.Directive(), matcherPrefix) {
+				err := parseMatcherDefinitions(caddyfile.NewDispenser(seg), matcherDefs)
+				if err != nil {
+					return nil, err
+				}
+				segments = append(segments[:i], segments[i+1:]...)
+			}
+		}
+
+		// with matchers ready to go, evaluate each directive's segment
+		for _, seg := range segments {
+			dir := seg.Directive()
 			dirFunc, ok := registeredDirectives[dir]
 			if !ok {
 				return nil, h.Errf("unrecognized directive: %s", dir)
 			}
 
 			subHelper := h
-			subHelper.Dispenser = h.NewFromNextSegment()
+			subHelper.Dispenser = caddyfile.NewDispenser(seg)
+			subHelper.matcherDefs = matcherDefs
 
 			results, err := dirFunc(subHelper)
 			if err != nil {
@@ -319,9 +346,9 @@ func parseSegmentAsSubroute(h Helper) (caddyhttp.MiddlewareHandler, error) {
 				allResults = append(allResults, result)
 			}
 		}
-		return buildSubroute(allResults, h.groupCounter) // TODO:  should we move this outside the loop?
 	}
-	return nil, nil
+
+	return buildSubroute(allResults, h.groupCounter)
 }
 
 // serverBlock pairs a Caddyfile server block
