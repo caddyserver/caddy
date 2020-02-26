@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	zaplogfmt "github.com/jsternberg/zap-logfmt"
 	"go.uber.org/zap"
 	"go.uber.org/zap/buffer"
@@ -31,7 +32,7 @@ func init() {
 	caddy.RegisterModule(ConsoleEncoder{})
 	caddy.RegisterModule(JSONEncoder{})
 	caddy.RegisterModule(LogfmtEncoder{})
-	caddy.RegisterModule(StringEncoder{})
+	caddy.RegisterModule(SingleFieldEncoder{})
 }
 
 // ConsoleEncoder encodes log entries that are mostly human-readable.
@@ -54,6 +55,27 @@ func (ce *ConsoleEncoder) Provision(_ caddy.Context) error {
 	return nil
 }
 
+// UnmarshalCaddyfile sets up the module from Caddyfile tokens. Syntax:
+//
+//     console {
+//         <common encoder config subdirectives...>
+//     }
+//
+// See the godoc on the LogEncoderConfig type for the syntax of
+// subdirectives that are common to most/all encoders.
+func (ce *ConsoleEncoder) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		if d.NextArg() {
+			return d.ArgErr()
+		}
+		err := ce.LogEncoderConfig.UnmarshalCaddyfile(d)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // JSONEncoder encodes entries as JSON.
 type JSONEncoder struct {
 	zapcore.Encoder `json:"-"`
@@ -71,6 +93,27 @@ func (JSONEncoder) CaddyModule() caddy.ModuleInfo {
 // Provision sets up the encoder.
 func (je *JSONEncoder) Provision(_ caddy.Context) error {
 	je.Encoder = zapcore.NewJSONEncoder(je.ZapcoreEncoderConfig())
+	return nil
+}
+
+// UnmarshalCaddyfile sets up the module from Caddyfile tokens. Syntax:
+//
+//     json {
+//         <common encoder config subdirectives...>
+//     }
+//
+// See the godoc on the LogEncoderConfig type for the syntax of
+// subdirectives that are common to most/all encoders.
+func (je *JSONEncoder) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		if d.NextArg() {
+			return d.ArgErr()
+		}
+		err := je.LogEncoderConfig.UnmarshalCaddyfile(d)
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -95,26 +138,47 @@ func (lfe *LogfmtEncoder) Provision(_ caddy.Context) error {
 	return nil
 }
 
-// StringEncoder writes a log entry that consists entirely
+// UnmarshalCaddyfile sets up the module from Caddyfile tokens. Syntax:
+//
+//     logfmt {
+//         <common encoder config subdirectives...>
+//     }
+//
+// See the godoc on the LogEncoderConfig type for the syntax of
+// subdirectives that are common to most/all encoders.
+func (lfe *LogfmtEncoder) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		if d.NextArg() {
+			return d.ArgErr()
+		}
+		err := lfe.LogEncoderConfig.UnmarshalCaddyfile(d)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// SingleFieldEncoder writes a log entry that consists entirely
 // of a single string field in the log entry. This is useful
 // for custom, self-encoded log entries that consist of a
 // single field in the structured log entry.
-type StringEncoder struct {
+type SingleFieldEncoder struct {
 	zapcore.Encoder `json:"-"`
 	FieldName       string          `json:"field,omitempty"`
 	FallbackRaw     json.RawMessage `json:"fallback,omitempty" caddy:"namespace=caddy.logging.encoders inline_key=format"`
 }
 
 // CaddyModule returns the Caddy module information.
-func (StringEncoder) CaddyModule() caddy.ModuleInfo {
+func (SingleFieldEncoder) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		ID:  "caddy.logging.encoders.string",
-		New: func() caddy.Module { return new(StringEncoder) },
+		ID:  "caddy.logging.encoders.single_field",
+		New: func() caddy.Module { return new(SingleFieldEncoder) },
 	}
 }
 
 // Provision sets up the encoder.
-func (se *StringEncoder) Provision(ctx caddy.Context) error {
+func (se *SingleFieldEncoder) Provision(ctx caddy.Context) error {
 	if se.FallbackRaw != nil {
 		val, err := ctx.LoadModule(se, "FallbackRaw")
 		if err != nil {
@@ -132,16 +196,16 @@ func (se *StringEncoder) Provision(ctx caddy.Context) error {
 // necessary because we implement our own EncodeEntry,
 // and if we simply let the embedded encoder's Clone
 // be promoted, it would return a clone of that, and
-// we'd lose our StringEncoder's EncodeEntry.
-func (se StringEncoder) Clone() zapcore.Encoder {
-	return StringEncoder{
+// we'd lose our SingleFieldEncoder's EncodeEntry.
+func (se SingleFieldEncoder) Clone() zapcore.Encoder {
+	return SingleFieldEncoder{
 		Encoder:   se.Encoder.Clone(),
 		FieldName: se.FieldName,
 	}
 }
 
 // EncodeEntry partially implements the zapcore.Encoder interface.
-func (se StringEncoder) EncodeEntry(ent zapcore.Entry, fields []zapcore.Field) (*buffer.Buffer, error) {
+func (se SingleFieldEncoder) EncodeEntry(ent zapcore.Entry, fields []zapcore.Field) (*buffer.Buffer, error) {
 	for _, f := range fields {
 		if f.Key == se.FieldName {
 			buf := bufferpool.Get()
@@ -158,6 +222,21 @@ func (se StringEncoder) EncodeEntry(ent zapcore.Entry, fields []zapcore.Field) (
 	return se.Encoder.EncodeEntry(ent, fields)
 }
 
+// UnmarshalCaddyfile sets up the module from Caddyfile tokens. Syntax:
+//
+//     single_field <field_name>
+//
+func (se *SingleFieldEncoder) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		var fieldName string
+		if !d.AllArgs(&fieldName) {
+			return d.ArgErr()
+		}
+		se.FieldName = d.Val()
+	}
+	return nil
+}
+
 // LogEncoderConfig holds configuration common to most encoders.
 type LogEncoderConfig struct {
 	MessageKey     *string `json:"message_key,omitempty"`
@@ -170,6 +249,53 @@ type LogEncoderConfig struct {
 	TimeFormat     string  `json:"time_format,omitempty"`
 	DurationFormat string  `json:"duration_format,omitempty"`
 	LevelFormat    string  `json:"level_format,omitempty"`
+}
+
+// UnmarshalCaddyfile populates the struct from Caddyfile tokens. Syntax:
+//
+//     {
+//         message_key <key>
+//         level_key   <key>
+//         time_key    <key>
+//         name_key    <key>
+//         caller_key  <key>
+//         stacktrace_key <key>
+//         line_ending  <char>
+//         time_format  <format>
+//         level_format <format>
+//     }
+//
+func (lec *LogEncoderConfig) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for nesting := d.Nesting(); d.NextBlock(nesting); {
+		subdir := d.Val()
+		var arg string
+		if !d.AllArgs(&arg) {
+			return d.ArgErr()
+		}
+		switch subdir {
+		case "message_key":
+			lec.MessageKey = &arg
+		case "level_key":
+			lec.LevelKey = &arg
+		case "time_key":
+			lec.TimeKey = &arg
+		case "name_key":
+			lec.NameKey = &arg
+		case "caller_key":
+			lec.CallerKey = &arg
+		case "stacktrace_key":
+			lec.StacktraceKey = &arg
+		case "line_ending":
+			lec.LineEnding = &arg
+		case "time_format":
+			lec.TimeFormat = arg
+		case "level_format":
+			lec.LevelFormat = arg
+		default:
+			return d.Errf("unrecognized subdirective %s", subdir)
+		}
+	}
+	return nil
 }
 
 // ZapcoreEncoderConfig returns the equivalent zapcore.EncoderConfig.
@@ -263,5 +389,10 @@ var (
 	_ zapcore.Encoder = (*ConsoleEncoder)(nil)
 	_ zapcore.Encoder = (*JSONEncoder)(nil)
 	_ zapcore.Encoder = (*LogfmtEncoder)(nil)
-	_ zapcore.Encoder = (*StringEncoder)(nil)
+	_ zapcore.Encoder = (*SingleFieldEncoder)(nil)
+
+	_ caddyfile.Unmarshaler = (*ConsoleEncoder)(nil)
+	_ caddyfile.Unmarshaler = (*JSONEncoder)(nil)
+	_ caddyfile.Unmarshaler = (*LogfmtEncoder)(nil)
+	_ caddyfile.Unmarshaler = (*SingleFieldEncoder)(nil)
 )

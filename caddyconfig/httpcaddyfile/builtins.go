@@ -24,8 +24,10 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
+	"go.uber.org/zap/zapcore"
 )
 
 func init() {
@@ -37,6 +39,7 @@ func init() {
 	RegisterHandlerDirective("route", parseRoute)
 	RegisterHandlerDirective("handle", parseSegmentAsSubroute)
 	RegisterDirective("handle_errors", parseHandleErrors)
+	RegisterDirective("log", parseLog)
 }
 
 // parseBind parses the bind directive. Syntax:
@@ -426,9 +429,116 @@ func parseHandleErrors(h Helper) ([]ConfigValue, error) {
 	}, nil
 }
 
+// parseLog parses the log directive. Syntax:
+//
+//     log {
+//         output <writer_module> ...
+//         format <encoder_module> ...
+//         level  <level>
+//     }
+//
+func parseLog(h Helper) ([]ConfigValue, error) {
+	var configValues []ConfigValue
+	for h.Next() {
+		cl := new(caddy.CustomLog)
+
+		for h.NextBlock(0) {
+			switch h.Val() {
+			case "output":
+				if !h.NextArg() {
+					return nil, h.ArgErr()
+				}
+				moduleName := h.Val()
+
+				// can't use the usual caddyfile.Unmarshaler flow with the
+				// standard writers because they are in the caddy package
+				// (because they are the default) and implementing that
+				// interface there would unfortunately create circular import
+				var wo caddy.WriterOpener
+				switch moduleName {
+				case "stdout":
+					wo = caddy.StdoutWriter{}
+				case "stderr":
+					wo = caddy.StderrWriter{}
+				case "discard":
+					wo = caddy.DiscardWriter{}
+				default:
+					mod, err := caddy.GetModule("caddy.logging.writers." + moduleName)
+					if err != nil {
+						return nil, h.Errf("getting log writer module named '%s': %v", moduleName, err)
+					}
+					unm, ok := mod.New().(caddyfile.Unmarshaler)
+					if !ok {
+						return nil, h.Errf("log writer module '%s' is not a Caddyfile unmarshaler", mod)
+					}
+					err = unm.UnmarshalCaddyfile(h.NewFromNextSegment())
+					if err != nil {
+						return nil, err
+					}
+					wo, ok = unm.(caddy.WriterOpener)
+					if !ok {
+						return nil, h.Errf("module %s is not a WriterOpener", mod)
+					}
+				}
+				cl.WriterRaw = caddyconfig.JSONModuleObject(wo, "output", moduleName, h.warnings)
+
+			case "format":
+				if !h.NextArg() {
+					return nil, h.ArgErr()
+				}
+				moduleName := h.Val()
+				mod, err := caddy.GetModule("caddy.logging.encoders." + moduleName)
+				if err != nil {
+					return nil, h.Errf("getting log encoder module named '%s': %v", moduleName, err)
+				}
+				unm, ok := mod.New().(caddyfile.Unmarshaler)
+				if !ok {
+					return nil, h.Errf("log encoder module '%s' is not a Caddyfile unmarshaler", mod)
+				}
+				err = unm.UnmarshalCaddyfile(h.NewFromNextSegment())
+				if err != nil {
+					return nil, err
+				}
+				enc, ok := unm.(zapcore.Encoder)
+				if !ok {
+					return nil, h.Errf("module %s is not a zapcore.Encoder", mod)
+				}
+				cl.EncoderRaw = caddyconfig.JSONModuleObject(enc, "format", moduleName, h.warnings)
+
+			case "level":
+				if !h.NextArg() {
+					return nil, h.ArgErr()
+				}
+				cl.Level = h.Val()
+				if h.NextArg() {
+					return nil, h.ArgErr()
+				}
+
+			default:
+				return nil, h.Errf("unrecognized subdirective: %s", h.Val())
+			}
+		}
+
+		var val namedCustomLog
+		if !reflect.DeepEqual(cl, new(caddy.CustomLog)) {
+			cl.Include = []string{"http.log.access"}
+			val.name = fmt.Sprintf("log%d", logCounter)
+			val.log = cl
+			logCounter++
+		}
+		configValues = append(configValues, ConfigValue{
+			Class: "custom_log",
+			Value: val,
+		})
+	}
+	return configValues, nil
+}
+
 // tlsCertTags maps certificate filenames to their tag.
 // This is used to remember which tag is used for each
 // certificate files, since we need to avoid loading
 // the same certificate files more than once, overwriting
 // previous tags
 var tlsCertTags = make(map[string]string)
+
+var logCounter int
